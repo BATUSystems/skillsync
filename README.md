@@ -90,7 +90,7 @@ acceptance. See [docs/prototypes.md](docs/prototypes.md).
 
 Developed and tested with uv 0.13; the minimum version has not been measured. CI uses the current uv.
 
-Supported systems:
+Supported systems: v1.0.0 supports Linux and WSL. Native Windows and macOS are planned for v1.0.1; CI runs them, but their results do not block the release.
 
 | System | Support in v1.0.0 | Known limits |
 |---|---|---|
