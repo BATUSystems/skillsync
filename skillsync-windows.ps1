@@ -26,9 +26,9 @@ $MANIFEST = Join-Path $GITHUB_DIR ".skillsync.yaml"
 $INSTRUCTIONS = Join-Path $GITHUB_DIR "copilot-instructions.md"
 $GIT_URL = "https://github.com/BATUSystems/skillsync.git"
 
-# Stara biblioteka (klon CopilotSkills) w stalym miejscu. Ustawienie biblioteki w manifescie nie jest
-# juz czytane (spec A, K3); do czasu warstw z layer.yaml (spec B) generator czyta ja przez most
-# `layers migrate --adopt-legacy` (warstwa core tylko do odczytu).
+# Biblioteka (klon CopilotSkills) w stalym miejscu. Ustawienie biblioteki w manifescie nie jest
+# czytane (spec A, K3); config rejestruje ja jako warstwe core przez
+# `layers migrate --layer-source core=<biblioteka>` (warstwa wymaga layer.yaml, inaczej link = BLOCKED).
 $LIBRARY_PATH = "$env:USERPROFILE\.local\copilot-library"
 
 # Czytaj listę merge z manifestu; fallback do _base
@@ -200,17 +200,17 @@ python_command: $pyExe
 "@
         [System.IO.File]::WriteAllText($cfgFile, ($cfgContent -replace "`r`n", "`n"), (New-Object System.Text.UTF8Encoding $false))
         Write-Host "  Utworzono config: $cfgFile"
-        # Most K15 (do v1.0): stara biblioteka jako tymczasowa warstwa core tylko do odczytu.
-        & $pyExe @pyArgs $SKILLSYNC_PY layers migrate --adopt-legacy $libFwd --apply
+        # Biblioteka jako warstwa core (layers, layer_rules `**`, isolation, cel straznika core).
+        & $pyExe @pyArgs $SKILLSYNC_PY layers migrate --layer-source "core=$libFwd" --apply
         if ($LASTEXITCODE -ne 0) { Write-Error "skillsync layers migrate nie powiodl sie (exit $LASTEXITCODE)"; exit $LASTEXITCODE }
     } elseif (-not (Select-String -LiteralPath $cfgFile -Pattern '^layers:' -Quiet)) {
         # Config bez `layers` (stary klucz biblioteki albo pusty): skrypt go nie przepisuje sam.
         Write-Host "  [BLOCKED] $cfgFile nie ma 'layers:' (stary format configu, D41). Skrypt nie przepisuje go sam." -ForegroundColor Red
         Write-Host "  Podglad migracji (nic nie zapisuje):" -ForegroundColor Yellow
-        Write-Host "    $($PY -join ' ') `"$SKILLSYNC_PY`" layers migrate --adopt-legacy `"$libFwd`"" -ForegroundColor Yellow
+        Write-Host "    $($PY -join ' ') `"$SKILLSYNC_PY`" layers migrate --layer-source `"core=$libFwd`"" -ForegroundColor Yellow
         Write-Host "  Zapis (z kopia zapasowa configu):" -ForegroundColor Yellow
-        Write-Host "    $($PY -join ' ') `"$SKILLSYNC_PY`" layers migrate --adopt-legacy `"$libFwd`" --apply" -ForegroundColor Yellow
-        Write-Host "  (gdy config ma stary klucz biblioteki, wystarczy samo --adopt-legacy: uzyje sciezki z configu)" -ForegroundColor Yellow
+        Write-Host "    $($PY -join ' ') `"$SKILLSYNC_PY`" layers migrate --layer-source `"core=$libFwd`" --apply" -ForegroundColor Yellow
+        Write-Host "  (gdy stara biblioteka z klucza configu ma layer.yaml, --layer-source mozna pominac)" -ForegroundColor Yellow
         exit 2
     }
     if (-not (Select-String -LiteralPath $cfgFile -Pattern '^python_command:' -Quiet)) {

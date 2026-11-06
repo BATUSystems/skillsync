@@ -24,9 +24,7 @@ None.
 ### Fixed
 None.
 
-## [1.0.0] - Unreleased
-
-The release date and `__version__` = `1.0.0` are set in the release commit; until then `__version__` is 0.9.0.
+## [1.0.0] - 2026-11-07
 
 ### Added
 

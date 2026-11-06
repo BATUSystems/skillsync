@@ -9,6 +9,7 @@ consumers (spec A, K1-K3, K9, K12).
 This module has no side effects on import. Commands that write (``layers init``,
 ``layers add``, ``layers update``) do so only when invoked.
 """
+import argparse
 import copy
 import fnmatch
 import hashlib
@@ -37,9 +38,6 @@ LAYER_SCHEMA = 1
 LAYER_KINDS = ('core', 'org', 'personal')
 DEFAULT_WRITABLE = {'core': False, 'org': True, 'personal': True}
 TARGET_SCOPE = {'core': 'public', 'org': 'org-private', 'personal': 'private'}
-# K15 bridge (`layers migrate --adopt-legacy`): removed together with every `synthetic`
-# reference before v1.0. Tests swap it to prove the D41 behaviour without the bridge.
-LEGACY_BRIDGE = True
 LAYER_FILE = 'layer.yaml'
 DEFAULT_IDENTITY = 'leakguard/identity.yaml'
 FRAGMENTS_DIR = 'instructions/_base.d'
@@ -257,15 +255,11 @@ class Layer:
         if not self.root_clean:
             return None, (f'Layer {self.id}: the path to the layer root ({self.subdir}) contains a symlink/junction'
                           '; the layer is not read')
-        if self.synthetic:
-            return ({'schema': LAYER_SCHEMA, 'id': self.id, 'kind': self.kind,
-                     'version': self.synthetic.get('version'), 'core_min': self.synthetic.get('core_min'),
-                     'requires': [], 'identity': None}, None)
         return read_layer_yaml(self.root)
 
     @property
     def meta(self):
-        """Normalized `layer.yaml` (or the synthetic metadata), None when absent/invalid."""
+        """Normalized `layer.yaml`, None when absent/invalid."""
         return self._meta[0]
 
     @property
@@ -295,8 +289,7 @@ class Layer:
         return None
 
     def argv_value(self):
-        value = f'{self.id}={self.root}'
-        return value + ',synthetic' if self.synthetic else value
+        return f'{self.id}={self.root}'
 
     def as_json(self):
         return {'id': self.id, 'kind': self.kind, 'path': str(self.path), 'subdir': self.subdir,
@@ -491,22 +484,25 @@ def load_machine_config(path=None):
 
 # --------------------------------------------------------------------------- --layer flag
 
+_SYNTHETIC_REFUSED = '--layer ...,synthetic (the legacy bridge) is no longer supported; pass a real layer directory'
+
+
 @dataclass(frozen=True)
 class LayerOverride:
-    """Parsed `--layer id=path[,synthetic]` (path = layer root)."""
+    """Parsed `--layer id=path` (path = layer root). `synthetic` exists only to refuse the 0.9.x bridge form."""
     id: str
     path: Path
     synthetic: bool = False
 
     def argv_value(self):
-        return f'{self.id}={self.path}' + (',synthetic' if self.synthetic else '')
+        return f'{self.id}={self.path}'
 
 
-def parse_layer_flag(value, *, allow_synthetic=False, cwd=None):
-    """Parse one `--layer` value. `,synthetic` only when `allow_synthetic` (K15 bridge)."""
+def parse_layer_flag(value, *, cwd=None):
+    """Parse one `--layer` value; the old bridge form `id=path,synthetic` is refused (`synthetic-refused`)."""
     if isinstance(value, LayerOverride):
-        if value.synthetic and not allow_synthetic:
-            raise LayerError('--layer ...,synthetic is accepted only for the legacy bridge layer', 'synthetic-refused')
+        if value.synthetic:
+            raise LayerError(_SYNTHETIC_REFUSED, 'synthetic-refused')
         return value
     if not isinstance(value, str) or '=' not in value:
         raise LayerError(f'--layer expects id=path, got {value!r}', 'bad-layer-flag')
@@ -518,8 +514,8 @@ def parse_layer_flag(value, *, allow_synthetic=False, cwd=None):
         raise LayerError(f'--layer id must match [a-z0-9][a-z0-9-]*: {layer_id!r}', 'bad-layer-flag')
     if not rest:
         raise LayerError(f'--layer {layer_id}= needs a path', 'bad-layer-flag')
-    if synthetic and not allow_synthetic:
-        raise LayerError('--layer ...,synthetic is accepted only for the legacy bridge layer', 'synthetic-refused')
+    if synthetic:
+        raise LayerError(_SYNTHETIC_REFUSED, 'synthetic-refused')
     path = Path(rest).expanduser()
     if not path.is_absolute():
         path = Path(cwd or os.getcwd()) / path
@@ -1010,25 +1006,19 @@ def _no_layers_error(config):
         return LayerError(f'Missing machine config: {config.path}. Create layers with `skillsync layers init`/'
                           '`layers add`, or run `skillsync layers migrate`', 'missing-config')
     if config.legacy_library_key:
-        bridge = (' Until the library has a layer.yaml, `skillsync layers migrate --adopt-legacy` registers it as a '
-                  'temporary read-only core layer; add `--apply` to write.') if LEGACY_BRIDGE else ''
         return LayerError('Machine config uses the legacy `library:` key, which this generator no longer reads. '
-                          'Run `skillsync layers migrate` (dry-run by default) to convert it to `layers`.' + bridge,
-                          'legacy-config')
+                          'Run `skillsync layers migrate --layer-source core=PATH` (dry-run by default) to convert it '
+                          'to `layers`.', 'legacy-config')
     return LayerError('No layers configured. Add one with `skillsync layers add` or run `skillsync layers migrate`.',
                       'no-layers')
 
 
 def _check_bridge(layer):
-    if layer.synthetic and not LEGACY_BRIDGE:
+    """A config entry with `synthetic` (the legacy bridge of 0.9.x) is refused: BLOCKED with the migration."""
+    if layer.synthetic:
         raise LayerError(f'Layer {layer.id} is the legacy bridge (`synthetic`), which this generator no longer '
-                         'supports. Run `skillsync layers migrate` to convert the config to real layers.', 'legacy-config')
-
-
-def _bridge_note(layer):
-    """Warning `legacy-bridge` (K15) printed by every `link` and `layers check` using the bridge."""
-    return _finding('legacy-bridge', 'warning', f'Layer {layer.id} is the temporary legacy bridge (legacy-bridge, '
-                    'read-only); migrate to real layers before v1.0', layer.id)
+                         'supports. Run `skillsync layers migrate --layer-source core=PATH --apply` to replace it '
+                         'with a real core layer.', 'legacy-config')
 
 
 def _order_notes(layers, notes):
@@ -1087,8 +1077,6 @@ def resolve_layers(project=None, *, layers=None, config=None, cwd=None, system=N
             active.append(layer)
         else:
             notes.append(_finding('layer-absent', 'info', f'Layer {layer.id} is not present at {layer.root}; skipped', layer.id))
-        if layer.synthetic:
-            notes.append(_bridge_note(layer))
     if rule:
         _order_notes(chosen, notes)
     if project is not None and rule is not None:
@@ -1104,30 +1092,23 @@ def resolve_layers(project=None, *, layers=None, config=None, cwd=None, system=N
 
 
 def _override_set(values, config, notes, project):
-    allow = {layer.id for layer in config.layers.values() if layer.synthetic and LEGACY_BRIDGE}
     active, seen = [], set()
     for value in values:
-        override = parse_layer_flag(value, allow_synthetic=_flag_id(value) in allow)
+        override = parse_layer_flag(value)
         if override.id in seen:
             raise LayerError(f'--layer {override.id} given twice', 'bad-layer-flag')
         seen.add(override.id)
         known = config.layers.get(override.id)
-        if override.synthetic:
-            layer = Layer(override.id, 'core', override.path, '', known.source if known else None, None, False,
-                          dict(known.synthetic))
-        else:
-            meta, _ = read_layer_yaml(override.path)
-            kind = known.kind if known else (meta or {}).get('kind') or ('core' if override.id == 'core' else None)
-            if kind is None:
-                raise LayerError(f'--layer {override.id}: kind unknown (no config entry and no layer.yaml)', 'bad-layer-flag')
-            writable = known.writable if known and not known.synthetic else None
-            layer = Layer(override.id, kind, override.path, '', known.source if known else None, None, writable)
+        meta, _ = read_layer_yaml(override.path)
+        kind = known.kind if known else (meta or {}).get('kind') or ('core' if override.id == 'core' else None)
+        if kind is None:
+            raise LayerError(f'--layer {override.id}: kind unknown (no config entry and no layer.yaml)', 'bad-layer-flag')
+        writable = known.writable if known and not known.synthetic else None
+        layer = Layer(override.id, kind, override.path, '', known.source if known else None, None, writable)
         if layer.present:
             active.append(layer)
         else:
             notes.append(_finding('layer-absent', 'info', f'Layer {layer.id} is not present at {layer.root}; skipped', layer.id))
-        if layer.synthetic:
-            notes.append(_bridge_note(layer))
     personal = [layer.id for layer in active if layer.kind == 'personal']
     if len(personal) > 1:
         raise LayerError(f'More than one personal layer: {", ".join(personal)}', 'bad-layer-flag')
@@ -1775,11 +1756,10 @@ def check_layers(layerset, *, version=None, hooks=True, trust=True, orphans=True
             if layer.kind == 'core' and meta['version'] and meta['version'] != version:
                 findings.append(_finding('core-version-mismatch', 'warning', f'Core layer version {meta["version"]} '
                                          f'differs from the generator version {version}', layer.id))
-        if not layer.synthetic:
-            for label, pattern in (('README', 'README*'), ('CHANGELOG', 'CHANGELOG*')):
-                if not any(any(directory.glob(pattern)) for directory in {layer.root, layer.path} if directory.is_dir()):
-                    findings.append(_finding(f'{label.lower()}-missing', 'warning', f'Layer {layer.id} has no {label}', layer.id))
-        if hooks and layer.writable and not layer.synthetic:
+        for label, pattern in (('README', 'README*'), ('CHANGELOG', 'CHANGELOG*')):
+            if not any(any(directory.glob(pattern)) for directory in {layer.root, layer.path} if directory.is_dir()):
+                findings.append(_finding(f'{label.lower()}-missing', 'warning', f'Layer {layer.id} has no {label}', layer.id))
+        if hooks and layer.writable:
             findings.extend(_hook_findings(layer))
         for rel in layer_links(layer):
             findings.append(_finding('symlink-in-layer', 'error', f'Layer {layer.id}: {rel} is a symlink/junction; '
@@ -2509,7 +2489,11 @@ def layers_add(layer_id, kind, source, *, subdir=None, ref=None, path=None, writ
         config = load_machine_config()
         if layer_id in config.layers:
             raise LayerError(f'Layer {layer_id} already exists in {config.path}', 'conflict')
-        if kind == 'core' and any(layer.kind == 'core' for layer in config.layers.values()):
+        configured_core = next((layer for layer in config.layers.values() if layer.kind == 'core'), None)
+        if kind == 'core' and configured_core is not None:
+            if configured_core.synthetic:
+                raise LayerError(f'The configured core layer {configured_core.id} is the 0.9.x legacy bridge; replace it '
+                                 'with `skillsync layers migrate --layer-source core=PATH --apply`', 'conflict')
             raise LayerError('A core layer is already configured', 'conflict')
         subdir = _safe_rel(subdir, '--subdir') if subdir not in (None, '', '.') else ''
         if path:
@@ -2633,7 +2617,7 @@ def layers_update(layer_id=None, *, ref=None):
                 item.update(status=status, action=action, to=_head(layer.path))
                 if reason:
                     item['reason'] = reason
-                if status == 'PASS' and layer.writable and not layer.synthetic:
+                if status == 'PASS' and layer.writable:
                     item['hooks'] = _install_hooks(layer).get('hooks', [])
             results.append(item)
         if ref is not None and results and results[0]['status'] == 'PASS' and ref != config.layers[layer_id].ref:
@@ -2980,13 +2964,6 @@ def migrate_layer_entry(layer_id, kind, stored):
     return {'id': layer_id, 'kind': kind, 'source': _origin_url(checkout) or stored, 'path': stored}
 
 
-def migrate_bridge_entry(stored):
-    """K15 bridge: the old library as a temporary read-only core layer with synthetic metadata."""
-    version = generator_version()
-    return {'id': 'core', 'kind': 'core', 'path': stored, 'writable': False,
-            'synthetic': {'version': version, 'core_min': version}}
-
-
 def _replace_bridge_op(bridge_id, entry):
     """Replace the bridge entry with a real core layer (rewrite with backup: no textual edit)."""
     def mutate(data):
@@ -3024,20 +3001,19 @@ def _extend_allowed_layers_op(layer_ids):
     return (lambda text: None, (), mutate)
 
 
-def migrate_config(*, adopt_legacy=None, sources=(), kinds=(), matches=(), apply=False):
+def migrate_config(*, sources=(), kinds=(), matches=(), apply=False):
     """`layers migrate` (K11, D41): the machine config with the old single-library key -> `layers` +
     `layer_rules` (+ `isolation`, `leakguard.targets` stubs); the old key becomes `legacy_library`; every
     other key is kept. Dry-run unless `apply`; a backup before writing; idempotent (an already migrated
     config gives PASS without a change).
 
-    Core layer: `--adopt-legacy [PATH]` (K15 bridge, the old library or PATH as a read-only core with
-    `synthetic` metadata; a library that already has `layer.yaml` becomes a real core layer), else
-    `--layer-source core=PATH`, else the old library when it has `layer.yaml`. `--layer-source ID=PATH`
+    Core layer: `--layer-source core=PATH`, else the old library when it has `layer.yaml`. A config with the
+    0.9.x legacy bridge (a `synthetic` core entry) gets the bridge replaced by that core layer (D162). `--layer-source ID=PATH`
     registers local layers in place (`--kind ID=KIND` when the directory has no `layer.yaml`);
     `--match ID=GLOB` gives an org layer its own rule. Remote sources are added later with `layers add`.
 
     A config with the legacy bridge (synthetic core) behaves like the old `library:` key for the layers added in
-    the same call: a personal layer joins the default rule `**` (rewritten, not duplicated) and every org rule, and
+    the same call (D166): a personal layer joins the default rule `**` (rewritten, not duplicated) and every org rule, and
     every added layer joins `isolation.allowed_layers` (the config is rewritten, comments are lost, a backup is
     kept). A config already on layers keeps its rules and `allowed_layers` (decision 2.4); the warnings say what to
     add with `layers use`."""
@@ -3046,9 +3022,9 @@ def migrate_config(*, adopt_legacy=None, sources=(), kinds=(), matches=(), apply
     source_map = _single(_pairs(sources, '--layer-source'), '--layer-source')
     kind_map = _single(_pairs(kinds, '--kind'), '--kind')
     match_map = _pairs(matches, '--match')
-    if text is None and adopt_legacy in (None, True) and not source_map:
-        raise LayerError(f'Missing machine config: {path}; nothing to migrate (pass --adopt-legacy PATH or '
-                         '--layer-source core=PATH to create one)', 'missing-config')
+    if text is None and not source_map:
+        raise LayerError(f'Missing machine config: {path}; nothing to migrate (pass --layer-source core=PATH to '
+                         'create one)', 'missing-config')
     try:
         raw = (yaml.safe_load(text) if text and text.strip() else {}) or {}
     except yaml.YAMLError as exc:
@@ -3065,40 +3041,6 @@ def migrate_config(*, adopt_legacy=None, sources=(), kinds=(), matches=(), apply
     changes, warnings, operations, new_entries = [], [], [], []
     core = next((layer for layer in config.layers.values() if layer.kind == 'core'), None)
     replace_bridge = None
-    adopted_path = None
-
-    if adopt_legacy is not None and not LEGACY_BRIDGE:
-        raise LayerError('--adopt-legacy (the legacy bridge) is no longer supported; pass '
-                         '--layer-source core=PATH with a real core layer', 'bad-argument')
-    if adopt_legacy is True and not old and core is not None:
-        adopt_legacy = None  # rerun after the migration: the core layer exists already (idempotent)
-    if adopt_legacy is not None:
-        value = adopt_legacy if isinstance(adopt_legacy, str) else old
-        if not value:
-            raise LayerError('The machine config has no `library:` key; pass the old library as '
-                             '--adopt-legacy PATH', 'bad-argument')
-        if any(kind_map.get(item) == 'core' or item == 'core' for item in source_map):
-            raise LayerError('--adopt-legacy and --layer-source core= both define the core layer', 'bad-argument')
-        stored = _stored_path(value)
-        bridge_path = _expand(stored, '--adopt-legacy')
-        if not bridge_path.is_dir():
-            raise LayerError(f'Old library not found: {bridge_path}', 'bad-argument')
-        adopted_path = stored
-        meta, problem = read_layer_yaml(bridge_path)
-        if problem:
-            raise LayerError(problem, 'layer-yaml-invalid')
-        if core is not None:
-            if _path_key(core.path) != _path_key(bridge_path):
-                raise LayerError(f'A core layer is already configured ({core.id} at {core.path})', 'conflict')
-        elif meta is not None:
-            if meta['kind'] != 'core':
-                raise LayerError(f'{bridge_path / LAYER_FILE} declares kind {meta["kind"]}, not core', 'layer-yaml-invalid')
-            new_entries.append(migrate_layer_entry(meta['id'], 'core', stored))
-            warnings.append(f'{bridge_path} has layer.yaml: registered as a real core layer (no bridge needed)')
-        else:
-            new_entries.append(migrate_bridge_entry(stored))
-            warnings.append('The core layer is the legacy bridge (read-only): `push`, `import` and `skills add` '
-                            'to it are BLOCKED; edit the old library with git; remove the bridge before v1.0')
 
     for layer_id, value in source_map.items():
         kind = kind_map.get(layer_id)
@@ -3135,10 +3077,17 @@ def migrate_config(*, adopt_legacy=None, sources=(), kinds=(), matches=(), apply
                 if _path_key(core.path) == _path_key(checkout) and core.id == layer_id:
                     continue
                 raise LayerError(f'A core layer is already configured ({core.id} at {core.path})', 'conflict')
+            if replace_bridge is not None:
+                raise LayerError(f'Two core layers replace the legacy bridge {core.id}: {replace_bridge[1]["id"]} and '
+                                 f'{layer_id}; pass one --layer-source of kind core', 'conflict')
             replace_bridge = (core.id, entry)
             continue
         new_entries.append(entry)
 
+    if core is not None and core.synthetic and replace_bridge is None:
+        raise LayerError(f'The machine config has the 0.9.x legacy bridge (core layer {core.id} is `synthetic`), which '
+                         'this generator no longer supports; pass --layer-source core=PATH with a real core layer to '
+                         'replace it', 'no-core')
     new_ids = [entry['id'] for entry in new_entries]
     if len(set(new_ids)) != len(new_ids) or any(item in config.layers for item in new_ids):
         raise LayerError('A layer id is defined twice', 'conflict')
@@ -3149,13 +3098,11 @@ def migrate_config(*, adopt_legacy=None, sources=(), kinds=(), matches=(), apply
             if problem:
                 raise LayerError(problem, 'layer-yaml-invalid')
             if meta is None or meta['kind'] != 'core':
-                bridge = ' --adopt-legacy (a temporary read-only bridge until v1.0) or' if LEGACY_BRIDGE else ''
-                raise LayerError(f'The old library {library} has no core layer.yaml. Pass{bridge} '
-                                 '--layer-source core=PATH with a real core layer', 'no-core')
+                raise LayerError(f'The old library {library} has no core layer.yaml. Pass --layer-source core=PATH '
+                                 'with a real core layer', 'no-core')
             new_entries.insert(0, migrate_layer_entry(meta['id'], 'core', _stored_path(old)))
         else:
-            raise LayerError('No core layer: pass --layer-source core=PATH'
-                             + (' or --adopt-legacy PATH' if LEGACY_BRIDGE else ''), 'no-core')
+            raise LayerError('No core layer: pass --layer-source core=PATH', 'no-core')
 
     all_kinds = {layer.id: layer.kind for layer in config.layers.values()}
     all_kinds.update({entry['id']: entry['kind'] for entry in new_entries})
@@ -3180,9 +3127,6 @@ def migrate_config(*, adopt_legacy=None, sources=(), kinds=(), matches=(), apply
         else:
             operations.append(_rename_top_op('library', 'legacy_library'))
         changes.append(f'library: {old} -> legacy_library (only to recognise old managed symlinks)')
-    elif adopted_path and config.legacy_library is None and any(entry.get('synthetic') for entry in new_entries):
-        operations.append(_append_top_op('legacy_library', adopted_path))
-        changes.append(f'legacy_library: {adopted_path}')
 
     if replace_bridge is not None:
         operations.append(_replace_bridge_op(*replace_bridge))
@@ -3190,8 +3134,7 @@ def migrate_config(*, adopt_legacy=None, sources=(), kinds=(), matches=(), apply
                        f'({replace_bridge[1]["path"]})')
     for entry in new_entries:
         operations.append(_add_layer_op(entry))
-        label = 'legacy bridge, read-only' if entry.get('synthetic') else entry['kind']
-        changes.append(f'layers: + {entry["id"]} ({label}) at {entry["path"]}')
+        changes.append(f'layers: + {entry["id"]} ({entry["kind"]}) at {entry["path"]}')
 
     bridge_config = bool(core is not None and core.synthetic)  # the legacy bridge is the core layer
     bridge_id = replace_bridge[0] if replace_bridge is not None else None
@@ -3269,7 +3212,7 @@ def migrate_config(*, adopt_legacy=None, sources=(), kinds=(), matches=(), apply
 
     targets = dict(config.targets)
     for entry in new_entries + ([replace_bridge[1]] if replace_bridge else []):
-        if entry.get('synthetic') or entry['id'] in targets:
+        if entry['id'] in targets:
             continue
         stub = target_stub(entry['kind'], _expand(entry['path'], 'path'), entry.get('source'))
         targets[entry['id']] = stub
@@ -3464,9 +3407,11 @@ def layers_migrate(*, adopt_legacy=None, sources=(), kinds=(), matches=(), manif
                    projects=(), apply=False):
     """Entry of `layers migrate`: config (default), `--manifests` or `--finish`; dry-run unless `apply`."""
     try:
+        if adopt_legacy is not None:
+            raise LayerError('--adopt-legacy (the 0.9.x legacy bridge) was removed in 1.0; pass '
+                             '--layer-source core=PATH with a real core layer', 'bad-argument')
         if manifests or finish:
-            extra = [name for name, value in (('--adopt-legacy', adopt_legacy is not None), ('--layer-source', sources),
-                                              ('--kind', kinds), ('--match', matches)) if value]
+            extra = [name for name, value in (('--layer-source', sources), ('--kind', kinds), ('--match', matches)) if value]
             if extra or (manifests and finish):
                 raise LayerError(f'--manifests and --finish are separate steps (not with {", ".join(extra) or "each other"})',
                                  'bad-argument')
@@ -3477,7 +3422,7 @@ def layers_migrate(*, adopt_legacy=None, sources=(), kinds=(), matches=(), manif
             return migrate_manifests(projects, apply=apply)
         if projects:
             raise LayerError('--project applies to --manifests only', 'bad-argument')
-        return migrate_config(adopt_legacy=adopt_legacy, sources=sources, kinds=kinds, matches=matches, apply=apply)
+        return migrate_config(sources=sources, kinds=kinds, matches=matches, apply=apply)
     except (LayerError, OSError) as exc:
         return _blocked(exc)
 
@@ -3497,7 +3442,7 @@ def _print(report, json_output, title):
             print(f'  {report[key]}', file=stream)
     for layer in report.get('layers', []):
         if 'kind' in layer:
-            flags = ('rw' if layer.get('writable') else 'ro') + (', synthetic' if layer.get('synthetic') else '')
+            flags = 'rw' if layer.get('writable') else 'ro'
             status = f'{layer["status"]:<8} ' if layer.get('status') else ''
             print(f'  {status}{layer["id"]:<16} {layer["kind"]:<9} {layer.get("version") or "-":<9} {flags:<14} '
                   f'{layer["root"]}', file=stream)
@@ -3620,9 +3565,8 @@ def register(subparsers):
     mode = migrate.add_mutually_exclusive_group()
     mode.add_argument('--apply', action='store_true', help='Write the changes (a backup copy is kept)')
     mode.add_argument('--dry-run', action='store_true', help='Only show the planned changes (default)')
-    migrate.add_argument('--adopt-legacy', nargs='?', const=True, default=None, metavar='PATH',
-                         help='Temporary read-only core layer from the old library (default: the old config key; '
-                              'until v1.0)')
+    # Removed in 1.0 (the 0.9.x bridge): kept hidden only to answer with the migration instruction (BLOCKED).
+    migrate.add_argument('--adopt-legacy', nargs='?', const=True, default=None, help=argparse.SUPPRESS)
     migrate.add_argument('--layer-source', dest='layer_sources', action='append', default=[], metavar='ID=PATH',
                          help='Register a local layer directory in place (repeatable)')
     migrate.add_argument('--kind', dest='kinds', action='append', default=[], metavar='ID=KIND',

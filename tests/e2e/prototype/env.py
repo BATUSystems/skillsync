@@ -183,11 +183,16 @@ def prepare(workdir, library, chrome_port, port1, port2):
     fd = os.open(config, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, 'w') as handle:
         handle.write('prototype:\n  default_password: "%s"\n' % secrets['default'])
-        # Layer `core` = the test library as the read-only bridge (synthetic metadata, as `layers migrate --adopt-legacy`).
+        # Layer `core` = a copy of the test library with a `layer.yaml` (a real core layer, read-only by default).
         sys.path.insert(0, str(REPO))
         from skillsync_workflow import __version__
-        handle.write('layers:\n  - {id: core, kind: core, path: "%s", writable: false,\n'
-                     '     synthetic: {version: "%s", core_min: "%s"}}\n' % (library, __version__, __version__))
+        core = workdir / 'core'
+        if core.exists():
+            shutil.rmtree(core)
+        shutil.copytree(library, core, ignore=shutil.ignore_patterns('.git', 'node_modules', '__pycache__'))
+        (core / 'layer.yaml').write_text('schema: 1\nid: core\nkind: core\nversion: %s\ncore_min: %s\n'
+                                         % (__version__, __version__), encoding='utf-8')
+        handle.write('layers:\n  - {id: core, kind: core, path: "%s"}\n' % core)
         handle.write('layer_rules:\n  - {match: ["**"], use: [core]}\n')
     environ = dict(os.environ, SKILLSYNC_CONFIG=str(config))
     for slug, screens, extra in (('demo', screens_demo(), None), ('alfa', screens_simple('alfa'), None),

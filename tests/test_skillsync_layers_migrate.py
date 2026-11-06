@@ -1,4 +1,4 @@
-"""Step 2.4t: `skillsync layers migrate` (K11, D41) and the legacy bridge `--adopt-legacy` (K15, D60, D63).
+"""Step 2.4t: `skillsync layers migrate` (K11, D41) and the 0.9.x legacy bridge that is no longer created (K15, D60, D63).
 
 Contract under test (spec K11/K15, decisions of step 2.4 in the plan "Wynik"):
 - dry-run by default (also `--dry-run`), writing only with `--apply`; a backup copy of the config before writing;
@@ -10,9 +10,11 @@ Contract under test (spec K11/K15, decisions of step 2.4 in the plan "Wynik"):
   (`<data dir>/backups/manifests/<stamp>/...`), never next to the manifest in the project repository;
 - `--finish` removes `legacy_library` only after the old clone is gone and `layers check --isolation` = PASS;
 - after the migration `link --dry-run` plans no removal of the user's own files;
-- the bridge: `kind: core`, `writable: false`, `synthetic {version, core_min} = __version__`, no leak guard
-  target, the warning `legacy-bridge` in `layers check` and `link`, read-only (`push`, `import`, `skills add` =
-  BLOCKED with the D63 phrase, the library tree unchanged).
+- the core layer is a real layer: `--layer-source core=PATH` (or an old library with `layer.yaml`); `--adopt-legacy`
+  (removed in 1.0, hidden from `--help`) is BLOCKED with the instruction and writes nothing;
+- a config written by 0.9.x with the bridge (`synthetic` core entry, written here by `MigrateCase.bridge_config`) is
+  still read: `link`/`layers` commands = BLOCKED `legacy-config`, `layers check --isolation` = `isolation-legacy-bridge`,
+  and `layers migrate --layer-source core=PATH` replaces it with a real core (D162, D166).
 All names are synthetic; machine state is isolated (layers_helpers).
 """
 import json
@@ -34,7 +36,6 @@ from layers_helpers import (LINK_MODES, SKILL_TEXT, LayersCase, commit, each_mod
 from skillsync_workflow import layers  # noqa: E402
 from layers_helpers import needs_os_symlinks  # noqa: E402
 
-BRIDGE_PHRASE = 'most tylko do odczytu'          # D63
 OLD_LIBRARY_FILES = {
     'skills/feature/SKILL.md': SKILL_TEXT.format('feature'),
     'skills/feature/references/ref.md': 'reference\n',
@@ -116,6 +117,48 @@ class MigrateCase(LayersCase):
     def bridge(self):
         return next(entry for entry in self.config()['layers'] if entry['id'] == 'core')
 
+    def core_layer(self, name='core-layer'):
+        """A real core layer (with `layer.yaml`) holding the files of the old library."""
+        return make_layer(self.work / name, 'core', 'core', dict(OLD_LIBRARY_FILES), readme=False, changelog=False)
+
+    def link_through_old_library(self, project, mode='symlink'):
+        """Link `project` the way 0.9.x did, so that its managed links/copies come from the old library path, and
+        leave the machine config as 0.9.x wrote it (the bridge; the generator cannot link through it any more)."""
+        make_layer(self.library, 'core', 'core', readme=False, changelog=False)           # the old library as a core
+        self.old_config()
+        self.migrate('--apply')
+        self.assertEqual(self.link(project, mode=mode).returncode, 0)
+        self.bridge_config()
+
+    def assert_bridge_needs_a_core(self, *args):
+        """`layers migrate` on a bridge config without a core `--layer-source`: BLOCKED `no-core`, nothing written."""
+        before, tree = self.config_file.read_bytes(), self.machine_tree()
+        report = self.migrate(*args, '--apply', code=2)
+        self.assertEqual((report['status'], report['code']), ('BLOCKED', 'no-core'), report)
+        self.assertIn('--layer-source core=PATH', report['reason'])
+        self.assertEqual(self.config_file.read_bytes(), before)
+        self.assertEqual(self.machine_tree(), tree, 'no config change, no backup')
+        self.assertEqual(self.backups(), [])
+        return report
+
+    def core_args(self, name='core-layer'):
+        return ['--layer-source', f'core={self.core_layer(name)}']
+
+    def bridge_config(self, comment=True, **extra):
+        """The machine config exactly as 0.9.x `layers migrate --adopt-legacy --apply` wrote it for `old_config()`:
+        a read-only `synthetic` core entry on the old library, `legacy_library`, the default rule and the isolation
+        list. The generator no longer creates it, but still has to read, refuse and migrate it."""
+        version = generator_version()
+        data = dict(KEPT_KEYS, discover_paths=[str(self.projects)])
+        data.update(legacy_library=str(self.library),
+                    layers=[{'id': 'core', 'kind': 'core', 'path': str(self.library), 'writable': False,
+                             'synthetic': {'version': version, 'core_min': version}}],
+                    layer_rules=[{'match': ['**'], 'use': ['core']}], isolation={'allowed_layers': ['core']})
+        data.update(extra)
+        text = ('# machine config of the tester\n' if comment else '') + yaml_text(data)
+        self.config_file.write_text(text, encoding='utf-8')
+        return text
+
 
 # ====================================================================== K11: dry-run, apply, backup, idempotence
 
@@ -126,7 +169,7 @@ class DryRunAndApplyTest(MigrateCase):
         before = self.machine_tree()
         for args in ((), ('--dry-run',)):
             with self.subTest(args=args):
-                report = self.migrate('--adopt-legacy', *args)
+                report = self.migrate(*self.core_args(), *args)
                 self.assertEqual((report['status'], report['dry_run']), ('PASS', True), report)
                 self.assertTrue(report['changes'], 'the plan lists the changes')
                 self.assertIsNone(report['backup'])
@@ -134,7 +177,7 @@ class DryRunAndApplyTest(MigrateCase):
                 self.assertIn('legacy_library', report['preview'])                    # the would-be config
                 self.assertEqual(self.machine_tree(), before, 'dry-run: config and its directory unchanged')
                 self.assertEqual(self.config_file.read_text(encoding='utf-8'), original)
-        process = self.cli('layers', 'migrate', '--adopt-legacy')                       # text output says so too
+        process = self.cli('layers', 'migrate', *self.core_args())                      # text output says so too
         self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
         self.assertIn('(dry-run)', process.stdout)
         self.assertIn('would change', process.stdout)
@@ -143,13 +186,13 @@ class DryRunAndApplyTest(MigrateCase):
     def test_apply_and_dry_run_exclude_each_other(self):
         self.old_config()
         before = self.machine_tree()
-        process = self.cli('layers', 'migrate', '--adopt-legacy', '--apply', '--dry-run')
+        process = self.cli('layers', 'migrate', *self.core_args(), '--apply', '--dry-run')
         self.assertEqual(process.returncode, 2, process.stdout + process.stderr)
         self.assertEqual(self.machine_tree(), before)
 
     def test_apply_writes_a_backup_with_the_original_and_converts_the_old_key(self):
         original = self.old_config()
-        report = self.migrate('--adopt-legacy', '--apply')
+        report = self.migrate(*self.core_args(), '--apply')
         self.assertEqual((report['status'], report['dry_run']), ('PASS', False), report)
         backup = Path(report['backup'])
         self.assertEqual(self.backups(), [backup])
@@ -163,14 +206,15 @@ class DryRunAndApplyTest(MigrateCase):
         text = self.config_file.read_text(encoding='utf-8')
         self.assertIn('# machine config of the tester', text)                          # comments kept
         self.assertEqual([item['id'] for item in config['layers']], ['core'])
+        self.assertNotIn('synthetic', self.bridge(), 'a real core layer, never the 0.9.x bridge')
         self.assertEqual(config['layer_rules'], [{'match': ['**'], 'use': ['core']}])
         self.assertEqual(config['isolation'], {'allowed_layers': ['core']})
 
     def test_a_second_apply_changes_nothing_and_makes_no_backup(self):
         self.old_config()
-        self.migrate('--adopt-legacy', '--apply')
+        self.migrate(*self.core_args(), '--apply')
         text, backups = self.config_file.read_bytes(), self.backups()
-        for args in (('--adopt-legacy', '--apply'), ('--apply',), ()):
+        for args in ((*self.core_args(), '--apply'), ('--apply',), ()):
             with self.subTest(args=args):
                 report = self.migrate(*args)
                 self.assertEqual((report['status'], report['changed'], report['changes']), ('PASS', False, []), report)
@@ -183,29 +227,66 @@ class DryRunAndApplyTest(MigrateCase):
         before = tree_snapshot(project)
         self.assertEqual(self.link(project).returncode, 2, 'before the migration: BLOCKED (D41)')
         self.assertEqual(tree_snapshot(project), before)
-        self.migrate('--adopt-legacy', '--apply')
+        self.migrate(*self.core_args(), '--apply')
         code, report = self.cli_json('layers', 'list', '--project', str(project))
         self.assertEqual((code, [item['id'] for item in report['layers']]), (0, ['core']), report)
 
-    def test_a_missing_config_or_library_is_blocked_without_writing(self):
-        code_report = self.migrate('--adopt-legacy', '--apply', code=2)
+    def test_a_missing_config_is_blocked_without_writing(self):
+        code_report = self.migrate('--apply', code=2)
         self.assertEqual((code_report['status'], code_report['code']), ('BLOCKED', 'missing-config'))
+        self.assertIn('--layer-source core=PATH', code_report['reason'])
+        self.assertNotIn('--adopt-legacy', code_report['reason'])
         self.assertFalse(self.config_file.exists())
+
+    def test_a_missing_old_library_without_a_core_source_is_blocked_without_writing(self):
         self.old_config()
         shutil.rmtree(self.library)
         before = self.machine_tree()
-        report = self.migrate('--adopt-legacy', '--apply', code=2)
-        self.assertEqual((report['status'], report['code']), ('BLOCKED', 'bad-argument'))
-        self.assertIn('Old library not found', report['reason'])
+        report = self.migrate('--apply', code=2)
+        self.assertEqual((report['status'], report['code']), ('BLOCKED', 'no-core'), report)
+        self.assertIn('--layer-source core=PATH', report['reason'])
         self.assertEqual(self.machine_tree(), before)
 
-    def test_without_the_bridge_an_old_library_without_layer_yaml_is_blocked(self):
+    def test_an_old_library_without_layer_yaml_is_blocked_and_points_at_layer_source(self):
         self.old_config()
         before = self.machine_tree()
         report = self.migrate('--apply', code=2)
         self.assertEqual((report['status'], report['code']), ('BLOCKED', 'no-core'))
-        self.assertIn('--adopt-legacy', report['reason'])
+        self.assertIn('--layer-source core=PATH', report['reason'])
+        self.assertNotIn('--adopt-legacy', report['reason'], 'the removed bridge is not offered')
         self.assertEqual(self.machine_tree(), before)
+
+    def test_adopt_legacy_is_blocked_with_the_instruction_and_writes_nothing(self):
+        """The 0.9.x bridge flag was removed in 1.0: every form answers BLOCKED `bad-argument` and changes nothing."""
+        original = self.old_config()
+        before = self.machine_tree()
+        forms = {'bare': ('--adopt-legacy',), 'with a path': ('--adopt-legacy', str(self.library)),
+                 'with a core source': ('--adopt-legacy', *self.core_args()), 'with --apply': ('--adopt-legacy', '--apply'),
+                 'with --manifests': ('--manifests', '--adopt-legacy', '--apply')}
+        for label, args in forms.items():
+            with self.subTest(label):
+                report = self.migrate(*args, code=2)
+                self.assertEqual((report['status'], report['code']), ('BLOCKED', 'bad-argument'), report)
+                self.assertIn('--adopt-legacy', report['reason'])
+                self.assertIn('removed in 1.0', report['reason'])
+                self.assertIn('--layer-source core=PATH', report['reason'])
+                self.assertEqual(self.machine_tree(), before, 'no config change, no backup')
+                self.assertEqual(self.config_file.read_text(encoding='utf-8'), original)
+        process = self.cli('layers', 'migrate', '--adopt-legacy', '--apply')
+        self.assertEqual(process.returncode, 2, process.stdout + process.stderr)
+        self.assertIn('layer-source core=PATH', process.stdout + process.stderr)
+        self.assertEqual(self.machine_tree(), before)
+
+    def test_adopt_legacy_without_any_config_is_blocked_and_creates_no_config(self):
+        report = self.migrate('--adopt-legacy', str(self.library), '--apply', code=2)
+        self.assertEqual((report['status'], report['code']), ('BLOCKED', 'bad-argument'), report)
+        self.assertFalse(self.config_file.exists())
+
+    def test_adopt_legacy_is_hidden_from_help(self):
+        process = self.cli('layers', 'migrate', '--help')
+        self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+        self.assertNotIn('adopt-legacy', process.stdout + process.stderr)
+        self.assertIn('--layer-source', process.stdout)
 
     def test_an_old_library_with_layer_yaml_becomes_a_real_core_layer(self):
         make_layer(self.library, 'core', 'core', readme=False, changelog=False)
@@ -226,7 +307,7 @@ class LayerSourceTest(MigrateCase):
         org = make_layer(self.work / 'acme-skills', 'acme', 'org', {'skills/team/SKILL.md': SKILL_TEXT.format('team')})
         me = make_layer(self.work / 'my-skills', 'me', 'personal')
         glob = f'{self.projects}/acme/**'
-        report = self.migrate('--adopt-legacy', '--layer-source', f'acme={org}', '--layer-source', f'me={me}',
+        report = self.migrate(*self.core_args(), '--layer-source', f'acme={org}', '--layer-source', f'me={me}',
                               '--match', f'acme={glob}', '--apply')
         config = self.config()
         entries = {item['id']: item for item in config['layers']}
@@ -237,8 +318,9 @@ class LayerSourceTest(MigrateCase):
                                                  {'match': ['**'], 'use': ['core', 'me']}])
         self.assertEqual(config['isolation']['allowed_layers'], ['core', 'acme', 'me'])
         targets = config['leakguard']['targets']
-        self.assertEqual(sorted(targets), ['acme', 'me'], 'stubs for the new layers, none for the bridge')
-        self.assertEqual((targets['acme']['scope'], targets['me']['scope']), ('org-private', 'private'))
+        self.assertEqual(sorted(targets), ['acme', 'core', 'me'], 'stubs for every registered layer')
+        self.assertEqual((targets['acme']['scope'], targets['me']['scope'], targets['core']['scope']),
+                         ('org-private', 'private', 'public'))
         for path in (org, me):
             self.assertFalse((path / '.git').exists(), 'registered in place: nothing cloned or initialised')
 
@@ -247,11 +329,11 @@ class LayerSourceTest(MigrateCase):
         plain = self.work / 'plain'
         plain.mkdir()
         before = self.machine_tree()
-        report = self.migrate('--adopt-legacy', '--layer-source', f'plain={plain}', '--apply', code=2)
+        report = self.migrate(*self.core_args(), '--layer-source', f'plain={plain}', '--apply', code=2)
         self.assertEqual((report['status'], report['code']), ('BLOCKED', 'bad-argument'))
         self.assertIn('--kind', report['reason'])
         self.assertEqual(self.machine_tree(), before)
-        report = self.migrate('--adopt-legacy', '--layer-source', f'plain={plain}', '--kind', 'plain=org', '--apply')
+        report = self.migrate(*self.core_args(), '--layer-source', f'plain={plain}', '--kind', 'plain=org', '--apply')
         self.assertEqual(next(item for item in self.config()['layers'] if item['id'] == 'plain')['kind'], 'org')
         self.assertTrue(any('layer.yaml' in item for item in report['warnings']), report['warnings'])
 
@@ -261,7 +343,7 @@ class LayerSourceTest(MigrateCase):
         for url in ('https://example.test/acme/skills.git', 'ssh://git@example.test/acme/skills.git',
                     'git@example.test:acme/skills.git'):
             with self.subTest(url=url):
-                report = self.migrate('--adopt-legacy', '--layer-source', f'acme={url}', '--apply', code=2)
+                report = self.migrate(*self.core_args(), '--layer-source', f'acme={url}', '--apply', code=2)
                 self.assertEqual((report['status'], report['code']), ('BLOCKED', 'bad-argument'))
                 self.assertIn('layers add acme', report['reason'])
                 self.assertEqual(self.machine_tree(), before, 'nothing written, nothing cloned')
@@ -278,13 +360,12 @@ class LayerSourceTest(MigrateCase):
             '--kind outside the kinds': (('--layer-source', f'acme={org}', '--kind', 'acme=team'), 'bad-argument',
                                          'must be one of'),
             '--match for a non-org layer': (('--match', 'core=**'), 'bad-argument', 'org layers only'),
-            'two cores': (('--layer-source', f'core={org}'), 'bad-argument', 'both define the core layer'),
             'same source twice': (('--layer-source', f'acme={org}', '--layer-source', f'acme={org}'), 'bad-argument',
                                   'given twice'),
         }
         for label, (args, code, phrase) in cases.items():
             with self.subTest(label):
-                report = self.migrate('--adopt-legacy', *args, '--apply', code=2)
+                report = self.migrate(*self.core_args(), *args, '--apply', code=2)
                 self.assertEqual((report['status'], report['code']), ('BLOCKED', code), report)
                 self.assertIn(phrase, report['reason'])
         self.assertEqual(self.machine_tree(), before)
@@ -308,10 +389,8 @@ class LayerSourceTest(MigrateCase):
         self.assertEqual(config['tags'], {'x': ['y']})
 
     def test_a_layer_source_core_replaces_the_bridge(self):
-        self.old_config()
-        self.migrate('--adopt-legacy', '--apply')
-        real = make_layer(self.work / 'core-layer', 'core', 'core', dict(OLD_LIBRARY_FILES), readme=False,
-                          changelog=False)
+        self.bridge_config()
+        real = self.core_layer()
         report = self.migrate('--layer-source', f'core={real}', '--apply')
         core = self.bridge()
         self.assertEqual(core['path'], str(real), report)
@@ -332,7 +411,7 @@ class ManifestsTest(MigrateCase):
     def setUp(self):
         super().setUp()
         self.old_config()
-        self.migrate('--adopt-legacy', '--apply')
+        self.migrate(*self.core_args(), '--apply')
         self.first = self.new_project('first', self.MANIFEST)
         self.second = self.new_project('second', self.ONLY_LIBRARY)
         self.clean = self.new_project('clean', 'skills: [feature]\n')
@@ -395,7 +474,7 @@ class ManifestsTest(MigrateCase):
 
     def test_manifests_and_config_flags_are_separate_steps(self):
         before = self.projects_tree()
-        for args in (('--manifests', '--adopt-legacy'), ('--manifests', '--finish'), ('--project', str(self.first))):
+        for args in (('--manifests', *self.core_args()), ('--manifests', '--finish'), ('--project', str(self.first))):
             with self.subTest(args=args):
                 report = self.migrate(*args, '--apply', code=2)
                 self.assertEqual((report['status'], report['code']), ('BLOCKED', 'bad-argument'))
@@ -408,12 +487,10 @@ class ManifestsTest(MigrateCase):
 class FinishTest(MigrateCase):
     def setUp(self):
         super().setUp()
-        self.old_config()
-        self.migrate('--adopt-legacy', '--apply')
+        self.bridge_config()
 
     def replace_bridge(self):
-        real = make_layer(self.work / 'core-layer', 'core', 'core', dict(OLD_LIBRARY_FILES), readme=False,
-                          changelog=False)
+        real = self.core_layer()
         self.migrate('--layer-source', f'core={real}', '--apply')
         return real
 
@@ -478,17 +555,14 @@ class LinkAfterMigrationTest(MigrateCase):
 
     @each_mode
     def test_link_dry_run_plans_no_removal_of_user_files_and_old_links_are_repointed(self, mode):
-        self.old_config()
-        self.migrate('--adopt-legacy', '--apply')
         project = self.new_project(f'app-{mode}')
-        self.assertEqual(self.link(project, mode=mode).returncode, 0)
+        self.link_through_old_library(project, mode)
         for rel, text in self.USER_FILES.items():
             write(project / rel, text)
         installed = project / '.claude' / 'skills' / 'feature'
         if mode == 'symlink':
             self.assertEqual(Path(os.path.realpath(installed)), (self.library / 'skills' / 'feature').resolve())
-        real = make_layer(self.work / f'core-layer-{mode}', 'core', 'core', dict(OLD_LIBRARY_FILES), readme=False,
-                          changelog=False)
+        real = self.core_layer(f'core-layer-{mode}')
         self.migrate('--layer-source', f'core={real}', '--apply')                       # the bridge -> real core
         dry = self.link(project, '--dry-run', mode=mode)
         self.assertEqual(dry.returncode, 0, dry.stdout + dry.stderr)
@@ -509,17 +583,14 @@ class LinkAfterMigrationTest(MigrateCase):
         """K11 + `prune_managed`: after the bridge is replaced, a symlink into `legacy_library` for a skill that is
         no longer wanted is recognised as generator-managed (removed), while a user's own entry stays."""
         write(self.library / 'skills' / 'extra' / 'SKILL.md', SKILL_TEXT.format('extra'))
-        self.old_config()
-        self.migrate('--adopt-legacy', '--apply')
         manifest = {'skills': ['feature', 'extra'], 'instructions': {'merge': ['_base'], 'template': 'proj'},
                     'claude': True, 'codex': False, 'mcp': False}
         project = self.new_project('old-links', yaml_text(manifest))
-        self.assertEqual(self.link(project).returncode, 0)
+        self.link_through_old_library(project)
         stale = project / '.claude' / 'skills' / 'extra'
         self.assertEqual(Path(os.path.realpath(stale)), (self.library / 'skills' / 'extra').resolve())
         write(project / '.claude' / 'skills' / 'my-own' / 'SKILL.md', SKILL_TEXT.format('my-own'))
-        real = make_layer(self.work / 'core-layer', 'core', 'core', dict(OLD_LIBRARY_FILES), readme=False,
-                          changelog=False)
+        real = self.core_layer()
         self.migrate('--layer-source', f'core={real}', '--apply')
         manifest['skills'] = ['feature']
         write(project / '.github' / '.skillsync.yaml', yaml_text(manifest))
@@ -585,7 +656,7 @@ class PartialConfigTest(MigrateCase):
         self.assertEqual(config['legacy_library'], str(self.library))
         self.assertEqual(config['layers'], layers_before, 'no bridge added next to a real core')
         self.assertEqual(config['layer_rules'], [{'match': ['**'], 'use': ['core']}])
-        report = self.migrate('--adopt-legacy', '--apply')                                 # nothing left to adopt
+        report = self.migrate('--layer-source', f'core={core}', '--apply')                 # the same core again
         self.assertEqual((report['status'], report['changed']), ('PASS', False), report)
         self.assertEqual(Path(self.config()['layers'][0]['path']), core)
 
@@ -594,7 +665,7 @@ class PartialConfigTest(MigrateCase):
                  'a list': ('- library\n- other\n', 'must be a mapping'),
                  'a scalar': ('just text\n', 'must be a mapping')}
         for label, (text, phrase) in cases.items():
-            for args in (('--adopt-legacy', str(self.library), '--apply'), ('--apply',), ('--manifests', '--apply')):
+            for args in (('--layer-source', f'core={self.library}', '--apply'), ('--apply',), ('--manifests', '--apply')):
                 with self.subTest(label, args=args):
                     self.config_file.write_text(text, encoding='utf-8')
                     before = self.machine_tree()
@@ -606,7 +677,7 @@ class PartialConfigTest(MigrateCase):
 
     def test_an_isolation_block_without_allowed_layers_gets_a_warning(self):
         self.old_config(isolation={})
-        report = self.migrate('--adopt-legacy', '--apply')
+        report = self.migrate(*self.core_args(), '--apply')
         self.assertEqual(report['status'], 'PASS', report)
         self.assertEqual(self.config()['isolation'], {}, 'the list is not added (no widening)')
         self.assertEqual(len([item for item in report['warnings'] if 'has no `allowed_layers`' in item]), 1,
@@ -620,7 +691,7 @@ class WriteSafetyTest(MigrateCase):
         original = self.old_config()
         names_before = sorted(path.name for path in self.config_file.parent.iterdir())
         with mock.patch.object(layers.os, 'replace', side_effect=OSError('disk full (simulated)')):
-            report = layers.layers_migrate(adopt_legacy=True, apply=True)
+            report = layers.layers_migrate(sources=[f'core={self.core_layer()}'], apply=True)
         self.assertEqual(report['status'], 'BLOCKED', report)
         self.assertEqual(self.config_file.read_text(encoding='utf-8'), original)
         leftovers = [path.name for path in self.config_file.parent.iterdir()
@@ -628,7 +699,7 @@ class WriteSafetyTest(MigrateCase):
         self.assertEqual(leftovers, [], 'no temporary file is left behind')
         for backup in self.backups():
             self.assertEqual(backup.read_text(encoding='utf-8'), original, 'a backup made before the write is whole')
-        self.assertEqual(self.migrate('--adopt-legacy', '--apply')['status'], 'PASS', 'a retry works')
+        self.assertEqual(self.migrate(*self.core_args(), '--apply')['status'], 'PASS', 'a retry works')
 
     def test_the_backup_is_made_before_the_write(self):
         from unittest import mock
@@ -640,14 +711,14 @@ class WriteSafetyTest(MigrateCase):
             seen.append([path.read_text(encoding='utf-8') for path in self.backups()])
             return real_replace(src, dst)
         with mock.patch.object(layers.os, 'replace', side_effect=replace):
-            report = layers.layers_migrate(adopt_legacy=True, apply=True)
+            report = layers.layers_migrate(sources=[f'core={self.core_layer()}'], apply=True)
         self.assertEqual(report['status'], 'PASS', report)
         self.assertEqual(seen, [[original]], 'when the new config replaces the old one, the backup already holds it')
 
     def test_an_unchanged_result_is_not_written_and_makes_no_backup(self):
         """`edit_config`: a result equal to the current text writes nothing (idempotence of every config edit)."""
         self.old_config()
-        self.migrate('--adopt-legacy', '--apply')
+        self.migrate(*self.core_args(), '--apply')
         text, backups, mtime = self.config_file.read_bytes(), self.backups(), self.config_file.stat().st_mtime_ns
         for apply in (True, False):
             with self.subTest(apply=apply):
@@ -665,7 +736,7 @@ class WriteSafetyTest(MigrateCase):
         original = self.old_config()
         self.config_file.rename(target)
         self.config_file.symlink_to(target)
-        report = self.migrate('--adopt-legacy', '--apply')
+        report = self.migrate(*self.core_args(), '--apply')
         self.assertEqual(report['status'], 'PASS', report)
         self.assertTrue(self.config_file.is_symlink(), 'the symlink stays')
         self.assertEqual(Path(os.path.realpath(self.config_file)), target.resolve())
@@ -683,7 +754,7 @@ class WriteSafetyTest(MigrateCase):
         self.config_file.rename(target)
         relative = os.path.relpath(target, self.config_file.parent)
         self.config_file.symlink_to(relative)
-        report = self.migrate('--adopt-legacy', '--apply')
+        report = self.migrate(*self.core_args(), '--apply')
         self.assertEqual(report['status'], 'PASS', report)
         self.assertEqual(os.readlink(self.config_file), relative, 'the relative link stays as it was')
         self.assertIn('legacy_library', target.read_text(encoding='utf-8'))
@@ -694,7 +765,7 @@ class WriteSafetyTest(MigrateCase):
         from unittest import mock
         from skillsync_workflow.common import exit_code
         self.old_config()
-        self.migrate('--adopt-legacy', '--apply')
+        self.migrate(*self.core_args(), '--apply')
         texts = {name: f'skills: [feature]\nsync:\n  library: /old/{name}\n  push: true\n' for name in ('m1', 'm2')}
         projects = {name: self.new_project(name, text, with_git=False) for name, text in texts.items()}
         manifests = {name: path / '.github' / '.skillsync.yaml' for name, path in projects.items()}
@@ -722,7 +793,7 @@ class WriteSafetyTest(MigrateCase):
     @needs_os_symlinks
     def test_a_symlinked_manifest_is_written_through_to_its_target(self):
         self.old_config()
-        self.migrate('--adopt-legacy', '--apply')
+        self.migrate(*self.core_args(), '--apply')
         project = self.new_project('linked', with_git=False)
         shared = self.work / 'shared-manifests' / 'linked.yaml'
         original = 'skills: [feature]\nsync:\n  library: /somewhere/old\n  push: true\n'
@@ -737,89 +808,149 @@ class WriteSafetyTest(MigrateCase):
         self.assertEqual(Path(report['manifests'][0]['backup']).read_text(encoding='utf-8'), original)
 
 
-# ====================================================================== K15: the bridge
+# ====================================================================== K15: a 0.9.x bridge config is read, refused, migrated
 
 
-class BridgeTest(MigrateCase):
+class LegacyBridgeConfigTest(MigrateCase):
+    """The generator no longer creates the bridge (a `synthetic` core entry on the old library), but a machine
+    config written by 0.9.x may still hold it: it is parsed, every command that needs layers is BLOCKED
+    `legacy-config` with the migration instruction, and `layers migrate --layer-source core=PATH` replaces it."""
+
+    INSTRUCTION = 'layers migrate --layer-source core=PATH --apply'
+
     def setUp(self):
         super().setUp()
-        self.old_config()
-        self.migrate('--adopt-legacy', '--apply')
+        self.bridge_config()
 
-    def test_the_bridge_entry_is_a_read_only_synthetic_core_without_a_guard_target(self):
+    def test_the_bridge_config_is_the_one_0_9_x_wrote(self):
         entry = self.bridge()
         version = generator_version()
         self.assertEqual((entry['kind'], entry['writable'], entry['path']), ('core', False, str(self.library)))
         self.assertEqual(entry['synthetic'], {'version': version, 'core_min': version})
-        self.assertNotIn('core', (self.config().get('leakguard') or {}).get('targets', {}))
-        self.assertFalse((self.library / 'layer.yaml').exists(), 'nothing written to the library repository')
+        self.assertEqual(self.config()['legacy_library'], str(self.library))
+        parsed = layers.load_machine_config(self.config_file)
+        self.assertEqual(parsed.layers['core'].synthetic, {'version': version, 'core_min': version},
+                         'a config with the bridge is still parsed')
 
     def test_the_bridge_with_a_personal_layer_gives_the_rule_core_personal(self):
-        self.config_file.unlink()
-        for path in self.backups():
-            path.unlink()
-        self.old_config()
         me = make_layer(self.work / 'me', 'me', 'personal')
-        self.migrate('--adopt-legacy', '--layer-source', f'me={me}', '--apply')
+        self.migrate(*self.core_args(), '--layer-source', f'me={me}', '--apply')
         self.assertEqual(self.config()['layer_rules'], [{'match': ['**'], 'use': ['core', 'me']}])
+        self.assertNotIn('synthetic', self.bridge())
 
-    def test_adopt_legacy_with_an_explicit_path_on_a_config_without_the_old_key(self):
-        self.config_file.write_text(yaml_text({'tags': {'a': ['b']}}), encoding='utf-8')
-        other = self.work / 'other-old-library'
-        shutil.copytree(self.library, other)
-        report = self.migrate('--adopt-legacy', str(other), '--apply')
-        config = self.config()
-        self.assertEqual((self.bridge()['path'], config['legacy_library']), (str(other), str(other)), report)
-        self.assertEqual(config['tags'], {'a': ['b']})
+    def test_without_a_core_source_nothing_is_migrated_whatever_else_is_given(self):
+        """There is no "bridge kept" state: org/personal sources alone are BLOCKED `no-core`, nothing is written."""
+        org = make_layer(self.work / 'acme', 'acme', 'org')
+        me = make_layer(self.work / 'me', 'me', 'personal')
+        cases = {'no flags': (), 'org only': ('--layer-source', f'acme={org}'),
+                 'personal only': ('--layer-source', f'me={me}'),
+                 'org and personal': ('--layer-source', f'acme={org}', '--layer-source', f'me={me}',
+                                      '--match', f'acme={self.projects}/acme/**')}
+        for label, args in cases.items():
+            with self.subTest(label):
+                self.assert_bridge_needs_a_core(*args)
 
-    def test_layers_check_passes_with_the_legacy_bridge_warning_and_isolation_fails_on_purpose(self):
+    def test_two_core_sources_replacing_the_bridge_are_a_conflict_and_nothing_is_written(self):
+        second = make_layer(self.work / 'core2', 'core2', 'core', dict(OLD_LIBRARY_FILES), readme=False, changelog=False)
+        before, tree = self.config_file.read_bytes(), self.machine_tree()
+        report = self.migrate(*self.core_args(), '--layer-source', f'core2={second}', '--apply', code=2)
+        self.assertEqual((report['status'], report['code']), ('BLOCKED', 'conflict'), report)
+        self.assertIn('Two core layers', report['reason'])
+        self.assertEqual((self.config_file.read_bytes(), self.machine_tree()), (before, tree))
+
+    def test_apply_replacing_the_bridge_keeps_a_backup_equal_to_the_original_config(self):
+        original = self.config_file.read_bytes()
+        report = self.migrate(*self.core_args(), '--apply')
+        self.assertEqual(report['status'], 'PASS', report)
+        backups = self.backups()
+        self.assertEqual(len(backups), 1)
+        self.assertEqual(Path(report['backup']), backups[0])
+        self.assertEqual(backups[0].read_bytes(), original, 'the backup holds the original bytes')
+        self.assertNotEqual(self.config_file.read_bytes(), original)
+
+    def test_other_commands_on_a_bridge_config_report_the_problem_and_write_nothing(self):
         project = self.new_project('app')
-        code, report = self.cli_json('layers', 'check', '--project', str(project))
-        self.assertEqual((code, report['status']), (0, 'PASS'), report)
-        warning = [item for item in report['findings'] if item['code'] == 'legacy-bridge']
-        self.assertEqual([(item['severity'], item['layer']) for item in warning], [('warning', 'core')], report)
-        text = self.cli('layers', 'check', '--project', str(project))
-        self.assertIn('legacy-bridge', text.stdout)
+        before, project_before = self.machine_tree(), tree_snapshot(project)
+        for args in (('instructions', str(project)), ('skills', 'list'), ('doctor', str(project)), ('list',)):
+            with self.subTest(args=args):
+                process = self.cli(*args, cwd=project)
+                output = process.stdout + process.stderr
+                self.assertNotIn('Traceback', process.stderr)
+                self.assertEqual(process.returncode, 2, output)
+                self.assertTrue('legacy bridge' in output or 'legacy-config' in output, output)
+                self.assertIn('layers migrate --layer-source core=PATH --apply', output)
+                self.assertEqual((self.machine_tree(), tree_snapshot(project)), (before, project_before))
+
+    def test_layers_add_core_on_a_bridge_config_points_to_the_migration(self):
+        self.bridge_config()
+        before = self.config_file.read_bytes()
+        process = self.cli('layers', 'add', 'core2', '--kind', 'core', '--source', str(self.core_layer('core-src')), '--json')
+        self.assertEqual(process.returncode, 2, process.stdout + process.stderr)
+        report = json.loads(process.stdout)
+        self.assertEqual((report['status'], report['code']), ('BLOCKED', 'conflict'), report)
+        self.assertIn('legacy bridge', report['reason'])
+        self.assertIn('layers migrate --layer-source core=PATH --apply', report['reason'])
+        self.assertEqual(self.config_file.read_bytes(), before)
+
+    def test_layers_commands_are_blocked_with_the_migration_instruction_and_write_nothing(self):
+        project = self.new_project('app')
+        before, project_before = self.machine_tree(), tree_snapshot(project)
+        for args in (('layers', 'list', '--project', str(project)), ('layers', 'check', '--project', str(project)),
+                     ('layers', 'update')):
+            with self.subTest(args=args):
+                code, report = self.cli_json(*args)
+                self.assertEqual((code, report['status'], report['code']), (2, 'BLOCKED', 'legacy-config'), report)
+                self.assertIn(self.INSTRUCTION, report['reason'])
+                self.assertNotIn('--adopt-legacy', report['reason'])
+        self.assertEqual((self.machine_tree(), tree_snapshot(project)), (before, project_before))
+
+    @each_mode
+    def test_link_is_blocked_with_the_migration_instruction_and_changes_nothing(self, mode):
+        project = self.new_project(f'blocked-{mode}')
+        before = tree_snapshot(project)
+        for extra in ((), ('--dry-run',)):
+            with self.subTest(args=extra):
+                process = self.link(project, *extra, mode=mode)
+                self.assertEqual(process.returncode, 2, process.stdout + process.stderr)
+                text = process.stdout + process.stderr
+                self.assertIn('the legacy bridge', text)
+                self.assertIn(self.INSTRUCTION, text)
+                self.assertNotIn('legacy-bridge', text, 'the bridge warning is gone')
+                self.assertEqual(tree_snapshot(project), before)
+
+    def test_isolation_check_still_reports_the_bridge_and_fails_on_purpose(self):
         code, isolation = self.cli_json('layers', 'check', '--isolation')
-        self.assertEqual((code, isolation['status']), (1, 'FAIL'))
+        self.assertEqual((code, isolation['status']), (1, 'FAIL'), isolation)
         # exactly one finding: the bridge path is also `legacy_library`, which is not reported a second time
         self.assertEqual([item['code'] for item in isolation['findings']], ['isolation-legacy-bridge'], isolation)
+        self.assertEqual(isolation['findings'][0]['layer'], 'core')
 
-    def test_the_bridge_passed_as_a_layer_flag_warns_too(self):
-        """K15: children get the bridge as `--layer core=<path>,synthetic`; the warning comes with it."""
+    def test_the_synthetic_layer_flag_is_refused_whatever_the_config_holds(self):
         stray = self.work / 'elsewhere'
         stray.mkdir()
-        code, report = self.cli_json('layers', 'check', '--layer', f'core={self.library},synthetic', cwd=stray)
-        self.assertEqual((code, report['status']), (0, 'PASS'), report)
-        self.assertEqual([item['code'] for item in report['findings'] if item['code'] == 'legacy-bridge'],
-                         ['legacy-bridge'], report)
+        before = self.machine_tree()
+        for args in (('layers', 'check', '--layer', f'core={self.library},synthetic'),
+                     ('layers', 'list', '--layer', f'core={self.library},synthetic')):
+            with self.subTest(args=args):
+                code, report = self.cli_json(*args, cwd=stray)
+                self.assertEqual((code, report['status'], report['code']), (2, 'BLOCKED', 'synthetic-refused'), report)
+        self.assertEqual(self.machine_tree(), before)
         code, report = self.cli_json('layers', 'check', '--layer', f'core={self.library}', cwd=stray)
         self.assertNotIn('legacy-bridge', [item['code'] for item in report['findings']], report)
 
     @each_mode
-    def test_link_warns_about_the_bridge(self, mode):
-        project = self.new_project(f'warn-{mode}')
-        process = self.link(project, mode=mode)
-        self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
-        self.assertRegex(process.stdout + process.stderr, r'(?m)^\[warn\] .*legacy-bridge')
-
-    @each_mode
-    def test_push_to_the_bridge_is_blocked_with_the_d63_phrase_and_writes_nothing(self, mode):
+    def test_push_to_the_bridge_is_blocked_and_writes_nothing(self, mode):
         project = self.new_project(f'push-{mode}')
-        self.assertEqual(self.link(project, mode=mode).returncode, 0)
-        instructions = project / '.github' / 'copilot-instructions.md'
-        instructions.write_text(instructions.read_text(encoding='utf-8').replace('Project rules.', 'Project rules edited.'),
-                                encoding='utf-8')
-        if mode == 'copy':
-            write(project / '.github' / 'skills' / 'feature' / 'references' / 'ref.md', 'edited\n')
-        before = tree_snapshot(self.library)
+        before_project, before = tree_snapshot(project), tree_snapshot(self.library)
         for extra in ((), ('--to-layer', 'core')):
             with self.subTest(args=extra), link_mode(mode):
                 process = self.cli('push', str(project), *extra)
                 self.assertNotIn('Traceback', process.stderr)
                 self.assertEqual(process.returncode, 2, process.stdout + process.stderr)
-                self.assertIn(BRIDGE_PHRASE, process.stdout + process.stderr)
+                self.assertIn('the legacy bridge', process.stdout + process.stderr)
+                self.assertIn(self.INSTRUCTION, process.stdout + process.stderr)
                 self.assertEqual(tree_snapshot(self.library), before, 'the old library tree is unchanged')
+                self.assertEqual(tree_snapshot(project), before_project)
 
     def test_import_and_skills_add_into_the_bridge_are_blocked(self):
         before = tree_snapshot(self.library)
@@ -830,22 +961,32 @@ class BridgeTest(MigrateCase):
                 process = self.cli(*args)
                 self.assertNotIn('Traceback', process.stderr)
                 self.assertEqual(process.returncode, 2, process.stdout + process.stderr)
-                self.assertIn(BRIDGE_PHRASE, process.stdout + process.stderr)
+                self.assertIn(self.INSTRUCTION, process.stdout + process.stderr)
                 self.assertEqual(tree_snapshot(self.library), before)
 
-    def test_in_process_the_bridge_is_refused_when_the_constant_is_off(self):
-        """K15 (b): with `LEGACY_BRIDGE = False` the synthetic layer and `--adopt-legacy` are BLOCKED."""
-        from unittest import mock
+    def test_in_process_the_bridge_and_adopt_legacy_are_refused(self):
         project = self.new_project('off')
-        with mock.patch.object(layers, 'LEGACY_BRIDGE', False):
-            with self.assertRaises(layers.LayerError) as caught:
-                layers.resolve_layers(project)
-            self.assertEqual(caught.exception.code, 'legacy-config')
-            self.assertIn('layers migrate', str(caught.exception))
-            report = layers.layers_migrate(adopt_legacy=True, apply=True)
-            self.assertEqual(report['status'], 'BLOCKED')
-            check = layers.layers_check(project)
-            self.assertEqual(check['status'], 'BLOCKED')
+        with self.assertRaises(layers.LayerError) as caught:
+            layers.resolve_layers(project)
+        self.assertEqual(caught.exception.code, 'legacy-config')
+        self.assertIn('layers migrate', str(caught.exception))
+        before = self.config_file.read_bytes()
+        report = layers.layers_migrate(adopt_legacy=True, apply=True)
+        self.assertEqual((report['status'], report['code']), ('BLOCKED', 'bad-argument'))
+        self.assertEqual(self.config_file.read_bytes(), before)
+        check = layers.layers_check(project)
+        self.assertEqual(check['status'], 'BLOCKED')
+
+    def test_the_migration_replaces_the_bridge_and_the_config_works_again(self):
+        project = self.new_project('app')
+        real = self.core_layer()
+        report = self.migrate('--layer-source', f'core={real}', '--apply')
+        self.assertTrue(any('the bridge core replaced by the core layer core' in item for item in report['changes']), report)
+        self.assertNotIn('synthetic', self.bridge())
+        self.assertEqual((self.bridge()['path'], self.config()['legacy_library']), (str(real), str(self.library)))
+        code, listing = self.cli_json('layers', 'list', '--project', str(project))
+        self.assertEqual((code, [item['id'] for item in listing['layers']]), (0, ['core']), listing)
+        self.assertEqual(self.link(project).returncode, 0)
 
 
 # ====================================================================== D166: the bridge config + layers in one call
@@ -886,8 +1027,7 @@ class BridgeWithLayersTest(MigrateCase):
         self.migrate(*self.flags(core, org, me), '--apply')
         from_library = self.config()
         self.config_file.unlink()
-        self.old_config()
-        self.migrate('--adopt-legacy', '--apply')
+        self.bridge_config()
         self.assertEqual(self.config()['layer_rules'], [{'match': ['**'], 'use': ['core']}], 'the bridge before')
         report = self.migrate(*self.flags(core, org, me), '--apply')
         config = self.config()
@@ -905,8 +1045,7 @@ class BridgeWithLayersTest(MigrateCase):
         self.assertFalse(again['changed'], 'idempotent')
 
     def test_r3_the_migrated_bridge_config_links_without_missing_skills_and_isolation_passes(self):
-        self.old_config()
-        self.migrate('--adopt-legacy', '--apply')
+        self.bridge_config()
         core, org, me = self.layers_on_disk()
         self.migrate(*self.flags(core, org, me), '--apply')
         manifest = lambda skills: yaml_text({'skills': skills, 'instructions': {'merge': ['_base'], 'template': 'proj'},  # noqa: E731
@@ -929,40 +1068,34 @@ class BridgeWithLayersTest(MigrateCase):
         code, isolation = self.cli_json('layers', 'check', '--isolation')
         self.assertEqual((code, isolation['status']), (0, 'PASS'), isolation)
 
-    def test_the_bridge_kept_gets_the_layers_added_in_the_same_call(self):
-        self.old_config()
-        self.migrate('--adopt-legacy', '--apply')
+    def test_the_layers_alone_do_not_keep_the_bridge_the_call_is_blocked(self):
+        """Was "the bridge kept gets the layers added in the same call"; the same result needs the core source (R2)."""
+        self.bridge_config()
         core, org, me = self.layers_on_disk()
-        self.migrate(*self.flags(core, org, me, with_core=False), '--apply')
-        config = self.config()
-        self.assertEqual(config['layer_rules'], self.expected_rules())
-        self.assertEqual(config['isolation']['allowed_layers'], ['core', 'acme', 'me'])
-        self.assertIn('synthetic', self.bridge(), 'the bridge is still the core')
+        self.assert_bridge_needs_a_core(*self.flags(core, org, me, with_core=False))
 
-    def test_existing_org_rules_of_the_bridge_config_get_the_personal_layer_added_later(self):
-        self.old_config()
-        self.migrate('--adopt-legacy', '--apply')
+    def test_an_org_layer_first_and_the_personal_layer_later_is_no_longer_a_bridge_flow(self):
+        """Was a two-step flow with the bridge kept after the org call; now the org call alone is BLOCKED and the
+        complete result (org rule with core, acme, me; default rule core, me) comes from one call with the core (R2)."""
+        self.bridge_config()
         core, org, me = self.layers_on_disk()
         glob = f'{self.projects}/acme/**'
-        self.migrate('--layer-source', f'acme={org}', '--match', f'acme={glob}', '--apply')
-        self.assertEqual(self.config()['layer_rules'], [{'match': [glob], 'use': ['core', 'acme']},
-                                                        {'match': ['**'], 'use': ['core']}], 'org first, bridge kept')
-        self.migrate('--layer-source', f'core={core}', '--layer-source', f'me={me}', '--apply')
+        self.assert_bridge_needs_a_core('--layer-source', f'acme={org}', '--match', f'acme={glob}')
+        self.migrate('--layer-source', f'core={core}', '--layer-source', f'acme={org}', '--layer-source', f'me={me}',
+                     '--match', f'acme={glob}', '--apply')
         self.assertEqual(self.config()['layer_rules'], [{'match': [glob], 'use': ['core', 'acme', 'me']},
                                                         {'match': ['**'], 'use': ['core', 'me']}])
         self.assertEqual(self.config()['isolation']['allowed_layers'], ['core', 'acme', 'me'])
 
     def test_the_isolation_list_follows_the_kind_order_whatever_the_order_of_the_flags(self):
-        self.old_config()
-        self.migrate('--adopt-legacy', '--apply')
+        self.bridge_config()
         core, org, me = self.layers_on_disk()
-        self.migrate('--layer-source', f'me={me}', '--layer-source', f'acme={org}',
+        self.migrate('--layer-source', f'me={me}', '--layer-source', f'acme={org}', '--layer-source', f'core={core}',
                      '--match', f'acme={self.projects}/acme/**', '--apply')
         self.assertEqual(self.config()['isolation']['allowed_layers'], ['core', 'acme', 'me'])
 
     def test_the_bridge_with_an_org_layer_only_keeps_the_default_rule_and_widens_the_isolation_list(self):
-        self.old_config()
-        self.migrate('--adopt-legacy', '--apply')
+        self.bridge_config()
         core, org, me = self.layers_on_disk()
         self.migrate('--layer-source', f'core={core}', '--layer-source', f'acme={org}',
                      '--match', f'acme={self.projects}/acme/**', '--apply')
@@ -972,8 +1105,7 @@ class BridgeWithLayersTest(MigrateCase):
         self.assertEqual(config['isolation']['allowed_layers'], ['core', 'acme'])
 
     def test_a_renamed_core_replaces_the_bridge_id_in_rules_and_isolation(self):
-        self.old_config()
-        self.migrate('--adopt-legacy', '--apply')
+        self.bridge_config()
         core2 = make_layer(self.work / 'core2', 'core2', 'core', dict(OLD_LIBRARY_FILES), readme=False, changelog=False)
         _, org, me = self.layers_on_disk()
         report = self.migrate('--layer-source', f'core2={core2}', '--layer-source', f'acme={org}',
@@ -985,8 +1117,7 @@ class BridgeWithLayersTest(MigrateCase):
         self.assertEqual(config['isolation']['allowed_layers'], ['core2', 'acme', 'me'])
 
     def test_a_dry_run_on_the_bridge_config_writes_nothing_and_lists_the_changes(self):
-        self.old_config()
-        self.migrate('--adopt-legacy', '--apply')
+        self.bridge_config()
         core, org, me = self.layers_on_disk()
         before = self.machine_tree()
         report = self.migrate(*self.flags(core, org, me))
@@ -996,19 +1127,20 @@ class BridgeWithLayersTest(MigrateCase):
         self.assertIn('isolation.allowed_layers: + acme, me', report['changes'])
 
     def test_repeating_the_same_match_with_a_new_personal_layer_does_not_duplicate_the_org_rule(self):
-        self.old_config()
-        self.migrate('--adopt-legacy', '--apply')
+        self.bridge_config()
         core, org, me = self.layers_on_disk()
         glob = f'{self.projects}/acme/**'
-        self.migrate('--layer-source', f'acme={org}', '--match', f'acme={glob}', '--apply')
-        self.migrate('--layer-source', f'core={core}', '--layer-source', f'me={me}', '--match', f'acme={glob}', '--apply')
+        flags = ['--layer-source', f'core={core}', '--layer-source', f'acme={org}', '--layer-source', f'me={me}',
+                 '--match', f'acme={glob}']
+        self.migrate(*flags, '--apply')
+        again = self.migrate(*flags, '--apply')
+        self.assertFalse(again['changed'])
         rules = self.config()['layer_rules']
         self.assertEqual(rules, [{'match': [glob], 'use': ['core', 'acme', 'me']},
                                  {'match': ['**'], 'use': ['core', 'me']}], 'one org rule, one default rule')
 
     def test_without_a_default_rule_the_personal_layer_joins_every_rule_and_none_is_created(self):
-        self.old_config()
-        self.migrate('--adopt-legacy', '--apply')
+        self.bridge_config()
         config = self.config()
         config['layer_rules'] = [{'match': [f'{self.projects}/x/**'], 'use': ['core']}]
         self.config_file.write_text(yaml_text(config), encoding='utf-8')
@@ -1016,34 +1148,30 @@ class BridgeWithLayersTest(MigrateCase):
         self.migrate('--layer-source', f'core={core}', '--layer-source', f'me={me}', '--apply')
         self.assertEqual(self.config()['layer_rules'], [{'match': [f'{self.projects}/x/**'], 'use': ['core', 'me']}])
 
-    def test_a_personal_layer_present_in_the_bridge_config_goes_into_the_org_rule_added_later(self):
-        self.old_config()
-        self.migrate('--adopt-legacy', '--apply')
+    def test_a_personal_layer_alone_on_the_bridge_config_is_blocked_and_with_the_core_joins_the_default_rule(self):
+        """Was a two-step flow (personal first, org later) with the bridge kept; the combined result is R2."""
+        self.bridge_config()
         core, org, me = self.layers_on_disk()
-        self.migrate('--layer-source', f'me={me}', '--apply')
+        self.assert_bridge_needs_a_core('--layer-source', f'me={me}')
+        self.migrate('--layer-source', f'core={core}', '--layer-source', f'me={me}', '--apply')
         self.assertEqual(self.config()['layer_rules'], [{'match': ['**'], 'use': ['core', 'me']}])
-        glob = f'{self.projects}/acme/**'
-        self.migrate('--layer-source', f'acme={org}', '--match', f'acme={glob}', '--apply')
-        self.assertEqual(self.config()['layer_rules'], [{'match': [glob], 'use': ['core', 'acme', 'me']},
-                                                        {'match': ['**'], 'use': ['core', 'me']}])
 
-    def test_the_bridge_kept_is_idempotent_on_a_second_call(self):
-        self.old_config()
-        self.migrate('--adopt-legacy', '--apply')
+    def test_the_replaced_bridge_is_idempotent_on_a_second_call(self):
+        self.bridge_config()
         core, org, me = self.layers_on_disk()
-        self.migrate(*self.flags(core, org, me, with_core=False), '--apply')
+        self.migrate(*self.flags(core, org, me), '--apply')
         before = self.config_file.read_bytes()
-        again = self.migrate(*self.flags(core, org, me, with_core=False), '--apply')
+        again = self.migrate(*self.flags(core, org, me), '--apply')
         self.assertFalse(again['changed'])
         self.assertEqual(self.config_file.read_bytes(), before)
 
     def test_two_personal_layers_in_the_bridge_config_are_a_conflict_and_nothing_is_written(self):
-        self.old_config()
-        self.migrate('--adopt-legacy', '--apply')
+        self.bridge_config()
         core, org, me = self.layers_on_disk()
         other = make_layer(self.work / 'me-other', 'me2', 'personal')
         before = self.config_file.read_bytes()
-        report = self.migrate('--layer-source', f'me={me}', '--layer-source', f'me2={other}', '--apply', code=2)
+        report = self.migrate(*self.core_args(), '--layer-source', f'me={me}', '--layer-source', f'me2={other}',
+                              '--apply', code=2)
         self.assertEqual((report['status'], report['code']), ('BLOCKED', 'conflict'), report)
         self.assertEqual(self.config_file.read_bytes(), before)
 

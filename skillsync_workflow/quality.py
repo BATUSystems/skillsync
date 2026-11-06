@@ -793,7 +793,7 @@ def layer_findings(root, manifest, layerset):
     `sync` = warning (ignored), `project.name` vs the project path = warning. Layers (`check_layers`
     without hooks and orphans): `blocked` (core_min, requires, missing version/core_min, invalid
     layer.yaml...; `link` refuses these) = error, other findings = warning (README/CHANGELOG, generator vs
-    core version, legacy bridge...), `info` (absent layer) omitted. Details: `skillsync layers check`."""
+    core version...), `info` (absent layer) omitted. Details: `skillsync layers check`."""
     found = []
     for key in MACHINE_ONLY_KEYS:
         if key in manifest:

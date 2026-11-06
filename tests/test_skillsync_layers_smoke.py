@@ -120,7 +120,7 @@ class LayersSmokeTest(IsolatedTestCase):
         process = subprocess.run([sys.executable, str(SCRIPT), 'layers', 'list', '--project', str(self.project), '--json'],
                                  capture_output=True, text=True, timeout=60)
         self.assertEqual(process.returncode, 0, process.stderr)
-        self.assertIn('"generator_version": "0.9.0"', process.stdout)
+        self.assertIn('"generator_version": "1.0.0"', process.stdout)
 
 
 if __name__ == '__main__':

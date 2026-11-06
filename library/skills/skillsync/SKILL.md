@@ -73,11 +73,11 @@ layer.yaml                  ← id, kind, version, core_min, requires
 
 `link`, `push` i `instructions` mają `--dry-run` (pokazuje `[dry-run] Would ...`, nic nie zapisuje) — używaj przed pierwszym realnym `link` na nowym projekcie. Operacje są idempotentne: drugi `link` bez zmian w warstwach nic nie wypisuje.
 
-Wspólna flaga `--layer id=ścieżka[,synthetic]` (powtarzalna) zastępuje warstwy dla jednej komendy; `synthetic` oznacza warstwę bez `layer.yaml` (most, tylko do odczytu). Brak dopasowania `layer_rules` albo config bez `layers` = `BLOCKED` (exit 2).
+Wspólna flaga `--layer id=ścieżka` (powtarzalna; ścieżka = katalog warstwy z `layer.yaml`) zastępuje warstwy dla jednej komendy; forma `,synthetic` (most 0.9.x) jest odrzucana (`synthetic-refused`). Brak dopasowania `layer_rules` albo config bez `layers` = `BLOCKED` (exit 2).
 
 ### Migracja maszyny
 
-`skillsync layers migrate --adopt-legacy` (dry-run) pokazuje, jak dotychczasowa biblioteka zostanie odczytana jako warstwa `core` tylko do odczytu; `--apply` zapisuje config z kopią zapasową (stary `library` → `legacy_library`). Most działa do wydania v1.0. Migracja i aktualizacja generatora idą razem; po niej `skillsync-ctl restart`, potem `skillsync link`.
+`skillsync layers migrate --layer-source core=<katalog z layer.yaml>` (dry-run) pokazuje, jak dotychczasowy config zostanie przeniesiony na warstwy; `--apply` zapisuje config z kopią zapasową (stary `library` → `legacy_library`). Config z mostem 0.9.x (`synthetic`) dostaje wpis zastąpiony prawdziwą warstwą `core`. Migracja i aktualizacja generatora idą razem; po niej `skillsync-ctl restart`, potem `skillsync link`.
 
 ### Claude Code: agenci, hook Stop, settings.json
 

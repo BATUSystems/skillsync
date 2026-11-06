@@ -3,8 +3,10 @@
 The fixture `tests/fixtures/layers/baseline/*.json` was generated once on the generator before the layers work
 (step 0.2, `make_baseline.py`): one library, the machine config with the old `library:` key, `skillsync link` of a
 synthetic project. Here the same library and project go through the new generator: the old config is first
-converted by `skillsync layers migrate` (the legacy variant through the bridge `--adopt-legacy`, the variant with
-`layer.yaml` through the plain migration and through `--adopt-legacy`), then `skillsync link` runs in the given mode.
+converted by `skillsync layers migrate` (the legacy variant, whose library has no `layer.yaml`, through
+`--layer-source core=PATH` with a real core layer holding the same files; the variant with `layer.yaml` through the
+plain migration and through `--layer-source core=<library>`), then `skillsync link` runs in the given mode.
+The 0.9.x bridge (`--adopt-legacy`) no longer exists: it is BLOCKED (see `UnmigratedConfigTest`).
 
 Equivalence (K1): the same list of files and symlinks in the project, the same content (paths of the temporary
 directories replaced by tokens, as in the fixture), symlink targets equal relative to the library/layer root.
@@ -17,6 +19,7 @@ import json
 import os
 import re
 import subprocess
+import shutil
 import sys
 import unittest
 from pathlib import Path
@@ -28,13 +31,13 @@ sys.path.insert(0, str(TESTS / 'fixtures' / 'layers'))
 sys.path.insert(0, str(ROOT))
 
 import make_baseline  # noqa: E402
-from layers_helpers import LINK_MODES, LayersCase, generator_version, link_mode, tree_snapshot  # noqa: E402
+from layers_helpers import LINK_MODES, LayersCase, generator_version, link_mode, make_layer, tree_snapshot, yaml_text  # noqa: E402
 
 BASELINE = TESTS / 'fixtures' / 'layers' / 'baseline'
 STATE_FILE = '.github/.skillsync-state.json'
 # K4 changed the copy-mode state format (`files{owner, base}` per file); the file must exist, its hash differs.
 COPY_STATE = {("copy", STATE_FILE)}
-BRIDGE_WARNING = 'legacy-bridge'
+BRIDGE_WARNING = 'legacy-bridge'           # the warning of 0.9.x: never printed any more
 
 
 def baseline(variant, mode):
@@ -95,33 +98,39 @@ class LinkEquivalenceTest(EquivalenceCase):
     """K1: artefacts of `link` after `layers migrate` equal the baseline of the generator before layers."""
 
     CASES = {
-        # label: (fixture variant, flags of `layers migrate`, bridge expected)
-        'legacy-bridge': ('legacy', ('--adopt-legacy',), True),
-        'with-layer-yaml': ('with-layer-yaml', (), False),
-        'with-layer-yaml-adopt': ('with-layer-yaml', ('--adopt-legacy',), False),
+        # label: (fixture variant, how the core layer is given to `layers migrate`)
+        'legacy-core-source': ('legacy', 'core-copy'),      # a real core: the library files plus `layer.yaml`
+        'with-layer-yaml': ('with-layer-yaml', 'old-library'),
+        'with-layer-yaml-source': ('with-layer-yaml', 'library-as-source'),
     }
 
     def test_link_after_the_migration_gives_the_baseline_artefacts(self):
-        for label, (variant, flags, bridge) in self.CASES.items():
+        for label, (variant, how) in self.CASES.items():
             for mode in LINK_MODES:
                 with self.subTest(case=label, link_mode=mode):
                     library, project = self.prepare(variant, mode, label)
-                    before = tree_snapshot(library)
+                    root, flags = library, ()
+                    if how == 'core-copy':
+                        root = library.parent / 'core'
+                        shutil.copytree(library, root)
+                        make_layer(root, 'core', 'core', readme=False, changelog=False)
+                    if how != 'old-library':
+                        flags = ('--layer-source', f'core={root}')
+                    before = tree_snapshot(root)
                     report = self.migrate(*flags)
                     self.assertEqual(report['status'], 'PASS', report)
                     config = self.config()
                     core = [entry for entry in config['layers'] if entry['kind'] == 'core']
                     self.assertEqual(len(core), 1, config)
-                    self.assertEqual(Path(core[0]['path']), library)
-                    self.assertEqual('synthetic' in core[0], bridge, core[0])
+                    self.assertEqual(Path(core[0]['path']), root)
+                    self.assertNotIn('synthetic', core[0], 'a real core layer, never the 0.9.x bridge')
                     with link_mode(mode):
                         linked = self.cli('link', str(project))
                     self.assertEqual(linked.returncode, 0, linked.stdout + linked.stderr)
                     self.assertNotIn('Traceback', linked.stderr)
-                    self.assertEqual(BRIDGE_WARNING in linked.stdout + linked.stderr, bridge,
-                                     'link prints the legacy-bridge warning exactly when the bridge is used')
-                    self.assert_equivalent(self.describe(library, project), baseline(variant, mode), mode)
-                    self.assertEqual(tree_snapshot(library), before, 'neither migrate nor link writes to the library')
+                    self.assertNotIn(BRIDGE_WARNING, linked.stdout + linked.stderr, 'no legacy-bridge warning any more')
+                    self.assert_equivalent(self.describe(root, project), baseline(variant, mode), mode)
+                    self.assertEqual(tree_snapshot(root), before, 'neither migrate nor link writes to the core layer')
                     if mode == 'copy':
                         self.assert_copy_state(project, core[0]['id'])
 
@@ -153,16 +162,9 @@ class LinkEquivalenceTest(EquivalenceCase):
 
 
 class UnmigratedConfigTest(EquivalenceCase):
-    """D41 and K15 (b): the old config without migration, and the bridge with `LEGACY_BRIDGE = False`, are BLOCKED
-    (exit 2) with the `layers migrate` instruction and do not change the artefacts of the project."""
-
-    def bridge_disabled(self, *args, cwd=None):
-        """`skillsync <args>` in a child process with the constant `LEGACY_BRIDGE` switched off (as after v1.0)."""
-        code = ('import runpy, sys; sys.path.insert(0, sys.argv[1]); from skillsync_workflow import layers; '
-                'layers.LEGACY_BRIDGE = False; sys.argv = [sys.argv[2], *sys.argv[3:]]; '
-                'runpy.run_path(sys.argv[0], run_name="__main__")')
-        return subprocess.run([sys.executable, '-c', code, str(ROOT), str(ROOT / 'skillsync'), *args],
-                              capture_output=True, text=True, cwd=str(cwd or self.work), env=dict(os.environ), timeout=300)
+    """D41 and K15: the old config without migration, and a 0.9.x bridge config (`synthetic` core), are BLOCKED
+    (exit 2) with the `layers migrate` instruction and do not change the artefacts of the project;
+    `layers migrate --adopt-legacy` (removed in 1.0) is BLOCKED and writes nothing."""
 
     def test_the_old_library_key_is_blocked_with_the_migration_instruction(self):
         for mode in LINK_MODES:
@@ -179,29 +181,40 @@ class UnmigratedConfigTest(EquivalenceCase):
                 self.assertEqual((code, report['status']), (2, 'BLOCKED'), report)
                 self.assertIn('layers migrate', report['reason'])
 
-    def test_with_the_bridge_switched_off_the_bridge_config_is_blocked_and_nothing_changes(self):
+    def test_a_bridge_config_written_by_0_9_x_is_blocked_and_nothing_changes(self):
         for mode in LINK_MODES:
             with self.subTest(link_mode=mode):
-                library, project = self.prepare('legacy', mode, 'switched-off')
-                self.migrate('--adopt-legacy')
-                with link_mode(mode):
-                    self.assertEqual(self.cli('link', str(project)).returncode, 0)
-                    before = tree_snapshot(project)
-                    process = self.bridge_disabled('link', str(project))
-                self.assertEqual(process.returncode, 2, process.stdout + process.stderr)
-                self.assertNotIn('Traceback', process.stderr)
-                self.assertIn('layers migrate', process.stdout + process.stderr)
-                self.assertEqual(tree_snapshot(project), before, 'artefacts unchanged')
-                control = self.cli('link', str(project), '--dry-run')                  # the same config with the bridge on
-                self.assertEqual(control.returncode, 0, control.stdout + control.stderr)
-        self.config_file.write_text(f'library: {self.work / "switched-off-copy" / "library"}\n', encoding='utf-8')
+                library, project = self.prepare('legacy', mode, 'bridge-config')
+                version = generator_version()
+                self.config_file.write_text(yaml_text({
+                    'discover_paths': [], 'tags': {}, 'python_command': 'python3', 'legacy_library': str(library),
+                    'layers': [{'id': 'core', 'kind': 'core', 'path': str(library), 'writable': False,
+                                'synthetic': {'version': version, 'core_min': version}}],
+                    'layer_rules': [{'match': ['**'], 'use': ['core']}], 'isolation': {'allowed_layers': ['core']}}),
+                    encoding='utf-8')
+                before = tree_snapshot(project)
+                for extra in ((), ('--dry-run',)):
+                    with link_mode(mode):
+                        process = self.cli('link', str(project), *extra)
+                    self.assertEqual(process.returncode, 2, process.stdout + process.stderr)
+                    self.assertNotIn('Traceback', process.stderr)
+                    self.assertIn('layers migrate --layer-source core=PATH --apply', process.stdout + process.stderr)
+                    self.assertNotIn(BRIDGE_WARNING, process.stdout + process.stderr)
+                    self.assertEqual(tree_snapshot(project), before, 'artefacts unchanged')
+
+    def test_adopt_legacy_is_blocked_and_writes_nothing(self):
+        library, project = self.prepare('legacy', 'symlink', 'adopt')
         config_before = self.config_file.read_bytes()
         backups = sorted(self.config_file.parent.glob('*.bak-*'))
-        process = self.bridge_disabled('layers', 'migrate', '--adopt-legacy', '--apply', '--json')
+        library_before = tree_snapshot(library)
+        process = self.cli('layers', 'migrate', '--adopt-legacy', '--apply', '--json')
         self.assertEqual(process.returncode, 2, process.stdout + process.stderr)
-        self.assertEqual(json.loads(process.stdout)['status'], 'BLOCKED')
-        self.assertEqual(self.config_file.read_bytes(), config_before, '--adopt-legacy without the bridge writes nothing')
+        report = json.loads(process.stdout)
+        self.assertEqual((report['status'], report['code']), ('BLOCKED', 'bad-argument'))
+        self.assertIn('--layer-source core=PATH', report['reason'])
+        self.assertEqual(self.config_file.read_bytes(), config_before, '--adopt-legacy writes nothing')
         self.assertEqual(sorted(self.config_file.parent.glob('*.bak-*')), backups, 'and makes no backup')
+        self.assertEqual(tree_snapshot(library), library_before)
 
 
 if __name__ == '__main__':

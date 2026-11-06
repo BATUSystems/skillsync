@@ -262,7 +262,7 @@ Każda porażka = pytanie, propozycja zostaje `approved`; wyjątek: `stale`. Kol
 Dopiero po rekordzie `final`, w repozytorium celu, dla bieżącego diffu (pole `diff` ostatniego wpisu):
 
 1. Kontrole wstępne. Cel w `docs/` albo plik routingu (`workflow/*.yaml`, manifest `.github/.skillsync.yaml`): zapisz wynik
-   `skillsync doctor` projektu bieżącego przebiegu (dla `repo: library` z `--layer core=<ścieżka>,synthetic`; po migracji treści `--layer core=<ścieżka>` z `layer.yaml`) do
+   `skillsync doctor` projektu bieżącego przebiegu (dla `repo: library` z `--layer core=<ścieżka>`, katalog z `layer.yaml`) do
    `.skillsync/runs/<run-id>/doctor-before-P<n>.log`.
 2. `git apply <diff>` (bez indeksu).
 3. Walidacja: cel `.yaml`/`.yml` się parsuje; dla celów z kroku 1 `skillsync doctor` bez błędów spoza

@@ -392,20 +392,6 @@ class PathKeyTest(PathKeyCase):
                             self.assertEqual((report['status'], report['code']), ('BLOCKED', 'conflict'), report)
                         self.assertEqual(self.config_file.read_bytes(), before)
 
-    def test_adopt_legacy_spelled_differently_is_the_configured_core(self):
-        core = make_layer(self.work / 'Lib', 'core', 'core')
-        twin = self.twin(core, self.work / 'lib')
-        self.config({'layers': [{'id': 'core', 'kind': 'core', 'path': str(core)}],
-                     'layer_rules': [{'match': ['**'], 'use': ['core']}], 'isolation': {'allowed_layers': ['core']},
-                     'leakguard': {'targets': {'core': {'scope': 'public'}}}})
-        for name in HOSTS:
-            with self.subTest(host=name), host(name):
-                report = layers.layers_migrate(adopt_legacy=str(twin))
-                if FOLDS[name]:
-                    self.assertEqual(report['status'], 'PASS', report)
-                else:
-                    self.assertEqual((report['status'], report['code']), ('BLOCKED', 'conflict'), report)
-
     def test_finish_treats_legacy_library_spelled_like_a_layer_as_in_use(self):
         core = make_layer(self.work / 'Lib', 'core', 'core')
         twin = self.twin(core, self.work / 'lib')

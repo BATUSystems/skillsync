@@ -542,7 +542,6 @@ class LayerFlagTest(ConfigCase):
         self.assertEqual(relative.path, self.work / 'rel' / 'dir')
         home = layers.parse_layer_flag('me=~/lay')
         self.assertEqual(home.path, Path(self.env['HOME']) / 'lay')
-        self.assertEqual(layers.parse_layer_flag('core=/x,synthetic', allow_synthetic=True).synthetic, True)
 
     def test_bad_forms_are_rejected(self):
         for value in ('core', '=/x', 'core=', 'Core=/x', '-a=/x', 'a b=/x', 5, None, ''):
@@ -551,17 +550,30 @@ class LayerFlagTest(ConfigCase):
                     layers.parse_layer_flag(value)
                 self.assertEqual((caught.exception.code, caught.exception.status), ('bad-layer-flag', 'BLOCKED'))
 
-    def test_synthetic_marker_is_refused_outside_the_bridge_api(self):
+    def test_synthetic_marker_is_always_refused(self):
+        """The 0.9.x bridge form `id=path,synthetic` has no accepting API any more."""
+        with self.assertRaises(TypeError):
+            layers.parse_layer_flag('core=/x,synthetic', allow_synthetic=True)
         for value in ('core=/x,synthetic', layers.LayerOverride('core', Path('/x'), True)):
             with self.subTest(value=repr(value)):
                 with self.assertRaises(layers.LayerError) as caught:
                     layers.parse_layer_flag(value)
                 self.assertEqual(caught.exception.code, 'synthetic-refused')
-        # through the resolver the marker is also refused when the config has no such bridge layer
+        # through the resolver the marker is refused when the config has no such bridge layer ...
         core = self.layer_dir('core', 'core')
         self.write_config([('core', 'core', core)], [(['**'], ['core'])])
         with self.assertRaises(layers.LayerError) as caught:
             layers.resolve_layers(layers=[f'core={core},synthetic'])
+        self.assertEqual(caught.exception.code, 'synthetic-refused')
+        # ... and also when the config still holds a 0.9.x bridge entry for that id
+        old = self.work / 'old-library'
+        old.mkdir()
+        self.config_file.write_text(yaml_text({
+            'layers': [{'id': 'core', 'kind': 'core', 'path': str(old),
+                        'synthetic': {'version': '0.9.0', 'core_min': '0.9.0'}}],
+            'layer_rules': [{'match': ['**'], 'use': ['core']}]}), encoding='utf-8')
+        with self.assertRaises(layers.LayerError) as caught:
+            layers.resolve_layers(layers=[f'core={old},synthetic'])
         self.assertEqual(caught.exception.code, 'synthetic-refused')
 
     def test_override_replaces_the_configured_layers_for_one_command(self):
@@ -618,7 +630,7 @@ class LayerFlagTest(ConfigCase):
         with self.assertRaises(layers.LayerError):
             layers.resolve_layers(layers=[f'nometa={no_meta}'])
 
-    def test_bridge_marker_needs_a_synthetic_layer_in_the_config_and_an_enabled_bridge(self):
+    def test_a_synthetic_bridge_entry_in_the_config_is_parsed_but_blocked_when_layers_are_resolved(self):
         old = self.work / 'old-library'
         old.mkdir()
         self.config_file.write_text(yaml_text({
@@ -626,33 +638,30 @@ class LayerFlagTest(ConfigCase):
                         'synthetic': {'version': '0.9.0', 'core_min': '0.9.0'}}],
             'layer_rules': [{'match': ['**'], 'use': ['core']}]}), encoding='utf-8')
         project = self.project('p')
-        bridge = layers.resolve_layers(project)
-        core = bridge.core
+        core = layers.load_machine_config().layers['core']
         self.assertEqual((core.synthetic, core.writable), ({'version': '0.9.0', 'core_min': '0.9.0'}, False))
-        self.assertIn('legacy-bridge', codes(bridge.notes))
-        argv = layers.layer_argv(bridge)
-        self.assertEqual(argv, ['--layer', f'core={old},synthetic'])
-        child = layers.resolve_layers(layers=argv[1::2])
-        self.assertEqual((child.core.synthetic is not None, child.core.writable), (True, False))
-        # the bridge switched off (D41 without the bridge): the old configuration is BLOCKED
-        with mock.patch.object(layers, 'LEGACY_BRIDGE', False):
-            with self.assertRaises(layers.LayerError) as config_case:
-                layers.resolve_layers(project)
-            self.assertEqual((config_case.exception.code, config_case.exception.status), ('legacy-config', 'BLOCKED'))
-            self.assertIn('layers migrate', str(config_case.exception))
-            with self.assertRaises(layers.LayerError) as flag_case:
-                layers.resolve_layers(layers=argv[1::2])
-            self.assertIn(flag_case.exception.code, ('synthetic-refused', 'legacy-config'))
+        self.assertEqual(core.argv_value(), f'core={old}', 'the bridge form `,synthetic` is never produced')
+        with self.assertRaises(layers.LayerError) as config_case:
+            layers.resolve_layers(project)
+        self.assertEqual((config_case.exception.code, config_case.exception.status), ('legacy-config', 'BLOCKED'))
+        self.assertIn('layers migrate --layer-source core=PATH --apply', str(config_case.exception))
+        # a plain override of the same id does not resurrect the bridge: it is a real layer or nothing
+        child = layers.resolve_layers(layers=[f'core={old}'])
+        self.assertNotIn('legacy-bridge', codes(child.notes))
+        self.assertEqual((child.core.synthetic, child.core.writable), (None, False))
+        with self.assertRaises(layers.LayerError) as flag_case:
+            layers.resolve_layers(layers=[f'core={old},synthetic'])
+        self.assertEqual(flag_case.exception.code, 'synthetic-refused')
 
 
 # ====================================================================== layer.yaml and versions (K12)
 
 
 class LayerYamlTest(ConfigCase):
-    def test_generator_version_is_0_9_0(self):
+    def test_generator_version_is_1_0_0(self):
         import skillsync_workflow
-        self.assertEqual(skillsync_workflow.__version__, '0.9.0')
-        self.assertEqual(layers.generator_version(), '0.9.0')
+        self.assertEqual(skillsync_workflow.__version__, '1.0.0')
+        self.assertEqual(layers.generator_version(), '1.0.0')
         pyproject = ROOT / 'pyproject.toml'
         if pyproject.exists():          # the package version is dynamic: hatch reads it from `__version__`
             import tomllib
@@ -742,21 +751,21 @@ class LayerYamlTest(ConfigCase):
 
     def test_core_min_above_the_generator_version_is_blocked(self):
         layerset = self.layerset(('core', 'core', {'version': layers.generator_version()}),
-                                 ('acme', 'org', {'core_min': '0.10.0'}))
+                                 ('acme', 'org', {'core_min': '1.1.0'}))
         findings = self.check(layerset)
         self.assertEqual([item['layer'] for item in by_code(findings, 'core-min-unmet')], ['acme'])
         self.assertEqual(layers.findings_status(findings), 'BLOCKED')
         # the comparison is against the generator version: the same layer is fine for a newer generator ...
-        self.assertNotIn('core-min-unmet', codes(self.check(layerset, version='0.10.0')))
+        self.assertNotIn('core-min-unmet', codes(self.check(layerset, version='1.1.0')))
         # ... and equal versions are fine, lower ones are not
-        equal = self.layerset(('core', 'core', {'version': '0.9.0'}), ('acme', 'org', {'core_min': '0.9.0'}))
-        self.assertNotIn('core-min-unmet', codes(self.check(equal, version='0.9.0')))
+        equal = self.layerset(('core', 'core', {'version': '1.0.0'}), ('acme', 'org', {'core_min': '1.0.0'}))
+        self.assertNotIn('core-min-unmet', codes(self.check(equal, version='1.0.0')))
         old = self.check(layerset, version='0.9.9')
         self.assertIn('core-min-unmet', codes(old))
 
     def test_core_min_is_checked_for_numeric_not_lexical_order(self):
         layerset = self.layerset(('core', 'core', {'version': '0.9.0', 'core_min': '0.9.0'}), ('acme', 'org', {'core_min': '0.9.0'}))
-        self.assertNotIn('core-min-unmet', codes(self.check(layerset, version='0.10.0')))
+        self.assertNotIn('core-min-unmet', codes(self.check(layerset, version='1.1.0')))
         layerset = self.layerset(('core', 'core', {'version': '0.9.0', 'core_min': '0.9.0'}), ('acme', 'org', {'core_min': '0.10.0'}))
         self.assertIn('core-min-unmet', codes(self.check(layerset, version='0.9.0')))
 
@@ -807,7 +816,7 @@ class LayerYamlTest(ConfigCase):
         self.assertEqual(layers.findings_status(findings), 'BLOCKED')
 
     def test_core_version_mismatch_is_only_a_warning(self):
-        layerset = self.layerset(('core', 'core', {'version': '1.0.0'}), ('acme', 'org', {}))
+        layerset = self.layerset(('core', 'core', {'version': '1.0.1'}), ('acme', 'org', {}))
         findings = self.check(layerset)
         mismatch = by_code(findings, 'core-version-mismatch')
         self.assertEqual([(item['severity'], item['layer']) for item in mismatch], [('warning', 'core')])
@@ -835,18 +844,17 @@ class LayerYamlTest(ConfigCase):
         self.assertEqual(layers.findings_status(mixed + [dict(mixed[0], severity='error'), dict(mixed[0], severity='blocked')]),
                          'BLOCKED')
 
-    def test_synthetic_layer_metadata_comes_from_the_config(self):
+    def test_synthetic_metadata_is_parsed_from_the_config_but_the_layer_is_blocked(self):
         old = self.work / 'old-library'
         old.mkdir()
         self.config_file.write_text(yaml_text({
             'layers': [{'id': 'core', 'kind': 'core', 'path': str(old), 'synthetic': {'version': '0.9.0', 'core_min': '0.9.0'}}],
             'layer_rules': [{'match': ['**'], 'use': ['core']}]}), encoding='utf-8')
-        layerset = layers.resolve_layers(self.project('p'))
-        findings = layers.check_layers(layerset)           # hooks on: a read-only bridge needs none
-        self.assertEqual(sorted(codes(findings)), ['legacy-bridge'])
-        self.assertEqual(layers.findings_status(findings), 'PASS')
-        # a synthetic core_min above the generator is BLOCKED like any other
-        self.assertEqual(layers.findings_status(layers.check_layers(layerset, version='0.8.0')), 'BLOCKED')
+        bridge = layers.load_machine_config().layers['core']
+        self.assertEqual(bridge.synthetic, {'version': '0.9.0', 'core_min': '0.9.0'}, 'parsed from the config as written')
+        with self.assertRaises(layers.LayerError) as caught:
+            layers.resolve_layers(self.project('p'))
+        self.assertEqual(caught.exception.code, 'legacy-config')
 
 
 # ====================================================================== leak guard sources from the layers (K7/K8, N5-2)

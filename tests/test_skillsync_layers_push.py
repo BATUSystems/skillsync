@@ -1,5 +1,5 @@
 """Acceptance tests of the 2.2b writes into layers (step 2.2bt): K4 `push` (owner rule, core only with
-`--to-layer <core>`, read-only and bridge layers BLOCKED with the D63 phrase, detached HEAD BLOCKED, leakcheck
+`--to-layer <core>`, read-only layers and a 0.9.x bridge config BLOCKED, detached HEAD BLOCKED, leakcheck
 before any write, adoption of new files, atomic writes), the copy state `files{owner, base}` with the one-time
 conversion of the legacy state (Q2) and the unknown-base conflict (Q3), `pull`/`watch`/`add` exit codes,
 `import`/`skills add`/`init` on layers, `update_composites` without a lock for a project without composites,
@@ -52,7 +52,7 @@ PERSONAL_FILES = {
     'skills/team/references/personal.md': 'personal note\n',
 }
 SKILLS = ('feature', 'team')
-BRIDGE_PHRASE = 'most tylko do odczytu'
+MIGRATE_HINT = 'layers migrate --layer-source core=PATH --apply'   # instruction for a 0.9.x bridge config
 
 
 def load_generator():
@@ -225,6 +225,7 @@ class PushOwnerTests(PushCase):
 
 class PushRefusalTests(PushCase):
     def bridge_config(self, name):
+        self.real_core = getattr(self, 'real_core', self.layer_paths['core'])
         bridge = self.work / f'old-library-{name}'
         for rel, text in CORE_FILES.items():
             write(bridge / rel, text)
@@ -233,10 +234,14 @@ class PushRefusalTests(PushCase):
         return bridge
 
     @each_mode
-    def test_bridge_is_read_only_with_and_without_to_layer_core(self, mode):
-        """K15/D63: a difference in a bridge file is BLOCKED (exit 2) with the D63 phrase; nothing written."""
-        bridge = self.bridge_config(mode)
+    def test_push_on_a_bridge_config_is_blocked_with_the_migration(self, mode):
+        """A project linked before; the machine config then carries the 0.9.x bridge (`synthetic` core): `push`
+        (with and without `--to-layer core`) is BLOCKED (exit 2) with the migration instruction; nothing written."""
+        if hasattr(self, 'real_core'):              # @each_mode: the previous mode left the bridge config behind
+            self.layer_paths['core'] = self.real_core
+            self.configure()
         project = self.project('bridge', mode)
+        bridge = self.bridge_config(mode)
         self.edit_instructions(project, '# Core base', '# Core base edited')
         self.edit_instructions(project, '# Project template', '# Project template edited')
         if mode == 'copy':
@@ -246,11 +251,12 @@ class PushRefusalTests(PushCase):
             with self.subTest(args=extra):
                 process = self.push(project, *extra, mode=mode)
                 self.assertEqual(process.returncode, 2, process.stdout + process.stderr)
-                self.assertRegex(process.stdout, rf'(?m)^\[blocked\] .*{BRIDGE_PHRASE}')
+                self.assertIn('legacy bridge', process.stdout + process.stderr)
+                self.assertIn(MIGRATE_HINT, process.stdout + process.stderr)
                 self.assertEqual(self.layers_snapshot(), before, 'neither the bridge nor the other layers change')
         self.assertFalse((bridge / 'layer.yaml').exists())
 
-    def test_import_and_skills_add_into_the_bridge_are_blocked(self):
+    def test_import_and_skills_add_on_a_bridge_config_are_blocked(self):
         bridge = self.bridge_config('import')
         before = tree_snapshot(bridge)
         source = self.work / 'to-import'
@@ -259,7 +265,7 @@ class PushRefusalTests(PushCase):
             with self.subTest(args=args):
                 process = self.cli(*args)
                 self.assertEqual(process.returncode, 2, process.stdout + process.stderr)
-                self.assertIn(BRIDGE_PHRASE, process.stdout)
+                self.assertIn(MIGRATE_HINT, process.stdout + process.stderr)
                 self.assertEqual(tree_snapshot(bridge), before)
         self.assertFalse((source / '.github' / '.skillsync.yaml').exists())
 

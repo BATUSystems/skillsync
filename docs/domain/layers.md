@@ -2,7 +2,7 @@
 title: "Warstwy generatora: core, org, personal, layer.yaml, layer_rules, LayerSet, kompozyty, _base.d, kody layers check"
 tags: [skillsync, layers, configuration, composition, isolation, push, versioning]
 paths: ['skillsync_workflow/layers.py', 'skillsync', 'skillsync_workflow/common.py', 'skillsync_workflow/quality.py', 'skillsync-windows.ps1', 'tests/test_skillsync_layers*.py']
-source: "docs/specs/2026-11-05-warstwy-generator.md (Terminologia, K1–K15, Kontrakty, Migracja); fakty z kodu skillsync_workflow/layers.py (LEGACY_BRIDGE), (match_rule), (LayerSet), (check_layers), (migrate_config); plan docs/plans/2026-11-05-warstwy-generator.md, sekcja Wynik (krok 2.1–2.4)"
+source: "docs/specs/2026-11-05-warstwy-generator.md (Terminologia, K1–K15, Kontrakty, Migracja); fakty z kodu skillsync_workflow/layers.py (match_rule, LayerSet, check_layers, migrate_config, _check_bridge, parse_layer_flag, isolation_findings), potwierdzone 2026-11-06; plan docs/plans/2026-11-05-warstwy-generator.md, sekcja Wynik (krok 2.1–2.4)"
 verified: 2026-11-06
 ---
 Reguła: generator składa skille, instrukcje, agenty i workflow z **warstw**. Warstwa to katalog o układzie
@@ -163,7 +163,8 @@ per plik w kompozycie skilla.
 - `--to-layer ID` (cel zapisu). Nie jest to wspólna flaga `--layer id=ścieżka` (ta zastępuje warstwy dla jednej komendy).
 - Zapis do `core` wymaga `writable: true` w configu i `--to-layer <core>`; bez `--to-layer` plik jest pominięty z `[info]`.
 - `import` i `skills add` mają domyślnie `personal`.
-- Warstwa `writable: false` (w tym most) odmawia każdego zapisu: `BLOCKED` (exit 2), także z `--to-layer <core>`.
+- Warstwa `writable: false` odmawia zapisu (exit 2), także z `--to-layer <core>`. Config z wpisem `synthetic` (0.9.x)
+  blokuje `push`, `import` i `skills add` już przy wyborze warstw (`legacy-config`, instrukcja `layers migrate`).
 - `push` w warstwie zapisywalnej na odłączonym HEAD (`ref` = tag lub commit) = `BLOCKED` z instrukcją `layers update --ref <gałąź>`.
 - Przed zapisem `leakcheck --target <warstwa>`; wyciek = exit 1 bez zapisu.
 - Każdy `[conflict]` w `push` = exit 2, projekt bez zapisu.
@@ -206,7 +207,7 @@ per plik w kompozycie skilla.
   systemu, w `legacy_library` i w znanych lokalizacjach legacy nie ma biblioteki o `id` spoza listy ani katalogu bez
   `layer.yaml`; (3) w drzewie nie ma pliku `identity` obcej warstwy.
 - Bez `isolation.allowed_layers` wynik to **NOT_RUN** (exit 0).
-- `--isolation` z mostem daje FAIL (stara biblioteka nie ma `layer.yaml`).
+- Wpis `synthetic` (config 0.9.x) daje FAIL `isolation-legacy-bridge`, także gdy katalog nie istnieje.
 - `--project` i `--layer` z `--isolation` są ignorowane z ostrzeżeniem.
 - Pełny tryb: `skillsync layers check --isolation`; `layers check` bez tej flagi sprawdza pozostałe kody.
 
@@ -227,22 +228,27 @@ per plik w kompozycie skilla.
   `isolation` bez `allowed_layers` daje ostrzeżenie bez zmiany.
 - Po migracji: `skillsync leakguard install-hook` dla każdej warstwy zapisywalnej (hooki nie są dopisywane automatycznie
   przy migracji configu).
-- Config z mostem i warstwy dodawane w tym samym wywołaniu (`--layer-source`, `--match`): `layers migrate` dopisuje warstwę
-  `personal` do reguł i poszerza `isolation.allowed_layers` tak samo jak przy starym `library:` (D166). Config już na warstwach
-  (bez mostu) nie jest poszerzany (decyzja 2.4). Przepisany YAML traci komentarze; zostają w kopii obok configu.
+- Przepisany YAML traci komentarze; zostają w kopii obok configu.
 - Znane ograniczenie: `layers migrate` na configu z dwiema warstwami personal daje BLOCKED (`conflict`, „More than one personal layer”),
   także gdy config jest już zmigrowany. Spec zakłada jedną warstwę personal na użytkownika.
 
-## Most `--adopt-legacy` (tymczasowy, tylko do odczytu)
+## Config 0.9.x z wpisem `synthetic`
 
-Źródło: spec A K15 (D60, D63), `layers.py` (`LEGACY_BRIDGE = True`), `layers.py` (`migrate_bridge_entry`).
+Źródło: `layers.py` (`_check_bridge`, `parse_layer_flag`, `migrate_config`, `isolation_findings`).
 
-- Stan kodu 1.0.0-przed-wydaniem: `skillsync layers migrate --adopt-legacy [PATH]` rejestruje starą bibliotekę jako warstwę
-  `core` z `synthetic` (metadane mostu) i `writable: false`. Z mostem `layers check` i `link` wypisują ostrzeżenie `legacy-bridge`.
-- Most jest **tylko do odczytu**: `push`, `import` i `skills add` do warstwy mostu kończą się BLOCKED z komunikatem o edycji
-  przez git w starym repo. Nie ma celu strażnika dla starej biblioteki.
-- Flaga `--layer core=<ścieżka>,synthetic` przekazuje most potomkom; poza mostem flaga nie przyjmuje `synthetic`.
-- Most jest tymczasowy: zostanie usunięty przed wydaniem 1.0.0. Rekord nie zakłada jego trwałości.
+- Config zapisany przez generator 0.9.x ma wpis `core` z `synthetic: {version, core_min}` i `writable: false`, bez `layer.yaml`.
+  Generator go rozpoznaje, ale nie czyta jako warstwy:
+  - `link`, `instructions`, `push`, `import`, `skills add|list`, `doctor`, `list` i `layers list|check|update` = BLOCKED
+    (exit 2, kod `legacy-config`) z instrukcją
+    `skillsync layers migrate --layer-source core=PATH --apply`;
+  - `layers check --isolation` = FAIL, `isolation-legacy-bridge`.
+- `layers migrate --layer-source core=<prawdziwy core>` zastępuje wpis: `layer_rules` i `isolation.allowed_layers` dostają
+  id nowej warstwy core (D162). Warstwy org i personal dodane w tym samym wywołaniu wchodzą do reguł i do izolacji (D166).
+  Config już na warstwach (bez wpisu 0.9.x) nie jest poszerzany (decyzja 2.4).
+- `layers migrate` na configu z wpisem 0.9.x bez `--layer-source` rodzaju core (także z samymi warstwami org i personal)
+  = BLOCKED `no-core`, nic nie jest zapisywane; dwa źródła core = BLOCKED `conflict`.
+- Przy `--layer id=ścieżka,synthetic` odpowiedź to BLOCKED z kodem `synthetic-refused`.
+- Flaga `--adopt-legacy` nie jest obsługiwana: BLOCKED (exit 2, kod `bad-argument`) z instrukcją `--layer-source core=PATH`.
 
 ## Flagi wspólne i ograniczenia `--library`
 
@@ -281,7 +287,7 @@ commit = checkout (odłączony HEAD); brak `ref` = `pull --ff-only`; brudne drze
 |---|---|---|
 | blocked | `core-missing`, `layer-yaml-invalid`, `layer-yaml-missing`, `id-mismatch`, `kind-mismatch`, `version-missing`, `core-min-missing`, `core-min-unmet`, `requires-unmet`, `requires-cycle` | `layers check` BLOCKED (2); `doctor` FAIL (1); `link` BLOCKED (2) |
 | error | `symlink-in-layer`, `identity-invalid`, `case-collision`, `override-without-consent`, `merge-invalid`, `alias-collision` | `layers check` FAIL (1); `doctor` ostrzeżenie; `link` pokazuje `[warn]` |
-| warning | `readme-missing`, `changelog-missing`, `identity-layer-mismatch`, `core-version-mismatch`, `hook-legacy`, `instruction-collision`, `core-not-first`, `personal-not-last`, `project-name-mismatch`, `core-only-ignored`, `legacy-bridge` | ostrzeżenie |
+| warning | `readme-missing`, `changelog-missing`, `identity-layer-mismatch`, `core-version-mismatch`, `hook-legacy`, `instruction-collision`, `core-not-first`, `personal-not-last`, `project-name-mismatch`, `core-only-ignored` | ostrzeżenie |
 | info | `layer-absent`, `isolation-layer-absent` | informacja; `doctor` pomija |
 | FAIL izolacji | `isolation-layer-not-allowed`, `isolation-legacy-bridge`, `isolation-layer-yaml-invalid`, `isolation-no-layer-yaml`, `isolation-foreign-library`, `isolation-unknown-checkout`, `isolation-legacy-library`, `isolation-foreign-identity` | tylko `layers check --isolation`: FAIL (1) |
 
@@ -314,12 +320,11 @@ Kody `hook-missing` (error) i `orphans` (warning) są zgłaszane tylko przez `la
   `push` go dokończy; `OSError` daje exit 2.
 - `push`, `import` i `skills add` także w trybie kopii tworzą `composed/.lock` i czekają na obcą blokadę `link`
   do `SKILLSYNC_LOCK_TIMEOUT`; potem BLOCKED.
-- `push` w trybie symlink z mostem jest cichy (bez ostrzeżenia).
 - Katalog `.github/skills` zarządzany przez generator usuwa ręczne skille użytkownika (zachowanie dry-run: `Would remove obsolete:`).
 - Placeholdery chmury (pliki „na żądanie”) i pliki deduplikacji mają atrybut reparse point i są odrzucane (zakaz symlinków);
   checkoutu warstwy nie trzyma się w folderze synchronizowanym „na żądanie”.
 - Na Windows i macOS wynik `layers` i strażnika nie zależy od wielkości liter w ścieżce; na Linuksie zależy. Testy dla macOS i
   Windows są `NOT_RUN` do czasu ręcznego smoke (plan, K13).
 
-Gdzie w kodzie: `skillsync_workflow/layers.py`: `LEGACY_BRIDGE`, `match_rule`, `LayerSet`,
-`check_layers`, `migrate_bridge_entry`, `migrate_config`; `skillsync` (wspólna flaga `--layer`).
+Gdzie w kodzie: `skillsync_workflow/layers.py`: `match_rule`, `LayerSet`, `check_layers`, `_check_bridge`,
+`migrate_config`, `parse_layer_flag`, `isolation_findings`; `skillsync` (wspólna flaga `--layer`, `LayerWriter.refusal`).

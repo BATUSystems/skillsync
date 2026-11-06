@@ -496,11 +496,11 @@ class LinkBlockedByLayerGateTests(ComposeCase):
         self.assertFalse((project / '.github' / 'skills').exists())
 
 
-class LegacyBridgeIsReadOnlyTests(ComposeCase):
-    """K15: a `synthetic` bridge layer is read like core and never written."""
+class LegacyBridgeIsBlockedTests(ComposeCase):
+    """K15: a `synthetic` bridge entry (written by 0.9.x) is no longer linked: BLOCKED, nothing written."""
 
     @each_mode
-    def test_link_reads_the_bridge_and_leaves_it_byte_for_byte_unchanged(self, mode):
+    def test_link_on_a_bridge_config_is_blocked_and_leaves_everything_unchanged(self, mode):
         bridge = self.work / f'old-library-{mode}'
         for rel, text in CORE_FILES.items():
             write(bridge / rel, text)
@@ -510,13 +510,19 @@ class LegacyBridgeIsReadOnlyTests(ComposeCase):
             layers=[('core', 'core', bridge, {'synthetic': {'version': '1.0.0', 'core_min': generator_version()}}),
                     ('org', 'org', org)],
             rules=[(['**'], ['core', 'org'])])
-        before = tree_snapshot(bridge)
+        before, org_before = tree_snapshot(bridge), tree_snapshot(org)
         project = self.new_project(f'old-style-{mode}', skills=SKILLS)
-        result = self.link_ok(project, mode=mode)
-        self.assertRegex(result.stdout, r'(?m)^\[warn\] .*legacy bridge')
-        self.assertTrue((self.skill_dir(project, 'feature') / 'references/core.md').is_file())
-        self.assertTrue((self.skill_dir(project, 'feature') / 'references/org.md').is_file())
+        project_before = tree_snapshot(project)
+        process = self.link(project, mode=mode)
+        output = process.stdout + process.stderr
+        self.assertNotIn('Traceback', process.stderr)
+        self.assertEqual(process.returncode, 2, output)
+        self.assertIn('legacy bridge', output)
+        self.assertIn('layers migrate --layer-source core=PATH --apply', output)
+        self.assertFalse((project / '.github' / 'skills').exists(), 'no project skills created')
+        self.assertEqual(tree_snapshot(project), project_before)
         self.assertEqual(tree_snapshot(bridge), before)
+        self.assertEqual(tree_snapshot(org), org_before)
         self.assertFalse((bridge / 'layer.yaml').exists())
 
 

@@ -8,12 +8,13 @@
 3. K2/D73 (deviation from "error" in the spec, plan "Wynik", D73): `leakcheck` of a layer whose tree holds a link,
    and of a repository whose `.leakguard/patterns.yaml` is a link, is BLOCKED (exit 2, a structure error), never
    FAIL (exit 1, reserved for leaks); `--worktree` and `--staged`.
-4. K15 (a): on the config after `layers migrate --adopt-legacy --apply` (the `synthetic` bridge), `validate` starts
-   its child `guard` with `--layer core=<path>,synthetic`, the child accepts it and evaluates the guard rules of the
-   bridge (PASS, FAIL on a forbidden pattern), not BLOCKED.
-5. K15 (a), copy mode (`SKILLSYNC_NO_SYMLINK=1`): a local edit of a copied file owned by the bridge is reported as a
-   divergence by `link` and by `push` (BLOCKED with the D63 phrase); neither writes into the old library (tree
-   snapshot before and after) and the local edit is kept.
+4. K15 (a): on the config after `layers migrate` of a library with `layer.yaml` (a real core layer), `validate` starts
+   its child `guard` with `--layer core=<path>` (never `,synthetic`), the child evaluates the guard rules of the
+   core (PASS, FAIL on a forbidden pattern), not BLOCKED; `guard --layer id=path,synthetic` is refused
+   (`synthetic-refused`) and `validate` on a 0.9.x bridge config is BLOCKED `legacy-config`.
+5. K15 (a), copy mode (`SKILLSYNC_NO_SYMLINK=1`): a local edit of a copied file owned by the (read-only) core is
+   reported as a divergence by `link` and by `push` (skipped, BLOCKED with `--to-layer core`); neither writes into the
+   library (tree snapshot before and after) and the local edit is kept.
 
 The probe of gap 1 is a script that appends its argv and environment to a JSON-lines file. All names are synthetic;
 machine state is isolated (layers_helpers)."""
@@ -32,7 +33,6 @@ sys.path.insert(0, str(ROOT))
 from layers_helpers import (SKILL_TEXT, ComposeCase, LayersCase, commit, each_mode, git, link_mode,  # noqa: E402
                             make_layer, needs_os_symlinks, tree_snapshot, write, yaml_text)
 
-BRIDGE_PHRASE = 'most tylko do odczytu'          # D63
 PROBE = '''import json, os, sys
 with open(sys.argv[1], 'a', encoding='utf-8') as handle:
     handle.write(json.dumps({'argv': sys.argv, 'env': dict(os.environ)}) + '\\n')
@@ -291,7 +291,7 @@ class LeakcheckLinkBlockedTest(LayersCase):
                 self.assertEqual((code, report['status']), (1, 'FAIL'), report)   # the additions are read: a leak
 
 
-# ====================================================================== gaps 4, 5: the K15 bridge
+# ====================================================================== gaps 4, 5: K15, the core layer instead of the bridge
 
 
 OLD_LIBRARY_FILES = {
@@ -305,35 +305,37 @@ OLD_LIBRARY_FILES = {
 }
 
 
-class BridgeCase(LayersCase):
+class CoreCase(LayersCase):
+    """The old library holds a `layer.yaml`, so `layers migrate` registers it as a real core layer (the 0.9.x bridge
+    is no longer created)."""
+
     def setUp(self):
         super().setUp()
         self.library = self.work / 'old-library'
-        for rel, text in OLD_LIBRARY_FILES.items():
-            write(self.library / rel, text)
+        make_layer(self.library, 'core', 'core', OLD_LIBRARY_FILES, readme=False, changelog=False)
         self.projects = self.work / 'repos'
         self.projects.mkdir()
         self.config_file.write_text(f'library: {self.library}\n' + yaml_text({'discover_paths': [str(self.projects)]}),
                                     encoding='utf-8')
-        code, report = run_json(self, 'layers', 'migrate', '--adopt-legacy', '--apply')
+        code, report = run_json(self, 'layers', 'migrate', '--apply')
         self.assertEqual(code, 0, report)
-        self.assertEqual(self.bridge().get('synthetic', {}).get('version') is not None, True, self.bridge())
+        self.assertNotIn('synthetic', self.core_entry(), self.core_entry())
 
-    def bridge(self):
+    def core_entry(self):
         import yaml
         config = yaml.safe_load(self.config_file.read_text(encoding='utf-8'))
         return next(entry for entry in config['layers'] if entry['id'] == 'core')
 
 
-class BridgeGuardChildTest(BridgeCase):
-    def test_validate_gives_the_guard_child_the_synthetic_bridge_and_the_child_passes(self):
+class CoreGuardChildTest(CoreCase):
+    def test_validate_gives_the_guard_child_the_core_layer_and_the_child_passes(self):
         app = git_project(self.projects / 'app', {'skills': ['feature'], 'claude': False, 'codex': False,
                                                   'mcp': False})
         code, report = run_json(self, 'validate', str(app), '--files', 'app.py')
         self.assertEqual(code, 0, report)
-        guard = next(item for item in report['checks'] if item['id'] == 'project-guard')   # rule only in the bridge
+        guard = next(item for item in report['checks'] if item['id'] == 'project-guard')   # rule only in the core
         pairs = [guard['argv'][i + 1] for i, item in enumerate(guard['argv']) if item == '--layer']
-        self.assertEqual(pairs, [f'core={self.library.resolve()},synthetic'], guard['argv'])
+        self.assertEqual(pairs, [f'core={self.library.resolve()}'], guard['argv'])
         code, report = run_json(self, 'validate', str(app), '--files', 'app.py', '--run')
         self.assertEqual((code, report['status']), (0, 'PASS'), report)
         result = next(item for item in report['results'] if item['id'] == 'project-guard')
@@ -341,27 +343,54 @@ class BridgeGuardChildTest(BridgeCase):
         write(app / 'app.py', 'BRIDGE_FORBIDDEN = 1\n')
         code, report = run_json(self, 'validate', str(app), '--files', 'app.py', '--run')
         result = next(item for item in report['results'] if item['id'] == 'project-guard')
-        self.assertEqual((report['status'], result['status']), ('FAIL', 'FAIL'), report)   # the bridge rule ran
+        self.assertEqual((report['status'], result['status']), ('FAIL', 'FAIL'), report)   # the core rule ran
 
-    def test_the_child_command_itself_accepts_the_bridge_flag_only_for_the_bridge(self):
+    def test_the_child_command_accepts_a_plain_layer_flag_and_refuses_the_synthetic_marker(self):
         app = git_project(self.projects / 'direct', {'skills': ['feature'], 'claude': False, 'codex': False,
                                                      'mcp': False})
-        code, report = run_json(self, 'guard', str(app), '--layer', f'core={self.library},synthetic',
-                                '--files', 'app.py', '--run')
+        code, report = run_json(self, 'guard', str(app), '--layer', f'core={self.library}', '--files', 'app.py', '--run')
         self.assertEqual((code, report['status']), (0, 'PASS'), report)
-        other = self.work / 'not-the-bridge'
+        other = self.work / 'other-layer'
         make_layer(other, 'other', 'org')
-        code, report = run_json(self, 'guard', str(app), '--layer', f'core={self.library},synthetic',
-                                '--layer', f'other={other},synthetic', '--files', 'app.py', '--run')
-        # `,synthetic` outside the bridge is refused (K15: "poza mostem flaga go nie przyjmuje")
-        self.assertEqual((code, report.get('status')), (2, 'BLOCKED'), report)
-        self.assertIn('synthetic', report.get('reason', '') + json.dumps(report), report)
+        for label, flags in {'the core': ['--layer', f'core={self.library},synthetic'],
+                             'a second layer': ['--layer', f'core={self.library}', '--layer', f'other={other},synthetic']}.items():
+            with self.subTest(label):
+                code, report = run_json(self, 'guard', str(app), *flags, '--files', 'app.py', '--run')
+                # `,synthetic` is refused for every layer: the 0.9.x bridge is gone
+                self.assertEqual((code, report.get('status')), (2, 'BLOCKED'), report)
+                self.assertIn('synthetic', report.get('reason', ''), report)
+                self.assertIn('no longer supported', report.get('reason', ''), report)
 
 
-class BridgeCopyModeTest(BridgeCase):
-    """K15 (a): "w trybie copy lokalne edycje plików mostu raportowane jako rozbieżność bez zapisu"."""
+class BridgeConfigValidateTest(LayersCase):
+    def test_validate_on_a_0_9_x_bridge_config_is_blocked_with_the_migration_instruction(self):
+        from layers_helpers import generator_version
+        library = self.work / 'old-library'
+        for rel, text in OLD_LIBRARY_FILES.items():
+            write(library / rel, text)
+        projects = self.work / 'repos'
+        projects.mkdir()
+        version = generator_version()
+        self.config_file.write_text(yaml_text({
+            'discover_paths': [str(projects)], 'legacy_library': str(library),
+            'layers': [{'id': 'core', 'kind': 'core', 'path': str(library), 'writable': False,
+                        'synthetic': {'version': version, 'core_min': version}}],
+            'layer_rules': [{'match': ['**'], 'use': ['core']}], 'isolation': {'allowed_layers': ['core']}}),
+            encoding='utf-8')
+        app = git_project(projects / 'app', {'skills': ['feature'], 'claude': False, 'codex': False, 'mcp': False})
+        before = tree_snapshot(app)
+        process = self.cli('validate', str(app), '--files', 'app.py', '--run', '--json')
+        self.assertNotIn('Traceback', process.stderr)
+        self.assertEqual(process.returncode, 2, process.stdout + process.stderr)
+        self.assertIn('layers migrate --layer-source core=PATH --apply', process.stdout + process.stderr)
+        self.assertEqual(tree_snapshot(app), before)
 
-    def test_a_local_edit_of_a_bridge_file_is_reported_and_never_written_to_the_old_library(self):
+
+class CoreCopyModeTest(CoreCase):
+    """K15 (a): in copy mode a local edit of a copied file is reported as a divergence and never written to the
+    (read-only) core layer."""
+
+    def test_a_local_edit_of_a_core_file_is_reported_and_never_written_to_the_core_layer(self):
         project = self.projects / 'copy-app'
         write(project / '.github' / '.skillsync.yaml', yaml_text({
             'skills': ['feature'], 'instructions': {'merge': ['_base'], 'template': 'proj'}, 'claude': False,
@@ -382,17 +411,29 @@ class BridgeCopyModeTest(BridgeCase):
         self.assertRegex(output, r'(?m)^\[info\] Local edits in .*feature', output)
         self.assertEqual(copied.read_text(encoding='utf-8'), 'edited locally\n', 'the local edit is kept')
         self.assertEqual(tree_snapshot(self.library), before, 'link wrote into the old library')
-        for extra in ((), ('--to-layer', 'core'), ('--dry-run',)):
+        # the core layer is read-only (`writable: false`): without `--to-layer core` the edit is only skipped (info),
+        # with it `push` is BLOCKED; neither writes into the layer and the local edit stays
+        for extra in ((), ('--dry-run',)):
             with self.subTest(args=extra), link_mode('copy'):
                 pushed = self.cli('push', str(project), *extra)
                 output = pushed.stdout + pushed.stderr
                 self.assertNotIn('Traceback', pushed.stderr)
-                self.assertEqual(pushed.returncode, 2, output)
-                blocked = [line for line in output.splitlines() if line.startswith('[blocked]') and 'ref.md' in line]
-                self.assertTrue(blocked, output)
-                self.assertIn(BRIDGE_PHRASE, blocked[0])
-                self.assertEqual(tree_snapshot(self.library), before, 'push wrote into the old library')
+                self.assertEqual(pushed.returncode, 0, output)
+                skipped = [line for line in output.splitlines() if line.startswith('[info]') and 'ref.md' in line]
+                self.assertTrue(skipped, output)
+                self.assertIn('written only with `--to-layer core`; skipped', skipped[0])
+                self.assertEqual(tree_snapshot(self.library), before, 'push wrote into the core layer')
                 self.assertEqual(copied.read_text(encoding='utf-8'), 'edited locally\n')
+        with link_mode('copy'):
+            pushed = self.cli('push', str(project), '--to-layer', 'core')
+        output = pushed.stdout + pushed.stderr
+        self.assertNotIn('Traceback', pushed.stderr)
+        self.assertEqual(pushed.returncode, 2, output)
+        blocked = [line for line in output.splitlines() if line.startswith('[blocked]') and 'ref.md' in line]
+        self.assertTrue(blocked, output)
+        self.assertIn('layer core is read-only (writable: false)', blocked[0])
+        self.assertEqual(tree_snapshot(self.library), before, 'push wrote into the core layer')
+        self.assertEqual(copied.read_text(encoding='utf-8'), 'edited locally\n')
 
 
 if __name__ == '__main__':

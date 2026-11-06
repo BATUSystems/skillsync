@@ -132,7 +132,7 @@ def machine_config(config: dict):
 
 def resolve_project_layers(project_dir: Path | None, config: dict, overrides: list | None = None, machine=None):
     """LayerSet for a project (`layer_rules` by its path) or, without a project, for the current directory;
-    `overrides` (`--layer id=path[,synthetic]`) replace the configured layers. Raises LayerError (BLOCKED)."""
+    `overrides` (`--layer id=path`) replace the configured layers. Raises LayerError (BLOCKED)."""
     return _layers_module().resolve_layers(project_dir, layers=list(overrides or []) or None,
                                            config=machine if machine is not None else machine_config(config))
 
@@ -152,7 +152,7 @@ def add_layer_flag(parser: argparse.ArgumentParser) -> None:
 class LayerGate:
     """K12 gate of `link`/`instructions`: `check_layers` without hooks and orphans; any `blocked`
     finding (core_min, requires, missing version/core_min, invalid layer.yaml, cycle...) refuses the
-    project. Resolution notes (`legacy-bridge`, `layer-absent`...) and `error` findings (including
+    project. Resolution notes (`layer-absent`...) and `error` findings (including
     the trust model: `override-without-consent`) are printed once as `[warn]` and never block."""
 
     def __init__(self):
@@ -160,7 +160,7 @@ class LayerGate:
         self.printed = set()
 
     def findings(self, layerset) -> list:
-        key = tuple((layer.id, str(layer.root), bool(layer.synthetic)) for layer in layerset.layers)
+        key = tuple((layer.id, str(layer.root)) for layer in layerset.layers)
         if key not in self.cache:
             found = _layers_module().check_layers(layerset, hooks=False, trust=True, orphans=False)
             self.cache[key] = found[len(layerset.notes):]
@@ -1543,10 +1543,6 @@ def managed_roots(layerset) -> list[Path]:
 
 # ---------------------------------------------------------------- writes into layers (K4)
 
-BRIDGE_READ_ONLY = ("the legacy bridge is read-only (most tylko do odczytu): edit the old library "
-                    "repository with git")
-
-
 def status_code(*codes) -> int:
     """Combined exit code: BLOCKED (2) wins over FAIL (1) over PASS/NOT_RUN (0)."""
     return max([0, *[code or 0 for code in codes]])
@@ -1599,7 +1595,7 @@ def write_layer_file(layer, rel: str, data: bytes) -> Path:
 
 class LayerWriter:
     """Writes of one command into layers (K4). Planned writes go to the owner chosen by the caller;
-    `commit` refuses read-only layers (`writable: false`, the legacy bridge), the core layer without
+    `commit` refuses read-only layers (`writable: false`), the core layer without
     `--to-layer <core>` (`[info]`, skipped), detached HEAD checkouts, and runs `leakcheck --target <layer>`
     on every planned file (content and name) before writing anything.
 
@@ -1637,9 +1633,7 @@ class LayerWriter:
         """None when `layer` accepts writes, else (code, message); code 0 = skipped with `[info]`."""
         if layer.id not in self._refusals:
             result = None
-            if layer.synthetic:
-                result = (2, f"layer {layer.id}: {BRIDGE_READ_ONLY}")
-            elif layer.kind == "core" and not self.consent_core:
+            if layer.kind == "core" and not self.consent_core:
                 result = (0, f"files of the core layer {layer.id} are written only with `--to-layer {layer.id}`")
             elif not layer.writable:
                 result = (2, f"layer {layer.id} is read-only (writable: false)")

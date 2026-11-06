@@ -255,13 +255,15 @@ class HookMissingTest(CommandsCase):
             write(path / '.githooks' / name, '#!/bin/sh\nskillsync leakcheck . --staged\n', executable=True)
         self.assertFalse(by_code(self.findings(('acme', 'org', path)), 'hook-missing'))
 
-    def test_the_bridge_layer_is_read_only_and_needs_no_hooks(self):
+    def test_a_legacy_bridge_entry_is_blocked_before_any_hook_check(self):
         old = self.work / 'old-library'
         old.mkdir()
         self.config_file.write_text(yaml_text({
             'layers': [{'id': 'core', 'kind': 'core', 'path': str(old), 'synthetic': {'version': '0.9.0', 'core_min': '0.9.0'}}],
             'layer_rules': [{'match': ['**'], 'use': ['core']}]}), encoding='utf-8')
-        self.assertFalse(by_code(layers.check_layers(layers.resolve_layers(self.project('p'))), 'hook-missing'))
+        with self.assertRaises(layers.LayerError) as caught:
+            layers.resolve_layers(self.project('p'))
+        self.assertEqual(caught.exception.code, 'legacy-config')
 
 
 class OrphansTest(CommandsCase):
@@ -854,12 +856,10 @@ class LayersUpdateTest(CommandsCase):
         old.mkdir()
         self.config_file.write_text(yaml_text({'layers': [{'id': 'core', 'kind': 'core', 'path': str(old),
                                                            'synthetic': {'version': '0.9.0', 'core_min': '0.9.0'}}]}), encoding='utf-8')
-        self.assertEqual(layers.layers_update()['status'], 'NOT_RUN')          # the bridge is accepted, it is not a git checkout
-        from unittest import mock
-        with mock.patch.object(layers, 'LEGACY_BRIDGE', False):
-            for args in ((), ('core',)):
-                report = layers.layers_update(*args)
-                self.assertEqual((report['status'], report['code']), ('BLOCKED', 'legacy-config'))
+        for args in ((), ('core',)):
+            report = layers.layers_update(*args)
+            self.assertEqual((report['status'], report['code']), ('BLOCKED', 'legacy-config'))
+            self.assertIn('layers migrate --layer-source core=PATH --apply', report['reason'])
 
     def test_update_covers_layers_in_kind_order(self):
         core_bare, _ = self.source_repo('core', 'core', 'core', version=generator_version())

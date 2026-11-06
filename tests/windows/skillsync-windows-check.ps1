@@ -136,6 +136,11 @@ if ($haveNew) {
 }
 Write-Lf (Join-Path $lib "instructions/_base.md") "## Base`nzasady`n<!-- SKILLSYNC:BASE-END -->`n"
 Write-Lf (Join-Path $lib "instructions/proj.md") "## Projekt`nlokalne`n"
+# Atrapa jest prawdziwa warstwa core (layer.yaml); wersja = wersja generatora (bez ostrzezenia core-version-mismatch).
+$genVer = ([regex]::Match([System.IO.File]::ReadAllText((Join-Path $RepoRoot "skillsync_workflow/__init__.py")), '__version__\s*=\s*"([^"]+)"')).Groups[1].Value
+Write-Lf (Join-Path $lib "layer.yaml") "schema: 1`nid: core`nkind: core`nversion: $genVer`ncore_min: $genVer`n"
+Write-Lf (Join-Path $lib "README.md") "# core`n"
+Write-Lf (Join-Path $lib "CHANGELOG.md") "# Changelog`n"
 
 $proj = Join-Path $work "proj"
 New-Item -ItemType Directory -Force -Path (Join-Path $proj ".github"), (Join-Path $proj ".claude") | Out-Null
@@ -159,7 +164,7 @@ Push-Location $proj; & git init -q 2>&1 | Out-Null; & git config user.email t@t;
 
 $cfgFile = Join-Path $work "config.yaml"
 $libFwd = $lib -replace '\\', '/'
-# Config bez klucza biblioteki (D41); warstwy dopisuje `layers migrate --adopt-legacy` (most K15, tylko odczyt).
+# Config bez klucza biblioteki (D41); warstwe core dopisuje `layers migrate --layer-source core=<biblioteka>`.
 Write-Lf $cfgFile "discover_paths: []`ntags: {}`nvariables: {}`nremotes: {}`npython_command: $pyExe`n"
 $env:SKILLSYNC_CONFIG = $cfgFile
 Remove-Item Env:\SKILLSYNC_NO_SYMLINK -ErrorAction SilentlyContinue
@@ -168,21 +173,17 @@ function Run-Skillsync([string[]]$ArgList) {
     $o = & $pyExe @pyArgs $Skillsync @ArgList 2>&1 | Out-String
     return @{ Out = $o.Trim(); Code = $LASTEXITCODE }
 }
-# Linie wyjscia poza ostrzezeniem mostu (`[warn] layers: ... legacy-bridge ...`), ktore wypisuje kazdy link.
-function Out-WithoutBridge([string]$Text) {
-    return ((($Text -split "`r?`n") | Where-Object { $_ -and ($_ -notmatch '^\[warn\] layers: .*legacy-bridge') }) -join "`n").Trim()
-}
 
 $cfgBefore = [System.IO.File]::ReadAllText($cfgFile)
-$rm0 = Run-Skillsync @("layers", "migrate", "--adopt-legacy", $libFwd)
-Check "layers migrate --adopt-legacy (dry-run) nic nie zapisuje" (($rm0.Code -eq 0) -and ([System.IO.File]::ReadAllText($cfgFile) -eq $cfgBefore)) "exit 0, config bez zmian" "exit=$($rm0.Code)"
-$rm = Run-Skillsync @("layers", "migrate", "--adopt-legacy", $libFwd, "--apply")
+$rm0 = Run-Skillsync @("layers", "migrate", "--layer-source", "core=$libFwd")
+Check "layers migrate --layer-source core=... (dry-run) nic nie zapisuje" (($rm0.Code -eq 0) -and ([System.IO.File]::ReadAllText($cfgFile) -eq $cfgBefore)) "exit 0, config bez zmian" "exit=$($rm0.Code)"
+$rm = Run-Skillsync @("layers", "migrate", "--layer-source", "core=$libFwd", "--apply")
 $cfgAfter = [System.IO.File]::ReadAllText($cfgFile)
-Check "layers migrate --adopt-legacy --apply dopisuje warstwe mostu" (($rm.Code -eq 0) -and ($cfgAfter -match '(?m)^layers:') -and ($cfgAfter -match 'synthetic:') -and ($cfgAfter -match '(?m)^layer_rules:')) "exit 0; layers z 'synthetic', layer_rules" "exit=$($rm.Code) $($rm.Out -split "`n" | Select-Object -First 1)"
-$rm2 = Run-Skillsync @("layers", "migrate", "--adopt-legacy", $libFwd, "--apply")
+Check "layers migrate --layer-source core=... --apply dopisuje warstwe core" (($rm.Code -eq 0) -and ($cfgAfter -match '(?m)^layers:') -and ($cfgAfter -match '(?m)^layer_rules:')) "exit 0; layers i layer_rules" "exit=$($rm.Code) $($rm.Out -split "`n" | Select-Object -First 1)"
+$rm2 = Run-Skillsync @("layers", "migrate", "--layer-source", "core=$libFwd", "--apply")
 Check "layers migrate jest idempotentne" (($rm2.Code -eq 0) -and ([System.IO.File]::ReadAllText($cfgFile) -eq $cfgAfter)) "exit 0, config bez zmian" "exit=$($rm2.Code)"
 $rc = Run-Skillsync @("layers", "check")
-Check "layers check z mostem: PASS z ostrzezeniem legacy-bridge" (($rc.Code -eq 0) -and ($rc.Out -match "legacy-bridge")) "exit 0, 'legacy-bridge' w outpucie" "exit=$($rc.Code)"
+Check "layers check z warstwa core: PASS" ($rc.Code -eq 0) "exit 0" "exit=$($rc.Code)"
 
 $claudeSkill = Join-Path $proj ".claude/skills/feature"
 $stateFile = Join-Path $proj ".github/.skillsync-state.json"
@@ -202,8 +203,7 @@ if (-not $pySymlinks) {
 }
 
 $r2 = Run-Skillsync @("link", $proj)
-$r2Rest = Out-WithoutBridge $r2.Out
-Check "drugi link jest cichy (idempotencja)" (($r2.Code -eq 0) -and ($r2Rest -eq "")) "exit 0, poza ostrzezeniem mostu (legacy-bridge) pusty output" "exit=$($r2.Code) out='$r2Rest'"
+Check "drugi link jest cichy (idempotencja)" (($r2.Code -eq 0) -and ($r2.Out -eq "")) "exit 0, pusty output" "exit=$($r2.Code) out='$($r2.Out)'"
 
 # separatory, CRLF
 $genFiles = @(".github/.gitignore", ".claude/.gitignore", "CLAUDE.md", ".github/copilot-instructions.md")
@@ -245,8 +245,8 @@ if ($haveNew) {
     Check "hook Stop: stop_hook_active=true => exit 0 (ochrona przed petla)" ($h2.Code -eq 0) "exit 0" "exit=$($h2.Code)"
 } else { Skip "test hooka Stop" "brak prawdziwego check-tests.py w bibliotece" }
 
-# tryb wymuszonej kopii + wykrywanie zmian + odmowa push do mostu (na kopii biblioteki)
-Out-Report "`n--- 5. Fallback kopiowania: wykrywanie zmian i push do mostu tylko do odczytu (SKILLSYNC_NO_SYMLINK=1) ---"
+# tryb wymuszonej kopii + wykrywanie zmian + push do warstwy core tylko do odczytu (na kopii biblioteki)
+Out-Report "`n--- 5. Fallback kopiowania: wykrywanie zmian i push do core tylko do odczytu (SKILLSYNC_NO_SYMLINK=1) ---"
 $proj2 = Join-Path $work "proj2"
 New-Item -ItemType Directory -Force -Path (Join-Path $proj2 ".github") | Out-Null
 Copy-Item -LiteralPath (Join-Path $proj ".github/.skillsync.yaml") -Destination (Join-Path $proj2 ".github/.skillsync.yaml")
@@ -262,7 +262,10 @@ Check "link po lokalnej edycji NIE nadpisuje jej" ((Get-Content -LiteralPath (Jo
 $libSkillBefore = [System.IO.File]::ReadAllText((Join-Path $lib "skills/feature/SKILL.md"))
 $rp = Run-Skillsync @("push", $proj2)
 $libSkill = [System.IO.File]::ReadAllText((Join-Path $lib "skills/feature/SKILL.md"))
-Check "push do mostu: BLOCKED (exit 2), biblioteka bez zmian (D63)" (($rp.Code -eq 2) -and ($libSkill -eq $libSkillBefore) -and -not ($libSkill -match "edycja lokalna")) "exit 2, komunikat 'most tylko do odczytu', plik biblioteki nietkniety" "exit=$($rp.Code) $(($rp.Out -split "`n" | Where-Object { $_ -match 'read-only|tylko do odczytu' } | Select-Object -First 1) -join '')"
+Check "push bez --to-layer: core pominiety ([info], exit 0), biblioteka bez zmian" (($rp.Code -eq 0) -and ($rp.Out -match "--to-layer core") -and ($libSkill -eq $libSkillBefore)) "exit 0, '[info] ... --to-layer core', plik biblioteki nietkniety" "exit=$($rp.Code) $(($rp.Out -split "`n" | Where-Object { $_ -match 'to-layer' } | Select-Object -First 1) -join '')"
+$rpc = Run-Skillsync @("push", $proj2, "--to-layer", "core")
+$libSkill = [System.IO.File]::ReadAllText((Join-Path $lib "skills/feature/SKILL.md"))
+Check "push --to-layer core: BLOCKED (exit 2, core tylko do odczytu), biblioteka bez zmian" (($rpc.Code -eq 2) -and ($rpc.Out -match "read-only") -and ($libSkill -eq $libSkillBefore) -and -not ($libSkill -match "edycja lokalna")) "exit 2, 'read-only (writable: false)', plik biblioteki nietkniety" "exit=$($rpc.Code) $(($rpc.Out -split "`n" | Where-Object { $_ -match 'read-only' } | Select-Object -First 1) -join '')"
 Check "edycja lokalna nadal w kopii po odmowie push" ((Get-Content -LiteralPath (Join-Path $copyDir "SKILL.md") -Raw) -match "edycja lokalna") "edycja jest w .claude\skills\feature\SKILL.md" "ok?"
 Remove-Item Env:\SKILLSYNC_NO_SYMLINK -ErrorAction SilentlyContinue
 
@@ -291,7 +294,7 @@ try {
     $env:USERPROFILE = $prevProfile; $env:SKILLSYNC_CONFIG = $prevCfg
 }
 $bootCfgAfter = [System.IO.File]::ReadAllText($bootCfg)
-Check "bootstrap: config bez 'layers:' => exit 2, config bez zmian, instrukcja 'layers migrate'" (($bootCode -eq 2) -and ($bootCfgAfter -eq $bootCfgText) -and ($bootOut -match "layers migrate --adopt-legacy")) "exit 2; config nietkniety; komenda migracji w outpucie" "exit=$bootCode config-zmieniony=$($bootCfgAfter -ne $bootCfgText)"
+Check "bootstrap: config bez 'layers:' => exit 2, config bez zmian, instrukcja 'layers migrate'" (($bootCode -eq 2) -and ($bootCfgAfter -eq $bootCfgText) -and ($bootOut -match "layers migrate --layer-source")) "exit 2; config nietkniety; komenda migracji w outpucie" "exit=$bootCode config-zmieniony=$($bootCfgAfter -ne $bootCfgText)"
 Check "bootstrap: odmowa nie linkuje projektu" (-not (Test-Path -LiteralPath (Join-Path $bootProj ".claude"))) "brak .claude w projekcie" "$(Test-Path -LiteralPath (Join-Path $bootProj '.claude'))"
 
 # ---------------------------------------------------------------- 6. rozwijanie ~ w config
@@ -301,7 +304,7 @@ if ($lib.StartsWith($env:USERPROFILE, [System.StringComparison]::OrdinalIgnoreCa
     $relLib = $lib.Substring($env:USERPROFILE.Length).TrimStart('\', '/') -replace '\\', '/'
     Write-Lf $cfgTilde "discover_paths: []`n"
     $env:SKILLSYNC_CONFIG = $cfgTilde
-    $null = Run-Skillsync @("layers", "migrate", "--adopt-legacy", "~/$relLib", "--apply")
+    $null = Run-Skillsync @("layers", "migrate", "--layer-source", "core=~/$relLib", "--apply")
     $rt = Run-Skillsync @("list")
     Check "sciezka warstwy ~/... rozwijana przez skillsync" (($rt.Code -eq 0) -and ($rt.Out -match "feature")) "'skillsync list' widzi skill feature" ($rt.Out -split "`n" | Select-Object -First 2 | Out-String).Trim()
     $env:SKILLSYNC_CONFIG = $cfgFile

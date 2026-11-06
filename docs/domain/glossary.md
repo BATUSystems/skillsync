@@ -47,10 +47,12 @@ znaczenia pojęcia. Termin, którego nie ma tutaj, nie jest zdefiniowany.
   Dopasowanie wyłącznie po rozwiązanej ścieżce projektu, nie po `project.name`.
 - **Źródło:** spec A, K3, D36, 2026-11-05; `match_rule` w `skillsync_workflow/layers.py`. Szczegóły: [layers](layers.md).
 
-### most (`--adopt-legacy`, `synthetic`)
-- **Znaczenie:** tymczasowa warstwa `core` ze starej biblioteki, tylko do odczytu; usuwana przed wydaniem 1.0.0.
-- **Nie oznacza:** warstwę docelową core.
-- **Źródło:** spec A, K15, D60, D63, 2026-11-05. Szczegóły: [layers](layers.md).
+### wpis `synthetic` (config 0.9.x)
+- **Znaczenie:** wpis `core` z `synthetic: {version, core_min}` i `writable: false` w configu zapisanym przez generator 0.9.x.
+  Generator go rozpoznaje (`link` i `layers` = BLOCKED `legacy-config`) i zastępuje prawdziwą warstwą core przez
+  `layers migrate --layer-source core=PATH`.
+- **Nie oznacza:** warstwy docelowej core ani poprawnej konfiguracji.
+- **Źródło:** kod `skillsync_workflow/layers.py` (`_check_bridge`, `parse_layer_flag`, `migrate_config`), 2026-11-06. Szczegóły: [layers](layers.md).
 
 ### właściciel pliku
 - **Znaczenie:** warstwa, z której plik został rozwiązany. Zapis (`push`) trafia do właściciela.

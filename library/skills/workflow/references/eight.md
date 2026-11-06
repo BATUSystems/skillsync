@@ -1,7 +1,7 @@
 # Workflow v2: osiem rozszerzeń
 
 Wspólne źródło: workflow/defaults.yaml → workflow/projects/<project-name>.yaml →
-workflow manifestu. CLI: skillsync <komenda> <projekt> [--layer core=<ścieżka>,synthetic] [--json]
+workflow manifestu. CLI: skillsync <komenda> <projekt> [--layer core=<ścieżka>] [--json]
 (most; po migracji treści `--layer core=<ścieżka>` z `layer.yaml`).
 PASS/FAIL/BLOCKED/NOT_RUN odnoszą się do wykonanej operacji; plan i brak konfiguracji
 nie są dowodami przetestowania aplikacji. Stan, logi i backupy pozostają w .skillsync/.
