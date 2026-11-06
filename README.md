@@ -88,7 +88,7 @@ acceptance. See [docs/prototypes.md](docs/prototypes.md).
 - git. Layers are cloned and checked out with git.
 - [uv](https://docs.astral.sh/uv/), used to install the tool.
 
-> **TODO [I1]** minimum `uv` version.
+Developed and tested with uv 0.13; the minimum version has not been measured. CI uses the current uv.
 
 Supported systems:
 
@@ -98,7 +98,7 @@ Supported systems:
 | macOS | Everything except the watch service as a system service (planned for v1.1.0) | no watch service as a system service |
 | Windows | Copy mode by default (symlinks only with Developer Mode); CLI, `link`, `doctor` and workflow commands (planned) | no watch service, no `flock`, no TTY |
 
-> **TODO [I1]** confirm the table with manual tests on macOS and Windows (installer spec, question Q4).
+The table rests on CI results (tests, install smoke). Manual tests on macOS and Windows are planned for v1.0.1.
 
 ## Install
 
@@ -113,8 +113,6 @@ skillsync --version
 ```
 
 `skillsync --version` prints the generator version (`skillsync_workflow.__version__`).
-
-> **TODO [I1]** the installable package (`pyproject.toml`) comes with the packaging step for v1.0.0. The tag `v1.0.0` must exist before this line is published.
 
 `skillsync-ctl` (the `systemctl --user` wrapper for the watch service) is not part of the installed package: the package holds only
 `skillsync_workflow` with the `skillsync` entry point. The script works only on Linux, from a repository checkout.
@@ -167,8 +165,6 @@ skillsync link . --dry-run          # what would be written; nothing changes
 skillsync link .                    # write the agent files into the project
 skillsync doctor .                  # validate the project (exit 0 = PASS)
 ```
-
-> **TODO [I1]** before publishing: the repository is public, the tag `v1.0.0` exists and contains `library/` with `layer.yaml`.
 
 A directory that matches no `layer_rules` entry gets `BLOCKED` with the instruction to run `skillsync layers use`.
 

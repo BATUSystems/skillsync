@@ -22,7 +22,7 @@ a `doctor` zgłasza błąd (FAIL, 1), gdy rdzeń jest za stary.
 
 Wersję generatora pokazuje `skillsync --version`.
 
-> **TODO [I1]** kanał aktualizacji pakietu (po kroku pakowania).
+Pakiet aktualizujesz ponownym zainstalowaniem z tagu (`uv tool install --force git+https://github.com/BATUSystems/skillsync@vX.Y.Z`); zobacz [installation.md](installation.md#aktualizacja).
 
 ## Przejście na nową wersję MAJOR
 
@@ -58,7 +58,7 @@ Katalog bez `layer.yaml` wymaga w kroku 3 `--kind core=core`. Przed kontrolą w 
 2. **Przepięcie generatora** na wersję 1.0.0 (dowiązanie albo pakiet). Nie restartuj jeszcze usługi watch i nie wykonuj `link`:
    nowy generator czyta config dopiero po migracji (kroki 3–4).
 
-   > **TODO [I1]** v1.0.0: polecenie instalacji z tagu i sposób przepięcia dowiązania dla Linuksa.
+   Linux z checkoutu: usuń dowiązanie `~/.local/bin/skillsync`, potem `uv tool install --force git+https://github.com/BATUSystems/skillsync@v1.0.0` i sprawdź `skillsync --version`. `skillsync-ctl` zostaje w checkoucie (nie wchodzi do pakietu).
 3. **Dry-run.** Sprawdź plan migracji:
 
    ```bash
@@ -134,7 +134,7 @@ Zakres wsparcia systemów opisuje tabela w [README](../README.pl.md#wymagania).
 
 Przejście maszyn Windows i macOS na warstwy jest przewidziane w v1.0.1.
 
-> **TODO [I1]** v1.0.1: procedura przejścia maszyn Windows i macOS oraz ręczne testy na tych systemach.
+Procedura przejścia maszyn Windows i macOS oraz ręczne testy na tych systemach powstaną w v1.0.1.
 
 ## Co dalej
 

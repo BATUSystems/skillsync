@@ -50,7 +50,7 @@
  "notes": {
   "linux/symlink": "Measured locally (full run 2.4 + step 3.1t): Node 22, SKILLSYNC_TEST_LIBRARY and SKILLSYNC_PROTOTYPE_ENGINE_V2_SOURCE set, no Chrome.",
   "linux/copy": "As linux/symlink with SKILLSYNC_NO_SYMLINK=1. Since step 5.1 the prototype tests that plant hostile links use the OS-level guard (`needs_os_symlinks`), so they run in copy mode and no longer appear here.",
-  "ubuntu-latest/*": "null until the first CI run: tool differences (Node, Chrome, library not present on the runner).",
+  "ubuntu-latest/*": "null until the first CI run. Expected skips: the Chrome E2E tests (category e2e-chrome, reason \"set SKILLSYNC_E2E_CHROME…\": they run in the `e2e` job, K11) and whatever the runner lacks.",
   "windows-latest/*": "null until the first CI run (K13 residual risk).",
   "macos-latest/*": "null until the first CI run.",
   "e2e-chrome": "The 10 Chrome scenarios are allowed: CI runs no Chrome; the prototype E2E runs separately with Chrome and leased ports."

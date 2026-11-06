@@ -24,9 +24,9 @@ None.
 ### Fixed
 None.
 
-## [1.0.0] - TODO [I1] release date
+## [1.0.0] - Unreleased
 
-> **TODO [I1]** release number of the core at release. Until then `__version__` of the generator is 0.9.0.
+The release date and `__version__` = `1.0.0` are set in the release commit; until then `__version__` is 0.9.0.
 
 ### Added
 
@@ -48,9 +48,11 @@ None.
 - `layers check` reports `hook-command-missing` (FAIL) when a guard hook of a layer calls a file that no longer exists.
 - `SKILLSYNC_NO_SYMLINK` accepts `1`/`true`/`yes`/`on` and `0`/`false`/`no`/`off`; any other value warns and turns copy
   mode on.
-- Installation as a Python package with `uv tool install` (see [README](README.md)).
-
-> **TODO [I1]** the `uv tool install` item depends on the packaging step.
+- Installation as a Python package with `uv tool install` (see [README](README.md)): `pyproject.toml` (hatchling, entry point
+  `skillsync`), `scripts/check_wheel.py` (wheel contents) and `scripts/check_release.py` (CHANGELOG section for the version or tag).
+- CI: Python 3.11 and 3.12 matrix, `install-smoke` (wheel built, installed as a tool, run outside the checkout), `e2e` (Chrome),
+  `release-check`, and `release-smoke` after a `v*` tag. Tests run against the `library/` of the checkout.
+- `tests/test_skillsync_library_smoke.py`: the shipped `library/` links and passes `doctor` in both link modes.
 
 ### Changed
 None.

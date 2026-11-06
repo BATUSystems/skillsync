@@ -1,7 +1,7 @@
 # CI generatora (K13). Bez sekretów; uprawnienia tylko do odczytu.
 # Skipy testów są sprawdzane według tests/skip-baseline.json (klucz <system>/<tryb>) przez scripts/check_skips.py.
-# Testy E2E Chrome są wyłączone: nie ustawiamy SKILLSYNC_E2E_CHROME, SKILLSYNC_TEST_LIBRARY ani SKILLSYNC_TEST_NODE,
-# więc ich skipy muszą mieścić się w bazie (kategorie e2e-chrome, needs-library, needs-node).
+# Testy E2E Chrome działają tylko w zadaniu `e2e` (K11); w macierzy nie ustawiamy SKILLSYNC_E2E_CHROME,
+# więc ich skipy muszą mieścić się w bazie (kategoria e2e-chrome).
 # Akcje są przypięte tagiem głównym (@v4/@v5), nie SHA: świadomy kompromis; przegląd wersji przy każdej aktualizacji workflow.
 name: ci
 
@@ -24,14 +24,19 @@ env:
 
 jobs:
   test:
-    name: test (${{ matrix.os }}, ${{ matrix.mode }})
+    name: test (${{ matrix.os }}, ${{ matrix.python }}, ${{ matrix.mode }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ['3.11', '3.12']
         mode: [symlink, copy]
+        exclude:
+          # Windows runs without Developer Mode: no OS symlinks, so only the copy mode makes sense (10 jobs).
+          - os: windows-latest
+            mode: symlink
     defaults:
       run:
         shell: bash
@@ -40,15 +45,39 @@ jobs:
       SKILLSYNC_NO_SYMLINK: ${{ matrix.mode == 'copy' && '1' || '' }}
       # Kontekst `runner` nie jest dostępny w `jobs.<id>.env`; system wybiera macierz.
       PY: ${{ matrix.os == 'windows-latest' && 'python' || 'python3' }}
+      SKILLSYNC_TEST_NODE: node
+      # Biblioteka leży w repozytorium rdzenia (plan B); brak katalogu to błąd kroku "Require the library".
+      SKILLSYNC_TEST_LIBRARY: ${{ github.workspace }}/library
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
       - uses: actions/setup-python@v5
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-      - name: Install PyYAML
-        run: $PY -m pip install "PyYAML==${PYYAML_VERSION}"
+          python-version: ${{ matrix.python }}
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install the package (checkout form, with PyYAML) and the build backend (packaging test)
+        run: uv pip install --system -e . hatchling
+      - name: Require the library
+        run: |
+          if [ ! -d "$SKILLSYNC_TEST_LIBRARY" ]; then
+            echo "::error::SKILLSYNC_TEST_LIBRARY=$SKILLSYNC_TEST_LIBRARY does not exist (library/ is missing in the checkout)"
+            exit 1
+          fi
+      - name: Prototype engine source
+        # Without the engine source in library/ the freshness test skips with its own reason (see tests/skip-baseline.json).
+        run: |
+          engine="$SKILLSYNC_TEST_LIBRARY/skills/prototype/assets/repo/prototype.js"
+          if [ -f "$engine" ]; then
+            echo "SKILLSYNC_PROTOTYPE_ENGINE_V2_SOURCE=$engine" >> "$GITHUB_ENV"
+          else
+            echo "::warning::engine source $engine is missing; the freshness test will skip"
+          fi
       - name: Git identity for tests
         run: |
           git config --global user.name "ci"
@@ -60,12 +89,19 @@ jobs:
         run: for script in skillsync-ctl scripts/smoke.sh; do bash -n "$script"; done
       - name: Control grep K1
         run: $PY tests/k1_grep.py
+      - name: Control grep K5 (no path next to the package outside selfcmd.py)
+        run: |
+          if grep -rnE "parent\.parent / ['\"]skillsync['\"]" skillsync_workflow --include='*.py' --exclude=selfcmd.py; then
+            echo "::error::K5: use selfcmd.self_argv() instead of a path next to the package"
+            exit 1
+          fi
       - name: Unit tests
         run: |
           set -o pipefail
           $PY -m unittest discover -s tests -p 'test_skillsync*.py' -v 2>&1 | tee "$RUNNER_TEMP/unittest.log"
       - name: Skips against the baseline
         # Exit 0 = within the baseline or key `null` (warning until the first run of the runner is measured).
+        # The Chrome E2E tests skip here (SKILLSYNC_E2E_CHROME is not set): they run in the `e2e` job.
         run: $PY scripts/check_skips.py "$RUNNER_TEMP/unittest.log" --system "${{ matrix.os }}" --mode "${{ matrix.mode }}"
       - name: Smoke (POSIX)
         if: runner.os != 'Windows'
@@ -80,6 +116,122 @@ jobs:
           if [ -f "$RUNNER_TEMP/unittest.log" ]; then
             $PY scripts/check_skips.py "$RUNNER_TEMP/unittest.log" --system "${{ matrix.os }}" --mode "${{ matrix.mode }}" --emit || true
           fi
+
+  install-smoke:
+    name: install-smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Build the wheel
+        run: uv build
+      - name: Wheel contents (K1)
+        run: python scripts/check_wheel.py dist/skillsync-*.whl
+      - name: Install the wheel as a tool
+        run: |
+          wheels=(dist/skillsync-*.whl)
+          uv tool install "${wheels[0]}"
+          uv tool dir --bin >> "$GITHUB_PATH"
+      - name: Version, help and self_argv outside the checkout
+        run: |
+          workdir=$(mktemp -d)
+          cd "$workdir"
+          tool_dir=$(uv tool dir)
+          if [ "$RUNNER_OS" = "Windows" ]; then tool_python="$tool_dir/skillsync/Scripts/python.exe"; else tool_python="$tool_dir/skillsync/bin/python"; fi
+          expected=$("$tool_python" -c 'from skillsync_workflow import __version__; print(__version__)' | tr -d '\r')
+          actual=$(skillsync --version | tr -d '\r')
+          echo "expected: skillsync $expected; actual: $actual"
+          [ "$actual" = "skillsync $expected" ]
+          skillsync --help > /dev/null
+          skillsync leakcheck --no-config --worktree "$workdir" > /dev/null   # reads data/ from site-packages
+          "$tool_python" -c "import sys; from skillsync_workflow.selfcmd import self_argv; a = self_argv(); print(a); assert a[1:] == ['-P', '-m', 'skillsync_workflow'] and a[0] == sys.executable, a"
+      - name: Uninstall the tool
+        if: always()
+        run: uv tool uninstall skillsync
+
+  e2e:
+    # Chrome E2E of the prototype (K11): only Linux; the matrix jobs skip these tests (reason in tests/skip-baseline.json).
+    name: e2e (ubuntu-latest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SKILLSYNC_TEST_NODE: node
+      SKILLSYNC_TEST_LIBRARY: ${{ github.workspace }}/library
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: browser-actions/setup-chrome@v1
+        id: chrome
+      - name: Install the package (checkout form, with PyYAML)
+        run: uv pip install --system -e .
+      - name: Require the library
+        run: |
+          if [ ! -d "$SKILLSYNC_TEST_LIBRARY" ]; then
+            echo "::error::SKILLSYNC_TEST_LIBRARY=$SKILLSYNC_TEST_LIBRARY does not exist (library/ is missing in the checkout)"
+            exit 1
+          fi
+      - name: Git identity for tests
+        run: |
+          git config --global user.name "ci"
+          git config --global user.email "ci@example.invalid"
+      - name: Prototype E2E (Chrome)
+        env:
+          SKILLSYNC_E2E_CHROME: ${{ steps.chrome.outputs.chrome-path }}
+        run: |
+          # A skipped E2E test would still end with `OK`: the job must prove that Chrome tests really ran.
+          rc=0
+          python3 -m unittest discover -s tests -p 'test_skillsync_prototype_e2e.py' -v > e2e.log 2>&1 || rc=$?
+          cat e2e.log
+          [ "$rc" -eq 0 ]
+          if grep -Eq '\.\.\. skipped|^OK \(skipped' e2e.log; then echo "::error::E2E tests were skipped (Chrome missing?)"; exit 1; fi
+
+  release-check:
+    # K12: CHANGELOG has a section for `__version__`. PR and push to main: only when the change touches `__version__`.
+    name: release-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: check_release.py
+        run: |
+          if git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null && git diff --quiet "${BASE_SHA}" HEAD -- skillsync_workflow/__init__.py; then
+            echo "__version__ unchanged; skipping"
+            exit 0
+          fi
+          python scripts/check_release.py
 
   leakcheck:
     # Wzorce ogólne + dodatki z gałęzi bazowej (D57). Obecna treść repo przejdzie dopiero po specu B,

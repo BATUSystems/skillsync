@@ -15,7 +15,7 @@ Błędy i propozycje zgłaszaj w GitHub Issues: co robisz, czego oczekujesz, co 
 Python 3.11 lub nowszy i PyYAML. Kod leży w pakiecie `skillsync_workflow/` (polecenia w `skillsync_workflow/cli.py`);
 plik `skillsync` w korzeniu repo to wrapper, który uruchamia pakiet z checkoutu (`./skillsync …`).
 
-> **TODO [I1]** instalacja deweloperska `uv tool install -e .` (po kroku pakowania).
+Instalacja deweloperska: `uv tool install -e .` (polecenie `skillsync` wskazuje wtedy checkout). Jeśli `~/.local/bin/skillsync` jest starym dowiązaniem do checkoutu, usuń je przed instalacją; sprawdź `which skillsync`.
 
 ## Testy i kontrole
 

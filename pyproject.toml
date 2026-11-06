@@ -1,0 +1,25 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "skillsync"
+description = "Generator of workflow artifacts (instructions, skills, agents) for AI coding assistants."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+dynamic = ["version"]
+dependencies = ["PyYAML>=6"]
+
+[project.scripts]
+skillsync = "skillsync_workflow.cli:run"
+
+[tool.hatch.version]
+path = "skillsync_workflow/__init__.py"
+
+[tool.hatch.build.targets.sdist]
+include = ["skillsync_workflow", "skillsync", "pyproject.toml", "README.md", "LICENSE"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["skillsync_workflow"]
+exclude = ["**/__pycache__", "**/*.pyc"]

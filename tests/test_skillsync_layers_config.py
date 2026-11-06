@@ -654,8 +654,12 @@ class LayerYamlTest(ConfigCase):
         self.assertEqual(skillsync_workflow.__version__, '0.9.0')
         self.assertEqual(layers.generator_version(), '0.9.0')
         pyproject = ROOT / 'pyproject.toml'
-        if pyproject.exists():          # consistency is enforced only once the project file exists
-            self.assertIn('version = "0.9.0"', pyproject.read_text(encoding='utf-8'))
+        if pyproject.exists():          # the package version is dynamic: hatch reads it from `__version__`
+            import tomllib
+            data = tomllib.loads(pyproject.read_text(encoding='utf-8'))
+            self.assertIn('version', data['project']['dynamic'])
+            self.assertNotIn('version', data['project'])
+            self.assertEqual(data['tool']['hatch']['version']['path'], 'skillsync_workflow/__init__.py')
 
     def test_semver_parsing_and_ordering(self):
         self.assertEqual(layers.parse_semver('1.20.3'), (1, 20, 3))

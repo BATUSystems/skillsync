@@ -14,7 +14,7 @@ Po instalacji dodajesz warstwy (`skillsync layers add`) i reguły ich użycia (`
 Pakiet jest czystym Pythonem, więc na macOS działa tak samo na Apple Silicon i Intel. Zakres wsparcia systemów: tabela
 w [README](../README.pl.md#wymagania).
 
-> **TODO [I1]** minimalna wersja `uv` (krok pakowania).
+Rozwijane i sprawdzane z uv 0.13; minimalna wersja nie została zmierzona. CI używa bieżącego uv.
 
 ## Instalacja
 
@@ -73,7 +73,7 @@ skillsync doctor <projekt>
 
 `skillsync pull` aktualizuje checkouty warstw (`layers update`) i linkuje projekty (`link`).
 
-> **TODO [I1]** aktualizacja pakietu: `uv tool upgrade skillsync` czy `uv tool install --force` z nowym tagiem (krok pakowania).
+Aktualizację pakietu wykonaj ponownym zainstalowaniem z nowego tagu: `uv tool install --force git+https://github.com/BATUSystems/skillsync@vX.Y.Z`. `uv tool upgrade skillsync` zostaje przy przypiętym tagu.
 
 Przed przejściem na nową wersję MAJOR przeczytaj [upgrading.md](upgrading.md).
 

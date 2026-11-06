@@ -1,0 +1,47 @@
+# Smoke wydania (K13): po tagu `v*` sprawdza CHANGELOG i instalację z tagu na trzech systemach.
+# Porażka oznacza wadliwe wydanie; poprawia je kolejny tag łatki. Bez sekretów, uprawnienia tylko do odczytu.
+name: release-smoke
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  release-smoke:
+    name: release-smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: astral-sh/setup-uv@v5
+      - name: CHANGELOG matches the tag
+        run: python scripts/check_release.py --tag "${GITHUB_REF_NAME}"
+      - name: Install from the tag
+        env:
+          REPOSITORY: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          uv tool install "git+https://github.com/${REPOSITORY}@${TAG}"
+          uv tool dir --bin >> "$GITHUB_PATH"
+      - name: Version equals the tag
+        run: |
+          workdir=$(mktemp -d)
+          cd "$workdir"
+          actual=$(skillsync --version | tr -d '\r')
+          echo "expected: skillsync ${GITHUB_REF_NAME#v}; actual: $actual"
+          [ "$actual" = "skillsync ${GITHUB_REF_NAME#v}" ]

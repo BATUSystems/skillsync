@@ -26,7 +26,7 @@ Zasady udziału zewnętrznego (zgłoszenia, `leakcheck` przed PR): [CONTRIBUTING
   postać z `selfcmd.self_argv()`: z checkoutu `python <checkout>/skillsync`, z pakietu `python -P -m skillsync_workflow`.
   Po przeniesieniu checkoutu uruchom `skillsync link` w projektach.
 
-> **TODO [I1]** v1.0.0: instalacja deweloperska `uv tool install -e .`, usunięcie starego dowiązania `~/.local/bin/skillsync` przed instalacją, kontrola `which skillsync`.
+Instalacja deweloperska: `uv tool install -e .`. Stare dowiązanie `~/.local/bin/skillsync` usuń przed instalacją (inaczej uv odmówi nadpisania), potem sprawdź `which skillsync`.
 
 ## Testy
 
@@ -89,14 +89,18 @@ export TMPDIR="$(mktemp -d -p <katalog spoza repo>)"
 
 ### CI
 
-Workflow `ci` (`.github/workflows/ci.yml`) ma dwa zadania:
+Workflow `ci` (`.github/workflows/ci.yml`) ma zadania:
 
-- `test (<system>, <tryb>)`: systemy `ubuntu-latest`, `windows-latest`, `macos-latest` × tryby `symlink`, `copy`
-  (`SKILLSYNC_NO_SYMLINK=1`); składnia (`py_compile`, `bash -n`), `tests/k1_grep.py`, testy jednostkowe, skipy wobec
+- `test (<system>, <python>, <tryb>)`: systemy `ubuntu-latest`, `windows-latest`, `macos-latest` × Python 3.11 i 3.12 × tryby `symlink`, `copy`
+  (`SKILLSYNC_NO_SYMLINK=1`; Windows tylko w trybie kopii); biblioteka testowa to `library/` z checkoutu, silnik prototypu
+  z `library/skills/prototype/assets/repo/prototype.js`; składnia (`py_compile`, `bash -n`), `tests/k1_grep.py`, testy jednostkowe, skipy wobec
   `tests/skip-baseline.json` (`scripts/check_skips.py`) i smoke (`scripts/smoke.sh`, na Windows `scripts/smoke.ps1`);
+- `install-smoke (<system>)`: budowa koła (`uv build`), `scripts/check_wheel.py`, instalacja jako narzędzie i `skillsync --version`, `--help`, `leakcheck`, `self_argv` poza checkoutem;
+- `e2e (ubuntu-latest)`: E2E prototypu w Chrome (pominięty test jest błędem zadania);
+- `release-check`: `scripts/check_release.py` (sekcja CHANGELOG dla `__version__`; w PR tylko gdy zmienia `__version__`);
 - `leakcheck`: strażnik na drzewie roboczym i commitach PR-a; działa tylko w pull requestach repo `BATUSystems/skillsync`.
 
-> **TODO [I1]** krok 2.1: macierz Pythona, zadania `e2e`, `install-smoke` i `release-smoke`.
+Workflow `release-smoke` (`.github/workflows/release-smoke.yml`) po tagu `v*` sprawdza CHANGELOG względem tagu i instalację z tagu na trzech systemach.
 
 ## Próba na projekcie testowym
 
@@ -158,7 +162,7 @@ Na macOS i Windows usługi watch nie ma; `skillsync watch` uruchamia się tam r�
   Uruchomienie z korzenia repo: `powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\windows\skillsync-windows-check.ps1`.
 - Windows nie ma backendu własności procesów: `env up` i `env down` zwracają BLOCKED.
 
-> **TODO [I1]** v1.0.1: ręczne testy na Windows i macOS; zakres obsługi Windows w v1.0.0 (tryb kopii, CLI, `link`, `doctor`, bez usługi, bez `flock` i TTY) zgodnie z tabelą wsparcia.
+Ręczne testy na Windows i macOS są zaplanowane na v1.0.1. Zakres obsługi Windows w v1.0.0 to tryb kopii, CLI, `link` i `doctor` (bez usługi, bez `flock` i TTY), zgodnie z tabelą wsparcia.
 
 ## Reguły zmian w kodzie
 
