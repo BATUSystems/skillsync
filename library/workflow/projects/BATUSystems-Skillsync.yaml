@@ -1,0 +1,47 @@
+version: 1
+validation:
+  checks:
+  - id: skillsync-unit
+    argv:
+    - python3
+    - -m
+    - unittest
+    - discover
+    - -s
+    - tests
+    - -p
+    - test_skillsync*.py
+    kind: test
+    profiles:
+    - quick
+    - final
+    required: true
+    timeout: 180
+    resources:
+    - skillsync-unittest
+    allow_skips: true
+  - id: workflow-doctor
+    argv:
+    - python3
+    - skillsync
+    - doctor
+    - .
+    - --json
+    kind: lint
+    profiles:
+    - final
+    required: true
+    timeout: 30
+testing:
+  wide_paths:
+  - skillsync
+  - skillsync_workflow/**
+  - .github/.skillsync.yaml
+  rules:
+  - paths:
+    - tests/test_skillsync*.py
+    - skillsync*
+    - skillsync_workflow/**
+    - docs/plans/**
+    checks:
+    - skillsync-unit

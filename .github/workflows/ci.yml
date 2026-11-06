@@ -1,0 +1,115 @@
+# CI generatora (K13). Bez sekretów; uprawnienia tylko do odczytu.
+# Skipy testów są sprawdzane według tests/skip-baseline.json (klucz <system>/<tryb>) przez scripts/check_skips.py.
+# Testy E2E Chrome są wyłączone: nie ustawiamy SKILLSYNC_E2E_CHROME, SKILLSYNC_TEST_LIBRARY ani SKILLSYNC_TEST_NODE,
+# więc ich skipy muszą mieścić się w bazie (kategorie e2e-chrome, needs-library, needs-node).
+# Akcje są przypięte tagiem głównym (@v4/@v5), nie SHA: świadomy kompromis; przegląd wersji przy każdej aktualizacji workflow.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: '3.11'
+  PYYAML_VERSION: '6.0.2'
+  PYTHONUTF8: '1'
+
+jobs:
+  test:
+    name: test (${{ matrix.os }}, ${{ matrix.mode }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        mode: [symlink, copy]
+    defaults:
+      run:
+        shell: bash
+    env:
+      # `copy` = SKILLSYNC_NO_SYMLINK=1; `symlink` = pusta wartość (generator traktuje ją jako nieustawioną).
+      SKILLSYNC_NO_SYMLINK: ${{ matrix.mode == 'copy' && '1' || '' }}
+      # Kontekst `runner` nie jest dostępny w `jobs.<id>.env`; system wybiera macierz.
+      PY: ${{ matrix.os == 'windows-latest' && 'python' || 'python3' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install PyYAML
+        run: $PY -m pip install "PyYAML==${PYYAML_VERSION}"
+      - name: Git identity for tests
+        run: |
+          git config --global user.name "ci"
+          git config --global user.email "ci@example.invalid"
+      - name: Syntax (py_compile)
+        run: $PY -m py_compile skillsync skillsync_workflow/*.py
+      - name: Syntax (skillsync-ctl)
+        if: runner.os != 'Windows'
+        run: for script in skillsync-ctl scripts/smoke.sh; do bash -n "$script"; done
+      - name: Control grep K1
+        run: $PY tests/k1_grep.py
+      - name: Unit tests
+        run: |
+          set -o pipefail
+          $PY -m unittest discover -s tests -p 'test_skillsync*.py' -v 2>&1 | tee "$RUNNER_TEMP/unittest.log"
+      - name: Skips against the baseline
+        # Exit 0 = within the baseline or key `null` (warning until the first run of the runner is measured).
+        run: $PY scripts/check_skips.py "$RUNNER_TEMP/unittest.log" --system "${{ matrix.os }}" --mode "${{ matrix.mode }}"
+      - name: Smoke (POSIX)
+        if: runner.os != 'Windows'
+        run: scripts/smoke.sh
+      - name: Smoke (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: scripts/smoke.ps1
+      - name: Skip baseline entries (info)
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/unittest.log" ]; then
+            $PY scripts/check_skips.py "$RUNNER_TEMP/unittest.log" --system "${{ matrix.os }}" --mode "${{ matrix.mode }}" --emit || true
+          fi
+
+  leakcheck:
+    # Wzorce ogólne + dodatki z gałęzi bazowej (D57). Obecna treść repo przejdzie dopiero po specu B,
+    # więc zadanie działa tylko w repozytorium publicznym.
+    if: github.repository == 'BATUSystems/skillsync' && github.event_name == 'pull_request'
+    name: leakcheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install PyYAML
+        run: python3 -m pip install "PyYAML==${PYYAML_VERSION}"
+      - name: Target additions from the base branch
+        # Dodatków nie czytamy z gałęzi PR (zewnętrzny autor nie rozluźni ani nie zepsuje kontroli).
+        run: |
+          if git show "${BASE_SHA}:.leakguard/patterns.yaml" > "$RUNNER_TEMP/base-patterns.yaml" 2>/dev/null; then
+            echo "using .leakguard/patterns.yaml from ${BASE_SHA}"
+          else
+            echo "schema: 1" > "$RUNNER_TEMP/base-patterns.yaml"
+            echo "base has no .leakguard/patterns.yaml; generic patterns only"
+          fi
+      - name: leakcheck (working tree)
+        run: python3 skillsync leakcheck --no-config --worktree --target-patterns "$RUNNER_TEMP/base-patterns.yaml" --json .
+      - name: leakcheck (commits of the PR)
+        run: python3 skillsync leakcheck --no-config --range "${BASE_SHA}..HEAD" --target-patterns "$RUNNER_TEMP/base-patterns.yaml" --json .

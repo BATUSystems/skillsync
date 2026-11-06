@@ -1,0 +1,99 @@
+version: 1
+capabilities:
+- read
+- update-title
+- pr-list
+- pr-latest
+- pr-show
+- pr-create
+- pr-ready
+- pr-comment
+- pr-last-thread
+operations:
+  read:
+    effect: read
+    builtin: azure
+    required_params:
+    - organization
+    - project
+    - id
+    result: &id001
+      type: object
+      required:
+      - provider
+      - id
+      - title
+      - state
+      - url
+    timeout: 30
+  update-title:
+    effect: write
+    builtin: azure
+    required_params:
+    - organization
+    - project
+    - id
+    - title
+    result: *id001
+    timeout: 30
+    verify:
+      operation: read
+      match:
+      - id
+      - title
+  # --- Pull requesty (Azure Repos) przez `az`; org to nazwa organizacji (jak w `read`).
+  # Uwaga: parametr numeru PR w operacjach wątków nazywa się `pr`, nie `id` — `verify.match: [id]` porównuje też pola z parametrami.
+  # Szablony argv: bez powłoki, osobne elementy. Pola wyniku `az` niezweryfikowane na żywo — niezgodność = BLOCKED.
+  pr-list:
+    effect: read
+    required_params: [organization, project, repository, source, target]
+    argv: [az, repos, pr, list, --organization, 'https://dev.azure.com/{organization}', --project, '{project}', --repository, '{repository}',
+      --source-branch, '{source}', --target-branch, '{target}', --status, active, --output, json]
+    result: {type: list, required: [pullRequestId, title, status, isDraft]}
+    timeout: 60
+  pr-latest:
+    effect: read
+    required_params: [organization, project, repository, source, target]
+    argv: [az, repos, pr, list, --organization, 'https://dev.azure.com/{organization}', --project, '{project}', --repository, '{repository}',
+      --source-branch, '{source}', --target-branch, '{target}', --status, active, --query, '[0]', --output, json]
+    result: {type: object, required: [pullRequestId, title, status, isDraft]}
+    timeout: 60
+  pr-show:
+    effect: read
+    required_params: [organization, id]
+    argv: [az, repos, pr, show, --organization, 'https://dev.azure.com/{organization}', --id, '{id}', --output, json]
+    result: {type: object, required: [pullRequestId, title, status, isDraft]}
+    timeout: 60
+  pr-create:
+    effect: write
+    required_params: [organization, project, repository, source, target, title, description]
+    argv: [az, repos, pr, create, --organization, 'https://dev.azure.com/{organization}', --project, '{project}', --repository, '{repository}',
+      --source-branch, '{source}', --target-branch, '{target}', --title, '{title}', --description, '{description}',
+      --draft, 'true', --output, json]
+    result: {type: object, required: [pullRequestId, title, status, isDraft]}
+    timeout: 120
+    verify: {operation: pr-latest, match: [pullRequestId, title]}
+  pr-ready:
+    effect: write
+    required_params: [organization, id]
+    argv: [az, repos, pr, update, --organization, 'https://dev.azure.com/{organization}', --id, '{id}', --draft, 'false', --output, json]
+    result: {type: object, required: [pullRequestId, title, status, isDraft]}
+    timeout: 60
+    verify: {operation: pr-show, match: [pullRequestId, isDraft]}
+  pr-last-thread:
+    effect: read
+    required_params: [organization, project, repository, pr]
+    argv: [az, devops, invoke, --area, git, --resource, pullRequestThreads,
+      --route-parameters, 'project={project}', 'repositoryId={repository}', 'pullRequestId={pr}',
+      --http-method, GET, --api-version, '7.1', --organization, 'https://dev.azure.com/{organization}', --query, 'value[-1]', --output, json]
+    result: {type: object, required: [id, comments]}
+    timeout: 60
+  pr-comment:
+    effect: write
+    required_params: [organization, project, repository, pr, body_file]
+    argv: [az, devops, invoke, --area, git, --resource, pullRequestThreads,
+      --route-parameters, 'project={project}', 'repositoryId={repository}', 'pullRequestId={pr}',
+      --http-method, POST, --in-file, '{body_file}', --api-version, '7.1', --organization, 'https://dev.azure.com/{organization}', --output, json]
+    result: {type: object, required: [id, comments]}
+    timeout: 60
+    verify: {operation: pr-last-thread, match: [id]}

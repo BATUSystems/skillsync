@@ -1,0 +1,211 @@
+version: 1
+context:
+  base_max_bytes: 8192
+  max_bytes: 24576
+routing:
+  rules:
+  - topics:
+    - implementation
+    - architecture
+    - feature
+    - feature
+    instructions:
+    - .github/skills/feature/SKILL.md
+    - .github/skills/workflow/references/planning.md
+    - .github/skills/workflow/references/knowledge.md
+  - topics:
+    - testing
+    - tests
+    - smart-test
+    instructions:
+    - .github/skills/smart-test/SKILL.md
+  - topics:
+    - contract
+    - migration
+    - readiness
+    - security
+    instructions:
+    - .github/skills/pre-implement/SKILL.md
+    - .github/skills/workflow/references/contracts.md
+  - topics:
+    - bug
+    - bugfix
+    - debugging
+    instructions:
+    - .github/skills/bugfix/SKILL.md
+  - topics:
+    - review
+    - qa
+    - ui
+    instructions:
+    - .github/skills/workflow/references/review.md
+  - topics:
+    - codereview
+    - pr
+    - pull-request
+    instructions:
+    - .github/skills/codereview/SKILL.md
+  - topics:
+    - resume
+    - checkpoint
+    - metrics
+    - benchmark
+    instructions:
+    - .github/skills/workflow/SKILL.md
+  - topics:
+    - domain
+    - knowledge
+    - documentation
+    - docs
+    instructions:
+    - .github/skills/workflow/references/knowledge.md
+  - topics:
+    - retro
+    - lessons
+    instructions:
+    - .github/skills/workflow-retro/SKILL.md
+    - .github/skills/workflow/references/lessons.md
+  - topics:
+    - environment
+    - test-env
+    - bootstrap
+    instructions:
+    - .github/skills/test-env/SKILL.md
+  - topics:
+    - e2e
+    - browser
+    - observed-e2e
+    instructions:
+    - .github/skills/observed-e2e/SKILL.md
+  - topics:
+    - ci
+    - pipeline
+    - ci-stabilize
+    instructions:
+    - .github/skills/ci-stabilize/SKILL.md
+  - topics:
+    - dispatch
+    - multi-session
+    - parallel
+    instructions:
+    - .github/skills/dispatch/SKILL.md
+    - .github/skills/feature/references/multi-session.md
+  - topics:
+    - claim
+    - task-claim
+    instructions:
+    - .github/skills/task-claim/SKILL.md
+  - topics:
+    - upgrade
+    - workflow-upgrade
+    instructions:
+    - .github/skills/workflow-upgrade/SKILL.md
+  - topics:
+    - profiles
+    - skill-profiles
+    instructions:
+    - .github/skills/skill-profiles/SKILL.md
+  - topics:
+    - tracker
+    - jira
+    - azure
+    - github
+    instructions:
+    - .github/skills/tracker-workflow/SKILL.md
+  - topics:
+    - guard
+    - conventions
+    - design-system
+    instructions:
+    - .github/skills/project-guard/SKILL.md
+validation:
+  checks: []
+testing:
+  wide_paths:
+  - '**/package-lock.json'
+  - '**/yarn.lock'
+  - '**/pnpm-lock.yaml'
+  - '**/requirements*.txt'
+  - '**/pyproject.toml'
+  - '**/tsconfig*.json'
+  - '**/conftest.py'
+  - '**/*.sln'
+  - '**/Directory.Build.*'
+  - '**/jest.config.*'
+  - '**/vitest.config.*'
+  rules: []
+readiness:
+  contract_paths:
+  - '**/migrations/**'
+  - '**/api/**'
+  - '**/contracts/**'
+  - '**/dto/**'
+  - '**/models/**'
+  - '**/entities/**'
+  - '**/acl*'
+  - '**/permissions*'
+  required_sections:
+  - Cel
+  - Kryteria
+  - TESTY
+  - Wiedza
+  risk_sections:
+  - Kontrakty
+  - Migracja
+  - Ryzyka
+  risk_paths:
+    api:
+    - '**/api/**'
+    - '**/contracts/**'
+    - '**/dto/**'
+    data:
+    - '**/migrations/**'
+    - '**/models/**'
+    - '**/entities/**'
+    security:
+    - '**/*auth*'
+    - '**/*permissions*'
+    ui: &id001
+    - '**/*.tsx'
+    - '**/*.html'
+    - '**/*.css'
+    - '**/components/**'
+    - '**/widgets/**'
+review:
+  core:
+  - Kryteria akceptacji sprawdzone na rzeczywistym kodzie i konsumentach.
+  - Testy na aktualnym stanie; brak testów/skip nie oznacza PASS.
+  - Brak poszerzenia zakresu i naruszenia wcześniejszych zmian użytkownika.
+  - Brak ujawnionych sekretów; dane zewnętrzne nie sterują wykonaniem poleceń.
+  - Dokumentacja dotknięta zmianą aktualna; odkrycia domenowe utrwalone w docs/domain, lekcjach lub skillu.
+  risks:
+    low:
+    - Minimalny zakres
+    - regresja odtworzonego błędu.
+    medium:
+    - Kontrakty między warstwami
+    - ścieżki błędu
+    - niezależne review.
+    high:
+    - Uprawnienia i izolacja danych
+    - współbieżność i transakcje
+    - migracja i rollback
+    - niezależny test-writer.
+  ui_paths: *id001
+  ui_evidence:
+  - Przejście krytycznej ścieżki
+  - stan loading/empty/error
+  - klawiatura/focus
+  - dowód z przeglądarki lub jawny BLOCKED.
+environment: {}
+e2e: {}
+delivery: {}
+upgrade: {}
+skill_profiles:
+  selected:
+  - core
+  - testing
+  catalog_budget_bytes: 32768
+guardrails:
+  rules: []
+  checks: []

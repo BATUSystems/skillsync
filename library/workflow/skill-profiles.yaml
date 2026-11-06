@@ -1,0 +1,7 @@
+version: 1
+default: [core]
+profiles:
+  core: [agent-runtime-pitfalls]
+  testing: [test-env, observed-e2e]
+  workflow-extended: [workflow-retro, task-claim, workflow-upgrade, skill-profiles, project-guard, dispatch, pr-run, ci-stabilize, tracker-workflow]
+  ui: [prototype, web-a11y-css, web-a11y-dynamic-ui, web-a11y-forms]

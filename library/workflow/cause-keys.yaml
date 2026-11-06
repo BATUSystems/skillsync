@@ -1,0 +1,75 @@
+# Lista kluczy przyczyn (`cause_key`) dla `skillsync retro` i `retro-decide`.
+# Klucz kanoniczny ma opis i aliasy; `retro` grupuje kandydatów po kluczu kanonicznym, a `retro-decide`
+# zapisuje decyzję pod nim. Alias nie może być kluczem ani należeć do dwóch kluczy (inaczej lista jest
+# niepoprawna i `retro` działa jak bez niej). `checkpoint` nadal przyjmuje dowolny poprawny klucz.
+version: 1
+keys:
+  review-changes-required:
+    description: Historyczny, przyczyna nierozdzielona; nowe rekordy review używają klucza tego, co review znalazło
+    aliases: [review-findings, library-review-findings]
+  docs-behind-code:
+    description: Dokumentacja nie nadąża za kodem
+    aliases: []
+  test-gap:
+    description: Luka w testach, zachowanie bez pokrycia
+    aliases: []
+  state-rule-gap:
+    description: Luka w regule stanu, nieobsłużony stan lub konsument
+    aliases: []
+  plan-review-changes:
+    description: Przegląd planu wymusił zmiany
+    aliases: []
+  oracle-red-expected:
+    description: Zaplanowana czerwień testu
+    aliases: [red-phase]
+  test-defect:
+    description: Błąd w teście lub danych testowych
+    aliases: [test-defect-red-phase, fixture-class-expectation]
+  contract-test-update:
+    description: Test wymagał aktualizacji po zmianie kontraktu
+    aliases: []
+  flaky-test:
+    description: Niestabilny test
+    aliases: []
+  environment:
+    description: Środowisko, zależność, zasób
+    aliases: []
+  missing-tool:
+    description: Brak narzędzia lub CLI
+    aliases: []
+  permission-denied:
+    description: Odmowa uprawnień
+    aliases: []
+  requirement-gap:
+    description: Luka w wymaganiach
+    aliases: []
+  bookkeeping:
+    description: Księgowanie przebiegu
+    aliases: [run-record-bookkeeping]
+  other:
+    description: Inne, do wyjaśnienia
+    aliases: []
+  evidence-gap:
+    description: Luka dowodu, brak logu albo log starszy niż kod
+    aliases: []
+  user-correction:
+    description: Sygnał retrospektywy, korekta użytkownika w przebiegu
+    aliases: []
+  skill-deviation:
+    description: Sygnał retrospektywy, odstępstwo od procedury skilla
+    aliases: []
+  review-rounds:
+    description: Sygnał retrospektywy, rundy przeglądu z uwagami bez wspólnej przyczyny merytorycznej
+    aliases: []
+  docs-practice-gap:
+    description: Sygnał retrospektywy, rozjazd dokumentacji projektu lub skilla z praktyką
+    aliases: []
+  unneeded-question:
+    description: Sygnał retrospektywy, pytanie, na które instrukcje powinny odpowiadać
+    aliases: []
+  decision-to-rule:
+    description: Sygnał retrospektywy, decyzja użytkownika do zapisania jako reguła
+    aliases: []
+  ceremony-excess:
+    description: Sygnał retrospektywy, kontrola ponad to, czego wymaga ryzyko (runda po rundzie bez blockera albo powtórzona na niezmienionym stanie)
+    aliases: []

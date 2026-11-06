@@ -1,0 +1,101 @@
+# Katalog skilli: scope (org|client|project|tech|workflow|tool|personal), org, tech. Generuje: skillsync skills index.
+version: 1
+orgs: {}
+skills:
+  acli: {scope: tool}
+  agent-runtime-pitfalls: {scope: workflow}
+  angular-21-patterns:
+    scope: tech
+    tech: [angular]
+  angular-patterns:
+    scope: tech
+    tech: [angular]
+  azure-devops: {scope: tool}
+  azure-devops-boards: {scope: tool}
+  azure-devops-pr-review: {scope: tool}
+  backend-architecture:
+    scope: tech
+    tech: [dotnet]
+  bugfix: {scope: workflow}
+  build-deployment: {scope: workflow}
+  capacitor-android-patterns:
+    scope: tech
+    tech: [capacitor]
+  ci-stabilize: {scope: workflow}
+  codereview: {scope: workflow}
+  copilot-orchestrator: {scope: tool}
+  copilot-skills-yaml: {scope: workflow}
+  csharp-async:
+    scope: tech
+    tech: [dotnet]
+  csharp-docs:
+    scope: tech
+    tech: [dotnet]
+  csharp-xunit:
+    scope: tech
+    tech: [dotnet]
+  delivery-workflow-jira-azure: {scope: tool}
+  dispatch: {scope: workflow}
+  django-5-patterns:
+    scope: tech
+    tech: [django]
+  docx-to-markdown: {scope: tool}
+  dotnet-best-practices:
+    scope: tech
+    tech: [dotnet]
+  dotnet-design-pattern-review:
+    scope: tech
+    tech: [dotnet]
+  dotnet-framework-48:
+    scope: tech
+    tech: [dotnet]
+  feature: {scope: workflow}
+  go-jira: {scope: tool}
+  nhibernate:
+    scope: tech
+    tech: [dotnet]
+  observed-e2e: {scope: workflow}
+  pre-implement: {scope: workflow}
+  pr-run: {scope: workflow}
+  prototype: {scope: workflow}
+  project-guard: {scope: workflow}
+  review-fix-a11y:
+    scope: tech
+    tech: [web]
+  skill-profiles: {scope: workflow}
+  skillsync: {scope: workflow}
+  smart-test: {scope: workflow}
+  sql-code-review:
+    scope: tech
+    tech: [sqlserver]
+  sql-optimization:
+    scope: tech
+    tech: [sqlserver]
+  sqlserver:
+    scope: tech
+    tech: [sqlserver]
+  task-claim: {scope: workflow}
+  test-env: {scope: workflow}
+  testing-guidelines: {scope: workflow}
+  tracker-workflow: {scope: workflow}
+  wcag-accessibility:
+    scope: tech
+    tech: [web]
+  web-a11y-css:
+    scope: tech
+    tech: [web]
+  web-a11y-dynamic-ui:
+    scope: tech
+    tech: [web]
+  web-a11y-forms:
+    scope: tech
+    tech: [web]
+  web-a11y-review:
+    scope: tech
+    tech: [web]
+  web-a11y-testing:
+    scope: tech
+    tech: [web]
+  workflow: {scope: workflow}
+  workflow-retro: {scope: workflow}
+  workflow-upgrade: {scope: workflow}

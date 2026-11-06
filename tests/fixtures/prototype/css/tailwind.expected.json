@@ -1,0 +1,21 @@
+{
+  "light": [
+    ["--bg", "#fafafa"],
+    ["--font-sans", "\"Inter; sans}serif\", 'Fira;Code'"],
+    ["--bg-image", "url(\"data:image/svg+xml;utf8,<svg xmlns='x'>;}</svg>\")"],
+    ["--shadow", "0 1px 2px rgb(0 0 0 / 5%), 0 2px 4px rgb(0 0 0 / 5%)"],
+    ["--calc", "calc((1px + 2px) * 3)"],
+    ["--radius", "0.5rem"],
+    ["--color-brand", "oklch(0.6 0.2 250)"],
+    ["--color-brand-fg", "#fff"],
+    ["--color-background", "var(--bg)"],
+    ["--layered", "1"]
+  ],
+  "dark": [
+    ["--layered-dark", "2"],
+    ["--bg", "#0a0a0a"],
+    ["--fg", "#fafafa"]
+  ],
+  "absent": ["--ghost-comment", "--ghost-inline", "--inner", "--not-a-root", "--media-only", "--supports-only", "--body-token"],
+  "warnings_contain": ["@media", "@import"]
+}

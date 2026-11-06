@@ -1,0 +1,34 @@
+version: 1
+capabilities:
+- read
+- update-title
+operations:
+  read:
+    effect: read
+    builtin: github
+    required_params:
+    - repo
+    - id
+    result: &id001
+      type: object
+      required:
+      - provider
+      - id
+      - title
+      - state
+      - url
+    timeout: 30
+  update-title:
+    effect: write
+    builtin: github
+    required_params:
+    - repo
+    - id
+    - title
+    result: *id001
+    timeout: 30
+    verify:
+      operation: read
+      match:
+      - id
+      - title

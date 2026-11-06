@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Skillsync workflow v1 (manifest.workflow)",
+  "type": "object",
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "context": {
+      "type": "object"
+    },
+    "routing": {
+      "type": "object"
+    },
+    "guides": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "validation": {
+      "type": "object",
+      "properties": {
+        "checks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "argv": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string"
+                }
+              },
+              "command": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]+$",
+                "description": "Typ kontroli, np. test, integration, e2e, build, lint, typecheck, migration lub ui."
+              },
+              "profiles": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "cwd": {
+                "type": "string"
+              },
+              "required": {
+                "type": "boolean"
+              },
+              "timeout": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 86400
+              },
+              "resources": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "success_pattern": {
+                "type": "string"
+              },
+              "allow_skips": {
+                "type": "boolean"
+              },
+              "requires_env": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "requires_executables": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "oneOf": [
+              {
+                "required": [
+                  "argv"
+                ],
+                "not": {
+                  "required": [
+                    "command"
+                  ]
+                }
+              },
+              {
+                "required": [
+                  "command"
+                ],
+                "not": {
+                  "required": [
+                    "argv"
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "testing": {
+      "type": "object"
+    },
+    "readiness": {
+      "type": "object"
+    },
+    "review": {
+      "type": "object"
+    },
+    "environment": {
+      "type": "object"
+    },
+    "e2e": {
+      "type": "object"
+    },
+    "delivery": {
+      "type": "object"
+    },
+    "upgrade": {
+      "type": "object"
+    },
+    "skill_profiles": {
+      "type": "object"
+    },
+    "guardrails": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": false
+}

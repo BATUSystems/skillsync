@@ -1,0 +1,78 @@
+version: 1
+entries:
+  - path: artifact-ownership.md
+    title: Własność artefaktów generowanych w projektach
+    tags: [skillsync, artifacts, ownership, link]
+    paths: ['skillsync', 'tests/test_skillsync*.py']
+  - path: skill-expansion.md
+    title: Rozwijanie listy skilli (alias, towarzysze, tagi, profile)
+    tags: [skillsync, skills, feature, expansion]
+    paths: ['skillsync', 'skillsync_workflow/common.py', 'skillsync_workflow/maintenance.py']
+  - path: config-resolution.md
+    title: "Rozwiązywanie configu maszyny, warstw, katalogów danych i listy projektów"
+    tags: [skillsync, configuration, layers, library]
+    paths: ['skillsync', 'skillsync_workflow/common.py', 'skillsync_workflow/layers.py', 'skillsync_workflow/prototype.py', 'skillsync-windows.ps1']
+  - path: layers.md
+    title: "Warstwy generatora: core, org, personal, layer.yaml, layer_rules, LayerSet, kompozyty, _base.d, kody layers check"
+    tags: [skillsync, layers, configuration, composition, isolation, push, versioning]
+    paths: ['skillsync_workflow/layers.py', 'skillsync', 'skillsync_workflow/common.py', 'skillsync_workflow/quality.py', 'skillsync-windows.ps1', 'tests/test_skillsync_layers*.py']
+  - path: leakguard.md
+    title: "Strażnik wycieków (leakguard): identity.yaml, patterns.yaml, coverage, klasy ścieżek, hooki, pełne ścieżki w raporcie (D71)"
+    tags: [skillsync, leakguard, leakcheck, security, identity, coverage, hooks, privacy]
+    paths: ['skillsync_workflow/leakguard.py', 'skillsync_workflow/data/leakguard-patterns.yaml', 'skillsync_workflow/data/leakguard-suffixes-pl.txt', 'skillsync_workflow/layers.py', 'skillsync', 'tests/test_skillsync_leakguard*.py']
+  - path: glossary.md
+    title: Glosariusz domenowy Skillsync (słownik warstw, strażnika i workflow)
+    tags: [terminology, skillsync, layers, leakguard, workflow]
+    load: bootstrap
+  - path: generated-instructions.md
+    title: Instrukcje generowane (CLAUDE.md, AGENTS.md, copilot-instructions.md) i push
+    tags: [skillsync, instructions, claude, codex, push]
+    paths: ['skillsync']
+  - path: statuses-and-exit-codes.md
+    title: Statusy, kody wyjścia i semantyka doctor
+    tags: [skillsync, doctor, workflow, exit-codes]
+    paths: ['skillsync', 'skillsync_workflow/**']
+  - path: state-and-runtime-dirs.md
+    title: Stan lokalny (.github/.skillsync-state.json, .skillsync/)
+    tags: [skillsync, state, runs, dispatch]
+    paths: ['skillsync', 'skillsync_workflow/storage.py', 'skillsync_workflow/runs.py']
+  - path: dispatch-manifest-section.md
+    title: Sekcja dispatch manifestu
+    tags: [skillsync, dispatch, manifest]
+    paths: ['skillsync_workflow/dispatch.py', 'skillsync_workflow/quality.py']
+  - path: skill-catalog.md
+    title: Katalog skilli, INDEX.md i ostrzeżenia doctor
+    tags: [skillsync, skills, catalog, doctor, organizations]
+    paths: ['skillsync_workflow/catalog.py', 'skillsync_workflow/quality.py']
+  - path: repo-map.md
+    title: Mapa repo (.skillsync/map.md) i jej świeżość
+    tags: [skillsync, map, context, fingerprint]
+    paths: ['skillsync_workflow/repomap.py']
+  - path: knowledge-init.md
+    title: Szkielet dokumentacji projektu (knowledge init)
+    tags: [skillsync, knowledge, docs, lessons, domain]
+    paths: ['skillsync_workflow/knowledge.py', 'skillsync_workflow/quality.py']
+  - path: bootstrap-glossary.md
+    title: Rekordy bootstrap i wczesne ładowanie glosariusza domenowego
+    tags: [skillsync, knowledge, domain, terminology, routing]
+    paths: ['skillsync_workflow/quality.py', 'tests/test_skillsync_workflow.py']
+  - path: dispatch-state-view.md
+    title: "Widok stanu dyspozycji (skillsync dispatch): biała lista, brak wolnego tekstu, koszt paczki"
+    tags: [skillsync, dispatch, ide-contract, redaction, cost, state]
+    paths: ['skillsync_workflow/dispatch_state.py', 'tests/test_skillsync_dispatch_state.py']
+  - path: prototype-manifest-and-cli.md
+    title: "Prototypy w repo: komenda prototype, sekcja manifestu i reguły zapisu"
+    tags: [skillsync, prototype, manifest, cli, security, atomic-write]
+    paths: ['skillsync_workflow/prototype.py', 'skillsync_workflow/quality.py', 'tests/test_skillsync_prototype.py']
+  - path: prototype-comments-server.md
+    title: "Wspólne komentarze prototypów: serwer, dziennik v2, użytkownicy, iteracje, przywracanie, akceptacja i bramka"
+    tags: [skillsync, prototype, comments, server, journal, users, security, glossary, iterations, restore, merge, acceptance, gate]
+    paths: ['skillsync_workflow/prototype_server.py', 'skillsync_workflow/prototype.py', 'skillsync_workflow/quality.py', 'tests/test_skillsync_prototype_server.py', 'tests/test_skillsync_prototype_restore.py', 'tests/test_skillsync_prototype_accept.py']
+  - path: run-classes.md
+    title: Klasy przebiegów, final, kandydaci zmian (metrics --classify, retro)
+    tags: [skillsync, workflow, retro, classify, checkpoints, runs]
+    paths: ['skillsync_workflow/runs.py', 'skillsync_workflow/retro.py', 'tests/test_skillsync_metrics_classify.py', 'tests/test_skillsync_retro.py']
+  - path: retro-proposals.md
+    title: "Propozycje retrospektywy: rejestr proposals:, stany, kolejność, skan progu i maskowanie"
+    tags: [skillsync, retro, proposals, registry, workflow, privacy]
+    paths: ['skillsync_workflow/retro_scan.py', 'skillsync_workflow/retro.py', 'tests/test_skillsync_retro_scan.py', 'tests/test_skillsync_retro.py']

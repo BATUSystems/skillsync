@@ -1,0 +1,11 @@
+config.toml
+config.toml.skillsync-backup
+skillsync-instructions.md
+agents/explorer.toml
+agents/implementer.toml
+agents/reviewer.toml
+agents/test_runner.toml
+agents/test_writer.toml
+agents/mechanic.toml
+agents/scribe.toml
+agents/verifier.toml

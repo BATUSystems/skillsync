@@ -1,0 +1,18 @@
+{
+  "threads": [
+    {
+      "id": "thread-a",
+      "screen": "s1",
+      "anchor": "div:2>div",
+      "label": "Ramka ekranu",
+      "resolved": true,
+      "messages": [
+        "msg-0001",
+        "msg-0002"
+      ]
+    }
+  ],
+  "openCountByScreen": {
+    "s1": 1
+  }
+}

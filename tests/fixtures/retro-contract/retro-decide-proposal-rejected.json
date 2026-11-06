@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "status": "PASS",
+  "path": "docs/retro/decisions.yaml",
+  "decision": {
+    "proposal": "2026-11-05-przyklad/P1",
+    "decision": "rejected",
+    "date": "2026-11-05"
+  },
+  "previous": null,
+  "writes": {
+    "run": "written",
+    "registry": "written"
+  }
+}

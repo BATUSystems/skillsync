@@ -1,0 +1,129 @@
+version: 1
+description: Offline local workflow tool checks; no model inference
+cases:
+- id: cli-surface
+  argv:
+  - '{python}'
+  - '{skillsync}'
+  - --help
+  expected_output: smart-test
+- id: routing
+  argv:
+  - '{python}'
+  - '{skillsync}'
+  - route
+  - '{project}'
+  - --topic
+  - testing
+  - --json
+  fixture:
+    .github/.skillsync.yaml: "version: 1\nskills: []\nsync:\n  library: library\n"
+    library/workflow/defaults.yaml: "version: 1\nrouting:\n  rules:\n    - topics:\
+      \ [testing]\n      instructions: [docs/testing.md]\n"
+    docs/testing.md: '# Testy
+
+      '
+  expected_output: docs/testing.md
+- id: invalid-skill
+  argv:
+  - '{python}'
+  - '{skillsync}'
+  - doctor
+  - '{project}'
+  - --json
+  fixture:
+    .github/.skillsync.yaml: "version: 1\nskills: [broken]\nsync:\n  library: library\n"
+    library/skills/broken/SKILL.md: '---
+
+      name: broken
+
+      ---
+
+      '
+  expected_exit: 1
+  expected_output: Missing name/description
+- id: real-tests
+  argv:
+  - '{python}'
+  - '{skillsync}'
+  - validate
+  - '{project}'
+  - --run
+  - --json
+  fixture:
+    .github/.skillsync.yaml: "skills: []\nsync:\n  library: library\nversion: 1\n\
+      workflow:\n  validation:\n    checks:\n    - argv:\n      - python3\n      -\
+      \ -m\n      - unittest\n      - discover\n      - -s\n      - tests\n      id:\
+      \ unit\n      kind: test\n"
+    tests/test_example.py: "import unittest\nclass Example(unittest.TestCase):\n def\
+      \ test_behavior(self): self.assertEqual(2 + 2, 4)\n"
+  expected_output: '"tests_run": 1'
+- id: unknown-path-fallback
+  argv:
+  - '{python}'
+  - -c
+  - 'import json,subprocess,sys
+
+    from pathlib import Path
+
+    subprocess.run([''git'',''init'',''-q''],check=True)
+
+    p=subprocess.run([sys.executable,sys.argv[1],''smart-test'',''.'',''--json''],capture_output=True,text=True)
+
+    r=json.loads(p.stdout)
+
+    assert r[''fallback''] and r[''checks''] and r[''status'']==''NOT_RUN'',r
+
+    print(''fallback-correct'')
+
+    '
+  - '{skillsync}'
+  fixture:
+    .github/.skillsync.yaml: "skills: []\nsync:\n  library: library\nversion: 1\n\
+      workflow:\n  validation:\n    checks:\n    - argv:\n      - python3\n      -\
+      \ -m\n      - unittest\n      - discover\n      - -s\n      - tests\n      id:\
+      \ unit\n      kind: test\n"
+    src/new.py: 'x = 1
+
+      '
+  expected_output: fallback-correct
+- id: checkpoint-staleness
+  argv:
+  - '{python}'
+  - -c
+  - 'import json,subprocess,sys
+
+    from pathlib import Path
+
+    subprocess.run([''git'',''init'',''-q''],check=True)
+
+    Path(''.skillsync/logs'').mkdir(parents=True)
+
+    Path(''.skillsync/logs/evidence.txt'').write_text(''test result PASS'')
+
+    cli=[sys.executable,sys.argv[1]]
+
+    p=subprocess.run(cli+[''checkpoint'',''.'',''--run-id'',''sample'',''--step'',''one'',''--status'',''PASS'',''--evidence'',''.skillsync/logs/evidence.txt'',''--next'',''review'',''--json''],capture_output=True,text=True)
+
+    assert p.returncode==0,p.stderr
+
+    p=subprocess.run(cli+[''resume'',''.'',''--run-id'',''sample'',''--json''],capture_output=True,text=True)
+
+    assert p.returncode==0,p.stdout
+
+    Path(''src/new.py'').write_text(''x = 2'')
+
+    p=subprocess.run(cli+[''resume'',''.'',''--run-id'',''sample'',''--json''],capture_output=True,text=True)
+
+    assert p.returncode==2 and json.loads(p.stdout)[''stale''],p.stdout
+
+    print(''stale-detected'')
+
+    '
+  - '{skillsync}'
+  fixture:
+    .github/.skillsync.yaml: "version: 1\nskills: []\nsync:\n  library: library\n"
+    src/new.py: 'x = 1
+
+      '
+  expected_output: stale-detected

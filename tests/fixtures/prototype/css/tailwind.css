@@ -1,0 +1,46 @@
+/* leading comment :root { --ghost-comment: 1; } */
+@import "tailwindcss";
+@custom-variant dark (&:is(.dark *));
+@layer components, utilities;
+
+:root {
+  --bg: #ffffff; /* inline comment --ghost-inline: 2; */
+  --font-sans: "Inter; sans}serif", 'Fira;Code';
+  --bg-image: url("data:image/svg+xml;utf8,<svg xmlns='x'>;}</svg>");
+  --shadow: 0 1px 2px rgb(0 0 0 / 5%), 0 2px 4px rgb(0 0 0 / 5%);
+  --calc: calc((1px + 2px) * 3);
+  --bg: #fafafa;
+  color-scheme: light;
+  --radius: 0.5rem;
+  .child { --inner: 9; }
+}
+
+@theme {
+  --color-brand: oklch(0.6 0.2 250);
+  --color-brand-fg: #fff;
+}
+
+@theme inline {
+  --color-background: var(--bg);
+}
+
+@layer base {
+  :root { --layered: 1; }
+  .dark { --layered-dark: 2; }
+  body { --not-a-root: 3; color: red; }
+}
+
+.dark {
+  --bg: #0a0a0a;
+  --fg: #fafafa;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root { --media-only: 1; }
+}
+
+@supports (display: grid) {
+  :root { --supports-only: 1; }
+}
+
+body { margin: 0; --body-token: 1; }

@@ -1,0 +1,44 @@
+{
+  "light": [
+    [
+      "--g",
+      "7"
+    ],
+    [
+      "--light",
+      "0"
+    ]
+  ],
+  "dark": [
+    [
+      "--a",
+      "1"
+    ],
+    [
+      "--b",
+      "2"
+    ],
+    [
+      "--c",
+      "3"
+    ],
+    [
+      "--d",
+      "4"
+    ],
+    [
+      "--e",
+      "5"
+    ],
+    [
+      "--h",
+      "8"
+    ]
+  ],
+  "absent": [
+    "--nope-descendant",
+    "--nope-card",
+    "--nope-root-descendant"
+  ],
+  "warnings_contain": []
+}

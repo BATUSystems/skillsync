@@ -1,0 +1,398 @@
+{
+  "threads": [
+    {
+      "id": "th-a",
+      "number": 1,
+      "screen": "s1",
+      "anchorKind": "element",
+      "protoId": "plan-zaj-2-2",
+      "label": "Fizyka",
+      "by": "henryk.testowy@example.test",
+      "status": "decided",
+      "statusReason": null,
+      "triage": "disputed",
+      "decisions": [
+        "developer:apply"
+      ],
+      "messages": [
+        {
+          "id": "m-a1",
+          "by": "henryk.testowy@example.test",
+          "text": "Fizyka w Lab 2 koliduje z dyżurem; przenieśmy ją.",
+          "edited": true,
+          "retracted": false,
+          "up": [
+            "pawel.kowalski@example.test"
+          ],
+          "down": [
+            "pawel.kos@example.test"
+          ]
+        },
+        {
+          "id": "m-a2",
+          "by": "pawel.kos@example.test",
+          "text": "Proponuję piątek, slot 2.",
+          "edited": false,
+          "retracted": false,
+          "up": [],
+          "down": []
+        },
+        {
+          "id": "m-a3",
+          "by": "marta.zieba@example.test",
+          "text": "Wycofam to.",
+          "edited": false,
+          "retracted": true,
+          "up": [],
+          "down": []
+        }
+      ],
+      "view": "desktop"
+    },
+    {
+      "id": "th-c",
+      "number": 3,
+      "screen": "s1",
+      "anchorKind": "element",
+      "protoId": "plan-data-od",
+      "label": "Data od",
+      "by": "pawel.kos@example.test",
+      "status": "open",
+      "statusReason": null,
+      "triage": null,
+      "decisions": [],
+      "messages": [
+        {
+          "id": "m-c1",
+          "by": "pawel.kos@example.test",
+          "text": "Usuńmy pole daty.",
+          "edited": false,
+          "retracted": true,
+          "up": [],
+          "down": []
+        },
+        {
+          "id": "m-c2",
+          "by": "henryk.testowy@example.test",
+          "text": "Zostawmy je.",
+          "edited": false,
+          "retracted": false,
+          "up": [],
+          "down": []
+        },
+        {
+          "id": "m-c3",
+          "by": "anna.nowak@example.test",
+          "text": "Odpowiedź na zamkniętym.",
+          "edited": false,
+          "retracted": false,
+          "up": [],
+          "down": []
+        }
+      ],
+      "view": "desktop"
+    },
+    {
+      "id": "th-e",
+      "number": 5,
+      "screen": "s2",
+      "anchorKind": "screen",
+      "protoId": null,
+      "label": "Cały ekran",
+      "by": "pawel.kowalski@example.test",
+      "status": "closed",
+      "statusReason": "kept",
+      "triage": "clear",
+      "decisions": [
+        "agent:keep"
+      ],
+      "messages": [
+        {
+          "id": "m-e1",
+          "by": "pawel.kowalski@example.test",
+          "text": "Brakuje informacji, kto zmieniał plan.",
+          "edited": false,
+          "retracted": false,
+          "up": [],
+          "down": []
+        }
+      ],
+      "view": "desktop"
+    },
+    {
+      "id": "th-f",
+      "number": 6,
+      "screen": "s3",
+      "anchorKind": "lost",
+      "protoId": null,
+      "label": "Kolumna Sala",
+      "by": "pawel.baran@example.test",
+      "status": "deferred",
+      "statusReason": null,
+      "triage": null,
+      "decisions": [
+        "agent:defer"
+      ],
+      "messages": [
+        {
+          "id": "m-f1",
+          "by": "pawel.baran@example.test",
+          "text": "Kolumna „Sala” jest zbędna.",
+          "edited": false,
+          "retracted": false,
+          "up": [],
+          "down": []
+        }
+      ],
+      "view": "desktop"
+    },
+    {
+      "id": "th-g",
+      "number": 7,
+      "screen": "s2",
+      "anchorKind": "element",
+      "protoId": "zaj-prowadzacy",
+      "label": "Prowadzący",
+      "by": "marta.zieba@example.test",
+      "status": "closed",
+      "statusReason": "out_of_scope",
+      "triage": null,
+      "decisions": [
+        "agent:variant",
+        "agent:out_of_scope"
+      ],
+      "messages": [
+        {
+          "id": "m-g1",
+          "by": "marta.zieba@example.test",
+          "text": "Lista prowadzących z wyszukiwaniem.",
+          "edited": false,
+          "retracted": false,
+          "up": [],
+          "down": []
+        }
+      ],
+      "view": "desktop"
+    },
+    {
+      "id": "th-h",
+      "number": 8,
+      "screen": "s1",
+      "anchorKind": "element",
+      "protoId": "plan-tytul",
+      "label": "Plan zajęć",
+      "by": "henryk.testowy@example.test",
+      "status": "open",
+      "statusReason": null,
+      "triage": null,
+      "decisions": [],
+      "messages": [
+        {
+          "id": "m-h1",
+          "by": "henryk.testowy@example.test",
+          "text": "Remis i duplikat.",
+          "edited": false,
+          "retracted": false,
+          "up": [],
+          "down": []
+        },
+        {
+          "id": "m-h2",
+          "by": "anna.nowak@example.test",
+          "text": "Pierwszy z remisu (id h02).",
+          "edited": false,
+          "retracted": false,
+          "up": [],
+          "down": []
+        },
+        {
+          "id": "m-h3",
+          "by": "pawel.kos@example.test",
+          "text": "Drugi z remisu (id h03).",
+          "edited": false,
+          "retracted": false,
+          "up": [],
+          "down": []
+        },
+        {
+          "id": "m-hdup",
+          "by": "pawel.baran@example.test",
+          "text": "Duplikat id: pierwszy w tablicy wygrywa.",
+          "edited": false,
+          "retracted": false,
+          "up": [],
+          "down": []
+        }
+      ],
+      "view": "desktop"
+    },
+    {
+      "id": "th-m1",
+      "number": 9,
+      "screen": "s3",
+      "anchorKind": "screen",
+      "protoId": null,
+      "label": "Widok m1",
+      "by": "anna.nowak@example.test",
+      "status": "open",
+      "statusReason": null,
+      "triage": null,
+      "decisions": [],
+      "messages": [
+        {
+          "id": "m-m11",
+          "by": "anna.nowak@example.test",
+          "text": "Widok m1.",
+          "edited": false,
+          "retracted": false,
+          "up": [],
+          "down": []
+        }
+      ],
+      "view": "mobile"
+    },
+    {
+      "id": "th-m2",
+      "number": 10,
+      "screen": "s3",
+      "anchorKind": "screen",
+      "protoId": null,
+      "label": "Widok m2",
+      "by": "anna.nowak@example.test",
+      "status": "open",
+      "statusReason": null,
+      "triage": null,
+      "decisions": [],
+      "messages": [
+        {
+          "id": "m-m21",
+          "by": "anna.nowak@example.test",
+          "text": "Widok m2.",
+          "edited": false,
+          "retracted": false,
+          "up": [],
+          "down": []
+        }
+      ],
+      "view": "desktop"
+    },
+    {
+      "id": "th-m3",
+      "number": 11,
+      "screen": "s3",
+      "anchorKind": "screen",
+      "protoId": null,
+      "label": "Widok m3",
+      "by": "anna.nowak@example.test",
+      "status": "open",
+      "statusReason": null,
+      "triage": null,
+      "decisions": [],
+      "messages": [
+        {
+          "id": "m-m31",
+          "by": "anna.nowak@example.test",
+          "text": "Widok m3.",
+          "edited": false,
+          "retracted": false,
+          "up": [],
+          "down": []
+        }
+      ],
+      "view": "desktop"
+    },
+    {
+      "id": "th-m4",
+      "number": 12,
+      "screen": "s3",
+      "anchorKind": "screen",
+      "protoId": null,
+      "label": "Widok m4",
+      "by": "anna.nowak@example.test",
+      "status": "open",
+      "statusReason": null,
+      "triage": null,
+      "decisions": [],
+      "messages": [
+        {
+          "id": "m-m41",
+          "by": "anna.nowak@example.test",
+          "text": "Widok m4.",
+          "edited": false,
+          "retracted": false,
+          "up": [],
+          "down": []
+        }
+      ],
+      "view": "desktop"
+    },
+    {
+      "id": "th-m5",
+      "number": 13,
+      "screen": "s3",
+      "anchorKind": "screen",
+      "protoId": null,
+      "label": "Widok m5",
+      "by": "anna.nowak@example.test",
+      "status": "open",
+      "statusReason": null,
+      "triage": null,
+      "decisions": [],
+      "messages": [
+        {
+          "id": "m-m51",
+          "by": "anna.nowak@example.test",
+          "text": "Widok m5.",
+          "edited": false,
+          "retracted": false,
+          "up": [],
+          "down": []
+        }
+      ],
+      "view": "desktop"
+    },
+    {
+      "id": "th-m6",
+      "number": 14,
+      "screen": "s3",
+      "anchorKind": "screen",
+      "protoId": null,
+      "label": "Widok m6",
+      "by": "anna.nowak@example.test",
+      "status": "open",
+      "statusReason": null,
+      "triage": null,
+      "decisions": [],
+      "messages": [
+        {
+          "id": "m-m61",
+          "by": "anna.nowak@example.test",
+          "text": "Widok m6.",
+          "edited": false,
+          "retracted": false,
+          "up": [],
+          "down": []
+        }
+      ],
+      "view": "desktop"
+    }
+  ],
+  "removed": {
+    "th-b": "retracted",
+    "th-d": "deleted"
+  },
+  "currentIteration": 4,
+  "openCountByScreen": {
+    "s1": 3,
+    "s3": 6
+  },
+  "people": {
+    "agent": "Agent",
+    "anna.nowak@example.test": "Anna",
+    "henryk.testowy@example.test": "Henryk",
+    "marta.zieba@example.test": "Marta",
+    "pawel.baran@example.test": "Pawel B.",
+    "pawel.kos@example.test": "Pawel Kos",
+    "pawel.kowalski@example.test": "Pawel Kowalski"
+  }
+}

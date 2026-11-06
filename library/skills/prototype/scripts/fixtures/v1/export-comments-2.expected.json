@@ -1,0 +1,63 @@
+{
+  "threads": [
+    {
+      "id": "th-tie",
+      "screen": "s1",
+      "anchor": "div:2>button",
+      "label": "Zapisz",
+      "resolved": false,
+      "messages": [
+        "msg-a0",
+        "msg-zz",
+        "msg-aa",
+        "msg-dup1"
+      ]
+    },
+    {
+      "id": "th-state",
+      "screen": "s2",
+      "anchor": "div:3",
+      "label": "Tabela",
+      "resolved": true,
+      "messages": [
+        "msg-s0"
+      ]
+    },
+    {
+      "id": "th-state2",
+      "screen": "s2",
+      "anchor": "div:4",
+      "label": "Filtr",
+      "resolved": false,
+      "messages": [
+        "msg-t0"
+      ]
+    },
+    {
+      "id": "th-early",
+      "screen": "s1",
+      "anchor": "div:5",
+      "label": "Nagłówek",
+      "resolved": false,
+      "messages": [
+        "msg-e0"
+      ]
+    },
+    {
+      "id": "th-move",
+      "screen": "s2",
+      "anchor": "div:3>button",
+      "label": "Przycisk",
+      "resolved": false,
+      "messages": [
+        "msg-m0",
+        "msg-astral",
+        "msg-bmp"
+      ]
+    }
+  ],
+  "openCountByScreen": {
+    "s1": 2,
+    "s2": 2
+  }
+}

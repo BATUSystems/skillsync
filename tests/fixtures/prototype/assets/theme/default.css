@@ -1,0 +1,11 @@
+/* atrapa motywu do testów Skillsync */
+:root {
+  --bg: #fefefe;
+  --fg: #121212;
+  --accent: #0a58ff;
+}
+:root[data-theme="dark"] {
+  --bg: #0c0c0c;
+  --fg: #f4f4f4;
+  --accent: #6d9cff;
+}

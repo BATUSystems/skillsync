@@ -1,0 +1,36 @@
+{
+  "files": {
+    ".agents/.gitignore": "3074ce5c365e5669d8f542ae91b3b58eec605e8f8dc54e7b2682d1be4fc36bcd",
+    ".claude/.gitignore": "ce98926fa37bb15c51d766331777eb374c78594321ec17fcd299ca32d5b4b6f8",
+    ".claude/hooks/check-closure.py": "f780a81196627946d42c6c9ee43f806226c6cc0357697b2bf1d8d2743a3d5569",
+    ".claude/settings.local.json": "402b5d3d046d5a35f61f12978b27ff41fe0788ca4ba3d01ba5c3a34e12bb2730",
+    ".codex/.gitignore": "115ee8ce81504162a956b9ca31bd1c86554a8812fb948fe6f47e02a2ba96a752",
+    ".codex/agents/implementer.toml": "627352921dd7928dbf414bd722dd635f3d48b0aba8a2ee53195361ab2fc125ef",
+    ".codex/config.toml": "b900f72d9ba3fa001374b4d5aee5dd05f6398f44f7bd8763a1d280143df53f1a",
+    ".codex/skillsync-instructions.md": "2a2b2a5d899d38c9d1b99c06e6ce5240894774d22d37f6e10fd8bed1839fe2f9",
+    ".github/.gitignore": "6bd3031b0a8df6b5d5cb38b80541c365c0f19a633a4b17502a51955d58b5652d",
+    ".github/.skillsync-state.json": "c2d6e096a6f44bf082131998209829c9952cb31b41e85b4399fe66fa5b72ee7d",
+    ".github/.skillsync.yaml": "cb02a467c3286dcc31b6cd1e1cce13fb769c63bd971d0119ad94f419108f8c09",
+    ".github/copilot-instructions.md": "2a2b2a5d899d38c9d1b99c06e6ce5240894774d22d37f6e10fd8bed1839fe2f9",
+    ".gitignore": "6802be9ba633e52920683e6a97147053426191297ccddb32b7db5bc0144d874f",
+    ".mcp.json": "24dab5d1cf7b628b37fa4304a8ac242716a4022e7b5cc32f0d26f2b68aed9733",
+    ".vscode/tasks.json": "cdec44fe4355f3d03e341548a447ee53bf6d0e2f8962de3751e7c018492927a9",
+    "AGENTS.md": "02d066d2ad7e0caf60e7ac7d625a75da249f48d48f2e97f328ac922fe69436cb",
+    "CLAUDE.md": "13226c1009f310fcc983f21123d302deb77e084b9384a780d5b48fa26c368089"
+  },
+  "link_stdout": "Updated: <PROJ>/.claude/settings.local.json\nUpdated: <PROJ>/.mcp.json\n[update] Added folder-open sync: <PROJ>/.vscode/tasks.json\n",
+  "mode": "symlink",
+  "symlinks": {
+    ".agents/skills/bugfix": "skills/bugfix",
+    ".agents/skills/feature": "skills/feature",
+    ".agents/skills/helper": "skills/helper",
+    ".claude/agents/implementer.md": "agents/implementer.md",
+    ".claude/skills/bugfix": "skills/bugfix",
+    ".claude/skills/feature": "skills/feature",
+    ".claude/skills/helper": "skills/helper",
+    ".github/skills/bugfix": "skills/bugfix",
+    ".github/skills/feature": "skills/feature",
+    ".github/skills/helper": "skills/helper"
+  },
+  "variant": "legacy"
+}

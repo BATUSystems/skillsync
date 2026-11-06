@@ -1,0 +1,178 @@
+version: 1
+lessons:
+  - path: regula-stanu-przejdz-konsumentow-i-stany.md
+    title: "Nowa reguła stanu w instrukcjach: przejdź wszystkich konsumentów i stany, których reguła nie przewiduje"
+    tags: [workflow, instrukcje, plan, review]
+    paths: ['docs/plans/*', 'library/skills/feature/*', 'library/skills/pr-run/*']
+  - path: hook-stop-sprawdzaj-na-zywo.md
+    title: "Stop hook sprawdzaj w prawdziwym Claude Code: testy i przeglądy nie widzą jego środowiska"
+    tags: [workflow, hook, claude-code, testy]
+    paths: ['hooks/*', 'skillsync', 'tests/test_skillsync_closure.py']
+  - path: instrukcje-procesu-sprawdzaj-historia-pr.md
+    title: "Instrukcja procesu zestarzała się bez sygnału: przed oparciem na niej automatu sprawdź historię PR-ów"
+    tags: [workflow, proces, pr, azure, agent-flow]
+    paths: ['library/skills/feature/references/pr-after-approval.md']
+  - path: checkpoint-w-worktree-wymaga-manifestu.md
+    title: "Checkpoint nie działa w worktree bez manifestu, a sam przebieg znika razem z worktree"
+    tags: [skillsync, checkpoint, worktree, dispatch, manifest]
+    paths: ['skillsync_workflow/runs.py', 'skillsync_workflow/common.py', 'tests/test_skillsync_retro.py']
+  - path: testy-node-i-mutacje-podumyslow-w-tmp.md
+    title: "Wspólny /tmp psuje cudze biegi testów (prywatny TMPDIR dla każdego biegu), a test zależny od node po cichu się pomija"
+    tags: [skillsync, tests, testing, agents, tmp, tmpdir, concurrency, flaky, mutation, node, nvm, prototype]
+    paths: ['tests/test_skillsync_knowledge_init.py', 'tests/test_skillsync_prototype_engine.py', 'tests/test_skillsync_prototype_server.py', 'tests/test_skillsync_prototype_accept.py', 'tests/test_skillsync_prototype_restore.py', 'tests/fixtures/prototype/engine-v2/SOURCE.md']
+  - path: manifest-w-worktree-uruchamia-watch.md
+    title: "Kopia manifestu w worktree sprawia, że usługa watch linkuje worktree"
+    tags: [skillsync, worktree, watch, manifest, doctor, dispatch]
+    paths: ['skillsync', 'skillsync-ctl', 'skillsync_workflow/quality.py']
+  - path: checkpointy-obowiazkowe-i-domkniecie-kroku.md
+    title: "Bez obowiązkowych checkpointów pętla samodoskonalenia jest ślepa, a błędny zapis rekordu psuje klasę przebiegu"
+    tags: [skillsync, checkpoint, retro, workflow, evidence, dispatch]
+    paths: ['skillsync_workflow/retro.py', 'skillsync_workflow/runs.py']
+  - path: kontrakt-odczytu-stanu-szkielety-i-sentinele.md
+    title: "Kontrakt odczytu stanu z ręcznie pisanych plików: fixtury ze szkieletów i sentinel w każdym polu"
+    tags: [skillsync, dispatch, ide-contract, redaction, tests, fixtures]
+    paths: ['skillsync_workflow/dispatch_state.py', 'tests/test_skillsync_dispatch_state.py']
+  - path: tempfile-tworzy-0600-prototyp-nieczytelny-dla-grupy.md
+    title: "tempfile.mkstemp i mkdtemp tworzą 0600/0700: generowane pliki repo są nieczytelne dla grupy"
+    tags: [skillsync, python, tempfile, permissions, prototype, atomic-write]
+    paths: ['skillsync_workflow/prototype.py', 'tests/test_skillsync_prototype.py']
+  - path: read-text-tlumaczy-crlf-kopia-bajtowa.md
+    title: "Path.read_text tłumaczy CRLF na LF: kopia „bez zmian” musi czytać bajty"
+    tags: [skillsync, python, encoding, crlf, prototype]
+    paths: ['skillsync_workflow/prototype.py', 'tests/test_skillsync_prototype.py']
+  - path: samotne-surogaty-w-argv-i-manifescie-wywracaja-print.md
+    title: "Samotne surogaty z argv, nazw plików i manifestu dają UnicodeEncodeError przy print poza try"
+    tags: [skillsync, python, unicode, surrogates, cli, json]
+    paths: ['skillsync_workflow/prototype.py', 'skillsync_workflow/common.py', 'tests/test_skillsync_prototype.py']
+  - path: html-parser-python-311-textarea-nie-jest-rcdata.md
+    title: "html.parser w Pythonie 3.11 nie traktuje textarea jako RCDATA: liczenie elementów zlicza je w środku"
+    tags: [skillsync, python, html-parser, prototype, tests]
+    paths: ['skillsync_workflow/prototype.py', 'tests/test_skillsync_prototype.py']
+  - path: html-parser-offset-przesloniety-przez-atrybut.md
+    title: "HTMLParser.reset() ustawia atrybuty lineno i offset: metoda podklasy o tej nazwie jest przesłonięta"
+    tags: [skillsync, python, html-parser, prototype]
+    paths: ['skillsync_workflow/prototype_server.py']
+  - path: socketserver-request-queue-size-gubi-polaczenia.md
+    title: "socketserver.TCPServer.request_queue_size = 5: równoległe połączenia dostają ConnectionResetError"
+    tags: [skillsync, python, http-server, socketserver, concurrency, prototype, tests]
+    paths: ['skillsync_workflow/prototype_server.py', 'tests/test_skillsync_prototype_server.py']
+  - path: json-dumps-nie-jest-json-stringify.md
+    title: "json.dumps nie odtwarza JSON.stringify: liczby, samotne surogaty i kolejność kluczy-indeksów"
+    tags: [skillsync, python, javascript, json, serialization, prototype, tests]
+    paths: ['skillsync_workflow/prototype_server.py', 'tests/test_skillsync_prototype_engine.py', 'tests/fixtures/prototype/engine-v2/**']
+  - path: pyenv-bez-hashlib-scrypt-i-ssl.md
+    title: "Python z pyenv bez _hashlib i _ssl: brak hashlib.scrypt, PBKDF2 w czystym Pythonie z DeprecationWarning"
+    tags: [skillsync, python, pyenv, hashlib, openssl, passwords, prototype]
+    paths: ['skillsync_workflow/prototype_server.py', 'tests/test_skillsync_prototype_server.py']
+  - path: blad-yaml-cytuje-linie-pliku-wyciek-sekretu.md
+    title: "Błąd PyYAML cytuje linię pliku: syntax error w configu z hasłem ujawnia sekret, a redact w emit tego nie łapie"
+    tags: [skillsync, python, yaml, secrets, redaction, config, prototype]
+    paths: ['skillsync_workflow/prototype.py', 'skillsync_workflow/common.py', 'tests/test_skillsync_prototype_cli.py']
+  - path: umask-zero-w-serwerze-wielowatkowym.md
+    title: "os.umask(0) i przywrócenie w serwerze wielowątkowym to wyścig: inny wątek tworzy plik z umask 0"
+    tags: [skillsync, python, umask, threading, permissions, prototype]
+    paths: ['skillsync_workflow/prototype_server.py', 'skillsync_workflow/prototype.py']
+  - path: watch-runs-stale-code.md
+    title: Usługa watch uruchamia kod z chwili startu
+    tags: [skillsync, watch, service, library]
+    paths: ['skillsync', 'skillsync-ctl']
+  - path: duplicated-skill-expansion.md
+    title: Rozwijanie skilli ma dwie implementacje
+    tags: [skillsync, skills, expansion, tests]
+    paths: ['skillsync_workflow/cli.py', 'skillsync_workflow/common.py', 'tests/test_skillsync_dispatch.py']
+  - path: folder-open-task-absolute-path.md
+    title: Task folder-open miał twardą rozwiązaną ścieżkę skryptu i nie był odświeżany
+    tags: [skillsync, vscode, tasks, relocation]
+    paths: ['skillsync_workflow/cli.py', 'skillsync_workflow/selfcmd.py', 'tests/test_skillsync_folder_open.py']
+  - path: repo-move-stale-references.md
+    title: Po przeniesieniu generatora zostają stare ścieżki
+    tags: [skillsync, documentation, relocation]
+    paths: ['skillsync-windows.ps1', 'tests/windows/**', 'docs/**']
+  - path: unquoted-colon-in-frontmatter.md
+    title: Niecytowany title z dwukropkiem łamie YAML rekordu
+    tags: [skillsync, yaml, frontmatter, doctor]
+    paths: ['docs/lessons/**', 'docs/domain/**']
+  - path: przyklejony-pasek-a-komponenty-ramki-z-index.md
+    title: "Przyklejony pasek a komponenty ramki: z-index bez kontekstu nakładania wycieka"
+    tags: [prototype, css, z-index, sticky, stacking-context, comments, layout-probe]
+    paths: ['tests/fixtures/prototype/engine/**', 'tests/test_skillsync_prototype_engine.py']
+  - path: pasek-nawigacji-rosnie-z-liczba-ekranow.md
+    title: "Pasek nawigacji rośnie z liczbą ekranów; stały scroll-margin chowa tytuł"
+    tags: [prototype, css, layout, navigation, scroll-margin, responsive, layout-probe]
+    paths: ['tests/fixtures/prototype/engine/**', 'tests/test_skillsync_prototype_engine.py']
+  - path: dark-reader-zostawia-fallback-mimo-lock.md
+    title: "Dark Reader 4.9.125 zostawia style.darkreader--fallback mimo darkreader-lock: meta w HTML i zdjęcie fallbacku w silniku"
+    tags: [prototype, darkreader, theme, css, browser, engine]
+    paths: ['skillsync_workflow/prototype.py', 'tests/test_skillsync_prototype.py', 'tests/test_skillsync_prototype_engine.py', 'tests/fixtures/prototype/engine-v2/**']
+  - path: testy-k40-git-i-blokada-comments-json-lock.md
+    title: "Commit przed iteracją (K40) i testy git: add z :(exclude) na ignorowanym pliku daje błąd, a pusty comments.json.lock łamie asercje „nic nie zapisano”"
+    tags: [skillsync, git, prototype, testing, commit, lock, tests]
+    paths: ['skillsync_workflow/prototype.py', 'tests/test_skillsync_prototype_restore.py', 'tests/test_skillsync_prototype_server.py', 'tests/test_skillsync_prototype.py']
+  - path: getpass-czyta-dev-tty-mimo-stdin.md
+    title: "getpass czyta /dev/tty także przy stdin z rury: wymóg hasła z terminala trzeba sprawdzić przez stdin.isatty()"
+    tags: [skillsync, python, getpass, tty, security, prototype, cli]
+    paths: ['skillsync_workflow/prototype.py', 'skillsync_workflow/prototype_server.py', 'tests/test_skillsync_prototype_accept.py']
+  - path: btn-inline-flex-przeslania-hidden.md
+    title: "Klasa .btn z display:inline-flex przesłania atrybut hidden: ukryty przycisk zostaje widoczny"
+    tags: [prototype, css, browser, hidden, engine, buttons]
+    paths: ['tests/fixtures/prototype/engine-v2/**', 'tests/test_skillsync_prototype_engine.py', 'skillsync_workflow/prototype.py']
+  - path: e2e-z-logowaniem-sekrety-srodowiska-testowego.md
+    title: "E2E z logowaniem: podumysł czytający w całości config.yaml lub secrets.json środowiska testowego wypisuje hasła do transkryptu"
+    tags: [testing, e2e, secrets, agents, security, prototype]
+    paths: ['.skillsync/runs/**/tools/e2e-*.mjs', 'skillsync_workflow/prototype_server.py', 'skillsync_workflow/prototype.py']
+  - path: natywne-okno-modalne-nie-zawija-tab.md
+    title: "Natywne dialog.showModal() w Chrome nie zawija Tab: okno silnika potrzebuje własnej pułapki fokusu i blokady Esc w keydown"
+    tags: [prototype, dialog, focus, keyboard, accessibility, e2e, engine]
+    paths: ['library/skills/prototype/assets/repo/prototype.js', 'tests/test_skillsync_prototype_engine.py', 'tests/fixtures/prototype/engine-v2/**', '.skillsync/runs/**/tools/e2e-*.mjs']
+  - path: stan-przycisku-okna-liczony-tylko-w-update.md
+    title: "Stan przycisku okna liczy się tylko w update(): każde otwarcie okna musi przeliczyć go jawnie, bo skutek uboczny cudzego wywołania maskuje brak"
+    tags: [prototype, dialog, accept, state, aria, e2e]
+    paths: ['library/skills/prototype/assets/repo/prototype.js', 'tests/test_skillsync_prototype_engine.py', '.skillsync/runs/**/tools/e2e-*.mjs']
+  - path: sterownik-cdp-pulapki-e2e-prototypu.md
+    title: "Sterownik CDP w E2E prototypu: Page.navigate z samym hashem wiesza go, clickEl przewija stronę, a cel okna trzeba sprawdzać po treści"
+    tags: [testing, e2e, cdp, chrome, prototype, driver]
+    paths: ['.skillsync/runs/**/tools/e2e-*.mjs', 'library/skills/prototype/assets/repo/prototype.js']
+  - path: slepa-proba-instrukcji-izolacja-wykonawcy.md
+    title: "Ślepa próba instrukcji: wykonawca widzi więcej niż w produkcji, a wyrocznia dopasowuje się do wyniku"
+    tags: [workflow, testy, slepa-proba, instrukcje, podagenci, wyrocznia]
+    paths: ['library/skills/feature/references/retro-quality.md', 'library/skills/feature/references/*.md', 'docs/plans/*']
+  - path: zmiana-head-w-trakcie-biegu-uniewaznia-bieg.md
+    title: "Zmiana HEAD lub plików testowanych w trakcie biegu unieważnia wynik: PASS z mieszanym stanem nie dowodzi żadnego commita"
+    tags: [testing, unittest, e2e, git, evidence, runs]
+    paths: ['tests/**', 'tests/e2e/prototype/**', 'tests/fixtures/**']
+  - path: e2e-asercje-na-ukladzie-starego-silnika.md
+    title: "Asercje E2E na układzie CSS i strukturze DOM starego silnika dają FAIL dla poprawnej implementacji: asercje tylko na słowniku kontraktu"
+    tags: [testing, e2e, prototype, css, dom, oracle, rewrite]
+    paths: ['tests/e2e/prototype/**', 'tests/test_skillsync_prototype_e2e.py']
+  - path: limity-pamieci-w-skryptach-mutacji.md
+    title: "Skrypt mutacji bez limitu pamięci zjada sesję, a bieg zabity limitem wygląda jak mutant „przeżył”"
+    tags: [skillsync, tests, mutation, memory, systemd, evidence, agents]
+    paths: ['.skillsync/runs/**/mutate.py', '.skillsync/runs/**/mut/**', 'tests/test_skillsync*.py']
+  - path: grep-usunietej-flagi-musi-objac-tests-e2e.md
+    title: "Grep po usuniętej fladze musi objąć tests/e2e: kontrola ograniczona do tests/test_*.py przepuszcza stare wywołania"
+    tags: [skillsync, tests, e2e, cli, grep, regression, breaking-change, prototype]
+    paths: ['tests/e2e/**', 'tests/test_skillsync*.py', 'skillsync_workflow/prototype.py', 'skillsync_workflow/prototype_server.py']
+  - path: kontrola-zgodnosci-blokow-tokenow-porownuje-wartosci.md
+    title: "Kontrola zgodności dwóch bloków tokenów musi porównywać wartości, nie tylko zbiór nazw"
+    tags: [prototype, theme, tokens, dark-mode, check-tokens, e2e, no-js]
+    paths: ['tests/test_skillsync_prototype_library.py', 'tests/test_skillsync_prototype_e2e.py', 'tests/e2e/prototype/**', 'tests/fixtures/prototype/check-tokens/**']
+  - path: datetime-astimezone-przepelnienie-obce-dane.md
+    title: "datetime.astimezone rzuca OverflowError na krańcach zakresu: parser obcych danych mapuje go na ValueError"
+    tags: [skillsync, python, datetime, retro, parsing, tests]
+    paths: ['skillsync_workflow/retro_scan.py', 'skillsync_workflow/runs.py', 'skillsync_workflow/retro.py', 'tests/test_skillsync_retro_scan.py']
+  - path: przenosny-odczyt-obcych-drzew.md
+    title: "Odczyt obcych drzew: O_NOFOLLOW, realpath i samestat na deskryptorze, a git w obcym drzewie z oczyszczonym GIT_*"
+    tags: [skillsync, security, filesystem, git, worktree, retro, portability]
+    paths: ['skillsync_workflow/retro.py', 'skillsync_workflow/retro_scan.py', 'tests/test_skillsync_retro_scan.py', 'tests/test_skillsync_retro.py']
+  - path: test-prywatnosci-literal-wycieka.md
+    title: "Test prywatności z literałem imienia w rdzeniu sam staje się wyciekiem: składaj literał albo czytaj go z pliku tożsamości"
+    tags: [skillsync, privacy, leakguard, tests, identity]
+    paths: ['tests/test_skillsync_retro.py', 'tests/test_skillsync_retro_scan.py', 'skillsync_workflow/leakguard.py']
+  - path: except-exception-na-granicy-obcego-zrodla.md
+    title: "except Exception na granicy obcego źródła wymaga testu z wyjątkiem spoza (OSError, ValueError)"
+    tags: [skillsync, python, exceptions, retro, tests]
+    paths: ['skillsync_workflow/retro_scan.py', 'skillsync_workflow/retro.py', 'tests/test_skillsync_retro_scan.py', 'tests/test_skillsync_retro.py']
+  - path: reason-bez-sciezek-i-tresci.md
+    title: "reason w BLOCKED nie zawiera ścieżek ani treści plików: stałe komunikaty także dla OSError i błędów configu"
+    tags: [skillsync, retro, redaction, privacy, blocked, errors]
+    paths: ['skillsync_workflow/retro.py', 'skillsync_workflow/retro_scan.py', 'tests/test_skillsync_retro.py']

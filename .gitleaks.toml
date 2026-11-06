@@ -1,0 +1,16 @@
+# Konfiguracja gitleaks rdzenia: reguły domyślne + wyjątek dla atrap w testach (D255).
+# Odcisk (fingerprint) zawiera sha commitu, a drzewo rdzenia zmienia się z każdym commitem, więc wyjątek jest po ścieżce i regule.
+title = "skillsync"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Atrapy haseł i tokenów w testach maskowania (wartości sztuczne, składane w testach)"
+targetRules = ["generic-api-key"]
+paths = [
+  '''tests/test_skillsync_prototype_accept\.py''',
+  '''tests/test_skillsync_prototype_cli\.py''',
+  '''tests/test_skillsync_prototype_server\.py''',
+  '''tests/test_skillsync_retro\.py''',
+]

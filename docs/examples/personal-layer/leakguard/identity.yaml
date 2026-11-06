@@ -1,0 +1,10 @@
+# Ślady właściciela tej warstwy. Strażnik (`leakcheck`) nie wpuszcza ich do repo innych celów.
+# Ścieżki domowe i adresy e-mail łapią wzorce wbudowane, więc nie trzeba ich tu wpisywać.
+# Nazwy organizacji i klientów tu nie wpisujemy: należą do warstw organizacji.
+schema: 1
+layer: moja
+terms:
+  - {term: alex-dev, kind: owner-nick}
+  - {term: Alex Example, kind: owner-name}
+  - {term: alex-laptop, kind: machine, match: whole}
+  - {term: Asystent, kind: persona, case: sensitive, match: whole}

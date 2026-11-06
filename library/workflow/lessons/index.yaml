@@ -1,0 +1,69 @@
+version: 1
+lessons:
+- path: testing-scoped-runs.md
+  title: Testy zawężone, preflight środowiska i filtry w solution
+  tags:
+  - testing
+  - test-selection
+  - dotnet
+  paths:
+  - '**/tests/**'
+  - '**/*.csproj'
+- path: testing-playwright-testserver.md
+  title: Playwright E2E i TestServer w testach backendu (okna dialogowe, proxy, WebSocket, EF)
+  tags:
+  - testing
+  - e2e
+  - playwright
+  - dotnet
+  paths:
+  - '**/e2e/**'
+  - '**/tests/**'
+- path: angular-frontend-testing.md
+  title: Angular w testach frontendu (Vitest i Karma)
+  tags:
+  - angular
+  - vitest
+  - karma
+  - frontend
+  paths:
+  - '**/*.spec.ts'
+  - '**/karma.conf.js'
+- path: api-signature-contract.md
+  title: Kontrakty testów API (podpisy, nagłówki, filtry, kodowanie, redakcja)
+  tags:
+  - testing
+  - contracts
+  - api
+  - security
+  paths:
+  - '**/tests/**'
+  - '**/*Tests.cs'
+- path: test-cleanup-and-coverage-scope.md
+  title: Sprzątanie artefaktów testów i pomiar coverage wycinka
+  tags:
+  - testing
+  - coverage
+  - cleanup
+  paths:
+  - '**/*.runsettings'
+  - '**/tests/**'
+- path: django-tenant-test-setup.md
+  title: django-tenants TenantTestCase.setUpClass nie woła super() - klasowe override_settings, setUpTestData i transakcja klasowa są martwe
+  tags:
+  - testing
+  - django
+  - django-tenants
+  - pytest
+  - performance
+  paths:
+  - '**/conftest.py'
+  - '**/tests/**'
+- path: test-resource-isolation.md
+  title: Izolacja zasobów testowych
+  tags:
+  - testing
+  - concurrency
+  paths:
+  - '**/conftest.py'
+  - '**/migrations/**'

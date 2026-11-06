@@ -1,0 +1,108 @@
+<title>Makieta przepływu: rejestracja w serwisie</title>
+<style>
+  /* Tokeny jasne. Dopasowanie do projektu = nadpisanie wartości, bez przepisywania reguł niżej. */
+  :root {
+    color-scheme: light dark;
+    --bg: #f7f7f5;
+    --fg: #1d2125;
+    --muted: #5f6872;
+    --card: #ffffff;
+    --line: #d9dce0;
+    --accent: #1f6feb;
+    --accent-fg: #ffffff;
+    --ok: #1a7f37;
+    --warn: #9a6700;
+    --err: #cf222e;
+    --radius: 10px;
+    --font-ui: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  /* Ciemny wg ustawienia systemu, o ile strona nie wymusiła jasnego... */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #14171a; --fg: #e8eaed; --muted: #9aa3ad; --card: #1d2227; --line: #343b43;
+      --accent: #58a6ff; --accent-fg: #0b1220; --ok: #3fb950; --warn: #d29922; --err: #f85149;
+    }
+  }
+  /* ...albo wymuszony atrybutem data-theme="dark". */
+  :root[data-theme="dark"] {
+    --bg: #14171a; --fg: #e8eaed; --muted: #9aa3ad; --card: #1d2227; --line: #343b43;
+    --accent: #58a6ff; --accent-fg: #0b1220; --ok: #3fb950; --warn: #d29922; --err: #f85149;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.5 var(--font-ui); }
+  .doc { max-width: 960px; margin: 0 auto; padding: 24px 16px 64px; }
+  .doc-head h1 { margin: 0 0 4px; font-size: 26px; }
+  .doc-head p, .screen-meta p { margin: 0; color: var(--muted); }
+  .screen-nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 28px; }
+  .screen-nav a { padding: 4px 12px; border: 1px solid var(--line); border-radius: 999px; color: var(--fg); text-decoration: none; }
+  .screen-nav a:hover { border-color: var(--accent); }
+
+  .screen { margin-bottom: 40px; scroll-margin-top: 16px; }
+  .screen-meta h2 { margin: 0 0 4px; font-size: 19px; }
+  .screen-refs { display: flex; gap: 6px; margin: 8px 0 12px; padding: 0; list-style: none; }
+  .ref { padding: 0 8px; border: 1px solid var(--line); border-radius: 6px; color: var(--muted); font-size: 12px; }
+
+  .frame { padding: 20px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); }
+  .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+  .field-error { margin: 0; color: var(--err); font-size: 13px; }
+  .input { padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: inherit; font: inherit; }
+  .input-invalid { border-color: var(--err); }
+  .btn { padding: 8px 14px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+  .btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+  .alert-success { padding: 10px 12px; border: 1px solid var(--ok); border-radius: 6px; color: var(--ok); }
+  [data-goto] { cursor: pointer; }
+
+  .notes { margin: 12px 0 0; padding: 8px 12px 8px 28px; border-left: 3px solid var(--warn); color: var(--muted); font-size: 14px; }
+</style>
+
+<main class="doc">
+  <header class="doc-head">
+    <h1>Makieta przepływu: rejestracja w serwisie</h1>
+    <p>Dwa ekrany pokazujące błąd w formularzu i potwierdzenie. Podmień treść, zachowaj budowę sekcji.</p>
+  </header>
+
+  <!-- Spis ekranów: jeden link na ekran, w kolejności ekranów. -->
+  <nav class="screen-nav" aria-label="Ekrany">
+    <a href="#s1">1. Formularz</a>
+    <a href="#s2">2. Potwierdzenie</a>
+  </nav>
+
+  <section class="screen" id="s1" aria-labelledby="s1-h">
+    <header class="screen-meta">
+      <h2 id="s1-h">1. Formularz</h2>
+      <p>Nowa osoba zakłada konto i dostaje czytelną informację, gdy adres e-mail jest już zajęty.</p>
+      <ul class="screen-refs"><li class="ref">US-1</li><li class="ref">§2</li></ul>
+    </header>
+    <div class="frame">
+      <div class="field">
+        <label for="s1-imie">Imię</label>
+        <input class="input" id="s1-imie" value="Marta">
+      </div>
+      <div class="field">
+        <label for="s1-mail">Adres e-mail</label>
+        <input class="input input-invalid" id="s1-mail" value="marta@example.com" aria-describedby="s1-mail-err">
+        <p class="field-error" id="s1-mail-err" role="alert">Na ten adres istnieje już konto.</p>
+      </div>
+      <button class="btn btn-primary" type="button" data-goto="s2">Załóż konto</button>
+    </div>
+    <ul class="notes">
+      <li>Błąd pojawia się po wysłaniu formularza; pole z błędem dostaje fokus.</li>
+    </ul>
+  </section>
+
+  <section class="screen" id="s2" aria-labelledby="s2-h">
+    <header class="screen-meta">
+      <h2 id="s2-h">2. Potwierdzenie</h2>
+      <p>Po udanej rejestracji widać komunikat i drogę do pierwszego kroku.</p>
+      <ul class="screen-refs"><li class="ref">US-1</li></ul>
+    </header>
+    <div class="frame">
+      <p class="alert-success" role="status">Konto zostało utworzone. Wysłaliśmy wiadomość z linkiem aktywacyjnym.</p>
+      <p><button class="btn" type="button" data-goto="s1">Wróć do formularza</button></p>
+    </div>
+    <ul class="notes">
+      <li>Link aktywacyjny działa 24 godziny; po tym czasie formularz prosi o ponowne wysłanie.</li>
+    </ul>
+  </section>
+</main>

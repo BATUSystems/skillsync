@@ -1,0 +1,158 @@
+{
+ "schema_version": 1,
+ "description": "Allowed skipped tests per runner and link mode (K13). Key = \"<system>/<mode>\". A list = enforced by scripts/check_skips.py (skip outside it = FAIL); null = not measured yet (warning only).",
+ "categories": {
+  "needs-symlinks": [
+   "symlinks unavailable (Windows without Developer Mode)",
+   "brak dowiązań symbolicznych"
+  ],
+  "no-os-symlinks": [
+   "OS cannot create symlinks",
+   "cannot create symlinks",
+   "symlinks are not available",
+   "symlink creation needs POSIX"
+  ],
+  "windows-only": [
+   "tylko na Windows"
+  ],
+  "e2e-chrome": [
+   "SKILLSYNC_E2E_CHROME"
+  ],
+  "needs-library": [
+   "SKILLSYNC_TEST_LIBRARY",
+   "machine library"
+  ],
+  "needs-node": [
+   "SKILLSYNC_TEST_NODE",
+   "node >="
+  ],
+  "no-mode-enforcement": [
+   "chmod",
+   "uprawnienia nie są egzekwowane",
+   "file modes",
+   "directory modes",
+   "privileges that ignore"
+  ],
+  "posix-only": [
+   "POSIX",
+   "fcntl",
+   "mkfifo",
+   "FIFO",
+   "`sh`"
+  ],
+  "filesystem": [
+   "non-UTF-8",
+   "spoza UTF-8",
+   "letter case",
+   "hard links"
+  ]
+ },
+ "notes": {
+  "linux/symlink": "Measured locally (full run 2.4 + step 3.1t): Node 22, SKILLSYNC_TEST_LIBRARY and SKILLSYNC_PROTOTYPE_ENGINE_V2_SOURCE set, no Chrome.",
+  "linux/copy": "As linux/symlink with SKILLSYNC_NO_SYMLINK=1. Since step 5.1 the prototype tests that plant hostile links use the OS-level guard (`needs_os_symlinks`), so they run in copy mode and no longer appear here.",
+  "ubuntu-latest/*": "null until the first CI run: tool differences (Node, Chrome, library not present on the runner).",
+  "windows-latest/*": "null until the first CI run (K13 residual risk).",
+  "macos-latest/*": "null until the first CI run.",
+  "e2e-chrome": "The 10 Chrome scenarios are allowed: CI runs no Chrome; the prototype E2E runs separately with Chrome and leased ports."
+ },
+ "baselines": {
+  "linux/symlink": [
+   {
+    "id": "test_skillsync_layers_merge.TrustModelTest.test_a_real_junction_is_skipped_and_reported",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_d23",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_dr",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_f1",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_f2",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_f3",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_final",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_layout_probe",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_n",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_nr",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_ryzyka",
+    "category": "e2e-chrome"
+   }
+  ],
+  "linux/copy": [
+   {
+    "id": "test_skillsync_layers_merge.TrustModelTest.test_a_real_junction_is_skipped_and_reported",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_d23",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_dr",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_f1",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_f2",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_f3",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_final",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_layout_probe",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_n",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_nr",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_ryzyka",
+    "category": "e2e-chrome"
+   }
+  ],
+  "ubuntu-latest/symlink": null,
+  "ubuntu-latest/copy": null,
+  "windows-latest/symlink": null,
+  "windows-latest/copy": null,
+  "macos-latest/symlink": null,
+  "macos-latest/copy": null
+ }
+}

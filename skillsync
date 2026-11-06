@@ -1,0 +1,15 @@
+#!/usr/bin/env python3
+"""Development wrapper: `skillsync` from a checkout (installed copies use the `skillsync` console script)."""
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+try:
+    from skillsync_workflow.cli import run
+except ModuleNotFoundError as exc:
+    if exc.name != "yaml":
+        raise
+    sys.exit("skillsync: PyYAML is required (pip install pyyaml, or install the package with uv)")
+
+if __name__ == "__main__":
+    run()

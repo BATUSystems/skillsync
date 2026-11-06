@@ -1,0 +1,11 @@
+.dark { --a: 1; }
+[data-theme=dark] { --b: 2; }
+[data-theme="dark"] { --c: 3; }
+[data-theme='dark'] { --d: 4; }
+:root[data-theme="dark"] { --e: 5; }
+.dark, .other { --h: 8; }
+body, :root { --g: 7; }
+.dark .card { --nope-descendant: 1; }
+.card { --nope-card: 1; }
+:root [data-theme=dark] { --nope-root-descendant: 1; }
+:root { --light: 0; }

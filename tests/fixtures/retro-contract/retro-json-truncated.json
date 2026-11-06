@@ -1,0 +1,337 @@
+{
+  "schema": 1,
+  "status": "PASS",
+  "runs": [
+    {
+      "id": "2026-11-02-zepsuty",
+      "class": "no_data",
+      "steps": 0,
+      "repeated_steps": 0,
+      "failed_records": 0,
+      "not_run_records": 0,
+      "final_status": null,
+      "rubric": {
+        "evidence": {
+          "status": "unavailable",
+          "reason": "Brak rekordów"
+        },
+        "repeats": {
+          "status": "unavailable",
+          "reason": "Brak rekordów"
+        },
+        "denied": {
+          "status": "unavailable",
+          "reason": "Brak rekordów"
+        },
+        "inherited": {
+          "status": "unavailable",
+          "reason": "Brak rekordów"
+        },
+        "plan_coverage": {
+          "status": "unavailable",
+          "reason": "Kroki checkpointu nie są powiązane z planem"
+        }
+      }
+    },
+    {
+      "id": "2026-11-03-alfa",
+      "class": "no_data",
+      "steps": 0,
+      "repeated_steps": 0,
+      "failed_records": 0,
+      "not_run_records": 0,
+      "final_status": null,
+      "rubric": {
+        "evidence": {
+          "status": "unavailable",
+          "reason": "Brak rekordów"
+        },
+        "repeats": {
+          "status": "unavailable",
+          "reason": "Brak rekordów"
+        },
+        "denied": {
+          "status": "unavailable",
+          "reason": "Brak rekordów"
+        },
+        "inherited": {
+          "status": "unavailable",
+          "reason": "Brak rekordów"
+        },
+        "plan_coverage": {
+          "status": "unavailable",
+          "reason": "Kroki checkpointu nie są powiązane z planem"
+        }
+      }
+    },
+    {
+      "id": "2026-11-04-beta",
+      "class": "no_data",
+      "steps": 0,
+      "repeated_steps": 0,
+      "failed_records": 0,
+      "not_run_records": 0,
+      "final_status": null,
+      "rubric": {
+        "evidence": {
+          "status": "unavailable",
+          "reason": "Brak rekordów"
+        },
+        "repeats": {
+          "status": "unavailable",
+          "reason": "Brak rekordów"
+        },
+        "denied": {
+          "status": "unavailable",
+          "reason": "Brak rekordów"
+        },
+        "inherited": {
+          "status": "unavailable",
+          "reason": "Brak rekordów"
+        },
+        "plan_coverage": {
+          "status": "unavailable",
+          "reason": "Kroki checkpointu nie są powiązane z planem"
+        }
+      }
+    },
+    {
+      "id": "2026-11-05-gamma",
+      "class": "no_data",
+      "steps": 0,
+      "repeated_steps": 0,
+      "failed_records": 0,
+      "not_run_records": 0,
+      "final_status": null,
+      "rubric": {
+        "evidence": {
+          "status": "unavailable",
+          "reason": "Brak rekordów"
+        },
+        "repeats": {
+          "status": "unavailable",
+          "reason": "Brak rekordów"
+        },
+        "denied": {
+          "status": "unavailable",
+          "reason": "Brak rekordów"
+        },
+        "inherited": {
+          "status": "unavailable",
+          "reason": "Brak rekordów"
+        },
+        "plan_coverage": {
+          "status": "unavailable",
+          "reason": "Kroki checkpointu nie są powiązane z planem"
+        }
+      }
+    },
+    {
+      "id": "2026-11-05-przyklad",
+      "class": "clean",
+      "steps": 2,
+      "repeated_steps": 0,
+      "failed_records": 0,
+      "not_run_records": 0,
+      "final_status": "PASS",
+      "rubric": {
+        "evidence": {
+          "status": "available",
+          "source": "checkpoints+sha256",
+          "pass_records": 2,
+          "evidence_files": 2,
+          "verified": 2,
+          "changed": 0,
+          "missing": 0,
+          "refused": 0,
+          "unreadable": 0,
+          "reused_from_problem": 0
+        },
+        "repeats": {
+          "status": "available",
+          "source": "checkpoints",
+          "repeated_steps": 0,
+          "attempts_over_1": 0
+        },
+        "denied": {
+          "status": "unavailable",
+          "reason": "Brak pola w rekordach"
+        },
+        "inherited": {
+          "status": "unavailable",
+          "reason": "Brak pola w rekordach"
+        },
+        "plan_coverage": {
+          "status": "unavailable",
+          "reason": "Kroki checkpointu nie są powiązane z planem"
+        }
+      }
+    }
+  ],
+  "report_dirs": [
+    {
+      "id": "2026-11-02-zepsuty",
+      "has_records": false,
+      "provenance": "report-heuristic",
+      "files": {
+        "md": 0,
+        "log": 0,
+        "diff": 0,
+        "other": 2
+      },
+      "status_signals": {
+        "PASS": 0,
+        "FAIL": 0,
+        "BLOCKED": 0,
+        "NOT_RUN": 0,
+        "CHANGES_REQUIRED": 0,
+        "DONE": 0,
+        "unrecognized": 0
+      },
+      "unrecorded_signals": 0,
+      "truncated": false,
+      "unreadable_files": 0
+    },
+    {
+      "id": "2026-11-03-alfa",
+      "has_records": false,
+      "provenance": "report-heuristic",
+      "files": {
+        "md": 0,
+        "log": 0,
+        "diff": 2,
+        "other": 2
+      },
+      "status_signals": {
+        "PASS": 0,
+        "FAIL": 0,
+        "BLOCKED": 0,
+        "NOT_RUN": 0,
+        "CHANGES_REQUIRED": 0,
+        "DONE": 0,
+        "unrecognized": 0
+      },
+      "unrecorded_signals": 0,
+      "truncated": false,
+      "unreadable_files": 0
+    },
+    {
+      "id": "2026-11-04-beta",
+      "has_records": false,
+      "provenance": "report-heuristic",
+      "files": {
+        "md": 0,
+        "log": 0,
+        "diff": 2,
+        "other": 2
+      },
+      "status_signals": {
+        "PASS": 0,
+        "FAIL": 0,
+        "BLOCKED": 0,
+        "NOT_RUN": 0,
+        "CHANGES_REQUIRED": 0,
+        "DONE": 0,
+        "unrecognized": 0
+      },
+      "unrecorded_signals": 0,
+      "truncated": false,
+      "unreadable_files": 0
+    },
+    {
+      "id": "2026-11-05-gamma",
+      "has_records": false,
+      "provenance": "report-heuristic",
+      "files": {
+        "md": 0,
+        "log": 0,
+        "diff": 1,
+        "other": 2
+      },
+      "status_signals": {
+        "PASS": 0,
+        "FAIL": 0,
+        "BLOCKED": 0,
+        "NOT_RUN": 0,
+        "CHANGES_REQUIRED": 0,
+        "DONE": 0,
+        "unrecognized": 0
+      },
+      "unrecorded_signals": 0,
+      "truncated": false,
+      "unreadable_files": 0
+    }
+  ],
+  "candidates": [],
+  "decisions": {
+    "status": "available",
+    "path": "docs/retro/decisions.yaml",
+    "count": 0
+  },
+  "candidates_complete": true,
+  "coverage": {
+    "runs": 5,
+    "no_data": 4,
+    "with_records": 1,
+    "unreadable": 0,
+    "unreadable_outside_scope": 0,
+    "uncategorized_causes": 0,
+    "symlinks_skipped": 0,
+    "invalid_dirs": 0,
+    "benchmark_runs_skipped": 0,
+    "retro": {
+      "runs": 3,
+      "invalid_files": 1,
+      "final_without_retro": 1
+    }
+  },
+  "not_detected": "Klasa wynika wyłącznie z rekordów; zdarzenia niezapisane jako checkpoint, niezapisane porażki i zgubione pliki paczek są niewidoczne.",
+  "notes": "Wyłącznie zapisane pomiary; narzędzie nie ustala przyczyn.",
+  "unknown_cause_keys": null,
+  "proposals": [
+    {
+      "id": "2026-11-04-beta/P1",
+      "owner": "docs",
+      "repo": "library",
+      "target": "skills/feature/references/x.md",
+      "title": "Poprawka w worktree",
+      "state": "deferred",
+      "diff": ".skillsync/runs/2026-11-04-beta/retro-P1.diff",
+      "keys": [
+        "user-correction"
+      ],
+      "signals": 1,
+      "created_at": "2026-11-04T09:00:00Z"
+    },
+    {
+      "id": "2026-11-05-gamma/P2",
+      "owner": "docs",
+      "repo": "library",
+      "target": "skills/feature/references/x.md",
+      "title": "Tytuł z tokenem [REDACTED] jest filtrowany",
+      "state": "open",
+      "diff": null,
+      "keys": [
+        "user-correction"
+      ],
+      "signals": 1,
+      "created_at": "2026-11-05T08:00:00Z"
+    },
+    {
+      "id": "2026-11-03-alfa/P1",
+      "owner": "skill",
+      "repo": "library",
+      "target": "skills/feature/references/x.md",
+      "title": "Doprecyzuj regułę pętli",
+      "state": "open",
+      "diff": ".skillsync/runs/2026-11-03-alfa/retro-P1.diff",
+      "keys": [
+        "unneeded-question",
+        "user-correction"
+      ],
+      "signals": 2,
+      "created_at": "2026-11-03T09:00:00Z"
+    }
+  ],
+  "proposals_truncated": true
+}

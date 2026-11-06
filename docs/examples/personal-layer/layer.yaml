@@ -1,0 +1,7 @@
+schema: 1
+id: moja
+kind: personal
+version: 0.1.0
+core_min: 1.0.0   # wersja generatora, dla której piszesz warstwę (`layers init` wpisuje ją sam)
+requires: []
+identity: leakguard/identity.yaml

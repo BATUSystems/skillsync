@@ -1,0 +1,15 @@
+---
+title: "Widok stanu dyspozycji (skillsync dispatch): biała lista, brak wolnego tekstu, koszt paczki"
+tags: [skillsync, dispatch, ide-contract, redaction, cost, state]
+paths: ['skillsync_workflow/dispatch_state.py', 'tests/test_skillsync_dispatch_state.py']
+source: skillsync_workflow/dispatch_state.py (_Reader, _dispatch_entry, _cost, _run, dispatch_report); docs/cli.md sekcja dispatch; analiza 5 rzeczywistych plików .skillsync/dispatch w repo Skillsync i skippster (2026-10-31); decyzje Dyspozytora w ramach delegacji Barcisia (R3c, Q1–Q8)
+verified: 2026-10-31
+---
+Reguła: `skillsync dispatch` czyta `.skillsync/dispatch/*.yaml` wyłącznie do odczytu i oddaje tylko pola z białej listy po walidacji wzorcem (id, gałąź, hash, czas ISO, liczby w granicach). Nieznane pola, wolny tekst, nazwy i identyfikatory sesji, ścieżki (w tym `worktree`) nie wychodzą. Zły kształt pola to `null` plus wpis w `findings` z samą nazwą pola; zły plik to wpis `unreadable`; wyjątek nie wychodzi nigdy.
+Dlaczego: rzeczywiste pliki stanu są pisane ręcznie i odbiegają od schematu (`active` zamiast `running`, status paczki `go`, `evidence` jako napis albo lista, `merge_queue` jako napisy albo mapy, `master_head` zamiast `master.head`, pojedyncza paczka zamiast listy) i zawierają długie teksty, które mogą opisywać incydenty i poświadczenia.
+Nazwa pliku też jest wolnym tekstem: `file` jest podawane tylko, gdy nazwa jest zwykłym identyfikatorem (inaczej `null`, a w `findings` jest numer wpisu). Wartości o kształcie poświadczenia (32 i więcej znaków `[A-Za-z0-9_]` bez przerwy w polach id/gałąź) są odrzucane jako `null`; ryzyko resztkowe: krótszy sekret w polu id, gałęzi albo skrócie 40-hex nie jest wykrywalny; `redact` zna tylko sekrety z env. `evidenceCount` jest `null` dla braku lub złego kształtu (nie 0). Wyjście ma `ensure_ascii` i `allow_nan=False`, a odczyty claimów i przebiegów używają `lstat`/`S_ISREG`, bo FIFO zawiesiłoby odczyt.
+Stan jest hipotezą: wyjście ma `authoritative: false`; `stale` tylko dla stanów czynnych i pliku niezapisywanego dłużej niż 6 h; `claimActive` pochodzi z `.skillsync/claims`, nie z `ttl` w YAML; `git` nie jest wywoływany.
+Koszt paczki: przebieg `<run dyspozycji>.<id paczki>` w `.skillsync/runs/`; suma `cost` tylko dla jednostki USD; brak kosztu to `unknown`, część rekordów z kosztem to `partial`, nigdy 0 z braku danych; inne jednostki i tokeny nie są przeliczane. Dziś `cost` w checkpointach jest puste, więc `unknown` jest normą.
+Aliasy i granice: dyspozycja `active` → `running`; statusy spoza listy (np. `push_granted`, `phase6`, `closing`) → `unknown`. Klasa przebiegu z `retro` nie jest w v1 (kandydat na v2).
+Wyjątki i przykłady: `NOT_RUN` (0) gdy brak katalogu lub brak plików; `BLOCKED` (2) przy dowiązaniu `.skillsync` albo `.skillsync/dispatch` i złym `--run-id`; `PASS` oznacza tylko, że raport powstał.
+Gdzie w kodzie: `skillsync_workflow/dispatch_state.py:dispatch_report`, `_dispatch_entry`, `_cost`; test `tests/test_skillsync_dispatch_state.py` (sentinel w każdym polu wyłączonym i nieznanym).

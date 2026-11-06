@@ -1,0 +1,32 @@
+version: 1
+capabilities:
+- read
+- update-title
+operations:
+  read:
+    effect: read
+    builtin: jira
+    required_params:
+    - id
+    result: &id001
+      type: object
+      required:
+      - provider
+      - id
+      - title
+      - state
+      - url
+    timeout: 30
+  update-title:
+    effect: write
+    builtin: jira
+    required_params:
+    - id
+    - title
+    result: *id001
+    timeout: 30
+    verify:
+      operation: read
+      match:
+      - id
+      - title

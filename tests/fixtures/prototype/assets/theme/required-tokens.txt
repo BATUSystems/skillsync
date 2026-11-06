@@ -1,0 +1,6 @@
+# tokens required by the fixture theme
+--bg
+
+--fg
+  # indented comment
+--accent

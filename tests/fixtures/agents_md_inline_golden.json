@@ -1,0 +1,54 @@
+{
+ "claude_off": {
+  ".codex/skillsync-instructions.md": "Base example\n\n\n## Project\n\nTemplate rules\n",
+  ".github/copilot-instructions.md": "Base example\n\n\n## Project\n\nTemplate rules\n",
+  ".gitignore": "AGENTS.md\n",
+  "AGENTS.md": "<!-- SKILLSYNC:CODEX-BEGIN -->\n## Skillsync: Codex\n\nRead `.codex/skillsync-instructions.md` before working in this project.\nFor an implementation using `$feature`, read `.agents/skills/feature/SKILL.md`\nand its Codex adapter. Delegate the planned roles to native subagents from\n`.codex/agents/`; do not start this pipeline for questions or audits.\nShared sources are in the skillsync library; do not edit generated TOML files.\n<!-- SKILLSYNC:CODEX-END -->\n"
+ },
+ "codex_off": {
+  ".github/copilot-instructions.md": "Base example\n\n\n## Project\n\nTemplate rules\n",
+  ".gitignore": "CLAUDE.md\n",
+  "CLAUDE.md": "# CLAUDE.md\n\nThis file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.\n\nBase example\n\n\n## Project\n\nTemplate rules\n"
+ },
+ "feature_only": {
+  ".codex/skillsync-instructions.md": "Base example\n",
+  ".gitignore": "CLAUDE.md\nAGENTS.md\n",
+  "AGENTS.md": "<!-- SKILLSYNC:CODEX-BEGIN -->\n## Skillsync: Codex\n\nRead `.codex/skillsync-instructions.md` before working in this project.\nFor an implementation using `$feature`, read `.agents/skills/feature/SKILL.md`\nand its Codex adapter. Delegate the planned roles to native subagents from\n`.codex/agents/`; do not start this pipeline for questions or audits.\nShared sources are in the skillsync library; do not edit generated TOML files.\n<!-- SKILLSYNC:CODEX-END -->\n",
+  "CLAUDE.md": "# CLAUDE.md\n\nThis file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.\n\nBase example\n"
+ },
+ "handwritten_claude": {
+  ".codex/skillsync-instructions.md": "Base example\n",
+  ".gitignore": "AGENTS.md\n",
+  "AGENTS.md": "<!-- SKILLSYNC:CODEX-BEGIN -->\n## Skillsync: Codex\n\nRead `.codex/skillsync-instructions.md` before working in this project.\nFor an implementation using `$feature`, read `.agents/skills/feature/SKILL.md`\nand its Codex adapter. Delegate the planned roles to native subagents from\n`.codex/agents/`; do not start this pipeline for questions or audits.\nShared sources are in the skillsync library; do not edit generated TOML files.\n<!-- SKILLSYNC:CODEX-END -->\n",
+  "CLAUDE.md": "My own rules\n"
+ },
+ "merge_no_template_copilot": {
+  ".codex/skillsync-instructions.md": "Base example\n\n\nRead `.github/copilot-instructions.md` for project-specific instructions.\n",
+  ".github/copilot-instructions.md": "Handwritten copilot\n",
+  ".gitignore": "CLAUDE.md\nAGENTS.md\n",
+  "AGENTS.md": "<!-- SKILLSYNC:CODEX-BEGIN -->\n## Skillsync: Codex\n\nRead `.codex/skillsync-instructions.md` before working in this project.\nFor an implementation using `$feature`, read `.agents/skills/feature/SKILL.md`\nand its Codex adapter. Delegate the planned roles to native subagents from\n`.codex/agents/`; do not start this pipeline for questions or audits.\nShared sources are in the skillsync library; do not edit generated TOML files.\n<!-- SKILLSYNC:CODEX-END -->\n",
+  "CLAUDE.md": "# CLAUDE.md\n\nThis file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.\n\nBase example\n\n## Project instructions\n\nRead `.github/copilot-instructions.md` for project-specific conventions.\n"
+ },
+ "own_agents": {
+  ".codex/skillsync-instructions.md": "Base example\n\n\n## Project\n\nTemplate rules\n",
+  ".github/copilot-instructions.md": "Base example\n\n\n## Project\n\nTemplate rules\n",
+  ".gitignore": "CLAUDE.md\nAGENTS.md.skillsync-backup\n",
+  "AGENTS.md": "# Team agents\n\nKeep this.\n\n<!-- SKILLSYNC:CODEX-BEGIN -->\n## Skillsync: Codex\n\nRead `.codex/skillsync-instructions.md` before working in this project.\nFor an implementation using `$feature`, read `.agents/skills/feature/SKILL.md`\nand its Codex adapter. Delegate the planned roles to native subagents from\n`.codex/agents/`; do not start this pipeline for questions or audits.\nShared sources are in the skillsync library; do not edit generated TOML files.\n<!-- SKILLSYNC:CODEX-END -->\n",
+  "AGENTS.md.skillsync-backup": "# Team agents\n\nKeep this.\n",
+  "CLAUDE.md": "# CLAUDE.md\n\nThis file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.\n\nBase example\n\n\n## Project\n\nTemplate rules\n"
+ },
+ "template_merge": {
+  ".codex/skillsync-instructions.md": "Base example\n\n\n## Project\n\nTemplate rules\n",
+  ".github/copilot-instructions.md": "Base example\n\n\n## Project\n\nTemplate rules\n",
+  ".gitignore": "CLAUDE.md\nAGENTS.md\n",
+  "AGENTS.md": "<!-- SKILLSYNC:CODEX-BEGIN -->\n## Skillsync: Codex\n\nRead `.codex/skillsync-instructions.md` before working in this project.\nFor an implementation using `$feature`, read `.agents/skills/feature/SKILL.md`\nand its Codex adapter. Delegate the planned roles to native subagents from\n`.codex/agents/`; do not start this pipeline for questions or audits.\nShared sources are in the skillsync library; do not edit generated TOML files.\n<!-- SKILLSYNC:CODEX-END -->\n",
+  "CLAUDE.md": "# CLAUDE.md\n\nThis file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.\n\nBase example\n\n\n## Project\n\nTemplate rules\n"
+ },
+ "template_no_merge": {
+  ".codex/skillsync-instructions.md": "Base example\n\n\n## Project\n\nTemplate rules\n",
+  ".github/copilot-instructions.md": "## Project\n\nTemplate rules\n",
+  ".gitignore": "CLAUDE.md\nAGENTS.md\n",
+  "AGENTS.md": "<!-- SKILLSYNC:CODEX-BEGIN -->\n## Skillsync: Codex\n\nRead `.codex/skillsync-instructions.md` before working in this project.\nFor an implementation using `$feature`, read `.agents/skills/feature/SKILL.md`\nand its Codex adapter. Delegate the planned roles to native subagents from\n`.codex/agents/`; do not start this pipeline for questions or audits.\nShared sources are in the skillsync library; do not edit generated TOML files.\n<!-- SKILLSYNC:CODEX-END -->\n",
+  "CLAUDE.md": "# CLAUDE.md\n\nThis file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.\n\n## Project\n\nTemplate rules\n"
+ }
+}

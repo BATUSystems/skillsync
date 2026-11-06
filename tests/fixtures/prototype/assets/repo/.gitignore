@@ -1,0 +1,3 @@
+# MIT fixture: .gitignore
+comments.json.lock
+*.tmp

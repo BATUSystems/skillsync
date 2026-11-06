@@ -1,0 +1,24 @@
+# Zamknięty zbiór polskich końcówek fleksyjnych dla dopasowania odmian terminów jawnych
+# (skillsync leakcheck, kryterium K7). Jedna końcówka na linię; `#` zaczyna komentarz.
+# Dopasowanie: token równy terminowi albo termin + jedna końcówka z tej listy.
+a
+u
+e
+y
+i
+ie
+ze
+ce
+em
+om
+ów
+ach
+ami
+owi
+owie
+ą
+ę
+ego
+emu
+ym
+ich

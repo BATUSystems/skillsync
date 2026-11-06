@@ -1,0 +1,45 @@
+# Ustawienia adaptera; instrukcje ról pozostają we wspólnych agents/*.md.
+max_concurrent_threads_per_session: 3
+exclude_skills:
+  - copilot-orchestrator
+agents:
+  Explore:
+    name: explorer
+    model: gpt-6-luna
+    model_reasoning_effort: low
+    sandbox_mode: read-only
+  implementer:
+    name: implementer
+    model: gpt-6.1-sol
+    model_reasoning_effort: medium
+    sandbox_mode: workspace-write
+  test-writer:
+    name: test_writer
+    model: gpt-6.1-sol
+    model_reasoning_effort: medium
+    sandbox_mode: workspace-write
+  test-runner:
+    name: test_runner
+    model: gpt-6-luna
+    model_reasoning_effort: low
+    sandbox_mode: workspace-write
+  reviewer:
+    name: reviewer
+    model: gpt-6.1-sol
+    model_reasoning_effort: high
+    sandbox_mode: read-only
+  verifier:
+    name: verifier
+    model: gpt-6-luna
+    model_reasoning_effort: low
+    sandbox_mode: read-only
+  scribe:
+    name: scribe
+    model: gpt-6-luna
+    model_reasoning_effort: low
+    sandbox_mode: workspace-write
+  mechanic:
+    name: mechanic
+    model: gpt-6-luna
+    model_reasoning_effort: low
+    sandbox_mode: workspace-write

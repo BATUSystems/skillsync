@@ -1,0 +1,9 @@
+# Skippster — wtyczka VS Code do workflow skillsync (repo-specific)
+- To **wtyczka VS Code** (TypeScript) dla naszego workflow: plany i postęp, zadania Jira i PR-y Azure, kilku agentów naraz, zarządzanie skillami projektu. Faza: **planowanie, brak kodu**. Start: `README.md`, potem `docs/README.md` (mapa) i plan `docs/plans/2026-10-29-skippster-vscode-extension.md`.
+- Zasada nadrzędna: **wtyczka sama nie pisze do repo; piszą agenci** (Claude, Codex) pod swoimi uprawnieniami i naszymi bramkami. Brak trybu autonomicznego domyślnie, każda prośba o uprawnienie widoczna, commit/push/deploy tylko jako jawna akcja użytkownika, zatwierdzenie planu to wiadomość „GO” do sesji agenta.
+- Wtyczka jest **cienkim klientem CLI `skillsync`**: logika (rozwijanie skilli, route, doctor, manifest) zostaje w generatorze `<katalog repo skillsync>`; wtyczka czyta wersjonowany JSON (`docs/contracts/skillsync-cli.md`) i nie reimplementuje reguł. Zmiany kontraktu CLI to osobny plan w repo Skillsync.
+- Jira/Azure: tylko przez już zalogowane CLI (`acli`, `az`); wtyczka nie przechowuje ani nie loguje poświadczeń. Zdalnie (Remote-SSH) działa jako rozszerzenie workspace; agenci i ich logowania muszą być na zdalnym hoście.
+- Nie zgaduj wersji Node, TypeScriptu ani API VS Code: wybór toolchainu i scaffold to etap 0 planu; sprawdź aktualną dokumentację zamiast polegać na pamięci.
+- Zewnętrzne wzorce są opisane w `docs/research/`; ich kodu nie kopiuj, tylko opisuj i cytuj ze ścieżkami i SHA.
+- Testy i komendy buildu: do ustalenia po scaffoldzie (etap 0); do tego czasu nie wymyślaj komend, które nie istnieją.
+- Nie edytuj ręcznie plików generowanych (`CLAUDE.md`, `AGENTS.md`, `.github/copilot-instructions.md`, `.codex/*`, `.claude/agents|skills`). Zmieniaj bibliotekę `~/.local/copilot-library` i uruchom `skillsync link`; biblioteka ma osobny git.

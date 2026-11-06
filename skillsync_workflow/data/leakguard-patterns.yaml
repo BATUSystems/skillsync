@@ -1,0 +1,59 @@
+# Wbudowane wzorce strażnika wycieków: `skillsync leakcheck` i `docs/site/build.py`
+# (także przez `skillsync leakguard patterns --json`).
+# Tylko część ogólna i publiczna. Jawne tożsamości żyją wyłącznie w lokalnych plikach
+# `identity.yaml`. Wzorce śladów zapisane klasami znaków, żeby plik nie zawierał
+# dosłownego śladu. Plik jest wyłączony ze skanu treści po dokładnej ścieżce i walidacji.
+# Format (schema 1): regex w składni Pythona `re`, bez flag inline, dopasowywany do
+# każdej linii osobno; `allow` wyłącza trafienie tylko, gdy mieści się ono w całości
+# w dopasowaniu `allow` (ta sama linia, plik, powierzchnia).
+schema: 1
+patterns:
+  - id: d27-source
+    category: d27
+    regex: '(?<![A-Za-z0-9])[o]pen[ _-]?[m]ercato(?![A-Za-z0-9])'
+    flags: [ignorecase]
+  - id: d27-skill-names
+    category: d27
+    regex: '(?<![A-Za-z0-9])[o]m-(mockup|spec|auto|brainstorm|pre-implement|code-review|troubleshooter|integration|judge|evolve|create-skill|setup|app-spec|pipeline|review)[\w-]*'
+    flags: [ignorecase]
+  - id: d27-person
+    category: d27
+    regex: '(?<![A-Za-z0-9])[c]ezar(a|ze|owi|em|u)?(?![A-Za-z0-9])'
+    flags: [ignorecase]
+  - id: d27-icons-a
+    category: d27
+    regex: '(?<![A-Za-z0-9])[l]ucide(?![A-Za-z0-9])'
+    flags: [ignorecase]
+  - id: d27-icons-b
+    category: d27
+    regex: '(?<![A-Za-z0-9])[f]eather(?![A-Za-z0-9])'
+    flags: [ignorecase]
+  - id: home-linux
+    category: owner-path
+    regex: '/home/[\w<>-]+(?:\.[\w<>-]+)*'
+  - id: home-windows
+    category: owner-path
+    regex: '\b[a-z]:(?:\\{1,2}|/)users(?:\\{1,2}|/)[\w<>-]*(?:\.[\w<>-]+)*'
+    flags: [ignorecase]
+  - id: email
+    category: email
+    regex: '(?<![\w.+-])(?!git@)[\w.+-]+@(?:[\w-]+\.)+[A-Za-z]{2,}\b'
+allow:
+  - id: home-placeholders
+    regex: '/home/(?:user|<user>|runner)(?![\w<>-])'
+  - id: windows-home-placeholders
+    regex: '\b[a-z]:(?:\\{1,2}|/)users(?:\\{1,2}|/)(?:user|<user>|runneradmin)(?![\w<>.-])'
+    flags: [ignorecase]
+  - id: email-placeholders
+    regex: '[\w.+-]+@(?:[\w-]+\.)*(?:example\.[A-Za-z]{2,}|[\w-]+\.example|[\w-]+\.invalid)(?![\w.-])'
+    flags: [ignorecase]
+  - id: publisher-urls
+    regex: 'github\.com/BATUSystems/(skillsync|skippster)(\.git)?(/(issues|pull|releases|blob|tree)(/[\w.-]+)*)?(?![\w-])'
+    flags: [ignorecase]
+  - id: publisher-license
+    regex: '^Copyright \(c\) \d{4} BATUSystems$'
+    paths: ['LICENSE*']
+  # Only the address range: the trailer name stays subject to identity terms.
+  - id: trailer-noreply
+    regex: '(?<=<)noreply@anthropic\.com(?=>\s*$)'
+    applies_to: [commit]

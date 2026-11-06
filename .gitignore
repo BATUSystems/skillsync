@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.skillsync/
+CLAUDE.md
+.mcp.json
+AGENTS.md
+AGENTS.md.skillsync-backup

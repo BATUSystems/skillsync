@@ -1,0 +1,3 @@
+# Plik blokady i pliki tymczasowe serwera prototypów (skillsync prototype serve); nie trafiają do gita.
+comments.json.lock
+*.tmp
