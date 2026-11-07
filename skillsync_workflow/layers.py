@@ -1121,12 +1121,6 @@ def _override_set(values, config, notes, project):
     return LayerSet(tuple(active), config, 'override', project, None, None, notes)
 
 
-def _flag_id(value):
-    if isinstance(value, LayerOverride):
-        return value.id
-    return str(value).partition('=')[0]
-
-
 # --------------------------------------------------------------------------- merge semantics
 
 def merge_rule(rel):

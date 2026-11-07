@@ -251,7 +251,10 @@ def start_chrome(env, binary):
     short.symlink_to(real_tmp)
     (workdir / 'chrome-tmp.link').write_text(str(short))
     child_env = dict(os.environ, TMPDIR=str(short))
-    child = subprocess.Popen([binary, '--headless=new', '--remote-debugging-port=%d' % port, '--remote-debugging-address=127.0.0.1',
+    # GitHub runners (Ubuntu 24.04) restrict unprivileged user namespaces, so the Chrome sandbox cannot start there.
+    # The flag is added only in CI (CI=true), never on a developer machine.
+    sandbox = ['--no-sandbox'] if os.environ.get('CI') == 'true' else []
+    child = subprocess.Popen([binary, '--headless=new', *sandbox, '--remote-debugging-port=%d' % port, '--remote-debugging-address=127.0.0.1',
                               '--user-data-dir=%s' % profile, '--no-first-run', '--no-default-browser-check', '--disable-extensions',
                               '--disable-gpu', '--disable-background-timer-throttling', '--disable-renderer-backgrounding',
                               '--disable-backgrounding-occluded-windows', '--window-size=1440,900', 'about:blank'],

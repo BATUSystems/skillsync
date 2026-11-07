@@ -594,7 +594,8 @@ class ClosureLink(WorkflowFixture):
         self.write(self.LOCAL, '{"permissions": {}}\n')
         self.init_git()
         self.git('add', '-f', self.LOCAL)
-        self.git('commit', '-qm', 'track local settings')
+        # `init_git` already tracks the file when no global ignore hides it; --allow-empty keeps the commit independent of that
+        self.git('commit', '-qm', 'track local settings', '--allow-empty')
         before = (self.root / self.LOCAL).read_bytes()
         result = self.link()
         self.assertIn('[warn]', result.stdout)
