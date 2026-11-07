@@ -1,5 +1,6 @@
 """`delivery:` manifest section: validator, `doctor` findings and the `route` field `delivery`."""
 import copy
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -174,6 +175,96 @@ class RouteDeliveryTests(WorkflowFixture):
         result = self.route()
         for key in ('status', 'files', 'topics', 'routes', 'skipped', 'lessons', 'domain', 'note'):
             self.assertIn(key, result)
+
+
+LIBRARY = Path(__file__).resolve().parents[1] / 'library'
+
+# Zdania sprzed trybu dostarczania: bezwarunkowe „commit/push tylko na polecenie” (K5).
+STALE_PHRASES = [
+    r'commit tylko na polecenie',
+    r'Commit, push i deploy tylko na wyraźne polecenie użytkownika',
+    r'commit/push/deploy \(tylko na polecenie użytkownika\)',
+    r'Bez jawnego wywołania skill nie startuje',
+    r'Nie działa bez /pr-run',
+    r'Commit/push/deploy\s+wymagają polecenia użytkownika; samo',
+]
+# Pliki, w których takie zdanie ma odrębny powód (pierwszeństwo klucza zgłoszenia, retrospektywa,
+# zewnętrzne repo lekcji, zamrożony wyjątek prototypów).
+STALE_PHRASE_ALLOWED = {
+    'skills/feature/references/pr-after-approval.md',
+    'skills/feature/references/retro-quality.md',
+    'skills/workflow/references/knowledge.md',
+    'skills/prototype/references/decisions.md',
+    'CHANGELOG.md',
+}
+# Pliki, w których polecenia merge/complete PR muszą być zakazane (K6).
+PR_FORBIDDEN_SCOPE = ('instructions/_base.md', 'skills/feature/', 'skills/pr-run/', 'skills/dispatch/')
+PR_ACTION = re.compile(r'gh pr merge|--auto-complete|--status completed|merge i complete|merge/complete|complete PR', re.I)
+NEGATION = re.compile(r'nigdy|zakaz|nie |poza zakresem|tylko człowiek|scala człowiek', re.I)
+BASE_REQUIRED = ['READY', 'READY!', 'CP!', 'CPD!', 'delivery.mode', 'route', '`pr`', '`direct`']
+
+
+def library_texts(root=LIBRARY):
+    return {str(p.relative_to(root)): p.read_text(encoding='utf-8') for p in sorted(root.rglob('*.md'))}
+
+
+def stale_phrase_hits(texts):
+    return [f'{name}: {m.group(0)}'
+            for name, text in texts.items() if name not in STALE_PHRASE_ALLOWED
+            for pattern in STALE_PHRASES for m in re.finditer(pattern, text)]
+
+
+def unguarded_pr_actions(texts):
+    hits = []
+    for name, text in texts.items():
+        if not name.startswith(PR_FORBIDDEN_SCOPE):
+            continue
+        for number, line in enumerate(text.splitlines(), 1):
+            if PR_ACTION.search(line) and not NEGATION.search(line):
+                hits.append(f'{name}:{number}')
+    return hits
+
+
+def missing_in_base(texts):
+    base = texts.get('instructions/_base.md', '')
+    return [token for token in BASE_REQUIRED if token not in base]
+
+
+class LibraryDeliveryConsistencyTests(unittest.TestCase):
+    """Strażnik spójności biblioteki z trybem dostarczania (K5, K6)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.texts = library_texts()
+
+    def test_library_is_readable(self):
+        self.assertIn('instructions/_base.md', self.texts)
+        self.assertIn('skills/pr-run/SKILL.md', self.texts)
+
+    def test_no_unconditional_commit_only_on_command_phrases(self):
+        self.assertEqual(stale_phrase_hits(self.texts), [])
+
+    def test_base_instruction_defines_modes_and_ready_words(self):
+        self.assertEqual(missing_in_base(self.texts), [])
+
+    def test_mode_aware_skills_mention_ready_or_modes(self):
+        for name in ('skills/pr-run/SKILL.md', 'skills/feature/SKILL.md', 'skills/dispatch/SKILL.md',
+                     'skills/feature/references/worker-mode.md', 'skills/feature/references/multi-session.md'):
+            self.assertRegex(self.texts[name], r'READY|`pr`', name)
+
+    def test_no_instruction_allows_merge_or_complete_of_a_pr(self):
+        self.assertEqual(unguarded_pr_actions(self.texts), [])
+
+    def test_guard_detects_a_restored_pre_mode_sentence(self):
+        mutated = dict(self.texts)
+        mutated['skills/feature/SKILL.md'] += '\nCommit, push i deploy tylko na wyraźne polecenie użytkownika.\n'
+        self.assertEqual(len(stale_phrase_hits(mutated)), len(stale_phrase_hits(self.texts)) + 1)
+        mutated = dict(self.texts)
+        mutated['skills/pr-run/SKILL.md'] += '\nPo PASS wykonaj gh pr merge.\n'
+        self.assertEqual(len(unguarded_pr_actions(mutated)), len(unguarded_pr_actions(self.texts)) + 1)
+        mutated = dict(self.texts)
+        mutated['instructions/_base.md'] = mutated['instructions/_base.md'].replace('READY!', 'RDY')
+        self.assertEqual(missing_in_base(mutated), ['READY!'])
 
 
 if __name__ == '__main__':

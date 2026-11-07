@@ -61,6 +61,8 @@ None.
   `pr-run` on "GO implement" and waits for `READY`; `direct` commits locally and delivers on `CP`. `CP` in `direct` now pushes
   `work:base` (fast-forward) instead of committing in place. `READY` and `READY!` come only from the user; merge and complete PR are never
   agent actions. In `pr` parallel cards get no `PUSH SLOT` on the base branch.
+- A consistency guard (`tests/test_skillsync_delivery_mode.py`) fails on pre-mode sentences such as "commit only on command" in `library/`,
+  on a base instruction without `READY`/`CP!`/`CPD!`, and on any instruction that allows merging or completing a PR.
 
 ### Breaking
 
