@@ -138,8 +138,8 @@ def problems_matrix(ci):
         errs.append(f"zbiór kombinacji różni się od oczekiwanego: brak {sorted(want - keys)}, nadmiar {sorted(keys - want)}")
     if job.get("timeout-minutes") != 30:
         errs.append(f"timeout test: {job.get('timeout-minutes')}")
-    if ci["jobs"].get("e2e", {}).get("timeout-minutes") != 20:
-        errs.append("timeout e2e != 20")
+    if ci["jobs"].get("e2e", {}).get("timeout-minutes") != 45:
+        errs.append("timeout e2e != 45")
     conc = ci.get("concurrency") or {}
     if conc.get("cancel-in-progress") is not True:
         errs.append("concurrency bez cancel-in-progress: true")

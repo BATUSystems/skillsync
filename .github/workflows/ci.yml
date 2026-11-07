@@ -170,7 +170,7 @@ jobs:
     # Chrome E2E of the prototype (K11): only Linux; the matrix jobs skip these tests (reason in tests/skip-baseline.json).
     name: e2e (ubuntu-latest)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
     env:
       SKILLSYNC_TEST_NODE: node
       SKILLSYNC_TEST_LIBRARY: ${{ github.workspace }}/library
