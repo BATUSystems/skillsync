@@ -88,7 +88,7 @@ def plan_record(root, path):
     title = _TITLE.search(text)
     pr = _PR.search(text)
     ticket = _TICKET.search(text)
-    return {'path': str(path.relative_to(root)), 'title': title.group(1) if title else path.stem, 'status': status,
+    return {'path': path.relative_to(root).as_posix(), 'title': title.group(1) if title else path.stem, 'status': status,
             'statusText': status_text, 'steps': _progress(text), 'pr': {'number': int(pr.group(1)), 'link': pr.group(2)} if pr else None,
             'ticket': {'key': ticket.group(1), 'link': ticket.group(2)} if ticket else None, 'spec': _plan_spec(text),
             'needsHuman': ['approval'] if status == 'draft' else [], 'updated': _iso(path.stat().st_mtime)}
@@ -293,7 +293,7 @@ def set_plan_status(root, name, action):
     finally:
         Path(tmp).unlink(missing_ok=True)
     return {'schema': SCHEMA, 'status': 'PASS', 'reason': f'Plan status {source} -> {target}', 'root': str(root),
-            'plan': str(path.relative_to(root)), 'from': source, 'to': target}
+            'plan': path.relative_to(root).as_posix(), 'from': source, 'to': target}
 
 
 def _cmd_plan(args):

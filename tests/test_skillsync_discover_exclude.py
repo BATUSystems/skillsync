@@ -63,7 +63,7 @@ class DiscoverManifestsTest(LayersCase):
         self.assertIn(self.arch2, result)
 
     def test_tilde_is_expanded(self):
-        with mock.patch.dict(os.environ, {'HOME': str(self.work)}):
+        with mock.patch.dict(os.environ, {'HOME': str(self.work), 'USERPROFILE': str(self.work)}):
             result = self.found(discover_exclude=['~/x/arch'])
         self.assertEqual(result, sorted([self.mine, self.arch2]))
 

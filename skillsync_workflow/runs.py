@@ -392,7 +392,7 @@ def _checkpoint_locked(args):
     evidence = []
     for name in args.evidence or []:
         item = _inside(root, name)
-        evidence.append({"path": str(item.relative_to(root)), "sha256": _hash_file(item)})
+        evidence.append({"path": item.relative_to(root).as_posix(), "sha256": _hash_file(item)})
     if args.status == "PASS" and not evidence:
         raise ValueError("PASS wymaga pliku z rzeczywistym dowodem; sama deklaracja nie wystarcza")
     if len(args.next) > 2000 or len(args.cause or "") > 500:

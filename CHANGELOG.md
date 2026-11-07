@@ -22,7 +22,7 @@ None.
 None.
 
 ### Fixed
-None.
+- Windows (1.0.1, WIN-1): paths in JSON output use `/` (`status --json` plans and `plan` results, run evidence, delivery logs, e2e observation, `skills list` references).
 
 ## [1.0.0] - 2026-11-07
 

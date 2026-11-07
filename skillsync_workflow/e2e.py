@@ -126,7 +126,7 @@ def e2e(root, manifest, library, action='plan', run=False, observation_path=None
             path = state_path(root, config['observations'] + '/' + data['id'] + '.json', create=True)
             scenario = state_path(root, config['scenarios'] + '/' + data['id'] + '.json', create=True)
             write_json(path, data)
-            write_json(scenario, {'version': 1, 'source_observation': str(path.relative_to(root)), 'observation_digest': digest(data), 'source_fingerprint': data['source_fingerprint'], 'URL': data['URL'], 'steps': data['steps'], 'evidence': data['evidence'], 'runner': 'Configured native e2e checks consume this observation; steps are not commands'})
+            write_json(scenario, {'version': 1, 'source_observation': path.relative_to(root).as_posix(), 'observation_digest': digest(data), 'source_fingerprint': data['source_fingerprint'], 'URL': data['URL'], 'steps': data['steps'], 'evidence': data['evidence'], 'runner': 'Configured native e2e checks consume this observation; steps are not commands'})
             return {'status': 'NOT_RUN', 'recorded': str(path), 'scenario': str(scenario), 'reason': 'Observation recorded; no E2E tests executed'}
         directory = state_path(root, config['observations'] + '/probe.json').parent
         if observation_path:

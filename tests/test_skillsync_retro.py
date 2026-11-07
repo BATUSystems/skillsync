@@ -2919,7 +2919,7 @@ class RetroAll(CandidateBase):
         return self.root
 
     def run_all(self, *args, code=0, expect_json=True):
-        env = {**os.environ, 'HOME': str(self.home), 'SKILLSYNC_CONFIG': str(self.config)}
+        env = {**os.environ, 'HOME': str(self.home), 'USERPROFILE': str(self.home), 'SKILLSYNC_CONFIG': str(self.config)}
         result = subprocess.run([sys.executable, str(CLI), 'retro', '--all', *map(str, args), '--json'],
                                 capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=40,
                                 cwd=self.base, env=env)
@@ -3354,7 +3354,7 @@ class LibraryPairs(CandidateBase):
             {'schema': 1, 'run_id': run, 'created_at': created, 'signals': listed, 'proposals': []}))
 
     def run_all(self, code=0):
-        env = {**os.environ, 'HOME': str(self.home), 'SKILLSYNC_CONFIG': str(self.config)}
+        env = {**os.environ, 'HOME': str(self.home), 'USERPROFILE': str(self.home), 'SKILLSYNC_CONFIG': str(self.config)}
         result = subprocess.run([sys.executable, str(CLI), 'retro', '--all', '--json'], capture_output=True,
                                 text=True, encoding='utf-8', errors='replace', timeout=40, cwd=self.base, env=env)
         self.text = result.stdout + result.stderr
@@ -3375,7 +3375,7 @@ class LibraryPairs(CandidateBase):
         retro.register(parser.add_subparsers())
         args = parser.parse_args(['retro', '--all', '--json'])
         out = io.StringIO()
-        env = {'HOME': str(self.home), 'SKILLSYNC_CONFIG': str(self.config)}
+        env = {'HOME': str(self.home), 'USERPROFILE': str(self.home), 'SKILLSYNC_CONFIG': str(self.config)}
         with contextlib.ExitStack() as stack:
             stack.enter_context(mock.patch.dict(os.environ, env))
             for patch in patches:

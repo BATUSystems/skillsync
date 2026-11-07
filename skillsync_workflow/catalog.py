@@ -306,7 +306,7 @@ def _skill_references(library, name):
         files = require_layerset(library, 'skill references').skill_files(name)
     except _layers.LayerError:  # a directory name that is not a valid skill name
         return []
-    return sorted(str(Path(rel)) for rel in files if rel.startswith('references/'))[:100]
+    return sorted(rel for rel in files if rel.startswith('references/'))[:100]
 
 
 def skills_list(root, manifest, library, statuses=SKILL_STATUSES):
