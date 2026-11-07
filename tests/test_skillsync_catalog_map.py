@@ -18,6 +18,8 @@ from tests.test_skillsync import skillsync  # noqa: E402
 from tests.test_skillsync_workflow import CLI, WorkflowFixture  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from layers_helpers import machine_cache_dir  # noqa: E402
 from layers_helpers import transitional_config  # noqa: E402
 
 CORE = ["workflow", "pre-implement", "smart-test", "bugfix", "codereview"]
@@ -293,7 +295,7 @@ class G3Index(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("mystery", result.stdout)
         self.assertFalse((self.library / "skills" / "INDEX.md").exists())
-        self.assertFalse((Path(self.env["XDG_CACHE_HOME"]) / "skillsync" / "skills-index").exists())
+        self.assertFalse((machine_cache_dir(self.env) / "skills-index").exists())
         self.assertEqual(self.run_index("--check").returncode, 1)  # nothing was written to the cache either
 
     def test_check_detects_stale_index_and_passes_after_regeneration(self):

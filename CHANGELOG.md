@@ -46,7 +46,7 @@ None.
 - `layers check` reports `hook-command-missing` (FAIL) when a guard hook of a layer calls a file that no longer exists.
 - `SKILLSYNC_NO_SYMLINK` accepts `1`/`true`/`yes`/`on` and `0`/`false`/`no`/`off`; any other value warns and turns copy
   mode on.
-- v1.0.0 supports Linux and WSL; native Windows and macOS are planned for v1.0.1 (their CI jobs do not block).
+- v1.0.0 supports Linux, WSL and macOS; native Windows is planned for v1.0.1. CI on Ubuntu and macOS blocks the release; the Windows jobs do not.
 - Installation as a Python package with `uv tool install` (see [README](README.md)): `pyproject.toml` (hatchling, entry point
   `skillsync`), `scripts/check_wheel.py` (wheel contents) and `scripts/check_release.py` (CHANGELOG section for the version or tag).
 - CI: Python 3.11 and 3.12 matrix, `install-smoke` (wheel built, installed as a tool, run outside the checkout), `e2e` (Chrome),
@@ -69,7 +69,16 @@ None.
   see [docs/upgrading.md](docs/upgrading.md).
 
 ### Fixed
-None.
+
+- Prototype toolbar on phones (<600 px): the hint `.anno-save` has its natural width capped at 11rem and is ellipsized, so a wider system font (e.g. DejaVu Sans)
+  no longer pushes the "⋯" button into a third row (logged-out toolbar 151 px → 117 px).
+- E2E V-02 reads the pre-D28b engine from `tests/fixtures/prototype/engine-v2-prev/` instead of git history, which the public core does not have;
+  V-02 now checks that the bar is not taller than the reference (+2 px) instead of equal to it (D271).
+
+### Known issues
+
+- E2E scenario N-R1 (comment panel, mobile view) is unstable: it sometimes fails with a page jump of about −3000 px (open shift equals close shift).
+  On clean `main` 6134a8c: 2 of 6 runs fail with DejaVu Sans, 0 of 6 with the default font. Possibly related to V-23. Fix planned for 1.0.1.
 
 [Unreleased]: https://github.com/BATUSystems/skillsync/compare/v1.0.0...HEAD
 [1.0.0]: https://github.com/BATUSystems/skillsync/releases/tag/v1.0.0

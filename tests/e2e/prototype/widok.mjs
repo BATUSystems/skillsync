@@ -9,9 +9,11 @@
 // Macierz: każdy scenariusz przy 1440 i 375 oraz w obu motywach, chyba że opis mówi inaczej.
 // Kolejność: V-09 tworzy wątki dla V-10 i V-12; V-15 zamraża iteracje dla V-16 (uruchamiane pojedynczo przez
 // SKILLSYNC_E2E_ONLY potrzebują poprzedników).
-// SKILLSYNC_E2E_OLD_ENGINE_SHA: commit biblioteki z silnikiem sprzed D28b (V-15, V-16: iteracja sprzed wdrożenia);
-// domyślnie efaa3ff.
-const OLD_ENGINE_SHA = process.env.SKILLSYNC_E2E_OLD_ENGINE_SHA || 'efaa3ff';
+// Silnik sprzed D28b (V-02, V-15, V-16) pochodzi z fikstury tests/fixtures/prototype/engine-v2-prev/ (kopia z efaa3ff, SOURCE.md),
+// nie z historii gita: rdzeń publiczny ma osieroconą historię bez tego commitu.
+const OLD_ENGINE_SHA = 'efaa3ff';
+const OLD_ENGINE_DIR = fileURLToPath(new URL('../../fixtures/prototype/engine-v2-prev/', import.meta.url));
+const oldEngineFile = (f) => readFileSync(`${OLD_ENGINE_DIR}${f}`);
 import {
   sleep, env, secret, mail, PORT1, PORT2, connect, workspace, proto, startServer, session, apiOps, apiPost,
   cid, setAcceptance, commentMode, openPanel, closePanelIfOpen, pickFilter, Suite, pageErrors, errors, wasSaved,
@@ -19,6 +21,7 @@ import {
 } from './lib.mjs';
 import { createHash } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { spawn, execFileSync } from 'node:child_process';
 import { SLUG, TITLE, REQUIREMENTS_PATH, REQUIREMENTS, PROJECT_CSS, SCREENS, NAV } from './widok/fixture.mjs';
 
@@ -79,13 +82,13 @@ async function openPage(c, base, { width, dark, who = null, hash = '#s1', slug =
   await p.go(`${base}/${slug}/${hash}`);
   return p;
 }
-// Prototyp wzorcowy dla V-02: te same ekrany (kopia index.html i project.css), silnik sprzed D28b (4 pliki z OLD_ENGINE_SHA).
+// Prototyp wzorcowy dla V-02: te same ekrany (kopia index.html i project.css), silnik sprzed D28b (4 pliki z fikstury engine-v2-prev).
 const REF_SLUG = 'widok-ref';
 async function buildRef(ctx) {
   if (ctx.created.ref) return ctx.created.ref;
   const files = ['prototype.js', 'prototype.css', 'components.css', 'screens.css']; const old = {};
-  try { for (const f of files) old[f] = execFileSync('git', ['-C', env.library, 'show', `${OLD_ENGINE_SHA}:skills/prototype/assets/repo/${f}`], { maxBuffer: 16 << 20, stdio: ['ignore', 'pipe', 'ignore'] }); }
-  catch (e) { return (ctx.created.ref = { ok: false, reason: `brak silnika sprzed D28b: git show ${OLD_ENGINE_SHA}:skills/prototype/assets/repo/… w ${env.library} nie powiódł się` }); }
+  try { for (const f of files) old[f] = oldEngineFile(f); }
+  catch (e) { return (ctx.created.ref = { ok: false, reason: `brak fikstury silnika sprzed D28b: ${OLD_ENGINE_DIR}${e.path ? '' : ''} (${e.message.slice(0, 120)})` }); }
   const init = await proto(ctx.ws, 'init', REF_SLUG, '--requirements', REQUIREMENTS_PATH, '--title', TITLE);
   if (init.code !== 0) return (ctx.created.ref = { ok: false, reason: 'init prototypu wzorcowego: ' + (init.err || init.out).slice(0, 160) });
   const html = readFileSync(ctx.ws.file(SLUG), 'utf8').replaceAll(`data-prototype-id="${SLUG}"`, `data-prototype-id="${REF_SLUG}"`).replaceAll(`data-slug="${SLUG}"`, `data-slug="${REF_SLUG}"`);
@@ -208,7 +211,7 @@ add('V-01', 'Start i przeładowanie: każdy ekran z ramką startuje w Desktop; l
   return { ok, start: { views: v0, localDesktopPressed: local0 }, mobile: { views: vM, rendered }, desktop: { views: vD, noIframe }, afterReload: { views: vR } };
 }));
 
-add('V-02', 'Budżet paska bez grupy „Widok” (D246): wysokość paska jak przed D28b (±2 px, prototyp wzorcowy z silnikiem sprzed D28b); 375 i 599 ≤ 2 × najwyższa kontrolka + 32 px (zalogowany i nie)', async (ctx) => {
+add('V-02', 'Budżet paska bez grupy „Widok” (D246): wysokość paska nie większa niż przed D28b (+2 px, D271; prototyp wzorcowy z silnikiem sprzed D28b); 375 i 599 ≤ 2 × najwyższa kontrolka + 32 px (zalogowany i nie)', async (ctx) => {
   const ref = await buildRef(ctx);
   const measure = (p) => p.evaluate(`(() => { const tb = document.querySelector('.doc-toolbar'); if (!tb) return { noBar: true }; const ctl = [...tb.querySelectorAll('button, select, a, input')].filter((e) => e.getClientRects().length);
     const maxH = Math.max(...ctl.map((e) => e.getBoundingClientRect().height)); const h = tb.getBoundingClientRect().height;
@@ -220,12 +223,16 @@ add('V-02', 'Budżet paska bez grupy „Widok” (D246): wysokość paska jak pr
     try { r = await measure(p); } finally { await p.dispose(); }
     if (ref.ok) { const q = await openPage(ctx.c, ctx.base, { width, dark, who, slug: REF_SLUG }); try { rr = await measure(q); } finally { await q.dispose(); } }
     const budget = width < 600 ? r.h <= 2 * r.maxH + 32 : true;
-    const asBefore = rr ? !rr.noBar && Math.abs(r.h - rr.h) <= 2 : null;
+    // D271: jednostronnie — pasek nie urósł względem silnika sprzed D28b. Równość ±2 px była nie do spełnienia, gdy poprawka paska (podpowiedź .anno-save)
+    // obniża pasek poniżej wzorcowego, a na szerokim foncie wzorcowy sam przekracza budżet.
+    const asBefore = rr ? !rr.noBar && r.h <= rr.h + 2 : null;
     const ok = !r.noBar && !r.hscroll && !r.group && budget && asBefore !== false;
     rows.push({ who: who || 'anonim', width, dark, ok, ...r, refH: rr ? rr.h : null, asBefore });
   }
+  // Dowód w CI bywa ucinany: najpierw wiersze z ok:false, pełna tabela za nimi.
+  const failed = rows.filter((x) => !x.ok);
   if (!ref.ok && rows.every((x) => x.ok)) return { status: 'NOT_RUN', reason: ref.reason, rows };
-  return { ok: rows.every((x) => x.ok) && ref.ok, ref, rows };
+  return { ok: rows.every((x) => x.ok) && ref.ok, ref, failed, rows };
 });
 
 // ---------------------------------------------------------------- K2
@@ -563,8 +570,8 @@ add('V-15', 'Iteracje zamrożone: strona iteracji z nowym silnikiem ma widoki; i
   // Iteracja sprzed wdrożenia: druga zamrożona kopia z prototype.js ze starego commitu biblioteki.
   let old = { status: 'NOT_RUN' };
   let oldJs = null;
-  try { oldJs = execFileSync('git', ['-C', env.library, 'show', `${OLD_ENGINE_SHA}:skills/prototype/assets/repo/prototype.js`], { maxBuffer: 16 << 20, stdio: ['ignore', 'pipe', 'ignore'] }); }
-  catch (e) { old.reason = `brak starego silnika: git show ${OLD_ENGINE_SHA}:skills/prototype/assets/repo/prototype.js w ${env.library} nie powiódł się`; }
+  try { oldJs = oldEngineFile('prototype.js'); }
+  catch (e) { old.reason = `brak fikstury starego silnika: ${OLD_ENGINE_DIR}prototype.js (${e.message.slice(0, 120)})`; }
   if (oldJs) {
     const it2 = await proto(ctx.ws, 'iterate', SLUG); const m = it2.json?.iteration;
     writeFileSync(`${ctx.ws.proj}/docs/prototypes/${SLUG}/iterations/${m}/prototype.js`, oldJs);

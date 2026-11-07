@@ -1,0 +1,253 @@
+/* screens.css: układ dokumentu prototypu (strona z ekranami, nagłówek ekranu, ramka „okna przeglądarki”,
+   powłoka aplikacji z paskiem bocznym i górnym).
+   Kolejność ładowania: tokens.css, theme.css, prototype.css, components.css, screens.css, project.css (ostatni).
+   Plik zarządza biblioteka: `skillsync prototype migrate` go nadpisuje. Style swojego prototypu wpisuj w project.css. */
+
+/* ---------- Dokument ---------- */
+
+.doc { width: 100%; max-width: 100%; margin: 0 auto; padding-bottom: 4rem; }
+
+.doc-head {
+  max-width: 90rem;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 1rem;
+}
+.doc-head h1 { margin: 0 0 0.5rem; font-size: 1.75rem; font-weight: 700; letter-spacing: -0.015em; line-height: 1.2; }
+.doc-head p { margin: 0; max-width: 60rem; color: var(--muted-foreground); }
+
+.note, .notes {
+  margin: 0.75rem 0 0;
+  padding: 0.625rem 0.875rem;
+  border: 1px solid var(--status-info-border);
+  border-left-width: 4px;
+  border-radius: var(--radius-md);
+  background: var(--status-info-bg);
+  color: var(--status-info-text);
+  font-size: 0.8125rem;
+}
+.notes > :first-child, .note > :first-child { margin-top: 0; }
+.notes > :last-child, .note > :last-child { margin-bottom: 0; }
+.notes ul { margin: 0; padding-left: 1.25rem; }
+ul.notes { padding-left: 2rem; }   /* sama lista jest ramką uwag: znaczniki punktów mają leżeć wewnątrz ramki */
+
+/* ---------- Ekran ---------- */
+
+.screen {
+  max-width: 90rem;
+  margin: 0 auto;
+  padding: 1.5rem 1.5rem 2rem;
+  scroll-margin-top: calc(var(--proto-toolbar-height, 4rem) + 0.5rem);
+  border-top: 1px solid var(--border);
+}
+
+.screen-meta { display: flex; flex-direction: column; gap: 0.375rem; margin-bottom: 1rem; }
+.screen-meta h2 { margin: 0; font-size: 1.25rem; font-weight: 700; line-height: 1.3; scroll-margin-top: calc(var(--proto-toolbar-height, 4rem) + 0.5rem); }
+.screen-meta p { margin: 0; max-width: 60rem; color: var(--muted-foreground); }
+.screen-meta .t-overline, .screen-meta .num { color: var(--muted-foreground); }
+
+.screen.is-current .screen-meta h2 { color: var(--foreground); }
+.screen.is-current .screen-meta h2::before {
+  content: "";
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  margin-right: 0.5rem;
+  border-radius: 50%;
+  background: var(--primary);
+  vertical-align: middle;
+}
+
+.screen-refs { display: flex; flex-wrap: wrap; align-items: center; gap: 0.375rem; margin: 0; padding: 0; list-style: none; }
+.ref {
+  display: inline-block;
+  padding: 0 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--muted);
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
+/* Prosty pasek linków ekranów (bez ulepszenia przełącznikiem albo z data-proto-nav="strip"). */
+.screen-nav:not(.proto-screens) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  min-width: 0;
+}
+.screen-nav:not(.proto-screens) > a {
+  padding: 0.125rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--foreground);
+  font-size: 0.75rem;
+  text-decoration: none;
+}
+.screen-nav:not(.proto-screens) > a:hover, .screen-nav:not(.proto-screens) > a[aria-current] { background: var(--accent); color: var(--accent-foreground); }
+.screen-nav:not(.proto-screens) > a:focus-visible { outline: solid 2px var(--ring); outline-offset: 2px; }
+
+/* ---------- Ramka „okna przeglądarki” ---------- */
+
+.frame {
+  position: relative;
+  isolation: isolate;
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--background);
+  color: var(--foreground);
+  box-shadow: var(--shadow-lg);
+}
+
+.frame-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--muted);
+}
+.frame-dots { display: inline-flex; flex: none; gap: 0.375rem; }
+.frame-dots > * { width: 0.625rem; height: 0.625rem; border-radius: 50%; background: var(--input); }
+.frame-url {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.125rem 0.75rem;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--background);
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.back-link { display: inline-flex; align-items: center; gap: 0.25rem; color: var(--muted-foreground); font-size: 0.8125rem; text-decoration: none; }
+.back-link:hover { color: var(--foreground); }
+
+/* ---------- Powłoka aplikacji ---------- */
+
+.app {
+  position: relative;
+  display: flex;
+  height: 40rem;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  background: var(--background);
+  color: var(--foreground);
+  font-size: 0.875rem;
+}
+.app-tall { height: 52rem; }
+.app-taller { height: 64rem; }
+.app-narrow { height: 34rem; }
+.app-foot { padding: 0.5rem 1rem; border-top: 1px solid var(--border); color: var(--muted-foreground); font-size: 0.75rem; }
+.app-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: var(--radius-md);
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-size: 0.8125rem;
+  font-weight: 800;
+}
+
+.sidebar {
+  display: flex;
+  flex: 0 0 15rem;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 0;
+  padding: 0.75rem;
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+  background: var(--muted);
+}
+.sidebar-app { display: flex; align-items: center; gap: 0.5rem; padding: 0.25rem 0.25rem 0.5rem; font-weight: 700; }
+.sidebar-search { display: flex; align-items: center; gap: 0.5rem; min-height: 2.25rem; margin: 0; padding: 0.375rem 0.625rem; border: 1px solid var(--input); border-radius: var(--radius-md); background: var(--background); color: var(--muted-foreground); font-size: 0.8125rem; }
+.sidebar-nav { display: flex; flex: 1 1 auto; flex-direction: column; gap: 0.75rem; min-height: 0; }
+.sidebar-foot { display: flex; align-items: center; gap: 0.5rem; padding-top: 0.5rem; border-top: 1px solid var(--border); }
+
+.nav, .nav-group, .nav-items { display: flex; flex-direction: column; gap: 0.125rem; min-width: 0; }
+.nav-group > .t-overline, .nav-group > .t-label { padding: 0.25rem 0.5rem; }
+/* nagłówek grupy: etykieta + szewron w jednym wierszu (elementy .nav-items są rodzeństwem) */
+.nav-group:has(> svg) { flex-direction: row; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.375rem 0.5rem 0.125rem; color: var(--muted-foreground); font-size: 0.6875rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; }
+.nav-group:has(> svg) > svg { flex: none; }
+.nav-sep { height: 1px; margin: 0.375rem 0; border: 0; background: var(--border); }
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--radius-md);
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+}
+.nav-item:hover { background: var(--accent); color: var(--accent-foreground); }
+.nav-item.here, .nav-item.active, .nav-item[aria-current] { background: var(--background); color: var(--foreground); box-shadow: var(--shadow-xs); }
+.nav-item:focus-visible { outline: solid 2px var(--ring); outline-offset: -2px; }
+
+.main { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; min-height: 0; }
+
+.topbar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 3.25rem;
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--background);
+}
+.topbar-left, .topbar-right { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
+.topbar-right { margin-left: auto; }
+.topbar-search { flex: 0 1 18rem; min-width: 0; }
+
+.page { flex: 1 1 auto; min-width: 0; min-height: 0; padding: 1.25rem 1.5rem; overflow: auto; display: flex; flex-direction: column; gap: 1rem; }
+.page-head p { margin: 0.25rem 0 0; color: var(--muted-foreground); }
+.page-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem; }
+.page-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 0.375rem; color: var(--muted-foreground); font-size: 0.8125rem; }
+.crumbs .here { color: var(--foreground); font-weight: 600; }
+
+/* ---------- Wąskie okna ---------- */
+
+@media (max-width: 48rem) {
+  .doc-head { padding: 1.25rem 1rem 0.75rem; }
+  .screen { padding: 1rem 0.75rem 1.5rem; }
+  .sidebar { flex-basis: 11rem; }
+  .page { padding: 1rem; }
+  .frame-bar { padding: 0.375rem 0.5rem; }
+}
+
+@media (max-width: 599.98px) {
+  .app .sidebar { display: none; }
+}
+
+@media (max-width: 37.5rem) {
+  .doc-head h1 { font-size: 1.375rem; }
+  .topbar-search { display: none; }
+}
+
+/* ---------- Telefon (biblioteka) ---------- */
+/* Style ekranów swojego prototypu wpisuj w project.css, nie tutaj. */
+
+/* Telefon: tytuł strony w ramce makiety ma się mieścić w dwóch liniach. */
+@media (max-width: 37.5rem) {
+  .frame .t-page-title { font-size: 1.125rem; overflow-wrap: anywhere; }
+  .frame .page-head { gap: 0.5rem; }
+}

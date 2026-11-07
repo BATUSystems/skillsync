@@ -1746,6 +1746,9 @@ class ConfigPrePushHookTest(LayersCase):
         return found.stdout.strip() if found.returncode == 0 else None
 
     def assert_fails_closed(self, shebang):
+        if sys.platform == 'darwin':
+            self.skipTest('BSD mktemp falls back to the per-user temp dir when TMPDIR is gone, so a temporary file '
+                          'is always possible on macOS and the premise of the test (none possible) does not hold')
         self.install(shebang)
         head = commit_file(self.mine, 'a.md', 'clean\n', 'clean')
         self.assertFalse(self.tmp_missing.parent.exists())

@@ -291,6 +291,8 @@ class OrgDataPositiveControls(ConsumersCase):
         self.assertEqual([check['id'] for check in report['checks']], ['org-e2e'], report)
         control = self.run_json('e2e', str(self.app), '--action', 'plan', *self.core_only(), code=0)
         self.assertEqual(control['checks'], [])
+        if sys.platform != 'linux':
+            self.skipTest('the env lifecycle has a process ownership backend on Linux only (BLOCKED elsewhere by design)')
         report = self.run_json('env', str(self.app), '--action', 'plan', code=0)
         self.assertEqual(report['configuration']['start'], ORG_WORKFLOW['workflow']['environment']['start'], report)
         control = self.run_json('env', str(self.app), '--action', 'plan', *self.core_only(), code=0)
