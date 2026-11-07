@@ -20,8 +20,9 @@ Lokalnie oba scenariusze przechodziły.
   `tests/fixtures/` z `SOURCE.md` (sha, sha256). Dla starego silnika komplet: `prototype.js` **i** pliki CSS, nie sam JS.
 - Układ mierzony w E2E sprawdzaj także na szerokim foncie. Lokalnie: `FONTCONFIG_FILE` z regułami zamieniającymi
   `sans-serif`, `system-ui` i `Noto Sans` na `DejaVu Sans`, uruchomienie Chrome z tą zmienną.
-- Elementy tekstowe w wierszach paska mają być elastyczne (`flex: 1 1 <basis>; min-width: 0; text-overflow: ellipsis`),
-  a nie sztywno `nowrap`. Fix w CI przez instalację fontu maskowałby defekt widoczny u użytkowników.
+- Elementy tekstowe w wierszach paska mają szerokość naturalną z górnym limitem (`max-width: 11rem; min-width: 0; text-overflow: ellipsis`),
+  a nie sztywno `nowrap`. Nie dawaj im `flex-grow` ani dużej `flex-basis`: poszerzony „Zapisano” wypchnął „⋯” zalogowanego do trzeciego rzędu (V-02, 599 px). Fix w CI przez instalację fontu maskowałby defekt widoczny u użytkowników.
+- Dowód scenariusza w `evidence` zaczynaj od wierszy z `ok:false`: log CI ucina dowód po ok. 800 znakach.
 - Asercja „równa wzorcowi ±N” nie wytrzymuje poprawy poniżej wzorca (D271): wyrażaj ją jednostronnie („nie większe niż przed”).
 
 **Jak wykryć:** `grep -nE "git.*show|execFileSync\('git'" tests/e2e/prototype/*.mjs` (zależność od historii);

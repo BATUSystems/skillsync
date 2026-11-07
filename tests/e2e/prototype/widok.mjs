@@ -229,8 +229,10 @@ add('V-02', 'Budżet paska bez grupy „Widok” (D246): wysokość paska nie wi
     const ok = !r.noBar && !r.hscroll && !r.group && budget && asBefore !== false;
     rows.push({ who: who || 'anonim', width, dark, ok, ...r, refH: rr ? rr.h : null, asBefore });
   }
+  // Dowód w CI bywa ucinany: najpierw wiersze z ok:false, pełna tabela za nimi.
+  const failed = rows.filter((x) => !x.ok);
   if (!ref.ok && rows.every((x) => x.ok)) return { status: 'NOT_RUN', reason: ref.reason, rows };
-  return { ok: rows.every((x) => x.ok) && ref.ok, ref, rows };
+  return { ok: rows.every((x) => x.ok) && ref.ok, ref, failed, rows };
 });
 
 // ---------------------------------------------------------------- K2

@@ -64,7 +64,7 @@ None.
 
 ### Fixed
 
-- Prototype toolbar on phones (<600 px): the hint `.anno-save` is flexible and ellipsized, so a wider system font (e.g. DejaVu Sans)
+- Prototype toolbar on phones (<600 px): the hint `.anno-save` has its natural width capped at 11rem and is ellipsized, so a wider system font (e.g. DejaVu Sans)
   no longer pushes the "⋯" button into a third row (logged-out toolbar 151 px → 117 px).
 - E2E V-02 reads the pre-D28b engine from `tests/fixtures/prototype/engine-v2-prev/` instead of git history, which the public core does not have;
   V-02 now checks that the bar is not taller than the reference (+2 px) instead of equal to it (D271).
