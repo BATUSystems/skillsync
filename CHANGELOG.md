@@ -69,5 +69,10 @@ None.
 - E2E V-02 reads the pre-D28b engine from `tests/fixtures/prototype/engine-v2-prev/` instead of git history, which the public core does not have;
   V-02 now checks that the bar is not taller than the reference (+2 px) instead of equal to it (D271).
 
+### Known issues
+
+- E2E scenario N-R1 (comment panel, mobile view) is unstable: it sometimes fails with a page jump of about −3000 px (open shift equals close shift).
+  On clean `main` 6134a8c: 2 of 6 runs fail with DejaVu Sans, 0 of 6 with the default font. Possibly related to V-23. Fix planned for 1.0.1.
+
 [Unreleased]: https://github.com/BATUSystems/skillsync/compare/v1.0.0...HEAD
 [1.0.0]: https://github.com/BATUSystems/skillsync/releases/tag/v1.0.0

@@ -27,3 +27,7 @@ Lokalnie oba scenariusze przechodziły.
 
 **Jak wykryć:** `grep -nE "git.*show|execFileSync\('git'" tests/e2e/prototype/*.mjs` (zależność od historii);
 bieg N-R9 i V-02 z `FONTCONFIG_FILE` wymuszającym DejaVu Sans.
+
+**Niestabilność zależna od fontu (N-R1 mobile, D277):** przed uznaniem porażki za skutek zmiany zrób baseline na czystym `main`
+(osobny worktree, ten sam font, 6 biegów). N-R1 mobile padał na `main` 6134a8c w 2 z 6 biegów z DejaVu Sans i w 0 z 6 ze zwykłym fontem
+(sygnatura `openShift` = `closeShift` ≈ −3000…−3121 px). Sam zielony pojedynczy bieg CI niczego nie dowodzi, sam czerwony też.

@@ -198,6 +198,10 @@ Sekcje 8 i 9 opisują scenariusze uzupełniające i ustalenia kontraktu. Sekcja 
   i wymienione w jego wyniku.
 - Znane defekty (wpisy `KNOWN_DEFECTS` w `tests/test_skillsync_prototype_e2e.py`; zagnieżdżony punkt `- <ID>: wymagane zachowanie`):
   - V-23: górna krawędź oglądanego ekranu względem okna zmienia się o ≤ 2 px, gdy iframe widoku mobile nad nim pierwszy raz dopasowują wysokość do treści (D249: poprawka cofnięta). Scenariusz zgłasza `defectObserved`; usuń wpis w tym samym commicie, który naprawia defekt.
+- Niestabilne scenariusze (D277; poza `KNOWN_DEFECTS`, bo XFAIL nie znosi niestabilności: nieoczekiwany PASS też jest błędem): N-R1 w wariancie mobile
+  bywa FAIL z sygnaturą `openShift` = `closeShift` ≈ −3000…−3121 px (np. `1024/dark/s1`, `1280/light/s2`). Częstość z czystego `main` 6134a8c, 6 biegów na font:
+  DejaVu Sans 2/6 FAIL, zwykły font (Noto Sans) 0/6. Powiązanie z V-23 (D249, skok strony przy dopasowaniu wysokości iframe mobile) jest hipotezą, niepotwierdzoną.
+  Asercja bez zmian; naprawa w wydaniu 1.0.1. Reguła dla CI: gdy job e2e pada wyłącznie na N-R1 z tą sygnaturą, wykonaj jeden rerun i zapisz oba wyniki; inna porażka blokuje.
 - Dokończenie przerwanego przywracania nie jest wywoływalne z UI (F07, tylko CLI).
 - Prawdziwe rozszerzenie Dark Reader nie jest uruchamiane (wymaga zgody); zachowanie sprawdzane jest wstrzykniętym węzłem stylu (DR-start, DR-późny).
 
