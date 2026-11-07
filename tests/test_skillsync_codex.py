@@ -237,7 +237,7 @@ class CodexTests(TempProjectMixin, unittest.TestCase):
         target.parent.mkdir(parents=True)
         target.symlink_to(external, target_is_directory=True)
         self.build()
-        self.assertEqual(target.resolve(), external)
+        self.assertEqual(target.resolve(), external.resolve())
 
     def test_invalid_role_name_rejected(self):
         with self.assertRaises(ValueError):

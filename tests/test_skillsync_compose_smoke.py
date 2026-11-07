@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from layers_helpers import IsolatedTestCase, write  # noqa: E402
+from layers_helpers import IsolatedTestCase, machine_cache_dir, write  # noqa: E402
 
 from cli_module import SKILLSYNC_PATH  # noqa: E402
 
@@ -85,7 +85,7 @@ class ComposeSmokeTest(IsolatedTestCase):
                 second = self.link(env=env)
                 self.assertEqual((second.returncode, second.stdout), (0, ''), second.stderr)
                 if mode == 'symlink':
-                    composed = Path(self.env['XDG_CACHE_HOME']) / 'skillsync' / 'composed' / 'feature'
+                    composed = machine_cache_dir() / 'composed' / 'feature'
                     self.assertTrue(os.path.realpath(skill).startswith(str(composed)))
                     self.assertTrue(os.path.islink(skill / 'references' / 'org.md'))
                 else:

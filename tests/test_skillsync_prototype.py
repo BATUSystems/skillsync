@@ -1407,7 +1407,7 @@ class ListTests(PrototypeFixture):
 
     def test_staging_and_irregular_directories_are_skipped(self):
         self.init('demo')
-        for name in ('.demo-staging-abc', 'Demo', '_x', 'a--b'):
+        for name in ('.demo-staging-abc', 'Other', '_x', 'a--b'):
             (self.protos / name).mkdir()
             shutil.copyfile(self.proto_dir() / 'prototype.json', self.protos / name / 'prototype.json')
         (self.protos / 'no-json').mkdir()

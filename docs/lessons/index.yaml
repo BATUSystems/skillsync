@@ -180,3 +180,7 @@ lessons:
     title: "Testy rdzenia nie zależą od historii gita sprzed migawki; pasek prototypu nie może zależeć od szerokości fontu systemowego"
     tags: [testing, e2e, prototype, ci, fonts, css, git]
     paths: ['tests/e2e/prototype/widok.mjs', 'tests/e2e/prototype/nr.mjs', 'tests/fixtures/prototype/engine-v2-prev/*', 'library/skills/prototype/assets/repo/prototype.css']
+  - path: macos-sciezki-platformy-zamiast-xdg-w-testach.md
+    title: "Testy na macOS: ścieżki platformy zamiast XDG i system plików bez rozróżniania wielkości liter"
+    tags: [skillsync, tests, macos, ci, xdg, paths]
+    paths: ['tests/layers_helpers.py', 'tests/test_skillsync_workflow.py', 'skillsync_workflow/layers.py', '.github/workflows/ci.yml']

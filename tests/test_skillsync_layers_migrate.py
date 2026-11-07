@@ -31,7 +31,7 @@ ROOT = TESTS.parent
 sys.path.insert(0, str(TESTS))
 sys.path.insert(0, str(ROOT))
 
-from layers_helpers import (LINK_MODES, SKILL_TEXT, LayersCase, commit, each_mode, generator_version, git,  # noqa: E402
+from layers_helpers import (LINK_MODES, SKILL_TEXT, LayersCase, commit, each_mode, generator_version, git, machine_data_dir,  # noqa: E402
                             link_mode, make_layer, tree_snapshot, write, yaml_text)
 from skillsync_workflow import layers  # noqa: E402
 from layers_helpers import needs_os_symlinks  # noqa: E402
@@ -347,7 +347,7 @@ class LayerSourceTest(MigrateCase):
                 self.assertEqual((report['status'], report['code']), ('BLOCKED', 'bad-argument'))
                 self.assertIn('layers add acme', report['reason'])
                 self.assertEqual(self.machine_tree(), before, 'nothing written, nothing cloned')
-        self.assertFalse((Path(self.env['XDG_DATA_HOME']) / 'skillsync' / 'layers').exists())
+        self.assertFalse((machine_data_dir() / 'layers').exists())
 
     def test_bad_pairs_are_refused_without_writing(self):
         self.old_config()
@@ -420,7 +420,7 @@ class ManifestsTest(MigrateCase):
         return project / '.github' / '.skillsync.yaml'
 
     def backup_root(self):
-        return Path(self.env['XDG_DATA_HOME']) / 'skillsync' / 'backups' / 'manifests'
+        return machine_data_dir() / 'backups' / 'manifests'
 
     def projects_tree(self):
         return {name: tree_snapshot(self.projects / name) for name in ('first', 'second', 'clean')}
@@ -512,7 +512,7 @@ class FinishTest(MigrateCase):
     def test_isolation_must_pass(self):
         self.replace_bridge()
         shutil.rmtree(self.library)
-        foreign = make_layer(Path(self.env['XDG_DATA_HOME']) / 'skillsync' / 'layers' / 'foreign', 'foreign', 'org')
+        foreign = make_layer(machine_data_dir() / 'layers' / 'foreign', 'foreign', 'org')
         before = self.config_file.read_bytes()
         report = self.migrate('--finish', '--apply', code=2)
         self.assertIn('isolation-foreign-library', {item['code'] for item in report['findings']}, report)

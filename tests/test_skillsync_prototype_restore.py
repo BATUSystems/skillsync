@@ -876,7 +876,14 @@ class CommitBeforeIterationTests(RestoreFixture):
         self.assertTrue(self.iterate()['commit'])
 
     def test_outside_a_git_working_copy_is_a_warning_without_a_commit(self):
-        shutil.rmtree(self.base / '.git')
+        # Background `git maintenance` may delete its own lock mid-walk (seen on macOS): retry the rest.
+        for _ in range(5):
+            try:
+                shutil.rmtree(self.base / '.git')
+                break
+            except FileNotFoundError:
+                continue
+        self.assertFalse((self.base / '.git').exists())
         self.flag()
         report = self.iterate(env={'GIT_CEILING_DIRECTORIES': str(self.base)})
         self.assertIsNone(report['commit'])

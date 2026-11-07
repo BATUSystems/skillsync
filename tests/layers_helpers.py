@@ -29,7 +29,9 @@ import yaml
 
 REAL_HOME = Path.home()
 # Directories that must stay untouched by tests (machine state of the real user).
-REAL_STATE_DIRS = (REAL_HOME / '.cache' / 'skillsync', REAL_HOME / '.local' / 'share' / 'skillsync')
+REAL_STATE_DIRS = (REAL_HOME / '.cache' / 'skillsync', REAL_HOME / '.local' / 'share' / 'skillsync',
+                   REAL_HOME / 'Library' / 'Caches' / 'skillsync',
+                   REAL_HOME / 'Library' / 'Application Support' / 'skillsync')
 
 ISOLATED_VARS = ('HOME', 'USERPROFILE', 'XDG_CACHE_HOME', 'XDG_DATA_HOME', 'XDG_CONFIG_HOME',
                  'LOCALAPPDATA', 'APPDATA', 'GIT_CONFIG_GLOBAL', 'GIT_CONFIG_NOSYSTEM', 'SKILLSYNC_CONFIG')
@@ -72,6 +74,26 @@ def isolated_environment(root, extra=None):
         for name in GIT_IDENTITY_VARS:
             os.environ.pop(name, None)
         yield values
+
+
+def machine_data_dir(env=None):
+    """Per-user data directory of the host platform inside an isolated machine (`layers.data_home()`).
+
+    Linux honours `XDG_DATA_HOME`; macOS uses `~/Library/Application Support/skillsync` under the isolated
+    `HOME`; Windows uses `LOCALAPPDATA`. Tests must not assume the Linux layout."""
+    return _platform_dir('data_home', env)
+
+
+def machine_cache_dir(env=None):
+    """Per-user cache directory of the host platform inside an isolated machine (`layers.cache_home()`)."""
+    return _platform_dir('cache_home', env)
+
+
+def _platform_dir(function, env):
+    sys.path.insert(0, str(ROOT))
+    from skillsync_workflow import layers
+    with mock.patch.dict(os.environ, dict(env or {})):
+        return getattr(layers, function)()
 
 
 def real_state_snapshot():
