@@ -50,7 +50,7 @@ class WorkflowFixture(unittest.TestCase):
                     'XDG_DATA_HOME': str(self.base / 'xdg-data')}
         if sys.platform == 'darwin':
             # macOS keeps the per-user dirs under `~/Library` (not XDG): only `HOME` moves them into the fixture.
-            home = self.base / 'home'
+            home = self.base / 'machine-home'
             home.mkdir()
             isolated['HOME'] = str(home)
         environ = mock.patch.dict(os.environ, isolated)
