@@ -71,7 +71,7 @@ docelowego. Zobacz [docs/security.md](docs/security.md).
 |---|---|---|
 | I. Spec | spec bez pytań otwartych i szkic planu | „GO plan” |
 | II. Plan | kroki, testy, zasoby i propozycja wersji | „GO implement” |
-| III. Realizacja | kod, testy, review, dokumentacja, changelog, wersja | status `done`; commit tylko na polecenie |
+| III. Realizacja | kod, testy, review, dokumentacja, changelog, wersja | status `done`; commity według trybu dostarczania (`delivery.mode`) |
 
 Sesja główna jest orkiestratorem; pracę wykonują podagenci (podumysły) o wąskim zakresie (Explore, implementer,
 test-writer, test-runner, reviewer, verifier, scribe, mechanic), którzy nie delegują dalej. Małe błędy idą skróconym

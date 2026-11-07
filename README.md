@@ -71,7 +71,7 @@ target repository. See [docs/security.md](docs/security.md).
 |---|---|---|
 | I. Spec | a spec without open questions and a draft plan | “GO plan” |
 | II. Plan | steps, tests, resources and the proposed version | “GO implement” |
-| III. Delivery | code, tests, review, documentation, changelog, version | status `done`; commit only on request |
+| III. Delivery | code, tests, review, documentation, changelog, version | status `done`; commits and pushes follow the delivery mode (`delivery.mode`) |
 
 The main session orchestrates; scoped subagents (Explore, implementer, test-writer, test-runner, reviewer, verifier,
 scribe, mechanic) do the work and never delegate further. Small bugs use the shorter `bugfix` flow. Larger goals can

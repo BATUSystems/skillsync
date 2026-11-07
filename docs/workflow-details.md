@@ -91,7 +91,7 @@ deklaracji `PASS`. Prywatne materiały sesji głównej nie trafiają do zleceń 
 |---|---|---|---|
 | I Spec (tylko `plan-large`) | spec bez pytań `Q`; przy „GO plan” status `approved` i plan-szkic z `Spec-sha` | `spec` | „GO plan” |
 | II Plan | plan `draft (czeka na GO implement)`, `readiness`, odpowiedź o wersję | `plan` (obowiązkowa przy `plan-large`, ryzyku planu high, prośbie użytkownika) | „GO implement” |
-| III Realizacja | kod, testy, dokumentacja, changelog, wersja | `kod`: po kroku z ryzykiem high i końcowa | `done`; commit tylko na polecenie |
+| III Realizacja | kod, testy, dokumentacja, changelog, wersja | `kod`: po kroku z ryzykiem high i końcowa | `done`; commity według trybu dostarczania (`delivery.mode`) |
 
 - Plan `direct` ma akty II i III i jedną zgodę „GO implement”.
 - `bugfix` ma brief i akt III; przy wejściu z klucza brief staje się planem z „GO implement”.

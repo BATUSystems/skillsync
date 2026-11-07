@@ -277,6 +277,11 @@ Klikalne prototypy HTML w repo projektu (`<root>/<slug>/`, domyślnie `docs/prot
 - Manifest, sekcja `prototype:` (opcjonalna): `root`, `theme.tokens_from` (CSS z tokenami), `theme.css`, `guidelines` (md), `commit_before_iteration` (bool); ścieżki względne, w repo, walidowane przez `doctor`.
 - Szczegóły generatora: dokumentacja repo Skillsync, `docs/cli.md`, `docs/manifest.md` i rekord `docs/domain/prototype-manifest-and-cli.md`.
 
+### Tryb dostarczania (`delivery`)
+
+- Manifest, sekcja `delivery:` (opcjonalna): `mode` (`pr` | `direct`; brak = `pr`, `doctor` ostrzega) i `base` (gałąź bazowa; `direct` bez `base` daje ostrzeżenie). To inna sekcja niż `workflow.delivery` (provider, CI). Nie zmienia artefaktów `link`.
+- `skillsync route <projekt> --json` zwraca `delivery {mode, base, source}`; `source`: `manifest`, `default` albo `invalid` (wtedy `error`, a agent pyta zamiast zakładać `pr`). Zachowanie agenta w obu trybach: instrukcje rdzenia (`CP`, `CPD`, `READY`).
+
 ## Troubleshooting
 
 ### Skill nie pojawia się po skillsync link

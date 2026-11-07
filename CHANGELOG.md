@@ -52,9 +52,15 @@ None.
 - CI: Python 3.11 and 3.12 matrix, `install-smoke` (wheel built, installed as a tool, run outside the checkout), `e2e` (Chrome),
   `release-check`, and `release-smoke` after a `v*` tag. Tests run against the `library/` of the checkout.
 - `tests/test_skillsync_library_smoke.py`: the shipped `library/` links and passes `doctor` in both link modes.
+- Delivery mode: optional manifest section `delivery` (`mode`: `pr` | `direct`, `base`), validated by `skillsync doctor`
+  and returned by `skillsync route` as `delivery {mode, base, source}`.
 
 ### Changed
-None.
+
+- The library describes both delivery modes: the agent commits after each verified plan step on a work branch; `pr` (default) starts
+  `pr-run` on "GO implement" and waits for `READY`; `direct` commits locally and delivers on `CP`. `CP` in `direct` now pushes
+  `work:base` (fast-forward) instead of committing in place. `READY` and `READY!` come only from the user; merge and complete PR are never
+  agent actions. In `pr` parallel cards get no `PUSH SLOT` on the base branch.
 
 ### Breaking
 

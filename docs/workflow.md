@@ -99,7 +99,7 @@ stany i wznowienie: `../library/skills/feature/references/spec.md`.
 |---|---|---|---|
 | I Spec (tylko `plan-large`) | spec bez pytań `Q`, przy „GO plan” `approved` i plan-szkic z `Spec-sha` | `spec` (zawsze) | „GO plan” |
 | II Plan | plan `draft (czeka na GO implement)`, `readiness`, odpowiedź o wersję | `plan` (obowiązkowa przy `plan-large`, ryzyku planu high, prośbie użytkownika; inaczej jedna runda opcjonalna) | „GO implement” |
-| III Realizacja | kod, testy, dokumentacja, changelog, wersja | `kod`: po każdym kroku z ryzykiem high i końcowa | `done`; commit tylko na polecenie |
+| III Realizacja | kod, testy, dokumentacja, changelog, wersja | `kod`: po każdym kroku z ryzykiem high i końcowa | `done`; commity według trybu dostarczania (`delivery.mode`) |
 
 Plan `direct` ma akty II i III i jedną zgodę „GO implement”. `bugfix` ma brief i akt III. Samo „GO” agent
 przyjmuje według tabeli stanów i nazywa w odpowiedzi, na co je przyjął; stan niejednoznaczny to pytanie, nie działanie.
