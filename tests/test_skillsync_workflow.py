@@ -29,7 +29,8 @@ class WorkflowFixture(unittest.TestCase):
     from the machine config (K3). The per-user cache and data
     dirs (`XDG_CACHE_HOME`, `XDG_DATA_HOME`: composites, layer checkouts, skills index) point inside the
     fixture too (created on demand); a cleanup proves the real `~/.cache/skillsync` and
-    `~/.local/share/skillsync` stay untouched. `HOME` stays real (retro and prototype tests use it)."""
+    `~/.local/share/skillsync` stay untouched. `HOME` stays real, except on macOS, where the per-user dirs live
+    under `~/Library` and only `HOME` can move them into the fixture."""
 
     def setUp(self):
         real_state = real_state_snapshot()
@@ -44,9 +45,15 @@ class WorkflowFixture(unittest.TestCase):
         self.library.mkdir()
         self.machine_config = self.base / 'skillsync-config.yaml'
         self.use_layers()
-        environ = mock.patch.dict(os.environ, {'SKILLSYNC_CONFIG': str(self.machine_config),
-                                               'XDG_CACHE_HOME': str(self.base / 'xdg-cache'),
-                                               'XDG_DATA_HOME': str(self.base / 'xdg-data')})
+        isolated = {'SKILLSYNC_CONFIG': str(self.machine_config),
+                    'XDG_CACHE_HOME': str(self.base / 'xdg-cache'),
+                    'XDG_DATA_HOME': str(self.base / 'xdg-data')}
+        if sys.platform == 'darwin':
+            # macOS keeps the per-user dirs under `~/Library` (not XDG): only `HOME` moves them into the fixture.
+            home = self.base / 'home'
+            home.mkdir()
+            isolated['HOME'] = str(home)
+        environ = mock.patch.dict(os.environ, isolated)
         environ.start()
         self.addCleanup(environ.stop)
         self.manifest = {'sync': {'library': str(self.library)}, 'workflow': {}}
@@ -416,7 +423,7 @@ class ContextContracts(WorkflowFixture):
         self.manifest['workflow']['knowledge'] = {'domain': '../docs/domain'}
         self.save()
         report = self.report('route', '--topics', 'implementation')
-        self.assertEqual([record['path'] for record in report['domain']], [str(shared / 'glossary.md')])
+        self.assertEqual([record['path'] for record in report['domain']], [str(shared.resolve() / 'glossary.md')])
 
     def test_domain_records_without_load_keep_existing_routing_and_pass_doctor(self):
         self.write('docs/domain/billing.md', '---\ntags: [billing]\n---\nInvoice numbering rule')

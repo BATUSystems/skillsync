@@ -19,7 +19,7 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from layers_helpers import (LINK_MODES, LayersCase, ROOT, commit, git, link_mode, make_layer,  # noqa: E402
+from layers_helpers import (LINK_MODES, LayersCase, ROOT, commit, git, link_mode, machine_data_dir, make_layer,  # noqa: E402
                             write, yaml_text)
 from skillsync_workflow import layers, leakguard  # noqa: E402
 from layers_helpers import needs_os_symlinks, require_os_symlinks  # noqa: E402
@@ -105,7 +105,7 @@ class ConfigParsingTest(ConfigCase):
 
     def test_missing_path_uses_the_default_checkout_dir(self):
         config = layers.parse_machine_config({'layers': [{'id': 'acme', 'kind': 'org', 'source': 's'}]}, None)
-        expected = Path(self.env['XDG_DATA_HOME']) / 'skillsync' / 'layers' / 'acme'
+        expected = machine_data_dir() / 'layers' / 'acme'
         self.assertEqual(config.layers['acme'].path, expected)
 
     def test_tilde_in_path_is_expanded(self):

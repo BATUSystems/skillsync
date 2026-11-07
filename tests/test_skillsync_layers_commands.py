@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from layers_helpers import (LINK_MODES, LayersCase, commit, generator_version, git, link_mode,  # noqa: E402
-                            make_layer, write, yaml_text)
+                            machine_cache_dir, machine_data_dir, make_layer, write, yaml_text)
 from skillsync_workflow import layers, leakguard  # noqa: E402
 from skillsync_workflow.selfcmd import self_argv  # noqa: E402
 
@@ -41,7 +41,7 @@ class CommandsCase(LayersCase):
         return yaml.safe_load(self.config_file.read_text(encoding='utf-8')) or {}
 
     def default_checkout(self, layer_id):
-        return Path(self.env['XDG_DATA_HOME']) / 'skillsync' / 'layers' / layer_id
+        return machine_data_dir() / 'layers' / layer_id
 
     def head(self, path):
         return git(path, 'rev-parse', 'HEAD').stdout.strip()
@@ -890,7 +890,7 @@ class LayersListTest(CommandsCase):
                 for key in ('schema', 'generator_version', 'layers', 'composed_root', 'status'):
                     self.assertIn(key, report)
                 self.assertEqual((report['schema'], report['status'], report['generator_version']), (1, 'PASS', generator_version()))
-                self.assertEqual(report['composed_root'], str(Path(self.env['XDG_CACHE_HOME']) / 'skillsync' / 'composed'))
+                self.assertEqual(report['composed_root'], str(machine_cache_dir() / 'composed'))
                 self.assertEqual([item['id'] for item in report['layers']], ['core', 'acme', 'me'])
                 acme = report['layers'][1]
                 for key in ('id', 'kind', 'path', 'subdir', 'version', 'writable'):
@@ -1288,7 +1288,7 @@ class IsolationTest(CommandsCase):
 
     def test_foreign_checkouts_in_the_layers_directory_fail(self):
         self.configure()
-        layers_dir = Path(self.env['XDG_DATA_HOME']) / 'skillsync' / 'layers'
+        layers_dir = machine_data_dir() / 'layers'
         make_layer(layers_dir / 'foreign', 'foreign', 'org')
         self.assert_fail('isolation-foreign-library')
         shutil.rmtree(layers_dir / 'foreign')
@@ -1332,7 +1332,7 @@ class IsolationTest(CommandsCase):
 
     def test_an_invalid_layer_yaml_fails(self):
         self.configure()
-        layers_dir = Path(self.env['XDG_DATA_HOME']) / 'skillsync' / 'layers'
+        layers_dir = machine_data_dir() / 'layers'
         write(layers_dir / 'broken' / 'layer.yaml', 'schema: 1\nid: Bad Id\nkind: org\n')
         self.assert_fail('isolation-layer-yaml-invalid')
         shutil.rmtree(layers_dir / 'broken')
