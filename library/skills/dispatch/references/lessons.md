@@ -6,7 +6,7 @@ Czytaj przy sporze o kolejność, dzierżawy, push lub status; tabela mapuje zda
 |---|---|---|
 | 1 | zlecenie do zajętej karty (nazwy się przetasowały, duplikaty) | aliasy z listy imion + sonda przed każdym przydziałem (Start 3–4, Przydział) |
 | 2 | sesja-duch „waiting” blokowała paczkę 2 h | brak odpowiedzi na sondę → niedostępna, realokacja, prośba o restart (Start 4) |
-| 3 | push dokumentów zepsuł fast-forward innej karcie | PUSH SLOT dla wszystkich pushy, także dokumentów (pętla) |
+| 3 | push dokumentów zepsuł fast-forward innej karcie | PUSH SLOT dla wszystkich pushy na bazę, także dokumentów (tryb `direct`; w `pr` dokumenty dyspozytora poza bazą) (pętla) |
 | 4 | dwa razy „SEC-33” dla różnych luk | ID tylko od dyspozytora, etykiety robocze do nadania (pętla, `ID REQUEST`) |
 | 5 | trzy gałęzie z migracjami EF | integrujący później regeneruje migrację po rebase (`MASTER MOVED`, multi-session.md) |
 | 6 | zgłoszony push, którego nie było | `git ls-remote` — weryfikacja hasha (`PUSHED`) |

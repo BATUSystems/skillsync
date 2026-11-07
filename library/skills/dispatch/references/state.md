@@ -65,7 +65,7 @@ leases:
     released_at: null
     release: null                       # { exit: 0, log: ".../e2e.log", verified: true }
     queue: [F06]                        # kolejka oczekujących paczek (FIFO)
-merge_queue:                            # kolejność PUSH SLOT
+merge_queue:                            # kolejność PUSH SLOT (tryb direct; w pr scala człowiek)
   - { package: F06, state: waiting }    # waiting | granted | pushed | verified
   - { package: F05, state: waiting }
 master:

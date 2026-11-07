@@ -62,7 +62,7 @@ Dyspozytor sprawdza rejestr stanu i repo (ostatnie SEC-32): `ID GRANT SEC W1 SEC
 → dyspozytor czyta log (liczba scenariuszy, exit 0, czas logu po ostatniej zmianie kodu),
 sprawdza, że porty wolne → `LEASE GRANT e2e W3`.
 
-**8. Raport i kolejka merge.** `REPORT DONE W1 commit=f00d111 checks=… debt=… retro=0` → dyspozytor sprawdza
+**8. Raport i kolejka merge (tryb `direct`; w `pr` karta zgłasza status `review`, a PR scala człowiek).** `REPORT DONE W1 commit=f00d111 checks=… debt=… retro=0` → dyspozytor sprawdza
 dowody w logach i `skillsync retro` (odbiór paczki), oznacza W1 `review→done`. `PUSH SLOT W1` → `PUSH GRANT W1` (pierwsza w kolejce)
 → `PUSHED W1 9e8d7c6` → `git ls-remote origin main` = `9e8d7c6` (zweryfikowano) → `MASTER MOVED
 9e8d7c6 "endpoint+migracja W1" rebase=tak, migracja=regeneruj` do `karta-2` i `karta-3`
@@ -93,7 +93,7 @@ otwarte decyzje). Pytanie o sprzątanie worktree i baz testowych — tylko za zg
 - Sonda przed każdym przydziałem; duch nie zablokował paczki.
 - Zgoda na plan ≠ GO; GO w kartach lokalnie.
 - ID tylko od dyspozytora; dzierżawa `e2e` jedna naraz, GRANT po zweryfikowanym RELEASE.
-- Push tylko w slocie, hash zweryfikowany na zdalnym repo; `MASTER MOVED` po każdym pushu.
+- Push na bazę (tryb `direct`) tylko w slocie, hash zweryfikowany na zdalnym repo; `MASTER MOVED` po każdym pushu.
 - Resume z pliku, uzgodnienie ze stanem faktycznym (ls-remote, procesy, karty) i potwierdzenie
   użytkownika przed wznowieniem; bramka modelu w każdej turze.
 

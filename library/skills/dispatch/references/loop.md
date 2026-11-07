@@ -7,7 +7,7 @@ Czytaj przy każdej wiadomości od karty (tabela reakcji dyspozytora).
 | `FREE` / `BUSY` / `STATUS` | aktualizacja stanu; przy `czeka-na=użytkownik` nie ponaglaj |
 | `LEASE REQUEST` | sprawdź faktyczny stan (porty, procesy, dysk, load, baza) → `LEASE GRANT` albo `LEASE QUEUED` |
 | `LEASE RELEASE` | zweryfikuj exit code i log, procesy zatrzymane, porty wolne → dopiero potem następny GRANT |
-| `PUSH SLOT` | kolejka merge; `PUSH GRANT` po jednym; zmiany kontraktów ostatnie |
+| `PUSH SLOT` | kolejka merge (tryb `direct`; w `pr` brak `PUSH SLOT` na bazę, gotowość = status `review`); `PUSH GRANT` po jednym; zmiany kontraktów ostatnie |
 | `PUSHED <hash>` | `git ls-remote` — hash na zdalnym repo; `MASTER MOVED` do pozostałych kart |
 | `ID REQUEST` | nadaj numer z rejestru (stan + repo); do tego czasu karta używa etykiety roboczej |
 | `REPORT DONE` | [odbiór paczki](#odbiór-paczki-report-done); oznacz paczkę; przydziel następną |
