@@ -46,7 +46,7 @@ None.
 - `layers check` reports `hook-command-missing` (FAIL) when a guard hook of a layer calls a file that no longer exists.
 - `SKILLSYNC_NO_SYMLINK` accepts `1`/`true`/`yes`/`on` and `0`/`false`/`no`/`off`; any other value warns and turns copy
   mode on.
-- v1.0.0 supports Linux and WSL; native Windows and macOS are planned for v1.0.1 (their CI jobs do not block).
+- v1.0.0 supports Linux, WSL and macOS; native Windows is planned for v1.0.1. CI on Ubuntu and macOS blocks the release; the Windows jobs do not.
 - Installation as a Python package with `uv tool install` (see [README](README.md)): `pyproject.toml` (hatchling, entry point
   `skillsync`), `scripts/check_wheel.py` (wheel contents) and `scripts/check_release.py` (CHANGELOG section for the version or tag).
 - CI: Python 3.11 and 3.12 matrix, `install-smoke` (wheel built, installed as a tool, run outside the checkout), `e2e` (Chrome),

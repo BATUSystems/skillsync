@@ -176,3 +176,7 @@ lessons:
     title: "reason w BLOCKED nie zawiera ścieżek ani treści plików: stałe komunikaty także dla OSError i błędów configu"
     tags: [skillsync, retro, redaction, privacy, blocked, errors]
     paths: ['skillsync_workflow/retro.py', 'skillsync_workflow/retro_scan.py', 'tests/test_skillsync_retro.py']
+  - path: macos-sciezki-platformy-zamiast-xdg-w-testach.md
+    title: "Testy na macOS: ścieżki platformy zamiast XDG i system plików bez rozróżniania wielkości liter"
+    tags: [skillsync, tests, macos, ci, xdg, paths]
+    paths: ['tests/layers_helpers.py', 'tests/test_skillsync_workflow.py', 'skillsync_workflow/layers.py', '.github/workflows/ci.yml']
