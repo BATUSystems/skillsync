@@ -4,6 +4,7 @@ Cel: zweryfikować, że dyspozytor zadaje pytania o karty, sonduje, przydziela, 
 dzierżawę i kolejkę merge oraz wznawia się z pliku stanu po restarcie. Wersja „na sucho” dla
 trybu ręcznego (Codex bez wiadomości między sesjami) — na końcu. Reguły: [SKILL.md](../SKILL.md),
 protokół: [multi-session.md](../../feature/references/multi-session.md), stan: [state.md](state.md).
+Scenariusz opisuje tryb `direct` (`PUSH SLOT` na bazę, kolejka merge); w trybie `pr` karty nie dostają `PUSH SLOT`, zgłaszają status `review`, a PR scala człowiek.
 
 ## Dane
 
@@ -62,7 +63,7 @@ Dyspozytor sprawdza rejestr stanu i repo (ostatnie SEC-32): `ID GRANT SEC W1 SEC
 → dyspozytor czyta log (liczba scenariuszy, exit 0, czas logu po ostatniej zmianie kodu),
 sprawdza, że porty wolne → `LEASE GRANT e2e W3`.
 
-**8. Raport i kolejka merge (tryb `direct`; w `pr` karta zgłasza status `review`, a PR scala człowiek).** `REPORT DONE W1 commit=f00d111 checks=… debt=… retro=0` → dyspozytor sprawdza
+**8. Raport i kolejka merge.** `REPORT DONE W1 commit=f00d111 checks=… debt=… retro=0` → dyspozytor sprawdza
 dowody w logach i `skillsync retro` (odbiór paczki), oznacza W1 `review→done`. `PUSH SLOT W1` → `PUSH GRANT W1` (pierwsza w kolejce)
 → `PUSHED W1 9e8d7c6` → `git ls-remote origin main` = `9e8d7c6` (zweryfikowano) → `MASTER MOVED
 9e8d7c6 "endpoint+migracja W1" rebase=tak, migracja=regeneruj` do `karta-2` i `karta-3`

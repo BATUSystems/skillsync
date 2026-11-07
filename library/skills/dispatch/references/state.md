@@ -98,7 +98,8 @@ Pola są minimalne; dodawaj tylko to, co potrzebne do wznowienia. Pole nieznane 
 4. Uzgodnij z faktami: `git ls-remote` (czy `PUSHED` rzeczywiście są na zdalnym repo, czy
    `master.head` się zmienił → `MASTER MOVED` do kart), stan dzierżaw (procesy, porty:
    dzierżawa bez żywej karty jest `released` dopiero po sprawdzeniu, nigdy automatycznie),
-   `task-claim` (kto trzyma paczkę).
+   `task-claim` (kto trzyma paczkę). W trybie `pr` uzgodnij też stan PR każdej paczki w `review` u hosta (otwarty, scalony,
+   zamknięty); scalenie przez człowieka odblokowuje zależne karty.
 5. Pokaż użytkownikowi odtworzony `status` i rozbieżności; po jego akceptacji wznów pętlę.
    Nie wznawiaj przydziałów, dzierżaw ani PUSH SLOT bez tego potwierdzenia.
 6. Zapisz zdarzenie `resumed` i nowy `session_id` dyspozytora w stanie.

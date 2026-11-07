@@ -46,5 +46,5 @@ Użytkownik otwiera karty (sesje Codex lub Claude) i sam przekazuje wiadomości.
 - **Stan**: po każdym przetworzonym zdarzeniu zapisz plik stanu; to jedyna pamięć dyspozycji
   (patrz [state.md](state.md)). Wydrukuj też krótki „status” po większych zdarzeniach, aby
   użytkownik mógł wznowić z niego, gdy sesja padnie.
-- **Dzierżawy i PUSH SLOT** (ten ostatni tylko w trybie `direct`) działają tak samo; `LEASE GRANT`/`PUSH GRANT` użytkownik przekazuje
+- **Dzierżawy i PUSH SLOT** (ten ostatni tylko w trybie `direct`) działają tak samo; `LEASE GRANT`/`PUSH GRANT` (ten drugi tylko w trybie `direct`) użytkownik przekazuje
   wklejając blok do właściwej karty. Do czasu wklejenia grant uznaj za nieprzekazany.
