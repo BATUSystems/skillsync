@@ -960,6 +960,19 @@ class PathClassTableTest(LeakTestCase):
         self.assertLess(order.index('code'), order.index('inne.root_files'))
         self.assertLess(order.index('instrukcje.segments'), order.index('inne.first_segments'))
 
+    def test_every_code_suffix_is_instrukcje_where_the_default_would_not_say_so(self):
+        """Elsewhere the default is `instrukcje` already; under `docs/` and in the root (`inne`) only the code rule decides."""
+        for suffix in ('.py', '.ts', '.js', '.mjs', '.cjs', '.ps1', '.sh'):
+            for rel in (f'docs/site/build{suffix}', f'tool{suffix}'):
+                with self.subTest(rel=rel):
+                    self.assertEqual(leakguard.path_class(rel), 'instrukcje')
+        for rel in ('skillsync', 'skillsync-ctl', 'docs/skillsync', 'docs/skillsync-ctl'):
+            with self.subTest(rel=rel):
+                self.assertEqual(leakguard.path_class(rel), 'instrukcje')
+        for rel in ('docs/guide.md', 'docs/skillsync.md', 'README.md', 'setup.cfg'):    # no code: unchanged
+            with self.subTest(rel=rel):
+                self.assertNotEqual(leakguard.path_class(rel), 'instrukcje')
+
     def test_code_files_outside_tests_and_github_are_instrukcje(self):
         """D238 (spec A, K8): a code file outside `tests/` and `.github/` is `instrukcje` everywhere, also under
         `docs/` and in the root (`skillsync`, `tool.py`); an owner nick there fails in core and org, passes in

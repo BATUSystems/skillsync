@@ -1372,6 +1372,14 @@ class IsolationTest(CommandsCase):
         write(checkout / 'docs' / 'leakguard' / 'identity.yaml', yaml_text({'schema': 1, 'layer': 'client', 'terms': []}))
         self.isolation(code=0)
 
+    def test_a_checkout_without_layer_yaml_is_scanned_whole_for_foreign_identity(self):
+        """No library directory to narrow to (an old clone): the whole tree is searched, so nothing hides in it."""
+        stray = machine_data_dir() / 'layers' / 'stray'
+        write(stray / 'docs' / 'leakguard' / 'identity.yaml', yaml_text({'schema': 1, 'layer': 'client', 'terms': []}))
+        self.configure()
+        report = self.assert_fail('isolation-unknown-checkout')
+        self.assertIn('isolation-foreign-identity', codes(report['findings']), report)
+
     def test_the_layers_directory_follows_the_system(self):
         """K10: Linux for real, macOS and Windows by passing the platform (in-process, isolated HOME/LOCALAPPDATA)."""
         self.configure()
