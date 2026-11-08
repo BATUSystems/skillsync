@@ -86,13 +86,15 @@ def klass(rel):
     name = parts[-1]
     if any(part in ('instructions', 'skills', 'agents', '_base.d') for part in parts[:-1]):
         return 'instrukcje'
+    if parts[0] in ('tests', '.github') and len(parts) > 1:
+        return 'inne'
+    if name.endswith(('.py', '.ts', '.js', '.mjs', '.cjs', '.ps1', '.sh')) or name in ('skillsync', 'skillsync-ctl'):
+        return 'instrukcje'     # code outside tests/ and .github/ (D238)
     if parts[0] == 'docs' and len(parts) > 1:
         return 'atrybucje'
     if any(fnmatch.fnmatchcase(name, glob) for glob in ('CHANGELOG*', 'README*', 'LICENSE*', 'NOTICE*')):
         return 'atrybucje'
-    if name.endswith(('.py', '.ts', '.js', '.mjs', '.cjs', '.ps1', '.sh')) or name in ('skillsync', 'skillsync-ctl'):
-        return 'atrybucje'
-    if parts[0] in ('tests', '.github') or len(parts) == 1:
+    if len(parts) == 1:
         return 'inne'
     return 'instrukcje'     # unclassified = strictest
 
@@ -138,7 +140,7 @@ FIXTURE = {
     'docs/b.md': f'host-88 in docs\nsee {HOME}/<user>/proj and {HOME}/bob/proj\nx{AT}ci.invalid y{AT}host.example z{AT}acme.test\n',
     'LICENSE': 'Copyright (c) 2026 BATUSystems\nCopyright (c) 2026 Somebody Else\n',
     'tests/c.txt': f'host-99 in tests\n{HOME}/runner/work and {HOME}/carol/work\n',
-    'src/d.py': f'# {D27.upper()} twice {D27.lower()}\nx = "noreply{AT}anthropic.com"\n',
+    'src/d.py': f'# {D27.upper()} twice {D27.lower()}\nx = "noreply{AT}anthropic.com"\nhost-55 in code\n',
     'misc/e.dat': f'host-11 {HOME}/dave/x\n',
 }
 
@@ -177,7 +179,7 @@ class ReferenceReaderTest(IsolatedTestCase):
         self.assertEqual(categories, {'d27', 'owner-path', 'email', 'custom', 'machine'})
         paths = {item[0] for item in hits}
         self.assertEqual(paths, {'skills/a.md', 'docs/b.md', 'tests/c.txt', 'src/d.py', 'misc/e.dat'})
-        self.assertEqual(len(hits), 15)
+        self.assertEqual(len(hits), 16)
 
     def test_reader_and_leakcheck_agree_on_the_yaml_files(self):
         expected = reader_hits(FIXTURE, read_files(RESOURCE, self.additions))
@@ -201,6 +203,9 @@ class ReferenceReaderTest(IsolatedTestCase):
         self.assertNotIn(('tests/c.txt', '1'), cell)         # pattern limited to instrukcje/atrybucje
         self.assertIn(('misc/e.dat', '1'), cell)             # unknown path = instrukcje
         self.assertIn(('src/d.py', '2'), cell)               # the noreply allow is commit-scoped, not for content
+        # D238: code is `instrukcje` - the `instrukcje` pattern hits it, the `atrybucje` one (paths `*.py`) does not
+        self.assertIn(('src/d.py', '3:1', 'custom'), hits)
+        self.assertNotIn(('src/d.py', '3:1', 'machine'), hits)
 
     def test_both_readers_refuse_a_newer_schema(self):
         newer = self.root / 'newer.yaml'

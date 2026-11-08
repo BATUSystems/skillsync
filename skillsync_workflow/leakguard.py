@@ -76,19 +76,24 @@ _ALLOW_PROBES = (
 # default instrukcje (strictest). `inne` is equivalent to `instrukcje` in the table.
 PATH_CLASS_RULES = {
     'instrukcje': {'segments': ['instructions', 'skills', 'agents', '_base.d']},
+    # D238 (spec A, K8): code files outside `tests/` and `.github/` are `instrukcje` (also under
+    # `docs/` and in the root); they are no attributions.
+    'code': {
+        'suffixes': ['.py', '.ts', '.js', '.mjs', '.cjs', '.ps1', '.sh'],
+        'exact_names': ['skillsync', 'skillsync-ctl'],
+    },
     'atrybucje': {
         'first_segments': ['docs'],
         'names': ['CHANGELOG*', 'README*', 'LICENSE*', 'NOTICE*'],
-        'suffixes': ['.py', '.ts', '.js', '.mjs', '.cjs', '.ps1', '.sh'],
-        'exact_names': ['skillsync', 'skillsync-ctl'],
         'surfaces': ['commit'],
     },
     'inne': {'first_segments': ['tests', '.github'], 'root_files': True},
     'default': 'instrukcje',
     'filename_surface': 'instrukcje',
-    # Evaluation order (spec A, K8): `tests/**` and `.github/**` are `inne` before the code
-    # suffixes of `atrybucje`, so `tests/**/*.py` is `inne` (= `instrukcje` in the K8 table).
-    'order': ['instrukcje.segments', 'inne.first_segments', 'atrybucje', 'inne.root_files', 'default'],
+    # Evaluation order (spec A, K8): `tests/**` and `.github/**` are `inne` before code files and
+    # `atrybucje`, so `tests/**/*.py` is `inne` (= `instrukcje` in the K8 table); code files come before
+    # `atrybucje` and the root files, so `docs/site/build.py` and `skillsync` are `instrukcje`.
+    'order': ['instrukcje.segments', 'inne.first_segments', 'code', 'atrybucje', 'inne.root_files', 'default'],
 }
 
 _FOLDED_SEGMENTS = {
@@ -719,13 +724,14 @@ def path_class(rel, surface='content'):
     if any(part in _FOLDED_SEGMENTS['instrukcje'] for part in folded[:-1]):
         return 'instrukcje'
     if folded and folded[0] in _FOLDED_SEGMENTS['inne'] and len(parts) > 1:
-        return 'inne'  # before the code suffixes: `tests/**/*.py` is `inne`
+        return 'inne'  # before `atrybucje`: `tests/**` (also `tests/README.md`) is `inne`
     name = parts[-1] if parts else rel
+    code = rules['code']
+    if any(name.endswith(suffix) for suffix in code['suffixes']) or name in code['exact_names']:
+        return 'instrukcje'  # D238: code is never an attribution
     attr = rules['atrybucje']
     if (parts and parts[0] in attr['first_segments'] and len(parts) > 1) \
-            or any(fnmatch.fnmatchcase(name, glob) for glob in attr['names']) \
-            or any(name.endswith(suffix) for suffix in attr['suffixes']) \
-            or name in attr['exact_names']:
+            or any(fnmatch.fnmatchcase(name, glob) for glob in attr['names']):
         return 'atrybucje'
     if len(parts) == 1:
         return 'inne'
@@ -1119,11 +1125,15 @@ def _scan_commits(ctx, revs):
             continue
         # D86: `all` = every commit needs author and committer from `authors`; `committer` = only
         # commits committed by the local user, commits of other people are reported as notices.
+        # D239: a commit authored by the local user but committed by someone else (cherry-pick, rebase,
+        # a merge button) has its author checked; the foreign committer stays a notice.
         if every or (local and committer_email.strip().lower() == local):
             for name, email in (('author', author_email), ('committer', committer_email)):
                 if email.strip().lower() not in ctx.authors:
                     ctx.scanner.findings.add((path, 'author', name))
         else:
+            if local and author_email.strip().lower() == local and local not in ctx.authors:
+                ctx.scanner.findings.add((path, 'author', 'author'))
             ctx.notices.add((path, 'foreign-commit', 'committer'))
 
 

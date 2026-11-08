@@ -102,10 +102,12 @@ Reguły:
 
 - `instrukcje` = dowolny segment katalogu `instructions`, `skills`, `agents` albo `_base.d` na dowolnej głębokości (np. `docs/skills/x.md` i `tests/skills/a.py` są `instrukcje`; sprawdzane są tylko katalogi, nie nazwa pliku) oraz każda ścieżka niesklasyfikowana
   (domyślna klasa nieznanej ścieżki = najostrzejsza).
-- `atrybucje` = `CHANGELOG*`, `README*`, `docs/**`, `LICENSE*`, `NOTICE*`, pliki kodu (`*.py`, `*.ts`, `*.js`, `*.mjs`,
-  `*.cjs`, `*.ps1`, `*.sh`, `skillsync`, `skillsync-ctl`) oraz komunikaty i trailery commitów.
+- `atrybucje` = `CHANGELOG*`, `README*`, `docs/**`, `LICENSE*`, `NOTICE*` oraz komunikaty i trailery commitów.
+- Pliki kodu (`*.py`, `*.ts`, `*.js`, `*.mjs`, `*.cjs`, `*.ps1`, `*.sh`, `skillsync`, `skillsync-ctl`) poza `tests/**`
+  i `.github/**` mają klasę `instrukcje`, także w `docs/**` i w korzeniu (D238): kod nie jest atrybucją.
 - `inne` = `tests/**`, `.github/**`, pliki konfiguracyjne w korzeniu. **`inne` ≡ `instrukcje`** w każdej kolumnie.
-- Klasy ścieżek: segmenty klas `instrukcje` (`instructions/`, `skills/`, `agents/`, `_base.d/`) i `inne` (`tests/`, `.github/`) porównywane są po `casefold` na wszystkich systemach (`Skills/x/run.py` = `instrukcje`); dopasowania klasy `atrybucje` (`docs/`, `README*`, `CHANGELOG*`, rozszerzenia kodu) zostają dosłowne, bo `casefold` poluzowałby klasę.
+- Klasy ścieżek: segmenty klas `instrukcje` (`instructions/`, `skills/`, `agents/`, `_base.d/`) i `inne` (`tests/`, `.github/`) porównywane są po `casefold` na wszystkich systemach (`Skills/x/run.py` = `instrukcje`); dopasowania klasy `atrybucje` (`docs/`, `README*`, `CHANGELOG*`) zostają dosłowne, bo `casefold` poluzowałby klasę.
+  Kolejność: segmenty `instrukcje`, `tests/`/`.github/` (`inne`), pliki kodu (`instrukcje`), `atrybucje`, pliki w korzeniu (`inne`).
 - Kolumny tabeli wybiera `kind` warstwy celu (core/org/personal), nie `scope`. `scope` wpływa tylko na CI i `coverage`.
 
 | Termin | core: instrukcje | core: atrybucje | org: instrukcje | org: atrybucje | personal |
@@ -117,8 +119,8 @@ Reguły:
 | inne wzmianki o BATUSystems | dozwolone | dozwolone | zakazane (poza warstwą wydawcy) | zakazane | zakazane |
 | tożsamości klientów | zakazane | zakazane | wg macierzy celu | wg macierzy celu | zakazane |
 
-Atrybucje nie są blokowane: trailery `Co-Authored-By` oraz wzmianki o właścicielu w komentarzach, `CHANGELOG`, `docs/**`
-i komunikatach commitów są dozwolone. Wyjątek wydawcy (URL-e i linia `LICENSE`) jest jawną regułą `allow` z testem.
+Atrybucje nie są blokowane: trailery `Co-Authored-By` oraz wzmianki o właścicielu w `CHANGELOG`, `docs/**`
+i komunikatach commitów są dozwolone; komentarze i docstringi w kodzie są klasą `instrukcje` (D238). Wyjątek wydawcy (URL-e i linia `LICENSE`) jest jawną regułą `allow` z testem.
 
 Nazwy plików i nazwy tagów (`tag-name`) są zawsze sprawdzane jako klasa `instrukcje` (najostrzejsza), także w `docs/**`
 i `CHANGELOG*`. Tożsamość w nazwie pliku w `atrybucje` jest więc blokowana według kolumny `instrukcje`.
@@ -147,7 +149,9 @@ leakguard:
 - `authors`: adresy dozwolonych autorów i committerów celu.
 - `authors_scope` (D86): `all` lub `committer`. Domyślnie `all` dla `private` i `org-private`; `committer` dla `public`.
   `all`: każdy commit w zakresie musi mieć autora i committera z `authors`. `committer`: kontrola dotyczy commitów, których
-  committerem jest lokalny użytkownik; commity innych osób są informacją.
+  committerem jest lokalny użytkownik (autor i committer); commit, którego autorem jest lokalny użytkownik, a committerem
+  ktoś inny (cherry-pick, rebase, przycisk merge), ma sprawdzanego autora, a obcy committer jest informacją (D239);
+  commity innych osób są informacją.
 - Adres autora i committera nie jest sprawdzany przez wzorce `email` (tylko przez `authors`); bez `authors` (cel nieznany)
   adres autora nie jest sprawdzany i jest to ostrzeżenie w `warnings`.
 
@@ -257,8 +261,8 @@ dołączony do repo.
 - Rozwiązanie końców zakresu używa `git rev-parse --end-of-options` (nowsze wersje git); na git bez tej opcji zakres z tagiem
   albo końcówka, której nie da się rozwiązać, daje `BLOCKED` (fail-closed).
 - Zapasowa ścieżka pliku tymczasowego hooka (`$TMPDIR/skillsync-pre-push.$$`, gdy `mktemp` zawiedzie) jest przewidywalna.
-- Przy `authors_scope: committer` własny commit z adresem committera innym niż `git config user.email` trafia do `notices`,
-  a jego adres autora nie jest sprawdzany.
+- Przy `authors_scope: committer` własny commit z adresem autora i committera innym niż `git config user.email` trafia do
+  `notices`, a jego adresy nie są sprawdzane (właściciel jest rozpoznawany po `user.email`).
 - Bajt `\x1e` w komunikacie commitu kończy skanowany rekord; reszta komunikatu nie jest skanowana.
 
 Gdzie w kodzie: `skillsync_workflow/leakguard.py`: zasoby wzorców i `.leakguard/patterns.yaml`, domyślne `authors_scope`,
