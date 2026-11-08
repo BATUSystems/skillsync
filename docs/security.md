@@ -52,7 +52,7 @@ Format pliku (`schema: 1`, ten sam dla zasobu generatora i `.leakguard/patterns.
 Sekcja `allow` wyłącza trafienie tylko wtedy, gdy dopasowanie wzorca mieści się w całości w dopasowaniu wyjątku.
 
 Kategorie wzorców (`category`): `d27`, `owner-path`, `email`, `machine`, `publisher`, `custom`. Powierzchnie (`applies_to`):
-`content`, `filename`, `commit`. Klasy ścieżek (`path_classes`): `instrukcje`, `atrybucje`, `inne`. Format `identity.yaml`
+`content`, `filename`, `commit`. Klasy ścieżek (`path_classes`): `instrukcje`, `atrybucje`, `inne`. Pliki kodu (`*.py`, `*.ts`, `*.js`, `*.mjs`, `*.cjs`, `*.ps1`, `*.sh`, `skillsync`, `skillsync-ctl`) poza `tests/**` i `.github/**` należą do `instrukcje`, także w `docs/**` i w korzeniu; `tests/**` i `.github/**` to `inne` (traktowane jak `instrukcje`). Format `identity.yaml`
 opisuje [layers-authoring](layers-authoring.md).
 
 Poziomy pokrycia (`coverage`): `full` (każdy inny cel niepubliczny ma warstwę z plikiem tożsamości), `partial` (część celów),

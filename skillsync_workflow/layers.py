@@ -2749,7 +2749,7 @@ def isolation_findings(config, system=None):
                                      f'{layer.path}', layer.id))
             continue
         seen.update({_path_key(layer.path), _path_key(layer.root)})
-        trees.append(layer.path)
+        trees.append(layer.root)  # the layer's library, not the whole clone (examples in `docs/` are no identity)
         if layer.synthetic:
             pass
         elif layer.meta_error:
@@ -2778,8 +2778,9 @@ def isolation_findings(config, system=None):
         if not path.is_dir() or _path_key(path) in seen:
             continue
         seen.add(_path_key(path))
-        trees.append(path)
         roots = _library_roots(path)
+        # identity files are looked up in the library directory only; a tree without `layer.yaml` is scanned whole
+        trees.extend([root for root, _meta, _problem in roots] or [path])
         if not roots:
             if origin == 'checkout':
                 error('isolation-unknown-checkout', f'{path}: a checkout in the layers directory without layer.yaml')
