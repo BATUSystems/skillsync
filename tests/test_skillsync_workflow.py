@@ -285,6 +285,12 @@ class ValidationContracts(WorkflowFixture):
         self.assertEqual(report['status'], 'FAIL')
         self.assertEqual([r['exit_code'] for r in report['results']], [3, 5])
 
+    def test_redact_keeps_structural_keys_when_a_short_env_secret_equals_one(self):
+        from skillsync_workflow.common import redact
+        with mock.patch.dict(os.environ, {'SKILLSYNC_TEST_SECRET': 'root'}):
+            masked = redact({'root': 'root', 'composed_root': 'x'})
+        self.assertEqual(masked, {'root': '[REDACTED]', 'composed_root': 'x'})
+
     def test_plan_redacts_secret_without_mutating_command_execution(self):
         key = 'SKILLSYNC_TEST_SECRET'
         secret = 'plan-private-' + uuid.uuid4().hex

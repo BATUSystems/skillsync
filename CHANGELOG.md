@@ -23,6 +23,7 @@ None.
 
 ### Fixed
 - Windows (1.0.1, WIN-1): paths in JSON output use `/` (`status --json` plans and `plan` results, run evidence, delivery logs, e2e observation, `skills list` references).
+- Windows (1.0.1, WIN-1): `redact` no longer applies the environment-secret substitution to dict keys, so a short secret value (`root` on the Windows runner) cannot rename structural keys such as `root` or `composed_root` in JSON reports.
 
 ## [1.0.0] - 2026-11-08
 
