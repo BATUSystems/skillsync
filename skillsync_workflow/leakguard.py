@@ -72,8 +72,8 @@ _ALLOW_PROBES = (
     'Copyright (c) 1999 Nobody',
 )
 
-# Path classes (K8). Order of evaluation: instrukcje (any segment), atrybucje, inne,
-# default instrukcje (strictest). `inne` is equivalent to `instrukcje` in the table.
+# Path classes (K8). Order of evaluation: instrukcje (any segment), inne (`tests/`, `.github/`), code files
+# (`instrukcje`), atrybucje, inne (root files), default instrukcje (strictest). `inne` is equivalent to `instrukcje` in the table.
 PATH_CLASS_RULES = {
     'instrukcje': {'segments': ['instructions', 'skills', 'agents', '_base.d']},
     # D238 (spec A, K8): code files outside `tests/` and `.github/` are `instrukcje` (also under
@@ -726,8 +726,8 @@ def path_class(rel, surface='content'):
     if folded and folded[0] in _FOLDED_SEGMENTS['inne'] and len(parts) > 1:
         return 'inne'  # before `atrybucje`: `tests/**` (also `tests/README.md`) is `inne`
     name = parts[-1] if parts else rel
-    code = rules['code']
-    if any(name.endswith(suffix) for suffix in code['suffixes']) or name in code['exact_names']:
+    code, folded_name = rules['code'], name.casefold()   # stricter class: `Build.PY` is code too
+    if any(folded_name.endswith(suffix) for suffix in code['suffixes']) or folded_name in code['exact_names']:
         return 'instrukcje'  # D238: code is never an attribution
     attr = rules['atrybucje']
     if (parts and parts[0] in attr['first_segments'] and len(parts) > 1) \

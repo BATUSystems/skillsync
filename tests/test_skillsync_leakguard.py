@@ -966,7 +966,8 @@ class PathClassTableTest(LeakTestCase):
             for rel in (f'docs/site/build{suffix}', f'tool{suffix}'):
                 with self.subTest(rel=rel):
                     self.assertEqual(leakguard.path_class(rel), 'instrukcje')
-        for rel in ('skillsync', 'skillsync-ctl', 'docs/skillsync', 'docs/skillsync-ctl'):
+        for rel in ('skillsync', 'skillsync-ctl', 'docs/skillsync', 'docs/skillsync-ctl', 'docs/site/Build.PY', 'docs/x.Sh',
+                    'Tool.TS', 'docs/Skillsync-CTL'):
             with self.subTest(rel=rel):
                 self.assertEqual(leakguard.path_class(rel), 'instrukcje')
         for rel in ('docs/guide.md', 'docs/skillsync.md', 'README.md', 'setup.cfg'):    # no code: unchanged

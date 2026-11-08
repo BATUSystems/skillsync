@@ -104,7 +104,7 @@ Reguły:
   (domyślna klasa nieznanej ścieżki = najostrzejsza).
 - `atrybucje` = `CHANGELOG*`, `README*`, `docs/**`, `LICENSE*`, `NOTICE*` oraz komunikaty i trailery commitów.
 - Pliki kodu (`*.py`, `*.ts`, `*.js`, `*.mjs`, `*.cjs`, `*.ps1`, `*.sh`, `skillsync`, `skillsync-ctl`) poza `tests/**`
-  i `.github/**` mają klasę `instrukcje`, także w `docs/**` i w korzeniu (D238): kod nie jest atrybucją.
+  i `.github/**` mają klasę `instrukcje`, także w `docs/**` i w korzeniu (D238): kod nie jest atrybucją. Nazwy i sufiksy plików kodu porównuje się po `casefold` (`docs/Build.PY` to kod), bo to tylko zaostrza klasę.
 - `inne` = `tests/**`, `.github/**`, pliki konfiguracyjne w korzeniu. **`inne` ≡ `instrukcje`** w każdej kolumnie.
 - Klasy ścieżek: segmenty klas `instrukcje` (`instructions/`, `skills/`, `agents/`, `_base.d/`) i `inne` (`tests/`, `.github/`) porównywane są po `casefold` na wszystkich systemach (`Skills/x/run.py` = `instrukcje`); dopasowania klasy `atrybucje` (`docs/`, `README*`, `CHANGELOG*`) zostają dosłowne, bo `casefold` poluzowałby klasę.
   Kolejność: segmenty `instrukcje`, `tests/`/`.github/` (`inne`), pliki kodu (`instrukcje`), `atrybucje`, pliki w korzeniu (`inne`).
