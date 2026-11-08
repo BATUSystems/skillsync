@@ -82,6 +82,7 @@ class PlanArchive(WorkflowFixture):
     def test_missing_status_line_is_blocked(self):
         path = self.plan('d.md', b'# D\n\nbrak\n')
         report = self.cli('plan', 'archive', self.root, 'docs/plans/d.md', code=2)
+        self.assertIn('root', report, report)  # the message shows the actual BLOCKED report on a failing platform
         self.assertEqual((report['status'], report['root']), ('BLOCKED', str(self.root.resolve())))
         self.assertIn('Status', report['reason'])
         self.assertEqual(path.read_bytes(), b'# D\n\nbrak\n')
