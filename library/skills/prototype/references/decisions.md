@@ -54,10 +54,10 @@ ani kazać uruchomić komendy.
    taki jak w iteracji źródłowej: `restore` niczego nie zapisze (`result: "unchanged"`), powiedz to proszącemu. `--who` musi mieć rolę akceptujący albo
    programista. Niejednoznaczny ekran albo iteracja = pytanie przez AskUserQuestion. Przywracana jest tylko sekcja ekranu;
    CSS i `<head>` zostają bieżące. Przerwane przywrócenie (`incomplete_restore`) dokańcza `restore … --resume`.
-9. **Commit przed iteracją (wyjątek K40).** Wyjątek od reguły „commit tylko na polecenie” obejmuje wyłącznie commit, który robią
+9. **Commit przed iteracją (wyjątek K40).** Ten wyjątek dotyczy commitu robionego przez CLI, nie przez agenta (commity agenta regulują tryb dostarczania i słowa zgody, `instructions/_base.md`, „Tryb dostarczania”); obejmuje wyłącznie commit, który robią
    same `iterate` i `restore` z CLI przy `prototype.commit_before_iteration: true` w manifeście projektu: tylko katalog
    `<root>/<slug>/`, stały komunikat „prototyp <slug>: stan przed iteracją N”, bez pusha i bez innych plików. Bez flagi (albo
-   z `false`) `iterate` i `restore` nie commitują. Każdy inny commit, push albo `git add` nadal wymaga polecenia użytkownika.
+   z `false`) `iterate` i `restore` nie commitują. Inne commity, pushe i `git add` agenta regulują tryb dostarczania i słowa zgody (`instructions/_base.md`, „Tryb dostarczania”).
    Przywrócenie z przeglądarki nigdy nie commituje, a `restore --dry-run` i `--resume` też nie.
 
 ## Kody i odmowy

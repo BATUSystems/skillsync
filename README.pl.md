@@ -71,7 +71,7 @@ docelowego. Zobacz [docs/security.md](docs/security.md).
 |---|---|---|
 | I. Spec | spec bez pytań otwartych i szkic planu | „GO plan” |
 | II. Plan | kroki, testy, zasoby i propozycja wersji | „GO implement” |
-| III. Realizacja | kod, testy, review, dokumentacja, changelog, wersja | status `done`; commit tylko na polecenie |
+| III. Realizacja | kod, testy, review, dokumentacja, changelog, wersja | status `done`; commity według trybu dostarczania (`delivery.mode`) |
 
 Sesja główna jest orkiestratorem; pracę wykonują podagenci (podumysły) o wąskim zakresie (Explore, implementer,
 test-writer, test-runner, reviewer, verifier, scribe, mechanic), którzy nie delegują dalej. Małe błędy idą skróconym
@@ -90,7 +90,7 @@ Zobacz [docs/prototypes.md](docs/prototypes.md).
 
 Rozwijane i sprawdzane z uv 0.13; minimalna wersja nie została zmierzona. CI używa bieżącego uv.
 
-Obsługiwane systemy: v1.0.0 wspiera Linux i WSL. Natywny Windows i macOS są planowane na v1.0.1; CI je uruchamia, ale ich wynik nie blokuje wydania.
+Obsługiwane systemy: v1.0.0 wspiera Linux, WSL i macOS (CI na Ubuntu i macOS blokuje wydanie). Natywny Windows jest planowany na v1.0.1; CI go uruchamia, ale jego wynik nie blokuje wydania.
 
 | System | Wsparcie w v1.0.0 | Znane ograniczenia |
 |---|---|---|

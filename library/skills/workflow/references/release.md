@@ -1,7 +1,7 @@
 # Dokumentacja, changelog i wersja wydania
 
 Obowiązuje `feature`, `bugfix` (oraz każdy skill kończący zmianę kodu). Uzupełnia
-[knowledge.md](knowledge.md); nie zastępuje zasad commit/push/deploy (tylko na polecenie użytkownika).
+[knowledge.md](knowledge.md); nie zastępuje zasad dostarczania (tryb `delivery.mode`, słowa `CP`, `CPD`, `READY`; patrz AGENTS).
 
 1. **Rozpoznaj** (w planie/briefie, sekcja „Dokumentacja i wiedza” + „Wersja”): changelog projektu
    (`CHANGELOG*`, `docs/**/changelog*`, `RELEASE*`, wpisy w `docs/`), źródła numeru wersji
@@ -24,7 +24,7 @@ Obowiązuje `feature`, `bugfix` (oraz każdy skill kończący zmianę kodu). Uzu
    przed `done`. Nie zmieniaj numeru wersji bez odpowiedzi; po odpowiedzi ustaw ją we wszystkich
    źródłach spójnie, zamień „Unreleased” na `## <wersja> — <data>` i sprawdź zgodność (grep starego numeru).
    Jedno pytanie na wydanie: kolejne zmiany tego samego wydania zachowują już ustaloną wersję.
-4. **Granice:** tag, release, publikacja pakietu, commit/push/deploy — tylko na osobne polecenie.
+4. **Granice:** tag, release, publikacja pakietu i deploy — tylko na osobne polecenie; commit i push według trybu dostarczania.
    W pracy wielosesyjnej (`dispatch`) karty nie zmieniają numeru wersji ani nagłówka changeloga;
    wpisy dodają pod „Unreleased”, a o wersję pyta dyspozytor jednokrotnie dla całego przebiegu.
 5. **Raport końcowy** wymienia: zaktualizowane dokumenty, wpis changeloga, ustaloną wersję (albo „bez zmiany”,

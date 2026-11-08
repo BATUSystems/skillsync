@@ -4,6 +4,7 @@ Cel: zweryfikować, że dyspozytor zadaje pytania o karty, sonduje, przydziela, 
 dzierżawę i kolejkę merge oraz wznawia się z pliku stanu po restarcie. Wersja „na sucho” dla
 trybu ręcznego (Codex bez wiadomości między sesjami) — na końcu. Reguły: [SKILL.md](../SKILL.md),
 protokół: [multi-session.md](../../feature/references/multi-session.md), stan: [state.md](state.md).
+Scenariusz opisuje tryb `direct` (`PUSH SLOT` na bazę, kolejka merge); w trybie `pr` karty nie dostają `PUSH SLOT`, zgłaszają status `review`, a PR scala człowiek.
 
 ## Dane
 
@@ -93,7 +94,7 @@ otwarte decyzje). Pytanie o sprzątanie worktree i baz testowych — tylko za zg
 - Sonda przed każdym przydziałem; duch nie zablokował paczki.
 - Zgoda na plan ≠ GO; GO w kartach lokalnie.
 - ID tylko od dyspozytora; dzierżawa `e2e` jedna naraz, GRANT po zweryfikowanym RELEASE.
-- Push tylko w slocie, hash zweryfikowany na zdalnym repo; `MASTER MOVED` po każdym pushu.
+- Push na bazę (tryb `direct`) tylko w slocie, hash zweryfikowany na zdalnym repo; `MASTER MOVED` po każdym pushu.
 - Resume z pliku, uzgodnienie ze stanem faktycznym (ls-remote, procesy, karty) i potwierdzenie
   użytkownika przed wznowieniem; bramka modelu w każdej turze.
 

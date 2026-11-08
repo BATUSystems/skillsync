@@ -38,7 +38,7 @@ Słownik bez kolizji: „etap” zostaje dla etapów pracy w projektach (np. eta
 |---|---|---|---|
 | I Spec (`plan-large`) | spec bez `Q`, przy „GO plan” `approved` i plan-szkic | `spec` | „GO plan” |
 | II Plan | plan `draft (czeka na GO implement)`, `readiness`, pytanie o wersję | `plan` (obowiązkowa przy `plan-large`, ryzyku high, prośbie użytkownika) | „GO implement” |
-| III Realizacja | kod, testy, dokumentacja, changelog, wersja | `kod`: po kroku z ryzykiem high i końcowa | `done`; commit tylko na polecenie |
+| III Realizacja | kod, testy, dokumentacja, changelog, wersja | `kod`: po kroku z ryzykiem high i końcowa | `done`; commity i push według trybu dostarczania (rdzeń AGENTS) |
 
 Plan `direct` ma akty II i III i jedną zgodę „GO implement” (dawne GO); `bugfix` ma brief i akt III (szczegóły w skillu
 `bugfix`); `reuse` wznawia akt według tabeli stanów w [spec](references/spec.md). Samo „GO” przyjmij według tej tabeli
@@ -79,9 +79,10 @@ określa format; `pre-implement` sprawdza zmiany kontraktów i wysokie ryzyko.
    `reuse` (istniejący plan pokrywa zadanie) → zaktualizuj go zamiast tworzyć nowy;
    `direct` (bugfix, dokumentacja, zależności, izolowany refaktor) → zwykły plan.
    Tylko jawne słowa użytkownika znoszą plan dla dużej zmiany.
-   Dostawa jako PR (draft → ready, Azure/GitHub): opcjonalny `/pr-run`, tylko na jawne wywołanie. Gdy plan lub branch ma
-   klucz ticketu Jira, po „GO implement” zaproponuj `/pr-run` jednym zdaniem i nie uruchamiaj bez zgody;
-   wyjątek: przy wejściu z klucza zgłoszenia nie proponuj `/pr-run`; PR według
+   Dostawa zależy od `delivery.mode` (`skillsync route`). tryb `pr` (domyślny): „GO implement” jest jawnym wywołaniem `/pr-run` (Azure/GitHub,
+   zainstalowany `pr-run`; bez niego lub bez hosta nie zakładaj PR-a, zapytaj); po ostatnim kroku stan „czeka na READY”. tryb `direct`: commity
+   lokalne po każdym kroku, bez pusha i PR, a po ostatnim kroku „czeka na CP”; `READY` jest tu odmową. W obu trybach pierwszy commit to plan i spec.
+   Wyjątek: przy wejściu z klucza zgłoszenia nie uruchamiaj `/pr-run`; PR według
    [pr-after-approval](references/pr-after-approval.md), tylko na „rób PR”.
    Niejasny przepływ UI: zaproponuj opcjonalną makietę (`prototype`, jeśli dostępny); bez zgody użytkownika nie twórz.
 4. Przed realizacją (akt III) plan musi mieć „GO implement” (przy `direct` wystarcza samo `GO`) lub równoważną jawną zgodę;
@@ -181,7 +182,7 @@ dokumentacji, changelogu, ustalonej wersji, zapisanej wiedzy (albo uzasadnionym 
 PASS pętli końcowej `kod` (STOP pętli wyklucza `done`), rekordzie końcowym checkpointu (`--final`) z wynikiem `skillsync retro` (przed rekordem `final` idzie retrospektywa jakościowa z checkpointem `retro-quality`, [retro-quality](references/retro-quality.md); jej propozycje nie blokują `done`) oraz zamknięciu blokujących uwag; przy specu `done` ustawia też jego status, chyba że spec jest już `implemented` ([spec](references/spec.md)). Nierozwiązane blokery dają `blocked`, a nie sukces z przypisem.
 Sekcja „Wynik” zawiera zmiany, dowody, stare porażki, niewykonane sprawdzenia/ograniczenia
 oraz podsekcję „Zdobyta wiedza” z odnośnikami do zaktualizowanych dokumentów i rekordów.
-Commit, push i deploy tylko na wyraźne polecenie użytkownika; zatwierdzenie planu ich nie obejmuje. Wyjątek: „TAK P<n>” po retrospektywie jest poleceniem commita tej jednej zmiany tekstowej, bez pusha; działa tylko w głównym checkoucie (w worktree propozycje są `deferred`, a słowa nie działają), a propozycję z innego przebiegu wskaż jako „TAK <run-id>/P<n>” / „NIE <run-id>/P<n>” ([retro-quality](references/retro-quality.md)).
+Commity, push i deploy według trybu dostarczania i słów zgody z rdzenia AGENTS (`CP`, `CPD`, `READY`); merge i complete PR nigdy. Wyjątek: „TAK P<n>” po retrospektywie jest poleceniem commita tej jednej zmiany tekstowej, bez pusha; działa tylko w głównym checkoucie (w worktree propozycje są `deferred`, a słowa nie działają), a propozycję z innego przebiegu wskaż jako „TAK <run-id>/P<n>” / „NIE <run-id>/P<n>” ([retro-quality](references/retro-quality.md)).
 Przy wejściu z klucza polecenia i ich zakres opisuje [pr-after-approval](references/pr-after-approval.md).
 Wykonany plan (`done`) można zarchiwizować: `skillsync plan archive <projekt> <plik>` (zmienia tylko `Status:`; `archived` jest poza kolejkami, bez `needsHuman`).
 Po `done` zaproponuj `codereview` (tryb „przed PR”) na gotowych zmianach, zanim powstanie PR.

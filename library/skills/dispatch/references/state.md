@@ -65,7 +65,7 @@ leases:
     released_at: null
     release: null                       # { exit: 0, log: ".../e2e.log", verified: true }
     queue: [F06]                        # kolejka oczekujących paczek (FIFO)
-merge_queue:                            # kolejność PUSH SLOT
+merge_queue:                            # kolejność PUSH SLOT (tryb direct; w pr scala człowiek)
   - { package: F06, state: waiting }    # waiting | granted | pushed | verified
   - { package: F05, state: waiting }
 master:
@@ -98,7 +98,8 @@ Pola są minimalne; dodawaj tylko to, co potrzebne do wznowienia. Pole nieznane 
 4. Uzgodnij z faktami: `git ls-remote` (czy `PUSHED` rzeczywiście są na zdalnym repo, czy
    `master.head` się zmienił → `MASTER MOVED` do kart), stan dzierżaw (procesy, porty:
    dzierżawa bez żywej karty jest `released` dopiero po sprawdzeniu, nigdy automatycznie),
-   `task-claim` (kto trzyma paczkę).
+   `task-claim` (kto trzyma paczkę). W trybie `pr` uzgodnij też stan PR każdej paczki w `review` u hosta (otwarty, scalony,
+   zamknięty); scalenie przez człowieka odblokowuje zależne karty.
 5. Pokaż użytkownikowi odtworzony `status` i rozbieżności; po jego akceptacji wznów pętlę.
    Nie wznawiaj przydziałów, dzierżaw ani PUSH SLOT bez tego potwierdzenia.
 6. Zapisz zdarzenie `resumed` i nowy `session_id` dyspozytora w stanie.

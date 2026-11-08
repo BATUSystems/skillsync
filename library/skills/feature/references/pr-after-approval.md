@@ -1,6 +1,6 @@
 # PR po akceptacji człowieka (wejście z klucza zgłoszenia)
 
-Czytaj tylko przy wejściu z klucza ([ticket-intake](ticket-intake.md)). Bez klucza obowiązuje `/pr-run` lub zasada „commit, push i deploy tylko na wyraźne polecenie”.
+Czytaj tylko przy wejściu z klucza ([ticket-intake](ticket-intake.md)). Przy wejściu z klucza te polecenia mają pierwszeństwo przed trybem dostarczania (kontrola człowieka przed PR-em); bez klucza obowiązuje tryb z `delivery.mode` (rdzeń AGENTS).
 Inne słowa niż poniższe polecenia nie są zgodą na zapis. Komendy dostawcy (`az`) i reguły gałęzi, wersji i repozytoriów podaje instrukcja projektu.
 
 ## Słownik poleceń

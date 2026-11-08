@@ -321,8 +321,10 @@ class HostSimulationTest(unittest.TestCase):
 
 class PathKeyCase(LayersCase):
     def twin(self, path, other):
-        """`other` = the same directory as `path` under another spelling (a copy on this case-sensitive host)."""
-        shutil.copytree(path, other)
+        """`other` = the same directory as `path` under another spelling: a copy on a case-sensitive host,
+        the very same directory (it already exists under that spelling) on a case-insensitive one (macOS)."""
+        if not other.exists():
+            shutil.copytree(path, other)
         return other
 
     def config(self, data):

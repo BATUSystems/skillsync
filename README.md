@@ -71,7 +71,7 @@ target repository. See [docs/security.md](docs/security.md).
 |---|---|---|
 | I. Spec | a spec without open questions and a draft plan | “GO plan” |
 | II. Plan | steps, tests, resources and the proposed version | “GO implement” |
-| III. Delivery | code, tests, review, documentation, changelog, version | status `done`; commit only on request |
+| III. Delivery | code, tests, review, documentation, changelog, version | status `done`; commits and pushes follow the delivery mode (`delivery.mode`) |
 
 The main session orchestrates; scoped subagents (Explore, implementer, test-writer, test-runner, reviewer, verifier,
 scribe, mechanic) do the work and never delegate further. Small bugs use the shorter `bugfix` flow. Larger goals can
@@ -90,7 +90,7 @@ acceptance. See [docs/prototypes.md](docs/prototypes.md).
 
 Developed and tested with uv 0.13; the minimum version has not been measured. CI uses the current uv.
 
-Supported systems: v1.0.0 supports Linux and WSL. Native Windows and macOS are planned for v1.0.1; CI runs them, but their results do not block the release.
+Supported systems: v1.0.0 supports Linux, WSL and macOS (CI on Ubuntu and macOS blocks the release). Native Windows is planned for v1.0.1; CI runs it, but its result does not block the release.
 
 | System | Support in v1.0.0 | Known limits |
 |---|---|---|

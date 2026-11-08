@@ -19,7 +19,7 @@ z podagentami ta procedura nie jest potrzebna. To **jedyne źródło protokołu*
   Alias + identyfikator sesji to klucz adresowania. Nazwy nadane przez użytkownika mają pierwszeństwo.
   Każdy alias ma w liście rodzaj gramatyczny. Dyspozytor odmienia według niego i podaje go karcie
   w `ASSIGN`, a karta pisze o sobie w tej formie.
-- **Użytkownik**: bramki („GO plan”, „GO implement”, decyzje, commit/push/deploy) są lokalne w karcie. Decyzja
+- **Użytkownik**: bramki („GO plan”, „GO implement”, decyzje, commit/push/deploy, `READY`) są lokalne w karcie; `READY` daje tylko użytkownik, nie dyspozytor ani inna karta. Decyzja
   użytkownika podjęta w karcie, także wbrew trybowi wygaszania lub planowi dyspozycji,
   ma pierwszeństwo: dyspozytor aktualizuje stan i nie spiera się.
 
@@ -86,7 +86,8 @@ jest dzierżawiony przez dyspozytora:
 
 ## Integracja do gałęzi głównej
 
-- **PUSH SLOT**: przed każdym pushem na gałąź główną, także samych dokumentów, sesja wysyła
+- **Tryb `pr`**: karty nie dostają `PUSH SLOT` na bazę (nie scalają); gotowość PR zgłaszają istniejącym statusem paczki `review`. Karta zależna od paczki, której PR nie scalono, czeka na scalenie przez człowieka. Dokumenty i stan dyspozytora nie trafiają na bazę (gałąź i PR albo bez pusha).
+- **PUSH SLOT** (tryb `direct`): przed każdym pushem na gałąź główną, także samych dokumentów, sesja wysyła
   `PUSH SLOT <paczka>`, a dyspozytor wyznacza kolejność (`PUSH GRANT`). Push poza kolejką
   przesuwa bazę innym gałęziom i psuje im fast-forward.
 - Kolejność ustalaj z wyprzedzeniem: najpierw zmiany, które zmieniają wspólne kontrakty
