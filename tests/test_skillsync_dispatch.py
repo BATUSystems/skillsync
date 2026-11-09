@@ -71,6 +71,13 @@ class ExpandSkillsTests(TempProjectMixin, unittest.TestCase):
         self.assertEqual(self.expand(["@jira"], {"jira": ["go-jira"]}), ["acli"])
         self.assertEqual(workflow_common.expand_project_skills({"skills": ["go-jira"]}, self.one_layer()), ["acli"])
 
+    def test_go_jira_alias_with_glob_matches_the_package_expander(self):
+        self.library_with("acli", "other")
+        manifest = {"skills": ["go-jira", "ac*"]}
+        self.assertEqual(workflow_common.expand_project_skills(manifest, self.one_layer()),
+                         skillsync.expand_skills(["go-jira", "ac*"], self.library_dir / "skills", {}))
+        self.assertEqual(workflow_common.expand_project_skills(manifest, self.one_layer()), ["acli"])
+
     def test_go_jira_is_kept_when_acli_is_not_available(self):
         self.library_with("other")
         self.assertEqual(self.expand(["go-jira"]), ["go-jira"])

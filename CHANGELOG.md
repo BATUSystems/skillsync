@@ -21,7 +21,7 @@ None.
 - `docs/workflow.md`, `docs/workflow-details.md`: bramka modelu dyspozytora to Opus 5.5 lub Fable 5.1 (zgodnie z `library/skills/dispatch`).
 
 ### Removed
-- Skill `go-jira` (przestarzały; zastąpiony przez `acli`). Wpis w manifeście nadal działa jako alias.
+- Skill `go-jira` (przestarzały; zastąpiony przez `acli`). Wpis w manifeście nadal działa jako alias; ręczne odesłania do `skills/go-jira/` trzeba zamienić na `skills/acli/`.
 
 ### Breaking
 None.

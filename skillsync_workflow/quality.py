@@ -839,7 +839,7 @@ def doctor(root, manifest, library):
     if isinstance(declared, list) and 'go-jira' in declared:
         finding('warning', '.github/.skillsync.yaml',
                 'Deprecated skill `go-jira` in skills: it was removed from the library; replace it with `acli` '
-                '(the old name still resolves to `acli`)')
+                '(the old name resolves to `acli` when the library has it)')
     dispatch_errors, dispatch_warnings = validate_dispatch(manifest.get('dispatch'))
     for message in dispatch_errors:
         finding('error', '.github/.skillsync.yaml', message)
