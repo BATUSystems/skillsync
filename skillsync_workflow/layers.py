@@ -2920,6 +2920,24 @@ def layers_use(layer_id, match, *, position=None):
         return _blocked(exc)
 
 
+def layers_ensure_core_rule():
+    """`skillsync setup`: a machine with only the core layer has no `layer_rules` entry, and `link` needs one
+    (`no-rule`). With no rules at all this inserts the default rule `**: [core]`; existing rules are never touched."""
+    try:
+        config = load_machine_config()
+        core = next((layer for layer in config.layers.values() if layer.kind == 'core'), None)
+        if core is None:
+            raise LayerError('No core layer is configured; add one with `skillsync layers add core --kind core ...`',
+                             'bad-argument')
+        if config.rules:
+            return _report('PASS', changed=False, rules=len(config.rules), config=str(config.path))
+        rule = {'match': ['**'], 'use': [core.id]}
+        edited = edit_config(config.path, [_insert_rule_op(rule, 0)])
+        return _report('PASS', rule=rule, **edited)   # `edited` carries `changed`
+    except (LayerError, OSError) as exc:
+        return _blocked(exc)
+
+
 # --------------------------------------------------------------------------- layers migrate (K11, K15)
 
 def _pairs(values, label):

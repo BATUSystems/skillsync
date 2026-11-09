@@ -45,3 +45,21 @@ jobs:
           actual=$(skillsync --version | tr -d '\r')
           echo "expected: skillsync ${GITHUB_REF_NAME#v}; actual: $actual"
           [ "$actual" = "skillsync ${GITHUB_REF_NAME#v}" ]
+      - name: install.sh from the tag (curl | sh), twice
+        if: runner.os != 'Windows'
+        env:
+          REPOSITORY: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -eu
+          uv tool uninstall skillsync
+          work=$(mktemp -d)
+          export HOME="$work/home" XDG_CONFIG_HOME="$work/xdg-config" XDG_DATA_HOME="$work/xdg-data" XDG_CACHE_HOME="$work/xdg-cache"
+          export UV_TOOL_DIR="$work/uv-tools" UV_TOOL_BIN_DIR="$work/uv-bin" SKILLSYNC_CONFIG="$work/config.yaml"
+          mkdir -p "$HOME"
+          git config --global user.email ci@example.invalid
+          for run in 1 2; do
+            curl --proto '=https' --tlsv1.2 -LsSf "https://raw.githubusercontent.com/${REPOSITORY}/${TAG}/install.sh" | sh -s -- --yes
+            "$UV_TOOL_BIN_DIR/skillsync" --version
+            "$UV_TOOL_BIN_DIR/skillsync" layers check
+          done

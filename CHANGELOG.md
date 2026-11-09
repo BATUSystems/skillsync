@@ -13,7 +13,11 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 ## [Unreleased]
 
 ### Added
-None.
+
+- `install.sh`: installer for Linux, WSL2 and macOS. It installs `uv` if missing, installs `skillsync` from the release tag
+  baked into the script (no sudo), checks that the version equals the tag and runs `skillsync setup`.
+- `skillsync setup`: machine setup wizard. It adds the core layer, optionally a read-only organization layer (after an
+  access check with `git ls-remote`), the layer rule and a final `layers check`. It is idempotent; `--dry-run` and `--json` are available.
 
 ### Changed
 - Alias skilla `go-jira` → `acli` w manifestach (`skills:`) w obu miejscach rozwijania skilli (`skillsync:expand_skills`, `common.expand_project_skills`); `skillsync doctor` ostrzega, żeby zamienić `go-jira` na `acli`. `skillsync skills list` pokazuje `acli` z pochodzeniem `alias`.
