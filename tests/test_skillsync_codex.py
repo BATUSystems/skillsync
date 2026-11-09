@@ -182,8 +182,10 @@ class CodexTests(TempProjectMixin, unittest.TestCase):
             skillsync.ensure_link_on_open(self.project_dir, manifest, self.config)
         task = json.loads((self.project_dir / ".vscode/tasks.json").read_text())["tasks"][0]
         self.assertEqual(task["runOptions"]["runOn"], "folderOpen")
-        self.assertEqual(task["args"], ["link", "${workspaceFolder}"])  # checkout without an entry: the wrapper is the command
-        self.assertEqual(Path(task["command"]).resolve(), SKILLSYNC_PATH.resolve())
+        self.assertEqual(task["args"][-2:], ["link", "${workspaceFolder}"])
+        if os.name != "nt":  # checkout without an entry: the wrapper is the command (Windows: interpreter + wrapper, selfcmd)
+            self.assertEqual(task["args"], ["link", "${workspaceFolder}"])
+            self.assertEqual(Path(task["command"]).resolve(), SKILLSYNC_PATH.resolve())
 
     def test_removed_role_pruned_and_manual_role_retained(self):
         self.build()
@@ -237,7 +239,7 @@ class CodexTests(TempProjectMixin, unittest.TestCase):
         target.parent.mkdir(parents=True)
         target.symlink_to(external, target_is_directory=True)
         self.build()
-        self.assertEqual(target.resolve(), external.resolve())
+        self.assertTrue(target.resolve().samefile(external))  # 8.3 short names on Windows differ textually
 
     def test_invalid_role_name_rejected(self):
         with self.assertRaises(ValueError):

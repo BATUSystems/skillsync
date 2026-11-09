@@ -35,6 +35,8 @@ pasować do środowiska, popraw ją tutaj zamiast obchodzić.
   (skrypty, podumysły) zapisuj w scratchpadzie lub katalogu worktree, nigdy wprost w `/tmp`:
   kopia `prototype.py` w `/tmp/x` wywróciła test Skillsync, który zakłada brak `/tmp/x`
   (`tests/test_skillsync_knowledge_init.py:97`).
+  Gdy przywrócenie zawiesi się (`cp -i`) albo skrypt zostanie przerwany, **mutant zostaje na dysku**:
+  przed dalszą pracą porównaj plik z kopią (`diff -q`) lub `git diff`, nie zakładaj stanu wyjściowego.
 
 ## Scratchpad i narzędzia sesji
 
@@ -119,6 +121,9 @@ pasować do środowiska, popraw ją tutaj zamiast obchodzić.
 
 ## Testy
 
+- **Windows: `Path.write_text` zamienia LF na CRLF**, więc skrót (sha256) liczony w teście z tekstu z LF
+  nie zgadza się ze skrótem pliku. Helper fikstur, który zapisuje dowody, pisze z `newline=''` albo bajtami.
+  Ścieżki w wyjściach JSON i w stanie przechodzą przez `.as_posix()`, nie `str(relative_to(...))`.
 - **Dowód z testów jest ważny tylko, gdy bieg zaczął się po ostatniej zmianie kodu.**
   Porównuj godzinę startu w logu (`Start at` w Vitest, nagłówek logu) z `stat -c %y` plików
   z commita. Zmiana testu po biegu unieważnia dowód.

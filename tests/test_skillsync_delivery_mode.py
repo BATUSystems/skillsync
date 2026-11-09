@@ -205,7 +205,7 @@ BASE_REQUIRED = ['READY', 'READY!', 'CP!', 'CPD!', 'delivery.mode', 'route', '`p
 
 
 def library_texts(root=LIBRARY):
-    return {str(p.relative_to(root)): p.read_text(encoding='utf-8') for p in sorted(root.rglob('*.md'))}
+    return {p.relative_to(root).as_posix(): p.read_text(encoding='utf-8') for p in sorted(root.rglob('*.md'))}
 
 
 def stale_phrase_hits(texts):

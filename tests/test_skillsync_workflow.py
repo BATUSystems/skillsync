@@ -285,6 +285,33 @@ class ValidationContracts(WorkflowFixture):
         self.assertEqual(report['status'], 'FAIL')
         self.assertEqual([r['exit_code'] for r in report['results']], [3, 5])
 
+    def test_redact_keeps_structural_keys_when_a_short_env_secret_equals_one(self):
+        from skillsync_workflow.common import redact
+        with mock.patch.dict(os.environ, {'SKILLSYNC_TEST_SECRET': 'root'}):
+            masked = redact({'root': 'root', 'composed_root': 'x'})
+        self.assertEqual(masked, {'root': '[REDACTED]', 'composed_root': 'x'})  # value masked, key kept
+
+    def test_redact_masks_a_long_env_secret_used_as_key_and_as_value(self):
+        from skillsync_workflow.common import redact
+        secret = 'tok-' + uuid.uuid4().hex
+        with mock.patch.dict(os.environ, {'SKILLSYNC_TEST_TOKEN': secret}):
+            masked = redact({secret: {'inner': secret}, 'list': [{secret: 1}]})
+        self.assertEqual(masked, {'[REDACTED]': {'inner': '[REDACTED]'}, 'list': [{'[REDACTED]': 1}]})
+
+    def test_redact_key_threshold_is_eight_characters(self):
+        from skillsync_workflow.common import redact
+        with mock.patch.dict(os.environ, {'SKILLSYNC_TEST_TOKEN': 'abcdefg', 'SKILLSYNC_TEST_SECRET': 'ABCDEFGH'}):
+            masked = redact({'abcdefg': 1, 'ABCDEFGH': 2})
+        self.assertEqual(masked, {'abcdefg': 1, '[REDACTED]': 2})  # 7 characters keeps the key, 8 masks it
+
+    def test_delivery_scrub_keeps_structural_keys_like_redact(self):
+        from skillsync_workflow import delivery
+        with mock.patch.dict(os.environ, {'SKILLSYNC_TEST_SECRET': 'root'}):
+            self.assertEqual(delivery._scrub({'root': {'data': 'root'}}), {'root': {'data': '[REDACTED]'}})
+        secret = 'tok-' + uuid.uuid4().hex
+        with mock.patch.dict(os.environ, {'SKILLSYNC_TEST_TOKEN': secret}):
+            self.assertEqual(delivery._scrub({secret: 1}), {'[REDACTED]': 1})
+
     def test_plan_redacts_secret_without_mutating_command_execution(self):
         key = 'SKILLSYNC_TEST_SECRET'
         secret = 'plan-private-' + uuid.uuid4().hex

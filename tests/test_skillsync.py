@@ -807,8 +807,9 @@ class AgentflowBootstrapTests(TempProjectMixin, unittest.TestCase):
         self.assertEqual(task["type"], "process")
         self.assertEqual(task["args"][-2:], ["link", "${workspaceFolder}"])
         # no user entry (isolated from the real HOME/PATH), checkout: the wrapper itself is the command
-        self.assertEqual(task["args"], ["link", "${workspaceFolder}"])
-        self.assertEqual(Path(task["command"]).resolve(), SKILLSYNC_PATH.resolve())
+        if os.name != "nt":  # Windows without an entry: interpreter + wrapper (selfcmd.link_task_argv)
+            self.assertEqual(task["args"], ["link", "${workspaceFolder}"])
+            self.assertEqual(Path(task["command"]).resolve(), SKILLSYNC_PATH.resolve())
         self.assertTrue(os.access(task["command"], os.X_OK))
         self.assertEqual(target.with_name("tasks.json.skillsync-backup").read_text(), original)
         content, mtime = target.read_bytes(), target.stat().st_mtime_ns

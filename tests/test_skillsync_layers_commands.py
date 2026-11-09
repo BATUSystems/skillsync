@@ -890,14 +890,14 @@ class LayersListTest(CommandsCase):
                 for key in ('schema', 'generator_version', 'layers', 'composed_root', 'status'):
                     self.assertIn(key, report)
                 self.assertEqual((report['schema'], report['status'], report['generator_version']), (1, 'PASS', generator_version()))
-                self.assertEqual(report['composed_root'], str(machine_cache_dir() / 'composed'))
-                self.assertEqual([item['id'] for item in report['layers']], ['core', 'acme', 'me'])
+                self.assertEqual(report['composed_root'], str(machine_cache_dir() / 'composed'), report)
+                self.assertEqual([item['id'] for item in report['layers']], ['core', 'acme', 'me'], report)
                 acme = report['layers'][1]
                 for key in ('id', 'kind', 'path', 'subdir', 'version', 'writable'):
                     self.assertIn(key, acme)
                 self.assertEqual((acme['kind'], acme['path'], acme['subdir'], acme['version'], acme['writable']),
-                                 ('org', str(self.acme), '', '2.1.0', True))
-                self.assertEqual([item['writable'] for item in report['layers']], [False, True, True])
+                                 ('org', str(self.acme), '', '2.1.0', True), report)
+                self.assertEqual([item['writable'] for item in report['layers']], [False, True, True], report)
 
     def test_the_effective_list_depends_on_the_project(self):
         other = self.project('Repos/Other/app')

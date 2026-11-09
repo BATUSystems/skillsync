@@ -48,7 +48,7 @@ def _local(root, name):
 
 def _scrub(value):
     if isinstance(value, dict):
-        return {redact(str(key)): '[REDACTED]' if _SECRET.search(str(key)) else _scrub(item) for key, item in value.items()}
+        return {redact(str(key), True): '[REDACTED]' if _SECRET.search(str(key)) else _scrub(item) for key, item in value.items()}
     if isinstance(value, list):
         return [_scrub(item) for item in value]
     return redact(value)
@@ -253,7 +253,7 @@ def ci(root, manifest, library, report_path, run=False):
         if not log.is_file() or log.stat().st_size > 2 * 1024 * 1024:
             raise ValueError('CI check requires bounded local log evidence')
         text = log.read_text(encoding='utf-8', errors='replace')
-        checks.append({'name': name, 'status': check['status'], 'log': str(log.relative_to(root)), 'cause': None if check['status'] == 'PASS' else _diagnosis(text), 'cause_verified': False, 'note': 'Heuristic candidate; confirm against actual implementation and test before fixing'})
+        checks.append({'name': name, 'status': check['status'], 'log': log.relative_to(root).as_posix(), 'cause': None if check['status'] == 'PASS' else _diagnosis(text), 'cause_verified': False, 'note': 'Heuristic candidate; confirm against actual implementation and test before fixing'})
     report = {'status': 'NOT_RUN', 'checks': checks, 'source': source, 'iterations': [], 'ci_status': 'PASS' if all(c['status'] == 'PASS' for c in checks) else 'FAIL', 'reason': 'Imported evidence analyzed; no fresh CI execution'}
     failing = any(c['status'] != 'PASS' for c in checks)
     if not run or not failing or not rerun or not limit:
