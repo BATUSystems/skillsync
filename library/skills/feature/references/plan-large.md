@@ -35,7 +35,7 @@ Umiejscowienie: w specu, poza fazami i krokami — te są w planie.
 ## 3. Przegląd w świeżym kontekście
 
 - Kolejność po odpowiedziach nie podlega wyborowi. akt I: `pre-implement`, jeśli dotyczy (wynik jest tylko do odczytu; kontrakty, migrację i ryzyka przenosi orkiestrator), następnie raport spójności (§4), pętla `spec`, zgoda GO plan. akt II: plan, pętla `plan`, `skillsync readiness` z linią `Spec:`, decyzja o wersji, zgoda GO implement. Zasady pętli: [pętla przeglądu](review-loop.md).
-- Każda runda to osobny podumysł z rolą `reviewer`; kolejne rundy uruchamiasz, aż na liście zostaną same drobne uwagi, bo autor nie przeprowadzi surowej recenzji swojego tekstu. Checklistę i materiał dla profili `spec` oraz `plan` masz w [pętli przeglądu](review-loop.md).
+- Każda runda to osobny podumysł z rolą `reviewer`, bo autor nie przeprowadzi surowej recenzji swojego tekstu. Liczbę rund wyznacza kategoria pętli z [pętli przeglądu](review-loop.md): pętla pełna tylko dla strażnika wycieków, migracji i bezpieczeństwa; w pozostałych przypadkach jedna runda, a kolejna tylko po blockerze. Samo ryzyko high ani `plan-large` nie dają pętli pełnej; powtórzenie rundy bez blockera to nadmiar ceremonii (`ceremony-excess`). Checklistę i materiał dla profili `spec` oraz `plan` masz w tym samym dokumencie.
 - Werdykt `podziel` nie uruchamia przepisania; trafia do użytkownika w formie pytania.
 
 ### Challenger pomysłu (opcjonalny, dla zmiany dużej lub kosztownej)
