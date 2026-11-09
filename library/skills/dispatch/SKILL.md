@@ -37,10 +37,10 @@ z `dispatch.owned_files` (indeks paczek, rejestry).
 
 ## Krok 0: bramka modelu (każda tura dyspozytora)
 
-Dyspozytor działa na modelu **co najmniej Opus 5.5** w **każdej** turze (start, `resume`, `status`,
+Dyspozytor działa na modelu **Opus 5.5 lub Fable 5.1 (najmocniejszy model rodziny 5)** w **każdej** turze (start, `resume`, `status`,
 `drain`, każdy raport/zdarzenie/polecenie). Sprawdź faktyczny model z kontekstu systemowego. Słabszy
-(Sonnet, Haiku, starszy Opus) albo niepotwierdzony = bramka niespełniona:
-- **nie startuj** dyspozycji (poproś o przełączenie: Claude `/model opus`, Codex: [adapter](references/codex.md)
+(Sonnet, Haiku, starszy Opus) albo niepotwierdzony = bramka niespełniona. Bramka dotyczy tylko dyspozytora: podział modeli kart ustala użytkownik (karty mogą być słabsze, podumysły dobierane według roli). Gdy bramka jest niespełniona:
+- **nie startuj** dyspozycji (poproś o przełączenie: Claude `/model opus` albo `/model fable`, Codex: [adapter](references/codex.md)
   — i o ponowne wywołanie komendy);
 - model spadł w trakcie: żadnych decyzji koordynacyjnych (przydziały, `LEASE/PUSH/ID GRANT`, weryfikacja
   `DONE`); zapisz stan, poinformuj użytkownika i poproś o przywrócenie modelu. Karty czekają.

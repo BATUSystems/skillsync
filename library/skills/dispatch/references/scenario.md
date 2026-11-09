@@ -23,7 +23,7 @@ Cel: `/dispatch domknij paczki W1–W4`. Manifest: `dispatch.max_parallel: 3`,
 ## Przebieg
 
 **0. Bramka modelu.** Dyspozytor odczytuje swój model z kontekstu. `claude-sonnet-5-5` →
-„Dyspozytor wymaga Opus 5.5 lub nowszego; przełącz `/model opus` i ponów `/dispatch …`.
+„Dyspozytor wymaga Opus 5.5 lub Fable 5.1; przełącz `/model opus` i ponów `/dispatch …`.
 Nie startuję.” Po przełączeniu `claude-opus-5-5` → dalej. (Powtarzane w każdej turze.)
 
 **1. Pytanie o karty.** `ListAgents` zwraca: „Zarządca” (ta sesja), dwie sesje „Nowy czat”
