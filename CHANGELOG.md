@@ -33,7 +33,7 @@ None.
 ### Fixed
 - `link` appends to a user's `.gitignore` (project root, `.github/`, `.claude/`, `.cursor/rules/`, the state folder) without rewriting it: the existing bytes and line endings (CRLF, LF or mixed) stay as they are and new lines follow the last line's ending. Before, the whole file was rewritten with LF, so a Windows project with `core.autocrlf=true` got a diff of the whole file instead of the added lines.
 - `link` keeps the line endings and bytes of the user's `AGENTS.md`, `.codex/config.toml`, `.vscode/tasks.json`, `.claude/settings.json` and `.mcp.json`: the managed block or JSON is written in the file's own line ending (CRLF stays CRLF, a new file is LF) and the `*.skillsync-backup` copies are byte copies. The prototype ignore files (`.gitignore`, `.gitattributes`) use the same appending rule.
-- On Windows reports are UTF-8 on stdout and stderr (Polish letters no longer raise `UnicodeEncodeError`), and the run metadata, suite and benchmark files are read and written as UTF-8 explicitly.
+- On Windows reports are always UTF-8 on stdout and stderr (Polish letters no longer raise `UnicodeEncodeError`; a caller that reads the output with the console code page must decode UTF-8; stdin is not changed), and the run metadata, suite and benchmark files are read and written as UTF-8 explicitly.
 
 ## [1.0.1] - 2026-11-09
 

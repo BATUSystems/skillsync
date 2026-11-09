@@ -727,7 +727,8 @@ def update_codex_config(project_dir: Path, limit: int, enabled: bool, dry_run: b
                 print(f"[warn] Nonstandard agents table, configure manually: {target}")
                 return
             else:
-                content = original.rstrip() + (nl * 2 if original.strip() else "") + "[agents]" + nl + block
+                gap = (nl if original and not original.endswith("\n") else "") + (nl if original.strip() else "")
+                content = original + gap + "[agents]" + nl + block
         else:
             content = stripped
         tomllib.loads(content)

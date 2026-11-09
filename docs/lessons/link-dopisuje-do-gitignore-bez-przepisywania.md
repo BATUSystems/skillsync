@@ -2,7 +2,7 @@
 title: 'link przepisywał cały .gitignore projektu: dopisuj do plików użytkownika bez zmiany istniejących bajtów'
 tags: [skillsync, windows, gitignore, crlf, link]
 paths: ['skillsync_workflow/cli.py', 'tests/test_skillsync_gitignore_eol.py']
-source: 'WIN-2: projekt na natywnym Windows z core.autocrlf=true i plikiem .gitignore z mieszanymi końcami linii (i/mixed); dowód na Windows 5.11: stary kod zwiększył plik z 25 do 44 bajtów i zamienił CRLF na LF, nowy dopisał tylko dwie linie w stylu CRLF'
+source: 'projekt na natywnym Windows z core.autocrlf=true i plikiem .gitignore z mieszanymi końcami linii (i/mixed); dowód na Windows 5.11: stary kod zwiększył plik z 25 do 44 bajtów i zamienił CRLF na LF, nowy dopisał tylko dwie linie w stylu CRLF'
 verified: 2026-11-09
 ---
 **Objaw:** po `skillsync link` diff `.gitignore` obejmował cały plik zamiast dopisanych linii: `read_text().splitlines()` gubiło końce linii, a `write_text_lf` zapisało całość z LF.
