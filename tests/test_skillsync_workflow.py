@@ -308,6 +308,9 @@ class ValidationContracts(WorkflowFixture):
         from skillsync_workflow import delivery
         with mock.patch.dict(os.environ, {'SKILLSYNC_TEST_SECRET': 'root'}):
             self.assertEqual(delivery._scrub({'root': {'data': 'root'}}), {'root': {'data': '[REDACTED]'}})
+        secret = 'tok-' + uuid.uuid4().hex
+        with mock.patch.dict(os.environ, {'SKILLSYNC_TEST_TOKEN': secret}):
+            self.assertEqual(delivery._scrub({secret: 1}), {'[REDACTED]': 1})
 
     def test_plan_redacts_secret_without_mutating_command_execution(self):
         key = 'SKILLSYNC_TEST_SECRET'
