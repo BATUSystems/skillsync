@@ -335,6 +335,12 @@ def read_user_text(path: Path) -> str:
     return path.read_bytes().decode("utf-8")
 
 
+def json_file_text(data, like: str = "") -> str:
+    """JSON text for a user's file in the line ending of `like` (its previous content); LF for a new file."""
+    text = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+    return text.replace("\n", detect_eol(like)) if like else text
+
+
 def add_gitignore_entries(gitignore_path: Path, entries: list[str], dry_run: bool = False) -> bool:
     """Append the missing `entries` to a .gitignore without touching the existing bytes.
 
@@ -901,7 +907,7 @@ def ensure_link_on_open(project_dir: Path, manifest: dict, config: dict, dry_run
         return
 
     target = project_dir / ".vscode" / "tasks.json"
-    original = target.read_text(encoding="utf-8") if target.exists() else ""
+    original = read_user_text(target) if target.exists() else ""
     try:
         data = json.loads(strip_jsonc(original)) if original else {"version": "2.0.0", "tasks": []}
     except json.JSONDecodeError:
@@ -945,7 +951,7 @@ def ensure_link_on_open(project_dir: Path, manifest: dict, config: dict, dry_run
     target.parent.mkdir(parents=True, exist_ok=True)
     if original:
         write_text_lf(target.with_name("tasks.json.skillsync-backup"), original)
-    write_text_lf(target, json.dumps(data, indent=2, ensure_ascii=False) + "\n")
+    write_text_lf(target, json_file_text(data, original))
     print(message)
 
 
@@ -2403,8 +2409,8 @@ def merge_closure_settings(project_dir: Path, manifest: dict, config: dict, want
         settings_path.parent.mkdir(parents=True, exist_ok=True)
         if settings_path.exists():
             backup_path = settings_path.with_name(settings_path.name + ".skillsync-backup")
-            write_text_lf(backup_path, settings_path.read_text(encoding="utf-8"))
-        write_text_lf(settings_path, json.dumps(updated, indent=2, ensure_ascii=False) + "\n")
+            write_text_lf(backup_path, read_user_text(settings_path))
+        write_text_lf(settings_path, json_file_text(updated, read_user_text(settings_path) if settings_path.exists() else ""))
     except OSError as error:
         print(f"[warn] Nie udalo sie zapisac {settings_path}: {error}")
         return False
@@ -2478,9 +2484,9 @@ def merge_claude_settings(project_dir: Path, manifest: dict, config: dict, dry_r
     settings_path.parent.mkdir(parents=True, exist_ok=True)
     if settings_path.exists():
         backup_path = settings_path.with_name(settings_path.name + ".skillsync-backup")
-        write_text_lf(backup_path, settings_path.read_text(encoding="utf-8"))
+        write_text_lf(backup_path, read_user_text(settings_path))
 
-    write_text_lf(settings_path, json.dumps(updated, indent=2, ensure_ascii=False) + "\n")
+    write_text_lf(settings_path, json_file_text(updated, read_user_text(settings_path) if settings_path.exists() else ""))
     print(f"Updated: {settings_path}")
 
 
@@ -2618,7 +2624,7 @@ def build_claude_mcp(project_dir: Path, manifest: dict, config: dict, dry_run: b
         if dry_run:
             print(f"[dry-run] Would write: {target}")
         else:
-            write_text_lf(target, json.dumps(updated, indent=2, ensure_ascii=False) + "\n")
+            write_text_lf(target, json_file_text(updated, read_user_text(target) if target.exists() else ""))
             print(f"Updated: {target}")
     ensure_root_gitignore(project_dir, dry_run=dry_run, entry=".mcp.json")
 
