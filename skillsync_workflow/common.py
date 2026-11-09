@@ -253,8 +253,9 @@ def validate_workflow(config):
 
 
 def redact(value, _key=False):
-    """Masks secrets in strings. Dict keys keep the environment-secret substitution off: a short secret value
-    (the Windows runner has one equal to `root`) must not rename structural keys such as `root`."""
+    """Masks secrets in strings. Dict keys get the environment-secret substitution only for secrets of
+    8+ characters: a short secret value (the Windows runner has one equal to `root`) must not rename
+    structural keys such as `root`, while a real token used as a key is still masked."""
     if isinstance(value, dict):
         return {redact(key, True): redact(item) for key, item in value.items()}
     if isinstance(value, list):
@@ -264,8 +265,8 @@ def redact(value, _key=False):
     if not isinstance(value, str):
         return value
     text = value
-    for name, secret in ([] if _key else os.environ.items()):
-        if len(secret) >= 4 and re.search(r'(?i)token|secret|password|passwd|api_?key|credential', name):
+    for name, secret in os.environ.items():
+        if len(secret) >= (8 if _key else 4) and re.search(r'(?i)token|secret|password|passwd|api_?key|credential', name):
             text = text.replace(secret, '[REDACTED]')
     text = re.sub(r'(https?://)[^/@\s]+:[^/@\s]+@', r'\1[REDACTED]@', text)
     text = re.sub(r'(?i)(authorization\s*[:=]\s*(?:bearer\s+)?)[^\s\x22\x27,;]+', r'\1[REDACTED]', text)

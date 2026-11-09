@@ -289,7 +289,14 @@ class ValidationContracts(WorkflowFixture):
         from skillsync_workflow.common import redact
         with mock.patch.dict(os.environ, {'SKILLSYNC_TEST_SECRET': 'root'}):
             masked = redact({'root': 'root', 'composed_root': 'x'})
-        self.assertEqual(masked, {'root': '[REDACTED]', 'composed_root': 'x'})
+        self.assertEqual(masked, {'root': '[REDACTED]', 'composed_root': 'x'})  # value masked, key kept
+
+    def test_redact_masks_a_long_env_secret_used_as_key_and_as_value(self):
+        from skillsync_workflow.common import redact
+        secret = 'tok-' + uuid.uuid4().hex
+        with mock.patch.dict(os.environ, {'SKILLSYNC_TEST_TOKEN': secret}):
+            masked = redact({secret: {'inner': secret}, 'list': [{secret: 1}]})
+        self.assertEqual(masked, {'[REDACTED]': {'inner': '[REDACTED]'}, 'list': [{'[REDACTED]': 1}]})
 
     def test_plan_redacts_secret_without_mutating_command_execution(self):
         key = 'SKILLSYNC_TEST_SECRET'
