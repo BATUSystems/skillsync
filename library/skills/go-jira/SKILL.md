@@ -8,6 +8,9 @@ Używaj, gdy zadanie dotyczy pracy z Jirą przez CLI `jira` (go-jira): instalacj
 przeglądania, tworzenia i edycji issues, transitions, worklogów, ustawiania custom fields i pól wieloliniowych
 oraz diagnozy błędów uwierzytelniania.
 
+Dla **Jira Cloud** podstawowym klientem jest `acli` (skill [acli](../acli/SKILL.md)); `go-jira` służy do operacji, których `acli` nie obsługuje
+(np. zapis pól własnych `customfield_*`) oraz do starszych instancji.
+
 Wartości instancji i projektu (endpoint, klucz projektu, login, wymagane pola, ID custom fields):
 firmowe konwencje w skillu organizacji, projektowe w skillu projektu.
 W dalszej części `<KEY>-123` oznacza dowolny klucz issue, `<user>` login Jiry, `<endpoint>` adres instancji.
