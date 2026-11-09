@@ -157,7 +157,7 @@ class SetupFlowTest(SetupCase):
     def test_4_resume_after_core_only(self):
         self.setup_cli(*self.base_args(org=False, match=()))
         self.assertIsNone(self.layer_entry('acme'))
-        # the core-only run left `**: [core]`, so --yes needs an explicit --match (Q1)
+        # the core-only run left `**: [core]`, so --yes needs an explicit --match (except when the only rule is the `**: [core]` that a core-only setup leaves) (Q1)
         process, report = self.setup_cli(*self.base_args(match=('**',)))
         self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
         res = self.results(report)
@@ -399,8 +399,6 @@ class SetupCheckFailTest(SetupCase):
         self.assertIn('symlink-in-layer', check['detail'])
 
 
-if __name__ == '__main__':
-    unittest.main()
 
 
 class SetupReviewR1Test(SetupCase):
@@ -533,3 +531,33 @@ class SetupReviewR1Test(SetupCase):
         process, report = self.setup_cli(*self.base_args(org=False, match=(), extra=['--dry-run']))
         self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
         self.assertEqual(self.results(report)['rule'], 'unchanged')
+
+if __name__ == '__main__':
+    unittest.main()
+
+class SetupProbeTest(SetupCase):
+    def test_23_literal_glob_uses_the_directory_itself(self):
+        project = self.work / 'single-project'
+        project.mkdir()
+        process, report = self.setup_cli(*self.base_args(match=(str(project),)))
+        self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+        self.assertEqual(self.results(report)['check'], 'done')
+        self.assertEqual(list(project.iterdir()), [])
+
+    def test_23b_wildcard_in_the_middle_falls_back_to_the_warning(self):
+        base = self.work / 'groups'
+        (base / 'a').mkdir(parents=True)
+        process, report = self.setup_cli(*self.base_args(match=(f'{base}/*/sub',)))
+        self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+        self.assertTrue(any('not checked against a project' in w for w in report['warnings']), report['warnings'])
+        self.assertEqual(sorted(p.name for p in base.iterdir()), ['a'])
+
+    def test_23c_org_rule_is_probed_before_the_catch_all_rule(self):
+        projects = self.work / 'orgprojects'
+        projects.mkdir()
+        self.setup_cli(*self.base_args(org=False, match=()))          # leaves `**: [core]`
+        process, report = self.setup_cli(*self.base_args(match=(f'{projects}/**',)))
+        self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+        detail = next(item for item in report['steps'] if item['step'] == 'check')['detail']
+        self.assertIn('PASS', detail)
+        self.assertEqual(list(projects.iterdir()), [])

@@ -11,8 +11,8 @@ Po instalacji dodajesz warstwy (`skillsync layers add`) i reguły ich użycia (`
 | Python 3.11+ | systemowy albo z `uv` | systemowy albo z `uv` | systemowy albo z `uv` |
 | usługa watch | systemd (user), `skillsync-ctl` z checkoutu | brak (`skillsync watch` ręcznie) | brak (`skillsync watch` ręcznie) |
 
-Wersja 1.0.0 wspiera Linux, WSL2 i macOS. Natywny Windows jest poza drogą instalatora (`install.sh`) i nie jest
-wsparty w 1.0.0; zalecany jest WSL2 (Ubuntu), gdzie działa ta sama ścieżka co na Linuksie.
+Instalator (`install.sh`) i `skillsync setup` działają na Linuksie, w WSL2 i na macOS. Natywny Windows jest poza drogą instalatora;
+zalecany jest WSL2 (Ubuntu), gdzie działa ta sama ścieżka co na Linuksie.
 
 Pakiet jest czystym Pythonem, więc na macOS działa tak samo na Apple Silicon i Intel. Zakres wsparcia systemów: tabela
 w [README](../README.pl.md#wymagania).
@@ -71,7 +71,7 @@ Zmienne środowiskowe (głównie testy i CI):
 | `SKILLSYNC_INSTALL_FORCE=1` | zgadza się na nadpisanie obcego `skillsync` na `PATH` |
 
 Gdy odpowiedzi kreatora mają być czytane z terminala, a skrypt jest w potoku (`curl … | sh`), instalator czyta je z `/dev/tty`,
-jeśli jest dostępny. Bez terminala `setup` działa nieinteraktywnie.
+jeśli jest dostępny (ta gałąź nie ma testu automatycznego: sprawdzana ręcznie na koncie próbnym). Bez terminala `setup` działa nieinteraktywnie.
 
 Opcje `skillsync setup` (pełna lista: `skillsync setup --help`):
 
@@ -214,7 +214,7 @@ do `layers migrate --finish --apply`. Powrót: kopia configu i poprzednia wersja
 | `setup: BLOCKED` → `no access to …: … Permission denied (publickey)` | klucz SSH nie jest w agencie albo nie jest dodany u dostawcy | `ssh-add -l`; dodaj klucz do konta u dostawcy; `ssh -T <git-host>`; potem `skillsync setup` |
 | `setup: BLOCKED` → `Host key verification failed` | nieznany klucz hosta | połącz się raz interaktywnie (`ssh -T <git-host>`, potwierdź), potem `skillsync setup` |
 | `setup: BLOCKED` → `could not resolve` / `timed out` | brak sieci albo VPN | sprawdź sieć lub VPN; `git ls-remote <url>` musi działać bez pytań |
-| `setup: BLOCKED` → `tag … not found` w `layers add core` | wersja bez zdalnego tagu (build deweloperski) | podaj istniejący tag, gałąź albo commit: `skillsync setup --core-ref <ref>`; `main` nie jest używany automatycznie |
+| `setup: BLOCKED` → `Unknown ref <ref>` i „The ref … does not exist” w kroku `core` | wersja bez zdalnego tagu (build deweloperski) | podaj istniejący tag, gałąź albo commit: `skillsync setup --core-ref <ref>`; `main` nie jest używany automatycznie |
 | `setup:` ostrzeżenie `git user.email is not set` | adres autora nie jest ustawiony przed dodaniem warstw | `git config --global user.email "<adres>"`, potem `skillsync layers check` |
 | `setup: BLOCKED` → `… is not empty` (organizacja) | przerwane klonowanie zostawiło katalog warstwy | usuń wskazany katalog (`rm -r <ścieżka>`; nie ma go w configu) i uruchom `setup` ponownie |
 | `setup: BLOCKED` → `already configured with a different kind or source` | id warstwy istnieje z innym adresem albo rodzajem | zmień ją poleceniami `skillsync layers …`; `setup` nie nadpisuje warstw |

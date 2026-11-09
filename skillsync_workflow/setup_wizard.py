@@ -181,14 +181,20 @@ def _core_step(run, layers, config):
 
 _SSH_BATCH = '-o BatchMode=yes -o ConnectTimeout=15'
 _ACCESS_PHRASES = ('permission denied', 'publickey', 'host key verification failed', 'could not resolve',
-                   'unable to access', 'authentication failed', 'repository not found', 'could not read from remote')
+                   'unable to access', 'authentication failed', 'repository not found', 'connection timed out',
+                   'connection refused', 'network is unreachable', 'no route to host', 'could not read from remote')
 
 
 def _ls_remote(url):
     """Access check before cloning. Returns (ok, message): the message is the most telling stderr line."""
     env = dict(os.environ, GIT_TERMINAL_PROMPT='0')
-    # GIT_SSH_COMMAND wins over core.sshCommand, so extend it instead of being overridden by it.
-    env['GIT_SSH_COMMAND'] = f"{os.environ.get('GIT_SSH_COMMAND') or 'ssh'} {_SSH_BATCH}"
+    # GIT_SSH_COMMAND wins over core.sshCommand, so extend whichever one is in force instead of replacing it.
+    base = os.environ.get('GIT_SSH_COMMAND')
+    if not base:
+        configured = _git_global('config', '--get', 'core.sshCommand')
+        base = configured.stdout.strip() if configured is not None and configured.returncode == 0 else ''
+    env['GIT_SSH_COMMAND'] = f"{base or 'ssh'} {_SSH_BATCH}"
+    env['LC_ALL'] = 'C'   # the diagnostic phrases below are matched in English
     command = ['git', 'ls-remote', '--exit-code', url, 'HEAD']
     try:
         process = subprocess.run(command, capture_output=True, text=True, env=env, timeout=LS_REMOTE_TIMEOUT)
@@ -300,21 +306,34 @@ def _rule_step(run, layers, org_id):
 
 
 def _probe_project(layers):
-    """A fresh temporary directory that the configured rules match: anywhere for `**`, otherwise inside the literal
-    prefix of a glob (`~/X/**` -> `~/X/<tmp>`). Returns (path, cleanup) or (None, None) when no prefix directory exists."""
+    """A directory that the configured rules match, for `layers check --project`. Rules are tried in config order
+    (an organisation rule is more specific than `**`): `**` -> a temporary directory; a glob without wildcards -> that
+    directory; a glob with a wildcard -> a temporary subdirectory of its literal prefix. Every candidate is confirmed
+    with `match_rule` (a literal glob does not match a child, `~/X/*/sub` does not match `~/X/<tmp>`).
+    Returns (path, cleanup) or (None, None) when no existing directory fits."""
     config = layers.load_machine_config()
-    globs = [glob for rule in config.rules for glob in rule['match']]
-    if '**' in globs:
-        path = Path(tempfile.mkdtemp(prefix='skillsync-setup-'))
-        return path, lambda: shutil.rmtree(path, ignore_errors=True)
-    for glob in globs:
-        prefix = glob.split('*', 1)[0].rstrip('/')
-        if not prefix:
-            continue
-        base = Path(os.path.expanduser(prefix))
-        if base.is_dir() and os.access(base, os.W_OK):
-            path = Path(tempfile.mkdtemp(prefix='skillsync-setup-', dir=base))
-            return path, lambda: shutil.rmtree(path, ignore_errors=True)
+    for rule in config.rules:
+        for glob in rule['match']:
+            candidate, cleanup = None, None
+            if glob == '**':
+                candidate = Path(tempfile.mkdtemp(prefix='skillsync-setup-'))
+                cleanup = (lambda path=candidate: shutil.rmtree(path, ignore_errors=True))
+            elif not any(char in glob for char in '*?['):
+                path = Path(os.path.expanduser(glob))
+                candidate = path if path.is_dir() else None
+            else:
+                prefix = glob.split('*', 1)[0].rstrip('/')
+                base = Path(os.path.expanduser(prefix)) if prefix else None
+                if base is not None and base.is_dir() and os.access(base, os.W_OK):
+                    candidate = Path(tempfile.mkdtemp(prefix='skillsync-setup-', dir=base))
+                    cleanup = (lambda path=candidate: shutil.rmtree(path, ignore_errors=True))
+            if candidate is None:
+                continue
+            matched, _ = layers.match_rule(config, candidate)
+            if matched is not None:
+                return candidate, cleanup
+            if cleanup:
+                cleanup()
     return None, None
 
 

@@ -15,6 +15,9 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+if sys.platform == 'win32':
+    raise unittest.SkipTest('install.sh is a POSIX sh script; native Windows is out of scope (WSL2)')
+
 INSTALL = ROOT / "install.sh"
 REAL_TOOLS = ["sh", "env", "awk", "grep", "mktemp", "rm", "cat", "mkdir", "chmod", "cp", "printf", "dirname"]
 
@@ -64,7 +67,6 @@ def write_exec(path, text):
     os.chmod(path, 0o755)
 
 
-@unittest.skipIf(sys.platform == 'win32', 'install.sh is a POSIX sh script; native Windows is out of scope')
 class Env:
     """One artificial machine: fakes dir, HOME, TMPDIR, log."""
 
