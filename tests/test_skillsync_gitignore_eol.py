@@ -68,6 +68,14 @@ class AddGitignoreEntriesTests(unittest.TestCase):
         _, after = self.add(before, ["new"])
         self.assertEqual(after, before + b"new\r\n")
 
+    def test_lone_cr_or_lf_and_mixed_without_final_terminator(self):
+        _, after = self.add(b"\r", ["x"])
+        self.assertEqual(after, b"\r\nx\n")
+        _, after = self.add(b"\n", ["x"])
+        self.assertEqual(after, b"\nx\n")
+        _, after = self.add(b"a\nb\r\nc", ["x"])
+        self.assertEqual(after, b"a\nb\r\nc\r\nx\r\n")
+
     def test_only_missing_entries_are_added_once(self):
         _, after = self.add(b"a\n", ["a", "b", "b", "c"])
         self.assertEqual(after, b"a\nb\nc\n")
@@ -107,6 +115,18 @@ class EnsureFunctionsKeepLineEndingsTests(unittest.TestCase):
             self.assertTrue(after.startswith(before), folder)
             self.assertNotIn(b"\n", after.replace(b"\r\n", b""), folder)  # only CRLF line endings
             self.assertGreater(len(after), len(before), folder)
+
+
+class SaveStateGitignoreTests(unittest.TestCase):
+    def test_state_folder_gitignore_keeps_crlf(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp)
+            (project / ".github").mkdir()
+            before = b"copilot-instructions.md\r\nskills/\r\n"
+            (project / ".github" / ".gitignore").write_bytes(before)
+            skillsync.save_state(project, {"k": "v"})
+            after = (project / ".github" / ".gitignore").read_bytes()
+            self.assertEqual(after, before + skillsync.STATE_FILE.name.encode() + b"\r\n")
 
 
 if __name__ == "__main__":
