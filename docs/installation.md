@@ -11,8 +11,8 @@ Po instalacji dodajesz warstwy (`skillsync layers add`) i reguły ich użycia (`
 | Python 3.11+ | systemowy albo z `uv` | systemowy albo z `uv` | systemowy albo z `uv` |
 | usługa watch | systemd (user), `skillsync-ctl` z checkoutu | brak (`skillsync watch` ręcznie) | brak (`skillsync watch` ręcznie) |
 
-Instalator (`install.sh`) i `skillsync setup` działają na Linuksie, w WSL2 i na macOS. Natywny Windows jest poza drogą instalatora;
-zalecany jest WSL2 (Ubuntu), gdzie działa ta sama ścieżka co na Linuksie.
+Wersje 1.0.x wspierają Linux, WSL2 i macOS. Instalator (`install.sh`) i `skillsync setup` działają na tych systemach; natywny Windows
+jest poza drogą instalatora, zalecany jest WSL2 (Ubuntu), gdzie działa ta sama ścieżka co na Linuksie.
 
 Pakiet jest czystym Pythonem, więc na macOS działa tak samo na Apple Silicon i Intel. Zakres wsparcia systemów: tabela
 w [README](../README.pl.md#wymagania).

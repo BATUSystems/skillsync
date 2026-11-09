@@ -90,7 +90,7 @@ acceptance. See [docs/prototypes.md](docs/prototypes.md).
 
 Developed and tested with uv 0.13; the minimum version has not been measured. CI uses the current uv.
 
-Supported systems: v1.0.0 supports Linux, WSL and macOS (CI on Ubuntu and macOS blocks the release). Native Windows is planned for v1.0.1; CI runs it, but its result does not block the release.
+Supported systems: v1.0.0 supports Linux, WSL and macOS (CI on Ubuntu and macOS blocks the release). Native Windows is planned for v1.0.2; CI runs it, but its result does not block the release.
 
 | System | Support in v1.0.0 | Known limits |
 |---|---|---|
@@ -98,7 +98,7 @@ Supported systems: v1.0.0 supports Linux, WSL and macOS (CI on Ubuntu and macOS 
 | macOS | Everything except the watch service as a system service (planned for v1.1.0) | no watch service as a system service |
 | Windows | Copy mode by default (symlinks only with Developer Mode); CLI, `link`, `doctor` and workflow commands (planned) | no watch service, no `flock`, no TTY |
 
-The table rests on CI results (tests, install smoke). Manual tests on macOS and Windows are planned for v1.0.1.
+The table rests on CI results (tests, install smoke). Manual tests on macOS and Windows are planned for v1.0.2.
 
 ## Install
 

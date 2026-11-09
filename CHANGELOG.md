@@ -20,17 +20,31 @@ Every release has a **Breaking** section that lists incompatible changes. When a
   access check with `git ls-remote`), the layer rule and a final `layers check`. It is idempotent; `--dry-run` and `--json` are available.
 
 ### Changed
+None.
+
+### Breaking
+None.
+
+### Fixed
+None.
+
+## [1.0.1] - 2026-11-09
+
+### Added
+None.
+
+### Changed
 
 - Leak guard: with `authors_scope: committer`, a commit authored by the local user but committed by someone else (cherry-pick, rebase, merge button) has its author checked against `authors`; the foreign committer stays a notice (`foreign-commit`).
 - `layers check --isolation` looks for identity files in the library directory of a layer (`layer.yaml` root, e.g. `library/`), not in the whole clone, so examples under `docs/` of the core clone no longer raise `isolation-foreign-identity`.
 
 ### Breaking
 
-- Leak guard: code files (`*.py`, `*.ts`, `*.js`, `*.mjs`, `*.cjs`, `*.ps1`, `*.sh`, `skillsync`, `skillsync-ctl`) outside `tests/**` and `.github/**` are in the path class `instrukcje`, also under `docs/` and in the root; before they were attributions, so an owner nick in a code docstring passed. Now it is `FAIL` in core and org targets (the owner's real name stays allowed in org), allowed in personal. File names and suffixes are compared case-insensitively. `path_class_rules` in `leakcheck --json` and `leakguard patterns --json` has a new key `code`, and `atrybucje` no longer has `suffixes` or `exact_names`; patterns and `allow` entries with `path_classes: [atrybucje]` no longer cover code files.
+- Leak guard: code files (`*.py`, `*.ts`, `*.js`, `*.mjs`, `*.cjs`, `*.ps1`, `*.sh`, `skillsync`, `skillsync-ctl`) outside `tests/**` and `.github/**` are in the path class `instrukcje`, also under `docs/` and in the root; before they were attributions, so an owner nick in a code docstring passed. Now it is `FAIL` in core and org targets (the owner's real name stays allowed in org), allowed in personal. File names and suffixes are compared case-insensitively. `path_class_rules` in `leakcheck --json` and `leakguard patterns --json` has a new key `code`, and `atrybucje` no longer has `suffixes` or `exact_names`; patterns and `allow` entries with `path_classes: [atrybucje]` no longer cover code files. Shipped in a PATCH release on purpose: it closes a leak gap in the leak guard released the day before, and the only consumers of the `path_class_rules` schema are the core and our own layers (D297).
 
 ### Fixed
-- Windows (1.0.1, WIN-1): paths in JSON output use `/` (`status --json` plans and `plan` results, run evidence, delivery logs, e2e observation, `skills list` references).
-- Windows (1.0.1, WIN-1): `redact` applies the environment-secret substitution to dict keys only for secrets of 8+ characters, so a short secret value (`root` on the Windows runner) cannot rename structural keys such as `root` or `composed_root` in JSON reports; values keep the 4+ character rule (the `delivery` report scrubber follows the same key rule).
+- Windows: paths in JSON output use `/` (`status --json` plans and `plan` results, run evidence, delivery logs, e2e observation, `skills list` references).
+- Windows: `redact` applies the environment-secret substitution to dict keys only for secrets of 8+ characters, so a short secret value (`root` on the Windows runner) cannot rename structural keys such as `root` or `composed_root` in JSON reports; values keep the 4+ character rule (the `delivery` report scrubber follows the same key rule).
 - Prototype, mobile view: loading a view iframe no longer scrolls the page. The iframe address fragment was `#sN`, and the iframe document has an element with that id, so the browser scrolled it into view in the same-origin parent too (page jump of hundreds of pixels, also when a lazy iframe enters the window after the comment panel shrinks the layout). The fragment is now `#view-sN`; the embedded instance still accepts the old `#sN`. This fixes the V-23 known defect and the flaky `N-R1` (mobile) e2e scenario; the iteration compare frames (`?embed=compare#sN`, frozen older releases) are unchanged.
 
 ## [1.0.0] - 2026-11-08
@@ -91,5 +105,6 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 - E2E scenario N-R1 (comment panel, mobile view) is unstable: it sometimes fails with a page jump of about −3000 px (open shift equals close shift).
   On clean `main` 6134a8c: 2 of 6 runs fail with DejaVu Sans, 0 of 6 with the default font. Possibly related to V-23. Fix planned for 1.0.1.
 
-[Unreleased]: https://github.com/BATUSystems/skillsync/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/BATUSystems/skillsync/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/BATUSystems/skillsync/releases/tag/v1.0.1
 [1.0.0]: https://github.com/BATUSystems/skillsync/releases/tag/v1.0.0

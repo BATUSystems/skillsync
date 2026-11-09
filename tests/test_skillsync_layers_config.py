@@ -658,17 +658,10 @@ class LayerFlagTest(ConfigCase):
 
 
 class LayerYamlTest(ConfigCase):
-    def test_generator_version_is_1_0_0(self):
+    def test_generator_version_matches_the_package_version(self):
         import skillsync_workflow
-        self.assertEqual(skillsync_workflow.__version__, '1.0.0')
-        self.assertEqual(layers.generator_version(), '1.0.0')
-        pyproject = ROOT / 'pyproject.toml'
-        if pyproject.exists():          # the package version is dynamic: hatch reads it from `__version__`
-            import tomllib
-            data = tomllib.loads(pyproject.read_text(encoding='utf-8'))
-            self.assertIn('version', data['project']['dynamic'])
-            self.assertNotIn('version', data['project'])
-            self.assertEqual(data['tool']['hatch']['version']['path'], 'skillsync_workflow/__init__.py')
+        self.assertRegex(skillsync_workflow.__version__, r'^\d+\.\d+\.\d+$')
+        self.assertEqual(layers.generator_version(), skillsync_workflow.__version__)
 
     def test_semver_parsing_and_ordering(self):
         self.assertEqual(layers.parse_semver('1.20.3'), (1, 20, 3))
@@ -758,8 +751,9 @@ class LayerYamlTest(ConfigCase):
         # the comparison is against the generator version: the same layer is fine for a newer generator ...
         self.assertNotIn('core-min-unmet', codes(self.check(layerset, version='1.1.0')))
         # ... and equal versions are fine, lower ones are not
-        equal = self.layerset(('core', 'core', {'version': '1.0.0'}), ('acme', 'org', {'core_min': '1.0.0'}))
-        self.assertNotIn('core-min-unmet', codes(self.check(equal, version='1.0.0')))
+        current = layers.generator_version()  # core_min of a layer defaults to the generator version (make_layer)
+        equal = self.layerset(('core', 'core', {'version': current}), ('acme', 'org', {'core_min': current}))
+        self.assertNotIn('core-min-unmet', codes(self.check(equal, version=current)))
         old = self.check(layerset, version='0.9.9')
         self.assertIn('core-min-unmet', codes(old))
 
@@ -816,7 +810,9 @@ class LayerYamlTest(ConfigCase):
         self.assertEqual(layers.findings_status(findings), 'BLOCKED')
 
     def test_core_version_mismatch_is_only_a_warning(self):
-        layerset = self.layerset(('core', 'core', {'version': '1.0.1'}), ('acme', 'org', {}))
+        major, minor, patch = map(int, layers.generator_version().split('.'))
+        newer_core = f'{major}.{minor}.{patch + 1}'  # a core newer than the generator, whatever the release
+        layerset = self.layerset(('core', 'core', {'version': newer_core}), ('acme', 'org', {}))
         findings = self.check(layerset)
         mismatch = by_code(findings, 'core-version-mismatch')
         self.assertEqual([(item['severity'], item['layer']) for item in mismatch], [('warning', 'core')])

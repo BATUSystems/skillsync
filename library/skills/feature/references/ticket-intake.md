@@ -42,3 +42,7 @@ z kilku kroków zadaj razem, w jednej wiadomości.
    a te dane do tego czasu są w sekcji „Zakres” szkieletu speca ([spec](spec.md)).
 8. **PR.** Przy wejściu z klucza nie proponuj `/pr-run` po „GO implement”. Po realizacji STOP na code review człowieka,
    a commit, push i PR tylko na polecenia ze słownika w [pr-after-approval](pr-after-approval.md).
+9. **Pytania w trakcie przebiegu.** Zgłoszenie z komentarzami jest pierwotnym źródłem informacji także po „GO”.
+   Zanim zadasz użytkownikowi pytanie produktowe albo o niejasność wymagań, odczytaj zgłoszenie i komentarze ponownie
+   (krok 1) i oprzyj pytanie na ich treści. Przesłanki pytania sprawdź w źródle (zgłoszenie, kod, dane);
+   niepotwierdzone oznacz w pytaniu jako założenie.
