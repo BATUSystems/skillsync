@@ -158,6 +158,7 @@ Na macOS i Windows usługi watch nie ma; `skillsync watch` uruchamia się tam r�
 - Bootstrapper `skillsync-windows.ps1` z Pythonem 3 i plikiem `skillsync` obok woła `skillsync link <projekt>` i tworzy config, jeśli go brak.
 - Nieudany `git pull` warstwy nie przerywa synchronizacji, ale skrypt kończy się kodem 3 i ostrzeżeniem o starych artefaktach. Nieudany `git clone` daje kod 1.
 - Bez Developer Mode dowiązania nie działają: generator przechodzi w tryb kopii; wymusisz go `SKILLSYNC_NO_SYMLINK=1` lub `sync.method: copy`.
+- Ścieżki w wyjściach JSON i w zapisywanym stanie przechodzą przez `.as_posix()` (nie `str(relative_to(...))`); wywołanie `redact` na kluczu słownika przekazuje `True` (próg sekretu z env 8 znaków). Szczegóły: `docs/lessons/windows-sciezki-json-i-redact-kluczy.md`.
 - Test środowiska: `tests/windows/skillsync-windows-check.ps1` (raport `[PASS]/[FAIL]/[SKIP]/[INFO]`, praca na kopii w katalogu tymczasowym).
   Uruchomienie z korzenia repo: `powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\windows\skillsync-windows-check.ps1`.
 - Windows nie ma backendu własności procesów: `env up` i `env down` zwracają BLOCKED.

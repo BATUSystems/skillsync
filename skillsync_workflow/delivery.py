@@ -48,7 +48,7 @@ def _local(root, name):
 
 def _scrub(value):
     if isinstance(value, dict):
-        return {redact(str(key)): '[REDACTED]' if _SECRET.search(str(key)) else _scrub(item) for key, item in value.items()}
+        return {redact(str(key), True): '[REDACTED]' if _SECRET.search(str(key)) else _scrub(item) for key, item in value.items()}
     if isinstance(value, list):
         return [_scrub(item) for item in value]
     return redact(value)

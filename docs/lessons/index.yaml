@@ -184,3 +184,7 @@ lessons:
     title: "Testy na macOS: ścieżki platformy zamiast XDG i system plików bez rozróżniania wielkości liter"
     tags: [skillsync, tests, macos, ci, xdg, paths]
     paths: ['tests/layers_helpers.py', 'tests/test_skillsync_workflow.py', 'skillsync_workflow/layers.py', '.github/workflows/ci.yml']
+  - path: windows-sciezki-json-i-redact-kluczy.md
+    title: "Windows: ścieżki w JSON przez as_posix, a redact nie może przemianowywać kluczy krótkim sekretem z env"
+    tags: [skillsync, windows, json, redact, sekrety, ci]
+    paths: ['skillsync_workflow/common.py', 'skillsync_workflow/delivery.py', 'skillsync_workflow/status.py', 'skillsync_workflow/runs.py', 'skillsync_workflow/e2e.py', 'skillsync_workflow/catalog.py', 'tests/test_skillsync_workflow.py']

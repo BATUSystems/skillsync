@@ -298,6 +298,17 @@ class ValidationContracts(WorkflowFixture):
             masked = redact({secret: {'inner': secret}, 'list': [{secret: 1}]})
         self.assertEqual(masked, {'[REDACTED]': {'inner': '[REDACTED]'}, 'list': [{'[REDACTED]': 1}]})
 
+    def test_redact_key_threshold_is_eight_characters(self):
+        from skillsync_workflow.common import redact
+        with mock.patch.dict(os.environ, {'SKILLSYNC_TEST_TOKEN': 'abcdefg', 'SKILLSYNC_TEST_SECRET': 'ABCDEFGH'}):
+            masked = redact({'abcdefg': 1, 'ABCDEFGH': 2})
+        self.assertEqual(masked, {'abcdefg': 1, '[REDACTED]': 2})  # 7 characters keeps the key, 8 masks it
+
+    def test_delivery_scrub_keeps_structural_keys_like_redact(self):
+        from skillsync_workflow import delivery
+        with mock.patch.dict(os.environ, {'SKILLSYNC_TEST_SECRET': 'root'}):
+            self.assertEqual(delivery._scrub({'root': {'data': 'root'}}), {'root': {'data': '[REDACTED]'}})
+
     def test_plan_redacts_secret_without_mutating_command_execution(self):
         key = 'SKILLSYNC_TEST_SECRET'
         secret = 'plan-private-' + uuid.uuid4().hex
