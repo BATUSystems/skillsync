@@ -945,15 +945,54 @@ class PathClassTableTest(LeakTestCase):
                 self.assertEqual(leakguard.path_class(rel), 'inne')
                 self.assertEqual(self.status_of_cell(rel, f'# decyzja {NICK}a\n', 'owner-nick', NICK, 'core'), 'FAIL')
                 self.assertEqual(self.status_of_cell(rel, f'# decyzja {NICK}a\n', 'owner-nick', NICK, 'personal'), 'PASS')
-        for rel in ('skillsync_workflow/x.py', 'scripts/run.py', 'src/tests/x.py', 'docs/tests/a.md', 'mytests/x.py'):
+        for rel in ('skillsync_workflow/x.py', 'scripts/run.py', 'src/tests/x.py', 'mytests/x.py'):
             with self.subTest(rel=rel):                                   # `tests` only as the FIRST segment
-                self.assertEqual(leakguard.path_class(rel), 'atrybucje')
-                self.assertEqual(self.status_of_cell(rel, f'# decyzja {NICK}a\n', 'owner-nick', NICK, 'core'), 'PASS')
+                self.assertEqual(leakguard.path_class(rel), 'instrukcje')  # D238: code is no attribution
+                self.assertEqual(self.status_of_cell(rel, f'# decyzja {NICK}a\n', 'owner-nick', NICK, 'core'), 'FAIL')
+        self.assertEqual(leakguard.path_class('docs/tests/a.md'), 'atrybucje')
+        self.assertEqual(self.status_of_cell('docs/tests/a.md', f'# decyzja {NICK}a\n', 'owner-nick', NICK, 'core'),
+                         'PASS')
         self.assertEqual(leakguard.path_class('tests/skills/x.py'), 'instrukcje')          # the instruction segments come first
         self.assertEqual(leakguard.path_class('tests'), 'inne')                            # a root file
         order = leakguard.PATH_CLASS_RULES['order']
-        self.assertLess(order.index('inne.first_segments'), order.index('atrybucje'))
+        self.assertLess(order.index('inne.first_segments'), order.index('code'))
+        self.assertLess(order.index('code'), order.index('atrybucje'))
+        self.assertLess(order.index('code'), order.index('inne.root_files'))
         self.assertLess(order.index('instrukcje.segments'), order.index('inne.first_segments'))
+
+    def test_every_code_suffix_is_instrukcje_where_the_default_would_not_say_so(self):
+        """Elsewhere the default is `instrukcje` already; under `docs/` and in the root (`inne`) only the code rule decides."""
+        for suffix in ('.py', '.ts', '.js', '.mjs', '.cjs', '.ps1', '.sh'):
+            for rel in (f'docs/site/build{suffix}', f'tool{suffix}'):
+                with self.subTest(rel=rel):
+                    self.assertEqual(leakguard.path_class(rel), 'instrukcje')
+        for rel in ('skillsync', 'skillsync-ctl', 'docs/skillsync', 'docs/skillsync-ctl', 'docs/site/Build.PY', 'docs/x.Sh',
+                    'Tool.TS', 'docs/Skillsync-CTL'):
+            with self.subTest(rel=rel):
+                self.assertEqual(leakguard.path_class(rel), 'instrukcje')
+        for rel in ('docs/guide.md', 'docs/skillsync.md', 'README.md', 'setup.cfg'):    # no code: unchanged
+            with self.subTest(rel=rel):
+                self.assertNotEqual(leakguard.path_class(rel), 'instrukcje')
+
+    def test_code_files_outside_tests_and_github_are_instrukcje(self):
+        """D238 (spec A, K8): a code file outside `tests/` and `.github/` is `instrukcje` everywhere, also under
+        `docs/` and in the root (`skillsync`, `tool.py`); an owner nick there fails in core and org, passes in
+        personal; documentation, README*, CHANGELOG*, LICENSE*, NOTICE* and commits stay attributions."""
+        for rel in ('skillsync_workflow/retro.py', 'docs/site/build.py', 'docs/x.ts', 'tool.py', 'skillsync',
+                    'skillsync-ctl', 'lib/a.mjs', 'lib/a.cjs', 'lib/a.js', 'scripts/a.ps1', 'scripts/a.sh'):
+            with self.subTest(rel=rel):
+                self.assertEqual(leakguard.path_class(rel), 'instrukcje')
+                line = f'"""Rejestr decyzji {NICK}a."""\n'
+                self.assertEqual(self.status_of_cell(rel, line, 'owner-nick', NICK, 'core'), 'FAIL')
+                self.assertEqual(self.status_of_cell(rel, line, 'owner-nick', NICK, 'org'), 'FAIL')
+                self.assertEqual(self.status_of_cell(rel, line, 'owner-nick', NICK, 'personal'), 'PASS')
+        for rel in ('docs/guide.md', 'README.md', 'src/README.rst', 'CHANGELOG.md', 'LICENSE', 'NOTICE.txt'):
+            with self.subTest(attribution=rel):
+                self.assertEqual(leakguard.path_class(rel), 'atrybucje')
+                self.assertEqual(self.status_of_cell(rel, f'autor: {NICK}\n', 'owner-nick', NICK, 'core'), 'PASS')
+        self.assertEqual(leakguard.path_class('tests/x.py'), 'inne')
+        self.assertEqual(leakguard.path_class('x.py', surface='commit'), 'atrybucje')
+        self.assertEqual(leakguard.path_class('setup.cfg'), 'inne')                     # root, not code
 
     def test_instruction_segments_are_case_folded_on_every_system(self):
         # Review 6.1-1 M2: the generator reads `Skills/` as `skills/` on case-insensitive systems, so a file
@@ -966,7 +1005,7 @@ class PathClassTableTest(LeakTestCase):
                 self.assertEqual(self.status_of_cell(rel, f'# decyzja {NICK}a\n', 'owner-nick', NICK, 'personal'),
                                  'PASS')                                          # the term itself is allowed there
         for rel, expected in (('docs/guide.md', 'atrybucje'), ('CHANGELOG.md', 'atrybucje'), ('README.md', 'atrybucje'),
-                              ('src/README.md', 'atrybucje'), ('tool.py', 'atrybucje'), ('tests/x.py', 'inne'),
+                              ('src/README.md', 'atrybucje'), ('tool.py', 'instrukcje'), ('tests/x.py', 'inne'),
                               ('tests/a/b.md', 'inne')):
             with self.subTest(lowercase=rel):                                     # no regression for lower case
                 self.assertEqual(leakguard.path_class(rel), expected)
@@ -975,15 +1014,20 @@ class PathClassTableTest(LeakTestCase):
                 self.assertEqual(leakguard.path_class(rel), leakguard.path_class(rel.lower()))
                 self.assertEqual(leakguard.path_class(rel), 'inne')
 
-    def test_attribution_paths_allow_the_nick(self):
-        for rel in ('CHANGELOG.md', 'CHANGELOG', 'README.md', 'docs/guide.md', 'docs/a/b/c.md', 'NOTICE', 'LICENSE',
-                    'tool.py', 'src/app.ts', 'scripts/run.sh', 'lib/x.mjs', 'skillsync', 'skillsync-ctl'):
-            with self.subTest(rel=rel):
+    def test_attribution_paths_allow_the_nick_and_code_files_do_not(self):
+        for rel in ('CHANGELOG.md', 'CHANGELOG', 'README.md', 'docs/guide.md', 'docs/a/b/c.md', 'NOTICE', 'LICENSE'):
+            with self.subTest(attribution=rel):
                 self.assertEqual(self.status_of_cell(rel, f'# decyzja {NICK}a\n', 'owner-nick', NICK, 'core'), 'PASS')
+        for rel in ('tool.py', 'src/app.ts', 'scripts/run.sh', 'lib/x.mjs', 'skillsync', 'skillsync-ctl'):
+            with self.subTest(code=rel):                                  # D238: code is no attribution
+                self.assertEqual(self.status_of_cell(rel, f'# decyzja {NICK}a\n', 'owner-nick', NICK, 'core'), 'FAIL')
 
-    def test_nick_in_code_comment_is_allowed_but_not_in_instructions_inflected(self):
+    def test_nick_inflected_in_a_code_comment_and_in_instructions_fails_in_core(self):
         self.assertEqual(self.status_of_cell('tool.py', f'x = 1  # {NICK}a prosba\n', 'owner-nick', NICK, 'core'),
+                         'FAIL')
+        self.assertEqual(self.status_of_cell('tool.py', f'x = 1  # {NICK}a prosba\n', 'owner-nick', NICK, 'personal'),
                          'PASS')
+        self.assertEqual(self.status_of_cell('CHANGELOG.md', f'{NICK}a prosba\n', 'owner-nick', NICK, 'core'), 'PASS')
         self.assertEqual(self.status_of_cell('instructions/a.md', f'{NICK}a prosba\n', 'owner-nick', NICK, 'core'),
                          'FAIL')
 
@@ -1250,6 +1294,35 @@ class AuthorsScopeTest(LeakTestCase):
                 self.assertEqual((report['status'], report['findings']), ('PASS', []))
                 self.assertEqual(report['authors_scope'], 'committer')
                 self.assertTrue(report['notices'])
+
+    def test_own_author_with_a_foreign_committer_checks_the_author_only(self):
+        """D239: with `authors_scope: committer` a commit authored by the local user but committed by someone
+        else (cherry-pick, rebase, a merge button) has its author checked; the foreign committer is a notice."""
+        other = f'me{AT}other-org.example'                     # local user.email outside `authors` (D178)
+        repo = self.make_repo(email=other)
+        commit_file(repo, 'a.md', 'x\n', 'picked', author=('Me', other), committer=self.EXT)
+        report = self.scan(repo, self.targets('public'))
+        self.assertEqual(report['authors_scope'], 'committer')
+        self.assertEqual((report['status'], categories(report)), ('FAIL', {'author'}))
+        self.assertEqual([f['location'] for f in report['findings']], ['author'])   # the committer is not checked
+        self.assertTrue(report['notices'])
+        self.assertNotIn(other, json.dumps(report))
+        self.assertNotIn(self.EXT[1], json.dumps(report))
+
+    def test_own_listed_author_with_a_foreign_committer_passes_with_a_notice(self):
+        repo = self.make_repo(email=self.DEV)
+        commit_file(repo, 'a.md', 'x\n', 'picked', author=('Dev', self.DEV), committer=self.EXT)
+        report = self.scan(repo, self.targets('public'))
+        self.assertEqual((report['status'], report['findings']), ('PASS', []))
+        self.assertTrue(report['notices'])
+
+    def test_foreign_author_and_committer_stay_a_notice_even_with_an_unlisted_local_user(self):
+        """D239 keeps D86: commits of other people (author and committer foreign) are never checked."""
+        repo = self.make_repo(email=f'me{AT}other-org.example')
+        commit_file(repo, 'a.md', 'x\n', 'external', author=self.EXT, committer=self.EXT)
+        report = self.scan(repo, self.targets('public'))
+        self.assertEqual((report['status'], report['findings']), ('PASS', []))
+        self.assertTrue(report['notices'])
 
     def test_foreign_author_with_a_foreign_committer_and_a_listed_one(self):
         """`all` checks both identities: a foreign author fails even when committed by the local developer."""

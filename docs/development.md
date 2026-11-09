@@ -189,6 +189,19 @@ python3 -m unittest discover -s tests -p 'test_skillsync*.py'
 
 Dla zmiany linkowania dodatkowo: `link --dry-run` na projekcie testowym (receptura wyżej).
 
+## Strażnik wycieków na maszynie dewelopera
+
+Pełne sprawdzenie (`skillsync leakcheck . --require full`) potrzebuje plików tożsamości innych celów niż publiczny rdzeń.
+Nie trzymamy ich w tym repo: wskaż katalog w configu maszyny (`~/.config/skillsync/config.yaml`, albo ścieżka z `SKILLSYNC_CONFIG`):
+
+```yaml
+leakguard:
+  identity_dir: ~/Repos/<repo-operacyjne>/leakguard
+```
+
+Z ustawionym `identity_dir` `--require full` działa bez osobnego configu pomocniczego. Szczegóły pola: [configuration](configuration.md#strażnik-wycieków-leakguard).
+`skillsync layers check --isolation` szuka plików tożsamości w katalogu biblioteki warstwy (korzeń `layer.yaml`), nie w całym klonie.
+
 ## Flagi dla narzędzi integracyjnych
 
 Strażnik ma flagi jawnych wejść dla hooków i narzędzi integracyjnych, nie do pracy ręcznej (działają, ale `--help`

@@ -156,7 +156,7 @@ leakguard:
 | `targets.<id>.scope` | `public`, `org-private` albo `private`; wpływa na CI i poziom pokrycia (`coverage`) |
 | `targets.<id>.remote_match` | wzorce adresów remote, po których `leakcheck` rozpoznaje cel |
 | `targets.<id>.authors` | adresy dozwolonych autorów i committerów celu |
-| `targets.<id>.authors_scope` | `committer` (sprawdzany tylko committer) albo `all` (autor i committer); domyślnie `committer` dla `scope: public`, `all` dla `org-private` i `private` |
+| `targets.<id>.authors_scope` | `committer` (sprawdzany committer; w commicie lokalnego autora zatwierdzonym przez kogoś innego także autor) albo `all` (autor i committer); domyślnie `committer` dla `scope: public`, `all` dla `org-private` i `private` |
 | `trailer_allow` | adresy dozwolone w trailerach `Co-Authored-By` (lista) |
 
 Klucze `trailer_allow` i `authors_scope` czyta config maszyny; flagi `--trailer-allow` i `--targets-json` są wejściami dla narzędzi

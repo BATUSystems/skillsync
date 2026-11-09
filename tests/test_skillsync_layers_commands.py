@@ -1352,6 +1352,34 @@ class IsolationTest(CommandsCase):
         write(self.acme / 'leakguard' / 'other.yaml', yaml_text({'schema': 1, 'layer': 'client', 'empty': 'celowo pusta'}))
         self.assert_fail('isolation-foreign-identity')
 
+    def test_identity_files_are_looked_up_in_the_layer_library_not_the_whole_clone(self):
+        """SEC-1: a clone of the core repository holds the library in `library/`; an example identity under
+        `docs/` of the clone is no identity of the machine, a foreign one in the library still fails."""
+        clone = self.work / 'core-clone'
+        make_layer(clone / 'library', 'core', 'core', version=generator_version())
+        example = clone / 'docs' / 'examples' / 'personal-layer' / 'leakguard' / 'identity.yaml'
+        write(example, yaml_text({'schema': 1, 'layer': 'client', 'terms': [{'term': CLIENT_BETA}]}))
+        self.write_config([('core', 'core', clone, {'subdir': 'library'}), ('acme', 'org', self.acme)],
+                          [(['**'], ['core', 'acme'])], discover_paths=[str(self.repos)],
+                          isolation={'allowed_layers': ['core', 'acme']})
+        self.isolation(code=0)
+        write(clone / 'library' / 'leakguard' / 'other.yaml', yaml_text({'schema': 1, 'layer': 'client', 'terms': []}))
+        self.assert_fail('isolation-foreign-identity')
+        # the same for a checkout found in the layers directory (not configured): the library is the root
+        (clone / 'library' / 'leakguard' / 'other.yaml').unlink()
+        checkout = machine_data_dir() / 'layers' / 'core-extra'
+        make_layer(checkout / 'library', 'acme', 'org')
+        write(checkout / 'docs' / 'leakguard' / 'identity.yaml', yaml_text({'schema': 1, 'layer': 'client', 'terms': []}))
+        self.isolation(code=0)
+
+    def test_a_checkout_without_layer_yaml_is_scanned_whole_for_foreign_identity(self):
+        """No library directory to narrow to (an old clone): the whole tree is searched, so nothing hides in it."""
+        stray = machine_data_dir() / 'layers' / 'stray'
+        write(stray / 'docs' / 'leakguard' / 'identity.yaml', yaml_text({'schema': 1, 'layer': 'client', 'terms': []}))
+        self.configure()
+        report = self.assert_fail('isolation-unknown-checkout')
+        self.assertIn('isolation-foreign-identity', codes(report['findings']), report)
+
     def test_the_layers_directory_follows_the_system(self):
         """K10: Linux for real, macOS and Windows by passing the platform (in-process, isolated HOME/LOCALAPPDATA)."""
         self.configure()
