@@ -471,6 +471,41 @@ class SetupReviewR1Test(SetupCase):
         self.assertEqual(self.results(report)['rule'], 'unchanged')
         self.assertEqual(self.digest(), before)
 
+    def test_19b_without_org_an_org_layer_without_a_rule_gets_no_rule(self):
+        # core-only setup leaves `**: [core]`; the org layer is added by hand without any rule
+        self.setup_cli(*self.base_args(org=False, match=()))
+        add = subprocess.run([sys.executable, str(SKILLSYNC), 'layers', 'add', 'acme', '--kind', 'org', '--source',
+                              str(self.org_src), '--read-only', '--json'], capture_output=True, text=True, cwd=str(self.work))
+        self.assertEqual(add.returncode, 0, add.stdout + add.stderr)
+        before = self.digest()
+        process, report = self.setup_cli(*self.base_args(org=False, match=()))
+        self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+        self.assertEqual(self.results(report)['org'], 'skipped')
+        self.assertEqual(self.results(report)['rule'], 'unchanged')
+        self.assertEqual(self.digest(), before)
+        self.assertEqual(self.config()['layer_rules'], [{'match': ['**'], 'use': ['core']}])
+
+    def test_22_text_output_redacts_credentials_in_planned_steps(self):
+        import contextlib
+        import io
+        from skillsync_workflow import setup_wizard
+        bindir = self.work / 'fakebin'
+        bindir.mkdir(exist_ok=True)
+        (bindir / 'git').write_text('#!/bin/sh\nexit 0\n', encoding='utf-8')   # ls-remote succeeds, user.email empty
+        (bindir / 'git').chmod(0o755)
+        url = f'https://user:{SECRET}@setup-host.invalid/org/repo'
+        args = argparse.Namespace(yes=True, dry_run=True, core_source=str(self.core_src), core_ref=CORE_TAG,
+                                  org='acme', org_source=url, org_ref=None, match=['**'], json=False)
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.dict(os.environ, {'PATH': f'{bindir}:{os.environ["PATH"]}'}), \
+                contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = setup_wizard._cmd(args)
+        text = out.getvalue() + err.getvalue()
+        self.assertEqual(code, 0, text)
+        self.assertIn('[planned] org', text)
+        self.assertNotIn(SECRET, text)
+        self.assertIn('[REDACTED]', text)
+
     def test_20_interactive_email_is_stored_in_authors(self):
         from skillsync_workflow import setup_wizard
         Path(self.env['GIT_CONFIG_GLOBAL']).write_text('', encoding='utf-8')
