@@ -2,7 +2,7 @@
 title: 'Windows: ścieżki w JSON przez as_posix, a redact nie może przemianowywać kluczy krótkim sekretem z env'
 tags: [skillsync, windows, json, redact, sekrety, ci]
 paths: ['skillsync_workflow/common.py', 'skillsync_workflow/delivery.py', 'skillsync_workflow/status.py', 'skillsync_workflow/runs.py', 'skillsync_workflow/e2e.py', 'skillsync_workflow/catalog.py', 'tests/test_skillsync_workflow.py']
-source: WIN-1 (1.0.1); CI windows-latest 3.12: run 42534245564 czerwony (123F/46E, klucz `root` zamaskowany), run 42536817942 po poprawce 119F/44E bez tych przypadków; review D113 tej paczki
+source: 'WIN-1 (1.0.1); CI windows-latest 3.12: run 42534245564 czerwony (123F/46E, klucz `root` zamaskowany), run 42536817942 po poprawce 119F/44E bez tych przypadków; review D113 tej paczki'
 verified: 2026-11-09
 ---
 **Objaw:** na Windows 3.12 `plan archive` (BLOCKED), `layers list` i `prototype list` gubiły klucze `root` i `composed_root` (w JSON stał `[REDACTED]`), a klucze `path` w wyjściach JSON miały `\`.
