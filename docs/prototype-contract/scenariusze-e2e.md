@@ -202,7 +202,7 @@ Sekcje 8 i 9 opisują scenariusze uzupełniające i ustalenia kontraktu. Sekcja 
   ładowanie ramki (także leniwe, np. gdy panel zmniejsza układ i ramka wchodzi w okno) przewijało również stronę nadrzędną (ramka tego samego
   pochodzenia): openShift = closeShift ≈ −3000…−3300 px w N-R1, skok o setki px w V-23. Fragment ma przedrostek (`?embed=view#view-sN`), a instancja
   osadzona przyjmuje też dawny zapis `#sN` (V-24). Iframe porównania iteracji (`?embed=compare#sN`) ładuje zamrożone starsze wydania i zostaje bez zmian.
-  Odtwarzanie N-R1 lokalnie: obciążenie CPU (po jednym procesie na rdzeń) przy DejaVu Sans; przed poprawką 6/6 FAIL, po poprawce PASS.
+  Odtwarzanie N-R1 lokalnie: obciążenie CPU (po jednym procesie na rdzeń) przy DejaVu Sans; przed poprawką DejaVu 6/6 i zwykły font 3/3 FAIL, po poprawce 10/10 PASS w obu fontach.
 - Dokończenie przerwanego przywracania nie jest wywoływalne z UI (F07, tylko CLI).
 - Prawdziwe rozszerzenie Dark Reader nie jest uruchamiane (wymaga zgody); zachowanie sprawdzane jest wstrzykniętym węzłem stylu (DR-start, DR-późny).
 

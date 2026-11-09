@@ -18,7 +18,7 @@ panel zmniejsza układ i ramka wchodzi w okno; wtedy strona skacze o ok. 3000 px
   zdejmuje przedrostek i przyjmuje też dawny zapis.
 - Ramki porównania iteracji (`?embed=compare#sN`) ładują zamrożone, starsze wydania, więc ich fragmentu nie zmieniaj bez migracji iteracji.
 - Niestabilny scenariusz układu odtwarzaj deterministycznie, zanim zgadniesz przyczynę: obciążenie CPU (po jednym procesie
-  na rdzeń) opóźnia ładowanie leniwych ramek i wywołuje wyścig w każdym biegu (przed poprawką 6/6 FAIL, po poprawce 20/20 PASS z DejaVu i zwykłym fontem).
+  na rdzeń) opóźnia ładowanie leniwych ramek i wywołuje wyścig w każdym biegu (przed poprawką: DejaVu 6/6 FAIL, zwykły font 3/3 FAIL; po poprawce: 10/10 PASS z DejaVu i 10/10 ze zwykłym fontem).
 - Wyścig diagnozuj próbkami `requestAnimationFrame` (scrollY, górna krawędź ekranu, wysokości ramek) i znacznikami zdarzeń
   `load` ramek oraz wiadomości `postMessage`; podejrzewaną przyczynę sprawdź na kopii silnika poza repo, zanim ruszysz kod.
 

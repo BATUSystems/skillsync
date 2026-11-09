@@ -3610,7 +3610,7 @@
       const screens = Array.prototype.slice.call(document.querySelectorAll('section.screen[id]'));
       const raw = String(location.hash || '').slice(1);
       const wanted = raw.indexOf(EMBED_VIEW_PREFIX) === 0 ? raw.slice(EMBED_VIEW_PREFIX.length) : raw;   // także dawne `#sN`
-      const target = screens.find((section) => section.id === wanted) || screens[0] || null;
+      const target = screens.find((section) => section.id === raw) || screens.find((section) => section.id === wanted) || screens[0] || null;   // dokładne dopasowanie ma pierwszeństwo
       screens.forEach((section) => section.classList.toggle('is-embed-target', section === target));
       state.section = target;
       state.sid = target ? target.id : '';
