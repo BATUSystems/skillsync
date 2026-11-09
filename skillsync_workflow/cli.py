@@ -3706,8 +3706,23 @@ def main() -> None:
         sys.exit(result)
 
 
+def use_utf8_streams() -> None:
+    """On Windows stdout/stderr default to the console code page (cp1252), which cannot print the Polish letters
+    of the JSON/text reports: the report is UTF-8 there as it is everywhere else."""
+    if sys.platform != "win32":
+        return
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except (OSError, ValueError):
+                pass
+
+
 def run() -> None:
     """Console entry point (`skillsync`, wrapper, `python -m skillsync_workflow`)."""
+    use_utf8_streams()
     sys.exit(main())
 
 
