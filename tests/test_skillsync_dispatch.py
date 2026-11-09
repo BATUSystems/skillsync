@@ -40,6 +40,10 @@ class SharedConstantsTests(unittest.TestCase):
         self.assertEqual(list(skillsync.WORKFLOW_COMPANIONS), COMPANIONS)
         self.assertEqual(skillsync.WORKFLOW_SKILL, "feature")
 
+    def test_removed_skill_aliases_are_identical_in_both_expanders(self):
+        self.assertEqual(skillsync.REMOVED_SKILL_ALIASES, workflow_common.REMOVED_SKILL_ALIASES)
+        self.assertEqual(skillsync.REMOVED_SKILL_ALIASES, {"go-jira": "acli"})
+
 
 class ExpandSkillsTests(TempProjectMixin, unittest.TestCase):
     def library_with(self, *names):
@@ -59,6 +63,17 @@ class ExpandSkillsTests(TempProjectMixin, unittest.TestCase):
         expanded = self.expand(["agentflow"])
         self.assertEqual(expanded[0], "feature")
         self.assertNotIn("agentflow", expanded)
+
+    def test_go_jira_alias_expands_to_acli_in_both_expanders(self):
+        self.library_with("acli", "other")
+        self.assertEqual(self.expand(["go-jira"]), ["acli"])
+        self.assertEqual(self.expand(["go-jira", "acli"]), ["acli"])
+        self.assertEqual(self.expand(["@jira"], {"jira": ["go-jira"]}), ["acli"])
+        self.assertEqual(workflow_common.expand_project_skills({"skills": ["go-jira"]}, self.one_layer()), ["acli"])
+
+    def test_go_jira_is_kept_when_acli_is_not_available(self):
+        self.library_with("other")
+        self.assertEqual(self.expand(["go-jira"]), ["go-jira"])
 
     def test_alias_through_tag_and_glob_is_deduplicated(self):
         self.library_with("feature", "dispatch", "other")
@@ -435,6 +450,17 @@ class DoctorAgentflowNameTests(WorkflowFixture):
         missing = [f["path"] for f in report["findings"] if f["reason"] == "Missing installed skill"]
         self.assertTrue(missing and all(Path(p).parent.name == "skills" and Path(p).name == "feature" for p in missing), missing)
         self.assertFalse(any(f["reason"] == "Missing skill" for f in report["findings"]))
+
+    def test_go_jira_in_manifest_warns_with_replacement_hint_and_resolves_to_acli(self):
+        write_skill(self.library, "acli")
+        self.manifest["skills"] = ["go-jira"]
+        self.save()
+        report = self.report("doctor", code=1)  # not linked yet: Missing installed skill
+        warning = [f for f in report["findings"] if "go-jira" in f["reason"] and f["level"] == "warning"]
+        self.assertEqual(len(warning), 1)
+        self.assertIn("acli", warning[0]["reason"])
+        missing = [f["path"] for f in report["findings"] if f["reason"] == "Missing installed skill"]
+        self.assertTrue(missing and all(Path(p).name == "acli" for p in missing), missing)
 
     def test_feature_in_manifest_has_no_deprecation_warning(self):
         write_skill(self.library, "feature", adapters=True)
