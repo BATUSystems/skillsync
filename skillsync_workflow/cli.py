@@ -324,6 +324,17 @@ def expand_skills(specs: list[str], source, tags: dict, manifest: dict | None = 
     return expanded
 
 
+def detect_eol(text: str) -> str:
+    """Line ending of the last line of `text` ("\\r\\n" or "\\n"); LF for an empty text or one without a newline."""
+    last_lf = text.rfind("\n")
+    return "\r\n" if last_lf > 0 and text[last_lf - 1] == "\r" else "\n"
+
+
+def read_user_text(path: Path) -> str:
+    """Text of a user's file without newline translation (CRLF stays CRLF, so it can be written back byte for byte)."""
+    return path.read_bytes().decode("utf-8")
+
+
 def add_gitignore_entries(gitignore_path: Path, entries: list[str], dry_run: bool = False) -> bool:
     """Append the missing `entries` to a .gitignore without touching the existing bytes.
 
@@ -339,8 +350,7 @@ def add_gitignore_entries(gitignore_path: Path, entries: list[str], dry_run: boo
     if dry_run:
         print(f"[dry-run] Would update: {gitignore_path}")
         return True
-    last_lf = text.rfind("\n")
-    eol = "\r\n" if last_lf > 0 and text[last_lf - 1] == "\r" else "\n"
+    eol = detect_eol(text)
     prefix = "" if not text or text.endswith("\n") else eol
     payload = (text + prefix + eol.join(missing) + eol).encode("utf-8", errors="surrogateescape")
     gitignore_path.parent.mkdir(parents=True, exist_ok=True)
@@ -557,15 +567,18 @@ def write_managed_text(path: Path, content: str, state: dict, key: str, dry_run:
     return True
 
 
-def replace_managed_block(original: str, start: str, end: str, body: str) -> str:
+def replace_managed_block(original: str, start: str, end: str, body: str, nl: str = "\n") -> str:
+    """Replace or append the managed block. Text outside the block stays as it is; the lines the function adds
+    use `nl` (the caller passes the file's line ending, `body` is converted to it)."""
     if original.count(start) != original.count(end) or original.count(start) > 1:
         raise ValueError("Malformed skillsync markers")
-    block = start + "\n" + body.rstrip() + "\n" + end if body else ""
+    body = body.replace("\r\n", "\n").replace("\n", nl)
+    block = start + nl + body.rstrip() + nl + end if body else ""
     if start in original:
         before, rest = original.split(start, 1)
         middle, after = rest.split(end, 1)
         return before + block + after
-    return original + ("\n" if original and not original.endswith("\n") else "") + ("\n" if original else "") + block + ("\n" if block else "")
+    return original + (nl if original and not original.endswith("\n") else "") + (nl if original else "") + block + (nl if block else "")
 
 
 def update_codex_entrypoint(project_dir: Path, enabled: bool, dry_run: bool = False) -> None:
@@ -573,7 +586,7 @@ def update_codex_entrypoint(project_dir: Path, enabled: bool, dry_run: bool = Fa
     if target.is_symlink():
         print(f"[warn] Symlinked AGENTS.md left intact; include .codex/skillsync-instructions.md manually: {target}")
         return
-    original = target.read_text(encoding="utf-8") if target.exists() else ""
+    original = read_user_text(target) if target.exists() else ""
     body = ("## Skillsync: Codex\n\n"
             "Read `.codex/skillsync-instructions.md` before working in this project.\n"
             "For an implementation using `$feature`, read `.agents/skills/feature/SKILL.md`\n"
@@ -583,7 +596,8 @@ def update_codex_entrypoint(project_dir: Path, enabled: bool, dry_run: bool = Fa
     if not enabled and "<!-- SKILLSYNC:CODEX-BEGIN -->" not in original:
         return
     try:
-        content = replace_managed_block(original, "<!-- SKILLSYNC:CODEX-BEGIN -->", "<!-- SKILLSYNC:CODEX-END -->", body)
+        content = replace_managed_block(original, "<!-- SKILLSYNC:CODEX-BEGIN -->", "<!-- SKILLSYNC:CODEX-END -->", body,
+                                        detect_eol(original))
     except ValueError as exc:
         print(f"[warn] {target}: {exc}")
         return
@@ -658,13 +672,13 @@ def write_agents_block(project_dir: Path, manifest: dict, config: dict, dry_run:
     if target.is_symlink():
         print(f"[warn] Symlinked AGENTS.md left intact; instructions stay in CLAUDE.md: {target}")
         return "inline"
-    original = target.read_text(encoding="utf-8") if target.exists() else ""
+    original = read_user_text(target) if target.exists() else ""
     if target.exists() and not agents_md_shareable(project_dir, original):
         print(f"[warn] AGENTS.md is shared (not ignored by git or has own content); instructions stay in CLAUDE.md: {target}")
         return "inline"
     body = content.rstrip() + ("\n\n" + CODEX_NOTE_BEGIN + "\n" + CODEX_NOTE + "\n" + CODEX_NOTE_END if codex else "")
     try:
-        updated = replace_managed_block(original, AGENTS_BEGIN, AGENTS_END, body)
+        updated = replace_managed_block(original, AGENTS_BEGIN, AGENTS_END, body, detect_eol(original))
     except ValueError as exc:
         print(f"[warn] {target}: {exc}; instructions stay in CLAUDE.md")
         return "inline"
@@ -689,13 +703,14 @@ def update_codex_config(project_dir: Path, limit: int, enabled: bool, dry_run: b
     if target.is_symlink():
         print(f"[warn] Not modifying symlinked Codex config: {target}")
         return
-    original = target.read_text(encoding="utf-8") if target.exists() else ""
+    original = read_user_text(target) if target.exists() else ""
+    nl = detect_eol(original)
     start, end = "# SKILLSYNC:AGENTS-BEGIN", "# SKILLSYNC:AGENTS-END"
     if not enabled and start not in original:
         return
     try:
         tomllib.loads(original)
-        stripped = replace_managed_block(original, start, end, "") if start in original else original
+        stripped = replace_managed_block(original, start, end, "", nl) if start in original else original
         data = tomllib.loads(stripped)
         agents = data.get("agents", {})
         lines = []
@@ -707,17 +722,17 @@ def update_codex_config(project_dir: Path, limit: int, enabled: bool, dry_run: b
             if "max_concurrent_threads_per_session" not in agents and "max_threads" not in agents:
                 lines.append(f"max_concurrent_threads_per_session = {limit}")
         if start in original:
-            content = replace_managed_block(original, start, end, "\n".join(lines))
+            content = replace_managed_block(original, start, end, "\n".join(lines), nl)
         elif lines:
-            block = start + "\n" + "\n".join(lines) + "\n" + end + "\n"
-            table = re.search(r"(?m)^\s*\[agents\][ \t]*(?:#[^\n]*)?\n", original)
+            block = start + nl + nl.join(lines) + nl + end + nl
+            table = re.search(r"(?m)^\s*\[agents\][ \t]*(?:#[^\r\n]*)?\r?\n", original)
             if table:
                 content = original[:table.end()] + block + original[table.end():]
             elif "agents" in data:
                 print(f"[warn] Nonstandard agents table, configure manually: {target}")
                 return
             else:
-                content = original.rstrip() + ("\n\n" if original.strip() else "") + "[agents]\n" + block
+                content = original.rstrip() + (nl * 2 if original.strip() else "") + "[agents]" + nl + block
         else:
             content = stripped
         tomllib.loads(content)
