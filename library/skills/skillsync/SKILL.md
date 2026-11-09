@@ -139,7 +139,7 @@ Zasady pisania skilla (opis, referencje, swoboda, zimny odczyt): [authoring.md](
 **Nazwa i zakres (nie mieszaj firm ani projektów; skill organizacji i projektu należy do warstwy org, nie do core):**
 - skill organizacji (`<organizacja>`) — tylko firma: ludzie, struktura, eskalacje, wspólne instancje narzędzi;
 - wiedza jednego projektu → skill z prefiksem projektu (`<projekt>-*`) albo `instructions/<Projekt>.md`;
-- nazwa ogólna (`go-jira`, `azure-devops`, `csharp-*`, `sql-*`, `nhibernate`) = treść ogólna, bez projektów, serwerów i loginów;
+- nazwa ogólna (`acli`, `azure-devops`, `csharp-*`, `sql-*`, `nhibernate`) = treść ogólna, bez projektów, serwerów i loginów;
   konkrety projektu przenieś do skilla projektu (`references/<źródło>.md`); ogólny skill może mieć najwyżej jednolinijkowy odsyłacz do skilla projektu, bez treści projektowej.
 Szczegóły i tabela: `<katalog repo skillsync>/docs/library.md` („Organizacja, projekt, wiedza ogólna”).
 

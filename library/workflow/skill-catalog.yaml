@@ -50,7 +50,6 @@ skills:
     scope: tech
     tech: [dotnet]
   feature: {scope: workflow}
-  go-jira: {scope: tool}
   nhibernate:
     scope: tech
     tech: [dotnet]

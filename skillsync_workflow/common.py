@@ -278,6 +278,8 @@ def redact(value, _key=False):
 WORKFLOW_SKILL = 'feature'
 LEGACY_WORKFLOW_SKILL = 'agentflow'
 WORKFLOW_COMPANIONS = ('workflow', 'pre-implement', 'smart-test', 'bugfix', 'codereview')
+# Removed skills kept as manifest aliases (mirror of `skillsync:REMOVED_SKILL_ALIASES`).
+REMOVED_SKILL_ALIASES = {'go-jira': 'acli'}
 
 
 def expand_project_skills(manifest, layerset):
@@ -305,6 +307,8 @@ def expand_project_skills(manifest, layerset):
                 raise ValueError(f'Unsafe skill name: {name}')
             if name == LEGACY_WORKFLOW_SKILL and WORKFLOW_SKILL in available:
                 name = WORKFLOW_SKILL
+            if name in REMOVED_SKILL_ALIASES and REMOVED_SKILL_ALIASES[name] in available:
+                name = REMOVED_SKILL_ALIASES[name]
             if name not in expanded:
                 expanded.append(name)
     if WORKFLOW_SKILL in expanded or LEGACY_WORKFLOW_SKILL in expanded:

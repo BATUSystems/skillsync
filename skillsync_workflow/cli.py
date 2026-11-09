@@ -50,6 +50,9 @@ MCP_SERVER_KEYS = ("type", "command", "args", "env", "url", "headers")
 WORKFLOW_SKILL = "feature"
 LEGACY_WORKFLOW_SKILL = "agentflow"
 WORKFLOW_COMPANIONS = ("workflow", "pre-implement", "smart-test", "bugfix", "codereview")
+# Removed skills kept as manifest aliases: `go-jira` (removed from the library) resolves to `acli`.
+# Mirrored in skillsync_workflow/common.py (tests keep both copies identical).
+REMOVED_SKILL_ALIASES = {"go-jira": "acli"}
 
 
 def write_text_lf(path: Path, content: str) -> None:
@@ -294,6 +297,8 @@ def expand_skills(specs: list[str], source, tags: dict, manifest: dict | None = 
             raise ValueError(f"Unsafe skill name: {name}")
         if name == LEGACY_WORKFLOW_SKILL and WORKFLOW_SKILL in available:
             name = WORKFLOW_SKILL
+        if name in REMOVED_SKILL_ALIASES and REMOVED_SKILL_ALIASES[name] in available:
+            name = REMOVED_SKILL_ALIASES[name]
         if name not in seen:
             seen.add(name)
             expanded.append(name)
