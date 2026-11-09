@@ -163,7 +163,7 @@ Na macOS i Windows usługi watch nie ma; `skillsync watch` uruchamia się tam r�
   Uruchomienie z korzenia repo: `powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\windows\skillsync-windows-check.ps1`.
 - Windows nie ma backendu własności procesów: `env up` i `env down` zwracają BLOCKED.
 
-Ręczne testy na Windows i macOS są zaplanowane na v1.0.1. Zakres obsługi Windows w v1.0.0 to tryb kopii, CLI, `link` i `doctor` (bez usługi, bez `flock` i TTY), zgodnie z tabelą wsparcia.
+Ręczne testy na Windows i macOS są zaplanowane na v1.0.2. Zakres obsługi Windows w v1.0.0 to tryb kopii, CLI, `link` i `doctor` (bez usługi, bez `flock` i TTY), zgodnie z tabelą wsparcia.
 
 ## Reguły zmian w kodzie
 

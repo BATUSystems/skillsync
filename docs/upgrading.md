@@ -132,9 +132,9 @@ Reguła `**` dla projektów bez innej reguły tworzy `layers migrate` albo ręcz
 
 Zakres wsparcia systemów opisuje tabela w [README](../README.pl.md#wymagania).
 
-Przejście maszyn Windows i macOS na warstwy jest przewidziane w v1.0.1.
+Przejście maszyn Windows i macOS na warstwy jest przewidziane w v1.0.2.
 
-Procedura przejścia maszyn Windows i macOS oraz ręczne testy na tych systemach powstaną w v1.0.1.
+Procedura przejścia maszyn Windows i macOS oraz ręczne testy na tych systemach powstaną w v1.0.2.
 
 ## Co dalej
 
