@@ -5,8 +5,8 @@ Karty robocze to inne sesje Claude Code w VS Code, które wykonują `/feature` w
 
 ## Bramka modelu
 
-Wymagany jest model co najmniej Opus 5.5 w każdej turze dyspozytora. Odczyt: identyfikator
-modelu z kontekstu systemowego sesji (np. `claude-opus-5-5`), opcjonalnie zmienna środowiskowa
+Wymagany jest model Opus 5.5 lub Fable 5.1 (najmocniejszy model rodziny 5) w każdej turze dyspozytora. Podział modeli kart ustala użytkownik (karty mogą być słabsze, podumysły według roli). Odczyt: identyfikator
+modelu z kontekstu systemowego sesji (np. `claude-opus-5-5`, `claude-fable-5-1`), opcjonalnie zmienna środowiskowa
 `ANTHROPIC_MODEL`. Brak potwierdzenia = bramka niespełniona. Przełączenie robi użytkownik:
 `/model opus`, potem ponowne `/dispatch …` (przy spadku modelu w trakcie: zapisz stan, nie wydawaj grantów).
 

@@ -16,7 +16,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 None.
 
 ### Changed
-None.
+- `docs/development.md`: po sklonowaniu repo do rozwoju zainstaluj hooki strażnika (`skillsync leakguard install-hook <klon>`); worktree dzielą `.git/hooks`.
 
 ### Breaking
 None.

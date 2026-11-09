@@ -767,7 +767,7 @@ flowchart TB
 
 **Dyspozytor** (`/dispatch <cel>`, `status`, `drain`, `resume <run-id>`):
 
-- w każdej turze sprawdza bramkę modelu (co najmniej Opus 5.5); słabszy albo niepotwierdzony model = brak decyzji
+- w każdej turze sprawdza bramkę modelu (Opus 5.5 lub Fable 5.1); słabszy albo niepotwierdzony model = brak decyzji
   koordynacyjnych i prośba o przełączenie;
 - tworzy `run-id` i stan `.skillsync/dispatch/<run-id>.yaml`, pyta, których kart wolno użyć, nadaje aliasy `karta-1`,
   `karta-2`… w kolejności wyboru kart (nazwy nadane przez użytkownika mają pierwszeństwo; opcjonalną listę imion, także
