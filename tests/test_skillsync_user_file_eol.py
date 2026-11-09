@@ -8,7 +8,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from tests.test_skillsync import skillsync  # noqa: E402
+import json  # noqa: E402
+from unittest import mock  # noqa: E402
+
+from tests.test_skillsync import TempProjectMixin, skillsync  # noqa: E402
 
 BEGIN, END = "<!-- SKILLSYNC:CODEX-BEGIN -->", "<!-- SKILLSYNC:CODEX-END -->"
 
@@ -90,6 +93,51 @@ class CodexConfigTests(Base):
         (self.root / ".codex" / "config.toml").unlink()
         lf, _ = self.run_config(b'model = "x"\n')
         self.assertNotIn(b"\r", lf)
+
+
+class JsonFilesTests(TempProjectMixin, unittest.TestCase):
+    def assert_crlf_only(self, raw):
+        self.assertNotIn(b"\n", raw.replace(b"\r\n", b""))
+        self.assertIn(b"\r\n", raw)
+
+    def test_json_file_text_follows_the_previous_line_ending(self):
+        self.assertEqual(skillsync.json_file_text({"a": 1}), '{\n  "a": 1\n}\n')
+        self.assertEqual(skillsync.json_file_text({"a": 1}, "{}\r\n"), '{\r\n  "a": 1\r\n}\r\n')
+        self.assertEqual(skillsync.json_file_text({"a": 1}, "{}\n"), '{\n  "a": 1\n}\n')
+
+    def test_mcp_json_keeps_crlf_and_new_file_is_lf(self):
+        target = self.project_dir / ".mcp.json"
+        target.write_bytes(b'{\r\n  "mcpServers": {}\r\n}\r\n')
+        skillsync.build_claude_mcp(self.project_dir, {}, self.config)
+        self.assert_crlf_only(target.read_bytes())
+        self.assertIn("chrome-devtools", json.loads(target.read_text())["mcpServers"])
+        target.unlink()
+        skillsync.build_claude_mcp(self.project_dir, {}, self.config)
+        self.assertNotIn(b"\r", target.read_bytes())
+
+    def test_claude_settings_keep_crlf_and_the_backup_is_a_byte_copy(self):
+        path = self.project_dir / ".claude" / "settings.json"
+        path.parent.mkdir()
+        old = {"type": "command", "command": "python3", "args": [".claude/hooks/check-tests.py", "tests"]}
+        data = {"permissions": {"allow": ["Read"]}, "hooks": {"Stop": [{"matcher": "", "hooks": [old]}]}}
+        before = (json.dumps(data, indent=4) + "\n").replace("\n", "\r\n").encode()
+        path.write_bytes(before)
+        skillsync.merge_claude_settings(self.project_dir, {"skills": ["feature"], "hooks": {"stop_tests": True}}, self.config)
+        self.assert_crlf_only(path.read_bytes())
+        self.assertEqual((path.parent / "settings.json.skillsync-backup").read_bytes(), before)
+
+    def test_tasks_json_keeps_crlf_and_the_backup_is_a_byte_copy(self):
+        from skillsync_workflow import selfcmd
+        target = self.project_dir / ".vscode" / "tasks.json"
+        target.parent.mkdir()
+        before = b'{\r\n  "version": "2.0.0",\r\n  "tasks": [{"label": "mine", "type": "shell", "command": "x"}]\r\n}\r\n'
+        target.write_bytes(before)
+        with mock.patch.object(selfcmd, "_user_entry", return_value=None):
+            skillsync.ensure_link_on_open(self.project_dir, {"skills": ["feature"]}, self.config)
+        after = target.read_bytes()
+        self.assert_crlf_only(after)
+        self.assertEqual(len(json.loads(after)["tasks"]), 2)
+        self.assertEqual((target.parent / "tasks.json.skillsync-backup").read_bytes(), before)
 
 
 if __name__ == "__main__":
