@@ -61,6 +61,18 @@ class AgentsMdTests(Base):
         self.assertNotIn(b"\r", after)
 
 
+class ReplaceManagedBlockTests(unittest.TestCase):
+    def test_lf_block_in_a_crlf_file_is_replaced_once_and_the_rest_stays(self):
+        original = f"head\r\n{BEGIN}\nold\n{END}\r\ntail\r\n"
+        updated = skillsync.replace_managed_block(original, BEGIN, END, "new\r\nline", "\r\n")
+        self.assertEqual(updated, f"head\r\n{BEGIN}\r\nnew\r\nline\r\n{END}\r\ntail\r\n")
+        self.assertEqual(skillsync.replace_managed_block(updated, BEGIN, END, "new\nline", "\r\n"), updated)
+
+    def test_removing_the_block_leaves_no_stray_cr(self):
+        original = f"head\r\n{BEGIN}\r\nold\r\n{END}\r\ntail\r\n"
+        self.assertEqual(skillsync.replace_managed_block(original, BEGIN, END, "", "\r\n"), "head\r\n\r\ntail\r\n")
+
+
 class CodexConfigTests(Base):
     def run_config(self, original, enabled=True):
         target = self.root / ".codex" / "config.toml"
@@ -85,6 +97,26 @@ class CodexConfigTests(Base):
         self.assertNotIn(b"\n", after.replace(b"\r\n", b""))
         self.assertTrue(after.endswith(b"max_depth = 2\r\n[tui]\r\nflag = true\r\n"))
         self.assertEqual(tomllib.loads(after.decode())["agents"]["max_depth"], 2)
+
+    def test_agents_table_without_comment_gets_the_block_and_the_rest_is_untouched(self):
+        before = b'[agents]\r\nmax_depth = 2\r\n\r\n'
+        after, _ = self.run_config(before)
+        self.assertIn(b"# SKILLSYNC:AGENTS-BEGIN\r\n", after)
+        self.assertTrue(after.startswith(b"[agents]\r\n# SKILLSYNC:AGENTS-BEGIN\r\n"))
+        self.assertTrue(after.endswith(b"max_depth = 2\r\n\r\n"))
+        self.assertNotIn(b"\n", after.replace(b"\r\n", b""))
+        self.assertEqual(tomllib.loads(after.decode())["agents"]["max_depth"], 2)
+
+    def test_new_table_keeps_the_original_bytes_before_it(self):
+        before = b'model = "x"\r\n\r\n\r\n'
+        after, _ = self.run_config(before)
+        self.assertTrue(after.startswith(before))
+
+    def test_disabling_removes_the_block_from_the_config(self):
+        after, _ = self.run_config(b'[agents]\r\nmax_depth = 2\r\n')
+        removed, _ = self.run_config(after, enabled=False)
+        self.assertNotIn(b"SKILLSYNC", removed)
+        self.assertEqual(tomllib.loads(removed.decode())["agents"]["max_depth"], 2)
 
     def test_second_run_is_idempotent_and_lf_config_stays_lf(self):
         after, _ = self.run_config(b'[agents]\r\nmax_depth = 2\r\n')
