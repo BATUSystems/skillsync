@@ -13,6 +13,20 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 ## [Unreleased]
 
 ### Added
+None.
+
+### Changed
+None.
+
+### Breaking
+None.
+
+### Fixed
+None.
+
+## [1.0.2] - 2026-11-09
+
+### Added
 
 - `install.sh`: installer for Linux, WSL2 and macOS. It installs `uv` if missing, installs `skillsync` from the release tag
   baked into the script (no sudo), checks that the version equals the tag and runs `skillsync setup`.

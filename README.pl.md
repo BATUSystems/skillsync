@@ -90,9 +90,9 @@ Zobacz [docs/prototypes.md](docs/prototypes.md).
 
 Rozwijane i sprawdzane z uv 0.13; minimalna wersja nie została zmierzona. CI używa bieżącego uv.
 
-Obsługiwane systemy: v1.0.0 wspiera Linux, WSL i macOS (CI na Ubuntu i macOS blokuje wydanie). Natywny Windows jest planowany na v1.0.2; CI go uruchamia, ale jego wynik nie blokuje wydania.
+Obsługiwane systemy: v1.0.x wspiera Linux, WSL2 i macOS (CI na Ubuntu i macOS blokuje wydanie). Instalator (`install.sh`) obejmuje te same systemy; natywny Windows jest poza drogą instalatora (użyj WSL2), CI go uruchamia, ale jego wynik nie blokuje wydania.
 
-| System | Wsparcie w v1.0.0 | Znane ograniczenia |
+| System | Wsparcie w v1.0.x | Znane ograniczenia |
 |---|---|---|
 | Linux | Pełne (planowane) | brak planowanych |
 | macOS | Wszystko oprócz usługi watch jako usługi systemowej (planowane w v1.1.0) | brak usługi watch jako usługi systemowej |
@@ -103,7 +103,7 @@ Tabela opiera się na wynikach CI (testy, install smoke). Ręczne testy na macOS
 ## Instalacja
 
 ```bash
-uv tool install git+https://github.com/BATUSystems/skillsync@v1.0.0
+uv tool install git+https://github.com/BATUSystems/skillsync@v1.0.2
 ```
 
 Sprawdź instalację:
@@ -129,7 +129,7 @@ opcje i rozwiązywanie problemów: [docs/installation.md](docs/installation.md#s
 curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/BATUSystems/skillsync/<tag>/install.sh | sh
 ```
 
-Zamiast `<tag>` podaj tag wydania (np. `v1.0.0`). Natywny Windows nie jest obsługiwany przez instalator: użyj WSL2.
+Zamiast `<tag>` podaj tag wydania (np. `v1.0.2`). Natywny Windows nie jest obsługiwany przez instalator: użyj WSL2.
 Poniższe kroki robią to samo ręcznie.
 
 Ta ścieżka nie wymaga warstwy organizacji: wystarczy warstwa osobista i warstwa core.
@@ -148,7 +148,7 @@ sync: {method: symlink}
 
 ```bash
 # 1. Dodaj warstwę core (skille, workflow i role); należy do każdej reguły
-skillsync layers add core --kind core --source https://github.com/BATUSystems/skillsync --subdir library --ref v1.0.0
+skillsync layers add core --kind core --source https://github.com/BATUSystems/skillsync --subdir library --ref v1.0.2
 
 # 2. Utwórz szkielet własnej warstwy osobistej (repo git) i zacommituj go:
 #    `layers add` klonuje repo, więc szkielet musi być najpierw w commicie
