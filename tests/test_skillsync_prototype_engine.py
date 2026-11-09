@@ -49,7 +49,7 @@ def find_node():
 # Kopia: tests/fixtures/prototype/engine-v2/ (SOURCE.md). Strona Pythona: skillsync_workflow/prototype_server.py.
 
 ENGINE_V2_DIR = Path(__file__).resolve().parent / 'fixtures' / 'prototype' / 'engine-v2'
-ENGINE_V2_SHA256 = '8ccbd59136ff1a0e48784049abc5f039fab3ee02f26495aa0be71c7b485539c7'
+ENGINE_V2_SHA256 = 'b8635f23eb716a9a0270033b37639227e2310b3e51880ccb4ff18943295a971d'
 REFRESH_V2 = 'Odśwież kopię wg tests/fixtures/prototype/engine-v2/SOURCE.md i zaktualizuj ENGINE_V2_SHA256.'
 ENGINE_V2_PATH_ENV = 'SKILLSYNC_PROTOTYPE_ENGINE_V2_PATH'
 DIFF_SEEDS = (20261104, 7, 1234567, 99, 424242, 31337)

@@ -768,7 +768,7 @@ dialog select:focus,
 /* Przełącznik widoku przy ekranie (w nagłówku ekranu). */
 .screen-meta [data-proto-view-switch] { align-self: flex-start; }
 
-/* Instancja osadzona w iframe widoku (?embed=view#sN): tylko ramka wybranego ekranu, bez marginesów strony. */
+/* Instancja osadzona w iframe widoku (?embed=view#view-sN): tylko ramka wybranego ekranu, bez marginesów strony. */
 html.proto-embed-view { height: 100%; overflow: hidden; }
 .proto-embed-view body { height: 100%; margin: 0; padding: 0; overflow: hidden; }
 .proto-embed-view main.doc { max-width: none; margin: 0; padding: 0; }

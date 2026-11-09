@@ -161,8 +161,8 @@ znaczenia pojęcia. Termin, którego nie ma tutaj, nie jest zdefiniowany.
 - **Źródło:** `library/skills/prototype/references/comments-format.md` (biblioteka), 2026-11-06.
 
 ### iframe widoku, instancja osadzona
-- **Znaczenie:** iframe w ramce ekranu w widoku `mobile` (`?embed=view#sN`) i silnik działający w nim bez zapisów i sesji;
-  dane i zapisy ma strona. Haki: [słownik](../prototype-contract/slownik-html-css.md), część C. Spec, D1–D2, 2026-11-06.
+- **Znaczenie:** iframe w ramce ekranu w widoku `mobile` (`?embed=view#view-sN`) i silnik działający w nim bez zapisów i sesji;
+  dane i zapisy ma strona. Haki: [słownik](../prototype-contract/slownik-html-css.md), część C. Fragment adresu `#view-sN` (stary `#sN` nadal przyjmowany): lekcja o skoku strony, NR1-V23, 2026-11-09. Spec, D1–D2, 2026-11-06.
 
 Gdzie w kodzie: `skillsync_workflow/layers.py` (`match_rule`, `LayerSet`, `check_layers`, `leakguard_inputs`);
 `skillsync_workflow/leakguard.py` (strażnik).

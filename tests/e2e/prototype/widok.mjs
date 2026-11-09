@@ -760,7 +760,8 @@ add('V-21', 'postMessage: podrobiony „pick” od strony i od obcej ramki nie o
     const frames = async () => { const tree = await p.send('Page.getFrameTree'); const out = []; const walk = (n) => { for (const ch of n.childFrames || []) { out.push(ch.frame); walk(ch); } }; walk(tree.frameTree); return { main: tree.frameTree.frame.id, children: out }; };
     const evalIn = async (frameId, expression) => { const c = ctxs.filter((x) => x.auxData && x.auxData.frameId === frameId && x.auxData.isDefault).pop(); if (!c) return { noContext: true };
       const r = await p.send('Runtime.evaluate', { expression, contextId: c.id, returnByValue: true }); return r.exceptionDetails ? { error: (r.exceptionDetails.text || '').slice(0, 120) } : { value: r.result.value }; };
-    const viewFrameOf = async (sid) => { for (const fr of (await frames()).children) { if (!/[?&]embed=view\b/.test(fr.url || '')) continue; const h = await evalIn(fr.id, 'location.hash'); if (h.value === '#' + sid) return fr.id; } return null; };
+    // fragment adresu ramki: `#view-sN` (NR1-V23) albo dawny `#sN`
+    const viewFrameOf = async (sid) => { for (const fr of (await frames()).children) { if (!/[?&]embed=view\b/.test(fr.url || '')) continue; const h = await evalIn(fr.id, 'location.hash'); if (h.value === '#view-' + sid || h.value === '#' + sid) return fr.id; } return null; };
     try {
       const sA = await session(ctx.base, mail('anna'), secret('anna')); await p.setSession(sA, ctx.base);
       await p.go(`${ctx.base}/${SLUG}/#s1`);
@@ -881,9 +882,8 @@ add('V-23', 'Brak skoku strony: górna krawędź oglądanego ekranu nie zmienia 
       const grew = phases.some((x) => x.heightDelta.some((d) => d != null && d >= 200));
       const shrank = phases.some((x) => x.heightDelta.some((d) => d != null && d <= -20));
       const heightsChanged = phases.every((x) => x.heightDelta.some((d) => d != null && Math.abs(d) >= 20));
-      // Znany defekt (D249): poprawka skoku cofnięta, więc wymagane zachowanie (|delta| ≤ 2 po każdej fazie) nie jest spełnione.
-      // `restOk` = wszystko poza tym warunkiem; `defectObserved` = restOk i jakaś faza ma |delta| > 2. Czerwony (ok=false) również wtedy,
-      // gdy defekt nie wystąpi (runner: unexpected PASS = usuń wpis z KNOWN_DEFECTS i przywróć asercję |delta| ≤ 2).
+      // Wymagane zachowanie: |delta| ≤ 2 po każdej fazie. `restOk` = wszystko poza tym warunkiem; `defectObserved` = restOk i jakaś
+      // faza ma |delta| > 2 (diagnostyka porażki). Naprawione w NR1-V23 (fragment adresu ramki `#view-sN`); V-23 nie jest już znanym defektem.
       const restOk = inWindow && heightsChanged && grew && shrank && phases.every((x) => x.settled);
       const defectObserved = restOk && phases.some((x) => Math.abs(x.delta) > 2);
       const ok = restOk && !defectObserved;
@@ -894,5 +894,33 @@ add('V-23', 'Brak skoku strony: górna krawędź oglądanego ekranu nie zmienia 
   const restOkAll = res.every((r) => r.restOk);
   return { ok: res.every((r) => r.ok), restOk: restOkAll, defectObserved: restOkAll && res.some((r) => r.defectObserved), cells: res };
 }, { timeout: 240000 });
+
+// ---------------------------------------------------------------- NR1-V23
+// Przyczyna skoku strony (V-23, N-R1): fragment adresu iframe `#sN` wskazuje element dokumentu ramki, więc ładowanie ramki
+// przewijało także stronę nadrzędną (ramka tego samego pochodzenia). Fragment ma przedrostek `view-`; dawny zapis nadal działa.
+add('V-24', 'Ładowanie iframe widoku nie przewija strony (fragment adresu ramki `#view-sN`); instancja osadzona przyjmuje też dawny `#sN`', async (ctx) => {
+  const res = [];
+  for (const width of SIZES) {
+    const p = await openPage(ctx.c, ctx.base, { width, dark: false, hash: '#s1' });
+    try {
+      const y0 = await p.evaluate('Math.round(scrollY * 10) / 10');
+      for (const sid of ['s1', 's2']) await p.domClick(H.localBtn(sid, 'Mobile'), 'Mobile ' + sid);
+      const loaded = await p.waitFor(`['s1', 's2'].every((sid) => { const f = document.querySelector('#' + sid + ' .frame iframe[data-proto-view="mobile"]'); return !!f && !!f.contentDocument && f.contentDocument.readyState === 'complete' && f.getBoundingClientRect().height !== 667; })`, 9000);
+      await sleep(1200);
+      const y1 = await p.evaluate('Math.round(scrollY * 10) / 10');
+      const srcs = await p.evaluate(`['s1', 's2'].map((sid) => { const f = document.querySelector('#' + sid + ' .frame iframe[data-proto-view="mobile"]'); return f ? f.getAttribute('src') : null; })`);
+      const srcOk = srcs.every((u, i) => typeof u === 'string' && /\?embed=view#view-s[12]$/.test(u) && u.endsWith('#view-' + ['s1', 's2'][i]));
+      res.push({ width, loaded: loaded.ok, y0, y1, scrollDelta: Math.round((y1 - y0) * 10) / 10, srcs, srcOk });
+    } finally { await p.dispose(); }
+  }
+  // instancja osadzona otwarta wprost: nowy zapis i dawny zapis wskazują ten sam ekran
+  const targets = {};
+  for (const frag of ['#view-s2', '#s2']) {
+    const p = await openPage(ctx.c, ctx.base, { width: 375, dark: false, hash: '?embed=view' + frag });
+    try { targets[frag] = await p.evaluate(`(document.querySelector('section.screen.is-embed-target') || {}).id || null`); } finally { await p.dispose(); }
+  }
+  const embedOk = targets['#view-s2'] === 's2' && targets['#s2'] === 's2';
+  return { ok: res.every((r) => r.loaded && r.srcOk && Math.abs(r.scrollDelta) <= 2) && embedOk, cells: res, embedTargets: targets };
+}, { timeout: 120000 });
 
 await s.main();

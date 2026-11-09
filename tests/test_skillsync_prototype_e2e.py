@@ -43,9 +43,7 @@ SCRIPT_TIMEOUT = 1000
 # Running scenarios alone with SKILLSYNC_E2E_ONLY needs their predecessors in the list: F1 from F1-S03 (it opens S.A, and S16/S22/S17
 # rely on the comments of S04 and the later state), E3-05 before E3-06, F06-A before F06-B, D23-lista (opens the list) and D23-szukaj
 # before D23-klawiatura-listy, and in final.mjs Z1 before Z2/Z3 (shared state S.*). The other scenarios are independent.
-KNOWN_DEFECTS = {
-    'V-23': 'skok strony przy pierwszym dopasowaniu wysokości iframe mobile nad oglądanym ekranem (D249: poprawka cofnięta)',
-}
+KNOWN_DEFECTS = {}
 
 CHROME = os.environ.get('SKILLSYNC_E2E_CHROME')
 LIBRARY = os.environ.get('SKILLSYNC_TEST_LIBRARY')

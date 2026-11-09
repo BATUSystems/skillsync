@@ -143,7 +143,7 @@ Uzupełnienia (widok makiety desktop / mobile, V-01 do V-22; spec `docs/specs/20
 - Przełącznik lokalny: w `.screen-meta` każdego ekranu z ramką element `[data-proto-view-switch]` z przyciskami „Desktop”
   i „Mobile” (`aria-pressed`). Ekran bez ramki nie ma przełącznika i ma zawsze widok desktop.
 - Widok mobile: w `.frame` element `iframe[data-proto-view="mobile"]` (iframe widoku) z tym samym `index.html` w roli
-  osadzonej `?embed=view#sN`; szerokość min(375 px, dostępna); wysokość według treści, bez wewnętrznego przewijania.
+  osadzonej `?embed=view#view-sN`; szerokość min(375 px, dostępna); wysokość według treści, bez wewnętrznego przewijania.
   Treść ramki na stronie jest wtedy ukryta (`display: none`); iframe stoi w kontenerze `.anno-view-host`, a ramka
   ekranu ma atrybut `data-proto-view-on="mobile"` (w desktop atrybutu nie ma). Dokument iframe widoku ma na `<html>` te same klasy stanu co
   strona (`proto-hotspots`, `proto-pins-hidden`, `proto-presentation`) i ten sam `data-theme`; pinezki wątków mobile są
