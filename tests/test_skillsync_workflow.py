@@ -88,7 +88,8 @@ class WorkflowFixture(unittest.TestCase):
     def write(self, name, content):
         path = self.root / name
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content, encoding='utf-8')
+        with path.open('w', encoding='utf-8', newline='') as handle:  # no LF -> CRLF on Windows: callers hash the text
+            handle.write(content)
         return path
 
     def cli(self, command, *args):
