@@ -26,7 +26,7 @@ jobs:
   test:
     name: test (${{ matrix.os }}, ${{ matrix.python }}, ${{ matrix.mode }})
     runs-on: ${{ matrix.os }}
-    # v1.0.0 gate: Ubuntu and macOS block. Native Windows stays in the matrix for visibility but does not block (support: v1.0.2).
+    # v1.0.0 gate: Ubuntu and macOS block. Native Windows stays in the matrix for visibility but does not block (support: a later release).
     continue-on-error: ${{ matrix.os == 'windows-latest' }}
     timeout-minutes: 30
     strategy:

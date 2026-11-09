@@ -98,7 +98,7 @@ Supported systems: v1.0.x supports Linux, WSL2 and macOS (CI on Ubuntu and macOS
 | macOS | Everything except the watch service as a system service (planned for v1.1.0) | no watch service as a system service |
 | Windows | Copy mode by default (symlinks only with Developer Mode); CLI, `link`, `doctor` and workflow commands (planned) | no watch service, no `flock`, no TTY |
 
-The table rests on CI results (tests, install smoke). Manual tests on macOS and Windows are planned for v1.0.2.
+The table rests on CI results (tests, install smoke). Manual tests on macOS and Windows are planned for a later release; native Windows is outside the installer path (use WSL2).
 
 ## Install
 

@@ -98,7 +98,7 @@ Obsługiwane systemy: v1.0.x wspiera Linux, WSL2 i macOS (CI na Ubuntu i macOS b
 | macOS | Wszystko oprócz usługi watch jako usługi systemowej (planowane w v1.1.0) | brak usługi watch jako usługi systemowej |
 | Windows | Tryb kopii domyślnie (dowiązania tylko z Developer Mode); CLI, `link`, `doctor` i polecenia workflow (planowane) | brak usługi watch, `flock` i TTY |
 
-Tabela opiera się na wynikach CI (testy, install smoke). Ręczne testy na macOS i Windows są zaplanowane na v1.0.2.
+Tabela opiera się na wynikach CI (testy, install smoke). Ręczne testy na macOS i Windows są zaplanowane na późniejsze wydanie; natywny Windows jest poza drogą instalatora (użyj WSL2).
 
 ## Instalacja
 
