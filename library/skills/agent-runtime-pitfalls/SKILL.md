@@ -170,7 +170,7 @@ pasować do środowiska, popraw ją tutaj zamiast obchodzić.
   wynik (`select count(*) from pg_database where datname like ...`) po każdym `dropdb`.
 - **Podumysł zapisuje pliki względem własnego cwd**, nie worktree orkiestratora: ścieżka `../<repo>-wt/<paczka>`
   liczona z worktree daje `<repo>-wt-wt/...`. W zleceniu podawaj ścieżki bezwzględne i sprawdzaj `git status` po kroku.
-- **Nie uruchamiaj skryptu pomocniczego po samej nazwie.** Skrypt z katalogu tymczasowego o nazwie
+- **Nie uruchamiaj skryptu pomocniczego po samej nazwie.** Skrypt z katalogu tymczasowego (np. scratchpadu sesji) o nazwie
   sugerującej zapytanie SQL okazał się runnerem testów: zebrał 0 testów i na chwilę zmienił plik konfiguracji
   testów z danymi dostępowymi. Przed uruchomieniem przeczytaj jego początek i listę zapisywanych plików;
   po biegu sprawdź `git status` i `git diff` plików konfiguracji (przywróć je), a wynik „0 testów” traktuj
