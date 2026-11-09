@@ -26,7 +26,7 @@ base_branch: main
 base_commit: 1a2b3c4                    # master w chwili startu
 mode: messages                          # messages | manual (tryb ręczny Codex)
 status: running                         # planning | running | draining | done | aborted
-model_gate: { required: "opus>=5.5", confirmed: "claude-opus-5-5", at: "2026-10-02T10:05:00Z" }
+model_gate: { required: "opus-5.5|fable-5.1", confirmed: "claude-opus-5-5", at: "2026-10-02T10:05:00Z" }
 parallel_limit: 2                       # min(karty, dispatch.max_parallel), obniżony guardami
 cards:
   - alias: Dyspozytor

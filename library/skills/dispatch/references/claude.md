@@ -8,7 +8,7 @@ Karty robocze to inne sesje Claude Code w VS Code, które wykonują `/feature` w
 Wymagany jest model Opus 5.5 lub Fable 5.1 (najmocniejszy model rodziny 5) w każdej turze dyspozytora. Podział modeli kart ustala użytkownik (karty mogą być słabsze, podumysły według roli). Odczyt: identyfikator
 modelu z kontekstu systemowego sesji (np. `claude-opus-5-5`, `claude-fable-5-1`), opcjonalnie zmienna środowiskowa
 `ANTHROPIC_MODEL`. Brak potwierdzenia = bramka niespełniona. Przełączenie robi użytkownik:
-`/model opus`, potem ponowne `/dispatch …` (przy spadku modelu w trakcie: zapisz stan, nie wydawaj grantów).
+`/model opus` albo `/model fable`, potem ponowne `/dispatch …` (przy spadku modelu w trakcie: zapisz stan, nie wydawaj grantów).
 
 Dlaczego bez `model:` we frontmatterze skilla: w Claude Code zmienia on model wyłącznie na bieżącą
 turę, po czym sesja wraca do swojego modelu — pierwsza tura przeszłaby bramkę, a dalsza
