@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check that __version__ (or the given version/tag) has a section in CHANGELOG.md.
+"""Check that __version__ (or the given version/tag) has a section in CHANGELOG.md and that install.sh bakes that tag.
 
 Usage: check_release.py [--version X.Y.Z | --tag vX.Y.Z] [--root DIR]
 Exit 0 = OK, 1 = missing section or version mismatch, 2 = bad argument.
@@ -64,6 +64,13 @@ def main(argv):
     if not heading.search(changelog):
         print(f'check_release: CHANGELOG.md has no section "## [{wanted}]"')
         return 1
+    installer = root / 'install.sh'
+    if installer.is_file():
+        match = re.search(r'^SKILLSYNC_DEFAULT_TAG="v([^"]*)"', installer.read_text(encoding='utf-8'), re.MULTILINE)
+        baked = match.group(1) if match else None
+        if baked != wanted:
+            print(f'check_release: install.sh bakes the tag v{baked}, expected v{wanted}')
+            return 1
     print(f'check_release: OK {wanted}')
     return 0
 

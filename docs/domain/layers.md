@@ -68,6 +68,16 @@ Zasady configu:
 - Komendy bez projektu (`layers list` bez `--project`, `import`, `leakcheck <katalog>`): najpierw reguła dla bieżącego
   katalogu; poza projektem wszystkie `layers` w kolejności core, org (kolejność z configu), personal.
 
+## Reguły z `skillsync setup`
+
+Źródło: `skillsync_workflow/setup_wizard.py` (`_rule_step`, `_core_step`), INST-1, 2026-11-09.
+
+- `layers add core` nie tworzy reguły. `setup` gwarantuje regułę pokrywającą każdy projekt: gdy `layer_rules` jest puste,
+  dopisuje `{match: ["**"], use: [core]}` (`layers_ensure_core_rule`).
+- Z organizacją `setup` wywołuje `layers use <org> --match …` (domyślnie `**`); reguła zawiera `core`, jak przy ręcznym `layers use`.
+- Przy istniejących regułach i `--yes` bez `--match` `setup` nie dodaje `**` (zasłoniłaby starą regułę) i kończy się BLOCKED.
+- Identyczna reguła już istnieje: `unchanged`. Szczegóły kroków: [cli](../cli.md#konfiguracja-maszyny-setup).
+
 ## Dodawanie reguł (`layers use`, `layers add`, `layers init`)
 
 - `layers use <id> --match GLOB` (powtarzalne, wymagane) tworzy regułę; bez `--position` wstawia ją **przed** regułą `**`.

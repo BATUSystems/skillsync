@@ -26,6 +26,11 @@ Komendy synchronizacji kończą 0 także z `[warn]`/`[conflict]`/`[info]`; błę
 Ostrzeżenie „No checks selected; no validation was performed” pojawia się zawsze, gdy projekt nie ma żadnych kontroli (`plan_validation`).
 `doctor` jest kontrolą statyczną — nie dowodzi, że aplikacja przechodzi testy.
 
+`setup` (kreator maszyny): `PASS` → 0 tylko wtedy, gdy każdy krok przeszedł bez blokady i `layers check` zwrócił PASS;
+`FAIL` → 1, gdy kroki przeszły, a `layers check` zgłasza problem (np. `symlink-in-layer`); `BLOCKED` → 2 przy złej fladze,
+braku dostępu do `--org-source` (`git ls-remote` bez pytań, limit 30 s), nieznanej wersji core bez zdalnego tagu albo błędzie git.
+`NOT_RUN` `setup` nie zwraca. `--dry-run` nie zapisuje, więc jego wynik nie jest dowodem skonfigurowania maszyny.
+
 Dlaczego: PASS/FAIL ma znaczyć wykonaną i dowiedzioną operację; plan lub brak konfiguracji nie może wyglądać jak zielony wynik.
 
 Wyjątki i przykłady: `validate --run` daje `PASS` tylko dla kontroli z policzonymi testami: zero testów, nieznana liczba (bez `success_pattern`) albo pominięte testy bez `allow_skips` → `BLOCKED`.

@@ -121,6 +121,17 @@ Aktualizacja, odinstalowanie i rozwiązywanie problemów: [docs/installation.md]
 
 ## Szybki start
 
+Szybka ścieżka (Linux, WSL2 lub macOS): jedno polecenie instaluje narzędzie i uruchamia `skillsync setup`, który dodaje
+warstwę core, opcjonalnie warstwę organizacji, regułę warstw i końcowe sprawdzenie. Przed uruchomieniem przeczytaj skrypt;
+opcje i rozwiązywanie problemów: [docs/installation.md](docs/installation.md#szybka-instalacja-linux-wsl2-macos).
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/BATUSystems/skillsync/<tag>/install.sh | sh
+```
+
+Zamiast `<tag>` podaj tag wydania (np. `v1.0.0`). Natywny Windows nie jest obsługiwany przez instalator: użyj WSL2.
+Poniższe kroki robią to samo ręcznie.
+
 Ta ścieżka nie wymaga warstwy organizacji: wystarczy warstwa osobista i warstwa core.
 
 Wykonaj kroki w tej kolejności: reguła z `layers use` zawiera `core` tylko wtedy, gdy `core` jest już zarejestrowany.

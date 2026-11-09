@@ -162,6 +162,38 @@ jobs:
           skillsync --help > /dev/null
           skillsync leakcheck --no-config --worktree "$workdir" > /dev/null   # reads data/ from site-packages
           "$tool_python" -c "import sys; from skillsync_workflow.selfcmd import self_argv; a = self_argv(); print(a); assert a[1:] == ['-P', '-m', 'skillsync_workflow'] and a[0] == sys.executable, a"
+      - name: shellcheck install.sh
+        if: runner.os == 'Linux'
+        run: shellcheck --shell=sh install.sh
+      - name: install.sh (Linux and macOS), twice, in an isolated home
+        if: runner.os != 'Windows'
+        run: |
+          set -eu
+          wheels=(dist/skillsync-*.whl)
+          spec="$PWD/${wheels[0]}"
+          old_bin=$(uv tool dir --bin)
+          work=$(mktemp -d)
+          # A clean machine: no skillsync from the steps above on PATH, own home, uv tool dir and config.
+          PATH=$(printf '%s' "$PATH" | tr ':' '\n' | grep -vxF "$old_bin" | paste -sd: -)
+          export PATH HOME="$work/home" XDG_CONFIG_HOME="$work/xdg-config" XDG_DATA_HOME="$work/xdg-data" XDG_CACHE_HOME="$work/xdg-cache"
+          export UV_TOOL_DIR="$work/uv-tools" UV_TOOL_BIN_DIR="$work/uv-bin" SKILLSYNC_CONFIG="$work/config.yaml"
+          mkdir -p "$HOME"
+          git config --global user.email ci@example.invalid
+          git config --global user.name ci
+          for run in 1 2; do
+            SKILLSYNC_INSTALL_SPEC="$spec" sh install.sh --yes --core-source "$GITHUB_WORKSPACE" --core-ref "$GITHUB_SHA"
+            "$UV_TOOL_BIN_DIR/skillsync" layers check
+            if [ "$run" = 1 ]; then cp "$SKILLSYNC_CONFIG" "$work/config.after-first.yaml"; fi
+          done
+          cmp "$SKILLSYNC_CONFIG" "$work/config.after-first.yaml"
+      - name: install.sh refuses native Windows
+        if: runner.os == 'Windows'
+        run: |
+          rc=0
+          out=$(sh install.sh 2>&1) || rc=$?
+          echo "$out"
+          [ "$rc" = 2 ]
+          echo "$out" | grep -q 'WSL2'
       - name: Uninstall the tool
         if: always()
         run: uv tool uninstall skillsync

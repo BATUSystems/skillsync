@@ -136,6 +136,20 @@ znaczenia pojęcia. Termin, którego nie ma tutaj, nie jest zdefiniowany.
   `docs/**`, `README`, `LICENSE`, `NOTICE`). Atrybucje nie są blokowane.
 - **Źródło:** spec A, K8 i D40, 2026-11-05.
 
+## Instalacja
+
+### instalator (install.sh)
+- **Znaczenie:** skrypt `install.sh` z niezmiennego tagu wydania (Linux, WSL2, macOS): instaluje `uv` (gdy brak),
+  narzędzie `skillsync` z tagu przez `uv tool install` i uruchamia `skillsync setup` z przekazanymi opcjami.
+- **Nie oznacza:** instalatora z PyPI ani wsparcia natywnego Windows (tam wymagany WSL2).
+- **Źródło:** `install.sh` (nagłówek i funkcje), INST-1, 2026-11-09. Szczegóły: [installation](../installation.md).
+
+### kreator setup (`skillsync setup`)
+- **Znaczenie:** polecenie konfigurujące maszynę: warstwa core, opcjonalnie warstwa organizacji (tylko do odczytu),
+  reguła doboru warstw i `layers check`; idempotentne, bez własnej logiki warstw.
+- **Nie oznacza:** konfiguracji projektu ani `link`; projekt linkuje się osobno.
+- **Źródło:** `skillsync_workflow/setup_wizard.py`, INST-1, 2026-11-09. Szczegóły: [cli](../cli.md#konfiguracja-maszyny-setup).
+
 ## Workflow i agenci
 
 ### podagent (podumysł)

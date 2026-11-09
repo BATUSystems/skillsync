@@ -75,6 +75,19 @@ layer.yaml                  ← id, kind, version, core_min, requires
 
 Wspólna flaga `--layer id=ścieżka` (powtarzalna; ścieżka = katalog warstwy z `layer.yaml`) zastępuje warstwy dla jednej komendy; forma `,synthetic` (most 0.9.x) jest odrzucana (`synthetic-refused`). Brak dopasowania `layer_rules` albo config bez `layers` = `BLOCKED` (exit 2).
 
+### Instalacja i `skillsync setup`
+
+- Instalator `install.sh` (Linux, WSL2, macOS; natywny Windows → komunikat o WSL2, exit 2) z tagu wydania: instaluje `uv`, jeśli go brak,
+  `uv tool install --force git+https://github.com/BATUSystems/skillsync@<tag>`, sprawdza `skillsync --version` = tag i uruchamia `skillsync setup "$@"`.
+  Bez sudo; wymaga `git` i `curl` (nie instaluje ich). Odmawia nadpisania obcego `skillsync` na PATH (`SKILLSYNC_INSTALL_FORCE=1` pozwala).
+  Zmienne: `SKILLSYNC_TAG`, `SKILLSYNC_INSTALL_SPEC`, `SKILLSYNC_NO_SETUP=1`. Kody: 0, 2 (środowisko), 3 (instalacja).
+- `skillsync setup [--yes] [--dry-run] [--json] [--core-source URL] [--core-ref REF] [--org ID --org-source URL [--org-ref REF]] [--match GLOB]...`:
+  kroki `author-email` (przed warstwami), `core`, `org` (najpierw `git ls-remote`, limit 30 s; warstwa tylko do odczytu),
+  `rule` (`**: [core]` przy pustym `layer_rules`; z organizacją `layers use --match`, domyślnie `**`), `check` (`layers check` na przykładowym katalogu).
+  Idempotentny: drugie uruchomienie daje `unchanged`. Statusy: PASS 0, FAIL 1 (`layers check`), BLOCKED 2.
+- Nie aktualizuje narzędzia ani core przypiętego do tagu. Aktualizacja: ponowne `install.sh` z nowego tagu albo
+  `uv tool install --force …@<tag>` + `skillsync layers update core --ref <tag>`. `skillsync pull` odświeża tylko checkouty i linki.
+
 ### Migracja maszyny
 
 `skillsync layers migrate --layer-source core=<katalog z layer.yaml>` (dry-run) pokazuje, jak dotychczasowy config zostanie przeniesiony na warstwy; `--apply` zapisuje config z kopią zapasową (stary `library` → `legacy_library`). Config z mostem 0.9.x (`synthetic`) dostaje wpis zastąpiony prawdziwą warstwą `core`. Migracja i aktualizacja generatora idą razem; po niej `skillsync-ctl restart`, potem `skillsync link`.

@@ -165,6 +165,18 @@ class CheckReleaseTests(TempDirCase):
                 self.project(changelog=changelog)
                 self.assertEqual(self.check().returncode, 1)
 
+    def test_install_sh_must_bake_the_release_tag(self):
+        self.project()
+        (self.tmp / 'install.sh').write_text('SKILLSYNC_DEFAULT_TAG="v1.0.1"\n', encoding='utf-8')
+        self.assertEqual(self.check().returncode, 0)
+        for text in ('SKILLSYNC_DEFAULT_TAG="v1.0.0"\n', 'SKILLSYNC_DEFAULT_TAG="1.0.1"\n', '# no tag here\n',
+                     '  SKILLSYNC_DEFAULT_TAG="v1.0.1"\n'):
+            with self.subTest(text=text):
+                (self.tmp / 'install.sh').write_text(text, encoding='utf-8')
+                result = self.check()
+                self.assertEqual(result.returncode, 1, result.stdout)
+                self.assertIn('install.sh', result.stdout)
+
     def test_the_dot_in_the_version_is_literal(self):
         self.project(changelog='## [1x0x1] - 2026-11-06\n')
         self.assertEqual(self.check().returncode, 1)
