@@ -196,3 +196,7 @@ lessons:
     title: "Pełny bieg testów pada na strażniku real-state, gdy ktokolwiek dotknie gitem prawdziwych klonów warstw"
     tags: [testing, layers, lease, dispatch, flaky, git]
     paths: ['tests/layers_helpers.py', 'tests/test_skillsync_workflow.py']
+  - path: link-dopisuje-do-gitignore-bez-przepisywania.md
+    title: "link przepisywał cały .gitignore projektu: dopisuj do plików użytkownika bez zmiany istniejących bajtów"
+    tags: [skillsync, windows, gitignore, crlf, link]
+    paths: ['skillsync_workflow/cli.py', 'tests/test_skillsync_gitignore_eol.py']

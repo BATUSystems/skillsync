@@ -31,7 +31,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 None.
 
 ### Fixed
-None.
+- `link` appends to a user's `.gitignore` (project root, `.github/`, `.claude/`, `.cursor/rules/`, the state folder) without rewriting it: the existing bytes and line endings (CRLF, LF or mixed) stay as they are and new lines follow the last line's ending. Before, the whole file was rewritten with LF, so a Windows project with `core.autocrlf=true` got a diff of the whole file instead of the added lines.
 
 ## [1.0.1] - 2026-11-09
 

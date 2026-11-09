@@ -324,28 +324,32 @@ def expand_skills(specs: list[str], source, tags: dict, manifest: dict | None = 
     return expanded
 
 
-def ensure_gitignore(github_dir: Path, dry_run: bool = False) -> None:
-    gitignore_path = github_dir / ".gitignore"
-    entries = ["copilot-instructions.md", "skills/", ".skillsync.yaml"]
+def add_gitignore_entries(gitignore_path: Path, entries: list[str], dry_run: bool = False) -> bool:
+    """Append the missing `entries` to a .gitignore without touching the existing bytes.
 
-    if gitignore_path.exists():
-        existing = gitignore_path.read_text(encoding="utf-8").splitlines()
-    else:
-        existing = []
-
-    updated = list(existing)
-    for entry in entries:
-        if entry not in existing:
-            updated.append(entry)
-
-    if updated == existing:
-        return
-
+    The existing content (also mixed CRLF/LF, a missing final newline, non-UTF-8 bytes) stays byte for byte;
+    the new lines use the line ending of the file's last line (LF for an empty or new file). Returns True when
+    the file would change (or was changed)."""
+    raw = gitignore_path.read_bytes() if gitignore_path.exists() else b""
+    text = raw.decode("utf-8", errors="surrogateescape")
+    existing = text.splitlines()
+    missing = [entry for entry in dict.fromkeys(entries) if entry not in existing]
+    if not missing:
+        return False
     if dry_run:
         print(f"[dry-run] Would update: {gitignore_path}")
-        return
+        return True
+    last_lf = text.rfind("\n")
+    eol = "\r\n" if last_lf > 0 and text[last_lf - 1] == "\r" else "\n"
+    prefix = "" if not text or text.endswith("\n") else eol
+    payload = (text + prefix + eol.join(missing) + eol).encode("utf-8", errors="surrogateescape")
+    gitignore_path.parent.mkdir(parents=True, exist_ok=True)
+    gitignore_path.write_bytes(payload)
+    return True
 
-    write_text_lf(gitignore_path, "\n".join(updated).rstrip() + "\n")
+
+def ensure_gitignore(github_dir: Path, dry_run: bool = False) -> None:
+    add_gitignore_entries(github_dir / ".gitignore", ["copilot-instructions.md", "skills/", ".skillsync.yaml"], dry_run)
 
 
 def apply_variables(content: str, manifest: dict, config: dict) -> str:
@@ -434,22 +438,7 @@ def claude_enabled(manifest: dict) -> bool:
 
 
 def ensure_root_gitignore(project_dir: Path, dry_run: bool = False, entry: str = "CLAUDE.md") -> None:
-    gitignore_path = project_dir / ".gitignore"
-
-    if gitignore_path.exists():
-        existing = gitignore_path.read_text(encoding="utf-8").splitlines()
-    else:
-        existing = []
-
-    if entry in existing:
-        return
-
-    if dry_run:
-        print(f"[dry-run] Would update: {gitignore_path}")
-        return
-
-    updated = existing + [entry]
-    write_text_lf(gitignore_path, "\n".join(updated).rstrip() + "\n")
+    add_gitignore_entries(project_dir / ".gitignore", [entry], dry_run)
 
 
 def handwritten_claude_md(project_dir: Path, manifest: dict) -> bool:
@@ -946,27 +935,7 @@ def ensure_link_on_open(project_dir: Path, manifest: dict, config: dict, dry_run
 
 
 def ensure_cursor_gitignore(cursor_rules_dir: Path, dry_run: bool = False) -> None:
-    gitignore_path = cursor_rules_dir / ".gitignore"
-    entries = ["*.mdc"]
-
-    if gitignore_path.exists():
-        existing = gitignore_path.read_text(encoding="utf-8").splitlines()
-    else:
-        existing = []
-
-    updated = list(existing)
-    for entry in entries:
-        if entry not in existing:
-            updated.append(entry)
-
-    if updated == existing:
-        return
-
-    if dry_run:
-        print(f"[dry-run] Would update: {gitignore_path}")
-        return
-
-    write_text_lf(gitignore_path, "\n".join(updated).rstrip() + "\n")
+    add_gitignore_entries(cursor_rules_dir / ".gitignore", ["*.mdc"], dry_run)
 
 
 def build_cursor_rules(project_dir: Path, manifest: dict, config: dict, dry_run: bool = False) -> None:
@@ -1386,10 +1355,7 @@ def save_state(project_dir: Path, state: dict, dry_run: bool = False) -> None:
         return
     state_path.parent.mkdir(parents=True, exist_ok=True)
     write_text_lf(state_path, json.dumps(state, indent=2, sort_keys=True) + "\n")
-    gitignore_path = state_path.parent / ".gitignore"
-    lines = gitignore_path.read_text(encoding="utf-8").splitlines() if gitignore_path.exists() else []
-    if STATE_FILE.name not in lines:
-        write_text_lf(gitignore_path, "\n".join(lines + [STATE_FILE.name]).rstrip() + "\n")
+    add_gitignore_entries(state_path.parent / ".gitignore", [STATE_FILE.name])
 
 
 def remove_item(path: Path) -> None:
@@ -2657,28 +2623,7 @@ def claude_gitignore_entries(manifest: dict, config: dict) -> list[str]:
 def ensure_claude_gitignore(claude_dir: Path, entries: list[str], dry_run: bool = False) -> None:
     if not entries:
         return
-
-    gitignore_path = claude_dir / ".gitignore"
-
-    if gitignore_path.exists():
-        existing = gitignore_path.read_text(encoding="utf-8").splitlines()
-    else:
-        existing = []
-
-    updated = list(existing)
-    for entry in entries:
-        if entry not in existing:
-            updated.append(entry)
-
-    if updated == existing:
-        return
-
-    if dry_run:
-        print(f"[dry-run] Would update: {gitignore_path}")
-        return
-
-    claude_dir.mkdir(parents=True, exist_ok=True)
-    write_text_lf(gitignore_path, "\n".join(updated).rstrip() + "\n")
+    add_gitignore_entries(claude_dir / ".gitignore", entries, dry_run)
 
 
 def link_project(manifest_path: Path, config: dict, dry_run: bool = False, layerset=None) -> None:
