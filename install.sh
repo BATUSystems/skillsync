@@ -17,7 +17,9 @@
 #   SKILLSYNC_INSTALL_SPEC   full requirement for `uv tool install` (default: git+https://github.com/BATUSystems/skillsync@<tag>)
 #   SKILLSYNC_NO_SETUP=1     install the tool only; do not run `skillsync setup`
 #   SKILLSYNC_INSTALL_FORCE=1  replace a `skillsync` on PATH that is not a uv tool
-# Exit codes: 0 ok, 2 environment problem (unsupported system, missing git/curl, foreign skillsync), 3 install failed.
+# Exit codes: 0 ok, 2 environment problem (unsupported system, missing git/curl, foreign skillsync), 3 install failed;
+# after a successful install the exit code of `skillsync setup` is passed through (0 PASS, 1 FAIL, 2 BLOCKED;
+# the messages say which step failed).
 # Docs: https://github.com/BATUSystems/skillsync/blob/main/docs/installation.md (English) and README.pl.md (Polish).
 #
 # The whole body is in main(): a truncated download then runs nothing.

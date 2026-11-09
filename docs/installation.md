@@ -46,8 +46,10 @@ Co robi instalator, w tej kolejności:
 | 6 | uruchamia `skillsync setup` z opcjami podanymi po `--` | wynik `setup`, patrz [cli](cli.md) |
 
 Kody wyjścia instalatora: `0` (ok), `2` (błąd środowiska: system, brak `git` lub `curl`, obcy `skillsync` na `PATH`),
-`3` (błąd instalacji `uv` lub `skillsync`). Wynik `skillsync setup` jest wypisany w terminalu; kodu `setup` instalator
-nie przekazuje dalej, więc przy `BLOCKED` sprawdź wypis albo uruchom `skillsync setup --dry-run`.
+`3` (błąd instalacji `uv` lub `skillsync`). Po udanej instalacji instalator kończy się kodem `skillsync setup`
+(`0` PASS, `1` FAIL, `2` BLOCKED). Kod `2` ma więc dwa źródła; komunikat (`install.sh: error: …` albo `setup: BLOCKED` z listą
+kroków) mówi, które. Przy `BLOCKED` kreatora popraw przyczynę z komunikatu i uruchom `skillsync setup` ponownie (bez
+ponownej instalacji); `skillsync setup --dry-run` pokazuje plan bez zapisu.
 
 Bezpieczeństwo:
 

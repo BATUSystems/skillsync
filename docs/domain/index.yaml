@@ -15,7 +15,7 @@ entries:
   - path: layers.md
     title: "Warstwy generatora: core, org, personal, layer.yaml, layer_rules, LayerSet, kompozyty, _base.d, kody layers check"
     tags: [skillsync, layers, configuration, composition, isolation, push, versioning]
-    paths: ['skillsync_workflow/layers.py', 'skillsync', 'skillsync_workflow/common.py', 'skillsync_workflow/quality.py', 'skillsync-windows.ps1', 'tests/test_skillsync_layers*.py']
+    paths: ['skillsync_workflow/layers.py', 'skillsync_workflow/setup_wizard.py', 'install.sh', 'skillsync', 'skillsync_workflow/common.py', 'skillsync_workflow/quality.py', 'skillsync-windows.ps1', 'tests/test_skillsync_layers*.py', 'tests/test_skillsync_setup.py', 'tests/test_skillsync_install_sh.py']
   - path: leakguard.md
     title: "Strażnik wycieków (leakguard): identity.yaml, patterns.yaml, coverage, klasy ścieżek, hooki, pełne ścieżki w raporcie (D71)"
     tags: [skillsync, leakguard, leakcheck, security, identity, coverage, hooks, privacy]

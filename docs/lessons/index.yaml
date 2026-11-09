@@ -188,3 +188,7 @@ lessons:
     title: "Fragment adresu iframe z id istniejącym w jego dokumencie przewija także stronę nadrzędną (skok strony, niestabilny N-R1)"
     tags: [prototype, e2e, iframe, scroll, flaky, testing, chrome]
     paths: ['library/skills/prototype/assets/repo/prototype.js', 'tests/e2e/prototype/nr.mjs', 'tests/e2e/prototype/widok.mjs']
+  - path: pelny-bieg-testow-a-git-na-prawdziwych-warstwach.md
+    title: "Pełny bieg testów pada na strażniku real-state, gdy ktokolwiek dotknie gitem prawdziwych klonów warstw"
+    tags: [testing, layers, lease, dispatch, flaky, git]
+    paths: ['tests/layers_helpers.py', 'tests/test_skillsync_workflow.py']

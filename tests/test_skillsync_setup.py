@@ -401,3 +401,100 @@ class SetupCheckFailTest(SetupCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class SetupReviewR1Test(SetupCase):
+    """Closures of review r1 (INST-1)."""
+
+    def fake_git_dir(self, stderr_lines, code=128):
+        bindir = self.work / 'fakebin'
+        bindir.mkdir(exist_ok=True)
+        script = bindir / 'git'
+        body = '\n'.join(f'echo "{line}" >&2' for line in stderr_lines)
+        script.write_text(f'#!/bin/sh\n{body}\nexit {code}\n', encoding='utf-8')
+        script.chmod(0o755)
+        return bindir
+
+    def test_17_ls_remote_reports_the_telling_line_not_the_last_one(self):
+        from skillsync_workflow import setup_wizard
+        cases = {
+            'ssh-add': ['git@host.invalid: Permission denied (publickey).', 'fatal: Could not read from remote repository.',
+                        'Please make sure you have the correct access rights', 'and the repository exists.'],
+            'host key': ['Host key verification failed.', 'fatal: Could not read from remote repository.',
+                         'Please make sure you have the correct access rights', 'and the repository exists.'],
+        }
+        for expected, lines in cases.items():
+            with self.subTest(expected=expected):
+                bindir = self.fake_git_dir(lines)
+                with mock.patch.dict(os.environ, {'PATH': f'{bindir}:{os.environ["PATH"]}', 'GIT_SSH_COMMAND': 'ssh -F /dev/null'}):
+                    ok, message = setup_wizard._ls_remote('git@host.invalid:org/repo')
+                self.assertFalse(ok)
+                self.assertNotIn('repository exists', message)
+                self.assertIn(expected, setup_wizard._access_help(message))
+
+    def test_17b_ls_remote_extends_an_existing_ssh_command(self):
+        from skillsync_workflow import setup_wizard
+        bindir = self.work / 'fakebin'
+        bindir.mkdir(exist_ok=True)
+        (bindir / 'git').write_text('#!/bin/sh\nprintf "%s" "$GIT_SSH_COMMAND" > "$FAKE_OUT"\nexit 0\n', encoding='utf-8')
+        (bindir / 'git').chmod(0o755)
+        out = self.work / 'ssh-cmd.txt'
+        with mock.patch.dict(os.environ, {'PATH': f'{bindir}:{os.environ["PATH"]}', 'GIT_SSH_COMMAND': 'my-ssh-wrapper -v',
+                                          'FAKE_OUT': str(out)}):
+            ok, _ = setup_wizard._ls_remote('x')
+        self.assertTrue(ok)
+        self.assertEqual(out.read_text(encoding='utf-8'), 'my-ssh-wrapper -v -o BatchMode=yes -o ConnectTimeout=15')
+
+    def test_18_custom_glob_prefix_is_checked_with_a_matching_directory(self):
+        projects = self.work / 'projects'
+        projects.mkdir(exist_ok=True)
+        process, report = self.setup_cli(*self.base_args(match=(f'{projects}/**',)))
+        self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+        self.assertEqual(self.results(report)['check'], 'done')
+        self.assertEqual(sorted(p.name for p in projects.iterdir()), [], 'the probe directory is removed')
+        self.assertFalse(any('not checked against a project' in w for w in report['warnings']), report['warnings'])
+
+    def test_18b_no_matching_directory_checks_all_layers_from_a_neutral_cwd(self):
+        missing = self.work / 'nowhere'
+        process, report = self.setup_cli(*self.base_args(match=(f'{missing}/**',)))
+        self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+        self.assertEqual(self.results(report)['check'], 'done')
+        self.assertTrue(any('not checked against a project' in w for w in report['warnings']), report['warnings'])
+        self.assertFalse(missing.exists())
+
+    def test_19_without_org_an_existing_org_layer_and_its_rules_are_left_alone(self):
+        self.setup_cli(*self.base_args(match=(f'{self.work}/projects/**',)))
+        before = self.digest()
+        process, report = self.setup_cli(*self.base_args(org=False, match=()))
+        self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+        self.assertEqual(self.results(report)['org'], 'skipped')
+        self.assertEqual(self.results(report)['rule'], 'unchanged')
+        self.assertEqual(self.digest(), before)
+
+    def test_20_interactive_email_is_stored_in_authors(self):
+        from skillsync_workflow import setup_wizard
+        Path(self.env['GIT_CONFIG_GLOBAL']).write_text('', encoding='utf-8')
+        answers = {'Commit author address': 'new.dev@example.test', 'Organisation layer id': ''}
+
+        def fake_input(prompt=''):
+            for key, value in answers.items():
+                if key in prompt:
+                    return value
+            self.fail(f'unexpected question: {prompt!r}')
+
+        args = argparse.Namespace(yes=False, dry_run=False, core_source=str(self.core_src), core_ref=CORE_TAG,
+                                  org=None, org_source=None, org_ref=None, match=None, json=False)
+        fake_stdin = mock.Mock()
+        fake_stdin.isatty.return_value = True
+        with mock.patch.object(sys, 'stdin', fake_stdin), mock.patch.object(builtins, 'input', fake_input):
+            report = setup_wizard.run_setup(args)
+        self.assertEqual(report['status'], 'PASS', report)
+        self.assertEqual(self.results(report)['author-email'], 'done')
+        self.assertIn('new.dev@example.test', self.config()['leakguard']['targets']['core']['authors'])
+        self.assertEqual(report['warnings'], [])
+
+    def test_21_dry_run_without_org_reports_unchanged_when_rules_exist(self):
+        self.setup_cli(*self.base_args(org=False, match=()))
+        process, report = self.setup_cli(*self.base_args(org=False, match=(), extra=['--dry-run']))
+        self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+        self.assertEqual(self.results(report)['rule'], 'unchanged')

@@ -6,6 +6,7 @@ same arguments changes nothing. It only calls `layers add|use|check`; no layer l
 """
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -38,9 +39,9 @@ def register(subparsers):
 
 def _cmd(args):
     from .common import exit_code, redact
-    report = run_setup(args)
+    report = redact(run_setup(args))   # credentials in URLs are masked in both output modes
     if args.json:
-        print(json.dumps(redact(report), ensure_ascii=False, indent=2, default=str))
+        print(json.dumps(report, ensure_ascii=False, indent=2, default=str))
         return exit_code(report)
     stream = sys.stdout if report['status'] in ('PASS', 'NOT_RUN') else sys.stderr
     suffix = ' (dry-run)' if report.get('dry_run') else ''
@@ -74,8 +75,13 @@ class _Run:
         if not self.interactive:
             return default
         suffix = f' [{default}]' if default else ''
+        prompt = f'{question}{suffix}: '
         try:
-            answer = input(f'{question}{suffix}: ').strip()
+            if getattr(self.args, 'json', False):   # stdout carries the JSON report: ask on stderr
+                print(prompt, end='', file=sys.stderr, flush=True)
+                answer = input().strip()
+            else:
+                answer = input(prompt).strip()
         except EOFError:
             return default
         return answer or default
@@ -166,16 +172,24 @@ def _core_step(run, layers, config):
     report = layers.layers_add('core', 'core', run.args.core_source, subdir=CORE_SUBDIR, ref=ref, writable=False)
     if report['status'] != 'PASS':
         reason = report.get('reason', 'layers add failed')
-        hint = (f' The tag {ref} was not found in the source. If this skillsync is not a release build, pass an '
-                'existing tag, branch or commit with --core-ref.') if report.get('code') in ('unknown-ref', 'bad-argument') or 'ref' in reason.lower() else ''
+        hint = (f' The ref {ref} does not exist in {run.args.core_source}. If this skillsync is not a release build, '
+                'pass an existing tag, branch or commit with --core-ref.') if report.get('code') == 'unknown-ref' else ''
         run.step('core', 'blocked', reason + hint)
         return
     run.step('core', 'done', f'core layer added at {ref}')
 
 
+_SSH_BATCH = '-o BatchMode=yes -o ConnectTimeout=15'
+_ACCESS_PHRASES = ('permission denied', 'publickey', 'host key verification failed', 'could not resolve',
+                   'unable to access', 'authentication failed', 'repository not found', 'could not read from remote')
+
+
 def _ls_remote(url):
+    """Access check before cloning. Returns (ok, message): the message is the most telling stderr line."""
     env = dict(os.environ, GIT_TERMINAL_PROMPT='0')
-    command = ['git', '-c', 'core.sshCommand=ssh -o BatchMode=yes -o ConnectTimeout=15', 'ls-remote', '--exit-code', url, 'HEAD']
+    # GIT_SSH_COMMAND wins over core.sshCommand, so extend it instead of being overridden by it.
+    env['GIT_SSH_COMMAND'] = f"{os.environ.get('GIT_SSH_COMMAND') or 'ssh'} {_SSH_BATCH}"
+    command = ['git', 'ls-remote', '--exit-code', url, 'HEAD']
     try:
         process = subprocess.run(command, capture_output=True, text=True, env=env, timeout=LS_REMOTE_TIMEOUT)
     except subprocess.TimeoutExpired:
@@ -185,7 +199,8 @@ def _ls_remote(url):
     if process.returncode == 0:
         return True, ''
     lines = [line.strip() for line in (process.stderr or '').splitlines() if line.strip()]
-    return False, lines[-1] if lines else f'git exit {process.returncode}'
+    telling = next((line for line in lines if any(phrase in line.lower() for phrase in _ACCESS_PHRASES)), None)
+    return False, telling or (lines[-1] if lines else f'git exit {process.returncode}')
 
 
 def _access_help(message):
@@ -195,7 +210,7 @@ def _access_help(message):
                 'provider; `ssh -T <git-host>` shows how the host sees you.')
     if 'host key verification failed' in low:
         return ('The host key is unknown. Connect once interactively (`ssh -T <git-host>`, answer yes) and run setup again.')
-    if 'could not resolve' in low or 'timed out' in low or 'unable to access' in low:
+    if 'could not resolve' in low or 'timed out' in low or 'unable to access' in low or 'connection timed out' in low:
         return 'The host is not reachable. Check the network or VPN and run setup again.'
     return 'Check that `git ls-remote <url>` works without any question, then run setup again.'
 
@@ -207,8 +222,7 @@ def _org_step(run, layers, config):
         org_id = run.ask('Organisation layer id (empty = none)', '') or None
     if not org_id:
         run.step('org', 'skipped', 'no organisation layer requested')
-        existing = [layer.id for layer in config.layers.values() if layer.kind == 'org']
-        return existing[0] if existing else None
+        return None   # existing organisation layers and their rules are left alone
     if not source:
         source = run.ask(f'Repository URL of the {org_id} layer', '') or None
     existing = config.layers.get(org_id)
@@ -246,7 +260,10 @@ def _rule_step(run, layers, org_id):
     config = layers.load_machine_config()
     if org_id is None:
         if run.dry:
-            run.step('rule', 'planned', 'would add the default rule `**: [core]` when the config has no rules')
+            if config.rules:
+                run.step('rule', 'unchanged', 'the config already has layer_rules')
+            else:
+                run.step('rule', 'planned', 'would add the default rule `**: [core]`')
             return
         report = layers.layers_ensure_core_rule()
         if report['status'] != 'PASS':
@@ -282,34 +299,46 @@ def _rule_step(run, layers, org_id):
     run.warnings.extend(report.get('warnings', []) if report.get('changed', True) else [])
 
 
-def _probe_project(run, layers):
-    """A directory that the rule should match: `**` matches any; for a custom glob its literal prefix."""
+def _probe_project(layers):
+    """A fresh temporary directory that the configured rules match: anywhere for `**`, otherwise inside the literal
+    prefix of a glob (`~/X/**` -> `~/X/<tmp>`). Returns (path, cleanup) or (None, None) when no prefix directory exists."""
     config = layers.load_machine_config()
-    candidates = [glob for rule in config.rules for glob in rule['match']]
-    for glob in candidates:
-        if glob == '**':
-            return Path(tempfile.mkdtemp(prefix='skillsync-setup-')), True
-    for glob in candidates:
+    globs = [glob for rule in config.rules for glob in rule['match']]
+    if '**' in globs:
+        path = Path(tempfile.mkdtemp(prefix='skillsync-setup-'))
+        return path, lambda: shutil.rmtree(path, ignore_errors=True)
+    for glob in globs:
         prefix = glob.split('*', 1)[0].rstrip('/')
-        path = Path(os.path.expanduser(prefix)) if prefix else None
-        if path is not None and path.is_dir():
-            return path, False
-    return None, False
+        if not prefix:
+            continue
+        base = Path(os.path.expanduser(prefix))
+        if base.is_dir() and os.access(base, os.W_OK):
+            path = Path(tempfile.mkdtemp(prefix='skillsync-setup-', dir=base))
+            return path, lambda: shutil.rmtree(path, ignore_errors=True)
+    return None, None
 
 
 def _check_step(run, layers):
-    probe, temporary = _probe_project(run, layers)
+    probe, cleanup = _probe_project(layers)
     try:
-        report = layers.layers_check(str(probe) if probe else None)
-    finally:
-        if temporary and probe is not None:
+        if probe is not None:
+            report = layers.layers_check(str(probe))
+        else:
+            # No directory matches the rules yet: check every configured layer from a neutral cwd (never the
+            # caller's cwd, which may be inside a project without a rule).
+            neutral = tempfile.mkdtemp(prefix='skillsync-setup-cwd-')
+            previous = os.getcwd()
             try:
-                probe.rmdir()
-            except OSError:
-                pass
-    if probe is None:
-        run.warnings.append('No existing directory matches the configured rules, so the rules could not be checked '
-                            'against a project. Run `skillsync layers check --project <your project>` after cloning it.')
+                os.chdir(neutral)
+                report = layers.layers_check(None)
+            finally:
+                os.chdir(previous)
+                shutil.rmtree(neutral, ignore_errors=True)
+            run.warnings.append('No existing directory matches the configured rules, so the rule was not checked '
+                                'against a project. After cloning one run `skillsync layers check --project <project>`.')
+    finally:
+        if cleanup:
+            cleanup()
     status = report['status']
     findings = report.get('findings', [])
     detail = 'layers check: ' + status + (f' ({len(findings)} findings: ' + ', '.join(sorted({item["code"] for item in findings}))

@@ -4,6 +4,7 @@ PATH contains only a directory of fakes (git, curl, uv, skillsync, uname, sudo)
 and symlinks to a few real coreutils, so a missing tool is really missing.
 Every fake appends its argv to a log; nothing touches the real uv/skillsync.
 """
+import sys
 import os
 import re
 import shutil
@@ -63,6 +64,7 @@ def write_exec(path, text):
     os.chmod(path, 0o755)
 
 
+@unittest.skipIf(sys.platform == 'win32', 'install.sh is a POSIX sh script; native Windows is out of scope')
 class Env:
     """One artificial machine: fakes dir, HOME, TMPDIR, log."""
 

@@ -76,6 +76,8 @@ Zasady configu:
   dopisuje `{match: ["**"], use: [core]}` (`layers_ensure_core_rule`).
 - Z organizacją `setup` wywołuje `layers use <org> --match …` (domyślnie `**`); reguła zawiera `core`, jak przy ręcznym `layers use`.
 - Przy istniejących regułach i `--yes` bez `--match` `setup` nie dodaje `**` (zasłoniłaby starą regułę) i kończy się BLOCKED.
+  Wyjątek: jedyna reguła `**: [core]` (ślad po `setup` bez organizacji) nie liczy się jako reguła użytkownika; wtedy organizacja
+  dostaje `**` (reguła staje się `**: [core, <org>]`). Bez `--org` istniejące warstwy organizacji i ich reguły zostają nietknięte.
 - Identyczna reguła już istnieje: `unchanged`. Szczegóły kroków: [cli](../cli.md#konfiguracja-maszyny-setup).
 
 ## Dodawanie reguł (`layers use`, `layers add`, `layers init`)
