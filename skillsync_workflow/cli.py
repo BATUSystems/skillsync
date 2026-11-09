@@ -15,7 +15,7 @@ from pathlib import Path
 
 import yaml
 
-from .common import discover_excludes, is_excluded
+from .common import append_missing_lines, detect_eol, discover_excludes, is_excluded
 
 CONFIG_PATH = Path(os.environ.get("SKILLSYNC_CONFIG") or (Path.home() / ".config" / "skillsync" / "config.yaml"))
 STATE_FILE = Path(".github") / ".skillsync-state.json"
@@ -324,12 +324,6 @@ def expand_skills(specs: list[str], source, tags: dict, manifest: dict | None = 
     return expanded
 
 
-def detect_eol(text: str) -> str:
-    """Line ending of the last line of `text` ("\\r\\n" or "\\n"); LF for an empty text or one without a newline."""
-    last_lf = text.rfind("\n")
-    return "\r\n" if last_lf > 0 and text[last_lf - 1] == "\r" else "\n"
-
-
 def read_user_text(path: Path) -> str:
     """Text of a user's file without newline translation (CRLF stays CRLF, so it can be written back byte for byte)."""
     return path.read_bytes().decode("utf-8")
@@ -348,19 +342,14 @@ def add_gitignore_entries(gitignore_path: Path, entries: list[str], dry_run: boo
     the new lines use the line ending of the file's last line (LF for an empty or new file). Returns True when
     the file would change (or was changed)."""
     raw = gitignore_path.read_bytes() if gitignore_path.exists() else b""
-    text = raw.decode("utf-8", errors="surrogateescape")
-    existing = text.splitlines()
-    missing = [entry for entry in dict.fromkeys(entries) if entry not in existing]
-    if not missing:
+    updated = append_missing_lines(raw.decode("utf-8", errors="surrogateescape"), entries)
+    if updated is None:
         return False
     if dry_run:
         print(f"[dry-run] Would update: {gitignore_path}")
         return True
-    eol = detect_eol(text)
-    prefix = "" if not text or text.endswith("\n") else eol
-    payload = (text + prefix + eol.join(missing) + eol).encode("utf-8", errors="surrogateescape")
     gitignore_path.parent.mkdir(parents=True, exist_ok=True)
-    gitignore_path.write_bytes(payload)
+    gitignore_path.write_bytes(updated.encode("utf-8", errors="surrogateescape"))
     return True
 
 

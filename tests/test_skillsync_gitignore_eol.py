@@ -129,5 +129,18 @@ class SaveStateGitignoreTests(unittest.TestCase):
             self.assertEqual(after, before + skillsync.STATE_FILE.name.encode() + b"\r\n")
 
 
+class PrototypeEnsureLinesTests(unittest.TestCase):
+    def test_prototype_ignore_file_reuses_the_appending_rule(self):
+        from skillsync_workflow import prototype
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / ".gitignore"
+            before = b"keep\r\n  comments.json.lock  \r\n"
+            path.write_bytes(before)
+            self.assertEqual(prototype._ensure_lines(path, ["comments.json.lock", "*.tmp"], "TEMPLATE"),
+                             before.decode() + "*.tmp\r\n")
+            self.assertIsNone(prototype._ensure_lines(path, ["keep"], "TEMPLATE"))
+            self.assertEqual(prototype._ensure_lines(Path(tmp) / "missing", ["x"], "TEMPLATE"), "TEMPLATE")
+
+
 if __name__ == "__main__":
     unittest.main()
