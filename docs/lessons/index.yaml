@@ -184,3 +184,7 @@ lessons:
     title: "Testy na macOS: ścieżki platformy zamiast XDG i system plików bez rozróżniania wielkości liter"
     tags: [skillsync, tests, macos, ci, xdg, paths]
     paths: ['tests/layers_helpers.py', 'tests/test_skillsync_workflow.py', 'skillsync_workflow/layers.py', '.github/workflows/ci.yml']
+  - path: fragment-adresu-iframe-przewija-strone-nadrzedna.md
+    title: "Fragment adresu iframe z id istniejącym w jego dokumencie przewija także stronę nadrzędną (skok strony, niestabilny N-R1)"
+    tags: [prototype, e2e, iframe, scroll, flaky, testing, chrome]
+    paths: ['library/skills/prototype/assets/repo/prototype.js', 'tests/e2e/prototype/nr.mjs', 'tests/e2e/prototype/widok.mjs']

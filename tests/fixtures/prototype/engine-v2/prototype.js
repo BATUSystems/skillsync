@@ -3409,9 +3409,10 @@
   // ── 13j2. UI: widok makiety (przełączniki, iframe widoku mobile) i instancja osadzona ────────────────────────────
   //
   // Strona (ViewsUi) trzyma widok każdego ekranu (przełącznik przy ekranie; domyślnie desktop), wstawia do `.frame` iframe widoku mobile i obsługuje wiadomości z niego.
-  // Instancja osadzona (EmbedUi, `?embed=view#sN`) renderuje jeden ekran, rysuje pinezki z listy od strony i zgłasza kliknięcia;
+  // Instancja osadzona (EmbedUi, `?embed=view#view-sN`) renderuje jeden ekran, rysuje pinezki z listy od strony i zgłasza kliknięcia;
   // dane i zapisy ma wyłącznie strona.
 
+  const EMBED_VIEW_PREFIX = 'view-';      // przedrostek fragmentu adresu iframe widoku (patrz `frameUrl`)
   const VIEW_PLACEHOLDER_HEIGHT = 667;   // wysokość iframe do pierwszego pomiaru treści (makieta ze 100vh zostaje przy niej)
   const VIEW_LOAD_LIMIT = 5000;          // ms od rozpoczęcia ładowania do uznania iframe za niegotowy
 
@@ -3427,7 +3428,11 @@
     // Pinezka wątku jest na stronie tylko wtedy, gdy wątek i ekran są w widoku desktop.
     const pinOnPage = (thread) => Views.normalize(thread.view) === 'desktop' && effective(thread.screen) === 'desktop';
 
-    const frameUrl = (sid) => String(location.href).split('#')[0].split('?')[0] + '?embed=view#' + sid;
+    // Fragment adresu ramki to `view-<id>`, nie `<id>`: dokument ramki ma element o id ekranu, więc fragment `#sN` kazałby
+    // przeglądarce przewinąć go do widoku, a w ramce tego samego pochodzenia przewinięcie obejmuje też stronę nadrzędną
+    // (skok strony przy ładowaniu ramki, także leniwym, np. po zmniejszeniu układu przy otwarciu panelu). Instancja osadzona
+    // przyjmuje oba zapisy (`#view-sN` i dawne `#sN`).
+    const frameUrl = (sid) => String(location.href).split('#')[0].split('?')[0] + '?embed=view#' + EMBED_VIEW_PREFIX + sid;
     const post = (entry, name, fields) => {
       const target = entry.iframe.contentWindow;
       if (target) target.postMessage(Views.composeMessage(name, fields), Views.targetOrigin(location.protocol, location.origin));
@@ -3603,7 +3608,8 @@
 
     const chooseSection = () => {
       const screens = Array.prototype.slice.call(document.querySelectorAll('section.screen[id]'));
-      const wanted = String(location.hash || '').slice(1);
+      const raw = String(location.hash || '').slice(1);
+      const wanted = raw.indexOf(EMBED_VIEW_PREFIX) === 0 ? raw.slice(EMBED_VIEW_PREFIX.length) : raw;   // także dawne `#sN`
       const target = screens.find((section) => section.id === wanted) || screens[0] || null;
       screens.forEach((section) => section.classList.toggle('is-embed-target', section === target));
       state.section = target;
