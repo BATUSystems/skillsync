@@ -178,7 +178,8 @@ Porażkę kieruj do właściciela kodu/testu; nie zmieniaj asercji, nie dodawaj 
 usuwaj testów dla zielonego wyniku. Po 3 nieudanych cyklach tej samej usterki zatrzymaj krok
 (`blocked`) z dowodami i potrzebną decyzją. Format raportu runnera, baseline i stare porażki:
 [testy i baseline](references/tests-baseline.md). Po każdym wyniku kroku, także porażce, zapisz checkpoint:
-[pomiar](references/measurement.md).
+[pomiar](references/measurement.md). Raport postępu (`checkpoints.md`) dopisuj po każdym kroku albo co 30 minut, co nastąpi
+pierwsze (agent sprawdza godzinę sam, bo nie ma zegara).
 
 ## Dokumentacja i wiedza (obowiązkowe)
 

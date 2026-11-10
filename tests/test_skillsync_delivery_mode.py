@@ -297,5 +297,17 @@ class ConsentOnlyFromTheUser(unittest.TestCase):
             self.assertIn(phrase, feature)
 
 
+class ProgressReportCadence(unittest.TestCase):
+    """Progress report after every step or every 30 minutes, whichever comes first."""
+
+    def test_feature_states_the_cadence(self):
+        root = Path(__file__).resolve().parents[1] / 'library/skills/feature'
+        text = ' '.join((root / 'references/measurement.md').read_text(encoding='utf-8').split())
+        self.assertIn('po każdym kroku ALBO co 30 minut, co nastąpi pierwsze', text)
+        self.assertIn('date +%H:%M', text)
+        skill = ' '.join((root / 'SKILL.md').read_text(encoding='utf-8').split())
+        self.assertIn('po każdym kroku albo co 30 minut, co nastąpi pierwsze', skill)
+
+
 if __name__ == '__main__':
     unittest.main()
