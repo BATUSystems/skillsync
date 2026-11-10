@@ -2,7 +2,8 @@
 """Stop hook: przypomnienie o zamknieciu przebiegu. Uruchamiane przez Claude Code przed zakonczeniem tury.
 
 Blokuje (exit 2) raz na sesje i plan, gdy plan z docs/plans zmieniony wzgledem HEAD ma status done, a przebieg z linii
-`Przebieg:` nie ma rekordu `final`. Tylko biblioteka standardowa, bez sieci i testow; kazdy blad przepuszcza ture (exit 0)."""
+`Przebieg:` nie ma rekordu `final`, albo ma status in_progress i wszystkie kroki `Progress` odhaczone (brak zamkniecia
+przebiegu; plan z linia `Ticket:` bez `PR:` czeka na PR-y i nie blokuje). Tylko biblioteka standardowa, bez sieci i testow; kazdy blad przepuszcza ture (exit 0)."""
 import hashlib
 import json
 import os
@@ -18,6 +19,10 @@ MAX_RUN_BYTES = 5 * 1024 * 1024
 _STATUS = re.compile(r'^(?:[-*>][ \t]+)?(?:\*\*|__)?status(?:\*\*|__)?[ \t]*:[ \t]*(?:\*\*|__)?[ \t]*'
                      r'(?P<raw>[`*_]*(?P<word>[A-Za-z_]+)[^\n]*)', re.MULTILINE | re.IGNORECASE)
 _RUN = re.compile(r'^Przebieg:[ \t]*`?([^\s`]*)`?[ \t]*$', re.MULTILINE)
+# Kroki i linie PR/Ticket jak `_STEP`, `_PR`, `_TICKET` w status.py generatora (zrodlo prawdy).
+_STEP = re.compile(r'^\s*-\s\[([ xX])\]\s+\S', re.MULTILINE)
+_PR = re.compile(r'^PR:\s*#(\d+)\s*\(link:\s*(\S+?)\)\s*$', re.MULTILINE)
+_TICKET = re.compile(r'^Ticket:\s*([A-Z][A-Z0-9_]+-\d+)\s*\(link:\s*(\S+?)\)\s*$', re.MULTILINE)
 # Id przebiegu jak `_slug` (runs.py generatora).
 _RUN_ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,79}')
 
@@ -51,12 +56,28 @@ def changed_plans(top):
     return paths
 
 
-def read_head(path):
+def read_plan(path):
     info = os.lstat(path)
     if not os.path.isfile(path) or os.path.islink(path) or info.st_size > MAX_PLAN_BYTES:
         return None
     with open(path, encoding='utf-8') as handle:
-        return handle.read(4000)
+        return handle.read()
+
+
+def _section_marks(text, heading):
+    match = re.search(heading, text, re.MULTILINE)
+    if not match:
+        return []
+    rest = text[match.end():]
+    end = re.search(r'^##\s+\S', rest, re.MULTILINE)
+    return _STEP.findall(rest[:end.start()] if end else rest)
+
+
+def all_steps_checked(text):
+    """Wszystkie kroki `## Progress` (starsze plany: `## Kroki`/`## Steps`) odhaczone; brak krokow = False."""
+    marks = (_section_marks(text, r'^##\s+Progress\s*$')
+             or _section_marks(text, r'^##\s+(?:Kroki|Steps)\b[^\n]*$'))
+    return bool(marks) and all(mark in 'xX' for mark in marks)
 
 
 def run_state(top, run_id):
@@ -108,26 +129,42 @@ def main():
         if not isinstance(payload, dict) or payload.get('stop_hook_active'):
             return 0
         top = git(payload.get('cwd') or '.', 'rev-parse', '--show-toplevel').strip()
-        pending = []
+        pending, unclosed = [], []
         for rel in changed_plans(top):
             try:
-                head = read_head(os.path.join(top, rel))
+                text = read_plan(os.path.join(top, rel))
             except (OSError, UnicodeDecodeError, ValueError):
                 continue
-            if head is None:
+            if text is None:
                 continue
+            head = text[:4000]
             status, line = _STATUS.search(head), _RUN.search(head)
-            if not status or status.group('word').lower() != 'done' or not line:
+            word = status.group('word').lower() if status else ''
+            if (word == 'in_progress' and all_steps_checked(text)
+                    and not (_TICKET.search(text) and not _PR.search(text))):
+                unclosed.append(rel)
+                continue
+            if word != 'done' or not line:
                 continue
             run_id = line.group(1)
             if _RUN_ID.fullmatch(run_id) and run_state(top, run_id) == 'open':
                 pending.append((rel, run_id))
         session_id = payload.get('session_id')
         # Bez identyfikatora sesji znacznik idzie na repo: lepiej przemilczec niz wrocic do petli blokad.
-        pending = unseen(session_id if isinstance(session_id, str) and session_id else 'repo:' + top, pending)
-        if not pending:
+        owner = session_id if isinstance(session_id, str) and session_id else 'repo:' + top
+        pending = unseen(owner, pending)
+        unclosed = [rel for (rel,) in unseen(owner, [(rel,) for rel in unclosed])]
+        if not pending and not unclosed:
             return 0
-        lines = ['Plan done bez zamkniecia przebiegu: ' + ', '.join(f'{rel} (przebieg {run_id})' for rel, run_id in pending[:3])
+        lines = []
+        if unclosed:
+            lines.append('Plan in_progress ze wszystkimi krokami odhaczonymi: ' + ', '.join(unclosed[:3])
+                         + '. Zamknij przebieg: sekcja Wynik, retro-quality, `skillsync checkpoint ... --final`, '
+                           'Status: done (spec implemented); albo odznacz niedokonczony krok.')
+        if not pending:
+            sys.stderr.write('\n'.join(lines) + '\n')
+            return 2
+        lines += ['Plan done bez zamkniecia przebiegu: ' + ', '.join(f'{rel} (przebieg {run_id})' for rel, run_id in pending[:3])
                  + '. Zamknij go (jedno polecenie, potem retro):']
         run_id = pending[0][1]
         lines.append(f'  skillsync checkpoint <projekt> --run-id {run_id} --step final --status PASS --next koniec '

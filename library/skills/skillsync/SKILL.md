@@ -66,7 +66,7 @@ layer.yaml                  ← id, kind, version, core_min, requires
 | `skillsync suggest <path>` | tylko odczyt | JSON: skille do dodania/usunięcia wg katalogu (organizacja, technologie) |
 | `skillsync skills list <path> [--status S] --json` | tylko odczyt | JSON `schema: 1`: skille projektu (active/companion/suggested/available) z metadanymi |
 | `skillsync skills remove <projekt> <skill> [--no-link]` | zapis manifestu | usuwa jawny wpis z `skills:` (odwrotność `add`), potem `link` |
-| `skillsync status <path> --json` | tylko odczyt | JSON `schema: 1`: plany z postępem (`## Progress`; statusy `draft|approved|in_progress|done|archived|unknown`, `archived` bez `needsHuman`), specyfikacje, pliki FRD (bez treści), przebiegi, dzierżawy |
+| `skillsync status <path> --json` | tylko odczyt | JSON `schema: 1`: plany z postępem (`## Progress`; statusy `draft|approved|in_progress|done|archived|unknown`, `archived` bez `needsHuman`, `needsHuman: closure` przy `in_progress` ze wszystkimi krokami `[x]`, `pull_request`, gdy taki plan ma `Ticket:` bez `PR:`; `doctor` ostrzega tylko o `closure`), specyfikacje, pliki FRD (bez treści), przebiegi, dzierżawy |
 | `skillsync plan approve\|archive\|unarchive <projekt> <plik> [--json]` | zapis linii `Status:` | tylko `draft` → `approved` / `done` → `archived` / `archived` → `done` w `docs/plans/*.md`; reszta pliku bez zmian; błąd = exit 2, `BLOCKED` |
 | `skillsync knowledge init <path> [--dry-run]` | projekt | Tworzy brakujące `docs/domain/index.yaml`, `docs/lessons/index.yaml`, `docs/README.md` (nigdy nie nadpisuje) |
 | `skillsync map <path> [--check]` | projekt | Generuje `.skillsync/map.md` (mapa repo); `--check` → exit 1 przy nieaktualnej/brakującej |

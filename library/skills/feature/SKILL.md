@@ -66,6 +66,11 @@ określa format; `pre-implement` sprawdza zmiany kontraktów i wysokie ryzyko.
 1. Sprawdź instrukcje projektu, manifest `.github/.skillsync.yaml`, stan git i zmiany użytkownika.
    Zapisz bazowy commit i stan początkowy (także staged/untracked); nie przypisuj całego diffu
    zadaniu. Plan i duże logi trzymaj w plikach.
+   Bramka otwartych planów: przed nowym zadaniem przejrzyj `skillsync status <projekt> --json` (`plans[]`, `runs[]`, `claims[]`).
+   `needsHuman: closure` (`in_progress`, wszystkie kroki `[x]`) → najpierw zaproponuj zamknięcie tego planu (niżej); inny
+   `in_progress` (także `(blocked — …)`) bez żywego właściciela → pytanie, czy zaczynamy mimo to; prowadzony przez żywą sesję
+   (aktywna dzierżawa `claims[]` albo świeży checkpoint przebiegu z linii `Przebieg:`) → tylko informacja; `draft`/`approved` →
+   informacja; `done`/`archived` → nic. Wyjątek: plan z wejścia z klucza czekający na PR-y (`Ticket:` bez `PR:`, `needsHuman: pull_request`, [pr-after-approval](references/pr-after-approval.md)) → informacja.
 2. `Explore` lokalizuje pliki i wzorce; wnioski architektoniczne wyciąga orkiestrator z kodu.
 3. Zapisz `docs/plans/RRRR-MM-DD-<slug>.md` ze statusem `draft`, przy `plan-large` w akcie II (szkic przy „GO plan”) (cel, kryteria, kroki z rolą i
    plikami, TESTY, zasoby, ryzyka, **Dokumentacja i wiedza**, **Wersja i changelog** z pytaniem do
@@ -182,6 +187,11 @@ dokumentacji, changelogu, ustalonej wersji, zapisanej wiedzy (albo uzasadnionym 
 PASS pętli końcowej `kod` (STOP pętli wyklucza `done`), rekordzie końcowym checkpointu (`--final`) z wynikiem `skillsync retro` (przed rekordem `final` idzie retrospektywa jakościowa z checkpointem `retro-quality`, [retro-quality](references/retro-quality.md); jej propozycje nie blokują `done`) oraz zamknięciu blokujących uwag; przy specu `done` ustawia też jego status, chyba że spec jest już `implemented` ([spec](references/spec.md)). Nierozwiązane blokery dają `blocked`, a nie sukces z przypisem.
 Sekcja „Wynik” zawiera zmiany, dowody, stare porażki, niewykonane sprawdzenia/ograniczenia
 oraz podsekcję „Zdobyta wiedza” z odnośnikami do zaktualizowanych dokumentów i rekordów.
+**Zamknięcie przebiegu** należy do sesji głównej i jest ostatnim krokiem `Progress` (nie poza planem): „Wynik” →
+`retro-quality` → `skillsync checkpoint --final` → `Status: done` planu i `implemented` speca → commit. Robisz je przed
+stanem „czeka na READY/CP”, nie po merge'u, w każdym trybie, także gdy commity powstają ręcznie na polecenie użytkownika.
+Plan ze wszystkimi `[x]` i `in_progress` to niezamknięty przebieg (`skillsync status`: `needsHuman: closure`, `doctor`: ostrzeżenie, hook Stop: jedna blokada tury, gdy plan jest zmieniony względem HEAD);
+sesja, która go zastanie, proponuje zamknięcie przed nowym zadaniem.
 Commity, push i deploy według trybu dostarczania i słów zgody z rdzenia AGENTS (`CP`, `CPD`, `READY`); merge i complete PR nigdy. Wyjątek: „TAK P<n>” po retrospektywie jest poleceniem commita tej jednej zmiany tekstowej, bez pusha; działa tylko w głównym checkoucie (w worktree propozycje są `deferred`, a słowa nie działają), a propozycję z innego przebiegu wskaż jako „TAK <run-id>/P<n>” / „NIE <run-id>/P<n>” ([retro-quality](references/retro-quality.md)).
 Przy wejściu z klucza polecenia i ich zakres opisuje [pr-after-approval](references/pr-after-approval.md).
 Wykonany plan (`done`) można zarchiwizować: `skillsync plan archive <projekt> <plik>` (zmienia tylko `Status:`; `archived` jest poza kolejkami, bez `needsHuman`).

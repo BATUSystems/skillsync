@@ -82,16 +82,33 @@ def _plan_spec(text):
     return match.group(1) if match and is_spec_path(match.group(1)) else None
 
 
+def plan_needs_human(status, steps, ticket=False, pr=False):
+    """`approval` for a draft; for an `in_progress` plan whose Progress steps are all checked: `closure` (Result,
+    `--final` and `done` are still missing), or `pull_request` when it came from a ticket and has no `PR:` line yet
+    (it stays `in_progress` until the human code review and the PRs; information, not a closure gap)."""
+    if status == 'draft':
+        return ['approval']
+    if status == 'in_progress' and steps and steps['total'] and steps['done'] == steps['total']:
+        return ['pull_request'] if ticket and not pr else ['closure']
+    return []
+
+
+def plan_text_needs_human(status, text):
+    """`plan_needs_human` read from the whole plan text (Progress, `Ticket:` and `PR:` lines)."""
+    return plan_needs_human(status, _progress(text), bool(_TICKET.search(text)), bool(_PR.search(text)))
+
+
 def plan_record(root, path):
     text = path.read_text(encoding='utf-8')
     status, status_text = _status_fields(text, PLAN_STATUSES)
     title = _TITLE.search(text)
+    steps = _progress(text)
     pr = _PR.search(text)
     ticket = _TICKET.search(text)
     return {'path': path.relative_to(root).as_posix(), 'title': title.group(1) if title else path.stem, 'status': status,
-            'statusText': status_text, 'steps': _progress(text), 'pr': {'number': int(pr.group(1)), 'link': pr.group(2)} if pr else None,
+            'statusText': status_text, 'steps': steps, 'pr': {'number': int(pr.group(1)), 'link': pr.group(2)} if pr else None,
             'ticket': {'key': ticket.group(1), 'link': ticket.group(2)} if ticket else None, 'spec': _plan_spec(text),
-            'needsHuman': ['approval'] if status == 'draft' else [], 'updated': _iso(path.stat().st_mtime)}
+            'needsHuman': plan_needs_human(status, steps, bool(ticket), bool(pr)), 'updated': _iso(path.stat().st_mtime)}
 
 
 def _plans(root, findings):

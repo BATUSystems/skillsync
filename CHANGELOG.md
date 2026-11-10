@@ -30,6 +30,11 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 - Skill `prototype` (SKILL.md): `prototype index` po `init`, usunięciu prototypu albo zmianie tytułu, gdy galerię ogląda się
   bez `serve` (plik statyczny); przed zgłoszeniem „gotowy do akceptacji” sprawdzenie sluga na stronie głównej `serve`
   (`prototype list` czyta katalogi, nie galerię).
+- Zamknięcie planu: `skillsync status` oznacza plan `in_progress` ze wszystkimi krokami `Progress` odhaczonymi jako `needsHuman: ["closure"]`,
+  a `skillsync doctor` ostrzega o nim; hook Stop `check-closure` blokuje turę raz, gdy taki plan jest zmieniony względem HEAD.
+  Plan z wejścia z klucza (`Ticket:` bez `PR:`) dostaje informację `needsHuman: ["pull_request"]` zamiast `closure` (czeka na PR-y; bez ostrzeżenia i blokady). `feature`: zamknięcie przebiegu („Wynik”, `retro-quality`, `--final`, plan `done`, spec
+  `implemented`) jest obowiązkowym ostatnim krokiem `Progress` przed „czeka na READY/CP”, także przy commitach ręcznych; `pr-run`
+  zapisuje `done` planu w ostatnim commicie przed READY. Nowa bramka otwartych planów przed zadaniem `feature`/`bugfix` (rdzeń AGENTS).
 - Alias skilla `go-jira` → `acli` w manifestach (`skills:`) w obu miejscach rozwijania skilli (`skillsync:expand_skills`, `common.expand_project_skills`); `skillsync doctor` ostrzega, żeby zamienić `go-jira` na `acli`. `skillsync skills list` pokazuje `acli` z pochodzeniem `alias`.
 - `docs/development.md`: po sklonowaniu repo do rozwoju zainstaluj hooki strażnika (`skillsync leakguard install-hook <klon>`); worktree dzielą `.git/hooks`.
 - `docs/workflow.md`, `docs/workflow-details.md`: bramka modelu dyspozytora to Opus 5.5 lub Fable 5.1 (zgodnie z `library/skills/dispatch`).
