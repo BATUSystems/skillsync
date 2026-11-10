@@ -1137,13 +1137,13 @@ class AgentReplyAndWaitTests(RestoreFixture):
     def test_wait_reports_a_new_comment_by_a_person_but_not_by_the_agent(self):
         code, report = self.run_wait()
         self.assertEqual((code, report['status']), (3, 'TIMEOUT'))  # wątek sprzed startu się nie liczy
-        start = ps.format_at(int(time.time() * 1000) - 1)
+        last = self.ops()[-1]['id']
         self.proto('reply', 'demo', '1', '--text', 'odpowiedź agenta')
-        code, report = self.run_wait('--since', start)
+        code, report = self.run_wait('--after', last)
         self.assertEqual(code, 3, report)  # wpis agenta nie budzi
         self.store().append([{'type': 'reply', 'threadId': 'th-a', 'by': COMMENTER,
                               'payload': {'message': {'id': 'm-odp', 'text': 'Chodzi o kolor.'}}}])
-        code, report = self.run_wait('--since', start)
+        code, report = self.run_wait('--after', last)
         self.assertEqual((code, report['event']), (0, 'comment'), report)
         self.assertEqual({k: report['comment'][k] for k in ('threadId', 'number', 'screen', 'author', 'text')},
                          {'threadId': 'th-a', 'number': 1, 'screen': 's2', 'author': COMMENTER, 'text': 'Chodzi o kolor.'})
@@ -1177,9 +1177,9 @@ class AgentReplyAndWaitTests(RestoreFixture):
                                           'anchor': {'kind': 'screen', 'x': 0.1, 'y': 0.1, 'iteration': 1}}}])
 
     def test_wait_reports_author_role_decision_and_reaction(self):
-        start = ps.format_at(int(time.time() * 1000) - 1)
+        last = self.ops()[-1]['id']  # punkt odniesienia z dziennika, nie z zegara (ta sama milisekunda = niestabilny test)
         self.comment_by(COMMENTER, 'th-k', 'propozycja')
-        code, report = self.run_wait('--since', start)
+        code, report = self.run_wait('--after', last)
         c = report['comment']
         self.assertEqual((c['authorRole'], c['decision'], c['reaction']), ('commenter', None, 'reply'), report)
         self.comment_by(DEVELOPER, 'th-d', 'zmień kolor na zielony')
