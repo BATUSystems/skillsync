@@ -14,6 +14,14 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ### Added
 
+- `skillsync status --json`: field `approvals` — the latest consent per run and word from
+  `.skillsync/runs/<run-id>/approvals.jsonl` (written by the status page buttons: `GO plan`, `GO implement`, `CP`, `READY`).
+- `skillsync approvals wait <project> --word …`: deterministic wait for a consent (for Claude Code `Monitor`); exit 0 with the
+  match, 3 on timeout; `--run`, `--sha`, `--since`, and `--file` (GO: an `approved` spec/plan also ends the wait).
+- `feature` and the AGENTS core: `CP`/`READY` may also come from a status-page entry whose `sha` equals the HEAD of the branch
+  to push; at every consent STOP the session waits on `approvals wait` (fallback: a 30-minute `/loop`) and always verifies the
+  consent in the file after waking. Stated assumption: the trust boundary is the machine.
+
 - `skillsync spec approve <project> <spec>`: changes only the spec status word `draft` → `approved`; the procedure treats it
   (or a status-page button that calls it) as the user's "GO plan", like `plan approve` for "GO implement".
 - `plan approve` and `spec approve` accept `--expect-sha <git blob sha>`: the change is refused when the file differs from the
@@ -38,6 +46,12 @@ Every release has a **Breaking** section that lists incompatible changes. When a
   kod naraz w rozłącznych katalogach, nowe pliki następnej fazy poza drzewem do zielonego szczebla poprzedniej; bieg aktu III
   ≤ ok. 90 min pracy agenta z wznowieniem w świeżym kontekście; rekordy `checkpoint` na koniec fazy. Źródło: porównanie
   z przebiegiem o tym samym zakresie w innym stosie — różnica 3–5× w tempie wynikała z ziarna kroków i liczby przekazań, nie z zakresu.
+
+- `CP` now pushes the current working branch to its remote counterpart in both delivery modes and never to `delivery.base`,
+  `main`, `master` or `develop` unless the working branch is that branch. Handing over to the base (`direct` only) needs the
+  explicit word `CP <branch>` or the answer to a question asked at the first `CP` of a run, stored in the plan as
+  `Oddanie: <branch>`; without an answer nothing is pushed. The fast-forward rules for pushing to the base are unchanged
+  (AGENTS core, `feature`, `plan-details`, `release.md`).
 - Skill `prototype` (SKILL.md): `prototype index` po `init`, usunięciu prototypu albo zmianie tytułu, gdy galerię ogląda się
   bez `serve` (plik statyczny); przed zgłoszeniem „gotowy do akceptacji” sprawdzenie sluga na stronie głównej `serve`
   (`prototype list` czyta katalogi, nie galerię).
