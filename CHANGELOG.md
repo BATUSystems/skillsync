@@ -94,6 +94,9 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ### Fixed
 
+- `skillsync spec approve` and `plan approve` drop the waiting note the approval satisfies (`(… czeka na … GO plan)` for a spec,
+  `(czeka na GO implement)` for a plan) instead of leaving `approved (… czeka na „GO plan”)`; other notes such as
+  `czeka na spec` or `szkic` stay, as the resume table decides on them.
 - Prototype threads panel: a long handle label on a thread card now wraps within the panel (the button's `nowrap`
   used to widen the panel horizontally and clip the screen heading); the group heading has the same edge spacing as the cards.
 

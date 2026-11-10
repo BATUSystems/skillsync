@@ -229,7 +229,7 @@ pierwsze słowo statusu, więc oba są dla CLI zwykłym `draft`. Blokada nie jes
 `in_progress`, a powód trafia w nawiasie, np. `Status: in_progress (blocked — czeka na decyzję)`. Plan zatwierdzony
 przyciskiem albo `plan approve` może też mieć `approved (czeka na GO implement)` albo `approved (czeka na spec)`; start
 rozstrzyga wtedy tabela wznowienia (§6.4). `archived` jest poza
-kolejkami, bez `needsHuman`. `skillsync plan approve` zmienia tylko słowo `draft` → `approved`; start aktu III i tak
+kolejkami, bez `needsHuman`. `skillsync plan approve` zmienia słowo `draft` → `approved` i usuwa dopisek „czeka na GO implement” (`spec approve` — „czeka na … GO plan”; inne dopiski, np. „czeka na spec”, zostają); start aktu III i tak
 sprawdza pętlę, odpowiedź o wersję i `readiness`.
 
 ## 8. Bramka `pre-implement`
