@@ -1,5 +1,6 @@
 """Project status for IDE integrations (read-only: plans with progress, specs, FRD files, run checkpoints, claims) and the only write
-operation, `plan archive|unarchive`, which rewrites a single plan Status line."""
+operations, `plan approve|archive|unarchive` and `spec approve`, which rewrite a single Status line."""
+import hashlib
 from datetime import datetime, timezone
 import json
 import os
@@ -257,45 +258,64 @@ def _cmd_status(args):
 
 
 _TRANSITIONS = {'approve': ('draft', 'approved'), 'archive': ('done', 'archived'), 'unarchive': ('archived', 'done')}
+_SPEC_TRANSITIONS = {'approve': ('draft', 'approved')}
+_SHA = re.compile(r'^[0-9a-f]{40}$')
 
 
-def _plan_file(root, name):
-    """Resolve `name` to a regular, non-symlink `docs/plans/*.md` file inside the project or raise ValueError."""
+def git_blob_sha(data):
+    """`git hash-object` of bytes (SHA-1 of the blob header and content); works outside a repository."""
+    return hashlib.sha1(b'blob %d\0' % len(data) + data).hexdigest()
+
+
+def _doc_file(root, name, folder='plans'):
+    """Resolve `name` to a regular, non-symlink `docs/<folder>/*.md` file inside the project or raise ValueError."""
+    kind = folder[:-1].capitalize()
     if not name or '\0' in name or '..' in Path(name).parts:
-        raise ValueError(f'Invalid plan path: {name!r}')
-    plans = root / 'docs' / 'plans'
+        raise ValueError(f'Invalid {kind.lower()} path: {name!r}')
+    plans = root / 'docs' / folder
     for part in (root / 'docs', plans):
         if part.is_symlink():
-            raise ValueError(f'Symlink in plan path: {part.relative_to(root)}')
+            raise ValueError(f'Symlink in {kind.lower()} path: {part.relative_to(root)}')
     if not plans.is_dir():
-        raise ValueError('Project has no docs/plans directory')
+        raise ValueError(f'Project has no docs/{folder} directory')
     given = Path(name).expanduser()
     candidate = given if given.is_absolute() else root / given
     if candidate.is_symlink():
-        raise ValueError(f'Plan is a symlink: {name}')
+        raise ValueError(f'{kind} is a symlink: {name}')
     resolved = candidate.resolve()
     if resolved.parent != plans.resolve() or resolved.suffix != '.md' or resolved.name.lower() == 'readme.md':
-        raise ValueError(f'Plan must be a docs/plans/*.md file (not README.md): {name}')
+        raise ValueError(f'{kind} must be a docs/{folder}/*.md file (not README.md): {name}')
     if not resolved.is_file():
-        raise ValueError(f'Plan not found: {name}')
+        raise ValueError(f'{kind} not found: {name}')
     if resolved.stat().st_size > MAX_PLAN_BYTES:
-        raise ValueError(f'Plan over {MAX_PLAN_BYTES // 1024} KiB: {name}')
+        raise ValueError(f'{kind} over {MAX_PLAN_BYTES // 1024} KiB: {name}')
     return resolved
 
 
-def set_plan_status(root, name, action):
-    """Rewrite only the status word of the first Status line (suffix and markup kept), atomically. Returns the report."""
+def _plan_file(root, name):
+    return _doc_file(root, name, 'plans')
+
+
+def set_doc_status(root, name, action, folder='plans', expect_sha=None):
+    """Rewrite only the status word of the first Status line (suffix and markup kept), atomically. Returns the report.
+    `expect_sha` (git blob sha of the file) refuses the change when the file differs from the version the user saw."""
     root = Path(root).resolve()
-    source, target = _TRANSITIONS[action]
-    path = _plan_file(root, name)
+    source, target = (_TRANSITIONS if folder == 'plans' else _SPEC_TRANSITIONS)[action]
+    kind = folder[:-1].capitalize()
+    path = _doc_file(root, name, folder)
     raw = path.read_bytes()
+    if expect_sha is not None:
+        if not _SHA.match(expect_sha):
+            raise ValueError('--expect-sha must be a 40-character lowercase git blob sha')
+        if git_blob_sha(raw) != expect_sha:
+            raise ValueError(f'{kind} changed since it was shown (sha mismatch); reload and approve again')
     text = raw.decode('utf-8')
     match = _STATUS.search(text[:4000])
     if not match:
-        raise ValueError('Plan has no Status line in the first 4000 characters')
+        raise ValueError(f'{kind} has no Status line in the first 4000 characters')
     current = match.group('word').lower()
     if current != source:
-        raise ValueError(f'Cannot {action} a plan with status {current!r}; expected {source!r}')
+        raise ValueError(f'Cannot {action} a {kind.lower()} with status {current!r}; expected {source!r}')
     start, end = match.span('word')
     updated = (text[:start] + target + text[end:]).encode('utf-8')
     mode = path.stat().st_mode & 0o7777
@@ -309,14 +329,19 @@ def set_plan_status(root, name, action):
         os.replace(tmp, path)
     finally:
         Path(tmp).unlink(missing_ok=True)
-    return {'schema': SCHEMA, 'status': 'PASS', 'reason': f'Plan status {source} -> {target}', 'root': str(root),
-            'plan': path.relative_to(root).as_posix(), 'from': source, 'to': target}
+    return {'schema': SCHEMA, 'status': 'PASS', 'reason': f'{kind} status {source} -> {target}', 'root': str(root),
+            kind.lower(): path.relative_to(root).as_posix(), 'from': source, 'to': target, 'sha': git_blob_sha(updated)}
 
 
-def _cmd_plan(args):
+def set_plan_status(root, name, action, expect_sha=None):
+    return set_doc_status(root, name, action, 'plans', expect_sha)
+
+
+def _cmd_doc(args):
+    folder = 'specs' if args.doc_kind == 'spec' else 'plans'
     try:
         root, _ = read_project(args.path)
-        report, code = set_plan_status(root, args.plan, args.plan_action), 0
+        report, code = set_doc_status(root, args.doc, args.doc_action, folder, args.expect_sha), 0
     except (OSError, ValueError, TypeError, KeyError, yaml.YAMLError) as error:
         report, code = {'schema': SCHEMA, 'status': 'BLOCKED', 'reason': ' '.join(str(error).split())[:500],
                         'root': str(Path(args.path).expanduser().resolve())}, 2
@@ -329,11 +354,14 @@ def register(subparsers):
     add_project_arguments(parser)
     parser.set_defaults(func=_cmd_status)
     plan = subparsers.add_parser('plan', help='Plan file operations: approve / archive / unarchive (changes only the Status line)')
-    actions = plan.add_subparsers(dest='plan_action', required=True)
-    for action, (source, target) in _TRANSITIONS.items():
-        sub = actions.add_parser(action, help=f'Set Status {source} -> {target} in a docs/plans/*.md file (JSON)')
-        sub.add_argument('path')
-        sub.add_argument('plan', help='Plan file (relative to the project or absolute) in docs/plans')
-        add_layer_argument(sub)
-        sub.add_argument('--json', action='store_true')
-        sub.set_defaults(func=_cmd_plan)
+    spec = subparsers.add_parser('spec', help='Spec file operation: approve ("GO plan"; changes only the Status line)')
+    for kind, parser_, transitions in (('plan', plan, _TRANSITIONS), ('spec', spec, _SPEC_TRANSITIONS)):
+        actions = parser_.add_subparsers(dest='doc_action', required=True)
+        for action, (source, target) in transitions.items():
+            sub = actions.add_parser(action, help=f'Set Status {source} -> {target} in a docs/{kind}s/*.md file (JSON)')
+            sub.add_argument('path')
+            sub.add_argument('doc', metavar=kind, help=f'{kind.capitalize()} file (relative to the project or absolute) in docs/{kind}s')
+            add_layer_argument(sub)
+            sub.add_argument('--json', action='store_true')
+            sub.add_argument('--expect-sha', help='git blob sha of the file as shown to the user; a different file is refused')
+            sub.set_defaults(func=_cmd_doc, doc_kind=kind)
