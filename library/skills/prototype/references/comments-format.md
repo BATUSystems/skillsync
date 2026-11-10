@@ -27,7 +27,7 @@ Prototypy v1 (`comments.js`) opisuje na końcu sekcja „Format v1”.
 - `id` operacji: `op-` + 26 znaków Crockford base32 (10 czasu + 16 licznika i losowości), nadaje serwer pod blokadą, rosnące. `threadId`: `th-…`, wpis: `m-…`
   (nadaje klient przy `create`/`reply`); identyfikatory z v1 (`<prefiks>-<base36>-<losowe>`, `[A-Za-z0-9_-]{1,80}`) pozostają poprawne.
 - `at`: czas serwera UTC `YYYY-MM-DDTHH:MM:SS.mmmZ`, `max(teraz, ostatnie + 1 ms)` (monotoniczny nawet po cofnięciu zegara); porównywany jako napis.
-- `by`: login z sesji (adres e-mail), `agent` (CLI), `import` (migracja) albo `server` (odtwarzanie przy starcie `serve`). `agent`, `import` i `server` są zarezerwowanymi loginami. Klient nie wysyła `by`.
+- `by`: login z sesji (adres e-mail), `agent` (CLI), `import` (migracja) albo `server` (odtwarzanie przy starcie `serve`). `agent`, `import` i `server` są zarezerwowanymi loginami. Klient nie wysyła `by`. `by: agent` oznacza autora-AI (np. `reply` z `skillsync prototype reply`): UI pokazuje przy wpisie i na karcie wątku plakietkę „AI”, a `prototype wait` takich wpisów nie traktuje jak komentarza osoby. Nazwy agenta format nie przechowuje (stare kopie silnika czytają dziennik bez zmian).
 - `cid`: identyfikator klienta do deduplikacji (`by`, `cid`); wymagany w żądaniach z przeglądarki.
 - Limity: tekst wpisu ≤ 4000 jednostek UTF-16, ciało żądania ≤ 64 KiB, plik ≥ 10 MiB daje ostrzeżenie w `list`, ≥ 20 MiB serwer odmawia zapisu (507).
 - Dokument z innym `format`, `version` lub niepustym obcym `prototypeId` jest odrzucany przez silnik jako pusty, a przez serwer jako błąd pliku.
@@ -37,7 +37,7 @@ Prototypy v1 (`comments.js`) opisuje na końcu sekcja „Format v1”.
 | `type` | `payload` | Kto |
 |---|---|---|
 | `create` | `message {id, text}`, `screen`, `anchor {kind: element\|screen\|lost, protoId?, x, y, iteration}`, `label?`, `hint {text, legacyPath?}?`, `view?` (`"desktop"\|"mobile"`; silnik zapisuje je tylko dla mobile) | każda rola (`lost` tylko migracja) |
-| `reply` | `message {id, text}` | każda rola |
+| `reply` | `message {id, text}` | każda rola; także CLI agenta (`prototype reply`, `by: agent`) |
 | `edit` | `messageId`, `text` | autor wpisu |
 | `retract` | `messageId` | autor wpisu |
 | `vote` | `messageId`, `value: up\|down\|none` | każda rola |

@@ -54,6 +54,8 @@ odpytuje pliki, nie model), a jako zapas budzik co 30 min (`/loop`); inny host �
 tylko sygnał: po niej sprawdź zgodę w pliku. GO: status speca/planu `approved` i sha pokazanej wersji (`--expect-sha`
 zapisane we wpisie, `Spec-sha`); CP/READY: wpis tego słowa nowszy niż STOP z `sha` równym HEAD gałęzi do wypchnięcia
 (`git rev-parse <gałąź>`). Brak zgody w pliku albo inny sha = dalej czekasz albo pytasz; nigdy nie działasz na samą pobudkę.
+Tak samo przy akceptacji prototypu: `skillsync prototype wait` (skill
+`prototype`, „Czekanie na przegląd i rozmowa w wątkach”) budzi sesję na nowy komentarz osoby albo pełną akceptację.
 Wiadomość od użytkownika w sesji zawsze ma pierwszeństwo przed nasłuchem. Założenie: granicą zaufania jest maszyna (proces,
 który podrobiłby wpis, mógłby sam wykonać push), więc wpis nie jest słabszy niż słowo wpisane w terminalu.
 

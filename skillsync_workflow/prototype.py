@@ -26,6 +26,7 @@ import subprocess
 import sys
 import tempfile
 import unicodedata
+import time
 import yaml
 from .common import contained, emit, load_layer_project, read_project, read_yaml, require_layerset
 from . import layers as _layers
@@ -2920,8 +2921,8 @@ def decide_prototype(root, manifest, slug, thread, kind, outcome, text, who=None
         if who is None:
             raise PrototypeError('--who is required with --kind developer (a login with the role developer)')
         login, record, _warnings = _privileged_who(Path(root).resolve(), users, who)
-        if record['role'] != 'developer':
-            raise PrototypeError(f'forbidden: {login} has the role {record["role"]}; --who needs the role developer')
+        if record['role'] not in HUMAN_DECIDERS:
+            raise PrototypeError(f'forbidden: {login} has the role {record["role"]}; --who needs the role developer or acceptor')
         payload['who'] = login
     elif who is not None:
         raise PrototypeError('--who is only for --kind developer')
@@ -2930,6 +2931,122 @@ def decide_prototype(root, manifest, slug, thread, kind, outcome, text, who=None
             raise PrototypeError('--iteration must be 1 or more')
         payload['iteration'] = iteration
     return _agent_command(root, manifest, slug, thread, 'decision', payload)
+
+
+def reply_prototype(root, manifest, slug, thread, text):
+    """`reply`: the agent answers in a thread (`by: agent`, shown with the AI badge). Not a consent and not a decision."""
+    if not isinstance(text, str) or not text.strip():
+        raise PrototypeError('--text must not be empty')
+    message_id = 'm-agent-%s-%s' % (format(int(time.time() * 1000), 'x'), secrets.token_hex(4))
+    return _agent_command(root, manifest, slug, thread, 'reply', {'message': {'id': message_id, 'text': text}})
+
+
+HUMAN_COMMENT_TYPES = ('create', 'reply')
+HUMAN_DECIDERS = ('developer', 'acceptor')  # roles whose decision „Wprowadź” (apply) authorises the agent to implement
+
+
+def _roles(root):
+    """`{login: role}` from the users file (empty without the file); used only to describe comments."""
+    try:
+        users, _warnings = _users(Path(root).resolve(), None)
+        if not users.exists():
+            return {}
+        return {record['login']: record.get('role') for record in users.users() if isinstance(record, dict)}
+    except (PrototypeError, server.UserError, OSError, ValueError, AttributeError, TypeError):
+        return {}
+
+
+def thread_reaction(thread, author_role, roles):
+    """What the agent may do with a thread (skill `prototype`, table „rola autora × stan wątku”):
+    `implement` = the latest decision is „Wprowadź” (apply) by a developer or acceptor; `order?` = no human decision yet,
+    but the author is a developer or acceptor (implement only an unambiguous instruction); `reply` = everything else
+    (a proposal by a commenter, a decision Wariant/Odłóż/Zostaw, an agent decision)."""
+    decisions = (thread or {}).get('decisions') or []
+    last = decisions[-1] if decisions else None
+    if last and last.get('kind') == 'developer' and roles.get(last.get('who')) in HUMAN_DECIDERS:
+        return 'implement' if last.get('outcome') == 'apply' else 'reply'
+    if author_role in HUMAN_DECIDERS:
+        return 'order?'
+    return 'reply'
+
+
+def _new_comments(snapshot, since_at=None, after=None, roles=None):
+    """Operations `create`/`reply` by a person (not `agent`, `import`, `server`) newer than `since_at` or after the
+    operation id `after`, oldest first, with the thread facts."""
+    fold = snapshot.fold
+    seen_after = after is None
+    found = []
+    for operation in snapshot.operations:
+        if not seen_after:
+            seen_after = operation.get('id') == after
+            continue
+        if operation.get('type') not in HUMAN_COMMENT_TYPES or operation.get('by') in server.RESERVED_LOGINS:
+            continue
+        if since_at is not None and (server.parse_at(operation.get('at')) or 0) <= since_at:
+            continue
+        payload = operation.get('payload') or {}
+        thread_id = operation.get('threadId')
+        thread = fold['byId'].get(thread_id) if thread_id else None
+        message = payload.get('message') or {}
+        roles = roles or {}
+        decisions = (thread or {}).get('decisions') or []
+        last = decisions[-1] if decisions else None
+        author_role = roles.get(operation.get('by'))
+        found.append({'opId': operation.get('id'), 'type': operation['type'], 'threadId': thread_id,
+                      'authorRole': author_role, 'threadStatus': (thread or {}).get('status'),
+                      'decision': ({'kind': last.get('kind'), 'outcome': last.get('outcome'), 'who': last.get('who'),
+                                    'whoRole': roles.get(last.get('who')), 'at': last.get('at')} if last else None),
+                      'reaction': thread_reaction(thread, author_role, roles),
+                      'number': thread['number'] if thread else None,
+                      'screen': (thread or {}).get('screen') or payload.get('screen'),
+                      'author': operation.get('by'), 'at': operation.get('at'),
+                      'text': message.get('text') if isinstance(message.get('text'), str) else ''})
+    return found
+
+
+def wait_prototype(root, manifest, slug, since=None, after=None, timeout=1800.0, interval=5.0):
+    """`wait`: deterministic wait for the prototype review (for Claude Code `Monitor`). PASS with `event: comment`
+    (a new thread or message by a person) or `event: accepted` (`gate` PASS for this prototype); TIMEOUT (exit 3)."""
+    _repo, _settings, _directory, store = _prototype_context(root, manifest, slug)
+    if since is not None and after is not None:
+        raise PrototypeError('wait takes --since or --after, not both')
+    since_at = None
+    if since is not None:
+        since_at = server.parse_at(since)
+        if since_at is None:
+            parsed = _parse_iso(since)
+            if parsed is None:
+                raise PrototypeError('--since must be an ISO time, e.g. 2026-11-10T15:30:00Z')
+            since_at = parsed
+    elif after is None:
+        since_at = int(time.time() * 1000)
+    deadline = time.monotonic() + max(0.0, float(timeout))
+    while True:
+        if store.state() != 'v1':
+            comments = _new_comments(store.snapshot(), since_at, after, _roles(root))
+            if comments:
+                return {'status': 'PASS', 'slug': slug, 'event': 'comment', 'comment': comments[0],
+                        'comments': comments}
+        gate = prototype_gate(root, manifest, slugs=[slug])
+        if gate.get('status') == 'BLOCKED':
+            return gate
+        if gate.get('status') == 'PASS':
+            return {'status': 'PASS', 'slug': slug, 'event': 'accepted', 'gate': gate}
+        if time.monotonic() >= deadline:
+            return {'status': 'TIMEOUT', 'slug': slug, 'reason': 'no new comment and the prototype is not accepted yet',
+                    'missing': gate.get('missing', [])}
+        time.sleep(min(max(0.2, float(interval)), max(0.0, deadline - time.monotonic())) or 0.2)
+
+
+def _parse_iso(value):
+    from datetime import datetime, timezone
+    try:
+        moment = datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+    except ValueError:
+        return None
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return int(moment.timestamp() * 1000)
 
 
 def resolve_thread_prototype(root, manifest, slug, thread, reason, iteration=None):
@@ -3108,6 +3225,15 @@ def _cmd_decide(args, root, manifest, layerset):
                             who=args.who, iteration=args.iteration, users=args.users)
 
 
+def _cmd_reply(args, root, manifest, layerset):
+    return reply_prototype(root, manifest, args.slug, args.thread, args.text)
+
+
+def _cmd_wait(args, root, manifest, layerset):
+    return wait_prototype(root, manifest, args.slug, since=args.since, after=args.after, timeout=args.timeout,
+                          interval=args.interval)
+
+
 def _cmd_resolve(args, root, manifest, layerset):
     return resolve_thread_prototype(root, manifest, args.slug, args.thread, args.reason, args.iteration)
 
@@ -3275,6 +3401,21 @@ def register(subparsers):
     resolve.add_argument('--reason', required=True, choices=('done', 'kept', 'out_of_scope'))
     resolve.add_argument('--iteration', type=int, help='Iteration that implements the change')
     resolve.set_defaults(func=_run(_cmd_resolve))
+    reply = actions.add_parser('reply', help='Agent reply in a thread (by: agent, AI badge in the UI; not a consent)')
+    _common(reply)
+    reply.add_argument('slug', help='Prototype slug')
+    reply.add_argument('thread', help='Thread: th-… id or number')
+    reply.add_argument('--text', required=True, help='Message text')
+    reply.set_defaults(func=_run(_cmd_reply))
+    wait = actions.add_parser('wait', help='Wait for a new comment by a person or for the acceptance of all screens '
+                                           '(exit 0 with event comment|accepted, 3 on timeout)')
+    _common(wait)
+    wait.add_argument('slug', help='Prototype slug')
+    wait.add_argument('--since', help='ISO time; only newer comments count (default: now)')
+    wait.add_argument('--after', help='Operation id; only later comments count')
+    wait.add_argument('--timeout', type=float, default=1800.0, help='Seconds (default 1800 = 30 min)')
+    wait.add_argument('--interval', type=float, default=5.0, help='Poll interval in seconds (default 5)')
+    wait.set_defaults(func=_run(_cmd_wait))
     merge = actions.add_parser('merge-comments', help='Merge two comment logs (also as git merge driver: --driver %%O %%A %%B)')
     merge.add_argument('path', nargs='?', help='Project path or .skillsync.yaml')
     merge.add_argument('slug', nargs='?', help='Prototype slug')

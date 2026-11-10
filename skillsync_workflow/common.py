@@ -154,7 +154,7 @@ def changed_files(root, base=None):
 
 
 def exit_code(report):
-    return {'PASS': 0, 'NOT_RUN': 0, 'FAIL': 1, 'BLOCKED': 2}.get(report.get('status'), 2)
+    return {'PASS': 0, 'NOT_RUN': 0, 'FAIL': 1, 'BLOCKED': 2, 'TIMEOUT': 3}.get(report.get('status'), 2)
 
 
 def emit(report, json_output=False):
