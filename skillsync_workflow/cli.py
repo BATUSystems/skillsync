@@ -53,6 +53,8 @@ WORKFLOW_COMPANIONS = ("workflow", "pre-implement", "smart-test", "bugfix", "cod
 # Removed skills kept as manifest aliases: `go-jira` (removed from the library) resolves to `acli`.
 # Mirrored in skillsync_workflow/common.py (tests keep both copies identical).
 REMOVED_SKILL_ALIASES = {"go-jira": "acli"}
+# Renamed roles kept as manifest aliases for one release: `Explore` -> `explore` (lower case like the other roles).
+RENAMED_ROLE_ALIASES = {"Explore": "explore"}
 
 
 def write_text_lf(path: Path, content: str) -> None:
@@ -532,7 +534,12 @@ def codex_defaults(config: dict) -> dict:
 def resolve_roles(manifest: dict, config: dict) -> list[str]:
     """Same roster for Claude and Codex: explicit `agents:` wins; feature defaults to all roles."""
     if "agents" in manifest:
-        return list(manifest.get("agents") or [])
+        roles = []
+        for name in manifest.get("agents") or []:
+            name = RENAMED_ROLE_ALIASES.get(name, name)
+            if name not in roles:
+                roles.append(name)
+        return roles
     if not has_feature(manifest, config):
         return []
     agents = codex_defaults(config).get("agents", {})
@@ -779,7 +786,11 @@ def build_codex(project_dir: Path, manifest: dict, config: dict, dry_run: bool =
         place(src, dest, method, state, f"codex-skill:{name}", False, dry_run)
     wanted = set()
     for source_name in (resolve_roles(manifest, config) if enabled else []):
-        settings = {**defaults.get("agents", {}).get(source_name, {}), **local.get("agent_overrides", {}).get(source_name, {})}
+        overrides = local.get("agent_overrides", {})
+        old_names = [old for old, new in RENAMED_ROLE_ALIASES.items() if new == source_name]
+        settings = {**defaults.get("agents", {}).get(source_name, {}),
+                    **{k: v for old in old_names for k, v in overrides.get(old, {}).items()},
+                    **overrides.get(source_name, {})}
         if not settings:
             print(f"[warn] No Codex mapping for role: {source_name}")
             continue

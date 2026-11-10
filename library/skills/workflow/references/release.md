@@ -1,7 +1,8 @@
 # Dokumentacja, changelog i wersja wydania
 
 Obowiązuje `feature`, `bugfix` (oraz każdy skill kończący zmianę kodu). Uzupełnia
-[knowledge.md](knowledge.md); nie zastępuje zasad dostarczania (tryb `delivery.mode`, słowa `CP`, `CPD`, `READY`; patrz AGENTS).
+[knowledge.md](knowledge.md); nie zastępuje zasad dostarczania (tryb `delivery.mode`, słowa `CP`, `CPD`, `READY`; patrz AGENTS). „CP” wypycha gałąź roboczą,
+nie bazę; oddanie na bazę wymaga `CP <gałąź>` albo linii `Oddanie:` w planie.
 
 1. **Rozpoznaj** (w planie/briefie, sekcja „Dokumentacja i wiedza” + „Wersja”): changelog projektu
    (`CHANGELOG*`, `docs/**/changelog*`, `RELEASE*`, wpisy w `docs/`), źródła numeru wersji

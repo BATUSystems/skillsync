@@ -22,7 +22,7 @@ from . import layers as _layers
 from .delivery_mode import delivery_info, validate_delivery_mode
 from .dispatch import validate_dispatch
 from .prototype import validate_prototype
-from .status import MAX_PLAN_BYTES, SPEC_FULL, SPEC_LINE, _STATUS, is_spec_path
+from .status import MAX_PLAN_BYTES, SPEC_FULL, SPEC_LINE, _STATUS, is_spec_path, plan_text_needs_human
 
 
 def plan_validation(root, manifest, library, profile='quick', files=None, check_ids=None):
@@ -722,7 +722,8 @@ def _has_final_record(root, run_id):
 
 
 def plan_closure_findings(root, agentflow=False):
-    """Ostrzeżenia o planach `done` bez zamknięcia przebiegu: [(ścieżka, powód)]. Tylko odczyt."""
+    """Ostrzeżenia o niezamkniętych planach: `done` bez zamknięcia przebiegu albo `in_progress` ze wszystkimi krokami
+    `Progress` odhaczonymi: [(ścieżka, powód)]. Tylko odczyt."""
     directory = Path(root) / 'docs' / 'plans'
     if directory.is_symlink() or not directory.is_dir():
         return []
@@ -733,13 +734,20 @@ def plan_closure_findings(root, agentflow=False):
         try:
             if path.stat().st_size > MAX_PLAN_BYTES:
                 continue
-            head = path.read_text(encoding='utf-8')[:4000]
+            text = path.read_text(encoding='utf-8')
         except (OSError, UnicodeDecodeError):
             continue
+        head = text[:4000]
         status = _STATUS.search(head)
-        if not status or status.group('word').lower() != 'done':
-            continue
+        word = status.group('word').lower() if status else ''
         label = f'docs/plans/{path.name}'
+        if plan_text_needs_human(word, text) == ['closure']:
+            found.append((label, 'All Progress steps are checked but the plan is still in_progress; close it: Result section, '
+                                 '`retro-quality`, `skillsync checkpoint --final`, Status done (spec implemented), '
+                                 'or uncheck the unfinished step'))
+            continue
+        if word != 'done':
+            continue
         line = _PLAN_RUN.search(head)
         day = _PLAN_DAY.match(path.name)
         if not line:
@@ -840,6 +848,11 @@ def doctor(root, manifest, library):
         finding('warning', '.github/.skillsync.yaml',
                 'Deprecated skill `go-jira` in skills: it was removed from the library; replace it with `acli` '
                 '(the old name resolves to `acli` when the library has it)')
+    roles = manifest.get('agents')
+    if isinstance(roles, list) and 'Explore' in roles:
+        finding('warning', '.github/.skillsync.yaml',
+                'Renamed role `Explore` in agents: replace it with `explore` (the old name still works as an alias '
+                'for one release); then run `skillsync link`')
     dispatch_errors, dispatch_warnings = validate_dispatch(manifest.get('dispatch'))
     for message in dispatch_errors:
         finding('error', '.github/.skillsync.yaml', message)
@@ -902,6 +915,8 @@ def doctor(root, manifest, library):
     if agentflow:
         roles = manifest.get('agents', list(codex_defaults.get('agents', {})))
         strings(roles, 'agents')
+        from .common import RENAMED_ROLE_ALIASES
+        roles = list(dict.fromkeys(RENAMED_ROLE_ALIASES.get(role, role) for role in roles))  # link instaluje nową nazwę
         for role in roles:
             if Path(role).is_absolute() or '..' in Path(role).parts or '\\' in role:
                 raise ValueError(f'Path escapes project: agents/{role}.md')

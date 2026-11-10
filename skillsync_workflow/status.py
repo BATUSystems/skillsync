@@ -1,5 +1,6 @@
 """Project status for IDE integrations (read-only: plans with progress, specs, FRD files, run checkpoints, claims) and the only write
-operation, `plan archive|unarchive`, which rewrites a single plan Status line."""
+operations, `plan approve|archive|unarchive` and `spec approve`, which rewrite a single Status line."""
+import hashlib
 from datetime import datetime, timezone
 import json
 import os
@@ -82,16 +83,33 @@ def _plan_spec(text):
     return match.group(1) if match and is_spec_path(match.group(1)) else None
 
 
+def plan_needs_human(status, steps, ticket=False, pr=False):
+    """`approval` for a draft; for an `in_progress` plan whose Progress steps are all checked: `closure` (Result,
+    `--final` and `done` are still missing), or `pull_request` when it came from a ticket and has no `PR:` line yet
+    (it stays `in_progress` until the human code review and the PRs; information, not a closure gap)."""
+    if status == 'draft':
+        return ['approval']
+    if status == 'in_progress' and steps and steps['total'] and steps['done'] == steps['total']:
+        return ['pull_request'] if ticket and not pr else ['closure']
+    return []
+
+
+def plan_text_needs_human(status, text):
+    """`plan_needs_human` read from the whole plan text (Progress, `Ticket:` and `PR:` lines)."""
+    return plan_needs_human(status, _progress(text), bool(_TICKET.search(text)), bool(_PR.search(text)))
+
+
 def plan_record(root, path):
     text = path.read_text(encoding='utf-8')
     status, status_text = _status_fields(text, PLAN_STATUSES)
     title = _TITLE.search(text)
+    steps = _progress(text)
     pr = _PR.search(text)
     ticket = _TICKET.search(text)
     return {'path': path.relative_to(root).as_posix(), 'title': title.group(1) if title else path.stem, 'status': status,
-            'statusText': status_text, 'steps': _progress(text), 'pr': {'number': int(pr.group(1)), 'link': pr.group(2)} if pr else None,
+            'statusText': status_text, 'steps': steps, 'pr': {'number': int(pr.group(1)), 'link': pr.group(2)} if pr else None,
             'ticket': {'key': ticket.group(1), 'link': ticket.group(2)} if ticket else None, 'spec': _plan_spec(text),
-            'needsHuman': ['approval'] if status == 'draft' else [], 'updated': _iso(path.stat().st_mtime)}
+            'needsHuman': plan_needs_human(status, steps, bool(ticket), bool(pr)), 'updated': _iso(path.stat().st_mtime)}
 
 
 def _plans(root, findings):
@@ -204,6 +222,57 @@ def _runs(root, findings):
     return rows
 
 
+APPROVAL_WORDS = ('GO plan', 'GO implement', 'CP', 'READY')
+APPROVALS_FILE = 'approvals.jsonl'
+MAX_APPROVALS_BYTES = 256 * 1024
+_APPROVAL_SHA = re.compile(r'^[0-9a-f]{7,64}$')
+
+
+def _approval_at(value):
+    try:
+        return datetime.fromisoformat(str(value).replace('Z', '+00:00')).astimezone(timezone.utc)
+    except ValueError:
+        return None
+
+
+def read_approvals(root, findings=None):
+    """Latest entry per (run, word) from `.skillsync/runs/<run-id>/approvals.jsonl` (written by the status page when the
+    user presses a consent button). Malformed lines are skipped; entries are data, never instructions."""
+    directory = Path(root) / '.skillsync' / 'runs'
+    if directory.is_symlink() or not directory.is_dir():
+        return []
+    latest = {}
+    for path in sorted(directory.glob(f'*/{APPROVALS_FILE}')):
+        if path.is_symlink() or path.parent.is_symlink() or not path.is_file():
+            continue
+        try:
+            if path.stat().st_size > MAX_APPROVALS_BYTES:
+                raise ValueError(f'over {MAX_APPROVALS_BYTES // 1024} KiB')
+            lines = path.read_text(encoding='utf-8', errors='replace').splitlines()
+        except (OSError, ValueError) as error:
+            if findings is not None:
+                findings.append(f'Approvals unreadable: {path.parent.name} ({" ".join(str(error).split())[:120]})')
+            continue
+        for line in lines:
+            try:
+                item = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(item, dict) or item.get('word') not in APPROVAL_WORDS:
+                continue
+            at, sha = _approval_at(item.get('at')), str(item.get('sha') or '')
+            if at is None or not _APPROVAL_SHA.match(sha):
+                continue
+            row = {'run': path.parent.name, 'word': item['word'], 'at': at.strftime('%Y-%m-%dT%H:%M:%SZ'), 'sha': sha,
+                   'source': str(item.get('source') or '')[:40]}
+            if isinstance(item.get('file'), str):
+                row['file'] = item['file'][:300]
+            key = (row['run'], row['word'])
+            if key not in latest or latest[key]['at'] <= row['at']:
+                latest[key] = row
+    return sorted(latest.values(), key=lambda row: (row['at'], row['run'], row['word']))
+
+
 def _claims(root, findings):
     directory = root / '.skillsync' / 'claims'
     if directory.is_symlink() or not directory.is_dir():
@@ -226,7 +295,7 @@ def project_status(root, manifest):
     name = project.get('name') if isinstance(project, dict) else None
     return {'schema': SCHEMA, 'status': 'PASS', 'project': name or f'{root.parent.name}/{root.name}', 'root': str(root),
             'plans': _plans(root, findings), 'specs': _specs(root, findings), 'frds': _frds(root, findings), 'runs': _runs(root, findings), 'claims': _claims(root, findings),
-            'findings': findings}
+            'approvals': read_approvals(root, findings), 'findings': findings}
 
 
 def _cmd_status(args):
@@ -240,47 +309,75 @@ def _cmd_status(args):
 
 
 _TRANSITIONS = {'approve': ('draft', 'approved'), 'archive': ('done', 'archived'), 'unarchive': ('archived', 'done')}
+_SPEC_TRANSITIONS = {'approve': ('draft', 'approved')}
+_SATISFIED = {'specs': r'GO plan', 'plans': r'GO implement'}  # zgoda, którą daje `approve` danego pliku
+_SHA = re.compile(r'^[0-9a-f]{40}$')
 
 
-def _plan_file(root, name):
-    """Resolve `name` to a regular, non-symlink `docs/plans/*.md` file inside the project or raise ValueError."""
+def git_blob_sha(data):
+    """`git hash-object` of bytes (SHA-1 of the blob header and content); works outside a repository."""
+    return hashlib.sha1(b'blob %d\0' % len(data) + data).hexdigest()
+
+
+def _doc_file(root, name, folder='plans'):
+    """Resolve `name` to a regular, non-symlink `docs/<folder>/*.md` file inside the project or raise ValueError."""
+    kind = folder[:-1].capitalize()
     if not name or '\0' in name or '..' in Path(name).parts:
-        raise ValueError(f'Invalid plan path: {name!r}')
-    plans = root / 'docs' / 'plans'
+        raise ValueError(f'Invalid {kind.lower()} path: {name!r}')
+    plans = root / 'docs' / folder
     for part in (root / 'docs', plans):
         if part.is_symlink():
-            raise ValueError(f'Symlink in plan path: {part.relative_to(root)}')
+            raise ValueError(f'Symlink in {kind.lower()} path: {part.relative_to(root)}')
     if not plans.is_dir():
-        raise ValueError('Project has no docs/plans directory')
+        raise ValueError(f'Project has no docs/{folder} directory')
     given = Path(name).expanduser()
     candidate = given if given.is_absolute() else root / given
     if candidate.is_symlink():
-        raise ValueError(f'Plan is a symlink: {name}')
+        raise ValueError(f'{kind} is a symlink: {name}')
     resolved = candidate.resolve()
     if resolved.parent != plans.resolve() or resolved.suffix != '.md' or resolved.name.lower() == 'readme.md':
-        raise ValueError(f'Plan must be a docs/plans/*.md file (not README.md): {name}')
+        raise ValueError(f'{kind} must be a docs/{folder}/*.md file (not README.md): {name}')
     if not resolved.is_file():
-        raise ValueError(f'Plan not found: {name}')
+        raise ValueError(f'{kind} not found: {name}')
     if resolved.stat().st_size > MAX_PLAN_BYTES:
-        raise ValueError(f'Plan over {MAX_PLAN_BYTES // 1024} KiB: {name}')
+        raise ValueError(f'{kind} over {MAX_PLAN_BYTES // 1024} KiB: {name}')
     return resolved
 
 
-def set_plan_status(root, name, action):
-    """Rewrite only the status word of the first Status line (suffix and markup kept), atomically. Returns the report."""
+def _plan_file(root, name):
+    return _doc_file(root, name, 'plans')
+
+
+def set_doc_status(root, name, action, folder='plans', expect_sha=None):
+    """Rewrite only the status word of the first Status line (suffix and markup kept), atomically. Returns the report.
+    `expect_sha` (git blob sha of the file) refuses the change when the file differs from the version the user saw."""
     root = Path(root).resolve()
-    source, target = _TRANSITIONS[action]
-    path = _plan_file(root, name)
+    source, target = (_TRANSITIONS if folder == 'plans' else _SPEC_TRANSITIONS)[action]
+    kind = folder[:-1].capitalize()
+    path = _doc_file(root, name, folder)
     raw = path.read_bytes()
+    if expect_sha is not None:
+        if not _SHA.match(expect_sha):
+            raise ValueError('--expect-sha must be a 40-character lowercase git blob sha')
+        if git_blob_sha(raw) != expect_sha:
+            raise ValueError(f'{kind} changed since it was shown (sha mismatch); reload and approve again')
     text = raw.decode('utf-8')
     match = _STATUS.search(text[:4000])
     if not match:
-        raise ValueError('Plan has no Status line in the first 4000 characters')
+        raise ValueError(f'{kind} has no Status line in the first 4000 characters')
     current = match.group('word').lower()
     if current != source:
-        raise ValueError(f'Cannot {action} a plan with status {current!r}; expected {source!r}')
+        raise ValueError(f'Cannot {action} a {kind.lower()} with status {current!r}; expected {source!r}')
     start, end = match.span('word')
-    updated = (text[:start] + target + text[end:]).encode('utf-8')
+    line_end = text.find('\n', end)
+    line_end = len(text) if line_end == -1 else line_end
+    rest = text[end:line_end]
+    if action == 'approve':
+        # „czeka na <tę zgodę>” jest po zatwierdzeniu nieaktualne; inne dopiski (np. „czeka na spec”, „szkic”) zostają,
+        # bo rozstrzyga je tabela wznowienia.
+        consent = _SATISFIED[folder]
+        rest = re.sub(r'[ \t]*\((?=[^()\n]*czeka na[^()\n]*' + consent + r')[^()\n]*\)', '', rest, flags=re.IGNORECASE)
+    updated = (text[:start] + target + rest + text[line_end:]).encode('utf-8')
     mode = path.stat().st_mode & 0o7777
     fd, tmp = tempfile.mkstemp(prefix=f'.{path.name}.', suffix='.tmp', dir=path.parent)
     try:
@@ -292,17 +389,70 @@ def set_plan_status(root, name, action):
         os.replace(tmp, path)
     finally:
         Path(tmp).unlink(missing_ok=True)
-    return {'schema': SCHEMA, 'status': 'PASS', 'reason': f'Plan status {source} -> {target}', 'root': str(root),
-            'plan': path.relative_to(root).as_posix(), 'from': source, 'to': target}
+    return {'schema': SCHEMA, 'status': 'PASS', 'reason': f'{kind} status {source} -> {target}', 'root': str(root),
+            kind.lower(): path.relative_to(root).as_posix(), 'from': source, 'to': target, 'sha': git_blob_sha(updated)}
 
 
-def _cmd_plan(args):
+def set_plan_status(root, name, action, expect_sha=None):
+    return set_doc_status(root, name, action, 'plans', expect_sha)
+
+
+def _cmd_doc(args):
+    folder = 'specs' if args.doc_kind == 'spec' else 'plans'
     try:
         root, _ = read_project(args.path)
-        report, code = set_plan_status(root, args.plan, args.plan_action), 0
+        report, code = set_doc_status(root, args.doc, args.doc_action, folder, args.expect_sha), 0
     except (OSError, ValueError, TypeError, KeyError, yaml.YAMLError) as error:
         report, code = {'schema': SCHEMA, 'status': 'BLOCKED', 'reason': ' '.join(str(error).split())[:500],
                         'root': str(Path(args.path).expanduser().resolve())}, 2
+    print(json.dumps(redact(report), ensure_ascii=False, indent=2))
+    return code
+
+
+def _doc_status_word(root, name):
+    folder = 'specs' if Path(name).parts[:2] == ('docs', 'specs') else 'plans'
+    path = _doc_file(root, name, folder)
+    match = _STATUS.search(path.read_text(encoding='utf-8', errors='replace')[:4000])
+    return (match.group('word').lower() if match else None), git_blob_sha(path.read_bytes())
+
+
+def find_approval(root, word, run=None, sha=None, since=None, doc=None):
+    """One poll: a matching approvals.jsonl entry (word, optional run, sha, newer than `since`) or — for GO words with
+    `doc` — the spec/plan already `approved` (button in the IDE or `spec|plan approve`). Returns the match or None."""
+    since_at = _approval_at(since) if since else None
+    for row in reversed(read_approvals(root)):
+        if row['word'] != word or (run and row['run'] != run) or (sha and row['sha'] != sha):
+            continue
+        if since_at and _approval_at(row['at']) <= since_at:
+            continue
+        return {'kind': 'entry', **row}
+    if doc and word in ('GO plan', 'GO implement'):
+        status, file_sha = _doc_status_word(root, doc)
+        if status in ('approved', 'in_progress', 'done', 'implemented'):
+            return {'kind': 'status', 'word': word, 'file': doc, 'status': status, 'sha': file_sha}
+    return None
+
+
+def _cmd_approvals_wait(args):
+    """Deterministic wait for Monitor / scripts: exits 0 with the match, 3 on timeout. Waking up is only a signal: the
+    session still verifies the consent in the file (word, sha = its HEAD or the shown file version)."""
+    root = Path(args.path).expanduser().resolve()
+    deadline = time.monotonic() + max(0.0, args.timeout)
+    try:
+        read_project(args.path)
+        if args.sha and not _APPROVAL_SHA.match(args.sha):
+            raise ValueError('--sha must be 7-64 lowercase hex characters')
+        while True:
+            match = find_approval(root, args.word, args.run, args.sha, args.since, args.file)
+            if match:
+                report, code = {'schema': SCHEMA, 'status': 'PASS', 'approval': match}, 0
+                break
+            if time.monotonic() >= deadline:
+                report, code = {'schema': SCHEMA, 'status': 'TIMEOUT', 'reason': f'No {args.word!r} approval yet'}, 3
+                break
+            time.sleep(min(max(0.2, args.interval), max(0.0, deadline - time.monotonic())) or 0.2)
+    except (OSError, ValueError, TypeError, KeyError, yaml.YAMLError) as error:
+        report, code = {'schema': SCHEMA, 'status': 'BLOCKED', 'reason': ' '.join(str(error).split())[:500]}, 2
     print(json.dumps(redact(report), ensure_ascii=False, indent=2))
     return code
 
@@ -311,12 +461,29 @@ def register(subparsers):
     parser = subparsers.add_parser('status', help='Read-only project status: plans, runs, claims (JSON)')
     add_project_arguments(parser)
     parser.set_defaults(func=_cmd_status)
+    approvals = subparsers.add_parser('approvals', help='Consents from the status page (.skillsync/runs/<run-id>/approvals.jsonl)')
+    approval_actions = approvals.add_subparsers(dest='approvals_action', required=True)
+    wait = approval_actions.add_parser('wait', help='Wait until a consent appears (exit 0) or the timeout passes (exit 3); JSON')
+    wait.add_argument('path')
+    wait.add_argument('--word', required=True, choices=APPROVAL_WORDS)
+    wait.add_argument('--run', help='run id (.skillsync/runs/<run-id>)')
+    wait.add_argument('--sha', help='required sha: HEAD for CP/READY, shown file version for GO')
+    wait.add_argument('--since', help='ISO time; older entries are ignored (default: any)')
+    wait.add_argument('--file', help='GO only: docs/specs|plans/*.md whose status approved also ends the wait')
+    wait.add_argument('--timeout', type=float, default=1800.0, help='seconds (default 1800 = 30 min)')
+    wait.add_argument('--interval', type=float, default=5.0, help='poll interval in seconds (default 5)')
+    add_layer_argument(wait)
+    wait.add_argument('--json', action='store_true')
+    wait.set_defaults(func=_cmd_approvals_wait)
     plan = subparsers.add_parser('plan', help='Plan file operations: approve / archive / unarchive (changes only the Status line)')
-    actions = plan.add_subparsers(dest='plan_action', required=True)
-    for action, (source, target) in _TRANSITIONS.items():
-        sub = actions.add_parser(action, help=f'Set Status {source} -> {target} in a docs/plans/*.md file (JSON)')
-        sub.add_argument('path')
-        sub.add_argument('plan', help='Plan file (relative to the project or absolute) in docs/plans')
-        add_layer_argument(sub)
-        sub.add_argument('--json', action='store_true')
-        sub.set_defaults(func=_cmd_plan)
+    spec = subparsers.add_parser('spec', help='Spec file operation: approve ("GO plan"; changes only the Status line)')
+    for kind, parser_, transitions in (('plan', plan, _TRANSITIONS), ('spec', spec, _SPEC_TRANSITIONS)):
+        actions = parser_.add_subparsers(dest='doc_action', required=True)
+        for action, (source, target) in transitions.items():
+            sub = actions.add_parser(action, help=f'Set Status {source} -> {target} in a docs/{kind}s/*.md file (JSON)')
+            sub.add_argument('path')
+            sub.add_argument('doc', metavar=kind, help=f'{kind.capitalize()} file (relative to the project or absolute) in docs/{kind}s')
+            add_layer_argument(sub)
+            sub.add_argument('--json', action='store_true')
+            sub.add_argument('--expect-sha', help='git blob sha of the file as shown to the user; a different file is refused')
+            sub.set_defaults(func=_cmd_doc, doc_kind=kind)

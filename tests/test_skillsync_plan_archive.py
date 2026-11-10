@@ -5,6 +5,7 @@ import subprocess
 import sys
 import unittest
 
+from skillsync_workflow.status import git_blob_sha
 from tests.test_skillsync_workflow import CLI, WorkflowFixture
 from tests.layers_helpers import needs_os_symlinks, needs_posix  # noqa: E402
 
@@ -69,6 +70,75 @@ class PlanArchive(WorkflowFixture):
             path.write_bytes(f'Status: {status}\n'.encode())
             self.assertEqual(self.cli('plan', 'approve', self.root, 'docs/plans/e.md', code=2)['status'], 'BLOCKED')
             self.assertEqual(path.read_bytes(), f'Status: {status}\n'.encode())
+
+    def spec(self, name, data):
+        path = self.root / 'docs/specs' / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+        return path
+
+    def test_spec_approve_changes_only_draft_to_approved(self):
+        path = self.spec('s.md', b'# S\n\nStatus: draft\nQ: brak\n')
+        report = self.cli('spec', 'approve', self.root, 'docs/specs/s.md', '--json')
+        self.assertEqual((report['status'], report['spec'], report['from'], report['to']),
+                         ('PASS', 'docs/specs/s.md', 'draft', 'approved'))
+        self.assertEqual(path.read_bytes(), b'# S\n\nStatus: approved\nQ: brak\n')
+        self.assertEqual(report['sha'], git_blob_sha(path.read_bytes()))
+        for status in ('approved', 'implemented', 'superseded'):
+            path.write_bytes(f'Status: {status}\n'.encode())
+            self.assertEqual(self.cli('spec', 'approve', self.root, 'docs/specs/s.md', code=2)['status'], 'BLOCKED')
+            self.assertEqual(path.read_bytes(), f'Status: {status}\n'.encode())
+
+    def test_spec_command_has_no_archive_and_stays_in_specs(self):
+        self.plan('p.md', b'Status: draft\n')
+        self.spec('s.md', b'Status: draft\n')
+        for args in (('spec', 'approve', self.root, 'docs/plans/p.md'), ('plan', 'approve', self.root, 'docs/specs/s.md')):
+            with self.subTest(args[0]):
+                self.assertEqual(self.cli(*args, code=2)['status'], 'BLOCKED')
+        result = subprocess.run([sys.executable, str(CLI), 'spec', 'archive', str(self.root), 'docs/specs/s.md'],
+                                capture_output=True, text=True, timeout=30, cwd=self.root)
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertEqual((self.root / 'docs/specs/s.md').read_bytes(), b'Status: draft\n')
+        self.assertEqual((self.root / 'docs/plans/p.md').read_bytes(), b'Status: draft\n')
+
+    def test_approve_drops_only_the_waiting_note_it_satisfies(self):
+        cases = [
+            ('spec', 'Status: draft (Q odpowiedziane, czeka na ponowne „GO plan”)\n', 'Status: approved\n'),
+            ('spec', 'Status: **draft** (czeka na GO plan) — 2026-11-10\n', 'Status: **approved** — 2026-11-10\n'),
+            ('spec', 'Status: draft (czeka na spec)\n', 'Status: approved (czeka na spec)\n'),
+            ('plan', 'Status: draft (czeka na GO implement)\nrest', 'Status: approved\nrest'),
+            ('plan', 'Status: draft (szkic — czeka na GO plan)\n', 'Status: approved (szkic — czeka na GO plan)\n'),
+            ('plan', 'Status: draft (czeka na spec)\n', 'Status: approved (czeka na spec)\n'),
+        ]
+        for kind, before, after in cases:
+            with self.subTest(kind=kind, before=before):
+                path = (self.spec if kind == 'spec' else self.plan)('x.md', before.encode())
+                self.cli(kind, 'approve', self.root, f'docs/{kind}s/x.md')
+                self.assertEqual(path.read_text(encoding='utf-8'), after)
+
+    def test_expect_sha_binds_the_approval_to_the_shown_version(self):
+        shown = b'# P\n\nStatus: draft (czeka na GO implement)\n'
+        for kind, path in (('plan', self.plan('p.md', shown)), ('spec', self.spec('p.md', shown))):
+            with self.subTest(kind):
+                rel = f'docs/{kind}s/p.md'
+                sha = git_blob_sha(shown)
+                path.write_bytes(shown + b'zmiana po pokazaniu\n')
+                report = self.cli(kind, 'approve', self.root, rel, '--expect-sha', sha, code=2)
+                self.assertEqual(report['status'], 'BLOCKED')
+                self.assertIn('sha mismatch', report['reason'])
+                self.assertEqual(self.cli(kind, 'approve', self.root, rel, '--expect-sha', 'XYZ', code=2)['status'], 'BLOCKED')
+                path.write_bytes(shown)
+                self.assertEqual(self.cli(kind, 'approve', self.root, rel, '--expect-sha', sha)['to'], 'approved')
+
+    def test_git_blob_sha_matches_git_hash_object(self):
+        data = 'Status: draft\r\nZażółć\n'.encode()
+        path = self.spec('g.md', data)
+        try:
+            expected = subprocess.run(['git', 'hash-object', '--no-filters', str(path)], capture_output=True, text=True, timeout=30,
+                                      check=True).stdout.strip()
+        except (OSError, subprocess.CalledProcessError):
+            self.skipTest('git not available')
+        self.assertEqual(git_blob_sha(data), expected)
 
     def test_refuses_wrong_source_status(self):
         for status in ('draft', 'in_progress', 'archived', 'unknown-thing'):

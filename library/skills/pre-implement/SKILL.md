@@ -18,6 +18,11 @@ Procedura w tej kolejności:
 
 Wagi znalezisk: `Critical` blokuje start; `Warning` wymaga pomostu kompatybilności (alias, podwójne emitowanie, reeksport). Luki grupuj: blokujące, ważne, opcjonalne.
 
+Wykonawca i raport: podumysł tylko do odczytu (`reviewer` z briefem pre-implement), zlecony przez orkiestratora. Raport
+zapisuje orkiestrator (rola nie ma Write) w `.skillsync/runs/<run-id>/pre-implement.md`, a przy kilku bramkach w przebiegu
+`pre-implement-<krok>.md`; pierwsza linia raportu to `Werdykt: READY|NEEDS_CHANGES|BLOCKED`. Strona statusu i narzędzia
+rozpoznają raport po nazwie `pre-implement*`.
+
 Tryb tylko do odczytu: nie zmieniaj planu, speca ani kodu; zmiany zaproponuj w raporcie. Zapis wniosków należy do orkiestratora: kontrakty, migracja i ryzyka trafiają do speca, jeśli istnieje, zanim ruszy pętla `spec` i zgoda GO plan, bo po tym `Spec-sha` chroni treść; inaczej — do planu.
 
 Przy dużej zmianie zastosuj [plan-large](../feature/references/plan-large.md). Gdy zwykły plan odsłoni kontrakt albo dane, zadaj pytanie o spec zamiast samodzielnie rozszerzać zakres. Mała, lokalna zmiana wystarcza krótkim zapisem w planie; speca nie tworzysz, gdy bramka `plan-large` tego nie wymaga.

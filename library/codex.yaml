@@ -3,7 +3,7 @@ max_concurrent_threads_per_session: 3
 exclude_skills:
   - copilot-orchestrator
 agents:
-  Explore:
+  explore:
     name: explorer
     model: gpt-6-luna
     model_reasoning_effort: low

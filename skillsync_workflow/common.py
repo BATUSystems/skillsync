@@ -154,7 +154,7 @@ def changed_files(root, base=None):
 
 
 def exit_code(report):
-    return {'PASS': 0, 'NOT_RUN': 0, 'FAIL': 1, 'BLOCKED': 2}.get(report.get('status'), 2)
+    return {'PASS': 0, 'NOT_RUN': 0, 'FAIL': 1, 'BLOCKED': 2, 'TIMEOUT': 3}.get(report.get('status'), 2)
 
 
 def emit(report, json_output=False):
@@ -302,6 +302,8 @@ LEGACY_WORKFLOW_SKILL = 'agentflow'
 WORKFLOW_COMPANIONS = ('workflow', 'pre-implement', 'smart-test', 'bugfix', 'codereview')
 # Removed skills kept as manifest aliases (mirror of `skillsync:REMOVED_SKILL_ALIASES`).
 REMOVED_SKILL_ALIASES = {'go-jira': 'acli'}
+# Renamed roles kept as manifest aliases for one release (mirror of `skillsync:RENAMED_ROLE_ALIASES`).
+RENAMED_ROLE_ALIASES = {'Explore': 'explore'}
 
 
 def expand_project_skills(manifest, layerset):

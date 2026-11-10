@@ -30,10 +30,14 @@ ani kazać uruchomić komendy.
    Nagłówek pytania ma najwyżej 12 znaków, np. `#12 s3`.
    Codex: natywne narzędzie pytań hosta, a gdy go nie ma, lista pytań w tekście z tymi samymi opcjami i numerami wątków.
 4. **Zapis decyzji** (zawsze po `threadId`):
-   - odpowiedź użytkownika (albo innego programisty): `decide <projekt> <slug> <th-…> --kind developer --who <login> --outcome apply|keep|variant|defer --text "…"`;
-     w UI widać „Decyzja (programista): <wynik> · <tekst>”; `--who` musi mieć rolę programista;
+   - odpowiedź użytkownika (albo innej osoby z rolą programista lub akceptujący): `decide <projekt> <slug> <th-…> --kind developer --who <login> --outcome apply|keep|variant|defer --text "…"`;
+     w UI widać „Decyzja (<imię>): <wynik> · <tekst>” (dawniej „Decyzja (programista): <wynik> · <tekst>”); `--who` musi mieć rolę programista albo akceptujący;
    - poza zakresem: `decide … --kind agent --outcome out_of_scope --text "…"`;
-   - jasne: `decide … --kind agent --outcome apply --text "…"`; w UI widać „Decyzja (agent): <wynik> · <tekst>”.
+   - jasne **polecenie od programisty albo akceptującego** (autor wątku ma taką rolę, `prototype wait` zwraca `reaction: order?`):
+     `decide … --kind agent --outcome apply --text "…"`; w UI widać „Decyzja (agent AI): <wynik> · <tekst>”;
+   - jasna **propozycja komentującego** (rola `commenter`): agent jej nie wprowadza sam. Odpowiada w wątku (`prototype reply`:
+     co zrobi, warianty, rekomendacja) i czeka na decyzję „Wprowadź” osoby z rolą programista albo akceptujący (`decide --kind
+     developer --who …` albo pytanie przez AskUserQuestion jak przy spornych).
    Wynik `keep` i `out_of_scope` zamyka wątek, `apply` i `variant` dają „Zdecydowany”, `defer` „Odłożony”. `triage` na wątku
    z decyzją CLI jest odrzucany (exit 2); najpierw `reopen` przez UI (autor albo programista).
 5. **Zmiany HTML.** Przed pierwszą zmianą `index.html` w tej rundzie:
@@ -63,7 +67,7 @@ ani kazać uruchomić komendy.
 ## Kody i odmowy
 
 - `triage`, `decide`, `resolve`: 2 przy braku wątku, wątku usuniętym albo (dla `triage`) wątku z decyzją CLI; `decide --kind developer`
-  bez `--who` z rolą programista = 2.
+  bez `--who` z rolą programista albo akceptujący = 2.
 - `iterate`: 1 przy `ids` FAIL; 2, gdy `iterations/N/` już istnieje albo stan gita blokuje commit z K40 (merge, rebase, konflikt, hook).
 - `restore`: 2 z kodem `iteration_not_found`, `screen_missing`, `ambiguous_section`, `ids_check_failed`, `incomplete_restore`
   albo `--who` bez roli. Odmowa niczego nie zapisuje.

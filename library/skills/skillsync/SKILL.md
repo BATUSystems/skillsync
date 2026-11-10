@@ -66,7 +66,7 @@ layer.yaml                  ← id, kind, version, core_min, requires
 | `skillsync suggest <path>` | tylko odczyt | JSON: skille do dodania/usunięcia wg katalogu (organizacja, technologie) |
 | `skillsync skills list <path> [--status S] --json` | tylko odczyt | JSON `schema: 1`: skille projektu (active/companion/suggested/available) z metadanymi |
 | `skillsync skills remove <projekt> <skill> [--no-link]` | zapis manifestu | usuwa jawny wpis z `skills:` (odwrotność `add`), potem `link` |
-| `skillsync status <path> --json` | tylko odczyt | JSON `schema: 1`: plany z postępem (`## Progress`; statusy `draft|approved|in_progress|done|archived|unknown`, `archived` bez `needsHuman`), specyfikacje, pliki FRD (bez treści), przebiegi, dzierżawy |
+| `skillsync status <path> --json` | tylko odczyt | JSON `schema: 1`: plany z postępem (`## Progress`; statusy `draft|approved|in_progress|done|archived|unknown`, `archived` bez `needsHuman`, `needsHuman: closure` przy `in_progress` ze wszystkimi krokami `[x]`, `pull_request`, gdy taki plan ma `Ticket:` bez `PR:`; `doctor` ostrzega tylko o `closure`), specyfikacje, pliki FRD (bez treści), przebiegi, dzierżawy |
 | `skillsync plan approve\|archive\|unarchive <projekt> <plik> [--json]` | zapis linii `Status:` | tylko `draft` → `approved` / `done` → `archived` / `archived` → `done` w `docs/plans/*.md`; reszta pliku bez zmian; błąd = exit 2, `BLOCKED` |
 | `skillsync knowledge init <path> [--dry-run]` | projekt | Tworzy brakujące `docs/domain/index.yaml`, `docs/lessons/index.yaml`, `docs/README.md` (nigdy nie nadpisuje) |
 | `skillsync map <path> [--check]` | projekt | Generuje `.skillsync/map.md` (mapa repo); `--check` → exit 1 przy nieaktualnej/brakującej |
@@ -162,7 +162,7 @@ Instrukcje projektu mają tylko punkty wejścia (3–5 linii). Zamiast tego:
 2. `description` ≤ 200 bajtów (`doctor` ostrzega powyżej);
 3. `skillsync skills index` odświeża indeks (`--check` sprawdza aktualność);
 4. `skillsync suggest <projekt>` pokazuje braki/nadmiary skilli projektu (tylko odczyt), `skillsync doctor` ostrzega o skillu cudzej organizacji, braku skilla organizacji i niewykrytej technologii;
-5. `skillsync map <projekt>` buduje `.skillsync/map.md` (mapa repo dla `Explore`/orkiestratora).
+5. `skillsync map <projekt>` buduje `.skillsync/map.md` (mapa repo dla `explore`/orkiestratora).
 
 ### Krok 4 — wykonaj linkowanie
 
@@ -256,7 +256,7 @@ sync:
   method: symlink                      # symlink | copy (symlink z automatycznym fallbackiem do kopii)
 # --- workflow agentowy (Claude Code + Codex) ---
 # `feature` w skills (alias `agentflow` nadal działa): włącza workflow; role dla obu hostów domyślnie z codex.yaml
-agents: [implementer, test-writer, test-runner, reviewer, Explore]  # opcjonalnie: zawężenie (pusta lista = brak ról)
+agents: [implementer, test-writer, test-runner, reviewer, explore]  # opcjonalnie: zawężenie (pusta lista = brak ról)
 hooks:
   stop_tests: true                     # tylko projekty BEZ feature; z feature testy uruchamia test-runner
 tests:

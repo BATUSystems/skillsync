@@ -1064,7 +1064,7 @@ def _fold_accept(acceptance, operation, payload):
         }
 
 
-def acceptance_state(fold, screens):
+def acceptance_state(fold, screens, aliases=None):
     """`{sN: {valid, who, at, iteration, via}}` for screens with an acceptance in `fold`.
 
     `screens` = `{sN: current hash}`; `valid` = the accepted hash equals the current one.  Screens
@@ -1074,7 +1074,8 @@ def acceptance_state(fold, screens):
     for screen, entry in fold['acceptance'].items():
         if screen not in screens:
             continue
-        state[screen] = {'valid': entry['hash'] == screens[screen], 'who': entry['who'], 'at': entry['at'],
+        valid = entry['hash'] == screens[screen] or entry['hash'] in ((aliases or {}).get(screen) or ())
+        state[screen] = {'valid': valid, 'who': entry['who'], 'at': entry['at'],
                          'iteration': entry['iteration'], 'via': entry['via']}
     return state
 
@@ -1710,6 +1711,11 @@ TEXT_EXTENSIONS = ('.html', '.css', '.js', '.svg', '.json', '.txt')
 _ASSET_EXCLUDED_TOP = frozenset(('comments.json', 'comments.js', 'comments.v1.js', 'README.md', 'prototype.json',
                                  'prototype.js', 'index.html'))
 LEGACY_COMMENTS_KEPT = 'comments.v1.js'
+# Otoczka silnika (paski, panel komentarzy, dialogi): nie zmienia ekranów, więc nie wchodzi do hasha ekranu. Dawny wzór
+# ją liczył — akceptacje z tamtego hasha zostają ważne przez `aliases` (bieżący plik i historia z `prototype.json`).
+ENGINE_ASSETS = ('prototype.css',)
+ENGINE_HISTORY_KEY = 'engineAssetHistory'
+ENGINE_HISTORY_MAX = 20
 
 
 def normalize_newline_bytes(data):
@@ -1812,7 +1818,7 @@ def hash_signature(directory):
     return tuple(items)
 
 
-def assets_hash(directory, cache=None):
+def assets_hash(directory, cache=None, engine_digest=None):
     """SHA-256 of the sorted lines `path\\0sha256(content)\\n` of prototype assets.
 
     Text files (`.html .css .js .svg .json .txt`) are hashed after CRLF/CR -> LF.
@@ -1821,11 +1827,42 @@ def assets_hash(directory, cache=None):
     """
     cache = cache or HashCache()
     lines = []
-    for relative in asset_files(directory):
+    files = asset_files(directory)
+    for relative in files:
+        if relative in ENGINE_ASSETS:
+            if engine_digest is None:
+                continue  # wzór bieżący: otoczka silnika poza hashem
+            lines.append(relative + '\0' + engine_digest + '\n')  # wzór dawny z podanym skrótem pliku
+            continue
         path = os.path.join(directory, *relative.split('/'))
         digest = cache.digest(path, relative.lower().endswith(TEXT_EXTENSIONS))
         lines.append(relative + '\0' + digest + '\n')
+    if engine_digest is not None and not any(relative in ENGINE_ASSETS for relative in files):
+        lines.append(ENGINE_ASSETS[0] + '\0' + engine_digest + '\n')
+        lines.sort()
     return _sha256_hex(''.join(lines))
+
+
+def engine_digests(directory, cache=None):
+    """Skróty `prototype.css` do zgodności wstecz: bieżący plik i historia zapisana przez `migrate` w `prototype.json`."""
+    cache = cache or HashCache()
+    found = []
+    path = os.path.join(directory, ENGINE_ASSETS[0])
+    if os.path.isfile(path) and not os.path.islink(path):
+        try:
+            found.append(cache.digest(path, True))
+        except OSError:
+            pass
+    try:
+        with open(os.path.join(directory, PROTOTYPE_FILE), 'rb') as handle:
+            meta = json.loads(handle.read(64 * 1024).decode('utf-8'))
+        history = meta.get(ENGINE_HISTORY_KEY) if isinstance(meta, dict) else None
+    except (OSError, ValueError, UnicodeDecodeError):
+        history = None
+    for item in history if isinstance(history, list) else []:
+        if isinstance(item, str) and HASH_RE.fullmatch(item) and item not in found:
+            found.append(item)
+    return found
 
 
 def head_hash(html):
@@ -1887,7 +1924,7 @@ def read_index_html(directory):
     return normalize_newlines(data.decode('utf-8', 'surrogateescape'))
 
 
-def screen_hashes(directory, cache=None):
+def screen_hashes(directory, cache=None, extra_engine_digests=()):
     """Hashes of the screens of a prototype directory (screens with `data-prototype-example` skipped).
 
     Returns `{assets, head, screens: {sN: hash}, version, problems}`; screens with a
@@ -1901,11 +1938,17 @@ def screen_hashes(directory, cache=None):
     head_digest = _sha256_hex(head_source)
     broken = set(problem['screen'] for problem in spans['problems'])
     screens = {}
+    digests = engine_digests(directory, cache)
+    digests += [d for d in extra_engine_digests or () if d not in digests]
+    legacy = [assets_hash(directory, cache, engine_digest=digest) for digest in digests]
+    aliases = {}
     for screen_id, record in spans['screens'].items():
         if record['example'] or screen_id in broken or record['end'] is None:
             continue
-        screens[screen_id] = screen_hash(assets_digest, head_digest, html[record['start']:record['end']])
-    return {'assets': assets_digest, 'head': head_digest, 'screens': screens,
+        section = html[record['start']:record['end']]
+        screens[screen_id] = screen_hash(assets_digest, head_digest, section)
+        aliases[screen_id] = [screen_hash(old, head_digest, section) for old in legacy]
+    return {'assets': assets_digest, 'head': head_digest, 'screens': screens, 'aliases': aliases,
             'version': prototype_version(screens), 'problems': spans['problems'],
             'ambiguous': ambiguous_screens(spans)}
 
@@ -3405,7 +3448,7 @@ def thread_has_cli_decision(thread):
 
 
 def agent_operation(store, reference, kind, payload, by='agent'):
-    """Append a CLI operation (`triage`, `decision`, `resolve`) on a thread given as `th-…` or a number,
+    """Append a CLI operation (`triage`, `decision`, `resolve`, `reply`) on a thread given as `th-…` or a number,
     resolved and checked under the lock; returns `(operation, thread)`."""
     found = {}
 
@@ -4105,7 +4148,8 @@ class ServerConfig(object):
 
     def __init__(self, root, users, host=DEFAULT_HOST, port=DEFAULT_PORT, secure_cookies=False, trust_proxy=False,
                  login_to_view=False, source_writes=True, clock=None, pbkdf2_iterations=DEFAULT_ITERATIONS,
-                 lock_timeout=LOCK_TIMEOUT, log=None, git_checks=True, max_file_bytes=MAX_FILE_BYTES, recover=True):
+                 lock_timeout=LOCK_TIMEOUT, log=None, git_checks=True, max_file_bytes=MAX_FILE_BYTES, recover=True,
+                 gallery=None):
         self.root = os.path.abspath(os.fspath(root))
         self.users = os.path.abspath(os.fspath(users))
         self.host = host
@@ -4121,6 +4165,9 @@ class ServerConfig(object):
         self.git_checks = git_checks
         self.max_file_bytes = int(max_file_bytes)
         self.recover = bool(recover)
+        # `gallery`: callable returning the HTML of the gallery computed now; `/` and `/index.html` of the root are
+        # answered with it (the static `<root>/index.html` is only the fallback when the callable fails or is None)
+        self.gallery = gallery
 
 
 def is_loopback_host(host):
@@ -4583,6 +4630,22 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
     def _not_found(self):
         self._send(404, b'Not found\n', 'text/plain; charset=utf-8', None, 'no-cache')
 
+    def _live_gallery(self, target):
+        """`<root>/index.html` served from `config.gallery()` (state as of now: acceptance, comments, new prototypes).
+        False = not the gallery or the callable failed (the caller falls back to the static file)."""
+        gallery = self.app.config.gallery
+        if gallery is None or target != os.path.realpath(os.path.join(self.app.root, 'index.html')):
+            return False
+        try:
+            html = gallery()
+        except Exception as error:   # noqa: BLE001 — galeria na żywo nie może położyć serwera; plik statyczny zostaje
+            self.app.log('ostrzeżenie: galeria na żywo nie powstała (%s): podaję statyczny index.html' % error)
+            return False
+        if not isinstance(html, str):
+            return False
+        self._send(200, html.encode('utf-8'), 'text/html; charset=utf-8', None, 'no-cache')
+        return True
+
     def _static(self, raw_path, query):
         try:
             decoded = unquote(raw_path, errors='strict')
@@ -4616,6 +4679,8 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
                 return
         elif trailing:
             self._not_found()
+            return
+        if self._live_gallery(target):
             return
         if not os.path.isfile(target):
             self._not_found()
@@ -4873,7 +4938,7 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
                          'operations': operations, 'people': people,
                          'iteration': {'current': snapshot.fold['currentIteration']},
                          'version': hashes['version'], 'screens': hashes['screens'],
-                         'acceptance': acceptance_state(snapshot.fold, hashes['screens']),
+                         'acceptance': acceptance_state(snapshot.fold, hashes['screens'], hashes.get('aliases')),
                          'iterations': iterations_listing(_directory, snapshot.operations)})
 
     def _api_operations_post(self, slug, session, user):

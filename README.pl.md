@@ -73,7 +73,7 @@ docelowego. Zobacz [docs/security.md](docs/security.md).
 | II. Plan | kroki, testy, zasoby i propozycja wersji | „GO implement” |
 | III. Realizacja | kod, testy, review, dokumentacja, changelog, wersja | status `done`; commity według trybu dostarczania (`delivery.mode`) |
 
-Sesja główna jest orkiestratorem; pracę wykonują podagenci (podumysły) o wąskim zakresie (Explore, implementer,
+Sesja główna jest orkiestratorem; pracę wykonują podagenci (podumysły) o wąskim zakresie (explore, implementer,
 test-writer, test-runner, reviewer, verifier, scribe, mechanic), którzy nie delegują dalej. Małe błędy idą skróconym
 flow `bugfix`. Większy cel `dispatch` dzieli na paczki, a każdą realizuje osobna sesja (*karta*, alias `karta-1`,
 `karta-2`…). Szczegóły: [docs/workflow.md](docs/workflow.md).
