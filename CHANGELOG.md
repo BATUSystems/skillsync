@@ -18,8 +18,15 @@ Every release has a **Breaking** section that lists incompatible changes. When a
   baked into the script (no sudo), checks that the version equals the tag and runs `skillsync setup`.
 - `skillsync setup`: machine setup wizard. It adds the core layer, optionally a read-only organization layer (after an
   access check with `git ls-remote`), the layer rule and a final `layers check`. It is idempotent; `--dry-run` and `--json` are available.
+- Skill `prototype`: pasek ekranów ma link „⌂” do galerii prototypów (`proto-screens-home`, działa też z zamrożonej iteracji);
+  podpisy ramek `p.frame-caption` numerowane licznikiem CSS („Ramka N — opis”), numer w górnej krawędzi ramki bez podpisu
+  w ekranie z kilkoma ramkami i odstęp między ramkami (`screens.css`, wzorzec w `references/screen-patterns.md`).
+  Prototypy istniejące dostają to przez `skillsync prototype migrate`.
 
 ### Changed
+- Skill `prototype` (SKILL.md): po `init` (a także po usunięciu prototypu albo zmianie tytułu) obowiązkowo `skillsync prototype index`,
+  bo `init` nie odświeża galerii serwera; przed zgłoszeniem „gotowy do akceptacji” sprawdzenie sluga na stronie głównej `serve`
+  (`prototype list` czyta katalogi, nie galerię).
 - Alias skilla `go-jira` → `acli` w manifestach (`skills:`) w obu miejscach rozwijania skilli (`skillsync:expand_skills`, `common.expand_project_skills`); `skillsync doctor` ostrzega, żeby zamienić `go-jira` na `acli`. `skillsync skills list` pokazuje `acli` z pochodzeniem `alias`.
 - `docs/development.md`: po sklonowaniu repo do rozwoju zainstaluj hooki strażnika (`skillsync leakguard install-hook <klon>`); worktree dzielą `.git/hooks`.
 - `docs/workflow.md`, `docs/workflow-details.md`: bramka modelu dyspozytora to Opus 5.5 lub Fable 5.1 (zgodnie z `library/skills/dispatch`).

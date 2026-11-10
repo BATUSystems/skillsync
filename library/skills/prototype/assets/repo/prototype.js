@@ -2008,7 +2008,12 @@
       });
     };
 
+    // Galeria prototypów (`<root>/index.html`, `skillsync prototype index`): prototyp leży w `<root>/<slug>/`,
+    // a zamrożona iteracja w `<root>/<slug>/iterations/N/`.
+    const galleryHref = () => (/\/iterations\/\d+\/[^/]*$/.test(window.location.pathname || '') ? '../../../' : '../');
+
     const build = (nav) => {
+      ui.home = Dom.make('a', { class: 'proto-screens-home', href: galleryHref(), 'aria-label': 'Lista prototypów', title: 'Lista prototypów', text: '⌂' });
       ui.prev = Dom.make('button', { type: 'button', 'data-screen-step': 'prev', text: '‹' });
       ui.next = Dom.make('button', { type: 'button', 'data-screen-step': 'next', text: '›' });
       ui.num = Dom.make('span', { class: 'proto-screens-num' });
@@ -2021,7 +2026,7 @@
       ui.list = Dom.make('div', { id: 'proto-screens-list', role: 'listbox', 'aria-label': 'Ekrany' });
       ui.empty = Dom.make('div', { class: 'proto-screens-empty', role: 'status' });
       ui.pop = Dom.make('div', { class: 'proto-screens-pop', hidden: true }, [ui.search, ui.list]);
-      const bar = Dom.make('div', { class: 'proto-screens-bar' }, [ui.prev, ui.main, ui.next]);
+      const bar = Dom.make('div', { class: 'proto-screens-bar' }, [ui.home, ui.prev, ui.main, ui.next]);
       nav.classList.add('proto-screens');
       nav.appendChild(bar);
       nav.appendChild(ui.pop);
