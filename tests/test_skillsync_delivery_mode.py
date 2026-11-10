@@ -297,5 +297,46 @@ class ConsentOnlyFromTheUser(unittest.TestCase):
             self.assertIn(phrase, feature)
 
 
+class ProgressReportCadence(unittest.TestCase):
+    """Progress report after every step or every 30 minutes, whichever comes first."""
+
+    def test_feature_states_the_cadence(self):
+        root = Path(__file__).resolve().parents[1] / 'library/skills/feature'
+        text = ' '.join((root / 'references/measurement.md').read_text(encoding='utf-8').split())
+        self.assertIn('po każdym kroku ALBO co 30 minut, co nastąpi pierwsze', text)
+        self.assertIn('date +%H:%M', text)
+        skill = ' '.join((root / 'SKILL.md').read_text(encoding='utf-8').split())
+        self.assertIn('po każdym kroku albo co 30 minut, co nastąpi pierwsze', skill)
+
+
+class PhaseSubsteps(unittest.TestCase):
+    """A phase is the unit of review and commits; its sub-step Fn.k is the unit of reporting."""
+
+    def test_feature_and_plan_details_state_the_rule(self):
+        root = Path(__file__).resolve().parents[1] / 'library/skills/feature'
+        details = ' '.join((root / 'references/plan-details.md').read_text(encoding='utf-8').split())
+        self.assertIn('**podkrok fazy jednostką raportowania**', details)
+        self.assertIn('`Fn.1…Fn.k`', details)
+        self.assertIn('- [ ] F1.3 Testy integracyjne (test-writer) i commit', (root / 'references/plan-details.md').read_text(encoding='utf-8'))
+        skill = ' '.join((root / 'SKILL.md').read_text(encoding='utf-8').split())
+        self.assertIn('jednostką raportowania jest jej podkrok `Fn.1…Fn.k`', skill)
+
+
+class ReviewCadenceAndPreImplementReport(unittest.TestCase):
+    """The `kod` loop runs once per phase without a risk condition; pre-implement has a named role and report file."""
+
+    def test_rules_are_stated(self):
+        lib = Path(__file__).resolve().parents[1] / 'library/skills'
+        feature = ' '.join((lib / 'feature/SKILL.md').read_text(encoding='utf-8').split())
+        self.assertIn('raz na każdą fazę (krok planu), bez warunku ryzyka', feature)
+        self.assertNotIn('po każdej fazie (kroku planu) z ryzykiem high', feature)
+        self.assertIn('`.skillsync/runs/<run-id>/pre-implement.md`', feature)
+        gate = ' '.join((lib / 'pre-implement/SKILL.md').read_text(encoding='utf-8').split())
+        for phrase in ('podumysł tylko do odczytu (`reviewer` z briefem pre-implement)',
+                       '`.skillsync/runs/<run-id>/pre-implement.md`', '`pre-implement-<krok>.md`',
+                       '`Werdykt: READY|NEEDS_CHANGES|BLOCKED`', '`pre-implement*`'):
+            self.assertIn(phrase, gate)
+
+
 if __name__ == '__main__':
     unittest.main()

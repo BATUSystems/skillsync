@@ -61,9 +61,16 @@ Pole puste (`- [ ]`) = do zrobienia, zaznaczone (`- [x]`) = zrobione; po wylądo
 PR: #123 (link: https://example.com/pr/123)
 
 ### Faza 1: Przykład
-- [ ] K1 Krok do zrobienia
-- [x] K2 Krok zrobiony — 1a2b3c4
+- [x] F1.1 Kod BE ‖ FE (implementer) — moduł 631/631
+- [x] F1.2 Szczebel testów i commit kodu — 1a2b3c4
+- [ ] F1.3 Testy integracyjne (test-writer) i commit
+- [ ] F1.4 Review i poprawki
+- [ ] F1.5 `--fast` końca fazy i checkpoint fazy
 ```
+- Faza jest jednostką review i commitów, a **podkrok fazy jednostką raportowania**: każda faza ma podkroki `Fn.1…Fn.k`
+  (typowo: kod BE ‖ FE, szczebel testów i commit kodu, testy integracyjne i commit, review i poprawki, `--fast` końca
+  fazy i checkpoint), odhaczane z sha albo wynikiem; raport postępu po każdym podkroku albo co 30 minut, co nastąpi
+  pierwsze. Starsze plany z krokami bez kropki (`S1`, `S2a`, `K1`) są poprawne.
 - Kroki to pozycje `- [ ]` / `- [x]` z id i tytułem; krok odhacz dopiero po sprawdzeniu dowodów (checkpoint, wynik polecenia), nigdy na samej deklaracji podumysłu.
 - Ostatni krok `Progress` to zamknięcie przebiegu (rola: orkiestrator): „Wynik”, `retro-quality`, checkpoint `--final`,
   `Status: done` planu i `implemented` speca. Bez niego plan po ostatnim `[x]` zostaje `in_progress` i `skillsync status`

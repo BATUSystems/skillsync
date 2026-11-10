@@ -2,6 +2,15 @@
 
 Czytaj przed pierwszym checkpointem przebiegu, przy przerwaniu pracy, wznowieniu albo zapisie pomiarów.
 
+## Raport postępu: po każdym kroku albo co 30 minut
+
+Raport postępu to linia `- HH:MM zrobione: …; w toku: …; ryzyko: …[; czeka: …]` w `.skillsync/runs/<run-id>/checkpoints.md`
+(czyta ją człowiek i strona statusu). Dopisuj ją **po każdym kroku ALBO co 30 minut, co nastąpi pierwsze**. Agent nie ma
+zegara: przy każdym powrocie podumysła i przed każdą długą operacją sprawdź godzinę (`date +%H:%M`) i, gdy od ostatniej
+linii minęło 30 minut, dopisz linię `w toku: …` nawet bez zakończonego kroku. Długa praca jednego podumysła nie zwalnia
+z raportu: strona statusu po ok. 35 minutach ciszy przy planie `in_progress` pokazuje „brak raportu od N min”.
+Raport nie zastępuje rekordu `skillsync checkpoint` (niżej) ani odwrotnie.
+
 ## Checkpoint po każdym wyniku (obowiązkowe)
 
 Rekord zapisuje orkiestrator, nie równolegle, po każdym wyniku kroku, także `FAIL`, `BLOCKED` i `NOT_RUN`:

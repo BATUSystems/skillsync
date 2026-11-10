@@ -13,7 +13,7 @@ Ryzyko planu = najwyższe ryzyko kroku w planie (kolumna ryzyka, [plan](plan-det
 |---|---|---|---|---|
 | `spec` | I | `spec-review` | zawsze przy `plan-large` | — |
 | `plan` | II | `plan-review` | `plan-large`, ryzyko planu high, prośba użytkownika | jedna runda opcjonalna, bez pętli |
-| `kod` | III | `code-review` (końcowa), `code-review-<krok>` (po kroku) | końcowa zawsze; po kroku z ryzykiem high (kontrakt, dane, uprawnienia, migracja) | — |
+| `kod` | III | `code-review` (końcowa), `code-review-<krok>` (po fazie) | końcowa zawsze; raz na fazę po jej zielonym szczeblu, bez warunku ryzyka (ryzyko decyduje o kategorii pętli) | — |
 
 Kolumna „Pętla obowiązkowa” mówi, kiedy pętla jest; ile ma rund (pełna albo jednorundowa), wyznacza sekcja „Kategoria pętli i przejścia”.
 
