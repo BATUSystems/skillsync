@@ -1326,6 +1326,30 @@ class StaticAndReadTests(ServerCase):
         self.check(self.anon.get('/demo/index.html/'), 404)
         self.assertNotIn('plik.txt', self.anon.get('/demo/nolist/').text)
 
+    def test_root_gallery_is_computed_live_when_configured(self):
+        calls = []
+
+        def gallery():
+            calls.append(1)
+            return '<!doctype html><html><body>LIVE-GALLERY %d</body></html>' % len(calls)
+
+        self.start_server(gallery=gallery)
+        first = self.check(self.anon.get('/'), 200)
+        self.assertIn('LIVE-GALLERY 1', first.text)
+        self.assertIn('text/html', first.header('Content-Type'))
+        self.assertIn('LIVE-GALLERY 2', self.check(self.anon.get('/index.html'), 200).text)   # liczona przy każdym żądaniu
+        self.assertIn('DEMO-INDEX', self.check(self.anon.get('/demo/'), 200).text)         # prototypy bez zmian
+        self.assertEqual(self.check(self.anon.request('HEAD', '/'), 200).body, b'')
+
+    def test_root_gallery_falls_back_to_static_file_when_callable_fails(self):
+        def broken():
+            raise RuntimeError('boom')
+
+        self.start_server(gallery=broken)
+        self.check(self.anon.get('/'), 404)   # brak statycznego index.html → jak bez galerii
+        write(Path(self.root) / 'index.html', '<html><body>STATIC-GALLERY</body></html>\n')
+        self.assertIn('STATIC-GALLERY', self.check(self.anon.get('/'), 200).text)
+
     def test_other_methods_are_405(self):
         for method in ('PUT', 'DELETE', 'PATCH', 'OPTIONS', 'TRACE'):
             for path in ('/demo/index.html', '/_api/v1/session', '/_api/v1/prototypes/demo/operations'):
@@ -2450,6 +2474,19 @@ class FileSizeLimitTests(ServerCase):
         self.assertEqual(ps.WARN_FILE_BYTES, 10 * 1024 * 1024)
         self.assertEqual(ps.MAX_BODY, 64 * 1024)
         self.assertEqual(ps.MAX_TEXT, 4000)
+
+
+class AgentReplyVisibleTests(ServerCase):
+    def test_a_cli_reply_written_to_the_file_is_served_without_a_restart(self):
+        client = self.client(A)
+        self.seed(client, 'th-0', 'm-0')
+        before = self.check(client.operations('demo', '?after=0'), 200).json['operations']
+        self.assertEqual([op['type'] for op in before], ['create'])
+        store = ps.CommentsStore(self.demo, 'demo')
+        ps.agent_operation(store, '1', 'reply', {'message': {'id': 'm-agent-1', 'text': 'Pytanie agenta: a czy b?'}})
+        after = self.check(client.operations('demo', '?after=0'), 200).json['operations']
+        self.assertEqual([(op['type'], op['by']) for op in after], [('create', A), ('reply', 'agent')])
+        self.assertEqual(after[1]['payload']['message']['text'], 'Pytanie agenta: a czy b?')
 
 
 class MonotonicHttpTests(ServerCase):

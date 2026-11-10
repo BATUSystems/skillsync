@@ -12,7 +12,7 @@ Deleguj przez natywne narzędzia dostępne w tej sesji, wybierając skonfigurowa
 
 | Rola w planie | Typ Codexa | Domyślny model / wysiłek |
 |---|---|---|
-| Explore | explorer | gpt-6-luna / low |
+| explore | explorer | gpt-6-luna / low |
 | implementer | implementer | gpt-6.1-sol / medium |
 | test-writer | test_writer | gpt-6.1-sol / medium |
 | test-runner | test_runner | gpt-6-luna / low |

@@ -21,7 +21,7 @@ Skrót nie może ukrywać porażek: status i blokery są zawsze w skrócie.
 
 - Role z Write (`implementer`, `test-writer`, `test-runner`, `scribe`, `mechanic`) zapisują pełny raport
   w pliku i zwracają skrót.
-- Role tylko do odczytu (`Explore`, `reviewer`, `verifier`) nie mają Write. Dwie dopuszczalne ścieżki:
+- Role tylko do odczytu (`explore`, `reviewer`, `verifier`) nie mają Write. Dwie dopuszczalne ścieżki:
   (a) orkiestrator zapisuje ich pełny raport do pliku, jeśli jest potrzebny później (np. mapa zmian,
   lista uwag); (b) rola zwraca skrót plus sekcję szczegółów ograniczoną do ≤ 60 linii.
   Zlecenie wskazuje, która ścieżka obowiązuje.

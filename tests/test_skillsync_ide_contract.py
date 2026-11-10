@@ -156,6 +156,15 @@ class IdeContract(WorkflowFixture):
         self.assertEqual(by_name['2026-10-03-c.md']['status'], 'unknown')
         self.assertEqual([Path(p['path']).name for p in report['plans']][0], '2026-10-03-c.md')
 
+    def test_status_flags_closure_for_in_progress_plan_with_all_steps_checked(self):
+        self.plan('2026-10-01-a.md', '# A\nStatus: in_progress\n\n## Progress\n- [x] 1 a\n- [x] 2 b\n')
+        self.plan('2026-10-02-b.md', '# B\nStatus: in_progress (blocked — czeka)\n\n## Progress\n- [x] 1 a\n- [ ] 2 b\n')
+        self.plan('2026-10-03-c.md', '# C\nStatus: done\n\n## Progress\n- [x] 1 a\n')
+        self.plan('2026-10-04-d.md', '# D\nStatus: in_progress\n')
+        self.plan('2026-10-05-e.md', '# E\nStatus: in_progress\n\n## Progress\nTicket: ABC-1 (link: https://example/ABC-1)\n- [x] 1 a\n')
+        rows = {Path(p['path']).stem[-1]: p['needsHuman'] for p in self.run_cli('status', self.root, '--json')['plans']}
+        self.assertEqual(rows, {'a': ['closure'], 'b': [], 'c': [], 'd': [], 'e': ['pull_request']})
+
     def test_status_tolerates_older_plan_status_styles(self):
         styles = {'d1': '**Status:** done; drift pogodzony', 'd2': 'Status: **in_progress**', 'd3': 'Status: `done` (GO)',
                   'd4': '- Status: approved', 'd5': '> Status: **done** z dowodami', 'd6': '---\nstatus: draft\n---',

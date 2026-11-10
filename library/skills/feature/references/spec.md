@@ -17,7 +17,7 @@ a stan bieżący systemu opisują `docs/architecture.md` i `docs/domain/`. Po wd
 | Status | Znaczenie | Kto i kiedy |
 |---|---|---|
 | `draft` | szkielet z pytaniami `Q` albo projekt przed „GO plan” (akt I); także na czas zmiany merytorycznej po „GO plan” (`Spec-sha` nieważne do nowej zgody) | agent przy tworzeniu i przy takiej zmianie |
-| `approved` | przyjęty do realizacji (nie „opisuje stan bieżący”) | agent przy „GO plan”, razem z planem-szkicem; plan zatwierdzony przyciskiem albo `skillsync plan approve` przy specu `draft` to STOP i pytanie (tabela wznowienia) |
+| `approved` | przyjęty do realizacji (nie „opisuje stan bieżący”) | agent przy „GO plan”, razem z planem-szkicem; użytkownik przyciskiem (strona statusu) albo `skillsync spec approve` — to też „GO plan”; plan zatwierdzony przyciskiem albo `skillsync plan approve` przy specu `draft` to STOP i pytanie (tabela wznowienia) |
 | `implemented` | wdrożony, zamrożony | agent w tym samym commicie co kod; zob. niżej |
 | `superseded` | zastąpiony albo porzucony | agent, z odnośnikiem do nowego speca albo z powodem przy porzuconym planie |
 
@@ -62,12 +62,13 @@ kontrola `Spec-sha`, plan `in_progress`.
 | `draft` bez `Q` (zmiana merytoryczna w akcie II) | `draft (czeka na spec)` | akt I od nowa: pętla `spec` od 1, „GO plan”, nowy `Spec-sha` w tym samym planie, pętla `plan` od 1 |
 | `draft` bez `Q` | `in_progress (blocked — czeka na spec)` | spec zmieniony w akcie III: [pętla `spec`](review-loop.md) od 1, potem jedno GO zdejmujące blokadę; pętla `plan` tylko, jeśli plan zmienia się merytorycznie |
 | `draft` | `in_progress` bez tej blokady | brak zgody na spec: STOP i pytanie |
-| `approved` | brak | nie występuje po „GO plan”; z przerwanego zapisu: utwórz plan-szkic i porównaj sha z tym, co zatwierdził użytkownik (różnica = pytanie) |
+| `approved` | brak | nie występuje po „GO plan” w sesji; z przerwanego zapisu: utwórz plan-szkic i porównaj sha z tym, co zatwierdził użytkownik (różnica = pytanie) |
+| `approved` (przycisk albo `skillsync spec approve`) | brak albo plan-szkic bez `Spec-sha` | „GO plan” udzielone przez użytkownika: spec z `Q` = pytanie; inaczej utwórz albo dokończ plan-szkic, zapisz `Spec-sha`, akt II (pętla `plan`) |
 | `approved` | `draft` bez sufiksu | akt II: pętla `plan` (rekordy `plan-review` bez PASS) albo plan w pisaniu; po zmianie speca mechanicznej albo minor w akcie II: poprawka speca, nowy `Spec-sha`, lista zmian w prośbie o „GO implement” |
 | `approved` | `draft (czeka na spec)` | „GO plan” po zmianie merytorycznej: zdejmij sufiks (plan `draft`), pętla `plan` od 1; PASS `plan-review` sprzed tej zgody jest nieważny |
 | `approved` | `approved (czeka na spec)` (przycisk albo `skillsync plan approve` w trakcie powrotu do aktu I) | pytanie: plan zatwierdzono przed nową pętlą `plan`, kontynuować? |
 | `approved` | `draft (czeka na GO implement)` | akt II: czekanie na „GO implement” (ostatni `plan-review` PASS albo opcjonalna runda lub brak pętli przy `direct`) |
-| `approved` z `Spec-sha` | `approved` (także `approved (czeka na GO implement)` po `skillsync plan approve`) z PASS `plan-review` po ostatnim „GO plan” albo bez obowiązkowej pętli | „GO implement” udzielone: porównaj sha, usuń sufiks, plan `in_progress`, akt III |
+| `approved` z `Spec-sha` | `approved` (także `approved (czeka na GO implement)` z wersji CLI sprzed usuwania tego dopisku) z PASS `plan-review` po ostatnim „GO plan” albo bez obowiązkowej pętli | „GO implement” udzielone: porównaj sha, usuń sufiks, plan `in_progress`, akt III |
 | `approved` | `approved` bez PASS obowiązkowej pętli `plan` po ostatnim „GO plan” | pytanie: plan zatwierdzono przed końcem pętli (np. przyciskiem), kontynuować? |
 | `approved` bez `Spec-sha` | `approved` | przerwanie przy zapisie: policz, zapisz, plan `in_progress` |
 | `approved` bez `Spec-sha` | `in_progress` | pytanie |

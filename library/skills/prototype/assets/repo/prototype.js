@@ -2008,7 +2008,12 @@
       });
     };
 
+    // Galeria prototypów (`<root>/index.html`, `skillsync prototype index`): prototyp leży w `<root>/<slug>/`,
+    // a zamrożona iteracja w `<root>/<slug>/iterations/N/`.
+    const galleryHref = () => (/\/iterations\/\d+\/[^/]*$/.test(window.location.pathname || '') ? '../../../' : '../');
+
     const build = (nav) => {
+      ui.home = Dom.make('a', { class: 'proto-screens-home', href: galleryHref(), 'aria-label': 'Lista prototypów', title: 'Lista prototypów', text: '⌂' });
       ui.prev = Dom.make('button', { type: 'button', 'data-screen-step': 'prev', text: '‹' });
       ui.next = Dom.make('button', { type: 'button', 'data-screen-step': 'next', text: '›' });
       ui.num = Dom.make('span', { class: 'proto-screens-num' });
@@ -2021,7 +2026,7 @@
       ui.list = Dom.make('div', { id: 'proto-screens-list', role: 'listbox', 'aria-label': 'Ekrany' });
       ui.empty = Dom.make('div', { class: 'proto-screens-empty', role: 'status' });
       ui.pop = Dom.make('div', { class: 'proto-screens-pop', hidden: true }, [ui.search, ui.list]);
-      const bar = Dom.make('div', { class: 'proto-screens-bar' }, [ui.prev, ui.main, ui.next]);
+      const bar = Dom.make('div', { class: 'proto-screens-bar' }, [ui.home, ui.prev, ui.main, ui.next]);
       nav.classList.add('proto-screens');
       nav.appendChild(bar);
       nav.appendChild(ui.pop);
@@ -3822,6 +3827,9 @@
       thread.messages.filter((message) => !message.retracted).map((message) => message.text + ' ' + Model.labelOf(message.by))).join(' '));
     const orderedIds = () => visibleThreads().reduce((ids, group) => ids.concat(group.threads.map((thread) => thread.id)), []);
 
+    // Wpis agenta (`by: agent`, CLI `prototype reply`): plakietka „AI”; to nie zgoda ani decyzja.
+    const aiBadge = () => Dom.make('span', { class: 'anno-ai-badge', title: 'Wpis agenta AI (nie jest zgodą ani decyzją)', text: 'AI' });
+
     const cardFor = (thread) => {
       const opening = thread.messages.find((message) => message.opening) || thread.messages[0];
       const lost = !Model.hasHandle(thread);
@@ -3830,6 +3838,7 @@
         Dom.make('span', { class: 'muted', text: STATUS_LABELS[thread.status] + (lost ? ' · bez uchwytu' : '') }),
         Dom.make('span', { class: 'anno-view-badge', 'data-proto-view-badge': Views.normalize(thread.view), text: VIEW_LABELS[Views.normalize(thread.view)] })
       ]);
+      if (thread.messages.some((message) => message.by === 'agent' && !message.retracted)) open.appendChild(aiBadge());
       open.addEventListener('click', (event) => { event.stopPropagation(); showThread(thread.id, true, false, true); });
       const text = opening && !opening.retracted ? opening.text : 'Wpis wycofany przez autora.';
       const card = Dom.make('article', { class: 'anno-card anno-st-' + thread.status, 'data-thread': thread.id }, [
@@ -3889,8 +3898,10 @@
 
     const messageNode = (thread, message) => {
       const mine = Remote.login() !== null && message.by === Remote.login();
+      const who = Dom.make('span', { class: 'row' }, [Dom.make('span', { class: 'strong', text: Model.labelOf(message.by) })]);
+      if (message.by === 'agent') who.appendChild(aiBadge());
       const head = Dom.make('div', { class: 'row between' }, [
-        Dom.make('span', { class: 'strong', text: Model.labelOf(message.by) }),
+        who,
         Dom.make('span', { class: 'muted', text: Model.formatTime(message.at) + (message.edited ? ' · edytowano' : '') })
       ]);
       const node = Dom.make('div', { class: 'anno-msg', 'data-message': message.id }, [head]);
@@ -3973,7 +3984,7 @@
       const nodes = [];
       if (thread.triage) nodes.push(Dom.make('p', { class: 'muted', text: 'Ocena agenta: ' + thread.triage.class + (thread.triage.note ? ' · ' + thread.triage.note : '') }));
       thread.decisions.forEach((decision) => nodes.push(Dom.make('p', { class: 'muted',
-        text: 'Decyzja (' + (decision.kind === 'developer' ? 'programista' : 'agent') + '): ' + decision.outcome + (decision.text ? ' · ' + decision.text : '') })));
+        text: 'Decyzja (' + (decision.kind === 'developer' ? (decision.who ? Model.labelOf(decision.who) : 'człowiek') : 'agent AI') + '): ' + decision.outcome + (decision.text ? ' · ' + decision.text : '') })));
       return nodes;
     };
 

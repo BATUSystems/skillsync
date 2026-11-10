@@ -73,7 +73,7 @@ target repository. See [docs/security.md](docs/security.md).
 | II. Plan | steps, tests, resources and the proposed version | “GO implement” |
 | III. Delivery | code, tests, review, documentation, changelog, version | status `done`; commits and pushes follow the delivery mode (`delivery.mode`) |
 
-The main session orchestrates; scoped subagents (Explore, implementer, test-writer, test-runner, reviewer, verifier,
+The main session orchestrates; scoped subagents (explore, implementer, test-writer, test-runner, reviewer, verifier,
 scribe, mechanic) do the work and never delegate further. Small bugs use the shorter `bugfix` flow. Larger goals can
 be split by `dispatch` into packages, each delivered by a separate session (a *card*, aliased `karta-1`, `karta-2`…).
 Details: [docs/workflow.md](docs/workflow.md).

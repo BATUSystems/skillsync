@@ -10,7 +10,7 @@ Bez linku: review lokalnych zmian po `/feature` lub `/bugfix`, **zanim** powstan
 (`/codereview`, opcjonalnie `--base <ref>` lub ścieżka planu).
 Sesja główna jest orkiestratorem: zbiera materiał, przygotowuje worktree, deleguje review,
 weryfikuje uwagi i pisze podsumowanie. Podumysły nie delegują dalej. Wymagane są
-natywne podumysły hosta (Claude: `Agent` z `reviewer`/`Explore`/`verifier`/`test-runner`; Codex: te same role);
+natywne podumysły hosta (Claude: `Agent` z `reviewer`/`explore`/`verifier`/`test-runner`; Codex: te same role);
 bez nich zgłoś brak niezależnego review jako ograniczenie, nie udawaj go.
 
 Skill jest **tylko do odczytu** względem repozytorium i trackerów: nie commituje, nie pushuje, nie zmienia
@@ -42,10 +42,10 @@ Nie przypisuj zmian sprzed zadania do autora zadania: porównaj z zapisanym base
    głównego working tree ani cudzych zmian. Zapisz commity źródła i celu, by raport wskazywał przeglądany stan.
 3. **Rozpoznanie.** `skillsync route <projekt> --topic review --files <zmienione pliki>` (brak CLI: tabela
    `workflow/SKILL.md`); przeczytaj instrukcje projektu, pasujące lekcje i rekordy `docs/domain` — **z worktree**.
-   Przed `Explore` wykonaj `skillsync map <worktree> --check` (przy nieaktualnej mapie `skillsync map <worktree>`)
-   i podaj ścieżkę mapy w zleceniu. Jedno przejście `Explore` buduje **mapę zmian**: zmienione symbole → konsumenci → testy (oraz pokrewne
-   wzorce). `Explore` jest tylko do odczytu, więc mapę zapisuje orkiestrator w
-   `.skillsync/runs/<run-id>/map.md` (albo `Explore` zwraca ją w sekcji szczegółów ≤ 60 linii). Dla zmian
+   Przed `explore` wykonaj `skillsync map <worktree> --check` (przy nieaktualnej mapie `skillsync map <worktree>`)
+   i podaj ścieżkę mapy w zleceniu. Jedno przejście `explore` buduje **mapę zmian**: zmienione symbole → konsumenci → testy (oraz pokrewne
+   wzorce). `explore` jest tylko do odczytu, więc mapę zapisuje orkiestrator w
+   `.skillsync/runs/<run-id>/map.md` (albo `explore` zwraca ją w sekcji szczegółów ≤ 60 linii). Dla zmian
    kontraktu/API/migracji zastosuj checklistę `pre-implement`.
 4. **Review (równolegle, świeży kontekst, tylko odczyt).** Liczba `reviewer` zależy od rozmiaru i ryzyka:
    - < 300 zmienionych linii i ryzyko low → **1** reviewer ze wszystkimi soczewkami;

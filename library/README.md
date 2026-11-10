@@ -5,7 +5,7 @@ w pliki projektów:
 
 - `skills/`: skille (np. `feature`, `bugfix`, `workflow`, `dispatch`) z referencjami,
 - `instructions/`: instrukcje bazowe i fragmenty dla typów projektów,
-- `agents/`: role podumysłów (Explore, implementer, test-writer, test-runner, reviewer i inne),
+- `agents/`: role podumysłów (explore, implementer, test-writer, test-runner, reviewer i inne),
 - `workflow/`: mapa routingu (`defaults.yaml`), benchmarki i lekcje (`workflow/lessons/`).
 
 Treść jest ogólna: bez nazw klientów, organizacji i danych osobistych. Rzeczy specyficzne dla organizacji

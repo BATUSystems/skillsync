@@ -3,6 +3,8 @@
 Czytaj przy pisaniu planu `docs/plans/RRRR-MM-DD-<slug>.md`.
 
 Nagłówek planu ma linię `Przebieg: <run-id>` z identyfikatorem użytym w `checkpoint`; hook i `doctor` sprawdzają po niej zamknięcie.
+Opcjonalna linia `Oddanie: <gałąź>` zapisuje odpowiedź użytkownika, dokąd „CP” oddaje pracę w trybie `direct` (rdzeń AGENTS); bez niej
+„CP” wypycha tylko gałąź roboczą.
 
 Plan dużej zmiany ma w nagłówku linię `Spec: <docs/specs/RRRR-MM-DD-slug.md>` (jak `Przebieg:`, osobny wiersz, sama ścieżka),
 a od „GO plan” `Spec-sha: <git hash-object speca>` (plan-szkic, [plan-large](plan-large.md) §5). Plan przy specu nie powtarza jego treści:
@@ -40,6 +42,9 @@ przy ryzyku planu high albo na prośbę właściciela przechodzi [pętlę przegl
 
 ## Kroki, Exec i Progress
 
+Krok planu to faza: spójny kawałek, który kończy się działającą aplikacją, zielonym szczeblem testów i commitem (zwykle 5–8 na
+plan, np. model i migracja; reguły i silnik; API; UI; testy integracyjne i e2e; domknięcie). Kilkanaście drobnych kroków mnoży
+przekazania między rolami (implementer → test-writer → review → verifier → commit) i to one, nie zakres, wydłużają przebieg.
 Krok ma stały id i wiersz w tabeli o kolumnach `Id | Krok | Rola | Exec | Ryzyko kroku | Pliki`:
 
 | Id | Krok | Rola | Exec | Ryzyko kroku | Pliki |
@@ -56,10 +61,20 @@ Pole puste (`- [ ]`) = do zrobienia, zaznaczone (`- [x]`) = zrobione; po wylądo
 PR: #123 (link: https://example.com/pr/123)
 
 ### Faza 1: Przykład
-- [ ] K1 Krok do zrobienia
-- [x] K2 Krok zrobiony — 1a2b3c4
+- [x] F1.1 Kod BE ‖ FE (implementer) — moduł 631/631
+- [x] F1.2 Szczebel testów i commit kodu — 1a2b3c4
+- [ ] F1.3 Testy integracyjne (test-writer) i commit
+- [ ] F1.4 Review i poprawki
+- [ ] F1.5 `--fast` końca fazy i checkpoint fazy
 ```
+- Faza jest jednostką review i commitów, a **podkrok fazy jednostką raportowania**: każda faza ma podkroki `Fn.1…Fn.k`
+  (typowo: kod BE ‖ FE, szczebel testów i commit kodu, testy integracyjne i commit, review i poprawki, `--fast` końca
+  fazy i checkpoint), odhaczane z sha albo wynikiem; raport postępu po każdym podkroku albo co 30 minut, co nastąpi
+  pierwsze. Starsze plany z krokami bez kropki (`S1`, `S2a`, `K1`) są poprawne.
 - Kroki to pozycje `- [ ]` / `- [x]` z id i tytułem; krok odhacz dopiero po sprawdzeniu dowodów (checkpoint, wynik polecenia), nigdy na samej deklaracji podumysłu.
+- Ostatni krok `Progress` to zamknięcie przebiegu (rola: orkiestrator): „Wynik”, `retro-quality`, checkpoint `--final`,
+  `Status: done` planu i `implemented` speca. Bez niego plan po ostatnim `[x]` zostaje `in_progress` i `skillsync status`
+  zgłasza `needsHuman: closure`.
 - Fazy to nagłówki poziomu 3 lub niższego; nagłówek poziomu 2 zamyka sekcję `Progress`.
 - Linia `PR: #<n> (link: <url>)` zaczyna wiersz (nie jest punktem listy ani cytatem) i stoi pod `## Progress`; opcjonalna `Ticket: <KEY> (link: <url>)` ma klucz Jira, np. `ABC-123`.
 - Plany bez `Progress` (starsze) są poprawne i nie wymagają migracji; opcjonalny przebieg do PR-a opisuje [pr-run](../../pr-run/SKILL.md).

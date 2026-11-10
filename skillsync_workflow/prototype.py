@@ -14,6 +14,7 @@ server) live in the standalone `prototype_server` module; this module only impor
 from datetime import date, datetime, timezone
 from html.parser import HTMLParser
 import getpass
+import hashlib
 import json
 import math
 import os
@@ -26,6 +27,7 @@ import subprocess
 import sys
 import tempfile
 import unicodedata
+import time
 import yaml
 from .common import contained, emit, load_layer_project, read_project, read_yaml, require_layerset
 from . import layers as _layers
@@ -1145,7 +1147,7 @@ def prototype_comments_info(directory, slug, html=None):
         except OSError:
             hashes = None
         if hashes is not None:
-            state = server.acceptance_state(fold, hashes['screens'])
+            state = server.acceptance_state(fold, hashes['screens'], hashes.get('aliases'))
             valid = sum(1 for item in state.values() if item['valid'])
             fields['acceptance'] = {'screens': len(hashes['screens']), 'accepted': valid, 'stale': len(state) - valid}
         if os.path.lexists(directory / server.LEGACY_COMMENTS_FILE):
@@ -1262,6 +1264,28 @@ def render_gallery(entries):
         ''])
 
 
+def gallery_entries(prototypes_root, repo):
+    """`(entries, warnings)` of the gallery: valid prototypes under `prototypes_root` in `slug` order; a prototype
+    without a readable `prototype.json` is skipped with a warning."""
+    entries, warnings = [], []
+    for slug, directory in enumerate_prototypes(prototypes_root):
+        entry, entry_warnings = _describe(slug, directory, repo)
+        if 'error' in entry:
+            warnings.append(f'{entry["path"]}: {entry["error"]} (skipped in index)')
+            continue
+        warnings.extend(entry_warnings)
+        entries.append(entry)
+    return entries, warnings
+
+
+def gallery_html(prototypes_root, repo):
+    """Gallery HTML computed now (acceptance, open comments, screens as they are at this moment).  `serve` answers
+    `/` with it, so the gallery never lags behind `accept`, comments or `init`; `index` writes the same HTML to
+    `<root>/index.html` for `file://` and static servers."""
+    entries, _ = gallery_entries(Path(prototypes_root), Path(repo))
+    return render_gallery(entries)
+
+
 def _gallery_writable(path):
     if not os.path.lexists(path):
         return
@@ -1287,14 +1311,8 @@ def index_prototypes(root, manifest):
         if warnings:
             report['warnings'] = warnings
         return report
-    entries = []
-    for slug, directory in enumerate_prototypes(prototypes_root):
-        entry, entry_warnings = _describe(slug, directory, repo)
-        if 'error' in entry:
-            warnings.append(f'{entry["path"]}: {entry["error"]} (skipped in index)')
-            continue
-        warnings.extend(entry_warnings)
-        entries.append(entry)
+    entries, entry_warnings = gallery_entries(prototypes_root, repo)
+    warnings.extend(entry_warnings)
     target = prototypes_root / 'index.html'
     _gallery_writable(target)
     atomic_write(target, render_gallery(entries))
@@ -1904,6 +1922,27 @@ def _classes_lost_from(old, library_css, project_css):
     return sorted(classes)
 
 
+def _remember_engine_digest(directory, old_bytes):
+    """Przed podmianą otoczki silnika (`prototype.css`) zapisz jej skrót w `prototype.json` (`engineAssetHistory`):
+    akceptacje policzone dawnym wzorem hasha (z tym plikiem) zostają ważne, gdy ekran się nie zmienił."""
+    digest = hashlib.sha256(server.normalize_newline_bytes(old_bytes)).hexdigest()
+    path = Path(directory) / server.PROTOTYPE_FILE
+    data, reason = read_regular_bytes(path, MAX_PROTOTYPE_JSON)
+    if data is None:
+        return
+    try:
+        meta = json.loads(data.decode('utf-8'))
+    except (UnicodeDecodeError, ValueError):
+        return
+    if not isinstance(meta, dict):
+        return
+    history = [item for item in meta.get(server.ENGINE_HISTORY_KEY) or [] if isinstance(item, str)]
+    if digest in history:
+        return
+    meta[server.ENGINE_HISTORY_KEY] = (history + [digest])[-server.ENGINE_HISTORY_MAX:]
+    server.atomic_write_bytes(path, (json.dumps(meta, ensure_ascii=False, indent=2) + '\n').encode('utf-8'))
+
+
 def _acceptance_lost(directory, slug, hashes_before, paths, final_html, warnings, extra_files=None):
     """`{lost, screens}`: screens whose acceptance (`comments.json`) is valid before the migration and stale after it.
 
@@ -1922,7 +1961,9 @@ def _acceptance_lost(directory, slug, hashes_before, paths, final_html, warnings
     except (UnicodeDecodeError, server.CommentsFileError):
         warnings.append('acceptance: comments.json unreadable, stale acceptances not counted')
         return empty
-    valid = [screen for screen, entry in fold['acceptance'].items() if hashes_before.get(screen) == entry['hash']]
+    before = server.acceptance_state(fold, hashes_before['screens'], hashes_before.get('aliases'))
+    valid = [screen for screen, item in before.items() if item['valid']]
+    old_engine = server.engine_digests(str(directory))
     if not valid:
         return empty
     stage = None
@@ -1930,14 +1971,15 @@ def _acceptance_lost(directory, slug, hashes_before, paths, final_html, warnings
         replacements = {name: paths[f'repo/{name}'].read_bytes() for name in STATIC_FILES}
         replacements.update(extra_files or {})
         stage = _stage_for_hashes(directory, replacements, final_html)
-        after = server.screen_hashes(str(stage))['screens']
+        after = server.screen_hashes(str(stage), extra_engine_digests=old_engine)
     except OSError as error:
         warnings.append(f'acceptance: hashes after migration not computed ({error})')
         return empty
     finally:
         if stage is not None:
             shutil.rmtree(stage, ignore_errors=True)
-    lost = sorted(screen for screen in valid if after.get(screen) != fold['acceptance'][screen]['hash'])
+    still = server.acceptance_state(fold, after['screens'], after.get('aliases'))
+    lost = sorted(screen for screen in valid if not still.get(screen, {}).get('valid'))
     return {'lost': len(lost), 'screens': lost}
 
 
@@ -1965,7 +2007,7 @@ def migrate_prototype(root, manifest, layerset, slug, dry_run=False, assets=None
     already = os.path.lexists(comments_json)
     html = _read_index_html(directory)
     try:
-        hashes_before = server.screen_hashes(str(directory))['screens']
+        hashes_before = server.screen_hashes(str(directory))
     except OSError:
         hashes_before = None
 
@@ -2129,6 +2171,8 @@ def migrate_prototype(root, manifest, layerset, slug, dry_run=False, assets=None
                                 'do project.css; nie kopiuję ich automatycznie, bo stary plik może zawierać kod '
                                 'biblioteki')}
         if not dry_run:
+            if name in server.ENGINE_ASSETS and current is not None:
+                _remember_engine_digest(directory, current)
             server.atomic_write_bytes(target, source)
         record(5, 'copy_engine', target)
     if create_project_css:
@@ -2293,7 +2337,8 @@ def serve_prototypes(root, manifest, args, err=None):
     source_writes = not args.no_source_writes and _in_git_worktree(settings['root'])
     config = server.ServerConfig(settings['root'], users_file_path(repo, args.users), host=args.host, port=args.port,
                                  secure_cookies=args.secure_cookies, trust_proxy=args.trust_proxy,
-                                 login_to_view=args.login_to_view, source_writes=source_writes, log=err)
+                                 login_to_view=args.login_to_view, source_writes=source_writes, log=err,
+                                 gallery=lambda: gallery_html(settings['root'], repo))
     try:
         instance = server.make_server(config)
     except server.StartupError as error:
@@ -2792,7 +2837,7 @@ def prototype_gate(root, manifest, plan=None, slugs=None):
             return _blocked(error.code, f'{path}: {error.message}', path=path)
         except OSError as error:
             return _blocked('prototype_unreadable', f'{path}: {error.strerror or error}', path=path)
-        state = server.acceptance_state(fold, hashes)
+        state = server.acceptance_state(fold, hashes, info.get('aliases'))
         prototypes.append({'path': path, 'slug': slug, 'format': 2, 'iteration': fold['currentIteration'],
                            'screens': len(hashes)})
         problems = server.unique_problems(info['ambiguous'])
@@ -2903,8 +2948,8 @@ def decide_prototype(root, manifest, slug, thread, kind, outcome, text, who=None
         if who is None:
             raise PrototypeError('--who is required with --kind developer (a login with the role developer)')
         login, record, _warnings = _privileged_who(Path(root).resolve(), users, who)
-        if record['role'] != 'developer':
-            raise PrototypeError(f'forbidden: {login} has the role {record["role"]}; --who needs the role developer')
+        if record['role'] not in HUMAN_DECIDERS:
+            raise PrototypeError(f'forbidden: {login} has the role {record["role"]}; --who needs the role developer or acceptor')
         payload['who'] = login
     elif who is not None:
         raise PrototypeError('--who is only for --kind developer')
@@ -2913,6 +2958,122 @@ def decide_prototype(root, manifest, slug, thread, kind, outcome, text, who=None
             raise PrototypeError('--iteration must be 1 or more')
         payload['iteration'] = iteration
     return _agent_command(root, manifest, slug, thread, 'decision', payload)
+
+
+def reply_prototype(root, manifest, slug, thread, text):
+    """`reply`: the agent answers in a thread (`by: agent`, shown with the AI badge). Not a consent and not a decision."""
+    if not isinstance(text, str) or not text.strip():
+        raise PrototypeError('--text must not be empty')
+    message_id = 'm-agent-%s-%s' % (format(int(time.time() * 1000), 'x'), secrets.token_hex(4))
+    return _agent_command(root, manifest, slug, thread, 'reply', {'message': {'id': message_id, 'text': text}})
+
+
+HUMAN_COMMENT_TYPES = ('create', 'reply')
+HUMAN_DECIDERS = ('developer', 'acceptor')  # roles whose decision „Wprowadź” (apply) authorises the agent to implement
+
+
+def _roles(root):
+    """`{login: role}` from the users file (empty without the file); used only to describe comments."""
+    try:
+        users, _warnings = _users(Path(root).resolve(), None)
+        if not users.exists():
+            return {}
+        return {record['login']: record.get('role') for record in users.users() if isinstance(record, dict)}
+    except (PrototypeError, server.UserError, OSError, ValueError, AttributeError, TypeError):
+        return {}
+
+
+def thread_reaction(thread, author_role, roles):
+    """What the agent may do with a thread (skill `prototype`, table „rola autora × stan wątku”):
+    `implement` = the latest decision is „Wprowadź” (apply) by a developer or acceptor; `order?` = no human decision yet,
+    but the author is a developer or acceptor (implement only an unambiguous instruction); `reply` = everything else
+    (a proposal by a commenter, a decision Wariant/Odłóż/Zostaw, an agent decision)."""
+    decisions = (thread or {}).get('decisions') or []
+    last = decisions[-1] if decisions else None
+    if last and last.get('kind') == 'developer' and roles.get(last.get('who')) in HUMAN_DECIDERS:
+        return 'implement' if last.get('outcome') == 'apply' else 'reply'
+    if author_role in HUMAN_DECIDERS:
+        return 'order?'
+    return 'reply'
+
+
+def _new_comments(snapshot, since_at=None, after=None, roles=None):
+    """Operations `create`/`reply` by a person (not `agent`, `import`, `server`) newer than `since_at` or after the
+    operation id `after`, oldest first, with the thread facts."""
+    fold = snapshot.fold
+    seen_after = after is None
+    found = []
+    for operation in snapshot.operations:
+        if not seen_after:
+            seen_after = operation.get('id') == after
+            continue
+        if operation.get('type') not in HUMAN_COMMENT_TYPES or operation.get('by') in server.RESERVED_LOGINS:
+            continue
+        if since_at is not None and (server.parse_at(operation.get('at')) or 0) <= since_at:
+            continue
+        payload = operation.get('payload') or {}
+        thread_id = operation.get('threadId')
+        thread = fold['byId'].get(thread_id) if thread_id else None
+        message = payload.get('message') or {}
+        roles = roles or {}
+        decisions = (thread or {}).get('decisions') or []
+        last = decisions[-1] if decisions else None
+        author_role = roles.get(operation.get('by'))
+        found.append({'opId': operation.get('id'), 'type': operation['type'], 'threadId': thread_id,
+                      'authorRole': author_role, 'threadStatus': (thread or {}).get('status'),
+                      'decision': ({'kind': last.get('kind'), 'outcome': last.get('outcome'), 'who': last.get('who'),
+                                    'whoRole': roles.get(last.get('who')), 'at': last.get('at')} if last else None),
+                      'reaction': thread_reaction(thread, author_role, roles),
+                      'number': thread['number'] if thread else None,
+                      'screen': (thread or {}).get('screen') or payload.get('screen'),
+                      'author': operation.get('by'), 'at': operation.get('at'),
+                      'text': message.get('text') if isinstance(message.get('text'), str) else ''})
+    return found
+
+
+def wait_prototype(root, manifest, slug, since=None, after=None, timeout=1800.0, interval=5.0):
+    """`wait`: deterministic wait for the prototype review (for Claude Code `Monitor`). PASS with `event: comment`
+    (a new thread or message by a person) or `event: accepted` (`gate` PASS for this prototype); TIMEOUT (exit 3)."""
+    _repo, _settings, _directory, store = _prototype_context(root, manifest, slug)
+    if since is not None and after is not None:
+        raise PrototypeError('wait takes --since or --after, not both')
+    since_at = None
+    if since is not None:
+        since_at = server.parse_at(since)
+        if since_at is None:
+            parsed = _parse_iso(since)
+            if parsed is None:
+                raise PrototypeError('--since must be an ISO time, e.g. 2026-11-10T15:30:00Z')
+            since_at = parsed
+    elif after is None:
+        since_at = int(time.time() * 1000)
+    deadline = time.monotonic() + max(0.0, float(timeout))
+    while True:
+        if store.state() != 'v1':
+            comments = _new_comments(store.snapshot(), since_at, after, _roles(root))
+            if comments:
+                return {'status': 'PASS', 'slug': slug, 'event': 'comment', 'comment': comments[0],
+                        'comments': comments}
+        gate = prototype_gate(root, manifest, slugs=[slug])
+        if gate.get('status') == 'BLOCKED':
+            return gate
+        if gate.get('status') == 'PASS':
+            return {'status': 'PASS', 'slug': slug, 'event': 'accepted', 'gate': gate}
+        if time.monotonic() >= deadline:
+            return {'status': 'TIMEOUT', 'slug': slug, 'reason': 'no new comment and the prototype is not accepted yet',
+                    'missing': gate.get('missing', [])}
+        time.sleep(min(max(0.2, float(interval)), max(0.0, deadline - time.monotonic())) or 0.2)
+
+
+def _parse_iso(value):
+    from datetime import datetime, timezone
+    try:
+        moment = datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+    except ValueError:
+        return None
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return int(moment.timestamp() * 1000)
 
 
 def resolve_thread_prototype(root, manifest, slug, thread, reason, iteration=None):
@@ -3091,6 +3252,15 @@ def _cmd_decide(args, root, manifest, layerset):
                             who=args.who, iteration=args.iteration, users=args.users)
 
 
+def _cmd_reply(args, root, manifest, layerset):
+    return reply_prototype(root, manifest, args.slug, args.thread, args.text)
+
+
+def _cmd_wait(args, root, manifest, layerset):
+    return wait_prototype(root, manifest, args.slug, since=args.since, after=args.after, timeout=args.timeout,
+                          interval=args.interval)
+
+
 def _cmd_resolve(args, root, manifest, layerset):
     return resolve_thread_prototype(root, manifest, args.slug, args.thread, args.reason, args.iteration)
 
@@ -3258,6 +3428,21 @@ def register(subparsers):
     resolve.add_argument('--reason', required=True, choices=('done', 'kept', 'out_of_scope'))
     resolve.add_argument('--iteration', type=int, help='Iteration that implements the change')
     resolve.set_defaults(func=_run(_cmd_resolve))
+    reply = actions.add_parser('reply', help='Agent reply in a thread (by: agent, AI badge in the UI; not a consent)')
+    _common(reply)
+    reply.add_argument('slug', help='Prototype slug')
+    reply.add_argument('thread', help='Thread: th-… id or number')
+    reply.add_argument('--text', required=True, help='Message text')
+    reply.set_defaults(func=_run(_cmd_reply))
+    wait = actions.add_parser('wait', help='Wait for a new comment by a person or for the acceptance of all screens '
+                                           '(exit 0 with event comment|accepted, 3 on timeout)')
+    _common(wait)
+    wait.add_argument('slug', help='Prototype slug')
+    wait.add_argument('--since', help='ISO time; only newer comments count (default: now)')
+    wait.add_argument('--after', help='Operation id; only later comments count')
+    wait.add_argument('--timeout', type=float, default=1800.0, help='Seconds (default 1800 = 30 min)')
+    wait.add_argument('--interval', type=float, default=5.0, help='Poll interval in seconds (default 5)')
+    wait.set_defaults(func=_run(_cmd_wait))
     merge = actions.add_parser('merge-comments', help='Merge two comment logs (also as git merge driver: --driver %%O %%A %%B)')
     merge.add_argument('path', nargs='?', help='Project path or .skillsync.yaml')
     merge.add_argument('slug', nargs='?', help='Prototype slug')

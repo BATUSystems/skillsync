@@ -137,6 +137,14 @@ suite.add('D23-fokus', 'Widoczny fokus', async () => {
   return { ok: vis(f.step) && vis(f.main) && (vis(f.search) || f.search.shadow !== 'none'), focus: f };
 });
 
+suite.add('D23-home', 'Link do galerii prototypów', async () => {
+  await p.size(1920, 1080); await p.go(url());
+  const r = await p.evaluate(`(() => { const a = ${q('.proto-screens-home')}; if (!a) return { present: false }; const bar = ${q('.proto-screens-bar')}; a.focus({ focusVisible: true }); const cs = getComputedStyle(a);
+    return { present: true, href: a.getAttribute('href'), label: a.getAttribute('aria-label'), first: bar && bar.firstElementChild === a, isLink: a.tagName === 'A', fv: a.matches(':focus-visible'), outline: cs.outlineStyle + ' ' + cs.outlineWidth, h: a.getBoundingClientRect().height }; })()`);
+  const ok = r.present && r.isLink && r.href === '../' && r.label === 'Lista prototypów' && r.first && r.fv && /solid 2px/.test(r.outline) && r.h >= 35.5;
+  return { ok, ...r };
+});
+
 suite.add('D23-375', 'Telefon', async () => {
   await p.size(375, 812); await p.go(url()); await openList();
   const r = await p.evaluate(`(() => { const pop = ${q('.proto-screens-pop')}.getBoundingClientRect(); const bars = [...document.querySelectorAll('.doc-toolbar, .proto-toolbar')].map((e) => ({ sw: e.scrollWidth, cw: e.clientWidth })); const de = document.documentElement; return { left: Math.round(pop.left), width: Math.round(pop.width), vw: de.clientWidth, docSw: de.scrollWidth, bars }; })()`);

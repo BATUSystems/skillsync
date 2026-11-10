@@ -17,7 +17,7 @@ from tests.layers_helpers import needs_os_symlinks  # noqa: E402
 class CodexTests(TempProjectMixin, unittest.TestCase):
     def setUp(self):
         super().setUp()
-        self.manifest = {"skills": ["feature", "copilot-orchestrator"], "agents": ["Explore", "reviewer"]}
+        self.manifest = {"skills": ["feature", "copilot-orchestrator"], "agents": ["explore", "reviewer"]}
         for name in self.manifest["skills"]:
             folder = self.library_dir / "skills" / name
             folder.mkdir()
@@ -31,7 +31,7 @@ class CodexTests(TempProjectMixin, unittest.TestCase):
             "max_concurrent_threads_per_session": 3,
             "exclude_skills": ["copilot-orchestrator"],
             "agents": {
-                "Explore": {"name": "explorer", "model": "gpt-6-luna", "sandbox_mode": "read-only"},
+                "explore": {"name": "explorer", "model": "gpt-6-luna", "sandbox_mode": "read-only"},
                 "reviewer": {"name": "reviewer", "model": "gpt-6.1-sol", "model_reasoning_effort": "high", "sandbox_mode": "read-only"},
             },
         })
@@ -67,7 +67,7 @@ class CodexTests(TempProjectMixin, unittest.TestCase):
 
     def test_shared_role_update_propagates(self):
         self.build()
-        source = self.library_dir / "agents/Explore.md"
+        source = self.library_dir / "agents/explore.md"
         source.write_text(source.read_text() + "New instruction\n")
         self.build()
         self.assertIn("New instruction", tomllib.loads(self.role().read_text())["developer_instructions"])
@@ -75,7 +75,7 @@ class CodexTests(TempProjectMixin, unittest.TestCase):
     def test_local_role_edits_survive_source_update(self):
         self.build()
         self.role().write_text("# custom role\n")
-        source = self.library_dir / "agents/Explore.md"
+        source = self.library_dir / "agents/explore.md"
         source.write_text(source.read_text() + "new\n")
         self.build()
         self.assertEqual(self.role().read_text(), "# custom role\n")
@@ -116,7 +116,7 @@ class CodexTests(TempProjectMixin, unittest.TestCase):
         self.assertEqual(data["mcp_servers"]["custom"]["command"], "custom")
 
     def test_limit_and_model_override(self):
-        self.build(codex={"max_concurrent_threads_per_session": 2, "agent_overrides": {"Explore": {"model": "another-model"}}})
+        self.build(codex={"max_concurrent_threads_per_session": 2, "agent_overrides": {"explore": {"model": "another-model"}}})
         self.assertEqual(tomllib.loads(self.role().read_text())["model"], "another-model")
         self.assertEqual(tomllib.loads(self.config_path().read_text())["agents"]["max_concurrent_threads_per_session"], 2)
         self.build()
@@ -206,10 +206,20 @@ class CodexTests(TempProjectMixin, unittest.TestCase):
         skillsync.build_claude_agents(self.project_dir, manifest, self.config)
         skillsync.build_codex(self.project_dir, manifest, self.config)
         claude = sorted(p.stem for p in (self.project_dir / ".claude" / "agents").glob("*.md"))
-        self.assertEqual(claude, ["Explore", "reviewer"])
+        self.assertEqual(claude, ["explore", "reviewer"])
         self.assertTrue(self.role().is_file())
         entries = skillsync.claude_gitignore_entries(manifest, self.config)
-        self.assertIn("agents/Explore.md", entries)
+        self.assertIn("agents/explore.md", entries)
+
+    def test_old_role_name_explore_is_an_alias_for_one_release(self):
+        manifest = {"skills": ["feature"], "agents": ["Explore", "reviewer", "explore"]}
+        self.assertEqual(skillsync.resolve_roles(manifest, self.config), ["explore", "reviewer"])
+        skillsync.build_claude_agents(self.project_dir, manifest, self.config)
+        skillsync.build_codex(self.project_dir, {**manifest, "codex": {"agent_overrides": {"Explore": {"model": "old-key-model"}}}},
+                              self.config)
+        self.assertEqual(sorted(p.name for p in (self.project_dir / ".claude" / "agents").glob("*.md")),
+                         ["explore.md", "reviewer.md"])
+        self.assertEqual(tomllib.loads(self.role().read_text())["model"], "old-key-model")
 
     def test_explicit_empty_agents_disables_roles_for_both_hosts(self):
         manifest = {"skills": ["feature"], "agents": []}
@@ -243,7 +253,7 @@ class CodexTests(TempProjectMixin, unittest.TestCase):
 
     def test_invalid_role_name_rejected(self):
         with self.assertRaises(ValueError):
-            self.build(codex={"agent_overrides": {"Explore": {"name": "../escape"}}})
+            self.build(codex={"agent_overrides": {"explore": {"name": "../escape"}}})
 
 
 class StopHookMigrationTests(TempProjectMixin, unittest.TestCase):
