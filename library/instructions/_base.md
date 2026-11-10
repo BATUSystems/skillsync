@@ -46,7 +46,7 @@ Wiele sesji z dyspozytorem: `dispatch` (jeśli zainstalowany — profil `workflo
 Przed nowym zadaniem `feature`/`bugfix` bramka otwartych planów (`skillsync status`, `feature` krok 1): niezamknięty
 plan bez żywego właściciela = pytanie, czy zaczynamy; `needsHuman: closure` = najpierw propozycja zamknięcia.
 
-- Sesja główna utrzymuje plan i zasoby. Role: Explore, implementer, test-writer,
+- Sesja główna utrzymuje plan i zasoby. Role: explore, implementer, test-writer,
   test-runner, reviewer, verifier, scribe, mechanic; podumysły nie delegują dalej. Deleguj spójne kroki;
   pełny raport podumysł zapisuje w `.skillsync/runs/<run-id>/`, do sesji wraca skrót.
 - Terminologia: podagentów (subagentów) nazywamy **podumysłami** — w rozmowie z użytkownikiem,

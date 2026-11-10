@@ -56,7 +56,7 @@ Reguły rozwijania skilli (towarzysze, profile) istnieją w dwóch miejscach gen
 
 | Rola | Claude (`agents/<Rola>.md`): model, effort, `omitClaudeMd`, narzędzia | Codex (`codex.yaml`) | Zakres |
 |---|---|---|---|
-| `Explore` | `haiku`, low, `omitClaudeMd`, Read/Grep/Glob | `explorer`, `gpt-6-luna`, low, read-only | lokalizacja plików, wzorców i konsumentów |
+| `explore` | `haiku`, low, `omitClaudeMd`, Read/Grep/Glob | `explorer`, `gpt-6-luna`, low, read-only | lokalizacja plików, wzorców i konsumentów |
 | `implementer` | `sonnet`, medium, zapis + Bash | `implementer`, `gpt-6.1-sol`, medium, workspace-write | kod produkcyjny i przydzielona dokumentacja |
 | `test-writer` | `sonnet`, medium, zapis + Bash | `test_writer`, `gpt-6.1-sol`, medium, workspace-write | testy (osobny autor przy większym ryzyku) |
 | `test-runner` | `haiku`, low, `omitClaudeMd`, Read/Bash/Grep/Glob | `test_runner`, `gpt-6-luna`, low, workspace-write | uruchamianie przydzielonych kontroli |
@@ -227,7 +227,7 @@ zielony/czerwony znacznik (pełna tabela: [workflow-details.md](workflow-details
   usuwaj z `defaults.yaml`: projekty z profilami ich potrzebują.
 - `skills/INDEX.md` w bibliotece i `skillsync suggest` zastępują ręczny spis skilli w instrukcjach projektu; instrukcje
   zawierają tylko punkty wejścia.
-- `skillsync map` buduje `.skillsync/map.md`; przed delegowaniem `Explore` i implementera orkiestrator wykonuje
+- `skillsync map` buduje `.skillsync/map.md`; przed delegowaniem `explore` i implementera orkiestrator wykonuje
   `map --check`, a ścieżka mapy trafia do zlecenia.
 
 ## Dokumentacja i wiedza w workflow

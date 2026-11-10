@@ -12,7 +12,7 @@ Deleguj natywnym narzędziem `Agent` (starsze wersje: `Task`), jawnie podając `
 
 | Rola w planie | Typ Claude | Domyślny model | Effort | CLAUDE.md |
 |---|---|---|---|---|
-| Explore | Explore | haiku | low | pomijany (`omitClaudeMd`) |
+| explore | explore | haiku | low | pomijany (`omitClaudeMd`) |
 | implementer | implementer | sonnet | medium | tak |
 | test-writer | test-writer | sonnet | medium | tak |
 | test-runner | test-runner | haiku | low | pomijany |
@@ -43,7 +43,7 @@ do jego id), a niezależne review uruchamiaj w świeżym kontekście; każda run
 to nowy `reviewer`. Model recenzenta w pętli (każdy profil: `spec`, `plan`, `kod`): sesja na innym modelu niż `sonnet` → domyślny, sesja na `sonnet` → `model: opus`; profil `kod` przy ryzyku planu high może dostać `model: opus` zawsze. Nie przekazuj pełnej
 historii; wystarcza zlecenie z planem, zakresem i ścieżkami.
 
-`Explore`, `reviewer` i `verifier` mają tylko Read/Grep/Glob — orkiestrator przygotowuje diff i listę
+`explore`, `reviewer` i `verifier` mają tylko Read/Grep/Glob — orkiestrator przygotowuje diff i listę
 nowych plików do review. `implementer` i `test-writer` mają zapis i Bash; `scribe` zapis bez Bash (tylko dokumentacja),
 `mechanic` edycję i Bash (mapowane podmiany, grep); `test-runner` ma
 Bash do testów (skutki uboczne testów, nie tryb read-only). Uprawnienia sesji w

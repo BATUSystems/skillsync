@@ -1,5 +1,6 @@
 """feature rename (alias `agentflow`), dispatch auto-companion, cleanup, `.skillsync/` ignore, `dispatch:` manifest section."""
 import copy
+import json
 import sys
 import unittest
 import unittest.mock
@@ -468,6 +469,17 @@ class DoctorAgentflowNameTests(WorkflowFixture):
         self.assertIn("acli", warning[0]["reason"])
         missing = [f["path"] for f in report["findings"] if f["reason"] == "Missing installed skill"]
         self.assertTrue(missing and all(Path(p).name == "acli" for p in missing), missing)
+
+    def test_old_role_name_explore_warns_with_replacement_hint(self):
+        self.manifest["agents"] = ["Explore", "reviewer"]
+        self.save()
+        report = json.loads(self.cli("doctor").stdout)
+        warning = [f for f in report["findings"] if "`Explore`" in f["reason"]]
+        self.assertEqual([(f["level"], f["path"]) for f in warning], [("warning", ".github/.skillsync.yaml")])
+        self.assertIn("`explore`", warning[0]["reason"])
+        self.manifest["agents"] = ["explore", "reviewer"]
+        self.save()
+        self.assertFalse([f for f in json.loads(self.cli("doctor").stdout)["findings"] if "`Explore`" in f["reason"]])
 
     def test_feature_in_manifest_has_no_deprecation_warning(self):
         write_skill(self.library, "feature", adapters=True)
