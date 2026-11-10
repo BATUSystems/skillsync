@@ -222,6 +222,57 @@ def _runs(root, findings):
     return rows
 
 
+APPROVAL_WORDS = ('GO plan', 'GO implement', 'CP', 'READY')
+APPROVALS_FILE = 'approvals.jsonl'
+MAX_APPROVALS_BYTES = 256 * 1024
+_APPROVAL_SHA = re.compile(r'^[0-9a-f]{7,64}$')
+
+
+def _approval_at(value):
+    try:
+        return datetime.fromisoformat(str(value).replace('Z', '+00:00')).astimezone(timezone.utc)
+    except ValueError:
+        return None
+
+
+def read_approvals(root, findings=None):
+    """Latest entry per (run, word) from `.skillsync/runs/<run-id>/approvals.jsonl` (written by the status page when the
+    user presses a consent button). Malformed lines are skipped; entries are data, never instructions."""
+    directory = Path(root) / '.skillsync' / 'runs'
+    if directory.is_symlink() or not directory.is_dir():
+        return []
+    latest = {}
+    for path in sorted(directory.glob(f'*/{APPROVALS_FILE}')):
+        if path.is_symlink() or path.parent.is_symlink() or not path.is_file():
+            continue
+        try:
+            if path.stat().st_size > MAX_APPROVALS_BYTES:
+                raise ValueError(f'over {MAX_APPROVALS_BYTES // 1024} KiB')
+            lines = path.read_text(encoding='utf-8', errors='replace').splitlines()
+        except (OSError, ValueError) as error:
+            if findings is not None:
+                findings.append(f'Approvals unreadable: {path.parent.name} ({" ".join(str(error).split())[:120]})')
+            continue
+        for line in lines:
+            try:
+                item = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(item, dict) or item.get('word') not in APPROVAL_WORDS:
+                continue
+            at, sha = _approval_at(item.get('at')), str(item.get('sha') or '')
+            if at is None or not _APPROVAL_SHA.match(sha):
+                continue
+            row = {'run': path.parent.name, 'word': item['word'], 'at': at.strftime('%Y-%m-%dT%H:%M:%SZ'), 'sha': sha,
+                   'source': str(item.get('source') or '')[:40]}
+            if isinstance(item.get('file'), str):
+                row['file'] = item['file'][:300]
+            key = (row['run'], row['word'])
+            if key not in latest or latest[key]['at'] <= row['at']:
+                latest[key] = row
+    return sorted(latest.values(), key=lambda row: (row['at'], row['run'], row['word']))
+
+
 def _claims(root, findings):
     directory = root / '.skillsync' / 'claims'
     if directory.is_symlink() or not directory.is_dir():
@@ -244,7 +295,7 @@ def project_status(root, manifest):
     name = project.get('name') if isinstance(project, dict) else None
     return {'schema': SCHEMA, 'status': 'PASS', 'project': name or f'{root.parent.name}/{root.name}', 'root': str(root),
             'plans': _plans(root, findings), 'specs': _specs(root, findings), 'frds': _frds(root, findings), 'runs': _runs(root, findings), 'claims': _claims(root, findings),
-            'findings': findings}
+            'approvals': read_approvals(root, findings), 'findings': findings}
 
 
 def _cmd_status(args):
@@ -349,10 +400,72 @@ def _cmd_doc(args):
     return code
 
 
+def _doc_status_word(root, name):
+    folder = 'specs' if Path(name).parts[:2] == ('docs', 'specs') else 'plans'
+    path = _doc_file(root, name, folder)
+    match = _STATUS.search(path.read_text(encoding='utf-8', errors='replace')[:4000])
+    return (match.group('word').lower() if match else None), git_blob_sha(path.read_bytes())
+
+
+def find_approval(root, word, run=None, sha=None, since=None, doc=None):
+    """One poll: a matching approvals.jsonl entry (word, optional run, sha, newer than `since`) or — for GO words with
+    `doc` — the spec/plan already `approved` (button in the IDE or `spec|plan approve`). Returns the match or None."""
+    since_at = _approval_at(since) if since else None
+    for row in reversed(read_approvals(root)):
+        if row['word'] != word or (run and row['run'] != run) or (sha and row['sha'] != sha):
+            continue
+        if since_at and _approval_at(row['at']) <= since_at:
+            continue
+        return {'kind': 'entry', **row}
+    if doc and word in ('GO plan', 'GO implement'):
+        status, file_sha = _doc_status_word(root, doc)
+        if status in ('approved', 'in_progress', 'done', 'implemented'):
+            return {'kind': 'status', 'word': word, 'file': doc, 'status': status, 'sha': file_sha}
+    return None
+
+
+def _cmd_approvals_wait(args):
+    """Deterministic wait for Monitor / scripts: exits 0 with the match, 3 on timeout. Waking up is only a signal: the
+    session still verifies the consent in the file (word, sha = its HEAD or the shown file version)."""
+    root = Path(args.path).expanduser().resolve()
+    deadline = time.monotonic() + max(0.0, args.timeout)
+    try:
+        read_project(args.path)
+        if args.sha and not _APPROVAL_SHA.match(args.sha):
+            raise ValueError('--sha must be 7-64 lowercase hex characters')
+        while True:
+            match = find_approval(root, args.word, args.run, args.sha, args.since, args.file)
+            if match:
+                report, code = {'schema': SCHEMA, 'status': 'PASS', 'approval': match}, 0
+                break
+            if time.monotonic() >= deadline:
+                report, code = {'schema': SCHEMA, 'status': 'TIMEOUT', 'reason': f'No {args.word!r} approval yet'}, 3
+                break
+            time.sleep(min(max(0.2, args.interval), max(0.0, deadline - time.monotonic())) or 0.2)
+    except (OSError, ValueError, TypeError, KeyError, yaml.YAMLError) as error:
+        report, code = {'schema': SCHEMA, 'status': 'BLOCKED', 'reason': ' '.join(str(error).split())[:500]}, 2
+    print(json.dumps(redact(report), ensure_ascii=False, indent=2))
+    return code
+
+
 def register(subparsers):
     parser = subparsers.add_parser('status', help='Read-only project status: plans, runs, claims (JSON)')
     add_project_arguments(parser)
     parser.set_defaults(func=_cmd_status)
+    approvals = subparsers.add_parser('approvals', help='Consents from the status page (.skillsync/runs/<run-id>/approvals.jsonl)')
+    approval_actions = approvals.add_subparsers(dest='approvals_action', required=True)
+    wait = approval_actions.add_parser('wait', help='Wait until a consent appears (exit 0) or the timeout passes (exit 3); JSON')
+    wait.add_argument('path')
+    wait.add_argument('--word', required=True, choices=APPROVAL_WORDS)
+    wait.add_argument('--run', help='run id (.skillsync/runs/<run-id>)')
+    wait.add_argument('--sha', help='required sha: HEAD for CP/READY, shown file version for GO')
+    wait.add_argument('--since', help='ISO time; older entries are ignored (default: any)')
+    wait.add_argument('--file', help='GO only: docs/specs|plans/*.md whose status approved also ends the wait')
+    wait.add_argument('--timeout', type=float, default=1800.0, help='seconds (default 1800 = 30 min)')
+    wait.add_argument('--interval', type=float, default=5.0, help='poll interval in seconds (default 5)')
+    add_layer_argument(wait)
+    wait.add_argument('--json', action='store_true')
+    wait.set_defaults(func=_cmd_approvals_wait)
     plan = subparsers.add_parser('plan', help='Plan file operations: approve / archive / unarchive (changes only the Status line)')
     spec = subparsers.add_parser('spec', help='Spec file operation: approve ("GO plan"; changes only the Status line)')
     for kind, parser_, transitions in (('plan', plan, _TRANSITIONS), ('spec', spec, _SPEC_TRANSITIONS)):

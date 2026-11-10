@@ -43,8 +43,19 @@ Słownik bez kolizji: „etap” zostaje dla etapów pracy w projektach (np. eta
 | III Realizacja | kod, testy, dokumentacja, changelog, wersja | `kod`: po kroku z ryzykiem high i końcowa | `done`; commity i push według trybu dostarczania (rdzeń AGENTS) |
 
 Zgodę daje też status nadany przez użytkownika przyciskiem (strona statusu, IDE) albo `skillsync spec approve` („GO plan”)
-i `skillsync plan approve` („GO implement”); sesja zauważa go przy następnej turze i działa według tabeli wznowienia w
-[spec](references/spec.md). Sama sesja tych komend nie woła: zgoda pochodzi od użytkownika.
+i `skillsync plan approve` („GO implement”), a „CP”/„READY” wpis przycisku strony statusu w
+`.skillsync/runs/<run-id>/approvals.jsonl`; sesja działa według tabeli wznowienia w [spec](references/spec.md). Sama sesja
+tych komend nie woła i wpisów nie tworzy: zgoda pochodzi od użytkownika.
+
+**Czekanie na zgodę.** Przy każdym STOP na „GO plan”, „GO implement”, „CP” albo „READY” zapisz w checkpoincie
+`czeka: <słowo>` i, gdy host to umożliwia, zawieś się na nasłuchu: Claude Code — narzędzie `Monitor` z
+`skillsync approvals wait <projekt> --word "<słowo>" --since <czas STOP> [--run <run-id>] [--file <spec|plan>]` (skrypt
+odpytuje pliki, nie model), a jako zapas budzik co 30 min (`/loop`); inny host — zwykłe czekanie na wiadomość. Pobudka to
+tylko sygnał: po niej sprawdź zgodę w pliku. GO: status speca/planu `approved` i sha pokazanej wersji (`--expect-sha`
+zapisane we wpisie, `Spec-sha`); CP/READY: wpis tego słowa nowszy niż STOP z `sha` równym HEAD gałęzi do wypchnięcia
+(`git rev-parse <gałąź>`). Brak zgody w pliku albo inny sha = dalej czekasz albo pytasz; nigdy nie działasz na samą pobudkę.
+Wiadomość od użytkownika w sesji zawsze ma pierwszeństwo przed nasłuchem. Założenie: granicą zaufania jest maszyna (proces,
+który podrobiłby wpis, mógłby sam wykonać push), więc wpis nie jest słabszy niż słowo wpisane w terminalu.
 
 Plan `direct` ma akty II i III i jedną zgodę „GO implement” (dawne GO); `bugfix` ma brief i akt III (szczegóły w skillu
 `bugfix`); `reuse` wznawia akt według tabeli stanów w [spec](references/spec.md). Samo „GO” przyjmij według tej tabeli
