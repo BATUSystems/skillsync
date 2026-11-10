@@ -1,7 +1,7 @@
 # Kopia silnika prototypów w testach
 
 `prototype.js` w tym katalogu to kopia silnika z biblioteki skilli: `skills/prototype/assets/repo/prototype.js`
-(rdzeń, commit `55e2e1e` plus poprawka NR1-V23 (fragment `#view-sN` iframe widoku), sha256 `b8635f23eb716a9a0270033b37639227e2310b3e51880ccb4ff18943295a971d`). Testy silnika ładują ją domyślnie; inną ścieżkę wskazuje
+(rdzeń, commit `74aa7ff` na gałęzi `feat/proto-ux`: link ⌂ do galerii w pasku ekranów, sha256 `e990f17fe7d10a93113fb7768d46c6800b7a0f3504f341bdc18f89dd1c779684`). Testy silnika ładują ją domyślnie; inną ścieżkę wskazuje
 `SKILLSYNC_PROTOTYPE_ENGINE_V2_PATH`.
 
 Świeżość kopii: test `test_v2_copy_matches_library_source` porównuje ją z plikiem wskazanym przez
