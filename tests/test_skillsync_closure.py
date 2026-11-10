@@ -98,6 +98,26 @@ class DoctorClosure(WorkflowFixture):
         self.put_plan(status='in_progress')
         self.assertEqual(self.plan_warnings('2026-11-05-x.md'), [])
 
+    def test_in_progress_plan_with_all_steps_checked_warns_about_closure(self):
+        self.write('docs/plans/2026-11-05-x.md', plan_text(status='in_progress') + '\n## Progress\n- [x] A1 a\n- [x] A2 b\n\n## Wynik\n')
+        warnings = self.plan_warnings('2026-11-05-x.md')
+        self.assertEqual(len(warnings), 1)
+        self.assertIn('still in_progress', warnings[0]['reason'])
+
+    def test_ticket_plan_without_pr_is_information_not_warning(self):
+        self.write('docs/plans/2026-11-05-x.md', plan_text(status='in_progress')
+                   + '\n## Progress\nTicket: ABC-1 (link: https://example/ABC-1)\n- [x] A1 a\n')
+        self.assertEqual(self.plan_warnings('2026-11-05-x.md'), [])
+
+    def test_ticket_plan_with_pr_warns_about_closure(self):
+        self.write('docs/plans/2026-11-05-x.md', plan_text(status='in_progress')
+                   + '\n## Progress\nPR: #5 (link: https://example/pr/5)\nTicket: ABC-1 (link: https://example/ABC-1)\n- [x] A1 a\n')
+        self.assertEqual(len(self.plan_warnings('2026-11-05-x.md')), 1)
+
+    def test_in_progress_plan_with_open_step_is_not_flagged(self):
+        self.write('docs/plans/2026-11-05-x.md', plan_text(status='in_progress') + '\n## Progress\n- [x] A1 a\n- [ ] A2 b\n')
+        self.assertEqual(self.plan_warnings('2026-11-05-x.md'), [])
+
     def test_done_without_run_line_warns_from_2026_11_01(self):
         self.put_plan(name='2026-11-01-x.md', run=None)
         self.assertEqual(len(self.plan_warnings('2026-11-01-x.md')), 1)
@@ -232,6 +252,22 @@ class ClosureHook(WorkflowFixture):
         self.init_git()
         self.write(PLAN, plan_text())
         self.allowed(payload={'stop_hook_active': True})
+
+    def test_in_progress_plan_with_all_steps_checked_blocks(self):
+        self.init_git()
+        self.write(PLAN, plan_text(status='in_progress') + '\n## Progress\n- [x] A1 a\n- [x] A2 b\n')
+        self.assertIn('in_progress ze wszystkimi krokami', self.blocked())
+
+    def test_in_progress_plan_with_open_step_allows(self):
+        self.init_git()
+        self.write(PLAN, plan_text(status='in_progress') + '\n## Progress\n- [x] A1 a\n- [ ] A2 b\n')
+        self.allowed()
+
+    def test_ticket_plan_waiting_for_pull_requests_allows(self):
+        self.init_git()
+        self.write(PLAN, plan_text(status='in_progress') + '\n## Progress\nTicket: ABC-1 (link: https://example/ABC-1)\n'
+                   '- [x] A1 a\n')
+        self.allowed()
 
     def test_done_plan_unchanged_against_head_is_ignored(self):
         self.commit_plan(status='done')

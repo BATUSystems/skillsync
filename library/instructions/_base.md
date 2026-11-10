@@ -43,6 +43,8 @@ i przeczytaj wszystkie rekordy `domain` z `load: bootstrap`. Bez CLI odczytaj ws
 Źródło procedury: skill `feature` i **jeden** adapter bieżącego hosta.
 Claude: `/feature`, Codex: `$feature`; nie uruchamiaj pipeline'u dla pytań i audytów.
 Wiele sesji z dyspozytorem: `dispatch` (jeśli zainstalowany — profil `workflow-extended`).
+Przed nowym zadaniem `feature`/`bugfix` bramka otwartych planów (`skillsync status`, `feature` krok 1): niezamknięty
+plan bez żywego właściciela = pytanie, czy zaczynamy; `needsHuman: closure` = najpierw propozycja zamknięcia.
 
 - Sesja główna utrzymuje plan i zasoby. Role: Explore, implementer, test-writer,
   test-runner, reviewer, verifier, scribe, mechanic; podumysły nie delegują dalej. Deleguj spójne kroki;
@@ -53,7 +55,7 @@ Wiele sesji z dyspozytorem: `dispatch` (jeśli zainstalowany — profil `workflo
   i migracji. Jeden runner na współdzielony zasób. Stop hook nie dubluje runnera.
 - Review jest niezależne i tylko do odczytu. Po poprawkach testy oraz zamknięcie uwag
   sprawdza się na aktualnym stanie. Nowy zapis unieważnia dotknięte dowody.
-- Done wymaga kryteriów, wymaganych kontroli, dokumentacji, changeloga, ustalonej z użytkownikiem wersji (propozycja + pytanie, patrz `workflow/references/release.md`), wiedzy i zamknięcia blokerów. Merge i complete PR nigdy nie należą do agenta.
+- Done wymaga kryteriów, wymaganych kontroli, dokumentacji, changeloga, ustalonej z użytkownikiem wersji (propozycja + pytanie, patrz `workflow/references/release.md`), wiedzy, zamknięcia blokerów i zamknięcia przebiegu (ostatni krok planu). Merge i complete PR nigdy nie należą do agenta.
 - Tryb dostarczania: `skillsync route <projekt>` zwraca `delivery {mode, base, source}`; bez CLI czytaj `delivery.mode` z `.github/.skillsync.yaml`
   (brak = `pr`). Przy `source: invalid` nie zakładaj `pr`, zapytaj. Brak `delivery.base`: weź `origin/HEAD`, a gdy się nie da, STOP i pytanie.
 - Przed „GO implement” nic nie opuszcza maszyny. Po nim sesja główna pracuje na gałęzi roboczej w osobnym worktree i commituje po każdym
@@ -64,7 +66,7 @@ Wiele sesji z dyspozytorem: `dispatch` (jeśli zainstalowany — profil `workflo
 - Słowa zgody: `CP` — w `direct` push `robocza:base` z worktree (fast-forward; baza rozbieżna = STOP, rebase/merge tylko za osobną zgodą; główny
   checkout aktualizowany `--ff-only` tylko gdy czysty i na `base`), w `pr` commit i push gałęzi roboczej, nigdy bazy. `CPD` — `CP` i deploy według
   instrukcji projektu; w `pr` odmowa. `READY` — tylko w `pr` i tylko od użytkownika: po sprawdzeniu, że każdy krok ma `[x]` i kontrole są PASS,
-  komentarz końcowy i przełączenie draft PR na ready; w `direct` albo bez draft PR odmowa (odpowiednikiem w `direct` jest `CP`). `pr-run` wymaga zainstalowanego skilla i hosta Azure/GitHub; bez nich nie zakładaj PR-a, zapytaj. Przed stanem „czeka na READY/CP”: dokumentacja, changelog, wersja ustalona pytaniem, `retro-quality` i kopia przebiegu poza worktree; worktree sprzątasz po `CP` albo zamknięciu PR-a. Warianty z `!` (`CP!`, `CPD!`, `READY!`)
+  komentarz końcowy i przełączenie draft PR na ready; w `direct` albo bez draft PR odmowa (odpowiednikiem w `direct` jest `CP`). `pr-run` wymaga zainstalowanego skilla i hosta Azure/GitHub; bez nich nie zakładaj PR-a, zapytaj. Przed stanem „czeka na READY/CP”: dokumentacja, changelog, wersja ustalona pytaniem, `retro-quality`, „Wynik”, rekord `--final`, plan `done` (spec `implemented`) i kopia przebiegu poza worktree; worktree sprzątasz po `CP` albo zamknięciu PR-a. Warianty z `!` (`CP!`, `CPD!`, `READY!`)
   nie zadają pytań doprecyzowujących, ale nie omijają warunków ani pytania o wersję.
 - Pierwszeństwo: wejście z klucza zgłoszenia (`pr-after-approval`) i wyraźna, bardziej restrykcyjna instrukcja projektu wygrywają z trybem;
   tryb nie zmienia polityk repozytorium. Tag, release i publikacja pakietu wymagają osobnego polecenia.
