@@ -53,7 +53,9 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 None.
 
 ### Fixed
-None.
+
+- Prototype threads panel: a long handle label on a thread card now wraps within the panel (the button's `nowrap`
+  used to widen the panel horizontally and clip the screen heading); the group heading has the same edge spacing as the cards.
 
 ## [1.0.1] - 2026-11-09
 
