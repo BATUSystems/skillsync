@@ -626,6 +626,15 @@ dialog select:focus,
 .anno-filters button,
 .anno-view-filter button { min-height: 1.75rem; padding: 0.125rem 0.625rem; border-radius: 999px; font-size: 0.75rem; }
 
+/* Nagłówek grupy (ekran) w liście wątków: ten sam odstęp od krawędzi co karty. */
+.anno-cards > .t-label { margin: 0.75rem 0.75rem 0.25rem; }
+/* Etykieta uchwytu karty zawija się w szerokości panelu (przyciski mają nowrap; długi uchwyt rozpychał panel w poziomie). */
+.anno-card-open {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.125rem 0.5rem;
+  width: 100%; min-width: 0; height: auto; text-align: left; white-space: normal;
+}
+.anno-card-open > span { min-width: 0; overflow-wrap: anywhere; }
+
 .anno-card,
 .anno-thread {
   display: flex;
