@@ -161,7 +161,9 @@ planu (przed pierwszym `## `); linię podobną, ale nie taką samą, bramka odrz
 
 `skillsync prototype migrate <projekt> <slug>`: kopiuje cztery pliki silnika, gdy różnią się od biblioteki, a prototyp ze starym
 `comments.js` przenosi do `comments.json` (dopisuje uchwyty, blokadę motywu w `<head>`; akceptacje stają się wtedy nieaktualne).
-Odświeża też generowane `tokens.css` i `theme.css`, więc osobny `sync` nie jest potrzebny; nowe tokeny zmieniają hashe ekranów,
+Podmiana samej otoczki silnika (`prototype.js`, `prototype.css`) nie unieważnia akceptacji: `prototype.css` nie wchodzi do
+hasha ekranu, a `migrate` zapisuje skrót starego pliku w `prototype.json` (`engineAssetHistory`), więc akceptacje sprzed zmiany
+zostają ważne. Odświeża też generowane `tokens.css` i `theme.css`, więc osobny `sync` nie jest potrzebny; nowe tokeny zmieniają hashe ekranów,
 więc akceptacje mogą stać się nieaktualne (wynik JSON: `tokens_synced`, `tokens_files[]`). Ikony: szablon `init` ma pełny
 sprite biblioteki (`assets/icons/sprite.svg`), a `migrate` podmienia symbole `ic-*` na wersje z biblioteki i dopisuje nowe do
 `<svg>` w `index.html`; własne symbole projektu zostają (wynik JSON: `sprite.status`, `replaced[]`, `added[]`). Prototyp

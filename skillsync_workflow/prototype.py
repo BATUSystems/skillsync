@@ -14,6 +14,7 @@ server) live in the standalone `prototype_server` module; this module only impor
 from datetime import date, datetime, timezone
 from html.parser import HTMLParser
 import getpass
+import hashlib
 import json
 import math
 import os
@@ -1146,7 +1147,7 @@ def prototype_comments_info(directory, slug, html=None):
         except OSError:
             hashes = None
         if hashes is not None:
-            state = server.acceptance_state(fold, hashes['screens'])
+            state = server.acceptance_state(fold, hashes['screens'], hashes.get('aliases'))
             valid = sum(1 for item in state.values() if item['valid'])
             fields['acceptance'] = {'screens': len(hashes['screens']), 'accepted': valid, 'stale': len(state) - valid}
         if os.path.lexists(directory / server.LEGACY_COMMENTS_FILE):
@@ -1921,6 +1922,27 @@ def _classes_lost_from(old, library_css, project_css):
     return sorted(classes)
 
 
+def _remember_engine_digest(directory, old_bytes):
+    """Przed podmianą otoczki silnika (`prototype.css`) zapisz jej skrót w `prototype.json` (`engineAssetHistory`):
+    akceptacje policzone dawnym wzorem hasha (z tym plikiem) zostają ważne, gdy ekran się nie zmienił."""
+    digest = hashlib.sha256(server.normalize_newline_bytes(old_bytes)).hexdigest()
+    path = Path(directory) / server.PROTOTYPE_FILE
+    data, reason = read_regular_bytes(path, MAX_PROTOTYPE_JSON)
+    if data is None:
+        return
+    try:
+        meta = json.loads(data.decode('utf-8'))
+    except (UnicodeDecodeError, ValueError):
+        return
+    if not isinstance(meta, dict):
+        return
+    history = [item for item in meta.get(server.ENGINE_HISTORY_KEY) or [] if isinstance(item, str)]
+    if digest in history:
+        return
+    meta[server.ENGINE_HISTORY_KEY] = (history + [digest])[-server.ENGINE_HISTORY_MAX:]
+    server.atomic_write_bytes(path, (json.dumps(meta, ensure_ascii=False, indent=2) + '\n').encode('utf-8'))
+
+
 def _acceptance_lost(directory, slug, hashes_before, paths, final_html, warnings, extra_files=None):
     """`{lost, screens}`: screens whose acceptance (`comments.json`) is valid before the migration and stale after it.
 
@@ -1939,7 +1961,9 @@ def _acceptance_lost(directory, slug, hashes_before, paths, final_html, warnings
     except (UnicodeDecodeError, server.CommentsFileError):
         warnings.append('acceptance: comments.json unreadable, stale acceptances not counted')
         return empty
-    valid = [screen for screen, entry in fold['acceptance'].items() if hashes_before.get(screen) == entry['hash']]
+    before = server.acceptance_state(fold, hashes_before['screens'], hashes_before.get('aliases'))
+    valid = [screen for screen, item in before.items() if item['valid']]
+    old_engine = server.engine_digests(str(directory))
     if not valid:
         return empty
     stage = None
@@ -1947,14 +1971,15 @@ def _acceptance_lost(directory, slug, hashes_before, paths, final_html, warnings
         replacements = {name: paths[f'repo/{name}'].read_bytes() for name in STATIC_FILES}
         replacements.update(extra_files or {})
         stage = _stage_for_hashes(directory, replacements, final_html)
-        after = server.screen_hashes(str(stage))['screens']
+        after = server.screen_hashes(str(stage), extra_engine_digests=old_engine)
     except OSError as error:
         warnings.append(f'acceptance: hashes after migration not computed ({error})')
         return empty
     finally:
         if stage is not None:
             shutil.rmtree(stage, ignore_errors=True)
-    lost = sorted(screen for screen in valid if after.get(screen) != fold['acceptance'][screen]['hash'])
+    still = server.acceptance_state(fold, after['screens'], after.get('aliases'))
+    lost = sorted(screen for screen in valid if not still.get(screen, {}).get('valid'))
     return {'lost': len(lost), 'screens': lost}
 
 
@@ -1982,7 +2007,7 @@ def migrate_prototype(root, manifest, layerset, slug, dry_run=False, assets=None
     already = os.path.lexists(comments_json)
     html = _read_index_html(directory)
     try:
-        hashes_before = server.screen_hashes(str(directory))['screens']
+        hashes_before = server.screen_hashes(str(directory))
     except OSError:
         hashes_before = None
 
@@ -2146,6 +2171,8 @@ def migrate_prototype(root, manifest, layerset, slug, dry_run=False, assets=None
                                 'do project.css; nie kopiuję ich automatycznie, bo stary plik może zawierać kod '
                                 'biblioteki')}
         if not dry_run:
+            if name in server.ENGINE_ASSETS and current is not None:
+                _remember_engine_digest(directory, current)
             server.atomic_write_bytes(target, source)
         record(5, 'copy_engine', target)
     if create_project_css:
@@ -2810,7 +2837,7 @@ def prototype_gate(root, manifest, plan=None, slugs=None):
             return _blocked(error.code, f'{path}: {error.message}', path=path)
         except OSError as error:
             return _blocked('prototype_unreadable', f'{path}: {error.strerror or error}', path=path)
-        state = server.acceptance_state(fold, hashes)
+        state = server.acceptance_state(fold, hashes, info.get('aliases'))
         prototypes.append({'path': path, 'slug': slug, 'format': 2, 'iteration': fold['currentIteration'],
                            'screens': len(hashes)})
         problems = server.unique_problems(info['ambiguous'])

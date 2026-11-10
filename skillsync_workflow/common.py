@@ -280,6 +280,8 @@ LEGACY_WORKFLOW_SKILL = 'agentflow'
 WORKFLOW_COMPANIONS = ('workflow', 'pre-implement', 'smart-test', 'bugfix', 'codereview')
 # Removed skills kept as manifest aliases (mirror of `skillsync:REMOVED_SKILL_ALIASES`).
 REMOVED_SKILL_ALIASES = {'go-jira': 'acli'}
+# Renamed roles kept as manifest aliases for one release (mirror of `skillsync:RENAMED_ROLE_ALIASES`).
+RENAMED_ROLE_ALIASES = {'Explore': 'explore'}
 
 
 def expand_project_skills(manifest, layerset):

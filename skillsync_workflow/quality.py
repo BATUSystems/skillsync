@@ -915,6 +915,8 @@ def doctor(root, manifest, library):
     if agentflow:
         roles = manifest.get('agents', list(codex_defaults.get('agents', {})))
         strings(roles, 'agents')
+        from .common import RENAMED_ROLE_ALIASES
+        roles = list(dict.fromkeys(RENAMED_ROLE_ALIASES.get(role, role) for role in roles))  # link instaluje nową nazwę
         for role in roles:
             if Path(role).is_absolute() or '..' in Path(role).parts or '\\' in role:
                 raise ValueError(f'Path escapes project: agents/{role}.md')
