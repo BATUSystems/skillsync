@@ -103,7 +103,8 @@ i bezpieczeństwo. Pozostałe zmiany dostają jedną rundę, a drugą tylko wted
 Bezpieczeństwo to zmiany granic dostępu: uprawnień i słów zgody, uwierzytelniania, sekretów, odczytu albo zapisu
 poza projektem oraz wykonywania poleceń z danych zewnętrznych.
 
-Plan zapisuje kategorię pętli każdego kroku (przy kroku albo w opisie pętli po krokach). Krok dotykający strażnika wycieków,
+Pętla `kod` biegnie raz na fazę planu, po jej zielonym szczeblu testów; runda po każdym drobnym kroku to nadmiar ceremonii
+(`ceremony-excess`). Plan zapisuje kategorię pętli każdego kroku (przy kroku albo w opisie pętli po krokach). Krok dotykający strażnika wycieków,
 migracji albo bezpieczeństwa dostaje pętlę pełną `code-review-<krok>` niezależnie od kolumny ryzyka. Spec, plan i pętla końcowa dostają pętlę pełną tylko wtedy, gdy zmiana w całości należy do jednej
 z tych kategorii; kroki z pętlą pełną mają ją już po kroku. Runda po zmianie przeglądanego materiału, gdy pętla dała
 już PASS, zaczyna nową pętlę tego kroku, a nie jest jej kolejną rundą.
