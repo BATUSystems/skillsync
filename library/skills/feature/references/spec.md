@@ -68,7 +68,7 @@ kontrola `Spec-sha`, plan `in_progress`.
 | `approved` | `draft (czeka na spec)` | „GO plan” po zmianie merytorycznej: zdejmij sufiks (plan `draft`), pętla `plan` od 1; PASS `plan-review` sprzed tej zgody jest nieważny |
 | `approved` | `approved (czeka na spec)` (przycisk albo `skillsync plan approve` w trakcie powrotu do aktu I) | pytanie: plan zatwierdzono przed nową pętlą `plan`, kontynuować? |
 | `approved` | `draft (czeka na GO implement)` | akt II: czekanie na „GO implement” (ostatni `plan-review` PASS albo opcjonalna runda lub brak pętli przy `direct`) |
-| `approved` z `Spec-sha` | `approved` (także `approved (czeka na GO implement)` po `skillsync plan approve`) z PASS `plan-review` po ostatnim „GO plan” albo bez obowiązkowej pętli | „GO implement” udzielone: porównaj sha, usuń sufiks, plan `in_progress`, akt III |
+| `approved` z `Spec-sha` | `approved` (także `approved (czeka na GO implement)` z wersji CLI sprzed usuwania tego dopisku) z PASS `plan-review` po ostatnim „GO plan” albo bez obowiązkowej pętli | „GO implement” udzielone: porównaj sha, usuń sufiks, plan `in_progress`, akt III |
 | `approved` | `approved` bez PASS obowiązkowej pętli `plan` po ostatnim „GO plan” | pytanie: plan zatwierdzono przed końcem pętli (np. przyciskiem), kontynuować? |
 | `approved` bez `Spec-sha` | `approved` | przerwanie przy zapisie: policz, zapisz, plan `in_progress` |
 | `approved` bez `Spec-sha` | `in_progress` | pytanie |

@@ -310,6 +310,7 @@ def _cmd_status(args):
 
 _TRANSITIONS = {'approve': ('draft', 'approved'), 'archive': ('done', 'archived'), 'unarchive': ('archived', 'done')}
 _SPEC_TRANSITIONS = {'approve': ('draft', 'approved')}
+_SATISFIED = {'specs': r'GO plan', 'plans': r'GO implement'}  # zgoda, którą daje `approve` danego pliku
 _SHA = re.compile(r'^[0-9a-f]{40}$')
 
 
@@ -368,7 +369,15 @@ def set_doc_status(root, name, action, folder='plans', expect_sha=None):
     if current != source:
         raise ValueError(f'Cannot {action} a {kind.lower()} with status {current!r}; expected {source!r}')
     start, end = match.span('word')
-    updated = (text[:start] + target + text[end:]).encode('utf-8')
+    line_end = text.find('\n', end)
+    line_end = len(text) if line_end == -1 else line_end
+    rest = text[end:line_end]
+    if action == 'approve':
+        # „czeka na <tę zgodę>” jest po zatwierdzeniu nieaktualne; inne dopiski (np. „czeka na spec”, „szkic”) zostają,
+        # bo rozstrzyga je tabela wznowienia.
+        consent = _SATISFIED[folder]
+        rest = re.sub(r'[ \t]*\((?=[^()\n]*czeka na[^()\n]*' + consent + r')[^()\n]*\)', '', rest, flags=re.IGNORECASE)
+    updated = (text[:start] + target + rest + text[line_end:]).encode('utf-8')
     mode = path.stat().st_mode & 0o7777
     fd, tmp = tempfile.mkstemp(prefix=f'.{path.name}.', suffix='.tmp', dir=path.parent)
     try:

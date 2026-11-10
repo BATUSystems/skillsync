@@ -101,6 +101,21 @@ class PlanArchive(WorkflowFixture):
         self.assertEqual((self.root / 'docs/specs/s.md').read_bytes(), b'Status: draft\n')
         self.assertEqual((self.root / 'docs/plans/p.md').read_bytes(), b'Status: draft\n')
 
+    def test_approve_drops_only_the_waiting_note_it_satisfies(self):
+        cases = [
+            ('spec', 'Status: draft (Q odpowiedziane, czeka na ponowne „GO plan”)\n', 'Status: approved\n'),
+            ('spec', 'Status: **draft** (czeka na GO plan) — 2026-11-10\n', 'Status: **approved** — 2026-11-10\n'),
+            ('spec', 'Status: draft (czeka na spec)\n', 'Status: approved (czeka na spec)\n'),
+            ('plan', 'Status: draft (czeka na GO implement)\nrest', 'Status: approved\nrest'),
+            ('plan', 'Status: draft (szkic — czeka na GO plan)\n', 'Status: approved (szkic — czeka na GO plan)\n'),
+            ('plan', 'Status: draft (czeka na spec)\n', 'Status: approved (czeka na spec)\n'),
+        ]
+        for kind, before, after in cases:
+            with self.subTest(kind=kind, before=before):
+                path = (self.spec if kind == 'spec' else self.plan)('x.md', before.encode())
+                self.cli(kind, 'approve', self.root, f'docs/{kind}s/x.md')
+                self.assertEqual(path.read_text(encoding='utf-8'), after)
+
     def test_expect_sha_binds_the_approval_to_the_shown_version(self):
         shown = b'# P\n\nStatus: draft (czeka na GO implement)\n'
         for kind, path in (('plan', self.plan('p.md', shown)), ('spec', self.spec('p.md', shown))):
