@@ -1262,6 +1262,28 @@ def render_gallery(entries):
         ''])
 
 
+def gallery_entries(prototypes_root, repo):
+    """`(entries, warnings)` of the gallery: valid prototypes under `prototypes_root` in `slug` order; a prototype
+    without a readable `prototype.json` is skipped with a warning."""
+    entries, warnings = [], []
+    for slug, directory in enumerate_prototypes(prototypes_root):
+        entry, entry_warnings = _describe(slug, directory, repo)
+        if 'error' in entry:
+            warnings.append(f'{entry["path"]}: {entry["error"]} (skipped in index)')
+            continue
+        warnings.extend(entry_warnings)
+        entries.append(entry)
+    return entries, warnings
+
+
+def gallery_html(prototypes_root, repo):
+    """Gallery HTML computed now (acceptance, open comments, screens as they are at this moment).  `serve` answers
+    `/` with it, so the gallery never lags behind `accept`, comments or `init`; `index` writes the same HTML to
+    `<root>/index.html` for `file://` and static servers."""
+    entries, _ = gallery_entries(Path(prototypes_root), Path(repo))
+    return render_gallery(entries)
+
+
 def _gallery_writable(path):
     if not os.path.lexists(path):
         return
@@ -1287,14 +1309,8 @@ def index_prototypes(root, manifest):
         if warnings:
             report['warnings'] = warnings
         return report
-    entries = []
-    for slug, directory in enumerate_prototypes(prototypes_root):
-        entry, entry_warnings = _describe(slug, directory, repo)
-        if 'error' in entry:
-            warnings.append(f'{entry["path"]}: {entry["error"]} (skipped in index)')
-            continue
-        warnings.extend(entry_warnings)
-        entries.append(entry)
+    entries, entry_warnings = gallery_entries(prototypes_root, repo)
+    warnings.extend(entry_warnings)
     target = prototypes_root / 'index.html'
     _gallery_writable(target)
     atomic_write(target, render_gallery(entries))
@@ -2293,7 +2309,8 @@ def serve_prototypes(root, manifest, args, err=None):
     source_writes = not args.no_source_writes and _in_git_worktree(settings['root'])
     config = server.ServerConfig(settings['root'], users_file_path(repo, args.users), host=args.host, port=args.port,
                                  secure_cookies=args.secure_cookies, trust_proxy=args.trust_proxy,
-                                 login_to_view=args.login_to_view, source_writes=source_writes, log=err)
+                                 login_to_view=args.login_to_view, source_writes=source_writes, log=err,
+                                 gallery=lambda: gallery_html(settings['root'], repo))
     try:
         instance = server.make_server(config)
     except server.StartupError as error:

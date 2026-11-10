@@ -39,6 +39,17 @@ idą do `notes`.
 </section>
 ```
 
+Ekran z kilkoma ramkami (np. widok i to samo miejsce z rozwiniętym menu): przed każdą ramką stoi podpis `<p class="frame-caption">opis</p>`,
+a silnik numeruje go sam („Ramka 2 — rozwinięte menu kontekstowe”); ramka bez podpisu w takim ekranie dostaje numer w górnej
+krawędzi, a między ramkami jest odstęp. W notatkach i komentarzach odwołuj się do numeru ramki, bo to on jest widoczny na stronie.
+
+```html
+<p class="frame-caption">Siatka: sale, menu zwinięte</p>
+<div class="frame">…</div>
+<p class="frame-caption">Rozwinięte menu kontekstowe terminu</p>
+<div class="frame">…</div>
+```
+
 Wysokość powłoki `.app` (domyślnie 40rem) zmieniają warianty `app-tall` (52rem) i `app-taller` (64rem) dla ekranów z długą
 treścią oraz `app-narrow` (34rem) dla krótkich. Żaden z nich nie zmienia szerokości.
 

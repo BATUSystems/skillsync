@@ -4105,7 +4105,8 @@ class ServerConfig(object):
 
     def __init__(self, root, users, host=DEFAULT_HOST, port=DEFAULT_PORT, secure_cookies=False, trust_proxy=False,
                  login_to_view=False, source_writes=True, clock=None, pbkdf2_iterations=DEFAULT_ITERATIONS,
-                 lock_timeout=LOCK_TIMEOUT, log=None, git_checks=True, max_file_bytes=MAX_FILE_BYTES, recover=True):
+                 lock_timeout=LOCK_TIMEOUT, log=None, git_checks=True, max_file_bytes=MAX_FILE_BYTES, recover=True,
+                 gallery=None):
         self.root = os.path.abspath(os.fspath(root))
         self.users = os.path.abspath(os.fspath(users))
         self.host = host
@@ -4121,6 +4122,9 @@ class ServerConfig(object):
         self.git_checks = git_checks
         self.max_file_bytes = int(max_file_bytes)
         self.recover = bool(recover)
+        # `gallery`: callable returning the HTML of the gallery computed now; `/` and `/index.html` of the root are
+        # answered with it (the static `<root>/index.html` is only the fallback when the callable fails or is None)
+        self.gallery = gallery
 
 
 def is_loopback_host(host):
@@ -4583,6 +4587,22 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
     def _not_found(self):
         self._send(404, b'Not found\n', 'text/plain; charset=utf-8', None, 'no-cache')
 
+    def _live_gallery(self, target):
+        """`<root>/index.html` served from `config.gallery()` (state as of now: acceptance, comments, new prototypes).
+        False = not the gallery or the callable failed (the caller falls back to the static file)."""
+        gallery = self.app.config.gallery
+        if gallery is None or target != os.path.realpath(os.path.join(self.app.root, 'index.html')):
+            return False
+        try:
+            html = gallery()
+        except Exception as error:   # noqa: BLE001 — galeria na żywo nie może położyć serwera; plik statyczny zostaje
+            self.app.log('ostrzeżenie: galeria na żywo nie powstała (%s): podaję statyczny index.html' % error)
+            return False
+        if not isinstance(html, str):
+            return False
+        self._send(200, html.encode('utf-8'), 'text/html; charset=utf-8', None, 'no-cache')
+        return True
+
     def _static(self, raw_path, query):
         try:
             decoded = unquote(raw_path, errors='strict')
@@ -4616,6 +4636,8 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
                 return
         elif trailing:
             self._not_found()
+            return
+        if self._live_gallery(target):
             return
         if not os.path.isfile(target):
             self._not_found()

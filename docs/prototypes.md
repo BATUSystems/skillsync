@@ -135,6 +135,7 @@ Pasek u góry strony ma przełącznik ekranów (poprzedni, lista z wyszukiwaniem
 „Komentarze”), „Wątki”, konto („Zaloguj” albo chip konta), chip akceptacji (stan akceptacji; działania tylko dla ról
 akceptujących) oraz przyciski „Pokaż hotspoty”, „Prezentacja”, „Ukryj pinezki” i „Motyw”.
 
+Pasek ekranów zaczyna się od linku „⌂” do galerii prototypów: pod `serve` to strona główna liczona na żywo (akceptacje i komentarze bez `index`), z `file://` link otwiera katalog nadrzędny, gdzie `skillsync prototype index` zostawia statyczny `index.html`. W iframe widoku mobile i w porównaniu iteracji paska nie ma, więc linku też nie.
 Skróty klawiszowe (poza polem tekstowym): ← i → poprzedni i następny ekran, G lista ekranów, C tryb komentarzy,
 `[` i `]` poprzedni i następny wątek w panelu, Esc zamyka okienko, a drugi Esc wyłącza tryb komentarzy.
 

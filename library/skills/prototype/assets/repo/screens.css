@@ -110,6 +110,33 @@ ul.notes { padding-left: 2rem; }   /* sama lista jest ramką uwag: znaczniki pun
   border-bottom: 1px solid var(--border);
   background: var(--muted);
 }
+/* Kilka ramek w jednym ekranie: podpis nad ramką (`p.frame-caption`, silnik numeruje „Ramka N — opis”), odstęp między ramkami,
+   a ramka bez podpisu w takim ekranie dostaje sam numer w górnej krawędzi. Numeracja jest w CSS (liczniki), bez zmian w DOM. */
+.screen { counter-reset: frame; }
+.frame { counter-increment: frame; }
+.frame + .frame, .notes + .frame { margin-top: 1.25rem; }
+.frame-caption {
+  counter-increment: frame;
+  margin: 0 0 0.375rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--muted-foreground);
+}
+.frame + .frame-caption, .notes + .frame-caption { margin-top: 1.25rem; }   /* po regule .frame-caption: jej skrót margin nie może tego nadpisać */
+.frame-caption::before { content: "Ramka " counter(frame) " — "; font-variant-numeric: tabular-nums; }
+.frame-caption + .frame { counter-increment: none; margin-top: 0; }
+.screen:has(.frame ~ .frame) .frame:not(.frame-caption + .frame)::before {
+  content: "Ramka " counter(frame);
+  display: block;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted-foreground);
+  background: var(--muted);
+  border-bottom: 1px solid var(--border);
+}
+
 .frame-dots { display: inline-flex; flex: none; gap: 0.375rem; }
 .frame-dots > * { width: 0.625rem; height: 0.625rem; border-radius: 50%; background: var(--input); }
 .frame-url {
