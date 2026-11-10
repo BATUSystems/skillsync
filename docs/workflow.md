@@ -185,7 +185,8 @@ projektu albo skill organizacji, nie rdzeń.
 | Rozpoznanie | `map <projekt> [--check]` | `.skillsync/map.md` (moduły, entry pointy, komendy, testy, migracje), czytana przed Glob/Grep |
 | Stan pracy | `status <projekt> [--json]` | plany (`plans[].spec`), specy (`specs[]`), pliki FRD (`frds[]`), kroki, `needsHuman` (`approval` dla `draft`, `closure` dla `in_progress` ze wszystkimi `[x]`, `pull_request` dla takiego planu z `Ticket:` bez `PR:`) |
 | Akt II | `readiness <projekt> --plan <plik> --risk <ryzyko planu> --files ...` | struktura planu i speca z linii `Spec:` (sekcje, `TODO`/`TBD`), nie merytoryka |
-| Zgoda „GO implement” | `plan approve <projekt> <plik>` | tylko słowo statusu `draft` → `approved` (start aktu III i tak sprawdza pętlę, wersję i `readiness`) |
+| Zgoda „GO plan” | `spec approve <projekt> <plik> [--expect-sha SHA]` | tylko słowo statusu speca `draft` → `approved`; sesja przy następnej turze tworzy plan-szkic i `Spec-sha` |
+| Zgoda „GO implement” | `plan approve <projekt> <plik> [--expect-sha SHA]` | tylko słowo statusu `draft` → `approved` (start aktu III i tak sprawdza pętlę, wersję i `readiness`) |
 | Środowisko i dostęp | `env`, `claim`, `guard`, `profiles` | receptura środowiska, dzierżawa zadania, strażnik konwencji, katalog skilli |
 | Testy | `smart-test <projekt> [--run]`, `validate <projekt> --profile quick\|final [--run]` | selekcja i uruchomienie zaufanych kontroli z logami |
 | E2E / CI / tracker | `e2e`, `ci`, `tracker` | obserwacje przeglądarki + natywne testy, diagnoza CI, operacje trackera |

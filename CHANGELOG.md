@@ -14,6 +14,11 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ### Added
 
+- `skillsync spec approve <project> <spec>`: changes only the spec status word `draft` → `approved`; the procedure treats it
+  (or a status-page button that calls it) as the user's "GO plan", like `plan approve` for "GO implement".
+- `plan approve` and `spec approve` accept `--expect-sha <git blob sha>`: the change is refused when the file differs from the
+  version the user saw. The JSON report carries `sha` of the written file.
+
 - `install.sh`: installer for Linux, WSL2 and macOS. It installs `uv` if missing, installs `skillsync` from the release tag
   baked into the script (no sudo), checks that the version equals the tag and runs `skillsync setup`.
 - `skillsync setup`: machine setup wizard. It adds the core layer, optionally a read-only organization layer (after an

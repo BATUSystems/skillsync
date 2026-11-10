@@ -40,6 +40,10 @@ Słownik bez kolizji: „etap” zostaje dla etapów pracy w projektach (np. eta
 | II Plan | plan `draft (czeka na GO implement)`, `readiness`, pytanie o wersję | `plan` (obowiązkowa przy `plan-large`, ryzyku high, prośbie użytkownika) | „GO implement” |
 | III Realizacja | kod, testy, dokumentacja, changelog, wersja | `kod`: po kroku z ryzykiem high i końcowa | `done`; commity i push według trybu dostarczania (rdzeń AGENTS) |
 
+Zgodę daje też status nadany przez użytkownika przyciskiem (strona statusu, IDE) albo `skillsync spec approve` („GO plan”)
+i `skillsync plan approve` („GO implement”); sesja zauważa go przy następnej turze i działa według tabeli wznowienia w
+[spec](references/spec.md). Sama sesja tych komend nie woła: zgoda pochodzi od użytkownika.
+
 Plan `direct` ma akty II i III i jedną zgodę „GO implement” (dawne GO); `bugfix` ma brief i akt III (szczegóły w skillu
 `bugfix`); `reuse` wznawia akt według tabeli stanów w [spec](references/spec.md). Samo „GO” przyjmij według tej tabeli
 i nazwij w odpowiedzi, na co je przyjęto; stan niejednoznaczny albo pętla bez końca (PASS albo STOP z decyzją
