@@ -15,8 +15,10 @@ delegacji, zgłoś ograniczenie zamiast udawać niezależne review lub uruchamia
 ## Dobór zakresu i ról
 
 - Mała zmiana niskiego ryzyka: jeden `implementer` z testami i niezależny `reviewer`.
-- Większa zmiana: osobny `test-writer`; autorstwo testów rozdziel także przy uprawnieniach,
-  tenantach, płatnościach, migracjach danych i współbieżności.
+- Większa zmiana: kroki planu to **fazy** (5–8 na zmianę: model i migracja, reguły, API, UI, testy integracyjne, domknięcie),
+  nie kilkanaście drobnych kroków — każde przekazanie między rolami kosztuje kontekst. `implementer` fazy pisze kod **i testy
+  jednostkowe** tej fazy; osobny `test-writer` pisze testy integracyjne fazy przy uprawnieniach, tenantach, płatnościach,
+  migracjach danych i współbieżności — po zielonym szczeblu fazy, równolegle z następną fazą, w rozłącznym katalogu.
 - `verifier` (tylko odczyt): sprawdza konkretne twierdzenia `plik:linia` — uwagi reviewerów,
   deklaracje podumysłów, punktowe poprawki poza pętlą przeglądu. Używaj zamiast osobistego sprawdzania
   przez orkiestratora.
@@ -135,6 +137,11 @@ poleceń, nie deklarację podagenta. Kroki czekające na testy/review pozostają
 
 Równoległość wymaga niezależnych plików **i** zasobów (baza, port, build): jeden właściciel zapisu,
 jeden proces testowy na zasób, brak przydziału = `NOT_RUN`, testowany stan się nie zmienia.
+Najwyżej dwa podumysły piszące kod naraz, w rozłącznych katalogach; nowe pliki następnej fazy trzymaj poza drzewem
+źródeł i testów (np. `wip/`) do zielonego szczebla poprzedniej fazy, bo nowy plik psuje cudzy build; jeden build naraz.
+Bieg aktu III to najwyżej ok. 90 minut pracy agenta: po pełnej fazie commit i checkpoint, a przy ciężkim kontekście
+wznowienie w świeżym kontekście z planu i checkpointów ([przerwanie i pomiar](references/measurement.md)) zamiast
+ciągnięcia jednej sesji; rekordy `skillsync checkpoint` na koniec fazy i `--final`, nie po każdym drobnym kroku.
 Szczegóły: [zasoby](references/resources.md). Kilka **sesji** z dyspozytorem:
 [wiele sesji](references/multi-session.md); gdy zlecenie zaczyna się od `dispatch: <run-id> from
 Dyspozytor …`, przeczytaj [tryb roboczy](references/worker-mode.md). Współdzielone zadanie, integracja,
@@ -168,10 +175,11 @@ Dokumenty są częścią diffu objętego review i nie mogą być pomijane jako �
 
 ## Review i zakończenie
 
-Akt III kończy [pętla `kod`](references/review-loop.md): po każdym kroku z ryzykiem high i końcowa dla całości,
-każda runda w nowym podumyśle `reviewer`; liczbę rund i sposób zamknięcia uwag wyznacza kategoria pętli
-([Kategoria pętli i przejścia](references/review-loop.md#kategoria-pętli-i-przejścia)): pętla pełna tylko przy strażniku
-wycieków, migracji i bezpieczeństwie, poza nimi jedna runda. Materiał w plikach (diff, nowe pliki, stan
+Akt III kończy [pętla `kod`](references/review-loop.md): po każdej fazie (kroku planu) z ryzykiem high — po jej zielonym
+szczeblu testów, nie po każdej drobnej zmianie — i końcowa dla całości, każda runda w nowym podumyśle `reviewer`; liczbę rund
+i sposób zamknięcia uwag wyznacza kategoria pętli ([Kategoria pętli i przejścia](references/review-loop.md#kategoria-pętli-i-przejścia)):
+pętla pełna tylko przy strażniku wycieków, migracji i bezpieczeństwie (uprawnienia), poza nimi jedna runda, a majory zamyka
+świeży `verifier`; izolację danych między organizacjami sprawdzają testy integracyjne fazy (także mutacyjne) i jej jedna runda. Materiał w plikach (diff, nowe pliki, stan
 początkowy, plan, logi): [materiał review](references/review-material.md); reviewer pracuje tylko w trybie odczytu,
 brak materiału to `BLOCKED`. Checklista: `skillsync review <projekt> --risk <low|medium|high> --files <ścieżki>`
 i [review/QA](../workflow/references/review.md). Brak utrwalenia odkryć lub dokumentacji bez uzasadnienia to uwaga

@@ -27,6 +27,12 @@ Every release has a **Breaking** section that lists incompatible changes. When a
   Prototypy istniejące dostają to przez `skillsync prototype migrate`.
 
 ### Changed
+- Skill `feature`: kroki planu to fazy (5–8), `implementer` fazy pisze kod i testy jednostkowe, `test-writer` tylko testy
+  integracyjne (uprawnienia, tenanty, płatności, migracje, współbieżność) po zielonym szczeblu fazy; pętla `kod` raz na fazę
+  (pełna tylko przy strażniku wycieków, migracji i bezpieczeństwie, majory zamyka `verifier`); najwyżej dwa podumysły piszące
+  kod naraz w rozłącznych katalogach, nowe pliki następnej fazy poza drzewem do zielonego szczebla poprzedniej; bieg aktu III
+  ≤ ok. 90 min pracy agenta z wznowieniem w świeżym kontekście; rekordy `checkpoint` na koniec fazy. Źródło: porównanie
+  z przebiegiem o tym samym zakresie w innym stosie — różnica 3–5× w tempie wynikała z ziarna kroków i liczby przekazań, nie z zakresu.
 - Skill `prototype` (SKILL.md): `prototype index` po `init`, usunięciu prototypu albo zmianie tytułu, gdy galerię ogląda się
   bez `serve` (plik statyczny); przed zgłoszeniem „gotowy do akceptacji” sprawdzenie sluga na stronie głównej `serve`
   (`prototype list` czyta katalogi, nie galerię).

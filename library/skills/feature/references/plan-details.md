@@ -40,6 +40,9 @@ przy ryzyku planu high albo na prośbę właściciela przechodzi [pętlę przegl
 
 ## Kroki, Exec i Progress
 
+Krok planu to faza: spójny kawałek, który kończy się działającą aplikacją, zielonym szczeblem testów i commitem (zwykle 5–8 na
+plan, np. model i migracja; reguły i silnik; API; UI; testy integracyjne i e2e; domknięcie). Kilkanaście drobnych kroków mnoży
+przekazania między rolami (implementer → test-writer → review → verifier → commit) i to one, nie zakres, wydłużają przebieg.
 Krok ma stały id i wiersz w tabeli o kolumnach `Id | Krok | Rola | Exec | Ryzyko kroku | Pliki`:
 
 | Id | Krok | Rola | Exec | Ryzyko kroku | Pliki |
