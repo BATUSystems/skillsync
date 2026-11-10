@@ -70,7 +70,11 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 - Skill `go-jira` (przestarzały; zastąpiony przez `acli`). Wpis w manifeście nadal działa jako alias; ręczne odesłania do `skills/go-jira/` trzeba zamienić na `skills/acli/`.
 
 ### Breaking
-None.
+- Role `Explore` renamed to `explore` (lower case like `implementer`, `reviewer`, `verifier`, …): `library/agents/explore.md`
+  with `name: explore`, the `codex.yaml` key and all docs. Claude Code picks a subagent by the `name` in the frontmatter, so
+  orchestrators must delegate to `explore`. Run `skillsync link` after updating: it removes `.claude/agents/Explore.md` and
+  installs `explore.md`. Manifests with `agents: [Explore]` keep working for one release (alias, `doctor` warning), and a
+  Codex `agent_overrides` entry under `Explore` still applies; replace both with `explore`.
 
 ### Fixed
 

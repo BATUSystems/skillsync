@@ -9,7 +9,7 @@ Reguła: `skillsync map <projekt>` zapisuje generowany `.skillsync/map.md` (nie 
 drzewo do głębokości 3 z liczbą plików śledzonych i celem modułu (pierwsza niepusta linia `README*.md`). Limit 12 KB: najpierw płytsze drzewo z adnotacją, w ostateczności obcięcie.
 Nagłówek niesie `fingerprint` = sha256 z `git ls-files` + HEAD (poza gitem: lista plików). `map --check`: 0 świeża, 1 nieaktualna/brak, 2 błąd.
 
-Dlaczego: `Explore` i orkiestrator mają czytać mapę przed Glob/Grep, zamiast płacić za przeszukiwanie repo w każdej sesji.
+Dlaczego: `explore` i orkiestrator mają czytać mapę przed Glob/Grep, zamiast płacić za przeszukiwanie repo w każdej sesji.
 
 Wyjątki i pułapki:
 - Pliki nieśledzone i zmiana treści śledzonego pliku (bez zmiany listy i HEAD) nie zmieniają fingerprintu — `--check` ich nie widzi.

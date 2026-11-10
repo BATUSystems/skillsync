@@ -17,7 +17,7 @@ Ten dokument prowadzi akt I (spec, pętla `spec`, zgoda GO plan). Akt II (plan, 
 - Sprawdź podział: gdy zlecenie obejmuje kilka zdolności, z których każda działa samodzielnie, zapytaj użytkownika, czy rozbić je na osobne plany i specy.
 - Każde pytanie dostaje numer `Q1`, `Q2`… i własną, krótką linię; wybieraj formę tak/nie lub zestaw opcji.
 - Po pokazaniu szkieletu zatrzymaj się i czekaj na odpowiedzi użytkownika.
-- Do czasu odpowiedzi działa tylko `Explore` oraz zbieranie danych niezależnych od pytań: kto korzysta z modułu, jak zbudowany jest kod, jakie kontrakty już istnieją. Projekt na domysłach jest zakazany.
+- Do czasu odpowiedzi działa tylko `explore` oraz zbieranie danych niezależnych od pytań: kto korzysta z modułu, jak zbudowany jest kod, jakie kontrakty już istnieją. Projekt na domysłach jest zakazany.
 - Niewiadomą odkrytą później zgłaszaj bramką ponownie, tylko dla nowych pytań.
 - Gdy odpowiedzi padną, `Pytania otwarte` znikają z dokumentu; rozstrzygnięcia lądują w `Decyzje i alternatywy`, a spec uzupełnia się o kryteria akceptacji i mapę FRD ([spec](spec.md)).
 

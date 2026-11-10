@@ -60,7 +60,7 @@ który podrobiłby wpis, mógłby sam wykonać push), więc wpis nie jest słabs
 Plan `direct` ma akty II i III i jedną zgodę „GO implement” (dawne GO); `bugfix` ma brief i akt III (szczegóły w skillu
 `bugfix`); `reuse` wznawia akt według tabeli stanów w [spec](references/spec.md). Samo „GO” przyjmij według tej tabeli
 i nazwij w odpowiedzi, na co je przyjęto; stan niejednoznaczny albo pętla bez końca (PASS albo STOP z decyzją
-Użytkownika) = pytanie, bez działania. Czekając na odpowiedzi `Q`, rób tylko `Explore` i odczyt faktów niezależnych od
+Użytkownika) = pytanie, bez działania. Czekając na odpowiedzi `Q`, rób tylko `explore` i odczyt faktów niezależnych od
 pytań (konsumenci, struktura, istniejące kontrakty). Czekając na akceptację prototypu (STOP), orkiestrator może przygotować
 szkic planu ze statusem `draft (szkic — czeka na GO plan)` bez `Spec-sha`; po akceptacji i uwagach nanosi na niego różnice,
 a dopiero „GO plan” zapisuje `Spec-sha`.
@@ -90,7 +90,7 @@ określa format; `pre-implement` sprawdza zmiany kontraktów i wysokie ryzyko.
    `in_progress` (także `(blocked — …)`) bez żywego właściciela → pytanie, czy zaczynamy mimo to; prowadzony przez żywą sesję
    (aktywna dzierżawa `claims[]` albo świeży checkpoint przebiegu z linii `Przebieg:`) → tylko informacja; `draft`/`approved` →
    informacja; `done`/`archived` → nic. Wyjątek: plan z wejścia z klucza czekający na PR-y (`Ticket:` bez `PR:`, `needsHuman: pull_request`, [pr-after-approval](references/pr-after-approval.md)) → informacja.
-2. `Explore` lokalizuje pliki i wzorce; wnioski architektoniczne wyciąga orkiestrator z kodu.
+2. `explore` lokalizuje pliki i wzorce; wnioski architektoniczne wyciąga orkiestrator z kodu.
 3. Zapisz `docs/plans/RRRR-MM-DD-<slug>.md` ze statusem `draft`, przy `plan-large` w akcie II (szkic przy „GO plan”) (cel, kryteria, kroki z rolą i
    plikami, TESTY, zasoby, ryzyka, **Dokumentacja i wiedza**, **Wersja i changelog** z pytaniem do
    użytkownika); wymagana zawartość: [plan](references/plan-details.md).
@@ -128,7 +128,7 @@ określa format; `pre-implement` sprawdza zmiany kontraktów i wysokie ryzyko.
 
 ## Delegowanie i zasoby
 
-Przed delegowaniem `Explore` i implementera wykonaj `skillsync map <projekt> --check`, a przy nieaktualnej
+Przed delegowaniem `explore` i implementera wykonaj `skillsync map <projekt> --check`, a przy nieaktualnej
 mapie `skillsync map <projekt>`; ścieżka `.skillsync/map.md` trafia do zlecenia.
 
 Każde zlecenie zawiera:
@@ -141,7 +141,7 @@ Każde zlecenie zawiera:
 - ścieżkę raportu `.skillsync/runs/<run-id>/<krok>-<rola>.md`: pełny raport z „Odkryciami”
   (źródło plik:linia/ticket/dane) idzie do pliku; do orkiestratora wraca skrót ≤ 15 linii: status
   (PASS/FAIL/BLOCKED/NOT_RUN/CHANGES_REQUIRED), zmienione pliki, blokery, liczba odkryć, ścieżka.
-  Role bez Write (Explore, reviewer, verifier): raport zapisuje orkiestrator albo rola zwraca
+  Role bez Write (explore, reviewer, verifier): raport zapisuje orkiestrator albo rola zwraca
   skrót plus szczegóły ≤ 60 linii. Pełny raport czytaj tylko przy porażce, blokerze, odkryciach
   albo przed review ([raporty](references/reports.md)).
 

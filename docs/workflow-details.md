@@ -105,7 +105,7 @@ deklaracji `PASS`. Prywatne materiały sesji głównej nie trafiają do zleceń 
 
 Polecenie realizacji przedstawionej wcześniej listy też jest zgodą na ten zakres. Prośba o analizę nie upoważnia do
 implementacji. Stan niejednoznaczny albo pętla bez końca (ani PASS, ani STOP z decyzją użytkownika) to pytanie, nie
-działanie. Czekając na odpowiedzi na `Q`, agent robi tylko `Explore` i odczyt faktów niezależnych od pytań. Żadna zgoda nie
+działanie. Czekając na odpowiedzi na `Q`, agent robi tylko `explore` i odczyt faktów niezależnych od pytań. Żadna zgoda nie
 obejmuje commita, pusha ani deployu (§23).
 
 ## 5. Baseline i rozpoznanie
@@ -119,7 +119,7 @@ Przed aktem I albo II orkiestrator:
   baseline'u, dostępne środowiska, bazy, porty i katalogi wynikowe oraz wcześniejsze otwarte uwagi review;
 - wykonuje `skillsync map <projekt> --check` (przy nieaktualnej mapie `map`) i przekazuje `.skillsync/map.md` w zleceniach.
 
-`Explore` lokalizuje definicje, konsumentów, testy, wzorce, dokumentację i rekordy wiedzy. Podaje ścieżki oraz linie
+`explore` lokalizuje definicje, konsumentów, testy, wzorce, dokumentację i rekordy wiedzy. Podaje ścieżki oraz linie
 i rozdziela fakty od hipotez. Nie uruchamia testów, nie wykonuje review i nie podejmuje decyzji architektonicznych.
 Niejasny przepływ UI: orkiestrator może zaproponować makietę (`prototype`), ale bez zgody użytkownika jej nie tworzy.
 
@@ -380,7 +380,7 @@ wyjątkiem są rundy pętli przeglądu.
 
 Pełny raport roli zapisującej trafia do `.skillsync/runs/<run-id>/<krok>-<rola>.md`. Skrót do orkiestratora ma najwyżej
 15 linii i zawsze zawiera: status (`PASS`, `FAIL`, `BLOCKED`, `NOT_RUN`, `CHANGES_REQUIRED`), zmienione pliki, blokery
-(także jawne „brak”), liczbę „Odkryć” i ścieżkę pełnego raportu. Role tylko do odczytu (`Explore`, `reviewer`, `verifier`)
+(także jawne „brak”), liczbę „Odkryć” i ścieżkę pełnego raportu. Role tylko do odczytu (`explore`, `reviewer`, `verifier`)
 zwracają skrót i szczegóły do 60 linii albo ich materiał zapisuje orkiestrator. Orkiestrator czyta pełny raport przy
 `FAIL`, `BLOCKED`, `CHANGES_REQUIRED`, odkryciach oraz przed review.
 
@@ -389,7 +389,7 @@ zwracają skrót i szczegóły do 60 linii albo ich materiał zapisuje orkiestra
 ```mermaid
 flowchart TB
     O[Orkiestrator: plan, zakres, zasoby, decyzje, pętle]
-    O --> E[Explore: lokalizacja i konsumenci]
+    O --> E[explore: lokalizacja i konsumenci]
     O --> I[Implementer: kod produkcyjny]
     O --> TW[Test-writer: niezależne testy]
     O --> M[Mechanic: mapowane edycje]
@@ -404,7 +404,7 @@ flowchart TB
     V --> O
 ```
 
-### `Explore`
+### `explore`
 
 - tylko odczyt; bez testów, buildów i zapisu;
 - lokalizuje definicje, konsumentów, testy, wzorce, dokumentację i rekordy wiedzy;
@@ -585,7 +585,7 @@ unstaged i untracked względem zapisanego baseline'u).
 flowchart TD
     A[PR albo lokalny diff] --> B[Kontrakt zakresu]
     B --> C[Izolowany worktree lub snapshot]
-    C --> D[Explore: symbole → konsumenci → testy]
+    C --> D[explore: symbole → konsumenci → testy]
     D --> E{Rozmiar i ryzyko}
     E -- mniej niż 300 linii i low --> F[1 reviewer: wszystkie soczewki]
     E -- do 1500 linii lub medium --> G[2 reviewerów]

@@ -162,7 +162,7 @@ Instrukcje projektu mają tylko punkty wejścia (3–5 linii). Zamiast tego:
 2. `description` ≤ 200 bajtów (`doctor` ostrzega powyżej);
 3. `skillsync skills index` odświeża indeks (`--check` sprawdza aktualność);
 4. `skillsync suggest <projekt>` pokazuje braki/nadmiary skilli projektu (tylko odczyt), `skillsync doctor` ostrzega o skillu cudzej organizacji, braku skilla organizacji i niewykrytej technologii;
-5. `skillsync map <projekt>` buduje `.skillsync/map.md` (mapa repo dla `Explore`/orkiestratora).
+5. `skillsync map <projekt>` buduje `.skillsync/map.md` (mapa repo dla `explore`/orkiestratora).
 
 ### Krok 4 — wykonaj linkowanie
 
@@ -256,7 +256,7 @@ sync:
   method: symlink                      # symlink | copy (symlink z automatycznym fallbackiem do kopii)
 # --- workflow agentowy (Claude Code + Codex) ---
 # `feature` w skills (alias `agentflow` nadal działa): włącza workflow; role dla obu hostów domyślnie z codex.yaml
-agents: [implementer, test-writer, test-runner, reviewer, Explore]  # opcjonalnie: zawężenie (pusta lista = brak ról)
+agents: [implementer, test-writer, test-runner, reviewer, explore]  # opcjonalnie: zawężenie (pusta lista = brak ról)
 hooks:
   stop_tests: true                     # tylko projekty BEZ feature; z feature testy uruchamia test-runner
 tests:

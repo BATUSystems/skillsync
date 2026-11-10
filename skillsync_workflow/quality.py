@@ -848,6 +848,11 @@ def doctor(root, manifest, library):
         finding('warning', '.github/.skillsync.yaml',
                 'Deprecated skill `go-jira` in skills: it was removed from the library; replace it with `acli` '
                 '(the old name resolves to `acli` when the library has it)')
+    roles = manifest.get('agents')
+    if isinstance(roles, list) and 'Explore' in roles:
+        finding('warning', '.github/.skillsync.yaml',
+                'Renamed role `Explore` in agents: replace it with `explore` (the old name still works as an alias '
+                'for one release); then run `skillsync link`')
     dispatch_errors, dispatch_warnings = validate_dispatch(manifest.get('dispatch'))
     for message in dispatch_errors:
         finding('error', '.github/.skillsync.yaml', message)
