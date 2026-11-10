@@ -309,5 +309,18 @@ class ProgressReportCadence(unittest.TestCase):
         self.assertIn('po każdym kroku albo co 30 minut, co nastąpi pierwsze', skill)
 
 
+class PhaseSubsteps(unittest.TestCase):
+    """A phase is the unit of review and commits; its sub-step Fn.k is the unit of reporting."""
+
+    def test_feature_and_plan_details_state_the_rule(self):
+        root = Path(__file__).resolve().parents[1] / 'library/skills/feature'
+        details = ' '.join((root / 'references/plan-details.md').read_text(encoding='utf-8').split())
+        self.assertIn('**podkrok fazy jednostką raportowania**', details)
+        self.assertIn('`Fn.1…Fn.k`', details)
+        self.assertIn('- [ ] F1.3 Testy integracyjne (test-writer) i commit', (root / 'references/plan-details.md').read_text(encoding='utf-8'))
+        skill = ' '.join((root / 'SKILL.md').read_text(encoding='utf-8').split())
+        self.assertIn('jednostką raportowania jest jej podkrok `Fn.1…Fn.k`', skill)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -63,6 +63,10 @@ Every release has a **Breaking** section that lists incompatible changes. When a
   operation itself, but may not order it by word in another session.
 - `feature`: the progress report (`checkpoints.md` line) is written after every step OR every 30 minutes, whichever comes first;
   the agent checks the time itself (`date +%H:%M`) because it has no clock (`references/measurement.md`).
+- `feature`: a phase stays the unit of review and commits, but the unit of reporting is its sub-step `Fn.1…Fn.k` in
+  `Progress` (code BE ‖ FE, test rung and code commit, integration tests and commit, review and fixes, end-of-phase `--fast`
+  and checkpoint), ticked with a sha or a result; a progress report after every sub-step or every 30 minutes
+  (`plan-details.md`). Older plans with steps without a dot (`S1`, `S2a`) stay valid.
 - Skill `feature`: kroki planu to fazy (5–8), `implementer` fazy pisze kod i testy jednostkowe, `test-writer` tylko testy
   integracyjne (uprawnienia, tenanty, płatności, migracje, współbieżność) po zielonym szczeblu fazy; pętla `kod` raz na fazę
   (pełna tylko przy strażniku wycieków, migracji i bezpieczeństwie, majory zamyka `verifier`); najwyżej dwa podumysły piszące

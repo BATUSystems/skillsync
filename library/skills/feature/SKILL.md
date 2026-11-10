@@ -19,6 +19,8 @@ delegacji, zgłoś ograniczenie zamiast udawać niezależne review lub uruchamia
   nie kilkanaście drobnych kroków — każde przekazanie między rolami kosztuje kontekst. `implementer` fazy pisze kod **i testy
   jednostkowe** tej fazy; osobny `test-writer` pisze testy integracyjne fazy przy uprawnieniach, tenantach, płatnościach,
   migracjach danych i współbieżności — po zielonym szczeblu fazy, równolegle z następną fazą, w rozłącznym katalogu.
+  Faza jest jednostką review i commitów, a jednostką raportowania jest jej podkrok `Fn.1…Fn.k` w `Progress`
+  ([plan](references/plan-details.md)); raport postępu po każdym podkroku albo co 30 minut, co nastąpi pierwsze.
 - `verifier` (tylko odczyt): sprawdza konkretne twierdzenia `plik:linia` — uwagi reviewerów,
   deklaracje podumysłów, punktowe poprawki poza pętlą przeglądu. Używaj zamiast osobistego sprawdzania
   przez orkiestratora.
