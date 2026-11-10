@@ -67,6 +67,11 @@ Every release has a **Breaking** section that lists incompatible changes. When a
   `Progress` (code BE ‖ FE, test rung and code commit, integration tests and commit, review and fixes, end-of-phase `--fast`
   and checkpoint), ticked with a sha or a result; a progress report after every sub-step or every 30 minutes
   (`plan-details.md`). Older plans with steps without a dot (`S1`, `S2a`) stay valid.
+- `feature`: the `kod` loop runs once per phase after its green test rung, without a risk condition (the loop category still
+  decides full vs one round); this resolves the conflict with `review-loop.md`.
+- `pre-implement`: performed by a read-only subagent (`reviewer` with the pre-implement brief); the orchestrator writes the report
+  to `.skillsync/runs/<run-id>/pre-implement.md` (`pre-implement-<step>.md` for several gates) with the first line
+  `Werdykt: READY|NEEDS_CHANGES|BLOCKED`; the status page recognises it by the name `pre-implement*`.
 - Skill `feature`: kroki planu to fazy (5–8), `implementer` fazy pisze kod i testy jednostkowe, `test-writer` tylko testy
   integracyjne (uprawnienia, tenanty, płatności, migracje, współbieżność) po zielonym szczeblu fazy; pętla `kod` raz na fazę
   (pełna tylko przy strażniku wycieków, migracji i bezpieczeństwie, majory zamyka `verifier`); najwyżej dwa podumysły piszące

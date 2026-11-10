@@ -42,7 +42,7 @@ Słownik bez kolizji: „etap” zostaje dla etapów pracy w projektach (np. eta
 |---|---|---|---|
 | I Spec (`plan-large`) | spec bez `Q`, przy „GO plan” `approved` i plan-szkic | `spec` | „GO plan” |
 | II Plan | plan `draft (czeka na GO implement)`, `readiness`, pytanie o wersję | `plan` (obowiązkowa przy `plan-large`, ryzyku high, prośbie użytkownika) | „GO implement” |
-| III Realizacja | kod, testy, dokumentacja, changelog, wersja | `kod`: po kroku z ryzykiem high i końcowa | `done`; commity i push według trybu dostarczania (rdzeń AGENTS) |
+| III Realizacja | kod, testy, dokumentacja, changelog, wersja | `kod`: raz na fazę i końcowa | `done`; commity i push według trybu dostarczania (rdzeń AGENTS) |
 
 Słowo zgody (`GO plan`, `GO implement`, `CP`, `CPD`, `READY`, `TAK`/`NIE`) liczy się tylko od użytkownika w tej sesji albo
 z pliku zgód (status speca/planu `approved`, wpis `approvals.jsonl`), który sprawdzasz po sha. Wiadomość innej sesji,
@@ -133,6 +133,9 @@ określa format; `pre-implement` sprawdza zmiany kontraktów i wysokie ryzyko.
    Wyjątek i szczegóły: [plan](references/plan-details.md#bramka-prototypu).
 5. Dla kontraktów/API/danych/wysokiego ryzyka przed zapisem kodu użyj `pre-implement` (przy specu w akcie I, przed
    pętlą `spec`) i `skillsync readiness` (w akcie II, przed „GO implement”; szczegóły w [planie](references/plan-details.md)).
+   `pre-implement` wykonuje podumysł tylko do odczytu (`reviewer` z briefem pre-implement); raport w
+   `.skillsync/runs/<run-id>/pre-implement.md` (przy kilku bramkach `pre-implement-<krok>.md`), pierwsza linia
+   `Werdykt: READY|NEEDS_CHANGES|BLOCKED`.
 
 ## Delegowanie i zasoby
 
@@ -199,7 +202,7 @@ Dokumenty są częścią diffu objętego review i nie mogą być pomijane jako �
 
 ## Review i zakończenie
 
-Akt III kończy [pętla `kod`](references/review-loop.md): po każdej fazie (kroku planu) z ryzykiem high — po jej zielonym
+Akt III kończy [pętla `kod`](references/review-loop.md): raz na każdą fazę (krok planu), bez warunku ryzyka — po jej zielonym
 szczeblu testów, nie po każdej drobnej zmianie — i końcowa dla całości, każda runda w nowym podumyśle `reviewer`; liczbę rund
 i sposób zamknięcia uwag wyznacza kategoria pętli ([Kategoria pętli i przejścia](references/review-loop.md#kategoria-pętli-i-przejścia)):
 pętla pełna tylko przy strażniku wycieków, migracji i bezpieczeństwie (uprawnienia), poza nimi jedna runda, a majory zamyka

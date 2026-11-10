@@ -322,5 +322,21 @@ class PhaseSubsteps(unittest.TestCase):
         self.assertIn('jednostką raportowania jest jej podkrok `Fn.1…Fn.k`', skill)
 
 
+class ReviewCadenceAndPreImplementReport(unittest.TestCase):
+    """The `kod` loop runs once per phase without a risk condition; pre-implement has a named role and report file."""
+
+    def test_rules_are_stated(self):
+        lib = Path(__file__).resolve().parents[1] / 'library/skills'
+        feature = ' '.join((lib / 'feature/SKILL.md').read_text(encoding='utf-8').split())
+        self.assertIn('raz na każdą fazę (krok planu), bez warunku ryzyka', feature)
+        self.assertNotIn('po każdej fazie (kroku planu) z ryzykiem high', feature)
+        self.assertIn('`.skillsync/runs/<run-id>/pre-implement.md`', feature)
+        gate = ' '.join((lib / 'pre-implement/SKILL.md').read_text(encoding='utf-8').split())
+        for phrase in ('podumysł tylko do odczytu (`reviewer` z briefem pre-implement)',
+                       '`.skillsync/runs/<run-id>/pre-implement.md`', '`pre-implement-<krok>.md`',
+                       '`Werdykt: READY|NEEDS_CHANGES|BLOCKED`', '`pre-implement*`'):
+            self.assertIn(phrase, gate)
+
+
 if __name__ == '__main__':
     unittest.main()
