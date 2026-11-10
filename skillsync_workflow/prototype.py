@@ -29,7 +29,7 @@ import tempfile
 import unicodedata
 import time
 import yaml
-from .common import contained, emit, load_layer_project, read_project, read_yaml, require_layerset
+from .common import append_missing_lines, contained, emit, load_layer_project, read_project, read_yaml, require_layerset
 from . import layers as _layers
 from . import prototype_server as server
 
@@ -1566,14 +1566,8 @@ def _ensure_lines(path, lines, template):
     data, reason = read_regular_bytes(path, MAX_PROTOTYPE_JSON)
     if data is None:
         raise PrototypeError(f'{Path(path).name}: {reason}')
-    text = data.decode('utf-8', 'surrogateescape')
-    present = {line.strip() for line in text.splitlines()}
-    missing = [line for line in lines if line not in present]
-    if not missing:
-        return None
-    if text and not text.endswith('\n'):
-        text += '\n'
-    return text + ''.join(line + '\n' for line in missing)
+    # Same appending rule as the `.gitignore` of a project (`link`): existing bytes and line endings stay.
+    return append_missing_lines(data.decode('utf-8', 'surrogateescape'), lines, key=str.strip)
 
 
 LEGACY_COMMENTS_KEPT = 'comments.v1.js'

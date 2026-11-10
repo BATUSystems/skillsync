@@ -211,7 +211,7 @@ def _read(path):
     if path.stat().st_size > MAX_METADATA:
         raise ValueError("Przekroczono limit metadanych")
     try:
-        data = json.loads(path.read_text(), object_pairs_hook=_unique_pairs)
+        data = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=_unique_pairs)
     except RecursionError:
         raise ValueError("Przebieg jest zbyt głęboko zagnieżdżony") from None
     if not isinstance(data, dict) or data.get("schema_version") != 1 or not isinstance(data.get("checkpoints"), list):
@@ -687,7 +687,7 @@ def _suite(path):
     path = Path(path)
     if path.stat().st_size > MAX_METADATA:
         raise ValueError("Suite przekracza limit rozmiaru")
-    data = yaml.safe_load(path.read_text())
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict) or not isinstance(data.get("cases"), list) or not data["cases"]:
         raise ValueError("Suite wymaga niepustej listy cases")
     if len(data["cases"]) > 100:
@@ -788,7 +788,7 @@ def benchmark(args):
                 for name, content in case.get("fixture", {}).items():
                     target = _inside(fixture_root, name, existing=False)
                     target.parent.mkdir(parents=True, exist_ok=True)
-                    target.write_text(content)
+                    target.write_text(content, encoding="utf-8", newline="")
                 cwd = _inside(fixture_root, replace(case.get("cwd", ".")), existing=False)
                 if not cwd.is_dir():
                     raise ValueError("cwd benchmarku musi istnieć w fixture")

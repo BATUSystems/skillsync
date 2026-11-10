@@ -252,6 +252,28 @@ def validate_workflow(config):
         strings(risk_sections, 'readiness.risk_sections')
 
 
+def detect_eol(text):
+    """Line ending of the last line of `text` ("\\r\\n" or "\\n"); LF for an empty text or one without a newline."""
+    last_lf = text.rfind("\n")
+    return "\r\n" if last_lf > 0 and text[last_lf - 1] == "\r" else "\n"
+
+
+def append_missing_lines(text, entries, key=None):
+    """`text` with the `entries` that are not yet lines of it appended, or None when nothing is missing.
+
+    The existing text stays byte for byte; the added lines use the line ending of the last line (LF for an
+    empty text) and a missing final newline is completed in the same style. `key` normalizes lines before
+    they are compared (default: exact match)."""
+    key = key or (lambda line: line)
+    present = {key(line) for line in text.splitlines()}
+    missing = [entry for entry in dict.fromkeys(entries) if key(entry) not in present]
+    if not missing:
+        return None
+    eol = detect_eol(text)
+    prefix = "" if not text or text.endswith("\n") else eol
+    return text + prefix + eol.join(missing) + eol
+
+
 def redact(value, _key=False):
     """Masks secrets in strings. Dict keys get the environment-secret substitution only for secrets of
     8+ characters: a short secret value (the Windows runner has one equal to `root`) must not rename

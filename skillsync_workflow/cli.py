@@ -15,7 +15,7 @@ from pathlib import Path
 
 import yaml
 
-from .common import discover_excludes, is_excluded
+from .common import append_missing_lines, detect_eol, discover_excludes, is_excluded
 
 CONFIG_PATH = Path(os.environ.get("SKILLSYNC_CONFIG") or (Path.home() / ".config" / "skillsync" / "config.yaml"))
 STATE_FILE = Path(".github") / ".skillsync-state.json"
@@ -326,28 +326,37 @@ def expand_skills(specs: list[str], source, tags: dict, manifest: dict | None = 
     return expanded
 
 
-def ensure_gitignore(github_dir: Path, dry_run: bool = False) -> None:
-    gitignore_path = github_dir / ".gitignore"
-    entries = ["copilot-instructions.md", "skills/", ".skillsync.yaml"]
+def read_user_text(path: Path) -> str:
+    """Text of a user's file without newline translation (CRLF stays CRLF, so it can be written back byte for byte)."""
+    return path.read_bytes().decode("utf-8")
 
-    if gitignore_path.exists():
-        existing = gitignore_path.read_text(encoding="utf-8").splitlines()
-    else:
-        existing = []
 
-    updated = list(existing)
-    for entry in entries:
-        if entry not in existing:
-            updated.append(entry)
+def json_file_text(data, like: str = "") -> str:
+    """JSON text for a user's file in the line ending of `like` (its previous content); LF for a new file."""
+    text = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+    return text.replace("\n", detect_eol(like)) if like else text
 
-    if updated == existing:
-        return
 
+def add_gitignore_entries(gitignore_path: Path, entries: list[str], dry_run: bool = False) -> bool:
+    """Append the missing `entries` to a .gitignore without touching the existing bytes.
+
+    The existing content (also mixed CRLF/LF, a missing final newline, non-UTF-8 bytes) stays byte for byte;
+    the new lines use the line ending of the file's last line (LF for an empty or new file). Returns True when
+    the file would change (or was changed)."""
+    raw = gitignore_path.read_bytes() if gitignore_path.exists() else b""
+    updated = append_missing_lines(raw.decode("utf-8", errors="surrogateescape"), entries)
+    if updated is None:
+        return False
     if dry_run:
         print(f"[dry-run] Would update: {gitignore_path}")
-        return
+        return True
+    gitignore_path.parent.mkdir(parents=True, exist_ok=True)
+    gitignore_path.write_bytes(updated.encode("utf-8", errors="surrogateescape"))
+    return True
 
-    write_text_lf(gitignore_path, "\n".join(updated).rstrip() + "\n")
+
+def ensure_gitignore(github_dir: Path, dry_run: bool = False) -> None:
+    add_gitignore_entries(github_dir / ".gitignore", ["copilot-instructions.md", "skills/", ".skillsync.yaml"], dry_run)
 
 
 def apply_variables(content: str, manifest: dict, config: dict) -> str:
@@ -436,22 +445,7 @@ def claude_enabled(manifest: dict) -> bool:
 
 
 def ensure_root_gitignore(project_dir: Path, dry_run: bool = False, entry: str = "CLAUDE.md") -> None:
-    gitignore_path = project_dir / ".gitignore"
-
-    if gitignore_path.exists():
-        existing = gitignore_path.read_text(encoding="utf-8").splitlines()
-    else:
-        existing = []
-
-    if entry in existing:
-        return
-
-    if dry_run:
-        print(f"[dry-run] Would update: {gitignore_path}")
-        return
-
-    updated = existing + [entry]
-    write_text_lf(gitignore_path, "\n".join(updated).rstrip() + "\n")
+    add_gitignore_entries(project_dir / ".gitignore", [entry], dry_run)
 
 
 def handwritten_claude_md(project_dir: Path, manifest: dict) -> bool:
@@ -575,15 +569,18 @@ def write_managed_text(path: Path, content: str, state: dict, key: str, dry_run:
     return True
 
 
-def replace_managed_block(original: str, start: str, end: str, body: str) -> str:
+def replace_managed_block(original: str, start: str, end: str, body: str, nl: str = "\n") -> str:
+    """Replace or append the managed block. Text outside the block stays as it is; the lines the function adds
+    use `nl` (the caller passes the file's line ending, `body` is converted to it)."""
     if original.count(start) != original.count(end) or original.count(start) > 1:
         raise ValueError("Malformed skillsync markers")
-    block = start + "\n" + body.rstrip() + "\n" + end if body else ""
+    body = body.replace("\r\n", "\n").replace("\n", nl)
+    block = start + nl + body.rstrip() + nl + end if body else ""
     if start in original:
         before, rest = original.split(start, 1)
         middle, after = rest.split(end, 1)
         return before + block + after
-    return original + ("\n" if original and not original.endswith("\n") else "") + ("\n" if original else "") + block + ("\n" if block else "")
+    return original + (nl if original and not original.endswith("\n") else "") + (nl if original else "") + block + (nl if block else "")
 
 
 def update_codex_entrypoint(project_dir: Path, enabled: bool, dry_run: bool = False) -> None:
@@ -591,7 +588,7 @@ def update_codex_entrypoint(project_dir: Path, enabled: bool, dry_run: bool = Fa
     if target.is_symlink():
         print(f"[warn] Symlinked AGENTS.md left intact; include .codex/skillsync-instructions.md manually: {target}")
         return
-    original = target.read_text(encoding="utf-8") if target.exists() else ""
+    original = read_user_text(target) if target.exists() else ""
     body = ("## Skillsync: Codex\n\n"
             "Read `.codex/skillsync-instructions.md` before working in this project.\n"
             "For an implementation using `$feature`, read `.agents/skills/feature/SKILL.md`\n"
@@ -601,7 +598,8 @@ def update_codex_entrypoint(project_dir: Path, enabled: bool, dry_run: bool = Fa
     if not enabled and "<!-- SKILLSYNC:CODEX-BEGIN -->" not in original:
         return
     try:
-        content = replace_managed_block(original, "<!-- SKILLSYNC:CODEX-BEGIN -->", "<!-- SKILLSYNC:CODEX-END -->", body)
+        content = replace_managed_block(original, "<!-- SKILLSYNC:CODEX-BEGIN -->", "<!-- SKILLSYNC:CODEX-END -->", body,
+                                        detect_eol(original))
     except ValueError as exc:
         print(f"[warn] {target}: {exc}")
         return
@@ -676,13 +674,13 @@ def write_agents_block(project_dir: Path, manifest: dict, config: dict, dry_run:
     if target.is_symlink():
         print(f"[warn] Symlinked AGENTS.md left intact; instructions stay in CLAUDE.md: {target}")
         return "inline"
-    original = target.read_text(encoding="utf-8") if target.exists() else ""
+    original = read_user_text(target) if target.exists() else ""
     if target.exists() and not agents_md_shareable(project_dir, original):
         print(f"[warn] AGENTS.md is shared (not ignored by git or has own content); instructions stay in CLAUDE.md: {target}")
         return "inline"
     body = content.rstrip() + ("\n\n" + CODEX_NOTE_BEGIN + "\n" + CODEX_NOTE + "\n" + CODEX_NOTE_END if codex else "")
     try:
-        updated = replace_managed_block(original, AGENTS_BEGIN, AGENTS_END, body)
+        updated = replace_managed_block(original, AGENTS_BEGIN, AGENTS_END, body, detect_eol(original))
     except ValueError as exc:
         print(f"[warn] {target}: {exc}; instructions stay in CLAUDE.md")
         return "inline"
@@ -707,13 +705,14 @@ def update_codex_config(project_dir: Path, limit: int, enabled: bool, dry_run: b
     if target.is_symlink():
         print(f"[warn] Not modifying symlinked Codex config: {target}")
         return
-    original = target.read_text(encoding="utf-8") if target.exists() else ""
+    original = read_user_text(target) if target.exists() else ""
+    nl = detect_eol(original)
     start, end = "# SKILLSYNC:AGENTS-BEGIN", "# SKILLSYNC:AGENTS-END"
     if not enabled and start not in original:
         return
     try:
         tomllib.loads(original)
-        stripped = replace_managed_block(original, start, end, "") if start in original else original
+        stripped = replace_managed_block(original, start, end, "", nl) if start in original else original
         data = tomllib.loads(stripped)
         agents = data.get("agents", {})
         lines = []
@@ -725,17 +724,18 @@ def update_codex_config(project_dir: Path, limit: int, enabled: bool, dry_run: b
             if "max_concurrent_threads_per_session" not in agents and "max_threads" not in agents:
                 lines.append(f"max_concurrent_threads_per_session = {limit}")
         if start in original:
-            content = replace_managed_block(original, start, end, "\n".join(lines))
+            content = replace_managed_block(original, start, end, "\n".join(lines), nl)
         elif lines:
-            block = start + "\n" + "\n".join(lines) + "\n" + end + "\n"
-            table = re.search(r"(?m)^\s*\[agents\][ \t]*(?:#[^\n]*)?\n", original)
+            block = start + nl + nl.join(lines) + nl + end + nl
+            table = re.search(r"(?m)^\s*\[agents\][ \t]*(?:#[^\r\n]*)?\r?\n", original)
             if table:
                 content = original[:table.end()] + block + original[table.end():]
             elif "agents" in data:
                 print(f"[warn] Nonstandard agents table, configure manually: {target}")
                 return
             else:
-                content = original.rstrip() + ("\n\n" if original.strip() else "") + "[agents]\n" + block
+                gap = (nl if original and not original.endswith("\n") else "") + (nl if original.strip() else "")
+                content = original + gap + "[agents]" + nl + block
         else:
             content = stripped
         tomllib.loads(content)
@@ -908,7 +908,7 @@ def ensure_link_on_open(project_dir: Path, manifest: dict, config: dict, dry_run
         return
 
     target = project_dir / ".vscode" / "tasks.json"
-    original = target.read_text(encoding="utf-8") if target.exists() else ""
+    original = read_user_text(target) if target.exists() else ""
     try:
         data = json.loads(strip_jsonc(original)) if original else {"version": "2.0.0", "tasks": []}
     except json.JSONDecodeError:
@@ -952,32 +952,12 @@ def ensure_link_on_open(project_dir: Path, manifest: dict, config: dict, dry_run
     target.parent.mkdir(parents=True, exist_ok=True)
     if original:
         write_text_lf(target.with_name("tasks.json.skillsync-backup"), original)
-    write_text_lf(target, json.dumps(data, indent=2, ensure_ascii=False) + "\n")
+    write_text_lf(target, json_file_text(data, original))
     print(message)
 
 
 def ensure_cursor_gitignore(cursor_rules_dir: Path, dry_run: bool = False) -> None:
-    gitignore_path = cursor_rules_dir / ".gitignore"
-    entries = ["*.mdc"]
-
-    if gitignore_path.exists():
-        existing = gitignore_path.read_text(encoding="utf-8").splitlines()
-    else:
-        existing = []
-
-    updated = list(existing)
-    for entry in entries:
-        if entry not in existing:
-            updated.append(entry)
-
-    if updated == existing:
-        return
-
-    if dry_run:
-        print(f"[dry-run] Would update: {gitignore_path}")
-        return
-
-    write_text_lf(gitignore_path, "\n".join(updated).rstrip() + "\n")
+    add_gitignore_entries(cursor_rules_dir / ".gitignore", ["*.mdc"], dry_run)
 
 
 def build_cursor_rules(project_dir: Path, manifest: dict, config: dict, dry_run: bool = False) -> None:
@@ -1397,10 +1377,7 @@ def save_state(project_dir: Path, state: dict, dry_run: bool = False) -> None:
         return
     state_path.parent.mkdir(parents=True, exist_ok=True)
     write_text_lf(state_path, json.dumps(state, indent=2, sort_keys=True) + "\n")
-    gitignore_path = state_path.parent / ".gitignore"
-    lines = gitignore_path.read_text(encoding="utf-8").splitlines() if gitignore_path.exists() else []
-    if STATE_FILE.name not in lines:
-        write_text_lf(gitignore_path, "\n".join(lines + [STATE_FILE.name]).rstrip() + "\n")
+    add_gitignore_entries(state_path.parent / ".gitignore", [STATE_FILE.name])
 
 
 def remove_item(path: Path) -> None:
@@ -2433,8 +2410,8 @@ def merge_closure_settings(project_dir: Path, manifest: dict, config: dict, want
         settings_path.parent.mkdir(parents=True, exist_ok=True)
         if settings_path.exists():
             backup_path = settings_path.with_name(settings_path.name + ".skillsync-backup")
-            write_text_lf(backup_path, settings_path.read_text(encoding="utf-8"))
-        write_text_lf(settings_path, json.dumps(updated, indent=2, ensure_ascii=False) + "\n")
+            write_text_lf(backup_path, read_user_text(settings_path))
+        write_text_lf(settings_path, json_file_text(updated, read_user_text(settings_path) if settings_path.exists() else ""))
     except OSError as error:
         print(f"[warn] Nie udalo sie zapisac {settings_path}: {error}")
         return False
@@ -2508,9 +2485,9 @@ def merge_claude_settings(project_dir: Path, manifest: dict, config: dict, dry_r
     settings_path.parent.mkdir(parents=True, exist_ok=True)
     if settings_path.exists():
         backup_path = settings_path.with_name(settings_path.name + ".skillsync-backup")
-        write_text_lf(backup_path, settings_path.read_text(encoding="utf-8"))
+        write_text_lf(backup_path, read_user_text(settings_path))
 
-    write_text_lf(settings_path, json.dumps(updated, indent=2, ensure_ascii=False) + "\n")
+    write_text_lf(settings_path, json_file_text(updated, read_user_text(settings_path) if settings_path.exists() else ""))
     print(f"Updated: {settings_path}")
 
 
@@ -2648,7 +2625,7 @@ def build_claude_mcp(project_dir: Path, manifest: dict, config: dict, dry_run: b
         if dry_run:
             print(f"[dry-run] Would write: {target}")
         else:
-            write_text_lf(target, json.dumps(updated, indent=2, ensure_ascii=False) + "\n")
+            write_text_lf(target, json_file_text(updated, read_user_text(target) if target.exists() else ""))
             print(f"Updated: {target}")
     ensure_root_gitignore(project_dir, dry_run=dry_run, entry=".mcp.json")
 
@@ -2668,28 +2645,7 @@ def claude_gitignore_entries(manifest: dict, config: dict) -> list[str]:
 def ensure_claude_gitignore(claude_dir: Path, entries: list[str], dry_run: bool = False) -> None:
     if not entries:
         return
-
-    gitignore_path = claude_dir / ".gitignore"
-
-    if gitignore_path.exists():
-        existing = gitignore_path.read_text(encoding="utf-8").splitlines()
-    else:
-        existing = []
-
-    updated = list(existing)
-    for entry in entries:
-        if entry not in existing:
-            updated.append(entry)
-
-    if updated == existing:
-        return
-
-    if dry_run:
-        print(f"[dry-run] Would update: {gitignore_path}")
-        return
-
-    claude_dir.mkdir(parents=True, exist_ok=True)
-    write_text_lf(gitignore_path, "\n".join(updated).rstrip() + "\n")
+    add_gitignore_entries(claude_dir / ".gitignore", entries, dry_run)
 
 
 def link_project(manifest_path: Path, config: dict, dry_run: bool = False, layerset=None) -> None:
@@ -3762,8 +3718,23 @@ def main() -> None:
         sys.exit(result)
 
 
+def use_utf8_streams() -> None:
+    """On Windows stdout/stderr default to the console code page (cp1252), which cannot print the Polish letters
+    of the JSON/text reports: the report is UTF-8 there as it is everywhere else."""
+    if sys.platform != "win32":
+        return
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except (OSError, ValueError):
+                pass
+
+
 def run() -> None:
     """Console entry point (`skillsync`, wrapper, `python -m skillsync_workflow`)."""
+    use_utf8_streams()
     sys.exit(main())
 
 

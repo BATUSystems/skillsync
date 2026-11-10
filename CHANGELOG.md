@@ -109,19 +109,20 @@ Every release has a **Breaking** section that lists incompatible changes. When a
   Codex `agent_overrides` entry under `Explore` still applies; replace both with `explore`.
 
 ### Fixed
-
 - Prototype acceptance survives an engine update: `prototype.css` (engine chrome: toolbars, comment panel, dialogs) no longer
   enters the screen hash; acceptances computed with the former formula stay valid through aliases for the current file and the
   digests `migrate` records in `prototype.json` (`engineAssetHistory`) before replacing it. A change of a screen section, `<head>`
   or screen styles still invalidates the acceptance. `migrate` reports `acceptance.lost` with the same rule.
 - `doctor` applies the `Explore` → `explore` role alias, so a manifest with `Explore` no longer reports a missing
   `.claude/agents/Explore.md` after `skillsync link`.
-
 - `skillsync spec approve` and `plan approve` drop the waiting note the approval satisfies (`(… czeka na … GO plan)` for a spec,
   `(czeka na GO implement)` for a plan) instead of leaving `approved (… czeka na „GO plan”)`; other notes such as
   `czeka na spec` or `szkic` stay, as the resume table decides on them.
 - Prototype threads panel: a long handle label on a thread card now wraps within the panel (the button's `nowrap`
   used to widen the panel horizontally and clip the screen heading); the group heading has the same edge spacing as the cards.
+- `link` appends to a user's `.gitignore` (project root, `.github/`, `.claude/`, `.cursor/rules/`, the state folder) without rewriting it: the existing bytes and line endings (CRLF, LF or mixed) stay as they are and new lines follow the last line's ending. Before, the whole file was rewritten with LF, so a Windows project with `core.autocrlf=true` got a diff of the whole file instead of the added lines.
+- `link` keeps the line endings and bytes of the user's `AGENTS.md`, `.codex/config.toml`, `.vscode/tasks.json`, `.claude/settings.json` and `.mcp.json`: the managed block or JSON is written in the file's own line ending (CRLF stays CRLF, a new file is LF) and the `*.skillsync-backup` copies are byte copies. The prototype ignore files (`.gitignore`, `.gitattributes`) use the same appending rule.
+- On Windows reports are always UTF-8 on stdout and stderr (Polish letters no longer raise `UnicodeEncodeError`; a caller that reads the output with the console code page must decode UTF-8; stdin is not changed), and the run metadata, suite and benchmark files are read and written as UTF-8 explicitly.
 
 ## [1.0.1] - 2026-11-09
 

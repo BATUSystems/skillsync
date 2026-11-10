@@ -90,7 +90,7 @@ def source_digest(root, config):
 def identity(pid):
     try:
         base = Path('/proc') / str(pid)
-        raw = (base / 'stat').read_text()
+        raw = (base / 'stat').read_text(encoding='utf-8', errors='replace')
         fields = raw[raw.rfind(')') + 2:].split()
         if fields[0] == 'Z':
             return None
