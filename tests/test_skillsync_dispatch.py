@@ -44,6 +44,7 @@ class SharedConstantsTests(unittest.TestCase):
     def test_removed_skill_aliases_are_identical_in_both_expanders(self):
         self.assertEqual(skillsync.REMOVED_SKILL_ALIASES, workflow_common.REMOVED_SKILL_ALIASES)
         self.assertEqual(skillsync.REMOVED_SKILL_ALIASES, {"go-jira": "acli"})
+        self.assertEqual(skillsync.RENAMED_ROLE_ALIASES, workflow_common.RENAMED_ROLE_ALIASES)
 
 
 class ExpandSkillsTests(TempProjectMixin, unittest.TestCase):
@@ -477,6 +478,7 @@ class DoctorAgentflowNameTests(WorkflowFixture):
         warning = [f for f in report["findings"] if "`Explore`" in f["reason"]]
         self.assertEqual([(f["level"], f["path"]) for f in warning], [("warning", ".github/.skillsync.yaml")])
         self.assertIn("`explore`", warning[0]["reason"])
+        self.assertFalse([f for f in report["findings"] if str(f.get("path", "")).endswith("Explore.md")])  # alias: brak „Missing Claude role”
         self.manifest["agents"] = ["explore", "reviewer"]
         self.save()
         self.assertFalse([f for f in json.loads(self.cli("doctor").stdout)["findings"] if "`Explore`" in f["reason"]])

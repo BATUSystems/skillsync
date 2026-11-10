@@ -99,6 +99,13 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ### Fixed
 
+- Prototype acceptance survives an engine update: `prototype.css` (engine chrome: toolbars, comment panel, dialogs) no longer
+  enters the screen hash; acceptances computed with the former formula stay valid through aliases for the current file and the
+  digests `migrate` records in `prototype.json` (`engineAssetHistory`) before replacing it. A change of a screen section, `<head>`
+  or screen styles still invalidates the acceptance. `migrate` reports `acceptance.lost` with the same rule.
+- `doctor` applies the `Explore` → `explore` role alias, so a manifest with `Explore` no longer reports a missing
+  `.claude/agents/Explore.md` after `skillsync link`.
+
 - `skillsync spec approve` and `plan approve` drop the waiting note the approval satisfies (`(… czeka na … GO plan)` for a spec,
   `(czeka na GO implement)` for a plan) instead of leaving `approved (… czeka na „GO plan”)`; other notes such as
   `czeka na spec` or `szkic` stay, as the resume table decides on them.

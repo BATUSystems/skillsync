@@ -6,6 +6,7 @@ process deaths (`os._exit` at a chosen step in a child process, no `finally` run
 test has a control that passes (the same call with correct input).  Git tests use a temporary repository with its own
 identity and never touch the working tree of this repository.
 """
+import hashlib
 import json
 import time
 import threading
@@ -1203,6 +1204,63 @@ class AgentReplyAndWaitTests(RestoreFixture):
     def test_wait_rejects_since_and_after_together_and_bad_times(self):
         self.assertEqual(self.run_wait('--since', '2026-01-01T00:00:00Z', '--after', 'x')[0], 2)
         self.assertEqual(self.run_wait('--since', 'wczoraj')[0], 2)
+
+
+class EngineAssetsAndAcceptanceTests(RestoreFixture):
+    """Otoczka silnika (`prototype.css`) nie wchodzi do hasha ekranu; akceptacje z dawnego wzoru zostają ważne."""
+
+    def legacy_accept(self):
+        """Akceptacja zapisana dawnym wzorem (hash z `prototype.css`), jak przed tą zmianą."""
+        css = (self.dir / 'prototype.css').read_bytes()
+        digest = hashlib.sha256(ps.normalize_newline_bytes(css)).hexdigest()
+        old_assets = ps.assets_hash(str(self.dir), engine_digest=digest)
+        info = ps.screen_hashes(str(self.dir))
+        html = (self.dir / 'index.html').read_text(encoding='utf-8')
+        spans = ps.section_spans(html)
+        screens = {sid: ps.screen_hash(old_assets, info['head'], html[r['start']:r['end']])
+                   for sid, r in spans['screens'].items() if sid in info['screens']}
+        self.assertNotEqual(screens, info['screens'])  # dawny wzór naprawdę różni się od bieżącego
+        self.store().append([{'type': 'accept', 'by': ACCEPTOR,
+                              'payload': {'scope': 'screen', 'screens': screens, 'iteration': 1, 'via': 'ui'}}])
+
+    def gate(self, code=0):
+        return self.proto('gate', 'demo', code=code)
+
+    def test_engine_css_change_keeps_legacy_acceptances_when_recorded(self):
+        self.legacy_accept()
+        self.assertEqual(self.gate()['status'], 'PASS')  # alias: bieżący prototype.css
+        css = self.dir / 'prototype.css'
+        old = css.read_bytes()
+        from skillsync_workflow import prototype as proto
+        proto._remember_engine_digest(self.dir, old)  # to robi migrate przed podmianą
+        css.write_bytes(old + b'\n.anno-ai-badge { font-weight: 700; }\n')
+        self.assertEqual(self.gate()['status'], 'PASS')
+        # zmiana ekranu nadal unieważnia akceptację
+        self.write_page(page(s2=S2_V2))
+        self.assertEqual(self.gate(code=1)['status'], 'FAIL')
+
+    def test_without_history_an_engine_change_still_counts_as_stale_for_legacy_entries(self):
+        self.legacy_accept()
+        css = self.dir / 'prototype.css'
+        css.write_bytes(css.read_bytes() + b'\n/* inny silnik */\n')
+        self.assertEqual(self.gate(code=1)['status'], 'FAIL')
+        # nowa akceptacja (bieżący wzór) nie zależy od prototype.css
+        hashes = ps.screen_hashes(str(self.dir))['screens']
+        self.store().append([{'type': 'accept', 'by': ACCEPTOR,
+                              'payload': {'scope': 'screen', 'screens': hashes, 'iteration': 1, 'via': 'ui'}}])
+        css.write_bytes(css.read_bytes() + b'\n/* kolejny */\n')
+        self.assertEqual(self.gate()['status'], 'PASS')
+
+    def test_migrate_reports_no_lost_acceptance_for_an_engine_only_change(self):
+        self.proto('migrate', 'demo', '--assets', str(self.assets))  # strona w bieżącym formacie (head jak w projektach)
+        css = self.dir / 'prototype.css'
+        css.write_bytes(css.read_bytes() + b'\n/* stary silnik */\n')
+        self.legacy_accept()
+        report = self.proto('migrate', 'demo', '--assets', str(self.assets))
+        self.assertEqual(report['acceptance']['lost'], 0, report)
+        meta = json.loads((self.dir / 'prototype.json').read_text(encoding='utf-8'))
+        self.assertEqual(len(meta[ps.ENGINE_HISTORY_KEY]), 1)
+        self.assertEqual(self.gate()['status'], 'PASS')
 
 
 class MergeCommentsTests(RestoreFixture):
