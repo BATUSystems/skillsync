@@ -32,6 +32,8 @@ Every release has a **Breaking** section that lists incompatible changes. When a
   (`prototype list` czyta katalogi, nie galerię).
 - Zamknięcie planu: `skillsync status` oznacza plan `in_progress` ze wszystkimi krokami `Progress` odhaczonymi jako `needsHuman: ["closure"]`,
   a `skillsync doctor` ostrzega o nim; hook Stop `check-closure` blokuje turę raz, gdy taki plan jest zmieniony względem HEAD.
+  `feature`: czekając na akceptację prototypu, orkiestrator może przygotować szkic planu `draft (szkic — czeka na GO plan)` bez
+  `Spec-sha`; `Spec-sha` zapisuje dopiero „GO plan”.
   Plan z wejścia z klucza (`Ticket:` bez `PR:`) dostaje informację `needsHuman: ["pull_request"]` zamiast `closure` (czeka na PR-y; bez ostrzeżenia i blokady). `feature`: zamknięcie przebiegu („Wynik”, `retro-quality`, `--final`, plan `done`, spec
   `implemented`) jest obowiązkowym ostatnim krokiem `Progress` przed „czeka na READY/CP”, także przy commitach ręcznych; `pr-run`
   zapisuje `done` planu w ostatnim commicie przed READY. Nowa bramka otwartych planów przed zadaniem `feature`/`bugfix` (rdzeń AGENTS).

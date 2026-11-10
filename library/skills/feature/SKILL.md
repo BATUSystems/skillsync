@@ -44,7 +44,9 @@ Plan `direct` ma akty II i III i jedną zgodę „GO implement” (dawne GO); `b
 `bugfix`); `reuse` wznawia akt według tabeli stanów w [spec](references/spec.md). Samo „GO” przyjmij według tej tabeli
 i nazwij w odpowiedzi, na co je przyjęto; stan niejednoznaczny albo pętla bez końca (PASS albo STOP z decyzją
 Użytkownika) = pytanie, bez działania. Czekając na odpowiedzi `Q`, rób tylko `Explore` i odczyt faktów niezależnych od
-pytań (konsumenci, struktura, istniejące kontrakty).
+pytań (konsumenci, struktura, istniejące kontrakty). Czekając na akceptację prototypu (STOP), orkiestrator może przygotować
+szkic planu ze statusem `draft (szkic — czeka na GO plan)` bez `Spec-sha`; po akceptacji i uwagach nanosi na niego różnice,
+a dopiero „GO plan” zapisuje `Spec-sha`.
 
 ## Wejście z klucza zgłoszenia
 
