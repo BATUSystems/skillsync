@@ -2476,6 +2476,19 @@ class FileSizeLimitTests(ServerCase):
         self.assertEqual(ps.MAX_TEXT, 4000)
 
 
+class AgentReplyVisibleTests(ServerCase):
+    def test_a_cli_reply_written_to_the_file_is_served_without_a_restart(self):
+        client = self.client(A)
+        self.seed(client, 'th-0', 'm-0')
+        before = self.check(client.operations('demo', '?after=0'), 200).json['operations']
+        self.assertEqual([op['type'] for op in before], ['create'])
+        store = ps.CommentsStore(self.demo, 'demo')
+        ps.agent_operation(store, '1', 'reply', {'message': {'id': 'm-agent-1', 'text': 'Pytanie agenta: a czy b?'}})
+        after = self.check(client.operations('demo', '?after=0'), 200).json['operations']
+        self.assertEqual([(op['type'], op['by']) for op in after], [('create', A), ('reply', 'agent')])
+        self.assertEqual(after[1]['payload']['message']['text'], 'Pytanie agenta: a czy b?')
+
+
 class MonotonicHttpTests(ServerCase):
     def test_clock_set_back_one_hour_keeps_order_of_create_and_votes(self):
         """K34: po cofnięciu zegara o 1 h operacja nie trafia przed `create` ani przed poprzedni głos."""

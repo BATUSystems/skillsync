@@ -609,6 +609,11 @@ dialog select:focus,
   gap: 0.25rem;
   padding: 0.5rem 0.75rem 0;
 }
+.anno-ai-badge {
+  display: inline-flex; align-items: center; padding: 0 0.375rem; border-radius: 999px; font-size: 0.6875rem;
+  font-weight: 700; letter-spacing: 0.04em; background: var(--status-info-bg, var(--muted)); color: var(--status-info-text, var(--foreground));
+  border: 1px solid var(--status-info-border, var(--border));
+}
 .anno-view-badge {
   align-self: flex-start;
   padding: 0 0.5rem;

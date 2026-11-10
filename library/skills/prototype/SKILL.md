@@ -92,6 +92,40 @@ w ekranach, uchwytach ani akceptacji. Usuń go albo zostaw; własne ekrany to ko
 
 ## Decyzje po przeglądzie, iteracje i przywracanie
 
+### Czekanie na przegląd i rozmowa w wątkach
+
+Po zgłoszeniu „gotowy do akceptacji” zapisz w checkpoincie `czeka: akceptacja prototypu <slug>` i zawieś się na nasłuchu,
+nie na wiadomości od człowieka: Claude Code — `Monitor` z `skillsync prototype wait <projekt> <slug> [--since <czas
+zgłoszenia> | --after <id operacji>]` (skrypt odpytuje `comments.json` i bramkę, nie model), jako zapas budzik co 30 min
+(`/loop`). Kod 0 i `event`:
+
+- `comment` — nowy wątek albo wpis od osoby (`comment {threadId, number, screen, author, text, opId}`; wpisy `agent`,
+  `import`, `server` nie budzą); po obsłudze czekaj dalej z `--after <opId>`;
+- `accepted` — wszystkie ekrany poza przykładem mają aktualną akceptację (`gate` PASS); dalej według bramki niżej.
+
+Kod 3 = timeout (czekaj ponownie), 2 = BLOCKED. Pobudka to sygnał; stan zawsze sprawdzasz w pliku (`comments`, `gate`).
+
+Na komentarz odpowiadasz w wątku: `skillsync prototype reply <projekt> <slug> <th-…|nr> --text "…"` (wpis `by: agent`,
+w UI z plakietką „AI”; zapis pod blokadą pliku, `serve` pokazuje go przy następnym odpytaniu, bez restartu).
+
+- Komentarz niejednoznaczny albo nie masz pewności, że dobrze go rozumiesz: **nie zgadujesz**. Odpowiadasz pytaniem z 2–3
+  wariantami i rekomendacją (jak przy `Q`), zapisujesz w checkpoincie `czeka: odpowiedź w wątku #<n>` i czekasz tym samym
+  nasłuchem na odpowiedź osoby.
+- Rozumiesz: odpowiadasz krótko, co zrobisz (albo że odkładasz do decyzji), a po zmianie ekranu dopisujesz w wątku
+  „zrobione: …” (z numerem iteracji).
+- Wpisy agenta nie są zgodą ani decyzją i nie zamykają wątku; decyzje i zamknięcie dalej tylko przez `decide`/`resolve`
+  według [references/decisions.md](references/decisions.md).
+
+Doprecyzowywać (odpowiadać, pytać) wolno w każdym wątku. Zmieniać ekran — tylko według tabeli; `prototype wait` podaje
+`authorRole`, `decision` (ostatnia, z `whoRole`) i `reaction`:
+
+| Autor / stan wątku | `reaction` | Reakcja agenta |
+|---|---|---|
+| ostatnia decyzja „Wprowadź” (`apply`) od programisty albo akceptującego | `implement` | realizacja, potem w wątku „zrobione: …” |
+| bez decyzji człowieka, autor programista albo akceptujący, jednoznaczne polecenie | `order?` | realizacja (+ „zrobione: …”); niejednoznaczne = pytanie w wątku |
+| autor komentujący (`commenter`), bez decyzji człowieka | `reply` | odpowiedź: doprecyzowanie, warianty, rekomendacja; bez zmiany ekranu do decyzji „Wprowadź” |
+| decyzja „Wariant”, „Odłóż”, „Zostaw” albo decyzja agenta | `reply` | odpowiedź i nic więcej |
+
 ### Decyzje i iteracje
 
 Po rundzie komentarzy postępuj według [references/decisions.md](references/decisions.md): fakty z `skillsync prototype comments`,

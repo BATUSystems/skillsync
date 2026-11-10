@@ -14,6 +14,19 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ### Added
 
+- `skillsync prototype wait <project> <slug> [--since ISO | --after OP-ID] [--timeout S]`: deterministic wait for the prototype
+  review (for Claude Code `Monitor`): exit 0 with `event: comment` (a new thread or message by a person; `agent`, `import`,
+  `server` entries do not count) or `event: accepted` (`gate` PASS), exit 3 on timeout.
+- `skillsync prototype reply <project> <slug> <thread> --text …`: the agent answers in a comment thread (`by: agent`, under the
+  file lock; `serve` shows it at the next poll). The prototype UI marks agent entries and thread cards with an "AI" badge.
+- Skill `prototype`: after "ready for acceptance" the orchestrator waits on `prototype wait` (fallback: 30-minute `/loop`);
+  an ambiguous comment gets a question in the thread (2–3 options and a recommendation, `czeka: odpowiedź w wątku #<n>`)
+  instead of a guess; agent replies are neither consent nor decision.
+- `prototype wait` comment events carry `authorRole`, `threadStatus`, the latest `decision` (with `whoRole`) and `reaction`
+  (`implement` | `order?` | `reply`); skill `prototype` has the table "author role × thread state → agent reaction": the agent may
+  answer in every thread but changes a screen only after „Wprowadź” by a developer or acceptor or on an unambiguous order from
+  one of them; a commenter's comment is a proposal.
+
 - `skillsync status --json`: field `approvals` — the latest consent per run and word from
   `.skillsync/runs/<run-id>/approvals.jsonl` (written by the status page buttons: `GO plan`, `GO implement`, `CP`, `READY`).
 - `skillsync approvals wait <project> --word …`: deterministic wait for a consent (for Claude Code `Monitor`); exit 0 with the
@@ -40,6 +53,9 @@ Every release has a **Breaking** section that lists incompatible changes. When a
   Prototypy istniejące dostają to przez `skillsync prototype migrate`.
 
 ### Changed
+
+- `prototype decide --kind developer --who …` now also accepts an account with the role `acceptor` (human decision); the UI shows
+  the decider's name („Decyzja (<imię>): …”, agent decisions „Decyzja (agent AI): …”).
 - Skill `feature`: kroki planu to fazy (5–8), `implementer` fazy pisze kod i testy jednostkowe, `test-writer` tylko testy
   integracyjne (uprawnienia, tenanty, płatności, migracje, współbieżność) po zielonym szczeblu fazy; pętla `kod` raz na fazę
   (pełna tylko przy strażniku wycieków, migracji i bezpieczeństwie, majory zamyka `verifier`); najwyżej dwa podumysły piszące

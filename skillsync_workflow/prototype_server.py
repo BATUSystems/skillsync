@@ -3405,7 +3405,7 @@ def thread_has_cli_decision(thread):
 
 
 def agent_operation(store, reference, kind, payload, by='agent'):
-    """Append a CLI operation (`triage`, `decision`, `resolve`) on a thread given as `th-…` or a number,
+    """Append a CLI operation (`triage`, `decision`, `resolve`, `reply`) on a thread given as `th-…` or a number,
     resolved and checked under the lock; returns `(operation, thread)`."""
     found = {}
 

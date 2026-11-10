@@ -7,6 +7,8 @@ test has a control that passes (the same call with correct input).  Git tests us
 identity and never touch the working tree of this repository.
 """
 import json
+import time
+import threading
 import os
 import shutil
 import subprocess
@@ -1060,13 +1062,15 @@ class AgentCommandsTests(RestoreFixture):
         self.assertEqual(report['state'], 'deleted')
         self.assertEqual(self.proto('resolve', 'demo', 'th-a', '--reason', 'done')['threadStatus'], 'closed')  # control
 
-    def test_a_developer_decision_needs_a_developer_account(self):
-        refused = self.refused_without_write('decide', 'demo', 'th-a', '--kind', 'developer', '--who', ACCEPTOR,
+    def test_a_human_decision_needs_a_developer_or_acceptor_account(self):
+        refused = self.refused_without_write('decide', 'demo', 'th-a', '--kind', 'developer', '--who', COMMENTER,
                                              '--outcome', 'apply', '--text', 't')
-        self.assertIn('developer', refused['reason'])
-        done = self.proto('decide', 'demo', 'th-a', '--kind', 'developer', '--who', DEVELOPER, '--outcome', 'apply',
-                          '--text', 't')
-        self.assertEqual(done['threadStatus'], 'decided')
+        self.assertIn('developer or acceptor', refused['reason'])
+        for who, thread in ((DEVELOPER, 'th-a'), (ACCEPTOR, 'th-b')):
+            with self.subTest(who=who):
+                done = self.proto('decide', 'demo', thread, '--kind', 'developer', '--who', who, '--outcome', 'apply',
+                                  '--text', 't')
+                self.assertEqual(done['threadStatus'], 'decided')
 
     def test_triage_on_a_decided_thread_is_blocked(self):
         self.proto('decide', 'demo', 'th-a', '--kind', 'agent', '--outcome', 'apply', '--text', 't')
@@ -1098,6 +1102,107 @@ def reply_op(number, thread, text='odpowiedź'):
 def iteration_op(number, digit, at, ident=None):
     return op(80 + (ident or number), 'iteration', at=at, by='agent',
               payload={'number': number, 'path': 'iterations/%d/' % number, 'hash': digit * 64})
+
+
+class AgentReplyAndWaitTests(RestoreFixture):
+    """`prototype reply` (wpis agenta w wątku) i `prototype wait` (komentarz osoby albo akceptacja wszystkich ekranów)."""
+    def setUp(self):
+        super().setUp()
+        self.thread('th-a', 'm-a', 's2', 's2-btn-a')
+
+    def run_wait(self, *args, timeout='0'):
+        argv = [sys.executable, str(CLI), 'prototype', 'wait', str(self.root), 'demo', '--timeout', timeout,
+                '--interval', '0.2', '--json', *args]
+        result = subprocess.run(argv, capture_output=True, text=True, timeout=60, cwd=self.base)
+        self.assertNotIn('Traceback', result.stderr, result.stderr)
+        return result.returncode, json.loads(result.stdout)
+
+    def accept_all(self):
+        hashes = ps.screen_hashes(str(self.dir))['screens']
+        self.store().append([{'type': 'accept', 'by': ACCEPTOR,
+                              'payload': {'scope': 'screen', 'screens': hashes, 'iteration': 1, 'via': 'ui'}}])
+
+    def test_reply_is_an_agent_message_in_the_thread(self):
+        report = self.proto('reply', 'demo', '1', '--text', 'Czy chodzi o (a) kolor, (b) rozmiar? Rekomendacja: a.')
+        self.assertEqual((report['threadId'], report['operation']['type'], report['operation']['by']), ('th-a', 'reply', 'agent'))
+        thread = self.store().snapshot().fold['byId']['th-a']
+        self.assertEqual([(m['by'], m['text'][:8]) for m in thread['messages']], [(ACCEPTOR, 'uwaga th'), ('agent', 'Czy chod')])
+        self.assertRegex(thread['messages'][1]['id'], r'^m-agent-')
+        before = (self.dir / 'comments.json').read_bytes()
+        for args in (('99', '--text', 'x'), ('1', '--text', '   ')):
+            with self.subTest(args=args):
+                self.proto('reply', 'demo', *args, code=2)
+        self.assertEqual((self.dir / 'comments.json').read_bytes(), before)
+
+    def test_wait_reports_a_new_comment_by_a_person_but_not_by_the_agent(self):
+        code, report = self.run_wait()
+        self.assertEqual((code, report['status']), (3, 'TIMEOUT'))  # wątek sprzed startu się nie liczy
+        start = ps.format_at(int(time.time() * 1000) - 1)
+        self.proto('reply', 'demo', '1', '--text', 'odpowiedź agenta')
+        code, report = self.run_wait('--since', start)
+        self.assertEqual(code, 3, report)  # wpis agenta nie budzi
+        self.store().append([{'type': 'reply', 'threadId': 'th-a', 'by': COMMENTER,
+                              'payload': {'message': {'id': 'm-odp', 'text': 'Chodzi o kolor.'}}}])
+        code, report = self.run_wait('--since', start)
+        self.assertEqual((code, report['event']), (0, 'comment'), report)
+        self.assertEqual({k: report['comment'][k] for k in ('threadId', 'number', 'screen', 'author', 'text')},
+                         {'threadId': 'th-a', 'number': 1, 'screen': 's2', 'author': COMMENTER, 'text': 'Chodzi o kolor.'})
+        after = report['comment']['opId']
+        code, report = self.run_wait('--after', after)
+        self.assertEqual(code, 3, report)
+
+    def test_wait_ends_when_every_screen_is_accepted(self):
+        code, report = self.run_wait()
+        self.assertEqual(code, 3)
+        self.assertTrue(report['missing'])
+        self.accept_all()
+        code, report = self.run_wait()
+        self.assertEqual((code, report['event'], report['gate']['status']), (0, 'accepted', 'PASS'), report)
+
+    def test_wait_wakes_up_during_the_wait(self):
+        writer = threading.Timer(1.0, lambda: self.store().append([
+            {'type': 'create', 'threadId': 'th-n', 'by': COMMENTER,
+             'payload': {'message': {'id': 'm-n', 'text': 'nowa uwaga'}, 'screen': 's3',
+                         'anchor': {'kind': 'screen', 'x': 0.1, 'y': 0.1, 'iteration': 1}}}]))
+        writer.start()
+        try:
+            code, report = self.run_wait(timeout='20')
+        finally:
+            writer.cancel()
+        self.assertEqual((code, report['comment']['threadId'], report['comment']['type']), (0, 'th-n', 'create'), report)
+
+    def comment_by(self, who, thread_id, text='uwaga'):
+        self.store().append([{'type': 'create', 'threadId': thread_id, 'by': who,
+                              'payload': {'message': {'id': 'm-' + thread_id, 'text': text}, 'screen': 's3',
+                                          'anchor': {'kind': 'screen', 'x': 0.1, 'y': 0.1, 'iteration': 1}}}])
+
+    def test_wait_reports_author_role_decision_and_reaction(self):
+        start = ps.format_at(int(time.time() * 1000) - 1)
+        self.comment_by(COMMENTER, 'th-k', 'propozycja')
+        code, report = self.run_wait('--since', start)
+        c = report['comment']
+        self.assertEqual((c['authorRole'], c['decision'], c['reaction']), ('commenter', None, 'reply'), report)
+        self.comment_by(DEVELOPER, 'th-d', 'zmień kolor na zielony')
+        code, report = self.run_wait('--after', c['opId'])
+        self.assertEqual((report['comment']['authorRole'], report['comment']['reaction']), ('developer', 'order?'))
+        # decyzja „Wprowadź” akceptującego zmienia propozycję komentującego w realizację
+        self.proto('decide', 'demo', 'th-k', '--kind', 'developer', '--who', ACCEPTOR, '--outcome', 'apply', '--text', 'tak')
+        self.store().append([{'type': 'reply', 'threadId': 'th-k', 'by': COMMENTER,
+                              'payload': {'message': {'id': 'm-k2', 'text': 'dzięki'}}}])
+        code, report = self.run_wait('--after', report['comment']['opId'])
+        c = report['comment']
+        self.assertEqual((c['threadId'], c['reaction'], c['decision']['outcome'], c['decision']['whoRole']),
+                         ('th-k', 'implement', 'apply', 'acceptor'), report)
+        # „Wariant” albo decyzja agenta = tylko odpowiedź
+        self.proto('decide', 'demo', 'th-d', '--kind', 'agent', '--outcome', 'apply', '--text', 'agent')
+        self.store().append([{'type': 'reply', 'threadId': 'th-d', 'by': COMMENTER,
+                              'payload': {'message': {'id': 'm-d2', 'text': '?'}}}])
+        code, report = self.run_wait('--after', c['opId'])
+        self.assertEqual(report['comment']['reaction'], 'reply')
+
+    def test_wait_rejects_since_and_after_together_and_bad_times(self):
+        self.assertEqual(self.run_wait('--since', '2026-01-01T00:00:00Z', '--after', 'x')[0], 2)
+        self.assertEqual(self.run_wait('--since', 'wczoraj')[0], 2)
 
 
 class MergeCommentsTests(RestoreFixture):
