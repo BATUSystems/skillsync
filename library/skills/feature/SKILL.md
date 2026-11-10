@@ -217,7 +217,9 @@ oraz podsekcję „Zdobyta wiedza” z odnośnikami do zaktualizowanych dokument
 stanem „czeka na READY/CP”, nie po merge'u, w każdym trybie, także gdy commity powstają ręcznie na polecenie użytkownika.
 Plan ze wszystkimi `[x]` i `in_progress` to niezamknięty przebieg (`skillsync status`: `needsHuman: closure`, `doctor`: ostrzeżenie, hook Stop: jedna blokada tury, gdy plan jest zmieniony względem HEAD);
 sesja, która go zastanie, proponuje zamknięcie przed nowym zadaniem.
-Commity, push i deploy według trybu dostarczania i słów zgody z rdzenia AGENTS (`CP`, `CPD`, `READY`); merge i complete PR nigdy. Wyjątek: „TAK P<n>” po retrospektywie jest poleceniem commita tej jednej zmiany tekstowej, bez pusha; działa tylko w głównym checkoucie (w worktree propozycje są `deferred`, a słowa nie działają), a propozycję z innego przebiegu wskaż jako „TAK <run-id>/P<n>” / „NIE <run-id>/P<n>” ([retro-quality](references/retro-quality.md)).
+Commity, push i deploy według trybu dostarczania i słów zgody z rdzenia AGENTS (`CP`, `CPD`, `READY`); merge i complete PR nigdy.
+„CP” wypycha gałąź roboczą na jej zdalny odpowiednik; na bazę tylko `CP <gałąź>` albo zapisana w planie linia `Oddanie: <gałąź>`
+(pytanie przy pierwszym `CP`, gdy `delivery.base` różni się od roboczej). Wyjątek: „TAK P<n>” po retrospektywie jest poleceniem commita tej jednej zmiany tekstowej, bez pusha; działa tylko w głównym checkoucie (w worktree propozycje są `deferred`, a słowa nie działają), a propozycję z innego przebiegu wskaż jako „TAK <run-id>/P<n>” / „NIE <run-id>/P<n>” ([retro-quality](references/retro-quality.md)).
 Przy wejściu z klucza polecenia i ich zakres opisuje [pr-after-approval](references/pr-after-approval.md).
 Wykonany plan (`done`) można zarchiwizować: `skillsync plan archive <projekt> <plik>` (zmienia tylko `Status:`; `archived` jest poza kolejkami, bez `needsHuman`).
 Po `done` zaproponuj `codereview` (tryb „przed PR”) na gotowych zmianach, zanim powstanie PR.

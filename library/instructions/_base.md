@@ -63,8 +63,11 @@ plan bez żywego właściciela = pytanie, czy zaczynamy; `needsHuman: closure` =
   generowanych (tworzonych przez `link` lub wpisanych do `.github/.gitignore`) ani sekretów; przed commitem skan sekretów (gitleaks, gdy
   dostępny; inaczej STOP i prośba o skan).
 - `pr`: „GO implement” uruchamia `pr-run` (gałąź, commity, push gałęzi, draft PR do `delivery.base`). `direct`: commity lokalne, bez pusha i PR.
-- Słowa zgody: `CP` — w `direct` push `robocza:base` z worktree (fast-forward; baza rozbieżna = STOP, rebase/merge tylko za osobną zgodą; główny
-  checkout aktualizowany `--ff-only` tylko gdy czysty i na `base`), w `pr` commit i push gałęzi roboczej, nigdy bazy. `CPD` — `CP` i deploy według
+- Słowa zgody: `CP` — commit i push bieżącej gałęzi roboczej na jej zdalny odpowiednik (`git push origin <robocza>`), w obu trybach; nigdy na
+  `delivery.base`, `main`, `master` ani `develop`, chyba że robocza nią jest. Oddanie na bazę (tylko `direct`) to osobne słowo `CP <gałąź>`
+  (np. `CP main`) albo odpowiedź na pytanie: przy pierwszym `CP` przebiegu, gdy `delivery.base` różni się od roboczej, zapytaj, dokąd oddać, i zapisz
+  w planie linię `Oddanie: <gałąź>`; bez odpowiedzi nie pushujesz. Push na bazę: fast-forward `robocza:base` z worktree (baza rozbieżna = STOP,
+  rebase/merge tylko za osobną zgodą; główny checkout aktualizowany `--ff-only` tylko gdy czysty i na `base`); w `pr` nigdy bazy. `CPD` — `CP` i deploy według
   instrukcji projektu; w `pr` odmowa. `READY` — tylko w `pr` i tylko od użytkownika: po sprawdzeniu, że każdy krok ma `[x]` i kontrole są PASS,
   komentarz końcowy i przełączenie draft PR na ready; w `direct` albo bez draft PR odmowa (odpowiednikiem w `direct` jest `CP`). `CP`/`READY` daje też przycisk strony statusu: wpis w `.skillsync/runs/<run-id>/approvals.jsonl` (`skillsync status`, pole `approvals`) z `sha` równym HEAD gałęzi, którą zgoda wypchnie; inny `sha` = pytanie (założenie: granicą zaufania jest maszyna). `pr-run` wymaga zainstalowanego skilla i hosta Azure/GitHub; bez nich nie zakładaj PR-a, zapytaj. Przed stanem „czeka na READY/CP”: dokumentacja, changelog, wersja ustalona pytaniem, `retro-quality`, „Wynik”, rekord `--final`, plan `done` (spec `implemented`) i kopia przebiegu poza worktree; worktree sprzątasz po `CP` albo zamknięciu PR-a. Warianty z `!` (`CP!`, `CPD!`, `READY!`)
   nie zadają pytań doprecyzowujących, ale nie omijają warunków ani pytania o wersję.

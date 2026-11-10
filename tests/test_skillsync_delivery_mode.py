@@ -267,5 +267,19 @@ class LibraryDeliveryConsistencyTests(unittest.TestCase):
         self.assertEqual(missing_in_base(mutated), ['READY!'])
 
 
+class CpWordSemantics(unittest.TestCase):
+    """CP pushes the working branch; handing over to the base needs an explicit word or the plan's `Oddanie:` line."""
+
+    def test_core_defines_cp_as_the_working_branch_push(self):
+        base = (Path(__file__).resolve().parents[1] / 'library/instructions/_base.md').read_text(encoding='utf-8')
+        rule = ' '.join(base[base.index('Słowa zgody: `CP`'):base.index('`CPD` —')].split())
+        self.assertIn('push bieżącej gałęzi roboczej na jej zdalny odpowiednik', rule)
+        self.assertIn('nigdy na `delivery.base`, `main`, `master` ani `develop`', rule)
+        self.assertIn('`CP <gałąź>`', rule)
+        self.assertIn('`Oddanie: <gałąź>`', rule)
+        self.assertIn('bez odpowiedzi nie pushujesz', rule)
+        self.assertNotIn('`CP` — w `direct` push `robocza:base`', base)
+
+
 if __name__ == '__main__':
     unittest.main()

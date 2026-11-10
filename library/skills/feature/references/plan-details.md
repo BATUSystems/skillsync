@@ -3,6 +3,8 @@
 Czytaj przy pisaniu planu `docs/plans/RRRR-MM-DD-<slug>.md`.
 
 Nagłówek planu ma linię `Przebieg: <run-id>` z identyfikatorem użytym w `checkpoint`; hook i `doctor` sprawdzają po niej zamknięcie.
+Opcjonalna linia `Oddanie: <gałąź>` zapisuje odpowiedź użytkownika, dokąd „CP” oddaje pracę w trybie `direct` (rdzeń AGENTS); bez niej
+„CP” wypycha tylko gałąź roboczą.
 
 Plan dużej zmiany ma w nagłówku linię `Spec: <docs/specs/RRRR-MM-DD-slug.md>` (jak `Przebieg:`, osobny wiersz, sama ścieżka),
 a od „GO plan” `Spec-sha: <git hash-object speca>` (plan-szkic, [plan-large](plan-large.md) §5). Plan przy specu nie powtarza jego treści:
