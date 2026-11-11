@@ -1,0 +1,94 @@
+{
+ "act_spec": {
+  "title": "Akt I · Spec",
+  "text": "Orkiestrator pisze szkielet i projekt speca z pytaniami Q, podumysł reviewer prowadzi pętlę spec, a zgodę GO plan daje człowiek.\nWynik: spec bez pytań Q, przy GO plan status approved, obok szkic planu.\nStrona: akt zrobiony, gdy Status speca w docs/specs/<spec>.md to approved lub implemented."
+ },
+ "act_plan": {
+  "title": "Akt II · Plan",
+  "text": "Orkiestrator pisze plan (cel, kryteria, kroki z rolą, TESTY, dokumentacja, wersja) i pyta o wersję; podumysł reviewer prowadzi pętlę plan przy plan-large, ryzyku high albo prośbie, a zgodę GO implement daje człowiek.\nWynik: plan draft (czeka na GO implement) po readiness.\nStrona: akt zrobiony, gdy Status planu w docs/plans/<plan>.md to approved, in_progress lub done."
+ },
+ "act_real": {
+  "title": "Akt III · Realizacja",
+  "text": "Orkiestrator realizuje fazy planu: podumysły implementer i test-writer piszą kod i testy, reviewer robi pętlę kod, a zamknięcie wykonuje sesja główna.\nWynik: kod, testy, dokumentacja, changelog i ustalona wersja w commitach po fazach.\nStrona: procent to liczba `- [x]` w ## Progress planu; akt zrobiony, gdy Status planu to done."
+ },
+ "stage_spec_draft": {
+  "title": "Szkic",
+  "text": "Orkiestrator tworzy plik speca docs/specs/RRRR-MM-DD-<slug>.md jako szkielet z pytaniami Q i STOP przed projektem.\nWynik: pierwszy zapis speca ze statusem draft.\nStrona: etap zrobiony, gdy plik speca istnieje."
+ },
+ "stage_spec_review": {
+  "title": "Review speca",
+  "text": "Podumysł reviewer (świeży, tylko odczyt) ocenia spec w rundach pętli spec; orkiestrator nanosi albo odrzuca uwagi z uzasadnieniem.\nWynik: raport spec-review-N.md z werdyktem PASS albo uwagami.\nStrona: etap zrobiony, gdy w .skillsync/runs/<run>/ istnieje plik spec-review*."
+ },
+ "stage_prototype": {
+  "title": "Prototyp k/n",
+  "text": "Opcjonalna klikalna makieta ekranów, tylko na prośbę albo za zgodą; człowiek komentuje i akceptuje ekrany, agent nigdy nie akceptuje.\nWynik: zaakceptowane ekrany; zmiana ekranu po akceptacji ją unieważnia.\nStrona: licznik k/n z aktualnych akceptacji według `skillsync prototype list`."
+ },
+ "stage_spec_approved": {
+  "title": "Zatwierdzony (GO plan)",
+  "text": "Człowiek daje zgodę GO plan przyciskiem albo `skillsync spec approve`; orkiestrator zapisuje Spec-sha w planie-szkicu.\nWynik: spec ze statusem approved i plan-szkic z linią Spec-sha.\nStrona: etap zrobiony, gdy Status speca to approved."
+ },
+ "stage_plan": {
+  "title": "Plan",
+  "text": "Orkiestrator zapisuje plan docs/plans/RRRR-MM-DD-<slug>.md ze statusem draft, a przy plan-large jako szkic przy GO plan.\nWynik: plan z celem, kryteriami, krokami, TESTY, dokumentacją i wersją.\nStrona: etap zrobiony, gdy plik planu istnieje."
+ },
+ "stage_plan_review": {
+  "title": "Review planu",
+  "text": "Podumysł reviewer w profilu plan sprawdza mapowanie kryteriów, kroków i testów; orkiestrator rozstrzyga uwagi.\nWynik: raport plan-review-N.md z PASS albo uwagami.\nStrona: etap zrobiony, gdy w .skillsync/runs/<run>/ istnieje plik plan-review*."
+ },
+ "stage_pre_implement": {
+  "title": "Pre-implement",
+  "text": "Bramka przed ryzykowną zmianą (kontrakt, API, dane, migracja, wysokie ryzyko). Podumysł tylko do odczytu sprawdza rzeczywistych konsumentów, zgodność API przy współistnieniu wersji, dane zastane (migracja, transakcje, cofanie, uprawnienia, równoległość) i czy każde ryzyko ma test lub kontrolę.\nWynik: READY, NEEDS_CHANGES albo BLOCKED z dowodami plik:linia.\nStrona: etap zielony, gdy w .skillsync/runs/<run>/ jest plik pre-implement*."
+ },
+ "warning_pre_implement": {
+  "title": "Brak pre-implement",
+  "text": "Spec ma niepuste sekcje Kontrakty, Migracja albo Dane, a w przebiegu nie ma raportu pre-implement*.\nProcedura: przy zmianie kontraktu, API, danych albo migracji bramka pre-implement idzie przed GO plan (akt I).\nOstrzeżenie zniknie, gdy w .skillsync/runs/<run>/ pojawi się plik pre-implement*."
+ },
+ "stage_go_implement": {
+  "title": "GO implement",
+  "text": "Człowiek daje zgodę GO implement przyciskiem albo `skillsync plan approve`, po odpowiedzi o wersję i readiness; sesja przechodzi do aktu III.\nWynik: plan approved, potem in_progress.\nStrona: etap zrobiony, gdy Status planu to in_progress lub done."
+ },
+ "gate_go_plan": {
+  "title": "Przycisk GO plan",
+  "text": "Zgoda człowieka: przycisk wywołuje `skillsync spec approve --expect-sha` dla pokazanej wersji speca; sesja tej komendy sama nie wywołuje.\nWynik: spec ze statusem approved.\nStan: ukryty przed aktem, nieaktywny gdy akt trwa („czeka na…”), aktywny gdy sesja czeka, nieaktywny z godziną po zgodzie."
+ },
+ "gate_go_implement": {
+  "title": "Przycisk GO implement",
+  "text": "Zgoda człowieka: przycisk wywołuje `skillsync plan approve --expect-sha`; sesja tej komendy sama nie wywołuje.\nPrzed startem aktu III sesja sprawdza odpowiedź o wersję, readiness i zgodność sha.\nWynik: plan approved, a po starcie in_progress."
+ },
+ "gate_cp": {
+  "title": "Przycisk CP",
+  "text": "Przycisk człowieka zapisuje wpis w .skillsync/runs/<run>/approvals.jsonl z sha równym HEAD gałęzi roboczej; sesja wpisu nie tworzy.\nZnaczenie wg AGENTS: commit i push bieżącej gałęzi roboczej na jej zdalny odpowiednik, nigdy na bazę.\nOddanie na bazę tylko przez `CP <gałąź>` albo linię Oddanie: w planie (tryb direct)."
+ },
+ "gate_ready": {
+  "title": "Przycisk READY",
+  "text": "Przycisk człowieka w trybie pr zapisuje wpis w approvals.jsonl z sha równym HEAD gałęzi; sesja wpisu nie tworzy.\nZnaczenie wg AGENTS: po sprawdzeniu, że każdy krok ma [x] i kontrole są PASS, komentarz końcowy i przełączenie draft PR na ready.\nW trybie direct READY jest odmową; merge i complete PR nigdy."
+ },
+ "phase": {
+  "title": "Faza",
+  "text": "Jednostka review i commitów planu (zwykle 5–8 na zmianę); implementer pisze kod i testy jednostkowe, test-writer testy integracyjne, a faza kończy się zielonym szczeblem testów i commitem.\nWynik: commit fazy i odhaczone podkroki Fn.1…Fn.k.\nStrona: k/n to odhaczone podkroki fazy w ## Progress planu; zamknięta faza zwija się (kliknij, by rozwinąć)."
+ },
+ "substep": {
+  "title": "Podkrok",
+  "text": "Jednostka raportowania w fazie (np. kod, szczebel testów i commit, testy integracyjne, review i poprawki, checkpoint fazy), wykonywana przez sesję główną z podumysłami.\nWynik: odhaczenie `- [x]` z sha commita albo wynikiem.\nStrona: pozycja `- [x]` w ## Progress planu; raport postępu po każdym podkroku albo co 30 minut."
+ },
+ "code_review": {
+  "title": "Review kodu",
+  "text": "Podumysł reviewer (nowy w każdej rundzie, tylko odczyt) sprawdza diff w pętli kod: po fazie i końcowo dla całości.\nOrkiestrator nanosi albo odrzuca uwagi z uzasadnieniem; PASS wymaga zera blocker i major.\nStrona: liczba raportów code-review*/final-review* w .skillsync/runs/<run>/."
+ },
+ "closure": {
+  "title": "Zamknięcie przebiegu",
+  "text": "Ostatni krok Progress wykonuje sesja główna: Wynik, retro-quality, checkpoint --final, Status done planu i implemented speca, commit.\nWynik: zamknięty przebieg, zanim stan będzie czeka na READY lub CP.\nStrona: zrobione, gdy Status planu to done; plan z samymi [x] i statusem in_progress oznacza needsHuman: closure."
+ },
+ "banner_wait": {
+  "title": "Baner: sesja czeka na Ciebie",
+  "text": "Sesja zapisuje `czeka: <co>` przy każdym STOP (GO plan, GO implement, CP, READY, pytania, akceptacja prototypu).\nBaner czyta segment `czeka:` z najnowszej linii checkpoints.md albo `(czeka na …)` w linii Status planu lub speca.\nZnika, gdy kolejna linia raportu nie ma `czeka:`."
+ },
+ "banner_silence": {
+  "title": "Baner: brak raportu postępu",
+  "text": "Plan in_progress, brak `czeka:` i ponad 35 minut od ostatniego zapisu checkpoints.md.\nReguła dla sesji głównej: raport po każdym podkroku albo co 30 minut, co nastąpi pierwsze.\nZnika po następnym raporcie; minuty liczy przeglądarka."
+ },
+ "checkpoints": {
+  "title": "Ostatnie checkpointy",
+  "text": "Linie raportu postępu z .skillsync/runs/<run>/checkpoints.md w formacie `- HH:MM zrobione: …; w toku: …; ryzyko: …`.\nSesja główna dopisuje je po każdym kroku albo co 30 minut; nie zastępują rekordu skillsync checkpoint.\nŹródło: ten plik."
+ }
+}
