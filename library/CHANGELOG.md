@@ -4,6 +4,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+### Fixed
+- `skills/prototype` (`assets/repo/components.css`, `references/screen-patterns.md`): lista rozwijana otwarta w oknie lub szufladzie nie jest już obcinana przez `overflow` ciała okna ani chowana pod stopką — klasa `popover-float` (rodzeństwo okna) i wzorzec z regułą „okno mieści się bez paska przewijania”.
+
 ## [1.0.2] - 2026-11-11
 
 ### Removed
