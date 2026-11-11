@@ -1,6 +1,6 @@
 ---
 name: dashboard
-description: "Strona statusu przebiegu skilla feature na żywo (akty Spec/Plan/Realizacja, pasek postępu, checkpointy, podgląd speca i planu) - komenda skillsync dashboard serve (serwer stdlib nad JSON dashboard show); odczyt plików projektu, jedyny zapis to przyciski zgód z localhost."
+description: "Strona statusu przebiegu feature: akty, postęp, checkpointy, podgląd speca i planu; komenda skillsync dashboard serve, jedyny zapis to zgody z localhost."
 user-invokable: true
 ---
 

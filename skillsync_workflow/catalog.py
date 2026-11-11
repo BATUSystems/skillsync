@@ -7,7 +7,8 @@ import subprocess
 import sys
 import yaml
 from . import layers as _layers
-from .common import (LEGACY_WORKFLOW_SKILL, REMOVED_SKILL_ALIASES, WORKFLOW_SKILL, add_project_arguments, config_file,
+from .common import (CONDITIONAL_SKILL_ALIASES, LEGACY_WORKFLOW_SKILL, REMOVED_SKILL_ALIASES, WORKFLOW_SKILL,
+                     add_project_arguments, config_file,
                      expand_project_skills, load_layer_project, read_yaml, redact, require_layerset, strings)
 
 SCOPES = ('org', 'client', 'project', 'tech', 'workflow', 'tool', 'personal')
@@ -290,7 +291,8 @@ def _skill_origin(name, specs, tags, profile_skills, available):
         return 'manifest'
     if name == WORKFLOW_SKILL and LEGACY_WORKFLOW_SKILL in specs:
         return 'alias'
-    if any(old in specs and new == name for old, new in REMOVED_SKILL_ALIASES.items()):
+    if any(old in specs and new == name
+           for old, new in (*REMOVED_SKILL_ALIASES.items(), *CONDITIONAL_SKILL_ALIASES.items())):
         return 'alias'
     for spec in specs:
         if spec.startswith('@') and name in tags.get(spec[1:], []):
