@@ -18,6 +18,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 - `library/skills/agent-runtime-pitfalls`: two new pitfalls (explicit path list for `git add`; browser screenshots in a separate profile without extensions).
 
 ### Changed
+- Tests (Windows): leakguard term-scope cases skip file names with characters Windows forbids (`:` in `konta: …`) on the `filename` surface only; prototype doctor/init tests run without secret-named environment variables, so a runner variable such as `*_TOKEN=root` no longer turns `prototype.root` into `prototype.[REDACTED]`. No product change; `redact()` is untouched.
 - Dashboard page and Skippster panel: the layout follows the width of the host column, not the window (CSS container
   queries on a new `.dash-wrap` wrapper; the tooltip stays outside it). New compact tier up to 420 px: smaller type and
   spacing, no big Roman numerals or source notes, plan badge and live label shortened to a tooltip, approval and
