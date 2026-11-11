@@ -280,15 +280,17 @@
     ui.foot = h("footer", { class: "foot", id: "foot" });
     ui.descTip = h("div", { id: "descTip", class: "desc-tip", role: "tooltip", hidden: true });
 
-    root.appendChild(h("header", { class: "top" },
+    // Wrapper z container-type: układ zależy od szerokości kolumny hosta (app.css, @container), nie okna. Dymek zostaje poza nim
+    // (inline-size containment tworzy blok zawierający dla position: fixed).
+    root.appendChild(h("div", { class: "dash-wrap" }, h("header", { class: "top" },
       h("div", { class: "brand" },
         h("div", { class: "logo", "aria-hidden": "true" }, svg("svg", null, svg("use", { href: "#i-run" }))),
         h("div", { class: "brand-text" }, ui.title, ui.meta)),
-      h("div", { class: "top-right" }, ui.themeBtn || null, ui.live, h("div", { class: "plan-pick" }, ui.planBtn, ui.planMenu))));
-    root.appendChild(ui.waitBanner);
-    root.appendChild(h("nav", { class: "tabs", role: "tablist", "aria-label": "Widok" }, ui["tab-progress"], ui["tab-docs"], ui.protoLink));
-    root.appendChild(h("main", null, ui["view-progress"], ui["view-docs"]));
-    root.appendChild(ui.foot);
+      h("div", { class: "top-right" }, ui.themeBtn || null, ui.live, h("div", { class: "plan-pick" }, ui.planBtn, ui.planMenu))),
+      ui.waitBanner,
+      h("nav", { class: "tabs", role: "tablist", "aria-label": "Widok" }, ui["tab-progress"], ui["tab-docs"], ui.protoLink),
+      h("main", null, ui["view-progress"], ui["view-docs"]),
+      ui.foot));
     root.appendChild(ui.descTip);
 
     // ---------------------------------------------------------------- dymki opisów (descriptions.json)

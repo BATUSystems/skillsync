@@ -310,6 +310,22 @@ class RendererStaticTests(unittest.TestCase):
         self.assertIn(".act-head .chip-end { margin-left: auto; }", css)  # dawny inline margin-left:auto
         self.assertIn(".dashboard-root { display: contents; }", css)
 
+    def test_layout_follows_container_width_not_window(self) -> None:
+        """DASH-COMPACT: układ zależy od szerokości kolumny hosta (webview = kolumna edytora), więc progi to @container."""
+        css = (ASSETS / "app.css").read_text(encoding="utf-8")
+        self.assertRegex(css, r"\.dash-wrap \{[^}]*container: dash / inline-size")
+        for width in (1100, 640, 500, 420):
+            self.assertIn(f"@container dash (max-width: {width}px)", css)
+        self.assertNotRegex(re.sub(r"prefers-[a-z-]+", "", "\n".join(re.findall(r"@media[^{]*", css))), r"width|height", "układ tylko w @container")
+        self.assertRegex(css, r"@container dash \(max-width: 640px\) \{[^@]*\.wait-go \{ white-space: normal;")
+        self.assertIn(".plan-auto[hidden] { display: none; }", css)
+        src = RENDERER.read_text(encoding="utf-8")
+        wrap = src.index('h("div", { class: "dash-wrap" }')
+        self.assertLess(wrap, src.index("root.appendChild(ui.descTip)"))
+        for part in ("ui.waitBanner", '"nav"', '"main"', "ui.foot"):
+            self.assertGreater(src.index(part, wrap), wrap)
+        self.assertNotIn("ui.descTip", src[wrap:src.index("root.appendChild(ui.descTip)")], "dymek (position: fixed) poza kontenerem")
+
 
 # ---------------------------------------------------------------------------------------------- test behawioralny (Node)
 HARNESS = r"""
