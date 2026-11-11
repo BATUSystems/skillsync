@@ -1,9 +1,12 @@
-"""Testy serwera dashboard: python3 -m unittest tests.test_skillsync_dashboard_server
+"""Testy serwera dashboard (`skillsync dashboard serve`, skillsync_workflow/dashboard_http.py) i silnika, na którym stoi
+(skillsync_workflow/dashboard.py): python3 -m unittest tests.test_skillsync_dashboard_server
 
-Testy HTTP startują serwer na 127.0.0.1 na wolnym porcie z zakresu 5100–5199 (nigdy 5140), wybieranym dynamicznie.
+Testy HTTP startują serwer na 127.0.0.1 na wolnym porcie z zakresu 5100–5199 (nigdy 5140), wybieranym dynamicznie, i zamykają
+go po teście. Assety i descriptions.json pochodzą z warstwy `library/` repo przez `LayerSet.skill_files`, jak w komendzie.
 """
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import re
@@ -20,12 +23,17 @@ import urllib.request
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-SKILL = HERE.parent / "library" / "skills" / "dashboard"
-sys.path.insert(0, str(SKILL / "scripts"))
+ROOT = HERE.parent
+SKILL = ROOT / "library" / "skills" / "dashboard"
+CLI = ROOT / "skillsync"
+sys.path.insert(0, str(ROOT))
 
-import dashboard_server as sb  # noqa: E402
+from skillsync_workflow import dashboard as engine  # noqa: E402
+from skillsync_workflow import dashboard_http as srv  # noqa: E402
+from skillsync_workflow.common import as_layerset  # noqa: E402
 
 FIX = HERE / "fixtures" / "dashboard_server"
+ASSETS, DESCRIPTIONS = srv.skill_assets(as_layerset(ROOT / "library"))
 
 
 def free_port() -> int:
@@ -72,11 +80,29 @@ def make_project(base: Path) -> Path:
     return root
 
 
+def install_fake_cli(case: unittest.TestCase) -> None:
+    """Atrapa `skillsync` w PATH (zapisuje wywołania do `case.calls`): zna `spec|plan approve --expect-sha` i zwraca PASS.
+    GO idzie w F4 przez podproces jak w skrypcie; F5 przenosi je na wspólną funkcję rdzenia."""
+    case.bin = case.tmp / "bin"
+    case.bin.mkdir()
+    case.calls = case.tmp / "calls.txt"
+    fake = case.bin / "skillsync"
+    fake.write_text("#!/bin/sh\n"
+                    f"echo \"$@\" >> '{case.calls}'\n"
+                    "if [ \"$1\" = prototype ]; then echo '{\"prototypes\": []}'; exit 0; fi\n"
+                    "if [ \"$3\" = --help ]; then echo 'usage: --expect-sha EXPECT_SHA'; exit 0; fi\n"
+                    "echo '{\"status\": \"PASS\", \"sha\": \"after\"}'\n", encoding="utf-8")
+    fake.chmod(0o755)
+    old_path = os.environ["PATH"]
+    os.environ["PATH"] = f"{case.bin}{os.pathsep}{old_path}"
+    case.addCleanup(os.environ.__setitem__, "PATH", old_path)
+
+
 class ProjectCase(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = Path(tempfile.mkdtemp(prefix="status-board-"))
         self.root = make_project(self.tmp)
-        self.board = sb.Board(self.root, prototype_port=1)  # port 1: prototyp zawsze „wyłączony”
+        self.board = srv.Board(self.root, prototype_port=1)  # port 1: prototyp zawsze „wyłączony”
         self.board.prototype_acceptance = lambda slug: None  # bez wywołania CLI skillsync w testach
 
     def tearDown(self) -> None:
@@ -85,15 +111,16 @@ class ProjectCase(unittest.TestCase):
 
 class ParsingTests(unittest.TestCase):
     def test_header_fields(self) -> None:
-        title, fields = sb.parse_header((FIX / "plan.md").read_text(encoding="utf-8"))
+        text = (FIX / "plan.md").read_text(encoding="utf-8")
+        title, fields = engine.parse_header(text)
         self.assertEqual(title, "Plan: Demo, etap 1 — „Moduł przykładowy”")
-        self.assertEqual(sb.normalize_status(fields["status"]), "in_progress")
-        self.assertEqual(sb.first_token(fields["spec"]), SPEC)
-        self.assertEqual(sb.first_token(fields["przebieg"]), "2026-01-10-demo-etap-1")
+        self.assertEqual(engine.doc_status(text)[0], "in_progress")  # status.py `_status_fields` (K3), nie własny parser
+        self.assertEqual(engine.first_token(fields["spec"]), SPEC)
+        self.assertEqual(engine.first_token(fields["przebieg"]), "2026-01-10-demo-etap-1")
         self.assertTrue(fields["spec-sha"].startswith("0123456789"))
 
     def test_progress_phases_and_steps(self) -> None:
-        phases = sb.parse_progress((FIX / "plan.md").read_text(encoding="utf-8"))
+        phases = engine.parse_progress((FIX / "plan.md").read_text(encoding="utf-8"))
         self.assertEqual([p["name"] for p in phases], ["Faza 1: Fundament", "Faza 2: API", "Faza 3: Domknięcie"])
         steps = [s for p in phases for s in p["steps"]]
         self.assertEqual([s["id"] for s in steps], ["S0", "S1", "S2a", "S2b", "S3a", "S3b", "S4"])
@@ -104,36 +131,36 @@ class ParsingTests(unittest.TestCase):
         self.assertNotIn("S99", [s["id"] for s in steps])
 
     def test_progress_ids_with_dash_and_block_names(self) -> None:
-        phases = sb.parse_progress((FIX / "plan-done.md").read_text(encoding="utf-8"))
+        phases = engine.parse_progress((FIX / "plan-done.md").read_text(encoding="utf-8"))
         self.assertEqual([s["id"] for s in phases[0]["steps"]], ["A0", "A-1"])
         self.assertEqual(phases[0]["steps"][1]["sha"], "18848fd")
 
     def test_progress_without_phase_header(self) -> None:
-        phases = sb.parse_progress((FIX / "plan-draft.md").read_text(encoding="utf-8"))
+        phases = engine.parse_progress((FIX / "plan-draft.md").read_text(encoding="utf-8"))
         self.assertEqual(phases[0]["name"], "Kroki")
 
     def test_checkpoints(self) -> None:
-        start, items = sb.parse_checkpoints((FIX / "checkpoints.md").read_text(encoding="utf-8"))
+        start, items = engine.parse_checkpoints((FIX / "checkpoints.md").read_text(encoding="utf-8"))
         self.assertEqual(start, "2026-01-10T10:00:00+01:00")
         self.assertEqual(len(items), 3)
         self.assertTrue(items[-1]["text"].endswith("kontynuacja linii checkpointu"))
-        self.assertIsNotNone(sb.parse_iso(start))
+        self.assertIsNotNone(engine.parse_iso(start))
 
     def test_in_progress_ids_only_leading(self) -> None:
         text = ("checkpoint 1: zrobione S1, S2a/S2c; w toku: S2b/S2d (test-writer), S3a (implementer opus), "
                 "S5a, szczebel 3 S1 na migawce, baseline; ryzyko: S9 też")
-        self.assertEqual(sb.ids_in_progress(text), ["S2b", "S2d", "S3a", "S5a"])
-        self.assertEqual(sb.ids_reported_done(text), ["S1", "S2a", "S2c"])
-        self.assertIsNone(sb.ids_in_progress("restart sesji: przerwane S2b"))
-        self.assertEqual(sb.ids_in_progress("W toku S4 i S5"), ["S4", "S5"])
+        self.assertEqual(engine.ids_in_progress(text), ["S2b", "S2d", "S3a", "S5a"])
+        self.assertEqual(engine.ids_reported_done(text), ["S1", "S2a", "S2c"])
+        self.assertIsNone(engine.ids_in_progress("restart sesji: przerwane S2b"))
+        self.assertEqual(engine.ids_in_progress("W toku S4 i S5"), ["S4", "S5"])
 
 
 class ProgressTests(unittest.TestCase):
     def phases(self):
-        return sb.parse_progress((FIX / "plan.md").read_text(encoding="utf-8"))
+        return engine.parse_progress((FIX / "plan.md").read_text(encoding="utf-8"))
 
     def test_percent_and_current_from_checkpoint(self) -> None:
-        p = sb.build_progress(self.phases(), ["S2b", "S3a", "S1"], "in_progress", ["S2a"])
+        p = engine.build_progress(self.phases(), ["S2b", "S3a", "S1"], "in_progress", ["S2a"])
         self.assertEqual((p["done"], p["total"], p["percent"]), (2, 7, 29))
         self.assertEqual(p["active"], ["S2b", "S3a"])  # S1 już [x] — nie jest „w toku”
         self.assertEqual(p["current"], {"index": 4, "id": "S2b", "title": "Testy jednostkowe reguł"})
@@ -147,27 +174,27 @@ class ProgressTests(unittest.TestCase):
         self.assertEqual(p["phases"][0]["short"], "Fundament")
 
     def test_pending_segment_from_checkpoint(self) -> None:
-        p = sb.build_progress(self.phases(), ["S3a"], "in_progress", ["S2a", "S2b", "S0", "S9"])
+        p = engine.build_progress(self.phases(), ["S3a"], "in_progress", ["S2a", "S2b", "S0", "S9"])
         # S0 już [x], S9 nie istnieje — liczą się tylko S2a i S2b; % zostaje po twardym [x]
         self.assertEqual((p["percent"], p["pending"], p["pendingPercent"]), (29, 2, 28))
         self.assertEqual(p["percent"] + p["pendingPercent"], round(100 * 4 / 7))
         self.assertEqual([(ph["pending"], ph["pendingPercent"]) for ph in p["phases"]], [(2, 50), (0, 0), (0, 0)])
-        none = sb.build_progress(self.phases(), None, "in_progress")
+        none = engine.build_progress(self.phases(), None, "in_progress")
         self.assertEqual((none["pending"], none["pendingPercent"]), (0, 0))
-        self.assertEqual(sb._pending_percent(0, 0, 0), 0)
+        self.assertEqual(engine._pending_percent(0, 0, 0), 0)
 
     def test_fallback_first_unchecked(self) -> None:
-        p = sb.build_progress(self.phases(), None, "in_progress")
+        p = engine.build_progress(self.phases(), None, "in_progress")
         self.assertEqual(p["active"], ["S2a"])
         self.assertEqual(p["activeSource"], "first-unchecked")
 
     def test_no_active_when_not_in_progress(self) -> None:
-        p = sb.build_progress(self.phases(), None, "approved")
+        p = engine.build_progress(self.phases(), None, "approved")
         self.assertEqual(p["active"], [])
         self.assertIsNone(p["current"])
 
     def test_empty_plan(self) -> None:
-        p = sb.build_progress([], None, "draft")
+        p = engine.build_progress([], None, "draft")
         self.assertEqual((p["total"], p["percent"]), (0, 0))
 
 
@@ -176,7 +203,7 @@ class ActTests(unittest.TestCase):
         spec = {"exists": spec_exists, "status": spec_status, "path": SPEC}
         plan_info = {"status": plan_status, "path": PLAN} if plan else None
         progress = {"total": 4, "done": 1, "percent": 25, "phases": [], "current": None}
-        return {a["key"]: a["state"] for a in sb.compute_acts(spec, plan_info, progress, [])}
+        return {a["key"]: a["state"] for a in engine.compute_acts(spec, plan_info, progress, [])}
 
     def test_states(self) -> None:
         self.assertEqual(self.acts("draft", None, plan=False), {"spec": "active", "plan": "planned", "real": "planned"})
@@ -189,7 +216,7 @@ class ActTests(unittest.TestCase):
 
     def test_stages_from_run_files(self) -> None:
         spec = {"exists": True, "status": "approved", "path": SPEC}
-        acts = sb.compute_acts(spec, {"status": "in_progress", "path": PLAN},
+        acts = engine.compute_acts(spec, {"status": "in_progress", "path": PLAN},
                                {"total": 1, "phases": [], "current": None},
                                ["x/spec-review-r1.md", "x/spec-review-2-r1.md", "x/pre-implement.md"])
         stages = {s["label"]: s["done"] for s in acts[0]["stages"]}
@@ -292,10 +319,10 @@ class SpecActTests(ProjectCase):
     def test_run_from_spec_slug_and_explicit_line(self) -> None:
         runs = self.root / ".skillsync/runs"
         (runs / "2026-01-21-demo-etap-2").mkdir(parents=True)
-        self.assertEqual(sb.spec_run_id(self.root, self.SPEC2, {}), "2026-01-21-demo-etap-2")
-        self.assertEqual(sb.spec_run_id(self.root, self.SPEC2, {"przebieg": "2026-01-10-demo-etap-1"}),
+        self.assertEqual(engine.spec_run_id(self.root, self.SPEC2, {}), "2026-01-21-demo-etap-2")
+        self.assertEqual(engine.spec_run_id(self.root, self.SPEC2, {"przebieg": "2026-01-10-demo-etap-1"}),
                          "2026-01-10-demo-etap-1")
-        self.assertIsNone(sb.spec_run_id(self.root, "docs/specs/inny.md", {"przebieg": "../../etc"}))
+        self.assertIsNone(engine.spec_run_id(self.root, "docs/specs/inny.md", {"przebieg": "../../etc"}))
 
 
 class SubstepTests(unittest.TestCase):
@@ -313,18 +340,18 @@ class SubstepTests(unittest.TestCase):
 """
 
     def test_substeps_are_steps_and_phase_ids_point_to_the_first_open_one(self) -> None:
-        phases = sb.parse_progress(self.PLAN)
+        phases = engine.parse_progress(self.PLAN)
         self.assertEqual([[s["id"] for s in p["steps"]] for p in phases], [["F0.1", "F0.2"], ["F1.1", "F1.2", "F1.10"]])
-        prog = sb.build_progress(phases, ["F1"], "in_progress")
+        prog = engine.build_progress(phases, ["F1"], "in_progress")
         self.assertEqual((prog["done"], prog["total"], prog["active"], prog["current"]["id"]), (2, 5, ["F1.1"], "F1.1"))
         self.assertEqual([(p["done"], p["total"], p["state"]) for p in prog["phases"]], [(2, 2, "done"), (0, 3, "active")])
-        self.assertEqual(sb.build_progress(phases, ["F1.2"], "in_progress")["active"], ["F1.2"])
-        self.assertEqual(sb.ids_in_progress("zrobione: F0.2; w toku: F1.1 i F1.2"), ["F1.1", "F1.2"])
+        self.assertEqual(engine.build_progress(phases, ["F1.2"], "in_progress")["active"], ["F1.2"])
+        self.assertEqual(engine.ids_in_progress("zrobione: F0.2; w toku: F1.1 i F1.2"), ["F1.1", "F1.2"])
 
     def test_old_ids_without_a_dot_behave_as_before(self) -> None:
-        phases = sb.parse_progress("## Progress\n- [x] S1 A\n- [ ] S2a B\n- [ ] A-1 C\n")
+        phases = engine.parse_progress("## Progress\n- [x] S1 A\n- [ ] S2a B\n- [ ] A-1 C\n")
         self.assertEqual([s["id"] for s in phases[0]["steps"]], ["S1", "S2a", "A-1"])
-        self.assertEqual(sb.build_progress(phases, ["S2a"], "in_progress")["active"], ["S2a"])
+        self.assertEqual(engine.build_progress(phases, ["S2a"], "in_progress")["active"], ["S2a"])
 
 
 class WaitingTests(ProjectCase):
@@ -336,21 +363,21 @@ class WaitingTests(ProjectCase):
             fh.write(line + "\n")
 
     def test_marker_parsing(self) -> None:
-        self.assertEqual(sb.wait_marker("zrobione: S1; w toku: —; czeka: GO implement"), "GO implement")
-        self.assertEqual(sb.wait_marker("ryzyko: brak; czeka: akceptacja prototypu demo-etap-1."), "akceptacja prototypu demo-etap-1")
+        self.assertEqual(engine.wait_marker("zrobione: S1; w toku: —; czeka: GO implement"), "GO implement")
+        self.assertEqual(engine.wait_marker("ryzyko: brak; czeka: akceptacja prototypu demo-etap-1."), "akceptacja prototypu demo-etap-1")
         for text in ("czeka: —", "czeka: brak", "czeka na CP", "w toku: S2", "ryzyko: czeka-y"):
-            self.assertIsNone(sb.wait_marker(text), text)
+            self.assertIsNone(engine.wait_marker(text), text)
 
     def test_item_actions_and_links(self) -> None:
         ctx = {"spec": SPEC, "plan": PLAN, "slug": "demo-etap-1"}
-        proto = sb.wait_item("akceptacja prototypu demo-etap-2 (3/5)", "checkpoint", "10:50", ctx)
+        proto = engine.wait_item("akceptacja prototypu demo-etap-2 (3/5)", "checkpoint", "10:50", ctx)
         self.assertEqual(proto["link"], {"kind": "prototype", "slug": "demo-etap-2"})
-        self.assertEqual(sb.wait_item("GO implement", "plan", None, ctx)["link"], {"kind": "doc", "path": PLAN})
-        self.assertEqual(sb.wait_item("GO plan", "spec", None, ctx)["link"], {"kind": "doc", "path": SPEC})
-        self.assertIn("pytania", sb.wait_item("odpowiedź Q1–Q3", "checkpoint", None, ctx)["action"])
-        self.assertIn("„CP”", sb.wait_item("CP", "checkpoint", None, ctx)["action"])
-        self.assertIn("„READY”", sb.wait_item("READY", "checkpoint", None, ctx)["action"])
-        self.assertIn("retrospektywy", sb.wait_item("TAK/NIE run-1/P2", "checkpoint", None, ctx)["action"])
+        self.assertEqual(engine.wait_item("GO implement", "plan", None, ctx)["link"], {"kind": "doc", "path": PLAN})
+        self.assertEqual(engine.wait_item("GO plan", "spec", None, ctx)["link"], {"kind": "doc", "path": SPEC})
+        self.assertIn("pytania", engine.wait_item("odpowiedź Q1–Q3", "checkpoint", None, ctx)["action"])
+        self.assertIn("„CP”", engine.wait_item("CP", "checkpoint", None, ctx)["action"])
+        self.assertIn("„READY”", engine.wait_item("READY", "checkpoint", None, ctx)["action"])
+        self.assertIn("retrospektywy", engine.wait_item("TAK/NIE run-1/P2", "checkpoint", None, ctx)["action"])
 
     def test_banner_from_newest_checkpoint_until_next_one(self) -> None:
         self.assertEqual(self.board.status()["waiting"], [])
@@ -369,7 +396,7 @@ class WaitingTests(ProjectCase):
 
     def test_silence_hint_only_for_a_plan_in_progress_without_wait_marker(self) -> None:
         s = self.board.status()
-        self.assertEqual(s["silence"]["thresholdMin"], sb.SILENCE_MIN)
+        self.assertEqual(s["silence"]["thresholdMin"], engine.SILENCE_MIN)
         self.assertEqual(s["silence"]["since"], s["run"]["lastReportAt"])
         self.add_checkpoint("- 10:50 zrobione: S2b; w toku: —; czeka: CP")
         self.assertIsNone(self.board.status()["silence"])  # sesja czeka na człowieka: cisza oczekiwana
@@ -395,26 +422,26 @@ class WaitingTests(ProjectCase):
 
 class GitLinkTests(ProjectCase):
     def test_remote_web_hosts(self) -> None:
-        az = sb.remote_web("git@ssh.dev.azure.com:v3/org/Proj/repo")
+        az = engine.remote_web("git@ssh.dev.azure.com:v3/org/Proj/repo")
         self.assertEqual(az["repo"], "https://dev.azure.com/org/Proj/_git/repo")
-        self.assertEqual(sb.remote_web("https://dev.azure.com/org/Proj/_git/repo/")["repo"], az["repo"])
-        self.assertEqual(sb.remote_web("git@github.com:Org/repo.git")["repo"], "https://github.com/Org/repo")
-        self.assertEqual(sb.remote_web("https://github.com/Org/repo")["host"], "github")
+        self.assertEqual(engine.remote_web("https://dev.azure.com/org/Proj/_git/repo/")["repo"], az["repo"])
+        self.assertEqual(engine.remote_web("git@github.com:Org/repo.git")["repo"], "https://github.com/Org/repo")
+        self.assertEqual(engine.remote_web("https://github.com/Org/repo")["host"], "github")
         for bad in ("https://gitlab.com/a/b", "git@ssh.dev.azure.com:v3/o/p/r\"><x", "", None, "file:///tmp/repo"):
-            self.assertIsNone(sb.remote_web(bad), bad)
+            self.assertIsNone(engine.remote_web(bad), bad)
 
     def write_origin(self, url: str) -> None:
         (self.root / ".git/config").write_text(f'[core]\n\tbare = false\n[remote "origin"]\n\turl = {url}\n', encoding="utf-8")
 
     def test_branch_link_only_when_pushed(self) -> None:
         self.write_origin("git@ssh.dev.azure.com:v3/org/Proj/repo")
-        g = sb.read_git(self.root)
+        g = engine.read_git(self.root)
         self.assertEqual((g["remote"]["host"], g["branchPushed"]), ("azure", False))
         self.assertEqual(g["branchUrl"], "https://dev.azure.com/org/Proj/_git/repo?version=GBfeature%2Fdemo")
         (self.root / ".git/packed-refs").write_text("abc1234def5678 refs/remotes/origin/feature/demo\n", encoding="utf-8")
-        self.assertTrue(sb.read_git(self.root)["branchPushed"])
+        self.assertTrue(engine.read_git(self.root)["branchPushed"])
         self.write_origin("git@github.com:Org/repo.git")
-        self.assertEqual(sb.read_git(self.root)["branchUrl"], "https://github.com/Org/repo/tree/feature/demo")
+        self.assertEqual(engine.read_git(self.root)["branchUrl"], "https://github.com/Org/repo/tree/feature/demo")
 
     def test_plan_pr_line(self) -> None:
         plan = self.root / PLAN
@@ -427,7 +454,7 @@ class GitLinkTests(ProjectCase):
 
 class BoardTests(ProjectCase):
     def test_plan_choice_prefers_in_progress(self) -> None:
-        self.assertEqual(sb.choose_plan(sb.list_plans(self.root))["path"], PLAN)
+        self.assertEqual(engine.choose_plan(engine.list_plans(self.root))["path"], PLAN)
 
     def test_status_live_project(self) -> None:
         s = self.board.status()
@@ -455,7 +482,7 @@ class BoardTests(ProjectCase):
     def test_whitelist(self) -> None:
         ok = [SPEC, PLAN, f"{RUN}/checkpoints.md", f"{RUN}/S1-implementer.md"]
         for rel in ok:
-            self.assertIsNotNone(sb.resolve_doc(self.root, rel), rel)
+            self.assertIsNotNone(engine.resolve_doc(self.root, rel), rel)
         bad = [
             ".env", "docs/secret.md", ".skillsync/config.md", f"{RUN}/notes.txt",
             "../proj/" + SPEC, "docs/specs/../../.env", "/etc/passwd", "docs/specs/../secret.md",
@@ -463,7 +490,7 @@ class BoardTests(ProjectCase):
             "docs/specs//demo-etap-1.md", "docs/specs/./demo-etap-1.md", ".git/HEAD",
         ]
         for rel in bad:
-            self.assertIsNone(sb.resolve_doc(self.root, rel), rel)
+            self.assertIsNone(engine.resolve_doc(self.root, rel), rel)
 
     def test_symlink_escape_rejected(self) -> None:
         outside = self.tmp / "outside.md"
@@ -473,7 +500,7 @@ class BoardTests(ProjectCase):
             link.symlink_to(outside)
         except OSError:
             self.skipTest("brak symlinków")
-        self.assertIsNone(sb.resolve_doc(self.root, "docs/specs/link.md"))
+        self.assertIsNone(engine.resolve_doc(self.root, "docs/specs/link.md"))
 
     def test_doc_render_escapes(self) -> None:
         doc = self.board.doc(SPEC)
@@ -506,9 +533,9 @@ class BoardTests(ProjectCase):
     def test_port_validation(self) -> None:
         for port in (4444, 4448, 9222, 9333, 5099, 5200, 8080):
             with self.assertRaises(SystemExit):
-                sb.validate_port(port)
-        sb.validate_port(5140)
-        sb.validate_port(5142)
+                srv.validate_port(port)
+        srv.validate_port(5140)
+        srv.validate_port(5142)
 
 
 class ApprovalTests(ProjectCase):
@@ -518,22 +545,7 @@ class ApprovalTests(ProjectCase):
 
     def setUp(self) -> None:
         super().setUp()
-        self.bin = self.tmp / "bin"
-        self.bin.mkdir()
-        self.calls = self.tmp / "calls.txt"
-        fake = self.bin / "skillsync"
-        fake.write_text("#!/bin/sh\n"
-                        f"echo \"$@\" >> '{self.calls}'\n"
-                        "if [ \"$1\" = prototype ]; then echo '{\"prototypes\": []}'; exit 0; fi\n"
-                        "if [ \"$3\" = --help ]; then echo 'usage: --expect-sha EXPECT_SHA'; exit 0; fi\n"
-                        "echo '{\"status\": \"PASS\", \"sha\": \"after\"}'\n", encoding="utf-8")
-        fake.chmod(0o755)
-        self.old_path = os.environ["PATH"]
-        os.environ["PATH"] = f"{self.bin}{os.pathsep}{self.old_path}"
-
-    def tearDown(self) -> None:
-        os.environ["PATH"] = self.old_path
-        super().tearDown()
+        install_fake_cli(self)
 
     def spec_act(self, plan_status: str | None = None, spec_status: str = "draft (czeka na GO plan)") -> None:
         spec = self.root / self.SPEC2
@@ -569,7 +581,7 @@ class ApprovalTests(ProjectCase):
         self.spec_act()
         acts = self.actions()
         self.assertEqual((acts["spec"]["state"], acts["spec"]["blocked"], acts["spec"]["path"]), ("waiting", None, self.SPEC2))
-        self.assertEqual(acts["spec"]["sha"], sb.git_blob_sha((self.root / self.SPEC2).read_bytes()))
+        self.assertEqual(acts["spec"]["sha"], engine.git_blob_sha((self.root / self.SPEC2).read_bytes()))
         # trwa: niezaakceptowany prototyp wstrzymuje mimo sygnału
         self.board.prototype_acceptance = lambda slug: {"screens": 5, "accepted": 3, "stale": 0}
         self.add_prototype()
@@ -597,7 +609,7 @@ class ApprovalTests(ProjectCase):
         self.assertEqual((code, body["word"]), (200, "GO plan"), body)
         calls = self.calls.read_text(encoding="utf-8").splitlines()
         self.assertIn(f"spec approve {self.root} {self.SPEC2} --expect-sha {offer['sha']} --json", calls)
-        audit = [json.loads(x) for x in (self.root / sb.APPROVALS_LOG).read_text(encoding="utf-8").splitlines()]
+        audit = [json.loads(x) for x in (self.root / srv.APPROVALS_LOG).read_text(encoding="utf-8").splitlines()]
         self.assertEqual([(a["word"], a["file"], a["sha"], a["source"]) for a in audit],
                          [("GO plan", self.SPEC2, offer["sha"], "dashboard")])
 
@@ -614,14 +626,14 @@ class ApprovalTests(ProjectCase):
         self.assertEqual(self.board.approve("spec", self.SPEC2, sha)[0], 409)
         self.assertFalse([c for c in (self.calls.read_text(encoding="utf-8").splitlines() if self.calls.exists() else [])
                           if "--expect-sha" in c])
-        off = sb.Board(self.root, prototype_port=1, approvals=False)
+        off = srv.Board(self.root, prototype_port=1, approvals=False)
         self.assertEqual(off.status()["approvals"], {"enabled": False, "actions": [], "last": None})
         self.assertEqual(off.approve("spec", self.SPEC2, sha)[0], 403)
 
     def test_old_cli_hides_buttons(self) -> None:
         self.spec_act()
         (self.bin / "skillsync").write_text("#!/bin/sh\necho 'invalid choice' >&2; exit 2\n", encoding="utf-8")
-        board = sb.Board(self.root, prototype_port=1)
+        board = srv.Board(self.root, prototype_port=1)
         state = board.status()["approvals"]
         spec = next(a for a in state["actions"] if a["kind"] == "spec")
         self.assertEqual(spec["state"], "running")
@@ -629,11 +641,11 @@ class ApprovalTests(ProjectCase):
         self.assertEqual(board.approve("spec", self.SPEC2, "0" * 40)[0], 503)
 
     def test_session_url_and_host_helpers(self) -> None:
-        self.assertTrue(sb.session_url_ok("https://claude.ai/code/session_01abc"))
+        self.assertTrue(srv.session_url_ok("https://claude.ai/code/session_01abc"))
         for bad in ("http://claude.ai/x", "javascript:alert(1)", "https://u:p" + "@" + "claude.ai/", "", None):
-            self.assertFalse(sb.session_url_ok(bad), bad)
-        self.assertIsNone(sb.Board(self.root, prototype_port=1, session_url="javascript:x").session_url)
-        self.assertEqual([sb.request_host(h) for h in ("127.0.0.1:5140", "[::1]:5140", "LOCALHOST", "evil.example:80", None)],
+            self.assertFalse(srv.session_url_ok(bad), bad)
+        self.assertIsNone(srv.Board(self.root, prototype_port=1, session_url="javascript:x").session_url)
+        self.assertEqual([srv.request_host(h) for h in ("127.0.0.1:5140", "[::1]:5140", "LOCALHOST", "evil.example:80", None)],
                          ["127.0.0.1", "::1", "localhost", "evil.example", ""])
 
 
@@ -641,44 +653,49 @@ class DeliveryTests(ProjectCase):
     """Przyciski CP / READY (wariant A): tryb z manifestu, commity ponad bazą, plan done, znacznik `czeka:`."""
 
     def manifest(self, text: str) -> None:
-        path = self.root / sb.MANIFEST
+        path = self.root / srv.MANIFEST
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8")
 
+    def delivery(self) -> dict:
+        """Tryb dostarczania z manifestu czytanego przez serwer przy każdym statusie (`Board.manifest`)."""
+        return engine.read_delivery(self.board.manifest())
+
     def test_read_delivery_forms(self) -> None:
-        self.assertEqual(sb.read_delivery(self.root), {"mode": "pr", "base": None, "source": "default"})
+        self.assertEqual(self.delivery(), {"mode": "pr", "base": None, "source": "default"})
         self.manifest("skills: [a]\ndelivery:\n  mode: direct\n  base: develop  # baza\nother: 1\n")
-        self.assertEqual(sb.read_delivery(self.root), {"mode": "direct", "base": "develop", "source": "manifest"})
+        self.assertEqual(self.delivery(), {"mode": "direct", "base": "develop", "source": "manifest"})
         self.manifest("delivery: {mode: pr, base: 'main'}\n")
-        self.assertEqual(sb.read_delivery(self.root)["base"], "main")
+        self.assertEqual(self.delivery()["base"], "main")
         self.manifest("delivery:\n  mode: yolo\n  base: --upload-pack=x\n")
-        self.assertEqual(sb.read_delivery(self.root), {"mode": "invalid", "base": None, "source": "manifest"})
+        self.assertEqual(self.delivery(), {"mode": "invalid", "base": None, "source": "manifest"})
+        self.assertEqual(self.board.status()["delivery"]["words"], [])  # zły tryb = brak przycisków CP/READY
 
     def test_words_follow_mode_and_conditions(self) -> None:
         pr, direct = {"mode": "pr"}, {"mode": "direct"}
         none = {"remote": "origin/feature/x", "pushed": True, "ahead": 0}
-        self.assertEqual([(w["word"], w["active"]) for w in sb.delivery_words(pr, none, None, [])],
+        self.assertEqual([(w["word"], w["active"]) for w in engine.delivery_words(pr, none, None, [])],
                          [("CP", False), ("READY", False)])
-        self.assertEqual([w["word"] for w in sb.delivery_words(direct, none, None, [])], ["CP"])
-        self.assertEqual(sb.delivery_words({"mode": "invalid"}, none, None, []), [])
-        ahead = sb.delivery_words(direct, {"remote": "origin/feature/x", "pushed": True, "ahead": 3}, None, [], "feature/x")[0]
+        self.assertEqual([w["word"] for w in engine.delivery_words(direct, none, None, [])], ["CP"])
+        self.assertEqual(engine.delivery_words({"mode": "invalid"}, none, None, []), [])
+        ahead = engine.delivery_words(direct, {"remote": "origin/feature/x", "pushed": True, "ahead": 3}, None, [], "feature/x")[0]
         self.assertEqual((ahead["active"], ahead["target"]), (True, "feature/x"))
         self.assertEqual(ahead["tip"], "CP → origin/feature/x; 3 commity niewypchniętych względem origin/feature/x")
-        fresh = sb.delivery_words(direct, {"remote": "origin/f", "pushed": False, "ahead": 5}, None, [], "f")[0]
+        fresh = engine.delivery_words(direct, {"remote": "origin/f", "pushed": False, "ahead": 5}, None, [], "f")[0]
         self.assertIn("5 commitów niewypchniętych względem origin (gałęzi jeszcze nie ma na origin)", fresh["tip"])
-        handover = sb.delivery_words(direct, none, {"status": "done"}, [], "feature/x", "main")[0]
+        handover = engine.delivery_words(direct, none, {"status": "done"}, [], "feature/x", "main")[0]
         self.assertEqual((handover["target"], handover["tip"].split(";")[0]), ("main", "CP → origin/main (oddanie z feature/x)"))
-        self.assertTrue(sb.delivery_words(direct, none, {"status": "done"}, [])[0]["active"])
-        waits = [sb.wait_item("READY", "checkpoint")]
-        words = {w["word"]: w for w in sb.delivery_words(pr, none, None, waits)}
+        self.assertTrue(engine.delivery_words(direct, none, {"status": "done"}, [])[0]["active"])
+        waits = [engine.wait_item("READY", "checkpoint")]
+        words = {w["word"]: w for w in engine.delivery_words(pr, none, None, waits)}
         self.assertEqual((words["CP"]["active"], words["READY"]["active"]), (False, True))
         self.assertIn("czeka na „READY”", words["READY"]["tip"])
 
     def test_target_is_the_working_branch_unless_the_plan_says_otherwise(self) -> None:
-        self.assertEqual(sb.delivery_target({"mode": "direct"}, "feature/x", {}), "feature/x")
-        self.assertEqual(sb.delivery_target({"mode": "direct"}, "feature/x", {"oddanie": "main"}), "main")
-        self.assertEqual(sb.delivery_target({"mode": "pr"}, "feature/x", {"oddanie": "main"}), "feature/x")  # pr: nigdy bazy
-        self.assertEqual(sb.delivery_target({"mode": "direct"}, "feature/x", {"oddanie": "--evil"}), "feature/x")
+        self.assertEqual(engine.delivery_target({"mode": "direct"}, "feature/x", {}), "feature/x")
+        self.assertEqual(engine.delivery_target({"mode": "direct"}, "feature/x", {"oddanie": "main"}), "main")
+        self.assertEqual(engine.delivery_target({"mode": "pr"}, "feature/x", {"oddanie": "main"}), "feature/x")  # pr: nigdy bazy
+        self.assertEqual(engine.delivery_target({"mode": "direct"}, "feature/x", {"oddanie": "--evil"}), "feature/x")
 
     def test_git_ahead_counts_commits_not_on_the_remote_branch(self) -> None:
         if not shutil.which("git"):
@@ -696,10 +713,10 @@ class DeliveryTests(ProjectCase):
         for i in range(2):
             git("commit", "-q", "--allow-empty", "-m", f"c{i}")
         # gałęzi nie ma na origin: liczą się commity, których nie ma na żadnym origin/*
-        self.assertEqual(sb.git_ahead(repo, "feature/x"), {"remote": "origin/feature/x", "pushed": False, "ahead": 2})
+        self.assertEqual(engine.git_ahead(repo, "feature/x"), {"remote": "origin/feature/x", "pushed": False, "ahead": 2})
         git("update-ref", "refs/remotes/origin/feature/x", "HEAD~1")  # wypchnięty jeden z dwóch
-        self.assertEqual(sb.git_ahead(repo, "feature/x"), {"remote": "origin/feature/x", "pushed": True, "ahead": 1})
-        self.assertEqual(sb.git_ahead(repo, None), {"remote": None, "pushed": None, "ahead": None})
+        self.assertEqual(engine.git_ahead(repo, "feature/x"), {"remote": "origin/feature/x", "pushed": True, "ahead": 1})
+        self.assertEqual(engine.git_ahead(repo, None), {"remote": None, "pushed": None, "ahead": None})
 
     def test_status_exposes_delivery(self) -> None:
         d = self.board.status()["delivery"]
@@ -765,17 +782,22 @@ class DeliveryApprovalTests(ProjectCase):
         self.assertEqual(self.board.approve("cp", "2026-01-10-demo-etap-1", self.HEAD)[0], 409)  # bez powodu
         self.wait_for("READY")
         self.assertEqual(self.board.approve("ready", "../../etc", self.HEAD)[0], 409)
-        direct = self.root / sb.MANIFEST
+        direct = self.root / srv.MANIFEST
         direct.parent.mkdir(parents=True, exist_ok=True)
         direct.write_text("delivery:\n  mode: direct\n", encoding="utf-8")
         self.assertEqual(self.board.approve("ready", "2026-01-10-demo-etap-1", self.HEAD)[0], 409)  # READY tylko w pr
         self.assertFalse((self.root / f"{RUN}/approvals.jsonl").exists())
 
     def test_read_approvals_skips_bad_lines(self) -> None:
+        # Czytnik wpisów to `dashboard.run_approvals` z regułami przyjęcia ze status.py (znane słowo, `at`, sha hex):
+        # poprawne wpisy przechodzą, błędne linie i wpisy są pomijane.
         path = self.root / f"{RUN}/approvals.jsonl"
-        path.write_text('{"word": "CP", "sha": "a"}\nnie json\n[1]\n{"word": "READY"}\n', encoding="utf-8")
-        self.assertEqual([e["word"] for e in sb.read_approvals(self.root, "2026-01-10-demo-etap-1")], ["CP", "READY"])
-        self.assertEqual(sb.read_approvals(self.root, "../x"), [])
+        at = '"at": "2026-01-10T10:00:00Z"'
+        path.write_text(f'{{"word": "CP", "sha": "abc1234", {at}}}\nnie json\n[1]\n{{"word": "READY", "sha": "abc1234", {at}}}\n'
+                        f'{{"word": "CP", "sha": "a", {at}}}\n{{"word": "READY"}}\n{{"word": "RM", "sha": "abc1234", {at}}}\n',
+                        encoding="utf-8")
+        self.assertEqual([e["word"] for e in engine.run_approvals(self.root, "2026-01-10-demo-etap-1")], ["CP", "READY"])
+        self.assertEqual(engine.run_approvals(self.root, "../x"), [])
 
 
 class DescriptionTests(ProjectCase):
@@ -783,8 +805,9 @@ class DescriptionTests(ProjectCase):
 
     def test_every_referenced_key_has_a_description(self) -> None:
         import re as _re
-        descs = sb.load_descriptions()
-        server = set(_re.findall(r'key="(\w+)"', (SKILL / "scripts/dashboard_server.py").read_text(encoding="utf-8")))
+        descs = srv.load_descriptions(DESCRIPTIONS)
+        engine_src = (ROOT / "skillsync_workflow" / "dashboard.py").read_text(encoding="utf-8")
+        server = set(_re.findall(r"key=['\"](\w+)['\"]", engine_src))
         js = (SKILL / "assets/app.js").read_text(encoding="utf-8")
         front = set(_re.findall(r'desc\("(\w+)"', js)) | set(_re.findall(r'"(gate_\w+|banner_\w+|closure|substep|phase)"', js))
         front = {k for k in front if not k.endswith("_")} | {"act_spec", "act_plan", "act_real"}
@@ -807,15 +830,19 @@ class DescriptionTests(ProjectCase):
         stage = next(s for s in acts["spec"]["stages"] if s["key"] == "stage_spec_review")
         self.assertEqual(stage["tip"], "rundy review speca w katalogu przebiegu")
         self.assertEqual(acts["spec"]["warning"], "brak pre-implement przed GO plan: spec ma sekcje Kontrakty")
-        self.assertEqual(sb.risky_sections("## Dane\n\n- nie dotyczy (brak zmian)\n"), [])
+        self.assertEqual(engine.risky_sections("## Dane\n\n- nie dotyczy (brak zmian)\n"), [])
 
 
-class HttpTests(ProjectCase):
+class HttpCase(ProjectCase):
+    """Serwer na 127.0.0.1, wolny port 5100–5199 (nie 5140); zamykany w tearDown."""
+    APPROVALS = True
+
     def setUp(self) -> None:
         super().setUp()
         self.port = free_port()
-        self.board = sb.Board(self.root, poll=0.2, heartbeat=0.5, prototype_port=1)
-        self.server = sb.make_server(self.board, "127.0.0.1", self.port)
+        self.board = srv.Board(self.root, poll=0.2, heartbeat=0.5, prototype_port=1, assets=ASSETS,
+                               descriptions=DESCRIPTIONS, approvals=self.APPROVALS)
+        self.server = srv.make_server(self.board, "127.0.0.1", self.port)
         threading.Thread(target=self.server.serve_forever, kwargs={"poll_interval": 0.1}, daemon=True).start()
         threading.Thread(target=self.board.watch_loop, daemon=True).start()
         self.base = f"http://127.0.0.1:{self.port}"
@@ -831,6 +858,18 @@ class HttpTests(ProjectCase):
     def get(self, path: str):
         return urllib.request.urlopen(self.base + path, timeout=5)
 
+    def post(self, data: dict, headers: dict) -> tuple[int, dict]:
+        body = json.dumps(data).encode("utf-8")
+        req = urllib.request.Request(self.base + "/api/approve", data=body, method="POST", headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=5) as r:
+                return r.status, json.load(r)
+        except urllib.error.HTTPError as exc:
+            return exc.code, json.load(exc)
+
+
+
+class HttpTests(HttpCase):
     def test_endpoints_and_headers(self) -> None:
         with self.get("/") as r:
             self.assertIn("text/html", r.headers["Content-Type"])
@@ -861,15 +900,6 @@ class HttpTests(ProjectCase):
                 self.get(bad)
             self.assertEqual(ctx.exception.code, 404, bad)
 
-    def post(self, data: dict, headers: dict) -> tuple[int, dict]:
-        body = json.dumps(data).encode("utf-8")
-        req = urllib.request.Request(self.base + "/api/approve", data=body, method="POST", headers=headers)
-        try:
-            with urllib.request.urlopen(req, timeout=5) as r:
-                return r.status, json.load(r)
-        except urllib.error.HTTPError as exc:
-            return exc.code, json.load(exc)
-
     def test_approve_endpoint_guards(self) -> None:
         self.board.cli_supports_approvals = lambda: True  # bez zależności od wersji CLI na maszynie
         with self.get("/api/status") as r:
@@ -885,7 +915,7 @@ class HttpTests(ProjectCase):
         req = urllib.request.Request(self.base + "/api/status", headers={"Host": "tunel.example"})
         with urllib.request.urlopen(req, timeout=5) as r:
             self.assertFalse(json.load(r)["approvals"]["here"])
-        self.board.approve_hosts = sb.LOOPBACK_HOSTS | {"lan-host"}
+        self.board.approve_hosts = srv.LOOPBACK_HOSTS | {"lan-host"}
         with urllib.request.urlopen(req, timeout=5) as r:
             self.assertFalse(json.load(r)["approvals"]["here"])
         tunnel = {**ok, "Host": "lan-host:5140", "Origin": "http://lan-host:5140"}
@@ -926,6 +956,313 @@ class HttpTests(ProjectCase):
         self.assertEqual(events[-1], "change")
         with self.get("/api/status") as resp:
             self.assertEqual(json.load(resp)["progress"]["done"], 3)
+
+
+def raw_post(port: int, headers: dict, body: bytes = b"") -> tuple[int, dict]:
+    """POST /api/approve przez http.client z dowolnym Content-Length (np. większym niż wysłana treść)."""
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    try:
+        conn.putrequest("POST", "/api/approve", skip_host="Host" in headers)
+        for key, value in headers.items():
+            conn.putheader(key, value)
+        conn.endheaders()
+        if body:
+            conn.send(body)
+        resp = conn.getresponse()
+        return resp.status, json.loads(resp.read() or b"{}")
+    finally:
+        conn.close()
+
+
+class HttpSecurityTests(HttpCase):
+    """K4: nagłówki bezpieczeństwa, Content-Type, allowlista assetów i dokumentów, limit SSE i treści POST."""
+    OK = {"Content-Type": "application/json", "X-Status-Board": "1"}
+
+    def test_security_headers_and_content_types(self) -> None:
+        expected = {"/": "text/html; charset=utf-8", "/index.html": "text/html; charset=utf-8",
+                    "/api/status": "application/json; charset=utf-8", "/assets/app.css": "text/css; charset=utf-8",
+                    "/assets/app.js": "text/javascript; charset=utf-8", "/healthz": "application/json; charset=utf-8",
+                    "/api/descriptions": "application/json; charset=utf-8"}
+        for path, ctype in expected.items():
+            with self.subTest(path=path), self.get(path) as r:
+                self.assertEqual(r.headers["Content-Type"], ctype)
+                self.assertEqual(r.headers["X-Frame-Options"], "DENY")
+                self.assertEqual(r.headers["X-Content-Type-Options"], "nosniff")
+                self.assertEqual(r.headers["Referrer-Policy"], "no-referrer")
+                self.assertIn("no-store", r.headers["Cache-Control"])
+        with self.get("/") as r:
+            csp = r.headers["Content-Security-Policy"]
+        for part in ("default-src 'self'", "script-src 'self'", "frame-ancestors 'none'", "base-uri 'none'",
+                     "form-action 'none'", "connect-src 'self'"):
+            self.assertIn(part, csp)
+        self.assertNotIn("unsafe-eval", csp)
+        self.assertNotIn("'unsafe-inline'", csp.split("script-src", 1)[1].split(";")[0])  # bez inline script
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            self.get("/nope")
+        self.assertEqual(ctx.exception.headers["X-Frame-Options"], "DENY")
+        self.assertEqual(ctx.exception.headers["X-Content-Type-Options"], "nosniff")
+        with self.get("/healthz") as r:
+            self.assertEqual(json.load(r), {"ok": True, "version": self.board.version})
+        with self.get("/api/status") as r:
+            data = json.load(r)
+        self.assertEqual((data["schema"], data["app"]["name"]), (1, "dashboard"))  # ten sam kontrakt co `dashboard show`
+        req = urllib.request.Request(self.base + "/", method="HEAD")
+        with urllib.request.urlopen(req, timeout=5) as r:
+            self.assertEqual((r.status, r.read()), (200, b""))
+
+    def test_assets_come_only_from_the_allowlist(self) -> None:
+        self.assertEqual(sorted(ASSETS), ["app.css", "app.js", "index.html", "theme.js"])
+        self.assertEqual(DESCRIPTIONS, SKILL / "descriptions.json")
+        for bad in ("/assets/SKILL.md", "/assets/descriptions.json", "/assets/..%2fSKILL.md", "/assets/%2e%2e/SKILL.md",
+                    "/assets/../SKILL.md", "/assets/sub/app.js", "/assets/nie-ma.js", "/assets/.app.js", "/assets/app.js.map",
+                    "/assets/", "/assets/app.py"):
+            with self.subTest(path=bad), self.assertRaises(urllib.error.HTTPError) as ctx:
+                self.get(bad)
+            self.assertEqual(ctx.exception.code, 404, bad)
+        self.board.assets = {}  # bez warstwy z assetami strona nie istnieje
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            self.get("/")
+        self.assertEqual(ctx.exception.code, 404)
+
+    def test_doc_endpoint_refuses_paths_outside_the_allowlist(self) -> None:
+        outside = self.tmp / "outside.md"
+        outside.write_text("# poza projektem\n", encoding="utf-8")
+        links = []
+        for name, target in (("docs/specs/link-out.md", outside), ("docs/specs/link-env.md", self.root / ".env")):
+            try:
+                (self.root / name).symlink_to(target)
+                links.append(name)
+            except OSError:
+                pass
+        bad = ["../../.env", ".env", "docs/specs/../../.env", "docs%2F..%2F.env", ".skillsync/config.md", "docs/secret.md",
+               ".git/HEAD", str(self.root / SPEC), "docs/specs/%2e%2e/secret.md", f"{RUN}/notes.txt", *links]
+        for rel in bad:
+            with self.subTest(path=rel), self.assertRaises(urllib.error.HTTPError) as ctx:
+                self.get("/api/doc?path=" + rel)
+            self.assertEqual(ctx.exception.code, 404, rel)
+        self.assertEqual(srv.MAX_DOC_BYTES, 2_000_000)
+        big = self.root / "docs/specs/duzy.md"
+        big.write_text("# Duży\n\n" + ("x" * 99 + "\n") * 21_000, encoding="utf-8")
+        with self.get("/api/doc?path=docs/specs/duzy.md") as r:
+            doc = json.load(r)
+        self.assertEqual((doc["size"], doc["truncated"]), (big.stat().st_size, True))
+        self.assertLessEqual(doc["html"].count("x"), srv.MAX_DOC_BYTES)
+
+    def test_sse_client_limit(self) -> None:
+        self.assertEqual(srv.MAX_SSE_CLIENTS, 64)
+        with self.board.cond:
+            self.board.sse_clients = srv.MAX_SSE_CLIENTS
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            self.get("/events")
+        self.assertEqual(ctx.exception.code, 503)
+        self.assertEqual(self.board.sse_clients, srv.MAX_SSE_CLIENTS)  # odmowa nie zajmuje miejsca
+        with self.board.cond:
+            self.board.sse_clients = srv.MAX_SSE_CLIENTS - 1
+        r = self.get("/events")
+        self.assertEqual(r.status, 200)
+        self.assertEqual(self.board.sse_clients, srv.MAX_SSE_CLIENTS)
+        r.close()
+
+    def test_post_body_and_route_limits(self) -> None:
+        self.assertEqual(srv.MAX_BODY, 4096)
+        self.assertEqual(raw_post(self.port, {**self.OK, "Content-Length": str(srv.MAX_BODY + 1)})[0], 400)  # > 4096
+        self.assertEqual(raw_post(self.port, {**self.OK, "Content-Length": "0"})[0], 400)
+        self.assertEqual(raw_post(self.port, {**self.OK, "Content-Length": "-1"})[0], 400)
+        self.assertEqual(raw_post(self.port, {**self.OK, "Content-Length": "x"})[0], 400)
+        for body in (b"nie json", b"[1]", b"\xff\xfe"):
+            with self.subTest(body=body):
+                self.assertEqual(raw_post(self.port, {**self.OK, "Content-Length": str(len(body))}, body)[0], 400)
+        self.assertEqual(self.post({}, {**self.OK, "Origin": "null"})[0], 403)  # Origin bez hosta = obcy
+        req = urllib.request.Request(self.base + "/api/status", data=b"{}", method="POST", headers=self.OK)
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            urllib.request.urlopen(req, timeout=5)
+        self.assertEqual(ctx.exception.code, 404)
+
+
+class HttpApprovalTests(HttpCase):
+    """K4: zgoda z poprawnymi nagłówkami przechodzi do zapisu; każda odmowa nie woła zapisu (CLI ani approvals.jsonl)."""
+    SPEC2 = "docs/specs/demo-etap-2.md"
+    PLAN2 = "docs/plans/2026-01-20-demo-etap-2.md"
+    HEAD = "abc1234def5678"
+    RUN_ID = "2026-01-10-demo-etap-1"
+
+    def setUp(self) -> None:
+        super().setUp()
+        install_fake_cli(self)
+        self.writes: list[dict] = []
+        original = self.board._append_approval
+
+        def spy(run_id, entry):
+            self.writes.append(entry)
+            return original(run_id, entry)
+        self.board._append_approval = spy
+        self.ok = {"Content-Type": "application/json", "X-Status-Board": "1", "Origin": f"http://127.0.0.1:{self.port}"}
+
+    def go_plan_waiting(self) -> str:
+        spec = self.root / self.SPEC2
+        spec.write_text(f"# Spec: Demo 2\n\nStatus: draft (czeka na GO plan)\nPlan: {self.PLAN2}\n", encoding="utf-8")
+        later = (self.root / PLAN).stat().st_mtime + 100
+        os.utime(spec, (later, later))
+        with self.get("/api/status") as r:
+            offer = next(a for a in json.load(r)["approvals"]["actions"] if a["kind"] == "spec")
+        self.assertEqual((offer["state"], offer["path"]), ("waiting", self.SPEC2))
+        return offer["sha"]
+
+    def cli_writes(self) -> list[str]:
+        lines = self.calls.read_text(encoding="utf-8").splitlines() if self.calls.exists() else []
+        return [line for line in lines if "--expect-sha" in line]
+
+    def test_correct_headers_reach_the_consent(self) -> None:
+        sha = self.go_plan_waiting()
+        code, body = self.post({"kind": "spec", "path": self.SPEC2, "sha": sha}, self.ok)
+        self.assertEqual((code, body["word"], body["file"]), (200, "GO plan", self.SPEC2), body)
+        self.assertEqual(self.cli_writes(), [f"spec approve {self.root} {self.SPEC2} --expect-sha {sha} --json"])
+        self.assertEqual([(e["word"], e["sha"], e["file"], e["shaAfter"]) for e in self.writes],
+                         [("GO plan", sha, self.SPEC2, "after")])
+        self.assertTrue((self.root / srv.APPROVALS_LOG).is_file())
+        # bez Origin (np. curl na tej maszynie) też przechodzi; Host z --approve-host także
+        self.board.approve_hosts = srv.LOOPBACK_HOSTS | {"lan-host"}
+        code, _ = raw_post(self.port, {"Host": "lan-host:5140", "Content-Type": "application/json", "X-Status-Board": "1",
+                                       "Content-Length": "2"}, b"{}")
+        self.assertEqual(code, 400)  # przeszło strażników nagłówków; puste żądanie odrzuca dopiero walidacja treści
+
+    def test_refusals_never_write(self) -> None:
+        sha = self.go_plan_waiting()
+        data = {"kind": "spec", "path": self.SPEC2, "sha": sha}
+        bad_headers = [
+            {k: v for k, v in self.ok.items() if k != "X-Status-Board"},
+            {**self.ok, "X-Status-Board": "0"},
+            {**self.ok, "Host": "evil.example"},
+            {**self.ok, "Host": "127.0.0.1.evil.example"},
+            {**self.ok, "Origin": "https://evil.example"},
+            {**self.ok, "Origin": "http://localhost.evil.example:5140"},
+            {**self.ok, "Content-Type": "text/plain"},
+            {**self.ok, "Content-Type": "application/x-www-form-urlencoded"},
+            {k: v for k, v in self.ok.items() if k != "Content-Type"},
+        ]
+        for headers in bad_headers:
+            with self.subTest(headers=headers):
+                self.assertEqual(self.post(data, headers)[0], 403)
+        # treść > 4096 B: odmowa po samym Content-Length, przed odczytem treści (bez wysyłania jej, żeby nie zrywać połączenia)
+        self.assertEqual(raw_post(self.port, {**self.ok, "Content-Length": str(srv.MAX_BODY + 1)})[0], 400)
+        self.assertEqual(self.post({**data, "sha": "0" * 40}, self.ok)[0], 409)  # nieaktualny sha (plik się zmienił)
+        self.assertEqual(self.post({**data, "kind": "rm"}, self.ok)[0], 400)
+        self.assertEqual(self.post({**data, "path": "docs/specs/inny.md"}, self.ok)[0], 409)
+        self.assertEqual(self.cli_writes(), [])
+        self.assertEqual(self.writes, [])
+        self.assertFalse((self.root / srv.APPROVALS_LOG).exists())
+        self.assertFalse((self.root / RUN / "approvals.jsonl").exists())
+
+    def test_stale_head_and_second_write_are_refused(self) -> None:
+        with (self.root / f"{RUN}/checkpoints.md").open("a", encoding="utf-8") as fh:
+            fh.write("- 11:20 zrobione: S9; w toku: —; czeka: CP\n")
+        cp = {"kind": "cp", "path": self.RUN_ID, "plan": PLAN}
+        self.assertEqual(self.post({**cp, "sha": "0" * 14}, self.ok)[0], 409)  # HEAD inny niż pokazany
+        self.assertEqual(self.writes, [])
+        code, body = self.post({**cp, "sha": self.HEAD}, self.ok)
+        self.assertEqual((code, body["file"]), (200, f"{RUN}/approvals.jsonl"), body)
+        self.assertEqual(self.post({**cp, "sha": self.HEAD}, self.ok)[0], 409)  # drugi zapis dla tego HEAD
+        log = (self.root / f"{RUN}/approvals.jsonl").read_text(encoding="utf-8").splitlines()
+        self.assertEqual([json.loads(x)["word"] for x in log], ["CP"])
+        self.assertEqual(len(self.writes), 1)
+
+
+class HttpReadOnlyTests(HttpCase):
+    """`--no-approvals`: strona tylko do odczytu, POST /api/approve = 403 nawet z poprawnymi nagłówkami."""
+    APPROVALS = False
+
+    def test_no_approvals_is_403(self) -> None:
+        with self.get("/api/status") as r:
+            approvals = json.load(r)["approvals"]
+        self.assertEqual((approvals["enabled"], approvals["actions"]), (False, []))
+        ok = {"Content-Type": "application/json", "X-Status-Board": "1"}
+        code, body = self.post({"kind": "cp", "path": "2026-01-10-demo-etap-1", "sha": "abc1234def5678"}, ok)
+        self.assertEqual(code, 403)
+        self.assertIn("--no-approvals", body["error"])
+        self.assertFalse((self.root / RUN / "approvals.jsonl").exists())
+
+
+class ServeCommandTests(unittest.TestCase):
+    """`skillsync dashboard serve`: rejestracja podkomendy, odmowy startu (BLOCKED) i bieg na wolnym porcie z warstwy `library/`."""
+
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp(prefix="dashboard-serve-"))
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.root = make_project(self.tmp)
+        manifest = self.root / srv.MANIFEST
+        manifest.parent.mkdir(parents=True, exist_ok=True)
+        manifest.write_text("skills: [dashboard]\n", encoding="utf-8")
+        self.env = {**os.environ, "SKILLSYNC_CONFIG": str(self.tmp / "machine-config.yaml"),
+                    "XDG_CACHE_HOME": str(self.tmp / "xdg-cache"), "XDG_DATA_HOME": str(self.tmp / "xdg-data")}
+        self.layer = ["--layer", f"core={ROOT / 'library'}"]
+
+    def cli(self, *args: str, timeout: float = 60) -> subprocess.CompletedProcess:
+        return subprocess.run([sys.executable, str(CLI), *args], capture_output=True, text=True, timeout=timeout,
+                              env=self.env, check=False)
+
+    def test_help_lists_serve_and_its_flags(self) -> None:
+        result = self.cli("dashboard", "serve", "--help")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for flag in ("--port", "--host", "--approve-host", "--no-approvals", "--layer", "--plan", "--session-url"):
+            self.assertIn(flag, result.stdout)
+        self.assertIn("5140", result.stdout)
+        top = self.cli("dashboard", "--help")
+        self.assertEqual(top.returncode, 0, top.stderr)
+        self.assertIn("serve", top.stdout)
+        self.assertIn("show", top.stdout)
+        self.assertEqual(self.cli("dashboard").returncode, 2)  # podkomenda wymagana
+
+    def test_refused_start_is_blocked(self) -> None:
+        for port in ("5200", "4444", "9222", "5099"):
+            with self.subTest(port=port):
+                result = self.cli("dashboard", "serve", str(self.root), "--port", port, *self.layer)
+                self.assertEqual(result.returncode, 2, result.stderr)
+                report = json.loads(result.stdout)
+                self.assertEqual(report["status"], "BLOCKED")
+                self.assertIn("5100", report["reason"])
+        result = self.cli("dashboard", "serve", str(self.root), "--port", str(free_port()), "--session-url",
+                          "http://example.com/x", *self.layer)
+        self.assertEqual((result.returncode, json.loads(result.stdout)["status"]), (2, "BLOCKED"))
+        result = self.cli("dashboard", "serve", str(self.root), "--port", str(free_port()), "--plan",
+                          "../../etc/passwd.md", *self.layer)
+        self.assertEqual((result.returncode, json.loads(result.stdout)["status"]), (2, "BLOCKED"))
+        empty = self.tmp / "empty-layer"
+        empty.mkdir()
+        (empty / "layer.yaml").write_text((ROOT / "library" / "layer.yaml").read_text(encoding="utf-8"), encoding="utf-8")
+        result = self.cli("dashboard", "serve", str(self.root), "--port", str(free_port()), "--layer", f"core={empty}")
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("assets/index.html", json.loads(result.stdout)["reason"])
+        (self.root / srv.MANIFEST).unlink()
+        result = self.cli("dashboard", "serve", str(self.root), "--port", str(free_port()), *self.layer)
+        self.assertEqual((result.returncode, json.loads(result.stdout)["status"]), (2, "BLOCKED"))
+
+    @unittest.skipIf(os.name == "nt", "SIGTERM kończy proces na Windows bez obsługi")
+    def test_serve_answers_and_stops_on_sigterm(self) -> None:
+        port = free_port()
+        proc = subprocess.Popen([sys.executable, str(CLI), "dashboard", "serve", str(self.root), "--port", str(port),
+                                 *self.layer], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=self.env)
+        self.addCleanup(lambda: proc.poll() is None and proc.kill())
+        base, deadline, health = f"http://127.0.0.1:{port}", time.time() + 20, None
+        while time.time() < deadline and proc.poll() is None:
+            try:
+                with urllib.request.urlopen(base + "/healthz", timeout=1) as r:
+                    health = json.load(r)
+                break
+            except OSError:
+                time.sleep(0.1)
+        self.assertEqual(health, {"ok": True, "version": 0}, proc.stderr.read() if proc.poll() is not None else "")
+        with urllib.request.urlopen(base + "/", timeout=5) as r:
+            self.assertIn("text/html", r.headers["Content-Type"])
+        with urllib.request.urlopen(base + "/api/status", timeout=5) as r:
+            data = json.load(r)
+        self.assertEqual((data["schema"], data["plan"]["path"], data["approvals"]["here"]), (1, PLAN, True))
+        with urllib.request.urlopen(base + "/api/descriptions", timeout=5) as r:
+            self.assertIn("stage_pre_implement", json.load(r))
+        proc.terminate()
+        out, err = proc.communicate(timeout=15)
+        self.assertEqual(proc.returncode, 0, err)
+        self.assertEqual({k: v for k, v in json.loads(out).items() if k != "url"}, {"status": "PASS", "stopped": True})
+        self.assertIn(f"127.0.0.1:{port}", err)
 
 
 if __name__ == "__main__":

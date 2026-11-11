@@ -311,3 +311,33 @@ Różnice rozstrzygnięte świadomie:
   odczyt pliku z tymi samymi regułami przyjęcia wpisu.
 - Status planu: `_status_fields` czyta pierwszą linię statusu z pierwszych 4000 znaków (także `**Status:**`, `- Status:`);
   słowo statusu to litery i `_` (zapis `in-progress` daje `in`, nie `in_progress`).
+
+## Serwer (`dashboard serve`)
+
+`skillsync dashboard serve <projekt> [--port 5140] [--host 127.0.0.1] [--approve-host H ...] [--no-approvals] [--plan <rel>]
+[--session-url https://…] [--layer id=ścieżka ...]` (moduł `skillsync_workflow/dashboard_http.py`, ładowany leniwie) działa
+na pierwszym planie; Ctrl+C albo SIGTERM kończy go raportem `{"status": "PASS", "url", "stopped": true}` (kod `0`). Odmowa
+startu = `BLOCKED` (kod `2`): port spoza 5100–5199 albo zakazany (4444–4448, 9222, 9333), brak manifestu, brak
+`skills/dashboard/assets/index.html` w aktywnych warstwach, `--session-url` inny niż https bez danych logowania, `--plan`
+spoza dozwolonych dokumentów, port zajęty. Port wybiera się per projekt (domyślnie 5140).
+
+Endpointy:
+
+| Endpoint | Odpowiedź |
+|---|---|
+| `GET /`, `/index.html` | strona (`assets/index.html` skilla `dashboard`) |
+| `GET /assets/<plik>` | tylko nazwy `[\w-]+.(html\|css\|js\|svg)` z `skills/dashboard/assets/` aktywnych warstw (`LayerSet.skill_files`: późniejsza warstwa wygrywa per plik, dowiązania pomijane); inne = 404 |
+| `GET /api/status[?plan=<rel>]` | kontrakt `schema: 1` (to samo co `show`, z żywym `version`, `session.url`, `prototype.up`) plus `approvals.here` (bool: nagłówek `Host` żądania jest na liście hostów zgód) |
+| `GET /api/doc?path=<rel>` | `{path, title, status, mtime, size, truncated, html}`: podgląd `*.md` z `docs/specs`, `docs/plans`, `docs/design`, `docs/domain` i `.skillsync/runs/<run>/`; bez `..`, ścieżek absolutnych, ukrytych katalogów i dowiązań poza listę; limit 2 MB (`truncated`); inne = 404 |
+| `GET /events` | SSE: `hello {version, heartbeat}` (z `retry: 3000`), `change {version}` po zmianie obserwowanych plików, `ping {version, t}` co 15 s; najwyżej 64 połączenia (dalej 503) |
+| `GET /api/descriptions` | `descriptions.json` skilla (`{klucz: {title, text}}`) |
+| `GET /healthz` | `{ok: true, version}` |
+| `POST /api/approve` | `{kind: spec\|plan\|cp\|ready, path, sha[, plan]}`; tylko akcja, którą `/api/status` właśnie oferuje w stanie `waiting`, z tym samym `sha` |
+
+Zabezpieczenia `POST /api/approve` (odmowa = 403, bez zapisu i bez wywołania CLI): `Host` z listy `localhost`, `127.0.0.1`,
+`::1` i `--approve-host`; nagłówek `X-Status-Board: 1`; `Origin`, jeśli jest, z tej samej listy; `Content-Type:
+application/json`. Dalej `Content-Length` 1–4096 (inaczej 400), treść JSON-obiekt (inaczej 400), `--no-approvals` = 403,
+akcja nieoferowana, nieaktywna albo z innym `sha` = 409 (także drugi zapis CP/READY dla tego samego HEAD). Każda odpowiedź ma
+`X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `Cache-Control: no-cache,
+no-store`; strona HTML także CSP `default-src 'self'; script-src 'self'; …; frame-ancestors 'none'`. Odczyty (`GET`) nie
+sprawdzają nagłówka `Host`: strona pod innym adresem (tunel, LAN przy `--host 0.0.0.0`) jest tylko do odczytu.

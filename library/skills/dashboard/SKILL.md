@@ -1,21 +1,29 @@
 ---
 name: dashboard
-description: "Strona statusu przebiegu skilla feature na żywo (akty Spec/Plan/Realizacja, pasek postępu, checkpointy, podgląd speca i planu) - lokalny serwer stdlib Pythona; odczyt plików projektu, jedyny zapis to przyciski zgód GO plan / GO implement z localhost."
+description: "Strona statusu przebiegu skilla feature na żywo (akty Spec/Plan/Realizacja, pasek postępu, checkpointy, podgląd speca i planu) - komenda skillsync dashboard serve (serwer stdlib nad JSON dashboard show); odczyt plików projektu, jedyny zapis to przyciski zgód z localhost."
 user-invokable: true
 ---
 
 # dashboard: status przebiegu `feature` na żywo
 
-Jedna aplikacja w stdlib Pythona 3.11+ (bez pip, bez CDN, działa offline). Czyta pliki skilla `feature` w projekcie
-i pokazuje je jako stronę dla widzów (rzutnik, przeglądarka przez tunel SSH), odświeżaną na żywo, gdy agenci pracują.
-Nie wykonuje poleceń z danych. Jedyny zapis to zgoda użytkownika z przycisku (niżej: „Przyciski zgód”).
+Serwer jest częścią generatora (`skillsync dashboard serve`, stdlib Pythona 3.11+, bez pip, bez CDN, działa offline);
+ten skill dostarcza stronę (`assets/`: HTML, CSS, JS) i opisy dymków (`descriptions.json`). Serwer czyta pliki skilla
+`feature` w projekcie i pokazuje je jako stronę dla widzów (rzutnik, przeglądarka przez tunel SSH), odświeżaną na żywo,
+gdy agenci pracują. Stan strony to ten sam JSON co `skillsync dashboard show` (kontrakt `schema: 1`,
+`docs/dashboard-contract.md` w repo skillsync). Nie wykonuje poleceń z danych. Jedyny zapis to zgoda użytkownika z
+przycisku (niżej: „Przyciski zgód”).
 
 ## Uruchomienie
 
 ```bash
-python3 <warstwa>/skills/dashboard/scripts/dashboard_server.py --project <ścieżka-projektu> [--plan docs/plans/<plik>.md] [--port 5140] [--host 127.0.0.1] [--session-url https://…] [--approve-host NAZWA] [--no-approvals]
-python3 .../dashboard_server.py --project <ścieżka> --json   # jednorazowy zrzut /api/status (diagnostyka)
+skillsync dashboard serve <projekt> [--port 5140] [--host 127.0.0.1] [--approve-host NAZWA ...] [--no-approvals] [--plan docs/plans/<plik>.md] [--session-url https://…] [--layer id=ścieżka ...]
+skillsync dashboard show <projekt> [--json] [--plan docs/plans/<plik>.md]   # jednorazowy zrzut JSON (to samo co /api/status)
 ```
+
+- Serwer działa na pierwszym planie (Ctrl+C albo SIGTERM kończy, wynik `{"status": "PASS", "stopped": true}`); odmowa startu
+  (port spoza zakresu, brak manifestu, brak `assets/index.html` w aktywnych warstwach, zły `--session-url` albo `--plan`)
+  = `BLOCKED`, kod 2. Strona i `descriptions.json` pochodzą ze skilla `dashboard` aktywnych warstw (`--layer` jak w innych
+  komendach; późniejsza warstwa wygrywa per plik).
 
 - Port domyślny **5140**, dozwolony zakres **5100–5199** (nigdy 4444–4448, 9222, 9333). Jeden proces na projekt;
   port wybiera się per projekt (`--port`), żeby kilka projektów mogło działać równolegle.
@@ -27,8 +35,8 @@ python3 .../dashboard_server.py --project <ścieżka> --json   # jednorazowy zrz
 - Akt I bez planu: `feature` zakłada plan dopiero przy „GO plan”. Gdy najnowszy spec `draft`/`approved`, którego nie wskazuje
   żaden plan (`Spec:`), jest nowszy niż plan wybrany automatycznie, strona pokazuje akt I (`mode: "spec"`): spec, przebieg
   (linia `Przebieg:` speca, potem katalog o nazwie planu z linii `Plan:`, potem najnowszy `<data>-<slug speca>`), prototyp
-  z `docs/prototypes/*/prototype.json` (`requirements` = spec) z akceptacją ekranów z `skillsync prototype list`
-  (tylko odczyt, w pamięci do zmiany `comments.json`/`index.html`); akt II = „brak planu (czeka na GO plan)”.
+  z `docs/prototypes/*/prototype.json` (`requirements` = spec) z akceptacją ekranów liczoną jak w `skillsync prototype list`
+  (w procesie, tylko odczyt, w pamięci do zmiany `comments.json`/`index.html`); akt II = „brak planu (czeka na GO plan)”.
   Akt I przed specem (`mode: "run"`): gdy speca jeszcze nie ma, a najnowszy katalog przebiegu ma `checkpoints.md` nowszy
   niż plan wybrany automatycznie i nie należy do żadnego planu (`Przebieg:`) ani speca (`<data>-<slug speca>`), strona
   pokazuje „Akt I: specyfikacja w przygotowaniu”, run-id, ostatni checkpoint i baner `czeka:`; po zapisaniu speca działa
@@ -82,7 +90,7 @@ Znika, gdy zniknie powód.
   (inna wartość = ogólny komunikat). Najnowszy checkpoint bez `czeka:` (albo `czeka: —`) zdejmuje baner, czyli „sesja ruszyła”.
   Luźne „czeka na …” w treści nie jest znacznikiem.
 - **Fakty z plików** (bez znacznika): `Status: draft (czeka na GO implement)` planu albo `… (czeka na GO plan)` speca;
-  prototyp z niezaakceptowanymi ekranami, zanim plan wejdzie w realizację (`skillsync prototype list`).
+  prototyp z niezaakceptowanymi ekranami, zanim plan wejdzie w realizację (akceptacja jak w `skillsync prototype list`).
 - Odnośnik: spec albo plan w zakładce **Dokumenty**, prototyp na porcie serwera prototypów. Strona nie wysyła zgód; zgodę
   wpisuje się w sesji.
 
@@ -134,8 +142,9 @@ była, a nie, że pętla dała PASS.
   słabszy niż „CP” wpisane w terminalu. Nie wystawiaj strony z `--approve-host` w niezaufanej sieci.
 - `--session-url` (opcjonalny): adres sesji podany przy starcie (np. Remote Control), tylko `https` bez danych logowania;
   baner dokłada wtedy „Otwórz sesję”. Nie jest czytany z plików projektu, więc agent nie podmieni odnośnika.
-- Wymaga `skillsync` ze `spec approve` i `--expect-sha`; przy starszym CLI przycisków nie ma (`approvals.reason`). `--no-approvals`
-  = strona wyłącznie do odczytu.
+- „GO plan”/„GO implement” wymagają `skillsync` w PATH serwera ze `spec approve` i `--expect-sha`; przy starszym CLI
+  przycisk jest nieaktywny z powodem (`reason`). `--no-approvals` = strona wyłącznie do odczytu (brak przycisków,
+  `POST /api/approve` = 403).
 
 ### Podkroki faz, dymki z opisem i sygnały aktu I
 
@@ -177,15 +186,16 @@ była, a nie, że pętla dała PASS.
 ## Wskaźniki przebiegów
 
 Generyczne wskaźniki przebiegów (czasy kroków, liczby review i testów z `checkpoints.md` i raportów) liczy polecenie
-`skillsync dashboard metrics`, a nie ten skrypt; skrypt nie ma opcji `--metrics`.
+`skillsync dashboard metrics`, a nie strona; serwer nie ma opcji `--metrics`.
 
 ## Testy
 
 ```bash
-cd <repo skillsync> && python3 -m unittest tests.test_skillsync_dashboard_server
+cd <repo skillsync> && python3 -m unittest tests.test_skillsync_dashboard_server tests.test_skillsync_dashboard
 ```
 
-Test SSE wybiera wolny port z zakresu 5100–5199 (inny niż 5140). Fixtury w `tests/fixtures/` są zanonimizowanymi kopiami formatów.
+Testy HTTP wybierają wolny port z zakresu 5100–5199 (inny niż 5140) i zamykają serwer po teście. Fixtury w `tests/fixtures/`
+są zanonimizowanymi kopiami formatów.
 
 ## Ograniczenia
 

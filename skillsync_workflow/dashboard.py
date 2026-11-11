@@ -2,8 +2,8 @@
 
 `build_status(root, plan=None)` reads (never writes) plans `docs/plans/*.md`, specs, `.skillsync/runs/<run-id>/`
 (`checkpoints.md`, `approvals.jsonl`, `readiness.md`), prototypes and `.git` of the project and returns the dictionary the
-status page renders. `skillsync dashboard show` prints it. Shared parsers come from `status.py` (status line, git blob sha,
-approval entry rules); phases and `Fn.k` sub-steps of `## Progress` are the dashboard's own extension (contract section
+status page renders. `skillsync dashboard show` prints it; `dashboard serve` (`dashboard_http.py`) serves it live. Shared
+parsers come from `status.py` (status line, git blob sha, approval entry rules); phases and `Fn.k` sub-steps of `## Progress` are the dashboard's own extension (contract section
 "Zgodność z `skillsync status`")."""
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ import yaml
 
 from . import __version__
 from .common import add_project_arguments, read_project, redact
+from .layers import add_layer_argument
 from .delivery_mode import delivery_info
 from .status import (APPROVAL_WORDS, APPROVALS_FILE, MAX_APPROVALS_BYTES, _APPROVAL_SHA, _approval_at, _status_fields,
                      git_blob_sha)
@@ -26,6 +27,9 @@ from .status import (APPROVAL_WORDS, APPROVALS_FILE, MAX_APPROVALS_BYTES, _APPRO
 SCHEMA = 1
 APP_NAME = 'dashboard'
 PROTOTYPE_PORT = 5130
+DEFAULT_PORT = 5140  # `dashboard serve`; pick another port per project to run several in parallel
+PORT_MIN, PORT_MAX = 5100, 5199
+FORBIDDEN_PORTS = frozenset({4444, 4445, 4446, 4447, 4448, 9222, 9333})
 DOC_DIRS = ('docs/specs', 'docs/plans', 'docs/design', 'docs/domain')
 DOC_LABELS = {'docs/specs': 'Speki', 'docs/plans': 'Plany', 'docs/design': 'Projekt', 'docs/domain': 'Domena'}
 PROTOTYPES_DIR = 'docs/prototypes'
@@ -787,13 +791,13 @@ def consent_buttons(spec, plan, waiting, words, log, head_full, run_ok, cli_ok=T
     return out
 
 
-def approvals_state(root, spec, plan, delivery, run_id, head_full, log, waiting, enabled=True):
+def approvals_state(root, spec, plan, delivery, run_id, head_full, log, waiting, enabled=True, cli_ok=True):
     """`approvals {enabled, actions[], last}`; every action carries `run` (the run directory the consent is written to, or
     null when it does not exist); `path` of `cp`/`ready` is the run id."""
     if not enabled:
         return {'enabled': False, 'actions': [], 'last': log[-1] if log else None}
     run_ok = bool(run_id and RUN_ID_RE.match(run_id) and (root / RUNS_DIR / run_id).is_dir())
-    actions = consent_buttons(spec, plan, waiting, delivery.get('words', []), log, head_full, run_ok)
+    actions = consent_buttons(spec, plan, waiting, delivery.get('words', []), log, head_full, run_ok, cli_ok)
     for action in actions:
         if action['kind'] in ('cp', 'ready'):
             action['path'] = run_id
@@ -1068,12 +1072,13 @@ def _normal_plan_rel(plan):
 
 
 def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=None, prototype_port=PROTOTYPE_PORT,
-                 version=0, ahead=None, prototype_up=None, acceptance=None):
+                 version=0, ahead=None, prototype_up=None, acceptance=None, cli_ok=True):
     """The dashboard contract (`schema: 1`) for the project at `root`. Read-only: nothing in the project is written.
 
     `plan` = plan path relative to the project (unknown = automatic choice, `planAuto: true`). `version`, `session_url`,
     and the probes `ahead(root, branch, head)`, `prototype_up()`, `acceptance(slug)` let a server add its live state and
-    caches; `show` uses the defaults (`version` 0, no session, prototype `up` false)."""
+    caches; `show` uses the defaults (`version` 0, no session, prototype `up` false). `cli_ok=False` (the server's
+    `skillsync spec approve --expect-sha` probe failed) keeps the GO buttons `running` with the reason."""
     root = Path(root).resolve()
     if manifest is None:
         _, manifest = read_project(root)
@@ -1183,7 +1188,7 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
                     if plan_info and plan_info.get('status') == 'in_progress' and run.get('lastReportAt')
                     and not any(item.get('source') == 'checkpoint' for item in waiting) else None),
         'approvals': approvals_state(root, spec, plan_info, delivery_state, run_id, git_info['headFull'],
-                                     run_approvals(root, run_id), waiting, approvals),
+                                     run_approvals(root, run_id), waiting, approvals, cli_ok),
         'delivery': delivery_state,
         'session': {'url': session_url},
         'prototype': {'slug': slug, 'port': prototype_port, 'up': bool(slug) and bool(prototype_up and prototype_up())},
@@ -1207,6 +1212,11 @@ def _cmd_show(args):
     return code
 
 
+def _cmd_serve(args):
+    from .dashboard_http import serve_command  # lazy: http.server only for `serve`
+    return serve_command(args)
+
+
 def register(subparsers):
     parser = subparsers.add_parser('dashboard', help='Project status page (JSON contract schema 1, docs/dashboard-contract.md)')
     actions = parser.add_subparsers(dest='dashboard_action', required=True)
@@ -1214,3 +1224,18 @@ def register(subparsers):
     add_project_arguments(show)
     show.add_argument('--plan', help='plan relative to the project, e.g. docs/plans/<file>.md (default: chosen automatically)')
     show.set_defaults(func=_cmd_show)
+    serve = actions.add_parser('serve', help='Serve the live status page of a project (foreground; Ctrl+C stops)')
+    serve.add_argument('path', nargs='?', default='.')
+    add_layer_argument(serve)
+    serve.add_argument('--plan', help='plan relative to the project (default: chosen automatically, switchable on the page)')
+    serve.add_argument('--port', type=int, default=DEFAULT_PORT,
+                       help=f'port (default {DEFAULT_PORT}, range {PORT_MIN}-{PORT_MAX}; one port per project)')
+    serve.add_argument('--host', default='127.0.0.1',
+                       help='listen address (default 127.0.0.1; 0.0.0.0 = all interfaces, read-only view in a trusted network)')
+    serve.add_argument('--approve-host', action='append', default=[], metavar='NAME',
+                       help='extra Host name allowed to give consents (repeatable); default: localhost only')
+    serve.add_argument('--no-approvals', action='store_true', help='read-only page: no consent buttons, POST /api/approve = 403')
+    serve.add_argument('--session-url', help='https address of the session (button "Otwórz sesję"); no credentials')
+    serve.add_argument('--poll', type=float, default=1.0, help='seconds between file change checks (min 0.2)')
+    serve.add_argument('--verbose', action='store_true', help='log every request to stderr')
+    serve.set_defaults(func=_cmd_serve)
