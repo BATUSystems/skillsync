@@ -15,6 +15,7 @@ from pathlib import Path
 
 import yaml
 
+from .fsutil import ensure_utf8_streams, rmtree_force
 from .common import CONDITIONAL_SKILL_ALIASES, conditional_skill_alias, discover_excludes, is_excluded
 
 CONFIG_PATH = Path(os.environ.get("SKILLSYNC_CONFIG") or (Path.home() / ".config" / "skillsync" / "config.yaml"))
@@ -1410,7 +1411,7 @@ def remove_item(path: Path) -> None:
     if path.is_symlink() or path.is_file():
         path.unlink()
     elif path.is_dir():
-        shutil.rmtree(path)
+        rmtree_force(path)
 
 
 def copy_item(src: Path, dest: Path) -> None:
@@ -3767,6 +3768,7 @@ def main() -> None:
 
 def run() -> None:
     """Console entry point (`skillsync`, wrapper, `python -m skillsync_workflow`)."""
+    ensure_utf8_streams()
     sys.exit(main())
 
 
