@@ -280,6 +280,18 @@ LEGACY_WORKFLOW_SKILL = 'agentflow'
 WORKFLOW_COMPANIONS = ('workflow', 'pre-implement', 'smart-test', 'bugfix', 'codereview')
 # Removed skills kept as manifest aliases (mirror of `skillsync:REMOVED_SKILL_ALIASES`).
 REMOVED_SKILL_ALIASES = {'go-jira': 'acli'}
+# Renamed skills whose old name resolves to the new one only while NO layer ships the old name any more:
+# a layer that still has `skills/status-board` keeps it (and `prune_managed` keeps its links) until the layer
+# is updated. Single source for both expanders: `cli.py:expand_skills` imports it from here.
+CONDITIONAL_SKILL_ALIASES = {'status-board': 'dashboard'}
+
+
+def conditional_skill_alias(name, available):
+    """`name` after a conditional rename: the new name when the old one is in no layer and the new one is."""
+    target = CONDITIONAL_SKILL_ALIASES.get(name)
+    if target is not None and name not in available and target in available:
+        return target
+    return name
 # Renamed roles kept as manifest aliases for one release (mirror of `skillsync:RENAMED_ROLE_ALIASES`).
 RENAMED_ROLE_ALIASES = {'Explore': 'explore'}
 
@@ -311,6 +323,7 @@ def expand_project_skills(manifest, layerset):
                 name = WORKFLOW_SKILL
             if name in REMOVED_SKILL_ALIASES and REMOVED_SKILL_ALIASES[name] in available:
                 name = REMOVED_SKILL_ALIASES[name]
+            name = conditional_skill_alias(name, available)
             if name not in expanded:
                 expanded.append(name)
     if WORKFLOW_SKILL in expanded or LEGACY_WORKFLOW_SKILL in expanded:

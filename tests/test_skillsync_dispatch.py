@@ -46,6 +46,12 @@ class SharedConstantsTests(unittest.TestCase):
         self.assertEqual(skillsync.REMOVED_SKILL_ALIASES, {"go-jira": "acli"})
         self.assertEqual(skillsync.RENAMED_ROLE_ALIASES, workflow_common.RENAMED_ROLE_ALIASES)
 
+    def test_conditional_skill_aliases_have_one_source_shared_by_both_expanders(self):
+        self.assertIs(skillsync.CONDITIONAL_SKILL_ALIASES, workflow_common.CONDITIONAL_SKILL_ALIASES)
+        self.assertIs(skillsync.conditional_skill_alias, workflow_common.conditional_skill_alias)
+        self.assertEqual(workflow_common.CONDITIONAL_SKILL_ALIASES, {"status-board": "dashboard"})
+        self.assertFalse(set(workflow_common.CONDITIONAL_SKILL_ALIASES) & set(workflow_common.REMOVED_SKILL_ALIASES))
+
 
 class ExpandSkillsTests(TempProjectMixin, unittest.TestCase):
     def library_with(self, *names):
@@ -83,6 +89,40 @@ class ExpandSkillsTests(TempProjectMixin, unittest.TestCase):
     def test_go_jira_is_kept_when_acli_is_not_available(self):
         self.library_with("other")
         self.assertEqual(self.expand(["go-jira"]), ["go-jira"])
+
+    def both_expanders(self, specs):
+        script = self.expand(specs)
+        package = workflow_common.expand_project_skills({"skills": list(specs)}, self.one_layer())
+        self.assertEqual(script, package)  # (e) parity of cli.py and common.py on the same input
+        return script
+
+    def test_status_board_expands_to_dashboard_when_only_dashboard_is_available(self):
+        self.library_with("dashboard", "other")
+        self.assertEqual(self.both_expanders(["status-board"]), ["dashboard"])
+        self.assertEqual(self.expand(["@board"], {"board": ["status-board"]}), ["dashboard"])
+
+    def test_status_board_stays_when_both_skills_are_available(self):
+        self.library_with("status-board", "dashboard")
+        self.assertEqual(self.both_expanders(["status-board"]), ["status-board"])
+        self.assertEqual(self.both_expanders(["status-board", "dashboard"]), ["status-board", "dashboard"])
+
+    def test_status_board_stays_when_only_status_board_is_available(self):
+        self.library_with("status-board", "other")
+        self.assertEqual(self.both_expanders(["status-board"]), ["status-board"])
+
+    def test_status_board_stays_when_neither_skill_is_available(self):
+        self.library_with("other")
+        self.assertEqual(self.both_expanders(["status-board"]), ["status-board"])
+
+    def test_status_board_and_dashboard_together_give_no_duplicate(self):
+        self.library_with("dashboard", "other")
+        self.assertEqual(self.both_expanders(["status-board", "dashboard"]), ["dashboard"])
+        self.assertEqual(self.both_expanders(["dashboard", "status-board"]), ["dashboard"])
+        self.assertEqual(self.both_expanders(["status-board", "dash*"]), ["dashboard"])
+
+    def test_dashboard_is_not_a_feature_companion(self):
+        self.library_with("feature", *COMPANIONS, "dashboard")
+        self.assertNotIn("dashboard", self.both_expanders(["feature"]))
 
     def test_alias_through_tag_and_glob_is_deduplicated(self):
         self.library_with("feature", "dispatch", "other")
@@ -217,6 +257,21 @@ class ExpandSkillsOnLayersTests(LayersCase):
         for walk in (self.layerset.skill_files, lambda n: workflow_layers.layer_files(self.layerset.get("core"), f"skills/{n}")):
             with self.assertRaises(workflow_layers.LayerError):
                 walk("../..")
+
+    def test_status_board_in_any_layer_blocks_the_conditional_alias(self):
+        core = self.layerset.get("core").root
+        org = self.layerset.get("org").root
+        manifest = {"skills": ["status-board"]}
+        write_skill(core, "dashboard")
+        self.layerset = workflow_layers.resolve_layers(None, config=workflow_layers.load_machine_config(), cwd=self.work)
+        script, package = self.both(manifest)
+        self.assertEqual(script, package)
+        self.assertEqual(script, ["dashboard"])
+        write_skill(org, "status-board")  # an org layer that still ships the old skill keeps it
+        self.layerset = workflow_layers.resolve_layers(None, config=workflow_layers.load_machine_config(), cwd=self.work)
+        script, package = self.both(manifest)
+        self.assertEqual(script, package)
+        self.assertEqual(script, ["status-board"])
 
     def test_the_script_path_form_equals_the_one_layer_layerset_and_the_package_refuses_a_path(self):
         library = self.work / "layers" / "core"

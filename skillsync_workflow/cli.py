@@ -15,7 +15,7 @@ from pathlib import Path
 
 import yaml
 
-from .common import discover_excludes, is_excluded
+from .common import CONDITIONAL_SKILL_ALIASES, conditional_skill_alias, discover_excludes, is_excluded
 
 CONFIG_PATH = Path(os.environ.get("SKILLSYNC_CONFIG") or (Path.home() / ".config" / "skillsync" / "config.yaml"))
 STATE_FILE = Path(".github") / ".skillsync-state.json"
@@ -53,6 +53,8 @@ WORKFLOW_COMPANIONS = ("workflow", "pre-implement", "smart-test", "bugfix", "cod
 # Removed skills kept as manifest aliases: `go-jira` (removed from the library) resolves to `acli`.
 # Mirrored in skillsync_workflow/common.py (tests keep both copies identical).
 REMOVED_SKILL_ALIASES = {"go-jira": "acli"}
+# Conditional renames (`status-board` -> `dashboard`): CONDITIONAL_SKILL_ALIASES and conditional_skill_alias
+# are imported from skillsync_workflow/common.py (one source, no mirror to keep in sync).
 # Renamed roles kept as manifest aliases for one release: `Explore` -> `explore` (lower case like the other roles).
 RENAMED_ROLE_ALIASES = {"Explore": "explore"}
 
@@ -301,6 +303,7 @@ def expand_skills(specs: list[str], source, tags: dict, manifest: dict | None = 
             name = WORKFLOW_SKILL
         if name in REMOVED_SKILL_ALIASES and REMOVED_SKILL_ALIASES[name] in available:
             name = REMOVED_SKILL_ALIASES[name]
+        name = conditional_skill_alias(name, available)  # `status-board` -> `dashboard` only without an old layer
         if name not in seen:
             seen.add(name)
             expanded.append(name)

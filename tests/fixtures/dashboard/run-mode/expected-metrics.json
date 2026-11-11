@@ -1,0 +1,24 @@
+{
+  "failures": [],
+  "generatedAt": "2026-01-12T12:00:00+00:00",
+  "interventions": null,
+  "phases": [],
+  "plan": null,
+  "rounds": {
+    "failed": null,
+    "notRun": null,
+    "records": null,
+    "repeatedSteps": null
+  },
+  "run": "2026-01-11-demo-research",
+  "schema": 1,
+  "status": "PASS",
+  "substeps": [],
+  "totals": {
+    "measuredSeconds": null,
+    "seconds": null,
+    "substeps": 0,
+    "withData": 0,
+    "withoutData": 0
+  }
+}

@@ -3,7 +3,7 @@ title: Glosariusz domenowy Skillsync (słownik warstw, strażnika i workflow)
 tags: [terminology, skillsync, layers, leakguard, workflow, prototype]
 paths: ['skillsync', 'skillsync_workflow/layers.py', 'skillsync_workflow/leakguard.py', 'skillsync_workflow/common.py', 'skillsync_workflow/prototype_server.py', 'skillsync_workflow/prototype.py']
 source: "Definicje z docs/specs/2026-11-05-warstwy-generator.md (sekcja Terminologia domenowa, K1–K15, Kontrakty); AGENTS.md (podumysły); skillsync_workflow/layers.py (`match_rule`, `LayerSet`); plan docs/plans/2026-11-05-warstwy-generator.md (Terminologia domenowa)"
-verified: 2026-11-06
+verified: 2026-11-11
 ---
 Glosariusz: krótkie znaczenia pojęć projektu Skillsync. Szczegółowe reguły są w rekordach tematycznych
 (odsyłacze w nawiasach). Każda definicja ma źródło i datę potwierdzenia. Nazwa klasy w kodzie sama nie potwierdza
@@ -201,3 +201,15 @@ Gdzie w kodzie: `skillsync_workflow/layers.py` (`match_rule`, `LayerSet`, `check
 - **Znaczenie:** sekcja `proposals:` pliku rejestru decyzji `docs/retro/decisions.yaml` (cały plik to rejestr decyzji); decyzje końcowe, źródło stanu pary.
 - **Nie oznacza:** `retro-decisions.json` przebiegu (historia stanów).
 - **Źródło:** [retro-proposals](retro-proposals.md), 2026-11-06.
+
+## Dashboard i zgody
+
+### dashboard
+- **Znaczenie:** strona statusu projektu: ten sam stan workflow (plany, specyfikacje, kroki z postępem, checkpointy, zgody, gotowość) jako JSON `schema: 1` (`skillsync dashboard show`), jako żywa strona (`dashboard serve`) i jako metryki przebiegu (`dashboard metrics`); jedyny zapis to zgody użytkownika.
+- **Nie oznacza:** skilla `status-board` (nazwa starszego skilla, alias warunkowy `status-board` → `dashboard`).
+- **Źródło:** [dashboard-server](dashboard-server.md), `docs/dashboard-contract.md`, 2026-11-11.
+
+### approvals.jsonl
+- **Znaczenie:** dziennik zgód przebiegu `.skillsync/runs/<run-id>/approvals.jsonl`: jedna linia JSON na zgodę (słowo GO plan, GO implement, CP lub READY, sha pokazanej wersji, kto, źródło cli, ide lub dashboard, czas); pisany przez `skillsync approvals record` (blokada plikowa, odmowa duplikatu), czytany przez `approvals wait` i dashboard. Zgodę wyraża tylko użytkownik, ale reguła nie jest egzekwowana technicznie: proces tego samego użytkownika systemu może zapisać wpis (granicą zaufania jest maszyna).
+- **Nie oznacza:** dowodu tożsamości ani niepodrabialnego śladu.
+- **Źródło:** [dashboard-server](dashboard-server.md), `skillsync_workflow/status.py` (`record_approval`), 2026-11-11.

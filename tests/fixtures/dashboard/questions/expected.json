@@ -1,0 +1,285 @@
+{
+  "acts": [
+    {
+      "detail": null,
+      "key": "spec",
+      "name": "Spec",
+      "roman": "I",
+      "stages": [
+        {
+          "done": true,
+          "key": "stage_spec_draft",
+          "label": "Szkic",
+          "tip": "docs/specs/2026-01-11-demo-alerts.md"
+        },
+        {
+          "done": false,
+          "key": "stage_spec_review",
+          "label": "Review",
+          "tip": "rundy review speca w katalogu przebiegu"
+        },
+        {
+          "done": false,
+          "key": "stage_spec_approved",
+          "label": "Zatwierdzony",
+          "tip": "Status speca: draft"
+        }
+      ],
+      "state": "active",
+      "status": "draft",
+      "warning": null
+    },
+    {
+      "detail": "brak planu (czeka na GO plan)",
+      "key": "plan",
+      "name": "Plan",
+      "roman": "II",
+      "stages": [
+        {
+          "done": false,
+          "key": "stage_plan",
+          "label": "Plan",
+          "tip": "brak planu"
+        },
+        {
+          "done": false,
+          "key": "stage_plan_review",
+          "label": "Review",
+          "tip": "rundy review planu w katalogu przebiegu"
+        },
+        {
+          "done": false,
+          "key": "stage_pre_implement",
+          "label": "Pre-implement",
+          "tip": "bramka gotowości przed ryzykowną zmianą"
+        },
+        {
+          "done": false,
+          "key": "stage_go_implement",
+          "label": "GO implement",
+          "tip": "Status planu: —"
+        }
+      ],
+      "state": "planned",
+      "status": null
+    },
+    {
+      "detail": "brak kroków w Progress",
+      "key": "real",
+      "name": "Realizacja",
+      "percent": 0,
+      "roman": "III",
+      "stages": [
+        {
+          "done": false,
+          "key": "code_review",
+          "label": "Review kodu",
+          "tip": "raporty code-review*/final-review* w katalogu przebiegu"
+        },
+        {
+          "done": false,
+          "key": "closure",
+          "label": "Zamknięcie",
+          "tip": "Status planu: —"
+        }
+      ],
+      "state": "planned",
+      "status": null
+    }
+  ],
+  "app": {
+    "name": "dashboard",
+    "version": "<version>"
+  },
+  "approvals": {
+    "actions": [
+      {
+        "blocked": null,
+        "given": null,
+        "kind": "spec",
+        "path": "docs/specs/2026-01-11-demo-alerts.md",
+        "reason": null,
+        "run": "2026-01-11-demo-alerts",
+        "sha": "da24f109495951323695a64b3169043f0c678f25",
+        "state": "waiting",
+        "word": "GO plan"
+      }
+    ],
+    "enabled": true,
+    "last": null
+  },
+  "assumptions": {
+    "count": 3,
+    "items": [
+      {
+        "accepted": "w aplikacji",
+        "id": "Q1",
+        "question": "kanał powiadomień"
+      },
+      {
+        "accepted": "raz dziennie",
+        "id": "Q2",
+        "question": "częstotliwość"
+      },
+      {
+        "accepted": "UTC",
+        "id": "Q5",
+        "question": "strefa czasowa"
+      }
+    ]
+  },
+  "blockingQuestions": {
+    "count": 2,
+    "items": [
+      {
+        "id": "Q4",
+        "question": "czy wysyłać podsumowanie tygodniowe?"
+      },
+      {
+        "id": "Q6",
+        "question": "czy dopuszczamy wyciszenie?"
+      }
+    ]
+  },
+  "delivery": {
+    "ahead": null,
+    "base": "main",
+    "branch": null,
+    "mode": "pr",
+    "pushed": null,
+    "remote": null,
+    "source": "manifest",
+    "target": null,
+    "words": [
+      {
+        "active": false,
+        "target": null,
+        "tip": "CP → origin; nic do dostarczenia",
+        "word": "CP"
+      },
+      {
+        "active": false,
+        "target": null,
+        "tip": "nic do dostarczenia",
+        "word": "READY"
+      }
+    ]
+  },
+  "docs": [
+    {
+      "items": [
+        {
+          "mtime": "2026-01-11T10:00:00+00:00",
+          "path": "docs/specs/2026-01-11-demo-alerts.md",
+          "status": "draft",
+          "title": "Spec: demo alerts"
+        }
+      ],
+      "key": "task",
+      "label": "Bieżące zadanie"
+    },
+    {
+      "items": [
+        {
+          "mtime": "2026-01-11T10:00:00+00:00",
+          "path": ".skillsync/runs/2026-01-11-demo-alerts/checkpoints.md",
+          "status": null,
+          "title": "checkpoints"
+        }
+      ],
+      "key": "run",
+      "label": "Przebieg 2026-01-11-demo-alerts"
+    }
+  ],
+  "generatedAt": "2026-01-12T12:00:00+00:00",
+  "git": {
+    "branch": null,
+    "branchPushed": null,
+    "branchUrl": null,
+    "head": null,
+    "headFull": null,
+    "remote": null
+  },
+  "lastUpdate": "2026-01-11T10:00:00+00:00",
+  "mode": "spec",
+  "plan": null,
+  "planAuto": true,
+  "plans": [],
+  "progress": {
+    "active": [],
+    "activeSource": null,
+    "current": null,
+    "done": 0,
+    "parallel": 0,
+    "pending": 0,
+    "pendingPercent": 0,
+    "percent": 0,
+    "phases": [],
+    "reported": [],
+    "total": 0
+  },
+  "project": {
+    "name": "demo",
+    "path": "<root>"
+  },
+  "prototype": {
+    "port": 5130,
+    "slug": null,
+    "up": false
+  },
+  "readiness": {
+    "date": null,
+    "planSha": null,
+    "source": null,
+    "status": null
+  },
+  "run": {
+    "checkpoints": [
+      {
+        "text": "szkic speca z założeniami; czeka: GO plan",
+        "time": "08:20"
+      }
+    ],
+    "exists": true,
+    "files": [
+      ".skillsync/runs/2026-01-11-demo-alerts/checkpoints.md"
+    ],
+    "id": "2026-01-11-demo-alerts",
+    "lastReportAt": "2026-01-11T10:00:00+00:00",
+    "start": "2026-01-11T08:00:00Z",
+    "startIso": "2026-01-11T08:00:00+00:00"
+  },
+  "schema": 1,
+  "session": {
+    "url": null
+  },
+  "silence": null,
+  "spec": {
+    "exists": true,
+    "fileSha": "da24f109495951323695a64b3169043f0c678f25",
+    "mtime": "2026-01-11T10:00:00+00:00",
+    "path": "docs/specs/2026-01-11-demo-alerts.md",
+    "preparing": false,
+    "prototype": null,
+    "sha": null,
+    "status": "draft",
+    "statusText": "draft (czeka na GO plan)",
+    "title": "Spec: demo alerts"
+  },
+  "substeps": [],
+  "version": 0,
+  "waiting": [
+    {
+      "action": "Przeczytaj spec i zatwierdź „GO plan” przyciskiem albo wpisz to w sesji.",
+      "approve": "spec",
+      "link": {
+        "kind": "doc",
+        "path": "docs/specs/2026-01-11-demo-alerts.md"
+      },
+      "since": "08:20",
+      "source": "checkpoint",
+      "what": "GO plan",
+      "word": "GO plan"
+    }
+  ]
+}

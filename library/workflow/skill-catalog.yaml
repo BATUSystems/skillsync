@@ -34,6 +34,7 @@ skills:
   csharp-xunit:
     scope: tech
     tech: [dotnet]
+  dashboard: {scope: workflow}
   delivery-workflow-jira-azure: {scope: tool}
   dispatch: {scope: workflow}
   django-5-patterns:

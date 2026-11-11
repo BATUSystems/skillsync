@@ -82,6 +82,10 @@ Details: [docs/workflow.md](docs/workflow.md).
 (`docs/prototypes/<slug>/`). `skillsync prototype` creates prototypes, serves them with shared comments and runs their
 acceptance. See [docs/prototypes.md](docs/prototypes.md).
 
+**Dashboard.** `skillsync dashboard show` prints the project status (plans, steps, checkpoints, approvals) as JSON,
+`skillsync dashboard serve` shows the same state as a live page and `skillsync dashboard metrics` computes run metrics.
+The JSON contract: [docs/dashboard-contract.md](docs/dashboard-contract.md).
+
 ## Requirements
 
 - Python 3.11 or newer. PyYAML is installed together with the package.

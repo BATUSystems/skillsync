@@ -1,0 +1,48 @@
+{
+  "failures": [],
+  "generatedAt": "2026-01-12T12:00:00+00:00",
+  "interventions": null,
+  "phases": [
+    {
+      "id": "F1",
+      "seconds": null
+    }
+  ],
+  "plan": "docs/plans/2026-01-11-demo-report.md",
+  "rounds": {
+    "failed": null,
+    "notRun": null,
+    "records": null,
+    "repeatedSteps": null
+  },
+  "run": "2026-01-11-demo-report",
+  "schema": 1,
+  "status": "PASS",
+  "substeps": [
+    {
+      "finishedAt": "08:40",
+      "id": "F1.1",
+      "noData": false,
+      "seconds": 2100,
+      "source": "checkpoints.md",
+      "startedAt": "08:05",
+      "title": "Model danych"
+    },
+    {
+      "finishedAt": null,
+      "id": "F1.2",
+      "noData": true,
+      "seconds": null,
+      "source": null,
+      "startedAt": "08:40",
+      "title": "Widok raportu"
+    }
+  ],
+  "totals": {
+    "measuredSeconds": 2100,
+    "seconds": null,
+    "substeps": 2,
+    "withData": 1,
+    "withoutData": 1
+  }
+}

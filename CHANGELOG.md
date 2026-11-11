@@ -22,6 +22,26 @@ Every release has a **Breaking** section that lists incompatible changes. When a
   `nonUiPhases`, `uiPhasesWaiting` and `warnings`. Plans without `[UI]` behave as before.
 - Spec question classes: blocking `- Q<n>: …` and non-blocking `- Q<n> [ZAŁOŻENIE]: … — przyjęte: …`.
 - "GO plan" now includes one local commit (spec, plan draft, prototype) on the working branch in a separate worktree, without push.
+- `skillsync dashboard show <project> [--json] [--plan <rel>]`: the project status as a JSON contract (`schema: 1`, read-only;
+  additive fields `readiness`, `assumptions`, `blockingQuestions`, `substeps`); the contract and fixtures are in
+  [docs/dashboard-contract.md](docs/dashboard-contract.md) and `tests/fixtures/dashboard/`.
+- `skillsync dashboard serve <project> [--port 5140] [--host 127.0.0.1] [--approve-host H] [--no-approvals]`: the status page
+  with live refresh and approval buttons. The port is chosen per project so pages do not collide; the `Host` header is checked
+  on every endpoint, reads from outside loopback only through `--approve-host`; approvals are recorded in-process.
+- `skillsync dashboard metrics <project> <run-id> [--json] [--plan <rel>]`: per-substep times (`Fn.k`), rounds and failures of
+  a run; a substep without data is marked explicitly.
+- Dashboard page: act I shows a "Questions" section (blocking questions and assumptions to correct at the prototype, an
+  explicit "none" when empty, visible to every viewer), act II a "Readiness" tile (PASS / BLOCKED / no data, date, short
+  Plan-sha, a stale-brief marker and a link to `readiness.md` in the document preview), act III a collapsible list of
+  `Fn.k` substeps with times or "no data". All values are HTML-escaped; tooltips come from new `descriptions.json` keys.
+- `skillsync approvals record <project> --word … --run … --source cli|ide`: the single writer of
+  `.skillsync/runs/<run-id>/approvals.jsonl` (file lock, duplicate refusal, secret masking). Only the user records approvals.
+- Skill `dashboard` (status page) in the core library; domain record `docs/domain/dashboard-server.md` (server trust model).
+- `skillsync dashboard serve --read-host H` (repeatable): an extra `Host` name (port ignored, case-insensitive) that may read
+  everything (page, assets, `/api/*`, SSE, raw `/api/doc` preview) but not write from a viewer's browser: `POST /api/approve` answers 403 with the same message as a foreign
+  `Host`. Browser-only guarantee: a client forging the `Host` header (e.g. `curl -H 'Host: localhost'` through the tunnel) can still write, and a tunnel rewriting `Host` to localhost gives every viewer write access; use `--no-approvals` for untrusted viewers: run a second instance for them, `skillsync dashboard serve <project> --port <other port> --no-approvals --read-host <host>`, while the presenter keeps the loopback instance with approvals (the server warns at start). Host values with a port, brackets, `/` or whitespace are rejected (BLOCKED). Meant for viewers of a demo through a tunnel; approvals stay with loopback and `--approve-host`. `/api/status`
+  gains the additive `approvals.viewer` (true for a read-only host, where `approvals.here` is false). The server prints
+  read-only hosts separately from approval hosts at start.
 - `skillsync status --json`: each plan record with a valid `Spec:` line has `preImplement` (`required`, `sections`, `run`, `report`,
   `verdict`, `warning`; `null` when the plan has no valid `Spec:` line or the spec file is unreadable). `required` is true when the spec has a non-empty `Kontrakty`,
   `Migracja` or `Dane` section. `warning` is a non-blocking reminder for `draft`, `approved` and `in_progress` plans: no
@@ -52,6 +72,8 @@ Every release has a **Breaking** section that lists incompatible changes. When a
   parallel with review round 1 (only in phases that have a test-writer), two plans from five capabilities up, estimate of 75–105 min per capability,
   progress report of one line per sub-step.
 - Core rules (`library/instructions/_base.md`): first commit at "GO plan" and the explicit `demo` exception in the "Done" rule.
+- `status-board` in the manifest `skills:` list expands to `dashboard` only when no layer provides a skill named
+  `status-board` (one rule in `common.py`, used by both skill expanders).
 
 ### Breaking
 None.

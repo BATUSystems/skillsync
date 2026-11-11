@@ -1,5 +1,6 @@
 """Project status for IDE integrations (read-only: plans with progress, specs, FRD files, run checkpoints, claims) and the only write
-operations, `plan approve|archive|unarchive` and `spec approve`, which rewrite a single Status line."""
+operations, `plan approve|archive|unarchive` and `spec approve`, which rewrite a single Status line, and `approvals record`,
+which appends one consent entry to `.skillsync/runs/<run-id>/approvals.jsonl`."""
 import hashlib
 from datetime import datetime, timezone
 import json
@@ -609,6 +610,218 @@ def _cmd_approvals_wait(args):
     return code
 
 
+APPROVAL_SOURCES = ('cli', 'dashboard', 'ide')
+RUN_ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,79}')  # the run-id pattern of `quality._RUN_ID` (a test keeps them equal)
+_REF_NAME = re.compile(r'^(?!-)[\w.][\w./-]{0,120}$')
+_GO_FOLDER = {'GO plan': 'specs', 'GO implement': 'plans'}
+APPROVAL_LOCK_TIMEOUT = 10.0
+APPROVAL_LOCK_STALE = 60.0
+
+
+def _approval_user():
+    import getpass
+    try:
+        return getpass.getuser() or 'unknown'
+    except Exception:  # getpass raises OSError/KeyError/ImportError depending on the platform
+        return 'unknown'
+
+
+def _approval_run_dir(root, run_id):
+    """`.skillsync/runs/<run-id>` as an existing directory without symlinks on the way, or ValueError."""
+    if not isinstance(run_id, str) or not RUN_ID.fullmatch(run_id):
+        raise ValueError(f'Invalid run id: {run_id!r}')
+    current = root
+    for part in ('.skillsync', 'runs', run_id):
+        current = current / part
+        if current.is_symlink():
+            raise ValueError(f'Symlink in the run path: {current.relative_to(root).as_posix()}')
+        if not current.is_dir():
+            raise ValueError(f'Run directory not found: {current.relative_to(root).as_posix()}')
+    return current
+
+
+def _head_sha(root):
+    """HEAD of the project repository read from `.git` (no git process); ValueError without a readable HEAD."""
+    from .dashboard import read_git  # lazy: dashboard imports this module
+    head = read_git(root).get('headFull')
+    if not head or not _APPROVAL_SHA.match(head):
+        raise ValueError('No --sha and no readable HEAD of a git repository in the project')
+    return head
+
+
+class _ApprovalLock:
+    """Inter-process lock as a `<file>.lock` created with O_EXCL (works on POSIX and Windows) holding a unique token.
+
+    A lock older than APPROVAL_LOCK_STALE seconds is treated as left over by a crashed writer. It is taken over by an
+    atomic `os.rename` to a unique name: of two waiters only one rename succeeds, and a waiter whose rename caught a fresh
+    lock of another writer (created between its age check and the rename: other inode or mtime) puts it back with a
+    hard link that never overwrites. `__exit__` removes the lock file only while it is still this lock (inode and token)."""
+
+    def __init__(self, path, timeout=None):
+        self.path, self.timeout = path, APPROVAL_LOCK_TIMEOUT if timeout is None else timeout
+        self.token, self.inode = None, None
+
+    def __enter__(self):
+        import uuid
+        deadline = time.monotonic() + self.timeout
+        flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_BINARY', 0)
+        token = f'{os.getpid()}-{uuid.uuid4().hex}'
+        while True:
+            try:
+                fd = os.open(self.path, flags, 0o600)
+            except FileExistsError:
+                try:
+                    seen = self.path.lstat()
+                except FileNotFoundError:
+                    continue
+                if time.time() - seen.st_mtime > APPROVAL_LOCK_STALE:
+                    self._take_over(seen)
+                    continue
+                if time.monotonic() >= deadline:
+                    raise ValueError(f'Approvals file is locked by another writer: {self.path.name}') from None
+                time.sleep(0.02)
+                continue
+            try:
+                os.write(fd, token.encode('ascii'))
+                self.inode = os.fstat(fd).st_ino
+            finally:
+                os.close(fd)
+            self.token = token
+            return self
+
+    def _take_over(self, seen):
+        """Removes the stale lock judged by `seen` (its lstat); never a lock created after that check."""
+        import uuid
+        grave = self.path.with_name(f'{self.path.name}.stale-{uuid.uuid4().hex}')
+        try:
+            os.rename(self.path, grave)
+        except FileNotFoundError:
+            return  # another waiter took it over first
+        try:
+            moved = grave.lstat()
+            if (moved.st_ino, moved.st_mtime_ns) != (seen.st_ino, seen.st_mtime_ns):
+                try:  # a fresh lock of another writer: back under its name, unless a newer lock exists already
+                    os.link(grave, self.path)
+                except FileExistsError:
+                    pass
+                except OSError:  # no hard links on this file system: best effort, never over an existing lock
+                    if not self.path.exists():
+                        os.rename(grave, self.path)
+        finally:
+            grave.unlink(missing_ok=True)
+
+    def _owned(self):
+        try:
+            if self.path.lstat().st_ino != self.inode:
+                return False
+            return self.path.read_bytes()[:200] == (self.token or '').encode('ascii')
+        except OSError:
+            return False
+
+    def __exit__(self, *exc):
+        if self.token is not None and self._owned():
+            self.path.unlink(missing_ok=True)
+        self.token = None
+        return False
+
+
+def _approval_entries(path):
+    """Parseable dict lines of an approvals file (for the duplicate check, before the read rules of `read_approvals`)."""
+    rows = []
+    for line in path.read_text(encoding='utf-8', errors='replace').splitlines():
+        try:
+            item = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(item, dict):
+            rows.append(item)
+    return rows
+
+
+def record_approval(root, word, run_id, sha=None, source='cli', target=None, branch=None, file=None, by=None, now=None,
+                    plan=None, ahead=None, mode=None, sha_after=None):
+    """The only writer of `.skillsync/runs/<run-id>/approvals.jsonl` (CLI `approvals record`, the dashboard server, IDE).
+    Appends one JSON line under an inter-process lock and fsyncs it; refuses a second entry of the same (word, sha, run).
+    `sha`: for GO the git blob sha of the approved file (default: of `file`), for CP/READY the HEAD the consent pushes
+    (default: HEAD of the project repository). `sha_after` (GO only, `shaAfter` of the entry): the blob sha of the file after
+    its Status line changed. Returns {schema, status PASS|BLOCKED, reason, entry, path}; no subprocess."""
+    root = Path(root).expanduser().resolve()
+    try:
+        if word not in APPROVAL_WORDS:
+            raise ValueError(f'Unknown consent word {word!r}; allowed: {", ".join(APPROVAL_WORDS)}')
+        if source not in APPROVAL_SOURCES:
+            raise ValueError(f'Unknown source {source!r}; allowed: {", ".join(APPROVAL_SOURCES)}')
+        run_dir = _approval_run_dir(root, run_id)
+        for name, value in (('target', target), ('branch', branch)):
+            if value is not None and (not isinstance(value, str) or not _REF_NAME.match(value)):
+                raise ValueError(f'Invalid --{name}: {value!r}')
+        if file is not None:
+            folder = _GO_FOLDER.get(word)
+            if folder is None:
+                raise ValueError(f'--file applies only to GO words, not to {word!r}')
+            doc = _doc_file(root, file, folder)
+            file = doc.relative_to(root).as_posix()
+        if sha is None and file is None and word in _GO_FOLDER:
+            raise ValueError(f'{word!r} needs --file or --sha (the git blob sha of the approved file, not HEAD)')
+        if sha is None:
+            sha = git_blob_sha(doc.read_bytes()) if file is not None else _head_sha(root)
+        if not isinstance(sha, str) or not _APPROVAL_SHA.match(sha):
+            raise ValueError('--sha must be 7-64 lowercase hex characters')
+        if sha_after is not None and (word not in _GO_FOLDER or not isinstance(sha_after, str)
+                                      or not _APPROVAL_SHA.match(sha_after)):
+            raise ValueError('sha_after applies only to GO words and must be 7-64 lowercase hex characters')
+        moment = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+        entry = {'schema': SCHEMA, 'at': moment.strftime('%Y-%m-%dT%H:%M:%SZ'), 'word': word, 'sha': sha,
+                 'by': str(by if by is not None else _approval_user())[:80], 'source': source}
+        extra = {'file': file, 'shaAfter': sha_after, 'run': run_id, 'plan': plan, 'target': target, 'branch': branch, 'ahead': ahead, 'mode': mode}
+        entry.update({key: value for key, value in extra.items() if value is not None})
+        entry = redact(entry)
+        line = (json.dumps(entry, ensure_ascii=False) + '\n').encode('utf-8')
+        path = run_dir / APPROVALS_FILE
+        with _ApprovalLock(run_dir / (APPROVALS_FILE + '.lock')):
+            if path.is_symlink():
+                raise ValueError(f'Approvals file is a symlink: {APPROVALS_FILE}')
+            size = path.stat().st_size if path.exists() else 0
+            if size and not path.is_file():
+                raise ValueError(f'Approvals path is not a regular file: {APPROVALS_FILE}')
+            if size + len(line) + 1 > MAX_APPROVALS_BYTES:
+                raise ValueError(f'Approvals file would exceed {MAX_APPROVALS_BYTES // 1024} KiB; start a new run')
+            if size and any(item.get('word') == word and item.get('sha') == sha for item in _approval_entries(path)):
+                raise ValueError(f'Consent {word!r} for sha {sha[:12]} is already recorded in run {run_id}')
+            if size:
+                with path.open('rb') as handle:
+                    handle.seek(-1, os.SEEK_END)
+                    if handle.read(1) != b'\n':
+                        line = b'\n' + line  # a torn last line must not swallow the new entry
+            fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, 'O_NOFOLLOW', 0)
+                         | getattr(os, 'O_BINARY', 0), 0o644)
+            try:
+                os.write(fd, line)
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+    except (OSError, ValueError, TypeError, UnicodeDecodeError) as error:
+        return {'schema': SCHEMA, 'status': 'BLOCKED', 'reason': redact(' '.join(str(error).split())[:500]), 'entry': None}
+    return {'schema': SCHEMA, 'status': 'PASS', 'reason': f'Consent {word!r} recorded', 'entry': entry,
+            'path': path.relative_to(root).as_posix()}
+
+
+CLI_APPROVAL_SOURCES = ('cli', 'ide')  # `dashboard` is set only by the dashboard server, in its own process
+
+
+def _cmd_approvals_record(args):
+    try:
+        if args.source not in CLI_APPROVAL_SOURCES:
+            hint = '; dashboard is set only by the dashboard server in its own process' if args.source == 'dashboard' else ''
+            raise ValueError(f'Unknown source {args.source!r}; the command accepts: {", ".join(CLI_APPROVAL_SOURCES)}{hint}')
+        root, _ = read_project(args.path)
+        report = record_approval(root, args.word, args.run, args.sha, args.source, args.target, args.branch, args.file)
+    except (OSError, ValueError, TypeError, KeyError, yaml.YAMLError) as error:
+        report = {'schema': SCHEMA, 'status': 'BLOCKED', 'reason': ' '.join(str(error).split())[:500], 'entry': None}
+    print(json.dumps(redact(report), ensure_ascii=False, indent=2))
+    return 0 if report['status'] == 'PASS' else 2
+
+
 def register(subparsers):
     parser = subparsers.add_parser('status', help='Read-only project status: plans, runs, claims (JSON)')
     add_project_arguments(parser)
@@ -627,6 +840,20 @@ def register(subparsers):
     add_layer_argument(wait)
     wait.add_argument('--json', action='store_true')
     wait.set_defaults(func=_cmd_approvals_wait)
+    record = approval_actions.add_parser('record', help="Record the user's consent in approvals.jsonl (exit 0; 2 = refused); JSON")
+    record.add_argument('path')
+    record.add_argument('--word', required=True, help=f'one of: {", ".join(APPROVAL_WORDS)}')
+    record.add_argument('--run', required=True, help='run id (.skillsync/runs/<run-id> must exist)')
+    record.add_argument('--sha', help='GO: git blob sha of the approved file (default: of --file; GO needs --file or --sha); '
+                                      'CP/READY: HEAD (default)')
+    record.add_argument('--target', help='CP: branch the consent delivers to')
+    record.add_argument('--branch', help='working branch')
+    record.add_argument('--file', help='GO only: docs/specs/*.md (GO plan) or docs/plans/*.md (GO implement)')
+    record.add_argument('--source', required=True,
+                        help=f'one of: {", ".join(CLI_APPROVAL_SOURCES)} (dashboard is written only by the dashboard server)')
+    add_layer_argument(record)
+    record.add_argument('--json', action='store_true')
+    record.set_defaults(func=_cmd_approvals_record)
     plan = subparsers.add_parser('plan', help='Plan file operations: approve / archive / unarchive (changes only the Status line)')
     spec = subparsers.add_parser('spec', help='Spec file operation: approve ("GO plan"; changes only the Status line)')
     for kind, parser_, transitions in (('plan', plan, _TRANSITIONS), ('spec', spec, _SPEC_TRANSITIONS)):
