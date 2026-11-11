@@ -425,6 +425,22 @@ Pola `approvals.here` i `approvals.viewer` dodaje wyłącznie serwer; `dashboard
 klucza = `false`). Renderer pokazuje przy hoście z `viewer: true` informację, że zgody daje prowadzący na komputerze z
 sesją, zamiast instrukcji wpisania słowa.
 
+Renderer strony (`assets/app.js`) rysuje pola dodane do kontraktu w kafelkach aktów; każda wartość z danych przechodzi
+przez escapowanie HTML, a widoczność nie zależy od `approvals.here` ani `approvals.viewer`:
+
+- Akt I, sekcja „Pytania” (gdy spec istnieje albo któraś lista jest niepusta): „Pytania blokujące (N)” z
+  `blockingQuestions.items[]` (`id`, `question`) i „Założenia do korekty przy prototypie (N)” z `assumptions.items[]`
+  (`pytanie — przyjęte: wartość`); pusta lista = „brak”. Założenia nie mają akcji „Odpowiedz na pytania”.
+- Akt II, kafelek „Readiness”: `readiness.status` PASS (zielony), BLOCKED (ostrzeżenie), null (neutralny „brak danych”);
+  obok `readiness.date`, pierwsze 8 znaków `readiness.planSha`, znacznik „brief dla innej wersji planu”, gdy `planSha` różni
+  się od `plan.fileSha`, i przycisk otwierający `readiness.source` w podglądzie dokumentów (`/api/doc`); bez `source`
+  przycisku nie ma.
+- Akt III, rozwijana lista „Podkroki i czas (N)” z `substeps[]`: `seconds` jako czas, `missingData: true` jako „brak danych”,
+  podkrok niezrobiony pokazuje swój stan. Pusta tablica = brak listy.
+
+Dymki tych elementów mają klucze `stage_readiness`, `questions_blocking`, `questions_assumptions` i `substeps_time` w
+`descriptions.json`.
+
 Zgody in-process (bez podprocesu `skillsync`, bez własnego zapisu serwera): „GO plan”/„GO implement” =
 `status.set_doc_status(root, path, "approve", specs|plans, expect_sha=<sha z żądania>)` (plik zmieniony od wyświetlenia =
 409), a potem, gdy katalog przebiegu akcji (`actions[].run`) istnieje, `status.record_approval(..., source="dashboard",

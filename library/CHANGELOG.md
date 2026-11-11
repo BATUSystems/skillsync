@@ -6,6 +6,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ### Added
 - `skills/dashboard`: strona statusu projektu (plan, przebieg, zgody, metryki podkroków) nad kontraktem JSON `schema: 1`; komendy `skillsync dashboard show|serve|metrics` i `skillsync approvals record`. Wpis `dashboard: {scope: workflow}` w `workflow/skill-catalog.yaml`; `skills/skillsync` opisuje nowe komendy.
+- `skills/dashboard` (`assets/app.js`, `assets/app.css`, `descriptions.json`): sekcja „Pytania” w kafelku Aktu I (pytania blokujące i założenia do korekty przy prototypie, „brak” przy pustej liście, widoczna dla każdego widza), kafelek „Readiness” w Akcie II (PASS / BLOCKED / brak danych, data, skrót Plan-sha, znacznik nieaktualnego briefu, link do `readiness.md` w podglądzie) i rozwijana lista podkroków `Fn.k` z czasem w Akcie III; nowe klucze dymków `stage_readiness`, `questions_blocking`, `questions_assumptions`, `substeps_time`.
 
 ### Changed
 - Alias warunkowy: `status-board` w `skills:` rozwija się do `dashboard` tylko wtedy, gdy żadna warstwa nie dostarcza skilla `status-board`.

@@ -22,6 +22,10 @@ Every release has a **Breaking** section that lists incompatible changes. When a
   on every endpoint, reads from outside loopback only through `--approve-host`; approvals are recorded in-process.
 - `skillsync dashboard metrics <project> <run-id> [--json] [--plan <rel>]`: per-substep times (`Fn.k`), rounds and failures of
   a run; a substep without data is marked explicitly.
+- Dashboard page: act I shows a "Questions" section (blocking questions and assumptions to correct at the prototype, an
+  explicit "none" when empty, visible to every viewer), act II a "Readiness" tile (PASS / BLOCKED / no data, date, short
+  Plan-sha, a stale-brief marker and a link to `readiness.md` in the document preview), act III a collapsible list of
+  `Fn.k` substeps with times or "no data". All values are HTML-escaped; tooltips come from new `descriptions.json` keys.
 - `skillsync approvals record <project> --word … --run … --source cli|ide`: the single writer of
   `.skillsync/runs/<run-id>/approvals.jsonl` (file lock, duplicate refusal, secret masking). Only the user records approvals.
 - Skill `dashboard` (status page) in the core library; domain record `docs/domain/dashboard-server.md` (server trust model).

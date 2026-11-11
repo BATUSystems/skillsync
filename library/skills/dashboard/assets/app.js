@@ -186,6 +186,41 @@
   window.addEventListener("scroll", () => { if (!$("descTip").hidden) hideDesc(); }, { passive: true });
   fetch("/api/descriptions", { cache: "no-store" }).then((r) => r.json()).then((x) => { st.desc = x; }).catch(() => { st.desc = {}; });
 
+  // Readiness (akt II): brief gotowości z .skillsync/runs/<run>/readiness.md; źródło pliku = readiness.source z JSON.
+  const READY_STATE = { PASS: ["is-pass", "PASS"], BLOCKED: ["is-blocked", "BLOCKED"] };
+  function readinessTile(d) {
+    const r = d.readiness || {};
+    const [cls, label] = READY_STATE[r.status] || ["is-none", "brak danych"];
+    const sha = r.planSha ? String(r.planSha).slice(0, 8) : "";
+    const stale = Boolean(r.planSha && d.plan && d.plan.fileSha && r.planSha !== d.plan.fileSha);
+    const facts = [r.date ? `<span>${esc(r.date)}</span>` : "", sha ? `<span class="mono">plan ${esc(sha)}</span>` : "",
+      stale ? `<span class="chip s-warn">brief dla innej wersji planu</span>` : ""].join("");
+    const open = r.source ? `<button class="act-doc" type="button" data-open-doc="${esc(r.source)}" data-tip="${esc(r.source)} w zakładce Dokumenty">${icon("i-doc")}readiness.md</button>` : "";
+    return `<div class="readiness ${cls}"><span class="stage readiness-chip" ${desc("stage_readiness", r.source || "brak pliku readiness.md w przebiegu")}>${cls === "is-pass" ? icon("i-check") : ""}Readiness: ${esc(label)}</span>${facts ? `<span class="readiness-facts">${facts}</span>` : ""}${open}</div>`;
+  }
+  // Pytania (akt I): blokujące i założenia ze speca; widoczne dla każdego (bez zależności od approvals.here/viewer).
+  // Założenia nie są akcją „Odpowiedz na pytania”: tylko lista do korekty przy prototypie.
+  function questionsBlock(d) {
+    const bq = d.blockingQuestions || { count: 0, items: [] };
+    const as = d.assumptions || { count: 0, items: [] };
+    if (!(d.spec && d.spec.exists) && !bq.count && !as.count) return "";
+    const list = (items, line) => items.length ? `<ul class="q-list">${items.map(line).join("")}</ul>` : `<div class="q-none">brak</div>`;
+    const blocking = list(bq.items || [], (q) => `<li><span class="mono q-id">${esc(q.id)}</span><span>${esc(q.question)}</span></li>`);
+    const assumed = list(as.items || [], (q) => `<li><span class="mono q-id">${esc(q.id)}</span><span>${esc(q.question)} — przyjęte: <strong>${esc(q.accepted || "—")}</strong></span></li>`);
+    return `<div class="questions" role="group" aria-label="Pytania">
+      <div class="q-title">Pytania</div>
+      <div class="q-group${bq.count ? " is-blocking" : ""}"><div class="q-head" ${desc("questions_blocking")}>Pytania blokujące (${esc(bq.count || 0)})</div>${blocking}</div>
+      <div class="q-group"><div class="q-head" ${desc("questions_assumptions")}>Założenia do korekty przy prototypie (${esc(as.count || 0)})</div>${assumed}</div></div>`;
+  }
+  // Podkroki Fn.k z czasem (akt III): rozwijana lista; stan rozwinięcia przeżywa odświeżenie (st.substepsOpen).
+  function substepsBlock(d) {
+    const items = d.substeps || [];
+    if (!items.length) return "";
+    const time = (s) => s.seconds != null ? fmtDur(s.seconds * 1000) : s.missingData ? "brak danych" : esc(STEP_LABEL[s.state] || s.state);
+    return `<details class="substeps"${st.substepsOpen ? " open" : ""}><summary ${desc("substeps_time")}>Podkroki i czas (${items.length})</summary><ul class="sub-list">${items.map((s) =>
+      `<li class="${s.missingData ? "is-nodata" : ""}"><span class="mono q-id">${esc(s.id)}</span><span class="tt">${esc(s.title)}</span><span class="mono sub-t">${time(s)}</span></li>`).join("")}</ul></details>`;
+  }
+
   function renderActs(d) {
     const acts = d.acts;
     const anyActive = acts.some((a) => a.state === "active");
@@ -204,13 +239,16 @@
           ${cur ? `<div class="now" data-tip="Teraz wykonywane: ${esc(p.active.join(", "))}, ${cur.index}. pozycja z ${p.total} w planie (${p.activeSource === "checkpoint" ? "z ostatniego checkpointu „w toku”" : "pierwszy niezaznaczony krok"})"><span class="dot-live"></span><span class="txt">teraz: <span class="mono">${esc(cur.id)}</span> ${esc(cur.title)}</span>${p.parallel ? `<span class="par">+${p.parallel} równolegle</span>` : ""}</div>`
               : `<div class="act-detail">${esc(a.detail || "")}</div>`}
           <div class="stages">${stages}</div>
+          ${substepsBlock(d)}
           <div class="act-actions">${approveButton(d, "cp", "act-approve")}${approveButton(d, "ready", "act-approve")}</div>`;
       } else {
         const doc = a.key === "spec" ? (d.spec && d.spec.exists ? { path: d.spec.path, label: "Otwórz specyfikację" } : null)
           : a.key === "plan" ? (d.plan ? { path: d.plan.path, label: "Otwórz plan" } : null) : null;
         const docLink = doc ? `<button class="act-doc" type="button" data-open-doc="${esc(doc.path)}" data-tip="${esc(doc.path)} w zakładce Dokumenty">${icon("i-doc")}${doc.label}</button>` : "";
         const approve = approveButton(d, a.key === "spec" ? "spec" : "plan", "act-approve");
-        body = `<div class="act-detail">${esc(a.detail || " ")}</div><div class="stages">${stages}</div>${warn}<div class="act-actions">${docLink}${approve}</div>`;
+        const extra = a.key === "plan" ? readinessTile(d) : "";
+        const after = a.key === "spec" ? questionsBlock(d) : "";
+        body = `<div class="act-detail">${esc(a.detail || " ")}</div><div class="stages">${stages}</div>${extra}${warn}<div class="act-actions">${docLink}${approve}</div>${after}`;
       }
       return `<div class="act s-${a.state}${glow ? " s-active" : ""}" data-key="${a.key}">
         <div class="roman" aria-hidden="true">${a.roman}</div>
@@ -434,6 +472,8 @@
     st.doc = b.dataset.waitDoc;
     setView("docs");
   });
+  // toggle nie bubbluje: nasłuch w fazie przechwytywania na kontenerze aktów.
+  $("acts").addEventListener("toggle", (e) => { if (e.target.matches && e.target.matches("details.substeps")) st.substepsOpen = e.target.open; }, true);
   $("acts").addEventListener("click", (e) => {
     if (actionClick(e)) return;
     const b = e.target.closest("[data-open-doc]");

@@ -219,6 +219,29 @@ main { flex: 1; padding: 1.1rem 1.4rem; min-width: 0; }
   border: 1px solid var(--line); background: var(--panel-2); color: var(--accent); font-weight: 600; font-size: .82rem; cursor: pointer;
 }
 .act-doc:hover { border-color: var(--accent); }
+/* Readiness (akt II): PASS zielony, BLOCKED ostrzeżenie, brak danych neutralny */
+.readiness { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .5rem; margin-top: .5rem; font-size: .8rem; color: var(--muted); }
+.readiness .act-doc { margin-top: 0; }
+.readiness-facts { display: inline-flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
+.readiness.is-pass .readiness-chip { border-color: transparent; background: var(--done-soft); color: var(--done); font-weight: 650; }
+.readiness.is-blocked .readiness-chip { border-color: color-mix(in srgb, var(--warn) 45%, transparent); background: var(--warn-soft); color: var(--warn); font-weight: 650; }
+.readiness.is-none .readiness-chip { border-style: dashed; }
+/* Pytania (akt I): blokujące i założenia ze speca */
+.questions { margin-top: .7rem; padding-top: .55rem; border-top: 1px dashed var(--line); display: grid; gap: .45rem; font-size: .84rem; }
+.q-title { font-size: .72rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.q-head { font-weight: 650; }
+.q-group.is-blocking .q-head { color: var(--warn); }
+.q-list { list-style: none; margin: .2rem 0 0; padding: 0; display: grid; gap: .2rem; }
+.q-list li, .sub-list li { display: flex; gap: .45rem; align-items: baseline; min-width: 0; }
+.q-id { font-weight: 700; font-size: .78rem; color: var(--muted); flex: none; }
+.q-none { color: var(--faint); font-size: .8rem; font-style: italic; }
+/* Podkroki z czasem (akt III) */
+.substeps { margin-top: .6rem; font-size: .84rem; }
+.substeps summary { cursor: pointer; color: var(--muted); font-weight: 600; }
+.sub-list { list-style: none; margin: .3rem 0 0; padding: 0; display: grid; gap: .15rem; max-height: 14rem; overflow: auto; }
+.sub-list .tt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sub-list .sub-t { flex: none; color: var(--muted); font-variant-numeric: tabular-nums; }
+.sub-list li.is-nodata .sub-t { color: var(--faint); font-style: italic; }
 
 .act.s-done .act-icon { background: var(--done-soft); color: var(--done); }
 .act.s-done { border-color: color-mix(in srgb, var(--done) 40%, var(--line)); }

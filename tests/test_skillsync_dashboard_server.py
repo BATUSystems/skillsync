@@ -1514,6 +1514,100 @@ class HttpReadHostTests(HttpCase):
         self.assertLess(js.index("ap.viewer === true"), js.index("Zgody daje prowadzący na komputerze z sesją."))
 
 
+def js_function(js: str, name: str) -> str:
+    """Treść funkcji `name` z app.js: od `function name(` do następnej deklaracji funkcji na poziomie modułu."""
+    start = js.index(f"function {name}(")
+    nxt = re.search(r"\n  (?:async )?function \w+\(", js[start + 1:])
+    return js[start:start + 1 + nxt.start()] if nxt else js[start:]
+
+
+class AssetsRenderTests(unittest.TestCase):
+    """Renderer strony rysuje readiness, pytania blokujące, założenia i podkroki. Brak testu DOM: w repo nie ma
+    renderera strony w Node, więc kontrola jest statyczna (treść app.js) plus JSON z serwera na kopii fixture."""
+    FIXTURES = HERE / "fixtures" / "dashboard"
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.js = (SKILL / "assets/app.js").read_text(encoding="utf-8")
+        cls.css = (SKILL / "assets/app.css").read_text(encoding="utf-8")
+
+    def serve(self, case: str) -> str:
+        tmp = Path(tempfile.mkdtemp(prefix="dashboard-assets-"))
+        self.addCleanup(shutil.rmtree, tmp, True)
+        root = tmp / "proj"
+        shutil.copytree(self.FIXTURES / case / "input", root)
+        board = srv.Board(root, poll=0.2, heartbeat=0.5, prototype_port=1, assets=ASSETS, descriptions=DESCRIPTIONS)
+        board.prototype_acceptance = lambda slug: None
+        server = srv.make_server(board, "127.0.0.1", free_port())
+        threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.1}, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        return f"http://127.0.0.1:{server.server_address[1]}"
+
+    def fetch(self, base: str, path: str) -> str:
+        with urllib.request.urlopen(base + path, timeout=5) as r:
+            return r.read().decode("utf-8")
+
+    def test_app_js_reads_the_new_fields_and_shows_the_labels(self) -> None:
+        for field in ("d.readiness", "d.assumptions", "d.blockingQuestions", "d.substeps"):
+            self.assertIn(field, self.js)
+        for text in ("Readiness: ", "Pytania blokujące (", "Założenia do korekty przy prototypie (", "przyjęte: ",
+                     "Podkroki i czas (", "brak danych"):
+            self.assertIn(text, self.js)
+        for key in ("stage_readiness", "questions_blocking", "questions_assumptions", "substeps_time"):
+            self.assertIn(f'desc("{key}"', self.js)
+        for cls in (".readiness.is-pass", ".readiness.is-blocked", ".readiness.is-none", ".questions", ".q-none", ".substeps"):
+            self.assertIn(cls, self.css)
+
+    def test_new_templates_escape_data(self) -> None:
+        q = js_function(self.js, "questionsBlock")
+        for frag in ("esc(q.id)", "esc(q.question)", 'esc(q.accepted || "—")', "esc(bq.count || 0)", "esc(as.count || 0)"):
+            self.assertIn(frag, q)
+        r = js_function(self.js, "readinessTile")
+        for frag in ("esc(r.date)", "esc(sha)", "esc(r.source)", "esc(label)"):
+            self.assertIn(frag, r)
+        s = js_function(self.js, "substepsBlock")
+        for frag in ("esc(s.id)", "esc(s.title)", "esc(STEP_LABEL[s.state] || s.state)"):
+            self.assertIn(frag, s)
+        # Żadna wartość z danych nie trafia do szablonu bez esc(): ${q.…}, ${r.…}, ${s.…} tylko w esc()/warunkach.
+        for body in (q, r, s):
+            self.assertEqual(re.findall(r"\$\{(?:q|r|s)\.(?:id|question|accepted|title|date|source|planSha)\}", body), [])
+            self.assertNotIn("innerHTML", body)
+        # Założenia nie są akcją „Odpowiedz na pytania”; pytania nie zależą od approvals.here/viewer.
+        self.assertNotIn("approve", q)
+        self.assertNotIn("viewer", q)
+        self.assertNotIn(".here", q)
+
+    def test_questions_fixture_is_served_and_rendered(self) -> None:
+        base = self.serve("questions")
+        data = json.loads(self.fetch(base, "/api/status"))
+        self.assertEqual(data["assumptions"]["count"], 3)
+        self.assertEqual(data["blockingQuestions"]["count"], 2)
+        self.assertEqual(data["assumptions"]["items"][0]["accepted"], "w aplikacji")
+        self.assertIsNone(data["readiness"]["status"])
+        js = self.fetch(base, "/assets/app.js")
+        self.assertIn("questionsBlock(d)", js)
+        self.assertIn("d.blockingQuestions || {", js)
+        self.assertIn("d.assumptions || {", js)
+
+    def test_readiness_blocked_fixture_is_served_and_rendered(self) -> None:
+        base = self.serve("readiness-blocked")
+        data = json.loads(self.fetch(base, "/api/status"))
+        readiness = data["readiness"]
+        self.assertEqual(readiness["status"], "BLOCKED")
+        self.assertEqual(readiness["source"], ".skillsync/runs/2026-01-11-demo-export/readiness.md")
+        js = self.fetch(base, "/assets/app.js")
+        self.assertIn("readinessTile(d)", js)
+        self.assertIn('BLOCKED: ["is-blocked"', js)
+        self.assertIn('data-open-doc="${esc(r.source)}"', js)
+        # Link z kafelka otwiera się istniejącym podglądem dokumentów.
+        doc = json.loads(self.fetch(base, "/api/doc?path=" + readiness["source"]))
+        self.assertIn("BLOCKED", doc["html"])
+        descs = json.loads(self.fetch(base, "/api/descriptions"))
+        for key in ("stage_readiness", "questions_blocking", "questions_assumptions", "substeps_time"):
+            self.assertIn(key, descs)
+
+
 def cli_env(tmp: Path) -> dict:
     return {**os.environ, "SKILLSYNC_CONFIG": str(tmp / "machine-config.yaml"), "XDG_CACHE_HOME": str(tmp / "xdg-cache"),
             "XDG_DATA_HOME": str(tmp / "xdg-data")}

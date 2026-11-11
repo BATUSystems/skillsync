@@ -174,6 +174,12 @@ była, a nie, że pętla dała PASS.
 - Review speca: pliki `spec-review*` w katalogu przebiegu.
 - Ostrzeżenie w kafelku Aktu I „brak pre-implement przed GO plan”, gdy spec ma niepuste sekcje `## Kontrakty`, `## Migracja`
   albo `## Dane` (nie „nie dotyczy”), a w przebiegu nie ma `pre-implement*`.
+- Kafelek Aktu I ma sekcję „Pytania”: pytania blokujące i założenia do korekty przy prototypie z sekcji
+  `## Pytania otwarte` speca (pusta lista = „brak”); widzi ją każdy, także widz `--read-host`. Założenia nie są akcją
+  „Odpowiedz na pytania”.
+- Kafelek Aktu II ma „Readiness” z `readiness.md` przebiegu: PASS zielony, BLOCKED ostrzeżenie, bez pliku neutralny; data,
+  skrót Plan-sha (ostrzeżenie, gdy różni się od sha pliku planu) i link do podglądu pliku.
+- Kafelek Aktu III ma rozwijaną listę podkroków `Fn.k` z czasem z checkpointów albo „brak danych”.
 
 ## Interfejs i API
 
