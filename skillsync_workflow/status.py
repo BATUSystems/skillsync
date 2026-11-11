@@ -85,37 +85,56 @@ def _plan_spec(text):
 
 PRE_IMPLEMENT_SECTIONS = ('Kontrakty', 'Migracja', 'Dane')
 PRE_IMPLEMENT_VERDICTS = ('READY', 'NEEDS_CHANGES', 'BLOCKED')  # od najlepszego do najgorszego
-_PRE_HEADING = re.compile(r'^#{1,6}[ \t]+(?P<title>.*?)[ \t]*$', re.MULTILINE)
+_PRE_HEADING = re.compile(r'^(?P<hashes>#{1,6})[ \t]+(?P<title>.*?)[ \t]*$', re.MULTILINE)
 _PRE_SECTION_WORD = re.compile(r'\b(?:' + '|'.join(PRE_IMPLEMENT_SECTIONS) + r')\b', re.IGNORECASE)
-_PRE_EMPTY_BODY = re.compile(r'(?:nie[ \t]+dotyczy|todo|tbd|n/a)\b|[-—]+[ \t]*$', re.IGNORECASE)
+# Pusta treść: pierwsza niepusta linia (bez znaczników) to samo „nie dotyczy” (po nim koniec linii albo . - – — : , ;), samo
+# TODO/TBD/n/a (po nim koniec linii, kropka albo dwukropek) albo same myślniki; „Todo-lista” i „Nie dotyczy starych” to treść.
+_PRE_EMPTY_BODY = re.compile(r'(?:nie[ \t]+dotyczy(?:[ \t]*$|[ \t]*[.\-–—:,;])|(?:todo|tbd|n/a)(?:[ \t]*$|[ \t]*[.:])|[-–—]+[ \t]*$)',
+                             re.IGNORECASE)
 _PRE_VERDICT = re.compile(r'^[*_`]*Werdykt:[*_` \t]*(?P<word>READY|NEEDS_CHANGES|BLOCKED)[*_`. \t]*$')
 PRE_REPORT_GLOB = 'pre-implement*.md'
 MAX_PRE_REPORT_BYTES = 256 * 1024
 
 
-def _read_text_safe(path, limit=MAX_PLAN_BYTES):
-    """Text of a regular, non-symlink file within `limit` bytes, otherwise None (never raises on I/O or decoding)."""
+def _read_text_safe(path, limit=MAX_PLAN_BYTES, root=None):
+    """Text of a regular file within `limit` bytes, otherwise None (never raises on I/O or decoding). Symlinks are refused,
+    also in the directories between `root` (when given) and the file."""
     try:
-        if path.is_symlink() or not path.is_file() or path.stat().st_size > limit:
+        path = Path(path)
+        chain = [path]
+        if root is not None:
+            relative = path.relative_to(root)
+            chain = [Path(root).joinpath(*relative.parts[:i]) for i in range(1, len(relative.parts) + 1)]
+        if any(item.is_symlink() for item in chain) or not path.is_file() or path.stat().st_size > limit:
             return None
         return path.read_text(encoding='utf-8')
-    except (OSError, UnicodeDecodeError):
+    except (OSError, ValueError, UnicodeDecodeError):
         return None
 
 
 def pre_implement_sections(spec_text):
-    """Headings (any level) naming Kontrakty, Migracja or Dane whose body is not empty and not „nie dotyczy”/TODO/TBD/n/a/-."""
+    """Headings (any level) naming Kontrakty, Migracja or Dane whose body is not empty and not „nie dotyczy”/TODO/TBD/n/a/-.
+    The body ends at the nearest heading of the same or a higher level (subsections belong to it)."""
     marks = list(_PRE_HEADING.finditer(spec_text))
     found = []
     for index, mark in enumerate(marks):
         title = mark.group('title').strip()
         if not _PRE_SECTION_WORD.search(title):
             continue
-        end = marks[index + 1].start() if index + 1 < len(marks) else len(spec_text)
-        body = spec_text[mark.end():end].strip().lstrip('*_`> \t')
-        if body and not _PRE_EMPTY_BODY.match(body):
+        level = len(mark.group('hashes'))
+        end = next((later.start() for later in marks[index + 1:] if len(later.group('hashes')) <= level), len(spec_text))
+        body = spec_text[mark.end():end]
+        lines = [re.sub(r'^[*_`>\s]+', '', line).rstrip('*_` \t') for line in body.splitlines()]
+        lines = [line for line in lines if line.strip()]
+        # a heading-only subsection (no text under it) does not make the section non-empty
+        content = [line for line in lines if not _PRE_HEADING.match(line)]
+        if content and not _PRE_EMPTY_BODY.match(content[0]):
             found.append(title)
     return found
+
+
+def _natural_key(name):
+    return [int(part) if part.isdigit() else part for part in re.split(r'(\d+)', name)]
 
 
 def _pre_implement_reports(root, run_id):
@@ -142,7 +161,7 @@ def pre_implement_state(root, spec_rel, plan_text, status):
     """State of the `pre-implement` gate for a spec: {required, sections, run, report, verdict, warning}, or None when the
     spec file is unreadable. The warning (a string or None) is computed only for plans being prepared or in progress."""
     root = Path(root)
-    spec_text = _read_text_safe(root / spec_rel)
+    spec_text = _read_text_safe(root / spec_rel, root=root)
     if spec_text is None:
         return None
     from .quality import _PLAN_RUN, _RUN_ID  # lazy: quality imports this module
@@ -151,8 +170,9 @@ def pre_implement_state(root, spec_rel, plan_text, status):
     run_match = _PLAN_RUN.search(plan_text) if plan_text else None
     run = run_match.group(1) if run_match and _RUN_ID.fullmatch(run_match.group(1)) else None
     reports = _pre_implement_reports(root, run) if run else []
-    report = f'.skillsync/runs/{run}/{reports[-1][0]}' if reports else None
-    verdict = max((item[1] for item in reports), key=PRE_IMPLEMENT_VERDICTS.index) if reports else None
+    worst = max(reports, key=lambda item: (PRE_IMPLEMENT_VERDICTS.index(item[1]), _natural_key(item[0]))) if reports else None
+    report = f'.skillsync/runs/{run}/{worst[0]}' if worst else None
+    verdict = worst[1] if worst else None
     warning = None
     if status in ('draft', 'approved', 'in_progress'):
         if verdict in ('NEEDS_CHANGES', 'BLOCKED'):
@@ -482,6 +502,33 @@ def set_doc_status(root, name, action, folder='plans', expect_sha=None):
     return report
 
 
+def _plan_text_for_spec(root, spec_rel, spec_text):
+    """Plan text for a spec: the file named by its `Plan:` line, otherwise the newest `docs/plans/*.md` whose `Spec:` line
+    points at this spec and which has a valid `Przebieg:` line. None when there is no such plan."""
+    from .quality import _PLAN_RUN, _RUN_ID
+    plan = _spec_plan(spec_text)
+    text = _read_text_safe(root / plan, root=root) if plan else None
+    if text is not None:
+        return text
+    directory = root / 'docs' / 'plans'
+    try:
+        if (root / 'docs').is_symlink() or directory.is_symlink() or not directory.is_dir():
+            return None
+        paths = sorted(directory.glob('*.md'), key=lambda item: item.name, reverse=True)
+    except OSError:
+        return None
+    for path in paths[:MAX_PLANS]:
+        if path.name.lower() == 'readme.md':
+            continue
+        candidate = _read_text_safe(path, root=root)
+        if candidate is None or _plan_spec(candidate) != spec_rel:
+            continue
+        match = _PLAN_RUN.search(candidate)
+        if match and _RUN_ID.fullmatch(match.group(1)):
+            return candidate
+    return None
+
+
 def _approve_warnings(root, path, text, folder):
     """Pre-implement warning for the state after `approve` (a list, empty when nothing to warn about). Never raises."""
     try:
@@ -489,8 +536,9 @@ def _approve_warnings(root, path, text, folder):
             spec, plan_text = _plan_spec(text), text
         else:
             spec = path.relative_to(root).as_posix()
-            plan = _spec_plan(text)
-            plan_text = _read_text_safe(root / plan) if plan else None
+            plan_text = _plan_text_for_spec(root, spec, text)
+            if plan_text is None:
+                return []
         state = pre_implement_state(root, spec, plan_text, 'approved') if spec else None
     except (OSError, ValueError):
         return []

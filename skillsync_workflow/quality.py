@@ -22,7 +22,7 @@ from . import layers as _layers
 from .delivery_mode import delivery_info, validate_delivery_mode
 from .dispatch import validate_dispatch
 from .prototype import validate_prototype
-from .status import MAX_PLAN_BYTES, SPEC_FULL, SPEC_LINE, _STATUS, is_spec_path, plan_text_needs_human
+from .status import MAX_PLAN_BYTES, git_blob_sha, SPEC_FULL, SPEC_LINE, _STATUS, is_spec_path, plan_text_needs_human
 
 
 def plan_validation(root, manifest, library, profile='quick', files=None, check_ids=None):
@@ -1169,18 +1169,34 @@ def readiness(root, manifest, library, files, plan=None, risk=None):
     return report
 
 
-def readiness_markdown(report, plan=None):
+def readiness_markdown(report, plan=None, plan_sha=None, now=None):
     """Short Markdown form of a readiness report; the first line is `Readiness: PASS|BLOCKED`."""
     def lines(items):
         return [f'- {item}' for item in items] or ['- brak']
-    out = [f'Readiness: {report["status"]}', '', '## Ryzyko', '', str(report.get('risk')), '', '## Obszary', '',
-           *lines(report.get('areas') or [])]
+    now = now or time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+    out = [f'Readiness: {report["status"]}', f'Data: {now}']
+    if plan_sha:
+        out.append(f'Plan-sha: {plan_sha}')
+    if report.get('reason'):
+        out += ['', '## Powód', '', ' '.join(str(report['reason']).split())[:500]]
+    out += ['', '## Ryzyko', '', str(report.get('risk', 'nieznane')), '', '## Obszary', '', *lines(report.get('areas') or [])]
     if plan:
         out += ['', '## Plan', '', str(plan)]
     out += ['', '## Uwagi', '', *lines(report.get('issues') or []), '', '## Sekcje', '', *lines(report.get('sections') or []),
             '', '## Pliki', '', *lines(f'{item["file"]} ({"istnieje" if item["exists"] else "brak"})' for item in report.get('files', [])),
             '', '## Notatka', '', str(report.get('note', ''))]
     return redact('\n'.join(out) + '\n')
+
+
+def _plan_sha(root, plan):
+    """Git blob sha of the plan file when it exists inside the project, otherwise None."""
+    if not plan:
+        return None
+    try:
+        path = contained(root, plan)
+        return git_blob_sha(path.read_bytes()) if path.is_file() else None
+    except (OSError, ValueError):
+        return None
 
 
 def write_readiness_report(root, run_id, report, plan=None):
@@ -1204,7 +1220,7 @@ def write_readiness_report(root, run_id, report, plan=None):
     fd, tmp = tempfile.mkstemp(prefix='.readiness.', suffix='.tmp', dir=directory)
     try:
         with os.fdopen(fd, 'w', encoding='utf-8') as handle:
-            handle.write(readiness_markdown(report, plan))
+            handle.write(readiness_markdown(report, plan, _plan_sha(root, plan)))
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(tmp, target)
@@ -1258,6 +1274,12 @@ def _cmd(args):
             report = review(root, manifest, library, files, args.risk)
     except (OSError, ValueError, TypeError, KeyError, yaml.YAMLError, subprocess.SubprocessError) as error:
         report = {'status': 'BLOCKED', 'reason': _redact(str(error))}
+        run_id = getattr(args, 'run_id', None) if args.command == 'readiness' else None
+        if run_id is not None and _RUN_ID.fullmatch(run_id):
+            try:  # an error after a valid id must not leave a stale PASS file behind
+                report['reportFile'] = write_readiness_report(args.path, run_id, report, getattr(args, 'plan', None))
+            except (OSError, ValueError):
+                pass
     return emit(report, args.json)
 
 
