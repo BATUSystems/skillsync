@@ -196,3 +196,7 @@ lessons:
     title: "Pełny bieg testów pada na strażniku real-state, gdy ktokolwiek dotknie gitem prawdziwych klonów warstw"
     tags: [testing, layers, lease, dispatch, flaky, git]
     paths: ['tests/layers_helpers.py', 'tests/test_skillsync_workflow.py']
+  - path: os-kill-sygnal-0-na-windows-zabija-proces.md
+    title: "os.kill(pid, 0) na Windows zabija proces zamiast go sprawdzać: żywotność PID tam rozstrzyga inny dowód"
+    tags: [skillsync, python, windows, process, prototype, login-link, portability]
+    paths: ['skillsync_workflow/prototype_server.py', 'tests/test_skillsync_prototype_login_link.py']

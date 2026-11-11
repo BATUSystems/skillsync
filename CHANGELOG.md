@@ -13,7 +13,16 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 ## [Unreleased]
 
 ### Added
-None.
+- `skillsync prototype login-link <project> --user LOGIN [--path] [--port] [--users] --json`: a one-time login link for
+  the running prototype server (256-bit token, 60 s, one use; result `{schema, status, url, expires}` or `BLOCKED` with a
+  `code`). The server exchanges the token at `GET /_login/link` only for a loopback peer without a proxy (every refusal is
+  the same 302 to `/_login`); the session has the full permissions of the account and its writes are recorded in the
+  local audit log `.skillsync/prototype/run/audit.jsonl` (`{at, login, via, op, screen?}`; `comments.json` is unchanged).
+  A human command: the agent does not run it.
+- `serve` writes a state file `.skillsync/prototype/run/server-<port>.json` (0600; `pid`, `host`, `port`, `instance`,
+  `version`, `root`, `users`) and removes it on stop; `/_api/v1/session` returns `server.instance` and `features` lists
+  `login-link`. `ServerConfig(runtime_dir=...)` is optional (without it: no state file and no link endpoint).
+- `serve` handles SIGTERM like Ctrl+C (the state file is removed).
 
 ### Changed
 None.
@@ -22,7 +31,7 @@ None.
 None.
 
 ### Fixed
-None.
+- The prototype server request log never contains the query, also for a malformed request line (raw `requestline`).
 
 ## [1.0.2] - 2026-11-11
 

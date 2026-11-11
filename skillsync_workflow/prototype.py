@@ -15,17 +15,21 @@ from datetime import date, datetime, timezone
 from html.parser import HTMLParser
 import getpass
 import hashlib
+import hmac
+import http.client
 import json
 import math
 import os
 from pathlib import Path
 import re
 import secrets
+import signal
 import shutil
 import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import unicodedata
 import time
 import yaml
@@ -2329,6 +2333,21 @@ def _in_git_worktree(path):
     return process.returncode == 0 and process.stdout.strip() == b'true'
 
 
+def _stop_on_sigterm():
+    """SIGTERM stops `serve` like Ctrl+C (state file removed in `finally`).  POSIX, main thread only;
+    returns `(previous handler,)` or None when nothing was changed."""
+    if os.name == 'nt' or threading.current_thread() is not threading.main_thread():
+        return None
+
+    def stop(signum, frame):
+        raise KeyboardInterrupt
+
+    try:
+        return (signal.signal(signal.SIGTERM, stop),)
+    except (ValueError, OSError):
+        return None
+
+
 def serve_prototypes(root, manifest, args, err=None):
     """`serve`: foreground server on `root` of the manifest; BLOCKED (exit 2) when it may not start."""
     err = err or sys.stderr
@@ -2338,7 +2357,8 @@ def serve_prototypes(root, manifest, args, err=None):
     config = server.ServerConfig(settings['root'], users_file_path(repo, args.users), host=args.host, port=args.port,
                                  secure_cookies=args.secure_cookies, trust_proxy=args.trust_proxy,
                                  login_to_view=args.login_to_view, source_writes=source_writes, log=err,
-                                 gallery=lambda: gallery_html(settings['root'], repo))
+                                 gallery=lambda: gallery_html(settings['root'], repo),
+                                 runtime_dir=server.link_run_dir_of(repo))
     try:
         instance = server.make_server(config)
     except server.StartupError as error:
@@ -2356,13 +2376,93 @@ def serve_prototypes(root, manifest, args, err=None):
         err.write(f'ostrzeżenie: {warning}\n')
     err.write(f'Serwer prototypów: {instance.url} (Ctrl+C kończy)\n')
     err.flush()
+    previous = _stop_on_sigterm()
     try:
         instance.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
+        if previous is not None and previous[0] is not None:
+            signal.signal(signal.SIGTERM, previous[0])
         instance.server_close()
     return {'status': 'PASS', 'url': instance.url, 'root': _relative(settings['root'], repo), 'stopped': True}
+
+
+# ── One-time login link ──────────────────────────────────────────────────────
+
+def _link_blocked(code, reason):
+    return {'schema': 1, 'status': 'BLOCKED', 'reason': reason, 'code': code}
+
+
+def _link_instance_matches(state):
+    """Does the server answering on 127.0.0.1:<port> report the `instance` of the state file?"""
+    connection = http.client.HTTPConnection('127.0.0.1', state['port'], timeout=3)
+    try:
+        connection.request('GET', '/_api/v1/session')
+        response = connection.getresponse()
+        if response.status != 200:
+            return False
+        data = json.loads(response.read(65536).decode('utf-8'))
+        instance = data['server']['instance']
+    except (OSError, ValueError, KeyError, TypeError, http.client.HTTPException):
+        return False
+    finally:
+        connection.close()
+    return isinstance(instance, str) and hmac.compare_digest(instance.encode('utf-8'), state['instance'].encode('utf-8'))
+
+
+def login_link_prototype(root, manifest, args):
+    """`login-link`: a one-time token for an existing account of the running server of this project; the report
+    carries the URL (`http://127.0.0.1:<port>/_login/link?t=<token>`) and `expires`, only on stdout.
+
+    BLOCKED (exit 2) codes: `invalid_path`, `run_dir_unsafe`, `server_not_running` (no/stale state file, dead PID,
+    other `instance`, other users file), `ambiguous_server`, `link_needs_loopback`, `users_unreadable`,
+    `unknown_user`, `password_change_required`, `too_many_pending`.  The token is never logged or put in an error."""
+    repo = Path(root).resolve()
+    settings = _settings(repo, manifest)
+    if args.port is not None and not 1 <= args.port <= 65535:
+        return _link_blocked('invalid_port', '--port must be between 1 and 65535')
+    target = '/' if args.link_path is None else args.link_path
+    if not server.link_path_allowed(target) or server.safe_next(target) != target:
+        return _link_blocked('invalid_path', '--path must be a server path starting with one "/" (printable ASCII, not /_api/)')
+    run_dir = server.link_run_dir_of(repo)
+    problem = server.link_directory_problem(run_dir)
+    if problem not in (None, 'missing'):
+        return _link_blocked('run_dir_unsafe', f'{_relative(Path(run_dir), repo)} {problem}: the login link is off until it is fixed')
+    root_real = os.path.realpath(settings['root'])
+    candidates = [state for state in server.link_read_states(run_dir) if os.path.realpath(state['root']) == root_real
+                  and (args.port is None or state['port'] == args.port)]
+    live = [state for state in candidates if server.link_pid_alive(state['pid'])
+            and (server.link_host_kind(state['host']) is None or _link_instance_matches(state))]
+    if not live:
+        return _link_blocked('server_not_running', 'no running prototype server of this project (start it: skillsync prototype serve)')
+    if len(live) > 1:
+        ports = ', '.join(str(state['port']) for state in sorted(live, key=lambda item: item['port']))
+        return _link_blocked('ambiguous_server', f'several servers of this project run (ports {ports}): pass --port')
+    state = live[0]
+    if state.get('link') is False:
+        return _link_blocked('link_unavailable', 'this server runs with --trust-proxy: a login link works only without a proxy')
+    if server.link_host_kind(state['host']) is None:
+        return _link_blocked('link_needs_loopback', f'the server listens on {state["host"]}: a login link needs 127.0.0.1, localhost or a wildcard address')
+    users_path = users_file_path(repo, args.users)
+    if os.path.realpath(users_path) != os.path.realpath(state['users']):
+        return _link_blocked('server_not_running', 'the running server of this project reads another users file (pass the same --users as to serve)')
+    login = server.normalize_login(args.user)
+    try:
+        users, _warnings = _users(repo, args.users)
+        record = users.get(login) if login and users.exists() else None
+    except (PrototypeError, server.UserError) as error:
+        return _link_blocked('users_unreadable', str(getattr(error, 'message', None) or error))
+    if record is None:
+        return _link_blocked('unknown_user', f'no account {login or args.user!r} (create it: skillsync prototype user add)')
+    if record['mustChange']:
+        return _link_blocked('password_change_required', 'the account must change its password first: zmień hasło')
+    try:
+        token, expires = server.link_issue(run_dir, login, target, instance=state['instance'])
+    except server.LoginLinkError as error:
+        return _link_blocked(error.code, error.message)
+    return {'schema': 1, 'status': 'PASS', 'url': f'http://127.0.0.1:{state["port"]}{server.LINK_PATH}?t={token}',
+            'expires': server.format_at(int(round(expires * 1000)))}
 
 
 # ── Iterations, restore, agent operations, merge (F2) ────────────────────────
@@ -3221,6 +3321,22 @@ def _cmd_user(args, root, manifest, layerset):
     return user_command(root, args)
 
 
+def _login_link_handler(args):
+    """`login-link` always answers JSON with `schema` and `code` (also for a broken project, manifest or port)."""
+    try:
+        root, manifest = read_project(args.path)
+    except Exception as error:   # noqa: BLE001 - any project problem is a coded BLOCKED here
+        report = _link_blocked('invalid_project', str(error) or type(error).__name__)
+        return emit(safe_report(report))
+    try:
+        report = login_link_prototype(root, manifest, args)
+    except PrototypeError as error:
+        report = _link_blocked('invalid_project', str(error))
+    except (OSError, ValueError, TypeError, RuntimeError, OverflowError, server.UserError, server.PrototypeServerError) as error:
+        report = _link_blocked('invalid_project', str(error) or type(error).__name__)
+    return emit(safe_report(report))
+
+
 def _cmd_iterate(args, root, manifest, layerset):
     return iterate_prototype(root, manifest, args.slug)
 
@@ -3368,6 +3484,14 @@ def register(subparsers):
     user_parser('list', 'List accounts (never password hashes)')
     user_parser('import', 'Add accounts from a list of addresses (default password + mustChange; existing skipped)',
                 'file', role=True)
+    login_link = actions.add_parser('login-link', help='One-time login URL (60 s, one use) for an existing account of the running '
+                                                      'server; a human command, an agent does not run it')
+    _common(login_link)
+    login_link.add_argument('--user', required=True, help='Login (e-mail) of an existing account')
+    login_link.add_argument('--path', dest='link_path', help='Server path to open after the login (default /; not /_api/)')
+    login_link.add_argument('--port', type=int, help='Port of the server (required when several servers of the project run)')
+    login_link.add_argument('--users', help=f'Users file, relative to the project (default {USERS_DEFAULT})')
+    login_link.set_defaults(func=_login_link_handler)
     iterate = actions.add_parser('iterate', help='Freeze the current version to iterations/N/ (needs ids --check PASS)')
     _common(iterate)
     iterate.add_argument('slug', help='Prototype slug')

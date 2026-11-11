@@ -95,7 +95,7 @@ ACCEPT_VIA = ('ui', 'cli')
 
 ROLES = ('commenter', 'acceptor', 'developer')
 PRIVILEGED_ROLES = ('acceptor', 'developer')
-SERVER_FEATURES = ('views',)
+SERVER_FEATURES = ('views', 'login-link')   # `login-link` is listed only while the endpoint is active
 VIEW_VALUES = ('desktop', 'mobile')
 RESERVED_LOGINS = ('agent', 'import', 'server')
 
@@ -3942,9 +3942,10 @@ def import_users(users_file, logins, role='commenter', default_password=None):
 # ── Sessions and login rate limits ───────────────────────────────────────────
 
 class Session(object):
-    __slots__ = ('token', 'login', 'password_ref', 'pending_ref', 'csrf', 'created', 'last_seen')
+    __slots__ = ('token', 'login', 'password_ref', 'pending_ref', 'csrf', 'created', 'last_seen', 'via')
 
-    def __init__(self, token, login, password_ref, csrf, now):
+    def __init__(self, token, login, password_ref, csrf, now, via=None):
+        self.via = via   # 'link' for a session created by a login link
         self.token = token
         self.login = login
         self.password_ref = password_ref
@@ -3968,9 +3969,9 @@ class SessionStore(object):
         self._items = {}
         self._lock = threading.Lock()
 
-    def create(self, login, password_ref):
+    def create(self, login, password_ref, via=None):
         now = self.clock()
-        session = Session(secrets.token_urlsafe(32), login, password_ref, secrets.token_urlsafe(32), now)
+        session = Session(secrets.token_urlsafe(32), login, password_ref, secrets.token_urlsafe(32), now, via)
         with self._lock:
             self._prune(now)
             self._items[session.token] = session
@@ -4134,6 +4135,444 @@ class LoginRateLimiter(object):
             self._pairs.pop((login, ip), None)
 
 
+# ── One-time login links (`GET /_login/link`, `skillsync prototype login-link`) ───────────────────────────
+#
+# Layout under `<repo>/.skillsync/prototype/run/` (0700, owned by the effective user, never a symlink):
+#   server-<port>.json (0600)               {schema, pid, host, port, instance, version, root, users}, written by the
+#                                            server after bind (`runtime_dir` set) and removed when it stops;
+#   login/<sha256(token)>.json (0600)       {login, path, expires} per issued token (the token itself is never stored);
+#   login/.<sha256>.<random>.used           a token being redeemed (the rename that makes the use atomic).
+# The token (256 bits) exists only on the CLI stdout and in the query of the URL: nothing below logs or raises it.
+
+_LINK_POSIX = os.name != 'nt'
+LINK_PATH = '/_login/link'
+LINK_RUN_SUBPATH = ('.skillsync', 'prototype', 'run')
+LINK_LOGIN_DIR = 'login'
+LINK_STATE_SCHEMA = 1
+LINK_TOKEN_RE = re.compile(r'[A-Za-z0-9_-]{43}')
+LINK_QUERY_RE = re.compile(r't=([A-Za-z0-9_-]{43})')
+LINK_TTL_DEFAULT = 60            # seconds a token lives
+LINK_TTL_MAX = 120               # the server refuses a token whose expiry is further away than this
+LINK_MAX_PENDING = 32            # tokens waiting to be redeemed
+LINK_MAX_TOKEN_FILE = 4096
+LINK_STALE_SECONDS = 300         # leftovers (`.used`, `.tmp`) older than this are swept by the next `login-link`
+LINK_HOSTS = ('127.0.0.1', 'localhost')    # a server listening here is reachable at 127.0.0.1
+LINK_WILDCARD_HOSTS = ('0.0.0.0', '::', '')
+_LINK_NOFOLLOW = getattr(os, 'O_NOFOLLOW', 0)
+
+
+class LoginLinkError(Exception):
+    """A refusal with a stable `code` (reported as BLOCKED by the CLI)."""
+
+    def __init__(self, code, message):
+        Exception.__init__(self, message)
+        self.code = code
+        self.message = message
+
+
+def link_run_dir_of(repo):
+    return os.path.join(os.fspath(repo), *LINK_RUN_SUBPATH)
+
+
+def link_token_hash(token):
+    return hashlib.sha256(token.encode('ascii')).hexdigest()
+
+
+def link_new_token():
+    return secrets.token_urlsafe(32)
+
+
+# ── directories ──────────────────────────────────────────────────────────────
+
+def link_directory_problem(path):
+    """`None` when `path` is a private directory (0700, owned by us, not a symlink), `'missing'` when absent,
+    else a short description.  On Windows only the symlink/directory part is checked (no mode bits there)."""
+    try:
+        info = os.lstat(path)
+    except FileNotFoundError:
+        return 'missing'
+    except OSError as error:
+        return 'cannot stat (%s)' % (error.strerror or error.__class__.__name__)
+    if stat.S_ISLNK(info.st_mode):
+        return 'is a symlink'
+    if not stat.S_ISDIR(info.st_mode):
+        return 'is not a directory'
+    if _LINK_POSIX:
+        if info.st_uid != os.geteuid():
+            return 'is owned by another user'
+        if stat.S_IMODE(info.st_mode) != 0o700:
+            return 'has mode %03o instead of 700' % stat.S_IMODE(info.st_mode)
+    return None
+
+
+def _link_make_private_dir(path):
+    os.mkdir(path, 0o700)
+    if _LINK_POSIX:
+        os.chmod(path, 0o700)   # the umask must not narrow or widen it
+
+
+def link_prepare_run_dir(path):
+    """Create the run directory when absent; return a problem text (the link endpoint stays off) or None."""
+    problem = link_directory_problem(path)
+    if problem == 'missing':
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            _link_make_private_dir(path)
+        except OSError as error:
+            return 'cannot create (%s)' % (error.strerror or error.__class__.__name__)
+        problem = link_directory_problem(path)
+    if problem is None:
+        # The directory ignores itself in git (like a virtualenv), so no tracked/ignored setup is needed.
+        marker = os.path.join(path, '.gitignore')
+        try:
+            descriptor = os.open(marker, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _LINK_NOFOLLOW, 0o644)
+        except FileExistsError:
+            pass
+        except OSError:
+            pass
+        else:
+            with os.fdopen(descriptor, 'w', encoding='utf-8') as handle:
+                handle.write('*\n')
+    return problem
+
+
+def link_login_dir(run_dir, create=False):
+    """`<run>/login` after the same checks; created (0700) on request.  Raises `LoginLinkError('run_dir_unsafe')`."""
+    problem = link_directory_problem(run_dir)
+    if problem is not None:
+        raise LoginLinkError('run_dir_unsafe', 'katalog run/ jest niebezpieczny (%s): %s' % (problem, run_dir))
+    path = os.path.join(run_dir, LINK_LOGIN_DIR)
+    problem = link_directory_problem(path)
+    if problem == 'missing' and create:
+        try:
+            _link_make_private_dir(path)
+        except FileExistsError:
+            pass
+        except OSError as error:
+            raise LoginLinkError('run_dir_unsafe', 'nie można utworzyć %s (%s)' % (path, error.strerror or error))
+        problem = link_directory_problem(path)
+    if problem is not None:
+        raise LoginLinkError('run_dir_unsafe', 'katalog login/ jest niebezpieczny (%s): %s' % (problem, path))
+    return path
+
+
+# ── state file ───────────────────────────────────────────────────────────────
+
+def link_state_path(run_dir, port):
+    return os.path.join(run_dir, 'server-%d.json' % int(port))
+
+
+def _link_write_private(path, data):
+    """Atomic private write: `O_EXCL` temporary file, fsync, rename onto `path`."""
+    temporary = os.path.join(os.path.dirname(path), '.%s.%s.tmp' % (os.path.basename(path), secrets.token_hex(4)))
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _LINK_NOFOLLOW, 0o600)
+    try:
+        with os.fdopen(descriptor, 'wb') as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    except BaseException:
+        try:
+            os.unlink(temporary)
+        except OSError:
+            pass
+        raise
+
+
+def link_write_state(run_dir, state):
+    path = link_state_path(run_dir, state['port'])
+    _link_write_private(path, (json.dumps(state, ensure_ascii=False, indent=2) + '\n').encode('utf-8'))
+    return path
+
+
+def link_remove_state(path, instance):
+    """Remove our own state file (same `instance`); a file of another server stays."""
+    try:
+        with open(path, 'rb') as handle:
+            data = json.loads(handle.read(65536).decode('utf-8'))
+        if isinstance(data, dict) and data.get('instance') == instance:
+            os.unlink(path)
+    except (OSError, ValueError):
+        pass
+
+
+def link_read_states(run_dir):
+    """`[state]` of every valid `server-<port>.json` (regular, owned by us, private); broken files are skipped."""
+    states = []
+    try:
+        names = sorted(os.listdir(run_dir))
+    except OSError:
+        return states
+    for name in names:
+        found = re.fullmatch(r'server-([0-9]{1,5})\.json', name)
+        if not found:
+            continue
+        path = os.path.join(run_dir, name)
+        try:
+            descriptor = os.open(path, os.O_RDONLY | _LINK_NOFOLLOW)
+        except OSError:
+            continue
+        try:
+            info = os.fstat(descriptor)
+            if not stat.S_ISREG(info.st_mode) or (_LINK_POSIX and (info.st_uid != os.geteuid() or info.st_mode & 0o077)):
+                continue
+            data = json.loads(os.read(descriptor, 65536).decode('utf-8'))
+        except (OSError, ValueError):
+            continue
+        finally:
+            os.close(descriptor)
+        if not isinstance(data, dict) or data.get('port') != int(found.group(1)):
+            continue
+        if not (isinstance(data.get('pid'), int) and isinstance(data.get('host'), str)
+                and isinstance(data.get('instance'), str) and isinstance(data.get('root'), str)
+                and isinstance(data.get('users'), str)):
+            continue
+        states.append(data)
+    return states
+
+
+def link_pid_alive(pid):
+    """Is a process with this PID there?  Windows: always true (`os.kill` would terminate it); the `instance`
+    check decides there."""
+    if not _LINK_POSIX:
+        return True
+    if not isinstance(pid, int) or pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
+def link_host_kind(host):
+    """`'loopback'` (127.0.0.1/localhost), `'wildcard'`, or `None` (a host a link cannot be built for)."""
+    host = (host or '').strip().lower()
+    if host in LINK_HOSTS:
+        return 'loopback'
+    if host in LINK_WILDCARD_HOSTS:
+        return 'wildcard'
+    return None
+
+
+# ── request checks (server) ──────────────────────────────────────────────────
+
+def _link_address(text):
+    try:
+        address = ipaddress.ip_address(text.split('%', 1)[0].strip('[]'))
+    except ValueError:
+        return None
+    if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped is not None:
+        address = address.ipv4_mapped
+    return address
+
+
+def link_is_loopback_peer(peer):
+    """The raw `client_address[0]` is exactly 127.0.0.1, ::1 or ::ffff:127.0.0.1."""
+    address = _link_address(peer) if isinstance(peer, str) else None
+    return address is not None and address in (ipaddress.IPv4Address('127.0.0.1'), ipaddress.IPv6Address('::1'))
+
+
+_LINK_PROXY_EXACT = frozenset(('forwarded', 'x-real-ip', 'via'))
+
+
+def link_has_proxy_header(headers):
+    for key in headers.keys():
+        lowered = key.lower()
+        if lowered in _LINK_PROXY_EXACT or lowered.startswith('x-forwarded-'):
+            return True
+    return False
+
+
+def link_is_loopback_host_header(values):
+    """The one `Host` header names the loopback (127.0.0.1, ::1, localhost; any port)."""
+    if len(values) != 1:
+        return False
+    value = values[0].strip().lower()
+    if not value or any(char in value for char in '@/?#\\ \t'):
+        return False
+    if value.startswith('['):
+        end = value.find(']')
+        rest = value[end + 1:] if end > 0 else 'x'
+        if rest and not re.fullmatch(r':[0-9]{1,5}', rest):
+            return False
+        host = value[1:end]
+    else:
+        host, colon, port = value.partition(':')
+        if colon and not re.fullmatch(r'[0-9]{1,5}', port):
+            return False
+    if host == 'localhost':
+        return True
+    address = _link_address(host)
+    return address is not None and address in (ipaddress.IPv4Address('127.0.0.1'), ipaddress.IPv6Address('::1'))
+
+
+def link_path_allowed(path):
+    """`--path` / stored path: a server-relative path (one leading `/`), printable ASCII, not the API."""
+    if not isinstance(path, str) or not path.startswith('/') or path.startswith('//') or len(path) > 1000:
+        return False
+    if '\\' in path or any(ord(char) < 0x21 or ord(char) > 0x7e for char in path):
+        return False
+    return not (path == '/_api' or path.startswith('/_api/'))
+
+
+# ── issuing (CLI) ────────────────────────────────────────────────────────────
+
+def _link_read_token_file(path, limit=LINK_MAX_TOKEN_FILE):
+    """`dict` of a private regular token file, or None."""
+    try:
+        descriptor = os.open(path, os.O_RDONLY | _LINK_NOFOLLOW)
+    except OSError:
+        return None
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode) or info.st_size > limit:
+            return None
+        if _LINK_POSIX and (info.st_uid != os.geteuid() or info.st_mode & 0o077):
+            return None
+        data = json.loads(os.read(descriptor, limit).decode('utf-8'))
+    except (OSError, ValueError):
+        return None
+    finally:
+        os.close(descriptor)
+    if not isinstance(data, dict):
+        return None
+    login, target, expires = data.get('login'), data.get('path'), data.get('expires')
+    if not isinstance(login, str) or not isinstance(target, str):
+        return None
+    if isinstance(expires, bool) or not isinstance(expires, (int, float)) or expires != expires:
+        return None
+    instance = data.get('instance')
+    return {'login': login, 'path': target, 'expires': float(expires),
+            'instance': instance if isinstance(instance, str) else None}
+
+
+def _link_sweep(directory, now):
+    """Remove expired or unreadable tokens and old leftovers; return the number of pending tokens."""
+    pending = 0
+    try:
+        names = os.listdir(directory)
+    except OSError:
+        return 0
+    for name in names:
+        path = os.path.join(directory, name)
+        if re.fullmatch(r'[0-9a-f]{64}\.json', name):
+            data = _link_read_token_file(path)
+            if data is None or data['expires'] < now:
+                _link_unlink(path)
+            else:
+                pending += 1
+        elif name.startswith('.'):
+            try:
+                if now - os.lstat(path).st_mtime > LINK_STALE_SECONDS:
+                    _link_unlink(path)
+            except OSError:
+                pass
+    return pending
+
+
+def _link_unlink(path):
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
+
+
+def link_issue(run_dir, login, path, now=None, ttl=LINK_TTL_DEFAULT, instance=None):
+    """Create a one-time token file for `login`; returns `(token, expires)` (epoch seconds).
+    Raises `LoginLinkError('run_dir_unsafe' | 'too_many_pending')`."""
+    now = time.time() if now is None else now
+    directory = link_login_dir(run_dir, create=True)
+    if _link_sweep(directory, now) >= LINK_MAX_PENDING:
+        raise LoginLinkError('too_many_pending', 'za dużo oczekujących tokenów logowania (%d); poczekaj, aż wygasną' % LINK_MAX_PENDING)
+    token = link_new_token()
+    digest = link_token_hash(token)
+    expires = round(now + min(ttl, LINK_TTL_MAX), 3)
+    record = {'login': login, 'path': path, 'expires': expires}
+    if instance is not None:
+        record['instance'] = instance   # binds the token to one server process
+    data = (json.dumps(record, ensure_ascii=True) + '\n').encode('ascii')
+    final = os.path.join(directory, digest + '.json')
+    temporary = os.path.join(directory, '.%s.%s.tmp' % (digest, secrets.token_hex(4)))
+    try:
+        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _LINK_NOFOLLOW, 0o600)
+        with os.fdopen(descriptor, 'wb') as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.rename(temporary, final)
+    except OSError as error:
+        _link_unlink(temporary)
+        raise LoginLinkError('run_dir_unsafe', 'nie można zapisać tokenu (%s)' % (error.strerror or error.__class__.__name__))
+    return token, expires
+
+
+# ── redeeming (server) ───────────────────────────────────────────────────────
+
+def link_consume(run_dir, token, now, instance=None):
+    """Atomically take the token file (rename, so exactly one caller wins), read and delete it.
+
+    Returns `{login, path, expires}` or None for anything wrong (missing, used, unreadable, expired, too far in the
+    future); the caller still checks the account.  Nothing here raises the token or its hash."""
+    if not isinstance(token, str) or not LINK_TOKEN_RE.fullmatch(token):
+        return None
+    try:
+        directory = link_login_dir(run_dir)
+    except LoginLinkError:
+        return None
+    digest = link_token_hash(token)
+    source = os.path.join(directory, digest + '.json')
+    taken = os.path.join(directory, '.%s.%s.used' % (digest, secrets.token_hex(4)))
+    if instance is not None:
+        # a token of another server (other `instance`) is refused without being used up
+        peek = _link_read_token_file(source)
+        if peek is not None and peek.get('instance') != instance:
+            return None
+    try:
+        os.rename(source, taken)
+    except OSError:
+        return None
+    try:
+        data = _link_read_token_file(taken)
+    finally:
+        _link_unlink(taken)
+    if data is None or (instance is not None and data.get('instance') != instance):
+        return None
+    if data['expires'] < now or data['expires'] - now > LINK_TTL_MAX:
+        return None
+    return data
+
+
+# ── Audit of writes from login-link sessions: `<run>/audit.jsonl` (local, never `comments.json`) ─────────
+
+LINK_AUDIT_FILE = 'audit.jsonl'
+
+
+def link_audit_append(run_dir, record, lock_timeout=None):
+    """Append one JSON line (0600, `O_APPEND|O_NOFOLLOW`, under a `FileLock`); a symlink in place of the file is
+    refused (OSError), nothing is written through it.  The record never holds a token or its hash."""
+    problem = link_directory_problem(run_dir)
+    if problem is not None:
+        raise OSError('katalog run/ %s' % problem)
+    path = os.path.join(run_dir, LINK_AUDIT_FILE)
+    data = (json.dumps(record, ensure_ascii=True) + '\n').encode('ascii')
+    with FileLock(path + LOCK_SUFFIX, LOCK_TIMEOUT if lock_timeout is None else lock_timeout, 0o600):
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND | _LINK_NOFOLLOW, 0o600)
+        try:
+            info = os.fstat(descriptor)
+            if not stat.S_ISREG(info.st_mode):
+                raise OSError('audit.jsonl nie jest zwykłym plikiem')
+            os.write(descriptor, data)
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+
+
 # ── Server configuration and startup checks ──────────────────────────────────
 
 class ServerConfig(object):
@@ -4143,13 +4582,14 @@ class ServerConfig(object):
     `max_file_bytes` (507 limit), `log` (stream for the request log, None = silent),
     `git_checks` (False skips the git part of `startup_checks`), `recover` (False skips the
     recovery of interrupted freezes and restores at start), `source_writes` (restore from the UI;
-    the CLI turns it off with `--no-source-writes` and outside a git working copy).
+    the CLI turns it off with `--no-source-writes` and outside a git working copy), `runtime_dir` (directory of the
+    state file and of the login-link tokens; None = neither).
     """
 
     def __init__(self, root, users, host=DEFAULT_HOST, port=DEFAULT_PORT, secure_cookies=False, trust_proxy=False,
                  login_to_view=False, source_writes=True, clock=None, pbkdf2_iterations=DEFAULT_ITERATIONS,
                  lock_timeout=LOCK_TIMEOUT, log=None, git_checks=True, max_file_bytes=MAX_FILE_BYTES, recover=True,
-                 gallery=None):
+                 gallery=None, runtime_dir=None):
         self.root = os.path.abspath(os.fspath(root))
         self.users = os.path.abspath(os.fspath(users))
         self.host = host
@@ -4168,6 +4608,8 @@ class ServerConfig(object):
         # `gallery`: callable returning the HTML of the gallery computed now; `/` and `/index.html` of the root are
         # answered with it (the static `<root>/index.html` is only the fallback when the callable fails or is None)
         self.gallery = gallery
+        # `runtime_dir`: `<repo>/.skillsync/prototype/run/`; None (standalone, tests) = no state file, no login link
+        self.runtime_dir = os.path.abspath(os.fspath(runtime_dir)) if runtime_dir is not None else None
 
 
 def is_loopback_host(host):
@@ -4311,6 +4753,77 @@ class PrototypeApp(object):
         self._forwarded_warned = False
         self.warnings = []
         self.hash_cache = HashCache()
+        self.instance = secrets.token_urlsafe(16)   # nonce of this server process (state file, `/session`)
+        self.link_dir = None                        # run directory while the login-link endpoint is active
+        self.state_file = None
+
+    def enable_login_link(self, bound):
+        """Prepare `runtime_dir` and write the state file after bind; any problem leaves the endpoint off (warning)."""
+        config = self.config
+        run_dir = config.runtime_dir
+        if run_dir is None:
+            return
+        problem = link_prepare_run_dir(run_dir)
+        if problem is None and config.git_checks:
+            inside = _git(['rev-parse', '--is-inside-work-tree'], run_dir)
+            if inside is not None and inside.returncode == 0 and inside.stdout.strip() == b'true':
+                ignored = _git(['check-ignore', '-q', '--', os.path.join(run_dir, LINK_LOGIN_DIR, 'x.json')], run_dir)
+                if ignored is None or ignored.returncode != 0:
+                    problem = 'nie jest ignorowany przez git (git check-ignore)'
+        if problem is not None:
+            self.warnings.append('katalog run/ %s: %s; logowanie z linku wyłączone' % (run_dir, problem))
+            return
+        state = {'schema': LINK_STATE_SCHEMA, 'pid': os.getpid(), 'host': bound.server_address[0],
+                 'port': bound.port, 'instance': self.instance, 'version': SERVER_VERSION, 'root': self.root,
+                 'users': os.path.realpath(config.users), 'link': not config.trust_proxy}
+        try:
+            self.state_file = link_write_state(run_dir, state)
+        except (OSError, UnicodeEncodeError) as error:
+            self.warnings.append('plik stanu serwera w %s nie powstał (%s): logowanie z linku wyłączone'
+                                 % (run_dir, getattr(error, 'strerror', None) or error.__class__.__name__))
+            return
+        if config.trust_proxy:
+            # state file (liveness) stays with `link: false`; no endpoint, no `login-link` feature
+            self.warnings.append('--trust-proxy: logowanie z linku wyłączone (link działa tylko bez proxy)')
+            return
+        self.link_dir = run_dir
+
+    def redeem_link(self, query):
+        """`(user, path)` for a valid one-time token in `query`, else None (every reason alike)."""
+        found = LINK_QUERY_RE.fullmatch(query or '')
+        if found is None or self.link_dir is None:
+            return None
+        now = self.clock()
+        data = link_consume(self.link_dir, found.group(1), now, self.instance)
+        if data is None or not link_path_allowed(data['path']) or safe_next(data['path']) != data['path']:
+            return None
+        try:
+            user = self.users.get(data['login'])
+        except UserError:
+            return None
+        if user is None or user['mustChange']:
+            return None
+        return user, data['path']
+
+    def audit(self, session, op, screen=None):
+        """One line in `run/audit.jsonl` for a write made from a login-link session (nothing for other sessions
+        or without `runtime_dir`); a failure only warns in the log, the write itself has happened."""
+        if session is None or session.via != 'link' or self.link_dir is None:
+            return
+        record = {'at': format_at(clock_ms(self.clock)), 'login': session.login, 'via': 'link', 'op': op}
+        if screen:
+            record['screen'] = screen
+        try:
+            link_audit_append(self.link_dir, record, self.config.lock_timeout)
+        except (OSError, PrototypeServerError) as error:
+            self.log('ostrzeżenie: audyt sesji z linku nie zapisany (%s)' % (getattr(error, 'strerror', None)
+                                                                          or error.__class__.__name__))
+
+    def close_link(self):
+        if self.state_file is not None:
+            link_remove_state(self.state_file, self.instance)
+            self.state_file = None
+        self.link_dir = None
 
     def recover_all(self):
         """Recovery of interrupted freezes and restores at the start of `serve` (`by: server`).
@@ -4479,7 +4992,9 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
             except ValueError:
                 path = '-'
         else:
-            path = str(getattr(self, 'requestline', '') or '-')
+            # Never the query: a login-link token may sit in a malformed request line (cut at `?`, long token-like runs hidden).
+            line = str(getattr(self, 'requestline', '') or '-').split('?', 1)[0]
+            path = re.sub(r'[A-Za-z0-9_-]{32,}', '…', line)
         path = path[:200]   # cut before `_log_safe`, so no `\xNN` sequence is split
         try:
             code = int(code)
@@ -4597,6 +5112,9 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
             if path == _API_PREFIX or path.startswith(_API_PREFIX + '/') or path.startswith('/_api/'):
                 self._api(method, path, split.query, session, user)
                 return
+            if path == LINK_PATH and self.app.link_dir is not None:
+                self._login_link(method, split.query, session)
+                return
             if path == '/_login':
                 self._login_page(method, split.query)
                 return
@@ -4713,6 +5231,41 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
             return True
         return not any(_excluded_segment(part) for part in relative.split(os.sep))
 
+    # ── one-time login link ──
+
+    def _link_request_allowed(self):
+        """Raw peer is the loopback, no proxy headers, `Host` is the loopback (`--trust-proxy` has no endpoint at all)."""
+        peer = self.client_address[0] if self.client_address else None
+        if not link_is_loopback_peer(peer):
+            return False
+        if link_has_proxy_header(self.headers):
+            return False
+        return link_is_loopback_host_header(self.headers.get_all('Host') or [])
+
+    def _login_link(self, method, query, old_session):
+        """`GET /_login/link?t=<token>`: the token becomes a session (302 to the stored path, Set-Cookie);
+        every refusal is the same 302 to `/_login`, whatever the reason, and happens before the token is used."""
+        if method != 'GET':
+            self.close_connection = True
+            self._json(405, {'error': 'method_not_allowed'}, {'Allow': 'GET'})
+            return
+        app = self.app
+        grant = None
+        try:
+            if self._link_request_allowed():
+                grant = app.redeem_link(query)
+        except OSError:
+            grant = None
+        if grant is None:
+            self._empty(302, {'Location': '/_login'})
+            return
+        user, target = grant
+        if old_session is not None:
+            app.sessions.drop(old_session.token)
+        session = app.sessions.create(user['login'], user['password'], via='link')
+        self._login = user['login']
+        self._empty(302, {'Location': target, 'Set-Cookie': self._cookie(session.token)})
+
     # ── login page ──
 
     def _login_page(self, method, query):
@@ -4739,8 +5292,9 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
                 'user': app.user_payload(user) if user is not None else None,
                 'csrf': session.csrf if session is not None else None,
                 'server': {'version': SERVER_VERSION, 'loginToView': app.config.login_to_view,
-                           'sourceWrites': app.source_writes,
-                           'features': list(SERVER_FEATURES)},
+                           'sourceWrites': app.source_writes, 'instance': app.instance,
+                           'features': [item for item in SERVER_FEATURES
+                                        if item != 'login-link' or app.link_dir is not None]},
             })
             return
         if path == _API_PREFIX + '/login':
@@ -4956,7 +5510,13 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
             return
         if result.size_warning:
             app.log('ostrzeżenie: comments.json prototypu %s ma %d B (limit ostrzeżenia 10 MiB)' % (slug, result.size))
-        self._json(201, {'operation': result.operations[0], 'total': result.total, 'prefix': result.prefix})
+        written = result.operations[0]
+        payload = written.get('payload') if isinstance(written.get('payload'), dict) else {}
+        screens = payload.get('screens')
+        screen = payload.get('screen') if isinstance(payload.get('screen'), str) else (
+            next(iter(screens)) if isinstance(screens, dict) and len(screens) == 1 else None)
+        app.audit(session, written['type'], screen)
+        self._json(201, {'operation': written, 'total': result.total, 'prefix': result.prefix})
 
     def _project_access(self, session, user):
         """401 without a session, 403 `forbidden` for the commenter role."""
@@ -4976,7 +5536,14 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
             raise OperationError(400, 'cid_required', 'cid is required')
         self._project_access(session, user)
         cid, versions = validate_project_accept_request(body)
-        status, result = accept_project(self.app, user['login'], cid, versions)
+        try:
+            status, result = accept_project(self.app, user['login'], cid, versions)
+        except PrototypeServerError as error:
+            if error.details.get('accepted'):   # a partial write (409 partial, 507, 500): those prototypes are written
+                self.app.audit(session, 'project/accept')
+            raise
+        if status == 201:
+            self.app.audit(session, 'project/accept')
         self._json(status, result)
 
     def _restore_access(self, session, user):
@@ -5027,15 +5594,24 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
             validate_restore_request(body)
 
         store = app.store(slug)
-        result = perform_restore(store, directory, body.get('screen'), body.get('from'), body.get('reason'),
-                                 by=login, cid=cid, version=body.get('version'), recovery_by='server',
-                                 allow_source=True, precheck=precheck, hash_cache=app.hash_cache,
-                                 log=lambda note: app.log('ostrzeżenie: prototyp %s: %s' % (slug, note)))
+        screen_id = body.get('screen') if isinstance(body.get('screen'), str) else None
+        known = store.snapshot().find_cid(login, cid) is not None
+        try:
+            result = perform_restore(store, directory, body.get('screen'), body.get('from'), body.get('reason'),
+                                     by=login, cid=cid, version=body.get('version'), recovery_by='server',
+                                     allow_source=True, precheck=precheck, hash_cache=app.hash_cache,
+                                     log=lambda note: app.log('ostrzeżenie: prototyp %s: %s' % (slug, note)))
+        except BaseException:
+            if not known and store.snapshot().find_cid(login, cid) is not None:   # the pair of operations was written
+                app.audit(session, 'restore', screen_id)
+            raise
         extra = {'recovery': result['notes']} if result['notes'] else {}
         if result['unchanged']:
             self._json(200, dict({'unchanged': True, 'version': result['version']}, **extra))
             return
         status = 200 if result['existing'] else 201
+        if status == 201:
+            app.audit(session, 'restore', screen_id)
         self._json(status, dict({'operations': result['operations'], 'iteration': {'current': result['current']}},
                                 **extra))
 
@@ -5058,6 +5634,10 @@ class PrototypeHTTPServer(ThreadingHTTPServer):
         host, port = self.server_address[:2]
         self.server_name = host
         self.server_port = port
+
+    def server_close(self):
+        self.app.close_link()   # state file of this server goes with it
+        ThreadingHTTPServer.server_close(self)
 
     @property
     def port(self):
@@ -5088,6 +5668,7 @@ def make_server(config, check=True):
         app.warnings.extend(app.recover_all())
     server = PrototypeHTTPServer((config.host, config.port), PrototypeRequestHandler, app)
     app.port = server.port
+    app.enable_login_link(server)
     return server
 
 
