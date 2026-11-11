@@ -1561,7 +1561,7 @@ class AssetsRenderTests(unittest.TestCase):
 
     def test_new_templates_escape_data(self) -> None:
         q = js_function(self.js, "questionsBlock")
-        for frag in ("esc(q.id)", "esc(q.question)", 'esc(q.accepted || "—")', "esc(bq.count || 0)", "esc(as.count || 0)"):
+        for frag in ("esc(q.id)", "esc(q.question)", 'esc(q.accepted || "—")', "esc((bq.items || []).length || bq.count || 0)", "esc((as.items || []).length || as.count || 0)"):
             self.assertIn(frag, q)
         r = js_function(self.js, "readinessTile")
         for frag in ("esc(r.date)", "esc(sha)", "esc(r.source)", "esc(label)"):

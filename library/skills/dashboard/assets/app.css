@@ -233,6 +233,7 @@ main { flex: 1; padding: 1.1rem 1.4rem; min-width: 0; }
 .q-group.is-blocking .q-head { color: var(--warn); }
 .q-list { list-style: none; margin: .2rem 0 0; padding: 0; display: grid; gap: .2rem; }
 .q-list li, .sub-list li { display: flex; gap: .45rem; align-items: baseline; min-width: 0; }
+.q-list li > span:last-child { overflow-wrap: anywhere; min-width: 0; }
 .q-id { font-weight: 700; font-size: .78rem; color: var(--muted); flex: none; }
 .q-none { color: var(--faint); font-size: .8rem; font-style: italic; }
 /* Podkroki z czasem (akt III) */

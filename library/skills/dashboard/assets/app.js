@@ -192,7 +192,7 @@
     const r = d.readiness || {};
     const [cls, label] = READY_STATE[r.status] || ["is-none", "brak danych"];
     const sha = r.planSha ? String(r.planSha).slice(0, 8) : "";
-    const stale = Boolean(r.planSha && d.plan && d.plan.fileSha && r.planSha !== d.plan.fileSha);
+    const stale = Boolean(r.planSha && d.plan && d.plan.fileSha && !String(d.plan.fileSha).startsWith(String(r.planSha)));
     const facts = [r.date ? `<span>${esc(r.date)}</span>` : "", sha ? `<span class="mono">plan ${esc(sha)}</span>` : "",
       stale ? `<span class="chip s-warn">brief dla innej wersji planu</span>` : ""].join("");
     const open = r.source ? `<button class="act-doc" type="button" data-open-doc="${esc(r.source)}" data-tip="${esc(r.source)} w zakładce Dokumenty">${icon("i-doc")}readiness.md</button>` : "";
@@ -209,8 +209,8 @@
     const assumed = list(as.items || [], (q) => `<li><span class="mono q-id">${esc(q.id)}</span><span>${esc(q.question)} — przyjęte: <strong>${esc(q.accepted || "—")}</strong></span></li>`);
     return `<div class="questions" role="group" aria-label="Pytania">
       <div class="q-title">Pytania</div>
-      <div class="q-group${bq.count ? " is-blocking" : ""}"><div class="q-head" ${desc("questions_blocking")}>Pytania blokujące (${esc(bq.count || 0)})</div>${blocking}</div>
-      <div class="q-group"><div class="q-head" ${desc("questions_assumptions")}>Założenia do korekty przy prototypie (${esc(as.count || 0)})</div>${assumed}</div></div>`;
+      <div class="q-group${bq.count ? " is-blocking" : ""}"><div class="q-head" ${desc("questions_blocking")}>Pytania blokujące (${esc((bq.items || []).length || bq.count || 0)})</div>${blocking}</div>
+      <div class="q-group"><div class="q-head" ${desc("questions_assumptions")}>Założenia do korekty przy prototypie (${esc((as.items || []).length || as.count || 0)})</div>${assumed}</div></div>`;
   }
   // Podkroki Fn.k z czasem (akt III): rozwijana lista; stan rozwinięcia przeżywa odświeżenie (st.substepsOpen).
   function substepsBlock(d) {
