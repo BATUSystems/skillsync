@@ -11,6 +11,8 @@ i kto jest jego właścicielem.
 | `skillsync_workflow/` | pakiet generatora: polecenia (`cli.py`: synchronizacja `link`, `instructions`, `push`, `pull`, `watch`, warstwy `layers`, strażnik `leakcheck`, `leakguard`) i komendy workflow (`doctor`, `route`, `validate`, `smart-test`, `checkpoint`, `prototype` i inne); punkt wejścia pakietu `skillsync` i `python -m skillsync_workflow` |
 | `skillsync` | wrapper w korzeniu repo: uruchamia pakiet z checkoutu |
 | `skillsync_workflow/selfcmd.py` | `self_argv()`: polecenie, którym Skillsync wywołuje sam siebie w zapisywanych artefaktach (`[python, <checkout>/skillsync]` albo `[python, -P, -m, skillsync_workflow]`) |
+| `skillsync_workflow/dashboard.py` | stan projektu jako kontrakt JSON `schema: 1` (`dashboard show`, `dashboard metrics`) i polecenia `dashboard`/`approvals record`; tylko odczyt, zapis zgód woła `status.record_approval`; kontrakt: [dashboard-contract](dashboard-contract.md) |
+| `skillsync_workflow/dashboard_http.py` | serwer HTTP strony statusu (`dashboard serve`, tylko biblioteka standardowa, ładowany leniwie); strona i zasoby pochodzą ze skilla `dashboard` aktywnych warstw; model zaufania: [domain/dashboard-server.md](domain/dashboard-server.md) |
 | warstwy | repo z układem `skills/`, `instructions/`, `agents/`, `workflow/` i plikiem `layer.yaml`; patrz [layers-authoring](layers-authoring.md) |
 | usługa watch | ciągła synchronizacja po zmianach w warstwach; szczegóły usługi per system: [installation](installation.md) |
 | `skillsync-ctl` | sterowanie usługą watch na Linuksie (`start`, `stop`, `restart`, `enable`, `disable`, `status`, `logs`); dostępne tylko w checkoucie repo |
@@ -133,6 +135,7 @@ Procesy potomne, które `skillsync` uruchamia sam (np. `quality` wywołuje `guar
 | `.skillsync/logs/<uuid>/` | logi `validate --run` i `smart-test --run` | ignorowany |
 | `.skillsync/cache/smart-test/` | zapisany plan selekcji testów (nie wynik) | ignorowany |
 | `.skillsync/runs/<run-id>.json` | punkty kontrolne przebiegu | ignorowany |
+| `.skillsync/runs/<run-id>/approvals.jsonl` | zgody użytkownika (jedno źródło: `approvals record`, serwer dashboardu, IDE); jedna linia JSON na zgodę, blokada `approvals.jsonl.lock` | ignorowany |
 | `.skillsync/environments/`, `e2e/`, `claims/`, `upgrade/`, `providers/` | stan komend workflow | ignorowany |
 | `.skillsync/dispatch/<run-id>.yaml` | stan dyspozycji; zapisuje go skill, generator tylko go ignoruje | ignorowany |
 | `~/.cache/skillsync/composed/` | cache kompozytów; odtwarzalny | poza projektem |

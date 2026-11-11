@@ -13,10 +13,23 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 ## [Unreleased]
 
 ### Added
-None.
+
+- `skillsync dashboard show <project> [--json] [--plan <rel>]`: the project status as a JSON contract (`schema: 1`, read-only;
+  additive fields `readiness`, `assumptions`, `blockingQuestions`, `substeps`); the contract and fixtures are in
+  [docs/dashboard-contract.md](docs/dashboard-contract.md) and `tests/fixtures/dashboard/`.
+- `skillsync dashboard serve <project> [--port 5140] [--host 127.0.0.1] [--approve-host H] [--no-approvals]`: the status page
+  with live refresh and approval buttons. The port is chosen per project so pages do not collide; the `Host` header is checked
+  on every endpoint, reads from outside loopback only through `--approve-host`; approvals are recorded in-process.
+- `skillsync dashboard metrics <project> <run-id> [--json] [--plan <rel>]`: per-substep times (`Fn.k`), rounds and failures of
+  a run; a substep without data is marked explicitly.
+- `skillsync approvals record <project> --word … --run … --source cli|dashboard|ide`: the single writer of
+  `.skillsync/runs/<run-id>/approvals.jsonl` (file lock, duplicate refusal, secret masking). Only the user records approvals.
+- Skill `dashboard` (status page) in the core library; domain record `docs/domain/dashboard-server.md` (server trust model).
 
 ### Changed
-None.
+
+- `status-board` in the manifest `skills:` list expands to `dashboard` only when no layer provides a skill named
+  `status-board` (one rule in `common.py`, used by both skill expanders).
 
 ### Breaking
 None.

@@ -4,6 +4,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+### Added
+- `skills/dashboard`: strona statusu projektu (plan, przebieg, zgody, metryki podkroków) nad kontraktem JSON `schema: 1`; komendy `skillsync dashboard show|serve|metrics` i `skillsync approvals record`. Wpis `dashboard: {scope: workflow}` w `workflow/skill-catalog.yaml`; `skills/skillsync` opisuje nowe komendy.
+
+### Changed
+- Alias warunkowy: `status-board` w `skills:` rozwija się do `dashboard` tylko wtedy, gdy żadna warstwa nie dostarcza skilla `status-board`.
+
 ## [1.0.2] - 2026-11-11
 
 ### Removed

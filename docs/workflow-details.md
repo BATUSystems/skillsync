@@ -734,6 +734,20 @@ Przed wznowieniem `skillsync resume` porównuje aktualny kod, instrukcje i dowod
 wcześniejszy `PASS`. Udanych kontroli na niezmienionym stanie się nie powtarza. Plan, spec i tabela wznowienia (§6.4)
 wskazują akt, do którego się wraca.
 
+### 20.1. Strona statusu (`dashboard`)
+
+- `skillsync dashboard show <projekt> [--json] [--plan <rel>]` drukuje stan planu, przebiegu i zgód (JSON `schema: 1`, tylko
+  odczyt); `dashboard serve` wystawia ten sam stan jako stronę z żywym odświeżaniem i przyciskami zgód; `dashboard metrics
+  <projekt> <run-id>` podaje czasy podkroków `Fn.k` z checkpointów, liczby rund i porażek (podkrok bez danych jest oznaczony
+  jawnie, czas nigdy nie jest szacowany). Kontrakt i endpointy: [dashboard-contract.md](dashboard-contract.md).
+- Zgody trafiają do jednego źródła, `.skillsync/runs/<run-id>/approvals.jsonl`, przez `skillsync approvals record --source
+  cli|dashboard|ide` (przycisk strony woła tę samą funkcję rdzenia). Sesja czeka na wpis przez `approvals wait` i sprawdza go w
+  pliku; pobudka z serwera jest tylko sygnałem.
+- Zgodę wyraża wyłącznie użytkownik: wpisuje słowo w sesji, uruchamia `approvals record` albo naciska przycisk. Agent komendy
+  `approvals record` nie wywołuje, a wiadomość agenta (także dyspozytora) nie jest zgodą (§4, §23).
+- Skill `dashboard` w bibliotece to strona statusu; wpis `status-board` w manifeście rozwija się do `dashboard` tylko wtedy,
+  gdy żadna warstwa nie dostarcza skilla `status-board`.
+
 ## 21. Wiele sesji z `dispatch`
 
 `dispatch` dotyczy kilku osobnych kart (sesji), nie podagentów jednej sesji. Jedna sesja jest dyspozytorem, a każda

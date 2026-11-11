@@ -354,7 +354,13 @@ przez `@tag`, czy przez wildcard. Pozostałe skille (`workflow-retro`, `task-cla
 | `retro-decide <path> --cause-key K --decision approved\|rejected` | zapis decyzji w `docs/retro/decisions.yaml`; `approved` wymaga `--owner` i `--case`, istniejący klucz `--replace`, po poprawce `--replace --ref` |
 | `retro-decide <path> --proposal <run-id>/P<n> --decision rejected\|applied [--ref <sha>] [--replace]` | decyzja końcowa propozycji retrospektywy jakościowej: wpis w `retro-decisions.json` przebiegu i w sekcji `proposals:` rejestru `docs/retro/decisions.yaml` (opcjonalna; zawiera id, `repo`, `target`, decyzję, datę i `ref`); `applied` wymaga pełnego sha w `--ref`; wyklucza `--cause-key`, `--owner`, `--case`; w worktree `BLOCKED`; rejestr z `proposals:` wymaga generatora z tą obsługą |
 | `dispatch <path> [--run-id <id>] [--json]` | stan dyspozycji tylko do odczytu: karty, paczki, dzierżawy, kolejka merge, koszt znany albo `unknown`; bez wolnego tekstu |
+| `dashboard show <path> [--json] [--plan <rel>]` | tylko odczyt: stan planu, przebiegu i zgód jako JSON `schema: 1` (kontrakt: `docs/dashboard-contract.md` w repo Skillsync) |
+| `dashboard serve <path> [--port 5140] [--host 127.0.0.1] [--approve-host H] [--no-approvals]` | strona statusu z przyciskami zgód; port per projekt, `Host` sprawdzany na każdym endpoincie, odczyt spoza loopbacku tylko przez `--approve-host`; zgody zapisuje in-process |
+| `dashboard metrics <path> <run-id> [--json] [--plan <rel>]` | tylko odczyt: czasy podkroków `Fn.k`, liczby rund i porażek; podkrok bez danych oznaczony jawnie |
+| `approvals record <path> --word "GO plan\|GO implement\|CP\|READY" --run <run-id> --source cli\|dashboard\|ide [--sha SHA] [--file PLIK]` | zapis zgody w `.skillsync/runs/<run-id>/approvals.jsonl` (blokada plikowa, odmowa duplikatu = exit 2); tylko na słowo użytkownika, agent jej nie woła |
 | `benchmark <path> --suite <yaml>` | powtarzalny plan przypadków offline |
+
+Skill `dashboard` to strona statusu; wpis `status-board` w `skills:` rozwija się do `dashboard` tylko wtedy, gdy żadna warstwa nie ma skilla `status-board`.
 
 `validate`, `smart-test`, `benchmark` wykonują komendy dopiero z `--run`.
 Wyniki/cache/logi są lokalne w `.skillsync/`; generator dodaje ten katalog do gitignore.

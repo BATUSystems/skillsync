@@ -150,6 +150,25 @@ spójność instrukcji z plikami oraz budżety bajtów.
 
 Szczegóły: [workflow](workflow.md).
 
+## Dashboard i zgody
+
+| Komenda | Skutek |
+|---|---|
+| `dashboard show <projekt> [--json] [--plan <rel>]` | stan projektu jako JSON `schema: 1` ([dashboard-contract](dashboard-contract.md)); tylko odczyt |
+| `dashboard serve <projekt> [--port 5140] [--host 127.0.0.1] [--approve-host H] [--no-approvals] [--plan <rel>] [--session-url URL]` | strona statusu z żywym odświeżaniem (SSE) i przyciskami zgód |
+| `dashboard metrics <projekt> <run-id> [--json] [--plan <rel>]` | czasy podkroków `Fn.k`, liczby rund i porażek przebiegu; podkrok bez danych jest oznaczony jawnie |
+| `approvals record <projekt> --word "GO plan\|GO implement\|CP\|READY" --run <run-id> --source cli\|dashboard\|ide [--sha SHA] [--file PLIK] [--target X] [--branch Y]` | zapis zgody użytkownika w `.skillsync/runs/<run-id>/approvals.jsonl` |
+| `approvals wait …` | czekanie na zgodę (odczyt tego samego pliku), opis w [workflow](workflow.md) |
+
+- `serve` wiąże się z `127.0.0.1`; port wybiera się per projekt (domyślnie 5140, dozwolone 5100–5199), żeby strony różnych
+  projektów nie kolidowały. Nagłówek `Host` jest sprawdzany na wszystkich endpointach: odczyt spoza loopbacku (tunel, LAN)
+  wymaga `--approve-host <nazwa>`, a widok bez zapisu zgód dodatkowo `--no-approvals`. Zgody zapisuje serwer w tym samym
+  procesie (bez podprocesu `skillsync`). Model zaufania: [domain/dashboard-server.md](domain/dashboard-server.md).
+- `approvals record` jest jedynym zapisem zgód: blokada plikowa, odmowa duplikatu (to samo słowo i `sha` w przebiegu), maskowanie
+  sekretów. Słowo wpisuje użytkownik; agent tej komendy nie wywołuje.
+- Kody: `0` = `PASS`, `2` = `BLOCKED` (zły argument, odmowa zapisu, brak projektu lub przebiegu, port zajęty); `approvals wait`
+  kończy się `3` przy przekroczeniu czasu. Strona i dokument skilla: skill `dashboard` w bibliotece.
+
 ## Rozszerzenia workflow
 
 `env`, `e2e`, `tracker`, `ci`, `claim`, `profiles`, `upgrade`. Opis i kody: [workflow](workflow.md).
