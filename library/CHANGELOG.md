@@ -4,6 +4,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-11
+
 ### Added
 - `skills/feature/references/ceremony-demo.md`: ceremonia `demo` (klucz manifestu `workflow.ceremony`), `schema.json` z kluczem `workflow.ceremony` (`full` | `demo`).
 - `skills/dashboard`: strona statusu projektu (plan, przebieg, zgody, metryki podkroków) nad kontraktem JSON `schema: 1`; komendy `skillsync dashboard show|serve|metrics` i `skillsync approvals record`. Wpis `dashboard: {scope: workflow}` w `workflow/skill-catalog.yaml`; `skills/skillsync` opisuje nowe komendy.

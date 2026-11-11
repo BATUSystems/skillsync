@@ -31,6 +31,23 @@ Pakiet aktualizujesz ponownym zainstalowaniem z tagu (`uv tool install --force g
 3. `skillsync layers check` i `skillsync doctor` w projektach.
 4. `skillsync link <projekt>` w każdym projekcie z `discover_paths` (albo `skillsync link` bez ścieżki).
 
+## Przejście 1.0.x → 1.1.0
+
+Wydanie 1.1.0 jest MINOR (zgodne wstecz): nowe komendy i klucze, bez zmian niezgodnych (sekcja **Breaking** w `CHANGELOG.md` to „None.”).
+Gdy któraś warstwa ma `core_min: 1.1.0`, kolejność jest obowiązkowa:
+
+1. Rdzeń: `uv tool install --force git+https://github.com/BATUSystems/skillsync@v1.1.0`, potem `skillsync layers update core --ref v1.1.0`.
+   Warstwa z `core_min` wyższym niż wersja generatora jest odrzucana (`layers check` i `link` zwracają BLOCKED).
+2. Pozostałe warstwy: `skillsync layers update <id>` albo `skillsync pull`, potem `skillsync link`.
+
+Co się zmienia dla użytkownika:
+
+- nowe komendy: `skillsync dashboard show|serve|metrics`, `skillsync approvals record`, `skillsync prototype login-link`;
+- nowy klucz manifestu `workflow.ceremony` (`full` | `demo`), bramka prototypu per faza (`[UI]` w tabeli kroków planu), klasy pytań `Q` w specu;
+- alias `status-board` → `dashboard`: wpis `status-board` w `skills:` rozwija się do `dashboard` tylko wtedy, gdy żadna warstwa nie dostarcza skilla
+  `status-board`. Warstwa, która nadal go ma, zachowuje własny skill; po jego usunięciu z warstwy alias zaczyna działać, a skrypty projektów
+  odwołujące się do ścieżki `status-board/scripts/status_board.py` trzeba zmienić na `skillsync dashboard serve <projekt>`.
+
 ## Przejście maszyny na warstwy (wersja 1.0.0)
 
 Generator 1.0.0 nie czyta dwóch wcześniejszych postaci configu i dla obu zwraca BLOCKED z instrukcją
@@ -128,7 +145,7 @@ Reguła `**` dla projektów bez innej reguły tworzy `layers migrate` albo ręcz
 `--layer-source` przyjmuje wyłącznie ścieżki lokalne. Warstwę zdalną dodaj po migracji:
 `skillsync layers add <id> --kind <rodzaj> --source <URL>`.
 
-## Ograniczenia v1.0.0 na poszczególnych systemach
+## Ograniczenia na poszczególnych systemach
 
 Zakres wsparcia systemów opisuje tabela w [README](../README.pl.md#wymagania).
 

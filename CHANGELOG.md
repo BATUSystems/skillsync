@@ -13,6 +13,20 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 ## [Unreleased]
 
 ### Added
+None.
+
+### Changed
+None.
+
+### Breaking
+None.
+
+### Fixed
+None.
+
+## [1.1.0] - 2026-11-11
+
+### Added
 
 - Manifest key `workflow.ceremony` (`full` default | `demo`, lowercase; read only from the project manifest). `skillsync route` returns
   `ceremony {value, source: manifest|default|invalid[, error]}`; `skillsync doctor` reports an error for any other value.
@@ -272,7 +286,8 @@ None.
 - E2E scenario N-R1 (comment panel, mobile view) is unstable: it sometimes fails with a page jump of about −3000 px (open shift equals close shift).
   On clean `main` 6134a8c: 2 of 6 runs fail with DejaVu Sans, 0 of 6 with the default font. Possibly related to V-23. Fix planned for 1.0.1.
 
-[Unreleased]: https://github.com/BATUSystems/skillsync/compare/v1.0.2...HEAD
+[Unreleased]: https://github.com/BATUSystems/skillsync/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/BATUSystems/skillsync/releases/tag/v1.1.0
 [1.0.2]: https://github.com/BATUSystems/skillsync/releases/tag/v1.0.2
 [1.0.1]: https://github.com/BATUSystems/skillsync/releases/tag/v1.0.1
 [1.0.0]: https://github.com/BATUSystems/skillsync/releases/tag/v1.0.0

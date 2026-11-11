@@ -80,11 +80,11 @@ flow `bugfix`. Większy cel `dispatch` dzieli na paczki, a każdą realizuje oso
 
 **Prototypy.** Za Twoją zgodą agent buduje w repo klikalną makietę HTML przepływu UI (`docs/prototypes/<slug>/`).
 `skillsync prototype` tworzy prototypy, udostępnia je ze wspólnymi komentarzami i prowadzi ich akceptację.
-Zobacz [docs/prototypes.md](docs/prototypes.md).
+`skillsync prototype login-link` wystawia jednorazowy link logowania do działającego serwera (komenda człowieka). Zobacz [docs/prototypes.md](docs/prototypes.md).
 
 **Dashboard.** `skillsync dashboard show` wypisuje stan projektu (plany, kroki, checkpointy, zgody) jako JSON,
 `skillsync dashboard serve` pokazuje ten sam stan jako stronę z żywym odświeżaniem, a `skillsync dashboard metrics` liczy
-metryki przebiegu. Kontrakt JSON: [docs/dashboard-contract.md](docs/dashboard-contract.md).
+metryki przebiegu. `skillsync approvals record` zapisuje zgodę użytkownika (`GO plan`, `GO implement`, `CP`, `READY`). Wpis `status-board` w `skills:` manifestu rozwija się do `dashboard`, gdy żadna warstwa nie dostarcza własnego `status-board`. Klucz manifestu `workflow.ceremony` (`full` | `demo`) ustala, ile ceremonii procesu stosuje agent ([docs/manifest.md](docs/manifest.md)). Kontrakt JSON: [docs/dashboard-contract.md](docs/dashboard-contract.md).
 
 ## Wymagania
 
@@ -94,9 +94,9 @@ metryki przebiegu. Kontrakt JSON: [docs/dashboard-contract.md](docs/dashboard-co
 
 Rozwijane i sprawdzane z uv 0.13; minimalna wersja nie została zmierzona. CI używa bieżącego uv.
 
-Obsługiwane systemy: v1.0.x wspiera Linux, WSL2 i macOS (CI na Ubuntu i macOS blokuje wydanie). Instalator (`install.sh`) obejmuje te same systemy; natywny Windows jest poza drogą instalatora (użyj WSL2), CI go uruchamia, ale jego wynik nie blokuje wydania.
+Obsługiwane systemy: v1.1.x wspiera Linux, WSL2 i macOS (CI na Ubuntu i macOS blokuje wydanie). Instalator (`install.sh`) obejmuje te same systemy; natywny Windows jest poza drogą instalatora (użyj WSL2), CI go uruchamia, ale jego wynik nie blokuje wydania.
 
-| System | Wsparcie w v1.0.x | Znane ograniczenia |
+| System | Wsparcie w v1.1.x | Znane ograniczenia |
 |---|---|---|
 | Linux | Pełne (planowane) | brak planowanych |
 | macOS | Wszystko oprócz usługi watch jako usługi systemowej (planowane w v1.1.0) | brak usługi watch jako usługi systemowej |
@@ -107,7 +107,7 @@ Tabela opiera się na wynikach CI (testy, install smoke). Ręczne testy na macOS
 ## Instalacja
 
 ```bash
-uv tool install git+https://github.com/BATUSystems/skillsync@v1.0.2
+uv tool install git+https://github.com/BATUSystems/skillsync@v1.1.0
 ```
 
 Sprawdź instalację:
@@ -133,7 +133,7 @@ opcje i rozwiązywanie problemów: [docs/installation.md](docs/installation.md#s
 curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/BATUSystems/skillsync/<tag>/install.sh | sh
 ```
 
-Zamiast `<tag>` podaj tag wydania (np. `v1.0.2`). Natywny Windows nie jest obsługiwany przez instalator: użyj WSL2.
+Zamiast `<tag>` podaj tag wydania (np. `v1.1.0`). Natywny Windows nie jest obsługiwany przez instalator: użyj WSL2.
 Poniższe kroki robią to samo ręcznie.
 
 Ta ścieżka nie wymaga warstwy organizacji: wystarczy warstwa osobista i warstwa core.
@@ -152,7 +152,7 @@ sync: {method: symlink}
 
 ```bash
 # 1. Dodaj warstwę core (skille, workflow i role); należy do każdej reguły
-skillsync layers add core --kind core --source https://github.com/BATUSystems/skillsync --subdir library --ref v1.0.2
+skillsync layers add core --kind core --source https://github.com/BATUSystems/skillsync --subdir library --ref v1.1.0
 
 # 2. Utwórz szkielet własnej warstwy osobistej (repo git) i zacommituj go:
 #    `layers add` klonuje repo, więc szkielet musi być najpierw w commicie
