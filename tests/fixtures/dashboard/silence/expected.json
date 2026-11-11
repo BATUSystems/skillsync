@@ -1,0 +1,354 @@
+{
+  "acts": [
+    {
+      "detail": null,
+      "key": "spec",
+      "name": "Spec",
+      "roman": "I",
+      "stages": [
+        {
+          "done": false,
+          "key": "stage_spec_draft",
+          "label": "Szkic",
+          "tip": "brak speca"
+        },
+        {
+          "done": false,
+          "key": "stage_spec_review",
+          "label": "Review",
+          "tip": "rundy review speca w katalogu przebiegu"
+        },
+        {
+          "done": false,
+          "key": "stage_spec_approved",
+          "label": "Zatwierdzony",
+          "tip": "Status speca: —"
+        }
+      ],
+      "state": "planned",
+      "status": null,
+      "warning": null
+    },
+    {
+      "detail": "2 kroków w 1 fazach",
+      "key": "plan",
+      "name": "Plan",
+      "roman": "II",
+      "stages": [
+        {
+          "done": true,
+          "key": "stage_plan",
+          "label": "Plan",
+          "tip": "docs/plans/2026-01-11-demo-report.md"
+        },
+        {
+          "done": false,
+          "key": "stage_plan_review",
+          "label": "Review",
+          "tip": "rundy review planu w katalogu przebiegu"
+        },
+        {
+          "done": false,
+          "key": "stage_pre_implement",
+          "label": "Pre-implement",
+          "tip": "bramka gotowości przed ryzykowną zmianą"
+        },
+        {
+          "done": true,
+          "key": "stage_go_implement",
+          "label": "GO implement",
+          "tip": "Status planu: in_progress"
+        }
+      ],
+      "state": "done",
+      "status": "in_progress"
+    },
+    {
+      "detail": "krok 2 z 2: F1.2 Widok raportu",
+      "key": "real",
+      "name": "Realizacja",
+      "percent": 50,
+      "roman": "III",
+      "stages": [
+        {
+          "done": false,
+          "key": "code_review",
+          "label": "Review kodu",
+          "tip": "raporty code-review*/final-review* w katalogu przebiegu"
+        },
+        {
+          "done": false,
+          "key": "closure",
+          "label": "Zamknięcie",
+          "tip": "Status planu: in_progress"
+        }
+      ],
+      "state": "active",
+      "status": "in_progress"
+    }
+  ],
+  "app": {
+    "name": "dashboard",
+    "version": "<version>"
+  },
+  "approvals": {
+    "actions": [
+      {
+        "blocked": "zgoda „GO implement” już dana",
+        "given": {
+          "at": null
+        },
+        "kind": "plan",
+        "path": "docs/plans/2026-01-11-demo-report.md",
+        "reason": "zgoda „GO implement” już dana",
+        "run": "2026-01-11-demo-report",
+        "sha": "d79428b75b0134f55f24f8e7737df1b6e451d781",
+        "state": "after",
+        "word": "GO implement"
+      },
+      {
+        "blocked": "czeka na koniec realizacji (CP → origin; nic do dostarczenia)",
+        "given": null,
+        "kind": "cp",
+        "path": "2026-01-11-demo-report",
+        "reason": "czeka na koniec realizacji (CP → origin; nic do dostarczenia)",
+        "run": "2026-01-11-demo-report",
+        "sha": "",
+        "state": "running",
+        "target": null,
+        "word": "CP"
+      },
+      {
+        "blocked": "czeka na koniec realizacji (nic do dostarczenia)",
+        "given": null,
+        "kind": "ready",
+        "path": "2026-01-11-demo-report",
+        "reason": "czeka na koniec realizacji (nic do dostarczenia)",
+        "run": "2026-01-11-demo-report",
+        "sha": "",
+        "state": "running",
+        "target": null,
+        "word": "READY"
+      }
+    ],
+    "enabled": true,
+    "last": null
+  },
+  "assumptions": {
+    "count": 0,
+    "items": []
+  },
+  "blockingQuestions": {
+    "count": 0,
+    "items": []
+  },
+  "delivery": {
+    "ahead": null,
+    "base": "main",
+    "branch": null,
+    "mode": "pr",
+    "pushed": null,
+    "remote": null,
+    "source": "manifest",
+    "target": null,
+    "words": [
+      {
+        "active": false,
+        "target": null,
+        "tip": "CP → origin; nic do dostarczenia",
+        "word": "CP"
+      },
+      {
+        "active": false,
+        "target": null,
+        "tip": "nic do dostarczenia",
+        "word": "READY"
+      }
+    ]
+  },
+  "docs": [
+    {
+      "items": [
+        {
+          "mtime": "2026-01-11T10:00:00+00:00",
+          "path": "docs/plans/2026-01-11-demo-report.md",
+          "status": "in_progress",
+          "title": "Plan: demo report"
+        }
+      ],
+      "key": "task",
+      "label": "Bieżące zadanie"
+    },
+    {
+      "items": [
+        {
+          "mtime": "2026-01-11T10:00:00+00:00",
+          "path": ".skillsync/runs/2026-01-11-demo-report/checkpoints.md",
+          "status": null,
+          "title": "checkpoints"
+        }
+      ],
+      "key": "run",
+      "label": "Przebieg 2026-01-11-demo-report"
+    }
+  ],
+  "generatedAt": "2026-01-12T12:00:00+00:00",
+  "git": {
+    "branch": null,
+    "branchPushed": null,
+    "branchUrl": null,
+    "head": null,
+    "headFull": null,
+    "remote": null
+  },
+  "lastUpdate": "2026-01-11T10:00:00+00:00",
+  "mode": "plan",
+  "plan": {
+    "date": "2026-01-11",
+    "fileSha": "d79428b75b0134f55f24f8e7737df1b6e451d781",
+    "mtime": "2026-01-11T10:00:00+00:00",
+    "path": "docs/plans/2026-01-11-demo-report.md",
+    "pr": null,
+    "status": "in_progress",
+    "statusText": "in_progress",
+    "title": "Plan: demo report"
+  },
+  "planAuto": true,
+  "plans": [
+    {
+      "path": "docs/plans/2026-01-11-demo-report.md",
+      "run": "2026-01-11-demo-report",
+      "spec": null,
+      "status": "in_progress",
+      "title": "Plan: demo report"
+    }
+  ],
+  "progress": {
+    "active": [
+      "F1.2"
+    ],
+    "activeSource": "checkpoint",
+    "current": {
+      "id": "F1.2",
+      "index": 2,
+      "title": "Widok raportu"
+    },
+    "done": 1,
+    "parallel": 0,
+    "pending": 0,
+    "pendingPercent": 0,
+    "percent": 50,
+    "phases": [
+      {
+        "done": 1,
+        "label": "Faza 1",
+        "name": "Faza 1: Budowa",
+        "pending": 0,
+        "pendingPercent": 0,
+        "percent": 50,
+        "short": "Budowa",
+        "state": "active",
+        "steps": [
+          {
+            "done": true,
+            "id": "F1.1",
+            "index": 1,
+            "note": "abc1234",
+            "sha": "abc1234",
+            "state": "done",
+            "title": "Model danych"
+          },
+          {
+            "done": false,
+            "id": "F1.2",
+            "index": 2,
+            "note": "",
+            "sha": null,
+            "state": "active",
+            "title": "Widok raportu"
+          }
+        ],
+        "total": 2
+      }
+    ],
+    "reported": [],
+    "total": 2
+  },
+  "project": {
+    "name": "demo",
+    "path": "<root>"
+  },
+  "prototype": {
+    "port": 5130,
+    "slug": null,
+    "up": false
+  },
+  "readiness": {
+    "date": null,
+    "planSha": null,
+    "source": null,
+    "status": null
+  },
+  "run": {
+    "checkpoints": [
+      {
+        "text": "zrobione: F1.1; w toku: F1.2",
+        "time": "08:40"
+      },
+      {
+        "text": "start; w toku: F1.1",
+        "time": "08:05"
+      }
+    ],
+    "exists": true,
+    "files": [
+      ".skillsync/runs/2026-01-11-demo-report/checkpoints.md"
+    ],
+    "id": "2026-01-11-demo-report",
+    "inProgressFrom": "08:40",
+    "lastReportAt": "2026-01-11T10:00:00+00:00",
+    "start": "2026-01-11T08:00:00Z",
+    "startIso": "2026-01-11T08:00:00+00:00"
+  },
+  "schema": 1,
+  "session": {
+    "url": null
+  },
+  "silence": {
+    "since": "2026-01-11T10:00:00+00:00",
+    "thresholdMin": 35
+  },
+  "spec": {
+    "exists": false,
+    "path": null,
+    "preparing": false,
+    "prototype": null,
+    "sha": null
+  },
+  "substeps": [
+    {
+      "done": true,
+      "finishedAt": "08:40",
+      "id": "F1.1",
+      "missingData": false,
+      "phase": "Faza 1",
+      "seconds": 2100,
+      "startedAt": "08:05",
+      "state": "done",
+      "title": "Model danych"
+    },
+    {
+      "done": false,
+      "finishedAt": null,
+      "id": "F1.2",
+      "missingData": false,
+      "phase": "Faza 1",
+      "seconds": null,
+      "startedAt": "08:40",
+      "state": "active",
+      "title": "Widok raportu"
+    }
+  ],
+  "version": 0,
+  "waiting": []
+}

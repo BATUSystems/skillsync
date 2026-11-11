@@ -99,6 +99,7 @@
         "kind": "spec",
         "path": "docs/specs/2026-01-11-demo-onboarding.md",
         "reason": null,
+        "run": "2026-01-11-demo-onboarding",
         "sha": "deb9acc3eda830aafd5a41a3ee95fc651ec19013",
         "state": "waiting",
         "word": "GO plan"

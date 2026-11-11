@@ -187,7 +187,11 @@ nie czeka jawnie; w przeciwnym razie null. Minuty liczy konsument.
 
 Pola: `reason` (string lub null), `blocked` (powód nieaktywności; null dla `waiting`), `path` (plik speca/planu; dla
 `cp`/`ready` id przebiegu), `sha` (git blob sha pliku do zgody GO albo HEAD dla CP/READY; pusty string, gdy brak), `given`
-(wpis lub null), `target` (tylko `cp`/`ready`; dokąd oddać).
+(wpis lub null), `target` (tylko `cp`/`ready`; dokąd oddać), `run` (id przebiegu, do którego trafi wpis zgody, gdy katalog
+`.skillsync/runs/<run-id>` istnieje; inaczej null; pole dodane addytywnie, `path` dla `cp`/`ready` bez zmian).
+
+Wpisy zgód (`given`, `last`) pochodzą z `approvals.jsonl` bieżącego przebiegu w kolejności pliku, w postaci zapisanej; linie
+spoza reguł `skillsync status` (nieznane słowo, nieczytelne `at`, sha spoza 7–64 znaków hex, plik ponad 256 KiB) są pomijane.
 
 ### `delivery`
 
@@ -223,6 +227,9 @@ Grupy `{key, label, items[]}`; `key`: `task` (bieżący spec i plan), `run` (pli
 | `planSha` | string lub null | `Plan-sha:`; konsument porównuje z `plan.fileSha` (różnica = brief nieaktualny) |
 | `source` | string lub null | ścieżka pliku względem projektu; null bez pliku |
 
+Pierwsza niepusta linia decyduje o `status`; `Data:` i `Plan-sha:` są czytane także przy nierozpoznanej pierwszej linii
+(wtedy `status` = null, a `source` wskazuje plik). Bez katalogu przebiegu wszystkie pola są null.
+
 ### `assumptions` i `blockingQuestions`
 
 Źródło: sekcja `## Pytania otwarte` bieżącego speca (`spec.path`).
@@ -233,6 +240,11 @@ Grupy `{key, label, items[]}`; `key`: `task` (bieżący spec i plan), `run` (pli
   `{id, question}`, `count`.
 - Linie ze znacznikiem innym niż `[ZAŁOŻENIE]` (np. `[ROZSTRZYGNIĘTE …]`) i linie spoza sekcji są pomijane.
 - Założenia nie są akcją „Odpowiedz na pytania”; tej akcji (`waiting`) dotyczą tylko pytania blokujące zgłoszone przez sesję.
+- Separator przed `przyjęte:` może być półpauzą, pauzą, `--` albo `-` (otoczonymi spacjami); znacznik bez rozróżnienia
+  wielkości liter, także bez polskich znaków (`[ZALOZENIE]`). Założenie bez `przyjęte:` ma `accepted` = `""`.
+- Wiersz tabeli `| Q<n> | <pytanie> | … |` (jak w szkielecie speca) jest pytaniem blokującym; `question` = pierwsza niepusta
+  komórka po id. Id pogrubione (`**Q4**`) jest rozpoznawane; powtórzone id liczy się raz (pierwsze wystąpienie); bloki kodu
+  są pomijane.
 - Bez speca: `{count: 0, items: []}`.
 
 ### `substeps[]`
@@ -253,9 +265,25 @@ Podkroki o id `Fn.k` z planu (każdy krok z kropką), w kolejności planu. Czas 
 ## Zgodność z `skillsync status`
 
 `skillsync status` (`skillsync_workflow/status.py`) jest wąskim, stabilnym raportem planów/przebiegów/zgód (`schema: 1`
-własnego kontraktu) i pozostaje bez zmian. Z niego pochodzą te same źródła danych, które dashboard odczytuje przez
-wspólne funkcje: wpisy zgód (`read_approvals`, `approvals.jsonl`), sha pliku (`git_blob_sha`), pola nagłówków i
-liczniki kroków planu (`_status_fields`, `_progress`). Dashboard dodaje to, czego `status` nie ma: fazy i podkroki `Fn.k`, akty, czekanie, dostarczanie, dokumenty, readiness,
-założenia. Liczniki kroków (`progress.total`, `progress.done`) mają się równać `plans[].progress` z `status` dla planów z
-sekcją `## Progress`; `status` dodatkowo czyta starszą listę z `## Kroki` / `## Steps`, a dashboard jej nie pokazuje.
-Test zgodności liczników porównuje oba polecenia na tych samych fixtures.
+własnego kontraktu) i pozostaje bez zmian. Dashboard (`skillsync_workflow/dashboard.py`) używa jego funkcji tam, gdzie
+semantyka jest ta sama:
+
+| Funkcja `status.py` | Użycie w dashboardzie |
+|---|---|
+| `git_blob_sha` | `plan.fileSha`, `spec.fileSha`, sha akcji GO |
+| `_status_fields` | `status` i `statusText` planów, speców i dokumentów (słowo statusu jak w pliku, bez listy dozwolonych; brak linii = null) |
+| `APPROVAL_WORDS`, `_approval_at`, `_APPROVAL_SHA`, `MAX_APPROVALS_BYTES`, `APPROVALS_FILE` | reguły przyjęcia wpisu zgody |
+| `delivery_mode.delivery_info` | `delivery.mode/base/source` (ta sama wartość, którą zwraca `route`; błąd walidacji = `mode: invalid`, `source: manifest`) |
+
+Różnice rozstrzygnięte świadomie:
+
+- Postęp: `status._progress` liczy każdą linię `- [ ]`/`- [x]` sekcji `## Progress` (także bez id i w blokach kodu), a dla
+  starszych planów listę z `## Kroki` / `## Steps`. Dashboard (`parse_progress`) liczy tylko kroki z id (`S1`, `F1.2`, `A-1`)
+  poza blokami kodu, grupuje je w fazy `### …` i nie czyta `## Kroki`. Dla planów z `## Progress`, w których każdy krok ma id
+  (format skilla `feature`), `progress.total`/`progress.done` = `plans[].steps` z `status`; test zgodności porównuje oba
+  polecenia na wszystkich fixtures i przypina różnicę na przykładzie.
+- Zgody: `status.read_approvals` zwraca najnowszy wpis na parę (przebieg, słowo) ze wszystkich przebiegów, znormalizowany
+  (bez `by`, `schema`). Dashboard pokazuje wpisy jednego przebiegu w postaci zapisanej (`given`, `last`), więc ma własny
+  odczyt pliku z tymi samymi regułami przyjęcia wpisu.
+- Status planu: `_status_fields` czyta pierwszą linię statusu z pierwszych 4000 znaków (także `**Status:**`, `- Status:`);
+  słowo statusu to litery i `_` (zapis `in-progress` daje `in`, nie `in_progress`).

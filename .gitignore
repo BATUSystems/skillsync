@@ -5,3 +5,6 @@ CLAUDE.md
 .mcp.json
 AGENTS.md
 AGENTS.md.skillsync-backup
+
+# fixtures kontraktu dashboardu zawierają katalogi .skillsync jako dane wejściowe
+!tests/fixtures/**/.skillsync/

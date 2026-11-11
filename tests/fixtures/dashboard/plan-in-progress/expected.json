@@ -107,6 +107,7 @@
         "kind": "spec",
         "path": "docs/specs/2026-01-10-demo-feature.md",
         "reason": "zgoda „GO plan” dana 08:30",
+        "run": "2026-01-10-demo-feature",
         "sha": "606bb4a6f4b0054e9dbd2c89a511ba479ad618b3",
         "state": "after",
         "word": "GO plan"
@@ -125,6 +126,7 @@
         "kind": "plan",
         "path": "docs/plans/2026-01-10-demo-feature.md",
         "reason": "zgoda „GO implement” dana 08:45",
+        "run": "2026-01-10-demo-feature",
         "sha": "341eadd17d706e5d08bac2eca69cac9f00a783d6",
         "state": "after",
         "word": "GO implement"
@@ -135,6 +137,7 @@
         "kind": "cp",
         "path": "2026-01-10-demo-feature",
         "reason": "czeka na koniec realizacji (CP → origin/main; nic do dostarczenia)",
+        "run": "2026-01-10-demo-feature",
         "sha": "",
         "state": "running",
         "target": "main",

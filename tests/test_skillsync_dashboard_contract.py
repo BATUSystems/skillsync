@@ -7,7 +7,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / 'tests' / 'fixtures' / 'dashboard'
 CONTRACT_DOC = ROOT / 'docs' / 'dashboard-contract.md'
-CASES = ('empty', 'plan-in-progress', 'spec-act')
+CASES = ('empty', 'plan-in-progress', 'spec-act', 'run-mode', 'silence', 'readiness-blocked', 'questions')
+GENERATED_BY_LINK = {'.mcp.json', '.claude', '.github', '.gitignore', 'AGENTS.md', 'CLAUDE.md'}
 FORBIDDEN_IN_INPUT = ('/home/', '@')  # ogólne wzorce; nazwy prywatne pilnuje leakcheck (strażnik), nie źródło testu
 MODES = {'plan', 'spec', 'run', 'none'}
 STATUSES = {'draft', 'approved', 'in_progress', 'done', 'implemented', 'archived', None}
@@ -63,7 +64,7 @@ STEP = ({'id': str, 'title': str, 'done': bool, 'note': str, 'sha': STR_OR_NONE,
 WAITING = ({'what': str, 'source': str, 'since': STR_OR_NONE, 'action': str, 'link': (dict, type(None))},
            {'word': str, 'approve': STR_OR_NONE})
 ACTION = ({'kind': str, 'word': str, 'state': str, 'reason': STR_OR_NONE, 'blocked': STR_OR_NONE, 'path': STR_OR_NONE,
-           'sha': str, 'given': (dict, type(None))}, {'target': STR_OR_NONE})
+           'sha': str, 'given': (dict, type(None)), 'run': STR_OR_NONE}, {'target': STR_OR_NONE})
 DOC_GROUP = ({'key': str, 'label': str, 'items': list}, {})
 DOC_ITEM = ({'path': str, 'title': str, 'status': STR_OR_NONE, 'mtime': str}, {})
 SUBSTEP = ({'id': str, 'title': str, 'phase': str, 'state': str, 'done': bool, 'startedAt': STR_OR_NONE,
@@ -184,6 +185,12 @@ class DashboardContract(unittest.TestCase):
         spec = json.loads(load('spec-act')[1])
         self.assertEqual(spec['mode'], 'spec')
         self.assertEqual([a['state'] for a in spec['approvals']['actions']], ['waiting'])
+        self.assertEqual(json.loads(load('run-mode')[1])['mode'], 'run')
+        self.assertIsNotNone(json.loads(load('silence')[1])['silence'])
+        self.assertEqual(json.loads(load('readiness-blocked')[1])['readiness']['status'], 'BLOCKED')
+        questions = json.loads(load('questions')[1])
+        self.assertTrue(questions['assumptions']['items'] and questions['blockingQuestions']['items'])
+        self.assertFalse(any('pytania' in w['action'] for w in questions['waiting']))
 
     def test_top_level_keys_documented(self):
         doc = CONTRACT_DOC.read_text(encoding='utf-8')
@@ -211,6 +218,8 @@ class DashboardContract(unittest.TestCase):
             for path in sorted((FIXTURES / case / 'input').rglob('*')):
                 if not path.is_file():
                     continue
+                if GENERATED_BY_LINK.intersection(path.relative_to(FIXTURES / case / 'input').parts):
+                    continue  # pliki generowane przez `skillsync link`/usługę watch, nie część fixture
                 with self.subTest(file=str(path.relative_to(FIXTURES))):
                     text = path.read_text(encoding='utf-8')
                     for forbidden in FORBIDDEN_IN_INPUT:

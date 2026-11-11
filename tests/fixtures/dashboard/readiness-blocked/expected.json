@@ -1,0 +1,329 @@
+{
+  "acts": [
+    {
+      "detail": "Spec-sha 1111111111",
+      "key": "spec",
+      "name": "Spec",
+      "roman": "I",
+      "stages": [
+        {
+          "done": true,
+          "key": "stage_spec_draft",
+          "label": "Szkic",
+          "tip": "docs/specs/2026-01-11-demo-export.md"
+        },
+        {
+          "done": false,
+          "key": "stage_spec_review",
+          "label": "Review",
+          "tip": "rundy review speca w katalogu przebiegu"
+        },
+        {
+          "done": true,
+          "key": "stage_spec_approved",
+          "label": "Zatwierdzony",
+          "tip": "Status speca: approved"
+        }
+      ],
+      "state": "done",
+      "status": "approved",
+      "warning": "brak pre-implement przed GO plan: spec ma sekcje Kontrakty"
+    },
+    {
+      "detail": "2 kroków w 1 fazach",
+      "key": "plan",
+      "name": "Plan",
+      "roman": "II",
+      "stages": [
+        {
+          "done": true,
+          "key": "stage_plan",
+          "label": "Plan",
+          "tip": "docs/plans/2026-01-11-demo-export.md"
+        },
+        {
+          "done": false,
+          "key": "stage_plan_review",
+          "label": "Review",
+          "tip": "rundy review planu w katalogu przebiegu"
+        },
+        {
+          "done": false,
+          "key": "stage_pre_implement",
+          "label": "Pre-implement",
+          "tip": "bramka gotowości przed ryzykowną zmianą"
+        },
+        {
+          "done": false,
+          "key": "stage_go_implement",
+          "label": "GO implement",
+          "tip": "Status planu: draft"
+        }
+      ],
+      "state": "active",
+      "status": "draft"
+    },
+    {
+      "detail": "zrobione 0 z 2 kroków",
+      "key": "real",
+      "name": "Realizacja",
+      "percent": 0,
+      "roman": "III",
+      "stages": [
+        {
+          "done": false,
+          "key": "code_review",
+          "label": "Review kodu",
+          "tip": "raporty code-review*/final-review* w katalogu przebiegu"
+        },
+        {
+          "done": false,
+          "key": "closure",
+          "label": "Zamknięcie",
+          "tip": "Status planu: draft"
+        }
+      ],
+      "state": "planned",
+      "status": "draft"
+    }
+  ],
+  "app": {
+    "name": "dashboard",
+    "version": "<version>"
+  },
+  "approvals": {
+    "actions": [
+      {
+        "blocked": "zgoda „GO plan” już dana",
+        "given": {
+          "at": null
+        },
+        "kind": "spec",
+        "path": "docs/specs/2026-01-11-demo-export.md",
+        "reason": "zgoda „GO plan” już dana",
+        "run": "2026-01-11-demo-export",
+        "sha": "b95bc142134c534edf98b42bb4b27eec4a5f4474",
+        "state": "after",
+        "word": "GO plan"
+      },
+      {
+        "blocked": null,
+        "given": null,
+        "kind": "plan",
+        "path": "docs/plans/2026-01-11-demo-export.md",
+        "reason": null,
+        "run": "2026-01-11-demo-export",
+        "sha": "cf59390edba0d6b2d845de11bec7105ef96a2999",
+        "state": "waiting",
+        "word": "GO implement"
+      }
+    ],
+    "enabled": true,
+    "last": null
+  },
+  "assumptions": {
+    "count": 0,
+    "items": []
+  },
+  "blockingQuestions": {
+    "count": 0,
+    "items": []
+  },
+  "delivery": {
+    "ahead": null,
+    "base": "main",
+    "branch": null,
+    "mode": "direct",
+    "pushed": null,
+    "remote": null,
+    "source": "manifest",
+    "target": null,
+    "words": [
+      {
+        "active": false,
+        "target": null,
+        "tip": "CP → origin; nic do dostarczenia",
+        "word": "CP"
+      }
+    ]
+  },
+  "docs": [
+    {
+      "items": [
+        {
+          "mtime": "2026-01-11T10:00:00+00:00",
+          "path": "docs/specs/2026-01-11-demo-export.md",
+          "status": "approved",
+          "title": "Spec: demo export"
+        },
+        {
+          "mtime": "2026-01-11T10:00:00+00:00",
+          "path": "docs/plans/2026-01-11-demo-export.md",
+          "status": "draft",
+          "title": "Plan: demo export"
+        }
+      ],
+      "key": "task",
+      "label": "Bieżące zadanie"
+    },
+    {
+      "items": [
+        {
+          "mtime": "2026-01-11T10:00:00+00:00",
+          "path": ".skillsync/runs/2026-01-11-demo-export/checkpoints.md",
+          "status": null,
+          "title": "checkpoints"
+        },
+        {
+          "mtime": "2026-01-11T10:00:00+00:00",
+          "path": ".skillsync/runs/2026-01-11-demo-export/readiness.md",
+          "status": null,
+          "title": "readiness"
+        }
+      ],
+      "key": "run",
+      "label": "Przebieg 2026-01-11-demo-export"
+    }
+  ],
+  "generatedAt": "2026-01-12T12:00:00+00:00",
+  "git": {
+    "branch": null,
+    "branchPushed": null,
+    "branchUrl": null,
+    "head": null,
+    "headFull": null,
+    "remote": null
+  },
+  "lastUpdate": "2026-01-11T10:00:00+00:00",
+  "mode": "plan",
+  "plan": {
+    "date": "2026-01-11",
+    "fileSha": "cf59390edba0d6b2d845de11bec7105ef96a2999",
+    "mtime": "2026-01-11T10:00:00+00:00",
+    "path": "docs/plans/2026-01-11-demo-export.md",
+    "pr": null,
+    "status": "draft",
+    "statusText": "draft (czeka na GO implement)",
+    "title": "Plan: demo export"
+  },
+  "planAuto": true,
+  "plans": [
+    {
+      "path": "docs/plans/2026-01-11-demo-export.md",
+      "run": "2026-01-11-demo-export",
+      "spec": "docs/specs/2026-01-11-demo-export.md",
+      "status": "draft",
+      "title": "Plan: demo export"
+    }
+  ],
+  "progress": {
+    "active": [],
+    "activeSource": null,
+    "current": null,
+    "done": 0,
+    "parallel": 0,
+    "pending": 0,
+    "pendingPercent": 0,
+    "percent": 0,
+    "phases": [
+      {
+        "done": 0,
+        "label": "",
+        "name": "Kroki",
+        "pending": 0,
+        "pendingPercent": 0,
+        "percent": 0,
+        "short": "Kroki",
+        "state": "planned",
+        "steps": [
+          {
+            "done": false,
+            "id": "S1",
+            "index": 1,
+            "note": "",
+            "sha": null,
+            "state": "planned",
+            "title": "Format eksportu"
+          },
+          {
+            "done": false,
+            "id": "S2",
+            "index": 2,
+            "note": "",
+            "sha": null,
+            "state": "planned",
+            "title": "Komenda eksportu"
+          }
+        ],
+        "total": 2
+      }
+    ],
+    "reported": [],
+    "total": 2
+  },
+  "project": {
+    "name": "demo",
+    "path": "<root>"
+  },
+  "prototype": {
+    "port": 5130,
+    "slug": null,
+    "up": false
+  },
+  "readiness": {
+    "date": "2026-01-11",
+    "planSha": "2222222222222222222222222222222222222222",
+    "source": ".skillsync/runs/2026-01-11-demo-export/readiness.md",
+    "status": "BLOCKED"
+  },
+  "run": {
+    "checkpoints": [
+      {
+        "text": "plan gotowy, readiness BLOCKED; czeka: GO implement",
+        "time": "09:30"
+      }
+    ],
+    "exists": true,
+    "files": [
+      ".skillsync/runs/2026-01-11-demo-export/checkpoints.md",
+      ".skillsync/runs/2026-01-11-demo-export/readiness.md"
+    ],
+    "id": "2026-01-11-demo-export",
+    "lastReportAt": "2026-01-11T10:00:00+00:00",
+    "start": "2026-01-11T09:00:00Z",
+    "startIso": "2026-01-11T09:00:00+00:00"
+  },
+  "schema": 1,
+  "session": {
+    "url": null
+  },
+  "silence": null,
+  "spec": {
+    "exists": true,
+    "fileSha": "b95bc142134c534edf98b42bb4b27eec4a5f4474",
+    "mtime": "2026-01-11T10:00:00+00:00",
+    "path": "docs/specs/2026-01-11-demo-export.md",
+    "preparing": false,
+    "prototype": null,
+    "sha": "1111111111111111111111111111111111111111",
+    "status": "approved",
+    "statusText": "approved",
+    "title": "Spec: demo export"
+  },
+  "substeps": [],
+  "version": 0,
+  "waiting": [
+    {
+      "action": "Przeczytaj plan i zatwierdź „GO implement” przyciskiem albo wpisz to w sesji (przy planie direct wystarcza „GO”).",
+      "approve": "plan",
+      "link": {
+        "kind": "doc",
+        "path": "docs/plans/2026-01-11-demo-export.md"
+      },
+      "since": "09:30",
+      "source": "checkpoint",
+      "what": "GO implement",
+      "word": "GO implement"
+    }
+  ]
+}
