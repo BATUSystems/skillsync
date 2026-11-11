@@ -2308,6 +2308,777 @@ class CommentsStore(object):
         return self.transaction_locked(lambda snapshot: list(partials), create=create)
 
 
+# ── questions.json store (questions to a domain expert) ──────────────────────
+
+QUESTIONS_FILE = 'questions.json'
+QUESTIONS_FORMAT = 1
+QUESTIONS_SCHEMA = 'expert-questions/1'
+QUESTION_TYPES = ('ask', 'answer', 'comment', 'recorded', 'withdraw')
+QUESTION_STATES = ('open', 'answered', 'withdrawn')
+
+# Lengths in UTF-16 code units (like MAX_TEXT).
+MAX_QUESTION_TEXT = 2000
+MAX_QUESTION_ASSUMED = 500
+MAX_QUESTION_REF_TITLE = 200
+MAX_QUESTION_REF_HREF = 500
+MAX_QUESTION_REF_EXCERPT = 4000
+MAX_QUESTION_REFS = 5
+MAX_QUESTION_OPTIONS = 8
+MAX_QUESTION_OPTION_LABEL = 200
+MAX_QUESTION_ANSWER_TEXT = 4000
+MAX_QUESTION_COMMENT = 2000
+MAX_QUESTION_ADDRESSEES = 50
+MAX_QUESTION_LOGIN = 320
+QUESTIONS_MAX_FILE_BYTES = 1024 * 1024
+QUESTIONS_ASK_LIMIT_BYTES = 768 * 1024   # a new `ask` is refused above this; the rest is a reserve for answers
+
+QUESTION_ID_RE = re.compile(r'qn-[0-9a-f]{6,64}')
+QUESTION_OPTION_ID_RE = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,63}')
+QUESTION_ORIGIN_Q_RE = re.compile(r'Q[0-9]{1,6}')
+_QUESTION_SCHEME_RE = re.compile(r'[A-Za-z][A-Za-z0-9+.-]*:')
+_QUESTION_CONTROL_RE = re.compile('[\x00-\x1f\x7f]')
+# key order of a stored line: the common keys first, then the fields of the type
+QUESTION_KEYS = ('id', 'type', 'questionId', 'at', 'by', 'cid', 'text', 'blocking', 'assumed', 'addressees',
+                 'refs', 'options', 'refersTo', 'origin', 'optionId', 'confirm', 'comment', 'spec', 'line')
+_QUESTION_COMMON = ('id', 'type', 'questionId', 'at', 'by', 'cid')
+_QUESTION_FIELDS = {
+    'ask': (('text', 'blocking', 'assumed', 'addressees', 'refs', 'options', 'origin'), ('refersTo',)),
+    'answer': ((), ('optionId', 'text', 'confirm', 'comment')),
+    'comment': (('text',), ()),
+    'recorded': (('spec', 'line'), ()),
+    'withdraw': ((), ()),
+}
+
+
+class QuestionsFileTooLarge(PrototypeServerError):
+    """507 `file_too_large` for `questions.json` (same code as `comments.json`)."""
+
+    def __init__(self, size):
+        super().__init__(507, 'file_too_large', 'questions.json reached the size limit', {'size': size})
+
+
+class QuestionsFileError(PrototypeServerError):
+    """Unreadable or malformed `questions.json` (409 `invalid_log`; nothing is written)."""
+
+    def __init__(self, message):
+        super().__init__(409, 'invalid_log', message)
+
+
+def new_question_id():
+    """`qn-` + 12 hex characters."""
+    return 'qn-' + secrets.token_hex(6)
+
+
+def canonical_question_operation(operation):
+    """Stored key order: `id, type, questionId, at, by, cid`, then the type's fields, then any others."""
+    ordered = {}
+    for key in QUESTION_KEYS:
+        if key in operation:
+            ordered[key] = operation[key]
+    for key, value in operation.items():
+        if key not in ordered:
+            ordered[key] = value
+    return ordered
+
+
+def serialize_question_operation(operation):
+    return js_stringify(canonical_question_operation(operation))
+
+
+def serialize_questions(operations):
+    """`{"questionsFormat":1,"operations":[` + one operation per line + `]}`."""
+    lines = [serialize_question_operation(operation) for operation in operations]
+    return '{"questionsFormat":%d,"operations":[\n' % QUESTIONS_FORMAT + (',\n'.join(lines) + '\n' if lines else '') + ']}\n'
+
+
+def parse_questions_document(text):
+    """Operations of `questions.json` text as stored; `QuestionsFileError` for a wrong format."""
+    if text.startswith('﻿'):
+        text = text[1:]
+    try:
+        value = strict_json_loads(text)
+    except (ValueError, RecursionError) as error:
+        raise QuestionsFileError('questions.json is not valid JSON: %s' % error.__class__.__name__)
+    if not isinstance(value, dict):
+        raise QuestionsFileError('questions.json must be an object')
+    version = value.get('questionsFormat')
+    if not _is_int(version) or version != QUESTIONS_FORMAT:
+        raise QuestionsFileError('questions.json has an unsupported `questionsFormat`')
+    operations = value.get('operations')
+    if not isinstance(operations, list):
+        raise QuestionsFileError('questions.json has no `operations` list')
+    for index, operation in enumerate(operations):
+        if not isinstance(operation, dict):
+            raise QuestionsFileError('questions.json: operations[%d] is not an object' % index)
+    return operations
+
+
+# -- validation ---------------------------------------------------------------
+
+def _check_question_login(value, where):
+    _check_string(value, where, maximum=MAX_QUESTION_LOGIN)
+    if value != value.strip() or _QUESTION_CONTROL_RE.search(value) or re.search(r'\s', value):
+        _bad('%s must not contain white space' % where)
+
+
+def _check_question_path(value, where):
+    """Relative path (a spec): no scheme, no leading `/`, no `\\`, no `..` segment."""
+    _check_string(value, where, maximum=MAX_QUESTION_REF_HREF)
+    if (value.startswith('/') or '\\' in value or _QUESTION_CONTROL_RE.search(value)
+            or _QUESTION_SCHEME_RE.match(value) or ':' in value.split('/')[0]
+            or any(part == '..' for part in value.split('/'))):
+        _bad('%s must be a relative path inside the repository' % where)
+
+
+def _check_question_href(value, where):
+    """A relative reference or an `https:` URL."""
+    _check_string(value, where, maximum=MAX_QUESTION_REF_HREF)
+    if _QUESTION_CONTROL_RE.search(value) or re.search(r'\s', value) or '\\' in value:
+        _bad('%s has an invalid format' % where)
+    if value.lower().startswith('https://'):
+        if len(value) <= len('https://'):
+            _bad('%s has an invalid format' % where)
+        return
+    if value.startswith('//') or _QUESTION_SCHEME_RE.match(value):
+        _bad('%s must be relative or an https URL' % where)
+
+
+def _check_question_refs(refs):
+    if not isinstance(refs, list):
+        _bad('refs must be a list')
+    if len(refs) > MAX_QUESTION_REFS:
+        _bad('refs has more than %d items' % MAX_QUESTION_REFS, code='too_many')
+    for index, ref in enumerate(refs):
+        where = 'refs[%d]' % index
+        _check_object(ref, where, required=('title', 'href'), optional=('excerpt',))
+        _check_string(ref['title'], where + '.title', maximum=MAX_QUESTION_REF_TITLE, strip_empty=True)
+        _check_question_href(ref['href'], where + '.href')
+        if 'excerpt' in ref:
+            _check_string(ref['excerpt'], where + '.excerpt', minimum=0, maximum=MAX_QUESTION_REF_EXCERPT)
+
+
+def _check_question_options(options):
+    if not isinstance(options, list):
+        _bad('options must be a list')
+    if len(options) > MAX_QUESTION_OPTIONS:
+        _bad('options has more than %d items' % MAX_QUESTION_OPTIONS, code='too_many')
+    seen, recommended = set(), 0
+    for index, option in enumerate(options):
+        where = 'options[%d]' % index
+        _check_object(option, where, required=('id', 'label'), optional=('recommended',))
+        _check_string(option['id'], where + '.id', pattern=QUESTION_OPTION_ID_RE)
+        _check_string(option['label'], where + '.label', maximum=MAX_QUESTION_OPTION_LABEL, strip_empty=True)
+        if option['id'] in seen:
+            _bad('%s.id is duplicated' % where)
+        seen.add(option['id'])
+        if 'recommended' in option:
+            if not isinstance(option['recommended'], bool):
+                _bad('%s.recommended must be a boolean' % where)
+            recommended += 1 if option['recommended'] else 0
+    if recommended > 1:
+        _bad('options: at most one option may be recommended')
+
+
+def _check_question_addressees(value):
+    if value == 'all':
+        return
+    if not isinstance(value, list) or not value:
+        _bad('addressees must be "all" or a non-empty list of logins')
+    if len(value) > MAX_QUESTION_ADDRESSEES:
+        _bad('addressees has more than %d items' % MAX_QUESTION_ADDRESSEES, code='too_many')
+    seen = set()
+    for index, login in enumerate(value):
+        _check_question_login(login, 'addressees[%d]' % index)
+        if login != normalize_login(login):
+            _bad('addressees[%d] must be a normalized login' % index)
+        if login in seen:
+            _bad('addressees[%d] is duplicated' % index)
+        seen.add(login)
+
+
+def validate_question_operation(operation, known=None):
+    """Schema of one stored operation of `questions.json` (400 `invalid_operation` and friends).
+
+    `known` (optional) maps `questionId` to the folded question; with it `refersTo` must exist,
+    `optionId` must be an option of the question and `confirm` needs a non-null `assumed`.
+    There is no `number` field: the label of a question is `origin.q` and its `id`.
+    """
+    if not isinstance(operation, dict):
+        _bad('operation must be an object')
+    kind = operation.get('type')
+    if not isinstance(kind, str) or kind not in QUESTION_TYPES:
+        _bad('type must be one of: %s' % ', '.join(QUESTION_TYPES), code='invalid_type')
+    required, optional = _QUESTION_FIELDS[kind]
+    _check_object(operation, 'operation', required=_QUESTION_COMMON + required, optional=optional)
+    _check_string(operation['id'], 'id', pattern=OP_ID_RE)
+    if parse_at(operation['at']) is None:
+        _bad('at must be YYYY-MM-DDTHH:MM:SS.mmmZ')
+    _check_question_login(operation['by'], 'by')
+    _check_string(operation['cid'], 'cid', pattern=CID_RE)
+    _check_string(operation['questionId'], 'questionId', pattern=QUESTION_ID_RE)
+    question = known.get(operation['questionId']) if known is not None else None
+    if kind == 'ask':
+        _check_string(operation['text'], 'text', maximum=MAX_QUESTION_TEXT, strip_empty=True)
+        blocking, assumed = operation['blocking'], operation['assumed']
+        if not isinstance(blocking, bool):
+            _bad('blocking must be a boolean')
+        if assumed is not None:
+            _check_string(assumed, 'assumed', maximum=MAX_QUESTION_ASSUMED, strip_empty=True)
+        if blocking == (assumed is not None):
+            _bad('a question is either blocking (assumed null) or carries an assumed value')
+        _check_question_addressees(operation['addressees'])
+        _check_question_refs(operation['refs'])
+        _check_question_options(operation['options'])
+        _check_object(operation['origin'], 'origin', required=('spec', 'q'))
+        _check_question_path(operation['origin']['spec'], 'origin.spec')
+        _check_string(operation['origin']['q'], 'origin.q', pattern=QUESTION_ORIGIN_Q_RE)
+        if 'refersTo' in operation:
+            _check_string(operation['refersTo'], 'refersTo', pattern=QUESTION_ID_RE)
+            if operation['refersTo'] == operation['questionId']:
+                _bad('refersTo must not point at the question itself')
+            if known is not None and operation['refersTo'] not in known:
+                _bad('refersTo points at an unknown question', code='unknown_reference')
+    elif kind == 'answer':
+        present = [key for key in ('optionId', 'text', 'confirm') if key in operation]
+        if len(present) != 1:
+            _bad('answer needs exactly one of: optionId, text, confirm')
+        if 'optionId' in operation:
+            _check_string(operation['optionId'], 'optionId', pattern=QUESTION_OPTION_ID_RE)
+            if question is not None and operation['optionId'] not in [o['id'] for o in question['options']]:
+                _bad('optionId is not an option of the question', code='unknown_option')
+        elif 'text' in operation:
+            _check_string(operation['text'], 'text', maximum=MAX_QUESTION_ANSWER_TEXT, strip_empty=True)
+        else:
+            if operation['confirm'] is not True:
+                _bad('confirm must be true')
+            if question is not None and question['assumed'] is None:
+                _bad('confirm needs a question with an assumed value')
+        if 'comment' in operation:
+            _check_string(operation['comment'], 'comment', maximum=MAX_QUESTION_COMMENT, strip_empty=True)
+        if operation['by'] in RESERVED_LOGINS:
+            _bad('an answer comes from an expert, not from "%s"' % operation['by'])
+    elif kind == 'comment':
+        _check_string(operation['text'], 'text', maximum=MAX_QUESTION_COMMENT, strip_empty=True)
+    elif kind == 'recorded':
+        _check_question_path(operation['spec'], 'spec')
+        _check_int(operation['line'], 'line')
+
+
+# -- fold ----------------------------------------------------------------------
+
+def _clone(value):
+    if isinstance(value, dict):
+        return dict((key, _clone(item)) for key, item in value.items())
+    if isinstance(value, (list, tuple)):
+        return [_clone(item) for item in value]
+    return value
+
+
+def _question_sort_key(operation):
+    return (operation['at'], operation['id'])
+
+
+def _list_of(value, kind):
+    return [item for item in value if isinstance(item, kind)] if isinstance(value, list) else []
+
+
+def _ask_model(operation):
+    addressees = operation.get('addressees')
+    origin = operation.get('origin')
+    return {
+        'id': operation['questionId'], 'opId': operation['id'], 'by': operation.get('by'), 'at': operation['at'],
+        'text': operation.get('text') if isinstance(operation.get('text'), str) else '',
+        'state': 'open', 'blocking': operation.get('blocking') is True,
+        'assumed': operation.get('assumed') if isinstance(operation.get('assumed'), str) else None,
+        'addressees': 'all' if addressees == 'all' else [a for a in _list_of(addressees, str)],
+        'refs': [_clone(r) for r in _list_of(operation.get('refs'), dict)],
+        'options': [_clone(o) for o in _list_of(operation.get('options'), dict)],
+        'refersTo': operation.get('refersTo') if isinstance(operation.get('refersTo'), str) else None,
+        'origin': _clone(origin) if isinstance(origin, dict) else {},
+        'answer': None, 'comments': [], 'recorded': None, 'withdrawn': None,
+    }
+
+
+def _answer_text(question, operation):
+    """Readable text of an answer-like operation (used for a late answer treated as a comment)."""
+    parts = []
+    if isinstance(operation.get('text'), str):
+        parts.append(operation['text'])
+    elif isinstance(operation.get('optionId'), str):
+        label = [o.get('label') for o in question['options'] if o.get('id') == operation['optionId']]
+        parts.append(label[0] if label and isinstance(label[0], str) else operation['optionId'])
+    elif operation.get('confirm') is True:
+        parts.append(question['assumed'] or '')
+    if isinstance(operation.get('comment'), str):
+        parts.append(operation['comment'])
+    return '\n'.join(part for part in parts if part)
+
+
+def fold_questions(operations):
+    """State of every question: `{'questions': [model…], 'byId': {id: model}}` in `(at, id)` order.
+
+    The first `answer` (in `(at, id)` order) closes an open question; later `answer`s, and an
+    `answer` after `withdraw`, behave like a `comment` (`late: true`).  `withdraw` counts only on an
+    open question; `recorded` only on an answered one (the first wins).  Operations of an unknown
+    question and malformed entries are skipped, never removed.  Every `ask` is applied before the other
+    operations (each group in `(at, id)` order), so an operation timestamped before its `ask` still counts.
+    """
+    usable = [op for op in operations
+              if isinstance(op, dict) and isinstance(op.get('id'), str) and isinstance(op.get('at'), str)
+              and isinstance(op.get('questionId'), str) and op.get('type') in QUESTION_TYPES]
+    by_id, order, seen = {}, [], set()
+    ordered = sorted(usable, key=_question_sort_key)
+    # two passes: every `ask` first, so an operation whose `at` precedes its `ask` is not lost
+    for operation in ordered:
+        if operation['type'] != 'ask' or operation['id'] in seen:
+            continue
+        seen.add(operation['id'])
+        if operation['questionId'] not in by_id:
+            by_id[operation['questionId']] = _ask_model(operation)
+            order.append(by_id[operation['questionId']])
+    for operation in ordered:
+        if operation['type'] == 'ask':
+            continue
+        if operation['id'] in seen:
+            continue
+        seen.add(operation['id'])
+        kind, qid = operation['type'], operation['questionId']
+        question = by_id.get(qid)
+        if question is None:
+            continue
+        entry = {'id': operation['id'], 'by': operation.get('by'), 'at': operation['at']}
+        if kind == 'comment':
+            entry['text'] = operation.get('text') if isinstance(operation.get('text'), str) else ''
+            question['comments'].append(entry)
+        elif kind == 'answer':
+            if question['state'] == 'open':
+                question['state'] = 'answered'
+                for key in ('optionId', 'text', 'comment'):
+                    if isinstance(operation.get(key), str):
+                        entry[key] = operation[key]
+                if operation.get('confirm') is True:
+                    entry['confirm'] = True
+                question['answer'] = entry
+            else:
+                entry['text'] = _answer_text(question, operation)
+                entry['late'] = True
+                question['comments'].append(entry)
+        elif kind == 'withdraw':
+            if question['state'] == 'open':
+                question['state'] = 'withdrawn'
+                question['withdrawn'] = entry
+        elif kind == 'recorded':
+            if question['state'] == 'answered' and question['recorded'] is None:
+                entry['spec'] = operation.get('spec')
+                entry['line'] = operation.get('line')
+                question['recorded'] = entry
+    return {'questions': order, 'byId': by_id}
+
+
+# -- views ---------------------------------------------------------------------
+
+def _viewer_roles(viewer):
+    if not isinstance(viewer, dict):
+        return ()
+    roles = viewer.get('roles')
+    if isinstance(roles, str):
+        return (roles,)
+    if isinstance(roles, (list, tuple)) and roles:
+        return tuple(roles)
+    role = viewer.get('role')
+    return (role,) if isinstance(role, str) else ()
+
+
+def _is_admin_viewer(viewer):
+    return any(role in PRIVILEGED_ROLES for role in _viewer_roles(viewer))
+
+
+def _is_addressed(question, viewer):
+    if question['addressees'] == 'all':
+        return True
+    return normalize_login(viewer.get('login')) in question['addressees']
+
+
+def can_view_question(question, viewer):
+    """D13: `developer`/`acceptor` see every question; an `expert` sees the ones addressed to them or to
+    all, never a withdrawn one; `commenter` (and anybody else) sees none."""
+    if _is_admin_viewer(viewer):
+        return True
+    if 'expert' not in _viewer_roles(viewer):
+        return False
+    return question['state'] != 'withdrawn' and _is_addressed(question, viewer)
+
+
+def can_answer(question, viewer):
+    """Only an account with the role `expert` seen as an addressee (or the question is for all) may
+    answer; `developer`/`acceptor` without `expert` only comment.  The state is checked by the store."""
+    return 'expert' in _viewer_roles(viewer) and _is_addressed(question, viewer)
+
+
+def question_view(question, viewer, by_id=None):
+    """JSON model of `question` for `viewer` (`{login, roles}`), or None when the viewer must not see it.
+
+    The admin view has `addressees`; the expert view has only `forAll` and no `refersTo` unless the
+    referenced question is visible to the viewer (`by_id` is needed to know; without it `refersTo` is dropped)."""
+    if not can_view_question(question, viewer):
+        return None
+    admin = _is_admin_viewer(viewer)
+    view = {
+        'id': question['id'], 'text': question['text'], 'state': question['state'], 'by': question['by'],
+        'at': question['at'], 'blocking': question['blocking'], 'assumed': question['assumed'],
+        'forAll': question['addressees'] == 'all', 'refs': _clone(question['refs']),
+        'options': _clone(question['options']), 'origin': _clone(question['origin']),
+        'answer': _clone(question['answer']), 'comments': _clone(question['comments']),
+        'recorded': _clone(question['recorded']), 'refersTo': None,
+        'canAnswer': can_answer(question, viewer) and question['state'] == 'open',
+    }
+    target = question['refersTo']
+    if target is not None:
+        if admin:
+            view['refersTo'] = target
+        elif by_id is not None and target in by_id and can_view_question(by_id[target], viewer):
+            view['refersTo'] = target
+    if admin:
+        view['addressees'] = _clone(question['addressees'])
+        view['withdrawn'] = _clone(question['withdrawn'])
+    return view
+
+
+def get_question_view(snapshot, question_id, viewer):
+    """The view of one question, or None (unknown or invisible: the API answers 404 in both cases)."""
+    by_id = snapshot.fold['byId']
+    question = by_id.get(question_id)
+    return None if question is None else question_view(question, viewer, by_id)
+
+
+def visible_questions(snapshot, viewer):
+    """Views of the questions `viewer` may see, in `(at, id)` order."""
+    fold = snapshot.fold
+    views = [question_view(question, viewer, fold['byId']) for question in fold['questions']]
+    return [view for view in views if view is not None]
+
+
+# -- merge (git driver) and export ----------------------------------------------
+
+def _questions_size(operations):
+    try:
+        return len(serialize_questions(list(operations)).encode('utf-8', 'surrogatepass'))
+    except (TypeError, ValueError, OverflowError):
+        return 0
+
+
+def merge_question_operations(target_ops, other_ops, max_bytes=QUESTIONS_MAX_FILE_BYTES):
+    """Union by `id` sorted by `(at, id)`; commutative.  Returns `(operations, added)`, `added` = the
+    operations of `other_ops` missing in `target_ops`.
+
+    Conflicts (raise `MergeConflict`): the same `id` with different content, an operation that fails
+    the schema, an `answer` whose `ask` is not in the result, a result above `max_bytes` that is also larger than both inputs (a file legally
+    written one operation over the limit merges with itself).
+    """
+    by_id, conflicts = {}, []
+    for source in (target_ops, other_ops):
+        for operation in source:
+            if not isinstance(operation, dict) or not isinstance(operation.get('id'), str):
+                conflicts.append({'id': None, 'reason': 'operation without an id'})
+                continue
+            known = by_id.get(operation['id'])
+            if known is not None:
+                if serialize_question_operation(known) != serialize_question_operation(operation):
+                    conflicts.append({'id': operation['id'], 'reason': 'same id, different content'})
+                continue
+            try:
+                validate_question_operation(operation)
+            except PrototypeServerError as error:
+                conflicts.append({'id': operation['id'], 'reason': 'invalid operation: %s' % error.message})
+                continue
+            by_id[operation['id']] = operation
+    merged = sorted(by_id.values(), key=_question_sort_key)
+    asked = set(op['questionId'] for op in merged if op['type'] == 'ask')
+    for operation in merged:
+        if operation['type'] == 'answer' and operation['questionId'] not in asked:
+            conflicts.append({'id': operation['id'], 'reason': 'answer without an ask'})
+    size = len(serialize_questions(merged).encode('utf-8', 'surrogatepass'))
+    if size > max_bytes and size > max(_questions_size(target_ops), _questions_size(other_ops)):
+        conflicts.append({'id': None, 'reason': 'file_too_large: %d bytes (limit %d)' % (size, max_bytes)})
+    if conflicts:
+        raise MergeConflict(conflicts)
+    present = set(op.get('id') for op in target_ops if isinstance(op, dict))
+    return merged, [op for op in merged if op['id'] not in present]
+
+
+def export_questions(snapshot, project, url=None, users=None):
+    """`expert-questions/1` (read from the file, no server): every question with its answer, comments,
+    `recorded` and addressees.  `users` (login to name, or login to record with `name`) gives `name`;
+    without it `name` equals `by`."""
+    operations = snapshot if isinstance(snapshot, list) else snapshot.operations
+    users = users or {}
+
+    def name(login):
+        record = users.get(login) if isinstance(login, str) else None
+        if isinstance(record, dict):
+            record = record.get('name')
+        return record if isinstance(record, str) and record else login
+
+    questions = []
+    for question in fold_questions(operations)['questions']:
+        item = {'id': question['id'], 'text': question['text'], 'state': question['state'],
+                'blocking': question['blocking'], 'assumed': question['assumed'],
+                'addressees': _clone(question['addressees']), 'refs': _clone(question['refs']),
+                'options': _clone(question['options'])}
+        answer = question['answer']
+        if answer is not None:
+            exported = {'by': answer['by'], 'name': name(answer['by']), 'at': answer['at']}
+            for key in ('optionId', 'text', 'comment'):
+                if key in answer:
+                    exported[key] = answer[key]
+            if 'optionId' in answer:
+                labels = [o.get('label') for o in question['options'] if o.get('id') == answer['optionId']]
+                if labels and isinstance(labels[0], str):
+                    exported['optionLabel'] = labels[0]
+            if answer.get('confirm'):
+                exported['confirm'] = True
+            item['answer'] = exported
+        item['comments'] = [dict([('by', c['by']), ('name', name(c['by'])), ('at', c['at']), ('text', c['text'])]
+                                 + ([('late', True)] if c.get('late') else [])) for c in question['comments']]
+        if question['refersTo'] is not None:
+            item['refersTo'] = question['refersTo']
+        item['origin'] = _clone(question['origin'])
+        if question['recorded'] is not None:
+            recorded = question['recorded']
+            item['recorded'] = {'spec': recorded['spec'], 'line': recorded['line'], 'at': recorded['at']}
+        if url:
+            item['link'] = '%s#%s' % (url, question['id'])
+        questions.append(item)
+    result = {'schema': QUESTIONS_SCHEMA, 'project': project}
+    if url:
+        result['url'] = url
+    result['questions'] = questions
+    return result
+
+
+# -- the store -------------------------------------------------------------------
+
+class QuestionsSnapshot(object):
+    """Immutable view of one `questions.json` state (raw operations in file order)."""
+
+    def __init__(self, operations, size=0, key=None, exists=True):
+        self.operations = operations
+        self.size = size
+        self.key = key
+        self.exists = exists
+        self._fold = None
+        self._lock = threading.Lock()
+
+    @property
+    def total(self):
+        return len(self.operations)
+
+    def prefix(self, count=None):
+        return prefix_fingerprint(self.operations, count)
+
+    @property
+    def fold(self):
+        with self._lock:
+            if self._fold is None:
+                self._fold = fold_questions(self.operations)
+            return self._fold
+
+    def find_cid(self, by, cid):
+        """First operation with `(by, cid)` or None."""
+        for operation in self.operations:
+            if operation.get('by') == by and operation.get('cid') == cid and isinstance(cid, str):
+                return operation
+        return None
+
+
+def check_question_state(fold, operation):
+    """Online checks of a new operation against the folded questions (404 / 409), after dedup.
+
+    404 `not_found` (unknown question), 409 `duplicate_id` (an `ask` with a known id),
+    409 `already_answered` (`answer`, `withdraw` on an answered question), 409 `withdrawn`
+    (`answer` on a withdrawn one), 409 `not_answered` (`recorded` before an answer)."""
+    kind, qid = operation['type'], operation['questionId']
+    question = fold['byId'].get(qid)
+    if kind == 'ask':
+        if question is not None:
+            raise OperationError(409, 'duplicate_id', 'question id already exists')
+        return
+    if question is None:
+        raise OperationError(404, 'not_found', 'question not found')
+    if kind == 'answer':
+        if question['state'] == 'answered':
+            raise OperationError(409, 'already_answered', 'the question is already answered')
+        if question['state'] == 'withdrawn':
+            raise OperationError(409, 'withdrawn', 'the question was withdrawn')
+    elif kind == 'withdraw':
+        if question['state'] == 'answered':
+            raise OperationError(409, 'already_answered', 'an answered question cannot be withdrawn')
+        if question['state'] == 'withdrawn':
+            raise OperationError(409, 'withdrawn', 'the question was already withdrawn')
+    elif kind == 'recorded':
+        if question['state'] != 'answered':
+            raise OperationError(409, 'not_answered', 'the question has no answer to record')
+
+
+class QuestionsStore(object):
+    """`<root>/questions.json` of one project: cached reads and locked appends (pattern of `CommentsStore`).
+
+    `clock` returns seconds since the epoch (default `time.time`).  `root` is created by the first write.
+    The lock is `questions.json.lock` (plus a lock per path in the process); a timeout raises `LockTimeout` (503).
+    """
+
+    def __init__(self, root_dir, clock=None, lock_timeout=LOCK_TIMEOUT, max_bytes=QUESTIONS_MAX_FILE_BYTES):
+        self.directory = os.path.abspath(root_dir)
+        self.path = os.path.join(self.directory, QUESTIONS_FILE)
+        self.lock_path = self.path + LOCK_SUFFIX
+        self.clock = clock or system_clock
+        self.lock_timeout = lock_timeout
+        self.max_bytes = max_bytes
+        self._cache = None
+        self._cache_lock = threading.Lock()
+
+    def _read(self):
+        try:
+            info = os.lstat(self.path)
+        except FileNotFoundError:
+            return QuestionsSnapshot([], exists=False)
+        if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
+            raise QuestionsFileError('questions.json must be a regular file')
+        key = _stat_key(info)
+        with self._cache_lock:
+            if self._cache is not None and self._cache.key == key:
+                return self._cache
+        flags = os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_BINARY', 0)
+        fd = os.open(self.path, flags)
+        with os.fdopen(fd, 'rb') as handle:
+            info = os.fstat(handle.fileno())
+            data = handle.read()
+        try:
+            text = data.decode('utf-8')
+        except UnicodeDecodeError:
+            raise QuestionsFileError('questions.json is not UTF-8')
+        snapshot = QuestionsSnapshot(parse_questions_document(text), len(data), _stat_key(info))
+        with self._cache_lock:
+            self._cache = snapshot
+        return snapshot
+
+    def snapshot(self):
+        """Current state (an empty snapshot with `exists=False` when the file is missing)."""
+        return self._read()
+
+    def lock(self):
+        """The file lock; not reentrant.  Creates `root` when it is missing (use `transaction`, which
+        creates it only when something is really written)."""
+        os.makedirs(self.directory, exist_ok=True)
+        return FileLock(self.lock_path, self.lock_timeout)
+
+    def transaction(self, build):
+        """Append operations atomically under the lock.
+
+        `build(snapshot)` returns `Existing(operation)` (nothing written), one partial operation or a
+        list of them `{type, questionId, by, cid, <fields>}` (no `id`, no `at`); it may raise
+        `PrototypeServerError`.  For each partial the store runs the dedup `(by, cid)` (the same
+        `questionId` and `type`: the existing operation, idempotent; otherwise 409 `cid_conflict`),
+        then the schema (400) and the state checks (404/409), assigns monotonic `at` and `id`, refuses
+        with 507 when the file is already above `max_bytes` (an `ask`: above `QUESTIONS_ASK_LIMIT_BYTES`), and
+        writes the whole document atomically.
+        """
+        if not os.path.isdir(self.directory):
+            # nothing to race on yet: plan without the lock, so a domain error leaves no `root` behind;
+            # `build` therefore runs twice when something is to be written (it must be repeatable)
+            planned = self.transaction_locked(build, dry=True)
+            if not planned.operations:
+                return planned
+        with self.lock():
+            return self.transaction_locked(build)
+
+    def transaction_locked(self, build, dry=False):
+        snapshot = self._read()
+        result = build(snapshot)
+        if isinstance(result, Existing):
+            return TransactionResult(existing=result.operation, total=snapshot.total,
+                                     prefix=snapshot.prefix(), size=snapshot.size)
+        partials = [result] if isinstance(result, dict) else list(result or [])
+        if not partials:
+            return TransactionResult(total=snapshot.total, prefix=snapshot.prefix(), size=snapshot.size)
+        now = clock_ms(self.clock)
+        working = list(snapshot.operations)
+        last_at, last_id = None, None
+        for operation in working:
+            moment = parse_at(operation.get('at'))
+            if moment is not None and (last_at is None or moment > last_at):
+                last_at = moment
+            op_id = operation.get('id')
+            if isinstance(op_id, str) and NEW_OP_ID_RE.fullmatch(op_id) and (last_id is None or op_id > last_id):
+                last_id = op_id
+        written, existing = [], None
+        current_size = snapshot.size if snapshot.exists else None
+        for partial in partials:
+            if not isinstance(partial, dict):
+                _bad('operation must be an object')
+            kind = partial.get('type')
+            cid = partial.get('cid')
+            found = None
+            if isinstance(cid, str):
+                for operation in working:
+                    if operation.get('by') == partial.get('by') and operation.get('cid') == cid:
+                        found = operation
+                        break
+            if found is not None:
+                if found.get('questionId') != partial.get('questionId') or found.get('type') != kind:
+                    raise OperationError(409, 'cid_conflict', 'cid was already used for another operation')
+                existing = existing or found
+                continue
+            fold = fold_questions(working)
+            at_ms = now if last_at is None else max(now, last_at + 1)
+            op_id = new_operation_id(at_ms, last_id)
+            operation = {'id': op_id, 'type': kind, 'questionId': partial.get('questionId'),
+                         'at': format_at(at_ms), 'by': partial.get('by'), 'cid': cid}
+            for key, value in partial.items():
+                if key not in operation:
+                    operation[key] = value
+            validate_question_operation(operation, fold['byId'])
+            check_question_state(fold, operation)
+            if kind == 'recorded' and fold['byId'][operation['questionId']]['recorded'] is not None:
+                # idempotent: the first `recorded` stays, the repeated request returns it
+                for item in working:
+                    if item.get('type') == 'recorded' and item.get('questionId') == operation['questionId']:
+                        existing = existing or item
+                        break
+                continue
+            limit = QUESTIONS_ASK_LIMIT_BYTES if kind == 'ask' else self.max_bytes
+            if current_size is None:
+                current_size = len(serialize_questions(working).encode('utf-8', 'surrogatepass'))
+            if current_size > min(limit, self.max_bytes):
+                raise QuestionsFileTooLarge(current_size)
+            current_size = None
+            written.append(operation)
+            working.append(operation)
+            last_at, last_id = at_ms, op_id
+        if not written:
+            return TransactionResult(existing=existing, total=snapshot.total, prefix=snapshot.prefix(),
+                                     size=snapshot.size)
+        if dry:
+            return TransactionResult(operations=written, total=snapshot.total, prefix=snapshot.prefix(),
+                                     size=snapshot.size)
+        created = not snapshot.exists
+        try:
+            data = serialize_questions(working).encode('utf-8')
+        except OverflowError:
+            raise OperationError(400, 'invalid_request', 'a number in the operation is out of range')
+        atomic_write_bytes(self.path, data)
+        info = os.lstat(self.path)
+        fresh = QuestionsSnapshot(working, len(data), _stat_key(info))
+        with self._cache_lock:
+            self._cache = fresh
+        return TransactionResult(operations=written, total=fresh.total, prefix=fresh.prefix(),
+                                 created=created, size=len(data))
+
+    def append(self, partials):
+        """Append ready partial operations (CLI use): `transaction(lambda snapshot: partials)`."""
+        return self.transaction(lambda snapshot: list(partials))
+
+
 # ── Browser operations: role and reference checks ────────────────────────────
 
 def check_role(kind, login, role, thread, payload):
