@@ -1486,14 +1486,49 @@ class ListAndIndexAcceptanceTests(CliProject):
                      re.search(r'<dt>Akceptacja</dt>\s*<dd>([^<]*)</dd>', card).group(1)) for card in cards)
 
     def test_v2_lists_screens_accepted_stale_and_v1_is_null(self):
-        self.assertEqual(self.entry('alpha')['acceptance'], {'screens': 2, 'accepted': 0, 'stale': 0}, 'control: nothing accepted')
+        def per_screen(*states):
+            return [{'id': screen, 'state': state} for screen, state in zip(('s2', 's3'), states)]
+        self.assertEqual(self.entry('alpha')['acceptance'],
+                         {'screens': 2, 'accepted': 0, 'stale': 0, 'perScreen': per_screen('pending', 'pending')}, 'control: nothing accepted')
         self.accept_ops('alpha', 's2')
-        self.assertEqual(self.entry('alpha')['acceptance'], {'screens': 2, 'accepted': 1, 'stale': 0})
+        self.assertEqual(self.entry('alpha')['acceptance'],
+                         {'screens': 2, 'accepted': 1, 'stale': 0, 'perScreen': per_screen('accepted', 'pending')})
         self.accept_ops('alpha', 's3')
         self.page('alpha', s2=R_S2_V2)  # s2 changed after the acceptance
-        self.assertEqual(self.entry('alpha')['acceptance'], {'screens': 2, 'accepted': 1, 'stale': 1})
+        self.assertEqual(self.entry('alpha')['acceptance'],
+                         {'screens': 2, 'accepted': 1, 'stale': 1, 'perScreen': per_screen('stale', 'accepted')})
         self.assertIsNone(self.entry('old')['acceptance'])
-        self.assertEqual(self.entry('empty')['acceptance'], {'screens': 0, 'accepted': 0, 'stale': 0})
+        self.assertEqual(self.entry('empty')['acceptance'], {'screens': 0, 'accepted': 0, 'stale': 0, 'perScreen': []})
+
+    def test_per_screen_covers_every_screen_in_document_order_and_sums_match(self):
+        self.accept_ops('alpha', 's2')
+        self.accept_ops('alpha', 's3')
+        self.page('alpha', s2=R_S2_V2)
+        for slug in ('alpha', 'beta', 'empty'):
+            acceptance = self.entry(slug)['acceptance']
+            states = [item['state'] for item in acceptance['perScreen']]
+            self.assertEqual(set(item for item in states), set(states) & {'accepted', 'stale', 'pending'}, slug)
+            self.assertEqual(len(states), acceptance['screens'], slug)
+            self.assertEqual((states.count('accepted'), states.count('stale')), (acceptance['accepted'], acceptance['stale']), slug)
+            self.assertEqual(acceptance['accepted'] + acceptance['stale'] + states.count('pending'), acceptance['screens'], slug)
+            self.assertTrue(all(set(item) == {'id', 'state'} for item in acceptance['perScreen']), 'no title')
+        # document order, not alphabetical: swap the two sections in index.html
+        path = self.proto_dir('alpha') / 'index.html'
+        text = path.read_text(encoding='utf-8')
+        self.assertEqual([item['id'] for item in self.entry('alpha')['acceptance']['perScreen']], ['s2', 's3'])
+        self.assertIn(R_S2_V2 + R_S3, text, 'control: the fixture sections are adjacent')
+        path.write_text(text.replace(R_S2_V2 + R_S3, R_S3 + R_S2_V2), encoding='utf-8')
+        self.assertEqual([item['id'] for item in self.entry('alpha')['acceptance']['perScreen']], ['s3', 's2'])
+
+    def test_gallery_render_ignores_per_screen(self):
+        from skillsync_workflow import prototype as engine
+        base = {'slug': 'x', 'title': 'X', 'requirements': 'r', 'created': 'c', 'generated_by': 'g', 'path': 'p',
+                'screens': 2, 'comments': 0, 'commentsFormat': 2, 'threads': None, 'iteration': 1}
+        with_field = dict(base, acceptance={'screens': 2, 'accepted': 1, 'stale': 0,
+                                            'perScreen': [{'id': 's2', 'state': 'accepted'}, {'id': 's3', 'state': 'pending'}]})
+        without = dict(base, acceptance={'screens': 2, 'accepted': 1, 'stale': 0})
+        self.assertEqual(engine.render_gallery([with_field]), engine.render_gallery([without]))
+        # skillsync_workflow has no dashboard module in this tree (dashboard.prototype_acceptance is DASH-1 work)
 
     def test_index_column_shows_k_of_n_and_a_dash_for_v1(self):
         self.accept_ops('alpha', 's2')
@@ -1652,7 +1687,8 @@ class RealTemplateChainTests(PrototypeFixture):
         self.change_screen('Inna treść trzeciego ekranu', 'Treść trzeciego ekranu')  # control: restoring the text restores the PASS
         self.assertEqual(self.gate(0)['status'], 'PASS')
         listed = [item for item in self.list()['prototypes'] if item['slug'] == 'real'][0]
-        self.assertEqual(listed['acceptance'], {'screens': 2, 'accepted': 2, 'stale': 0})
+        self.assertEqual(listed['acceptance'], {'screens': 2, 'accepted': 2, 'stale': 0, 'perScreen': [
+            {'id': 's2', 'state': 'accepted'}, {'id': 's3', 'state': 'accepted'}]})
 
 
 # ═════════════════════════════════════════════════════════════════════════════

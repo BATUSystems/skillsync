@@ -1110,8 +1110,10 @@ def prototype_comments_info(directory, slug, html=None):
     by status (`lost` resolved against `html` with the shared `data-proto-id` collector);
     v1 (`comments.js` only) gives the v1 count and `commentsFormat: 1`; no file gives nulls.
     `iteration` = current iteration of the v2 log (1 + largest `iteration.number`; null for v1);
-    `acceptance` = `{screens, accepted, stale}` of the v2 log against the hashes of the current files
-    (screens without examples; null for v1, no file or unreadable files).
+    `acceptance` = `{screens, accepted, stale, perScreen}` of the v2 log against the hashes of the current files
+    (screens without examples; null for v1, no file or unreadable files); `perScreen` = `[{id, state}]` for every
+    screen in document order, `state` = `accepted` (valid acceptance), `stale` (acceptance of changed content) or
+    `pending` (no acceptance), so accepted + stale + pending == screens.
     """
     directory = Path(directory)
     fields = {'comments': None, 'commentsFormat': None, 'threads': None, 'iteration': None, 'acceptance': None}
@@ -1149,7 +1151,11 @@ def prototype_comments_info(directory, slug, html=None):
         if hashes is not None:
             state = server.acceptance_state(fold, hashes['screens'], hashes.get('aliases'))
             valid = sum(1 for item in state.values() if item['valid'])
-            fields['acceptance'] = {'screens': len(hashes['screens']), 'accepted': valid, 'stale': len(state) - valid}
+            per_screen = [{'id': screen, 'state': ('pending' if screen not in state
+                                                   else 'accepted' if state[screen]['valid'] else 'stale')}
+                          for screen in hashes['screens']]
+            fields['acceptance'] = {'screens': len(hashes['screens']), 'accepted': valid, 'stale': len(state) - valid,
+                                    'perScreen': per_screen}
         if os.path.lexists(directory / server.LEGACY_COMMENTS_FILE):
             warnings.append('comments.js left next to comments.json: run `skillsync prototype migrate` '
                             'to check it against comments.json and remove it')

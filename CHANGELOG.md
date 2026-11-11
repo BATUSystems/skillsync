@@ -13,7 +13,8 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 ## [Unreleased]
 
 ### Added
-None.
+- `skillsync prototype list --json`: `acceptance.perScreen` — `[{id, state}]` for every screen in document order, with `state`
+  `accepted`, `stale` or `pending` (accepted + stale + pending = `screens`). The sums `screens`, `accepted` and `stale` are unchanged.
 
 ### Changed
 None.

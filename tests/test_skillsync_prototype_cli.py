@@ -736,7 +736,8 @@ class SpriteMigrateTests(SpriteFixture):
         real = self.migrate()
         self.assertEqual(real['acceptance'], dry['acceptance'])
         listed = self.proto('list')['prototypes'][0]
-        self.assertEqual(listed['acceptance'], {'screens': 2, 'accepted': 0, 'stale': 2})
+        self.assertEqual(listed['acceptance'], {'screens': 2, 'accepted': 0, 'stale': 2, 'perScreen': [
+            {'id': 's1', 'state': 'stale'}, {'id': 's2', 'state': 'stale'}]})
         self.assertEqual((directory / 'screens.css').read_bytes(), css.read_bytes())
 
     def test_dry_run_writes_nothing_and_reports_the_same_as_the_real_run(self):
@@ -1197,7 +1198,8 @@ class ListAndIndexTests(V1Fixture):
         self.assertEqual(entry['threads'], {'open': 6, 'awaiting': 0, 'decided': 0, 'closed': 1, 'deferred': 0, 'lost': 4})
         self.assertEqual(entry['iteration'], 1, 'K32: the current iteration (no freeze yet)')
         # F3 (K20): v2 lists {screens, accepted, stale} (nothing accepted after the migration); v1 stays null (above)
-        self.assertEqual(entry['acceptance'], {'screens': 6, 'accepted': 0, 'stale': 0})
+        self.assertEqual(entry['acceptance'], {'screens': 6, 'accepted': 0, 'stale': 0, 'perScreen': [
+            {'id': f's{n}', 'state': 'pending'} for n in range(2, 8)]})
 
     def test_iteration_grows_after_a_frozen_iteration(self):
         self.migrate()
