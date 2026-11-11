@@ -1,0 +1,191 @@
+{
+  "acts": [
+    {
+      "detail": null,
+      "key": "spec",
+      "name": "Spec",
+      "roman": "I",
+      "stages": [
+        {
+          "done": false,
+          "key": "stage_spec_draft",
+          "label": "Szkic",
+          "tip": "brak speca"
+        },
+        {
+          "done": false,
+          "key": "stage_spec_review",
+          "label": "Review",
+          "tip": "rundy review speca w katalogu przebiegu"
+        },
+        {
+          "done": false,
+          "key": "stage_spec_approved",
+          "label": "Zatwierdzony",
+          "tip": "Status speca: —"
+        }
+      ],
+      "state": "planned",
+      "status": null,
+      "warning": null
+    },
+    {
+      "detail": null,
+      "key": "plan",
+      "name": "Plan",
+      "roman": "II",
+      "stages": [
+        {
+          "done": false,
+          "key": "stage_plan",
+          "label": "Plan",
+          "tip": "brak planu"
+        },
+        {
+          "done": false,
+          "key": "stage_plan_review",
+          "label": "Review",
+          "tip": "rundy review planu w katalogu przebiegu"
+        },
+        {
+          "done": false,
+          "key": "stage_pre_implement",
+          "label": "Pre-implement",
+          "tip": "bramka gotowości przed ryzykowną zmianą"
+        },
+        {
+          "done": false,
+          "key": "stage_go_implement",
+          "label": "GO implement",
+          "tip": "Status planu: —"
+        }
+      ],
+      "state": "planned",
+      "status": null
+    },
+    {
+      "detail": "brak kroków w Progress",
+      "key": "real",
+      "name": "Realizacja",
+      "percent": 0,
+      "roman": "III",
+      "stages": [
+        {
+          "done": false,
+          "key": "code_review",
+          "label": "Review kodu",
+          "tip": "raporty code-review*/final-review* w katalogu przebiegu"
+        },
+        {
+          "done": false,
+          "key": "closure",
+          "label": "Zamknięcie",
+          "tip": "Status planu: —"
+        }
+      ],
+      "state": "planned",
+      "status": null
+    }
+  ],
+  "app": {
+    "name": "dashboard",
+    "version": "<version>"
+  },
+  "approvals": {
+    "actions": [],
+    "enabled": true,
+    "last": null
+  },
+  "assumptions": {
+    "count": 0,
+    "items": []
+  },
+  "blockingQuestions": {
+    "count": 0,
+    "items": []
+  },
+  "delivery": {
+    "ahead": null,
+    "base": "main",
+    "branch": null,
+    "mode": "direct",
+    "pushed": null,
+    "remote": null,
+    "source": "manifest",
+    "target": null,
+    "words": [
+      {
+        "active": false,
+        "target": null,
+        "tip": "CP → origin; nic do dostarczenia",
+        "word": "CP"
+      }
+    ]
+  },
+  "docs": [],
+  "generatedAt": "2026-01-12T12:00:00+00:00",
+  "git": {
+    "branch": null,
+    "branchPushed": null,
+    "branchUrl": null,
+    "head": null,
+    "headFull": null,
+    "remote": null
+  },
+  "lastUpdate": null,
+  "mode": "none",
+  "plan": null,
+  "planAuto": true,
+  "plans": [],
+  "progress": {
+    "active": [],
+    "activeSource": null,
+    "current": null,
+    "done": 0,
+    "parallel": 0,
+    "pending": 0,
+    "pendingPercent": 0,
+    "percent": 0,
+    "phases": [],
+    "reported": [],
+    "total": 0
+  },
+  "project": {
+    "name": "demo",
+    "path": "<root>"
+  },
+  "prototype": {
+    "port": 5130,
+    "slug": null,
+    "up": false
+  },
+  "readiness": {
+    "date": null,
+    "planSha": null,
+    "source": null,
+    "status": null
+  },
+  "run": {
+    "checkpoints": [],
+    "exists": false,
+    "files": [],
+    "id": null,
+    "start": null,
+    "startIso": null
+  },
+  "schema": 1,
+  "session": {
+    "url": null
+  },
+  "silence": null,
+  "spec": {
+    "exists": false,
+    "path": null,
+    "preparing": false,
+    "prototype": null,
+    "sha": null
+  },
+  "substeps": [],
+  "version": 0,
+  "waiting": []
+}
