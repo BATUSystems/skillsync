@@ -855,5 +855,214 @@ class RegressionTests(QCase):
         self.check(expert.get('/_api/v1/questions'), 200)   # kontrola
 
 
+# ═════════════════════════════════════════════════════════════════════════════
+# (k) ochrona przed zalewem (K18, D21): limit zapisów, limit komentarzy, rezerwa pliku
+# ═════════════════════════════════════════════════════════════════════════════
+
+class FloodProtectionTests(QCase):
+    def burst(self, client, count, qid=Q1, prefix='b'):
+        return [self.comment(client, qid, {'cid': '%s-%d' % (prefix, n), 'text': 'x'}) for n in range(count)]
+
+    def fill_file(self, target_bytes):
+        """Dopisuje wprost (omijając progi) poprawne pytania, aż plik ma co najmniej `target_bytes`."""
+        store = self.server.app.questions_store()
+        operations = list(store.snapshot().operations)
+        index = 0
+        while len(ps.serialize_questions(operations).encode('utf-8')) < target_bytes:
+            index += 1
+            op = ask('qn-%012x' % (0x500 + index), refs=[{'title': 't', 'href': 'docs/a.md', 'excerpt': 'x' * 4000}] * 5)
+            op.update(id='op-fill%05d' % index, at='2026-01-01T00:00:00.%03dZ' % (index % 900 + 1))
+            operations.append(op)
+        ps.atomic_write_bytes(self.qpath, ps.serialize_questions(operations).encode('utf-8'))
+
+    def set_file_size(self, target):
+        """Ustawia plik na dokładnie `target` bajtów (poprawne pytania; ostatnie dopełnia długość jednego excerpt)."""
+        store = self.server.app.questions_store()
+        operations = [op for op in store.snapshot().operations if not op['id'].startswith('op-pad')]   # poprzednie dopełnienie
+        index = 0
+
+        def size():
+            return len(ps.serialize_questions(operations).encode('utf-8'))
+
+        def make(excerpt):
+            op = ask('qn-%012x' % (0x700 + index), refs=[{'title': 't', 'href': 'docs/a.md', 'excerpt': excerpt}])
+            op.update(id='op-pad%05d' % index, at='2026-01-01T00:00:00.%03dZ' % (index % 900 + 1))
+            return op
+
+        while target - size() > 6000:
+            index += 1
+            operations.append(make('x' * 4000))
+        index += 1
+        operations.append(make(''))
+        missing = target - size()
+        self.assertTrue(0 <= missing <= 4000, missing)
+        operations[-1] = make('x' * missing)
+        data = ps.serialize_questions(operations).encode('utf-8')
+        self.assertEqual(len(data), target)
+        ps.atomic_write_bytes(self.qpath, data)
+
+    # -- limit 60 zapisów / 60 s per login --
+
+    def test_60th_write_ok_61st_is_429_with_retry_after_then_window_passes(self):
+        expert = self.who(EX)
+        for n in range(30):
+            self.check(self.comment(expert, Q1, {'cid': 'a-%d' % n, 'text': 'x'}), 201)
+        for n in range(30):
+            self.check(self.comment(expert, Q4, {'cid': 'b-%d' % n, 'text': 'x'}), 201)
+        before = self.stored()
+        refused = self.check(self.comment(expert, Q8, {'cid': 'z-1', 'text': 'x'}), 429, 'rate_limited')
+        self.assertTrue(1 <= refused.json['retryAfter'] <= 60, refused.json)
+        self.assertEqual(refused.headers.get('Retry-After'), str(refused.json['retryAfter']))
+        self.assertEqual(self.stored(), before)
+        self.check(self.answer(expert, Q8, {'cid': 'z-2', 'optionId': 'o1'}), 429, 'rate_limited')
+        self.clock.advance(61)
+        self.check(self.comment(expert, Q8, {'cid': 'z-3', 'text': 'x'}), 201)
+
+    def test_limit_is_per_login(self):
+        first, second = self.who(EX), self.who(EX2)
+        for response in self.burst(first, 60, QX, 'n'):
+            self.check(response, 404)
+        self.check(self.comment(first, QX, {'cid': 'n-61', 'text': 'x'}), 429, 'rate_limited')
+        self.check(self.comment(second, Q1, {'cid': 'o-1', 'text': 'x'}), 201)
+
+    def test_limit_does_not_depend_on_visibility_or_data(self):
+        # każda próba po bramce roli się liczy: 404 (nieistniejące i niewidoczne), 409, 400 — i 429 jest ten sam
+        admin = self.who(S.D)
+        outcomes = []
+        for n in range(60):
+            qid = (QX, Q3, Q1)[n % 3]
+            body = {'cid': 'v-%d' % n, 'text': 'x'} if n % 7 else {'cid': 'v-%d' % n}
+            outcomes.append(self.comment(admin, qid, body).status)
+        self.assertTrue({404, 400, 201} <= set(outcomes), outcomes)
+        responses = [self.comment(admin, qid, {'cid': 'w-%d' % n, 'text': 'x'}) for n, qid in enumerate((QX, Q3, Q1, Q5))]
+        for response in responses:
+            self.check(response, 429, 'rate_limited')
+        self.assertEqual(len({(r.status, r.json['error']) for r in responses}), 1)
+
+    def test_blocked_and_unprivileged_requests_are_not_counted(self):
+        expert = self.who(EX)
+        commenter = self.who(S.A)
+        for n in range(70):
+            self.check(self.answer(commenter, Q1, {'cid': 'r-%d' % n, 'text': 'x'}), 403, 'forbidden')   # rola przed limitem
+        self.check(self.comment(expert, Q1, {'cid': 'r-ok', 'text': 'x'}), 201)
+
+    # -- 50 komentarzy na pytanie --
+
+    def test_50th_comment_ok_51st_is_409_comment_limit(self):
+        expert, admin = self.who(EX), self.who(S.D)
+        for n in range(25):
+            self.check(self.comment(expert, Q1, {'cid': 'k-%d' % n, 'text': 'x'}), 201)
+        for n in range(25):
+            self.check(self.comment(admin, Q1, {'cid': 'k-%d' % n, 'text': 'x'}), 201)
+        before = self.stored()
+        self.assert_no_write(before, self.comment(expert, Q1, {'cid': 'k-last', 'text': 'x'}), 409, 'comment_limit')
+        self.assert_no_write(before, self.comment(admin, Q1, {'cid': 'k-last2', 'text': 'x'}), 409, 'comment_limit')
+        self.check(self.comment(expert, Q4, {'cid': 'k-other', 'text': 'x'}), 201)          # inne pytanie niezależne
+        self.check(self.comment(expert, Q1, {'cid': 'k-0', 'text': 'x'}), 200)              # powtórzenie to nie nowy komentarz
+        self.check(self.answer(expert, Q1, {'cid': 'k-ans', 'text': 'odpowiedź'}), 201)     # odpowiedź nadal wchodzi
+
+    def test_late_answers_count_as_comments(self):
+        partials = [{'type': 'answer', 'questionId': Q1, 'by': EX3, 'cid': 'first', 'text': 'pierwsza'}]
+        partials += [{'type': 'comment', 'questionId': Q1, 'by': 'agent', 'cid': 'agc-%d' % n, 'text': 'x'} for n in range(24)]
+        self.seed_questions(partials)
+        # późne odpowiedzi (np. po scaleniu) magazyn przez API odrzuca, więc dopisujemy je wprost do pliku
+        operations = list(self.server.app.questions_store().snapshot().operations)
+        for n in range(25):
+            operations.append({'id': 'op-late%03d' % n, 'type': 'answer', 'questionId': Q1, 'at': '2026-12-01T00:00:00.%03dZ' % (n + 1),
+                               'by': EX2, 'cid': 'late-%d' % n, 'text': 'x'})
+        ps.atomic_write_bytes(self.qpath, ps.serialize_questions(operations).encode('utf-8'))
+        self.assertEqual(len(self.server.app.questions_store().snapshot().fold['byId'][Q1]['comments']), 49)
+        expert = self.who(EX)
+        self.check(self.comment(expert, Q1, {'cid': 'c-50', 'text': 'x'}), 201)
+        self.check(self.comment(expert, Q1, {'cid': 'c-51', 'text': 'x'}), 409, 'comment_limit')
+
+    # -- rezerwa pliku --
+
+    def test_comment_507_above_896_kib_answer_still_201(self):
+        self.fill_file(897 * 1024)
+        expert = self.who(EX)
+        before = self.stored()
+        self.assert_no_write(before, self.comment(expert, Q1, {'cid': 'f-1', 'text': 'x'}), 507, 'file_too_large')
+        self.check(self.answer(expert, Q1, {'cid': 'f-2', 'text': 'odpowiedź w rezerwie'}), 201)
+        self.assertLessEqual(len(self.stored()), 1024 * 1024)
+
+    def test_comment_ok_just_below_the_threshold(self):
+        self.fill_file(860 * 1024)
+        self.assertLess(len(self.stored()), 896 * 1024)
+        self.check(self.comment(self.who(EX), Q1, {'cid': 'f-1', 'text': 'x'}), 201)
+
+    def test_answer_507_only_above_1_mib(self):
+        self.fill_file(1024 * 1024 + 1)
+        before = self.stored()
+        self.assert_no_write(before, self.answer(self.who(EX), Q1, {'cid': 'f-1', 'text': 'x'}), 507, 'file_too_large')
+
+    def test_new_session_of_the_same_login_does_not_reset_the_limit(self):
+        first = self.who(EX)
+        for n in range(60):
+            self.check(self.comment(first, Q1 if n < 40 else Q4, {'cid': 's-%d' % n, 'text': 'x'}), 201)
+        second = self.who(EX)   # świeża sesja tego samego loginu
+        self.check(self.comment(second, Q8, {'cid': 's-new', 'text': 'x'}), 429, 'rate_limited')
+        self.check(self.who(EX2).post('/_api/v1/questions/%s/comment' % Q8, {'cid': 's-other', 'text': 'x'}), 201)
+
+    def test_parallel_comments_at_the_limit_exactly_one_wins(self):
+        self.seed_questions([{'type': 'comment', 'questionId': Q1, 'by': 'agent', 'cid': 'seed-%d' % n, 'text': 'x'}
+                             for n in range(49)])
+        clients = [self.who(EX) for _ in range(8)]   # jeden login, osobne sesje; 8 zapisów < 60/60 s
+        results = [None] * 8
+        gate = threading.Barrier(8)
+
+        def run(index):
+            gate.wait(10)
+            results[index] = self.comment(clients[index], Q1, {'cid': 'par-%d' % index, 'text': 'x'})
+
+        threads = [threading.Thread(target=run, args=(index,)) for index in range(8)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(60)
+        self.assertEqual(sorted(r.status for r in results), [201] + [409] * 7, [r.text for r in results])
+        for response in results:
+            if response.status == 409:
+                self.assertEqual(response.json['error'], 'comment_limit')
+        operations = self.operations_on_disk()   # plik poprawny (parsuje się) i dokładnie 50 komentarzy
+        self.assertEqual(len([op for op in operations if op['questionId'] == Q1 and op['type'] == 'comment']), 50)
+        self.assertEqual(len(self.server.app.questions_store().snapshot().fold['byId'][Q1]['comments']), 50)
+
+    def test_replay_of_a_stored_comment_is_200_even_when_the_file_is_over_the_threshold(self):
+        expert = self.who(EX)
+        self.check(self.comment(expert, Q1, {'cid': 'd-1', 'text': 'x'}), 201)
+        self.fill_file(900 * 1024)
+        before = self.stored()
+        self.assertGreater(len(before), 896 * 1024)
+        self.assert_no_write(before, self.comment(expert, Q1, {'cid': 'd-1', 'text': 'x'}), 200)
+        self.assert_no_write(before, self.comment(expert, Q1, {'cid': 'd-2', 'text': 'x'}), 507, 'file_too_large')
+
+    def test_comment_threshold_boundary_is_exact(self):
+        expert = self.who(EX)
+        self.set_file_size(896 * 1024)
+        self.check(self.comment(expert, Q1, {'cid': 'e-1', 'text': 'x'}), 201)
+        self.set_file_size(896 * 1024 + 1)
+        before = self.stored()
+        self.assert_no_write(before, self.comment(expert, Q1, {'cid': 'e-2', 'text': 'x'}), 507, 'file_too_large')
+
+    def test_answer_boundary_at_1_mib(self):
+        expert = self.who(EX)
+        self.set_file_size(1024 * 1024 - 1)
+        self.check(self.answer(expert, Q1, {'cid': 'g-1', 'text': 'x'}), 201)
+        self.set_file_size(1024 * 1024)
+        self.check(self.answer(expert, Q4, {'cid': 'g-2', 'text': 'x'}), 201)
+        self.set_file_size(1024 * 1024 + 1)
+        before = self.stored()
+        self.assert_no_write(before, self.answer(expert, Q8, {'cid': 'g-3', 'text': 'x'}), 507, 'file_too_large')
+
+    def test_ask_above_768_kib_is_refused_by_the_store(self):
+        self.fill_file(769 * 1024)
+        partial = ask('qn-0000000000aa', cid='ask-aa')
+        with self.assertRaises(ps.PrototypeServerError) as caught:
+            self.server.app.questions_store().append([partial])
+        self.assertEqual((caught.exception.status, caught.exception.code), (507, 'file_too_large'))
+        self.check(self.answer(self.who(EX), Q1, {'cid': 'f-1', 'text': 'x'}), 201)
+
+
 if __name__ == '__main__':
     unittest.main()

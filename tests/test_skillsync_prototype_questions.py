@@ -595,6 +595,53 @@ class FileSizeTests(QuestionsCase):
             self.assertEqual(code_of(self, lambda: self.add(ask(Q2), ask(Q3)), 507), 'file_too_large')
         self.assertEqual(len(self.file_ops()), 1)
 
+    def test_comment_limit_constant_and_boundary(self):
+        from unittest import mock
+        self.assertEqual(ps.QUESTIONS_COMMENT_LIMIT_BYTES, 896 * 1024)
+        self.write_ops([full(ask(Q1), 1)])
+        size = len(self.file_bytes())
+        with mock.patch.object(ps, 'QUESTIONS_COMMENT_LIMIT_BYTES', size):
+            self.add(comment(Q1, EWA, cid='c1'))     # plik ma dokładnie limit: OK
+        self.write_ops([full(ask(Q1), 1)])
+        with mock.patch.object(ps, 'QUESTIONS_COMMENT_LIMIT_BYTES', size - 1):
+            self.assertEqual(code_of(self, lambda: self.add(comment(Q1, EWA, cid='c2')), 507), 'file_too_large')
+            self.add(answer(Q1, EWA, text='odpowiedź nadal wchodzi'))   # answer nie podlega progowi komentarza
+
+    def test_above_896_kib_comment_refused_answer_recorded_withdraw_still_fit(self):
+        self.fill(897 * 1024)
+        before = self.file_bytes()
+        self.assertGreater(len(before), 896 * 1024)
+        t1, t2, t3 = ('qn-%012x' % (0x100 + n) for n in (1, 2, 3))
+        self.assertEqual(code_of(self, lambda: self.add(comment(t1, OLA, text='x')), 507), 'file_too_large')
+        self.assertEqual(self.file_bytes(), before)
+        self.add(answer(t1, EWA, text='odpowiedź w rezerwie'))
+        self.add(recorded(t1))
+        self.add(withdraw(t2))
+        self.assertEqual(self.state(t1)['state'], 'answered')
+        self.assertIsNotNone(self.state(t1)['recorded'])
+        self.assertEqual(self.state(t2)['state'], 'withdrawn')
+        self.assertEqual(code_of(self, lambda: self.add(ask(Q1)), 507), 'file_too_large')
+        self.assertEqual(self.state(t3)['state'], 'open')
+
+    def test_answer_fits_when_comments_stopped_at_the_threshold(self):
+        # symulacja pełnego pliku: komentarze przyjmowane aż do progu 896 KiB, potem odpowiedź i recorded
+        self.fill(880 * 1024)
+        target = 'qn-%012x' % 0x101
+        accepted = 0
+        while True:
+            try:
+                self.add(comment(target, OLA, text='k' * 2000, cid='fill-%d' % accepted))
+            except ps.PrototypeServerError as error:
+                self.assertEqual((error.status, error.code), (507, 'file_too_large'))
+                break
+            accepted += 1
+            self.assertLess(accepted, 400)
+        self.assertGreater(accepted, 0)
+        self.assertLessEqual(len(self.file_bytes()), 896 * 1024 + 4096)
+        self.add(answer(target, EWA, text='x' * 4000, comment='y' * 2000))
+        self.add(recorded(target))
+        self.assertLessEqual(len(self.file_bytes()), 1024 * 1024)
+
     def test_everything_refused_at_or_above_1_mib(self):
         self.fill(1024 * 1024 + 1)
         before = self.file_bytes()
@@ -605,6 +652,74 @@ class FileSizeTests(QuestionsCase):
 
 
 # ── współbieżność ───────────────────────────────────────────────────────────
+
+class WriteRateLimiterTests(unittest.TestCase):
+    def make(self, **kwargs):
+        self.clock = FakeClock(1000.0)
+        return ps.WriteRateLimiter(clock=self.clock, **kwargs)
+
+    def test_limit_then_exact_retry_after(self):
+        limiter = self.make(window=60, limit=3)
+        self.assertEqual(limiter.hit('a'), 0)
+        self.clock.advance(30)
+        self.assertEqual([limiter.hit('a'), limiter.hit('a')], [0, 0])
+        self.assertEqual(limiter.hit('a'), 30)          # najstarszy wpis wygasa za 30 s
+        self.clock.advance(10)
+        self.assertEqual(limiter.hit('a'), 20)
+        self.clock.advance(19.5)
+        self.assertEqual(limiter.hit('a'), 1)           # zaokrąglenie w górę, min 1
+        self.clock.advance(0.5)
+        self.assertEqual(limiter.hit('a'), 0)
+
+    def test_refused_attempt_is_not_counted(self):
+        limiter = self.make(window=60, limit=2)
+        limiter.hit('a'), limiter.hit('a')
+        for _ in range(5):
+            self.assertEqual(limiter.hit('a'), 60)
+        self.clock.advance(60)
+        self.assertEqual([limiter.hit('a'), limiter.hit('a'), limiter.hit('a')], [0, 0, 60])
+
+    def test_entries_expire_one_by_one(self):
+        limiter = self.make(window=60, limit=2)
+        limiter.hit('a')
+        self.clock.advance(20)
+        limiter.hit('a')
+        self.assertEqual(limiter.hit('a'), 40)
+        self.clock.advance(40)                          # wygasł tylko pierwszy wpis
+        self.assertEqual(limiter.hit('a'), 0)
+        self.assertEqual(limiter.hit('a'), 20)          # drugi (t=20) wygasa za 20 s
+
+    def test_clock_jump_back_clears_the_window(self):
+        limiter = self.make(window=60, limit=2)
+        limiter.hit('a'), limiter.hit('a')
+        self.assertEqual(limiter.hit('a'), 60)
+        self.clock.advance(-3600)
+        self.assertEqual(limiter.hit('a'), 0)           # stare stemple z przyszłości nie blokują
+        self.assertEqual(limiter.hit('a'), 0)
+        self.assertEqual(limiter.hit('a'), 60)          # retryAfter nie przekracza okna
+
+    def test_logins_are_independent(self):
+        limiter = self.make(window=60, limit=1)
+        self.assertEqual(limiter.hit('a'), 0)
+        self.assertEqual(limiter.hit('a'), 60)
+        self.assertEqual(limiter.hit('b'), 0)
+
+    def test_max_keys_evicts_expired_then_oldest_and_never_the_caller(self):
+        limiter = self.make(window=60, limit=1, max_keys=4)
+        for login in ('a', 'b', 'c', 'd'):
+            limiter.hit(login)
+            self.clock.advance(1)
+        self.assertEqual(len(limiter._items), 4)
+        self.assertEqual(limiter.hit('d'), 59)          # znany login przy pełnej tabeli: bez ewikcji, licznik zachowany
+        self.assertEqual(len(limiter._items), 4)
+        self.assertEqual(limiter.hit('e'), 0)           # nowy klucz: wypada najstarszy ('a'), tabela ograniczona
+        self.assertLessEqual(len(limiter._items), 4)
+        self.assertNotIn('a', limiter._items)
+        self.assertIn('d', limiter._items)
+        self.clock.advance(100)                         # wszystko wygasło: ewikcja czyści wygasłe
+        self.assertEqual(limiter.hit('f'), 0)
+        self.assertEqual(list(limiter._items), ['f'])
+
 
 class ConcurrencyTests(QuestionsCase):
     def run_threads(self, count, work):

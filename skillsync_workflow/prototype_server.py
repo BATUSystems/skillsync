@@ -2333,6 +2333,10 @@ MAX_QUESTION_ADDRESSEES = 50
 MAX_QUESTION_LOGIN = 320
 QUESTIONS_MAX_FILE_BYTES = 1024 * 1024
 QUESTIONS_ASK_LIMIT_BYTES = 768 * 1024   # a new `ask` is refused above this; the rest is a reserve for answers
+QUESTIONS_COMMENT_LIMIT_BYTES = 896 * 1024   # a `comment` is refused above this; answers/recorded/withdraw go to the hard limit
+QUESTION_WRITE_LIMIT = 60                # HTTP writes (answer, comment) per login ...
+QUESTION_WRITE_WINDOW = 60               # ... per this many seconds
+QUESTION_COMMENT_MAX = 50                # comments (late answers included) per question
 
 QUESTION_ID_RE = re.compile(r'qn-[0-9a-f]{6,64}')
 QUESTION_OPTION_ID_RE = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,63}')
@@ -2984,7 +2988,8 @@ class QuestionsStore(object):
         `PrototypeServerError`.  For each partial the store runs the dedup `(by, cid)` (the same
         `questionId` and `type`: the existing operation, idempotent; otherwise 409 `cid_conflict`),
         then the schema (400) and the state checks (404/409), assigns monotonic `at` and `id`, refuses
-        with 507 when the file is already above `max_bytes` (an `ask`: above `QUESTIONS_ASK_LIMIT_BYTES`), and
+        with 507 when the file is already above `max_bytes` (an `ask`: above `QUESTIONS_ASK_LIMIT_BYTES`, a
+        `comment`: above `QUESTIONS_COMMENT_LIMIT_BYTES`), and
         writes the whole document atomically.
         """
         if not os.path.isdir(self.directory):
@@ -3050,7 +3055,8 @@ class QuestionsStore(object):
                         existing = existing or item
                         break
                 continue
-            limit = QUESTIONS_ASK_LIMIT_BYTES if kind == 'ask' else self.max_bytes
+            limit = (QUESTIONS_ASK_LIMIT_BYTES if kind == 'ask'
+                     else QUESTIONS_COMMENT_LIMIT_BYTES if kind == 'comment' else self.max_bytes)
             if current_size is None:
                 current_size = len(serialize_questions(working).encode('utf-8', 'surrogatepass'))
             if current_size > min(limit, self.max_bytes):
@@ -4911,6 +4917,44 @@ class SessionStore(object):
             return len(self._items)
 
 
+class WriteRateLimiter(object):
+    """Sliding window of write attempts per login (K18); bounded memory (expired entries are dropped).
+
+    Every attempt that passes the role gate counts, also those ending in 404/400/409 (no oracle on
+    visibility or data); only an attempt refused by the limiter itself is not counted.
+    """
+
+    def __init__(self, clock=None, window=QUESTION_WRITE_WINDOW, limit=QUESTION_WRITE_LIMIT, max_keys=100000):
+        self.clock = clock or system_clock
+        self.window = window
+        self.limit = limit
+        self.max_keys = max_keys
+        self._items = {}
+        self._lock = threading.Lock()
+
+    def hit(self, login):
+        """Counts an attempt; returns 0 when allowed, otherwise the seconds to wait (>= 1; a refused attempt is not counted)."""
+        with self._lock:
+            now = self.clock()
+            if login not in self._items and len(self._items) >= self.max_keys:
+                for key in [key for key, entries in self._items.items() if not entries or now - entries[-1] >= self.window]:
+                    del self._items[key]
+                if len(self._items) >= self.max_keys:
+                    for key in sorted(self._items, key=lambda k: self._items[k][-1])[:max(1, self.max_keys // 10)]:
+                        del self._items[key]
+            entries = self._items.get(login)
+            if entries is None:
+                entries = self._items[login] = deque()
+            if entries and now < entries[-1]:
+                entries.clear()   # the clock jumped back: old stamps would make retryAfter lie
+            while entries and now - entries[0] >= self.window:
+                entries.popleft()
+            if len(entries) >= self.limit:
+                return max(1, min(self.window, int(math.ceil(entries[0] + self.window - now))))
+            entries.append(now)
+            return 0
+
+
 class LoginRateLimiter(object):
     """Failed logins per (login, IP) and per IP in a sliding window, enforced before PBKDF2.
 
@@ -5624,6 +5668,7 @@ class PrototypeApp(object):
         self.users.on_missing = lambda path: self.log(
             'ostrzeżenie: brak pliku użytkowników %s: żadne konto nie działa do jego przywrócenia' % path)
         self.limiter = LoginRateLimiter(clock=config.clock)
+        self.write_limiter = WriteRateLimiter(clock=config.clock)
         self.port = config.port
         self.source_writes = config.source_writes
         users_real = os.path.realpath(config.users)
@@ -6462,7 +6507,7 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
         self._json(200, {'question': view})
 
     def _api_question_post(self, question_id, kind, session, user):
-        """`answer` / `comment`; order: session → CSRF → mustChange → role → visibility (404) → body → dedup →
+        """`answer` / `comment`; order: session → CSRF → mustChange → role → rate limit (429) → visibility (404) → body → dedup →
         state (409) → schema (400).  Everything after the role runs in `build`, under the lock, on the snapshot
         of that transaction; the author is the login of the session."""
         app = self.app
@@ -6470,6 +6515,10 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
         allowed = ('expert',) if kind == 'answer' else ('developer', 'acceptor', 'expert')
         viewer = self._questions_gate(session, user, allowed)
         login = user['login']
+        wait = app.write_limiter.hit(login)   # independent of the data: counts every attempt past the role gate
+        if wait:
+            raise PrototypeServerError(429, 'rate_limited', 'too many writes', {'retryAfter': wait},
+                                       {'Retry-After': str(wait)})
         store = app.questions_store()
 
         def not_found():
@@ -6499,6 +6548,8 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
                     raise OperationError(409, 'cid_conflict', 'cid was already used for another operation')
                 return Existing(found)
             check_question_state(snapshot.fold, {'type': kind, 'questionId': question_id})
+            if kind == 'comment' and len(question['comments']) >= QUESTION_COMMENT_MAX:
+                raise OperationError(409, 'comment_limit', 'the question has reached the comment limit')
             partial = {'type': kind, 'questionId': question_id, 'by': login, 'cid': cid}
             for key, value in body.items():
                 if key not in partial:
