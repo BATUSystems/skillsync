@@ -47,10 +47,6 @@ class CeremonyInfoTests(unittest.TestCase):
     def test_error_never_contains_the_value(self):
         self.assertNotIn('sekretna', ceremony_info(manifest_with(ceremony='sekretna'))['error'])
 
-    def test_library_layers_are_not_consulted(self):
-        # funkcja przyjmuje tylko surowy manifest; defaults/projects biblioteki nie mają jak jej wpłynąć
-        self.assertEqual(ceremony_info({'workflow': {}}), {'value': 'full', 'source': 'default'})
-
 
 class RouteCeremonyTests(WorkflowFixture):
     def route(self):

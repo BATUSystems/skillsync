@@ -134,8 +134,11 @@
       "type": "object"
     },
     "ceremony": {
-      "enum": ["full", "demo"],
-      "description": "Ceremony of the feature workflow (default full); read only from the project manifest."
+      "enum": [
+        "full",
+        "demo"
+      ],
+      "description": "Ceremonia workflow feature (domyślnie full); czytana tylko z manifestu projektu."
     },
     "upgrade": {
       "type": "object"
