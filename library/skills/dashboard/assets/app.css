@@ -51,6 +51,8 @@ body {
   margin: 0; background: var(--bg); color: var(--text); font-family: var(--sans);
   line-height: 1.4; min-height: 100vh; display: flex; flex-direction: column;
 }
+/* Korzeń renderera (dashboard-render.js) nie tworzy własnego pudełka: nagłówek, zakładki, main i stopka są elementami flex body. */
+.dashboard-root { display: contents; }
 .sprite { position: absolute; }
 .ic { width: 1.05em; height: 1.05em; vertical-align: -0.16em; flex: none; }
 button { font: inherit; color: inherit; }
@@ -207,6 +209,7 @@ main { flex: 1; padding: 1.1rem 1.4rem; min-width: 0; }
 .act-head { display: flex; align-items: center; gap: .6rem; margin-bottom: .55rem; }
 .act-icon { width: 2.2rem; height: 2.2rem; border-radius: 10px; display: grid; place-items: center; background: var(--planned-soft); color: var(--planned); flex: none; }
 .act-icon svg { width: 1.3rem; height: 1.3rem; }
+.act-head .chip-end { margin-left: auto; }
 .act-name { font-size: 1.2rem; font-weight: 750; }
 .act-name small { display: block; font-size: .72rem; font-weight: 600; color: var(--muted); letter-spacing: .06em; text-transform: uppercase; }
 .act-detail { color: var(--muted); font-size: .88rem; margin: .25rem 0 .55rem; }
@@ -441,6 +444,7 @@ main { flex: 1; padding: 1.1rem 1.4rem; min-width: 0; }
   .foot { padding: .5rem 16px; }
   [data-tip]:hover::after, [data-tip]:focus-visible::after { max-width: calc(100vw - 32px); left: 0; transform: none; }
 }
-@media (max-width: 380px) {
+/* wąski telefon: akty I i II jeden pod drugim (dwie kolumny po ok. 175 px nie mieszczą Pytań i Readiness) */
+@media (max-width: 500px) {
   .acts { grid-template-columns: minmax(0, 1fr); }
 }

@@ -18,7 +18,14 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 - `library/skills/agent-runtime-pitfalls`: two new pitfalls (explicit path list for `git add`; browser screenshots in a separate profile without extensions).
 
 ### Changed
-None.
+- Skill `dashboard`: the status page view is a shared renderer, `assets/dashboard-render.js` (UMD,
+  `DashboardRenderer.create(root, deps)`: pure JSON → DOM without transport, browser storage, `innerHTML` or inline styles,
+  so the Skippster webview loads the same file under its CSP); `assets/app.js` is the page adapter (HTTP, SSE with polling,
+  `localStorage`, theme). The renderer contract is in the skill's `SKILL.md`; a static and a Node test guard it
+  (`tests/test_skillsync_dashboard_renderer.py`).
+- Dashboard page: the Questions, Readiness and substeps sections are drawn by the shared renderer. A remote viewer
+  (`approvals.viewer`) gets no "Copy „…”" buttons next to approvals, only the inactive approval buttons with the reason;
+  below 500 px the acts I and II stack in one column. Values are inserted as text (no HTML).
 
 ### Breaking
 None.

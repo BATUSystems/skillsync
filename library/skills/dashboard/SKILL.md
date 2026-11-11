@@ -175,7 +175,7 @@ była, a nie, że pętla dała PASS.
 - Ostrzeżenie w kafelku Aktu I „brak pre-implement przed GO plan”, gdy spec ma niepuste sekcje `## Kontrakty`, `## Migracja`
   albo `## Dane` (nie „nie dotyczy”), a w przebiegu nie ma `pre-implement*`.
 - Kafelek Aktu I ma sekcję „Pytania”: pytania blokujące i założenia do korekty przy prototypie z sekcji
-  `## Pytania otwarte` speca (pusta lista = „brak”); widzi ją każdy, także widz `--read-host`. Założenia nie są akcją
+  `## Pytania otwarte` speca (pusta lista = „brak”, długie pytania się zawijają); widzi ją każdy, także widz `--read-host`. Założenia nie są akcją
   „Odpowiedz na pytania”.
 - Kafelek Aktu II ma „Readiness” z `readiness.md` przebiegu: PASS zielony, BLOCKED ostrzeżenie, bez pliku neutralny; data,
   skrót Plan-sha (ostrzeżenie, gdy różni się od sha pliku planu) i link do podglądu pliku.
@@ -191,6 +191,93 @@ była, a nie, że pętla dała PASS.
 - Prototyp: odnośnik `http://<host strony>:5130/<slug>/` tylko gdy serwer prototypów na 5130 odpowiada.
 - `POST /api/approve` `{kind: spec|plan, path, sha}`: tylko akcja, którą strona właśnie oferuje; `/api/status` ma
   `approvals {enabled, here, viewer, actions[]}`, `session {url}`, `spec.fileSha`, `plan.fileSha`, a pozycje banera `word`/`approve`.
+
+### Assety strony i renderer wspólny ze Skippsterem
+
+| Plik | Rola |
+| --- | --- |
+| `index.html` | pusty korzeń `<div id="app">`, w `<head>` `app.css` i `theme.js`; skrypty: `dashboard-render.js`, potem `app.js` |
+| `dashboard-render.js` | **renderer**: czysty widok JSON (`schema: 1`) → DOM, cały szkielet strony, sprite ikon, dymki, zgody; ten sam plik wczytuje webview Skippstera |
+| `app.js` | **adapter strony**: `fetch` `/api/status`, `/api/doc`, `/api/approve` (nagłówek `X-Status-Board: 1`), `/api/descriptions`; SSE `/events` z pollingiem co 5 s i watchdogiem 40 s; `localStorage` (`dashboard:plan`, `dashboard:theme`); motyw; `#hash` adresu; zegar co 1 s; klawisze na poziomie dokumentu |
+| `theme.js` | motyw przed pierwszym rysowaniem (zapamiętany albo systemowy) |
+| `app.css` | wygląd; korzeń renderera ma klasę `dashboard-root` (`display: contents`) |
+
+Renderer to UMD: `window.DashboardRenderer` w przeglądarce, `module.exports` w Node. Eksport:
+`create(root, deps)` (alias `createDashboard`), `buildSprite(doc)`, `SPRITE` (dane symboli `i-…`), `version`.
+`create` zmienia tylko własny korzeń: dodaje do `root` klasę `dashboard-root`, sprite (pomijany przy `deps.sprite === false`,
+gdy host ma własny) i szkielet ze stałymi identyfikatorami (`title`, `meta`, `live`, `planBtn`, `planMenu`, `waitBanner`,
+`tab-progress`, `tab-docs`, `protoLink`, `acts`, `phases`, `feed`, `feedTitle`, `docList`, `docView`, `foot`, `descTip`,
+`elapsed`, `ago`, `retryDoc`, `themeBtn` tylko z `deps.theme`; symbole `i-…`). Identyfikatory są globalne w dokumencie:
+dwa egzemplarze renderera w jednym dokumencie się zderzą (jeden korzeń na dokument/webview).
+
+Kontrakt `deps` (wymagane tylko `now`):
+
+| Pole | Typ | Wymagane | Znaczenie |
+| --- | --- | --- | --- |
+| `now` | `() => number` | tak | czas w ms; renderer nie czyta zegara sam (brak = `TypeError`) |
+| `actions.approve` | `({kind, sha, path, word}) => Promise<{ok, word, text} \| void>` | nie | zgoda po dwóch kliknięciach w 5 s; wynik = komunikat w banerze (brak wyniku: host może dać `setNotice`); wyjątek = komunikat `texts.noConnection`; potem `actions.refresh()` |
+| `actions.refresh` | `() => void` | nie | prośba o świeży stan (po zgodzie) |
+| `actions.selectPlan` | `(path \| null) => void` | nie | wybór planu z menu (`null` = automatycznie); renderer zapisuje go też w `storage` (`plan`) |
+| `actions.loadDoc` | `(path) => Promise<{path, status, mtime, truncated, html}>` | nie | jak `/api/doc`; obecność włącza podgląd w zakładce Dokumenty |
+| `actions.openDoc` | `(path) => void` | nie | otwarcie dokumentu przez hosta (np. edytor), używane, gdy nie ma `loadDoc` |
+| `actions.openLink` | `(kind, id, url) => boolean` | nie | `kind`: `branch`, `pr`, `session`, `prototype`; `true` = host otworzył sam (renderer robi `preventDefault`), inaczej domyślne `<a target=_blank>` |
+| `actions.copyText` | `(text) => Promise` | nie | schowek dla „Kopiuj „CP””; brak albo błąd = „Wpisz w sesji: …” |
+| `canApprove` | `(json) => boolean` | nie | czy ten host może dawać zgody; domyślnie `approvals.here` z JSON-a |
+| `storage` | `{get(k) => string \| null, set(k, v)}` | nie | preferencje (`v == null` = usuń); bez niego wybór planu nie jest zapamiętywany |
+| `theme` | `{isDark() => boolean, toggle()}` | nie | przełącznik motywu i klawisz `T`; bez niego przycisku nie ma |
+| `texts` | `{live?, liveTip?, noConnection?}` | nie | nadpisanie tekstów wskaźnika (`live`, `polling`, `down`, `connecting`), ich dymków i komunikatu braku połączenia |
+| `prototypeUrl` | `(port, slug) => string` | nie | adres prototypu (strona: host strony + port); bez niego odnośnik bez `href` |
+| `mountHtml` | `(el, html) => void` | nie | wstawienie HTML podglądu Markdown (escapowanego przez serwer); renderer sam HTML nie parsuje |
+| `onTitle` | `(text) => void` | nie | tytuł okna (`⏳ Czeka · 40% · … — status`) |
+| `onNavigate` | `(hash) => void` | nie | adres widoku: `progress`, `docs`, `docs:<ścieżka>` |
+| `scroll` | `{save() => any, restore(v), reveal(el, inDocs)}` | nie | przewijanie przy odświeżeniu i otwarciu dokumentu |
+| `timers` | `{set(fn, ms) => id, clear(id)}` | nie | zegar uzbrojenia (5 s) i powrotu napisu „Kopiuj” (2,5 s); domyślnie `setTimeout` |
+| `raf`, `cancelRaf` | `(fn) => id`, `(id) => void` | nie | klatka animacji pasków; domyślnie `requestAnimationFrame`/`cancelAnimationFrame`; `destroy()` anuluje oczekujące |
+| `viewport` | `() => {width, height}` | nie | rozmiar okna dla dymku; domyślnie `ownerDocument.defaultView` |
+| `sprite` | `boolean` | nie | `false` = nie tworzyć sprite'a (host ma własny) |
+
+Metody obiektu z `create`:
+
+| Metoda | Znaczenie |
+| --- | --- |
+| `update(json)`, alias `render(json)` | rysuje stan; poprzedni stan służy do podświetlenia zmian; w widoku Dokumenty odświeża podgląd |
+| `setDescriptions(map)` | opisy dymków `{klucz: {title, text}}` (`descriptions.json`) |
+| `setNotice({ok, word, text, copied?} \| null)` | komunikat w banerze |
+| `setLive(mode)` | wskaźnik `live` / `polling` / `down` / `connecting` |
+| `setView(view, push = true)`, `setDoc(path)` | zakładka `progress`/`docs`; wybrany dokument (bez wczytania) |
+| `tick()` | host woła co 1 s: czas aktu III, „x min temu”, próg ciszy |
+| `handleKey(event)` | host podpina `keydown` dokumentu: `P`/`D`/`T`/`Esc` |
+| `closeMenu()`, `hideTip()` | host: kliknięcie poza korzeniem, przewinięcie |
+| `syncTheme()` | po zmianie motywu systemu |
+| `state()` | `{view, doc, armed, approving, notice}` (testy, diagnostyka) |
+| `destroy()` | anuluje zegary i klatki, zdejmuje nasłuch, czyści korzeń |
+
+Wymagania wobec hosta webview: `approvals.here` jest tylko w `/api/status` (`dashboard show` go nie zwraca), więc host, który
+pozwala na zgody, podaje `canApprove` (inaczej przyciski są nieaktywne z powodem „Zgoda tylko z przeglądarki…”). Host zawsze
+przejmuje `actions.openLink` (zwraca `true`) i nie zostawia domyślnej nawigacji w webview. Renderer wstawia do `href` tylko adresy
+`http:`/`https:` (inny schemat, np. `javascript:`, `data:` = odnośnik bez `href`, tekst bez zmian).
+
+Widz zdalny: pole `approvals.viewer` (`dashboard serve --read-host`; starszy serwer pola nie zwraca). Przy
+`approvals.viewer === true` (brak pola = false; serwer daje wtedy `approvals.here` = false) każdy przycisk zgody poza
+„zgoda dana” jest nieaktywny, a jego dymek ma powód „Zgody daje prowadzący na komputerze z sesją.” (zamiast powodu stanu i
+„Zgoda tylko z przeglądarki…”); renderer nie rysuje przycisków „Kopiuj „…”” (karta aktów, baner, komunikat) i nie wywołuje
+`actions.approve` (także z `canApprove`). Baner (`waiting`, cisza), sekcje Pytania i Readiness oraz stopka „tylko odczyt” bez zmian.
+
+Sekcje aktów rysuje renderer (`readinessTile`, `questionsBlock`, `substepsBlock`, funkcje modułu z kontekstem egzemplarza):
+Readiness w akcie II (`readiness`; link `readiness.source` jak inne dokumenty: podgląd z `loadDoc`, inaczej `openDoc`), Pytania
+w akcie I (`blockingQuestions`, `assumptions`; sekcja tylko przy specu albo niepustych listach), Podkroki i czas w akcie III
+(`substeps`, „brak danych” przy `missingData`; rozwinięcie `details` pamiętane w stanie renderera między `update()`).
+Poniżej 500 px szerokości akty I i II stoją w jednej kolumnie.
+
+Zasady renderera (CSP webview: `default-src 'none'`, skrypty i style z nonce, bez `connect-src` i `unsafe-inline`), pilnowane
+testem statycznym `tests/test_skillsync_dashboard_renderer.py`: bez `fetch`, `EventSource`, `XMLHttpRequest`, `WebSocket`,
+`postMessage`, `localStorage`/`sessionStorage`, ciasteczek, globalnych `window`/`document`/`location`/`history`/`navigator`,
+dostępu do dokumentu poza korzeniem (`ownerDocument.querySelector`/`getElementById`/`body`/`documentElement` …),
+`setInterval`, `Date.now()`; DOM tylko przez `createElement`/`createElementNS`/`textContent`/`setAttribute` (pomocnik `h()`,
+dane zawsze jako tekst: węzłem jest tylko obiekt z `nodeType`, inny obiekt staje się tekstem), bez `innerHTML`/`outerHTML`/
+`insertAdjacentHTML`, `eval`/`Function`, atrybutu `style` i `cssText` (szerokość pasków i pozycja dymku przez CSSOM
+`el.style.width`), bez handlerów inline (tylko `addEventListener`) i bez znaczników HTML w napisach. Nowy callback renderera =
+zmiana kontraktu ze Skippsterem (zgłoszenie przed zapisem).
 
 ## Bezpieczeństwo
 
@@ -215,8 +302,12 @@ Generyczne wskaźniki przebiegów (czasy kroków, liczby review i testów z `che
 ## Testy
 
 ```bash
-cd <repo skillsync> && python3 -m unittest tests.test_skillsync_dashboard_server tests.test_skillsync_dashboard
+cd <repo skillsync> && python3 -m unittest tests.test_skillsync_dashboard_server tests.test_skillsync_dashboard tests.test_skillsync_dashboard_renderer
 ```
+
+`test_skillsync_dashboard_renderer` sprawdza renderer statycznie (zasady wyżej, z kontrolą ujemną) i w Node ≥ 18
+(`SKILLSYNC_TEST_NODE` albo `node` z PATH; inaczej pominięty): rysuje każdy `tests/fixtures/dashboard/*/expected*.json` na
+cieniu DOM, który rzuca wyjątek przy wstrzykiwaniu HTML i stylu. Wyglądu (CSS, układ) nie sprawdza: to zadanie przeglądarki.
 
 Testy HTTP wybierają wolny port z zakresu 5100–5199 (inny niż 5140) i zamykają serwer po teście. Fixtury w `tests/fixtures/`
 są zanonimizowanymi kopiami formatów.
