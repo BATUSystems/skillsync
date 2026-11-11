@@ -53,7 +53,7 @@ Krok ma stały id i wiersz w tabeli o kolumnach `Id | Krok | Rola | Exec | Ryzyk
 |---|---|---|---|---|---|
 
 Faza z FE i BE zaczyna od kroku kontraktu (DTO, endpointy, migawka kontraktu w commicie); potem FE i BE idą równolegle na tym samym
-kontrakcie, bez tury „dopasowania”. Test-writer pracuje równolegle z review R1 fazy (jego testy wchodzą do rundy 2), ale tylko
+kontrakcie, bez tury „dopasowania”. Test-writer pracuje równolegle z review R1 fazy (jego testy sprawdza runda 2 albo, w pętli jednorundowej, świeży `verifier` przed odhaczeniem kroku), ale tylko
 w fazach, które mają test-writera w planie. Szacunek kalibruj na ok. 75–105 min pracy na zdolność z pełną pętlą review; spec
 z co najmniej 5 zdolnościami to dwa plany ([plan-large](plan-large.md)).
 
@@ -108,7 +108,9 @@ Faza dotykająca ekranu dostaje znacznik `[UI]` w komórce `Id` albo `Krok` tabe
 per faza: faza `[UI]` wymaga akceptacji prototypu przed startem, a fazy bez znacznika startują po „GO implement”.
 Przed startem fazy `[UI]` uruchom `skillsync prototype gate <projekt> --plan <plan> --phase <Fn>`; FAIL albo BLOCKED = faza nie startuje.
 Brak JSON-a przy kodzie wyjścia 2 (starszy `skillsync` bez `--phase`) = BLOCKED.
+Faza `[UI]` wymaga linii `Prototyp:`; bez niej `gate` i `readiness` dają BLOCKED `ui_phase_without_prototype` (chyba że jest obejście właściciela).
 Plan z linią `Prototyp:` bez żadnej fazy `[UI]` działa jak dotąd: cały plan za bramką.
+Przy planie z fazami `[UI]` FAIL bramki całego planu nie blokuje faz bez znacznika ani `readiness`; o starcie fazy decyduje `prototype gate --phase <Fn>`.
 Prośba o „GO implement” dla planu z fazami `[UI]` wymienia jawnie fazy `[UI]` i fazy bez znacznika (pola `uiPhases` i `nonUiPhases`
 z `skillsync readiness`), żeby podział zatwierdzał użytkownik.
 

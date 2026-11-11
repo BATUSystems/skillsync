@@ -23,8 +23,8 @@ delegacji, zgłoś ograniczenie zamiast udawać niezależne review lub uruchamia
   ([plan](references/plan-details.md)); raport postępu po każdym podkroku albo co 30 minut, co nastąpi pierwsze.
   Raport to jedna linia na podkrok `Fn.k` (podkrok, wynik albo sha, czas).
 - Kontrakt najpierw: faza z FE i BE zaczyna od kroku kontraktu (DTO, endpointy, migawka kontraktu w commicie), po czym FE i BE idą
-  równolegle na tym samym kontrakcie, bez tury „dopasowania”. Test-writer pracuje równolegle z review R1 fazy (jego testy integracyjne
-  wchodzą do rundy 2), ale tylko w fazach, które mają test-writera w planie.
+  równolegle na tym samym kontrakcie, bez tury „dopasowania”. Test-writer pracuje równolegle z review R1 fazy (jego testy integracyjne sprawdza runda 2 albo, w pętli jednorundowej, świeży `verifier` przed odhaczeniem kroku),
+  ale tylko w fazach, które mają test-writera w planie.
 - Podział etapu: spec z co najmniej 5 zdolnościami to dwa plany; przy bramce planu zapytaj użytkownika o podział. Szacunek kalibruj
   na ok. 75–105 min pracy na zdolność z pełną pętlą review.
 - Ceremonia: `skillsync route <projekt>` zwraca `ceremony.value` (`full` albo `demo`); przy `demo` przeczytaj
@@ -44,7 +44,7 @@ delegacji, zgłoś ograniczenie zamiast udawać niezależne review lub uruchamia
 ## Akty i zgody
 
 Praca `feature` ma trzy akty: **I Spec**, **II Plan**, **III Realizacja**; między nimi są bramki „GO plan” i „GO implement”.
-Słownik bez kolizji: „etap” zostaje dla etapów pracy w projektach (np. etapy przebiegu w projekcie), „faza” i „krok” to części planu,
+Słownik bez kolizji: „etap” zostaje dla etapów pracy w projektach (np. etapy prac w projekcie), „faza” i „krok” to części planu,
 „runda” to jedno okrążenie pętli review.
 
 | Akt | Wynik | Pętla ([review-loop](references/review-loop.md)) | Zgoda na koniec |
@@ -154,6 +154,7 @@ określa format; `pre-implement` sprawdza zmiany kontraktów i wysokie ryzyko.
    Plan z fazami `[UI]` ma bramkę per faza (znacznik `[UI]` w tabeli kroków): faza `[UI]` startuje dopiero po `skillsync prototype gate
    <projekt> --plan <plan> --phase <Fn>` (FAIL albo BLOCKED = faza nie startuje; brak JSON-a przy kodzie wyjścia 2 = BLOCKED), a prośba
    o „GO implement” wymienia jawnie fazy `[UI]` i fazy bez znacznika (`uiPhases`, `nonUiPhases` z `readiness`); szczegóły w tym samym miejscu.
+   Przy planie z fazami `[UI]` FAIL bramki całego planu nie blokuje faz bez znacznika ani `readiness`; o starcie fazy decyduje `prototype gate --phase <Fn>`.
 5. Dla kontraktów/API/danych/wysokiego ryzyka przed zapisem kodu użyj `pre-implement` (przy specu w akcie I, przed
    pętlą `spec`) i `skillsync readiness` (w akcie II, przed „GO implement”; szczegóły w [planie](references/plan-details.md)).
    `pre-implement` wykonuje podumysł tylko do odczytu (`reviewer` z briefem pre-implement); raport w
@@ -222,6 +223,7 @@ a wiedzę wspólną kilku repo w skillu biblioteki. Format: [knowledge.md](../wo
 Glosariusz ma krótko wyjaśniać slang projektu (cel 8 KB, limit procedury 12 KB), a szczegółowe
 reguły trafiają do rekordów tematycznych. Wiedzę potwierdzoną w planowaniu można zapisać już wtedy.
 Dokumenty są częścią diffu objętego review i nie mogą być pomijane jako „poza kodem”.
+Przy `ceremony: demo` dokumentacja to changelog i „Wynik”, a `retro-quality` i rekordy wiedzy to dług w „Wyniku” ([ceremonia demo](references/ceremony-demo.md)).
 
 ## Review i zakończenie
 
@@ -247,6 +249,7 @@ dokumentacji, changelogu, ustalonej wersji, zapisanej wiedzy (albo uzasadnionym 
 PASS pętli końcowej `kod` (STOP pętli wyklucza `done`), rekordzie końcowym checkpointu (`--final`) z wynikiem `skillsync retro` (przed rekordem `final` idzie retrospektywa jakościowa z checkpointem `retro-quality`, [retro-quality](references/retro-quality.md); jej propozycje nie blokują `done`) oraz zamknięciu blokujących uwag; przy specu `done` ustawia też jego status, chyba że spec jest już `implemented` ([spec](references/spec.md)). Nierozwiązane blokery dają `blocked`, a nie sukces z przypisem.
 Sekcja „Wynik” zawiera zmiany, dowody, stare porażki, niewykonane sprawdzenia/ograniczenia
 oraz podsekcję „Zdobyta wiedza” z odnośnikami do zaktualizowanych dokumentów i rekordów.
+Przy `ceremony: demo` `done` zachowuje wszystkie warunki poza dokumentacją ponad changelog i „Wynik”, `retro-quality` i rekordami wiedzy, które są długiem w „Wyniku” ([ceremonia demo](references/ceremony-demo.md)).
 **Zamknięcie przebiegu** należy do sesji głównej i jest ostatnim krokiem `Progress` (nie poza planem): „Wynik” →
 `retro-quality` → `skillsync checkpoint --final` → `Status: done` planu i `implemented` speca → commit. Robisz je przed
 stanem „czeka na READY/CP”, nie po merge'u, w każdym trybie, także gdy commity powstają ręcznie na polecenie użytkownika.

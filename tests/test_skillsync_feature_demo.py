@@ -44,7 +44,18 @@ REQUIRED = [
     ('k3-skill-wskaznik', SKILL, r'\(references/ceremony-demo\.md\)'),
     ('k3-plan-details-ceremonia', PLAN_DETAILS, r'Linia `Ceremonia: demo` \(opcjonalna przy `full`\)'),
     ('k3-plan-details-link', PLAN_DETAILS, r'\(ceremony-demo\.md\)'),
-    ('k3-base-wyjatek-done', BASE, r'Wyjątek `ceremony: demo`: dokumentacja ponad changelog i „Wynik”, `retro-quality`, rekordy wiedzy = dług w „Wyniku”; reszta bez zmian'),
+    ('k3-base-wyjatek-done', BASE, r'`ceremony: demo`: wyjątek tylko wg `ceremony-demo.md` skilla `feature`, także przed „czeka na READY/CP”'),
+    ('k3-skill-done-demo', SKILL, r'Przy `ceremony: demo` `done` zachowuje wszystkie warunki poza dokumentacją ponad changelog i „Wynik”'),
+    ('k3-skill-dokumentacja-demo', SKILL, r'Przy `ceremony: demo` dokumentacja to changelog i „Wynik”, a `retro-quality` i rekordy wiedzy to dług w „Wyniku”'),
+    ('k3-final-ostrzezenie', CEREMONY, r'`retro-quality-missing`; jest oczekiwane i nie blokuje'),
+    ('k3-liczba-petli', CEREMONY, r'`demo` zmienia liczbę pętli'),
+    ('k3-petla-koncowa-d113', CEREMONY, r'Pętla końcowa pozostaje pełna, gdy cała zmiana należy do kategorii D113'),
+    ('k3-review-loop-petle', REVIEW_LOOP, r'zmienia liczbę pętli: jedna pętla `kod` na przebieg zamiast pętli po każdej fazie.*pętla końcowa pozostaje pełna, gdy cała zmiana należy do kategorii D113'),
+    ('k10-review-loop-tw-wyjatek', REVIEW_LOOP, r'test-writer pracujący równolegle z R1 nie wstrzymuje rundy, bo R1 dotyczy kodu produkcyjnego'),
+    ('k10-measurement-wypelnia-format', MEASUREMENT, r'wypełnia istniejący format `- HH:MM zrobione: …`.*a nie zastępuje go'),
+    ('k9-spec-zamrozony-z-zalozeniami', SPEC, r'Po „GO plan” spec jest zamrożony razem z nimi: nie przenoś ich do „Decyzji”'),
+    ('k9-spec-bez-blokujacego-q', SPEC, r'`draft` bez blokującego `Q` \(także z samymi \[ZAŁOŻENIE\]\) \| `approved\*`'),
+    ('k9-spec-zalozenia-do-konca-aktu-I', SPEC, r'założenia `\[ZAŁOŻENIE\]` zostają w specu do końca aktu I jako jawne założenia'),
     # K9
     ('k9-spec-blokujace', SPEC, r'`- Q<n>: <pytanie>` jest \*\*blokujące\*\*: STOP'),
     ('k9-spec-zalozenie', SPEC, r'`- Q<n> \[ZAŁOŻENIE\]: <pytanie> — przyjęte: <wartość>` to \*\*założenie nieblokujące\*\*'),
@@ -64,12 +75,13 @@ REQUIRED = [
     ('k10-plan-large-go-plan', PLAN_LARGE, r'„GO plan” to też jeden lokalny commit: spec, plan-szkic i prototyp'),
     ('k10-plan-large-bez-pusha', PLAN_LARGE, r'Bez pusha: przed „GO implement” nic nie opuszcza maszyny'),
     ('k10-plan-large-wyjatek', PLAN_LARGE, r'wejście z klucza zgłoszenia zostaje bez commita przy „GO plan”'),
-    ('k10-base-go-plan', BASE, r'„GO plan” = jeden lokalny commit \(spec, plan-szkic, prototyp\) na gałęzi roboczej w worktree, bez pusha \(klucz zgłoszenia: bez commita\)'),
+    ('k10-base-go-plan', BASE, r'„GO plan” = lokalny commit speca, planu i prototypu, potem commit po każdym kroku'),
+    ('k10-base-osobny-worktree', BASE, r'Od „GO plan” \(bez niego: „GO implement”\) praca na gałęzi roboczej w osobnym worktree'),
     ('k10-base-przed-go-implement', BASE, r'Przed „GO implement” nic nie opuszcza maszyny'),
     ('k10-kontrakt-najpierw', SKILL, r'Kontrakt najpierw: faza z FE i BE zaczyna od kroku kontraktu \(DTO, endpointy, migawka kontraktu w commicie\)'),
     ('k10-bez-tury-dopasowania', SKILL, r'bez tury „dopasowania”'),
     ('k10-kontrakt-plan-details', PLAN_DETAILS, r'Faza z FE i BE zaczyna od kroku kontraktu'),
-    ('k10-tw-r1', SKILL, r'Test-writer pracuje równolegle z review R1 fazy \(jego testy integracyjne wchodzą do rundy 2\), ale tylko w fazach, które mają test-writera w planie'),
+    ('k10-tw-r1', SKILL, r'Test-writer pracuje równolegle z review R1 fazy \(jego testy integracyjne sprawdza runda 2 albo, w pętli jednorundowej, świeży `verifier` przed odhaczeniem kroku\), ale tylko w fazach, które mają test-writera w planie'),
     ('k10-tw-r1-review-loop', REVIEW_LOOP, r'Test-writer fazy pracuje równolegle z rundą R1 tej fazy.*tylko w fazach, które mają test-writera w planie'),
     ('k10-dwa-plany', SKILL, r'spec z co najmniej 5 zdolnościami to dwa plany'),
     ('k10-dwa-plany-plan-large', PLAN_LARGE, r'Spec z co najmniej 5 zdolnościami to dwa plany'),
@@ -83,6 +95,9 @@ REQUIRED = [
     ('k12-gate-phase', PLAN_DETAILS, r'`skillsync prototype gate <projekt> --plan <plan> --phase <Fn>`; FAIL albo BLOCKED = faza nie startuje'),
     ('k12-brak-json-blocked', PLAN_DETAILS, r'Brak JSON-a przy kodzie wyjścia 2 \(starszy `skillsync` bez `--phase`\) = BLOCKED'),
     ('k12-fazy-bez-znacznika', PLAN_DETAILS, r'fazy bez znacznika startują po „GO implement”'),
+    ('k12-fail-nie-blokuje-faz', PLAN_DETAILS, r'FAIL bramki całego planu nie blokuje faz bez znacznika ani `readiness`; o starcie fazy decyduje `prototype gate --phase <Fn>`'),
+    ('k12-skill-fail-nie-blokuje-faz', SKILL, r'FAIL bramki całego planu nie blokuje faz bez znacznika ani `readiness`; o starcie fazy decyduje `prototype gate --phase <Fn>`'),
+    ('k12-ui-wymaga-prototypu', PLAN_DETAILS, r'Faza `\[UI\]` wymaga linii `Prototyp:`; bez niej `gate` i `readiness` dają BLOCKED `ui_phase_without_prototype`'),
     ('k12-prototyp-bez-ui', PLAN_DETAILS, r'Plan z linią `Prototyp:` bez żadnej fazy `\[UI\]` działa jak dotąd: cały plan za bramką'),
     ('k12-go-implement-podzial', PLAN_DETAILS, r'wymienia jawnie fazy `\[UI\]` i fazy bez znacznika \(pola `uiPhases` i `nonUiPhases` z `skillsync readiness`\)'),
     ('k12-skill-gate-phase', SKILL, r'`skillsync prototype gate <projekt> --plan <plan> --phase <Fn>` \(FAIL albo BLOCKED = faza nie startuje; brak JSON-a przy kodzie wyjścia 2 = BLOCKED\)'),
@@ -94,7 +109,7 @@ LINKED_FROM_SKILL = ['references/ceremony-demo.md', 'references/spec.md', 'refer
 EDITED_SKILLS = ['skills/feature/SKILL.md']
 # Wzorzec składany z fragmentów, żeby sam plik testu nie zawierał nazwy (grep w bibliotece i testach ma dać 0).
 CLIENT_PATTERN = 'hac' + 'aton|hac' + 'kathon'
-CLIENT_NAMES = re.compile(CLIENT_PATTERN, re.I)
+CLIENT_NAMES = re.compile(CLIENT_PATTERN + '|' + '/' + 'home/', re.I)
 
 
 def norm(text):
@@ -148,7 +163,7 @@ class FeatureDemoPhraseTests(unittest.TestCase):
 
     def test_go_plan_commit_stays_local_and_cp_rules_untouched(self):
         base = norm((Path(LIB) / BASE).read_text(encoding='utf-8'))
-        self.assertLess(base.index('„GO plan” = jeden lokalny commit'), base.index('`pr`: „GO implement” uruchamia `pr-run`'))
+        self.assertLess(base.index('„GO plan” = lokalny commit speca'), base.index('`pr`: „GO implement” uruchamia `pr-run`'))
         for kept in ('`CP` — commit i push bieżącej gałęzi roboczej', '`READY` — tylko w `pr` i tylko od użytkownika',
                      'Zgody tylko od użytkownika: słowo zgody działa tylko wpisane przez użytkownika'):
             self.assertIn(kept, base)
@@ -167,9 +182,10 @@ class FeatureDemoPhraseTests(unittest.TestCase):
     def test_grep_equivalent_returns_zero(self):
         if shutil.which('grep') is None:
             self.skipTest('grep not available')
-        repo = Path(LIB).parent
-        proc = subprocess.run(['grep', '-rniE', CLIENT_PATTERN, 'library/skills/feature', 'library/instructions', 'tests/test_skillsync_feature_demo.py'],
-                              cwd=repo, capture_output=True, text=True)
+        pattern = CLIENT_PATTERN + '|' + '/' + 'home/'
+        targets = [str(Path(LIB) / 'skills/feature'), str(Path(LIB) / 'instructions'), str(Path(__file__).resolve())]
+        proc = subprocess.run(['grep', '-rniE', pattern, *targets], capture_output=True, text=True)
+        self.assertEqual(proc.returncode, 1, f'grep: 0 trafień = rc 1, rc 2 = błąd; stdout={proc.stdout!r} stderr={proc.stderr!r}')
         self.assertEqual(proc.stdout, '')
 
 

@@ -13,13 +13,13 @@ Tryb jest dla krótkich przebiegów pokazowych: obniża koszt procesu, nie obni�
 
 ## Co zmienia `ceremony: demo`
 
-- **Review `kod`**: jedno review `kod` na cały przebieg (jedna runda na końcu, zamknięcie majorów przez `verifier`) PLUS pętla pełna
+- **Review `kod`**: `demo` zmienia liczbę pętli: jedno review `kod` na cały przebieg (jedna runda na końcu, zamknięcie majorów przez `verifier`) PLUS pętla pełna
   ([review-loop](review-loop.md#kategoria-pętli-i-przejścia)) dla każdego kroku ze strażnikiem wycieków, migracją albo bezpieczeństwem.
-  Wszystkie trzy kategorie D113 zostają bez zmian; `demo` ich nie osłabia.
+  Pętla końcowa pozostaje pełna, gdy cała zmiana należy do kategorii D113. Wszystkie trzy kategorie D113 zostają bez zmian; `demo` ich nie osłabia.
 - **Test-writer**: tylko w fazach z uprawnieniami lub izolacją danych; w pozostałych testy jednostkowe pisze `implementer` fazy.
 - **Dokumentacja**: ograniczona do changeloga i „Wyniku” planu.
 - **Odroczone**: `retro-quality` i rekordy wiedzy (`docs/domain`, `docs/lessons`) przechodzą do podsekcji „Dług (ceremony: demo)”
   w „Wyniku” planu: lista odroczonych rekordów (temat, źródło, proponowany właściciel zapisu). Dług spłaca człowiek albo kolejny przebieg `full`.
 - **Bez zmian**: testy, ustalona wersja, rekord `--final`, zamknięcie planu i pętle według kategorii. Plan kończy się `done` z wypełnioną
   podsekcją „Dług (ceremony: demo)”. Relaksacja w regule „Done” rdzenia dotyczy wyłącznie dokumentacji ponad changelog i „Wynik”,
-  `retro-quality` i rekordów wiedzy.
+  `retro-quality` i rekordów wiedzy. `skillsync checkpoint --final` zgłosi wtedy ostrzeżenie `retro-quality-missing`; jest oczekiwane i nie blokuje.

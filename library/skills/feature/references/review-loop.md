@@ -50,10 +50,10 @@ Challenger pomysłu i `pre-implement` są poza licznikiem rund. Kolejność w ak
 - Zlecenie: profil, ścieżki materiału i instrukcji (w projekcie pełne ścieżki, np. `.claude/skills/feature/…`), a od rundy 2
   także plików decyzji wcześniejszych rund (`Id | Waga | Opis | Rozstrzygnięcie | Powroty`, przy odrzuconym blocker/major
   z uzasadnieniem autora) z poleceniem, by otworzyć je dopiero po niezależnym przeglądzie (kolejność deklaratywna).
-- Test-writer fazy pracuje równolegle z rundą R1 tej fazy (jego testy integracyjne wchodzą do rundy 2), ale tylko w fazach, które mają
+- Test-writer fazy pracuje równolegle z rundą R1 tej fazy (jego testy integracyjne sprawdza runda 2 albo, w pętli jednorundowej, świeży `verifier` przed odhaczeniem kroku), ale tylko w fazach, które mają
   test-writera w planie; bez niego runda R1 idzie sama.
-- Przy `ceremony: demo` liczbę rund `kod` wyznacza [ceremonia demo](ceremony-demo.md): jedno review na przebieg plus pętla pełna dla kroków
-  ze strażnikiem wycieków, migracją albo bezpieczeństwem.
+- Przy `ceremony: demo` [ceremonia demo](ceremony-demo.md) zmienia liczbę pętli: jedna pętla `kod` na przebieg zamiast pętli po każdej fazie, plus pętla pełna
+  dla kroków ze strażnikiem wycieków, migracją albo bezpieczeństwem; pętla końcowa pozostaje pełna, gdy cała zmiana należy do kategorii D113.
 - Recenzent zwraca: status, nowe uwagi (waga, miejsce, problem, propozycja) i od rundy 2 tabelę zamknięć, **jedna linia na
   każde id**, poza limitem długości raportu. Zamknięcie sprawdza na plikach, nie na deklaracji autora. Dla odrzuconego
   blocker/major orzeka „uzasadnienie przyjęte / nieprzyjęte”. Powrót uwagi dopasowuje recenzent: nowa uwaga podaje
@@ -75,7 +75,7 @@ Limit 4 rund i STOP dotyczą pętli pełnej. Pętla jednorundowa kończy się we
 i odrzucenia z przyjętym uzasadnieniem się nie liczą), pełnej tabeli zamknięć (brak wiersza dla id = uwaga otwarta)
 oraz braku pytań Q/C i werdyktu „podziel”. Profil `kod` dodatkowo:
 - dowód, że asercje negatywne i smoke potrafią paść;
-- **po kroku**: runda startuje po ustabilizowaniu plików kroku (koniec pracy `implementer` i `test-writer` tego kroku),
+- **po kroku**: runda startuje po ustabilizowaniu plików kroku (koniec pracy `implementer` i `test-writer` tego kroku; wyjątek: test-writer pracujący równolegle z R1 nie wstrzymuje rundy, bo R1 dotyczy kodu produkcyjnego, a jego testy sprawdza runda 2 albo świeży `verifier`),
   testy obszaru kroku są zielone na przeglądanym stanie; krok w Progress odhacza się po PASS jego pętli (krok bez pętli: po testach);
 - **końcowa**: zestaw końcowy zielony (logi nowsze niż ostatnia zmiana), a dokumentacja (`scribe`), changelog i ustalony
   numer wersji są w diffie przed rundą 1. Zmiana dokumentacji, changeloga, wersji albo kodu po PASS unieważnia dowód
