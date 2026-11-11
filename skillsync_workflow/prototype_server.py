@@ -93,8 +93,10 @@ DECISION_OUTCOMES = ('apply', 'keep', 'variant', 'defer', 'out_of_scope')
 ACCEPT_SCOPES = ('screen', 'all', 'project')
 ACCEPT_VIA = ('ui', 'cli')
 
-ROLES = ('commenter', 'acceptor', 'developer')
+LEGACY_ROLES = ('commenter', 'acceptor', 'developer')   # the `role` field of older cores
+ROLES = LEGACY_ROLES + ('expert',)
 PRIVILEGED_ROLES = ('acceptor', 'developer')
+ROLE_PRECEDENCE = ('developer', 'acceptor', 'expert', 'commenter')   # highest first
 SERVER_FEATURES = ('views', 'login-link')   # `login-link` is listed only while the endpoint is active
 VIEW_VALUES = ('desktop', 'mobile')
 RESERVED_LOGINS = ('agent', 'import', 'server')
@@ -3642,6 +3644,60 @@ def private_file_problem(path):
 PRIVATE_CHECK_SKIPPED = 'kontrola uprawnień 0600 pominięta na Windows'
 
 
+def roles_of(record):
+    """Roles of an account record as a tuple; `roles` wins over `role`.  Never mutates the record."""
+    roles = record.get('roles')
+    if isinstance(roles, (list, tuple)) and roles:
+        return tuple(roles)
+    role = record.get('role')
+    return (role,) if isinstance(role, str) else ()
+
+
+def primary_role(record):
+    """Highest role of the account (developer > acceptor > expert > commenter)."""
+    roles = roles_of(record)
+    for candidate in ROLE_PRECEDENCE:
+        if candidate in roles:
+            return candidate
+    return roles[0] if roles else 'commenter'
+
+
+def has_privileged_role(record):
+    return any(role in PRIVILEGED_ROLES for role in roles_of(record))
+
+
+def _legacy_role_for(roles):
+    """Value of the backward-compatible `role` field: the highest legacy role, `commenter` for expert-only."""
+    for candidate in ('developer', 'acceptor'):
+        if candidate in roles:
+            return candidate
+    return 'commenter'
+
+
+def role_fields(roles):
+    """Record fields for a role list (D16): `role` always, `roles` only for `expert` or several roles."""
+    roles = list(roles)
+    fields = {'role': _legacy_role_for(roles)}
+    if 'expert' in roles or len(roles) > 1:
+        fields['roles'] = roles
+    return fields
+
+
+def normalize_role_list(role=None, roles=None):
+    """Validated, de-duplicated role list from `role`/`roles` arguments (raises `invalid_role`)."""
+    if roles is None:
+        roles = [role if role is not None else 'commenter']
+    result = []
+    for item in roles:
+        if item not in ROLES:
+            raise UserError('invalid_role', 'role must be one of: %s' % ', '.join(ROLES))
+        if item not in result:
+            result.append(item)
+    if not result:
+        raise UserError('invalid_role', 'at least one role is required')
+    return result
+
+
 def _validate_users_data(data):
     if not isinstance(data, dict) or data.get('version') != 1 or not isinstance(data.get('users'), list):
         raise UserError('invalid_users_file', 'users file must be {"version": 1, "users": [...]}')
@@ -3653,8 +3709,21 @@ def _validate_users_data(data):
         if not isinstance(login, str) or not login or login in seen:
             raise UserError('invalid_users_file', 'user without a unique login')
         seen.add(login)
-        if record.get('role') not in ROLES:
+        has_role, has_roles = 'role' in record, 'roles' in record
+        if not has_role and not has_roles:
             raise UserError('invalid_users_file', 'user %s has an unknown role' % login)
+        if has_role and record['role'] not in LEGACY_ROLES:
+            raise UserError('invalid_users_file', 'user %s has an unknown role' % login)
+        if has_roles:
+            listed = record['roles']
+            if (not isinstance(listed, list) or not listed
+                    or any(not isinstance(item, str) or item not in ROLES for item in listed)
+                    or len(set(listed)) != len(listed)):
+                raise UserError('invalid_users_file',
+                                'user %s has invalid roles (a non-empty list of unique known roles)' % login)
+            if has_role and record['role'] != _legacy_role_for(listed):
+                raise UserError('invalid_users_file', 'user %s: role must be %s to match roles'
+                                % (login, _legacy_role_for(listed)))
         if not isinstance(record.get('password'), str) or not isinstance(record.get('mustChange'), bool):
             raise UserError('invalid_users_file', 'user %s lacks password/mustChange' % login)
         if 'name' in record and record['name'] is not None and not isinstance(record['name'], str):
@@ -3667,7 +3736,9 @@ def public_user(record):
     result = {'login': record['login']}
     if record.get('name'):
         result['name'] = record['name']
-    for key in ('role', 'mustChange', 'created', 'passwordChanged'):
+    result['role'] = primary_role(record)
+    result['roles'] = list(roles_of(record))
+    for key in ('mustChange', 'created', 'passwordChanged'):
         result[key] = record.get(key)
     return result
 
@@ -3808,12 +3879,19 @@ def _privileged_warning(login, role):
             'rozważ --password-prompt' % (login, role))
 
 
-def add_user(users_file, login, role='commenter', password=None, default_password=None, name=None):
+def _primary_of(role_list):
+    return primary_role({'roles': role_list})
+
+
+def _needs_warning(roles):
+    return 'expert' in roles or any(role in PRIVILEGED_ROLES for role in roles)
+
+
+def add_user(users_file, login, role='commenter', password=None, default_password=None, name=None, roles=None):
     """Create an account; returns `(public record, warnings)`.  Raises `UserError`."""
     login = normalize_login(login)
     validate_login(login)
-    if role not in ROLES:
-        raise UserError('invalid_role', 'role must be one of: %s' % ', '.join(ROLES))
+    role_list = normalize_role_list(role, roles)
     if name is not None:
         name = ' '.join(name.split())
         if not name or text_length(name) > MAX_NAME or not _encodable(name):
@@ -3823,7 +3901,8 @@ def add_user(users_file, login, role='commenter', password=None, default_passwor
     record = {'login': login}
     if name:
         record['name'] = name
-    record.update({'role': role, 'password': hash_password(secret, users_file.iterations),
+    record.update(role_fields(role_list))
+    record.update({'password': hash_password(secret, users_file.iterations),
                    'mustChange': must_change, 'created': now, 'passwordChanged': now})
 
     def change(users):
@@ -3831,7 +3910,7 @@ def add_user(users_file, login, role='commenter', password=None, default_passwor
             raise UserError('user_exists', 'user already exists: %s' % login)
         users.append(record)
     users_file.update(change)
-    warnings = [_privileged_warning(login, role)] if must_change and role in PRIVILEGED_ROLES else []
+    warnings = [_privileged_warning(login, primary_role(record))] if must_change and _needs_warning(role_list) else []
     return public_user(record), warnings
 
 
@@ -3853,7 +3932,29 @@ def set_password(users_file, login, password=None, default_password=None):
     if not users_file.exists():
         raise UserError('users_file_missing', 'users file does not exist: %s' % users_file.path)
     record = users_file.update(change)
-    warnings = [_privileged_warning(login, record['role'])] if must_change and record['role'] in PRIVILEGED_ROLES else []
+    warnings = ([_privileged_warning(login, primary_role(record))]
+                if must_change and _needs_warning(roles_of(record)) else [])
+    return public_user(record), warnings
+
+
+def set_roles(users_file, login, roles):
+    """Replace the role set of an existing account (`user roles`); recomputes `role`/`roles` (D16)."""
+    login = normalize_login(login)
+    role_list = normalize_role_list(None, list(roles) if roles else [])
+    fields = role_fields(role_list)
+
+    def change(users):
+        for item in users:
+            if item['login'] == login:
+                item.pop('roles', None)
+                item.update(fields)
+                return dict(item)
+        raise UserError('user_not_found', 'no such user: %s' % login)
+    if not users_file.exists():
+        raise UserError('users_file_missing', 'users file does not exist: %s' % users_file.path)
+    record = users_file.update(change)
+    warnings = [_privileged_warning(login, ', '.join(roles_of(record)))] if (
+        record.get('mustChange') and _needs_warning(roles_of(record))) else []
     return public_user(record), warnings
 
 
@@ -3909,10 +4010,9 @@ def parse_import_lines(text):
     return logins, invalid
 
 
-def import_users(users_file, logins, role='commenter', default_password=None):
+def import_users(users_file, logins, role='commenter', default_password=None, roles=None):
     """Create accounts with the default password and `mustChange`, skipping existing ones."""
-    if role not in ROLES:
-        raise UserError('invalid_role', 'role must be one of: %s' % ', '.join(ROLES))
+    role_list = normalize_role_list(role, roles)
     secret, _must = _choose_password(None, default_password)
     normalized = []
     for login in logins:
@@ -3930,12 +4030,15 @@ def import_users(users_file, logins, role='commenter', default_password=None):
             if login in existing:
                 skipped.append(login)
                 continue
-            users.append({'login': login, 'role': role, 'password': encoded[login], 'mustChange': True,
-                          'created': now, 'passwordChanged': now})
+            entry = {'login': login}
+            entry.update(role_fields(role_list))
+            entry.update({'password': encoded[login], 'mustChange': True, 'created': now, 'passwordChanged': now})
+            users.append(entry)
             added.append(login)
         return added, skipped
     added, skipped = users_file.update(change)
-    warnings = [_privileged_warning(login, role) for login in added] if role in PRIVILEGED_ROLES else []
+    warnings = ([_privileged_warning(login, _primary_of(role_list)) for login in added]
+                if _needs_warning(role_list) else [])
     return {'added': added, 'skipped': skipped}, warnings
 
 
@@ -4711,9 +4814,9 @@ def startup_checks(config):
             errors.append(error.message)
             records = []
         weak = sorted(record['login'] for record in records
-                      if record['mustChange'] and record['role'] in PRIVILEGED_ROLES)
+                      if record['mustChange'] and _needs_warning(roles_of(record)))
         if weak:
-            warnings.append('konta akceptujących/programistów z hasłem domyślnym (mustChange): ' + ', '.join(weak))
+            warnings.append('konta akceptujących, programistów i ekspertów z hasłem domyślnym (mustChange): ' + ', '.join(weak))
         if config.git_checks:
             git_errors, git_warnings = git_users_file_problems(users_real)
             errors.extend(git_errors)
@@ -4912,8 +5015,8 @@ class PrototypeApp(object):
 
     def user_payload(self, user):
         first, full = person_names(user['login'], user.get('name'))
-        return {'login': user['login'], 'name': full, 'firstName': first, 'role': user['role'],
-                'mustChange': bool(user['mustChange'])}
+        return {'login': user['login'], 'name': full, 'firstName': first, 'role': primary_role(user),
+                'roles': list(roles_of(user)), 'mustChange': bool(user['mustChange'])}
 
 
 def safe_next(value):
@@ -5502,7 +5605,7 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
         if state == 'v1':
             raise NeedsMigration()
         store = app.store(slug)
-        login, role = user['login'], user['role']
+        login, role = user['login'], primary_role(user)
         result = store.transaction(lambda snapshot: prepare_browser_operation(
             snapshot, login, role, body, current=lambda: app.prototype_hashes(_directory)))
         if result.existing is not None:
@@ -5522,7 +5625,7 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
         """401 without a session, 403 `forbidden` for the commenter role."""
         if session is None or user is None:
             raise PrototypeServerError(401, 'unauthorized', 'login required')
-        if user['role'] not in PRIVILEGED_ROLES:
+        if not has_privileged_role(user):
             raise PrototypeServerError(403, 'forbidden', 'only an acceptor or a developer may accept a project')
 
     def _api_project(self, session, user):
@@ -5550,7 +5653,7 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
         """401 without a session, 403 `forbidden` for the commenter role, 403 `source_writes_disabled`."""
         if session is None or user is None:
             raise PrototypeServerError(401, 'unauthorized', 'login required')
-        if user['role'] not in PRIVILEGED_ROLES:
+        if not has_privileged_role(user):
             raise PrototypeServerError(403, 'forbidden', 'only an acceptor or a developer may restore a screen')
         if not self.app.source_writes:
             raise PrototypeServerError(403, 'source_writes_disabled', 'this server does not write prototype sources')
@@ -5586,7 +5689,7 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
         cid = body.get('cid')
         if not isinstance(cid, str) or not CID_RE.fullmatch(cid):
             raise OperationError(400, 'cid_required', 'cid is required')
-        login, role = user['login'], user['role']
+        login, role = user['login'], primary_role(user)
 
         def precheck():
             if role not in PRIVILEGED_ROLES:
@@ -5880,12 +5983,15 @@ def run_user_command(args, stdin=None, out=None, err=None, iterations=DEFAULT_IT
     err = err or sys.stderr
     action = args.user_action
     try:
-        users, warnings = _users_for_cli(args.users, iterations, must_exist=action in ('passwd', 'remove', 'list'))
+        users, warnings = _users_for_cli(args.users, iterations, must_exist=action in ('passwd', 'remove', 'list', 'roles'))
         if action == 'add':
             password, default = _password_args(args, stdin)
-            record, extra = add_user(users, args.login, role=args.role, password=password, default_password=default,
+            record, extra = add_user(users, args.login, roles=args.role or ['commenter'], password=password, default_password=default,
                                      name=args.name)
             result = {'status': 'PASS', 'action': 'add', 'user': record}
+        elif action == 'roles':
+            record, extra = set_roles(users, args.login, args.role or [])
+            result = {'status': 'PASS', 'action': 'roles', 'user': record}
         elif action == 'passwd':
             password, default = _password_args(args, stdin)
             record, extra = set_password(users, args.login, password=password, default_password=default)
@@ -5907,7 +6013,7 @@ def run_user_command(args, stdin=None, out=None, err=None, iterations=DEFAULT_IT
                 _emit(out, {'status': 'BLOCKED', 'action': 'import', 'error': 'invalid_login', 'invalid': invalid})
                 return 2
             _password, default = _password_args(args, stdin)
-            outcome, extra = import_users(users, logins, role=args.role, default_password=default)
+            outcome, extra = import_users(users, logins, roles=args.role or ['commenter'], default_password=default)
             result = dict({'status': 'PASS', 'action': 'import'}, **outcome)
         for warning in warnings + extra:
             err.write('ostrzeżenie: %s\n' % warning)
@@ -5949,12 +6055,16 @@ def build_parser():
     add.add_argument('login')
     add.add_argument('--users', required=True)
     add.add_argument('--name')
-    add.add_argument('--role', choices=ROLES, default='commenter')
+    add.add_argument('--role', action='append', choices=ROLES, default=None)
     password_group(add)
     passwd = actions.add_parser('passwd')
     passwd.add_argument('login')
     passwd.add_argument('--users', required=True)
     password_group(passwd)
+    roles_parser = actions.add_parser('roles')
+    roles_parser.add_argument('login')
+    roles_parser.add_argument('--users', required=True)
+    roles_parser.add_argument('--role', action='append', choices=ROLES, default=None)
     remove = actions.add_parser('remove')
     remove.add_argument('login')
     remove.add_argument('--users', required=True)
@@ -5963,7 +6073,7 @@ def build_parser():
     importing = actions.add_parser('import')
     importing.add_argument('file')
     importing.add_argument('--users', required=True)
-    importing.add_argument('--role', choices=ROLES, default='commenter')
+    importing.add_argument('--role', action='append', choices=ROLES, default=None)
     password_group(importing, prompt=False)
     return parser
 

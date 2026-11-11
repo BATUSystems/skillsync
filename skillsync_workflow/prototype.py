@@ -2281,16 +2281,20 @@ def user_command(root, args):
     action = args.user_command
     report = {'status': 'PASS', 'action': action, 'users_file': _relative_or_absolute(users.path, repo)}
     try:
-        if action in ('passwd', 'remove', 'list') and not users.exists():
+        if action in ('passwd', 'remove', 'list', 'roles') and not users.exists():
             raise PrototypeError(f'users_file_missing: {report["users_file"]} does not exist')
-        if action in ('add', 'passwd'):
+        if action == 'roles':
+            record, extra = server.set_roles(users, args.login, args.role or [])
+            report['user'] = record
+            warnings += extra
+        elif action in ('add', 'passwd'):
             password = _cli_password(args)
             default = None
             if password is None:
                 default, extra = default_password()
                 warnings += extra
             if action == 'add':
-                record, extra = server.add_user(users, args.login, role=args.role, password=password,
+                record, extra = server.add_user(users, args.login, roles=args.role or ['commenter'], password=password,
                                                 default_password=default, name=args.name)
             else:
                 record, extra = server.set_password(users, args.login, password=password, default_password=default)
@@ -2311,7 +2315,7 @@ def user_command(root, args):
                                      [f'line {item["line"]}: {item["error"]}' for item in invalid])
             default, extra = default_password()
             warnings += extra
-            outcome, extra = server.import_users(users, logins, role=args.role, default_password=default)
+            outcome, extra = server.import_users(users, logins, roles=args.role or ['commenter'], default_password=default)
             report.update(outcome)
             warnings += extra
     except server.UserError as error:
@@ -2669,8 +2673,8 @@ def restore_prototype(root, manifest, slug, screen=None, source=None, reason=Non
         raise PrototypeError(f'--reason must have 1-{server.MAX_REASON} characters')
     login, record, user_warnings = _privileged_who(repo, users, who)
     warnings.extend(user_warnings)
-    if record['role'] not in server.PRIVILEGED_ROLES:
-        raise PrototypeError(f'forbidden: {login} has the role {record["role"]}; restore needs acceptor or developer')
+    if not server.has_privileged_role(record):
+        raise PrototypeError(f'forbidden: {login} has the role {server.primary_role(record)}; restore needs acceptor or developer')
     try:
         if dry_run:
             preview = server.preview_restore(store, str(directory), screen, source)
@@ -2748,7 +2752,7 @@ def accept_prototype(root, manifest, slug=None, screens=None, all_screens=False,
     login = server.normalize_login(by)
     account, warnings = _users(repo, users)
     record = account.get(login) if account.exists() else None
-    if record is None or record['role'] not in server.PRIVILEGED_ROLES:
+    if record is None or not server.has_privileged_role(record):
         return _blocked('forbidden', f'--by must be an account with the role acceptor or developer '
                         f'(checked in {_relative_or_absolute(account.path, repo)})')
     if record['mustChange']:
@@ -3082,8 +3086,8 @@ def decide_prototype(root, manifest, slug, thread, kind, outcome, text, who=None
         if who is None:
             raise PrototypeError('--who is required with --kind developer (a login with the role developer)')
         login, record, _warnings = _privileged_who(Path(root).resolve(), users, who)
-        if record['role'] not in HUMAN_DECIDERS:
-            raise PrototypeError(f'forbidden: {login} has the role {record["role"]}; --who needs the role developer or acceptor')
+        if not any(role in HUMAN_DECIDERS for role in server.roles_of(record)):
+            raise PrototypeError(f'forbidden: {login} has the role {server.primary_role(record)}; --who needs the role developer or acceptor')
         payload['who'] = login
     elif who is not None:
         raise PrototypeError('--who is only for --kind developer')
@@ -3107,21 +3111,33 @@ HUMAN_DECIDERS = ('developer', 'acceptor')  # roles whose decision „Wprowadź�
 
 
 def _roles(root):
-    """`{login: role}` from the users file (empty without the file); used only to describe comments."""
+    """`{login: highest role}` from the users file (empty without the file); used only to describe comments."""
+    return _role_maps(root)[0]
+
+
+def _roles_all(root):
+    """`{login: [roles]}` from the users file (empty without the file)."""
+    return _role_maps(root)[1]
+
+
+def _role_maps(root):
     try:
         users, _warnings = _users(Path(root).resolve(), None)
         if not users.exists():
-            return {}
-        return {record['login']: record.get('role') for record in users.users() if isinstance(record, dict)}
+            return {}, {}
+        records = [record for record in users.users() if isinstance(record, dict)]
+        return ({record['login']: server.primary_role(record) for record in records},
+                {record['login']: list(server.roles_of(record)) for record in records})
     except (PrototypeError, server.UserError, OSError, ValueError, AttributeError, TypeError):
-        return {}
+        return {}, {}
 
 
 def thread_reaction(thread, author_role, roles):
     """What the agent may do with a thread (skill `prototype`, table „rola autora × stan wątku”):
     `implement` = the latest decision is „Wprowadź” (apply) by a developer or acceptor; `order?` = no human decision yet,
     but the author is a developer or acceptor (implement only an unambiguous instruction); `reply` = everything else
-    (a proposal by a commenter, a decision Wariant/Odłóż/Zostaw, an agent decision)."""
+    (a proposal by a commenter or an expert, a decision Wariant/Odłóż/Zostaw, an agent decision).
+    `roles` holds the highest role per login, so an account with `expert` and `developer`/`acceptor` is not advisory."""
     decisions = (thread or {}).get('decisions') or []
     last = decisions[-1] if decisions else None
     if last and last.get('kind') == 'developer' and roles.get(last.get('who')) in HUMAN_DECIDERS:
@@ -3131,7 +3147,7 @@ def thread_reaction(thread, author_role, roles):
     return 'reply'
 
 
-def _new_comments(snapshot, since_at=None, after=None, roles=None):
+def _new_comments(snapshot, since_at=None, after=None, roles=None, roles_all=None):
     """Operations `create`/`reply` by a person (not `agent`, `import`, `server`) newer than `since_at` or after the
     operation id `after`, oldest first, with the thread facts."""
     fold = snapshot.fold
@@ -3150,13 +3166,16 @@ def _new_comments(snapshot, since_at=None, after=None, roles=None):
         thread = fold['byId'].get(thread_id) if thread_id else None
         message = payload.get('message') or {}
         roles = roles or {}
+        roles_all = roles_all or {}
         decisions = (thread or {}).get('decisions') or []
         last = decisions[-1] if decisions else None
         author_role = roles.get(operation.get('by'))
         found.append({'opId': operation.get('id'), 'type': operation['type'], 'threadId': thread_id,
-                      'authorRole': author_role, 'threadStatus': (thread or {}).get('status'),
+                      'authorRole': author_role, 'authorRoles': roles_all.get(operation.get('by')),
+                      'threadStatus': (thread or {}).get('status'),
                       'decision': ({'kind': last.get('kind'), 'outcome': last.get('outcome'), 'who': last.get('who'),
-                                    'whoRole': roles.get(last.get('who')), 'at': last.get('at')} if last else None),
+                                    'whoRole': roles.get(last.get('who')),
+                                    'whoRoles': roles_all.get(last.get('who')), 'at': last.get('at')} if last else None),
                       'reaction': thread_reaction(thread, author_role, roles),
                       'number': thread['number'] if thread else None,
                       'screen': (thread or {}).get('screen') or payload.get('screen'),
@@ -3184,7 +3203,7 @@ def wait_prototype(root, manifest, slug, since=None, after=None, timeout=1800.0,
     deadline = time.monotonic() + max(0.0, float(timeout))
     while True:
         if store.state() != 'v1':
-            comments = _new_comments(store.snapshot(), since_at, after, _roles(root))
+            comments = _new_comments(store.snapshot(), since_at, after, _roles(root), _roles_all(root))
             if comments:
                 return {'status': 'PASS', 'slug': slug, 'event': 'comment', 'comment': comments[0],
                         'comments': comments}
@@ -3502,7 +3521,8 @@ def register(subparsers):
             parser.add_argument('file', help='File with one e-mail address per line, relative to the project')
         parser.add_argument('--users', help=f'Users file, relative to the project (default {USERS_DEFAULT})')
         if role:
-            parser.add_argument('--role', choices=server.ROLES, default='commenter', help='Role (default commenter)')
+            parser.add_argument('--role', action='append', choices=server.ROLES, default=None,
+                                help='Role, repeatable (default commenter)')
         if password:
             group = parser.add_mutually_exclusive_group()
             group.add_argument('--password-prompt', action='store_true', help='Read the password with getpass')
@@ -3514,6 +3534,7 @@ def register(subparsers):
     add.add_argument('--name', help='Display name (overrides the name derived from the address)')
     user_parser('passwd', 'Set a password (without a password flag: reset to the default + mustChange)', 'login',
                 password=True)
+    user_parser('roles', 'Replace the roles of an existing account (--role repeatable, at least one)', 'login', True)
     user_parser('remove', 'Remove an account (its sessions end at the next request)', 'login')
     user_parser('list', 'List accounts (never password hashes)')
     user_parser('import', 'Add accounts from a list of addresses (default password + mustChange; existing skipped)',
