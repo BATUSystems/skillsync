@@ -133,6 +133,10 @@
     "delivery": {
       "type": "object"
     },
+    "ceremony": {
+      "enum": ["full", "demo"],
+      "description": "Ceremony of the feature workflow (default full); read only from the project manifest."
+    },
     "upgrade": {
       "type": "object"
     },

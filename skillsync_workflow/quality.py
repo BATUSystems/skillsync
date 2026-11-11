@@ -19,6 +19,7 @@ import yaml
 from .common import add_project_arguments, changed_files, emit, load_layer_project, matches, workflow_config, contained, normalize_files, read_yaml, strings, redact, expand_project_skills, require_layerset, WORKFLOW_SKILL, LEGACY_WORKFLOW_SKILL
 from .selfcmd import self_argv
 from . import layers as _layers
+from .ceremony import ceremony_info, validate_ceremony
 from .delivery_mode import delivery_info, validate_delivery_mode
 from .dispatch import validate_dispatch
 from .prototype import validate_prototype
@@ -549,6 +550,7 @@ def route(root, manifest, library, files, topics):
               or any(matches(f, record.get('paths', [])) for f in shared_files)]
     return {'status': 'NOT_RUN', 'files': files, 'topics': topics, 'routes': selected, 'skipped': skipped,
             'lessons': lessons, 'domain': domain, 'delivery': delivery_info(manifest),
+            'ceremony': ceremony_info(manifest),
             'note': 'Context selection only; instructions, lessons and domain records were not executed'}
 
 
@@ -863,6 +865,9 @@ def doctor(root, manifest, library):
         finding('error', '.github/.skillsync.yaml', message)
     for message in delivery_warnings:
         finding('warning', '.github/.skillsync.yaml', message)
+    ceremony_errors, _ = validate_ceremony(manifest)
+    for message in ceremony_errors:
+        finding('error', '.github/.skillsync.yaml', message)
     prototype_errors, prototype_warnings = validate_prototype(manifest.get('prototype'), root)
     for message in prototype_errors:
         finding('error', '.github/.skillsync.yaml', message)
