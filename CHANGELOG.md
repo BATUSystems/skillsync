@@ -22,7 +22,7 @@ None.
 None.
 
 ### Fixed
-None.
+- Prototype mockups: an open dropdown, autocomplete, calendar or menu placed inside `.modal-body`/`.drawer-body` was clipped by the body's `overflow` and hidden under the footer. New class `popover-float` (a sibling of the window, above it) and a pattern in `screen-patterns.md`.
 
 ## [1.0.2] - 2026-11-11
 

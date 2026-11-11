@@ -650,6 +650,15 @@
   box-shadow: var(--shadow-xl);
 }
 
+/* Lista rozwijana (autouzupełnianie, kalendarz, menu) otwarta nad oknem: makieta statyczna stawia `.popover.popover-float` jako rodzeństwo `.modal`/`.drawer`
+   (nie wewnątrz `.modal-body`, bo jego `overflow` obcina listę i chowa ją pod stopką); pozycja z `style="top:…;left:…"`. */
+.popover-float {
+  position: absolute;
+  z-index: calc(var(--z-index-modal) + 1);
+  max-height: min(16rem, calc(100% - 1rem));
+  overflow-y: auto;
+}
+
 /* ---------- Siatka tygodnia ---------- */
 
 .week-grid-scroll { max-width: 100%; overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--card); }
