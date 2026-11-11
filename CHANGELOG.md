@@ -13,6 +13,16 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 ## [Unreleased]
 
 ### Added
+- `skillsync status --json`: each plan record with a valid `Spec:` line has `preImplement` (`required`, `sections`, `run`, `report`,
+  `verdict`, `warning`; `null` when the plan has no valid `Spec:` line or the spec file is unreadable). `required` is true when the spec has a non-empty `Kontrakty`,
+  `Migracja` or `Dane` section. `warning` is a non-blocking reminder for `draft`, `approved` and `in_progress` plans: no
+  `pre-implement*.md` with the first line `Werdykt: READY|NEEDS_CHANGES|BLOCKED` in `.skillsync/runs/<run-id>/`, or the worst
+  verdict is `NEEDS_CHANGES` or `BLOCKED`. The schema version is unchanged.
+- `plan approve` and `spec approve` JSON: field `warnings` (a list, possibly empty) with the same pre-implement text. Status
+  and exit code do not change.
+- `skillsync readiness --run-id <id>`: writes `.skillsync/runs/<id>/readiness.md` atomically (first line
+  `Readiness: PASS|BLOCKED`, then risk, areas, plan, issues, sections, files, note) and adds `reportFile` to the JSON. It refuses
+  symlinked run paths and an invalid run id. Without the flag the behaviour is unchanged.
 - `skillsync prototype list --json`: `acceptance.perScreen` — `[{id, state}]` for every screen in document order, with `state`
   `accepted`, `stale` or `pending` (accepted + stale + pending = `screens`). The sums `screens`, `accepted` and `stale` are unchanged.
 
@@ -23,7 +33,7 @@ None.
 None.
 
 ### Fixed
-None.
+- Prototype mockups: an open dropdown, autocomplete, calendar or menu placed inside `.modal-body`/`.drawer-body` was clipped by the body's `overflow` and hidden under the footer. New class `popover-float` (a sibling of the window, above it) and a pattern in `screen-patterns.md`.
 
 ## [1.0.2] - 2026-11-11
 

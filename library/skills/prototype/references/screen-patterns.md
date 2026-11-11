@@ -205,6 +205,20 @@ zachowanie otwierania opisz w `notes`.
 </div>
 ```
 
+Okno, szuflada i panel mieszczą treść przy 1280×800 bez własnego paska przewijania (`.modal-body` przewija się dopiero wtedy, gdy okno
+dobiło do `max-height`, i to jest ostateczność). Otwartą listę rozwijaną, autouzupełnianie, kalendarz albo menu pokaż jako
+`.popover.popover-float` **obok** okna (rodzeństwo `.modal`/`.drawer` w ramce), nigdy wewnątrz `.modal-body`/`.drawer-body`:
+ich `overflow` obcina listę i chowa ją pod stopką. Gdy pod polem brakuje miejsca, otwórz listę w górę (`bottom` zamiast `top`);
+lista pokazuje co najmniej 5 pozycji i sama się przewija.
+
+```html
+<div class="modal" role="dialog" aria-label="Nowe zajęcia" data-proto-id="s2-okno">…pole „Sala” w .modal-body, stopka z przyciskami…</div>
+<ul class="popover popover-float" role="listbox" style="left:calc(50% - 15rem); bottom:9rem; width:30rem" data-proto-id="s2-sala-lista">
+  <li role="option"><button type="button" class="menu-item">A1 · 24 miejsca</button></li>
+  <li role="option"><button type="button" class="menu-item">A2 · 30 miejsc</button></li>
+</ul>
+```
+
 ## Tablica kanban
 
 Kolumny z kartami i licznikami; stan przeciągania pokaż klasą `kcard-dragging` na jednej karcie i `dropping` na kolumnie docelowej.
