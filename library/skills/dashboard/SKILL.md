@@ -27,8 +27,12 @@ skillsync dashboard show <projekt> [--json] [--plan docs/plans/<plik>.md]   # je
 
 - Port domyślny **5140**, dozwolony zakres **5100–5199** (nigdy 4444–4448, 9222, 9333). Jeden proces na projekt;
   port wybiera się per projekt (`--port`), żeby kilka projektów mogło działać równolegle.
-- Domyślnie nasłuch na `127.0.0.1`; dalej wystawia go tunel (`ssh -R 5140:127.0.0.1:5140 …`). `--host 0.0.0.0` = wszystkie
-  interfejsy (podgląd z telefonu lub innej maszyny w **zaufanej** sieci); serwer wypisuje wtedy ostrzeżenie i adresy LAN do otwarcia.
+- Domyślnie nasłuch na `127.0.0.1`; dalej wystawia go tunel (`ssh -R 5140:127.0.0.1:5140 …`; przeglądarka po drugiej
+  stronie wysyła `Host: localhost`, więc działa bez flag). `--host 0.0.0.0` = wszystkie interfejsy (podgląd z telefonu lub
+  innej maszyny w **zaufanej** sieci); każdy endpoint odpowiada jednak tylko pod nagłówkiem `Host` z loopbacku albo z
+  `--approve-host`, więc adres z paska przeglądarki innego urządzenia (nazwa lub IP) trzeba podać w `--approve-host`
+  (inaczej 403). `--approve-host` dopuszcza odczyt i zgody; sam podgląd = `--approve-host <adres> --no-approvals`. Serwer
+  wypisuje przy starcie ostrzeżenie i adresy LAN do otwarcia.
   Odnośnik do prototypu używa hosta, pod którym otwarto stronę, więc działa także z innego urządzenia (gdy prototypy też słuchają na LAN).
 - Bez `--plan`: bieżący plan = najnowszy `docs/plans/*.md` ze `Status: in_progress`, inaczej `approved`, inaczej `draft`, inaczej ostatni `done`
   (nazwa z datą, potem mtime). Na stronie przełącznik planów (zapamiętany w przeglądarce).
@@ -118,13 +122,17 @@ była, a nie, że pętla dała PASS.
 
 - **„GO plan”** (spec `draft`, bez planu albo z planem-szkicem) i **„GO implement”** (plan `draft` bez sufiksu szkicu;
   spec, jeśli jest, już `approved`): przycisk w kafelku aktu i w banerze. Dwa kliknięcia (drugie w ciągu 5 s), potem serwer
-  woła `skillsync spec approve` albo `skillsync plan approve` z `--expect-sha` = sha wersji pokazanej na stronie
-  (zmieniony plik = odmowa „przeczytaj ponownie”). To zgoda użytkownika sesji, równoważna wpisaniu słowa; procedura
+  w swoim procesie zmienia status tą samą funkcją rdzenia co `skillsync spec approve` / `plan approve` z `--expect-sha`
+  (`status.set_doc_status`, sha = wersja pokazana na stronie; zmieniony plik = odmowa „przeczytaj ponownie”); bez
+  podprocesu `skillsync`, więc wersja CLI w PATH nie ma znaczenia. To zgoda użytkownika sesji, równoważna wpisaniu słowa; procedura
   `feature` uznaje ten status i sesja działa według tabeli wznowienia przy następnej turze (strona podpowiada: napisz
   „dalej”). Przycisk jest wyłączony z powodem, gdy prototyp nie jest zaakceptowany albo „GO implement” wyprzedza „GO plan”.
-- Ślad zgód GO: ten sam `approvals.jsonl` przebiegu (`sha` = pokazana wersja pliku, `shaAfter`), bez przebiegu `.skillsync/status-board/approvals.jsonl`.
+- Ślad zgód GO: wpis `status.record_approval` (`source: "dashboard"`) w `approvals.jsonl` przebiegu (`sha` = pokazana
+  wersja pliku, `shaAfter`, `file`, `run`). Bez katalogu przebiegu śladu nie ma (odpowiedź `trail: null`): zgoda zostaje
+  w linii `Status:` pliku, którą sesja i `approvals wait --file` i tak czytają. Serwer nie ma własnego dziennika.
 - **„CP” i „READY” (tryb `pr`) w kafelku Aktu III** — przycisk zapisuje zgodę, nie otwiera sesji.
-  Dwa kliknięcia; serwer dopisuje do `.skillsync/runs/<run-id>/approvals.jsonl` wpis
+  Dwa kliknięcia; serwer zapisuje przez `status.record_approval` (ta sama funkcja co `skillsync approvals record`: blokada
+  plikowa, odmowa drugiego wpisu dla tego samego HEAD) do `.skillsync/runs/<run-id>/approvals.jsonl` wpis
   `{"schema": 1, "at", "word": "CP"|"READY", "sha": <pełny HEAD pokazany na stronie>, "run", "plan", "target", "branch", "ahead", "mode", "by", "source": "dashboard"}`.
   Zgoda dotyczy tego HEAD: nowy commit = nowa zgoda; ponowny zapis dla tego samego HEAD = odmowa. Przycisk aktywny, gdy
   plan jest `done`, najnowszy checkpoint ma `czeka: CP|READY` albo gałąź robocza ma commity, których nie ma na origin
@@ -142,9 +150,7 @@ była, a nie, że pętla dała PASS.
   słabszy niż „CP” wpisane w terminalu. Nie wystawiaj strony z `--approve-host` w niezaufanej sieci.
 - `--session-url` (opcjonalny): adres sesji podany przy starcie (np. Remote Control), tylko `https` bez danych logowania;
   baner dokłada wtedy „Otwórz sesję”. Nie jest czytany z plików projektu, więc agent nie podmieni odnośnika.
-- „GO plan”/„GO implement” wymagają `skillsync` w PATH serwera ze `spec approve` i `--expect-sha`; przy starszym CLI
-  przycisk jest nieaktywny z powodem (`reason`). `--no-approvals` = strona wyłącznie do odczytu (brak przycisków,
-  `POST /api/approve` = 403).
+- `--no-approvals` = strona wyłącznie do odczytu (brak przycisków, `POST /api/approve` = 403).
 
 ### Podkroki faz, dymki z opisem i sygnały aktu I
 
@@ -173,15 +179,17 @@ była, a nie, że pętla dała PASS.
 
 ## Bezpieczeństwo
 
-- Strona nie ma logowania: na `0.0.0.0` widzi ją każdy w tej sieci (plany, speki, checkpointy).
-- Zapis zgody tylko z przeglądarki na tej maszynie: nagłówek `Host` musi być `localhost`/`127.0.0.1`/`::1` albo nazwą podaną
-  jawnie w `--approve-host` (np. nazwa maszyny przy tunelu, IP w LAN); pod innym adresem strona jest tylko do odczytu (także przy
-  DNS rebinding), wymagany nagłówek `X-Status-Board: 1` (preflight CORS, którego
-  serwer nie obsługuje, blokuje obce strony), `Origin` — jeśli jest — z loopback, `Content-Type: application/json`, limit 4 KB.
+- Strona nie ma logowania: z `--approve-host` przy `0.0.0.0` widzi ją każdy w tej sieci, kto otworzy podany adres (plany,
+  speki, checkpointy).
+- Kontrola `Host` na wszystkich endpointach (strona, assety, `/api/*`, `/events`, `/healthz`, `POST`): nagłówek `Host` musi
+  być `localhost`/`127.0.0.1`/`[::1]` (dowolny port) albo nazwą podaną jawnie w `--approve-host` (np. nazwa maszyny przy
+  tunelu, IP w LAN); inny = 403 bez treści (ochrona przed DNS rebinding), odmowa w logu przy `--verbose`.
+- Zapis zgody dodatkowo: wymagany nagłówek `X-Status-Board: 1` (preflight CORS, którego
+  serwer nie obsługuje, blokuje obce strony), `Origin` — jeśli jest — z tej samej listy hostów, `Content-Type: application/json`, limit 4 KB.
   Bez uwierzytelnienia z decyzji właściciela: narzędzie programisty na jego maszynie; agent i tak może wywołać CLI.
 - Whitelist podglądu: `*.md` w `docs/specs`, `docs/plans`, `docs/design`, `docs/domain` oraz `.skillsync/runs/<run>/*.md`;
   odrzucane `..`, ścieżki absolutne, ukryte katalogi, symlinki prowadzące poza whitelistę, pliki inne niż `.md` (np. `.env`).
-- CSP `script-src 'self'`, poza śladem zgód brak zapisu na dysk (logi tylko na stderr), limit 2 MB na dokument i 64 połączeń SSE.
+- CSP `script-src 'self'`, poza zgodami (linia `Status:` przy GO, wpis `approvals.jsonl`) brak zapisu na dysk (logi tylko na stderr), limit 2 MB na dokument i 64 połączeń SSE.
 
 ## Wskaźniki przebiegów
 

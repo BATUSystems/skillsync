@@ -544,11 +544,12 @@ def _approval_entries(path):
 
 
 def record_approval(root, word, run_id, sha=None, source='cli', target=None, branch=None, file=None, by=None, now=None,
-                    plan=None, ahead=None, mode=None):
+                    plan=None, ahead=None, mode=None, sha_after=None):
     """The only writer of `.skillsync/runs/<run-id>/approvals.jsonl` (CLI `approvals record`, the dashboard server, IDE).
     Appends one JSON line under an inter-process lock and fsyncs it; refuses a second entry of the same (word, sha, run).
     `sha`: for GO the git blob sha of the approved file (default: of `file`), for CP/READY the HEAD the consent pushes
-    (default: HEAD of the project repository). Returns {schema, status PASS|BLOCKED, reason, entry, path}; no subprocess."""
+    (default: HEAD of the project repository). `sha_after` (GO only, `shaAfter` of the entry): the blob sha of the file after
+    its Status line changed. Returns {schema, status PASS|BLOCKED, reason, entry, path}; no subprocess."""
     root = Path(root).expanduser().resolve()
     try:
         if word not in APPROVAL_WORDS:
@@ -569,10 +570,13 @@ def record_approval(root, word, run_id, sha=None, source='cli', target=None, bra
             sha = git_blob_sha(doc.read_bytes()) if file is not None else _head_sha(root)
         if not isinstance(sha, str) or not _APPROVAL_SHA.match(sha):
             raise ValueError('--sha must be 7-64 lowercase hex characters')
+        if sha_after is not None and (word not in _GO_FOLDER or not isinstance(sha_after, str)
+                                      or not _APPROVAL_SHA.match(sha_after)):
+            raise ValueError('sha_after applies only to GO words and must be 7-64 lowercase hex characters')
         moment = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
         entry = {'schema': SCHEMA, 'at': moment.strftime('%Y-%m-%dT%H:%M:%SZ'), 'word': word, 'sha': sha,
                  'by': str(by if by is not None else _approval_user())[:80], 'source': source}
-        extra = {'file': file, 'run': run_id, 'plan': plan, 'target': target, 'branch': branch, 'ahead': ahead, 'mode': mode}
+        extra = {'file': file, 'shaAfter': sha_after, 'run': run_id, 'plan': plan, 'target': target, 'branch': branch, 'ahead': ahead, 'mode': mode}
         entry.update({key: value for key, value in extra.items() if value is not None})
         entry = redact(entry)
         line = (json.dumps(entry, ensure_ascii=False) + '\n').encode('utf-8')

@@ -53,7 +53,7 @@ WAIT_NONE = {'', '-', '—', 'nic', 'brak', 'nie'}
 STATUS_WAIT_RE = re.compile(r'czeka\s+na\s+(?P<what>[^);,]+)', re.IGNORECASE)
 ID_FIND_RE = re.compile(rf'(?<![\w-]){STEP_ID}(?![\w-])')
 SHA_RE = re.compile(r'^[0-9a-f]{7,40}$')
-RUN_ID_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$')  # jak wzorzec przebiegu w quality.py: bez '..' i wiodącej kropki
+RUN_ID_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$')  # jak wzorzec przebiegu w quality.py: bez '..' i wiodącej kropki
 REF_NAME_RE = re.compile(r'^(?!-)[\w.][\w./-]{0,120}$')
 PLAN_PR_RE = re.compile(r'^PR:\s*#(?P<num>\d+)\s*\(link:\s*(?P<url>https://[^\s)]+)\)\s*$', re.MULTILINE)
 APPROVE_KINDS = {'spec': 'GO plan', 'plan': 'GO implement', 'cp': 'CP', 'ready': 'READY'}
@@ -727,7 +727,7 @@ def _given_tip(word, entry):
     return f'zgoda „{word}” dana {at}'.rstrip() if at else f'zgoda „{word}” już dana'
 
 
-def consent_buttons(spec, plan, waiting, words, log, head_full, run_ok, cli_ok=True):
+def consent_buttons(spec, plan, waiting, words, log, head_full, run_ok):
     """Consent buttons of the act tiles, each in one of the states: before (the act has not come) = no entry; `waiting` =
     visible and active (the session waits for this consent); `running` = visible, inactive, `reason` "czeka na…";
     `after` = visible, inactive, `reason` "zgoda dana HH:MM" (already given; no second entry). The "waiting" signal is
@@ -754,9 +754,8 @@ def consent_buttons(spec, plan, waiting, words, log, head_full, run_ok, cli_ok=T
                 last.get('GO plan') or {'at': None})
         elif spec.get('status') == 'draft' and (not plan or sketch):
             signal = 'GO PLAN' in waits or 'czeka na go plan' in spec_text or 'czeka na go plan' in plan_text
-            reason = (None if signal and not proto_open and cli_ok else proto_reason if proto_open
-                      else 'czeka na koniec pętli spec (sesja zgłosi „czeka: GO plan”)' if not signal
-                      else 'zainstalowany skillsync nie zna `spec approve` — wpisz „GO plan” w sesji')
+            reason = (proto_reason if proto_open
+                      else None if signal else 'czeka na koniec pętli spec (sesja zgłosi „czeka: GO plan”)')
             add('spec', 'waiting' if reason is None else 'running', reason, spec['path'], spec.get('fileSha'))
     # Act II -> "GO implement": a plan other than a sketch.
     if plan and not sketch:
@@ -768,8 +767,7 @@ def consent_buttons(spec, plan, waiting, words, log, head_full, run_ok, cli_ok=T
             reason = ('czeka na „GO plan” (spec nie jest approved)' if spec.get('exists') and spec.get('status') != 'approved'
                       else proto_reason if proto_open
                       else 'czeka na koniec aktu II (pętla plan, readiness, wersja)' if not signal
-                      else None if cli_ok
-                      else 'zainstalowany skillsync nie zna `plan approve --expect-sha` — wpisz „GO implement” w sesji')
+                      else None)
             add('plan', 'waiting' if reason is None else 'running', reason, plan['path'], plan.get('fileSha'))
     # Act III -> "CP" / "READY": from the start of the implementation (plan in_progress or done).
     if plan_status in ('in_progress', 'done'):
@@ -791,13 +789,13 @@ def consent_buttons(spec, plan, waiting, words, log, head_full, run_ok, cli_ok=T
     return out
 
 
-def approvals_state(root, spec, plan, delivery, run_id, head_full, log, waiting, enabled=True, cli_ok=True):
+def approvals_state(root, spec, plan, delivery, run_id, head_full, log, waiting, enabled=True):
     """`approvals {enabled, actions[], last}`; every action carries `run` (the run directory the consent is written to, or
     null when it does not exist); `path` of `cp`/`ready` is the run id."""
     if not enabled:
         return {'enabled': False, 'actions': [], 'last': log[-1] if log else None}
     run_ok = bool(run_id and RUN_ID_RE.match(run_id) and (root / RUNS_DIR / run_id).is_dir())
-    actions = consent_buttons(spec, plan, waiting, delivery.get('words', []), log, head_full, run_ok, cli_ok)
+    actions = consent_buttons(spec, plan, waiting, delivery.get('words', []), log, head_full, run_ok)
     for action in actions:
         if action['kind'] in ('cp', 'ready'):
             action['path'] = run_id
@@ -1087,13 +1085,12 @@ def _normal_plan_rel(plan):
 
 
 def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=None, prototype_port=PROTOTYPE_PORT,
-                 version=0, ahead=None, prototype_up=None, acceptance=None, cli_ok=True):
+                 version=0, ahead=None, prototype_up=None, acceptance=None):
     """The dashboard contract (`schema: 1`) for the project at `root`. Read-only: nothing in the project is written.
 
     `plan` = plan path relative to the project (unknown = automatic choice, `planAuto: true`). `version`, `session_url`,
     and the probes `ahead(root, branch, head)`, `prototype_up()`, `acceptance(slug)` let a server add its live state and
-    caches; `show` uses the defaults (`version` 0, no session, prototype `up` false). `cli_ok=False` (the server's
-    `skillsync spec approve --expect-sha` probe failed) keeps the GO buttons `running` with the reason."""
+    caches; `show` uses the defaults (`version` 0, no session, prototype `up` false)."""
     root = Path(root).resolve()
     if manifest is None:
         _, manifest = read_project(root)
@@ -1203,7 +1200,7 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
                     if plan_info and plan_info.get('status') == 'in_progress' and run.get('lastReportAt')
                     and not any(item.get('source') == 'checkpoint' for item in waiting) else None),
         'approvals': approvals_state(root, spec, plan_info, delivery_state, run_id, git_info['headFull'],
-                                     run_approvals(root, run_id), waiting, approvals, cli_ok),
+                                     run_approvals(root, run_id), waiting, approvals),
         'delivery': delivery_state,
         'session': {'url': session_url},
         'prototype': {'slug': slug, 'port': prototype_port, 'up': bool(slug) and bool(prototype_up and prototype_up())},
@@ -1388,9 +1385,10 @@ def register(subparsers):
     serve.add_argument('--port', type=int, default=DEFAULT_PORT,
                        help=f'port (default {DEFAULT_PORT}, range {PORT_MIN}-{PORT_MAX}; one port per project)')
     serve.add_argument('--host', default='127.0.0.1',
-                       help='listen address (default 127.0.0.1; 0.0.0.0 = all interfaces, read-only view in a trusted network)')
+                       help='listen address (default 127.0.0.1; 0.0.0.0 = all interfaces; other devices also need --approve-host)')
     serve.add_argument('--approve-host', action='append', default=[], metavar='NAME',
-                       help='extra Host name allowed to give consents (repeatable); default: localhost only')
+                       help='extra Host name (no port) allowed to open the page and give consents (repeatable); '
+                            'default: localhost only; add --no-approvals for a read-only view')
     serve.add_argument('--no-approvals', action='store_true', help='read-only page: no consent buttons, POST /api/approve = 403')
     serve.add_argument('--session-url', help='https address of the session (button "Otwórz sesję"); no credentials')
     serve.add_argument('--poll', type=float, default=1.0, help='seconds between file change checks (min 0.2)')

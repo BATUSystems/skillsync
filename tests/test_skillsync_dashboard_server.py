@@ -19,6 +19,7 @@ import threading
 import time
 import unittest
 import urllib.error
+from unittest import mock
 import urllib.request
 from pathlib import Path
 
@@ -81,17 +82,15 @@ def make_project(base: Path) -> Path:
 
 
 def install_fake_cli(case: unittest.TestCase) -> None:
-    """Atrapa `skillsync` w PATH (zapisuje wywołania do `case.calls`): zna `spec|plan approve --expect-sha` i zwraca PASS.
-    GO idzie w F4 przez podproces jak w skrypcie; F5 przenosi je na wspólną funkcję rdzenia."""
+    """Pułapka `skillsync` w PATH: każde wywołanie trafia do `case.calls` i kończy się błędem. Serwer zapisuje zgody
+    in-process (`status.set_doc_status`, `status.record_approval`), więc `case.calls` ma zostać pusty."""
     case.bin = case.tmp / "bin"
     case.bin.mkdir()
     case.calls = case.tmp / "calls.txt"
     fake = case.bin / "skillsync"
     fake.write_text("#!/bin/sh\n"
                     f"echo \"$@\" >> '{case.calls}'\n"
-                    "if [ \"$1\" = prototype ]; then echo '{\"prototypes\": []}'; exit 0; fi\n"
-                    "if [ \"$3\" = --help ]; then echo 'usage: --expect-sha EXPECT_SHA'; exit 0; fi\n"
-                    "echo '{\"status\": \"PASS\", \"sha\": \"after\"}'\n", encoding="utf-8")
+                    "echo 'pułapka: serwer nie woła CLI' >&2; exit 1\n", encoding="utf-8")
     fake.chmod(0o755)
     old_path = os.environ["PATH"]
     os.environ["PATH"] = f"{case.bin}{os.pathsep}{old_path}"
@@ -538,14 +537,28 @@ class BoardTests(ProjectCase):
         srv.validate_port(5142)
 
 
+def spy_core(case: unittest.TestCase) -> None:
+    """`case.set_doc` i `case.record`: szpiegi funkcji rdzenia, które serwer woła in-process (wywołują oryginał)."""
+    for name, attr in (("set_doc_status", "set_doc"), ("record_approval", "record")):
+        patcher = mock.patch.object(srv.status_core, name, wraps=getattr(srv.status_core, name))
+        setattr(case, attr, patcher.start())
+        case.addCleanup(patcher.stop)
+
+
+def cli_calls(case: unittest.TestCase) -> list[str]:
+    return case.calls.read_text(encoding="utf-8").splitlines() if case.calls.exists() else []
+
+
 class ApprovalTests(ProjectCase):
-    """Przyciski zgód: „GO plan” (spec approve) i „GO implement” (plan approve) przez CLI, z sha pokazanej wersji."""
+    """Przyciski zgód: „GO plan” i „GO implement” in-process (`status.set_doc_status` z sha pokazanej wersji, potem
+    `status.record_approval` do przebiegu), bez podprocesu `skillsync`."""
     SPEC2 = "docs/specs/demo-etap-2.md"
     PLAN2 = "docs/plans/2026-01-20-demo-etap-2.md"
 
     def setUp(self) -> None:
         super().setUp()
         install_fake_cli(self)
+        spy_core(self)
 
     def spec_act(self, plan_status: str | None = None, spec_status: str = "draft (czeka na GO plan)") -> None:
         spec = self.root / self.SPEC2
@@ -602,18 +615,38 @@ class ApprovalTests(ProjectCase):
         self.spec_act("approved (czeka na GO implement)", spec_status="approved")
         self.assertEqual(self.states(self.PLAN2)["plan"][0], "after")
 
-    def test_approve_calls_cli_with_sha_and_writes_audit(self) -> None:
+    def test_approve_in_process_with_sha_and_writes_the_run_trail(self) -> None:
+        run = self.root / ".skillsync/runs/2026-01-20-demo-etap-2"  # przebieg z linii `Plan:` speca
+        run.mkdir(parents=True)
         self.spec_act()
         offer = self.actions()["spec"]
+        self.assertEqual(offer["run"], "2026-01-20-demo-etap-2")
         code, body = self.board.approve("spec", self.SPEC2, offer["sha"])
-        self.assertEqual((code, body["word"]), (200, "GO plan"), body)
-        calls = self.calls.read_text(encoding="utf-8").splitlines()
-        self.assertIn(f"spec approve {self.root} {self.SPEC2} --expect-sha {offer['sha']} --json", calls)
-        audit = [json.loads(x) for x in (self.root / srv.APPROVALS_LOG).read_text(encoding="utf-8").splitlines()]
-        self.assertEqual([(a["word"], a["file"], a["sha"], a["source"]) for a in audit],
-                         [("GO plan", self.SPEC2, offer["sha"], "dashboard")])
+        self.assertEqual((code, body["word"], body["trail"]), (200, "GO plan", f"{srv.RUNS_DIR}/2026-01-20-demo-etap-2/approvals.jsonl"),
+                         body)
+        self.set_doc.assert_called_once_with(self.board.root, self.SPEC2, "approve", "specs", expect_sha=offer["sha"])
+        after = (self.root / self.SPEC2).read_bytes()
+        self.assertIn(b"Status: approved", after)
+        audit = [json.loads(x) for x in (run / "approvals.jsonl").read_text(encoding="utf-8").splitlines()]
+        self.assertEqual([(a["word"], a["file"], a["sha"], a["shaAfter"], a["run"], a["source"]) for a in audit],
+                         [("GO plan", self.SPEC2, offer["sha"], engine.git_blob_sha(after), "2026-01-20-demo-etap-2",
+                           "dashboard")])
+        self.assertEqual(cli_calls(self), [])  # bez podprocesu skillsync
+        self.assertEqual(self.board.approve("spec", self.SPEC2, offer["sha"])[0], 409)  # drugi raz: już „po”
+        self.assertEqual(len(audit), len((run / "approvals.jsonl").read_text(encoding="utf-8").splitlines()))
 
-    def test_refusals_never_call_the_cli(self) -> None:
+    def test_go_without_a_run_changes_the_status_and_writes_no_trail(self) -> None:
+        self.spec_act()
+        offer = self.actions()["spec"]
+        self.assertIsNone(offer["run"])
+        code, body = self.board.approve("spec", self.SPEC2, offer["sha"])
+        self.assertEqual((code, body["trail"]), (200, None), body)
+        self.assertIn(b"Status: approved", (self.root / self.SPEC2).read_bytes())
+        self.record.assert_not_called()
+        self.assertFalse((self.root / ".skillsync/status-board").exists())  # żadnego własnego dziennika serwera
+        self.assertEqual(list((self.root / srv.RUNS_DIR).glob("*/approvals.jsonl")), [])
+
+    def test_refusals_never_call_the_core_writers(self) -> None:
         self.spec_act()
         sha = self.actions()["spec"]["sha"]
         cases = [("spec", self.SPEC2, "0" * 40, 409), ("plan", PLAN, sha, 409), ("spec", "docs/specs/inny.md", sha, 409),
@@ -624,21 +657,39 @@ class ApprovalTests(ProjectCase):
         self.board.prototype_acceptance = lambda slug: {"screens": 2, "accepted": 1, "stale": 0}
         self.add_prototype()
         self.assertEqual(self.board.approve("spec", self.SPEC2, sha)[0], 409)
-        self.assertFalse([c for c in (self.calls.read_text(encoding="utf-8").splitlines() if self.calls.exists() else [])
-                          if "--expect-sha" in c])
+        self.set_doc.assert_not_called()
+        self.record.assert_not_called()
+        self.assertEqual(cli_calls(self), [])
         off = srv.Board(self.root, prototype_port=1, approvals=False)
         self.assertEqual(off.status()["approvals"], {"enabled": False, "actions": [], "last": None})
         self.assertEqual(off.approve("spec", self.SPEC2, sha)[0], 403)
+        self.set_doc.assert_not_called()
 
-    def test_old_cli_hides_buttons(self) -> None:
+    def test_file_changed_between_offer_and_write_is_refused_by_the_core(self) -> None:
         self.spec_act()
-        (self.bin / "skillsync").write_text("#!/bin/sh\necho 'invalid choice' >&2; exit 2\n", encoding="utf-8")
-        board = srv.Board(self.root, prototype_port=1)
-        state = board.status()["approvals"]
-        spec = next(a for a in state["actions"] if a["kind"] == "spec")
-        self.assertEqual(spec["state"], "running")
-        self.assertIn("spec approve", spec["reason"])
-        self.assertEqual(board.approve("spec", self.SPEC2, "0" * 40)[0], 503)
+        sha = self.actions()["spec"]["sha"]
+        real = self.set_doc._mock_wraps  # oryginał (atrybut modułu jest już szpiegiem)
+
+        def edit_then_write(*args, **kwargs):  # zmiana pliku po sprawdzeniu oferty, przed zapisem
+            path = self.root / self.SPEC2
+            path.write_text(path.read_text(encoding="utf-8") + "\nNowa linia.\n", encoding="utf-8")
+            return real(*args, **kwargs)
+        self.set_doc.side_effect = edit_then_write
+        code, body = self.board.approve("spec", self.SPEC2, sha)
+        self.assertEqual(code, 409, body)
+        self.assertIn("sha mismatch", body["error"])
+        self.assertIn(b"draft", (self.root / self.SPEC2).read_bytes())
+        self.record.assert_not_called()
+
+    def test_go_does_not_depend_on_skillsync_in_path(self) -> None:
+        self.spec_act()
+        with mock.patch.dict(os.environ, {"PATH": str(self.tmp / "pusty")}):
+            board = srv.Board(self.root, prototype_port=1)
+            board.prototype_acceptance = lambda slug: None
+            spec = next(a for a in board.status()["approvals"]["actions"] if a["kind"] == "spec")
+            self.assertEqual((spec["state"], spec["reason"]), ("waiting", None))
+            self.assertEqual(board.approve("spec", self.SPEC2, spec["sha"])[0], 200)
+        self.assertEqual(cli_calls(self), [])
 
     def test_session_url_and_host_helpers(self) -> None:
         self.assertTrue(srv.session_url_ok("https://claude.ai/code/session_01abc"))
@@ -778,6 +829,34 @@ class DeliveryApprovalTests(ProjectCase):
         (self.root / ".git/refs/heads/feature/demo").write_text("fff0000aaa1111\n", encoding="utf-8")
         self.assertEqual(self.offers()["cp"]["state"], "waiting")  # nowy HEAD = nowa zgoda
 
+    def test_cp_goes_through_record_approval(self) -> None:
+        self.wait_for("CP")
+        with mock.patch.object(srv.status_core, "record_approval", wraps=srv.status_core.record_approval) as record:
+            code, body = self.board.approve("cp", "2026-01-10-demo-etap-1", self.HEAD, PLAN)
+        self.assertEqual((code, body["file"]), (200, f"{RUN}/approvals.jsonl"), body)
+        record.assert_called_once()
+        args, kwargs = record.call_args
+        self.assertEqual(args[1:3], ("CP", "2026-01-10-demo-etap-1"))
+        self.assertEqual((kwargs["sha"], kwargs["source"], kwargs["target"], kwargs["plan"]),
+                         (self.HEAD, "dashboard", "feature/demo", PLAN))
+
+    def test_core_refusal_is_a_500_without_an_entry(self) -> None:
+        self.wait_for("CP")
+        refused = {"schema": 1, "status": "BLOCKED", "reason": "Approvals file is locked by another writer", "entry": None}
+        with mock.patch.object(srv.status_core, "record_approval", return_value=refused):
+            code, body = self.board.approve("cp", "2026-01-10-demo-etap-1", self.HEAD)
+        self.assertEqual(code, 500, body)
+        self.assertIn("locked", body["error"])
+        self.assertFalse((self.root / f"{RUN}/approvals.jsonl").exists())
+
+    def test_run_ids_outside_the_pattern_are_refused(self) -> None:
+        self.wait_for("CP")
+        for bad in ("../x", "..", ".hidden", "../../etc", "a/b", ""):
+            with self.subTest(run=bad):
+                self.assertEqual(self.board.approve("cp", bad, self.HEAD)[0], 409)
+        self.assertFalse((self.root / f"{RUN}/approvals.jsonl").exists())
+        self.assertEqual(list(self.root.parent.glob("*/approvals.jsonl")), [])
+
     def test_blocked_and_foreign_requests_write_nothing(self) -> None:
         self.assertEqual(self.board.approve("cp", "2026-01-10-demo-etap-1", self.HEAD)[0], 409)  # bez powodu
         self.wait_for("READY")
@@ -901,7 +980,6 @@ class HttpTests(HttpCase):
             self.assertEqual(ctx.exception.code, 404, bad)
 
     def test_approve_endpoint_guards(self) -> None:
-        self.board.cli_supports_approvals = lambda: True  # bez zależności od wersji CLI na maszynie
         with self.get("/api/status") as r:
             self.assertTrue(json.load(r)["approvals"]["here"])
         ok = {"Content-Type": "application/json", "X-Status-Board": "1"}
@@ -912,12 +990,18 @@ class HttpTests(HttpCase):
                 self.assertEqual(self.post(data, headers)[0], 403)
         code, body = self.post(data, {**ok, "Origin": f"http://localhost:{self.port}"})
         self.assertEqual(code, 409, body)  # przeszło strażników; plan in_progress nie ma oferty
+        # Odczyt spoza loopbacku tylko przez jawne --approve-host: obcy Host = 403 także na GET.
         req = urllib.request.Request(self.base + "/api/status", headers={"Host": "tunel.example"})
-        with urllib.request.urlopen(req, timeout=5) as r:
-            self.assertFalse(json.load(r)["approvals"]["here"])
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            urllib.request.urlopen(req, timeout=5)
+        self.assertEqual(ctx.exception.code, 403)
         self.board.approve_hosts = srv.LOOPBACK_HOSTS | {"lan-host"}
-        with urllib.request.urlopen(req, timeout=5) as r:
-            self.assertFalse(json.load(r)["approvals"]["here"])
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            urllib.request.urlopen(req, timeout=5)
+        self.assertEqual(ctx.exception.code, 403)
+        lan = urllib.request.Request(self.base + "/api/status", headers={"Host": "lan-host:5140"})
+        with urllib.request.urlopen(lan, timeout=5) as r:
+            self.assertTrue(json.load(r)["approvals"]["here"])
         tunnel = {**ok, "Host": "lan-host:5140", "Origin": "http://lan-host:5140"}
         self.assertEqual(self.post(data, tunnel)[0], 409)  # dopuszczony host przechodzi strażników
         self.assertEqual(self.post(data, {**tunnel, "Origin": "http://evil.example"})[0], 403)
@@ -1080,7 +1164,7 @@ class HttpSecurityTests(HttpCase):
 
 
 class HttpApprovalTests(HttpCase):
-    """K4: zgoda z poprawnymi nagłówkami przechodzi do zapisu; każda odmowa nie woła zapisu (CLI ani approvals.jsonl)."""
+    """K4: zgoda z poprawnymi nagłówkami przechodzi do zapisu; każda odmowa nie woła `set_doc_status`/`record_approval`."""
     SPEC2 = "docs/specs/demo-etap-2.md"
     PLAN2 = "docs/plans/2026-01-20-demo-etap-2.md"
     HEAD = "abc1234def5678"
@@ -1089,13 +1173,7 @@ class HttpApprovalTests(HttpCase):
     def setUp(self) -> None:
         super().setUp()
         install_fake_cli(self)
-        self.writes: list[dict] = []
-        original = self.board._append_approval
-
-        def spy(run_id, entry):
-            self.writes.append(entry)
-            return original(run_id, entry)
-        self.board._append_approval = spy
+        spy_core(self)
         self.ok = {"Content-Type": "application/json", "X-Status-Board": "1", "Origin": f"http://127.0.0.1:{self.port}"}
 
     def go_plan_waiting(self) -> str:
@@ -1108,18 +1186,20 @@ class HttpApprovalTests(HttpCase):
         self.assertEqual((offer["state"], offer["path"]), ("waiting", self.SPEC2))
         return offer["sha"]
 
-    def cli_writes(self) -> list[str]:
-        lines = self.calls.read_text(encoding="utf-8").splitlines() if self.calls.exists() else []
-        return [line for line in lines if "--expect-sha" in line]
+    def entries(self, run: str) -> list[dict]:
+        path = self.root / srv.RUNS_DIR / run / "approvals.jsonl"
+        return [json.loads(x) for x in path.read_text(encoding="utf-8").splitlines()] if path.exists() else []
 
     def test_correct_headers_reach_the_consent(self) -> None:
+        (self.root / srv.RUNS_DIR / "2026-01-20-demo-etap-2").mkdir(parents=True)
         sha = self.go_plan_waiting()
         code, body = self.post({"kind": "spec", "path": self.SPEC2, "sha": sha}, self.ok)
         self.assertEqual((code, body["word"], body["file"]), (200, "GO plan", self.SPEC2), body)
-        self.assertEqual(self.cli_writes(), [f"spec approve {self.root} {self.SPEC2} --expect-sha {sha} --json"])
-        self.assertEqual([(e["word"], e["sha"], e["file"], e["shaAfter"]) for e in self.writes],
-                         [("GO plan", sha, self.SPEC2, "after")])
-        self.assertTrue((self.root / srv.APPROVALS_LOG).is_file())
+        self.set_doc.assert_called_once_with(self.board.root, self.SPEC2, "approve", "specs", expect_sha=sha)
+        after = engine.git_blob_sha((self.root / self.SPEC2).read_bytes())
+        self.assertEqual([(e["word"], e["sha"], e["file"], e["shaAfter"], e["source"])
+                          for e in self.entries("2026-01-20-demo-etap-2")], [("GO plan", sha, self.SPEC2, after, "dashboard")])
+        self.assertEqual(cli_calls(self), [])
         # bez Origin (np. curl na tej maszynie) też przechodzi; Host z --approve-host także
         self.board.approve_hosts = srv.LOOPBACK_HOSTS | {"lan-host"}
         code, _ = raw_post(self.port, {"Host": "lan-host:5140", "Content-Type": "application/json", "X-Status-Board": "1",
@@ -1148,9 +1228,11 @@ class HttpApprovalTests(HttpCase):
         self.assertEqual(self.post({**data, "sha": "0" * 40}, self.ok)[0], 409)  # nieaktualny sha (plik się zmienił)
         self.assertEqual(self.post({**data, "kind": "rm"}, self.ok)[0], 400)
         self.assertEqual(self.post({**data, "path": "docs/specs/inny.md"}, self.ok)[0], 409)
-        self.assertEqual(self.cli_writes(), [])
-        self.assertEqual(self.writes, [])
-        self.assertFalse((self.root / srv.APPROVALS_LOG).exists())
+        self.set_doc.assert_not_called()
+        self.record.assert_not_called()
+        self.assertEqual(cli_calls(self), [])
+        self.assertIn(b"draft", (self.root / self.SPEC2).read_bytes())
+        self.assertFalse((self.root / ".skillsync/status-board").exists())
         self.assertFalse((self.root / RUN / "approvals.jsonl").exists())
 
     def test_stale_head_and_second_write_are_refused(self) -> None:
@@ -1158,13 +1240,85 @@ class HttpApprovalTests(HttpCase):
             fh.write("- 11:20 zrobione: S9; w toku: —; czeka: CP\n")
         cp = {"kind": "cp", "path": self.RUN_ID, "plan": PLAN}
         self.assertEqual(self.post({**cp, "sha": "0" * 14}, self.ok)[0], 409)  # HEAD inny niż pokazany
-        self.assertEqual(self.writes, [])
+        self.record.assert_not_called()
         code, body = self.post({**cp, "sha": self.HEAD}, self.ok)
         self.assertEqual((code, body["file"]), (200, f"{RUN}/approvals.jsonl"), body)
         self.assertEqual(self.post({**cp, "sha": self.HEAD}, self.ok)[0], 409)  # drugi zapis dla tego HEAD
         log = (self.root / f"{RUN}/approvals.jsonl").read_text(encoding="utf-8").splitlines()
-        self.assertEqual([json.loads(x)["word"] for x in log], ["CP"])
-        self.assertEqual(len(self.writes), 1)
+        self.assertEqual([(json.loads(x)["word"], json.loads(x)["source"]) for x in log], [("CP", "dashboard")])
+        self.assertEqual(self.record.call_count, 1)
+
+
+def raw_get(port: int, path: str, host: str | None) -> tuple[int, dict, bytes]:
+    """GET przez http.client z dowolnym nagłówkiem Host (None = bez nagłówka); SSE czyta tylko nagłówki."""
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    try:
+        conn.putrequest("GET", path, skip_host=True)
+        if host is not None:
+            conn.putheader("Host", host)
+        conn.endheaders()
+        resp = conn.getresponse()
+        headers = {k.lower(): v for k, v in resp.getheaders()}
+        body = b"" if headers.get("content-type", "").startswith("text/event-stream") else resp.read()
+        return resp.status, headers, body
+    finally:
+        conn.close()
+
+
+class HttpHostTests(HttpCase):
+    """Kontrola Host na WSZYSTKICH endpointach: loopback (dowolny port) albo --approve-host; inaczej 403 bez treści."""
+    ENDPOINTS = ("/", "/index.html", "/assets/app.js", "/assets/app.css", "/api/status", f"/api/doc?path={SPEC}",
+                 "/api/descriptions", "/healthz", "/events", "/nope")
+    FOREIGN = ("evil.example", "evil.example:5140", "127.0.0.1.evil.example", "localhost.evil.example", "tunel.example:80",
+               "10.0.0.7", "[fe80::1]:5140", "", None)
+
+    def test_foreign_host_is_refused_on_every_get(self) -> None:
+        for path in self.ENDPOINTS:
+            for host in self.FOREIGN:
+                with self.subTest(path=path, host=host):
+                    code, headers, body = raw_get(self.port, path, host)
+                    self.assertEqual(code, 403)
+                    self.assertEqual(headers["content-type"], "application/json; charset=utf-8")
+                    self.assertEqual(headers["x-frame-options"], "DENY")
+                    self.assertEqual(json.loads(body), {"error": srv.HOST_REFUSED})  # bez treści strony/statusu
+        self.assertEqual(self.board.sse_clients, 0)  # odmowa SSE nie zajmuje miejsca
+
+    def test_loopback_host_with_any_port_is_served(self) -> None:
+        for host in ("127.0.0.1", f"127.0.0.1:{self.port}", "localhost:1", "LOCALHOST", "[::1]", "[::1]:5140", "::1"):
+            for path in ("/", "/api/status", "/healthz", "/api/descriptions", f"/api/doc?path={SPEC}", "/assets/app.js"):
+                with self.subTest(host=host, path=path):
+                    self.assertEqual(raw_get(self.port, path, host)[0], 200)
+            with self.subTest(host=host, path="/events"):
+                code, headers, _ = raw_get(self.port, "/events", host)
+                self.assertEqual((code, headers["content-type"]), (200, "text/event-stream; charset=utf-8"))
+
+    def test_approve_host_admits_an_extra_host_for_reading(self) -> None:
+        self.assertEqual(raw_get(self.port, "/api/status", "lan-host:5140")[0], 403)
+        self.board.approve_hosts = srv.LOOPBACK_HOSTS | {"lan-host"}
+        for path in ("/", "/api/status", "/healthz", "/events"):
+            with self.subTest(path=path):
+                self.assertEqual(raw_get(self.port, path, "lan-host:5140")[0], 200)
+        code, _, body = raw_get(self.port, "/api/status", "LAN-HOST")
+        self.assertEqual((code, json.loads(body)["approvals"]["here"]), (200, True))
+        self.assertEqual(raw_get(self.port, "/api/status", "lan-host.evil.example")[0], 403)
+
+    def test_foreign_host_post_is_refused_before_the_body(self) -> None:
+        spy_core(self)
+        for host in ("evil.example", "evil.example:5140", ""):
+            with self.subTest(host=host):
+                code, body = raw_post(self.port, {"Host": host, "Content-Type": "application/json", "X-Status-Board": "1",
+                                                  "Content-Length": str(srv.MAX_BODY + 1)})
+                self.assertEqual((code, body), (403, {"error": srv.HOST_REFUSED}))  # 403, nie 400: Host przed długością
+        self.set_doc.assert_not_called()
+        self.record.assert_not_called()
+
+    def test_refusal_is_logged_only_in_verbose_mode(self) -> None:
+        from io import StringIO
+        for verbose, expect in ((False, False), (True, True)):
+            with self.subTest(verbose=verbose), mock.patch.object(sys, "stderr", new=StringIO()) as err:
+                self.server.RequestHandlerClass.verbose = verbose
+                self.assertEqual(raw_get(self.port, "/api/status", "evil.example")[0], 403)
+                self.assertEqual("Host spoza listy ('evil.example')" in err.getvalue(), expect, err.getvalue())
 
 
 class HttpReadOnlyTests(HttpCase):

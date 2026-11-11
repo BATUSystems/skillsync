@@ -374,17 +374,36 @@ Endpointy:
 |---|---|
 | `GET /`, `/index.html` | strona (`assets/index.html` skilla `dashboard`) |
 | `GET /assets/<plik>` | tylko nazwy `[\w-]+.(html\|css\|js\|svg)` z `skills/dashboard/assets/` aktywnych warstw (`LayerSet.skill_files`: późniejsza warstwa wygrywa per plik, dowiązania pomijane); inne = 404 |
-| `GET /api/status[?plan=<rel>]` | kontrakt `schema: 1` (to samo co `show`, z żywym `version`, `session.url`, `prototype.up`) plus `approvals.here` (bool: nagłówek `Host` żądania jest na liście hostów zgód) |
+| `GET /api/status[?plan=<rel>]` | kontrakt `schema: 1` (to samo co `show`, z żywym `version`, `session.url`, `prototype.up`) plus `approvals.here` (bool: nagłówek `Host` żądania jest na liście hostów zgód; przy kontroli `Host` na wszystkich endpointach odpowiedź z danymi ma zawsze `true`, pole zostaje dla zgodności klienta) |
 | `GET /api/doc?path=<rel>` | `{path, title, status, mtime, size, truncated, html}`: podgląd `*.md` z `docs/specs`, `docs/plans`, `docs/design`, `docs/domain` i `.skillsync/runs/<run>/`; bez `..`, ścieżek absolutnych, ukrytych katalogów i dowiązań poza listę; limit 2 MB (`truncated`); inne = 404 |
 | `GET /events` | SSE: `hello {version, heartbeat}` (z `retry: 3000`), `change {version}` po zmianie obserwowanych plików, `ping {version, t}` co 15 s; najwyżej 64 połączenia (dalej 503) |
 | `GET /api/descriptions` | `descriptions.json` skilla (`{klucz: {title, text}}`) |
 | `GET /healthz` | `{ok: true, version}` |
-| `POST /api/approve` | `{kind: spec\|plan\|cp\|ready, path, sha[, plan]}`; tylko akcja, którą `/api/status` właśnie oferuje w stanie `waiting`, z tym samym `sha` |
+| `POST /api/approve` | `{kind: spec\|plan\|cp\|ready, path, sha[, plan]}`; tylko akcja, którą `/api/status` właśnie oferuje w stanie `waiting`, z tym samym `sha`; odpowiedź 200: `{ok, word, file, next}`, dla GO także `trail` (ścieżka `approvals.jsonl` przebiegu albo null bez przebiegu) |
 
-Zabezpieczenia `POST /api/approve` (odmowa = 403, bez zapisu i bez wywołania CLI): `Host` z listy `localhost`, `127.0.0.1`,
-`::1` i `--approve-host`; nagłówek `X-Status-Board: 1`; `Origin`, jeśli jest, z tej samej listy; `Content-Type:
+Kontrola `Host` na wszystkich endpointach (`GET`, `HEAD`, SSE `/events`, `POST`): nagłówek `Host` musi wskazywać loopback
+(`localhost`, `127.0.0.1`, `[::1]`, z dowolnym portem; bez rozróżniania wielkości liter) albo nazwę z `--approve-host`
+(port pomijany). Inny albo brakujący `Host` (DNS rebinding, tunel lub nazwa LAN spoza listy) = 403
+`{"error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host)."}` bez treści strony,
+dokumentu ani statusu; przy `--verbose` odmowa trafia do logu stderr (metoda, ścieżka, host). `--approve-host` jest więc
+listą hostów dozwolonych do odczytu i do zgód; widok tylko do odczytu pod dodatkowym adresem = `--approve-host <nazwa>
+--no-approvals`. Tunel `ssh -R`/`-L` na `127.0.0.1` działa bez flagi (przeglądarka wysyła `Host: localhost:<port>`).
+
+Zgody in-process (bez podprocesu `skillsync`, bez własnego zapisu serwera): „GO plan”/„GO implement” =
+`status.set_doc_status(root, path, "approve", specs|plans, expect_sha=<sha z żądania>)` (plik zmieniony od wyświetlenia =
+409), a potem, gdy katalog przebiegu akcji (`actions[].run`) istnieje, `status.record_approval(..., source="dashboard",
+file=path, sha_after=<sha po zmianie>)`: wpis `{schema, at, word, sha, by, source: "dashboard", file, shaAfter, run}`.
+Bez katalogu przebiegu zgoda GO zmienia tylko linię `Status:` (`trail: null`; sesja czyta zgodę ze statusu pliku, jak
+`approvals wait --file`). „CP”/„READY” = `status.record_approval(..., source="dashboard")` z `run`, `plan`, `target` (tylko
+CP), `branch`, `ahead`, `mode`; odmowa rdzenia po przejściu kontroli serwera (blokada pliku, limit 256 KiB, zła nazwa
+gałęzi, wyścig z drugim zapisem) = 500 z powodem. Id przebiegu: wzorzec `status.RUN_ID` (`[A-Za-z0-9][A-Za-z0-9_.-]{0,79}`;
+bez `/`, wiodącej kropki, więc też bez `..`); serwer przyjmuje z żądania tylko id, które `/api/status` właśnie oferuje.
+
+Zabezpieczenia `POST /api/approve` (odmowa = 403, bez wywołania `set_doc_status`/`record_approval`): `Host` jak wyżej
+(sprawdzany przed długością treści); nagłówek `X-Status-Board: 1`; `Origin`, jeśli jest, z tej samej listy; `Content-Type:
 application/json`. Dalej `Content-Length` 1–4096 (inaczej 400), treść JSON-obiekt (inaczej 400), `--no-approvals` = 403,
 akcja nieoferowana, nieaktywna albo z innym `sha` = 409 (także drugi zapis CP/READY dla tego samego HEAD). Każda odpowiedź ma
 `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `Cache-Control: no-cache,
-no-store`; strona HTML także CSP `default-src 'self'; script-src 'self'; …; frame-ancestors 'none'`. Odczyty (`GET`) nie
-sprawdzają nagłówka `Host`: strona pod innym adresem (tunel, LAN przy `--host 0.0.0.0`) jest tylko do odczytu.
+no-store`; strona HTML także CSP `default-src 'self'; script-src 'self'; …; frame-ancestors 'none'`. Przy `--host 0.0.0.0`
+inne urządzenia dostają 403, dopóki ich adres z paska przeglądarki nie trafi do `--approve-host` (serwer wypisuje to przy
+starcie).

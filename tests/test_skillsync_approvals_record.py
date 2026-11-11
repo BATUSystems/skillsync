@@ -105,6 +105,16 @@ class RecordEntry(RecordFixture):
             with self.subTest(word=word, file=name):
                 self.assertEqual(self.record(word, file=name)['status'], 'BLOCKED')
 
+    def test_go_sha_after_is_stored_as_sha_after(self):
+        spec = self.doc('specs', 's.md')
+        shown = status.git_blob_sha(spec.read_bytes())
+        entry = self.record('GO plan', sha=shown, file='docs/specs/s.md', sha_after=HEAD, source='dashboard')['entry']
+        self.assertEqual((entry['sha'], entry['shaAfter'], entry['source']), (shown, HEAD, 'dashboard'))
+        self.assertEqual(json.loads(self.log.read_text(encoding='utf-8'))['shaAfter'], HEAD)
+        bad = self.record('GO implement', sha=shown, file=None, sha_after='NOT-HEX')
+        self.assertEqual(bad['status'], 'BLOCKED')
+        self.assertIn('sha_after', bad['reason'])
+
     def test_default_sha_is_head_and_without_git_the_record_is_blocked(self):
         blocked = self.record(sha=None)
         self.assertEqual(blocked['status'], 'BLOCKED')
@@ -149,6 +159,8 @@ class RecordValidation(RecordFixture):
     def test_bad_inputs_are_blocked_and_write_nothing(self):
         cases = (({'word': 'MAYBE'}, 'Unknown consent word'), ({'source': 'web'}, 'Unknown source'),
                  ({'run': '../x'}, 'Invalid run id'), ({'run': '.hidden'}, 'Invalid run id'), ({'run': ''}, 'Invalid run id'),
+                 ({'run': '..'}, 'Invalid run id'), ({'run': '.'}, 'Invalid run id'), ({'run': 'a/b'}, 'Invalid run id'),
+                 ({'run': '../' + RUN}, 'Invalid run id'), ({'sha_after': HEAD}, 'sha_after'),
                  ({'run': 'r2'}, 'Run directory not found'), ({'sha': 'XYZ'}, '7-64'), ({'sha': 'abc12'}, '7-64'),
                  ({'target': '-x'}, 'Invalid --target'), ({'branch': 'a b'}, 'Invalid --branch'))
         for kwargs, fragment in cases:

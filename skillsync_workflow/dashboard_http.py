@@ -5,24 +5,25 @@ this module only adds the live parts: a file watcher with a version counter for 
 the Markdown preview `/api/doc`, the page assets and `descriptions.json` of the `dashboard` skill (read from the active
 layers through `LayerSet.skill_files`), and the consent buttons `POST /api/approve`.
 
-The only write: `POST /api/approve` ("GO plan"/"GO implement" through `skillsync spec|plan approve --expect-sha`, "CP"/
-"READY" as an entry of `.skillsync/runs/<run-id>/approvals.jsonl`). Only from a browser on this machine (loopback `Host`
-or `--approve-host`, header `X-Status-Board: 1`, matching `Origin`, `Content-Type: application/json`, body <= 4096 bytes);
-`--no-approvals` turns it off. Standard library only.
+Every endpoint (GET, HEAD, SSE and POST) answers only to a `Host` header from loopback (`localhost`, `127.0.0.1`, `::1`,
+any port) or from `--approve-host`; another `Host` (DNS rebinding, an unlisted tunnel or LAN name) = 403 without content.
+
+The only write: `POST /api/approve`, in-process through the shared core functions of `status.py` (no `skillsync`
+subprocess): "GO plan"/"GO implement" = `set_doc_status(..., expect_sha=<shown sha>)` and then, when the run directory
+exists, `record_approval(..., source='dashboard')`; "CP"/"READY" = `record_approval(..., source='dashboard')` into
+`.skillsync/runs/<run-id>/approvals.jsonl`. Header `X-Status-Board: 1`, matching `Origin`, `Content-Type:
+application/json`, body <= 4096 bytes; `--no-approvals` turns it off. Standard library only.
 """
 from __future__ import annotations
 
-import getpass
 import html
 import json
 import os
 import posixpath
 import re
-import shutil
 import signal
 import socket
 import socketserver
-import subprocess
 import sys
 import threading
 import time
@@ -35,6 +36,7 @@ import yaml
 
 from . import __version__
 from . import dashboard as engine
+from . import status as status_core
 from .common import emit, load_layer_project, read_project
 from .layers import LayerError
 
@@ -62,12 +64,12 @@ LOOPBACK_HOSTS = frozenset({'127.0.0.1', 'localhost', '::1'})
 APPROVE_KINDS = engine.APPROVE_KINDS
 RUNS_DIR = engine.RUNS_DIR
 RUN_APPROVALS = engine.APPROVALS_FILE  # .skillsync/runs/<run-id>/approvals.jsonl, the format `skillsync status` reads
-APPROVALS_LOG = '.skillsync/status-board/approvals.jsonl'  # GO consents outside a run (no run directory)
 MANIFEST = '.github/.skillsync.yaml'
 PROTO_CACHE_S = 30
 AHEAD_CACHE_S = 10
 CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
        "connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
+HOST_REFUSED = "Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host)."
 NEXT_HINT = ("Zgoda zapisana w pliku. Sesja czekająca na nią rusza sama (nasłuch zmian i budzik co 30 min); "
              "jeśli nie ruszy w ciągu minuty, napisz w sesji „dalej”.")
 
@@ -374,7 +376,6 @@ class Board:
         self.descriptions = descriptions
         self._manifest = manifest
         self._approve_lock = threading.Lock()
-        self._cli_support: tuple[str | None, bool] = ("", False)
         self._ahead: tuple[tuple, float, dict] = ((), 0.0, {})
         self.approve_hosts = LOOPBACK_HOSTS | {h.strip().lower() for h in approve_hosts if h.strip()}
         self.default_plan = default_plan
@@ -487,30 +488,13 @@ class Board:
             self._ahead = (key, time.time(), value)
         return value
 
-    def cli_supports_approvals(self) -> bool:
-        """Whether `skillsync` in PATH knows `spec approve --expect-sha` (checked once per program path).
-        F5 replaces the subprocess with the in-process consent function; until then GO goes through the CLI."""
-        exe = shutil.which("skillsync")
-        if exe != self._cli_support[0]:
-            ok = False
-            if exe:
-                try:
-                    out = subprocess.run([exe, "spec", "approve", "--help"], capture_output=True, text=True, timeout=15,
-                                         check=False)
-                    ok = out.returncode == 0 and "--expect-sha" in out.stdout
-                except (OSError, subprocess.SubprocessError):
-                    ok = False
-            self._cli_support = (exe, ok)
-        return self._cli_support[1]
-
     # --- status (the same JSON as `dashboard show`, plus the live state)
     def status(self, plan_rel: str | None = None) -> dict:
         return engine.build_status(
             self.root, plan_rel or self.default_plan, manifest=self.manifest(), approvals=self.approvals,
             session_url=self.session_url, prototype_port=self.prototype_port, version=self.version,
             ahead=lambda _root, branch, head: self.ahead(branch, head), prototype_up=self.prototype_up,
-            acceptance=lambda slug: self.prototype_acceptance(slug),
-            cli_ok=self.cli_supports_approvals() if self.approvals else True)
+            acceptance=lambda slug: self.prototype_acceptance(slug))
 
     # --- documents
     def doc(self, rel: str | None) -> dict | None:
@@ -524,77 +508,50 @@ class Board:
                 "mtime": engine._iso(engine._mtime(path)), "size": size, "truncated": size > MAX_DOC_BYTES,
                 "html": render_markdown(text, rel or "")}
 
-    # --- consents (F5 moves the writes to the shared `approvals record` function)
+    # --- consents (in-process, the shared core functions of status.py; no subprocess, no own jsonl writer)
     def approve(self, kind: str, rel: str, sha: str, plan: str | None = None) -> tuple[int, dict]:
-        """Consent from a button: only the action the page offers right now (the same file and sha), through the CLI."""
+        """Consent from a button: only the action the page offers right now (the same file and sha).
+
+        GO: `status.set_doc_status(..., expect_sha=sha)` rewrites the Status line (the consent itself), then
+        `status.record_approval` writes the trail entry to the run's `approvals.jsonl` when the run directory exists
+        (without a run there is no trail: `trail` = null; the session reads the consent from the Status line)."""
         if not self.approvals:
             return 403, {"error": "Zgody z tej strony są wyłączone (--no-approvals)."}
         if kind not in APPROVE_KINDS or not isinstance(rel, str) or not isinstance(sha, str):
             return 400, {"error": "Nieprawidłowe żądanie."}
         if kind in ("cp", "ready"):
             return self._approve_delivery(kind, rel, sha, plan if isinstance(plan, str) else None)
-        if not self.cli_supports_approvals():
-            return 503, {"error": "Zainstalowany skillsync nie zna `spec approve --expect-sha`; wpisz zgodę w sesji."}
+        word = APPROVE_KINDS[kind]
         with self._approve_lock:
             current = self.status(rel if kind == "plan" else None)
             offer = next((a for a in current["approvals"]["actions"] if a["kind"] == kind and a["path"] == rel), None)
             if offer is None:
-                return 409, {"error": f"„{APPROVE_KINDS[kind]}” nie jest teraz możliwe dla {rel}; odśwież stronę."}
+                return 409, {"error": f"„{word}” nie jest teraz możliwe dla {rel}; odśwież stronę."}
             if offer["state"] != "waiting":
                 return 409, {"error": f"„{offer['word']}” nieaktywne: {offer['reason']}."}
             if offer["sha"] != sha:
                 return 409, {"error": "Plik zmienił się od wyświetlenia; przeczytaj go ponownie i zatwierdź jeszcze raz."}
-            exe = shutil.which("skillsync")
-            if not exe:
-                return 503, {"error": "Brak polecenia skillsync w PATH serwera; wpisz zgodę w sesji."}
+            folder = "specs" if kind == "spec" else "plans"
             try:
-                proc = subprocess.run([exe, kind, "approve", str(self.root), rel, "--expect-sha", sha, "--json"],
-                                      capture_output=True, text=True, timeout=30, check=False)
-                report = json.loads(proc.stdout or "{}")
-            except (OSError, ValueError, subprocess.SubprocessError):
-                return 502, {"error": "skillsync nie odpowiedział poprawnie; wpisz zgodę w sesji."}
-            if proc.returncode != 0 or report.get("status") != "PASS":
-                reason = str(report.get("reason") or proc.stderr.strip()[-300:] or "nieznany błąd")
-                if "invalid choice" in proc.stderr or "unrecognized arguments" in proc.stderr:
-                    reason = "zainstalowany skillsync nie zna tej komendy (potrzebny `spec approve` i `--expect-sha`)"
-                return 409, {"error": f"skillsync odmówił: {reason}"}
-            run_id = current["run"]["id"] if current["run"].get("exists") else None
-            entry = self._entry(APPROVE_KINDS[kind], sha, file=rel, shaAfter=report.get("sha"))
-            self._append_approval(run_id, entry)
-            log(f"zgoda „{APPROVE_KINDS[kind]}” dla {rel} (sha {sha[:10]})")
+                report = status_core.set_doc_status(self.root, rel, "approve", folder, expect_sha=sha)
+            except (OSError, ValueError, TypeError, KeyError, UnicodeDecodeError) as error:
+                return 409, {"error": f"Odmowa zmiany statusu: {' '.join(str(error).split())[:300]}"}
+            run_id = offer.get("run")
+            trail = None
+            if run_id:
+                record = status_core.record_approval(self.root, word, run_id, sha=sha, source="dashboard", file=rel,
+                                                     sha_after=report.get("sha"))
+                if record["status"] == "PASS":
+                    trail = record["path"]
+                else:
+                    log(f"ślad zgody „{word}” nie zapisany: {record['reason']}")
+            log(f"zgoda „{word}” dla {rel} (sha {sha[:10]}, ślad: {trail or 'brak przebiegu'})")
         self.check_once()
-        return 200, {"ok": True, "word": APPROVE_KINDS[kind], "file": rel, "next": NEXT_HINT}
-
-    def _entry(self, word: str, sha: str, **extra) -> dict:
-        try:
-            by = getpass.getuser()
-        except (OSError, KeyError):
-            by = None
-        entry = {"schema": 1, "at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "word": word, "sha": sha,
-                 "by": by, "source": "dashboard"}
-        entry.update({k: v for k, v in extra.items() if v is not None})
-        return entry
-
-    def _append_approval(self, run_id: str | None, entry: dict) -> bool:
-        """Appends the entry to approvals.jsonl of the run (without a run: the page's own trail). One line, append."""
-        if run_id and engine.RUN_ID_RE.match(run_id) and (self.root / RUNS_DIR / run_id).is_dir():
-            log_path = self.root / RUNS_DIR / run_id / RUN_APPROVALS
-        else:
-            log_path = self.root / APPROVALS_LOG
-        try:
-            if log_path.is_symlink():
-                raise OSError("symlink")
-            log_path.parent.mkdir(parents=True, exist_ok=True)
-            with log_path.open("a", encoding="utf-8") as fh:
-                fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
-            return True
-        except OSError as exc:
-            log(f"wpis zgody nie zapisany: {exc!r}")
-            return False
+        return 200, {"ok": True, "word": word, "file": rel, "trail": trail, "next": NEXT_HINT}
 
     def _approve_delivery(self, kind: str, run_id: str, sha: str, plan: str | None = None) -> tuple[int, dict]:
-        """CP / READY: an entry in `.skillsync/runs/<run-id>/approvals.jsonl` with the sha of the HEAD shown on the page.
-        The session checks the entry (word, sha = its HEAD) instead of a word typed in the terminal."""
+        """CP / READY: `status.record_approval` into `.skillsync/runs/<run-id>/approvals.jsonl` with the sha of the HEAD
+        shown on the page. The session checks the entry (word, sha = its HEAD) instead of a word typed in the terminal."""
         word = APPROVE_KINDS[kind]
         with self._approve_lock:
             current = self.status(plan)
@@ -606,14 +563,16 @@ class Board:
             if offer["sha"] != sha:
                 return 409, {"error": "HEAD zmienił się od wyświetlenia; odśwież stronę i sprawdź zmiany."}
             d = current["delivery"]
-            entry = self._entry(word, sha, run=run_id, plan=(current.get("plan") or {}).get("path"),
-                                target=d.get("target") if kind == "cp" else None, branch=d.get("branch"),
-                                ahead=d.get("ahead"), mode=d.get("mode"))
-            if not self._append_approval(run_id, entry):
-                return 500, {"error": "Nie udało się zapisać zgody; wpisz słowo w sesji."}
+            record = status_core.record_approval(
+                self.root, word, run_id, sha=sha, source="dashboard", target=d.get("target") if kind == "cp" else None,
+                branch=d.get("branch"), plan=(current.get("plan") or {}).get("path"), ahead=d.get("ahead"),
+                mode=d.get("mode"))
+            if record["status"] != "PASS":
+                log(f"wpis zgody „{word}” nie zapisany: {record['reason']}")
+                return 500, {"error": f"Nie udało się zapisać zgody ({record['reason']}); wpisz słowo w sesji."}
             log(f"zgoda „{word}” dla HEAD {sha[:10]} (przebieg {run_id})")
         self.check_once()
-        return 200, {"ok": True, "word": word, "file": f"{RUNS_DIR}/{run_id}/{RUN_APPROVALS}", "next": NEXT_HINT}
+        return 200, {"ok": True, "word": word, "file": record["path"], "next": NEXT_HINT}
 
 
 # --------------------------------------------------------------------------- HTTP
@@ -647,10 +606,26 @@ class Handler(BaseHTTPRequestHandler):
     def _json(self, code: int, data: dict) -> None:
         self._send(code, json.dumps(data, ensure_ascii=False).encode("utf-8"), "application/json; charset=utf-8")
 
+    def _host_refused(self) -> bool:
+        """Every endpoint: a `Host` outside loopback and `--approve-host` (DNS rebinding, an unlisted tunnel or LAN
+        name) gets 403 without any content; the refusal goes to the verbose log only."""
+        host = request_host(self.headers.get("Host"))
+        if host in self.board.approve_hosts:
+            return False
+        if self.verbose:
+            log(f"odmowa {self.command} {urlparse(self.path).path[:120]!r}: Host spoza listy ({host[:80]!r})")
+        try:
+            self._json(403, {"error": HOST_REFUSED})
+        except OSError:
+            pass
+        return True
+
     def do_HEAD(self) -> None:  # noqa: N802
         self.do_GET()
 
     def do_GET(self) -> None:  # noqa: N802
+        if self._host_refused():
+            return None
         url = urlparse(self.path)
         query = parse_qs(url.query)
         route = url.path
@@ -689,8 +664,8 @@ class Handler(BaseHTTPRequestHandler):
         a CORS preflight the server does not answer), matching Origin when the browser sent one, JSON content type."""
         allowed = self.board.approve_hosts
         host = request_host(self.headers.get("Host"))
-        if host not in allowed:
-            return "Zgody tylko z localhost albo hosta z --approve-host; pod tym adresem strona jest tylko do odczytu."
+        if host not in allowed:  # do_POST already refused it; kept so the write guard stands on its own
+            return HOST_REFUSED
         if self.headers.get("X-Status-Board") != "1":
             return "Brak nagłówka X-Status-Board."
         origin = self.headers.get("Origin")
@@ -701,6 +676,8 @@ class Handler(BaseHTTPRequestHandler):
         return None
 
     def do_POST(self) -> None:  # noqa: N802
+        if self._host_refused():
+            return None
         route = urlparse(self.path).path
         try:
             if route != "/api/approve":
@@ -869,9 +846,16 @@ def serve_command(args) -> int:
     url = f"http://{'[%s]' % host if ':' in host else host}:{port}/"
     log(f"projekt {board.root} → {url}  (Ctrl+C kończy)")
     if args.host not in LOOPBACK_HOSTS:
-        log(f"UWAGA: nasłuch na {args.host} — strona (tylko odczyt) jest widoczna dla każdego w tej sieci; używaj w zaufanej sieci.")
+        extra = sorted(board.approve_hosts - LOOPBACK_HOSTS)
+        if not extra:
+            log(f"UWAGA: nasłuch na {args.host}, ale strona odpowiada tylko pod localhost (nagłówek Host); inne urządzenia "
+                f"dostaną 403, dopóki ich adres z paska przeglądarki (nazwa lub IP) nie trafi do --approve-host.")
+        else:
+            log(f"UWAGA: nasłuch na {args.host}; strona {'(tylko odczyt) ' if not board.approvals else 'i zgody '}"
+                f"dostępne pod: {', '.join(extra)} — używaj w zaufanej sieci"
+                f"{'' if not board.approvals else ' (--no-approvals = tylko odczyt)'}.")
         for ip in lan_addresses() if args.host in ("0.0.0.0", "::", "") else [args.host]:
-            log(f"  z innego urządzenia: http://{ip}:{port}/")
+            log(f"  z innego urządzenia: http://{ip}:{port}/ (wymaga --approve-host {ip})")
     try:
         server.serve_forever(poll_interval=0.5)
     except KeyboardInterrupt:
