@@ -7,7 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / 'tests' / 'fixtures' / 'dashboard'
 CONTRACT_DOC = ROOT / 'docs' / 'dashboard-contract.md'
-CASES = ('empty', 'plan-in-progress', 'spec-act', 'run-mode', 'silence', 'readiness-blocked', 'questions')
+CASES = ('empty', 'plan-in-progress', 'spec-act', 'run-mode', 'silence', 'readiness-blocked', 'questions', 'cp-ready')
 GENERATED_BY_LINK = {'.mcp.json', '.claude', '.github', '.gitignore', 'AGENTS.md', 'CLAUDE.md'}
 FORBIDDEN_IN_INPUT = ('/home/', '@')  # ogólne wzorce; nazwy prywatne pilnuje leakcheck (strażnik), nie źródło testu
 MODES = {'plan', 'spec', 'run', 'none'}
@@ -191,6 +191,16 @@ class DashboardContract(unittest.TestCase):
         questions = json.loads(load('questions')[1])
         self.assertTrue(questions['assumptions']['items'] and questions['blockingQuestions']['items'])
         self.assertFalse(any('pytania' in w['action'] for w in questions['waiting']))
+        cp_ready = json.loads(load('cp-ready')[1])
+        self.assertEqual([(a['kind'], a['state']) for a in cp_ready['approvals']['actions'][2:]],
+                         [('cp', 'waiting'), ('ready', 'waiting')])
+        self.assertEqual(cp_ready['git']['headFull'], '<head>')
+        after = json.loads((FIXTURES / 'cp-ready' / 'expected-after.json').read_text(encoding='utf-8'))
+        cp = next(a for a in after['approvals']['actions'] if a['kind'] == 'cp')
+        self.assertEqual((cp['state'], cp['given']['word'], cp['given']['sha'], after['approvals']['last']),
+                         ('after', 'CP', '<head>', cp['given']))
+        self.assertIsNotNone(cp['given']['at'])
+        self.each(after['approvals']['actions'], ACTION, 'cp-ready after: approvals.actions')
 
     def test_top_level_keys_documented(self):
         doc = CONTRACT_DOC.read_text(encoding='utf-8')

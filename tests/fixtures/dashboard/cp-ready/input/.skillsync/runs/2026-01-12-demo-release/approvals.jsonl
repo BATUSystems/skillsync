@@ -1,0 +1,2 @@
+{"schema": 1, "at": "2026-01-12T08:30:00Z", "word": "GO plan", "sha": "89abcdef0123456789abcdef0123456789abcdef", "by": "user", "source": "cli", "file": "docs/specs/2026-01-12-demo-release.md"}
+{"schema": 1, "at": "2026-01-12T08:45:00Z", "word": "GO implement", "sha": "fedcba9876543210fedcba9876543210fedcba98", "by": "user", "source": "ide", "file": "docs/plans/2026-01-12-demo-release.md"}

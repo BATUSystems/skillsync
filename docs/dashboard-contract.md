@@ -11,7 +11,7 @@ wyniku: `tests/fixtures/dashboard/<przypadek>/input/` i `expected.json`.
 | `skillsync dashboard show <projekt> [--json] [--plan <rel>]` | drukuje kontrakt `schema: 1` (JSON; bez `--json` ten sam JSON, formatowany); tylko odczyt, bez zapisu do projektu; `--plan` wybiera plan (ścieżka względna, np. `docs/plans/<plik>.md`), bez niego plan wybierany jest automatycznie (`planAuto: true`) |
 | `skillsync dashboard serve <projekt> [--port N] [--host H] [--approve-host H]` | serwer HTTP nad tym samym JSON (`/api/status`, strumień zmian `/events`, przyciski zgód); port wybiera się per projekt, by strony nie kolidowały |
 | `skillsync dashboard metrics <projekt> <run-id> [--json]` | ogólne metryki przebiegu: czas podkroków `Fn.k` z checkpointów, liczby rund i porażek; podkrok bez danych jest oznaczony jawnie |
-| `skillsync approvals record <projekt> --word "GO plan\|GO implement\|CP\|READY" --run <run-id> [--sha <git sha>] [--target X] [--branch Y] --source <cli\|dashboard>` | zapisuje zgodę użytkownika (patrz niżej) |
+| `skillsync approvals record <projekt> --word "GO plan\|GO implement\|CP\|READY" --run <run-id> [--sha <git sha>] [--target X] [--branch Y] [--file docs/…] --source <cli\|dashboard\|ide> [--json]` | zapisuje zgodę użytkownika (patrz niżej) |
 
 Kody wyjścia (jak pozostałe komendy workflow): `0` = PASS, `2` = BLOCKED (błąd danych wejściowych, odmowa zapisu, brak
 projektu lub przebiegu). Raport komend zapisujących i `metrics --json` to JSON z polami `schema`, `status` (`PASS` albo
@@ -20,11 +20,26 @@ projektu lub przebiegu). Raport komend zapisujących i `metrics --json` to JSON 
 ### `approvals record`
 
 - Dopisuje jedną linię JSON do `.skillsync/runs/<run-id>/approvals.jsonl` pod blokadą plikową (jedyne źródło, które czyta
-  `skillsync approvals wait`). Pola wpisu: `schema`, `at` (UTC), `word`, `sha`, `by`, `source` (`cli` albo `dashboard`),
-  opcjonalnie `file`, `run`, `plan`, `target`, `branch`, `ahead`, `mode`.
-- `--sha` domyślnie HEAD repozytorium projektu; dla `CP`/`READY` sha oznacza HEAD gałęzi roboczej, którą zgoda wypchnie.
-- Odmawia (kod `2`) drugiego zapisu tego samego słowa dla tego samego HEAD i run-id; nieznane słowo, zły `--source` albo
-  brak katalogu przebiegu też kończą się `BLOCKED`.
+  `skillsync approvals wait`). Pola wpisu: `schema`, `at` (UTC), `word`, `sha`, `by`, `source` (`cli`, `dashboard` albo
+  `ide`), opcjonalnie `file`, `run`, `plan`, `target`, `branch`, `ahead`, `mode`. Wpis z `record` ma zawsze `at`
+  (`YYYY-MM-DDTHH:MM:SSZ`), `run` (= `--run`) i `by` (nazwa użytkownika systemu, `unknown`, gdy jej nie da się odczytać);
+  pola opcjonalne bez wartości są pominięte (nie `null`). Wartości tekstowe przechodzą przez maskowanie sekretów.
+- `--sha` (7–64 znaków hex, małe litery): dla `GO plan`/`GO implement` git blob sha zatwierdzanego pliku (domyślnie: sha
+  pliku z `--file`), dla `CP`/`READY` HEAD gałęzi roboczej, którą zgoda wypchnie (domyślnie HEAD repozytorium projektu,
+  odczytany z `.git` bez uruchamiania git). Bez `--sha` i bez czytelnego HEAD (projekt bez `.git`): `BLOCKED`.
+- `--file` tylko dla słów GO: `docs/specs/*.md` dla `GO plan`, `docs/plans/*.md` dla `GO implement` (plik zwykły, nie
+  dowiązanie, nie `README.md`); dla `CP`/`READY` → `BLOCKED`. `--target`/`--branch`: nazwa gałęzi.
+- Odmawia (kod `2`) drugiego zapisu tego samego słowa z tym samym `sha` w tym samym przebiegu (dla GO: ta sama wersja pliku,
+  dla CP/READY: ten sam HEAD); nieznane słowo, zły `--source`, run-id spoza wzorca `[A-Za-z0-9][A-Za-z0-9_.-]{0,79}`, brak
+  katalogu przebiegu, dowiązanie na drodze `.skillsync/runs/<run-id>` lub dowiązany `approvals.jsonl`, plik, który
+  przekroczyłby 256 KiB (czytelnicy pomijają większy plik w całości), albo blokada trzymana dłużej niż 10 s też kończą się
+  `BLOCKED`.
+- Blokada: plik `approvals.jsonl.lock` w katalogu przebiegu, tworzony wyłącznie (`O_EXCL`; działa na POSIX i Windows),
+  usuwany po zapisie; blokada starsza niż 60 s jest uznana za porzuconą i usuwana. Kontrola duplikatu, dopisanie linii i
+  `fsync` odbywają się pod blokadą; urwana ostatnia linia pliku nie łączy się z nowym wpisem.
+- Raport (JSON na stdout, także bez `--json`): `schema`, `status` (`PASS`/`BLOCKED`), `reason`, `entry` (zapisany wpis albo
+  `null` przy odmowie), przy `PASS` także `path` (ścieżka pliku względem projektu). Ta sama funkcja rdzenia
+  (`status.record_approval`) służy serwerowi dashboardu; polecenie nie uruchamia podprocesów.
 - Zgodę wyraża wyłącznie użytkownik (wpisuje komendę sam albo naciska przycisk strony, którą woła serwer). Agent tej komendy
   nie wywołuje: wiadomość agenta nie jest zgodą.
 
@@ -46,6 +61,10 @@ projektu lub przebiegu). Raport komend zapisujących i `metrics --json` to JSON 
   `run.lastReportAt` = `2026-01-11T10:00:00+00:00`);
 - `generatedAt` zastąpione `2026-01-12T12:00:00+00:00`, `app.version` zastąpione `<version>`;
 - bez repozytorium git (wejście to same pliki tekstowe): `git.*` ma wartości `null`, `delivery.ahead` = `null`;
+- wyjątek: przypadek `cp-ready` wymaga repozytorium; test zakłada w kopii `input/` repozytorium git (gałąź `feat/demo`,
+  jeden commit, neutralna tożsamość, bez `origin`), a sha HEAD (pełne, 12 i 8 znaków) zastępuje `<head>`. Wariant
+  `expected-after.json` to wynik po `approvals record --word CP`: w zapisanym wpisie `at` = `2026-01-12T12:00:00Z`,
+  `by` = `user`, a godzina w `reason`/`blocked` = `12:00`;
 - JSON: `sort_keys`, wcięcie 2, `ensure_ascii=false`, końcowy znak nowej linii.
 
 ## Pola najwyższego poziomu
@@ -189,6 +208,11 @@ Pola: `reason` (string lub null), `blocked` (powód nieaktywności; null dla `wa
 `cp`/`ready` id przebiegu), `sha` (git blob sha pliku do zgody GO albo HEAD dla CP/READY; pusty string, gdy brak), `given`
 (wpis lub null), `target` (tylko `cp`/`ready`; dokąd oddać), `run` (id przebiegu, do którego trafi wpis zgody, gdy katalog
 `.skillsync/runs/<run-id>` istnieje; inaczej null; pole dodane addytywnie, `path` dla `cp`/`ready` bez zmian).
+
+`given` w stanie `after`: wpis zgody w postaci zapisanej w `approvals.jsonl` (wpis z `approvals record` ma zawsze `at`).
+Dla `spec`/`plan` stan `after` wynika ze statusu pliku (`approved` i dalej), więc zgoda mogła zostać dana poza
+`approvals.jsonl` (np. `spec approve`/`plan approve` w IDE albo słowo wpisane w sesji): wtedy `given` = `{"at": null}`, a
+`reason` mówi „zgoda … już dana”. Dla `cp`/`ready` stan `after` jest tylko przy wpisie, którego `sha` = `git.headFull`.
 
 Wpisy zgód (`given`, `last`) pochodzą z `approvals.jsonl` bieżącego przebiegu w kolejności pliku, w postaci zapisanej; linie
 spoza reguł `skillsync status` (nieznane słowo, nieczytelne `at`, sha spoza 7–64 znaków hex, plik ponad 256 KiB) są pomijane.

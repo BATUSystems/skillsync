@@ -20,15 +20,40 @@ CLI = ROOT / 'skillsync'
 FIXTURES = ROOT / 'tests' / 'fixtures' / 'dashboard'
 CASES = sorted(path.name for path in FIXTURES.iterdir() if path.is_dir())
 MTIME = datetime(2026, 1, 11, 10, 0, tzinfo=timezone.utc).timestamp()
+# Cases whose input is committed into a fresh git repository (branch GIT_BRANCH) before `dashboard show`.
+GIT_CASES = ('cp-ready',)
+GIT_BRANCH = 'feat/demo'
 
 
-def normalized(data):
-    """The fixture normalization of docs/dashboard-contract.md ("Normalizacja w fixtures")."""
+def git_env(env):
+    """Git without the user's configuration and with a neutral identity and fixed dates."""
+    return {**env, 'GIT_CONFIG_GLOBAL': os.devnull, 'GIT_CONFIG_NOSYSTEM': '1', 'GIT_AUTHOR_NAME': 'demo',
+            'GIT_AUTHOR_EMAIL': 'demo@example.invalid', 'GIT_COMMITTER_NAME': 'demo',
+            'GIT_COMMITTER_EMAIL': 'demo@example.invalid', 'GIT_AUTHOR_DATE': '2026-01-11T10:00:00Z',
+            'GIT_COMMITTER_DATE': '2026-01-11T10:00:00Z'}
+
+
+def git_commit_all(root, env):
+    """`git init` + one commit of everything in `root`; returns the full HEAD sha."""
+    env = git_env(env)
+    for args in (('init', '-q', '-b', GIT_BRANCH), ('add', '-A'), ('-c', 'commit.gpgsign=false', 'commit', '-q', '-m', 'demo')):
+        subprocess.run(['git', '-C', str(root), *args], check=True, capture_output=True, env=env, timeout=60)
+    return subprocess.run(['git', '-C', str(root), 'rev-parse', 'HEAD'], check=True, capture_output=True, text=True,
+                          env=env, timeout=60).stdout.strip()
+
+
+def normalized(data, head=None):
+    """The fixture normalization of docs/dashboard-contract.md ("Normalizacja w fixtures"); with `head` every form of the
+    HEAD sha (full, 12 and 8 characters) becomes `<head>`."""
     data = json.loads(json.dumps(data))
     data['project']['path'] = '<root>'
     data['generatedAt'] = '2026-01-12T12:00:00+00:00'
     data['app']['version'] = '<version>'
-    return json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + '\n'
+    text = json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + '\n'
+    if head:
+        for form in (head, head[:12], head[:8]):
+            text = text.replace(form, '<head>')
+    return text
 
 
 def tree_state(root):
@@ -51,8 +76,9 @@ class DashboardFixture(unittest.TestCase):
     def project(self, case):
         root = self.base / case / 'demo'
         shutil.copytree(FIXTURES / case / 'input', root)
+        self.head = git_commit_all(root, self.env) if case in GIT_CASES else None
         for path in root.rglob('*'):
-            if path.is_file():
+            if path.is_file() and '.git' not in path.relative_to(root).parts:
                 os.utime(path, (MTIME, MTIME))
         return root
 
@@ -70,7 +96,7 @@ class DashboardShow(DashboardFixture):
             with self.subTest(case=case):
                 report = self.cli('dashboard', 'show', self.project(case), '--json')
                 expected = (FIXTURES / case / 'expected.json').read_text(encoding='utf-8')
-                self.assertEqual(normalized(report), expected)
+                self.assertEqual(normalized(report, self.head), expected)
 
     def test_show_without_json_prints_the_same_contract(self):
         root = self.project('plan-in-progress')

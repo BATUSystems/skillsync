@@ -1,0 +1,403 @@
+{
+  "acts": [
+    {
+      "detail": null,
+      "key": "spec",
+      "name": "Spec",
+      "roman": "I",
+      "stages": [
+        {
+          "done": true,
+          "key": "stage_spec_draft",
+          "label": "Szkic",
+          "tip": "docs/specs/2026-01-12-demo-release.md"
+        },
+        {
+          "done": false,
+          "key": "stage_spec_review",
+          "label": "Review",
+          "tip": "rundy review speca w katalogu przebiegu"
+        },
+        {
+          "done": true,
+          "key": "stage_spec_approved",
+          "label": "Zatwierdzony",
+          "tip": "Status speca: approved"
+        }
+      ],
+      "state": "done",
+      "status": "approved",
+      "warning": null
+    },
+    {
+      "detail": "2 kroków w 1 fazach",
+      "key": "plan",
+      "name": "Plan",
+      "roman": "II",
+      "stages": [
+        {
+          "done": true,
+          "key": "stage_plan",
+          "label": "Plan",
+          "tip": "docs/plans/2026-01-12-demo-release.md"
+        },
+        {
+          "done": false,
+          "key": "stage_plan_review",
+          "label": "Review",
+          "tip": "rundy review planu w katalogu przebiegu"
+        },
+        {
+          "done": false,
+          "key": "stage_pre_implement",
+          "label": "Pre-implement",
+          "tip": "bramka gotowości przed ryzykowną zmianą"
+        },
+        {
+          "done": true,
+          "key": "stage_go_implement",
+          "label": "GO implement",
+          "tip": "Status planu: in_progress"
+        }
+      ],
+      "state": "done",
+      "status": "in_progress"
+    },
+    {
+      "detail": "wszystkie kroki zaznaczone",
+      "key": "real",
+      "name": "Realizacja",
+      "percent": 100,
+      "roman": "III",
+      "stages": [
+        {
+          "done": false,
+          "key": "code_review",
+          "label": "Review kodu",
+          "tip": "raporty code-review*/final-review* w katalogu przebiegu"
+        },
+        {
+          "done": false,
+          "key": "closure",
+          "label": "Zamknięcie",
+          "tip": "Status planu: in_progress"
+        }
+      ],
+      "state": "active",
+      "status": "in_progress"
+    }
+  ],
+  "app": {
+    "name": "dashboard",
+    "version": "<version>"
+  },
+  "approvals": {
+    "actions": [
+      {
+        "blocked": "zgoda „GO plan” dana 08:30",
+        "given": {
+          "at": "2026-01-12T08:30:00Z",
+          "by": "user",
+          "file": "docs/specs/2026-01-12-demo-release.md",
+          "schema": 1,
+          "sha": "89abcdef0123456789abcdef0123456789abcdef",
+          "source": "cli",
+          "word": "GO plan"
+        },
+        "kind": "spec",
+        "path": "docs/specs/2026-01-12-demo-release.md",
+        "reason": "zgoda „GO plan” dana 08:30",
+        "run": "2026-01-12-demo-release",
+        "sha": "10d405edaa396954aea7240c878d10f2b59f3910",
+        "state": "after",
+        "word": "GO plan"
+      },
+      {
+        "blocked": "zgoda „GO implement” dana 08:45",
+        "given": {
+          "at": "2026-01-12T08:45:00Z",
+          "by": "user",
+          "file": "docs/plans/2026-01-12-demo-release.md",
+          "schema": 1,
+          "sha": "fedcba9876543210fedcba9876543210fedcba98",
+          "source": "ide",
+          "word": "GO implement"
+        },
+        "kind": "plan",
+        "path": "docs/plans/2026-01-12-demo-release.md",
+        "reason": "zgoda „GO implement” dana 08:45",
+        "run": "2026-01-12-demo-release",
+        "sha": "03187759d7bac8e1759173303f34c300c848e291",
+        "state": "after",
+        "word": "GO implement"
+      },
+      {
+        "blocked": null,
+        "given": null,
+        "kind": "cp",
+        "path": "2026-01-12-demo-release",
+        "reason": "CP → origin/feat/demo; sesja czeka na „CP”; 1 commit niewypchniętych względem origin (gałęzi jeszcze nie ma na origin)",
+        "run": "2026-01-12-demo-release",
+        "sha": "<head>",
+        "state": "waiting",
+        "target": "feat/demo",
+        "word": "CP"
+      },
+      {
+        "blocked": null,
+        "given": null,
+        "kind": "ready",
+        "path": "2026-01-12-demo-release",
+        "reason": "1 commit niewypchniętych względem origin (gałęzi jeszcze nie ma na origin)",
+        "run": "2026-01-12-demo-release",
+        "sha": "<head>",
+        "state": "waiting",
+        "target": null,
+        "word": "READY"
+      }
+    ],
+    "enabled": true,
+    "last": {
+      "at": "2026-01-12T08:45:00Z",
+      "by": "user",
+      "file": "docs/plans/2026-01-12-demo-release.md",
+      "schema": 1,
+      "sha": "fedcba9876543210fedcba9876543210fedcba98",
+      "source": "ide",
+      "word": "GO implement"
+    }
+  },
+  "assumptions": {
+    "count": 0,
+    "items": []
+  },
+  "blockingQuestions": {
+    "count": 0,
+    "items": []
+  },
+  "delivery": {
+    "ahead": 1,
+    "base": "main",
+    "branch": "feat/demo",
+    "mode": "pr",
+    "pushed": false,
+    "remote": "origin/feat/demo",
+    "source": "manifest",
+    "target": "feat/demo",
+    "words": [
+      {
+        "active": true,
+        "target": "feat/demo",
+        "tip": "CP → origin/feat/demo; sesja czeka na „CP”; 1 commit niewypchniętych względem origin (gałęzi jeszcze nie ma na origin)",
+        "word": "CP"
+      },
+      {
+        "active": true,
+        "target": null,
+        "tip": "1 commit niewypchniętych względem origin (gałęzi jeszcze nie ma na origin)",
+        "word": "READY"
+      }
+    ]
+  },
+  "docs": [
+    {
+      "items": [
+        {
+          "mtime": "2026-01-11T10:00:00+00:00",
+          "path": "docs/specs/2026-01-12-demo-release.md",
+          "status": "approved",
+          "title": "Spec: demo release"
+        },
+        {
+          "mtime": "2026-01-11T10:00:00+00:00",
+          "path": "docs/plans/2026-01-12-demo-release.md",
+          "status": "in_progress",
+          "title": "Plan: demo release"
+        }
+      ],
+      "key": "task",
+      "label": "Bieżące zadanie"
+    },
+    {
+      "items": [
+        {
+          "mtime": "2026-01-11T10:00:00+00:00",
+          "path": ".skillsync/runs/2026-01-12-demo-release/checkpoints.md",
+          "status": null,
+          "title": "checkpoints"
+        }
+      ],
+      "key": "run",
+      "label": "Przebieg 2026-01-12-demo-release"
+    }
+  ],
+  "generatedAt": "2026-01-12T12:00:00+00:00",
+  "git": {
+    "branch": "feat/demo",
+    "branchPushed": null,
+    "branchUrl": null,
+    "head": "<head>",
+    "headFull": "<head>",
+    "remote": null
+  },
+  "lastUpdate": "2026-01-11T10:00:00+00:00",
+  "mode": "plan",
+  "plan": {
+    "date": "2026-01-12",
+    "fileSha": "03187759d7bac8e1759173303f34c300c848e291",
+    "mtime": "2026-01-11T10:00:00+00:00",
+    "path": "docs/plans/2026-01-12-demo-release.md",
+    "pr": null,
+    "status": "in_progress",
+    "statusText": "in_progress",
+    "title": "Plan: demo release"
+  },
+  "planAuto": true,
+  "plans": [
+    {
+      "path": "docs/plans/2026-01-12-demo-release.md",
+      "run": "2026-01-12-demo-release",
+      "spec": "docs/specs/2026-01-12-demo-release.md",
+      "status": "in_progress",
+      "title": "Plan: demo release"
+    }
+  ],
+  "progress": {
+    "active": [],
+    "activeSource": null,
+    "current": null,
+    "done": 2,
+    "parallel": 0,
+    "pending": 0,
+    "pendingPercent": 0,
+    "percent": 100,
+    "phases": [
+      {
+        "done": 2,
+        "label": "Faza 1",
+        "name": "Faza 1: Wydanie",
+        "pending": 0,
+        "pendingPercent": 0,
+        "percent": 100,
+        "short": "Wydanie",
+        "state": "done",
+        "steps": [
+          {
+            "done": true,
+            "id": "F1.1",
+            "index": 1,
+            "note": "",
+            "sha": null,
+            "state": "done",
+            "title": "Implementacja"
+          },
+          {
+            "done": true,
+            "id": "F1.2",
+            "index": 2,
+            "note": "",
+            "sha": null,
+            "state": "done",
+            "title": "Dokumentacja"
+          }
+        ],
+        "total": 2
+      }
+    ],
+    "reported": [],
+    "total": 2
+  },
+  "project": {
+    "name": "demo",
+    "path": "<root>"
+  },
+  "prototype": {
+    "port": 5130,
+    "slug": null,
+    "up": false
+  },
+  "readiness": {
+    "date": null,
+    "planSha": null,
+    "source": null,
+    "status": null
+  },
+  "run": {
+    "checkpoints": [
+      {
+        "text": "zrobione: F1.2; czeka: CP",
+        "time": "10:00"
+      },
+      {
+        "text": "zrobione: F1.1; w toku: F1.2",
+        "time": "09:40"
+      },
+      {
+        "text": "start planu; w toku: F1.1",
+        "time": "09:05"
+      }
+    ],
+    "exists": true,
+    "files": [
+      ".skillsync/runs/2026-01-12-demo-release/checkpoints.md"
+    ],
+    "id": "2026-01-12-demo-release",
+    "inProgressFrom": "09:40",
+    "lastReportAt": "2026-01-11T10:00:00+00:00",
+    "start": "2026-01-12T09:00:00Z",
+    "startIso": "2026-01-12T09:00:00+00:00"
+  },
+  "schema": 1,
+  "session": {
+    "url": null
+  },
+  "silence": null,
+  "spec": {
+    "exists": true,
+    "fileSha": "10d405edaa396954aea7240c878d10f2b59f3910",
+    "mtime": "2026-01-11T10:00:00+00:00",
+    "path": "docs/specs/2026-01-12-demo-release.md",
+    "preparing": false,
+    "prototype": null,
+    "sha": null,
+    "status": "approved",
+    "statusText": "approved",
+    "title": "Spec: demo release"
+  },
+  "substeps": [
+    {
+      "done": true,
+      "finishedAt": "09:40",
+      "id": "F1.1",
+      "missingData": false,
+      "phase": "Faza 1",
+      "seconds": 2100,
+      "startedAt": "09:05",
+      "state": "done",
+      "title": "Implementacja"
+    },
+    {
+      "done": true,
+      "finishedAt": "10:00",
+      "id": "F1.2",
+      "missingData": false,
+      "phase": "Faza 1",
+      "seconds": 1200,
+      "startedAt": "09:40",
+      "state": "done",
+      "title": "Dokumentacja"
+    }
+  ],
+  "version": 0,
+  "waiting": [
+    {
+      "action": "Sprawdź wynik i zatwierdź „CP” przyciskiem w Akcie III albo wpisz to w sesji.",
+      "approve": "cp",
+      "link": null,
+      "since": "10:00",
+      "source": "checkpoint",
+      "what": "CP",
+      "word": "CP"
+    }
+  ]
+}
