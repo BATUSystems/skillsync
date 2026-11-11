@@ -34,6 +34,16 @@ Every release has a **Breaking** section that lists incompatible changes. When a
   symlinked run paths and an invalid run id. Without the flag the behaviour is unchanged.
 - `skillsync prototype list --json`: `acceptance.perScreen` — `[{id, state}]` for every screen in document order, with `state`
   `accepted`, `stale` or `pending` (accepted + stale + pending = `screens`). The sums `screens`, `accepted` and `stale` are unchanged.
+- `skillsync prototype login-link <project> --user LOGIN [--path] [--port] [--users] --json`: a one-time login link for
+  the running prototype server (256-bit token, 60 s, one use; result `{schema, status, url, expires}` or `BLOCKED` with a
+  `code`). The server exchanges the token at `GET /_login/link` only for a loopback peer without a proxy (every refusal is
+  the same 302 to `/_login`); the session has the full permissions of the account and its writes are recorded in the
+  local audit log `.skillsync/prototype/run/audit.jsonl` (`{at, login, via, op, screen?}`; `comments.json` is unchanged).
+  A human command: the agent does not run it.
+- `serve` writes a state file `.skillsync/prototype/run/server-<port>.json` (0600; `pid`, `host`, `port`, `instance`,
+  `version`, `root`, `users`) and removes it on stop; `/_api/v1/session` returns `server.instance` and `features` lists
+  `login-link`. `ServerConfig(runtime_dir=...)` is optional (without it: no state file and no link endpoint).
+- `serve` handles SIGTERM like Ctrl+C (the state file is removed).
 
 ### Changed
 
@@ -48,6 +58,7 @@ None.
 
 ### Fixed
 - Prototype mockups: an open dropdown, autocomplete, calendar or menu placed inside `.modal-body`/`.drawer-body` was clipped by the body's `overflow` and hidden under the footer. New class `popover-float` (a sibling of the window, above it) and a pattern in `screen-patterns.md`.
+- The prototype server request log never contains the query, also for a malformed request line (raw `requestline`).
 
 ## [1.0.2] - 2026-11-11
 

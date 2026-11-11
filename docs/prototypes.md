@@ -401,6 +401,13 @@ skillsync prototype serve . --host 192.168.1.10 --port 4445 --login-to-view
 - Plik użytkowników nie może leżeć w `root`, a w repo gita musi być ignorowany i nieśledzony; inaczej serwer nie
   wystartuje (poza repo gita ta kontrola jest pomijana z ostrzeżeniem).
 
+- Link logowania (`skillsync prototype login-link`, np. z przycisku Skippstera) działa tylko, gdy serwer słucha na
+  `127.0.0.1`, `localhost` albo adresie wildcard (`0.0.0.0`, `::`) i nie stoi za proxy: serwer wymienia token wyłącznie
+  dla połączenia z pętli zwrotnej, bez `--trust-proxy`, bez nagłówków `X-Forwarded-*`/`Forwarded`/`X-Real-IP`/`Via`
+  i z `Host` wskazującym pętlę. Przy `--host` z adresem LAN komenda kończy się `BLOCKED link_needs_loopback`; zaloguj
+  się wtedy hasłem. Link działa 60 s, raz, i daje sesję z pełnymi uprawnieniami konta; wydaje go człowiek, agent
+  tej komendy nie uruchamia.
+
 Serwer działa na kodzie z chwili startu: po aktualizacji skillsync uruchom go ponownie, żeby korzystał z nowej wersji.
 Zmiany plików prototypu (HTML, CSS, `comments.json`, użytkownicy) widzi bez restartu.
 
@@ -415,6 +422,7 @@ Zmiany plików prototypu (HTML, CSS, `comments.json`, użytkownicy) widzi bez re
 | Po zmianie CSS akceptacje są „nieaktualne” | wspólny CSS i `<head>` wchodzą do hasha każdego ekranu | to zamierzone: zaakceptuj ekrany ponownie |
 | Zapis komentarza daje 409 `needs_migration` | prototyp w starym formacie (`comments.js`) | `migrate` |
 | `serve` kończy się `BLOCKED` przy starcie | zajęty port, brak pliku użytkowników, plik z trybem szerszym niż 0600, śledzony albo nieignorowany przez git | wybierz inny port, utwórz konto (`user add`), `chmod 600`, dodaj plik do `.gitignore` |
+| `login-link` kończy się `BLOCKED` | `server_not_running` (serwer nie działa albo czyta inny plik użytkowników), `ambiguous_server` (kilka serwerów: dodaj `--port`), `link_needs_loopback` (`--host` z adresem LAN), `run_dir_unsafe` (`.skillsync/prototype/run/` z prawami ≠ 0700 lub dowiązanie), `unknown_user`, `password_change_required`, `invalid_port`, `link_unavailable` (serwer z `--trust-proxy`), `too_many_pending` | uruchom `serve`, dodaj `--port`, popraw katalog `run/`, utwórz konto albo zmień hasło |
 | `accept` kończy się `BLOCKED tty_required` | komenda nie dostała terminala (np. uruchomiona przez skrypt albo agenta) | uruchom ją samodzielnie w terminalu |
 | Pasek „Prototyp zmieniono”, zapis daje 409 `stale_view` | ktoś zmienił pliki prototypu po wczytaniu strony | przeładuj stronę i powtórz działanie |
 | `iterate` albo `restore` kończy się `incomplete_restore` | przerwane wcześniejsze przywrócenie albo zamrożenie | `skillsync prototype restore . <slug> --resume`; szczegóły w wyniku i w [cli.md](cli.md) |

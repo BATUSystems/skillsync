@@ -2798,6 +2798,31 @@ class ErrorBodyTests(ServerCase):
         for secret in (PASSWORDS[A], client.csrf, client.cookie.split('=', 1)[1], 'TRESC-WPISU', 'ABC123'):
             self.assertNotIn(secret, log)
 
+    def test_request_log_has_no_login_link_token_also_for_a_bad_request_line(self):
+        # K24 (F-R2): token jednorazowego logowania w query nie trafia do dziennika żądań, także gdy żądanie
+        # nie ma `path` (błędna linia żądania: `log_request` loguje wtedy surowy `requestline` z query).
+        import secrets as _secrets
+        import socket as _socket
+        token = _secrets.token_urlsafe(32)  # atrapa składana w czasie wykonania
+        stream = io.StringIO()
+        self.tearDown()
+        self.start_server(log=stream)
+        Client(self.server).get('/_login/link?t=' + token)
+        for raw in ('GET\x01/_login/link?t=%s HTTP/1.1 EXTRA\r\n\r\n' % token, 'BAD /_login/link?t=%s\r\n\r\n' % token):
+            conn = _socket.create_connection(('127.0.0.1', self.server.port), timeout=5)
+            try:
+                conn.sendall(raw.encode('latin-1'))
+                conn.shutdown(_socket.SHUT_WR)
+                while conn.recv(65536):
+                    pass
+            finally:
+                conn.close()
+        time.sleep(0.2)
+        log = stream.getvalue()
+        self.assertIn('/_login/link', log, 'kontrola: dziennik jest niepusty i loguje ścieżkę bez query')
+        self.assertNotIn(token, log)
+        self.assertNotIn(hashlib.sha256(token.encode('utf-8')).hexdigest(), log)
+
 
 class DamagedLogTests(ServerCase):
     def damaged(self, operations):
