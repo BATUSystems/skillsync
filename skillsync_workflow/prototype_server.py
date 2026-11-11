@@ -5950,8 +5950,9 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
 
     def end_headers(self):
         self.send_header('X-Content-Type-Options', 'nosniff')
-        self.send_header('Referrer-Policy', 'same-origin')
-        self.send_header('Content-Security-Policy', "frame-ancestors 'self'")
+        if not getattr(self, '_strict_page', False):   # the expert page sends its own Referrer-Policy and CSP
+            self.send_header('Referrer-Policy', 'same-origin')
+            self.send_header('Content-Security-Policy', "frame-ancestors 'self'")
         BaseHTTPRequestHandler.end_headers(self)
 
     def _send(self, status, body=b'', content_type=None, headers=None, cache='no-store'):
@@ -6040,6 +6041,7 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
 
     def _dispatch(self, method):
         self._login = None
+        self._strict_page = False
         try:
             split = urlsplit(self.path)
             path = split.path or '/'
@@ -6056,6 +6058,9 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
                 return
             if path == '/_login':
                 self._login_page(method, split.query)
+                return
+            if path == EXPERTS_PATH:
+                self._experts_page(method, session)
                 return
             if method not in ('GET', 'HEAD'):
                 self._method_not_allowed()
@@ -6223,6 +6228,21 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
                 self._empty(302, {'Location': '/_login?next=%2F'})
                 return
         self._send(200, LOGIN_PAGE.encode('utf-8'), 'text/html; charset=utf-8', None, 'no-store')
+
+    def _experts_page(self, method, session):
+        """`/_experts`: no data in the HTML (the page reads the API after the session); strict own CSP."""
+        if method not in ('GET', 'HEAD'):
+            self._method_not_allowed()
+            return
+        if session is None:
+            self._empty(302, {'Location': '/_login?next=' + quote(EXPERTS_PATH, safe='/')})
+            return
+        self._strict_page = True
+        try:
+            self._send(200, EXPERTS_PAGE.encode('utf-8'), 'text/html; charset=utf-8',
+                       {'Referrer-Policy': 'no-referrer', 'Content-Security-Policy': EXPERTS_CSP}, 'no-store')
+        finally:
+            self._strict_page = False   # an exception in `_send` must not leave the flag for the next response
 
     # ── API ──
 
@@ -6875,6 +6895,476 @@ input:focus-visible,button:focus-visible{outline:3px solid var(--accent);outline
 </body>
 </html>
 """
+
+
+# ── Expert questions page (`GET /_experts`) ─────────────────────────────────
+
+EXPERTS_PATH = '/_experts'
+
+EXPERTS_STYLE = r"""
+:root{--bg:#f6f7f9;--surface:#fff;--text:#1d2330;--muted:#4f5869;--border:#c9ced8;--accent:#2f5fd0;--accent-text:#fff;--danger:#b42318;--ok:#157347;--quote:#eef1f6;--radius:.6rem;color-scheme:light dark}
+@media (prefers-color-scheme:dark){:root{--bg:#14171d;--surface:#1d2129;--text:#e7eaf0;--muted:#a9b1c0;--border:#3b4250;--accent:#8aa8f5;--accent-text:#0d1220;--danger:#f97066;--ok:#5fd08f;--quote:#262b35}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+header{padding:1rem 1.25rem;border-bottom:1px solid var(--border);background:var(--surface)}
+h1{font-size:1.25rem;margin:0}h2{font-size:1.15rem;margin:0 0 .5rem}h3{font-size:1rem;margin:1.25rem 0 .5rem}
+.who{margin:.25rem 0 0;color:var(--muted);font-size:.9rem}
+.layout{display:grid;grid-template-columns:minmax(14rem,22rem) 1fr;gap:1rem;padding:1rem 1.25rem;max-width:80rem;margin:0 auto}
+@media (max-width:48rem){.layout{grid-template-columns:1fr;padding:.75rem}}
+nav,section.detail,.notice{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1rem}
+nav ul{list-style:none;margin:0;padding:0}nav li+li{margin-top:.5rem}
+nav a{display:block;padding:.5rem .6rem;border:1px solid var(--border);border-radius:var(--radius);color:var(--text);text-decoration:none}
+nav a[aria-current="true"]{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.badge{display:inline-block;margin:.25rem .35rem 0 0;padding:0 .45rem;border:1px solid var(--border);border-radius:1rem;font-size:.8rem;color:var(--muted)}
+.badge.block{border-color:var(--danger);color:var(--danger)}.badge.done{border-color:var(--ok);color:var(--ok)}
+.muted{color:var(--muted)}
+.qtext{white-space:pre-wrap;overflow-wrap:anywhere}
+blockquote{margin:.4rem 0;padding:.5rem .75rem;background:var(--quote);border-left:4px solid var(--border);white-space:pre-wrap;overflow-wrap:anywhere}
+a{color:var(--accent)}a:focus-visible,button:focus-visible,input:focus-visible,textarea:focus-visible,[tabindex]:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+fieldset{border:1px solid var(--border);border-radius:var(--radius);margin:.75rem 0;padding:.5rem .9rem}legend{font-weight:600;padding:0 .3rem}
+.opt{display:flex;gap:.5rem;align-items:flex-start;margin:.4rem 0}.opt input{margin-top:.35rem}
+label.block{display:block;margin:.75rem 0 .25rem;font-weight:600}
+textarea{width:100%;min-height:5rem;padding:.55rem .7rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);color:var(--text);font:inherit}
+button{margin-top:.75rem;padding:.6rem 1.1rem;border:0;border-radius:var(--radius);background:var(--accent);color:var(--accent-text);font:inherit;font-weight:600;cursor:pointer}
+button[disabled]{opacity:.6;cursor:progress}
+.alert{color:var(--danger);font-weight:600;margin:0 0 .75rem}.status{color:var(--ok);margin:0 0 .75rem}
+.alert:empty,.status:empty{position:absolute;width:1px;height:1px;margin:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.entry{border-top:1px solid var(--border);padding:.6rem 0}.entry .meta{color:var(--muted);font-size:.85rem}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+[hidden]{display:none}
+"""
+
+EXPERTS_SCRIPT = r"""
+(function () {
+  'use strict';
+  var API = '/_api/v1';
+  var LOGIN = '/_login?next=/_experts';
+  var state = { csrf: null, questions: [], current: null, pending: {}, busy: {} };
+  var listBox = document.getElementById('list');
+  var detail = document.getElementById('detail');
+  var alertBox = document.getElementById('alert');
+  var statusBox = document.getElementById('status');
+  var whoBox = document.getElementById('who');
+
+  function el(tag, props, children) {
+    var node = document.createElement(tag);
+    var key;
+    props = props || {};
+    for (key in props) {
+      if (Object.prototype.hasOwnProperty.call(props, key)) {
+        if (key === 'text') node.textContent = props[key];
+        else node.setAttribute(key, props[key]);
+      }
+    }
+    (children || []).forEach(function (child) { if (child) node.appendChild(child); });
+    return node;
+  }
+  function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
+  function say(text) { statusBox.textContent = text || ''; }
+  function fail(text) { alertBox.textContent = text || ''; }
+  function when(value) {
+    var date = new Date(value);
+    return isNaN(date.getTime()) ? String(value || '') : date.toLocaleString('pl-PL');
+  }
+  function newCid() {
+    var bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    var out = 'c';
+    for (var i = 0; i < bytes.length; i += 1) out += ('0' + bytes[i].toString(16)).slice(-2);
+    return out;
+  }
+  function toLogin() { location.replace(LOGIN); }
+  function api(method, path, body) {
+    var headers = {};
+    var options = { method: method, credentials: 'same-origin', headers: headers };
+    if (body !== undefined) {
+      headers['Content-Type'] = 'application/json';
+      headers['X-Skillsync-CSRF'] = state.csrf || '';
+      options.body = JSON.stringify(body);
+    }
+    return fetch(API + path, options).then(function (response) {
+      return response.json().catch(function () { return {}; }).then(function (data) {
+        return { status: response.status, data: data || {} };
+      });
+    });
+  }
+  function describe(result) {
+    var status = result.status;
+    var code = result.data.error;
+    if (status === 401) { toLogin(); return 'Sesja wygasła. Zaloguj się ponownie.'; }
+    if (status === 403 && code === 'password_change_required') return 'Najpierw zmień hasło domyślne.';
+    if (status === 403 && (code === 'invalid_csrf' || code === 'invalid_origin' || code === 'invalid_content_type')) {
+      refreshSession();
+      return 'Sesja się zmieniła. Odśwież stronę i spróbuj ponownie.';
+    }
+    if (status === 403) return 'Brak uprawnień: ta akcja wymaga roli ekspert i pytania skierowanego do Ciebie.';
+    if (status === 404) return 'Nie znaleziono pytania (mogło zostać wycofane albo nie jest do Ciebie).';
+    if (status === 409 && code === 'already_answered') return 'Ktoś już odpowiedział na to pytanie. Widok został odświeżony.';
+    if (status === 409 && code === 'comment_limit') return 'Pytanie osiągnęło limit komentarzy.';
+    if (status === 409) return 'Konflikt zapisu (' + String(code || status) + '). Odśwież widok.';
+    if (status === 413) return 'Treść jest za duża.';
+    if (status === 507) return 'Plik pytań jest pełny, zapis niemożliwy. Skontaktuj się z programistą.';
+    if (status === 503) return 'Serwer jest chwilowo zajęty. Spróbuj ponownie za chwilę.';
+    if (status === 429) return 'Zbyt wiele zapisów, spróbuj ponownie za ' + (result.data.retryAfter || 60) + ' s.';
+    if (status === 400) return 'Serwer odrzucił dane (' + String(code || 'błąd żądania') + ').';
+    return 'Nie udało się wykonać akcji (HTTP ' + status + ').';
+  }
+  function refreshSession() {
+    try {
+      fetch(API + '/session', { credentials: 'same-origin' }).then(function (response) {
+        return response.ok ? response.json() : null;
+      }).then(function (data) {
+        if (data && data.user && data.csrf) state.csrf = data.csrf; else if (!data || !data.user) toLogin();
+      }).catch(function () {});
+    } catch (error) { /* offline: the user retries after a reload */ }
+  }
+  var UNEXPECTED = 'Nieoczekiwana odpowiedź serwera.';
+  function validQuestion(question) {
+    return !!question && typeof question === 'object' && typeof question.id === 'string' && typeof question.text === 'string';
+  }
+  var OFFLINE = 'Brak połączenia z serwerem (offline), spróbuj ponownie.';
+
+  function badges(question) {
+    var items = [];
+    if (question.blocking) items.push(el('span', { 'class': 'badge block', text: 'Blokujące' }));
+    items.push(el('span', { 'class': 'badge' + (question.state === 'open' ? '' : ' done'),
+                            text: question.state === 'open' ? 'Otwarte' : 'Odpowiedziane' }));
+    if (question.assumed !== null && question.assumed !== undefined) {
+      items.push(el('span', { 'class': 'badge', text: 'Przyjęto: ' + question.assumed }));
+    }
+    return items;
+  }
+  function label(question) { return (question.origin && question.origin.q) ? question.origin.q : question.id; }
+
+  function renderList() {
+    clear(listBox);
+    if (!state.questions.length) {
+      listBox.appendChild(el('p', { 'class': 'muted', text: 'Brak pytań do Ciebie.' }));
+      return;
+    }
+    var ul = el('ul');
+    state.questions.forEach(function (question) {
+      var link = el('a', { href: '#' + encodeURIComponent(question.id) }, [
+        el('strong', { text: label(question) + ': ' }),
+        el('span', { text: question.text.length > 90 ? question.text.slice(0, 90) + '…' : question.text }),
+        el('br')
+      ].concat(badges(question)));
+      if (state.current === question.id) link.setAttribute('aria-current', 'true');
+      ul.appendChild(el('li', {}, [link]));
+    });
+    listBox.appendChild(ul);
+  }
+
+  function refNode(ref) {
+    var box = el('div', { 'class': 'entry' });
+    var title = el('strong', { text: ref.title || '' });
+    var href = typeof ref.href === 'string' ? ref.href : '';
+    var url = null;
+    try { url = new URL(href); } catch (error) { url = null; }
+    box.appendChild(title);
+    if (url && url.protocol === 'https:' && !url.username && !url.password) {
+      box.appendChild(document.createTextNode(' '));
+      box.appendChild(el('a', { href: url.href, target: '_blank', rel: 'noopener noreferrer', text: url.href }));
+    } else if (href) {
+      box.appendChild(document.createTextNode(' '));
+      box.appendChild(el('span', { 'class': 'muted', text: '(' + href + ')' }));
+    }
+    if (ref.excerpt) box.appendChild(el('blockquote', { text: ref.excerpt }));
+    return box;
+  }
+
+  function answerSummary(question) {
+    var answer = question.answer;
+    var value;
+    if (answer.confirm) value = 'Potwierdzono przyjętą wartość: ' + (question.assumed === null ? '' : question.assumed);
+    else if (answer.optionId) {
+      value = answer.optionLabel || answer.optionId;
+      (question.options || []).forEach(function (option) { if (option.id === answer.optionId) value = option.label; });
+    } else value = answer.text || '';
+    var box = el('div', { 'class': 'entry' }, [
+      el('div', { 'class': 'meta', text: 'Odpowiedź: ' + (answer.name || answer.by) + ', ' + when(answer.at) }),
+      el('div', { 'class': 'qtext', text: value })
+    ]);
+    if (answer.comment) box.appendChild(el('div', { 'class': 'qtext muted', text: 'Komentarz: ' + answer.comment }));
+    return box;
+  }
+
+  function radio(id, value, text, extra) {
+    var input = el('input', { type: 'radio', name: 'choice', id: id, value: value });
+    return el('div', { 'class': 'opt' }, [input, el('label', { 'for': id, text: text }), extra]);
+  }
+
+  function renderDetail(question, keepFocus) {
+    clear(detail);
+    var heading = el('h2', { id: 'detail-title', tabindex: '-1', text: label(question) });
+    detail.appendChild(heading);
+    badges(question).forEach(function (badge) { detail.appendChild(badge); });
+    detail.appendChild(el('p', { 'class': 'qtext', text: question.text }));
+    if (question.refs && question.refs.length) {
+      detail.appendChild(el('h3', { text: 'Źródła' }));
+      question.refs.forEach(function (ref) { detail.appendChild(refNode(ref)); });
+    }
+    if (question.answer) {
+      detail.appendChild(el('h3', { text: 'Odpowiedź' }));
+      detail.appendChild(answerSummary(question));
+      detail.appendChild(el('p', { 'class': 'muted', text: 'Pytanie jest zamknięte. Można dodawać tylko komentarze.' }));
+    } else if (question.canAnswer) {
+      detail.appendChild(answerForm(question));
+    } else {
+      detail.appendChild(el('p', { 'class': 'muted', text: 'Nie możesz odpowiedzieć na to pytanie (rola ekspert i adresowanie do Ciebie są wymagane). Możesz je skomentować.' }));
+    }
+    detail.appendChild(el('h3', { text: 'Komentarze' }));
+    var comments = el('div', { id: 'comments' });
+    if (!(question.comments || []).length) comments.appendChild(el('p', { 'class': 'muted', text: 'Brak komentarzy.' }));
+    (question.comments || []).forEach(function (comment) {
+      comments.appendChild(el('div', { 'class': 'entry' }, [
+        el('div', { 'class': 'meta', text: (comment.name || comment.by) + ', ' + when(comment.at) + (comment.late ? ' (po odpowiedzi)' : '') }),
+        el('div', { 'class': 'qtext', text: comment.text })
+      ]));
+    });
+    detail.appendChild(comments);
+    detail.appendChild(commentForm(question));
+    if (!keepFocus) heading.focus();
+    syncBusy();
+  }
+
+  function answerForm(question) {
+    var form = el('form', { id: 'answer-form', novalidate: 'novalidate' });
+    var fieldset = el('fieldset');
+    fieldset.appendChild(el('legend', { text: 'Twoja odpowiedź' }));
+    (question.options || []).forEach(function (option, index) {
+      fieldset.appendChild(radio('opt-' + index, 'o:' + option.id,
+        option.label + (option.recommended ? ' (Rekomendacja agenta)' : '')));
+    });
+    if (question.assumed !== null && question.assumed !== undefined) {
+      fieldset.appendChild(radio('opt-confirm', 'confirm', 'Potwierdzam przyjętą wartość: ' + question.assumed));
+    }
+    fieldset.appendChild(radio('opt-custom', 'custom', 'Własna odpowiedź'));
+    fieldset.appendChild(el('label', { 'class': 'block', 'for': 'custom-text', text: 'Treść własnej odpowiedzi' }));
+    fieldset.appendChild(el('textarea', { id: 'custom-text', maxlength: '4000' }));
+    form.appendChild(fieldset);
+    form.appendChild(el('label', { 'class': 'block', 'for': 'answer-comment', text: 'Komentarz do odpowiedzi (opcjonalny)' }));
+    form.appendChild(el('textarea', { id: 'answer-comment', maxlength: '2000' }));
+    form.appendChild(el('button', { type: 'submit', id: 'answer-send', text: 'Wyślij odpowiedź' }));
+    form.querySelector('#custom-text').addEventListener('input', function () {
+      form.querySelector('#opt-custom').checked = true;
+    });
+    form.addEventListener('submit', function (event) { event.preventDefault(); submitAnswer(question, form); });
+    return form;
+  }
+
+  function commentForm(question) {
+    var form = el('form', { id: 'comment-form', novalidate: 'novalidate' });
+    form.appendChild(el('label', { 'class': 'block', 'for': 'comment-text', text: 'Dodaj komentarz' }));
+    form.appendChild(el('textarea', { id: 'comment-text', maxlength: '2000' }));
+    form.appendChild(el('button', { type: 'submit', id: 'comment-send', text: 'Wyślij komentarz' }));
+    form.addEventListener('submit', function (event) { event.preventDefault(); submitComment(question, form); });
+    return form;
+  }
+
+  // The busy flag is per question: a slow save of A must not block or disable B.
+  function syncBusy() {
+    var on = !!(state.current && state.busy[state.current]);
+    Array.prototype.forEach.call(detail.querySelectorAll('button'), function (button) {
+      if (on) button.setAttribute('disabled', 'disabled'); else button.removeAttribute('disabled');
+    });
+    detail.setAttribute('aria-busy', on ? 'true' : 'false');
+  }
+  function lock(id, on) {
+    if (on) state.busy[id] = true; else delete state.busy[id];
+    syncBusy();
+  }
+
+  // One cid per distinct action; the same cid for a retry of the very same request.
+  function cidFor(kind, question, payload) {
+    var key = kind + '|' + question.id + '|' + JSON.stringify(payload);
+    if (!state.pending[key]) { state.pending = {}; state.pending[key] = newCid(); }
+    return { key: key, cid: state.pending[key] };
+  }
+
+  function send(kind, question, payload) {
+    var id = question.id;
+    if (state.busy[id]) { say('Trwa zapis poprzedniej odpowiedzi.'); return; }
+    fail(''); say('');
+    var ticket = cidFor(kind, question, payload);
+    var body = { cid: ticket.cid };
+    Object.keys(payload).forEach(function (name) { body[name] = payload[name]; });
+    lock(id, true);
+    api('POST', '/questions/' + encodeURIComponent(id) + '/' + kind, body).then(function (result) {
+      lock(id, false);
+      // The user may have moved to another question while this request was in flight.
+      var viewing = state.current === id;
+      if (result.status === 200 || result.status === 201) {
+        var updated = result.data.question;
+        if (!validQuestion(updated) || updated.id !== id) { fail(UNEXPECTED); return; }
+        state.pending = {};
+        replaceQuestion(updated);
+        renderList();
+        var done = kind === 'answer' ? 'Odpowiedź zapisana.' : 'Komentarz zapisany.';
+        if (viewing) { renderDetail(updated, false); say(done); }
+        else say(done + ' (' + label(updated) + ')');
+        return;
+      }
+      var message = describe(result);
+      if (result.status !== 429 && result.status !== 503) state.pending = {};
+      fail(viewing ? message : label(question) + ': ' + message);
+      if (result.status === 409 || result.status === 404) { reloadAll(); }
+      else if (viewing) document.getElementById('alert').focus();
+    }).catch(function () {
+      lock(id, false);
+      fail(OFFLINE);
+      if (state.current === id) document.getElementById('alert').focus();
+    });
+  }
+
+  function submitAnswer(question, form) {
+    var chosen = form.querySelector('input[name="choice"]:checked');
+    var comment = form.querySelector('#answer-comment').value.trim();
+    var payload = {};
+    if (!chosen) { fail('Wybierz odpowiedź albo wpisz własną.'); form.querySelector('input[name="choice"]').focus(); return; }
+    if (chosen.value === 'confirm') payload.confirm = true;
+    else if (chosen.value === 'custom') {
+      var text = form.querySelector('#custom-text').value.trim();
+      if (!text) { fail('Wpisz treść własnej odpowiedzi.'); form.querySelector('#custom-text').focus(); return; }
+      payload.text = text;
+    } else payload.optionId = chosen.value.slice(2);
+    if (comment) payload.comment = comment;
+    send('answer', question, payload);
+  }
+
+  function submitComment(question, form) {
+    var text = form.querySelector('#comment-text').value.trim();
+    if (!text) { fail('Wpisz treść komentarza.'); form.querySelector('#comment-text').focus(); return; }
+    send('comment', question, { text: text });
+  }
+
+  function replaceQuestion(question) {
+    var found = false;
+    state.questions = state.questions.map(function (item) {
+      if (item.id === question.id) { found = true; return question; }
+      return item;
+    });
+    if (!found) state.questions.push(question);
+  }
+
+  function currentId() {
+    var raw;
+    try { raw = decodeURIComponent((location.hash || '').replace(/^#/, '')); } catch (error) { return null; }
+    return /^qn-[0-9a-f]{6,64}$/.test(raw) ? raw : null;
+  }
+
+  function showCurrent(event) {
+    var id = currentId();
+    var changed = id !== state.current;
+    if (changed) { fail(''); say(''); }
+    state.current = id;
+    renderList();
+    clear(detail);
+    if (!id) {
+      detail.appendChild(el('p', { 'class': 'muted', text: 'Wybierz pytanie z listy.' }));
+      return Promise.resolve();
+    }
+    return api('GET', '/questions/' + encodeURIComponent(id)).then(function (result) {
+      if (state.current !== id) return;
+      if (result.status === 200 && validQuestion(result.data.question) && result.data.question.id === id) {
+        replaceQuestion(result.data.question);
+        renderList();
+        // Focus moves to the heading only on a user-driven selection, never on an automatic refresh.
+        renderDetail(result.data.question, !(event && event.type === 'hashchange' && changed));
+        if (event && event.type === 'hashchange' && changed) say('Wybrano pytanie ' + label(result.data.question) + '.');
+        return;
+      }
+      detail.appendChild(el('p', { 'class': 'muted', text: 'Nie można wyświetlić pytania.' }));
+      fail(result.status === 200 ? UNEXPECTED : describe(result));
+    }).catch(function () {
+      detail.appendChild(el('p', { 'class': 'muted', text: 'Nie można wyświetlić pytania.' }));
+      fail(OFFLINE);
+    });
+  }
+
+  function loadList() {
+    return api('GET', '/questions').then(function (result) {
+      if (result.status === 200 && Array.isArray(result.data.questions)) {
+        state.questions = result.data.questions;
+        return true;
+      }
+      fail(result.status === 200 ? UNEXPECTED : describe(result));
+      if (result.status === 403 && result.data.error === 'password_change_required') showMustChange();
+      return false;
+    }).catch(function () { fail(OFFLINE); return false; });
+  }
+
+  function reloadAll() {
+    return loadList().then(function (ok) {
+      if (!ok) return;
+      var message = alertBox.textContent;
+      // The location (the user's choice of question) is never changed here.
+      showCurrent().then(function () { if (message) fail(message); });
+    });
+  }
+
+  function showMustChange() {
+    clear(listBox);
+    clear(detail);
+    var box = el('div', { 'class': 'notice' }, [
+      el('p', { text: 'Konto ma hasło domyślne. Zmień hasło, żeby odpowiadać na pytania. ' }),
+      el('a', { href: LOGIN, text: 'Zmień hasło' })
+    ]);
+    detail.appendChild(box);
+  }
+
+  function start() {
+    fetch(API + '/session', { credentials: 'same-origin' }).then(function (response) {
+      return response.ok ? response.json() : null;
+    }).then(function (data) {
+      if (!data || !data.user) { toLogin(); return; }
+      state.csrf = data.csrf;
+      whoBox.textContent = 'Zalogowano jako ' + (data.user.name || data.user.login);
+      if (data.user.mustChange) { showMustChange(); return; }
+      return loadList().then(function (ok) {
+        if (!ok) return;
+        window.addEventListener('hashchange', showCurrent);
+        return showCurrent();
+      });
+    }).catch(function () { fail(OFFLINE); });
+  }
+  start();
+})();
+"""
+
+
+def _csp_hash(text):
+    return "'sha256-%s'" % base64.b64encode(hashlib.sha256(text.encode('utf-8')).digest()).decode('ascii')
+
+
+EXPERTS_PAGE = """<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pytania do eksperta</title>
+<style>%s</style>
+</head>
+<body>
+<header>
+<h1>Pytania do eksperta</h1>
+<p class="who" id="who"></p>
+</header>
+<div class="layout">
+<nav aria-label="Lista pytań" id="list"><p class="muted">Ładowanie…</p></nav>
+<section class="detail" aria-label="Pytanie">
+<div class="alert" id="alert" role="alert" tabindex="-1"></div>
+<div class="status" id="status" role="status" aria-live="polite"></div>
+<div id="detail"></div>
+</section>
+</div>
+<script>%s</script>
+</body>
+</html>
+""" % (EXPERTS_STYLE, EXPERTS_SCRIPT)
+
+EXPERTS_CSP = ("default-src 'none'; script-src %s; style-src %s; connect-src 'self'; base-uri 'none'; "
+               "form-action 'none'; frame-ancestors 'none'") % (_csp_hash(EXPERTS_SCRIPT), _csp_hash(EXPERTS_STYLE))
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
