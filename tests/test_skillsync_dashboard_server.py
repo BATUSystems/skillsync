@@ -890,10 +890,10 @@ class DescriptionTests(ProjectCase):
         descs = srv.load_descriptions(DESCRIPTIONS)
         engine_src = (ROOT / "skillsync_workflow" / "dashboard.py").read_text(encoding="utf-8")
         server = set(_re.findall(r"key=['\"](\w+)['\"]", engine_src))
-        js = (SKILL / "assets/app.js").read_text(encoding="utf-8")
+        js = (SKILL / "assets/dashboard-render.js").read_text(encoding="utf-8")  # widok (także szkielet strony) rysuje renderer
         front = set(_re.findall(r'desc\("(\w+)"', js)) | set(_re.findall(r'"(gate_\w+|banner_\w+|closure|substep|phase)"', js))
         front = {k for k in front if not k.endswith("_")} | {"act_spec", "act_plan", "act_real"}
-        html = set(_re.findall(r'data-desc="(\w+)"', (SKILL / "assets/index.html").read_text(encoding="utf-8")))
+        html = set(_re.findall(r'data-desc"?\s*[=:]\s*"(\w+)"', (SKILL / "assets/index.html").read_text(encoding="utf-8") + js))
         needed = server | front | html
         self.assertGreaterEqual(len(needed), 20)
         self.assertEqual(sorted(needed - set(descs)), [])
@@ -962,9 +962,12 @@ class HttpTests(HttpCase):
         with self.get("/") as r:
             page = r.read().decode("utf-8")
         self.assertIn('<script src="/assets/theme.js"></script>', page.split("</head>")[0])
-        self.assertIn('id="themeBtn"', page)
+        self.assertLess(page.index('<script src="/assets/dashboard-render.js"></script>'), page.index('<script src="/assets/app.js"></script>'))
         with self.get("/assets/app.js") as r:
+            self.assertIn("DashboardRenderer.create", r.read().decode("utf-8"))
+        with self.get("/assets/dashboard-render.js") as r:
             js = r.read().decode("utf-8")
+        self.assertIn('id: "themeBtn"', js)  # przełącznik motywu w nagłówku (szkielet strony rysuje renderer)
         self.assertIn("Otwórz specyfikację", js)  # Akt I → spec w Dokumentach
         self.assertIn("Otwórz plan", js)  # Akt II → plan w Dokumentach
         with self.get("/assets/theme.js") as r:
@@ -1068,7 +1071,8 @@ class HttpSecurityTests(HttpCase):
     def test_security_headers_and_content_types(self) -> None:
         expected = {"/": "text/html; charset=utf-8", "/index.html": "text/html; charset=utf-8",
                     "/api/status": "application/json; charset=utf-8", "/assets/app.css": "text/css; charset=utf-8",
-                    "/assets/app.js": "text/javascript; charset=utf-8", "/healthz": "application/json; charset=utf-8",
+                    "/assets/app.js": "text/javascript; charset=utf-8", "/assets/dashboard-render.js": "text/javascript; charset=utf-8",
+                    "/healthz": "application/json; charset=utf-8",
                     "/api/descriptions": "application/json; charset=utf-8"}
         for path, ctype in expected.items():
             with self.subTest(path=path), self.get(path) as r:
@@ -1098,7 +1102,7 @@ class HttpSecurityTests(HttpCase):
             self.assertEqual((r.status, r.read()), (200, b""))
 
     def test_assets_come_only_from_the_allowlist(self) -> None:
-        self.assertEqual(sorted(ASSETS), ["app.css", "app.js", "index.html", "theme.js"])
+        self.assertEqual(sorted(ASSETS), ["app.css", "app.js", "dashboard-render.js", "index.html", "theme.js"])
         self.assertEqual(DESCRIPTIONS, SKILL / "descriptions.json")
         for bad in ("/assets/SKILL.md", "/assets/descriptions.json", "/assets/..%2fSKILL.md", "/assets/%2e%2e/SKILL.md",
                     "/assets/../SKILL.md", "/assets/sub/app.js", "/assets/nie-ma.js", "/assets/.app.js", "/assets/app.js.map",
@@ -1270,7 +1274,7 @@ def raw_get(port: int, path: str, host: str | None) -> tuple[int, dict, bytes]:
 
 class HttpHostTests(HttpCase):
     """Kontrola Host na WSZYSTKICH endpointach: loopback (dowolny port) albo --approve-host; inaczej 403 bez treści."""
-    ENDPOINTS = ("/", "/index.html", "/assets/app.js", "/assets/app.css", "/api/status", f"/api/doc?path={SPEC}",
+    ENDPOINTS = ("/", "/index.html", "/assets/app.js", "/assets/dashboard-render.js", "/assets/app.css", "/api/status", f"/api/doc?path={SPEC}",
                  "/api/descriptions", "/healthz", "/events", "/nope")
     FOREIGN = ("evil.example", "evil.example:5140", "127.0.0.1.evil.example", "localhost.evil.example", "tunel.example:80",
                "10.0.0.7", "[fe80::1]:5140", "", None)
@@ -1288,7 +1292,8 @@ class HttpHostTests(HttpCase):
 
     def test_loopback_host_with_any_port_is_served(self) -> None:
         for host in ("127.0.0.1", f"127.0.0.1:{self.port}", "localhost:1", "LOCALHOST", "[::1]", "[::1]:5140", "::1"):
-            for path in ("/", "/api/status", "/healthz", "/api/descriptions", f"/api/doc?path={SPEC}", "/assets/app.js"):
+            for path in ("/", "/api/status", "/healthz", "/api/descriptions", f"/api/doc?path={SPEC}", "/assets/app.js",
+                         "/assets/dashboard-render.js"):
                 with self.subTest(host=host, path=path):
                     self.assertEqual(raw_get(self.port, path, host)[0], 200)
             with self.subTest(host=host, path="/events"):
@@ -1505,7 +1510,7 @@ class HttpReadHostTests(HttpCase):
                 self.assertEqual((approvals["here"], approvals["viewer"]), (True, False))
 
     def test_asset_shows_the_viewer_tooltip_only_for_approvals_viewer(self):
-        js = (SKILL / "assets/app.js").read_text(encoding="utf-8")
+        js = (SKILL / "assets/dashboard-render.js").read_text(encoding="utf-8")
         self.assertIn("ap.viewer === true", js)
         self.assertIn("Zgody daje prowadzący na komputerze z sesją.", js)
         # bez viewer zostaje dotychczasowy tekst (instrukcja wpisania słowa w sesji)
@@ -1528,7 +1533,7 @@ class AssetsRenderTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls.js = (SKILL / "assets/app.js").read_text(encoding="utf-8")
+        cls.js = (SKILL / "assets/dashboard-render.js").read_text(encoding="utf-8")
         cls.css = (SKILL / "assets/app.css").read_text(encoding="utf-8")
 
     def serve(self, case: str) -> str:
@@ -1585,7 +1590,7 @@ class AssetsRenderTests(unittest.TestCase):
         self.assertEqual(data["blockingQuestions"]["count"], 2)
         self.assertEqual(data["assumptions"]["items"][0]["accepted"], "w aplikacji")
         self.assertIsNone(data["readiness"]["status"])
-        js = self.fetch(base, "/assets/app.js")
+        js = self.fetch(base, "/assets/dashboard-render.js")
         self.assertIn("questionsBlock(d)", js)
         self.assertIn("d.blockingQuestions || {", js)
         self.assertIn("d.assumptions || {", js)
@@ -1596,10 +1601,11 @@ class AssetsRenderTests(unittest.TestCase):
         readiness = data["readiness"]
         self.assertEqual(readiness["status"], "BLOCKED")
         self.assertEqual(readiness["source"], ".skillsync/runs/2026-01-11-demo-export/readiness.md")
-        js = self.fetch(base, "/assets/app.js")
+        js = self.fetch(base, "/assets/dashboard-render.js")
         self.assertIn("readinessTile(d)", js)
         self.assertIn('BLOCKED: ["is-blocked"', js)
-        self.assertIn('data-open-doc="${esc(r.source)}"', js)
+        # Renderer buduje DOM bez szablonów HTML (K3): ten sam atrybut `data-open-doc` z `esc(r.source)` jako wartością (zachowanie sprawdza test Node `test_readiness_tile`).
+        self.assertIn('"data-open-doc": esc(r.source)', js)
         # Link z kafelka otwiera się istniejącym podglądem dokumentów.
         doc = json.loads(self.fetch(base, "/api/doc?path=" + readiness["source"]))
         self.assertIn("BLOCKED", doc["html"])
