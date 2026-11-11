@@ -126,7 +126,7 @@ Klucz manifestu `workflow.ceremony: full | demo` ([manifest](manifest.md)); `rou
 
 | Relaksuje | Zostaje bez zmian |
 |---|---|
-| review `kod`: jedno na przebieg | pętla pełna dla każdego kroku ze strażnikiem wycieków, migracją albo bezpieczeństwem (wszystkie trzy kategorie D113) |
+| review `kod`: jedno na przebieg | pętla pełna dla każdego kroku ze strażnikiem wycieków, migracją albo bezpieczeństwem (wszystkie trzy kategorie pętli pełnej) |
 | test-writer tylko w fazach z uprawnieniami lub izolacją danych | testy, ustalona wersja, rekord `--final`, zamknięcie planu |
 | dokumentacja ograniczona do changeloga i „Wyniku” | changelog i „Wynik” planu |
 | `retro-quality` i rekordy wiedzy odroczone | dług zapisany w „Wyniku”, podsekcja „Dług (ceremony: demo)” (temat, źródło, proponowany właściciel); spłaca go człowiek albo kolejny przebieg `full` |
@@ -215,7 +215,7 @@ pracuje tylko do odczytu i przygotowuje rekomendację, ale nie komentuje, nie g�
   w `.skillsync/runs/<KLUCZ>/test-state.txt` wiąże commit z przetestowanym stanem. Plan `done` i `--final` dopiero po
   utworzeniu PR-ów.
 - **`/pr-run`**: wywołanie jest zgodą na branch, commity, push brancha, draft PR, komentarze i ready; nigdy push do
-  bazowej, merge ani deploy. Plan i spec idą w pierwszym commicie, spec `implemented` w ostatnim przed ready.
+  bazowej, merge ani deploy. Plan i spec (przy planie ze specem zacommitowane lokalnie już przy „GO plan”) idą w pierwszym pushu, spec `implemented` w ostatnim commicie przed ready.
 
 Komendy dostawcy (np. `az repos pr create`, zapis pól trackera), reguły gałęzi i strażnika statusu podaje instrukcja
 projektu albo skill organizacji, nie rdzeń.

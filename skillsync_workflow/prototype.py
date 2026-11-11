@@ -2776,7 +2776,7 @@ def prototype_gate(root, manifest, plan=None, slugs=None, phase=None):
 
     Phases: a plan with a `[UI]` phase (table of steps, `plan_phases`) needs a `Prototyp:` line or the bypass
     (else BLOCKED `ui_phase_without_prototype`); `phase` (only with `plan`) must be a known phase id (else BLOCKED
-    `unknown_phase`) and a phase without `[UI]` of such a plan passes with an empty report.  A plan without
+    `unknown_phase`) and a phase without `[UI]` of such a plan passes with an empty `missing` list (or `bypassed` under an owner bypass).  A plan without
     `[UI]` phases keeps the whole-plan result and only gets `phase`.
     """
     repo = Path(root).resolve()
@@ -2824,6 +2824,8 @@ def prototype_gate(root, manifest, plan=None, slugs=None, phase=None):
                                 path=value)
             resolved.append((directory.name, directory))
         ui_phases = phase_info['ui_phases']
+        if ui_phases:
+            report.update({'phases': phase_info['phases'], 'uiPhases': ui_phases})
         if phase is not None and phase not in phase_info['phases']:
             return {**report, **_blocked('unknown_phase', f'{phase} is not a phase of the plan (known: '
                                          f'{", ".join(phase_info["phases"]) or "none"})')}

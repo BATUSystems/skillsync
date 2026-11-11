@@ -698,7 +698,7 @@ nigdy na zapisy w trackerze. Argumenty: `<brief>` albo ścieżka planu, `--go` (
 `plan-large` „GO plan” po akcie I nadal obowiązuje), `--resume <PR|plan>`. Gdy plan lub gałąź ma klucz zgłoszenia, a praca
 nie zaczęła się od wejścia z klucza, `feature` po „GO implement” proponuje `/pr-run` jednym zdaniem i bez zgody go nie
 uruchamia. Kroki: rozpoznanie, plan według `feature` (bez `--go` STOP na „GO implement”, przy `plan-large` najpierw akt I), claim,
-izolowany worktree, plan i spec jako pierwszy commit z draft PR, realizacja (commit na krok, `Progress` z sha, checkpoint
+izolowany worktree, plan i spec (przy planie ze specem commit z „GO plan”) jako pierwszy push z draft PR, realizacja (commit na krok, `Progress` z sha, checkpoint
 co około 5 kroków z komentarzem na PR), bramka końcowa (dokumentacja, changelog, wersja, pełne kontrole, pętla `kod`, spec
 `implemented` w ostatnim commicie), komentarz końcowy i ready tylko przy wszystkich krokach `[x]` i kontrolach PASS.
 Nigdy push do bazowej, merge, deploy ani zatwierdzenie własnego PR-a.

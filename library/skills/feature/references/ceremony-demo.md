@@ -15,7 +15,7 @@ Tryb jest dla krótkich przebiegów pokazowych: obniża koszt procesu, nie obni�
 
 - **Review `kod`**: `demo` zmienia liczbę pętli: jedno review `kod` na cały przebieg (jedna runda na końcu, zamknięcie majorów przez `verifier`) PLUS pętla pełna
   ([review-loop](review-loop.md#kategoria-pętli-i-przejścia)) dla każdego kroku ze strażnikiem wycieków, migracją albo bezpieczeństwem, plus runda 2 po blockerze, jak w [review-loop](review-loop.md).
-  Pętla końcowa pozostaje pełna, gdy cała zmiana należy do kategorii D113. Wszystkie trzy kategorie D113 zostają bez zmian; `demo` ich nie osłabia.
+  Pętla końcowa pozostaje pełna, gdy cała zmiana należy do kategorii z sekcji „Kategoria pętli i przejścia” ([review-loop](review-loop.md#kategoria-pętli-i-przejścia)). Wszystkie trzy kategorie z tej sekcji zostają bez zmian; `demo` ich nie osłabia.
 - **Test-writer**: tylko w fazach z uprawnieniami lub izolacją danych; w pozostałych testy jednostkowe pisze `implementer` fazy.
 - **Dokumentacja**: ograniczona do changeloga i „Wyniku” planu.
 - **Odroczone**: `retro-quality` i rekordy wiedzy (`docs/domain`, `docs/lessons`) przechodzą do podsekcji „Dług (ceremony: demo)”

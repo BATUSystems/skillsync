@@ -17,7 +17,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 - Manifest key `workflow.ceremony` (`full` default | `demo`, lowercase; read only from the project manifest). `skillsync route` returns
   `ceremony {value, source: manifest|default|invalid[, error]}`; `skillsync doctor` reports an error for any other value.
 - Per-phase prototype gate: the `[UI]` marker on a phase of the plan table of steps (`Id` or `Krok` cell). `skillsync prototype gate --plan <plan>
-  --phase <Fn>` (new options `phase`, and `phases`/`uiPhases` in the report; exit codes unchanged; new BLOCKED reasons `unknown_phase` and
+  --phase <Fn>` (new option `--phase`, new report fields `phase`, `phases` and `uiPhases`; exit codes unchanged; new BLOCKED reasons `unknown_phase` and
   `ui_phase_without_prototype`). For plans with `[UI]` phases `skillsync readiness` no longer blocks on a gate FAIL and adds `uiPhases`,
   `nonUiPhases`, `uiPhasesWaiting` and `warnings`. Plans without `[UI]` behave as before.
 - Spec question classes: blocking `- Q<n>: …` and non-blocking `- Q<n> [ZAŁOŻENIE]: … — przyjęte: …`.

@@ -2046,6 +2046,7 @@ class GatePhaseTests(GateCase):
         self.assert_blocked(report, 'unknown_phase')
         self.assertTrue(report['reason'].startswith('unknown_phase: '))
         self.assertEqual(report['plan'], PLAN)
+        return report
 
     # -- U = nie ------------------------------------------------------------------
 
@@ -2096,7 +2097,8 @@ class GatePhaseTests(GateCase):
                 self.assertEqual(report['uiPhases'], ['F1'])
                 self.assertEqual(report['phases'], ['F1', 'F2'])
                 self.assertEqual(report.get('phase'), phase)
-        self.assert_unknown_phase([], UI_TABLE)  # an unknown phase is reported first
+        report = self.assert_unknown_phase([], UI_TABLE)  # an unknown phase is reported first
+        self.assertEqual((report['uiPhases'], report['phases']), (['F1'], ['F1', 'F2']))  # K6: also with --phase
 
     def test_row_ui_without_prototype_line_with_the_bypass_passes_with_bypassed(self):
         for phase in (None, 'F1', 'F2'):

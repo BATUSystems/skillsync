@@ -63,7 +63,7 @@ kontrola `Spec-sha`, plan `in_progress`.
 | `draft` bez blokującego `Q` (także z samymi [ZAŁOŻENIE]) | `in_progress (blocked — czeka na spec)` | spec zmieniony w akcie III: [pętla `spec`](review-loop.md) od 1, potem jedno GO zdejmujące blokadę; pętla `plan` tylko, jeśli plan zmienia się merytorycznie |
 | `draft` | `in_progress` bez tej blokady | brak zgody na spec: STOP i pytanie |
 | `approved` | brak | nie występuje po „GO plan” w sesji; z przerwanego zapisu: utwórz plan-szkic i porównaj sha z tym, co zatwierdził użytkownik (różnica = pytanie) |
-| `approved` (przycisk albo `skillsync spec approve`) | brak albo plan-szkic bez `Spec-sha` | „GO plan” udzielone przez użytkownika: spec z blokującym `Q` = pytanie; inaczej utwórz albo dokończ plan-szkic, zapisz `Spec-sha`, akt II (pętla `plan`) |
+| `approved` (przycisk albo `skillsync spec approve`) | brak albo plan-szkic bez `Spec-sha` | „GO plan” udzielone przez użytkownika: spec z blokującym `Q` = pytanie; inaczej utwórz albo dokończ plan-szkic, zapisz `Spec-sha`, zrób lokalny commit „GO plan” (spec, plan-szkic, prototyp; gałąź robocza w osobnym worktree), akt II (pętla `plan`) |
 | `approved` | `draft` bez sufiksu | akt II: pętla `plan` (rekordy `plan-review` bez PASS) albo plan w pisaniu; po zmianie speca mechanicznej albo minor w akcie II: poprawka speca, nowy `Spec-sha`, lista zmian w prośbie o „GO implement” |
 | `approved` | `draft (czeka na spec)` | „GO plan” po zmianie merytorycznej: zdejmij sufiks (plan `draft`), pętla `plan` od 1; PASS `plan-review` sprzed tej zgody jest nieważny |
 | `approved` | `approved (czeka na spec)` (przycisk albo `skillsync plan approve` w trakcie powrotu do aktu I) | pytanie: plan zatwierdzono przed nową pętlą `plan`, kontynuować? |

@@ -290,7 +290,7 @@ są ignorowane; zdublowane id = zero faz (jak plan bez tabeli). Znacznik `[UI]` 
 miejscu, w komórce `Krok` tylko na początku albo na końcu komórki (po obcięciu spacji). Plan bez tabeli albo bez `[UI]` ma zero faz `[UI]`.
 `[UI]` w wierszu tabelowym poza rozpoznaną tabelą nie tworzy fazy; `readiness` zgłasza to w `warnings`.
 
-`skillsync prototype gate <projekt> --plan <plan> --phase <Fn>` sprawdza jedną fazę (dopasowanie dosłowne; `--phase` bez `--plan` to błąd argumentów).
+`skillsync prototype gate <projekt> --plan <plan> --phase <Fn>` sprawdza jedną fazę (dopasowanie dosłowne; `--phase` bez `--plan` daje BLOCKED z JSON-em, kod wyjścia 2).
 Wymiary tabeli stanów: `U` = plan ma fazę `[UI]`, `P` = plan ma linię `Prototyp:`, `B` = linia obejścia właściciela `Bramka prototypu: pominięta`.
 „Wynik planu” to wynik bramki całego planu (PASS albo FAIL z brakami akceptacji). Błędne linie `Prototyp:` lub obejścia i `prototype_not_found` dają BLOCKED
 w każdym wierszu. W wierszach z `U = nie` kolumna „faza `[UI]`” nie ma zastosowania, a `B` oznaczone „–” działa jak bez zmian (obejście zamienia FAIL na PASS z `bypassed`).

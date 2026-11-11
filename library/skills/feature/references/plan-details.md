@@ -108,6 +108,7 @@ Faza dotykająca ekranu dostaje znacznik `[UI]` w komórce `Id` albo `Krok` tabe
 per faza: faza `[UI]` wymaga akceptacji prototypu przed startem, a fazy bez znacznika startują po „GO implement”.
 Przed startem fazy `[UI]` uruchom `skillsync prototype gate <projekt> --plan <plan> --phase <Fn>`; FAIL albo BLOCKED = faza nie startuje.
 Brak JSON-a przy kodzie wyjścia 2 (starszy `skillsync` bez `--phase`) = BLOCKED.
+Znacznik jest rozpoznawany dosłownie: `[UI]` w środku komórki `Krok`, w apostrofach albo poza tabelą kroków nie liczy się, a zdublowane id fazy wyłączają fazy planu (plan wraca do bramki całego planu); pisz znacznik na początku albo końcu komórki `Krok` albo w komórce `Id`.
 Faza `[UI]` wymaga linii `Prototyp:`; bez niej `gate` i `readiness` dają BLOCKED `ui_phase_without_prototype` (chyba że jest obejście właściciela).
 Plan z linią `Prototyp:` bez żadnej fazy `[UI]` działa jak dotąd: cały plan za bramką.
 Przy planie z fazami `[UI]` FAIL bramki całego planu nie blokuje faz bez znacznika ani `readiness`; o starcie fazy decyduje `prototype gate --phase <Fn>`.

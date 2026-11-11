@@ -56,7 +56,7 @@ plan bez żywego właściciela = pytanie, czy zaczynamy; `needsHuman: closure` =
 - Review jest niezależne i tylko do odczytu. Po poprawkach testy oraz zamknięcie uwag
   sprawdza się na aktualnym stanie. Nowy zapis unieważnia dotknięte dowody.
 - Done wymaga kryteriów, wymaganych kontroli, dokumentacji, changeloga, ustalonej z użytkownikiem wersji (propozycja + pytanie, `workflow/references/release.md`), wiedzy, zamknięcia blokerów i zamknięcia przebiegu (ostatni krok planu). Merge i complete PR nigdy nie należą do agenta.
-  `ceremony: demo`: zob. `ceremony-demo.md`.
+  `ceremony: demo`: zob. `feature/references/ceremony-demo.md`.
 - Tryb dostarczania: `skillsync route <projekt>` zwraca `delivery {mode, base, source}`; bez CLI czytaj `delivery.mode` z `.github/.skillsync.yaml`
   (brak = `pr`). Przy `source: invalid` nie zakładaj `pr`, zapytaj. Brak `delivery.base`: weź `origin/HEAD`, a gdy się nie da, STOP i pytanie.
 - Przed „GO implement” nic nie opuszcza maszyny. Od „GO plan” (bez niego: „GO implement”) osobny worktree i gałąź robocza;
