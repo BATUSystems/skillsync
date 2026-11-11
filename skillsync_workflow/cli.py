@@ -1532,9 +1532,33 @@ def prune_managed(target_dir: Path, prefix: str, wanted: set, library_root, stat
 
 
 def is_library_symlink(path: Path, library_root) -> bool:
-    """True for a symlink into one of the managed roots (`library_root`: a path or a list of paths)."""
+    """True for a symlink into one of the managed roots (`library_root`: a path or a list of paths).
+
+    Paths are compared in the `_link_text` form (Windows reports `\\\\?\\` forms for a dangling link, e.g. after a skill
+    was renamed in the library); a dangling link is also judged by its own absolute target (`os.readlink`)."""
     if not path.is_symlink():
         return False
+    roots = [library_root] if isinstance(library_root, (str, Path)) else list(library_root)
+    candidates = []
+    try:
+        candidates.append(_link_text(str(path.resolve())))
+    except (OSError, RuntimeError):
+        pass
+    if not path.exists():
+        try:
+            target = os.readlink(path)
+            candidates.append(_link_text(target if os.path.isabs(target) else os.path.join(os.path.dirname(path), target)))
+        except OSError:
+            pass
+    for root in roots:
+        try:
+            base = _link_text(str(Path(root).expanduser().resolve())).rstrip("\\/")
+        except (OSError, RuntimeError):
+            continue
+        prefixes = {base + os.sep, base + "/"}
+        if any(item == base or item.startswith(tuple(prefixes)) for item in candidates):
+            return True
+    return False
     roots = [library_root] if isinstance(library_root, (str, Path)) else list(library_root)
     try:
         resolved = path.resolve()
@@ -1905,9 +1929,12 @@ def composite_hash(files: dict) -> str:
     return digest.hexdigest()
 
 
+_WINDOWS_PATHS = os.name == "nt"  # module constant instead of `os.name` in the function: the test seam for the Windows path forms
+
+
 def _link_text(value: str) -> str:
     """Comparable symlink target (Windows may report `\\\\?\\` paths from `os.readlink`)."""
-    if os.name == "nt" and value.startswith("\\\\?\\"):
+    if _WINDOWS_PATHS and value.startswith("\\\\?\\"):
         value = value[4:]
     return os.path.normcase(value)
 

@@ -38,6 +38,8 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 None.
 
 ### Fixed
+- Windows: `link` recognises a dangling library symlink (e.g. after a skill was renamed in the library) regardless of the path form
+  (`\\?\` prefix) and removes it as obsolete; `is_library_symlink` compares paths through the existing `_link_text` and also judges a dangling link by its own target.
 - `skillsync dashboard`: the automatic plan choice no longer lets an `in_progress`/`approved` plan with all steps checked and no run directory (an orphan) hide a plan with a live run (the page showed "Act III, 35/35" for a finished, unclosed plan); within a status rank the plan with the freshest run activity wins. The JSON contract (`schema: 1`) is unchanged.
 - `skillsync doctor`: the warning for an `in_progress` plan with all steps checked names the run state (no `Przebieg:` line, missing run directory, no `final` record, record already present).
 - Skill `feature`: the `demo` ceremony says that after the spec and its review the next step is the prototype, not idle waiting for "GO plan".
