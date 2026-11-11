@@ -1125,6 +1125,7 @@ def readiness(root, manifest, library, files, plan=None, risk=None):
     if risk not in ('low', 'medium', 'high'):
         raise ValueError('risk must be low, medium or high')
     issues, sections, spec, gate = [], [], None, None
+    ui_phases, phase_info, gate_ui_waiting = [], {'phases': [], 'stray_ui': 0}, False
     if not files:
         issues.append('No changed files supplied or detected')
     required = list(config.get('required_sections', ['contracts', 'risks', 'evidence']))
@@ -1154,12 +1155,17 @@ def readiness(root, manifest, library, files, plan=None, risk=None):
         if spec and re.search(r'(?i)\b(?:TODO|TBD)\b', spec_text):
             issues.append('Unresolved TODO/TBD in spec')
         from . import prototype as prototype_module  # lazy: the gate lives with the prototype commands
-        if prototype_module.plan_has_gate_lines(text):
+        from .plan_phases import parse_plan_phases
+        phase_info = parse_plan_phases(text)
+        ui_phases = phase_info['ui_phases']
+        if prototype_module.plan_has_gate_lines(text) or ui_phases:
             try:
                 gate = prototype_module.prototype_gate(root, manifest, plan=plan)
             except (prototype_module.PrototypeError, ValueError, OSError) as error:
                 gate = {'status': 'BLOCKED', 'error': 'gate_failed', 'reason': str(error)}
-            if gate['status'] == 'FAIL':
+            if gate['status'] == 'FAIL' and ui_phases:
+                gate_ui_waiting = True
+            elif gate['status'] == 'FAIL':
                 issues.extend(f'Prototype gate FAIL: {item["slug"]} {item["screen"] or "—"} ({item["reason"]})'
                               for item in gate['missing'])
             elif gate['status'] == 'BLOCKED':
@@ -1171,6 +1177,20 @@ def readiness(root, manifest, library, files, plan=None, risk=None):
               'files': evidence, 'sections': sections, 'spec': spec, 'note': 'Structural readiness only; contract correctness requires human/agent review'}
     if gate is not None:
         report['prototypeGate'] = gate
+    if plan and ui_phases:
+        report['uiPhases'] = ui_phases
+        report['nonUiPhases'] = [item for item in phase_info['phases'] if item not in ui_phases]
+        if gate_ui_waiting:
+            report['uiPhasesWaiting'] = list(ui_phases)
+    if plan:
+        gate_warnings = []
+        if phase_info['stray_ui']:
+            gate_warnings.append(f'[UI] w wierszu tabelowym poza tabelą kroków planu ({phase_info["stray_ui"]}): '
+                                 'faza nie jest rozpoznana jako [UI]')
+        if ui_phases and gate is not None and gate.get('bypassed'):
+            gate_warnings.append('bramka pominięta przez właściciela')
+        if gate_warnings:
+            report['warnings'] = gate_warnings
     return report
 
 
