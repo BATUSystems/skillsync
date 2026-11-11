@@ -53,7 +53,7 @@ WAIT_NONE = {'', '-', '—', 'nic', 'brak', 'nie'}
 STATUS_WAIT_RE = re.compile(r'czeka\s+na\s+(?P<what>[^);,]+)', re.IGNORECASE)
 ID_FIND_RE = re.compile(rf'(?<![\w-]){STEP_ID}(?![\w-])')
 SHA_RE = re.compile(r'^[0-9a-f]{7,40}$')
-RUN_ID_RE = re.compile(r'^[\w.-]{1,120}$')
+RUN_ID_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$')  # jak wzorzec przebiegu w quality.py: bez '..' i wiodącej kropki
 REF_NAME_RE = re.compile(r'^(?!-)[\w.][\w./-]{0,120}$')
 PLAN_PR_RE = re.compile(r'^PR:\s*#(?P<num>\d+)\s*\(link:\s*(?P<url>https://[^\s)]+)\)\s*$', re.MULTILINE)
 APPROVE_KINDS = {'spec': 'GO plan', 'plan': 'GO implement', 'cp': 'CP', 'ready': 'READY'}
@@ -955,26 +955,41 @@ def _minutes(hhmm):
     return int(hours) * 60 + int(minutes)
 
 
-def build_substeps(progress, checkpoints):
-    """`substeps[]`: plan steps with an `Fn.k` id, with start ("w toku") and finish ("zrobione") taken from the first
-    checkpoint naming them; a done (checked or reported) sub-step without both marks has `missingData: true`."""
-    started, finished, reported = {}, {}, set()
+def substep_marks(checkpoints):
+    """Start ("w toku") and finish ("zrobione") of every step id: `({id: "HH:MM"}, {id: "HH:MM"}, ids in mention order)`
+    from the first chronological checkpoint naming it. Shared by `substeps[]` (`show`) and `dashboard metrics`."""
+    started, finished, order = {}, {}, []
     for item in checkpoints:  # chronological
         for sid in ids_in_progress(item['text']) or []:
             started.setdefault(sid, item['time'])
+            if sid not in order:
+                order.append(sid)
         for sid in ids_reported_done(item['text']):
             finished.setdefault(sid, item['time'])
-            reported.add(sid)
+            if sid not in order:
+                order.append(sid)
+    return started, finished, order
+
+
+def substep_seconds(start, finish):
+    """`finish − start` in seconds (minute resolution, crossing midnight = +24 h); None without one of the marks."""
+    if not start or not finish:
+        return None
+    delta = _minutes(finish) - _minutes(start)
+    return (delta + 24 * 60 if delta < 0 else delta) * 60
+
+
+def build_substeps(progress, checkpoints):
+    """`substeps[]`: plan steps with an `Fn.k` id, with start ("w toku") and finish ("zrobione") taken from the first
+    checkpoint naming them; a done (checked or reported) sub-step without both marks has `missingData: true`."""
+    started, finished, _ = substep_marks(checkpoints)
     out = []
     for phase in progress['phases']:
         for step in phase['steps']:
             if '.' not in step['id']:
                 continue
             start, finish = started.get(step['id']), finished.get(step['id'])
-            seconds = None
-            if start and finish:
-                delta = _minutes(finish) - _minutes(start)
-                seconds = (delta + 24 * 60 if delta < 0 else delta) * 60
+            seconds = substep_seconds(start, finish)
             done = step['done']
             out.append({'id': step['id'], 'title': step['title'], 'phase': phase['label'] or phase['name'],
                         'state': step['state'], 'done': done, 'startedAt': start, 'finishedAt': finish,
@@ -1200,12 +1215,148 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
     }
 
 
+# --------------------------------------------------------------------------- metrics
+
+CHECKPOINTS_FILE = 'checkpoints.md'
+FAILED_STATUSES = ('FAIL', 'BLOCKED')
+
+
+class MetricsBlocked(ValueError):
+    """`dashboard metrics` refuses the input (exit code 2)."""
+
+
+def _metrics_plan(root, run_id, plan):
+    """Plan whose `## Progress` lists the sub-steps: `plan` (relative path, must be a plan of the project) or the plan
+    with `Przebieg: <run-id>` (choice as `choose_plan`; otherwise the first one); None = no plan."""
+    plans = list_plans(root)
+    requested = _normal_plan_rel(plan)
+    if requested:
+        chosen = next((row for row in plans if row['path'] == requested), None)
+        if chosen is None:
+            raise MetricsBlocked(f'unknown plan: {requested}')
+        return chosen
+    linked = [row for row in plans if row.get('run') == run_id]
+    return choose_plan(linked) or (linked[0] if linked else None)
+
+
+def _record_seconds(records):
+    """Sum of `duration_seconds` of the step records (rounded to a second); None when any record has no duration."""
+    if not records or any(record.get('duration_seconds') is None for record in records):
+        return None
+    return int(round(sum(record['duration_seconds'] for record in records)))
+
+
+def build_metrics(root, run_id, plan=None):
+    """`dashboard metrics` (`schema: 1`, docs/dashboard-contract.md): general metrics of one run. Read-only.
+
+    Sub-step times come from `.skillsync/runs/<run-id>/checkpoints.md` (the same marks as `substeps[]` of `show`,
+    `substep_marks`/`substep_seconds`); a sub-step without both marks falls back to its checkpoint records
+    `.skillsync/runs/<run-id>.json` (sum of `duration_seconds`); without either it has `seconds: null, noData: true`.
+    Nothing is estimated. Raises `MetricsBlocked` for a bad run id, a missing run directory or symlinks."""
+    from . import runs as _runs  # lazy: the record reader is needed only here
+    root = Path(root).resolve()
+    if not isinstance(run_id, str) or not RUN_ID_RE.match(run_id):
+        raise MetricsBlocked('invalid run id')
+    try:
+        _runs._slug(run_id)
+    except ValueError:
+        raise MetricsBlocked('invalid run id') from None
+    for path in (root / '.skillsync', root / RUNS_DIR):
+        if path.is_symlink():
+            raise MetricsBlocked(f'{_posix_rel(root, path)} is a symlink')
+    run_dir = root / RUNS_DIR / run_id
+    if run_dir.is_symlink():
+        raise MetricsBlocked(f'{RUNS_DIR}/{run_id} is a symlink')
+    if not run_dir.is_dir():
+        raise MetricsBlocked(f'no run directory {RUNS_DIR}/{run_id}')
+    checkpoints_path = run_dir / CHECKPOINTS_FILE
+    if checkpoints_path.is_symlink():
+        raise MetricsBlocked(f'{RUNS_DIR}/{run_id}/{CHECKPOINTS_FILE} is a symlink')
+    chronological = []
+    if checkpoints_path.is_file():
+        _, chronological = parse_checkpoints(read_text(checkpoints_path))
+    try:
+        store = _runs._store_path(root, run_id)
+        data = _runs._read(store) if store.exists() or store.is_symlink() else None
+    except (OSError, ValueError, KeyError, TypeError, RecursionError) as error:
+        raise MetricsBlocked(f'run records: {error}') from None
+    records = data['checkpoints'] if data else []
+
+    chosen = _metrics_plan(root, run_id, plan)
+    started, finished, mentioned = substep_marks(chronological)
+    if chosen:
+        steps = [(step['id'], step['title']) for phase in parse_progress(read_text(root / chosen['path']))
+                 for step in phase['steps'] if '.' in step['id']]
+    else:  # no plan: the sub-steps named in the checkpoints, in the order of the first mention
+        steps = [(sid, None) for sid in mentioned if '.' in sid]
+    by_step = {}
+    for record in records:
+        by_step.setdefault(record['step'], []).append(record)
+
+    substeps = []
+    for sid, title in steps:
+        start, finish = started.get(sid), finished.get(sid)
+        seconds, source = substep_seconds(start, finish), CHECKPOINTS_FILE
+        if seconds is None:
+            seconds, source = _record_seconds(by_step.get(sid)), 'records'
+        if seconds is None:
+            source = None
+        substeps.append({'id': sid, 'title': title, 'seconds': seconds, 'startedAt': start, 'finishedAt': finish,
+                         'noData': seconds is None, 'source': source})
+
+    phases, members = [], {}
+    for item in substeps:
+        phase_id = item['id'].split('.', 1)[0]
+        if phase_id not in members:
+            members[phase_id] = []
+            phases.append(phase_id)
+        members[phase_id].append(item['seconds'])
+    measured = [item['seconds'] for item in substeps if item['seconds'] is not None]
+    without = len(substeps) - len(measured)
+
+    if data is None:
+        rounds, failures = {'records': None, 'failed': None, 'notRun': None, 'repeatedSteps': None}, []
+    else:
+        summary, _ = _runs._classify_run(run_id, records)
+        rounds = {'records': len(records), 'failed': summary['failed_records'], 'notRun': summary['not_run_records'],
+                  'repeatedSteps': summary['repeated_steps']}
+        failures = [{'step': record['step'], 'status': record['status'], 'causeKey': record.get('cause_key')}
+                    for record in records if record['status'] in FAILED_STATUSES]
+    return {
+        'schema': SCHEMA,
+        'status': 'PASS',
+        'run': run_id,
+        'plan': chosen['path'] if chosen else None,
+        'generatedAt': datetime.now().astimezone().isoformat(timespec='seconds'),
+        'substeps': substeps,
+        'phases': [{'id': phase_id,
+                    'seconds': None if any(value is None for value in members[phase_id]) else sum(members[phase_id])}
+                   for phase_id in phases],
+        'totals': {'substeps': len(substeps), 'withData': len(measured), 'withoutData': without,
+                   'seconds': sum(measured) if substeps and not without else None,
+                   'measuredSeconds': sum(measured) if measured else None},
+        'rounds': rounds,
+        'failures': failures,
+        'interventions': None,
+    }
+
+
 # --------------------------------------------------------------------------- CLI
 
 def _cmd_show(args):
     try:
         root, manifest = read_project(args.path)
         report, code = build_status(root, args.plan, manifest=manifest), 0
+    except (OSError, ValueError, TypeError, KeyError, yaml.YAMLError) as error:
+        report, code = {'schema': SCHEMA, 'status': 'BLOCKED', 'reason': ' '.join(str(error).split())[:500]}, 2
+    print(json.dumps(redact(report), ensure_ascii=False, indent=2))
+    return code
+
+
+def _cmd_metrics(args):
+    try:
+        root, _ = read_project(args.path)
+        report, code = build_metrics(root, args.run_id, args.plan), 0
     except (OSError, ValueError, TypeError, KeyError, yaml.YAMLError) as error:
         report, code = {'schema': SCHEMA, 'status': 'BLOCKED', 'reason': ' '.join(str(error).split())[:500]}, 2
     print(json.dumps(redact(report), ensure_ascii=False, indent=2))
@@ -1224,6 +1375,12 @@ def register(subparsers):
     add_project_arguments(show)
     show.add_argument('--plan', help='plan relative to the project, e.g. docs/plans/<file>.md (default: chosen automatically)')
     show.set_defaults(func=_cmd_show)
+    metrics = actions.add_parser('metrics', help='Print general metrics of one run: sub-step times, rounds, failures '
+                                                 '(read-only; same JSON with or without --json)')
+    add_project_arguments(metrics)
+    metrics.add_argument('run_id', metavar='run-id', help='run id (directory .skillsync/runs/<run-id>)')
+    metrics.add_argument('--plan', help='plan relative to the project (default: the plan with "Przebieg: <run-id>")')
+    metrics.set_defaults(func=_cmd_metrics)
     serve = actions.add_parser('serve', help='Serve the live status page of a project (foreground; Ctrl+C stops)')
     serve.add_argument('path', nargs='?', default='.')
     add_layer_argument(serve)

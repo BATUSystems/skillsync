@@ -10,7 +10,7 @@ wyniku: `tests/fixtures/dashboard/<przypadek>/input/` i `expected.json`.
 |---|---|
 | `skillsync dashboard show <projekt> [--json] [--plan <rel>]` | drukuje kontrakt `schema: 1` (JSON; bez `--json` ten sam JSON, formatowany); tylko odczyt, bez zapisu do projektu; `--plan` wybiera plan (ścieżka względna, np. `docs/plans/<plik>.md`), bez niego plan wybierany jest automatycznie (`planAuto: true`) |
 | `skillsync dashboard serve <projekt> [--port N] [--host H] [--approve-host H]` | serwer HTTP nad tym samym JSON (`/api/status`, strumień zmian `/events`, przyciski zgód); port wybiera się per projekt, by strony nie kolidowały |
-| `skillsync dashboard metrics <projekt> <run-id> [--json]` | ogólne metryki przebiegu: czas podkroków `Fn.k` z checkpointów, liczby rund i porażek; podkrok bez danych jest oznaczony jawnie |
+| `skillsync dashboard metrics <projekt> <run-id> [--json] [--plan <rel>]` | ogólne metryki przebiegu: czas podkroków `Fn.k` z checkpointów, liczby rund i porażek; podkrok bez danych jest oznaczony jawnie (sekcja „Metryki przebiegu”) |
 | `skillsync approvals record <projekt> --word "GO plan\|GO implement\|CP\|READY" --run <run-id> [--sha <git sha>] [--target X] [--branch Y] [--file docs/…] --source <cli\|dashboard\|ide> [--json]` | zapisuje zgodę użytkownika (patrz niżej) |
 
 Kody wyjścia (jak pozostałe komendy workflow): `0` = PASS, `2` = BLOCKED (błąd danych wejściowych, odmowa zapisu, brak
@@ -285,6 +285,53 @@ Podkroki o id `Fn.k` z planu (każdy krok z kropką), w kolejności planu. Czas 
 | `finishedAt` | `"HH:MM"` lub null | pierwszy checkpoint z id w „zrobione” |
 | `seconds` | int lub null | `finishedAt − startedAt` w sekundach (przejście przez północ: +24 h); null, gdy brak któregoś znacznika |
 | `missingData` | bool | `true`, gdy podkrok jest zrobiony (zaznaczony albo zgłoszony), a `seconds` = null |
+
+## Metryki przebiegu (`dashboard metrics`)
+
+`skillsync dashboard metrics <projekt> <run-id> [--json] [--plan <rel>]` liczy ogólne metryki jednego przebiegu (bez
+formatów warstw). Tylko odczyt; bez `--json` drukuje ten sam JSON. Wejście:
+
+- dziennik `.skillsync/runs/<run-id>/checkpoints.md` (te same znaczniki „w toku”/„zrobione” co `substeps[]`; czasy liczy ta
+  sama funkcja co `show`, więc podkrok z czasem w obu wynikach ma identyczne `seconds`, `startedAt`, `finishedAt`);
+- rekordy checkpointów `.skillsync/runs/<run-id>.json` (`skillsync checkpoint`), jeśli plik jest;
+- plan: `--plan` (ścieżka względna planu projektu; nieznany plan = `BLOCKED`), bez niego plan z `Przebieg: <run-id>` (wybór
+  jak dla `show`: `in_progress`, `approved`, `draft`, ostatni `done`). Bez planu podkroki to id `Fn.k` z dziennika w
+  kolejności pierwszego wystąpienia (`title` = null).
+
+| Pole | Typ | Opis |
+|---|---|---|
+| `schema` | int | `1` |
+| `status` | `"PASS"` | odmowa ma kształt `{schema, status: "BLOCKED", reason}` |
+| `run` | string | id przebiegu |
+| `plan` | string lub null | plan, z którego pochodzą podkroki; null = bez planu |
+| `generatedAt` | string | czas wygenerowania, ISO 8601 z przesunięciem strefy |
+| `substeps[]` | tablica | podkroki `Fn.k` w kolejności planu (patrz niżej) |
+| `phases[]` | tablica | `{id, seconds}`: `id` = część id podkroku przed kropką (`F1`), w kolejności pierwszego podkroku; `seconds` = suma czasów podkroków fazy albo null, gdy choć jeden podkrok fazy nie ma danych |
+| `totals` | obiekt | `substeps` (liczba), `withData`, `withoutData` (int), `seconds` (suma wszystkich podkroków albo null, gdy któryś nie ma danych lub nie ma podkroków), `measuredSeconds` (suma podkroków z danymi albo null, gdy żaden ich nie ma; wartość częściowa, zawsze czytana razem z `withoutData`) |
+| `rounds` | obiekt | `records` (liczba rekordów), `failed` (`FAIL`+`BLOCKED`), `notRun` (`NOT_RUN`), `repeatedSteps` (rekordy kroku zapisanego już wcześniej); liczone jak w `skillsync metrics` i `skillsync retro`; bez pliku rekordów wszystkie cztery = null (brak danych, nie zero) |
+| `failures[]` | tablica | `{step, status, causeKey}` dla rekordów `FAIL`/`BLOCKED` w kolejności pliku; `causeKey` = `cause_key` rekordu lub null; bez rekordów pusta |
+| `interventions` | null | zarezerwowane; rdzeń nie mierzy interwencji człowieka |
+
+`substeps[]`:
+
+| Pole | Typ | Opis |
+|---|---|---|
+| `id` | string | id podkroku |
+| `title` | string lub null | tytuł z planu; null bez planu |
+| `startedAt`, `finishedAt` | `"HH:MM"` lub null | pierwszy checkpoint z id w „w toku” / „zrobione” (także, gdy brakuje drugiego znacznika) |
+| `seconds` | int lub null | `finishedAt − startedAt` (przejście przez północ: +24 h); bez obu znaczników suma `duration_seconds` rekordów kroku (zaokrąglona do sekundy), o ile każdy rekord ma czas; w przeciwnym razie null |
+| `noData` | bool | `true` ⇔ `seconds` = null; czas nigdy nie jest szacowany |
+| `source` | `"checkpoints.md"`, `"records"` albo null | skąd pochodzi `seconds`; null przy `noData` |
+
+Różnica wobec `substeps[].missingData` w `show`: `missingData` dotyczy tylko podkroków zrobionych, `noData` każdego podkroku
+bez czasu (także zaplanowanego).
+
+Kody wyjścia: `0` = PASS; `2` = BLOCKED: brak projektu, id przebiegu spoza wzorca (`[A-Za-z0-9][A-Za-z0-9_.-]{0,79}`, np.
+`../x`), brak katalogu `.skillsync/runs/<run-id>`, dowiązanie (`.skillsync`, `.skillsync/runs`, katalog przebiegu,
+`checkpoints.md`, plik rekordów), nieczytelny plik rekordów, nieznany `--plan`.
+
+Fixtures: `tests/fixtures/dashboard/<przypadek>/expected-metrics.json` (przypadki `plan-in-progress` z plikiem rekordów,
+`silence`, `run-mode`); normalizacja: `generatedAt` = `2026-01-12T12:00:00+00:00`, JSON jak w `expected.json`.
 
 ## Zgodność z `skillsync status`
 

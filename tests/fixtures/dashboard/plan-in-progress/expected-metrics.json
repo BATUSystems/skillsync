@@ -1,0 +1,85 @@
+{
+  "failures": [
+    {
+      "causeKey": "fixture-drift",
+      "status": "FAIL",
+      "step": "F1.2"
+    }
+  ],
+  "generatedAt": "2026-01-12T12:00:00+00:00",
+  "interventions": null,
+  "phases": [
+    {
+      "id": "F1",
+      "seconds": null
+    },
+    {
+      "id": "F2",
+      "seconds": null
+    }
+  ],
+  "plan": "docs/plans/2026-01-10-demo-feature.md",
+  "rounds": {
+    "failed": 1,
+    "notRun": 1,
+    "records": 4,
+    "repeatedSteps": 1
+  },
+  "run": "2026-01-10-demo-feature",
+  "schema": 1,
+  "status": "PASS",
+  "substeps": [
+    {
+      "finishedAt": "09:20",
+      "id": "F1.1",
+      "noData": false,
+      "seconds": 900,
+      "source": "checkpoints.md",
+      "startedAt": "09:05",
+      "title": "Opis kontraktu"
+    },
+    {
+      "finishedAt": "09:50",
+      "id": "F1.2",
+      "noData": false,
+      "seconds": 900,
+      "source": "records",
+      "startedAt": null,
+      "title": "Fixtures"
+    },
+    {
+      "finishedAt": null,
+      "id": "F1.3",
+      "noData": true,
+      "seconds": null,
+      "source": null,
+      "startedAt": "09:20",
+      "title": "Test struktury"
+    },
+    {
+      "finishedAt": null,
+      "id": "F2.1",
+      "noData": true,
+      "seconds": null,
+      "source": null,
+      "startedAt": null,
+      "title": "Parsery"
+    },
+    {
+      "finishedAt": null,
+      "id": "F2.2",
+      "noData": true,
+      "seconds": null,
+      "source": null,
+      "startedAt": null,
+      "title": "Komenda"
+    }
+  ],
+  "totals": {
+    "measuredSeconds": 1800,
+    "seconds": null,
+    "substeps": 5,
+    "withData": 2,
+    "withoutData": 3
+  }
+}

@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "run_id": "2026-01-10-demo-feature",
+  "checkpoints": [
+    {
+      "step": "F1.1",
+      "status": "PASS",
+      "evidence": [
+        {
+          "path": "docs/plans/2026-01-10-demo-feature.md",
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      ],
+      "next": "next step",
+      "fingerprint": {
+        "head": null,
+        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "recorded_at": "2026-01-10T09:20:00+00:00",
+      "duration_seconds": 840,
+      "cost": null,
+      "cost_unit": "USD",
+      "attempt": 1,
+      "cause": null,
+      "provenance": "operator-recorded; evidence content is not automatically validated"
+    },
+    {
+      "step": "F1.2",
+      "status": "FAIL",
+      "evidence": [],
+      "next": "next step",
+      "fingerprint": {
+        "head": null,
+        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "recorded_at": "2026-01-10T09:30:00+00:00",
+      "duration_seconds": 300,
+      "cost": null,
+      "cost_unit": "USD",
+      "attempt": 1,
+      "cause": null,
+      "provenance": "operator-recorded; evidence content is not automatically validated",
+      "cause_key": "fixture-drift"
+    },
+    {
+      "step": "F1.2",
+      "status": "PASS",
+      "evidence": [
+        {
+          "path": "docs/plans/2026-01-10-demo-feature.md",
+          "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        }
+      ],
+      "next": "next step",
+      "fingerprint": {
+        "head": null,
+        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "recorded_at": "2026-01-10T09:50:00+00:00",
+      "duration_seconds": 600,
+      "cost": null,
+      "cost_unit": "USD",
+      "attempt": 2,
+      "cause": null,
+      "provenance": "operator-recorded; evidence content is not automatically validated"
+    },
+    {
+      "step": "F1.3",
+      "status": "NOT_RUN",
+      "evidence": [],
+      "next": "next step",
+      "fingerprint": {
+        "head": null,
+        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "recorded_at": "2026-01-10T09:55:00+00:00",
+      "duration_seconds": null,
+      "cost": null,
+      "cost_unit": "USD",
+      "attempt": 1,
+      "cause": null,
+      "provenance": "operator-recorded; evidence content is not automatically validated"
+    }
+  ]
+}
