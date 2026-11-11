@@ -20,7 +20,7 @@ from pathlib import Path
 from unittest import mock
 
 from tests.cli_module import ROOT  # noqa: E402
-from skillsync_workflow import fsutil, layers, prototype_server  # noqa: E402
+from skillsync_workflow import fsutil, prototype_server  # noqa: E402  (prototype_server: kopia ensure w samodzielnym pliku)
 
 PL = 'Serwer prototypów: kończy się (żółć)\n'
 
@@ -165,16 +165,95 @@ class RmtreeForceTests(unittest.TestCase):
             fsutil.rmtree_force(Path(self.tmp) / 'nie-ma')
 
 
+class RmtreeForceEdgeCaseTests(unittest.TestCase):
+    """Uwagi z review: symlinki, katalog nadrzędny korzenia, operacje, których chmod nie naprawia."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix='win-fix-')
+        self.addCleanup(self.cleanup)
+
+    def cleanup(self):
+        for dirpath, dirnames, filenames in os.walk(self.tmp):
+            for name in dirnames + filenames:
+                try:
+                    os.chmod(os.path.join(dirpath, name), stat.S_IRWXU)
+                except OSError:
+                    pass
+        os.chmod(self.tmp, stat.S_IRWXU)
+        shutil.rmtree(self.tmp, True)
+
+    posix_user = unittest.skipIf(os.name == 'nt' or (hasattr(os, 'geteuid') and os.geteuid() == 0),
+                                 'wymaga POSIX i zwykłego użytkownika')
+
+    @posix_user
+    def test_a_symlink_inside_the_tree_is_removed_and_its_target_keeps_its_mode(self):
+        target = Path(self.tmp) / 'outside'
+        target.mkdir()
+        target.chmod(0o700)
+        tree = Path(self.tmp) / 'tree'
+        tree.mkdir()
+        (tree / 'link').symlink_to(target)
+        tree.chmod(0o555)  # unlink wpisu w katalogu bez prawa zapisu
+        fsutil.rmtree_force(tree)
+        self.assertFalse(os.path.lexists(tree))
+        self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o700)
+
+    @posix_user
+    def test_the_parent_of_the_root_is_never_changed(self):
+        parent = Path(self.tmp) / 'parent'
+        (parent / 'root').mkdir(parents=True)
+        parent.chmod(0o555)  # rmdir(root) zawiedzie: brak prawa zapisu w rodzicu
+        with self.assertRaises(PermissionError):
+            fsutil.rmtree_force(parent / 'root')
+        self.assertEqual(stat.S_IMODE(parent.stat().st_mode), 0o555)
+        fsutil.rmtree_force(parent / 'root', ignore_errors=True)  # bez wyjątku
+        self.assertTrue((parent / 'root').exists())
+
+    @unittest.skipIf(os.name == 'nt', 'symlinki wymagają uprawnień')
+    def test_rmtree_on_a_symlink_is_refused_like_shutil_and_leaves_the_target(self):
+        target = Path(self.tmp) / 'target'
+        target.mkdir()
+        link = Path(self.tmp) / 'link'
+        link.symlink_to(target)
+        with self.assertRaises(OSError):
+            fsutil.rmtree_force(link)
+        fsutil.rmtree_force(link, ignore_errors=True)
+        self.assertTrue(link.is_symlink() and target.is_dir())
+
+    def test_operations_that_chmod_cannot_fix_do_not_raise_a_type_error(self):
+        for func in (os.open, os.path.islink, os.scandir):
+            fsutil._retry_after_chmod(func, self.tmp, PermissionError(13, 'denied'), ignore_errors=True)
+            with self.assertRaises(PermissionError):
+                fsutil._retry_after_chmod(func, self.tmp, PermissionError(13, 'denied'))
+
+    def test_a_missing_path_changes_no_permissions_and_keeps_the_error(self):
+        before = stat.S_IMODE(os.stat(self.tmp).st_mode)
+        with self.assertRaises(FileNotFoundError):
+            fsutil.rmtree_force(Path(self.tmp) / 'nie-ma')
+        self.assertEqual(stat.S_IMODE(os.stat(self.tmp).st_mode), before)
+
+    def test_cli_remove_item_removes_a_tree_with_read_only_entries(self):
+        from skillsync_workflow import cli
+        tree, victim = make_tree(self.tmp)
+        if os.name == 'nt':
+            victim.chmod(stat.S_IREAD)
+        elif hasattr(os, 'geteuid') and os.geteuid() == 0:
+            self.skipTest('root ignoruje prawa do katalogów')
+        else:
+            victim.parent.chmod(0o555)
+        cli.remove_item(tree)
+        self.assertFalse(tree.exists())
+
+
 class CloneRollbackTests(unittest.TestCase):
-    def test_every_cleanup_of_a_clone_goes_through_rmtree_force(self):
-        """Strażnik: wskazane miejsca nie wołają już gołego `shutil.rmtree` na klonie."""
-        for rel, needles in (('layers.py', ('checkout',)), ('setup_wizard.py', ('candidate',)), ('cli.py', ('remove_item',))):
+    def test_no_bare_rmtree_is_left_on_the_clone_paths(self):
+        """Strażnik: rollback klonu (layers, setup) i `remove_item` (cli) idą przez `rmtree_force`."""
+        for rel, forbidden in (('layers.py', 'shutil.rmtree('), ('setup_wizard.py', 'shutil.rmtree(path')):
             text = (ROOT / 'skillsync_workflow' / rel).read_text(encoding='utf-8')
-            self.assertIn('rmtree_force', text, rel)
-        layers_text = (ROOT / 'skillsync_workflow' / 'layers.py').read_text(encoding='utf-8')
-        self.assertNotIn('shutil.rmtree(checkout', layers_text)
-        setup_text = (ROOT / 'skillsync_workflow' / 'setup_wizard.py').read_text(encoding='utf-8')
-        self.assertNotIn('shutil.rmtree(path, ignore_errors=True))', setup_text)
+            self.assertNotIn(forbidden, text, rel)
+            self.assertIn('rmtree_force(', text, rel)
+        cli_text = (ROOT / 'skillsync_workflow' / 'cli.py').read_text(encoding='utf-8')
+        self.assertRegex(cli_text, r'def remove_item[^\n]*\n(?:.*\n){1,6}?\s+rmtree_force\(path\)')
 
 
 if __name__ == '__main__':

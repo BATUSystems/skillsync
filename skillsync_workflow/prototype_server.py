@@ -5971,12 +5971,12 @@ def build_parser():
 def _ensure_utf8_streams():
     """Kopia `fsutil.ensure_utf8_streams` (ten plik jest samodzielny, bez importów z pakietu): stdout/stderr w cp1252
     (rura, zadanie bez konsoli, Windows) nie mogą przewrócić polskich komunikatów (`UnicodeEncodeError`)."""
-    for stream in (sys.stdout, sys.stderr):
+    for stream, errors in ((sys.stdout, 'replace'), (sys.stderr, 'backslashreplace')):
         reconfigure = getattr(stream, 'reconfigure', None)
         if reconfigure is None or (getattr(stream, 'encoding', None) or '').lower().replace('-', '').replace('_', '') == 'utf8':
             continue
         try:
-            reconfigure(encoding='utf-8', errors='replace')
+            reconfigure(encoding='utf-8', errors=errors)
         except (OSError, ValueError):
             pass
 

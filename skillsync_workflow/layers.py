@@ -29,9 +29,9 @@ from dataclasses import dataclass, field
 from functools import cached_property
 from pathlib import Path, PurePosixPath
 
-from .fsutil import rmtree_force
-
 import yaml
+
+from .fsutil import rmtree_force
 
 # `common` is imported inside functions only, so that `common` can import this module (2.2a).
 
