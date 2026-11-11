@@ -1494,6 +1494,15 @@ class HttpReadHostTests(HttpCase):
                 approvals = self.status_as(host)["approvals"]
                 self.assertEqual((approvals["here"], approvals["viewer"]), (True, False))
 
+    def test_asset_shows_the_viewer_tooltip_only_for_approvals_viewer(self):
+        js = (SKILL / "assets/app.js").read_text(encoding="utf-8")
+        self.assertIn("ap.viewer === true", js)
+        self.assertIn("Zgody daje prowadzący na komputerze z sesją.", js)
+        # bez viewer zostaje dotychczasowy tekst (instrukcja wpisania słowa w sesji)
+        self.assertIn("Zgoda tylko z przeglądarki na komputerze z sesją", js)
+        # tekst widza jest wybierany warunkiem, nie dopisany do każdego przycisku
+        self.assertLess(js.index("ap.viewer === true"), js.index("Zgody daje prowadzący na komputerze z sesją."))
+
 
 def cli_env(tmp: Path) -> dict:
     return {**os.environ, "SKILLSYNC_CONFIG": str(tmp / "machine-config.yaml"), "XDG_CACHE_HOME": str(tmp / "xdg-cache"),
@@ -1534,6 +1543,7 @@ class HttpHardeningTests(HttpCase):
             for key in ("generatedAt", "version", "session", "prototype"):
                 data.pop(key, None)
             data["approvals"].pop("here", None)
+            data["approvals"].pop("viewer", None)  # pole dodawane przez serwer zależnie od Host (jak here)
             return data
 
         self.assertEqual(volatile(api), volatile(shown))

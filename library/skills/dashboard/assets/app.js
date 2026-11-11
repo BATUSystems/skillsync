@@ -343,7 +343,11 @@
       return `<button class="${cls} is-given" type="button" disabled data-state="after" ${desc(GATE_KEY[kind], a.reason)}>${icon("i-check")}${esc(a.word)}${a.target ? " → " + esc(a.target) : ""}${at ? " " + esc(at) : ""}</button>`;
     }
     if (a.state !== "waiting") return `<button class="${cls} is-waiting" type="button" disabled data-state="running" ${desc(GATE_KEY[kind], a.reason)}>${esc(a.word)}${a.target ? " → " + esc(a.target) : ""}</button>`;
-    if (!ap.here) return `<button class="${cls}" type="button" disabled data-state="waiting" ${desc(GATE_KEY[kind], `Zgoda tylko z przeglądarki na komputerze z sesją (localhost albo --approve-host); tu wpisz „${a.word}” w sesji`)}>${icon("i-check")}${esc(a.word)}</button>`;
+    if (!ap.here) {
+      // Widz z hosta --read-host (approvals.viewer): zgody daje prowadzący, widz nie ma sesji, więc nie pokazujemy instrukcji wpisania słowa.
+      const tip = ap.viewer === true ? "Zgody daje prowadzący na komputerze z sesją." : `Zgoda tylko z przeglądarki na komputerze z sesją (localhost albo --approve-host); tu wpisz „${a.word}” w sesji`;
+      return `<button class="${cls}" type="button" disabled data-state="waiting" ${desc(GATE_KEY[kind], tip)}>${icon("i-check")}${esc(a.word)}</button>`;
+    }
     const armed = st.armed === kind;
     const to = a.target ? ` → ${a.target}` : "";
     const label = st.approving && armed ? "Zapisuję…" : armed ? `Na pewno? Kliknij, by dać „${a.word}”${to}` : `Zatwierdź „${a.word}”${to}`;
