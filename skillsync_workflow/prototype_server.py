@@ -97,7 +97,7 @@ LEGACY_ROLES = ('commenter', 'acceptor', 'developer')   # the `role` field of ol
 ROLES = LEGACY_ROLES + ('expert',)
 PRIVILEGED_ROLES = ('acceptor', 'developer')
 ROLE_PRECEDENCE = ('developer', 'acceptor', 'expert', 'commenter')   # highest first
-SERVER_FEATURES = ('views', 'login-link')   # `login-link` is listed only while the endpoint is active
+SERVER_FEATURES = ('views', 'login-link', 'questions')   # `login-link` is listed only while the endpoint is active
 VIEW_VALUES = ('desktop', 'mobile')
 RESERVED_LOGINS = ('agent', 'import', 'server')
 
@@ -123,6 +123,8 @@ DEFAULT_HOST = '127.0.0.1'
 DEFAULT_PORT = 4445
 CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
 PUBLIC_READ_WARNING = 'prototypy i komentarze są widoczne bez logowania dla każdego, kto zna adres'
+EXPERT_PUBLIC_WARNING = ('istnieją konta z rolą expert, a serwer działa bez --login-to-view: pytania do eksperta wymagają '
+                         'sesji, ale prototypy i komentarze są dla każdego; uruchom serwer z --login-to-view')
 
 SLUG_RE = re.compile(r'[a-z0-9]+(?:-[a-z0-9]+)*')
 LOGIN_RE = re.compile(r'[^@\s]+@[^@\s]+\.[^@\s]+')
@@ -2732,6 +2734,8 @@ def question_view(question, viewer, by_id=None):
         'recorded': _clone(question['recorded']), 'refersTo': None,
         'canAnswer': can_answer(question, viewer) and question['state'] == 'open',
     }
+    if not admin:   # the repository path of the spec is not for an expert; `origin.q` stays
+        view['origin'] = {'q': question['origin'].get('q')}
     target = question['refersTo']
     if target is not None:
         if admin:
@@ -5568,6 +5572,7 @@ def startup_checks(config):
     if not os.path.isdir(root_real):
         errors.append('katalog prototypów nie istnieje: %s' % config.root)
     users_real = os.path.realpath(config.users)
+    records = []
     if _within(users_real, root_real):
         errors.append('plik użytkowników leży w serwowanym katalogu: %s' % config.users)
     if not os.path.isfile(users_real):
@@ -5594,6 +5599,8 @@ def startup_checks(config):
             warnings.extend(git_warnings)
     if not config.login_to_view:
         warnings.append(PUBLIC_READ_WARNING)
+        if any('expert' in roles_of(record) for record in records):
+            warnings.append(EXPERT_PUBLIC_WARNING)
     if not is_loopback_host(config.host):
         warnings.append('adres %s nie jest pętlą zwrotną: HTTP bez TLS, hasła i ciasteczka idą otwartym tekstem; '
                         'poza LAN użyj proxy z TLS i --secure-cookies' % config.host)
@@ -5620,7 +5627,10 @@ class PrototypeApp(object):
         self.port = config.port
         self.source_writes = config.source_writes
         users_real = os.path.realpath(config.users)
-        self.denied_paths = frozenset(item.lower() for item in (users_real, users_real + '.bak', users_real + LOCK_SUFFIX))
+        questions_real = os.path.join(self.root, QUESTIONS_FILE)
+        self.denied_paths = frozenset(item.lower() for item in (
+            users_real, users_real + '.bak', users_real + LOCK_SUFFIX, questions_real, questions_real + LOCK_SUFFIX))
+        self._questions = None
         self._stores = {}
         self._stores_lock = threading.Lock()
         self._log_lock = threading.Lock()
@@ -5784,6 +5794,13 @@ class PrototypeApp(object):
                                                            max_bytes=self.config.max_file_bytes)
             return store
 
+    def questions_store(self):
+        """The `QuestionsStore` of `<root>/questions.json` (one per server, created on first use)."""
+        with self._stores_lock:
+            if self._questions is None:
+                self._questions = QuestionsStore(self.root, clock=self.clock, lock_timeout=self.config.lock_timeout)
+            return self._questions
+
     def user_payload(self, user):
         first, full = person_names(user['login'], user.get('name'))
         return {'login': user['login'], 'name': full, 'firstName': first, 'role': primary_role(user),
@@ -5835,6 +5852,9 @@ _API_PREFIX = '/_api/v1'
 _OPERATIONS_PATH = re.compile(r'/_api/v1/prototypes/([^/]+)/operations')
 _RESTORE_PATH = re.compile(r'/_api/v1/prototypes/([^/]+)/restore')
 _PREVIEW_PATH = re.compile(r'/_api/v1/prototypes/([^/]+)/restore-preview')
+_QUESTIONS_PATH = _API_PREFIX + '/questions'
+_QUESTION_PATH = re.compile(r'/_api/v1/questions/([^/]+)')
+_QUESTION_ACTION_PATH = re.compile(r'/_api/v1/questions/([^/]+)/(answer|comment)')
 _LOGIN_TO_VIEW_EXCEPTIONS = ('/_login', _API_PREFIX + '/login', _API_PREFIX + '/session')
 
 
@@ -6055,6 +6075,11 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
             if (not segment or segment in ('.', '..') or _excluded_segment(segment) or ':' in segment):
                 self._not_found()
                 return
+        if segments:
+            first = segments[0].lower()
+            if (first.rstrip('. ') if os.name == 'nt' else first) == QUESTIONS_FILE:
+                self._not_found()   # `questions.json` is served only through `/_api/v1/questions`
+                return
         root = self.app.root
         target = os.path.realpath(os.path.join(root, *segments)) if segments else root
         if not self._allowed_real(target):
@@ -6194,6 +6219,20 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
             self._require_method(method, ('POST',))
             self._api_project_accept(session, user)
             return
+        if path == _QUESTIONS_PATH:
+            self._require_method(method, ('GET', 'HEAD'))
+            self._api_questions_list(session, user)
+            return
+        match = _QUESTION_ACTION_PATH.fullmatch(path)
+        if match:
+            self._require_method(method, ('POST',))
+            self._api_question_post(unquote(match.group(1)), match.group(2), session, user)
+            return
+        match = _QUESTION_PATH.fullmatch(path)
+        if match:
+            self._require_method(method, ('GET', 'HEAD'))
+            self._api_question_get(unquote(match.group(1)), session, user)
+            return
         match = _OPERATIONS_PATH.fullmatch(path)
         if match:
             slug = unquote(match.group(1))
@@ -6221,7 +6260,7 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
             self.close_connection = True
             raise PrototypeServerError(405, 'method_not_allowed', headers={'Allow': ', '.join(allowed)})
 
-    def _post_checks(self, session, user, allow_must_change=False, require_session=True, read_body=True):
+    def _post_checks(self, session, user, allow_must_change=False, require_session=True, read_body=True, raw=False):
         """POST order: session (401) → Content-Type/Origin/CSRF (403) → mustChange (403) → size (413) → JSON."""
         if require_session and session is None:
             self.close_connection = True
@@ -6268,6 +6307,8 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
             self.close_connection = True
             raise PrototypeServerError(413, 'payload_too_large', 'request body is larger than 64 KiB')
         data = self.rfile.read(length) if length else b''
+        if raw:
+            return data   # the caller parses the body later (the question routes check the role first)
         if not read_body:
             return None
         try:
@@ -6391,6 +6432,95 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
             next(iter(screens)) if isinstance(screens, dict) and len(screens) == 1 else None)
         app.audit(session, written['type'], screen)
         self._json(201, {'operation': written, 'total': result.total, 'prefix': result.prefix})
+
+    # ── questions to an expert ──
+
+    def _questions_gate(self, session, user, roles):
+        """Session (401) → mustChange (403) → role (403 `forbidden`) for the question routes; the session is
+        required always, also without `--login-to-view`.  Returns the viewer `{login, roles}`."""
+        if session is None or user is None:
+            raise PrototypeServerError(401, 'unauthorized', 'login required')
+        if user['mustChange']:
+            raise PrototypeServerError(403, 'password_change_required', 'change the password first')
+        have = roles_of(user)
+        if not any(role in have for role in roles):
+            raise PrototypeServerError(403, 'forbidden', 'your role has no access to expert questions')
+        return {'login': user['login'], 'roles': have}
+
+    def _api_questions_list(self, session, user):
+        viewer = self._questions_gate(session, user, ('developer', 'acceptor', 'expert'))
+        snapshot = self.app.questions_store().snapshot()
+        self._json(200, {'questions': visible_questions(snapshot, viewer)})
+
+    def _api_question_get(self, question_id, session, user):
+        viewer = self._questions_gate(session, user, ('developer', 'acceptor', 'expert'))
+        view = None
+        if QUESTION_ID_RE.fullmatch(question_id):
+            view = get_question_view(self.app.questions_store().snapshot(), question_id, viewer)
+        if view is None:
+            raise PrototypeServerError(404, 'not_found', 'question not found')
+        self._json(200, {'question': view})
+
+    def _api_question_post(self, question_id, kind, session, user):
+        """`answer` / `comment`; order: session → CSRF → mustChange → role → visibility (404) → body → dedup →
+        state (409) → schema (400).  Everything after the role runs in `build`, under the lock, on the snapshot
+        of that transaction; the author is the login of the session."""
+        app = self.app
+        data = self._post_checks(session, user, raw=True)
+        allowed = ('expert',) if kind == 'answer' else ('developer', 'acceptor', 'expert')
+        viewer = self._questions_gate(session, user, allowed)
+        login = user['login']
+        store = app.questions_store()
+
+        def not_found():
+            return OperationError(404, 'not_found', 'question not found')
+
+        seen = {}
+
+        def build(snapshot):
+            seen['snapshot'] = snapshot
+            question = snapshot.fold['byId'].get(question_id) if QUESTION_ID_RE.fullmatch(question_id) else None
+            if question is None or not can_view_question(question, viewer):
+                raise not_found()
+            if kind == 'answer' and not can_answer(question, viewer):
+                raise OperationError(403, 'forbidden', 'the question is not addressed to you')
+            try:
+                body = strict_json_loads(data.decode('utf-8'))
+            except (ValueError, UnicodeDecodeError, RecursionError):
+                raise PrototypeServerError(400, 'invalid_json', 'body must be JSON')
+            if not isinstance(body, dict):
+                raise PrototypeServerError(400, 'invalid_request', 'body must be a JSON object')
+            cid = body.get('cid')
+            if not isinstance(cid, str) or not CID_RE.fullmatch(cid):
+                raise OperationError(400, 'cid_required', 'cid is required')
+            found = snapshot.find_cid(login, cid)
+            if found is not None:
+                if found.get('questionId') != question_id or found.get('type') != kind:
+                    raise OperationError(409, 'cid_conflict', 'cid was already used for another operation')
+                return Existing(found)
+            check_question_state(snapshot.fold, {'type': kind, 'questionId': question_id})
+            partial = {'type': kind, 'questionId': question_id, 'by': login, 'cid': cid}
+            for key, value in body.items():
+                if key not in partial:
+                    partial[key] = value
+            return partial
+
+        result = store.transaction(build)
+        written = result.existing if result.existing is not None else result.operations[0]
+        # the view comes from the state of this very transaction: its snapshot plus what it wrote
+        fold = fold_questions(list(seen['snapshot'].operations) + list(result.operations))
+        question = fold['byId'].get(question_id)
+        view = None if question is None else question_view(question, viewer, fold['byId'])
+        if view is None:   # the question vanished from the fold: a damaged file, not a client error
+            raise OperationError(500, 'corrupt_questions', 'the questions file is inconsistent')
+        operation = {key: written.get(key) for key in ('id', 'type', 'at', 'cid')}
+        if not all(isinstance(value, str) for value in operation.values()):
+            # a damaged stored operation reached by dedup (lacks a field): a controlled domain error
+            raise OperationError(500, 'corrupt_operation', 'the stored operation is damaged')
+        status = 200 if result.existing is not None else 201
+        if status == 201:
+            app.audit(session, 'question/' + kind)
+        self._json(status, {'question': view, 'operation': operation})
 
     def _project_access(self, session, user):
         """401 without a session, 403 `forbidden` for the commenter role."""

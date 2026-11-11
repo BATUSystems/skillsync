@@ -704,6 +704,15 @@ class VisibilityTests(QuestionsCase):
         self.assertNotIn(OLA, json.dumps(ps.visible_questions(self.snap, viewer(EWA, 'expert'))))
         self.assertNotIn('number', mine)
 
+    def test_expert_view_has_no_origin_spec_but_admin_view_keeps_it(self):
+        expert = viewer(EWA, 'expert')
+        for view in ps.visible_questions(self.snap, expert):
+            self.assertEqual(set(view['origin']) - {'q'}, set(), view['id'])
+        self.assertNotIn('docs/specs', json.dumps(ps.visible_questions(self.snap, expert)))
+        self.assertEqual(ps.get_question_view(self.snap, Q1, expert)['origin'], {'q': 'Q1'})
+        admin = ps.get_question_view(self.snap, Q1, viewer('adm', 'developer'))
+        self.assertEqual(admin['origin'], {'spec': 'docs/specs/a.md', 'q': 'Q1'})
+
     def test_refers_to_invisible_question_is_omitted(self):
         who = viewer(EWA, 'expert')
         self.assertEqual(ps.get_question_view(self.snap, Q2, who)['refersTo'], Q1)
