@@ -204,3 +204,7 @@ lessons:
     title: "os.kill(pid, 0) na Windows zabija proces zamiast go sprawdzać: żywotność PID tam rozstrzyga inny dowód"
     tags: [skillsync, python, windows, process, prototype, login-link, portability]
     paths: ['skillsync_workflow/prototype_server.py', 'tests/test_skillsync_prototype_login_link.py']
+  - path: test-z-wersja-rdzenia-na-sztywno-wygasa.md
+    title: "Test z wersją rdzenia na sztywno wygasa przy podbiciu wersji: wyliczaj ją od generator_version()"
+    tags: [skillsync, tests, version, release, core-min]
+    paths: ['tests/test_skillsync_layers_config.py', 'tests/test_skillsync_layers_doctor.py', 'tests/test_skillsync_layers_commands.py']

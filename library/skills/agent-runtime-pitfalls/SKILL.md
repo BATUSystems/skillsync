@@ -59,6 +59,10 @@ pasować do środowiska, popraw ją tutaj zamiast obchodzić.
   **prawdziwym Chrome użytkownika** (otwiera mu karty). Wtedy nie używaj MCP. Uruchom własny
   headless na innym porcie (np. 9333) i steruj nim przez CDP. Kart użytkownika nie ruszaj,
   a przypadkiem otwartą zamknij.
+- **Zrzuty i odczyty przeglądarki rób w osobnym profilu bez rozszerzeń** (`--user-data-dir=<pusty katalog>`),
+  a kolory weryfikuj z tokenów i computed styles (`getComputedStyle`), nie ze zrzutu. Rozszerzenie
+  zmieniające motyw (np. dark mode) przekolorowuje stronę i fałszuje zrzuty, więc „zły kolor” bywa
+  skutkiem rozszerzenia w profilu, a nie błędem strony. Profil użytkownika ma takie rozszerzenia.
 - **`python3 -m http.server` nie wyłącza cache przeglądarki.** Chrome serwuje wtedy stare
   `prototype.js`/CSS po zmianie pliku. Skutek to fałszywa czerwień albo fałszywa zieleń
   przy powtórnym teście. Przed pomiarem włącz `Network.setCacheDisabled({cacheDisabled: true})` przez CDP
@@ -233,6 +237,9 @@ pasować do środowiska, popraw ją tutaj zamiast obchodzić.
 - Przed usunięciem worktree po wydaniu sprawdź `git cherry origin/<gałąź> <gałąź-paczki>`
   — zero linii `+` oznacza, że każda zmiana jest już na zdalnej gałęzi mimo innych hashy.
 - Push wydania tylko fast-forward; potwierdzaj hash przez `git ls-remote`.
+- **Listę ścieżek do `git add` wypisuj jawnie**, a nie z filtra ani grepa po `git status`. Filtr łapie też
+  nieśledzone pliki użytkownika, które leżą w drzewie obok pracy, i trafiają do commita. Przed commitem
+  porównaj `git diff --cached --name-only` z listą kroku.
 
 ## Dostęp do serwerów i uprawnienia
 
