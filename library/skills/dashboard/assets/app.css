@@ -53,6 +53,9 @@ body {
 }
 /* Korzeń renderera (dashboard-render.js) nie tworzy własnego pudełka: nagłówek, zakładki, main i stopka są elementami flex body. */
 .dashboard-root { display: contents; }
+/* Układ zależy od szerokości kolumny hosta (strona albo webview), nie okna: progi to @container (1100/640/500/420 px).
+   Wrapper tworzy kontener inline-size; dymek .desc-tip jest jego sąsiadem, bo containment psuje position: fixed. */
+.dash-wrap { container: dash / inline-size; flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
 .sprite { position: absolute; }
 .ic { width: 1.05em; height: 1.05em; vertical-align: -0.16em; flex: none; }
 button { font: inherit; color: inherit; }
@@ -382,7 +385,7 @@ main { flex: 1; padding: 1.1rem 1.4rem; min-width: 0; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
-@media (max-width: 1100px) {
+@container dash (max-width: 1100px) {
   .acts { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .acts .act.wide, .acts .act[data-key="real"] { grid-column: 1 / -1; order: -1; }
   .work, .docs { grid-template-columns: minmax(0, 1fr); }
@@ -398,8 +401,7 @@ main { flex: 1; padding: 1.1rem 1.4rem; min-width: 0; }
   .tabs { position: sticky; top: 0; z-index: 20; }
 }
 /* telefon: jedna kolumna, Realizacja na górze, zwarte kafelki Spec/Plan, nic nie wystaje poza ekran */
-@media (max-width: 640px) {
-  html { font-size: 15px; }
+@container dash (max-width: 640px) {
   .top { padding: .7rem 16px; gap: .6rem; }
   .brand { align-items: flex-start; }
   .logo { width: 2.2rem; height: 2.2rem; }
@@ -413,6 +415,7 @@ main { flex: 1; padding: 1.1rem 1.4rem; min-width: 0; }
   .wait-item { flex-wrap: wrap; }
   .wait-go { width: 100%; justify-content: center; }
   .wait-actions { width: 100%; }
+  .wait-go { white-space: normal; text-align: center; }
   .wait-actions .wait-go { flex: 1 1 auto; }
   main { padding: .8rem 16px; }
   .acts { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: .6rem; margin-bottom: .8rem; }
@@ -445,8 +448,53 @@ main { flex: 1; padding: 1.1rem 1.4rem; min-width: 0; }
   [data-tip]:hover::after, [data-tip]:focus-visible::after { max-width: calc(100vw - 32px); left: 0; transform: none; }
 }
 /* wąski telefon: akty I i II jeden pod drugim (dwie kolumny po ok. 175 px nie mieszczą Pytań i Readiness) */
-@media (max-width: 500px) {
+@container dash (max-width: 500px) {
   .acts { grid-template-columns: minmax(0, 1fr); }
 }
 
+/* tryb zwarty (kolumna do 420 px, np. panel obok sesji): mniejsze odstępy, źródła i etykiety skrócone (pełny tekst w dymku/title),
+   wszystko jeden pod drugim, przyciski zgód i „Otwórz dokument” pełnej szerokości */
+@container dash (max-width: 420px) {
+  .top { padding: .5rem 10px; gap: .4rem; }
+  .logo, .act .roman, .wait-txt small { display: none; }
+  #title { font-size: 1rem; }
+  .meta { font-size: .72rem; gap: .2rem .35rem; margin-top: .15rem; }
+  .meta .chip { font-size: .68rem; padding: .05rem .4rem; }
+  .top-right { gap: .4rem; }
+  .live { padding: .25rem .5rem; }
+  .live .live-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .plan-auto { display: none; }
+  .btn { padding: .3rem .55rem; font-size: .84rem; }
+  .tabs { padding: .2rem 10px 0; gap: 0; }
+  .tabs [role="tab"] { padding: .45rem .3rem; font-size: .85rem; gap: .3rem; }
+  .wait { padding: .4rem 10px 0; gap: .35rem; }
+  .wait-item { padding: .45rem .55rem; gap: .45rem; }
+  .wait-txt strong { font-size: .84rem; } .wait-txt span { font-size: .78rem; }
+  .wait-go, .act-approve, .act-doc { min-height: 2.2rem; justify-content: center; }
+  .wait-go { font-size: .82rem; }
+  .act-actions { gap: .35rem; } .act-actions > * { flex: 1 1 auto; margin-top: .45rem; }
+  .act-actions .act-doc, .readiness .act-doc { margin-top: .45rem; }
+  .readiness .act-doc { flex: 1 1 100%; }
+  main { padding: .55rem 10px; }
+  .acts { gap: .5rem; margin-bottom: .6rem; }
+  .act { padding: .6rem .65rem; border-radius: 10px; }
+  .act-icon { width: 1.5rem; height: 1.5rem; } .act-icon svg { width: .9rem; height: .9rem; }
+  .act-name { font-size: .95rem; } .act-name small { font-size: .62rem; }
+  .act-detail { font-size: .74rem !important; }
+  .big .pct { font-size: 1.9rem; } .big .of { font-size: .78rem; }
+  .now { font-size: .85rem; margin-top: .35rem; }
+  .bar { height: .65rem; }
+  .questions { margin-top: .45rem; padding-top: .4rem; font-size: .78rem; }
+  .phase, .feed-box { padding: .55rem .6rem; border-radius: 10px; }
+  .phases, .work { gap: .5rem; }
+  .phase-head .nm { font-size: .9rem; }
+  .step { font-size: .8rem; padding: .22rem .25rem; gap: .4rem; }
+  .step .st { width: 1.05rem; height: 1.05rem; } .step .sid { min-width: 2.1rem; font-size: .74rem; }
+  .feed li { font-size: .78rem; gap: .4rem; padding-bottom: .4rem; }
+  .doc-view { padding: .7rem .75rem; } .md { font-size: .88rem; }
+  .menu li { padding: .45rem .5rem; font-size: .84rem; }
+  .foot { padding: .4rem 10px; gap: .15rem .6rem; font-size: .68rem; }
+}
+
+.plan-auto[hidden] { display: none; }
 .plan-auto { margin-left: .4rem; font-size: .7rem; padding: .05rem .4rem; white-space: nowrap; }

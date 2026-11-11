@@ -18,6 +18,10 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 - `library/skills/agent-runtime-pitfalls`: two new pitfalls (explicit path list for `git add`; browser screenshots in a separate profile without extensions).
 
 ### Changed
+- Dashboard page and Skippster panel: the layout follows the width of the host column, not the window (CSS container
+  queries on a new `.dash-wrap` wrapper; the tooltip stays outside it). New compact tier up to 420 px: smaller type and
+  spacing, no big Roman numerals or source notes, plan badge and live label shortened to a tooltip, approval and
+  "open document" buttons full width. No horizontal scroll at 360 px; JSON contract (schema 1) unchanged.
 - Skill `dashboard`: the status page view is a shared renderer, `assets/dashboard-render.js` (UMD,
   `DashboardRenderer.create(root, deps)`: pure JSON → DOM without transport, browser storage, `innerHTML` or inline styles,
   so the Skippster webview loads the same file under its CSP); `assets/app.js` is the page adapter (HTTP, SSE with polling,

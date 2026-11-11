@@ -202,6 +202,10 @@ była, a nie, że pętla dała PASS.
 | `theme.js` | motyw przed pierwszym rysowaniem (zapamiętany albo systemowy) |
 | `app.css` | wygląd; korzeń renderera ma klasę `dashboard-root` (`display: contents`) |
 
+Układ zależy od szerokości kolumny hosta, nie okna: szkielet (nagłówek, zakładki, `main`, stopka) jest w wrapperze `.dash-wrap`
+(`container: dash / inline-size`), a progi to `@container dash` 1100, 640, 500 i 420 px (tryb zwarty: panel obok sesji).
+Dymek `#descTip` jest poza wrapperem (containment psuje `position: fixed`). Host z własnym CSS przejmuje te reguły z `app.css` i daje `.dash-wrap` określoną szerokość (kontener inline-size nie ma szerokości własnej treści).
+
 Renderer to UMD: `window.DashboardRenderer` w przeglądarce, `module.exports` w Node. Eksport:
 `create(root, deps)` (alias `createDashboard`), `buildSprite(doc)`, `SPRITE` (dane symboli `i-…`), `version`.
 `create` zmienia tylko własny korzeń: dodaje do `root` klasę `dashboard-root`, sprite (pomijany przy `deps.sprite === false`,
