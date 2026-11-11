@@ -723,6 +723,23 @@ def _has_final_record(root, run_id):
     return False
 
 
+def _closure_run_state(root, head):
+    """The run of a plan to close, for the closure finding: no `Przebieg:` line, an invalid id, a missing run directory,
+    a run without a `final` record or a run that already has one."""
+    line = _PLAN_RUN.search(head)
+    if not line:
+        return 'no `Przebieg:` line'
+    run_id = line.group(1)
+    if not _RUN_ID.fullmatch(run_id):
+        return 'invalid run id in the `Przebieg:` line'
+    if _has_final_record(root, run_id):
+        return f'run `{run_id}` has a `final` record'
+    directory = Path(root) / '.skillsync' / 'runs' / run_id
+    if directory.is_symlink() or not directory.is_dir():
+        return f'run `{run_id}` does not exist'
+    return f'run `{run_id}` has no `final` record'
+
+
 def plan_closure_findings(root, agentflow=False):
     """Ostrzeżenia o niezamkniętych planach: `done` bez zamknięcia przebiegu albo `in_progress` ze wszystkimi krokami
     `Progress` odhaczonymi: [(ścieżka, powód)]. Tylko odczyt."""
@@ -744,7 +761,8 @@ def plan_closure_findings(root, agentflow=False):
         word = status.group('word').lower() if status else ''
         label = f'docs/plans/{path.name}'
         if plan_text_needs_human(word, text) == ['closure']:
-            found.append((label, 'All Progress steps are checked but the plan is still in_progress; close it: Result section, '
+            found.append((label, 'All Progress steps are checked but the plan is still in_progress'
+                                 f' ({_closure_run_state(root, head)}); close it: Result section, '
                                  '`retro-quality`, `skillsync checkpoint --final`, Status done (spec implemented), '
                                  'or uncheck the unfinished step'))
             continue

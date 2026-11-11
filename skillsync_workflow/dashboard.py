@@ -61,6 +61,7 @@ REF_NAME_RE = re.compile(r'^(?!-)[\w.][\w./-]{0,120}$')
 PLAN_PR_RE = re.compile(r'^PR:\s*#(?P<num>\d+)\s*\(link:\s*(?P<url>https://[^\s)]+)\)\s*$', re.MULTILINE)
 APPROVE_KINDS = {'spec': 'GO plan', 'plan': 'GO implement', 'cp': 'CP', 'ready': 'READY'}
 
+PLAN_ROW_INTERNAL = ('mtime', 'complete', 'runAlive', 'activity')  # used to choose a plan, not part of the contract
 STATUS_RANK = {'in_progress': 0, 'approved': 1, 'draft': 2, 'done': 3}  # done: the last closed one (time for CP/READY)
 SPEC_DONE = {'approved', 'implemented', 'done', 'accepted'}
 SPEC_OPEN = {'draft', 'approved'}  # a spec that may not have a plan yet (act I)
@@ -394,9 +395,22 @@ def list_plans(root):
         except OSError:
             continue
         title, fields = parse_header(text)
+        run = first_token(fields.get('przebieg'))
+        mtime = _mtime(path) or 0
+        alive, activity = False, mtime
+        try:
+            steps = [step for phase in parse_progress(read_text(path)) for step in phase['steps']]
+        except OSError:
+            steps = []
+        complete = bool(steps) and all(step['done'] for step in steps)
+        directory = run_dir(root, run)
+        if directory is not None:
+            alive = True
+            activity = max([activity] + [stamp for stamp in (_mtime(directory / name) for name in ('checkpoints.md', 'approvals.jsonl'))
+                                         if stamp])
         plans.append({'path': rel, 'title': title or path.stem, 'status': doc_status(text)[0],
-                      'spec': first_token(fields.get('spec')), 'run': first_token(fields.get('przebieg')),
-                      'mtime': _mtime(path) or 0})
+                      'spec': first_token(fields.get('spec')), 'run': run, 'mtime': mtime,
+                      'complete': complete, 'runAlive': alive, 'activity': activity})
     return plans
 
 
@@ -415,13 +429,29 @@ def list_specs(root):
     return specs
 
 
+def _plan_rank(plan):
+    """`STATUS_RANK`, except an orphan: an `in_progress`/`approved` plan whose steps are all checked and whose run directory
+    does not exist is finished work nobody closed, so it ranks like `done` and cannot hide a plan that is being worked on."""
+    rank = STATUS_RANK[plan['status']]
+    if plan['status'] in ('in_progress', 'approved') and plan.get('complete') and not plan.get('runAlive'):
+        return STATUS_RANK['done']
+    return rank
+
+
 def choose_plan(plans):
-    """Newest `in_progress`, else `approved`, else `draft`, else the last `done` (dated name, then mtime)."""
+    """The plan being worked on: lowest rank (`in_progress`, `approved`, `draft`, last `done`; an orphan counts as `done`),
+    then a plan with an existing run first, then the freshest activity (run `checkpoints.md`/`approvals.jsonl`, plan mtime),
+    then the dated name and mtime (the run and the activity count only for the open ranks, never for `done` or an orphan)."""
     candidates = [plan for plan in plans if plan['status'] in STATUS_RANK]
     if not candidates:
         return None
     newest_first = sorted(candidates, key=lambda plan: (plan['path'], plan['mtime']), reverse=True)
-    return sorted(newest_first, key=lambda plan: STATUS_RANK[plan['status']])[0]
+    def key(plan):
+        rank = _plan_rank(plan)
+        if rank >= STATUS_RANK['done'] or not plan.get('runAlive'):
+            return (rank, 1, 0)       # closed work and plans without a run keep the dated-name order
+        return (rank, 0, -plan.get('activity', 0))
+    return sorted(newest_first, key=key)[0]
 
 
 def choose_spec_act(plans, specs, chosen):
@@ -1219,7 +1249,7 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
         'version': version,
         'lastUpdate': _iso(max((stamp for stamp in last_change if stamp), default=None)),
         'git': git_info,
-        'plans': [{key: value for key, value in row.items() if key != 'mtime'} for row in plans],
+        'plans': [{key: value for key, value in row.items() if key not in PLAN_ROW_INTERNAL} for row in plans],
         'planAuto': auto,
         'mode': 'plan' if chosen else ('spec' if spec_act else 'run' if run_act else 'none'),
         'plan': plan_info,

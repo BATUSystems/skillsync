@@ -91,6 +91,7 @@ Użytkownika) = pytanie, bez działania. Czekając na odpowiedzi `Q`, rób tylko
 pytań (konsumenci, struktura, istniejące kontrakty). Czekając na akceptację prototypu (STOP), orkiestrator może przygotować
 szkic planu ze statusem `draft (szkic — czeka na GO plan)` bez `Spec-sha`; po akceptacji i uwagach nanosi na niego różnice,
 a dopiero „GO plan” zapisuje `Spec-sha`.
+Przy `ceremony: demo` po specu i review `spec` następnym krokiem jest prototyp (gdy spec ma ekrany), nie bierne czekanie na „GO plan” ([ceremonia demo](references/ceremony-demo.md#po-specu-i-review-następny-krok-to-prototyp)).
 
 ## Wejście z klucza zgłoszenia
 
