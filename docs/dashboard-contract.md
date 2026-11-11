@@ -9,7 +9,7 @@ wyniku: `tests/fixtures/dashboard/<przypadek>/input/` i `expected.json`.
 | Komenda | Zachowanie |
 |---|---|
 | `skillsync dashboard show <projekt> [--json] [--plan <rel>]` | drukuje kontrakt `schema: 1` (JSON; bez `--json` ten sam JSON, formatowany); tylko odczyt, bez zapisu do projektu; `--plan` wybiera plan (ścieżka względna, np. `docs/plans/<plik>.md`), bez niego plan wybierany jest automatycznie (`planAuto: true`) |
-| `skillsync dashboard serve <projekt> [--port N] [--host H] [--approve-host H]` | serwer HTTP nad tym samym JSON (`/api/status`, strumień zmian `/events`, przyciski zgód); port wybiera się per projekt, by strony nie kolidowały |
+| `skillsync dashboard serve <projekt> [--port N] [--host H] [--approve-host H] [--read-host H]` | serwer HTTP nad tym samym JSON (`/api/status`, strumień zmian `/events`, przyciski zgód); port wybiera się per projekt, by strony nie kolidowały |
 | `skillsync dashboard metrics <projekt> <run-id> [--json] [--plan <rel>]` | ogólne metryki przebiegu: czas podkroków `Fn.k` z checkpointów, liczby rund i porażek; podkrok bez danych jest oznaczony jawnie (sekcja „Metryki przebiegu”) |
 | `skillsync approvals record <projekt> --word "GO plan\|GO implement\|CP\|READY" --run <run-id> [--sha <git sha>] [--target X] [--branch Y] [--file docs/…] --source <cli\|ide> [--json]` | zapisuje zgodę użytkownika (patrz niżej; `dashboard` ustawia tylko serwer) |
 
@@ -403,7 +403,7 @@ dokumentu ani statusu; przy `--verbose` odmowa trafia do logu stderr (metoda, ś
 |---|---|---|---|
 | loopback | tak | tak (chyba że `--no-approvals`) | `true` / `false` |
 | `--approve-host` | tak | tak (chyba że `--no-approvals`) | `true` / `false` |
-| `--read-host` | tak | nigdy: 403 z tym samym komunikatem co obcy `Host`, także z poprawnymi `Origin`, `X-Status-Board` i `Content-Type` | `false` / `true` |
+| `--read-host` | tak | w przeglądarce widza nigdy: 403 z tym samym komunikatem co obcy `Host`, także z poprawnymi `Origin`, `X-Status-Board` i `Content-Type` | `false` / `true` |
 | inny albo brak | 403 | 403 | (brak odpowiedzi z danymi) |
 
 `--read-host` służy pokazowi przez tunel: połączenie przychodzi z loopbacku, ale przeglądarka widza wysyła `Host:
@@ -413,6 +413,13 @@ tylko prowadzący pod loopbackiem albo `--approve-host`. Nazwa obecna na obu lis
 tym przy starcie. Przy starcie serwer wypisuje osobno hosty odczytu i zgód (`--approve-host`) i hosty tylko do odczytu
 (`--read-host`). Widok tylko do odczytu dla wszystkich = `--no-approvals`. Tunel `ssh -R`/`-L` na `127.0.0.1`, w którym
 przeglądarka wysyła `Host: localhost:<port>`, działa bez flagi (i daje zgody).
+
+Granica `--read-host`: gwarancja dotyczy zapisu z przeglądarki widza. Serwer odróżnia widza tylko po nagłówku `Host`,
+więc klient, który go podrobi (np. `curl -H 'Host: localhost'` przez tunel), zapisze zgodę; tunel przepisujący `Host` na
+`localhost` daje zapis każdemu widzowi. Serwer ostrzega o tym przy starcie (gdy są hosty `--read-host`, a zgody włączone).
+Przy nieufnych widzach użyj `--no-approvals`. Model dwóch instancji dla nieufnych widzów: prowadzący na loopbacku ze zgodami, widzowie na osobnej instancji `skillsync dashboard serve <projekt> --port <inny port> --no-approvals --read-host <host>` (bez zapisu, ten sam projekt; wspólny jest tylko `approvals.jsonl`). Widz z odczytem widzi też podgląd dokumentów `/api/doc` bez maskowania
+sekretów (surowy podgląd). Wartości `--read-host` i `--approve-host` to same nazwy hostów: z portem, nawiasami, `/` albo
+białym znakiem start kończy się `BLOCKED` (exit 2).
 
 Pola `approvals.here` i `approvals.viewer` dodaje wyłącznie serwer; `dashboard show` z wiersza poleceń ich nie ma (brak
 klucza = `false`). Renderer pokazuje przy hoście z `viewer: true` informację, że zgody daje prowadzący na komputerze z

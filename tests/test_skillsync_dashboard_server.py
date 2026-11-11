@@ -1338,6 +1338,16 @@ class HttpReadOnlyTests(HttpCase):
         self.assertIn("--no-approvals", body["error"])
         self.assertFalse((self.root / RUN / "approvals.jsonl").exists())
 
+    def test_no_approvals_refuses_post_from_loopback_host_with_correct_headers(self) -> None:
+        data = json.dumps({"kind": "cp", "path": "2026-01-10-demo-etap-1", "sha": "abc1234def5678"}).encode("utf-8")
+        for host in ("localhost", f"localhost:{self.port}", "127.0.0.1", "[::1]"):
+            with self.subTest(host=host):
+                code, body = raw_post(self.port, {"Host": host, "Origin": f"http://{host}", "Content-Type": "application/json",
+                                                  "X-Status-Board": "1", "Content-Length": str(len(data))}, data)
+                self.assertEqual(code, 403)
+                self.assertIn("--no-approvals", body["error"])
+        self.assertFalse((self.root / RUN / "approvals.jsonl").exists())
+
 
 def raw_request(port: int, method: str, path: str, host: str) -> tuple[int, dict, bytes]:
     """Żądanie (np. HEAD) przez http.client z dowolnym nagłówkiem Host; SSE czyta tylko nagłówki."""
@@ -1648,6 +1658,94 @@ class SymlinkedRunTests(ProjectCase):
         self.assertIsNone(engine.find_prototype(self.root, SPEC))
 
 
+class HttpTwoInstancesTests(ProjectCase):
+    """Model dwóch instancji dla jednego projektu: prowadzący (loopback, zgody) i widzowie (`--no-approvals
+    --read-host viewer.example`) na różnych portach; jedyny wspólny plik zapisu to approvals.jsonl."""
+    VIEWER = "viewer.example"
+    SPEC2 = "docs/specs/demo-etap-2.md"
+    PLAN2 = "docs/plans/2026-01-20-demo-etap-2.md"
+    OK = {"Content-Type": "application/json", "X-Status-Board": "1"}
+
+    def start(self, **kwargs) -> tuple[srv.Board, int]:
+        board = srv.Board(self.root, poll=0.2, heartbeat=0.5, prototype_port=1, assets=ASSETS,
+                          descriptions=DESCRIPTIONS, **kwargs)
+        board.prototype_acceptance = lambda slug: None
+        port = free_port()
+        server = srv.make_server(board, "127.0.0.1", port)
+        threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.1}, daemon=True).start()
+        threading.Thread(target=board.watch_loop, daemon=True).start()
+
+        def stop() -> None:
+            board.stop.set()
+            with board.cond:
+                board.cond.notify_all()
+            server.shutdown()
+            server.server_close()
+        self.addCleanup(stop)
+        return board, port
+
+    def status(self, port: int, host: str) -> dict:
+        code, _, body = raw_get(port, "/api/status", host)
+        self.assertEqual(code, 200, body)
+        return json.loads(body)
+
+    def files(self) -> set[str]:
+        return {str(p.relative_to(self.root)) for p in self.root.rglob("*") if p.is_file() and ".git" not in p.parts}
+
+    def test_leader_and_viewer_instances_run_side_by_side(self) -> None:
+        install_fake_cli(self)
+        spy_core(self)
+        spec = self.root / self.SPEC2
+        spec.write_text(f"# Spec: Demo 2\n\nStatus: draft (czeka na GO plan)\nPlan: {self.PLAN2}\n", encoding="utf-8")
+        later = (self.root / PLAN).stat().st_mtime + 100
+        os.utime(spec, (later, later))
+        _, lead = self.start(approvals=True)
+        _, view = self.start(approvals=False, read_hosts=(self.VIEWER,))
+        self.assertNotEqual(lead, view)
+        before_files = self.files()
+        # obie odpowiadają /api/status; widz nie dostaje zgód, prowadzący tak
+        leader_status = self.status(lead, "127.0.0.1")
+        viewer_status = self.status(view, f"{self.VIEWER}:{view}")
+        self.assertEqual((viewer_status["approvals"]["enabled"], viewer_status["approvals"]["actions"]), (False, []))
+        offer = next(a for a in leader_status["approvals"]["actions"] if a["kind"] == "spec")
+        self.assertEqual(offer["state"], "waiting")
+        # SSE `hello` na obu instancjach
+        for port, host in ((lead, "127.0.0.1"), (view, self.VIEWER)):
+            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+            try:
+                conn.putrequest("GET", "/events", skip_host=True)
+                conn.putheader("Host", host)
+                conn.endheaders()
+                resp = conn.getresponse()
+                self.assertEqual(resp.status, 200)
+                first = [resp.fp.readline().decode("utf-8").strip() for _ in range(3)]
+            finally:
+                conn.close()
+            self.assertIn("event: hello", first, (port, host))
+        # ta sama oferta: instancja widza (nawet z Host: localhost i poprawnymi nagłówkami) = 403, prowadzącego = 200
+        data = json.dumps({"kind": "spec", "path": self.SPEC2, "sha": offer["sha"]}).encode("utf-8")
+        headers = {**self.OK, "Host": "localhost", "Origin": "http://localhost", "Content-Length": str(len(data))}
+        code, answer = raw_post(view, headers, data)
+        self.assertEqual(code, 403, answer)
+        self.assertIn(b"draft", spec.read_bytes())
+        started = time.time()
+        code, answer = raw_post(lead, headers, data)
+        self.assertEqual((code, answer["word"]), (200, "GO plan"), answer)
+        self.assertLess(time.time() - started, 5)  # zapis nie czeka na instancję widza
+        self.assertEqual(cli_calls(self), [])
+        # instancja widza widzi zmianę po odpytaniu /api/status
+        deadline, changed = time.time() + 10, False
+        while time.time() < deadline and not changed:
+            changed = self.status(view, self.VIEWER) != viewer_status
+            time.sleep(0.2)
+        self.assertTrue(changed, "instancja widza nie pokazała zapisu prowadzącego")
+        self.assertNotIn(b"draft (czeka", spec.read_bytes())
+        # żadnych plików blokad poza tym, co zapisuje sam rdzeń zgód
+        created = self.files() - before_files
+        self.assertEqual([p for p in created if "lock" in p.lower()], [], created)
+        self.assertEqual(self.status(view, f"{self.VIEWER}:{view}")["approvals"]["actions"], [])
+
+
 class ServeCommandTests(unittest.TestCase):
     """`skillsync dashboard serve`: rejestracja podkomendy, odmowy startu (BLOCKED) i bieg na wolnym porcie z warstwy `library/`."""
 
@@ -1759,6 +1857,17 @@ class ServeCommandTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, err)
         self.assertIn("hosty odczytu i zgód (--approve-host): demo.example", err)
         self.assertIn("hosty tylko do odczytu (--read-host, bez zgód): viewer.example, viewer2.example", err)
+        self.assertIn("--read-host ogranicza zapis z przeglądarki, nie przed klientem podrabiającym nagłówek Host; "
+                      "przy nieufnych widzach użyj --no-approvals (osobna instancja bez zapisu: "
+                      "skillsync dashboard serve <projekt> --port <inny port> --no-approvals --read-host viewer.example).", err)
+
+    def test_serve_rejects_host_values_with_port_brackets_slash_or_space(self) -> None:
+        for flag in ("--read-host", "--approve-host"):
+            for bad in ("viewer.example:5140", "[::1]", "a/b", "a b"):
+                result = self.cli("dashboard", "serve", str(self.root), "--port", str(free_port()), flag, bad, *self.layer)
+                answer = json.loads(result.stdout)
+                self.assertEqual((result.returncode, answer["status"]), (2, "BLOCKED"), (flag, bad))
+                self.assertIn(flag, answer["reason"])
 
 
 if __name__ == "__main__":

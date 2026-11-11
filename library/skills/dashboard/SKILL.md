@@ -33,8 +33,10 @@ skillsync dashboard show <projekt> [--json] [--plan docs/plans/<plik>.md]   # je
   `--approve-host`, więc adres z paska przeglądarki innego urządzenia (nazwa lub IP) trzeba podać w `--approve-host`
   (inaczej 403). `--approve-host` dopuszcza odczyt i zgody; `--read-host <adres>` (powtarzalny) dopuszcza tylko odczyt:
   pokaz przez tunel, w którym widzowie wysyłają `Host: <nazwa>:5140`, widzą wszystko (także założenia i baner „czeka:”),
-  ale `POST /api/approve` dostaje 403, a `/api/status` ma `approvals.viewer: true` i `here: false`; zgody daje
-  prowadzący pod localhost. Podgląd bez zgód dla wszystkich = `--no-approvals`. Serwer
+  ale `POST /api/approve` z przeglądarki widza dostaje 403, a `/api/status` ma `approvals.viewer: true` i `here: false`; zgody daje
+  prowadzący pod localhost. To nie uwierzytelnienie: klient podrabiający nagłówek `Host` (np. `curl -H 'Host: localhost'`
+  przez tunel) zapisze zgodę, a tunel przepisujący `Host` na localhost daje zapis każdemu widzowi; przy nieufnych
+  widzach `--no-approvals`. Model dwóch instancji dla nieufnych widzów: prowadzący na loopbacku ze zgodami, widzowie na osobnej instancji `skillsync dashboard serve <projekt> --port <inny port> --no-approvals --read-host <host>` (bez zapisu, ten sam projekt; wspólny jest tylko `approvals.jsonl`). Widz widzi też podgląd `/api/doc` bez maskowania sekretów (surowy). Podgląd bez zgód dla wszystkich = `--no-approvals`. Serwer
   wypisuje przy starcie ostrzeżenie i adresy LAN do otwarcia.
   Odnośnik do prototypu używa hosta, pod którym otwarto stronę, więc działa także z innego urządzenia (gdy prototypy też słuchają na LAN).
 - Bez `--plan`: bieżący plan = najnowszy `docs/plans/*.md` ze `Status: in_progress`, inaczej `approved`, inaczej `draft`, inaczej ostatni `done`
@@ -191,7 +193,7 @@ była, a nie, że pętla dała PASS.
 - Kontrola `Host` na wszystkich endpointach (strona, assety, `/api/*`, `/events`, `/healthz`, `POST`): nagłówek `Host` musi
   być `localhost`/`127.0.0.1`/`[::1]` (dowolny port) albo nazwą podaną jawnie w `--approve-host` lub `--read-host` (np. nazwa
   maszyny przy tunelu, IP w LAN); inny = 403 bez treści (ochrona przed DNS rebinding), odmowa w logu przy `--verbose`.
-  Zapis zgody tylko z loopbacku albo `--approve-host`; host z `--read-host` czyta, ale nie zapisuje.
+  Zapis zgody tylko z loopbacku albo `--approve-host`; host z `--read-host` czyta, ale nie zapisuje z przeglądarki (klienta podrabiającego `Host` nie powstrzyma; nieufni widzowie = `--no-approvals`).
 - Zapis zgody dodatkowo: wymagany nagłówek `X-Status-Board: 1` (preflight CORS, którego
   serwer nie obsługuje, blokuje obce strony), `Origin` — jeśli jest — z tej samej listy hostów, `Content-Type: application/json`, limit 4 KB.
   Bez uwierzytelnienia z decyzji właściciela: narzędzie programisty na jego maszynie; agent i tak może wywołać CLI.

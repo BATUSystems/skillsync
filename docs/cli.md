@@ -162,7 +162,7 @@ Szczegóły: [workflow](workflow.md).
 
 - `serve` wiąże się z `127.0.0.1`; port wybiera się per projekt (domyślnie 5140, dozwolone 5100–5199), żeby strony różnych
   projektów nie kolidowały. Nagłówek `Host` jest sprawdzany na wszystkich endpointach: odczyt spoza loopbacku (tunel, LAN)
-  wymaga `--approve-host <nazwa>` (odczyt i zgody) albo `--read-host <nazwa>` (tylko odczyt: widzowie przez tunel, `POST
+  wymaga `--approve-host <nazwa>` (odczyt i zgody) albo `--read-host <nazwa>` (tylko odczyt z przeglądarki: widzowie przez tunel, także surowy podgląd `/api/doc` bez maskowania sekretów; nie chroni przed klientem podrabiającym `Host`, nieufni widzowie = `--no-approvals`; `POST
   /api/approve` = 403; obie flagi powtarzalne, nazwa bez portu); widok bez zapisu zgód dla wszystkich to `--no-approvals`.
   Zgody zapisuje serwer w tym samym
   procesie (bez podprocesu `skillsync`). Model zaufania: [domain/dashboard-server.md](domain/dashboard-server.md).

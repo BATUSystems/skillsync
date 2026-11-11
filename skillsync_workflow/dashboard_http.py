@@ -841,6 +841,10 @@ def serve_command(args) -> int:
         plan = args.plan.replace(os.sep, "/").removeprefix("./") if args.plan else None
         if plan and engine.resolve_doc(root, plan) is None:
             raise ValueError(f"Plan {args.plan} nie istnieje albo leży poza dozwolonymi katalogami dokumentów.")
+        for flag, names in (("--approve-host", args.approve_host), ("--read-host", getattr(args, "read_host", None) or ())):
+            for name in names:
+                if not name.strip() or any(c in name for c in ":[]/") or any(c.isspace() for c in name.strip()):
+                    raise ValueError(f"{flag} {name!r}: podaj samą nazwę hosta, bez portu, nawiasów, ukośników i spacji.")
         assets, descriptions = skill_assets(layerset)
         if "index.html" not in assets:
             raise ValueError(f"Brak strony: żadna aktywna warstwa nie ma skills/{SKILL}/assets/index.html "
@@ -868,6 +872,10 @@ def serve_command(args) -> int:
             f"{' (zgody wyłączone: --no-approvals)' if not board.approvals else ''}")
     if readers:
         log(f"hosty tylko do odczytu (--read-host, bez zgód): {', '.join(readers)}")
+    if readers and board.approvals:
+        log("UWAGA: --read-host ogranicza zapis z przeglądarki, nie przed klientem podrabiającym nagłówek Host; "
+            "przy nieufnych widzach użyj --no-approvals (osobna instancja bez zapisu: "
+            f"skillsync dashboard serve <projekt> --port <inny port> --no-approvals --read-host {readers[0]}).")
     shadowed = sorted(board.read_hosts & board.approve_hosts)
     if shadowed:
         log(f"UWAGA: {', '.join(shadowed)} z --read-host jest też loopbackiem albo w --approve-host, więc daje zgody.")

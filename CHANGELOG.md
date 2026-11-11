@@ -26,8 +26,8 @@ Every release has a **Breaking** section that lists incompatible changes. When a
   `.skillsync/runs/<run-id>/approvals.jsonl` (file lock, duplicate refusal, secret masking). Only the user records approvals.
 - Skill `dashboard` (status page) in the core library; domain record `docs/domain/dashboard-server.md` (server trust model).
 - `skillsync dashboard serve --read-host H` (repeatable): an extra `Host` name (port ignored, case-insensitive) that may read
-  everything (page, assets, `/api/*`, SSE) but never write: `POST /api/approve` answers 403 with the same message as a foreign
-  `Host`. Meant for viewers of a demo through a tunnel; approvals stay with loopback and `--approve-host`. `/api/status`
+  everything (page, assets, `/api/*`, SSE, raw `/api/doc` preview) but not write from a viewer's browser: `POST /api/approve` answers 403 with the same message as a foreign
+  `Host`. Browser-only guarantee: a client forging the `Host` header (e.g. `curl -H 'Host: localhost'` through the tunnel) can still write, and a tunnel rewriting `Host` to localhost gives every viewer write access; use `--no-approvals` for untrusted viewers: run a second instance for them, `skillsync dashboard serve <project> --port <other port> --no-approvals --read-host <host>`, while the presenter keeps the loopback instance with approvals (the server warns at start). Host values with a port, brackets, `/` or whitespace are rejected (BLOCKED). Meant for viewers of a demo through a tunnel; approvals stay with loopback and `--approve-host`. `/api/status`
   gains the additive `approvals.viewer` (true for a read-only host, where `approvals.here` is false). The server prints
   read-only hosts separately from approval hosts at start.
 
