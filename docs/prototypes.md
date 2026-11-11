@@ -282,6 +282,33 @@ bieżącej treści. Zmiana sekcji ekranu, wspólnego CSS albo `<head>` czyni akc
   Zamiast planu można podać slugi: `gate . plan-zajec`. Bramka tylko czyta; FAIL = brak aktualnej akceptacji.
   Akceptacja prototypu nie jest zatwierdzeniem planu.
 
+### Bramka per faza `[UI]`
+
+Plan może ograniczyć bramkę do wybranych faz. Faza to wiersz tabeli kroków planu; rozpoznawane są wszystkie tabele, których nagłówek ma kolumny `Id` i `Krok`
+(kolejność dowolna, pozostałe kolumny ignorowane). Id fazy to pierwszy token komórki `Id` bez `[UI]`. Wiersze w blokach kodu i tabele bez obu kolumn
+są ignorowane; zdublowane id = zero faz (jak plan bez tabeli). Znacznik `[UI]` jest rozpoznawany dosłownie (wielkość liter): w komórce `Id` w dowolnym
+miejscu, w komórce `Krok` tylko na początku albo na końcu komórki (po obcięciu spacji). Plan bez tabeli albo bez `[UI]` ma zero faz `[UI]`.
+`[UI]` w wierszu tabelowym poza rozpoznaną tabelą nie tworzy fazy; `readiness` zgłasza to w `warnings`.
+
+`skillsync prototype gate <projekt> --plan <plan> --phase <Fn>` sprawdza jedną fazę (dopasowanie dosłowne; `--phase` bez `--plan` to błąd argumentów).
+Wymiary tabeli stanów: `U` = plan ma fazę `[UI]`, `P` = plan ma linię `Prototyp:`, `B` = linia obejścia właściciela `Bramka prototypu: pominięta`.
+„Wynik planu” to wynik bramki całego planu (PASS albo FAIL z brakami akceptacji). Błędne linie `Prototyp:` lub obejścia i `prototype_not_found` dają BLOCKED
+w każdym wierszu. W wierszach z `U = nie` kolumna „faza `[UI]`” nie ma zastosowania, a `B` oznaczone „–” działa jak bez zmian (obejście zamienia FAIL na PASS z `bypassed`).
+`--phase` przy planie bez tabeli faz traktuje każdy id jako nieznany.
+
+| U | P | B | `gate` bez `--phase` | `gate --phase` faza `[UI]` | `gate --phase` faza bez `[UI]` | `gate --phase` nieznana faza | `readiness` |
+|---|---|---|---|---|---|---|---|
+| nie | nie | – | PASS (nota „plan bez linii Prototyp:”) | – | PASS, nota, `phase` | BLOCKED `unknown_phase` | bez zmian (brak bramki) |
+| nie | tak | – | wynik planu | – | wynik planu, `phase` | BLOCKED `unknown_phase` | BLOCKED przy FAIL |
+| tak | nie | nie | BLOCKED `ui_phase_without_prototype` | BLOCKED `ui_phase_without_prototype` | BLOCKED `ui_phase_without_prototype` | BLOCKED `unknown_phase` | BLOCKED (wpis w `issues`) |
+| tak | nie | tak | PASS z `bypassed` | PASS z `bypassed` | PASS z `bypassed` | BLOCKED `unknown_phase` | bez blokady, `warnings`: bramka pominięta przez właściciela |
+| tak | tak | nie | wynik planu (FAIL, gdy brak akceptacji) | wynik planu | PASS, `note: faza bez znacznika [UI]`, pola `prototypes`, `missing`, `acceptances` puste, `phase` | BLOCKED `unknown_phase` | FAIL bramki bez wpisu w `issues`, `uiPhasesWaiting`; BLOCKED bramki jak wyżej |
+| tak | tak | tak | PASS z `bypassed` | PASS z `bypassed` | PASS z `bypassed` | BLOCKED `unknown_phase` | bez blokady, `warnings`: bramka pominięta przez właściciela |
+
+Raport `gate` dodaje `phase` (przy `--phase`) oraz `phases` i `uiPhases` (tylko gdy plan ma fazy `[UI]`); `readiness` dodaje `uiPhases`, `nonUiPhases`,
+`uiPhasesWaiting` (tylko przy FAIL bramki) i `warnings` ([cli](cli.md)). Plan z linią `Prototyp:` bez żadnej fazy `[UI]` działa jak dotąd: cały plan
+za bramką, `readiness` BLOCKED przy FAIL. Agent nie uruchamia `prototype accept`; znacznik `[UI]` nie omija bramki.
+
 ## Aktualizacja silnika i migracja starego prototypu
 
 Każdy prototyp ma własną kopię silnika. `sync` jej nie aktualizuje; robi to `migrate`, które obsługuje też prototypy

@@ -282,7 +282,7 @@ Klikalne prototypy HTML w repo projektu (`<root>/<slug>/`, domyślnie `docs/prot
 - Scalanie: `merge-comments <projekt> <slug> <inny-plik>` albo `merge-comments --driver %O %A %B` (sterownik scalania gita); konflikt = `BLOCKED` `merge_conflict`, bez zapisu.
 - Klucz manifestu `prototype.commit_before_iteration` (bool, domyślnie `false`): tylko przy `true` `iterate` i `restore` z CLI commitują katalog prototypu przed zmianą (bez pusha).
 - `sync <projekt> [<slug>] [--check]`: odświeża **tylko** `tokens.css` i `theme.css`; silnika (`prototype.js`, CSS) nie aktualizuje — poprawki silnika przenosi się ręcznie (skopiuj `prototype.js`, `prototype.css`, `components.css`, `screens.css` z `assets/repo` skilla `prototype`, usuń lokalne obejścia z `<style>`). `--check` nic nie zapisuje.
-- `accept <projekt> <slug> (--screen sN … | --all) --by LOGIN` albo `accept <projekt> --project --by LOGIN`: akceptacja przez człowieka przy terminalu (hasło konta z TTY; bez TTY `BLOCKED` `tty_required`, bez pytania o hasło); agent jej nie uruchamia. `gate <projekt> (--plan PLIK | <slug> …)`: bramka akceptacji (`FAIL` = exit 1 przy brakach, `BLOCKED` = exit 2); `readiness --plan` z linią `Prototyp:` dodaje pole `prototypeGate`.
+- `accept <projekt> <slug> (--screen sN … | --all) --by LOGIN` albo `accept <projekt> --project --by LOGIN`: akceptacja przez człowieka przy terminalu (hasło konta z TTY; bez TTY `BLOCKED` `tty_required`, bez pytania o hasło); agent jej nie uruchamia. `gate <projekt> (--plan PLIK | <slug> …)`: bramka akceptacji (`FAIL` = exit 1 przy brakach, `BLOCKED` = exit 2); `readiness --plan` z linią `Prototyp:` dodaje pole `prototypeGate`. Bramka per faza: znacznik `[UI]` w komórce `Id` albo `Krok` tabeli kroków planu; `gate <projekt> --plan PLIK --phase Fn` (tylko z `--plan`, dosłowne dopasowanie; faza bez `[UI]` = PASS z notą, nieznana faza = `BLOCKED` `unknown_phase`, faza `[UI]` bez linii `Prototyp:` i bez obejścia = `BLOCKED` `ui_phase_without_prototype`; raport ma `phase`, `phases`, `uiPhases`). Przy fazach `[UI]` FAIL bramki nie blokuje `readiness`, a ten dodaje `uiPhases`, `nonUiPhases`, `uiPhasesWaiting` (tylko przy FAIL) i `warnings`.
 - `index <projekt>`: galeria `<root>/index.html`. `list <projekt> [--json]`: slug, tytuł, wymagania, ekrany, otwarte wątki.
 - `<projekt>` jest wymagany we wszystkich akcjach (bez domyślnego `.`).
 - Wspólne opcje `--layer id=ścieżka`, `--assets DIR` (tylko `init`, `sync` i `migrate` czytają zasoby skilla z warstw; `--assets` wyłącza warstwy, pozostałe akcje czytają sam manifest); wynik JSON; kody 0 PASS, 1 FAIL, 2 BLOCKED. FAIL (1): `sync --check` przy rozjeździe, `ids --check` przy brakujących, zduplikowanych lub nieprawidłowych uchwytach, `iterate` gdy `ids --check` nie przechodzi, `gate` przy brakujących akceptacjach. `BLOCKED` ma pierwszeństwo przed `FAIL`. Wyjątek: błąd argumentów (argparse) to exit 2 z usage na stderr, bez JSON — parser wyniku musi to obsłużyć.
@@ -294,6 +294,7 @@ Klikalne prototypy HTML w repo projektu (`<root>/<slug>/`, domyślnie `docs/prot
 
 - Manifest, sekcja `delivery:` (opcjonalna): `mode` (`pr` | `direct`; brak = `pr`, `doctor` ostrzega) i `base` (gałąź bazowa; `direct` bez `base` daje ostrzeżenie). To inna sekcja niż `workflow.delivery` (provider, CI). Nie zmienia artefaktów `link`.
 - `skillsync route <projekt> --json` zwraca `delivery {mode, base, source}`; `source`: `manifest`, `default` albo `invalid` (wtedy `error`, a agent pyta zamiast zakładać `pr`). Zachowanie agenta w obu trybach: instrukcje rdzenia (`CP`, `CPD`, `READY`).
+- Ceremonia `feature`: klucz manifestu `workflow.ceremony` (`full` | `demo`, małe litery; brak = `full`; czytany tylko z manifestu projektu, `workflow/defaults.yaml` i `workflow/projects/<slug>.yaml` go ignorują; zła wartość = błąd `doctor`). `route --json` zwraca `ceremony {value, source: manifest|default|invalid[, error]}`; przy `invalid` agent pyta.
 
 ## Troubleshooting
 
@@ -341,7 +342,7 @@ przez `@tag`, czy przez wildcard. Pozostałe skille (`workflow-retro`, `task-cla
 |---|---|
 | `route <path> --topic testing --files <paths>` | pasujące instrukcje i indeksowane lekcje |
 | `doctor <path>` | statyczna walidacja źródeł, budżetów, referencji i adapterów |
-| `readiness <path> --plan <file> --risk high --files <paths>` | gotowość struktury planu; przy linii `Spec:` także speca z `docs/specs` (pole `spec` w wyniku) |
+| `readiness <path> --plan <file> --risk high --files <paths>` | gotowość struktury planu; przy linii `Spec:` także speca z `docs/specs` (pole `spec` w wyniku); przy fazach `[UI]` pola `uiPhases`, `nonUiPhases`, `uiPhasesWaiting`, `warnings` |
 | `review <path> --risk high --files <paths>` | checklista core + ryzyko + UI/project |
 | `validate <path> --profile quick` | uporządkowany plan kontroli |
 | `smart-test <path> [--base <ref>]` | selekcja według rzeczywistych zmian i zależności |

@@ -4,6 +4,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+### Added
+- `skills/feature/references/ceremony-demo.md`: ceremonia `demo` (klucz manifestu `workflow.ceremony`), `schema.json` z kluczem `workflow.ceremony` (`full` | `demo`).
+
+### Changed
+- `skills/feature` (`SKILL.md`, `spec`, `plan-details`, `plan-large`, `review-loop`, `measurement`): klasy pytań `Q` (`[ZAŁOŻENIE]`), „GO plan” = jeden lokalny commit (spec, plan-szkic, prototyp), znacznik `[UI]` i bramka prototypu per faza, kontrakt najpierw, test-writer równolegle z review R1, przy ≥ 5 zdolnościach dwa plany, szacunek 75–105 min na zdolność, raport „jedna linia na podkrok”.
+- `instructions/_base.md`: pierwszy commit przy „GO plan”, jawny wyjątek `ceremony: demo` w regule „Done”.
+- `skills/skillsync`: `workflow.ceremony`, `prototype gate --phase`, pola `readiness` dla faz `[UI]`.
+
 ## [1.0.2] - 2026-11-11
 
 ### Removed

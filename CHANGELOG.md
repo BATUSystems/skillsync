@@ -13,10 +13,23 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 ## [Unreleased]
 
 ### Added
-None.
+
+- Manifest key `workflow.ceremony` (`full` default | `demo`, lowercase; read only from the project manifest). `skillsync route` returns
+  `ceremony {value, source: manifest|default|invalid[, error]}`; `skillsync doctor` reports an error for any other value.
+- Per-phase prototype gate: the `[UI]` marker on a phase of the plan table of steps (`Id` or `Krok` cell). `skillsync prototype gate --plan <plan>
+  --phase <Fn>` (new options `phase`, and `phases`/`uiPhases` in the report; exit codes unchanged; new BLOCKED reasons `unknown_phase` and
+  `ui_phase_without_prototype`). For plans with `[UI]` phases `skillsync readiness` no longer blocks on a gate FAIL and adds `uiPhases`,
+  `nonUiPhases`, `uiPhasesWaiting` and `warnings`. Plans without `[UI]` behave as before.
+- Spec question classes: blocking `- Q<n>: …` and non-blocking `- Q<n> [ZAŁOŻENIE]: … — przyjęte: …`.
+- "GO plan" now includes one local commit (spec, plan draft, prototype) on the working branch in a separate worktree, without push.
 
 ### Changed
-None.
+
+- Skill `feature`: `ceremony: demo` (one `kod` review per run plus the full loop for leak-guard, migration and security steps; documentation limited to
+  the changelog and the plan "Wynik"; `retro-quality` and knowledge records deferred as "Dług (ceremony: demo)"), contract first, test-writer in
+  parallel with review round 1 (only in phases that have a test-writer), two plans from five capabilities up, estimate of 75–105 min per capability,
+  progress report of one line per sub-step.
+- Core rules (`library/instructions/_base.md`): first commit at "GO plan" and the explicit `demo` exception in the "Done" rule.
 
 ### Breaking
 None.
