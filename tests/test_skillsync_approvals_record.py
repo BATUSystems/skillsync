@@ -238,6 +238,63 @@ class RecordLock(RecordFixture):
         self.assertFalse(lock.exists())
 
 
+class RecordLockTakeOver(RecordFixture):
+    """m1: a stale lock is taken over by an atomic rename; a fresh lock of another writer is never removed."""
+
+    def stale_lock(self):
+        lock = self.log.parent / 'approvals.jsonl.lock'
+        lock.write_text('1', encoding='utf-8')
+        old = time.time() - status.APPROVAL_LOCK_STALE - 5
+        os.utime(lock, (old, old))
+        return lock
+
+    def test_a_late_take_over_does_not_remove_the_fresh_lock_of_another_writer(self):
+        lock = self.stale_lock()
+        seen = lock.lstat()  # waiter B judged this lock stale ...
+        first = status._ApprovalLock(lock)
+        first.__enter__()  # ... but waiter A took it over first and holds a fresh lock
+        fresh = lock.read_bytes()
+        late = status._ApprovalLock(lock, timeout=0)
+        late._take_over(seen)  # B's rename now catches A's lock and has to put it back
+        self.assertEqual(lock.read_bytes(), fresh)
+        self.assertTrue(first._owned(), 'A still owns its lock')
+        with self.assertRaises(ValueError):
+            late.__enter__()  # a fresh lock is waited for, not taken over
+        late.__exit__(None, None, None)
+        self.assertTrue(lock.exists(), 'a writer that never got the lock does not remove it')
+        first.__exit__(None, None, None)
+        self.assertFalse(lock.exists())
+        self.assertEqual(sorted(path.name for path in lock.parent.iterdir() if '.stale-' in path.name), [])
+
+    def test_exit_keeps_a_lock_that_is_no_longer_ours(self):
+        lock = self.log.parent / 'approvals.jsonl.lock'
+        held = status._ApprovalLock(lock)
+        held.__enter__()
+        lock.unlink()
+        lock.write_text('other-writer', encoding='utf-8')
+        held.__exit__(None, None, None)
+        self.assertEqual(lock.read_text(encoding='utf-8'), 'other-writer')
+
+    def test_two_threads_and_a_stale_lock_write_exactly_once(self):
+        import threading
+        self.stale_lock()
+        barrier = threading.Barrier(2)
+        reports = []
+
+        def write():
+            barrier.wait(timeout=10)
+            reports.append(self.record())
+
+        threads = [threading.Thread(target=write) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=30)
+        self.assertEqual(sorted(report['status'] for report in reports), ['BLOCKED', 'PASS'], reports)
+        self.assertEqual(len(self.lines()), 1)
+        self.assertEqual([path.name for path in self.log.parent.iterdir() if 'lock' in path.name], [])
+
+
 class RecordCli(RecordFixture):
     def test_exit_codes_and_json(self):
         ok = self.record_cli('--sha', HEAD, '--target', 'main', '--branch', 'feat/demo')
@@ -249,6 +306,31 @@ class RecordCli(RecordFixture):
                 report = self.record_cli(*extra, code=2, **kwargs)
                 self.assertEqual((report['status'], report['entry']), ('BLOCKED', None))
         self.assertEqual(len(self.lines()), 1)
+
+    def test_source_dashboard_is_refused_by_the_cli(self):
+        for extra in (('--sha', HEAD), ()):
+            with self.subTest(extra=extra):
+                report = self.record_cli(*extra, source='dashboard', code=2)
+                self.assertEqual((report['status'], report['entry']), ('BLOCKED', None))
+                self.assertIn('only by the dashboard server', report['reason'])
+        self.assertEqual(self.lines(), [])
+        self.assertEqual(self.record_cli('--sha', HEAD, source='ide')['entry']['source'], 'ide')
+        self.assertEqual(self.record(source='dashboard', sha='b' * 40)['entry']['source'], 'dashboard',
+                         'the in-process call of the server keeps the source')
+
+    def test_go_needs_file_or_sha(self):
+        git_commit_all(self.root, self.env)  # a readable HEAD must not become the sha of a GO consent
+        plan = self.doc('plans', 'p.md')
+        for word in ('GO plan', 'GO implement'):
+            with self.subTest(word=word):
+                report = self.record_cli(word=word, code=2)
+                self.assertEqual((report['status'], report['entry']), ('BLOCKED', None))
+                self.assertIn('needs --file or --sha', report['reason'])
+        self.assertEqual(self.lines(), [])
+        sha = status.git_blob_sha(plan.read_bytes())
+        self.assertEqual(self.record_cli('--sha', sha, word='GO implement')['entry']['sha'], sha)
+        blocked = self.record('GO plan', sha=None)
+        self.assertIn('needs --file or --sha', blocked['reason'], 'the core function refuses it as well')
 
     def test_missing_project_is_blocked(self):
         result = self.run_cli('approvals', 'record', self.base / 'nope', '--word', 'CP', '--run', RUN, '--source', 'cli')
@@ -312,8 +394,8 @@ class CpReadyFixture(DashboardFixture):
         self.assertEqual([(a['kind'], a['state']) for a in before['approvals']['actions']],
                          [('spec', 'after'), ('plan', 'after'), ('cp', 'waiting'), ('ready', 'waiting')])
         cp = next(a for a in before['approvals']['actions'] if a['kind'] == 'cp')
-        recorded = self.cli('approvals', 'record', root, '--word', 'CP', '--run', cp['run'], '--source', 'dashboard',
-                            '--target', cp['target'], '--json')
+        # `source: dashboard` is written only in-process (the server's call); the CLI refuses that value
+        recorded = status.record_approval(root, 'CP', cp['run'], source='dashboard', target=cp['target'])
         self.assertEqual((recorded['status'], recorded['entry']['sha']), ('PASS', self.head))
         after = self.cli('dashboard', 'show', root, '--json')
         states = {a['kind']: a for a in after['approvals']['actions']}
@@ -322,8 +404,9 @@ class CpReadyFixture(DashboardFixture):
         self.assertIsNotNone(states['cp']['given']['at'])
         self.assertEqual(normalized_after(after, self.head, recorded['entry']),
                          (FIXTURES / 'cp-ready' / 'expected-after.json').read_text(encoding='utf-8'))
-        self.assertEqual(self.cli('approvals', 'record', root, '--word', 'CP', '--run', cp['run'], '--source', 'dashboard',
-                                  code=2)['status'], 'BLOCKED')
+        self.assertEqual(status.record_approval(root, 'CP', cp['run'], source='dashboard')['status'], 'BLOCKED')
+        refused = self.cli('approvals', 'record', root, '--word', 'CP', '--run', cp['run'], '--source', 'cli', code=2)
+        self.assertIn('already recorded', refused['reason'], 'the same HEAD from another source is the same consent')
 
 
 if __name__ == '__main__':

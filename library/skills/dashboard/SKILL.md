@@ -95,8 +95,9 @@ Znika, gdy zniknie powód.
   Luźne „czeka na …” w treści nie jest znacznikiem.
 - **Fakty z plików** (bez znacznika): `Status: draft (czeka na GO implement)` planu albo `… (czeka na GO plan)` speca;
   prototyp z niezaakceptowanymi ekranami, zanim plan wejdzie w realizację (akceptacja jak w `skillsync prototype list`).
-- Odnośnik: spec albo plan w zakładce **Dokumenty**, prototyp na porcie serwera prototypów. Strona nie wysyła zgód; zgodę
-  wpisuje się w sesji.
+- Odnośnik: spec albo plan w zakładce **Dokumenty**, prototyp na porcie serwera prototypów. Sam baner niczego nie
+  zatwierdza: zgodę daje przycisk zgody w kafelku aktu lub banerze (sekcja „Przyciski zgód i słów”) albo słowo wpisane
+  przez użytkownika w sesji.
 
 Zdanie do instrukcji/promptów (zgodne z formatem „zrobione / w toku / ryzyko”): *„Gdy zatrzymujesz się na decyzji
 człowieka, dopisz do checkpointu segment `czeka: <GO plan|GO implement|akceptacja prototypu <slug>|odpowiedź Q1–Qn|CP|READY|TAK/NIE <run-id>/P<n>>`;
@@ -106,6 +107,9 @@ następny checkpoint po wznowieniu pisz już bez `czeka:`.”*
 
 **Reguła:** agent nie wywołuje zgód. Zgodę zapisuje wyłącznie użytkownik (przycisk na stronie albo
 `skillsync approvals record` uruchomione przez niego); agent jej nie wywołuje, nie symuluje ani nie podsuwa wpisów.
+Komenda przyjmuje `--source cli` albo `--source ide`; `source: "dashboard"` zapisuje tylko serwer strony we własnym
+procesie. Reguła nie jest egzekwowana technicznie (proces tego samego użytkownika mógłby zapisać wpis); jej śladem są
+pola `source` i `by` wpisu.
 
 Każdy przycisk zgody (Akt I „GO plan”, Akt II „GO implement”, Akt III „CP” i — w trybie `pr` — „READY”) ma jeden z
 czterech stanów (`approvals.actions[].state`):

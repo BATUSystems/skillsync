@@ -37,7 +37,7 @@ import yaml
 from . import __version__
 from . import dashboard as engine
 from . import status as status_core
-from .common import emit, load_layer_project, read_project
+from .common import emit, load_layer_project, read_project, redact
 from .layers import LayerError
 
 HEADER_RE = engine.HEADER_RE
@@ -581,6 +581,9 @@ class Handler(BaseHTTPRequestHandler):
     server_version = f"dashboard/{__version__}"
     board: Board  # set in make_server
     verbose = False
+    # Socket timeout of every connection (`StreamRequestHandler.setup`): a client that opens a connection and sends no
+    # request (or stops in the middle of it) is closed after 30 s instead of holding a thread. SSE only writes.
+    timeout = 30
 
     def log_message(self, fmt: str, *args) -> None:  # noqa: N802 (stdlib API)
         if self.verbose:
@@ -637,13 +640,15 @@ class Handler(BaseHTTPRequestHandler):
             if route == "/api/status":
                 data = self.board.status((query.get("plan") or [None])[0])
                 data["approvals"]["here"] = request_host(self.headers.get("Host")) in self.board.approve_hosts
-                return self._json(200, data)
+                return self._json(200, redact(data))  # secrets masked as in `dashboard show`
             if route == "/api/doc":
                 doc = self.board.doc((query.get("path") or [None])[0])
                 if doc is None:
                     return self._json(404, {"error": "Dokument niedostępny (spoza listy dozwolonych albo nie istnieje)."})
                 return self._json(200, doc)
             if route == "/events":
+                if self.command == "HEAD":  # headers only; takes no SSE slot and opens no stream
+                    return self._send(200, b"", "text/event-stream; charset=utf-8")
                 return self._events()
             if route == "/api/descriptions":
                 return self._json(200, load_descriptions(self.board.descriptions))

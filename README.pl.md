@@ -82,6 +82,10 @@ flow `bugfix`. Większy cel `dispatch` dzieli na paczki, a każdą realizuje oso
 `skillsync prototype` tworzy prototypy, udostępnia je ze wspólnymi komentarzami i prowadzi ich akceptację.
 Zobacz [docs/prototypes.md](docs/prototypes.md).
 
+**Dashboard.** `skillsync dashboard show` wypisuje stan projektu (plany, kroki, checkpointy, zgody) jako JSON,
+`skillsync dashboard serve` pokazuje ten sam stan jako stronę z żywym odświeżaniem, a `skillsync dashboard metrics` liczy
+metryki przebiegu. Kontrakt JSON: [docs/dashboard-contract.md](docs/dashboard-contract.md).
+
 ## Wymagania
 
 - Python 3.11 lub nowszy. PyYAML instaluje się razem z pakietem.

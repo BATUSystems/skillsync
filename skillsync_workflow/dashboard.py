@@ -53,7 +53,10 @@ WAIT_NONE = {'', '-', '—', 'nic', 'brak', 'nie'}
 STATUS_WAIT_RE = re.compile(r'czeka\s+na\s+(?P<what>[^);,]+)', re.IGNORECASE)
 ID_FIND_RE = re.compile(rf'(?<![\w-]){STEP_ID}(?![\w-])')
 SHA_RE = re.compile(r'^[0-9a-f]{7,40}$')
-RUN_ID_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$')  # jak wzorzec przebiegu w quality.py: bez '..' i wiodącej kropki
+# Like the run pattern of quality.py: the first character is alphanumeric (no leading dot, so neither `.` nor `..` as a
+# whole id) and `/` is not allowed; `..` inside an id (`a..b`) is not excluded. Use `fullmatch`/`run_dir`: `$` of `match`
+# also accepts a trailing newline.
+RUN_ID_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$')
 REF_NAME_RE = re.compile(r'^(?!-)[\w.][\w./-]{0,120}$')
 PLAN_PR_RE = re.compile(r'^PR:\s*#(?P<num>\d+)\s*\(link:\s*(?P<url>https://[^\s)]+)\)\s*$', re.MULTILINE)
 APPROVE_KINDS = {'spec': 'GO plan', 'plan': 'GO implement', 'cp': 'CP', 'ready': 'READY'}
@@ -434,11 +437,29 @@ def choose_spec_act(plans, specs, chosen):
     return newest
 
 
+def runs_root(root):
+    """`.skillsync/runs` when it is a directory and neither it nor `.skillsync` is a symlink (the rule of `build_metrics`
+    and `status.record_approval`); otherwise None, and the dashboard reads nothing from runs."""
+    runs = root / RUNS_DIR
+    if (root / '.skillsync').is_symlink() or runs.is_symlink() or not runs.is_dir():
+        return None
+    return runs
+
+
+def run_dir(root, run_id):
+    """`.skillsync/runs/<run-id>` as an existing directory with no symlink on the way, or None."""
+    runs = runs_root(root)
+    if runs is None or not isinstance(run_id, str) or not RUN_ID_RE.fullmatch(run_id):
+        return None
+    path = runs / run_id
+    return path if path.is_dir() and not path.is_symlink() else None
+
+
 def choose_run_act(root, plans, specs, chosen):
     """Act I before the spec: the newest run directory with `checkpoints.md` newer than the auto-chosen plan that no plan
     points to (`Przebieg:`) and that matches no spec (`<date>-<spec slug>`)."""
-    runs = root / RUNS_DIR
-    if not runs.is_dir():
+    runs = runs_root(root)
+    if runs is None:
         return None
     taken = {plan['run'] for plan in plans if plan.get('run')}
     slugs = [posixpath.splitext(posixpath.basename(spec['path']))[0] for spec in specs]
@@ -460,12 +481,12 @@ def choose_run_act(root, plans, specs, chosen):
 def spec_run_id(root, spec_rel, fields):
     """Run of a spec without a plan: the spec's `Przebieg:` line, then the directory named after the `Plan:` line, then the
     newest `<date>-<spec slug>` (or `<spec slug>`) directory."""
-    runs = root / RUNS_DIR
-    if not runs.is_dir():
+    runs = runs_root(root)
+    if runs is None:
         return None
 
     def ok(name):
-        return bool(name) and bool(RUN_ID_RE.match(name)) and (runs / name).is_dir()
+        return run_dir(root, name) is not None
 
     explicit = first_token(fields.get('przebieg'))
     if ok(explicit):
@@ -475,17 +496,28 @@ def spec_run_id(root, spec_rel, fields):
         return posixpath.splitext(posixpath.basename(plan))[0]
     stem = posixpath.splitext(posixpath.basename(spec_rel))[0]
     names = sorted(directory.name for directory in runs.iterdir()
-                   if directory.is_dir() and RUN_ID_RE.match(directory.name)
+                   if directory.is_dir() and not directory.is_symlink() and RUN_ID_RE.fullmatch(directory.name)
                    and (directory.name == stem or directory.name.endswith('-' + stem)))
     return names[-1] if names else None
 
 
-def find_prototype(root, spec_rel):
-    """Prototype directory whose `prototype.json` has `requirements` equal to the spec path."""
+def prototypes_root(root):
+    """`docs/prototypes` as a directory without a symlink on the way, or None."""
     base = root / PROTOTYPES_DIR
-    if not spec_rel or not base.is_dir() or base.is_symlink():
+    if base.parent.is_symlink() or base.is_symlink() or not base.is_dir():
+        return None
+    return base
+
+
+def find_prototype(root, spec_rel):
+    """Prototype directory whose `prototype.json` has `requirements` equal to the spec path; symlinks on the way
+    (`docs`, `docs/prototypes`, the prototype directory, `prototype.json`) are skipped."""
+    base = prototypes_root(root)
+    if not spec_rel or base is None:
         return None
     for meta in sorted(base.glob('*/prototype.json')):
+        if meta.parent.is_symlink() or meta.is_symlink() or not meta.is_file():
+            continue
         try:
             data = json.loads(read_text(meta, 64_000))
         except (OSError, ValueError):
@@ -499,8 +531,9 @@ def prototype_acceptance(root, slug):
     """`{screens, accepted, stale}` of a prototype (in-process, read-only, the same function `prototype list` uses), or None."""
     if not slug or not re.fullmatch(r'[A-Za-z0-9][\w.-]*', slug):
         return None
-    directory = root / PROTOTYPES_DIR / slug
-    if not directory.is_dir() or directory.is_symlink():
+    base = prototypes_root(root)
+    directory = base / slug if base is not None else None
+    if directory is None or not directory.is_dir() or directory.is_symlink():
         return None
     try:
         from .prototype import prototype_comments_info
@@ -694,11 +727,12 @@ def run_approvals(root, run_id):
     """Entries of `.skillsync/runs/<run-id>/approvals.jsonl` in file order, as written (the contract shows the entry in
     `given` and `last`). The acceptance rules are those of `status.read_approvals` (known word, parseable `at`, hex sha,
     size limit); `status` aggregates the newest entry per (run, word) without `by`/`schema`, so the reader is not shared."""
-    if not run_id or not RUN_ID_RE.match(run_id):
+    directory = run_dir(root, run_id)
+    if directory is None:
         return []
-    path = root / RUNS_DIR / run_id / APPROVALS_FILE
+    path = directory / APPROVALS_FILE
     try:
-        if path.is_symlink() or path.parent.is_symlink() or not path.is_file() or path.stat().st_size > MAX_APPROVALS_BYTES:
+        if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_APPROVALS_BYTES:
             return []
         lines = path.read_text(encoding='utf-8', errors='replace').splitlines()
     except OSError:
@@ -794,7 +828,7 @@ def approvals_state(root, spec, plan, delivery, run_id, head_full, log, waiting,
     null when it does not exist); `path` of `cp`/`ready` is the run id."""
     if not enabled:
         return {'enabled': False, 'actions': [], 'last': log[-1] if log else None}
-    run_ok = bool(run_id and RUN_ID_RE.match(run_id) and (root / RUNS_DIR / run_id).is_dir())
+    run_ok = run_dir(root, run_id) is not None
     actions = consent_buttons(spec, plan, waiting, delivery.get('words', []), log, head_full, run_ok)
     for action in actions:
         if action['kind'] in ('cp', 'ready'):
@@ -1142,27 +1176,26 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
     run = {'id': run_id, 'exists': False, 'start': None, 'checkpoints': [], 'files': []}
     in_progress, reported, chronological = None, [], []
     last_change = [_mtime(root / chosen['path']) if chosen else None, _mtime(spec_path) if spec_path else None]
-    if run_id and RUN_ID_RE.match(run_id):
-        run_dir = root / RUNS_DIR / run_id
-        if run_dir.is_dir() and not run_dir.is_symlink():
-            run['exists'] = True
-            run['files'] = sorted(rel for rel in (f'{RUNS_DIR}/{run_id}/{item.name}' for item in run_dir.glob('*.md'))
-                                  if resolve_doc(root, rel))
-            checkpoints = run_dir / 'checkpoints.md'
-            if checkpoints.is_file() and not checkpoints.is_symlink():
-                start, chronological = parse_checkpoints(read_text(checkpoints))
-                run['start'] = start
-                run['checkpoints'] = list(reversed(chronological))
-                last_change.append(_mtime(checkpoints))
-                run['lastReportAt'] = _iso(_mtime(checkpoints))
-                for item in chronological:
-                    reported += [sid for sid in ids_reported_done(item['text']) if sid not in reported]
-                for item in reversed(chronological):
-                    ids = ids_in_progress(item['text'])
-                    if ids is not None:
-                        in_progress = ids
-                        run['inProgressFrom'] = item['time']
-                        break
+    directory = run_dir(root, run_id)
+    if directory is not None:
+        run['exists'] = True
+        run['files'] = sorted(rel for rel in (f'{RUNS_DIR}/{run_id}/{item.name}' for item in directory.glob('*.md'))
+                              if resolve_doc(root, rel))
+        checkpoints = directory / 'checkpoints.md'
+        if checkpoints.is_file() and not checkpoints.is_symlink():
+            start, chronological = parse_checkpoints(read_text(checkpoints))
+            run['start'] = start
+            run['checkpoints'] = list(reversed(chronological))
+            last_change.append(_mtime(checkpoints))
+            run['lastReportAt'] = _iso(_mtime(checkpoints))
+            for item in chronological:
+                reported += [sid for sid in ids_reported_done(item['text']) if sid not in reported]
+            for item in reversed(chronological):
+                ids = ids_in_progress(item['text'])
+                if ids is not None:
+                    in_progress = ids
+                    run['inProgressFrom'] = item['time']
+                    break
     start_dt = parse_iso(run['start'])
     run['startIso'] = start_dt.isoformat() if start_dt else None
 

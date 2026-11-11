@@ -357,7 +357,7 @@ przez `@tag`, czy przez wildcard. Pozostałe skille (`workflow-retro`, `task-cla
 | `dashboard show <path> [--json] [--plan <rel>]` | tylko odczyt: stan planu, przebiegu i zgód jako JSON `schema: 1` (kontrakt: `docs/dashboard-contract.md` w repo Skillsync) |
 | `dashboard serve <path> [--port 5140] [--host 127.0.0.1] [--approve-host H] [--no-approvals]` | strona statusu z przyciskami zgód; port per projekt, `Host` sprawdzany na każdym endpoincie, odczyt spoza loopbacku tylko przez `--approve-host`; zgody zapisuje in-process |
 | `dashboard metrics <path> <run-id> [--json] [--plan <rel>]` | tylko odczyt: czasy podkroków `Fn.k`, liczby rund i porażek; podkrok bez danych oznaczony jawnie |
-| `approvals record <path> --word "GO plan\|GO implement\|CP\|READY" --run <run-id> --source cli\|dashboard\|ide [--sha SHA] [--file PLIK]` | zapis zgody w `.skillsync/runs/<run-id>/approvals.jsonl` (blokada plikowa, odmowa duplikatu = exit 2); tylko na słowo użytkownika, agent jej nie woła |
+| `approvals record <path> --word "GO plan\|GO implement\|CP\|READY" --run <run-id> --source cli\|ide [--sha SHA] [--file PLIK]` | zapis zgody w `.skillsync/runs/<run-id>/approvals.jsonl` (blokada plikowa, odmowa duplikatu = exit 2); tylko na słowo użytkownika, agent jej nie woła |
 | `benchmark <path> --suite <yaml>` | powtarzalny plan przypadków offline |
 
 Skill `dashboard` to strona statusu; wpis `status-board` w `skills:` rozwija się do `dashboard` tylko wtedy, gdy żadna warstwa nie ma skilla `status-board`.

@@ -498,35 +498,78 @@ def _head_sha(root):
 
 
 class _ApprovalLock:
-    """Inter-process lock as a `<file>.lock` created with O_EXCL (works on POSIX and Windows); a lock older than
-    APPROVAL_LOCK_STALE seconds is treated as left over by a crashed writer and removed."""
+    """Inter-process lock as a `<file>.lock` created with O_EXCL (works on POSIX and Windows) holding a unique token.
+
+    A lock older than APPROVAL_LOCK_STALE seconds is treated as left over by a crashed writer. It is taken over by an
+    atomic `os.rename` to a unique name: of two waiters only one rename succeeds, and a waiter whose rename caught a fresh
+    lock of another writer (created between its age check and the rename: other inode or mtime) puts it back with a
+    hard link that never overwrites. `__exit__` removes the lock file only while it is still this lock (inode and token)."""
 
     def __init__(self, path, timeout=None):
         self.path, self.timeout = path, APPROVAL_LOCK_TIMEOUT if timeout is None else timeout
+        self.token, self.inode = None, None
 
     def __enter__(self):
+        import uuid
         deadline = time.monotonic() + self.timeout
-        flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, 'O_NOFOLLOW', 0)
+        flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_BINARY', 0)
+        token = f'{os.getpid()}-{uuid.uuid4().hex}'
         while True:
             try:
                 fd = os.open(self.path, flags, 0o600)
             except FileExistsError:
                 try:
-                    if time.time() - self.path.lstat().st_mtime > APPROVAL_LOCK_STALE:
-                        self.path.unlink(missing_ok=True)
-                        continue
+                    seen = self.path.lstat()
                 except FileNotFoundError:
+                    continue
+                if time.time() - seen.st_mtime > APPROVAL_LOCK_STALE:
+                    self._take_over(seen)
                     continue
                 if time.monotonic() >= deadline:
                     raise ValueError(f'Approvals file is locked by another writer: {self.path.name}') from None
                 time.sleep(0.02)
                 continue
-            with os.fdopen(fd, 'w', encoding='utf-8') as handle:
-                handle.write(str(os.getpid()))
+            try:
+                os.write(fd, token.encode('ascii'))
+                self.inode = os.fstat(fd).st_ino
+            finally:
+                os.close(fd)
+            self.token = token
             return self
 
+    def _take_over(self, seen):
+        """Removes the stale lock judged by `seen` (its lstat); never a lock created after that check."""
+        import uuid
+        grave = self.path.with_name(f'{self.path.name}.stale-{uuid.uuid4().hex}')
+        try:
+            os.rename(self.path, grave)
+        except FileNotFoundError:
+            return  # another waiter took it over first
+        try:
+            moved = grave.lstat()
+            if (moved.st_ino, moved.st_mtime_ns) != (seen.st_ino, seen.st_mtime_ns):
+                try:  # a fresh lock of another writer: back under its name, unless a newer lock exists already
+                    os.link(grave, self.path)
+                except FileExistsError:
+                    pass
+                except OSError:  # no hard links on this file system: best effort, never over an existing lock
+                    if not self.path.exists():
+                        os.rename(grave, self.path)
+        finally:
+            grave.unlink(missing_ok=True)
+
+    def _owned(self):
+        try:
+            if self.path.lstat().st_ino != self.inode:
+                return False
+            return self.path.read_bytes()[:200] == (self.token or '').encode('ascii')
+        except OSError:
+            return False
+
     def __exit__(self, *exc):
-        self.path.unlink(missing_ok=True)
+        if self.token is not None and self._owned():
+            self.path.unlink(missing_ok=True)
+        self.token = None
         return False
 
 
@@ -566,6 +609,8 @@ def record_approval(root, word, run_id, sha=None, source='cli', target=None, bra
                 raise ValueError(f'--file applies only to GO words, not to {word!r}')
             doc = _doc_file(root, file, folder)
             file = doc.relative_to(root).as_posix()
+        if sha is None and file is None and word in _GO_FOLDER:
+            raise ValueError(f'{word!r} needs --file or --sha (the git blob sha of the approved file, not HEAD)')
         if sha is None:
             sha = git_blob_sha(doc.read_bytes()) if file is not None else _head_sha(root)
         if not isinstance(sha, str) or not _APPROVAL_SHA.match(sha):
@@ -609,8 +654,14 @@ def record_approval(root, word, run_id, sha=None, source='cli', target=None, bra
             'path': path.relative_to(root).as_posix()}
 
 
+CLI_APPROVAL_SOURCES = ('cli', 'ide')  # `dashboard` is set only by the dashboard server, in its own process
+
+
 def _cmd_approvals_record(args):
     try:
+        if args.source == 'dashboard':
+            raise ValueError('--source dashboard is set only by the dashboard server in its own process; '
+                             f'the command accepts: {", ".join(CLI_APPROVAL_SOURCES)}')
         root, _ = read_project(args.path)
         report = record_approval(root, args.word, args.run, args.sha, args.source, args.target, args.branch, args.file)
     except (OSError, ValueError, TypeError, KeyError, yaml.YAMLError) as error:
@@ -641,11 +692,13 @@ def register(subparsers):
     record.add_argument('path')
     record.add_argument('--word', required=True, help=f'one of: {", ".join(APPROVAL_WORDS)}')
     record.add_argument('--run', required=True, help='run id (.skillsync/runs/<run-id> must exist)')
-    record.add_argument('--sha', help='GO: git blob sha of the approved file (default: of --file); CP/READY: HEAD (default)')
+    record.add_argument('--sha', help='GO: git blob sha of the approved file (default: of --file; GO needs --file or --sha); '
+                                      'CP/READY: HEAD (default)')
     record.add_argument('--target', help='CP: branch the consent delivers to')
     record.add_argument('--branch', help='working branch')
     record.add_argument('--file', help='GO only: docs/specs/*.md (GO plan) or docs/plans/*.md (GO implement)')
-    record.add_argument('--source', required=True, help=f'one of: {", ".join(APPROVAL_SOURCES)}')
+    record.add_argument('--source', required=True,
+                        help=f'one of: {", ".join(CLI_APPROVAL_SOURCES)} (dashboard is written only by the dashboard server)')
     add_layer_argument(record)
     record.add_argument('--json', action='store_true')
     record.set_defaults(func=_cmd_approvals_record)

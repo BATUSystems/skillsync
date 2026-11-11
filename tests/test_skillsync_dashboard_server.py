@@ -33,6 +33,9 @@ from skillsync_workflow import dashboard as engine  # noqa: E402
 from skillsync_workflow import dashboard_http as srv  # noqa: E402
 from skillsync_workflow.common import as_layerset  # noqa: E402
 
+sys.path.insert(0, str(HERE))
+from layers_helpers import needs_os_symlinks  # noqa: E402
+
 FIX = HERE / "fixtures" / "dashboard_server"
 ASSETS, DESCRIPTIONS = srv.skill_assets(as_layerset(ROOT / "library"))
 
@@ -1334,6 +1337,149 @@ class HttpReadOnlyTests(HttpCase):
         self.assertEqual(code, 403)
         self.assertIn("--no-approvals", body["error"])
         self.assertFalse((self.root / RUN / "approvals.jsonl").exists())
+
+
+def cli_env(tmp: Path) -> dict:
+    return {**os.environ, "SKILLSYNC_CONFIG": str(tmp / "machine-config.yaml"), "XDG_CACHE_HOME": str(tmp / "xdg-cache"),
+            "XDG_DATA_HOME": str(tmp / "xdg-data")}
+
+
+def cli_show(tmp: Path, root: Path) -> dict:
+    """`skillsync dashboard show <root> --json` w podprocesie (projekt dostaje manifest, jeśli go nie ma)."""
+    manifest = root / srv.MANIFEST
+    if not manifest.exists():
+        manifest.parent.mkdir(parents=True, exist_ok=True)
+        manifest.write_text("skills: [dashboard]\n", encoding="utf-8")
+    result = subprocess.run([sys.executable, str(CLI), "dashboard", "show", str(root), "--json"], capture_output=True,
+                            text=True, timeout=60, env=cli_env(tmp), check=False)
+    assert result.returncode == 0, result.stdout + result.stderr
+    return json.loads(result.stdout)
+
+
+class HttpHardeningTests(HttpCase):
+    """Poprawki review r1: maskowanie sekretów w /api/status jak w `show`, limit treści POST na granicy, timeout
+    połączenia, HEAD /events bez strumienia."""
+    OK = {"Content-Type": "application/json", "X-Status-Board": "1"}
+
+    def test_api_status_is_redacted_like_show(self) -> None:
+        fake = "Qw7" + "xZ9" + "pL4" + "mN2"  # atrapa składana w czasie wykonania (skaner sekretów nie widzi literału)
+        checkpoints = self.root / RUN / "checkpoints.md"
+        checkpoints.write_text(checkpoints.read_text(encoding="utf-8") + "- 11:00 notatka: to" + "ken=" + fake + "\n",
+                               encoding="utf-8")
+        shown = cli_show(self.tmp, self.root)
+        with self.get("/api/status") as r:
+            raw = r.read().decode("utf-8")
+        self.assertNotIn(fake, raw)
+        api = json.loads(raw)
+        self.assertIn("[REDACTED]", api["run"]["checkpoints"][0]["text"])
+
+        def volatile(data: dict) -> dict:
+            data = json.loads(json.dumps(data))
+            for key in ("generatedAt", "version", "session", "prototype"):
+                data.pop(key, None)
+            data["approvals"].pop("here", None)
+            return data
+
+        self.assertEqual(volatile(api), volatile(shown))
+
+    def test_post_body_of_exactly_4096_bytes_passes_and_4097_is_refused(self) -> None:
+        base = {"kind": "plan", "path": PLAN, "sha": "0" * 40, "pad": ""}
+        pad = srv.MAX_BODY - len(json.dumps(base).encode("utf-8"))
+        body = json.dumps({**base, "pad": "x" * pad}).encode("utf-8")
+        self.assertEqual(len(body), 4096)
+        code, data = raw_post(self.port, {**self.OK, "Content-Length": str(len(body))}, body)
+        self.assertEqual(code, 409, data)  # przeszło limit i strażników; plan in_progress nie ma oferty
+        longer = json.dumps({**base, "pad": "x" * (pad + 1)}).encode("utf-8")
+        self.assertEqual(len(longer), 4097)
+        self.assertEqual(raw_post(self.port, {**self.OK, "Content-Length": str(len(longer))}, longer)[0], 400)
+
+    def test_head_events_sends_headers_only_and_takes_no_sse_slot(self) -> None:
+        for taken in (srv.MAX_SSE_CLIENTS, 0):
+            with self.subTest(taken=taken):
+                with self.board.cond:
+                    self.board.sse_clients = taken
+                req = urllib.request.Request(self.base + "/events", method="HEAD")
+                with urllib.request.urlopen(req, timeout=5) as r:
+                    self.assertEqual((r.status, r.read()), (200, b""))
+                    self.assertEqual(r.headers["Content-Type"], "text/event-stream; charset=utf-8")
+                self.assertEqual(self.board.sse_clients, taken)
+
+    def test_idle_connection_is_closed_after_the_handler_timeout(self) -> None:
+        self.assertEqual(srv.Handler.timeout, 30)
+        with mock.patch.object(srv.Handler, "timeout", 0.3):
+            with socket.create_connection(("127.0.0.1", self.port), timeout=5) as conn:
+                start = time.monotonic()
+                try:
+                    data = conn.recv(1)  # bez treści żądania: serwer zamyka połączenie po timeoucie
+                except (ConnectionResetError, ConnectionAbortedError):
+                    data = b""
+                elapsed = time.monotonic() - start
+        self.assertEqual(data, b"")
+        self.assertLess(elapsed, 4)
+
+
+@needs_os_symlinks
+class SymlinkedRunTests(ProjectCase):
+    """`build_status`/`show`, `run_approvals` i `find_prototype` nie przechodzą przez dowiązania `.skillsync`,
+    `.skillsync/runs`, katalogu przebiegu ani katalogu prototypu (jak `build_metrics` i `record_approval`)."""
+    RUN_ID = RUN.rsplit("/", 1)[1]
+
+    def add_entry(self, root: Path) -> None:
+        entry = {"schema": 1, "at": "2026-01-10T10:00:00Z", "word": "CP", "sha": "a" * 40, "source": "cli", "run": self.RUN_ID}
+        (root / RUN / "approvals.jsonl").write_text(json.dumps(entry) + "\n", encoding="utf-8")
+
+    def assert_no_run(self, root: Path, status: dict) -> None:
+        self.assertEqual((status["run"]["exists"], status["run"]["checkpoints"], status["run"]["files"]), (False, [], []))
+        self.assertTrue(all(action["run"] is None for action in status["approvals"]["actions"]))
+        self.assertIsNone(status["approvals"]["last"])
+        self.assertEqual(engine.run_approvals(root, self.RUN_ID), [])
+        self.assertIsNone(engine.run_dir(root, self.RUN_ID))
+
+    def test_plain_run_directory_is_read(self) -> None:
+        self.add_entry(self.root)
+        status = engine.build_status(self.root, PLAN, manifest={})
+        self.assertTrue(status["run"]["exists"])
+        self.assertTrue(status["run"]["checkpoints"])
+        self.assertEqual(len(engine.run_approvals(self.root, self.RUN_ID)), 1)
+
+    def test_symlinked_skillsync_runs_or_run_directory_is_not_followed(self) -> None:
+        for index, part in enumerate((".skillsync", ".skillsync/runs", RUN)):
+            with self.subTest(part=part):
+                root = make_project(self.tmp / f"case-{index}")
+                self.add_entry(root)
+                elsewhere = self.tmp / f"elsewhere-{index}"
+                shutil.move(str(root / part), str(elsewhere))
+                (root / part).symlink_to(elsewhere, target_is_directory=True)
+                self.assertTrue((root / RUN / "checkpoints.md").is_file(), "the link target holds a valid run")
+                self.assert_no_run(root, engine.build_status(root, PLAN, manifest={}))
+                if part != RUN:
+                    self.assertIsNone(engine.runs_root(root))
+                    self.assertIsNone(engine.choose_run_act(root, [], [], None))
+                    self.assertIsNone(engine.spec_run_id(root, SPEC, {"przebieg": self.RUN_ID}))
+
+    def test_show_with_a_symlinked_skillsync(self) -> None:
+        self.add_entry(self.root)
+        elsewhere = self.tmp / "elsewhere"
+        shutil.move(str(self.root / ".skillsync"), str(elsewhere))
+        (self.root / ".skillsync").symlink_to(elsewhere, target_is_directory=True)
+        self.assert_no_run(self.root, cli_show(self.tmp, self.root))
+
+    def test_symlinked_prototype_directory_is_skipped(self) -> None:
+        outside = self.tmp / "outside-proto"
+        outside.mkdir()
+        (outside / "prototype.json").write_text(json.dumps({"requirements": SPEC}), encoding="utf-8")
+        protos = self.root / engine.PROTOTYPES_DIR
+        protos.mkdir(parents=True)
+        (protos / "linked").symlink_to(outside, target_is_directory=True)
+        self.assertIsNone(engine.find_prototype(self.root, SPEC))
+        self.assertIsNone(engine.prototype_acceptance(self.root, "linked"))
+        shutil.copytree(outside, protos / "real")
+        self.assertEqual(engine.find_prototype(self.root, SPEC), f"{engine.PROTOTYPES_DIR}/real")
+        shutil.rmtree(protos)
+        protos.symlink_to(self.tmp / "outside-protos", target_is_directory=True)
+        (self.tmp / "outside-protos").mkdir()
+        shutil.copytree(outside, self.tmp / "outside-protos" / "real")
+        self.assertIsNone(engine.find_prototype(self.root, SPEC))
 
 
 class ServeCommandTests(unittest.TestCase):

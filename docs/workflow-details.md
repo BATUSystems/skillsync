@@ -741,7 +741,7 @@ wskazują akt, do którego się wraca.
   <projekt> <run-id>` podaje czasy podkroków `Fn.k` z checkpointów, liczby rund i porażek (podkrok bez danych jest oznaczony
   jawnie, czas nigdy nie jest szacowany). Kontrakt i endpointy: [dashboard-contract.md](dashboard-contract.md).
 - Zgody trafiają do jednego źródła, `.skillsync/runs/<run-id>/approvals.jsonl`, przez `skillsync approvals record --source
-  cli|dashboard|ide` (przycisk strony woła tę samą funkcję rdzenia). Sesja czeka na wpis przez `approvals wait` i sprawdza go w
+  cli|ide` (przycisk strony woła tę samą funkcję rdzenia). Sesja czeka na wpis przez `approvals wait` i sprawdza go w
   pliku; pobudka z serwera jest tylko sygnałem.
 - Zgodę wyraża wyłącznie użytkownik: wpisuje słowo w sesji, uruchamia `approvals record` albo naciska przycisk. Agent komendy
   `approvals record` nie wywołuje, a wiadomość agenta (także dyspozytora) nie jest zgodą (§4, §23).
