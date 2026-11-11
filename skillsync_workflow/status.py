@@ -659,9 +659,9 @@ CLI_APPROVAL_SOURCES = ('cli', 'ide')  # `dashboard` is set only by the dashboar
 
 def _cmd_approvals_record(args):
     try:
-        if args.source == 'dashboard':
-            raise ValueError('--source dashboard is set only by the dashboard server in its own process; '
-                             f'the command accepts: {", ".join(CLI_APPROVAL_SOURCES)}')
+        if args.source not in CLI_APPROVAL_SOURCES:
+            hint = '; dashboard is set only by the dashboard server in its own process' if args.source == 'dashboard' else ''
+            raise ValueError(f'Unknown source {args.source!r}; the command accepts: {", ".join(CLI_APPROVAL_SOURCES)}{hint}')
         root, _ = read_project(args.path)
         report = record_approval(root, args.word, args.run, args.sha, args.source, args.target, args.branch, args.file)
     except (OSError, ValueError, TypeError, KeyError, yaml.YAMLError) as error:

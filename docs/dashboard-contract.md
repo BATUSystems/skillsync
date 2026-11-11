@@ -72,7 +72,7 @@ projektu lub przebiegu). Raport komend zapisujących i `metrics --json` to JSON 
 - bez repozytorium git (wejście to same pliki tekstowe): `git.*` ma wartości `null`, `delivery.ahead` = `null`;
 - wyjątek: przypadek `cp-ready` wymaga repozytorium; test zakłada w kopii `input/` repozytorium git (gałąź `feat/demo`,
   jeden commit, neutralna tożsamość, bez `origin`), a sha HEAD (pełne, 12 i 8 znaków) zastępuje `<head>`. Wariant
-  `expected-after.json` to wynik po `approvals record --word CP`: w zapisanym wpisie `at` = `2026-01-12T12:00:00Z`,
+  `expected-after.json` to wynik po zapisie zgody `CP` przez `record_approval` (źródło `dashboard`, w procesie testu): w zapisanym wpisie `at` = `2026-01-12T12:00:00Z`,
   `by` = `user`, a godzina w `reason`/`blocked` = `12:00`;
 - JSON: `sort_keys`, wcięcie 2, `ensure_ascii=false`, końcowy znak nowej linii.
 
@@ -384,7 +384,7 @@ Endpointy:
 | `GET /`, `/index.html` | strona (`assets/index.html` skilla `dashboard`) |
 | `GET /assets/<plik>` | tylko nazwy `[\w-]+.(html\|css\|js\|svg)` z `skills/dashboard/assets/` aktywnych warstw (`LayerSet.skill_files`: późniejsza warstwa wygrywa per plik, dowiązania pomijane); inne = 404 |
 | `GET /api/status[?plan=<rel>]` | kontrakt `schema: 1` (to samo co `show`, z tym samym maskowaniem sekretów, z żywym `version`, `session.url`, `prototype.up`) plus `approvals.here` (bool: nagłówek `Host` żądania jest na liście hostów zgód; przy kontroli `Host` na wszystkich endpointach odpowiedź z danymi ma zawsze `true`, pole zostaje dla zgodności klienta) |
-| `GET /api/doc?path=<rel>` | `{path, title, status, mtime, size, truncated, html}`: podgląd `*.md` z `docs/specs`, `docs/plans`, `docs/design`, `docs/domain` i `.skillsync/runs/<run>/`; bez `..`, ścieżek absolutnych, ukrytych katalogów i dowiązań poza listę; limit 2 MB (`truncated`); inne = 404 |
+| `GET /api/doc?path=<rel>` | `{path, title, status, mtime, size, truncated, html}`: podgląd `*.md` z `docs/specs`, `docs/plans`, `docs/design`, `docs/domain` i `.skillsync/runs/<run>/`; bez `..`, ścieżek absolutnych, ukrytych katalogów i dowiązań poza listę; limit 2 MB (`truncated`); inne = 404; to celowy podgląd surowy: treść nie przechodzi przez `redact` (inaczej niż `/api/status`) |
 | `GET /events` | SSE: `hello {version, heartbeat}` (z `retry: 3000`), `change {version}` po zmianie obserwowanych plików, `ping {version, t}` co 15 s; najwyżej 64 połączenia (dalej 503); `HEAD /events` = same nagłówki (200, `text/event-stream`), bez strumienia i bez zajmowania miejsca |
 | `GET /api/descriptions` | `descriptions.json` skilla (`{klucz: {title, text}}`) |
 | `GET /healthz` | `{ok: true, version}` |
