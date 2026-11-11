@@ -14,8 +14,8 @@ Ten dokument prowadzi akt I (spec, pętla `spec`, zgoda GO plan). Akt II (plan, 
 
 - Zakaz pisania speca w jednym kroku. Pierwszy zapis to szkielet: `draft` z częścią o problemie, o zakresie i sekcją `Pytania otwarte`. Zanim padnie GO plan, plan nie powstaje.
 - Krytyczna niewiadoma to założenie, którego pomyłka oznaczałaby przepisanie dużej części speca; typowe przypadki: format danych, zasięg, miejsce połączenia z resztą systemu, dobór narzędzia.
-- Sprawdź podział: gdy zlecenie obejmuje kilka zdolności, z których każda działa samodzielnie, zapytaj użytkownika, czy rozbić je na osobne plany i specy.
-- Każde pytanie dostaje numer `Q1`, `Q2`… i własną, krótką linię; wybieraj formę tak/nie lub zestaw opcji.
+- Sprawdź podział: gdy zlecenie obejmuje kilka zdolności, z których każda działa samodzielnie, zapytaj użytkownika, czy rozbić je na osobne plany i specy. Spec z co najmniej 5 zdolnościami to dwa plany (podział etapu): przy bramce planu zapytaj użytkownika o podział; szacunek kalibruj na ok. 75–105 min pracy na zdolność z pełną pętlą review.
+- Każde pytanie dostaje numer `Q1`, `Q2`… i własną, krótką linię; wybieraj formę tak/nie lub zestaw opcji. Pytanie z rozsądnym domyślnym rozstrzygnięciem może być założeniem nieblokującym `[ZAŁOŻENIE]` ([spec](spec.md#klasy-pytań-q)); STOP dotyczy pytań blokujących.
 - Po pokazaniu szkieletu zatrzymaj się i czekaj na odpowiedzi użytkownika.
 - Do czasu odpowiedzi działa tylko `explore` oraz zbieranie danych niezależnych od pytań: kto korzysta z modułu, jak zbudowany jest kod, jakie kontrakty już istnieją. Projekt na domysłach jest zakazany.
 - Niewiadomą odkrytą później zgłaszaj bramką ponownie, tylko dla nowych pytań.
@@ -56,5 +56,6 @@ Miejsce: w specu, przed zatwierdzeniem. Tabela o kolumnach `sprawdzenie | status
 ## 5. Po zgodzie
 
 - Po zgodzie na GO plan: spec przechodzi w status `approved`, a obok od razu powstaje szkic planu z `Status: draft` i liniami `Spec:`, `Spec-sha:`, `Przebieg:`. Przy FRD dochodzi sha pliku FRD oraz założenia z `LUKI` ([frd-intake](frd-intake.md)).
+- „GO plan” to też jeden lokalny commit: spec, plan-szkic i prototyp (bez plików generowanych i sekretów, `git add` tylko z jawnymi ścieżkami, skan sekretów przed commitem), na gałęzi roboczej w osobnym worktree, którą „GO plan” zakłada, jeśli jej nie ma. Bez pusha: przed „GO implement” nic nie opuszcza maszyny; push i PR idą po „GO implement” według trybu dostarczania. Wyjątek: wejście z klucza zgłoszenia zostaje bez commita przy „GO plan” ([pr-after-approval](pr-after-approval.md)).
 - Wyjątek: gdy plan już istnieje (przebieg `direct`, który odsłonił zmianę kontraktu), szkicu nie tworzysz; do istniejącego planu dopisz `Spec:` i `Spec-sha:`.
 - Zgoda GO implement otwiera akt III. Wznawianie, sha speca i statusy wyjaśniają [spec](spec.md) oraz [plan](plan-details.md).

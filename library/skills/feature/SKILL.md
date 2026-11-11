@@ -21,6 +21,15 @@ delegacji, zgłoś ograniczenie zamiast udawać niezależne review lub uruchamia
   migracjach danych i współbieżności — po zielonym szczeblu fazy, równolegle z następną fazą, w rozłącznym katalogu.
   Faza jest jednostką review i commitów, a jednostką raportowania jest jej podkrok `Fn.1…Fn.k` w `Progress`
   ([plan](references/plan-details.md)); raport postępu po każdym podkroku albo co 30 minut, co nastąpi pierwsze.
+  Raport to jedna linia na podkrok `Fn.k` (podkrok, wynik albo sha, czas).
+- Kontrakt najpierw: faza z FE i BE zaczyna od kroku kontraktu (DTO, endpointy, migawka kontraktu w commicie), po czym FE i BE idą
+  równolegle na tym samym kontrakcie, bez tury „dopasowania”. Test-writer pracuje równolegle z review R1 fazy (jego testy integracyjne
+  wchodzą do rundy 2), ale tylko w fazach, które mają test-writera w planie.
+- Podział etapu: spec z co najmniej 5 zdolnościami to dwa plany; przy bramce planu zapytaj użytkownika o podział. Szacunek kalibruj
+  na ok. 75–105 min pracy na zdolność z pełną pętlą review.
+- Ceremonia: `skillsync route <projekt>` zwraca `ceremony.value` (`full` albo `demo`); przy `demo` przeczytaj
+  [ceremonię demo](references/ceremony-demo.md) (jedno review `kod` na przebieg plus pętla pełna dla strażnika wycieków, migracji
+  i bezpieczeństwa; dług w „Wyniku”). Brak pola `ceremony` = `full`; `source: invalid` = pytanie do użytkownika, jak przy `delivery`.
 - `verifier` (tylko odczyt): sprawdza konkretne twierdzenia `plik:linia` — uwagi reviewerów,
   deklaracje podumysłów, punktowe poprawki poza pętlą przeglądu. Używaj zamiast osobistego sprawdzania
   przez orkiestratora.
@@ -35,12 +44,12 @@ delegacji, zgłoś ograniczenie zamiast udawać niezależne review lub uruchamia
 ## Akty i zgody
 
 Praca `feature` ma trzy akty: **I Spec**, **II Plan**, **III Realizacja**; między nimi są bramki „GO plan” i „GO implement”.
-Słownik bez kolizji: „etap” zostaje dla etapów pracy w projektach (np. etapy hackathonu), „faza” i „krok” to części planu,
+Słownik bez kolizji: „etap” zostaje dla etapów pracy w projektach (np. etapy przebiegu w projekcie), „faza” i „krok” to części planu,
 „runda” to jedno okrążenie pętli review.
 
 | Akt | Wynik | Pętla ([review-loop](references/review-loop.md)) | Zgoda na koniec |
 |---|---|---|---|
-| I Spec (`plan-large`) | spec bez `Q`, przy „GO plan” `approved` i plan-szkic | `spec` | „GO plan” |
+| I Spec (`plan-large`) | spec bez blokujących `Q`, przy „GO plan” `approved` i plan-szkic (jeden lokalny commit) | `spec` | „GO plan” |
 | II Plan | plan `draft (czeka na GO implement)`, `readiness`, pytanie o wersję | `plan` (obowiązkowa przy `plan-large`, ryzyku high, prośbie użytkownika) | „GO implement” |
 | III Realizacja | kod, testy, dokumentacja, changelog, wersja | `kod`: raz na fazę i końcowa | `done`; commity i push według trybu dostarczania (rdzeń AGENTS) |
 
@@ -52,6 +61,16 @@ Zgodę daje też status nadany przez użytkownika przyciskiem (strona statusu, I
 i `skillsync plan approve` („GO implement”), a „CP”/„READY” wpis przycisku strony statusu w
 `.skillsync/runs/<run-id>/approvals.jsonl`; sesja działa według tabeli wznowienia w [spec](references/spec.md). Sama sesja
 tych komend nie woła i wpisów nie tworzy: zgoda pochodzi od użytkownika.
+
+**„GO plan” = jeden lokalny commit.** Przy „GO plan” powstaje jeden commit lokalny: spec, plan-szkic i prototyp (bez plików generowanych
+i sekretów, `git add` tylko z jawnymi ścieżkami, skan sekretów przed commitem), na gałęzi roboczej w osobnym worktree; jeśli jej
+nie ma, zakłada ją „GO plan”. Bez pusha: przed „GO implement” nic nie opuszcza maszyny, a push i PR idą dalej według trybu
+dostarczania po „GO implement”. Wyjątek: wejście z klucza zgłoszenia zostaje bez commita przy „GO plan”
+([pr-after-approval](references/pr-after-approval.md)).
+
+**Pytania w specu.** Pytanie `- Q<n>: …` jest blokujące (STOP, jak dotąd). Pytanie `- Q<n> [ZAŁOŻENIE]: <pytanie> — przyjęte: <wartość>`
+to założenie nieblokujące: nie zatrzymuje „draft z Q” i zostaje widoczne do korekty (format i zakaz: [spec](references/spec.md#klasy-pytań-q)).
+Nie oznaczaj jako [ZAŁOŻENIE] pytań o kontrakt, dane, migrację ani bezpieczeństwo.
 
 **Czekanie na zgodę.** Przy każdym STOP na „GO plan”, „GO implement”, „CP” albo „READY” zapisz w checkpoincie
 `czeka: <słowo>` i, gdy host to umożliwia, zawieś się na nasłuchu: Claude Code — narzędzie `Monitor` z
@@ -113,7 +132,8 @@ określa format; `pre-implement` sprawdza zmiany kontraktów i wysokie ryzyko.
    Tylko jawne słowa użytkownika znoszą plan dla dużej zmiany.
    Dostawa zależy od `delivery.mode` (`skillsync route`). tryb `pr` (domyślny): „GO implement” jest jawnym wywołaniem `/pr-run` (Azure/GitHub,
    zainstalowany `pr-run`; bez niego lub bez hosta nie zakładaj PR-a, zapytaj); po ostatnim kroku stan „czeka na READY”. tryb `direct`: commity
-   lokalne po każdym kroku, bez pusha i PR, a po ostatnim kroku „czeka na CP”; `READY` jest tu odmową. W obu trybach pierwszy commit to plan i spec.
+   lokalne po każdym kroku, bez pusha i PR, a po ostatnim kroku „czeka na CP”; `READY` jest tu odmową. W obu trybach pierwszy commit
+   powstaje przy „GO plan” (spec, plan-szkic, prototyp; lokalnie, bez pusha), a kolejne po każdym sprawdzonym kroku.
    Wyjątek: przy wejściu z klucza zgłoszenia nie uruchamiaj `/pr-run`; PR według
    [pr-after-approval](references/pr-after-approval.md), tylko na „rób PR”.
    Niejasny przepływ UI: zaproponuj opcjonalną makietę (`prototype`, jeśli dostępny); bez zgody użytkownika nie twórz.
@@ -131,6 +151,9 @@ określa format; `pre-implement` sprawdza zmiany kontraktów i wysokie ryzyko.
    o „GO implement” i ponownie po jej otrzymaniu. FAIL = odmowa startu aktu III z listą braków, BLOCKED = zgłoszenie.
    Akceptacja prototypu to nie zatwierdzenie planu; agent nigdy nie uruchamia `skillsync prototype accept` ani `unaccept`.
    Wyjątek i szczegóły: [plan](references/plan-details.md#bramka-prototypu).
+   Plan z fazami `[UI]` ma bramkę per faza (znacznik `[UI]` w tabeli kroków): faza `[UI]` startuje dopiero po `skillsync prototype gate
+   <projekt> --plan <plan> --phase <Fn>` (FAIL albo BLOCKED = faza nie startuje; brak JSON-a przy kodzie wyjścia 2 = BLOCKED), a prośba
+   o „GO implement” wymienia jawnie fazy `[UI]` i fazy bez znacznika (`uiPhases`, `nonUiPhases` z `readiness`); szczegóły w tym samym miejscu.
 5. Dla kontraktów/API/danych/wysokiego ryzyka przed zapisem kodu użyj `pre-implement` (przy specu w akcie I, przed
    pętlą `spec`) i `skillsync readiness` (w akcie II, przed „GO implement”; szczegóły w [planie](references/plan-details.md)).
    `pre-implement` wykonuje podumysł tylko do odczytu (`reviewer` z briefem pre-implement); raport w

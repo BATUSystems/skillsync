@@ -55,9 +55,9 @@ kontrola `Spec-sha`, plan `in_progress`.
 
 | Spec | Plan | Akt i działanie |
 |---|---|---|
-| `draft` z `Q` | brak | akt I: szkielet jest w `docs/specs/`, zadaj pytania, bez nowego szkieletu |
-| `draft` z `Q` | dowolny status | pytania, bez startu |
-| `draft` bez `Q` | brak | akt I: pętla `spec` albo czekanie na „GO plan” |
+| `draft` z blokującym `Q` | brak | akt I: szkielet jest w `docs/specs/`, zadaj pytania, bez nowego szkieletu |
+| `draft` z blokującym `Q` | dowolny status | pytania, bez startu |
+| `draft` bez blokującego `Q` | brak | akt I: pętla `spec` albo czekanie na „GO plan” |
 | `draft` bez `Q` | `approved*` (także `approved (czeka na spec)` po `skillsync plan approve` albo przycisku) | STOP i pytanie, nigdy zwykły start; po potwierdzeniu użytkownika stary plan rusza starym startem (spec `approved`, `Spec-sha`, `in_progress`) |
 | `draft` bez `Q` (zmiana merytoryczna w akcie II) | `draft (czeka na spec)` | akt I od nowa: pętla `spec` od 1, „GO plan”, nowy `Spec-sha` w tym samym planie, pętla `plan` od 1 |
 | `draft` bez `Q` | `in_progress (blocked — czeka na spec)` | spec zmieniony w akcie III: [pętla `spec`](review-loop.md) od 1, potem jedno GO zdejmujące blokadę; pętla `plan` tylko, jeśli plan zmienia się merytorycznie |
@@ -114,6 +114,7 @@ Plan: <docs/plans/RRRR-MM-DD-slug.md, po utworzeniu>
 ## Pytania otwarte
 
 - Q1: <krótkie pytanie, najlepiej binarne lub z wyborem>
+- Q2 [ZAŁOŻENIE]: <pytanie z rozsądnym domyślnym rozstrzygnięciem> — przyjęte: <wartość>
 
 ## Kryteria akceptacji
 
@@ -178,7 +179,19 @@ Plan: <docs/plans/RRRR-MM-DD-slug.md, po utworzeniu>
 | <sprawdzenie> | <OK / luka> | <uwagi> |
 ````
 
-Po odpowiedziach usuń sekcję „Pytania otwarte” (decyzje trafiają do „Decyzji”) i ustaw `Plan:`.
+Po odpowiedziach usuń z sekcji „Pytania otwarte” pytania blokujące (decyzje trafiają do „Decyzji”) i ustaw `Plan:`. Założenia `[ZAŁOŻENIE]`
+zostają w tej sekcji (z oznaczeniem, bez osobnej listy) do końca aktu I, żeby użytkownik mógł je skorygować przed „GO plan”; przy „GO plan”
+przenieś je do „Decyzji” z przyjętą wartością i usuń sekcję.
+
+## Klasy pytań `Q`
+
+Spec ma dwie klasy pytań:
+- `- Q<n>: <pytanie>` jest **blokujące**: STOP, bez projektu na domysłach (jak dotąd).
+- `- Q<n> [ZAŁOŻENIE]: <pytanie> — przyjęte: <wartość>` to **założenie nieblokujące**: nie zatrzymuje „draft z Q”, a przyjęta wartość jest
+  widoczna do korekty (strona statusu, prototyp). Użytkownik zmienia ją odpowiedzią, a wtedy wiersz traci oznaczenie albo dostaje nową wartość.
+
+Format wiersza jest dosłowny: parser dzieli po **ostatnim** ` — przyjęte: ` (myślnik z odstępami), więc pytanie może zawierać myślniki.
+Nie oznaczaj jako [ZAŁOŻENIE] pytań o kontrakt, dane, migrację ani bezpieczeństwo: te zawsze blokują. W razie wątpliwości pytanie jest blokujące.
 
 ## Nagłówki planu przy specu
 

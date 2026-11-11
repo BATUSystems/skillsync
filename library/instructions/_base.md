@@ -4,7 +4,7 @@
   kontroli, silniejsza do implementacji/review, eskalacja tylko trudnego kroku.
   Model sesji wybiera użytkownik; instrukcja tekstowa go nie przełącza.
 - Realizuj autoryzowany zakres do końca; nie żądaj ponownie zgody już udzielonej.
-  Pytaj przy rzeczywistej niejasności, która grozi błędną zmianą. Polecenie wdrożenia
+  Pytaj przy niejasności grożącej błędną zmianą. Polecenie wdrożenia
   konkretnej wcześniej przedstawionej listy jest zgodą na tę listę.
 - Zachowuj wcześniejsze zmiany użytkownika; zapisz baseline przed implementacją.
   Nie poszerzaj zakresu o przypadkowy refaktor i nie edytuj ręcznie plików generowanych.
@@ -23,13 +23,13 @@ i przeczytaj wszystkie rekordy `domain` z `load: bootstrap`. Bez CLI odczytaj ws
 `docs/domain/index.yaml` i wskazane rekordy bootstrap. Zasady: `workflow/references/knowledge.md`.
 
 1. Sprawdź instrukcje najbliższego modułu, manifest `.github/.skillsync.yaml` i istniejący plan.
-   Orientację w repo zaczynaj od `.skillsync/map.md` (`skillsync map <projekt>`, `--check` = świeżość), potem Grep/Glob.
+   Orientację zaczynaj od `.skillsync/map.md` (`skillsync map <projekt>`, `--check` = świeżość), potem Grep/Glob.
 2. `skillsync route <projekt> --topic <temat> --files <ścieżki>` dobiera instrukcje, lekcje
    i wiedzę domenową.
    Mapa źródłowa: biblioteczny `workflow/defaults.yaml`, nadpisania: `workflow` w manifeście.
    Brak CLI: użyj tabeli `.github/skills/workflow/SKILL.md` i lokalnych instrukcji.
 3. Czytaj tylko pasujące rekordy lekcji i referencje. Reguły graniczne pozostają w instrukcjach;
-   dowody/doświadczenia w indeksowanych rekordach. Nigdy nie dopisuj całych historii do rdzenia.
+   dowody/doświadczenia w indeksowanych rekordach. Bez historii w rdzeniu.
 4. Przy zmianie kontraktu/API/danych albo wysokim ryzyku użyj `pre-implement`.
    Drobny jednoznaczny bugfix prowadzi skill `bugfix`; większa implementacja skill `feature`.
 5. Przed testami planuj `skillsync smart-test <projekt>` albo `skillsync validate <projekt>`.
@@ -49,17 +49,18 @@ plan bez żywego właściciela = pytanie, czy zaczynamy; `needsHuman: closure` =
 - Sesja główna utrzymuje plan i zasoby. Role: explore, implementer, test-writer,
   test-runner, reviewer, verifier, scribe, mechanic; podumysły nie delegują dalej. Deleguj spójne kroki;
   pełny raport podumysł zapisuje w `.skillsync/runs/<run-id>/`, do sesji wraca skrót.
-- Terminologia: podagentów (subagentów) nazywamy **podumysłami** — w rozmowie z użytkownikiem,
-  planach i raportach. Nazwy techniczne narzędzi i ról (`Agent`, `subagent_type`) bez zmian.
+- Terminologia: podagentów (subagentów) nazywamy **podumysłami** (rozmowy, plany, raporty);
+  nazwy techniczne (`Agent`, `subagent_type`) bez zmian.
 - Równoległość wymaga rozłącznych plików i izolacji baz, portów, build/coverage, lockfile
   i migracji. Jeden runner na współdzielony zasób. Stop hook nie dubluje runnera.
 - Review jest niezależne i tylko do odczytu. Po poprawkach testy oraz zamknięcie uwag
   sprawdza się na aktualnym stanie. Nowy zapis unieważnia dotknięte dowody.
-- Done wymaga kryteriów, wymaganych kontroli, dokumentacji, changeloga, ustalonej z użytkownikiem wersji (propozycja + pytanie, patrz `workflow/references/release.md`), wiedzy, zamknięcia blokerów i zamknięcia przebiegu (ostatni krok planu). Merge i complete PR nigdy nie należą do agenta.
+- Done wymaga kryteriów, wymaganych kontroli, dokumentacji, changeloga, ustalonej z użytkownikiem wersji (pytanie, `workflow/references/release.md`), wiedzy, zamknięcia blokerów i zamknięcia przebiegu (ostatni krok planu). Merge i complete PR nigdy nie należą do agenta.
+  Wyjątek `ceremony: demo`: dokumentacja ponad changelog i „Wynik”, `retro-quality`, rekordy wiedzy = dług w „Wyniku”; reszta bez zmian.
 - Tryb dostarczania: `skillsync route <projekt>` zwraca `delivery {mode, base, source}`; bez CLI czytaj `delivery.mode` z `.github/.skillsync.yaml`
   (brak = `pr`). Przy `source: invalid` nie zakładaj `pr`, zapytaj. Brak `delivery.base`: weź `origin/HEAD`, a gdy się nie da, STOP i pytanie.
-- Przed „GO implement” nic nie opuszcza maszyny. Po nim sesja główna pracuje na gałęzi roboczej w osobnym worktree i commituje po każdym
-  sprawdzonym kroku planu (pierwszy commit: spec i plan); podumysły nie commitują. `git add` tylko z jawnymi ścieżkami kroku, nigdy plików
+- Przed „GO implement” nic nie opuszcza maszyny. „GO plan” = jeden lokalny commit (spec, plan-szkic, prototyp) na gałęzi roboczej w worktree,
+  bez pusha (klucz zgłoszenia: bez commita); potem commit po każdym sprawdzonym kroku; podumysły nie commitują. `git add` tylko z jawnymi ścieżkami kroku, nigdy plików
   generowanych (tworzonych przez `link` lub wpisanych do `.github/.gitignore`) ani sekretów; przed commitem skan sekretów (gitleaks, gdy
   dostępny; inaczej STOP i prośba o skan).
 - `pr`: „GO implement” uruchamia `pr-run` (gałąź, commity, push gałęzi, draft PR do `delivery.base`). `direct`: commity lokalne, bez pusha i PR.

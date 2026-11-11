@@ -5,6 +5,8 @@ Czytaj przy pisaniu planu `docs/plans/RRRR-MM-DD-<slug>.md`.
 Nagłówek planu ma linię `Przebieg: <run-id>` z identyfikatorem użytym w `checkpoint`; hook i `doctor` sprawdzają po niej zamknięcie.
 Opcjonalna linia `Oddanie: <gałąź>` zapisuje odpowiedź użytkownika, dokąd „CP” oddaje pracę w trybie `direct` (rdzeń AGENTS); bez niej
 „CP” wypycha tylko gałąź roboczą.
+Linia `Ceremonia: demo` (opcjonalna przy `full`) zapisuje wartość `workflow.ceremony` z `skillsync route`; rozbieżność z `route` przy „GO implement”
+to pytanie do użytkownika ([ceremonia demo](ceremony-demo.md)).
 
 Plan dużej zmiany ma w nagłówku linię `Spec: <docs/specs/RRRR-MM-DD-slug.md>` (jak `Przebieg:`, osobny wiersz, sama ścieżka),
 a od „GO plan” `Spec-sha: <git hash-object speca>` (plan-szkic, [plan-large](plan-large.md) §5). Plan przy specu nie powtarza jego treści:
@@ -50,6 +52,11 @@ Krok ma stały id i wiersz w tabeli o kolumnach `Id | Krok | Rola | Exec | Ryzyk
 | Id | Krok | Rola | Exec | Ryzyko kroku | Pliki |
 |---|---|---|---|---|---|
 
+Faza z FE i BE zaczyna od kroku kontraktu (DTO, endpointy, migawka kontraktu w commicie); potem FE i BE idą równolegle na tym samym
+kontrakcie, bez tury „dopasowania”. Test-writer pracuje równolegle z review R1 fazy (jego testy wchodzą do rundy 2), ale tylko
+w fazach, które mają test-writera w planie. Szacunek kalibruj na ok. 75–105 min pracy na zdolność z pełną pętlą review; spec
+z co najmniej 5 zdolnościami to dwa plany ([plan-large](plan-large.md)).
+
 Ryzyko kroku to `low`, `medium` albo `high`. Ryzyko `high` dostaje krok dotykający kontraktu, danych, uprawnień lub migracji i ma zaraz po sobie własną [pętlę przeglądu](review-loop.md) w profilu `kod`. Najwyższe ryzyko kroków to ryzyko planu: przekaż je do `readiness --risk` i ono wyznacza zakres diffu końcowej pętli. Bez kolumny ryzyka plan bierze ryzyko z sekcji `Ryzyka`, a gdy jej brak, zadaj pytanie.
 
 `Exec` ustalaj raz, przy planowaniu: `inline` (sesja główna), `dispatch[:tier]` (osobny podumysł na każdy krok), `group:<id>[:tier]` (jeden podumysł na serię kroków). Brak wartości znaczy `inline`. `tier` to klasa modelu: `cheap` dla kroku w pełni wyspecyfikowanego, `standard`, `capable` dla kroku trudnego; klasę na model tłumaczy adapter hosta, a modelu, którego dostępności nie potwierdzono, nie deklaruj.
@@ -70,7 +77,7 @@ PR: #123 (link: https://example.com/pr/123)
 - Faza jest jednostką review i commitów, a **podkrok fazy jednostką raportowania**: każda faza ma podkroki `Fn.1…Fn.k`
   (typowo: kod BE ‖ FE, szczebel testów i commit kodu, testy integracyjne i commit, review i poprawki, `--fast` końca
   fazy i checkpoint), odhaczane z sha albo wynikiem; raport postępu po każdym podkroku albo co 30 minut, co nastąpi
-  pierwsze. Starsze plany z krokami bez kropki (`S1`, `S2a`, `K1`) są poprawne.
+  pierwsze (jedna linia na podkrok: podkrok, wynik albo sha, czas). Starsze plany z krokami bez kropki (`S1`, `S2a`, `K1`) są poprawne.
 - Kroki to pozycje `- [ ]` / `- [x]` z id i tytułem; krok odhacz dopiero po sprawdzeniu dowodów (checkpoint, wynik polecenia), nigdy na samej deklaracji podumysłu.
 - Ostatni krok `Progress` to zamknięcie przebiegu (rola: orkiestrator): „Wynik”, `retro-quality`, checkpoint `--final`,
   `Status: done` planu i `implemented` speca. Bez niego plan po ostatnim `[x]` zostaje `in_progress` i `skillsync status`
@@ -94,3 +101,14 @@ Plan ze zmianą UI ma w nagłówku (jak `Spec:`, osobny wiersz, sama ścieżka w
 - Akceptuje człowiek (UI albo CLI z hasłem z TTY); agent nigdy nie uruchamia `skillsync prototype accept` ani `unaccept`.
   `gate` pokazuje `via` i `who`, więc akceptację z CLI widać przy prośbie o „GO implement”.
 - Akceptacja prototypu to nie zatwierdzenie planu („GO implement”, `plan approve`); jedno nie zastępuje drugiego.
+
+### Bramka per faza (`[UI]`)
+
+Faza dotykająca ekranu dostaje znacznik `[UI]` w komórce `Id` albo `Krok` tabeli kroków (np. `F2 [UI]`). Plan z fazami `[UI]` ma bramkę
+per faza: faza `[UI]` wymaga akceptacji prototypu przed startem, a fazy bez znacznika startują po „GO implement”.
+Przed startem fazy `[UI]` uruchom `skillsync prototype gate <projekt> --plan <plan> --phase <Fn>`; FAIL albo BLOCKED = faza nie startuje.
+Brak JSON-a przy kodzie wyjścia 2 (starszy `skillsync` bez `--phase`) = BLOCKED.
+Plan z linią `Prototyp:` bez żadnej fazy `[UI]` działa jak dotąd: cały plan za bramką.
+Prośba o „GO implement” dla planu z fazami `[UI]` wymienia jawnie fazy `[UI]` i fazy bez znacznika (pola `uiPhases` i `nonUiPhases`
+z `skillsync readiness`), żeby podział zatwierdzał użytkownik.
+

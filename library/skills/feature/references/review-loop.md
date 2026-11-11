@@ -50,6 +50,10 @@ Challenger pomysłu i `pre-implement` są poza licznikiem rund. Kolejność w ak
 - Zlecenie: profil, ścieżki materiału i instrukcji (w projekcie pełne ścieżki, np. `.claude/skills/feature/…`), a od rundy 2
   także plików decyzji wcześniejszych rund (`Id | Waga | Opis | Rozstrzygnięcie | Powroty`, przy odrzuconym blocker/major
   z uzasadnieniem autora) z poleceniem, by otworzyć je dopiero po niezależnym przeglądzie (kolejność deklaratywna).
+- Test-writer fazy pracuje równolegle z rundą R1 tej fazy (jego testy integracyjne wchodzą do rundy 2), ale tylko w fazach, które mają
+  test-writera w planie; bez niego runda R1 idzie sama.
+- Przy `ceremony: demo` liczbę rund `kod` wyznacza [ceremonia demo](ceremony-demo.md): jedno review na przebieg plus pętla pełna dla kroków
+  ze strażnikiem wycieków, migracją albo bezpieczeństwem.
 - Recenzent zwraca: status, nowe uwagi (waga, miejsce, problem, propozycja) i od rundy 2 tabelę zamknięć, **jedna linia na
   każde id**, poza limitem długości raportu. Zamknięcie sprawdza na plikach, nie na deklaracji autora. Dla odrzuconego
   blocker/major orzeka „uzasadnienie przyjęte / nieprzyjęte”. Powrót uwagi dopasowuje recenzent: nowa uwaga podaje
