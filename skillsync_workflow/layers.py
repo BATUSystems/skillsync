@@ -29,6 +29,8 @@ from dataclasses import dataclass, field
 from functools import cached_property
 from pathlib import Path, PurePosixPath
 
+from .fsutil import rmtree_force
+
 import yaml
 
 # `common` is imported inside functions only, so that `common` can import this module (2.2a).
@@ -2430,10 +2432,10 @@ def layers_init(directory, kind, layer_id=None, *, register_target=True):
     except BaseException as exc:
         # Clean up only what this command created: the directory itself, or its new content.
         if not existed:
-            shutil.rmtree(directory, ignore_errors=True)
+            rmtree_force(directory, ignore_errors=True)
         elif directory.is_dir():
             for entry in directory.iterdir():
-                shutil.rmtree(entry, ignore_errors=True) if entry.is_dir() and not entry.is_symlink() else entry.unlink()
+                rmtree_force(entry, ignore_errors=True) if entry.is_dir() and not entry.is_symlink() else entry.unlink()
         if isinstance(exc, (LayerError, OSError)):
             return _blocked(exc)
         raise
@@ -2503,12 +2505,12 @@ def layers_add(layer_id, kind, source, *, subdir=None, ref=None, path=None, writ
         checkout.parent.mkdir(parents=True, exist_ok=True)
         cloned = _git(checkout.parent, 'clone', '--quiet', '--', clone_source, str(checkout), timeout=900)
         if cloned.returncode:
-            shutil.rmtree(checkout, ignore_errors=True)
+            rmtree_force(checkout, ignore_errors=True)
             raise LayerError(f'git clone failed: {_git_message(cloned)}', 'git-error')
         try:
             return _register_clone(config, layer_id, kind, source, subdir, ref, path, writable, checkout)
         except BaseException:
-            shutil.rmtree(checkout, ignore_errors=True)  # any failure after `clone`: no checkout left behind
+            rmtree_force(checkout, ignore_errors=True)  # any failure after `clone`: no checkout left behind
             raise
     except (LayerError, OSError) as exc:
         return _blocked(exc)
