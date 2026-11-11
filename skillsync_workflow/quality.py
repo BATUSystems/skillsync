@@ -1177,7 +1177,7 @@ def readiness(root, manifest, library, files, plan=None, risk=None):
               'files': evidence, 'sections': sections, 'spec': spec, 'note': 'Structural readiness only; contract correctness requires human/agent review'}
     if gate is not None:
         report['prototypeGate'] = gate
-    if plan and ui_phases:
+    if ui_phases:
         report['uiPhases'] = ui_phases
         report['nonUiPhases'] = [item for item in phase_info['phases'] if item not in ui_phases]
         if gate_ui_waiting:

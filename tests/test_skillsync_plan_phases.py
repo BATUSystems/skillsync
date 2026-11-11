@@ -116,14 +116,51 @@ class ParsePlanPhasesTests(unittest.TestCase):
         text = table('| Id | Krok |', '| F1 [UI] | a |').replace('\n', '\r\n')
         self.assertEqual(self.parse(text)['ui_phases'], ['F1'])
 
-    def test_real_plans_of_the_repository_have_no_ui_phases(self):
+    def test_fence_closes_only_with_the_same_character_and_at_least_the_same_length(self):
+        inner = '| Id | Krok |\n| F9 [UI] | przykład |\n'
+        cases = {'four backticks with an inner triple': '````\n```\n' + inner + '```\n' + inner + '````\n',
+                 'backticks with an inner tilde fence': '```\n~~~\n' + inner + '~~~\n' + inner + '```\n',
+                 'tildes with an inner backtick fence': '~~~\n```\n' + inner + '```\n' + inner + '~~~\n',
+                 'closing fence with an info string does not close': '```\n```md\n' + inner + '```\n',
+                 'unclosed fence ignores the rest': '```\n' + inner}
+        for name, body in cases.items():
+            with self.subTest(name):
+                self.assertEqual(self.parse(body), {'phases': [], 'ui_phases': [], 'stray_ui': 0})
+        after = '````\nx\n````\n' + table('| Id | Krok |', '| F1 [UI] | a |')  # control: the table after a closed block is read
+        self.assertEqual(self.parse(after)['ui_phases'], ['F1'])
+        self.assertEqual(self.parse(inner)['ui_phases'], ['F9'])  # control: the same rows outside a block are read
+        longer = '```\nx\n`````\n' + table('| Id | Krok |', '| F1 | a |')  # a longer closing fence closes
+        self.assertEqual(self.parse(longer)['phases'], ['F1'])
+
+    def test_rows_indented_by_four_spaces_or_a_tab_are_not_table_rows(self):
+        for indent in ('    ', '\t', '      '):
+            with self.subTest(indent=repr(indent)):
+                body = indent + '| Id | Krok |\n' + indent + '| F1 [UI] | a |\n' + indent + '| x [UI] |\n'
+                self.assertEqual(self.parse(body), {'phases': [], 'ui_phases': [], 'stray_ui': 0})
+        for indent in ('', ' ', '   '):
+            with self.subTest(indent=repr(indent)):
+                body = indent + '| Id | Krok |\n' + indent + '| F1 [UI] | a |\n'
+                self.assertEqual(self.parse(body)['ui_phases'], ['F1'])
+
+    def test_header_styles_of_existing_plans_give_no_ui_phases(self):
+        decisions = table('| Id | Decyzja | Źródło |', '| D1 | wybór | spec |')
+        numbered = table('| # | Krok | Rola | Pliki |', '| 1 | Kod | implementer | `a.py` |')
+        steps = table('| Id | Krok | Rola | Pliki |', '| F1 | Kod | implementer | `a.py` |', '| F2 | Dok `[UI]` | scribe | `b.md` |')
+        self.assertEqual(self.parse(decisions), {'phases': [], 'ui_phases': [], 'stray_ui': 0})
+        self.assertEqual(self.parse(numbered), {'phases': [], 'ui_phases': [], 'stray_ui': 0})
+        self.assertEqual(self.parse(steps), {'phases': ['F1', 'F2'], 'ui_phases': [], 'stray_ui': 0})
+        self.assertEqual(self.parse('\n'.join([decisions, numbered, steps]))['phases'], ['F1', 'F2'])
+
+    def test_real_plans_of_the_repository_parse_into_a_consistent_structure(self):
         plans = sorted((ROOT / 'docs' / 'plans').glob('*.md'))
         self.assertTrue(plans, 'control: the repository has plans')
         for path in plans:
             with self.subTest(plan=path.name):
                 result = parse_plan_phases(path.read_text(encoding='utf-8'))
-                self.assertEqual(result['ui_phases'], [])
-                self.assertEqual(result['stray_ui'], 0)
+                self.assertEqual(set(result), {'phases', 'ui_phases', 'stray_ui'})
+                self.assertEqual(len(set(result['phases'])), len(result['phases']))
+                self.assertTrue(set(result['ui_phases']) <= set(result['phases']))
+                self.assertGreaterEqual(result['stray_ui'], 0)
 
 
 if __name__ == '__main__':

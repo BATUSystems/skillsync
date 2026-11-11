@@ -2825,8 +2825,8 @@ def prototype_gate(root, manifest, plan=None, slugs=None, phase=None):
             resolved.append((directory.name, directory))
         ui_phases = phase_info['ui_phases']
         if phase is not None and phase not in phase_info['phases']:
-            return _blocked('unknown_phase', f'{phase} is not a phase of the plan (known: '
-                            f'{", ".join(phase_info["phases"]) or "none"})')
+            return {**report, **_blocked('unknown_phase', f'{phase} is not a phase of the plan (known: '
+                                         f'{", ".join(phase_info["phases"]) or "none"})')}
         if ui_phases:
             report.update({'phases': phase_info['phases'], 'uiPhases': ui_phases})
             if not targets and bypass is None:

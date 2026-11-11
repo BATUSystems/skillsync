@@ -8,7 +8,7 @@ import re
 UI_MARK = '[UI]'
 _INLINE_CODE = re.compile(r'`[^`]*`')
 _SEPARATOR_CELL = re.compile(r':?-+:?')
-_FENCE = ('```', '~~~')
+_FENCE_OPEN = re.compile(r'(`{3,}|~{3,})')
 
 
 def _cells(line):
@@ -38,18 +38,25 @@ def _step_is_ui(cell):
 def parse_plan_phases(text):
     """`{'phases': [id…], 'ui_phases': [id…], 'stray_ui': int}` for the whole plan text."""
     phases, ui_phases, stray = [], [], 0
-    in_fence = False
+    fence = None  # (character, length) of the open code fence
     table = None  # None outside a table, otherwise (id column, step column) or False for an unrecognised table
     for raw in text.splitlines():
         line = raw.rstrip('\r')
-        stripped = line.lstrip()
-        if stripped.startswith(_FENCE):
-            in_fence = not in_fence
+        stripped = line.lstrip(' ')
+        indented = len(line) - len(stripped) >= 4 or stripped.startswith('\t')
+        opening = None if indented else _FENCE_OPEN.match(stripped)
+        if fence is not None:
+            # CommonMark: the closing fence is the same character, at least as long, with nothing after it
+            if opening and opening.group(1)[0] == fence[0] and len(opening.group(1)) >= fence[1] \
+                    and not stripped[opening.end():].strip():
+                fence = None
             table = None
             continue
-        if in_fence:
+        if opening:
+            fence = (opening.group(1)[0], len(opening.group(1)))
+            table = None
             continue
-        if not stripped.startswith('|'):
+        if indented or not stripped.startswith('|'):
             table = None
             continue
         cells = _cells(stripped)

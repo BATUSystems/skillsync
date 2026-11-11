@@ -1160,7 +1160,6 @@ class ReadinessPrototypeGate(WorkflowFixture):
                 report = self.run_readiness(2)
                 self.assertEqual(report['prototypeGate']['status'], 'BLOCKED')
 
-
     # -- kolumna `readiness` tabeli stanów bramki (spec feat-demo, K7, K8): U = plan ma fazę `[UI]`, P = linia
     # `Prototyp:`, B = obejście właściciela --
     UI_TABLE = '\n| Id | Krok |\n|---|---|\n| F1 [UI] | Ekran |\n| F2 | Backend |\n'
@@ -1169,9 +1168,6 @@ class ReadinessPrototypeGate(WorkflowFixture):
 
     def phase_plan(self, header, table):
         self.plan(header=header, body=self.FULL + table)
-
-    def readiness_report(self, code):
-        return self.report(*self.ARGS, code=code)
 
     def test_row_no_ui_no_prototype_line_has_no_gate_and_no_phase_fields(self):
         self.phase_plan([], self.PLAIN_TABLE)

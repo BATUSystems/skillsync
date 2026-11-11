@@ -2045,6 +2045,7 @@ class GatePhaseTests(GateCase):
         report = self.run_gate(header, body, 'F9', code=2)
         self.assert_blocked(report, 'unknown_phase')
         self.assertTrue(report['reason'].startswith('unknown_phase: '))
+        self.assertEqual(report['plan'], PLAN)
 
     # -- U = nie ------------------------------------------------------------------
 
@@ -2134,7 +2135,8 @@ class GatePhaseTests(GateCase):
                 self.assertEqual(report['status'], 'PASS')
                 self.assertEqual(report['bypassed']['by'], 'Ola')
                 self.assertNotIn('note', report)
-                self.assertEqual(report['uiPhases'], ['F1'])
+                self.assertEqual((report['uiPhases'], report['phases']), (['F1'], ['F1', 'F2']))
+                self.assertEqual(report.get('phase'), phase)
         self.assert_unknown_phase(header, UI_TABLE)
 
     # -- błędy i argumenty ---------------------------------------------------------
