@@ -53,6 +53,16 @@ None.
   (or a status-page button that calls it) as the user's "GO plan", like `plan approve` for "GO implement".
 - `plan approve` and `spec approve` accept `--expect-sha <git blob sha>`: the change is refused when the file differs from the
   version the user saw. The JSON report carries `sha` of the written file.
+- `skillsync status --json`: each plan record with a valid `Spec:` line has `preImplement` (`required`, `sections`, `run`, `report`,
+  `verdict`, `warning`; `null` when the plan has no valid `Spec:` line or the spec file is unreadable). `required` is true when the spec has a non-empty `Kontrakty`,
+  `Migracja` or `Dane` section. `warning` is a non-blocking reminder for `draft`, `approved` and `in_progress` plans: no
+  `pre-implement*.md` with the first line `Werdykt: READY|NEEDS_CHANGES|BLOCKED` in `.skillsync/runs/<run-id>/`, or the worst
+  verdict is `NEEDS_CHANGES` or `BLOCKED`. The schema version is unchanged.
+- `plan approve` and `spec approve` JSON: field `warnings` (a list, possibly empty) with the same pre-implement text. Status
+  and exit code do not change.
+- `skillsync readiness --run-id <id>`: writes `.skillsync/runs/<id>/readiness.md` atomically (first line
+  `Readiness: PASS|BLOCKED`, then risk, areas, plan, issues, sections, files, note) and adds `reportFile` to the JSON. It refuses
+  symlinked run paths and an invalid run id. Without the flag the behaviour is unchanged.
 
 - `install.sh`: installer for Linux, WSL2 and macOS. It installs `uv` if missing, installs `skillsync` from the release tag
   baked into the script (no sudo), checks that the version equals the tag and runs `skillsync setup`.
