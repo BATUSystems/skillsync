@@ -476,7 +476,8 @@ function summary(m) {
     substeps: q('#acts details.substeps') ? { inAct: q('#acts .act[data-key="real"] details.substeps') !== null, summary: text(q('#acts .substeps summary')),
       summaryDesc: q('#acts .substeps summary').getAttribute('data-desc'), open: q('#acts details.substeps').hasAttribute('open'),
       items: qa('#acts .sub-list li').map((li) => ({ id: text(li.querySelector('.q-id')), t: text(li.querySelector('.sub-t')), cls: li.getAttribute('class') })) } : null,
-    copyButtons: qa('.wait-copy').length,
+    copyButtons: qa('.wait-copy').length + qa('[data-copy-word]').length + qa('button').filter((b) => /Kopiuj|Skopiowano/.test(text(b))).length,
+    planAuto: q('#planAuto') ? { hidden: q('#planAuto').hidden, text: text(q('#planAuto')), label: q('#planAuto').getAttribute('aria-label'), tip: q('#planBtn').getAttribute('data-tip'), btn: text(q('#planBtnText')) } : null,
     tags: [...tags].sort(),
   };
 }
@@ -651,25 +652,18 @@ function summary(m) {
   {
     const j = clone(F['empty']);
     j.waiting = [{ what: 'odpowiedź', source: 'checkpoint', since: null, action: 'a', word: 'CP', link: { kind: 'doc', path: 'docs/plans/x.md' } }];
-    const tm = fakeTimers();
-    let resolveCopy;
-    const m = mount(j, { now: NOW['empty'], deps: { timers: tm }, actions: { copyText: () => new Promise((r) => { resolveCopy = r; }) } });
+    const copyCalls = [];
+    const spy = { copyText: (t) => { copyCalls.push(t); return Promise.resolve(); } };
+    const m = mount(j, { now: NOW['empty'], actions: spy });
     m.root.querySelector('[data-wait-doc]').click();
-    const copy = m.root.querySelector('.wait-copy');
-    copy.click(); resolveCopy(); await tick(); await tick();
-    const copied = text(copy);
-    tm.run();
-    const reset = text(copy);
-    const m2 = mount(j, { now: NOW['empty'], actions: { copyText: () => Promise.reject(new Error('no')) } });
-    const c2 = m2.root.querySelector('.wait-copy'); c2.click(); await tick(); await tick();
-    const m3 = mount(j, { now: NOW['empty'] });
-    const c3 = m3.root.querySelector('.wait-copy'); c3.click(); await tick(); await tick();
+    const sum = summary(m);
+    const m2 = mount(j, { now: NOW['empty'] });
     const n = mount(F['empty'], { now: NOW['empty'] });
     n.board.setNotice({ ok: false, word: 'CP', text: 'odmowa' });
     const noticeShown = { hidden: n.root.querySelector('#waitBanner').hidden, text: text(n.root.querySelector('#waitBanner')) };
     n.root.querySelector('.wait-x').click();
-    ex.banner = { openDoc: m.calls.openDoc, copied, reset, rejected: text(c2), missing: text(c3), noticeShown, noticeClosed: n.root.querySelector('#waitBanner').hidden };
-    m.board.destroy(); m2.board.destroy(); m3.board.destroy();
+    ex.banner = { openDoc: m.calls.openDoc, copyButtons: sum.copyButtons, copyCalls, copyCallsApi: typeof m.board.copyText, noticeCopy: summary(n).copyButtons, noticeShown, noticeClosed: n.root.querySelector('#waitBanner').hidden };
+    m.board.destroy(); m2.board.destroy();
   }
   {
     const j = clone(F['plan-in-progress']);
@@ -756,10 +750,20 @@ function summary(m) {
       const given = clone(F[name]); given.approvals.viewer = true; // notice z „Kopiuj „dalej”” u widza też bez kopiowania
       const g = mount(given, { now: NOW[name] }); g.board.setNotice({ ok: true, word: 'CP', text: 'x' });
       res[name] = { viewer: summary(mount(v, { now: NOW[name] })).copyButtons, normal: summary(mount(n, { now: NOW[name] })).copyButtons,
-        viewerNotice: g.root.querySelectorAll('.wait-copy').length,
+        viewerNotice: summary(g).copyButtons,
         viewerApproveButtons: summary(mount(v, { now: NOW[name] })).bannerButtons.map((b) => [b.disabled, b.extra]) };
     }
     ex.viewerCopy = res;
+  }
+  {
+    const res = {};
+    for (const name of Object.keys(F)) {
+      const auto = clone(F[name]); auto.planAuto = true;
+      const manual = clone(F[name]); manual.planAuto = false;
+      res[name] = { auto: summary(mount(auto, { now: NOW[name] })).planAuto, manual: summary(mount(manual, { now: NOW[name] })).planAuto,
+        hasPlan: Boolean(F[name].plan) };
+    }
+    ex.planAuto = res;
   }
   out.extra = ex;
   // deps.now jest wymagane (renderer nie czyta zegara sam).
@@ -930,8 +934,8 @@ class RendererNodeTests(unittest.TestCase):
         self.assertEqual((f["enterPrevented"], f["s3"]), (True, True))  # Enter zwija
         b = ex["banner"]
         self.assertEqual(b["openDoc"], ["docs/plans/x.md"])
-        self.assertEqual((b["copied"], b["reset"]), ("Skopiowano „CP”", "Kopiuj „CP”"))
-        self.assertEqual((b["rejected"], b["missing"]), ("Wpisz w sesji: CP", "Wpisz w sesji: CP"))
+        self.assertEqual((b["copyButtons"], b["noticeCopy"]), (0, 0))  # brak przycisków „Kopiuj” (karta, baner, komunikat)
+        self.assertEqual(b["copyCalls"], [])
         self.assertFalse(b["noticeShown"]["hidden"])
         self.assertIn("Nie zapisano „CP”", b["noticeShown"]["text"])
         self.assertTrue(b["noticeClosed"])
@@ -1030,12 +1034,39 @@ class RendererNodeTests(unittest.TestCase):
         sub = self.out["extra"]["sub"]
         self.assertEqual((sub["closed"], sub["kept"], sub["closedAgain"]), (False, True, False))
 
+    def test_no_copy_buttons_anywhere(self) -> None:
+        for name, got in self.out["fixtures"].items():
+            with self.subTest(fixture=name):
+                self.assertEqual(got["copyButtons"], 0)
+        for path in (RENDERER, ADAPTER, ASSETS / "app.css", ASSETS / "index.html"):
+            src = path.read_text(encoding="utf-8")
+            for word in ("copyText", "clipboard", "data-copy-word", "wait-copy", "COPY_RESET_MS", "copyWord"):
+                self.assertNotIn(word, src, f"{path.name}: {word}")
+
+    def test_plan_auto_badge(self) -> None:
+        for name, got in self.out["extra"]["planAuto"].items():
+            with self.subTest(fixture=name):
+                if not got["hasPlan"]:
+                    self.assertTrue(got["auto"]["hidden"])
+                    continue
+                a, m = got["auto"], got["manual"]
+                self.assertFalse(a["hidden"])
+                self.assertEqual(a["text"], "wybrany automatycznie")
+                self.assertIn("automatycznie", a["label"])
+                self.assertIn("z listy", a["label"])
+                self.assertIn("docs/plans/", a["tip"])
+                self.assertIn("automatycznie", a["tip"])
+                self.assertNotIn("(bieżący)", a["btn"])
+                self.assertTrue(m["hidden"])
+                self.assertIn("ręcznie", m["tip"])
+                self.assertNotIn("automatycznie", m["tip"])
+
     def test_viewer_has_no_copy_buttons(self) -> None:
         for name, got in self.out["extra"]["viewerCopy"].items():
             with self.subTest(fixture=name):
                 self.assertEqual(got["viewer"], 0)
                 self.assertEqual(got["viewerNotice"], 0)
-                self.assertGreaterEqual(got["normal"], 1)  # bez widza „Kopiuj „…”” jak dotąd
+                self.assertEqual(got["normal"], 0)  # także bez widza przycisków kopiowania nie ma
                 for disabled, extra in got["viewerApproveButtons"]:
                     self.assertTrue(disabled)
                     self.assertEqual(extra, self.VIEWER_TEXT)

@@ -140,9 +140,9 @@ a.chip.git-link { text-decoration: none; }
   line-height: 1.4; background: var(--warn); color: var(--panel); border: 1px solid transparent; cursor: pointer; text-decoration: none; white-space: nowrap;
 }
 .wait-item.is-ok { background: var(--done-soft); border-color: color-mix(in srgb, var(--done) 45%, transparent); }
-.wait-item.is-ok .wait-copy, .wait-item.is-ok .wait-session { border-color: var(--done); }
+.wait-item.is-ok .wait-session { border-color: var(--done); }
 .wait-actions { display: flex; flex-wrap: wrap; gap: .4rem; flex: none; justify-content: flex-end; }
-.wait-copy, .wait-session { background: var(--panel); color: var(--text); border: 1px solid var(--warn); }
+.wait-session { background: var(--panel); color: var(--text); border: 1px solid var(--warn); }
 .wait-approve { background: var(--done); color: var(--on-done); }
 .wait-approve.is-armed, .act-approve.is-armed { outline: 3px solid var(--warn); outline-offset: 1px; }
 .wait-go:disabled, .act-approve:disabled { opacity: .6; cursor: not-allowed; white-space: normal; }
@@ -448,3 +448,5 @@ main { flex: 1; padding: 1.1rem 1.4rem; min-width: 0; }
 @media (max-width: 500px) {
   .acts { grid-template-columns: minmax(0, 1fr); }
 }
+
+.plan-auto { margin-left: .4rem; font-size: .7rem; padding: .05rem .4rem; white-space: nowrap; }

@@ -24,8 +24,11 @@ Every release has a **Breaking** section that lists incompatible changes. When a
   `localStorage`, theme). The renderer contract is in the skill's `SKILL.md`; a static and a Node test guard it
   (`tests/test_skillsync_dashboard_renderer.py`).
 - Dashboard page: the Questions, Readiness and substeps sections are drawn by the shared renderer. A remote viewer
-  (`approvals.viewer`) gets no "Copy „…”" buttons next to approvals, only the inactive approval buttons with the reason;
-  below 500 px the acts I and II stack in one column. Values are inserted as text (no HTML).
+  (`approvals.viewer`) gets only the inactive approval buttons with the reason; below 500 px the acts I and II stack in one column. Values are inserted as text (no HTML).
+- Dashboard page: the "Copy „…”" buttons (approval word to the clipboard) are removed entirely, including `actions.copyText`
+  in the renderer's `deps` (breaking for a host that passed it; no consumers outside Skippster). "Open session" stays.
+- Dashboard page: the header marks an automatically chosen plan with a "wybrany automatycznie" badge (`planAuto: true`) and
+  shows the full plan path in the button tooltip; a manually chosen plan has no badge.
 
 ### Breaking
 None.

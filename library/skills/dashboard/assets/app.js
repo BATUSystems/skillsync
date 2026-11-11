@@ -46,7 +46,6 @@
       loadDoc: fetchDoc,
       refresh: () => refresh(),
       selectPlan: (path) => { st.plan = path || null; refresh(); },
-      copyText: (text) => navigator.clipboard.writeText(text),
     },
     storage: store,
     theme,

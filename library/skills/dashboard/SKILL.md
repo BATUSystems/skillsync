@@ -153,7 +153,7 @@ była, a nie, że pętla dała PASS.
   zmienia (pisze go sesja); po zapisie kafelek pokazuje „CP zapisane HH:MM”, a baner „zgoda jest już w pliku”.
 - Sesja (`feature`) czekająca na zgodę nasłuchuje zmian (`skillsync status`, pole `approvals`) z budzikiem co 30 min i po
   pobudce sprawdza zgodę w pliku: GO = status speca/planu i sha, CP/READY = wpis z `sha` równym jej HEAD. CPD, TAK/NIE
-  i odpowiedzi `Q` zostają w sesji (baner: „Kopiuj”).
+  i odpowiedzi `Q` zostają w sesji (strona nie kopiuje słów zgody do schowka).
 - **Założenie zaufania (jawne):** granicą jest maszyna. Strona nie ma logowania; zapis tylko z localhost albo
   `--approve-host`. Lokalny proces, który podrobiłby wpis, mógłby równie dobrze sam wykonać push, więc wpis nie jest
   słabszy niż „CP” wpisane w terminalu. Nie wystawiaj strony z `--approve-host` w niezaufanej sieci.
@@ -221,7 +221,6 @@ Kontrakt `deps` (wymagane tylko `now`):
 | `actions.loadDoc` | `(path) => Promise<{path, status, mtime, truncated, html}>` | nie | jak `/api/doc`; obecność włącza podgląd w zakładce Dokumenty |
 | `actions.openDoc` | `(path) => void` | nie | otwarcie dokumentu przez hosta (np. edytor), używane, gdy nie ma `loadDoc` |
 | `actions.openLink` | `(kind, id, url) => boolean` | nie | `kind`: `branch`, `pr`, `session`, `prototype`; `true` = host otworzył sam (renderer robi `preventDefault`), inaczej domyślne `<a target=_blank>` |
-| `actions.copyText` | `(text) => Promise` | nie | schowek dla „Kopiuj „CP””; brak albo błąd = „Wpisz w sesji: …” |
 | `canApprove` | `(json) => boolean` | nie | czy ten host może dawać zgody; domyślnie `approvals.here` z JSON-a |
 | `storage` | `{get(k) => string \| null, set(k, v)}` | nie | preferencje (`v == null` = usuń); bez niego wybór planu nie jest zapamiętywany |
 | `theme` | `{isDark() => boolean, toggle()}` | nie | przełącznik motywu i klawisz `T`; bez niego przycisku nie ma |
@@ -231,7 +230,7 @@ Kontrakt `deps` (wymagane tylko `now`):
 | `onTitle` | `(text) => void` | nie | tytuł okna (`⏳ Czeka · 40% · … — status`) |
 | `onNavigate` | `(hash) => void` | nie | adres widoku: `progress`, `docs`, `docs:<ścieżka>` |
 | `scroll` | `{save() => any, restore(v), reveal(el, inDocs)}` | nie | przewijanie przy odświeżeniu i otwarciu dokumentu |
-| `timers` | `{set(fn, ms) => id, clear(id)}` | nie | zegar uzbrojenia (5 s) i powrotu napisu „Kopiuj” (2,5 s); domyślnie `setTimeout` |
+| `timers` | `{set(fn, ms) => id, clear(id)}` | nie | zegar uzbrojenia (5 s); domyślnie `setTimeout` |
 | `raf`, `cancelRaf` | `(fn) => id`, `(id) => void` | nie | klatka animacji pasków; domyślnie `requestAnimationFrame`/`cancelAnimationFrame`; `destroy()` anuluje oczekujące |
 | `viewport` | `() => {width, height}` | nie | rozmiar okna dla dymku; domyślnie `ownerDocument.defaultView` |
 | `sprite` | `boolean` | nie | `false` = nie tworzyć sprite'a (host ma własny) |
@@ -242,7 +241,7 @@ Metody obiektu z `create`:
 | --- | --- |
 | `update(json)`, alias `render(json)` | rysuje stan; poprzedni stan służy do podświetlenia zmian; w widoku Dokumenty odświeża podgląd |
 | `setDescriptions(map)` | opisy dymków `{klucz: {title, text}}` (`descriptions.json`) |
-| `setNotice({ok, word, text, copied?} \| null)` | komunikat w banerze |
+| `setNotice({ok, word, text} \| null)` | komunikat w banerze |
 | `setLive(mode)` | wskaźnik `live` / `polling` / `down` / `connecting` |
 | `setView(view, push = true)`, `setDoc(path)` | zakładka `progress`/`docs`; wybrany dokument (bez wczytania) |
 | `tick()` | host woła co 1 s: czas aktu III, „x min temu”, próg ciszy |
@@ -260,7 +259,7 @@ przejmuje `actions.openLink` (zwraca `true`) i nie zostawia domyślnej nawigacji
 Widz zdalny: pole `approvals.viewer` (`dashboard serve --read-host`; starszy serwer pola nie zwraca). Przy
 `approvals.viewer === true` (brak pola = false; serwer daje wtedy `approvals.here` = false) każdy przycisk zgody poza
 „zgoda dana” jest nieaktywny, a jego dymek ma powód „Zgody daje prowadzący na komputerze z sesją.” (zamiast powodu stanu i
-„Zgoda tylko z przeglądarki…”); renderer nie rysuje przycisków „Kopiuj „…”” (karta aktów, baner, komunikat) i nie wywołuje
+„Zgoda tylko z przeglądarki…”); renderer nie rysuje przycisków kopiowania słowa zgody (nigdy, także poza trybem widza; brak `actions.copyText` i schowka) i nie wywołuje
 `actions.approve` (także z `canApprove`). Baner (`waiting`, cisza), sekcje Pytania i Readiness oraz stopka „tylko odczyt” bez zmian.
 
 Sekcje aktów rysuje renderer (`readinessTile`, `questionsBlock`, `substepsBlock`, funkcje modułu z kontekstem egzemplarza):

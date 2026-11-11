@@ -5,7 +5,7 @@
    Wewnętrzne API renderera (nie publiczny kontrakt CLI); odstępstwa od pierwotnego szkicu w specu DASH-2 (zaakceptowane przez Dyspozytora):
    nazwy `create`/`update` (aliasy `createDashboard`/`render`); brak `deps.transport` (transport to host przez `actions`); opisy przez
    `setDescriptions(map)`; wymagane `deps.now`; `actions.approve({kind, sha, path, word})` zwraca Promise `{ok, word, text}`;
-   `actions.openLink(kind, id, url)` zwraca bool (true = host obsłużył); nowe `actions.loadDoc/selectPlan/copyText`; nowe `deps`:
+   `actions.openLink(kind, id, url)` zwraca bool (true = host obsłużył); nowe `actions.loadDoc/selectPlan`; nowe `deps`:
    `canApprove`, `texts`, `theme`, `prototypeUrl`, `mountHtml`, `onTitle`, `onNavigate`, `scroll`, `timers`, `raf`, `cancelRaf`, `viewport`,
    `sprite`; `approvals.viewer` (kontrakt DASH-1) obsługiwane; `href` z JSON-a tylko http(s). Pełna tabela: SKILL.md. */
 (function (scope, factory) {
@@ -29,9 +29,9 @@
     down: "Serwer statusu nie odpowiada. Strona ponawia próby automatycznie.",
     connecting: "Łączę z serwerem statusu…",
   };
-  const ARM_MS = 5000, COPY_RESET_MS = 2500;
+  const ARM_MS = 5000;
   // Widz zdalny (approvals.viewer, Host z --read-host; brak pola = false): odczyt bez zapisu. Przyciski zgody są nieaktywne
-  // z jednym powodem, bez przycisków „Kopiuj”, a renderer nie woła actions.approve.
+  // z jednym powodem, a renderer nie woła actions.approve.
   const isViewer = (d) => { const ap = d && d.approvals; return Boolean(ap && ap.viewer === true); };
   const VIEWER_TEXT = "Zgody daje prowadzący na komputerze z sesją.";
   const ID_RE = /(?<![\w-])([A-Z]{1,3}-?\d+[a-z]?)(?![\w-])/g;
@@ -247,9 +247,11 @@
         icon("i-moon", "ic i-moon"), icon("i-sun", "ic i-sun"));
     }
     ui.planBtnText = h("span", { id: "planBtnText" }, "Plan");
+    ui.planAuto = h("span", { id: "planAuto", class: "chip plan-auto", hidden: true,
+      "aria-label": "Plan wybrany automatycznie; inny plan wybierzesz z listy" }, "wybrany automatycznie");
     ui.planBtn = h("button", { id: "planBtn", class: "btn", "aria-haspopup": "listbox", "aria-expanded": "false",
       "data-tip": "Wybierz plan (domyślnie: bieżący w realizacji)", on: { click: (e) => { e.stopPropagation(); toggleMenu(); } } },
-      svg("svg", { class: "ic" }, svg("use", { href: "#i-plan" })), ui.planBtnText, svg("svg", { class: "ic chev" }, svg("use", { href: "#i-chev" })));
+      svg("svg", { class: "ic" }, svg("use", { href: "#i-plan" })), ui.planBtnText, ui.planAuto, svg("svg", { class: "ic chev" }, svg("use", { href: "#i-chev" })));
     ui.planMenu = h("ul", { id: "planMenu", class: "menu", role: "listbox", hidden: true });
     ui.waitBanner = h("div", { id: "waitBanner", class: "wait", role: "status", "aria-live": "polite", hidden: true });
     ui.docCount = h("span", { class: "count", id: "docCount" });
@@ -369,8 +371,13 @@
       }
       fill(ui.meta, meta);
 
-      ui.planBtnText.textContent = plan ? baseName(plan.path).replace(/\.md$/, "") + (d.planAuto ? " (bieżący)" : "")
+      ui.planBtnText.textContent = plan ? baseName(plan.path).replace(/\.md$/, "")
         : specAct ? baseName(d.spec.path).replace(/\.md$/, "") + " (akt I)" : runAct ? "przebieg (akt I)" : "Plan";
+      const autoPick = Boolean(plan && d.planAuto === true);
+      ui.planAuto.hidden = !autoPick;
+      ui.planBtn.setAttribute("data-tip", plan
+        ? `Plan: ${plan.path}${autoPick ? " (wybrany automatycznie; inny wybierzesz z listy)" : " (wybrany ręcznie)"}`
+        : "Wybierz plan (domyślnie: bieżący w realizacji)");
       renderProtoLink(d);
       renderPlanMenu();
       renderActs(d);
@@ -596,21 +603,8 @@
     }
     function wordTools(d, word) {
       const url = d.session && d.session.url;
-      // Widz nie dostaje „Kopiuj „…””: słowa zgody wpisuje prowadzący.
-      const copy = isViewer(d) ? null : h("button", { class: "wait-go wait-copy", type: "button", "data-copy-word": word, "data-tip": `Kopiuje „${word}” do schowka` }, `Kopiuj „${word}”`);
-      if (copy) copy.addEventListener("click", () => copyWord(copy, word));
-      return [copy, url ? h("a", { class: "wait-go wait-session", href: safeUrl(url), target: "_blank", rel: "noopener", "data-tip": "Otwiera sesję (adres z --session-url)",
-        on: { click: linkClick("session", url, url) } }, "Otwórz sesję") : null];
-    }
-    async function copyWord(btn, word) {
-      try {
-        if (typeof actions.copyText !== "function") throw new Error("brak schowka");
-        await actions.copyText(word);
-        btn.textContent = `Skopiowano „${word}”`;
-      } catch {
-        btn.textContent = `Wpisz w sesji: ${word}`;
-      }
-      later(() => { btn.textContent = `Kopiuj „${word}”`; }, COPY_RESET_MS);
+      return url ? h("a", { class: "wait-go wait-session", href: safeUrl(url), target: "_blank", rel: "noopener", "data-tip": "Otwiera sesję (adres z --session-url)",
+        on: { click: linkClick("session", url, url) } }, "Otwórz sesję") : null;
     }
     // Brak raportu postępu od N min (plan in_progress, sesja nie zgłosiła „czeka:”): sesja mogła się zawiesić.
     function silenceMinutes(d) {
@@ -629,9 +623,9 @@
       const note = n ? h("div", { class: "wait-item" + (n.ok ? " is-ok" : " is-err") },
         icon(n.ok ? "i-check" : "i-bell"),
         h("div", { class: "wait-txt" },
-          h("strong", null, n.copied ? `„${n.word}” w schowku` : n.ok ? `Zgoda „${n.word}” zapisana` : `Nie zapisano „${n.word}”`),
+          h("strong", null, n.ok ? `Zgoda „${n.word}” zapisana` : `Nie zapisano „${n.word}”`),
           h("span", null, n.text)),
-        n.ok && !n.copied ? wordTools(d, "dalej") : null,
+        n.ok ? wordTools(d, "dalej") : null,
         h("button", { class: "wait-x", type: "button", "data-notice-close": "", "aria-label": "Zamknij", on: { click: () => { st.notice = null; render(); } } }, "×")) : null;
       if (!items.length && !note) { el.hidden = true; fill(el); return; }
       el.hidden = false;
