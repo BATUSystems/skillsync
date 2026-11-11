@@ -88,7 +88,7 @@ projektu lub przebiegu). Raport komend zapisujących i `metrics --json` to JSON 
 | `lastUpdate` | string lub null | najnowsza modyfikacja pliku bieżącego planu, speca lub checkpointów; null = brak plików |
 | `git` | obiekt | stan repozytorium (niżej) |
 | `plans` | tablica | wszystkie plany projektu (niżej) |
-| `planAuto` | bool | `true`, gdy plan wybrano automatycznie (brak `--plan` albo nieznana ścieżka) |
+| `planAuto` | bool | `true`, gdy plan wybrano automatycznie (brak `--plan` albo nieznana ścieżka). Wybór: najniższa ranga statusu (`in_progress`, `approved`, `draft`, ostatni `done`), przy czym plan `in_progress`/`approved` z kompletem kroków `[x]` i bez katalogu przebiegu (sierota) liczy się jak `done`; w obrębie rangi pierwszeństwo ma plan z istniejącym przebiegiem i najświeższą aktywnością (`checkpoints.md`, `approvals.jsonl`, czas planu), potem data w nazwie |
 | `mode` | string | `plan`, `spec`, `run` albo `none` (niżej) |
 | `plan` | obiekt lub null | wybrany plan |
 | `spec` | obiekt | spec bieżącego zadania (zawsze obecny) |
@@ -306,7 +306,7 @@ formatów warstw). Tylko odczyt; bez `--json` drukuje ten sam JSON. Wejście:
   sama funkcja co `show`, więc podkrok z czasem w obu wynikach ma identyczne `seconds`, `startedAt`, `finishedAt`);
 - rekordy checkpointów `.skillsync/runs/<run-id>.json` (`skillsync checkpoint`), jeśli plik jest;
 - plan: `--plan` (ścieżka względna planu projektu; nieznany plan = `BLOCKED`), bez niego plan z `Przebieg: <run-id>` (wybór
-  jak dla `show`: `in_progress`, `approved`, `draft`, ostatni `done`). Bez planu podkroki to id `Fn.k` z dziennika w
+  jak dla `show`, zob. `planAuto`). Bez planu podkroki to id `Fn.k` z dziennika w
   kolejności pierwszego wystąpienia (`title` = null).
 
 | Pole | Typ | Opis |
