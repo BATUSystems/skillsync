@@ -196,3 +196,7 @@ lessons:
     title: "Pełny bieg testów pada na strażniku real-state, gdy ktokolwiek dotknie gitem prawdziwych klonów warstw"
     tags: [testing, layers, lease, dispatch, flaky, git]
     paths: ['tests/layers_helpers.py', 'tests/test_skillsync_workflow.py']
+  - path: budzet-instrukcji-bazowej-nowa-regula-wymusza-ciecie.md
+    title: "Instrukcja bazowa ma budżet 8192 B: nowa reguła rdzenia wymusza cięcie, więc zaplanuj miejsce w akcie I"
+    tags: [workflow, instrukcje, doctor, budzet, review]
+    paths: ['library/instructions/_base.md', 'library/workflow/defaults.yaml', 'tests/test_skillsync_library_smoke.py']
