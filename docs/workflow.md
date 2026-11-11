@@ -147,7 +147,9 @@ Najważniejsze bramki:
 - „GO plan” zatwierdza spec, „GO implement” plan; żadna zgoda nie obejmuje commita, pusha ani deployu;
 - `Spec-sha` zapisany przy „GO plan” chroni spec: różnica przed „GO implement”, review albo `implemented` to STOP i pytanie;
 - `pre-implement` czyta rzeczywistych konsumentów (przy specu w akcie I, przed pętlą `spec`); `readiness` kontroluje tylko
-  strukturę planu i speca (w akcie II, przed „GO implement”);
+  strukturę planu i speca (w akcie II, przed „GO implement”); z `--run-id` zapisuje `readiness.md` w przebiegu; brak raportu
+  `pre-implement` przy sekcji `Kontrakty`, `Migracja` lub `Dane` daje ostrzeżenie w `status` i w wyniku „GO plan”/„GO implement”,
+  bez blokady ([workflow-details §8](workflow-details.md#8-bramka-pre-implement));
 - równoległość wymaga rozłącznych plików **i** baz, portów, build/coverage, lockfile oraz migracji; osobny worktree nie
   izoluje usług;
 - raport podagenta nie jest dowodem: orkiestrator sprawdza aktualne pliki, logi i exit code; zapis po teście albo review

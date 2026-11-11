@@ -2,8 +2,8 @@
 title: Statusy, kody wyjścia i semantyka doctor
 tags: [skillsync, doctor, workflow, exit-codes]
 paths: ['skillsync', 'skillsync_workflow/**']
-source: odczyt skillsync_workflow/common.py:exit_code, quality.py:doctor/plan_validation/run_validation, runs.py:resume/benchmark, retro.py:retro, retro.py:_decide_proposal, retro_scan.py:retro_scan 2026-11-06
-verified: 2026-11-06
+source: odczyt skillsync_workflow/common.py:exit_code, quality.py:doctor/plan_validation/run_validation, runs.py:resume/benchmark, retro.py:retro, retro.py:_decide_proposal, retro_scan.py:retro_scan, quality.py:readiness/_cmd/write_readiness_report, status.py:pre_implement_state 2026-11-11
+verified: 2026-11-11
 ---
 Reguła: komendy workflow zwracają status operacji, nie projektu: `PASS`, `FAIL`, `BLOCKED`, `NOT_RUN`. Wyjście: `PASS`/`NOT_RUN` → 0, `FAIL` → 1, `BLOCKED` i nieznany → 2.
 Wyjątki w handlerach kończą się `skillsync: <komunikat>` i exit 2 (także brak configu). `resume`: 2 przy nieaktualnych dowodach/źródłach lub kroku ≠ PASS. `benchmark`: 0/1/2 dla PASS-NOT_RUN/FAIL/BLOCKED.
@@ -18,6 +18,10 @@ Wyjątki w handlerach kończą się `skillsync: <komunikat>` i exit 2 (także br
 `prototype iterate|restore|comments|triage|decide|resolve|merge-comments` (ten sam `emit`/`exit_code`): `iterate` → `FAIL` (1), gdy `ids --check` bieżącego `index.html` nie przechodzi (nic nie zamrożone), `BLOCKED` (2) przy prototypie v1, istniejącym `iterations/N/`, `incomplete_restore` i stanie gita blokującym commit K40 (merge, rebase, cherry-pick, revert, konflikt, porażka `git add`/`git commit`; poza repo tylko ostrzeżenie). `restore` (także `--dry-run`, `--resume`) → `PASS` (także `result: unchanged` bez zapisu, gdy sekcja iteracji równa się bieżącej, D27) albo `BLOCKED` (2) bez zapisu z polem `error`: `iteration_not_found`, `screen_missing`, `ambiguous_section`, `ids_check_failed`, `incomplete_restore`, `--who` spoza pliku użytkowników albo bez roli acceptor/developer; nigdy `FAIL`. `triage`/`decide`/`resolve` → `BLOCKED` (2) dla wątku nieistniejącego, usuniętego albo ukrytego (`thread_not_found`), `triage` na wątku z decyzją (`thread_decided`), złego `--who`; `comments` → `PASS` albo `BLOCKED` przy złym `--status` i prototypie v1. `merge-comments` (obie formy) → `PASS` (także z `missingIterations`, to ostrzeżenie) albo `BLOCKED` (2) przy konflikcie (`merge_conflict`), innym `prototypeId` i złym formacie; exit ≠ 0 sterownika git traktuje jako konflikt i zostawia plik A bez zmian. Klucz manifestu `prototype.commit_before_iteration` innego typu niż bool → błąd sekcji (`BLOCKED` każdej akcji, `error` w `doctor`).
 `doctor`, sekcja `prototype:` (`prototype.py:validate_prototype`): błąd typu/pustej wartości/ścieżki poza repo/brakującego `theme.tokens_from` lub `theme.css` albo `commit_before_iteration` niebędące bool → `error`; nieznane klucze i brakujące `guidelines` → `warning`; brak sekcji nie daje findings.
 `doctor`, sekcja `delivery:` (`delivery_mode.py:validate_delivery_mode`): zła wartość `mode`, `null`, nie-mapa lub zła nazwa `base` → `error`; brak `mode` (domyślnie `pr`), `direct` bez `base` i nieznane klucze → `warning` (exit 0).
+
+`readiness` (także `--run-id`): `PASS` → 0, `BLOCKED` → 2 z listą `issues`; zapis `readiness.md` nie zmienia kodu. Niepoprawny `--run-id`
+albo dowiązanie w `.skillsync`, `.skillsync/runs` lub katalogu przebiegu → `BLOCKED` z `reason`, exit 2, bez pliku.
+`status` i ostrzeżenia `preImplement.warning` oraz `warnings` z `plan|spec approve` nie są statusami operacji i nie zmieniają kodu wyjścia.
 
 `PASS` w `retro` znaczy tylko, że raport powstał; `NOT_RUN` znaczy brak danych (`no_data`, pusty magazyn), nie sukces.
 Komendy synchronizacji kończą 0 także z `[warn]`/`[conflict]`/`[info]`; błędy jawne (`import`, `add`, `skills add`) dają 1.
