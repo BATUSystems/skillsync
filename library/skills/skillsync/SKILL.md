@@ -66,8 +66,8 @@ layer.yaml                  ← id, kind, version, core_min, requires
 | `skillsync suggest <path>` | tylko odczyt | JSON: skille do dodania/usunięcia wg katalogu (organizacja, technologie) |
 | `skillsync skills list <path> [--status S] --json` | tylko odczyt | JSON `schema: 1`: skille projektu (active/companion/suggested/available) z metadanymi |
 | `skillsync skills remove <projekt> <skill> [--no-link]` | zapis manifestu | usuwa jawny wpis z `skills:` (odwrotność `add`), potem `link` |
-| `skillsync status <path> --json` | tylko odczyt | JSON `schema: 1`: plany z postępem (`## Progress`; statusy `draft|approved|in_progress|done|archived|unknown`, `archived` bez `needsHuman`, `needsHuman: closure` przy `in_progress` ze wszystkimi krokami `[x]`, `pull_request`, gdy taki plan ma `Ticket:` bez `PR:`; `doctor` ostrzega tylko o `closure`), specyfikacje, pliki FRD (bez treści), przebiegi, dzierżawy |
-| `skillsync plan approve\|archive\|unarchive <projekt> <plik> [--json]` | zapis linii `Status:` | tylko `draft` → `approved` / `done` → `archived` / `archived` → `done` w `docs/plans/*.md`; reszta pliku bez zmian; błąd = exit 2, `BLOCKED` |
+| `skillsync status <path> --json` | tylko odczyt | JSON `schema: 1`: plany z postępem (`## Progress`; statusy `draft|approved|in_progress|done|archived|unknown`, `archived` bez `needsHuman`, `needsHuman: closure` przy `in_progress` ze wszystkimi krokami `[x]`, `pull_request`, gdy taki plan ma `Ticket:` bez `PR:`; `doctor` ostrzega tylko o `closure`), specyfikacje, pliki FRD (bez treści), przebiegi, dzierżawy; rekord planu z linią `Spec:` ma `preImplement` {`required`, `sections`, `run`, `report`, `verdict`, `warning`} — nieblokujące ostrzeżenie o braku `pre-implement*.md` (pierwsza linia `Werdykt: READY\|NEEDS_CHANGES\|BLOCKED`) w `.skillsync/runs/<run-id>/` przy sekcjach Kontrakty/Migracja/Dane speca |
+| `skillsync plan approve\|archive\|unarchive <projekt> <plik> [--json]` | zapis linii `Status:` | tylko `draft` → `approved` / `done` → `archived` / `archived` → `done` w `docs/plans/*.md`; reszta pliku bez zmian; wynik ma `warnings[]` (to samo ostrzeżenie pre-implement, bez wpływu na status i exit code); błąd = exit 2, `BLOCKED` |
 | `skillsync knowledge init <path> [--dry-run]` | projekt | Tworzy brakujące `docs/domain/index.yaml`, `docs/lessons/index.yaml`, `docs/README.md` (nigdy nie nadpisuje) |
 | `skillsync map <path> [--check]` | projekt | Generuje `.skillsync/map.md` (mapa repo); `--check` → exit 1 przy nieaktualnej/brakującej |
 
@@ -342,7 +342,7 @@ przez `@tag`, czy przez wildcard. Pozostałe skille (`workflow-retro`, `task-cla
 |---|---|
 | `route <path> --topic testing --files <paths>` | pasujące instrukcje i indeksowane lekcje |
 | `doctor <path>` | statyczna walidacja źródeł, budżetów, referencji i adapterów |
-| `readiness <path> --plan <file> --risk high --files <paths>` | gotowość struktury planu; przy linii `Spec:` także speca z `docs/specs` (pole `spec` w wyniku); przy fazach `[UI]` pola `uiPhases`, `nonUiPhases`, `uiPhasesWaiting`, `warnings` |
+| `readiness <path> --plan <file> --risk high --files <paths> [--run-id <id>]` | gotowość struktury planu; przy linii `Spec:` także speca z `docs/specs` (pole `spec` w wyniku); przy fazach `[UI]` pola `uiPhases`, `nonUiPhases`, `uiPhasesWaiting`, `warnings`; z `--run-id` zapisuje `.skillsync/runs/<id>/readiness.md` (pierwsza linia `Readiness: PASS\|BLOCKED`) i zwraca `reportFile` |
 | `review <path> --risk high --files <paths>` | checklista core + ryzyko + UI/project |
 | `validate <path> --profile quick` | uporządkowany plan kontroli |
 | `smart-test <path> [--base <ref>]` | selekcja według rzeczywistych zmian i zależności |
