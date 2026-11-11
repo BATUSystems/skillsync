@@ -743,13 +743,16 @@ class LayerYamlTest(ConfigCase):
                 self.assertEqual(layers.findings_status(findings), 'BLOCKED')
 
     def test_core_min_above_the_generator_version_is_blocked(self):
+        # Versions are derived from the generator version so the test does not expire at a release bump.
+        major = int(layers.generator_version().split('.')[0])
+        above, newer = f'{major + 1}.0.0', f'{major + 2}.0.0'
         layerset = self.layerset(('core', 'core', {'version': layers.generator_version()}),
-                                 ('acme', 'org', {'core_min': '1.1.0'}))
+                                 ('acme', 'org', {'core_min': above}))
         findings = self.check(layerset)
         self.assertEqual([item['layer'] for item in by_code(findings, 'core-min-unmet')], ['acme'])
         self.assertEqual(layers.findings_status(findings), 'BLOCKED')
         # the comparison is against the generator version: the same layer is fine for a newer generator ...
-        self.assertNotIn('core-min-unmet', codes(self.check(layerset, version='1.1.0')))
+        self.assertNotIn('core-min-unmet', codes(self.check(layerset, version=newer)))
         # ... and equal versions are fine, lower ones are not
         current = layers.generator_version()  # core_min of a layer defaults to the generator version (make_layer)
         equal = self.layerset(('core', 'core', {'version': current}), ('acme', 'org', {'core_min': current}))
