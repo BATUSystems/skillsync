@@ -208,6 +208,8 @@ z pętlą po PASS tej pętli.
 Kolejność aktu II: plan, pętla `plan` (obowiązkowa przy `plan-large`, ryzyku planu high albo prośbie użytkownika;
 inaczej jedna runda opcjonalna), `skillsync readiness <projekt> --plan <plik> --risk <ryzyko planu> --files ...`,
 propozycja wersji z pytaniem, „GO implement”. `readiness` sprawdza tylko strukturę planu i speca z linii `Spec:`.
+`--run-id <id>` zapisuje wynik do `.skillsync/runs/<id>/readiness.md` (pierwsza linia `Readiness: PASS|BLOCKED`), żeby strona
+statusu i kolejne akty czytały go z pliku, a nie ze stdout.
 
 Statusy planu:
 
@@ -251,6 +253,15 @@ spec, pozostaje tylko do odczytu, a wnioski wpisuje do speca orkiestrator.
 
 Wynik: `READY` (wystarczające kontrakty i kontrole), `NEEDS_CHANGES` (korekta speca lub planu), `BLOCKED` (brak decyzji,
 dostępu, danych albo dowodu). Dla małej lokalnej zmiany wystarcza krótki zapis w planie, bez dokumentu dla rytuału.
+
+Konwencja raportu: plik `.skillsync/runs/<run-id>/pre-implement*.md` (np. `pre-implement.md`, `pre-implement-<krok>.md`),
+którego pierwsza niepusta linia to `Werdykt: READY|NEEDS_CHANGES|BLOCKED`. Plik zapisuje orkiestrator; podagent tylko czyta.
+
+Ostrzeżenie (nie blokada): `skillsync status` ustawia `preImplement.warning`, gdy spec ma sekcję `Kontrakty`, `Migracja`
+lub `Dane` z treścią, a w katalogu przebiegu nie ma raportu z poprawnym werdyktem; tę samą treść zwracają `plan approve`
+i `spec approve` w polu `warnings`. Werdykt `NEEDS_CHANGES` albo `BLOCKED` także ostrzega: liczy się najgorszy werdykt ze wszystkich raportów w przebiegu,
+więc ostrzeżenie znika dopiero, gdy żaden raport nie ma takiego werdyktu.
+Sekcje bez treści („nie dotyczy”, `TODO`, `TBD`, `n/a`, `-`) nie wymuszają raportu.
 
 ## 9. Pętla przeglądu
 

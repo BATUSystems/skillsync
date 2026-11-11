@@ -9,6 +9,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ### Changed
 - Alias warunkowy: `status-board` w `skills:` rozwija się do `dashboard` tylko wtedy, gdy żadna warstwa nie dostarcza skilla `status-board`.
+- Skill `skillsync`: tabela komend opisuje pole `preImplement` w `status`, `warnings[]` w `plan approve` i flagę `--run-id` w `readiness` (zapis `readiness.md`).
 
 ### Fixed
 - `skills/prototype` (`assets/repo/components.css`, `references/screen-patterns.md`): lista rozwijana otwarta w oknie lub szufladzie nie jest już obcinana przez `overflow` ciała okna ani chowana pod stopką — klasa `popover-float` (rodzeństwo okna) i wzorzec z regułą „okno mieści się bez paska przewijania”.

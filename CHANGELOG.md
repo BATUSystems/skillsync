@@ -30,6 +30,16 @@ Every release has a **Breaking** section that lists incompatible changes. When a
   `Host`. Browser-only guarantee: a client forging the `Host` header (e.g. `curl -H 'Host: localhost'` through the tunnel) can still write, and a tunnel rewriting `Host` to localhost gives every viewer write access; use `--no-approvals` for untrusted viewers: run a second instance for them, `skillsync dashboard serve <project> --port <other port> --no-approvals --read-host <host>`, while the presenter keeps the loopback instance with approvals (the server warns at start). Host values with a port, brackets, `/` or whitespace are rejected (BLOCKED). Meant for viewers of a demo through a tunnel; approvals stay with loopback and `--approve-host`. `/api/status`
   gains the additive `approvals.viewer` (true for a read-only host, where `approvals.here` is false). The server prints
   read-only hosts separately from approval hosts at start.
+- `skillsync status --json`: each plan record with a valid `Spec:` line has `preImplement` (`required`, `sections`, `run`, `report`,
+  `verdict`, `warning`; `null` when the plan has no valid `Spec:` line or the spec file is unreadable). `required` is true when the spec has a non-empty `Kontrakty`,
+  `Migracja` or `Dane` section. `warning` is a non-blocking reminder for `draft`, `approved` and `in_progress` plans: no
+  `pre-implement*.md` with the first line `Werdykt: READY|NEEDS_CHANGES|BLOCKED` in `.skillsync/runs/<run-id>/`, or the worst
+  verdict is `NEEDS_CHANGES` or `BLOCKED`. The schema version is unchanged.
+- `plan approve` and `spec approve` JSON: field `warnings` (a list, possibly empty) with the same pre-implement text. Status
+  and exit code do not change.
+- `skillsync readiness --run-id <id>`: writes `.skillsync/runs/<id>/readiness.md` atomically (first line
+  `Readiness: PASS|BLOCKED`, then risk, areas, plan, issues, sections, files, note) and adds `reportFile` to the JSON. It refuses
+  symlinked run paths and an invalid run id. Without the flag the behaviour is unchanged.
 
 ### Changed
 

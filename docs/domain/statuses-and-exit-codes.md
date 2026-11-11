@@ -2,8 +2,8 @@
 title: Statusy, kody wyjścia i semantyka doctor
 tags: [skillsync, doctor, workflow, exit-codes]
 paths: ['skillsync', 'skillsync_workflow/**']
-source: odczyt skillsync_workflow/common.py:exit_code, quality.py:doctor/plan_validation/run_validation, runs.py:resume/benchmark, retro.py:retro, retro.py:_decide_proposal, retro_scan.py:retro_scan 2026-11-06
-verified: 2026-11-06
+source: odczyt skillsync_workflow/common.py:exit_code, quality.py:doctor/plan_validation/run_validation, runs.py:resume/benchmark, retro.py:retro, retro.py:_decide_proposal, retro_scan.py:retro_scan, quality.py:readiness/_cmd/write_readiness_report, status.py:pre_implement_state 2026-11-11
+verified: 2026-11-11
 ---
 Reguła: komendy workflow zwracają status operacji, nie projektu: `PASS`, `FAIL`, `BLOCKED`, `NOT_RUN`. Wyjście: `PASS`/`NOT_RUN` → 0, `FAIL` → 1, `BLOCKED` i nieznany → 2.
 Wyjątki w handlerach kończą się `skillsync: <komunikat>` i exit 2 (także brak configu). `resume`: 2 przy nieaktualnych dowodach/źródłach lub kroku ≠ PASS. `benchmark`: 0/1/2 dla PASS-NOT_RUN/FAIL/BLOCKED.
@@ -19,6 +19,10 @@ Wyjątki w handlerach kończą się `skillsync: <komunikat>` i exit 2 (także br
 `dashboard show|serve|metrics` i `approvals record`: `PASS` → 0, `BLOCKED` → 2 (zły argument, brak projektu albo przebiegu, dowiązanie na drodze `.skillsync`, odmowa zapisu, duplikat zgody, blokada pliku trzymana ponad 10 s; `serve` także port spoza 5100–5199 albo zajęty); nie zwracają `FAIL`. `serve` po Ctrl+C/SIGTERM kończy 0 z JSON `PASS`. `approvals wait` (odczyt zgód) → 0 przy zgodzie, 3 przy przekroczeniu czasu (zob. `dashboard-server.md`, `docs/dashboard-contract.md`).
 `doctor`, sekcja `prototype:` (`prototype.py:validate_prototype`): błąd typu/pustej wartości/ścieżki poza repo/brakującego `theme.tokens_from` lub `theme.css` albo `commit_before_iteration` niebędące bool → `error`; nieznane klucze i brakujące `guidelines` → `warning`; brak sekcji nie daje findings.
 `doctor`, sekcja `delivery:` (`delivery_mode.py:validate_delivery_mode`): zła wartość `mode`, `null`, nie-mapa lub zła nazwa `base` → `error`; brak `mode` (domyślnie `pr`), `direct` bez `base` i nieznane klucze → `warning` (exit 0).
+
+`readiness` (także `--run-id`): `PASS` → 0, `BLOCKED` → 2 z listą `issues`; zapis `readiness.md` nie zmienia kodu. Niepoprawny `--run-id`
+albo dowiązanie w `.skillsync`, `.skillsync/runs` lub katalogu przebiegu → `BLOCKED` z `reason`, exit 2, bez pliku.
+`status` i ostrzeżenia `preImplement.warning` oraz `warnings` z `plan|spec approve` nie są statusami operacji i nie zmieniają kodu wyjścia.
 
 `PASS` w `retro` znaczy tylko, że raport powstał; `NOT_RUN` znaczy brak danych (`no_data`, pusty magazyn), nie sukces.
 Komendy synchronizacji kończą 0 także z `[warn]`/`[conflict]`/`[info]`; błędy jawne (`import`, `add`, `skills add`) dają 1.
