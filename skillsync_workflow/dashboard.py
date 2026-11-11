@@ -1418,10 +1418,14 @@ def register(subparsers):
     serve.add_argument('--port', type=int, default=DEFAULT_PORT,
                        help=f'port (default {DEFAULT_PORT}, range {PORT_MIN}-{PORT_MAX}; one port per project)')
     serve.add_argument('--host', default='127.0.0.1',
-                       help='listen address (default 127.0.0.1; 0.0.0.0 = all interfaces; other devices also need --approve-host)')
+                       help='listen address (default 127.0.0.1; 0.0.0.0 = all interfaces; other devices also need --approve-host or --read-host)')
     serve.add_argument('--approve-host', action='append', default=[], metavar='NAME',
                        help='extra Host name (no port) allowed to open the page and give consents (repeatable); '
                             'default: localhost only; add --no-approvals for a read-only view')
+    serve.add_argument('--read-host', action='append', default=[], metavar='NAME',
+                       help='extra Host name (no port) allowed to open the page read-only (repeatable): every read, '
+                            'no consents (POST /api/approve = 403), e.g. viewers through a tunnel; '
+                            'consents stay with loopback and --approve-host')
     serve.add_argument('--no-approvals', action='store_true', help='read-only page: no consent buttons, POST /api/approve = 403')
     serve.add_argument('--session-url', help='https address of the session (button "Otwórz sesję"); no credentials')
     serve.add_argument('--poll', type=float, default=1.0, help='seconds between file change checks (min 0.2)')

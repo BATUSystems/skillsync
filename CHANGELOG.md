@@ -25,6 +25,11 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 - `skillsync approvals record <project> --word … --run … --source cli|ide`: the single writer of
   `.skillsync/runs/<run-id>/approvals.jsonl` (file lock, duplicate refusal, secret masking). Only the user records approvals.
 - Skill `dashboard` (status page) in the core library; domain record `docs/domain/dashboard-server.md` (server trust model).
+- `skillsync dashboard serve --read-host H` (repeatable): an extra `Host` name (port ignored, case-insensitive) that may read
+  everything (page, assets, `/api/*`, SSE) but never write: `POST /api/approve` answers 403 with the same message as a foreign
+  `Host`. Meant for viewers of a demo through a tunnel; approvals stay with loopback and `--approve-host`. `/api/status`
+  gains the additive `approvals.viewer` (true for a read-only host, where `approvals.here` is false). The server prints
+  read-only hosts separately from approval hosts at start.
 
 ### Changed
 

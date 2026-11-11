@@ -1339,6 +1339,162 @@ class HttpReadOnlyTests(HttpCase):
         self.assertFalse((self.root / RUN / "approvals.jsonl").exists())
 
 
+def raw_request(port: int, method: str, path: str, host: str) -> tuple[int, dict, bytes]:
+    """Żądanie (np. HEAD) przez http.client z dowolnym nagłówkiem Host; SSE czyta tylko nagłówki."""
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    try:
+        conn.putrequest(method, path, skip_host=True)
+        conn.putheader("Host", host)
+        conn.endheaders()
+        resp = conn.getresponse()
+        headers = {k.lower(): v for k, v in resp.getheaders()}
+        body = b"" if headers.get("content-type", "").startswith("text/event-stream") else resp.read()
+        return resp.status, headers, body
+    finally:
+        conn.close()
+
+
+class HttpReadHostTests(HttpCase):
+    """`--read-host`: widzowie przez tunel (połączenie z loopbacku, `Host: <nazwa>:5140`) czytają wszystko, nie zapisują
+    niczego; zgody daje tylko loopback albo `--approve-host`."""
+    READ = "viewer.example"
+    SPEC2 = "docs/specs/demo-etap-2.md"
+    PLAN2 = "docs/plans/2026-01-20-demo-etap-2.md"
+    READS = ("/", "/index.html", "/assets/app.js", "/assets/app.css", "/assets/theme.js", "/api/status",
+             f"/api/doc?path={SPEC}", "/api/descriptions", "/healthz")
+
+    def setUp(self) -> None:
+        super().setUp()
+        install_fake_cli(self)
+        spy_core(self)
+        self.board.read_hosts = frozenset({self.READ})
+        self.ok = {"Content-Type": "application/json", "X-Status-Board": "1"}
+
+    def status_as(self, host: str) -> dict:
+        code, _, body = raw_get(self.port, "/api/status", host)
+        self.assertEqual(code, 200, body)
+        return json.loads(body)
+
+    def go_plan_waiting(self) -> dict:
+        spec = self.root / self.SPEC2
+        spec.write_text(f"# Spec: Demo 2\n\nStatus: draft (czeka na GO plan)\nPlan: {self.PLAN2}\n", encoding="utf-8")
+        later = (self.root / PLAN).stat().st_mtime + 100
+        os.utime(spec, (later, later))
+        offer = next(a for a in self.status_as("127.0.0.1")["approvals"]["actions"] if a["kind"] == "spec")
+        self.assertEqual((offer["state"], offer["path"]), ("waiting", self.SPEC2))
+        return {"kind": "spec", "path": self.SPEC2, "sha": offer["sha"]}
+
+    def test_board_normalizes_read_hosts(self) -> None:
+        board = srv.Board(self.root, poll=0.2, heartbeat=0.5, prototype_port=1, assets=ASSETS,
+                          read_hosts=(" Viewer.Example ", "demo.example", "", "  "))
+        self.assertEqual(board.read_hosts, frozenset({"viewer.example", "demo.example"}))
+        self.assertEqual(board.approve_hosts, srv.LOOPBACK_HOSTS)  # --read-host nie poszerza listy zgód
+        self.assertEqual(srv.Board(self.root, assets=ASSETS).read_hosts, frozenset())
+
+    def test_read_host_gets_every_read(self) -> None:
+        for host in (self.READ, f"{self.READ}:5140", "VIEWER.EXAMPLE", "Viewer.Example:80"):
+            for path in self.READS:
+                with self.subTest(host=host, path=path, method="GET"):
+                    self.assertEqual(raw_get(self.port, path, host)[0], 200)
+                with self.subTest(host=host, path=path, method="HEAD"):
+                    code, _, body = raw_request(self.port, "HEAD", path, host)
+                    self.assertEqual((code, body), (200, b""))
+            with self.subTest(host=host, path="/events"):
+                code, headers, _ = raw_get(self.port, "/events", host)
+                self.assertEqual((code, headers["content-type"]), (200, "text/event-stream; charset=utf-8"))
+        code, _, body = raw_get(self.port, f"/api/doc?path={SPEC}", self.READ)
+        self.assertIn("md-check", json.loads(body)["html"])
+        self.assertEqual(raw_get(self.port, "/nope", self.READ)[0], 404)  # odczyt przechodzi, nieistniejąca strona = 404
+        self.assertEqual(raw_get(self.port, "/api/status", "viewer.example.evil.example")[0], 403)
+
+    def test_read_host_sse_streams_events(self) -> None:
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        try:
+            conn.putrequest("GET", "/events", skip_host=True)
+            conn.putheader("Host", f"{self.READ}:5140")
+            conn.endheaders()
+            resp = conn.getresponse()
+            self.assertEqual(resp.status, 200)
+            first = [resp.fp.readline().decode("utf-8").strip() for _ in range(3)]
+        finally:
+            conn.close()
+        self.assertIn("event: hello", first)
+
+    def test_status_flags_here_and_viewer(self) -> None:
+        self.board.approve_hosts = srv.LOOPBACK_HOSTS | {"demo.example"}
+        cases = {f"{self.READ}:5140": (False, True), "VIEWER.EXAMPLE": (False, True), "127.0.0.1": (True, False),
+                 "localhost:5140": (True, False), "[::1]": (True, False), "demo.example:5140": (True, False),
+                 "DEMO.example": (True, False)}
+        for host, expected in cases.items():
+            with self.subTest(host=host):
+                approvals = self.status_as(host)["approvals"]
+                self.assertEqual((approvals["here"], approvals["viewer"]), expected)
+
+    def test_read_host_sees_assumptions_questions_waiting_and_silence(self) -> None:
+        local, viewer = self.status_as("127.0.0.1"), self.status_as(self.READ)
+        for key in ("assumptions", "blockingQuestions", "waiting", "silence"):
+            with self.subTest(key=key):
+                self.assertIn(key, viewer)
+                self.assertEqual(viewer[key], local[key])  # widz widzi to samo co prowadzący
+
+    def test_read_host_post_is_refused_even_with_correct_headers(self) -> None:
+        data = self.go_plan_waiting()
+        for headers in ({**self.ok, "Host": f"{self.READ}:5140", "Origin": f"http://{self.READ}:5140"},
+                        {**self.ok, "Host": self.READ},
+                        {**self.ok, "Host": "VIEWER.EXAMPLE:5140", "Origin": f"http://127.0.0.1:{self.port}"}):
+            with self.subTest(headers=headers):
+                body = json.dumps(data).encode("utf-8")
+                code, answer = raw_post(self.port, {**headers, "Content-Length": str(len(body))}, body)
+                self.assertEqual((code, answer), (403, {"error": srv.HOST_REFUSED}))  # ten sam komunikat co obcy Host
+        # Origin z --read-host przy hoście loopback też nie przechodzi (Origin musi być z listy zgód).
+        self.assertEqual(self.post(data, {**self.ok, "Origin": f"http://{self.READ}:5140"})[0], 403)
+        self.set_doc.assert_not_called()
+        self.record.assert_not_called()
+        self.assertEqual(cli_calls(self), [])
+        self.assertIn(b"draft", (self.root / self.SPEC2).read_bytes())
+        # ta sama oferta z loopbacku przechodzi do zapisu: odmowa wynikała wyłącznie z klasy Host
+        code, answer = self.post(data, {**self.ok, "Origin": f"http://127.0.0.1:{self.port}"})
+        self.assertEqual((code, answer["word"]), (200, "GO plan"), answer)
+        self.set_doc.assert_called_once()
+
+    def test_foreign_host_is_still_refused_everywhere(self) -> None:
+        for host in ("evil.example", "evil.example:5140", "demo.example", "viewer.example.evil.example"):
+            for path in (*self.READS, "/events"):
+                with self.subTest(host=host, path=path):
+                    code, _, body = raw_get(self.port, path, host)
+                    self.assertEqual((code, json.loads(body)), (403, {"error": srv.HOST_REFUSED}))
+            with self.subTest(host=host, method="POST"):
+                code, body = raw_post(self.port, {**self.ok, "Host": host, "Content-Length": "2"}, b"{}")
+                self.assertEqual((code, body), (403, {"error": srv.HOST_REFUSED}))
+        self.assertEqual(self.board.sse_clients, 0)
+        self.set_doc.assert_not_called()
+        self.record.assert_not_called()
+
+    def test_read_and_approve_hosts_together_and_repeated(self) -> None:
+        self.board.read_hosts = frozenset({self.READ, "viewer2.example"})
+        self.board.approve_hosts = srv.LOOPBACK_HOSTS | {"demo.example"}
+        data = self.go_plan_waiting()
+        body = json.dumps(data).encode("utf-8")
+        for host in (self.READ, "viewer2.example:5140"):
+            with self.subTest(host=host):
+                self.assertEqual(raw_get(self.port, "/api/status", host)[0], 200)
+                code, answer = raw_post(self.port, {**self.ok, "Host": host, "Content-Length": str(len(body))}, body)
+                self.assertEqual((code, answer), (403, {"error": srv.HOST_REFUSED}))
+        self.set_doc.assert_not_called()
+        code, answer = raw_post(self.port, {**self.ok, "Host": "demo.example:5140", "Origin": "http://demo.example:5140",
+                                            "Content-Length": str(len(body))}, body)
+        self.assertEqual((code, answer["word"]), (200, "GO plan"), answer)  # --approve-host nadal zapisuje
+
+    def test_name_in_both_lists_keeps_writing(self) -> None:
+        """Nazwa i w --read-host, i w --approve-host (albo loopback): zgody zostają; serwer ostrzega przy starcie."""
+        self.board.read_hosts = frozenset({"demo.example", "localhost"})
+        self.board.approve_hosts = srv.LOOPBACK_HOSTS | {"demo.example"}
+        for host in ("demo.example", "localhost"):
+            with self.subTest(host=host):
+                approvals = self.status_as(host)["approvals"]
+                self.assertEqual((approvals["here"], approvals["viewer"]), (True, False))
+
+
 def cli_env(tmp: Path) -> dict:
     return {**os.environ, "SKILLSYNC_CONFIG": str(tmp / "machine-config.yaml"), "XDG_CACHE_HOME": str(tmp / "xdg-cache"),
             "XDG_DATA_HOME": str(tmp / "xdg-data")}
@@ -1503,7 +1659,8 @@ class ServeCommandTests(unittest.TestCase):
     def test_help_lists_serve_and_its_flags(self) -> None:
         result = self.cli("dashboard", "serve", "--help")
         self.assertEqual(result.returncode, 0, result.stderr)
-        for flag in ("--port", "--host", "--approve-host", "--no-approvals", "--layer", "--plan", "--session-url"):
+        for flag in ("--port", "--host", "--approve-host", "--read-host", "--no-approvals", "--layer", "--plan",
+                     "--session-url"):
             self.assertIn(flag, result.stdout)
         self.assertIn("5140", result.stdout)
         top = self.cli("dashboard", "--help")
@@ -1563,6 +1720,35 @@ class ServeCommandTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, err)
         self.assertEqual({k: v for k, v in json.loads(out).items() if k != "url"}, {"status": "PASS", "stopped": True})
         self.assertIn(f"127.0.0.1:{port}", err)
+
+    @unittest.skipIf(os.name == "nt", "SIGTERM kończy proces na Windows bez obsługi")
+    def test_serve_read_host_reads_and_lists_hosts_separately(self) -> None:
+        port = free_port()
+        proc = subprocess.Popen([sys.executable, str(CLI), "dashboard", "serve", str(self.root), "--port", str(port),
+                                 "--read-host", "Viewer.Example", "--read-host", "viewer2.example",
+                                 "--approve-host", "demo.example", *self.layer],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=self.env)
+        self.addCleanup(lambda: proc.poll() is None and proc.kill())
+        deadline, code = time.time() + 20, None
+        while time.time() < deadline and proc.poll() is None:
+            try:
+                code, _, body = raw_get(port, "/api/status", f"viewer.example:{port}")
+                break
+            except OSError:
+                time.sleep(0.1)
+        self.assertEqual(code, 200, proc.stderr.read() if proc.poll() is not None else "")
+        approvals = json.loads(body)["approvals"]
+        self.assertEqual((approvals["here"], approvals["viewer"]), (False, True))
+        self.assertEqual(raw_get(port, "/api/status", "viewer2.example")[0], 200)
+        self.assertEqual(raw_get(port, "/api/status", "evil.example")[0], 403)
+        code, answer = raw_post(port, {"Host": "viewer.example", "Content-Type": "application/json", "X-Status-Board": "1",
+                                       "Content-Length": "2"}, b"{}")
+        self.assertEqual((code, answer), (403, {"error": srv.HOST_REFUSED}))
+        proc.terminate()
+        _, err = proc.communicate(timeout=15)
+        self.assertEqual(proc.returncode, 0, err)
+        self.assertIn("hosty odczytu i zgód (--approve-host): demo.example", err)
+        self.assertIn("hosty tylko do odczytu (--read-host, bez zgód): viewer.example, viewer2.example", err)
 
 
 if __name__ == "__main__":

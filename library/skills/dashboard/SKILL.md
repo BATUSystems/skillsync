@@ -16,7 +16,7 @@ przycisku (niżej: „Przyciski zgód”).
 ## Uruchomienie
 
 ```bash
-skillsync dashboard serve <projekt> [--port 5140] [--host 127.0.0.1] [--approve-host NAZWA ...] [--no-approvals] [--plan docs/plans/<plik>.md] [--session-url https://…] [--layer id=ścieżka ...]
+skillsync dashboard serve <projekt> [--port 5140] [--host 127.0.0.1] [--approve-host NAZWA ...] [--read-host NAZWA ...] [--no-approvals] [--plan docs/plans/<plik>.md] [--session-url https://…] [--layer id=ścieżka ...]
 skillsync dashboard show <projekt> [--json] [--plan docs/plans/<plik>.md]   # jednorazowy zrzut JSON (to samo co /api/status)
 ```
 
@@ -31,7 +31,10 @@ skillsync dashboard show <projekt> [--json] [--plan docs/plans/<plik>.md]   # je
   stronie wysyła `Host: localhost`, więc działa bez flag). `--host 0.0.0.0` = wszystkie interfejsy (podgląd z telefonu lub
   innej maszyny w **zaufanej** sieci); każdy endpoint odpowiada jednak tylko pod nagłówkiem `Host` z loopbacku albo z
   `--approve-host`, więc adres z paska przeglądarki innego urządzenia (nazwa lub IP) trzeba podać w `--approve-host`
-  (inaczej 403). `--approve-host` dopuszcza odczyt i zgody; sam podgląd = `--approve-host <adres> --no-approvals`. Serwer
+  (inaczej 403). `--approve-host` dopuszcza odczyt i zgody; `--read-host <adres>` (powtarzalny) dopuszcza tylko odczyt:
+  pokaz przez tunel, w którym widzowie wysyłają `Host: <nazwa>:5140`, widzą wszystko (także założenia i baner „czeka:”),
+  ale `POST /api/approve` dostaje 403, a `/api/status` ma `approvals.viewer: true` i `here: false`; zgody daje
+  prowadzący pod localhost. Podgląd bez zgód dla wszystkich = `--no-approvals`. Serwer
   wypisuje przy starcie ostrzeżenie i adresy LAN do otwarcia.
   Odnośnik do prototypu używa hosta, pod którym otwarto stronę, więc działa także z innego urządzenia (gdy prototypy też słuchają na LAN).
 - Bez `--plan`: bieżący plan = najnowszy `docs/plans/*.md` ze `Status: in_progress`, inaczej `approved`, inaczej `draft`, inaczej ostatni `done`
@@ -179,15 +182,16 @@ była, a nie, że pętla dała PASS.
   i sam wraca do trybu na żywo. Nagłówki `Cache-Control: no-cache`, `X-Accel-Buffering: no` (tunel/proxy bez buforowania).
 - Prototyp: odnośnik `http://<host strony>:5130/<slug>/` tylko gdy serwer prototypów na 5130 odpowiada.
 - `POST /api/approve` `{kind: spec|plan, path, sha}`: tylko akcja, którą strona właśnie oferuje; `/api/status` ma
-  `approvals {enabled, here, actions[]}`, `session {url}`, `spec.fileSha`, `plan.fileSha`, a pozycje banera `word`/`approve`.
+  `approvals {enabled, here, viewer, actions[]}`, `session {url}`, `spec.fileSha`, `plan.fileSha`, a pozycje banera `word`/`approve`.
 
 ## Bezpieczeństwo
 
 - Strona nie ma logowania: z `--approve-host` przy `0.0.0.0` widzi ją każdy w tej sieci, kto otworzy podany adres (plany,
   speki, checkpointy).
 - Kontrola `Host` na wszystkich endpointach (strona, assety, `/api/*`, `/events`, `/healthz`, `POST`): nagłówek `Host` musi
-  być `localhost`/`127.0.0.1`/`[::1]` (dowolny port) albo nazwą podaną jawnie w `--approve-host` (np. nazwa maszyny przy
-  tunelu, IP w LAN); inny = 403 bez treści (ochrona przed DNS rebinding), odmowa w logu przy `--verbose`.
+  być `localhost`/`127.0.0.1`/`[::1]` (dowolny port) albo nazwą podaną jawnie w `--approve-host` lub `--read-host` (np. nazwa
+  maszyny przy tunelu, IP w LAN); inny = 403 bez treści (ochrona przed DNS rebinding), odmowa w logu przy `--verbose`.
+  Zapis zgody tylko z loopbacku albo `--approve-host`; host z `--read-host` czyta, ale nie zapisuje.
 - Zapis zgody dodatkowo: wymagany nagłówek `X-Status-Board: 1` (preflight CORS, którego
   serwer nie obsługuje, blokuje obce strony), `Origin` — jeśli jest — z tej samej listy hostów, `Content-Type: application/json`, limit 4 KB.
   Bez uwierzytelnienia z decyzji właściciela: narzędzie programisty na jego maszynie; agent i tak może wywołać CLI.

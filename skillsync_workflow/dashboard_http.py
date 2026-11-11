@@ -6,7 +6,9 @@ the Markdown preview `/api/doc`, the page assets and `descriptions.json` of the 
 layers through `LayerSet.skill_files`), and the consent buttons `POST /api/approve`.
 
 Every endpoint (GET, HEAD, SSE and POST) answers only to a `Host` header from loopback (`localhost`, `127.0.0.1`, `::1`,
-any port) or from `--approve-host`; another `Host` (DNS rebinding, an unlisted tunnel or LAN name) = 403 without content.
+any port), from `--approve-host` or from `--read-host`; another `Host` (DNS rebinding, an unlisted tunnel or LAN name) = 403
+without content. Three Host classes: loopback and `--approve-host` read and write; `--read-host` (viewers through a tunnel)
+reads everything and never writes (`POST /api/approve` = 403 with the same refusal as a foreign Host).
 
 The only write: `POST /api/approve`, in-process through the shared core functions of `status.py` (no `skillsync`
 subprocess): "GO plan"/"GO implement" = `set_doc_status(..., expect_sha=<shown sha>)` and then, when the run directory
@@ -368,6 +370,7 @@ class Board:
     def __init__(self, root: Path, default_plan: str | None = None, poll: float = 1.0,
                  heartbeat: float = 15.0, prototype_port: int = engine.PROTOTYPE_PORT,
                  approvals: bool = True, session_url: str | None = None, approve_hosts: tuple[str, ...] = (),
+                 read_hosts: tuple[str, ...] = (),
                  assets: dict[str, Path] | None = None, descriptions: Path | None = None, manifest: dict | None = None):
         self.root = Path(root).resolve()
         self.approvals = approvals
@@ -378,6 +381,9 @@ class Board:
         self._approve_lock = threading.Lock()
         self._ahead: tuple[tuple, float, dict] = ((), 0.0, {})
         self.approve_hosts = LOOPBACK_HOSTS | {h.strip().lower() for h in approve_hosts if h.strip()}
+        # Read-only Host names (viewers through a tunnel): every read, never a write. A name that is also loopback or in
+        # --approve-host keeps writing: the request cannot tell the presenter from a viewer under the same Host.
+        self.read_hosts = frozenset(h.strip().lower() for h in read_hosts if h.strip())
         self.default_plan = default_plan
         self.poll = poll
         self.heartbeat = heartbeat
@@ -610,10 +616,11 @@ class Handler(BaseHTTPRequestHandler):
         self._send(code, json.dumps(data, ensure_ascii=False).encode("utf-8"), "application/json; charset=utf-8")
 
     def _host_refused(self) -> bool:
-        """Every endpoint: a `Host` outside loopback and `--approve-host` (DNS rebinding, an unlisted tunnel or LAN
-        name) gets 403 without any content; the refusal goes to the verbose log only."""
+        """Every endpoint: a `Host` outside loopback, `--approve-host` and `--read-host` (DNS rebinding, an unlisted
+        tunnel or LAN name) gets 403 without any content; the refusal goes to the verbose log only. Passing this check is
+        enough for reads; a write also needs `_approve_allowed` (loopback or `--approve-host`)."""
         host = request_host(self.headers.get("Host"))
-        if host in self.board.approve_hosts:
+        if host in self.board.approve_hosts or host in self.board.read_hosts:
             return False
         if self.verbose:
             log(f"odmowa {self.command} {urlparse(self.path).path[:120]!r}: Host spoza listy ({host[:80]!r})")
@@ -639,7 +646,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._asset(route[len("/assets/"):])
             if route == "/api/status":
                 data = self.board.status((query.get("plan") or [None])[0])
-                data["approvals"]["here"] = request_host(self.headers.get("Host")) in self.board.approve_hosts
+                host = request_host(self.headers.get("Host"))
+                here = host in self.board.approve_hosts
+                data["approvals"]["here"] = here
+                data["approvals"]["viewer"] = not here and host in self.board.read_hosts  # read-only Host (--read-host)
                 return self._json(200, redact(data))  # secrets masked as in `dashboard show`
             if route == "/api/doc":
                 doc = self.board.doc((query.get("path") or [None])[0])
@@ -669,7 +679,7 @@ class Handler(BaseHTTPRequestHandler):
         a CORS preflight the server does not answer), matching Origin when the browser sent one, JSON content type."""
         allowed = self.board.approve_hosts
         host = request_host(self.headers.get("Host"))
-        if host not in allowed:  # do_POST already refused it; kept so the write guard stands on its own
+        if host not in allowed:  # foreign Host: do_POST already refused it; --read-host: refused here, same message
             return HOST_REFUSED
         if self.headers.get("X-Status-Board") != "1":
             return "Brak nagłówka X-Status-Board."
@@ -836,7 +846,8 @@ def serve_command(args) -> int:
             raise ValueError(f"Brak strony: żadna aktywna warstwa nie ma skills/{SKILL}/assets/index.html "
                              f"(warstwy: {', '.join(layerset.ids) or 'brak'}).")
         board = Board(root, plan, poll=max(0.2, args.poll), approvals=not args.no_approvals,
-                      session_url=args.session_url, approve_hosts=tuple(args.approve_host), assets=assets,
+                      session_url=args.session_url, approve_hosts=tuple(args.approve_host),
+                      read_hosts=tuple(getattr(args, "read_host", None) or ()), assets=assets,
                       descriptions=descriptions, manifest=manifest)
         server = make_server(board, args.host, args.port, args.verbose)
     except OSError as error:
@@ -850,17 +861,30 @@ def serve_command(args) -> int:
     host, port = server.server_address[:2]
     url = f"http://{'[%s]' % host if ':' in host else host}:{port}/"
     log(f"projekt {board.root} → {url}  (Ctrl+C kończy)")
+    extra = sorted(board.approve_hosts - LOOPBACK_HOSTS)
+    readers = sorted(board.read_hosts - board.approve_hosts)
+    if extra:
+        log(f"hosty odczytu i zgód (--approve-host): {', '.join(extra)}"
+            f"{' (zgody wyłączone: --no-approvals)' if not board.approvals else ''}")
+    if readers:
+        log(f"hosty tylko do odczytu (--read-host, bez zgód): {', '.join(readers)}")
+    shadowed = sorted(board.read_hosts & board.approve_hosts)
+    if shadowed:
+        log(f"UWAGA: {', '.join(shadowed)} z --read-host jest też loopbackiem albo w --approve-host, więc daje zgody.")
     if args.host not in LOOPBACK_HOSTS:
-        extra = sorted(board.approve_hosts - LOOPBACK_HOSTS)
-        if not extra:
+        if not extra and not readers:
             log(f"UWAGA: nasłuch na {args.host}, ale strona odpowiada tylko pod localhost (nagłówek Host); inne urządzenia "
-                f"dostaną 403, dopóki ich adres z paska przeglądarki (nazwa lub IP) nie trafi do --approve-host.")
+                f"dostaną 403, dopóki ich adres z paska przeglądarki (nazwa lub IP) nie trafi do --approve-host "
+                f"albo --read-host.")
+        elif not extra:
+            log(f"UWAGA: nasłuch na {args.host}; strona (tylko odczyt) dostępna pod: {', '.join(readers)} — używaj "
+                f"w zaufanej sieci.")
         else:
             log(f"UWAGA: nasłuch na {args.host}; strona {'(tylko odczyt) ' if not board.approvals else 'i zgody '}"
                 f"dostępne pod: {', '.join(extra)} — używaj w zaufanej sieci"
                 f"{'' if not board.approvals else ' (--no-approvals = tylko odczyt)'}.")
         for ip in lan_addresses() if args.host in ("0.0.0.0", "::", "") else [args.host]:
-            log(f"  z innego urządzenia: http://{ip}:{port}/ (wymaga --approve-host {ip})")
+            log(f"  z innego urządzenia: http://{ip}:{port}/ (wymaga --approve-host {ip} albo --read-host {ip})")
     try:
         server.serve_forever(poll_interval=0.5)
     except KeyboardInterrupt:
