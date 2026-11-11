@@ -53,7 +53,7 @@ Krok ma stały id i wiersz w tabeli o kolumnach `Id | Krok | Rola | Exec | Ryzyk
 |---|---|---|---|---|---|
 
 Faza z FE i BE zaczyna od kroku kontraktu (DTO, endpointy, migawka kontraktu w commicie); potem FE i BE idą równolegle na tym samym
-kontrakcie, bez tury „dopasowania”. Test-writer pracuje równolegle z review R1 fazy (jego testy sprawdza runda 2 albo, w pętli jednorundowej, świeży `verifier` przed odhaczeniem kroku), ale tylko
+kontrakcie, bez tury „dopasowania”. Test-writer pracuje równolegle z review R1 fazy (jego testy sprawdza runda 2 albo, w pętli jednorundowej, świeży `verifier` przed odhaczeniem kroku sprawdza testy test-writera względem kryteriów kroku (czy je pokrywają i czy potrafią paść), a dowód (raport weryfikatora) trafia do rekordu checkpointu kroku), ale tylko
 w fazach, które mają test-writera w planie. Szacunek kalibruj na ok. 75–105 min pracy na zdolność z pełną pętlą review; spec
 z co najmniej 5 zdolnościami to dwa plany ([plan-large](plan-large.md)).
 
@@ -81,7 +81,7 @@ PR: #123 (link: https://example.com/pr/123)
 - Kroki to pozycje `- [ ]` / `- [x]` z id i tytułem; krok odhacz dopiero po sprawdzeniu dowodów (checkpoint, wynik polecenia), nigdy na samej deklaracji podumysłu.
 - Ostatni krok `Progress` to zamknięcie przebiegu (rola: orkiestrator): „Wynik”, `retro-quality`, checkpoint `--final`,
   `Status: done` planu i `implemented` speca. Bez niego plan po ostatnim `[x]` zostaje `in_progress` i `skillsync status`
-  zgłasza `needsHuman: closure`.
+  zgłasza `needsHuman: closure`. Przy `ceremony: demo` `retro-quality` jest odroczone do podsekcji „Dług (ceremony: demo)” w „Wyniku” ([ceremonia demo](ceremony-demo.md)).
 - Fazy to nagłówki poziomu 3 lub niższego; nagłówek poziomu 2 zamyka sekcję `Progress`.
 - Linia `PR: #<n> (link: <url>)` zaczyna wiersz (nie jest punktem listy ani cytatem) i stoi pod `## Progress`; opcjonalna `Ticket: <KEY> (link: <url>)` ma klucz Jira, np. `ABC-123`.
 - Plany bez `Progress` (starsze) są poprawne i nie wymagają migracji; opcjonalny przebieg do PR-a opisuje [pr-run](../../pr-run/SKILL.md).

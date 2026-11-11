@@ -23,7 +23,7 @@ delegacji, zgłoś ograniczenie zamiast udawać niezależne review lub uruchamia
   ([plan](references/plan-details.md)); raport postępu po każdym podkroku albo co 30 minut, co nastąpi pierwsze.
   Raport to jedna linia na podkrok `Fn.k` (podkrok, wynik albo sha, czas).
 - Kontrakt najpierw: faza z FE i BE zaczyna od kroku kontraktu (DTO, endpointy, migawka kontraktu w commicie), po czym FE i BE idą
-  równolegle na tym samym kontrakcie, bez tury „dopasowania”. Test-writer pracuje równolegle z review R1 fazy (jego testy integracyjne sprawdza runda 2 albo, w pętli jednorundowej, świeży `verifier` przed odhaczeniem kroku),
+  równolegle na tym samym kontrakcie, bez tury „dopasowania”. Test-writer pracuje równolegle z review R1 fazy (jego testy integracyjne sprawdza runda 2 albo, w pętli jednorundowej, świeży `verifier` przed odhaczeniem kroku sprawdza testy test-writera względem kryteriów kroku (czy je pokrywają i czy potrafią paść), a dowód (raport weryfikatora) trafia do rekordu checkpointu kroku),
   ale tylko w fazach, które mają test-writera w planie.
 - Podział etapu: spec z co najmniej 5 zdolnościami to dwa plany; przy bramce planu zapytaj użytkownika o podział. Szacunek kalibruj
   na ok. 75–105 min pracy na zdolność z pełną pętlą review.
@@ -44,7 +44,7 @@ delegacji, zgłoś ograniczenie zamiast udawać niezależne review lub uruchamia
 ## Akty i zgody
 
 Praca `feature` ma trzy akty: **I Spec**, **II Plan**, **III Realizacja**; między nimi są bramki „GO plan” i „GO implement”.
-Słownik bez kolizji: „etap” zostaje dla etapów pracy w projektach (np. etapy prac w projekcie), „faza” i „krok” to części planu,
+Słownik bez kolizji: „etap” zostaje dla etapów pracy w projektach, „faza” i „krok” to części planu,
 „runda” to jedno okrążenie pętli review.
 
 | Akt | Wynik | Pętla ([review-loop](references/review-loop.md)) | Zgoda na koniec |
@@ -133,7 +133,8 @@ określa format; `pre-implement` sprawdza zmiany kontraktów i wysokie ryzyko.
    Dostawa zależy od `delivery.mode` (`skillsync route`). tryb `pr` (domyślny): „GO implement” jest jawnym wywołaniem `/pr-run` (Azure/GitHub,
    zainstalowany `pr-run`; bez niego lub bez hosta nie zakładaj PR-a, zapytaj); po ostatnim kroku stan „czeka na READY”. tryb `direct`: commity
    lokalne po każdym kroku, bez pusha i PR, a po ostatnim kroku „czeka na CP”; `READY` jest tu odmową. W obu trybach pierwszy commit
-   powstaje przy „GO plan” (spec, plan-szkic, prototyp; lokalnie, bez pusha), a kolejne po każdym sprawdzonym kroku.
+   powstaje przy „GO plan” (spec, plan-szkic, prototyp; lokalnie, bez pusha), a kolejne po każdym sprawdzonym kroku planu. Plan bez speca
+   (`direct`, `bugfix`, wejście z klucza) nie ma „GO plan”: pierwszy commit (plan) powstaje po „GO implement”.
    Wyjątek: przy wejściu z klucza zgłoszenia nie uruchamiaj `/pr-run`; PR według
    [pr-after-approval](references/pr-after-approval.md), tylko na „rób PR”.
    Niejasny przepływ UI: zaproponuj opcjonalną makietę (`prototype`, jeśli dostępny); bez zgody użytkownika nie twórz.

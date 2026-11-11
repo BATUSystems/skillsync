@@ -88,7 +88,7 @@ Problem i odniesienie do wymagań (numery z mapy FRD, bez kopiowania), zakres, k
 przy FRD mapa wymaganie → kryterium ([frd-intake](frd-intake.md) §5), decyzje i alternatywy, badanie wzorców
 (gdy zmiana wprowadza nowy mechanizm), `Kontrakty`, dane, `Migracja`, bezpieczeństwo, `Ryzyka` (rejestr z ryzykiem rezydualnym),
 odwrócenie zmian (każda mutacja lub jawne „nieodwracalne”), strategia testów (podejście; komendy są w planie), raport spójności.
-Sekcja bez zastosowania: „nie dotyczy” z powodem, bez wymyślania treści. Blokujące pytania `Q` żyją tylko w szkielecie i znikają po odpowiedziach; założenia `[ZAŁOŻENIE]` zostają w specu do końca aktu I jako jawne założenia.
+Sekcja bez zastosowania: „nie dotyczy” z powodem, bez wymyślania treści. Blokujące pytania `Q` żyją tylko w szkielecie i znikają po odpowiedziach; założenia `[ZAŁOŻENIE]` zostają w specu jako jawne założenia także po „GO plan” (spec jest zamrożony razem z nimi).
 
 Nagłówki `Kontrakty`, `Migracja` i `Ryzyka` zostaw dosłownie, każdy z treścią bezpośrednio pod sobą (bez podnagłówka zaraz pod spodem):
 `skillsync readiness` kończy sekcję na najbliższym nagłówku dowolnego poziomu i dopasowuje podciąg nagłówka bez wielkości liter.
@@ -188,7 +188,7 @@ Po „GO plan” spec jest zamrożony razem z nimi: nie przenoś ich do „Decyz
 Spec ma dwie klasy pytań:
 - `- Q<n>: <pytanie>` jest **blokujące**: STOP, bez projektu na domysłach (jak dotąd).
 - `- Q<n> [ZAŁOŻENIE]: <pytanie> — przyjęte: <wartość>` to **założenie nieblokujące**: nie zatrzymuje „draft z Q”, a przyjęta wartość jest
-  widoczna do korekty (strona statusu, prototyp). Użytkownik zmienia ją odpowiedzią, a wtedy wiersz traci oznaczenie albo dostaje nową wartość.
+  widoczna do korekty (strona statusu, prototyp). Użytkownik zmienia ją odpowiedzią, a wtedy wiersz przechodzi do „Decyzji” albo dostaje nową wartość po „przyjęte:”.
 
 Format wiersza jest dosłowny: parser dzieli po **ostatnim** ` — przyjęte: ` (myślnik z odstępami), więc pytanie może zawierać myślniki.
 Nie oznaczaj jako [ZAŁOŻENIE] pytań o kontrakt, dane, migrację ani bezpieczeństwo: te zawsze blokują. W razie wątpliwości pytanie jest blokujące.

@@ -16,10 +16,10 @@ Ten dokument prowadzi akt I (spec, pętla `spec`, zgoda GO plan). Akt II (plan, 
 - Krytyczna niewiadoma to założenie, którego pomyłka oznaczałaby przepisanie dużej części speca; typowe przypadki: format danych, zasięg, miejsce połączenia z resztą systemu, dobór narzędzia.
 - Sprawdź podział: gdy zlecenie obejmuje kilka zdolności, z których każda działa samodzielnie, zapytaj użytkownika, czy rozbić je na osobne plany i specy. Spec z co najmniej 5 zdolnościami to dwa plany (podział etapu): przy bramce planu zapytaj użytkownika o podział; szacunek kalibruj na ok. 75–105 min pracy na zdolność z pełną pętlą review.
 - Każde pytanie dostaje numer `Q1`, `Q2`… i własną, krótką linię; wybieraj formę tak/nie lub zestaw opcji. Pytanie z rozsądnym domyślnym rozstrzygnięciem może być założeniem nieblokującym `[ZAŁOŻENIE]` ([spec](spec.md#klasy-pytań-q)); STOP dotyczy pytań blokujących.
-- Po pokazaniu szkieletu zatrzymaj się i czekaj na odpowiedzi użytkownika.
+- Po pokazaniu szkieletu z pytaniami blokującymi zatrzymaj się i czekaj na odpowiedzi użytkownika; przy samych założeniach `[ZAŁOŻENIE]` nie ma STOP.
 - Do czasu odpowiedzi działa tylko `explore` oraz zbieranie danych niezależnych od pytań: kto korzysta z modułu, jak zbudowany jest kod, jakie kontrakty już istnieją. Projekt na domysłach jest zakazany.
 - Niewiadomą odkrytą później zgłaszaj bramką ponownie, tylko dla nowych pytań.
-- Gdy odpowiedzi padną, `Pytania otwarte` znikają z dokumentu; rozstrzygnięcia lądują w `Decyzje i alternatywy`, a spec uzupełnia się o kryteria akceptacji i mapę FRD ([spec](spec.md)).
+- Gdy odpowiedzi padną, pytania blokujące znikają z sekcji `Pytania otwarte`, a założenia `[ZAŁOŻENIE]` zostają w specu ([spec](spec.md#klasy-pytań-q)); rozstrzygnięcia lądują w `Decyzje i alternatywy`, a spec uzupełnia się o kryteria akceptacji i mapę FRD ([spec](spec.md)).
 
 ## 2. Sekcje rozszerzone
 
@@ -44,7 +44,7 @@ Umiejscowienie: w specu, poza fazami i krokami — te są w planie.
 - Wykonawca: `reviewer` w profilu `spec`, z zleceniem ataku na sam wniosek, nie na formę.
 - Pięć pytań: czy problem istnieje i kogo dotyczy; czy rzetelnie zważono wariant bez zmian i wariant mniejszy; czy tempo i rampa wdrożenia odpowiadają ryzyku; które nieprzetestowane założenie jest najbardziej ryzykowne; czy opis zrozumie na zimno osoba bez kontekstu.
 - Wynik przekładaj na statusy profili pętli roli `reviewer`; poważny problem oznacza `CHANGES_REQUIRED`.
-- Uwagi challengera przychodzą do użytkownika jako `C1`, `C2`…, równolegle z `Q…`; zamyka je wyłącznie użytkownik. Odpowiedzi kasują obie listy pytań z dokumentu.
+- Uwagi challengera przychodzą do użytkownika jako `C1`, `C2`…, równolegle z `Q…`; zamyka je wyłącznie użytkownik. Odpowiedzi użytkownika kasują pytania blokujące i uwagi C; założenia zostają.
 
 ## 4. Raport spójności
 

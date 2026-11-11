@@ -56,11 +56,11 @@ plan bez żywego właściciela = pytanie, czy zaczynamy; `needsHuman: closure` =
 - Review jest niezależne i tylko do odczytu. Po poprawkach testy oraz zamknięcie uwag
   sprawdza się na aktualnym stanie. Nowy zapis unieważnia dotknięte dowody.
 - Done wymaga kryteriów, wymaganych kontroli, dokumentacji, changeloga, ustalonej z użytkownikiem wersji (propozycja + pytanie, `workflow/references/release.md`), wiedzy, zamknięcia blokerów i zamknięcia przebiegu (ostatni krok planu). Merge i complete PR nigdy nie należą do agenta.
-  `ceremony: demo`: wyjątek tylko wg `ceremony-demo.md` skilla `feature`, także przed „czeka na READY/CP”.
+  `ceremony: demo`: zob. `ceremony-demo.md`.
 - Tryb dostarczania: `skillsync route <projekt>` zwraca `delivery {mode, base, source}`; bez CLI czytaj `delivery.mode` z `.github/.skillsync.yaml`
   (brak = `pr`). Przy `source: invalid` nie zakładaj `pr`, zapytaj. Brak `delivery.base`: weź `origin/HEAD`, a gdy się nie da, STOP i pytanie.
-- Przed „GO implement” nic nie opuszcza maszyny. Od „GO plan” (bez niego: „GO implement”) praca na gałęzi roboczej w osobnym worktree; „GO plan” = lokalny commit speca, planu
-  i prototypu, potem commit po każdym kroku; podumysły nie commitują. `git add` tylko z jawnymi ścieżkami kroku, nigdy plików
+- Przed „GO implement” nic nie opuszcza maszyny. Od „GO plan” (bez niego: „GO implement”) osobny worktree i gałąź robocza;
+  „GO plan” = lokalny commit speca, planu i prototypu (bez niego: plan po „GO implement”); dalej commit po każdym sprawdzonym kroku planu; podumysły nie commitują. `git add` tylko z jawnymi ścieżkami kroku, nigdy plików
   generowanych (tworzonych przez `link` lub wpisanych do `.github/.gitignore`) ani sekretów; przed commitem skan sekretów (gitleaks, gdy
   dostępny; inaczej STOP i prośba o skan).
 - `pr`: „GO implement” uruchamia `pr-run` (gałąź, commity, push gałęzi, draft PR do `delivery.base`). `direct`: commity lokalne, bez pusha i PR.
