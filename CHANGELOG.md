@@ -32,6 +32,8 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 - `skillsync readiness --run-id <id>`: writes `.skillsync/runs/<id>/readiness.md` atomically (first line
   `Readiness: PASS|BLOCKED`, then risk, areas, plan, issues, sections, files, note) and adds `reportFile` to the JSON. It refuses
   symlinked run paths and an invalid run id. Without the flag the behaviour is unchanged.
+- `skillsync prototype list --json`: `acceptance.perScreen` — `[{id, state}]` for every screen in document order, with `state`
+  `accepted`, `stale` or `pending` (accepted + stale + pending = `screens`). The sums `screens`, `accepted` and `stale` are unchanged.
 
 ### Changed
 

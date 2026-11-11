@@ -1374,7 +1374,8 @@ class ListTests(PrototypeFixture):
             # K32: only added fields; `iteration` = the current iteration (1 before the first freeze),
             # F3 (K20): v2 has `acceptance` {screens, accepted, stale}; a fresh prototype has one
             # screen (the template s1) and nothing accepted yet (v1: null, see tests.test_skillsync_prototype_accept)
-            'commentsFormat': 2, 'iteration': 1, 'acceptance': {'screens': 1, 'accepted': 0, 'stale': 0},
+            'commentsFormat': 2, 'iteration': 1, 'acceptance': {'screens': 1, 'accepted': 0, 'stale': 0,
+                                                                  'perScreen': [{'id': 's2', 'state': 'pending'}]},
             'threads': {'open': 0, 'awaiting': 0, 'decided': 0, 'closed': 0, 'deferred': 0, 'lost': 0}})
 
     def test_list_iteration_is_the_current_iteration_after_frozen_ones(self):
