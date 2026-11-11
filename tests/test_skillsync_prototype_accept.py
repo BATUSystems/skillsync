@@ -2017,3 +2017,162 @@ class GateTests(GateCase):
         before = {slug: self.journal(slug) for slug in ('alpha', 'beta', 'old')}
         self.gate([self.line('alpha'), self.line('old')], code=1)
         self.assertEqual({slug: self.journal(slug) for slug in ('alpha', 'beta', 'old')}, before)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# Bramka per faza: `gate --phase`, tabela stanów U/P/B (spec feat-demo, K5, K6, K8)
+# ═════════════════════════════════════════════════════════════════════════════
+
+UI_TABLE = '## Kroki\n\n| Id | Krok |\n|---|---|\n| F1 [UI] | Ekran |\n| F2 | Backend |\n'
+PLAIN_TABLE = '## Kroki\n\n| Id | Krok |\n|---|---|\n| F1 | Kod |\n| F2 | Backend |\n'
+NO_TABLE = '## Etap 1\nTreść etapu.\n'
+
+
+class GatePhaseTests(GateCase):
+    """Każdy wiersz tabeli stanów (U = plan ma fazę `[UI]`, P = linia `Prototyp:`, B = obejście) to osobny przypadek;
+    kolumny: bez `--phase`, faza `[UI]` (F1), faza bez `[UI]` (F2), nieznana (F9)."""
+
+    def run_gate(self, header, body, phase=None, code=0):
+        args = ['gate', '--plan', self.plan(header, body)]
+        if phase is not None:
+            args += ['--phase', phase]
+        return self.proto(*args, code=code)
+
+    def assert_blocked(self, report, error):
+        self.assertEqual((report['status'], report['error']), ('BLOCKED', error))
+
+    def assert_unknown_phase(self, header, body):
+        report = self.run_gate(header, body, 'F9', code=2)
+        self.assert_blocked(report, 'unknown_phase')
+        self.assertTrue(report['reason'].startswith('unknown_phase: '))
+        self.assertEqual(report['plan'], PLAN)
+        return report
+
+    # -- U = nie ------------------------------------------------------------------
+
+    def test_row_no_ui_no_prototype_line(self):
+        for body in (NO_TABLE, PLAIN_TABLE):
+            with self.subTest(body=body[:12]):
+                whole = self.run_gate([], body)
+                self.assertEqual((whole['status'], whole['note']), ('PASS', 'plan bez linii Prototyp:'))
+                self.assertNotIn('phase', whole)
+                self.assertNotIn('uiPhases', whole)
+                self.assertNotIn('phases', whole)
+                self.assert_unknown_phase([], body)
+        known = self.run_gate([], PLAIN_TABLE, 'F2')
+        self.assertEqual((known['status'], known['phase'], known['note']), ('PASS', 'F2', 'plan bez linii Prototyp:'))
+        self.assertNotIn('uiPhases', known)
+
+    def test_row_no_ui_prototype_line_gives_the_plan_result(self):
+        header = [self.line('alpha')]
+        whole = self.run_gate(header, PLAIN_TABLE, code=1)
+        self.assertEqual(whole['status'], 'FAIL')
+        self.assertNotIn('phase', whole)
+        self.assertNotIn('uiPhases', whole)
+        phased = self.run_gate(header, PLAIN_TABLE, 'F2', code=1)  # K8: the whole plan stays behind the gate
+        self.assertEqual((phased['status'], phased['phase'], phased['missing']), ('FAIL', 'F2', whole['missing']))
+        self.assertNotIn('uiPhases', phased)
+        self.assert_unknown_phase(header, PLAIN_TABLE)
+        self.assert_unknown_phase(header, NO_TABLE)
+        self.accept_all('alpha')
+        ok = self.run_gate(header, PLAIN_TABLE, 'F1')
+        self.assertEqual((ok['status'], ok['phase'], len(ok['acceptances'])), ('PASS', 'F1', 2))
+
+    def test_no_ui_with_the_bypass_turns_the_fail_into_a_pass(self):
+        header = [self.line('alpha'), BYPASS]
+        for phase in (None, 'F1'):
+            with self.subTest(phase=phase):
+                report = self.run_gate(header, PLAIN_TABLE, phase)
+                self.assertEqual(report['status'], 'PASS')
+                self.assertEqual(report['bypassed']['by'], 'Ola')
+                self.assertEqual(report.get('phase'), phase)
+
+    # -- U = tak, P = nie ----------------------------------------------------------
+
+    def test_row_ui_without_prototype_line_and_bypass_is_blocked_in_every_mode(self):
+        for phase in (None, 'F1', 'F2'):
+            with self.subTest(phase=phase):
+                report = self.run_gate([], UI_TABLE, phase, code=2)
+                self.assert_blocked(report, 'ui_phase_without_prototype')
+                self.assertEqual(report['uiPhases'], ['F1'])
+                self.assertEqual(report['phases'], ['F1', 'F2'])
+                self.assertEqual(report.get('phase'), phase)
+        report = self.assert_unknown_phase([], UI_TABLE)  # an unknown phase is reported first
+        self.assertEqual((report['uiPhases'], report['phases']), (['F1'], ['F1', 'F2']))  # K6: also with --phase
+
+    def test_row_ui_without_prototype_line_with_the_bypass_passes_with_bypassed(self):
+        for phase in (None, 'F1', 'F2'):
+            with self.subTest(phase=phase):
+                report = self.run_gate([BYPASS], UI_TABLE, phase)
+                self.assertEqual(report['status'], 'PASS')
+                self.assertEqual(report['bypassed'], {'reason': 'pilna poprawka produkcyjna', 'by': 'Ola', 'date': '2026-11-05'})
+                self.assertEqual((report['uiPhases'], report['phases']), (['F1'], ['F1', 'F2']))
+                self.assertEqual(report.get('phase'), phase)
+        self.assert_unknown_phase([BYPASS], UI_TABLE)
+
+    # -- U = tak, P = tak ----------------------------------------------------------
+
+    def test_row_ui_prototype_line_without_bypass(self):
+        header = [self.line('alpha')]
+        for phase in (None, 'F1'):
+            with self.subTest(phase=phase):
+                report = self.run_gate(header, UI_TABLE, phase, code=1)
+                self.assertEqual(report['status'], 'FAIL')
+                self.assertEqual([item['screen'] for item in report['missing']], ['s2', 's3'])
+                self.assertEqual((report['uiPhases'], report['phases']), (['F1'], ['F1', 'F2']))
+                self.assertEqual(report.get('phase'), phase)
+        non_ui = self.run_gate(header, UI_TABLE, 'F2')  # exit 0 although the screens are not accepted
+        self.assertEqual((non_ui['status'], non_ui['prototypes'], non_ui['missing'], non_ui['acceptances']), ('PASS', [], [], []))
+        self.assertEqual((non_ui['phase'], non_ui['note']), ('F2', 'faza bez znacznika [UI]'))
+        self.assertEqual((non_ui['uiPhases'], non_ui['phases']), (['F1'], ['F1', 'F2']))
+        self.assert_unknown_phase(header, UI_TABLE)
+        self.accept_all('alpha')  # control: accepted screens pass the [UI] phase too
+        self.assertEqual(self.run_gate(header, UI_TABLE, 'F1')['status'], 'PASS')
+
+    def test_row_ui_prototype_line_with_the_bypass_passes_with_bypassed(self):
+        header = [self.line('alpha'), BYPASS]
+        for phase in (None, 'F1', 'F2'):
+            with self.subTest(phase=phase):
+                report = self.run_gate(header, UI_TABLE, phase)
+                self.assertEqual(report['status'], 'PASS')
+                self.assertEqual(report['bypassed']['by'], 'Ola')
+                self.assertNotIn('note', report)
+                self.assertEqual((report['uiPhases'], report['phases']), (['F1'], ['F1', 'F2']))
+                self.assertEqual(report.get('phase'), phase)
+        self.assert_unknown_phase(header, UI_TABLE)
+
+    # -- błędy i argumenty ---------------------------------------------------------
+
+    def test_bad_lines_and_missing_prototype_are_blocked_in_every_row(self):
+        cases = {'two paths': ('Prototyp: docs/prototypes/alpha docs/prototypes/beta', 'invalid_prototype_line'),
+                 'bad bypass': ('Bramka prototypu: pominięta - zły myślnik - Ola, 2026-11-05', 'invalid_bypass_line'),
+                 'unknown prototype': ('Prototyp: docs/prototypes/nie-ma', 'prototype_not_found')}
+        for body in (NO_TABLE, UI_TABLE):
+            for name, (line, error) in cases.items():
+                for phase in (None, 'F1', 'F9'):
+                    with self.subTest(body=body[:12], case=name, phase=phase):
+                        self.assert_blocked(self.run_gate([line], body, phase, code=2), error)
+
+    def test_phase_is_matched_literally(self):
+        header = [self.line('alpha')]
+        self.assert_blocked(self.run_gate(header, UI_TABLE, 'f2', code=2), 'unknown_phase')
+        self.assert_blocked(self.run_gate(header, UI_TABLE, ' F2', code=2), 'unknown_phase')
+        self.assertEqual(self.run_gate(header, UI_TABLE, 'F2')['phase'], 'F2')  # control
+
+    def test_phase_in_the_slug_form_is_an_argument_error(self):
+        self.accept_all('alpha')
+        self.proto('gate', 'alpha', '--phase', 'F1', code=2)
+        self.assertEqual(self.proto('gate', 'alpha')['status'], 'PASS')  # control: without --phase
+
+    def test_duplicated_phase_ids_leave_the_whole_plan_behind_the_gate(self):
+        body = '## Kroki\n\n| Id | Krok |\n|---|---|\n| F1 [UI] | a |\n| F1 | b |\n'
+        report = self.run_gate([], body)  # no faze [UI] recognised: like a plan without a table
+        self.assertEqual(report['note'], 'plan bez linii Prototyp:')
+        self.assertNotIn('uiPhases', report)
+        self.assert_blocked(self.run_gate([], body, 'F1', code=2), 'unknown_phase')
+
+    def test_phase_ids_are_read_from_the_whole_plan_text_not_the_header(self):
+        body = '## Etap\n\n```\n| Id | Krok |\n| F1 [UI] | przykład |\n```\n'
+        report = self.run_gate([], body)
+        self.assertNotIn('uiPhases', report)
+        self.assertEqual(report['status'], 'PASS')

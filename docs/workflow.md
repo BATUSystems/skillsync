@@ -32,7 +32,7 @@ Stan opisu: Skillsync `v1.0.0`.
 
 | Element | Gdzie żyje | Rola |
 |---|---|---|
-| `feature` (Claude `/feature`, Codex `$feature`) | `../library/skills/feature/` + `references/`: adaptery `claude.md`, `codex.md`; `spec.md`, `plan-large.md`, `plan-details.md`, `review-loop.md`, `review-material.md`, `tests-baseline.md`, `reports.md`, `resources.md`, `measurement.md`, `ticket-intake.md`, `frd-intake.md`, `pr-after-approval.md`, `worker-mode.md`, `multi-session.md`, `extensions.md` | akty I–III z pętlą przeglądu na końcu każdego; orkiestratorem jest sesja główna |
+| `feature` (Claude `/feature`, Codex `$feature`) | `../library/skills/feature/` + `references/`: adaptery `claude.md`, `codex.md`; `ceremony-demo.md`, `spec.md`, `plan-large.md`, `plan-details.md`, `review-loop.md`, `review-material.md`, `tests-baseline.md`, `reports.md`, `resources.md`, `measurement.md`, `ticket-intake.md`, `frd-intake.md`, `pr-after-approval.md`, `worker-mode.md`, `multi-session.md`, `extensions.md` | akty I–III z pętlą przeglądu na końcu każdego; orkiestratorem jest sesja główna |
 | `pre-implement` | `../library/skills/pre-implement/` + `../library/skills/workflow/references/contracts.md` | merytoryczna bramka przed zmianą kontraktu, API, danych albo wysokiego ryzyka; czyta spec, tylko do odczytu; `READY` / `NEEDS_CHANGES` / `BLOCKED` |
 | `smart-test` | `../library/skills/smart-test/` | konserwatywny dobór testów z rzeczywistych zmian i zależności; plan nie jest dowodem wykonania |
 | `bugfix` (Claude `/bugfix`, Codex `$bugfix`) | `../library/skills/bugfix/` (+ `../library/skills/bugfix/references/oracles.md`) | brief → test regresji czerwony na starym kodzie → poprawka → pętla `kod` → wiedza |
@@ -97,12 +97,54 @@ stany i wznowienie: `../library/skills/feature/references/spec.md`.
 
 | Akt | Wynik | Pętla przeglądu | Zgoda na koniec |
 |---|---|---|---|
-| I Spec (tylko `plan-large`) | spec bez pytań `Q`, przy „GO plan” `approved` i plan-szkic z `Spec-sha` | `spec` (zawsze) | „GO plan” |
+| I Spec (tylko `plan-large`) | spec bez pytań blokujących `Q` (pytania `[ZAŁOŻENIE]` mogą zostać), przy „GO plan” `approved`, plan-szkic z `Spec-sha` i jeden lokalny commit (spec, plan-szkic, prototyp) | `spec` (zawsze) | „GO plan” |
 | II Plan | plan `draft (czeka na GO implement)`, `readiness`, odpowiedź o wersję | `plan` (obowiązkowa przy `plan-large`, ryzyku planu high, prośbie użytkownika; inaczej jedna runda opcjonalna) | „GO implement” |
-| III Realizacja | kod, testy, dokumentacja, changelog, wersja | `kod`: po każdym kroku z ryzykiem high i końcowa | `done`; commity według trybu dostarczania (`delivery.mode`) |
+| III Realizacja | kod, testy, dokumentacja, changelog, wersja | `kod`: po każdym kroku z ryzykiem high i końcowa | `done`; commity kroków i push według trybu dostarczania (`delivery.mode`) |
 
 Plan `direct` ma akty II i III i jedną zgodę „GO implement”. `bugfix` ma brief i akt III. Samo „GO” agent
 przyjmuje według tabeli stanów i nazywa w odpowiedzi, na co je przyjął; stan niejednoznaczny to pytanie, nie działanie.
+
+### Klasy pytań `Q` w specu
+
+Spec ma dwie klasy pytań. Blokujące: `- Q<n>: <pytanie>`; dopóki jest otwarte, spec jest „draft z Q” i agent staje (STOP).
+Założenia: `- Q<n> [ZAŁOŻENIE]: <pytanie> — przyjęte: <wartość>`; nie zatrzymują „draft z Q”, ale zostają widoczne do korekty.
+Wiersz jest parsowany dzieleniem po ostatnim ` — przyjęte: `. Pytań o kontrakt, dane, migrację i bezpieczeństwo nie wolno
+oznaczać `[ZAŁOŻENIE]`. Parser `Q` należy do strony statusu, nie do kodu rdzenia (`readiness` go nie egzekwuje).
+
+### „GO plan” i commit
+
+„GO plan” zatwierdza spec i jest jednocześnie krokiem, w którym powstaje jeden lokalny commit: spec, plan-szkic i prototyp.
+Commit trafia na gałąź roboczą w osobnym worktree, zakładaną przy „GO plan”, jeśli jej nie ma; bez pusha, więc przed
+„GO implement” nic nie opuszcza maszyny (push i PR dalej według trybu dostarczania). Wyjątek: wejście z klucza zgłoszenia
+(`pr-after-approval`) zostaje bez commita przy „GO plan”.
+
+### Ceremonia `demo`
+
+Klucz manifestu `workflow.ceremony: full | demo` ([manifest](manifest.md)); `route` zwraca pole `ceremony`, a `doctor` waliduje wartość.
+`demo` jest dla krótkich przebiegów pokazowych i obniża koszt procesu, nie kontrolę granic dostępu. Plan przy `demo` ma w nagłówku linię
+`Ceremonia: demo`; rozbieżność z `route` przy „GO implement” to pytanie do użytkownika.
+
+| Relaksuje | Zostaje bez zmian |
+|---|---|
+| review `kod`: jedno na przebieg | pętla pełna dla każdego kroku ze strażnikiem wycieków, migracją albo bezpieczeństwem (wszystkie trzy kategorie pętli pełnej) |
+| test-writer tylko w fazach z uprawnieniami lub izolacją danych | testy, ustalona wersja, rekord `--final`, zamknięcie planu |
+| dokumentacja ograniczona do changeloga i „Wyniku” | changelog i „Wynik” planu |
+| `retro-quality` i rekordy wiedzy odroczone | dług zapisany w „Wyniku”, podsekcja „Dług (ceremony: demo)” (temat, źródło, proponowany właściciel); spłaca go człowiek albo kolejny przebieg `full` |
+
+Procedura: `../library/skills/feature/references/ceremony-demo.md`.
+
+### Bramka prototypu per faza `[UI]`
+
+Faza planu to wiersz tabeli kroków (kolumny `Id` i `Krok`); znacznik `[UI]` w komórce `Id` albo `Krok` oznacza fazę dotykającą ekranu.
+Akceptacja prototypu wstrzymuje wtedy tylko fazy `[UI]`, a pozostałe mogą ruszyć w czasie przeglądu UI: `readiness` przy FAIL bramki nie
+blokuje planu i zwraca `uiPhases`, `nonUiPhases`, `uiPhasesWaiting`, a start fazy `[UI]` poprzedza `skillsync prototype gate --plan <plan> --phase <Fn>`.
+Prośba o „GO implement” wymienia jawnie fazy `[UI]` i fazy bez znacznika, żeby podział zatwierdzał użytkownik. Plan z linią `Prototyp:` bez
+żadnej fazy `[UI]` działa jak dotąd (cały plan za bramką). Reguły i tabela stanów: [prototypes](prototypes.md#akceptacja).
+
+### Raport postępu
+
+Raport postępu orkiestratora ma jedną linię na podkrok. Dodatkowe reguły procesu: kontrakt najpierw (przed implementacją), test-writer równolegle
+z review R1 (tylko w fazach, które mają test-writera), przy co najmniej pięciu zdolnościach dwa plany, szacunek 75–105 min na zdolność z pełną pętlą.
 
 ```mermaid
 flowchart TD
@@ -144,7 +186,8 @@ Najważniejsze bramki:
 
 - plan ma mierzalne kryteria (przy specu: mapowanie kryteriów speca na kroki i dowody), kroki z rolą, `Exec`, plikami
   i ryzykiem, TESTY, zasoby, ryzyka, dokumentację i wiedzę, changelog, propozycję wersji oraz linię `Przebieg:`;
-- „GO plan” zatwierdza spec, „GO implement” plan; żadna zgoda nie obejmuje commita, pusha ani deployu;
+- „GO plan” zatwierdza spec i obejmuje lokalny commit (spec, plan-szkic, prototyp) bez pusha; „GO implement” zatwierdza plan; żadna zgoda
+  nie obejmuje pusha ani deployu;
 - `Spec-sha` zapisany przy „GO plan” chroni spec: różnica przed „GO implement”, review albo `implemented` to STOP i pytanie;
 - `pre-implement` czyta rzeczywistych konsumentów (przy specu w akcie I, przed pętlą `spec`); `readiness` kontroluje tylko
   strukturę planu i speca (w akcie II, przed „GO implement”); z `--run-id` zapisuje `readiness.md` w przebiegu; brak raportu
@@ -174,7 +217,7 @@ pracuje tylko do odczytu i przygotowuje rekomendację, ale nie komentuje, nie g�
   w `.skillsync/runs/<KLUCZ>/test-state.txt` wiąże commit z przetestowanym stanem. Plan `done` i `--final` dopiero po
   utworzeniu PR-ów.
 - **`/pr-run`**: wywołanie jest zgodą na branch, commity, push brancha, draft PR, komentarze i ready; nigdy push do
-  bazowej, merge ani deploy. Plan i spec idą w pierwszym commicie, spec `implemented` w ostatnim przed ready.
+  bazowej, merge ani deploy. Plan i spec (przy planie ze specem zacommitowane lokalnie już przy „GO plan”) idą w pierwszym pushu, spec `implemented` w ostatnim commicie przed ready.
 
 Komendy dostawcy (np. `az repos pr create`, zapis pól trackera), reguły gałęzi i strażnika statusu podaje instrukcja
 projektu albo skill organizacji, nie rdzeń.
@@ -186,7 +229,8 @@ projektu albo skill organizacji, nie rdzeń.
 | Rozpoznanie (przed aktem I/II) | `route <projekt>` (rekordy `load: bootstrap`), `route <projekt> --topic implementation --files ...` | instrukcje, lekcje i rekordy `docs/domain` do przeczytania |
 | Rozpoznanie | `map <projekt> [--check]` | `.skillsync/map.md` (moduły, entry pointy, komendy, testy, migracje), czytana przed Glob/Grep |
 | Stan pracy | `status <projekt> [--json]` | plany (`plans[].spec`), specy (`specs[]`), pliki FRD (`frds[]`), kroki, `needsHuman` (`approval` dla `draft`, `closure` dla `in_progress` ze wszystkimi `[x]`, `pull_request` dla takiego planu z `Ticket:` bez `PR:`) |
-| Akt II | `readiness <projekt> --plan <plik> --risk <ryzyko planu> --files ...` | struktura planu i speca z linii `Spec:` (sekcje, `TODO`/`TBD`), nie merytoryka |
+| Akt II | `readiness <projekt> --plan <plik> --risk <ryzyko planu> --files ...` | struktura planu i speca z linii `Spec:` (sekcje, `TODO`/`TBD`), nie merytoryka; przy fazach `[UI]` pola `uiPhases`, `nonUiPhases`, `uiPhasesWaiting`, `warnings` ([cli](cli.md)) |
+| Start fazy `[UI]` | `prototype gate <projekt> --plan <plik> --phase <Fn>` | bramka akceptacji prototypu dla jednej fazy; PASS dla fazy bez `[UI]` ([prototypes](prototypes.md#akceptacja)) |
 | Zgoda „GO plan” | `spec approve <projekt> <plik> [--expect-sha SHA]` | słowo statusu speca `draft` → `approved` i usunięty dopisek „czeka na … GO plan” (inne dopiski zostają); sesja przy następnej turze tworzy plan-szkic i `Spec-sha` |
 | Czekanie na zgodę (Monitor) | `approvals wait <projekt> --word <GO plan\|GO implement\|CP\|READY> [--since ISO] [--run ID] [--sha SHA] [--file PLIK] [--timeout S]` | 0 = zgoda w `approvals.jsonl` (albo GO: plik `approved`), 3 = timeout; pobudka to sygnał, zgodę sesja sprawdza w pliku |
 | Zgoda „GO implement” | `plan approve <projekt> <plik> [--expect-sha SHA]` | słowo statusu `draft` → `approved` i usunięty dopisek „czeka na GO implement” (inne zostają; start aktu III i tak sprawdza pętlę, wersję i `readiness`) |

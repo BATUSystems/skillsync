@@ -32,6 +32,7 @@ import yaml
 from .common import contained, emit, load_layer_project, read_project, read_yaml, require_layerset
 from . import layers as _layers
 from . import prototype_server as server
+from .plan_phases import parse_plan_phases
 
 DEFAULT_ROOT = 'docs/prototypes'
 KNOWN_KEYS = ('root', 'theme', 'guidelines', 'commit_before_iteration')
@@ -2765,24 +2766,33 @@ def _gate_path(repo, value):
     return path
 
 
-def prototype_gate(root, manifest, plan=None, slugs=None):
+def prototype_gate(root, manifest, plan=None, slugs=None, phase=None):
     """`gate` (K26): every screen (without `data-prototype-example`) of the named prototypes needs a current
     acceptance.  Prototypes come from the `Prototyp:` lines of the plan header or from `slugs` (under
     `prototype.root`).  PASS; FAIL (exit 1) with `missing: [{slug, path, screen, reason}]` (`brak`,
     `nieaktualna`, `needs_migration`, `brak_ekranow`, `niejednoznaczny_ekran` for a duplicate id or an unclosed screen); BLOCKED (exit 2) with `error` for a bad plan, line or
     prototype.  A header line `Bramka prototypu: pominięta — <powód> — <osoba>, <RRRR-MM-DD>` turns FAIL into
     PASS with `bypassed`.  Shared by `readiness --plan`.
+
+    Phases: a plan with a `[UI]` phase (table of steps, `plan_phases`) needs a `Prototyp:` line or the bypass
+    (else BLOCKED `ui_phase_without_prototype`); `phase` (only with `plan`) must be a known phase id (else BLOCKED
+    `unknown_phase`) and a phase without `[UI]` of such a plan passes with an empty `missing` list (or `bypassed` under an owner bypass).  A plan without
+    `[UI]` phases keeps the whole-plan result and only gets `phase`.
     """
     repo = Path(root).resolve()
     if bool(plan) == bool(slugs):
         raise PrototypeError('gate needs --plan FILE or one or more prototype slugs (not both)')
+    if phase is not None and not plan:
+        raise PrototypeError('--phase needs --plan FILE')
     targets, bypass, report = [], None, {}
+    phase_info = None
     if plan:
         plan_path = contained(repo, plan)
         text, reason = read_regular_text(plan_path, MAX_GATE_PLAN)
         if text is None:
             return _blocked('plan_unreadable', f'{plan}: {reason}')
         report['plan'] = _relative_or_absolute(plan_path, repo)
+        phase_info = parse_plan_phases(text)
         bypasses = 0
         for line in _plan_header(text):
             kind = _gate_line_kind(line)
@@ -2813,6 +2823,24 @@ def prototype_gate(root, manifest, plan=None, slugs=None):
                 return _blocked('prototype_not_found', f'{value} is not a prototype directory of this project',
                                 path=value)
             resolved.append((directory.name, directory))
+        ui_phases = phase_info['ui_phases']
+        if ui_phases:
+            report.update({'phases': phase_info['phases'], 'uiPhases': ui_phases})
+        if phase is not None and phase not in phase_info['phases']:
+            return {**report, **_blocked('unknown_phase', f'{phase} is not a phase of the plan (known: '
+                                         f'{", ".join(phase_info["phases"]) or "none"})')}
+        if ui_phases:
+            report.update({'phases': phase_info['phases'], 'uiPhases': ui_phases})
+            if not targets and bypass is None:
+                return {**report, **_blocked('ui_phase_without_prototype', 'the plan has [UI] phases ('
+                        f'{", ".join(ui_phases)}) but no Prototyp: line and no bypass line',
+                        **({'phase': phase} if phase is not None else {}))}
+        if phase is not None:
+            report['phase'] = phase
+        if ui_phases and phase is not None and phase not in ui_phases and bypass is None:
+            report.update({'status': 'PASS', 'prototypes': [], 'missing': [], 'acceptances': [],
+                           'note': 'faza bez znacznika [UI]'})
+            return report
     else:
         settings = _settings(repo, manifest)
         resolved = []
@@ -3236,7 +3264,7 @@ def _cmd_accept(args, root, manifest, layerset):
 
 
 def _cmd_gate(args, root, manifest, layerset):
-    return prototype_gate(root, manifest, plan=args.plan, slugs=args.slugs or None)
+    return prototype_gate(root, manifest, plan=args.plan, slugs=args.slugs or None, phase=args.phase)
 
 
 def _cmd_comments(args, root, manifest, layerset):
@@ -3397,6 +3425,7 @@ def register(subparsers):
     _common(gate)
     gate.add_argument('slugs', nargs='*', help='Prototype slugs under prototype.root (instead of --plan)')
     gate.add_argument('--plan', help='Plan file, relative to the project (Prototyp: lines of the header)')
+    gate.add_argument('--phase', help='Phase id of the plan table of steps (with --plan): a phase without the [UI] marker passes')
     gate.set_defaults(func=_run(_cmd_gate))
     comments = actions.add_parser('comments', help='Facts of comment threads for decisions (read only)')
     _common(comments)

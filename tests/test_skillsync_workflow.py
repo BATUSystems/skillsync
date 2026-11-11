@@ -1160,6 +1160,132 @@ class ReadinessPrototypeGate(WorkflowFixture):
                 report = self.run_readiness(2)
                 self.assertEqual(report['prototypeGate']['status'], 'BLOCKED')
 
+    # -- kolumna `readiness` tabeli stanów bramki (spec feat-demo, K7, K8): U = plan ma fazę `[UI]`, P = linia
+    # `Prototyp:`, B = obejście właściciela --
+    UI_TABLE = '\n| Id | Krok |\n|---|---|\n| F1 [UI] | Ekran |\n| F2 | Backend |\n'
+    PLAIN_TABLE = '\n| Id | Krok |\n|---|---|\n| F1 | Kod |\n| F2 | Backend |\n'
+    STRAY_TABLE = '\n| # | Krok |\n|---|---|\n| 1 | [UI] Ekran |\n'
+
+    def phase_plan(self, header, table):
+        self.plan(header=header, body=self.FULL + table)
+
+    def test_row_no_ui_no_prototype_line_has_no_gate_and_no_phase_fields(self):
+        self.phase_plan([], self.PLAIN_TABLE)
+        report = self.run_readiness(0)
+        for key in ('prototypeGate', 'uiPhases', 'nonUiPhases', 'uiPhasesWaiting', 'warnings'):
+            self.assertNotIn(key, report)
+
+    def test_row_no_ui_prototype_line_still_blocks_on_fail(self):  # K8
+        self.prototype('alpha', accepted=False)
+        self.phase_plan(['Prototyp: docs/prototypes/alpha'], self.PLAIN_TABLE)
+        report = self.run_readiness(2)
+        self.assertEqual(self.gate_issues(report), ['Prototype gate FAIL: alpha s2 (brak)', 'Prototype gate FAIL: alpha s3 (brak)'])
+        for key in ('uiPhases', 'nonUiPhases', 'uiPhasesWaiting', 'warnings'):
+            self.assertNotIn(key, report)
+        self.prototype('beta', accepted=True)  # control: accepted prototype passes
+        self.phase_plan(['Prototyp: docs/prototypes/beta'], self.PLAIN_TABLE)
+        self.assertEqual(self.run_readiness(0)['prototypeGate']['status'], 'PASS')
+
+    def test_row_ui_without_prototype_line_and_bypass_blocks_with_an_issue(self):
+        self.phase_plan([], self.UI_TABLE)
+        report = self.run_readiness(2)
+        issues = self.gate_issues(report)
+        self.assertEqual(len(issues), 1, issues)
+        self.assertIn('ui_phase_without_prototype', issues[0])
+        self.assertEqual(report['prototypeGate']['error'], 'ui_phase_without_prototype')
+        self.assertEqual((report['uiPhases'], report['nonUiPhases']), (['F1'], ['F2']))
+        self.assertNotIn('uiPhasesWaiting', report)
+        self.assertNotIn('warnings', report)
+
+    def test_row_ui_without_prototype_line_with_the_bypass_does_not_block_and_warns(self):
+        self.phase_plan([self.BYPASS], self.UI_TABLE)
+        report = self.run_readiness(0)
+        self.assertEqual(self.gate_issues(report), [])
+        self.assertEqual(report['prototypeGate']['bypassed']['by'], 'Alex')
+        self.assertEqual(report['warnings'], ['bramka pominięta przez właściciela'])
+        self.assertEqual((report['uiPhases'], report['nonUiPhases']), (['F1'], ['F2']))
+        self.assertNotIn('uiPhasesWaiting', report)
+
+    def test_row_ui_prototype_line_fail_does_not_block_and_lists_waiting_phases(self):
+        self.prototype('alpha', accepted=False)
+        self.phase_plan(['Prototyp: docs/prototypes/alpha'], self.UI_TABLE)
+        report = self.run_readiness(0)
+        self.assertEqual(report['issues'], [])
+        self.assertEqual(report['prototypeGate']['status'], 'FAIL')
+        self.assertEqual((report['uiPhases'], report['nonUiPhases'], report['uiPhasesWaiting']), (['F1'], ['F2'], ['F1']))
+        self.assertNotIn('warnings', report)
+
+    def test_row_ui_prototype_line_pass_has_no_waiting_field(self):
+        self.prototype('alpha', accepted=True)
+        self.phase_plan(['Prototyp: docs/prototypes/alpha'], self.UI_TABLE)
+        report = self.run_readiness(0)
+        self.assertEqual((report['uiPhases'], report['nonUiPhases']), (['F1'], ['F2']))
+        self.assertNotIn('uiPhasesWaiting', report)
+        self.assertNotIn('warnings', report)
+
+    def test_row_ui_prototype_line_blocked_gate_still_blocks(self):
+        self.prototype('alpha', accepted=True)
+        for line in ('Prototyp: docs/prototypes/nie-ma', 'Prototyp: docs/prototypes/alpha docs/prototypes/beta',
+                     'Bramka prototypu: pominięta - zły myślnik - Alex, 2026-11-05'):
+            with self.subTest(line=line):
+                self.phase_plan([line], self.UI_TABLE)
+                report = self.run_readiness(2)
+                issues = self.gate_issues(report)
+                self.assertEqual(len(issues), 1, issues)
+                self.assertTrue(issues[0].startswith('Prototype gate BLOCKED: '), issues)
+                self.assertNotIn('uiPhasesWaiting', report)
+
+    def test_row_ui_prototype_line_with_the_bypass_does_not_block_and_warns(self):
+        self.prototype('alpha', accepted=False)
+        self.phase_plan(['Prototyp: docs/prototypes/alpha', self.BYPASS], self.UI_TABLE)
+        report = self.run_readiness(0)
+        self.assertEqual(report['prototypeGate']['status'], 'PASS')
+        self.assertEqual(report['warnings'], ['bramka pominięta przez właściciela'])
+        self.assertNotIn('uiPhasesWaiting', report)
+        self.assertEqual(report['uiPhases'], ['F1'])
+
+    def test_no_ui_with_the_bypass_has_no_owner_warning(self):
+        self.prototype('alpha', accepted=False)
+        self.phase_plan(['Prototyp: docs/prototypes/alpha', self.BYPASS], self.PLAIN_TABLE)
+        report = self.run_readiness(0)
+        self.assertEqual(report['prototypeGate']['status'], 'PASS')
+        self.assertNotIn('warnings', report)
+
+    def test_ui_marker_outside_the_step_table_warns_and_does_not_block_by_itself(self):
+        self.prototype('alpha', accepted=True)
+        self.phase_plan(['Prototyp: docs/prototypes/alpha'], self.PLAIN_TABLE + self.STRAY_TABLE)
+        report = self.run_readiness(0)
+        self.assertEqual(len(report['warnings']), 1, report['warnings'])
+        self.assertIn('[UI]', report['warnings'][0])
+        self.assertNotIn('uiPhases', report)
+        self.prototype('beta', accepted=False)  # U = no: a FAIL still blocks, the warning stays
+        self.phase_plan(['Prototyp: docs/prototypes/beta'], self.PLAIN_TABLE + self.STRAY_TABLE)
+        report = self.run_readiness(2)
+        self.assertEqual(len(report['warnings']), 1)
+        self.assertEqual(len(self.gate_issues(report)), 2)
+
+    def test_ui_marker_outside_the_step_table_warns_also_without_any_gate_line(self):
+        self.phase_plan([], self.PLAIN_TABLE + self.STRAY_TABLE)
+        report = self.run_readiness(0)
+        self.assertNotIn('prototypeGate', report)
+        self.assertEqual(len(report['warnings']), 1, report['warnings'])
+        self.assertIn('[UI]', report['warnings'][0])
+        self.assertEqual(report['issues'], [])
+
+    def test_both_warnings_together(self):
+        self.phase_plan([self.BYPASS], self.UI_TABLE + self.STRAY_TABLE)
+        report = self.run_readiness(0)
+        self.assertEqual(len(report['warnings']), 2, report['warnings'])
+        self.assertIn('bramka pominięta przez właściciela', report['warnings'])
+        self.assertTrue(any('[UI]' in item and 'tabel' in item for item in report['warnings']))
+
+    def test_phase_table_below_the_first_heading_is_read_but_gate_lines_there_are_not(self):
+        self.prototype('alpha', accepted=False)
+        body = '## Kroki\nPrototyp: docs/prototypes/alpha\n' + self.UI_TABLE + self.FULL
+        self.plan(body=body)
+        report = self.run_readiness(2)  # [UI] phase without a header Prototyp: line
+        self.assertEqual(report['prototypeGate']['error'], 'ui_phase_without_prototype')
+
 
 if __name__ == '__main__':
     unittest.main()

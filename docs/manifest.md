@@ -41,6 +41,7 @@ Po zapisaniu manifestu: `skillsync link <projekt> --dry-run`, potem `skillsync l
 | `cursor` | mapa | `rules.base`, `rules.project` (nazwy szablonów), `skills` (bool, domyślnie `true`); pusta sekcja = bez Cursora |
 | `vscode.link_on_open` | bool | `false` wyłącza dopisywanie taska `skillsync: link` |
 | `workflow` | mapa | nadpisania ustawień workflow, patrz sekcja „Scalanie ustawień workflow” niżej |
+| `workflow.ceremony` | `full` \| `demo` | ceremonia skilla `feature`; brak klucza = `full`; wartości tylko małymi literami, inna wartość (także pusta, `null`, nie napis) = błąd `doctor`. Czytany wyłącznie z manifestu projektu: w `workflow/defaults.yaml` i `workflow/projects/<slug>.yaml` jest ignorowany. `route` zwraca `ceremony {value, source: manifest\|default\|invalid[, error]}` |
 | `dispatch` | mapa | konfiguracja skilla `dispatch`; walidowana, bez wpływu na artefakty; szczegóły: [workflow](workflow.md) |
 | `prototype` | mapa | konfiguracja komendy `prototype`; szczegóły: [prototypes](prototypes.md) |
 | `delivery` | `{mode: pr \| direct, base: <gałąź>}` | sposób dostarczania zmian przez agenta; brak `delivery.mode` = `pr` z ostrzeżeniem `doctor`; `mode: direct` bez `base` = ostrzeżenie; zła wartość lub typ = błąd; nieznany klucz = ostrzeżenie; nie zmienia artefaktów `link`. Inne niż `workflow.delivery` (provider i CI) |
@@ -66,6 +67,7 @@ Ustawienia workflow składają się z trzech poziomów (to nie są warstwy w roz
 **listy zastępuje się w całości**. Reguły scalania per plik i klucz, także dla `workflow/*`: [architecture](architecture.md).
 Opis kluczy `workflow:` (`validation`, `testing`, `readiness`, `review`, `environment`, `e2e`, `doctor`, `delivery`
 w sensie provider i CI, `skill_profiles`, `guardrails`, `knowledge`): [workflow](workflow.md).
+Wyjątek od scalania: `workflow.ceremony` (`full` | `demo`) czyta się tylko z manifestu projektu, wcześniejsze poziomy go ignorują.
 
 ## Pliki generowane
 

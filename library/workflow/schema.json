@@ -133,6 +133,13 @@
     "delivery": {
       "type": "object"
     },
+    "ceremony": {
+      "enum": [
+        "full",
+        "demo"
+      ],
+      "description": "Ceremonia workflow feature (domyślnie full); czytana tylko z manifestu projektu."
+    },
     "upgrade": {
       "type": "object"
     },

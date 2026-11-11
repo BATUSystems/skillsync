@@ -16,7 +16,7 @@ a stan bieżący systemu opisują `docs/architecture.md` i `docs/domain/`. Po wd
 
 | Status | Znaczenie | Kto i kiedy |
 |---|---|---|
-| `draft` | szkielet z pytaniami `Q` albo projekt przed „GO plan” (akt I); także na czas zmiany merytorycznej po „GO plan” (`Spec-sha` nieważne do nowej zgody) | agent przy tworzeniu i przy takiej zmianie |
+| `draft` | szkielet z blokującymi pytaniami `Q` albo projekt przed „GO plan” (akt I); także na czas zmiany merytorycznej po „GO plan” (`Spec-sha` nieważne do nowej zgody) | agent przy tworzeniu i przy takiej zmianie |
 | `approved` | przyjęty do realizacji (nie „opisuje stan bieżący”) | agent przy „GO plan”, razem z planem-szkicem; użytkownik przyciskiem (strona statusu) albo `skillsync spec approve` — to też „GO plan”; plan zatwierdzony przyciskiem albo `skillsync plan approve` przy specu `draft` to STOP i pytanie (tabela wznowienia) |
 | `implemented` | wdrożony, zamrożony | agent w tym samym commicie co kod; zob. niżej |
 | `superseded` | zastąpiony albo porzucony | agent, z odnośnikiem do nowego speca albo z powodem przy porzuconym planie |
@@ -55,15 +55,15 @@ kontrola `Spec-sha`, plan `in_progress`.
 
 | Spec | Plan | Akt i działanie |
 |---|---|---|
-| `draft` z `Q` | brak | akt I: szkielet jest w `docs/specs/`, zadaj pytania, bez nowego szkieletu |
-| `draft` z `Q` | dowolny status | pytania, bez startu |
-| `draft` bez `Q` | brak | akt I: pętla `spec` albo czekanie na „GO plan” |
-| `draft` bez `Q` | `approved*` (także `approved (czeka na spec)` po `skillsync plan approve` albo przycisku) | STOP i pytanie, nigdy zwykły start; po potwierdzeniu użytkownika stary plan rusza starym startem (spec `approved`, `Spec-sha`, `in_progress`) |
-| `draft` bez `Q` (zmiana merytoryczna w akcie II) | `draft (czeka na spec)` | akt I od nowa: pętla `spec` od 1, „GO plan”, nowy `Spec-sha` w tym samym planie, pętla `plan` od 1 |
-| `draft` bez `Q` | `in_progress (blocked — czeka na spec)` | spec zmieniony w akcie III: [pętla `spec`](review-loop.md) od 1, potem jedno GO zdejmujące blokadę; pętla `plan` tylko, jeśli plan zmienia się merytorycznie |
+| `draft` z blokującym `Q` | brak | akt I: szkielet jest w `docs/specs/`, zadaj pytania, bez nowego szkieletu |
+| `draft` z blokującym `Q` | dowolny status | pytania, bez startu |
+| `draft` bez blokującego `Q` (także z samymi [ZAŁOŻENIE]) | brak | akt I: pętla `spec` albo czekanie na „GO plan” |
+| `draft` bez blokującego `Q` (także z samymi [ZAŁOŻENIE]) | `approved*` (także `approved (czeka na spec)` po `skillsync plan approve` albo przycisku) | STOP i pytanie, nigdy zwykły start; po potwierdzeniu użytkownika stary plan rusza starym startem (spec `approved`, `Spec-sha`, `in_progress`) |
+| `draft` bez blokującego `Q` (także z samymi [ZAŁOŻENIE]; zmiana merytoryczna w akcie II) | `draft (czeka na spec)` | akt I od nowa: pętla `spec` od 1, „GO plan”, nowy `Spec-sha` w tym samym planie, pętla `plan` od 1 |
+| `draft` bez blokującego `Q` (także z samymi [ZAŁOŻENIE]) | `in_progress (blocked — czeka na spec)` | spec zmieniony w akcie III: [pętla `spec`](review-loop.md) od 1, potem jedno GO zdejmujące blokadę; pętla `plan` tylko, jeśli plan zmienia się merytorycznie |
 | `draft` | `in_progress` bez tej blokady | brak zgody na spec: STOP i pytanie |
 | `approved` | brak | nie występuje po „GO plan” w sesji; z przerwanego zapisu: utwórz plan-szkic i porównaj sha z tym, co zatwierdził użytkownik (różnica = pytanie) |
-| `approved` (przycisk albo `skillsync spec approve`) | brak albo plan-szkic bez `Spec-sha` | „GO plan” udzielone przez użytkownika: spec z `Q` = pytanie; inaczej utwórz albo dokończ plan-szkic, zapisz `Spec-sha`, akt II (pętla `plan`) |
+| `approved` (przycisk albo `skillsync spec approve`) | brak albo plan-szkic bez `Spec-sha` | „GO plan” udzielone przez użytkownika: spec z blokującym `Q` = pytanie; inaczej utwórz albo dokończ plan-szkic, zapisz `Spec-sha`, zrób lokalny commit „GO plan” (spec, plan-szkic, prototyp; gałąź robocza w osobnym worktree), akt II (pętla `plan`) |
 | `approved` | `draft` bez sufiksu | akt II: pętla `plan` (rekordy `plan-review` bez PASS) albo plan w pisaniu; po zmianie speca mechanicznej albo minor w akcie II: poprawka speca, nowy `Spec-sha`, lista zmian w prośbie o „GO implement” |
 | `approved` | `draft (czeka na spec)` | „GO plan” po zmianie merytorycznej: zdejmij sufiks (plan `draft`), pętla `plan` od 1; PASS `plan-review` sprzed tej zgody jest nieważny |
 | `approved` | `approved (czeka na spec)` (przycisk albo `skillsync plan approve` w trakcie powrotu do aktu I) | pytanie: plan zatwierdzono przed nową pętlą `plan`, kontynuować? |
@@ -88,7 +88,7 @@ Problem i odniesienie do wymagań (numery z mapy FRD, bez kopiowania), zakres, k
 przy FRD mapa wymaganie → kryterium ([frd-intake](frd-intake.md) §5), decyzje i alternatywy, badanie wzorców
 (gdy zmiana wprowadza nowy mechanizm), `Kontrakty`, dane, `Migracja`, bezpieczeństwo, `Ryzyka` (rejestr z ryzykiem rezydualnym),
 odwrócenie zmian (każda mutacja lub jawne „nieodwracalne”), strategia testów (podejście; komendy są w planie), raport spójności.
-Sekcja bez zastosowania: „nie dotyczy” z powodem, bez wymyślania treści. Pytania `Q` żyją tylko w szkielecie i znikają po odpowiedziach.
+Sekcja bez zastosowania: „nie dotyczy” z powodem, bez wymyślania treści. Blokujące pytania `Q` żyją tylko w szkielecie i znikają po odpowiedziach; założenia `[ZAŁOŻENIE]` zostają w specu jako jawne założenia także po „GO plan” (spec jest zamrożony razem z nimi).
 
 Nagłówki `Kontrakty`, `Migracja` i `Ryzyka` zostaw dosłownie, każdy z treścią bezpośrednio pod sobą (bez podnagłówka zaraz pod spodem):
 `skillsync readiness` kończy sekcję na najbliższym nagłówku dowolnego poziomu i dopasowuje podciąg nagłówka bez wielkości liter.
@@ -114,6 +114,7 @@ Plan: <docs/plans/RRRR-MM-DD-slug.md, po utworzeniu>
 ## Pytania otwarte
 
 - Q1: <krótkie pytanie, najlepiej binarne lub z wyborem>
+- Q2 [ZAŁOŻENIE]: <pytanie z rozsądnym domyślnym rozstrzygnięciem> — przyjęte: <wartość>
 
 ## Kryteria akceptacji
 
@@ -178,7 +179,19 @@ Plan: <docs/plans/RRRR-MM-DD-slug.md, po utworzeniu>
 | <sprawdzenie> | <OK / luka> | <uwagi> |
 ````
 
-Po odpowiedziach usuń sekcję „Pytania otwarte” (decyzje trafiają do „Decyzji”) i ustaw `Plan:`.
+Po odpowiedziach usuń z sekcji „Pytania otwarte” pytania blokujące (decyzje trafiają do „Decyzji”) i ustaw `Plan:`. Założenia `[ZAŁOŻENIE]`
+zostają w specu tak, jak są (sekcja „Pytania otwarte” z oznaczeniem, bez osobnej listy) i nie blokują; użytkownik może je skorygować do „GO plan”.
+Po „GO plan” spec jest zamrożony razem z nimi: nie przenoś ich do „Decyzji”, bo zmieniłoby to `Spec-sha`.
+
+## Klasy pytań `Q`
+
+Spec ma dwie klasy pytań:
+- `- Q<n>: <pytanie>` jest **blokujące**: STOP, bez projektu na domysłach (jak dotąd).
+- `- Q<n> [ZAŁOŻENIE]: <pytanie> — przyjęte: <wartość>` to **założenie nieblokujące**: nie zatrzymuje „draft z Q”, a przyjęta wartość jest
+  widoczna do korekty (strona statusu, prototyp). Użytkownik zmienia ją odpowiedzią, a wtedy wiersz przechodzi do „Decyzji” albo dostaje nową wartość po „przyjęte:”.
+
+Format wiersza jest dosłowny: parser dzieli po **ostatnim** ` — przyjęte: ` (myślnik z odstępami), więc pytanie może zawierać myślniki.
+Nie oznaczaj jako [ZAŁOŻENIE] pytań o kontrakt, dane, migrację ani bezpieczeństwo: te zawsze blokują. W razie wątpliwości pytanie jest blokujące.
 
 ## Nagłówki planu przy specu
 
