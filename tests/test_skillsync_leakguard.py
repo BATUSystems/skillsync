@@ -1399,6 +1399,15 @@ GLUED_A = 'x' + 'ABC'
 GLUED_B = 'i' + 'PNG'
 
 
+WINDOWS_FORBIDDEN_NAME_CHARS = '<>:"|?*'
+
+
+def filename_unrepresentable(surface, text, os_name=os.name):
+    """Czy tekst na powierzchni `filename` nie może być nazwą pliku w danym systemie: Windows (`nt`) zabrania
+    `<>:"|?*` (dwukropek to strumień alternatywny NTFS), więc plik o takiej nazwie nie powstaje."""
+    return surface == 'filename' and os_name == 'nt' and any(char in text for char in WINDOWS_FORBIDDEN_NAME_CHARS)
+
+
 class TermMatchScopeTest(LeakTestCase):
     """D104 (spec A, "Zakres dopasowania terminu"): `match: part` (default) hits a segment of an identifier,
     `match: whole` only a whole token; a glued term (one-letter prefix + camelCase) hits only its glued form.
@@ -1426,10 +1435,23 @@ class TermMatchScopeTest(LeakTestCase):
         for surface in self.SURFACES:
             for text in hits:
                 with self.subTest(surface=surface, text=text, expected='hit'):
+                    if filename_unrepresentable(surface, text):
+                        self.skipTest('nazwa pliku z tym znakiem jest niedozwolona na Windows')
                     self.assertEqual(self.surfaces_hit(surface, text, terms), {surface})
             for text in misses:
                 with self.subTest(surface=surface, text=text, expected='miss'):
+                    if filename_unrepresentable(surface, text):
+                        self.skipTest('nazwa pliku z tym znakiem jest niedozwolona na Windows')
                     self.assertEqual(self.surfaces_hit(surface, text, terms), set())
+
+    def test_filename_condition_skips_only_forbidden_characters_on_windows(self):
+        """Warunek pominięcia: tylko `filename` i tylko `nt`; na POSIX nic nie jest pomijane."""
+        self.assertTrue(filename_unrepresentable('filename', f'konta: {SNAKE}', 'nt'))
+        self.assertFalse(filename_unrepresentable('filename', f'konta: {SNAKE}', 'posix'))
+        self.assertFalse(filename_unrepresentable('content', f'konta: {SNAKE}', 'nt'))
+        self.assertFalse(filename_unrepresentable('commit', f'konta: {SNAKE}', 'nt'))
+        self.assertFalse(filename_unrepresentable('filename', f'notatki-{SNAKE}.v2', 'nt'))
+        self.assertEqual(filename_unrepresentable('filename', 'a: b', os.name), os.name == 'nt')
 
     def test_whole_term_hits_only_a_whole_token(self):
         self.assert_hits([term(SNAKE, 'domain-term', match='whole')],
