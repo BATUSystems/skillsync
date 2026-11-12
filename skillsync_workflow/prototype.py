@@ -3468,7 +3468,7 @@ def _find_question(settings, question_id, slug=None):
             if question_id in store.snapshot().fold['byId']:
                 return name, store
         except server.QuestionsFileError as error:
-            damage = damage or error
+            damage = damage or server.QuestionsFileError(f'{name}: {error.message}')
     if slug is None:
         legacy = _legacy_store(settings)
         if legacy is not None:
@@ -3476,7 +3476,7 @@ def _find_question(settings, question_id, slug=None):
                 if question_id in legacy.snapshot().fold['byId']:
                     return None, legacy
             except server.QuestionsFileError as error:
-                damage = damage or error
+                damage = damage or server.QuestionsFileError(f'old project file {server.QUESTIONS_FILE}: {error.message}')
     if damage is not None:
         raise damage
     return None
@@ -3986,7 +3986,10 @@ def wait_question(root, manifest, question_id=None, all_questions=False, since=N
             else:
                 return _question_fail('unknown_op', f'--after: no operation {after} in {server.QUESTIONS_FILE}')
         for name, store in stores:
-            snapshot = _wait_snapshot(store, not all_questions)
+            try:
+                snapshot = _wait_snapshot(store, not all_questions)
+            except server.QuestionsFileError as error:
+                raise server.QuestionsFileError(f'{name}: {error.message}') from None
             fold = snapshot.fold
             if not all_questions:
                 question = fold['byId'].get(question_id)
@@ -4200,8 +4203,12 @@ def migrate_questions(root, manifest, dry_run=False, slug_for=None):
                 os.unlink(sweep)
             except OSError:
                 pass
-    return {'status': 'PASS', 'dryRun': False, 'migrated': plan, 'legacy': outcome,
-            'files': [_relative(Path(settings['root']) / name / server.QUESTIONS_FILE, repo) for name in sorted(plan)]}
+    report = {'status': 'PASS', 'dryRun': False, 'migrated': plan, 'legacy': outcome,
+              'files': [_relative(Path(settings['root']) / name / server.QUESTIONS_FILE, repo) for name in sorted(plan)]}
+    if outcome.startswith('renamed:'):
+        report['notes'] = [f'no trash tool here: the old file was renamed to {outcome[len("renamed:"):]} in the project root '
+                           '(not served; not ignored by git): delete it after checking the run files, do not commit it']
+    return report
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────────

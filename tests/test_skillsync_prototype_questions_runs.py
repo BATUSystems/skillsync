@@ -157,7 +157,8 @@ class PerRunApiTests(RunsCase):
     def test_per_run_files_are_never_served_as_static_files(self):
         anon = S.Client(self.server)
         for path in ('/demo/questions.json', '/%s/questions.json' % SECOND, '/demo/QUESTIONS.JSON',
-                     '/demo/questions.json.lock', '/%s/questions.json.lock' % SECOND):
+                     '/demo/questions.json.lock', '/%s/questions.json.lock' % SECOND, '/demo/./questions.json',
+                     '//demo/questions.json', '/demo/%71uestions.json', '/demo/questions.json/', '/demo/x/../questions.json'):
             with self.subTest(path=path):
                 self.check(anon.get(path), 404)
                 self.check(self.who(Q.DE).get(path), 404)

@@ -373,9 +373,11 @@ class DamagedFileCliTests(RunsCliCase):
             with self.subTest(action=args[0]):
                 report = self.q(*args, code=2)
                 self.assertTrue(report['reason'].startswith('invalid_log'), report)
-                if args[0] != 'wait':
-                    self.assertIn(SECOND, report['reason'])
+                self.assertIn(SECOND, report['reason'])
         self.assertEqual([item['id'] for item in self.q('list', '--slug', RUN)['questions']], [QA], 'zdrowy przebieg nadal da się czytać')
+        self.assertEqual(self.q('withdraw', QA)['state'], 'withdrawn', 'pytanie znalezione w zdrowym pliku mimo uszkodzenia innego')
+        report = self.q('withdraw', QB, code=2)
+        self.assertIn(SECOND, report['reason'])
 
 
 class WaitAfterAcrossRunsTests(RunsCliCase):
