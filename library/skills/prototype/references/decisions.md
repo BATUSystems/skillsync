@@ -38,6 +38,10 @@ ani kazać uruchomić komendy.
    - jasna **propozycja komentującego** (rola `commenter`): agent jej nie wprowadza sam. Odpowiada w wątku (`prototype reply`:
      co zrobi, warianty, rekomendacja) i czeka na decyzję „Wprowadź” osoby z rolą programista albo akceptujący (`decide --kind
      developer --who …` albo pytanie przez AskUserQuestion jak przy spornych).
+   - komentarz **eksperta** (rola `expert`, bez roli programisty ani akceptującego): to głos doradczy. Agent odpowiada w wątku
+     (`prototype reply`) i zmienia makietę dopiero po `decide` osoby z rolą programista albo akceptujący. Role bierz z `authorRoles`
+     (lista; `authorRole` to string z najwyższą rolą) i `whoRoles`: konto z `expert` i programistą/akceptującym nie jest doradcze, a jego
+     decyzja liczy się jako ludzka. Akceptacja zostaje wyłącznie po stronie człowieka (krok 7).
    Wynik `keep` i `out_of_scope` zamyka wątek, `apply` i `variant` dają „Zdecydowany”, `defer` „Odłożony”. `triage` na wątku
    z decyzją CLI jest odrzucany (exit 2); najpierw `reopen` przez UI (autor albo programista).
 5. **Zmiany HTML.** Przed pierwszą zmianą `index.html` w tej rundzie:

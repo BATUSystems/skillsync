@@ -64,8 +64,8 @@ w ekranach, uchwytach ani akceptacji. Usuń go albo zostaw; własne ekrany to ko
 
 ## Przegląd z ludźmi
 
-- `skillsync prototype user add <projekt> <login> --role commenter|acceptor|developer` zakłada konto (login to e-mail);
-  `user list`, `user passwd`, `user remove`, `user import` obsługują resztę. Hasła nigdy nie wypisuj ani nie przekazuj jako argumentu:
+- `skillsync prototype user add <projekt> <login> --role commenter|acceptor|developer|expert` zakłada konto (login to e-mail; `--role` można powtórzyć,
+  a `user roles <projekt> <login> --role …` zmienia zbiór ról istniejącego konta); `user list`, `user passwd`, `user remove`, `user import` obsługują resztę. Hasła nigdy nie wypisuj ani nie przekazuj jako argumentu:
   własne hasło podaje `--password-prompt` albo `--password-stdin`. Bez tych flag konto dostaje hasło domyślne z configu maszyny
   (`prototype.default_password`, plik configu z trybem 0600, inaczej BLOCKED) i musi je zmienić przy pierwszym logowaniu.
 - `skillsync prototype serve <projekt>` uruchamia serwer wspólnych komentarzy (domyślnie `127.0.0.1:4445`). Plik kont
@@ -125,6 +125,12 @@ Doprecyzowywać (odpowiadać, pytać) wolno w każdym wątku. Zmieniać ekran �
 | bez decyzji człowieka, autor programista albo akceptujący, jednoznaczne polecenie | `order?` | realizacja (+ „zrobione: …”); niejednoznaczne = pytanie w wątku |
 | autor komentujący (`commenter`), bez decyzji człowieka | `reply` | odpowiedź: doprecyzowanie, warianty, rekomendacja; bez zmiany ekranu do decyzji „Wprowadź” |
 | decyzja „Wariant”, „Odłóż”, „Zostaw” albo decyzja agenta | `reply` | odpowiedź i nic więcej |
+
+Komentarz konta z rolą `expert` (bez roli programisty ani akceptującego) to **głos doradczy**: agent odpowiada w wątku (`prototype reply`)
+i zmienia makietę dopiero po `decide` osoby z rolą programisty albo akceptującego. Rola z `authorRole` (string, najwyższa rola konta) to
+nie wszystko: pełną listę ról podają `authorRoles` (komentarze) i `whoRoles` (decyzje); konto z `expert` **i** programistą/akceptującym nie jest
+doradcze. Akceptuje nadal wyłącznie człowiek z rolą akceptującego albo programisty. Pytania domenowe do eksperta to osobny kanał
+(`prototype question …`, skill `feature`, spec), nie wątki makiety.
 
 ### Decyzje i iteracje
 
