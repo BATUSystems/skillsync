@@ -3605,6 +3605,101 @@ def remove_restore_marker(directory):
     _fsync_directory(directory)
 
 
+# PROTO-READY: the "agent is still writing screens" marker, `<prototype>/.writing.json`.  A dot file: never
+# served, hashed or frozen (`_excluded_segment`).  Times are UTC milliseconds; the clock is always injected
+# (`now_ms`), a read never writes.  Anything that is not a valid marker counts as no marker (fail-open), so a
+# forgotten, damaged or forged file can never block acceptance for good.
+WRITING_MARKER = '.writing.json'
+WRITING_MAX_BYTES = 4096
+WRITING_MAX_WINDOW_MS = 3600000
+WRITING_CLOCK_SKEW_MS = 60000
+WRITING_TTL_MIN = 60
+WRITING_TTL_MAX = 3600
+WRITING_TTL_DEFAULT = 900
+WRITING_BY_RE = re.compile(r'[A-Za-z0-9][A-Za-z0-9._@+-]{0,63}')
+
+
+def _is_int(value):
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def read_writing(directory, now_ms):
+    """`{since, expiresAt, by}` of a valid writing marker, else None (see "Ważny marker" in the spec).
+
+    `lstat` before the open (no `O_NOFOLLOW` on Windows), then `O_NOFOLLOW|O_NONBLOCK` + `fstat` + `S_ISREG`
+    (a FIFO must not hang a server thread), at most 4 KiB, strict JSON, `version == 1`, integer `since` and
+    `expiresAt` (not bool), `since <= now + 60 s`, `now < expiresAt`, `0 < expiresAt - since <= 3600 s`.
+    """
+    path = os.path.join(directory, WRITING_MARKER)
+    try:
+        info = os.lstat(path)
+        if not stat.S_ISREG(info.st_mode) or info.st_size > WRITING_MAX_BYTES:
+            return None
+        fd = os.open(path, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_NONBLOCK', 0)
+                     | getattr(os, 'O_BINARY', 0))
+        try:
+            opened = os.fstat(fd)
+            if not stat.S_ISREG(opened.st_mode) or opened.st_size > WRITING_MAX_BYTES:
+                return None
+            data = b''
+            while len(data) <= WRITING_MAX_BYTES:
+                chunk = os.read(fd, WRITING_MAX_BYTES + 1 - len(data))
+                if not chunk:
+                    break
+                data += chunk
+        finally:
+            os.close(fd)
+        if len(data) > WRITING_MAX_BYTES:
+            return None
+        value = strict_json_loads(data.decode('utf-8'))
+    except (OSError, ValueError, UnicodeDecodeError, RecursionError):
+        return None
+    if not isinstance(value, dict) or not _is_int(value.get('version')) or value['version'] != 1:
+        return None
+    since, expires = value.get('since'), value.get('expiresAt')
+    if isinstance(now_ms, float):
+        now_ms = int(now_ms)
+    if not _is_int(since) or not _is_int(expires) or not _is_int(now_ms):
+        return None
+    if since > now_ms + WRITING_CLOCK_SKEW_MS or now_ms >= expires:
+        return None
+    if not 0 < expires - since <= WRITING_MAX_WINDOW_MS:
+        return None
+    by = value.get('by')
+    return {'since': since, 'expiresAt': expires, 'by': by if isinstance(by, str) and WRITING_BY_RE.fullmatch(by) else 'agent'}
+
+
+def write_writing(directory, now_ms, ttl_s, by='agent'):
+    """Atomically (re)write the marker: `since = now`, `expiresAt = now + ttl`; a short retry on Windows where
+    `os.replace` can fail while a reader holds the file.  Returns `{since, expiresAt, by}`."""
+    payload = {'version': 1, 'since': int(now_ms), 'expiresAt': int(now_ms) + int(ttl_s) * 1000, 'by': by}
+    data = (js_stringify(payload) + '\n').encode('utf-8')
+    path = os.path.join(directory, WRITING_MARKER)
+    attempts = 5 if os.name == 'nt' else 1
+    for attempt in range(attempts):
+        try:
+            atomic_write_bytes(path, data)
+            break
+        except PermissionError:
+            if attempt + 1 >= attempts:
+                raise
+            time.sleep(0.05 * (attempt + 1))
+    return {'since': payload['since'], 'expiresAt': payload['expiresAt'], 'by': by}
+
+
+def remove_writing(directory):
+    """Idempotent removal of the marker (a symlink or a directory in its place is left alone)."""
+    path = os.path.join(directory, WRITING_MARKER)
+    try:
+        if os.path.islink(path) or os.path.isdir(path):
+            return False
+        os.unlink(path)
+    except FileNotFoundError:
+        return False
+    _fsync_directory(directory)
+    return True
+
+
 def _marker_matches(marker, operation):
     if not marker or operation is None:
         return False

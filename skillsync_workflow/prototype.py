@@ -1337,7 +1337,7 @@ def index_prototypes(root, manifest):
 # ── Shared comments: ids, migrate, users, serve ──────────────────────────────
 
 USERS_DEFAULT = '.skillsync/prototype/users.json'
-GITIGNORE_LINES = ('comments.json.lock', '*.tmp')
+GITIGNORE_LINES = ('comments.json.lock', '*.tmp', server.WRITING_MARKER)
 GITATTRIBUTES_LINE = 'comments.json merge=skillsync-comments'
 _COMMENTS_SCRIPT = re.compile(
     r'[ \t]*<script\b[^>]*?\bsrc\s*=\s*(["\']?)(?:\./)?comments\.js(?:\?[^"\'\s>]*)?\1(?=[\s>/])[^>]*>\s*</script\s*>[ \t]*(?:\r\n|\n)?',
@@ -2709,6 +2709,64 @@ def restore_prototype(root, manifest, slug, screen=None, source=None, reason=Non
     return report
 
 
+def _writing_ttl(value):
+    """The `--ttl` seconds of `writing start` (60-3600, default 900), or None when invalid."""
+    if value is None:
+        return server.WRITING_TTL_DEFAULT
+    text = str(value).strip()
+    if not re.fullmatch(r'[0-9]{1,6}', text):
+        return None
+    seconds = int(text)
+    return seconds if server.WRITING_TTL_MIN <= seconds <= server.WRITING_TTL_MAX else None
+
+
+def writing_prototype(root, manifest, slug, action, ttl=None, by=None):
+    """`writing <slug> start|done|status`: the marker "the agent is still writing screens" (`.writing.json`).
+
+    `start` writes it under the prototype lock (`since = now`, `expiresAt = now + ttl`; a repeated `start`
+    replaces both) and adds `.writing.json` to the prototype `.gitignore` (a warning when that fails); `done`
+    and `status` take no lock.  BLOCKED (exit 2): `invalid_args`, `needs_migration` (v1), `lock_timeout`.
+    The time comes from the store clock (injectable), never from the marker file."""
+    if action not in ('start', 'done', 'status'):
+        return _blocked('invalid_args', 'the action must be start, done or status')
+    seconds = _writing_ttl(ttl)
+    if seconds is None:
+        return _blocked('invalid_args', f'--ttl must be a whole number of seconds from {server.WRITING_TTL_MIN} '
+                                        f'to {server.WRITING_TTL_MAX}')
+    who = 'agent' if by is None else by
+    if not isinstance(who, str) or not server.WRITING_BY_RE.fullmatch(who):
+        return _blocked('invalid_args', '--by must be 1-64 characters of letters, digits and . _ @ + -')
+    repo, settings, directory, store = _prototype_context(root, manifest, slug)
+    if store.state() == 'v1':
+        return _blocked('needs_migration', 'prototype v1 (comments.js): run `skillsync prototype migrate` first')
+    warnings = list(settings['warnings'])
+    now_ms = int(store.clock() * 1000)
+    try:
+        if action == 'start':
+            with store.lock():
+                writing = server.write_writing(str(directory), now_ms, seconds, who)
+            try:
+                gitignore = directory / '.gitignore'
+                text = _ensure_lines(gitignore, (server.WRITING_MARKER,), server.WRITING_MARKER + '\n')
+                if text is not None:
+                    atomic_write(gitignore, text)
+            except (PrototypeError, OSError, ValueError) as error:
+                warnings.append(f'.gitignore: could not add {server.WRITING_MARKER} ({error}); keep it out of commits')
+        elif action == 'done':
+            server.remove_writing(str(directory))
+            writing = None
+        else:
+            writing = server.read_writing(str(directory), now_ms)
+    except server.PrototypeServerError as error:
+        return _server_blocked(error, **({'warnings': warnings} if warnings else {}))
+    report = {'status': 'PASS', 'slug': slug, 'writing': writing}
+    if writing is not None and action == 'status':
+        report['writing'] = {'since': writing['since'], 'expiresAt': writing['expiresAt'], 'by': writing['by']}
+    if warnings:
+        report['warnings'] = warnings
+    return report
+
+
 # ── Acceptance from the terminal (F3) ────────────────────────────────────────
 
 def _blocked(code, reason, **extra):
@@ -3985,6 +4043,10 @@ def _cmd_reply(args, root, manifest, layerset):
     return reply_prototype(root, manifest, args.slug, args.thread, args.text)
 
 
+def _cmd_writing(args, root, manifest, layerset):
+    return writing_prototype(root, manifest, args.slug, args.writing_action, ttl=args.ttl, by=args.by)
+
+
 def _cmd_wait(args, root, manifest, layerset):
     return wait_prototype(root, manifest, args.slug, since=args.since, after=args.after, timeout=args.timeout,
                           interval=args.interval)
@@ -4074,7 +4136,7 @@ def _common(parser):
 
 
 def register(subparsers):
-    parser = subparsers.add_parser('prototype', help='Clickable HTML prototypes in the project repository (init, sync, index, list, ids, migrate, serve, user, iterate, restore, accept, gate, comments, triage, decide, resolve, merge-comments, question)')
+    parser = subparsers.add_parser('prototype', help='Clickable HTML prototypes in the project repository (init, sync, index, list, ids, migrate, serve, user, iterate, restore, accept, gate, comments, triage, decide, resolve, writing, merge-comments, question)')
     actions = parser.add_subparsers(dest='prototype_command', required=True)
     init = actions.add_parser('init', help='Create <root>/<slug> from the prototype assets (never overwrites)')
     _common(init)
@@ -4222,6 +4284,14 @@ def register(subparsers):
     reply.add_argument('thread', help='Thread: th-… id or number')
     reply.add_argument('--text', required=True, help='Message text')
     reply.set_defaults(func=_run(_cmd_reply))
+    writing = actions.add_parser('writing', help='Mark that the agent is still writing screens (start|done|status); '
+                                                 'acceptance waits for done or for the marker to expire')
+    _common(writing)
+    writing.add_argument('slug', help='Prototype slug')
+    writing.add_argument('writing_action', choices=('start', 'done', 'status'), metavar='start|done|status')
+    writing.add_argument('--ttl', help='Seconds the marker lasts, 60-3600 (default 900; start again to renew)')
+    writing.add_argument('--by', help='Who writes (letters, digits and . _ @ + -, at most 64; default agent)')
+    writing.set_defaults(func=_run(_cmd_writing))
     wait = actions.add_parser('wait', help='Wait for a new comment by a person or for the acceptance of all screens '
                                            '(exit 0 with event comment|accepted, 3 on timeout)')
     _common(wait)
