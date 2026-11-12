@@ -560,7 +560,7 @@ class AcceptanceLostPreviewTests(RestoreServerCase):
 PROJECT_URL = '/_api/v1/project'
 PROJECT_ACCEPT_URL = '/_api/v1/project/accept'
 # `problems` (S1-1, poprawki po przeglądzie F3): liczba ekranów niehaszowalnych (duplikat id, niezamknięta sekcja); zawsze int
-LISTING_FIELDS = {'slug', 'title', 'iteration', 'screens', 'open', 'awaiting', 'version', 'format', 'problems'}
+LISTING_FIELDS = {'slug', 'title', 'iteration', 'screens', 'open', 'awaiting', 'version', 'format', 'problems', 'writing'}
 
 
 class ProjectCase(AcceptCase):

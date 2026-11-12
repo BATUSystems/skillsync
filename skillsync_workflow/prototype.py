@@ -1224,11 +1224,13 @@ dl { display: grid; grid-template-columns: auto 1fr; gap: 0.25rem 0.75rem; margi
 dt { color: var(--muted); }
 dd { margin: 0; overflow-wrap: anywhere; }
 code { font: 0.8125rem ui-monospace, monospace; }
+.writing { margin: 0 0 0.75rem; font-size: 0.875rem; font-weight: 600; color: var(--accent); }
 """.strip('\n')
 
 
 def render_gallery(entries):
-    """HTML of `<root>/index.html` for valid entries (dicts as in `list`); `href` from `slug`."""
+    """HTML of `<root>/index.html` for valid entries (dicts as in `list`); `href` from `slug`.  An entry with a
+    truthy `writing` (set only by the live gallery) gets the "w trakcie zapisu" mark."""
     def number(value):
         return '—' if value is None else html_escape(value)
 
@@ -1241,6 +1243,8 @@ def render_gallery(entries):
         cards.append('\n'.join([
             '<li class="card">',
             f'  <h2><a href="{slug}/index.html">{html_escape(entry["title"])}</a></h2>',
+            *(['  <p class="writing" data-writing="true">W trakcie zapisu: agent jeszcze pisze ekrany</p>']
+              if entry.get('writing') else []),
             '  <dl>',
             f'    <dt>Slug</dt><dd><code>{slug}</code></dd>',
             f'    <dt>Wymagania</dt><dd><code>{html_escape(entry["requirements"])}</code></dd>',
@@ -1275,9 +1279,10 @@ def render_gallery(entries):
         ''])
 
 
-def gallery_entries(prototypes_root, repo):
+def gallery_entries(prototypes_root, repo, now_ms=None):
     """`(entries, warnings)` of the gallery: valid prototypes under `prototypes_root` in `slug` order; a prototype
-    without a readable `prototype.json` is skipped with a warning."""
+    without a readable `prototype.json` is skipped with a warning.  With `now_ms` (live gallery only) each entry
+    gets `writing`: `None` or `{since, expiresAt}` of a valid writing marker; `index` passes no `now_ms`."""
     entries, warnings = [], []
     for slug, directory in enumerate_prototypes(prototypes_root):
         entry, entry_warnings = _describe(slug, directory, repo)
@@ -1285,15 +1290,18 @@ def gallery_entries(prototypes_root, repo):
             warnings.append(f'{entry["path"]}: {entry["error"]} (skipped in index)')
             continue
         warnings.extend(entry_warnings)
+        if now_ms is not None:
+            entry['writing'] = server.public_writing(directory, now_ms)
         entries.append(entry)
     return entries, warnings
 
 
-def gallery_html(prototypes_root, repo):
+def gallery_html(prototypes_root, repo, clock=None):
     """Gallery HTML computed now (acceptance, open comments, screens as they are at this moment).  `serve` answers
     `/` with it, so the gallery never lags behind `accept`, comments or `init`; `index` writes the same HTML to
-    `<root>/index.html` for `file://` and static servers."""
-    entries, _ = gallery_entries(Path(prototypes_root), Path(repo))
+    `<root>/index.html` for `file://` and static servers.  Only the live gallery marks prototypes with a valid
+    writing marker; `clock` (seconds, default `time.time`) is injectable for tests."""
+    entries, _ = gallery_entries(Path(prototypes_root), Path(repo), server.clock_ms(clock or time.time))
     return render_gallery(entries)
 
 
@@ -2369,7 +2377,7 @@ def serve_prototypes(root, manifest, args, err=None):
     config = server.ServerConfig(settings['root'], users_file_path(repo, args.users), host=args.host, port=args.port,
                                  secure_cookies=args.secure_cookies, trust_proxy=args.trust_proxy,
                                  login_to_view=args.login_to_view, source_writes=source_writes, log=err,
-                                 gallery=lambda: gallery_html(settings['root'], repo),
+                                 gallery=lambda: gallery_html(settings['root'], repo, clock=config.clock),
                                  runtime_dir=server.link_run_dir_of(repo))
     try:
         instance = server.make_server(config)
