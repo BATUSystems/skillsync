@@ -12,6 +12,10 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Fixed
+- Windows: `link` removes a dangling library symlink also when its target is written in the short 8.3 form (e.g. `RUNNER~1`) while the library root resolves to the long form:
+  `is_library_symlink` expands the existing parent of the missing target through `os.path.realpath`. A failure of the related test now prints the path forms (`readlink`, `resolve`) in its message.
+
 ## [1.1.1] - 2026-11-12
 
 ### Added
