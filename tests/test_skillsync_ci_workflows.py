@@ -109,6 +109,10 @@ def problems_job_names(ci, smoke):
     return errs
 
 
+# Native Windows gets 60 minutes (the suite needs about 40), the other systems 30; the job names stay.
+TEST_TIMEOUT = "${{ matrix.os == 'windows-latest' && 60 || 30 }}"
+
+
 def problems_matrix(ci):
     errs = []
     job = ci["jobs"].get("test")
@@ -136,7 +140,7 @@ def problems_matrix(ci):
             for m in ("symlink", "copy")} | {("windows-latest", p, "copy") for p in ("3.11", "3.12")}
     if keys != want:
         errs.append(f"zbiór kombinacji różni się od oczekiwanego: brak {sorted(want - keys)}, nadmiar {sorted(keys - want)}")
-    if job.get("timeout-minutes") != 30:
+    if job.get("timeout-minutes") != TEST_TIMEOUT:
         errs.append(f"timeout test: {job.get('timeout-minutes')}")
     if ci["jobs"].get("e2e", {}).get("timeout-minutes") != 45:
         errs.append("timeout e2e != 45")
@@ -341,6 +345,9 @@ class MutationTests(unittest.TestCase):
     def test_timeout_and_concurrency(self):
         ci, _ = self.mut()
         ci["jobs"]["test"]["timeout-minutes"] = 60
+        self.assertTrue(problems_matrix(ci))
+        ci, _ = self.mut()
+        ci["jobs"]["test"]["timeout-minutes"] = 30
         self.assertTrue(problems_matrix(ci))
         ci, _ = self.mut()
         ci["concurrency"]["cancel-in-progress"] = False
