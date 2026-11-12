@@ -1,7 +1,7 @@
 """Akceptacja prototypu (F3): fold, API `accept`/`unaccept`, `GET /project`, `POST /project/accept`, CLI `accept`
 (TTY), `list`/`index` oraz bramka `gate` (K26).
 
-Kontrakt: docs/specs/2026-11-04-prototype-komentarze-wspolne.md (K14, K16, K20, K24-K26, K32, K42, K43) i
+Kontrakt: spec zadania (poza rdzeniem) (K14, K16, K20, K24-K26, K32, K42, K43) i
 .skillsync/runs/2026-11-04-prototype-komentarze.karta-2/F3-kontrakt.md (A, A1, B-E, G).  Testy obserwują odpowiedzi
 HTTP, pliki `comments.json` i raporty CLI.  Serwer działa na porcie 0, użytkownicy mają niską liczbę iteracji PBKDF2.
 Każdy test negatywny ma przypadek kontrolny, który przechodzi (to samo żądanie z poprawnymi danymi).  Różnicowy fold
@@ -560,7 +560,7 @@ class AcceptanceLostPreviewTests(RestoreServerCase):
 PROJECT_URL = '/_api/v1/project'
 PROJECT_ACCEPT_URL = '/_api/v1/project/accept'
 # `problems` (S1-1, poprawki po przeglądzie F3): liczba ekranów niehaszowalnych (duplikat id, niezamknięta sekcja); zawsze int
-LISTING_FIELDS = {'slug', 'title', 'iteration', 'screens', 'open', 'awaiting', 'version', 'format', 'problems'}
+LISTING_FIELDS = {'slug', 'title', 'iteration', 'screens', 'open', 'awaiting', 'version', 'format', 'problems', 'writing'}
 
 
 class ProjectCase(AcceptCase):
@@ -1541,7 +1541,7 @@ class ListAndIndexAcceptanceTests(CliProject):
     def test_only_new_fields_were_added_to_the_skippster_contract(self):
         entry = self.entry('alpha')
         base = {'slug', 'title', 'requirements', 'created', 'generated_by', 'path', 'screens', 'comments'}
-        self.assertEqual(set(entry) - base, {'commentsFormat', 'threads', 'iteration', 'acceptance'})
+        self.assertEqual(set(entry) - base, {'commentsFormat', 'threads', 'iteration', 'acceptance', 'writing'})
         self.assertTrue(base <= set(entry), 'no contract field was removed')
         self.assertIsInstance(entry['screens'], int)
         self.assertIsInstance(entry['comments'], int)

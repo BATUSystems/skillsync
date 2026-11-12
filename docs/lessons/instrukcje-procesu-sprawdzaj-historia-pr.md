@@ -2,7 +2,7 @@
 title: 'Instrukcja procesu zestarzała się bez sygnału: przed oparciem na niej automatu sprawdź historię PR-ów'
 tags: [workflow, proces, pr, azure, agent-flow]
 paths: ['library/skills/feature/references/pr-after-approval.md']
-source: "Historia PR-ów DEMO (az repos pr list, 2026-10-31); decyzja Barcisia: merge do RC i develop ręczny; docs/plans/2026-10-31-proces-f4-domkniecie.md"
+source: "Historia PR-ów DEMO (az repos pr list, 2026-10-31); decyzja Barcisia: merge do RC i develop ręczny; plan zadania (poza rdzeniem)"
 verified: 2026-10-31
 ---
 **Objaw:** instrukcja projektu opisywała hotfix jako 3 gałęzie i 6 PR-ów z cherry-pickami oraz `--project DEMO`. Ostatnie hotfiksy miały po jednym PR-ze do `master`, propagacja szła ręcznym merge'em, a projekt Azure ma nazwę repozytorium.

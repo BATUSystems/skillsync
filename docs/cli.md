@@ -135,7 +135,7 @@ Dwie różne flagi warstw:
 | Komenda | Skutek |
 |---|---|
 | `doctor [path] [--layer ID=PATH] [--json]` | statyczna walidacja konfiguracji; `error` → FAIL (1), same ostrzeżenia → PASS (0), nieczytelny config albo config z kluczem `library:` → BLOCKED (2). Nie testuje aplikacji |
-| `route`, `readiness`, `review`, `validate`, `smart-test`, `guard` | dobór kontekstu, gotowość planu, checklista review, plan i wykonanie kontroli, strażnik konwencji |
+| `route`, `readiness`, `review`, `validate`, `smart-test`, `guard` | dobór kontekstu, gotowość planu, checklista review, plan i wykonanie kontroli, strażnik konwencji; `review` zwraca też `profile` (`docs`, gdy zmiana dotyka wyłącznie dokumentacji (`docs/**` bez plików kodu), plików `.md` skilli, `CHANGELOG*` albo notatek wydania, inaczej `kod`) i `docsFiles`; ścieżki i pozycje docs nadpisują `workflow.review.docs_paths` i `workflow.review.docs_checklist` |
 | `map`, `suggest`, `knowledge init`, `status`, `plan`, `dispatch` | mapa repo, sugestie skilli, szkielet `docs/domain` i `docs/lessons`, odczyt stanu, zmiana statusu planu, stan dyspozycji |
 
 Pola workflow w tej grupie:
@@ -202,7 +202,7 @@ Szczegóły: [workflow](workflow.md).
 
 ## Prototypy
 
-`skillsync prototype init|sync|index|list|ids|migrate|serve|user|login-link|iterate|restore|accept|gate|comments|triage|decide|resolve|merge-comments|question <projekt> …`
+`skillsync prototype init|sync|index|list|ids|migrate|serve|user|login-link|iterate|restore|writing|accept|gate|comments|triage|decide|resolve|merge-comments|question <projekt> …`
 
 Komenda działa na klikalnych prototypach HTML w repo projektu. Opis akcji, kodów i formatu: [prototypes](prototypes.md).
 `list --json`: pole `acceptance` = `{screens, accepted, stale, perScreen}` (`null` przy v1 i bez `comments.json`); `perScreen` to `[{id, state}]` dla każdego ekranu w kolejności dokumentu, `state` = `accepted` | `stale` | `pending` (accepted + stale + pending = `screens`).
@@ -212,6 +212,27 @@ i dopasowuje id fazy dosłownie (wielkość liter). Wynik wg tabeli stanów ([pr
 (PASS/FAIL), faza bez `[UI]` w planie z fazami `[UI]` PASS z notą i pustymi `prototypes`, `missing`, `acceptances`, nieznana faza BLOCKED `unknown_phase`,
 plan z fazą `[UI]` bez linii `Prototyp:` i bez obejścia właściciela BLOCKED `ui_phase_without_prototype`. Raport dostaje opcjonalne pola `phase`
 (przy `--phase`) oraz `phases` i `uiPhases` (listy id, tylko gdy plan ma fazy `[UI]`). Kody wyjścia bez zmian: PASS 0, FAIL 1, BLOCKED 2.
+
+### Marker zapisu (`prototype writing`)
+
+`prototype writing <projekt> <slug> start|done|status [--ttl <s>] [--by <login>]`: agent oznacza, że jeszcze pisze ekrany prototypu.
+`start` zapisuje atomowo, pod blokadą prototypu, plik `<root>/<slug>/.writing.json` (`since`, `expiresAt`, `by`) i dopisuje
+`.writing.json` do `<proto>/.gitignore` (gdy się nie da, ostrzeżenie w raporcie); powtórzone `start` zastępuje oba czasy, więc odnawia
+marker (także skracając TTL). `--ttl` to sekundy, 60–3600, domyślnie 900; `--by` to login (pierwszy znak litera lub cyfra, dalej litery, cyfry i `. _ @ + -`, najwyżej 64 znaki;
+domyślnie `agent`). `done` usuwa marker (idempotentnie, bez blokady), `status` zwraca `{status, writing: null | {since, expiresAt, by}}`
+(bez blokady). Kody: PASS 0; BLOCKED 2 z `error`: `needs_migration` (prototyp bez `comments.json`), `lock_timeout` (zajęta blokada prototypu,
+np. trwa `iterate` albo `restore`: ponów), `invalid_args` (zły `--ttl` albo `--by`); FAIL (1) nie występuje. Nieznana akcja to błąd argparse.
+
+Wpływ ważnego markera na inne komendy (definicja w [prototypes](prototypes.md#marker-zapisu-agent-pisze-ekrany)):
+- `accept` (także `--project`) kończy się BLOCKED `writing_in_progress` przed pytaniem o hasło i ponownie pod blokadą transakcji;
+  przy `--project` wstępna kontrola obejmuje wszystkie prototypy, a odmowa w trakcie niesie listę `writing` oraz `accepted`/`pending`.
+  `accepted: []` bywa przy markerze wykrytym dopiero w `build` pierwszego prototypu projektu (nic jeszcze nie zapisano).
+- `gate` (po slugach i `--plan`) zwraca FAIL z wpisem `missing` `{slug, path, screen: null, reason: 'writing'}` dla każdego prototypu z ważnym
+  markerem, także gdy wszystkie jego ekrany mają ważną akceptację; linia „Bramka prototypu: pominięta — …” nadal daje PASS.
+- `wait` nie zwraca `accepted`, dopóki marker jest ważny (komentarze budzą jak dotąd).
+- `list` ma pole `writing`: `null` albo `{since, expiresAt}` (bez `by`).
+- `iterate` przy ważnym markerze działa i dodaje ostrzeżenie do raportu.
+- `status --ttl` i `done --by` są walidowane tak samo jak `start` (zły argument = BLOCKED `invalid_args`).
 
 ### Pytania do eksperta (`prototype question`, `prototype user roles`)
 
@@ -299,13 +320,15 @@ skillsync prototype question purge . --slug zwroty --include-open --yes         
 
 | Komenda | Skutek |
 |---|---|
-| `leakcheck [path] [--worktree \| --staged \| --range A..B \| --history] [--target ID] [--require full] [--no-config] [--json]` | skan treści, nazw plików i metadanych commitów |
+| `leakcheck [path] [--worktree \| --staged \| --range A..B \| --history \| --text FILE \| --stdin] [--target ID] [--require full] [--no-config] [--json]` | skan treści, nazw plików i metadanych commitów albo tekstu poza gitem (`--text`, `--stdin`) |
 | `leakguard patterns [--target ID] [--json]` | scalona lista wzorców (wbudowana i celu), JSON |
 | `leakguard install-hook <repo> [--remove] [--target ID] [--json]` | zarządzany blok w lokalnych hookach `pre-commit` i `pre-push` |
 
 `leakcheck` zwraca PASS (0), FAIL (1) z listą `{plik, kategoria, miejsce}` albo BLOCKED (2), gdy `--require full` nie ma
-pełnego pokrycia albo plik wzorców jest błędny. Nieznany cel daje `coverage: generic` z ostrzeżeniem. Raport nigdy nie
+pełnego pokrycia, plik wzorców jest błędny albo tekst do skanu nie da się wczytać. Nieznany cel daje `coverage: generic` z ostrzeżeniem. Raport nigdy nie
 pokazuje wartości wzorców. Model: [security](security.md).
+
+`--text FILE` i `--stdin` to kontrola publikacji tekstu spoza gita (opis PR-a, komentarz, notatka wydania; do 1 MiB, bez tekstu w argumencie komendy): te same tożsamości i wzorce co `--range`, ale cel wynika z katalogu bieżącego albo `--target` (nie z repozytorium docelowego publikacji: podaj `--target <id>`), tekst skanowany w najostrzejszej klasie ścieżki (jak plik instrukcji), bez wymogu repozytorium git. Raport podaje etykietę (nazwa pliku albo `<stdin>`), kategorię i miejsce `linia:kolumna`, nigdy samego tekstu. Instrukcje skilli `pr-run`, `feature` i `dispatch`: opis zapisany do pliku przechodzi `leakcheck --text <plik>` przed `gh pr create`, `gh pr edit --body`, `gh release create`.
 
 ## Schematy JSON
 

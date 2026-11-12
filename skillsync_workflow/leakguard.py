@@ -47,7 +47,9 @@ CASES = ('insensitive', 'sensitive')
 MATCHES = ('part', 'whole')   # D104: `part` also hits a segment of an identifier, `whole` only a whole token
 LAYER_KINDS = ('core', 'org', 'personal')
 SCOPES = ('public', 'org-private', 'private')
-MODES = ('worktree', 'staged', 'range', 'history')
+MODES = ('worktree', 'staged', 'range', 'history', 'text')
+TEXT_LIMIT_BYTES = 1024 * 1024          # `--text`/`--stdin`: a PR or release description, not a repository
+TEXT_CLASS_REL = 'skills/text'           # a text outside git is scanned in the strictest path class (instrukcje)
 COVERAGE = ('full', 'partial', 'generic')
 AUTHORS_SCOPES = ('all', 'committer')
 # D86: default `authors_scope` per target `scope` (public repos accept commits of other people).
@@ -1292,7 +1294,7 @@ def scan_texts(items, prepared, surface='content'):
 
 def leakcheck(path='.', *, mode='worktree', rev_range=None, target=None, targets=None,
               identity_files=(), target_patterns=None, require=None, trailer_allow=(),
-              patterns_file=None, suffixes_file=None, select=True):
+              patterns_file=None, suffixes_file=None, select=True, texts=None):
     """Run the leak guard on resolved inputs and return a report (schema 1).
 
     `targets`: `{id: {scope, authors, remote_match, kind?}}`; `identity_files`: paths of
@@ -1300,6 +1302,9 @@ def leakcheck(path='.', *, mode='worktree', rev_range=None, target=None, targets
     `<git root>/.leakguard/patterns.yaml` when present). Never raises for bad input:
     invalid input is `BLOCKED` with `reason`. `select=False`: the caller already chose the
     target (`select_target` via `layers.leakguard_inputs`), so no second selection here.
+    `mode='text'` scans `texts` (`[(label, text)]`, e.g. a PR description written to a file) with the same target,
+    identities and patterns as the other modes, in the strictest path class; it needs no git repository and the
+    findings carry only the label, never the text.
     """
     report = {'schema': SCHEMA, 'status': 'BLOCKED', 'coverage': 'generic', 'target': target,
               'findings': [], 'warnings': [], 'notices': []}
@@ -1313,7 +1318,7 @@ def leakcheck(path='.', *, mode='worktree', rev_range=None, target=None, targets
             raise LeakguardError(f'Not a directory: {path}')
         targets = validate_targets(targets)
         top = git_root(root)
-        if mode != 'worktree' and top is None:
+        if mode not in ('worktree', 'text') and top is None:
             raise LeakguardError(f'Mode {mode} requires a git repository')
         if select and target is None and targets and top is not None:
             target, chosen = select_target(top, targets)
@@ -1340,7 +1345,16 @@ def leakcheck(path='.', *, mode='worktree', rev_range=None, target=None, targets
         prefix = _git_prefix(root) if top is not None else ''
         ctx = _Context(root, top, prefix, scanner, prepared.authors, prepared.authors_scope or 'committer')
         report['authors_scope'] = prepared.authors_scope
-        if mode == 'worktree':
+        if mode == 'text':
+            if not texts:
+                raise LeakguardError('Mode text needs a text to scan')
+            for label, content in texts:
+                if not content.strip():
+                    raise LeakguardError('The text is empty: nothing to check')
+                if len(content.encode('utf-8', 'surrogatepass')) > TEXT_LIMIT_BYTES:
+                    raise LeakguardError(f'Text is larger than {TEXT_LIMIT_BYTES} bytes')
+                scanner.text(content, TEXT_CLASS_REL, label, '', False)
+        elif mode == 'worktree':
             _scan_worktree(ctx)
         elif mode == 'staged':
             _scan_staged(ctx)
@@ -1709,10 +1723,45 @@ def config_inputs(path=None, target=None):
         raise LeakguardError(f'Machine config: {exc}') from None
 
 
-def _cmd_leakcheck(args):
-    mode = 'range' if args.rev_range else (args.mode or 'worktree')
-    target, warnings, select = args.target, [], True
+def _read_text_input(args):
+    """`[(label, text)]` for `--text FILE` / `--stdin`; raises LeakguardError. The label is the file name, never the text."""
+    if args.from_stdin:
+        label = '<stdin>'
+        try:
+            data = sys.stdin.buffer.read(TEXT_LIMIT_BYTES + 1)
+        except (AttributeError, OSError, ValueError):
+            raise LeakguardError('Cannot read the text from standard input') from None
+    else:
+        try:
+            source = Path(args.text_file).expanduser()
+            label = source.name or 'text'
+            if not source.is_file():
+                raise LeakguardError(f'Not a file: {label}')
+            with open(source, 'rb') as handle:
+                data = handle.read(TEXT_LIMIT_BYTES + 1)
+        except (OSError, RuntimeError) as exc:
+            raise LeakguardError(f'Cannot read the text file: {getattr(exc, "strerror", None) or type(exc).__name__}') from None
+    if len(data) > TEXT_LIMIT_BYTES:
+        raise LeakguardError(f'Text is larger than {TEXT_LIMIT_BYTES} bytes')
+    if b'\0' in data[:8192]:
+        raise LeakguardError('The text looks binary; leakcheck --text expects a text file')
     try:
+        text = data.decode('utf-8-sig')   # strict: a text in another encoding would hide identities with diacritics
+    except UnicodeDecodeError:
+        raise LeakguardError('The text is not valid UTF-8; convert it before the check') from None
+    if not text.strip():
+        raise LeakguardError('The text is empty: nothing to check (a failed producer must not pass the gate)')
+    return [(label, text)]
+
+
+def _cmd_leakcheck(args):
+    text_mode = args.text_file is not None or args.from_stdin   # `--text ''` is still the text mode (then BLOCKED), never a worktree scan
+    mode = 'text' if text_mode else ('range' if args.rev_range else (args.mode or 'worktree'))
+    target, warnings, select = args.target, [], True
+    texts = None
+    try:
+        if text_mode:
+            texts = _read_text_input(args)
         if _explicit_inputs(args) or args.no_config:
             targets, identity_files, trailer_allow = _targets_from(args), args.identity, args.trailer_allow
         else:
@@ -1727,7 +1776,7 @@ def _cmd_leakcheck(args):
         return _print(report, args.json, 'leakcheck')
     report = leakcheck(args.path, mode=mode, rev_range=args.rev_range, target=target, targets=targets,
                        identity_files=identity_files, target_patterns=args.target_patterns,
-                       require=args.require, trailer_allow=trailer_allow, select=select)
+                       require=args.require, trailer_allow=trailer_allow, select=select, texts=texts)
     report['warnings'] = warnings + report.get('warnings', [])
     return _print(report, args.json, 'leakcheck')
 
@@ -1791,13 +1840,17 @@ def register(subparsers):
                        help='Commits in a range (a single revision = its whole history)')
     modes.add_argument('--history', dest='mode', action='store_const', const='history',
                        help='Whole history of HEAD')
+    modes.add_argument('--text', dest='text_file', metavar='FILE',
+                       help='A text outside git (a PR or release description written to a file); never pass the text itself')
+    modes.add_argument('--stdin', dest='from_stdin', action='store_true',
+                       help='Scan the text read from standard input (a PR or release description)')
     _add_inputs(check)
     check.add_argument('--target-patterns', help=argparse.SUPPRESS)   # D200; default: <git root>/.leakguard/patterns.yaml
     check.add_argument('--require', choices=['full'], help='BLOCKED unless coverage is full')
     check.add_argument('--no-config', action='store_true',
                        help='Do not read identities/targets from the machine config (generic patterns only)')
     check.add_argument('--json', action='store_true')
-    check.set_defaults(func=_cmd_leakcheck, mode=None)
+    check.set_defaults(func=_cmd_leakcheck, mode=None, text_file=None, from_stdin=False)
 
     guard = subparsers.add_parser('leakguard', help='Leak guard patterns and git hooks')
     actions = guard.add_subparsers(dest='leakguard_command', required=True)

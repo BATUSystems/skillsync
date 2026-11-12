@@ -1,6 +1,6 @@
 """`skillsync prototype` v2 (shared comments): ids, migrate, list/index fields, user, serve refusal.
 
-Contract: docs/specs/2026-11-04-prototype-komentarze-wspolne.md (K10, K22, K30, K32, K33, K36, K41,
+Contract: spec zadania (poza rdzeniem) (K10, K22, K30, K32, K33, K36, K41,
 "Kontrakty", "Migracja", "Dane"). Resources: tests/fixtures/prototype/assets (v2 shape), the v1 prototype
 tests/fixtures/prototype/v1 (comments.js with threads anchored by position, see the comments in its index.html).
 """
@@ -632,7 +632,7 @@ class MigrateTests(V1Fixture):
 # K32, K33: list and index
 # ---------------------------------------------------------------------------
 CONTRACT_FIELDS = {'slug', 'title', 'requirements', 'created', 'generated_by', 'path', 'screens', 'comments'}
-ADDED_FIELDS = {'commentsFormat', 'threads', 'iteration', 'acceptance'}
+ADDED_FIELDS = {'commentsFormat', 'threads', 'iteration', 'acceptance', 'writing'}
 THREAD_KEYS = {'open', 'awaiting', 'decided', 'closed', 'deferred', 'lost'}
 
 

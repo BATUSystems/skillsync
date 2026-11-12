@@ -2,7 +2,7 @@
 title: 'Stop hook sprawdzaj w prawdziwym Claude Code: testy i przeglądy nie widzą jego środowiska'
 tags: [workflow, hook, claude-code, testy]
 paths: ['hooks/*', 'skillsync', 'tests/test_skillsync_closure.py']
-source: "Próba `claude -p` w projekcie tymczasowym, konto prywatne, 2026-10-31; .skillsync/runs/2026-10-31-r2b/live/; docs/plans/2026-10-31-r2b-petla-po-kazdym-zadaniu.md"
+source: "Próba `claude -p` w projekcie tymczasowym, konto prywatne, 2026-10-31; .skillsync/runs/2026-10-31-r2b/live/; plan zadania (poza rdzeniem)"
 verified: 2026-10-31
 ---
 **Objaw:** hook `check-closure.py` miał 40 zielonych testów i przegląd PASS, a na żywo w sesji startującej z podkatalogu nic nie robił, zaś w sesji z katalogu głównego blokował turę więcej niż raz.

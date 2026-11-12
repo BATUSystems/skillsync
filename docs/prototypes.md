@@ -274,6 +274,46 @@ skillsync prototype restore . plan-zajec --screen s2 --from 1 --reason "wracamy 
 
 Przywrócenie zmienia tylko sekcję jednego ekranu i samo zamraża bieżącą wersję, więc da się je cofnąć.
 
+## Marker zapisu: agent pisze ekrany
+
+Agent, który dopisuje ekrany, zmienia `<head>`, `project.css` i `screens.css`, tym samym zmienia hashe ekranów. Osoba akceptująca,
+która zdąży przed końcem pracy, musiałaby akceptować jeszcze raz. Dlatego agent oznacza zapis markerem:
+
+```bash
+skillsync prototype writing . plan-zajec start            # przed edycją ekranów (po iterate)
+skillsync prototype writing . plan-zajec start --ttl 1800 # dłuższa partia; powtórzone start odnawia czas
+skillsync prototype ids . plan-zajec --check              # po pracy
+skillsync prototype writing . plan-zajec done             # dopiero potem „prototyp gotowy”
+```
+
+**Plik.** `<root>/<slug>/.writing.json` = `{"version":1,"since":<ms>,"expiresAt":<ms>,"by":"<login>"}` (UTC, milisekundy; `--ttl` w sekundach).
+Zapis jest atomowy, pod tą samą blokadą co `comments.json`. To dotfile: nie wchodzi do hasha ekranów, do `prototype_version` ani
+`assets_hash` (akceptacje sprzed zapisu nie tracą ważności przez sam marker), nie jest serwowany ani kopiowany do `iterations/`.
+Plik nie jest śledzony w gicie: linię `.writing.json` dopisuje do `.gitignore` prototypu `init`, `migrate` (istniejące prototypy) i pierwszy `start`.
+
+**Ważny marker.** Zwykły plik (nie symlink, nie FIFO, do 4 KiB) o schemacie wersji 1, z całkowitymi `since` i `expiresAt`, taki że
+`now < expiresAt`, okno `0 < expiresAt - since <= 3600 s` i `since` nie dalej niż 60 s w przyszłości (tolerancja zegara). Marker
+niespełniający któregokolwiek warunku (uszkodzony, wygasły, „z przyszłości”, o zbyt długim oknie) jest traktowany jak brak: blokada
+nie trwa w nieskończoność, a odczyt niczego nie zapisuje. TTL domyślnie 900 s, zakres 60–3600 s.
+
+**Skutki ważnego markera.**
+- Serwer odmawia akceptacji (`POST …/operations` typu `accept` i `POST /_api/v1/project/accept`) oraz przywracania (`POST …/restore`) kodem 409
+  `{error: 'writing_in_progress', slug, since, expiresAt}`; dla `project/accept` odpowiedź niesie listę `writing: [{slug, since, expiresAt}]`.
+  Marker wykryty dopiero po zapisie części prototypów to 409 `partial` z polem `writing`. Komentarze, głosy i cofnięcie akceptacji działają jak dotąd.
+- Pole `writing` (`null` albo `{since, expiresAt}`, bez `by`) widać w `GET …/operations`, w `GET /_api/v1/project` (per prototyp) i w `prototype list`.
+- Galeria na żywo (`serve`) pokazuje znacznik „w trakcie zapisu”; statyczny `index.html` z `prototype index` go nie ma.
+- Silnik w przeglądarce pokazuje baner „Agent jeszcze pisze ekrany”, wyłącza przyciski akceptacji i przywracania i wraca do normy po zniknięciu markera
+  bez przeładowania (o ile pliki się nie zmieniły; w przeciwnym razie ma pierwszeństwo baner „Prototyp zmieniono, przeładuj”). Kopię silnika
+  z banerem dostaje istniejący prototyp po `skillsync prototype migrate`.
+- CLI: `accept` odmawia (BLOCKED), `gate` ma powód `writing` (FAIL), `wait` nie zwraca `accepted`, `iterate` ostrzega ([cli.md](cli.md)).
+
+**Zgodność wsteczna.** Stara kopia silnika (przed `migrate`) pokazuje przy markerze zwykły błąd ogólny po odpowiedzi 409; akceptacja
+nie jest kolejkowana ani zapisywana. Starszy serwer marker ignoruje, a nowy silnik na starszym serwerze nie widzi pola `writing`.
+
+**To sygnał koordynacji, nie autoryzacja.** Ktoś z dostępem do repozytorium zdejmie marker przez `done` albo usunięcie pliku; nie ma obejścia
+blokady w interfejsie akceptacji, wystarcza wygaśnięcie. Dwóch agentów na jednym slugu: ostatni `start` wygrywa, a pierwszy `done` zdejmuje marker
+dla obu, więc w jednym prototypie pisze jeden agent.
+
 ## Akceptacja
 
 Akceptacja to zgoda człowieka na konkretną wersję ekranu. Ma ją ekran, którego zapisany hash równa się hashowi
@@ -506,6 +546,8 @@ Zmiany plików prototypu (HTML, CSS, `comments.json`, użytkownicy) widzi bez re
 | `ids --check` daje FAIL po dodaniu kart lub okien | nowe elementy komentowalne bez uchwytów | `skillsync prototype ids . <slug> --fix` |
 | Element nachodzi na sąsiada w wąskiej kolumnie (np. tekst pod plakietką) | `white-space: nowrap` bez zgody na zawinięcie wiersza | pozwól wierszowi się zawinąć (`flex-wrap: wrap`) zamiast ucinać; sprawdź na kilku szerokościach okna |
 | Po zmianie CSS akceptacje są „nieaktualne” | wspólny CSS i `<head>` wchodzą do hasha każdego ekranu | to zamierzone: zaakceptuj ekrany ponownie |
+| Akceptacja albo przywracanie daje 409 `writing_in_progress`, przyciski są wyłączone z banerem „Agent jeszcze pisze ekrany” | agent ma ważny marker zapisu | poczekaj na `prototype writing … done` albo wygaśnięcie markera (do 15 min domyślnie); gdy agent padł, zdejmij marker: `skillsync prototype writing . <slug> done` |
+| `writing start` kończy się `BLOCKED` `lock_timeout` albo `needs_migration` | zajęta blokada prototypu (`iterate`, `restore`) albo prototyp w starym formacie | ponów komendę; `migrate` |
 | Zapis komentarza daje 409 `needs_migration` | prototyp w starym formacie (`comments.js`) | `migrate` |
 | `serve` kończy się `BLOCKED` przy starcie | zajęty port, brak pliku użytkowników, plik z trybem szerszym niż 0600, śledzony albo nieignorowany przez git | wybierz inny port, utwórz konto (`user add`), `chmod 600`, dodaj plik do `.gitignore` |
 | `login-link` kończy się `BLOCKED` | `server_not_running` (serwer nie działa albo czyta inny plik użytkowników), `ambiguous_server` (kilka serwerów: dodaj `--port`), `link_needs_loopback` (`--host` z adresem LAN), `run_dir_unsafe` (`.skillsync/prototype/run/` z prawami ≠ 0700 lub dowiązanie), `unknown_user`, `password_change_required`, `invalid_port`, `link_unavailable` (serwer z `--trust-proxy`), `too_many_pending` | uruchom `serve`, dodaj `--port`, popraw katalog `run/`, utwórz konto albo zmień hasło |

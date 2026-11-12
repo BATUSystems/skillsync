@@ -216,3 +216,7 @@ lessons:
     title: "Test z wersją rdzenia na sztywno wygasa przy podbiciu wersji: wyliczaj ją od generator_version()"
     tags: [skillsync, tests, version, release, core-min]
     paths: ['tests/test_skillsync_layers_config.py', 'tests/test_skillsync_layers_doctor.py', 'tests/test_skillsync_layers_commands.py']
+  - path: marker-zapisu-kolejnosc-kontroli-i-zamkniete-zestawy.md
+    title: "Marker zapisu: kolejność kontroli w serwerze i pułapki testów (zamknięte zestawy pól, osobny .gitignore fixtury, zegar testu)"
+    tags: [skillsync, prototype, writing, server, testy, accept]
+    paths: ['skillsync_workflow/prototype_server.py', 'skillsync_workflow/prototype.py', 'tests/test_skillsync_prototype_accept.py', 'tests/test_skillsync_prototype_cli.py', 'tests/test_skillsync_prototype_writing*.py', 'tests/fixtures/prototype/assets/repo/.gitignore']

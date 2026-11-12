@@ -1,5 +1,5 @@
 // E2E widoku makiety desktop / mobile (D28b, B7a). Niezależny test-writer: scenariusze ze speca
-// docs/specs/2026-11-06-prototyp-tryb-widoku.md (K1–K15), kontraktu (scenariusze-e2e.md, sekcja 14) i haków
+// spec zadania (poza rdzeniem) (K1–K15), kontraktu (scenariusze-e2e.md, sekcja 14) i haków
 // (slownik-html-css.md, część C, „Uzupełnienia (widok makiety desktop / mobile…)”), bez czytania implementacji silnika.
 // Do B6 scenariusze dają FAIL (oczekiwane). Biegi tylko po GRANT (porty i Chrome).
 // D246 (D28c): globalnego przełącznika Desktop / Mobile nie ma (ani w pasku, ani w menu „Więcej”); widok zmienia wyłącznie

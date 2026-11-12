@@ -12,6 +12,37 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-11-13
+
+### Added
+
+- `skillsync prototype writing <projekt> <slug> start|done|status [--ttl <s>] [--by <login>]`: a marker "the agent is still writing screens"
+  (`<root>/<slug>/.writing.json`, TTL 60-3600 s, default 900; `start` again renews it). The marker is a dotfile outside the screen hashes,
+  `prototype_version` and `assets_hash`, is not served and is not copied to `iterations/`; `.writing.json` is added to the prototype
+  `.gitignore` (by `init`, `migrate` and the first `start`). Exit codes: 0, and 2 (BLOCKED `needs_migration`, `lock_timeout`, `invalid_args`). `--ttl` and `--by` are validated for every action (`status --ttl`, `done --by`); `--by` must start with a letter or a digit.
+- Acceptance and restore are blocked while a valid marker exists: 409 `writing_in_progress` on browser `accept` operations,
+  on `POST /_api/v1/project/accept` (with the list `writing`) and on `restore`; 409 `partial` carries `writing` when the marker appears
+  during a project acceptance. A marker that is corrupt, expired, from the future or longer than an hour counts as absent.
+- The field `writing` (`null` or `{since, expiresAt}`) in `GET …/operations`, `GET /_api/v1/project` (per prototype) and `prototype list`;
+  the live gallery marks a prototype whose agent is still writing (the static `index.html` does not).
+- Prototype engine: the banner "the agent is still writing screens" and disabled accept and restore buttons that return without reloading
+  once the marker is gone (an older copy of the engine shows the generic error until `skillsync prototype migrate`).
+- `skillsync leakcheck --text FILE` and `--stdin`: the leak check for text outside git (a PR description, a comment, release notes), with the same target, identities and patterns as `--range`, scanned in the strictest path class. The report names the label (file name or `<stdin>`), the category and the position, never the text. No git repository needed; the text is never a command argument. The skills `pr-run`, `feature` and `dispatch` now require this check for a description written to a file before `gh pr create`, `gh pr edit --body` and `gh release create`.
+- Review profile `docs` of the role `reviewer` (`library/skills/feature/references/review-loop.md`, `library/agents/reviewer.md`): every promise in docs, CHANGELOG and notes has evidence or is marked unconfirmed, instructions match the tools that check them, skills do not contradict each other, current state only, no names of people, clients or events in the public core. `skillsync review` returns `profile` (`docs` when the change touches only `docs/**`, skill `.md` files, `CHANGELOG*` or release notes, otherwise `kod`) and `docsFiles`, adds the docs checklist items for docs files, and does not change the risk or `readiness`. Paths and items can be overridden with `workflow.review.docs_paths` and `workflow.review.docs_checklist`.
+- Dashboard: `timing`, the work time and the waiting time for a human per step and per plan phase, counted by the status page itself (`show` and `dashboard metrics`, additive in `schema: 1`). A waiting window opens at a checkpoint with `czeka:` and closes at the consent named in it (`approvals.jsonl`) or at the next checkpoint; a window that nothing closes and a step without its marks are `unknown`, never estimated. The status page shows a collapsible "Czas pracy i czekania" section with sums per phase and a tooltip with the windows. Contract: `docs/dashboard-contract.md` (section `timing`).
+
+### Changed
+
+- `prototype accept` refuses with BLOCKED `writing_in_progress` before asking for the password and again under the lock; `prototype gate`
+  reports FAIL with the reason `writing` (`screen: null`) per prototype with a valid marker; `prototype wait` does not return `accepted`
+  while the marker is valid; `prototype iterate` warns. With `--project`, `accepted` may be empty when the marker is found in the first prototype.
+- `classifyAcceptResult` in the engine knows the result `writing`; the copy of the engine in the library is refreshed (no new exports).
+- Skills `prototype`, `skillsync` and `feature` (`references/plan-details.md`) describe the marker, see the library changelog.
+- `comments.json` is unchanged; `SERVER_VERSION` is unchanged.
+- The core repository no longer tracks task specifications or plans: `docs/specs/**` and `docs/plans/**` are removed (they live in the operations repository; history and tags are untouched), references to specific (dated) specification and plan files that the core does not keep are replaced by a neutral description (domain records, lessons, the prototype contract, library instructions, comments), and the new test `tests/test_skillsync_repo_hygiene.py` fails in CI when any file is tracked under those directories or a tracked file outside `tests/` points at such a dated file. The project directory convention (`docs/specs/*.md`, `docs/plans/*.md`) that the generator reads is unchanged.
+
+### Breaking
+
 ## [1.2.3] - 2026-11-13
 
 ### Added

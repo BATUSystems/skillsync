@@ -48,9 +48,10 @@ ani kazać uruchomić komendy.
    1. `ids <projekt> <slug> --check`; przy FAIL `ids <projekt> <slug> --fix` (dopisuje tylko atrybuty `data-proto-id`, wygląd się nie zmienia);
    2. `iterate <projekt> <slug>`: zamraża wersję, której dotyczyły uwagi, w `iterations/N/` i dopisuje operację `iteration`
       (przy `prototype.commit_before_iteration: true` `iterate` sam robi commit katalogu prototypu, zob. „Commit przed iteracją”);
-   3. dopiero potem zmiany HTML; istniejących `data-proto-id` nie zmieniaj (wątki straciłyby uchwyt), nowe elementy dostają nowe;
-   4. ponownie `ids <projekt> <slug> --check`;
-   5. `resolve <projekt> <slug> <th-…> --reason done --iteration <bieżąca>` dla wątków wdrożonych (bieżąca = pole `iteration` z `comments --json` albo `list --json`).
+   3. `writing <projekt> <slug> start` (marker „agent pisze”; odnawiaj `start` przy większych partiach, zob. skill `prototype`);
+   4. dopiero potem zmiany HTML; istniejących `data-proto-id` nie zmieniaj (wątki straciłyby uchwyt), nowe elementy dostają nowe;
+   5. ponownie `ids <projekt> <slug> --check`, sprawdzenie, że slug jest na stronie głównej `serve`, i `writing <projekt> <slug> done`;
+   6. `resolve <projekt> <slug> <th-…> --reason done --iteration <bieżąca>` dla wątków wdrożonych (bieżąca = pole `iteration` z `comments --json` albo `list --json`).
    Wątek, którego element zniknął, trafia do „Bez uchwytu” z „Pokaż w iteracji N”; nie przepinaj go heurystycznie.
 6. **Podsumowanie dla użytkownika**: tabela `#n | ekran | klasa | decyzja | iteracja`, a pod nią wątki odłożone i pytania na następną rundę.
 7. **Akceptacja należy do człowieka.** Agent nigdy nie uruchamia `accept` i nie cofa akceptacji („Cofnij akceptację”

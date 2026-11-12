@@ -2,7 +2,7 @@
 title: Klasy przebiegów, final, kandydaci zmian (metrics --classify, retro)
 tags: [skillsync, workflow, retro, classify, checkpoints, runs]
 paths: ['skillsync_workflow/runs.py', 'skillsync_workflow/retro.py', 'tests/test_skillsync_metrics_classify.py', 'tests/test_skillsync_retro.py']
-source: runs.py:_classify_run, _read, _is_problem, _label, _extra_fields, _owner_dir, retrospective; retro.py:retro, _candidates, _failing_case, _mask, _decide_proposal; retro_scan.py:retro_scan; docs/plans/2026-10-30-r2-self-improve.md (Decyzje D57, N1-N7; Kontrakty; Terminologia domenowa) 2026-10-30
+source: runs.py:_classify_run, _read, _is_problem, _label, _extra_fields, _owner_dir, retrospective; retro.py:retro, _candidates, _failing_case, _mask, _decide_proposal; retro_scan.py:retro_scan; plan zadania (poza rdzeniem) (Decyzje D57, N1-N7; Kontrakty; Terminologia domenowa) 2026-10-30
 verified: 2026-11-06
 ---
 Reguła: klasę przebiegu wyznaczają wyłącznie rekordy `checkpoint` w `.skillsync/runs/<id>.json`. Raporty `.md` w `.skillsync/runs/<id>/` dają tylko sygnały pomocnicze (`provenance: report-heuristic`) i nigdy nie podnoszą klasy.

@@ -383,6 +383,15 @@ def normalized_after(report, head, entry):
                 action[key] = action[key].replace(f'dana {hhmm}', 'dana 12:00')
     if data['approvals']['last'] == entry:
         data['approvals']['last'] = stable
+    # a waiting window closed by the consent ends at the real recording time: pin it to the fixed `at` above
+    timing = data.get('timing') or {}
+    for window in timing.get('windows', []):
+        if window.get('source') == 'approval':
+            started = datetime.fromisoformat(window['startedAt'])
+            ended = datetime(2026, 1, 12, 12, 0, tzinfo=timezone.utc)
+            seconds = int((ended - started).total_seconds())
+            timing['totals']['waitSeconds'] += seconds - window['seconds']
+            window['endedAt'], window['seconds'] = ended.isoformat(), seconds
     return normalized(data, head)
 
 

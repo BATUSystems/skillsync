@@ -81,6 +81,8 @@
   const TEXTS = Object.freeze({
     connecting: 'Łączenie z serwerem…',
     stale: 'Prototyp zmieniono od wczytania strony: przeładuj.',
+    writing: 'Agent jeszcze pisze ekrany: akceptacja wróci sama, gdy skończy.',
+    writingRestore: 'Agent jeszcze pisze ekrany: przywracanie wróci samo, gdy skończy.',
     noVersion: 'Serwer nie podał wersji prototypu: przeładuj stronę.',
     noQueueRestore: 'Przywrócenie wymaga połączenia z serwerem i nie trafia do kolejki.',
     noQueueAccept: 'Akceptacja wymaga połączenia z serwerem i nie trafia do kolejki.'
@@ -313,6 +315,7 @@
       ['expired', () => 'Sesja wygasła: zaloguj się ponownie.'],
       ['mustChange', () => 'Najpierw ustaw własne hasło.'],
       ['stale', () => TEXTS.stale],
+      ['writing', () => TEXTS.writing],
       ['offline', () => TEXTS.noQueueAccept],
       ['loading', (s) => loadReason(s.problem)]
     ];
@@ -390,6 +393,14 @@
       return 'Zaakceptowano ' + done + ' ' + pluralPrototypes(done) + (skipped ? '; pominięto ' + skipped : '') + '.';
     };
 
+    // Slugi prototypów z ważnym markerem zapisu z odpowiedzi serwera (`writing: [{slug, since, expiresAt}]`).
+    const writingSlugs = (data) => asArray(isObject(data) ? data.writing : null)
+      .map((entry) => (isObject(entry) ? entry.slug : null)).filter((slug) => isStr(slug));
+    const writingNote = (data) => {
+      const writing = writingSlugs(data);
+      return writing.length ? ' Agent jeszcze pisze ekrany (' + writing.join(', ') + '): ponów, gdy skończy.' : '';
+    };
+
     // Reakcja na wynik po zamknięciu okna: odświeżyć stan (`poll`), oznaczyć stronę jako nieaktualną, wymagane logowanie / hasło / token.
     const OUTCOMES = {
       done: (source, ask) => ({ poll: true, message: doneMessage(ask.kind, source, ask.title) }),
@@ -398,7 +409,15 @@
         return {
           poll: true,
           message: 'Akceptacja zapisana częściowo' + (pending.length ? ' (czeka: ' + pending.join(', ') + ')' : '') +
-            '; ponów, żeby dokończyć.'
+            '; ponów, żeby dokończyć.' + writingNote(source)
+        };
+      },
+      writing: (source, ask) => {
+        const writing = writingSlugs(source);
+        return {
+          poll: true,
+          message: (ask.kind === 'project' && writing.length ? 'Agent jeszcze pisze ekrany: ' + writing.join(', ') + '.' :
+            'Agent jeszcze pisze ekrany tego prototypu.') + ' Nic nie zapisano; akceptacja wróci, gdy skończy.'
         };
       },
       stale: (source, ask) => {
@@ -462,6 +481,7 @@
     const ACCEPT_RULES = [
       [(s) => s >= 200 && s < 300, 'done'],
       [(s, c) => s === 409 && c === 'stale_view', 'stale'],
+      [(s, c) => s === 409 && c === 'writing_in_progress', 'writing'],
       [(s, c) => s === 409 && c === 'partial', 'partial'],
       [(s, c) => s === 409 && c === 'not_accepted', 'not_accepted'],
       [(s, c) => (s === 500 && c === 'write_failed') || (s === 507 && c === 'file_too_large') ||
@@ -493,6 +513,7 @@
       submitState: submitState, canUnaccept: canUnaccept, targetScreen: targetScreen, escapeAllowed: escapeAllowed,
       panelEscape: panelEscape, tabTarget: tabTarget, doneMessage: doneMessage, closedOutcome: closedOutcome,
       projectSummary: projectSummary, screenBody: screenBody, unacceptBody: unacceptBody, classifyResult: classifyResult,
+      writingNote: writingNote,
       acceptedLine: acceptedLine
     });
   })();
@@ -572,6 +593,7 @@
       if (!shown) return Shapes.availability(false, false, '');
       const reason = firstRule([
         [() => s.stale, TEXTS.stale],
+        [() => s.writing, TEXTS.writingRestore],
         [() => s.version === null || s.version === undefined, TEXTS.noVersion],
         [() => s.offline || s.expired, TEXTS.noQueueRestore],
         [() => s.unchanged, () => unchangedText(s.from)]
@@ -584,6 +606,7 @@
       const reason = firstRule([
         [() => s.busy, ''],
         [() => s.stale, 'Prototyp zmieniono od wczytania strony: przeładuj stronę i spróbuj ponownie.'],
+        [() => s.writing, TEXTS.writingRestore],
         [() => s.unchanged, () => unchangedText(s.from)],
         [() => s.previewFailed, 'Nie udało się pobrać podglądu skutków: użyj „Ponów podgląd” albo wybierz inną iterację.'],
         [() => !s.previewOk, 'Poczekaj na podgląd skutków przywrócenia.'],
@@ -595,6 +618,7 @@
     const RESTORE_RULES = [
       [(s) => s >= 200 && s < 300, (s, c, data) => (isObject(data) && data.unchanged === true ? 'unchanged' : 'done')],
       [(s, c) => s === 409 && c === 'stale_view', 'stale'],
+      [(s, c) => s === 409 && c === 'writing_in_progress', 'writing'],
       [(s) => s === 503 || s === 429, 'busy'],
       [(s) => s === 401, 'auth'],
       [(s, c) => s === 403 && c === 'password_change_required', 'password'],
@@ -2225,7 +2249,8 @@
       iterations: null,      // lista iteracji z serwera ({number, path, exists}) albo null
       baseVersion: null,     // wersja prototypu przy pierwszym wczytaniu strony (to ją widział użytkownik)
       baseScreens: emptyMap(), // hashe ekranów z tego wczytania
-      stale: false           // pliki prototypu zmieniły się po wczytaniu strony
+      stale: false,          // pliki prototypu zmieniły się po wczytaniu strony
+      writing: null          // marker „agent jeszcze pisze ekrany” z ostatniej odpowiedzi operations ({since, expiresAt}) albo null
     };
     let pollTimer = null;
     let polling = Promise.resolve();
@@ -2330,6 +2355,7 @@
         }
       }
       state.acceptance = isObject(json.acceptance) ? json.acceptance : state.acceptance;
+      state.writing = isObject(json.writing) ? json.writing : null;   // zawsze nadpisywane: stary serwer bez pola = brak markera
       state.loaded = true;
       Bus.emit('data', state);
     };
@@ -2348,6 +2374,7 @@
         state.total = 0;
         state.prefix = '';
         state.loaded = false;
+        state.writing = null;   // po wylogowaniu baner „pisze” nie może wisieć
         state.pollProblem = 'error';
         Bus.emit('data', state);
       } else {
@@ -3063,6 +3090,8 @@
           buttons: [], links: [{ label: 'Wróć do bieżącej', href: frozenInfo.currentHref }] });
       } else if (s.stale && s.mode !== 'file') {
         rows.push({ key: 'stale', role: 'alert', text: 'Prototyp zmieniono, przeładuj.', buttons: [{ label: 'Przeładuj', run: () => location.reload() }] });
+      } else if (isObject(s.writing) && s.mode !== 'file' && !PageState.embedded) {
+        rows.push({ key: 'writing', role: 'status', text: TEXTS.writing, buttons: [] });
       }
       if (s.pollProblem === 'invalid_log' || s.pollProblem === 'needs_migration' || (s.pollProblem && s.mode === 'full' && !s.loaded)) {
         rows.push({ key: 'poll', role: 'alert', text: s.pollProblem === 'needs_migration' ?
@@ -4500,7 +4529,8 @@
     const restoreContext = (extra) => Object.assign({
       mode: NetState.apiUser() ? 'api' : Remote.state.mode, frozen: PageState.frozen(), embed: PageState.embedded, user: Remote.state.user,
       sourceWrites: !!(isObject(Remote.state.server) && Remote.state.server.sourceWrites), iterations: existing().length,
-      stale: Remote.state.stale, version: Remote.state.baseVersion, offline: NetState.offline(), expired: Remote.state.conn === 'expired'
+      stale: Remote.state.stale, writing: isObject(Remote.state.writing), version: Remote.state.baseVersion, offline: NetState.offline(),
+      expired: Remote.state.conn === 'expired'
     }, extra);
     const restoreGate = () => Iterations.restoreAvailability(restoreContext({}));
 
@@ -4618,7 +4648,7 @@
       views.paint('desktop');
 
       const context = () => ({
-        busy: ask.busy, stale: Remote.state.stale, unchanged: ask.previewState === 'ok' && isObject(ask.preview) && ask.preview.unchanged === true,
+        busy: ask.busy, stale: Remote.state.stale, writing: isObject(Remote.state.writing), unchanged: ask.previewState === 'ok' && isObject(ask.preview) && ask.preview.unchanged === true,
         from: ask.from, previewFailed: ask.previewState === 'failed', previewOk: ask.previewState === 'ok', reason: why.value
       });
       const gateState = () => {
@@ -4694,6 +4724,9 @@
         } else if (verdict === 'stale') {
           Remote.markStale();
           ask.message = 'Prototyp zmieniono od wczytania strony: przeładuj stronę i spróbuj ponownie. Nic nie zapisano.';
+        } else if (verdict === 'writing') {
+          await Remote.poll();
+          ask.message = TEXTS.writingRestore + ' Nic nie zapisano.';
         } else if (verdict === 'csrf') {
           await Remote.refreshSession();
           ask.message = 'Nie udało się potwierdzić sesji: odśwież połączenie i ponów akcję.';
@@ -4843,7 +4876,8 @@
       const entry = entryOf(sid);
       return Object.assign({
         mode: NetState.apiUser() ? 'api' : s.mode, frozen: PageState.frozen(), embed: PageState.embedded, example: false, user: s.user,
-        mustChange: !!(s.user && s.user.mustChange), expired: s.conn === 'expired', stale: s.stale, offline: NetState.offline(),
+        mustChange: !!(s.user && s.user.mustChange), expired: s.conn === 'expired', stale: s.stale, writing: isObject(s.writing),
+        offline: NetState.offline(),
         loading: !s.loaded, problem: s.pollProblem, version: s.baseVersion, hash: has(s.baseScreens, sid) ? s.baseScreens[sid] : null,
         accepted: !!entry && entry.valid === true
       }, extra);
@@ -5055,7 +5089,7 @@
           const pending = Acceptance.slugList(data.pending);
           ask.partial = { accepted: accepted, pending: pending };
           message = 'Zapisano część akceptacji.' + (accepted.length ? ' Zaakceptowano: ' + accepted.join(', ') + '.' : '') +
-            (pending.length ? ' Czeka: ' + pending.join(', ') + '.' : '');
+            (pending.length ? ' Czeka: ' + pending.join(', ') + '.' : '') + Acceptance.writingNote(data);
         }
         const inWindow = api.isOpen() && !oneOf(['done', 'not_accepted'], action);
         if (inWindow) {

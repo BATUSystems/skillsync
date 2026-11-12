@@ -2,7 +2,7 @@
 title: "Warstwy generatora: core, org, personal, layer.yaml, layer_rules, LayerSet, kompozyty, _base.d, kody layers check"
 tags: [skillsync, layers, configuration, composition, isolation, push, versioning]
 paths: ['skillsync_workflow/layers.py', 'skillsync', 'skillsync_workflow/common.py', 'skillsync_workflow/quality.py', 'skillsync-windows.ps1', 'tests/test_skillsync_layers*.py']
-source: "docs/specs/2026-11-05-warstwy-generator.md (Terminologia, K1–K15, Kontrakty, Migracja); fakty z kodu skillsync_workflow/layers.py (match_rule, LayerSet, check_layers, migrate_config, _check_bridge, parse_layer_flag, isolation_findings), potwierdzone 2026-11-06; plan docs/plans/2026-11-05-warstwy-generator.md, sekcja Wynik (krok 2.1–2.4)"
+source: "spec zadania (poza rdzeniem) (Terminologia, K1–K15, Kontrakty, Migracja); fakty z kodu skillsync_workflow/layers.py (match_rule, LayerSet, check_layers, migrate_config, _check_bridge, parse_layer_flag, isolation_findings), potwierdzone 2026-11-06; plan zadania (poza rdzeniem), sekcja Wynik (krok 2.1–2.4)"
 verified: 2026-11-06
 ---
 Reguła: generator składa skille, instrukcje, agenty i workflow z **warstw**. Warstwa to katalog o układzie

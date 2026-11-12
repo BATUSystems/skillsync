@@ -154,6 +154,35 @@
     return box;
   }
 
+  // Czas pracy i czekania na człowieka (akt III): sumy na fazę i na przebieg, dymek z oknami czekania; nieznane to „brak danych”.
+  function timingBlock(d) {
+    const { h, desc, st } = this;
+    const t = d.timing;
+    const list = (v) => (Array.isArray(v) ? v : []);
+    if (!t || typeof t !== "object" || !t.available || !(list(t.stages).length || list(t.windows).length)) return null;
+    const dur = (s) => (s != null ? fmtDur(s * 1000) : "brak danych");
+    const clock = (iso) => (typeof iso === "string" && iso.length >= 16 ? iso.slice(11, 16) : "?");
+    const part = (work, wait, more) => "praca " + dur(work) + " · czekanie " + dur(wait) + (more && wait != null ? "+" : "");
+    const windowLine = (w) => esc(w.what) + ": " + clock(w.startedAt)
+      + (w.unknown ? " (okno nieznane: brak zgody i kolejnego checkpointu)"
+        : "–" + clock(w.endedAt) + ", " + dur(w.seconds) + (w.source === "approval" ? ", do zgody" : ", do kolejnego checkpointu"));
+    const tip = list(t.windows).length ? list(t.windows).map(windowLine).join("\n") : "Brak okien czekania.";
+    const totals = t.totals || {};
+    const rows = list(t.stages).map((s) => h("li", { class: s.complete ? "" : "is-nodata" },
+      h("span", { class: "mono q-id" }, esc(s.phase)),
+      h("span", { class: "tt" }, esc(s.name)),
+      h("span", { class: "mono sub-t" }, part(s.workSeconds, s.waitSeconds) + (s.complete ? "" : " (niepełne)"))));
+    rows.push(h("li", { class: totals.complete ? "" : "is-nodata" },
+      h("span", { class: "mono q-id" }, "Σ"),
+      h("span", { class: "tt" }, "Razem" + (totals.unknownWindows ? " (okna nieznane: " + totals.unknownWindows + ")" : "")),
+      h("span", { class: "mono sub-t" }, part(totals.workSeconds, totals.waitSeconds, totals.unknownWindows > 0) + (totals.complete ? "" : " (niepełne)"))));
+    const box = h("details", { class: "timing-box", open: Boolean(st.timingOpen) },
+      h("summary", desc("timing_time", tip), "Czas pracy i czekania"),
+      h("ul", { class: "timing-list" }, rows));
+    box.addEventListener("toggle", () => { st.timingOpen = box.hasAttribute("open"); });
+    return box;
+  }
+
   // ------------------------------------------------------------------ renderer
   function create(root, deps) {
     if (!root || !root.ownerDocument) throw new TypeError("dashboard-render: create(root, deps) wymaga elementu DOM");
@@ -232,7 +261,7 @@
       if (!key) return extra ? { "data-tip": extra } : {};
       return { "data-desc": key, "data-desc-extra": extra || null, tabindex: "0", "aria-describedby": "descTip" };
     }
-    // Kontekst sekcji modułu (readinessTile, substepsBlock); openDoc to deklaracja funkcji niżej (hoisting).
+    // Kontekst sekcji modułu (readinessTile, substepsBlock, timingBlock); openDoc to deklaracja funkcji niżej (hoisting).
     const kit = { h, icon, desc, openDoc: (path) => openDoc(path), st };
     // Odnośnik zewnętrzny: host może przejąć otwarcie (webview), strona zostawia zwykłe <a target=_blank>.
     const linkClick = (kind, id, url) => (e) => {
@@ -438,6 +467,7 @@
               : h("div", { class: "act-detail" }, a.detail || ""),
             h("div", { class: "stages" }, stages),
             substepsBlock.call(kit, d),
+            timingBlock.call(kit, d),
             h("div", { class: "act-actions" }, approveButton(d, "cp", "act-approve"), approveButton(d, "ready", "act-approve")),
           ];
         } else {

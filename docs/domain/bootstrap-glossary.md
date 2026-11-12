@@ -2,7 +2,7 @@
 title: Rekordy bootstrap i wczesne ładowanie glosariusza domenowego
 tags: [skillsync, knowledge, domain, terminology, routing]
 paths: ['skillsync_workflow/quality.py', 'tests/test_skillsync_workflow.py']
-source: "Kontrakt wdrożony w Skillsync, plan docs/plans/2026-10-27-domain-glossary-bootstrap.md"
+source: "Kontrakt wdrożony w Skillsync, plan zadania (poza rdzeniem)"
 verified: 2026-10-27
 ---
 

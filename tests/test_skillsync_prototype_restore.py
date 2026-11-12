@@ -1,6 +1,6 @@
 """`skillsync prototype` F2: iterate, restore (with interruptions), commit before the iteration, agent CLI, merge-comments.
 
-Contract: docs/specs/2026-11-04-prototype-komentarze-wspolne.md (K23, K29, K32, K35, K37, K40; "Przywrócenie:
+Contract: spec zadania (poza rdzeniem) (K23, K29, K32, K35, K37, K40; "Przywrócenie:
 kolejność i odtwarzanie").  The tests observe the CLI reports and the files of a temporary project; crashes are real
 process deaths (`os._exit` at a chosen step in a child process, no `finally` runs), not exceptions.  Every negative
 test has a control that passes (the same call with correct input).  Git tests use a temporary repository with its own

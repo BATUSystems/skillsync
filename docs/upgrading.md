@@ -31,6 +31,14 @@ Pakiet aktualizujesz ponownym zainstalowaniem z tagu (`uv tool install --force g
 3. `skillsync layers check` i `skillsync doctor` w projektach.
 4. `skillsync link <projekt>` w każdym projekcie z `discover_paths` (albo `skillsync link` bez ścieżki).
 
+## Przejście 1.2.x → 1.3.0
+
+Wydanie 1.3.0 jest MINOR (zgodne wstecz): sekcja **Breaking** w `CHANGELOG.md` to „None.”. Dodaje marker „agent pisze ekrany” (`skillsync prototype writing`, blokada akceptacji i przywracania), czas pracy i czekania na stronie statusu, `skillsync leakcheck --text` i profil przeglądu `docs`; repozytorium rdzenia przestaje śledzić `docs/specs/**` i `docs/plans/**`. Warstwa `core` ma `core_min: 1.3.0`:
+
+1. Rdzeń: `uv tool install --force git+https://github.com/BATUSystems/skillsync@v1.3.0`, potem `skillsync layers update core --ref v1.3.0`.
+2. Istniejące prototypy dostają nowy silnik (baner zapisu) przez `skillsync prototype migrate`; do tego czasu starszy silnik pokazuje ogólny błąd przy zablokowanej akceptacji.
+3. Uruchom ponownie działający `prototype serve`.
+
 ## Przejście 1.2.0 → 1.2.1
 
 Wydanie 1.2.1 jest PATCH (sekcja **Breaking** w `CHANGELOG.md` opisuje zmianę lokalizacji pliku pytań). Pytania do eksperta są osobne dla każdego przebiegu:

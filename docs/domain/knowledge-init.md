@@ -2,7 +2,7 @@
 title: Szkielet dokumentacji projektu (knowledge init)
 tags: [skillsync, knowledge, docs, lessons, domain]
 paths: ['skillsync_workflow/knowledge.py', 'skillsync_workflow/quality.py']
-source: odczyt skillsync_workflow/knowledge.py, quality.py:lessons_location; tests/test_skillsync_knowledge_init.py 2026-10-21; plan docs/plans/2026-10-21-agent-optimization.md (G6)
+source: odczyt skillsync_workflow/knowledge.py, quality.py:lessons_location; tests/test_skillsync_knowledge_init.py 2026-10-21; plan zadania (poza rdzeniem) (G6)
 verified: 2026-10-21
 ---
 Reguła: `skillsync knowledge init <projekt> [--dry-run]` tworzy tylko BRAKUJĄCE `docs/domain/index.yaml` (`entries: []`), `docs/lessons/index.yaml` (`lessons: []`) i `docs/README.md`;

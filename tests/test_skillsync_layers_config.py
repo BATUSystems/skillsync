@@ -1,7 +1,7 @@
 """Step 2.1t: machine config, layer selection (K3), `layer.yaml` and versions (K12),
 leak guard sources taken from the layers (K7/K8, N5-2).
 
-The tests follow spec A (docs/specs/2026-11-05-warstwy-generator.md) and the decisions of
+The tests follow spec A (spec zadania (poza rdzeniem)) and the decisions of
 the orchestrator in the plan ("Wynik"): `severity` has a `blocked` level, `allow_override`
 format, glob rules. All layer, client and project names are synthetic; terms the guard must
 catch are composed at runtime. Every test runs in an isolated environment (layers_helpers).

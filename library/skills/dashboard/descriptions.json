@@ -55,6 +55,10 @@
   "title": "Podkroki i czas",
   "text": "Podkroki Fn.k planu w kolejności planu z czasem od pierwszego checkpointu „w toku” do pierwszego „zrobione” (rozdzielczość minuty).\nBrak danych: podkrok zrobiony, ale checkpoints.md nie ma obu znaczników.\nStrona: pole substeps; podkrok niezrobiony pokazuje swój stan zamiast czasu."
  },
+ "timing_time": {
+  "title": "Czas pracy i czekania",
+  "text": "Czas pracy (od „w toku” do „zrobione” kroku minus czekanie) i czas czekania na człowieka (od checkpointu z `czeka:` do zgody z approvals.jsonl albo do następnego checkpointu), sumy na fazę planu i na przebieg.\nOkno, którego nic nie zamyka, i krok bez znaczników są „nieznane”; nic nie jest szacowane.\nStrona: pole timing; dymek listuje okna czekania."
+ },
  "gate_go_plan": {
   "title": "Przycisk GO plan",
   "text": "Zgoda człowieka: przycisk wywołuje `skillsync spec approve --expect-sha` dla pokazanej wersji speca; sesja tej komendy sama nie wywołuje.\nWynik: spec ze statusem approved.\nStan: ukryty przed aktem, nieaktywny gdy akt trwa („czeka na…”), aktywny gdy sesja czeka, nieaktywny z godziną po zgodzie."

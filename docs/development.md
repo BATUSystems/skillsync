@@ -189,6 +189,8 @@ python3 -m unittest discover -s tests -p 'test_skillsync*.py'
 
 Dla zmiany linkowania dodatkowo: `link --dry-run` na projekcie testowym (receptura wyżej).
 
+**Rdzeń nie przechowuje specyfikacji ani planów zadań.** Repozytorium jest publiczne: pliki pod `docs/specs/` i `docs/plans/` nie są śledzone, a w plikach poza `tests/` nie wskazujemy konkretnych (datowanych) specyfikacji ani planów; piszemy opis bez ścieżki. Pilnuje tego `tests/test_skillsync_repo_hygiene.py` (w CI na każdym PR). Konwencja katalogów projektu użytkownika (`docs/specs/*.md`, `docs/plans/*.md`), z której korzysta generator, pozostaje opisana normalnie.
+
 ## Strażnik wycieków na maszynie dewelopera
 
 Pełne sprawdzenie (`skillsync leakcheck . --require full`) potrzebuje plików tożsamości innych celów niż publiczny rdzeń.

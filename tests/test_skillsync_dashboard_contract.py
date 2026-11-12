@@ -7,7 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / 'tests' / 'fixtures' / 'dashboard'
 CONTRACT_DOC = ROOT / 'docs' / 'dashboard-contract.md'
-CASES = ('empty', 'plan-in-progress', 'spec-act', 'run-mode', 'silence', 'readiness-blocked', 'questions', 'cp-ready')
+CASES = ('empty', 'plan-in-progress', 'spec-act', 'run-mode', 'silence', 'readiness-blocked', 'questions', 'cp-ready', 'timing')
 GENERATED_BY_LINK = {'.mcp.json', '.claude', '.github', '.gitignore', 'AGENTS.md', 'CLAUDE.md'}
 FORBIDDEN_IN_INPUT = ('/home/', '@')  # ogólne wzorce; nazwy prywatne pilnuje leakcheck (strażnik), nie źródło testu
 MODES = {'plan', 'spec', 'run', 'none'}
@@ -27,7 +27,7 @@ TOP = {
     'git': dict, 'plans': list, 'planAuto': bool, 'mode': str, 'plan': (dict, type(None)), 'spec': dict, 'run': dict,
     'progress': dict, 'acts': list, 'waiting': list, 'silence': (dict, type(None)), 'approvals': dict, 'delivery': dict,
     'session': dict, 'prototype': dict, 'docs': list, 'readiness': dict, 'assumptions': dict, 'blockingQuestions': dict,
-    'expertQuestions': dict, 'substeps': list,
+    'expertQuestions': dict, 'substeps': list, 'timing': dict,
 }
 # Pola obiektów zagnieżdżonych: wymagane (typ) i opcjonalne (opcjonalne tylko gdy opisane w kontrakcie jako opcjonalne).
 NESTED = {
@@ -68,6 +68,15 @@ ACTION = ({'kind': str, 'word': str, 'state': str, 'reason': STR_OR_NONE, 'block
            'sha': str, 'given': (dict, type(None)), 'run': STR_OR_NONE}, {'target': STR_OR_NONE})
 DOC_GROUP = ({'key': str, 'label': str, 'items': list}, {})
 DOC_ITEM = ({'path': str, 'title': str, 'status': STR_OR_NONE, 'mtime': str}, {})
+TIMING = ({'available': bool, 'reason': STR_OR_NONE, 'windows': list, 'steps': list, 'stages': list, 'totals': dict}, {})
+TIMING_WINDOW = ({'what': str, 'startedAt': str, 'endedAt': STR_OR_NONE, 'seconds': (int, type(None)), 'source': STR_OR_NONE,
+                  'unknown': bool}, {})
+TIMING_STEP = ({'id': str, 'phase': str, 'startedAt': STR_OR_NONE, 'finishedAt': STR_OR_NONE, 'workSeconds': (int, type(None)),
+                'waitSeconds': (int, type(None)), 'unknown': bool, 'reason': STR_OR_NONE}, {})
+TIMING_STAGE = ({'phase': str, 'name': str, 'workSeconds': (int, type(None)), 'waitSeconds': (int, type(None)),
+                 'unknownSteps': int, 'complete': bool}, {})
+TIMING_TOTALS = ({'workSeconds': (int, type(None)), 'waitSeconds': (int, type(None)), 'windows': int, 'unknownWindows': int,
+                  'unknownSteps': int, 'complete': bool}, {})
 SUBSTEP = ({'id': str, 'title': str, 'phase': str, 'state': str, 'done': bool, 'startedAt': STR_OR_NONE,
             'finishedAt': STR_OR_NONE, 'seconds': (int, type(None)), 'missingData': bool}, {})
 CHECKPOINT = ({'time': str, 'text': str}, {})
@@ -155,6 +164,11 @@ class DashboardContract(unittest.TestCase):
                 for group in data['docs']:
                     self.each(group['items'], DOC_ITEM, f"docs.{group['key']}.items")
                 self.each(data['substeps'], SUBSTEP, 'substeps')
+                self.check_shape(data['timing'], TIMING, 'timing')
+                self.each(data['timing']['windows'], TIMING_WINDOW, 'timing.windows')
+                self.each(data['timing']['steps'], TIMING_STEP, 'timing.steps')
+                self.each(data['timing']['stages'], TIMING_STAGE, 'timing.stages')
+                self.check_shape(data['timing']['totals'], TIMING_TOTALS, 'timing.totals')
                 self.each(data['assumptions']['items'], ASSUMPTION, 'assumptions.items')
                 self.each(data['blockingQuestions']['items'], BLOCKING, 'blockingQuestions.items')
                 self.each(data['expertQuestions']['runs'], EXPERT_RUN, 'expertQuestions.runs')
@@ -181,6 +195,24 @@ class DashboardContract(unittest.TestCase):
                         self.assertFalse(sub['missingData'], sub['id'])
                     self.assertTrue(not sub['missingData'] or sub['done'] or sub['state'] == 'reported', sub['id'])
                 self.assertEqual(data['progress']['total'], sum(len(p['steps']) for p in data['progress']['phases']))
+
+    def test_timing_is_consistent(self):
+        for case in CASES:
+            with self.subTest(case=case):
+                timing = json.loads(load(case)[1])['timing']
+                for window in timing['windows']:
+                    self.assertEqual(window['unknown'], window['seconds'] is None, window)
+                    self.assertEqual(window['source'] is None, window['unknown'], window)
+                for item in timing['steps']:
+                    self.assertEqual(item['unknown'], item['workSeconds'] is None, item)
+                    self.assertEqual(item['reason'] is None, not item['unknown'], item)
+                totals = timing['totals']
+                self.assertEqual(totals['windows'], len(timing['windows']))
+                self.assertEqual(totals['unknownWindows'], sum(1 for w in timing['windows'] if w['unknown']))
+                self.assertEqual(totals['unknownSteps'], sum(1 for s in timing['steps'] if s['unknown']))
+                self.assertEqual(totals['complete'], not totals['unknownWindows'] and not totals['unknownSteps'] and timing['available'])
+                if not timing['available']:
+                    self.assertTrue(timing['reason'])
 
     def test_cases_cover_the_contract(self):
         plan = json.loads(load('plan-in-progress')[1])

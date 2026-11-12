@@ -212,6 +212,21 @@
     "sha": null
   },
   "substeps": [],
+  "timing": {
+    "available": true,
+    "reason": null,
+    "stages": [],
+    "steps": [],
+    "totals": {
+      "complete": true,
+      "unknownSteps": 0,
+      "unknownWindows": 0,
+      "waitSeconds": 0,
+      "windows": 0,
+      "workSeconds": null
+    },
+    "windows": []
+  },
   "version": 0,
   "waiting": []
 }

@@ -270,7 +270,8 @@ Widz zdalny: pole `approvals.viewer` (`dashboard serve --read-host`; starszy ser
 
 Sekcje aktów rysuje renderer (`readinessTile`, `substepsBlock`, funkcje modułu z kontekstem egzemplarza):
 Readiness w akcie II (`readiness`; link `readiness.source` jak inne dokumenty: podgląd z `loadDoc`, inaczej `openDoc`), Podkroki i czas w akcie III
-(`substeps`, „brak danych” przy `missingData`; rozwinięcie `details` pamiętane w stanie renderera między `update()`).
+(`substeps`, „brak danych” przy `missingData`; rozwinięcie `details` pamiętane w stanie renderera między `update()`),
+Czas pracy i czekania w akcie III (`timing`: czas pracy i czekania na człowieka per faza i suma przebiegu z checkpointów `czeka:` i `approvals.jsonl`; okno bez zamknięcia i krok bez znaczników to „nieznane”, nigdy zero ani szacunek; sekcja `timingBlock`).
 Poniżej 500 px szerokości akty I i II stoją w jednej kolumnie.
 
 Zasady renderera (CSP webview: `default-src 'none'`, skrypty i style z nonce, bez `connect-src` i `unsafe-inline`), pilnowane

@@ -4,6 +4,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-11-13
+
+### Added
+- `skills/prototype/SKILL.md`: sekcja „Zapis ekranów: marker »agent pisze«”: `prototype writing <projekt> <slug> start` przed edycją ekranów (po `iterate`), odnowienie przy większych partiach albo `--ttl 1800`, `done` po `ids --check` i sprawdzeniu slugu w galerii, dopiero potem „prototyp gotowy”; obsługa `lock_timeout` i `needs_migration`; marker to sygnał koordynacji z wygasaniem; agent nadal nie uruchamia `accept`.
+- `skills/skillsync/SKILL.md`: komenda `prototype writing`, kody BLOCKED (`needs_migration`, `lock_timeout`, `invalid_args`), `writing_in_progress` przy `accept`, pole `writing` w `list`.
+- `skills/feature/references/review-loop.md`, `agents/reviewer.md`: profil przeglądu `docs` (obietnice z dowodem, zgodność instrukcji z narzędziami, brak sprzeczności skilli, tylko stan bieżący, brak nazw osób, klientów i wydarzeń); `skills/pr-run`, `skills/feature`, `skills/dispatch`: opis PR-a, komentarz i notatka wydania przechodzą `skillsync leakcheck --text <plik>` przed publikacją; `skills/skillsync`: flagi `--text`/`--stdin`.
+- `skills/dashboard`: czas pracy i czekania na człowieka (`timing`) w sekcji aktu III strony statusu, renderer (`timingBlock`), opis w `descriptions.json` i w `SKILL.md`.
+
+### Changed
+- `skills/prototype/references/decisions.md` i `SKILL.md` (procedura po rundzie): po `iterate` marker `writing start`, po zmianach HTML `ids --check`, sprawdzenie slugu i `writing done`.
+- `skills/prototype/SKILL.md`: `prototype wait` nie zgłasza `accepted` przy ważnym markerze; `gate` ma powód `writing`.
+- `skills/feature/references/plan-details.md`: lista powodów FAIL bramki o `writing`.
+- `skills/prototype/assets/repo/prototype.js`: baner „Agent jeszcze pisze ekrany”, wyłączone przyciski akceptacji i przywracania, powrót po zniknięciu markera bez przeładowania; istniejące prototypy dostają silnik po `skillsync prototype migrate`.
+- `skills/prototype/assets/repo/.gitignore`: linia `.writing.json`.
+- `layer.yaml`: `version` i `core_min` 1.3.0 (warstwa opisuje komendy rdzenia 1.3.0).
+
 ## [1.2.3] - 2026-11-13
 
 ### Changed
