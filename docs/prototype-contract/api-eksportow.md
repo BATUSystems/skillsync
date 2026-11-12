@@ -1,8 +1,8 @@
 # API eksportów silnika prototypów
 
-Zbiór nazw eksportowanych przez silnik w Node (`module.exports`) jest kontraktem: silnik eksportuje dokładnie te 106 nazw.
+Zbiór nazw eksportowanych przez silnik w Node (`module.exports`) jest kontraktem: silnik eksportuje dokładnie te 107 nazw.
 Opis podaje wejście i wynik słowami; szczegóły zachowania rozstrzygają testy z kolumny „Testy” i `comments-format.md` (format i fold).
-Zbiór nazw (dokładnie 106) sprawdza `EngineV2ExportContractTests.test_export_names_are_exactly_the_contract_set`; każda nazwa ma test z wywołaniem i asercją wartości albo wyniku.
+Zbiór nazw (dokładnie 107) sprawdza `EngineV2ExportContractTests.test_export_names_are_exactly_the_contract_set`; każda nazwa ma test z wywołaniem i asercją wartości albo wyniku.
 Kolumna „Testy” podaje `klasa.metoda` z `tests/test_skillsync_prototype_engine.py`.
 Funkcje `filterThreads`, `filterCounts` i `threadMatches` przyjmują w kontekście dodatkowo `viewFilter` (iloczyn z filtrem statusu; test `EngineV2ExportContractTests.test_view_filter_in_context_multiplies_with_status_filter`).
 Liczba w kolumnie „Argumenty” to długość deklarowanej listy parametrów; testy dopuszczają parametry opcjonalne.
@@ -58,6 +58,7 @@ Liczba w kolumnie „Argumenty” to długość deklarowanej listy parametrów; 
 | `hasDarkReaderLock` | funkcja | 1 | (dokument) → czy jest meta blokady | `EngineV2ExportContractTests.test_has_dark_reader_lock` |
 | `removeDarkReaderLeftovers` | funkcja | 2 | (dokument, rodzice) → usuwa pozostałości tylko przy blokadzie | `EngineV2DarkReaderLeftoverTests.test_leftover_removed_at_start`, `EngineV2DarkReaderLeftoverTests.test_without_lock_nothing_is_removed` |
 | `screenEntriesFromLinks` | funkcja | 1 | (linki) → lista ekranów przełącznika (numer, nazwa, id) | `EngineV2ScreenSwitcherTests.test_entries_built_from_links` |
+| `screenNavMode` | funkcja | 2 | (atrybut `data-proto-nav`, liczba ekranów) → `'strip'` (tylko `strip` i najwyżej 5 ekranów) albo `'switcher'` | `EngineV2ScreenSwitcherTests.test_nav_mode_strip_only_for_a_few_screens` |
 | `normalizeSearch` | funkcja | 1 | (tekst) → postać do wyszukiwania (bez wielkości liter i znaków diakrytycznych) | `EngineV2ExportContractTests.test_normalize_search_ignores_case_diacritics_and_extra_spaces` |
 | `filterScreens` | funkcja | 2 | (ekrany, zapytanie) → ekrany pasujące po numerze albo nazwie | `EngineV2ScreenSwitcherTests.test_filter_ignores_case_and_polish_diacritics`, `EngineV2ScreenSwitcherTests.test_filter_number_is_prefix` |
 | `adjacentScreen` | funkcja | 3 | (ekrany, id bieżącego, kierunek -1 albo 1) → poprzedni/następny ekran albo brak na krańcu | `EngineV2ScreenSwitcherTests.test_prev_next_at_edges` |
