@@ -21,10 +21,10 @@ FIXTURES = ROOT / 'tests' / 'fixtures' / 'dashboard'
 MTIME = datetime(2026, 1, 11, 10, 0, tzinfo=timezone.utc).timestamp()
 # case -> run id; every case has `expected-metrics.json`
 CASES = {'plan-in-progress': '2026-01-10-demo-feature', 'silence': '2026-01-11-demo-report',
-         'run-mode': '2026-01-11-demo-research'}
+         'run-mode': '2026-01-11-demo-research', 'timing': '2026-01-11-timing-demo'}
 SUBSTEP_KEYS = {'id', 'title', 'seconds', 'startedAt', 'finishedAt', 'noData', 'source'}
 TOP_KEYS = {'schema', 'status', 'run', 'plan', 'generatedAt', 'substeps', 'phases', 'totals', 'rounds', 'failures',
-            'interventions'}
+            'interventions', 'timing'}
 
 
 def normalized(data):
@@ -182,6 +182,13 @@ class MetricsAgreeWithShow(MetricsFixture):
                         self.assertEqual((mine['seconds'], mine['source']), (theirs['seconds'], 'checkpoints.md'))
                     elif mine['source'] != 'records':
                         self.assertIsNone(mine['seconds'])
+
+    def test_timing_is_the_same_in_show_and_in_metrics(self):
+        for case, run in CASES.items():
+            with self.subTest(case=case):
+                root = self.project(case)
+                shown = self.cli('dashboard', 'show', root, '--json')['timing']
+                self.assertEqual(self.metrics(root, run)['timing'], shown)
 
     def test_one_shared_time_function(self):
         self.assertEqual(dashboard.substep_seconds('23:50', '00:10'), 1200)

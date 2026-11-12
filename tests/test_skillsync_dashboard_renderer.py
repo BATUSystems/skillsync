@@ -492,6 +492,10 @@ function summary(m) {
     substeps: q('#acts details.substeps') ? { inAct: q('#acts .act[data-key="real"] details.substeps') !== null, summary: text(q('#acts .substeps summary')),
       summaryDesc: q('#acts .substeps summary').getAttribute('data-desc'), open: q('#acts details.substeps').hasAttribute('open'),
       items: qa('#acts .sub-list li').map((li) => ({ id: text(li.querySelector('.q-id')), t: text(li.querySelector('.sub-t')), cls: li.getAttribute('class') })) } : null,
+    timing: q('#acts details.timing-box') ? { inAct: q('#acts .act[data-key="real"] details.timing-box') !== null, summary: text(q('#acts .timing-box summary')),
+      summaryDesc: q('#acts .timing-box summary').getAttribute('data-desc'), summaryTip: q('#acts .timing-box summary').getAttribute('data-desc-extra'),
+      open: q('#acts details.timing-box').hasAttribute('open'),
+      rows: qa('#acts .timing-list li').map((li) => ({ id: text(li.querySelector('.q-id')), name: text(li.querySelector('.tt')), t: text(li.querySelector('.sub-t')), cls: li.getAttribute('class') })) } : null,
     copyButtons: qa('.wait-copy').length + qa('[data-copy-word]').length + qa('button').filter((b) => /Kopiuj|Skopiowano/.test(text(b))).length,
     planAuto: q('#planAuto') ? { hidden: q('#planAuto').hidden, text: text(q('#planAuto')), label: q('#planAuto').getAttribute('aria-label'), tip: q('#planBtn').getAttribute('data-tip'), btn: text(q('#planBtnText')) } : null,
     tags: [...tags].sort(),
@@ -1184,6 +1188,30 @@ class RendererNodeTests(unittest.TestCase):
             self.assertIsNone(self.out["fixtures"][name]["substeps"], name)
         sub = self.out["extra"]["sub"]
         self.assertEqual((sub["closed"], sub["kept"], sub["closedAgain"]), (False, True, False))
+
+    def test_timing_section(self) -> None:
+        got = self.out["fixtures"]["timing"]["timing"]
+        self.assertTrue(got["inAct"])
+        self.assertEqual((got["summary"], got["summaryDesc"], got["open"]), ("Czas pracy i czekania", "timing_time", False))
+        # fixture `timing`: faza 1 = praca 1:25:00 (5100 s), czekanie 45:00 (2700 s); faza 2 nieznana; okno „CP” bez zamknięcia
+        self.assertEqual([r["id"] for r in got["rows"]], ["Faza 1", "Faza 2", "Σ"])
+        self.assertEqual(got["rows"][0]["t"], "praca 1:25:00 · czekanie 45:00")
+        self.assertEqual((got["rows"][1]["t"], got["rows"][1]["cls"]), ("praca brak danych · czekanie brak danych (niepełne)", "is-nodata"))
+        self.assertEqual(got["rows"][2]["name"], "Razem (okna nieznane: 1)")
+        self.assertEqual(got["rows"][2]["cls"], "is-nodata")
+        tip = got["summaryTip"].split("\n")
+        self.assertEqual(len(tip), 3)
+        self.assertIn("do zgody", tip[0])
+        self.assertIn("do kolejnego checkpointu", tip[1])
+        self.assertIn("okno nieznane", tip[2])
+        self.assertEqual(got["rows"][2]["t"], "praca 1:25:00 · czekanie 45:00+ (niepełne)")   # „+”: są okna nieznane, więc to dolna granica
+        for name in ("empty", "run-mode", "readiness-blocked", "spec-act"):
+            shown = self.out["fixtures"][name]["timing"]    # brak sekcji albo tylko wiersz sumy z oknem nieznanym (bez faz)
+            self.assertTrue(shown is None or [r["id"] for r in shown["rows"]] == ["Σ"], name)
+        only_window = self.out["fixtures"]["questions"]["timing"]               # tylko okno nieznane: sam wiersz sumy, nic nie jest szacowane
+        self.assertEqual([r["id"] for r in only_window["rows"]], ["Σ"])
+        self.assertEqual(only_window["rows"][0]["t"], "praca brak danych · czekanie 0:00+ (niepełne)")
+        self.assertIn("okno nieznane", only_window["summaryTip"])
 
     def test_no_copy_buttons_anywhere(self) -> None:
         for name, got in self.out["fixtures"].items():

@@ -8,6 +8,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 - `skills/prototype/SKILL.md`: sekcja „Zapis ekranów: marker »agent pisze«”: `prototype writing <projekt> <slug> start` przed edycją ekranów (po `iterate`), odnowienie przy większych partiach albo `--ttl 1800`, `done` po `ids --check` i sprawdzeniu slugu w galerii, dopiero potem „prototyp gotowy”; obsługa `lock_timeout` i `needs_migration`; marker to sygnał koordynacji z wygasaniem; agent nadal nie uruchamia `accept`.
 - `skills/skillsync/SKILL.md`: komenda `prototype writing`, kody BLOCKED (`needs_migration`, `lock_timeout`, `invalid_args`), `writing_in_progress` przy `accept`, pole `writing` w `list`.
 - `skills/feature/references/review-loop.md`, `agents/reviewer.md`: profil przeglądu `docs` (obietnice z dowodem, zgodność instrukcji z narzędziami, brak sprzeczności skilli, tylko stan bieżący, brak nazw osób, klientów i wydarzeń); `skills/pr-run`, `skills/feature`, `skills/dispatch`: opis PR-a, komentarz i notatka wydania przechodzą `skillsync leakcheck --text <plik>` przed publikacją; `skills/skillsync`: flagi `--text`/`--stdin`.
+- `skills/dashboard`: czas pracy i czekania na człowieka (`timing`) w sekcji aktu III strony statusu, renderer (`timingBlock`), opis w `descriptions.json` i w `SKILL.md`.
 
 ### Changed
 - `skills/prototype/references/decisions.md` i `SKILL.md` (procedura po rundzie): po `iterate` marker `writing start`, po zmianach HTML `ids --check`, sprawdzenie slugu i `writing done`.

@@ -75,6 +75,70 @@
       "title": "Komenda"
     }
   ],
+  "timing": {
+    "available": true,
+    "reason": null,
+    "stages": [
+      {
+        "complete": false,
+        "name": "Faza 1: Kontrakt",
+        "phase": "Faza 1",
+        "unknownSteps": 2,
+        "waitSeconds": 0,
+        "workSeconds": 900
+      }
+    ],
+    "steps": [
+      {
+        "finishedAt": "2026-01-10T09:20:00+00:00",
+        "id": "F1.1",
+        "phase": "Faza 1",
+        "reason": null,
+        "startedAt": "2026-01-10T09:05:00+00:00",
+        "unknown": false,
+        "waitSeconds": 0,
+        "workSeconds": 900
+      },
+      {
+        "finishedAt": "2026-01-10T09:50:00+00:00",
+        "id": "F1.2",
+        "phase": "Faza 1",
+        "reason": "no-start",
+        "startedAt": null,
+        "unknown": true,
+        "waitSeconds": null,
+        "workSeconds": null
+      },
+      {
+        "finishedAt": null,
+        "id": "F1.3",
+        "phase": "Faza 1",
+        "reason": "no-finish",
+        "startedAt": "2026-01-10T09:20:00+00:00",
+        "unknown": true,
+        "waitSeconds": null,
+        "workSeconds": null
+      }
+    ],
+    "totals": {
+      "complete": false,
+      "unknownSteps": 2,
+      "unknownWindows": 1,
+      "waitSeconds": 0,
+      "windows": 1,
+      "workSeconds": 900
+    },
+    "windows": [
+      {
+        "endedAt": null,
+        "seconds": null,
+        "source": null,
+        "startedAt": "2026-01-10T09:50:00+00:00",
+        "unknown": true,
+        "what": "odpowiedź Q3"
+      }
+    ]
+  },
   "totals": {
     "measuredSeconds": 1800,
     "seconds": null,
