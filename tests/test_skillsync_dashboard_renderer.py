@@ -825,6 +825,17 @@ function summary(m) {
       const quiet = clone(base); quiet.run.lastReportAt = '2026-01-12T08:00:00+00:00';
       stab.given = { moved: banner(mount(moved, { now: NOW['cp-ready'] })), quiet: banner(mount(quiet, { now: NOW['cp-ready'] })) };
     }
+    {  // D3: licznik niewypchniętych commitów przy gałęzi (delivery.ahead / delivery.pushed, bez zmiany kontraktu)
+      const chip = (ahead, pushed, branchPushed) => {
+        const j = clone(F['plan-in-progress']);
+        j.git = { branch: 'feat/x', head: 'abcdef1234', headFull: 'abcdef1234', branchUrl: 'https://example.test/b', branchPushed, remote: { host: 'github', repo: 'o/r' } };
+        j.delivery = { ...j.delivery, branch: 'feat/x', remote: 'origin/feat/x', ahead, pushed };
+        const m = mount(j, { now: NOW['plan-in-progress'] });
+        const el = m.root.querySelector('#meta .ahead-chip');
+        return el ? { text: text(el), cls: el.getAttribute('class'), tip: el.getAttribute('data-tip') } : null;
+      };
+      stab.ahead = { sixteen: chip(16, true, true), one: chip(1, false, false), zero: chip(0, true, true), unknown: chip(null, null, true), notPushed: chip(0, false, false) };
+    }
     ex.stab = stab;
   }
   out.extra = ex;
@@ -1051,6 +1062,18 @@ class RendererNodeTests(unittest.TestCase):
         given = self.out["extra"]["stab"]["given"]
         self.assertEqual(given["moved"]["items"], 0, given["moved"])
         self.assertEqual(given["quiet"]["items"], 1, given["quiet"])
+
+    def test_stab_header_shows_unpushed_commits_next_to_the_branch(self) -> None:
+        """D3: `branchPushed` znaczy tylko „origin/<gałąź> istnieje”; liczba niewypchniętych commitów (delivery.ahead) ma być widoczna przy gałęzi."""
+        a = self.out["extra"]["stab"]["ahead"]
+        self.assertEqual(a["sixteen"]["text"], "16 niewypchniętych", a)  # branchPushed: true, a 16 commitów lokalnie
+        self.assertIn("16 commitów", a["sixteen"]["tip"])
+        self.assertIn("s-warn", a["sixteen"]["cls"])
+        self.assertEqual(a["one"]["text"], "1 niewypchniętych", a)
+        self.assertIn("nie ma jej jeszcze na origin", a["one"]["tip"])
+        self.assertIsNone(a["zero"], "nic niewypchniętego: bez znacznika")
+        self.assertIsNone(a["unknown"], "ahead nieznane (null): bez znacznika")
+        self.assertEqual(a["notPushed"]["text"], "gałąź nie wypchnięta", a)
 
     def test_readiness_tile(self) -> None:
         none = {"cls": "readiness is-none", "chip": "Readiness: brak danych"}

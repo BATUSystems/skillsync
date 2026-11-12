@@ -386,6 +386,17 @@
             on: { click: linkClick("branch", g.branch, g.branchUrl) } }, name)
           : h("span", { class: "mono", "data-tip": g.branchUrl ? "Gałąź tylko lokalnie (brak na origin), bez linku" : "Gałąź i HEAD repozytorium" }, name);
         meta.push(h("span", { class: "m" }, icon("i-branch"), branch));
+        // `git.branchPushed` = origin/<gałąź> istnieje; liczba commitów przed origin to `delivery.ahead` (null = nieznana: bez znacznika).
+        const dv = d.delivery || {};
+        const ahead = typeof dv.ahead === "number" && dv.ahead > 0 ? dv.ahead : 0;
+        const remoteName = dv.remote || `origin/${g.branch}`;
+        if (ahead || dv.pushed === false) {
+          const tip = ahead
+            ? `${ahead} ${ahead === 1 ? "commit" : "commitów"} lokalnie przed ${remoteName}${dv.pushed === false ? " (nie ma jej jeszcze na origin)" : ""}; „CP” je wypchnie`
+            : `Gałąź nie istnieje na ${remoteName}; „CP” ją wypchnie`;
+          meta.push(h("span", { class: "m" }, h("span", { class: "chip s-warn ahead-chip", "data-tip": tip },
+            ahead ? `${ahead} niewypchniętych` : "gałąź nie wypchnięta")));
+        }
       }
       if (plan && plan.pr) {
         meta.push(h("span", { class: "m" }, h("a", { class: "chip s-active git-link", href: safeUrl(plan.pr.url), target: "_blank", rel: "noopener",

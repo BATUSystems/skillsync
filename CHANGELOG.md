@@ -18,6 +18,8 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 - `library/skills/agent-runtime-pitfalls`: two new pitfalls (explicit path list for `git add`; browser screenshots in a separate profile without extensions).
 
 ### Changed
+- Dashboard header: the branch shows "N niewypchniętych" (unpushed commits, `delivery.ahead`) or "gałąź nie wypchnięta" (`delivery.pushed: false`), so a branch on origin with
+  16 local commits ahead is no longer read as pushed. No JSON change (the fields already existed); `git.branchPushed` is documented as "origin/<branch> exists".
 - CI: the `test` job on native Windows has a 60-minute limit (was 30, which cancelled both Windows jobs at about 80% of the suite); Ubuntu and macOS keep 30. Job names are unchanged; Windows stays non-blocking.
 - Dashboard page and Skippster panel: the layout follows the width of the host column, not the window (CSS container
   queries on a new `.dash-wrap` wrapper; the tooltip stays outside it). New compact tier up to 420 px: smaller type and
@@ -39,6 +41,9 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 None.
 
 ### Fixed
+- Dashboard page and panel: the "session waits for you" banner item disappears once its consent is recorded and the work is done or under way
+  (CP/READY: nothing unpushed; GO plan/GO implement: the session reported after the consent), and the consent-result toast fades by itself
+  (10 s, an error 30 s, the countdown stands still while the tab is hidden via `board.setVisible`). Before, both stayed until the next checkpoint or a click on "×".
 - Windows: `skillsync` commands and the standalone `prototype_server.py` switch stdout and stderr to UTF-8 (`errors=replace`) when
   the output is redirected and uses another encoding (cp1252). Polish messages no longer crash `prototype serve` with `UnicodeEncodeError`.
 - Windows: a clone left half-done by `skillsync setup`, `layers add` or `layers init` is removed even when it holds read-only files
