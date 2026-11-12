@@ -12,6 +12,18 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Changed
+
+- `skillsync prototype question purge --slug <slug>` removes only the withdrawn questions by default; `--include-open` also removes the open ones that have
+  neither an answer nor a comment (a fresh question waiting for the expert is no longer removed by a plain `purge --yes`). The preview lists what would
+  be removed and why, and the open questions it leaves alone (`skipped`).
+- `skillsync prototype question record` checks the spec line it is given: the line must hold `[EKSPERT]` and the question id (the row from `answerLine`);
+  otherwise FAIL `record_line_mismatch`, `record_line_out_of_range` or `record_spec_unreadable` with a hint, and nothing is written.
+
+### Fixed
+
+- `question record` no longer reports PASS `changed: true` when the line still holds the old waiting row (`- Q1: …`) without `[EKSPERT]`.
+
 ## [1.2.1] - 2026-11-12
 
 ### Added

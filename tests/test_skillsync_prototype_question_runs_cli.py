@@ -94,7 +94,7 @@ class SlugSelectionTests(RunsCliCase):
         self.assertEqual((withdrawn['state'], withdrawn['questions'][0]['state'], withdrawn['slug']), ('withdrawn', 'withdrawn', SECOND))
         self.add('C?', QC, '--slug', RUN)
         self.answer(QC)   # odpowiedź eksperta zapisana w pliku przebiegu demo
-        recorded = self.q('record', QC, '--spec', SPEC, '--line', 4)
+        recorded = self.rec(QC, 4)
         self.assertEqual(recorded['slug'], RUN)
         self.q('show', 'qn-ffffffffffff', code=1)
         self.q('withdraw', 'qn-ffffffffffff', code=1)
@@ -165,7 +165,7 @@ class PurgeTests(RunsCliCase):
     def test_without_yes_it_only_lists_and_changes_nothing(self):
         self.seed()
         before = self.file_bytes()
-        report = self.q('purge', '--slug', RUN)
+        report = self.q('purge', '--slug', RUN, '--include-open')
         self.assertTrue(report['dryRun'])
         self.assertEqual(sorted(item['id'] for item in report['removed']), [QA, QB])
         self.assertEqual(self.file_bytes(), before)
@@ -173,7 +173,7 @@ class PurgeTests(RunsCliCase):
     def test_yes_removes_only_withdrawn_and_untouched_questions(self):
         self.seed()
         second_before = (self.qroot / SECOND / ps.QUESTIONS_FILE).read_bytes()
-        report = self.q('purge', '--slug', RUN, '--yes')
+        report = self.q('purge', '--slug', RUN, '--include-open', '--yes')
         self.assertFalse(report['dryRun'])
         self.assertEqual({item['id']: item['reason'] for item in report['removed']},
                          {QA: 'no answer and no comment', QB: 'withdrawn'})
@@ -183,7 +183,7 @@ class PurgeTests(RunsCliCase):
         self.assertEqual({item['id']: item['state'] for item in self.q('list', '--slug', RUN, '--status', 'all')['questions']},
                          {QC: 'answered', QD: 'open'})
         self.assertEqual((self.qroot / SECOND / ps.QUESTIONS_FILE).read_bytes(), second_before, 'inny przebieg nietknięty')
-        self.assertEqual(self.q('purge', '--slug', RUN, '--yes')['removed'], [], 'powtórka nic nie usuwa')
+        self.assertEqual(self.q('purge', '--slug', RUN, '--include-open', '--yes')['removed'], [], 'powtórka nic nie usuwa')
 
     def test_an_answered_or_commented_question_is_untouched_even_when_asked_to_purge(self):
         self.add('Odpowiedziane?', QC)
@@ -216,6 +216,124 @@ class PurgeTests(RunsCliCase):
         self.assertNotIn('Traceback', result.stderr)
         # wstrzymane na locku do jego 5 s limitu albo odrzucone; w każdym razie plik nie został zmieniony w trakcie
         self.assertEqual({op['questionId'] for op in self.ops()}, {QA, QB, QC, QD})
+
+
+class PurgeDefaultTests(RunsCliCase):
+    """Q-FIX-122 D1: domyślnie tylko wycofane; otwarte bez odpowiedzi dopiero z --include-open."""
+
+    def seed(self):
+        self.add('Czeka na eksperta?', QA)
+        self.add('Wycofane?', QB)
+        self.q('withdraw', QB)
+        self.add('Odpowiedziane?', QC)
+        self.answer(QC)
+        self.add('Z komentarzem?', QD)
+        self.expert_write('comment', QD, C.EWA, text='uwaga')
+
+    def test_the_default_preview_lists_only_the_withdrawn_and_names_the_skipped_open_ones(self):
+        self.seed()
+        before = self.file_bytes()
+        report = self.q('purge', '--slug', RUN)
+        self.assertTrue(report['dryRun'])
+        self.assertEqual([item['id'] for item in report['removed']], [QB])
+        self.assertEqual([item['id'] for item in report['skipped']], [QA])
+        self.assertIn('--include-open', report['skipped'][0]['reason'])
+        self.assertEqual(self.file_bytes(), before)
+
+    def test_the_default_yes_keeps_a_fresh_open_question_waiting_for_the_expert(self):
+        self.seed()
+        report = self.q('purge', '--slug', RUN, '--yes')
+        self.assertEqual([item['id'] for item in report['removed']], [QB])
+        self.assertEqual({op['questionId'] for op in self.ops()}, {QA, QC, QD})
+        self.assertEqual(self.q('show', QA)['questions'][0]['state'], 'open')
+
+    def test_include_open_also_removes_open_questions_without_answer_or_comment(self):
+        self.seed()
+        preview = self.q('purge', '--slug', RUN, '--include-open')
+        self.assertEqual(sorted(item['id'] for item in preview['removed']), [QA, QB])
+        self.assertEqual(preview['skipped'], [])
+        self.assertEqual({op['questionId'] for op in self.ops()}, {QA, QB, QC, QD}, 'podgląd nic nie zmienia')
+        report = self.q('purge', '--slug', RUN, '--include-open', '--yes')
+        self.assertEqual({item['id']: item['reason'] for item in report['removed']},
+                         {QA: 'no answer and no comment', QB: 'withdrawn'})
+        self.assertEqual({op['questionId'] for op in self.ops()}, {QC, QD})
+
+    def test_answered_or_commented_questions_are_untouched_in_both_modes(self):
+        self.seed()
+        for extra in ((), ('--include-open',)):
+            self.q('purge', '--slug', RUN, '--yes', *extra)
+            left = {op['questionId'] for op in self.ops()}
+            self.assertTrue({QC, QD} <= left, extra)
+
+    def test_a_withdrawn_question_that_a_kept_one_refers_to_stays(self):
+        self.add('Źródło?', QA)
+        self.add('Spór?', QB, '--refers-to', QA)
+        self.expert_write('comment', QB, C.EWA, text='uwaga')
+        self.q('withdraw', QA)
+        report = self.q('purge', '--slug', RUN, '--yes')
+        self.assertEqual(report['removed'], [])
+        self.assertEqual({op['questionId'] for op in self.ops()}, {QA, QB})
+
+
+class RecordLineTests(RunsCliCase):
+    """Q-FIX-122 D2: `record` sprawdza, że wskazana linia speca ma [EKSPERT] i identyfikator pytania."""
+
+    ROW = '- Q1 [EKSPERT]: Czy faktura? (ekspert: %s) — odpowiedź: tak — ekspert: ewa, 2026-11-12T10:00Z'
+
+    def spec(self, lines, spec=SPEC):
+        path = self.root / spec
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+
+    def answered(self, qid=QA):
+        self.add('Czy faktura?', qid)
+        self.answer(qid)
+
+    def test_a_line_with_the_old_waiting_row_is_a_fail_and_writes_nothing(self):
+        self.answered()
+        self.spec(['# Spec', '- Q1: Czy faktura? (ekspert: %s)' % QA])
+        before = self.file_bytes()
+        report = self.q('record', QA, '--spec', SPEC, '--line', 2, code=1)
+        self.assertEqual(report['error'], 'record_line_mismatch')
+        self.assertIn('answerLine', report['reason'] + json.dumps(report.get('hint', '')))
+        self.assertEqual(self.file_bytes(), before)
+        self.assertNotIn('recorded', self.question())
+
+    def test_a_row_without_the_question_id_or_with_another_id_is_a_fail(self):
+        self.answered()
+        self.spec(['# Spec', '- Q1 [EKSPERT]: Czy faktura? — odpowiedź: tak', self.ROW % QB])
+        for line in (2, 3):
+            with self.subTest(line=line):
+                self.assertEqual(self.q('record', QA, '--spec', SPEC, '--line', line, code=1)['error'], 'record_line_mismatch')
+
+    def test_the_row_from_answer_line_passes_and_is_recorded(self):
+        self.answered()
+        row = self.q('show', QA)['answerLine']
+        self.spec(['# Spec', 'x', row])
+        report = self.q('record', QA, '--spec', SPEC, '--line', 3)
+        self.assertEqual((report['changed'], report['recorded']['line']), (True, 3))
+        again = self.q('record', QA, '--spec', SPEC, '--line', 3)
+        self.assertFalse(again['changed'])
+
+    def test_line_out_of_range_and_missing_or_foreign_spec_are_fails(self):
+        self.answered()
+        self.spec(['# Spec', self.ROW % QA])
+        self.assertEqual(self.q('record', QA, '--spec', SPEC, '--line', 9, code=1)['error'], 'record_line_out_of_range')
+        self.assertEqual(self.q('record', QA, '--spec', 'docs/specs/nie-ma.md', '--line', 1, code=1)['error'], 'record_spec_unreadable')
+        self.assertEqual(self.q('record', QA, '--spec', '../poza.md', '--line', 1, code=1)['error'], 'record_spec_unreadable')
+        self.assertNotIn('recorded', self.question())
+
+    def test_an_unanswered_question_keeps_the_state_error_before_the_line_check(self):
+        self.add('Czy faktura?', QA)
+        self.spec(['# Spec', '- Q1: stary wiersz'])
+        self.assertEqual(self.q('record', QA, '--spec', SPEC, '--line', 2, code=1)['error'], 'not_answered')
+
+    def test_crlf_spec_and_a_long_answer_row_pass(self):
+        self.answered()
+        path = self.root / SPEC
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(('# Spec\r\n' + (self.ROW % QA) + '\r\n').encode('utf-8'))
+        self.assertTrue(self.q('record', QA, '--spec', SPEC, '--line', 2)['changed'])
 
 
 class MigrateTests(RunsCliCase):

@@ -3815,6 +3815,29 @@ def export_questions_cli(root, manifest, users=None, slug=None):
     return _question_documents(repo, settings, slug, users)
 
 
+RECORD_HINT = ('write the row from the `answerLine` of `question show`/`wait` into the spec first, then record the line '
+               'where it stands (`- Q<n> [EKSPERT]: … (ekspert: qn-…) — odpowiedź: … — ekspert: …`)')
+
+
+def _check_record_line(repo, spec, line, question_id):
+    """None when line `line` (1-based) of the spec holds `[EKSPERT]` and the question id, else the FAIL report."""
+    path, error = resolve_repo_path(repo, spec, '--spec')
+    if error is not None or path is None:
+        return _question_fail('record_spec_unreadable', f'--spec {safe_text(spec)}: not a file inside the repository', hint=RECORD_HINT)
+    text, reason = read_regular_text(path, MAX_SCAN_BYTES)
+    if text is None:
+        return _question_fail('record_spec_unreadable', f'--spec {safe_text(spec)}: {reason}', hint=RECORD_HINT)
+    lines = text.split('\n')
+    if line > len(lines) or (line == len(lines) and lines[-1] == ''):
+        return _question_fail('record_line_out_of_range', f'--line {line}: the spec has {len(lines) - (1 if lines[-1] == "" else 0)} lines',
+                              hint=RECORD_HINT)
+    row = lines[line - 1].rstrip('\r')
+    if '[EKSPERT]' not in row or question_id not in row:
+        return _question_fail('record_line_mismatch', f'line {line} of {safe_text(spec)} is not the [EKSPERT] row of {question_id} '
+                              '(it must hold `[EKSPERT]` and the question id)', hint=RECORD_HINT)
+    return None
+
+
 def record_question(root, manifest, question_id, spec, line, slug=None):
     """`question record`: the operation `recorded` (the answer is in the spec); idempotent, a repeat with
     another place keeps the first one and says so."""
@@ -3828,6 +3851,10 @@ def record_question(root, manifest, question_id, spec, line, slug=None):
     if found[0] is None:
         return _migration_required(question_id)
     store = found[1]
+    if found[1].snapshot().fold['byId'][question_id]['state'] == 'answered':
+        problem = _check_record_line(repo, spec, line, question_id)
+        if problem is not None:
+            return problem
     partial = {'type': 'recorded', 'questionId': question_id, 'by': 'agent', 'cid': 'recorded-' + question_id,
                'spec': spec, 'line': line}
     try:
@@ -4069,23 +4096,29 @@ def merge_questions(root, manifest, other, slug):
 PURGE_SAMPLE = 80
 
 
-def purge_questions(root, manifest, slug, yes=False):
-    """`question purge --slug S [--yes]` (decision of the owner): drops from the log of one run only the questions
-    that were withdrawn or have neither an answer nor a comment; a question with an answer or a comment stays
-    untouched, and so does one that a kept question refers to. Without `--yes` it only lists (dry run).
-    The log is rewritten under its lock."""
+def purge_questions(root, manifest, slug, yes=False, include_open=False):
+    """`question purge --slug S [--include-open] [--yes]` (decision of the owner): drops from the log of one run only
+    the withdrawn questions; `--include-open` adds the open ones that have neither an answer nor a comment (a fresh
+    question waiting for the expert is never removed by default). A question with an answer or a comment stays untouched
+    in both modes, and so does one that a kept question refers to. Without `--yes` it only lists (dry run); the open
+    questions left alone are listed as `skipped`. The log is rewritten under its lock."""
     repo = Path(root).resolve()
     _settings_, store = _questions_store(repo, manifest, slug)
     try:
         with store.lock():
             snapshot = store.snapshot()
             fold = snapshot.fold
-            removable = {}
+            removable, skipped = {}, []
             for question in fold['questions']:
                 if question['state'] == 'withdrawn':
                     removable[question['id']] = 'withdrawn'
                 elif question['state'] == 'open' and not question['comments'] and question['answer'] is None:
-                    removable[question['id']] = 'no answer and no comment'
+                    if include_open:
+                        removable[question['id']] = 'no answer and no comment'
+                    else:
+                        skipped.append({'id': question['id'], 'q': (question['origin'] or {}).get('q'),
+                                        'reason': 'open, waiting for the expert: add --include-open to remove it',
+                                        'text': _one_line(question['text'])[:PURGE_SAMPLE]})
             changed = True
             while changed:   # a question that a kept one refers to is kept too
                 changed = False
@@ -4099,7 +4132,9 @@ def purge_questions(root, manifest, slug, yes=False):
                               for item in fold['questions'] if item['id'] in removable]
             kept = [operation for operation in snapshot.operations
                     if not (isinstance(operation, dict) and operation.get('questionId') in removable)]
-            report = {'status': 'PASS', 'slug': slug, 'dryRun': not yes, 'removed': report_removed,
+            skipped = [item for item in skipped if item['id'] not in removable]
+            report = {'status': 'PASS', 'slug': slug, 'dryRun': not yes, 'includeOpen': bool(include_open),
+                      'removed': report_removed, 'skipped': skipped,
                       'kept': len(fold['questions']) - len(removable), 'file': _relative(store.path, repo)}
             if yes and removable:
                 server.atomic_write_bytes(store.path, server.serialize_questions(kept).encode('utf-8'))
@@ -4380,7 +4415,7 @@ def _cmd_question(args, root, manifest, layerset):
     if action == 'purge':
         if args.slug is None:
             raise PrototypeError('question purge needs --slug <slug> (one run at a time)')
-        return purge_questions(root, manifest, args.slug, args.yes)
+        return purge_questions(root, manifest, args.slug, args.yes, args.include_open)
     if action == 'migrate':
         return migrate_questions(root, manifest, args.dry_run, args.slug_for)
     return wait_question(root, manifest, args.question, args.all_questions, since=args.since, after=args.after,
@@ -4623,7 +4658,8 @@ def register(subparsers):
     qmigrate = question_parser('migrate', 'Split the old <root>/questions.json into <root>/<slug>/questions.json by origin.spec (idempotent; BLOCKED when not unambiguous)', slug=False)
     qmigrate.add_argument('--dry-run', action='store_true', help='Show the plan, write nothing')
     qmigrate.add_argument('--slug-for', action='append', metavar='SPEC=SLUG', help='Decide the run of a spec that has no single prototype (repeatable)')
-    qpurge = question_parser('purge', 'Remove withdrawn questions and those without any answer or comment from one run (dry run without --yes)')
+    qpurge = question_parser('purge', 'Remove withdrawn questions from one run (dry run without --yes); --include-open adds open ones without any answer or comment')
+    qpurge.add_argument('--include-open', action='store_true', help='Also remove open questions that have no answer and no comment (default: only withdrawn ones)')
     qpurge.add_argument('--yes', action='store_true', help='Really rewrite the file (default: only list what would be removed)')
     question_parser('url', 'Address of the experts page and the number of expert accounts (BLOCKED without them)', users=True)
     qwait = question_parser('wait', 'Wait for an answer or a comment (exit 0 event answer|comment, 3 on timeout)')
