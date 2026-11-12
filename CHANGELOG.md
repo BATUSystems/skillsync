@@ -12,6 +12,9 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Changed
+- The core repository no longer tracks task specifications or plans: `docs/specs/**` and `docs/plans/**` are removed (they live in the operations repository; history and tags are untouched), and the new test `tests/test_skillsync_repo_hygiene.py` fails in CI when any file is tracked under those directories.
+
 ## [1.2.0] - 2026-11-12
 
 ### Added
