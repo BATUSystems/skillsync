@@ -12,6 +12,15 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Changed
+- Dashboard header: the branch shows "N niewypchniętych" (unpushed commits, `delivery.ahead`) or "gałąź nie wypchnięta" (`delivery.pushed: false`), so a branch on origin with
+  16 local commits ahead is no longer read as pushed. No JSON change (the fields already existed); `git.branchPushed` is documented as "origin/<branch> exists".
+
+### Fixed
+- Dashboard page and panel: the "session waits for you" banner item (and the "⏳ Czeka" tab title) disappears once its consent is recorded and the session has moved on
+  (it reported after the consent, or the consent is older than 10 minutes), and the consent-result toast fades by itself (10 s, an error 30 s, the countdown stands still
+  while the tab is hidden via `board.setVisible`). Before, both stayed until the next checkpoint or a click on "×".
+
 ## [1.1.1] - 2026-11-12
 
 ### Added

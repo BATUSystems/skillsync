@@ -127,7 +127,7 @@ W trybach innych niż `plan` pola `plan`, `progress.phases` itd. są puste (`pla
 | `headFull` | string lub null | pełne sha HEAD |
 | `remote` | obiekt lub null | `{host: "azure"\|"github", repo}` rozpoznany z `origin`; null gdy nieznany host |
 | `branchUrl` | string lub null | adres gałęzi na hoście |
-| `branchPushed` | bool lub null | czy `origin/<gałąź>` istnieje |
+| `branchPushed` | bool lub null | czy `origin/<gałąź>` istnieje (nie znaczy „wszystko wypchnięte”: liczba niewypchniętych commitów to `delivery.ahead`) |
 
 ### `plans[]`
 
@@ -232,7 +232,7 @@ spoza reguł `skillsync status` (nieznane słowo, nieczytelne `at`, sha spoza 7�
 
 `mode` (`pr`, `direct`, `invalid`), `base` (string lub null), `source` (`manifest`, `default`), `branch`, `target` (dokąd
 oddaje „CP”; w `direct` z linii planu `Oddanie:`), `remote`, `pushed` (bool lub null), `ahead` (int lub null; commity
-niewypchnięte), `words[]`: `{word: "CP"|"READY", active, tip, target}` (`READY` tylko w trybie `pr`; przy `invalid` pusta
+niewypchnięte; renderer pokazuje je przy gałęzi w nagłówku jako „N niewypchniętych” (neutralnie w trybie `direct`, do zakończenia planu)), `words[]`: `{word: "CP"|"READY", active, tip, target}` (`READY` tylko w trybie `pr`; przy `invalid` pusta
 tablica).
 
 ### `session`

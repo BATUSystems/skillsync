@@ -781,6 +781,89 @@ function summary(m) {
     }
     ex.planAuto = res;
   }
+
+  // DASH-STAB D1: toasty (komunikat wyniku zgody i baner „czeka”) gasną po wykonaniu zadania, a toast zgody sam po czasie.
+  {
+    const msTimers = () => ({ q: new Map(), n: 0, set(fn, ms) { const id = ++this.n; this.q.set(id, { fn, ms }); return id; }, clear(id) { this.q.delete(id); },
+      run() { const items = [...this.q.values()]; this.q.clear(); items.forEach((x) => x.fn()); }, list() { return [...this.q.values()].map((x) => x.ms); } });
+    const banner = (m) => ({ hidden: m.root.querySelector('#waitBanner').hidden, items: m.root.querySelectorAll('#waitBanner .wait-item').length,
+      ok: m.root.querySelectorAll('#waitBanner .wait-item.is-ok').length, err: m.root.querySelectorAll('#waitBanner .wait-item.is-err').length,
+      text: text(m.root.querySelector('#waitBanner')) });
+    const stab = {};
+    {  // (a) toast wyniku zgody: ok i błąd gasną same; odliczanie stoi, gdy karta jest w tle
+      const j = clone(F['cp-ready']); j.approvals.here = true;
+      const tm = msTimers();
+      const m = mount(j, { now: NOW['cp-ready'], deps: { timers: tm } });
+      const b = () => m.root.querySelector('#acts button[data-approve="cp"]');
+      b().click(); b().click(); await tick(); await tick();
+      const shown = banner(m), timersWhileShown = tm.list();
+      let hiddenTimers = null, backAgain = null;
+      if (typeof m.board.setVisible === 'function') {
+        m.board.setVisible(false); hiddenTimers = tm.list();
+        m.board.setVisible(true); backAgain = tm.list();
+      }
+      tm.run();
+      stab.notice = { shown, timersWhileShown, hiddenTimers, backAgain, after: banner(m), hasSetVisible: typeof m.board.setVisible === 'function', state: m.board.state().notice };
+      const failingTm = msTimers();
+      const failing = mount(j, { now: NOW['cp-ready'], deps: { timers: failingTm }, actions: { approve: () => Promise.reject(new Error('x')) } });
+      const fb = () => failing.root.querySelector('#acts button[data-approve="cp"]');
+      fb().click(); fb().click(); await tick(); await tick();
+      stab.errorShown = banner(failing);
+      stab.errorTimers = failingTm.list();
+      failingTm.run(); stab.errorAfter = banner(failing);
+      // toast ustawiony przy ukrytej karcie nie ma timera; startuje dopiero po powrocie
+      const tm2 = msTimers(); const bg = mount(clone(F['cp-ready']), { now: NOW['cp-ready'], deps: { timers: tm2 } });
+      const hasVis = typeof bg.board.setVisible === 'function';
+      if (hasVis) bg.board.setVisible(false);
+      bg.board.setNotice({ ok: false, word: 'CP', text: 'x' });
+      const bgShown = { timers: tm2.list(), notice: banner(bg).err };
+      if (hasVis) bg.board.setVisible(true);
+      stab.background = { ...bgShown, afterReturn: tm2.list() };
+    }
+    {  // (b)(c) element banera „czeka” przy zapisanej zgodzie: znika, gdy sesja ruszyła albo zgoda jest stara; świeża i bez raportu zostaje
+      const GEN = Date.parse('2026-01-12T12:00:00Z');
+      const scenario = (kind, o) => {
+        const j = clone(F['cp-ready']);
+        j.waiting = [{ what: kind, word: kind, approve: kind, source: 'checkpoint', since: '11:50', link: null, action: 'Zatwierdź.' }];
+        const act = j.approvals.actions.find((x) => x.kind === kind);
+        act.state = 'after'; act.given = o.at === undefined ? null : { at: o.at, by: 'user', word: act.word, sha: act.sha, source: 'cli', schema: 1 };
+        j.run.lastReportAt = o.reported; j.delivery.ahead = o.ahead === undefined ? 0 : o.ahead;
+        if (o.plan) j.plan.status = o.plan;
+        let t = GEN;
+        const m = mount(j, { now: () => t });
+        const first = banner(m), title = m.calls.titles[m.calls.titles.length - 1];
+        return { first, title, advance(ms) { t += ms; m.board.tick(); return banner(m); } };
+      };
+      const fresh = '2026-01-12T11:58:00Z', old = '2026-01-12T10:00:00Z';
+      const r = {
+        freshQuiet: scenario('plan', { at: fresh, reported: '2026-01-12T11:00:00+00:00' }),
+        reportedAfter: scenario('plan', { at: fresh, reported: '2026-01-12T11:59:00+00:00' }),
+        oldConsent: scenario('plan', { at: old, reported: '2026-01-12T09:00:00+00:00' }),
+        noAtRunning: scenario('plan', { at: undefined, reported: '2026-01-12T09:00:00+00:00', plan: 'in_progress' }),
+        noAtApproved: scenario('plan', { at: undefined, reported: '2026-01-12T09:00:00+00:00', plan: 'approved' }),
+        badAt: scenario('plan', { at: 'x', reported: '2026-01-12T09:00:00+00:00', plan: 'in_progress' }),
+        cpAheadZeroFresh: scenario('cp', { at: fresh, reported: '2026-01-12T11:00:00+00:00', ahead: 0 }),
+        readyFresh: scenario('ready', { at: fresh, reported: '2026-01-12T11:00:00+00:00', ahead: 0 }),
+        cpReported: scenario('cp', { at: fresh, reported: '2026-01-12T11:59:00+00:00', ahead: 3 }),
+      };
+      const aging = scenario('plan', { at: fresh, reported: '2026-01-12T11:00:00+00:00' });
+      stab.given = { ...Object.fromEntries(Object.entries(r).map(([k, v]) => [k, { items: v.first.items, title: v.title }])),
+        agingBefore: aging.first.items, agingAfter: aging.advance(11 * 60000).items };
+    }
+    {  // D3: licznik niewypchniętych commitów przy gałęzi (delivery.ahead / delivery.pushed, bez zmiany kontraktu)
+      const chip = (ahead, pushed, branchPushed, extra) => {
+        const j = clone(F['plan-in-progress']);
+        j.git = { branch: 'feat/x', head: 'abcdef1234', headFull: 'abcdef1234', branchUrl: 'https://example.test/b', branchPushed, remote: { host: 'github', repo: 'o/r' } };
+        j.delivery = { ...j.delivery, mode: 'pr', branch: 'feat/x', remote: 'origin/feat/x', ahead, pushed, ...(extra || {}) };
+        const m = mount(j, { now: NOW['plan-in-progress'] });
+        const el = m.root.querySelector('#meta .ahead-chip');
+        return el ? { text: text(el), cls: el.getAttribute('class'), tip: el.getAttribute('data-tip') } : null;
+      };
+      stab.ahead = { sixteen: chip(16, true, true), one: chip(1, false, false), two: chip(2, true, true), five: chip(5, true, true), twelve: chip(12, true, true),
+        twentytwo: chip(22, true, true), zero: chip(0, true, true), unknown: chip(null, null, true), notPushed: chip(0, false, false), direct: chip(3, true, true, { mode: 'direct' }) };
+    }
+    ex.stab = stab;
+  }
   out.extra = ex;
   // deps.now jest wymagane (renderer nie czyta zegara sam).
   try { R.create(makeDoc().createElement('div'), {}); out.nowRequired = false; } catch (e) { out.nowRequired = e instanceof TypeError; }
@@ -980,6 +1063,58 @@ class RendererNodeTests(unittest.TestCase):
         self.assertEqual(r["width"], "")  # klatka po destroy() nic nie rysuje
         self.assertEqual(ex["emptyDoc"]["noPreview"], "Wybierz dokument z listy po lewej.")
         self.assertIn("Podgląd odświeża się sam", ex["emptyDoc"]["preview"])
+
+    def test_stab_approval_toast_expires_by_itself_and_waits_for_visibility(self) -> None:
+        """D1 przyczyna 1: toast wyniku zgody gasł tylko po kliknięciu „×”; teraz sam (ok 10 s, błąd 30 s), a w tle odliczanie stoi."""
+        stab = self.out["extra"]["stab"]
+        n = stab["notice"]
+        self.assertEqual((n["shown"]["ok"], n["shown"]["items"]), (1, 2), n)  # toast zgody + baner „czeka: CP”
+        self.assertEqual(n["timersWhileShown"], [10000], n)
+        self.assertTrue(n["hasSetVisible"])
+        self.assertEqual(n["hiddenTimers"], [], "w tle odliczanie stoi")
+        self.assertEqual(n["backAgain"], [10000], "po powrocie startuje od nowa")
+        self.assertEqual(n["after"]["ok"], 0, n)
+        self.assertIsNone(n["state"])
+        self.assertEqual(stab["errorShown"]["err"], 1, stab["errorShown"])
+        self.assertEqual(stab["errorTimers"], [30000], "błąd gaśnie po 30 s, nie po 10 s")
+        self.assertEqual(stab["errorAfter"]["err"], 0)
+        self.assertEqual(stab["background"], {"timers": [], "notice": 1, "afterReturn": [30000]})  # toast w tle: bez timera, start po powrocie
+
+    def test_stab_waiting_banner_goes_when_the_session_moved_or_consent_is_old(self) -> None:
+        """D1 przyczyna 2: zgoda zapisana, sesja ruszyła (raport po zgodzie) albo zgoda ma ponad 10 min: baner i tytuł karty nie ostrzegają.
+        Świeża zgoda bez raportu zostaje; `delivery.ahead` i READY nie są sygnałem wykonania."""
+        g = self.out["extra"]["stab"]["given"]
+        self.assertEqual(g["freshQuiet"]["items"], 1, g)
+        self.assertTrue(g["freshQuiet"]["title"].startswith("⏳"), g["freshQuiet"])
+        self.assertEqual(g["reportedAfter"]["items"], 0, g)
+        self.assertFalse(g["reportedAfter"]["title"].startswith("⏳"), "tytuł karty też przestaje sygnalizować oczekiwanie")
+        self.assertEqual(g["oldConsent"]["items"], 0, g)
+        self.assertEqual(g["noAtRunning"]["items"], 0, g)
+        self.assertEqual(g["badAt"]["items"], 0, g)
+        self.assertEqual(g["noAtApproved"]["items"], 1, g)  # zgoda ze statusu pliku, plan jeszcze nie ruszył
+        self.assertEqual(g["cpAheadZeroFresh"]["items"], 1, "ahead 0 nie dowodzi wykonania CP")
+        self.assertEqual(g["readyFresh"]["items"], 1, "READY nie zmienia liczby commitów")
+        self.assertEqual(g["cpReported"]["items"], 0, g)
+        self.assertEqual((g["agingBefore"], g["agingAfter"]), (1, 0), "zgoda starzeje się bez nowych danych z serwera (tick)")
+
+    def test_stab_header_shows_unpushed_commits_next_to_the_branch(self) -> None:
+        """D3: `branchPushed` znaczy tylko „origin/<gałąź> istnieje”; liczba niewypchniętych commitów (delivery.ahead) ma być widoczna przy gałęzi."""
+        a = self.out["extra"]["stab"]["ahead"]
+        self.assertEqual(a["sixteen"]["text"], "16 niewypchniętych", a)  # branchPushed: true, a 16 commitów lokalnie
+        self.assertIn("16 commitów", a["sixteen"]["tip"])
+        self.assertIn("s-warn", a["sixteen"]["cls"])
+        self.assertEqual(a["one"]["text"], "1 niewypchnięty", a)
+        self.assertIn("1 commit lokalnie", a["one"]["tip"])
+        self.assertIn("nie ma jej jeszcze na origin", a["one"]["tip"])
+        self.assertEqual(a["two"]["text"], "2 niewypchnięte")
+        self.assertIn("2 commity", a["two"]["tip"])
+        self.assertEqual(a["five"]["text"], "5 niewypchniętych")
+        self.assertEqual(a["twelve"]["text"], "12 niewypchniętych")
+        self.assertEqual(a["twentytwo"]["text"], "22 niewypchnięte")
+        self.assertIsNone(a["zero"], "nic niewypchniętego: bez znacznika")
+        self.assertIsNone(a["unknown"], "ahead nieznane (null): bez znacznika")
+        self.assertIsNone(a["notPushed"], "gałąź bez własnych commitów nie ma czego wypychać")
+        self.assertIn("s-planned", a["direct"]["cls"], "w trybie direct lokalne commity są normą do CP")
 
     def test_readiness_tile(self) -> None:
         none = {"cls": "readiness is-none", "chip": "Readiness: brak danych"}
