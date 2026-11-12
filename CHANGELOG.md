@@ -39,6 +39,11 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 None.
 
 ### Fixed
+- Windows: `skillsync` commands and the standalone `prototype_server.py` switch stdout and stderr to UTF-8 (`errors=replace`) when
+  the output is redirected and uses another encoding (cp1252). Polish messages no longer crash `prototype serve` with `UnicodeEncodeError`.
+- Windows: a clone left half-done by `skillsync setup`, `layers add` or `layers init` is removed even when it holds read-only files
+  (git objects); the cleanup uses the new `rmtree_force` instead of `rmtree(ignore_errors=True)`, which swallowed the error and left the clone.
+- Test `leakguard pre-push` feeds the hook as bytes (text mode added `\r` to the pushed sha on Windows); the hook itself is unchanged.
 - `skillsync dashboard`: the automatic plan choice no longer lets an `in_progress`/`approved` plan with all steps checked and no run directory (an orphan) hide a plan with a live run (the page showed "Act III, 35/35" for a finished, unclosed plan); within a status rank the plan with the freshest run activity wins. The JSON contract (`schema: 1`) is unchanged.
 - `skillsync doctor`: the warning for an `in_progress` plan with all steps checked names the run state (no `Przebieg:` line, missing run directory, no `final` record, record already present).
 - Skill `feature`: the `demo` ceremony says that after the spec and its review the next step is the prototype, not idle waiting for "GO plan".

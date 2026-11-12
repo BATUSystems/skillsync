@@ -1642,7 +1642,9 @@ class HooksTest(LeakTestCase):
         self.assertEqual(git(self.repo, 'rev-list', '--count', 'HEAD').stdout.strip(), '1')
 
     def run_pre_push(self, lines, remote='origin'):
-        return subprocess.run(['sh', str(self.hooks / 'pre-push'), remote, 'url'], input=lines, text=True,
+        # Bajty, nie `text=True`: na Windows tryb tekstowy zamienia \n na \r\n, hook dostaje sha z końcowym \r i skanuje całą
+        # gałąź zamiast zakresu (git wysyła LF).
+        return subprocess.run(['sh', str(self.hooks / 'pre-push'), remote, 'url'], input=lines.encode(),
                               capture_output=True, cwd=str(self.repo), env=dict(os.environ))
 
     def push_line(self, local, remote_sha=ZEROS):
