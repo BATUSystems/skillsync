@@ -1536,7 +1536,8 @@ def is_library_symlink(path: Path, library_root) -> bool:
     """True for a symlink into one of the managed roots (`library_root`: a path or a list of paths).
 
     Paths are compared in the `_link_text` form (Windows reports `\\\\?\\` forms for a dangling link, e.g. after a skill
-    was renamed in the library); a dangling link is also judged by its own absolute target (`os.readlink`)."""
+    was renamed in the library); a dangling link is also judged by its own absolute target (`os.readlink`), with the existing parent of that
+    target expanded through `os.path.realpath` (8.3 short names)."""
     if not path.is_symlink():
         return False
     roots = [library_root] if isinstance(library_root, (str, Path)) else list(library_root)
@@ -1550,7 +1551,12 @@ def is_library_symlink(path: Path, library_root) -> bool:
             target = os.readlink(path)
             if not os.path.isabs(target):
                 target = os.path.join(os.path.realpath(os.path.dirname(path)), target)
-            candidates.append(_link_text(os.path.normpath(target)))
+            target = os.path.normpath(target)
+            candidates.append(_link_text(target))
+            # the target stays in the form it was written in (Windows: 8.3 `RUNNER~1`), while the root resolves to the long form:
+            # expand the existing parent directory of the (missing) target and keep the final name
+            head, tail = os.path.split(target)
+            candidates.append(_link_text(os.path.join(os.path.realpath(head), tail)))
         except OSError:
             pass
     for root in roots:
