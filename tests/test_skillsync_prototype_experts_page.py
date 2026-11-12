@@ -518,6 +518,90 @@ setTimeout(() => { out.csrf = ctx.state.csrf; console.log(JSON.stringify(out)); 
 """
 
 
+NODE_HARNESS_MULTI = r"""
+const fs = require('fs'); const vm = require('vm');
+const script = fs.readFileSync(process.argv[2], 'utf8');
+function grab(name) {
+  const start = script.indexOf('  function ' + name + '(');
+  if (start < 0) throw new Error('brak funkcji ' + name);
+  const end = script.indexOf('\n  }\n', start);
+  return script.slice(start, end + 4);
+}
+function matches(node, selector) {
+  let checked = false;
+  if (selector.endsWith(':checked')) { checked = true; selector = selector.slice(0, -':checked'.length); }
+  let ok;
+  if (selector[0] === '#') ok = node.attrs.id === selector.slice(1);
+  else { const m = /^input\[name="(\w+)"\]$/.exec(selector); ok = !!m && node.tag === 'input' && node.attrs.name === m[1]; }
+  return ok && (!checked || node.checked);
+}
+function node(tag) {
+  const n = { tag, attrs: {}, children: [], textContent: '', value: '', checked: false, handlers: {}, focused: false,
+    setAttribute(k, v) { this.attrs[k] = v; if (k === 'value') this.value = v; },
+    appendChild(c) { this.children.push(c); return c; },
+    addEventListener(type, fn) { (this.handlers[type] = this.handlers[type] || []).push(fn); },
+    fire(type) { (this.handlers[type] || []).forEach(fn => fn({ preventDefault() {} })); },
+    focus() { this.focused = true; },
+    querySelectorAll(sel) { const found = []; (function walk(x) { x.children.forEach(c => { if (c.attrs && matches(c, sel)) found.push(c); if (c.children) walk(c); }); })(this); return found; },
+    querySelector(sel) { return this.querySelectorAll(sel)[0] || null; } };
+  return n;
+}
+const sent = []; const failures = [];
+const ctx = { document: { createElement: node, createTextNode(t) { return { text: t }; } }, sent, failures,
+  send(kind, question, payload) { sent.push({ kind, id: question.id, payload }); }, fail(text) { failures.push(text); },
+  submitAnswerNow: null, out: {} };
+vm.createContext(ctx);
+vm.runInContext(['el', 'checkbox', 'radio', 'answerForm', 'submitAnswer', 'answerSummary'].map(grab).join('\n'), ctx);
+const options = [{ id: 'o1', label: 'CSV', recommended: true }, { id: 'o2', label: 'XLSX' }, { id: 'o3', label: 'PDF' }];
+const multi = { id: 'qn-aaaaaa', multi: true, options, assumed: 'CSV' };
+const single = { id: 'qn-bbbbbb', options, assumed: null };
+ctx.q = multi; ctx.s = single;
+const out = {};
+const form = vm.runInContext('answerForm(q)', ctx);
+const boxes = () => form.querySelectorAll('input[name="multi"]');
+const radios = () => form.querySelectorAll('input[name="choice"]');
+out.boxes = boxes().length;
+out.radios = radios().map(r => r.attrs.value);
+out.hint = !!form.querySelector('#multi-hint');
+out.labels = out.boxes && [];
+// empty set
+ctx.f = form;
+vm.runInContext('submitAnswer(q, f)', ctx);
+out.emptySent = sent.length; out.emptyFail = failures.slice(); out.emptyFocus = boxes()[0].focused;
+// exclusion: box ticked clears the radio, radio clears boxes, typing clears boxes
+radios()[0].checked = true;
+boxes()[0].checked = true; boxes()[0].fire('change');
+out.radioAfterTick = radios().map(r => r.checked);
+radios()[1].checked = true; radios()[1].fire('change');
+out.boxesAfterRadio = boxes().map(b => b.checked);
+boxes()[0].checked = true; boxes()[0].fire('change');
+form.querySelector('#custom-text').fire('input');
+out.boxesAfterTyping = boxes().map(b => b.checked);
+out.customAfterTyping = form.querySelector('#opt-custom').checked;
+// two ticked -> optionIds in DOM order, comment kept
+boxes()[2].checked = true; boxes()[0].checked = true;
+form.querySelector('#answer-comment').value = 'oba';
+vm.runInContext('submitAnswer(q, f)', ctx);
+out.sentMulti = sent[sent.length - 1];
+// single question: radios only
+const sform = vm.runInContext('answerForm(s)', ctx);
+out.singleBoxes = sform.querySelectorAll('input[name="multi"]').length;
+out.singleRadios = sform.querySelectorAll('input[name="choice"]').length;
+out.singleHint = !!sform.querySelector('#multi-hint');
+sform.querySelector('#opt-1').checked = true;
+ctx.sf = sform;
+vm.runInContext('submitAnswer(s, sf)', ctx);
+out.sentSingle = sent[sent.length - 1];
+// summary
+ctx.ans = { optionIds: ['o3', 'o1'], by: 'x', at: '2026-11-12T10:00:00.000Z' };
+ctx.when = () => 'teraz';
+ctx.sq = { id: 'qn-aaaaaa', multi: true, options, answer: ctx.ans, assumed: null };
+const box = vm.runInContext('(function(){ var a = answerSummary({ options: sq.options, assumed: null, answer: ans }); return a; })()', ctx);
+out.summary = box.children.map(c => c.textContent);
+console.log(JSON.stringify(out));
+"""
+
+
 class ScriptBehaviorTests(ExpertsPageBase):
     """Poprawki E4: czyste funkcje skryptu wyciągnięte z EXPERTS_SCRIPT i uruchomione w node z atrapami DOM/fetch."""
 
@@ -547,6 +631,38 @@ class ScriptBehaviorTests(ExpertsPageBase):
     def test_unexpected_shape_has_its_own_message(self):
         self.assertIn("var UNEXPECTED = 'Nieoczekiwana odpowiedź serwera.';", self.script)
         self.assertGreaterEqual(self.script.count('UNEXPECTED'), 4)
+
+    def test_multi_choice_form_in_node(self):
+        node = shutil.which('node')
+        if not node:
+            self.skipTest('brak node w środowisku')
+        import json
+        with tempfile.TemporaryDirectory(prefix='experts-js-') as tmp:
+            (Path(tmp) / 'experts.js').write_text(self.script, encoding='utf-8')
+            (Path(tmp) / 'harness.js').write_text(NODE_HARNESS_MULTI, encoding='utf-8')
+            done = subprocess.run([node, str(Path(tmp) / 'harness.js'), str(Path(tmp) / 'experts.js')],
+                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
+        self.assertEqual(done.returncode, 0, done.stderr.decode('utf-8', 'replace'))
+        out = json.loads(done.stdout.decode('utf-8'))
+        self.assertEqual(out['boxes'], 3)
+        self.assertEqual(out['radios'], ['confirm', 'custom'])
+        self.assertTrue(out['hint'])
+        # pusty zestaw: nic nie jest wysyłane, jest komunikat i fokus na pierwszym polu
+        self.assertEqual(out['emptySent'], 0)
+        self.assertEqual(out['emptyFail'], ['Zaznacz co najmniej jeden wariant albo wpisz własną odpowiedź.'])
+        self.assertTrue(out['emptyFocus'])
+        # wykluczanie zestawu, potwierdzenia i własnej odpowiedzi
+        self.assertEqual(out['radioAfterTick'], [False, False])
+        self.assertEqual(out['boxesAfterRadio'], [False, False, False])
+        self.assertEqual(out['boxesAfterTyping'], [False, False, False])
+        self.assertTrue(out['customAfterTyping'])
+        # zestaw w kolejności DOM (stabilny cid przy ponowieniu), z komentarzem
+        self.assertEqual(out['sentMulti'], {'kind': 'answer', 'id': 'qn-aaaaaa', 'payload': {'optionIds': ['o1', 'o3'], 'comment': 'oba'}})
+        # pytanie jednokrotne: tylko radia i optionId
+        self.assertEqual((out['singleBoxes'], out['singleHint']), (0, False))
+        self.assertEqual(out['singleRadios'], 4)   # 3 opcje + własna (assumed null: bez potwierdzenia)
+        self.assertEqual(out['sentSingle']['payload'], {'optionId': 'o2'})
+        self.assertEqual(out['summary'][1], 'CSV, PDF')
 
     def test_node_pure_functions(self):
         node = shutil.which('node')

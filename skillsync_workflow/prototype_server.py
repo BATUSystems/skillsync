@@ -2347,11 +2347,11 @@ _QUESTION_SCHEME_RE = re.compile(r'[A-Za-z][A-Za-z0-9+.-]*:')
 _QUESTION_CONTROL_RE = re.compile('[\x00-\x1f\x7f]')
 # key order of a stored line: the common keys first, then the fields of the type
 QUESTION_KEYS = ('id', 'type', 'questionId', 'at', 'by', 'cid', 'text', 'blocking', 'assumed', 'addressees',
-                 'refs', 'options', 'refersTo', 'origin', 'optionId', 'confirm', 'comment', 'spec', 'line')
+                 'refs', 'options', 'refersTo', 'origin', 'multi', 'optionId', 'optionIds', 'confirm', 'comment', 'spec', 'line')
 _QUESTION_COMMON = ('id', 'type', 'questionId', 'at', 'by', 'cid')
 _QUESTION_FIELDS = {
-    'ask': (('text', 'blocking', 'assumed', 'addressees', 'refs', 'options', 'origin'), ('refersTo',)),
-    'answer': ((), ('optionId', 'text', 'confirm', 'comment')),
+    'ask': (('text', 'blocking', 'assumed', 'addressees', 'refs', 'options', 'origin'), ('refersTo', 'multi')),
+    'answer': ((), ('optionId', 'optionIds', 'text', 'confirm', 'comment')),
     'comment': (('text',), ()),
     'recorded': (('spec', 'line'), ()),
     'withdraw': ((), ()),
@@ -2465,7 +2465,7 @@ def _check_question_refs(refs):
             _check_string(ref['excerpt'], where + '.excerpt', minimum=0, maximum=MAX_QUESTION_REF_EXCERPT)
 
 
-def _check_question_options(options):
+def _check_question_options(options, multi=False):
     if not isinstance(options, list):
         _bad('options must be a list')
     if len(options) > MAX_QUESTION_OPTIONS:
@@ -2483,8 +2483,10 @@ def _check_question_options(options):
             if not isinstance(option['recommended'], bool):
                 _bad('%s.recommended must be a boolean' % where)
             recommended += 1 if option['recommended'] else 0
-    if recommended > 1:
-        _bad('options: at most one option may be recommended')
+    if recommended > 1 and not multi:
+        _bad('options: at most one option may be recommended (several only in a multi-choice question)')
+    if multi and len(options) < 2:
+        _bad('a multi-choice question needs at least 2 options', code='multi_needs_options')
 
 
 def _check_question_addressees(value):
@@ -2536,7 +2538,10 @@ def validate_question_operation(operation, known=None):
             _bad('a question is either blocking (assumed null) or carries an assumed value')
         _check_question_addressees(operation['addressees'])
         _check_question_refs(operation['refs'])
-        _check_question_options(operation['options'])
+        multi = operation.get('multi', False)
+        if not isinstance(multi, bool):
+            _bad('multi must be a boolean')
+        _check_question_options(operation['options'], multi)
         _check_object(operation['origin'], 'origin', required=('spec', 'q'))
         _check_question_path(operation['origin']['spec'], 'origin.spec')
         _check_string(operation['origin']['q'], 'origin.q', pattern=QUESTION_ORIGIN_Q_RE)
@@ -2547,13 +2552,33 @@ def validate_question_operation(operation, known=None):
             if known is not None and operation['refersTo'] not in known:
                 _bad('refersTo points at an unknown question', code='unknown_reference')
     elif kind == 'answer':
-        present = [key for key in ('optionId', 'text', 'confirm') if key in operation]
+        present = [key for key in ('optionId', 'optionIds', 'text', 'confirm') if key in operation]
         if len(present) != 1:
-            _bad('answer needs exactly one of: optionId, text, confirm')
+            _bad('answer needs exactly one of: optionId, optionIds, text, confirm')
         if 'optionId' in operation:
             _check_string(operation['optionId'], 'optionId', pattern=QUESTION_OPTION_ID_RE)
+            if question is not None and question.get('multi'):
+                _bad('a multi-choice question takes optionIds (a non-empty list), not optionId', code='wrong_answer_kind')
             if question is not None and operation['optionId'] not in [o['id'] for o in question['options']]:
                 _bad('optionId is not an option of the question', code='unknown_option')
+        elif 'optionIds' in operation:
+            chosen = operation['optionIds']
+            if not isinstance(chosen, list):
+                _bad('optionIds must be a list')
+            if not chosen:
+                _bad('optionIds must not be empty: choose at least one option or answer with text', code='empty_selection')
+            if len(chosen) > MAX_QUESTION_OPTIONS:
+                _bad('optionIds has more than %d items' % MAX_QUESTION_OPTIONS, code='too_many')
+            for index, option_id in enumerate(chosen):
+                _check_string(option_id, 'optionIds[%d]' % index, pattern=QUESTION_OPTION_ID_RE)
+            if len(set(chosen)) != len(chosen):
+                _bad('optionIds has a duplicate')
+            if question is not None:
+                if not question.get('multi'):
+                    _bad('a single-choice question takes optionId, not optionIds', code='wrong_answer_kind')
+                known_ids = [o['id'] for o in question['options']]
+                if any(option_id not in known_ids for option_id in chosen):
+                    _bad('optionIds holds an option that the question does not have', code='unknown_option')
         elif 'text' in operation:
             _check_string(operation['text'], 'text', maximum=MAX_QUESTION_ANSWER_TEXT, strip_empty=True)
         else:
@@ -2601,10 +2626,22 @@ def _ask_model(operation):
         'addressees': 'all' if addressees == 'all' else [a for a in _list_of(addressees, str)],
         'refs': [_clone(r) for r in _list_of(operation.get('refs'), dict)],
         'options': [_clone(o) for o in _list_of(operation.get('options'), dict)],
+        'multi': operation.get('multi') is True,
         'refersTo': operation.get('refersTo') if isinstance(operation.get('refersTo'), str) else None,
         'origin': _clone(origin) if isinstance(origin, dict) else {},
         'answer': None, 'comments': [], 'recorded': None, 'withdrawn': None,
     }
+
+
+def selected_option_labels(question, option_ids):
+    """Labels of the chosen options in the order of the question's options; an unknown id stays as its id."""
+    ids = [item for item in option_ids if isinstance(item, str)]
+    labels = []
+    for option in question.get('options') or []:
+        if option.get('id') in ids:
+            labels.append(option['label'] if isinstance(option.get('label'), str) else option['id'])
+    known = [option.get('id') for option in question.get('options') or []]
+    return labels + [item for item in ids if item not in known]
 
 
 def _answer_text(question, operation):
@@ -2615,6 +2652,8 @@ def _answer_text(question, operation):
     elif isinstance(operation.get('optionId'), str):
         label = [o.get('label') for o in question['options'] if o.get('id') == operation['optionId']]
         parts.append(label[0] if label and isinstance(label[0], str) else operation['optionId'])
+    elif isinstance(operation.get('optionIds'), list):
+        parts.append(', '.join(selected_option_labels(question, operation['optionIds'])))
     elif operation.get('confirm') is True:
         parts.append(question['assumed'] or '')
     if isinstance(operation.get('comment'), str):
@@ -2664,6 +2703,8 @@ def fold_questions(operations):
                 for key in ('optionId', 'text', 'comment'):
                     if isinstance(operation.get(key), str):
                         entry[key] = operation[key]
+                if isinstance(operation.get('optionIds'), list):
+                    entry['optionIds'] = [item for item in operation['optionIds'] if isinstance(item, str)]
                 if operation.get('confirm') is True:
                     entry['confirm'] = True
                 question['answer'] = entry
@@ -2735,7 +2776,7 @@ def question_view(question, viewer, by_id=None, slug=None):
         'id': question['id'], 'slug': slug, 'text': question['text'], 'state': question['state'], 'by': question['by'],
         'at': question['at'], 'blocking': question['blocking'], 'assumed': question['assumed'],
         'forAll': question['addressees'] == 'all', 'refs': _clone(question['refs']),
-        'options': _clone(question['options']), 'origin': _clone(question['origin']),
+        'options': _clone(question['options']), 'multi': question['multi'], 'origin': _clone(question['origin']),
         'answer': _clone(question['answer']), 'comments': _clone(question['comments']),
         'recorded': _clone(question['recorded']), 'refersTo': None,
         'canAnswer': can_answer(question, viewer) and question['state'] == 'open',
@@ -2837,6 +2878,8 @@ def export_questions(snapshot, project, url=None, users=None, slug=None):
                 'blocking': question['blocking'], 'assumed': question['assumed'],
                 'addressees': _clone(question['addressees']), 'refs': _clone(question['refs']),
                 'options': _clone(question['options'])}
+        if question['multi']:
+            item['multi'] = True
         answer = question['answer']
         if answer is not None:
             exported = {'by': answer['by'], 'name': name(answer['by']), 'at': answer['at']}
@@ -2847,6 +2890,9 @@ def export_questions(snapshot, project, url=None, users=None, slug=None):
                 labels = [o.get('label') for o in question['options'] if o.get('id') == answer['optionId']]
                 if labels and isinstance(labels[0], str):
                     exported['optionLabel'] = labels[0]
+            if 'optionIds' in answer:
+                exported['optionIds'] = list(answer['optionIds'])
+                exported['optionLabels'] = selected_option_labels(question, answer['optionIds'])
             if answer.get('confirm'):
                 exported['confirm'] = True
             item['answer'] = exported
@@ -7282,6 +7328,9 @@ EXPERTS_SCRIPT = r"""
     else if (answer.optionId) {
       value = answer.optionLabel || answer.optionId;
       (question.options || []).forEach(function (option) { if (option.id === answer.optionId) value = option.label; });
+    } else if (answer.optionIds && answer.optionIds.length) {
+      value = (question.options || []).filter(function (option) { return answer.optionIds.indexOf(option.id) !== -1; })
+        .map(function (option) { return option.label; }).join(', ') || answer.optionIds.join(', ');
     } else value = answer.text || '';
     var box = el('div', { 'class': 'entry' }, [
       el('div', { 'class': 'meta', text: 'Odpowiedź: ' + (answer.name || answer.by) + ', ' + when(answer.at) }),
@@ -7289,6 +7338,11 @@ EXPERTS_SCRIPT = r"""
     ]);
     if (answer.comment) box.appendChild(el('div', { 'class': 'qtext muted', text: 'Komentarz: ' + answer.comment }));
     return box;
+  }
+
+  function checkbox(id, value, text) {
+    var input = el('input', { type: 'checkbox', name: 'multi', id: id, value: value });
+    return el('div', { 'class': 'opt' }, [input, el('label', { 'for': id, text: text })]);
   }
 
   function radio(id, value, text, extra) {
@@ -7334,9 +7388,13 @@ EXPERTS_SCRIPT = r"""
     var form = el('form', { id: 'answer-form', novalidate: 'novalidate' });
     var fieldset = el('fieldset');
     fieldset.appendChild(el('legend', { text: 'Twoja odpowiedź' }));
+    if (question.multi) {
+      fieldset.setAttribute('aria-describedby', 'multi-hint');
+      fieldset.appendChild(el('p', { 'class': 'muted', id: 'multi-hint', text: 'Zaznacz co najmniej jeden wariant albo wpisz własną odpowiedź.' }));
+    }
     (question.options || []).forEach(function (option, index) {
-      fieldset.appendChild(radio('opt-' + index, 'o:' + option.id,
-        option.label + (option.recommended ? ' (Rekomendacja agenta)' : '')));
+      var text = option.label + (option.recommended ? ' (Rekomendacja agenta)' : '');
+      fieldset.appendChild(question.multi ? checkbox('opt-' + index, option.id, text) : radio('opt-' + index, 'o:' + option.id, text));
     });
     if (question.assumed !== null && question.assumed !== undefined) {
       fieldset.appendChild(radio('opt-confirm', 'confirm', 'Potwierdzam przyjętą wartość: ' + question.assumed));
@@ -7348,9 +7406,24 @@ EXPERTS_SCRIPT = r"""
     form.appendChild(el('label', { 'class': 'block', 'for': 'answer-comment', text: 'Komentarz do odpowiedzi (opcjonalny)' }));
     form.appendChild(el('textarea', { id: 'answer-comment', maxlength: '2000' }));
     form.appendChild(el('button', { type: 'submit', id: 'answer-send', text: 'Wyślij odpowiedź' }));
+    function clearBoxes() {
+      Array.prototype.forEach.call(form.querySelectorAll('input[name="multi"]'), function (box) { box.checked = false; });
+    }
     form.querySelector('#custom-text').addEventListener('input', function () {
       form.querySelector('#opt-custom').checked = true;
+      clearBoxes();
     });
+    if (question.multi) {
+      // The set of options, the confirmation and the own answer exclude one another.
+      Array.prototype.forEach.call(form.querySelectorAll('input[name="multi"]'), function (box) {
+        box.addEventListener('change', function () {
+          if (box.checked) Array.prototype.forEach.call(form.querySelectorAll('input[name="choice"]'), function (radio) { radio.checked = false; });
+        });
+      });
+      Array.prototype.forEach.call(form.querySelectorAll('input[name="choice"]'), function (radio) {
+        radio.addEventListener('change', clearBoxes);
+      });
+    }
     form.addEventListener('submit', function (event) { event.preventDefault(); submitAnswer(question, form); });
     return form;
   }
@@ -7423,6 +7496,14 @@ EXPERTS_SCRIPT = r"""
     var chosen = form.querySelector('input[name="choice"]:checked');
     var comment = form.querySelector('#answer-comment').value.trim();
     var payload = {};
+    var boxes = Array.prototype.filter.call(form.querySelectorAll('input[name="multi"]'), function (box) { return box.checked; });
+    if (question.multi && boxes.length) {
+      payload.optionIds = boxes.map(function (box) { return box.value; });
+      if (comment) payload.comment = comment;
+      send('answer', question, payload);
+      return;
+    }
+    if (!chosen && question.multi) { fail('Zaznacz co najmniej jeden wariant albo wpisz własną odpowiedź.'); form.querySelector('input[name="multi"]').focus(); return; }
     if (!chosen) { fail('Wybierz odpowiedź albo wpisz własną.'); form.querySelector('input[name="choice"]').focus(); return; }
     if (chosen.value === 'confirm') payload.confirm = true;
     else if (chosen.value === 'custom') {

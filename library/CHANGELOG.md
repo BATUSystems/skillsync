@@ -7,7 +7,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 ## [1.2.1] - 2026-11-12
 
 ### Changed
-- `skills/skillsync`: pytania do eksperta są w `<root>/<slug>/questions.json` (osobny plik per przebieg), strony `/_experts` i `/_experts/<slug>`; `prototype question` z `--slug` (przy `add` bez niego przebieg wybierany ze speca z `--origin`), nowe `question migrate` i `question purge`, wynik `add` z `created` i `notes`.
+- `skills/skillsync`: pytania do eksperta są w `<root>/<slug>/questions.json` (osobny plik per przebieg), strony `/_experts` i `/_experts/<slug>`; `prototype question` z `--slug` (przy `add` bez niego przebieg wybierany ze speca z `--origin`), nowe `question migrate` i `question purge`, wynik `add` z `created` i `notes`, `add --multi` (pytanie wielokrotnego wyboru).
 - `layer.yaml`: `version` i `core_min` 1.2.1 (warstwa opisuje komendy rdzenia 1.2.1).
 
 ## [1.2.0] - 2026-11-12

@@ -60,7 +60,7 @@ def ask(qid=Q1, cid=None, **over):
 
 def answer(qid=Q1, by=EWA, cid=None, **over):
     op = {'type': 'answer', 'questionId': qid, 'by': by, 'cid': cid or 'ans-%s-%s' % (qid, _safe(by))}
-    if not any(key in over for key in ('optionId', 'text', 'confirm')):
+    if not any(key in over for key in ('optionId', 'optionIds', 'text', 'confirm')):
         op['text'] = 'tak, nowy numer'
     op.update(over)
     return op
@@ -1119,6 +1119,129 @@ class ExportTests(QuestionsCase):
         questions = self.by_id(self.export())
         self.assertEqual(questions[Q1]['answer']['optionId'], 'o1')
         self.assertEqual(questions[Q2]['refersTo'], Q1)
+
+
+MULTI_OPTIONS = [{'id': 'o1', 'label': 'CSV', 'recommended': True}, {'id': 'o2', 'label': 'XLSX', 'recommended': True},
+                 {'id': 'o3', 'label': 'PDF'}]
+
+
+class MultiChoiceSchemaTests(unittest.TestCase):
+    """Pytanie wielokrotnego wyboru (`multi`): schemat `ask` i `answer` (addytywnie do `expert-questions/1`)."""
+
+    def check(self, op, known=None):
+        ps.validate_question_operation(full(op), known)
+
+    def reject(self, op, known=None, code=None):
+        got = code_of(self, lambda: self.check(op, known), 400)
+        if code is not None:
+            self.assertEqual(got, code)
+
+    def message_of(self, op, known=None):
+        with self.assertRaises(ps.PrototypeServerError) as caught:
+            self.check(op, known)
+        return caught.exception
+
+    def known(self, **over):
+        question = {'options': MULTI_OPTIONS, 'assumed': 'CSV', 'multi': True}
+        question.update(over)
+        return {Q1: question}
+
+    def test_ask_multi_allows_several_recommendations_and_needs_two_options(self):
+        self.check(ask(multi=True, options=MULTI_OPTIONS))
+        self.reject(ask(multi=False, options=MULTI_OPTIONS))      # dwie rekomendacje tylko przy multi
+        self.reject(ask(options=MULTI_OPTIONS))
+        self.reject(ask(multi=True, options=MULTI_OPTIONS[:1]), code='multi_needs_options')
+        self.reject(ask(multi=True, options=[]), code='multi_needs_options')
+        self.reject(ask(multi='tak', options=MULTI_OPTIONS))
+        self.check(ask(multi=False, options=MULTI_OPTIONS[1:]))
+
+    def test_answer_optionids_for_a_multi_question(self):
+        known = self.known()
+        self.check(answer(optionIds=['o1', 'o3']), known)
+        self.check(answer(optionIds=['o2']), known)
+        self.check(answer(optionIds=['o1'], comment='dwa formaty'), known)
+        self.check(answer(text='żaden z nich: JSON'), known)           # „żaden” = własna odpowiedź
+        self.check(answer(confirm=True), known)
+
+    def test_empty_selection_is_refused_with_its_own_code(self):
+        self.reject(answer(optionIds=[]), self.known(), code='empty_selection')
+        self.reject(answer(optionIds=[]), code='empty_selection')
+
+    def test_bad_optionids_are_refused(self):
+        known = self.known()
+        self.reject(answer(optionIds=['o1', 'o1']), known)
+        self.reject(answer(optionIds=['o1', 'o9']), known, code='unknown_option')
+        self.assertEqual(code_of(self, lambda: self.check(answer(optionIds='o1'), known), 400), 'invalid_operation')
+        self.assertIn('must be a list', str(self.message_of(answer(optionIds='o1'), known)))
+        self.reject(answer(optionIds=[1]), known)
+        self.reject(answer(optionIds=['o1', '']), known)
+        self.reject(answer(optionIds=['o%d' % n for n in range(9)]), code='too_many')
+
+    def test_optionids_xor_the_other_answer_kinds(self):
+        known = self.known()
+        for over in ({'text': 'x'}, {'confirm': True}, {'optionId': 'o1'}):
+            op = answer(optionIds=['o1'], **over)
+            self.reject(op, known)
+
+    def test_single_and_multi_questions_take_their_own_kind(self):
+        self.reject(answer(optionId='o1'), self.known(), code='wrong_answer_kind')
+        self.reject(answer(optionIds=['o1']), self.known(multi=False), code='wrong_answer_kind')
+        self.check(answer(optionId='o1'), self.known(multi=False))
+        self.check(answer(optionIds=['o1']))                   # bez znajomości pytania (np. scalanie): tylko kształt
+
+
+class MultiChoiceFoldTests(QuestionsCase):
+    def setUp(self):
+        QuestionsCase.setUp(self)
+        self.add(ask(Q1, multi=True, options=MULTI_OPTIONS, text='W jakich formatach eksport?'))
+        self.add(ask(Q2, options=[{'id': 'o1', 'label': 'Tak'}, {'id': 'o2', 'label': 'Nie'}]))
+
+    def test_answer_keeps_the_selection_and_exports_ids_and_labels_in_option_order(self):
+        self.add(answer(Q1, EWA, optionIds=['o3', 'o1'], comment='oba'))
+        item = dict((q['id'], q) for q in ps.export_questions(self.store.snapshot(), 'root')['questions'])[Q1]
+        self.assertTrue(item['multi'])
+        self.assertEqual(item['answer']['optionIds'], ['o3', 'o1'])
+        self.assertEqual(item['answer']['optionLabels'], ['CSV', 'PDF'])
+        self.assertNotIn('optionId', item['answer'])
+        self.assertNotIn('optionLabel', item['answer'])
+        self.assertEqual(item['answer']['comment'], 'oba')
+
+    def test_single_question_export_is_unchanged(self):
+        self.add(answer(Q2, EWA, optionId='o2'))
+        item = dict((q['id'], q) for q in ps.export_questions(self.store.snapshot(), 'root')['questions'])[Q2]
+        self.assertNotIn('multi', item)
+        self.assertEqual((item['answer']['optionId'], item['answer']['optionLabel']), ('o2', 'Nie'))
+        self.assertNotIn('optionIds', item['answer'])
+
+    def test_view_carries_multi_and_the_stored_selection(self):
+        self.add(answer(Q1, EWA, optionIds=['o2']))
+        snap = self.store.snapshot()
+        view = ps.get_question_view(snap, Q1, viewer(EWA, 'expert'))
+        self.assertTrue(view['multi'])
+        self.assertEqual(view['answer']['optionIds'], ['o2'])
+        self.assertFalse(ps.get_question_view(snap, Q2, viewer(EWA, 'expert'))['multi'])
+
+    def test_free_text_and_confirm_still_work_on_a_multi_question(self):
+        self.add(answer(Q1, EWA, text='żaden: JSON'))
+        item = dict((q['id'], q) for q in ps.export_questions(self.store.snapshot(), 'root')['questions'])[Q1]
+        self.assertEqual(item['answer']['text'], 'żaden: JSON')
+        self.assertNotIn('optionIds', item['answer'])
+
+    def test_server_side_store_refuses_wrong_kind_and_empty_selection(self):
+        self.assertEqual(code_of(self, lambda: self.add(answer(Q1, EWA, optionIds=[])), 400), 'empty_selection')
+        self.assertEqual(code_of(self, lambda: self.add(answer(Q1, EWA, optionId='o1')), 400), 'wrong_answer_kind')
+        self.assertEqual(code_of(self, lambda: self.add(answer(Q2, EWA, optionIds=['o1'])), 400), 'wrong_answer_kind')
+
+    def test_late_multi_answer_becomes_a_comment_with_all_labels(self):
+        folded = ps.fold_questions([full(ask(Q1, multi=True, options=MULTI_OPTIONS), 1), full(answer(Q1, EWA, text='x'), 2),
+                                    full(answer(Q1, OLA, optionIds=['o1', 'o2']), 3)])
+        late = folded['byId'][Q1]['comments'][0]
+        self.assertTrue(late['late'])
+        self.assertEqual(late['text'], 'CSV, XLSX')
+
+    def test_old_log_without_multi_folds_as_a_single_choice_question(self):
+        folded = ps.fold_questions([full(ask(Q1, options=[{'id': 'o1', 'label': 'a'}]), 1)])
+        self.assertIs(folded['byId'][Q1]['multi'], False)
 
 
 if __name__ == '__main__':

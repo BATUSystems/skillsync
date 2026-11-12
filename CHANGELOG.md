@@ -29,6 +29,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
   or a comment; a question that another kept question refers to stays. Without `--yes` it only lists what would be removed.
 - `question add` returns `created` (files created by the call) and `notes`; `list`, `export` and `show` report `legacy` while the old file exists.
 - `question add` removes an orphaned `questions.json.lock` (a free lock without its data file) of the run it writes to.
+- Expert questions: a multi-choice question. `skillsync prototype question add … --multi` (at least 2 `--option`, several `:recommended` allowed) lets the expert tick one or more variants; the `/_experts` page shows check boxes for it, and an empty set is refused in the page and on the server (400 `empty_selection`); "none of them" is the free-text answer. A multi answer is stored as `optionIds` and exported with `optionLabels` (lists, in the order of the question's options); `answerLine` and the `[EKSPERT]` row list every chosen variant. A single answer on a multi question (or a set on a single one) is 400 `wrong_answer_kind`.
 
 ### Changed
 
@@ -47,6 +48,10 @@ None for existing fields. Two changes need action: the questions file moves from
 ### Fixed
 
 - `skillsync prototype question withdraw` reported no state; it now returns `state`, and `questions[0].state` is `withdrawn`.
+
+### Compatibility
+
+- Additive in `expert-questions/1`: a new optional `multi` on a question and `optionIds`/`optionLabels` on its answer; single-choice questions, free-text answers, confirmations and existing logs are unchanged. A server older than this version ignores the new fields: it shows a `multi` question as a single-choice one and an `optionIds` answer as empty, and only its merge driver refuses such a file, so update the core before using `--multi` in a shared project.
 
 ## [1.2.0] - 2026-11-12
 

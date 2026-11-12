@@ -402,7 +402,8 @@ oznacza to przez `question record`; programista dostaje informację, nie pytanie
   nieprawidłowy slug daje 404). `question url` podaje adres strony razem z liczbą kont `expert`. Bez sesji przekierowanie do `/_login?next=<ścieżka>`.
 - Każde pytanie ma badge „Przebieg: <slug>”. Etykieta pytania: dla administratora nazwa pliku speca i `Q<n>`, dla eksperta `Q<n>`.
   Konto z hasłem domyślnym widzi komunikat i link do zmiany hasła; odpowiadać może dopiero po zmianie (403 `password_change_required`).
-- Lista pytań widocznych dla konta, szczegóły (tekst, linki, wyciągi), wybór wariantu (rekomendacja agenta jest oznaczona), „Potwierdzam przyjętą
+- Lista pytań widocznych dla konta, szczegóły (tekst, linki, wyciągi), wybór wariantu (rekomendacja agenta jest oznaczona; w pytaniu wielokrotnego wyboru pola wyboru, zatwierdzenie
+  wysyła cały zestaw, a pusty zestaw jest odrzucany w stronie i na serwerze: „żaden” to własna odpowiedź), „Potwierdzam przyjętą
   wartość”, własna odpowiedź z opcjonalnym komentarzem oraz osobny komentarz do pytania (także po zamknięciu). Obsługa klawiaturą, stany błędu
   (401 powrót do logowania, 403, 409 `already_answered` z odświeżeniem widoku, brak połączenia).
 - Strona ma własny ścisły CSP (`default-src 'none'`, skrypt i styl z hashem, `connect-src 'self'`, `frame-ancestors 'none'`); cała treść z
