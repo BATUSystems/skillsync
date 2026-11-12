@@ -212,3 +212,7 @@ lessons:
     title: "UsersFile.update zapisuje cały obiekt kont: zmiana jednego konta nie może normalizować pozostałych"
     tags: [skillsync, python, prototype, users, compatibility, migration]
     paths: ['skillsync_workflow/prototype_server.py', 'tests/test_skillsync_prototype_roles.py']
+  - path: test-z-wersja-rdzenia-na-sztywno-wygasa.md
+    title: "Test z wersją rdzenia na sztywno wygasa przy podbiciu wersji: wyliczaj ją od generator_version()"
+    tags: [skillsync, tests, version, release, core-min]
+    paths: ['tests/test_skillsync_layers_config.py', 'tests/test_skillsync_layers_doctor.py', 'tests/test_skillsync_layers_commands.py']

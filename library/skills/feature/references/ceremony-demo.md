@@ -11,6 +11,13 @@ Tryb jest dla krótkich przebiegów pokazowych: obniża koszt procesu, nie obni�
 - Plan przy `demo` ma w nagłówku linię `Ceremonia: demo` (jak `Oddanie:`, osobny wiersz); przy `full` linia jest opcjonalna.
   Rozbieżność linii planu z `route` przy „GO implement” = pytanie do użytkownika, bez zgadywania.
 
+## Po specu i review: następny krok to prototyp
+
+Przy `demo` samo ukończenie speca i review `spec` nie jest powodem, by bezczynnie czekać na „GO plan”. Gdy spec ma ekrany albo
+sekcje UI, następnym krokiem jest prototyp (skill `prototype`, [plan-details](plan-details.md#bramka-prototypu)): zbuduj go od razu,
+przygotuj szkic planu `draft (szkic — czeka na GO plan)` i zatrzymaj się dopiero na akceptacji prototypu (STOP, `skillsync prototype wait`).
+Bez ekranów w specu nie ma prototypu: poproś o „GO plan” od razu. Zgody nadal daje wyłącznie użytkownik; prototyp nie jest „GO plan”.
+
 ## Co zmienia `ceremony: demo`
 
 - **Review `kod`**: `demo` zmienia liczbę pętli: jedno review `kod` na cały przebieg (jedna runda na końcu, zamknięcie majorów przez `verifier`) PLUS pętla pełna

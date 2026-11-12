@@ -13,6 +13,7 @@ import tempfile
 from pathlib import Path
 
 from . import __version__
+from .fsutil import rmtree_force
 
 DEFAULT_CORE_SOURCE = 'https://github.com/BATUSystems/skillsync'
 CORE_SUBDIR = 'library'
@@ -317,7 +318,7 @@ def _probe_project(layers):
             candidate, cleanup = None, None
             if glob == '**':
                 candidate = Path(tempfile.mkdtemp(prefix='skillsync-setup-'))
-                cleanup = (lambda path=candidate: shutil.rmtree(path, ignore_errors=True))
+                cleanup = (lambda path=candidate: rmtree_force(path, ignore_errors=True))
             elif not any(char in glob for char in '*?['):
                 path = Path(os.path.expanduser(glob))
                 candidate = path if path.is_dir() else None
@@ -326,7 +327,7 @@ def _probe_project(layers):
                 base = Path(os.path.expanduser(prefix)) if prefix else None
                 if base is not None and base.is_dir() and os.access(base, os.W_OK):
                     candidate = Path(tempfile.mkdtemp(prefix='skillsync-setup-', dir=base))
-                    cleanup = (lambda path=candidate: shutil.rmtree(path, ignore_errors=True))
+                    cleanup = (lambda path=candidate: rmtree_force(path, ignore_errors=True))
             if candidate is None:
                 continue
             matched, _ = layers.match_rule(config, candidate)

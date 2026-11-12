@@ -10,19 +10,7 @@ What counts as MAJOR, MINOR and PATCH: [docs/upgrading.md](docs/upgrading.md).
 
 Every release has a **Breaking** section that lists incompatible changes. When a release has none, the section says "None."
 
-## [Unreleased]
-
-### Added
-None.
-
-### Changed
-None.
-
-### Breaking
-None.
-
-### Fixed
-None.
+<!-- Kolejność 1.2.0 względem wpisów [Unreleased] (wydanie 1.1.x) do potwierdzenia przez właściciela. -->
 
 ## [1.2.0] - 2026-11-12
 
@@ -66,6 +54,43 @@ so an older core ignores `roles` and sees an `expert` as a commenter. `comments.
 
 ### Fixed
 None.
+
+## [Unreleased]
+
+### Added
+- `docs/lessons/test-z-wersja-rdzenia-na-sztywno-wygasa.md`: lesson on tests that hard-code a core version and expire at a version bump (derive it from `generator_version()`).
+- `library/skills/dispatch/references/codex.md`: section on the BRIDGE/1 protocol (Claude Code and Codex sessions talking on one machine).
+- `library/skills/agent-runtime-pitfalls`: two new pitfalls (explicit path list for `git add`; browser screenshots in a separate profile without extensions).
+
+### Changed
+- Dashboard page and Skippster panel: the layout follows the width of the host column, not the window (CSS container
+  queries on a new `.dash-wrap` wrapper; the tooltip stays outside it). New compact tier up to 420 px: smaller type and
+  spacing, no big Roman numerals or source notes, plan badge and live label shortened to a tooltip, approval and
+  "open document" buttons full width. No horizontal scroll at 360 px; JSON contract (schema 1) unchanged.
+- Skill `dashboard`: the status page view is a shared renderer, `assets/dashboard-render.js` (UMD,
+  `DashboardRenderer.create(root, deps)`: pure JSON → DOM without transport, browser storage, `innerHTML` or inline styles,
+  so the Skippster webview loads the same file under its CSP); `assets/app.js` is the page adapter (HTTP, SSE with polling,
+  `localStorage`, theme). The renderer contract is in the skill's `SKILL.md`; a static and a Node test guard it
+  (`tests/test_skillsync_dashboard_renderer.py`).
+- Dashboard page: the Questions, Readiness and substeps sections are drawn by the shared renderer. A remote viewer
+  (`approvals.viewer`) gets only the inactive approval buttons with the reason; below 500 px the acts I and II stack in one column. Values are inserted as text (no HTML).
+- Dashboard page: the "Copy „…”" buttons (approval word to the clipboard) are removed entirely, including `actions.copyText`
+  in the renderer's `deps` (breaking for a host that passed it; no consumers outside Skippster). "Open session" stays.
+- Dashboard page: the header marks an automatically chosen plan with a "wybrany automatycznie" badge (`planAuto: true`) and
+  shows the full plan path in the button tooltip; a manually chosen plan has no badge.
+
+### Breaking
+None.
+
+### Fixed
+- Windows: `skillsync` commands and the standalone `prototype_server.py` switch stdout and stderr to UTF-8 (`errors=replace`) when
+  the output is redirected and uses another encoding (cp1252). Polish messages no longer crash `prototype serve` with `UnicodeEncodeError`.
+- Windows: a clone left half-done by `skillsync setup`, `layers add` or `layers init` is removed even when it holds read-only files
+  (git objects); the cleanup uses the new `rmtree_force` instead of `rmtree(ignore_errors=True)`, which swallowed the error and left the clone.
+- Test `leakguard pre-push` feeds the hook as bytes (text mode added `\r` to the pushed sha on Windows); the hook itself is unchanged.
+- `skillsync dashboard`: the automatic plan choice no longer lets an `in_progress`/`approved` plan with all steps checked and no run directory (an orphan) hide a plan with a live run (the page showed "Act III, 35/35" for a finished, unclosed plan); within a status rank the plan with the freshest run activity wins. The JSON contract (`schema: 1`) is unchanged.
+- `skillsync doctor`: the warning for an `in_progress` plan with all steps checked names the run state (no `Przebieg:` line, missing run directory, no `final` record, record already present).
+- Skill `feature`: the `demo` ceremony says that after the spec and its review the next step is the prototype, not idle waiting for "GO plan".
 
 ## [1.1.0] - 2026-11-11
 
