@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from layers_helpers import (LINK_MODES, LayersCase, commit, generator_version, git, link_mode,  # noqa: E402
-                            machine_cache_dir, machine_data_dir, make_layer, write, yaml_text)
+                            machine_cache_dir, machine_data_dir, make_layer, needs_sh, write, yaml_text)
 from skillsync_workflow import layers, leakguard  # noqa: E402
 from skillsync_workflow.selfcmd import self_argv  # noqa: E402
 
@@ -645,6 +645,28 @@ class LayersAddTest(CommandsCase):
         targets['acme']['remote_match'] = layers.remote_patterns('https://example.test/ac*me/skills')
         self.assertEqual(leakguard.match_targets(targets, ['https://example.test/ac*me/skills']), ['acme'])
         self.assertEqual(leakguard.match_targets(targets, ['https://example.test/ac-me/skills']), [])
+
+    @needs_sh
+    def test_a_failure_after_the_clone_removes_a_clone_with_read_only_entries(self):
+        """WIN-FIX G5: obiekty `.git` są tylko do odczytu (Windows: atrybut; POSIX: katalogi 0555); rollback musi je usunąć.
+
+        Hook `post-checkout` z szablonu git blokuje zapis w `.git/objects` tuż po klonie, a konfiguracja, której nie da się
+        zapisać, wymusza porażkę po klonie."""
+        if os.name != 'nt' and hasattr(os, 'geteuid') and os.geteuid() == 0:
+            self.skipTest('root ignoruje prawa do katalogów')
+        template = self.work / 'git-template'
+        (template / 'hooks').mkdir(parents=True)
+        hook = template / 'hooks' / 'post-checkout'
+        hook.write_text('#!/bin/sh\nchmod -R a-w .git/objects 2>/dev/null\nexit 0\n', encoding='utf-8', newline='\n')
+        hook.chmod(0o755)
+        self.config_file.mkdir()
+        try:
+            code, report = self.cli_json('layers', 'add', 'acme', '--kind', 'org', '--source', str(self.bare),
+                                         env={'GIT_TEMPLATE_DIR': str(template)})
+        finally:
+            self.config_file.rmdir()
+        self.assertEqual((code, report['status']), (2, 'BLOCKED'), report)
+        self.assertFalse(self.default_checkout('acme').exists(), 'klon z wpisami tylko do odczytu został po rollbacku')
 
     def test_a_failure_after_the_clone_removes_the_clone_and_a_retry_works(self):
         self.config_file.mkdir()                                             # the config cannot be written
