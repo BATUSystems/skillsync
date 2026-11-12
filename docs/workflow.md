@@ -11,7 +11,7 @@ i wiele sesji) jest w [workflow-details.md](workflow-details.md). Wersję HTML o
 w przeglądarce buduje `python3 docs/site/build.py` do `docs/site/out/` (katalog poza gitem; opis w
 [site/README.md](site/README.md)).
 
-Stan opisu: Skillsync `v1.1.0`.
+Stan opisu: Skillsync `v1.2.0`.
 
 ## Słownik
 
@@ -106,10 +106,17 @@ przyjmuje według tabeli stanów i nazywa w odpowiedzi, na co je przyjął; stan
 
 ### Klasy pytań `Q` w specu
 
-Spec ma dwie klasy pytań. Blokujące: `- Q<n>: <pytanie>`; dopóki jest otwarte, spec jest „draft z Q” i agent staje (STOP).
+Spec ma trzy klasy pytań (blokujące `Q<n>`, `[ZAŁOŻENIE]`, `[EKSPERT]`). Blokujące: `- Q<n>: <pytanie>`; dopóki jest otwarte, spec jest „draft z Q” i agent staje (STOP).
 Założenia: `- Q<n> [ZAŁOŻENIE]: <pytanie> — przyjęte: <wartość>`; nie zatrzymują „draft z Q”, ale zostają widoczne do korekty.
 Wiersz jest parsowany dzieleniem po ostatnim ` — przyjęte: `. Pytań o kontrakt, dane, migrację i bezpieczeństwo nie wolno
 oznaczać `[ZAŁOŻENIE]`. Parser `Q` należy do strony statusu, nie do kodu rdzenia (`readiness` go nie egzekwuje).
+
+Klasa `[EKSPERT]` to wiersz: pytanie domenowe, na które odpowiada ekspert, a nie programista
+([prototypes](prototypes.md#pytania-do-eksperta), rekord [expert-questions](domain/expert-questions.md)). Czekające pytanie jest zwykłym
+`- Q<n>: … (ekspert: qn-<hex>)` albo `- Q<n> [ZAŁOŻENIE]: … (ekspert: qn-<hex>) — przyjęte: <wartość>`; po odpowiedzi agent zastępuje je wierszem
+`- Q<n> [EKSPERT]: … (ekspert: qn-<hex>) — odpowiedź: <wartość> — ekspert: <login>, <RRRR-MM-DDTHH:MMZ>`. Parser strony statusu pomija wiersz
+`[EKSPERT]` jak `[ROZSTRZYGNIĘTE]`. Znane ograniczenie: strona statusu nie rozróżnia „czeka na eksperta”, więc blokujące pytanie z `(ekspert: …)`
+pokazuje jako pytanie do odpowiedzi przez użytkownika (osobny wiersz na stronie statusu to dług na kolejne wydanie).
 
 ### „GO plan” i commit
 

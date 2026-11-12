@@ -80,3 +80,7 @@ entries:
     title: "Propozycje retrospektywy: rejestr proposals:, stany, kolejność, skan progu i maskowanie"
     tags: [skillsync, retro, proposals, registry, workflow, privacy]
     paths: ['skillsync_workflow/retro_scan.py', 'skillsync_workflow/retro.py', 'tests/test_skillsync_retro_scan.py', 'tests/test_skillsync_retro.py']
+  - path: expert-questions.md
+    title: "Pytania do eksperta domenowego: questions.json, fold, widoczność, limity, CLI question, wiersz [EKSPERT], konta z wieloma rolami"
+    tags: [skillsync, prototype, expert, questions, server, security, spec, glossary]
+    paths: ['skillsync_workflow/prototype_server.py', 'skillsync_workflow/prototype.py', 'library/skills/feature/references/spec.md', 'tests/test_skillsync_prototype_questions*.py', 'tests/test_skillsync_prototype_question_cli.py', 'tests/test_skillsync_prototype_roles.py', 'tests/test_skillsync_prototype_experts_page.py', 'tests/test_skillsync_expert_skills.py']

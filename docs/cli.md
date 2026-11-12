@@ -202,7 +202,7 @@ Szczegóły: [workflow](workflow.md).
 
 ## Prototypy
 
-`skillsync prototype init|sync|index|list|ids|migrate|serve|user|login-link|iterate|restore|accept|gate|comments|triage|decide|resolve|merge-comments <projekt> …`
+`skillsync prototype init|sync|index|list|ids|migrate|serve|user|login-link|iterate|restore|accept|gate|comments|triage|decide|resolve|merge-comments|question <projekt> …`
 
 Komenda działa na klikalnych prototypach HTML w repo projektu. Opis akcji, kodów i formatu: [prototypes](prototypes.md).
 `list --json`: pole `acceptance` = `{screens, accepted, stale, perScreen}` (`null` przy v1 i bez `comments.json`); `perScreen` to `[{id, state}]` dla każdego ekranu w kolejności dokumentu, `state` = `accepted` | `stale` | `pending` (accepted + stale + pending = `screens`).
@@ -212,6 +212,58 @@ i dopasowuje id fazy dosłownie (wielkość liter). Wynik wg tabeli stanów ([pr
 (PASS/FAIL), faza bez `[UI]` w planie z fazami `[UI]` PASS z notą i pustymi `prototypes`, `missing`, `acceptances`, nieznana faza BLOCKED `unknown_phase`,
 plan z fazą `[UI]` bez linii `Prototyp:` i bez obejścia właściciela BLOCKED `ui_phase_without_prototype`. Raport dostaje opcjonalne pola `phase`
 (przy `--phase`) oraz `phases` i `uiPhases` (listy id, tylko gdy plan ma fazy `[UI]`). Kody wyjścia bez zmian: PASS 0, FAIL 1, BLOCKED 2.
+
+### Pytania do eksperta (`prototype question`, `prototype user roles`)
+
+Agent zadaje pytania ekspertom domenowym przez wspólny serwer prototypów; odpowiedzi czyta z pliku `<root>/questions.json`
+(bez serwera). Odpowiadać może tylko człowiek z rolą `expert` na stronie `/_experts`: agent nie ma polecenia `answer`.
+Model, limity i strona: [prototypes](prototypes.md#pytania-do-eksperta), poufność: [security](security.md).
+
+```bash
+skillsync prototype user add . ewa.ekspert@example.com --role expert --password-prompt   # konto eksperta
+skillsync prototype user roles . ewa.ekspert@example.com --role expert --role commenter  # zastępuje zbiór ról
+skillsync prototype question url .                                                       # adres strony i liczba kont expert
+skillsync prototype question add . --text "Czy zwrot po terminie jest dozwolony?" \
+  --ref "Sekcja 3|docs/specs/zwroty.md#3|Zwrot do 14 dni od zakupu." \
+  --option "Tak, bez limitu" --option "Tak, do 30 dni:recommended" --option "Nie" \
+  --assume "do 30 dni" --origin docs/specs/zwroty.md:Q3                                  # domyślnie agent nie czeka
+skillsync prototype question add . --text "Jaki jest klucz idempotencji płatności?" \
+  --blocking --to ewa.ekspert@example.com --origin docs/specs/platnosci.md:Q5            # agent czeka na odpowiedź
+skillsync prototype question list . --status open,answered
+skillsync prototype question show . qn-3f9a1c
+skillsync prototype question wait . qn-3f9a1c --timeout 600
+skillsync prototype question wait . --all --since 2026-11-12T08:00:00Z
+skillsync prototype question record . qn-3f9a1c --spec docs/specs/zwroty.md --line 42   # po wpisaniu wiersza do speca
+skillsync prototype question withdraw . qn-3f9a1c                                        # tylko pytanie otwarte
+skillsync prototype question export . --json > pytania.json
+```
+
+- `add`: dokładnie jedno z `--assume <wartość>` (pytanie nie zatrzymuje agenta; ekspert potwierdza albo koryguje) i `--blocking`
+  (agent czeka). `--ref` ma postać `TYTUŁ|ADRES[|WYCIĄG]` (do 5; adres względny albo `https`), `--option` `ETYKIETA[:recommended]`
+  (do 8, najwyżej jedna rekomendowana), `--to LOGIN` powtarzane (domyślnie wszyscy eksperci; login spoza pliku kont daje
+  ostrzeżenie), `--refers-to <id>` (spór z wcześniejszą odpowiedzią), `--origin <spec>:Q<n>` (ścieżka względna). Wyciąg ze speca lub
+  dokumentacji agent wpisuje sam: serwer nie czyta repozytorium. Skan sekretów w treści jest heurystyką: trafienie blokuje
+  (`secret_detected`, exit 2, bez wartości w raporcie), `--force` przepuszcza z ostrzeżeniem. Raport: `questionId`, `specLine`
+  (wiersz do speca), `files` (pliki do commita, w tym `<root>/.gitignore` z `questions.json.lock` i `*.tmp` oraz `<root>/.gitattributes`
+  z `merge=skillsync-questions`, dopisywane przy pierwszym użyciu), `warnings`, `url`, gdy serwer projektu działa. Powtórka z tym
+  samym `--question-id` jest idempotentna.
+- `list`, `show`, `export` zwracają dokument `expert-questions/1`: `{schema, project, url?, questions: [{id, text, state, blocking, assumed,
+  addressees, refs, options, answer?, comments, refersTo?, origin, recorded?}]}` oraz `status: PASS` (potrzebne do kodu wyjścia; klient ignoruje
+  nieznane pola). `show` i `wait` dodają `answerLine`: gotowy wiersz `[EKSPERT]` do speca (`null` bez odpowiedzi); `specLine` z `add` i `withdraw`
+  to wiersz czekającego pytania. Domyślny filtr `list` to `open,answered`; `--status` przyjmuje też `withdrawn` i `all`.
+- `wait <id>` zwraca od razu PASS (`event: answer`), gdy pytanie jest już odpowiedziane, a poza tym czeka na odpowiedź albo komentarz
+  nowszy niż `--since` (domyślnie „teraz”) lub `--after <id operacji>`. `wait --all` kończy się, gdy istnieje pytanie odpowiedziane
+  bez operacji `recorded` albo zdarzenie nowsze niż `--since`/`--after`. TIMEOUT to exit 3.
+- `record <id> --spec … --line <numer>` zapisuje tylko znacznik „wpisano do speca” (idempotentnie); `withdraw <id>` wycofuje pytanie otwarte,
+  także blokujące, i zwraca zwykły wiersz `Q` programisty (odpowiedzianego nie da się wycofać: `already_answered`).
+- `url` zwraca adres strony i liczbę kont `expert`; BLOCKED (`users_file_missing`, `users_file_invalid`, `no_expert_accounts`) znaczy, że
+  nie ma komu zadać pytania, więc agent pyta zwykle. Nie sprawdza, czy serwer działa (pole `running` mówi o stanie z pliku serwera).
+- `add`, `list`, `show`, `export` i `url` przyjmują `--users` (plik kont względem projektu, jak w `user`).
+- `merge --driver %O %A %B` to sterownik gita `skillsync-questions` (rejestracja: [prototypes](prototypes.md#pytania-do-eksperta-w-gicie));
+  `merge <projekt> <inny-questions.json>` scala ręcznie.
+- Kody wyjścia: 0 PASS, 1 FAIL, 2 BLOCKED, 3 TIMEOUT. `1` znaczy, że magazyn odrzucił treść albo stan (zła ścieżka w `--origin`,
+  nieznany `--refers-to`, `already_answered`, `withdrawn`, brak obu `--assume`/`--blocking` jako `invalid_mode`, konflikt scalania).
+  `2` znaczy błędne wywołanie albo środowisko (zły format `--origin`, `secret_detected`, plik za duży 507, uszkodzony plik, brak kont w `url`).
 
 ## Bezpieczeństwo
 
@@ -234,6 +286,7 @@ Raporty mają co najmniej te pola; konsument ignoruje pola, których nie zna.
 | `layers check --json` | `{schema: 1, status, project, rule, layers, findings: [{code, severity, layer, message}]}` |
 | `leakcheck --json` | `{schema: 1, status, coverage, target, findings: [{path, category, location}], notices, warnings}`; po udanym skanie także `authors_scope`, przy BLOCKED `reason` |
 | `prototype login-link --json` | `{schema: 1, status: "PASS", url, expires}` (`url` = `http://127.0.0.1:<port>/_login/link?t=<token>`, `expires` = ISO-8601 UTC, token tylko na stdout) albo `{schema: 1, status: "BLOCKED", reason, code}` z `code` ∈ (exit 2) `server_not_running` (brak serwera projektu: brak pliku stanu, martwy PID, inny `instance` albo inny plik użytkowników), `ambiguous_server` (kilka serwerów projektu bez `--port`), `link_needs_loopback` (host serwera inny niż `127.0.0.1`/`localhost`/wildcard), `link_unavailable` (serwer z `--trust-proxy`: brak endpointu linku), `run_dir_unsafe` (katalog `run/` z prawami ≠ 0700, innego właściciela lub dowiązanie), `unknown_user` (konto nie istnieje; nigdy nie jest tworzone), `password_change_required` (konto z `mustChange`), `invalid_path` (`--path` poza dozwolonymi), `invalid_port` (`--port` poza 1-65535), `invalid_project` (błędny projekt lub manifest), `too_many_pending` (32 oczekujące tokeny), `users_unreadable` (nieczytelny plik użytkowników); zapisy z sesji linku trafiają do lokalnego `.skillsync/prototype/run/audit.jsonl` (`{at, login, via, op, screen?}`), nie do `comments.json`; flagi `--user LOGIN` (wymagana), `--path /ścieżka`, `--port N`, `--users PLIK` |
+| `prototype question list`, `show`, `export` | `{schema: "expert-questions/1", status: "PASS", project, url?, questions: [{id, text, state: open|answered|withdrawn, blocking, assumed, addressees, refs, options, answer?: {by, name, at, optionId?, optionLabel?, text?, confirm?, comment?}, comments, refersTo?, origin: {spec, q}, recorded?: {spec, line, at}}]}`; `show` i `wait` dodają `answerLine`, `add` i `withdraw` `specLine`; klient ignoruje nieznane pola, zmiana niezgodna = nowa wartość `schema` |
 | `layers list --json` | `{schema: 1, status, generator_version, project, rule, layers: [{id, kind, path, root, subdir, version, writable, present}], composed_root, notes}` |
 
 ## Najczęstsze przepływy

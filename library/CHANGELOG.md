@@ -4,6 +4,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-12
+
+### Added
+- `skills/feature/references/spec.md`: klasa wiersza `[EKSPERT]` (cykl: czekające `(ekspert: qn-…)`, odpowiedź z autorem i czasem, powrót po `withdraw`), opt-in programisty w akcie I, opcja „Nie wiem, zapytaj eksperta” w zwykłym pytaniu, wykrycie zdolności przez `question url` (BLOCKED = pytanie zwykłe).
+- `skills/skillsync`: komendy `prototype question add|list|show|export|record|withdraw|url|wait|merge` i `prototype user roles`, plik `questions.json`, strona `/_experts`.
+
+### Changed
+- `skills/prototype` (`SKILL.md`, `references/decisions.md`): komentarz użytkownika z rolą `expert` jest głosem doradczym; `authorRoles`/`whoRoles` obok `authorRole`/`whoRole`.
+- `skills/feature/references/spec.md`: reguła usuwania blokujących `Q` po odpowiedzi ma wyjątek dla wierszy `(ekspert: qn-…)`.
+- `layer.yaml`: `version` i `core_min` 1.2.0 (warstwa wymaga rdzenia z komendami `question`). Warstwa `core` jest wydawana razem z rdzeniem, więc podniesienie jej `core_min` do wersji tego samego wydania nie jest zmianą MAJOR warstwy.
+
 ## [1.1.0] - 2026-11-11
 
 ### Added
