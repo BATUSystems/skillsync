@@ -5994,7 +5994,7 @@ class PrototypeApp(object):
 
     def collect_questions(self, viewer, slug=None):
         """`{questions, runs, legacy}` for `viewer`: `questions` of the run `slug` (all runs and the legacy file without
-        it), `runs` = `[{slug, open, answered, total}]` over every run with a visible question, `legacy` = `{count}` or None."""
+        it), `runs` = `[{slug, open, blocking, answered, total}]` over every run with a visible question, `legacy` = `{count}` or None."""
         views, runs, damaged, seen = [], [], [], set()
         for name in self.question_slugs():
             try:
@@ -7451,6 +7451,7 @@ EXPERTS_SCRIPT = r"""
     detail.setAttribute('aria-busy', on ? 'true' : 'false');
   }
   function lock(id, on) {
+    state.writes = (state.writes || 0) + 1;
     if (on) state.busy[id] = true; else delete state.busy[id];
     syncBusy();
   }
@@ -7546,6 +7547,8 @@ EXPERTS_SCRIPT = r"""
     var changed = id !== state.current;
     if (changed) { fail(''); say(''); }
     state.current = id;
+    state.shownSig = null;
+    state.notedSig = null;
     renderList();
     clear(detail);
     if (!id) {
@@ -7581,7 +7584,9 @@ EXPERTS_SCRIPT = r"""
     return open ? '(' + open + (blocking ? '!' : '') + ') ' + BASE_TITLE : BASE_TITLE;
   }
 
-  function updateTitle() { document.title = titleFor(state.runs); }
+  function updateTitle() {
+    document.title = titleFor(state.runs);
+  }
 
   // What the open detail shows of a question: a change of it is what the expert must hear about.
   function signature(question) {
@@ -7595,7 +7600,7 @@ EXPERTS_SCRIPT = r"""
     return found;
   }
 
-  // A started answer or comment (text, a ticked option, the focus in a field) is never redrawn.
+  // A started answer or comment (text, a ticked option, the focus inside the detail) is never redrawn.
   function formDirty() {
     var dirty = false;
     Array.prototype.forEach.call(detail.querySelectorAll('textarea'), function (field) {
@@ -7603,7 +7608,8 @@ EXPERTS_SCRIPT = r"""
     });
     Array.prototype.forEach.call(detail.querySelectorAll('input'), function (field) { if (field.checked) dirty = true; });
     var active = document.activeElement;
-    if (active && detail.contains && detail.contains(active) && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT' || active.tag === 'textarea' || active.tag === 'input')) dirty = true;
+    // the focus anywhere in the detail (a field, a button, a link) except the heading that a selection focuses
+    if (active && detail.contains(active) && active.id !== 'detail-title') dirty = true;
     return dirty;
   }
 
@@ -7612,19 +7618,27 @@ EXPERTS_SCRIPT = r"""
     state.runs = Array.isArray(data.runs) ? data.runs : [];
     state.legacy = data.legacy || null;
     updateTitle();
-    renderList();
-    if (!state.current) return;
+    var listSig = JSON.stringify([state.questions, state.runs, state.legacy]);
+    if (listSig !== state.listSig) {   // an unchanged list is not rebuilt: that would drop the focus of a keyboard user
+      state.listSig = listSig;
+      renderList();
+    }
+    if (!state.current || !state.shownSig) return;
     var now = findQuestion(state.current);
     if (!now) {
-      if (state.notedSig !== 'gone') say('To pytanie zniknęło z listy (wycofane albo nie jest już do Ciebie). Rozpoczęta odpowiedź zostaje na ekranie.');
-      state.notedSig = 'gone';
+      var gone = 'gone:' + state.current;
+      if (state.notedSig !== gone) {
+        say('To pytanie zniknęło z listy (wycofane albo nie jest już do Ciebie).' + (formDirty() ? ' Rozpoczęta odpowiedź zostaje na ekranie.' : ''));
+      }
+      state.notedSig = gone;
       return;
     }
     var sig = signature(now);
     if (sig === state.shownSig) return;
+    var noted = now.id + ':' + sig;
     if (formDirty() || state.busy[now.id]) {
-      if (state.notedSig !== sig) say('To pytanie zmieniło się na serwerze (np. ktoś odpowiedział lub dodał komentarz). Twoja rozpoczęta odpowiedź została nietknięta.');
-      state.notedSig = sig;
+      if (state.notedSig !== noted) say('To pytanie zmieniło się na serwerze (np. ktoś odpowiedział lub dodał komentarz). Twoja rozpoczęta odpowiedź została nietknięta.');
+      state.notedSig = noted;
       return;
     }
     renderDetail(now, true);
@@ -7634,9 +7648,11 @@ EXPERTS_SCRIPT = r"""
   function pollOnce() {
     if (document.hidden || pollBusy) return Promise.resolve(false);
     pollBusy = true;
+    var epoch = state.writes || 0;   // a save that finishes while this request is in flight makes its answer stale
     return api('GET', listPath()).then(function (result) {
       pollBusy = false;
       if (result.status === 401) { describe(result); return false; }
+      if ((state.writes || 0) !== epoch) return false;
       if (result.status !== 200 || !result.data || !Array.isArray(result.data.questions)) return false;
       applyPolled(result.data);
       return true;
@@ -7654,6 +7670,7 @@ EXPERTS_SCRIPT = r"""
         state.questions = result.data.questions;
         state.runs = Array.isArray(result.data.runs) ? result.data.runs : [];
         state.legacy = result.data.legacy || null;
+        state.listSig = JSON.stringify([state.questions, state.runs, state.legacy]);
         updateTitle();
         return true;
       }

@@ -611,13 +611,13 @@ function grab(name) {
   const end = script.indexOf('\n  }\n', start);
   return script.slice(start, end + 4);
 }
-function field(tag, value, checked) { return { tag, value: value || '', checked: !!checked }; }
+function field(tag, value, checked, id) { return { tag, value: value || '', checked: !!checked, id: id || '' }; }
 const calls = []; const said = []; const rendered = { list: 0, detail: [] }; const intervals = []; const listeners = {};
 let apiResult = { status: 200, data: { questions: [], runs: [], legacy: null } };
 let gate = null;
 const detail = { fields: [], contains(x) { return this.fields.includes(x); },
   querySelectorAll(sel) { return this.fields.filter(f => (sel === 'textarea' ? f.tag === 'textarea' : sel === 'input' ? f.tag === 'input' : false)); } };
-const ctx = { state: { csrf: 'c', questions: [], runs: [], legacy: null, current: null, pending: {}, busy: {}, shownSig: null, notedSig: null },
+const ctx = { state: { csrf: 'c', questions: [], runs: [], legacy: null, current: null, pending: {}, busy: {}, shownSig: null, notedSig: null, listSig: null, writes: 0 },
   detail, document: { hidden: false, title: '', activeElement: null, addEventListener(t, fn) { listeners[t] = fn; } },
   say(t) { said.push(t); }, fail() {}, renderList() { rendered.list += 1; }, renderDetail(q, keep) { rendered.detail.push([q.id, keep]); },
   api(method, path) { calls.push(path); return gate ? gate.then(() => apiResult) : Promise.resolve(apiResult); },
@@ -649,13 +649,14 @@ const done = async () => {
   // detail logic
   ctx.state.current = 'qn-aaaaaa'; ctx.state.questions = [q()]; ctx.state.shownSig = vm.runInContext('signature(' + JSON.stringify(q()) + ')', ctx);
   said.length = 0; rendered.list = 0; rendered.detail.length = 0;
-  // 1) unchanged question: list redrawn, detail untouched, no message
+  // 1) unchanged data: the list is NOT rebuilt (it would drop the keyboard focus), detail untouched, no message
+  ctx.state.listSig = JSON.stringify([apiResult.data.questions, apiResult.data.runs, apiResult.data.legacy]);
   await vm.runInContext('pollOnce()', ctx);
   out.unchanged = { list: rendered.list, detail: rendered.detail.length, said: said.length, title: ctx.document.title };
   // 2) changed question, empty form: detail redrawn with the new view
   apiResult.data.questions = [q({ state: 'answered', answer: { at: 't1', by: 'x' } })];
   await vm.runInContext('pollOnce()', ctx);
-  out.cleanChanged = { detail: rendered.detail.slice(), said: said.slice() };
+  out.cleanChanged = { detail: rendered.detail.slice(), said: said.slice(), list: rendered.list };
   // 3) changed again while the user has typed: form untouched, one message only
   rendered.detail.length = 0; said.length = 0;
   ctx.state.shownSig = vm.runInContext('signature(' + JSON.stringify(q({ state: 'answered', answer: { at: 't1', by: 'x' } })) + ')', ctx);
@@ -676,6 +677,28 @@ const done = async () => {
   apiResult.data.questions = [q({ state: 'answered', answer: { at: 't9' } })];
   await vm.runInContext('pollOnce()', ctx);
   out.busy = { detail: rendered.detail.length, said: said.length };
+  delete ctx.state.busy['qn-aaaaaa'];
+  // 7) the focus on the heading (a selection) is not a started answer; the focus on a button inside the detail is
+  const heading = field('h2', '', false, 'detail-title'); detail.fields = [heading]; ctx.document.activeElement = heading;
+  out.headingFocusClean = !vm.runInContext('formDirty()', ctx);
+  const button = field('button', '', false, 'answer-send'); detail.fields = [button]; ctx.document.activeElement = button;
+  out.buttonFocusDirty = vm.runInContext('formDirty()', ctx);
+  ctx.document.activeElement = null; detail.fields = [];
+  // 8) a save that finishes while the request is in flight makes its answer stale: nothing is applied
+  ctx.state.shownSig = 'old'; ctx.state.current = 'qn-aaaaaa'; rendered.detail.length = 0; rendered.list = 0; said.length = 0;
+  apiResult = { status: 200, data: { questions: [q({ state: 'answered', answer: { at: 't7' } })], runs: [], legacy: null } };
+  let release2; gate = new Promise(r => { release2 = r; });
+  const inflight = vm.runInContext('pollOnce()', ctx); ctx.state.writes += 1; release2(); gate = null;
+  out.staleApplied = await inflight; out.staleEffects = { list: rendered.list, detail: rendered.detail.length, said: said.length };
+  // 9) the note is per question: the same signature on another question is announced again; no note without a shown detail
+  detail.fields = [field('textarea', 'x')]; said.length = 0;
+  ctx.state.notedSig = null; ctx.state.current = 'qn-aaaaaa'; ctx.state.shownSig = 'old';
+  apiResult.data.questions = [q({ state: 'answered', answer: { at: 't7' } }), q({ id: 'qn-bbbbbb', state: 'answered', answer: { at: 't7' } })];
+  await vm.runInContext('pollOnce()', ctx); const firstNote = said.length;
+  ctx.state.current = 'qn-bbbbbb'; ctx.state.shownSig = 'old'; await vm.runInContext('pollOnce()', ctx);
+  out.perQuestionNotes = [firstNote, said.length];
+  ctx.state.shownSig = null; said.length = 0; ctx.state.current = 'qn-gone'; await vm.runInContext('pollOnce()', ctx);
+  out.noNoteWithoutDetail = said.length;
   console.log(JSON.stringify(out));
 };
 done();
@@ -767,7 +790,8 @@ class ScriptBehaviorTests(ExpertsPageBase):
         self.assertTrue(out['loggedOut'], '401 prowadzi do logowania')
         self.assertFalse(out['quietFail'])
         self.assertEqual(out['saidAfterFail'], 0, 'błąd odpytywania nie zaśmieca komunikatów')
-        self.assertEqual(out['unchanged'], {'list': 1, 'detail': 0, 'said': 0, 'title': '(1) ' + base})
+        self.assertEqual(out['unchanged'], {'list': 0, 'detail': 0, 'said': 0, 'title': '(1) ' + base})   # lista bez zmian nie jest przebudowywana
+        self.assertEqual(out['cleanChanged']['list'], 1, 'lista zmieniona: przebudowana raz')
         self.assertEqual(out['cleanChanged']['detail'], [['qn-aaaaaa', True]])
         self.assertEqual(len(out['cleanChanged']['said']), 1)
         self.assertEqual(out['dirtyText']['detail'], 0, 'rozpoczęta odpowiedź nie jest przerysowana')
@@ -779,12 +803,21 @@ class ScriptBehaviorTests(ExpertsPageBase):
         self.assertEqual(out['vanished']['detail'], 0)
         self.assertEqual(len(out['vanished']['said']), 1)
         self.assertEqual(out['busy'], {'detail': 0, 'said': 1})
+        self.assertTrue(out['headingFocusClean'], 'fokus na nagłówku po wyborze pytania to nie rozpoczęta odpowiedź')
+        self.assertTrue(out['buttonFocusDirty'], 'fokus na przycisku w szczególe chroni przed przerysowaniem')
+        self.assertFalse(out['staleApplied'])
+        self.assertEqual(out['staleEffects'], {'list': 0, 'detail': 0, 'said': 0}, 'odpowiedź odpytania po zapisie jest odrzucana')
+        self.assertEqual(out['perQuestionNotes'], [1, 2], 'komunikat jest per pytanie')
+        self.assertEqual(out['noNoteWithoutDetail'], 0)
 
     def test_polling_is_wired_into_the_page_and_the_csp_hash_follows_the_script(self):
         self.assertIn('var POLL_MS = 15000;', self.script)
         self.assertIn('startPolling();', self.script)
         self.assertIn("document.addEventListener('visibilitychange'", self.script)
         self.assertNotIn('setTimeout(', self.script, 'cykl odpytywania to jeden setInterval, bez łańcucha timerów')
+        self.assertIn('    state.shownSig = signature(question);\n    clear(detail);', self.script, 'szczegół zapamiętuje, co pokazuje')
+        self.assertIn('    state.shownSig = null;\n    state.notedSig = null;\n    renderList();', self.script, 'zmiana pytania zeruje stan odświeżania')
+        self.assertIn('state.writes = (state.writes || 0) + 1;', self.script)
 
     def test_node_pure_functions(self):
         node = shutil.which('node')
