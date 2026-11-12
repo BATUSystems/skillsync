@@ -410,6 +410,11 @@ oznacza to przez `question record`; programista dostaje informację, nie pytanie
   rekordów jest wstawiana jako tekst, więc `<script>` w wyciągu, komentarzu albo odpowiedzi nie działa. Link jest klikalny tylko dla `https`
   (`rel="noopener noreferrer"`), adres względny jest pokazany jako tekst.
 - Fragment `#qn-…` z adresu zwróconego przez `question add` nie przeżywa logowania: po zalogowaniu wybierz pytanie z listy.
+- Strona odświeża listę sama co 15 s (pauza, gdy karta jest ukryta; po powrocie na kartę od razu), więc ekspert zauważa nowe pytanie, także blokujące,
+  bez przeładowania. Tytuł karty pokazuje liczbę otwartych pytań po wszystkich przebiegach: „(2) Pytania do eksperta”, a „(2!) …”, gdy któreś z nich jest blokujące.
+  Odświeżanie nie przerysowuje rozpoczętej odpowiedzi ani komentarza (tekst w polu, zaznaczony wariant albo fokus w polu): lista się aktualizuje,
+  a gdy to pytanie zmieniło się na serwerze (ktoś odpowiedział, dodał komentarz), strona pokazuje komunikat (raz), nie nadpisuje formularza.
+  Przy pustym formularzu szczegół jest odświeżany. Błąd sieci przy odświeżaniu jest cichy (następna próba za 15 s), wygasła sesja prowadzi do logowania.
 
 ### Widoczność i dane
 

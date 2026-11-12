@@ -602,6 +602,86 @@ console.log(JSON.stringify(out));
 """
 
 
+NODE_HARNESS_POLL = r"""
+const fs = require('fs'); const vm = require('vm');
+const script = fs.readFileSync(process.argv[2], 'utf8');
+function grab(name) {
+  const start = script.indexOf('  function ' + name + '(');
+  if (start < 0) throw new Error('brak funkcji ' + name);
+  const end = script.indexOf('\n  }\n', start);
+  return script.slice(start, end + 4);
+}
+function field(tag, value, checked) { return { tag, value: value || '', checked: !!checked }; }
+const calls = []; const said = []; const rendered = { list: 0, detail: [] }; const intervals = []; const listeners = {};
+let apiResult = { status: 200, data: { questions: [], runs: [], legacy: null } };
+let gate = null;
+const detail = { fields: [], contains(x) { return this.fields.includes(x); },
+  querySelectorAll(sel) { return this.fields.filter(f => (sel === 'textarea' ? f.tag === 'textarea' : sel === 'input' ? f.tag === 'input' : false)); } };
+const ctx = { state: { csrf: 'c', questions: [], runs: [], legacy: null, current: null, pending: {}, busy: {}, shownSig: null, notedSig: null },
+  detail, document: { hidden: false, title: '', activeElement: null, addEventListener(t, fn) { listeners[t] = fn; } },
+  say(t) { said.push(t); }, fail() {}, renderList() { rendered.list += 1; }, renderDetail(q, keep) { rendered.detail.push([q.id, keep]); },
+  api(method, path) { calls.push(path); return gate ? gate.then(() => apiResult) : Promise.resolve(apiResult); },
+  listPath() { return '/questions'; }, toLogin() { ctx.loggedOut = true; }, describe(r) { if (r.status === 401) ctx.toLogin(); return 'x'; }, loggedOut: false,
+  setInterval(fn, ms) { intervals.push({ fn, ms }); return 1; }, BASE_TITLE: 'Pytania do eksperta' };
+vm.createContext(ctx);
+vm.runInContext('var POLL_MS = 15000; var pollBusy = false;\n' +
+  ['titleFor', 'updateTitle', 'signature', 'formDirty', 'findQuestion', 'applyPolled', 'pollOnce', 'startPolling'].map(grab).join('\n'), ctx);
+const out = {};
+const q = (over) => Object.assign({ id: 'qn-aaaaaa', state: 'open', comments: [], answer: null, recorded: null, blocking: false }, over);
+// title
+out.titles = [[], [{ open: 0, blocking: 0 }], [{ open: 2, blocking: 0 }, { open: 1, blocking: 0 }], [{ open: 2, blocking: 1 }, { open: 1, blocking: 0 }]]
+  .map(r => vm.runInContext('titleFor(' + JSON.stringify(r) + ')', ctx));
+ctx.state.runs = [{ slug: 'a', open: 4, blocking: 2 }]; vm.runInContext('updateTitle()', ctx); out.docTitle = ctx.document.title;
+// polling schedule: interval, hidden pause, immediate poll on return
+vm.runInContext('startPolling()', ctx);
+out.interval = intervals.map(i => i.ms);
+const done = async () => {
+  ctx.document.hidden = true; await intervals[0].fn(); out.callsWhileHidden = calls.length;
+  ctx.document.hidden = false; listeners.visibilitychange(); await new Promise(r => setTimeout(r, 5)); out.callsOnReturn = calls.length;
+  // only one request at a time
+  let release; gate = new Promise(r => { release = r; });
+  const first = vm.runInContext('pollOnce()', ctx); const second = vm.runInContext('pollOnce()', ctx);
+  release(); gate = null; await first; out.secondSkipped = (await second) === false; out.callsAfterConcurrent = calls.length;
+  // 401 -> login; other failures quiet
+  apiResult = { status: 401, data: {} }; await vm.runInContext('pollOnce()', ctx); out.loggedOut = ctx.loggedOut;
+  apiResult = { status: 500, data: {} }; out.quietFail = await vm.runInContext('pollOnce()', ctx); out.saidAfterFail = said.length;
+  apiResult = { status: 200, data: { questions: [q()], runs: [{ slug: 'a', open: 1, blocking: 0 }], legacy: null } };
+  // detail logic
+  ctx.state.current = 'qn-aaaaaa'; ctx.state.questions = [q()]; ctx.state.shownSig = vm.runInContext('signature(' + JSON.stringify(q()) + ')', ctx);
+  said.length = 0; rendered.list = 0; rendered.detail.length = 0;
+  // 1) unchanged question: list redrawn, detail untouched, no message
+  await vm.runInContext('pollOnce()', ctx);
+  out.unchanged = { list: rendered.list, detail: rendered.detail.length, said: said.length, title: ctx.document.title };
+  // 2) changed question, empty form: detail redrawn with the new view
+  apiResult.data.questions = [q({ state: 'answered', answer: { at: 't1', by: 'x' } })];
+  await vm.runInContext('pollOnce()', ctx);
+  out.cleanChanged = { detail: rendered.detail.slice(), said: said.slice() };
+  // 3) changed again while the user has typed: form untouched, one message only
+  rendered.detail.length = 0; said.length = 0;
+  ctx.state.shownSig = vm.runInContext('signature(' + JSON.stringify(q({ state: 'answered', answer: { at: 't1', by: 'x' } })) + ')', ctx);
+  detail.fields = [field('textarea', 'moja rozpoczęta odpowiedź')];
+  apiResult.data.questions = [q({ state: 'answered', answer: { at: 't1', by: 'x' }, comments: [{ at: 't2' }] })];
+  await vm.runInContext('pollOnce()', ctx); await vm.runInContext('pollOnce()', ctx);
+  out.dirtyText = { detail: rendered.detail.length, said: said.slice() };
+  // 4) ticked option, empty text, counts as dirty; focus in a field counts too
+  detail.fields = [field('input', '', true)]; out.dirtyChecked = vm.runInContext('formDirty()', ctx);
+  const focused = field('textarea', ''); detail.fields = [focused]; ctx.document.activeElement = focused; out.dirtyFocus = vm.runInContext('formDirty()', ctx);
+  ctx.document.activeElement = null; detail.fields = [field('textarea', '   '), field('input', '', false)]; out.cleanForm = !vm.runInContext('formDirty()', ctx);
+  // 5) the selected question vanished from the list: message, detail kept
+  rendered.detail.length = 0; said.length = 0; detail.fields = [];
+  apiResult.data.questions = []; await vm.runInContext('pollOnce()', ctx);
+  out.vanished = { detail: rendered.detail.length, said: said.slice() };
+  // 6) a write in progress blocks the redraw
+  ctx.state.busy['qn-aaaaaa'] = true; ctx.state.shownSig = 'old'; rendered.detail.length = 0; said.length = 0;
+  apiResult.data.questions = [q({ state: 'answered', answer: { at: 't9' } })];
+  await vm.runInContext('pollOnce()', ctx);
+  out.busy = { detail: rendered.detail.length, said: said.length };
+  console.log(JSON.stringify(out));
+};
+done();
+"""
+
+
 class ScriptBehaviorTests(ExpertsPageBase):
     """Poprawki E4: czyste funkcje skryptu wyciągnięte z EXPERTS_SCRIPT i uruchomione w node z atrapami DOM/fetch."""
 
@@ -663,6 +743,48 @@ class ScriptBehaviorTests(ExpertsPageBase):
         self.assertEqual(out['singleRadios'], 4)   # 3 opcje + własna (assumed null: bez potwierdzenia)
         self.assertEqual(out['sentSingle']['payload'], {'optionId': 'o2'})
         self.assertEqual(out['summary'][1], 'CSV, PDF')
+
+    def test_auto_refresh_in_node(self):
+        node = shutil.which('node')
+        if not node:
+            self.skipTest('brak node w środowisku')
+        import json
+        with tempfile.TemporaryDirectory(prefix='experts-js-') as tmp:
+            (Path(tmp) / 'experts.js').write_text(self.script, encoding='utf-8')
+            (Path(tmp) / 'harness.js').write_text(NODE_HARNESS_POLL, encoding='utf-8')
+            done = subprocess.run([node, str(Path(tmp) / 'harness.js'), str(Path(tmp) / 'experts.js')],
+                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
+        self.assertEqual(done.returncode, 0, done.stderr.decode('utf-8', 'replace'))
+        out = json.loads(done.stdout.decode('utf-8'))
+        base = 'Pytania do eksperta'
+        self.assertEqual(out['titles'], [base, base, '(3) ' + base, '(3!) ' + base])
+        self.assertEqual(out['docTitle'], '(4!) ' + base)
+        self.assertEqual(out['interval'], [15000])
+        self.assertEqual(out['callsWhileHidden'], 0, 'ukryta karta: bez odpytywania')
+        self.assertEqual(out['callsOnReturn'], 1, 'powrót na kartę: od razu jedno odpytanie')
+        self.assertTrue(out['secondSkipped'])
+        self.assertEqual(out['callsAfterConcurrent'], 2, 'jedno żądanie naraz')
+        self.assertTrue(out['loggedOut'], '401 prowadzi do logowania')
+        self.assertFalse(out['quietFail'])
+        self.assertEqual(out['saidAfterFail'], 0, 'błąd odpytywania nie zaśmieca komunikatów')
+        self.assertEqual(out['unchanged'], {'list': 1, 'detail': 0, 'said': 0, 'title': '(1) ' + base})
+        self.assertEqual(out['cleanChanged']['detail'], [['qn-aaaaaa', True]])
+        self.assertEqual(len(out['cleanChanged']['said']), 1)
+        self.assertEqual(out['dirtyText']['detail'], 0, 'rozpoczęta odpowiedź nie jest przerysowana')
+        self.assertEqual(len(out['dirtyText']['said']), 1, 'komunikat o zmianie pytania pojawia się raz')
+        self.assertIn('zmieni', out['dirtyText']['said'][0])
+        self.assertTrue(out['dirtyChecked'])
+        self.assertTrue(out['dirtyFocus'])
+        self.assertTrue(out['cleanForm'])
+        self.assertEqual(out['vanished']['detail'], 0)
+        self.assertEqual(len(out['vanished']['said']), 1)
+        self.assertEqual(out['busy'], {'detail': 0, 'said': 1})
+
+    def test_polling_is_wired_into_the_page_and_the_csp_hash_follows_the_script(self):
+        self.assertIn('var POLL_MS = 15000;', self.script)
+        self.assertIn('startPolling();', self.script)
+        self.assertIn("document.addEventListener('visibilitychange'", self.script)
+        self.assertNotIn('setTimeout(', self.script, 'cykl odpytywania to jeden setInterval, bez łańcucha timerów')
 
     def test_node_pure_functions(self):
         node = shutil.which('node')
