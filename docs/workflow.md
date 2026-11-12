@@ -11,7 +11,7 @@ i wiele sesji) jest w [workflow-details.md](workflow-details.md). Wersję HTML o
 w przeglądarce buduje `python3 docs/site/build.py` do `docs/site/out/` (katalog poza gitem; opis w
 [site/README.md](site/README.md)).
 
-Stan opisu: Skillsync `v1.2.1`.
+Stan opisu: Skillsync `v1.3.0`.
 
 ## Słownik
 

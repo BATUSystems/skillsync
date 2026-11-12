@@ -107,7 +107,7 @@ Tabela opiera się na wynikach CI (testy, install smoke). Ręczne testy na macOS
 ## Instalacja
 
 ```bash
-uv tool install git+https://github.com/BATUSystems/skillsync@v1.2.1
+uv tool install git+https://github.com/BATUSystems/skillsync@v1.3.0
 ```
 
 Sprawdź instalację:
@@ -133,7 +133,7 @@ opcje i rozwiązywanie problemów: [docs/installation.md](docs/installation.md#s
 curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/BATUSystems/skillsync/<tag>/install.sh | sh
 ```
 
-Zamiast `<tag>` podaj tag wydania (np. `v1.2.1`). Natywny Windows nie jest obsługiwany przez instalator: użyj WSL2.
+Zamiast `<tag>` podaj tag wydania (np. `v1.3.0`). Natywny Windows nie jest obsługiwany przez instalator: użyj WSL2.
 Poniższe kroki robią to samo ręcznie.
 
 Ta ścieżka nie wymaga warstwy organizacji: wystarczy warstwa osobista i warstwa core.
@@ -152,7 +152,7 @@ sync: {method: symlink}
 
 ```bash
 # 1. Dodaj warstwę core (skille, workflow i role); należy do każdej reguły
-skillsync layers add core --kind core --source https://github.com/BATUSystems/skillsync --subdir library --ref v1.2.1
+skillsync layers add core --kind core --source https://github.com/BATUSystems/skillsync --subdir library --ref v1.3.0
 
 # 2. Utwórz szkielet własnej warstwy osobistej (repo git) i zacommituj go:
 #    `layers add` klonuje repo, więc szkielet musi być najpierw w commicie

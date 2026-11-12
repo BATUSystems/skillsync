@@ -12,6 +12,8 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-11-12
+
 ### Added
 
 - `skillsync prototype writing <projekt> <slug> start|done|status [--ttl <s>] [--by <login>]`: a marker "the agent is still writing screens"
