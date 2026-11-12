@@ -4,6 +4,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-11-12
+
+### Changed
+- `skills/dashboard` (`assets/dashboard-render.js`, `assets/app.js`, `SKILL.md`): pozycja „sesja czeka na Ciebie” i tytuł karty znikają po zapisaniu zgody, a komunikat o wyniku zgody gaśnie sam (10 s, błąd 30 s, odliczanie stoi przy ukrytej karcie).
+- `skills/feature` (`SKILL.md`, `references/ceremony-demo.md`, `plan-details.md`, `retro-quality.md`, `review-loop.md`) i `skills/prototype/SKILL.md`: postępowanie przy `BLOCKED tty_required` przy akceptacji prototypu (poproś osobę o kliknięcie Akceptuj na stronie, czekaj dalej); w ceremonii `demo` przegląd `kod` ma najwyżej 2 rundy; cięcie zakresu dopiero po przekroczeniu progu planu albo za zgodą prowadzącego.
+- `skills/agent-runtime-pitfalls`: cztery nowe pułapki (`npm ci` z niewłaściwą wersją npm, potok gubiący kod wyjścia runnera testów, zegar sesji odbiegający od maszyny, `=====` w zsh jako argument i odwrotne apostrofy w `echo`).
+
+### Fixed
+- `skills/prototype` (`assets/repo/prototype.js`, `prototype.css`, `references/screen-patterns.md`): nawigacja ekranów zawsze ma odnośnik „domek” do listy prototypów, także w prostym pasku (`data-proto-nav="strip"`); pasek działa tylko do 5 ekranów, przy większej liczbie atrybut jest ignorowany i powstaje rozwijany przełącznik z wyszukiwarką (nowy eksport silnika `screenNavMode`). Istniejące prototypy dostają nowy silnik przez `skillsync prototype migrate` albo `sync`.
+
 ## [1.1.1] - 2026-11-12
 
 ### Added
