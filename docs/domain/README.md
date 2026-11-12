@@ -20,6 +20,7 @@ skill `workflow`, `library/skills/workflow/references/knowledge.md`; weryfikacj�
 | [retro-proposals.md](retro-proposals.md) | propozycje retrospektywy: rejestr `proposals:`, stany, kolejność, skan progu, maskowanie między projektami |
 | [prototype-manifest-and-cli.md](prototype-manifest-and-cli.md) | sekcja `prototype:` i komenda `skillsync prototype` (zapis w repo, komentarze, tokeny) |
 | [prototype-comments-server.md](prototype-comments-server.md) | wspólne komentarze prototypów: serwer, dziennik `comments.json` v2, fold zgodny z JS, użytkownicy, sesje, odczyt publiczny, iteracje, przywracanie, decyzje agenta, scalanie, akceptacja i bramka prototypu, słownik |
+| [expert-questions.md](expert-questions.md) | pytania do eksperta: `questions.json`, fold, widoczność, limity, CLI `prototype question`, wiersz `[EKSPERT]`, konta z wieloma rolami |
 
 Maszynowy indeks: [index.yaml](index.yaml) (`version: 1`, klucz `entries`; `paths` względne do korzenia repo).
 

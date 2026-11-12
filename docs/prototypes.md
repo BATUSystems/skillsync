@@ -224,6 +224,14 @@ polecenia dla agenta.
 | `commenter` | komentować, odpowiadać, głosować, edytować i wycofywać własne wpisy |
 | `acceptor` | to co `commenter` oraz akceptować ekrany i cofać własną akceptację |
 | `developer` | to co `acceptor` oraz usuwać wątki, zamykać i otwierać cudze, cofać każdą akceptację |
+| `expert` | odpowiadać na pytania do eksperta i je komentować ([niżej](#pytania-do-eksperta)); w makiecie komentuje jak `commenter`, a jego komentarz jest głosem doradczym |
+
+Konto może mieć kilka ról (np. `expert` i `acceptor`): uprawnienia się sumują, a `session.user.role` pokazuje najwyższą w kolejności
+`developer`, `acceptor`, `expert`, `commenter` (`session.user.roles` to cała lista). Rola `expert` nie jest uprzywilejowana: nie daje dostępu do
+`/project`, przywracania ani akceptacji. W chipie konta silnika JS prototypów rola `expert` wyświetla się jako surowe „expert” (bez etykiety).
+Komentarz konta wyłącznie z rolą `expert` do makiety jest głosem doradczym: agent nie zmienia makiety bez `decide` osoby z rolą `developer`
+albo `acceptor`; konto z `expert` i `developer`/`acceptor` nie jest doradcze. Dziennik `comments.json` ma ten sam format (`authorRole` to
+najwyższa rola, `authorRoles` lista).
 
 Konta są w pliku użytkowników serwera: domyślnie `<projekt>/.skillsync/prototype/users.json` (inny plik: `--users`,
 ścieżka względem projektu). Plik ma tryb 0600, nie może leżeć w katalogu prototypów, a w repo gita musi być
@@ -236,13 +244,18 @@ skillsync prototype user passwd . anna.nowak@szkola.example                    #
 skillsync prototype user remove . anna.nowak@szkola.example                    # sesje konta kończą się
 skillsync prototype user list .                                                # bez skrótów haseł
 skillsync prototype user import . testerzy.txt                                 # adresy po jednym w linii; ścieżka względem projektu
+skillsync prototype user add . ewa.ekspert@example.com --role expert --role commenter --password-prompt  # kilka ról: --role powtarzane
+skillsync prototype user roles . ewa.ekspert@example.com --role acceptor      # zastępuje zbiór ról istniejącego konta
 ```
 
 - Hasło podaje `--password-prompt` (pytanie w terminalu) albo `--password-stdin` (ze standardowego wejścia);
   minimum 10 znaków.
 - Bez tych flag konto dostaje hasło domyślne z configu maszyny (`prototype.default_password`, plik 0600) i musi je
   zmienić przy pierwszym logowaniu. Żadna komenda nie wypisuje hasła domyślnego.
-- Dla ról `acceptor` i `developer` ustaw hasło od razu (`--password-prompt`).
+- Dla ról `acceptor`, `developer` i `expert` ustaw hasło od razu (`--password-prompt`); `add` i `import` ostrzegają o haśle domyślnym także dla `expert`.
+- `--role` domyślnie wynosi `commenter`; `user roles` wymaga co najmniej jednej roli i zmienia tylko wskazane konto.
+- W pliku kont pole `role` zawiera zawsze najwyższą rolę ze zbioru `developer` > `acceptor` > `commenter` (konto tylko z `expert` ma `commenter`), a pole `roles` dochodzi
+  obok tylko dla kont z rolą `expert` albo z kilkoma rolami. Odczyt nie zmienia pliku, zmiana hasła przepisuje tylko to jedno konto.
 - Serwer czyta zmiany pliku użytkowników na bieżąco, bez restartu.
 
 ### Iteracje i przywracanie
@@ -367,6 +380,56 @@ Skutki `migrate`:
 Starszy Skillsync (bez obsługi `view`) scala dziennik gitem z konfliktem dla operacji `create` z polem `view`, bez
 utraty danych: plik nie jest przepisywany, dopóki nie zaktualizujesz Skillsync.
 
+## Pytania do eksperta
+
+Część pytań z aktu I (spec) wymaga wiedzy domenowej, której programista nie ma. Agent zadaje je ekspertom (konta z rolą `expert`) przez ten
+sam serwer, z kontekstem: tekst, linki z wyciągami, warianty z rekomendacją agenta i wartość przyjęta. Ekspert odpowiada na stronie
+`/_experts`; odpowiedź wraca do speca w gicie jako wiersz `[EKSPERT]`.
+
+Agent: `skillsync prototype question add|list|show|export|record|withdraw|url|wait|merge` ([cli](cli.md#pytania-do-eksperta-prototype-question-prototype-user-roles)).
+Pytanie jest domyślnie **nieblokujące** (`--assume`: agent idzie dalej z wartością przyjętą, ekspert ją potwierdza albo koryguje);
+pytania o kontrakt, dane, migrację i bezpieczeństwo agent zadaje jako blokujące (`--blocking`). Pytanie jest do wszystkich ekspertów
+albo do wskazanych loginów (`--to`). Pierwsza odpowiedź zamyka pytanie i jest ostateczna: nie ma edycji ani unieważnienia, spór to nowe
+pytanie z `--refers-to`, a stara odpowiedź zostaje widoczna. Agent wpisuje odpowiedź do speca z autorem i czasem (`answerLine`) i
+oznacza to przez `question record`; programista dostaje informację, nie pytanie.
+
+### Strona `/_experts`
+
+- Adres: `http://<host>:<port>/_experts` (`question url` podaje go razem z liczbą kont `expert`). Bez sesji przekierowanie do `/_login?next=/_experts`.
+  Konto z hasłem domyślnym widzi komunikat i link do zmiany hasła; odpowiadać może dopiero po zmianie (403 `password_change_required`).
+- Lista pytań widocznych dla konta, szczegóły (tekst, linki, wyciągi), wybór wariantu (rekomendacja agenta jest oznaczona), „Potwierdzam przyjętą
+  wartość”, własna odpowiedź z opcjonalnym komentarzem oraz osobny komentarz do pytania (także po zamknięciu). Obsługa klawiaturą, stany błędu
+  (401 powrót do logowania, 403, 409 `already_answered` z odświeżeniem widoku, brak połączenia).
+- Strona ma własny ścisły CSP (`default-src 'none'`, skrypt i styl z hashem, `connect-src 'self'`, `frame-ancestors 'none'`); cała treść z
+  rekordów jest wstawiana jako tekst, więc `<script>` w wyciągu, komentarzu albo odpowiedzi nie działa. Link jest klikalny tylko dla `https`
+  (`rel="noopener noreferrer"`), adres względny jest pokazany jako tekst.
+- Fragment `#qn-…` z adresu zwróconego przez `question add` nie przeżywa logowania: po zalogowaniu wybierz pytanie z listy.
+
+### Widoczność i dane
+
+- `questions.json` nie jest serwowany statycznie nikomu (404, także z sesją). Pytania zwraca wyłącznie `GET /_api/v1/questions` i
+  `/questions/<id>`, z sesją wymaganą **zawsze**, także bez `--login-to-view`. `commenter` dostaje 403; `developer` i `acceptor` widzą wszystko,
+  ekspert tylko pytania do wszystkich i zaadresowane do siebie (cudze: 404, żeby nie ujawniać istnienia). Ekspert nie dostaje niczego z
+  repozytorium poza wyciągami zapisanymi w pytaniu. `developer` i `acceptor` bez roli `expert` mogą tylko komentować.
+- Zapisy (`answer`, `comment`) są limitowane per login: 60 na 60 s (429 `rate_limited` z `retryAfter`), najwyżej 50 komentarzy na pytanie
+  (409 `comment_limit`). Plik ma 1 MiB: nowe pytanie jest odrzucane powyżej 768 KiB, komentarz powyżej 896 KiB, odpowiedź do 1 MiB (507
+  `file_too_large`); progi liczone są od rozmiaru przed zapisem. Drugi ekspert, który odpowiada na zamknięte pytanie, dostaje 409 `already_answered`.
+- Serwer ostrzega przy starcie, gdy istnieją konta `expert`, a serwer działa bez `--login-to-view`: bez niego prototypy i komentarze są
+  jawne, więc uruchamiaj `serve` z `--login-to-view` i hasłami ustawionymi przez `--password-prompt`.
+
+### Pytania do eksperta w gicie
+
+`questions.json` jest śledzony w gicie, a `questions.json.lock` i `*.tmp` ignorowane: `question add` dopisuje brakujące linie do
+`<root>/.gitignore` i `<root>/.gitattributes` (`questions.json merge=skillsync-questions`). Zarejestruj sterownik raz w repo:
+
+```bash
+git config merge.skillsync-questions.driver "skillsync prototype question merge --driver %O %A %B"
+```
+
+Sterownik łączy dwie kopie jako sumę operacji (po `id`, posortowaną po `at` i `id`). Druga odpowiedź na to samo pytanie jest w scalonym
+dzienniku zwykłym komentarzem; operacja `answer` bez `ask` albo ten sam `id` z inną treścią to FAIL (exit 1) i plik zostaje nietknięty.
+Ręcznie: `skillsync prototype question merge . <inny-questions.json>`.
+
 ## Komentarze w gicie
 
 `comments.json` jest dopisywany przez serwer, więc dwie gałęzie z komentarzami do tego samego prototypu trzeba scalać
@@ -427,6 +490,7 @@ Zmiany plików prototypu (HTML, CSS, `comments.json`, użytkownicy) widzi bez re
 | Pasek „Prototyp zmieniono”, zapis daje 409 `stale_view` | ktoś zmienił pliki prototypu po wczytaniu strony | przeładuj stronę i powtórz działanie |
 | `iterate` albo `restore` kończy się `incomplete_restore` | przerwane wcześniejsze przywrócenie albo zamrożenie | `skillsync prototype restore . <slug> --resume`; szczegóły w wyniku i w [cli.md](cli.md) |
 | W katalogu prototypów został `.<slug>-staging-…` | `init` przerwany twardym zabiciem procesu | usuń ten katalog ręcznie |
+| `/_experts` daje 403 albo pytanie nie jest widoczne | konto bez roli `expert`, pytanie zaadresowane do kogoś innego (404), konto z hasłem domyślnym (`password_change_required`) | `skillsync prototype user roles . <login> --role expert`, sprawdź adresatów w `question show`, zmień hasło |
 | Nowe konto nie może komentować | konto z hasłem domyślnym musi najpierw ustawić własne | zaloguj się i użyj „Ustaw własne hasło” |
 | Strona otwarta jako plik (`file://`) nie zapisuje komentarzy | brak serwera | uruchom `serve` i otwórz adres HTTP |
 | W widoku Mobile komentowanie jest zablokowane komunikatem o serwerze | serwer nie zgłasza `"views"` w `server.features` | zaktualizuj Skillsync i uruchom ponownie `serve` |

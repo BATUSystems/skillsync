@@ -93,9 +93,11 @@ DECISION_OUTCOMES = ('apply', 'keep', 'variant', 'defer', 'out_of_scope')
 ACCEPT_SCOPES = ('screen', 'all', 'project')
 ACCEPT_VIA = ('ui', 'cli')
 
-ROLES = ('commenter', 'acceptor', 'developer')
+LEGACY_ROLES = ('commenter', 'acceptor', 'developer')   # the `role` field of older cores
+ROLES = LEGACY_ROLES + ('expert',)
 PRIVILEGED_ROLES = ('acceptor', 'developer')
-SERVER_FEATURES = ('views', 'login-link')   # `login-link` is listed only while the endpoint is active
+ROLE_PRECEDENCE = ('developer', 'acceptor', 'expert', 'commenter')   # highest first
+SERVER_FEATURES = ('views', 'login-link', 'questions')   # `login-link` is listed only while the endpoint is active
 VIEW_VALUES = ('desktop', 'mobile')
 RESERVED_LOGINS = ('agent', 'import', 'server')
 
@@ -121,6 +123,8 @@ DEFAULT_HOST = '127.0.0.1'
 DEFAULT_PORT = 4445
 CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
 PUBLIC_READ_WARNING = 'prototypy i komentarze są widoczne bez logowania dla każdego, kto zna adres'
+EXPERT_PUBLIC_WARNING = ('istnieją konta z rolą expert, a serwer działa bez --login-to-view: pytania do eksperta wymagają '
+                         'sesji, ale prototypy i komentarze są dla każdego; uruchom serwer z --login-to-view')
 
 SLUG_RE = re.compile(r'[a-z0-9]+(?:-[a-z0-9]+)*')
 LOGIN_RE = re.compile(r'[^@\s]+@[^@\s]+\.[^@\s]+')
@@ -2306,6 +2310,787 @@ class CommentsStore(object):
         return self.transaction_locked(lambda snapshot: list(partials), create=create)
 
 
+# ── questions.json store (questions to a domain expert) ──────────────────────
+
+QUESTIONS_FILE = 'questions.json'
+QUESTIONS_FORMAT = 1
+QUESTIONS_SCHEMA = 'expert-questions/1'
+QUESTION_TYPES = ('ask', 'answer', 'comment', 'recorded', 'withdraw')
+QUESTION_STATES = ('open', 'answered', 'withdrawn')
+
+# Lengths in UTF-16 code units (like MAX_TEXT).
+MAX_QUESTION_TEXT = 2000
+MAX_QUESTION_ASSUMED = 500
+MAX_QUESTION_REF_TITLE = 200
+MAX_QUESTION_REF_HREF = 500
+MAX_QUESTION_REF_EXCERPT = 4000
+MAX_QUESTION_REFS = 5
+MAX_QUESTION_OPTIONS = 8
+MAX_QUESTION_OPTION_LABEL = 200
+MAX_QUESTION_ANSWER_TEXT = 4000
+MAX_QUESTION_COMMENT = 2000
+MAX_QUESTION_ADDRESSEES = 50
+MAX_QUESTION_LOGIN = 320
+QUESTIONS_MAX_FILE_BYTES = 1024 * 1024
+QUESTIONS_ASK_LIMIT_BYTES = 768 * 1024   # a new `ask` is refused above this; the rest is a reserve for answers
+QUESTIONS_COMMENT_LIMIT_BYTES = 896 * 1024   # a `comment` is refused above this; answers/recorded/withdraw go to the hard limit
+QUESTION_WRITE_LIMIT = 60                # HTTP writes (answer, comment) per login ...
+QUESTION_WRITE_WINDOW = 60               # ... per this many seconds
+QUESTION_COMMENT_MAX = 50                # comments (late answers included) per question
+
+QUESTION_ID_RE = re.compile(r'qn-[0-9a-f]{6,64}')
+QUESTION_OPTION_ID_RE = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,63}')
+QUESTION_ORIGIN_Q_RE = re.compile(r'Q[0-9]{1,6}')
+_QUESTION_SCHEME_RE = re.compile(r'[A-Za-z][A-Za-z0-9+.-]*:')
+_QUESTION_CONTROL_RE = re.compile('[\x00-\x1f\x7f]')
+# key order of a stored line: the common keys first, then the fields of the type
+QUESTION_KEYS = ('id', 'type', 'questionId', 'at', 'by', 'cid', 'text', 'blocking', 'assumed', 'addressees',
+                 'refs', 'options', 'refersTo', 'origin', 'optionId', 'confirm', 'comment', 'spec', 'line')
+_QUESTION_COMMON = ('id', 'type', 'questionId', 'at', 'by', 'cid')
+_QUESTION_FIELDS = {
+    'ask': (('text', 'blocking', 'assumed', 'addressees', 'refs', 'options', 'origin'), ('refersTo',)),
+    'answer': ((), ('optionId', 'text', 'confirm', 'comment')),
+    'comment': (('text',), ()),
+    'recorded': (('spec', 'line'), ()),
+    'withdraw': ((), ()),
+}
+
+
+class QuestionsFileTooLarge(PrototypeServerError):
+    """507 `file_too_large` for `questions.json` (same code as `comments.json`)."""
+
+    def __init__(self, size):
+        super().__init__(507, 'file_too_large', 'questions.json reached the size limit', {'size': size})
+
+
+class QuestionsFileError(PrototypeServerError):
+    """Unreadable or malformed `questions.json` (409 `invalid_log`; nothing is written)."""
+
+    def __init__(self, message):
+        super().__init__(409, 'invalid_log', message)
+
+
+def new_question_id():
+    """`qn-` + 12 hex characters."""
+    return 'qn-' + secrets.token_hex(6)
+
+
+def canonical_question_operation(operation):
+    """Stored key order: `id, type, questionId, at, by, cid`, then the type's fields, then any others."""
+    ordered = {}
+    for key in QUESTION_KEYS:
+        if key in operation:
+            ordered[key] = operation[key]
+    for key, value in operation.items():
+        if key not in ordered:
+            ordered[key] = value
+    return ordered
+
+
+def serialize_question_operation(operation):
+    return js_stringify(canonical_question_operation(operation))
+
+
+def serialize_questions(operations):
+    """`{"questionsFormat":1,"operations":[` + one operation per line + `]}`."""
+    lines = [serialize_question_operation(operation) for operation in operations]
+    return '{"questionsFormat":%d,"operations":[\n' % QUESTIONS_FORMAT + (',\n'.join(lines) + '\n' if lines else '') + ']}\n'
+
+
+def parse_questions_document(text):
+    """Operations of `questions.json` text as stored; `QuestionsFileError` for a wrong format."""
+    if text.startswith('﻿'):
+        text = text[1:]
+    try:
+        value = strict_json_loads(text)
+    except (ValueError, RecursionError) as error:
+        raise QuestionsFileError('questions.json is not valid JSON: %s' % error.__class__.__name__)
+    if not isinstance(value, dict):
+        raise QuestionsFileError('questions.json must be an object')
+    version = value.get('questionsFormat')
+    if not _is_int(version) or version != QUESTIONS_FORMAT:
+        raise QuestionsFileError('questions.json has an unsupported `questionsFormat`')
+    operations = value.get('operations')
+    if not isinstance(operations, list):
+        raise QuestionsFileError('questions.json has no `operations` list')
+    for index, operation in enumerate(operations):
+        if not isinstance(operation, dict):
+            raise QuestionsFileError('questions.json: operations[%d] is not an object' % index)
+    return operations
+
+
+# -- validation ---------------------------------------------------------------
+
+def _check_question_login(value, where):
+    _check_string(value, where, maximum=MAX_QUESTION_LOGIN)
+    if value != value.strip() or _QUESTION_CONTROL_RE.search(value) or re.search(r'\s', value):
+        _bad('%s must not contain white space' % where)
+
+
+def _check_question_path(value, where):
+    """Relative path (a spec): no scheme, no leading `/`, no `\\`, no `..` segment."""
+    _check_string(value, where, maximum=MAX_QUESTION_REF_HREF)
+    if (value.startswith('/') or '\\' in value or _QUESTION_CONTROL_RE.search(value)
+            or _QUESTION_SCHEME_RE.match(value) or ':' in value.split('/')[0]
+            or any(part == '..' for part in value.split('/'))):
+        _bad('%s must be a relative path inside the repository' % where)
+
+
+def _check_question_href(value, where):
+    """A relative reference or an `https:` URL."""
+    _check_string(value, where, maximum=MAX_QUESTION_REF_HREF)
+    if _QUESTION_CONTROL_RE.search(value) or re.search(r'\s', value) or '\\' in value:
+        _bad('%s has an invalid format' % where)
+    if value.lower().startswith('https://'):
+        if len(value) <= len('https://'):
+            _bad('%s has an invalid format' % where)
+        return
+    if value.startswith('//') or _QUESTION_SCHEME_RE.match(value):
+        _bad('%s must be relative or an https URL' % where)
+
+
+def _check_question_refs(refs):
+    if not isinstance(refs, list):
+        _bad('refs must be a list')
+    if len(refs) > MAX_QUESTION_REFS:
+        _bad('refs has more than %d items' % MAX_QUESTION_REFS, code='too_many')
+    for index, ref in enumerate(refs):
+        where = 'refs[%d]' % index
+        _check_object(ref, where, required=('title', 'href'), optional=('excerpt',))
+        _check_string(ref['title'], where + '.title', maximum=MAX_QUESTION_REF_TITLE, strip_empty=True)
+        _check_question_href(ref['href'], where + '.href')
+        if 'excerpt' in ref:
+            _check_string(ref['excerpt'], where + '.excerpt', minimum=0, maximum=MAX_QUESTION_REF_EXCERPT)
+
+
+def _check_question_options(options):
+    if not isinstance(options, list):
+        _bad('options must be a list')
+    if len(options) > MAX_QUESTION_OPTIONS:
+        _bad('options has more than %d items' % MAX_QUESTION_OPTIONS, code='too_many')
+    seen, recommended = set(), 0
+    for index, option in enumerate(options):
+        where = 'options[%d]' % index
+        _check_object(option, where, required=('id', 'label'), optional=('recommended',))
+        _check_string(option['id'], where + '.id', pattern=QUESTION_OPTION_ID_RE)
+        _check_string(option['label'], where + '.label', maximum=MAX_QUESTION_OPTION_LABEL, strip_empty=True)
+        if option['id'] in seen:
+            _bad('%s.id is duplicated' % where)
+        seen.add(option['id'])
+        if 'recommended' in option:
+            if not isinstance(option['recommended'], bool):
+                _bad('%s.recommended must be a boolean' % where)
+            recommended += 1 if option['recommended'] else 0
+    if recommended > 1:
+        _bad('options: at most one option may be recommended')
+
+
+def _check_question_addressees(value):
+    if value == 'all':
+        return
+    if not isinstance(value, list) or not value:
+        _bad('addressees must be "all" or a non-empty list of logins')
+    if len(value) > MAX_QUESTION_ADDRESSEES:
+        _bad('addressees has more than %d items' % MAX_QUESTION_ADDRESSEES, code='too_many')
+    seen = set()
+    for index, login in enumerate(value):
+        _check_question_login(login, 'addressees[%d]' % index)
+        if login != normalize_login(login):
+            _bad('addressees[%d] must be a normalized login' % index)
+        if login in seen:
+            _bad('addressees[%d] is duplicated' % index)
+        seen.add(login)
+
+
+def validate_question_operation(operation, known=None):
+    """Schema of one stored operation of `questions.json` (400 `invalid_operation` and friends).
+
+    `known` (optional) maps `questionId` to the folded question; with it `refersTo` must exist,
+    `optionId` must be an option of the question and `confirm` needs a non-null `assumed`.
+    There is no `number` field: the label of a question is `origin.q` and its `id`.
+    """
+    if not isinstance(operation, dict):
+        _bad('operation must be an object')
+    kind = operation.get('type')
+    if not isinstance(kind, str) or kind not in QUESTION_TYPES:
+        _bad('type must be one of: %s' % ', '.join(QUESTION_TYPES), code='invalid_type')
+    required, optional = _QUESTION_FIELDS[kind]
+    _check_object(operation, 'operation', required=_QUESTION_COMMON + required, optional=optional)
+    _check_string(operation['id'], 'id', pattern=OP_ID_RE)
+    if parse_at(operation['at']) is None:
+        _bad('at must be YYYY-MM-DDTHH:MM:SS.mmmZ')
+    _check_question_login(operation['by'], 'by')
+    _check_string(operation['cid'], 'cid', pattern=CID_RE)
+    _check_string(operation['questionId'], 'questionId', pattern=QUESTION_ID_RE)
+    question = known.get(operation['questionId']) if known is not None else None
+    if kind == 'ask':
+        _check_string(operation['text'], 'text', maximum=MAX_QUESTION_TEXT, strip_empty=True)
+        blocking, assumed = operation['blocking'], operation['assumed']
+        if not isinstance(blocking, bool):
+            _bad('blocking must be a boolean')
+        if assumed is not None:
+            _check_string(assumed, 'assumed', maximum=MAX_QUESTION_ASSUMED, strip_empty=True)
+        if blocking == (assumed is not None):
+            _bad('a question is either blocking (assumed null) or carries an assumed value')
+        _check_question_addressees(operation['addressees'])
+        _check_question_refs(operation['refs'])
+        _check_question_options(operation['options'])
+        _check_object(operation['origin'], 'origin', required=('spec', 'q'))
+        _check_question_path(operation['origin']['spec'], 'origin.spec')
+        _check_string(operation['origin']['q'], 'origin.q', pattern=QUESTION_ORIGIN_Q_RE)
+        if 'refersTo' in operation:
+            _check_string(operation['refersTo'], 'refersTo', pattern=QUESTION_ID_RE)
+            if operation['refersTo'] == operation['questionId']:
+                _bad('refersTo must not point at the question itself')
+            if known is not None and operation['refersTo'] not in known:
+                _bad('refersTo points at an unknown question', code='unknown_reference')
+    elif kind == 'answer':
+        present = [key for key in ('optionId', 'text', 'confirm') if key in operation]
+        if len(present) != 1:
+            _bad('answer needs exactly one of: optionId, text, confirm')
+        if 'optionId' in operation:
+            _check_string(operation['optionId'], 'optionId', pattern=QUESTION_OPTION_ID_RE)
+            if question is not None and operation['optionId'] not in [o['id'] for o in question['options']]:
+                _bad('optionId is not an option of the question', code='unknown_option')
+        elif 'text' in operation:
+            _check_string(operation['text'], 'text', maximum=MAX_QUESTION_ANSWER_TEXT, strip_empty=True)
+        else:
+            if operation['confirm'] is not True:
+                _bad('confirm must be true')
+            if question is not None and question['assumed'] is None:
+                _bad('confirm needs a question with an assumed value')
+        if 'comment' in operation:
+            _check_string(operation['comment'], 'comment', maximum=MAX_QUESTION_COMMENT, strip_empty=True)
+        if operation['by'] in RESERVED_LOGINS:
+            _bad('an answer comes from an expert, not from "%s"' % operation['by'])
+    elif kind == 'comment':
+        _check_string(operation['text'], 'text', maximum=MAX_QUESTION_COMMENT, strip_empty=True)
+    elif kind == 'recorded':
+        _check_question_path(operation['spec'], 'spec')
+        _check_int(operation['line'], 'line')
+
+
+# -- fold ----------------------------------------------------------------------
+
+def _clone(value):
+    if isinstance(value, dict):
+        return dict((key, _clone(item)) for key, item in value.items())
+    if isinstance(value, (list, tuple)):
+        return [_clone(item) for item in value]
+    return value
+
+
+def _question_sort_key(operation):
+    return (operation['at'], operation['id'])
+
+
+def _list_of(value, kind):
+    return [item for item in value if isinstance(item, kind)] if isinstance(value, list) else []
+
+
+def _ask_model(operation):
+    addressees = operation.get('addressees')
+    origin = operation.get('origin')
+    return {
+        'id': operation['questionId'], 'opId': operation['id'], 'by': operation.get('by'), 'at': operation['at'],
+        'text': operation.get('text') if isinstance(operation.get('text'), str) else '',
+        'state': 'open', 'blocking': operation.get('blocking') is True,
+        'assumed': operation.get('assumed') if isinstance(operation.get('assumed'), str) else None,
+        'addressees': 'all' if addressees == 'all' else [a for a in _list_of(addressees, str)],
+        'refs': [_clone(r) for r in _list_of(operation.get('refs'), dict)],
+        'options': [_clone(o) for o in _list_of(operation.get('options'), dict)],
+        'refersTo': operation.get('refersTo') if isinstance(operation.get('refersTo'), str) else None,
+        'origin': _clone(origin) if isinstance(origin, dict) else {},
+        'answer': None, 'comments': [], 'recorded': None, 'withdrawn': None,
+    }
+
+
+def _answer_text(question, operation):
+    """Readable text of an answer-like operation (used for a late answer treated as a comment)."""
+    parts = []
+    if isinstance(operation.get('text'), str):
+        parts.append(operation['text'])
+    elif isinstance(operation.get('optionId'), str):
+        label = [o.get('label') for o in question['options'] if o.get('id') == operation['optionId']]
+        parts.append(label[0] if label and isinstance(label[0], str) else operation['optionId'])
+    elif operation.get('confirm') is True:
+        parts.append(question['assumed'] or '')
+    if isinstance(operation.get('comment'), str):
+        parts.append(operation['comment'])
+    return '\n'.join(part for part in parts if part)
+
+
+def fold_questions(operations):
+    """State of every question: `{'questions': [model…], 'byId': {id: model}}` in `(at, id)` order.
+
+    The first `answer` (in `(at, id)` order) closes an open question; later `answer`s, and an
+    `answer` after `withdraw`, behave like a `comment` (`late: true`).  `withdraw` counts only on an
+    open question; `recorded` only on an answered one (the first wins).  Operations of an unknown
+    question and malformed entries are skipped, never removed.  Every `ask` is applied before the other
+    operations (each group in `(at, id)` order), so an operation timestamped before its `ask` still counts.
+    """
+    usable = [op for op in operations
+              if isinstance(op, dict) and isinstance(op.get('id'), str) and isinstance(op.get('at'), str)
+              and isinstance(op.get('questionId'), str) and op.get('type') in QUESTION_TYPES]
+    by_id, order, seen = {}, [], set()
+    ordered = sorted(usable, key=_question_sort_key)
+    # two passes: every `ask` first, so an operation whose `at` precedes its `ask` is not lost
+    for operation in ordered:
+        if operation['type'] != 'ask' or operation['id'] in seen:
+            continue
+        seen.add(operation['id'])
+        if operation['questionId'] not in by_id:
+            by_id[operation['questionId']] = _ask_model(operation)
+            order.append(by_id[operation['questionId']])
+    for operation in ordered:
+        if operation['type'] == 'ask':
+            continue
+        if operation['id'] in seen:
+            continue
+        seen.add(operation['id'])
+        kind, qid = operation['type'], operation['questionId']
+        question = by_id.get(qid)
+        if question is None:
+            continue
+        entry = {'id': operation['id'], 'by': operation.get('by'), 'at': operation['at']}
+        if kind == 'comment':
+            entry['text'] = operation.get('text') if isinstance(operation.get('text'), str) else ''
+            question['comments'].append(entry)
+        elif kind == 'answer':
+            if question['state'] == 'open':
+                question['state'] = 'answered'
+                for key in ('optionId', 'text', 'comment'):
+                    if isinstance(operation.get(key), str):
+                        entry[key] = operation[key]
+                if operation.get('confirm') is True:
+                    entry['confirm'] = True
+                question['answer'] = entry
+            else:
+                entry['text'] = _answer_text(question, operation)
+                entry['late'] = True
+                question['comments'].append(entry)
+        elif kind == 'withdraw':
+            if question['state'] == 'open':
+                question['state'] = 'withdrawn'
+                question['withdrawn'] = entry
+        elif kind == 'recorded':
+            if question['state'] == 'answered' and question['recorded'] is None:
+                entry['spec'] = operation.get('spec')
+                entry['line'] = operation.get('line')
+                question['recorded'] = entry
+    return {'questions': order, 'byId': by_id}
+
+
+# -- views ---------------------------------------------------------------------
+
+def _viewer_roles(viewer):
+    if not isinstance(viewer, dict):
+        return ()
+    roles = viewer.get('roles')
+    if isinstance(roles, str):
+        return (roles,)
+    if isinstance(roles, (list, tuple)) and roles:
+        return tuple(roles)
+    role = viewer.get('role')
+    return (role,) if isinstance(role, str) else ()
+
+
+def _is_admin_viewer(viewer):
+    return any(role in PRIVILEGED_ROLES for role in _viewer_roles(viewer))
+
+
+def _is_addressed(question, viewer):
+    if question['addressees'] == 'all':
+        return True
+    return normalize_login(viewer.get('login')) in question['addressees']
+
+
+def can_view_question(question, viewer):
+    """D13: `developer`/`acceptor` see every question; an `expert` sees the ones addressed to them or to
+    all, never a withdrawn one; `commenter` (and anybody else) sees none."""
+    if _is_admin_viewer(viewer):
+        return True
+    if 'expert' not in _viewer_roles(viewer):
+        return False
+    return question['state'] != 'withdrawn' and _is_addressed(question, viewer)
+
+
+def can_answer(question, viewer):
+    """Only an account with the role `expert` seen as an addressee (or the question is for all) may
+    answer; `developer`/`acceptor` without `expert` only comment.  The state is checked by the store."""
+    return 'expert' in _viewer_roles(viewer) and _is_addressed(question, viewer)
+
+
+def question_view(question, viewer, by_id=None):
+    """JSON model of `question` for `viewer` (`{login, roles}`), or None when the viewer must not see it.
+
+    The admin view has `addressees`; the expert view has only `forAll` and no `refersTo` unless the
+    referenced question is visible to the viewer (`by_id` is needed to know; without it `refersTo` is dropped)."""
+    if not can_view_question(question, viewer):
+        return None
+    admin = _is_admin_viewer(viewer)
+    view = {
+        'id': question['id'], 'text': question['text'], 'state': question['state'], 'by': question['by'],
+        'at': question['at'], 'blocking': question['blocking'], 'assumed': question['assumed'],
+        'forAll': question['addressees'] == 'all', 'refs': _clone(question['refs']),
+        'options': _clone(question['options']), 'origin': _clone(question['origin']),
+        'answer': _clone(question['answer']), 'comments': _clone(question['comments']),
+        'recorded': _clone(question['recorded']), 'refersTo': None,
+        'canAnswer': can_answer(question, viewer) and question['state'] == 'open',
+    }
+    if not admin:   # the repository path of the spec is not for an expert; `origin.q` stays, `recorded` is only a time
+        view['origin'] = {'q': question['origin'].get('q')}
+        if question['recorded'] is not None:
+            view['recorded'] = {'at': question['recorded']['at']}
+    target = question['refersTo']
+    if target is not None:
+        if admin:
+            view['refersTo'] = target
+        elif by_id is not None and target in by_id and can_view_question(by_id[target], viewer):
+            view['refersTo'] = target
+    if admin:
+        view['addressees'] = _clone(question['addressees'])
+        view['withdrawn'] = _clone(question['withdrawn'])
+    return view
+
+
+def get_question_view(snapshot, question_id, viewer):
+    """The view of one question, or None (unknown or invisible: the API answers 404 in both cases)."""
+    by_id = snapshot.fold['byId']
+    question = by_id.get(question_id)
+    return None if question is None else question_view(question, viewer, by_id)
+
+
+def visible_questions(snapshot, viewer):
+    """Views of the questions `viewer` may see, in `(at, id)` order."""
+    fold = snapshot.fold
+    views = [question_view(question, viewer, fold['byId']) for question in fold['questions']]
+    return [view for view in views if view is not None]
+
+
+# -- merge (git driver) and export ----------------------------------------------
+
+def _questions_size(operations):
+    try:
+        return len(serialize_questions(list(operations)).encode('utf-8', 'surrogatepass'))
+    except (TypeError, ValueError, OverflowError):
+        return 0
+
+
+def merge_question_operations(target_ops, other_ops, max_bytes=QUESTIONS_MAX_FILE_BYTES):
+    """Union by `id` sorted by `(at, id)`; commutative.  Returns `(operations, added)`, `added` = the
+    operations of `other_ops` missing in `target_ops`.
+
+    Conflicts (raise `MergeConflict`): the same `id` with different content, an operation that fails
+    the schema, an `answer` whose `ask` is not in the result, a result above `max_bytes` that is also larger than both inputs (a file legally
+    written one operation over the limit merges with itself).
+    """
+    by_id, conflicts = {}, []
+    for source in (target_ops, other_ops):
+        for operation in source:
+            if not isinstance(operation, dict) or not isinstance(operation.get('id'), str):
+                conflicts.append({'id': None, 'reason': 'operation without an id'})
+                continue
+            known = by_id.get(operation['id'])
+            if known is not None:
+                if serialize_question_operation(known) != serialize_question_operation(operation):
+                    conflicts.append({'id': operation['id'], 'reason': 'same id, different content'})
+                continue
+            try:
+                validate_question_operation(operation)
+            except PrototypeServerError as error:
+                conflicts.append({'id': operation['id'], 'reason': 'invalid operation: %s' % error.message})
+                continue
+            by_id[operation['id']] = operation
+    merged = sorted(by_id.values(), key=_question_sort_key)
+    asked = set(op['questionId'] for op in merged if op['type'] == 'ask')
+    for operation in merged:
+        if operation['type'] == 'answer' and operation['questionId'] not in asked:
+            conflicts.append({'id': operation['id'], 'reason': 'answer without an ask'})
+    size = len(serialize_questions(merged).encode('utf-8', 'surrogatepass'))
+    if size > max_bytes and size > max(_questions_size(target_ops), _questions_size(other_ops)):
+        conflicts.append({'id': None, 'reason': 'file_too_large: %d bytes (limit %d)' % (size, max_bytes)})
+    if conflicts:
+        raise MergeConflict(conflicts)
+    present = set(op.get('id') for op in target_ops if isinstance(op, dict))
+    return merged, [op for op in merged if op['id'] not in present]
+
+
+def export_questions(snapshot, project, url=None, users=None):
+    """`expert-questions/1` (read from the file, no server): every question with its answer, comments,
+    `recorded` and addressees.  `users` (login to name, or login to record with `name`) gives `name`;
+    without it `name` equals `by`."""
+    operations = snapshot if isinstance(snapshot, list) else snapshot.operations
+    users = users or {}
+
+    def name(login):
+        record = users.get(login) if isinstance(login, str) else None
+        if isinstance(record, dict):
+            record = record.get('name')
+        return record if isinstance(record, str) and record else login
+
+    questions = []
+    for question in fold_questions(operations)['questions']:
+        item = {'id': question['id'], 'text': question['text'], 'state': question['state'],
+                'blocking': question['blocking'], 'assumed': question['assumed'],
+                'addressees': _clone(question['addressees']), 'refs': _clone(question['refs']),
+                'options': _clone(question['options'])}
+        answer = question['answer']
+        if answer is not None:
+            exported = {'by': answer['by'], 'name': name(answer['by']), 'at': answer['at']}
+            for key in ('optionId', 'text', 'comment'):
+                if key in answer:
+                    exported[key] = answer[key]
+            if 'optionId' in answer:
+                labels = [o.get('label') for o in question['options'] if o.get('id') == answer['optionId']]
+                if labels and isinstance(labels[0], str):
+                    exported['optionLabel'] = labels[0]
+            if answer.get('confirm'):
+                exported['confirm'] = True
+            item['answer'] = exported
+        item['comments'] = [dict([('by', c['by']), ('name', name(c['by'])), ('at', c['at']), ('text', c['text'])]
+                                 + ([('late', True)] if c.get('late') else [])) for c in question['comments']]
+        if question['refersTo'] is not None:
+            item['refersTo'] = question['refersTo']
+        item['origin'] = _clone(question['origin'])
+        if question['recorded'] is not None:
+            recorded = question['recorded']
+            item['recorded'] = {'spec': recorded['spec'], 'line': recorded['line'], 'at': recorded['at']}
+        if url:
+            item['link'] = '%s#%s' % (url, question['id'])
+        questions.append(item)
+    result = {'schema': QUESTIONS_SCHEMA, 'project': project}
+    if url:
+        result['url'] = url
+    result['questions'] = questions
+    return result
+
+
+# -- the store -------------------------------------------------------------------
+
+class QuestionsSnapshot(object):
+    """Immutable view of one `questions.json` state (raw operations in file order)."""
+
+    def __init__(self, operations, size=0, key=None, exists=True):
+        self.operations = operations
+        self.size = size
+        self.key = key
+        self.exists = exists
+        self._fold = None
+        self._lock = threading.Lock()
+
+    @property
+    def total(self):
+        return len(self.operations)
+
+    def prefix(self, count=None):
+        return prefix_fingerprint(self.operations, count)
+
+    @property
+    def fold(self):
+        with self._lock:
+            if self._fold is None:
+                self._fold = fold_questions(self.operations)
+            return self._fold
+
+    def find_cid(self, by, cid):
+        """First operation with `(by, cid)` or None."""
+        for operation in self.operations:
+            if operation.get('by') == by and operation.get('cid') == cid and isinstance(cid, str):
+                return operation
+        return None
+
+
+def check_question_state(fold, operation):
+    """Online checks of a new operation against the folded questions (404 / 409), after dedup.
+
+    404 `not_found` (unknown question), 409 `duplicate_id` (an `ask` with a known id),
+    409 `already_answered` (`answer`, `withdraw` on an answered question), 409 `withdrawn`
+    (`answer` on a withdrawn one), 409 `not_answered` (`recorded` before an answer)."""
+    kind, qid = operation['type'], operation['questionId']
+    question = fold['byId'].get(qid)
+    if kind == 'ask':
+        if question is not None:
+            raise OperationError(409, 'duplicate_id', 'question id already exists')
+        return
+    if question is None:
+        raise OperationError(404, 'not_found', 'question not found')
+    if kind == 'answer':
+        if question['state'] == 'answered':
+            raise OperationError(409, 'already_answered', 'the question is already answered')
+        if question['state'] == 'withdrawn':
+            raise OperationError(409, 'withdrawn', 'the question was withdrawn')
+    elif kind == 'withdraw':
+        if question['state'] == 'answered':
+            raise OperationError(409, 'already_answered', 'an answered question cannot be withdrawn')
+        if question['state'] == 'withdrawn':
+            raise OperationError(409, 'withdrawn', 'the question was already withdrawn')
+    elif kind == 'recorded':
+        if question['state'] != 'answered':
+            raise OperationError(409, 'not_answered', 'the question has no answer to record')
+
+
+class QuestionsStore(object):
+    """`<root>/questions.json` of one project: cached reads and locked appends (pattern of `CommentsStore`).
+
+    `clock` returns seconds since the epoch (default `time.time`).  `root` is created by the first write.
+    The lock is `questions.json.lock` (plus a lock per path in the process); a timeout raises `LockTimeout` (503).
+    """
+
+    def __init__(self, root_dir, clock=None, lock_timeout=LOCK_TIMEOUT, max_bytes=QUESTIONS_MAX_FILE_BYTES):
+        self.directory = os.path.abspath(root_dir)
+        self.path = os.path.join(self.directory, QUESTIONS_FILE)
+        self.lock_path = self.path + LOCK_SUFFIX
+        self.clock = clock or system_clock
+        self.lock_timeout = lock_timeout
+        self.max_bytes = max_bytes
+        self._cache = None
+        self._cache_lock = threading.Lock()
+
+    def _read(self):
+        try:
+            info = os.lstat(self.path)
+        except FileNotFoundError:
+            return QuestionsSnapshot([], exists=False)
+        if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
+            raise QuestionsFileError('questions.json must be a regular file')
+        key = _stat_key(info)
+        with self._cache_lock:
+            if self._cache is not None and self._cache.key == key:
+                return self._cache
+        flags = os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_BINARY', 0)
+        fd = os.open(self.path, flags)
+        with os.fdopen(fd, 'rb') as handle:
+            info = os.fstat(handle.fileno())
+            data = handle.read()
+        try:
+            text = data.decode('utf-8')
+        except UnicodeDecodeError:
+            raise QuestionsFileError('questions.json is not UTF-8')
+        snapshot = QuestionsSnapshot(parse_questions_document(text), len(data), _stat_key(info))
+        with self._cache_lock:
+            self._cache = snapshot
+        return snapshot
+
+    def snapshot(self):
+        """Current state (an empty snapshot with `exists=False` when the file is missing)."""
+        return self._read()
+
+    def lock(self):
+        """The file lock; not reentrant.  Creates `root` when it is missing (use `transaction`, which
+        creates it only when something is really written)."""
+        os.makedirs(self.directory, exist_ok=True)
+        return FileLock(self.lock_path, self.lock_timeout)
+
+    def transaction(self, build):
+        """Append operations atomically under the lock.
+
+        `build(snapshot)` returns `Existing(operation)` (nothing written), one partial operation or a
+        list of them `{type, questionId, by, cid, <fields>}` (no `id`, no `at`); it may raise
+        `PrototypeServerError`.  For each partial the store runs the dedup `(by, cid)` (the same
+        `questionId` and `type`: the existing operation, idempotent; otherwise 409 `cid_conflict`),
+        then the schema (400) and the state checks (404/409), assigns monotonic `at` and `id`, refuses
+        with 507 when the file is already above `max_bytes` (an `ask`: above `QUESTIONS_ASK_LIMIT_BYTES`, a
+        `comment`: above `QUESTIONS_COMMENT_LIMIT_BYTES`), and
+        writes the whole document atomically.
+        """
+        if not os.path.isdir(self.directory):
+            # nothing to race on yet: plan without the lock, so a domain error leaves no `root` behind;
+            # `build` therefore runs twice when something is to be written (it must be repeatable)
+            planned = self.transaction_locked(build, dry=True)
+            if not planned.operations:
+                return planned
+        with self.lock():
+            return self.transaction_locked(build)
+
+    def transaction_locked(self, build, dry=False):
+        snapshot = self._read()
+        result = build(snapshot)
+        if isinstance(result, Existing):
+            return TransactionResult(existing=result.operation, total=snapshot.total,
+                                     prefix=snapshot.prefix(), size=snapshot.size)
+        partials = [result] if isinstance(result, dict) else list(result or [])
+        if not partials:
+            return TransactionResult(total=snapshot.total, prefix=snapshot.prefix(), size=snapshot.size)
+        now = clock_ms(self.clock)
+        working = list(snapshot.operations)
+        last_at, last_id = None, None
+        for operation in working:
+            moment = parse_at(operation.get('at'))
+            if moment is not None and (last_at is None or moment > last_at):
+                last_at = moment
+            op_id = operation.get('id')
+            if isinstance(op_id, str) and NEW_OP_ID_RE.fullmatch(op_id) and (last_id is None or op_id > last_id):
+                last_id = op_id
+        written, existing = [], None
+        current_size = snapshot.size if snapshot.exists else None
+        for partial in partials:
+            if not isinstance(partial, dict):
+                _bad('operation must be an object')
+            kind = partial.get('type')
+            cid = partial.get('cid')
+            found = None
+            if isinstance(cid, str):
+                for operation in working:
+                    if operation.get('by') == partial.get('by') and operation.get('cid') == cid:
+                        found = operation
+                        break
+            if found is not None:
+                if found.get('questionId') != partial.get('questionId') or found.get('type') != kind:
+                    raise OperationError(409, 'cid_conflict', 'cid was already used for another operation')
+                existing = existing or found
+                continue
+            fold = fold_questions(working)
+            at_ms = now if last_at is None else max(now, last_at + 1)
+            op_id = new_operation_id(at_ms, last_id)
+            operation = {'id': op_id, 'type': kind, 'questionId': partial.get('questionId'),
+                         'at': format_at(at_ms), 'by': partial.get('by'), 'cid': cid}
+            for key, value in partial.items():
+                if key not in operation:
+                    operation[key] = value
+            validate_question_operation(operation, fold['byId'])
+            check_question_state(fold, operation)
+            if kind == 'recorded' and fold['byId'][operation['questionId']]['recorded'] is not None:
+                # idempotent: the first `recorded` stays, the repeated request returns it
+                for item in working:
+                    if item.get('type') == 'recorded' and item.get('questionId') == operation['questionId']:
+                        existing = existing or item
+                        break
+                continue
+            limit = (QUESTIONS_ASK_LIMIT_BYTES if kind == 'ask'
+                     else QUESTIONS_COMMENT_LIMIT_BYTES if kind == 'comment' else self.max_bytes)
+            if current_size is None:
+                current_size = len(serialize_questions(working).encode('utf-8', 'surrogatepass'))
+            if current_size > min(limit, self.max_bytes):
+                raise QuestionsFileTooLarge(current_size)
+            current_size = None
+            written.append(operation)
+            working.append(operation)
+            last_at, last_id = at_ms, op_id
+        if not written:
+            return TransactionResult(existing=existing, total=snapshot.total, prefix=snapshot.prefix(),
+                                     size=snapshot.size)
+        if dry:
+            return TransactionResult(operations=written, total=snapshot.total, prefix=snapshot.prefix(),
+                                     size=snapshot.size)
+        created = not snapshot.exists
+        try:
+            data = serialize_questions(working).encode('utf-8')
+        except OverflowError:
+            raise OperationError(400, 'invalid_request', 'a number in the operation is out of range')
+        atomic_write_bytes(self.path, data)
+        info = os.lstat(self.path)
+        fresh = QuestionsSnapshot(working, len(data), _stat_key(info))
+        with self._cache_lock:
+            self._cache = fresh
+        return TransactionResult(operations=written, total=fresh.total, prefix=fresh.prefix(),
+                                 created=created, size=len(data))
+
+    def append(self, partials):
+        """Append ready partial operations (CLI use): `transaction(lambda snapshot: partials)`."""
+        return self.transaction(lambda snapshot: list(partials))
+
+
 # ── Browser operations: role and reference checks ────────────────────────────
 
 def check_role(kind, login, role, thread, payload):
@@ -3642,6 +4427,60 @@ def private_file_problem(path):
 PRIVATE_CHECK_SKIPPED = 'kontrola uprawnień 0600 pominięta na Windows'
 
 
+def roles_of(record):
+    """Roles of an account record as a tuple; `roles` wins over `role`.  Never mutates the record."""
+    roles = record.get('roles')
+    if isinstance(roles, (list, tuple)) and roles:
+        return tuple(roles)
+    role = record.get('role')
+    return (role,) if isinstance(role, str) else ()
+
+
+def primary_role(record):
+    """Highest role of the account (developer > acceptor > expert > commenter)."""
+    roles = roles_of(record)
+    for candidate in ROLE_PRECEDENCE:
+        if candidate in roles:
+            return candidate
+    return roles[0] if roles else 'commenter'
+
+
+def has_privileged_role(record):
+    return any(role in PRIVILEGED_ROLES for role in roles_of(record))
+
+
+def _legacy_role_for(roles):
+    """Value of the backward-compatible `role` field: the highest legacy role, `commenter` for expert-only."""
+    for candidate in ('developer', 'acceptor'):
+        if candidate in roles:
+            return candidate
+    return 'commenter'
+
+
+def role_fields(roles):
+    """Record fields for a role list (D16): `role` always, `roles` only for `expert` or several roles."""
+    roles = list(roles)
+    fields = {'role': _legacy_role_for(roles)}
+    if 'expert' in roles or len(roles) > 1:
+        fields['roles'] = roles
+    return fields
+
+
+def normalize_role_list(role=None, roles=None):
+    """Validated, de-duplicated role list from `role`/`roles` arguments (raises `invalid_role`)."""
+    if roles is None:
+        roles = [role if role is not None else 'commenter']
+    result = []
+    for item in roles:
+        if item not in ROLES:
+            raise UserError('invalid_role', 'role must be one of: %s' % ', '.join(ROLES))
+        if item not in result:
+            result.append(item)
+    if not result:
+        raise UserError('invalid_role', 'at least one role is required')
+    return result
+
+
 def _validate_users_data(data):
     if not isinstance(data, dict) or data.get('version') != 1 or not isinstance(data.get('users'), list):
         raise UserError('invalid_users_file', 'users file must be {"version": 1, "users": [...]}')
@@ -3653,8 +4492,21 @@ def _validate_users_data(data):
         if not isinstance(login, str) or not login or login in seen:
             raise UserError('invalid_users_file', 'user without a unique login')
         seen.add(login)
-        if record.get('role') not in ROLES:
+        has_role, has_roles = 'role' in record, 'roles' in record
+        if not has_role and not has_roles:
             raise UserError('invalid_users_file', 'user %s has an unknown role' % login)
+        if has_role and record['role'] not in LEGACY_ROLES:
+            raise UserError('invalid_users_file', 'user %s has an unknown role' % login)
+        if has_roles:
+            listed = record['roles']
+            if (not isinstance(listed, list) or not listed
+                    or any(not isinstance(item, str) or item not in ROLES for item in listed)
+                    or len(set(listed)) != len(listed)):
+                raise UserError('invalid_users_file',
+                                'user %s has invalid roles (a non-empty list of unique known roles)' % login)
+            if has_role and record['role'] != _legacy_role_for(listed):
+                raise UserError('invalid_users_file', 'user %s: role must be %s to match roles'
+                                % (login, _legacy_role_for(listed)))
         if not isinstance(record.get('password'), str) or not isinstance(record.get('mustChange'), bool):
             raise UserError('invalid_users_file', 'user %s lacks password/mustChange' % login)
         if 'name' in record and record['name'] is not None and not isinstance(record['name'], str):
@@ -3667,7 +4519,9 @@ def public_user(record):
     result = {'login': record['login']}
     if record.get('name'):
         result['name'] = record['name']
-    for key in ('role', 'mustChange', 'created', 'passwordChanged'):
+    result['role'] = primary_role(record)
+    result['roles'] = list(roles_of(record))
+    for key in ('mustChange', 'created', 'passwordChanged'):
         result[key] = record.get(key)
     return result
 
@@ -3808,12 +4662,19 @@ def _privileged_warning(login, role):
             'rozważ --password-prompt' % (login, role))
 
 
-def add_user(users_file, login, role='commenter', password=None, default_password=None, name=None):
+def _primary_of(role_list):
+    return primary_role({'roles': role_list})
+
+
+def _needs_warning(roles):
+    return 'expert' in roles or any(role in PRIVILEGED_ROLES for role in roles)
+
+
+def add_user(users_file, login, role='commenter', password=None, default_password=None, name=None, roles=None):
     """Create an account; returns `(public record, warnings)`.  Raises `UserError`."""
     login = normalize_login(login)
     validate_login(login)
-    if role not in ROLES:
-        raise UserError('invalid_role', 'role must be one of: %s' % ', '.join(ROLES))
+    role_list = normalize_role_list(role, roles)
     if name is not None:
         name = ' '.join(name.split())
         if not name or text_length(name) > MAX_NAME or not _encodable(name):
@@ -3823,7 +4684,8 @@ def add_user(users_file, login, role='commenter', password=None, default_passwor
     record = {'login': login}
     if name:
         record['name'] = name
-    record.update({'role': role, 'password': hash_password(secret, users_file.iterations),
+    record.update(role_fields(role_list))
+    record.update({'password': hash_password(secret, users_file.iterations),
                    'mustChange': must_change, 'created': now, 'passwordChanged': now})
 
     def change(users):
@@ -3831,7 +4693,7 @@ def add_user(users_file, login, role='commenter', password=None, default_passwor
             raise UserError('user_exists', 'user already exists: %s' % login)
         users.append(record)
     users_file.update(change)
-    warnings = [_privileged_warning(login, role)] if must_change and role in PRIVILEGED_ROLES else []
+    warnings = [_privileged_warning(login, primary_role(record))] if must_change and _needs_warning(role_list) else []
     return public_user(record), warnings
 
 
@@ -3853,7 +4715,29 @@ def set_password(users_file, login, password=None, default_password=None):
     if not users_file.exists():
         raise UserError('users_file_missing', 'users file does not exist: %s' % users_file.path)
     record = users_file.update(change)
-    warnings = [_privileged_warning(login, record['role'])] if must_change and record['role'] in PRIVILEGED_ROLES else []
+    warnings = ([_privileged_warning(login, primary_role(record))]
+                if must_change and _needs_warning(roles_of(record)) else [])
+    return public_user(record), warnings
+
+
+def set_roles(users_file, login, roles):
+    """Replace the role set of an existing account (`user roles`); recomputes `role`/`roles` (D16)."""
+    login = normalize_login(login)
+    role_list = normalize_role_list(None, list(roles) if roles else [])
+    fields = role_fields(role_list)
+
+    def change(users):
+        for item in users:
+            if item['login'] == login:
+                item.pop('roles', None)
+                item.update(fields)
+                return dict(item)
+        raise UserError('user_not_found', 'no such user: %s' % login)
+    if not users_file.exists():
+        raise UserError('users_file_missing', 'users file does not exist: %s' % users_file.path)
+    record = users_file.update(change)
+    warnings = [_privileged_warning(login, ', '.join(roles_of(record)))] if (
+        record.get('mustChange') and _needs_warning(roles_of(record))) else []
     return public_user(record), warnings
 
 
@@ -3909,10 +4793,9 @@ def parse_import_lines(text):
     return logins, invalid
 
 
-def import_users(users_file, logins, role='commenter', default_password=None):
+def import_users(users_file, logins, role='commenter', default_password=None, roles=None):
     """Create accounts with the default password and `mustChange`, skipping existing ones."""
-    if role not in ROLES:
-        raise UserError('invalid_role', 'role must be one of: %s' % ', '.join(ROLES))
+    role_list = normalize_role_list(role, roles)
     secret, _must = _choose_password(None, default_password)
     normalized = []
     for login in logins:
@@ -3930,12 +4813,15 @@ def import_users(users_file, logins, role='commenter', default_password=None):
             if login in existing:
                 skipped.append(login)
                 continue
-            users.append({'login': login, 'role': role, 'password': encoded[login], 'mustChange': True,
-                          'created': now, 'passwordChanged': now})
+            entry = {'login': login}
+            entry.update(role_fields(role_list))
+            entry.update({'password': encoded[login], 'mustChange': True, 'created': now, 'passwordChanged': now})
+            users.append(entry)
             added.append(login)
         return added, skipped
     added, skipped = users_file.update(change)
-    warnings = [_privileged_warning(login, role) for login in added] if role in PRIVILEGED_ROLES else []
+    warnings = ([_privileged_warning(login, _primary_of(role_list)) for login in added]
+                if _needs_warning(role_list) else [])
     return {'added': added, 'skipped': skipped}, warnings
 
 
@@ -4031,6 +4917,44 @@ class SessionStore(object):
     def count(self):
         with self._lock:
             return len(self._items)
+
+
+class WriteRateLimiter(object):
+    """Sliding window of write attempts per login (K18); bounded memory (expired entries are dropped).
+
+    Every attempt that passes the role gate counts, also those ending in 404/400/409 (no oracle on
+    visibility or data); only an attempt refused by the limiter itself is not counted.
+    """
+
+    def __init__(self, clock=None, window=QUESTION_WRITE_WINDOW, limit=QUESTION_WRITE_LIMIT, max_keys=100000):
+        self.clock = clock or system_clock
+        self.window = window
+        self.limit = limit
+        self.max_keys = max_keys
+        self._items = {}
+        self._lock = threading.Lock()
+
+    def hit(self, login):
+        """Counts an attempt; returns 0 when allowed, otherwise the seconds to wait (>= 1; a refused attempt is not counted)."""
+        with self._lock:
+            now = self.clock()
+            if login not in self._items and len(self._items) >= self.max_keys:
+                for key in [key for key, entries in self._items.items() if not entries or now - entries[-1] >= self.window]:
+                    del self._items[key]
+                if len(self._items) >= self.max_keys:
+                    for key in sorted(self._items, key=lambda k: self._items[k][-1])[:max(1, self.max_keys // 10)]:
+                        del self._items[key]
+            entries = self._items.get(login)
+            if entries is None:
+                entries = self._items[login] = deque()
+            if entries and now < entries[-1]:
+                entries.clear()   # the clock jumped back: old stamps would make retryAfter lie
+            while entries and now - entries[0] >= self.window:
+                entries.popleft()
+            if len(entries) >= self.limit:
+                return max(1, min(self.window, int(math.ceil(entries[0] + self.window - now))))
+            entries.append(now)
+            return 0
 
 
 class LoginRateLimiter(object):
@@ -4694,6 +5618,7 @@ def startup_checks(config):
     if not os.path.isdir(root_real):
         errors.append('katalog prototypów nie istnieje: %s' % config.root)
     users_real = os.path.realpath(config.users)
+    records = []
     if _within(users_real, root_real):
         errors.append('plik użytkowników leży w serwowanym katalogu: %s' % config.users)
     if not os.path.isfile(users_real):
@@ -4711,15 +5636,17 @@ def startup_checks(config):
             errors.append(error.message)
             records = []
         weak = sorted(record['login'] for record in records
-                      if record['mustChange'] and record['role'] in PRIVILEGED_ROLES)
+                      if record['mustChange'] and _needs_warning(roles_of(record)))
         if weak:
-            warnings.append('konta akceptujących/programistów z hasłem domyślnym (mustChange): ' + ', '.join(weak))
+            warnings.append('konta akceptujących, programistów i ekspertów z hasłem domyślnym (mustChange): ' + ', '.join(weak))
         if config.git_checks:
             git_errors, git_warnings = git_users_file_problems(users_real)
             errors.extend(git_errors)
             warnings.extend(git_warnings)
     if not config.login_to_view:
         warnings.append(PUBLIC_READ_WARNING)
+        if any('expert' in roles_of(record) for record in records):
+            warnings.append(EXPERT_PUBLIC_WARNING)
     if not is_loopback_host(config.host):
         warnings.append('adres %s nie jest pętlą zwrotną: HTTP bez TLS, hasła i ciasteczka idą otwartym tekstem; '
                         'poza LAN użyj proxy z TLS i --secure-cookies' % config.host)
@@ -4743,10 +5670,14 @@ class PrototypeApp(object):
         self.users.on_missing = lambda path: self.log(
             'ostrzeżenie: brak pliku użytkowników %s: żadne konto nie działa do jego przywrócenia' % path)
         self.limiter = LoginRateLimiter(clock=config.clock)
+        self.write_limiter = WriteRateLimiter(clock=config.clock)
         self.port = config.port
         self.source_writes = config.source_writes
         users_real = os.path.realpath(config.users)
-        self.denied_paths = frozenset(item.lower() for item in (users_real, users_real + '.bak', users_real + LOCK_SUFFIX))
+        questions_real = os.path.join(self.root, QUESTIONS_FILE)
+        self.denied_paths = frozenset(item.lower() for item in (
+            users_real, users_real + '.bak', users_real + LOCK_SUFFIX, questions_real, questions_real + LOCK_SUFFIX))
+        self._questions = None
         self._stores = {}
         self._stores_lock = threading.Lock()
         self._log_lock = threading.Lock()
@@ -4910,10 +5841,17 @@ class PrototypeApp(object):
                                                            max_bytes=self.config.max_file_bytes)
             return store
 
+    def questions_store(self):
+        """The `QuestionsStore` of `<root>/questions.json` (one per server, created on first use)."""
+        with self._stores_lock:
+            if self._questions is None:
+                self._questions = QuestionsStore(self.root, clock=self.clock, lock_timeout=self.config.lock_timeout)
+            return self._questions
+
     def user_payload(self, user):
         first, full = person_names(user['login'], user.get('name'))
-        return {'login': user['login'], 'name': full, 'firstName': first, 'role': user['role'],
-                'mustChange': bool(user['mustChange'])}
+        return {'login': user['login'], 'name': full, 'firstName': first, 'role': primary_role(user),
+                'roles': list(roles_of(user)), 'mustChange': bool(user['mustChange'])}
 
 
 def safe_next(value):
@@ -4961,6 +5899,9 @@ _API_PREFIX = '/_api/v1'
 _OPERATIONS_PATH = re.compile(r'/_api/v1/prototypes/([^/]+)/operations')
 _RESTORE_PATH = re.compile(r'/_api/v1/prototypes/([^/]+)/restore')
 _PREVIEW_PATH = re.compile(r'/_api/v1/prototypes/([^/]+)/restore-preview')
+_QUESTIONS_PATH = _API_PREFIX + '/questions'
+_QUESTION_PATH = re.compile(r'/_api/v1/questions/([^/]+)')
+_QUESTION_ACTION_PATH = re.compile(r'/_api/v1/questions/([^/]+)/(answer|comment)')
 _LOGIN_TO_VIEW_EXCEPTIONS = ('/_login', _API_PREFIX + '/login', _API_PREFIX + '/session')
 
 
@@ -5011,8 +5952,9 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
 
     def end_headers(self):
         self.send_header('X-Content-Type-Options', 'nosniff')
-        self.send_header('Referrer-Policy', 'same-origin')
-        self.send_header('Content-Security-Policy', "frame-ancestors 'self'")
+        if not getattr(self, '_strict_page', False):   # the expert page sends its own Referrer-Policy and CSP
+            self.send_header('Referrer-Policy', 'same-origin')
+            self.send_header('Content-Security-Policy', "frame-ancestors 'self'")
         BaseHTTPRequestHandler.end_headers(self)
 
     def _send(self, status, body=b'', content_type=None, headers=None, cache='no-store'):
@@ -5101,6 +6043,7 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
 
     def _dispatch(self, method):
         self._login = None
+        self._strict_page = False
         try:
             split = urlsplit(self.path)
             path = split.path or '/'
@@ -5117,6 +6060,9 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
                 return
             if path == '/_login':
                 self._login_page(method, split.query)
+                return
+            if path == EXPERTS_PATH:
+                self._experts_page(method, session)
                 return
             if method not in ('GET', 'HEAD'):
                 self._method_not_allowed()
@@ -5180,6 +6126,11 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
         for segment in segments:
             if (not segment or segment in ('.', '..') or _excluded_segment(segment) or ':' in segment):
                 self._not_found()
+                return
+        if segments:
+            first = segments[0].lower()
+            if (first.rstrip('. ') if os.name == 'nt' else first) == QUESTIONS_FILE:
+                self._not_found()   # `questions.json` is served only through `/_api/v1/questions`
                 return
         root = self.app.root
         target = os.path.realpath(os.path.join(root, *segments)) if segments else root
@@ -5280,6 +6231,21 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
                 return
         self._send(200, LOGIN_PAGE.encode('utf-8'), 'text/html; charset=utf-8', None, 'no-store')
 
+    def _experts_page(self, method, session):
+        """`/_experts`: no data in the HTML (the page reads the API after the session); strict own CSP."""
+        if method not in ('GET', 'HEAD'):
+            self._method_not_allowed()
+            return
+        if session is None:
+            self._empty(302, {'Location': '/_login?next=' + quote(EXPERTS_PATH, safe='/')})
+            return
+        self._strict_page = True
+        try:
+            self._send(200, EXPERTS_PAGE.encode('utf-8'), 'text/html; charset=utf-8',
+                       {'Referrer-Policy': 'no-referrer', 'Content-Security-Policy': EXPERTS_CSP}, 'no-store')
+        finally:
+            self._strict_page = False   # an exception in `_send` must not leave the flag for the next response
+
     # ── API ──
 
     def _api(self, method, path, query, session, user):
@@ -5320,6 +6286,20 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
             self._require_method(method, ('POST',))
             self._api_project_accept(session, user)
             return
+        if path == _QUESTIONS_PATH:
+            self._require_method(method, ('GET', 'HEAD'))
+            self._api_questions_list(session, user)
+            return
+        match = _QUESTION_ACTION_PATH.fullmatch(path)
+        if match:
+            self._require_method(method, ('POST',))
+            self._api_question_post(unquote(match.group(1)), match.group(2), session, user)
+            return
+        match = _QUESTION_PATH.fullmatch(path)
+        if match:
+            self._require_method(method, ('GET', 'HEAD'))
+            self._api_question_get(unquote(match.group(1)), session, user)
+            return
         match = _OPERATIONS_PATH.fullmatch(path)
         if match:
             slug = unquote(match.group(1))
@@ -5347,7 +6327,7 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
             self.close_connection = True
             raise PrototypeServerError(405, 'method_not_allowed', headers={'Allow': ', '.join(allowed)})
 
-    def _post_checks(self, session, user, allow_must_change=False, require_session=True, read_body=True):
+    def _post_checks(self, session, user, allow_must_change=False, require_session=True, read_body=True, raw=False):
         """POST order: session (401) → Content-Type/Origin/CSRF (403) → mustChange (403) → size (413) → JSON."""
         if require_session and session is None:
             self.close_connection = True
@@ -5394,6 +6374,8 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
             self.close_connection = True
             raise PrototypeServerError(413, 'payload_too_large', 'request body is larger than 64 KiB')
         data = self.rfile.read(length) if length else b''
+        if raw:
+            return data   # the caller parses the body later (the question routes check the role first)
         if not read_body:
             return None
         try:
@@ -5502,7 +6484,7 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
         if state == 'v1':
             raise NeedsMigration()
         store = app.store(slug)
-        login, role = user['login'], user['role']
+        login, role = user['login'], primary_role(user)
         result = store.transaction(lambda snapshot: prepare_browser_operation(
             snapshot, login, role, body, current=lambda: app.prototype_hashes(_directory)))
         if result.existing is not None:
@@ -5518,11 +6500,106 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
         app.audit(session, written['type'], screen)
         self._json(201, {'operation': written, 'total': result.total, 'prefix': result.prefix})
 
+    # ── questions to an expert ──
+
+    def _questions_gate(self, session, user, roles):
+        """Session (401) → mustChange (403) → role (403 `forbidden`) for the question routes; the session is
+        required always, also without `--login-to-view`.  Returns the viewer `{login, roles}`."""
+        if session is None or user is None:
+            raise PrototypeServerError(401, 'unauthorized', 'login required')
+        if user['mustChange']:
+            raise PrototypeServerError(403, 'password_change_required', 'change the password first')
+        have = roles_of(user)
+        if not any(role in have for role in roles):
+            raise PrototypeServerError(403, 'forbidden', 'your role has no access to expert questions')
+        return {'login': user['login'], 'roles': have}
+
+    def _api_questions_list(self, session, user):
+        viewer = self._questions_gate(session, user, ('developer', 'acceptor', 'expert'))
+        snapshot = self.app.questions_store().snapshot()
+        self._json(200, {'questions': visible_questions(snapshot, viewer)})
+
+    def _api_question_get(self, question_id, session, user):
+        viewer = self._questions_gate(session, user, ('developer', 'acceptor', 'expert'))
+        view = None
+        if QUESTION_ID_RE.fullmatch(question_id):
+            view = get_question_view(self.app.questions_store().snapshot(), question_id, viewer)
+        if view is None:
+            raise PrototypeServerError(404, 'not_found', 'question not found')
+        self._json(200, {'question': view})
+
+    def _api_question_post(self, question_id, kind, session, user):
+        """`answer` / `comment`; order: session → CSRF → mustChange → role → rate limit (429) → visibility (404) → body → dedup →
+        state (409) → schema (400).  Everything after the role runs in `build`, under the lock, on the snapshot
+        of that transaction; the author is the login of the session."""
+        app = self.app
+        data = self._post_checks(session, user, raw=True)
+        allowed = ('expert',) if kind == 'answer' else ('developer', 'acceptor', 'expert')
+        viewer = self._questions_gate(session, user, allowed)
+        login = user['login']
+        wait = app.write_limiter.hit(login)   # independent of the data: counts every attempt past the role gate
+        if wait:
+            raise PrototypeServerError(429, 'rate_limited', 'too many writes', {'retryAfter': wait},
+                                       {'Retry-After': str(wait)})
+        store = app.questions_store()
+
+        def not_found():
+            return OperationError(404, 'not_found', 'question not found')
+
+        seen = {}
+
+        def build(snapshot):
+            seen['snapshot'] = snapshot
+            question = snapshot.fold['byId'].get(question_id) if QUESTION_ID_RE.fullmatch(question_id) else None
+            if question is None or not can_view_question(question, viewer):
+                raise not_found()
+            if kind == 'answer' and not can_answer(question, viewer):
+                raise OperationError(403, 'forbidden', 'the question is not addressed to you')
+            try:
+                body = strict_json_loads(data.decode('utf-8'))
+            except (ValueError, UnicodeDecodeError, RecursionError):
+                raise PrototypeServerError(400, 'invalid_json', 'body must be JSON')
+            if not isinstance(body, dict):
+                raise PrototypeServerError(400, 'invalid_request', 'body must be a JSON object')
+            cid = body.get('cid')
+            if not isinstance(cid, str) or not CID_RE.fullmatch(cid):
+                raise OperationError(400, 'cid_required', 'cid is required')
+            found = snapshot.find_cid(login, cid)
+            if found is not None:
+                if found.get('questionId') != question_id or found.get('type') != kind:
+                    raise OperationError(409, 'cid_conflict', 'cid was already used for another operation')
+                return Existing(found)
+            check_question_state(snapshot.fold, {'type': kind, 'questionId': question_id})
+            if kind == 'comment' and len(question['comments']) >= QUESTION_COMMENT_MAX:
+                raise OperationError(409, 'comment_limit', 'the question has reached the comment limit')
+            partial = {'type': kind, 'questionId': question_id, 'by': login, 'cid': cid}
+            for key, value in body.items():
+                if key not in partial:
+                    partial[key] = value
+            return partial
+
+        result = store.transaction(build)
+        written = result.existing if result.existing is not None else result.operations[0]
+        # the view comes from the state of this very transaction: its snapshot plus what it wrote
+        fold = fold_questions(list(seen['snapshot'].operations) + list(result.operations))
+        question = fold['byId'].get(question_id)
+        view = None if question is None else question_view(question, viewer, fold['byId'])
+        if view is None:   # the question vanished from the fold: a damaged file, not a client error
+            raise OperationError(500, 'corrupt_questions', 'the questions file is inconsistent')
+        operation = {key: written.get(key) for key in ('id', 'type', 'at', 'cid')}
+        if not all(isinstance(value, str) for value in operation.values()):
+            # a damaged stored operation reached by dedup (lacks a field): a controlled domain error
+            raise OperationError(500, 'corrupt_operation', 'the stored operation is damaged')
+        status = 200 if result.existing is not None else 201
+        if status == 201:
+            app.audit(session, 'question/' + kind)
+        self._json(status, {'question': view, 'operation': operation})
+
     def _project_access(self, session, user):
         """401 without a session, 403 `forbidden` for the commenter role."""
         if session is None or user is None:
             raise PrototypeServerError(401, 'unauthorized', 'login required')
-        if user['role'] not in PRIVILEGED_ROLES:
+        if not has_privileged_role(user):
             raise PrototypeServerError(403, 'forbidden', 'only an acceptor or a developer may accept a project')
 
     def _api_project(self, session, user):
@@ -5550,7 +6627,7 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
         """401 without a session, 403 `forbidden` for the commenter role, 403 `source_writes_disabled`."""
         if session is None or user is None:
             raise PrototypeServerError(401, 'unauthorized', 'login required')
-        if user['role'] not in PRIVILEGED_ROLES:
+        if not has_privileged_role(user):
             raise PrototypeServerError(403, 'forbidden', 'only an acceptor or a developer may restore a screen')
         if not self.app.source_writes:
             raise PrototypeServerError(403, 'source_writes_disabled', 'this server does not write prototype sources')
@@ -5586,7 +6663,7 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
         cid = body.get('cid')
         if not isinstance(cid, str) or not CID_RE.fullmatch(cid):
             raise OperationError(400, 'cid_required', 'cid is required')
-        login, role = user['login'], user['role']
+        login, role = user['login'], primary_role(user)
 
         def precheck():
             if role not in PRIVILEGED_ROLES:
@@ -5822,6 +6899,476 @@ input:focus-visible,button:focus-visible{outline:3px solid var(--accent);outline
 """
 
 
+# ── Expert questions page (`GET /_experts`) ─────────────────────────────────
+
+EXPERTS_PATH = '/_experts'
+
+EXPERTS_STYLE = r"""
+:root{--bg:#f6f7f9;--surface:#fff;--text:#1d2330;--muted:#4f5869;--border:#c9ced8;--accent:#2f5fd0;--accent-text:#fff;--danger:#b42318;--ok:#157347;--quote:#eef1f6;--radius:.6rem;color-scheme:light dark}
+@media (prefers-color-scheme:dark){:root{--bg:#14171d;--surface:#1d2129;--text:#e7eaf0;--muted:#a9b1c0;--border:#3b4250;--accent:#8aa8f5;--accent-text:#0d1220;--danger:#f97066;--ok:#5fd08f;--quote:#262b35}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+header{padding:1rem 1.25rem;border-bottom:1px solid var(--border);background:var(--surface)}
+h1{font-size:1.25rem;margin:0}h2{font-size:1.15rem;margin:0 0 .5rem}h3{font-size:1rem;margin:1.25rem 0 .5rem}
+.who{margin:.25rem 0 0;color:var(--muted);font-size:.9rem}
+.layout{display:grid;grid-template-columns:minmax(14rem,22rem) 1fr;gap:1rem;padding:1rem 1.25rem;max-width:80rem;margin:0 auto}
+@media (max-width:48rem){.layout{grid-template-columns:1fr;padding:.75rem}}
+nav,section.detail,.notice{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1rem}
+nav ul{list-style:none;margin:0;padding:0}nav li+li{margin-top:.5rem}
+nav a{display:block;padding:.5rem .6rem;border:1px solid var(--border);border-radius:var(--radius);color:var(--text);text-decoration:none}
+nav a[aria-current="true"]{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.badge{display:inline-block;margin:.25rem .35rem 0 0;padding:0 .45rem;border:1px solid var(--border);border-radius:1rem;font-size:.8rem;color:var(--muted)}
+.badge.block{border-color:var(--danger);color:var(--danger)}.badge.done{border-color:var(--ok);color:var(--ok)}
+.muted{color:var(--muted)}
+.qtext{white-space:pre-wrap;overflow-wrap:anywhere}
+blockquote{margin:.4rem 0;padding:.5rem .75rem;background:var(--quote);border-left:4px solid var(--border);white-space:pre-wrap;overflow-wrap:anywhere}
+a{color:var(--accent)}a:focus-visible,button:focus-visible,input:focus-visible,textarea:focus-visible,[tabindex]:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+fieldset{border:1px solid var(--border);border-radius:var(--radius);margin:.75rem 0;padding:.5rem .9rem}legend{font-weight:600;padding:0 .3rem}
+.opt{display:flex;gap:.5rem;align-items:flex-start;margin:.4rem 0}.opt input{margin-top:.35rem}
+label.block{display:block;margin:.75rem 0 .25rem;font-weight:600}
+textarea{width:100%;min-height:5rem;padding:.55rem .7rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);color:var(--text);font:inherit}
+button{margin-top:.75rem;padding:.6rem 1.1rem;border:0;border-radius:var(--radius);background:var(--accent);color:var(--accent-text);font:inherit;font-weight:600;cursor:pointer}
+button[disabled]{opacity:.6;cursor:progress}
+.alert{color:var(--danger);font-weight:600;margin:0 0 .75rem}.status{color:var(--ok);margin:0 0 .75rem}
+.alert:empty,.status:empty{position:absolute;width:1px;height:1px;margin:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.entry{border-top:1px solid var(--border);padding:.6rem 0}.entry .meta{color:var(--muted);font-size:.85rem}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+[hidden]{display:none}
+"""
+
+EXPERTS_SCRIPT = r"""
+(function () {
+  'use strict';
+  var API = '/_api/v1';
+  var LOGIN = '/_login?next=/_experts';
+  var state = { csrf: null, questions: [], current: null, pending: {}, busy: {} };
+  var listBox = document.getElementById('list');
+  var detail = document.getElementById('detail');
+  var alertBox = document.getElementById('alert');
+  var statusBox = document.getElementById('status');
+  var whoBox = document.getElementById('who');
+
+  function el(tag, props, children) {
+    var node = document.createElement(tag);
+    var key;
+    props = props || {};
+    for (key in props) {
+      if (Object.prototype.hasOwnProperty.call(props, key)) {
+        if (key === 'text') node.textContent = props[key];
+        else node.setAttribute(key, props[key]);
+      }
+    }
+    (children || []).forEach(function (child) { if (child) node.appendChild(child); });
+    return node;
+  }
+  function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
+  function say(text) { statusBox.textContent = text || ''; }
+  function fail(text) { alertBox.textContent = text || ''; }
+  function when(value) {
+    var date = new Date(value);
+    return isNaN(date.getTime()) ? String(value || '') : date.toLocaleString('pl-PL');
+  }
+  function newCid() {
+    var bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    var out = 'c';
+    for (var i = 0; i < bytes.length; i += 1) out += ('0' + bytes[i].toString(16)).slice(-2);
+    return out;
+  }
+  function toLogin() { location.replace(LOGIN); }
+  function api(method, path, body) {
+    var headers = {};
+    var options = { method: method, credentials: 'same-origin', headers: headers };
+    if (body !== undefined) {
+      headers['Content-Type'] = 'application/json';
+      headers['X-Skillsync-CSRF'] = state.csrf || '';
+      options.body = JSON.stringify(body);
+    }
+    return fetch(API + path, options).then(function (response) {
+      return response.json().catch(function () { return {}; }).then(function (data) {
+        return { status: response.status, data: data || {} };
+      });
+    });
+  }
+  function describe(result) {
+    var status = result.status;
+    var code = result.data.error;
+    if (status === 401) { toLogin(); return 'Sesja wygasła. Zaloguj się ponownie.'; }
+    if (status === 403 && code === 'password_change_required') return 'Najpierw zmień hasło domyślne.';
+    if (status === 403 && (code === 'invalid_csrf' || code === 'invalid_origin' || code === 'invalid_content_type')) {
+      refreshSession();
+      return 'Sesja się zmieniła. Odśwież stronę i spróbuj ponownie.';
+    }
+    if (status === 403) return 'Brak uprawnień: ta akcja wymaga roli ekspert i pytania skierowanego do Ciebie.';
+    if (status === 404) return 'Nie znaleziono pytania (mogło zostać wycofane albo nie jest do Ciebie).';
+    if (status === 409 && code === 'already_answered') return 'Ktoś już odpowiedział na to pytanie. Widok został odświeżony.';
+    if (status === 409 && code === 'comment_limit') return 'Pytanie osiągnęło limit komentarzy.';
+    if (status === 409) return 'Konflikt zapisu (' + String(code || status) + '). Odśwież widok.';
+    if (status === 413) return 'Treść jest za duża.';
+    if (status === 507) return 'Plik pytań jest pełny, zapis niemożliwy. Skontaktuj się z programistą.';
+    if (status === 503) return 'Serwer jest chwilowo zajęty. Spróbuj ponownie za chwilę.';
+    if (status === 429) return 'Zbyt wiele zapisów, spróbuj ponownie za ' + (result.data.retryAfter || 60) + ' s.';
+    if (status === 400) return 'Serwer odrzucił dane (' + String(code || 'błąd żądania') + ').';
+    return 'Nie udało się wykonać akcji (HTTP ' + status + ').';
+  }
+  function refreshSession() {
+    try {
+      fetch(API + '/session', { credentials: 'same-origin' }).then(function (response) {
+        return response.ok ? response.json() : null;
+      }).then(function (data) {
+        if (data && data.user && data.csrf) state.csrf = data.csrf; else if (!data || !data.user) toLogin();
+      }).catch(function () {});
+    } catch (error) { /* offline: the user retries after a reload */ }
+  }
+  var UNEXPECTED = 'Nieoczekiwana odpowiedź serwera.';
+  function validQuestion(question) {
+    return !!question && typeof question === 'object' && typeof question.id === 'string' && typeof question.text === 'string';
+  }
+  var OFFLINE = 'Brak połączenia z serwerem (offline), spróbuj ponownie.';
+
+  function badges(question) {
+    var items = [];
+    if (question.blocking) items.push(el('span', { 'class': 'badge block', text: 'Blokujące' }));
+    items.push(el('span', { 'class': 'badge' + (question.state === 'open' ? '' : ' done'),
+                            text: question.state === 'open' ? 'Otwarte' : 'Odpowiedziane' }));
+    if (question.assumed !== null && question.assumed !== undefined) {
+      items.push(el('span', { 'class': 'badge', text: 'Przyjęto: ' + question.assumed }));
+    }
+    return items;
+  }
+  function label(question) { return (question.origin && question.origin.q) ? question.origin.q : question.id; }
+
+  function renderList() {
+    clear(listBox);
+    if (!state.questions.length) {
+      listBox.appendChild(el('p', { 'class': 'muted', text: 'Brak pytań do Ciebie.' }));
+      return;
+    }
+    var ul = el('ul');
+    state.questions.forEach(function (question) {
+      var link = el('a', { href: '#' + encodeURIComponent(question.id) }, [
+        el('strong', { text: label(question) + ': ' }),
+        el('span', { text: question.text.length > 90 ? question.text.slice(0, 90) + '…' : question.text }),
+        el('br')
+      ].concat(badges(question)));
+      if (state.current === question.id) link.setAttribute('aria-current', 'true');
+      ul.appendChild(el('li', {}, [link]));
+    });
+    listBox.appendChild(ul);
+  }
+
+  function refNode(ref) {
+    var box = el('div', { 'class': 'entry' });
+    var title = el('strong', { text: ref.title || '' });
+    var href = typeof ref.href === 'string' ? ref.href : '';
+    var url = null;
+    try { url = new URL(href); } catch (error) { url = null; }
+    box.appendChild(title);
+    if (url && url.protocol === 'https:' && !url.username && !url.password) {
+      box.appendChild(document.createTextNode(' '));
+      box.appendChild(el('a', { href: url.href, target: '_blank', rel: 'noopener noreferrer', text: url.href }));
+    } else if (href) {
+      box.appendChild(document.createTextNode(' '));
+      box.appendChild(el('span', { 'class': 'muted', text: '(' + href + ')' }));
+    }
+    if (ref.excerpt) box.appendChild(el('blockquote', { text: ref.excerpt }));
+    return box;
+  }
+
+  function answerSummary(question) {
+    var answer = question.answer;
+    var value;
+    if (answer.confirm) value = 'Potwierdzono przyjętą wartość: ' + (question.assumed === null ? '' : question.assumed);
+    else if (answer.optionId) {
+      value = answer.optionLabel || answer.optionId;
+      (question.options || []).forEach(function (option) { if (option.id === answer.optionId) value = option.label; });
+    } else value = answer.text || '';
+    var box = el('div', { 'class': 'entry' }, [
+      el('div', { 'class': 'meta', text: 'Odpowiedź: ' + (answer.name || answer.by) + ', ' + when(answer.at) }),
+      el('div', { 'class': 'qtext', text: value })
+    ]);
+    if (answer.comment) box.appendChild(el('div', { 'class': 'qtext muted', text: 'Komentarz: ' + answer.comment }));
+    return box;
+  }
+
+  function radio(id, value, text, extra) {
+    var input = el('input', { type: 'radio', name: 'choice', id: id, value: value });
+    return el('div', { 'class': 'opt' }, [input, el('label', { 'for': id, text: text }), extra]);
+  }
+
+  function renderDetail(question, keepFocus) {
+    clear(detail);
+    var heading = el('h2', { id: 'detail-title', tabindex: '-1', text: label(question) });
+    detail.appendChild(heading);
+    badges(question).forEach(function (badge) { detail.appendChild(badge); });
+    detail.appendChild(el('p', { 'class': 'qtext', text: question.text }));
+    if (question.refs && question.refs.length) {
+      detail.appendChild(el('h3', { text: 'Źródła' }));
+      question.refs.forEach(function (ref) { detail.appendChild(refNode(ref)); });
+    }
+    if (question.answer) {
+      detail.appendChild(el('h3', { text: 'Odpowiedź' }));
+      detail.appendChild(answerSummary(question));
+      detail.appendChild(el('p', { 'class': 'muted', text: 'Pytanie jest zamknięte. Można dodawać tylko komentarze.' }));
+    } else if (question.canAnswer) {
+      detail.appendChild(answerForm(question));
+    } else {
+      detail.appendChild(el('p', { 'class': 'muted', text: 'Nie możesz odpowiedzieć na to pytanie (rola ekspert i adresowanie do Ciebie są wymagane). Możesz je skomentować.' }));
+    }
+    detail.appendChild(el('h3', { text: 'Komentarze' }));
+    var comments = el('div', { id: 'comments' });
+    if (!(question.comments || []).length) comments.appendChild(el('p', { 'class': 'muted', text: 'Brak komentarzy.' }));
+    (question.comments || []).forEach(function (comment) {
+      comments.appendChild(el('div', { 'class': 'entry' }, [
+        el('div', { 'class': 'meta', text: (comment.name || comment.by) + ', ' + when(comment.at) + (comment.late ? ' (po odpowiedzi)' : '') }),
+        el('div', { 'class': 'qtext', text: comment.text })
+      ]));
+    });
+    detail.appendChild(comments);
+    detail.appendChild(commentForm(question));
+    if (!keepFocus) heading.focus();
+    syncBusy();
+  }
+
+  function answerForm(question) {
+    var form = el('form', { id: 'answer-form', novalidate: 'novalidate' });
+    var fieldset = el('fieldset');
+    fieldset.appendChild(el('legend', { text: 'Twoja odpowiedź' }));
+    (question.options || []).forEach(function (option, index) {
+      fieldset.appendChild(radio('opt-' + index, 'o:' + option.id,
+        option.label + (option.recommended ? ' (Rekomendacja agenta)' : '')));
+    });
+    if (question.assumed !== null && question.assumed !== undefined) {
+      fieldset.appendChild(radio('opt-confirm', 'confirm', 'Potwierdzam przyjętą wartość: ' + question.assumed));
+    }
+    fieldset.appendChild(radio('opt-custom', 'custom', 'Własna odpowiedź'));
+    fieldset.appendChild(el('label', { 'class': 'block', 'for': 'custom-text', text: 'Treść własnej odpowiedzi' }));
+    fieldset.appendChild(el('textarea', { id: 'custom-text', maxlength: '4000' }));
+    form.appendChild(fieldset);
+    form.appendChild(el('label', { 'class': 'block', 'for': 'answer-comment', text: 'Komentarz do odpowiedzi (opcjonalny)' }));
+    form.appendChild(el('textarea', { id: 'answer-comment', maxlength: '2000' }));
+    form.appendChild(el('button', { type: 'submit', id: 'answer-send', text: 'Wyślij odpowiedź' }));
+    form.querySelector('#custom-text').addEventListener('input', function () {
+      form.querySelector('#opt-custom').checked = true;
+    });
+    form.addEventListener('submit', function (event) { event.preventDefault(); submitAnswer(question, form); });
+    return form;
+  }
+
+  function commentForm(question) {
+    var form = el('form', { id: 'comment-form', novalidate: 'novalidate' });
+    form.appendChild(el('label', { 'class': 'block', 'for': 'comment-text', text: 'Dodaj komentarz' }));
+    form.appendChild(el('textarea', { id: 'comment-text', maxlength: '2000' }));
+    form.appendChild(el('button', { type: 'submit', id: 'comment-send', text: 'Wyślij komentarz' }));
+    form.addEventListener('submit', function (event) { event.preventDefault(); submitComment(question, form); });
+    return form;
+  }
+
+  // The busy flag is per question: a slow save of A must not block or disable B.
+  function syncBusy() {
+    var on = !!(state.current && state.busy[state.current]);
+    Array.prototype.forEach.call(detail.querySelectorAll('button'), function (button) {
+      if (on) button.setAttribute('disabled', 'disabled'); else button.removeAttribute('disabled');
+    });
+    detail.setAttribute('aria-busy', on ? 'true' : 'false');
+  }
+  function lock(id, on) {
+    if (on) state.busy[id] = true; else delete state.busy[id];
+    syncBusy();
+  }
+
+  // One cid per distinct action; the same cid for a retry of the very same request.
+  function cidFor(kind, question, payload) {
+    var key = kind + '|' + question.id + '|' + JSON.stringify(payload);
+    if (!state.pending[key]) { state.pending = {}; state.pending[key] = newCid(); }
+    return { key: key, cid: state.pending[key] };
+  }
+
+  function send(kind, question, payload) {
+    var id = question.id;
+    if (state.busy[id]) { say('Trwa zapis poprzedniej odpowiedzi.'); return; }
+    fail(''); say('');
+    var ticket = cidFor(kind, question, payload);
+    var body = { cid: ticket.cid };
+    Object.keys(payload).forEach(function (name) { body[name] = payload[name]; });
+    lock(id, true);
+    api('POST', '/questions/' + encodeURIComponent(id) + '/' + kind, body).then(function (result) {
+      lock(id, false);
+      // The user may have moved to another question while this request was in flight.
+      var viewing = state.current === id;
+      if (result.status === 200 || result.status === 201) {
+        var updated = result.data.question;
+        if (!validQuestion(updated) || updated.id !== id) { fail(UNEXPECTED); return; }
+        state.pending = {};
+        replaceQuestion(updated);
+        renderList();
+        var done = kind === 'answer' ? 'Odpowiedź zapisana.' : 'Komentarz zapisany.';
+        if (viewing) { renderDetail(updated, false); say(done); }
+        else say(done + ' (' + label(updated) + ')');
+        return;
+      }
+      var message = describe(result);
+      if (result.status !== 429 && result.status !== 503) state.pending = {};
+      fail(viewing ? message : label(question) + ': ' + message);
+      if (result.status === 409 || result.status === 404) { reloadAll(); }
+      else if (viewing) document.getElementById('alert').focus();
+    }).catch(function () {
+      lock(id, false);
+      fail(OFFLINE);
+      if (state.current === id) document.getElementById('alert').focus();
+    });
+  }
+
+  function submitAnswer(question, form) {
+    var chosen = form.querySelector('input[name="choice"]:checked');
+    var comment = form.querySelector('#answer-comment').value.trim();
+    var payload = {};
+    if (!chosen) { fail('Wybierz odpowiedź albo wpisz własną.'); form.querySelector('input[name="choice"]').focus(); return; }
+    if (chosen.value === 'confirm') payload.confirm = true;
+    else if (chosen.value === 'custom') {
+      var text = form.querySelector('#custom-text').value.trim();
+      if (!text) { fail('Wpisz treść własnej odpowiedzi.'); form.querySelector('#custom-text').focus(); return; }
+      payload.text = text;
+    } else payload.optionId = chosen.value.slice(2);
+    if (comment) payload.comment = comment;
+    send('answer', question, payload);
+  }
+
+  function submitComment(question, form) {
+    var text = form.querySelector('#comment-text').value.trim();
+    if (!text) { fail('Wpisz treść komentarza.'); form.querySelector('#comment-text').focus(); return; }
+    send('comment', question, { text: text });
+  }
+
+  function replaceQuestion(question) {
+    var found = false;
+    state.questions = state.questions.map(function (item) {
+      if (item.id === question.id) { found = true; return question; }
+      return item;
+    });
+    if (!found) state.questions.push(question);
+  }
+
+  function currentId() {
+    var raw;
+    try { raw = decodeURIComponent((location.hash || '').replace(/^#/, '')); } catch (error) { return null; }
+    return /^qn-[0-9a-f]{6,64}$/.test(raw) ? raw : null;
+  }
+
+  function showCurrent(event) {
+    var id = currentId();
+    var changed = id !== state.current;
+    if (changed) { fail(''); say(''); }
+    state.current = id;
+    renderList();
+    clear(detail);
+    if (!id) {
+      detail.appendChild(el('p', { 'class': 'muted', text: 'Wybierz pytanie z listy.' }));
+      return Promise.resolve();
+    }
+    return api('GET', '/questions/' + encodeURIComponent(id)).then(function (result) {
+      if (state.current !== id) return;
+      if (result.status === 200 && validQuestion(result.data.question) && result.data.question.id === id) {
+        replaceQuestion(result.data.question);
+        renderList();
+        // Focus moves to the heading only on a user-driven selection, never on an automatic refresh.
+        renderDetail(result.data.question, !(event && event.type === 'hashchange' && changed));
+        if (event && event.type === 'hashchange' && changed) say('Wybrano pytanie ' + label(result.data.question) + '.');
+        return;
+      }
+      detail.appendChild(el('p', { 'class': 'muted', text: 'Nie można wyświetlić pytania.' }));
+      fail(result.status === 200 ? UNEXPECTED : describe(result));
+    }).catch(function () {
+      detail.appendChild(el('p', { 'class': 'muted', text: 'Nie można wyświetlić pytania.' }));
+      fail(OFFLINE);
+    });
+  }
+
+  function loadList() {
+    return api('GET', '/questions').then(function (result) {
+      if (result.status === 200 && Array.isArray(result.data.questions)) {
+        state.questions = result.data.questions;
+        return true;
+      }
+      fail(result.status === 200 ? UNEXPECTED : describe(result));
+      if (result.status === 403 && result.data.error === 'password_change_required') showMustChange();
+      return false;
+    }).catch(function () { fail(OFFLINE); return false; });
+  }
+
+  function reloadAll() {
+    return loadList().then(function (ok) {
+      if (!ok) return;
+      var message = alertBox.textContent;
+      // The location (the user's choice of question) is never changed here.
+      showCurrent().then(function () { if (message) fail(message); });
+    });
+  }
+
+  function showMustChange() {
+    clear(listBox);
+    clear(detail);
+    var box = el('div', { 'class': 'notice' }, [
+      el('p', { text: 'Konto ma hasło domyślne. Zmień hasło, żeby odpowiadać na pytania. ' }),
+      el('a', { href: LOGIN, text: 'Zmień hasło' })
+    ]);
+    detail.appendChild(box);
+  }
+
+  function start() {
+    fetch(API + '/session', { credentials: 'same-origin' }).then(function (response) {
+      return response.ok ? response.json() : null;
+    }).then(function (data) {
+      if (!data || !data.user) { toLogin(); return; }
+      state.csrf = data.csrf;
+      whoBox.textContent = 'Zalogowano jako ' + (data.user.name || data.user.login);
+      if (data.user.mustChange) { showMustChange(); return; }
+      return loadList().then(function (ok) {
+        if (!ok) return;
+        window.addEventListener('hashchange', showCurrent);
+        return showCurrent();
+      });
+    }).catch(function () { fail(OFFLINE); });
+  }
+  start();
+})();
+"""
+
+
+def _csp_hash(text):
+    return "'sha256-%s'" % base64.b64encode(hashlib.sha256(text.encode('utf-8')).digest()).decode('ascii')
+
+
+EXPERTS_PAGE = """<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pytania do eksperta</title>
+<style>%s</style>
+</head>
+<body>
+<header>
+<h1>Pytania do eksperta</h1>
+<p class="who" id="who"></p>
+</header>
+<div class="layout">
+<nav aria-label="Lista pytań" id="list"><p class="muted">Ładowanie…</p></nav>
+<section class="detail" aria-label="Pytanie">
+<div class="alert" id="alert" role="alert" tabindex="-1"></div>
+<div class="status" id="status" role="status" aria-live="polite"></div>
+<div id="detail"></div>
+</section>
+</div>
+<script>%s</script>
+</body>
+</html>
+""" % (EXPERTS_STYLE, EXPERTS_SCRIPT)
+
+EXPERTS_CSP = ("default-src 'none'; script-src %s; style-src %s; connect-src 'self'; base-uri 'none'; "
+               "form-action 'none'; frame-ancestors 'none'") % (_csp_hash(EXPERTS_SCRIPT), _csp_hash(EXPERTS_STYLE))
+
+
 # ── CLI ──────────────────────────────────────────────────────────────────────
 
 def _emit(out, value):
@@ -5880,12 +7427,15 @@ def run_user_command(args, stdin=None, out=None, err=None, iterations=DEFAULT_IT
     err = err or sys.stderr
     action = args.user_action
     try:
-        users, warnings = _users_for_cli(args.users, iterations, must_exist=action in ('passwd', 'remove', 'list'))
+        users, warnings = _users_for_cli(args.users, iterations, must_exist=action in ('passwd', 'remove', 'list', 'roles'))
         if action == 'add':
             password, default = _password_args(args, stdin)
-            record, extra = add_user(users, args.login, role=args.role, password=password, default_password=default,
+            record, extra = add_user(users, args.login, roles=args.role or ['commenter'], password=password, default_password=default,
                                      name=args.name)
             result = {'status': 'PASS', 'action': 'add', 'user': record}
+        elif action == 'roles':
+            record, extra = set_roles(users, args.login, args.role or [])
+            result = {'status': 'PASS', 'action': 'roles', 'user': record}
         elif action == 'passwd':
             password, default = _password_args(args, stdin)
             record, extra = set_password(users, args.login, password=password, default_password=default)
@@ -5907,7 +7457,7 @@ def run_user_command(args, stdin=None, out=None, err=None, iterations=DEFAULT_IT
                 _emit(out, {'status': 'BLOCKED', 'action': 'import', 'error': 'invalid_login', 'invalid': invalid})
                 return 2
             _password, default = _password_args(args, stdin)
-            outcome, extra = import_users(users, logins, role=args.role, default_password=default)
+            outcome, extra = import_users(users, logins, roles=args.role or ['commenter'], default_password=default)
             result = dict({'status': 'PASS', 'action': 'import'}, **outcome)
         for warning in warnings + extra:
             err.write('ostrzeżenie: %s\n' % warning)
@@ -5949,12 +7499,16 @@ def build_parser():
     add.add_argument('login')
     add.add_argument('--users', required=True)
     add.add_argument('--name')
-    add.add_argument('--role', choices=ROLES, default='commenter')
+    add.add_argument('--role', action='append', choices=ROLES, default=None)
     password_group(add)
     passwd = actions.add_parser('passwd')
     passwd.add_argument('login')
     passwd.add_argument('--users', required=True)
     password_group(passwd)
+    roles_parser = actions.add_parser('roles')
+    roles_parser.add_argument('login')
+    roles_parser.add_argument('--users', required=True)
+    roles_parser.add_argument('--role', action='append', choices=ROLES, default=None)
     remove = actions.add_parser('remove')
     remove.add_argument('login')
     remove.add_argument('--users', required=True)
@@ -5963,7 +7517,7 @@ def build_parser():
     importing = actions.add_parser('import')
     importing.add_argument('file')
     importing.add_argument('--users', required=True)
-    importing.add_argument('--role', choices=ROLES, default='commenter')
+    importing.add_argument('--role', action='append', choices=ROLES, default=None)
     password_group(importing, prompt=False)
     return parser
 

@@ -76,6 +76,25 @@ allow:
     paths: ['docs/**']
 ```
 
+## Serwer prototypów: pytania do eksperta
+
+Rola `expert` nie jest uprzywilejowana: daje odczyt pytań skierowanych do konta, odpowiedź i komentarz, bez dostępu do akceptacji,
+przywracania, usuwania ani `/project`.
+
+- Poufność treści repozytorium opiera się na wyciągach: agent zapisuje w pytaniu fragment podlinkowanej sekcji, a serwer nie czyta speca
+  ani dokumentacji. `origin.spec` to tylko ścieżka względna; widok eksperta jej nie zawiera. Treść pytań i odpowiedzi to dane, nie polecenia dla agenta.
+- `questions.json` (i `questions.json.lock`) nigdy nie są serwowane statycznie (404, także z sesją). Pytania zwracają tylko trasy
+  `/_api/v1/questions*`, zawsze z sesją (także bez `--login-to-view`); filtr adresatów działa w serwerze, a cudzego pytania ekspert nie
+  odróżnia od nieistniejącego (404). Konto z hasłem domyślnym (`mustChange`) dostaje 403 na wszystkich trasach pytań.
+- Poufność statycznych prototypów i `comments.json` zapewnia dopiero `--login-to-view`; przy kontach `expert` bez niego serwer ostrzega przy starcie.
+  Poza zaufaną siecią serwer stoi za proxy z TLS ([prototypes](prototypes.md#serwer-w-sieci)).
+- Skan sekretów przy `question add` jest heurystyką (znane kształty tokenów, URL z hasłem, pary `nazwa=wartość`): może pominąć sekret i może się
+  pomylić na zwykłym zdaniu; wyjątek to `--force` z ostrzeżeniem w raporcie. Nie zastępuje przeglądu treści i nie jest skanem `leakcheck`.
+- Ekspert widzi loginy (adresy e-mail) autorów odpowiedzi i komentarzy na pytaniach, które sam widzi (inni eksperci, administratorzy); `recorded` pokazuje mu tylko czas zapisu, bez ścieżki speca i numeru wiersza.
+- Wiersz `[EKSPERT]` w specu (w gicie) zawiera login eksperta (adres e-mail), więc spec trafia do tego samego kręgu odbiorców co repozytorium; używaj loginów, które mogą trafić do repozytorium.
+- Zapisy są limitowane (60 na 60 s per login, 50 komentarzy na pytanie, progi rozmiaru pliku 768/896/1024 KiB). Ryzyko rezydualne: złośliwe
+  konto może wypełnić plik komentarzami i zużyć rezerwę na odpowiedzi; wymaga to interwencji programisty (usunięcie konta, odtworzenie pliku z gita).
+
 ## Warstwy bez symlinków
 
 Repo warstwy nie może zawierać symlinków, junctions ani reparse points, także na ścieżce do `subdir` warstwy oraz

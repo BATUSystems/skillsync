@@ -204,6 +204,14 @@ lessons:
     title: "os.kill(pid, 0) na Windows zabija proces zamiast go sprawdzać: żywotność PID tam rozstrzyga inny dowód"
     tags: [skillsync, python, windows, process, prototype, login-link, portability]
     paths: ['skillsync_workflow/prototype_server.py', 'tests/test_skillsync_prototype_login_link.py']
+  - path: strona-z-wlasnym-csp-wymaga-flagi-w-end-headers.md
+    title: "Strona serwera z własnym CSP i Referrer-Policy: end_headers dubluje nagłówki bez flagi _strict_page"
+    tags: [skillsync, python, http, csp, security, prototype, server]
+    paths: ['skillsync_workflow/prototype_server.py', 'tests/test_skillsync_prototype_experts_page.py']
+  - path: usersfile-update-zapisuje-caly-obiekt-kont.md
+    title: "UsersFile.update zapisuje cały obiekt kont: zmiana jednego konta nie może normalizować pozostałych"
+    tags: [skillsync, python, prototype, users, compatibility, migration]
+    paths: ['skillsync_workflow/prototype_server.py', 'tests/test_skillsync_prototype_roles.py']
   - path: test-z-wersja-rdzenia-na-sztywno-wygasa.md
     title: "Test z wersją rdzenia na sztywno wygasa przy podbiciu wersji: wyliczaj ją od generator_version()"
     tags: [skillsync, tests, version, release, core-min]

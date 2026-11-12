@@ -1,7 +1,7 @@
 """`skillsync prototype`: clickable HTML prototypes in the project repository.
 
 Actions `init`, `sync`, `index`, `list`, `ids`, `migrate`, `serve`, `user`, `iterate`, `restore`, `comments`, `triage`,
-`decide`, `resolve`, `merge-comments` plus validation of the optional `prototype:` manifest
+`decide`, `resolve`, `merge-comments`, `question` plus validation of the optional `prototype:` manifest
 section (`validate_prototype`, also called by `doctor`). Assets (engine, default theme,
 templates) come from the files `skills/prototype/assets/**` of the active layers (`LayerSet`,
 per file the later layer wins, as in the generator) or from the `--assets` directory (contract C1).
@@ -1582,9 +1582,10 @@ def _ensure_lines(path, lines, template):
     missing = [line for line in lines if line not in present]
     if not missing:
         return None
+    eol = '\r\n' if '\r\n' in text else '\n'
     if text and not text.endswith('\n'):
-        text += '\n'
-    return text + ''.join(line + '\n' for line in missing)
+        text += eol
+    return text + ''.join(line + eol for line in missing)
 
 
 LEGACY_COMMENTS_KEPT = 'comments.v1.js'
@@ -2281,16 +2282,20 @@ def user_command(root, args):
     action = args.user_command
     report = {'status': 'PASS', 'action': action, 'users_file': _relative_or_absolute(users.path, repo)}
     try:
-        if action in ('passwd', 'remove', 'list') and not users.exists():
+        if action in ('passwd', 'remove', 'list', 'roles') and not users.exists():
             raise PrototypeError(f'users_file_missing: {report["users_file"]} does not exist')
-        if action in ('add', 'passwd'):
+        if action == 'roles':
+            record, extra = server.set_roles(users, args.login, args.role or [])
+            report['user'] = record
+            warnings += extra
+        elif action in ('add', 'passwd'):
             password = _cli_password(args)
             default = None
             if password is None:
                 default, extra = default_password()
                 warnings += extra
             if action == 'add':
-                record, extra = server.add_user(users, args.login, role=args.role, password=password,
+                record, extra = server.add_user(users, args.login, roles=args.role or ['commenter'], password=password,
                                                 default_password=default, name=args.name)
             else:
                 record, extra = server.set_password(users, args.login, password=password, default_password=default)
@@ -2311,7 +2316,7 @@ def user_command(root, args):
                                      [f'line {item["line"]}: {item["error"]}' for item in invalid])
             default, extra = default_password()
             warnings += extra
-            outcome, extra = server.import_users(users, logins, role=args.role, default_password=default)
+            outcome, extra = server.import_users(users, logins, roles=args.role or ['commenter'], default_password=default)
             report.update(outcome)
             warnings += extra
     except server.UserError as error:
@@ -2669,8 +2674,8 @@ def restore_prototype(root, manifest, slug, screen=None, source=None, reason=Non
         raise PrototypeError(f'--reason must have 1-{server.MAX_REASON} characters')
     login, record, user_warnings = _privileged_who(repo, users, who)
     warnings.extend(user_warnings)
-    if record['role'] not in server.PRIVILEGED_ROLES:
-        raise PrototypeError(f'forbidden: {login} has the role {record["role"]}; restore needs acceptor or developer')
+    if not server.has_privileged_role(record):
+        raise PrototypeError(f'forbidden: {login} has the role {server.primary_role(record)}; restore needs acceptor or developer')
     try:
         if dry_run:
             preview = server.preview_restore(store, str(directory), screen, source)
@@ -2748,7 +2753,7 @@ def accept_prototype(root, manifest, slug=None, screens=None, all_screens=False,
     login = server.normalize_login(by)
     account, warnings = _users(repo, users)
     record = account.get(login) if account.exists() else None
-    if record is None or record['role'] not in server.PRIVILEGED_ROLES:
+    if record is None or not server.has_privileged_role(record):
         return _blocked('forbidden', f'--by must be an account with the role acceptor or developer '
                         f'(checked in {_relative_or_absolute(account.path, repo)})')
     if record['mustChange']:
@@ -3082,8 +3087,8 @@ def decide_prototype(root, manifest, slug, thread, kind, outcome, text, who=None
         if who is None:
             raise PrototypeError('--who is required with --kind developer (a login with the role developer)')
         login, record, _warnings = _privileged_who(Path(root).resolve(), users, who)
-        if record['role'] not in HUMAN_DECIDERS:
-            raise PrototypeError(f'forbidden: {login} has the role {record["role"]}; --who needs the role developer or acceptor')
+        if not any(role in HUMAN_DECIDERS for role in server.roles_of(record)):
+            raise PrototypeError(f'forbidden: {login} has the role {server.primary_role(record)}; --who needs the role developer or acceptor')
         payload['who'] = login
     elif who is not None:
         raise PrototypeError('--who is only for --kind developer')
@@ -3107,21 +3112,33 @@ HUMAN_DECIDERS = ('developer', 'acceptor')  # roles whose decision „Wprowadź�
 
 
 def _roles(root):
-    """`{login: role}` from the users file (empty without the file); used only to describe comments."""
+    """`{login: highest role}` from the users file (empty without the file); used only to describe comments."""
+    return _role_maps(root)[0]
+
+
+def _roles_all(root):
+    """`{login: [roles]}` from the users file (empty without the file)."""
+    return _role_maps(root)[1]
+
+
+def _role_maps(root):
     try:
         users, _warnings = _users(Path(root).resolve(), None)
         if not users.exists():
-            return {}
-        return {record['login']: record.get('role') for record in users.users() if isinstance(record, dict)}
+            return {}, {}
+        records = [record for record in users.users() if isinstance(record, dict)]
+        return ({record['login']: server.primary_role(record) for record in records},
+                {record['login']: list(server.roles_of(record)) for record in records})
     except (PrototypeError, server.UserError, OSError, ValueError, AttributeError, TypeError):
-        return {}
+        return {}, {}
 
 
 def thread_reaction(thread, author_role, roles):
     """What the agent may do with a thread (skill `prototype`, table „rola autora × stan wątku”):
     `implement` = the latest decision is „Wprowadź” (apply) by a developer or acceptor; `order?` = no human decision yet,
     but the author is a developer or acceptor (implement only an unambiguous instruction); `reply` = everything else
-    (a proposal by a commenter, a decision Wariant/Odłóż/Zostaw, an agent decision)."""
+    (a proposal by a commenter or an expert, a decision Wariant/Odłóż/Zostaw, an agent decision).
+    `roles` holds the highest role per login, so an account with `expert` and `developer`/`acceptor` is not advisory."""
     decisions = (thread or {}).get('decisions') or []
     last = decisions[-1] if decisions else None
     if last and last.get('kind') == 'developer' and roles.get(last.get('who')) in HUMAN_DECIDERS:
@@ -3131,7 +3148,7 @@ def thread_reaction(thread, author_role, roles):
     return 'reply'
 
 
-def _new_comments(snapshot, since_at=None, after=None, roles=None):
+def _new_comments(snapshot, since_at=None, after=None, roles=None, roles_all=None):
     """Operations `create`/`reply` by a person (not `agent`, `import`, `server`) newer than `since_at` or after the
     operation id `after`, oldest first, with the thread facts."""
     fold = snapshot.fold
@@ -3150,13 +3167,16 @@ def _new_comments(snapshot, since_at=None, after=None, roles=None):
         thread = fold['byId'].get(thread_id) if thread_id else None
         message = payload.get('message') or {}
         roles = roles or {}
+        roles_all = roles_all or {}
         decisions = (thread or {}).get('decisions') or []
         last = decisions[-1] if decisions else None
         author_role = roles.get(operation.get('by'))
         found.append({'opId': operation.get('id'), 'type': operation['type'], 'threadId': thread_id,
-                      'authorRole': author_role, 'threadStatus': (thread or {}).get('status'),
+                      'authorRole': author_role, 'authorRoles': roles_all.get(operation.get('by')),
+                      'threadStatus': (thread or {}).get('status'),
                       'decision': ({'kind': last.get('kind'), 'outcome': last.get('outcome'), 'who': last.get('who'),
-                                    'whoRole': roles.get(last.get('who')), 'at': last.get('at')} if last else None),
+                                    'whoRole': roles.get(last.get('who')),
+                                    'whoRoles': roles_all.get(last.get('who')), 'at': last.get('at')} if last else None),
                       'reaction': thread_reaction(thread, author_role, roles),
                       'number': thread['number'] if thread else None,
                       'screen': (thread or {}).get('screen') or payload.get('screen'),
@@ -3184,7 +3204,7 @@ def wait_prototype(root, manifest, slug, since=None, after=None, timeout=1800.0,
     deadline = time.monotonic() + max(0.0, float(timeout))
     while True:
         if store.state() != 'v1':
-            comments = _new_comments(store.snapshot(), since_at, after, _roles(root))
+            comments = _new_comments(store.snapshot(), since_at, after, _roles(root), _roles_all(root))
             if comments:
                 return {'status': 'PASS', 'slug': slug, 'event': 'comment', 'comment': comments[0],
                         'comments': comments}
@@ -3294,6 +3314,565 @@ def merge_comments_driver(ancestor, current, other):
         server.atomic_write_bytes(str(current_path), server.serialize_document(mine.prototype_id, merged).encode('utf-8'))
     return _merge_report(merged, added, _driver_directory(mine.prototype_id),
                          {'slug': mine.prototype_id, 'driver': True})
+
+
+# ── Questions for a domain expert (`question`) ───────────────────────────────
+
+AGENT_VIEWER = {'login': 'agent', 'roles': ['developer']}   # the agent reads the administrator view
+QUESTION_STATUS_DEFAULT = ('open', 'answered')
+_SECRET_SHAPES = re.compile(
+    r'-----BEGIN [A-Z ]*PRIVATE KEY[A-Z ]*-----'
+    r'|(?<![A-Za-z0-9])(?:sk-ant-|sk-proj-|ghp_|gho_|ghu_|ghs_|ghr_|github_pat_|glpat-|xox[abprs]-)[A-Za-z0-9_-]{8,}'
+    r'|(?<![A-Za-z0-9])sk-[A-Za-z0-9_-]{20,}'
+    r'|(?<![A-Za-z0-9])[spr]k_(?:live|test)_[A-Za-z0-9]{8,}'
+    r'|(?<![A-Za-z0-9])(?:AKIA|ASIA)[0-9A-Z]{16}(?![A-Za-z0-9])'
+    r'|(?<![A-Za-z0-9])AIza[0-9A-Za-z_-]{35}'
+    r'|(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}'
+    r'|hooks\.slack\.com/services/[A-Z0-9]+/[A-Z0-9]+/[A-Za-z0-9]+'
+    r'|(?i:[a-z][a-z0-9+.-]*://[^/\s:@]+:[^/\s@]+@)'
+    r'|(?i:\bbearer\s+[A-Za-z0-9._~+/=-]{20,})'
+    r'|(?i:\bauthorization\s*[:=]\s*(?:(?:bearer|basic|token)\s+\S{8,}|\S{16,}))'
+    r'|(?i:\b[\w-]{0,40}(?:secret|private|api[-_]?key|apikey|passw(?:or)?d|pwd|accountkey|sharedaccesskey|token)'
+    r'[\w-]{0,40}["\']?\s*[=:]\s*["\']?\S{6,})')
+
+
+def _has_secret(text):
+    """A secret in `text`: well-known token shapes and `name=value` pairs. The scan is independent of the
+    environment (it does not use `common.redact`, which also masks values of environment variables)."""
+    return _SECRET_SHAPES.search(text) is not None
+
+
+def _secret_fields(fields):
+    """Names of the `(name, text)` pairs holding a secret (never their values)."""
+    return [name for name, text in fields if isinstance(text, str) and _has_secret(text)]
+
+
+_CONTROL_CHARS = re.compile('[\x00-\x1f\x7f\u202a-\u202e\u2066-\u2069]')
+
+
+def _flat(text):
+    """One line without control and bidi characters (collapsed white space)."""
+    text = ' '.join(str(text).split())
+    return ' '.join(_CONTROL_CHARS.sub('', text).split())
+
+
+def _one_line(text):
+    """One line; a standalone em dash (also at the edge of the text) becomes `-`, so it cannot act as the row separator."""
+    return re.sub(r'(?:(?<= )|^)\u2014(?= |$)', '-', _flat(text))
+
+
+def _spec_cell(text, limit=500):
+    """Text for a spec row: one line without control/bidi characters, no em dash (the row separator), no leading `- Q` or `## `, at most `limit` characters."""
+    text = _flat(text).replace('\u2014', '-')
+    previous = None
+    while previous != text:
+        previous = text
+        text = re.sub(r'^(?:-\s*Q|#+\s)', '', text).lstrip()
+    return text[:limit].rstrip()
+
+
+def question_answer_line(question):
+    """Spec row after the answer (grammar of the `[EKSPERT]` class); the question text and the answer are each cut to
+    500 characters (`_spec_cell`), for a question as the exported item or the
+    administrator view (`id`, `text`, `origin.q`, `assumed`, `options`, `answer`); None without an answer."""
+    answer = question.get('answer')
+    if not answer:
+        return None
+    if answer.get('text') is not None:
+        value = answer['text']
+    elif answer.get('optionId') is not None:
+        labels = [item.get('label') for item in question.get('options') or [] if item.get('id') == answer['optionId']]
+        value = labels[0] if labels and isinstance(labels[0], str) else answer.get('optionLabel') or answer['optionId']
+    elif answer.get('confirm'):
+        value = 'potwierdzam przyjętą wartość: %s' % (question.get('assumed') or '')
+    else:
+        value = ''
+    label = (question.get('origin') or {}).get('q') or 'Q?'
+    moment = str(answer.get('at') or '')[:16] + 'Z'
+    return '- %s [EKSPERT]: %s (ekspert: %s) — odpowiedź: %s — ekspert: %s, %s' % (
+        label, _spec_cell(question['text']), question['id'], _spec_cell(value), _one_line(answer.get('by') or ''), moment)
+
+
+def question_spec_line(question, expert=True):
+    """Spec row of a question (grammar of the `[EKSPERT]` class): `expert` adds the `(ekspert: qn-…)` marker,
+    without it the row is the plain `Q` of the developer (after `withdraw`)."""
+    label = question['origin'].get('q') or 'Q?'
+    line = '- %s%s: %s' % (label, '' if question['blocking'] else ' [ZAŁOŻENIE]', _one_line(question['text']))
+    if expert:
+        line += ' (ekspert: %s)' % question['id']
+    if not question['blocking']:
+        line += ' — przyjęte: %s' % _one_line(question['assumed'] or '')
+    return line
+
+
+def _question_failure(error):
+    """FAIL (exit 1) for a request the store refuses (400/404/409), BLOCKED for the environment (507, 503, broken file)."""
+    fail = error.status in (400, 404, 409) and error.code != 'invalid_log'
+    report = {'status': 'FAIL' if fail else 'BLOCKED', 'error': error.code, 'reason': '%s: %s' % (error.code, error.message)}
+    for key, value in (error.details or {}).items():
+        report.setdefault(key, value)
+    return report
+
+
+def _question_fail(code, reason, **extra):
+    report = {'status': 'FAIL', 'error': code, 'reason': reason}
+    report.update(extra)
+    return report
+
+
+def _questions_store(repo, manifest):
+    settings = _settings(repo, manifest)
+    if settings['root'] is None:
+        raise PrototypeError('prototype.root: not usable')
+    return settings, server.QuestionsStore(str(settings['root']))
+
+
+def _account_records(repo, users_value=None):
+    """`{login: record}` of the users file, or None when it is missing or unreadable."""
+    try:
+        users, _warnings = _users(repo, users_value)
+        if not users.exists():
+            return None
+        return {record['login']: record for record in users.users() if isinstance(record, dict) and 'login' in record}
+    except (PrototypeError, server.UserError, OSError, ValueError, TypeError, KeyError):
+        return None
+
+
+def _users_state(repo, users_value=None):
+    """`(records, error, message)`: `error` is `users_file_missing` or `users_file_invalid` when `records` is None."""
+    path = users_file_path(repo, users_value)
+    if not os.path.lexists(path):
+        return None, 'users_file_missing', 'no users file (%s): experts have no accounts' % _relative_or_absolute(path, repo)
+    try:
+        users, _warnings = _users(repo, users_value)
+        return ({record['login']: record for record in users.users() if isinstance(record, dict) and 'login' in record},
+                None, None)
+    except (PrototypeError, server.UserError, OSError, ValueError, TypeError, KeyError) as error:
+        return None, 'users_file_invalid', 'the users file (%s) is unusable: %s' % (
+            _relative_or_absolute(path, repo), getattr(error, 'message', None) or str(error) or type(error).__name__)
+
+
+def _account_names(repo, users_value=None):
+    names = {}
+    for login, record in (_account_records(repo, users_value) or {}).items():
+        if record.get('name'):
+            names[login] = record['name']
+    return names
+
+
+def _experts_url(repo, settings):
+    """`(base address, running)`: the address of a running server of this project (state file with a live pid;
+    the server is not asked), else the default one."""
+    host, port, running = server.DEFAULT_HOST, server.DEFAULT_PORT, False
+    try:
+        root_real = os.path.realpath(settings['root'])
+        live = [state for state in server.link_read_states(server.link_run_dir_of(repo))
+                if os.path.realpath(state['root']) == root_real and server.link_pid_alive(state['pid'])]
+        if len(live) == 1:
+            host, port, running = live[0]['host'], live[0]['port'], True
+    except (OSError, ValueError, TypeError, KeyError):
+        pass
+    if server.link_host_kind(host) == 'wildcard':
+        host = '127.0.0.1'
+    if ':' in host and not host.startswith('['):
+        host = '[%s]' % host
+    return 'http://%s:%s%s' % (host, port, server.EXPERTS_PATH), running
+
+
+def _ensure_root_lines(root, name, lines):
+    """Append the missing `lines` to `<root>/<name>` (created with just them); never rewrites other content."""
+    path = Path(root) / name
+    text = _ensure_lines(path, lines, ''.join(line + '\n' for line in lines))
+    if text is None:
+        return False
+    atomic_write(path, text)
+    return True
+
+
+def _merge_attribute(path):
+    """`(foreign, ours)` for the `.gitattributes` lines of `questions.json`: `ours` when one sets our merge driver,
+    else `foreign` = the first other merge setting (or None)."""
+    if not os.path.lexists(path):
+        return None, False
+    data, _reason = read_regular_bytes(path, MAX_PROTOTYPE_JSON)
+    if data is None:
+        return None, False
+    foreign = None
+    for line in data.decode('utf-8', 'replace').splitlines():
+        tokens = line.split()
+        if len(tokens) < 2 or tokens[0] != server.QUESTIONS_FILE:
+            continue
+        merges = [token for token in tokens[1:] if re.fullmatch(r'[-!]?merge(=\S*)?', token)]
+        if 'merge=skillsync-questions' in merges:
+            return None, True
+        if merges and foreign is None:
+            foreign = merges[0]
+    return foreign, False
+
+
+def _parse_question_ref(value):
+    parts = value.split('|', 2)
+    if len(parts) < 2 or not parts[0].strip() or not parts[1].strip():
+        raise PrototypeError(f'--ref {value!r}: use "title|href" or "title|href|excerpt"')
+    ref = {'title': parts[0].strip(), 'href': parts[1].strip()}
+    if len(parts) == 3 and parts[2].strip():
+        ref['excerpt'] = parts[2].strip()
+    return ref
+
+
+def _parse_question_options(values):
+    options = []
+    for index, value in enumerate(values or [], 1):
+        label, recommended = value, False
+        if value.endswith(':recommended'):
+            label, recommended = value[:-len(':recommended')], True
+        option = {'id': 'o%d' % index, 'label': label.strip()}
+        if recommended:
+            option['recommended'] = True
+        options.append(option)
+    return options
+
+
+def _parse_origin(value):
+    spec, _separator, label = value.rpartition(':')
+    if not spec or not server.QUESTION_ORIGIN_Q_RE.fullmatch(label):
+        raise PrototypeError(f'--origin {value!r}: use <spec path>:Q<n>, e.g. docs/specs/x.md:Q3')
+    return {'spec': spec, 'q': label}
+
+
+def add_question(root, manifest, args):
+    """`question add`: appends an `ask` (`by: agent`) under the lock; a secret blocks (exit 2) unless `--force`."""
+    repo = Path(root).resolve()
+    settings, store = _questions_store(repo, manifest)
+    if args.blocking == (args.assume is not None):
+        return _question_fail('invalid_mode', 'give exactly one of --assume <value> (a question that does not stop '
+                              'the agent) or --blocking (the agent waits for the answer)')
+    refs = [_parse_question_ref(value) for value in args.ref or []]
+    options = _parse_question_options(args.option)
+    origin = _parse_origin(args.origin)
+    addressees = 'all'
+    if args.to:
+        addressees = list(dict.fromkeys(server.normalize_login(login) for login in args.to))
+    fields = [('text', args.text), ('assume', args.assume)]
+    for number, ref in enumerate(refs, 1):
+        fields += [('ref %d title' % number, ref['title']), ('ref %d href' % number, ref['href']),
+                   ('ref %d excerpt' % number, ref.get('excerpt'))]
+    fields += [('option %d' % number, option['label']) for number, option in enumerate(options, 1)]
+    warnings = list(settings['warnings'])
+    secrets_found = _secret_fields(fields)
+    if secrets_found:
+        if not args.force:
+            return {'status': 'BLOCKED', 'error': 'secret_detected', 'fields': secrets_found,
+                    'reason': 'the question looks like it holds a secret (%s); this is a heuristic that can be wrong: '
+                              'remove the secret, or pass --force after checking those fields that it is not one'
+                              % ', '.join(secrets_found)}
+        warnings.append('--force: a possible secret in %s went to the question file; specLine repeats the question '
+                        'text, so do not paste it into the spec or a commit without checking it' % ', '.join(secrets_found))
+    accounts = _account_records(repo, args.users)
+    if args.to and accounts is not None:
+        for login in addressees:
+            record = accounts.get(login)
+            if record is None:
+                warnings.append(f'{login}: no such account in the users file; only a developer or an acceptor sees the question')
+            elif 'expert' not in server.roles_of(record):
+                warnings.append(f'{login}: the account has no expert role and cannot answer')
+    question_id = args.question_id or server.new_question_id()
+    partial = {'type': 'ask', 'questionId': question_id, 'by': 'agent', 'cid': args.cid or 'ask-' + question_id,
+               'text': args.text, 'blocking': bool(args.blocking), 'assumed': None if args.blocking else args.assume,
+               'addressees': addressees, 'refs': refs, 'options': options, 'origin': origin}
+    if args.refers_to:
+        partial['refersTo'] = args.refers_to
+    try:
+        result = store.transaction(lambda snapshot: partial)
+    except server.PrototypeServerError as error:
+        return _question_failure(error)
+    question = store.snapshot().fold['byId'][question_id]
+    files = []
+    if result.operations:
+        files.append(_relative(store.path, repo))
+    else:
+        existing = result.existing or {}
+        if existing.get('text') != args.text:
+            warnings.append('a question with this id and cid already exists with other content: nothing was written')
+    try:
+        for name, lines in (('.gitignore', (server.QUESTIONS_FILE + server.LOCK_SUFFIX, '*.tmp')),
+                            ('.gitattributes', (server.QUESTIONS_FILE + ' merge=skillsync-questions',))):
+            if name == '.gitattributes':
+                conflict, ours = _merge_attribute(Path(settings['root']) / name)
+                if ours:
+                    continue
+                if conflict:
+                    warnings.append('.gitattributes already sets another merge driver for %s (%s): left unchanged, '
+                                    'set merge=skillsync-questions yourself' % (server.QUESTIONS_FILE, conflict))
+                    continue
+            if _ensure_root_lines(settings['root'], name, lines):
+                files.append(_relative(Path(settings['root']) / name, repo))
+    except (PrototypeError, OSError, ValueError) as error:
+        warnings.append(f'{server.QUESTIONS_FILE} was written, but the ignore/attributes lines were not: {error}')
+    base, running = _experts_url(repo, settings)
+    report = {'status': 'PASS', 'questionId': question_id, 'idempotent': not result.operations,
+              'specLine': question_spec_line(question), 'files': files, 'warnings': warnings}
+    if running:
+        report['url'] = '%s#%s' % (base, question_id)
+    return report
+
+
+def _project_name(settings):
+    return Path(settings['root']).name
+
+
+def _states_filter(value):
+    if value is None:
+        return list(QUESTION_STATUS_DEFAULT)
+    states = [item.strip() for item in value.split(',') if item.strip()]
+    if states == ['all']:
+        return list(server.QUESTION_STATES)
+    unknown = [item for item in states if item not in server.QUESTION_STATES]
+    if unknown or not states:
+        raise PrototypeError(f'--status: unknown {", ".join(unknown) or value!r} (use {", ".join(server.QUESTION_STATES)} or all)')
+    return states
+
+
+def _question_document(repo, settings, snapshot, users=None):
+    """The `expert-questions/1` document read from the file (no server); `status` is added for the exit code."""
+    base, running = _experts_url(repo, settings)
+    document = server.export_questions(snapshot, _project_name(settings), base if running else None, _account_names(repo, users))
+    document['status'] = 'PASS'
+    return document
+
+
+def list_questions(root, manifest, status=None, users=None):
+    repo = Path(root).resolve()
+    settings, store = _questions_store(repo, manifest)
+    states = _states_filter(status)
+    document = _question_document(repo, settings, store.snapshot(), users)
+    everything = document['questions']
+    document['questions'] = [item for item in everything if item['state'] in states]
+    document['statuses'] = states
+    document['counts'] = {state: sum(1 for item in everything if item['state'] == state) for state in server.QUESTION_STATES}
+    document['counts']['toRecord'] = sum(1 for item in everything if item['state'] == 'answered' and 'recorded' not in item)
+    return document
+
+
+def show_question(root, manifest, question_id, users=None):
+    repo = Path(root).resolve()
+    settings, store = _questions_store(repo, manifest)
+    document = _question_document(repo, settings, store.snapshot(), users)
+    document['questions'] = [item for item in document['questions'] if item['id'] == question_id]
+    if not document['questions']:
+        return _question_fail('not_found', f'no question {question_id}')
+    document['answerLine'] = question_answer_line(document['questions'][0])
+    return document
+
+
+def export_questions_cli(root, manifest, users=None):
+    repo = Path(root).resolve()
+    settings, store = _questions_store(repo, manifest)
+    names = _account_names(repo, users)
+    base, running = _experts_url(repo, settings)
+    document = server.export_questions(store.snapshot(), _project_name(settings), base if running else None, names)
+    document['status'] = 'PASS'
+    return document
+
+
+def record_question(root, manifest, question_id, spec, line):
+    """`question record`: the operation `recorded` (the answer is in the spec); idempotent, a repeat with
+    another place keeps the first one and says so."""
+    repo = Path(root).resolve()
+    settings, store = _questions_store(repo, manifest)
+    if line < 1:
+        raise PrototypeError('--line must be 1 or more')
+    partial = {'type': 'recorded', 'questionId': question_id, 'by': 'agent', 'cid': 'recorded-' + question_id,
+               'spec': spec, 'line': line}
+    try:
+        result = store.transaction(lambda snapshot: partial)
+    except server.PrototypeServerError as error:
+        return _question_failure(error)
+    kept = result.existing or (result.operations[0] if result.operations else {})
+    report = {'status': 'PASS', 'questionId': question_id, 'changed': bool(result.operations),
+              'recorded': {'spec': kept.get('spec'), 'line': kept.get('line'), 'at': kept.get('at')},
+              'files': [_relative(store.path, repo)] if result.operations else []}
+    if result.existing is not None and (kept.get('spec'), kept.get('line')) != (spec, line):
+        report['warnings'] = [f'already recorded at {kept.get("spec")}:{kept.get("line")}; the first record stays']
+    return report
+
+
+def withdraw_question(root, manifest, question_id):
+    """`question withdraw` (K17): only an open question; `specLine` returns the row to the plain `Q`/`[ZAŁOŻENIE]`."""
+    repo = Path(root).resolve()
+    settings, store = _questions_store(repo, manifest)
+    partial = {'type': 'withdraw', 'questionId': question_id, 'by': 'agent', 'cid': 'withdraw-' + question_id}
+    try:
+        result = store.transaction(lambda snapshot: partial)
+    except server.PrototypeServerError as error:
+        return _question_failure(error)
+    question = store.snapshot().fold['byId'][question_id]
+    return {'status': 'PASS', 'questionId': question_id, 'changed': bool(result.operations),
+            'specLine': question_spec_line(question, expert=False),
+            'files': [_relative(store.path, repo)] if result.operations else []}
+
+
+def url_question(root, manifest, users=None):
+    """`question url`: the address of `/_experts` and the number of `expert` accounts; BLOCKED without them.
+    Does not check that the server runs."""
+    repo = Path(root).resolve()
+    settings = _settings(repo, manifest)
+    accounts, error, message = _users_state(repo, users)
+    if accounts is None:
+        return {'status': 'BLOCKED', 'error': error, 'reason': message}
+    experts = sum(1 for record in accounts.values() if 'expert' in server.roles_of(record))
+    if not experts:
+        return {'status': 'BLOCKED', 'error': 'no_expert_accounts', 'experts': 0,
+                'reason': 'no account with the role expert (skillsync prototype user add … --role expert)'}
+    base, running = _experts_url(repo, settings)
+    return {'status': 'PASS', 'url': base, 'experts': experts, 'running': running}
+
+
+def _since_ms(since):
+    moment = server.parse_at(since)
+    if moment is None:
+        moment = _parse_iso(since)
+    if moment is None:
+        raise PrototypeError('--since must be an ISO time, e.g. 2026-11-10T15:30:00Z')
+    return moment
+
+
+def _question_events(snapshot, wanted, since_at, after):
+    """`answer`/`comment` operations of people (not `agent`, `import`, `server`) newer than `since_at` or after the
+    operation `after` (file order) on open or answered questions of `wanted` (None = all). A second answer counts as a comment."""
+    fold = snapshot.fold
+    reached = after is None
+    found = []
+    for operation in snapshot.operations:
+        if not reached:
+            reached = operation.get('id') == after
+            continue
+        if operation.get('type') not in ('answer', 'comment') or operation.get('by') in server.RESERVED_LOGINS:
+            continue
+        question = fold['byId'].get(operation.get('questionId'))
+        if question is None or question['state'] == 'withdrawn' or (wanted is not None and question['id'] not in wanted):
+            continue
+        if since_at is not None and (server.parse_at(operation.get('at')) or 0) <= since_at:
+            continue
+        answer = question['answer']
+        found.append({'event': 'answer' if answer is not None and answer['id'] == operation.get('id') else 'comment',
+                      'question': question, 'opId': operation.get('id'), 'by': operation.get('by'), 'at': operation.get('at')})
+    return found
+
+
+def _wait_report(event, question, fold, **extra):
+    view = server.question_view(question, AGENT_VIEWER, fold['byId'])
+    report = {'status': 'PASS', 'event': event, 'questionId': question['id'], 'question': view,
+              'answerLine': question_answer_line(view)}
+    report.update(extra)
+    return report
+
+
+WAIT_READ_RETRIES = 3
+WAIT_READ_PAUSE = 0.3
+
+
+def _wait_snapshot(store, retry_missing):
+    """Snapshot of the file; a half-written (truncated JSON) or briefly absent file (`retry_missing`) is retried
+    `WAIT_READ_RETRIES` times every `WAIT_READ_PAUSE` s before the error is returned to the caller."""
+    for attempt in range(WAIT_READ_RETRIES + 1):
+        last = attempt == WAIT_READ_RETRIES
+        try:
+            snapshot = store.snapshot()
+        except (server.QuestionsFileError, OSError):
+            if last:
+                raise
+        else:
+            if snapshot.exists or not retry_missing or last:
+                return snapshot
+        time.sleep(WAIT_READ_PAUSE)
+
+
+def wait_question(root, manifest, question_id=None, all_questions=False, since=None, after=None, timeout=1800.0, interval=5.0):
+    """`question wait` (K6): PASS at once for an answered question (`<id>`: also a recorded one; `--all`: only an
+    answered one without `recorded`), else for the first answer or comment newer than `--since`/`--after`
+    (default: now); TIMEOUT (exit 3)."""
+    repo = Path(root).resolve()
+    _settings_, store = _questions_store(repo, manifest)
+    if all_questions == (question_id is not None):
+        raise PrototypeError('wait takes one question id or --all')
+    if since is not None and after is not None:
+        raise PrototypeError('wait takes --since or --after, not both')
+    since_at = _since_ms(since) if since is not None else None
+    if since is None and after is None:
+        since_at = int(time.time() * 1000)
+    wanted = None if all_questions else {question_id}
+    deadline = time.monotonic() + max(0.0, float(timeout))
+    checked_after = after is None
+    while True:
+        snapshot = _wait_snapshot(store, not all_questions)
+        fold = snapshot.fold
+        if not checked_after:
+            checked_after = True
+            if not any(operation.get('id') == after for operation in snapshot.operations):
+                return _question_fail('unknown_op', f'--after: no operation {after} in {server.QUESTIONS_FILE}')
+        if not all_questions:
+            question = fold['byId'].get(question_id)
+            if question is None:
+                return _question_fail('not_found', f'no question {question_id}')
+            if question['state'] == 'answered':
+                return _wait_report('answer', question, fold)
+            if question['state'] == 'withdrawn':
+                return _question_fail('withdrawn', f'question {question_id} was withdrawn')
+        else:
+            ready = [item for item in fold['questions'] if item['state'] == 'answered' and item['recorded'] is None]
+            if ready:
+                return _wait_report('answer', ready[0], fold, pending=[item['id'] for item in ready])
+        events = _question_events(snapshot, wanted, since_at, after)
+        if events:
+            first = events[0]
+            return _wait_report(first['event'], first['question'], fold, opId=first['opId'], by=first['by'], at=first['at'])
+        if time.monotonic() >= deadline:
+            return {'status': 'TIMEOUT', 'reason': 'no new answer or comment on the question(s)'}
+        time.sleep(min(max(0.2, float(interval)), max(0.0, deadline - time.monotonic())) or 0.2)
+
+
+def _read_questions_file(path):
+    data, reason = read_regular_bytes(path, 2 * server.QUESTIONS_MAX_FILE_BYTES)
+    if data is None:
+        raise PrototypeError(f'{path}: {reason}')
+    try:
+        return server.parse_questions_document(data.decode('utf-8')), data
+    except UnicodeDecodeError:
+        raise PrototypeError(f'{path}: not UTF-8') from None
+    except server.QuestionsFileError as error:
+        raise PrototypeError(f'{path}: {error.message}') from None
+
+
+def merge_questions_driver(ancestor, current, other):
+    """`question merge --driver %O %A %B`: A = union of the operations of A and B by `id`, sorted by `(at, id)`;
+    a conflict leaves A untouched (FAIL, exit 1)."""
+    mine, original = _read_questions_file(Path(current))
+    theirs, _data = _read_questions_file(Path(other))
+    try:
+        merged, added = server.merge_question_operations(mine, theirs)
+    except server.MergeConflict as error:
+        return _question_failure(error)
+    data = server.serialize_questions(merged).encode('utf-8')
+    if data != original:
+        server.atomic_write_bytes(str(current), data)
+    return {'status': 'PASS', 'driver': True, 'added': len(added), 'total': len(merged)}
+
+
+def merge_questions(root, manifest, other):
+    """`question merge <path> <other>`: the same union into the project `questions.json`, under its lock."""
+    repo = Path(root).resolve()
+    _settings_, store = _questions_store(repo, manifest)
+    incoming, _data = _read_questions_file(users_file_path(repo, other))
+    try:
+        with store.lock():
+            snapshot = store.snapshot()
+            merged, added = server.merge_question_operations(snapshot.operations, incoming)
+            if added or not snapshot.exists:
+                server.atomic_write_bytes(store.path, server.serialize_questions(merged).encode('utf-8'))
+    except server.PrototypeServerError as error:
+        return _question_failure(error)
+    return {'status': 'PASS', 'added': len(added), 'total': len(merged)}
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
@@ -3438,6 +4017,54 @@ def _merge_comments_handler(args):
     return emit(safe_report(report))
 
 
+def _cmd_question(args, root, manifest, layerset):
+    action = args.question_command
+    if action == 'add':
+        return add_question(root, manifest, args)
+    if action == 'list':
+        return list_questions(root, manifest, args.status, args.users)
+    if action == 'show':
+        return show_question(root, manifest, args.question, args.users)
+    if action == 'export':
+        return export_questions_cli(root, manifest, args.users)
+    if action == 'record':
+        return record_question(root, manifest, args.question, args.spec, args.line)
+    if action == 'withdraw':
+        return withdraw_question(root, manifest, args.question)
+    if action == 'url':
+        return url_question(root, manifest, args.users)
+    return wait_question(root, manifest, args.question, args.all_questions, since=args.since, after=args.after,
+                         timeout=args.timeout, interval=args.interval)
+
+
+_question_run = _run(_cmd_question)
+
+
+def _question_handler(args):
+    """`question` actions; `merge` has two forms (`--driver %O %A %B` needs no project argument)."""
+    if args.question_command != 'merge':
+        return _question_run(args)
+    try:
+        if args.driver is not None:
+            if args.path is not None or args.other is not None:
+                raise PrototypeError('question merge --driver takes only %O %A %B')
+            report = merge_questions_driver(*args.driver)
+        else:
+            if args.path is None or args.other is None:
+                raise PrototypeError('question merge needs <path> <other-file> (or --driver %O %A %B)')
+            root, manifest = read_project(args.path)
+            report = merge_questions(root, manifest, args.other)
+    except server.PrototypeServerError as error:
+        report = _question_failure(error)
+    except PrototypeError as error:
+        report = {'status': 'BLOCKED', 'reason': str(error)}
+        if error.errors:
+            report['errors'] = error.errors
+    except (OSError, ValueError, TypeError, RuntimeError, yaml.YAMLError) as error:
+        report = {'status': 'BLOCKED', 'reason': str(error) or type(error).__name__}
+    return emit(safe_report(report))
+
+
 def _common(parser):
     parser.add_argument('path', help='Project path or .skillsync.yaml (required)')
     _layers.add_layer_argument(parser)
@@ -3447,7 +4074,7 @@ def _common(parser):
 
 
 def register(subparsers):
-    parser = subparsers.add_parser('prototype', help='Clickable HTML prototypes in the project repository (init, sync, index, list, ids, migrate, serve, user, iterate, restore, accept, gate, comments, triage, decide, resolve, merge-comments)')
+    parser = subparsers.add_parser('prototype', help='Clickable HTML prototypes in the project repository (init, sync, index, list, ids, migrate, serve, user, iterate, restore, accept, gate, comments, triage, decide, resolve, merge-comments, question)')
     actions = parser.add_subparsers(dest='prototype_command', required=True)
     init = actions.add_parser('init', help='Create <root>/<slug> from the prototype assets (never overwrites)')
     _common(init)
@@ -3502,7 +4129,8 @@ def register(subparsers):
             parser.add_argument('file', help='File with one e-mail address per line, relative to the project')
         parser.add_argument('--users', help=f'Users file, relative to the project (default {USERS_DEFAULT})')
         if role:
-            parser.add_argument('--role', choices=server.ROLES, default='commenter', help='Role (default commenter)')
+            parser.add_argument('--role', action='append', choices=server.ROLES, default=None,
+                                help='Role, repeatable (default commenter)')
         if password:
             group = parser.add_mutually_exclusive_group()
             group.add_argument('--password-prompt', action='store_true', help='Read the password with getpass')
@@ -3514,6 +4142,7 @@ def register(subparsers):
     add.add_argument('--name', help='Display name (overrides the name derived from the address)')
     user_parser('passwd', 'Set a password (without a password flag: reset to the default + mustChange)', 'login',
                 password=True)
+    user_parser('roles', 'Replace the roles of an existing account (--role repeatable, at least one)', 'login', True)
     user_parser('remove', 'Remove an account (its sessions end at the next request)', 'login')
     user_parser('list', 'List accounts (never password hashes)')
     user_parser('import', 'Add accounts from a list of addresses (default password + mustChange; existing skipped)',
@@ -3602,6 +4231,53 @@ def register(subparsers):
     wait.add_argument('--timeout', type=float, default=1800.0, help='Seconds (default 1800 = 30 min)')
     wait.add_argument('--interval', type=float, default=5.0, help='Poll interval in seconds (default 5)')
     wait.set_defaults(func=_run(_cmd_wait))
+    question = actions.add_parser('question', help='Questions for a domain expert (add, list, show, export, record, withdraw, url, wait, merge)')
+    question_actions = question.add_subparsers(dest='question_command', required=True)
+
+    def question_parser(name, help_text, subject=False, users=False):
+        parser = question_actions.add_parser(name, help=help_text)
+        _common(parser)
+        if subject:
+            parser.add_argument('question', help='Question id (qn-…)')
+        if users:
+            parser.add_argument('--users', help=f'Users file, relative to the project (default {USERS_DEFAULT})')
+        parser.set_defaults(func=_question_handler)
+        return parser
+
+    qadd = question_parser('add', 'Ask the experts (<root>/questions.json); default: with an assumed value, the agent goes on', users=True)
+    qadd.add_argument('--text', required=True, help='The question (at most 2000 characters)')
+    qadd.add_argument('--ref', action='append', metavar='TITLE|HREF[|EXCERPT]', help='Context link with an optional excerpt (repeatable, at most 5)')
+    qadd.add_argument('--option', action='append', metavar='LABEL[:recommended]', help='Answer option (repeatable, at most 8, one recommended)')
+    qadd.add_argument('--assume', help='Assumed value: the question does not stop the agent (exactly one of --assume, --blocking)')
+    qadd.add_argument('--blocking', action='store_true', help='The agent waits for the answer (contract, data, migration, security)')
+    qadd.add_argument('--to', action='append', metavar='LOGIN', help='Address to this expert (repeatable; default all experts)')
+    qadd.add_argument('--refers-to', metavar='QN', help='A dispute: the question this one refers to')
+    qadd.add_argument('--origin', required=True, metavar='SPEC:Qn', help='Spec path (relative) and the Q number, e.g. docs/specs/x.md:Q3')
+    qadd.add_argument('--question-id', metavar='QN', help='Question id (retry of the same ask; default random)')
+    qadd.add_argument('--cid', help='Dedup id (default derived from the question id)')
+    qadd.add_argument('--force', action='store_true', help='Go on although the text looks like it holds a secret (warning in the report)')
+    qlist = question_parser('list', 'Questions with answers (expert-questions/1); default status open,answered', users=True)
+    qlist.add_argument('--status', help='Comma-separated open, answered, withdrawn, or all')
+    question_parser('show', 'One question (expert-questions/1) and its spec row after the answer (answerLine)', subject=True, users=True)
+    question_parser('export', 'Every question as expert-questions/1 (read from the file, no server)', users=True)
+    qrecord = question_parser('record', 'Mark the answer as written to the spec (idempotent)', subject=True)
+    qrecord.add_argument('--spec', required=True, help='Spec path, relative to the project')
+    qrecord.add_argument('--line', required=True, type=int, help='Line of the spec row')
+    question_parser('withdraw', 'Withdraw an open question (an answered one cannot be); prints the plain spec row', subject=True)
+    question_parser('url', 'Address of the experts page and the number of expert accounts (BLOCKED without them)', users=True)
+    qwait = question_parser('wait', 'Wait for an answer or a comment (exit 0 event answer|comment, 3 on timeout)')
+    qwait.add_argument('question', nargs='?', help='Question id (or --all)')
+    qwait.add_argument('--all', dest='all_questions', action='store_true', help='Any answered question without a record, or a newer event')
+    qwait.add_argument('--since', help='ISO time; only newer comments count (default: now)')
+    qwait.add_argument('--after', help='Operation id; only later events count')
+    qwait.add_argument('--timeout', type=float, default=1800.0, help='Seconds (default 1800 = 30 min)')
+    qwait.add_argument('--interval', type=float, default=5.0, help='Poll interval in seconds (default 5)')
+    qmerge = question_actions.add_parser('merge', help='Merge two question logs (also as git merge driver: --driver %%O %%A %%B)')
+    qmerge.add_argument('path', nargs='?', help='Project path or .skillsync.yaml')
+    qmerge.add_argument('other', nargs='?', help='The other questions.json, relative to the project')
+    qmerge.add_argument('--driver', nargs=3, metavar=('O', 'A', 'B'), help='Git merge driver form: result = A + B, written to A')
+    qmerge.add_argument('--json', action='store_true', help='JSON output (the only format)')
+    qmerge.set_defaults(func=_question_handler)
     merge = actions.add_parser('merge-comments', help='Merge two comment logs (also as git merge driver: --driver %%O %%A %%B)')
     merge.add_argument('path', nargs='?', help='Project path or .skillsync.yaml')
     merge.add_argument('slug', nargs='?', help='Prototype slug')

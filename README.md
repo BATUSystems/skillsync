@@ -80,7 +80,7 @@ Details: [docs/workflow.md](docs/workflow.md).
 
 **Prototypes.** With your consent, the agent can build a clickable HTML mock-up of a UI flow inside the repository
 (`docs/prototypes/<slug>/`). `skillsync prototype` creates prototypes, serves them with shared comments and runs their
-acceptance. `skillsync prototype login-link` issues a one-time login link for the running server (a human command). See [docs/prototypes.md](docs/prototypes.md).
+acceptance. `skillsync prototype login-link` issues a one-time login link for the running server (a human command). `skillsync prototype question` sends domain questions to experts on the `/_experts` page. See [docs/prototypes.md](docs/prototypes.md).
 
 **Dashboard.** `skillsync dashboard show` prints the project status (plans, steps, checkpoints, approvals) as JSON,
 `skillsync dashboard serve` shows the same state as a live page and `skillsync dashboard metrics` computes run metrics.
@@ -94,12 +94,12 @@ acceptance. `skillsync prototype login-link` issues a one-time login link for th
 
 Developed and tested with uv 0.13; the minimum version has not been measured. CI uses the current uv.
 
-Supported systems: v1.1.x supports Linux, WSL2 and macOS (CI on Ubuntu and macOS blocks the release). The installer (`install.sh`) covers the same systems; native Windows is outside the installer path (use WSL2), CI runs it, but its result does not block the release.
+Supported systems: v1.2.x supports Linux, WSL2 and macOS (CI on Ubuntu and macOS blocks the release). The installer (`install.sh`) covers the same systems; native Windows is outside the installer path (use WSL2), CI runs it, but its result does not block the release.
 
-| System | Support in v1.1.x | Known limits |
+| System | Support in v1.2.x | Known limits |
 |---|---|---|
 | Linux | Full (planned) | none planned |
-| macOS | Everything except the watch service as a system service (planned for v1.1.0) | no watch service as a system service |
+| macOS | Everything except the watch service as a system service (planned) | no watch service as a system service |
 | Windows | Copy mode by default (symlinks only with Developer Mode); CLI, `link`, `doctor` and workflow commands (planned) | no watch service, no `flock`, no TTY |
 
 The table rests on CI results (tests, install smoke). Manual tests on macOS and Windows are planned for a later release; native Windows is outside the installer path (use WSL2).
@@ -107,7 +107,7 @@ The table rests on CI results (tests, install smoke). Manual tests on macOS and 
 ## Install
 
 ```bash
-uv tool install git+https://github.com/BATUSystems/skillsync@v1.1.2
+uv tool install git+https://github.com/BATUSystems/skillsync@v1.2.0
 ```
 
 Check the installation:
@@ -133,7 +133,7 @@ troubleshooting are in [docs/installation.md](docs/installation.md#szybka-instal
 curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/BATUSystems/skillsync/<tag>/install.sh | sh
 ```
 
-Replace `<tag>` with a release tag (for example `v1.1.2`). Native Windows is not supported by the installer: use WSL2.
+Replace `<tag>` with a release tag (for example `v1.2.0`). Native Windows is not supported by the installer: use WSL2.
 The steps below do the same by hand.
 
 This path needs no organization layer: a personal layer and the core layer are enough.
@@ -152,7 +152,7 @@ sync: {method: symlink}
 
 ```bash
 # 1. Add the core layer (skills, workflow and roles); it is part of every rule
-skillsync layers add core --kind core --source https://github.com/BATUSystems/skillsync --subdir library --ref v1.1.2
+skillsync layers add core --kind core --source https://github.com/BATUSystems/skillsync --subdir library --ref v1.2.0
 
 # 2. Create the skeleton of your personal layer (a git repository) and commit it:
 #    `layers add` clones the repository, so the skeleton must be committed first

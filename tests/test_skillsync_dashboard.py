@@ -199,6 +199,26 @@ class NewFields(unittest.TestCase):
                                        {'id': 'Q5', 'question': 'bez wartości', 'accepted': ''}])
         self.assertEqual(blocking, [{'id': 'Q4', 'question': 'd?'}, {'id': 'Q6', 'question': 'e?'}])
 
+    def test_cli_generated_expert_rows_follow_d17(self):
+        from skillsync_workflow import prototype
+        base = {'id': 'qn-00000000a001', 'text': 'Czy numer jest nowy?', 'origin': {'q': 'Q3'}, 'options': []}
+        waiting = prototype.question_spec_line(dict(base, blocking=True, assumed=None))
+        assumed = prototype.question_spec_line(dict(base, blocking=False, assumed='tak'))
+        answered = prototype.question_answer_line(dict(base, blocking=False, assumed='tak', answer={
+            'text': 'nowy numer', 'by': 'ewa@example.com', 'at': '2026-11-10T09:30:00Z'}))
+        heading = '# Spec\n\n## Pytania otwarte\n\n'
+        marker = '(ekspert: qn-00000000a001)'
+        assumptions, blocking = dashboard.parse_questions(heading + waiting + '\n')
+        self.assertEqual([item['id'] for item in blocking], ['Q3'])
+        self.assertEqual(assumptions, [])
+        self.assertIn('Czy numer jest nowy?', blocking[0]['question'])
+        assumptions, blocking = dashboard.parse_questions(heading + assumed + '\n')
+        self.assertEqual(blocking, [])
+        self.assertEqual([(item['id'], item['accepted']) for item in assumptions], [('Q3', 'tak')])
+        self.assertIn('Czy numer jest nowy?', assumptions[0]['question'])
+        self.assertEqual(dashboard.parse_questions(heading + answered + '\n'), ([], []))
+        self.assertIn(marker, waiting + assumed + answered)
+
     def test_readiness_unrecognized_first_line_keeps_source(self):
         with tempfile.TemporaryDirectory(prefix='skillsync-dashboard-') as temp:
             root = Path(temp)

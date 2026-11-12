@@ -12,6 +12,49 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-12
+
+### Added
+
+- Questions to a domain expert. Prototype server accounts may have the new role `expert` and several roles (`roles`, next to the
+  single-role field). `skillsync prototype user add|import` accept a repeated `--role`; the new `skillsync prototype user roles <login> --role …`
+  replaces the role set of an existing account. `session.user` gains `roles`; `session.features` gains `questions`.
+- `<root>/questions.json` (a journal of operations `ask`, `answer`, `comment`, `recorded`, `withdraw`; own file lock, 1 MiB limit,
+  tracked in git) and the page `/_experts` ("Questions to the expert": options with the agent's recommendation, an own answer, a comment;
+  the first answer closes the question). API: `GET /_api/v1/questions`, `GET /_api/v1/questions/<id>`,
+  `POST /_api/v1/questions/<id>/answer|comment`. A session is always required, also without `--login-to-view`; the file is never served
+  statically; an expert sees only questions addressed to them or to everyone (anything else is 404).
+- `skillsync prototype question add|list|show|export|record|withdraw|url|wait|merge`: the agent side. `list`, `show` and `export` print
+  `expert-questions/1` JSON (with `status: PASS`) read from the file, without the server. `wait <id>` returns at once for an already
+  answered question and wakes on a comment; `wait --all` skips questions that already have a `recorded` operation. `add` blocks on a
+  secret-like value in the text (heuristic; `--force` overrides with a warning), creates `<root>/.gitignore` and `<root>/.gitattributes`
+  lines, and prints `specLine`; `show` and `wait` print `answerLine`. `merge --driver %O %A %B` is the git merge driver
+  `skillsync-questions` (register it with `git config`, see `docs/prototypes.md`).
+- Spec line class `[EKSPERT]` (answer of a domain expert with author and time) and the rules of the cycle in
+  `library/skills/feature/references/spec.md`; the option "I do not know, ask the expert" in an ordinary question.
+- Write limits on the server for questions: 60 writes per 60 s per login (429 `rate_limited` with `retryAfter`), 50 comments per question
+  (409 `comment_limit`), file size thresholds 768 KiB (`ask`), 896 KiB (`comment`), 1 MiB (`answer`) with 507 `file_too_large`.
+- Startup warning when expert accounts exist and the server runs without `--login-to-view`.
+- New domain record `docs/domain/expert-questions.md`.
+
+### Changed
+
+- The account file keeps `role` (the highest role of the former set: `developer` > `acceptor` > `commenter`; an `expert`-only account gets
+  `commenter`) and adds `roles` only for accounts with `expert` or with more than one role. Reading never mutates the file; a password
+  change rewrites only the changed account. `session.user.role` is the highest role (`developer` > `acceptor` > `expert` > `commenter`),
+  chosen by one function for all gates.
+- `skillsync prototype comments --json` and `wait` add `authorRoles` and `whoRoles` next to the string fields `authorRole` and `whoRole`.
+  A comment of an `expert`-only account is advisory: the agent changes a mockup only after a `decide` from a `developer` or an `acceptor`.
+- Core library layer `1.2.0` (`core_min: 1.2.0`): skills `feature`, `prototype` and `skillsync` describe the new commands and the
+  `[EKSPERT]` line.
+
+### Breaking
+None. The account file stays readable by the previous core: the `role` field is always present and is never higher than the account's rights,
+so an older core ignores `roles` and sees an `expert` as a commenter. `comments.json` is unchanged.
+
+### Fixed
+None.
+
 ## [1.1.2] - 2026-11-12
 
 ### Changed
@@ -334,7 +377,8 @@ None.
 - E2E scenario N-R1 (comment panel, mobile view) is unstable: it sometimes fails with a page jump of about −3000 px (open shift equals close shift).
   On clean `main` 6134a8c: 2 of 6 runs fail with DejaVu Sans, 0 of 6 with the default font. Possibly related to V-23. Fix planned for 1.0.1.
 
-[Unreleased]: https://github.com/BATUSystems/skillsync/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/BATUSystems/skillsync/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/BATUSystems/skillsync/releases/tag/v1.2.0
 [1.1.0]: https://github.com/BATUSystems/skillsync/releases/tag/v1.1.0
 [1.0.2]: https://github.com/BATUSystems/skillsync/releases/tag/v1.0.2
 [1.0.1]: https://github.com/BATUSystems/skillsync/releases/tag/v1.0.1

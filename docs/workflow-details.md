@@ -6,7 +6,7 @@ pomiaru przebiegu i pracy wielu sesji. Nie opisuje instalacji, synchronizacji an
 i komend: [workflow.md](workflow.md). Źródłem prawdy są skille warstwy core (`../library/skills/feature/SKILL.md` i jego
 `references/`); przy rozbieżności wygrywa skill, a ten dokument trzeba poprawić.
 
-Stan opisu: Skillsync `v1.1.2`.
+Stan opisu: Skillsync `v1.2.0`.
 
 ## 1. Elementy systemu
 
@@ -137,6 +137,13 @@ opisują `docs/architecture.md` i `docs/domain/`. Po wdrożeniu spec jest zamro�
 4. Opcjonalnie uruchamia **challengera pomysłu**: `reviewer` w profilu `spec`, który atakuje wniosek, nie formę; jego
    zastrzeżenia trafiają do użytkownika jako pytania `C1`, `C2`…
 5. **Twardy STOP** do odpowiedzi. Potem sekcja pytań znika, a decyzje trafiają do „Decyzji i alternatyw”.
+6. Pytanie domenowe, którego programista nie rozstrzygnie, może trafić do eksperta (`skillsync prototype question add`; opcja „Nie wiem, zapytaj
+   eksperta” w zwykłym pytaniu albo opt-in programisty w akcie I, tylko gdy `question url` zwraca PASS). Wiersz `Q` dostaje wtedy
+   `(ekspert: qn-<hex>)`; domyślnie pytanie jest nieblokujące (`[ZAŁOŻENIE]`), a `--blocking` stosuje się do kontraktu, danych, migracji i
+   bezpieczeństwa. Odpowiedź eksperta jest ostateczna: agent wpisuje ją do speca jako wiersz `[EKSPERT]` (autor, czas UTC) i woła
+   `question record`; programista dostaje informację, nie pytanie. Po „GO plan” wpis jest poprawką mechaniczną (nowy `Spec-sha`), a odpowiedź
+   zmieniająca decyzję, kontrakt albo zakres to powrót do aktu I; po „GO implement” agent nie zmienia speca, tylko zapisuje odpowiedź w „Wyniku”
+   planu i pyta programistę o powrót do aktu I. Dashboard nie rozróżnia „czeka na eksperta” (dług).
 
 ### 6.2. Treść speca
 

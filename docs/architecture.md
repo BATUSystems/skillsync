@@ -141,6 +141,7 @@ Procesy potomne, które `skillsync` uruchamia sam (np. `quality` wywołuje `guar
 | `.skillsync/dispatch/<run-id>.yaml` | stan dyspozycji; zapisuje go skill, generator tylko go ignoruje | ignorowany |
 | `~/.cache/skillsync/composed/` | cache kompozytów; odtwarzalny | poza projektem |
 | `<projekt>/.skillsync/prototype/users.json` | konta serwera prototypów (domyślnie) | ignorowany |
+| `<root>/questions.json` (`root` = katalog prototypów) | pytania do eksperta; blokada `questions.json.lock` i `*.tmp` ignorowane | śledzony w gicie |
 
 Stan w `.skillsync/` zapisuje się przez kontrolowane ścieżki: bez dowiązań i wyjścia poza projekt.
 
@@ -160,5 +161,7 @@ Stan w `.skillsync/` zapisuje się przez kontrolowane ścieżki: bez dowiązań 
 
 Komenda `prototype` tworzy klikalne prototypy HTML w repo projektu. Serwer wspólnych komentarzy jest samodzielnym modułem
 bez zależności od PyYAML i bez importów z generatora. Kierunek zależności: moduł prototypów korzysta z serwera, nigdy odwrotnie.
-Opis: [prototypes](prototypes.md).
+Ten sam serwer obsługuje pytania do eksperta: klasa `QuestionsStore` (dziennik `<root>/questions.json`, ta sama blokada pliku i zapis atomowy co
+`comments.json`), trasy `/_api/v1/questions*` i strona `/_experts`; po stronie generatora `prototype question …` (`prototype.py`) czyta ten plik
+bez serwera. Opis: [prototypes](prototypes.md#pytania-do-eksperta), rekord: [expert-questions](domain/expert-questions.md).
 

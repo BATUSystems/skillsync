@@ -1612,7 +1612,8 @@ class LoginTests(ServerCase):
         session = self.check(client.get('/_api/v1/session'), 200).json
         self.assertEqual(session['user']['role'], 'developer')
         self.assertEqual(session['csrf'], client.csrf)
-        self.assertEqual(set(session['user']), {'login', 'name', 'firstName', 'role', 'mustChange'})
+        self.assertEqual(set(session['user']), {'login', 'name', 'firstName', 'role', 'roles', 'mustChange'})
+        self.assertEqual(session['user']['roles'], ['developer'])
 
     def test_bad_password_and_unknown_login_are_indistinguishable(self):
         wrong = Client(self.server).login(A, 'zle-haslo-123')
