@@ -2738,8 +2738,10 @@ def question_view(question, viewer, by_id=None):
         'recorded': _clone(question['recorded']), 'refersTo': None,
         'canAnswer': can_answer(question, viewer) and question['state'] == 'open',
     }
-    if not admin:   # the repository path of the spec is not for an expert; `origin.q` stays
+    if not admin:   # the repository path of the spec is not for an expert; `origin.q` stays, `recorded` is only a time
         view['origin'] = {'q': question['origin'].get('q')}
+        if question['recorded'] is not None:
+            view['recorded'] = {'at': question['recorded']['at']}
     target = question['refersTo']
     if target is not None:
         if admin:

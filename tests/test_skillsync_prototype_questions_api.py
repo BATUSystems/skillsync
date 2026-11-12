@@ -246,6 +246,22 @@ class RoleAndVisibilityTests(QCase):
             self.assertNotIn(hidden, body)
         self.assertIn(EX3, body, 'kontrola: autor widocznej odpowiedzi jest w treści')
 
+    def test_recorded_shows_the_expert_only_the_time_and_the_admin_everything(self):
+        spec = 'docs/specs/zapisane-w-specu.md'
+        self.seed_questions([{'type': 'recorded', 'questionId': Q6, 'by': 'agent', 'cid': 'rec-6', 'spec': spec, 'line': 41}])
+        expert = self.who(EX)
+        listing = self.check(expert.get('/_api/v1/questions'), 200)
+        detail = self.check(expert.get('/_api/v1/questions/%s' % Q6), 200)
+        for response, view in ((listing, {i['id']: i for i in listing.json['questions']}[Q6]), (detail, detail.json['question'])):
+            self.assertEqual(set(view['recorded']), {'at'})
+            self.assertTrue(view['recorded']['at'])
+            self.assertNotIn(spec, response.text)
+            self.assertNotIn('"line"', response.text)
+        for login in (DE, AE):
+            admin = self.who(login)
+            view = self.check(admin.get('/_api/v1/questions/%s' % Q6), 200).json['question']
+            self.assertEqual((view['recorded']['spec'], view['recorded']['line']), (spec, 41))
+
     def test_expert_gets_404_for_foreign_and_withdrawn_and_200_for_visible(self):
         expert = self.who(EX)
         self.check(expert.get('/_api/v1/questions/%s' % Q3), 404, 'not_found')

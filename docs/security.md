@@ -90,6 +90,7 @@ przywracania, usuwania ani `/project`.
   Poza zaufaną siecią serwer stoi za proxy z TLS ([prototypes](prototypes.md#serwer-w-sieci)).
 - Skan sekretów przy `question add` jest heurystyką (znane kształty tokenów, URL z hasłem, pary `nazwa=wartość`): może pominąć sekret i może się
   pomylić na zwykłym zdaniu; wyjątek to `--force` z ostrzeżeniem w raporcie. Nie zastępuje przeglądu treści i nie jest skanem `leakcheck`.
+- Ekspert widzi loginy (adresy e-mail) autorów odpowiedzi i komentarzy na pytaniach, które sam widzi (inni eksperci, administratorzy); `recorded` pokazuje mu tylko czas zapisu, bez ścieżki speca i numeru wiersza.
 - Wiersz `[EKSPERT]` w specu (w gicie) zawiera login eksperta (adres e-mail), więc spec trafia do tego samego kręgu odbiorców co repozytorium; używaj loginów, które mogą trafić do repozytorium.
 - Zapisy są limitowane (60 na 60 s per login, 50 komentarzy na pytanie, progi rozmiaru pliku 768/896/1024 KiB). Ryzyko rezydualne: złośliwe
   konto może wypełnić plik komentarzami i zużyć rezerwę na odpowiedzi; wymaga to interwencji programisty (usunięcie konta, odtworzenie pliku z gita).

@@ -819,6 +819,17 @@ class VisibilityTests(QuestionsCase):
         self.assertNotIn(OLA, json.dumps(ps.visible_questions(self.snap, viewer(EWA, 'expert'))))
         self.assertNotIn('number', mine)
 
+    def test_recorded_view_is_only_time_for_the_expert_and_full_for_the_admin(self):
+        self.add(answer(Q1, by=OLA), recorded(Q1, spec='docs/specs/tajny.md', line=7))
+        snap = self.store.snapshot()
+        expert = ps.get_question_view(snap, Q1, viewer(EWA, 'expert'))
+        self.assertEqual(set(expert['recorded']), {'at'})
+        self.assertNotIn('docs/specs/tajny.md', json.dumps(ps.visible_questions(snap, viewer(EWA, 'expert'))))
+        admin = ps.get_question_view(snap, Q1, viewer(DEV, 'developer'))
+        self.assertEqual((admin['recorded']['spec'], admin['recorded']['line']), ('docs/specs/tajny.md', 7))
+        self.assertEqual(admin['recorded']['at'], expert['recorded']['at'])
+        self.assertIsNone(ps.get_question_view(snap, Q2, viewer(EWA, 'expert'))['recorded'])
+
     def test_expert_view_has_no_origin_spec_but_admin_view_keeps_it(self):
         expert = viewer(EWA, 'expert')
         for view in ps.visible_questions(self.snap, expert):
