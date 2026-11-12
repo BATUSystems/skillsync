@@ -3221,11 +3221,13 @@ def _check_acceptance_body(body, kind):
         raise OperationError(400, 'invalid_request', 'payload must be an object')
 
 
-def _prepare_accept(snapshot, login, body, current):
+def _prepare_accept(snapshot, login, body, current, writing=None):
     """Browser `accept`: payload `{scope: screen, screens: {sN: hash}, version}` (400 `field_not_allowed`
     for `via`/`who`/`iteration`, 400 `invalid_scope`, 400 `invalid_request` for other than one screen,
     409 `stale_view` for another `version` or hash, 400 `unknown_screen`).  The stored payload adds
-    `iteration` (current) and `via: ui`; `version` is not stored."""
+    `iteration` (current) and `via: ui`; `version` is not stored.  `writing()` (writing marker) raises 409
+    `writing_in_progress` for a valid marker: after the shape checks (and the `cid` dedup of the caller), before
+    the `version`/hash comparison."""
     payload = body['payload']
     forbidden = [key for key in ('via', 'who', 'iteration') if key in payload]
     if forbidden:
@@ -3247,6 +3249,8 @@ def _prepare_accept(snapshot, login, body, current):
     _check_screen(screen, 'payload.screens key')
     _check_hash(digest, 'payload.screens.' + screen)
     _check_hash(payload['version'], 'payload.version')
+    if writing is not None:
+        writing()
     hashes = current()
     if payload['version'] != hashes['version']:
         raise OperationError(409, 'stale_view', 'the prototype changed since the page was loaded')
@@ -3279,13 +3283,13 @@ def _prepare_unaccept(snapshot, login, role, body, current):
     return {'type': 'unaccept', 'by': login, 'cid': body['cid'], 'payload': {'screens': screens}}
 
 
-def prepare_browser_operation(snapshot, login, role, body, current=None):
+def prepare_browser_operation(snapshot, login, role, body, current=None, writing=None):
     """POST order from "dedup" on: dedup (`by`, `cid`) → type → role → schema → references.
 
     Returns `Existing(operation)` for a repeated `cid` or a partial operation for
     `CommentsStore.transaction`.  Raises `OperationError`.  `current()` returns the current
     `{screens, version}` (`screen_hashes`); it is needed for `accept`/`unaccept` and is called under
-    the prototype lock.
+    the prototype lock.  `writing()` raises 409 `writing_in_progress` (only `accept`).
     """
     if not isinstance(body, dict):
         raise OperationError(400, 'invalid_request', 'body must be a JSON object')
@@ -3311,7 +3315,7 @@ def prepare_browser_operation(snapshot, login, role, body, current=None):
         if current is None:
             raise OperationError(500, 'internal_error', 'hashes of the prototype are not available')
         if kind == 'accept':
-            return _prepare_accept(snapshot, login, body, current)
+            return _prepare_accept(snapshot, login, body, current, writing)
         return _prepare_unaccept(snapshot, login, role, body, current)
     unknown = [key for key in body if key not in ('cid', 'type', 'threadId', 'payload')]
     if unknown:
@@ -3670,6 +3674,124 @@ def remove_restore_marker(directory):
     _fsync_directory(directory)
 
 
+# writing marker: the "agent is still writing screens" marker, `<prototype>/.writing.json`.  A dot file: never
+# served, hashed or frozen (`_excluded_segment`).  Times are UTC milliseconds; the clock is always injected
+# (`now_ms`), a read never writes.  Anything that is not a valid marker counts as no marker (fail-open), so a
+# forgotten, damaged or forged file can never block acceptance for good.
+WRITING_MARKER = '.writing.json'
+WRITING_MAX_BYTES = 4096
+WRITING_MAX_WINDOW_MS = 3600000
+WRITING_CLOCK_SKEW_MS = 60000
+WRITING_TTL_MIN = 60
+WRITING_TTL_MAX = 3600
+WRITING_TTL_DEFAULT = 900
+WRITING_BY_RE = re.compile(r'[A-Za-z0-9][A-Za-z0-9._@+-]{0,63}')
+
+
+def _is_int(value):
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def read_writing(directory, now_ms):
+    """`{since, expiresAt, by}` of a valid writing marker, else None (see "Ważny marker" in the spec).
+
+    `lstat` before the open (no `O_NOFOLLOW` on Windows), then `O_NOFOLLOW|O_NONBLOCK` + `fstat` + `S_ISREG`
+    (a FIFO must not hang a server thread), at most 4 KiB, strict JSON, `version == 1`, integer `since` and
+    `expiresAt` (not bool), `since <= now + 60 s`, `now < expiresAt`, `0 < expiresAt - since <= 3600 s`.
+    """
+    path = os.path.join(directory, WRITING_MARKER)
+    try:
+        info = os.lstat(path)
+        if not stat.S_ISREG(info.st_mode) or info.st_size > WRITING_MAX_BYTES:
+            return None
+        fd = os.open(path, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_NONBLOCK', 0)
+                     | getattr(os, 'O_BINARY', 0))
+        try:
+            opened = os.fstat(fd)
+            if not stat.S_ISREG(opened.st_mode) or opened.st_size > WRITING_MAX_BYTES:
+                return None
+            data = b''
+            while len(data) <= WRITING_MAX_BYTES:
+                chunk = os.read(fd, WRITING_MAX_BYTES + 1 - len(data))
+                if not chunk:
+                    break
+                data += chunk
+        finally:
+            os.close(fd)
+        if len(data) > WRITING_MAX_BYTES:
+            return None
+        value = strict_json_loads(data.decode('utf-8'))
+    except (OSError, ValueError, UnicodeDecodeError, RecursionError):
+        return None
+    if not isinstance(value, dict) or not _is_int(value.get('version')) or value['version'] != 1:
+        return None
+    since, expires = value.get('since'), value.get('expiresAt')
+    if isinstance(now_ms, float):
+        now_ms = int(now_ms)
+    if not _is_int(since) or not _is_int(expires) or not _is_int(now_ms):
+        return None
+    if since > now_ms + WRITING_CLOCK_SKEW_MS or now_ms >= expires:
+        return None
+    if not 0 < expires - since <= WRITING_MAX_WINDOW_MS:
+        return None
+    by = value.get('by')
+    return {'since': since, 'expiresAt': expires, 'by': by if isinstance(by, str) and WRITING_BY_RE.fullmatch(by) else 'agent'}
+
+
+def write_writing(directory, now_ms, ttl_s, by='agent'):
+    """Atomically (re)write the marker: `since = now`, `expiresAt = now + ttl`; a short retry on Windows where
+    `os.replace` can fail while a reader holds the file.  Returns `{since, expiresAt, by}`."""
+    payload = {'version': 1, 'since': int(now_ms), 'expiresAt': int(now_ms) + int(ttl_s) * 1000, 'by': by}
+    data = (js_stringify(payload) + '\n').encode('utf-8')
+    path = os.path.join(directory, WRITING_MARKER)
+    attempts = 5 if os.name == 'nt' else 1
+    for attempt in range(attempts):
+        try:
+            atomic_write_bytes(path, data)
+            break
+        except PermissionError:
+            if attempt + 1 >= attempts:
+                raise
+            time.sleep(0.05 * (attempt + 1))
+    return {'since': payload['since'], 'expiresAt': payload['expiresAt'], 'by': by}
+
+
+def remove_writing(directory):
+    """Idempotent removal of the marker (a symlink or a directory in its place is left alone)."""
+    path = os.path.join(directory, WRITING_MARKER)
+    try:
+        if os.path.islink(path) or os.path.isdir(path):
+            return False
+        os.unlink(path)
+    except FileNotFoundError:
+        return False
+    _fsync_directory(directory)
+    return True
+
+
+def public_writing(directory, now_ms):
+    """The `writing` field of the API, `prototype list` and the live gallery: `None` or `{since, expiresAt}`
+    (never `by`).  The one helper of that shape."""
+    marker = read_writing(directory, now_ms)
+    return None if marker is None else {'since': marker['since'], 'expiresAt': marker['expiresAt']}
+
+
+def writing_conflict(slug, marker):
+    """409 `writing_in_progress` `{slug, since, expiresAt}` for a valid `marker` (no `by`)."""
+    return OperationError(409, 'writing_in_progress', 'the agent is still writing screens of this prototype',
+                          {'slug': slug, 'since': marker['since'], 'expiresAt': marker['expiresAt']})
+
+
+def writing_entries(items, now_ms):
+    """`[{slug, since, expiresAt}]` of the `(slug, directory)` pairs with a valid marker, in the given order."""
+    result = []
+    for slug, directory in items:
+        marker = read_writing(directory, now_ms)
+        if marker is not None:
+            result.append({'slug': slug, 'since': marker['since'], 'expiresAt': marker['expiresAt']})
+    return result
+
+
 def _marker_matches(marker, operation):
     if not marker or operation is None:
         return False
@@ -3941,9 +4063,10 @@ def find_restore_pair(snapshot, by, cid):
 
 def perform_restore(store, directory, screen, source_number, reason, by, who=None, cid=None, version=None,
                     before_freeze=None, recovery_by=None, allow_source=True, precheck=None, hash_cache=None,
-                    log=None):
+                    log=None, writing=None):
     """`restore` of one screen in the order of "Przywrócenie: kolejność i odtwarzanie", all under the
-    prototype lock: dedup (`by`, `cid`) → `precheck()` (role, schema) → recovery → `version`
+    prototype lock: dedup (`by`, `cid`) → `precheck()` (role, schema) → recovery → `writing()` (writing marker:
+    raises 409 `writing_in_progress`; the browser passes it, the CLI does not) → `version`
     (409 `stale_view`) → `plan_restore` → `unchanged` (D27: the section equals the current one =
     return `unchanged: True` without any write) → (1) `before_freeze(C)` (CLI commit, K40) → (2) freeze of
     the current iteration C (refused with 409 `stale_view` and removed when `index.html` or the hashed files
@@ -3971,6 +4094,8 @@ def perform_restore(store, directory, screen, source_number, reason, by, who=Non
             for note in notes:
                 log(note)
         warnings = list(notes)
+        if writing is not None:
+            writing()
         try:
             return _restore_after_recovery(store, directory, screen, source_number, reason, by, who, cid, version,
                                            before_freeze, hash_cache, recovery, notes, warnings)
@@ -4113,6 +4238,14 @@ def validate_restore_request(body):
 
 # ── Project-wide acceptance (K43) ────────────────────────────────────────────
 
+class _WritingStarted(Exception):
+    """A valid writing marker was found under the prototype lock in `project/accept` (becomes 409 `partial`)."""
+
+    def __init__(self, marker):
+        Exception.__init__(self)
+        self.marker = marker
+
+
 class _VersionChanged(Exception):
     """The `version` of a prototype changed between the comparison and the write of `project/accept`."""
 
@@ -4130,14 +4263,17 @@ def _prototype_title(directory, slug):
 def project_listing(app):
     """`GET /_api/v1/project`: `[{slug, title, iteration, screens, open, awaiting, version, format}]` in the
     order of `slug`.  v1 (`comments.js` only): `format: 1`, `iteration`/`version`/`open`/`awaiting` null.
-    A prototype whose `comments.json` cannot be read keeps `format: 2`, nulls and `error`."""
+    A prototype whose `comments.json` cannot be read keeps `format: 2`, nulls and `error`.  `writing`: `None` or
+    `{since, expiresAt}` (writing marker)."""
     result = []
+    now_ms = clock_ms(app.clock)
     for slug, directory in enumerate_prototype_dirs(app.root):
         store = app.store(slug, directory)
         hashes = app.prototype_hashes(directory)
         entry = {'slug': slug, 'title': _prototype_title(directory, slug), 'iteration': None,
                  'screens': len(hashes['screens']), 'problems': len(unique_problems(hashes['ambiguous'])),
-                 'open': None, 'awaiting': None, 'version': None, 'format': 2}
+                 'open': None, 'awaiting': None, 'version': None, 'format': 2,
+                 'writing': public_writing(directory, now_ms)}
         if store.state() == 'v1':
             entry['format'] = 1
         else:
@@ -4182,6 +4318,10 @@ def accept_project(app, login, cid, versions):
     3. In the order of `slug`, each prototype is written under its own lock (never two at once): `cid` and
        `version` are checked again and one `accept` (`scope: project`, all screens, `via: ui`) is appended;
        a prototype without screens is skipped.
+    3a. writing marker: before the first write the markers of all prototypes that would be written (not done by `cid`,
+       not empty) are read; any valid one gives 409 `writing_in_progress` `{writing: [{slug, since, expiresAt}]}`
+       before `stale_view`.  A marker that appears under the lock of a prototype gives 409 `partial` with the same
+       `writing` list (the detected slug is always in it; `accepted` is `[]` when it is the first prototype).
     4. A changed version under the lock or a lock timeout gives 409 `partial` `{accepted, pending}`; any other
        failure (507, `invalid_log`, `OSError` as 500 `write_failed`) keeps its own status and code and carries
        `accepted` and `pending` in the body.
@@ -4200,16 +4340,26 @@ def accept_project(app, login, cid, versions):
                 done.add(slug)
         except PrototypeServerError:
             pass
-    stale, empty = [], set()
+    stale, empty, no_screens, hashed = [], set(), set(), {}
     for slug, directory, _store in targets:
-        hashes = app.prototype_hashes(directory)
+        hashes = hashed[slug] = app.prototype_hashes(directory)
         skipped_screens.extend({'slug': slug, 'screen': item['screen'], 'reason': item['problem']}
                                for item in unique_problems(hashes['ambiguous']))
+        if slug not in done and not hashes['screens']:
+            no_screens.add(slug)
+    # writing marker: a valid marker of any prototype that would be written refuses the whole request before any
+    # write and before `stale_view` (done by `cid` and empty prototypes are left out).
+    writing = writing_entries([(slug, directory) for slug, directory, _store in targets
+                               if slug not in done and slug not in no_screens], clock_ms(app.clock))
+    if writing:
+        raise OperationError(409, 'writing_in_progress', 'the agent is still writing screens: %s'
+                             % ', '.join(item['slug'] for item in writing), {'writing': writing})
+    for slug, directory, _store in targets:
         if slug in done:
             continue
-        if versions.get(slug) != hashes['version']:
+        if versions.get(slug) != hashed[slug]['version']:
             stale.append(slug)
-        elif not hashes['screens']:
+        elif slug in no_screens:
             empty.add(slug)
     if stale:
         raise OperationError(409, 'stale_view', 'the project changed since the window was opened',
@@ -4229,6 +4379,9 @@ def accept_project(app, login, cid, versions):
             if existing is not None:
                 return Existing(existing)
             hashes = app.prototype_hashes(directory)
+            marker = read_writing(directory, clock_ms(app.clock)) if hashes['screens'] else None
+            if marker is not None:
+                raise _WritingStarted(marker)   # a marker appeared after the preflight (under the prototype lock)
             if hashes['version'] != versions.get(slug):
                 raise _VersionChanged()
             if not hashes['screens']:
@@ -4239,6 +4392,15 @@ def accept_project(app, login, cid, versions):
 
         try:
             result = store.transaction(build)
+        except _WritingStarted as started:
+            listed = writing_entries([(item_slug, item_dir) for item_slug, item_dir, _s in targets
+                                      if item_slug in pending], clock_ms(app.clock))
+            if all(item['slug'] != slug for item in listed):   # the marker vanished between the detection and the read
+                listed.append({'slug': slug, 'since': started.marker['since'], 'expiresAt': started.marker['expiresAt']})
+                listed.sort(key=lambda item: item['slug'])
+            raise OperationError(409, 'partial', 'not every prototype was accepted: the agent started writing, '
+                                 'repeat with the same cid',
+                                 {'accepted': sorted(accepted), 'pending': pending, 'writing': listed})
         except (_VersionChanged, LockTimeout):
             raise OperationError(409, 'partial', 'not every prototype was accepted: repeat with the same cid',
                                  {'accepted': sorted(accepted), 'pending': pending})
@@ -6675,7 +6837,8 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
                          'iteration': {'current': snapshot.fold['currentIteration']},
                          'version': hashes['version'], 'screens': hashes['screens'],
                          'acceptance': acceptance_state(snapshot.fold, hashes['screens'], hashes.get('aliases')),
-                         'iterations': iterations_listing(_directory, snapshot.operations)})
+                         'iterations': iterations_listing(_directory, snapshot.operations),
+                         'writing': public_writing(_directory, clock_ms(app.clock))})
 
     def _api_operations_post(self, slug, session, user):
         app = self.app
@@ -6685,8 +6848,13 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
             raise NeedsMigration()
         store = app.store(slug)
         login, role = user['login'], primary_role(user)
+        def check_writing():
+            marker = read_writing(_directory, clock_ms(app.clock))   # under the transaction lock, the store's clock
+            if marker is not None:
+                raise writing_conflict(slug, marker)
+
         result = store.transaction(lambda snapshot: prepare_browser_operation(
-            snapshot, login, role, body, current=lambda: app.prototype_hashes(_directory)))
+            snapshot, login, role, body, current=lambda: app.prototype_hashes(_directory), writing=check_writing))
         if result.existing is not None:
             self._json(200, {'operation': result.existing, 'total': result.total, 'prefix': result.prefix})
             return
@@ -6883,6 +7051,11 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
                 raise OperationError(403, 'forbidden', 'only an acceptor or a developer may restore a screen')
             validate_restore_request(body)
 
+        def check_writing():
+            marker = read_writing(directory, clock_ms(app.clock))
+            if marker is not None:
+                raise writing_conflict(slug, marker)
+
         store = app.store(slug)
         screen_id = body.get('screen') if isinstance(body.get('screen'), str) else None
         known = store.snapshot().find_cid(login, cid) is not None
@@ -6890,7 +7063,8 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
             result = perform_restore(store, directory, body.get('screen'), body.get('from'), body.get('reason'),
                                      by=login, cid=cid, version=body.get('version'), recovery_by='server',
                                      allow_source=True, precheck=precheck, hash_cache=app.hash_cache,
-                                     log=lambda note: app.log('ostrzeżenie: prototyp %s: %s' % (slug, note)))
+                                     log=lambda note: app.log('ostrzeżenie: prototyp %s: %s' % (slug, note)),
+                                     writing=check_writing)
         except BaseException:
             if not known and store.snapshot().find_cid(login, cid) is not None:   # the pair of operations was written
                 app.audit(session, 'restore', screen_id)

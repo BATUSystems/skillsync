@@ -4,6 +4,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+### Added
+- `skills/prototype/SKILL.md`: sekcja „Zapis ekranów: marker »agent pisze«”: `prototype writing <projekt> <slug> start` przed edycją ekranów (po `iterate`), odnowienie przy większych partiach albo `--ttl 1800`, `done` po `ids --check` i sprawdzeniu slugu w galerii, dopiero potem „prototyp gotowy”; obsługa `lock_timeout` i `needs_migration`; marker to sygnał koordynacji z wygasaniem; agent nadal nie uruchamia `accept`.
+- `skills/skillsync/SKILL.md`: komenda `prototype writing`, kody BLOCKED (`needs_migration`, `lock_timeout`, `invalid_args`), `writing_in_progress` przy `accept`, pole `writing` w `list`.
+
+### Changed
+- `skills/prototype/references/decisions.md` i `SKILL.md` (procedura po rundzie): po `iterate` marker `writing start`, po zmianach HTML `ids --check`, sprawdzenie slugu i `writing done`.
+- `skills/prototype/SKILL.md`: `prototype wait` nie zgłasza `accepted` przy ważnym markerze; `gate` ma powód `writing`.
+- `skills/feature/references/plan-details.md`: lista powodów FAIL bramki o `writing`.
+- `skills/prototype/assets/repo/prototype.js`: baner „Agent jeszcze pisze ekrany”, wyłączone przyciski akceptacji i przywracania, powrót po zniknięciu markera bez przeładowania; istniejące prototypy dostają silnik po `skillsync prototype migrate`.
+- `skills/prototype/assets/repo/.gitignore`: linia `.writing.json`.
+
 ## [1.2.1] - 2026-11-12
 
 ### Changed

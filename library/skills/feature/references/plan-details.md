@@ -94,7 +94,7 @@ Plan ze zmianą UI ma w nagłówku (jak `Spec:`, osobny wiersz, sama ścieżka w
 - `skillsync prototype gate <projekt> --plan <plan>` uruchom przed prośbą o „GO implement” i ponownie po jej otrzymaniu.
   `readiness` z linią `Prototyp:` daje BLOCKED, gdy bramka ma FAIL.
 - FAIL bramki = odmowa startu aktu III z listą brakujących akceptacji (`slug`, ekran, powód: brak, nieaktualna,
-  needs_migration, brak_ekranow, niejednoznaczny_ekran). BLOCKED (np. `prototype_not_found`, `invalid_prototype_line`) = zgłoszenie, nie obejście.
+  needs_migration, brak_ekranow, niejednoznaczny_ekran, `writing` = agent jeszcze pisze ekrany prototypu, wpis bez ekranu; po `prototype writing <projekt> <slug> done` albo wygaśnięciu markera bramka wraca do zwykłej oceny). BLOCKED (np. `prototype_not_found`, `invalid_prototype_line`) = zgłoszenie, nie obejście.
 - Wyjątek (D16-Q2): tylko właściciel w karcie słowami „GO implement bez akceptacji prototypu”. Agent dopisuje wtedy w nagłówku
   linię `Bramka prototypu: pominięta — <powód> — <osoba>, <RRRR-MM-DD>`, cytując powód. Bez tych słów właściciela agent
   tej linii nie dopisuje i nie usuwa linii `Prototyp:`. Dyspozytor ani agent nie obchodzą bramki.

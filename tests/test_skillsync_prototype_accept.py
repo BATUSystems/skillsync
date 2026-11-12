@@ -560,7 +560,7 @@ class AcceptanceLostPreviewTests(RestoreServerCase):
 PROJECT_URL = '/_api/v1/project'
 PROJECT_ACCEPT_URL = '/_api/v1/project/accept'
 # `problems` (S1-1, poprawki po przeglądzie F3): liczba ekranów niehaszowalnych (duplikat id, niezamknięta sekcja); zawsze int
-LISTING_FIELDS = {'slug', 'title', 'iteration', 'screens', 'open', 'awaiting', 'version', 'format', 'problems'}
+LISTING_FIELDS = {'slug', 'title', 'iteration', 'screens', 'open', 'awaiting', 'version', 'format', 'problems', 'writing'}
 
 
 class ProjectCase(AcceptCase):
@@ -1541,7 +1541,7 @@ class ListAndIndexAcceptanceTests(CliProject):
     def test_only_new_fields_were_added_to_the_skippster_contract(self):
         entry = self.entry('alpha')
         base = {'slug', 'title', 'requirements', 'created', 'generated_by', 'path', 'screens', 'comments'}
-        self.assertEqual(set(entry) - base, {'commentsFormat', 'threads', 'iteration', 'acceptance'})
+        self.assertEqual(set(entry) - base, {'commentsFormat', 'threads', 'iteration', 'acceptance', 'writing'})
         self.assertTrue(base <= set(entry), 'no contract field was removed')
         self.assertIsInstance(entry['screens'], int)
         self.assertIsInstance(entry['comments'], int)

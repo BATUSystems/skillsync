@@ -49,7 +49,7 @@ def find_node():
 # Kopia: tests/fixtures/prototype/engine-v2/ (SOURCE.md). Strona Pythona: skillsync_workflow/prototype_server.py.
 
 ENGINE_V2_DIR = Path(__file__).resolve().parent / 'fixtures' / 'prototype' / 'engine-v2'
-ENGINE_V2_SHA256 = '5ac18195b89ba518efc3b79ca42661144ec2415dda0bc643ef19000cede233fd'
+ENGINE_V2_SHA256 = 'cf4c4878abf8476976318903a7e489a4deb6e94db3bb6c61d7167de484bd3eeb'
 REFRESH_V2 = 'Odśwież kopię wg tests/fixtures/prototype/engine-v2/SOURCE.md i zaktualizuj ENGINE_V2_SHA256.'
 ENGINE_V2_PATH_ENV = 'SKILLSYNC_PROTOTYPE_ENGINE_V2_PATH'
 DIFF_SEEDS = (20261104, 7, 1234567, 99, 424242, 31337)
@@ -2485,6 +2485,301 @@ class EngineV2AcceptancePureTests(unittest.TestCase):
         # atrapa błędu: przerwana akceptacja projektu traci stan „częściowo”
         assert_detects(self, lambda value: self.assertEqual(value, ['partial']),
                        self.many('classifyAcceptResult', [[500, 'write_failed', done]]), ['error'])
+
+
+# ── writing marker (K9, K11): sygnał „agent jeszcze pisze ekrany” w silniku ─────────────────────────────────────────
+
+WRITING_HARNESS = r"""'use strict';
+// Silnik (require) na minimalnej atrapie przeglądarki: `Remote.poll()` przez prawdziwe `take`, opis banerów i stan akceptacji.
+const [enginePath, specJson] = process.argv.slice(2);
+const spec = JSON.parse(specJson);
+const attrs = Object.assign({ 'data-prototype-id': 'demo' }, spec.attrs || {});
+const search = spec.search || '';
+globalThis.location = { href: 'http://example.test/index.html' + search, search: search, hash: '', protocol: 'http:' };
+globalThis.document = { documentElement: { getAttribute: (k) => (k in attrs ? attrs[k] : null), hasAttribute: (k) => k in attrs } };
+const api = require(enginePath);
+const store = {};
+globalThis.window = { localStorage: { getItem: (k) => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); },
+  removeItem: (k) => { delete store[k]; }, key: () => null, length: 0 } };
+const hook = api.__t;
+const queue = (spec.responses || []).slice();
+let requests = 0;
+globalThis.fetch = async () => { requests += 1; const r = queue.shift(); return { status: r.status, json: async () => r.json }; };
+const state = hook.Remote.state;
+state.mode = spec.mode || 'full';
+state.user = { login: 'a@example.com', role: spec.role || 'acceptor', mustChange: false };
+(async () => {
+  const steps = [];
+  for (let i = 0; i < (spec.responses || []).length; i += 1) {
+    await hook.Remote.poll();
+    const rows = hook.describe();
+    const gate = api.acceptAvailability(hook.stateFor('s1'));
+    steps.push({ writing: state.writing === undefined ? 'undefined' : state.writing, stale: state.stale,
+      banners: rows.map((row) => row.key), texts: rows.map((row) => row.text), buttons: rows.map((row) => row.buttons.length),
+      gate: gate, submit: api.acceptSubmitState(hook.stateFor('s1', { scope: 'screen' })) });
+  }
+  process.stdout.write(JSON.stringify({ steps: steps, requests: requests }));
+})();
+"""
+
+WRITING_OPS = {'prototypeId': 'demo', 'total': 0, 'prefix': '', 'reset': False, 'operations': [], 'people': {},
+               'iteration': {'current': 1}, 'version': 'v1', 'screens': {'s1': 'h1'}, 'acceptance': {}, 'iterations': []}
+WRITING_MARK = {'since': 1000, 'expiresAt': 901000}
+
+
+def writing_ops(**changes):
+    body = dict(WRITING_OPS)
+    body.update(changes)
+    return {'status': 200, 'json': body}
+
+
+def expose_writing_internals(text):
+    """Atrapa po stronie testu: dokłada do eksportów `__t` z wewnętrznymi `Remote`, `BannersUi.describe`, `AcceptUi.stateFor`."""
+    anchors = [
+        ("    return Object.freeze({ start: start });\n  })();\n\n  // ── 13j.",
+         "    return Object.freeze({ start: start, describe: describe });\n  })();\n\n  // ── 13j."),
+        ("    return Object.freeze({ start: start });\n  })();\n\n  function startUi(",
+         "    return Object.freeze({ start: start, stateFor: stateFor });\n  })();\n\n  function startUi("),
+        ("if (typeof module !== 'undefined' && module.exports) Object.assign(module.exports, EXPORT_MAP);",
+         "if (typeof module !== 'undefined' && module.exports) { Object.assign(module.exports, EXPORT_MAP);\n"
+         "    module.exports.__t = { Remote: Remote, describe: BannersUi.describe, stateFor: AcceptUi.stateFor }; }"),
+    ]
+    for old, new in anchors:
+        if text.count(old) != 1:
+            raise AssertionError('kotwica atrapy testowej nie występuje dokładnie raz: %r' % old[:60])
+        text = text.replace(old, new)
+    return text
+
+
+class EngineV2WritingTests(unittest.TestCase):
+    """Writing marker K9/K11: powód `writing` w blokadach akceptacji, `take`, baner, klasyfikacja 409 i zgodność wsteczna."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.node, cls.reason = find_node()
+        cls.tmp = tempfile.mkdtemp(prefix='skillsync-engine-v2-writing-')
+        cls.addClassCleanup(shutil.rmtree, cls.tmp, ignore_errors=True)
+        cls.engine_js = install_engine_v2(cls.tmp)
+        if cls.node:
+            def copy_to(name, transform=None):
+                directory = Path(cls.tmp) / name
+                directory.mkdir()
+                return install_engine_copy(directory, engine_v2_js() if name == 'hooked' else ENGINE_V2_PREV_JS, transform)
+            cls.hooked = copy_to('hooked', expose_writing_internals)
+            cls.prev_plain = copy_to('prev')
+            cls.hooked_prev = copy_to('hooked-prev', expose_writing_internals)
+            Path(cls.tmp, 'writing-harness.cjs').write_text(WRITING_HARNESS, encoding='utf-8')
+
+    def need_node(self):
+        if not self.node:
+            self.skipTest(self.reason)
+
+    def many(self, name, arg_lists, engine=None):
+        self.need_node()
+        input_path, output_path = Path(self.tmp) / 'w-in.json', Path(self.tmp) / 'w-out.json'
+        input_path.write_text(json.dumps({'calls': [{'fn': name, 'args': args} for args in arg_lists]}), encoding='utf-8')
+        if output_path.exists():
+            output_path.unlink()
+        engine_js = Path(engine) if engine else self.engine_js
+        shutil.copy2(ENGINE_V2_DIR / 'queue.cjs', engine_js.parent)
+        result = subprocess.run([self.node, str(engine_js.parent / 'queue.cjs'), str(engine_js), str(input_path), str(output_path)],
+                                capture_output=True, text=True, timeout=120)
+        if result.returncode != 0:
+            raise AssertionError('node queue.cjs exit %s: %s' % (result.returncode, result.stderr[-2000:]))
+        return json.loads(output_path.read_text(encoding='utf-8'))
+
+    def run_harness(self, engine_js, **spec):
+        self.need_node()
+        result = subprocess.run([self.node, str(Path(self.tmp) / 'writing-harness.cjs'), str(engine_js), json.dumps(spec)],
+                                capture_output=True, text=True, timeout=120)
+        self.assertEqual(result.returncode, 0, result.stderr[-2000:])
+        return json.loads(result.stdout)
+
+    # -- czyste funkcje: powód w BLOCKS, kolejność, przywracanie, klasyfikacja --
+
+    def test_blocks_order_stale_before_writing_before_offline_and_loading(self):
+        base = {'mode': 'api', 'user': {'role': 'acceptor', 'mustChange': False}, 'version': 'v', 'hash': 'h'}
+        writing, stale_wins, offline_after, loading_after, expired_wins, must_change_wins, ready = self.many('acceptAvailability', [
+            [dict(base, writing=True)], [dict(base, writing=True, stale=True)], [dict(base, writing=True, offline=True)],
+            [dict(base, writing=True, loading=True)], [dict(base, writing=True, expired=True)],
+            [dict(base, writing=True, user={'role': 'acceptor', 'mustChange': True})], [dict(base, writing=False)]])
+        self.assertEqual((writing['visible'], writing['enabled']), (True, False))
+        self.assertIn('Agent jeszcze pisze ekrany', writing['reason'])
+        self.assertIn('wróci sama', writing['reason'])
+        self.assertIn('zmieniono', stale_wins['reason'], 'stale (akcja użytkownika) ma pierwszeństwo przed „pisze”')
+        self.assertIn('Agent jeszcze pisze', offline_after['reason'], 'writing przed offline')
+        self.assertIn('Agent jeszcze pisze', loading_after['reason'], 'writing przed loading')
+        self.assertIn('Sesja wygasła', expired_wins['reason'])
+        self.assertIn('własne hasło', must_change_wins['reason'])
+        self.assertEqual((ready['enabled'], ready['reason']), (True, ''))
+        sub = {'version': 'v', 'hash': 'h', 'scope': 'screen'}
+        a, b = self.many('acceptSubmitState', [[dict(sub, writing=True)], [dict(sub, writing=True, stale=True)]])
+        self.assertEqual(a['enabled'], False)
+        self.assertIn('Agent jeszcze pisze', a['reason'])
+        self.assertIn('zmieniono', b['reason'])
+        # atrapa błędu: ignorowanie `writing` zostawia przycisk włączony
+        assert_detects(self, lambda value: self.assertEqual(value['enabled'], False), writing, ready)
+
+    def test_hidden_contexts_ignore_writing(self):
+        base = {'mode': 'api', 'user': {'role': 'acceptor', 'mustChange': False}, 'version': 'v', 'hash': 'h', 'writing': True}
+        out = self.many('acceptAvailability', [[dict(base, frozen=True)], [dict(base, embed=True)]])
+        self.assertEqual(out, [{'visible': False, 'enabled': False, 'reason': ''}] * 2)
+
+    def test_classify_accept_result_writing_in_progress(self):
+        mark = {'slug': 'demo', 'since': 1, 'expiresAt': 2}
+        cases = [((409, 'writing_in_progress', mark), 'writing'), ((409, 'writing_in_progress', {'writing': [mark]}), 'writing'),
+                 ((409, 'writing_in_progress', None), 'writing'), ((409, 'stale_view', None), 'stale'),
+                 ((409, 'partial', {'accepted': ['a'], 'pending': ['b'], 'writing': [mark]}), 'partial'),
+                 ((403, 'writing_in_progress', None), 'forbidden'), ((500, 'writing_in_progress', None), 'error')]
+        out = self.many('classifyAcceptResult', [list(args) for args, _ in cases])
+        self.assertEqual(out, [expected for _, expected in cases])
+
+    def test_restore_rules_and_availability_know_writing(self):
+        self.assertEqual(self.many('classifyRestoreResult', [[409, 'writing_in_progress', {'slug': 'demo'}], [409, 'stale_view', None],
+                                                              [500, 'x', None]]), ['writing', 'stale', 'error'])
+        base = {'mode': 'api', 'frozen': False, 'embed': False, 'user': {'role': 'developer', 'mustChange': False},
+                'sourceWrites': True, 'iterations': 2, 'stale': False, 'version': 'v-1', 'offline': False, 'expired': False}
+        free, writing, stale_wins, offline = self.many('restoreAvailability', [
+            [base], [dict(base, writing=True)], [dict(base, writing=True, stale=True)], [dict(base, writing=True, offline=True)]])
+        self.assertEqual((free['enabled'], free['reason']), (True, ''))
+        self.assertEqual(writing['visible'], True)
+        self.assertEqual(writing['enabled'], False)
+        self.assertIn('Agent jeszcze pisze ekrany', writing['reason'])
+        self.assertIn('przywracanie', writing['reason'])
+        self.assertIn('zmieniono', stale_wins['reason'])
+        self.assertIn('Agent jeszcze pisze', offline['reason'])
+        hidden = self.many('restoreAvailability', [[dict(base, writing=True, frozen=True)], [dict(base, writing=True, embed=True)]])
+        self.assertEqual(hidden, [{'visible': False, 'enabled': False, 'reason': ''}] * 2)
+
+    def test_outcome_for_writing_polls_and_names_the_prototypes(self):
+        screen = self.many('acceptClosedOutcome', [['writing', 'screen', {'slug': 'demo'}, 'Tydzień', 'demo', 'writing_in_progress']])[0]
+        self.assertEqual((screen['poll'], screen['markStale'], screen['auth']), (True, False, False))
+        self.assertIn('Agent jeszcze pisze ekrany', screen['message'])
+        self.assertIn('Nic nie zapisano', screen['message'])
+        project = self.many('acceptClosedOutcome', [['writing', 'project', {'writing': [
+            {'slug': 'beta', 'since': 1, 'expiresAt': 2}, {'slug': 'demo'}, 5, None, {'slug': ''}]}, None, 'demo', 'x']])[0]
+        self.assertTrue(project['poll'])
+        self.assertIn('beta, demo', project['message'])
+        self.assertNotIn('5', project['message'])
+        self.assertIn('Agent jeszcze pisze ekrany tego prototypu', self.many(
+            'acceptClosedOutcome', [['writing', 'project', {}, None, 'demo', 'x']])[0]['message'])
+        # `partial` z polem `writing` dopisuje komunikat; bez pola jest bez zmian
+        partial = self.many('acceptClosedOutcome', [['partial', 'project', {'pending': ['beta'], 'writing': [{'slug': 'beta'}]}, None, 'demo', 'x'],
+                                                    ['partial', 'project', {'pending': ['beta']}, None, 'demo', 'x']])
+        self.assertTrue(partial[0]['poll'])
+        self.assertIn('czeka: beta', partial[0]['message'])
+        self.assertIn('pisze ekrany (beta)', partial[0]['message'])
+        self.assertNotIn('pisze', partial[1]['message'])
+
+    def test_restore_submit_state_blocks_on_writing_with_hint(self):
+        ready = {'busy': False, 'previewOk': True, 'stale': False, 'reason': 'Powód', 'from': 2}
+        free, writing, stale_wins = self.many('restoreSubmitState', [[ready], [dict(ready, writing=True)], [dict(ready, writing=True, stale=True)]])
+        self.assertEqual(free, {'enabled': True, 'reason': ''})
+        self.assertEqual(writing['enabled'], False)
+        self.assertIn('Agent jeszcze pisze ekrany', writing['reason'])
+        self.assertIn('przeładuj', stale_wins['reason'])
+
+    def test_logout_401_outside_full_mode_clears_writing(self):
+        result = self.run_harness(self.hooked, mode='anon', responses=[writing_ops(writing=WRITING_MARK), {'status': 401, 'json': None}])
+        shown, logged_out = result['steps']
+        self.assertEqual(shown['banners'], ['writing'])
+        self.assertIsNone(logged_out['writing'])
+        self.assertEqual(logged_out['banners'], [])
+        # inne błędy zostawiają ostatnią znaną wartość
+        kept = self.run_harness(self.hooked, responses=[writing_ops(writing=WRITING_MARK), {'status': 500, 'json': None}])['steps'][1]
+        self.assertEqual(kept['writing'], WRITING_MARK)
+
+    # -- take / baner / przycisk na prawdziwym `Remote.poll()` --
+
+    def test_take_sets_writing_and_banner_with_disabled_button_then_returns_without_reload(self):
+        result = self.run_harness(self.hooked, responses=[writing_ops(writing=WRITING_MARK), writing_ops(writing=WRITING_MARK),
+                                                          writing_ops(writing=None)])
+        first, second, third = result['steps']
+        self.assertEqual(first['writing'], WRITING_MARK)
+        self.assertEqual(first['banners'], ['writing'])
+        self.assertIn('Agent jeszcze pisze ekrany', first['texts'][0])
+        self.assertEqual(first['buttons'], [0], 'baner bez przycisku „Przeładuj”')
+        self.assertEqual((first['gate']['visible'], first['gate']['enabled']), (True, False))
+        self.assertIn('Agent jeszcze pisze ekrany', first['gate']['reason'])
+        self.assertEqual(first['submit']['enabled'], False)
+        self.assertFalse(first['stale'])
+        self.assertEqual(second['banners'], ['writing'])
+        # marker znika, pliki bez zmian: baner znika, przycisk wraca bez przeładowania, bez „Prototyp zmieniono”
+        self.assertIsNone(third['writing'])
+        self.assertEqual((third['banners'], third['stale']), ([], False))
+        self.assertEqual(third['gate'], {'visible': True, 'enabled': True, 'reason': ''})
+        self.assertEqual(third['submit'], {'enabled': True, 'reason': ''})
+        self.assertEqual(result['requests'], 3)
+
+    def test_take_overwrites_writing_old_server_without_field_means_null(self):
+        result = self.run_harness(self.hooked, responses=[writing_ops(writing=WRITING_MARK), writing_ops(), writing_ops(writing='x'),
+                                                          writing_ops(writing=[1])])
+        first, absent, junk, listed = result['steps']
+        self.assertEqual(first['writing'], WRITING_MARK)
+        self.assertIsNone(absent['writing'], 'brak pola u starego serwera = null (zawsze nadpisywane)')
+        self.assertEqual(absent['banners'], [])
+        self.assertEqual(absent['gate']['enabled'], True)
+        self.assertIsNone(junk['writing'])
+        self.assertIsNone(listed['writing'])
+        self.assertEqual(self.run_harness(self.hooked, responses=[writing_ops()])['steps'][0]['writing'], None)
+
+    def test_stale_banner_takes_precedence_over_writing(self):
+        result = self.run_harness(self.hooked, responses=[writing_ops(), writing_ops(version='v2', writing=WRITING_MARK),
+                                                          writing_ops(version='v2', writing=None)])
+        first, changed, after = result['steps']
+        self.assertEqual(first['banners'], [])
+        self.assertTrue(changed['stale'])
+        self.assertEqual(changed['banners'], ['stale'], 'baner „pisze” ustępuje „Prototyp zmieniono”')
+        self.assertIn('zmieniono', changed['gate']['reason'])
+        self.assertEqual(changed['buttons'], [1])
+        self.assertEqual(after['banners'], ['stale'], 'po `done` nadal trzeba przeładować')
+        self.assertEqual(after['gate']['enabled'], False)
+
+    def test_no_writing_banner_on_frozen_iteration_or_embed(self):
+        frozen = self.run_harness(self.hooked, responses=[writing_ops(version='v2', writing=WRITING_MARK)],
+                                  attrs={'data-prototype-frozen': '', 'data-prototype-iteration': '2'})['steps'][0]
+        self.assertEqual(frozen['banners'], ['frozen'], 'zamrożona iteracja: tylko jej własny baner')
+        self.assertEqual(frozen['gate'], {'visible': False, 'enabled': False, 'reason': ''})
+        self.assertFalse(frozen['stale'])
+        embed = self.run_harness(self.hooked, responses=[writing_ops(writing=WRITING_MARK)], search='?embed=compare')['steps'][0]
+        self.assertEqual(embed['banners'], [])
+        self.assertEqual(embed['gate']['visible'], False)
+        # kontrola: ta sama odpowiedź na zwykłej stronie daje baner
+        self.assertEqual(self.run_harness(self.hooked, responses=[writing_ops(writing=WRITING_MARK)])['steps'][0]['banners'], ['writing'])
+
+    # -- K11: zgodność wsteczna (zamrożona kopia poprzedniego silnika) --
+
+    def test_previous_engine_ignores_writing_field_on_operations(self):
+        result = self.run_harness(self.hooked_prev, responses=[writing_ops(writing=WRITING_MARK), writing_ops()])
+        for step in result['steps']:
+            self.assertEqual(step['writing'], 'undefined', 'stary silnik nie zna pola')
+            self.assertEqual(step['banners'], [])
+            self.assertEqual(step['gate'], {'visible': True, 'enabled': True, 'reason': ''})
+            self.assertEqual(step['submit'], {'enabled': True, 'reason': ''})
+
+    def test_previous_engine_shows_generic_error_on_409_writing_without_queueing(self):
+        mark = {'error': 'writing_in_progress', 'slug': 'demo', 'since': 1, 'expiresAt': 2}
+        project = {'error': 'writing_in_progress', 'writing': [{'slug': 'demo', 'since': 1, 'expiresAt': 2}]}
+        verdict = self.many('classifyAcceptResult', [[409, 'writing_in_progress', mark], [409, 'writing_in_progress', project]], self.prev_plain)
+        self.assertEqual(verdict, ['error', 'error'])
+        outcome = self.many('acceptClosedOutcome', [['error', 'screen', mark, 'Tydzień', 'demo', 'writing_in_progress'],
+                                                    ['error', 'project', project, None, 'demo', 'writing_in_progress']], self.prev_plain)
+        for item in outcome:
+            self.assertEqual((item['poll'], item['markStale'], item['auth'], item['password'], item['renew']), (False,) * 5,
+                             'błąd ogólny: stan strony bez zmian')
+            self.assertIn('Nie udało się zapisać akceptacji', item['message'])
+            self.assertIn('writing_in_progress', item['message'])
+            self.assertIn('Nic nie zapisano', item['message'])
+        queueable = self.many('classifyWriteResult', [[409, 'writing_in_progress']], self.prev_plain)
+        self.assertEqual(queueable, ['reject'], 'stary silnik odrzuca wpis, nie kolejkuje go')
+        self.assertNotIn('accept', self.js_prev('api.QUEUEABLE_TYPES'), 'akceptacja nie trafia do kolejki offline')
+        self.assertEqual(self.many('classifyRestoreResult', [[409, 'writing_in_progress', mark]], self.prev_plain), ['error'])
+
+    def js_prev(self, expression):
+        script = 'const api=require(process.argv[1]);process.stdout.write(JSON.stringify(%s));' % expression
+        result = subprocess.run([self.node, '-e', script, str(self.prev_plain)], capture_output=True, text=True, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stderr[-800:])
+        return json.loads(result.stdout)
 
 
 # ── Kontrakt API eksportów (K4): zbiór nazw `module.exports` i wywołania nazw bez innego testu ────────────────────
