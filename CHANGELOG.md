@@ -12,6 +12,12 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Added
+- Expert questions: a multi-choice question. `skillsync prototype question add … --multi` (at least 2 `--option`, several `:recommended` allowed) lets the expert tick one or more variants; the `/_experts` page shows check boxes for it, and an empty set is refused in the page and on the server (400 `empty_selection`); "none of them" is the free-text answer. A multi answer is stored as `optionIds` and exported with `optionLabels` (lists, in the order of the question's options); `answerLine` and the `[EKSPERT]` row list every chosen variant. A single answer on a multi question (or a set on a single one) is 400 `wrong_answer_kind`.
+
+### Compatibility
+- Additive in `expert-questions/1`: a new optional `multi` on a question and `optionIds`/`optionLabels` on its answer; single-choice questions, free-text answers, confirmations and existing logs are unchanged. A server older than this version refuses a `questions.json` that already holds a `multi` question or an `optionIds` answer, so update the core before using `--multi` in a shared project.
+
 ## [1.2.0] - 2026-11-12
 
 ### Added

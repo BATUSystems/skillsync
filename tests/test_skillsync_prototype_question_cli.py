@@ -154,7 +154,7 @@ class QuestionCase(PrototypeFixture):
         return result.operations[0]
 
     def answer(self, qid=QA, by=EWA, **fields):
-        if not any(key in fields for key in ('optionId', 'text', 'confirm')):
+        if not any(key in fields for key in ('optionId', 'optionIds', 'text', 'confirm')):
             fields['text'] = 'tak, nowy numer'
         return self.expert_write('answer', qid, by, **fields)
 
@@ -1551,6 +1551,52 @@ class CommentsRegressionTests(QuestionCase):
                                 cwd=str(self.base))
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(comments.read_bytes(), before)
+
+
+class MultiChoiceTests(QuestionCase):
+    FORMATS = ('--option', 'CSV:recommended', '--option', 'XLSX:recommended', '--option', 'PDF')
+
+    def add_multi(self, qid=QA, *extra, **kwargs):
+        return self.add('W jakich formatach eksport?', qid, *(self.FORMATS + ('--multi',) + extra), **kwargs)
+
+    def test_add_multi_stores_the_flag_and_allows_several_recommendations(self):
+        self.add_multi()
+        (op,) = self.ops()
+        self.assertIs(op['multi'], True)
+        self.assertEqual([o.get('recommended', False) for o in op['options']], [True, True, False])
+        item = self.question()
+        self.assertTrue(item['multi'])
+        self.assertEqual(self.q('show', QA)['questions'][0]['multi'], True)
+
+    def test_single_choice_question_has_no_multi_field(self):
+        self.add('Jeden?', QA, '--option', 'Tak:recommended', '--option', 'Nie')
+        (op,) = self.ops()
+        self.assertNotIn('multi', op)
+        self.assertNotIn('multi', self.question())
+
+    def test_several_recommendations_without_multi_and_multi_without_two_options_fail(self):
+        self.add('Kilka?', QA, *self.FORMATS, code=1)
+        self.add('Jeden wariant?', QB, '--option', 'CSV', '--multi', code=1)
+        self.add('Brak wariantów?', QB, '--multi', code=1)
+        self.assertEqual(self.ops(), [])
+
+    def test_answer_line_and_wait_list_every_chosen_option(self):
+        self.add_multi()
+        self.assertIsNone(self.q('show', QA)['answerLine'])
+        self.answer(QA, optionIds=['o3', 'o1'])
+        shown = self.q('show', QA)
+        self.assertIn(' — odpowiedź: CSV, PDF — ekspert: ', shown['answerLine'])
+        self.assertEqual(shown['questions'][0]['answer']['optionLabels'], ['CSV', 'PDF'])
+        self.assertEqual(shown['questions'][0]['answer']['optionIds'], ['o3', 'o1'])
+        waited = self.q('wait', QA, '--timeout', '5', '--interval', '0.2')
+        self.assertEqual(waited['answerLine'], shown['answerLine'])
+        exported = self.question()
+        self.assertEqual(exported['answer']['optionLabels'], ['CSV', 'PDF'])
+
+    def test_free_text_answer_replaces_none_of_them(self):
+        self.add_multi()
+        self.answer(QA, text='Żaden z nich: JSON')
+        self.assertIn(' — odpowiedź: Żaden z nich: JSON — ekspert: ', self.q('show', QA)['answerLine'])
 
 
 if __name__ == '__main__':

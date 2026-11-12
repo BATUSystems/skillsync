@@ -1080,5 +1080,68 @@ class FloodProtectionTests(QCase):
         self.check(self.answer(self.who(EX), Q1, {'cid': 'f-1', 'text': 'x'}), 201)
 
 
+QM = 'qn-0000000000a1'   # all, multi
+
+
+class MultiChoiceApiTests(QCase):
+    """Pytanie wielokrotnego wyboru: formularz wysyła `optionIds`, pusty zestaw i zły rodzaj odpowiedzi to 400 z kodem."""
+
+    def setUp(self):
+        super().setUp()
+        options = [{'id': 'o1', 'label': 'CSV', 'recommended': True}, {'id': 'o2', 'label': 'XLSX', 'recommended': True},
+                   {'id': 'o3', 'label': 'PDF'}]
+        self.seed_questions([ask(QM, multi=True, options=options, text='Formaty eksportu?')])
+
+    def test_view_shows_multi_and_the_answer_keeps_every_chosen_option(self):
+        expert = self.who(EX)
+        listing = expert.get('/_api/v1/questions').json['questions']
+        self.assertTrue([q for q in listing if q['id'] == QM][0]['multi'])
+        self.assertFalse([q for q in listing if q['id'] == Q8][0]['multi'])
+        response = self.answer(expert, QM, {'cid': 'c-1', 'optionIds': ['o3', 'o1']})
+        self.check(response, 201)
+        stored = self.kinds(QM, 'answer')
+        self.assertEqual(stored[0]['optionIds'], ['o3', 'o1'])
+        self.assertNotIn('optionId', stored[0])
+        self.assertEqual(response.json['question']['answer']['optionIds'], ['o3', 'o1'])
+
+    def test_empty_selection_is_400_with_its_code_and_writes_nothing(self):
+        expert = self.who(EX)
+        before = self.stored()
+        response = self.answer(expert, QM, {'cid': 'c-1', 'optionIds': []})
+        self.assert_no_write(before, response, 400)
+        self.assertEqual(response.json['error'], 'empty_selection')
+
+    def test_wrong_kind_unknown_and_duplicate_options_are_400(self):
+        expert = self.who(EX)
+        before = self.stored()
+        cases = {
+            'optionId na multi': ({'cid': 'c-1', 'optionId': 'o1'}, QM, 'wrong_answer_kind'),
+            'optionIds na pojedynczym': ({'cid': 'c-2', 'optionIds': ['o1']}, Q8, 'wrong_answer_kind'),
+            'nieznana opcja': ({'cid': 'c-3', 'optionIds': ['o1', 'o9']}, QM, 'unknown_option'),
+            'duplikat': ({'cid': 'c-4', 'optionIds': ['o1', 'o1']}, QM, None),
+            'nie lista': ({'cid': 'c-5', 'optionIds': 'o1'}, QM, None),
+            'zestaw i tekst': ({'cid': 'c-6', 'optionIds': ['o1'], 'text': 'x'}, QM, None),
+        }
+        for name, (body, qid, code) in cases.items():
+            with self.subTest(name):
+                response = self.answer(expert, qid, body)
+                self.assert_no_write(before, response, 400)
+                if code:
+                    self.assertEqual(response.json['error'], code)
+
+    def test_free_text_and_comment_stay_available_on_a_multi_question(self):
+        expert = self.who(EX)
+        self.check(self.answer(expert, QM, {'cid': 'c-1', 'text': 'Żaden: JSON', 'comment': 'potrzebny też JSON'}), 201)
+        self.check(self.comment(expert, QM, {'cid': 'c-2', 'text': 'dopisek'}), 201)
+
+    def test_retry_of_the_same_multi_answer_is_idempotent(self):
+        expert = self.who(EX)
+        body = {'cid': 'c-1', 'optionIds': ['o2']}
+        self.check(self.answer(expert, QM, body), 201)
+        before = self.stored()
+        self.check(self.answer(expert, QM, body), 200)
+        self.assertEqual(self.stored(), before)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -3380,6 +3380,12 @@ def question_answer_line(question):
         return None
     if answer.get('text') is not None:
         value = answer['text']
+    elif isinstance(answer.get('optionIds'), list) and answer['optionIds']:
+        chosen = [item for item in answer['optionIds'] if isinstance(item, str)]
+        labels = [item.get('label') if isinstance(item.get('label'), str) else item.get('id')
+                  for item in question.get('options') or [] if item.get('id') in chosen]
+        known = [item.get('id') for item in question.get('options') or []]
+        value = ', '.join(labels + [item for item in chosen if item not in known])
     elif answer.get('optionId') is not None:
         labels = [item.get('label') for item in question.get('options') or [] if item.get('id') == answer['optionId']]
         value = labels[0] if labels and isinstance(labels[0], str) else answer.get('optionLabel') or answer['optionId']
@@ -3582,6 +3588,8 @@ def add_question(root, manifest, args):
                'addressees': addressees, 'refs': refs, 'options': options, 'origin': origin}
     if args.refers_to:
         partial['refersTo'] = args.refers_to
+    if getattr(args, 'multi', False):
+        partial['multi'] = True
     try:
         result = store.transaction(lambda snapshot: partial)
     except server.PrototypeServerError as error:
@@ -4247,7 +4255,8 @@ def register(subparsers):
     qadd = question_parser('add', 'Ask the experts (<root>/questions.json); default: with an assumed value, the agent goes on', users=True)
     qadd.add_argument('--text', required=True, help='The question (at most 2000 characters)')
     qadd.add_argument('--ref', action='append', metavar='TITLE|HREF[|EXCERPT]', help='Context link with an optional excerpt (repeatable, at most 5)')
-    qadd.add_argument('--option', action='append', metavar='LABEL[:recommended]', help='Answer option (repeatable, at most 8, one recommended)')
+    qadd.add_argument('--option', action='append', metavar='LABEL[:recommended]', help='Answer option (repeatable, at most 8; one recommended, several with --multi)')
+    qadd.add_argument('--multi', action='store_true', help='Multi-choice: the expert ticks one or more options (at least one; "none" is a free-text answer); needs at least 2 --option')
     qadd.add_argument('--assume', help='Assumed value: the question does not stop the agent (exactly one of --assume, --blocking)')
     qadd.add_argument('--blocking', action='store_true', help='The agent waits for the answer (contract, data, migration, security)')
     qadd.add_argument('--to', action='append', metavar='LOGIN', help='Address to this expert (repeatable; default all experts)')
