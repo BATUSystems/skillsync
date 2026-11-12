@@ -12,6 +12,21 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+## [1.2.3] - 2026-11-13
+
+### Added
+
+- The page `/_experts` (and `/_experts/<slug>`) refreshes the list by itself every 15 s (paused while the tab is hidden, at once when it comes back),
+  so a remote expert notices a new question, also a blocking one, without reloading. The tab title shows the number of open questions across
+  all runs, `(2) Pytania do eksperta`, and `(2!) …` when one of them is blocking. A started answer or comment (text in a field, a ticked option, the focus
+  in a field) is never redrawn: the list updates, and when that question changed on the server (someone answered or commented) the page says so once
+  instead of overwriting the form.
+- `GET /_api/v1/questions` and `GET /_api/v1/prototypes/<slug>/questions`: `runs[]` has `blocking` (open blocking questions visible to the viewer).
+
+### Breaking
+
+None.
+
 ## [1.2.2] - 2026-11-12
 
 ### Added

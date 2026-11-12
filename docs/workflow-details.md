@@ -6,7 +6,7 @@ pomiaru przebiegu i pracy wielu sesji. Nie opisuje instalacji, synchronizacji an
 i komend: [workflow.md](workflow.md). Źródłem prawdy są skille warstwy core (`../library/skills/feature/SKILL.md` i jego
 `references/`); przy rozbieżności wygrywa skill, a ten dokument trzeba poprawić.
 
-Stan opisu: Skillsync `v1.2.2`.
+Stan opisu: Skillsync `v1.2.3`.
 
 ## 1. Elementy systemu
 
