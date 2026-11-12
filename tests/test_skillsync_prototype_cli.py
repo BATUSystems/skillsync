@@ -1,6 +1,6 @@
 """`skillsync prototype` v2 (shared comments): ids, migrate, list/index fields, user, serve refusal.
 
-Contract: docs/specs/2026-11-04-prototype-komentarze-wspolne.md (K10, K22, K30, K32, K33, K36, K41,
+Contract: spec zadania (poza rdzeniem) (K10, K22, K30, K32, K33, K36, K41,
 "Kontrakty", "Migracja", "Dane"). Resources: tests/fixtures/prototype/assets (v2 shape), the v1 prototype
 tests/fixtures/prototype/v1 (comments.js with threads anchored by position, see the comments in its index.html).
 """

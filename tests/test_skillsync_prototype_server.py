@@ -1,6 +1,6 @@
 """Serwer komentarzy prototypów (`skillsync_workflow/prototype_server.py`), część serwerowa kroku 1.6 planu W1.
 
-Kontrakt: docs/specs/2026-11-04-prototype-komentarze-wspolne.md (K1-K4, K6-K14, K16 po stronie serwera, K34,
+Kontrakt: spec zadania (poza rdzeniem) (K1-K4, K6-K14, K16 po stronie serwera, K34,
 K41, K42, „Kontrakty”, „Dane”, „Bezpieczeństwo”). Testy opisują zachowanie z speca; nie sprawdzają szczegółów
 implementacji. Serwer zawsze startuje na porcie 0 i jest sprzątany w `tearDown`. Zegar i liczba iteracji PBKDF2 są
 wstrzykiwane (`ServerConfig(clock=…, pbkdf2_iterations=…)`); tylko jeden test używa pełnych 600 000 iteracji.

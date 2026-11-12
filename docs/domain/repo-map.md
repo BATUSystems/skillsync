@@ -2,7 +2,7 @@
 title: Mapa repo (.skillsync/map.md) i jej świeżość
 tags: [skillsync, map, context, fingerprint]
 paths: ['skillsync_workflow/repomap.py']
-source: odczyt skillsync_workflow/repomap.py; tests/test_skillsync_catalog_map.py 2026-10-21; plan docs/plans/2026-10-21-agent-optimization.md (G4)
+source: odczyt skillsync_workflow/repomap.py; tests/test_skillsync_catalog_map.py 2026-10-21; plan zadania (poza rdzeniem) (G4)
 verified: 2026-10-21
 ---
 Reguła: `skillsync map <projekt>` zapisuje generowany `.skillsync/map.md` (nie edytować ręcznie): komendy build/test, entry pointy, katalogi testów/migracji/`docs/domain`/`docs/lessons`,

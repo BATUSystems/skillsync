@@ -2,7 +2,7 @@
 
 Lista identyfikatorów interfejsu, które prototypy i testy wykorzystują i które silnik oraz arkusze muszą obsługiwać.
 Słownik podaje nazwy i rolę; wygląd (reguły CSS, kolory, odstępy) jest swobodny w granicach tokenów
-(`required-tokens.txt`) i wymagań UI. Źródło wymagań: spec `docs/specs/2026-11-04-prototype-komentarze-wspolne.md`.
+(`required-tokens.txt`) i wymagań UI. Źródło wymagań: spec zadania (poza rdzeniem).
 
 ## A. Klasy autorskie (używane w HTML prototypów; arkusze komponentów i ekranów)
 
@@ -137,7 +137,7 @@ Uzupełnienia (panel komentarzy, N-R1 do N-R8):
 - Pasek ma też inne przyciski z `aria-haspopup="menu"`, np. chip konta. Przycisk menu paska rozpoznaje się wyłącznie po
   nazwie dostępnej „Więcej”. Każde menu otwierane z paska, także menu konta, mieści się w oknie przy szerokości 375 px.
 
-Uzupełnienia (widok makiety desktop / mobile, V-01 do V-22; spec `docs/specs/2026-11-06-prototyp-tryb-widoku.md`):
+Uzupełnienia (widok makiety desktop / mobile, V-01 do V-22; spec zadania (poza rdzeniem)):
 - „Widok” (desktop, mobile) to stan oglądania ramki ekranu, odrębny od grupy „Tryb” (Klikalny / Komentarze).
 - Pasek i menu „⋯” nie mają kontrolki widoku: widok ekranu ustawia wyłącznie jego przełącznik lokalny. Start strony zawsze „Desktop”.
 - Przełącznik lokalny: w `.screen-meta` każdego ekranu z ramką element `[data-proto-view-switch]` z przyciskami „Desktop”

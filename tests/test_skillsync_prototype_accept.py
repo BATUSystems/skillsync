@@ -1,7 +1,7 @@
 """Akceptacja prototypu (F3): fold, API `accept`/`unaccept`, `GET /project`, `POST /project/accept`, CLI `accept`
 (TTY), `list`/`index` oraz bramka `gate` (K26).
 
-Kontrakt: docs/specs/2026-11-04-prototype-komentarze-wspolne.md (K14, K16, K20, K24-K26, K32, K42, K43) i
+Kontrakt: spec zadania (poza rdzeniem) (K14, K16, K20, K24-K26, K32, K42, K43) i
 .skillsync/runs/2026-11-04-prototype-komentarze.karta-2/F3-kontrakt.md (A, A1, B-E, G).  Testy obserwują odpowiedzi
 HTTP, pliki `comments.json` i raporty CLI.  Serwer działa na porcie 0, użytkownicy mają niską liczbę iteracji PBKDF2.
 Każdy test negatywny ma przypadek kontrolny, który przechodzi (to samo żądanie z poprawnymi danymi).  Różnicowy fold

@@ -2,7 +2,7 @@
 title: "Przyklejony pasek a komponenty ramki: z-index bez kontekstu nakładania wycieka"
 tags: [prototype, css, z-index, sticky, stacking-context, comments, layout-probe]
 paths: ['tests/fixtures/prototype/engine/**', 'tests/test_skillsync_prototype_engine.py']
-source: '<projekt>/.skillsync/runs/prototyp-plan-zajec/screens/07-ZNALEZISKO-modal-nad-paskiem-900.png, 08-light-900-pinezki-pole-i-konflikt.png (raport przeglądu plan-zajec); docs/plans/2026-11-04-prototype-poprawki.md (E1, E2, sekcja Projekt rozwiązania); .skillsync/runs/2026-11-04-prototype-poprawki.Q1-prototype-poprawki/lib-1-2-3-5-implementer.md (krok 1, przegląd z-index); pomiary akceptacyjne kroku 8 (headless Chrome, CDP, elementFromPoint, 2026-11-04)'
+source: '<projekt>/.skillsync/runs/prototyp-plan-zajec/screens/07-ZNALEZISKO-modal-nad-paskiem-900.png, 08-light-900-pinezki-pole-i-konflikt.png (raport przeglądu plan-zajec); plan zadania (poza rdzeniem) (E1, E2, sekcja Projekt rozwiązania); .skillsync/runs/2026-11-04-prototype-poprawki.Q1-prototype-poprawki/lib-1-2-3-5-implementer.md (krok 1, przegląd z-index); pomiary akceptacyjne kroku 8 (headless Chrome, CDP, elementFromPoint, 2026-11-04)'
 verified: 2026-11-04
 ---
 **Objaw:** na prototypie z 28 ekranami przy szerokości 900 px dialog `.modal` przewinięty pod `.doc-toolbar` (sticky) przykrywa pasek. `elementFromPoint` w środku przycisku „Wątki” zwraca `input` dialogu, więc klik nie otwiera panelu. Pinezki komentarzy zakotwiczone w treści dialogu leżą pod dialogiem; klik w pinezkę otwiera nowy kompozytor na elemencie pod spodem zamiast wątku.

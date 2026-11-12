@@ -2,7 +2,7 @@
 title: Glosariusz domenowy Skillsync (słownik warstw, strażnika i workflow)
 tags: [terminology, skillsync, layers, leakguard, workflow, prototype]
 paths: ['skillsync', 'skillsync_workflow/layers.py', 'skillsync_workflow/leakguard.py', 'skillsync_workflow/common.py', 'skillsync_workflow/prototype_server.py', 'skillsync_workflow/prototype.py']
-source: "Definicje z docs/specs/2026-11-05-warstwy-generator.md (sekcja Terminologia domenowa, K1–K15, Kontrakty); AGENTS.md (podumysły); skillsync_workflow/layers.py (`match_rule`, `LayerSet`); plan docs/plans/2026-11-05-warstwy-generator.md (Terminologia domenowa)"
+source: "Definicje ze specu zadania (poza rdzeniem) (sekcja Terminologia domenowa, K1–K15, Kontrakty); AGENTS.md (podumysły); skillsync_workflow/layers.py (`match_rule`, `LayerSet`); plan zadania (poza rdzeniem) (Terminologia domenowa)"
 verified: 2026-11-11
 ---
 Glosariusz: krótkie znaczenia pojęć projektu Skillsync. Szczegółowe reguły są w rekordach tematycznych

@@ -45,7 +45,7 @@ def find_node():
 
 
 # ── Silnik v2: kopia, test różnicowy foldu (K5) i etykiet (K41) Node <-> Python ──────────────────────────────
-# Kontrakt: docs/specs/2026-11-04-prototype-komentarze-wspolne.md (tabela operacji, „Fold”, `people`/`label`).
+# Kontrakt: spec zadania (poza rdzeniem) (tabela operacji, „Fold”, `people`/`label`).
 # Kopia: tests/fixtures/prototype/engine-v2/ (SOURCE.md). Strona Pythona: skillsync_workflow/prototype_server.py.
 
 ENGINE_V2_DIR = Path(__file__).resolve().parent / 'fixtures' / 'prototype' / 'engine-v2'

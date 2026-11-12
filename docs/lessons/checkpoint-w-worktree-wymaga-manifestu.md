@@ -2,7 +2,7 @@
 title: 'Checkpoint nie działa w worktree bez manifestu, a sam przebieg znika razem z worktree'
 tags: [skillsync, checkpoint, worktree, dispatch, manifest]
 paths: ['skillsync_workflow/runs.py', 'skillsync_workflow/common.py', 'tests/test_skillsync_retro.py']
-source: docs/plans/2026-10-30-r2-self-improve.md (F9, N4, K11); skippster docs/plans/2026-10-29-skippster-vscode-extension.md (plan 44/44); library/skills/feature/references/worker-mode.md w bibliotece; tests/test_skillsync_retro.py (WorktreeFlow)
+source: plan zadania (poza rdzeniem) (F9, N4, K11); skippster plan zadania (poza rdzeniem) (plan 44/44); library/skills/feature/references/worker-mode.md w bibliotece; tests/test_skillsync_retro.py (WorktreeFlow)
 verified: 2026-10-31
 ---
 **Objaw:** `skillsync checkpoint` w worktree paczki kończy się błędem (exit 2), więc karta nie zapisuje rekordów, a raport `retro` daje `no_data`. Przebieg `poc-a` skończył 44 kroki bez ani jednego checkpointu.

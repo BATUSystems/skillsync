@@ -2,7 +2,7 @@
 title: Instrukcje generowane (CLAUDE.md, AGENTS.md, copilot-instructions.md) i push
 tags: [skillsync, instructions, claude, codex, push]
 paths: ['skillsync']
-source: "odczyt skillsync:build_instructions, build_claude_md, update_codex_entrypoint, strip_merge_preamble, cmd_push 2026-10-02; tryb agents: write_agents_block, agents_block_for_push, spec docs/specs/2026-11-02-agents-md-jedno-zrodlo.md"
+source: "odczyt skillsync:build_instructions, build_claude_md, update_codex_entrypoint, strip_merge_preamble, cmd_push 2026-10-02; tryb agents: write_agents_block, agents_block_for_push, spec zadania (poza rdzeniem)"
 verified: 2026-11-02
 ---
 Reguła: instrukcje w projekcie są pochodne. Źródłem są `instructions/_base.md` (+ inne z `instructions.merge`) i szablon projektu `instructions/<template>.md` w bibliotece.

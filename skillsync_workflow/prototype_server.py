@@ -8,7 +8,7 @@ other way round).  It can be copied to any host and run directly::
     python3 prototype_server.py serve --root <prototypes dir> --users <users.json>
     python3 prototype_server.py user add|passwd|remove|list|import --users <users.json> ...
 
-Contents (source of the contract: docs/specs/2026-11-04-prototype-komentarze-wspolne.md):
+Contents (the contract comes from the task specification, kept outside the core):
 
 * ``comments.json`` v2: parsing, validation of every operation type, canonical
   serialization (header on the first line, one operation per line).

@@ -5,6 +5,7 @@ wiedza domenowa i lekcje. Test działa na każdym PR w CI (`git ls-files`). W CI
 lub błąd gita to FAIL, nie pominięcie; lokalnie bez gita test pomija się z powodem.
 """
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -13,6 +14,8 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 FORBIDDEN = ('docs/specs', 'docs/plans')
+# odwołanie do konkretnego (datowanego) pliku specyfikacji albo planu; ogólna konwencja katalogów projektu (`docs/specs/*.md`) jest dozwolona
+DATED = re.compile(r'docs/(?:specs|plans)/[0-9]{4}-[0-9]{2}-[0-9]{2}[A-Za-z0-9_.-]*')
 IN_CI = bool(os.environ.get('CI') or os.environ.get('GITHUB_ACTIONS'))
 
 
@@ -40,6 +43,28 @@ class RepoHygieneTests(unittest.TestCase):
         files = self.need(tracked(*FORBIDDEN))
         self.assertEqual(files, [], 'specyfikacje i plany nie należą do publicznego rdzenia (trzymaj je w repozytorium operacyjnym): '
                          + ', '.join(files))
+
+    def test_no_references_to_dated_specs_or_plans_outside_tests(self):
+        # `tests/` zostaje poza kontrolą: dane syntetyczne testów (katalogi tymczasowe projektów) używają takich nazw
+        files = self.need(tracked('.'))
+        hits = []
+        for name in files:
+            if name.startswith('tests/'):
+                continue
+            try:
+                text = (REPO / name).read_text(encoding='utf-8')
+            except (OSError, UnicodeDecodeError):
+                continue
+            for number, line in enumerate(text.splitlines(), 1):
+                if DATED.search(line):
+                    hits.append('%s:%d' % (name, number))
+        self.assertEqual(hits, [], 'odwołania do specyfikacji i planów, których rdzeń nie przechowuje (użyj opisu bez ścieżki): ' + ', '.join(hits[:20]))
+
+    def test_the_dated_reference_pattern_matches_what_it_should(self):
+        self.assertTrue(DATED.search('plan docs/plans/2026-11-05-warstwy-generator.md (K1)'))
+        self.assertTrue(DATED.search('`docs/specs/2026-01-02-a.md`'))
+        self.assertFalse(DATED.search('katalog docs/specs/*.md w projekcie'))
+        self.assertFalse(DATED.search('--spec docs/specs/zwroty.md'))
 
     def test_the_guard_lists_nested_files_of_a_directory_prefix(self):
         # kontrola: prefiks katalogu bez gwiazdki zwraca pliki zagnieżdżone, a na tym opiera się strażnik

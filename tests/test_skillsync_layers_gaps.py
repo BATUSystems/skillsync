@@ -1,4 +1,4 @@
-"""Gaps before the final verification of P1 (spec A `docs/specs/2026-11-05-warstwy-generator.md`):
+"""Gaps before the final verification of P1 (spec A spec zadania (poza rdzeniem)):
 
 1. K3: project commands run by `validate`, `guard` and `smart-test --run` get no information about the layers
    (no `--layer`, no layer path, no `SKILLSYNC_*` variable with the layers) in argv or in the environment; only the
