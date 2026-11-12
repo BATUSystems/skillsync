@@ -2,7 +2,7 @@
 title: 'Nowa reguła stanu w instrukcjach: przejdź wszystkich konsumentów i stany, których reguła nie przewiduje'
 tags: [workflow, instrukcje, plan, review]
 paths: ['docs/plans/*', 'skills/feature/*', 'skills/pr-run/*']
-source: ".skillsync/runs/2026-11-01-proces-f3/ (plan-review-1.md, 3.5-blind.md, 3.7-review.md, 3.7-blind-2.md); docs/plans/2026-10-31-proces-f3-spec.md"
+source: ".skillsync/runs/2026-11-01-proces-f3/ (plan-review-1.md, 3.5-blind.md, 3.7-review.md, 3.7-blind-2.md); plan zadania (poza rdzeniem)"
 verified: 2026-11-01
 ---
 **Objaw:** plan fazy 3 po dwóch przeglądach i ślepej próbie 26 scenariuszy nadal pozwalał zamrozić niezatwierdzony spec jako wdrożony, a `/pr-run` tworzył PR z linią `Spec:` wskazującą plik spoza gałęzi. Znalazł to dopiero przegląd pełnego diffu.

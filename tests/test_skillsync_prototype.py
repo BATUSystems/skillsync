@@ -1,6 +1,6 @@
 """`skillsync prototype` (init, sync, index, list) and the `prototype:` manifest section.
 
-Contract: docs/plans/2026-11-03-prototype-cli.md (C1, CLI table, K1-K7, K10). Resources come from
+Contract: plan zadania (poza rdzeniem) (C1, CLI table, K1-K7, K10). Resources come from
 tests/fixtures/prototype/assets (shape C1); CSS goldens from tests/fixtures/prototype/css.
 """
 import builtins

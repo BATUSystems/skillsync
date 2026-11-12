@@ -2,7 +2,7 @@
 
 Lista scenariuszy stałego zestawu E2E silnika prototypów (`tests/e2e/prototype/`). Każdy scenariusz opisuje zachowanie
 z poziomu użytkownika; selektory wyłącznie ze słownika kontraktu (`slownik-html-css.md`), ról, `aria-*` i tekstów UI.
-Wymagania źródłowe: spec W1 `docs/specs/2026-11-04-prototype-komentarze-wspolne.md` (kryteria W1-K i decyzje D).
+Wymagania źródłowe: spec W1 (poza rdzeniem) (kryteria W1-K i decyzje D).
 ID z W1 zostają; `D23-…`, `DR-…` i `N-…` są nadane w zestawie E2E.
 Kolumna „Krytyczny”: scenariusz chroni zachowanie, którego regresja blokuje przegląd albo akceptację.
 Zachowanie wyroczni opisuje `README.md` w tym katalogu.
@@ -258,7 +258,7 @@ Tryby pracy według specu W1: start bez sieci (błąd sieci na `GET /_api/v1/ses
 
 ## 14. Widok makiety desktop / mobile (`tests/e2e/prototype/widok.mjs`)
 
-Spec: `docs/specs/2026-11-06-prototyp-tryb-widoku.md` (K1–K15). Prototyp testowy tworzy sam skrypt (`init` w katalogu
+Spec zadania (poza rdzeniem): K1–K15. Prototyp testowy tworzy sam skrypt (`init` w katalogu
 biegu): co najmniej 3 ekrany z ramką (`.frame`), jeden ekran bez ramki, w CSS projektu (`project.css`) element widoczny
 tylko poniżej 600 px (`[data-test-mobile-only]`) i element widoczny tylko od 600 px (`[data-test-desktop-only]`), ekran z
 `min-height: 100vh` w ramce. Każdy scenariusz bez innego zapisu biegnie przy 1440 i 375 oraz w obu motywach. W każdym

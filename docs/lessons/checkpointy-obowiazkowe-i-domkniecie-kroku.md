@@ -2,7 +2,7 @@
 title: 'Bez obowiązkowych checkpointów pętla samodoskonalenia jest ślepa, a błędny zapis rekordu psuje klasę przebiegu'
 tags: [skillsync, checkpoint, retro, workflow, evidence, dispatch]
 paths: ['skillsync_workflow/retro.py', 'skillsync_workflow/runs.py']
-source: docs/plans/2026-10-30-r2-self-improve.md (F1, F2, 4.1 próbny raport); library/skills/feature/references/measurement.md w bibliotece; dyspozycja 2026-10-30-skippster-r4-r3 (odbiór R3b, S1, S2, R4)
+source: plan zadania (poza rdzeniem) (F1, F2, 4.1 próbny raport); library/skills/feature/references/measurement.md w bibliotece; dyspozycja 2026-10-30-skippster-r4-r3 (odbiór R3b, S1, S2, R4)
 verified: 2026-10-31
 ---
 **Objaw 1:** procedury nie wymagały checkpointów, więc `retro` dla `poc-a` dało `no_data`. Błąd B1, luka dowodu P13a i incydent z plikami planów pozostały niewidoczne.

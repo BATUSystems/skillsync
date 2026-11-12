@@ -2,7 +2,7 @@
 title: "Pasek nawigacji rośnie z liczbą ekranów; stały scroll-margin chowa tytuł"
 tags: [prototype, css, layout, navigation, scroll-margin, responsive, layout-probe]
 paths: ['tests/fixtures/prototype/engine/**', 'tests/test_skillsync_prototype_engine.py']
-source: '<projekt>/.skillsync/runs/prototyp-plan-zajec/screens/11-ZNALEZISKO-dark-375-pasek-70proc.png (raport plan-zajec); docs/plans/2026-11-04-prototype-poprawki.md (E3, sekcja Projekt rozwiązania); pomiary akceptacyjne kroku 8 (headless Chrome, CDP, 2026-11-04: silnik 801ab23 i worktree biblioteki, 28 sekcji i 1 sekcja na tej samej stronie); .skillsync/runs/2026-11-04-prototype-poprawki.Q1-prototype-poprawki/lib-1-2-3-5-implementer.md (krok 2, Odkrycie 1)'
+source: '<projekt>/.skillsync/runs/prototyp-plan-zajec/screens/11-ZNALEZISKO-dark-375-pasek-70proc.png (raport plan-zajec); plan zadania (poza rdzeniem) (E3, sekcja Projekt rozwiązania); pomiary akceptacyjne kroku 8 (headless Chrome, CDP, 2026-11-04: silnik 801ab23 i worktree biblioteki, 28 sekcji i 1 sekcja na tej samej stronie); .skillsync/runs/2026-11-04-prototype-poprawki.Q1-prototype-poprawki/lib-1-2-3-5-implementer.md (krok 2, Odkrycie 1)'
 verified: 2026-11-04
 ---
 **Objaw:** wysokość `.doc-toolbar` zależy od liczby ekranów i od szerokości okna. Przed poprawką: 1440 px, 28 ekranów 209 px, 1 ekran 59 px; 900 px 243 px; 375×812 px 567 px (70% wysokości okna). Po skoku linkiem `#sN` albo wejściu z adresem `…/#sN` tytuł `h2` ekranu leżał 80 px pod paskiem o dolnej krawędzi 209 px, czyli był schowany.

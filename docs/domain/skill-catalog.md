@@ -2,7 +2,7 @@
 title: Katalog skilli, INDEX.md i ostrzeżenia doctor
 tags: [skillsync, skills, catalog, doctor, organizations]
 paths: ['skillsync_workflow/catalog.py', 'skillsync_workflow/quality.py', 'skillsync']
-source: odczyt skillsync_workflow/catalog.py:79 (render_index), :129-131 (index_cache_path), :134-144 (cmd_index, --check), quality.py:doctor; skillsync:3687-3691 (flagi skills index); tests/test_skillsync_catalog_map.py 2026-10-21; plan docs/plans/2026-10-21-agent-optimization.md (G3)
+source: odczyt skillsync_workflow/catalog.py:79 (render_index), :129-131 (index_cache_path), :134-144 (cmd_index, --check), quality.py:doctor; skillsync:3687-3691 (flagi skills index); tests/test_skillsync_catalog_map.py 2026-10-21; plan zadania (poza rdzeniem) (G3)
 verified: 2026-11-05
 ---
 Reguła: `workflow/skill-catalog.yaml` (biblioteka, `version: 1`) opisuje każdy skill: `scope` (org|client|project|tech|workflow|tool|personal), opcjonalnie `org` i `tech[]`,

@@ -1,6 +1,6 @@
 """Strażnik treści skilla `feature` i rdzenia: ceremonia `demo` (K1, K3), klasy pytań `Q` (K9), „GO plan” i FEAT-R6 (K10), bramka per faza `[UI]` (K12).
 
-Frazy pochodzą ze specyfikacji docs/specs/2026-11-11-feat-demo.md, nie z obecnego tekstu.  Biblioteka z SKILLSYNC_TEST_LIBRARY.
+Frazy pochodzą ze specyfikacji zadania (poza rdzeniem), nie z obecnego tekstu.  Biblioteka z SKILLSYNC_TEST_LIBRARY.
 """
 import os
 import re

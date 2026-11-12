@@ -151,16 +151,22 @@ class ParsePlanPhasesTests(unittest.TestCase):
         self.assertEqual(self.parse(steps), {'phases': ['F1', 'F2'], 'ui_phases': [], 'stray_ui': 0})
         self.assertEqual(self.parse('\n'.join([decisions, numbered, steps]))['phases'], ['F1', 'F2'])
 
-    def test_real_plans_of_the_repository_parse_into_a_consistent_structure(self):
-        plans = sorted((ROOT / 'docs' / 'plans').glob('*.md'))
-        self.assertTrue(plans, 'control: the repository has plans')
-        for path in plans:
-            with self.subTest(plan=path.name):
-                result = parse_plan_phases(path.read_text(encoding='utf-8'))
-                self.assertEqual(set(result), {'phases', 'ui_phases', 'stray_ui'})
-                self.assertEqual(len(set(result['phases'])), len(result['phases']))
-                self.assertTrue(set(result['ui_phases']) <= set(result['phases']))
-                self.assertGreaterEqual(result['stray_ui'], 0)
+    def test_a_plan_mixing_all_header_styles_parses_into_a_consistent_structure(self):
+        # plan syntetyczny (rdzeń nie przechowuje realnych planów): tabele decyzji, numerowana, kroków z [UI] i luźny wiersz
+        plan = '\n\n'.join([
+            '# Plan', 'Opis.',
+            table('| Id | Decyzja | Źródło |', '| D1 | wybór | spec |'),
+            table('| # | Krok | Rola | Pliki |', '| 1 | Kod | implementer | `a.py` |'),
+            table('| Id | Krok | Rola | Pliki |', '| F1 | Kod | implementer | `a.py` |', '| F2 [UI] | Ekran | implementer | `b.html` |'),
+            '| F9 [UI] | luźny wiersz poza tabelą rozpoznaną |',
+        ])
+        result = parse_plan_phases(plan)
+        self.assertEqual(set(result), {'phases', 'ui_phases', 'stray_ui'})
+        self.assertEqual(result['phases'], ['F1', 'F2'], 'control: the recognised table lists its phases')
+        self.assertEqual(len(set(result['phases'])), len(result['phases']))
+        self.assertTrue(set(result['ui_phases']) <= set(result['phases']))
+        self.assertEqual(result['ui_phases'], ['F2'])
+        self.assertGreaterEqual(result['stray_ui'], 0)
 
 
 if __name__ == '__main__':

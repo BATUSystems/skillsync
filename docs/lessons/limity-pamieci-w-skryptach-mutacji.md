@@ -2,7 +2,7 @@
 title: "Skrypt mutacji bez limitu pamięci zjada sesję, a bieg zabity limitem wygląda jak mutant „przeżył”"
 tags: [skillsync, tests, mutation, memory, systemd, evidence, agents]
 paths: ['.skillsync/runs/**/mutate.py', '.skillsync/runs/**/mut/**', 'tests/test_skillsync*.py']
-source: "docs/plans/2026-11-05-warstwy-generator.md, sekcja Wynik, krok 2.2at (naruszenie zasady limitu, zgłoszenie koordynatora przebiegu 2026-11-05 ok. 11:45Z; poprawka skryptu mutate.py ok. 11:50Z); sekcja TESTY (limity MemoryMax=4G dla pełnego zestawu) i sekcja Zasoby (ciężkie biegi pod systemd-run) tego samego planu; skrypt mutate.py kroku 2.2at (biegi owinięte w systemd-run, rc 124/137 jako ZABITY-LIMIT)"
+source: "plan zadania (poza rdzeniem), sekcja Wynik, krok 2.2at (naruszenie zasady limitu, zgłoszenie koordynatora przebiegu 2026-11-05 ok. 11:45Z; poprawka skryptu mutate.py ok. 11:50Z); sekcja TESTY (limity MemoryMax=4G dla pełnego zestawu) i sekcja Zasoby (ciężkie biegi pod systemd-run) tego samego planu; skrypt mutate.py kroku 2.2at (biegi owinięte w systemd-run, rc 124/137 jako ZABITY-LIMIT)"
 verified: 2026-11-05
 ---
 **Objaw:** biegi mutacji kroków 1.1t, 2.1t (r1–r9) i 2.2at (r1–r9 oraz bieżące) szły bez limitu pamięci, w scope VS Code

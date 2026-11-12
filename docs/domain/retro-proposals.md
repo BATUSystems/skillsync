@@ -2,7 +2,7 @@
 title: "Propozycje retrospektywy: rejestr proposals:, stany, kolejność, skan progu i maskowanie"
 tags: [skillsync, retro, proposals, registry, workflow, privacy]
 paths: ['skillsync_workflow/retro_scan.py', 'skillsync_workflow/retro.py', 'tests/test_skillsync_retro_scan.py', 'tests/test_skillsync_retro.py']
-source: 'retro_scan.py:328-352 (_proposals), 355-356 (_order), 545 (sources), 587-596 (krok d), 323-325; retro.py:305, 1104-1105, 1211-1212, 646-660, 679-691, 989-994; spec docs/specs/2026-11-05-retro-narzedzia.md (Kontrakty, Migracja, Ryzyka); raporty 1.3, 1.4 w .skillsync/runs/2026-11-05-retro-narzedzia/'
+source: 'retro_scan.py:328-352 (_proposals), 355-356 (_order), 545 (sources), 587-596 (krok d), 323-325; retro.py:305, 1104-1105, 1211-1212, 646-660, 679-691, 989-994; spec zadania (poza rdzeniem) (Kontrakty, Migracja, Ryzyka); raporty 1.3, 1.4 w .skillsync/runs/2026-11-05-retro-narzedzia/'
 verified: 2026-11-06
 ---
 **Reguła:** propozycja retrospektywy to gotowa zmiana jednego pliku z id `<run-id>/P<n>`. Jej stan trzymają dwa miejsca:

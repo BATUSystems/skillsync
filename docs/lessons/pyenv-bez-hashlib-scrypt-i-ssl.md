@@ -2,7 +2,7 @@
 title: "Python z pyenv bez _hashlib i _ssl: brak hashlib.scrypt, PBKDF2 w czystym Pythonie z DeprecationWarning"
 tags: [skillsync, python, pyenv, hashlib, openssl, passwords, prototype]
 paths: ['skillsync_workflow/prototype_server.py', 'tests/test_skillsync_prototype_server.py']
-source: .skillsync/runs/2026-11-04-prototype-komentarze.karta-2/1.1-1.2-implementer.md (Odkrycia 2); Python 3.11.8 pyenv, spec docs/specs/2026-11-04-prototype-komentarze-wspolne.md (decyzja o PBKDF2)
+source: .skillsync/runs/2026-11-04-prototype-komentarze.karta-2/1.1-1.2-implementer.md (Odkrycia 2); Python 3.11.8 pyenv, spec zadania (poza rdzeniem) (decyzja o PBKDF2)
 verified: 2026-11-04
 ---
 **Objaw:** `ImportError: libcrypto.so.1.1 / libssl.so.1.1` przy `import _hashlib`/`import ssl` w pyenv 3.11.8 (system ma nowszy OpenSSL). `hashlib.scrypt` nie istnieje, a `hashlib.pbkdf2_hmac` działa przez przestarzałą implementację w Pythonie z `DeprecationWarning` na stderr (~0,03 s na 60 tys., ~0,3 s na 600 tys. iteracji). `/usr/bin/python3` (3.14) ma `scrypt` i PBKDF2 z OpenSSL (~0,07 s na 600 tys.).

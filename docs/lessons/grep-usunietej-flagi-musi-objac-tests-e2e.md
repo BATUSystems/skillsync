@@ -2,7 +2,7 @@
 title: "Grep po usuniętej fladze musi objąć tests/e2e: kontrola ograniczona do tests/test_*.py przepuszcza stare wywołania"
 tags: [skillsync, tests, e2e, cli, grep, regression, breaking-change, prototype]
 paths: ['tests/e2e/**', 'tests/test_skillsync*.py', 'skillsync_workflow/prototype.py', 'skillsync_workflow/prototype_server.py']
-source: "tests/e2e/prototype/accept_cli.py:19, tests/e2e/prototype/lib.mjs:179 i :183, tests/e2e/prototype/env.py:154, tests/e2e/prototype/f3.mjs:153 (wywołania --library w worktree P1 2026-11-05); skillsync_workflow/prototype.py (flaga --library była zdefiniowana, gdy zdarzenie wystąpiło); docs/plans/2026-11-05-warstwy-generator.md, Wynik, krok 2.4 (odkrycia dla 3.2) i K1 w specu A (kontrolny grep)"
+source: "tests/e2e/prototype/accept_cli.py:19, tests/e2e/prototype/lib.mjs:179 i :183, tests/e2e/prototype/env.py:154, tests/e2e/prototype/f3.mjs:153 (wywołania --library w worktree P1 2026-11-05); skillsync_workflow/prototype.py (flaga --library była zdefiniowana, gdy zdarzenie wystąpiło); plan zadania (poza rdzeniem), Wynik, krok 2.4 (odkrycia dla 3.2) i K1 w specu A (kontrolny grep)"
 verified: 2026-11-05
 ---
 **Objaw:** po usunięciu flagi `--library` kontrolny grep w testach (`tests/test_*.py`) jest czysty, a w worktree P1 nadal

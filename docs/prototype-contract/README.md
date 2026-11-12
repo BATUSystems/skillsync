@@ -13,7 +13,7 @@ opisem implementacji: wewnętrzne funkcje i kod źródłowy silnika nie są kont
 | [api-eksportow.md](api-eksportow.md) | 107 nazw eksportów `module.exports` z sygnaturą i zachowaniem opisanym słowami | `tests/test_skillsync_prototype_engine.py` (zbiór nazw i wywołanie każdej nazwy) |
 | [tematy-dokumentow.md](tematy-dokumentow.md) | tematy wymagane w dokumentach skilla `prototype` i szablonie README, z listą znaczników, które muszą się w nich pojawić | `tests/test_skillsync_prototype_library.py` (obecność tematów) |
 
-Źródłem wymagań W1 (K- i D-numery w tabelach) jest spec `docs/specs/2026-11-04-prototype-komentarze-wspolne.md`.
+Źródłem wymagań W1 (K- i D-numery w tabelach) jest spec zadania (poza rdzeniem).
 
 ## Testy pilnujące kontraktu
 

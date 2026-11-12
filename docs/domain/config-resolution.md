@@ -2,7 +2,7 @@
 title: "Rozwiązywanie configu maszyny, warstw, katalogów danych i listy projektów"
 tags: [skillsync, configuration, layers, library]
 paths: ['skillsync', 'skillsync_workflow/common.py', 'skillsync_workflow/layers.py', 'skillsync_workflow/prototype.py', 'skillsync-windows.ps1']
-source: "skillsync_workflow/layers.py: `config_path` (SKILLSYNC_CONFIG), `parse_machine_config` (klucze leakguard, nieznany klucz); skillsync_workflow/common.py (`workflow_config`); skillsync_workflow/prototype.py (zasoby z `LayerSet.skill_files`); docs/specs/2026-11-05-warstwy-generator.md (K3, K11, Kontrakty „Config maszyny”, „Katalogi”); fakty F-G03 (katalogi per system); plan docs/plans/2026-11-05-warstwy-generator.md (Wynik 2.3, 2.4)"
+source: "skillsync_workflow/layers.py: `config_path` (SKILLSYNC_CONFIG), `parse_machine_config` (klucze leakguard, nieznany klucz); skillsync_workflow/common.py (`workflow_config`); skillsync_workflow/prototype.py (zasoby z `LayerSet.skill_files`); spec zadania (poza rdzeniem) (K3, K11, Kontrakty „Config maszyny”, „Katalogi”); fakty F-G03 (katalogi per system); plan zadania (poza rdzeniem) (Wynik 2.3, 2.4)"
 verified: 2026-11-06
 ---
 Reguła:
