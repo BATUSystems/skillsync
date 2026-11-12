@@ -13,7 +13,14 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 ## [Unreleased]
 
 ### Changed
+- Dashboard header: the branch shows "N niewypchniętych" (unpushed commits, `delivery.ahead`) or "gałąź nie wypchnięta" (`delivery.pushed: false`), so a branch on origin with
+  16 local commits ahead is no longer read as pushed. No JSON change (the fields already existed); `git.branchPushed` is documented as "origin/<branch> exists".
 - Library text (retro fixes): `prototype` and `feature` say what to do when `prototype accept` ends `BLOCKED tty_required` (tell the person to click Accept on the prototype page, keep waiting; the guard stays); under `ceremony: demo` the `kod` review has at most 2 rounds (the second only on a blocker, 3+ majors, or fixes touching permissions or migrations; otherwise the `verifier` closes the majors); `feature` cuts scope only after the plan's threshold is exceeded or with the lead's consent; `agent-runtime-pitfalls` gains four pitfalls (`npm ci` with the wrong npm version, a pipe that loses the test runner's exit code, a session clock that drifted from the machine, zsh `=====` as an argument and backticks inside `echo "…"`). Full review loops outside `demo` are unchanged.
+
+### Fixed
+- Dashboard page and panel: the "session waits for you" banner item (and the "⏳ Czeka" tab title) disappears once its consent is recorded and the session has moved on
+  (it reported after the consent, or the consent is older than 10 minutes), and the consent-result toast fades by itself (10 s, an error 30 s, the countdown stands still
+  while the tab is hidden via `board.setVisible`). Before, both stayed until the next checkpoint or a click on "×".
 
 ## [1.1.1] - 2026-11-12
 

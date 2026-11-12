@@ -198,13 +198,39 @@
 
     const st = {
       data: null, prev: null, view: "progress", doc: null, docData: null, desc: null,
-      armed: null, armedTimer: null, approving: false, notice: null, openPhases: {},
+      armed: null, armedTimer: null, approving: false, notice: null, noticeTimer: null, visible: true, openPhases: {},
       silenceShown: false, silenceMin: 0, descFor: null, descPinned: false, docButtons: [], timers: new Set(), frames: new Set(), destroyed: false,
     };
     const later = (fn, ms) => { const t = timers.set(() => { st.timers.delete(t); if (!st.destroyed) fn(); }, ms); st.timers.add(t); return t; };
     const cancel = (t) => { if (t) { timers.clear(t); st.timers.delete(t); } };
+    // Toast wyniku zgody gaśnie sam (ok 10 s, błąd 30 s), a odliczanie biegnie tylko przy widocznej karcie (host woła `setVisible`),
+    // żeby komunikat o błędzie nie zniknął, zanim ktokolwiek go zobaczy. „×” zamyka od razu.
+    const NOTICE_MS = { ok: 10000, err: 30000 };
+    function setNoticeState(n) {
+      cancel(st.noticeTimer); st.noticeTimer = null;
+      st.notice = n || null;
+      if (st.notice && st.visible) st.noticeTimer = later(() => { st.noticeTimer = null; st.notice = null; render(); }, st.notice.ok ? NOTICE_MS.ok : NOTICE_MS.err);
+    }
+    // Element banera „czeka” jest nieaktualny, gdy jego zgoda jest zapisana, a sesja już ruszyła: raportowała po zgodzie (`run.lastReportAt` to
+    // mtime całego checkpoints.md, więc to sygnał ruchu, nie treści) albo zgoda ma ponad 10 min (kafelek aktu pokazuje „zgoda dana”, a ciszę
+    // pilnuje osobny baner `silence`). Zgoda świeża i bez raportu zostaje z podpowiedzią „napisz »dalej«”. Wartość `delivery.ahead` nie jest
+    // sygnałem wykonania: `pr-run` wypycha po każdym commicie, a READY nie zmienia liczby commitów.
+    const CONSENT_FRESH_MS = 10 * 60000;
+    function waitDone(d, w) {
+      const act = w.approve && ((d.approvals && d.approvals.actions) || []).find((x) => x.kind === w.approve);
+      if (!act || act.state !== "after") return false;
+      const at = act.given && act.given.at ? Date.parse(act.given.at) : NaN;
+      if (!Number.isFinite(at)) { // zgoda ze statusu pliku (bez wpisu w dzienniku): spec/plan, gdy plan już trwa albo się skończył
+        const plan = d.plan && d.plan.status;
+        return (w.approve === "spec" || w.approve === "plan") && (plan === "in_progress" || plan === "done");
+      }
+      const reported = d.run && d.run.lastReportAt ? Date.parse(d.run.lastReportAt) : NaN;
+      if (Number.isFinite(reported) && reported > at) return true;
+      return now() - at > CONSENT_FRESH_MS;
+    }
 
     const icon = (id, cls = "ic") => svg("svg", { class: cls, "aria-hidden": "true" }, svg("use", { href: "#" + id }));
+    const plural = (n, one, few, many) => (n === 1 ? one : n % 10 >= 2 && n % 10 <= 4 && !(n % 100 >= 12 && n % 100 <= 14) ? few : many);
     const mono = (text) => h("span", { class: "mono" }, text);
     const statusChip = (s) => {
       if (!s) return null;
@@ -338,7 +364,7 @@
         : specAct ? String(d.spec.title || d.spec.path).replace(/^Spec:\s*/i, "")
         : runAct ? "Akt I: specyfikacja w przygotowaniu" : "Brak planu w realizacji";
       ui.title.textContent = title;
-      const waiting = d.waiting || [];
+      const waiting = (d.waiting || []).filter((w) => !waitDone(d, w));
       const progress = d.progress || {};
       if (typeof deps.onTitle === "function") {
         deps.onTitle((waiting.length ? "⏳ Czeka · " : "") + (plan ? `${progress.percent}% · ` : specAct || runAct ? "Akt I · " : "") + title + " — status");
@@ -366,6 +392,17 @@
             on: { click: linkClick("branch", g.branch, g.branchUrl) } }, name)
           : h("span", { class: "mono", "data-tip": g.branchUrl ? "Gałąź tylko lokalnie (brak na origin), bez linku" : "Gałąź i HEAD repozytorium" }, name);
         meta.push(h("span", { class: "m" }, icon("i-branch"), branch));
+        // `git.branchPushed` = origin/<gałąź> istnieje; liczba commitów przed origin to `delivery.ahead` (null = nieznana, 0 = nic do wypchnięcia: bez znacznika).
+        const dv = d.delivery || {};
+        const ahead = typeof dv.ahead === "number" && dv.ahead > 0 ? dv.ahead : 0;
+        const remoteName = dv.remote || `origin/${g.branch}`;
+        if (ahead) {
+          // w trybie `direct` lokalne commity są normą do „CP”: ostrzeżenie dopiero, gdy plan jest zakończony
+          const calm = dv.mode === "direct" && !(plan && plan.status === "done");
+          const tip = `${ahead} ${plural(ahead, "commit", "commity", "commitów")} lokalnie przed ${remoteName}${dv.pushed === false ? " (nie ma jej jeszcze na origin)" : ""}; „CP” je wypchnie`;
+          meta.push(h("span", { class: "m" }, h("span", { class: `chip ${calm ? "s-planned" : "s-warn"} ahead-chip`, "data-tip": tip },
+            `${ahead} ${plural(ahead, "niewypchnięty", "niewypchnięte", "niewypchniętych")}`)));
+        }
       }
       if (plan && plan.pr) {
         meta.push(h("span", { class: "m" }, h("a", { class: "chip s-active git-link", href: safeUrl(plan.pr.url), target: "_blank", rel: "noopener",
@@ -599,7 +636,7 @@
       }
       if (st.destroyed) return;
       st.approving = false; st.armed = null;
-      if (res) st.notice = res;
+      if (res) setNoticeState(res);
       render();
       if (typeof actions.refresh === "function") actions.refresh();
     }
@@ -619,7 +656,7 @@
       const el = ui.waitBanner;
       const quiet = silenceMinutes(d);
       st.silenceShown = quiet > 0;
-      const items = (d.waiting || []).concat(quiet ? [{ what: `brak raportu od ${quiet} min`, source: "silence", since: null,
+      const items = (d.waiting || []).filter((w) => !waitDone(d, w)).concat(quiet ? [{ what: `brak raportu od ${quiet} min`, source: "silence", since: null,
         action: "Raport postępu powinien być po każdym kroku albo co 30 minut. Sesja mogła się zawiesić albo długo pracuje bez raportu: zajrzyj do sesji.", link: null }] : []);
       const n = st.notice;
       const note = n ? h("div", { class: "wait-item" + (n.ok ? " is-ok" : " is-err") },
@@ -628,7 +665,7 @@
           h("strong", null, n.ok ? `Zgoda „${n.word}” zapisana` : `Nie zapisano „${n.word}”`),
           h("span", null, n.text)),
         n.ok ? wordTools(d, "dalej") : null,
-        h("button", { class: "wait-x", type: "button", "data-notice-close": "", "aria-label": "Zamknij", on: { click: () => { st.notice = null; render(); } } }, "×")) : null;
+        h("button", { class: "wait-x", type: "button", "data-notice-close": "", "aria-label": "Zamknij", on: { click: () => { setNoticeState(null); render(); } } }, "×")) : null;
       if (!items.length && !note) { el.hidden = true; fill(el); return; }
       el.hidden = false;
       fill(el, note, items.map((w) => {
@@ -761,6 +798,8 @@
       if (!d) return;
       if (ui.elapsed && d.run && d.run.startIso) ui.elapsed.textContent = fmtDur(now() - Date.parse(d.run.startIso));
       if (ui.ago) ui.ago.textContent = fmtAgo(ui.ago.getAttribute("data-iso"));
+      const open = (d.waiting || []).filter((w) => !waitDone(d, w)).length;
+      if (open !== st.waitOpen) { st.waitOpen = open; render(); return; } // zgoda „zestarzała się” bez nowych danych z serwera
       const quiet = silenceMinutes(d);
       if ((quiet > 0) !== Boolean(st.silenceShown) || (quiet && quiet !== st.silenceMin)) { st.silenceMin = quiet; renderWaiting(d); }
     }
@@ -780,7 +819,12 @@
         if (st.view === "docs" && st.doc) loadDoc(st.doc, true);
       },
       setDescriptions(map) { st.desc = map && typeof map === "object" ? map : {}; },
-      setNotice(notice) { st.notice = notice || null; render(); },
+      setNotice(notice) { setNoticeState(notice); render(); },
+      setVisible(visible) {
+        st.visible = visible !== false;
+        if (!st.visible) { cancel(st.noticeTimer); st.noticeTimer = null; }
+        else if (st.notice && !st.noticeTimer) setNoticeState(st.notice);
+      },
       setLive,
       setView,
       setDoc(path) { st.doc = path || null; },

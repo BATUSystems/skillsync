@@ -245,7 +245,8 @@ Metody obiektu z `create`:
 | --- | --- |
 | `update(json)`, alias `render(json)` | rysuje stan; poprzedni stan służy do podświetlenia zmian; w widoku Dokumenty odświeża podgląd |
 | `setDescriptions(map)` | opisy dymków `{klucz: {title, text}}` (`descriptions.json`) |
-| `setNotice({ok, word, text} \| null)` | komunikat w banerze |
+| `setNotice({ok, word, text} \| null)` | komunikat w banerze; gaśnie sam (ok po 10 s, błąd po 30 s), „×” zamyka od razu |
+| `setVisible(bool)` | host: karta widoczna/ukryta (`visibilitychange`); odliczanie komunikatu stoi, gdy karta jest w tle, i startuje od nowa po powrocie (domyślnie widoczna) |
 | `setLive(mode)` | wskaźnik `live` / `polling` / `down` / `connecting` |
 | `setView(view, push = true)`, `setDoc(path)` | zakładka `progress`/`docs`; wybrany dokument (bez wczytania) |
 | `tick()` | host woła co 1 s: czas aktu III, „x min temu”, próg ciszy |
