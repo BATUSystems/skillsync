@@ -12,6 +12,20 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Added
+
+- Dashboard contract: the field `expertQuestions` (`{open, blocking, runs[{slug, open, blocking, url}]}`) counts the open questions to a domain
+  expert across ALL runs of the project (`docs/prototypes/<slug>/questions.json`, read-only, no import of the prototype server), not only
+  the run of the visible spec. The page shows them as a toast "Pytania do eksperta: N otwartych (M blokujących)" with a link to `/_experts/<slug>`
+  (one run) or `/_experts` once the host knows the prototype server address; the toast has no timer and disappears when nothing is open.
+  The dashboard watcher follows `questions.json`.
+
+### Changed
+
+- The dashboard no longer draws the "Pytania" section of the spec act (the lists of blocking questions and assumptions, also with zero). The
+  fields `blockingQuestions` and `assumptions` stay in the JSON contract; the description keys `questions_blocking` and `questions_assumptions`
+  are gone from `descriptions.json`.
+
 ## [1.2.1] - 2026-11-12
 
 ### Added

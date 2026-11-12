@@ -1,0 +1,5 @@
+{
+  "schema": "prototype/1",
+  "slug": "run-gamma",
+  "requirements": "docs/specs/other-run-gamma.md"
+}

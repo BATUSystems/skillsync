@@ -420,6 +420,7 @@ class Board:
         if protos.is_dir():
             paths.extend(protos.glob("*/prototype.json"))
             paths.extend(protos.glob("*/comments.json"))
+            paths.extend(protos.glob("*/questions.json"))
         git = self.root / ".git"
         paths.extend([git / "HEAD", git / "packed-refs"])
         branch = engine.read_git(self.root).get("branch")

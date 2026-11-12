@@ -4,6 +4,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+### Changed
+- `skills/dashboard` (`assets/dashboard-render.js`, `assets/app.js`, `assets/app.css`, `descriptions.json`, `SKILL.md`): bez sekcji „Pytania” w kafelku Aktu I; pytania do eksperta pokazuje toast „Pytania do eksperta: N otwartych (M blokujących)” z pola `expertQuestions` (wszystkie przebiegi), z odnośnikiem do `/_experts[/<slug>]`; usunięte klucze dymków `questions_blocking` i `questions_assumptions`.
+
 ## [1.2.1] - 2026-11-12
 
 ### Changed

@@ -140,24 +140,6 @@
       facts.length ? h("span", { class: "readiness-facts" }, facts) : null,
       open);
   }
-  // Pytania (akt I): blokujące i założenia ze speca; widoczne dla każdego (bez zależności od zgód i widza).
-  // Założenia nie są akcją „Odpowiedz na pytania”: tylko lista do korekty przy prototypie.
-  function questionsBlock(d) {
-    const { h, desc } = this;
-    const bq = d.blockingQuestions || { count: 0, items: [] };
-    const as = d.assumptions || { count: 0, items: [] };
-    if (!(d.spec && d.spec.exists) && !bq.count && !as.count) return null;
-    const list = (items, line) => (items.length ? h("ul", { class: "q-list" }, items.map(line)) : h("div", { class: "q-none" }, "brak"));
-    const blocking = list(bq.items || [], (q) => h("li", null, h("span", { class: "mono q-id" }, esc(q.id)), h("span", null, esc(q.question))));
-    const assumed = list(as.items || [], (q) => h("li", null, h("span", { class: "mono q-id" }, esc(q.id)),
-      h("span", null, esc(q.question) + " — przyjęte: ", h("strong", null, esc(q.accepted || "—")))));
-    return h("div", { class: "questions", role: "group", "aria-label": "Pytania" },
-      h("div", { class: "q-title" }, "Pytania"),
-      h("div", { class: "q-group" + (bq.count ? " is-blocking" : "") },
-        h("div", { class: "q-head", ...desc("questions_blocking") }, "Pytania blokujące (" + esc((bq.items || []).length || bq.count || 0) + ")"), blocking),
-      h("div", { class: "q-group" },
-        h("div", { class: "q-head", ...desc("questions_assumptions") }, "Założenia do korekty przy prototypie (" + esc((as.items || []).length || as.count || 0) + ")"), assumed));
-  }
   // Podkroki Fn.k z czasem (akt III): rozwijana lista; stan rozwinięcia przeżywa odświeżenie (st.substepsOpen).
   function substepsBlock(d) {
     const { h, desc, st } = this;
@@ -250,7 +232,7 @@
       if (!key) return extra ? { "data-tip": extra } : {};
       return { "data-desc": key, "data-desc-extra": extra || null, tabindex: "0", "aria-describedby": "descTip" };
     }
-    // Kontekst sekcji modułu (readinessTile, questionsBlock, substepsBlock); openDoc to deklaracja funkcji niżej (hoisting).
+    // Kontekst sekcji modułu (readinessTile, substepsBlock); openDoc to deklaracja funkcji niżej (hoisting).
     const kit = { h, icon, desc, openDoc: (path) => openDoc(path), st };
     // Odnośnik zewnętrzny: host może przejąć otwarcie (webview), strona zostawia zwykłe <a target=_blank>.
     const linkClick = (kind, id, url) => (e) => {
@@ -465,8 +447,7 @@
             on: { click: () => openDoc(docRef.path) } }, icon("i-doc"), docRef.label) : null;
           const approve = approveButton(d, a.key === "spec" ? "spec" : "plan", "act-approve");
           const extra = a.key === "plan" ? readinessTile.call(kit, d) : null;
-          const after = a.key === "spec" ? questionsBlock.call(kit, d) : null;
-          body = [h("div", { class: "act-detail" }, a.detail || " "), h("div", { class: "stages" }, stages), extra, warn, h("div", { class: "act-actions" }, docLink, approve), after];
+          body = [h("div", { class: "act-detail" }, a.detail || " "), h("div", { class: "stages" }, stages), extra, warn, h("div", { class: "act-actions" }, docLink, approve)];
         }
         return h("div", { class: `act s-${a.state}${glow ? " s-active" : ""}`, "data-key": a.key },
           h("div", { class: "roman", "aria-hidden": "true" }, a.roman),
@@ -652,6 +633,27 @@
       const minutes = Math.floor((now() - Date.parse(s.since)) / 60000);
       return minutes >= s.thresholdMin ? minutes : 0;
     }
+    // Toast „Pytania do eksperta”: stan z plików pytań WSZYSTKICH przebiegów (`d.expertQuestions`), nie z widocznego speca. To stan, nie wynik
+    // akcji, więc bez timera i bez „×”: znika dopiero, gdy open = 0. Odnośnik tylko, gdy host zna adres serwera prototypów (`deps.prototypeOrigin`).
+    function questionsToast(d) {
+      const eq = d.expertQuestions;
+      const open = eq && Number.isFinite(eq.open) ? eq.open : 0;
+      if (open <= 0) return null;
+      const blocking = Number.isFinite(eq.blocking) ? eq.blocking : 0;
+      const runs = Array.isArray(eq.runs) ? eq.runs : [];
+      const origin = typeof deps.prototypeOrigin === "function" ? deps.prototypeOrigin(d.prototype && d.prototype.port) : null;
+      let url = null;
+      if (origin) {
+        const path = runs.length === 1 && typeof runs[0].url === "string" && /^\/_experts\/[a-z0-9-]+$/.test(runs[0].url) ? runs[0].url : "/_experts";
+        url = safeUrl(String(origin).replace(/\/+$/, "") + path);
+      }
+      const text = `Pytania do eksperta: ${open} otwartych (${blocking} blokujących)`;
+      return h("div", { class: "wait-item is-info", "data-questions-toast": "" },
+        icon("i-bell"),
+        h("div", { class: "wait-txt" }, h("strong", null, text)),
+        url ? h("a", { class: "wait-go", href: url, target: "_blank", rel: "noopener",
+          on: { click: linkClick("experts", runs.length === 1 ? String(runs[0].slug || "") : "", url) } }, "Odpowiedz na pytania") : null);
+    }
     function renderWaiting(d) {
       const el = ui.waitBanner;
       const quiet = silenceMinutes(d);
@@ -666,9 +668,10 @@
           h("span", null, n.text)),
         n.ok ? wordTools(d, "dalej") : null,
         h("button", { class: "wait-x", type: "button", "data-notice-close": "", "aria-label": "Zamknij", on: { click: () => { setNoticeState(null); render(); } } }, "×")) : null;
-      if (!items.length && !note) { el.hidden = true; fill(el); return; }
+      const qnote = questionsToast(d);
+      if (!items.length && !note && !qnote) { el.hidden = true; fill(el); return; }
       el.hidden = false;
-      fill(el, note, items.map((w) => {
+      fill(el, qnote, note, items.map((w) => {
         let link = null;
         if (w.link && w.link.kind === "doc") {
           link = h("button", { class: "wait-go", type: "button", "data-wait-doc": w.link.path, on: { click: () => openDoc(w.link.path) } }, `Otwórz ${baseName(w.link.path)}`);
