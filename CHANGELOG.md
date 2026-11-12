@@ -10,7 +10,7 @@ What counts as MAJOR, MINOR and PATCH: [docs/upgrading.md](docs/upgrading.md).
 
 Every release has a **Breaking** section that lists incompatible changes. When a release has none, the section says "None."
 
-<!-- Kolejność 1.2.0 względem wpisów [Unreleased] (wydanie 1.1.x) do potwierdzenia przez właściciela. -->
+## [Unreleased]
 
 ## [1.2.0] - 2026-11-12
 
@@ -55,7 +55,7 @@ so an older core ignores `roles` and sees an `expert` as a commenter. `comments.
 ### Fixed
 None.
 
-## [Unreleased]
+## [1.1.1] - 2026-11-12
 
 ### Added
 - `docs/lessons/test-z-wersja-rdzenia-na-sztywno-wygasa.md`: lesson on tests that hard-code a core version and expire at a version bump (derive it from `generator_version()`).
@@ -63,6 +63,7 @@ None.
 - `library/skills/agent-runtime-pitfalls`: two new pitfalls (explicit path list for `git add`; browser screenshots in a separate profile without extensions).
 
 ### Changed
+- Tests (Windows): leakguard term-scope cases skip file names with characters Windows forbids (`:` in `konta: …`) on the `filename` surface only; prototype doctor/init tests run without secret-named environment variables, so a runner variable such as `*_TOKEN=root` no longer turns `prototype.root` into `prototype.[REDACTED]`. No product change; `redact()` is untouched.
 - Tests (`tests/test_skillsync_retro.py`): the retro fixture writes files byte for byte (`write_exact`) instead of in text mode, so on Windows evidence files no longer get `\r\n` and their sha256 matches the digest computed from `\n`. A new test forces CRLF on Linux and shows both outcomes. No product change.
 - CI: the `test` job on native Windows has a 60-minute limit (was 30, which cancelled both Windows jobs at about 80% of the suite); Ubuntu and macOS keep 30. Job names are unchanged; Windows stays non-blocking.
 - Dashboard page and Skippster panel: the layout follows the width of the host column, not the window (CSS container
