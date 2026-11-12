@@ -1106,7 +1106,7 @@ class RecordArgumentTests(QuestionCase):
         for spec in ('../x.md', '/etc/x.md', 'https://example.com/x.md'):
             with self.subTest(spec=spec):
                 report = self.q('record', QA, '--spec', spec, '--line', 3, code=1)
-                self.assertIn(report['error'], ('record_spec_unreadable', 'invalid_operation'))   # sprawdzenie linii wyprzedza magazyn
+                self.assertEqual(report['error'], 'record_spec_unreadable')   # sprawdzenie linii wyprzedza magazyn
         for bad in ('nie-id', 'QN-AAAA', 'qn-zzzzzzzzzzzz'):
             with self.subTest(question=bad):
                 report = self.rec(bad, 3, code=1)

@@ -446,7 +446,7 @@ odpowiedź na takie pytanie to 409 `migration_required`. `skillsync prototype qu
 `--slug-for SPEC=SLUG` rozstrzyga jawnie. Stary plik trafia do kosza dopiero po odczycie zwrotnym, że wszystkie operacje są w plikach przebiegów.
 
 `skillsync prototype question purge --slug <slug>` pokazuje, co usunąłby z dziennika przebiegu: domyślnie tylko pytania wycofane, a z `--include-open` także otwarte bez odpowiedzi
-i bez komentarza (otwarte pominięte są wymienione w `skipped`). Pytanie z odpowiedzią lub komentarzem zostaje, tak samo pytanie, do którego ono się odwołuje. Usuwa dopiero `--yes`.
+i bez komentarza (pominięte pytania i powód są w `skipped`). Pytanie z odpowiedzią lub komentarzem zostaje, tak samo pytanie, do którego ono się odwołuje. Usuwa dopiero `--yes`.
 
 ## Komentarze w gicie
 

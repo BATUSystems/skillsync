@@ -284,10 +284,10 @@ skillsync prototype question purge . --slug zwroty --include-open --yes         
   Pytanie bez jednoznacznego przebiegu albo operacja bez swojego `ask` = BLOCKED `unassigned` z listą, bez zapisu. Stary plik trafia
   do kosza (`trash-put`, `gio trash`, `trash`; bez nich zmiana nazwy na `.questions.json.migrated` (nazwa z kropką, której serwer prototypów nie wydaje), nigdy usunięcie) dopiero po odczycie zwrotnym;
   `verify_failed` = BLOCKED, stary plik zostaje.
-- `purge --slug <slug> [--include-open] [--yes]` usuwa z dziennika przebiegu domyślnie tylko pytania wycofane; `--include-open` dodaje otwarte bez odpowiedzi
+- `purge --slug <slug> [--include-open] [--yes]` usuwa z dziennika przebiegu domyślnie tylko pytania wycofane (wycofane z komentarzem albo odpowiedzią zostaje); `--include-open` dodaje otwarte bez odpowiedzi
   i bez komentarza (świeże pytanie czekające na eksperta nie jest usuwane bez tej flagi). Pytanie z odpowiedzią albo komentarzem zostaje w obu trybach,
   tak samo pytanie, do którego odwołuje się zachowane (`refersTo`). Bez `--yes` tylko podgląd: `dryRun: true`, lista `removed` z `id`, `q`, `state`, `reason`, `text`
-  oraz `skipped` (otwarte pytania pominięte, z podpowiedzią `--include-open`). Wymaga `--slug`.
+  oraz `skipped` (pytania pominięte z powodem: otwarte z podpowiedzią `--include-open`, wycofane z komentarzem, zachowane przez `refersTo`). Wymaga `--slug`.
 - `merge --driver %O %A %B` to sterownik gita `skillsync-questions` (rejestracja: [prototypes](prototypes.md#pytania-do-eksperta-w-gicie));
   `merge <projekt> <inny-questions.json> --slug <slug>` scala ręcznie do pliku tego przebiegu (`--slug` jest wymagany).
 - Kody wyjścia: 0 PASS, 1 FAIL, 2 BLOCKED, 3 TIMEOUT. `1` znaczy, że magazyn odrzucił treść albo stan (zła ścieżka w `--origin`,

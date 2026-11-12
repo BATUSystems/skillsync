@@ -3832,7 +3832,7 @@ def _check_record_line(repo, spec, line, question_id):
         return _question_fail('record_line_out_of_range', f'--line {line}: the spec has {len(lines) - (1 if lines[-1] == "" else 0)} lines',
                               hint=RECORD_HINT)
     row = lines[line - 1].rstrip('\r')
-    if '[EKSPERT]' not in row or question_id not in row:
+    if '[EKSPERT]' not in row or not re.search(re.escape(question_id) + r'(?![0-9a-f])', row):
         return _question_fail('record_line_mismatch', f'line {line} of {safe_text(spec)} is not the [EKSPERT] row of {question_id} '
                               '(it must hold `[EKSPERT]` and the question id)', hint=RECORD_HINT)
     return None
@@ -3851,7 +3851,8 @@ def record_question(root, manifest, question_id, spec, line, slug=None):
     if found[0] is None:
         return _migration_required(question_id)
     store = found[1]
-    if found[1].snapshot().fold['byId'][question_id]['state'] == 'answered':
+    asked = found[1].snapshot().fold['byId'][question_id]
+    if asked['state'] == 'answered' and asked['recorded'] is None:   # a repeat is idempotent: the first record stays
         problem = _check_record_line(repo, spec, line, question_id)
         if problem is not None:
             return problem
@@ -4109,22 +4110,30 @@ def purge_questions(root, manifest, slug, yes=False, include_open=False):
             snapshot = store.snapshot()
             fold = snapshot.fold
             removable, skipped = {}, []
+
+            def skip(question, reason):
+                skipped.append({'id': question['id'], 'q': (question['origin'] or {}).get('q'), 'reason': reason,
+                                'text': _one_line(question['text'])[:PURGE_SAMPLE]})
+
             for question in fold['questions']:
+                bare = not question['comments'] and question['answer'] is None   # nothing an expert wrote
                 if question['state'] == 'withdrawn':
-                    removable[question['id']] = 'withdrawn'
-                elif question['state'] == 'open' and not question['comments'] and question['answer'] is None:
+                    if bare:
+                        removable[question['id']] = 'withdrawn'
+                    else:
+                        skip(question, 'withdrawn, but it has a comment or an answer: kept')
+                elif question['state'] == 'open' and bare:
                     if include_open:
                         removable[question['id']] = 'no answer and no comment'
                     else:
-                        skipped.append({'id': question['id'], 'q': (question['origin'] or {}).get('q'),
-                                        'reason': 'open, waiting for the expert: add --include-open to remove it',
-                                        'text': _one_line(question['text'])[:PURGE_SAMPLE]})
+                        skip(question, 'open, waiting for the expert: add --include-open to remove it')
             changed = True
             while changed:   # a question that a kept one refers to is kept too
                 changed = False
                 for question in fold['questions']:
                     target = question.get('refersTo')
                     if question['id'] not in removable and target in removable:
+                        skip(fold['byId'][target], 'referred to by %s, which is kept' % question['id'])
                         del removable[target]
                         changed = True
             report_removed = [{'id': item['id'], 'q': (item['origin'] or {}).get('q'), 'state': item['state'],
@@ -4132,14 +4141,14 @@ def purge_questions(root, manifest, slug, yes=False, include_open=False):
                               for item in fold['questions'] if item['id'] in removable]
             kept = [operation for operation in snapshot.operations
                     if not (isinstance(operation, dict) and operation.get('questionId') in removable)]
-            skipped = [item for item in skipped if item['id'] not in removable]
             report = {'status': 'PASS', 'slug': slug, 'dryRun': not yes, 'includeOpen': bool(include_open),
                       'removed': report_removed, 'skipped': skipped,
                       'kept': len(fold['questions']) - len(removable), 'file': _relative(store.path, repo)}
             if yes and removable:
                 server.atomic_write_bytes(store.path, server.serialize_questions(kept).encode('utf-8'))
             if not yes:
-                report['hint'] = 'nothing was changed; run again with --yes to remove the listed questions'
+                report['hint'] = ('nothing was changed; run again with --yes to remove the listed questions' if removable
+                                  else 'nothing was changed; there is nothing to remove')
             return report
     except server.PrototypeServerError as error:
         return _question_failure(error)

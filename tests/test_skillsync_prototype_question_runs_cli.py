@@ -274,6 +274,30 @@ class PurgeDefaultTests(RunsCliCase):
         self.assertEqual(report['removed'], [])
         self.assertEqual({op['questionId'] for op in self.ops()}, {QA, QB})
 
+    def test_a_withdrawn_question_with_a_comment_is_untouched_in_both_modes(self):
+        self.add('Z komentarzem, potem wycofane?', QA)
+        self.expert_write('comment', QA, C.EWA, text='uwaga eksperta')
+        self.q('withdraw', QA)
+        before = self.file_bytes()
+        for extra in ((), ('--include-open',)):
+            report = self.q('purge', '--slug', RUN, '--yes', *extra)
+            self.assertEqual(report['removed'], [], extra)
+            self.assertEqual([item['id'] for item in report['skipped']], [QA], extra)
+            self.assertEqual(self.file_bytes(), before, extra)
+
+    def test_a_question_kept_only_because_another_refers_to_it_is_reported_as_skipped(self):
+        self.add('Źródło?', QA)
+        self.q('withdraw', QA)
+        self.add('Spór bez komentarza?', QB, '--refers-to', QA)
+        self.add('Spór z komentarzem?', QC, '--refers-to', QA)
+        self.expert_write('comment', QC, C.EWA, text='uwaga')
+        report = self.q('purge', '--slug', RUN, '--yes')
+        self.assertEqual(report['removed'], [])
+        self.assertIn(QA, {item['id'] for item in report['skipped']})
+        self.assertIn('referred', [item['reason'] for item in report['skipped'] if item['id'] == QA][0])
+        self.assertNotIn('--yes', self.q('purge', '--slug', RUN)['hint'], 'nic do usunięcia: bez podpowiedzi „run again with --yes”')
+
+
 
 class RecordLineTests(RunsCliCase):
     """Q-FIX-122 D2: `record` sprawdza, że wskazana linia speca ma [EKSPERT] i identyfikator pytania."""
@@ -334,6 +358,22 @@ class RecordLineTests(RunsCliCase):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(('# Spec\r\n' + (self.ROW % QA) + '\r\n').encode('utf-8'))
         self.assertTrue(self.q('record', QA, '--spec', SPEC, '--line', 2)['changed'])
+
+    def test_a_repeat_after_the_spec_moved_is_a_no_op_not_a_fail(self):
+        self.answered()
+        self.spec(['# Spec', self.ROW % QA])
+        self.assertTrue(self.q('record', QA, '--spec', SPEC, '--line', 2)['changed'])
+        self.spec(['# Spec', 'nowy wiersz u góry', self.ROW % QA])   # linia 2 już nie ma wiersza
+        again = self.q('record', QA, '--spec', SPEC, '--line', 2)
+        self.assertFalse(again['changed'])
+        self.assertEqual(again['recorded']['line'], 2)
+
+    def test_the_question_id_must_match_as_a_whole_not_as_a_prefix_of_another_id(self):
+        self.add('Krótkie id?', 'qn-abcdef')
+        self.answer('qn-abcdef')
+        self.add('Dłuższe id?', 'qn-abcdef01')
+        self.spec(['# Spec', self.ROW % 'qn-abcdef01'])
+        self.assertEqual(self.q('record', 'qn-abcdef', '--spec', SPEC, '--line', 2, code=1)['error'], 'record_line_mismatch')
 
 
 class MigrateTests(RunsCliCase):
