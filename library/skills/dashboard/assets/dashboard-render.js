@@ -211,20 +211,26 @@
       st.notice = n || null;
       if (st.notice && st.visible) st.noticeTimer = later(() => { st.noticeTimer = null; st.notice = null; render(); }, st.notice.ok ? NOTICE_MS.ok : NOTICE_MS.err);
     }
-    // Element banera „czeka” jest już nieaktualny: zgoda zapisana i zadanie się wykonało (CP/READY: nic niewypchniętego)
-    // albo trwa (spec/plan: sesja zaraportowała po zgodzie). Serwer zwraca znacznik `czeka:` do następnego checkpointu.
+    // Element banera „czeka” jest nieaktualny, gdy jego zgoda jest zapisana, a sesja już ruszyła: raportowała po zgodzie (`run.lastReportAt` to
+    // mtime całego checkpoints.md, więc to sygnał ruchu, nie treści) albo zgoda ma ponad 10 min (kafelek aktu pokazuje „zgoda dana”, a ciszę
+    // pilnuje osobny baner `silence`). Zgoda świeża i bez raportu zostaje z podpowiedzią „napisz »dalej«”. Wartość `delivery.ahead` nie jest
+    // sygnałem wykonania: `pr-run` wypycha po każdym commicie, a READY nie zmienia liczby commitów.
+    const CONSENT_FRESH_MS = 10 * 60000;
     function waitDone(d, w) {
       const act = w.approve && ((d.approvals && d.approvals.actions) || []).find((x) => x.kind === w.approve);
       if (!act || act.state !== "after") return false;
-      if (w.approve === "cp" || w.approve === "ready") return Boolean(d.delivery) && d.delivery.ahead === 0;
-      const plan = d.plan && d.plan.status;
       const at = act.given && act.given.at ? Date.parse(act.given.at) : NaN;
+      if (!Number.isFinite(at)) { // zgoda ze statusu pliku (bez wpisu w dzienniku): spec/plan, gdy plan już trwa albo się skończył
+        const plan = d.plan && d.plan.status;
+        return (w.approve === "spec" || w.approve === "plan") && (plan === "in_progress" || plan === "done");
+      }
       const reported = d.run && d.run.lastReportAt ? Date.parse(d.run.lastReportAt) : NaN;
-      if (Number.isFinite(at)) return Number.isFinite(reported) && reported > at;
-      return plan === "in_progress" || plan === "done";
+      if (Number.isFinite(reported) && reported > at) return true;
+      return now() - at > CONSENT_FRESH_MS;
     }
 
     const icon = (id, cls = "ic") => svg("svg", { class: cls, "aria-hidden": "true" }, svg("use", { href: "#" + id }));
+    const plural = (n, one, few, many) => (n === 1 ? one : n % 10 >= 2 && n % 10 <= 4 && !(n % 100 >= 12 && n % 100 <= 14) ? few : many);
     const mono = (text) => h("span", { class: "mono" }, text);
     const statusChip = (s) => {
       if (!s) return null;
@@ -358,7 +364,7 @@
         : specAct ? String(d.spec.title || d.spec.path).replace(/^Spec:\s*/i, "")
         : runAct ? "Akt I: specyfikacja w przygotowaniu" : "Brak planu w realizacji";
       ui.title.textContent = title;
-      const waiting = d.waiting || [];
+      const waiting = (d.waiting || []).filter((w) => !waitDone(d, w));
       const progress = d.progress || {};
       if (typeof deps.onTitle === "function") {
         deps.onTitle((waiting.length ? "⏳ Czeka · " : "") + (plan ? `${progress.percent}% · ` : specAct || runAct ? "Akt I · " : "") + title + " — status");
@@ -386,16 +392,16 @@
             on: { click: linkClick("branch", g.branch, g.branchUrl) } }, name)
           : h("span", { class: "mono", "data-tip": g.branchUrl ? "Gałąź tylko lokalnie (brak na origin), bez linku" : "Gałąź i HEAD repozytorium" }, name);
         meta.push(h("span", { class: "m" }, icon("i-branch"), branch));
-        // `git.branchPushed` = origin/<gałąź> istnieje; liczba commitów przed origin to `delivery.ahead` (null = nieznana: bez znacznika).
+        // `git.branchPushed` = origin/<gałąź> istnieje; liczba commitów przed origin to `delivery.ahead` (null = nieznana, 0 = nic do wypchnięcia: bez znacznika).
         const dv = d.delivery || {};
         const ahead = typeof dv.ahead === "number" && dv.ahead > 0 ? dv.ahead : 0;
         const remoteName = dv.remote || `origin/${g.branch}`;
-        if (ahead || dv.pushed === false) {
-          const tip = ahead
-            ? `${ahead} ${ahead === 1 ? "commit" : "commitów"} lokalnie przed ${remoteName}${dv.pushed === false ? " (nie ma jej jeszcze na origin)" : ""}; „CP” je wypchnie`
-            : `Gałąź nie istnieje na ${remoteName}; „CP” ją wypchnie`;
-          meta.push(h("span", { class: "m" }, h("span", { class: "chip s-warn ahead-chip", "data-tip": tip },
-            ahead ? `${ahead} niewypchniętych` : "gałąź nie wypchnięta")));
+        if (ahead) {
+          // w trybie `direct` lokalne commity są normą do „CP”: ostrzeżenie dopiero, gdy plan jest zakończony
+          const calm = dv.mode === "direct" && !(plan && plan.status === "done");
+          const tip = `${ahead} ${plural(ahead, "commit", "commity", "commitów")} lokalnie przed ${remoteName}${dv.pushed === false ? " (nie ma jej jeszcze na origin)" : ""}; „CP” je wypchnie`;
+          meta.push(h("span", { class: "m" }, h("span", { class: `chip ${calm ? "s-planned" : "s-warn"} ahead-chip`, "data-tip": tip },
+            `${ahead} ${plural(ahead, "niewypchnięty", "niewypchnięte", "niewypchniętych")}`)));
         }
       }
       if (plan && plan.pr) {
@@ -792,6 +798,8 @@
       if (!d) return;
       if (ui.elapsed && d.run && d.run.startIso) ui.elapsed.textContent = fmtDur(now() - Date.parse(d.run.startIso));
       if (ui.ago) ui.ago.textContent = fmtAgo(ui.ago.getAttribute("data-iso"));
+      const open = (d.waiting || []).filter((w) => !waitDone(d, w)).length;
+      if (open !== st.waitOpen) { st.waitOpen = open; render(); return; } // zgoda „zestarzała się” bez nowych danych z serwera
       const quiet = silenceMinutes(d);
       if ((quiet > 0) !== Boolean(st.silenceShown) || (quiet && quiet !== st.silenceMin)) { st.silenceMin = quiet; renderWaiting(d); }
     }
