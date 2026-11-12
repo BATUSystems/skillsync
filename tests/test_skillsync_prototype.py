@@ -503,7 +503,8 @@ class InitTests(PrototypeFixture):
 
     def test_invalid_manifest_section_blocks_with_errors_list(self):
         self.set_prototype({'root': 5})
-        report = self.blocked('init', 'demo', '--requirements', 'docs/req.md')
+        with secret_free_environ():
+            report = self.blocked('init', 'demo', '--requirements', 'docs/req.md')
         self.assertTrue(report['errors'])
         self.assertTrue(any('root' in error for error in report['errors']))
 
@@ -1847,7 +1848,33 @@ class ListTests(PrototypeFixture):
 # ---------------------------------------------------------------------------
 # K6 doctor and validate_prototype
 # ---------------------------------------------------------------------------
+SECRET_ENV_NAME = re.compile(r'(?i)token|secret|password|passwd|api_?key|credential')
+
+
+def secret_free_environ():
+    """Środowisko bez zmiennych o nazwie sekretu: runner Windows ma jedną o wartości `root`, a `redact()` maskuje
+    wtedy `prototype.root` w komunikatach doctor/init (`prototype.[REDACTED]`). CLI dziedziczy `os.environ`."""
+    kept = {name: value for name, value in os.environ.items() if not SECRET_ENV_NAME.search(name)}
+    return mock.patch.dict(os.environ, kept, clear=True)
+
+
 class DoctorPrototypeTests(PrototypeFixture):
+    def setUp(self):
+        super().setUp()
+        patcher = secret_free_environ()
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_secret_like_environment_masks_field_names_unless_isolated(self):
+        """Mechanizm (c) wymuszony na Linuxie: zmienna `*_TOKEN` o wartości `root` (jak na runnerze Windows)
+        zamienia `prototype.root` w `prototype.[REDACTED]`; `secret_free_environ()` to usuwa."""
+        with mock.patch.dict(os.environ, {'CI_DEMO_TOKEN': 'root'}):
+            masked = self.errors(self.doctor({'root': 5}, code=1))
+            self.assertTrue(any('[REDACTED]' in error for error in masked), masked)
+            with secret_free_environ():
+                clean = self.errors(self.doctor({'root': 5}, code=1))
+            self.assertTrue(any('prototype.root' in error for error in clean), clean)
+
     def findings(self, report):
         return [f for f in report['findings'] if f['reason'].startswith('prototype')]
 
