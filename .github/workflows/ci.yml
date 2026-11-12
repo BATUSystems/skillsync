@@ -28,7 +28,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     # v1.0.0 gate: Ubuntu and macOS block. Native Windows stays in the matrix for visibility but does not block (support: a later release).
     continue-on-error: ${{ matrix.os == 'windows-latest' }}
-    timeout-minutes: 30
+    # Native Windows needs about 40 minutes for the whole suite, so it gets 60 (the job names stay: the ruleset binds required checks by name).
+    timeout-minutes: ${{ matrix.os == 'windows-latest' && 60 || 30 }}
     strategy:
       fail-fast: false
       matrix:
