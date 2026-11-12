@@ -781,6 +781,52 @@ function summary(m) {
     }
     ex.planAuto = res;
   }
+
+  // DASH-STAB D1: toasty (komunikat wyniku zgody i baner „czeka”) gasną po wykonaniu zadania, a toast zgody sam po czasie.
+  {
+    const msTimers = () => ({ q: new Map(), n: 0, set(fn, ms) { const id = ++this.n; this.q.set(id, { fn, ms }); return id; }, clear(id) { this.q.delete(id); },
+      run() { const items = [...this.q.values()]; this.q.clear(); items.forEach((x) => x.fn()); }, list() { return [...this.q.values()].map((x) => x.ms); } });
+    const banner = (m) => ({ hidden: m.root.querySelector('#waitBanner').hidden, items: m.root.querySelectorAll('#waitBanner .wait-item').length,
+      ok: m.root.querySelectorAll('#waitBanner .wait-item.is-ok').length, err: m.root.querySelectorAll('#waitBanner .wait-item.is-err').length,
+      text: text(m.root.querySelector('#waitBanner')) });
+    const stab = {};
+    {  // (a) toast wyniku zgody: ok i błąd gasną same; odliczanie stoi, gdy karta jest w tle
+      const j = clone(F['cp-ready']); j.approvals.here = true;
+      const tm = msTimers();
+      const m = mount(j, { now: NOW['cp-ready'], deps: { timers: tm } });
+      const b = () => m.root.querySelector('#acts button[data-approve="cp"]');
+      b().click(); b().click(); await tick(); await tick();
+      const shown = banner(m), timersWhileShown = tm.list();
+      let hiddenTimers = null, backAgain = null;
+      if (typeof m.board.setVisible === 'function') {
+        m.board.setVisible(false); hiddenTimers = tm.list();
+        m.board.setVisible(true); backAgain = tm.list();
+      }
+      tm.run();
+      stab.notice = { shown, timersWhileShown, hiddenTimers, backAgain, after: banner(m), hasSetVisible: typeof m.board.setVisible === 'function', state: m.board.state().notice };
+      const failing = mount(j, { now: NOW['cp-ready'], deps: { timers: msTimers() }, actions: { approve: () => Promise.reject(new Error('x')) } });
+      const fb = () => failing.root.querySelector('#acts button[data-approve="cp"]');
+      fb().click(); fb().click(); await tick(); await tick();
+      stab.errorShown = banner(failing);
+    }
+    {  // (b) CP wykonany (zgoda after, ahead 0): baner „czeka: CP” znika; przy ahead > 0 zostaje
+      const done = clone(F['cp-ready']);
+      const cp = done.approvals.actions.find((a) => a.kind === 'cp');
+      cp.state = 'after'; cp.given = { at: '2026-01-12T10:30:00Z', by: 'user', word: 'CP', sha: cp.sha, source: 'cli', schema: 1 };
+      done.delivery.ahead = 0; done.delivery.pushed = true;
+      const open = clone(done); open.delivery.ahead = 2;
+      stab.cp = { done: banner(mount(done, { now: NOW['cp-ready'] })), open: banner(mount(open, { now: NOW['cp-ready'] })) };
+    }
+    {  // (c) GO implement zapisane, a sesja zaraportowała po zgodzie: baner znika; bez raportu po zgodzie zostaje
+      const base = clone(F['cp-ready']);
+      base.waiting = [{ what: 'GO implement', word: 'GO implement', approve: 'plan', source: 'checkpoint', since: '08:50', link: null, action: 'Zatwierdź „GO implement”.' }];
+      base.run.lastReportAt = '2026-01-12T09:50:00+00:00';
+      const moved = clone(base);
+      const quiet = clone(base); quiet.run.lastReportAt = '2026-01-12T08:00:00+00:00';
+      stab.given = { moved: banner(mount(moved, { now: NOW['cp-ready'] })), quiet: banner(mount(quiet, { now: NOW['cp-ready'] })) };
+    }
+    ex.stab = stab;
+  }
   out.extra = ex;
   // deps.now jest wymagane (renderer nie czyta zegara sam).
   try { R.create(makeDoc().createElement('div'), {}); out.nowRequired = false; } catch (e) { out.nowRequired = e instanceof TypeError; }
@@ -980,6 +1026,31 @@ class RendererNodeTests(unittest.TestCase):
         self.assertEqual(r["width"], "")  # klatka po destroy() nic nie rysuje
         self.assertEqual(ex["emptyDoc"]["noPreview"], "Wybierz dokument z listy po lewej.")
         self.assertIn("Podgląd odświeża się sam", ex["emptyDoc"]["preview"])
+
+    def test_stab_approval_toast_expires_by_itself_and_waits_for_visibility(self) -> None:
+        """D1 przyczyna 1: toast wyniku zgody gasł tylko po kliknięciu „×”; teraz sam (ok 10 s, błąd 30 s), a w tle odliczanie stoi."""
+        n = self.out["extra"]["stab"]["notice"]
+        self.assertEqual((n["shown"]["ok"], n["shown"]["items"]), (1, 2), n)  # toast zgody + baner „czeka: CP”
+        self.assertEqual(n["timersWhileShown"], [10000], n)
+        self.assertTrue(n["hasSetVisible"])
+        self.assertEqual(n["hiddenTimers"], [], "w tle odliczanie stoi")
+        self.assertEqual(n["backAgain"], [10000], "po powrocie startuje od nowa")
+        self.assertEqual(n["after"]["ok"], 0, n)
+        self.assertIsNone(n["state"])
+        err = self.out["extra"]["stab"]["errorShown"]
+        self.assertEqual(err["err"], 1, err)
+
+    def test_stab_waiting_banner_goes_when_cp_is_done(self) -> None:
+        """D1 przyczyna 2a: „czeka: CP” znikało dopiero z kolejnym checkpointem, także po wykonanym CP (zgoda after, ahead 0)."""
+        cp = self.out["extra"]["stab"]["cp"]
+        self.assertEqual(cp["done"]["items"], 0, cp["done"])
+        self.assertEqual(cp["open"]["items"], 1, cp["open"])
+
+    def test_stab_waiting_banner_goes_when_session_reported_after_consent(self) -> None:
+        """D1 przyczyna 2b: zgoda zapisana i sesja już raportuje (w trakcie): baner nie ostrzega; bez raportu po zgodzie zostaje."""
+        given = self.out["extra"]["stab"]["given"]
+        self.assertEqual(given["moved"]["items"], 0, given["moved"])
+        self.assertEqual(given["quiet"]["items"], 1, given["quiet"])
 
     def test_readiness_tile(self) -> None:
         none = {"cls": "readiness is-none", "chip": "Readiness: brak danych"}

@@ -121,6 +121,8 @@
   fetch("/api/descriptions", { cache: "no-store" }).then((r) => r.json()).then((x) => { board.setDescriptions(x); }).catch(() => { board.setDescriptions({}); });
   document.addEventListener("keydown", (e) => board.handleKey(e));
   document.addEventListener("click", () => board.closeMenu());
+  document.addEventListener("visibilitychange", () => board.setVisible(document.visibilityState !== "hidden")); // odliczanie toastu stoi w tle
+  board.setVisible(document.visibilityState !== "hidden");
   window.addEventListener("scroll", () => board.hideTip(), { passive: true });
   if (darkQuery && darkQuery.addEventListener) darkQuery.addEventListener("change", () => board.syncTheme());
   setInterval(() => board.tick(), 1000);

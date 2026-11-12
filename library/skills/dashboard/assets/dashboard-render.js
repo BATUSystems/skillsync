@@ -198,11 +198,31 @@
 
     const st = {
       data: null, prev: null, view: "progress", doc: null, docData: null, desc: null,
-      armed: null, armedTimer: null, approving: false, notice: null, openPhases: {},
+      armed: null, armedTimer: null, approving: false, notice: null, noticeTimer: null, visible: true, openPhases: {},
       silenceShown: false, silenceMin: 0, descFor: null, descPinned: false, docButtons: [], timers: new Set(), frames: new Set(), destroyed: false,
     };
     const later = (fn, ms) => { const t = timers.set(() => { st.timers.delete(t); if (!st.destroyed) fn(); }, ms); st.timers.add(t); return t; };
     const cancel = (t) => { if (t) { timers.clear(t); st.timers.delete(t); } };
+    // Toast wyniku zgody gaśnie sam (ok 10 s, błąd 30 s), a odliczanie biegnie tylko przy widocznej karcie (host woła `setVisible`),
+    // żeby komunikat o błędzie nie zniknął, zanim ktokolwiek go zobaczy. „×” zamyka od razu.
+    const NOTICE_MS = { ok: 10000, err: 30000 };
+    function setNoticeState(n) {
+      cancel(st.noticeTimer); st.noticeTimer = null;
+      st.notice = n || null;
+      if (st.notice && st.visible) st.noticeTimer = later(() => { st.noticeTimer = null; st.notice = null; render(); }, st.notice.ok ? NOTICE_MS.ok : NOTICE_MS.err);
+    }
+    // Element banera „czeka” jest już nieaktualny: zgoda zapisana i zadanie się wykonało (CP/READY: nic niewypchniętego)
+    // albo trwa (spec/plan: sesja zaraportowała po zgodzie). Serwer zwraca znacznik `czeka:` do następnego checkpointu.
+    function waitDone(d, w) {
+      const act = w.approve && ((d.approvals && d.approvals.actions) || []).find((x) => x.kind === w.approve);
+      if (!act || act.state !== "after") return false;
+      if (w.approve === "cp" || w.approve === "ready") return Boolean(d.delivery) && d.delivery.ahead === 0;
+      const plan = d.plan && d.plan.status;
+      const at = act.given && act.given.at ? Date.parse(act.given.at) : NaN;
+      const reported = d.run && d.run.lastReportAt ? Date.parse(d.run.lastReportAt) : NaN;
+      if (Number.isFinite(at)) return Number.isFinite(reported) && reported > at;
+      return plan === "in_progress" || plan === "done";
+    }
 
     const icon = (id, cls = "ic") => svg("svg", { class: cls, "aria-hidden": "true" }, svg("use", { href: "#" + id }));
     const mono = (text) => h("span", { class: "mono" }, text);
@@ -599,7 +619,7 @@
       }
       if (st.destroyed) return;
       st.approving = false; st.armed = null;
-      if (res) st.notice = res;
+      if (res) setNoticeState(res);
       render();
       if (typeof actions.refresh === "function") actions.refresh();
     }
@@ -619,7 +639,7 @@
       const el = ui.waitBanner;
       const quiet = silenceMinutes(d);
       st.silenceShown = quiet > 0;
-      const items = (d.waiting || []).concat(quiet ? [{ what: `brak raportu od ${quiet} min`, source: "silence", since: null,
+      const items = (d.waiting || []).filter((w) => !waitDone(d, w)).concat(quiet ? [{ what: `brak raportu od ${quiet} min`, source: "silence", since: null,
         action: "Raport postępu powinien być po każdym kroku albo co 30 minut. Sesja mogła się zawiesić albo długo pracuje bez raportu: zajrzyj do sesji.", link: null }] : []);
       const n = st.notice;
       const note = n ? h("div", { class: "wait-item" + (n.ok ? " is-ok" : " is-err") },
@@ -628,7 +648,7 @@
           h("strong", null, n.ok ? `Zgoda „${n.word}” zapisana` : `Nie zapisano „${n.word}”`),
           h("span", null, n.text)),
         n.ok ? wordTools(d, "dalej") : null,
-        h("button", { class: "wait-x", type: "button", "data-notice-close": "", "aria-label": "Zamknij", on: { click: () => { st.notice = null; render(); } } }, "×")) : null;
+        h("button", { class: "wait-x", type: "button", "data-notice-close": "", "aria-label": "Zamknij", on: { click: () => { setNoticeState(null); render(); } } }, "×")) : null;
       if (!items.length && !note) { el.hidden = true; fill(el); return; }
       el.hidden = false;
       fill(el, note, items.map((w) => {
@@ -780,7 +800,12 @@
         if (st.view === "docs" && st.doc) loadDoc(st.doc, true);
       },
       setDescriptions(map) { st.desc = map && typeof map === "object" ? map : {}; },
-      setNotice(notice) { st.notice = notice || null; render(); },
+      setNotice(notice) { setNoticeState(notice); render(); },
+      setVisible(visible) {
+        st.visible = visible !== false;
+        if (!st.visible) { cancel(st.noticeTimer); st.noticeTimer = null; }
+        else if (st.notice && !st.noticeTimer) setNoticeState(st.notice);
+      },
       setLive,
       setView,
       setDoc(path) { st.doc = path || null; },
