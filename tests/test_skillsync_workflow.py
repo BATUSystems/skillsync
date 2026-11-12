@@ -1008,13 +1008,20 @@ class ReviewDocsProfile(WorkflowFixture):
         self.assertTrue(any('leakcheck --text' in item for item in mixed['checklist']))
 
     def test_library_code_and_non_markdown_skill_files_are_not_docs(self):
-        for files in (['library/skills/feature/scripts/run.py'], ['library/skills/feature/assets/a.json'], ['skillsync_workflow/cli.py']):
+        for files in (['library/skills/feature/scripts/run.py'], ['docs/site/build.py'], ['docs/site/app.js'], ['docs/prototypes/x/theme.css'], ['library/skills/feature/assets/a.json'], ['skillsync_workflow/cli.py']):
             with self.subTest(files=files):
                 self.assertEqual(self.review(*files)['profile'], 'kod')
 
     def test_docs_change_does_not_raise_the_risk_or_change_readiness(self):
         self.assertEqual(self.review('docs/cli.md')['risk'], 'low')
         self.assertEqual(self.report('readiness', '--files', 'docs/cli.md')['status'], 'PASS')
+
+    def test_scalar_docs_overrides_are_rejected(self):
+        for key in ('docs_paths', 'docs_checklist'):
+            with self.subTest(key=key):
+                self.manifest['workflow']['review'] = {key: 'docs/**'}
+                self.save()
+                self.rejected('review', '--files', 'docs/a.md')
 
     def test_manifest_overrides_paths_and_checklist(self):
         self.manifest['workflow']['review'] = {'docs_paths': ['handbook/**'], 'docs_checklist': ['własna pozycja docs']}

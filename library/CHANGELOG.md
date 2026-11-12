@@ -4,6 +4,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+### Added
+- `skills/feature/references/review-loop.md`, `agents/reviewer.md`: profil przeglądu `docs` (obietnice z dowodem, zgodność instrukcji z narzędziami, brak sprzeczności skilli, tylko stan bieżący, brak nazw osób, klientów i wydarzeń); `skills/pr-run`, `skills/feature`, `skills/dispatch`: opis PR-a, komentarz i notatka wydania przechodzą `skillsync leakcheck --text <plik>` przed publikacją; `skills/skillsync`: flagi `--text`/`--stdin`.
+
 ## [1.2.0] - 2026-11-12
 
 ### Added

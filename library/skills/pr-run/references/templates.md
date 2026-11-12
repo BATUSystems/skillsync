@@ -2,7 +2,7 @@
 
 ## Opis PR-a
 
-Opis tworzysz jako draft i aktualizujesz do chwili zamknięcia przebiegu. Każdą wersję opisu (także komentarz i notatkę wydania) zapisz do pliku i przepuść przez `skillsync leakcheck --text <plik>` przed publikacją: nazwy osób, klientów i wydarzeń oraz aliasy kart w publicznym rdzeniu to FAIL.
+Opis tworzysz jako draft i aktualizujesz do chwili zamknięcia przebiegu. Każdą wersję opisu (także komentarz i notatkę wydania) zapisz do pliku i przepuść przez `skillsync leakcheck --text <plik>` przed publikacją: tytuł PR-a wpisz jako pierwszą linię tego samego pliku. FAIL dają terminy z plików tożsamości maszyny (nazwy osób, klientów, wydarzeń, aliasy kart w publicznym rdzeniu); przy `coverage: generic` w raporcie (maszyna bez tożsamości) kontrola jest słabsza, więc dopisz `--require full` tam, gdzie maszyna ma tożsamości.
 
 ```markdown
 ## Cel

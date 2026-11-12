@@ -35,7 +35,7 @@ Plik treści `.skillsync/tmp/comment.json` (katalog ignorowany przez git) ma pos
 
 ## GitHub
 
-Opis PR-a, komentarz i notatka wydania wychodzą poza gita, więc przed `gh pr create`, `gh pr edit --body`, `gh pr comment`, `gh release create` (i ich odpowiednikami `az repos pr create/update`) zapisz tekst do pliku i sprawdź go `skillsync leakcheck --text <plik>` (albo `--stdin`; tekstu nigdy w argumencie): FAIL (exit 1) lub BLOCKED (exit 2) wstrzymuje publikację do poprawki, a raport podaje tylko plik, kategorię i miejsce.
+Opis PR-a, komentarz i notatka wydania wychodzą poza gita, więc przed `gh pr create`, `gh pr edit --body`, `gh pr comment`, `gh release create` (i ich odpowiednikami `az repos pr create/update`) zapisz tekst do pliku i sprawdź go `skillsync leakcheck --text <plik>` (albo `--stdin`; tekstu nigdy w argumencie): FAIL (exit 1) lub BLOCKED (exit 2, także pusty tekst) wstrzymuje publikację do poprawki, a raport podaje tylko plik, kategorię i miejsce. Tytuł wpisz jako pierwszą linię pliku. Wykrywa terminy z plików tożsamości maszyny; przy `coverage: generic` kontrola jest słabsza (`--require full`, gdy maszyna ma tożsamości).
 
 ```bash
 gh pr create --draft --base <BASE> --head <BRANCH> --title "<KEY>: opis" --body-file <plik>

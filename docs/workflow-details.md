@@ -466,7 +466,7 @@ migracjach danych i współbieżności.
 
 ### `reviewer`
 
-- jest niezależny i tylko do odczytu; pracuje w profilu pętli `spec`, `plan` albo `kod`;
+- jest niezależny i tylko do odczytu; pracuje w profilu pętli `spec`, `plan`, `kod` albo `docs`;
 - czyta aktualny materiał z plików (diff, nowe pliki, baseline, plan, spec, FRD, logi), nie streszczenie autora;
 - ocenia kryteria, poprawność, kontrakty, ryzyka, testy, dokumentację i wiedzę; może zakwestionować plan i spec;
 - oddziela nowe problemy od zastanych; zgłasza wagę, miejsce, scenariusz, skutek, dowód i propozycję;

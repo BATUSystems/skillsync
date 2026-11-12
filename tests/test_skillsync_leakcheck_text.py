@@ -85,6 +85,11 @@ class TextApiTests(TextCase):
     def test_text_mode_without_a_text_is_blocked(self):
         self.assertEqual(self.api([])['status'], 'BLOCKED')
 
+    def test_empty_text_is_blocked_not_passed(self):
+        for body in ('', '  \n\t\n'):
+            with self.subTest(body=body):
+                self.assertEqual(self.api([('a.md', body)])['status'], 'BLOCKED')
+
     def test_oversized_text_is_blocked(self):
         report = self.api([('big.md', 'a' * (leakguard.TEXT_LIMIT_BYTES + 1))])
         self.assertEqual(report['status'], 'BLOCKED')
@@ -131,6 +136,47 @@ class TextCliTests(TextCase):
             with self.subTest(extra):
                 done = self.cli('--text', str(path), extra, stdin='')
                 self.assertEqual(done.returncode, 2, done.stdout + done.stderr)
+
+    def test_empty_path_argument_is_the_text_mode_and_never_a_worktree_scan(self):
+        self.write('leak.md', 'klient %s\n' % CLIENT)           # katalog roboczy ma wyciek: skan worktree dałby FAIL
+        done = self.cli('--text', '')
+        self.assertEqual(done.returncode, 2, done.stdout + done.stderr)
+        self.assertIn('BLOCKED', done.stderr)
+        self.assertNotIn('leak.md', done.stdout + done.stderr)
+
+    def test_empty_whitespace_directory_and_bad_encoding_are_blocked(self):
+        cases = {'pusty': b'', 'białe znaki': b' \n\t\n', 'nie-UTF-8': 'klient Żuraw\n'.encode('cp1250'), 'NUL': b'a\x00b'}
+        for name, data in cases.items():
+            with self.subTest(name):
+                path = self.root / 'case.md'
+                path.write_bytes(data)
+                done = self.cli('--text', str(path))
+                self.assertEqual(done.returncode, 2, done.stdout + done.stderr)
+        self.assertEqual(self.cli('--text', str(self.root)).returncode, 2)         # katalog
+        self.assertEqual(self.cli('--stdin', stdin='  \n').returncode, 2)
+
+    def test_utf8_bom_is_stripped_and_the_text_is_still_scanned(self):
+        path = self.root / 'bom.md'
+        path.write_bytes(b'\xef\xbb\xbf' + ('klient %s\n' % CLIENT).encode('utf-8'))
+        self.assertEqual(self.cli('--text', str(path)).returncode, 1)
+
+    def test_oversized_text_is_blocked_for_a_file_and_for_stdin(self):
+        big = 'a' * (leakguard.TEXT_LIMIT_BYTES + 1)
+        path = self.write('big.md', big)
+        self.assertEqual(self.cli('--text', str(path)).returncode, 2)
+        self.assertEqual(self.cli('--stdin', stdin=big).returncode, 2)
+        self.assertEqual(self.cli('--text', str(self.write('edge.md', 'b' * leakguard.TEXT_LIMIT_BYTES))).returncode, 0)
+
+    def test_require_full_applies_to_the_text_mode(self):
+        partial = dict(TARGETS, third={'scope': 'private'})        # cel bez pliku tożsamości: pokrycie częściowe
+        targets = self.root / 'targets-partial.json'
+        targets.write_text(json.dumps(partial), encoding='utf-8')
+        path = self.write('pr.md', 'czysty opis\n')
+        argv = [sys.executable, str(SKILLSYNC_PATH), 'leakcheck', '--text', str(path), '--identity', str(self.identity),
+                '--targets-json', str(targets), '--target', 'mine', '--require', 'full']
+        done = subprocess.run(argv, capture_output=True, text=True, cwd=str(self.root), timeout=60)
+        self.assertEqual(done.returncode, 2, done.stdout + done.stderr)
+        self.assertEqual(self.cli('--text', str(path), '--require', 'full').returncode, 0)   # pełne pokrycie: PASS
 
     def test_the_text_is_never_an_argument_of_the_command(self):
         done = subprocess.run([sys.executable, str(SKILLSYNC_PATH), 'leakcheck', '--help'], capture_output=True, text=True, timeout=60)

@@ -34,7 +34,7 @@ zgłoś brak niezależnego review jako ograniczenie wymagające decyzji użytkow
 
 Domyślny limit: 3 podagenci poza orkiestratorem. Wznawiaj agenta do poprawek tego samego
 kroku, ale każda runda [pętli przeglądu](review-loop.md) to nowy `reviewer` (model recenzenta zmienia tylko
-`codex.agent_overrides`, więc zwykle „ten sam model” i zapis tego w raporcie rundy, w każdym profilu: `spec`, `plan`, `kod`); zamykaj ukończone wątki, gdy zajmują limit. Nie przekazuj pełnej historii, gdy
+`codex.agent_overrides`, więc zwykle „ten sam model” i zapis tego w raporcie rundy, w każdym profilu: `spec`, `plan`, `kod`, `docs`); zamykaj ukończone wątki, gdy zajmują limit. Nie przekazuj pełnej historii, gdy
 wystarcza zlecenie z planem. Gdy model override wymaga pustego/krótkiego kontekstu,
 zastosuj ten tryb i jawnie przekaż wymagane instrukcje.
 

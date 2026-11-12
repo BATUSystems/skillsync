@@ -1285,10 +1285,13 @@ DOCS_CHECKLIST = [
 ]
 
 
+DOCS_CODE_SUFFIXES = ('.py', '.ts', '.js', '.mjs', '.cjs', '.ps1', '.sh', '.css', '.html')   # kod pod docs/ nie jest dokumentacją
+
+
 def docs_profile(config, files):
     """`(profile, docs_files)`: `docs` gdy zmiana (niepusta) dotyka wyłącznie dokumentacji, inaczej `kod`."""
     paths = config.get('docs_paths', DOCS_PATHS)
-    docs_files = [f for f in files if matches(f, paths)]
+    docs_files = [f for f in files if matches(f, paths) and not str(f).casefold().endswith(DOCS_CODE_SUFFIXES)]
     return ('docs' if files and len(docs_files) == len(files) else 'kod'), docs_files
 
 

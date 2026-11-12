@@ -59,6 +59,8 @@ Zlecenie podaje profil pętli przeglądu (skill `feature`, `references/review-lo
   jest trafne, czy są ukryte założenia, konflikt stanów między krokami, zasoby i ścieżki porażek.
 - **`kod`**: materiał jak w zwykłym review (diff, nowe pliki, plan, spec, logi); zakres diffu rundy podaje zlecenie.
   Sprawdzasz także zamknięcie uwag poprzednich rund na aktualnych plikach.
+- **`docs`**: zmienione dokumenty, CHANGELOG, notatki wydania i skille; checklista w `review-loop.md` (dowód dla obietnic,
+  zgodność z narzędziami, brak sprzeczności, tylko stan bieżący, brak nazw osób, klientów i wydarzeń).
 
 Czytaj materiał adwersarialnie. Wynik jak wyżej, z wagami.
 

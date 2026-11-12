@@ -16,7 +16,7 @@ innej, a prywatne nawyki użytkownika nie mogą trafić do repo publicznego.
 ## `leakcheck`
 
 ```bash
-skillsync leakcheck <katalog|projekt> [--target ID] [--worktree|--staged|--range A..B|--history] [--json]
+skillsync leakcheck <katalog|projekt> [--target ID] [--worktree|--staged|--range A..B|--history|--text FILE|--stdin] [--json]
 ```
 
 Sprawdza treść plików, nazwy plików i metadane commitów (autor, e-mail). Kody: PASS 0, FAIL 1, BLOCKED 2.

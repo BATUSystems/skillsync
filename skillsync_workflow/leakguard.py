@@ -1349,6 +1349,8 @@ def leakcheck(path='.', *, mode='worktree', rev_range=None, target=None, targets
             if not texts:
                 raise LeakguardError('Mode text needs a text to scan')
             for label, content in texts:
+                if not content.strip():
+                    raise LeakguardError('The text is empty: nothing to check')
                 if len(content.encode('utf-8', 'surrogatepass')) > TEXT_LIMIT_BYTES:
                     raise LeakguardError(f'Text is larger than {TEXT_LIMIT_BYTES} bytes')
                 scanner.text(content, TEXT_CLASS_REL, label, '', False)
@@ -1724,27 +1726,36 @@ def config_inputs(path=None, target=None):
 def _read_text_input(args):
     """`[(label, text)]` for `--text FILE` / `--stdin`; raises LeakguardError. The label is the file name, never the text."""
     if args.from_stdin:
-        label, data = '<stdin>', sys.stdin.buffer.read(TEXT_LIMIT_BYTES + 1)
-    else:
-        source = Path(args.text_file).expanduser()
-        label = source.name or 'text'
+        label = '<stdin>'
         try:
+            data = sys.stdin.buffer.read(TEXT_LIMIT_BYTES + 1)
+        except (AttributeError, OSError, ValueError):
+            raise LeakguardError('Cannot read the text from standard input') from None
+    else:
+        try:
+            source = Path(args.text_file).expanduser()
+            label = source.name or 'text'
             if not source.is_file():
-                raise LeakguardError(f'Not a file: {source.name}')
+                raise LeakguardError(f'Not a file: {label}')
             with open(source, 'rb') as handle:
                 data = handle.read(TEXT_LIMIT_BYTES + 1)
-        except OSError as exc:
-            raise LeakguardError(f'Cannot read {source.name}: {exc.strerror or exc}') from None
+        except (OSError, RuntimeError) as exc:
+            raise LeakguardError(f'Cannot read the text file: {getattr(exc, "strerror", None) or type(exc).__name__}') from None
     if len(data) > TEXT_LIMIT_BYTES:
         raise LeakguardError(f'Text is larger than {TEXT_LIMIT_BYTES} bytes')
-    text = _decode(data)
-    if text is None:
+    if b'\0' in data[:8192]:
         raise LeakguardError('The text looks binary; leakcheck --text expects a text file')
+    try:
+        text = data.decode('utf-8-sig')   # strict: a text in another encoding would hide identities with diacritics
+    except UnicodeDecodeError:
+        raise LeakguardError('The text is not valid UTF-8; convert it before the check') from None
+    if not text.strip():
+        raise LeakguardError('The text is empty: nothing to check (a failed producer must not pass the gate)')
     return [(label, text)]
 
 
 def _cmd_leakcheck(args):
-    text_mode = bool(args.text_file or args.from_stdin)
+    text_mode = args.text_file is not None or args.from_stdin   # `--text ''` is still the text mode (then BLOCKED), never a worktree scan
     mode = 'text' if text_mode else ('range' if args.rev_range else (args.mode or 'worktree'))
     target, warnings, select = args.target, [], True
     texts = None

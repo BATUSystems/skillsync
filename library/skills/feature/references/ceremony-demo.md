@@ -31,3 +31,4 @@ Bez ekranów w specu nie ma prototypu: poproś o „GO plan” od razu. Zgody na
   podsekcją „Dług (ceremony: demo)”. Relaksacja w regule „Done” rdzenia dotyczy wyłącznie dokumentacji ponad changelog i „Wynik”,
   `retro-quality` i rekordów wiedzy. `skillsync checkpoint --final` zgłosi wtedy ostrzeżenie `retro-quality-missing`; jest oczekiwane i nie blokuje.
   Dług zastępuje `retro-quality` także w liście warunków przed stanem „czeka na READY/CP”.
+- **Profil `docs`** (zmiana wyłącznie dokumentacji, [pętla przeglądu](review-loop.md)): jedna runda także w `demo`; druga tylko na warunkach drugiej rundy powyżej.
