@@ -18,6 +18,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 - `library/skills/agent-runtime-pitfalls`: two new pitfalls (explicit path list for `git add`; browser screenshots in a separate profile without extensions).
 
 ### Changed
+- CI: the `test` job on native Windows has a 60-minute limit (was 30, which cancelled both Windows jobs at about 80% of the suite); Ubuntu and macOS keep 30. Job names are unchanged; Windows stays non-blocking.
 - Dashboard page and Skippster panel: the layout follows the width of the host column, not the window (CSS container
   queries on a new `.dash-wrap` wrapper; the tooltip stays outside it). New compact tier up to 420 px: smaller type and
   spacing, no big Roman numerals or source notes, plan badge and live label shortened to a tooltip, approval and
