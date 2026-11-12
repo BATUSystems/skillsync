@@ -9,6 +9,7 @@ import json
 import os
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
@@ -159,7 +160,12 @@ class WritingHelperTests(unittest.TestCase):
     @unittest.skipUnless(hasattr(os, 'mkfifo'), 'no FIFO on this platform')
     def test_fifo_does_not_hang(self):
         os.mkfifo(self.path)
-        self.assertIsNone(ps.read_writing(self.dir, NOW))
+        result = []
+        thread = threading.Thread(target=lambda: result.append(ps.read_writing(self.dir, NOW)), daemon=True)
+        thread.start()
+        thread.join(5)
+        self.assertFalse(thread.is_alive(), 'read_writing hangs on a FIFO')
+        self.assertEqual(result, [None])
 
     def test_remove_is_idempotent_and_leaves_links_alone(self):
         self.assertFalse(ps.remove_writing(self.dir))

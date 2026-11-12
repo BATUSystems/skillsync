@@ -243,10 +243,11 @@ class RealBaselineTests(unittest.TestCase):
             for entry in entries or []:
                 self.assertIn(entry['category'], self.data['categories'], (key, entry))
 
-    def test_the_ten_chrome_scenarios_are_allowed_until_step_5_1(self):
+    def test_every_chrome_e2e_script_is_allowed(self):
         for mode in ('symlink', 'copy'):
             chrome = [e['id'] for e in self.data['baselines'][f'linux/{mode}'] if e['category'] == 'e2e-chrome']
-            self.assertEqual(len(chrome), 10, mode)
+            scripts = sorted(p.stem.replace('-', '_') for p in (Path(__file__).parent / 'e2e' / 'prototype').glob('*.mjs') if p.name != 'lib.mjs')
+            self.assertEqual(sorted(i.rsplit('.test_', 1)[1] for i in chrome), scripts, mode)
             self.assertTrue(all(i.startswith('test_skillsync_prototype_e2e.') for i in chrome), mode)
 
     def test_the_copy_baseline_is_the_symlink_one_plus_only_mode_dependent_skips(self):

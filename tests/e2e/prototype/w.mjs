@@ -93,6 +93,7 @@ suite.add('W-02', 'Pliki zmieniły się w trakcie zapisu: „przeładuj”, po p
   const staleText = await p.evaluate(banner('stale'));
   const attempt = await tryActivate(p, acceptBtn('s1'));
   const during = { acceptOps: await acceptOps(slug), accepted: await validAccepted(slug, 's1') };
+  await marker('start', slug);   // odnowienie przed przeładowaniem (wolny runner)
   await p.reload();
   const again = await p.waitFor(`${banner('writing')} !== null && ${banner('stale')} === null && ${disabled(acceptBtn('s1'))}`, 20000, 250);
   const done = await marker('done', slug);

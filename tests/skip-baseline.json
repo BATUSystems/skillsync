@@ -53,7 +53,7 @@
   "ubuntu-latest/*": "null until the first CI run. Expected skips: the Chrome E2E tests (category e2e-chrome, reason \"set SKILLSYNC_E2E_CHROME…\": they run in the `e2e` job, K11) and whatever the runner lacks.",
   "windows-latest/*": "null until the first CI run (K13 residual risk).",
   "macos-latest/*": "null until the first CI run.",
-  "e2e-chrome": "The 10 Chrome scenarios are allowed: CI runs no Chrome; the prototype E2E runs separately with Chrome and leased ports."
+  "e2e-chrome": "The 12 Chrome scenario scripts (one test per tests/e2e/prototype/*.mjs, incl. test_widok and test_w) are allowed: CI runs no Chrome; the prototype E2E runs separately with Chrome and leased ports."
  },
  "baselines": {
   "linux/symlink": [
@@ -100,6 +100,14 @@
    {
     "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_ryzyka",
     "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_w",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_widok",
+    "category": "e2e-chrome"
    }
   ],
   "linux/copy": [
@@ -145,6 +153,14 @@
    },
    {
     "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_ryzyka",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_w",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_widok",
     "category": "e2e-chrome"
    }
   ],
