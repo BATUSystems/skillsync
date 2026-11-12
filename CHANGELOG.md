@@ -12,6 +12,8 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-11-12
+
 ### Added
 
 - Questions to a domain expert are kept per run: `<root>/<slug>/questions.json` next to the run's `comments.json`. The page `/_experts`
