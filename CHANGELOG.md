@@ -12,7 +12,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
-## [1.3.0] - 2026-11-12
+## [1.3.0] - 2026-11-13
 
 ### Added
 
@@ -42,6 +42,20 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 - The core repository no longer tracks task specifications or plans: `docs/specs/**` and `docs/plans/**` are removed (they live in the operations repository; history and tags are untouched), references to specific (dated) specification and plan files that the core does not keep are replaced by a neutral description (domain records, lessons, the prototype contract, library instructions, comments), and the new test `tests/test_skillsync_repo_hygiene.py` fails in CI when any file is tracked under those directories or a tracked file outside `tests/` points at such a dated file. The project directory convention (`docs/specs/*.md`, `docs/plans/*.md`) that the generator reads is unchanged.
 
 ### Breaking
+
+## [1.2.3] - 2026-11-13
+
+### Added
+
+- The page `/_experts` (and `/_experts/<slug>`) refreshes the list by itself every 15 s (paused while the tab is hidden, at once when it comes back),
+  so a remote expert notices a new question, also a blocking one, without reloading. The tab title shows the number of open questions across
+  all runs, `(2) Pytania do eksperta`, and `(2!) …` when one of them is blocking. A started answer or comment (text in a field, a ticked option, the focus
+  in a field) is never redrawn: the list updates, and when that question changed on the server (someone answered or commented) the page says so once
+  instead of overwriting the form.
+- `GET /_api/v1/questions` and `GET /_api/v1/prototypes/<slug>/questions`: `runs[]` has `blocking` (open blocking questions visible to the viewer).
+
+### Breaking
+
 None.
 
 ## [1.2.2] - 2026-11-12

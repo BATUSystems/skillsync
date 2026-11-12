@@ -88,6 +88,22 @@ class PerRunApiTests(RunsCase):
         self.assertIn('etap-3', [run['slug'] for run in self.listing(self.who(Q.DE))['runs']])
         self.check(self.who(Q.EX).get('/_api/v1/questions?slug=etap-3'), 200)   # istnienie prototypu nie jest tajemnicą
 
+    def test_runs_count_the_open_blocking_questions_the_viewer_sees(self):
+        make_run(self.root, 'etap-3')
+        self.app.questions_store('etap-3').append([
+            Q.ask('qn-0000000000d1', blocking=True, assumed=None),
+            Q.ask('qn-0000000000d2', to=[Q.EX2], blocking=True, assumed=None),
+            Q.ask('qn-0000000000d3'),
+            Q.ask('qn-0000000000d4', blocking=True, assumed=None),
+            {'type': 'withdraw', 'questionId': 'qn-0000000000d4', 'by': 'agent', 'cid': 'wd-d4'}])
+        def blocking(login):
+            return {run['slug']: run['blocking'] for run in self.listing(self.who(login))['runs']}['etap-3']
+        self.assertEqual(blocking(Q.EX), 1, 'ekspert: tylko widoczne, otwarte, blokujące')
+        self.assertEqual(blocking(Q.EX2), 2)
+        self.assertEqual(blocking(Q.DE), 2, 'administrator: bez wycofanych')
+        runs = {run['slug']: run for run in self.listing(self.who(Q.EX))['runs']}
+        self.assertEqual(runs['etap-3']['open'], 2)
+
     def test_a_commenter_gets_403_on_the_run_routes(self):
         commenter = [login for login, role in S.ROLES.items() if role == 'commenter'][0]
         client = self.client(commenter)

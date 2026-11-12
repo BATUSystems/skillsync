@@ -6156,7 +6156,7 @@ class PrototypeApp(object):
 
     def collect_questions(self, viewer, slug=None):
         """`{questions, runs, legacy}` for `viewer`: `questions` of the run `slug` (all runs and the legacy file without
-        it), `runs` = `[{slug, open, answered, total}]` over every run with a visible question, `legacy` = `{count}` or None."""
+        it), `runs` = `[{slug, open, blocking, answered, total}]` over every run with a visible question, `legacy` = `{count}` or None."""
         views, runs, damaged, seen = [], [], [], set()
         for name in self.question_slugs():
             try:
@@ -6171,6 +6171,7 @@ class PrototypeApp(object):
             if not found:
                 continue
             runs.append({'slug': name, 'open': sum(1 for item in found if item['state'] == 'open'),
+                         'blocking': sum(1 for item in found if item['state'] == 'open' and item.get('blocking')),
                          'answered': sum(1 for item in found if item['state'] == 'answered'), 'total': len(found)})
             if slug is None or slug == name:
                 views.extend(found)
@@ -7418,6 +7419,9 @@ EXPERTS_SCRIPT = r"""
     return !!question && typeof question === 'object' && typeof question.id === 'string' && typeof question.text === 'string';
   }
   var OFFLINE = 'Brak połączenia z serwerem (offline), spróbuj ponownie.';
+  var POLL_MS = 15000;
+  var BASE_TITLE = 'Pytania do eksperta';
+  var pollBusy = false;
 
   function badges(question) {
     var items = [];
@@ -7525,6 +7529,7 @@ EXPERTS_SCRIPT = r"""
   }
 
   function renderDetail(question, keepFocus) {
+    state.shownSig = signature(question);
     clear(detail);
     var heading = el('h2', { id: 'detail-title', tabindex: '-1', text: label(question) });
     detail.appendChild(heading);
@@ -7620,6 +7625,7 @@ EXPERTS_SCRIPT = r"""
     detail.setAttribute('aria-busy', on ? 'true' : 'false');
   }
   function lock(id, on) {
+    state.writes = (state.writes || 0) + 1;
     if (on) state.busy[id] = true; else delete state.busy[id];
     syncBusy();
   }
@@ -7715,6 +7721,8 @@ EXPERTS_SCRIPT = r"""
     var changed = id !== state.current;
     if (changed) { fail(''); say(''); }
     state.current = id;
+    state.shownSig = null;
+    state.notedSig = null;
     renderList();
     clear(detail);
     if (!id) {
@@ -7739,12 +7747,105 @@ EXPERTS_SCRIPT = r"""
     });
   }
 
+  function listPath() {
+    return SLUG ? '/prototypes/' + encodeURIComponent(SLUG) + '/questions' : '/questions';
+  }
+
+  function titleFor(runs) {
+    var open = 0;
+    var blocking = 0;
+    (runs || []).forEach(function (run) { open += run.open || 0; blocking += run.blocking || 0; });
+    return open ? '(' + open + (blocking ? '!' : '') + ') ' + BASE_TITLE : BASE_TITLE;
+  }
+
+  function updateTitle() {
+    document.title = titleFor(state.runs);
+  }
+
+  // What the open detail shows of a question: a change of it is what the expert must hear about.
+  function signature(question) {
+    return JSON.stringify([question.state, question.answer ? question.answer.at : null, (question.comments || []).length,
+                           !!question.recorded]);
+  }
+
+  function findQuestion(id) {
+    var found = null;
+    state.questions.forEach(function (item) { if (item.id === id) found = item; });
+    return found;
+  }
+
+  // A started answer or comment (text, a ticked option, the focus inside the detail) is never redrawn.
+  function formDirty() {
+    var dirty = false;
+    Array.prototype.forEach.call(detail.querySelectorAll('textarea'), function (field) {
+      if (field.value && field.value.trim()) dirty = true;
+    });
+    Array.prototype.forEach.call(detail.querySelectorAll('input'), function (field) { if (field.checked) dirty = true; });
+    var active = document.activeElement;
+    // the focus anywhere in the detail (a field, a button, a link) except the heading that a selection focuses
+    if (active && detail.contains(active) && active.id !== 'detail-title') dirty = true;
+    return dirty;
+  }
+
+  function applyPolled(data) {
+    state.questions = data.questions;
+    state.runs = Array.isArray(data.runs) ? data.runs : [];
+    state.legacy = data.legacy || null;
+    updateTitle();
+    var listSig = JSON.stringify([state.questions, state.runs, state.legacy]);
+    if (listSig !== state.listSig) {   // an unchanged list is not rebuilt: that would drop the focus of a keyboard user
+      state.listSig = listSig;
+      renderList();
+    }
+    if (!state.current || !state.shownSig) return;
+    var now = findQuestion(state.current);
+    if (!now) {
+      var gone = 'gone:' + state.current;
+      if (state.notedSig !== gone) {
+        say('To pytanie zniknęło z listy (wycofane albo nie jest już do Ciebie).' + (formDirty() ? ' Rozpoczęta odpowiedź zostaje na ekranie.' : ''));
+      }
+      state.notedSig = gone;
+      return;
+    }
+    var sig = signature(now);
+    if (sig === state.shownSig) return;
+    var noted = now.id + ':' + sig;
+    if (formDirty() || state.busy[now.id]) {
+      if (state.notedSig !== noted) say('To pytanie zmieniło się na serwerze (np. ktoś odpowiedział lub dodał komentarz). Twoja rozpoczęta odpowiedź została nietknięta.');
+      state.notedSig = noted;
+      return;
+    }
+    renderDetail(now, true);
+    say('Pytanie zostało zaktualizowane.');
+  }
+
+  function pollOnce() {
+    if (document.hidden || pollBusy) return Promise.resolve(false);
+    pollBusy = true;
+    var epoch = state.writes || 0;   // a save that finishes while this request is in flight makes its answer stale
+    return api('GET', listPath()).then(function (result) {
+      pollBusy = false;
+      if (result.status === 401) { describe(result); return false; }
+      if ((state.writes || 0) !== epoch) return false;
+      if (result.status !== 200 || !result.data || !Array.isArray(result.data.questions)) return false;
+      applyPolled(result.data);
+      return true;
+    }).catch(function () { pollBusy = false; return false; });
+  }
+
+  function startPolling() {
+    setInterval(pollOnce, POLL_MS);
+    document.addEventListener('visibilitychange', function () { if (!document.hidden) pollOnce(); });
+  }
+
   function loadList() {
-    return api('GET', SLUG ? '/prototypes/' + encodeURIComponent(SLUG) + '/questions' : '/questions').then(function (result) {
+    return api('GET', listPath()).then(function (result) {
       if (result.status === 200 && Array.isArray(result.data.questions)) {
         state.questions = result.data.questions;
         state.runs = Array.isArray(result.data.runs) ? result.data.runs : [];
         state.legacy = result.data.legacy || null;
+        state.listSig = JSON.stringify([state.questions, state.runs, state.legacy]);
+        updateTitle();
         return true;
       }
       fail(result.status === 200 ? UNEXPECTED : (result.status === 404 && SLUG ? 'Nie ma przebiegu „' + SLUG + '”.' : describe(result)));
@@ -7783,6 +7884,7 @@ EXPERTS_SCRIPT = r"""
       return loadList().then(function (ok) {
         if (!ok) return;
         window.addEventListener('hashchange', showCurrent);
+        startPolling();
         return showCurrent();
       });
     }).catch(function () { fail(OFFLINE); });
