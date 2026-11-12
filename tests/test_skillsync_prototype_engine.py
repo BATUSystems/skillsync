@@ -49,7 +49,7 @@ def find_node():
 # Kopia: tests/fixtures/prototype/engine-v2/ (SOURCE.md). Strona Pythona: skillsync_workflow/prototype_server.py.
 
 ENGINE_V2_DIR = Path(__file__).resolve().parent / 'fixtures' / 'prototype' / 'engine-v2'
-ENGINE_V2_SHA256 = '8f0b9e4bc53f62bc62943a4829a64fa4aa822741b10ad1413d517ea40d09330e'
+ENGINE_V2_SHA256 = '5ac18195b89ba518efc3b79ca42661144ec2415dda0bc643ef19000cede233fd'
 REFRESH_V2 = 'Odśwież kopię wg tests/fixtures/prototype/engine-v2/SOURCE.md i zaktualizuj ENGINE_V2_SHA256.'
 ENGINE_V2_PATH_ENV = 'SKILLSYNC_PROTOTYPE_ENGINE_V2_PATH'
 DIFF_SEEDS = (20261104, 7, 1234567, 99, 424242, 31337)
@@ -1248,6 +1248,14 @@ class EngineV2ScreenSwitcherTests(unittest.TestCase):
         entries = self.plan_entries()
         self.assertEqual(len(entries), 28)
         self.assertEqual(entries[2], {'id': 's3', 'number': 3, 'name': 'Tydzień sali', 'label': '3 Tydzień sali'})
+
+    def test_nav_mode_strip_only_for_a_few_screens(self):
+        """PROTO-NAV: `data-proto-nav="strip"` zostawia pasek linków tylko do 5 ekranów; przy większej liczbie (i bez atrybutu) jest przełącznik z listą."""
+        calls = [{'fn': 'screenNavMode', 'args': list(args)} for args in (
+            ('strip', 1), ('strip', 5), ('strip', 6), ('strip', 13), (None, 3), ('', 3), ('switcher', 2), ('STRIP', 2), ('strip', 'x'), ('strip', -1), ('strip', 0), ('strip', 5.5), ('strip', None))]
+        modes = self.call(calls)
+        self.assertEqual(modes, ['strip', 'strip', 'switcher', 'switcher', 'switcher', 'switcher', 'switcher', 'switcher', 'switcher', 'switcher',
+                                'strip', 'switcher', 'switcher'])
 
     def test_filter_ignores_case_and_polish_diacritics(self):
         entries = self.plan_entries()
@@ -2491,7 +2499,7 @@ EXPECTED_EXPORTS = (
    'filterThreads', 'filterCounts', 'classifyWriteResult', 'mergeQueueItems', 'pollDelay', 'newClientId',
    'canonicalOperation', 'serializeCommentsDocument', 'normalizeCommentsDocument', 'convertV1Operations',
    'v1ImportId', 'THEME_LOCK_METAS', 'ensureThemeLockMetas', 'isDarkReaderLeftover', 'hasDarkReaderLock',
-   'removeDarkReaderLeftovers', 'screenEntriesFromLinks', 'normalizeSearch', 'filterScreens', 'adjacentScreen',
+   'removeDarkReaderLeftovers', 'screenEntriesFromLinks', 'screenNavMode', 'normalizeSearch', 'filterScreens', 'adjacentScreen',
    'visibleScreenId', 'screenListMove', 'screenShortcut', 'screenSearchKeyAction', 'focusableAfter',
    'screenSearchTabTarget', 'shouldProbeIteration', 'screenEntriesWithCounts', 'toolbarFitsOneRow', 'RESTORE_ROLES',
    'MAX_RESTORE_REASON', 'iterationPath', 'iterationList', 'iterationForThread', 'embedModeFrom', 'threadIdFromHash',
@@ -2506,7 +2514,7 @@ EXPECTED_EXPORTS = (
 
 
 class EngineV2ExportContractTests(unittest.TestCase):
-    """Zbiór nazw eksportów (dokładnie 106) oraz stałe i czyste funkcje, które nie mają testu w innych klasach."""
+    """Zbiór nazw eksportów (dokładnie 107) oraz stałe i czyste funkcje, które nie mają testu w innych klasach."""
 
     @classmethod
     def setUpClass(cls):
@@ -2547,8 +2555,8 @@ class EngineV2ExportContractTests(unittest.TestCase):
     # --- zbiór nazw ---
 
     def test_export_names_are_exactly_the_contract_set(self):
-        self.assertEqual(len(EXPECTED_EXPORTS), 106)
-        self.assertEqual(len(set(EXPECTED_EXPORTS)), 106)
+        self.assertEqual(len(EXPECTED_EXPORTS), 107)
+        self.assertEqual(len(set(EXPECTED_EXPORTS)), 107)
         names = self.js('Object.keys(api)')
         self.assertEqual(sorted(names), sorted(EXPECTED_EXPORTS), 'różnica: %s' % sorted(set(names) ^ set(EXPECTED_EXPORTS)))
         kinds = self.js('Object.fromEntries(Object.keys(api).map((k) => [k, typeof api[k] === "function" ? "function" : typeof api[k]]))')

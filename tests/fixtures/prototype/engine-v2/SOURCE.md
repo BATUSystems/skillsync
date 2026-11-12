@@ -1,7 +1,7 @@
 # Kopia silnika prototypów w testach
 
 `prototype.js` w tym katalogu to kopia silnika z biblioteki skilli: `skills/prototype/assets/repo/prototype.js`
-(rdzeń, commit `035588e` na gałęzi `feat/prototype-wait-reply`: plakietka „AI” przy wpisach agenta, autor decyzji w UI, sha256 `8f0b9e4bc53f62bc62943a4829a64fa4aa822741b10ad1413d517ea40d09330e`). Testy silnika ładują ją domyślnie; inną ścieżkę wskazuje
+(rdzeń, commit `035588e` na gałęzi `feat/prototype-wait-reply`: plakietka „AI” przy wpisach agenta, autor decyzji w UI; PROTO-NAV: domek w pasku strip i `screenNavMode`, sha256 `5ac18195b89ba518efc3b79ca42661144ec2415dda0bc643ef19000cede233fd`). Testy silnika ładują ją domyślnie; inną ścieżkę wskazuje
 `SKILLSYNC_PROTOTYPE_ENGINE_V2_PATH`.
 
 Świeżość kopii: test `test_v2_copy_matches_library_source` porównuje ją z plikiem wskazanym przez

@@ -174,12 +174,20 @@ suite.add('D23-prezentacja', 'Tryb Prezentacja', async () => {
   return { ok: /^2 \/ 28/.test(s.num) && s.current === 's2', num: s.num, current: s.current };
 });
 
-suite.add('D23-strip', 'Wyłącznik paska ekranów', async () => {
-  const html = ws.read('plan'); ws.write('plan', 'index.html', html.replace('<nav class="screen-nav"', '<nav class="screen-nav" data-proto-nav="strip"'));
+suite.add('D23-strip', 'Pasek linków (strip) tylko do 5 ekranów, domek zawsze', async () => {
+  const html = ws.read('plan');
+  // plan ma 28 ekranów: strip powyżej progu jest ignorowany i silnik buduje przełącznik z domkiem
+  ws.write('plan', 'index.html', html.replace('<nav class="screen-nav"', '<nav class="screen-nav" data-proto-nav="strip"'));
   const q2 = await c.page('strip'); await q2.go(url());
-  const r = await q2.evaluate(`(() => { const n = document.querySelector('nav.screen-nav'); return { enhanced: n.classList.contains('proto-screens'), bar: !!document.querySelector('.proto-screens-bar'), links: [...n.querySelectorAll(':scope > a')].filter((a) => getComputedStyle(a).display !== 'none').length }; })()`);
+  const many = await q2.evaluate(`(() => { const n = document.querySelector('nav.screen-nav'); return { enhanced: n.classList.contains('proto-screens'), home: !!n.querySelector('.proto-screens-home'), main: !!n.querySelector('.proto-screens-main') }; })()`);
   await q2.dispose(); ws.write('plan', 'index.html', html);
-  return { ok: !r.enhanced && !r.bar && r.links === 28, ...r };
+  // strip z 3 ekranami zostaje paskiem linków z domkiem jako pierwszym linkiem
+  const few = html.replace(/<nav class="screen-nav"[^>]*>[\s\S]*?<\/nav>/, '<nav class="screen-nav" data-proto-nav="strip"><a href="#s1">1 Jeden</a><a href="#s2">2 Dwa</a><a href="#s3">3 Trzy</a></nav>');
+  ws.write('plan', 'index.html', few);
+  const q3 = await c.page('strip3'); await q3.go(url());
+  const r = await q3.evaluate(`(() => { const n = document.querySelector('nav.screen-nav'); const first = n.querySelector(':scope > a'); return { enhanced: n.classList.contains('proto-screens'), bar: !!document.querySelector('.proto-screens-bar'), firstIsHome: !!first && first.classList.contains('proto-screens-home'), links: [...n.querySelectorAll(':scope > a')].filter((a) => getComputedStyle(a).display !== 'none').length }; })()`);
+  await q3.dispose(); ws.write('plan', 'index.html', html);
+  return { ok: many.enhanced && many.home && many.main && !r.enhanced && !r.bar && r.firstIsHome && r.links === 4, many, ...r };
 });
 
 
