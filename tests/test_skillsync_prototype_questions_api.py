@@ -85,10 +85,10 @@ class QCase(S.ServerCase):
         ps.add_user(users, MX, roles=['expert'], default_password=S.DEFAULT_PW)
         self.start_server()   # serwer startuje po dodaniu kont (ostrzeżenia startowe)
         self.seed_questions(seed_operations())
-        self.qpath = os.path.join(self.root, 'questions.json')
+        self.qpath = os.path.join(self.demo, 'questions.json')
 
     def seed_questions(self, partials):
-        self.server.app.questions_store().append(partials)
+        self.server.app.questions_store('demo').append(partials)
 
     def who(self, login):
         client = S.Client(self.server)
@@ -881,7 +881,7 @@ class FloodProtectionTests(QCase):
 
     def fill_file(self, target_bytes):
         """Dopisuje wprost (omijając progi) poprawne pytania, aż plik ma co najmniej `target_bytes`."""
-        store = self.server.app.questions_store()
+        store = self.server.app.questions_store('demo')
         operations = list(store.snapshot().operations)
         index = 0
         while len(ps.serialize_questions(operations).encode('utf-8')) < target_bytes:
@@ -893,7 +893,7 @@ class FloodProtectionTests(QCase):
 
     def set_file_size(self, target):
         """Ustawia plik na dokładnie `target` bajtów (poprawne pytania; ostatnie dopełnia długość jednego excerpt)."""
-        store = self.server.app.questions_store()
+        store = self.server.app.questions_store('demo')
         operations = [op for op in store.snapshot().operations if not op['id'].startswith('op-pad')]   # poprzednie dopełnienie
         index = 0
 
@@ -982,12 +982,12 @@ class FloodProtectionTests(QCase):
         partials += [{'type': 'comment', 'questionId': Q1, 'by': 'agent', 'cid': 'agc-%d' % n, 'text': 'x'} for n in range(24)]
         self.seed_questions(partials)
         # późne odpowiedzi (np. po scaleniu) magazyn przez API odrzuca, więc dopisujemy je wprost do pliku
-        operations = list(self.server.app.questions_store().snapshot().operations)
+        operations = list(self.server.app.questions_store('demo').snapshot().operations)
         for n in range(25):
             operations.append({'id': 'op-late%03d' % n, 'type': 'answer', 'questionId': Q1, 'at': '2026-12-01T00:00:00.%03dZ' % (n + 1),
                                'by': EX2, 'cid': 'late-%d' % n, 'text': 'x'})
         ps.atomic_write_bytes(self.qpath, ps.serialize_questions(operations).encode('utf-8'))
-        self.assertEqual(len(self.server.app.questions_store().snapshot().fold['byId'][Q1]['comments']), 49)
+        self.assertEqual(len(self.server.app.questions_store('demo').snapshot().fold['byId'][Q1]['comments']), 49)
         expert = self.who(EX)
         self.check(self.comment(expert, Q1, {'cid': 'c-50', 'text': 'x'}), 201)
         self.check(self.comment(expert, Q1, {'cid': 'c-51', 'text': 'x'}), 409, 'comment_limit')
@@ -1042,7 +1042,7 @@ class FloodProtectionTests(QCase):
                 self.assertEqual(response.json['error'], 'comment_limit')
         operations = self.operations_on_disk()   # plik poprawny (parsuje się) i dokładnie 50 komentarzy
         self.assertEqual(len([op for op in operations if op['questionId'] == Q1 and op['type'] == 'comment']), 50)
-        self.assertEqual(len(self.server.app.questions_store().snapshot().fold['byId'][Q1]['comments']), 50)
+        self.assertEqual(len(self.server.app.questions_store('demo').snapshot().fold['byId'][Q1]['comments']), 50)
 
     def test_replay_of_a_stored_comment_is_200_even_when_the_file_is_over_the_threshold(self):
         expert = self.who(EX)
@@ -1075,7 +1075,7 @@ class FloodProtectionTests(QCase):
         self.fill_file(769 * 1024)
         partial = ask('qn-0000000000aa', cid='ask-aa')
         with self.assertRaises(ps.PrototypeServerError) as caught:
-            self.server.app.questions_store().append([partial])
+            self.server.app.questions_store('demo').append([partial])
         self.assertEqual((caught.exception.status, caught.exception.code), (507, 'file_too_large'))
         self.check(self.answer(self.who(EX), Q1, {'cid': 'f-1', 'text': 'x'}), 201)
 

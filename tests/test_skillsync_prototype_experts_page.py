@@ -369,7 +369,7 @@ class PathVariantTests(ExpertsPageBase):
 
     def test_variants_are_not_the_page(self):
         client = self.who(Q.EX)
-        for path in ('/_experts/', '/_Experts', '/_EXPERTS', '/_experts/x', '/_experts.html', '/_experts%2F'):
+        for path in ('/_experts/', '/_Experts', '/_EXPERTS', '/_experts/X', '/_experts/a/b', '/_experts/a_b', '/_experts.html', '/_experts%2F'):
             with self.subTest(path=path):
                 response = client.get(path)
                 self.assertEqual(response.status, 404)
@@ -408,6 +408,18 @@ class ScriptStaticTests(ExpertsPageBase):
             self.assertFalse(re.search(FIELD_SINKS[field], bad), field)
             self.assertTrue(unsafe_use(bad, field), field)
 
+    def test_run_page_for_a_valid_slug_is_the_page(self):
+        client = self.who(Q.EX)
+        for path in ('/_experts/demo', '/_experts/etap-1', '/_experts/brak-takiego'):
+            with self.subTest(path=path):
+                response = client.get(path)
+                self.assertEqual(response.status, 200)
+                self.assertIn('Pytania do eksperta', response.text)
+                self.assertEqual(response.header('Referrer-Policy'), 'no-referrer')
+        anonymous = S.Client(self.server).get('/_experts/demo')
+        self.assertEqual(anonymous.status, 302)
+        self.assertEqual(anonymous.header('Location'), '/_login?next=/_experts/demo')
+
     def test_helper_sets_text_only_via_textcontent(self):
         self.assertIn("node.textContent = props[key]", self.script)
         self.assertIn("document.createTextNode(' ')", self.script)
@@ -417,7 +429,8 @@ class ScriptStaticTests(ExpertsPageBase):
     def test_record_fields_never_become_attributes_except_checked_href(self):
         # w `el(...)` pola rekordów nie trafiają do atrybutów; jedyny href z rekordu to `url.href` po sprawdzeniu https
         for match in re.finditer(r"href:\s*([^,}]+)", self.script):
-            self.assertIn(match.group(1).strip(), ("url.href", "LOGIN", "'#' + encodeURIComponent(question.id)"))
+            self.assertIn(match.group(1).strip(), ("url.href", "LOGIN", "'#' + encodeURIComponent(question.id)", "BASE",
+                                                   "BASE + '/' + encodeURIComponent(run.slug)"))
         self.assertNotRegex(self.script, r"setAttribute\(\s*['\"](?:href|src|on\w+|style)['\"]")
         self.assertNotRegex(self.script, r"\.(?:href|src)\s*=(?!=)")
 
@@ -513,7 +526,7 @@ class ScriptBehaviorTests(ExpertsPageBase):
         self.script = split_page(self.page().text)[0][0][1]
 
     def test_race_guard_and_per_question_busy_are_present(self):
-        self.assertIn('var state = { csrf: null, questions: [], current: null, pending: {}, busy: {} };', self.script)
+        self.assertIn('var state = { csrf: null, questions: [], runs: [], legacy: null, current: null, pending: {}, busy: {} };', self.script)
         self.assertIn('if (state.busy[id]) { say(\'Trwa zapis poprzedniej odpowiedzi.\'); return; }', self.script)
         self.assertIn('var viewing = state.current === id;', self.script)
         self.assertRegex(self.script, r"if \(viewing\) \{ renderDetail\(updated, false\); say\(done\); \}")

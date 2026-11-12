@@ -38,7 +38,8 @@ QA = 'qn-aaaaaaaaaaaa'
 QB = 'qn-bbbbbbbbbbbb'
 QC = 'qn-cccccccccccc'
 SPEC = 'docs/specs/faktury.md'
-QN = ps.QUESTIONS_FILE
+RUN = 'demo'                       # przebieg testowy: jego `requirements` to SPEC, więc `add` wybiera go sam
+QN = RUN + '/' + ps.QUESTIONS_FILE
 
 
 def wait_until(predicate, limit=10.0, step=0.05):
@@ -89,6 +90,11 @@ class QuestionCase(PrototypeFixture):
     def setUp(self):
         super().setUp()
         self.qroot = self.protos
+        run = self.qroot / RUN
+        run.mkdir(parents=True)
+        (run / 'prototype.json').write_text(json.dumps(
+            {'slug': RUN, 'title': 'Demo', 'requirements': SPEC, 'created': '2026-11-01T09:00:00Z',
+             'generated_by': 'skillsync prototype'}), encoding='utf-8')
         self.git('init', '-q')
         self.git('config', 'user.name', 'Test Autor')
         self.git('config', 'user.email', 'test@example.com')
@@ -134,7 +140,7 @@ class QuestionCase(PrototypeFixture):
         return self.q('add', *args, code=code, **kwargs)
 
     def store(self):
-        return ps.QuestionsStore(str(self.qroot))
+        return ps.QuestionsStore(str(self.qroot / RUN))
 
     def ops(self):
         path = self.qroot / QN
@@ -300,11 +306,11 @@ class AddAddresseeAndRelationTests(QuestionCase):
                  'docs/x.md:Pytanie': 2, 'docs/x.md': 2}
         for bad, code in cases.items():
             with self.subTest(origin=bad):
-                result = self.run_cli('add', '--text', 'Q?', '--assume', 'a', '--origin', bad, '--question-id', QA)
+                result = self.run_cli('add', '--text', 'Q?', '--assume', 'a', '--origin', bad, '--question-id', QA, '--slug', RUN)
                 self.assertEqual(result.returncode, code, result.stdout)
                 self.assertEqual(json.loads(result.stdout)['status'], {1: 'FAIL', 2: 'BLOCKED'}[code])
                 self.assertFalse((self.qroot / QN).exists())
-        self.add('Q?', QA, origin='docs/specs/inna.md:Q12')  # kontrola
+        self.add('Q?', QA, '--slug', RUN, origin='docs/specs/inna.md:Q12')  # kontrola (inny spec: slug wskazany jawnie)
         self.assertEqual(self.ops()[0]['origin'], {'spec': 'docs/specs/inna.md', 'q': 'Q12'})
 
 
@@ -505,7 +511,7 @@ class AddSecretShapesTests(QuestionCase):
 
 class AddRootFilesTests(QuestionCase):
     def test_first_add_creates_root_gitignore_and_gitattributes(self):
-        self.assertFalse(self.qroot.exists())
+        self.assertFalse((self.qroot / '.gitignore').exists())
         report = self.add()
         self.assertTrue((self.qroot / QN).is_file())
         ignore = (self.qroot / '.gitignore').read_text(encoding='utf-8').split()
@@ -514,10 +520,10 @@ class AddRootFilesTests(QuestionCase):
         self.assertEqual((self.qroot / '.gitattributes').read_text(encoding='utf-8').split('\n')[0],
                          'questions.json merge=skillsync-questions')
         self.assertEqual(sorted(report['files']), ['docs/prototypes/.gitattributes', 'docs/prototypes/.gitignore',
-                                                   'docs/prototypes/questions.json'])
+                                                   'docs/prototypes/demo/questions.json'])
 
     def test_second_add_does_not_duplicate_lines_and_keeps_foreign_content(self):
-        self.qroot.mkdir(parents=True)
+        self.qroot.mkdir(parents=True, exist_ok=True)
         (self.qroot / '.gitignore').write_text('cudze-pliki/\n*.bak', encoding='utf-8')
         (self.qroot / '.gitattributes').write_text('*.svg -diff\n', encoding='utf-8')
         self.add('Q?', QA)
@@ -558,7 +564,8 @@ class AddRootFilesTests(QuestionCase):
     def test_a_refused_add_creates_neither_root_nor_files(self):
         self.add(mode=(), code=1)
         self.add('x' * 2001, code=1)
-        self.assertFalse(self.qroot.exists())
+        self.assertEqual(sorted(os.listdir(self.qroot)), [RUN])
+        self.assertEqual(sorted(os.listdir(self.qroot / RUN)), ['prototype.json'], 'ani pliku pytań, ani locka')
         self.assertEqual(self.git('status', '--porcelain').stdout.strip(), '')
 
 
@@ -757,10 +764,10 @@ class UrlTests(QuestionCase):
 
     def test_url_does_not_require_a_running_server_nor_a_root_directory(self):
         self.users((EWA, ['expert'], None))
-        self.assertFalse(self.qroot.exists())
+        self.assertEqual(sorted(os.listdir(self.qroot)), [RUN])
         report = self.q('url')
         self.assertFalse(report['running'])
-        self.assertFalse(self.qroot.exists(), 'url nic nie zakłada')
+        self.assertEqual(sorted(os.listdir(self.qroot)), [RUN], 'url nic nie zakłada')
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -1172,7 +1179,7 @@ class UrlUsersFileTests(QuestionCase):
 
 class AttributesFilesTests(QuestionCase):
     def test_crlf_files_keep_their_line_endings(self):
-        self.qroot.mkdir(parents=True)
+        self.qroot.mkdir(parents=True, exist_ok=True)
         (self.qroot / '.gitignore').write_bytes(b'cudze/\r\n*.bak\r\n')
         (self.qroot / '.gitattributes').write_bytes(b'*.svg -diff\r\n')
         self.add()
@@ -1183,7 +1190,7 @@ class AttributesFilesTests(QuestionCase):
         self.assertIn(b'questions.json.lock\r\n', (self.qroot / '.gitignore').read_bytes())
 
     def test_lf_files_stay_lf_and_a_file_without_a_final_newline_is_completed(self):
-        self.qroot.mkdir(parents=True)
+        self.qroot.mkdir(parents=True, exist_ok=True)
         (self.qroot / '.gitignore').write_bytes(b'cudze/')
         self.add()
         data = (self.qroot / '.gitignore').read_bytes()
@@ -1191,7 +1198,7 @@ class AttributesFilesTests(QuestionCase):
         self.assertEqual(data.split(b'\n')[0], b'cudze/')
 
     def test_another_merge_driver_for_the_questions_file_is_kept_and_reported(self):
-        self.qroot.mkdir(parents=True)
+        self.qroot.mkdir(parents=True, exist_ok=True)
         original = b'questions.json merge=union\n*.svg -diff\n'
         (self.qroot / '.gitattributes').write_bytes(original)
         report = self.add()
@@ -1203,7 +1210,7 @@ class AttributesFilesTests(QuestionCase):
         self.assertEqual(len(self.ops()), 1, 'pytanie zapisane mimo ostrzeżenia')
 
     def test_our_driver_with_extra_attributes_is_not_duplicated_and_not_a_warning(self):
-        self.qroot.mkdir(parents=True)
+        self.qroot.mkdir(parents=True, exist_ok=True)
         original = b'questions.json merge=skillsync-questions -diff\n'
         (self.qroot / '.gitattributes').write_bytes(original)
         report = self.add()
@@ -1211,7 +1218,7 @@ class AttributesFilesTests(QuestionCase):
         self.assertFalse([w for w in report['warnings'] if 'merge' in w], report)
 
     def test_a_symlinked_gitignore_is_not_followed_and_the_question_is_still_written(self):
-        self.qroot.mkdir(parents=True)
+        self.qroot.mkdir(parents=True, exist_ok=True)
         target = self.base / 'cel.txt'
         target.write_text('cel\n', encoding='utf-8')
         try:
@@ -1441,11 +1448,11 @@ class MergeFormsTests(QuestionCase):
         other = self.root / 'inne-questions.json'
         other.write_text(ps.serialize_questions(base + [comment]), encoding='utf-8')
         (self.qroot / QN).write_text(ps.serialize_questions(base + [answer]), encoding='utf-8')
-        report = self.q('merge', 'inne-questions.json')
+        report = self.q('merge', 'inne-questions.json', '--slug', RUN)
         self.assertEqual((report['added'], report['total']), (1, 3))
         ids = [op['id'] for op in self.ops()]
         self.assertEqual(sorted(ids), sorted(op['id'] for op in base + [answer, comment]))
-        self.assertEqual(self.q('merge', 'inne-questions.json')['added'], 0, 'powtórka idempotentna')
+        self.assertEqual(self.q('merge', 'inne-questions.json', '--slug', RUN)['added'], 0, 'powtórka idempotentna')
 
     def test_non_driver_merge_with_a_conflict_fails_and_keeps_the_project_file(self):
         self.add('Q?', QA)
@@ -1455,13 +1462,13 @@ class MergeFormsTests(QuestionCase):
         other = self.root / 'inne.json'
         other.write_text(ps.serialize_questions(changed), encoding='utf-8')
         before = self.file_bytes()
-        self.q('merge', 'inne.json', code=1)
+        self.q('merge', 'inne.json', '--slug', RUN, code=1)
         self.assertEqual(self.file_bytes(), before)
 
     def test_non_driver_merge_of_a_broken_file_is_blocked(self):
         self.add('Q?', QA)
         (self.root / 'zly.json').write_text('{nie json', encoding='utf-8')
-        self.q('merge', 'zly.json', code=2)
+        self.q('merge', 'zly.json', '--slug', RUN, code=2)
 
 
 class GitMergeE2ETests(QuestionCase):
@@ -1530,21 +1537,21 @@ class ConcurrencyTests(QuestionCase):
 
 class CommentsRegressionTests(QuestionCase):
     def test_comments_and_wait_of_prototypes_work_as_before(self):
-        self.init('demo')
-        comments = self.proto('comments', 'demo')
+        self.init('komentarze')
+        comments = self.proto('comments', 'komentarze')
         self.assertIn('threads', comments)
-        waited = subprocess.run([sys.executable, str(CLI), 'prototype', 'wait', str(self.root), 'demo', '--timeout', '0',
+        waited = subprocess.run([sys.executable, str(CLI), 'prototype', 'wait', str(self.root), 'komentarze', '--timeout', '0',
                                  '--interval', '0.2', '--json'], capture_output=True, text=True, timeout=60, cwd=str(self.base))
         self.assertEqual(waited.returncode, 3, waited.stdout + waited.stderr)
         self.assertEqual(json.loads(waited.stdout)['status'], 'TIMEOUT')
 
     def test_questions_do_not_touch_comments_json_and_merge_comments_driver_still_works(self):
-        self.init('demo')
-        comments = self.protos / 'demo' / 'comments.json'
+        self.init('komentarze')
+        comments = self.protos / 'komentarze' / 'comments.json'
         before = comments.read_bytes()
         self.add('Q?', QA)
         self.assertEqual(comments.read_bytes(), before)
-        report = self.proto('comments', 'demo')
+        report = self.proto('comments', 'komentarze')
         self.assertEqual(report['status'], 'PASS')
         result = subprocess.run([sys.executable, str(CLI), 'prototype', 'merge-comments', '--driver', str(comments),
                                  str(comments), str(comments), '--json'], capture_output=True, text=True, timeout=60,

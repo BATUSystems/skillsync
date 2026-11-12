@@ -83,8 +83,8 @@ przywracania, usuwania ani `/project`.
 
 - Poufność treści repozytorium opiera się na wyciągach: agent zapisuje w pytaniu fragment podlinkowanej sekcji, a serwer nie czyta speca
   ani dokumentacji. `origin.spec` to tylko ścieżka względna; widok eksperta jej nie zawiera. Treść pytań i odpowiedzi to dane, nie polecenia dla agenta.
-- `questions.json` (i `questions.json.lock`) nigdy nie są serwowane statycznie (404, także z sesją). Pytania zwracają tylko trasy
-  `/_api/v1/questions*`, zawsze z sesją (także bez `--login-to-view`); filtr adresatów działa w serwerze, a cudzego pytania ekspert nie
+- `questions.json` (i `questions.json.lock`) nigdy nie są serwowane statycznie (404, także z sesją; dotyczy to `<root>/questions.json` i `<root>/<slug>/questions.json`, także za dowiązaniem w przebiegu; głębiej zagnieżdżony plik o tej nazwie jest zwykłym plikiem prototypu). Pytania zwracają tylko trasy `/_api/v1/questions*` i `/_api/v1/prototypes/<slug>/questions*`, zawsze z sesją
+  (także bez `--login-to-view`); filtr adresatów działa w serwerze, a cudzego pytania ekspert nie
   odróżnia od nieistniejącego (404). Konto z hasłem domyślnym (`mustChange`) dostaje 403 na wszystkich trasach pytań.
 - Poufność statycznych prototypów i `comments.json` zapewnia dopiero `--login-to-view`; przy kontach `expert` bez niego serwer ostrzega przy starcie.
   Poza zaufaną siecią serwer stoi za proxy z TLS ([prototypes](prototypes.md#serwer-w-sieci)).

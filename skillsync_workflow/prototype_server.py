@@ -123,6 +123,8 @@ DEFAULT_HOST = '127.0.0.1'
 DEFAULT_PORT = 4445
 CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
 PUBLIC_READ_WARNING = 'prototypy i komentarze są widoczne bez logowania dla każdego, kto zna adres'
+LEGACY_QUESTIONS_WARNING = ('pytania do eksperta są w starym pliku <root>/questions.json: serwer pokazuje je tylko do odczytu; '
+                            'uruchom skillsync prototype question migrate (pytania trafią do <root>/<slug>/questions.json)')
 EXPERT_PUBLIC_WARNING = ('istnieją konta z rolą expert, a serwer działa bez --login-to-view: pytania do eksperta wymagają '
                          'sesji, ale prototypy i komentarze są dla każdego; uruchom serwer z --login-to-view')
 
@@ -1712,8 +1714,8 @@ def resolve_v1_anchor(html, screen_id, path):
 # ── Screen hashes ────────────────────────────────────────────────────────────
 
 TEXT_EXTENSIONS = ('.html', '.css', '.js', '.svg', '.json', '.txt')
-_ASSET_EXCLUDED_TOP = frozenset(('comments.json', 'comments.js', 'comments.v1.js', 'README.md', 'prototype.json',
-                                 'prototype.js', 'index.html'))
+_ASSET_EXCLUDED_TOP = frozenset(('comments.json', 'comments.js', 'comments.v1.js', 'questions.json', 'README.md',
+                                 'prototype.json', 'prototype.js', 'index.html'))
 LEGACY_COMMENTS_KEPT = 'comments.v1.js'
 # Otoczka silnika (paski, panel komentarzy, dialogi): nie zmienia ekranów, więc nie wchodzi do hasha ekranu. Dawny wzór
 # ją liczył — akceptacje z tamtego hasha zostają ważne przez `aliases` (bieżący plik i historia z `prototype.json`).
@@ -2721,7 +2723,7 @@ def can_answer(question, viewer):
     return 'expert' in _viewer_roles(viewer) and _is_addressed(question, viewer)
 
 
-def question_view(question, viewer, by_id=None):
+def question_view(question, viewer, by_id=None, slug=None):
     """JSON model of `question` for `viewer` (`{login, roles}`), or None when the viewer must not see it.
 
     The admin view has `addressees`; the expert view has only `forAll` and no `refersTo` unless the
@@ -2730,7 +2732,7 @@ def question_view(question, viewer, by_id=None):
         return None
     admin = _is_admin_viewer(viewer)
     view = {
-        'id': question['id'], 'text': question['text'], 'state': question['state'], 'by': question['by'],
+        'id': question['id'], 'slug': slug, 'text': question['text'], 'state': question['state'], 'by': question['by'],
         'at': question['at'], 'blocking': question['blocking'], 'assumed': question['assumed'],
         'forAll': question['addressees'] == 'all', 'refs': _clone(question['refs']),
         'options': _clone(question['options']), 'origin': _clone(question['origin']),
@@ -2754,17 +2756,17 @@ def question_view(question, viewer, by_id=None):
     return view
 
 
-def get_question_view(snapshot, question_id, viewer):
+def get_question_view(snapshot, question_id, viewer, slug=None):
     """The view of one question, or None (unknown or invisible: the API answers 404 in both cases)."""
     by_id = snapshot.fold['byId']
     question = by_id.get(question_id)
-    return None if question is None else question_view(question, viewer, by_id)
+    return None if question is None else question_view(question, viewer, by_id, slug)
 
 
-def visible_questions(snapshot, viewer):
-    """Views of the questions `viewer` may see, in `(at, id)` order."""
+def visible_questions(snapshot, viewer, slug=None):
+    """Views of the questions `viewer` may see, in `(at, id)` order (`slug`: the run the file belongs to)."""
     fold = snapshot.fold
-    views = [question_view(question, viewer, fold['byId']) for question in fold['questions']]
+    views = [question_view(question, viewer, fold['byId'], slug) for question in fold['questions']]
     return [view for view in views if view is not None]
 
 
@@ -2816,7 +2818,7 @@ def merge_question_operations(target_ops, other_ops, max_bytes=QUESTIONS_MAX_FIL
     return merged, [op for op in merged if op['id'] not in present]
 
 
-def export_questions(snapshot, project, url=None, users=None):
+def export_questions(snapshot, project, url=None, users=None, slug=None):
     """`expert-questions/1` (read from the file, no server): every question with its answer, comments,
     `recorded` and addressees.  `users` (login to name, or login to record with `name`) gives `name`;
     without it `name` equals `by`."""
@@ -2831,7 +2833,7 @@ def export_questions(snapshot, project, url=None, users=None):
 
     questions = []
     for question in fold_questions(operations)['questions']:
-        item = {'id': question['id'], 'text': question['text'], 'state': question['state'],
+        item = {'id': question['id'], 'slug': slug, 'text': question['text'], 'state': question['state'],
                 'blocking': question['blocking'], 'assumed': question['assumed'],
                 'addressees': _clone(question['addressees']), 'refs': _clone(question['refs']),
                 'options': _clone(question['options'])}
@@ -2931,7 +2933,8 @@ def check_question_state(fold, operation):
 
 
 class QuestionsStore(object):
-    """`<root>/questions.json` of one project: cached reads and locked appends (pattern of `CommentsStore`).
+    """`questions.json` of one directory (`<root>/<slug>` of a run; `<root>` for the old project file): cached reads
+    and locked appends (pattern of `CommentsStore`).
 
     `clock` returns seconds since the epoch (default `time.time`).  `root` is created by the first write.
     The lock is `questions.json.lock` (plus a lock per path in the process); a timeout raises `LockTimeout` (503).
@@ -2976,6 +2979,21 @@ class QuestionsStore(object):
         """Current state (an empty snapshot with `exists=False` when the file is missing)."""
         return self._read()
 
+    def sweep_orphan_lock(self):
+        """Remove `questions.json.lock` that outlived its `questions.json` (the data file was deleted by hand);
+        True when removed.  Best effort: only without the data file, only when the lock is free right now
+        (a held lock or a platform that cannot unlink an open file leaves it)."""
+        if os.path.lexists(self.path) or not os.path.lexists(self.lock_path):
+            return False
+        try:
+            with FileLock(self.lock_path, 0.2):
+                if os.path.lexists(self.path):
+                    return False
+                os.unlink(self.lock_path)
+        except (LockTimeout, OSError):
+            return False
+        return True
+
     def lock(self):
         """The file lock; not reentrant.  Creates `root` when it is missing (use `transaction`, which
         creates it only when something is really written)."""
@@ -2994,9 +3012,10 @@ class QuestionsStore(object):
         `comment`: above `QUESTIONS_COMMENT_LIMIT_BYTES`), and
         writes the whole document atomically.
         """
-        if not os.path.isdir(self.directory):
+        if not os.path.lexists(self.path):
             # nothing to race on yet: plan without the lock, so a domain error leaves no `root` behind;
-            # `build` therefore runs twice when something is to be written (it must be repeatable)
+            # `build` therefore runs twice when something is to be written (it must be repeatable); a refused write
+            # leaves no lock file behind either
             planned = self.transaction_locked(build, dry=True)
             if not planned.operations:
                 return planned
@@ -3262,7 +3281,7 @@ def prepare_browser_operation(snapshot, login, role, body, current=None):
 ITERATIONS_DIR = 'iterations'
 _ITERATION_NAME = re.compile(r'[1-9][0-9]{0,8}')
 # Top-level entries a freeze never copies (dot files, `*.lock`, `*.tmp` and staging names are skipped everywhere).
-_FREEZE_EXCLUDED_TOP = frozenset((COMMENTS_FILE, LEGACY_COMMENTS_FILE, LEGACY_COMMENTS_KEPT, ITERATIONS_DIR))
+_FREEZE_EXCLUDED_TOP = frozenset((COMMENTS_FILE, LEGACY_COMMENTS_FILE, LEGACY_COMMENTS_KEPT, ITERATIONS_DIR, 'questions.json'))
 _FROZEN_ATTRS = re.compile(
     r'\s+data-prototype-(?:iteration|frozen)(?![\w-])(?:\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s"\'=<>`]+))?',
     re.IGNORECASE)
@@ -5652,6 +5671,8 @@ def startup_checks(config):
                         'poza LAN użyj proxy z TLS i --secure-cookies' % config.host)
     for slug in v1_prototypes(root_real) if os.path.isdir(root_real) else []:
         warnings.append('prototyp v1, uruchom migrate: %s' % slug)
+    if os.path.lexists(os.path.join(root_real, QUESTIONS_FILE)):
+        warnings.append(LEGACY_QUESTIONS_WARNING)
     return errors, warnings
 
 
@@ -5677,7 +5698,8 @@ class PrototypeApp(object):
         questions_real = os.path.join(self.root, QUESTIONS_FILE)
         self.denied_paths = frozenset(item.lower() for item in (
             users_real, users_real + '.bak', users_real + LOCK_SUFFIX, questions_real, questions_real + LOCK_SUFFIX))
-        self._questions = None
+        self._question_stores = {}
+        self._legacy_questions = None
         self._stores = {}
         self._stores_lock = threading.Lock()
         self._log_lock = threading.Lock()
@@ -5841,12 +5863,126 @@ class PrototypeApp(object):
                                                            max_bytes=self.config.max_file_bytes)
             return store
 
-    def questions_store(self):
-        """The `QuestionsStore` of `<root>/questions.json` (one per server, created on first use)."""
+    def questions_store(self, slug):
+        """The `QuestionsStore` of `<root>/<slug>/questions.json` (one per run, created on first use); 404 for an
+        invalid slug or a directory that is not a prototype."""
+        if not isinstance(slug, str) or not SLUG_RE.fullmatch(slug):
+            raise PrototypeServerError(404, 'not_found', 'prototype not found')
         with self._stores_lock:
-            if self._questions is None:
-                self._questions = QuestionsStore(self.root, clock=self.clock, lock_timeout=self.config.lock_timeout)
-            return self._questions
+            store = self._question_stores.get(slug)
+            if store is not None:
+                return store
+        directory = os.path.join(self.root, slug)
+        try:
+            info = os.lstat(directory)
+        except OSError:
+            raise PrototypeServerError(404, 'not_found', 'prototype not found')
+        if not stat.S_ISDIR(info.st_mode) or not os.path.lexists(os.path.join(directory, PROTOTYPE_FILE)):
+            raise PrototypeServerError(404, 'not_found', 'prototype not found')
+        with self._stores_lock:
+            store = self._question_stores.get(slug)
+            if store is None:
+                store = self._question_stores[slug] = QuestionsStore(
+                    directory, clock=self.clock, lock_timeout=self.config.lock_timeout)
+            return store
+
+    def question_slugs(self):
+        """Slugs of the runs that have a `questions.json` (a regular file; symlinks and other kinds are skipped), sorted."""
+        found = []
+        try:
+            names = sorted(os.listdir(self.root))
+        except OSError:
+            return found
+        for name in names:
+            if not SLUG_RE.fullmatch(name):
+                continue
+            directory = os.path.join(self.root, name)
+            try:
+                if stat.S_ISLNK(os.lstat(directory).st_mode) or not os.path.isdir(directory):
+                    continue
+                if not os.path.lexists(os.path.join(directory, PROTOTYPE_FILE)):   # `questions_store` needs a prototype
+                    continue
+                info = os.lstat(os.path.join(directory, QUESTIONS_FILE))
+            except OSError:
+                continue
+            if stat.S_ISREG(info.st_mode):
+                found.append(name)
+        return found
+
+    def legacy_questions_store(self):
+        """The old project-wide `<root>/questions.json` (read only since 1.2.1), or None when it does not exist."""
+        path = os.path.join(self.root, QUESTIONS_FILE)
+        if not os.path.lexists(path):
+            return None
+        with self._stores_lock:
+            if self._legacy_questions is None:
+                self._legacy_questions = QuestionsStore(self.root, clock=self.clock,
+                                                        lock_timeout=self.config.lock_timeout)
+            return self._legacy_questions
+
+    def locate_question(self, question_id, slug=None):
+        """`(slug, store, snapshot)` of the file that holds the question, `slug` None for the legacy file, or None.
+        `slug` narrows the search to one run; a damaged file of another run is skipped, the asked one raises."""
+        if not isinstance(question_id, str) or not QUESTION_ID_RE.fullmatch(question_id):
+            return None
+        for name in ([slug] if slug is not None else self.question_slugs()):
+            store = self.questions_store(name)
+            try:
+                snapshot = store.snapshot()
+            except QuestionsFileError:
+                if slug is not None:
+                    raise
+                continue
+            if question_id in snapshot.fold['byId']:
+                return name, store, snapshot
+        if slug is None:
+            legacy = self.legacy_questions_store()
+            if legacy is not None:
+                try:
+                    snapshot = legacy.snapshot()
+                except QuestionsFileError:
+                    return None
+                if question_id in snapshot.fold['byId']:
+                    return None, legacy, snapshot
+        return None
+
+    def collect_questions(self, viewer, slug=None):
+        """`{questions, runs, legacy}` for `viewer`: `questions` of the run `slug` (all runs and the legacy file without
+        it), `runs` = `[{slug, open, answered, total}]` over every run with a visible question, `legacy` = `{count}` or None."""
+        views, runs, damaged, seen = [], [], [], set()
+        for name in self.question_slugs():
+            try:
+                snapshot = self.questions_store(name).snapshot()
+                seen.update(snapshot.fold['byId'])
+                found = visible_questions(snapshot, viewer, name)
+            except QuestionsFileError:
+                if slug == name:
+                    raise
+                damaged.append(name)
+                continue
+            if not found:
+                continue
+            runs.append({'slug': name, 'open': sum(1 for item in found if item['state'] == 'open'),
+                         'answered': sum(1 for item in found if item['state'] == 'answered'), 'total': len(found)})
+            if slug is None or slug == name:
+                views.extend(found)
+        legacy_info = None
+        legacy = self.legacy_questions_store()
+        if legacy is not None:
+            try:
+                # a question already moved to a run (an interrupted migration) is shown once, from its run
+                old = [item for item in visible_questions(legacy.snapshot(), viewer, None) if item['id'] not in seen]
+            except QuestionsFileError:
+                old = []
+                damaged.append(None)
+            legacy_info = {'count': len(old), 'readOnly': True}
+            if slug is None:
+                views.extend(old)
+        views.sort(key=lambda item: (item['at'], item['id']))
+        result = {'questions': views, 'runs': runs, 'legacy': legacy_info}
+        if damaged and any(role in viewer['roles'] for role in PRIVILEGED_ROLES):
+            result['damaged'] = [item for item in damaged if item is not None] + (['questions.json'] if None in damaged else [])
+        return result
 
     def user_payload(self, user):
         first, full = person_names(user['login'], user.get('name'))
@@ -5900,8 +6036,9 @@ _OPERATIONS_PATH = re.compile(r'/_api/v1/prototypes/([^/]+)/operations')
 _RESTORE_PATH = re.compile(r'/_api/v1/prototypes/([^/]+)/restore')
 _PREVIEW_PATH = re.compile(r'/_api/v1/prototypes/([^/]+)/restore-preview')
 _QUESTIONS_PATH = _API_PREFIX + '/questions'
-_QUESTION_PATH = re.compile(r'/_api/v1/questions/([^/]+)')
-_QUESTION_ACTION_PATH = re.compile(r'/_api/v1/questions/([^/]+)/(answer|comment)')
+_RUN_QUESTIONS_PATH = re.compile(r'/_api/v1/prototypes/([^/]+)/questions')
+_QUESTION_PATH = re.compile(r'/_api/v1/(?:prototypes/([^/]+)/)?questions/([^/]+)')
+_QUESTION_ACTION_PATH = re.compile(r'/_api/v1/(?:prototypes/([^/]+)/)?questions/([^/]+)/(answer|comment)')
 _LOGIN_TO_VIEW_EXCEPTIONS = ('/_login', _API_PREFIX + '/login', _API_PREFIX + '/session')
 
 
@@ -6061,8 +6198,8 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
             if path == '/_login':
                 self._login_page(method, split.query)
                 return
-            if path == EXPERTS_PATH:
-                self._experts_page(method, session)
+            if path == EXPERTS_PATH or path.startswith(EXPERTS_PATH + '/'):
+                self._experts_page(method, session, path)
                 return
             if method not in ('GET', 'HEAD'):
                 self._method_not_allowed()
@@ -6127,10 +6264,12 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
             if (not segment or segment in ('.', '..') or _excluded_segment(segment) or ':' in segment):
                 self._not_found()
                 return
-        if segments:
-            first = segments[0].lower()
-            if (first.rstrip('. ') if os.name == 'nt' else first) == QUESTIONS_FILE:
-                self._not_found()   # `questions.json` is served only through `/_api/v1/questions`
+        for segment in segments[:2]:
+            lowered = segment.lower()
+            if (lowered.rstrip('. ') if os.name == 'nt' else lowered) == QUESTIONS_FILE:
+                # `<root>/questions.json` (the old project file) and `<root>/<slug>/questions.json` are served only
+                # through `/_api/v1/questions`; a deeper file of that name belongs to the prototype (demo data)
+                self._not_found()
                 return
         root = self.app.root
         target = os.path.realpath(os.path.join(root, *segments)) if segments else root
@@ -6180,7 +6319,10 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
         relative = os.path.relpath(real, root)
         if relative == '.':
             return True
-        return not any(_excluded_segment(part) for part in relative.split(os.sep))
+        parts = relative.split(os.sep)
+        if len(parts) <= 2 and parts[-1].lower() == QUESTIONS_FILE:   # also behind a symbolic link inside a run
+            return False
+        return not any(_excluded_segment(part) for part in parts)
 
     # ── one-time login link ──
 
@@ -6231,13 +6373,17 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
                 return
         self._send(200, LOGIN_PAGE.encode('utf-8'), 'text/html; charset=utf-8', None, 'no-store')
 
-    def _experts_page(self, method, session):
-        """`/_experts`: no data in the HTML (the page reads the API after the session); strict own CSP."""
+    def _experts_page(self, method, session, path='/_experts'):
+        """`/_experts` and `/_experts/<slug>`: no data in the HTML (the page reads the API after the session); strict own CSP.
+        The slug is checked against the slug grammar only (the page itself shows an empty run); anything else is 404."""
         if method not in ('GET', 'HEAD'):
             self._method_not_allowed()
             return
+        if path != EXPERTS_PATH and not SLUG_RE.fullmatch(path[len(EXPERTS_PATH) + 1:]):
+            self._not_found()
+            return
         if session is None:
-            self._empty(302, {'Location': '/_login?next=' + quote(EXPERTS_PATH, safe='/')})
+            self._empty(302, {'Location': '/_login?next=' + quote(path, safe='/')})
             return
         self._strict_page = True
         try:
@@ -6288,17 +6434,25 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
             return
         if path == _QUESTIONS_PATH:
             self._require_method(method, ('GET', 'HEAD'))
-            self._api_questions_list(session, user)
+            slugs = parse_qs(query).get('slug') or []
+            self._api_questions_list(session, user, unquote(slugs[0]) if slugs else None)
+            return
+        match = _RUN_QUESTIONS_PATH.fullmatch(path)
+        if match:
+            self._require_method(method, ('GET', 'HEAD'))
+            self._api_questions_list(session, user, unquote(match.group(1)))
             return
         match = _QUESTION_ACTION_PATH.fullmatch(path)
         if match:
             self._require_method(method, ('POST',))
-            self._api_question_post(unquote(match.group(1)), match.group(2), session, user)
+            self._api_question_post(unquote(match.group(2)), match.group(3), session, user,
+                                    unquote(match.group(1)) if match.group(1) else None)
             return
         match = _QUESTION_PATH.fullmatch(path)
         if match:
             self._require_method(method, ('GET', 'HEAD'))
-            self._api_question_get(unquote(match.group(1)), session, user)
+            self._api_question_get(unquote(match.group(2)), session, user,
+                                   unquote(match.group(1)) if match.group(1) else None)
             return
         match = _OPERATIONS_PATH.fullmatch(path)
         if match:
@@ -6514,21 +6668,23 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
             raise PrototypeServerError(403, 'forbidden', 'your role has no access to expert questions')
         return {'login': user['login'], 'roles': have}
 
-    def _api_questions_list(self, session, user):
+    def _api_questions_list(self, session, user, slug=None):
         viewer = self._questions_gate(session, user, ('developer', 'acceptor', 'expert'))
-        snapshot = self.app.questions_store().snapshot()
-        self._json(200, {'questions': visible_questions(snapshot, viewer)})
+        if slug is not None:
+            self.app.questions_store(slug)   # 404 for an invalid slug or a directory that is not a prototype
+        self._json(200, self.app.collect_questions(viewer, slug))
 
-    def _api_question_get(self, question_id, session, user):
+    def _api_question_get(self, question_id, session, user, slug=None):
         viewer = self._questions_gate(session, user, ('developer', 'acceptor', 'expert'))
-        view = None
-        if QUESTION_ID_RE.fullmatch(question_id):
-            view = get_question_view(self.app.questions_store().snapshot(), question_id, viewer)
+        if slug is not None:
+            self.app.questions_store(slug)
+        found = self.app.locate_question(question_id, slug)
+        view = None if found is None else get_question_view(found[2], question_id, viewer, found[0])
         if view is None:
             raise PrototypeServerError(404, 'not_found', 'question not found')
         self._json(200, {'question': view})
 
-    def _api_question_post(self, question_id, kind, session, user):
+    def _api_question_post(self, question_id, kind, session, user, slug=None):
         """`answer` / `comment`; order: session → CSRF → mustChange → role → rate limit (429) → visibility (404) → body → dedup →
         state (409) → schema (400).  Everything after the role runs in `build`, under the lock, on the snapshot
         of that transaction; the author is the login of the session."""
@@ -6541,7 +6697,18 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
         if wait:
             raise PrototypeServerError(429, 'rate_limited', 'too many writes', {'retryAfter': wait},
                                        {'Retry-After': str(wait)})
-        store = app.questions_store()
+        if slug is not None:
+            app.questions_store(slug)
+        found = app.locate_question(question_id, slug)
+        if found is None:
+            raise PrototypeServerError(404, 'not_found', 'question not found')
+        slug, store, located = found
+        if slug is None:   # the old project-wide file: visible questions are read only until `question migrate`
+            old = located.fold['byId'][question_id]
+            if not can_view_question(old, viewer):
+                raise PrototypeServerError(404, 'not_found', 'question not found')
+            raise PrototypeServerError(409, 'migration_required', 'the question is in the old questions.json: '
+                                       'run skillsync prototype question migrate', {'readOnly': True})
 
         def not_found():
             return OperationError(404, 'not_found', 'question not found')
@@ -6583,7 +6750,7 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
         # the view comes from the state of this very transaction: its snapshot plus what it wrote
         fold = fold_questions(list(seen['snapshot'].operations) + list(result.operations))
         question = fold['byId'].get(question_id)
-        view = None if question is None else question_view(question, viewer, fold['byId'])
+        view = None if question is None else question_view(question, viewer, fold['byId'], slug)
         if view is None:   # the question vanished from the fold: a damaged file, not a client error
             raise OperationError(500, 'corrupt_questions', 'the questions file is inconsistent')
         operation = {key: written.get(key) for key in ('id', 'type', 'at', 'cid')}
@@ -6940,8 +7107,13 @@ EXPERTS_SCRIPT = r"""
 (function () {
   'use strict';
   var API = '/_api/v1';
-  var LOGIN = '/_login?next=/_experts';
-  var state = { csrf: null, questions: [], current: null, pending: {}, busy: {} };
+  var BASE = '/_experts';
+  var LOGIN = '/_login?next=' + encodeURIComponent(location.pathname);
+  var SLUG = (function () {
+    var rest = location.pathname.slice(BASE.length).replace(/^\//, '');
+    return /^[a-z0-9]+(-[a-z0-9]+)*$/.test(rest) ? rest : null;
+  })();
+  var state = { csrf: null, questions: [], runs: [], legacy: null, current: null, pending: {}, busy: {} };
   var listBox = document.getElementById('list');
   var detail = document.getElementById('detail');
   var alertBox = document.getElementById('alert');
@@ -7001,6 +7173,7 @@ EXPERTS_SCRIPT = r"""
     }
     if (status === 403) return 'Brak uprawnień: ta akcja wymaga roli ekspert i pytania skierowanego do Ciebie.';
     if (status === 404) return 'Nie znaleziono pytania (mogło zostać wycofane albo nie jest do Ciebie).';
+    if (status === 409 && code === 'migration_required') return 'To pytanie jest w starym pliku, tylko do odczytu. Programista musi je przenieść (skillsync prototype question migrate).';
     if (status === 409 && code === 'already_answered') return 'Ktoś już odpowiedział na to pytanie. Widok został odświeżony.';
     if (status === 409 && code === 'comment_limit') return 'Pytanie osiągnęło limit komentarzy.';
     if (status === 409) return 'Konflikt zapisu (' + String(code || status) + '). Odśwież widok.';
@@ -7028,6 +7201,7 @@ EXPERTS_SCRIPT = r"""
 
   function badges(question) {
     var items = [];
+    if (question.slug) items.push(el('span', { 'class': 'badge', text: 'Przebieg: ' + question.slug }));
     if (question.blocking) items.push(el('span', { 'class': 'badge block', text: 'Blokujące' }));
     items.push(el('span', { 'class': 'badge' + (question.state === 'open' ? '' : ' done'),
                             text: question.state === 'open' ? 'Otwarte' : 'Odpowiedziane' }));
@@ -7036,14 +7210,40 @@ EXPERTS_SCRIPT = r"""
     }
     return items;
   }
-  function label(question) { return (question.origin && question.origin.q) ? question.origin.q : question.id; }
+  function label(question) {
+    var q = (question.origin && question.origin.q) ? question.origin.q : question.id;
+    var spec = question.origin && typeof question.origin.spec === 'string' ? question.origin.spec.split('/').pop() : '';
+    return spec ? spec + ' · ' + q : q;
+  }
+
+  function runsNav() {
+    var box = el('div', { id: 'runs' });
+    var ul = el('ul');
+    var all = el('a', { href: BASE, text: 'Wszystkie przebiegi' });
+    if (!SLUG) all.setAttribute('aria-current', 'true');
+    ul.appendChild(el('li', {}, [all]));
+    state.runs.forEach(function (run) {
+      var link = el('a', { href: BASE + '/' + encodeURIComponent(run.slug), text: run.slug + ' (otwarte: ' + run.open + ', razem: ' + run.total + ')' });
+      if (SLUG === run.slug) link.setAttribute('aria-current', 'true');
+      ul.appendChild(el('li', {}, [link]));
+    });
+    box.appendChild(el('h2', { text: 'Przebiegi' }));
+    box.appendChild(ul);
+    if (state.legacy && state.legacy.count) {
+      box.appendChild(el('p', { 'class': 'muted', id: 'legacy-note',
+        text: 'Pytania w starym pliku (' + state.legacy.count + ') są tylko do odczytu. Programista musi je przenieść poleceniem skillsync prototype question migrate.' }));
+    }
+    return box;
+  }
 
   function renderList() {
     clear(listBox);
+    listBox.appendChild(runsNav());
     if (!state.questions.length) {
-      listBox.appendChild(el('p', { 'class': 'muted', text: 'Brak pytań do Ciebie.' }));
+      listBox.appendChild(el('p', { 'class': 'muted', text: SLUG ? 'Brak pytań do Ciebie w tym przebiegu.' : 'Brak pytań do Ciebie.' }));
       return;
     }
+    listBox.appendChild(el('h2', { text: SLUG ? 'Pytania: ' + SLUG : 'Pytania' }));
     var ul = el('ul');
     state.questions.forEach(function (question) {
       var link = el('a', { href: '#' + encodeURIComponent(question.id) }, [
@@ -7285,12 +7485,14 @@ EXPERTS_SCRIPT = r"""
   }
 
   function loadList() {
-    return api('GET', '/questions').then(function (result) {
+    return api('GET', SLUG ? '/prototypes/' + encodeURIComponent(SLUG) + '/questions' : '/questions').then(function (result) {
       if (result.status === 200 && Array.isArray(result.data.questions)) {
         state.questions = result.data.questions;
+        state.runs = Array.isArray(result.data.runs) ? result.data.runs : [];
+        state.legacy = result.data.legacy || null;
         return true;
       }
-      fail(result.status === 200 ? UNEXPECTED : describe(result));
+      fail(result.status === 200 ? UNEXPECTED : (result.status === 404 && SLUG ? 'Nie ma przebiegu „' + SLUG + '”.' : describe(result)));
       if (result.status === 403 && result.data.error === 'password_change_required') showMustChange();
       return false;
     }).catch(function () { fail(OFFLINE); return false; });

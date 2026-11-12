@@ -386,7 +386,10 @@ Część pytań z aktu I (spec) wymaga wiedzy domenowej, której programista nie
 sam serwer, z kontekstem: tekst, linki z wyciągami, warianty z rekomendacją agenta i wartość przyjęta. Ekspert odpowiada na stronie
 `/_experts`; odpowiedź wraca do speca w gicie jako wiersz `[EKSPERT]`.
 
-Agent: `skillsync prototype question add|list|show|export|record|withdraw|url|wait|merge` ([cli](cli.md#pytania-do-eksperta-prototype-question-prototype-user-roles)).
+Pytania są osobne dla każdego przebiegu (prototypu o danym slugu): plik `<root>/<slug>/questions.json` leży obok `comments.json` tego przebiegu,
+więc etapy na jednej gałęzi nie mieszają pytań, a ekspert widzi każdy przebieg osobno.
+
+Agent: `skillsync prototype question add|list|show|export|record|withdraw|url|wait|merge|migrate|purge` ([cli](cli.md#pytania-do-eksperta-prototype-question-prototype-user-roles)).
 Pytanie jest domyślnie **nieblokujące** (`--assume`: agent idzie dalej z wartością przyjętą, ekspert ją potwierdza albo koryguje);
 pytania o kontrakt, dane, migrację i bezpieczeństwo agent zadaje jako blokujące (`--blocking`). Pytanie jest do wszystkich ekspertów
 albo do wskazanych loginów (`--to`). Pierwsza odpowiedź zamyka pytanie i jest ostateczna: nie ma edycji ani unieważnienia, spór to nowe
@@ -395,7 +398,9 @@ oznacza to przez `question record`; programista dostaje informację, nie pytanie
 
 ### Strona `/_experts`
 
-- Adres: `http://<host>:<port>/_experts` (`question url` podaje go razem z liczbą kont `expert`). Bez sesji przekierowanie do `/_login?next=/_experts`.
+- Adres: `http://<host>:<port>/_experts` (lista przebiegów i wszystkie widoczne pytania), `http://<host>:<port>/_experts/<slug>` (jeden przebieg;
+  nieprawidłowy slug daje 404). `question url` podaje adres strony razem z liczbą kont `expert`. Bez sesji przekierowanie do `/_login?next=<ścieżka>`.
+- Każde pytanie ma badge „Przebieg: <slug>”. Etykieta pytania: dla administratora nazwa pliku speca i `Q<n>`, dla eksperta `Q<n>`.
   Konto z hasłem domyślnym widzi komunikat i link do zmiany hasła; odpowiadać może dopiero po zmianie (403 `password_change_required`).
 - Lista pytań widocznych dla konta, szczegóły (tekst, linki, wyciągi), wybór wariantu (rekomendacja agenta jest oznaczona), „Potwierdzam przyjętą
   wartość”, własna odpowiedź z opcjonalnym komentarzem oraz osobny komentarz do pytania (także po zamknięciu). Obsługa klawiaturą, stany błędu
@@ -407,28 +412,40 @@ oznacza to przez `question record`; programista dostaje informację, nie pytanie
 
 ### Widoczność i dane
 
-- `questions.json` nie jest serwowany statycznie nikomu (404, także z sesją). Pytania zwraca wyłącznie `GET /_api/v1/questions` i
-  `/questions/<id>`, z sesją wymaganą **zawsze**, także bez `--login-to-view`. `commenter` dostaje 403; `developer` i `acceptor` widzą wszystko,
+- `questions.json` nie jest serwowany statycznie nikomu (404, także z sesją; dotyczy to `<root>/questions.json` i `<root>/<slug>/questions.json`, także za dowiązaniem; plik o tej nazwie głębiej w prototypie, np. dane demo `<slug>/data/questions.json`, jest zwykłym plikiem prototypu). Pytania zwraca wyłącznie API: `GET /_api/v1/questions[?slug=]` (wszystkie przebiegi albo jeden), `GET /_api/v1/prototypes/<slug>/questions`,
+  `GET /_api/v1/questions/<id>` i `POST …/answer|comment`. Id pytania jest unikalny w całym `<root>`, więc wariant bez slugu też znajdzie pytanie; wariant
+  z `prototypes/<slug>/` zawęża szukanie do jednego przebiegu. Nieznany albo źle zbudowany slug daje 404. Z sesją wymaganą **zawsze**, także bez `--login-to-view`. `commenter` dostaje 403; `developer` i `acceptor` widzą wszystko,
   ekspert tylko pytania do wszystkich i zaadresowane do siebie (cudze: 404, żeby nie ujawniać istnienia). Ekspert nie dostaje niczego z
   repozytorium poza wyciągami zapisanymi w pytaniu. `developer` i `acceptor` bez roli `expert` mogą tylko komentować.
 - Zapisy (`answer`, `comment`) są limitowane per login: 60 na 60 s (429 `rate_limited` z `retryAfter`), najwyżej 50 komentarzy na pytanie
-  (409 `comment_limit`). Plik ma 1 MiB: nowe pytanie jest odrzucane powyżej 768 KiB, komentarz powyżej 896 KiB, odpowiedź do 1 MiB (507
+  (409 `comment_limit`). Plik każdego przebiegu ma 1 MiB: nowe pytanie jest odrzucane powyżej 768 KiB, komentarz powyżej 896 KiB, odpowiedź do 1 MiB (507
   `file_too_large`); progi liczone są od rozmiaru przed zapisem. Drugi ekspert, który odpowiada na zamknięte pytanie, dostaje 409 `already_answered`.
 - Serwer ostrzega przy starcie, gdy istnieją konta `expert`, a serwer działa bez `--login-to-view`: bez niego prototypy i komentarze są
   jawne, więc uruchamiaj `serve` z `--login-to-view` i hasłami ustawionymi przez `--password-prompt`.
 
 ### Pytania do eksperta w gicie
 
-`questions.json` jest śledzony w gicie, a `questions.json.lock` i `*.tmp` ignorowane: `question add` dopisuje brakujące linie do
-`<root>/.gitignore` i `<root>/.gitattributes` (`questions.json merge=skillsync-questions`). Zarejestruj sterownik raz w repo:
+Pliki `<root>/<slug>/questions.json` są śledzone w gicie, a `questions.json.lock` i `*.tmp` ignorowane. `question add` dopisuje brakujące linie do
+`<root>/.gitignore` i `<root>/.gitattributes` (`questions.json merge=skillsync-questions`); wzorzec bez ukośnika obejmuje pliki na każdej głębokości.
+`add` zwraca `created` (pliki utworzone przy tym wywołaniu) i `notes`. Zarejestruj sterownik raz w repo:
 
 ```bash
 git config merge.skillsync-questions.driver "skillsync prototype question merge --driver %O %A %B"
 ```
 
-Sterownik łączy dwie kopie jako sumę operacji (po `id`, posortowaną po `at` i `id`). Druga odpowiedź na to samo pytanie jest w scalonym
+Sterownik łączy dwie kopie jako sumę operacji (po `id`, posortowaną po `at` i `id`) i działa na jednym pliku przebiegu. Druga odpowiedź na to samo pytanie jest w scalonym
 dzienniku zwykłym komentarzem; operacja `answer` bez `ask` albo ten sam `id` z inną treścią to FAIL (exit 1) i plik zostaje nietknięty.
-Ręcznie: `skillsync prototype question merge . <inny-questions.json>`.
+Ręcznie: `skillsync prototype question merge . <inny-questions.json> --slug <slug>`.
+
+### Migracja i czyszczenie
+
+Starszy projektowy `<root>/questions.json` serwer czyta tylko do odczytu (`legacy` w liście, na stronie informacja, przy starcie ostrzeżenie);
+odpowiedź na takie pytanie to 409 `migration_required`. `skillsync prototype question migrate` dzieli go według `origin.spec` na przebiegi
+(przebieg, którego `requirements` to ten spec). Pytanie bez jednoznacznego przebiegu blokuje całość (BLOCKED `unassigned`, nic nie zapisane);
+`--slug-for SPEC=SLUG` rozstrzyga jawnie. Stary plik trafia do kosza dopiero po odczycie zwrotnym, że wszystkie operacje są w plikach przebiegów.
+
+`skillsync prototype question purge --slug <slug>` pokazuje, co usunąłby z dziennika przebiegu: pytania wycofane albo otwarte bez odpowiedzi i bez
+komentarza. Pytanie z odpowiedzią lub komentarzem zostaje, tak samo pytanie, do którego ono się odwołuje. Usuwa dopiero `--yes`.
 
 ## Komentarze w gicie
 

@@ -3420,11 +3420,88 @@ def _question_fail(code, reason, **extra):
     return report
 
 
-def _questions_store(repo, manifest):
+def _run_directory(settings, slug):
+    """`<root>/<slug>` of an existing prototype (a run); BLOCKED (PrototypeError) for anything else."""
+    root = Path(settings['root'])
+    if not valid_slug(slug) or not is_prototype_dir(root, slug):
+        raise PrototypeError(f'--slug {safe_text(slug)}: no prototype with this slug in {safe_text(str(root))}')
+    return root / slug
+
+
+def _questions_store(repo, manifest, slug):
     settings = _settings(repo, manifest)
     if settings['root'] is None:
         raise PrototypeError('prototype.root: not usable')
-    return settings, server.QuestionsStore(str(settings['root']))
+    return settings, server.QuestionsStore(str(_run_directory(settings, slug)))
+
+
+def _question_runs(settings, slug=None):
+    """Sorted `[(slug, store)]` of the runs with a regular `questions.json` (`slug`: only that run, which must exist)."""
+    if slug is not None:
+        directory = _run_directory(settings, slug)
+        return [(slug, server.QuestionsStore(str(directory)))]
+    runs = []
+    for name, path in enumerate_prototypes(settings['root']):
+        try:
+            info = os.lstat(path / server.QUESTIONS_FILE)
+        except OSError:
+            continue
+        if stat.S_ISREG(info.st_mode):
+            runs.append((name, server.QuestionsStore(str(path))))
+    return runs
+
+
+def _legacy_store(settings):
+    """The old project-wide `<root>/questions.json` (read only since 1.2.1), or None."""
+    if settings['root'] is None or not os.path.lexists(Path(settings['root']) / server.QUESTIONS_FILE):
+        return None
+    return server.QuestionsStore(str(settings['root']))
+
+
+def _find_question(settings, question_id, slug=None):
+    """`(slug, store)` of the file that holds the question (`slug` None = the old file), or None. A damaged file of
+    another run is skipped; when the question is found nowhere, the first damage is raised (`QuestionsFileError`),
+    because the question may be in that file."""
+    damage = None
+    for name, store in _question_runs(settings, slug):
+        try:
+            if question_id in store.snapshot().fold['byId']:
+                return name, store
+        except server.QuestionsFileError as error:
+            damage = damage or error
+    if slug is None:
+        legacy = _legacy_store(settings)
+        if legacy is not None:
+            try:
+                if question_id in legacy.snapshot().fold['byId']:
+                    return None, legacy
+            except server.QuestionsFileError as error:
+                damage = damage or error
+    if damage is not None:
+        raise damage
+    return None
+
+
+def _norm_spec(value):
+    import posixpath
+    return posixpath.normpath(str(value).replace('\\', '/'))
+
+
+def _slugs_for_spec(settings, spec):
+    """Slugs of the prototypes whose `requirements` is the spec path (the origin of a question)."""
+    want = _norm_spec(spec)
+    found = []
+    for name, path in enumerate_prototypes(settings['root']):
+        data, _error = read_prototype_json(path, name)
+        if data is not None and _norm_spec(data['requirements']) == want:
+            found.append(name)
+    return found
+
+
+def _migration_required(question_id):
+    return {'status': 'BLOCKED', 'error': 'migration_required', 'questionId': question_id,
+            'reason': f'{question_id} is in the old {server.QUESTIONS_FILE} of the project: run '
+                      'skillsync prototype question migrate (the file is read only until then)'}
 
 
 def _account_records(repo, users_value=None):
@@ -3543,13 +3620,34 @@ def _parse_origin(value):
 def add_question(root, manifest, args):
     """`question add`: appends an `ask` (`by: agent`) under the lock; a secret blocks (exit 2) unless `--force`."""
     repo = Path(root).resolve()
-    settings, store = _questions_store(repo, manifest)
+    settings = _settings(repo, manifest)
+    if settings['root'] is None:
+        raise PrototypeError('prototype.root: not usable')
     if args.blocking == (args.assume is not None):
         return _question_fail('invalid_mode', 'give exactly one of --assume <value> (a question that does not stop '
                               'the agent) or --blocking (the agent waits for the answer)')
     refs = [_parse_question_ref(value) for value in args.ref or []]
     options = _parse_question_options(args.option)
     origin = _parse_origin(args.origin)
+    slug = args.slug
+    if slug is None:
+        candidates = _slugs_for_spec(settings, origin['spec'])
+        if len(candidates) != 1:
+            every = [name for name, _path in enumerate_prototypes(settings['root'])]
+            return {'status': 'BLOCKED', 'error': 'slug_ambiguous' if candidates else 'slug_required',
+                    'candidates': candidates, 'prototypes': every,
+                    'reason': ('--slug is required: several prototypes have %s as their requirements (%s)' % (origin['spec'], ', '.join(candidates)))
+                    if candidates else '--slug is required: no prototype has %s as its requirements (prototypes: %s)'
+                    % (origin['spec'], ', '.join(every) or 'none')}
+        slug = candidates[0]
+    _settings_, store = _questions_store(repo, manifest, slug)
+    known = {name: os.path.lexists(path) for name, path in (
+        ('questions', store.path), ('lock', store.lock_path),
+        ('gitignore', Path(settings['root']) / '.gitignore'), ('gitattributes', Path(settings['root']) / '.gitattributes'))}
+    notes = []
+    if not known['questions'] and store.sweep_orphan_lock():
+        known['lock'] = False
+        notes.append(f'removed an orphaned lock file {_relative(store.lock_path, repo)} (the questions file was gone)')
     addressees = 'all'
     if args.to:
         addressees = list(dict.fromkeys(server.normalize_login(login) for login in args.to))
@@ -3609,9 +3707,19 @@ def add_question(root, manifest, args):
                 files.append(_relative(Path(settings['root']) / name, repo))
     except (PrototypeError, OSError, ValueError) as error:
         warnings.append(f'{server.QUESTIONS_FILE} was written, but the ignore/attributes lines were not: {error}')
+    created = []
+    for name, path in (('questions', store.path), ('lock', store.lock_path),
+                       ('gitignore', Path(settings['root']) / '.gitignore'),
+                       ('gitattributes', Path(settings['root']) / '.gitattributes')):
+        if not known[name] and os.path.lexists(path):
+            created.append(_relative(path, repo))
+    for path in created:
+        notes.append(f'created {path}' + (' (lock file of the questions file; ignored by git)' if path.endswith(server.LOCK_SUFFIX) else ''))
     base, running = _experts_url(repo, settings)
-    report = {'status': 'PASS', 'questionId': question_id, 'idempotent': not result.operations,
-              'specLine': question_spec_line(question), 'files': files, 'warnings': warnings}
+    base = base.rstrip('/') + '/' + slug
+    report = {'status': 'PASS', 'questionId': question_id, 'slug': slug, 'idempotent': not result.operations,
+              'specLine': question_spec_line(question), 'files': files, 'created': created, 'notes': notes,
+              'warnings': warnings}
     if running:
         report['url'] = '%s#%s' % (base, question_id)
     return report
@@ -3641,23 +3749,51 @@ def _question_document(repo, settings, snapshot, users=None):
     return document
 
 
-def list_questions(root, manifest, status=None, users=None):
+def _question_documents(repo, settings, slug, users=None):
+    """The `expert-questions/1` document read from the files (no server): the questions of every run (`slug`: one run)
+    in the order slug, file; without `slug` the old project-wide file is appended (slug null, `legacy` in the document)."""
+    base, running = _experts_url(repo, settings)
+    names = _account_names(repo, users)
+    document = server.export_questions([], _project_name(settings), base if running else None, names)
+    for name, store in _question_runs(settings, slug):
+        try:
+            part = server.export_questions(store.snapshot(), _project_name(settings), base if running else None, names, slug=name)
+        except server.QuestionsFileError as error:
+            # loud on purpose: a partial list would tell the agent that there are no questions (the server page skips instead)
+            raise server.QuestionsFileError(f'{name}: {error.message}') from None
+        document['questions'].extend(part['questions'])
+    if slug is None:
+        legacy = _legacy_store(settings)
+        if legacy is not None:
+            part = server.export_questions(legacy.snapshot(), _project_name(settings), base if running else None, names)
+            moved = {item['id'] for item in document['questions']}   # moved by an interrupted migration: listed once
+            part['questions'] = [item for item in part['questions'] if item['id'] not in moved]
+            document['questions'].extend(part['questions'])
+            document['legacy'] = {'file': server.QUESTIONS_FILE, 'questions': len(part['questions']), 'readOnly': True,
+                                  'hint': 'skillsync prototype question migrate'}
+    document['status'] = 'PASS'
+    return document
+
+
+def list_questions(root, manifest, status=None, users=None, slug=None):
     repo = Path(root).resolve()
-    settings, store = _questions_store(repo, manifest)
+    settings = _settings(repo, manifest)
     states = _states_filter(status)
-    document = _question_document(repo, settings, store.snapshot(), users)
+    document = _question_documents(repo, settings, slug, users)
     everything = document['questions']
     document['questions'] = [item for item in everything if item['state'] in states]
     document['statuses'] = states
     document['counts'] = {state: sum(1 for item in everything if item['state'] == state) for state in server.QUESTION_STATES}
     document['counts']['toRecord'] = sum(1 for item in everything if item['state'] == 'answered' and 'recorded' not in item)
+    document['runs'] = [{'slug': name, 'questions': sum(1 for item in everything if item['slug'] == name)}
+                        for name in sorted({item['slug'] for item in everything if item['slug']})]
     return document
 
 
-def show_question(root, manifest, question_id, users=None):
+def show_question(root, manifest, question_id, users=None, slug=None):
     repo = Path(root).resolve()
-    settings, store = _questions_store(repo, manifest)
-    document = _question_document(repo, settings, store.snapshot(), users)
+    settings = _settings(repo, manifest)
+    document = _question_documents(repo, settings, slug, users)
     document['questions'] = [item for item in document['questions'] if item['id'] == question_id]
     if not document['questions']:
         return _question_fail('not_found', f'no question {question_id}')
@@ -3665,23 +3801,25 @@ def show_question(root, manifest, question_id, users=None):
     return document
 
 
-def export_questions_cli(root, manifest, users=None):
+def export_questions_cli(root, manifest, users=None, slug=None):
     repo = Path(root).resolve()
-    settings, store = _questions_store(repo, manifest)
-    names = _account_names(repo, users)
-    base, running = _experts_url(repo, settings)
-    document = server.export_questions(store.snapshot(), _project_name(settings), base if running else None, names)
-    document['status'] = 'PASS'
-    return document
+    settings = _settings(repo, manifest)
+    return _question_documents(repo, settings, slug, users)
 
 
-def record_question(root, manifest, question_id, spec, line):
+def record_question(root, manifest, question_id, spec, line, slug=None):
     """`question record`: the operation `recorded` (the answer is in the spec); idempotent, a repeat with
     another place keeps the first one and says so."""
     repo = Path(root).resolve()
-    settings, store = _questions_store(repo, manifest)
+    settings = _settings(repo, manifest)
     if line < 1:
         raise PrototypeError('--line must be 1 or more')
+    found = _find_question(settings, question_id, slug)
+    if found is None:
+        return _question_fail('not_found', f'no question {question_id}')
+    if found[0] is None:
+        return _migration_required(question_id)
+    store = found[1]
     partial = {'type': 'recorded', 'questionId': question_id, 'by': 'agent', 'cid': 'recorded-' + question_id,
                'spec': spec, 'line': line}
     try:
@@ -3689,7 +3827,7 @@ def record_question(root, manifest, question_id, spec, line):
     except server.PrototypeServerError as error:
         return _question_failure(error)
     kept = result.existing or (result.operations[0] if result.operations else {})
-    report = {'status': 'PASS', 'questionId': question_id, 'changed': bool(result.operations),
+    report = {'status': 'PASS', 'questionId': question_id, 'slug': found[0], 'changed': bool(result.operations),
               'recorded': {'spec': kept.get('spec'), 'line': kept.get('line'), 'at': kept.get('at')},
               'files': [_relative(store.path, repo)] if result.operations else []}
     if result.existing is not None and (kept.get('spec'), kept.get('line')) != (spec, line):
@@ -3697,18 +3835,26 @@ def record_question(root, manifest, question_id, spec, line):
     return report
 
 
-def withdraw_question(root, manifest, question_id):
-    """`question withdraw` (K17): only an open question; `specLine` returns the row to the plain `Q`/`[ZAŁOŻENIE]`."""
+def withdraw_question(root, manifest, question_id, slug=None):
+    """`question withdraw` (K17): only an open question; `specLine` returns the row to the plain `Q`/`[ZAŁOŻENIE]`.
+    The report carries the state after the operation (`state`, `questions[0].state`: `withdrawn`)."""
     repo = Path(root).resolve()
-    settings, store = _questions_store(repo, manifest)
+    settings = _settings(repo, manifest)
+    found = _find_question(settings, question_id, slug)
+    if found is None:
+        return _question_fail('not_found', f'no question {question_id}')
+    if found[0] is None:
+        return _migration_required(question_id)
+    store = found[1]
     partial = {'type': 'withdraw', 'questionId': question_id, 'by': 'agent', 'cid': 'withdraw-' + question_id}
     try:
         result = store.transaction(lambda snapshot: partial)
     except server.PrototypeServerError as error:
         return _question_failure(error)
     question = store.snapshot().fold['byId'][question_id]
-    return {'status': 'PASS', 'questionId': question_id, 'changed': bool(result.operations),
-            'specLine': question_spec_line(question, expert=False),
+    return {'status': 'PASS', 'questionId': question_id, 'slug': found[0], 'state': question['state'],
+            'questions': [{'id': question_id, 'slug': found[0], 'state': question['state']}],
+            'changed': bool(result.operations), 'specLine': question_spec_line(question, expert=False),
             'files': [_relative(store.path, repo)] if result.operations else []}
 
 
@@ -3760,9 +3906,9 @@ def _question_events(snapshot, wanted, since_at, after):
     return found
 
 
-def _wait_report(event, question, fold, **extra):
-    view = server.question_view(question, AGENT_VIEWER, fold['byId'])
-    report = {'status': 'PASS', 'event': event, 'questionId': question['id'], 'question': view,
+def _wait_report(event, question, fold, slug=None, **extra):
+    view = server.question_view(question, AGENT_VIEWER, fold['byId'], slug)
+    report = {'status': 'PASS', 'event': event, 'questionId': question['id'], 'slug': slug, 'question': view,
               'answerLine': question_answer_line(view)}
     report.update(extra)
     return report
@@ -3788,12 +3934,29 @@ def _wait_snapshot(store, retry_missing):
         time.sleep(WAIT_READ_PAUSE)
 
 
-def wait_question(root, manifest, question_id=None, all_questions=False, since=None, after=None, timeout=1800.0, interval=5.0):
+def _wait_locate(settings, question_id, slug):
+    """`_find_question` with the retries of `_wait_snapshot`: a half-written or briefly absent file is tried again
+    `WAIT_READ_RETRIES` times every `WAIT_READ_PAUSE` s; the last damage is raised, a question that is nowhere is None."""
+    for attempt in range(WAIT_READ_RETRIES + 1):
+        last = attempt == WAIT_READ_RETRIES
+        try:
+            found = _find_question(settings, question_id, slug)
+        except (server.QuestionsFileError, OSError):
+            if last:
+                raise
+        else:
+            if found is not None or last:
+                return found
+        time.sleep(WAIT_READ_PAUSE)
+
+
+def wait_question(root, manifest, question_id=None, all_questions=False, since=None, after=None, timeout=1800.0, interval=5.0,
+                  slug=None):
     """`question wait` (K6): PASS at once for an answered question (`<id>`: also a recorded one; `--all`: only an
-    answered one without `recorded`), else for the first answer or comment newer than `--since`/`--after`
-    (default: now); TIMEOUT (exit 3)."""
+    answered one without `recorded`, in every run or only in `--slug`), else for the first answer or comment newer than
+    `--since`/`--after` (default: now); TIMEOUT (exit 3)."""
     repo = Path(root).resolve()
-    _settings_, store = _questions_store(repo, manifest)
+    settings = _settings(repo, manifest)
     if all_questions == (question_id is not None):
         raise PrototypeError('wait takes one question id or --all')
     if since is not None and after is not None:
@@ -3804,29 +3967,46 @@ def wait_question(root, manifest, question_id=None, all_questions=False, since=N
     wanted = None if all_questions else {question_id}
     deadline = time.monotonic() + max(0.0, float(timeout))
     checked_after = after is None
+    after_at = None
     while True:
-        snapshot = _wait_snapshot(store, not all_questions)
-        fold = snapshot.fold
+        if all_questions:
+            stores = _question_runs(settings, slug)
+        else:
+            found = _wait_locate(settings, question_id, slug)
+            if found is None:
+                return _question_fail('not_found', f'no question {question_id}')
+            stores = [found]
         if not checked_after:
             checked_after = True
-            if not any(operation.get('id') == after for operation in snapshot.operations):
+            for _name, store in stores:
+                held = [operation for operation in _wait_snapshot(store, False).operations if operation.get('id') == after]
+                if held:
+                    after_at = server.parse_at(held[0].get('at'))
+                    break
+            else:
                 return _question_fail('unknown_op', f'--after: no operation {after} in {server.QUESTIONS_FILE}')
-        if not all_questions:
-            question = fold['byId'].get(question_id)
-            if question is None:
-                return _question_fail('not_found', f'no question {question_id}')
-            if question['state'] == 'answered':
-                return _wait_report('answer', question, fold)
-            if question['state'] == 'withdrawn':
-                return _question_fail('withdrawn', f'question {question_id} was withdrawn')
-        else:
-            ready = [item for item in fold['questions'] if item['state'] == 'answered' and item['recorded'] is None]
-            if ready:
-                return _wait_report('answer', ready[0], fold, pending=[item['id'] for item in ready])
-        events = _question_events(snapshot, wanted, since_at, after)
-        if events:
-            first = events[0]
-            return _wait_report(first['event'], first['question'], fold, opId=first['opId'], by=first['by'], at=first['at'])
+        for name, store in stores:
+            snapshot = _wait_snapshot(store, not all_questions)
+            fold = snapshot.fold
+            if not all_questions:
+                question = fold['byId'].get(question_id)
+                if question is None:
+                    return _question_fail('not_found', f'no question {question_id}')
+                if question['state'] == 'answered':
+                    return _wait_report('answer', question, fold, name)
+                if question['state'] == 'withdrawn':
+                    return _question_fail('withdrawn', f'question {question_id} was withdrawn')
+            else:
+                ready = [item for item in fold['questions'] if item['state'] == 'answered' and item['recorded'] is None]
+                if ready:
+                    return _wait_report('answer', ready[0], fold, name, pending=[item['id'] for item in ready])
+            # `--after` names an operation of one run's file: in the other files the events after its time count
+            in_file = after is not None and any(operation.get('id') == after for operation in snapshot.operations)
+            events = (_question_events(snapshot, wanted, since_at, after) if after is None or in_file
+                      else _question_events(snapshot, wanted, after_at, None))
+            if events:
+                first = events[0]
+                return _wait_report(first['event'], first['question'], fold, name, opId=first['opId'], by=first['by'], at=first['at'])
         if time.monotonic() >= deadline:
             return {'status': 'TIMEOUT', 'reason': 'no new answer or comment on the question(s)'}
         time.sleep(min(max(0.2, float(interval)), max(0.0, deadline - time.monotonic())) or 0.2)
@@ -3859,10 +4039,10 @@ def merge_questions_driver(ancestor, current, other):
     return {'status': 'PASS', 'driver': True, 'added': len(added), 'total': len(merged)}
 
 
-def merge_questions(root, manifest, other):
-    """`question merge <path> <other>`: the same union into the project `questions.json`, under its lock."""
+def merge_questions(root, manifest, other, slug):
+    """`question merge --slug <slug> <path> <other>`: the same union into `<root>/<slug>/questions.json`, under its lock."""
     repo = Path(root).resolve()
-    _settings_, store = _questions_store(repo, manifest)
+    _settings_, store = _questions_store(repo, manifest, slug)
     incoming, _data = _read_questions_file(users_file_path(repo, other))
     try:
         with store.lock():
@@ -3872,7 +4052,156 @@ def merge_questions(root, manifest, other):
                 server.atomic_write_bytes(store.path, server.serialize_questions(merged).encode('utf-8'))
     except server.PrototypeServerError as error:
         return _question_failure(error)
-    return {'status': 'PASS', 'added': len(added), 'total': len(merged)}
+    return {'status': 'PASS', 'slug': slug, 'added': len(added), 'total': len(merged)}
+
+
+PURGE_SAMPLE = 80
+
+
+def purge_questions(root, manifest, slug, yes=False):
+    """`question purge --slug S [--yes]` (decision of the owner): drops from the log of one run only the questions
+    that were withdrawn or have neither an answer nor a comment; a question with an answer or a comment stays
+    untouched, and so does one that a kept question refers to. Without `--yes` it only lists (dry run).
+    The log is rewritten under its lock."""
+    repo = Path(root).resolve()
+    _settings_, store = _questions_store(repo, manifest, slug)
+    try:
+        with store.lock():
+            snapshot = store.snapshot()
+            fold = snapshot.fold
+            removable = {}
+            for question in fold['questions']:
+                if question['state'] == 'withdrawn':
+                    removable[question['id']] = 'withdrawn'
+                elif question['state'] == 'open' and not question['comments'] and question['answer'] is None:
+                    removable[question['id']] = 'no answer and no comment'
+            changed = True
+            while changed:   # a question that a kept one refers to is kept too
+                changed = False
+                for question in fold['questions']:
+                    target = question.get('refersTo')
+                    if question['id'] not in removable and target in removable:
+                        del removable[target]
+                        changed = True
+            report_removed = [{'id': item['id'], 'q': (item['origin'] or {}).get('q'), 'state': item['state'],
+                               'reason': removable[item['id']], 'text': _one_line(item['text'])[:PURGE_SAMPLE]}
+                              for item in fold['questions'] if item['id'] in removable]
+            kept = [operation for operation in snapshot.operations
+                    if not (isinstance(operation, dict) and operation.get('questionId') in removable)]
+            report = {'status': 'PASS', 'slug': slug, 'dryRun': not yes, 'removed': report_removed,
+                      'kept': len(fold['questions']) - len(removable), 'file': _relative(store.path, repo)}
+            if yes and removable:
+                server.atomic_write_bytes(store.path, server.serialize_questions(kept).encode('utf-8'))
+            if not yes:
+                report['hint'] = 'nothing was changed; run again with --yes to remove the listed questions'
+            return report
+    except server.PrototypeServerError as error:
+        return _question_failure(error)
+
+
+def _move_to_trash(path):
+    """`'trashed'` (system trash) or `'renamed:<name>'` (a `.migrated` copy beside it when no trash tool exists)."""
+    import shutil
+    for command in (['trash-put', '--', str(path)], ['gio', 'trash', str(path)], ['trash', str(path)]):
+        if shutil.which(command[0]) is None:
+            continue
+        try:
+            done = subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60)
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if done.returncode == 0 and not os.path.lexists(path):
+            return 'trashed'
+    # a name with a leading dot: the prototype server never serves it (`_excluded_segment`), unlike `questions.json.migrated`
+    target = Path(path).with_name('.' + Path(path).name + '.migrated')
+    number = 1
+    while os.path.lexists(target):
+        number += 1
+        target = Path(path).with_name(f'.{Path(path).name}.migrated{number}')
+    os.replace(path, target)
+    return 'renamed:' + target.name
+
+
+def migrate_questions(root, manifest, dry_run=False, slug_for=None):
+    """`question migrate [--dry-run] [--slug-for SPEC=SLUG]`: splits the old `<root>/questions.json` into
+    `<root>/<slug>/questions.json` by `origin.spec` (the run whose `prototype.json` `requirements` is that spec).
+    Nothing is guessed: a question without exactly one run, or an operation without its `ask`, is BLOCKED with the list
+    and nothing is written. Idempotent (an operation already in the target is skipped; a different one with the
+    same `id` is BLOCKED). The old file goes to the trash only after every operation is read back from the targets."""
+    repo = Path(root).resolve()
+    settings = _settings(repo, manifest)
+    if settings['root'] is None:
+        raise PrototypeError('prototype.root: not usable')
+    legacy = _legacy_store(settings)
+    if legacy is None:
+        return {'status': 'PASS', 'migrated': {}, 'legacy': 'absent', 'reason': f'no {server.QUESTIONS_FILE} in the project root: nothing to migrate'}
+    forced = {}
+    for item in slug_for or []:
+        spec, separator, name = item.rpartition('=')
+        if not separator or not spec or not name:
+            raise PrototypeError(f'--slug-for {item!r}: use SPEC=SLUG')
+        _run_directory(settings, name)
+        forced[_norm_spec(spec)] = name
+    with legacy.lock():
+        snapshot = legacy.snapshot()
+        owner, problems = {}, []
+        for operation in snapshot.operations:
+            if isinstance(operation, dict) and operation.get('type') == 'ask' and isinstance(operation.get('questionId'), str):
+                spec = ((operation.get('origin') or {}).get('spec')) if isinstance(operation.get('origin'), dict) else None
+                if not isinstance(spec, str):
+                    problems.append({'id': operation['questionId'], 'error': 'no_origin', 'reason': 'the question has no origin.spec'})
+                    continue
+                if _norm_spec(spec) in forced:
+                    owner[operation['questionId']] = forced[_norm_spec(spec)]
+                    continue
+                candidates = _slugs_for_spec(settings, spec)
+                if len(candidates) == 1:
+                    owner[operation['questionId']] = candidates[0]
+                else:
+                    problems.append({'id': operation['questionId'], 'spec': spec, 'candidates': candidates,
+                                     'error': 'ambiguous' if candidates else 'no_run',
+                                     'reason': 'several prototypes have this spec as requirements' if candidates
+                                     else 'no prototype has this spec as requirements (use --slug-for SPEC=SLUG)'})
+        targets = {}
+        for operation in snapshot.operations:
+            qid = operation.get('questionId') if isinstance(operation, dict) else None
+            if qid in owner:
+                targets.setdefault(owner[qid], []).append(operation)
+            elif not any(item['id'] == qid for item in problems):
+                problems.append({'id': qid, 'error': 'orphan_operation', 'reason': 'the operation has no `ask` in the file'})
+        if problems:
+            return {'status': 'BLOCKED', 'error': 'unassigned', 'unassigned': problems,
+                    'reason': f'{len(problems)} question(s) cannot be assigned to one run: nothing was written'}
+        plan, merged_by = {}, {}
+        for name, operations in sorted(targets.items()):
+            store = server.QuestionsStore(str(_run_directory(settings, name)))
+            try:
+                merged, added = server.merge_question_operations(store.snapshot().operations, operations)
+            except server.MergeConflict as error:
+                return _question_failure(error)
+            merged_by[name] = (store, operations)
+            plan[name] = {'operations': len(operations), 'added': len(added)}
+        if dry_run:
+            return {'status': 'PASS', 'dryRun': True, 'plan': plan, 'legacy': 'kept'}
+        for name, (store, operations) in merged_by.items():
+            with store.lock():
+                current = store.snapshot()
+                merged, added = server.merge_question_operations(current.operations, operations)
+                if added or not current.exists:
+                    server.atomic_write_bytes(store.path, server.serialize_questions(merged).encode('utf-8'))
+        for name, (store, operations) in merged_by.items():   # read back: every operation of the old file must be there
+            have = {operation.get('id') for operation in store.snapshot().operations}
+            if not all(operation.get('id') in have for operation in operations):
+                return {'status': 'BLOCKED', 'error': 'verify_failed', 'slug': name,
+                        'reason': 'a target file does not hold every operation: the old file was left in place'}
+        outcome = _move_to_trash(Path(legacy.path)) if os.path.lexists(legacy.path) else 'absent'
+        sweep = Path(legacy.lock_path)
+        if os.path.lexists(sweep):
+            try:
+                os.unlink(sweep)
+            except OSError:
+                pass
+    return {'status': 'PASS', 'dryRun': False, 'migrated': plan, 'legacy': outcome,
+            'files': [_relative(Path(settings['root']) / name / server.QUESTIONS_FILE, repo) for name in sorted(plan)]}
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
@@ -4022,19 +4351,25 @@ def _cmd_question(args, root, manifest, layerset):
     if action == 'add':
         return add_question(root, manifest, args)
     if action == 'list':
-        return list_questions(root, manifest, args.status, args.users)
+        return list_questions(root, manifest, args.status, args.users, args.slug)
     if action == 'show':
-        return show_question(root, manifest, args.question, args.users)
+        return show_question(root, manifest, args.question, args.users, args.slug)
     if action == 'export':
-        return export_questions_cli(root, manifest, args.users)
+        return export_questions_cli(root, manifest, args.users, args.slug)
     if action == 'record':
-        return record_question(root, manifest, args.question, args.spec, args.line)
+        return record_question(root, manifest, args.question, args.spec, args.line, args.slug)
     if action == 'withdraw':
-        return withdraw_question(root, manifest, args.question)
+        return withdraw_question(root, manifest, args.question, args.slug)
     if action == 'url':
         return url_question(root, manifest, args.users)
+    if action == 'purge':
+        if args.slug is None:
+            raise PrototypeError('question purge needs --slug <slug> (one run at a time)')
+        return purge_questions(root, manifest, args.slug, args.yes)
+    if action == 'migrate':
+        return migrate_questions(root, manifest, args.dry_run, args.slug_for)
     return wait_question(root, manifest, args.question, args.all_questions, since=args.since, after=args.after,
-                         timeout=args.timeout, interval=args.interval)
+                         timeout=args.timeout, interval=args.interval, slug=args.slug)
 
 
 _question_run = _run(_cmd_question)
@@ -4053,7 +4388,9 @@ def _question_handler(args):
             if args.path is None or args.other is None:
                 raise PrototypeError('question merge needs <path> <other-file> (or --driver %O %A %B)')
             root, manifest = read_project(args.path)
-            report = merge_questions(root, manifest, args.other)
+            if args.slug is None:
+                raise PrototypeError('question merge needs --slug <slug> (the run whose questions.json receives the other file)')
+            report = merge_questions(root, manifest, args.other, args.slug)
     except server.PrototypeServerError as error:
         report = _question_failure(error)
     except PrototypeError as error:
@@ -4234,17 +4571,20 @@ def register(subparsers):
     question = actions.add_parser('question', help='Questions for a domain expert (add, list, show, export, record, withdraw, url, wait, merge)')
     question_actions = question.add_subparsers(dest='question_command', required=True)
 
-    def question_parser(name, help_text, subject=False, users=False):
+    def question_parser(name, help_text, subject=False, users=False, slug=True, slug_help=''):
         parser = question_actions.add_parser(name, help=help_text)
         _common(parser)
         if subject:
             parser.add_argument('question', help='Question id (qn-…)')
         if users:
             parser.add_argument('--users', help=f'Users file, relative to the project (default {USERS_DEFAULT})')
+        if slug:
+            parser.add_argument('--slug', help='Run (prototype slug): the questions of <root>/<slug>/questions.json' + slug_help)
         parser.set_defaults(func=_question_handler)
         return parser
 
-    qadd = question_parser('add', 'Ask the experts (<root>/questions.json); default: with an assumed value, the agent goes on', users=True)
+    qadd = question_parser('add', 'Ask the experts (<root>/<slug>/questions.json); default: with an assumed value, the agent goes on', users=True,
+                           slug_help=' (default: the one prototype whose requirements is the --origin spec)')
     qadd.add_argument('--text', required=True, help='The question (at most 2000 characters)')
     qadd.add_argument('--ref', action='append', metavar='TITLE|HREF[|EXCERPT]', help='Context link with an optional excerpt (repeatable, at most 5)')
     qadd.add_argument('--option', action='append', metavar='LABEL[:recommended]', help='Answer option (repeatable, at most 8, one recommended)')
@@ -4264,6 +4604,11 @@ def register(subparsers):
     qrecord.add_argument('--spec', required=True, help='Spec path, relative to the project')
     qrecord.add_argument('--line', required=True, type=int, help='Line of the spec row')
     question_parser('withdraw', 'Withdraw an open question (an answered one cannot be); prints the plain spec row', subject=True)
+    qmigrate = question_parser('migrate', 'Split the old <root>/questions.json into <root>/<slug>/questions.json by origin.spec (idempotent; BLOCKED when not unambiguous)', slug=False)
+    qmigrate.add_argument('--dry-run', action='store_true', help='Show the plan, write nothing')
+    qmigrate.add_argument('--slug-for', action='append', metavar='SPEC=SLUG', help='Decide the run of a spec that has no single prototype (repeatable)')
+    qpurge = question_parser('purge', 'Remove withdrawn questions and those without any answer or comment from one run (dry run without --yes)')
+    qpurge.add_argument('--yes', action='store_true', help='Really rewrite the file (default: only list what would be removed)')
     question_parser('url', 'Address of the experts page and the number of expert accounts (BLOCKED without them)', users=True)
     qwait = question_parser('wait', 'Wait for an answer or a comment (exit 0 event answer|comment, 3 on timeout)')
     qwait.add_argument('question', nargs='?', help='Question id (or --all)')
@@ -4276,6 +4621,7 @@ def register(subparsers):
     qmerge.add_argument('path', nargs='?', help='Project path or .skillsync.yaml')
     qmerge.add_argument('other', nargs='?', help='The other questions.json, relative to the project')
     qmerge.add_argument('--driver', nargs=3, metavar=('O', 'A', 'B'), help='Git merge driver form: result = A + B, written to A')
+    qmerge.add_argument('--slug', help='Run that receives the other file (project form)')
     qmerge.add_argument('--json', action='store_true', help='JSON output (the only format)')
     qmerge.set_defaults(func=_question_handler)
     merge = actions.add_parser('merge-comments', help='Merge two comment logs (also as git merge driver: --driver %%O %%A %%B)')
