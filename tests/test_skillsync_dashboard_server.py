@@ -1520,14 +1520,14 @@ class HttpReadHostTests(HttpCase):
 
 
 def js_function(js: str, name: str) -> str:
-    """Treść funkcji `name` z app.js: od `function name(` do następnej deklaracji funkcji na poziomie modułu."""
+    """Treść funkcji `name` z app.js: od `function name(` do następnej deklaracji funkcji (moduł albo wnętrze `create`)."""
     start = js.index(f"function {name}(")
-    nxt = re.search(r"\n  (?:async )?function \w+\(", js[start + 1:])
+    nxt = re.search(r"\n {2,4}(?:async )?function \w+\(", js[start + 1:])
     return js[start:start + 1 + nxt.start()] if nxt else js[start:]
 
 
 class AssetsRenderTests(unittest.TestCase):
-    """Renderer strony rysuje readiness, pytania blokujące, założenia i podkroki. Brak testu DOM: w repo nie ma
+    """Renderer strony rysuje readiness, toast pytań do eksperta i podkroki. Brak testu DOM: w repo nie ma
     renderera strony w Node, więc kontrola jest statyczna (treść app.js) plus JSON z serwera na kopii fixture."""
     FIXTURES = HERE / "fixtures" / "dashboard"
 
@@ -1554,20 +1554,25 @@ class AssetsRenderTests(unittest.TestCase):
             return r.read().decode("utf-8")
 
     def test_app_js_reads_the_new_fields_and_shows_the_labels(self) -> None:
-        for field in ("d.readiness", "d.assumptions", "d.blockingQuestions", "d.substeps"):
+        for field in ("d.readiness", "d.expertQuestions", "d.substeps"):
             self.assertIn(field, self.js)
-        for text in ("Readiness: ", "Pytania blokujące (", "Założenia do korekty przy prototypie (", "przyjęte: ",
-                     "Podkroki i czas (", "brak danych"):
+        for text in ("Readiness: ", "Pytania do eksperta: ", "Podkroki i czas (", "brak danych"):
             self.assertIn(text, self.js)
-        for key in ("stage_readiness", "questions_blocking", "questions_assumptions", "substeps_time"):
+        # sekcji „Pytania” aktu I nie ma (Q-TOAST): ani listy blokujących, ani założeń
+        for text in ("Pytania blokujące (", "Założenia do korekty przy prototypie (", "questionsBlock", "d.blockingQuestions", "d.assumptions"):
+            self.assertNotIn(text, self.js)
+        for key in ("stage_readiness", "substeps_time"):
             self.assertIn(f'desc("{key}"', self.js)
-        for cls in (".readiness.is-pass", ".readiness.is-blocked", ".readiness.is-none", ".questions", ".q-none", ".substeps"):
+        for cls in (".readiness.is-pass", ".readiness.is-blocked", ".readiness.is-none", ".substeps"):
             self.assertIn(cls, self.css)
+        for cls in (".questions", ".q-none", ".q-group", ".q-list"):
+            self.assertNotIn(cls, self.css)
 
     def test_new_templates_escape_data(self) -> None:
-        q = js_function(self.js, "questionsBlock")
-        for frag in ("esc(q.id)", "esc(q.question)", 'esc(q.accepted || "—")', "esc((bq.items || []).length || bq.count || 0)", "esc((as.items || []).length || as.count || 0)"):
+        q = js_function(self.js, "questionsToast")
+        for frag in ("Number.isFinite(eq.open)", "Number.isFinite(eq.blocking)", "safeUrl("):
             self.assertIn(frag, q)
+        self.assertNotIn("innerHTML", q)
         r = js_function(self.js, "readinessTile")
         for frag in ("esc(r.date)", "esc(sha)", "esc(r.source)", "esc(label)"):
             self.assertIn(frag, r)
@@ -1575,10 +1580,10 @@ class AssetsRenderTests(unittest.TestCase):
         for frag in ("esc(s.id)", "esc(s.title)", "esc(STEP_LABEL[s.state] || s.state)"):
             self.assertIn(frag, s)
         # Żadna wartość z danych nie trafia do szablonu bez esc(): ${q.…}, ${r.…}, ${s.…} tylko w esc()/warunkach.
-        for body in (q, r, s):
-            self.assertEqual(re.findall(r"\$\{(?:q|r|s)\.(?:id|question|accepted|title|date|source|planSha)\}", body), [])
+        for body in (r, s):
+            self.assertEqual(re.findall(r"\$\{(?:r|s)\.(?:id|title|date|source|planSha)\}", body), [])
             self.assertNotIn("innerHTML", body)
-        # Założenia nie są akcją „Odpowiedz na pytania”; pytania nie zależą od approvals.here/viewer.
+        # Toast pytań nie zależy od zgód ani widza.
         self.assertNotIn("approve", q)
         self.assertNotIn("viewer", q)
         self.assertNotIn(".here", q)
@@ -1586,14 +1591,14 @@ class AssetsRenderTests(unittest.TestCase):
     def test_questions_fixture_is_served_and_rendered(self) -> None:
         base = self.serve("questions")
         data = json.loads(self.fetch(base, "/api/status"))
-        self.assertEqual(data["assumptions"]["count"], 3)
+        self.assertEqual(data["assumptions"]["count"], 3)  # pola zostają w kontrakcie, renderer ich nie rysuje
         self.assertEqual(data["blockingQuestions"]["count"], 2)
         self.assertEqual(data["assumptions"]["items"][0]["accepted"], "w aplikacji")
+        self.assertEqual((data["expertQuestions"]["open"], data["expertQuestions"]["blocking"]), (3, 2))
         self.assertIsNone(data["readiness"]["status"])
         js = self.fetch(base, "/assets/dashboard-render.js")
-        self.assertIn("questionsBlock(d)", js)
-        self.assertIn("d.blockingQuestions || {", js)
-        self.assertIn("d.assumptions || {", js)
+        self.assertIn("questionsToast(d)", js)
+        self.assertNotIn("questionsBlock", js)
 
     def test_readiness_blocked_fixture_is_served_and_rendered(self) -> None:
         base = self.serve("readiness-blocked")
@@ -1610,8 +1615,10 @@ class AssetsRenderTests(unittest.TestCase):
         doc = json.loads(self.fetch(base, "/api/doc?path=" + readiness["source"]))
         self.assertIn("BLOCKED", doc["html"])
         descs = json.loads(self.fetch(base, "/api/descriptions"))
-        for key in ("stage_readiness", "questions_blocking", "questions_assumptions", "substeps_time"):
+        for key in ("stage_readiness", "substeps_time"):
             self.assertIn(key, descs)
+        for key in ("questions_blocking", "questions_assumptions"):
+            self.assertNotIn(key, descs)
 
 
 def cli_env(tmp: Path) -> dict:

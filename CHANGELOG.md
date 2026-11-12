@@ -12,6 +12,35 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-11-12
+
+### Added
+
+- Dashboard contract: the field `expertQuestions` (`{open, blocking, runs[{slug, open, blocking, url}]}`) counts the open questions to a domain
+  expert across ALL runs of the project (`docs/prototypes/<slug>/questions.json`, read-only, no import of the prototype server), not only
+  the run of the visible spec. The page shows them as a toast "Pytania do eksperta: N otwartych (M blokujących)" with a link to `/_experts/<slug>`
+  (one run) or `/_experts` once the host knows the prototype server address; the toast has no timer and disappears when nothing is open.
+  The dashboard watcher follows `questions.json`.
+
+### Changed
+
+- `skillsync prototype question purge --slug <slug>` removes only the withdrawn questions by default; `--include-open` also removes the open ones that have
+  neither an answer nor a comment (a fresh question waiting for the expert is no longer removed by a plain `purge --yes`). A withdrawn question that has a comment or an answer stays. The preview lists
+  what would be removed and why, and the questions it leaves alone (`skipped`).
+- `skillsync prototype question record` checks the spec line it is given: the line must hold `[EKSPERT]` and the question id (the row from `answerLine`);
+  otherwise FAIL `record_line_mismatch`, `record_line_out_of_range` or `record_spec_unreadable` with a hint, and nothing is written.
+- The dashboard no longer draws the "Pytania" section of the spec act (the lists of blocking questions and assumptions, also with zero). The
+  fields `blockingQuestions` and `assumptions` stay in the JSON contract; the description keys `questions_blocking` and `questions_assumptions`
+  are gone from `descriptions.json`.
+
+### Breaking
+
+None for existing fields. Behaviour changes: `question purge --yes` now removes fewer questions by default (only withdrawn ones; open ones need `--include-open`), `question record` refuses a spec line that is not the `[EKSPERT]` row of the question, and the dashboard no longer draws the "Pytania" section of the spec act (the JSON fields stay).
+
+### Fixed
+
+- `question record` no longer reports PASS `changed: true` when the line still holds the old waiting row (`- Q1: …`) without `[EKSPERT]`.
+
 ## [1.2.1] - 2026-11-12
 
 ### Added

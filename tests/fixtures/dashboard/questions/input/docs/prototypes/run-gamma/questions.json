@@ -1,0 +1,4 @@
+{"questionsFormat":1,"operations":[
+{"id":"op-g1","type":"ask","questionId":"qn-c00001","at":"2026-01-11T09:07:00Z","by":"agent","text":"Czy limit to 10 pozycji?","blocking":true,"assumed":null,"addressees":[],"refs":[],"options":[]},
+{"id":"op-g2","type":"answer","questionId":"qn-c00001","at":"2026-01-11T09:50:00Z","by":"expert","text":"Tak"}
+]}
