@@ -632,7 +632,7 @@ class MigrateTests(V1Fixture):
 # K32, K33: list and index
 # ---------------------------------------------------------------------------
 CONTRACT_FIELDS = {'slug', 'title', 'requirements', 'created', 'generated_by', 'path', 'screens', 'comments'}
-ADDED_FIELDS = {'commentsFormat', 'threads', 'iteration', 'acceptance'}
+ADDED_FIELDS = {'commentsFormat', 'threads', 'iteration', 'acceptance', 'writing'}
 THREAD_KEYS = {'open', 'awaiting', 'decided', 'closed', 'deferred', 'lost'}
 
 

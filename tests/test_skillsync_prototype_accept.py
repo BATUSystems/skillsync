@@ -1541,7 +1541,7 @@ class ListAndIndexAcceptanceTests(CliProject):
     def test_only_new_fields_were_added_to_the_skippster_contract(self):
         entry = self.entry('alpha')
         base = {'slug', 'title', 'requirements', 'created', 'generated_by', 'path', 'screens', 'comments'}
-        self.assertEqual(set(entry) - base, {'commentsFormat', 'threads', 'iteration', 'acceptance'})
+        self.assertEqual(set(entry) - base, {'commentsFormat', 'threads', 'iteration', 'acceptance', 'writing'})
         self.assertTrue(base <= set(entry), 'no contract field was removed')
         self.assertIsInstance(entry['screens'], int)
         self.assertIsInstance(entry['comments'], int)

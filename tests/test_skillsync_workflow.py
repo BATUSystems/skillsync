@@ -1053,6 +1053,18 @@ class ReadinessPrototypeGate(WorkflowFixture):
         report = self.run_readiness(2)
         self.assertEqual(self.gate_issues(report), ['Prototype gate FAIL: stary — (needs_migration)'])
 
+    def test_writing_marker_blocks_readiness_even_when_every_screen_is_accepted(self):
+        # PROTO-READY (K8): powód `writing` ma `screen: null`, więc w issue stoi „—”; marker zegarem rzeczywistym (komenda to proces)
+        import time
+        from skillsync_workflow import prototype_server as ps
+        directory = self.prototype('alpha', accepted=True)
+        self.plan(header=['Prototyp: docs/prototypes/alpha'])
+        self.assertEqual(self.gate_issues(self.run_readiness(0)), [], 'control: no marker')
+        ps.write_writing(str(directory), int(time.time() * 1000), 900, 'agent')
+        report = self.run_readiness(2)
+        self.assertEqual(self.gate_issues(report), ['Prototype gate FAIL: alpha — (writing)'])
+        self.assertEqual(report['prototypeGate']['missing'][0]['screen'], None)
+
     def test_gate_pass_adds_no_issue(self):
         self.prototype('alpha', accepted=True)
         self.plan(header=['Prototyp: docs/prototypes/alpha'])

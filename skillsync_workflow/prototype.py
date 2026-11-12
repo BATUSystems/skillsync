@@ -1190,15 +1190,20 @@ def _describe(slug, directory, repo):
     return entry, [f'{path}: {warning}' for warning in warnings]
 
 
-def list_prototypes(root, manifest):
+def list_prototypes(root, manifest, clock=None):
+    """`list`: per prototype also `writing` (`None` or `{since, expiresAt}` of a valid writing marker, never `by`);
+    `clock` (seconds, default `time.time`) is injectable for tests."""
     repo = Path(root).resolve()
     settings = _settings(repo, manifest)
     warnings = list(settings['warnings'])
     entries = []
+    now_ms = server.clock_ms(clock or time.time)
     for slug, directory in enumerate_prototypes(settings['root']):
         entry, entry_warnings = _describe(slug, directory, repo)
         if 'error' in entry:
             warnings.append(f'{entry["path"]}: {entry["error"]}')
+        else:
+            entry['writing'] = server.public_writing(str(directory), now_ms)
         warnings.extend(entry_warnings)
         entries.append(entry)
     report = {'status': 'PASS', 'root': _relative(settings['root'], repo), 'prototypes': entries}
@@ -2609,6 +2614,10 @@ def iterate_prototype(root, manifest, slug):
     current iteration N to `iterations/N/` and the operation `iteration {number: N}` (`by: agent`)."""
     repo, settings, directory, store = _prototype_context(root, manifest, slug)
     warnings = list(settings['warnings'])
+    marker = server.read_writing(str(directory), server.clock_ms(store.clock))
+    if marker is not None:
+        warnings.append(f'writing marker is active (since {marker["since"]}, expiresAt {marker["expiresAt"]}): the agent '
+                        'is still writing screens; this iteration may freeze an unfinished prototype')
     hook = _commit_hook(settings, repo, directory, slug, warnings)
     try:
         result = server.perform_iterate(store, str(directory), by='agent', before_freeze=hook)
@@ -2790,6 +2799,40 @@ def _stdin_is_tty():
         return False
 
 
+def _accept_marker(name, directory, store):
+    """`{slug, since, expiresAt}` of a valid writing marker that matters for `accept` (the one filter of the preflight
+    and of the list after a refusal under the lock), else None: v1 (`needs_migration` comes later) and a prototype
+    without screens (nothing to accept) are left out, like on the server."""
+    if store.state() == 'v1':
+        return None
+    marker = server.read_writing(str(directory), server.clock_ms(store.clock))
+    if marker is None:
+        return None
+    try:
+        has_screens = bool(server.screen_hashes(str(directory))['screens'])
+    except (server.PrototypeServerError, OSError):
+        has_screens = True
+    if not has_screens:
+        return None
+    return {'slug': name, 'since': marker['since'], 'expiresAt': marker['expiresAt']}
+
+
+def _accept_writing_preflight(targets, project):
+    """BLOCKED `writing_in_progress` before the password prompt: a valid writing marker of the prototype (one slug:
+    `slug`, `since`, `expiresAt`) or of any prototype with screens (`--project`: the list `writing: [{slug, since,
+    expiresAt}]`).  v1 and prototypes without screens never refuse here.  None when nothing blocks."""
+    entries = [entry for entry in (_accept_marker(name, directory, _store(directory, name))
+                                   for name, directory in targets) if entry is not None]
+    if not entries:
+        return None
+    if not project:
+        entry = entries[0]
+        return _server_blocked(server.writing_conflict(entry['slug'], entry))
+    return _blocked('writing_in_progress', 'the agent is still writing screens of: '
+                    + ', '.join(item['slug'] for item in entries), writing=entries, accepted=[],
+                    pending=[name for name, _directory in targets])
+
+
 def accept_prototype(root, manifest, slug=None, screens=None, all_screens=False, project=False, by=None, users=None):
     """`accept` (K24, K43): acceptance of screens of the current files by a human at a terminal.
 
@@ -2798,6 +2841,8 @@ def accept_prototype(root, manifest, slug=None, screens=None, all_screens=False,
     any prompt), `--by` has the role acceptor or developer (`forbidden`), no `mustChange`
     (`password_change_required`), the password read with `getpass` (`invalid_credentials`).  Written as
     `by: agent` with `who` = the login and `via: cli`.  The password and its hash never reach the output.
+    A valid writing marker (`prototype writing`) blocks it with `writing_in_progress` before the password prompt and
+    again under the prototype lock; `--project` checks every prototype with screens first (`writing` list).
     BLOCKED (exit 2) carries `error`; a failure in `project` lists `accepted` and `pending`.  Screens whose
     section is ambiguous (duplicate id, unclosed) are left out of `all`/`project` and listed in `skippedScreens`.
     """
@@ -2824,6 +2869,14 @@ def accept_prototype(root, manifest, slug=None, screens=None, all_screens=False,
                         f'(checked in {_relative_or_absolute(account.path, repo)})')
     if record['mustChange']:
         return _blocked('password_change_required', f'{login} must change the password first (sign in to the server)')
+    scope = 'project' if project else ('all' if all_screens else 'screen')
+    if project:
+        targets = list(enumerate_prototypes(settings['root']))
+    else:
+        targets = [(slug, _prototype_directory(repo, settings, slug))]
+    refusal = _accept_writing_preflight(targets, project)
+    if refusal is not None:
+        return refusal
     try:
         password = getpass.getpass(f'Hasło {login}: ')
     except (EOFError, KeyboardInterrupt):
@@ -2831,13 +2884,9 @@ def accept_prototype(root, manifest, slug=None, screens=None, all_screens=False,
     if not server.verify_password(password, record['password']):
         return _blocked('invalid_credentials', 'wrong password')
     del password
-    scope = 'project' if project else ('all' if all_screens else 'screen')
-    if project:
-        targets = list(enumerate_prototypes(settings['root']))
-    else:
-        targets = [(slug, _prototype_directory(repo, settings, slug))]
     accepted, skipped, skipped_screens = [], [], []
     pending = [name for name, _directory in targets]
+    directory_of = dict(targets)
     for name, directory in targets:
         store = _store(directory, name)
         state = store.state()
@@ -2861,6 +2910,9 @@ def accept_prototype(root, manifest, slug=None, screens=None, all_screens=False,
                                             {'screens': unknown})
             if not wanted:
                 return []
+            marker = server.read_writing(str(directory), server.clock_ms(store.clock))
+            if marker is not None:
+                raise server.writing_conflict(name, marker)
             return {'type': 'accept', 'by': 'agent',
                     'payload': {'scope': scope, 'screens': {screen: hashes[screen] for screen in wanted},
                                 'iteration': snapshot.fold['currentIteration'], 'via': 'cli', 'who': login}}
@@ -2873,6 +2925,16 @@ def accept_prototype(root, manifest, slug=None, screens=None, all_screens=False,
             else:
                 report = _blocked('write_failed', str(error) or type(error).__name__)
             if project:
+                if report.get('error') == 'writing_in_progress':
+                    listed = [entry for entry in (_accept_marker(item, directory_of[item], store if item == name
+                                                                 else _store(directory_of[item], item))
+                                                  for item in pending) if entry is not None]
+                    if not any(item['slug'] == name for item in listed):   # the marker vanished since the refusal
+                        listed.append({'slug': name, 'since': report['since'], 'expiresAt': report['expiresAt']})
+                        listed.sort(key=lambda item: item['slug'])
+                    for key in ('slug', 'since', 'expiresAt'):
+                        report.pop(key, None)
+                    report['writing'] = listed
                 report.update({'accepted': accepted, 'pending': pending})
             return report
         pending.remove(name)
@@ -2947,7 +3009,8 @@ def prototype_gate(root, manifest, plan=None, slugs=None, phase=None):
     """`gate` (K26): every screen (without `data-prototype-example`) of the named prototypes needs a current
     acceptance.  Prototypes come from the `Prototyp:` lines of the plan header or from `slugs` (under
     `prototype.root`).  PASS; FAIL (exit 1) with `missing: [{slug, path, screen, reason}]` (`brak`,
-    `nieaktualna`, `needs_migration`, `brak_ekranow`, `niejednoznaczny_ekran` for a duplicate id or an unclosed screen); BLOCKED (exit 2) with `error` for a bad plan, line or
+    `nieaktualna`, `needs_migration`, `brak_ekranow`, `niejednoznaczny_ekran` for a duplicate id or an unclosed screen,
+    `writing` with `screen: null` for a prototype with a valid writing marker, even when every screen is accepted); BLOCKED (exit 2) with `error` for a bad plan, line or
     prototype.  A header line `Bramka prototypu: pominięta — <powód> — <osoba>, <RRRR-MM-DD>` turns FAIL into
     PASS with `bypassed`.  Shared by `readiness --plan`.
 
@@ -3059,6 +3122,8 @@ def prototype_gate(root, manifest, plan=None, slugs=None, phase=None):
                                     'via': entry['via'], 'iteration': entry['iteration']})
         for item in problems:
             missing.append({'slug': slug, 'path': path, 'screen': item['screen'], 'reason': 'niejednoznaczny_ekran'})
+        if server.read_writing(str(directory), server.clock_ms(store.clock)) is not None:
+            missing.append({'slug': slug, 'path': path, 'screen': None, 'reason': 'writing'})
     status = 'FAIL' if missing and bypass is None else 'PASS'
     report.update({'status': status, 'prototypes': prototypes, 'missing': missing, 'acceptances': acceptances})
     if bypass is not None:
@@ -3253,7 +3318,9 @@ def _new_comments(snapshot, since_at=None, after=None, roles=None, roles_all=Non
 
 def wait_prototype(root, manifest, slug, since=None, after=None, timeout=1800.0, interval=5.0):
     """`wait`: deterministic wait for the prototype review (for Claude Code `Monitor`). PASS with `event: comment`
-    (a new thread or message by a person) or `event: accepted` (`gate` PASS for this prototype); TIMEOUT (exit 3)."""
+    (a new thread or message by a person) or `event: accepted` (`gate` PASS for this prototype, which needs no
+    valid writing marker: while the agent is still writing, `accepted` waits for `writing done` or the expiry);
+    TIMEOUT (exit 3)."""
     _repo, _settings, _directory, store = _prototype_context(root, manifest, slug)
     if since is not None and after is not None:
         raise PrototypeError('wait takes --since or --after, not both')
@@ -3280,8 +3347,11 @@ def wait_prototype(root, manifest, slug, since=None, after=None, timeout=1800.0,
         if gate.get('status') == 'PASS':
             return {'status': 'PASS', 'slug': slug, 'event': 'accepted', 'gate': gate}
         if time.monotonic() >= deadline:
-            return {'status': 'TIMEOUT', 'slug': slug, 'reason': 'no new comment and the prototype is not accepted yet',
-                    'missing': gate.get('missing', [])}
+            missing = gate.get('missing', [])
+            reason = 'no new comment and the prototype is not accepted yet'
+            if any(item.get('reason') == 'writing' for item in missing):
+                reason += '; the agent is still writing screens (writing marker), accepted waits for `writing done` or expiry'
+            return {'status': 'TIMEOUT', 'slug': slug, 'reason': reason, 'missing': missing}
         time.sleep(min(max(0.2, float(interval)), max(0.0, deadline - time.monotonic())) or 0.2)
 
 
@@ -4241,7 +4311,8 @@ def register(subparsers):
     restore_mode.add_argument('--dry-run', action='store_true', help='Report the effects, write nothing')
     restore_mode.add_argument('--resume', action='store_true', help='Finish an interrupted restore')
     restore.set_defaults(func=_run(_cmd_restore))
-    accept = actions.add_parser('accept', help='Accept screens of the current files (human at a terminal: password of --by from the TTY)')
+    accept = actions.add_parser('accept', help='Accept screens of the current files (human at a terminal: password of --by from the TTY; '
+                                          'BLOCKED writing_in_progress while the agent is still writing screens)')
     _common(accept)
     accept.add_argument('slug', nargs='?', help='Prototype slug (not with --project)')
     accept.add_argument('--screen', dest='screens', action='append', metavar='sN', help='Screen to accept (repeatable)')
