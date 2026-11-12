@@ -13,8 +13,10 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 ## [Unreleased]
 
 ### Fixed
-- Windows: `link` removes a dangling library symlink also when its target is written in the short 8.3 form (e.g. `RUNNER~1`) while the library root resolves to the long form:
-  `is_library_symlink` expands the existing parent of the missing target through `os.path.realpath`. A failure of the related test now prints the path forms (`readlink`, `resolve`) in its message.
+- Windows: `is_library_symlink` also judges a dangling library symlink by its own target with the existing parent of that target expanded through `os.path.realpath` (guards against a short 8.3
+  form such as `RUNNER~1` in the target while the library root resolves to the long form). The cause of the still-failing orphaned-link test on Windows is not confirmed: its failure message now prints the path
+  forms (`readlink`, `resolve`) so the next Windows run shows them.
+
 
 ## [1.1.1] - 2026-11-12
 

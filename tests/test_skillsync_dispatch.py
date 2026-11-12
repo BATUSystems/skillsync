@@ -1,7 +1,7 @@
 """feature rename (alias `agentflow`), dispatch auto-companion, cleanup, `.skillsync/` ignore, `dispatch:` manifest section."""
-import os
 import copy
 import json
+import os
 import sys
 import unittest
 import unittest.mock
