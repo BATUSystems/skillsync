@@ -3,7 +3,7 @@ title: "Strażnik wycieków (leakguard): identity.yaml, patterns.yaml, coverage,
 tags: [skillsync, leakguard, leakcheck, security, identity, coverage, hooks, privacy]
 paths: ['skillsync_workflow/leakguard.py', 'skillsync_workflow/data/leakguard-patterns.yaml', 'skillsync_workflow/data/leakguard-suffixes-pl.txt', 'skillsync_workflow/layers.py', 'skillsync', 'tests/test_skillsync_leakguard*.py']
 source: "docs/specs/2026-11-05-warstwy-generator.md (K6–K8, D86, Format patterns.yaml, Klasy ścieżek, Hooki); skillsync_workflow/leakguard.py (zasoby i .leakguard/patterns.yaml, authors_scope, pole path w raporcie, --require full, core.hooksPath); skillsync_workflow/layers.py (parse_machine_config, leakguard_inputs); plan docs/plans/2026-11-05-warstwy-generator.md, sekcja Wynik (D71, D86, krok 1.1, 2.1)"
-verified: 2026-11-06
+verified: 2026-11-12
 ---
 Reguła: `skillsync leakcheck` i hooki git blokują treść, nazwy plików i metadane commitów, które zawierają tożsamości
 niepubliczne (nazwy organizacji, projektów, osób, domen, nick i imię właściciela, nazwy persony) albo ślady ogólne
@@ -193,7 +193,10 @@ Raport nie zawiera wartości trafienia ani wzorca, tylko `path`, `category` i `l
 skillsync leakcheck <katalog|projekt> [--target ID] [--worktree|--staged|--range A..B|--history] \
   [--identity FILE]... [--targets-json JSON] [--trailer-allow ADRES]... [--target-patterns PLIK] \
   [--require full] [--no-config] [--json]
+skillsync leakcheck --text <plik>|--stdin [--target ID] [--require full] [--json]   # tekst poza gitem (PR, notatka wydania)
 ```
+
+- Tekst poza gitem (`--text FILE`, `--stdin`, do 1 MiB): ten sam cel, te same tożsamości i wzorce co `--range`; tekst jest skanowany w klasie ścieżki `skills/text` (`instrukcje`, najostrzejsza), więc nick właściciela dozwolony w `CHANGELOG`/`docs` w opisie PR-a jest trafieniem. Nie wymaga repozytorium git; etykieta w raporcie to nazwa pliku albo `<stdin>`, tekstu raport nie powtarza. Tekst nigdy nie jest argumentem komendy (błąd wypisałby go); skille `pr-run`, `feature`, `dispatch` wymagają tej kontroli przed `gh pr create`, `gh pr edit --body` i `gh release create`.
 
 - Tryby: `--worktree` (domyślnie), `--staged`, `--range A..B`, `--history`. Skan obejmuje treść, nazwy plików i metadane
   commitów (autor, committer, trailery, komunikat). W `--range` i w `pre-push` skanowane są też adnotowane tagi wskazujące

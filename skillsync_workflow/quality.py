@@ -1272,6 +1272,26 @@ def write_readiness_report(root, run_id, report, plan=None):
     return target.relative_to(root).as_posix()
 
 
+# Profil `docs` roli `reviewer`: zmiana dotyka dokumentacji, skilli (pliki .md biblioteki), CHANGELOG albo notatek wydania.
+# Nadpisanie: `workflow.review.docs_paths` i `workflow.review.docs_checklist` w manifeście.
+DOCS_PATHS = ['docs/**', 'library/skills/**/*.md', 'CHANGELOG*', '**/CHANGELOG*', '**/release-notes*', '**/RELEASE-NOTES*',
+              '**/RELEASE_NOTES*']
+DOCS_CHECKLIST = [
+    'Każda obietnica w docs, CHANGELOG i notatkach ma dowód (test, CI, zrzut) albo jest oznaczona jako niepotwierdzona.',
+    'Instrukcje zgadzają się z narzędziami, które je sprawdzają (check_*, walidatory, doctor): uruchom opisaną komendę na przykładzie.',
+    'Skille i dokumenty nie przeczą sobie nawzajem (np. ceremonia a sygnały retro, ścieżki, nazwy komend i flag).',
+    'Tylko bieżący stan: bez „dawniej X”, starych aliasów i opisu stanu sprzed zmiany (historia w CHANGELOG).',
+    'Brak nazw osób, klientów i wydarzeń w publicznym rdzeniu; opis PR i notatki wydania przechodzą skillsync leakcheck --text.',
+]
+
+
+def docs_profile(config, files):
+    """`(profile, docs_files)`: `docs` gdy zmiana (niepusta) dotyka wyłącznie dokumentacji, inaczej `kod`."""
+    paths = config.get('docs_paths', DOCS_PATHS)
+    docs_files = [f for f in files if matches(f, paths)]
+    return ('docs' if files and len(docs_files) == len(files) else 'kod'), docs_files
+
+
 def review(root, manifest, library, files, risk=None):
     files = normalize_files(root, files)
     workflow = workflow_config(root, manifest, library)
@@ -1284,9 +1304,13 @@ def review(root, manifest, library, files, risk=None):
     for area in areas:
         checklist.extend(additions.get(area, []))
     checklist.extend(config.get('project', []))
+    profile, docs_files = docs_profile(config, files)
+    if docs_files:
+        checklist.extend(config.get('docs_checklist', DOCS_CHECKLIST))
     ui_evidence = config.get('ui_evidence', ['Critical UI path executed in browser', 'Error states verified', 'Keyboard accessibility verified']) if 'ui' in areas else []
     checklist.extend(ui_evidence)
-    return {'status': 'NOT_RUN', 'risk': risk, 'risks': areas, 'areas': areas, 'checklist': checklist, 'ui_evidence': ui_evidence,
+    return {'status': 'NOT_RUN', 'risk': risk, 'risks': areas, 'areas': areas, 'profile': profile, 'docsFiles': docs_files,
+            'checklist': checklist, 'ui_evidence': ui_evidence,
             'note': 'Review checklist only; independent review and UI evidence still required'}
 
 

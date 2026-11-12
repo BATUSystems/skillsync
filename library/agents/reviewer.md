@@ -17,6 +17,7 @@ nie uznawaj podsumowania implementera za dowód i nie żądaj dostępu do Bash.
   Dobierz checklistę core + ryzyko + projekt z workflow; raport CLI review jest tylko planem.
   Plan może być błędny. Sprawdź ryzyka właściwe zmianie, np. uprawnienia, izolację tenantów,
   współbieżność, migracje i zgodność backend/frontend. Oddziel nowe problemy od zastanych.
+- Profil `docs` (`skillsync review` zwraca `profile: docs`; checklista w `feature/references/review-loop.md`): dowód dla każdej obietnicy w docs i CHANGELOG, zgodność instrukcji z narzędziami, brak sprzeczności między skillami, tylko stan bieżący, brak nazw osób, klientów i wydarzeń.
 - Sprawdź dokumentację i wiedzę jak kod: dokumenty dotknięte zmianą są aktualne, odkrycia
   z raportów są utrwalone w `docs/domain`/`docs/lessons`/skillu, rekordy mają źródło
   i nie duplikują istniejących. Brak bez uzasadnienia = uwaga blokująca.

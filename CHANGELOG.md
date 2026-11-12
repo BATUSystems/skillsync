@@ -12,6 +12,10 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Added
+- `skillsync leakcheck --text FILE` and `--stdin`: the leak check for text outside git (a PR description, a comment, release notes), with the same target, identities and patterns as `--range`, scanned in the strictest path class. The report names the label (file name or `<stdin>`), the category and the position, never the text. No git repository needed; the text is never a command argument. The skills `pr-run`, `feature` and `dispatch` now require this check for a description written to a file before `gh pr create`, `gh pr edit --body` and `gh release create`.
+- Review profile `docs` of the role `reviewer` (`library/skills/feature/references/review-loop.md`, `library/agents/reviewer.md`): every promise in docs, CHANGELOG and notes has evidence or is marked unconfirmed, instructions match the tools that check them, skills do not contradict each other, current state only, no names of people, clients or events in the public core. `skillsync review` returns `profile` (`docs` when the change touches only `docs/**`, skill `.md` files, `CHANGELOG*` or release notes, otherwise `kod`) and `docsFiles`, adds the docs checklist items for docs files, and does not change the risk or `readiness`. Paths and items can be overridden with `workflow.review.docs_paths` and `workflow.review.docs_checklist`.
+
 ## [1.2.0] - 2026-11-12
 
 ### Added

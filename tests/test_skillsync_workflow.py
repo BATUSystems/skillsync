@@ -982,6 +982,50 @@ class ReadinessSpecContracts(WorkflowFixture):
         self.assertEqual(report['sections'], ['contracts', 'risks', 'evidence'])
 
 
+class ReviewDocsProfile(WorkflowFixture):
+    """`skillsync review`: profil `docs` roli `reviewer` dla zmian w dokumentacji, skillach, CHANGELOG i notatkach wydania."""
+
+    def review(self, *files):
+        return self.report('review', '--files', *files)
+
+    def test_docs_only_change_selects_the_docs_profile_with_its_checklist(self):
+        for files in (['docs/cli.md'], ['docs/domain/x.md', 'CHANGELOG.md'], ['library/skills/feature/SKILL.md'],
+                      ['library/skills/feature/references/a.md'], ['notes/release-notes-1.3.md'], ['docs/a.md', 'sub/CHANGELOG.md']):
+            with self.subTest(files=files):
+                report = self.review(*files)
+                self.assertEqual(report['profile'], 'docs')
+                self.assertEqual(sorted(report['docsFiles']), sorted(files))
+                self.assertTrue(any('dowód' in item for item in report['checklist']), report['checklist'])
+                self.assertTrue(any('leakcheck --text' in item for item in report['checklist']))
+                self.assertEqual(report['status'], 'NOT_RUN')
+
+    def test_code_or_mixed_change_keeps_the_code_profile_and_adds_the_docs_items_for_docs_files(self):
+        plain = self.review('helper.py')
+        self.assertEqual((plain['profile'], plain['docsFiles']), ('kod', []))
+        self.assertFalse(any('leakcheck --text' in item for item in plain['checklist']))
+        mixed = self.review('helper.py', 'docs/cli.md')
+        self.assertEqual((mixed['profile'], mixed['docsFiles']), ('kod', ['docs/cli.md']))
+        self.assertTrue(any('leakcheck --text' in item for item in mixed['checklist']))
+
+    def test_library_code_and_non_markdown_skill_files_are_not_docs(self):
+        for files in (['library/skills/feature/scripts/run.py'], ['library/skills/feature/assets/a.json'], ['skillsync_workflow/cli.py']):
+            with self.subTest(files=files):
+                self.assertEqual(self.review(*files)['profile'], 'kod')
+
+    def test_docs_change_does_not_raise_the_risk_or_change_readiness(self):
+        self.assertEqual(self.review('docs/cli.md')['risk'], 'low')
+        self.assertEqual(self.report('readiness', '--files', 'docs/cli.md')['status'], 'PASS')
+
+    def test_manifest_overrides_paths_and_checklist(self):
+        self.manifest['workflow']['review'] = {'docs_paths': ['handbook/**'], 'docs_checklist': ['własna pozycja docs']}
+        self.save()
+        report = self.review('handbook/a.md')
+        self.assertEqual(report['profile'], 'docs')
+        self.assertIn('własna pozycja docs', report['checklist'])
+        self.assertFalse(any('leakcheck --text' in item for item in report['checklist']))
+        self.assertEqual(self.review('docs/cli.md')['profile'], 'kod')
+
+
 class ReadinessPrototypeGate(WorkflowFixture):
     """F3 (K26, kontrakt G): `readiness --plan` woła bramkę prototypu, gdy nagłówek planu ma linię `Prototyp:` albo obejścia."""
     FULL = '# Contracts\ncontract text\n# Risks\nrisk text\n# Evidence\nevidence text\n'
