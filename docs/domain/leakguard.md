@@ -2,7 +2,7 @@
 title: "Strażnik wycieków (leakguard): identity.yaml, patterns.yaml, coverage, klasy ścieżek, hooki, pełne ścieżki w raporcie (D71)"
 tags: [skillsync, leakguard, leakcheck, security, identity, coverage, hooks, privacy]
 paths: ['skillsync_workflow/leakguard.py', 'skillsync_workflow/data/leakguard-patterns.yaml', 'skillsync_workflow/data/leakguard-suffixes-pl.txt', 'skillsync_workflow/layers.py', 'skillsync', 'tests/test_skillsync_leakguard*.py']
-source: "spec zadania (poza rdzeniem) (K6–K8, D86, Format patterns.yaml, Klasy ścieżek, Hooki); skillsync_workflow/leakguard.py (zasoby i .leakguard/patterns.yaml, authors_scope, pole path w raporcie, --require full, core.hooksPath); skillsync_workflow/layers.py (parse_machine_config, leakguard_inputs); plan docs/plans/2026-11-05-warstwy-generator.md, sekcja Wynik (D71, D86, krok 1.1, 2.1)"
+source: "spec zadania (poza rdzeniem) (K6–K8, D86, Format patterns.yaml, Klasy ścieżek, Hooki); skillsync_workflow/leakguard.py (zasoby i .leakguard/patterns.yaml, authors_scope, pole path w raporcie, --require full, core.hooksPath); skillsync_workflow/layers.py (parse_machine_config, leakguard_inputs); plan zadania (poza rdzeniem), sekcja Wynik (D71, D86, krok 1.1, 2.1)"
 verified: 2026-11-12
 ---
 Reguła: `skillsync leakcheck` i hooki git blokują treść, nazwy plików i metadane commitów, które zawierają tożsamości

@@ -1,7 +1,7 @@
 """CLI pytań do eksperta per przebieg (Q-PER-RUN, 1.2.1): `--slug`, wybór przebiegu ze speca, `withdraw`, notatki
 o utworzonych plikach i osierocony lock, `purge`, `migrate`.
 
-Kryteria: docs/specs/2026-11-12-q-per-run.md (K1, K4, D4, D6) i dodatki z testu 1.2.0 (withdraw -> stan, wypisanie
+Kryteria: spec zadania (poza rdzeniem) (K1, K4, D4, D6) i dodatki z testu 1.2.0 (withdraw -> stan, wypisanie
 utworzonych plików, sprzątanie locka, purge). Fixture `QuestionCase`: repozytorium git, przebieg `demo` z `requirements`
 równym SPEC. Migracja chodzi w procesie testu z podstawionym `_move_to_trash`, żeby test nie ruszał kosza użytkownika.
 Uruchamianie: `python3 -m unittest discover -s tests -p test_skillsync_prototype_question_runs_cli.py`.

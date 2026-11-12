@@ -1,7 +1,7 @@
 """Pytania do eksperta osobno dla każdego przebiegu (Q-PER-RUN, 1.2.1): API, tryb zgodności ze starym plikiem,
 `questions.json` poza hashem ekranów i zamrożeniem iteracji.
 
-Kryteria: docs/specs/2026-11-12-q-per-run.md w repozytorium ops (K2, K4, K5, D2, D7, D9). Serwer startuje na porcie 0
+Kryteria: spec zadania (poza rdzeniem) (K2, K4, K5, D2, D7, D9). Serwer startuje na porcie 0
 (harness `ServerCase`), loginy to `*@example.com`, hasła-atrapy są składane w czasie wykonania.
 Uruchamianie: `python3 -m unittest discover -s tests -p test_skillsync_prototype_questions_runs.py`.
 """
