@@ -20,7 +20,7 @@ PREFIX = '\\\\?\\'
 @needs_os_symlinks
 class DanglingLibrarySymlinkTests(unittest.TestCase):
     def setUp(self):
-        self.tmp = Path(tempfile.mkdtemp(prefix='link-win-'))
+        self.tmp = Path(tempfile.mkdtemp(prefix='link-win-')).resolve()
         self.addCleanup(shutil.rmtree, self.tmp, True)
         self.library = self.tmp / 'library'
         (self.library / 'skills' / 'feature').mkdir(parents=True)
@@ -37,15 +37,23 @@ class DanglingLibrarySymlinkTests(unittest.TestCase):
         """`Path.resolve` wiszącego symlinku zwraca formę `\\\\?\\<ścieżka>`, a istniejących ścieżek (korzeń biblioteki) zwykłą:
         tak rozjeżdżają się formy na Windows i `relative_to` rzuca `ValueError`."""
         real = Path.resolve
+        cache = {}  # wyniki liczone przed ewentualnym wyłączeniem `os.readlink` (realpath sam go używa)
 
         def windows_form(path, strict=False):
-            resolved = real(path, strict=strict)
+            if path not in cache:
+                cache[path] = real(path, strict=strict)
+            resolved = cache[path]
             return resolved if resolved.exists() else Path(PREFIX + str(resolved))
+
+        for item in (self.dangling, self.live, self.foreign, self.library):
+            windows_form(item)
 
         return mock.patch.object(Path, 'resolve', windows_form)
 
     def test_dangling_symlink_is_recognised_when_resolve_returns_the_extended_form(self):
-        with self.with_windows_resolve(), mock.patch.object(skillsync, '_WINDOWS_PATHS', True, create=True):
+        # bez kandydata z `readlink`: test wymusza samą ścieżkę `resolve` + zdejmowanie prefiksu
+        with self.with_windows_resolve(), mock.patch.object(skillsync, '_WINDOWS_PATHS', True, create=True), \
+                mock.patch.object(os, 'readlink', side_effect=OSError):
             self.assertTrue(skillsync.is_library_symlink(self.dangling, [self.library]))
             self.assertTrue(skillsync.is_library_symlink(self.live, [self.library]))
 
@@ -63,6 +71,14 @@ class DanglingLibrarySymlinkTests(unittest.TestCase):
         with mock.patch.object(Path, 'resolve', unrelated_for_dangling):
             self.assertTrue(skillsync.is_library_symlink(self.dangling, [self.library]))
             self.assertFalse(skillsync.is_library_symlink(self.foreign, [self.library]))
+
+    def test_a_target_leaving_the_library_through_dotdot_is_not_managed(self):
+        escaping = self.skills / 'ucieka'
+        escaping.symlink_to(self.library / '..' / 'inne' / 'skill', target_is_directory=True)  # wiszący, poza biblioteką
+        relative = self.skills / 'wzgledny'
+        relative.symlink_to(Path('..') / '..' / '..' / 'library' / '..' / 'inne', target_is_directory=True)
+        self.assertFalse(skillsync.is_library_symlink(escaping, [self.library]))
+        self.assertFalse(skillsync.is_library_symlink(relative, [self.library]))
 
     def test_plain_posix_behaviour_is_unchanged(self):
         self.assertTrue(skillsync.is_library_symlink(self.dangling, [self.library]))

@@ -1547,7 +1547,9 @@ def is_library_symlink(path: Path, library_root) -> bool:
     if not path.exists():
         try:
             target = os.readlink(path)
-            candidates.append(_link_text(target if os.path.isabs(target) else os.path.join(os.path.dirname(path), target)))
+            if not os.path.isabs(target):
+                target = os.path.join(os.path.realpath(os.path.dirname(path)), target)
+            candidates.append(_link_text(os.path.normpath(target)))
         except OSError:
             pass
     for root in roots:
@@ -1558,18 +1560,6 @@ def is_library_symlink(path: Path, library_root) -> bool:
         prefixes = {base + os.sep, base + "/"}
         if any(item == base or item.startswith(tuple(prefixes)) for item in candidates):
             return True
-    return False
-    roots = [library_root] if isinstance(library_root, (str, Path)) else list(library_root)
-    try:
-        resolved = path.resolve()
-    except (OSError, RuntimeError):
-        return False
-    for root in roots:
-        try:
-            resolved.relative_to(Path(root).expanduser().resolve())
-            return True
-        except (ValueError, OSError, RuntimeError):
-            continue
     return False
 
 
