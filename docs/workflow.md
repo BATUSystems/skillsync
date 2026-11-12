@@ -126,7 +126,7 @@ Klucz manifestu `workflow.ceremony: full | demo` ([manifest](manifest.md)); `rou
 
 | Relaksuje | Zostaje bez zmian |
 |---|---|
-| review `kod`: jedno na przebieg | pętla pełna dla każdego kroku ze strażnikiem wycieków, migracją albo bezpieczeństwem (wszystkie trzy kategorie pętli pełnej) |
+| review `kod`: jedno na przebieg, najwyżej 2 rundy (druga tylko przy blockerze, co najmniej 3 majorach, poprawkach w strażniku wycieków, migracji lub bezpieczeństwie albo po drugim `REFUTED`) | pętla pełna dla każdego kroku ze strażnikiem wycieków, migracją albo bezpieczeństwem (wszystkie trzy kategorie pętli pełnej) |
 | test-writer tylko w fazach z uprawnieniami lub izolacją danych | testy, ustalona wersja, rekord `--final`, zamknięcie planu |
 | dokumentacja ograniczona do changeloga i „Wyniku” | changelog i „Wynik” planu |
 | `retro-quality` i rekordy wiedzy odroczone | dług zapisany w „Wyniku”, podsekcja „Dług (ceremony: demo)” (temat, źródło, proponowany właściciel); spłaca go człowiek albo kolejny przebieg `full` |
