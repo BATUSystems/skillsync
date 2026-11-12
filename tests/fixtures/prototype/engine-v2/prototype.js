@@ -1,7 +1,7 @@
 /* Silnik prototypów skillsync, wersja 2.
  *
  * Jeden plik bez zależności. W przeglądarce uruchamia interfejs komentarzy, akceptacji i iteracji;
- * pod Node (`require`) eksportuje czyste funkcje (`module.exports`, kontrakt: 106 nazw), bez dotykania `window` i `document`.
+ * pod Node (`require`) eksportuje czyste funkcje (`module.exports`, kontrakt: 107 nazw), bez dotykania `window` i `document`.
  *
  * Układ pliku: logika podzielona na dziedziny (każda to obiekt z małymi funkcjami), eksport składany na końcu z mapy
  * nazwa -> implementacja. Kształty danych powstają w fabrykach (`Shapes`), nie w miejscu użycia.
@@ -628,6 +628,10 @@
   const Switcher = (() => {
     const FOCUSABLE_SELECTOR = 'a[href], button, input, select, textarea, [tabindex]';
 
+    // Prosty pasek linków (`data-proto-nav="strip"`) ma sens tylko przy kilku ekranach; powyżej progu (i bez atrybutu) jest przełącznik z listą rozwijaną.
+    const STRIP_MAX = 5;
+    const navMode = (attribute, count) => (attribute === 'strip' && Number.isInteger(count) && count >= 0 && count <= STRIP_MAX ? 'strip' : 'switcher');
+
     const entriesFromLinks = (links) => {
       const entries = [];
       asArray(links).forEach((link) => {
@@ -739,7 +743,7 @@
     };
 
     return Object.freeze({
-      entriesFromLinks: entriesFromLinks, normalizeSearch: normalizeSearch, filterEntries: filterEntries, adjacent: adjacent,
+      entriesFromLinks: entriesFromLinks, navMode: navMode, normalizeSearch: normalizeSearch, filterEntries: filterEntries, adjacent: adjacent,
       visibleId: visibleId, listMove: listMove, shortcut: shortcut, searchKeyAction: searchKeyAction,
       focusableAfter: focusableAfter, searchTabTarget: searchTabTarget, withCounts: withCounts,
       toolbarFitsOneRow: toolbarFitsOneRow
@@ -2012,8 +2016,11 @@
     // a zamrożona iteracja w `<root>/<slug>/iterations/N/`.
     const galleryHref = () => (/\/iterations\/\d+\/[^/]*$/.test(window.location.pathname || '') ? '../../../' : '../');
 
+    // Link do galerii prototypów (domek): jest zarówno w przełączniku, jak i w prostym pasku linków (strip).
+    const makeHome = () => Dom.make('a', { class: 'proto-screens-home', href: galleryHref(), 'aria-label': 'Lista prototypów', title: 'Lista prototypów', text: '⌂' });
+
     const build = (nav) => {
-      ui.home = Dom.make('a', { class: 'proto-screens-home', href: galleryHref(), 'aria-label': 'Lista prototypów', title: 'Lista prototypów', text: '⌂' });
+      ui.home = makeHome();
       ui.prev = Dom.make('button', { type: 'button', 'data-screen-step': 'prev', text: '‹' });
       ui.next = Dom.make('button', { type: 'button', 'data-screen-step': 'next', text: '›' });
       ui.num = Dom.make('span', { class: 'proto-screens-num' });
@@ -2034,9 +2041,16 @@
 
     const start = () => {
       const nav = document.querySelector('nav.screen-nav');
-      if (!nav || nav.getAttribute('data-proto-nav') === 'strip') return false;
-      state.entries = readEntries(nav);
-      if (!state.entries.length) return false;
+      if (!nav) return false;
+      const entries = readEntries(nav);
+      if (!entries.length) return false;
+      if (Switcher.navMode(nav.getAttribute('data-proto-nav'), entries.length) === 'strip') {
+        // pasek zostaje paskiem, ale z domkiem na początku; stan przełącznika (wpisy, linki) zostaje pusty, więc `goTo` i listy ekranów nie działają na pasku
+        state.links = emptyMap();
+        nav.insertBefore(makeHome(), nav.firstChild);
+        return true;
+      }
+      state.entries = entries;
       build(nav);
       bindEvents();
       state.current = null;
@@ -5170,7 +5184,7 @@
 
   // ── 14. Eksporty i start ──────────────────────────────────────────────────────────────────────────────────────
 
-  // Mapa nazwa -> implementacja (dokładnie 106 nazw kontraktu); funkcje pomocnicze UI tu nie trafiają.
+  // Mapa nazwa -> implementacja (dokładnie 107 nazw kontraktu); funkcje pomocnicze UI tu nie trafiają.
   const EXPORT_MAP = {
     // stałe
     ENGINE_VERSION, FORMAT_NAME, FORMAT_VERSION, API_ROOT, QUEUE_PREFIX, REJECTED_PREFIX, SEEN_PREFIX, V1_COMMENTS_PREFIX,
@@ -5227,6 +5241,7 @@
     removeDarkReaderLeftovers: Appearance.sweep,
     // przełącznik ekranów
     screenEntriesFromLinks: Switcher.entriesFromLinks,
+    screenNavMode: Switcher.navMode,
     normalizeSearch: Switcher.normalizeSearch,
     filterScreens: Switcher.filterEntries,
     adjacentScreen: Switcher.adjacent,

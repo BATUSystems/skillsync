@@ -41,7 +41,8 @@ Analizę rozpoczyna co najmniej jeden z sygnałów:
    ryzyko według reguły [pętli przeglądu](review-loop.md):
    1. pętla przeglądu ma rundę 2 lub dalszą, choć poprzednia runda nie znalazła blockera, a ryzyko kroku albo planu
       leży poza trzema kategoriami pętli pełnej (strażnik wycieków, migracja, bezpieczeństwo); wyjątkiem jest runda 2
-      po drugim `REFUTED` tej samej uwagi ([review-loop](review-loop.md));
+      po drugim `REFUTED` tej samej uwagi ([review-loop](review-loop.md)) oraz, przy `ceremony: demo`, runda 2 z powodów z
+      [ceremonii demo](ceremony-demo.md) (co najmniej 3 majory, poprawki w strażniku wycieków, migracji lub bezpieczeństwie);
    2. późniejsza pętla albo krok powtórzyły tę samą kontrolę na niezmienionym stanie (ten sam HEAD, to samo drzewo
       robocze, ten sam materiał).
 

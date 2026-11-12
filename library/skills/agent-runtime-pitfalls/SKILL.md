@@ -37,6 +37,7 @@ pasować do środowiska, popraw ją tutaj zamiast obchodzić.
   (`tests/test_skillsync_knowledge_init.py:97`).
   Gdy przywrócenie zawiesi się (`cp -i`) albo skrypt zostanie przerwany, **mutant zostaje na dysku**:
   przed dalszą pracą porównaj plik z kopią (`diff -q`) lub `git diff`, nie zakładaj stanu wyjściowego.
+- **zsh: `=====` jako argument i backticki w `echo "…"`.** Napis zaczynający się od `=` (np. separator `echo =====` albo `print ======`) zsh rozwija jak `=polecenie` i kończy się błędem `not found` (zsh zdejmuje pierwsze `=`); kolejne polecenia w łańcuchu `&&` się nie wykonują. W cudzysłowie `echo "…"` backticki wokół nazwy i `$(…)` wykonują komendę zamiast wypisać tekst (opis z nazwą polecenia w backtickach odpalił to polecenie). Separator pisz jako `printf '%s\n' '-----'` albo `echo '====='` w apostrofach, a tekst z backtickami podawaj w apostrofach lub przez `cat <<'E'`.
 
 ## Scratchpad i narzędzia sesji
 
@@ -86,6 +87,7 @@ pasować do środowiska, popraw ją tutaj zamiast obchodzić.
   `docs/lessons/path-hosta-z-systemd-user.md`).
 - **`pgrep -f` i `grep` łapią własną powłokę**, gdy wzorzec jest w treści polecenia. Licz przez `pgrep -f '[w]zorzec' | wc -l` (nawias na pierwszej literze wzorca),
   a przynależność procesu do katalogu sprawdzaj w `/proc/<pid>/cwd`.
+- **Zegar sesji rozjechany z maszyną.** Godzina „z głowy”, z kontekstu rozmowy albo ze znacznika w wiadomości bywa przesunięta o godziny (dryf rzędu +2 h w stanie przebiegu). Każdy czas wpisywany do planu, checkpointu, stanu lub raportu bierz z `date` (np. `date +%H:%M`, `date -Iseconds`) albo z źródła, które go podało; nie szacuj i nie przepisuj z poprzedniej wiadomości.
 
 ## Procesy
 
@@ -122,8 +124,11 @@ pasować do środowiska, popraw ją tutaj zamiast obchodzić.
   Przy dodawaniu zależności: zmiana tylko w jednym commicie, a dowód spójności to
   `sha256sum package-lock.json package.json` przed i po prawdziwym `npm ci` (muszą być
   identyczne) oraz `npm ls <pakiet>` bez błędów peer/invalid.
+- **`npm ci` z niewłaściwą wersją npm kończy się `EUSAGE`** („`npm ci` can only install packages when your package.json and package-lock.json are in sync”, z `Missing`/`Invalid … from lock file`), choć lockfile bywa poprawny: domyślny npm z powłoki jest starszy niż ten, którym go wygenerowano. Zanim uznasz rozjazd za prawdziwy, sprawdź najpierw wersję npm. Przed `npm ci` sprawdź `npm -v` i `node -v` względem `engines`/dokumentacji projektu i uruchom z właściwym Node: `PATH=$HOME/.nvm/versions/node/v22.<x>/bin:$PATH npm ci`; nie „naprawiaj” lockfile, dopóki wersja npm się nie zgadza.
 
 ## Testy
+
+- **Potok gubi kod wyjścia runnera testów.** `testy | tail -5 && git commit` (albo `… | grep wynik`) zwraca kod ostatniego polecenia w potoku, więc czerwone testy wyglądają na zielone, a commit i tak się wykonuje. Zapisz kod w zmiennej: `testy > log 2>&1; rc=$?; tail -5 log; [ $rc -eq 0 ] && git commit …`, albo `set -o pipefail` (zsh: `setopt pipefail`); wynik zawsze według `rc`, nie według ostatniej linii wyjścia.
 
 - **Windows: `Path.write_text` zamienia LF na CRLF**, więc skrót (sha256) liczony w teście z tekstu z LF
   nie zgadza się ze skrótem pliku. Helper fikstur, który zapisuje dowody, pisze z `newline=''` albo bajtami.

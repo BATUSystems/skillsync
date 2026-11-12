@@ -150,7 +150,7 @@ Zachowanie wyroczni opisuje `README.md` w tym katalogu.
 | D23-375 | Telefon | 375 px, otwórz listę | `.proto-screens-pop` na całą szerokość widoku (lewa krawędź ≤ 1 px, szerokość ≥ szerokość widoku − 2) i brak poziomego przewijania dokumentu oraz paska | D23 | tak | znany defekt paska, patrz sekcja 10 |
 | D23-motywy | Oba motywy | Jasny/ciemny × 4 szerokości | Brak czarnych pól w jasnym motywie; kontrast tła i tekstu większy niż próg skryptu | D23 | tak | — |
 | D23-prezentacja | Tryb „Prezentacja” | Prezentacja; › | „2 / 28”, ekran s2 | D23 | tak | — |
-| D23-strip | Wyłącznik | `nav.screen-nav[data-proto-nav="strip"]` | Brak `proto-screens`, stary pasek linków widoczny | D23 | tak | atrybut wstrzyknięty przed DOMContentLoaded |
+| D23-strip | Pasek linków (strip) | `nav.screen-nav[data-proto-nav="strip"]`: plan z 28 ekranami, potem 3 ekrany | 28 ekranów: atrybut ignorowany, przełącznik z domkiem i listą; 3 ekrany: brak `proto-screens`, pasek linków z domkiem jako pierwszym linkiem (4 widoczne) | D23 | tak | atrybut wstrzyknięty przed DOMContentLoaded; próg 5 ekranów |
 
 ## 6. DR: pozostałości Dark Readera
 

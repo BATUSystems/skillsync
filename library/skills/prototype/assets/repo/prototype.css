@@ -282,6 +282,15 @@ button.anno-user, button.anno-accept { cursor: pointer; }
 }
 .proto-screens-home:hover { background: var(--accent); color: var(--accent-foreground); }
 
+/* domek w prostym pasku linków (strip): jak pozostałe pigułki paska, nie jak przycisk przełącznika */
+.screen-nav:not(.proto-screens) > .proto-screens-home {
+  min-width: 0;
+  min-height: 0;
+  padding: 0.125rem 0.5rem;
+  font-size: 0.75rem;
+  border-radius: 999px;
+}
+
 [data-screen-step], .proto-screens-home {
   min-width: 2.25rem;
   min-height: 2.25rem;
