@@ -66,7 +66,7 @@ dla przejścia), bo ma fokus i klawiaturę z definicji; atrybut na `div`, `tr` c
 
 Lista ekranów w pasku to `nav.screen-nav` z linkami `<a href="#sN">N Nazwa</a>`. Silnik zamienia ją na przełącznik z listą rozwijaną i wyszukiwaniem;
 **domyślnie nie ustawiaj `data-proto-nav`**. Atrybut `data-proto-nav="strip"` zostawia prosty pasek linków tylko na wyraźne życzenie właściciela i tylko do 5 ekranów
-(przy większej liczbie silnik go ignoruje i buduje przełącznik). Link do listy prototypów (domek ⌂) jest zawsze, w obu trybach.
+(przy większej liczbie silnik go ignoruje i buduje przełącznik). Link do listy prototypów (domek ⌂) jest w obu trybach (przy ekranach z linkami w `nav`).
 
 ```html
 <nav class="screen-nav" aria-label="Ekrany" data-proto-nav="strip">

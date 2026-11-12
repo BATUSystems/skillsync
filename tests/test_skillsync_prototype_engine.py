@@ -49,7 +49,7 @@ def find_node():
 # Kopia: tests/fixtures/prototype/engine-v2/ (SOURCE.md). Strona Pythona: skillsync_workflow/prototype_server.py.
 
 ENGINE_V2_DIR = Path(__file__).resolve().parent / 'fixtures' / 'prototype' / 'engine-v2'
-ENGINE_V2_SHA256 = 'd0d7ac5c2f3be77223c8c572d74a76aec39812dd13a23b4b041c0c02a927be76'
+ENGINE_V2_SHA256 = '5ac18195b89ba518efc3b79ca42661144ec2415dda0bc643ef19000cede233fd'
 REFRESH_V2 = 'Odśwież kopię wg tests/fixtures/prototype/engine-v2/SOURCE.md i zaktualizuj ENGINE_V2_SHA256.'
 ENGINE_V2_PATH_ENV = 'SKILLSYNC_PROTOTYPE_ENGINE_V2_PATH'
 DIFF_SEEDS = (20261104, 7, 1234567, 99, 424242, 31337)
@@ -1252,9 +1252,10 @@ class EngineV2ScreenSwitcherTests(unittest.TestCase):
     def test_nav_mode_strip_only_for_a_few_screens(self):
         """PROTO-NAV: `data-proto-nav="strip"` zostawia pasek linków tylko do 5 ekranów; przy większej liczbie (i bez atrybutu) jest przełącznik z listą."""
         calls = [{'fn': 'screenNavMode', 'args': list(args)} for args in (
-            ('strip', 1), ('strip', 5), ('strip', 6), ('strip', 13), (None, 3), ('', 3), ('switcher', 2), ('STRIP', 2), ('strip', 'x'), ('strip', -1))]
+            ('strip', 1), ('strip', 5), ('strip', 6), ('strip', 13), (None, 3), ('', 3), ('switcher', 2), ('STRIP', 2), ('strip', 'x'), ('strip', -1), ('strip', 0), ('strip', 5.5), ('strip', None))]
         modes = self.call(calls)
-        self.assertEqual(modes, ['strip', 'strip', 'switcher', 'switcher', 'switcher', 'switcher', 'switcher', 'switcher', 'switcher', 'switcher'])
+        self.assertEqual(modes, ['strip', 'strip', 'switcher', 'switcher', 'switcher', 'switcher', 'switcher', 'switcher', 'switcher', 'switcher',
+                                'strip', 'switcher', 'switcher'])
 
     def test_filter_ignores_case_and_polish_diacritics(self):
         entries = self.plan_entries()

@@ -2042,12 +2042,15 @@
     const start = () => {
       const nav = document.querySelector('nav.screen-nav');
       if (!nav) return false;
-      state.entries = readEntries(nav);
-      if (!state.entries.length) return false;
-      if (Switcher.navMode(nav.getAttribute('data-proto-nav'), state.entries.length) === 'strip') {
-        nav.insertBefore(makeHome(), nav.firstChild); // pasek zostaje paskiem, ale z domkiem na początku
+      const entries = readEntries(nav);
+      if (!entries.length) return false;
+      if (Switcher.navMode(nav.getAttribute('data-proto-nav'), entries.length) === 'strip') {
+        // pasek zostaje paskiem, ale z domkiem na początku; stan przełącznika (wpisy, linki) zostaje pusty, więc `goTo` i listy ekranów nie działają na pasku
+        state.links = emptyMap();
+        nav.insertBefore(makeHome(), nav.firstChild);
         return true;
       }
+      state.entries = entries;
       build(nav);
       bindEvents();
       state.current = null;

@@ -34,7 +34,7 @@ wygląd elementu, do którego są dodane.
 | `[data-prototype-example]` | ekran przykładowy z szablonu: pomijany w liczeniu ekranów, `ids`, akceptacji i bramce |
 | `[data-proto-id]` | stały uchwyt elementu komentowalnego (kotwica wątku) |
 | `[data-goto="sN"]` | przejście do ekranu po kliknięciu (tryb „Klikalny”) |
-| `[data-proto-nav="strip"]` | wymuszenie prostego paska linków ekranów zamiast przełącznika |
+| `[data-proto-nav="strip"]` | prosty pasek linków ekranów zamiast przełącznika, tylko do 5 ekranów (powyżej atrybut jest ignorowany); domek (`.proto-screens-home`) jest w obu trybach |
 | `[data-theme]` | motyw jasny/ciemny na `html` |
 | `meta[name=color-scheme]`, `meta[name=darkreader-lock]` | blokada motywu (zdejmowanie pozostałości rozszerzeń przyciemniających tylko przy tym meta) |
 | `aria-current`, `aria-checked`, `aria-pressed`, `aria-selected`, `aria-expanded`, `aria-disabled`, `disabled`, `hidden` | stany używane w HTML prototypów i w UI silnika |
