@@ -201,7 +201,7 @@ Trzecia klasa, `[EKSPERT]`, dotyczy pytań domenowych zadawanych ekspertowi: zob
 
 Pytanie, na które programista nie zna odpowiedzi domenowej, może trafić do eksperta z kontem serwera prototypów (rola `expert`)
 przez `skillsync prototype question add`. Pytanie ma kontekst (`--ref`: tytuł, link, wyciąg), warianty z rekomendacją (`--option`)
-i `--origin <ścieżka speca>:Q<n>` (np. `--origin docs/specs/x.md:Q3`); gdy sensowna odpowiedź to kilka wariantów (które formaty, kolumny, role), pytanie jest jedno z `--multi` (co najmniej 2 `--option`, kilka `:recommended` dozwolone), a nie kilka pytań tak/nie; „żaden” ekspert wyraża własną odpowiedzią; kontekst to `--ref 'TYTUŁ|HREF[|WYCIĄG]'` (powtarzalne); odpowiedź wraca do speca w gicie jako wiersz `[EKSPERT]`.
+i `--origin <ścieżka speca>:Q<n>` (np. `--origin docs/specs/x.md:Q3`); kontekst to `--ref 'TYTUŁ|HREF[|WYCIĄG]'` (powtarzalne); gdy sensowna odpowiedź to kilka wariantów (które formaty, kolumny, role), pytanie jest jedno z `--multi` (co najmniej 2 `--option`, kilka `:recommended` dozwolone), a nie kilka pytań tak/nie; „żaden” ekspert wyraża własną odpowiedzią; odpowiedź wraca do speca w gicie jako wiersz `[EKSPERT]`.
 
 **Wejście (nie domyślnie).** Są dwie ścieżki:
 - opt-in programisty w akcie I: dopiero na jego życzenie pytania dla eksperta idą przez `skillsync prototype question add`;
