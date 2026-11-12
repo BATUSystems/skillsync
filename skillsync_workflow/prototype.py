@@ -3600,7 +3600,7 @@ def add_question(root, manifest, args):
         files.append(_relative(store.path, repo))
     else:
         existing = result.existing or {}
-        if existing.get('text') != args.text:
+        if existing.get('text') != args.text or bool(existing.get('multi')) != bool(partial.get('multi')):
             warnings.append('a question with this id and cid already exists with other content: nothing was written')
     try:
         for name, lines in (('.gitignore', (server.QUESTIONS_FILE + server.LOCK_SUFFIX, '*.tmp')),

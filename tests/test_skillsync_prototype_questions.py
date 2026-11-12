@@ -1136,6 +1136,11 @@ class MultiChoiceSchemaTests(unittest.TestCase):
         if code is not None:
             self.assertEqual(got, code)
 
+    def message_of(self, op, known=None):
+        with self.assertRaises(ps.PrototypeServerError) as caught:
+            self.check(op, known)
+        return caught.exception
+
     def known(self, **over):
         question = {'options': MULTI_OPTIONS, 'assumed': 'CSV', 'multi': True}
         question.update(over)
@@ -1166,7 +1171,8 @@ class MultiChoiceSchemaTests(unittest.TestCase):
         known = self.known()
         self.reject(answer(optionIds=['o1', 'o1']), known)
         self.reject(answer(optionIds=['o1', 'o9']), known, code='unknown_option')
-        self.reject(answer(optionIds='o1'), known)
+        self.assertEqual(code_of(self, lambda: self.check(answer(optionIds='o1'), known), 400), 'invalid_operation')
+        self.assertIn('must be a list', str(self.message_of(answer(optionIds='o1'), known)))
         self.reject(answer(optionIds=[1]), known)
         self.reject(answer(optionIds=['o1', '']), known)
         self.reject(answer(optionIds=['o%d' % n for n in range(9)]), code='too_many')

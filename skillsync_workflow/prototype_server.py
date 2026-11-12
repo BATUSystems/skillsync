@@ -7188,7 +7188,10 @@ EXPERTS_SCRIPT = r"""
     var form = el('form', { id: 'answer-form', novalidate: 'novalidate' });
     var fieldset = el('fieldset');
     fieldset.appendChild(el('legend', { text: 'Twoja odpowiedź' }));
-    if (question.multi) fieldset.appendChild(el('p', { 'class': 'muted', id: 'multi-hint', text: 'Zaznacz co najmniej jeden wariant albo wpisz własną odpowiedź.' }));
+    if (question.multi) {
+      fieldset.setAttribute('aria-describedby', 'multi-hint');
+      fieldset.appendChild(el('p', { 'class': 'muted', id: 'multi-hint', text: 'Zaznacz co najmniej jeden wariant albo wpisz własną odpowiedź.' }));
+    }
     (question.options || []).forEach(function (option, index) {
       var text = option.label + (option.recommended ? ' (Rekomendacja agenta)' : '');
       fieldset.appendChild(question.multi ? checkbox('opt-' + index, option.id, text) : radio('opt-' + index, 'o:' + option.id, text));
