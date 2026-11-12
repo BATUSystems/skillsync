@@ -174,6 +174,21 @@ class QuestionCase(PrototypeFixture):
         (self.qroot / QN).write_text(ps.serialize_questions(operations + [operation]), encoding='utf-8')
         return operation
 
+    def spec_row(self, qid, line, spec=SPEC):
+        """Zapisuje w specu wiersz `[EKSPERT]` pytania w linii `line` (`record` sprawdza, że tam stoi)."""
+        path = self.root / spec
+        path.parent.mkdir(parents=True, exist_ok=True)
+        lines = path.read_text(encoding='utf-8').split('\n') if path.exists() else []
+        while len(lines) < line:
+            lines.append('')
+        lines[line - 1] = '- Q1 [EKSPERT]: Pytanie (ekspert: %s) — odpowiedź: tak — ekspert: ewa, 2026-11-12T10:00Z' % qid
+        path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+
+    def rec(self, qid, line, spec=SPEC, **kwargs):
+        """`question record` po wpisaniu wiersza do speca (agent robi to przed `record`)."""
+        self.spec_row(qid, line, spec)
+        return self.q('record', qid, '--spec', spec, '--line', line, **kwargs)
+
     def users(self, *accounts):
         users = ps.UsersFile(str(self.root / '.skillsync' / 'prototype' / 'users.json'), iterations=1000)
         for login, roles, name in accounts:
@@ -606,7 +621,7 @@ class ReadCommandsTests(QuestionCase):
     def test_list_marks_answered_questions_waiting_to_be_recorded(self):
         counts = self.q('list')['counts']
         self.assertEqual(counts['toRecord'], 1)
-        self.q('record', QB, '--spec', SPEC, '--line', 12)
+        self.rec(QB, 12)
         self.assertEqual(self.q('list')['counts']['toRecord'], 0)
 
     def test_show_one_question_and_a_missing_one_fails(self):
@@ -646,7 +661,7 @@ class ReadCommandsTests(QuestionCase):
     def test_export_carries_comments_recorded_and_late_answers(self):
         self.expert_write('comment', QB, OLA, text='dopisek')
         self.late_answer(QB, OLA)
-        self.q('record', QB, '--spec', SPEC, '--line', 7)
+        self.rec(QB, 7)
         item = self.question(QB)
         self.assertEqual(item['answer']['by'], EWA, 'pierwsza odpowiedź zamyka pytanie')
         self.assertEqual([(c['by'], c['text']) for c in item['comments']], [(OLA, 'dopisek'), (OLA, 'druga odpowiedź')])
@@ -672,11 +687,11 @@ class RecordTests(QuestionCase):
     def test_record_marks_an_answered_question_and_is_idempotent(self):
         self.add()
         self.answer()
-        first = self.q('record', QA, '--spec', SPEC, '--line', 12)
+        first = self.rec(QA, 12)
         self.assertTrue(first['changed'])
         self.assertEqual((first['recorded']['spec'], first['recorded']['line']), (SPEC, 12))
         before = self.file_bytes()
-        again = self.q('record', QA, '--spec', SPEC, '--line', 12)
+        again = self.rec(QA, 12)
         self.assertFalse(again['changed'])
         self.assertNotIn('warnings', again)
         self.assertEqual(self.file_bytes(), before)
@@ -684,9 +699,9 @@ class RecordTests(QuestionCase):
     def test_record_again_with_another_line_keeps_the_first_and_warns(self):
         self.add()
         self.answer()
-        self.q('record', QA, '--spec', SPEC, '--line', 12)
+        self.rec(QA, 12)
         before = self.file_bytes()
-        report = self.q('record', QA, '--spec', SPEC, '--line', 40)
+        report = self.rec(QA, 40)
         self.assertFalse(report['changed'])
         self.assertEqual(report['recorded']['line'], 12)
         self.assertTrue(report['warnings'], report)
@@ -696,12 +711,12 @@ class RecordTests(QuestionCase):
     def test_record_on_an_unanswered_or_missing_question_fails(self):
         self.add()
         before = self.file_bytes()
-        report = self.q('record', QA, '--spec', SPEC, '--line', 12, code=1)
+        report = self.rec(QA, 12, code=1)
         self.assertEqual(report['error'], 'not_answered')
         self.assertEqual(self.q('record', 'qn-ffffffffffff', '--spec', SPEC, '--line', 1, code=1)['error'], 'not_found')
         self.assertEqual(self.file_bytes(), before)
         self.answer()
-        self.q('record', QA, '--spec', SPEC, '--line', 12)  # kontrola: po odpowiedzi przechodzi
+        self.rec(QA, 12)  # kontrola: po odpowiedzi przechodzi
 
 
 class WithdrawTests(QuestionCase):
@@ -812,7 +827,7 @@ class WaitTests(QuestionCase):
     def test_an_already_answered_and_recorded_question_named_by_id_passes_too(self):
         self.add()
         self.answer()
-        self.q('record', QA, '--spec', SPEC, '--line', 3)
+        self.rec(QA, 3)
         self.assertEqual(self.wait(QA)['event'], 'answer')
 
     def test_an_open_question_times_out_with_exit_3(self):
@@ -907,7 +922,7 @@ class WaitAllTests(QuestionCase):
     def test_all_skips_recorded_questions_so_a_loop_does_not_return_at_once(self):
         self.add('A?', QA)
         self.answer(QA)
-        self.q('record', QA, '--spec', SPEC, '--line', 5)
+        self.rec(QA, 5)
         report = self.wait_all(code=3)
         self.assertEqual(report['status'], 'TIMEOUT')
         self.add('B?', QB)  # kontrola: odpowiedziane i niezapisane = natychmiastowy PASS
@@ -922,7 +937,7 @@ class WaitAllTests(QuestionCase):
     def test_all_reports_a_comment_newer_than_since(self):
         self.add('A?', QA)
         answer = self.answer(QA)
-        self.q('record', QA, '--spec', SPEC, '--line', 5)
+        self.rec(QA, 5)
         comment = self.expert_write('comment', QA, OLA, text='uwaga po odpowiedzi')
         report = self.wait_all('--since', answer['at'])
         self.assertEqual((report['event'], report['questionId'], report['by']), ('comment', QA, OLA))
@@ -932,7 +947,7 @@ class WaitAllTests(QuestionCase):
     def test_all_reports_a_comment_after_an_operation_id(self):
         self.add('A?', QA)
         answer = self.answer(QA)
-        self.q('record', QA, '--spec', SPEC, '--line', 5)
+        self.rec(QA, 5)
         comment = self.expert_write('comment', QA, OLA, text='uwaga')
         self.assertEqual(self.wait_all('--after', answer['id'])['event'], 'comment')
         self.wait_all('--after', comment['id'], code=3)
@@ -941,7 +956,7 @@ class WaitAllTests(QuestionCase):
         self.add('A?', QA)
         self.add('B?', QB)
         first = self.answer(QA)
-        self.q('record', QA, '--spec', SPEC, '--line', 5)
+        self.rec(QA, 5)
         late = self.late_answer(QA, OLA, 'druga')
         report = self.wait_all('--since', first['at'])
         self.assertEqual((report['event'], report['opId']), ('comment', late['id']))
@@ -960,7 +975,7 @@ class SinceFormatTests(QuestionCase):
     def test_since_without_milliseconds_and_an_invalid_since(self):
         self.add('A?', QA)
         answer = self.answer(QA)
-        self.q('record', QA, '--spec', SPEC, '--line', 5)
+        self.rec(QA, 5)
         comment = self.expert_write('comment', QA, OLA, text='uwaga')
         before = answer['at'][:19] + 'Z'   # sekundy, bez milisekund, nie później niż odpowiedź: jej zdarzenie jest nowsze
         report = self.q('wait', '--all', '--since', before, '--timeout', '0', '--interval', '0.2')
@@ -1091,15 +1106,15 @@ class RecordArgumentTests(QuestionCase):
         for spec in ('../x.md', '/etc/x.md', 'https://example.com/x.md'):
             with self.subTest(spec=spec):
                 report = self.q('record', QA, '--spec', spec, '--line', 3, code=1)
-                self.assertEqual(report['error'], 'invalid_operation')
+                self.assertEqual(report['error'], 'record_spec_unreadable')   # sprawdzenie linii wyprzedza magazyn
         for bad in ('nie-id', 'QN-AAAA', 'qn-zzzzzzzzzzzz'):
             with self.subTest(question=bad):
-                report = self.q('record', bad, '--spec', SPEC, '--line', 3, code=1)
+                report = self.rec(bad, 3, code=1)
                 self.assertIn(report['error'], ('invalid_operation', 'not_found'))
         self.assertEqual(self.file_bytes(), before)
         result = self.run_cli('record', QA, '--spec', SPEC, '--line', 0)
         self.assertEqual(result.returncode, 2, result.stdout)
-        self.q('record', QA, '--spec', SPEC, '--line', 3)   # kontrola
+        self.rec(QA, 3)   # kontrola
 
     def test_add_with_a_bad_question_id_fails(self):
         for bad in ('nie-id', 'qn-xyz', 'QN-AAAAAAAAAAAA'):
@@ -1115,9 +1130,9 @@ class ReportedFilesTests(QuestionCase):
         self.add('B?', QB)
         self.answer(QA)
         path = self.qroot.joinpath(QN).relative_to(self.root).as_posix()
-        first = self.q('record', QA, '--spec', SPEC, '--line', 4)
+        first = self.rec(QA, 4)
         self.assertEqual(first['files'], [path])
-        self.assertEqual(self.q('record', QA, '--spec', SPEC, '--line', 4)['files'], [], 'powtórka nic nie zapisuje')
+        self.assertEqual(self.rec(QA, 4)['files'], [], 'powtórka nic nie zapisuje')
         out = self.q('withdraw', QB)
         self.assertEqual(out['files'], [path])
         self.assertEqual(self.q('withdraw', QB)['files'], [])
@@ -1309,7 +1324,7 @@ class AnswerLineTests(QuestionCase):
         report = self.q('wait', QA, '--timeout', '0', '--interval', '0.2')
         self.assertEqual(report['answerLine'], shown)
         self.assert_grammar(report['answerLine'])
-        self.q('record', QA, '--spec', SPEC, '--line', 2)
+        self.rec(QA, 2)
         self.expert_write('comment', QA, OLA, text='dopisek')
         answer_id = [op['id'] for op in self.ops() if op['type'] == 'answer'][0]
         late = self.q('wait', '--all', '--after', answer_id, '--timeout', '0', '--interval', '0.2')

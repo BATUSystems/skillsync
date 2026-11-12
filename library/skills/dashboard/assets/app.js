@@ -50,6 +50,7 @@
     storage: store,
     theme,
     now: () => Date.now(),
+    prototypeOrigin: (port) => `${location.protocol}//${location.hostname}:${port}`,
     prototypeUrl: (port, slug) => `${location.protocol}//${location.hostname}:${port}/${encodeURIComponent(slug)}/`,
     // Podgląd Markdown: HTML renderuje i escapuje serwer (/api/doc); strona działa pod CSP script-src 'self'.
     mountHtml: (el, html) => { el.innerHTML = html; },

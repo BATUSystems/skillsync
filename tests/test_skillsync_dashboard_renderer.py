@@ -486,9 +486,9 @@ function summary(m) {
       chipDesc: q('#acts .readiness-chip').getAttribute('data-desc'), facts: text(q('#acts .readiness-facts')),
       open: q('#acts .readiness [data-open-doc]') ? q('#acts .readiness [data-open-doc]').getAttribute('data-open-doc') : null,
       inAct: q('#acts .act[data-key="plan"] .readiness') !== null } : null,
-    questions: q('#acts .questions') ? { inAct: q('#acts .act[data-key="spec"] .questions') !== null, heads: qa('#acts .q-head').map(text),
-      descs: qa('#acts .q-head').map((x) => x.getAttribute('data-desc')), groups: qa('#acts .q-group').map((g) => ({ cls: g.getAttribute('class'),
-        items: g.querySelectorAll('li').map(text), none: g.querySelector('.q-none') !== null })), strong: qa('#acts .questions strong').map(text) } : null,
+    questions: q('#acts .questions') !== null || q('#acts .q-head') !== null || q('#acts .q-group') !== null,
+    qtoast: qa('#waitBanner [data-questions-toast]').map((n) => ({ text: text(n), cls: n.getAttribute('class'), role: n.getAttribute('role'),
+      hrefs: n.querySelectorAll('a').map((a) => a.getAttribute('href')), close: n.querySelectorAll('[data-notice-close]').length })),
     substeps: q('#acts details.substeps') ? { inAct: q('#acts .act[data-key="real"] details.substeps') !== null, summary: text(q('#acts .substeps summary')),
       summaryDesc: q('#acts .substeps summary').getAttribute('data-desc'), open: q('#acts details.substeps').hasAttribute('open'),
       items: qa('#acts .sub-list li').map((li) => ({ id: text(li.querySelector('.q-id')), t: text(li.querySelector('.sub-t')), cls: li.getAttribute('class') })) } : null,
@@ -734,16 +734,41 @@ function summary(m) {
     const noPreview = mount(null, { now: 0 }), preview = mount(null, { now: 0, preview: true });
     ex.emptyDoc = { noPreview: text(noPreview.root.querySelector('#docView')), preview: text(preview.root.querySelector('#docView')) };
   }
-  // Runda 2 (#31): XSS w pytaniach i założeniach, rozwinięcie podkroków po update(), link readiness, widz bez „Kopiuj”.
+  // Q-TOAST: pytania do eksperta to toast ze stanu wszystkich przebiegów (d.expertQuestions); w kafelku speca nie ma sekcji pytań.
   {
+    const origin = { prototypeOrigin: (port) => `http://127.0.0.1:${port}` };
+    const qa0 = (root, sel) => root.querySelectorAll(sel).map((n) => text(n));
+    const toast = (d, deps) => summary(mount(d, { now: NOW['questions'], deps: deps || {} })).qtoast;
     const j = clone(F['questions']);
     j.blockingQuestions.items[0].question = '<img src=x onerror=alert(1)>';
-    j.assumptions.items[0].question = '<script>alert(2)</script>';
     j.assumptions.items[0].accepted = '<b>tak</b>';
-    j.blockingQuestions.items[0].id = '<i>Q1</i>';
     ex.qxss = summary(mount(j, { now: NOW['questions'] }));
     const v = clone(F['questions']); v.approvals.viewer = true; v.approvals.here = false;
     ex.qviewer = summary(mount(v, { now: NOW['questions'] }));
+    ex.qtoast = { two: toast(F['questions'], origin), noOrigin: toast(F['questions']) };
+    const one = clone(F['questions']); one.expertQuestions = { open: 2, blocking: 1, runs: [one.expertQuestions.runs[0]] };
+    ex.qtoast.one = toast(one, origin);
+    const hostile = clone(one); hostile.expertQuestions.runs[0].url = '/_experts/../x';
+    ex.qtoast.hostileUrl = toast(hostile, origin);
+    const badOrigin = toast(F['questions'], { prototypeOrigin: () => 'javascript:alert(2)' });
+    ex.qtoast.badOrigin = badOrigin;
+    const zero = clone(F['questions']); zero.expertQuestions = { open: 0, blocking: 0, runs: [] };
+    ex.qtoast.zero = toast(zero, origin);
+    const junk = clone(F['questions']); junk.expertQuestions = { open: '<b>3</b>', blocking: null, runs: 'x' };
+    ex.qtoast.junk = toast(junk, origin);
+    const old = clone(F['questions']); delete old.expertQuestions;
+    ex.qtoast.absent = toast(old, origin);
+    // bez timera i bez „×”; znika po update z open = 0 (stan, nie wynik akcji)
+    const tm = { q: new Map(), n: 0, set(fn, ms) { const id = ++this.n; this.q.set(id, { fn, ms }); return id; }, clear(id) { this.q.delete(id); } };
+    const m = mount(clone(F['questions']), { now: NOW['questions'], deps: { timers: tm, ...origin } });
+    const timersAfterMount = tm.q.size;
+    const before = qa0(m.root, '#waitBanner [data-questions-toast]');
+    m.board.update(zero);
+    ex.qtoast.lifecycle = { timersAfterMount, before, after: qa0(m.root, '#waitBanner [data-questions-toast]'), banner: text(m.root.querySelector('#waitBanner')) };
+    // razem z toastem zgody oba są widoczne
+    const cp = clone(F['cp-ready']); cp.approvals.here = true; cp.expertQuestions = clone(F['questions']).expertQuestions;
+    const mc = mount(cp, { now: NOW['cp-ready'], deps: origin });
+    ex.qtoast.withBanner = { toast: qa0(mc.root, '#waitBanner [data-questions-toast]'), items: mc.root.querySelectorAll('#waitBanner .wait-item').length };
   }
   {
     const m = mount(F['plan-in-progress'], { now: NOW['plan-in-progress'] });
@@ -1147,32 +1172,53 @@ class RendererNodeTests(unittest.TestCase):
         self.assertEqual(sub["readinessOpenDoc"], [rb["open"]])
         self.assertEqual((sub["readinessLoadDoc"], sub["readinessView"]), ([rb["open"]], "docs"))
 
-    def test_questions_section(self) -> None:
-        q = self.out["fixtures"]["questions"]["questions"]
+    def test_questions_section_is_gone_from_the_spec_act(self) -> None:
+        # Q-TOAST: strona statusu nie rysuje listy pytań ani założeń (dla prowadzącego i widza, także z zerem); pola JSON zostają.
         d = self.fixtures["questions"]
-        self.assertTrue(q["inAct"])
-        self.assertEqual(q["heads"], ["Pytania blokujące (2)", "Założenia do korekty przy prototypie (3)"])
-        self.assertEqual(q["descs"], ["questions_blocking", "questions_assumptions"])
-        self.assertIn("is-blocking", q["groups"][0]["cls"])
-        self.assertEqual(len(q["groups"][0]["items"]), 2)
-        self.assertEqual(len(q["groups"][1]["items"]), 3)
-        self.assertEqual(q["strong"], [a["accepted"] or "—" for a in d["assumptions"]["items"]])
-        for item, src in zip(q["groups"][1]["items"], d["assumptions"]["items"]):
-            self.assertIn(f"{src['question']} — przyjęte: ", item)
-        sa = self.out["fixtures"]["spec-act"]["questions"]  # zero blokujących = „brak”
-        self.assertEqual(sa["heads"][0], "Pytania blokujące (0)")
-        self.assertTrue(sa["groups"][0]["none"])
-        for name in ("empty", "run-mode", "silence"):
-            self.assertIsNone(self.out["fixtures"][name]["questions"], name)  # brak speca i pytań = brak sekcji
+        self.assertTrue(d["blockingQuestions"]["items"] and d["assumptions"]["items"])
+        for name, got in self.out["fixtures"].items():
+            with self.subTest(fixture=name):
+                self.assertIs(got["questions"], False)
+        self.assertIs(self.out["extra"]["qviewer"]["questions"], False)
         x = self.out["extra"]["qxss"]
         self.assertNotIn("error", x)
         for tag in ("img", "script", "b", "i"):
             self.assertNotIn(tag, x["tags"])
-        self.assertIn("<img src=x onerror=alert(1)>", x["questions"]["groups"][0]["items"][0])
-        self.assertIn("<i>Q1</i>", x["questions"]["groups"][0]["items"][0])
-        self.assertIn("<script>alert(2)</script> — przyjęte: <b>tak</b>", x["questions"]["groups"][1]["items"][0])
-        self.assertEqual(x["questions"]["strong"][0], "<b>tak</b>")
-        self.assertEqual(self.out["extra"]["qviewer"]["questions"], q)  # widz widzi to samo
+        self.assertNotIn("<img", x["banner"])
+
+    def test_questions_toast_counts_all_runs(self) -> None:
+        d = self.fixtures["questions"]["expertQuestions"]
+        self.assertEqual((d["open"], d["blocking"], len(d["runs"])), (3, 2, 2))
+        t = self.out["extra"]["qtoast"]
+        text = "Pytania do eksperta: 3 otwartych (2 blokujących)"
+        self.assertEqual(len(t["two"]), 1)
+        two = t["two"][0]
+        self.assertTrue(two["text"].startswith(text), two["text"])
+        self.assertEqual(two["hrefs"], ["http://127.0.0.1:5130/_experts"])  # kilka przebiegów = lista
+        self.assertEqual((two["close"], two["role"]), (0, None))  # rolę status ma już baner
+        self.assertIn("wait-item", two["cls"])
+        self.assertEqual(t["one"][0]["hrefs"], ["http://127.0.0.1:5130/_experts/run-alpha"])  # jeden przebieg = jego strona
+        self.assertTrue(t["one"][0]["text"].startswith("Pytania do eksperta: 2 otwartych (1 blokujących)"))
+        # bez adresu serwera prototypów albo z adresem spoza http(s): sam tekst
+        self.assertEqual(t["noOrigin"][0]["hrefs"], [])
+        self.assertEqual(t["badOrigin"][0]["hrefs"], [])
+        self.assertTrue(t["noOrigin"][0]["text"].startswith(text))
+        # url z danych nie jest ufany: bierze się tylko ścieżka /_experts/…, inaczej lista
+        self.assertEqual(t["hostileUrl"][0]["hrefs"], ["http://127.0.0.1:5130/_experts"])
+        # open = 0, brak pola i śmieci = brak toastu
+        for key in ("zero", "junk", "absent"):
+            self.assertEqual(t[key], [], key)
+
+    def test_questions_toast_is_a_state_not_an_action_result(self) -> None:
+        life = self.out["extra"]["qtoast"]["lifecycle"]
+        self.assertEqual(life["timersAfterMount"], 0)  # bez timera
+        self.assertEqual(len(life["before"]), 1)
+        self.assertEqual(life["after"], [])  # znika, gdy open = 0
+        self.assertNotIn("Pytania do eksperta", life["banner"])
+        both = self.out["extra"]["qtoast"]["withBanner"]
+        self.assertEqual(len(both["toast"]), 1)
+        self.assertGreaterEqual(both["items"], 2)  # obok innych elementów banera
+        self.assertEqual(len(self.out["extra"]["qviewer"]["qtoast"]), 1)  # widz widzi to samo
 
     def test_substeps_section(self) -> None:
         got = self.out["fixtures"]["plan-in-progress"]["substeps"]

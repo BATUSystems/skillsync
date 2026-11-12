@@ -174,9 +174,9 @@ była, a nie, że pętla dała PASS.
 - Review speca: pliki `spec-review*` w katalogu przebiegu.
 - Ostrzeżenie w kafelku Aktu I „brak pre-implement przed GO plan”, gdy spec ma niepuste sekcje `## Kontrakty`, `## Migracja`
   albo `## Dane` (nie „nie dotyczy”), a w przebiegu nie ma `pre-implement*`.
-- Kafelek Aktu I ma sekcję „Pytania”: pytania blokujące i założenia do korekty przy prototypie z sekcji
-  `## Pytania otwarte` speca (pusta lista = „brak”, długie pytania się zawijają); widzi ją każdy, także widz `--read-host`. Założenia nie są akcją
-  „Odpowiedz na pytania”.
+- Kafelek Aktu I nie ma listy pytań: pytania do eksperta pokazuje toast w banerze „Pytania do eksperta: N otwartych (M blokujących)”
+  z pola `expertQuestions` (pliki `docs/prototypes/<slug>/questions.json` wszystkich przebiegów, nie tylko widocznego speca), z odnośnikiem do
+  `/_experts` albo `/_experts/<slug>`; toast nie ma timera i znika, gdy otwartych nie ma. Widzi go każdy, także widz `--read-host`.
 - Kafelek Aktu II ma „Readiness” z `readiness.md` przebiegu: PASS zielony, BLOCKED ostrzeżenie, bez pliku neutralny; data,
   skrót Plan-sha (ostrzeżenie, gdy różni się od sha pliku planu) i link do podglądu pliku.
 - Kafelek Aktu III ma rozwijaną listę podkroków `Fn.k` z czasem z checkpointów albo „brak danych”.
@@ -224,12 +224,13 @@ Kontrakt `deps` (wymagane tylko `now`):
 | `actions.selectPlan` | `(path \| null) => void` | nie | wybór planu z menu (`null` = automatycznie); renderer zapisuje go też w `storage` (`plan`) |
 | `actions.loadDoc` | `(path) => Promise<{path, status, mtime, truncated, html}>` | nie | jak `/api/doc`; obecność włącza podgląd w zakładce Dokumenty |
 | `actions.openDoc` | `(path) => void` | nie | otwarcie dokumentu przez hosta (np. edytor), używane, gdy nie ma `loadDoc` |
-| `actions.openLink` | `(kind, id, url) => boolean` | nie | `kind`: `branch`, `pr`, `session`, `prototype`; `true` = host otworzył sam (renderer robi `preventDefault`), inaczej domyślne `<a target=_blank>` |
+| `actions.openLink` | `(kind, id, url) => boolean` | nie | `kind`: `branch`, `pr`, `session`, `prototype`, `experts` (toast pytań do eksperta); `true` = host otworzył sam (renderer robi `preventDefault`), inaczej domyślne `<a target=_blank>` |
 | `canApprove` | `(json) => boolean` | nie | czy ten host może dawać zgody; domyślnie `approvals.here` z JSON-a |
 | `storage` | `{get(k) => string \| null, set(k, v)}` | nie | preferencje (`v == null` = usuń); bez niego wybór planu nie jest zapamiętywany |
 | `theme` | `{isDark() => boolean, toggle()}` | nie | przełącznik motywu i klawisz `T`; bez niego przycisku nie ma |
 | `texts` | `{live?, liveTip?, noConnection?}` | nie | nadpisanie tekstów wskaźnika (`live`, `polling`, `down`, `connecting`), ich dymków i komunikatu braku połączenia |
 | `prototypeUrl` | `(port, slug) => string` | nie | adres prototypu (strona: host strony + port); bez niego odnośnik bez `href` |
+| `prototypeOrigin` | `(port) => string` | nie | adres serwera prototypów bez ścieżki (strona: `protokół//host:port`); z nim toast pytań do eksperta ma odnośnik `/_experts[/<slug>]`, bez niego jest samym tekstem |
 | `mountHtml` | `(el, html) => void` | nie | wstawienie HTML podglądu Markdown (escapowanego przez serwer); renderer sam HTML nie parsuje |
 | `onTitle` | `(text) => void` | nie | tytuł okna (`⏳ Czeka · 40% · … — status`) |
 | `onNavigate` | `(hash) => void` | nie | adres widoku: `progress`, `docs`, `docs:<ścieżka>` |
@@ -265,11 +266,10 @@ Widz zdalny: pole `approvals.viewer` (`dashboard serve --read-host`; starszy ser
 `approvals.viewer === true` (brak pola = false; serwer daje wtedy `approvals.here` = false) każdy przycisk zgody poza
 „zgoda dana” jest nieaktywny, a jego dymek ma powód „Zgody daje prowadzący na komputerze z sesją.” (zamiast powodu stanu i
 „Zgoda tylko z przeglądarki…”); renderer nie rysuje przycisków kopiowania słowa zgody (nigdy, także poza trybem widza; brak `actions.copyText` i schowka) i nie wywołuje
-`actions.approve` (także z `canApprove`). Baner (`waiting`, cisza), sekcje Pytania i Readiness oraz stopka „tylko odczyt” bez zmian.
+`actions.approve` (także z `canApprove`). Baner (`waiting`, cisza), sekcja Readiness, toast pytań oraz stopka „tylko odczyt” bez zmian.
 
-Sekcje aktów rysuje renderer (`readinessTile`, `questionsBlock`, `substepsBlock`, funkcje modułu z kontekstem egzemplarza):
-Readiness w akcie II (`readiness`; link `readiness.source` jak inne dokumenty: podgląd z `loadDoc`, inaczej `openDoc`), Pytania
-w akcie I (`blockingQuestions`, `assumptions`; sekcja tylko przy specu albo niepustych listach), Podkroki i czas w akcie III
+Sekcje aktów rysuje renderer (`readinessTile`, `substepsBlock`, funkcje modułu z kontekstem egzemplarza):
+Readiness w akcie II (`readiness`; link `readiness.source` jak inne dokumenty: podgląd z `loadDoc`, inaczej `openDoc`), Podkroki i czas w akcie III
 (`substeps`, „brak danych” przy `missingData`; rozwinięcie `details` pamiętane w stanie renderera między `update()`),
 Czas pracy i czekania w akcie III (`timing`: czas pracy i czekania na człowieka per faza i suma przebiegu z checkpointów `czeka:` i `approvals.jsonl`; okno bez zamknięcia i krok bez znaczników to „nieznane”, nigdy zero ani szacunek; sekcja `timingBlock`).
 Poniżej 500 px szerokości akty I i II stoją w jednej kolumnie.

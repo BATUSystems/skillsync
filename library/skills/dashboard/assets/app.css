@@ -151,6 +151,7 @@ a.chip.git-link { text-decoration: none; }
 .wait-go:disabled, .act-approve:disabled { opacity: .6; cursor: not-allowed; white-space: normal; }
 .wait-item.is-ok > .ic { color: var(--done); animation: none; }
 .wait-item.is-err > .ic { color: var(--warn); animation: none; }
+.wait-item.is-info > .ic { animation: none; }
 .wait-x { flex: none; background: none; border: 0; color: var(--muted); font-size: 1.1rem; line-height: 1; cursor: pointer; padding: 0 .2rem; }
 .act-approve.is-waiting, .wait-approve.is-waiting { background: var(--panel-2); color: var(--muted); border: 1px dashed var(--line); opacity: 1; }
 .act-approve.is-given, .wait-approve.is-given { background: var(--done-soft); color: var(--done); opacity: 1; cursor: default; }
@@ -233,15 +234,8 @@ main { flex: 1; padding: 1.1rem 1.4rem; min-width: 0; }
 .readiness.is-blocked .readiness-chip { border-color: color-mix(in srgb, var(--warn) 45%, transparent); background: var(--warn-soft); color: var(--warn); font-weight: 650; }
 .readiness.is-none .readiness-chip { border-style: dashed; }
 /* Pytania (akt I): blokujące i założenia ze speca */
-.questions { margin-top: .7rem; padding-top: .55rem; border-top: 1px dashed var(--line); display: grid; gap: .45rem; font-size: .84rem; }
-.q-title { font-size: .72rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
-.q-head { font-weight: 650; }
-.q-group.is-blocking .q-head { color: var(--warn); }
-.q-list { list-style: none; margin: .2rem 0 0; padding: 0; display: grid; gap: .2rem; }
-.q-list li, .sub-list li, .timing-list li { display: flex; gap: .45rem; align-items: baseline; min-width: 0; }
-.q-list li > span:last-child { overflow-wrap: anywhere; min-width: 0; }
-.q-id { font-weight: 700; font-size: .78rem; color: var(--muted); flex: none; }
-.q-none { color: var(--faint); font-size: .8rem; font-style: italic; }
+.sub-list .q-id { font-weight: 700; font-size: .78rem; color: var(--muted); flex: none; }
+.sub-list li, .timing-list li { display: flex; gap: .45rem; align-items: baseline; min-width: 0; }
 /* Podkroki z czasem (akt III) */
 .substeps, .timing-box { margin-top: .6rem; font-size: .84rem; }
 .substeps summary, .timing-box summary { cursor: pointer; color: var(--muted); font-weight: 600; }
@@ -484,7 +478,6 @@ main { flex: 1; padding: 1.1rem 1.4rem; min-width: 0; }
   .big .pct { font-size: 1.9rem; } .big .of { font-size: .78rem; }
   .now { font-size: .85rem; margin-top: .35rem; }
   .bar { height: .65rem; }
-  .questions { margin-top: .45rem; padding-top: .4rem; font-size: .78rem; }
   .phase, .feed-box { padding: .55rem .6rem; border-radius: 10px; }
   .phases, .work { gap: .5rem; }
   .phase-head .nm { font-size: .9rem; }

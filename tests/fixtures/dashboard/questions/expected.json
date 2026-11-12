@@ -191,6 +191,24 @@
       "label": "Przebieg 2026-01-11-demo-alerts"
     }
   ],
+  "expertQuestions": {
+    "blocking": 2,
+    "open": 3,
+    "runs": [
+      {
+        "blocking": 1,
+        "open": 2,
+        "slug": "run-alpha",
+        "url": "/_experts/run-alpha"
+      },
+      {
+        "blocking": 1,
+        "open": 1,
+        "slug": "run-beta",
+        "url": "/_experts/run-beta"
+      }
+    ]
+  },
   "generatedAt": "2026-01-12T12:00:00+00:00",
   "git": {
     "branch": null,

@@ -105,6 +105,7 @@ projektu lub przebiegu). Raport komend zapisujących i `metrics --json` to JSON 
 | `readiness` | obiekt | NOWE: brief gotowości przebiegu |
 | `assumptions` | obiekt | NOWE: założenia ze speca |
 | `blockingQuestions` | obiekt | NOWE: pytania blokujące ze speca |
+| `expertQuestions` | obiekt | NOWE: otwarte pytania do eksperta ze wszystkich przebiegów |
 | `substeps` | tablica | NOWE: podkroki `Fn.k` z czasem |
 | `timing` | obiekt | NOWE (addytywnie, `schema: 1`): czas pracy i czas czekania na człowieka per krok i per faza planu |
 
@@ -276,12 +277,31 @@ Pierwsza niepusta linia decyduje o `status`; `Data:` i `Plan-sha:` są czytane t
   `{id, question}`, `count`.
 - Linie ze znacznikiem innym niż `[ZAŁOŻENIE]` (np. `[ROZSTRZYGNIĘTE …]`, `[EKSPERT]`) i linie spoza sekcji są pomijane.
 - Założenia nie są akcją „Odpowiedz na pytania”; tej akcji (`waiting`) dotyczą tylko pytania blokujące zgłoszone przez sesję.
+- Pola zostają w kontrakcie dla innych konsumentów, ale renderer strony ich nie rysuje: lista pytań i założeń w Akcie I została
+  zastąpiona toastem opartym na `expertQuestions`.
 - Separator przed `przyjęte:` może być półpauzą, pauzą, `--` albo `-` (otoczonymi spacjami); znacznik bez rozróżnienia
   wielkości liter, także bez polskich znaków (`[ZALOZENIE]`). Założenie bez `przyjęte:` ma `accepted` = `""`.
 - Wiersz tabeli `| Q<n> | <pytanie> | … |` (jak w szkielecie speca) jest pytaniem blokującym; `question` = pierwsza niepusta
   komórka po id. Id pogrubione (`**Q4**`) jest rozpoznawane; powtórzone id liczy się raz (pierwsze wystąpienie); bloki kodu
   są pomijane.
 - Bez speca: `{count: 0, items: []}`.
+
+### `expertQuestions`
+
+Źródło: pliki `docs/prototypes/<slug>/questions.json` WSZYSTKICH przebiegów projektu (format `expert-questions/1`), a nie
+wiersze widocznego speca. Czytane tak samo jak w serwerze prototypów (bez jego importu), tylko do odczytu: katalog i pliki
+bez dowiązań symbolicznych, `prototype.json` obok, plik do 2 MiB (serwer zapisuje do 1 MiB plus jedna operacja), uszkodzony albo nieznany plik jest pomijany.
+
+- Pytanie jest otwarte od pierwszego `ask` do pierwszego `answer` albo `withdraw` (wycofane i odpowiedziane się nie liczą);
+  blokujące = `blocking: true` w `ask`.
+- `open`, `blocking`: sumy po wszystkich przebiegach; zawsze obecne, `0` bez pytań. Pytania do eksperta nie zależą od
+  wybranego planu ani speca, więc pytanie z przebiegu A nie znika po starcie przebiegu B.
+- `runs[]`: tylko przebiegi z otwartymi pytaniami, w kolejności `slug`: `{slug, open, blocking, url}`; `url` to ścieżka
+  strony przebiegu na serwerze prototypów (`/_experts/<slug>`), host dokłada konsument.
+- Renderer pokazuje toast „Pytania do eksperta: N otwartych (M blokujących)” w banerze, gdy `open > 0`: to stan, nie wynik
+  akcji, więc bez timera i bez „×”; znika, gdy `open` spadnie do `0`. Odnośnik „Odpowiedz na pytania” prowadzi do
+  `/_experts/<slug>` przy jednym przebiegu albo do `/_experts` przy kilku, o ile host zna adres serwera prototypów
+  (`deps.prototypeOrigin(port)`); bez niego toast jest samym tekstem. Pole nie zależy od `approvals.here` ani `viewer`.
 
 ### `substeps[]`
 
@@ -470,9 +490,8 @@ sesją, zamiast instrukcji wpisania słowa.
 Renderer strony (`assets/app.js`) rysuje pola dodane do kontraktu w kafelkach aktów; każda wartość z danych przechodzi
 przez escapowanie HTML, a widoczność nie zależy od `approvals.here` ani `approvals.viewer`:
 
-- Akt I, sekcja „Pytania” (gdy spec istnieje albo któraś lista jest niepusta): „Pytania blokujące (N)” z
-  `blockingQuestions.items[]` (`id`, `question`) i „Założenia do korekty przy prototypie (N)” z `assumptions.items[]`
-  (`pytanie — przyjęte: wartość`); pusta lista = „brak”. Założenia nie mają akcji „Odpowiedz na pytania”.
+- Akt I nie ma sekcji z pytaniami: ani listy blokujących, ani założeń (także z zerem, dla prowadzącego i widza). Pytania do
+  eksperta pokazuje toast w banerze z pola `expertQuestions` (sekcja `expertQuestions`).
 - Akt II, kafelek „Readiness”: `readiness.status` PASS (zielony), BLOCKED (ostrzeżenie), null (neutralny „brak danych”);
   obok `readiness.date`, pierwsze 8 znaków `readiness.planSha`, znacznik „brief dla innej wersji planu”, gdy `planSha` różni
   się od `plan.fileSha`, i przycisk otwierający `readiness.source` w podglądzie dokumentów (`/api/doc`); bez `source`
@@ -481,8 +500,7 @@ przez escapowanie HTML, a widoczność nie zależy od `approvals.here` ani `appr
   podkrok niezrobiony pokazuje swój stan. Pusta tablica = brak listy.
 - Akt III, rozwijana sekcja „Czas pracy i czekania” z `timing`: wiersz na fazę (`stages[]`: praca, czekanie, „niepełne” przy `complete: false`), wiersz sumy (`totals`), dymek z oknami czekania (`windows[]`). `available: false` albo brak okien i faz = brak sekcji.
 
-Dymki tych elementów mają klucze `stage_readiness`, `questions_blocking`, `questions_assumptions` i `substeps_time` w
-`descriptions.json`.
+Dymki tych elementów mają klucze `stage_readiness` i `substeps_time` w `descriptions.json`.
 
 Zgody in-process (bez podprocesu `skillsync`, bez własnego zapisu serwera): „GO plan”/„GO implement” =
 `status.set_doc_status(root, path, "approve", specs|plans, expect_sha=<sha z żądania>)` (plik zmieniony od wyświetlenia =

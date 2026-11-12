@@ -1,0 +1,6 @@
+{"questionsFormat":1,"operations":[
+{"id":"op-a1","type":"ask","questionId":"qn-a00001","at":"2026-01-11T09:00:00Z","by":"agent","text":"Czy numer faktury jest unikalny?","blocking":true,"assumed":null,"addressees":[],"refs":[],"options":[]},
+{"id":"op-a2","type":"ask","questionId":"qn-a00002","at":"2026-01-11T09:01:00Z","by":"agent","text":"Jaka jest waluta domyślna?","blocking":false,"assumed":"PLN","addressees":[],"refs":[],"options":[]},
+{"id":"op-a3","type":"ask","questionId":"qn-a00003","at":"2026-01-11T09:02:00Z","by":"agent","text":"Czy zaokrąglamy w górę?","blocking":true,"assumed":null,"addressees":[],"refs":[],"options":[]},
+{"id":"op-a4","type":"answer","questionId":"qn-a00003","at":"2026-01-11T09:30:00Z","by":"expert","text":"Tak"}
+]}

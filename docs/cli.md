@@ -263,8 +263,9 @@ skillsync prototype question withdraw . qn-3f9a1c                               
 skillsync prototype question export . --slug zwroty --json > pytania.json
 skillsync prototype question migrate . --dry-run                                         # plan podziału starego pliku
 skillsync prototype question migrate . --slug-for docs/specs/zwroty.md=zwroty            # rozstrzygnięcie jawne
-skillsync prototype question purge . --slug zwroty                                       # podgląd (bez --yes niczego nie zmienia)
-skillsync prototype question purge . --slug zwroty --yes
+skillsync prototype question purge . --slug zwroty                                       # podgląd: tylko wycofane (bez --yes niczego nie zmienia)
+skillsync prototype question purge . --slug zwroty --yes                                 # usuwa wycofane
+skillsync prototype question purge . --slug zwroty --include-open --yes                  # także otwarte bez odpowiedzi i komentarza
 ```
 
 - `add`: dokładnie jedno z `--assume <wartość>` (pytanie nie zatrzymuje agenta; ekspert potwierdza albo koryguje) i `--blocking`
@@ -294,7 +295,7 @@ skillsync prototype question purge . --slug zwroty --yes
 - `wait <id>` zwraca od razu PASS (`event: answer`), gdy pytanie jest już odpowiedziane, a poza tym czeka na odpowiedź albo komentarz
   nowszy niż `--since` (domyślnie „teraz”) lub `--after <id operacji>`. `wait --all` (z `--slug` albo po wszystkich przebiegach) kończy się, gdy istnieje pytanie odpowiedziane
   bez operacji `recorded` albo zdarzenie nowsze niż `--since`/`--after`. TIMEOUT to exit 3.
-- `record <id> --spec … --line <numer>` zapisuje tylko znacznik „wpisano do speca” (idempotentnie); `withdraw <id>` wycofuje pytanie otwarte,
+- `record <id> --spec … --line <numer>` zapisuje znacznik „wpisano do speca” (idempotentnie), ale najpierw czyta wskazaną linię speca i wymaga w niej `[EKSPERT]` oraz identyfikatora pytania (wiersz z pola `answerLine`); inaczej FAIL (1) z kodem `record_line_mismatch` (inna treść linii), `record_line_out_of_range` (za krótki spec) albo `record_spec_unreadable` (brak pliku, ścieżka poza repozytorium) i podpowiedzią w `hint`. Pytanie bez odpowiedzi daje najpierw `not_answered`; `withdraw <id>` wycofuje pytanie otwarte,
   także blokujące, zwraca stan po operacji (`state` i `questions[0].state` = `withdrawn`) i zwykły wiersz `Q` programisty (odpowiedzianego nie da się wycofać: `already_answered`).
 - `url` zwraca adres strony i liczbę kont `expert`; BLOCKED (`users_file_missing`, `users_file_invalid`, `no_expert_accounts`) znaczy, że
   nie ma komu zadać pytania, więc agent pyta zwykle. Nie sprawdza, czy serwer działa (pole `running` mówi o stanie z pliku serwera).
@@ -304,9 +305,10 @@ skillsync prototype question purge . --slug zwroty --yes
   Pytanie bez jednoznacznego przebiegu albo operacja bez swojego `ask` = BLOCKED `unassigned` z listą, bez zapisu. Stary plik trafia
   do kosza (`trash-put`, `gio trash`, `trash`; bez nich zmiana nazwy na `.questions.json.migrated` (nazwa z kropką, której serwer prototypów nie wydaje), nigdy usunięcie) dopiero po odczycie zwrotnym;
   `verify_failed` = BLOCKED, stary plik zostaje.
-- `purge --slug <slug> [--yes]` usuwa z dziennika przebiegu tylko pytania wycofane albo otwarte bez odpowiedzi i bez komentarza. Pytanie
-  z odpowiedzią albo komentarzem zostaje, tak samo pytanie, do którego ono się odwołuje (`refersTo`). Bez `--yes` tylko podgląd: `dryRun: true`,
-  lista `removed` z `id`, `q`, `state`, `reason`, `text`. Wymaga `--slug`.
+- `purge --slug <slug> [--include-open] [--yes]` usuwa z dziennika przebiegu domyślnie tylko pytania wycofane (wycofane z komentarzem albo odpowiedzią zostaje); `--include-open` dodaje otwarte bez odpowiedzi
+  i bez komentarza (świeże pytanie czekające na eksperta nie jest usuwane bez tej flagi). Pytanie z odpowiedzią albo komentarzem zostaje w obu trybach,
+  tak samo pytanie, do którego odwołuje się zachowane (`refersTo`). Bez `--yes` tylko podgląd: `dryRun: true`, lista `removed` z `id`, `q`, `state`, `reason`, `text`
+  oraz `skipped` (pytania pominięte z powodem: otwarte z podpowiedzią `--include-open`, wycofane z komentarzem, zachowane przez `refersTo`). Wymaga `--slug`.
 - `merge --driver %O %A %B` to sterownik gita `skillsync-questions` (rejestracja: [prototypes](prototypes.md#pytania-do-eksperta-w-gicie));
   `merge <projekt> <inny-questions.json> --slug <slug>` scala ręcznie do pliku tego przebiegu (`--slug` jest wymagany).
 - Kody wyjścia: 0 PASS, 1 FAIL, 2 BLOCKED, 3 TIMEOUT. `1` znaczy, że magazyn odrzucił treść albo stan (zła ścieżka w `--origin`,

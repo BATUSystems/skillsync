@@ -51,14 +51,6 @@
   "title": "Readiness",
   "text": "Brief gotowości przed GO implement: `skillsync readiness --run-id` zapisuje .skillsync/runs/<run>/readiness.md z pierwszą linią Readiness: PASS albo BLOCKED, datą i Plan-sha.\nWynik: PASS = plan gotowy do zgody, BLOCKED = bloker do rozstrzygnięcia przed GO implement.\nStrona: zielony przy PASS, ostrzeżenie przy BLOCKED, neutralny bez pliku; Plan-sha inny niż sha pliku planu = brief dla innej wersji planu."
  },
- "questions_blocking": {
-  "title": "Pytania blokujące",
-  "text": "Pytania Q<n> bez znacznika w sekcji ## Pytania otwarte bieżącego speca (także wiersze tabeli | Q<n> | … |).\nWymagają odpowiedzi człowieka przed GO plan; sesja zgłasza je w checkpoincie jako czeka: odpowiedź Q<n>.\nStrona: liczba i lista z pola blockingQuestions; „brak”, gdy spec nie ma otwartych pytań."
- },
- "questions_assumptions": {
-  "title": "Założenia do korekty przy prototypie",
-  "text": "Pytania Q<n> [ZAŁOŻENIE] w sekcji ## Pytania otwarte speca z przyjętą wartością (— przyjęte: <wartość>).\nNie blokują i nie są akcją „Odpowiedz na pytania”: sesja idzie dalej z przyjętą wartością, a człowiek koryguje ją przy prototypie albo review speca.\nStrona: lista z pola assumptions."
- },
  "substeps_time": {
   "title": "Podkroki i czas",
   "text": "Podkroki Fn.k planu w kolejności planu z czasem od pierwszego checkpointu „w toku” do pierwszego „zrobione” (rozdzielczość minuty).\nBrak danych: podkrok zrobiony, ale checkpoints.md nie ma obu znaczników.\nStrona: pole substeps; podkrok niezrobiony pokazuje swój stan zamiast czasu."

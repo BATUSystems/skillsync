@@ -557,6 +557,78 @@ def find_prototype(root, spec_rel):
     return None
 
 
+EXPERT_QUESTIONS_FILE = 'questions.json'
+EXPERT_QUESTIONS_MAX_BYTES = 2 * 1024 * 1024  # the server writes up to 1 MiB plus one operation; the margin keeps such a file counted
+EXPERT_QUESTION_SLUG = re.compile(r'[a-z0-9]+(?:-[a-z0-9]+)*')
+EXPERT_QUESTION_TYPES = ('ask', 'answer', 'comment', 'recorded', 'withdraw')
+
+
+def _open_questions(path):
+    """`(open, blocking)` of one `questions.json` (`expert-questions/1`), read like the prototype server folds it: a question is
+    open from its first `ask` until an `answer` or `withdraw` of it; operations without id/at/questionId/known type are skipped.
+    None for an unreadable or malformed file."""
+    try:
+        with open(path, 'rb') as handle:
+            raw = handle.read(EXPERT_QUESTIONS_MAX_BYTES + 1)
+    except OSError:
+        return None
+    if len(raw) > EXPERT_QUESTIONS_MAX_BYTES:
+        return None
+    try:
+        data = json.loads(raw.decode('utf-8-sig'))
+    except (ValueError, RecursionError):
+        return None
+    version = data.get('questionsFormat') if isinstance(data, dict) else None
+    operations = data.get('operations') if type(version) is int and version == 1 else None
+    if not isinstance(operations, list):
+        return None
+    usable = [op for op in operations
+              if isinstance(op, dict) and isinstance(op.get('id'), str) and isinstance(op.get('at'), str)
+              and isinstance(op.get('questionId'), str) and op.get('type') in EXPERT_QUESTION_TYPES]
+    asked, closed, seen = {}, set(), set()
+    # the same order and de-duplication as the server's fold: operations by (at, id), an `ask` of a question first,
+    # an operation whose id was already seen is skipped
+    ordered = sorted(usable, key=lambda op: (op['at'], op['id']))
+    for op in ordered:
+        if op['type'] == 'ask' and op['id'] not in seen:
+            seen.add(op['id'])
+            asked.setdefault(op['questionId'], op.get('blocking') is True)
+    for op in ordered:
+        if op['type'] == 'ask' or op['id'] in seen:
+            continue
+        seen.add(op['id'])
+        if op['type'] in ('answer', 'withdraw'):
+            closed.add(op['questionId'])
+    still_open = [qid for qid in asked if qid not in closed]
+    return len(still_open), sum(1 for qid in still_open if asked[qid])
+
+
+def build_expert_questions(root):
+    """Contract field `expertQuestions`: open questions to a domain expert across ALL runs of the project
+    (`docs/prototypes/<slug>/questions.json`), not only the run of the visible spec. `runs` lists only runs with open
+    questions; `url` is the path of that run's page on the prototype server (the consumer adds the origin)."""
+    base = prototypes_root(root)
+    runs = []
+    if base is not None:
+        try:
+            names = sorted(os.listdir(base))
+        except OSError:
+            names = []
+        for name in names:
+            if not EXPERT_QUESTION_SLUG.fullmatch(name):
+                continue
+            directory = base / name
+            meta, questions = directory / 'prototype.json', directory / EXPERT_QUESTIONS_FILE
+            if directory.is_symlink() or not directory.is_dir() or meta.is_symlink() or not meta.is_file():
+                continue
+            if questions.is_symlink() or not questions.is_file():
+                continue
+            counts = _open_questions(questions)
+            if counts and counts[0]:
+                runs.append({'slug': name, 'open': counts[0], 'blocking': counts[1], 'url': f'/_experts/{name}'})
+    return {'open': sum(run['open'] for run in runs), 'blocking': sum(run['blocking'] for run in runs), 'runs': runs}
+
+
 def prototype_acceptance(root, slug):
     """`{screens, accepted, stale}` of a prototype (in-process, read-only, the same function `prototype list` uses), or None."""
     if not slug or not re.fullmatch(r'[A-Za-z0-9][\w.-]*', slug):
@@ -1424,6 +1496,7 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
         'readiness': read_readiness(root, run_id, run['exists']),
         'assumptions': {'count': len(assumptions), 'items': assumptions},
         'blockingQuestions': {'count': len(blocking), 'items': blocking},
+        'expertQuestions': build_expert_questions(root),
         'substeps': build_substeps(progress, chronological),
         'timing': build_timing(run['start'], chronological, run_approvals(root, run_id), progress['phases']),
     }

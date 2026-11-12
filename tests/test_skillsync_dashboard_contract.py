@@ -27,7 +27,7 @@ TOP = {
     'git': dict, 'plans': list, 'planAuto': bool, 'mode': str, 'plan': (dict, type(None)), 'spec': dict, 'run': dict,
     'progress': dict, 'acts': list, 'waiting': list, 'silence': (dict, type(None)), 'approvals': dict, 'delivery': dict,
     'session': dict, 'prototype': dict, 'docs': list, 'readiness': dict, 'assumptions': dict, 'blockingQuestions': dict,
-    'substeps': list, 'timing': dict,
+    'expertQuestions': dict, 'substeps': list, 'timing': dict,
 }
 # Pola obiektów zagnieżdżonych: wymagane (typ) i opcjonalne (opcjonalne tylko gdy opisane w kontrakcie jako opcjonalne).
 NESTED = {
@@ -51,6 +51,7 @@ NESTED = {
     'readiness': ({'status': STR_OR_NONE, 'date': STR_OR_NONE, 'planSha': STR_OR_NONE, 'source': STR_OR_NONE}, {}),
     'assumptions': ({'count': int, 'items': list}, {}),
     'blockingQuestions': ({'count': int, 'items': list}, {}),
+    'expertQuestions': ({'open': int, 'blocking': int, 'runs': list}, {}),
 }
 PLAN = ({'path': str, 'title': str, 'status': STR_OR_NONE, 'statusText': STR_OR_NONE, 'date': STR_OR_NONE, 'mtime': str,
          'fileSha': STR_OR_NONE, 'pr': (dict, type(None))}, {})
@@ -82,6 +83,7 @@ CHECKPOINT = ({'time': str, 'text': str}, {})
 DELIVERY_WORD = ({'word': str, 'active': bool, 'tip': str, 'target': STR_OR_NONE}, {})
 ASSUMPTION = ({'id': str, 'question': str, 'accepted': str}, {})
 BLOCKING = ({'id': str, 'question': str}, {})
+EXPERT_RUN = ({'slug': str, 'open': int, 'blocking': int, 'url': str}, {})
 
 
 def load(case):
@@ -169,6 +171,7 @@ class DashboardContract(unittest.TestCase):
                 self.check_shape(data['timing']['totals'], TIMING_TOTALS, 'timing.totals')
                 self.each(data['assumptions']['items'], ASSUMPTION, 'assumptions.items')
                 self.each(data['blockingQuestions']['items'], BLOCKING, 'blockingQuestions.items')
+                self.each(data['expertQuestions']['runs'], EXPERT_RUN, 'expertQuestions.runs')
 
     def test_new_fields_are_consistent(self):
         for case in CASES:
@@ -180,6 +183,12 @@ class DashboardContract(unittest.TestCase):
                     self.assertIsNone(data['readiness']['source'])
                 for key in ('assumptions', 'blockingQuestions'):
                     self.assertEqual(data[key]['count'], len(data[key]['items']), key)
+                eq = data['expertQuestions']
+                self.assertEqual((eq['open'], eq['blocking']), (sum(r['open'] for r in eq['runs']), sum(r['blocking'] for r in eq['runs'])))
+                for run in eq['runs']:
+                    self.assertGreater(run['open'], 0, run['slug'])
+                    self.assertLessEqual(run['blocking'], run['open'], run['slug'])
+                    self.assertEqual(run['url'], '/_experts/' + run['slug'])
                 for sub in data['substeps']:
                     self.assertRegex(sub['id'], r'^[A-Z]{1,3}-?\d+[a-z]?\.\d+[a-z]?$')
                     if sub['seconds'] is not None:
@@ -223,6 +232,9 @@ class DashboardContract(unittest.TestCase):
         questions = json.loads(load('questions')[1])
         self.assertTrue(questions['assumptions']['items'] and questions['blockingQuestions']['items'])
         self.assertFalse(any('pytania' in w['action'] for w in questions['waiting']))
+        self.assertEqual([(r['slug'], r['open'], r['blocking']) for r in questions['expertQuestions']['runs']],
+                         [('run-alpha', 2, 1), ('run-beta', 1, 1)])  # dwa przebiegi, zamknięty run-gamma pominięty
+        self.assertEqual({k: v for k, v in json.loads(load('empty')[1])['expertQuestions'].items()}, {'open': 0, 'blocking': 0, 'runs': []})
         cp_ready = json.loads(load('cp-ready')[1])
         self.assertEqual([(a['kind'], a['state']) for a in cp_ready['approvals']['actions'][2:]],
                          [('cp', 'waiting'), ('ready', 'waiting')])

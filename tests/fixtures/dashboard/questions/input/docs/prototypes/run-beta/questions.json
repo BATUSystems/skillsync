@@ -1,0 +1,5 @@
+{"questionsFormat":1,"operations":[
+{"id":"op-b1","type":"ask","questionId":"qn-b00001","at":"2026-01-11T09:05:00Z","by":"agent","text":"Kto zatwierdza korektę?","blocking":true,"assumed":null,"addressees":[],"refs":[],"options":[]},
+{"id":"op-b2","type":"ask","questionId":"qn-b00002","at":"2026-01-11T09:06:00Z","by":"agent","text":"Czy raport jest dzienny?","blocking":true,"assumed":null,"addressees":[],"refs":[],"options":[]},
+{"id":"op-b3","type":"withdraw","questionId":"qn-b00002","at":"2026-01-11T09:40:00Z","by":"expert"}
+]}
