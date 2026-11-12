@@ -19,6 +19,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ### Changed
 - Tests (Windows): leakguard term-scope cases skip file names with characters Windows forbids (`:` in `konta: …`) on the `filename` surface only; prototype doctor/init tests run without secret-named environment variables, so a runner variable such as `*_TOKEN=root` no longer turns `prototype.root` into `prototype.[REDACTED]`. No product change; `redact()` is untouched.
+- Tests (`tests/test_skillsync_retro.py`): the retro fixture writes files byte for byte (`write_exact`) instead of in text mode, so on Windows evidence files no longer get `\r\n` and their sha256 matches the digest computed from `\n`. A new test forces CRLF on Linux and shows both outcomes. No product change.
 - CI: the `test` job on native Windows has a 60-minute limit (was 30, which cancelled both Windows jobs at about 80% of the suite); Ubuntu and macOS keep 30. Job names are unchanged; Windows stays non-blocking.
 - Dashboard page and Skippster panel: the layout follows the width of the host column, not the window (CSS container
   queries on a new `.dash-wrap` wrapper; the tooltip stays outside it). New compact tier up to 420 px: smaller type and

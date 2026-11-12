@@ -1,6 +1,7 @@
 """skillsync retro (R2): kontrakt wyjść, rubryka, K5 (wyciek), K6 (tylko odczyt), sygnały raportów,
 pliki nieczytelne, kandydaci zmiany (K4), koniec do końca i worktree (K11)."""
 import hashlib
+import io
 import json
 import os
 import re
@@ -54,6 +55,15 @@ def sha(text):
     return hashlib.sha256(text.encode()).hexdigest()
 
 
+def write_exact(path, text):
+    """Zapis tekstu bajt w bajt (UTF-8, bez tłumaczenia końców linii): na Windows `write_text` zamienia `\n` na
+    `\r\n`, a `sha()` liczy z `\n`, więc sha dowodu musi pochodzić z tych samych bajtów, które produkt czyta."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(text.encode('utf-8'))
+    return path
+
+
 def rec(step, status='PASS', cause=None, attempt=1, evidence=None, nxt='n', **extra):
     """Rekord checkpointu. PASS bez `evidence` dostaje domyślny dowód e.log (fikstura tworzy ten plik)."""
     if evidence is None:
@@ -85,6 +95,9 @@ class RetroBase(WorkflowFixture):
         self.text = ''
 
     # ---- zapis danych ----
+    def write(self, name, content):
+        return write_exact(self.root / name, content)
+
     def run_file(self, ident, *records, close=True, **top):
         records = list(records)
         if close and records and records[-1]['status'] == 'PASS' and 'final' not in records[-1]:
@@ -498,6 +511,25 @@ class Rubric(RetroBase):
                                     'evidence_files': 1, 'verified': 1, 'changed': 0, 'missing': 0, 'refused': 0,
                                     'unreadable': 0, 'reused_from_problem': 0})
 
+    def test_evidence_written_with_crlf_text_mode_is_changed_but_exact_write_is_verified(self):
+        """Mechanizm G1 wymuszony na Linuxie: tryb tekstowy Windows (`\\r\\n`) rozjeżdża sha liczone z `\\n`,
+        a `write_exact` (helper fikstury) zachowuje bajty, więc dowód jest zweryfikowany na każdym systemie."""
+        content = 'proof line 1\nproof line 2\n'
+        crlf = self.root / '.skillsync/evidence/crlf.log'
+        crlf.parent.mkdir(parents=True, exist_ok=True)
+        with open(crlf, 'wb') as raw, io.TextIOWrapper(raw, encoding='utf-8', newline='\r\n') as stream:
+            stream.write(content)
+        self.assertEqual(crlf.read_bytes(), content.replace('\n', '\r\n').encode())
+        self.assertNotEqual(hashlib.sha256(crlf.read_bytes()).hexdigest(), sha(content))
+        proof = {'path': '.skillsync/evidence/crlf.log', 'sha256': sha(content)}
+        self.assertEqual(self.rubric(rec('a', evidence=[proof]))['evidence']['changed'], 1)
+        exact = write_exact(self.root / '.skillsync/evidence/exact.log', content)
+        self.assertEqual(exact.read_bytes(), content.encode())
+        self.assertNotIn(b'\r', exact.read_bytes())
+        fixed = {'path': '.skillsync/evidence/exact.log', 'sha256': sha(content)}
+        evidence = self.rubric(rec('a', evidence=[fixed]), ident='exact')['evidence']
+        self.assertEqual((evidence['verified'], evidence['changed']), (1, 0))
+
     def test_evidence_changed_is_partial_and_class_stays_from_records(self):
         proof = self.evidence('one.log')
         self.write(proof['path'], 'rewritten after the checkpoint\n')
@@ -538,7 +570,7 @@ class Rubric(RetroBase):
     @needs_os_symlinks
     def test_evidence_symlink_leaving_the_project_is_refused(self):
         outside = self.base / 'outside.log'
-        outside.write_text('outside\n')
+        write_exact(outside, 'outside\n')
         link = self.root / '.skillsync/evidence/out.log'
         link.parent.mkdir(parents=True)
         link.symlink_to(outside)
