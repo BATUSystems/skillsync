@@ -53,7 +53,7 @@ Challenger pomysłu i `pre-implement` są poza licznikiem rund. Kolejność w ak
 - Test-writer fazy pracuje równolegle z rundą R1 tej fazy (jego testy integracyjne sprawdza runda 2 albo, w pętli jednorundowej, świeży `verifier` przed odhaczeniem kroku sprawdza testy test-writera względem kryteriów kroku (czy je pokrywają i czy potrafią paść), a dowód (raport weryfikatora) trafia do rekordu checkpointu kroku), ale tylko w fazach, które mają
   test-writera w planie; bez niego runda R1 idzie sama.
 - Przy `ceremony: demo` [ceremonia demo](ceremony-demo.md) zmienia liczbę pętli: jedna pętla `kod` na przebieg zamiast pętli po każdej fazie, plus pętla pełna
-  dla kroków ze strażnikiem wycieków, migracją albo bezpieczeństwem; pętla końcowa pozostaje pełna, gdy cała zmiana należy do kategorii pętli pełnej z tej sekcji.
+  dla kroków ze strażnikiem wycieków, migracją albo bezpieczeństwem; pętla końcowa pozostaje pełna, gdy cała zmiana należy do kategorii pętli pełnej z tej sekcji. Tylko w `demo` jednorundowa pętla `kod` ma najwyżej 2 rundy ([ceremonia demo](ceremony-demo.md)): druga wyłącznie przy blockerze, co najmniej 3 majorach, poprawkach dotykających strażnika wycieków, migracji lub bezpieczeństwa albo po drugim `REFUTED`; w pozostałych przypadkach majory zamyka `verifier`. Pętle pełne i tryb `full` bez zmian.
 - Recenzent zwraca: status, nowe uwagi (waga, miejsce, problem, propozycja) i od rundy 2 tabelę zamknięć, **jedna linia na
   każde id**, poza limitem długości raportu. Zamknięcie sprawdza na plikach, nie na deklaracji autora. Dla odrzuconego
   blocker/major orzeka „uzasadnienie przyjęte / nieprzyjęte”. Powrót uwagi dopasowuje recenzent: nowa uwaga podaje
@@ -123,7 +123,7 @@ już PASS, zaczyna nową pętlę tego kroku, a nie jest jej kolejną rundą.
 
 Runda 2 i dalsze w pętli jednorundowej, choć poprzednia runda nie znalazła blockera, oraz powtórzenie kontroli na
 niezmienionym stanie to sygnał `ceremony-excess` retrospektywy ([retro-quality](retro-quality.md)). Wyjątek: runda 2
-po drugim `REFUTED` tej samej uwagi nie jest nadmiarem ceremonii, bo weryfikator już wykazał, że zamknięcie nie działa.
+po drugim `REFUTED` tej samej uwagi nie jest nadmiarem ceremonii, bo weryfikator już wykazał, że zamknięcie nie działa. Tak samo w `demo` runda 2 z powodów z [ceremonii demo](ceremony-demo.md) (blocker, co najmniej 3 majory, poprawki w strażniku wycieków, migracji lub bezpieczeństwie).
 
 ## Stany
 

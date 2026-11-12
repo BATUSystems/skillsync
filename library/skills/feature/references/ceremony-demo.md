@@ -21,7 +21,7 @@ Bez ekranów w specu nie ma prototypu: poproś o „GO plan” od razu. Zgody na
 ## Co zmienia `ceremony: demo`
 
 - **Review `kod`**: `demo` zmienia liczbę pętli: jedno review `kod` na cały przebieg (jedna runda na końcu, zamknięcie majorów przez `verifier`) PLUS pętla pełna
-  ([review-loop](review-loop.md#kategoria-pętli-i-przejścia)) dla każdego kroku ze strażnikiem wycieków, migracją albo bezpieczeństwem, plus runda 2 po blockerze, jak w [review-loop](review-loop.md).
+  ([review-loop](review-loop.md#kategoria-pętli-i-przejścia)) dla każdego kroku ze strażnikiem wycieków, migracją albo bezpieczeństwem. W `demo` jednorundowe review `kod` ma **najwyżej 2 rundy**: druga tylko przy blockerze, przy co najmniej 3 majorach, gdy poprawki dotknęły strażnika wycieków, migracji lub bezpieczeństwa (w tym uprawnień) albo po drugim `REFUTED` tej samej uwagi; inaczej majory zamyka `verifier`, a trzeciej rundy nie ma (dalsze uwagi: poprawka i `verifier` albo zapis do „Długu”). Druga runda z tych powodów nie jest `ceremony-excess`. Pętle pełne (kroki ze strażnikiem wycieków, migracją, bezpieczeństwem) zostają w `demo` bez zmian, także limit 4 rund.
   Pętla końcowa pozostaje pełna, gdy cała zmiana należy do kategorii z sekcji „Kategoria pętli i przejścia” ([review-loop](review-loop.md#kategoria-pętli-i-przejścia)). Wszystkie trzy kategorie z tej sekcji zostają bez zmian; `demo` ich nie osłabia.
 - **Test-writer**: tylko w fazach z uprawnieniami lub izolacją danych; w pozostałych testy jednostkowe pisze `implementer` fazy.
 - **Dokumentacja**: ograniczona do changeloga i „Wyniku” planu.

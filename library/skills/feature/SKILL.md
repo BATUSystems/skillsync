@@ -27,6 +27,7 @@ delegacji, zgłoś ograniczenie zamiast udawać niezależne review lub uruchamia
   ale tylko w fazach, które mają test-writera w planie.
 - Podział etapu: spec z co najmniej 5 zdolnościami to dwa plany; przy bramce planu zapytaj użytkownika o podział. Szacunek kalibruj
   na ok. 75–105 min pracy na zdolność z pełną pętlą review.
+- Cięcie zakresu: tylko po przekroczeniu progu z planu (np. 5 zdolności w specu, wykroczenie poza szacunek) albo za zgodą użytkownika; bez progu w planie pytaj użytkownika, zamiast ciąć samodzielnie; nie „na zapas” ani z własnej oceny, że będzie za dużo. Bez przekroczenia progu realizuj cały zakres planu; wycięty kawałek zapisz w „Wyniku” z powodem.
 - Ceremonia: `skillsync route <projekt>` zwraca `ceremony.value` (`full` albo `demo`); przy `demo` przeczytaj
   [ceremonię demo](references/ceremony-demo.md) (jedno review `kod` na przebieg plus pętla pełna dla strażnika wycieków, migracji
   i bezpieczeństwa; dług w „Wyniku”). Brak pola `ceremony` = `full`; `source: invalid` = pytanie do użytkownika, jak przy `delivery`.

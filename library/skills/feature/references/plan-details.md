@@ -100,6 +100,7 @@ Plan ze zmianą UI ma w nagłówku (jak `Spec:`, osobny wiersz, sama ścieżka w
   tej linii nie dopisuje i nie usuwa linii `Prototyp:`. Dyspozytor ani agent nie obchodzą bramki.
 - Akceptuje człowiek (UI albo CLI z hasłem z TTY); agent nigdy nie uruchamia `skillsync prototype accept` ani `unaccept`.
   `gate` pokazuje `via` i `who`, więc akceptację z CLI widać przy prośbie o „GO implement”.
+  Gdy `accept` mimo to zostanie uruchomione (przez pomyłkę albo inną sesję) i zwróci `BLOCKED` `error: tty_required`, mów wprost „kliknij Akceptacja na stronie prototypu” i czekaj (`prototype wait`); zabezpieczenie zostaje.
 - Akceptacja prototypu to nie zatwierdzenie planu („GO implement”, `plan approve`); jedno nie zastępuje drugiego.
 
 ### Bramka per faza (`[UI]`)
