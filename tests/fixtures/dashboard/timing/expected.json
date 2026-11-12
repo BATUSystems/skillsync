@@ -1,0 +1,522 @@
+{
+  "acts": [
+    {
+      "detail": null,
+      "key": "spec",
+      "name": "Spec",
+      "roman": "I",
+      "stages": [
+        {
+          "done": false,
+          "key": "stage_spec_draft",
+          "label": "Szkic",
+          "tip": "brak speca"
+        },
+        {
+          "done": false,
+          "key": "stage_spec_review",
+          "label": "Review",
+          "tip": "rundy review speca w katalogu przebiegu"
+        },
+        {
+          "done": false,
+          "key": "stage_spec_approved",
+          "label": "Zatwierdzony",
+          "tip": "Status speca: —"
+        }
+      ],
+      "state": "planned",
+      "status": null,
+      "warning": null
+    },
+    {
+      "detail": "4 kroków w 2 fazach",
+      "key": "plan",
+      "name": "Plan",
+      "roman": "II",
+      "stages": [
+        {
+          "done": true,
+          "key": "stage_plan",
+          "label": "Plan",
+          "tip": "docs/plans/2026-01-11-timing-demo.md"
+        },
+        {
+          "done": false,
+          "key": "stage_plan_review",
+          "label": "Review",
+          "tip": "rundy review planu w katalogu przebiegu"
+        },
+        {
+          "done": false,
+          "key": "stage_pre_implement",
+          "label": "Pre-implement",
+          "tip": "bramka gotowości przed ryzykowną zmianą"
+        },
+        {
+          "done": true,
+          "key": "stage_go_implement",
+          "label": "GO implement",
+          "tip": "Status planu: in_progress"
+        }
+      ],
+      "state": "done",
+      "status": "in_progress"
+    },
+    {
+      "detail": "krok 4 z 4: F2.1 Parsery",
+      "key": "real",
+      "name": "Realizacja",
+      "percent": 50,
+      "roman": "III",
+      "stages": [
+        {
+          "done": false,
+          "key": "code_review",
+          "label": "Review kodu",
+          "tip": "raporty code-review*/final-review* w katalogu przebiegu"
+        },
+        {
+          "done": false,
+          "key": "closure",
+          "label": "Zamknięcie",
+          "tip": "Status planu: in_progress"
+        }
+      ],
+      "state": "active",
+      "status": "in_progress"
+    }
+  ],
+  "app": {
+    "name": "dashboard",
+    "version": "<version>"
+  },
+  "approvals": {
+    "actions": [
+      {
+        "blocked": "zgoda „GO implement” dana 09:45",
+        "given": {
+          "at": "2026-01-11T09:45:00Z",
+          "by": "user",
+          "file": "docs/plans/2026-01-11-timing-demo.md",
+          "schema": 1,
+          "sha": "fedcba9876543210fedcba9876543210fedcba98",
+          "source": "dashboard",
+          "word": "GO implement"
+        },
+        "kind": "plan",
+        "path": "docs/plans/2026-01-11-timing-demo.md",
+        "reason": "zgoda „GO implement” dana 09:45",
+        "run": "2026-01-11-timing-demo",
+        "sha": "cf6a79dde7d9dab43c8fb9a011035f8044302302",
+        "state": "after",
+        "word": "GO implement"
+      },
+      {
+        "blocked": "brak HEAD repozytorium",
+        "given": null,
+        "kind": "cp",
+        "path": "2026-01-11-timing-demo",
+        "reason": "brak HEAD repozytorium",
+        "run": "2026-01-11-timing-demo",
+        "sha": "",
+        "state": "running",
+        "target": "main",
+        "word": "CP"
+      }
+    ],
+    "enabled": true,
+    "last": {
+      "at": "2026-01-11T09:45:00Z",
+      "by": "user",
+      "file": "docs/plans/2026-01-11-timing-demo.md",
+      "schema": 1,
+      "sha": "fedcba9876543210fedcba9876543210fedcba98",
+      "source": "dashboard",
+      "word": "GO implement"
+    }
+  },
+  "assumptions": {
+    "count": 0,
+    "items": []
+  },
+  "blockingQuestions": {
+    "count": 0,
+    "items": []
+  },
+  "delivery": {
+    "ahead": null,
+    "base": "main",
+    "branch": null,
+    "mode": "direct",
+    "pushed": null,
+    "remote": null,
+    "source": "manifest",
+    "target": "main",
+    "words": [
+      {
+        "active": true,
+        "target": "main",
+        "tip": "CP → origin/main; sesja czeka na „CP”",
+        "word": "CP"
+      }
+    ]
+  },
+  "docs": [
+    {
+      "items": [
+        {
+          "mtime": "2026-01-11T10:00:00+00:00",
+          "path": "docs/plans/2026-01-11-timing-demo.md",
+          "status": "in_progress",
+          "title": "Plan: timing demo"
+        }
+      ],
+      "key": "task",
+      "label": "Bieżące zadanie"
+    },
+    {
+      "items": [
+        {
+          "mtime": "2026-01-11T10:00:00+00:00",
+          "path": ".skillsync/runs/2026-01-11-timing-demo/checkpoints.md",
+          "status": null,
+          "title": "checkpoints"
+        }
+      ],
+      "key": "run",
+      "label": "Przebieg 2026-01-11-timing-demo"
+    }
+  ],
+  "generatedAt": "2026-01-12T12:00:00+00:00",
+  "git": {
+    "branch": null,
+    "branchPushed": null,
+    "branchUrl": null,
+    "head": null,
+    "headFull": null,
+    "remote": null
+  },
+  "lastUpdate": "2026-01-11T10:00:00+00:00",
+  "mode": "plan",
+  "plan": {
+    "date": "2026-01-11",
+    "fileSha": "cf6a79dde7d9dab43c8fb9a011035f8044302302",
+    "mtime": "2026-01-11T10:00:00+00:00",
+    "path": "docs/plans/2026-01-11-timing-demo.md",
+    "pr": null,
+    "status": "in_progress",
+    "statusText": "in_progress",
+    "title": "Plan: timing demo"
+  },
+  "planAuto": true,
+  "plans": [
+    {
+      "path": "docs/plans/2026-01-11-timing-demo.md",
+      "run": "2026-01-11-timing-demo",
+      "spec": null,
+      "status": "in_progress",
+      "title": "Plan: timing demo"
+    }
+  ],
+  "progress": {
+    "active": [
+      "F2.1"
+    ],
+    "activeSource": "checkpoint",
+    "current": {
+      "id": "F2.1",
+      "index": 4,
+      "title": "Parsery"
+    },
+    "done": 2,
+    "parallel": 0,
+    "pending": 1,
+    "pendingPercent": 25,
+    "percent": 50,
+    "phases": [
+      {
+        "done": 2,
+        "label": "Faza 1",
+        "name": "Faza 1: Kontrakt",
+        "pending": 1,
+        "pendingPercent": 33,
+        "percent": 67,
+        "short": "Kontrakt",
+        "state": "planned",
+        "steps": [
+          {
+            "done": true,
+            "id": "F1.1",
+            "index": 1,
+            "note": "1a2b3c4",
+            "sha": "1a2b3c4",
+            "state": "done",
+            "title": "Opis kontraktu"
+          },
+          {
+            "done": true,
+            "id": "F1.2",
+            "index": 2,
+            "note": "2b3c4d5",
+            "sha": "2b3c4d5",
+            "state": "done",
+            "title": "Fixtures"
+          },
+          {
+            "done": false,
+            "id": "F1.3",
+            "index": 3,
+            "note": "",
+            "sha": null,
+            "state": "reported",
+            "title": "Test struktury"
+          }
+        ],
+        "total": 3
+      },
+      {
+        "done": 0,
+        "label": "Faza 2",
+        "name": "Faza 2: Silnik",
+        "pending": 0,
+        "pendingPercent": 0,
+        "percent": 0,
+        "short": "Silnik",
+        "state": "active",
+        "steps": [
+          {
+            "done": false,
+            "id": "F2.1",
+            "index": 4,
+            "note": "",
+            "sha": null,
+            "state": "active",
+            "title": "Parsery"
+          }
+        ],
+        "total": 1
+      }
+    ],
+    "reported": [
+      "F1.3"
+    ],
+    "total": 4
+  },
+  "project": {
+    "name": "demo",
+    "path": "<root>"
+  },
+  "prototype": {
+    "port": 5130,
+    "slug": null,
+    "up": false
+  },
+  "readiness": {
+    "date": null,
+    "planSha": null,
+    "source": null,
+    "status": null
+  },
+  "run": {
+    "checkpoints": [
+      {
+        "text": "zrobione: F1.3; w toku: F2.1; czeka: CP",
+        "time": "11:10"
+      },
+      {
+        "text": "w toku: F1.3",
+        "time": "10:50"
+      },
+      {
+        "text": "zrobione: F1.2; w toku: F1.3; czeka: odpowiedź Q3",
+        "time": "10:20"
+      },
+      {
+        "text": "zrobione: F1.1; w toku: F1.2; czeka: GO implement",
+        "time": "09:30"
+      },
+      {
+        "text": "start planu; w toku: F1.1",
+        "time": "09:00"
+      }
+    ],
+    "exists": true,
+    "files": [
+      ".skillsync/runs/2026-01-11-timing-demo/checkpoints.md"
+    ],
+    "id": "2026-01-11-timing-demo",
+    "inProgressFrom": "11:10",
+    "lastReportAt": "2026-01-11T10:00:00+00:00",
+    "start": "2026-01-11T09:00:00Z",
+    "startIso": "2026-01-11T09:00:00+00:00"
+  },
+  "schema": 1,
+  "session": {
+    "url": null
+  },
+  "silence": null,
+  "spec": {
+    "exists": false,
+    "path": null,
+    "preparing": false,
+    "prototype": null,
+    "sha": null
+  },
+  "substeps": [
+    {
+      "done": true,
+      "finishedAt": "09:30",
+      "id": "F1.1",
+      "missingData": false,
+      "phase": "Faza 1",
+      "seconds": 1800,
+      "startedAt": "09:00",
+      "state": "done",
+      "title": "Opis kontraktu"
+    },
+    {
+      "done": true,
+      "finishedAt": "10:20",
+      "id": "F1.2",
+      "missingData": false,
+      "phase": "Faza 1",
+      "seconds": 3000,
+      "startedAt": "09:30",
+      "state": "done",
+      "title": "Fixtures"
+    },
+    {
+      "done": false,
+      "finishedAt": "11:10",
+      "id": "F1.3",
+      "missingData": false,
+      "phase": "Faza 1",
+      "seconds": 3000,
+      "startedAt": "10:20",
+      "state": "reported",
+      "title": "Test struktury"
+    },
+    {
+      "done": false,
+      "finishedAt": null,
+      "id": "F2.1",
+      "missingData": false,
+      "phase": "Faza 2",
+      "seconds": null,
+      "startedAt": "11:10",
+      "state": "active",
+      "title": "Parsery"
+    }
+  ],
+  "timing": {
+    "available": true,
+    "reason": null,
+    "stages": [
+      {
+        "complete": true,
+        "name": "Faza 1: Kontrakt",
+        "phase": "Faza 1",
+        "unknownSteps": 0,
+        "waitSeconds": 2700,
+        "workSeconds": 5100
+      },
+      {
+        "complete": false,
+        "name": "Faza 2: Silnik",
+        "phase": "Faza 2",
+        "unknownSteps": 1,
+        "waitSeconds": null,
+        "workSeconds": null
+      }
+    ],
+    "steps": [
+      {
+        "finishedAt": "2026-01-11T09:30:00+00:00",
+        "id": "F1.1",
+        "phase": "Faza 1",
+        "reason": null,
+        "startedAt": "2026-01-11T09:00:00+00:00",
+        "unknown": false,
+        "waitSeconds": 0,
+        "workSeconds": 1800
+      },
+      {
+        "finishedAt": "2026-01-11T10:20:00+00:00",
+        "id": "F1.2",
+        "phase": "Faza 1",
+        "reason": null,
+        "startedAt": "2026-01-11T09:30:00+00:00",
+        "unknown": false,
+        "waitSeconds": 900,
+        "workSeconds": 2100
+      },
+      {
+        "finishedAt": "2026-01-11T11:10:00+00:00",
+        "id": "F1.3",
+        "phase": "Faza 1",
+        "reason": null,
+        "startedAt": "2026-01-11T10:20:00+00:00",
+        "unknown": false,
+        "waitSeconds": 1800,
+        "workSeconds": 1200
+      },
+      {
+        "finishedAt": null,
+        "id": "F2.1",
+        "phase": "Faza 2",
+        "reason": "no-finish",
+        "startedAt": "2026-01-11T11:10:00+00:00",
+        "unknown": true,
+        "waitSeconds": null,
+        "workSeconds": null
+      }
+    ],
+    "totals": {
+      "complete": false,
+      "unknownSteps": 1,
+      "unknownWindows": 1,
+      "waitSeconds": 2700,
+      "windows": 3,
+      "workSeconds": 5100
+    },
+    "windows": [
+      {
+        "endedAt": "2026-01-11T09:45:00+00:00",
+        "seconds": 900,
+        "source": "approval",
+        "startedAt": "2026-01-11T09:30:00+00:00",
+        "unknown": false,
+        "what": "GO implement"
+      },
+      {
+        "endedAt": "2026-01-11T10:50:00+00:00",
+        "seconds": 1800,
+        "source": "checkpoint",
+        "startedAt": "2026-01-11T10:20:00+00:00",
+        "unknown": false,
+        "what": "odpowiedź Q3"
+      },
+      {
+        "endedAt": null,
+        "seconds": null,
+        "source": null,
+        "startedAt": "2026-01-11T11:10:00+00:00",
+        "unknown": true,
+        "what": "CP"
+      }
+    ]
+  },
+  "version": 0,
+  "waiting": [
+    {
+      "action": "Sprawdź wynik i zatwierdź „CP” przyciskiem w Akcie III albo wpisz to w sesji.",
+      "approve": "cp",
+      "link": null,
+      "since": "11:10",
+      "source": "checkpoint",
+      "what": "CP",
+      "word": "CP"
+    }
+  ]
+}

@@ -238,16 +238,16 @@ main { flex: 1; padding: 1.1rem 1.4rem; min-width: 0; }
 .q-head { font-weight: 650; }
 .q-group.is-blocking .q-head { color: var(--warn); }
 .q-list { list-style: none; margin: .2rem 0 0; padding: 0; display: grid; gap: .2rem; }
-.q-list li, .sub-list li { display: flex; gap: .45rem; align-items: baseline; min-width: 0; }
+.q-list li, .sub-list li, .timing-list li { display: flex; gap: .45rem; align-items: baseline; min-width: 0; }
 .q-list li > span:last-child { overflow-wrap: anywhere; min-width: 0; }
 .q-id { font-weight: 700; font-size: .78rem; color: var(--muted); flex: none; }
 .q-none { color: var(--faint); font-size: .8rem; font-style: italic; }
 /* Podkroki z czasem (akt III) */
-.substeps { margin-top: .6rem; font-size: .84rem; }
-.substeps summary { cursor: pointer; color: var(--muted); font-weight: 600; }
-.sub-list { list-style: none; margin: .3rem 0 0; padding: 0; display: grid; gap: .15rem; max-height: 14rem; overflow: auto; }
-.sub-list .tt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sub-list .sub-t { flex: none; color: var(--muted); font-variant-numeric: tabular-nums; }
+.substeps, .timing-box { margin-top: .6rem; font-size: .84rem; }
+.substeps summary, .timing-box summary { cursor: pointer; color: var(--muted); font-weight: 600; }
+.sub-list, .timing-list { list-style: none; margin: .3rem 0 0; padding: 0; display: grid; gap: .15rem; max-height: 14rem; overflow: auto; }
+.sub-list .tt, .timing-list .tt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sub-list .sub-t, .timing-list .sub-t { flex: none; color: var(--muted); font-variant-numeric: tabular-nums; }
 .sub-list li.is-nodata .sub-t { color: var(--faint); font-style: italic; }
 
 .act.s-done .act-icon { background: var(--done-soft); color: var(--done); }

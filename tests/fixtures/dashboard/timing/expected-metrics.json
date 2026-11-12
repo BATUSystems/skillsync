@@ -1,0 +1,168 @@
+{
+  "failures": [],
+  "generatedAt": "2026-01-12T12:00:00+00:00",
+  "interventions": null,
+  "phases": [
+    {
+      "id": "F1",
+      "seconds": 7800
+    },
+    {
+      "id": "F2",
+      "seconds": null
+    }
+  ],
+  "plan": "docs/plans/2026-01-11-timing-demo.md",
+  "rounds": {
+    "failed": null,
+    "notRun": null,
+    "records": null,
+    "repeatedSteps": null
+  },
+  "run": "2026-01-11-timing-demo",
+  "schema": 1,
+  "status": "PASS",
+  "substeps": [
+    {
+      "finishedAt": "09:30",
+      "id": "F1.1",
+      "noData": false,
+      "seconds": 1800,
+      "source": "checkpoints.md",
+      "startedAt": "09:00",
+      "title": "Opis kontraktu"
+    },
+    {
+      "finishedAt": "10:20",
+      "id": "F1.2",
+      "noData": false,
+      "seconds": 3000,
+      "source": "checkpoints.md",
+      "startedAt": "09:30",
+      "title": "Fixtures"
+    },
+    {
+      "finishedAt": "11:10",
+      "id": "F1.3",
+      "noData": false,
+      "seconds": 3000,
+      "source": "checkpoints.md",
+      "startedAt": "10:20",
+      "title": "Test struktury"
+    },
+    {
+      "finishedAt": null,
+      "id": "F2.1",
+      "noData": true,
+      "seconds": null,
+      "source": null,
+      "startedAt": "11:10",
+      "title": "Parsery"
+    }
+  ],
+  "timing": {
+    "available": true,
+    "reason": null,
+    "stages": [
+      {
+        "complete": true,
+        "name": "Faza 1: Kontrakt",
+        "phase": "Faza 1: Kontrakt",
+        "unknownSteps": 0,
+        "waitSeconds": 2700,
+        "workSeconds": 5100
+      },
+      {
+        "complete": false,
+        "name": "Faza 2: Silnik",
+        "phase": "Faza 2: Silnik",
+        "unknownSteps": 1,
+        "waitSeconds": null,
+        "workSeconds": null
+      }
+    ],
+    "steps": [
+      {
+        "finishedAt": "2026-01-11T09:30:00+00:00",
+        "id": "F1.1",
+        "phase": "Faza 1: Kontrakt",
+        "reason": null,
+        "startedAt": "2026-01-11T09:00:00+00:00",
+        "unknown": false,
+        "waitSeconds": 0,
+        "workSeconds": 1800
+      },
+      {
+        "finishedAt": "2026-01-11T10:20:00+00:00",
+        "id": "F1.2",
+        "phase": "Faza 1: Kontrakt",
+        "reason": null,
+        "startedAt": "2026-01-11T09:30:00+00:00",
+        "unknown": false,
+        "waitSeconds": 900,
+        "workSeconds": 2100
+      },
+      {
+        "finishedAt": "2026-01-11T11:10:00+00:00",
+        "id": "F1.3",
+        "phase": "Faza 1: Kontrakt",
+        "reason": null,
+        "startedAt": "2026-01-11T10:20:00+00:00",
+        "unknown": false,
+        "waitSeconds": 1800,
+        "workSeconds": 1200
+      },
+      {
+        "finishedAt": null,
+        "id": "F2.1",
+        "phase": "Faza 2: Silnik",
+        "reason": "no-finish",
+        "startedAt": "2026-01-11T11:10:00+00:00",
+        "unknown": true,
+        "waitSeconds": null,
+        "workSeconds": null
+      }
+    ],
+    "totals": {
+      "complete": false,
+      "unknownSteps": 1,
+      "unknownWindows": 1,
+      "waitSeconds": 2700,
+      "windows": 3,
+      "workSeconds": 5100
+    },
+    "windows": [
+      {
+        "endedAt": "2026-01-11T09:45:00+00:00",
+        "seconds": 900,
+        "source": "approval",
+        "startedAt": "2026-01-11T09:30:00+00:00",
+        "unknown": false,
+        "what": "GO implement"
+      },
+      {
+        "endedAt": "2026-01-11T10:50:00+00:00",
+        "seconds": 1800,
+        "source": "checkpoint",
+        "startedAt": "2026-01-11T10:20:00+00:00",
+        "unknown": false,
+        "what": "odpowiedź Q3"
+      },
+      {
+        "endedAt": null,
+        "seconds": null,
+        "source": null,
+        "startedAt": "2026-01-11T11:10:00+00:00",
+        "unknown": true,
+        "what": "CP"
+      }
+    ]
+  },
+  "totals": {
+    "measuredSeconds": 7800,
+    "seconds": null,
+    "substeps": 4,
+    "withData": 3,
+    "withoutData": 1
+  }
+}

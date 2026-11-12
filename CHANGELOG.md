@@ -12,6 +12,9 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Added
+- Dashboard: `timing`, the work time and the waiting time for a human per step and per plan phase, counted by the status page itself (`show` and `dashboard metrics`, additive in `schema: 1`). A waiting window opens at a checkpoint with `czeka:` and closes at the consent named in it (`approvals.jsonl`) or at the next checkpoint; a window that nothing closes and a step without its marks are `unknown`, never estimated. The status page shows a collapsible "Czas pracy i czekania" section with sums per phase and a tooltip with the windows. Contract: `docs/dashboard-contract.md` (section `timing`).
+
 ## [1.2.0] - 2026-11-12
 
 ### Added

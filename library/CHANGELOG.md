@@ -4,6 +4,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+### Added
+- `skills/dashboard`: czas pracy i czekania na człowieka (`timing`) w sekcji aktu III strony statusu, renderer (`timingBlock`), opis w `descriptions.json` i w `SKILL.md`.
+
 ## [1.2.0] - 2026-11-12
 
 ### Added

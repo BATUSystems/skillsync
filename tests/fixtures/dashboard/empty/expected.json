@@ -186,6 +186,21 @@
     "sha": null
   },
   "substeps": [],
+  "timing": {
+    "available": false,
+    "reason": "run start (RUN=) or checkpoint time missing",
+    "stages": [],
+    "steps": [],
+    "totals": {
+      "complete": false,
+      "unknownSteps": 0,
+      "unknownWindows": 0,
+      "waitSeconds": null,
+      "windows": 0,
+      "workSeconds": null
+    },
+    "windows": []
+  },
   "version": 0,
   "waiting": []
 }

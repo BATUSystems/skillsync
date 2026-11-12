@@ -311,6 +311,30 @@
     "title": "Spec: demo export"
   },
   "substeps": [],
+  "timing": {
+    "available": true,
+    "reason": null,
+    "stages": [],
+    "steps": [],
+    "totals": {
+      "complete": false,
+      "unknownSteps": 0,
+      "unknownWindows": 1,
+      "waitSeconds": 0,
+      "windows": 1,
+      "workSeconds": null
+    },
+    "windows": [
+      {
+        "endedAt": null,
+        "seconds": null,
+        "source": null,
+        "startedAt": "2026-01-11T09:30:00+00:00",
+        "unknown": true,
+        "what": "GO implement"
+      }
+    ]
+  },
   "version": 0,
   "waiting": [
     {

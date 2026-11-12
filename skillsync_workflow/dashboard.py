@@ -7,7 +7,7 @@ parsers come from `status.py` (status line, git blob sha, approval entry rules);
 "Zgodność z `skillsync status`")."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 import os
 from pathlib import Path
@@ -1060,6 +1060,145 @@ def build_substeps(progress, checkpoints):
     return out
 
 
+def _instants(run_start, checkpoints):
+    """Absolute time of every checkpoint (`- HH:MM …` has no date): the clock of the first one is read against the run start
+    (`RUN=<iso>`), a later clock that goes back means the next day. None when the run start is unknown."""
+    start = parse_iso(run_start)
+    if start is None:
+        return None
+    previous, out = start.replace(second=0, microsecond=0), []
+    for item in checkpoints:
+        try:
+            hours, minutes = (int(part) for part in item['time'].split(':'))
+            moment = previous.replace(hour=hours, minute=minutes, second=0, microsecond=0)
+        except (ValueError, KeyError):
+            return None
+        if moment < previous:
+            moment += timedelta(days=1)
+        out.append(moment)
+        previous = moment
+    return out
+
+
+def _wait_words(what):
+    return [word for word in APPROVAL_WORDS if re.search(rf'(?<![\w]){re.escape(word)}(?![\w])', what, re.IGNORECASE)]
+
+
+def _overlap_seconds(windows, start, finish):
+    """Seconds of the closed windows that lie inside `[start, finish]`; None when a window without an end touches it."""
+    total = 0
+    for window in windows:
+        if window['end'] is None:
+            if window['startAt'] < finish:
+                return None
+            continue
+        low, high = max(window['startAt'], start), min(window['endAt'], finish)
+        if high > low:
+            total += int((high - low).total_seconds())
+    return total
+
+
+def build_timing(run_start, checkpoints, approvals, phases):
+    """`timing` of the dashboard (`show`) and `dashboard metrics`: work time and waiting time per step and per plan phase.
+
+    A waiting window opens at a checkpoint with `czeka:` and closes at the consent of `approvals.jsonl` named in it
+    (`source: approval`, the first entry at or after the opening) or, for any other wait or a consent given in the session,
+    at the next checkpoint without `czeka:` (`source: checkpoint`). A window that nothing closes is `unknown: true` with
+    `seconds: null`; so is every step whose work time cannot be told (missing start or finish mark, an unknown window inside).
+    Work of a step = first `w toku` mark to first `zrobione` mark minus the waiting windows inside; nothing is estimated.
+    `checkpoints` are chronological `{time, text}`, `phases` are `parse_progress`/`progress.phases` (steps with `id`)."""
+    instants = _instants(run_start, checkpoints)
+    if instants is None:
+        return {'available': False, 'reason': 'run start (RUN=) or checkpoint time missing', 'windows': [], 'steps': [],
+                'stages': [], 'totals': {'workSeconds': None, 'waitSeconds': None, 'windows': 0, 'unknownWindows': 0,
+                                         'unknownSteps': 0, 'complete': False}}
+    given = []
+    for entry in approvals or []:
+        moment = _approval_at(entry.get('at'))
+        if moment is not None:
+            given.append((moment, entry.get('word')))
+    given.sort(key=lambda pair: pair[0])
+
+    def consent(window, limit):
+        """First consent named by the window, given between its opening and `limit` (None = no limit)."""
+        words = _wait_words(window['what'])
+        return next((moment for moment, word in given if word in words and moment >= window['startAt']
+                     and (limit is None or moment <= limit)), None)
+
+    windows, current = [], None
+    for item, moment in zip(checkpoints, instants):
+        what = wait_marker(item['text'])
+        if what:
+            if current is not None and consent(current, moment) is None:   # still waiting: the same window goes on
+                if what not in current['what']:
+                    current['what'] += '; ' + what
+                continue
+            current = {'what': what, 'startAt': moment, 'end': None, 'endAt': None, 'source': None}
+            windows.append(current)
+        elif current is not None:
+            current.update(end=True, endAt=moment, source='checkpoint')
+            current = None
+    for window in windows:
+        moment = consent(window, window['endAt'])
+        if moment is not None:
+            window.update(end=True, endAt=moment, source='approval')
+    for window in windows:
+        seconds = int((window['endAt'] - window['startAt']).total_seconds()) if window['endAt'] else None
+        window['seconds'] = seconds if seconds is not None and seconds >= 0 else None
+        if window['seconds'] is None:
+            window['end'] = None
+    started, finished = {}, {}
+    for item, moment in zip(checkpoints, instants):
+        for sid in ids_in_progress(item['text']) or []:
+            started.setdefault(sid, moment)
+        for sid in ids_reported_done(item['text']):
+            finished.setdefault(sid, moment)
+    iso = lambda value: value.isoformat(timespec='seconds') if value else None  # noqa: E731
+    steps, stages = [], []
+    for phase in phases:
+        spans, work_total, unknown_steps = [], 0, 0
+        for step in phase['steps']:
+            sid = step['id']
+            begin, end = started.get(sid), finished.get(sid)
+            if begin is None and end is None and not step.get('done'):
+                continue
+            wait = work = None
+            reason = None
+            if begin is None or end is None:
+                reason = 'no-start' if begin is None else 'no-finish'
+            elif end < begin:
+                reason = 'order'
+            else:
+                wait = _overlap_seconds(windows, begin, end)
+                if wait is None:
+                    reason = 'open-window'
+                else:
+                    work = int((end - begin).total_seconds()) - wait
+                    spans.append((begin, end))
+            if work is None:
+                unknown_steps += 1
+            else:
+                work_total += work
+            steps.append({'id': sid, 'phase': phase.get('label') or phase['name'], 'startedAt': iso(begin), 'finishedAt': iso(end),
+                          'workSeconds': work, 'waitSeconds': wait, 'unknown': work is None, 'reason': reason})
+        if not spans and not unknown_steps:
+            continue
+        wait_total = _overlap_seconds(windows, min(a for a, _ in spans), max(b for _, b in spans)) if spans else None
+        stages.append({'phase': phase.get('label') or phase['name'], 'name': phase['name'], 'workSeconds': work_total if spans else None,
+                       'waitSeconds': wait_total, 'unknownSteps': unknown_steps,
+                       'complete': bool(spans) and not unknown_steps and wait_total is not None})
+    unknown_windows = sum(1 for window in windows if window['seconds'] is None)
+    known_wait = sum(window['seconds'] for window in windows if window['seconds'] is not None)
+    unknown_steps_total = sum(1 for step in steps if step['unknown'])
+    out_windows = [{'what': window['what'], 'startedAt': iso(window['startAt']), 'endedAt': iso(window['endAt'].astimezone(window['startAt'].tzinfo)) if window['seconds'] is not None else None,
+                    'seconds': window['seconds'], 'source': window['source'] if window['seconds'] is not None else None,
+                    'unknown': window['seconds'] is None} for window in windows]
+    return {'available': True, 'reason': None, 'windows': out_windows, 'steps': steps, 'stages': stages,
+            'totals': {'workSeconds': sum(stage['workSeconds'] or 0 for stage in stages) if stages else None,
+                       'waitSeconds': known_wait, 'windows': len(windows), 'unknownWindows': unknown_windows,
+                       'unknownSteps': unknown_steps_total, 'complete': not unknown_windows and not unknown_steps_total}}
+
+
 def read_readiness(root, run_id, run_exists):
     """`readiness {status, date, planSha, source}` from `.skillsync/runs/<run-id>/readiness.md` (produced by
     `skillsync readiness --run-id`); no file = all null; an unrecognized first line = status null, source set."""
@@ -1272,6 +1411,7 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
         'assumptions': {'count': len(assumptions), 'items': assumptions},
         'blockingQuestions': {'count': len(blocking), 'items': blocking},
         'substeps': build_substeps(progress, chronological),
+        'timing': build_timing(run['start'], chronological, run_approvals(root, run_id), progress['phases']),
     }
 
 
@@ -1332,9 +1472,9 @@ def build_metrics(root, run_id, plan=None):
     checkpoints_path = run_dir / CHECKPOINTS_FILE
     if checkpoints_path.is_symlink():
         raise MetricsBlocked(f'{RUNS_DIR}/{run_id}/{CHECKPOINTS_FILE} is a symlink')
-    chronological = []
+    chronological, run_start = [], None
     if checkpoints_path.is_file():
-        _, chronological = parse_checkpoints(read_text(checkpoints_path))
+        run_start, chronological = parse_checkpoints(read_text(checkpoints_path))
     try:
         store = _runs._store_path(root, run_id)
         data = _runs._read(store) if store.exists() or store.is_symlink() else None
@@ -1398,6 +1538,8 @@ def build_metrics(root, run_id, plan=None):
         'rounds': rounds,
         'failures': failures,
         'interventions': None,
+        'timing': build_timing(run_start, chronological, run_approvals(root, run_id),
+                               parse_progress(read_text(root / chosen['path'])) if chosen else []),
     }
 
 

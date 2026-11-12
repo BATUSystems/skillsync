@@ -388,6 +388,60 @@
       "title": "Dokumentacja"
     }
   ],
+  "timing": {
+    "available": true,
+    "reason": null,
+    "stages": [
+      {
+        "complete": true,
+        "name": "Faza 1: Wydanie",
+        "phase": "Faza 1",
+        "unknownSteps": 0,
+        "waitSeconds": 0,
+        "workSeconds": 3300
+      }
+    ],
+    "steps": [
+      {
+        "finishedAt": "2026-01-12T09:40:00+00:00",
+        "id": "F1.1",
+        "phase": "Faza 1",
+        "reason": null,
+        "startedAt": "2026-01-12T09:05:00+00:00",
+        "unknown": false,
+        "waitSeconds": 0,
+        "workSeconds": 2100
+      },
+      {
+        "finishedAt": "2026-01-12T10:00:00+00:00",
+        "id": "F1.2",
+        "phase": "Faza 1",
+        "reason": null,
+        "startedAt": "2026-01-12T09:40:00+00:00",
+        "unknown": false,
+        "waitSeconds": 0,
+        "workSeconds": 1200
+      }
+    ],
+    "totals": {
+      "complete": false,
+      "unknownSteps": 0,
+      "unknownWindows": 1,
+      "waitSeconds": 0,
+      "windows": 1,
+      "workSeconds": 3300
+    },
+    "windows": [
+      {
+        "endedAt": null,
+        "seconds": null,
+        "source": null,
+        "startedAt": "2026-01-12T10:00:00+00:00",
+        "unknown": true,
+        "what": "CP"
+      }
+    ]
+  },
   "version": 0,
   "waiting": [
     {

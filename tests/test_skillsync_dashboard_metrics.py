@@ -21,10 +21,10 @@ FIXTURES = ROOT / 'tests' / 'fixtures' / 'dashboard'
 MTIME = datetime(2026, 1, 11, 10, 0, tzinfo=timezone.utc).timestamp()
 # case -> run id; every case has `expected-metrics.json`
 CASES = {'plan-in-progress': '2026-01-10-demo-feature', 'silence': '2026-01-11-demo-report',
-         'run-mode': '2026-01-11-demo-research'}
+         'run-mode': '2026-01-11-demo-research', 'timing': '2026-01-11-timing-demo'}
 SUBSTEP_KEYS = {'id', 'title', 'seconds', 'startedAt', 'finishedAt', 'noData', 'source'}
 TOP_KEYS = {'schema', 'status', 'run', 'plan', 'generatedAt', 'substeps', 'phases', 'totals', 'rounds', 'failures',
-            'interventions'}
+            'interventions', 'timing'}
 
 
 def normalized(data):

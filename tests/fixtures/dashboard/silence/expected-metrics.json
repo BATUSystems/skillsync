@@ -38,6 +38,51 @@
       "title": "Widok raportu"
     }
   ],
+  "timing": {
+    "available": true,
+    "reason": null,
+    "stages": [
+      {
+        "complete": false,
+        "name": "Faza 1: Budowa",
+        "phase": "Faza 1: Budowa",
+        "unknownSteps": 1,
+        "waitSeconds": 0,
+        "workSeconds": 2100
+      }
+    ],
+    "steps": [
+      {
+        "finishedAt": "2026-01-11T08:40:00+00:00",
+        "id": "F1.1",
+        "phase": "Faza 1: Budowa",
+        "reason": null,
+        "startedAt": "2026-01-11T08:05:00+00:00",
+        "unknown": false,
+        "waitSeconds": 0,
+        "workSeconds": 2100
+      },
+      {
+        "finishedAt": null,
+        "id": "F1.2",
+        "phase": "Faza 1: Budowa",
+        "reason": "no-finish",
+        "startedAt": "2026-01-11T08:40:00+00:00",
+        "unknown": true,
+        "waitSeconds": null,
+        "workSeconds": null
+      }
+    ],
+    "totals": {
+      "complete": false,
+      "unknownSteps": 1,
+      "unknownWindows": 0,
+      "waitSeconds": 0,
+      "windows": 0,
+      "workSeconds": 2100
+    },
+    "windows": []
+  },
   "totals": {
     "measuredSeconds": 2100,
     "seconds": null,
