@@ -4,6 +4,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+## [1.2.3] - 2026-11-13
+
+### Changed
+- `layer.yaml`: `version` i `core_min` 1.2.3 (bez zmian w skillach; warstwa jest wydawana razem z rdzeniem).
+
 ## [1.2.2] - 2026-11-12
 
 ### Changed

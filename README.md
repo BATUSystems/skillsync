@@ -107,7 +107,7 @@ The table rests on CI results (tests, install smoke). Manual tests on macOS and 
 ## Install
 
 ```bash
-uv tool install git+https://github.com/BATUSystems/skillsync@v1.2.2
+uv tool install git+https://github.com/BATUSystems/skillsync@v1.2.3
 ```
 
 Check the installation:
@@ -133,7 +133,7 @@ troubleshooting are in [docs/installation.md](docs/installation.md#szybka-instal
 curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/BATUSystems/skillsync/<tag>/install.sh | sh
 ```
 
-Replace `<tag>` with a release tag (for example `v1.2.2`). Native Windows is not supported by the installer: use WSL2.
+Replace `<tag>` with a release tag (for example `v1.2.3`). Native Windows is not supported by the installer: use WSL2.
 The steps below do the same by hand.
 
 This path needs no organization layer: a personal layer and the core layer are enough.
@@ -152,7 +152,7 @@ sync: {method: symlink}
 
 ```bash
 # 1. Add the core layer (skills, workflow and roles); it is part of every rule
-skillsync layers add core --kind core --source https://github.com/BATUSystems/skillsync --subdir library --ref v1.2.2
+skillsync layers add core --kind core --source https://github.com/BATUSystems/skillsync --subdir library --ref v1.2.3
 
 # 2. Create the skeleton of your personal layer (a git repository) and commit it:
 #    `layers add` clones the repository, so the skeleton must be committed first
