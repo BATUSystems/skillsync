@@ -240,7 +240,7 @@ def validate_workflow(config):
             raise ValueError(f'{section}.{key} must be a mapping')
         for name, value in mapping.items():
             strings(value, f'{section}.{key}.{name}')
-    for section, keys in [('readiness', ('required_sections', 'contract_paths')), ('review', ('core', 'project', 'ui_paths', 'ui_evidence'))]:
+    for section, keys in [('readiness', ('required_sections', 'contract_paths')), ('review', ('core', 'project', 'ui_paths', 'ui_evidence', 'docs_paths', 'docs_checklist'))]:
         for key in keys:
             if key in config.get(section, {}):
                 strings(config[section][key], f'{section}.{key}')

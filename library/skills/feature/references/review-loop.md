@@ -14,10 +14,12 @@ Ryzyko planu = najwyższe ryzyko kroku w planie (kolumna ryzyka, [plan](plan-det
 | `spec` | I | `spec-review` | zawsze przy `plan-large` | — |
 | `plan` | II | `plan-review` | `plan-large`, ryzyko planu high, prośba użytkownika | jedna runda opcjonalna, bez pętli |
 | `kod` | III | `code-review` (końcowa), `code-review-<krok>` (po fazie) | końcowa zawsze; raz na fazę po jej zielonym szczeblu, bez warunku ryzyka (ryzyko decyduje o kategorii pętli) | — |
+| `docs` | III | `code-review` (zamiast profilu `kod`, gdy zmiana dotyka wyłącznie dokumentacji) | jedna runda; pętla pełna tylko przy zmianach w strażniku wycieków, migracjach lub bezpieczeństwie (jak w „Kategorii pętli”) | — |
 
 Kolumna „Pętla obowiązkowa” mówi, kiedy pętla jest; ile ma rund (pełna albo jednorundowa), wyznacza sekcja „Kategoria pętli i przejścia”.
 
 `direct`, który odsłoni zmianę kontraktu, przechodzi do speca (`feature`, krok 4), więc dostaje profil `spec`.
+Profil `docs` wybiera `skillsync review` (pole `profile`), gdy zmiana dotyka wyłącznie dokumentacji (`docs/**` bez plików kodu, np. `.py`, `.js`, `.css`), plików `.md` skilli biblioteki, `CHANGELOG*` albo notatek wydania; przy zmianie mieszanej profil to `kod`, a pozycje `docs` z checklisty dostają pliki dokumentacji (`docsFiles`). Ścieżki i pozycje można nadpisać w manifeście (`workflow.review.docs_paths`, `workflow.review.docs_checklist`).
 Challenger pomysłu i `pre-implement` są poza licznikiem rund. Kolejność w akcie I: odpowiedzi na `Q`, `pre-implement`
 (gdy dotyczy), pętla `spec`, „GO plan”; w akcie II: plan, pętla `plan`, `readiness`, „GO implement”.
 
@@ -30,6 +32,7 @@ Challenger pomysłu i `pre-implement` są poza licznikiem rund. Kolejność w ak
 - **`plan`**: plan i spec z linii `Spec:` (bez speca: sam plan z kryteriami). Kryteria ↔ kroki ↔ TESTY (mapowanie),
   ryzyko kroków, zasoby i równoległość, konflikt stanów między krokami (zmiana w A łamie warunek wstępny B), ścieżki
   porażek, ukryte założenia, dokumentacja i wiedza, pytanie o wersję.
+- **`docs`**: zmienione dokumenty, CHANGELOG, notatki wydania i skille, plus dokumenty i narzędzia, do których się odwołują. Każda obietnica (zachowanie, komenda, kod wyjścia, wersja, „działa na X”) ma dowód: test, CI, zrzut albo log; bez dowodu musi być oznaczona jako niepotwierdzona. Instrukcje są zgodne z narzędziami, które je sprawdzają (`check_*`, walidatory, `doctor`): uruchom opisaną komendę na przykładzie albo wskaż jej test. Skille i dokumenty nie przeczą sobie (ceremonia a sygnały retro, nazwy komend i flag, ścieżki). Tylko bieżący stan: bez „dawniej X”, starych aliasów i opisu sprzed zmiany. Bez nazw osób, klientów i wydarzeń w publicznym rdzeniu; tekst PR i notatek przechodzi `skillsync leakcheck --text`.
 - **`kod`**: materiał z [review-material](review-material.md) (diff roboczy i staged, nowe pliki, stan początkowy, plan,
   spec, FRD, logi testów) i checklista roli `reviewer` z `skillsync review`. Zakres diffu:
   - pętla po kroku: diff plików kroku z listy planu;

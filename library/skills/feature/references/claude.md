@@ -40,7 +40,7 @@ decyzji użytkownika.
 Limit: maksymalnie 3 równoległe podagenty poza orkiestratorem; testy na wspólnych zasobach
 sekwencyjnie. Do poprawek tego samego kroku wznawiaj tego samego agenta (`SendMessage`
 do jego id), a niezależne review uruchamiaj w świeżym kontekście; każda runda [pętli przeglądu](review-loop.md)
-to nowy `reviewer`. Model recenzenta w pętli (każdy profil: `spec`, `plan`, `kod`): sesja na innym modelu niż `sonnet` → domyślny, sesja na `sonnet` → `model: opus`; profil `kod` przy ryzyku planu high może dostać `model: opus` zawsze. Nie przekazuj pełnej
+to nowy `reviewer`. Model recenzenta w pętli (każdy profil: `spec`, `plan`, `kod`, `docs`): sesja na innym modelu niż `sonnet` → domyślny, sesja na `sonnet` → `model: opus`; profil `kod` przy ryzyku planu high może dostać `model: opus` zawsze. Nie przekazuj pełnej
 historii; wystarcza zlecenie z planem, zakresem i ścieżkami.
 
 `explore`, `reviewer` i `verifier` mają tylko Read/Grep/Glob — orkiestrator przygotowuje diff i listę
