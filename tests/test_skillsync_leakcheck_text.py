@@ -178,6 +178,15 @@ class TextCliTests(TextCase):
         self.assertEqual(done.returncode, 2, done.stdout + done.stderr)
         self.assertEqual(self.cli('--text', str(path), '--require', 'full').returncode, 0)   # pełne pokrycie: PASS
 
+    def test_the_target_decides_whose_terms_are_foreign(self):
+        """Cel wynika z `--target` (albo katalogu bieżącego), nie z miejsca publikacji: własne terminy celu przechodzą."""
+        path = self.write('pr.md', 'klient %s\n' % CLIENT)
+        self.assertEqual(self.cli('--text', str(path)).returncode, 1)                   # cel `mine`: terminy `other` są obce
+        argv = [sys.executable, str(SKILLSYNC_PATH), 'leakcheck', '--text', str(path), '--identity', str(self.identity),
+                '--targets-json', str(self.targets), '--target', 'other']
+        wrong = subprocess.run(argv, capture_output=True, text=True, cwd=str(self.root), timeout=60)
+        self.assertEqual(wrong.returncode, 0, wrong.stdout + wrong.stderr)               # zły cel: własne terminy nie są obce
+
     def test_the_text_is_never_an_argument_of_the_command(self):
         done = subprocess.run([sys.executable, str(SKILLSYNC_PATH), 'leakcheck', '--help'], capture_output=True, text=True, timeout=60)
         self.assertIn('--text FILE', done.stdout)

@@ -344,7 +344,7 @@ przez `@tag`, czy przez wildcard. Pozostałe skille (`workflow-retro`, `task-cla
 | `route <path> --topic testing --files <paths>` | pasujące instrukcje i indeksowane lekcje |
 | `doctor <path>` | statyczna walidacja źródeł, budżetów, referencji i adapterów |
 | `readiness <path> --plan <file> --risk high --files <paths> [--run-id <id>]` | gotowość struktury planu; przy linii `Spec:` także speca z `docs/specs` (pole `spec` w wyniku); przy fazach `[UI]` pola `uiPhases`, `nonUiPhases`, `uiPhasesWaiting`, `warnings`; z `--run-id` zapisuje `.skillsync/runs/<id>/readiness.md` (pierwsza linia `Readiness: PASS\|BLOCKED`) i zwraca `reportFile` |
-| `review <path> --risk high --files <paths>` | checklista core + ryzyko + UI/project |
+| `review <path> --risk high --files <paths>` | checklista core + ryzyko + UI/project; `profile` (`docs` przy zmianie wyłącznie dokumentacji, inaczej `kod`) i `docsFiles` (przy plikach docs dopisane pozycje checklisty docs) |
 | `validate <path> --profile quick` | uporządkowany plan kontroli |
 | `smart-test <path> [--base <ref>]` | selekcja według rzeczywistych zmian i zależności |
 | `checkpoint <path> --run-id <id> --step <id> --status <status> --evidence <file> --next <opis> [--cause T] [--cause-key K] [--owner O] [--attempt N] [--denied N] [--inherited N] [--final]` | rekord kroku, także porażki; `--evidence` wymagany przy `PASS`; `--final` zamyka przebieg |

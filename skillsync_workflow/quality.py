@@ -1278,14 +1278,15 @@ DOCS_PATHS = ['docs/**', 'library/skills/**/*.md', 'CHANGELOG*', '**/CHANGELOG*'
               '**/RELEASE_NOTES*']
 DOCS_CHECKLIST = [
     'Każda obietnica w docs, CHANGELOG i notatkach ma dowód (test, CI, zrzut) albo jest oznaczona jako niepotwierdzona.',
-    'Instrukcje zgadzają się z narzędziami, które je sprawdzają (check_*, walidatory, doctor): uruchom opisaną komendę na przykładzie.',
+    'Instrukcje zgadzają się z narzędziami, które je sprawdzają (check_*, walidatory, doctor): sprawdź opisaną komendę na przykładzie z logu albo wskaż jej test.',
     'Skille i dokumenty nie przeczą sobie nawzajem (np. ceremonia a sygnały retro, ścieżki, nazwy komend i flag).',
     'Tylko bieżący stan: bez „dawniej X”, starych aliasów i opisu stanu sprzed zmiany (historia w CHANGELOG).',
     'Brak nazw osób, klientów i wydarzeń w publicznym rdzeniu; opis PR i notatki wydania przechodzą skillsync leakcheck --text.',
 ]
 
 
-DOCS_CODE_SUFFIXES = ('.py', '.ts', '.js', '.mjs', '.cjs', '.ps1', '.sh', '.css', '.html')   # kod pod docs/ nie jest dokumentacją
+DOCS_CODE_SUFFIXES = ('.py', '.ts', '.js', '.mjs', '.cjs', '.ps1', '.sh', '.css', '.html',
+                      '.sql', '.go', '.rs', '.java', '.cs', '.rb', '.php', '.tsx', '.jsx', '.vue')   # kod pod docs/ nie jest dokumentacją
 
 
 def docs_profile(config, files):

@@ -196,7 +196,7 @@ skillsync leakcheck <katalog|projekt> [--target ID] [--worktree|--staged|--range
 skillsync leakcheck --text <plik>|--stdin [--target ID] [--require full] [--json]   # tekst poza gitem (PR, notatka wydania)
 ```
 
-- Tekst poza gitem (`--text FILE`, `--stdin`, do 1 MiB): ten sam cel, te same tożsamości i wzorce co `--range`; tekst jest skanowany w klasie ścieżki `skills/text` (`instrukcje`, najostrzejsza), więc nick właściciela dozwolony w `CHANGELOG`/`docs` w opisie PR-a jest trafieniem. Nie wymaga repozytorium git; etykieta w raporcie to nazwa pliku albo `<stdin>`, tekstu raport nie powtarza. Tekst nigdy nie jest argumentem komendy (błąd wypisałby go); skille `pr-run`, `feature`, `dispatch` wymagają tej kontroli przed `gh pr create`, `gh pr edit --body` i `gh release create`.
+- Tekst poza gitem (`--text FILE`, `--stdin`, do 1 MiB): te same tożsamości i wzorce co `--range`, ale cel wybiera się z katalogu bieżącego (config maszyny) albo `--target`, nie z repozytorium docelowego publikacji: tożsamości warstwy równej celowi nie są „obce”, więc przy złym celu własne terminy przejdą; podawaj `--target <id repo docelowego>` albo uruchamiaj w jego checkoucie, a `--require full` blokuje niepełne pokrycie; tekst jest skanowany w klasie ścieżki `skills/text` (`instrukcje`, najostrzejsza), więc nick właściciela dozwolony w `CHANGELOG`/`docs` w opisie PR-a jest trafieniem. Nie wymaga repozytorium git; etykieta w raporcie to nazwa pliku albo `<stdin>`, tekstu raport nie powtarza. Tekst nigdy nie jest argumentem komendy (błąd wypisałby go); skille `pr-run`, `feature`, `dispatch` wymagają tej kontroli przed `gh pr create`, `gh pr edit --body` i `gh release create`.
 
 - Tryby: `--worktree` (domyślnie), `--staged`, `--range A..B`, `--history`. Skan obejmuje treść, nazwy plików i metadane
   commitów (autor, committer, trailery, komunikat). W `--range` i w `pre-push` skanowane są też adnotowane tagi wskazujące
@@ -205,7 +205,9 @@ skillsync leakcheck --text <plik>|--stdin [--target ID] [--require full] [--json
   działa, ale jest nieobjęta gwarancją 1.0.0.
 - Kody: PASS 0, FAIL 1 (wyciek: `{path, category, location}`), BLOCKED 2 (`--require full` przy niepełnym pokryciu,
   brak lub błędny plik wzorców, niepoprawny `layer.yaml` z configu: fail-closed dla tożsamości; D73: link (symlink)
-  w warstwie lub repo celu, link jako plik identity, `.leakguard/patterns.yaml` jako link).
+  w warstwie lub repo celu, link jako plik identity, `.leakguard/patterns.yaml` jako link). W trybie `--text`/`--stdin`
+  BLOCKED także dla pustego tekstu, binarnego (NUL w pierwszych 8 KiB), niepoprawnego UTF-8, tekstu ponad 1 MiB, braku
+  pliku albo nieczytelnego wejścia (fail-closed: bramka publikacji nie przepuszcza tekstu, którego nie przeskanowała).
 - Pole `notices` w wyniku zawiera informacje niebędące wyciekiem, np. `foreign-commit` (commit innej osoby przy
   `authors_scope: committer`) i własny commit z adresem committera różnym od `git config user.email`. Tag adnotowany innej osoby przy `authors_scope: committer` daje `foreign-tag` (bez gwarancji 1.0.0).
 - Gdy adres remote pasuje do kilku `remote_match` (kilka trafień), cel nie jest rozstrzygany samodzielnie: wymagane jest

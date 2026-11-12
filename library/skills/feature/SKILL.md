@@ -142,7 +142,7 @@ określa format; `pre-implement` sprawdza zmiany kontraktów i wysokie ryzyko.
    lokalne po każdym kroku, bez pusha i PR, a po ostatnim kroku „czeka na CP”; `READY` jest tu odmową. W obu trybach pierwszy commit
    powstaje przy „GO plan” (spec, plan-szkic, prototyp; lokalnie, bez pusha), a kolejne po każdym sprawdzonym kroku planu. Plan bez speca
    (`direct`, `bugfix`, wejście z klucza) nie ma „GO plan”: pierwszy commit (plan) powstaje po „GO implement”.
-   Opis PR-a, komentarz i notatka wydania (`gh pr create`, `gh pr edit --body`, `gh release create`) to tekst poza gitem: zapisz go do pliku i przepuść przez `skillsync leakcheck --text <plik>` przed publikacją.
+   Opis PR-a, komentarz i notatka wydania (`gh pr create`, `gh pr edit --body`, `gh release create`) to tekst poza gitem: zapisz go do pliku i przepuść przez `skillsync leakcheck --text <plik>` przed publikacją. Cel wynika z katalogu bieżącego (nie z repozytorium, do którego tekst trafi), więc podaj `--target <id repo docelowego>` albo uruchom komendę w jego checkoucie; FAIL i BLOCKED wstrzymują publikację.
    Wyjątek: przy wejściu z klucza zgłoszenia nie uruchamiaj `/pr-run`; PR według
    [pr-after-approval](references/pr-after-approval.md), tylko na „rób PR”.
    Niejasny przepływ UI: zaproponuj opcjonalną makietę (`prototype`, jeśli dostępny); bez zgody użytkownika nie twórz.
