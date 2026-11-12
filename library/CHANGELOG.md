@@ -4,9 +4,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-11-12
+
 ### Added
 - `skills/dispatch/references/codex.md`: sekcja o protokole BRIDGE/1 (koperta, ACK, rejestr, skrzynki, granica zaufania).
 - `skills/agent-runtime-pitfalls`: wpisy o jawnej liście ścieżek do `git add` i o zrzutach przeglądarki w osobnym profilu bez rozszerzeń.
+
+### Changed
+- `skills/dashboard` (`assets/dashboard-render.js`, `assets/app.js`, `assets/app.css`, `assets/index.html`, `SKILL.md`): widok strony statusu to wspólny renderer
+  JSON → DOM (ten sam plik ładuje panel hosta), `app.js` to adapter strony; układ zależy od szerokości kontenera (`.dash-wrap`, progi 1100/640/500/420 px, tryb zwarty), a opis w `SKILL.md`
+  zawiera kontrakt renderera i obowiązek hosta (wrapper z określoną szerokością).
 
 ### Fixed
 - `skills/feature/references/ceremony-demo.md`: sekcja „Po specu i review: następny krok to prototyp” (ceremonia `demo` nie czeka biernie na „GO plan”).

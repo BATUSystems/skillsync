@@ -12,6 +12,8 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-11-12
+
 ### Added
 - `docs/lessons/test-z-wersja-rdzenia-na-sztywno-wygasa.md`: lesson on tests that hard-code a core version and expire at a version bump (derive it from `generator_version()`).
 - `library/skills/dispatch/references/codex.md`: section on the BRIDGE/1 protocol (Claude Code and Codex sessions talking on one machine).
