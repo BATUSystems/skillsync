@@ -2487,7 +2487,7 @@ class EngineV2AcceptancePureTests(unittest.TestCase):
                        self.many('classifyAcceptResult', [[500, 'write_failed', done]]), ['error'])
 
 
-# ── PROTO-READY (K9, K11): sygnał „agent jeszcze pisze ekrany” w silniku ─────────────────────────────────────────
+# ── writing marker (K9, K11): sygnał „agent jeszcze pisze ekrany” w silniku ─────────────────────────────────────────
 
 WRITING_HARNESS = r"""'use strict';
 // Silnik (require) na minimalnej atrapie przeglądarki: `Remote.poll()` przez prawdziwe `take`, opis banerów i stan akceptacji.
@@ -2552,7 +2552,7 @@ def expose_writing_internals(text):
 
 
 class EngineV2WritingTests(unittest.TestCase):
-    """PROTO-READY K9/K11: powód `writing` w blokadach akceptacji, `take`, baner, klasyfikacja 409 i zgodność wsteczna."""
+    """Writing marker K9/K11: powód `writing` w blokadach akceptacji, `take`, baner, klasyfikacja 409 i zgodność wsteczna."""
 
     @classmethod
     def setUpClass(cls):

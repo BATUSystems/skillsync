@@ -66,8 +66,8 @@ entries:
     paths: ['skillsync_workflow/prototype.py', 'skillsync_workflow/quality.py', 'tests/test_skillsync_prototype.py']
   - path: prototype-comments-server.md
     title: "Wspólne komentarze prototypów: serwer, dziennik v2, użytkownicy, iteracje, przywracanie, akceptacja i bramka"
-    tags: [skillsync, prototype, comments, server, journal, users, security, glossary, iterations, restore, merge, acceptance, gate]
-    paths: ['skillsync_workflow/prototype_server.py', 'skillsync_workflow/prototype.py', 'skillsync_workflow/quality.py', 'tests/test_skillsync_prototype_server.py', 'tests/test_skillsync_prototype_restore.py', 'tests/test_skillsync_prototype_accept.py']
+    tags: [skillsync, prototype, comments, server, journal, users, security, glossary, iterations, restore, merge, acceptance, gate, writing]
+    paths: ['skillsync_workflow/prototype_server.py', 'skillsync_workflow/prototype.py', 'skillsync_workflow/quality.py', 'tests/test_skillsync_prototype_server.py', 'tests/test_skillsync_prototype_restore.py', 'tests/test_skillsync_prototype_accept.py', 'tests/test_skillsync_prototype_writing*.py']
   - path: dashboard-server.md
     title: "Serwer strony statusu (dashboard serve): Host, Origin, X-Status-Board, CSP, allowlista, limity, zgody tylko użytkownika"
     tags: [skillsync, dashboard, server, security, approvals, workflow]

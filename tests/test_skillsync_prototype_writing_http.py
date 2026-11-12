@@ -1,6 +1,6 @@
-"""PROTO-READY, krok P2: blokada akceptacji przy markerze zapisu (`.writing.json`) po stronie serwera HTTP.
+"""Krok P2: blokada akceptacji przy markerze zapisu (`.writing.json`) po stronie serwera HTTP.
 
-Kontrakt: .skillsync/runs/PROTO-READY/spec.md (K3, K4, K5, K7, K12).  Serwer działa na porcie 0, zegar sklepu i serwera
+Kontrakt: spec zadania (K3, K4, K5, K7, K12).  Serwer działa na porcie 0, zegar sklepu i serwera
 jest wstrzykiwany (`FakeClock`, sekundy); marker ma czasy w milisekundach.  Każdy test negatywny ma przypadek kontrolny
 (to samo żądanie bez markera albo po jego wygaśnięciu przechodzi).
 """

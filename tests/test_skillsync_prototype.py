@@ -1378,7 +1378,7 @@ class ListTests(PrototypeFixture):
             'commentsFormat': 2, 'iteration': 1, 'acceptance': {'screens': 1, 'accepted': 0, 'stale': 0,
                                                                   'perScreen': [{'id': 's2', 'state': 'pending'}]},
             'threads': {'open': 0, 'awaiting': 0, 'decided': 0, 'closed': 0, 'deferred': 0, 'lost': 0},
-            'writing': None})  # PROTO-READY (K7): no valid writing marker
+            'writing': None})  # writing marker (K7): no valid writing marker
 
     def test_list_iteration_is_the_current_iteration_after_frozen_ones(self):
         # K32 (F2): `iteration` = the highest frozen number + 1, taken from the `iteration` operations

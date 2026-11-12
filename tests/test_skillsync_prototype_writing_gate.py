@@ -1,6 +1,6 @@
-"""CLI prototypu a marker zapisu ekranów: `accept`, `gate`, `wait`, `list`, `iterate` (PROTO-READY, K7, K8, K12 część CLI).
+"""CLI prototypu a marker zapisu ekranów: `accept`, `gate`, `wait`, `list`, `iterate` (K7, K8, K12 część CLI).
 
-Kontrakt: .skillsync/runs/PROTO-READY/spec.md (K5, K7, K8, K12, „Kontrakty -> gate/wait/accept CLI").  Wywołania w procesie
+Kontrakt: spec zadania (K5, K7, K8, K12, „Kontrakty -> gate/wait/accept CLI").  Wywołania w procesie
 testu (`pt.accept_prototype`, `pt.prototype_gate`, `pt.wait_prototype`, `pt.writing_prototype`) z zegarem sklepu
 wstrzykiwanym przez `pt._store`; `getpass` i TTY są atrapami (dowód: odmowa przed pytaniem o hasło = brak wywołania).
 Marker testowy ma wyróżnialne `by`, które nie może trafić do żadnego wyniku.  Każdy test negatywny ma kontrolę.

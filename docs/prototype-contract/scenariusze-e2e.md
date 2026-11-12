@@ -294,7 +294,7 @@ wpisem jest komunikat ładowania iframe widoku z nazwą ekranu w V-20. Haki: sł
 
 ## 15. Znacznik zapisu „agent jeszcze pisze ekrany” (`tests/e2e/prototype/w.mjs`)
 
-Spec: `.skillsync/runs/PROTO-READY/spec.md` (K9, K10; K11 sprawdza test węzłowy). Marker ustawia CLI `prototype writing <slug> start --ttl 60`
+Kryteria: baner i wyłączony przycisk w silniku, blokada akceptacji po stronie serwera (K11, zgodność wsteczna, sprawdza test węzłowy). Marker ustawia CLI `prototype writing <slug> start --ttl 60`
 (`done` go zdejmuje); marker jest odnawiany w trakcie scenariusza, żeby nie wygasł. Zalogowany jest akceptujący (`celina`). Czekania wynikają
 wyłącznie z odpytywania silnika (karta widoczna: ok. 5 s). Skrypt ma własny workspace (kopia projektu): tor a używa `demo` i `alfa`, tor b używa `beta`; żaden prototyp nie jest dodawany do wspólnego `env.prepare` (inne skrypty liczą prototypy projektu).
 Haki: słownik, część C (`data-banner="writing"`, `aria-disabled`). Uruchomienie pojedynczo: `SKILLSYNC_E2E_ONLY=W-01` (scenariusze są niezależne).

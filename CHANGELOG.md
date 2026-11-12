@@ -12,6 +12,32 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Added
+
+- `skillsync prototype writing <projekt> <slug> start|done|status [--ttl <s>] [--by <login>]`: a marker "the agent is still writing screens"
+  (`<root>/<slug>/.writing.json`, TTL 60-3600 s, default 900; `start` again renews it). The marker is a dotfile outside the screen hashes,
+  `prototype_version` and `assets_hash`, is not served and is not copied to `iterations/`; `.writing.json` is added to the prototype
+  `.gitignore` (by `init`, `migrate` and the first `start`). Exit codes: 0, and 2 (BLOCKED `needs_migration`, `lock_timeout`, `invalid_args`). `--ttl` and `--by` are validated for every action (`status --ttl`, `done --by`); `--by` must start with a letter or a digit.
+- Acceptance and restore are blocked while a valid marker exists: 409 `writing_in_progress` on browser `accept` operations,
+  on `POST /_api/v1/project/accept` (with the list `writing`) and on `restore`; 409 `partial` carries `writing` when the marker appears
+  during a project acceptance. A marker that is corrupt, expired, from the future or longer than an hour counts as absent.
+- The field `writing` (`null` or `{since, expiresAt}`) in `GET …/operations`, `GET /_api/v1/project` (per prototype) and `prototype list`;
+  the live gallery marks a prototype whose agent is still writing (the static `index.html` does not).
+- Prototype engine: the banner "the agent is still writing screens" and disabled accept and restore buttons that return without reloading
+  once the marker is gone (an older copy of the engine shows the generic error until `skillsync prototype migrate`).
+
+### Changed
+
+- `prototype accept` refuses with BLOCKED `writing_in_progress` before asking for the password and again under the lock; `prototype gate`
+  reports FAIL with the reason `writing` (`screen: null`) per prototype with a valid marker; `prototype wait` does not return `accepted`
+  while the marker is valid; `prototype iterate` warns. With `--project`, `accepted` may be empty when the marker is found in the first prototype.
+- `classifyAcceptResult` in the engine knows the result `writing`; the copy of the engine in the library is refreshed (no new exports).
+- Skills `prototype`, `skillsync` and `feature` (`references/plan-details.md`) describe the marker, see the library changelog.
+- `comments.json` is unchanged; `SERVER_VERSION` is unchanged.
+
+### Breaking
+None.
+
 ## [1.2.0] - 2026-11-12
 
 ### Added

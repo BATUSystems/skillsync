@@ -1,4 +1,4 @@
-// Znacznik zapisu „agent jeszcze pisze ekrany” (PROTO-READY, K9/K10): W-01 … W-03.
+// Znacznik zapisu „agent jeszcze pisze ekrany”: W-01 … W-03.
 // W-01 tor (a): marker bez zmiany plików, W-02 tor (b): pliki zmieniły się w trakcie zapisu (prototyp `beta` we własnym workspace skryptu),
 // W-03: serwer odrzuca akceptację przez HTTP (409 writing_in_progress) i przyjmuje ją po `writing done`.
 // Marker odnawiany z `--ttl 60`, żeby nie wygasł w trakcie scenariusza; czekania tylko na odpytywanie silnika (karta widoczna: ok. 5 s).

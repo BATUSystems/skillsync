@@ -1,6 +1,6 @@
-"""Znacznik zapisu ekranów `.writing.json` (PROTO-READY, K1, K2, K6): helper odczytu, zapisu i usuwania.
+"""Znacznik zapisu ekranów `.writing.json` (K1, K2, K6): helper odczytu, zapisu i usuwania.
 
-Kontrakt: .skillsync/runs/PROTO-READY/spec.md („Terminologia: ważny marker", K6). Zegar jest wstrzykiwany
+Kontrakt: spec zadania („Terminologia: ważny marker", K6). Zegar jest wstrzykiwany
 (`now_ms`), odczyt niczego nie zapisuje; każdy marker spoza definicji „ważny" ma być traktowany jak brak.
 Uruchamianie: `python3 -m unittest discover -s tests -p test_skillsync_prototype_writing.py`.
 Zgodność ze składnią Pythona 3.8.

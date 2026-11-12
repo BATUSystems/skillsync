@@ -1,6 +1,6 @@
-"""CLI `skillsync prototype writing <projekt> <slug> start|done|status` (PROTO-READY, K1, K2, K12 część CLI).
+"""CLI `skillsync prototype writing <projekt> <slug> start|done|status` (K1, K2, K12 część CLI).
 
-Kontrakt: .skillsync/runs/PROTO-READY/spec.md (K1, „Kontrakty -> CLI"). Testy obserwują raporty CLI (kody 0/2),
+Kontrakt: spec zadania (K1, „Kontrakty -> CLI"). Testy obserwują raporty CLI (kody 0/2),
 plik `.writing.json` i `.gitignore` tymczasowego projektu; zegar i blokada wstrzykiwane w procesie testu
 (CommentsStore z krótkim lock_timeout), bez długich procesów. Każdy test negatywny ma przypadek kontrolny.
 Uruchamianie: `python3 -m unittest discover -s tests -p test_skillsync_prototype_writing_cli.py`.

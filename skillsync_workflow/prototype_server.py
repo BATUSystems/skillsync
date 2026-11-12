@@ -3160,7 +3160,7 @@ def _prepare_accept(snapshot, login, body, current, writing=None):
     """Browser `accept`: payload `{scope: screen, screens: {sN: hash}, version}` (400 `field_not_allowed`
     for `via`/`who`/`iteration`, 400 `invalid_scope`, 400 `invalid_request` for other than one screen,
     409 `stale_view` for another `version` or hash, 400 `unknown_screen`).  The stored payload adds
-    `iteration` (current) and `via: ui`; `version` is not stored.  `writing()` (PROTO-READY) raises 409
+    `iteration` (current) and `via: ui`; `version` is not stored.  `writing()` (writing marker) raises 409
     `writing_in_progress` for a valid marker: after the shape checks (and the `cid` dedup of the caller), before
     the `version`/hash comparison."""
     payload = body['payload']
@@ -3609,7 +3609,7 @@ def remove_restore_marker(directory):
     _fsync_directory(directory)
 
 
-# PROTO-READY: the "agent is still writing screens" marker, `<prototype>/.writing.json`.  A dot file: never
+# writing marker: the "agent is still writing screens" marker, `<prototype>/.writing.json`.  A dot file: never
 # served, hashed or frozen (`_excluded_segment`).  Times are UTC milliseconds; the clock is always injected
 # (`now_ms`), a read never writes.  Anything that is not a valid marker counts as no marker (fail-open), so a
 # forgotten, damaged or forged file can never block acceptance for good.
@@ -4000,7 +4000,7 @@ def perform_restore(store, directory, screen, source_number, reason, by, who=Non
                     before_freeze=None, recovery_by=None, allow_source=True, precheck=None, hash_cache=None,
                     log=None, writing=None):
     """`restore` of one screen in the order of "Przywrócenie: kolejność i odtwarzanie", all under the
-    prototype lock: dedup (`by`, `cid`) → `precheck()` (role, schema) → recovery → `writing()` (PROTO-READY:
+    prototype lock: dedup (`by`, `cid`) → `precheck()` (role, schema) → recovery → `writing()` (writing marker:
     raises 409 `writing_in_progress`; the browser passes it, the CLI does not) → `version`
     (409 `stale_view`) → `plan_restore` → `unchanged` (D27: the section equals the current one =
     return `unchanged: True` without any write) → (1) `before_freeze(C)` (CLI commit, K40) → (2) freeze of
@@ -4199,7 +4199,7 @@ def project_listing(app):
     """`GET /_api/v1/project`: `[{slug, title, iteration, screens, open, awaiting, version, format}]` in the
     order of `slug`.  v1 (`comments.js` only): `format: 1`, `iteration`/`version`/`open`/`awaiting` null.
     A prototype whose `comments.json` cannot be read keeps `format: 2`, nulls and `error`.  `writing`: `None` or
-    `{since, expiresAt}` (PROTO-READY)."""
+    `{since, expiresAt}` (writing marker)."""
     result = []
     now_ms = clock_ms(app.clock)
     for slug, directory in enumerate_prototype_dirs(app.root):
@@ -4253,7 +4253,7 @@ def accept_project(app, login, cid, versions):
     3. In the order of `slug`, each prototype is written under its own lock (never two at once): `cid` and
        `version` are checked again and one `accept` (`scope: project`, all screens, `via: ui`) is appended;
        a prototype without screens is skipped.
-    3a. PROTO-READY: before the first write the markers of all prototypes that would be written (not done by `cid`,
+    3a. writing marker: before the first write the markers of all prototypes that would be written (not done by `cid`,
        not empty) are read; any valid one gives 409 `writing_in_progress` `{writing: [{slug, since, expiresAt}]}`
        before `stale_view`.  A marker that appears under the lock of a prototype gives 409 `partial` with the same
        `writing` list (the detected slug is always in it; `accepted` is `[]` when it is the first prototype).
@@ -4282,7 +4282,7 @@ def accept_project(app, login, cid, versions):
                                for item in unique_problems(hashes['ambiguous']))
         if slug not in done and not hashes['screens']:
             no_screens.add(slug)
-    # PROTO-READY: a valid marker of any prototype that would be written refuses the whole request before any
+    # writing marker: a valid marker of any prototype that would be written refuses the whole request before any
     # write and before `stale_view` (done by `cid` and empty prototypes are left out).
     writing = writing_entries([(slug, directory) for slug, directory, _store in targets
                                if slug not in done and slug not in no_screens], clock_ms(app.clock))
