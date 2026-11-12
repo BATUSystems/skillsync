@@ -215,55 +215,83 @@ plan z fazą `[UI]` bez linii `Prototyp:` i bez obejścia właściciela BLOCKED 
 
 ### Pytania do eksperta (`prototype question`, `prototype user roles`)
 
-Agent zadaje pytania ekspertom domenowym przez wspólny serwer prototypów; odpowiedzi czyta z pliku `<root>/questions.json`
-(bez serwera). Odpowiadać może tylko człowiek z rolą `expert` na stronie `/_experts`: agent nie ma polecenia `answer`.
+Agent zadaje pytania ekspertom domenowym przez wspólny serwer prototypów; odpowiedzi czyta z pliku `<root>/<slug>/questions.json`
+przebiegu (bez serwera). Odpowiadać może tylko człowiek z rolą `expert` na stronie `/_experts`: agent nie ma polecenia `answer`.
 Model, limity i strona: [prototypes](prototypes.md#pytania-do-eksperta), poufność: [security](security.md).
 
 ```bash
 skillsync prototype user add . ewa.ekspert@example.com --role expert --password-prompt   # konto eksperta
 skillsync prototype user roles . ewa.ekspert@example.com --role expert --role commenter  # zastępuje zbiór ról
 skillsync prototype question url .                                                       # adres strony i liczba kont expert
-skillsync prototype question add . --text "Czy zwrot po terminie jest dozwolony?" \
+skillsync prototype question add . --slug zwroty --text "Czy zwrot po terminie jest dozwolony?" \
   --ref "Sekcja 3|docs/specs/zwroty.md#3|Zwrot do 14 dni od zakupu." \
   --option "Tak, bez limitu" --option "Tak, do 30 dni:recommended" --option "Nie" \
   --assume "do 30 dni" --origin docs/specs/zwroty.md:Q3                                  # domyślnie agent nie czeka
+skillsync prototype question add . --text "W jakich formatach eksport?" --multi \
+  --option "CSV:recommended" --option "XLSX:recommended" --option "PDF" \
+  --assume "CSV i XLSX" --origin docs/specs/eksport.md:Q4                                 # ekspert zaznacza jeden lub więcej wariantów
 skillsync prototype question add . --text "Jaki jest klucz idempotencji płatności?" \
-  --blocking --to ewa.ekspert@example.com --origin docs/specs/platnosci.md:Q5            # agent czeka na odpowiedź
-skillsync prototype question list . --status open,answered
-skillsync prototype question show . qn-3f9a1c
+  --blocking --to ewa.ekspert@example.com --origin docs/specs/platnosci.md:Q5            # bez --slug: przebieg ze speca
+skillsync prototype question list . --slug zwroty --status open,answered                 # jeden przebieg
+skillsync prototype question list . --status open,answered                               # wszystkie przebiegi
+skillsync prototype question show . qn-3f9a1c                                            # slug nie jest potrzebny: id jest unikalny
 skillsync prototype question wait . qn-3f9a1c --timeout 600
-skillsync prototype question wait . --all --since 2026-11-12T08:00:00Z
+skillsync prototype question wait . --all --slug zwroty --since 2026-11-12T08:00:00Z
 skillsync prototype question record . qn-3f9a1c --spec docs/specs/zwroty.md --line 42   # po wpisaniu wiersza do speca
 skillsync prototype question withdraw . qn-3f9a1c                                        # tylko pytanie otwarte
-skillsync prototype question export . --json > pytania.json
+skillsync prototype question export . --slug zwroty --json > pytania.json
+skillsync prototype question migrate . --dry-run                                         # plan podziału starego pliku
+skillsync prototype question migrate . --slug-for docs/specs/zwroty.md=zwroty            # rozstrzygnięcie jawne
+skillsync prototype question purge . --slug zwroty                                       # podgląd (bez --yes niczego nie zmienia)
+skillsync prototype question purge . --slug zwroty --yes
 ```
 
 - `add`: dokładnie jedno z `--assume <wartość>` (pytanie nie zatrzymuje agenta; ekspert potwierdza albo koryguje) i `--blocking`
-  (agent czeka). `--ref` ma postać `TYTUŁ|ADRES[|WYCIĄG]` (do 5; adres względny albo `https`), `--option` `ETYKIETA[:recommended]`
-  (do 8, najwyżej jedna rekomendowana), `--to LOGIN` powtarzane (domyślnie wszyscy eksperci; login spoza pliku kont daje
-  ostrzeżenie), `--refers-to <id>` (spór z wcześniejszą odpowiedzią), `--origin <spec>:Q<n>` (ścieżka względna). Wyciąg ze speca lub
+  (agent czeka). `--slug <slug>` wybiera przebieg, którego `<root>/<slug>/questions.json` dostaje pytanie. Bez `--slug` przebieg
+  to jedyny prototyp, którego `requirements` równa się ścieżce z `--origin`; zero dopasowań = BLOCKED `slug_required` (z listą
+  `prototypes`), kilka = BLOCKED `slug_ambiguous` (z `candidates`). `--ref` ma postać `TYTUŁ|ADRES[|WYCIĄG]` (do 5; adres względny albo `https`), `--option` `ETYKIETA[:recommended]`
+  (do 8, najwyżej jedna rekomendowana, kilka tylko z `--multi`), `--multi` (pytanie wielokrotnego wyboru: ekspert zaznacza co najmniej jeden
+  wariant, wymaga co najmniej 2 opcji; „żaden” to własna odpowiedź tekstowa; do pytań typu „które formaty/kolumny/role” zamiast
+  rozbijania na pytania tak/nie), `--to LOGIN` powtarzane (domyślnie wszyscy eksperci; login spoza pliku kont daje
+  ostrzeżenie), `--refers-to <id>` (spór z wcześniejszą odpowiedzią w tym samym przebiegu), `--origin <spec>:Q<n>` (ścieżka względna). Wyciąg ze speca lub
   dokumentacji agent wpisuje sam: serwer nie czyta repozytorium. Skan sekretów w treści jest heurystyką: trafienie blokuje
-  (`secret_detected`, exit 2, bez wartości w raporcie), `--force` przepuszcza z ostrzeżeniem. Raport: `questionId`, `specLine`
-  (wiersz do speca), `files` (pliki do commita, w tym `<root>/.gitignore` z `questions.json.lock` i `*.tmp` oraz `<root>/.gitattributes`
-  z `merge=skillsync-questions`, dopisywane przy pierwszym użyciu), `warnings`, `url`, gdy serwer projektu działa. Powtórka z tym
-  samym `--question-id` jest idempotentna.
-- `list`, `show`, `export` zwracają dokument `expert-questions/1`: `{schema, project, url?, questions: [{id, text, state, blocking, assumed,
+  (`secret_detected`, exit 2, bez wartości w raporcie), `--force` przepuszcza z ostrzeżeniem. Raport: `questionId`, `slug`, `specLine`
+  (wiersz do speca), `files` (pliki do commita, w tym `<root>/<slug>/questions.json`, `<root>/.gitignore` z `questions.json.lock` i `*.tmp` oraz `<root>/.gitattributes`
+  z `merge=skillsync-questions`, dopisywane przy pierwszym użyciu), `created` (nowo utworzone pliki: plik pytań, jego lock, `<root>/.gitignore`, `<root>/.gitattributes`),
+  `notes` (zdania typu „created <ścieżka>”, także o locku ignorowanym przez git), `warnings`, `url`, gdy serwer projektu działa. Powtórka z tym
+  samym `--question-id` jest idempotentna. Osierocony lock (`questions.json.lock` bez pliku pytań, wolny) usuwa następny `add` tego przebiegu
+  (best effort; na platformie, która nie usuwa otwartego pliku, zostaje). Odrzucony `add` nie zakłada ani pliku, ani locka.
+- `list`, `show`, `export` zwracają dokument `expert-questions/1`: `{schema, project, url?, questions: [{id, slug, text, state, blocking, assumed,
   addressees, refs, options, answer?, comments, refersTo?, origin, recorded?}]}` oraz `status: PASS` (potrzebne do kodu wyjścia; klient ignoruje
-  nieznane pola). `show` i `wait` dodają `answerLine`: gotowy wiersz `[EKSPERT]` do speca (`null` bez odpowiedzi); `specLine` z `add` i `withdraw`
+  nieznane pola). Pytanie wielokrotnego wyboru ma `multi: true`, a jego odpowiedź `optionIds` i `optionLabels` (listy w kolejności opcji
+  pytania) zamiast `optionId`/`optionLabel`; pytania jednokrotne i stare dzienniki bez zmian. `slug` to nazwa przebiegu, `null` dla pytania ze starego pliku. `--slug` zawęża do jednego przebiegu; bez niego
+  łączą wszystkie przebiegi i dopisują stary plik (`legacy` w dokumencie, gdy istnieje). `list` ma `runs` (`slug`, liczby pytań).
+  `show` i `wait` dodają `answerLine`: gotowy wiersz `[EKSPERT]` do speca (`null` bez odpowiedzi); `specLine` z `add` i `withdraw`
   to wiersz czekającego pytania. Domyślny filtr `list` to `open,answered`; `--status` przyjmuje też `withdrawn` i `all`.
+- `show`, `record`, `withdraw` i `wait <id>` znajdują pytanie po id (`--slug` opcjonalny, zawęża szukanie). `record` i `withdraw` pytania
+  ze starego pliku dają BLOCKED `migration_required`.
 - `wait <id>` zwraca od razu PASS (`event: answer`), gdy pytanie jest już odpowiedziane, a poza tym czeka na odpowiedź albo komentarz
-  nowszy niż `--since` (domyślnie „teraz”) lub `--after <id operacji>`. `wait --all` kończy się, gdy istnieje pytanie odpowiedziane
+  nowszy niż `--since` (domyślnie „teraz”) lub `--after <id operacji>`. `wait --all` (z `--slug` albo po wszystkich przebiegach) kończy się, gdy istnieje pytanie odpowiedziane
   bez operacji `recorded` albo zdarzenie nowsze niż `--since`/`--after`. TIMEOUT to exit 3.
 - `record <id> --spec … --line <numer>` zapisuje tylko znacznik „wpisano do speca” (idempotentnie); `withdraw <id>` wycofuje pytanie otwarte,
-  także blokujące, i zwraca zwykły wiersz `Q` programisty (odpowiedzianego nie da się wycofać: `already_answered`).
+  także blokujące, zwraca stan po operacji (`state` i `questions[0].state` = `withdrawn`) i zwykły wiersz `Q` programisty (odpowiedzianego nie da się wycofać: `already_answered`).
 - `url` zwraca adres strony i liczbę kont `expert`; BLOCKED (`users_file_missing`, `users_file_invalid`, `no_expert_accounts`) znaczy, że
   nie ma komu zadać pytania, więc agent pyta zwykle. Nie sprawdza, czy serwer działa (pole `running` mówi o stanie z pliku serwera).
 - `add`, `list`, `show`, `export` i `url` przyjmują `--users` (plik kont względem projektu, jak w `user`).
+- `migrate [--dry-run] [--slug-for SPEC=SLUG]` dzieli stary `<root>/questions.json` na pliki przebiegów według `origin.spec`. Idempotentna.
+  Wynik: `migrated` (per slug: `operations`, `added`), `legacy` (`trashed` | `renamed:<nazwa>` | `absent`), `files`; `--dry-run` zwraca `plan` i `legacy: kept`.
+  Pytanie bez jednoznacznego przebiegu albo operacja bez swojego `ask` = BLOCKED `unassigned` z listą, bez zapisu. Stary plik trafia
+  do kosza (`trash-put`, `gio trash`, `trash`; bez nich zmiana nazwy na `.questions.json.migrated` (nazwa z kropką, której serwer prototypów nie wydaje), nigdy usunięcie) dopiero po odczycie zwrotnym;
+  `verify_failed` = BLOCKED, stary plik zostaje.
+- `purge --slug <slug> [--yes]` usuwa z dziennika przebiegu tylko pytania wycofane albo otwarte bez odpowiedzi i bez komentarza. Pytanie
+  z odpowiedzią albo komentarzem zostaje, tak samo pytanie, do którego ono się odwołuje (`refersTo`). Bez `--yes` tylko podgląd: `dryRun: true`,
+  lista `removed` z `id`, `q`, `state`, `reason`, `text`. Wymaga `--slug`.
 - `merge --driver %O %A %B` to sterownik gita `skillsync-questions` (rejestracja: [prototypes](prototypes.md#pytania-do-eksperta-w-gicie));
-  `merge <projekt> <inny-questions.json>` scala ręcznie.
+  `merge <projekt> <inny-questions.json> --slug <slug>` scala ręcznie do pliku tego przebiegu (`--slug` jest wymagany).
 - Kody wyjścia: 0 PASS, 1 FAIL, 2 BLOCKED, 3 TIMEOUT. `1` znaczy, że magazyn odrzucił treść albo stan (zła ścieżka w `--origin`,
-  nieznany `--refers-to`, `already_answered`, `withdrawn`, brak obu `--assume`/`--blocking` jako `invalid_mode`, konflikt scalania).
-  `2` znaczy błędne wywołanie albo środowisko (zły format `--origin`, `secret_detected`, plik za duży 507, uszkodzony plik, brak kont w `url`).
+  nieznany `--refers-to`, `already_answered`, `withdrawn`, brak obu `--assume`/`--blocking` jako `invalid_mode`, konflikt scalania, `migrate` przy tym samym `id` z inną treścią).
+  `2` znaczy błędne wywołanie albo środowisko (zły format `--origin`, `secret_detected`, plik za duży 507, uszkodzony plik, brak kont w `url`,
+  `slug_required`, `slug_ambiguous`, `migration_required`, `unassigned`, `verify_failed`).
 
 ## Bezpieczeństwo
 
@@ -286,7 +314,7 @@ Raporty mają co najmniej te pola; konsument ignoruje pola, których nie zna.
 | `layers check --json` | `{schema: 1, status, project, rule, layers, findings: [{code, severity, layer, message}]}` |
 | `leakcheck --json` | `{schema: 1, status, coverage, target, findings: [{path, category, location}], notices, warnings}`; po udanym skanie także `authors_scope`, przy BLOCKED `reason` |
 | `prototype login-link --json` | `{schema: 1, status: "PASS", url, expires}` (`url` = `http://127.0.0.1:<port>/_login/link?t=<token>`, `expires` = ISO-8601 UTC, token tylko na stdout) albo `{schema: 1, status: "BLOCKED", reason, code}` z `code` ∈ (exit 2) `server_not_running` (brak serwera projektu: brak pliku stanu, martwy PID, inny `instance` albo inny plik użytkowników), `ambiguous_server` (kilka serwerów projektu bez `--port`), `link_needs_loopback` (host serwera inny niż `127.0.0.1`/`localhost`/wildcard), `link_unavailable` (serwer z `--trust-proxy`: brak endpointu linku), `run_dir_unsafe` (katalog `run/` z prawami ≠ 0700, innego właściciela lub dowiązanie), `unknown_user` (konto nie istnieje; nigdy nie jest tworzone), `password_change_required` (konto z `mustChange`), `invalid_path` (`--path` poza dozwolonymi), `invalid_port` (`--port` poza 1-65535), `invalid_project` (błędny projekt lub manifest), `too_many_pending` (32 oczekujące tokeny), `users_unreadable` (nieczytelny plik użytkowników); zapisy z sesji linku trafiają do lokalnego `.skillsync/prototype/run/audit.jsonl` (`{at, login, via, op, screen?}`), nie do `comments.json`; flagi `--user LOGIN` (wymagana), `--path /ścieżka`, `--port N`, `--users PLIK` |
-| `prototype question list`, `show`, `export` | `{schema: "expert-questions/1", status: "PASS", project, url?, questions: [{id, text, state: open|answered|withdrawn, blocking, assumed, addressees, refs, options, answer?: {by, name, at, optionId?, optionLabel?, text?, confirm?, comment?}, comments, refersTo?, origin: {spec, q}, recorded?: {spec, line, at}}]}`; `show` i `wait` dodają `answerLine`, `add` i `withdraw` `specLine`; klient ignoruje nieznane pola, zmiana niezgodna = nowa wartość `schema` |
+| `prototype question list`, `show`, `export` | `{schema: "expert-questions/1", status: "PASS", project, url?, questions: [{id, text, state: open|answered|withdrawn, blocking, assumed, addressees, refs, options, answer?: {by, name, at, optionId?, optionLabel?, optionIds?, optionLabels?, text?, confirm?, comment?}, comments, refersTo?, origin: {spec, q}, recorded?: {spec, line, at}}]}`; `show` i `wait` dodają `answerLine`, `add` i `withdraw` `specLine`; klient ignoruje nieznane pola, zmiana niezgodna = nowa wartość `schema` |
 | `layers list --json` | `{schema: 1, status, generator_version, project, rule, layers: [{id, kind, path, root, subdir, version, writable, present}], composed_root, notes}` |
 
 ## Najczęstsze przepływy

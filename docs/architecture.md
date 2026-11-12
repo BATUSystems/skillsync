@@ -141,7 +141,8 @@ Procesy potomne, które `skillsync` uruchamia sam (np. `quality` wywołuje `guar
 | `.skillsync/dispatch/<run-id>.yaml` | stan dyspozycji; zapisuje go skill, generator tylko go ignoruje | ignorowany |
 | `~/.cache/skillsync/composed/` | cache kompozytów; odtwarzalny | poza projektem |
 | `<projekt>/.skillsync/prototype/users.json` | konta serwera prototypów (domyślnie) | ignorowany |
-| `<root>/questions.json` (`root` = katalog prototypów) | pytania do eksperta; blokada `questions.json.lock` i `*.tmp` ignorowane | śledzony w gicie |
+| `<root>/<slug>/questions.json` (`root` = katalog prototypów, `slug` = przebieg) | pytania do eksperta przebiegu; blokada `questions.json.lock` i `*.tmp` ignorowane | śledzony w gicie |
+| `<root>/questions.json` (stary plik projektowy) | tylko do odczytu, dopóki `skillsync prototype question migrate` go nie przeniesie | śledzony w gicie, do usunięcia po migracji |
 
 Stan w `.skillsync/` zapisuje się przez kontrolowane ścieżki: bez dowiązań i wyjścia poza projekt.
 
@@ -161,7 +162,8 @@ Stan w `.skillsync/` zapisuje się przez kontrolowane ścieżki: bez dowiązań 
 
 Komenda `prototype` tworzy klikalne prototypy HTML w repo projektu. Serwer wspólnych komentarzy jest samodzielnym modułem
 bez zależności od PyYAML i bez importów z generatora. Kierunek zależności: moduł prototypów korzysta z serwera, nigdy odwrotnie.
-Ten sam serwer obsługuje pytania do eksperta: klasa `QuestionsStore` (dziennik `<root>/questions.json`, ta sama blokada pliku i zapis atomowy co
-`comments.json`), trasy `/_api/v1/questions*` i strona `/_experts`; po stronie generatora `prototype question …` (`prototype.py`) czyta ten plik
-bez serwera. Opis: [prototypes](prototypes.md#pytania-do-eksperta), rekord: [expert-questions](domain/expert-questions.md).
+Ten sam serwer obsługuje pytania do eksperta: klasa `QuestionsStore` (dziennik `<root>/<slug>/questions.json`, jeden na przebieg, ta sama blokada
+pliku i zapis atomowy co `comments.json`; `PrototypeApp.questions_store(slug)` daje magazyn przebiegu), trasy `/_api/v1/questions*` i
+`/_api/v1/prototypes/<slug>/questions*`, strona `/_experts` i `/_experts/<slug>`; po stronie generatora `prototype question …` (`prototype.py`)
+czyta pliki przebiegów bez serwera, a `migrate` i `purge` pracują na nich pod blokadą pliku. Opis: [prototypes](prototypes.md#pytania-do-eksperta), rekord: [expert-questions](domain/expert-questions.md).
 

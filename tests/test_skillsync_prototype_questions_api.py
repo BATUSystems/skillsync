@@ -85,10 +85,10 @@ class QCase(S.ServerCase):
         ps.add_user(users, MX, roles=['expert'], default_password=S.DEFAULT_PW)
         self.start_server()   # serwer startuje po dodaniu kont (ostrzeżenia startowe)
         self.seed_questions(seed_operations())
-        self.qpath = os.path.join(self.root, 'questions.json')
+        self.qpath = os.path.join(self.demo, 'questions.json')
 
     def seed_questions(self, partials):
-        self.server.app.questions_store().append(partials)
+        self.server.app.questions_store('demo').append(partials)
 
     def who(self, login):
         client = S.Client(self.server)
@@ -881,7 +881,7 @@ class FloodProtectionTests(QCase):
 
     def fill_file(self, target_bytes):
         """Dopisuje wprost (omijając progi) poprawne pytania, aż plik ma co najmniej `target_bytes`."""
-        store = self.server.app.questions_store()
+        store = self.server.app.questions_store('demo')
         operations = list(store.snapshot().operations)
         index = 0
         while len(ps.serialize_questions(operations).encode('utf-8')) < target_bytes:
@@ -893,7 +893,7 @@ class FloodProtectionTests(QCase):
 
     def set_file_size(self, target):
         """Ustawia plik na dokładnie `target` bajtów (poprawne pytania; ostatnie dopełnia długość jednego excerpt)."""
-        store = self.server.app.questions_store()
+        store = self.server.app.questions_store('demo')
         operations = [op for op in store.snapshot().operations if not op['id'].startswith('op-pad')]   # poprzednie dopełnienie
         index = 0
 
@@ -982,12 +982,12 @@ class FloodProtectionTests(QCase):
         partials += [{'type': 'comment', 'questionId': Q1, 'by': 'agent', 'cid': 'agc-%d' % n, 'text': 'x'} for n in range(24)]
         self.seed_questions(partials)
         # późne odpowiedzi (np. po scaleniu) magazyn przez API odrzuca, więc dopisujemy je wprost do pliku
-        operations = list(self.server.app.questions_store().snapshot().operations)
+        operations = list(self.server.app.questions_store('demo').snapshot().operations)
         for n in range(25):
             operations.append({'id': 'op-late%03d' % n, 'type': 'answer', 'questionId': Q1, 'at': '2026-12-01T00:00:00.%03dZ' % (n + 1),
                                'by': EX2, 'cid': 'late-%d' % n, 'text': 'x'})
         ps.atomic_write_bytes(self.qpath, ps.serialize_questions(operations).encode('utf-8'))
-        self.assertEqual(len(self.server.app.questions_store().snapshot().fold['byId'][Q1]['comments']), 49)
+        self.assertEqual(len(self.server.app.questions_store('demo').snapshot().fold['byId'][Q1]['comments']), 49)
         expert = self.who(EX)
         self.check(self.comment(expert, Q1, {'cid': 'c-50', 'text': 'x'}), 201)
         self.check(self.comment(expert, Q1, {'cid': 'c-51', 'text': 'x'}), 409, 'comment_limit')
@@ -1042,7 +1042,7 @@ class FloodProtectionTests(QCase):
                 self.assertEqual(response.json['error'], 'comment_limit')
         operations = self.operations_on_disk()   # plik poprawny (parsuje się) i dokładnie 50 komentarzy
         self.assertEqual(len([op for op in operations if op['questionId'] == Q1 and op['type'] == 'comment']), 50)
-        self.assertEqual(len(self.server.app.questions_store().snapshot().fold['byId'][Q1]['comments']), 50)
+        self.assertEqual(len(self.server.app.questions_store('demo').snapshot().fold['byId'][Q1]['comments']), 50)
 
     def test_replay_of_a_stored_comment_is_200_even_when_the_file_is_over_the_threshold(self):
         expert = self.who(EX)
@@ -1075,9 +1075,72 @@ class FloodProtectionTests(QCase):
         self.fill_file(769 * 1024)
         partial = ask('qn-0000000000aa', cid='ask-aa')
         with self.assertRaises(ps.PrototypeServerError) as caught:
-            self.server.app.questions_store().append([partial])
+            self.server.app.questions_store('demo').append([partial])
         self.assertEqual((caught.exception.status, caught.exception.code), (507, 'file_too_large'))
         self.check(self.answer(self.who(EX), Q1, {'cid': 'f-1', 'text': 'x'}), 201)
+
+
+QM = 'qn-0000000000a1'   # all, multi
+
+
+class MultiChoiceApiTests(QCase):
+    """Pytanie wielokrotnego wyboru: formularz wysyła `optionIds`, pusty zestaw i zły rodzaj odpowiedzi to 400 z kodem."""
+
+    def setUp(self):
+        super().setUp()
+        options = [{'id': 'o1', 'label': 'CSV', 'recommended': True}, {'id': 'o2', 'label': 'XLSX', 'recommended': True},
+                   {'id': 'o3', 'label': 'PDF'}]
+        self.seed_questions([ask(QM, multi=True, options=options, text='Formaty eksportu?')])
+
+    def test_view_shows_multi_and_the_answer_keeps_every_chosen_option(self):
+        expert = self.who(EX)
+        listing = expert.get('/_api/v1/questions').json['questions']
+        self.assertTrue([q for q in listing if q['id'] == QM][0]['multi'])
+        self.assertFalse([q for q in listing if q['id'] == Q8][0]['multi'])
+        response = self.answer(expert, QM, {'cid': 'c-1', 'optionIds': ['o3', 'o1']})
+        self.check(response, 201)
+        stored = self.kinds(QM, 'answer')
+        self.assertEqual(stored[0]['optionIds'], ['o3', 'o1'])
+        self.assertNotIn('optionId', stored[0])
+        self.assertEqual(response.json['question']['answer']['optionIds'], ['o3', 'o1'])
+
+    def test_empty_selection_is_400_with_its_code_and_writes_nothing(self):
+        expert = self.who(EX)
+        before = self.stored()
+        response = self.answer(expert, QM, {'cid': 'c-1', 'optionIds': []})
+        self.assert_no_write(before, response, 400)
+        self.assertEqual(response.json['error'], 'empty_selection')
+
+    def test_wrong_kind_unknown_and_duplicate_options_are_400(self):
+        expert = self.who(EX)
+        before = self.stored()
+        cases = {
+            'optionId na multi': ({'cid': 'c-1', 'optionId': 'o1'}, QM, 'wrong_answer_kind'),
+            'optionIds na pojedynczym': ({'cid': 'c-2', 'optionIds': ['o1']}, Q8, 'wrong_answer_kind'),
+            'nieznana opcja': ({'cid': 'c-3', 'optionIds': ['o1', 'o9']}, QM, 'unknown_option'),
+            'duplikat': ({'cid': 'c-4', 'optionIds': ['o1', 'o1']}, QM, None),
+            'nie lista': ({'cid': 'c-5', 'optionIds': 'o1'}, QM, None),
+            'zestaw i tekst': ({'cid': 'c-6', 'optionIds': ['o1'], 'text': 'x'}, QM, None),
+        }
+        for name, (body, qid, code) in cases.items():
+            with self.subTest(name):
+                response = self.answer(expert, qid, body)
+                self.assert_no_write(before, response, 400)
+                if code:
+                    self.assertEqual(response.json['error'], code)
+
+    def test_free_text_and_comment_stay_available_on_a_multi_question(self):
+        expert = self.who(EX)
+        self.check(self.answer(expert, QM, {'cid': 'c-1', 'text': 'Żaden: JSON', 'comment': 'potrzebny też JSON'}), 201)
+        self.check(self.comment(expert, QM, {'cid': 'c-2', 'text': 'dopisek'}), 201)
+
+    def test_retry_of_the_same_multi_answer_is_idempotent(self):
+        expert = self.who(EX)
+        body = {'cid': 'c-1', 'optionIds': ['o2']}
+        self.check(self.answer(expert, QM, body), 201)
+        before = self.stored()
+        self.check(self.answer(expert, QM, body), 200)
+        self.assertEqual(self.stored(), before)
 
 
 if __name__ == '__main__':

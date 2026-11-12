@@ -12,6 +12,47 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-11-12
+
+### Added
+
+- Questions to a domain expert are kept per run: `<root>/<slug>/questions.json` next to the run's `comments.json`. The page `/_experts`
+  lists the runs and all questions; `/_experts/<slug>` shows one run. API: `GET /_api/v1/questions[?slug=]`,
+  `GET /_api/v1/prototypes/<slug>/questions` and `/_api/v1/prototypes/<slug>/questions/<id>[/answer|comment]`; a question view has a `slug` field.
+- `skillsync prototype question --slug <slug>` for `add`, `list`, `export` and `wait --all`; `add` without `--slug` picks the one prototype
+  whose `requirements` is the `--origin` spec (BLOCKED `slug_required` or `slug_ambiguous` otherwise). `show`, `record`, `withdraw` and `wait <id>`
+  find a question by its id.
+- `skillsync prototype question migrate [--dry-run] [--slug-for SPEC=SLUG]` splits the old `<root>/questions.json` into the runs by `origin.spec`.
+  It is idempotent and BLOCKED (nothing written) when a question has no single run. The old file goes to the trash only after every operation
+  has been read back from the run files.
+- `skillsync prototype question purge --slug <slug> [--yes]` removes from one run only the withdrawn questions and the open ones without an answer
+  or a comment; a question that another kept question refers to stays. Without `--yes` it only lists what would be removed.
+- `question add` returns `created` (files created by the call) and `notes`; `list`, `export` and `show` report `legacy` while the old file exists.
+- `question add` removes an orphaned `questions.json.lock` (a free lock without its data file) of the run it writes to.
+- Expert questions: a multi-choice question. `skillsync prototype question add … --multi` (at least 2 `--option`, several `:recommended` allowed) lets the expert tick one or more variants; the `/_experts` page shows check boxes for it, and an empty set is refused in the page and on the server (400 `empty_selection`); "none of them" is the free-text answer. A multi answer is stored as `optionIds` and exported with `optionLabels` (lists, in the order of the question's options); `answerLine` and the `[EKSPERT]` row list every chosen variant. A single answer on a multi question (or a set on a single one) is 400 `wrong_answer_kind`.
+
+### Changed
+
+- `skillsync prototype question merge <path> <other>` (project form) requires `--slug`; the git merge driver form `--driver %O %A %B` is unchanged.
+- The questions file is `<root>/<slug>/questions.json` instead of `<root>/questions.json`. The old file is read-only until `question migrate`:
+  its questions show `slug: null`, answering one gives 409 `migration_required`, and the server warns at startup.
+- `questions.json` is excluded from the screen hash (`assets_hash`) and from the iteration freeze, so an expert's answer does not invalidate
+  an accepted screen. The server hides `questions.json` only at the project root and at the run level (also behind a symbolic link in a run);
+  a deeper file of that name is an ordinary prototype file.
+
+### Breaking
+
+None for existing fields. Two changes need action: the questions file moves from `<root>/questions.json` to `<root>/<slug>/questions.json`
+(run `skillsync prototype question migrate` once; until then the old questions are read-only), and `question merge` in project form needs `--slug`.
+
+### Fixed
+
+- `skillsync prototype question withdraw` reported no state; it now returns `state`, and `questions[0].state` is `withdrawn`.
+
+### Compatibility
+
+- Additive in `expert-questions/1`: a new optional `multi` on a question and `optionIds`/`optionLabels` on its answer; single-choice questions, free-text answers, confirmations and existing logs are unchanged. A server older than this version ignores the new fields: it shows a `multi` question as a single-choice one and an `optionIds` answer as empty, and only its merge driver refuses such a file, so update the core before using `--multi` in a shared project.
+
 ## [1.2.0] - 2026-11-12
 
 ### Added
