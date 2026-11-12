@@ -1204,13 +1204,13 @@ class RendererNodeTests(unittest.TestCase):
         self.assertIn("do zgody", tip[0])
         self.assertIn("do kolejnego checkpointu", tip[1])
         self.assertIn("okno nieznane", tip[2])
-        self.assertEqual(got["rows"][2]["t"], "praca 1:25:00 · czekanie 45:00+")   # „+”: są okna nieznane, więc to dolna granica
+        self.assertEqual(got["rows"][2]["t"], "praca 1:25:00 · czekanie 45:00+ (niepełne)")   # „+”: są okna nieznane, więc to dolna granica
         for name in ("empty", "run-mode", "readiness-blocked", "spec-act"):
             shown = self.out["fixtures"][name]["timing"]    # brak sekcji albo tylko wiersz sumy z oknem nieznanym (bez faz)
             self.assertTrue(shown is None or [r["id"] for r in shown["rows"]] == ["Σ"], name)
         only_window = self.out["fixtures"]["questions"]["timing"]               # tylko okno nieznane: sam wiersz sumy, nic nie jest szacowane
         self.assertEqual([r["id"] for r in only_window["rows"]], ["Σ"])
-        self.assertEqual(only_window["rows"][0]["t"], "praca brak danych · czekanie 0:00+")
+        self.assertEqual(only_window["rows"][0]["t"], "praca brak danych · czekanie 0:00+ (niepełne)")
         self.assertIn("okno nieznane", only_window["summaryTip"])
 
     def test_no_copy_buttons_anywhere(self) -> None:

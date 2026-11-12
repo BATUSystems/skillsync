@@ -183,6 +183,13 @@ class MetricsAgreeWithShow(MetricsFixture):
                     elif mine['source'] != 'records':
                         self.assertIsNone(mine['seconds'])
 
+    def test_timing_is_the_same_in_show_and_in_metrics(self):
+        for case, run in CASES.items():
+            with self.subTest(case=case):
+                root = self.project(case)
+                shown = self.cli('dashboard', 'show', root, '--json')['timing']
+                self.assertEqual(self.metrics(root, run)['timing'], shown)
+
     def test_one_shared_time_function(self):
         self.assertEqual(dashboard.substep_seconds('23:50', '00:10'), 1200)
         self.assertEqual(dashboard.substep_seconds('09:05', '09:20'), 900)

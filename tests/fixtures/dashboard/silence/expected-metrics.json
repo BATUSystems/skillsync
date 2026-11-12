@@ -45,7 +45,7 @@
       {
         "complete": false,
         "name": "Faza 1: Budowa",
-        "phase": "Faza 1: Budowa",
+        "phase": "Faza 1",
         "unknownSteps": 1,
         "waitSeconds": 0,
         "workSeconds": 2100
@@ -55,7 +55,7 @@
       {
         "finishedAt": "2026-01-11T08:40:00+00:00",
         "id": "F1.1",
-        "phase": "Faza 1: Budowa",
+        "phase": "Faza 1",
         "reason": null,
         "startedAt": "2026-01-11T08:05:00+00:00",
         "unknown": false,
@@ -65,7 +65,7 @@
       {
         "finishedAt": null,
         "id": "F1.2",
-        "phase": "Faza 1: Budowa",
+        "phase": "Faza 1",
         "reason": "no-finish",
         "startedAt": "2026-01-11T08:40:00+00:00",
         "unknown": true,

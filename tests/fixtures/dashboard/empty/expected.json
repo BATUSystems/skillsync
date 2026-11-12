@@ -188,7 +188,7 @@
   "substeps": [],
   "timing": {
     "available": false,
-    "reason": "run start (RUN=) or checkpoint time missing",
+    "reason": "run start (RUN=) missing, or the first checkpoint is earlier than it, or a checkpoint time is unreadable",
     "stages": [],
     "steps": [],
     "totals": {

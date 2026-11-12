@@ -1074,10 +1074,20 @@ def _instants(run_start, checkpoints):
         except (ValueError, KeyError):
             return None
         if moment < previous:
+            if not out:   # the first checkpoint before the run start: a clock of another zone or a wrong `RUN=`, not a next day
+                return None
             moment += timedelta(days=1)
         out.append(moment)
         previous = moment
     return out
+
+
+def _phase_label(phase):
+    """Label of a plan phase (`Faza 1` of `### Faza 1: Kontrakt`): `progress.phases` has it, `parse_progress` only the name."""
+    if 'label' in phase:
+        return phase['label'] or phase['name']
+    label, _, short = phase['name'].partition(':')
+    return label.strip() if short else phase['name']
 
 
 def _wait_words(what):
@@ -1109,7 +1119,7 @@ def build_timing(run_start, checkpoints, approvals, phases):
     `checkpoints` are chronological `{time, text}`, `phases` are `parse_progress`/`progress.phases` (steps with `id`)."""
     instants = _instants(run_start, checkpoints)
     if instants is None:
-        return {'available': False, 'reason': 'run start (RUN=) or checkpoint time missing', 'windows': [], 'steps': [],
+        return {'available': False, 'reason': 'run start (RUN=) missing, or the first checkpoint is earlier than it, or a checkpoint time is unreadable', 'windows': [], 'steps': [],
                 'stages': [], 'totals': {'workSeconds': None, 'waitSeconds': None, 'windows': 0, 'unknownWindows': 0,
                                          'unknownSteps': 0, 'complete': False}}
     given = []
@@ -1179,22 +1189,26 @@ def build_timing(run_start, checkpoints, approvals, phases):
                 unknown_steps += 1
             else:
                 work_total += work
-            steps.append({'id': sid, 'phase': phase.get('label') or phase['name'], 'startedAt': iso(begin), 'finishedAt': iso(end),
+            steps.append({'id': sid, 'phase': _phase_label(phase), 'startedAt': iso(begin), 'finishedAt': iso(end),
                           'workSeconds': work, 'waitSeconds': wait, 'unknown': work is None, 'reason': reason})
         if not spans and not unknown_steps:
             continue
         wait_total = _overlap_seconds(windows, min(a for a, _ in spans), max(b for _, b in spans)) if spans else None
-        stages.append({'phase': phase.get('label') or phase['name'], 'name': phase['name'], 'workSeconds': work_total if spans else None,
+        stages.append({'phase': _phase_label(phase), 'name': phase['name'], 'workSeconds': work_total if spans else None,
                        'waitSeconds': wait_total, 'unknownSteps': unknown_steps,
                        'complete': bool(spans) and not unknown_steps and wait_total is not None})
     unknown_windows = sum(1 for window in windows if window['seconds'] is None)
     known_wait = sum(window['seconds'] for window in windows if window['seconds'] is not None)
     unknown_steps_total = sum(1 for step in steps if step['unknown'])
-    out_windows = [{'what': window['what'], 'startedAt': iso(window['startAt']), 'endedAt': iso(window['endAt'].astimezone(window['startAt'].tzinfo)) if window['seconds'] is not None else None,
-                    'seconds': window['seconds'], 'source': window['source'] if window['seconds'] is not None else None,
-                    'unknown': window['seconds'] is None} for window in windows]
+    out_windows = []
+    for window in windows:
+        known = window['seconds'] is not None
+        out_windows.append({'what': window['what'], 'startedAt': iso(window['startAt']),
+                            'endedAt': iso(window['endAt'].astimezone(window['startAt'].tzinfo)) if known else None,
+                            'seconds': window['seconds'], 'source': window['source'] if known else None, 'unknown': not known})
     return {'available': True, 'reason': None, 'windows': out_windows, 'steps': steps, 'stages': stages,
-            'totals': {'workSeconds': sum(stage['workSeconds'] or 0 for stage in stages) if stages else None,
+            'totals': {'workSeconds': (sum(stage['workSeconds'] or 0 for stage in stages)
+                                       if any(stage['workSeconds'] is not None for stage in stages) else None),
                        'waitSeconds': known_wait, 'windows': len(windows), 'unknownWindows': unknown_windows,
                        'unknownSteps': unknown_steps_total, 'complete': not unknown_windows and not unknown_steps_total}}
 

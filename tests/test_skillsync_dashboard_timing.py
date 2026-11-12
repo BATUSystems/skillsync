@@ -133,6 +133,40 @@ class StepsAndStages(unittest.TestCase):
         self.assertEqual((step(report, 'F0.1')['reason'], step(report, 'F0.1')['workSeconds']), ('order', None))
 
 
+class WordsAndEdges(unittest.TestCase):
+    def test_cp_with_a_bang_is_the_cp_consent_but_cpd_is_not(self):
+        closed = timing([cp('10:00', 'czeka: CP!'), cp('10:40', 'w toku: F0.1')], [approval('CP', '2026-11-11T09:20:00Z')])
+        self.assertEqual((closed['windows'][0]['seconds'], closed['windows'][0]['source']), (1200, 'approval'))
+        other = timing([cp('10:00', 'czeka: CPD'), cp('10:40', 'w toku: F0.1')], [approval('CP', '2026-11-11T09:20:00Z')])
+        self.assertEqual((other['windows'][0]['seconds'], other['windows'][0]['source']), (2400, 'checkpoint'))
+
+    def test_a_consent_after_the_closing_checkpoint_is_not_used(self):
+        report = timing([cp('10:00', 'czeka: GO plan'), cp('10:20', 'w toku: F0.1')], [approval('GO plan', '2026-11-11T09:40:00Z')])
+        self.assertEqual((report['windows'][0]['seconds'], report['windows'][0]['source']), (1200, 'checkpoint'))
+
+    def test_a_consent_across_midnight_closes_the_window(self):
+        report = timing([cp('23:50', 'czeka: GO plan'), cp('00:30', 'w toku: F0.1')], [approval('GO plan', '2026-11-11T23:10:00Z')],
+                        start='2026-11-11T23:40:00+01:00')
+        self.assertEqual((report['windows'][0]['seconds'], report['windows'][0]['source']), (1200, 'approval'))
+
+    def test_the_first_checkpoint_before_the_run_start_makes_timing_unavailable(self):
+        report = timing([cp('09:30', 'w toku: F0.1')], start='2026-11-11T10:00:00+01:00')
+        self.assertFalse(report['available'])
+        self.assertIn('earlier', report['reason'])
+
+    def test_stage_with_no_known_work_does_not_make_the_total_zero(self):
+        report = timing([cp('10:00', 'w toku: F1.1')], phases=[PHASES[1]])
+        self.assertEqual(report['stages'][0]['workSeconds'], None)
+        self.assertIsNone(report['totals']['workSeconds'])
+        self.assertFalse(report['totals']['complete'])
+
+    def test_phase_label_is_the_part_before_the_colon_with_or_without_a_label_field(self):
+        plain = [{'name': 'Faza 1: Kontrakt', 'steps': [{'id': 'F1.1', 'done': True}]}, {'name': 'Kroki', 'steps': [{'id': 'F2.1', 'done': True}]}]
+        report = timing([cp('10:00', 'w toku: F1.1, F2.1'), cp('10:10', 'zrobione: F1.1, F2.1')], phases=plain)
+        self.assertEqual([item['phase'] for item in report['steps']], ['Faza 1', 'Kroki'])
+        self.assertEqual([item['phase'] for item in report['stages']], ['Faza 1', 'Kroki'])
+
+
 class Availability(unittest.TestCase):
     def test_without_the_run_start_nothing_is_computed(self):
         report = timing([cp('10:00', 'w toku: F0.1')], start=None)

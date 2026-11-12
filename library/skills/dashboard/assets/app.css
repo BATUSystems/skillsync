@@ -248,7 +248,7 @@ main { flex: 1; padding: 1.1rem 1.4rem; min-width: 0; }
 .sub-list, .timing-list { list-style: none; margin: .3rem 0 0; padding: 0; display: grid; gap: .15rem; max-height: 14rem; overflow: auto; }
 .sub-list .tt, .timing-list .tt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sub-list .sub-t, .timing-list .sub-t { flex: none; color: var(--muted); font-variant-numeric: tabular-nums; }
-.sub-list li.is-nodata .sub-t { color: var(--faint); font-style: italic; }
+.sub-list li.is-nodata .sub-t, .timing-list li.is-nodata .sub-t { color: var(--faint); font-style: italic; }
 
 .act.s-done .act-icon { background: var(--done-soft); color: var(--done); }
 .act.s-done { border-color: color-mix(in srgb, var(--done) 40%, var(--line)); }
