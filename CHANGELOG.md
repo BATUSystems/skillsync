@@ -17,6 +17,9 @@ Every release has a **Breaking** section that lists incompatible changes. When a
   16 local commits ahead is no longer read as pushed. No JSON change (the fields already existed); `git.branchPushed` is documented as "origin/<branch> exists".
 
 ### Fixed
+- Prototype engine (`prototype.js`, `prototype.css`): the screen nav always shows the "home" link to the prototype list, also in the simple link strip (`data-proto-nav="strip"`),
+  and the strip is used only up to 5 screens; with more screens the attribute is ignored and the dropdown screen switcher with search is built (`screenNavMode`, new engine export, contract 107 names).
+  `references/screen-patterns.md`: the switcher is the default, `strip` only on explicit request. Existing prototypes get the new engine with `skillsync prototype migrate` / `skillsync prototype sync`.
 - Dashboard page and panel: the "session waits for you" banner item (and the "⏳ Czeka" tab title) disappears once its consent is recorded and the session has moved on
   (it reported after the consent, or the consent is older than 10 minutes), and the consent-result toast fades by itself (10 s, an error 30 s, the countdown stands still
   while the tab is hidden via `board.setVisible`). Before, both stayed until the next checkpoint or a click on "×".
