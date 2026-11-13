@@ -770,6 +770,37 @@ function summary(m) {
     const mc = mount(cp, { now: NOW['cp-ready'], deps: origin });
     ex.qtoast.withBanner = { toast: qa0(mc.root, '#waitBanner [data-questions-toast]'), items: mc.root.querySelectorAll('#waitBanner .wait-item').length };
   }
+  // DASH-ETA: toast „szacowany koniec” z d.eta; przekroczenie liczy zegar (deps.now), nie serwer; stan, nie wynik akcji.
+  {
+    const e = F['eta'];
+    const until = Date.parse(e.eta.untilIso);
+    let t = until - 30 * 60000;
+    const tm = fakeTimers();
+    const m = mount(clone(e), { now: () => t, deps: { timers: tm } });
+    const sel = '#waitBanner [data-eta-toast]';
+    const read = (root) => root.querySelectorAll(sel).map((n) => ({ text: text(n), cls: n.getAttribute('class'), role: n.getAttribute('role'), close: n.querySelectorAll('[data-notice-close]').length }));
+    const before = read(m.root), timersAfterMount = tm.q.size;
+    t = until - 1000; m.board.tick(); const atTheMinute = read(m.root);
+    t = until + 60000; m.board.tick(); const late1 = read(m.root);
+    t = until + 17 * 60000 + 5000; m.board.tick(); const late17 = read(m.root);
+    t = until + 65 * 60000 + 5000; m.board.tick(); const late65 = read(m.root); t = until - 30 * 60000;
+    const upd = clone(e); upd.eta = { operation: 'prototyp', until: '12:30', untilIso: '2026-01-11T12:30:00+00:00', since: '11:25' };
+    m.board.update(upd); const updated = read(m.root);
+    const gone = clone(e); gone.eta = null; m.board.update(gone);
+    const afterGone = read(m.root);
+    const noIso = clone(e); noIso.eta.untilIso = null; t = until + 99 * 60000;
+    const noIsoTxt = read(mount(noIso, { now: () => t }).root);
+    const junk = clone(e); junk.eta = { operation: '<b>x</b>', until: 5 };
+    const hostile = clone(e); hostile.eta.operation = '<img src=x onerror=alert(1)>';
+    const hm = mount(hostile, { now: () => until - 1000 });
+    const viewer = clone(e); viewer.approvals.viewer = true; viewer.approvals.here = false;
+    const old = clone(e); delete old.eta;
+    const withWait = clone(F['cp-ready']); withWait.eta = { operation: 'CP', until: '10:00', untilIso: null, since: '09:00' }; withWait.approvals.here = true;
+    ex.eta = { before, timersAfterMount, atTheMinute, late1, late17, late65, updated, afterGone, noIsoTxt, junk: read(mount(junk, { now: () => t }).root),
+      hostile: read(hm.root), hostileTags: hm.root.querySelectorAll('#waitBanner img').length + hm.root.querySelectorAll('#waitBanner b').length,
+      viewer: read(mount(viewer, { now: () => until - 1000 }).root), absent: read(mount(old, { now: () => t }).root),
+      withWait: { eta: read(mount(withWait, { now: NOW['cp-ready'] }).root).length, items: mount(withWait, { now: NOW['cp-ready'] }).root.querySelectorAll('#waitBanner .wait-item').length } };
+  }
   {
     const m = mount(F['plan-in-progress'], { now: NOW['plan-in-progress'] });
     const det = () => m.root.querySelector('details.substeps');
@@ -1219,6 +1250,31 @@ class RendererNodeTests(unittest.TestCase):
         self.assertEqual(len(both["toast"]), 1)
         self.assertGreaterEqual(both["items"], 2)  # obok innych elementów banera
         self.assertEqual(len(self.out["extra"]["qviewer"]["qtoast"]), 1)  # widz widzi to samo
+
+    def test_eta_toast_shows_the_estimate_and_counts_the_overrun_from_now(self) -> None:
+        e = self.out["extra"]["eta"]
+        self.assertEqual(self.fixtures["eta"]["eta"]["until"], "11:40")
+        self.assertEqual([x["text"] for x in e["before"]], ["parsowanie fixtures, koniec ok. 11:40"])
+        self.assertEqual(e["timersAfterMount"], 0)  # bez timera, bez „×”, bez roli
+        self.assertEqual((e["before"][0]["close"], e["before"][0]["role"]), (0, None))
+        self.assertIn("is-info", e["before"][0]["cls"])
+        self.assertEqual([x["text"] for x in e["atTheMinute"]], ["parsowanie fixtures, koniec ok. 11:40"])  # jeszcze nie po terminie
+        self.assertEqual([x["text"] for x in e["late1"]], ["parsowanie fixtures: przekroczono ETA o 1 min"])
+        self.assertEqual([x["text"] for x in e["late17"]], ["parsowanie fixtures: przekroczono ETA o 17 min"])  # tick odświeża co minutę
+        self.assertEqual([x["text"] for x in e["late65"]], ["parsowanie fixtures: przekroczono ETA o 1 h 5 min"])
+        self.assertEqual([x["text"] for x in e["updated"]], ["prototyp, koniec ok. 12:30"])  # nowe ETA zastępuje stare (bez STOP)
+        self.assertEqual(e["afterGone"], [])  # następny checkpoint bez eta: zdejmuje toast
+        self.assertEqual([x["text"] for x in e["noIsoTxt"]], ["parsowanie fixtures, koniec ok. 11:40"])  # bez untilIso tylko godzina
+
+    def test_eta_toast_is_text_only_for_everybody(self) -> None:
+        e = self.out["extra"]["eta"]
+        self.assertEqual(e["junk"], [])
+        self.assertEqual(e["absent"], [])
+        self.assertEqual(e["hostileTags"], 0)
+        self.assertEqual(e["hostile"][0]["text"], "<img src=x onerror=alert(1)>, koniec ok. 11:40")
+        self.assertEqual(len(e["viewer"]), 1)  # widz widzi to samo
+        self.assertEqual(e["withWait"]["eta"], 1)
+        self.assertGreaterEqual(e["withWait"]["items"], 2)  # obok baneru zgody
 
     def test_substeps_section(self) -> None:
         got = self.out["fixtures"]["plan-in-progress"]["substeps"]

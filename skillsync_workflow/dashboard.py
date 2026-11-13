@@ -50,6 +50,9 @@ ID_LIST_RE = re.compile(rf'^\s*(?P<ids>{STEP_ID}(?:(?:\s*[/+&]\s*|\s+(?:i|oraz)\
 # "zrobione" / "w toku"). The newest checkpoint without `czeka:` clears the banner.
 WAIT_RE = re.compile(r'(?:^|;)\s*czeka\s*:\s*(?P<seg>[^;]+)', re.IGNORECASE)
 WAIT_NONE = {'', '-', '—', 'nic', 'brak', 'nie'}
+# "The session works until HH:MM" in a checkpoint: segment `eta: <operation> do HH:MM` (like `czeka:`, split by `;`).
+ETA_RE = re.compile(r'(?:^|;)\s*eta\s*:\s*(?P<seg>[^;]+)', re.IGNORECASE)
+ETA_AT_RE = re.compile(r'^(?P<operation>.*?\S)\s+do\s+(?P<time>\d{1,2}:\d{2})\.?$', re.IGNORECASE)
 STATUS_WAIT_RE = re.compile(r'czeka\s+na\s+(?P<what>[^);,]+)', re.IGNORECASE)
 ID_FIND_RE = re.compile(rf'(?<![\w-]){STEP_ID}(?![\w-])')
 SHA_RE = re.compile(r'^[0-9a-f]{7,40}$')
@@ -200,6 +203,41 @@ def wait_marker(text):
         return None
     value = match.group('seg').strip().rstrip('.')
     return None if value.lower() in WAIT_NONE else value
+
+
+def parse_eta(text):
+    """`(operation, "HH:MM")` of the `eta: <operation> do HH:MM` segment of a checkpoint text, or None (no segment, no
+    readable time, an empty operation, or the "nothing" values of `czeka:`)."""
+    match = ETA_RE.search(text)
+    found = ETA_AT_RE.match(match.group('seg').strip()) if match else None
+    if not found:
+        return None
+    hours, minutes = (int(part) for part in found.group('time').split(':'))
+    if hours > 23 or minutes > 59:
+        return None
+    return found.group('operation').strip(), f'{hours:02d}:{minutes:02d}'
+
+
+def build_eta(run_start, chronological, plan_status):
+    """`eta` of the dashboard: the estimate of the NEWEST checkpoint, or None. It vanishes with the next checkpoint without
+    `eta:`, with a `czeka:` one (the session waits, it does not work) and on a closed plan. `untilIso` is read like
+    `timing` reads clocks (run start + midnight crossings; None without a run start); an estimate that lies more than 12 h
+    before its checkpoint is the next day. The server reads no clock: the renderer counts the overrun from `now`."""
+    if not chronological or plan_status in ('done', 'implemented'):
+        return None
+    newest = chronological[-1]
+    found = parse_eta(newest['text'])
+    if not found or wait_marker(newest['text']):
+        return None
+    until_iso = None
+    instants = _instants(run_start, chronological)
+    if instants:
+        hours, minutes = (int(part) for part in found[1].split(':'))
+        moment = instants[-1].replace(hour=hours, minute=minutes)
+        if instants[-1] - moment > timedelta(hours=12):
+            moment += timedelta(days=1)
+        until_iso = moment.isoformat()
+    return {'operation': found[0], 'until': found[1], 'untilIso': until_iso, 'since': newest['time']}
 
 
 def wait_item(what, source, since=None, ctx=None):
@@ -1483,6 +1521,7 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
         'progress': progress,
         'acts': acts,
         'waiting': waiting,
+        'eta': build_eta(run['start'], chronological, plan_info['status'] if plan_info else None),
         # Report silence: the consumer counts the minutes (no events arrive when nothing changes).
         'silence': ({'since': run.get('lastReportAt'), 'thresholdMin': SILENCE_MIN}
                     if plan_info and plan_info.get('status') == 'in_progress' and run.get('lastReportAt')

@@ -55,6 +55,12 @@ Marker to sygnał koordynacji, nie autoryzacja: dopóki jest ważny, serwer odma
 Przy jednym slugu pisze jeden agent; gdy dwóch używa tego samego, wygrywa ostatni `start`, a pierwszy `done` zdejmuje marker
 dla obu. Agent nadal nigdy nie uruchamia `accept`.
 
+## Szacunek czasu przed rysowaniem
+
+Rysowanie ekranów i każda iteracja to długa praca: przed `writing start` dopisz do raportu postępu `eta: <operacja> do HH:MM`
+(np. `eta: rysowanie 12 ekranów prototypu do 15:10`, godzina z `date`), powtarzaj ją w każdym raporcie podczas pracy (strona czyta tylko najnowszą linię), a po przekroczeniu podaj nowy termin bez
+przerywania pracy. Następny raport po `writing done` jest bez `eta:`. Szczegóły: skill `feature`, referencja `measurement`.
+
 ## Pliki prototypu
 
 | Plik | Rola |

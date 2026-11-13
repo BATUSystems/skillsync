@@ -12,6 +12,10 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Added
+
+- Dashboard: `eta` (JSON schema 1, addytywnie) i toast „<operacja>, koniec ok. HH:MM” z szacunku, który agent zapisuje przed długą operacją w checkpoincie przebiegu (`eta: <operacja> do HH:MM`); po przekroczeniu toast mówi „przekroczono ETA o N min”, znika po następnym checkpoincie bez `eta:`, z `czeka:` i po zamknięciu planu. Serwer nie czyta zegara: przekroczenie liczy renderer. Skille `feature` i `prototype`: reguła „szacuj przed startem, aktualizuj przy przekroczeniu”.
+
 ## [1.3.0] - 2026-11-13
 
 ### Added
