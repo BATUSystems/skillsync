@@ -12,6 +12,33 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Added
+
+- Status page and the writing marker: `/api/status` and `dashboard show` have `prototype.writing` (`null` or `{since, expiresAt, renewedAt}`, never `by`). While the
+  marker is valid, `waiting` has the item `source: "writing"` ("agent pisze ekrany (do HH:MM)") instead of the call to accept the prototype (also
+  when the call came from a checkpoint `czeka:`); the page shows "Sesja pracuje od HH:MM". The page server watches `.writing.json` and its validity, so the page
+  also refreshes when the marker expires.
+- `waiting` item `source: "expert"` ("odpowiedź eksperta (N blokujących)", link `{kind: "expert", slug, url}` like the questions toast) when `expertQuestions.blocking > 0`
+  and the newest checkpoint has no `czeka:` marker.
+- `POST /_api/v1/prototypes/<slug>/writing/release`: removes the writing marker (idempotent, `{writing: null, released}`); only `developer` and `acceptor`
+  (403 `forbidden` for `commenter` and `expert`, 401 without a session, same checks as `restore`). The engine banner has a "Zwolnij" button for those roles.
+
+### Changed
+
+- `prototype writing start` on a valid marker keeps `since` (the start of the writing) and `by` (unless `--by` is given) and sets the new field `renewedAt`; the window
+  of at most one hour counts from `renewedAt`, so a long writing renewed again and again stays one marker. `writing` in `list`, the API and `status` has `renewedAt`.
+- The engine banner says "Agent jeszcze pisze ekrany (do HH:MM)" (the hour from `expiresAt`, browser time). The 409 `writing_in_progress` has a Polish message for people
+  ("Agent jeszcze pisze ekrany tego prototypu (do HH:MM)…", host time of the server), so a copy of the engine without the banner shows readable text; the code and fields are unchanged.
+
+### Compatibility
+
+- `.writing.json` stays `version: 1`; `renewedAt` is optional. A core 1.3.0 reads a file renewed for more than an hour after `since` as no marker (acceptance unblocks); do not mix
+  versions while the agent writes for longer than an hour. Times outside 0…2^53 (ms) make the file invalid.
+
+### Breaking
+
+None.
+
 ## [1.3.0] - 2026-11-13
 
 ### Added

@@ -286,13 +286,15 @@ skillsync prototype ids . plan-zajec --check              # po pracy
 skillsync prototype writing . plan-zajec done             # dopiero potem „prototyp gotowy”
 ```
 
-**Plik.** `<root>/<slug>/.writing.json` = `{"version":1,"since":<ms>,"expiresAt":<ms>,"by":"<login>"}` (UTC, milisekundy; `--ttl` w sekundach).
+**Plik.** `<root>/<slug>/.writing.json` = `{"version":1,"since":<ms>,"renewedAt":<ms>,"expiresAt":<ms>,"by":"<login>"}` (UTC, milisekundy; `--ttl` w sekundach).
+`since` to początek pisania, `renewedAt` ostatnie `start`: powtórzone `start` na ważnym markerze zachowuje `since` i `by` (nowe `--by` je zmienia), ustawia `renewedAt` i nowy `expiresAt`.
 Zapis jest atomowy, pod tą samą blokadą co `comments.json`. To dotfile: nie wchodzi do hasha ekranów, do `prototype_version` ani
 `assets_hash` (akceptacje sprzed zapisu nie tracą ważności przez sam marker), nie jest serwowany ani kopiowany do `iterations/`.
 Plik nie jest śledzony w gicie: linię `.writing.json` dopisuje do `.gitignore` prototypu `init`, `migrate` (istniejące prototypy) i pierwszy `start`.
 
 **Ważny marker.** Zwykły plik (nie symlink, nie FIFO, do 4 KiB) o schemacie wersji 1, z całkowitymi `since` i `expiresAt`, taki że
-`now < expiresAt`, okno `0 < expiresAt - since <= 3600 s` i `since` nie dalej niż 60 s w przyszłości (tolerancja zegara). Marker
+`now < expiresAt`, okno `0 < expiresAt - renewedAt <= 3600 s` (bez pola `renewedAt` liczy się od `since`) i `renewedAt` nie dalej niż 60 s w przyszłości (tolerancja zegara);
+`renewedAt` nie może być mniejsze od `since`, a oba czasy to liczby całkowite od 0 do 2^53. Dzięki temu długie pisanie odnawiane co kilkanaście minut zostaje jednym markerem. Marker
 niespełniający któregokolwiek warunku (uszkodzony, wygasły, „z przyszłości”, o zbyt długim oknie) jest traktowany jak brak: blokada
 nie trwa w nieskończoność, a odczyt niczego nie zapisuje. TTL domyślnie 900 s, zakres 60–3600 s.
 
@@ -300,15 +302,19 @@ nie trwa w nieskończoność, a odczyt niczego nie zapisuje. TTL domyślnie 900 
 - Serwer odmawia akceptacji (`POST …/operations` typu `accept` i `POST /_api/v1/project/accept`) oraz przywracania (`POST …/restore`) kodem 409
   `{error: 'writing_in_progress', slug, since, expiresAt}`; dla `project/accept` odpowiedź niesie listę `writing: [{slug, since, expiresAt}]`.
   Marker wykryty dopiero po zapisie części prototypów to 409 `partial` z polem `writing`. Komentarze, głosy i cofnięcie akceptacji działają jak dotąd.
-- Pole `writing` (`null` albo `{since, expiresAt}`, bez `by`) widać w `GET …/operations`, w `GET /_api/v1/project` (per prototyp) i w `prototype list`.
+- Pole `writing` (`null` albo `{since, expiresAt, renewedAt}`, bez `by`) widać w `GET …/operations`, w `GET /_api/v1/project` (per prototyp), w `prototype list` i w statusie dashboardu (`prototype.writing`; pozycja „agent pisze ekrany (do HH:MM)” zastępuje wezwanie do akceptacji, zob. [dashboard-contract.md](dashboard-contract.md#waiting)).
 - Galeria na żywo (`serve`) pokazuje znacznik „w trakcie zapisu”; statyczny `index.html` z `prototype index` go nie ma.
-- Silnik w przeglądarce pokazuje baner „Agent jeszcze pisze ekrany”, wyłącza przyciski akceptacji i przywracania i wraca do normy po zniknięciu markera
+- Silnik w przeglądarce pokazuje baner „Agent jeszcze pisze ekrany (do HH:MM). Akceptacja wróci sama, gdy skończy.” (godzina z `expiresAt`, czas lokalny przeglądarki), wyłącza przyciski akceptacji i przywracania i wraca do normy po zniknięciu markera
   bez przeładowania (o ile pliki się nie zmieniły; w przeciwnym razie ma pierwszeństwo baner „Prototyp zmieniono, przeładuj”). Kopię silnika
   z banerem dostaje istniejący prototyp po `skillsync prototype migrate`.
+- Zwolnienie: przycisk „Zwolnij” w banerze (tylko `developer` i `acceptor`) wysyła `POST /_api/v1/prototypes/<slug>/writing/release` (sesja i token CSRF jak przy `restore`;
+  403 `forbidden` dla `commenter` i `expert`, 401 bez sesji, 403 `source_writes_disabled` na serwerze bez zapisu źródeł, 409 `needs_migration` dla v1). Odpowiedź 200 `{writing: null, released: bool}`;
+  zwolnienie jest idempotentne i usuwa tylko `.writing.json` (dowiązanie albo katalog w jego miejscu zostają). To samo robi `prototype writing … done` w terminalu.
 - CLI: `accept` odmawia (BLOCKED), `gate` ma powód `writing` (FAIL), `wait` nie zwraca `accepted`, `iterate` ostrzega ([cli.md](cli.md)).
 
-**Zgodność wsteczna.** Stara kopia silnika (przed `migrate`) pokazuje przy markerze zwykły błąd ogólny po odpowiedzi 409; akceptacja
-nie jest kolejkowana ani zapisywana. Starszy serwer marker ignoruje, a nowy silnik na starszym serwerze nie widzi pola `writing`.
+**Zgodność wsteczna.** Stara kopia silnika (przed `migrate`) pokazuje przy markerze komunikat z odpowiedzi 409, który serwer pisze po polsku
+(„Agent jeszcze pisze ekrany tego prototypu (do HH:MM). Akceptacja wróci, gdy skończy.”, godzina w czasie lokalnym hosta serwera); akceptacja
+nie jest kolejkowana ani zapisywana. Plik z `renewedAt` czytany przez rdzeń 1.3.0 jest ważny tylko do godziny od `since` (potem 1.3.0 traktuje go jak brak, więc akceptacja się odblokowuje): przy mieszanych wersjach nie odnawiaj markera ponad godzinę. Starszy serwer marker ignoruje, a nowy silnik na starszym serwerze nie widzi pola `writing`.
 
 **To sygnał koordynacji, nie autoryzacja.** Ktoś z dostępem do repozytorium zdejmie marker przez `done` albo usunięcie pliku; nie ma obejścia
 blokady w interfejsie akceptacji, wystarcza wygaśnięcie. Dwóch agentów na jednym slugu: ostatni `start` wygrywa, a pierwszy `done` zdejmuje marker

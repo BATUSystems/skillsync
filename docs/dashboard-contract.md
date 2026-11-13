@@ -190,12 +190,23 @@ Kontrakty/Migracja/Dane), `percent` (tylko akt III; = `progress.percent`).
 
 ### `waiting[]`
 
-`what`, `source` (`checkpoint`, `plan`, `spec`, `prototype`), `since` (`HH:MM` lub null), `action` (podpowiedź dla
-człowieka), `link` (`{kind: "doc", path}` albo `{kind: "prototype", slug}` lub null); opcjonalnie `word` (np. `GO plan`) i
+`what`, `source` (`checkpoint`, `plan`, `spec`, `prototype`, `writing`, `expert`), `since` (`HH:MM` lub null), `action` (podpowiedź dla
+człowieka), `link` (`{kind: "doc", path}`, `{kind: "prototype", slug}`, `{kind: "expert", slug, url}` lub null); opcjonalnie `word` (np. `GO plan`) i
 `approve` (`spec`, `plan`, `cp`, `ready`), gdy czekanie odpowiada przyciskowi zgody.
 
 Pytania blokujące (`blockingQuestions`) generują czekanie tylko, gdy sesja zgłosi je w checkpoincie (`czeka: odpowiedź Q3`);
 założenia nigdy nie są akcją „Odpowiedz na pytania”.
+
+Dwie pozycje powstają z plików, bez znacznika w checkpoincie:
+
+- `source: "writing"`: prototyp przebiegu ma ważny znacznik zapisu (`prototype.writing` nie jest null). `what` = „agent pisze ekrany (do HH:MM)”
+  (czas lokalny hosta strony z `expiresAt`), `since` = `HH:MM` początku pisania, `link` = `{kind: "prototype", slug}`. Pozycja jest pierwsza
+  i zastępuje każdą pozycję akceptacji prototypu (też tę z `czeka:` w checkpoincie), bo nie ma czego akceptować, dopóki agent pisze.
+  Renderer pisze „Sesja pracuje od HH:MM: …”, nie „Sesja czeka na Ciebie”.
+- `source: "expert"`: `expertQuestions.blocking > 0`, a najnowszy checkpoint nie ma znacznika `czeka:`. `what` = „odpowiedź eksperta (N blokujących)”,
+  `link` = `{kind: "expert", slug, url}`: przy jednym przebiegu z otwartymi pytaniami jego `slug` i `/_experts/<slug>`, w pozostałych
+  przypadkach `slug: null` i `/_experts`. Renderer składa adres jak w toaście (`deps.prototypeOrigin(port)` plus ścieżka; bez adresu serwera
+  prototypów pozycja nie ma odnośnika). Pytania bez `blocking` nie tworzą pozycji.
 
 ### `silence`
 
@@ -243,7 +254,10 @@ tablica).
 
 ### `prototype`
 
-`{slug: string|null, port: int, up: bool}`; `up` bez serwera (`show`) = false.
+`{slug: string|null, port: int, up: bool, writing: object|null}`; `up` bez serwera (`show`) = false. `writing` = `{since, expiresAt, renewedAt}`
+(UTC, milisekundy; nigdy `by`) ważnego znacznika zapisu ekranów `docs/prototypes/<slug>/.writing.json`, inaczej null (brak, wygasły, uszkodzony,
+dowiązanie symboliczne). Odczyt jest tym samym kodem co w serwerze prototypów, tylko do odczytu; serwer strony śledzi plik znacznika i jego ważność,
+więc strona odświeża się też przy wygaśnięciu.
 
 ### `docs[]`
 
