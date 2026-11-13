@@ -1,6 +1,7 @@
-// Znacznik zapisu „agent jeszcze pisze ekrany”: W-01 … W-03.
+// Znacznik zapisu „agent jeszcze pisze ekrany”: W-01 … W-04.
 // W-01 tor (a): marker bez zmiany plików, W-02 tor (b): pliki zmieniły się w trakcie zapisu (prototyp `beta` we własnym workspace skryptu),
 // W-03: serwer odrzuca akceptację przez HTTP (409 writing_in_progress) i przyjmuje ją po `writing done`.
+// W-04: baner z godziną „do HH:MM” i przycisk „Zwolnij” (akceptujący zwalnia marker, komentujący przycisku nie widzi).
 // Marker odnawiany z `--ttl 60`, żeby nie wygasł w trakcie scenariusza; czekania tylko na odpytywanie silnika (karta widoczna: ok. 5 s).
 import {
   Suite, sleep, workspace, startServer, connect, PORT1, proto, apiOps, apiPost, session, sessionPage, cid, createThread,
@@ -125,5 +126,29 @@ suite.add('W-03', 'Serwer: 409 writing_in_progress na accept przy markerze, po d
   return { ok: restOk, startExit: start.code, refusedStatus: refused.status, refusedError: refused.body && refused.body.error, commentStatus: comment.status,
     writingField: listed && Object.keys(listed).sort(), noBy, acceptedDuringMarker: accepted0, doneExit: done.code, writingAfterDone: cur.writing ?? null, acceptAfterDone: ok2.status };
 });
+
+suite.add('W-04', 'Baner „do HH:MM” i „Zwolnij”: akceptujący zwalnia marker, komentujący nie ma przycisku', async () => {
+  const slug = 'alfa';
+  const buttons = `[...document.querySelectorAll('[data-banner="writing"] button')].map((b) => b.textContent.trim())`;
+  const start = await marker('start', slug);
+  const acc = await sessionPage(c, 'w04a', srv.base, 'celina'); await acc.p.go(url(slug));
+  const com = await sessionPage(c, 'w04c', srv.base, 'anna'); await com.p.go(url(slug));
+  const accShown = await acc.p.waitFor(`${banner('writing')} !== null && ${disabled(acceptBtn('s1'))}`, 25000, 250);
+  const comShown = await com.p.waitFor(`${banner('writing')} !== null`, 25000, 250);
+  const accText = await acc.p.evaluate(banner('writing'));
+  const accButtons = await acc.p.evaluate(buttons);
+  const comButtons = await com.p.evaluate(buttons);
+  await marker('start', slug);   // odnowienie (ttl 60)
+  await acc.p.domClick(`[...document.querySelectorAll('[data-banner="writing"] button')].find((b) => b.textContent.trim() === 'Zwolnij')`);
+  const gone = await acc.p.waitFor(`${banner('writing')} === null && ${enabled(acceptBtn('s1'))}`, 25000, 250);
+  const status = await marker('status', slug);
+  const listing = await apiOps(srv.base, slug);
+  await acc.p.dispose(); await com.p.dispose();
+  const restOk = start.code === 0 && accShown.ok && comShown.ok && /Agent jeszcze pisze ekrany \(do \d\d:\d\d\)/.test(accText || '')
+    && JSON.stringify(accButtons) === JSON.stringify(['Zwolnij']) && comButtons.length === 0 && gone.ok && status.code === 0
+    && listing.writing == null;
+  return { ok: restOk, startExit: start.code, accBanner: (accText || '').slice(0, 100), accButtons, comButtons, goneAfterRelease: gone.ok, statusExit: status.code,
+    writingAfterRelease: listing.writing ?? null };
+}, { timeout: 120000 });
 
 await suite.main();

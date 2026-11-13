@@ -668,7 +668,7 @@
       const origin = typeof deps.prototypeOrigin === "function" ? deps.prototypeOrigin(d.prototype && d.prototype.port) : null;
       if (!origin) return null;
       const path = typeof runUrl === "string" && /^\/_experts\/[a-z0-9-]+$/.test(runUrl) ? runUrl : "/_experts";
-      return safeUrl(String(origin).replace(/\/+$/, "") + path);
+      return String(origin).replace(/\/+$/, "") + path;
     }
     // Toast „Pytania do eksperta”: stan z plików pytań WSZYSTKICH przebiegów (`d.expertQuestions`), nie z widocznego speca. To stan, nie wynik
     // akcji, więc bez timera i bez „×”: znika dopiero, gdy open = 0. Odnośnik tylko, gdy host zna adres serwera prototypów (`deps.prototypeOrigin`).
@@ -678,7 +678,7 @@
       if (open <= 0) return null;
       const blocking = Number.isFinite(eq.blocking) ? eq.blocking : 0;
       const runs = Array.isArray(eq.runs) ? eq.runs : [];
-      const url = expertsUrl(d, runs.length === 1 ? runs[0].url : null);
+      const url = safeUrl(expertsUrl(d, runs.length === 1 ? runs[0].url : null));
       const text = `Pytania do eksperta: ${open} otwartych (${blocking} blokujących)`;
       return h("div", { class: "wait-item is-info", "data-questions-toast": "" },
         icon("i-bell"),
@@ -711,7 +711,7 @@
           const url = protoUrl(d, w.link.slug);
           link = h("a", { class: "wait-go", href: safeUrl(url), target: "_blank", rel: "noopener", on: { click: linkClick("prototype", w.link.slug, url) } }, `Otwórz prototyp ${w.link.slug}`);
         } else if (w.link && w.link.kind === "expert") {
-          const url = expertsUrl(d, w.link.url);
+          const url = safeUrl(expertsUrl(d, w.link.url));
           link = url ? h("a", { class: "wait-go", href: url, target: "_blank", rel: "noopener", "data-wait-expert": "",
             on: { click: linkClick("experts", w.link.slug ? String(w.link.slug) : "", url) } }, "Odpowiedz na pytania") : null;
         }
