@@ -49,7 +49,7 @@ class WritingHelperTests(unittest.TestCase):
 
     def test_write_then_read_roundtrip_with_ttl(self):
         written = ps.write_writing(self.dir, NOW, 900, 'ala@example.com')
-        self.assertEqual(written, {'since': NOW, 'expiresAt': NOW + 900_000, 'by': 'ala@example.com'})
+        self.assertEqual(written, {'since': NOW, 'expiresAt': NOW + 900_000, 'renewedAt': NOW, 'by': 'ala@example.com'})
         self.assertEqual(ps.read_writing(self.dir, NOW + 1), written)
         self.assertEqual(json.loads(Path(self.path).read_text(encoding='utf-8'))['version'], 1)
 
@@ -69,12 +69,52 @@ class WritingHelperTests(unittest.TestCase):
         self.assertIsNotNone(ps.read_writing(self.dir, NOW + 1))
         self.assertIsNone(ps.read_writing(self.dir, NOW + 900_000))
 
-    def test_renewal_replaces_both_fields_also_shortening(self):
-        ps.write_writing(self.dir, NOW, 3600, 'agent')
-        ps.write_writing(self.dir, NOW + MINUTE, 60, 'agent')
+    def test_renewal_keeps_since_and_by_and_replaces_expiry_also_shortening(self):
+        ps.write_writing(self.dir, NOW, 3600, 'ala')
+        ps.write_writing(self.dir, NOW + MINUTE, 60)
         value = ps.read_writing(self.dir, NOW + MINUTE)
-        self.assertEqual((value['since'], value['expiresAt']), (NOW + MINUTE, NOW + 2 * MINUTE))
+        self.assertEqual((value['since'], value['renewedAt'], value['expiresAt'], value['by']),
+                         (NOW, NOW + MINUTE, NOW + 2 * MINUTE, 'ala'))
         self.assertIsNone(ps.read_writing(self.dir, NOW + 2 * MINUTE))
+
+    def test_renewal_with_a_new_by_replaces_it(self):
+        ps.write_writing(self.dir, NOW, 900, 'ala')
+        ps.write_writing(self.dir, NOW + MINUTE, 900, 'ola')
+        self.assertEqual(ps.read_writing(self.dir, NOW + MINUTE)['by'], 'ola')
+
+    def test_start_without_a_valid_marker_starts_anew(self):
+        ps.write_writing(self.dir, NOW, 60, 'ala')
+        ps.write_writing(self.dir, NOW + 2 * MINUTE, 900)   # the first one expired
+        value = ps.read_writing(self.dir, NOW + 2 * MINUTE)
+        self.assertEqual((value['since'], value['renewedAt'], value['by']), (NOW + 2 * MINUTE, NOW + 2 * MINUTE, 'agent'))
+
+    def test_a_long_writing_renewed_again_and_again_stays_valid(self):
+        ps.write_writing(self.dir, NOW, 3600, 'agent')
+        for step in range(1, 6):
+            ps.write_writing(self.dir, NOW + step * 20 * MINUTE, 3600, 'agent')
+        now = NOW + 5 * 20 * MINUTE + 1
+        value = ps.read_writing(self.dir, now)
+        self.assertEqual(value['since'], NOW)   # more than an hour after the start, still the same writing
+        self.assertGreater(value['expiresAt'] - value['since'], 3_600_000)
+
+    def test_file_without_renewed_at_reads_it_as_since(self):
+        self.put(marker_text())
+        self.assertEqual(ps.read_writing(self.dir, NOW + 1)['renewedAt'], NOW)
+
+    def test_renewed_at_is_validated(self):
+        for extra in ({'renewedAt': NOW - 1}, {'renewedAt': True}, {'renewedAt': 1.5}, {'renewedAt': '1'},
+                      {'renewedAt': None}, {'renewedAt': NOW + 3_600_001}):
+            with self.subTest(extra=extra):
+                self.put(marker_text(expires=NOW + 900_000, **extra))
+                self.assertIsNone(ps.read_writing(self.dir, NOW + 1))
+
+    def test_window_and_clock_count_from_renewed_at(self):
+        self.put(marker_text(since=NOW - 7_200_000, expires=NOW + 900_000, renewedAt=NOW))
+        self.assertIsNotNone(ps.read_writing(self.dir, NOW + 1))
+        self.put(marker_text(since=NOW, expires=NOW + 3_600_001, renewedAt=NOW))
+        self.assertIsNone(ps.read_writing(self.dir, NOW + 1))
+        self.put(marker_text(since=NOW, expires=NOW + 900_000 + 120_000, renewedAt=NOW + 120_000))   # from the future
+        self.assertIsNone(ps.read_writing(self.dir, NOW - 1))
 
     def test_upper_limit_of_the_window(self):
         self.put(marker_text(expires=NOW + 3_600_000))

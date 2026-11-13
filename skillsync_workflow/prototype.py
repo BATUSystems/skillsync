@@ -2740,8 +2740,8 @@ def _writing_ttl(value):
 def writing_prototype(root, manifest, slug, action, ttl=None, by=None):
     """`writing <slug> start|done|status`: the marker "the agent is still writing screens" (`.writing.json`).
 
-    `start` writes it under the prototype lock (`since = now`, `expiresAt = now + ttl`; a repeated `start`
-    replaces both) and adds `.writing.json` to the prototype `.gitignore` (a warning when that fails); `done`
+    `start` writes it under the prototype lock (`expiresAt = now + ttl`; a repeated `start` on a valid marker keeps
+    `since` and `by` and sets `renewedAt = now`) and adds `.writing.json` to the prototype `.gitignore` (a warning when that fails); `done`
     and `status` take no lock.  BLOCKED (exit 2): `invalid_args`, `needs_migration` (v1), `lock_timeout`.
     The time comes from the store clock (injectable), never from the marker file."""
     if action not in ('start', 'done', 'status'):
@@ -2750,8 +2750,8 @@ def writing_prototype(root, manifest, slug, action, ttl=None, by=None):
     if seconds is None:
         return _blocked('invalid_args', f'--ttl must be a whole number of seconds from {server.WRITING_TTL_MIN} '
                                         f'to {server.WRITING_TTL_MAX}')
-    who = 'agent' if by is None else by
-    if not isinstance(who, str) or not server.WRITING_BY_RE.fullmatch(who):
+    who = by
+    if who is not None and (not isinstance(who, str) or not server.WRITING_BY_RE.fullmatch(who)):
         return _blocked('invalid_args', '--by must be 1-64 characters of letters, digits and . _ @ + -')
     repo, settings, directory, store = _prototype_context(root, manifest, slug)
     if store.state() == 'v1':
@@ -2778,7 +2778,8 @@ def writing_prototype(root, manifest, slug, action, ttl=None, by=None):
         return _server_blocked(error, **({'warnings': warnings} if warnings else {}))
     report = {'status': 'PASS', 'slug': slug, 'writing': writing}
     if writing is not None and action == 'status':
-        report['writing'] = {'since': writing['since'], 'expiresAt': writing['expiresAt'], 'by': writing['by']}
+        report['writing'] = {'since': writing['since'], 'expiresAt': writing['expiresAt'],
+                             'renewedAt': writing['renewedAt'], 'by': writing['by']}
     if warnings:
         report['warnings'] = warnings
     return report

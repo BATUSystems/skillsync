@@ -3693,7 +3693,10 @@ def _is_int(value):
 
 
 def read_writing(directory, now_ms):
-    """`{since, expiresAt, by}` of a valid writing marker, else None (see "Ważny marker" in the spec).
+    """`{since, expiresAt, renewedAt, by}` of a valid writing marker, else None (see "Ważny marker" in the spec).
+
+    `since` is the start of the writing, `renewedAt` the last `start` (equal to `since` in a file without the field); the
+    window and the clock check count from `renewedAt`, so a long writing renewed again and again stays valid.
 
     `lstat` before the open (no `O_NOFOLLOW` on Windows), then `O_NOFOLLOW|O_NONBLOCK` + `fstat` + `S_ISREG`
     (a FIFO must not hang a server thread), at most 4 KiB, strict JSON, `version == 1`, integer `since` and
@@ -3730,18 +3733,30 @@ def read_writing(directory, now_ms):
         now_ms = int(now_ms)
     if not _is_int(since) or not _is_int(expires) or not _is_int(now_ms):
         return None
-    if since > now_ms + WRITING_CLOCK_SKEW_MS or now_ms >= expires:
+    renewed = since
+    if 'renewedAt' in value:
+        renewed = value['renewedAt']
+        if not _is_int(renewed) or renewed < since:
+            return None
+    if renewed > now_ms + WRITING_CLOCK_SKEW_MS or now_ms >= expires:
         return None
-    if not 0 < expires - since <= WRITING_MAX_WINDOW_MS:
+    if not 0 < expires - renewed <= WRITING_MAX_WINDOW_MS:
         return None
     by = value.get('by')
-    return {'since': since, 'expiresAt': expires, 'by': by if isinstance(by, str) and WRITING_BY_RE.fullmatch(by) else 'agent'}
+    return {'since': since, 'expiresAt': expires, 'renewedAt': renewed,
+            'by': by if isinstance(by, str) and WRITING_BY_RE.fullmatch(by) else 'agent'}
 
 
-def write_writing(directory, now_ms, ttl_s, by='agent'):
-    """Atomically (re)write the marker: `since = now`, `expiresAt = now + ttl`; a short retry on Windows where
-    `os.replace` can fail while a reader holds the file.  Returns `{since, expiresAt, by}`."""
-    payload = {'version': 1, 'since': int(now_ms), 'expiresAt': int(now_ms) + int(ttl_s) * 1000, 'by': by}
+def write_writing(directory, now_ms, ttl_s, by=None):
+    """Atomically (re)write the marker; a short retry on Windows where `os.replace` can fail while a reader holds the
+    file.  A repeated call on a marker that is still valid keeps its `since` (and its `by`, unless `by` is given) and sets
+    `renewedAt = now`; otherwise `since = renewedAt = now`.  `expiresAt = now + ttl`.
+    Returns `{since, expiresAt, renewedAt, by}`."""
+    now_ms = int(now_ms)
+    current = read_writing(directory, now_ms)
+    since = current['since'] if current is not None else now_ms
+    who = by if by is not None else (current['by'] if current is not None else 'agent')
+    payload = {'version': 1, 'since': since, 'renewedAt': now_ms, 'expiresAt': now_ms + int(ttl_s) * 1000, 'by': who}
     data = (js_stringify(payload) + '\n').encode('utf-8')
     path = os.path.join(directory, WRITING_MARKER)
     attempts = 5 if os.name == 'nt' else 1
@@ -3753,7 +3768,7 @@ def write_writing(directory, now_ms, ttl_s, by='agent'):
             if attempt + 1 >= attempts:
                 raise
             time.sleep(0.05 * (attempt + 1))
-    return {'since': payload['since'], 'expiresAt': payload['expiresAt'], 'by': by}
+    return {'since': since, 'expiresAt': payload['expiresAt'], 'renewedAt': now_ms, 'by': who}
 
 
 def remove_writing(directory):
@@ -3770,10 +3785,11 @@ def remove_writing(directory):
 
 
 def public_writing(directory, now_ms):
-    """The `writing` field of the API, `prototype list` and the live gallery: `None` or `{since, expiresAt}`
-    (never `by`).  The one helper of that shape."""
+    """The `writing` field of the API, `prototype list`, the status page and the live gallery: `None` or
+    `{since, expiresAt, renewedAt}` (never `by`).  The one helper of that shape."""
     marker = read_writing(directory, now_ms)
-    return None if marker is None else {'since': marker['since'], 'expiresAt': marker['expiresAt']}
+    return None if marker is None else {'since': marker['since'], 'expiresAt': marker['expiresAt'],
+                                        'renewedAt': marker['renewedAt']}
 
 
 def writing_conflict(slug, marker):
