@@ -134,7 +134,7 @@ W trybach innych niż `plan` pola `plan`, `progress.phases` itd. są puste (`pla
 ### `plans[]`
 
 `path` (string), `title` (string), `status` (`draft`, `approved`, `in_progress`, `done`, `implemented` albo null), `spec`
-(ścieżka speca lub null), `run` (id przebiegu lub null).
+(ścieżka speca lub null), `run` (id przebiegu lub null). Plan wiąże się z przebiegiem tylko linią `Przebieg: <run-id>` w nagłówku planu: sam `checkpoint --run-id X` tworzy `.skillsync/runs/X`, ale bez tej linii `plans[].run` i `run.id` strony statusu zostają `null` (strona nie zgaduje powiązania).
 
 ### `plan`
 

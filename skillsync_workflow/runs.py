@@ -85,9 +85,14 @@ def _retro_warnings(path, run_id, records):
     return ["retro-quality-missing: przebieg nie ma rekordu retro-quality PASS przed final"]
 
 
-def _slug(value):
-    if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,79}", value):
-        raise ValueError("Id musi być krótkim identyfikatorem bez separatorów ścieżki")
+ID_PATTERN = r"[A-Za-z0-9][A-Za-z0-9_.-]{0,79}"
+
+
+def _slug(value, field="id"):
+    """`value` when it is a short identifier; the error names the `field` (`--step`, `--run-id`) and the pattern."""
+    if not isinstance(value, str) or not re.fullmatch(ID_PATTERN, value):
+        raise ValueError(f"{field}: musi być krótkim identyfikatorem bez separatorów ścieżki i spacji, "
+                         f"wzorzec {ID_PATTERN} (otrzymano: {str(value)[:40]!r})")
     return value
 
 
@@ -161,7 +166,7 @@ def fingerprint(root):
 
 
 def _store_path(root, run_id):
-    path = root / ".skillsync" / "runs" / (_slug(run_id) + ".json")
+    path = root / ".skillsync" / "runs" / (_slug(run_id, "--run-id") + ".json")
     for parent in (root / ".skillsync", path.parent, path):
         if parent.is_symlink():
             raise ValueError("Magazyn przebiegów nie może być dowiązaniem")
@@ -221,7 +226,7 @@ def _read(path):
     for record in data["checkpoints"]:
         if not isinstance(record, dict):
             raise ValueError("Nieprawidłowy rekord checkpointu")
-        _slug(record.get("step"))
+        _slug(record.get("step"), "step (rekord checkpointu)")
         if record.get("status") not in STATUSES or not isinstance(record.get("next"), str):
             raise ValueError("Nieprawidłowy status lub następny krok")
         if len(record["next"]) > 2000 or not isinstance(record.get("recorded_at"), str):
@@ -397,7 +402,7 @@ def _checkpoint_locked(args):
         raise ValueError("PASS wymaga pliku z rzeczywistym dowodem; sama deklaracja nie wystarcza")
     if len(args.next) > 2000 or len(args.cause or "") > 500:
         raise ValueError("Opis przekracza limit metadanych")
-    record = {"step": _slug(args.step), "status": args.status, "evidence": evidence,
+    record = {"step": _slug(args.step, "--step"), "status": args.status, "evidence": evidence,
               "next": _redact(args.next), "fingerprint": fingerprint(root), "sources_digest": _sources(root, getattr(args, "layers", None)),
               "recorded_at": datetime.now(timezone.utc).isoformat(),
               "duration_seconds": None if args.duration is None else _number(args.duration),

@@ -279,7 +279,7 @@ skillsync prototype question purge . --slug zwroty --include-open --yes         
   dokumentacji agent wpisuje sam: serwer nie czyta repozytorium. Skan sekretów w treści jest heurystyką: trafienie blokuje
   (`secret_detected`, exit 2, bez wartości w raporcie), `--force` przepuszcza z ostrzeżeniem. Raport: `questionId`, `slug`, `specLine`
   (wiersz do speca), `files` (pliki do commita, w tym `<root>/<slug>/questions.json`, `<root>/.gitignore` z `questions.json.lock` i `*.tmp` oraz `<root>/.gitattributes`
-  z `merge=skillsync-questions`, dopisywane przy pierwszym użyciu), `created` (nowo utworzone pliki: plik pytań, jego lock, `<root>/.gitignore`, `<root>/.gitattributes`),
+  z `merge=skillsync-questions`, dopisywane przy pierwszym użyciu), `created` (nowo utworzone pliki: plik pytań, jego lock, `<root>/.gitignore`, `<root>/.gitattributes`), `ignored` (te utworzone pliki, które git ignoruje, czyli lock: `created` = `files` bez dopisanych wcześniej + `ignored`),
   `notes` (zdania typu „created <ścieżka>”, także o locku ignorowanym przez git), `warnings`, `url`, gdy serwer projektu działa albo ustawiono `prototype.public_url`/`SKILLSYNC_PROTOTYPE_PUBLIC_URL`. Powtórka z tym
   samym `--question-id` jest idempotentna. Osierocony lock (`questions.json.lock` bez pliku pytań, wolny) usuwa następny `add` tego przebiegu
   (best effort; na platformie, która nie usuwa otwartego pliku, zostaje). Odrzucony `add` nie zakłada ani pliku, ani locka.

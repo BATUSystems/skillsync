@@ -51,3 +51,17 @@ class ShapeTests(QuestionCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class FilesCreatedTests(QuestionCase):
+    def test_created_is_files_to_commit_plus_ignored(self):
+        report = self.add()
+        self.assertTrue(report['created'], 'pierwszy add tworzy pliki')
+        self.assertEqual(sorted(report['created']), sorted(report['files'] + report['ignored']), report)
+        self.assertEqual([item for item in report['ignored'] if not item.endswith('.lock')], [])
+        self.assertTrue(report['ignored'], 'lock jest utworzony i ignorowany przez git')
+
+    def test_a_repeat_creates_and_ignores_nothing(self):
+        self.add()
+        again = self.add()
+        self.assertEqual((again['created'], again['files'], again['ignored']), ([], [], []))

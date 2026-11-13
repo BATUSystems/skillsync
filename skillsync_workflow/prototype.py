@@ -3936,7 +3936,8 @@ def add_question(root, manifest, args):
     base, running = _experts_url(repo, settings)
     base = base.rstrip('/') + '/' + slug
     report = {'status': 'PASS', 'questionId': question_id, 'slug': slug, 'idempotent': not result.operations,
-              'specLine': question_spec_line(question), 'files': files, 'created': created, 'notes': notes,
+              'specLine': question_spec_line(question), 'files': files, 'created': created,
+              'ignored': [path for path in created if path.endswith(server.LOCK_SUFFIX)], 'notes': notes,
               'warnings': warnings}
     if running or public_url_of(settings)[0]:
         report['url'] = '%s#%s' % (base, question_id)
