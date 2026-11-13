@@ -16,6 +16,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 - Klucz manifestu `prototype.port` (1024-65535) i flaga `dashboard serve --prototype-port`: port serwera prototypów, który sprawdza strona statusu (dotąd na sztywno 5130; domyślnie nadal 5130). `prototype serve` bierze ten klucz jako domyślny port (flaga `--port` wygrywa, bez klucza 4445), więc serwer i strona statusu zgadzają się co do portu; `doctor` waliduje wartość.
 - `answerLine` (`question show`/`wait`) podaje czas odpowiedzi lokalny z offsetem (`2026-11-13T13:30+01:00`) zamiast UTC z „Z”; dziennik, kontrakt `expert-questions/1` i `record` bez zmian (starsze wiersze z „Z” zostają poprawne).
+- `question show` ma pole `question` (pierwsze pytanie), a `question wait` pole `questions[]`: oba mają teraz `question`, `questions[]` i `answerLine` na górze (zmiana addytywna, żadne pole nie znika).
 - `prototype.public_url` (manifest) i zmienna `SKILLSYNC_PROTOTYPE_PUBLIC_URL` (wygrywa): adres serwera prototypów dla ekspertów za tunelem ssh. Używają go `prototype question url`, pole `url` w `question add` (także bez lokalnego serwera) i dodatkowa linia „Adres publiczny” komunikatu `prototype serve`; błędna zmienna to BLOCKED `invalid_public_url`.
 
 ## [1.3.0] - 2026-11-13

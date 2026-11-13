@@ -4015,6 +4015,7 @@ def show_question(root, manifest, question_id, users=None, slug=None):
     document['questions'] = [item for item in document['questions'] if item['id'] == question_id]
     if not document['questions']:
         return _question_fail('not_found', f'no question {question_id}')
+    document['question'] = document['questions'][0]
     document['answerLine'] = question_answer_line(document['questions'][0])
     return document
 
@@ -4158,7 +4159,7 @@ def _question_events(snapshot, wanted, since_at, after):
 def _wait_report(event, question, fold, slug=None, **extra):
     view = server.question_view(question, AGENT_VIEWER, fold['byId'], slug)
     report = {'status': 'PASS', 'event': event, 'questionId': question['id'], 'slug': slug, 'question': view,
-              'answerLine': question_answer_line(view)}
+              'questions': [view], 'answerLine': question_answer_line(view)}
     report.update(extra)
     return report
 
