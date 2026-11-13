@@ -3560,6 +3560,21 @@ def _spec_cell(text, limit=500):
     return text[:limit].rstrip()
 
 
+def answer_moment(at):
+    """Time of the answer for the spec row: local time with the offset, to the minute (`2026-11-13T13:30+01:00`).
+    The log keeps UTC; an unreadable value keeps the old UTC form (`<16 characters>Z`)."""
+    text = str(at or '')
+    try:
+        parsed = datetime.fromisoformat(text.replace('Z', '+00:00'))
+        if parsed.tzinfo is None:
+            raise ValueError(text)
+        moment = parsed.astimezone()
+    except ValueError:
+        return text[:16] + 'Z'
+    offset = moment.strftime('%z')
+    return moment.strftime('%Y-%m-%dT%H:%M') + offset[:3] + ':' + offset[3:]
+
+
 def question_answer_line(question):
     """Spec row after the answer (grammar of the `[EKSPERT]` class); the question text and the answer are each cut to
     500 characters (`_spec_cell`), for a question as the exported item or the
@@ -3583,7 +3598,7 @@ def question_answer_line(question):
     else:
         value = ''
     label = (question.get('origin') or {}).get('q') or 'Q?'
-    moment = str(answer.get('at') or '')[:16] + 'Z'
+    moment = answer_moment(answer.get('at'))
     return '- %s [EKSPERT]: %s (ekspert: %s) — odpowiedź: %s — ekspert: %s, %s' % (
         label, _spec_cell(question['text']), question['id'], _spec_cell(value), _one_line(answer.get('by') or ''), moment)
 

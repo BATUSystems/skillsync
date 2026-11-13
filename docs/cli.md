@@ -288,7 +288,7 @@ skillsync prototype question purge . --slug zwroty --include-open --yes         
   nieznane pola). Pytanie wielokrotnego wyboru ma `multi: true`, a jego odpowiedź `optionIds` i `optionLabels` (listy w kolejności opcji
   pytania) zamiast `optionId`/`optionLabel`; pytania jednokrotne i stare dzienniki bez zmian. `slug` to nazwa przebiegu, `null` dla pytania ze starego pliku. `--slug` zawęża do jednego przebiegu; bez niego
   łączą wszystkie przebiegi i dopisują stary plik (`legacy` w dokumencie, gdy istnieje). `list` ma `runs` (`slug`, liczby pytań).
-  `show` i `wait` dodają `answerLine`: gotowy wiersz `[EKSPERT]` do speca (`null` bez odpowiedzi); `specLine` z `add` i `withdraw`
+  `show` i `wait` dodają `answerLine`: gotowy wiersz `[EKSPERT]` do speca (`null` bez odpowiedzi; czas odpowiedzi lokalny z offsetem, np. `2026-11-13T13:30+01:00`, a w dzienniku nadal UTC); `specLine` z `add` i `withdraw`
   to wiersz czekającego pytania. Domyślny filtr `list` to `open,answered`; `--status` przyjmuje też `withdrawn` i `all`.
 - `show`, `record`, `withdraw` i `wait <id>` znajdują pytanie po id (`--slug` opcjonalny, zawęża szukanie). `record` i `withdraw` pytania
   ze starego pliku dają BLOCKED `migration_required`.

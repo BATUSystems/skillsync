@@ -9,6 +9,7 @@ Uruchamianie: `python3 -m unittest discover -s tests -p test_skillsync_prototype
 Zgodność ze składnią Pythona 3.8.
 """
 import copy
+from datetime import datetime
 import json
 import os
 import re
@@ -1248,8 +1249,15 @@ class AttributesFilesTests(QuestionCase):
         self.assertEqual(len(self.ops()), 1)
 
 
+def local_stamp(at):
+    """Czas odpowiedzi z dziennika (UTC) tak, jak go pokazuje `answerLine`: czas lokalny, offset, minuty."""
+    moment = datetime.fromisoformat(at.replace('Z', '+00:00')).astimezone()
+    offset = moment.strftime('%z')
+    return moment.strftime('%Y-%m-%dT%H:%M') + offset[:3] + ':' + offset[3:]
+
+
 GRAMMAR = re.compile(r'- Q\d+ \[EKSPERT\]: .+ \(ekspert: qn-[0-9a-f]{12}\) — odpowiedź: .* — ekspert: \S+, '
-                     r'\d{4}-\d\d-\d\dT\d\d:\d\dZ')
+                     r'\d{4}-\d\d-\d\dT\d\d:\d\d(?:Z|[+-]\d\d:\d\d)')
 
 
 class AnswerLineTests(QuestionCase):
@@ -1269,7 +1277,7 @@ class AnswerLineTests(QuestionCase):
                  mode=('--assume', 'nowy numer'))
         self.assertIsNone(self.q('show', QA)['answerLine'], 'bez odpowiedzi brak wiersza')
         answer = self.answer(QA, text='Tak, nowy numer')
-        stamp = answer['at'][:16] + 'Z'
+        stamp = local_stamp(answer['at'])
         self.assertEqual(self.line(), '- Q3 [EKSPERT]: Numer korekty? (ekspert: %s) — odpowiedź: Tak, nowy numer — ekspert: %s, %s'
                          % (QA, EWA, stamp))
         self.add('Wybór?', QB, '--option', 'Nowy numer:recommended', '--option', 'Stary numer', origin=SPEC + ':Q4')
@@ -1281,11 +1289,11 @@ class AnswerLineTests(QuestionCase):
         for qid in (QA, QB, QC):
             self.assert_grammar(self.line(qid))
 
-    def test_the_time_is_utc_truncated_to_minutes(self):
+    def test_the_time_is_local_with_an_offset_truncated_to_minutes(self):
         self.add()
         answer = self.answer()
         line = self.line()
-        self.assertTrue(line.endswith(', ' + answer['at'][:16] + 'Z'), line)
+        self.assertTrue(line.endswith(', ' + local_stamp(answer['at'])), line)
         self.assertNotRegex(line, r'\d\d:\d\d:\d\d')
 
     def test_hostile_content_is_always_one_grammar_line(self):

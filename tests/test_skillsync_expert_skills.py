@@ -23,7 +23,7 @@ REQUIRED = [
     ('spec-klasa-ekspert', SPEC, r'## Klasa `\[EKSPERT\]`: pytania do eksperta domenowego'),
     ('spec-wiersz-czekajacy', SPEC, r'`- Q<n>: <pytanie> \(ekspert: qn-<hex>\)`'),
     ('spec-wiersz-zalozenie', SPEC, r'`- Q<n> \[ZAŁOŻENIE\]: <pytanie> \(ekspert: qn-<hex>\) — przyjęte: <wartość>`'),
-    ('spec-wiersz-po-odpowiedzi', SPEC, r'`- Q<n> \[EKSPERT\]: <pytanie> \(ekspert: qn-<hex>\) — odpowiedź: <wartość> — ekspert: <login>, <RRRR-MM-DDTHH:MMZ>`'),
+    ('spec-wiersz-po-odpowiedzi', SPEC, r'`- Q<n> \[EKSPERT\]: <pytanie> \(ekspert: qn-<hex>\) — odpowiedź: <wartość> — ekspert: <login>, <RRRR-MM-DDTHH:MM±GG:MM>`'),
     ('spec-answerline', SPEC, r'pola `answerLine` wyniku `question show` albo `question wait`'),
     ('spec-ostateczna', SPEC, r'Odpowiedź jest ostateczna'),
     ('spec-informacja-nie-pytanie', SPEC, r'programista dostaje informację.*nie pytanie'),
