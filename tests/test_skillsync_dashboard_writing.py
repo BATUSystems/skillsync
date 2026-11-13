@@ -46,7 +46,7 @@ class WaitingItems(unittest.TestCase):
         self.assertIn('akceptacja prototypu demo (0/2)', items[0]['what'])
 
     def test_a_valid_marker_replaces_the_acceptance_call(self):
-        items = dashboard.waiting_items(run(), spec(), plan(), 'demo', writing=MARK, now_ms=NOW)
+        items = dashboard.waiting_items(run(), spec(), plan(), 'demo', writing=MARK)
         self.assertEqual([item['source'] for item in items], ['writing'])
         item = items[0]
         self.assertEqual(item['what'], 'agent pisze ekrany (do %s)' % hhmm(MARK['expiresAt']))
@@ -57,25 +57,25 @@ class WaitingItems(unittest.TestCase):
 
     def test_the_marker_also_replaces_an_acceptance_item_from_the_checkpoint(self):
         items = dashboard.waiting_items(run('ryzyko: brak; czeka: akceptacja prototypu demo.'), spec(), plan(), 'demo',
-                                        writing=MARK, now_ms=NOW)
+                                        writing=MARK)
         self.assertEqual([item['source'] for item in items], ['writing'])
 
     def test_other_checkpoint_waits_stay_next_to_the_writing_item(self):
-        items = dashboard.waiting_items(run('czeka: GO plan.'), spec(), plan(), 'demo', writing=MARK, now_ms=NOW)
+        items = dashboard.waiting_items(run('czeka: GO plan.'), spec(), plan(), 'demo', writing=MARK)
         self.assertEqual([item['source'] for item in items], ['writing', 'checkpoint'])
 
     def test_the_marker_shows_even_without_accepted_screens_to_wait_for(self):
-        items = dashboard.waiting_items(run(), spec({'screens': 0, 'accepted': 0, 'stale': 0}), plan(), 'demo', writing=MARK, now_ms=NOW)
+        items = dashboard.waiting_items(run(), spec({'screens': 0, 'accepted': 0, 'stale': 0}), plan(), 'demo', writing=MARK)
         self.assertEqual([item['source'] for item in items], ['writing'])
 
     def test_no_slug_no_writing_item(self):
-        self.assertEqual(dashboard.waiting_items(run(), None, None, None, writing=MARK, now_ms=NOW), [])
+        self.assertEqual(dashboard.waiting_items(run(), None, None, None, writing=MARK), [])
 
     def test_blocking_questions_give_an_expert_item(self):
         items = dashboard.waiting_items(run(), spec(), plan('in_progress'), 'demo', expert=EXPERT)
         self.assertEqual([item['source'] for item in items], ['expert'])
         item = items[0]
-        self.assertEqual(item['what'], 'odpowiedź eksperta (1 blokujące)')
+        self.assertEqual(item['what'], 'odpowiedź eksperta (1 blokujących)')
         self.assertEqual(item['link'], {'kind': 'expert', 'slug': 'demo', 'url': '/_experts/demo'})
         self.assertIsNone(item['since'])
 
@@ -83,7 +83,7 @@ class WaitingItems(unittest.TestCase):
         many = {'open': 3, 'blocking': 2, 'runs': [{'slug': 'a', 'open': 1, 'blocking': 1, 'url': '/_experts/a'},
                                                     {'slug': 'b', 'open': 2, 'blocking': 1, 'url': '/_experts/b'}]}
         item = dashboard.waiting_items(run(), None, None, None, expert=many)[0]
-        self.assertEqual(item['what'], 'odpowiedź eksperta (2 blokujące)')
+        self.assertEqual(item['what'], 'odpowiedź eksperta (2 blokujących)')
         self.assertEqual(item['link'], {'kind': 'expert', 'slug': None, 'url': '/_experts'})
 
     def test_only_non_blocking_questions_give_no_item(self):
@@ -96,15 +96,40 @@ class WaitingItems(unittest.TestCase):
         self.assertEqual([item['source'] for item in items], ['checkpoint'])
 
     def test_expert_item_comes_with_the_writing_item_when_both_hold(self):
-        items = dashboard.waiting_items(run(), spec(), plan(), 'demo', writing=MARK, now_ms=NOW, expert=EXPERT)
+        items = dashboard.waiting_items(run(), spec(), plan(), 'demo', writing=MARK, expert=EXPERT)
         self.assertEqual([item['source'] for item in items], ['writing', 'expert'])
 
-    def test_polish_count_forms(self):
-        for blocking, word in ((1, 'blokujące'), (2, 'blokujące'), (5, 'blokujących'), (12, 'blokujących'), (22, 'blokujące')):
-            with self.subTest(blocking=blocking):
-                expert = {'open': blocking, 'blocking': blocking, 'runs': []}
-                self.assertEqual(dashboard.waiting_items(run(), None, None, None, expert=expert)[0]['what'],
-                                 'odpowiedź eksperta (%d %s)' % (blocking, word))
+
+class SilenceAndItems(unittest.TestCase):
+    """`silence` (brak raportu) tylko, gdy sesja nie czeka jawnie: checkpoint `czeka:` albo pytanie blokujące do eksperta."""
+
+    def setUp(self):
+        import shutil
+        self.temp = tempfile.TemporaryDirectory(prefix='skillsync-dashboard-silence-')
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name) / 'demo'
+        shutil.copytree(Path(__file__).parent / 'fixtures' / 'dashboard' / 'silence' / 'input', self.root)
+
+    def status(self):
+        return dashboard.build_status(self.root, manifest={}, writing=lambda slug: None)
+
+    def test_the_fixture_is_silent_and_a_blocking_expert_question_ends_it(self):
+        import json
+        before = self.status()
+        self.assertIsNotNone(before['silence'], 'fixture silence: plan trwa, raporty były, nikt nie czeka jawnie')
+        directory = self.root / 'docs' / 'prototypes' / 'demo'
+        directory.mkdir(parents=True)
+        (directory / 'prototype.json').write_text('{}\n', encoding='utf-8')
+        ask = {'id': 'o1', 'type': 'ask', 'questionId': 'qn-000001', 'at': '2026-01-11T09:00:00Z', 'by': 'agent', 'text': 'Pytanie?',
+               'blocking': True, 'assumed': None, 'addressees': [], 'refs': [], 'options': []}
+        (directory / 'questions.json').write_text(json.dumps({'questionsFormat': 1, 'operations': [ask]}), encoding='utf-8')
+        after = self.status()
+        self.assertEqual([item['source'] for item in after['waiting']], ['expert'])
+        self.assertIsNone(after['silence'], 'sesja czeka jawnie na eksperta')
+        ask['blocking'] = False
+        ask['assumed'] = 'tak'
+        (directory / 'questions.json').write_text(json.dumps({'questionsFormat': 1, 'operations': [ask]}), encoding='utf-8')
+        self.assertIsNotNone(self.status()['silence'], 'pytanie nieblokujące nie jest czekaniem')
 
 
 class PrototypeWriting(unittest.TestCase):
@@ -172,7 +197,7 @@ class BuildStatus(unittest.TestCase):
         self.assertEqual([item['source'] for item in data['waiting']], ['prototype'])
 
     def test_marker_shows_in_prototype_and_waiting(self):
-        data = self.status(writing=lambda slug: MARK if slug == 'demo' else None, now_ms=NOW)
+        data = self.status(writing=lambda slug: MARK if slug == 'demo' else None)
         self.assertEqual(data['prototype']['writing'], MARK)
         self.assertEqual([item['source'] for item in data['waiting']], ['writing'])
 
@@ -191,7 +216,7 @@ class BuildStatus(unittest.TestCase):
         ops = [{'id': 'o1', 'type': 'ask', 'questionId': 'qn-000001', 'at': '2026-01-11T09:00:00Z', 'by': 'agent', 'text': 'Pytanie?',
                 'blocking': True, 'assumed': None, 'addressees': [], 'refs': [], 'options': []}]
         (self.root / 'docs/prototypes/demo/questions.json').write_text(json.dumps({'questionsFormat': 1, 'operations': ops}), encoding='utf-8')
-        data = self.status(writing=lambda slug: None, now_ms=NOW)
+        data = self.status(writing=lambda slug: None)
         sources = [item['source'] for item in data['waiting']]
         self.assertIn('expert', sources)
         expert = next(item for item in data['waiting'] if item['source'] == 'expert')

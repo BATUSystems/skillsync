@@ -3089,16 +3089,20 @@
     };
 
     // Zwolnienie markera zapisu: tylko akceptujący i deweloper w trybie z kontem; serwer i tak sprawdza rolę.
+    let releasing = false;
     const releaseWriting = async () => {
+      if (releasing) return;
+      releasing = true;
       let result = null;
       try { result = await Remote.postJson('/prototypes/' + encodeURIComponent(Remote.slug()) + '/writing/release', {}); } catch (error) { result = { status: 0, json: null }; }
+      releasing = false;
       if (result && result.status === 200) Remote.state.writing = null;
       Remote.poll();
     };
 
     const writingButtons = (s) => {
       const user = isObject(s.user) ? s.user : null;
-      if (s.mode !== 'full' || !user || user.mustChange || !oneOf(RESTORE_ROLES, user.role)) return [];
+      if (s.mode !== 'full' || !user || user.mustChange || !oneOf(RESTORE_ROLES, user.role) || !isObject(s.server) || s.server.sourceWrites !== true) return [];
       return [{ label: 'Zwolnij', run: releaseWriting }];
     };
 

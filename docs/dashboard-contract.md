@@ -211,7 +211,7 @@ Dwie pozycje powstają z plików, bez znacznika w checkpoincie:
 ### `silence`
 
 `{since, thresholdMin}` (czas ostatniego raportu i próg w minutach, 35), gdy plan jest `in_progress`, są raporty i sesja
-nie czeka jawnie; w przeciwnym razie null. Minuty liczy konsument.
+nie czeka jawnie (żaden element `waiting` ze źródłem `checkpoint` ani `expert`); w przeciwnym razie null. Minuty liczy konsument.
 
 ### `approvals`
 

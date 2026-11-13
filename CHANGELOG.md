@@ -27,6 +27,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 - `prototype writing start` on a valid marker keeps `since` (the start of the writing) and `by` (unless `--by` is given) and sets the new field `renewedAt`; the window
   of at most one hour counts from `renewedAt`, so a long writing renewed again and again stays one marker. `writing` in `list`, the API and `status` has `renewedAt`.
+- `silence` (no report) is also off while a blocking question to an expert is open (the session waits explicitly); the card title gets "⏳ Czeka" only for items that wait for a person, not for the writing item.
 - The engine banner says "Agent jeszcze pisze ekrany (do HH:MM)" (the hour from `expiresAt`, browser time). The 409 `writing_in_progress` has a Polish message for people
   ("Agent jeszcze pisze ekrany tego prototypu (do HH:MM)…", host time of the server), so a copy of the engine without the banner shows readable text; the code and fields are unchanged.
 

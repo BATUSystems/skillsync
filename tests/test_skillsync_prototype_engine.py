@@ -49,7 +49,7 @@ def find_node():
 # Kopia: tests/fixtures/prototype/engine-v2/ (SOURCE.md). Strona Pythona: skillsync_workflow/prototype_server.py.
 
 ENGINE_V2_DIR = Path(__file__).resolve().parent / 'fixtures' / 'prototype' / 'engine-v2'
-ENGINE_V2_SHA256 = 'e6c4c95a92984296ef9a68cd49019984f48bde87723bff8fd0a0a3d6cd6538aa'
+ENGINE_V2_SHA256 = '5717753c8810f40174bb93f3af03ce4435350b192880e6c763321af7ea775af0'
 REFRESH_V2 = 'Odśwież kopię wg tests/fixtures/prototype/engine-v2/SOURCE.md i zaktualizuj ENGINE_V2_SHA256.'
 ENGINE_V2_PATH_ENV = 'SKILLSYNC_PROTOTYPE_ENGINE_V2_PATH'
 DIFF_SEEDS = (20261104, 7, 1234567, 99, 424242, 31337)
@@ -2508,6 +2508,8 @@ globalThis.fetch = async () => { requests += 1; const r = queue.shift(); return 
 const state = hook.Remote.state;
 state.mode = spec.mode || 'full';
 state.user = { login: 'a@example.com', role: spec.role || 'acceptor', mustChange: false };
+state.server = { sourceWrites: spec.sourceWrites !== false };
+if (spec.mustChange) state.user.mustChange = true;
 (async () => {
   const steps = [];
   for (let i = 0; i < (spec.responses || []).length; i += 1) {
@@ -2719,6 +2721,14 @@ class EngineV2WritingTests(unittest.TestCase):
                 self.assertEqual(step['banners'], ['writing'])
                 self.assertEqual(step['buttons'], buttons)
                 self.assertRegex(step['texts'][0], r'\(do \d\d:\d\d\)')
+
+    def test_release_button_needs_source_writes_and_a_password_that_is_set_and_full_mode(self):
+        mark = [writing_ops(writing=WRITING_MARK)]
+        for label, spec in (('bez zapisu źródeł', {'sourceWrites': False}), ('hasło do zmiany', {'mustChange': True}),
+                            ('tryb tylko do odczytu', {'mode': 'readonly'})):
+            with self.subTest(label):
+                step = self.run_harness(self.hooked, responses=mark, **spec)['steps'][0]
+                self.assertNotIn(1, step['buttons'])
 
     def test_banner_without_a_usable_expires_at_has_no_hour(self):
         for mark in ({'since': 1000}, {'since': 1000, 'expiresAt': 'x'}, {'since': 1000, 'expiresAt': 1.5}):

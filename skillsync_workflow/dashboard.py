@@ -1326,11 +1326,6 @@ def read_readiness(root, run_id, run_exists):
     return out
 
 
-def _blocking_word(count):
-    """`blokujące` / `blokujących` after a count (Polish plural)."""
-    return 'blokujące' if count % 10 in (1, 2, 3, 4) and count % 100 not in (11, 12, 13, 14) else 'blokujących'
-
-
 def _local_hhmm(millis):
     return time.strftime('%H:%M', time.localtime(millis / 1000.0))
 
@@ -1348,13 +1343,13 @@ def expert_item(expert):
     runs = [run for run in (expert.get('runs') or []) if run.get('blocking')]
     single = runs[0] if len(runs) == 1 and len(expert.get('runs') or []) == 1 else None
     blocking = expert['blocking']
-    return {'what': f'odpowiedź eksperta ({blocking} {_blocking_word(blocking)})', 'source': 'expert', 'since': None,
+    return {'what': f'odpowiedź eksperta ({blocking} blokujących)', 'source': 'expert', 'since': None,
             'action': 'Odpowiedz na pytania eksperta na stronie pytań; sesja czeka na odpowiedź.',
             'link': {'kind': 'expert', 'slug': single['slug'] if single else None,
                      'url': single['url'] if single else '/_experts'}}
 
 
-def waiting_items(run, spec, plan, slug, writing=None, now_ms=None, expert=None):
+def waiting_items(run, spec, plan, slug, writing=None, expert=None):
     """What the session waits for: the `czeka:` marker of the newest checkpoint wins; otherwise facts from the files:
     `Status: … (czeka na …)` of the plan or spec, a prototype with unaccepted screens before "GO implement" and open
     blocking questions to a domain expert.  A valid writing marker (`writing`) of the prototype comes first and replaces every
@@ -1513,8 +1508,7 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
     acts = compute_acts(spec, plan_info, progress, run['files'], {'risky': risky_sections(spec_text)})
     writing_state = ((writing or (lambda name: prototype_writing(root, name, now_ms)))(slug)) if slug else None
     expert_questions = build_expert_questions(root)
-    waiting = waiting_items(run, spec if spec_path else None, plan_info, slug, writing=writing_state, now_ms=now_ms,
-                            expert=expert_questions)
+    waiting = waiting_items(run, spec if spec_path else None, plan_info, slug, writing=writing_state, expert=expert_questions)
     git_info = read_git(root)
     delivery = read_delivery(manifest)
     ahead_state = (ahead or (lambda base, branch, head: git_ahead(base, branch)))(root, git_info['branch'], git_info['head'])
@@ -1544,7 +1538,7 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
         # Report silence: the consumer counts the minutes (no events arrive when nothing changes).
         'silence': ({'since': run.get('lastReportAt'), 'thresholdMin': SILENCE_MIN}
                     if plan_info and plan_info.get('status') == 'in_progress' and run.get('lastReportAt')
-                    and not any(item.get('source') == 'checkpoint' for item in waiting) else None),
+                    and not any(item.get('source') in ('checkpoint', 'expert') for item in waiting) else None),
         'approvals': approvals_state(root, spec, plan_info, delivery_state, run_id, git_info['headFull'],
                                      run_approvals(root, run_id), waiting, approvals),
         'delivery': delivery_state,

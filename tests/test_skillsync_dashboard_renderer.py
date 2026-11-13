@@ -906,10 +906,12 @@ function summary(m) {
     writing.prototype = Object.assign({}, writing.prototype, { slug: 'run-alpha', writing: { since: 1, expiresAt: 2, renewedAt: 1 } });
     writing.waiting = [{ what: 'agent pisze ekrany (do 14:25)', source: 'writing', since: '14:10', action: 'Agent pisze ekrany prototypu; akceptacja wróci, gdy skończy. Nic nie musisz robić.', link: { kind: 'prototype', slug: 'run-alpha' } }];
     const expert = clone(base);
-    expert.waiting = [{ what: 'odpowiedź eksperta (1 blokujące)', source: 'expert', since: null, action: 'Odpowiedz na pytania eksperta na stronie pytań; sesja czeka na odpowiedź.', link: { kind: 'expert', slug: 'run-alpha', url: '/_experts/run-alpha' } }];
+    expert.waiting = [{ what: 'odpowiedź eksperta (1 blokujących)', source: 'expert', since: null, action: 'Odpowiedz na pytania eksperta na stronie pytań; sesja czeka na odpowiedź.', link: { kind: 'expert', slug: 'run-alpha', url: '/_experts/run-alpha' } }];
     const many = clone(expert); many.waiting[0].link = { kind: 'expert', slug: null, url: '/_experts' };
     const hostile = clone(expert); hostile.waiting[0].link.url = '/_experts/../x';
-    ex.wux = { writing: items(writing, Object.assign({ prototypeUrl: (port, slug) => `http://127.0.0.1:${port}/${slug}/` }, origin)), expert: items(expert, origin), expertNoOrigin: items(expert), expertMany: items(many, origin),
+    const titleOf = (d) => { const m = mount(d, { now: NOW['questions'] }); return m.calls.titles[m.calls.titles.length - 1]; };
+    const wtitle = { writing: titleOf(writing), expert: titleOf(expert) };
+    ex.wux = { titles: wtitle, writing: items(writing, Object.assign({ prototypeUrl: (port, slug) => `http://127.0.0.1:${port}/${slug}/` }, origin)), expert: items(expert, origin), expertNoOrigin: items(expert), expertMany: items(many, origin),
       expertHostile: items(hostile, origin), expertBadOrigin: items(expert, { prototypeOrigin: () => 'javascript:alert(2)' }) };
   }
   out.extra = ex;
@@ -1208,13 +1210,15 @@ class RendererNodeTests(unittest.TestCase):
     def test_waiting_banner_writing_and_expert_items(self) -> None:
         w = self.out["extra"]["wux"]
         writing = w["writing"][0]
+        self.assertNotIn("⏳", w["titles"]["writing"], "praca sesji nie jest czekaniem na człowieka")
+        self.assertIn("⏳ Czeka", w["titles"]["expert"])
         self.assertIn("Sesja pracuje od 14:10: agent pisze ekrany (do 14:25)", writing["text"])
         self.assertNotIn("czeka na Ciebie", writing["text"])
         self.assertIn("Zniknie, gdy agent skończy pisać albo znacznik wygaśnie", writing["text"])
         self.assertIn("znacznik zapisu ekranów prototypu", writing["text"])
         self.assertEqual(writing["hrefs"], ["http://127.0.0.1:5130/run-alpha/"])
         expert = w["expert"][0]
-        self.assertIn("Sesja czeka na Ciebie: odpowiedź eksperta (1 blokujące)", expert["text"])
+        self.assertIn("Sesja czeka na Ciebie: odpowiedź eksperta (1 blokujących)", expert["text"])
         self.assertEqual(expert["hrefs"], ["http://127.0.0.1:5130/_experts/run-alpha"])
         self.assertEqual(expert["expertLinks"], 1)
         self.assertEqual(w["expertMany"][0]["hrefs"], ["http://127.0.0.1:5130/_experts"])

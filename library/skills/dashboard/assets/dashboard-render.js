@@ -376,9 +376,10 @@
         : runAct ? "Akt I: specyfikacja w przygotowaniu" : "Brak planu w realizacji";
       ui.title.textContent = title;
       const waiting = (d.waiting || []).filter((w) => !waitDone(d, w));
+      const waitsForYou = waiting.filter((w) => w.source !== "writing");   // „agent pisze ekrany” to praca sesji, nie czekanie na człowieka
       const progress = d.progress || {};
       if (typeof deps.onTitle === "function") {
-        deps.onTitle((waiting.length ? "⏳ Czeka · " : "") + (plan ? `${progress.percent}% · ` : specAct || runAct ? "Akt I · " : "") + title + " — status");
+        deps.onTitle((waitsForYou.length ? "⏳ Czeka · " : "") + (plan ? `${progress.percent}% · ` : specAct || runAct ? "Akt I · " : "") + title + " — status");
       }
       renderWaiting(d);
 
