@@ -61,7 +61,7 @@ skillsync prototype init . plan-zajec --requirements docs/wymagania/plan-zajec.m
 skillsync prototype ids . plan-zajec --check      # PASS: ekran przykładowy jest pomijany
 skillsync prototype index .                       # galeria docs/prototypes/index.html
 skillsync prototype user add . ewa.lis@szkola.example --role developer --password-prompt
-skillsync prototype serve .                       # http://127.0.0.1:4445/, Ctrl+C kończy
+skillsync prototype serve .                       # http://127.0.0.1:4445/ (port z `prototype.port`, jeśli ustawiono), Ctrl+C kończy
 ```
 
 - `init` nigdy nie nadpisuje istniejącego katalogu. Slug: małe litery, cyfry i myślniki (`plan-zajec`). Plik
@@ -510,7 +510,7 @@ akceptacje) pokazuje `skillsync prototype list .`.
 
 ## Serwer w sieci
 
-Domyślnie `serve` słucha na `127.0.0.1:4445` i odczyt jest publiczny: każdy, kto zna adres, widzi prototypy i
+Domyślnie `serve` słucha na `127.0.0.1:4445` (albo na porcie z klucza manifestu `prototype.port`, zob. [manifest](manifest.md)) i odczyt jest publiczny: każdy, kto zna adres, widzi prototypy i
 komentarze (z adresami e-mail autorów), a zalogowani piszą.
 
 ```bash

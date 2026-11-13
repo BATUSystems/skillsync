@@ -830,7 +830,7 @@ def _stop_on_sigterm(_signum, _frame):
     raise KeyboardInterrupt
 
 
-def _prototype_port(args, manifest) -> int:
+def _prototype_port(args, manifest, root=".") -> int:
     """Port of the prototype server: `--prototype-port`, else `prototype.port` of the manifest, else 5130."""
     flag = getattr(args, "prototype_port", None)
     if flag is not None:
@@ -838,7 +838,7 @@ def _prototype_port(args, manifest) -> int:
             raise ValueError(f"--prototype-port {flag}: podaj port 1024–65535.")
         return flag
     from .prototype import resolve_prototype_settings  # lazy: the prototype module is large
-    settings = resolve_prototype_settings((manifest or {}).get("prototype"), ".")
+    settings = resolve_prototype_settings((manifest or {}).get("prototype"), root)
     port_errors = [error for error in settings["errors"] if error.startswith("prototype.port")]
     if port_errors:
         raise ValueError(port_errors[0])
@@ -866,7 +866,7 @@ def serve_command(args) -> int:
             raise ValueError(f"Brak strony: żadna aktywna warstwa nie ma skills/{SKILL}/assets/index.html "
                              f"(warstwy: {', '.join(layerset.ids) or 'brak'}).")
         board = Board(root, plan, poll=max(0.2, args.poll), approvals=not args.no_approvals,
-                      prototype_port=_prototype_port(args, manifest),
+                      prototype_port=_prototype_port(args, manifest, root),
                       session_url=args.session_url, approve_hosts=tuple(args.approve_host),
                       read_hosts=tuple(getattr(args, "read_host", None) or ()), assets=assets,
                       descriptions=descriptions, manifest=manifest)

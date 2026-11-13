@@ -15,12 +15,20 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 ### Added
 
 - Klucz manifestu `prototype.port` (1024-65535) i flaga `dashboard serve --prototype-port`: port serwera prototypów, który sprawdza strona statusu (dotąd na sztywno 5130; domyślnie nadal 5130). `prototype serve` bierze ten klucz jako domyślny port (flaga `--port` wygrywa, bez klucza 4445), więc serwer i strona statusu zgadzają się co do portu; `doctor` waliduje wartość.
-- `answerLine` (`question show`/`wait`) podaje czas odpowiedzi lokalny z offsetem (`2026-11-13T13:30+01:00`) zamiast UTC z „Z”; dziennik, kontrakt `expert-questions/1` i `record` bez zmian (starsze wiersze z „Z” zostają poprawne).
 - `question show` ma pole `question` (pierwsze pytanie), a `question wait` pole `questions[]`: oba mają teraz `question`, `questions[]` i `answerLine` na górze (zmiana addytywna, żadne pole nie znika).
 - `question add`: pole `ignored` (utworzone pliki ignorowane przez git, czyli lock); `created` = `files` + `ignored` przy pierwszym użyciu.
-- `checkpoint`: komunikat o złym identyfikatorze nazywa pole (`--step`, `--run-id`) i wzorzec `[A-Za-z0-9][A-Za-z0-9_.-]{0,79}`.
 - `skillsync checkpoint` i `resume`: flaga `--manifest PLIK` (manifest projektu spoza repozytorium, np. dla publicznego rdzenia bez `.github/.skillsync.yaml`); bez flagi zachowanie bez zmian.
 - `prototype.public_url` (manifest) i zmienna `SKILLSYNC_PROTOTYPE_PUBLIC_URL` (wygrywa): adres serwera prototypów dla ekspertów za tunelem ssh. Używają go `prototype question url`, pole `url` w `question add` (także bez lokalnego serwera) i dodatkowa linia „Adres publiczny” komunikatu `prototype serve`; błędna zmienna to BLOCKED `invalid_public_url`.
+
+### Changed
+
+- Docs: `/_experts/<slug>` bez sesji to 302, zły slug 404 zawsze, nieistniejący poprawny slug po zalogowaniu to pusta strona; `plans[].run` i `run.id` strony statusu są `null` bez linii `Przebieg:` w planie (opis, bez zmiany zachowania).
+- `answerLine` (`question show`/`wait`) podaje czas odpowiedzi lokalny z offsetem (`2026-11-13T13:30+01:00`) zamiast UTC z „Z”; dziennik, kontrakt `expert-questions/1` i `record` bez zmian (starsze wiersze z „Z” zostają poprawne).
+- `checkpoint`: komunikat o złym identyfikatorze nazywa pole (`--step`, `--run-id`) i wzorzec `[A-Za-z0-9][A-Za-z0-9_.-]{0,79}`.
+
+### Breaking
+
+None.
 
 ## [1.3.0] - 2026-11-13
 

@@ -49,9 +49,6 @@ class ShapeTests(QuestionCase):
         self.assertEqual(shown['question']['id'], 'qn-bbbbbbbbbbbb')
 
 
-if __name__ == '__main__':
-    unittest.main()
-
 
 class FilesCreatedTests(QuestionCase):
     def test_created_is_files_to_commit_plus_ignored(self):
@@ -65,3 +62,6 @@ class FilesCreatedTests(QuestionCase):
         self.add()
         again = self.add()
         self.assertEqual((again['created'], again['files'], again['ignored']), ([], [], []))
+
+if __name__ == '__main__':
+    unittest.main()

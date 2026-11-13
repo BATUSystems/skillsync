@@ -42,6 +42,10 @@ class LocalMomentTests(unittest.TestCase):
         self.assertEqual(self.at('UTC', '2026-11-13T12:30:45.123Z'), '2026-11-13T12:30+00:00')
         self.assertEqual(self.at('Asia/Kolkata', '2026-11-13T23:00:00.000Z'), '2026-11-14T04:30+05:30')
 
+    def test_extreme_dates_and_naive_times_keep_the_utc_form_without_a_crash(self):
+        self.assertEqual(self.at('America/New_York', '0001-01-01T00:00:00.000Z'), '0001-01-01T00:00Z')
+        self.assertEqual(self.at('Europe/Warsaw', '2026-11-13T12:30:45'), '2026-11-13T12:30Z')
+
     def test_an_unreadable_time_keeps_the_utc_form(self):
         self.assertEqual(self.at('Europe/Warsaw', '2026-11-13T12:30:45Q'), '2026-11-13T12:30Z')
         self.assertEqual(self.at('Europe/Warsaw', ''), 'Z')

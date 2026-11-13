@@ -33,7 +33,8 @@ class SettingsTests(unittest.TestCase):
 
     def test_invalid_values_name_the_key(self):
         for value in ('ftp://a.example', 'proto.example.org', 'https://u:p@a.example', 'https://a.example/?x=1',
-                      'https://a.example/#f', 'https://', '', 5, True):
+                      'https://a.example/#f', 'https://', '', 5, True, 'https://a b.example', 'https://a.exa\nmple',
+                      'https://a.example\x1b[0m', 'https://a.example:0', 'https://a:', 'https://a.example:99999'):
             errors = self.errors(value)
             self.assertTrue(errors and errors[0].startswith('prototype.public_url'), (value, errors))
 
@@ -77,9 +78,21 @@ class QuestionUrlTests(QuestionCase):
 
 
 class ServeMessageTests(unittest.TestCase):
+    def lines(self, section, env):
+        return pt.public_address_lines(pt.resolve_prototype_settings(section, ROOT), env)
+
     def test_startup_line_names_the_public_address(self):
-        self.assertEqual(pt.public_address_note('https://proto.example.org'), 'Adres publiczny: https://proto.example.org')
-        self.assertIsNone(pt.public_address_note(None))
+        self.assertEqual(self.lines({'public_url': 'https://proto.example.org'}, {}),
+                         ['Adres publiczny: https://proto.example.org'])
+        self.assertEqual(self.lines({}, {}), [])
+        self.assertEqual(self.lines({'public_url': 'https://m.example'}, {ENV: 'https://e.example'}),
+                         ['Adres publiczny: https://e.example'])
+
+    def test_an_invalid_variable_is_a_warning_not_silence(self):
+        lines = self.lines({'public_url': 'https://m.example'}, {ENV: 'not a url'})
+        self.assertEqual(len(lines), 1)
+        self.assertTrue(lines[0].startswith('ostrzeżenie: ') and ENV in lines[0], lines)
+        self.assertNotIn('not a url', lines[0])
 
 
 if __name__ == '__main__':

@@ -614,11 +614,15 @@ def normalise_public_url(value, label):
     if not isinstance(value, str) or not value.strip():
         return None, f'{label}: must be an http(s) address, e.g. https://proto.example.org:8443'
     text = value.strip()
+    if any(ch.isspace() or unicodedata.category(ch).startswith('C') for ch in text):
+        return None, f'{label}: must not contain spaces or control characters'
     try:
         parts = urllib.parse.urlsplit(text)
-        parts.port  # noqa: B018  (raises ValueError for a bad port)
+        port = parts.port
     except ValueError:
         return None, f'{label}: not a valid address'
+    if (port is not None and not 1 <= port <= 65535) or (parts.netloc.endswith(':') and port is None):
+        return None, f'{label}: the port must be 1-65535'
     if parts.scheme not in ('http', 'https') or not parts.hostname:
         return None, f'{label}: must be an http(s) address with a host, e.g. https://proto.example.org:8443'
     if parts.username or parts.password or '@' in parts.netloc:
@@ -636,8 +640,13 @@ def public_url_of(settings, environ=None):
     return settings.get('public_url'), None
 
 
-def public_address_note(public):
-    return None if not public else f'Adres publiczny: {public}'
+def public_address_lines(settings, environ=None):
+    """Lines for the startup message of `prototype serve`: the public address, or a warning when the variable is invalid
+    (the warning names the variable, never its value)."""
+    public, error = public_url_of(settings, environ)
+    if error:
+        return [f'ostrzeżenie: {error}']
+    return [f'Adres publiczny: {public}'] if public else []
 
 
 def resolve_prototype_settings(section, root):
@@ -2450,9 +2459,8 @@ def serve_prototypes(root, manifest, args, err=None):
     for warning in notes:
         err.write(f'ostrzeżenie: {warning}\n')
     err.write(f'Serwer prototypów: {instance.url} (Ctrl+C kończy)\n')
-    public_note = public_address_note(public_url_of(settings)[0])
-    if public_note:
-        err.write(public_note + '\n')
+    for line in public_address_lines(settings):
+        err.write(line + '\n')
     err.flush()
     previous = _stop_on_sigterm()
     try:
@@ -3569,7 +3577,7 @@ def answer_moment(at):
         if parsed.tzinfo is None:
             raise ValueError(text)
         moment = parsed.astimezone()
-    except ValueError:
+    except (ValueError, OverflowError, OSError):
         return text[:16] + 'Z'
     offset = moment.strftime('%z')
     return moment.strftime('%Y-%m-%dT%H:%M') + offset[:3] + ':' + offset[3:]

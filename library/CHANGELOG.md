@@ -4,6 +4,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+### Changed
+- `skills/skillsync/SKILL.md`: klucze manifestu `prototype.public_url` i `prototype.port`, pola `ignored`, `question`/`questions[]`, `checkpoint --manifest`; `skills/feature/references/spec.md`: czas w wierszu `[EKSPERT]` lokalny z offsetem (`<RRRR-MM-DDTHH:MM±GG:MM>`); `skills/dashboard/SKILL.md`: `--prototype-port` i port z manifestu.
+- `skills/agent-runtime-pitfalls/SKILL.md`: pułapki zsh (`$S:Q1` to modyfikator `:Q`, pisz `"${S}:Q1"`) i stopka `[exited with code 0]` polecenia w tle.
+
 ## [1.3.0] - 2026-11-13
 
 ### Added
