@@ -52,6 +52,8 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ### Breaking
 
+None.
+
 ## [1.2.3] - 2026-11-13
 
 ### Added
