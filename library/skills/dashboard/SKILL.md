@@ -108,6 +108,18 @@ Zdanie do instrukcji/promptów (zgodne z formatem „zrobione / w toku / ryzyko�
 człowieka, dopisz do checkpointu segment `czeka: <GO plan|GO implement|akceptacja prototypu <slug>|odpowiedź Q1–Qn|CP|READY|TAK/NIE <run-id>/P<n>>`;
 następny checkpoint po wznowieniu pisz już bez `czeka:`.”*
 
+### Toast „szacowany koniec” (`eta`)
+
+Przed długą operacją sesja dopisuje do checkpointu segment `eta: <operacja> do HH:MM` (godzina z `date`):
+
+```
+- 14:05 w toku: F1.2; eta: rysowanie 12 ekranów prototypu do 15:10
+```
+
+Baner pokazuje toast „<operacja>, koniec ok. 15:10”, a po przekroczeniu „<operacja>: przekroczono ETA o N min”. Przy
+przekroczeniu sesja dopisuje nowy checkpoint z nowym `eta:` (bez zatrzymywania pracy). Toast znika po następnym checkpoincie
+bez `eta:`, po checkpoincie z `czeka:` i po zamknięciu planu; widz widzi go tak samo. Pole JSON: sekcja `eta` kontraktu.
+
 ### Przyciski zgód i słów
 
 **Reguła:** agent nie wywołuje zgód. Zgodę zapisuje wyłącznie użytkownik (przycisk na stronie albo

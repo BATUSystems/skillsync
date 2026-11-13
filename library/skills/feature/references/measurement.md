@@ -13,6 +13,20 @@ Raport „jedna linia na podkrok”: po każdym podkroku `Fn.k` dopisz jedną li
 co nastąpi pierwsze. Ta linia wypełnia istniejący format `- HH:MM zrobione: …` (podkrok i wynik albo sha w `zrobione`), a nie zastępuje go.
 Raport nie zastępuje rekordu `skillsync checkpoint` (niżej) ani odwrotnie.
 
+## Szacunek przed długą operacją: `eta:`
+
+Przed startem długiej operacji (spec, prototyp i jego iteracje, plan, każdy krok implementacji, długi bieg testów) oszacuj, ile
+potrzebujesz, i dopisz linię raportu z segmentem `eta: <operacja> do HH:MM`; godzinę policz z `date +%H:%M`, nigdy z szacunku:
+
+```
+- 14:05 w toku: F1.2; eta: rysowanie 12 ekranów prototypu do 15:10
+```
+
+Strona statusu pokazuje na toaście „<operacja>, koniec ok. 15:10”, a po terminie „przekroczono ETA o N min”, więc człowiek
+nie musi pytać „jak idzie?”. Gdy operacja przekroczy ETA, NIE zatrzymuj pracy: przy najbliższym raporcie dopisz nowy segment
+z nowym terminem. Po zakończeniu następna linia raportu jest bez `eta:` (toast znika; znika też przy `czeka:` i po zamknięciu planu).
+Szacunek ma być uczciwy, nie optymistyczny: lepiej podać późniejszą godzinę i skończyć wcześniej.
+
 ## Checkpoint po każdym wyniku (obowiązkowe)
 
 Rekord zapisuje orkiestrator, nie równolegle, po każdym wyniku kroku, także `FAIL`, `BLOCKED` i `NOT_RUN`:

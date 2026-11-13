@@ -684,6 +684,19 @@
         url ? h("a", { class: "wait-go", href: url, target: "_blank", rel: "noopener",
           on: { click: linkClick("experts", runs.length === 1 ? String(runs[0].slug || "") : "", url) } }, "Odpowiedz na pytania") : null);
     }
+    // Toast „szacowany koniec” (`d.eta` z `eta:` najnowszego checkpointu): stan, nie wynik akcji, więc bez timera i bez „×”. Serwer nie czyta
+    // zegara, więc przekroczenie liczy `now` względem `untilIso` (bez `untilIso` tylko godzina). Tylko tekst z `h()`.
+    function etaText(d) {
+      const e = d && d.eta;
+      if (!e || typeof e.operation !== "string" || !e.operation || typeof e.until !== "string") return null;
+      const late = e.untilIso ? Math.floor((now() - Date.parse(e.untilIso)) / 60000) : 0;
+      return late >= 1 ? `${e.operation}: przekroczono ETA o ${late} min` : `${e.operation}, koniec ok. ${e.until}`;
+    }
+    function etaToast(d) {
+      const text = etaText(d);
+      st.etaText = text;
+      return text ? h("div", { class: "wait-item is-info", "data-eta-toast": "" }, icon("i-clock"), h("div", { class: "wait-txt" }, h("strong", null, text))) : null;
+    }
     function renderWaiting(d) {
       const el = ui.waitBanner;
       const quiet = silenceMinutes(d);
@@ -699,9 +712,10 @@
         n.ok ? wordTools(d, "dalej") : null,
         h("button", { class: "wait-x", type: "button", "data-notice-close": "", "aria-label": "Zamknij", on: { click: () => { setNoticeState(null); render(); } } }, "×")) : null;
       const qnote = questionsToast(d);
-      if (!items.length && !note && !qnote) { el.hidden = true; fill(el); return; }
+      const enote = etaToast(d);
+      if (!items.length && !note && !qnote && !enote) { el.hidden = true; fill(el); return; }
       el.hidden = false;
-      fill(el, qnote, note, items.map((w) => {
+      fill(el, enote, qnote, note, items.map((w) => {
         let link = null;
         if (w.link && w.link.kind === "doc") {
           link = h("button", { class: "wait-go", type: "button", "data-wait-doc": w.link.path, on: { click: () => openDoc(w.link.path) } }, `Otwórz ${baseName(w.link.path)}`);
@@ -833,6 +847,7 @@
       if (ui.ago) ui.ago.textContent = fmtAgo(ui.ago.getAttribute("data-iso"));
       const open = (d.waiting || []).filter((w) => !waitDone(d, w)).length;
       if (open !== st.waitOpen) { st.waitOpen = open; render(); return; } // zgoda „zestarzała się” bez nowych danych z serwera
+      if (etaText(d) !== (st.etaText ?? null)) { renderWaiting(d); return; }   // ETA zmienia się z zegarem (przekroczenie co minutę)
       const quiet = silenceMinutes(d);
       if ((quiet > 0) !== Boolean(st.silenceShown) || (quiet && quiet !== st.silenceMin)) { st.silenceMin = quiet; renderWaiting(d); }
     }

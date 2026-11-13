@@ -4,6 +4,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+### Added
+- `skills/dashboard`: toast „szacowany koniec” (`eta:` w checkpoincie, pole `eta` JSON); `skills/feature`, `skills/prototype`: reguła „szacuj przed startem długiej operacji i zapisz `eta: <operacja> do HH:MM` w checkpoincie, aktualizuj przy przekroczeniu, czas z `date`”.
+
 ## [1.3.0] - 2026-11-13
 
 ### Added

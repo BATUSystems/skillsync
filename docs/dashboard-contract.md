@@ -106,6 +106,7 @@ projektu lub przebiegu). Raport komend zapisujących i `metrics --json` to JSON 
 | `assumptions` | obiekt | NOWE: założenia ze speca |
 | `blockingQuestions` | obiekt | NOWE: pytania blokujące ze speca |
 | `expertQuestions` | obiekt | NOWE: otwarte pytania do eksperta ze wszystkich przebiegów |
+| `eta` | obiekt albo null | NOWE (addytywnie, `schema: 1`): szacowany koniec bieżącej operacji z najnowszego checkpointu (`eta:`) |
 | `substeps` | tablica | NOWE: podkroki `Fn.k` z czasem |
 | `timing` | obiekt | NOWE (addytywnie, `schema: 1`): czas pracy i czas czekania na człowieka per krok i per faza planu |
 
@@ -302,6 +303,28 @@ bez dowiązań symbolicznych, `prototype.json` obok, plik do 2 MiB (serwer zapis
   akcji, więc bez timera i bez „×”; znika, gdy `open` spadnie do `0`. Odnośnik „Odpowiedz na pytania” prowadzi do
   `/_experts/<slug>` przy jednym przebiegu albo do `/_experts` przy kilku, o ile host zna adres serwera prototypów
   (`deps.prototypeOrigin(port)`); bez niego toast jest samym tekstem. Pole nie zależy od `approvals.here` ani `viewer`.
+
+### `eta`
+
+Źródło: segment `eta: <operacja> do HH:MM` NAJNOWSZEGO checkpointu przebiegu (`.skillsync/runs/<run>/checkpoints.md`), w tej
+samej linii co `zrobione: …; w toku: …` (segmenty rozdziela `;`):
+
+```
+- 14:05 w toku: F1.2; eta: rysowanie 12 ekranów prototypu do 15:10
+```
+
+Agent pisze segment PRZED długą operacją (spec, prototyp i jego iteracje, plan, krok implementacji) i nowym checkpointem
+aktualizuje go po przekroczeniu (bez zatrzymywania pracy); czas bierze z `date`, nie z szacunku zegara.
+
+- `{operation, until, untilIso, since}`: `operation` to tekst przed ` do `, `until` to `HH:MM`, `since` to czas checkpointu,
+  `untilIso` to pełna data z godziną rozwiązana jak w `timing` (start przebiegu `RUN=` plus przejścia przez północ;
+  szacunek o ponad 12 h wcześniejszy niż checkpoint liczy się jako następny dzień); bez startu przebiegu `untilIso` jest null.
+- `eta` jest null, gdy najnowszy checkpoint nie ma segmentu `eta:` (albo ma `eta: -`, nieczytelną godzinę, pustą operację),
+  ma `czeka:` (sesja czeka na człowieka, nie pracuje) albo plan jest `done`/`implemented`. Nowszy checkpoint zastępuje
+  wcześniejsze szacunki.
+- Serwer nie czyta zegara: „przekroczono” liczy konsument z `untilIso`. Renderer pokazuje toast „<operacja>, koniec ok.
+  HH:MM”, a po przekroczeniu „<operacja>: przekroczono ETA o N min” (stan, nie wynik akcji: bez timera i bez „×”; widz widzi
+  go tak samo). Pole nie zależy od `approvals.here` ani `viewer`.
 
 ### `substeps[]`
 
