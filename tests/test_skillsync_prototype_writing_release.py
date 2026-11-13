@@ -79,6 +79,46 @@ class ReleasePermissionTests(ReleaseCase):
         self.assertTrue(self.marker_exists())
 
 
+class ReleaseMultiRoleAndEdgeTests(ReleaseCase):
+    def test_roles_are_resolved_like_restore_by_the_highest_one(self):
+        users = ps.UsersFile(self.users_path, iterations=ITER, clock=self.clock)
+        ps.add_user(users, 'ea@example.com', password=PW_EA, roles=['expert', 'acceptor'])
+        ps.add_user(users, 'ec@example.com', password=PW_EC, roles=['expert', 'commenter'])
+        put_marker(self.demo, self.clock)
+        self.check(self.release(self.client('ec@example.com', PW_EC)), 403, 'forbidden')
+        self.assertTrue(self.marker_exists())
+        self.check(self.release(self.client('ea@example.com', PW_EA)), 200)
+        self.assertFalse(self.marker_exists())
+
+    def test_a_directory_in_place_of_the_marker_is_left_alone(self):
+        os.mkdir(os.path.join(self.demo, ps.WRITING_MARKER))
+        self.assertEqual(self.check(self.release(self.acc), 200).json, {'writing': None, 'released': False})
+        self.assertTrue(os.path.isdir(os.path.join(self.demo, ps.WRITING_MARKER)))
+
+    def test_slugs_that_try_to_leave_the_root_are_404_and_nothing_is_removed(self):
+        put_marker(self.demo, self.clock)
+        for slug in ('..', '%2e%2e', '..%2Fdemo', '%252e%252e', 'demo%2F..%2Fdemo', 'de%00mo'):
+            with self.subTest(slug=slug):
+                response = self.acc.post('/_api/v1/prototypes/%s/writing/release' % slug, {})
+                self.assertIn(response.status, (400, 404))
+        self.assertTrue(self.marker_exists())
+
+    def test_body_is_required_json(self):
+        put_marker(self.demo, self.clock)
+        self.check(self.acc.post(RELEASE_URL % 'demo', None), 400)
+        self.assertTrue(self.marker_exists())
+
+    def test_released_is_false_for_an_expired_marker_file_that_is_still_there(self):
+        put_marker(self.demo, self.clock, ttl=60)
+        self.clock.advance(61)
+        self.assertTrue(self.marker_exists())
+        self.assertEqual(self.check(self.release(self.acc), 200).json['released'], True)   # the file existed and was removed
+
+    def test_release_does_not_leak_the_author(self):
+        put_marker(self.demo, self.clock)
+        self.assertNotIn(BY, self.check(self.release(self.acc), 200).text)
+
+
 class ReleaseBehaviourTests(ReleaseCase):
     def test_without_a_marker_it_is_released_false(self):
         response = self.check(self.release(self.acc), 200)
@@ -138,6 +178,23 @@ class ReleaseWithoutSourceWritesTests(ReleaseCase):
 class PolishConflictMessageTests(ReleaseCase):
     def hhmm(self, millis):
         return time.strftime('%H:%M', time.localtime(millis / 1000))
+
+    @unittest.skipUnless(hasattr(time, 'tzset'), 'brak time.tzset (Windows)')
+    def test_the_hour_follows_the_host_time_zone(self):
+        old = os.environ.get('TZ')
+        os.environ['TZ'] = 'Pacific/Kiritimati'   # UTC+14: a different hour than the test host has in practice
+        time.tzset()
+        try:
+            marker = put_marker(self.demo, self.clock)
+            body = self.check(self.accept(self.acc), 409, 'writing_in_progress').json
+            expected = time.strftime('%H:%M', time.gmtime(marker['expiresAt'] / 1000 + 14 * 3600))
+            self.assertIn('do ' + expected, body['message'])
+        finally:
+            if old is None:
+                os.environ.pop('TZ', None)
+            else:
+                os.environ['TZ'] = old
+            time.tzset()
 
     def test_accept_409_has_a_human_message_with_the_hour(self):
         marker = put_marker(self.demo, self.clock)

@@ -97,6 +97,22 @@ class WritingHelperTests(unittest.TestCase):
         self.assertEqual(value['since'], NOW)   # more than an hour after the start, still the same writing
         self.assertGreater(value['expiresAt'] - value['since'], 3_600_000)
 
+    def test_a_clock_that_went_back_does_not_invalidate_the_renewed_marker(self):
+        ps.write_writing(self.dir, NOW, 900, 'agent')
+        ps.write_writing(self.dir, NOW - 10_000, 900)   # NTP step back by 10 s
+        value = ps.read_writing(self.dir, NOW - 10_000)
+        self.assertIsNotNone(value)
+        self.assertLessEqual(value['since'], value['renewedAt'])
+
+    def test_times_outside_a_millisecond_range_are_not_a_marker(self):
+        for extra in ({'since': -1}, {'since': -10 ** 400}, {'since': 2 ** 60}, {'expiresAt': 2 ** 60},
+                      {'since': 10 ** 400, 'renewedAt': 10 ** 400}):
+            with self.subTest(extra=extra):
+                value = {'version': 1, 'since': NOW, 'expiresAt': NOW + 900_000, 'by': 'agent'}
+                value.update(extra)
+                self.put(json.dumps(value))
+                self.assertIsNone(ps.read_writing(self.dir, NOW + 1))
+
     def test_file_without_renewed_at_reads_it_as_since(self):
         self.put(marker_text())
         self.assertEqual(ps.read_writing(self.dir, NOW + 1)['renewedAt'], NOW)

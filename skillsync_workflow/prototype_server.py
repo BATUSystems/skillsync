@@ -3682,6 +3682,7 @@ WRITING_MARKER = '.writing.json'
 WRITING_MAX_BYTES = 4096
 WRITING_MAX_WINDOW_MS = 3600000
 WRITING_CLOCK_SKEW_MS = 60000
+WRITING_MAX_TIME = 2 ** 53
 WRITING_TTL_MIN = 60
 WRITING_TTL_MAX = 3600
 WRITING_TTL_DEFAULT = 900
@@ -3733,6 +3734,8 @@ def read_writing(directory, now_ms):
         now_ms = int(now_ms)
     if not _is_int(since) or not _is_int(expires) or not _is_int(now_ms):
         return None
+    if not 0 <= since <= WRITING_MAX_TIME or not 0 <= expires <= WRITING_MAX_TIME:
+        return None   # not a time in milliseconds (also keeps the number inside what a JSON writer can print)
     renewed = since
     if 'renewedAt' in value:
         renewed = value['renewedAt']
@@ -3754,7 +3757,7 @@ def write_writing(directory, now_ms, ttl_s, by=None):
     Returns `{since, expiresAt, renewedAt, by}`."""
     now_ms = int(now_ms)
     current = read_writing(directory, now_ms)
-    since = current['since'] if current is not None else now_ms
+    since = min(current['since'], now_ms) if current is not None else now_ms   # a clock that went back keeps since <= renewedAt
     who = by if by is not None else (current['by'] if current is not None else 'agent')
     payload = {'version': 1, 'since': since, 'renewedAt': now_ms, 'expiresAt': now_ms + int(ttl_s) * 1000, 'by': who}
     data = (js_stringify(payload) + '\n').encode('utf-8')

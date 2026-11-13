@@ -3081,6 +3081,27 @@
 
     const plural = (n) => (n === 1 ? 'wpis' : (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? 'wpisy' : 'wpisów'));
 
+    // „do HH:MM” z `expiresAt` markera zapisu (czas lokalny przeglądarki); bez poprawnej liczby samo zdanie.
+    const writingText = (writing) => {
+      const until = isInt(writing.expiresAt, 0) ? new Date(writing.expiresAt) : null;
+      const hhmm = until && !isNaN(until.getTime()) ? until.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' }) : '';
+      return 'Agent jeszcze pisze ekrany' + (hhmm ? ' (do ' + hhmm + ')' : '') + '. Akceptacja wróci sama, gdy skończy.';
+    };
+
+    // Zwolnienie markera zapisu: tylko akceptujący i deweloper w trybie z kontem; serwer i tak sprawdza rolę.
+    const releaseWriting = async () => {
+      let result = null;
+      try { result = await Remote.postJson('/prototypes/' + encodeURIComponent(Remote.slug()) + '/writing/release', {}); } catch (error) { result = { status: 0, json: null }; }
+      if (result && result.status === 200) Remote.state.writing = null;
+      Remote.poll();
+    };
+
+    const writingButtons = (s) => {
+      const user = isObject(s.user) ? s.user : null;
+      if (s.mode !== 'full' || !user || user.mustChange || !oneOf(RESTORE_ROLES, user.role)) return [];
+      return [{ label: 'Zwolnij', run: releaseWriting }];
+    };
+
     const describe = () => {
       const s = Remote.state;
       const rows = [];
@@ -3091,7 +3112,7 @@
       } else if (s.stale && s.mode !== 'file') {
         rows.push({ key: 'stale', role: 'alert', text: 'Prototyp zmieniono, przeładuj.', buttons: [{ label: 'Przeładuj', run: () => location.reload() }] });
       } else if (isObject(s.writing) && s.mode !== 'file' && !PageState.embedded) {
-        rows.push({ key: 'writing', role: 'status', text: TEXTS.writing, buttons: [] });
+        rows.push({ key: 'writing', role: 'status', text: writingText(s.writing), buttons: writingButtons(s) });
       }
       if (s.pollProblem === 'invalid_log' || s.pollProblem === 'needs_migration' || (s.pollProblem && s.mode === 'full' && !s.loaded)) {
         rows.push({ key: 'poll', role: 'alert', text: s.pollProblem === 'needs_migration' ?
