@@ -52,7 +52,7 @@ WAIT_RE = re.compile(r'(?:^|;)\s*czeka\s*:\s*(?P<seg>[^;]+)', re.IGNORECASE)
 WAIT_NONE = {'', '-', '—', 'nic', 'brak', 'nie'}
 # "The session works until HH:MM" in a checkpoint: segment `eta: <operation> do HH:MM` (like `czeka:`, split by `;`).
 ETA_RE = re.compile(r'(?:^|;)\s*eta\s*:\s*(?P<seg>[^;]+)', re.IGNORECASE)
-ETA_AT_RE = re.compile(r'^(?P<operation>.*?\S)\s+do\s+(?P<time>\d{1,2}:\d{2})\s*\.?\s*$', re.IGNORECASE)
+ETA_AT_RE = re.compile(r'^(?P<operation>.*?\S)\s+do\s+(?P<time>\d{1,2}:\d{2})\.?$', re.IGNORECASE)
 STATUS_WAIT_RE = re.compile(r'czeka\s+na\s+(?P<what>[^);,]+)', re.IGNORECASE)
 ID_FIND_RE = re.compile(rf'(?<![\w-]){STEP_ID}(?![\w-])')
 SHA_RE = re.compile(r'^[0-9a-f]{7,40}$')

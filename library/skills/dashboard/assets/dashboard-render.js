@@ -690,7 +690,8 @@
       const e = d && d.eta;
       if (!e || typeof e.operation !== "string" || !e.operation || typeof e.until !== "string") return null;
       const late = e.untilIso ? Math.floor((now() - Date.parse(e.untilIso)) / 60000) : 0;
-      return late >= 1 ? `${e.operation}: przekroczono ETA o ${late} min` : `${e.operation}, koniec ok. ${e.until}`;
+      const over = late >= 60 ? `${Math.floor(late / 60)} h ${late % 60} min` : `${late} min`;
+      return late >= 1 ? `${e.operation}: przekroczono ETA o ${over}` : `${e.operation}, koniec ok. ${e.until}`;
     }
     function etaToast(d) {
       const text = etaText(d);

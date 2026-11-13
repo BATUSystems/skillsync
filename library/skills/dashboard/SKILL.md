@@ -116,8 +116,8 @@ Przed długą operacją sesja dopisuje do checkpointu segment `eta: <operacja> d
 - 14:05 w toku: F1.2; eta: rysowanie 12 ekranów prototypu do 15:10
 ```
 
-Baner pokazuje toast „<operacja>, koniec ok. 15:10”, a po przekroczeniu „<operacja>: przekroczono ETA o N min”. Przy
-przekroczeniu sesja dopisuje nowy checkpoint z nowym `eta:` (bez zatrzymywania pracy). Toast znika po następnym checkpoincie
+Baner pokazuje toast „<operacja>, koniec ok. 15:10”, a po przekroczeniu „<operacja>: przekroczono ETA o N min”. Dopóki operacja
+trwa, każda linia raportu powtarza `eta:` (czytana jest tylko najnowsza); przy przekroczeniu sesja podaje nowy termin (bez zatrzymywania pracy). Toast znika po następnym checkpoincie
 bez `eta:`, po checkpoincie z `czeka:` i po zamknięciu planu; widz widzi go tak samo. Pole JSON: sekcja `eta` kontraktu.
 
 ### Przyciski zgód i słów

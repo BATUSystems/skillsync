@@ -313,8 +313,8 @@ samej linii co `zrobione: …; w toku: …` (segmenty rozdziela `;`):
 - 14:05 w toku: F1.2; eta: rysowanie 12 ekranów prototypu do 15:10
 ```
 
-Agent pisze segment PRZED długą operacją (spec, prototyp i jego iteracje, plan, krok implementacji) i nowym checkpointem
-aktualizuje go po przekroczeniu (bez zatrzymywania pracy); czas bierze z `date`, nie z szacunku zegara.
+Agent pisze segment PRZED długą operacją (spec, prototyp i jego iteracje, plan, krok implementacji), powtarza go w każdej linii
+raportu aż do końca operacji (czytana jest tylko najnowsza linia) i po przekroczeniu podaje w nowej linii nowy termin (bez zatrzymywania pracy); czas bierze z `date`, nie z szacunku zegara.
 
 - `{operation, until, untilIso, since}`: `operation` to tekst przed ` do `, `until` to `HH:MM`, `since` to czas checkpointu,
   `untilIso` to pełna data z godziną rozwiązana jak w `timing` (start przebiegu `RUN=` plus przejścia przez północ;
@@ -323,7 +323,7 @@ aktualizuje go po przekroczeniu (bez zatrzymywania pracy); czas bierze z `date`,
   ma `czeka:` (sesja czeka na człowieka, nie pracuje) albo plan jest `done`/`implemented`. Nowszy checkpoint zastępuje
   wcześniejsze szacunki.
 - Serwer nie czyta zegara: „przekroczono” liczy konsument z `untilIso`. Renderer pokazuje toast „<operacja>, koniec ok.
-  HH:MM”, a po przekroczeniu „<operacja>: przekroczono ETA o N min” (stan, nie wynik akcji: bez timera i bez „×”; widz widzi
+  HH:MM”, a po przekroczeniu „<operacja>: przekroczono ETA o N min” (od 60 min „o H h M min”) (stan, nie wynik akcji: bez timera i bez „×”; widz widzi
   go tak samo). Pole nie zależy od `approvals.here` ani `viewer`.
 
 ### `substeps[]`

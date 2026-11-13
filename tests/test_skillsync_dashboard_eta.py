@@ -56,6 +56,23 @@ class BuildEta(unittest.TestCase):
         chrono = cps(('14:05', 'eta: krok do 14:00'))
         self.assertEqual(dashboard.build_eta('2026-11-13T09:00:00+01:00', chrono, None)['untilIso'], '2026-11-13T14:00:00+01:00')
 
+    def test_implemented_plan_and_empty_wait_value(self):
+        self.assertIsNone(dashboard.build_eta(START, cps(('09:00', 'eta: plan do 09:30')), 'implemented'))
+        self.assertEqual(dashboard.build_eta(START, cps(('09:00', 'czeka: -; eta: plan do 09:30')), 'in_progress')['until'], '09:30')
+
+    def test_first_segment_wins_and_a_semicolon_in_the_operation_is_not_an_estimate(self):
+        self.assertEqual(dashboard.parse_eta('eta: a do 10:00; eta: b do 11:00'), ('a', '10:00'))
+        self.assertIsNone(dashboard.parse_eta('w toku: F1 eta: x do 10:00'))  # segment musi zaczynać się po `;`
+
+    def test_the_twelve_hour_boundary(self):
+        base = '2026-11-13T09:00:00+01:00'
+        past = dashboard.build_eta(base, cps(('20:00', 'eta: x do 08:00')), None)['untilIso']      # 12 h w przeszłości: ten sam dzień
+        nextday = dashboard.build_eta(base, cps(('20:00', 'eta: x do 07:59')), None)['untilIso']   # ponad 12 h: następny dzień
+        self.assertEqual((past, nextday), ('2026-11-13T08:00:00+01:00', '2026-11-14T07:59:00+01:00'))
+
+    def test_a_long_run_of_spaces_after_the_time_is_not_an_estimate_and_is_fast(self):
+        self.assertIsNone(dashboard.parse_eta('eta: x do 1:23' + ' ' * 50000 + 'y'))
+
     def test_without_a_run_start_only_the_clock_is_given(self):
         found = dashboard.build_eta(None, cps(('09:00', 'eta: plan do 09:30')), 'in_progress')
         self.assertEqual((found['until'], found['untilIso']), ('09:30', None))

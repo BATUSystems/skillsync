@@ -79,7 +79,7 @@ i zgodzie programisty) pytanie domenowe idzie do eksperta przez `skillsync proto
 [spec](references/spec.md#klasa-ekspert-pytania-do-eksperta-domenowego)).
 
 **Szacunek czasu.** Przed długą operacją (spec, prototyp, plan, krok implementacji) zapisz w raporcie postępu `eta: <operacja> do HH:MM`
-(godzina z `date`) i aktualizuj przy przekroczeniu bez zatrzymywania pracy: toast strony statusu pokazuje koniec (zob.
+(godzina z `date`) i powtarzaj go w każdej linii raportu, aż operacja się skończy (strona czyta tylko najnowszą linię); przy przekroczeniu podaj nowy termin bez zatrzymywania pracy: toast strony statusu pokazuje koniec (zob.
 [measurement](references/measurement.md#szacunek-przed-długą-operacją-eta)).
 
 **Czekanie na zgodę.** Przy każdym STOP na „GO plan”, „GO implement”, „CP” albo „READY” zapisz w checkpoincie

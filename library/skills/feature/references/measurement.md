@@ -23,8 +23,9 @@ potrzebujesz, i dopisz linię raportu z segmentem `eta: <operacja> do HH:MM`; go
 ```
 
 Strona statusu pokazuje na toaście „<operacja>, koniec ok. 15:10”, a po terminie „przekroczono ETA o N min”, więc człowiek
-nie musi pytać „jak idzie?”. Gdy operacja przekroczy ETA, NIE zatrzymuj pracy: przy najbliższym raporcie dopisz nowy segment
-z nowym terminem. Po zakończeniu następna linia raportu jest bez `eta:` (toast znika; znika też przy `czeka:` i po zamknięciu planu).
+nie musi pytać „jak idzie?”. Strona czyta tylko NAJNOWSZĄ linię, więc dopóki operacja trwa, KAŻDA linia raportu (także ta wymagana co 30 minut albo po podkroku)
+powtarza `eta:`. Gdy operacja przekroczy ETA, NIE zatrzymuj pracy: w najbliższym raporcie podaj nowy termin. Po zakończeniu
+operacji następna linia raportu jest bez `eta:` (toast znika; znika też przy `czeka:` i po zamknięciu planu).
 Szacunek ma być uczciwy, nie optymistyczny: lepiej podać późniejszą godzinę i skończyć wcześniej.
 
 ## Checkpoint po każdym wyniku (obowiązkowe)
