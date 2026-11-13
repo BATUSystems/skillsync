@@ -434,7 +434,7 @@ Różnice rozstrzygnięte świadomie:
 
 ## Serwer (`dashboard serve`)
 
-`skillsync dashboard serve <projekt> [--port 5140] [--host 127.0.0.1] [--approve-host H ...] [--read-host H ...] [--no-approvals] [--plan <rel>]
+`skillsync dashboard serve <projekt> [--port 5140] [--prototype-port N] [--host 127.0.0.1] [--approve-host H ...] [--read-host H ...] [--no-approvals] [--plan <rel>]
 [--session-url https://…] [--layer id=ścieżka ...]` (moduł `skillsync_workflow/dashboard_http.py`, ładowany leniwie) działa
 na pierwszym planie; Ctrl+C albo SIGTERM kończy go raportem `{"status": "PASS", "url", "stopped": true}` (kod `0`). Odmowa
 startu = `BLOCKED` (kod `2`): port spoza 5100–5199 albo zakazany (4444–4448, 9222, 9333), brak manifestu, brak

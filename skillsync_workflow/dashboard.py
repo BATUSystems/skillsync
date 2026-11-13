@@ -1676,6 +1676,8 @@ def register(subparsers):
     serve.add_argument('--plan', help='plan relative to the project (default: chosen automatically, switchable on the page)')
     serve.add_argument('--port', type=int, default=DEFAULT_PORT,
                        help=f'port (default {DEFAULT_PORT}, range {PORT_MIN}-{PORT_MAX}; one port per project)')
+    serve.add_argument('--prototype-port', type=int, default=None,
+                       help=f'port of the prototype server the page checks (default: prototype.port of the manifest, else {PROTOTYPE_PORT})')
     serve.add_argument('--host', default='127.0.0.1',
                        help='listen address (default 127.0.0.1; 0.0.0.0 = all interfaces; other devices also need --approve-host or --read-host)')
     serve.add_argument('--approve-host', action='append', default=[], metavar='NAME',

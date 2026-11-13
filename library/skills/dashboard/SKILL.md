@@ -16,7 +16,7 @@ przycisku (niżej: „Przyciski zgód”).
 ## Uruchomienie
 
 ```bash
-skillsync dashboard serve <projekt> [--port 5140] [--host 127.0.0.1] [--approve-host NAZWA ...] [--read-host NAZWA ...] [--no-approvals] [--plan docs/plans/<plik>.md] [--session-url https://…] [--layer id=ścieżka ...]
+skillsync dashboard serve <projekt> [--port 5140] [--prototype-port N] [--host 127.0.0.1] [--approve-host NAZWA ...] [--read-host NAZWA ...] [--no-approvals] [--plan docs/plans/<plik>.md] [--session-url https://…] [--layer id=ścieżka ...]
 skillsync dashboard show <projekt> [--json] [--plan docs/plans/<plik>.md]   # jednorazowy zrzut JSON (to samo co /api/status)
 ```
 
@@ -188,7 +188,7 @@ była, a nie, że pętla dała PASS.
 - `/events` SSE: `hello`, `change` (obserwator mtime co 1 s: plany, speki, design, domain, katalogi runów, `.git/HEAD` i ref gałęzi),
   `ping` co 15 s. Klient po `change` pobiera `/api/status` bez przeładowania; gdy SSE pada albo milknie > 40 s, odpytuje co 5 s
   i sam wraca do trybu na żywo. Nagłówki `Cache-Control: no-cache`, `X-Accel-Buffering: no` (tunel/proxy bez buforowania).
-- Prototyp: odnośnik `http://<host strony>:5130/<slug>/` tylko gdy serwer prototypów na 5130 odpowiada.
+- Prototyp: odnośnik `http://<host strony>:<port>/<slug>/` tylko gdy serwer prototypów na tym porcie odpowiada; port to `--prototype-port`, klucz manifestu `prototype.port`, a bez nich 5130.
 - `POST /api/approve` `{kind: spec|plan, path, sha}`: tylko akcja, którą strona właśnie oferuje; `/api/status` ma
   `approvals {enabled, here, viewer, actions[]}`, `session {url}`, `spec.fileSha`, `plan.fileSha`, a pozycje banera `word`/`approve`.
 

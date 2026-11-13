@@ -40,8 +40,9 @@ from . import prototype_server as server
 from .plan_phases import parse_plan_phases
 
 DEFAULT_ROOT = 'docs/prototypes'
-KNOWN_KEYS = ('root', 'theme', 'guidelines', 'commit_before_iteration', 'public_url')
+KNOWN_KEYS = ('root', 'theme', 'guidelines', 'commit_before_iteration', 'public_url', 'port')
 PUBLIC_URL_ENV = 'SKILLSYNC_PROTOTYPE_PUBLIC_URL'
+PORT_RANGE = (1024, 65535)
 THEME_KEYS = ('tokens_from', 'css')
 SLUG_PATTERN = re.compile(r'[a-z0-9]+(?:-[a-z0-9]+)*')
 TITLE_MAX = 120
@@ -645,7 +646,7 @@ def resolve_prototype_settings(section, root):
     `commit_before_iteration` (bool, default False; K40)."""
     settings = {'errors': [], 'warnings': [], 'root': None, 'root_value': DEFAULT_ROOT,
                 'tokens_from': None, 'css': None, 'guidelines': None, 'commit_before_iteration': False,
-                'public_url': None}
+                'public_url': None, 'port': None}
     errors, warnings = settings['errors'], settings['warnings']
     if section is None:
         section = {}
@@ -661,6 +662,13 @@ def resolve_prototype_settings(section, root):
             errors.append('prototype.commit_before_iteration: must be true or false')
         else:
             settings['commit_before_iteration'] = flag
+    if 'port' in section:
+        port = section['port']
+        if isinstance(port, bool) or not isinstance(port, int) or not PORT_RANGE[0] <= port <= PORT_RANGE[1]:
+            errors.append(f'prototype.port: must be an integer {PORT_RANGE[0]}-{PORT_RANGE[1]} '
+                          '(the port of the prototype server of this project)')
+        else:
+            settings['port'] = port
     if 'public_url' in section:
         public, error = normalise_public_url(section['public_url'], 'prototype.public_url')
         if error:
@@ -2419,8 +2427,9 @@ def serve_prototypes(root, manifest, args, err=None):
     err = err or sys.stderr
     repo = Path(root).resolve()
     settings = _settings(repo, manifest)
+    port = args.port if args.port is not None else (settings['port'] or server.DEFAULT_PORT)
     source_writes = not args.no_source_writes and _in_git_worktree(settings['root'])
-    config = server.ServerConfig(settings['root'], users_file_path(repo, args.users), host=args.host, port=args.port,
+    config = server.ServerConfig(settings['root'], users_file_path(repo, args.users), host=args.host, port=port,
                                  secure_cookies=args.secure_cookies, trust_proxy=args.trust_proxy,
                                  login_to_view=args.login_to_view, source_writes=source_writes, log=err,
                                  gallery=lambda: gallery_html(settings['root'], repo, clock=config.clock),
@@ -2433,7 +2442,7 @@ def serve_prototypes(root, manifest, args, err=None):
             report['warnings'] = error.warnings
         return report
     except OSError as error:
-        return {'status': 'BLOCKED', 'reason': f'cannot listen on {args.host}:{args.port} ({error.strerror or error})'}
+        return {'status': 'BLOCKED', 'reason': f'cannot listen on {args.host}:{port} ({error.strerror or error})'}
     notes = list(settings['warnings']) + instance.app.warnings
     if not args.no_source_writes and not source_writes:
         notes.append(f'{_relative(settings["root"], repo)} nie leży w kopii roboczej gita: przywracanie z UI wyłączone '
@@ -3726,7 +3735,7 @@ def _account_names(repo, users_value=None):
 def _experts_url(repo, settings):
     """`(base address, running)`: the address of a running server of this project (state file with a live pid;
     the server is not asked), else the default one."""
-    host, port, running = server.DEFAULT_HOST, server.DEFAULT_PORT, False
+    host, port, running = server.DEFAULT_HOST, settings.get('port') or server.DEFAULT_PORT, False
     try:
         root_real = os.path.realpath(settings['root'])
         live = [state for state in server.link_read_states(server.link_run_dir_of(repo))
@@ -4699,7 +4708,8 @@ def register(subparsers):
     serve = actions.add_parser('serve', help='Serve prototypes with the shared comments API (foreground, Ctrl+C stops)')
     _common(serve)
     serve.add_argument('--host', default=server.DEFAULT_HOST, help='Listen address (default 127.0.0.1)')
-    serve.add_argument('--port', type=int, default=server.DEFAULT_PORT, help='Port (default 4445; 0 = any free port)')
+    serve.add_argument('--port', type=int, default=None,
+                       help='Port (default: prototype.port of the manifest, else 4445; 0 = any free port)')
     serve.add_argument('--users', help=f'Users file, relative to the project (default {USERS_DEFAULT})')
     serve.add_argument('--secure-cookies', action='store_true', help='Mark the session cookie Secure (behind TLS)')
     serve.add_argument('--trust-proxy', action='store_true', help='Use X-Forwarded-For for the login rate limit')
