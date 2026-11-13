@@ -222,7 +222,7 @@ Przy wznowieniu pracy oraz przed „GO plan”, „GO implement” i review agen
 **Cykl wiersza** (parser dashboardu pomija tag `[EKSPERT]` jak `[ROZSTRZYGNIĘTE]`, więc nie wymaga zmiany):
 - czekające, blokujące: `- Q<n>: <pytanie> (ekspert: qn-<hex>)`;
 - czekające, z założeniem: `- Q<n> [ZAŁOŻENIE]: <pytanie> (ekspert: qn-<hex>) — przyjęte: <wartość>`;
-- po odpowiedzi: `- Q<n> [EKSPERT]: <pytanie> (ekspert: qn-<hex>) — odpowiedź: <wartość> — ekspert: <login>, <RRRR-MM-DDTHH:MMZ>`.
+- po odpowiedzi: `- Q<n> [EKSPERT]: <pytanie> (ekspert: qn-<hex>) — odpowiedź: <wartość> — ekspert: <login>, <RRRR-MM-DDTHH:MM±GG:MM>`.
 Wiersz po odpowiedzi zastępuje czekający, a identyfikator `qn-…` zostaje. Agent nie składa go ręcznie z surowej treści: bierze gotowy wiersz
 z pola `specLine` wyniku `question add` i `question withdraw` albo (po odpowiedzi) z pola `answerLine` wyniku `question show` albo `question wait`.
 **Poufność.** Wyciąg `--ref` i tekst pytania trafiają na serwer w sieci: bez sekretów i poufnych danych. BLOCKED `secret_detected` to heurystyka: `--force` dopiero po sprawdzeniu wskazanych pól, a `specLine` z `--force` powtarza tekst (nie wklejaj bez sprawdzenia). Serwer z kontami `expert` uruchamiaj z `--login-to-view`.

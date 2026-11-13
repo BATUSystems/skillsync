@@ -32,6 +32,7 @@ import tempfile
 import threading
 import unicodedata
 import time
+import urllib.parse
 import yaml
 from .common import contained, emit, load_layer_project, read_project, read_yaml, require_layerset
 from . import layers as _layers
@@ -39,7 +40,9 @@ from . import prototype_server as server
 from .plan_phases import parse_plan_phases
 
 DEFAULT_ROOT = 'docs/prototypes'
-KNOWN_KEYS = ('root', 'theme', 'guidelines', 'commit_before_iteration')
+KNOWN_KEYS = ('root', 'theme', 'guidelines', 'commit_before_iteration', 'public_url', 'port')
+PUBLIC_URL_ENV = 'SKILLSYNC_PROTOTYPE_PUBLIC_URL'
+PORT_RANGE = (1024, 65535)
 THEME_KEYS = ('tokens_from', 'css')
 SLUG_PATTERN = re.compile(r'[a-z0-9]+(?:-[a-z0-9]+)*')
 TITLE_MAX = 120
@@ -605,12 +608,54 @@ def _path_kind(path, label):
     return ('file' if stat.S_ISREG(mode) else 'other'), None
 
 
+def normalise_public_url(value, label):
+    """`(url, None)` for an http(s) address without credentials, query and fragment (no trailing `/`), else
+    `(None, '<label>: …')`. Used for `prototype.public_url` and `SKILLSYNC_PROTOTYPE_PUBLIC_URL`."""
+    if not isinstance(value, str) or not value.strip():
+        return None, f'{label}: must be an http(s) address, e.g. https://proto.example.org:8443'
+    text = value.strip()
+    if any(ch.isspace() or unicodedata.category(ch).startswith('C') for ch in text):
+        return None, f'{label}: must not contain spaces or control characters'
+    try:
+        parts = urllib.parse.urlsplit(text)
+        port = parts.port
+    except ValueError:
+        return None, f'{label}: not a valid address'
+    if (port is not None and not 1 <= port <= 65535) or (parts.netloc.endswith(':') and port is None):
+        return None, f'{label}: the port must be 1-65535'
+    if parts.scheme not in ('http', 'https') or not parts.hostname:
+        return None, f'{label}: must be an http(s) address with a host, e.g. https://proto.example.org:8443'
+    if parts.username or parts.password or '@' in parts.netloc:
+        return None, f'{label}: must not contain login data'
+    if parts.query or parts.fragment or '?' in text or '#' in text:
+        return None, f'{label}: must not contain a query or a fragment'
+    return text.rstrip('/'), None
+
+
+def public_url_of(settings, environ=None):
+    """`(url or None, error or None)`: the variable SKILLSYNC_PROTOTYPE_PUBLIC_URL wins over `prototype.public_url`."""
+    raw = (environ if environ is not None else os.environ).get(PUBLIC_URL_ENV)
+    if raw is not None and raw.strip():
+        return normalise_public_url(raw, PUBLIC_URL_ENV)
+    return settings.get('public_url'), None
+
+
+def public_address_lines(settings, environ=None):
+    """Lines for the startup message of `prototype serve`: the public address, or a warning when the variable is invalid
+    (the warning names the variable, never its value)."""
+    public, error = public_url_of(settings, environ)
+    if error:
+        return [f'ostrzeżenie: {error}']
+    return [f'Adres publiczny: {public}'] if public else []
+
+
 def resolve_prototype_settings(section, root):
     """Validate the section and resolve its paths: dict with `errors`, `warnings`, `root`,
     `root_value`, `tokens_from`, `css`, `guidelines` (resolved `Path` or None) and
     `commit_before_iteration` (bool, default False; K40)."""
     settings = {'errors': [], 'warnings': [], 'root': None, 'root_value': DEFAULT_ROOT,
-                'tokens_from': None, 'css': None, 'guidelines': None, 'commit_before_iteration': False}
+                'tokens_from': None, 'css': None, 'guidelines': None, 'commit_before_iteration': False,
+                'public_url': None, 'port': None}
     errors, warnings = settings['errors'], settings['warnings']
     if section is None:
         section = {}
@@ -626,6 +671,19 @@ def resolve_prototype_settings(section, root):
             errors.append('prototype.commit_before_iteration: must be true or false')
         else:
             settings['commit_before_iteration'] = flag
+    if 'port' in section:
+        port = section['port']
+        if isinstance(port, bool) or not isinstance(port, int) or not PORT_RANGE[0] <= port <= PORT_RANGE[1]:
+            errors.append(f'prototype.port: must be an integer {PORT_RANGE[0]}-{PORT_RANGE[1]} '
+                          '(the port of the prototype server of this project)')
+        else:
+            settings['port'] = port
+    if 'public_url' in section:
+        public, error = normalise_public_url(section['public_url'], 'prototype.public_url')
+        if error:
+            errors.append(error)
+        else:
+            settings['public_url'] = public
     root_value = section.get('root', DEFAULT_ROOT)
     path, error = resolve_repo_path(root, root_value, 'prototype.root')
     if error:
@@ -2378,8 +2436,9 @@ def serve_prototypes(root, manifest, args, err=None):
     err = err or sys.stderr
     repo = Path(root).resolve()
     settings = _settings(repo, manifest)
+    port = args.port if args.port is not None else (settings['port'] or server.DEFAULT_PORT)
     source_writes = not args.no_source_writes and _in_git_worktree(settings['root'])
-    config = server.ServerConfig(settings['root'], users_file_path(repo, args.users), host=args.host, port=args.port,
+    config = server.ServerConfig(settings['root'], users_file_path(repo, args.users), host=args.host, port=port,
                                  secure_cookies=args.secure_cookies, trust_proxy=args.trust_proxy,
                                  login_to_view=args.login_to_view, source_writes=source_writes, log=err,
                                  gallery=lambda: gallery_html(settings['root'], repo, clock=config.clock),
@@ -2392,7 +2451,7 @@ def serve_prototypes(root, manifest, args, err=None):
             report['warnings'] = error.warnings
         return report
     except OSError as error:
-        return {'status': 'BLOCKED', 'reason': f'cannot listen on {args.host}:{args.port} ({error.strerror or error})'}
+        return {'status': 'BLOCKED', 'reason': f'cannot listen on {args.host}:{port} ({error.strerror or error})'}
     notes = list(settings['warnings']) + instance.app.warnings
     if not args.no_source_writes and not source_writes:
         notes.append(f'{_relative(settings["root"], repo)} nie leży w kopii roboczej gita: przywracanie z UI wyłączone '
@@ -2400,6 +2459,8 @@ def serve_prototypes(root, manifest, args, err=None):
     for warning in notes:
         err.write(f'ostrzeżenie: {warning}\n')
     err.write(f'Serwer prototypów: {instance.url} (Ctrl+C kończy)\n')
+    for line in public_address_lines(settings):
+        err.write(line + '\n')
     err.flush()
     previous = _stop_on_sigterm()
     try:
@@ -3507,6 +3568,21 @@ def _spec_cell(text, limit=500):
     return text[:limit].rstrip()
 
 
+def answer_moment(at):
+    """Time of the answer for the spec row: local time with the offset, to the minute (`2026-11-13T13:30+01:00`).
+    The log keeps UTC; an unreadable value keeps the old UTC form (`<16 characters>Z`)."""
+    text = str(at or '')
+    try:
+        parsed = datetime.fromisoformat(text.replace('Z', '+00:00'))
+        if parsed.tzinfo is None:
+            raise ValueError(text)
+        moment = parsed.astimezone()
+    except (ValueError, OverflowError, OSError):
+        return text[:16] + 'Z'
+    offset = moment.strftime('%z')
+    return moment.strftime('%Y-%m-%dT%H:%M') + offset[:3] + ':' + offset[3:]
+
+
 def question_answer_line(question):
     """Spec row after the answer (grammar of the `[EKSPERT]` class); the question text and the answer are each cut to
     500 characters (`_spec_cell`), for a question as the exported item or the
@@ -3530,7 +3606,7 @@ def question_answer_line(question):
     else:
         value = ''
     label = (question.get('origin') or {}).get('q') or 'Q?'
-    moment = str(answer.get('at') or '')[:16] + 'Z'
+    moment = answer_moment(answer.get('at'))
     return '- %s [EKSPERT]: %s (ekspert: %s) — odpowiedź: %s — ekspert: %s, %s' % (
         label, _spec_cell(question['text']), question['id'], _spec_cell(value), _one_line(answer.get('by') or ''), moment)
 
@@ -3682,7 +3758,7 @@ def _account_names(repo, users_value=None):
 def _experts_url(repo, settings):
     """`(base address, running)`: the address of a running server of this project (state file with a live pid;
     the server is not asked), else the default one."""
-    host, port, running = server.DEFAULT_HOST, server.DEFAULT_PORT, False
+    host, port, running = server.DEFAULT_HOST, settings.get('port') or server.DEFAULT_PORT, False
     try:
         root_real = os.path.realpath(settings['root'])
         live = [state for state in server.link_read_states(server.link_run_dir_of(repo))
@@ -3693,6 +3769,9 @@ def _experts_url(repo, settings):
         pass
     if server.link_host_kind(host) == 'wildcard':
         host = '127.0.0.1'
+    public, _error = public_url_of(settings)
+    if public:
+        return public + server.EXPERTS_PATH, running
     if ':' in host and not host.startswith('['):
         host = '[%s]' % host
     return 'http://%s:%s%s' % (host, port, server.EXPERTS_PATH), running
@@ -3768,6 +3847,9 @@ def add_question(root, manifest, args):
     if args.blocking == (args.assume is not None):
         return _question_fail('invalid_mode', 'give exactly one of --assume <value> (a question that does not stop '
                               'the agent) or --blocking (the agent waits for the answer)')
+    _public, public_error = public_url_of(settings)
+    if public_error:
+        return _question_fail('invalid_public_url', public_error, status='BLOCKED')
     refs = [_parse_question_ref(value) for value in args.ref or []]
     options = _parse_question_options(args.option)
     origin = _parse_origin(args.origin)
@@ -3862,9 +3944,10 @@ def add_question(root, manifest, args):
     base, running = _experts_url(repo, settings)
     base = base.rstrip('/') + '/' + slug
     report = {'status': 'PASS', 'questionId': question_id, 'slug': slug, 'idempotent': not result.operations,
-              'specLine': question_spec_line(question), 'files': files, 'created': created, 'notes': notes,
+              'specLine': question_spec_line(question), 'files': files, 'created': created,
+              'ignored': [path for path in created if path.endswith(server.LOCK_SUFFIX)], 'notes': notes,
               'warnings': warnings}
-    if running:
+    if running or public_url_of(settings)[0]:
         report['url'] = '%s#%s' % (base, question_id)
     return report
 
@@ -3941,6 +4024,7 @@ def show_question(root, manifest, question_id, users=None, slug=None):
     document['questions'] = [item for item in document['questions'] if item['id'] == question_id]
     if not document['questions']:
         return _question_fail('not_found', f'no question {question_id}')
+    document['question'] = document['questions'][0]
     document['answerLine'] = question_answer_line(document['questions'][0])
     return document
 
@@ -4035,6 +4119,9 @@ def url_question(root, manifest, users=None):
     Does not check that the server runs."""
     repo = Path(root).resolve()
     settings = _settings(repo, manifest)
+    _public, public_error = public_url_of(settings)
+    if public_error:
+        return {'status': 'BLOCKED', 'error': 'invalid_public_url', 'reason': public_error}
     accounts, error, message = _users_state(repo, users)
     if accounts is None:
         return {'status': 'BLOCKED', 'error': error, 'reason': message}
@@ -4081,7 +4168,7 @@ def _question_events(snapshot, wanted, since_at, after):
 def _wait_report(event, question, fold, slug=None, **extra):
     view = server.question_view(question, AGENT_VIEWER, fold['byId'], slug)
     report = {'status': 'PASS', 'event': event, 'questionId': question['id'], 'slug': slug, 'question': view,
-              'answerLine': question_answer_line(view)}
+              'questions': [view], 'answerLine': question_answer_line(view)}
     report.update(extra)
     return report
 
@@ -4646,7 +4733,8 @@ def register(subparsers):
     serve = actions.add_parser('serve', help='Serve prototypes with the shared comments API (foreground, Ctrl+C stops)')
     _common(serve)
     serve.add_argument('--host', default=server.DEFAULT_HOST, help='Listen address (default 127.0.0.1)')
-    serve.add_argument('--port', type=int, default=server.DEFAULT_PORT, help='Port (default 4445; 0 = any free port)')
+    serve.add_argument('--port', type=int, default=None,
+                       help='Port (default: prototype.port of the manifest, else 4445; 0 = any free port)')
     serve.add_argument('--users', help=f'Users file, relative to the project (default {USERS_DEFAULT})')
     serve.add_argument('--secure-cookies', action='store_true', help='Mark the session cookie Secure (behind TLS)')
     serve.add_argument('--trust-proxy', action='store_true', help='Use X-Forwarded-For for the login rate limit')

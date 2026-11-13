@@ -228,6 +228,13 @@ pasować do środowiska, popraw ją tutaj zamiast obchodzić.
 - Klawisze Enter/Spacja na przycisku wewnątrz elementu z `(keydown.enter)` bąbelkują —
   przycisk usuwający wymaga `stopPropagation` na keydown albo rozdzielenia elementów.
 
+## zsh: modyfikatory parametrów i tło
+
+- W zsh `$S:Q1` to nie „zawartość `S` plus `:Q1`”: `:Q` jest modyfikatorem (zdejmuje cytowanie), więc
+  `--origin $S:Q1` daje błędną wartość. Zapisuj `"${S}:Q1"`.
+- Polecenie w tle (`question wait` i podobne) kończy się stopką `[exited with code 0]` w pliku wyjścia.
+  To znacznik narzędzia, nie wyjście komendy: nie parsuj jej jako JSON ani nie szukaj jej w raporcie.
+
 ## PDF (reportlab)
 
 - `Frame.addFromList` nie obsługuje `KeepTogether` ani `keepWithNext` — „sierotę”

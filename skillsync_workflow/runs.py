@@ -85,9 +85,14 @@ def _retro_warnings(path, run_id, records):
     return ["retro-quality-missing: przebieg nie ma rekordu retro-quality PASS przed final"]
 
 
-def _slug(value):
-    if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,79}", value):
-        raise ValueError("Id musi być krótkim identyfikatorem bez separatorów ścieżki")
+ID_PATTERN = r"[A-Za-z0-9][A-Za-z0-9_.-]{0,79}"
+
+
+def _slug(value, field="id"):
+    """`value` when it is a short identifier; the error names the `field` (`--step`, `--run-id`) and the pattern."""
+    if not isinstance(value, str) or not re.fullmatch(ID_PATTERN, value):
+        raise ValueError(f"{field}: musi być krótkim identyfikatorem bez separatorów ścieżki i spacji, "
+                         f"wzorzec {ID_PATTERN} (otrzymano: {str(value)[:40]!r})")
     return value
 
 
@@ -161,7 +166,7 @@ def fingerprint(root):
 
 
 def _store_path(root, run_id):
-    path = root / ".skillsync" / "runs" / (_slug(run_id) + ".json")
+    path = root / ".skillsync" / "runs" / (_slug(run_id, "--run-id") + ".json")
     for parent in (root / ".skillsync", path.parent, path):
         if parent.is_symlink():
             raise ValueError("Magazyn przebiegów nie może być dowiązaniem")
@@ -221,7 +226,7 @@ def _read(path):
     for record in data["checkpoints"]:
         if not isinstance(record, dict):
             raise ValueError("Nieprawidłowy rekord checkpointu")
-        _slug(record.get("step"))
+        _slug(record.get("step"), "step (rekord checkpointu)")
         if record.get("status") not in STATUSES or not isinstance(record.get("next"), str):
             raise ValueError("Nieprawidłowy status lub następny krok")
         if len(record["next"]) > 2000 or not isinstance(record.get("recorded_at"), str):
@@ -315,12 +320,12 @@ def _emit(args, result):
         print(json.dumps(result, ensure_ascii=False, allow_nan=False))
 
 
-def _sources(root, layers=None):
+def _sources(root, layers=None, manifest_file=None):
     """Skrót źródeł instrukcji workflow projektu: pliki projektu i aktywnych warstw (`LayerSet`, K1).
 
     Dozwolone położenia: projekt, korzeń każdej aktywnej warstwy i pamięć kompozytów skilli (wpisy
     kompozytu to dowiązania do plików warstw). Pliki warstw czytane przez `layer_files` (bez dowiązań, D73)."""
-    _, manifest, layerset = load_layer_project(root, layers)
+    _, manifest, layerset = load_layer_project(root, layers, manifest_file=manifest_file)
     allowed = [Path(root).resolve()] + [Path(os.path.realpath(path)) for path in layerset.roots]
     composed = Path(os.path.realpath(_layers.composed_root()))
 
@@ -366,7 +371,7 @@ def _sources(root, layers=None):
 
 
 def checkpoint(args):
-    root, _ = read_project(args.path)
+    root, _ = read_project(args.path, getattr(args, "manifest", None))
     path = _store_path(Path(root).resolve(), args.run_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     lock = path.with_suffix(".lock")
@@ -381,7 +386,7 @@ def checkpoint(args):
 
 
 def _checkpoint_locked(args):
-    root, _ = read_project(args.path)
+    root, _ = read_project(args.path, getattr(args, "manifest", None))
     root = Path(root).resolve()
     path = _store_path(root, args.run_id)
     data = _read(path)
@@ -397,8 +402,8 @@ def _checkpoint_locked(args):
         raise ValueError("PASS wymaga pliku z rzeczywistym dowodem; sama deklaracja nie wystarcza")
     if len(args.next) > 2000 or len(args.cause or "") > 500:
         raise ValueError("Opis przekracza limit metadanych")
-    record = {"step": _slug(args.step), "status": args.status, "evidence": evidence,
-              "next": _redact(args.next), "fingerprint": fingerprint(root), "sources_digest": _sources(root, getattr(args, "layers", None)),
+    record = {"step": _slug(args.step, "--step"), "status": args.status, "evidence": evidence,
+              "next": _redact(args.next), "fingerprint": fingerprint(root), "sources_digest": _sources(root, getattr(args, "layers", None), getattr(args, "manifest", None)),
               "recorded_at": datetime.now(timezone.utc).isoformat(),
               "duration_seconds": None if args.duration is None else _number(args.duration),
               "cost": None if args.cost is None else _number(args.cost),
@@ -430,7 +435,7 @@ def _checkpoint_locked(args):
 
 
 def resume(args):
-    root, _ = read_project(args.path)
+    root, _ = read_project(args.path, getattr(args, "manifest", None))
     root = Path(root).resolve()
     data = _read(_store_path(root, args.run_id))
     if not data["checkpoints"]:
@@ -439,7 +444,7 @@ def resume(args):
     stale = []
     if last["fingerprint"] != fingerprint(root):
         stale.append("Zmienił się HEAD lub staged/unstaged/untracked stan projektu")
-    if last.get("sources_digest") != _sources(root, getattr(args, "layers", None)):
+    if last.get("sources_digest") != _sources(root, getattr(args, "layers", None), getattr(args, "manifest", None)):
         stale.append("Zmieniły się źródła konfiguracji lub instrukcji workflow")
     for item in last["evidence"]:
         try:
@@ -843,6 +848,9 @@ def register(subparsers):
         if name in ("checkpoint", "resume"):
             parser.add_argument("--run-id", required=True)
             _layers.add_layer_argument(parser)  # warstwy skrótu źródeł (`sources_digest`, K3)
+            parser.add_argument("--manifest", metavar="PLIK",
+                                help="manifest projektu spoza repozytorium (np. publiczny rdzeń bez .github/.skillsync.yaml); "
+                                     "korzeń projektu zostaje ścieżką <path>")
         if name in ("metrics", "benchmark"):
             _layers.add_layer_argument(parser)  # przyjęta i ignorowana: komenda nie czyta biblioteki
         if name == "checkpoint":

@@ -61,7 +61,7 @@ skillsync prototype init . plan-zajec --requirements docs/wymagania/plan-zajec.m
 skillsync prototype ids . plan-zajec --check      # PASS: ekran przykładowy jest pomijany
 skillsync prototype index .                       # galeria docs/prototypes/index.html
 skillsync prototype user add . ewa.lis@szkola.example --role developer --password-prompt
-skillsync prototype serve .                       # http://127.0.0.1:4445/, Ctrl+C kończy
+skillsync prototype serve .                       # http://127.0.0.1:4445/ (port z `prototype.port`, jeśli ustawiono), Ctrl+C kończy
 ```
 
 - `init` nigdy nie nadpisuje istniejącego katalogu. Slug: małe litery, cyfry i myślniki (`plan-zajec`). Plik
@@ -438,8 +438,10 @@ oznacza to przez `question record`; programista dostaje informację, nie pytanie
 
 ### Strona `/_experts`
 
-- Adres: `http://<host>:<port>/_experts` (lista przebiegów i wszystkie widoczne pytania), `http://<host>:<port>/_experts/<slug>` (jeden przebieg;
-  nieprawidłowy slug daje 404). `question url` podaje adres strony razem z liczbą kont `expert`. Bez sesji przekierowanie do `/_login?next=<ścieżka>`.
+- Adres: `http://<host>:<port>/_experts` (lista przebiegów i wszystkie widoczne pytania), `http://<host>:<port>/_experts/<slug>` (jeden przebieg).
+  `question url` podaje adres strony razem z liczbą kont `expert`. Kolejność odpowiedzi: slug niezgodny z gramatyką slugów to 404 zawsze (także bez sesji);
+  poprawny slug bez sesji to 302 do `/_login?next=<ścieżka>` (nie 404, więc bez logowania nie da się sprawdzić, czy przebieg istnieje);
+  po zalogowaniu poprawny, ale nieistniejący slug otwiera stronę z pustym przebiegiem (200), bo dane strona czyta dopiero z API.
 - Każde pytanie ma badge „Przebieg: <slug>”. Etykieta pytania: dla administratora nazwa pliku speca i `Q<n>`, dla eksperta `Q<n>`.
   Konto z hasłem domyślnym widzi komunikat i link do zmiany hasła; odpowiadać może dopiero po zmianie (403 `password_change_required`).
 - Lista pytań widocznych dla konta, szczegóły (tekst, linki, wyciągi), wybór wariantu (rekomendacja agenta jest oznaczona; w pytaniu wielokrotnego wyboru pola wyboru, zatwierdzenie
@@ -508,7 +510,7 @@ akceptacje) pokazuje `skillsync prototype list .`.
 
 ## Serwer w sieci
 
-Domyślnie `serve` słucha na `127.0.0.1:4445` i odczyt jest publiczny: każdy, kto zna adres, widzi prototypy i
+Domyślnie `serve` słucha na `127.0.0.1:4445` (albo na porcie z klucza manifestu `prototype.port`, zob. [manifest](manifest.md)) i odczyt jest publiczny: każdy, kto zna adres, widzi prototypy i
 komentarze (z adresami e-mail autorów), a zalogowani piszą.
 
 ```bash
