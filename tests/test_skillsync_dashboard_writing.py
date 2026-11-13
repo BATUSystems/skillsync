@@ -198,5 +198,30 @@ class BuildStatus(unittest.TestCase):
         self.assertEqual(expert['link'], {'kind': 'expert', 'slug': 'demo', 'url': '/_experts/demo'})
 
 
+class Watcher(unittest.TestCase):
+    def setUp(self):
+        from skillsync_workflow import dashboard_http as srv
+        self.temp = tempfile.TemporaryDirectory(prefix='skillsync-dashboard-writing-')
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.directory = self.root / 'docs' / 'prototypes' / 'demo'
+        self.directory.mkdir(parents=True)
+        (self.directory / 'prototype.json').write_text('{}\n', encoding='utf-8')
+        self.board = srv.Board(self.root, prototype_port=1)
+
+    def test_marker_appearing_expiring_and_going_change_the_signature(self):
+        empty = self.board.signature()
+        now_ms = int(time.time() * 1000)
+        prototype_server.write_writing(str(self.directory), now_ms, 60, 'agent')
+        with_marker = self.board.signature()
+        self.assertNotEqual(empty, with_marker)
+        # the same file, but past its expiry: no file change, yet the signature differs (validity is part of it)
+        prototype_server.write_writing(str(self.directory), now_ms - 120_000, 60, 'agent')
+        expired = self.board.signature()
+        self.assertNotEqual(with_marker, expired)
+        (self.directory / '.writing.json').unlink()
+        self.assertNotEqual(expired, self.board.signature())
+
+
 if __name__ == '__main__':
     unittest.main()

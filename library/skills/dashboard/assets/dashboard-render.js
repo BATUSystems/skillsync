@@ -21,7 +21,7 @@
   const STATUS_PL = { draft: "szkic", approved: "zatwierdzony", in_progress: "w realizacji", done: "zakończony", implemented: "wdrożony" };
   const ACT_ICON = { spec: "i-spec", plan: "i-plan", real: "i-run" };
   const GATE_KEY = { spec: "gate_go_plan", plan: "gate_go_implement", cp: "gate_cp", ready: "gate_ready" };
-  const WAIT_SOURCE = { silence: "czas od ostatniej linii checkpoints.md (próg z serwera)", checkpoint: "znacznik „czeka:” w ostatnim checkpoincie", plan: "status planu", spec: "status speca", prototype: "akceptacja ekranów prototypu" };
+  const WAIT_SOURCE = { silence: "czas od ostatniej linii checkpoints.md (próg z serwera)", checkpoint: "znacznik „czeka:” w ostatnim checkpoincie", plan: "status planu", spec: "status speca", prototype: "akceptacja ekranów prototypu", writing: "znacznik zapisu ekranów prototypu (.writing.json)", expert: "otwarte pytania blokujące do eksperta" };
   const LIVE_TEXT = { live: "Na żywo", polling: "Odświeżam co 5 s", down: "Brak połączenia", connecting: "Łączę…" };
   const LIVE_TIP = {
     live: "Zmiany w planie, specu i checkpointach pojawiają się od razu (SSE).",
@@ -663,6 +663,13 @@
       const minutes = Math.floor((now() - Date.parse(s.since)) / 60000);
       return minutes >= s.thresholdMin ? minutes : 0;
     }
+    // Adres strony pytań: `runUrl` (`/_experts/<slug>`, tylko poprawna ścieżka) albo lista `/_experts`; tylko gdy host zna adres serwera prototypów.
+    function expertsUrl(d, runUrl) {
+      const origin = typeof deps.prototypeOrigin === "function" ? deps.prototypeOrigin(d.prototype && d.prototype.port) : null;
+      if (!origin) return null;
+      const path = typeof runUrl === "string" && /^\/_experts\/[a-z0-9-]+$/.test(runUrl) ? runUrl : "/_experts";
+      return safeUrl(String(origin).replace(/\/+$/, "") + path);
+    }
     // Toast „Pytania do eksperta”: stan z plików pytań WSZYSTKICH przebiegów (`d.expertQuestions`), nie z widocznego speca. To stan, nie wynik
     // akcji, więc bez timera i bez „×”: znika dopiero, gdy open = 0. Odnośnik tylko, gdy host zna adres serwera prototypów (`deps.prototypeOrigin`).
     function questionsToast(d) {
@@ -671,12 +678,7 @@
       if (open <= 0) return null;
       const blocking = Number.isFinite(eq.blocking) ? eq.blocking : 0;
       const runs = Array.isArray(eq.runs) ? eq.runs : [];
-      const origin = typeof deps.prototypeOrigin === "function" ? deps.prototypeOrigin(d.prototype && d.prototype.port) : null;
-      let url = null;
-      if (origin) {
-        const path = runs.length === 1 && typeof runs[0].url === "string" && /^\/_experts\/[a-z0-9-]+$/.test(runs[0].url) ? runs[0].url : "/_experts";
-        url = safeUrl(String(origin).replace(/\/+$/, "") + path);
-      }
+      const url = expertsUrl(d, runs.length === 1 ? runs[0].url : null);
       const text = `Pytania do eksperta: ${open} otwartych (${blocking} blokujących)`;
       return h("div", { class: "wait-item is-info", "data-questions-toast": "" },
         icon("i-bell"),
@@ -708,6 +710,10 @@
         } else if (w.link && w.link.kind === "prototype") {
           const url = protoUrl(d, w.link.slug);
           link = h("a", { class: "wait-go", href: safeUrl(url), target: "_blank", rel: "noopener", on: { click: linkClick("prototype", w.link.slug, url) } }, `Otwórz prototyp ${w.link.slug}`);
+        } else if (w.link && w.link.kind === "expert") {
+          const url = expertsUrl(d, w.link.url);
+          link = url ? h("a", { class: "wait-go", href: url, target: "_blank", rel: "noopener", "data-wait-expert": "",
+            on: { click: linkClick("experts", w.link.slug ? String(w.link.slug) : "", url) } }, "Odpowiedz na pytania") : null;
         }
         const docRef = w.approve === "spec" ? d.spec : w.approve === "plan" ? d.plan : null;
         const act = w.approve && ((d.approvals && d.approvals.actions) || []).find((x) => x.kind === w.approve);
@@ -720,9 +726,10 @@
         return h("div", { class: "wait-item", ...desc(silence ? "banner_silence" : "banner_wait") },
           icon("i-bell"),
           h("div", { class: "wait-txt" },
-            h("strong", null, silence ? `Brak raportu postępu: ${String(w.what).replace(/^brak raportu /, "")}` : `Sesja czeka na Ciebie${since}: ${w.what}`),
+            h("strong", null, silence ? `Brak raportu postępu: ${String(w.what).replace(/^brak raportu /, "")}`
+              : w.source === "writing" ? `Sesja pracuje${since}: ${w.what}` : `Sesja czeka na Ciebie${since}: ${w.what}`),
             h("span", null, action),
-            h("small", null, `Źródło: ${WAIT_SOURCE[w.source] || w.source}. ${silence ? "Zniknie po następnym raporcie." : "Baner zniknie, gdy sesja ruszy."}`)),
+            h("small", null, `Źródło: ${WAIT_SOURCE[w.source] || w.source}. ${silence ? "Zniknie po następnym raporcie." : w.source === "writing" ? "Zniknie, gdy agent skończy pisać albo znacznik wygaśnie." : "Baner zniknie, gdy sesja ruszy."}`)),
           h("div", { class: "wait-actions" }, link, tools));
       }));
     }
