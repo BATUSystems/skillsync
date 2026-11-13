@@ -216,10 +216,10 @@ plan z fazą `[UI]` bez linii `Prototyp:` i bez obejścia właściciela BLOCKED 
 ### Marker zapisu (`prototype writing`)
 
 `prototype writing <projekt> <slug> start|done|status [--ttl <s>] [--by <login>]`: agent oznacza, że jeszcze pisze ekrany prototypu.
-`start` zapisuje atomowo, pod blokadą prototypu, plik `<root>/<slug>/.writing.json` (`since`, `expiresAt`, `by`) i dopisuje
-`.writing.json` do `<proto>/.gitignore` (gdy się nie da, ostrzeżenie w raporcie); powtórzone `start` zastępuje oba czasy, więc odnawia
-marker (także skracając TTL). `--ttl` to sekundy, 60–3600, domyślnie 900; `--by` to login (pierwszy znak litera lub cyfra, dalej litery, cyfry i `. _ @ + -`, najwyżej 64 znaki;
-domyślnie `agent`). `done` usuwa marker (idempotentnie, bez blokady), `status` zwraca `{status, writing: null | {since, expiresAt, by}}`
+`start` zapisuje atomowo, pod blokadą prototypu, plik `<root>/<slug>/.writing.json` (`since`, `renewedAt`, `expiresAt`, `by`) i dopisuje
+`.writing.json` do `<proto>/.gitignore` (gdy się nie da, ostrzeżenie w raporcie); powtórzone `start` na ważnym markerze zachowuje `since` (początek pisania)
+i `by` (chyba że podano `--by`), ustawia `renewedAt` i nowy `expiresAt`, więc odnawia marker (także skracając TTL); na wygasłym albo uszkodzonym zaczyna od nowa. `--ttl` to sekundy, 60–3600, domyślnie 900; `--by` to login (pierwszy znak litera lub cyfra, dalej litery, cyfry i `. _ @ + -`, najwyżej 64 znaki;
+domyślnie `agent`). `done` usuwa marker (idempotentnie, bez blokady), `status` zwraca `{status, writing: null | {since, expiresAt, renewedAt, by}}`
 (bez blokady). Kody: PASS 0; BLOCKED 2 z `error`: `needs_migration` (prototyp bez `comments.json`), `lock_timeout` (zajęta blokada prototypu,
 np. trwa `iterate` albo `restore`: ponów), `invalid_args` (zły `--ttl` albo `--by`); FAIL (1) nie występuje. Nieznana akcja to błąd argparse.
 
@@ -230,7 +230,7 @@ Wpływ ważnego markera na inne komendy (definicja w [prototypes](prototypes.md#
 - `gate` (po slugach i `--plan`) zwraca FAIL z wpisem `missing` `{slug, path, screen: null, reason: 'writing'}` dla każdego prototypu z ważnym
   markerem, także gdy wszystkie jego ekrany mają ważną akceptację; linia „Bramka prototypu: pominięta — …” nadal daje PASS.
 - `wait` nie zwraca `accepted`, dopóki marker jest ważny (komentarze budzą jak dotąd).
-- `list` ma pole `writing`: `null` albo `{since, expiresAt}` (bez `by`).
+- `list` ma pole `writing`: `null` albo `{since, expiresAt, renewedAt}` (bez `by`).
 - `iterate` przy ważnym markerze działa i dodaje ostrzeżenie do raportu.
 - `status --ttl` i `done --by` są walidowane tak samo jak `start` (zły argument = BLOCKED `invalid_args`).
 

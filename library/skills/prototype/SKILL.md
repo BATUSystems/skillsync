@@ -42,7 +42,8 @@ ponownie. Marker zapisu mówi serwerowi, `gate`, `wait` i interfejsowi, że agen
 1. `skillsync prototype writing <projekt> <slug> start` PRZED edycją ekranów w `index.html` i `project.css`.
    W rundzie po przeglądzie najpierw `iterate` (zamrożenie rundy), dopiero potem `writing start`.
 2. Marker wygasa (TTL 60–3600 s, domyślnie 900 s; `--ttl <s>`). Przy każdej większej partii zmian wykonaj `start` ponownie
-   (odnawia czas) albo od razu `start --ttl 1800`. Wygasły marker nie blokuje nikogo.
+   (odnawia czas) albo od razu `start --ttl 1800`; odnowienie zachowuje początek pisania. Wygasły marker nie blokuje nikogo. Strona statusu pokazuje wtedy
+   „agent pisze ekrany (do HH:MM)” zamiast wezwania do akceptacji, a baner w prototypie ma tę samą godzinę.
 3. Po zakończeniu pracy: `ids --check`, sprawdzenie, że slug jest na stronie głównej `serve`, `skillsync prototype writing
    <projekt> <slug> done`. DOPIERO POTEM zgłoś „prototyp gotowy”. `writing status` pokazuje bieżący stan.
 4. Przy `BLOCKED` z `error: lock_timeout` (zajęta blokada prototypu, np. trwa `iterate`) ponów komendę. `error: needs_migration`
@@ -53,7 +54,7 @@ ponownie. Marker zapisu mówi serwerowi, `gate`, `wait` i interfejsowi, że agen
 Marker to sygnał koordynacji, nie autoryzacja: dopóki jest ważny, serwer odmawia akceptacji i przywracania (409
 `writing_in_progress`), `prototype accept` daje BLOCKED, `gate` ma powód `writing`, a `prototype wait` nie zgłasza `accepted`.
 Przy jednym slugu pisze jeden agent; gdy dwóch używa tego samego, wygrywa ostatni `start`, a pierwszy `done` zdejmuje marker
-dla obu. Agent nadal nigdy nie uruchamia `accept`.
+dla obu. Zawieszony marker (agent padł) może zdjąć osoba z rolą `acceptor` albo `developer` przyciskiem „Zwolnij” w banerze prototypu. Agent nadal nigdy nie uruchamia `accept`.
 
 ## Pliki prototypu
 

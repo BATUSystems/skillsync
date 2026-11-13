@@ -3682,6 +3682,7 @@ WRITING_MARKER = '.writing.json'
 WRITING_MAX_BYTES = 4096
 WRITING_MAX_WINDOW_MS = 3600000
 WRITING_CLOCK_SKEW_MS = 60000
+WRITING_MAX_TIME = 2 ** 53
 WRITING_TTL_MIN = 60
 WRITING_TTL_MAX = 3600
 WRITING_TTL_DEFAULT = 900
@@ -3693,7 +3694,10 @@ def _is_int(value):
 
 
 def read_writing(directory, now_ms):
-    """`{since, expiresAt, by}` of a valid writing marker, else None (see "Ważny marker" in the spec).
+    """`{since, expiresAt, renewedAt, by}` of a valid writing marker, else None (see "Ważny marker" in the spec).
+
+    `since` is the start of the writing, `renewedAt` the last `start` (equal to `since` in a file without the field); the
+    window and the clock check count from `renewedAt`, so a long writing renewed again and again stays valid.
 
     `lstat` before the open (no `O_NOFOLLOW` on Windows), then `O_NOFOLLOW|O_NONBLOCK` + `fstat` + `S_ISREG`
     (a FIFO must not hang a server thread), at most 4 KiB, strict JSON, `version == 1`, integer `since` and
@@ -3730,18 +3734,32 @@ def read_writing(directory, now_ms):
         now_ms = int(now_ms)
     if not _is_int(since) or not _is_int(expires) or not _is_int(now_ms):
         return None
-    if since > now_ms + WRITING_CLOCK_SKEW_MS or now_ms >= expires:
+    if not 0 <= since <= WRITING_MAX_TIME or not 0 <= expires <= WRITING_MAX_TIME:
+        return None   # not a time in milliseconds (also keeps the number inside what a JSON writer can print)
+    renewed = since
+    if 'renewedAt' in value:
+        renewed = value['renewedAt']
+        if not _is_int(renewed) or renewed < since:
+            return None
+    if renewed > now_ms + WRITING_CLOCK_SKEW_MS or now_ms >= expires:
         return None
-    if not 0 < expires - since <= WRITING_MAX_WINDOW_MS:
+    if not 0 < expires - renewed <= WRITING_MAX_WINDOW_MS:
         return None
     by = value.get('by')
-    return {'since': since, 'expiresAt': expires, 'by': by if isinstance(by, str) and WRITING_BY_RE.fullmatch(by) else 'agent'}
+    return {'since': since, 'expiresAt': expires, 'renewedAt': renewed,
+            'by': by if isinstance(by, str) and WRITING_BY_RE.fullmatch(by) else 'agent'}
 
 
-def write_writing(directory, now_ms, ttl_s, by='agent'):
-    """Atomically (re)write the marker: `since = now`, `expiresAt = now + ttl`; a short retry on Windows where
-    `os.replace` can fail while a reader holds the file.  Returns `{since, expiresAt, by}`."""
-    payload = {'version': 1, 'since': int(now_ms), 'expiresAt': int(now_ms) + int(ttl_s) * 1000, 'by': by}
+def write_writing(directory, now_ms, ttl_s, by=None):
+    """Atomically (re)write the marker; a short retry on Windows where `os.replace` can fail while a reader holds the
+    file.  A repeated call on a marker that is still valid keeps its `since` (and its `by`, unless `by` is given) and sets
+    `renewedAt = now`; otherwise `since = renewedAt = now`.  `expiresAt = now + ttl`.
+    Returns `{since, expiresAt, renewedAt, by}`."""
+    now_ms = int(now_ms)
+    current = read_writing(directory, now_ms)
+    since = min(current['since'], now_ms) if current is not None else now_ms   # a clock that went back keeps since <= renewedAt
+    who = by if by is not None else (current['by'] if current is not None else 'agent')
+    payload = {'version': 1, 'since': since, 'renewedAt': now_ms, 'expiresAt': now_ms + int(ttl_s) * 1000, 'by': who}
     data = (js_stringify(payload) + '\n').encode('utf-8')
     path = os.path.join(directory, WRITING_MARKER)
     attempts = 5 if os.name == 'nt' else 1
@@ -3753,7 +3771,7 @@ def write_writing(directory, now_ms, ttl_s, by='agent'):
             if attempt + 1 >= attempts:
                 raise
             time.sleep(0.05 * (attempt + 1))
-    return {'since': payload['since'], 'expiresAt': payload['expiresAt'], 'by': by}
+    return {'since': since, 'expiresAt': payload['expiresAt'], 'renewedAt': now_ms, 'by': who}
 
 
 def remove_writing(directory):
@@ -3770,15 +3788,24 @@ def remove_writing(directory):
 
 
 def public_writing(directory, now_ms):
-    """The `writing` field of the API, `prototype list` and the live gallery: `None` or `{since, expiresAt}`
-    (never `by`).  The one helper of that shape."""
+    """The `writing` field of the API, `prototype list`, the status page and the live gallery: `None` or
+    `{since, expiresAt, renewedAt}` (never `by`).  The one helper of that shape."""
     marker = read_writing(directory, now_ms)
-    return None if marker is None else {'since': marker['since'], 'expiresAt': marker['expiresAt']}
+    return None if marker is None else {'since': marker['since'], 'expiresAt': marker['expiresAt'],
+                                        'renewedAt': marker['renewedAt']}
+
+
+def _local_hhmm(millis):
+    """`HH:MM` of a UTC-millisecond time in the local time of the host that runs the server."""
+    return time.strftime('%H:%M', time.localtime(millis / 1000.0))
 
 
 def writing_conflict(slug, marker):
-    """409 `writing_in_progress` `{slug, since, expiresAt}` for a valid `marker` (no `by`)."""
-    return OperationError(409, 'writing_in_progress', 'the agent is still writing screens of this prototype',
+    """409 `writing_in_progress` `{slug, since, expiresAt}` for a valid `marker` (no `by`).  The message is for a person:
+    an engine that does not know the code shows it as it is."""
+    return OperationError(409, 'writing_in_progress',
+                          'Agent jeszcze pisze ekrany tego prototypu (do %s). Akceptacja wróci, gdy skończy.'
+                          % _local_hhmm(marker['expiresAt']),
                           {'slug': slug, 'since': marker['since'], 'expiresAt': marker['expiresAt']})
 
 
@@ -4352,8 +4379,10 @@ def accept_project(app, login, cid, versions):
     writing = writing_entries([(slug, directory) for slug, directory, _store in targets
                                if slug not in done and slug not in no_screens], clock_ms(app.clock))
     if writing:
-        raise OperationError(409, 'writing_in_progress', 'the agent is still writing screens: %s'
-                             % ', '.join(item['slug'] for item in writing), {'writing': writing})
+        raise OperationError(409, 'writing_in_progress',
+                             'Agent jeszcze pisze ekrany: %s (do %s). Nic nie zapisano; akceptacja wróci, gdy skończy.'
+                             % (', '.join(item['slug'] for item in writing),
+                                _local_hhmm(max(item['expiresAt'] for item in writing))), {'writing': writing})
     for slug, directory, _store in targets:
         if slug in done:
             continue
@@ -6243,6 +6272,7 @@ def _log_safe(text):
 _API_PREFIX = '/_api/v1'
 _OPERATIONS_PATH = re.compile(r'/_api/v1/prototypes/([^/]+)/operations')
 _RESTORE_PATH = re.compile(r'/_api/v1/prototypes/([^/]+)/restore')
+_WRITING_RELEASE_PATH = re.compile(r'/_api/v1/prototypes/([^/]+)/writing/release')
 _PREVIEW_PATH = re.compile(r'/_api/v1/prototypes/([^/]+)/restore-preview')
 _QUESTIONS_PATH = _API_PREFIX + '/questions'
 _RUN_QUESTIONS_PATH = re.compile(r'/_api/v1/prototypes/([^/]+)/questions')
@@ -6678,6 +6708,11 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
             self._require_method(method, ('POST',))
             self._api_restore(unquote(match.group(1)), session, user)
             return
+        match = _WRITING_RELEASE_PATH.fullmatch(path)
+        if match:
+            self._require_method(method, ('POST',))
+            self._api_writing_release(unquote(match.group(1)), session, user)
+            return
         match = _PREVIEW_PATH.fullmatch(path)
         if match:
             self._require_method(method, ('GET', 'HEAD'))
@@ -7079,6 +7114,24 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
             app.audit(session, 'restore', screen_id)
         self._json(status, dict({'operations': result['operations'], 'iteration': {'current': result['current']}},
                                 **extra))
+
+
+    def _api_writing_release(self, slug, session, user):
+        """`POST …/prototypes/<slug>/writing/release`: removes the writing marker (idempotent).  Only an acceptor or a
+        developer; the same order of checks as `restore` (session, CSRF, v1, source writes, role)."""
+        app = self.app
+        self._post_checks(session, user)
+        directory, state = app.prototype_dir(slug)
+        if state == 'v1':
+            raise NeedsMigration()
+        if not app.source_writes:
+            raise PrototypeServerError(403, 'source_writes_disabled', 'this server does not write prototype sources')
+        if primary_role(user) not in PRIVILEGED_ROLES:
+            raise PrototypeServerError(403, 'forbidden', 'only an acceptor or a developer may release the writing marker')
+        with app.store(slug).lock():
+            released = remove_writing(directory)
+        app.audit(session, 'writing/release')
+        self._json(200, {'writing': None, 'released': bool(released)})
 
 
 class PrototypeHTTPServer(ThreadingHTTPServer):

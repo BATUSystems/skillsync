@@ -4,6 +4,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+### Changed
+- `skills/prototype/SKILL.md`, `skills/skillsync/SKILL.md`: odnowienie `writing start` zachowuje początek pisania (`since`) i autora, nowe pole `renewedAt`; „Zwolnij” w banerze (tylko akceptujący i deweloper); strona statusu pokazuje „agent pisze ekrany (do HH:MM)” zamiast wezwania do akceptacji.
+- `skills/dashboard`: pozycje czekania `writing` i `expert` (z plików), pole `prototype.writing`, renderer z odnośnikiem do strony pytań w banerze czekania.
+- `skills/prototype/assets/repo/prototype.js`: baner „do HH:MM”, przycisk „Zwolnij” dla roli `acceptor` i `developer`; istniejące prototypy dostają silnik po `skillsync prototype migrate`.
+
 ## [1.3.0] - 2026-11-13
 
 ### Added
