@@ -87,6 +87,9 @@ prototype:
     css: docs/design/prototype.css      # opcjonalnie
   guidelines: docs/design/prototype.md  # opcjonalnie
   commit_before_iteration: false        # opcjonalnie
+  public_url: https://proto.example.org # opcjonalnie
 ```
 
 Ścieżki są względne do katalogu projektu. Ścieżka bezwzględna, `..` wychodzące z repo i dowiązanie na zewnątrz są błędem.
+
+`public_url` to adres, pod którym eksperci otwierają serwer prototypów (np. koniec tunelu ssh albo odwrotne proxy): http(s), bez danych logowania, zapytania i fragmentu; końcowy `/` jest obcinany. Zmienna środowiskowa `SKILLSYNC_PROTOTYPE_PUBLIC_URL` ma pierwszeństwo przed manifestem. Adres trafia do `prototype question url`, pola `url` w `prototype question add` (także gdy serwer nie działa lokalnie) i dodatkowej linii „Adres publiczny” komunikatu `prototype serve`; `prototype link` zostaje lokalny. Błędna wartość w manifeście to błąd walidacji (`doctor`), a w zmiennej BLOCKED `invalid_public_url`.

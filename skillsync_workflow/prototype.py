@@ -32,6 +32,7 @@ import tempfile
 import threading
 import unicodedata
 import time
+import urllib.parse
 import yaml
 from .common import contained, emit, load_layer_project, read_project, read_yaml, require_layerset
 from . import layers as _layers
@@ -39,7 +40,8 @@ from . import prototype_server as server
 from .plan_phases import parse_plan_phases
 
 DEFAULT_ROOT = 'docs/prototypes'
-KNOWN_KEYS = ('root', 'theme', 'guidelines', 'commit_before_iteration')
+KNOWN_KEYS = ('root', 'theme', 'guidelines', 'commit_before_iteration', 'public_url')
+PUBLIC_URL_ENV = 'SKILLSYNC_PROTOTYPE_PUBLIC_URL'
 THEME_KEYS = ('tokens_from', 'css')
 SLUG_PATTERN = re.compile(r'[a-z0-9]+(?:-[a-z0-9]+)*')
 TITLE_MAX = 120
@@ -605,12 +607,45 @@ def _path_kind(path, label):
     return ('file' if stat.S_ISREG(mode) else 'other'), None
 
 
+def normalise_public_url(value, label):
+    """`(url, None)` for an http(s) address without credentials, query and fragment (no trailing `/`), else
+    `(None, '<label>: …')`. Used for `prototype.public_url` and `SKILLSYNC_PROTOTYPE_PUBLIC_URL`."""
+    if not isinstance(value, str) or not value.strip():
+        return None, f'{label}: must be an http(s) address, e.g. https://proto.example.org:8443'
+    text = value.strip()
+    try:
+        parts = urllib.parse.urlsplit(text)
+        parts.port  # noqa: B018  (raises ValueError for a bad port)
+    except ValueError:
+        return None, f'{label}: not a valid address'
+    if parts.scheme not in ('http', 'https') or not parts.hostname:
+        return None, f'{label}: must be an http(s) address with a host, e.g. https://proto.example.org:8443'
+    if parts.username or parts.password or '@' in parts.netloc:
+        return None, f'{label}: must not contain login data'
+    if parts.query or parts.fragment or '?' in text or '#' in text:
+        return None, f'{label}: must not contain a query or a fragment'
+    return text.rstrip('/'), None
+
+
+def public_url_of(settings, environ=None):
+    """`(url or None, error or None)`: the variable SKILLSYNC_PROTOTYPE_PUBLIC_URL wins over `prototype.public_url`."""
+    raw = (environ if environ is not None else os.environ).get(PUBLIC_URL_ENV)
+    if raw is not None and raw.strip():
+        return normalise_public_url(raw, PUBLIC_URL_ENV)
+    return settings.get('public_url'), None
+
+
+def public_address_note(public):
+    return None if not public else f'Adres publiczny: {public}'
+
+
 def resolve_prototype_settings(section, root):
     """Validate the section and resolve its paths: dict with `errors`, `warnings`, `root`,
     `root_value`, `tokens_from`, `css`, `guidelines` (resolved `Path` or None) and
     `commit_before_iteration` (bool, default False; K40)."""
     settings = {'errors': [], 'warnings': [], 'root': None, 'root_value': DEFAULT_ROOT,
-                'tokens_from': None, 'css': None, 'guidelines': None, 'commit_before_iteration': False}
+                'tokens_from': None, 'css': None, 'guidelines': None, 'commit_before_iteration': False,
+                'public_url': None}
     errors, warnings = settings['errors'], settings['warnings']
     if section is None:
         section = {}
@@ -626,6 +661,12 @@ def resolve_prototype_settings(section, root):
             errors.append('prototype.commit_before_iteration: must be true or false')
         else:
             settings['commit_before_iteration'] = flag
+    if 'public_url' in section:
+        public, error = normalise_public_url(section['public_url'], 'prototype.public_url')
+        if error:
+            errors.append(error)
+        else:
+            settings['public_url'] = public
     root_value = section.get('root', DEFAULT_ROOT)
     path, error = resolve_repo_path(root, root_value, 'prototype.root')
     if error:
@@ -2400,6 +2441,9 @@ def serve_prototypes(root, manifest, args, err=None):
     for warning in notes:
         err.write(f'ostrzeżenie: {warning}\n')
     err.write(f'Serwer prototypów: {instance.url} (Ctrl+C kończy)\n')
+    public_note = public_address_note(public_url_of(settings)[0])
+    if public_note:
+        err.write(public_note + '\n')
     err.flush()
     previous = _stop_on_sigterm()
     try:
@@ -3693,6 +3737,9 @@ def _experts_url(repo, settings):
         pass
     if server.link_host_kind(host) == 'wildcard':
         host = '127.0.0.1'
+    public, _error = public_url_of(settings)
+    if public:
+        return public + server.EXPERTS_PATH, running
     if ':' in host and not host.startswith('['):
         host = '[%s]' % host
     return 'http://%s:%s%s' % (host, port, server.EXPERTS_PATH), running
@@ -3768,6 +3815,9 @@ def add_question(root, manifest, args):
     if args.blocking == (args.assume is not None):
         return _question_fail('invalid_mode', 'give exactly one of --assume <value> (a question that does not stop '
                               'the agent) or --blocking (the agent waits for the answer)')
+    _public, public_error = public_url_of(settings)
+    if public_error:
+        return _question_fail('invalid_public_url', public_error, status='BLOCKED')
     refs = [_parse_question_ref(value) for value in args.ref or []]
     options = _parse_question_options(args.option)
     origin = _parse_origin(args.origin)
@@ -3864,7 +3914,7 @@ def add_question(root, manifest, args):
     report = {'status': 'PASS', 'questionId': question_id, 'slug': slug, 'idempotent': not result.operations,
               'specLine': question_spec_line(question), 'files': files, 'created': created, 'notes': notes,
               'warnings': warnings}
-    if running:
+    if running or public_url_of(settings)[0]:
         report['url'] = '%s#%s' % (base, question_id)
     return report
 
@@ -4035,6 +4085,9 @@ def url_question(root, manifest, users=None):
     Does not check that the server runs."""
     repo = Path(root).resolve()
     settings = _settings(repo, manifest)
+    _public, public_error = public_url_of(settings)
+    if public_error:
+        return {'status': 'BLOCKED', 'error': 'invalid_public_url', 'reason': public_error}
     accounts, error, message = _users_state(repo, users)
     if accounts is None:
         return {'status': 'BLOCKED', 'error': error, 'reason': message}

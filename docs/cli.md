@@ -280,7 +280,7 @@ skillsync prototype question purge . --slug zwroty --include-open --yes         
   (`secret_detected`, exit 2, bez wartości w raporcie), `--force` przepuszcza z ostrzeżeniem. Raport: `questionId`, `slug`, `specLine`
   (wiersz do speca), `files` (pliki do commita, w tym `<root>/<slug>/questions.json`, `<root>/.gitignore` z `questions.json.lock` i `*.tmp` oraz `<root>/.gitattributes`
   z `merge=skillsync-questions`, dopisywane przy pierwszym użyciu), `created` (nowo utworzone pliki: plik pytań, jego lock, `<root>/.gitignore`, `<root>/.gitattributes`),
-  `notes` (zdania typu „created <ścieżka>”, także o locku ignorowanym przez git), `warnings`, `url`, gdy serwer projektu działa. Powtórka z tym
+  `notes` (zdania typu „created <ścieżka>”, także o locku ignorowanym przez git), `warnings`, `url`, gdy serwer projektu działa albo ustawiono `prototype.public_url`/`SKILLSYNC_PROTOTYPE_PUBLIC_URL`. Powtórka z tym
   samym `--question-id` jest idempotentna. Osierocony lock (`questions.json.lock` bez pliku pytań, wolny) usuwa następny `add` tego przebiegu
   (best effort; na platformie, która nie usuwa otwartego pliku, zostaje). Odrzucony `add` nie zakłada ani pliku, ani locka.
 - `list`, `show`, `export` zwracają dokument `expert-questions/1`: `{schema, project, url?, questions: [{id, slug, text, state, blocking, assumed,
@@ -297,7 +297,7 @@ skillsync prototype question purge . --slug zwroty --include-open --yes         
   bez operacji `recorded` albo zdarzenie nowsze niż `--since`/`--after`. TIMEOUT to exit 3.
 - `record <id> --spec … --line <numer>` zapisuje znacznik „wpisano do speca” (idempotentnie), ale najpierw czyta wskazaną linię speca i wymaga w niej `[EKSPERT]` oraz identyfikatora pytania (wiersz z pola `answerLine`); inaczej FAIL (1) z kodem `record_line_mismatch` (inna treść linii), `record_line_out_of_range` (za krótki spec) albo `record_spec_unreadable` (brak pliku, ścieżka poza repozytorium) i podpowiedzią w `hint`. Pytanie bez odpowiedzi daje najpierw `not_answered`; `withdraw <id>` wycofuje pytanie otwarte,
   także blokujące, zwraca stan po operacji (`state` i `questions[0].state` = `withdrawn`) i zwykły wiersz `Q` programisty (odpowiedzianego nie da się wycofać: `already_answered`).
-- `url` zwraca adres strony i liczbę kont `expert`; BLOCKED (`users_file_missing`, `users_file_invalid`, `no_expert_accounts`) znaczy, że
+- `url` zwraca adres strony i liczbę kont `expert` (adres z `prototype.public_url` albo zmiennej `SKILLSYNC_PROTOTYPE_PUBLIC_URL`, gdy ustawiono: za tunelem ssh inaczej byłoby 127.0.0.1; błędna zmienna to BLOCKED `invalid_public_url`); BLOCKED (`users_file_missing`, `users_file_invalid`, `no_expert_accounts`) znaczy, że
   nie ma komu zadać pytania, więc agent pyta zwykle. Nie sprawdza, czy serwer działa (pole `running` mówi o stanie z pliku serwera).
 - `add`, `list`, `show`, `export` i `url` przyjmują `--users` (plik kont względem projektu, jak w `user`).
 - `migrate [--dry-run] [--slug-for SPEC=SLUG]` dzieli stary `<root>/questions.json` na pliki przebiegów według `origin.spec`. Idempotentna.
