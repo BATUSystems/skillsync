@@ -3792,9 +3792,17 @@ def public_writing(directory, now_ms):
                                         'renewedAt': marker['renewedAt']}
 
 
+def _local_hhmm(millis):
+    """`HH:MM` of a UTC-millisecond time in the local time of the host that runs the server."""
+    return time.strftime('%H:%M', time.localtime(millis / 1000.0))
+
+
 def writing_conflict(slug, marker):
-    """409 `writing_in_progress` `{slug, since, expiresAt}` for a valid `marker` (no `by`)."""
-    return OperationError(409, 'writing_in_progress', 'the agent is still writing screens of this prototype',
+    """409 `writing_in_progress` `{slug, since, expiresAt}` for a valid `marker` (no `by`).  The message is for a person:
+    an engine that does not know the code shows it as it is."""
+    return OperationError(409, 'writing_in_progress',
+                          'Agent jeszcze pisze ekrany tego prototypu (do %s). Akceptacja wróci, gdy skończy.'
+                          % _local_hhmm(marker['expiresAt']),
                           {'slug': slug, 'since': marker['since'], 'expiresAt': marker['expiresAt']})
 
 
@@ -4368,8 +4376,10 @@ def accept_project(app, login, cid, versions):
     writing = writing_entries([(slug, directory) for slug, directory, _store in targets
                                if slug not in done and slug not in no_screens], clock_ms(app.clock))
     if writing:
-        raise OperationError(409, 'writing_in_progress', 'the agent is still writing screens: %s'
-                             % ', '.join(item['slug'] for item in writing), {'writing': writing})
+        raise OperationError(409, 'writing_in_progress',
+                             'Agent jeszcze pisze ekrany: %s (do %s). Nic nie zapisano; akceptacja wróci, gdy skończy.'
+                             % (', '.join(item['slug'] for item in writing),
+                                _local_hhmm(max(item['expiresAt'] for item in writing))), {'writing': writing})
     for slug, directory, _store in targets:
         if slug in done:
             continue
@@ -6259,6 +6269,7 @@ def _log_safe(text):
 _API_PREFIX = '/_api/v1'
 _OPERATIONS_PATH = re.compile(r'/_api/v1/prototypes/([^/]+)/operations')
 _RESTORE_PATH = re.compile(r'/_api/v1/prototypes/([^/]+)/restore')
+_WRITING_RELEASE_PATH = re.compile(r'/_api/v1/prototypes/([^/]+)/writing/release')
 _PREVIEW_PATH = re.compile(r'/_api/v1/prototypes/([^/]+)/restore-preview')
 _QUESTIONS_PATH = _API_PREFIX + '/questions'
 _RUN_QUESTIONS_PATH = re.compile(r'/_api/v1/prototypes/([^/]+)/questions')
@@ -6694,6 +6705,11 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
             self._require_method(method, ('POST',))
             self._api_restore(unquote(match.group(1)), session, user)
             return
+        match = _WRITING_RELEASE_PATH.fullmatch(path)
+        if match:
+            self._require_method(method, ('POST',))
+            self._api_writing_release(unquote(match.group(1)), session, user)
+            return
         match = _PREVIEW_PATH.fullmatch(path)
         if match:
             self._require_method(method, ('GET', 'HEAD'))
@@ -7095,6 +7111,24 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
             app.audit(session, 'restore', screen_id)
         self._json(status, dict({'operations': result['operations'], 'iteration': {'current': result['current']}},
                                 **extra))
+
+
+    def _api_writing_release(self, slug, session, user):
+        """`POST …/prototypes/<slug>/writing/release`: removes the writing marker (idempotent).  Only an acceptor or a
+        developer; the same order of checks as `restore` (session, CSRF, v1, source writes, role)."""
+        app = self.app
+        self._post_checks(session, user)
+        directory, state = app.prototype_dir(slug)
+        if state == 'v1':
+            raise NeedsMigration()
+        if not app.source_writes:
+            raise PrototypeServerError(403, 'source_writes_disabled', 'this server does not write prototype sources')
+        if primary_role(user) not in PRIVILEGED_ROLES:
+            raise PrototypeServerError(403, 'forbidden', 'only an acceptor or a developer may release the writing marker')
+        with app.store(slug).lock():
+            released = remove_writing(directory)
+        app.audit(session, 'writing/release')
+        self._json(200, {'writing': None, 'released': bool(released)})
 
 
 class PrototypeHTTPServer(ThreadingHTTPServer):
