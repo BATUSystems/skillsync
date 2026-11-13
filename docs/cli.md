@@ -170,7 +170,7 @@ spójność instrukcji z plikami oraz budżety bajtów.
 
 | Komenda | Skutek |
 |---|---|
-| `checkpoint`, `resume` | zapis i sprawdzenie kroku przebiegu |
+| `checkpoint`, `resume` | zapis i sprawdzenie kroku przebiegu; `--manifest PLIK` bierze manifest spoza repozytorium (np. publiczny rdzeń bez `.github/.skillsync.yaml`), a korzeń projektu i zapis `.skillsync/runs/` zostają w `<path>`; bez flagi zachowanie bez zmian; zły plik to błąd z nazwą flagi |
 | `metrics`, `retro`, `retro-decide`, `benchmark` | pomiary, raport retrospektywy, rejestracja decyzji, benchmark narzędzi |
 
 Szczegóły: [workflow](workflow.md).

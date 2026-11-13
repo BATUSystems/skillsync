@@ -19,6 +19,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 - `question show` ma pole `question` (pierwsze pytanie), a `question wait` pole `questions[]`: oba mają teraz `question`, `questions[]` i `answerLine` na górze (zmiana addytywna, żadne pole nie znika).
 - `question add`: pole `ignored` (utworzone pliki ignorowane przez git, czyli lock); `created` = `files` + `ignored` przy pierwszym użyciu.
 - `checkpoint`: komunikat o złym identyfikatorze nazywa pole (`--step`, `--run-id`) i wzorzec `[A-Za-z0-9][A-Za-z0-9_.-]{0,79}`.
+- `skillsync checkpoint` i `resume`: flaga `--manifest PLIK` (manifest projektu spoza repozytorium, np. dla publicznego rdzenia bez `.github/.skillsync.yaml`); bez flagi zachowanie bez zmian.
 - `prototype.public_url` (manifest) i zmienna `SKILLSYNC_PROTOTYPE_PUBLIC_URL` (wygrywa): adres serwera prototypów dla ekspertów za tunelem ssh. Używają go `prototype question url`, pole `url` w `question add` (także bez lokalnego serwera) i dodatkowa linia „Adres publiczny” komunikatu `prototype serve`; błędna zmienna to BLOCKED `invalid_public_url`.
 
 ## [1.3.0] - 2026-11-13
