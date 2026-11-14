@@ -109,7 +109,7 @@ przyjmuje według tabeli stanów i nazywa w odpowiedzi, na co je przyjął; stan
 Spec ma trzy klasy pytań (blokujące `Q<n>`, `[ZAŁOŻENIE]`, `[EKSPERT]`). Blokujące: `- Q<n>: <pytanie>`; dopóki jest otwarte, spec jest „draft z Q” i agent staje (STOP).
 Założenia: `- Q<n> [ZAŁOŻENIE]: <pytanie> — przyjęte: <wartość>`; nie zatrzymują „draft z Q”, ale zostają widoczne do korekty.
 Wiersz jest parsowany dzieleniem po ostatnim ` — przyjęte: `. Pytań o kontrakt, dane, migrację i bezpieczeństwo nie wolno
-oznaczać `[ZAŁOŻENIE]`. Parser `Q` należy do strony statusu, nie do kodu rdzenia (`readiness` go nie egzekwuje).
+oznaczać `[ZAŁOŻENIE]`; to decyzja programisty, zadawana jako zwykłe `Q` w sesji, nie ekspertowi. Parser `Q` należy do strony statusu, nie do kodu rdzenia (`readiness` go nie egzekwuje).
 
 Klasa `[EKSPERT]` to wiersz: pytanie domenowe, na które odpowiada ekspert, a nie programista
 ([prototypes](prototypes.md#pytania-do-eksperta), rekord [expert-questions](domain/expert-questions.md)). Czekające pytanie jest zwykłym

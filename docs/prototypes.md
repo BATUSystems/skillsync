@@ -437,7 +437,7 @@ więc etapy na jednej gałęzi nie mieszają pytań, a ekspert widzi każdy prze
 
 Agent: `skillsync prototype question add|list|show|export|record|withdraw|url|wait|merge|migrate|purge` ([cli](cli.md#pytania-do-eksperta-prototype-question-prototype-user-roles)).
 Pytanie jest domyślnie **nieblokujące** (`--assume`: agent idzie dalej z wartością przyjętą, ekspert ją potwierdza albo koryguje);
-pytania o kontrakt, dane, migrację i bezpieczeństwo agent zadaje jako blokujące (`--blocking`). Pytanie jest do wszystkich ekspertów
+pytania o kontrakt, dane (schemat bazy), migrację i bezpieczeństwo to decyzja programisty: agent zadaje je jako zwykłe `Q` w sesji, nie ekspertowi; do eksperta idą tylko pytania domenowe, blokujące (`--blocking`) wtedy, gdy bez odpowiedzi nie da się zaprojektować ekranu. Pytanie jest do wszystkich ekspertów
 albo do wskazanych loginów (`--to`). Pierwsza odpowiedź zamyka pytanie i jest ostateczna: nie ma edycji ani unieważnienia, spór to nowe
 pytanie z `--refers-to`, a stara odpowiedź zostaje widoczna. Agent wpisuje odpowiedź do speca z autorem i czasem (`answerLine`) i
 oznacza to przez `question record`; programista dostaje informację, nie pytanie.

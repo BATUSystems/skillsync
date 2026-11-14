@@ -71,7 +71,7 @@ dostarczania po „GO implement”. Wyjątek: wejście z klucza zgłoszenia zost
 
 **Pytania w specu.** Pytanie `- Q<n>: …` jest blokujące (STOP, jak dotąd). Pytanie `- Q<n> [ZAŁOŻENIE]: <pytanie> — przyjęte: <wartość>`
 to założenie nieblokujące: nie zatrzymuje „draft z Q” i zostaje widoczne do korekty (format i zakaz: [spec](references/spec.md#klasy-pytań-q)).
-Nie oznaczaj jako [ZAŁOŻENIE] pytań o kontrakt, dane, migrację ani bezpieczeństwo.
+Nie oznaczaj jako [ZAŁOŻENIE] pytań o kontrakt, dane, migrację ani bezpieczeństwo; to decyzja programisty (zwykłe `Q` w sesji), nie pytanie do eksperta.
 
 **Pytania do eksperta.** Za opt-in programisty (albo po opcji „Nie wiem, zapytaj eksperta”, oferowanej dopiero po opt-in lub po `question url` PASS
 i zgodzie programisty) pytanie domenowe idzie do eksperta przez `skillsync prototype question add`, a odpowiedź wraca do speca jako wiersz

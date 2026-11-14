@@ -193,7 +193,7 @@ Spec ma dwie klasy pytań:
   widoczna do korekty (strona statusu, prototyp). Użytkownik zmienia ją odpowiedzią, a wtedy wiersz przechodzi do „Decyzji” albo dostaje nową wartość po „przyjęte:”.
 
 Format wiersza jest dosłowny: parser dzieli po **ostatnim** ` — przyjęte: ` (myślnik z odstępami), więc pytanie może zawierać myślniki.
-Nie oznaczaj jako [ZAŁOŻENIE] pytań o kontrakt, dane, migrację ani bezpieczeństwo: te zawsze blokują. W razie wątpliwości pytanie jest blokujące.
+Nie oznaczaj jako [ZAŁOŻENIE] pytań o kontrakt, dane, migrację ani bezpieczeństwo: te zawsze blokują i są decyzją programisty (zwykłe `Q` w sesji, nie pytanie do eksperta). W razie wątpliwości pytanie jest blokujące.
 
 Trzecia klasa, `[EKSPERT]`, dotyczy pytań domenowych zadawanych ekspertowi: zob. następną sekcję.
 
@@ -214,7 +214,9 @@ i `--origin <ścieżka speca>:Q<n>` (np. `--origin docs/specs/x.md:Q3`); konteks
 zostaje zwykłym pytaniem do programisty (opcji „Nie wiem, zapytaj eksperta” wtedy nie oferuj). Link do strony `/_experts` przekazuje
 ekspertowi programista (adres z `question url`), agent go nie rozsyła.
 
-**Blokujące czy z założeniem.** Pytania o kontrakt, dane, migrację i bezpieczeństwo są blokujące (`question add --blocking`); reszta
+**Blokujące czy z założeniem.** Pytania o kontrakt, dane (schemat bazy), migrację i bezpieczeństwo to decyzja programisty: agent zadaje je jako zwykłe
+blokujące `Q` w sesji (STOP), nie ekspertowi, i nie tworzy dla nich `question add`. Do eksperta idą wyłącznie pytania domenowe (reguły biznesowe, słownictwo,
+zachowanie widoczne dla użytkownika): blokujące (`question add --blocking`) tylko wtedy, gdy bez odpowiedzi nie da się zaprojektować ekranu; reszta
 dostaje wartość przyjętą (`--assume`). Domyślnie agent NIE czeka: pytanie z założeniem nie zatrzymuje pracy. Agent czeka na odpowiedź
 tylko przy pytaniach blokujących i tylko przez `skillsync prototype question wait <projekt> <id>` (Monitor; kod 3 = timeout, czekaj ponownie; na hoście bez Monitora zwykłe czekanie, jak w `SKILL.md`).
 Przy wznowieniu pracy oraz przed „GO plan”, „GO implement” i review agent sprawdza odpowiedzi na pytania nieblokujące: `question list <projekt>` (pole `counts.toRecord`) albo `question wait <projekt> --all`; odpowiedź ostateczną wpisuje do speca według reguł czasowych niżej.
