@@ -62,6 +62,71 @@ except ImportError:
     msvcrt = None
 
 
+# ── Lingering close (shared with the status page) ───────────────────────────
+#
+# A handler that answers an error (401, 403, 405, 411, 413, ...) before it has read the request body and then closes
+# the connection leaves the client's bytes unread in the socket. The kernel answers such a close with a TCP reset,
+# and on Windows the client then sees ConnectionResetError (WinError 10054) instead of the response it was sent.
+# The cure is the one of RFC 9112 section 9.6: after the response, half-close the sending side and discard what the
+# client still sends, within hard limits, before closing. The limits are small and fixed, so a client without any
+# rights cannot hold a worker or make the server read an unbounded body.
+#
+# The status page (`dashboard_http`) imports `LingeringCloseMixin` from here: one source, this module stays standalone.
+
+LINGER_BYTES = 256 * 1024   # a body over this is not drained (the reset is then the client's own doing)
+LINGER_SECONDS = 1.0        # all of the discarding, not per read
+_CHUNK = 64 * 1024
+_BODY_METHODS = frozenset({'POST', 'PUT', 'PATCH', 'DELETE'})
+
+
+def declares_body(command, headers):
+    """True when the request may carry a body the handler might not have read."""
+    if command not in _BODY_METHODS:
+        return False
+    if headers is None:
+        return False
+    if headers.get('Transfer-Encoding'):
+        return True
+    try:
+        return int(headers.get('Content-Length') or 0) > 0
+    except ValueError:
+        return True
+
+
+def linger_close(connection, limit=LINGER_BYTES, seconds=LINGER_SECONDS):
+    """Half-close `connection` for writing and discard the client's remaining bytes (bounded); never raises.
+
+    Returns the number of bytes discarded. The caller closes the connection afterwards."""
+    discarded = 0
+    deadline = time.monotonic() + seconds
+    try:
+        connection.shutdown(socket.SHUT_WR)
+        while discarded < limit:
+            left = deadline - time.monotonic()
+            if left <= 0:
+                break
+            connection.settimeout(left)
+            data = connection.recv(min(_CHUNK, limit - discarded))
+            if not data:   # the client has closed its side: nothing is left to reset
+                break
+            discarded += len(data)
+    except OSError:   # includes timeouts, resets and a connection that is already gone
+        pass
+    return discarded
+
+
+class LingeringCloseMixin:
+    """Mixin for `BaseHTTPRequestHandler` subclasses: lingering close when the connection is closed after a request
+    that declared a body. List it BEFORE the handler base class."""
+
+    def finish(self):
+        try:
+            if self.close_connection and declares_body(getattr(self, 'command', None), getattr(self, 'headers', None)):
+                linger_close(self.connection)
+        finally:
+            super().finish()
+
+
 # ── Constants ────────────────────────────────────────────────────────────────
 
 SERVER_VERSION = '1'
@@ -6253,7 +6318,7 @@ _LOGIN_TO_VIEW_EXCEPTIONS = ('/_login', _API_PREFIX + '/login', _API_PREFIX + '/
 
 # ── HTTP handler ─────────────────────────────────────────────────────────────
 
-class PrototypeRequestHandler(BaseHTTPRequestHandler):
+class PrototypeRequestHandler(LingeringCloseMixin, BaseHTTPRequestHandler):
     server_version = 'skillsync-prototype/' + SERVER_VERSION
     sys_version = ''
     timeout = 30

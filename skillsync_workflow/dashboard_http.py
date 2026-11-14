@@ -41,6 +41,7 @@ from . import dashboard as engine
 from . import status as status_core
 from .common import emit, load_layer_project, read_project, redact
 from .layers import LayerError
+from .prototype_server import LingeringCloseMixin
 
 HEADER_RE = engine.HEADER_RE
 is_allowed_rel = engine.is_allowed_rel
@@ -584,7 +585,7 @@ class Board:
 
 # --------------------------------------------------------------------------- HTTP
 
-class Handler(BaseHTTPRequestHandler):
+class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
     server_version = f"dashboard/{__version__}"
     board: Board  # set in make_server
     verbose = False
