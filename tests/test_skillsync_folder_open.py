@@ -100,7 +100,9 @@ class FolderOpenTaskTests(TempProjectMixin, unittest.TestCase):
         self.manifest = {"skills": ["feature"]}
         self.home = self.tmp / "home"
         self.home.mkdir()
-        env = mock.patch.dict(os.environ, {"HOME": str(self.home)})
+        # `Path.home()` is `%USERPROFILE%` on Windows: both variables point into the fixture, so the real profile
+        # (with a real `~/.local/bin/skillsync.exe`) is never read.
+        env = mock.patch.dict(os.environ, {"HOME": str(self.home), "USERPROFILE": str(self.home)})
         env.start()
         self.addCleanup(env.stop)
         self.target = self.project_dir / ".vscode" / "tasks.json"

@@ -53,6 +53,12 @@ class WorkflowFixture(unittest.TestCase):
             home = self.base / 'machine-home'
             home.mkdir()
             isolated['HOME'] = str(home)
+        elif os.name == 'nt':
+            # Windows keeps them under `%LOCALAPPDATA%` (and `Path.home()` is `%USERPROFILE%`): both move into the fixture.
+            home = self.base / 'machine-home'
+            (home / 'localappdata').mkdir(parents=True)
+            isolated['USERPROFILE'] = str(home)
+            isolated['LOCALAPPDATA'] = str(home / 'localappdata')
         environ = mock.patch.dict(os.environ, isolated)
         environ.start()
         self.addCleanup(environ.stop)

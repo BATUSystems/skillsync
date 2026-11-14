@@ -212,7 +212,7 @@ class UserEntry(unittest.TestCase):
     @needs_os_symlinks
     def test_a_symlink_entry_stays_unresolved_whatever_it_points_at(self):
         target = self.make(self.tmp / 'other-checkout-skillsync')
-        link = self.home / '.local' / 'bin' / 'skillsync'
+        link = self.home / '.local' / 'bin' / ('skillsync.exe' if os.name == 'nt' else 'skillsync')   # the entry is `.exe` on Windows
         os.symlink(target, link)
         self.assertEqual(self.entry(), str(link))
         with mock.patch.object(selfcmd, '_user_entry', return_value=str(link)):
