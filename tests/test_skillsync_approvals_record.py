@@ -310,6 +310,7 @@ class RecordLock(RecordFixture):
         self.assertEqual(errors, [])
         self.assertEqual(int(counter.read_text(encoding='utf-8')), 8 * 15, 'no lost update across unlink/recreate')
 
+    @unittest.skipIf(os.name == 'nt', 'Windows nie pozwala usunąć ani podmienić otwartego pliku')
     def test_a_lock_file_replaced_between_open_and_flock_is_locked_again_on_the_new_file(self):
         lock = self.log.parent / 'approvals.jsonl.lock'
         real, calls = server._try_lock_fd, []

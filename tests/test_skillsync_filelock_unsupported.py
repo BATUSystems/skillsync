@@ -106,6 +106,7 @@ class WaiterFollowsAnUnlinkedLockFileTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.path = os.path.join(self.tmp.name, 'questions.json.lock')
 
+    @unittest.skipIf(os.name == 'nt', 'Windows nie pozwala usunąć ani podmienić otwartego pliku')
     def test_a_default_waiter_locks_the_recreated_file_after_the_holder_unlinked_it(self):
         import threading
         holder_in, waiter_started, result = threading.Event(), threading.Event(), {}
@@ -169,6 +170,49 @@ class WaiterFollowsAnUnlinkedLockFileTests(unittest.TestCase):
             result['thread'].join(10)
             self.assertTrue(waiter_done.is_set())
             self.assertEqual(result['same'], True)
+
+
+class WaiterEntersAfterReleaseTests(unittest.TestCase):
+    """The property the unlink/replace tests protect, in a form every platform can run: a second writer blocks while the
+    first holds the lock and enters as soon as the first releases it (with and without `unlink=True`)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix='filelock-release-')
+        self.addCleanup(self.tmp.cleanup)
+        self.path = os.path.join(self.tmp.name, 'x.lock')
+
+    def check(self, unlink):
+        import threading
+        entered, finished = threading.Event(), threading.Event()
+        errors = []
+
+        def waiter():
+            try:
+                with ps.FileLock(self.path, 20, unlink=unlink):
+                    entered.set()
+                finished.set()
+            except BaseException as error:  # noqa: BLE001
+                errors.append(repr(error))
+                entered.set()
+                finished.set()
+
+        with mock.patch.object(ps, '_process_lock', side_effect=lambda path: threading.Lock()):
+            holder = ps.FileLock(self.path, 20, unlink=unlink)
+            holder.__enter__()
+            thread = threading.Thread(target=waiter)
+            thread.start()
+            self.assertFalse(entered.wait(0.4), 'the waiter must block while the holder keeps the lock')
+            holder.__exit__(None, None, None)
+            self.assertTrue(finished.wait(15), 'the waiter enters after the holder released')
+            thread.join(10)
+        self.assertEqual(errors, [])
+        self.assertTrue(entered.is_set())
+
+    def test_the_waiter_enters_after_the_holder_releases(self):
+        self.check(False)
+
+    def test_the_waiter_enters_after_a_holder_that_unlinks_the_lock_file(self):
+        self.check(True)
 
 
 if __name__ == '__main__':
