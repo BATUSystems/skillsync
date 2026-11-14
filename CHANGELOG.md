@@ -12,6 +12,10 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Fixed
+
+- `prototype serve` i `dashboard serve`: SIGINT (Ctrl+C) albo SIGTERM tuż po starcie, między instalacją handlera, ogłoszeniem adresu a `serve_forever`, kończy serwer czysto (PASS, `stopped`) zamiast tracebacku i kodu -2; handler jest instalowany przed ogłoszeniem adresu, a cały start leży pod `try`. W CI padło tak raz na macOS (okno kilkunastu milisekund).
+
 ## [1.3.0] - 2026-11-13
 
 ### Added

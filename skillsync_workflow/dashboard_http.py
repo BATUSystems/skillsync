@@ -860,41 +860,42 @@ def serve_command(args) -> int:
                                                     f"({error.strerror or error})"})
     except (LayerError, ValueError, TypeError, yaml.YAMLError) as error:
         return emit({"status": "BLOCKED", "reason": " ".join(str(error).split())[:500]})
-    if threading.current_thread() is threading.main_thread():
-        signal.signal(signal.SIGTERM, _stop_on_sigterm)
-    threading.Thread(target=board.watch_loop, name="watcher", daemon=True).start()
     host, port = server.server_address[:2]
     url = f"http://{'[%s]' % host if ':' in host else host}:{port}/"
-    log(f"projekt {board.root} → {url}  (Ctrl+C kończy)")
-    extra = sorted(board.approve_hosts - LOOPBACK_HOSTS)
-    readers = sorted(board.read_hosts - board.approve_hosts)
-    if extra:
-        log(f"hosty odczytu i zgód (--approve-host): {', '.join(extra)}"
-            f"{' (zgody wyłączone: --no-approvals)' if not board.approvals else ''}")
-    if readers:
-        log(f"hosty tylko do odczytu (--read-host, bez zgód): {', '.join(readers)}")
-    if readers and board.approvals:
-        log("UWAGA: --read-host ogranicza zapis z przeglądarki, nie przed klientem podrabiającym nagłówek Host; "
-            "przy nieufnych widzach użyj --no-approvals (osobna instancja bez zapisu: "
-            f"skillsync dashboard serve <projekt> --port <inny port> --no-approvals --read-host {readers[0]}).")
-    shadowed = sorted(board.read_hosts & board.approve_hosts)
-    if shadowed:
-        log(f"UWAGA: {', '.join(shadowed)} z --read-host jest też loopbackiem albo w --approve-host, więc daje zgody.")
-    if args.host not in LOOPBACK_HOSTS:
-        if not extra and not readers:
-            log(f"UWAGA: nasłuch na {args.host}, ale strona odpowiada tylko pod localhost (nagłówek Host); inne urządzenia "
-                f"dostaną 403, dopóki ich adres z paska przeglądarki (nazwa lub IP) nie trafi do --approve-host "
-                f"albo --read-host.")
-        elif not extra:
-            log(f"UWAGA: nasłuch na {args.host}; strona (tylko odczyt) dostępna pod: {', '.join(readers)} — używaj "
-                f"w zaufanej sieci.")
-        else:
-            log(f"UWAGA: nasłuch na {args.host}; strona {'(tylko odczyt) ' if not board.approvals else 'i zgody '}"
-                f"dostępne pod: {', '.join(extra)} — używaj w zaufanej sieci"
-                f"{'' if not board.approvals else ' (--no-approvals = tylko odczyt)'}.")
-        for ip in lan_addresses() if args.host in ("0.0.0.0", "::", "") else [args.host]:
-            log(f"  z innego urządzenia: http://{ip}:{port}/ (wymaga --approve-host {ip} albo --read-host {ip})")
     try:
+        # Everything from the SIGTERM handler to `serve_forever` is under the `try` (SIGINT in the start window stops cleanly).
+        if threading.current_thread() is threading.main_thread():
+            signal.signal(signal.SIGTERM, _stop_on_sigterm)
+        threading.Thread(target=board.watch_loop, name="watcher", daemon=True).start()
+        log(f"projekt {board.root} → {url}  (Ctrl+C kończy)")
+        extra = sorted(board.approve_hosts - LOOPBACK_HOSTS)
+        readers = sorted(board.read_hosts - board.approve_hosts)
+        if extra:
+            log(f"hosty odczytu i zgód (--approve-host): {', '.join(extra)}"
+                f"{' (zgody wyłączone: --no-approvals)' if not board.approvals else ''}")
+        if readers:
+            log(f"hosty tylko do odczytu (--read-host, bez zgód): {', '.join(readers)}")
+        if readers and board.approvals:
+            log("UWAGA: --read-host ogranicza zapis z przeglądarki, nie przed klientem podrabiającym nagłówek Host; "
+                "przy nieufnych widzach użyj --no-approvals (osobna instancja bez zapisu: "
+                f"skillsync dashboard serve <projekt> --port <inny port> --no-approvals --read-host {readers[0]}).")
+        shadowed = sorted(board.read_hosts & board.approve_hosts)
+        if shadowed:
+            log(f"UWAGA: {', '.join(shadowed)} z --read-host jest też loopbackiem albo w --approve-host, więc daje zgody.")
+        if args.host not in LOOPBACK_HOSTS:
+            if not extra and not readers:
+                log(f"UWAGA: nasłuch na {args.host}, ale strona odpowiada tylko pod localhost (nagłówek Host); inne urządzenia "
+                    f"dostaną 403, dopóki ich adres z paska przeglądarki (nazwa lub IP) nie trafi do --approve-host "
+                    f"albo --read-host.")
+            elif not extra:
+                log(f"UWAGA: nasłuch na {args.host}; strona (tylko odczyt) dostępna pod: {', '.join(readers)} — używaj "
+                    f"w zaufanej sieci.")
+            else:
+                log(f"UWAGA: nasłuch na {args.host}; strona {'(tylko odczyt) ' if not board.approvals else 'i zgody '}"
+                    f"dostępne pod: {', '.join(extra)} — używaj w zaufanej sieci"
+                    f"{'' if not board.approvals else ' (--no-approvals = tylko odczyt)'}.")
+            for ip in lan_addresses() if args.host in ("0.0.0.0", "::", "") else [args.host]:
+                log(f"  z innego urządzenia: http://{ip}:{port}/ (wymaga --approve-host {ip} albo --read-host {ip})")
         server.serve_forever(poll_interval=0.5)
     except KeyboardInterrupt:
         pass
