@@ -14,6 +14,8 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ### Fixed
 
+- A symlink loop in a `discover_exclude` entry or in a project path is again treated as unresolvable (`common.discover_excludes`, `common.is_excluded`) on newer Pythons:
+  `Path.resolve()` stopped raising on a loop in POSIX 3.13 and Windows 3.12, so the loop is now detected by `os.stat` (ELOOP, Windows error 1921).
 - Prototype server and status page: an error answered before the request body is read (401, 403, 405, 411, 413, a refused approval) no longer ends in a connection reset for the client
   (WinError 10054 on Windows). After such a response the connection is closed with a lingering close (RFC 9112 section 9.6): the sending side is half-closed and the client's remaining bytes are discarded,
   within fixed limits (256 KiB and one second), so a client without rights cannot hold a worker or make the server read an unbounded body.
