@@ -615,7 +615,6 @@ RUN_ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,79}')  # the run-id pattern of
 _REF_NAME = re.compile(r'^(?!-)[\w.][\w./-]{0,120}$')
 _GO_FOLDER = {'GO plan': 'specs', 'GO implement': 'plans'}
 APPROVAL_LOCK_TIMEOUT = 10.0
-APPROVAL_LOCK_STALE = 60.0
 
 
 def _approval_user():
@@ -649,80 +648,12 @@ def _head_sha(root):
     return head
 
 
-class _ApprovalLock:
-    """Inter-process lock as a `<file>.lock` created with O_EXCL (works on POSIX and Windows) holding a unique token.
-
-    A lock older than APPROVAL_LOCK_STALE seconds is treated as left over by a crashed writer. It is taken over by an
-    atomic `os.rename` to a unique name: of two waiters only one rename succeeds, and a waiter whose rename caught a fresh
-    lock of another writer (created between its age check and the rename: other inode or mtime) puts it back with a
-    hard link that never overwrites. `__exit__` removes the lock file only while it is still this lock (inode and token)."""
-
-    def __init__(self, path, timeout=None):
-        self.path, self.timeout = path, APPROVAL_LOCK_TIMEOUT if timeout is None else timeout
-        self.token, self.inode = None, None
-
-    def __enter__(self):
-        import uuid
-        deadline = time.monotonic() + self.timeout
-        flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_BINARY', 0)
-        token = f'{os.getpid()}-{uuid.uuid4().hex}'
-        while True:
-            try:
-                fd = os.open(self.path, flags, 0o600)
-            except FileExistsError:
-                try:
-                    seen = self.path.lstat()
-                except FileNotFoundError:
-                    continue
-                if time.time() - seen.st_mtime > APPROVAL_LOCK_STALE:
-                    self._take_over(seen)
-                    continue
-                if time.monotonic() >= deadline:
-                    raise ValueError(f'Approvals file is locked by another writer: {self.path.name}') from None
-                time.sleep(0.02)
-                continue
-            try:
-                os.write(fd, token.encode('ascii'))
-                self.inode = os.fstat(fd).st_ino
-            finally:
-                os.close(fd)
-            self.token = token
-            return self
-
-    def _take_over(self, seen):
-        """Removes the stale lock judged by `seen` (its lstat); never a lock created after that check."""
-        import uuid
-        grave = self.path.with_name(f'{self.path.name}.stale-{uuid.uuid4().hex}')
-        try:
-            os.rename(self.path, grave)
-        except FileNotFoundError:
-            return  # another waiter took it over first
-        try:
-            moved = grave.lstat()
-            if (moved.st_ino, moved.st_mtime_ns) != (seen.st_ino, seen.st_mtime_ns):
-                try:  # a fresh lock of another writer: back under its name, unless a newer lock exists already
-                    os.link(grave, self.path)
-                except FileExistsError:
-                    pass
-                except OSError:  # no hard links on this file system: best effort, never over an existing lock
-                    if not self.path.exists():
-                        os.rename(grave, self.path)
-        finally:
-            grave.unlink(missing_ok=True)
-
-    def _owned(self):
-        try:
-            if self.path.lstat().st_ino != self.inode:
-                return False
-            return self.path.read_bytes()[:200] == (self.token or '').encode('ascii')
-        except OSError:
-            return False
-
-    def __exit__(self, *exc):
-        if self.token is not None and self._owned():
-            self.path.unlink(missing_ok=True)
-        self.token = None
-        return False
+def _lock_module():
+    """The prototype server module (imported on first use: ~0.3 s, and only a consent write needs it). Its `FileLock` is
+    the one system lock (`flock`; `msvcrt.locking` on Windows) shared with the questions store, comments and users files;
+    importing it opens no port, reads no configuration and changes no signal handler."""
+    from . import prototype_server
+    return prototype_server
 
 
 def _approval_entries(path):
@@ -778,28 +709,35 @@ def record_approval(root, word, run_id, sha=None, source='cli', target=None, bra
         entry = redact(entry)
         line = (json.dumps(entry, ensure_ascii=False) + '\n').encode('utf-8')
         path = run_dir / APPROVALS_FILE
-        with _ApprovalLock(run_dir / (APPROVALS_FILE + '.lock')):
-            if path.is_symlink():
-                raise ValueError(f'Approvals file is a symlink: {APPROVALS_FILE}')
-            size = path.stat().st_size if path.exists() else 0
-            if size and not path.is_file():
-                raise ValueError(f'Approvals path is not a regular file: {APPROVALS_FILE}')
-            if size + len(line) + 1 > MAX_APPROVALS_BYTES:
-                raise ValueError(f'Approvals file would exceed {MAX_APPROVALS_BYTES // 1024} KiB; start a new run')
-            if size and any(item.get('word') == word and item.get('sha') == sha for item in _approval_entries(path)):
-                raise ValueError(f'Consent {word!r} for sha {sha[:12]} is already recorded in run {run_id}')
-            if size:
-                with path.open('rb') as handle:
-                    handle.seek(-1, os.SEEK_END)
-                    if handle.read(1) != b'\n':
-                        line = b'\n' + line  # a torn last line must not swallow the new entry
-            fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, 'O_NOFOLLOW', 0)
-                         | getattr(os, 'O_BINARY', 0), 0o644)
-            try:
-                os.write(fd, line)
-                os.fsync(fd)
-            finally:
-                os.close(fd)
+        server = _lock_module()
+        try:
+            with server.FileLock(str(run_dir / (APPROVALS_FILE + '.lock')), APPROVAL_LOCK_TIMEOUT, 0o600, unlink=True):
+                if path.is_symlink():
+                    raise ValueError(f'Approvals file is a symlink: {APPROVALS_FILE}')
+                size = path.stat().st_size if path.exists() else 0
+                if size and not path.is_file():
+                    raise ValueError(f'Approvals path is not a regular file: {APPROVALS_FILE}')
+                if size + len(line) + 1 > MAX_APPROVALS_BYTES:
+                    raise ValueError(f'Approvals file would exceed {MAX_APPROVALS_BYTES // 1024} KiB; start a new run')
+                if size and any(item.get('word') == word and item.get('sha') == sha for item in _approval_entries(path)):
+                    raise ValueError(f'Consent {word!r} for sha {sha[:12]} is already recorded in run {run_id}')
+                if size:
+                    with path.open('rb') as handle:
+                        handle.seek(-1, os.SEEK_END)
+                        if handle.read(1) != b'\n':
+                            line = b'\n' + line  # a torn last line must not swallow the new entry
+                fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, 'O_NOFOLLOW', 0)
+                             | getattr(os, 'O_BINARY', 0), 0o644)
+                try:
+                    os.write(fd, line)
+                    os.fsync(fd)
+                finally:
+                    os.close(fd)
+        except server.LockUnavailable:
+            raise ValueError(f'The file system does not support file locks (approvals lock {APPROVALS_FILE}.lock not supported); '
+                             'keep .skillsync on a local disk') from None
+        except server.LockTimeout:
+            raise ValueError(f'Approvals file is locked by another writer: {APPROVALS_FILE}.lock') from None
     except (OSError, ValueError, TypeError, UnicodeDecodeError) as error:
         return {'schema': SCHEMA, 'status': 'BLOCKED', 'reason': redact(' '.join(str(error).split())[:500]), 'entry': None}
     return {'schema': SCHEMA, 'status': 'PASS', 'reason': f'Consent {word!r} recorded', 'entry': entry,

@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import errno
 import getpass
 import hashlib
 import hmac
@@ -170,6 +171,15 @@ class OperationError(PrototypeServerError):
 class LockTimeout(PrototypeServerError):
     def __init__(self, message='lock wait exceeded'):
         super().__init__(503, 'lock_timeout', message, headers={'Retry-After': '1'})
+
+
+class LockUnavailable(LockTimeout):
+    """The file system does not support the system lock (`flock`/`msvcrt.locking`: ENOTSUP, ENOLCK, ...): no point
+    in waiting for the timeout. A `LockTimeout` for every handler that already maps lock failures to 503."""
+
+    def __init__(self, message='file locks are not supported by this file system'):
+        super().__init__(message)
+        self.code = 'lock_unsupported'
 
 
 class FileTooLarge(PrototypeServerError):
@@ -1974,6 +1984,13 @@ def _process_lock(path):
         return lock
 
 
+# `flock`/`LockFileEx` answers with these when the file system cannot lock at all (a network share, some FUSE drivers):
+# retrying cannot help. Contention (EAGAIN, EACCES, EDEADLK, ...) is anything else and is waited for.
+_LOCK_UNSUPPORTED_ERRNOS = frozenset(
+    code for code in (getattr(errno, name, None) for name in ('ENOTSUP', 'EOPNOTSUPP', 'ENOLCK', 'ENOSYS', 'EINVAL'))
+    if code is not None)
+
+
 def _try_lock_fd(fd):
     if fcntl is not None:
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -1993,14 +2010,28 @@ def _unlock_fd(fd):
 class FileLock(object):
     """`threading.Lock` per path in this process plus an exclusive lock on `path`
     (`fcntl.flock` on POSIX, `msvcrt.locking` on Windows).  Waits up to `timeout`
-    seconds in total, then raises `LockTimeout` (HTTP 503)."""
+    seconds in total, then raises `LockTimeout` (HTTP 503); a file system without
+    system locks raises `LockUnavailable` at once.
 
-    def __init__(self, path, timeout=LOCK_TIMEOUT, mode=0o666):
+    `unlink=True` removes the lock file on release (the approvals lock: a transient file next to the data, like the
+    older O_EXCL lock). That is safe because the holder re-checks, after `flock`, that the path still names the inode it
+    locked (a waiter that opened the old file just before it was unlinked retries on the new one); on Windows the
+    file is removed after the handle is closed and a failure (someone else has it open) is harmless."""
+
+    def __init__(self, path, timeout=LOCK_TIMEOUT, mode=0o666, unlink=False):
         self.path = os.path.abspath(path)
         self.timeout = timeout
         self.mode = mode
+        self.unlink = unlink
         self._thread_lock = _process_lock(self.path)
         self._fd = None
+
+    def _same_file(self, fd):
+        try:
+            held, named = os.fstat(fd), os.lstat(self.path)
+        except OSError:
+            return False
+        return (held.st_ino, held.st_dev) == (named.st_ino, named.st_dev) and not stat.S_ISLNK(named.st_mode)
 
     def __enter__(self):
         deadline = time.monotonic() + self.timeout
@@ -2008,16 +2039,24 @@ class FileLock(object):
             raise LockTimeout()
         try:
             flags = os.O_RDWR | os.O_CREAT | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_BINARY', 0)
-            fd = os.open(self.path, flags, self.mode)
             while True:
-                try:
-                    _try_lock_fd(fd)
+                fd = os.open(self.path, flags, self.mode)
+                while True:
+                    try:
+                        _try_lock_fd(fd)
+                        break
+                    except OSError as error:
+                        if error.errno in _LOCK_UNSUPPORTED_ERRNOS:
+                            os.close(fd)
+                            raise LockUnavailable()
+                        if time.monotonic() >= deadline:
+                            os.close(fd)
+                            raise LockTimeout()
+                        time.sleep(0.02)
+                if not self.unlink or os.name == 'nt' or self._same_file(fd):
                     break
-                except OSError:
-                    if time.monotonic() >= deadline:
-                        os.close(fd)
-                        raise LockTimeout()
-                    time.sleep(0.02)
+                _unlock_fd(fd)  # the file was unlinked (and maybe recreated) under us: lock the one the path names now
+                os.close(fd)
             self._fd = fd
         except BaseException:
             self._thread_lock.release()
@@ -2028,10 +2067,20 @@ class FileLock(object):
         try:
             if self._fd is not None:
                 try:
+                    if self.unlink and os.name != 'nt':
+                        try:
+                            os.unlink(self.path)  # still holding the lock: waiters re-check the inode
+                        except OSError:
+                            pass
                     _unlock_fd(self._fd)
                 finally:
                     os.close(self._fd)
                     self._fd = None
+                    if self.unlink and os.name == 'nt':  # pragma: no cover - Windows
+                        try:
+                            os.unlink(self.path)
+                        except OSError:
+                            pass
         finally:
             self._thread_lock.release()
         return False

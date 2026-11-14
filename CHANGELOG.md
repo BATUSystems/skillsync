@@ -14,7 +14,17 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ### Fixed
 
+- Blokada pliku zgód `approvals.jsonl`: blokada systemowa (`flock`; `msvcrt.locking` na Windows) ta sama co pliku pytań, komentarzy i użytkowników serwera prototypów, zamiast pliku `.lock` tworzonego wyłącznie i przejmowanego po 60 s. Naprawia wyścig, w którym spóźniony pisarz odkładał blokadę po jej właścicielu i zostawiał bezpański plik `.lock` (do 60 s `BLOCKED` dla kolejnych pisarzy, a w oknie przejęcia ścieżka blokady przez chwilę nie istniała); w CI padało tak około 4,5% jobów macOS 3.12. Zakończenie procesu zwalnia blokadę; resztka `.lock` po starym zapisie nie blokuje; plik `.lock` nadal jest tymczasowy (usuwany pod blokadą, kolejny pisarz sprawdza i-węzeł). Zob. docs/upgrading.md: po aktualizacji zrestartuj `dashboard serve` przed pierwszą zgodą.
+- `FileLock`: błąd inny niż rywalizacja (ENOTSUP, ENOLCK, EOPNOTSUPP, ENOSYS, EINVAL) daje od razu `LockUnavailable` (503 `lock_unsupported`, podklasa `LockTimeout`) zamiast czekania do timeoutu. Dotyczy blokad pytań do eksperta, komentarzy i użytkowników oraz zgód.
 - `prototype serve` i `dashboard serve`: SIGINT (Ctrl+C) albo SIGTERM tuż po starcie, między instalacją handlera, ogłoszeniem adresu a `serve_forever`, kończy serwer czysto (PASS, `stopped`) zamiast tracebacku i kodu -2; handler jest instalowany przed ogłoszeniem adresu, a cały start leży pod `try`. W CI padło tak raz na macOS (okno kilkunastu milisekund).
+
+### Compatibility
+
+Systemy plików bez blokad systemowych (część udziałów sieciowych): zapis zgód i blokady serwera prototypów kończą się od razu błędem „file locks are not supported” (`BLOCKED` / 503 `lock_unsupported`); dawna blokada plikowa działała wszędzie. Stary proces `dashboard serve` uruchomiony przed aktualizacją pisze zgody starą blokadą do restartu: zrestartuj go przed pierwszą zgodą (docs/upgrading.md).
+
+### Breaking
+
+None.
 
 ## [1.3.0] - 2026-11-13
 

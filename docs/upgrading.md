@@ -31,6 +31,14 @@ Pakiet aktualizujesz ponownym zainstalowaniem z tagu (`uv tool install --force g
 3. `skillsync layers check` i `skillsync doctor` w projektach.
 4. `skillsync link <projekt>` w każdym projekcie z `discover_paths` (albo `skillsync link` bez ścieżki).
 
+## Przejście 1.3.x → 1.4.1
+
+Wydanie 1.4.1 jest PATCH (zgodne wstecz w kontraktach: sekcja **Breaking** w `CHANGELOG.md` to „None.”), ale zmienia mechanizm blokady pliku zgód `approvals.jsonl` (zob. [dashboard-contract](dashboard-contract.md), „Blokada”).
+
+1. Rdzeń: `uv tool install --force git+https://github.com/BATUSystems/skillsync@v1.4.1`, potem `skillsync layers update core --ref v1.4.1`.
+2. **Uruchom ponownie działający `skillsync dashboard serve` PRZED pierwszą zgodą po aktualizacji.** Działający proces ma w pamięci stary kod i zapisuje zgody starą blokadą (plik `approvals.jsonl.lock` tworzony wyłącznie, `O_EXCL`), a nowe polecenia `approvals record` biorą blokadę systemową. Obie blokady się nie widzą: zapis w tej samej chwili przez stary serwer i nowe polecenie nie jest wzajemnie wykluczony (oba dopisują linię `O_APPEND` z `fsync`, więc nie uszkodzą pliku, ale mogą zapisać dwa razy tę samą parę słowo + sha). Czytelnicy zgód są na zdublowany wpis odporni (liczy się ostatni wpis na parę przebieg-słowo), więc skutek jest kosmetyczny. Po restarcie serwera problem znika. Plik `approvals.jsonl.lock` pozostały po starym zapisie lub po awarii niczemu nie szkodzi: nowy kod go ignoruje.
+3. Systemy plików bez blokad systemowych (niektóre udziały sieciowe, sterowniki FUSE): `approvals record` i zapis zgody ze strony statusu kończą się `BLOCKED` z powodem „file locks are not supported”, zamiast czekać (to jedyna zmiana zgodności tej wersji: stara blokada plikowa działała na każdym systemie plików z atomowym tworzeniem pliku). Trzymaj `.skillsync/` na dysku lokalnym. To samo rozróżnienie dotyczy blokad pytań do eksperta, komentarzy i użytkowników serwera prototypów (błąd 503 `lock_unsupported` zamiast `lock_timeout` po 5 s).
+
 ## Przejście 1.2.x → 1.3.0
 
 Wydanie 1.3.0 jest MINOR (zgodne wstecz): sekcja **Breaking** w `CHANGELOG.md` to „None.”. Dodaje marker „agent pisze ekrany” (`skillsync prototype writing`, blokada akceptacji i przywracania), czas pracy i czekania na stronie statusu, `skillsync leakcheck --text` i profil przeglądu `docs`; repozytorium rdzenia przestaje śledzić `docs/specs/**` i `docs/plans/**`. Warstwa `core` ma `core_min: 1.3.0`:
