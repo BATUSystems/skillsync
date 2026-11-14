@@ -43,9 +43,22 @@ class QuickSkillPhrases(unittest.TestCase):
         self.assertEqual(missing(LIB), [])
 
     def test_each_phrase_can_fail(self):
+        import shutil
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
             self.assertEqual(len(missing(tmp)), len(REQUIRED))
+        for key, rel, pattern in REQUIRED:
+            with self.subTest(phrase=key), tempfile.TemporaryDirectory() as tmp:
+                for _key, other, _pattern in REQUIRED:
+                    target = Path(tmp) / other
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(LIB / other, target)
+                path = Path(tmp) / rel
+                text = path.read_text(encoding='utf-8')
+                match = re.search(norm(pattern).replace(r'\s+', ' '), norm(text))
+                self.assertIsNotNone(match, key)
+                path.write_text(norm(text).replace(match.group(0), 'ZMIENIONE'), encoding='utf-8')
+                self.assertIn(key, missing(tmp))
 
 
 if __name__ == '__main__':
