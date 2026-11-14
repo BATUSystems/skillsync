@@ -12,6 +12,10 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Changed
+
+- CI: the test matrix adds Python 3.13 (blocks like 3.11 and 3.12) and Python 3.14 (informational, `continue-on-error`, Ubuntu only, both modes).
+
 ### Fixed
 
 - A symlink loop in a `discover_exclude` entry or in a project path is again treated as unresolvable (`common.discover_excludes`, `common.is_excluded`) on newer Pythons:
