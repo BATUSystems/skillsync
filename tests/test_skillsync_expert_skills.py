@@ -31,6 +31,8 @@ REQUIRED = [
     ('spec-idempotencja', SPEC, r'idempotencja po awarii'),
     ('spec-spor-refers-to', SPEC, r'spór to nowe pytanie z `--refers-to <qn-…>`'),
     ('spec-blocking', SPEC, r'`question add --blocking`'),
+    ('spec-decyzja-programisty', SPEC, r'Pytania o kontrakt, dane \(schemat bazy\), migrację i bezpieczeństwo to decyzja programisty: agent zadaje je jako zwykłe\s+blokujące `Q` w sesji \(STOP\), nie ekspertowi'),
+    ('spec-tylko-domenowe', SPEC, r'Do eksperta idą wyłącznie pytania domenowe'),
     ('spec-domyslnie-nie-czeka', SPEC, r'Domyślnie agent NIE czeka'),
     ('spec-wait-monitor', SPEC, r'tylko przez `skillsync prototype question wait <projekt> <id>` \(Monitor'),
     ('spec-nie-wiem', SPEC, r'opcja „Nie wiem, zapytaj eksperta” w zwykłym pytaniu AskUserQuestion'),

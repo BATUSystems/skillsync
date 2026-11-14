@@ -216,10 +216,10 @@ plan z fazą `[UI]` bez linii `Prototyp:` i bez obejścia właściciela BLOCKED 
 ### Marker zapisu (`prototype writing`)
 
 `prototype writing <projekt> <slug> start|done|status [--ttl <s>] [--by <login>]`: agent oznacza, że jeszcze pisze ekrany prototypu.
-`start` zapisuje atomowo, pod blokadą prototypu, plik `<root>/<slug>/.writing.json` (`since`, `expiresAt`, `by`) i dopisuje
-`.writing.json` do `<proto>/.gitignore` (gdy się nie da, ostrzeżenie w raporcie); powtórzone `start` zastępuje oba czasy, więc odnawia
-marker (także skracając TTL). `--ttl` to sekundy, 60–3600, domyślnie 900; `--by` to login (pierwszy znak litera lub cyfra, dalej litery, cyfry i `. _ @ + -`, najwyżej 64 znaki;
-domyślnie `agent`). `done` usuwa marker (idempotentnie, bez blokady), `status` zwraca `{status, writing: null | {since, expiresAt, by}}`
+`start` zapisuje atomowo, pod blokadą prototypu, plik `<root>/<slug>/.writing.json` (`since`, `renewedAt`, `expiresAt`, `by`) i dopisuje
+`.writing.json` do `<proto>/.gitignore` (gdy się nie da, ostrzeżenie w raporcie); powtórzone `start` na ważnym markerze zachowuje `since` (początek pisania)
+i `by` (chyba że podano `--by`), ustawia `renewedAt` i nowy `expiresAt`, więc odnawia marker (także skracając TTL); na wygasłym albo uszkodzonym zaczyna od nowa. `--ttl` to sekundy, 60–3600, domyślnie 900; `--by` to login (pierwszy znak litera lub cyfra, dalej litery, cyfry i `. _ @ + -`, najwyżej 64 znaki;
+domyślnie `agent`). `done` usuwa marker (idempotentnie, bez blokady), `status` zwraca `{status, writing: null | {since, expiresAt, renewedAt, by}}`
 (bez blokady). Kody: PASS 0; BLOCKED 2 z `error`: `needs_migration` (prototyp bez `comments.json`), `lock_timeout` (zajęta blokada prototypu,
 np. trwa `iterate` albo `restore`: ponów), `invalid_args` (zły `--ttl` albo `--by`); FAIL (1) nie występuje. Nieznana akcja to błąd argparse.
 
@@ -230,7 +230,7 @@ Wpływ ważnego markera na inne komendy (definicja w [prototypes](prototypes.md#
 - `gate` (po slugach i `--plan`) zwraca FAIL z wpisem `missing` `{slug, path, screen: null, reason: 'writing'}` dla każdego prototypu z ważnym
   markerem, także gdy wszystkie jego ekrany mają ważną akceptację; linia „Bramka prototypu: pominięta — …” nadal daje PASS.
 - `wait` nie zwraca `accepted`, dopóki marker jest ważny (komentarze budzą jak dotąd).
-- `list` ma pole `writing`: `null` albo `{since, expiresAt}` (bez `by`).
+- `list` ma pole `writing`: `null` albo `{since, expiresAt, renewedAt}` (bez `by`).
 - `iterate` przy ważnym markerze działa i dodaje ostrzeżenie do raportu.
 - `status --ttl` i `done --by` są walidowane tak samo jak `start` (zły argument = BLOCKED `invalid_args`).
 
@@ -297,6 +297,7 @@ skillsync prototype question purge . --slug zwroty --include-open --yes         
   bez operacji `recorded` albo zdarzenie nowsze niż `--since`/`--after`. TIMEOUT to exit 3.
 - `record <id> --spec … --line <numer>` zapisuje znacznik „wpisano do speca” (idempotentnie), ale najpierw czyta wskazaną linię speca i wymaga w niej `[EKSPERT]` oraz identyfikatora pytania (wiersz z pola `answerLine`); inaczej FAIL (1) z kodem `record_line_mismatch` (inna treść linii), `record_line_out_of_range` (za krótki spec) albo `record_spec_unreadable` (brak pliku, ścieżka poza repozytorium) i podpowiedzią w `hint`. Pytanie bez odpowiedzi daje najpierw `not_answered`; `withdraw <id>` wycofuje pytanie otwarte,
   także blokujące, zwraca stan po operacji (`state` i `questions[0].state` = `withdrawn`) i zwykły wiersz `Q` programisty (odpowiedzianego nie da się wycofać: `already_answered`).
+  `--reason <tekst>` (1–500 znaków, bez sekretu; `secret_detected` bez `--force`) zapisuje powód w operacji `withdraw` (pole `reason`) i zwraca go w raporcie; ekspert, do którego pytanie było skierowane, widzi je jako „wycofane” z powodem. Złe `--reason` to BLOCKED `invalid_reason`; powtórne `withdraw` niczego nie zmienia (zostaje pierwszy powód).
 - `url` zwraca adres strony i liczbę kont `expert`; BLOCKED (`users_file_missing`, `users_file_invalid`, `no_expert_accounts`) znaczy, że
   nie ma komu zadać pytania, więc agent pyta zwykle. Nie sprawdza, czy serwer działa (pole `running` mówi o stanie z pliku serwera).
 - `add`, `list`, `show`, `export` i `url` przyjmują `--users` (plik kont względem projektu, jak w `user`).
@@ -338,8 +339,9 @@ Raporty mają co najmniej te pola; konsument ignoruje pola, których nie zna.
 |---|---|
 | `layers check --json` | `{schema: 1, status, project, rule, layers, findings: [{code, severity, layer, message}]}` |
 | `leakcheck --json` | `{schema: 1, status, coverage, target, findings: [{path, category, location}], notices, warnings}`; po udanym skanie także `authors_scope`, przy BLOCKED `reason` |
+| `prototype comments --json`, `prototype wait --json` (zdarzenie `comment`) | `{status: "PASS", slug, …, untrusted: true, notice}`: `notice` to stały tekst (dosłownie w [prototypes](prototypes.md#role-kont) obok opisu pracy agenta na komentarzach), teksty wiadomości bez zmian; oba pola są na początku raportu; `wait` z TIMEOUT albo `accepted` nie ma tych pól (brak tekstów od osób) |
 | `prototype login-link --json` | `{schema: 1, status: "PASS", url, expires}` (`url` = `http://127.0.0.1:<port>/_login/link?t=<token>`, `expires` = ISO-8601 UTC, token tylko na stdout) albo `{schema: 1, status: "BLOCKED", reason, code}` z `code` ∈ (exit 2) `server_not_running` (brak serwera projektu: brak pliku stanu, martwy PID, inny `instance` albo inny plik użytkowników), `ambiguous_server` (kilka serwerów projektu bez `--port`), `link_needs_loopback` (host serwera inny niż `127.0.0.1`/`localhost`/wildcard), `link_unavailable` (serwer z `--trust-proxy`: brak endpointu linku), `run_dir_unsafe` (katalog `run/` z prawami ≠ 0700, innego właściciela lub dowiązanie), `unknown_user` (konto nie istnieje; nigdy nie jest tworzone), `password_change_required` (konto z `mustChange`), `invalid_path` (`--path` poza dozwolonymi), `invalid_port` (`--port` poza 1-65535), `invalid_project` (błędny projekt lub manifest), `too_many_pending` (32 oczekujące tokeny), `users_unreadable` (nieczytelny plik użytkowników); zapisy z sesji linku trafiają do lokalnego `.skillsync/prototype/run/audit.jsonl` (`{at, login, via, op, screen?}`), nie do `comments.json`; flagi `--user LOGIN` (wymagana), `--path /ścieżka`, `--port N`, `--users PLIK` |
-| `prototype question list`, `show`, `export` | `{schema: "expert-questions/1", status: "PASS", project, url?, questions: [{id, text, state: open|answered|withdrawn, blocking, assumed, addressees, refs, options, answer?: {by, name, at, optionId?, optionLabel?, optionIds?, optionLabels?, text?, confirm?, comment?}, comments, refersTo?, origin: {spec, q}, recorded?: {spec, line, at}}]}`; `show` i `wait` dodają `answerLine`, `add` i `withdraw` `specLine`; klient ignoruje nieznane pola, zmiana niezgodna = nowa wartość `schema` |
+| `prototype question list`, `show`, `export` | `{schema: "expert-questions/1", status: "PASS", project, url?, questions: [{id, text, state: open|answered|withdrawn, blocking, assumed, addressees, refs, options, answer?: {by, name, at, optionId?, optionLabel?, optionIds?, optionLabels?, text?, confirm?, comment?}, comments, refersTo?, withdrawn?: {at, reason?}, origin: {spec, q}, recorded?: {spec, line, at}}]}`; `show` i `wait` dodają `answerLine`, `add` i `withdraw` `specLine`; klient ignoruje nieznane pola, zmiana niezgodna = nowa wartość `schema` |
 | `layers list --json` | `{schema: 1, status, generator_version, project, rule, layers: [{id, kind, path, root, subdir, version, writable, present}], composed_root, notes}` |
 
 ## Najczęstsze przepływy

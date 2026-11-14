@@ -2331,6 +2331,7 @@ MAX_QUESTION_OPTIONS = 8
 MAX_QUESTION_OPTION_LABEL = 200
 MAX_QUESTION_ANSWER_TEXT = 4000
 MAX_QUESTION_COMMENT = 2000
+MAX_QUESTION_WITHDRAW_REASON = 500
 MAX_QUESTION_ADDRESSEES = 50
 MAX_QUESTION_LOGIN = 320
 QUESTIONS_MAX_FILE_BYTES = 1024 * 1024
@@ -2347,14 +2348,14 @@ _QUESTION_SCHEME_RE = re.compile(r'[A-Za-z][A-Za-z0-9+.-]*:')
 _QUESTION_CONTROL_RE = re.compile('[\x00-\x1f\x7f]')
 # key order of a stored line: the common keys first, then the fields of the type
 QUESTION_KEYS = ('id', 'type', 'questionId', 'at', 'by', 'cid', 'text', 'blocking', 'assumed', 'addressees',
-                 'refs', 'options', 'refersTo', 'origin', 'multi', 'optionId', 'optionIds', 'confirm', 'comment', 'spec', 'line')
+                 'refs', 'options', 'refersTo', 'origin', 'multi', 'optionId', 'optionIds', 'confirm', 'comment', 'spec', 'line', 'reason')
 _QUESTION_COMMON = ('id', 'type', 'questionId', 'at', 'by', 'cid')
 _QUESTION_FIELDS = {
     'ask': (('text', 'blocking', 'assumed', 'addressees', 'refs', 'options', 'origin'), ('refersTo', 'multi')),
     'answer': ((), ('optionId', 'optionIds', 'text', 'confirm', 'comment')),
     'comment': (('text',), ()),
     'recorded': (('spec', 'line'), ()),
-    'withdraw': ((), ()),
+    'withdraw': ((), ('reason',)),
 }
 
 
@@ -2592,6 +2593,9 @@ def validate_question_operation(operation, known=None):
             _bad('an answer comes from an expert, not from "%s"' % operation['by'])
     elif kind == 'comment':
         _check_string(operation['text'], 'text', maximum=MAX_QUESTION_COMMENT, strip_empty=True)
+    elif kind == 'withdraw':
+        if 'reason' in operation:
+            _check_string(operation['reason'], 'reason', maximum=MAX_QUESTION_WITHDRAW_REASON, strip_empty=True)
     elif kind == 'recorded':
         _check_question_path(operation['spec'], 'spec')
         _check_int(operation['line'], 'line')
@@ -2715,6 +2719,8 @@ def fold_questions(operations):
         elif kind == 'withdraw':
             if question['state'] == 'open':
                 question['state'] = 'withdrawn'
+                if isinstance(operation.get('reason'), str):
+                    entry['reason'] = operation['reason']
                 question['withdrawn'] = entry
         elif kind == 'recorded':
             if question['state'] == 'answered' and question['recorded'] is None:
@@ -2750,12 +2756,12 @@ def _is_addressed(question, viewer):
 
 def can_view_question(question, viewer):
     """D13: `developer`/`acceptor` see every question; an `expert` sees the ones addressed to them or to
-    all, never a withdrawn one; `commenter` (and anybody else) sees none."""
+    all, a withdrawn one too (as `withdrawn`, with the reason, nothing to answer); `commenter` (and anybody else) sees none."""
     if _is_admin_viewer(viewer):
         return True
     if 'expert' not in _viewer_roles(viewer):
         return False
-    return question['state'] != 'withdrawn' and _is_addressed(question, viewer)
+    return _is_addressed(question, viewer)
 
 
 def can_answer(question, viewer):
@@ -2794,6 +2800,8 @@ def question_view(question, viewer, by_id=None, slug=None):
     if admin:
         view['addressees'] = _clone(question['addressees'])
         view['withdrawn'] = _clone(question['withdrawn'])
+    elif question['withdrawn'] is not None:   # the expert sees when and why, not who (the agent) nor the operation ids
+        view['withdrawn'] = {'at': question['withdrawn']['at'], 'reason': question['withdrawn'].get('reason')}
     return view
 
 
@@ -2900,6 +2908,10 @@ def export_questions(snapshot, project, url=None, users=None, slug=None):
                                  + ([('late', True)] if c.get('late') else [])) for c in question['comments']]
         if question['refersTo'] is not None:
             item['refersTo'] = question['refersTo']
+        if question['withdrawn'] is not None:
+            item['withdrawn'] = {'at': question['withdrawn']['at']}
+            if 'reason' in question['withdrawn']:
+                item['withdrawn']['reason'] = question['withdrawn']['reason']
         item['origin'] = _clone(question['origin'])
         if question['recorded'] is not None:
             recorded = question['recorded']
@@ -3682,6 +3694,7 @@ WRITING_MARKER = '.writing.json'
 WRITING_MAX_BYTES = 4096
 WRITING_MAX_WINDOW_MS = 3600000
 WRITING_CLOCK_SKEW_MS = 60000
+WRITING_MAX_TIME = 2 ** 53
 WRITING_TTL_MIN = 60
 WRITING_TTL_MAX = 3600
 WRITING_TTL_DEFAULT = 900
@@ -3693,7 +3706,10 @@ def _is_int(value):
 
 
 def read_writing(directory, now_ms):
-    """`{since, expiresAt, by}` of a valid writing marker, else None (see "Ważny marker" in the spec).
+    """`{since, expiresAt, renewedAt, by}` of a valid writing marker, else None (see "Ważny marker" in the spec).
+
+    `since` is the start of the writing, `renewedAt` the last `start` (equal to `since` in a file without the field); the
+    window and the clock check count from `renewedAt`, so a long writing renewed again and again stays valid.
 
     `lstat` before the open (no `O_NOFOLLOW` on Windows), then `O_NOFOLLOW|O_NONBLOCK` + `fstat` + `S_ISREG`
     (a FIFO must not hang a server thread), at most 4 KiB, strict JSON, `version == 1`, integer `since` and
@@ -3730,18 +3746,32 @@ def read_writing(directory, now_ms):
         now_ms = int(now_ms)
     if not _is_int(since) or not _is_int(expires) or not _is_int(now_ms):
         return None
-    if since > now_ms + WRITING_CLOCK_SKEW_MS or now_ms >= expires:
+    if not 0 <= since <= WRITING_MAX_TIME or not 0 <= expires <= WRITING_MAX_TIME:
+        return None   # not a time in milliseconds (also keeps the number inside what a JSON writer can print)
+    renewed = since
+    if 'renewedAt' in value:
+        renewed = value['renewedAt']
+        if not _is_int(renewed) or renewed < since:
+            return None
+    if renewed > now_ms + WRITING_CLOCK_SKEW_MS or now_ms >= expires:
         return None
-    if not 0 < expires - since <= WRITING_MAX_WINDOW_MS:
+    if not 0 < expires - renewed <= WRITING_MAX_WINDOW_MS:
         return None
     by = value.get('by')
-    return {'since': since, 'expiresAt': expires, 'by': by if isinstance(by, str) and WRITING_BY_RE.fullmatch(by) else 'agent'}
+    return {'since': since, 'expiresAt': expires, 'renewedAt': renewed,
+            'by': by if isinstance(by, str) and WRITING_BY_RE.fullmatch(by) else 'agent'}
 
 
-def write_writing(directory, now_ms, ttl_s, by='agent'):
-    """Atomically (re)write the marker: `since = now`, `expiresAt = now + ttl`; a short retry on Windows where
-    `os.replace` can fail while a reader holds the file.  Returns `{since, expiresAt, by}`."""
-    payload = {'version': 1, 'since': int(now_ms), 'expiresAt': int(now_ms) + int(ttl_s) * 1000, 'by': by}
+def write_writing(directory, now_ms, ttl_s, by=None):
+    """Atomically (re)write the marker; a short retry on Windows where `os.replace` can fail while a reader holds the
+    file.  A repeated call on a marker that is still valid keeps its `since` (and its `by`, unless `by` is given) and sets
+    `renewedAt = now`; otherwise `since = renewedAt = now`.  `expiresAt = now + ttl`.
+    Returns `{since, expiresAt, renewedAt, by}`."""
+    now_ms = int(now_ms)
+    current = read_writing(directory, now_ms)
+    since = min(current['since'], now_ms) if current is not None else now_ms   # a clock that went back keeps since <= renewedAt
+    who = by if by is not None else (current['by'] if current is not None else 'agent')
+    payload = {'version': 1, 'since': since, 'renewedAt': now_ms, 'expiresAt': now_ms + int(ttl_s) * 1000, 'by': who}
     data = (js_stringify(payload) + '\n').encode('utf-8')
     path = os.path.join(directory, WRITING_MARKER)
     attempts = 5 if os.name == 'nt' else 1
@@ -3753,7 +3783,7 @@ def write_writing(directory, now_ms, ttl_s, by='agent'):
             if attempt + 1 >= attempts:
                 raise
             time.sleep(0.05 * (attempt + 1))
-    return {'since': payload['since'], 'expiresAt': payload['expiresAt'], 'by': by}
+    return {'since': since, 'expiresAt': payload['expiresAt'], 'renewedAt': now_ms, 'by': who}
 
 
 def remove_writing(directory):
@@ -3770,15 +3800,24 @@ def remove_writing(directory):
 
 
 def public_writing(directory, now_ms):
-    """The `writing` field of the API, `prototype list` and the live gallery: `None` or `{since, expiresAt}`
-    (never `by`).  The one helper of that shape."""
+    """The `writing` field of the API, `prototype list`, the status page and the live gallery: `None` or
+    `{since, expiresAt, renewedAt}` (never `by`).  The one helper of that shape."""
     marker = read_writing(directory, now_ms)
-    return None if marker is None else {'since': marker['since'], 'expiresAt': marker['expiresAt']}
+    return None if marker is None else {'since': marker['since'], 'expiresAt': marker['expiresAt'],
+                                        'renewedAt': marker['renewedAt']}
+
+
+def _local_hhmm(millis):
+    """`HH:MM` of a UTC-millisecond time in the local time of the host that runs the server."""
+    return time.strftime('%H:%M', time.localtime(millis / 1000.0))
 
 
 def writing_conflict(slug, marker):
-    """409 `writing_in_progress` `{slug, since, expiresAt}` for a valid `marker` (no `by`)."""
-    return OperationError(409, 'writing_in_progress', 'the agent is still writing screens of this prototype',
+    """409 `writing_in_progress` `{slug, since, expiresAt}` for a valid `marker` (no `by`).  The message is for a person:
+    an engine that does not know the code shows it as it is."""
+    return OperationError(409, 'writing_in_progress',
+                          'Agent jeszcze pisze ekrany tego prototypu (do %s). Akceptacja wróci, gdy skończy.'
+                          % _local_hhmm(marker['expiresAt']),
                           {'slug': slug, 'since': marker['since'], 'expiresAt': marker['expiresAt']})
 
 
@@ -4352,8 +4391,10 @@ def accept_project(app, login, cid, versions):
     writing = writing_entries([(slug, directory) for slug, directory, _store in targets
                                if slug not in done and slug not in no_screens], clock_ms(app.clock))
     if writing:
-        raise OperationError(409, 'writing_in_progress', 'the agent is still writing screens: %s'
-                             % ', '.join(item['slug'] for item in writing), {'writing': writing})
+        raise OperationError(409, 'writing_in_progress',
+                             'Agent jeszcze pisze ekrany: %s (do %s). Nic nie zapisano; akceptacja wróci, gdy skończy.'
+                             % (', '.join(item['slug'] for item in writing),
+                                _local_hhmm(max(item['expiresAt'] for item in writing))), {'writing': writing})
     for slug, directory, _store in targets:
         if slug in done:
             continue
@@ -6243,6 +6284,7 @@ def _log_safe(text):
 _API_PREFIX = '/_api/v1'
 _OPERATIONS_PATH = re.compile(r'/_api/v1/prototypes/([^/]+)/operations')
 _RESTORE_PATH = re.compile(r'/_api/v1/prototypes/([^/]+)/restore')
+_WRITING_RELEASE_PATH = re.compile(r'/_api/v1/prototypes/([^/]+)/writing/release')
 _PREVIEW_PATH = re.compile(r'/_api/v1/prototypes/([^/]+)/restore-preview')
 _QUESTIONS_PATH = _API_PREFIX + '/questions'
 _RUN_QUESTIONS_PATH = re.compile(r'/_api/v1/prototypes/([^/]+)/questions')
@@ -6678,6 +6720,11 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
             self._require_method(method, ('POST',))
             self._api_restore(unquote(match.group(1)), session, user)
             return
+        match = _WRITING_RELEASE_PATH.fullmatch(path)
+        if match:
+            self._require_method(method, ('POST',))
+            self._api_writing_release(unquote(match.group(1)), session, user)
+            return
         match = _PREVIEW_PATH.fullmatch(path)
         if match:
             self._require_method(method, ('GET', 'HEAD'))
@@ -6952,6 +6999,8 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
                     raise OperationError(409, 'cid_conflict', 'cid was already used for another operation')
                 return Existing(found)
             check_question_state(snapshot.fold, {'type': kind, 'questionId': question_id})
+            if kind == 'comment' and question['state'] == 'withdrawn' and not _is_admin_viewer(viewer):
+                raise OperationError(409, 'withdrawn', 'the question was withdrawn')
             if kind == 'comment' and len(question['comments']) >= QUESTION_COMMENT_MAX:
                 raise OperationError(409, 'comment_limit', 'the question has reached the comment limit')
             partial = {'type': kind, 'questionId': question_id, 'by': login, 'cid': cid}
@@ -7079,6 +7128,24 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
             app.audit(session, 'restore', screen_id)
         self._json(status, dict({'operations': result['operations'], 'iteration': {'current': result['current']}},
                                 **extra))
+
+
+    def _api_writing_release(self, slug, session, user):
+        """`POST …/prototypes/<slug>/writing/release`: removes the writing marker (idempotent).  Only an acceptor or a
+        developer; the same order of checks as `restore` (session, CSRF, v1, source writes, role)."""
+        app = self.app
+        self._post_checks(session, user)
+        directory, state = app.prototype_dir(slug)
+        if state == 'v1':
+            raise NeedsMigration()
+        if not app.source_writes:
+            raise PrototypeServerError(403, 'source_writes_disabled', 'this server does not write prototype sources')
+        if primary_role(user) not in PRIVILEGED_ROLES:
+            raise PrototypeServerError(403, 'forbidden', 'only an acceptor or a developer may release the writing marker')
+        with app.store(slug).lock():
+            released = remove_writing(directory)
+        app.audit(session, 'writing/release')
+        self._json(200, {'writing': None, 'released': bool(released)})
 
 
 class PrototypeHTTPServer(ThreadingHTTPServer):
@@ -7393,7 +7460,8 @@ EXPERTS_SCRIPT = r"""
       return 'Sesja się zmieniła. Odśwież stronę i spróbuj ponownie.';
     }
     if (status === 403) return 'Brak uprawnień: ta akcja wymaga roli ekspert i pytania skierowanego do Ciebie.';
-    if (status === 404) return 'Nie znaleziono pytania (mogło zostać wycofane albo nie jest do Ciebie).';
+    if (status === 404) return 'Nie znaleziono pytania (nie istnieje albo nie jest do Ciebie).';
+    if (status === 409 && code === 'withdrawn') return 'To pytanie zostało wycofane: nie można już na nie odpowiedzieć ani go skomentować.';
     if (status === 409 && code === 'migration_required') return 'To pytanie jest w starym pliku, tylko do odczytu. Programista musi je przenieść (skillsync prototype question migrate).';
     if (status === 409 && code === 'already_answered') return 'Ktoś już odpowiedział na to pytanie. Widok został odświeżony.';
     if (status === 409 && code === 'comment_limit') return 'Pytanie osiągnęło limit komentarzy.';
@@ -7428,7 +7496,7 @@ EXPERTS_SCRIPT = r"""
     if (question.slug) items.push(el('span', { 'class': 'badge', text: 'Przebieg: ' + question.slug }));
     if (question.blocking) items.push(el('span', { 'class': 'badge block', text: 'Blokujące' }));
     items.push(el('span', { 'class': 'badge' + (question.state === 'open' ? '' : ' done'),
-                            text: question.state === 'open' ? 'Otwarte' : 'Odpowiedziane' }));
+                            text: question.state === 'open' ? 'Otwarte' : (question.state === 'withdrawn' ? 'Wycofane' : 'Odpowiedziane') }));
     if (question.assumed !== null && question.assumed !== undefined) {
       items.push(el('span', { 'class': 'badge', text: 'Przyjęto: ' + question.assumed }));
     }
@@ -7543,6 +7611,10 @@ EXPERTS_SCRIPT = r"""
       detail.appendChild(el('h3', { text: 'Odpowiedź' }));
       detail.appendChild(answerSummary(question));
       detail.appendChild(el('p', { 'class': 'muted', text: 'Pytanie jest zamknięte. Można dodawać tylko komentarze.' }));
+    } else if (question.state === 'withdrawn') {
+      detail.appendChild(el('h3', { text: 'Pytanie wycofane' }));
+      detail.appendChild(el('p', { 'class': 'qtext', text: (question.withdrawn && question.withdrawn.reason) ? 'Powód: ' + question.withdrawn.reason : 'Pytanie wycofał programista (bez podania powodu).' }));
+      detail.appendChild(el('p', { 'class': 'muted', text: 'Nie można już na nie odpowiedzieć ani go skomentować.' }));
     } else if (question.canAnswer) {
       detail.appendChild(answerForm(question));
     } else {
@@ -7558,7 +7630,7 @@ EXPERTS_SCRIPT = r"""
       ]));
     });
     detail.appendChild(comments);
-    detail.appendChild(commentForm(question));
+    if (question.state !== 'withdrawn') detail.appendChild(commentForm(question));   // nothing to say on a withdrawn question
     if (!keepFocus) heading.focus();
     syncBusy();
   }
@@ -7765,7 +7837,7 @@ EXPERTS_SCRIPT = r"""
   // What the open detail shows of a question: a change of it is what the expert must hear about.
   function signature(question) {
     return JSON.stringify([question.state, question.answer ? question.answer.at : null, (question.comments || []).length,
-                           !!question.recorded]);
+                           !!question.recorded, question.withdrawn ? question.withdrawn.reason || true : null]);
   }
 
   function findQuestion(id) {
@@ -7802,7 +7874,7 @@ EXPERTS_SCRIPT = r"""
     if (!now) {
       var gone = 'gone:' + state.current;
       if (state.notedSig !== gone) {
-        say('To pytanie zniknęło z listy (wycofane albo nie jest już do Ciebie).' + (formDirty() ? ' Rozpoczęta odpowiedź zostaje na ekranie.' : ''));
+        say('To pytanie nie jest już na Twojej liście (nie istnieje albo nie jest do Ciebie).' + (formDirty() ? ' Rozpoczęta odpowiedź zostaje na ekranie.' : ''));
       }
       state.notedSig = gone;
       return;

@@ -1,6 +1,7 @@
-// Znacznik zapisu „agent jeszcze pisze ekrany”: W-01 … W-03.
+// Znacznik zapisu „agent jeszcze pisze ekrany”: W-01 … W-04; W-05: widoczny stan przełączników paska (aria-pressed, aria-expanded).
 // W-01 tor (a): marker bez zmiany plików, W-02 tor (b): pliki zmieniły się w trakcie zapisu (prototyp `beta` we własnym workspace skryptu),
 // W-03: serwer odrzuca akceptację przez HTTP (409 writing_in_progress) i przyjmuje ją po `writing done`.
+// W-04: baner z godziną „do HH:MM” i przycisk „Zwolnij” (akceptujący zwalnia marker, komentujący przycisku nie widzi).
 // Marker odnawiany z `--ttl 60`, żeby nie wygasł w trakcie scenariusza; czekania tylko na odpytywanie silnika (karta widoczna: ok. 5 s).
 import {
   Suite, sleep, workspace, startServer, connect, PORT1, proto, apiOps, apiPost, session, sessionPage, cid, createThread,
@@ -125,5 +126,80 @@ suite.add('W-03', 'Serwer: 409 writing_in_progress na accept przy markerze, po d
   return { ok: restOk, startExit: start.code, refusedStatus: refused.status, refusedError: refused.body && refused.body.error, commentStatus: comment.status,
     writingField: listed && Object.keys(listed).sort(), noBy, acceptedDuringMarker: accepted0, doneExit: done.code, writingAfterDone: cur.writing ?? null, acceptAfterDone: ok2.status };
 });
+
+suite.add('W-04', 'Baner „do HH:MM” i „Zwolnij”: akceptujący zwalnia marker, komentujący nie ma przycisku', async () => {
+  const slug = 'alfa';
+  const buttons = `[...document.querySelectorAll('[data-banner="writing"] button')].map((b) => b.textContent.trim())`;
+  const start = await marker('start', slug);
+  const acc = await sessionPage(c, 'w04a', srv.base, 'celina'); await acc.p.go(url(slug));
+  const com = await sessionPage(c, 'w04c', srv.base, 'anna'); await com.p.go(url(slug));
+  const accShown = await acc.p.waitFor(`${banner('writing')} !== null && ${disabled(acceptBtn('s1'))}`, 25000, 250);
+  const comShown = await com.p.waitFor(`${banner('writing')} !== null`, 25000, 250);
+  const accText = await acc.p.evaluate(banner('writing'));
+  const accButtons = await acc.p.evaluate(buttons);
+  const comButtons = await com.p.evaluate(buttons);
+  await marker('start', slug);   // odnowienie (ttl 60)
+  await acc.p.domClick(`[...document.querySelectorAll('[data-banner="writing"] button')].find((b) => b.textContent.trim() === 'Zwolnij')`);
+  const gone = await acc.p.waitFor(`${banner('writing')} === null && ${enabled(acceptBtn('s1'))}`, 25000, 250);
+  const status = await marker('status', slug);
+  const listing = await apiOps(srv.base, slug);
+  await acc.p.dispose(); await com.p.dispose();
+  const restOk = start.code === 0 && accShown.ok && comShown.ok && /Agent jeszcze pisze ekrany \(do \d\d:\d\d\)/.test(accText || '')
+    && JSON.stringify(accButtons) === JSON.stringify(['Zwolnij']) && comButtons.length === 0 && gone.ok && status.code === 0
+    && listing.writing == null;
+  return { ok: restOk, startExit: start.code, accBanner: (accText || '').slice(0, 100), accButtons, comButtons, goneAfterRelease: gone.ok, statusExit: status.code,
+    writingAfterRelease: listing.writing ?? null };
+}, { timeout: 120000 });
+
+// Przełączniki paska. Przełącznik typu „toggle” (aria-pressed/aria-expanded poza grupą radio): po kliknięciu atrybut się zmienia i wygląd też.
+// Grupa radio (`.segmented`, np. „Tryb”): wciśnięty różni się wyglądem od niewciśniętych (bez klikania, żeby nie zmieniać trybu).
+// Kontrast tekstu do tła wciśniętego ≥ 4,5:1 liczony na kolorach z rgba() przez canvas (tokeny motywu są w oklch, więc computed style nie jest rgb()).
+const toggleProbe = `(() => {
+  const cx = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
+  const rgba = (css) => { cx.clearRect(0, 0, 1, 1); cx.fillStyle = '#000'; cx.fillStyle = css; cx.fillRect(0, 0, 1, 1); const d = cx.getImageData(0, 0, 1, 1).data; return [d[0], d[1], d[2]]; };
+  const lum = (css) => { const v = rgba(css).map((x) => { x /= 255; return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4); }); return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2]; };
+  const contrast = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+  return [...document.querySelectorAll('.doc-toolbar button[aria-pressed], .doc-toolbar button[aria-expanded]')].map((b, index) => {
+    const s = getComputedStyle(b);
+    return { index, label: b.textContent.trim().slice(0, 24), state: b.getAttribute('aria-pressed') ?? b.getAttribute('aria-expanded'), attr: b.hasAttribute('aria-pressed') ? 'pressed' : 'expanded',
+      radio: !!b.closest('.segmented'), group: [...document.querySelectorAll('.doc-toolbar .segmented')].indexOf(b.closest('.segmented')),
+      look: [s.backgroundColor, s.borderTopColor, s.boxShadow, s.fontWeight].join('|'), contrast: contrast(s.color, s.backgroundColor) };
+  });
+})()`;
+const clickToggle = (index) => `(() => { const b = [...document.querySelectorAll('.doc-toolbar button[aria-pressed], .doc-toolbar button[aria-expanded]')][${index}]; b.click(); return 1; })()`;
+
+suite.add('W-05', 'Przełączniki paska: stan wciśnięcia jest widoczny (jasny i ciemny motyw)', async () => {
+  const slug = 'demo';
+  const report = {};
+  let allOk = true;
+  for (const dark of [false, true]) {
+    const { p } = await sessionPage(c, dark ? 'w05d' : 'w05l', srv.base, 'celina', { dark }); await p.go(url(slug));
+    await p.waitFor(`document.querySelectorAll('.doc-toolbar button[aria-pressed], .doc-toolbar button[aria-expanded]').length > 0`, 20000);
+    const before = await p.evaluate(toggleProbe);
+    const rows = [];
+    // grupy radio: wciśnięty kontra niewciśnięty w tym samym momencie
+    for (const group of [...new Set(before.filter((b) => b.radio).map((b) => b.group))]) {
+      const members = before.filter((b) => b.radio && b.group === group);
+      const on = members.filter((b) => b.state === 'true'), off = members.filter((b) => b.state !== 'true');
+      rows.push({ kind: 'radio', group, on: on.map((b) => b.label), off: off.map((b) => b.label), oneOn: on.length === 1, differs: on.length === 1 && off.every((b) => b.look !== on[0].look),
+        contrastOn: on.length ? Math.round(on[0].contrast * 100) / 100 : 0 });
+    }
+    // toggle: klik zmienia atrybut i wygląd; drugi klik przywraca
+    for (const item of before.filter((b) => !b.radio)) {
+      await p.evaluate(clickToggle(item.index)); await sleep(500);
+      const after = (await p.evaluate(toggleProbe))[item.index];
+      const [on, off] = item.state === 'true' ? [item, after] : [after, item];
+      rows.push({ kind: 'toggle', label: item.label, attr: item.attr, flipped: item.state !== after.state, differs: on.look !== off.look, contrastOn: Math.round(on.contrast * 100) / 100 });
+      await p.evaluate(clickToggle(item.index)); await sleep(300);
+    }
+    await p.dispose();
+    const toggles = rows.filter((r) => r.kind === 'toggle'), radios = rows.filter((r) => r.kind === 'radio');
+    const ok = toggles.length >= 1 && toggles.some((r) => r.attr === 'expanded') && radios.length >= 1
+      && toggles.every((r) => r.flipped && r.differs && r.contrastOn >= 4.5) && radios.every((r) => r.oneOn && r.differs && r.contrastOn >= 4.5);
+    report[dark ? 'dark' : 'light'] = { ok, rows };
+    allOk = allOk && ok;
+  }
+  return { ok: allOk, ...report };
+}, { timeout: 120000 });
 
 await suite.main();
