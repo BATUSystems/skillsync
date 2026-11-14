@@ -59,7 +59,10 @@ def post_and_read(port, body=BODY, pause=0.3, chunked=False):
             + (b'Transfer-Encoding: chunked\r\n' if chunked else b'Content-Length: ' + str(len(body)).encode() + b'\r\n')
             + b'\r\n')
     with socket.create_connection(('127.0.0.1', port), timeout=5) as sock:
-        sock.sendall(head + body)
+        try:
+            sock.sendall(head + body)
+        except OSError:   # the server answered and closed before the whole body was sent (it is allowed to)
+            pass
         time.sleep(pause)   # the server has answered and (without the cure) closed with the body unread
         data = b''
         while True:
@@ -103,7 +106,7 @@ class LingeringClose(unittest.TestCase):
         port = self.serve(Spy)
         post_and_read(port, body=b'a' * (512 * 1024), pause=0.1)
         self.assertLess(time.monotonic() - started, 5)
-        self.assertTrue(discarded and discarded[0] <= 1024, discarded)
+        self.assertEqual(discarded, [1024])   # it stopped at the limit it was given
 
     def test_linger_close_is_bounded_by_bytes_and_time_and_never_raises(self):
         server, client = socket.socketpair()
@@ -122,15 +125,94 @@ class LingeringClose(unittest.TestCase):
         gone.close()
         self.assertEqual(http_body.linger_close(gone), 0)   # a connection that is already closed
 
-    def test_only_requests_that_declare_a_body_linger(self):
-        class Headers(dict):
-            get = dict.get
-        self.assertFalse(http_body.declares_body('GET', Headers({'Content-Length': '5'})))
-        self.assertFalse(http_body.declares_body('POST', Headers()))
-        self.assertFalse(http_body.declares_body('POST', Headers({'Content-Length': '0'})))
-        self.assertTrue(http_body.declares_body('POST', Headers({'Content-Length': '5'})))
-        self.assertTrue(http_body.declares_body('POST', Headers({'Transfer-Encoding': 'chunked'})))
-        self.assertTrue(http_body.declares_body('POST', Headers({'Content-Length': 'abc'})))
+class _Handlers:
+    """Minimal handlers that refuse or accept a POST, with and without reading the body."""
+
+    class NotFoundUnread(http_body.LingeringCloseMixin, http.server.BaseHTTPRequestHandler):
+        protocol_version = 'HTTP/1.1'
+        timeout = 5
+
+        def do_POST(self):   # refuses WITHOUT close_connection and without reading: the old keep-alive desync
+            payload = b'{"error": "not_found"}'
+            self.send_response(404)
+            self.send_header('Content-Length', str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        do_GET = do_POST
+
+        def log_message(self, *args):
+            pass
+
+    class ReadsBody(NotFoundUnread):
+        def do_POST(self):
+            self.rfile.read(int(self.headers.get('Content-Length') or 0))
+            payload = b'{"ok": true}'
+            self.send_response(200)
+            self.send_header('Content-Length', str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+
+def keep_alive_exchange(port, body, second=True):
+    """POST `body` on a keep-alive connection, read one response, then see what the server does with the connection."""
+    head = (b'POST /x HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: ' + str(len(body)).encode() + b'\r\n\r\n')
+    with socket.create_connection(('127.0.0.1', port), timeout=5) as sock:
+        sock.sendall(head + body)
+        data = b''
+        while b'\r\n\r\n' not in data:
+            data += sock.recv(65536)
+        header, _, rest = data.partition(b'\r\n\r\n')
+        length = int(next(line.split(b':')[1] for line in header.split(b'\r\n') if line.lower().startswith(b'content-length')))
+        while len(rest) < length:
+            rest += sock.recv(65536)
+        time.sleep(0.2)
+        if second:
+            sock.sendall(b'GET /y HTTP/1.1\r\nHost: x\r\n\r\n')
+        sock.settimeout(2)
+        try:
+            extra = sock.recv(65536)
+        except socket.timeout:
+            return header, 'open'
+        except ConnectionResetError:
+            return header, 'closed'
+        return header, ('closed' if not extra else 'answered:' + extra[:20].decode('latin-1'))
+
+
+class UnreadBodyClosesTheConnection(unittest.TestCase):
+    def serve(self, handler):
+        server = _Server(handler)
+        self.addCleanup(server.close)
+        return server.port
+
+    def test_an_unread_body_is_not_parsed_as_the_next_request_on_a_kept_alive_connection(self):
+        header, after = keep_alive_exchange(self.serve(_Handlers.NotFoundUnread), BIG[:100 * 1024])
+        self.assertTrue(header.startswith(b'HTTP/1.1 404'), header[:30])
+        self.assertEqual(after, 'closed')   # not 'answered:' (the body bytes taken for a request) and not 'open'
+
+    def test_a_body_the_handler_read_keeps_the_connection_and_does_not_linger(self):
+        spy = []
+        original = http_body.linger_close
+        with mock.patch.object(http_body, 'linger_close', lambda *a, **k: spy.append(1) or original(*a, **k)):
+            header, after = keep_alive_exchange(self.serve(_Handlers.ReadsBody), b'{"a": 1}')
+        self.assertTrue(header.startswith(b'HTTP/1.1 200'), header[:30])
+        self.assertTrue(after.startswith('answered:HTTP/1.1'), after)   # the connection stayed for the second request
+        self.assertEqual(spy, [])
+
+    def test_a_get_that_declares_a_body_is_closed_too(self):
+        port = self.serve(_Handlers.NotFoundUnread)
+        head = b'GET /x HTTP/1.1\r\nHost: x\r\nContent-Length: 5000\r\n\r\n'
+        with socket.create_connection(('127.0.0.1', port), timeout=5) as sock:
+            sock.sendall(head + b'a' * 5000)
+            data = b''
+            sock.settimeout(3)
+            while True:
+                chunk = sock.recv(65536)
+                if not chunk:
+                    break
+                data += chunk
+        self.assertTrue(data.startswith(b'HTTP/1.1 404'), data[:30])   # the server closed it: recv returned the EOF
+
 
 
 def raw_post(port, path, body, headers=b''):
@@ -138,7 +220,10 @@ def raw_post(port, path, body, headers=b''):
     head = (b'POST ' + path.encode() + b' HTTP/1.1\r\nHost: 127.0.0.1:' + str(port).encode() + b'\r\nContent-Type: application/json\r\n'
             + headers + b'Content-Length: ' + str(len(body)).encode() + b'\r\n\r\n')
     with socket.create_connection(('127.0.0.1', port), timeout=5) as sock:
-        sock.sendall(head + body)
+        try:
+            sock.sendall(head + body)
+        except OSError:   # a refusal may close before the whole body is sent
+            pass
         data = b''
         while True:
             try:
@@ -194,6 +279,32 @@ class PrototypeServerLingers(prototype_tests.ServerCase):
         self.assertIsNotNone(spy.wait())
 
 
+class PrototypeServerOtherRefusals(prototype_tests.ServerCase):
+    def test_chunked_without_a_length_is_411_and_the_connection_is_closed(self):
+        spy = SpyLinger(self)
+        head = (b'POST /_api/v1/prototypes/demo/operations HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\n'
+                b'Transfer-Encoding: chunked\r\n\r\n')
+        chunked = b'%x\r\n' % len(BODY) + BODY + b'\r\n0\r\n\r\n'
+        with socket.create_connection(('127.0.0.1', self.server.port), timeout=5) as sock:
+            sock.sendall(head + chunked)
+            data = b''
+            while True:
+                try:
+                    chunk = sock.recv(65536)
+                except ConnectionResetError:
+                    break
+                if not chunk:
+                    break
+                data += chunk
+        self.assertTrue(data.startswith(b'HTTP/1.'), data[:40])
+        self.assertIsNotNone(spy.wait())
+
+    def test_an_unknown_endpoint_with_a_body_is_404_and_closed_not_kept_alive(self):
+        header, after = keep_alive_exchange(self.server.port, BIG[:100 * 1024], second=True)
+        self.assertTrue(header.startswith(b'HTTP/1.'), header[:30])
+        self.assertEqual(after, 'closed')
+
+
 class DashboardServerLingers(dashboard_tests.HttpCase):
     def test_a_refused_approval_with_a_big_body_is_drained_not_reset(self):
         spy = SpyLinger(self)
@@ -204,6 +315,12 @@ class DashboardServerLingers(dashboard_tests.HttpCase):
         discarded = spy.wait()
         self.assertIsNotNone(discarded, 'the connection was closed without the lingering close')
         self.assertGreaterEqual(discarded, 32 * 1024)
+
+    def test_an_unknown_route_and_a_bad_length_with_a_body_are_answered_and_drained_too(self):
+        spy = SpyLinger(self)
+        data = raw_post(self.port, '/nie-ma', BIG)
+        self.assertIn(b' 404 ', data.split(b'\r\n', 1)[0])
+        self.assertGreaterEqual(spy.wait() or 0, 32 * 1024)
 
 
 if __name__ == '__main__':

@@ -73,24 +73,9 @@ except ImportError:
 #
 # The status page (`dashboard_http`) imports `LingeringCloseMixin` from here: one source, this module stays standalone.
 
-LINGER_BYTES = 256 * 1024   # a body over this is not drained (the reset is then the client's own doing)
+LINGER_BYTES = 256 * 1024   # a body over this is not drained (the reset is then the client's own doing); above the handler's own read buffer
 LINGER_SECONDS = 1.0        # all of the discarding, not per read
 _CHUNK = 64 * 1024
-_BODY_METHODS = frozenset({'POST', 'PUT', 'PATCH', 'DELETE'})
-
-
-def declares_body(command, headers):
-    """True when the request may carry a body the handler might not have read."""
-    if command not in _BODY_METHODS:
-        return False
-    if headers is None:
-        return False
-    if headers.get('Transfer-Encoding'):
-        return True
-    try:
-        return int(headers.get('Content-Length') or 0) > 0
-    except ValueError:
-        return True
 
 
 def linger_close(connection, limit=LINGER_BYTES, seconds=LINGER_SECONDS):
@@ -115,13 +100,89 @@ def linger_close(connection, limit=LINGER_BYTES, seconds=LINGER_SECONDS):
     return discarded
 
 
+class _CountingReader:
+    """Proxy of a handler's `rfile` that counts the bytes handed out, to tell whether a request body was read."""
+
+    def __init__(self, raw):
+        self._raw = raw
+        self.count = 0
+
+    def read(self, *args):
+        data = self._raw.read(*args)
+        self.count += len(data)
+        return data
+
+    def read1(self, *args):
+        data = self._raw.read1(*args)
+        self.count += len(data)
+        return data
+
+    def readline(self, *args):
+        data = self._raw.readline(*args)
+        self.count += len(data)
+        return data
+
+    def readinto(self, buffer):
+        size = self._raw.readinto(buffer)
+        self.count += size or 0
+        return size
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        line = self.readline()
+        if not line:
+            raise StopIteration
+        return line
+
+    def __getattr__(self, name):
+        return getattr(self._raw, name)
+
+
 class LingeringCloseMixin:
-    """Mixin for `BaseHTTPRequestHandler` subclasses: lingering close when the connection is closed after a request
-    that declared a body. List it BEFORE the handler base class."""
+    """Mixin for `BaseHTTPRequestHandler` subclasses (list it BEFORE the handler base class).
+
+    After each request it checks whether the declared body was read. A body that is left unread would be parsed
+    as the next request on a kept-alive connection and, at the close, answered with a reset; so such a connection
+    is closed (`close_connection`) and, in `finish`, closed with a lingering close. A request whose body the
+    handler read, or that has none, is not touched."""
+
+    _body_mark = None
+    _linger = False
+
+    def setup(self):
+        super().setup()
+        self.rfile = _CountingReader(self.rfile)
+
+    def parse_request(self):
+        ok = super().parse_request()
+        self._body_mark = self.rfile.count if ok else None
+        return ok
+
+    def handle_one_request(self):
+        self._body_mark = None
+        self._linger = False
+        super().handle_one_request()
+        if self._body_mark is not None and self._body_unread():
+            self.close_connection = True
+            self._linger = True
+
+    def _body_unread(self):
+        headers = getattr(self, 'headers', None)
+        if headers is None:
+            return False
+        if headers.get('Transfer-Encoding'):
+            return True   # a chunked body is never read by these handlers (411); count it as unread
+        try:
+            declared = int(headers.get('Content-Length') or 0)
+        except ValueError:
+            return True
+        return declared > 0 and self.rfile.count - self._body_mark < declared
 
     def finish(self):
         try:
-            if self.close_connection and declares_body(getattr(self, 'command', None), getattr(self, 'headers', None)):
+            if self._linger:
                 linger_close(self.connection)
         finally:
             super().finish()

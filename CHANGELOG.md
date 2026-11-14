@@ -23,6 +23,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 - Prototype server and status page: an error answered before the request body is read (401, 403, 405, 411, 413, a refused approval) no longer ends in a connection reset for the client
   (WinError 10054 on Windows). After such a response the connection is closed with a lingering close (RFC 9112 section 9.6): the sending side is half-closed and the client's remaining bytes are discarded,
   within fixed limits (256 KiB and one second), so a client without rights cannot hold a worker or make the server read an unbounded body.
+  A request whose declared body was left unread (also a refusal that kept the connection alive, e.g. 404) now closes the connection, so the leftover bytes are no longer parsed as the next request.
 
 ## [1.3.0] - 2026-11-13
 
