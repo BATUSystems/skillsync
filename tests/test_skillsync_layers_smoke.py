@@ -3,6 +3,7 @@
 Not the acceptance tests of K2/K3/K9/K12 (those belong to step 2.1t); they only keep the
 module importable and its main paths alive. All machine state is isolated.
 """
+import json
 import subprocess
 import sys
 import unittest
@@ -27,6 +28,11 @@ def make_layer(root, layer_id, kind, files=None, core_min='0.9.0', version='1.0.
     for rel, text in (files or {}).items():
         write(root / rel, text)
     return root
+
+
+def _q(value):
+    """A YAML scalar for a path or glob: a JSON string is a valid YAML double-quoted scalar, so the backslashes of a Windows path survive."""
+    return json.dumps(str(value))
 
 
 class LayersSmokeTest(IsolatedTestCase):
@@ -57,12 +63,12 @@ class LayersSmokeTest(IsolatedTestCase):
         write(self.work / 'loose' / 'x' / '.github' / '.skillsync.yaml', '')
         write(self.config_file, (
             'layers:\n'
-            f'  - {{id: core, kind: core, path: {self.core}, source: {self.core}}}\n'
-            f'  - {{id: acme, kind: org, path: {self.org}, source: {self.org}}}\n'
-            f'  - {{id: me, kind: personal, path: {self.personal}, source: {self.personal}}}\n'
+            f'  - {{id: core, kind: core, path: {_q(self.core)}, source: {_q(self.core)}}}\n'
+            f'  - {{id: acme, kind: org, path: {_q(self.org)}, source: {_q(self.org)}}}\n'
+            f'  - {{id: me, kind: personal, path: {_q(self.personal)}, source: {_q(self.personal)}}}\n'
             'layer_rules:\n'
-            f'  - {{match: ["{projects}/Acme/**"], use: [core, acme, me]}}\n'
-            f'  - {{match: ["{projects}/**"], use: [core, me]}}\n'))
+            f'  - {{match: [{_q(projects.as_posix() + "/Acme/**")}], use: [core, acme, me]}}\n'
+            f'  - {{match: [{_q(projects.as_posix() + "/**")}], use: [core, me]}}\n'))
         self.project = projects / 'Acme' / 'app'
 
     def test_rule_selection_and_blocked_without_rule(self):
