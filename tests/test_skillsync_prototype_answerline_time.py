@@ -16,7 +16,7 @@ from tests.test_skillsync_prototype_question_cli import (EWA, QA, QuestionCase, 
                                                          setUpModule, tearDownModule)
 
 
-@unittest.skipIf(os.name == 'nt', 'TZ i tzset tylko na Unixie')
+@unittest.skipUnless(hasattr(time, 'tzset'), 'brak time.tzset (Windows)')
 class LocalMomentTests(unittest.TestCase):
     def setUp(self):
         self.old = os.environ.get('TZ')

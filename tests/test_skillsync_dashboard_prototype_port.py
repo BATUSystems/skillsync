@@ -5,6 +5,7 @@ Uruchamianie: `python3 -m unittest discover -s tests -p test_skillsync_dashboard
 import json
 import os
 import subprocess
+import threading
 import sys
 import time
 import unittest
@@ -82,17 +83,22 @@ class DashboardPortTests(base.ServeCommandTests):
         proc = subprocess.Popen([sys.executable, str(CLI), 'prototype', 'serve', str(self.root), *self.layer],
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=self.env)
         self.addCleanup(lambda: proc.poll() is None and proc.kill())
-        deadline, listening = time.time() + 20, False
-        while time.time() < deadline and proc.poll() is None and not listening:
-            try:
-                socket.create_connection(('127.0.0.1', port), timeout=1).close()
-                listening = True
-            except OSError:
-                time.sleep(0.1)
-        proc.kill()
-        _out, err = proc.communicate(timeout=15)
-        self.assertTrue(listening, err)
-        self.assertIn(':%d' % port, err)
+        watchdog = threading.Timer(30, proc.kill)
+        watchdog.start()
+        lines = []
+        try:
+            for line in proc.stderr:  # the announcement comes after the bind, so it proves the server listens (no polling race)
+                lines.append(line)
+                if line.startswith('Serwer prototypów:'):
+                    break
+            else:
+                self.fail('the server did not announce its address: ' + ''.join(lines))
+            self.assertIn(':%d/' % port, lines[-1])
+            socket.create_connection(('127.0.0.1', port), timeout=5).close()
+        finally:
+            watchdog.cancel()
+            proc.kill()
+            proc.communicate(timeout=15)
 
     def test_help_lists_the_flag(self):
         result = self.cli('dashboard', 'serve', '--help')
