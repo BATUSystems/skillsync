@@ -49,7 +49,7 @@ def find_node():
 # Kopia: tests/fixtures/prototype/engine-v2/ (SOURCE.md). Strona Pythona: skillsync_workflow/prototype_server.py.
 
 ENGINE_V2_DIR = Path(__file__).resolve().parent / 'fixtures' / 'prototype' / 'engine-v2'
-ENGINE_V2_SHA256 = 'cf4c4878abf8476976318903a7e489a4deb6e94db3bb6c61d7167de484bd3eeb'
+ENGINE_V2_SHA256 = 'd2b8655aa6dcc73fe27cd436a3a00eac64200ebd1d855aaeda0f65d8ca641ddc'
 REFRESH_V2 = 'Odśwież kopię wg tests/fixtures/prototype/engine-v2/SOURCE.md i zaktualizuj ENGINE_V2_SHA256.'
 ENGINE_V2_PATH_ENV = 'SKILLSYNC_PROTOTYPE_ENGINE_V2_PATH'
 DIFF_SEEDS = (20261104, 7, 1234567, 99, 424242, 31337)
@@ -2508,6 +2508,8 @@ globalThis.fetch = async () => { requests += 1; const r = queue.shift(); return 
 const state = hook.Remote.state;
 state.mode = spec.mode || 'full';
 state.user = { login: 'a@example.com', role: spec.role || 'acceptor', mustChange: false };
+state.server = { sourceWrites: spec.sourceWrites !== false };
+if (spec.mustChange) state.user.mustChange = true;
 (async () => {
   const steps = [];
   for (let i = 0; i < (spec.responses || []).length; i += 1) {
@@ -2698,7 +2700,8 @@ class EngineV2WritingTests(unittest.TestCase):
         self.assertEqual(first['writing'], WRITING_MARK)
         self.assertEqual(first['banners'], ['writing'])
         self.assertIn('Agent jeszcze pisze ekrany', first['texts'][0])
-        self.assertEqual(first['buttons'], [0], 'baner bez przycisku „Przeładuj”')
+        self.assertEqual(first['buttons'], [1], 'baner bez „Przeładuj”, z jednym przyciskiem „Zwolnij” dla akceptującego')
+        self.assertRegex(first['texts'][0], r'\(do \d\d:\d\d\)')
         self.assertEqual((first['gate']['visible'], first['gate']['enabled']), (True, False))
         self.assertIn('Agent jeszcze pisze ekrany', first['gate']['reason'])
         self.assertEqual(first['submit']['enabled'], False)
@@ -2710,6 +2713,29 @@ class EngineV2WritingTests(unittest.TestCase):
         self.assertEqual(third['gate'], {'visible': True, 'enabled': True, 'reason': ''})
         self.assertEqual(third['submit'], {'enabled': True, 'reason': ''})
         self.assertEqual(result['requests'], 3)
+
+    def test_release_button_only_for_acceptor_and_developer(self):
+        for role, buttons in (('acceptor', [1]), ('developer', [1]), ('expert', [0]), ('commenter', [0])):
+            with self.subTest(role=role):
+                step = self.run_harness(self.hooked, role=role, responses=[writing_ops(writing=WRITING_MARK)])['steps'][0]
+                self.assertEqual(step['banners'], ['writing'])
+                self.assertEqual(step['buttons'], buttons)
+                self.assertRegex(step['texts'][0], r'\(do \d\d:\d\d\)')
+
+    def test_release_button_needs_source_writes_and_a_password_that_is_set_and_full_mode(self):
+        mark = [writing_ops(writing=WRITING_MARK)]
+        for label, spec in (('bez zapisu źródeł', {'sourceWrites': False}), ('hasło do zmiany', {'mustChange': True}),
+                            ('tryb tylko do odczytu', {'mode': 'readonly'})):
+            with self.subTest(label):
+                step = self.run_harness(self.hooked, responses=mark, **spec)['steps'][0]
+                self.assertNotIn(1, step['buttons'])
+
+    def test_banner_without_a_usable_expires_at_has_no_hour(self):
+        for mark in ({'since': 1000}, {'since': 1000, 'expiresAt': 'x'}, {'since': 1000, 'expiresAt': 1.5}):
+            with self.subTest(mark=mark):
+                step = self.run_harness(self.hooked, responses=[writing_ops(writing=mark)])['steps'][0]
+                self.assertNotIn('(do', step['texts'][0])
+                self.assertIn('Agent jeszcze pisze ekrany', step['texts'][0])
 
     def test_take_overwrites_writing_old_server_without_field_means_null(self):
         result = self.run_harness(self.hooked, responses=[writing_ops(writing=WRITING_MARK), writing_ops(), writing_ops(writing='x'),

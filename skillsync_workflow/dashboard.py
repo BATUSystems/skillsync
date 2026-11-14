@@ -14,6 +14,7 @@ from pathlib import Path
 import posixpath
 import re
 import subprocess
+import time
 
 import yaml
 
@@ -50,6 +51,9 @@ ID_LIST_RE = re.compile(rf'^\s*(?P<ids>{STEP_ID}(?:(?:\s*[/+&]\s*|\s+(?:i|oraz)\
 # "zrobione" / "w toku"). The newest checkpoint without `czeka:` clears the banner.
 WAIT_RE = re.compile(r'(?:^|;)\s*czeka\s*:\s*(?P<seg>[^;]+)', re.IGNORECASE)
 WAIT_NONE = {'', '-', '—', 'nic', 'brak', 'nie'}
+# "The session works until HH:MM" in a checkpoint: segment `eta: <operation> do HH:MM` (like `czeka:`, split by `;`).
+ETA_RE = re.compile(r'(?:^|;)\s*eta\s*:\s*(?P<seg>[^;]+)', re.IGNORECASE)
+ETA_AT_RE = re.compile(r'^(?P<operation>.*?\S)\s+do\s+(?P<time>\d{1,2}:\d{2})\.?$', re.IGNORECASE)
 STATUS_WAIT_RE = re.compile(r'czeka\s+na\s+(?P<what>[^);,]+)', re.IGNORECASE)
 ID_FIND_RE = re.compile(rf'(?<![\w-]){STEP_ID}(?![\w-])')
 SHA_RE = re.compile(r'^[0-9a-f]{7,40}$')
@@ -200,6 +204,41 @@ def wait_marker(text):
         return None
     value = match.group('seg').strip().rstrip('.')
     return None if value.lower() in WAIT_NONE else value
+
+
+def parse_eta(text):
+    """`(operation, "HH:MM")` of the `eta: <operation> do HH:MM` segment of a checkpoint text, or None (no segment, no
+    readable time, an empty operation, or the "nothing" values of `czeka:`)."""
+    match = ETA_RE.search(text)
+    found = ETA_AT_RE.match(match.group('seg').strip()) if match else None
+    if not found:
+        return None
+    hours, minutes = (int(part) for part in found.group('time').split(':'))
+    if hours > 23 or minutes > 59:
+        return None
+    return found.group('operation').strip(), f'{hours:02d}:{minutes:02d}'
+
+
+def build_eta(run_start, chronological, plan_status):
+    """`eta` of the dashboard: the estimate of the NEWEST checkpoint, or None. It vanishes with the next checkpoint without
+    `eta:`, with a `czeka:` one (the session waits, it does not work) and on a closed plan. `untilIso` is read like
+    `timing` reads clocks (run start + midnight crossings; None without a run start); an estimate that lies more than 12 h
+    before its checkpoint is the next day. The server reads no clock: the renderer counts the overrun from `now`."""
+    if not chronological or plan_status in ('done', 'implemented'):
+        return None
+    newest = chronological[-1]
+    found = parse_eta(newest['text'])
+    if not found or wait_marker(newest['text']):
+        return None
+    until_iso = None
+    instants = _instants(run_start, chronological)
+    if instants:
+        hours, minutes = (int(part) for part in found[1].split(':'))
+        moment = instants[-1].replace(hour=hours, minute=minutes)
+        if instants[-1] - moment > timedelta(hours=12):
+            moment += timedelta(days=1)
+        until_iso = moment.isoformat()
+    return {'operation': found[0], 'until': found[1], 'untilIso': until_iso, 'since': newest['time']}
 
 
 def wait_item(what, source, since=None, ctx=None):
@@ -645,6 +684,22 @@ def prototype_acceptance(root, slug):
     if not isinstance(acceptance, dict):
         return None
     return {key: int(acceptance.get(key) or 0) for key in ('screens', 'accepted', 'stale')}
+
+
+def prototype_writing(root, slug, now_ms=None):
+    """`{since, expiresAt, renewedAt}` of a valid writing marker of the prototype (`.writing.json`, in-process, read-only, the
+    same reader as the prototype server; never `by`), or None.  The clock is `now_ms` (UTC milliseconds), by default the host's."""
+    if not slug or not re.fullmatch(r'[A-Za-z0-9][\w.-]*', slug):
+        return None
+    base = prototypes_root(root)
+    directory = base / slug if base is not None else None
+    if directory is None or not directory.is_dir() or directory.is_symlink():
+        return None
+    try:
+        from .prototype_server import public_writing
+        return public_writing(str(directory), int(time.time() * 1000) if now_ms is None else int(now_ms))
+    except Exception:  # an unreadable marker must not break the status page
+        return None
 
 
 def risky_sections(text):
@@ -1309,29 +1364,61 @@ def read_readiness(root, run_id, run_exists):
     return out
 
 
-def waiting_items(run, spec, plan, slug):
+def _local_hhmm(millis):
+    return time.strftime('%H:%M', time.localtime(millis / 1000.0))
+
+
+def writing_item(slug, writing):
+    """Banner entry for a valid writing marker: the agent is still writing screens, nothing to accept yet."""
+    return {'what': f"agent pisze ekrany (do {_local_hhmm(writing['expiresAt'])})", 'source': 'writing',
+            'since': _local_hhmm(writing['since']),
+            'action': 'Agent pisze ekrany prototypu; akceptacja wróci, gdy skończy. Nic nie musisz robić.',
+            'link': {'kind': 'prototype', 'slug': slug}}
+
+
+def expert_item(expert):
+    """Banner entry for open blocking questions to a domain expert (link like the toast: one run or the list)."""
+    runs = [run for run in (expert.get('runs') or []) if run.get('blocking')]
+    single = runs[0] if len(runs) == 1 and len(expert.get('runs') or []) == 1 else None
+    blocking = expert['blocking']
+    return {'what': f'odpowiedź eksperta ({blocking} blokujących)', 'source': 'expert', 'since': None,
+            'action': 'Odpowiedz na pytania eksperta na stronie pytań; sesja czeka na odpowiedź.',
+            'link': {'kind': 'expert', 'slug': single['slug'] if single else None,
+                     'url': single['url'] if single else '/_experts'}}
+
+
+def waiting_items(run, spec, plan, slug, writing=None, expert=None):
     """What the session waits for: the `czeka:` marker of the newest checkpoint wins; otherwise facts from the files:
-    `Status: … (czeka na …)` of the plan or spec and a prototype with unaccepted screens before "GO implement"."""
+    `Status: … (czeka na …)` of the plan or spec, a prototype with unaccepted screens before "GO implement" and open
+    blocking questions to a domain expert.  A valid writing marker (`writing`) of the prototype comes first and replaces every
+    acceptance item: there is nothing to accept while the agent still writes."""
     ctx = {'spec': spec.get('path') if spec else None, 'plan': plan.get('path') if plan else None, 'slug': slug}
     newest = run['checkpoints'][0] if run.get('checkpoints') else None
     marker = wait_marker(newest['text']) if newest else None
-    if marker:
-        return [wait_item(marker, 'checkpoint', newest['time'], ctx)]
     items = []
-    for doc, source in ((plan, 'plan'), (spec, 'spec')):
-        text = (doc or {}).get('statusText') or ''
-        match = STATUS_WAIT_RE.search(text)
-        satisfied = match and re.search(r'GO plan|GO implement', match.group('what'), re.IGNORECASE) and \
-            doc.get('status') in ('approved', 'in_progress', 'done', 'implemented')
-        if match and not satisfied and doc.get('status') in ('draft', 'approved', 'in_progress'):
-            items.append(wait_item(match.group('what').strip(), source, None, ctx))
-            break
-    acc = spec.get('prototypeAcceptance') if spec else None
-    before_go = not plan or plan.get('status') in ('draft', 'approved')
-    if acc and acc.get('screens') and before_go and (acc['accepted'] < acc['screens'] or acc.get('stale')):
-        what = f"akceptacja prototypu {slug} ({acc['accepted']}/{acc['screens']})"
-        if not any('prototyp' in item['what'].lower() for item in items):
-            items.append(wait_item(what, 'prototype', None, ctx))
+    if marker:
+        items = [wait_item(marker, 'checkpoint', newest['time'], ctx)]
+    else:
+        for doc, source in ((plan, 'plan'), (spec, 'spec')):
+            text = (doc or {}).get('statusText') or ''
+            match = STATUS_WAIT_RE.search(text)
+            satisfied = match and re.search(r'GO plan|GO implement', match.group('what'), re.IGNORECASE) and \
+                doc.get('status') in ('approved', 'in_progress', 'done', 'implemented')
+            if match and not satisfied and doc.get('status') in ('draft', 'approved', 'in_progress'):
+                items.append(wait_item(match.group('what').strip(), source, None, ctx))
+                break
+        acc = spec.get('prototypeAcceptance') if spec else None
+        before_go = not plan or plan.get('status') in ('draft', 'approved')
+        if acc and acc.get('screens') and before_go and (acc['accepted'] < acc['screens'] or acc.get('stale')):
+            what = f"akceptacja prototypu {slug} ({acc['accepted']}/{acc['screens']})"
+            if not any('prototyp' in item['what'].lower() for item in items):
+                items.append(wait_item(what, 'prototype', None, ctx))
+        if expert and expert.get('blocking'):
+            items.append(expert_item(expert))
+    if writing and slug:
+        items = [item for item in items if item['source'] != 'prototype'
+                 and not (item.get('link') or {}).get('kind') == 'prototype']
+        items.insert(0, writing_item(slug, writing))
     return items
 
 
@@ -1374,12 +1461,13 @@ def _normal_plan_rel(plan):
 
 
 def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=None, prototype_port=PROTOTYPE_PORT,
-                 version=0, ahead=None, prototype_up=None, acceptance=None):
+                 version=0, ahead=None, prototype_up=None, acceptance=None, writing=None, now_ms=None):
     """The dashboard contract (`schema: 1`) for the project at `root`. Read-only: nothing in the project is written.
 
     `plan` = plan path relative to the project (unknown = automatic choice, `planAuto: true`). `version`, `session_url`,
     and the probes `ahead(root, branch, head)`, `prototype_up()`, `acceptance(slug)` let a server add its live state and
-    caches; `show` uses the defaults (`version` 0, no session, prototype `up` false)."""
+    caches; `show` uses the defaults (`version` 0, no session, prototype `up` false).  `writing(slug)` is the probe of the
+    writing marker (default: the file, read with `now_ms` or the host clock)."""
     root = Path(root).resolve()
     if manifest is None:
         _, manifest = read_project(root)
@@ -1456,7 +1544,9 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
 
     progress = build_progress(phases, in_progress, plan_info['status'] if plan_info else None, reported)
     acts = compute_acts(spec, plan_info, progress, run['files'], {'risky': risky_sections(spec_text)})
-    waiting = waiting_items(run, spec if spec_path else None, plan_info, slug)
+    writing_state = ((writing or (lambda name: prototype_writing(root, name, now_ms)))(slug)) if slug else None
+    expert_questions = build_expert_questions(root)
+    waiting = waiting_items(run, spec if spec_path else None, plan_info, slug, writing=writing_state, expert=expert_questions)
     git_info = read_git(root)
     delivery = read_delivery(manifest)
     ahead_state = (ahead or (lambda base, branch, head: git_ahead(base, branch)))(root, git_info['branch'], git_info['head'])
@@ -1483,20 +1573,22 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
         'progress': progress,
         'acts': acts,
         'waiting': waiting,
+        'eta': build_eta(run['start'], chronological, plan_info['status'] if plan_info else None),
         # Report silence: the consumer counts the minutes (no events arrive when nothing changes).
         'silence': ({'since': run.get('lastReportAt'), 'thresholdMin': SILENCE_MIN}
                     if plan_info and plan_info.get('status') == 'in_progress' and run.get('lastReportAt')
-                    and not any(item.get('source') == 'checkpoint' for item in waiting) else None),
+                    and not any(item.get('source') in ('checkpoint', 'expert') for item in waiting) else None),
         'approvals': approvals_state(root, spec, plan_info, delivery_state, run_id, git_info['headFull'],
                                      run_approvals(root, run_id), waiting, approvals),
         'delivery': delivery_state,
         'session': {'url': session_url},
-        'prototype': {'slug': slug, 'port': prototype_port, 'up': bool(slug) and bool(prototype_up and prototype_up())},
+        'prototype': {'slug': slug, 'port': prototype_port, 'up': bool(slug) and bool(prototype_up and prototype_up()),
+                      'writing': writing_state},
         'docs': doc_groups(root, [rel for rel in current_docs if rel], run['files'], run_id),
         'readiness': read_readiness(root, run_id, run['exists']),
         'assumptions': {'count': len(assumptions), 'items': assumptions},
         'blockingQuestions': {'count': len(blocking), 'items': blocking},
-        'expertQuestions': build_expert_questions(root),
+        'expertQuestions': expert_questions,
         'substeps': build_substeps(progress, chronological),
         'timing': build_timing(run['start'], chronological, run_approvals(root, run_id), progress['phases']),
     }
@@ -1676,6 +1768,8 @@ def register(subparsers):
     serve.add_argument('--plan', help='plan relative to the project (default: chosen automatically, switchable on the page)')
     serve.add_argument('--port', type=int, default=DEFAULT_PORT,
                        help=f'port (default {DEFAULT_PORT}, range {PORT_MIN}-{PORT_MAX}; one port per project)')
+    serve.add_argument('--prototype-port', type=int, default=None,
+                       help=f'port of the prototype server the page checks (default: prototype.port of the manifest, else {PROTOTYPE_PORT})')
     serve.add_argument('--host', default='127.0.0.1',
                        help='listen address (default 127.0.0.1; 0.0.0.0 = all interfaces; other devices also need --approve-host or --read-host)')
     serve.add_argument('--approve-host', action='append', default=[], metavar='NAME',

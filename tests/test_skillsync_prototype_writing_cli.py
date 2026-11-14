@@ -59,7 +59,7 @@ class WritingCliTests(WritingCliFixture):
         after = time.time() * 1000
         self.assertEqual(started['status'], 'PASS')
         window = started['writing']
-        self.assertEqual(set(window), {'since', 'expiresAt', 'by'})
+        self.assertEqual(set(window), {'since', 'expiresAt', 'renewedAt', 'by'})
         self.assertEqual(window['by'], 'agent')
         self.assertEqual(window['expiresAt'] - window['since'], 900_000)
         self.assertTrue(before - 1000 <= window['since'] <= after + 1000)
@@ -87,8 +87,9 @@ class WritingCliTests(WritingCliFixture):
     def test_ttl_limits_are_inclusive(self):
         for ttl in ('60', '3600'):
             with self.subTest(ttl=ttl):
+                self.writing('done')
                 report = self.writing('start', '--ttl', ttl)
-                self.assertEqual(report['writing']['expiresAt'] - report['writing']['since'], int(ttl) * 1000)
+                self.assertEqual(report['writing']['expiresAt'] - report['writing']['renewedAt'], int(ttl) * 1000)
 
     def test_invalid_args_are_blocked_and_write_nothing(self):
         for args in (('--ttl', '59'), ('--ttl', '3601'), ('--ttl', '0'), ('--ttl', '-5'), ('--ttl', 'abc'),
@@ -104,13 +105,17 @@ class WritingCliTests(WritingCliFixture):
         self.assertEqual(self.writing('status', '--ttl', '5', code=2)['error'], 'invalid_args')
         self.assertEqual(self.writing('done', '--by', 'a b', code=2)['error'], 'invalid_args')
 
-    def test_repeated_start_replaces_both_fields_also_shortening(self):
-        first = self.writing('start', '--ttl', '3600')['writing']
+    def test_repeated_start_keeps_since_renews_and_also_shortens(self):
+        first = self.writing('start', '--ttl', '3600', '--by', 'ala')['writing']
         time.sleep(0.01)
         second = self.writing('start', '--ttl', '60')['writing']
-        self.assertGreater(second['since'], first['since'])
-        self.assertEqual(second['expiresAt'] - second['since'], 60_000)
+        self.assertEqual(second['since'], first['since'], 'the start of the writing stays')
+        self.assertEqual(second['by'], 'ala', 'a renewal without --by keeps the author')
+        self.assertGreater(second['renewedAt'], first['renewedAt'])
+        self.assertEqual(second['expiresAt'] - second['renewedAt'], 60_000)
         self.assertEqual(self.writing('status')['writing'], second)
+        third = self.writing('start', '--by', 'ola')['writing']
+        self.assertEqual((third['since'], third['by']), (first['since'], 'ola'))
 
     def test_unknown_action_and_unknown_slug(self):
         report = self.proto('writing', 'nieistnieje', 'start', code=2)
@@ -178,7 +183,8 @@ class WritingCliTests(WritingCliFixture):
 class WritingClockAndLockTests(WritingCliFixture):
     def test_injected_store_clock_sets_both_times(self):
         report, _ = self.in_process('start', lambda: 1_800_000_000.5, ttl='120', by='ala')
-        self.assertEqual(report['writing'], {'since': 1_800_000_000_500, 'expiresAt': 1_800_000_120_500, 'by': 'ala'})
+        self.assertEqual(report['writing'], {'since': 1_800_000_000_500, 'expiresAt': 1_800_000_120_500,
+                                             'renewedAt': 1_800_000_000_500, 'by': 'ala'})
         status, _ = self.in_process('status', lambda: 1_800_000_119.0)
         self.assertEqual(status['writing'], report['writing'])
         expired, _ = self.in_process('status', lambda: 1_800_000_121.0)

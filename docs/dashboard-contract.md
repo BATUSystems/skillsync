@@ -106,6 +106,7 @@ projektu lub przebiegu). Raport komend zapisujących i `metrics --json` to JSON 
 | `assumptions` | obiekt | NOWE: założenia ze speca |
 | `blockingQuestions` | obiekt | NOWE: pytania blokujące ze speca |
 | `expertQuestions` | obiekt | NOWE: otwarte pytania do eksperta ze wszystkich przebiegów |
+| `eta` | obiekt albo null | NOWE (addytywnie, `schema: 1`): szacowany koniec bieżącej operacji z najnowszego checkpointu (`eta:`) |
 | `substeps` | tablica | NOWE: podkroki `Fn.k` z czasem |
 | `timing` | obiekt | NOWE (addytywnie, `schema: 1`): czas pracy i czas czekania na człowieka per krok i per faza planu |
 
@@ -134,7 +135,7 @@ W trybach innych niż `plan` pola `plan`, `progress.phases` itd. są puste (`pla
 ### `plans[]`
 
 `path` (string), `title` (string), `status` (`draft`, `approved`, `in_progress`, `done`, `implemented` albo null), `spec`
-(ścieżka speca lub null), `run` (id przebiegu lub null).
+(ścieżka speca lub null), `run` (id przebiegu lub null). Plan wiąże się z przebiegiem tylko linią `Przebieg: <run-id>` w nagłówku planu: sam `checkpoint --run-id X` tworzy `.skillsync/runs/X`, ale bez tej linii `plans[].run` i `run.id` strony statusu zostają `null` (strona nie zgaduje powiązania).
 
 ### `plan`
 
@@ -190,17 +191,28 @@ Kontrakty/Migracja/Dane), `percent` (tylko akt III; = `progress.percent`).
 
 ### `waiting[]`
 
-`what`, `source` (`checkpoint`, `plan`, `spec`, `prototype`), `since` (`HH:MM` lub null), `action` (podpowiedź dla
-człowieka), `link` (`{kind: "doc", path}` albo `{kind: "prototype", slug}` lub null); opcjonalnie `word` (np. `GO plan`) i
+`what`, `source` (`checkpoint`, `plan`, `spec`, `prototype`, `writing`, `expert`), `since` (`HH:MM` lub null), `action` (podpowiedź dla
+człowieka), `link` (`{kind: "doc", path}`, `{kind: "prototype", slug}`, `{kind: "expert", slug, url}` lub null); opcjonalnie `word` (np. `GO plan`) i
 `approve` (`spec`, `plan`, `cp`, `ready`), gdy czekanie odpowiada przyciskowi zgody.
 
 Pytania blokujące (`blockingQuestions`) generują czekanie tylko, gdy sesja zgłosi je w checkpoincie (`czeka: odpowiedź Q3`);
 założenia nigdy nie są akcją „Odpowiedz na pytania”.
 
+Dwie pozycje powstają z plików, bez znacznika w checkpoincie:
+
+- `source: "writing"`: prototyp przebiegu ma ważny znacznik zapisu (`prototype.writing` nie jest null). `what` = „agent pisze ekrany (do HH:MM)”
+  (czas lokalny hosta strony z `expiresAt`), `since` = `HH:MM` początku pisania, `link` = `{kind: "prototype", slug}`. Pozycja jest pierwsza
+  i zastępuje każdą pozycję akceptacji prototypu (też tę z `czeka:` w checkpoincie), bo nie ma czego akceptować, dopóki agent pisze.
+  Renderer pisze „Sesja pracuje od HH:MM: …”, nie „Sesja czeka na Ciebie”.
+- `source: "expert"`: `expertQuestions.blocking > 0`, a najnowszy checkpoint nie ma znacznika `czeka:`. `what` = „odpowiedź eksperta (N blokujących)”,
+  `link` = `{kind: "expert", slug, url}`: przy jednym przebiegu z otwartymi pytaniami jego `slug` i `/_experts/<slug>`, w pozostałych
+  przypadkach `slug: null` i `/_experts`. Renderer składa adres jak w toaście (`deps.prototypeOrigin(port)` plus ścieżka; bez adresu serwera
+  prototypów pozycja nie ma odnośnika). Pytania bez `blocking` nie tworzą pozycji.
+
 ### `silence`
 
 `{since, thresholdMin}` (czas ostatniego raportu i próg w minutach, 35), gdy plan jest `in_progress`, są raporty i sesja
-nie czeka jawnie; w przeciwnym razie null. Minuty liczy konsument.
+nie czeka jawnie (żaden element `waiting` ze źródłem `checkpoint` ani `expert`); w przeciwnym razie null. Minuty liczy konsument.
 
 ### `approvals`
 
@@ -243,7 +255,10 @@ tablica).
 
 ### `prototype`
 
-`{slug: string|null, port: int, up: bool}`; `up` bez serwera (`show`) = false.
+`{slug: string|null, port: int, up: bool, writing: object|null}`; `up` bez serwera (`show`) = false. `writing` = `{since, expiresAt, renewedAt}`
+(UTC, milisekundy; nigdy `by`) ważnego znacznika zapisu ekranów `docs/prototypes/<slug>/.writing.json`, inaczej null (brak, wygasły, uszkodzony,
+dowiązanie symboliczne). Odczyt jest tym samym kodem co w serwerze prototypów, tylko do odczytu; serwer strony śledzi plik znacznika i jego ważność,
+więc strona odświeża się też przy wygaśnięciu.
 
 ### `docs[]`
 
@@ -302,6 +317,28 @@ bez dowiązań symbolicznych, `prototype.json` obok, plik do 2 MiB (serwer zapis
   akcji, więc bez timera i bez „×”; znika, gdy `open` spadnie do `0`. Odnośnik „Odpowiedz na pytania” prowadzi do
   `/_experts/<slug>` przy jednym przebiegu albo do `/_experts` przy kilku, o ile host zna adres serwera prototypów
   (`deps.prototypeOrigin(port)`); bez niego toast jest samym tekstem. Pole nie zależy od `approvals.here` ani `viewer`.
+
+### `eta`
+
+Źródło: segment `eta: <operacja> do HH:MM` NAJNOWSZEGO checkpointu przebiegu (`.skillsync/runs/<run>/checkpoints.md`), w tej
+samej linii co `zrobione: …; w toku: …` (segmenty rozdziela `;`):
+
+```
+- 14:05 w toku: F1.2; eta: rysowanie 12 ekranów prototypu do 15:10
+```
+
+Agent pisze segment PRZED długą operacją (spec, prototyp i jego iteracje, plan, krok implementacji), powtarza go w każdej linii
+raportu aż do końca operacji (czytana jest tylko najnowsza linia) i po przekroczeniu podaje w nowej linii nowy termin (bez zatrzymywania pracy); czas bierze z `date`, nie z szacunku zegara.
+
+- `{operation, until, untilIso, since}`: `operation` to tekst przed ` do `, `until` to `HH:MM`, `since` to czas checkpointu,
+  `untilIso` to pełna data z godziną rozwiązana jak w `timing` (start przebiegu `RUN=` plus przejścia przez północ;
+  szacunek o ponad 12 h wcześniejszy niż checkpoint liczy się jako następny dzień); bez startu przebiegu `untilIso` jest null.
+- `eta` jest null, gdy najnowszy checkpoint nie ma segmentu `eta:` (albo ma `eta: -`, nieczytelną godzinę, pustą operację),
+  ma `czeka:` (sesja czeka na człowieka, nie pracuje) albo plan jest `done`/`implemented`. Nowszy checkpoint zastępuje
+  wcześniejsze szacunki.
+- Serwer nie czyta zegara: „przekroczono” liczy konsument z `untilIso`. Renderer pokazuje toast „<operacja>, koniec ok.
+  HH:MM”, a po przekroczeniu „<operacja>: przekroczono ETA o N min” (od 60 min „o H h M min”) (stan, nie wynik akcji: bez timera i bez „×”; widz widzi
+  go tak samo). Pole nie zależy od `approvals.here` ani `viewer`.
 
 ### `substeps[]`
 
@@ -434,7 +471,7 @@ Różnice rozstrzygnięte świadomie:
 
 ## Serwer (`dashboard serve`)
 
-`skillsync dashboard serve <projekt> [--port 5140] [--host 127.0.0.1] [--approve-host H ...] [--read-host H ...] [--no-approvals] [--plan <rel>]
+`skillsync dashboard serve <projekt> [--port 5140] [--prototype-port N] [--host 127.0.0.1] [--approve-host H ...] [--read-host H ...] [--no-approvals] [--plan <rel>]
 [--session-url https://…] [--layer id=ścieżka ...]` (moduł `skillsync_workflow/dashboard_http.py`, ładowany leniwie) działa
 na pierwszym planie; Ctrl+C albo SIGTERM kończy go raportem `{"status": "PASS", "url", "stopped": true}` (kod `0`). Odmowa
 startu = `BLOCKED` (kod `2`): port spoza 5100–5199 albo zakazany (4444–4448, 9222, 9333), brak manifestu, brak
