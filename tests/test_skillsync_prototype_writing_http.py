@@ -24,7 +24,7 @@ from tests.test_skillsync_prototype_server import (  # noqa: E402
 from tests.test_skillsync_prototype_accept import (  # noqa: E402
     PROJECT_ACCEPT_URL, PROJECT_URL, ProjectCase, file_operations)
 
-WRITING_KEYS = {'since', 'expiresAt'}
+WRITING_KEYS = {'since', 'expiresAt', 'renewedAt'}
 BY = 'zz-writer'   # wyróżnialny autor markera: nie wolno go znaleźć w żadnej odpowiedzi
 
 
@@ -131,22 +131,28 @@ class WritingFieldTests(WritingCase):
         self.assertNotIn(BY, raw)
         field = self.listing()['writing']
         self.assertEqual(set(field), WRITING_KEYS)
-        self.assertEqual(field, {'since': marker['since'], 'expiresAt': marker['expiresAt']})
+        self.assertEqual(field, {'since': marker['since'], 'expiresAt': marker['expiresAt'], 'renewedAt': marker['since']})
         self.clock.advance(901)
         self.assertIsNone(self.listing()['writing'])
+
+    def test_renewed_marker_exposes_since_and_renewed_at(self):
+        now = int(self.clock() * 1000)
+        self.mark('beta', since_shift=-2_400_000, window=3_300_000, renewedAt=now)   # started 40 min ago, renewed now
+        field = dict((item['slug'], item) for item in self.project())['beta']['writing']
+        self.assertEqual(field, {'since': now - 2_400_000, 'expiresAt': now + 900_000, 'renewedAt': now})
 
     def test_project_listing_has_writing_per_prototype(self):
         marker = self.mark('beta')
         self.assertNotIn(BY, self.check(self.acc.get(PROJECT_URL), 200).text)
         by = dict((item['slug'], item) for item in self.project())
-        self.assertEqual(by['beta']['writing'], {'since': marker['since'], 'expiresAt': marker['expiresAt']})
+        self.assertEqual(by['beta']['writing'], {'since': marker['since'], 'expiresAt': marker['expiresAt'], 'renewedAt': marker['since']})
         for slug in ('alpha', 'demo', 'empty', 'old'):
             self.assertIsNone(by[slug]['writing'], slug)
 
     def test_one_helper_gives_the_shape(self):
         marker = self.mark('alpha')
         now = int(self.clock() * 1000)
-        self.assertEqual(ps.public_writing(self.directories['alpha'], now), {'since': marker['since'], 'expiresAt': marker['expiresAt']})
+        self.assertEqual(ps.public_writing(self.directories['alpha'], now), {'since': marker['since'], 'expiresAt': marker['expiresAt'], 'renewedAt': marker['since']})
         self.assertIsNone(ps.public_writing(self.directories['beta'], now))
         self.assertIsNone(ps.public_writing(self.directories['alpha'], marker['expiresAt']))
 

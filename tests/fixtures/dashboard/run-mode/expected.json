@@ -136,6 +136,7 @@
       "label": "Przebieg 2026-01-11-demo-research"
     }
   ],
+  "eta": null,
   "expertQuestions": {
     "blocking": 0,
     "open": 0,
@@ -175,7 +176,8 @@
   "prototype": {
     "port": 5130,
     "slug": null,
-    "up": false
+    "up": false,
+    "writing": null
   },
   "readiness": {
     "date": null,
