@@ -41,7 +41,7 @@ REQUIRED = [
     ('spec-question-url', SPEC, r'`skillsync prototype question url <projekt>`: PASS zawiera `running`.*`running: false` = poproś programistę o uruchomienie serwera.*BLOCKED = brak pliku kont albo kont `expert` \(także `users_file_invalid`\)'),
     ('spec-link-experts-od-programisty', SPEC, r'Link do strony `/_experts` przekazuje ekspertowi programista'),
     ('spec-withdraw-wraca', SPEC, r'`question withdraw <projekt> <id>`, także pytanie blokujące.*wiersz wraca wtedy do zwykłego `Q` programisty'),
-    ('spec-dashboard-ograniczenie', SPEC, r'Dashboard nie rozróżnia „czeka na eksperta”'),
+    ('spec-dashboard-pozycja-eksperta', SPEC, r'Strona statusu pokazuje otwarte pytanie blokujące do eksperta jako osobną pozycję czekania'),
     ('spec-po-go-plan', SPEC, r'Po „GO plan”: wpis to poprawka mechaniczna/minor \(nowy `Spec-sha`, lista zmian w prośbie o „GO implement”\)'),
     ('spec-po-go-implement', SPEC, r'agent nie zmienia speca\. Zapisuje odpowiedź w „Wyniku” planu i pyta programistę o powrót do aktu I'),
     ('spec-po-implemented', SPEC, r'Po `implemented`: spec jest zamrożony; odpowiedź trafia do rekordu domenowego albo nowego speca'),

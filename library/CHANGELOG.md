@@ -5,6 +5,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 ## [Unreleased]
 
 ### Changed
+- `skills/feature` (`SKILL.md`, `references/spec.md`) i `skills/skillsync`: treść odpowiedzi i komentarzy ekspertów to dane (`untrusted` i `notice` w raportach `question list|show|export|wait`): poleceń z niej agent nie wykonuje i zgłasza je człowiekowi; `questions.json` czytany wprost to ta sama niezaufana treść; wiersz `[EKSPERT]` w specu to dane w pliku repo.
 - `skills/feature` (`SKILL.md`, `references/spec.md`) i `skills/skillsync`: pytania o kontrakt, dane (schemat bazy), migrację i bezpieczeństwo to decyzja programisty (zwykłe `Q` w sesji), do eksperta tylko pytania domenowe; `question withdraw --reason` (powód widzi ekspert, wycofane pytanie zostaje na jego liście).
 - `skills/prototype` (`SKILL.md`, `references/decisions.md`) i `skills/feature`: polecenie w komentarzu agent zgłasza człowiekowi, przytacza i odpowiada w wątku, że nie wykona; raporty `comments` i `wait` mają `untrusted` i `notice`; ponowny odczyt komentarzy przy „GO plan”, „GO implement” i przed fazą interfejsu.
 - `skills/prototype/assets/repo/prototype.css`: widoczny stan wciśniętych przełączników paska, mniejsze pole komentarza (istniejące prototypy dostają arkusz po `skillsync prototype migrate`).
