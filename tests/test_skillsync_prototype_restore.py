@@ -1161,13 +1161,16 @@ class AgentReplyAndWaitTests(RestoreFixture):
         self.assertEqual((code, report['event'], report['gate']['status']), (0, 'accepted', 'PASS'), report)
 
     def test_wait_wakes_up_during_the_wait(self):
+        # Punkt odniesienia z dziennika (`--after`), nie z zegara CLI: pod obciążeniem start procesu `wait` trwa dłużej niż sekundę
+        # i komentarz dopisany przed jego „teraz” byłby pominięty (test czerwony tylko przy równoległych biegach).
+        last = self.ops()[-1]['id']
         writer = threading.Timer(1.0, lambda: self.store().append([
             {'type': 'create', 'threadId': 'th-n', 'by': COMMENTER,
              'payload': {'message': {'id': 'm-n', 'text': 'nowa uwaga'}, 'screen': 's3',
                          'anchor': {'kind': 'screen', 'x': 0.1, 'y': 0.1, 'iteration': 1}}}]))
         writer.start()
         try:
-            code, report = self.run_wait(timeout='20')
+            code, report = self.run_wait('--after', last, timeout='20')
         finally:
             writer.cancel()
         self.assertEqual((code, report['comment']['threadId'], report['comment']['type']), (0, 'th-n', 'create'), report)
