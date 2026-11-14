@@ -3199,9 +3199,9 @@ def comments_prototype(root, manifest, slug, status=None):
     threads = [server.thread_facts(thread, people, screen_ids, proto_ids)
                for thread in fold['threads'] if thread['status'] in statuses]
     # `untrusted` and `notice` come first: a reader that sees the output in pieces (or cut) meets the warning before any comment text
-    report = {'status': 'PASS', 'slug': slug, 'untrusted': True, 'notice': UNTRUSTED_NOTICES['comments'],
-              'iteration': fold['currentIteration'], 'statuses': statuses,
-              'counts': server.thread_counts(fold, screen_ids, proto_ids), 'threads': threads}
+    report = mark_untrusted({'status': 'PASS', 'slug': slug, 'iteration': fold['currentIteration'], 'statuses': statuses,
+                             'counts': server.thread_counts(fold, screen_ids, proto_ids), 'threads': threads},
+                            'comments', after=('status', 'slug'))
     warnings = list(settings['warnings'])
     if fold['iterationDuplicates']:
         warnings.append('comments.json: duplicated iteration number(s): '
@@ -3361,8 +3361,8 @@ def wait_prototype(root, manifest, slug, since=None, after=None, timeout=1800.0,
         if store.state() != 'v1':
             comments = _new_comments(store.snapshot(), since_at, after, _roles(root), _roles_all(root))
             if comments:
-                return {'status': 'PASS', 'slug': slug, 'event': 'comment', 'untrusted': True, 'notice': UNTRUSTED_NOTICES['comments'],
-                        'comment': comments[0], 'comments': comments}
+                return mark_untrusted({'status': 'PASS', 'slug': slug, 'event': 'comment', 'comment': comments[0], 'comments': comments},
+                                      'comments', after=('status', 'slug', 'event'))
         gate = prototype_gate(root, manifest, slugs=[slug])
         if gate.get('status') == 'BLOCKED':
             return gate

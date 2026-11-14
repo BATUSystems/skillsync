@@ -47,7 +47,6 @@ Every release has a **Breaking** section that lists incompatible changes. When a
   ("Agent jeszcze pisze ekrany tego prototypu (do HH:MM)…", host time of the server), so a copy of the engine without the banner shows readable text; the code and fields are unchanged.
 
 ### Compatibility
-
 - `untrusted` and `notice` in `question list|show|export|wait` are additive (the `expert-questions/1` document keeps its schema version; two keys come first). The text of `notice` for comments of a prototype is unchanged.
 
 - `untrusted` and `notice` are additive; a consumer that ignores unknown keys is not affected (the key order changed only by two new keys near the top).

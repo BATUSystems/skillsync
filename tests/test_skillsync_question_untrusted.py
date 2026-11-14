@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from skillsync_workflow import prototype as pt  # noqa: E402
+from skillsync_workflow import prototype_server as ps  # noqa: E402
 from tests.test_skillsync_prototype_question_cli import EWA, OLA, QA, QB, SPEC, QuestionCase  # noqa: E402
 from tests.test_skillsync_prototype_server import setUpModule, tearDownModule  # noqa: E402,F401  (strażnik katalogu)
 
@@ -178,6 +179,17 @@ class NoPersonTextTests(Fixture):
         self.assert_clean(self.q('purge', '--slug', 'demo'))
         self.assert_clean(self.q('migrate', '--dry-run'))
         self.assert_clean(self.run_and_load('url', code=2))
+
+    def test_merge_driver_error_and_migrate_with_an_old_file_have_no_marker(self):
+        good = self.base / 'dobry.json'
+        good.write_text(ps.serialize_questions([]), encoding='utf-8')
+        broken = self.base / 'zly.json'
+        broken.write_text('{ nie json', encoding='utf-8')
+        result = self.run_cli('merge', '--driver', good, broken, good, project=False)
+        self.assertEqual(result.returncode, 2, result.stdout)
+        self.assert_clean(json.loads(result.stdout))
+        (self.qroot / 'questions.json').write_bytes((self.qroot / 'demo' / 'questions.json').read_bytes())
+        self.assert_clean(self.q('migrate', '--dry-run'))
 
     def run_and_load(self, action, *args, code):
         result = self.run_cli(action, *args)
