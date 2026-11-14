@@ -227,12 +227,23 @@ class RecordLock(RecordFixture):
 
     def test_a_held_lock_blocks_after_the_timeout_and_is_free_again_after_release(self):
         lock = self.log.parent / 'approvals.jsonl.lock'
-        with server.FileLock(str(lock), 5, 0o600):  # another writer holds the system lock
-            with mock.patch.object(status, 'APPROVAL_LOCK_TIMEOUT', 0.1):
+        holder = subprocess.Popen(  # another PROCESS holds the system lock (an in-process holder would stop on the thread lock)
+            [sys.executable, '-c',
+             'import sys\nfrom skillsync_workflow import prototype_server as ps\n'
+             'with ps.FileLock(sys.argv[1], 30, 0o600):\n    print("ready", flush=True)\n    sys.stdin.readline()\n', str(lock)],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, cwd=ROOT, env={**self.env, 'PYTHONPATH': str(ROOT)})
+        try:
+            self.assertEqual(holder.stdout.readline().strip(), 'ready')
+            with mock.patch.object(status, 'APPROVAL_LOCK_TIMEOUT', 0.3):
                 report = self.record()
             self.assertEqual(report['status'], 'BLOCKED')
             self.assertIn('locked', report['reason'])
             self.assertEqual(self.lines(), [], 'nothing is written without the lock')
+        finally:
+            holder.stdin.write('\n')
+            holder.stdin.close()
+            holder.wait(timeout=30)
+            holder.stdout.close()
         self.assertEqual(self.record()['status'], 'PASS')
 
     def test_a_leftover_lock_file_without_an_owner_never_blocks(self):
@@ -254,7 +265,25 @@ class RecordLock(RecordFixture):
         self.assertEqual(self.record(sha='a' * 40)['status'], 'PASS')
         self.assertFalse(lock.exists())
 
-    def test_unlinking_the_lock_file_never_breaks_mutual_exclusion(self):
+    def test_unlinking_the_lock_file_never_breaks_mutual_exclusion_between_processes(self):
+        counter = self.log.parent / 'counter.txt'
+        counter.write_text('0', encoding='utf-8')
+        lock = self.log.parent / 'approvals.jsonl.lock'
+        code = (
+            'import sys, time\nfrom pathlib import Path\nfrom skillsync_workflow import prototype_server as ps\n'
+            'counter, lock = Path(sys.argv[1]), sys.argv[2]\n'
+            'for _ in range(25):\n'
+            '    with ps.FileLock(lock, 60, 0o600, unlink=True):\n'
+            '        value = int(counter.read_text())\n        time.sleep(0.002)\n        counter.write_text(str(value + 1))\n')
+        procs = [subprocess.Popen([sys.executable, '-c', code, str(counter), str(lock)], cwd=ROOT,
+                                  env={**self.env, 'PYTHONPATH': str(ROOT)}, stderr=subprocess.PIPE, text=True)
+                 for _ in range(4)]
+        errors = [proc.communicate(timeout=120)[1] for proc in procs]
+        self.assertEqual([proc.returncode for proc in procs], [0] * 4, errors)
+        self.assertEqual(int(counter.read_text(encoding='utf-8')), 4 * 25, 'no lost update across unlink/recreate')
+        self.assertFalse(lock.exists())
+
+    def test_unlinking_the_lock_file_never_breaks_mutual_exclusion_with_a_real_flock_between_threads(self):
         import threading
         counter = self.log.parent / 'counter.txt'
         counter.write_text('0', encoding='utf-8')
@@ -271,13 +300,46 @@ class RecordLock(RecordFixture):
             except BaseException as error:  # noqa: BLE001
                 errors.append(repr(error))
 
-        threads = [threading.Thread(target=work) for _ in range(8)]
-        for thread in threads:
-            thread.start()
-        for thread in threads:
-            thread.join(timeout=120)
+        # a fresh thread lock per instance: the threads no longer serialise on it, so the system lock and the inode check decide
+        with mock.patch.object(server, '_process_lock', side_effect=lambda path: threading.Lock()):
+            threads = [threading.Thread(target=work) for _ in range(8)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(timeout=120)
         self.assertEqual(errors, [])
         self.assertEqual(int(counter.read_text(encoding='utf-8')), 8 * 15, 'no lost update across unlink/recreate')
+
+    def test_a_lock_file_replaced_between_open_and_flock_is_locked_again_on_the_new_file(self):
+        lock = self.log.parent / 'approvals.jsonl.lock'
+        real, calls = server._try_lock_fd, []
+
+        def replace_then_lock(fd):
+            if not calls:  # the first writer unlinks and recreates the file after we opened it, before our flock
+                os.unlink(lock)
+                lock.write_text('', encoding='utf-8')
+            calls.append(fd)
+            return real(fd)
+
+        with mock.patch.object(server, '_try_lock_fd', side_effect=replace_then_lock):
+            held = server.FileLock(str(lock), 5, 0o600, unlink=True)
+            held.__enter__()
+            try:
+                self.assertEqual(len(calls), 2, 'locked once on the old inode, then again on the new one')
+                self.assertTrue(held._same_file(held._fd))
+            finally:
+                held.__exit__(None, None, None)
+        self.assertFalse(lock.exists())
+
+    def test_a_failed_unlink_on_release_still_frees_the_lock(self):
+        lock = self.log.parent / 'approvals.jsonl.lock'
+        with mock.patch.object(server.os, 'unlink', side_effect=OSError('denied')):
+            with server.FileLock(str(lock), 5, 0o600, unlink=True):
+                pass
+        self.assertTrue(lock.exists(), 'the file stays when it cannot be removed')
+        with server.FileLock(str(lock), 1, 0o600, unlink=True):  # and it is not stuck
+            pass
+
 
 
 class RecordLockSystem(RecordFixture):

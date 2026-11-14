@@ -2334,6 +2334,8 @@ def user_command(root, args):
             warnings += extra
     except server.UserError as error:
         raise _user_error(error) from None
+    except server.LockUnavailable:
+        raise PrototypeError('lock_unsupported: the file system does not support file locks (keep the users file on a local disk)') from None
     except server.LockTimeout:
         raise PrototypeError('lock_timeout: the users file is locked') from None
     if warnings:

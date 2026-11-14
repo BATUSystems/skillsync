@@ -25,7 +25,7 @@ class FileLockClassificationTests(unittest.TestCase):
         self.path = os.path.join(self.tmp.name, 'x.lock')
 
     def test_every_unsupported_errno_fails_at_once(self):
-        for name in ('ENOTSUP', 'EOPNOTSUPP', 'ENOLCK', 'ENOSYS', 'EINVAL'):
+        for name in ('ENOTSUP', 'EOPNOTSUPP', 'ENOSYS'):
             code = getattr(errno, name, None)
             if code is None:
                 continue
@@ -36,6 +36,21 @@ class FileLockClassificationTests(unittest.TestCase):
                 self.assertLess(time.monotonic() - started, 1)
                 self.assertEqual((caught.exception.status, caught.exception.code), (503, 'lock_unsupported'))
         self.assertTrue(issubclass(ps.LockUnavailable, ps.LockTimeout), 'handlers of LockTimeout keep working')
+
+    def test_enolck_is_retried_for_half_of_the_timeout_then_reported(self):
+        with mock.patch.object(ps, '_try_lock_fd', side_effect=OSError(errno.ENOLCK, 'no locks')):
+            started = time.monotonic()
+            with self.assertRaises(ps.LockUnavailable):
+                ps.FileLock(self.path, 1.0).__enter__()
+            elapsed = time.monotonic() - started
+        self.assertGreaterEqual(elapsed, 0.45, 'a transient lack of a lock manager gets a chance')
+        self.assertLess(elapsed, 0.95)
+
+    def test_einval_stays_contention_like_before(self):
+        with mock.patch.object(ps, '_try_lock_fd', side_effect=OSError(errno.EINVAL, 'bad argument')):
+            with self.assertRaises(ps.LockTimeout) as caught:
+                ps.FileLock(self.path, 0.15).__enter__()
+            self.assertNotIsInstance(caught.exception, ps.LockUnavailable)
 
     def test_contention_errnos_wait_and_time_out(self):
         for name in ('EAGAIN', 'EACCES', 'EDEADLK', 'EWOULDBLOCK'):
@@ -76,7 +91,7 @@ class QuestionsStoreSharesThePrimitiveTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='filelock-c-') as directory:
             os.makedirs(os.path.join(directory, 'demo'))
             lock = ps.FileLock(os.path.join(directory, 'demo', 'comments.json.lock'), 1)
-            with mock.patch.object(ps, '_try_lock_fd', side_effect=OSError(errno.ENOLCK, 'x')):
+            with mock.patch.object(ps, '_try_lock_fd', side_effect=OSError(errno.ENOTSUP, 'x')):
                 with self.assertRaises(ps.LockTimeout) as caught:
                     lock.__enter__()
                 self.assertEqual(caught.exception.status, 503)

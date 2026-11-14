@@ -1985,10 +1985,11 @@ def _process_lock(path):
 
 
 # `flock`/`LockFileEx` answers with these when the file system cannot lock at all (a network share, some FUSE drivers):
-# retrying cannot help. Contention (EAGAIN, EACCES, EDEADLK, ...) is anything else and is waited for.
+# retrying cannot help. ENOLCK is ambiguous (no lock manager yet, or no kernel lock records): it is retried for half of the
+# timeout first. Contention (EAGAIN, EACCES, EDEADLK, ...) is anything else and is waited for.
 _LOCK_UNSUPPORTED_ERRNOS = frozenset(
-    code for code in (getattr(errno, name, None) for name in ('ENOTSUP', 'EOPNOTSUPP', 'ENOLCK', 'ENOSYS', 'EINVAL'))
-    if code is not None)
+    code for code in (getattr(errno, name, None) for name in ('ENOTSUP', 'EOPNOTSUPP', 'ENOSYS')) if code is not None)
+_LOCK_MAYBE_UNSUPPORTED_ERRNOS = frozenset(code for code in (getattr(errno, 'ENOLCK', None),) if code is not None)
 
 
 def _try_lock_fd(fd):
@@ -2046,7 +2047,9 @@ class FileLock(object):
                         _try_lock_fd(fd)
                         break
                     except OSError as error:
-                        if error.errno in _LOCK_UNSUPPORTED_ERRNOS:
+                        if error.errno in _LOCK_UNSUPPORTED_ERRNOS or (
+                                error.errno in _LOCK_MAYBE_UNSUPPORTED_ERRNOS
+                                and time.monotonic() >= deadline - self.timeout / 2):
                             os.close(fd)
                             raise LockUnavailable()
                         if time.monotonic() >= deadline:
@@ -2057,6 +2060,8 @@ class FileLock(object):
                     break
                 _unlock_fd(fd)  # the file was unlinked (and maybe recreated) under us: lock the one the path names now
                 os.close(fd)
+                if time.monotonic() >= deadline:
+                    raise LockTimeout()
             self._fd = fd
         except BaseException:
             self._thread_lock.release()
@@ -8073,6 +8078,9 @@ def run_user_command(args, stdin=None, out=None, err=None, iterations=DEFAULT_IT
         return 0
     except UserError as error:
         _emit(out, {'status': 'BLOCKED', 'action': action, 'error': error.code, 'message': error.message})
+        return 2
+    except LockUnavailable:
+        _emit(out, {'status': 'BLOCKED', 'action': action, 'error': 'lock_unsupported'})
         return 2
     except LockTimeout:
         _emit(out, {'status': 'BLOCKED', 'action': action, 'error': 'lock_timeout'})
