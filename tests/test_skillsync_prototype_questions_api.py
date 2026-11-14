@@ -232,17 +232,17 @@ class RoleAndVisibilityTests(QCase):
             self.assertNotIn('Pytanie', response.text)
         self.assertEqual(self.stored(), before)
 
-    def test_expert_only_sees_all_and_own_without_addressees_and_without_withdrawn(self):
+    def test_expert_only_sees_all_and_own_and_withdrawn_without_addressees(self):
         expert = self.who(EX)
         listing = self.check(expert.get('/_api/v1/questions'), 200).json['questions']
-        self.assertEqual([item['id'] for item in listing], [Q1, Q2, Q4, Q6, Q8, Q9])
+        self.assertEqual([item['id'] for item in listing], [Q1, Q2, Q4, Q5, Q6, Q8, Q9])
         for item in listing:
             self.assertNotIn('addressees', item)
             self.assertIn(item['forAll'], (True, False))
         self.assertEqual({item['id']: item['forAll'] for item in listing}[Q2], False)
         self.assertEqual({item['id']: item['forAll'] for item in listing}[Q1], True)
         body = expert.get('/_api/v1/questions').text
-        for hidden in (SECRET, EX2, 'Pytanie %s' % Q3, 'Pytanie %s' % Q5, 'Pytanie %s' % Q7):
+        for hidden in (SECRET, EX2, 'Pytanie %s' % Q3, 'Pytanie %s' % Q7):
             self.assertNotIn(hidden, body)
         self.assertIn(EX3, body, 'kontrola: autor widocznej odpowiedzi jest w treści')
 
@@ -262,12 +262,11 @@ class RoleAndVisibilityTests(QCase):
             view = self.check(admin.get('/_api/v1/questions/%s' % Q6), 200).json['question']
             self.assertEqual((view['recorded']['spec'], view['recorded']['line']), (spec, 41))
 
-    def test_expert_gets_404_for_foreign_and_withdrawn_and_200_for_visible(self):
+    def test_expert_gets_404_for_foreign_and_200_for_visible_and_withdrawn(self):
         expert = self.who(EX)
         self.check(expert.get('/_api/v1/questions/%s' % Q3), 404, 'not_found')
-        self.check(expert.get('/_api/v1/questions/%s' % Q5), 404, 'not_found')
         self.check(expert.get('/_api/v1/questions/%s' % Q7), 404, 'not_found')
-        for qid in (Q1, Q2, Q4, Q6):   # kontrola
+        for qid in (Q1, Q2, Q4, Q5, Q6):   # kontrola; wycofane adresowane do eksperta jest widoczne
             detail = self.check(expert.get('/_api/v1/questions/%s' % qid), 200).json['question']
             self.assertEqual(detail['id'], qid)
             self.assertNotIn('addressees', detail)
@@ -330,10 +329,55 @@ class RoleAndVisibilityTests(QCase):
 # (d) 404 nieodróżnialne
 # ═════════════════════════════════════════════════════════════════════════════
 
-class IndistinguishableNotFoundTests(QCase):
-    def test_get_detail_is_byte_identical_for_missing_foreign_withdrawn_and_malformed(self):
+class WithdrawnQuestionTests(QCase):
+    """QUICK-140 (S15): a withdrawn question stays on the addressed expert's list as `withdrawn`, with the reason, nothing to answer."""
+
+    def test_the_addressed_expert_sees_it_as_withdrawn_without_the_author(self):
         expert = self.who(EX)
-        prints = {qid: self.fingerprint(expert.get('/_api/v1/questions/%s' % qid)) for qid in (QX, Q3, Q5, Q7, 'zly-id')}
+        view = self.check(expert.get('/_api/v1/questions/%s' % Q5), 200).json['question']
+        self.assertEqual((view['state'], view['canAnswer']), ('withdrawn', False))
+        self.assertEqual(set(view['withdrawn']), {'at', 'reason'})
+        self.assertIsNone(view['withdrawn']['reason'])
+        listed = {item['id']: item for item in self.check(expert.get('/_api/v1/questions'), 200).json['questions']}[Q5]
+        self.assertEqual(listed['state'], 'withdrawn')
+
+    def test_the_reason_is_shown_and_the_operation_stays_valid(self):
+        qid = 'qn-0000000000aa'
+        self.seed_questions([ask(qid), {'type': 'withdraw', 'questionId': qid, 'by': 'agent', 'cid': 'wd-r', 'reason': 'pytanie zdublowane'}])
+        view = self.check(self.who(EX).get('/_api/v1/questions/%s' % qid), 200).json['question']
+        self.assertEqual(view['withdrawn']['reason'], 'pytanie zdublowane')
+        admin = self.check(self.who(DE).get('/_api/v1/questions/%s' % qid), 200).json['question']
+        self.assertEqual(admin['withdrawn']['reason'], 'pytanie zdublowane')
+        self.assertEqual(admin['withdrawn']['by'], 'agent')
+
+    def test_a_question_withdrawn_for_somebody_else_is_still_404(self):
+        qid = 'qn-0000000000ab'
+        self.seed_questions([ask(qid, to=[EX2]), {'type': 'withdraw', 'questionId': qid, 'by': 'agent', 'cid': 'wd-s'}])
+        self.check(self.who(EX).get('/_api/v1/questions/%s' % qid), 404, 'not_found')
+        self.check(self.who(EX2).get('/_api/v1/questions/%s' % qid), 200)
+
+    def test_answer_and_comment_of_the_expert_are_409_withdrawn_and_write_nothing(self):
+        expert = self.who(EX)
+        before = self.stored()
+        self.check(self.answer(expert, Q5, {'cid': 'c-1', 'text': 'x'}), 409, 'withdrawn')
+        self.check(self.comment(expert, Q5, {'cid': 'c-2', 'text': 'x'}), 409, 'withdrawn')
+        self.assertEqual(self.stored(), before)
+
+    def test_the_admin_can_still_comment_as_before(self):
+        self.check(self.comment(self.who(S.D), Q5, {'cid': 'c-1', 'text': 'x'}), 201)
+
+    def test_the_messages_differ_by_status_in_the_page_script(self):
+        script = ps.EXPERTS_SCRIPT
+        self.assertIn("Nie znaleziono pytania (nie istnieje albo nie jest do Ciebie).", script)
+        self.assertIn("code === 'withdrawn'", script)
+        self.assertIn('To pytanie zostało wycofane', script)
+        self.assertNotIn('mogło zostać wycofane', script)
+
+
+class IndistinguishableNotFoundTests(QCase):
+    def test_get_detail_is_byte_identical_for_missing_foreign_and_malformed(self):
+        expert = self.who(EX)
+        prints = {qid: self.fingerprint(expert.get('/_api/v1/questions/%s' % qid)) for qid in (QX, Q3, Q7, 'zly-id')}
         self.assertEqual(prints[QX][0], 404)
         for qid, value in prints.items():
             with self.subTest(qid=qid):
@@ -342,14 +386,14 @@ class IndistinguishableNotFoundTests(QCase):
 
     def test_head_is_404_identical_to_get_for_missing_and_invisible(self):
         expert = self.who(EX)
-        for qid in (QX, Q3, Q5, Q7):
+        for qid in (QX, Q3, Q7):
             with self.subTest(qid=qid):
                 head = expert.request('HEAD', '/_api/v1/questions/%s' % qid)
                 get = expert.get('/_api/v1/questions/%s' % qid)
                 self.assertEqual(head.status, 404)
                 self.assertEqual(get.status, 404)
                 self.assertEqual(self.fingerprint(head)[0], self.fingerprint(get)[0])
-        heads = {qid: self.fingerprint(expert.request('HEAD', '/_api/v1/questions/%s' % qid)) for qid in (QX, Q3, Q5, Q7)}
+        heads = {qid: self.fingerprint(expert.request('HEAD', '/_api/v1/questions/%s' % qid)) for qid in (QX, Q3, Q7)}
         for value in heads.values():
             self.assertEqual(value, heads[QX])
 
@@ -374,12 +418,12 @@ class IndistinguishableNotFoundTests(QCase):
         self.assertEqual(response.status, 404, response.text)
         self.assertNotIn(SECRET, response.text)
 
-    def test_post_answer_and_comment_are_byte_identical_for_missing_foreign_and_withdrawn(self):
+    def test_post_answer_and_comment_are_byte_identical_for_missing_and_foreign(self):
         expert = self.who(EX)
         before = self.stored()
         for kind, body in (('answer', {'cid': 'c-1', 'text': 'x'}), ('comment', {'cid': 'c-2', 'text': 'x'})):
             prints = {qid: self.fingerprint(expert.post('/_api/v1/questions/%s/%s' % (qid, kind), body))
-                      for qid in (QX, Q3, Q5, Q7)}
+                      for qid in (QX, Q3, Q7)}
             self.assertEqual(prints[QX][0], 404)
             for qid, value in prints.items():
                 with self.subTest(kind=kind, qid=qid):
@@ -396,7 +440,7 @@ class IndistinguishableNotFoundTests(QCase):
                   dict(data={'cid': 'zly cid!', 'text': 'x'}), dict(data={'cid': 'c-1', 'optionId': 1, 'text': 'x'}),
                   dict(data={'cid': 'c-1', 'bogus': True}))
         for kind in ('answer', 'comment'):
-            for qid in (QX, Q3, Q5):
+            for qid in (QX, Q3, Q7):
                 for body in bodies:
                     with self.subTest(kind=kind, qid=qid, body=sorted(body)):
                         response = expert.post('/_api/v1/questions/%s/%s' % (qid, kind), **body)

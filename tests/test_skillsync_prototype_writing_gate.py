@@ -332,7 +332,7 @@ class ListWritingTests(WritingGateCase):
         self.assertTrue(all(item['writing'] is None for item in before.values()))
         self.mark('beta', ttl=1200)
         after = self.listing()
-        self.assertEqual(after['beta']['writing'], {'since': self.clock.ms, 'expiresAt': self.clock.ms + 1_200_000})
+        self.assertEqual(after['beta']['writing'], {'since': self.clock.ms, 'expiresAt': self.clock.ms + 1_200_000, 'renewedAt': self.clock.ms})
         self.assertIsNone(after['alpha']['writing'])
         for slug, item in before.items():
             self.assertEqual({key: value for key, value in after[slug].items() if key != 'writing'},
@@ -348,7 +348,7 @@ class ListWritingTests(WritingGateCase):
         report = self.proto('list')
         self.no_by(report)
         entries = {item['slug']: item for item in report['prototypes']}
-        self.assertEqual(set(entries['alpha']['writing']), {'since', 'expiresAt'})
+        self.assertEqual(set(entries['alpha']['writing']), {'since', 'expiresAt', 'renewedAt'})
         self.assertIsNone(entries['beta']['writing'])
 
     def test_static_index_has_no_mark_but_the_live_gallery_has(self):

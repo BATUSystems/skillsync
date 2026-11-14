@@ -16,7 +16,7 @@ przycisku (niżej: „Przyciski zgód”).
 ## Uruchomienie
 
 ```bash
-skillsync dashboard serve <projekt> [--port 5140] [--host 127.0.0.1] [--approve-host NAZWA ...] [--read-host NAZWA ...] [--no-approvals] [--plan docs/plans/<plik>.md] [--session-url https://…] [--layer id=ścieżka ...]
+skillsync dashboard serve <projekt> [--port 5140] [--prototype-port N] [--host 127.0.0.1] [--approve-host NAZWA ...] [--read-host NAZWA ...] [--no-approvals] [--plan docs/plans/<plik>.md] [--session-url https://…] [--layer id=ścieżka ...]
 skillsync dashboard show <projekt> [--json] [--plan docs/plans/<plik>.md]   # jednorazowy zrzut JSON (to samo co /api/status)
 ```
 
@@ -108,6 +108,18 @@ Zdanie do instrukcji/promptów (zgodne z formatem „zrobione / w toku / ryzyko�
 człowieka, dopisz do checkpointu segment `czeka: <GO plan|GO implement|akceptacja prototypu <slug>|odpowiedź Q1–Qn|CP|READY|TAK/NIE <run-id>/P<n>>`;
 następny checkpoint po wznowieniu pisz już bez `czeka:`.”*
 
+### Toast „szacowany koniec” (`eta`)
+
+Przed długą operacją sesja dopisuje do checkpointu segment `eta: <operacja> do HH:MM` (godzina z `date`):
+
+```
+- 14:05 w toku: F1.2; eta: rysowanie 12 ekranów prototypu do 15:10
+```
+
+Baner pokazuje toast „<operacja>, koniec ok. 15:10”, a po przekroczeniu „<operacja>: przekroczono ETA o N min”. Dopóki operacja
+trwa, każda linia raportu powtarza `eta:` (czytana jest tylko najnowsza); przy przekroczeniu sesja podaje nowy termin (bez zatrzymywania pracy). Toast znika po następnym checkpoincie
+bez `eta:`, po checkpoincie z `czeka:` i po zamknięciu planu; widz widzi go tak samo. Pole JSON: sekcja `eta` kontraktu.
+
 ### Przyciski zgód i słów
 
 **Reguła:** agent nie wywołuje zgód. Zgodę zapisuje wyłącznie użytkownik (przycisk na stronie albo
@@ -188,7 +200,7 @@ była, a nie, że pętla dała PASS.
 - `/events` SSE: `hello`, `change` (obserwator mtime co 1 s: plany, speki, design, domain, katalogi runów, `.git/HEAD` i ref gałęzi),
   `ping` co 15 s. Klient po `change` pobiera `/api/status` bez przeładowania; gdy SSE pada albo milknie > 40 s, odpytuje co 5 s
   i sam wraca do trybu na żywo. Nagłówki `Cache-Control: no-cache`, `X-Accel-Buffering: no` (tunel/proxy bez buforowania).
-- Prototyp: odnośnik `http://<host strony>:5130/<slug>/` tylko gdy serwer prototypów na 5130 odpowiada.
+- Prototyp: odnośnik `http://<host strony>:<port>/<slug>/` tylko gdy serwer prototypów na tym porcie odpowiada; port to `--prototype-port`, klucz manifestu `prototype.port`, a bez nich 5130.
 - `POST /api/approve` `{kind: spec|plan, path, sha}`: tylko akcja, którą strona właśnie oferuje; `/api/status` ma
   `approvals {enabled, here, viewer, actions[]}`, `session {url}`, `spec.fileSha`, `plan.fileSha`, a pozycje banera `word`/`approve`.
 
@@ -271,6 +283,7 @@ Widz zdalny: pole `approvals.viewer` (`dashboard serve --read-host`; starszy ser
 Sekcje aktów rysuje renderer (`readinessTile`, `substepsBlock`, funkcje modułu z kontekstem egzemplarza):
 Readiness w akcie II (`readiness`; link `readiness.source` jak inne dokumenty: podgląd z `loadDoc`, inaczej `openDoc`), Podkroki i czas w akcie III
 (`substeps`, „brak danych” przy `missingData`; rozwinięcie `details` pamiętane w stanie renderera między `update()`),
+Baner czekania ma też pozycje z plików: „agent pisze ekrany (do HH:MM)” (`source: writing`, ważny znacznik `.writing.json`, zastępuje wezwanie do akceptacji prototypu) i „odpowiedź eksperta (N blokujących)” (`source: expert`, gdy `expertQuestions.blocking > 0` bez `czeka:` w checkpoincie), z odnośnikiem jak w toaście pytań; pole `prototype.writing` niesie `{since, expiresAt, renewedAt}`.
 Czas pracy i czekania w akcie III (`timing`: czas pracy i czekania na człowieka per faza i suma przebiegu z checkpointów `czeka:` i `approvals.jsonl`; okno bez zamknięcia i krok bez znaczników to „nieznane”, nigdy zero ani szacunek; sekcja `timingBlock`).
 Poniżej 500 px szerokości akty I i II stoją w jednej kolumnie.
 

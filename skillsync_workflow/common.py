@@ -28,9 +28,18 @@ def read_yaml(path):
     return data
 
 
-def _read_manifest(path):
+def _read_manifest(path, manifest_file=None):
+    """`(root, manifest)`; `manifest_file` (`--manifest PLIK`) replaces `<root>/.github/.skillsync.yaml`: the project
+    root stays `path`, the manifest comes from a file outside it (e.g. a public core repository without a manifest)."""
     path = Path(path or '.').expanduser().resolve()
-    if path.is_file():
+    if manifest_file is not None:
+        file = Path(manifest_file).expanduser()
+        if not file.is_file():
+            raise ValueError(f'--manifest {manifest_file}: not a file')
+        if not path.is_dir():
+            raise ValueError('--manifest needs a project directory as the path')
+        root, manifest_path = path, file
+    elif path.is_file():
         if path.name != '.skillsync.yaml':
             raise ValueError('Project file must be .skillsync.yaml')
         root, manifest_path = path.parent.parent, path
@@ -39,6 +48,8 @@ def _read_manifest(path):
     if not manifest_path.is_file():
         raise ValueError(f'Missing manifest: {manifest_path}')
     manifest = read_yaml(manifest_path)
+    if manifest_file is not None and not isinstance(manifest, dict):
+        raise ValueError(f'--manifest {manifest_file}: must be a mapping')
     for section in ('sync', 'instructions', 'tests'):
         if section in manifest and not isinstance(manifest[section], dict):
             raise ValueError(f'{section} must be a mapping')
@@ -47,18 +58,18 @@ def _read_manifest(path):
     return root, manifest
 
 
-def load_layer_project(path='.', layers=None, *, config=None):
+def load_layer_project(path='.', layers=None, *, config=None, manifest_file=None):
     """(root, manifest, LayerSet): layers from the machine config (`layer_rules` by the project path) or
     the `--layer id=path` overrides. Raises `layers.LayerError` (BLOCKED) when nothing matches.
     The manifest's own library setting is not read (`doctor` warns about it, K3)."""
-    root, manifest = _read_manifest(path)
+    root, manifest = _read_manifest(path, manifest_file)
     return root, manifest, _layers.resolve_layers(root, layers=list(layers or []) or None, config=config)
 
 
-def read_project(path='.'):
+def read_project(path='.', manifest_file=None):
     """(root, manifest) without resolving layers: commands that never read a layer (`status`, `plan`,
     `claim`, `dispatch`, `checkpoint`...) do not depend on the machine config."""
-    return _read_manifest(path)
+    return _read_manifest(path, manifest_file)
 
 
 def require_layerset(layerset, what='This function'):

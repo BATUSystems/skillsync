@@ -770,6 +770,37 @@ function summary(m) {
     const mc = mount(cp, { now: NOW['cp-ready'], deps: origin });
     ex.qtoast.withBanner = { toast: qa0(mc.root, '#waitBanner [data-questions-toast]'), items: mc.root.querySelectorAll('#waitBanner .wait-item').length };
   }
+  // DASH-ETA: toast „szacowany koniec” z d.eta; przekroczenie liczy zegar (deps.now), nie serwer; stan, nie wynik akcji.
+  {
+    const e = F['eta'];
+    const until = Date.parse(e.eta.untilIso);
+    let t = until - 30 * 60000;
+    const tm = fakeTimers();
+    const m = mount(clone(e), { now: () => t, deps: { timers: tm } });
+    const sel = '#waitBanner [data-eta-toast]';
+    const read = (root) => root.querySelectorAll(sel).map((n) => ({ text: text(n), cls: n.getAttribute('class'), role: n.getAttribute('role'), close: n.querySelectorAll('[data-notice-close]').length }));
+    const before = read(m.root), timersAfterMount = tm.q.size;
+    t = until - 1000; m.board.tick(); const atTheMinute = read(m.root);
+    t = until + 60000; m.board.tick(); const late1 = read(m.root);
+    t = until + 17 * 60000 + 5000; m.board.tick(); const late17 = read(m.root);
+    t = until + 65 * 60000 + 5000; m.board.tick(); const late65 = read(m.root); t = until - 30 * 60000;
+    const upd = clone(e); upd.eta = { operation: 'prototyp', until: '12:30', untilIso: '2026-01-11T12:30:00+00:00', since: '11:25' };
+    m.board.update(upd); const updated = read(m.root);
+    const gone = clone(e); gone.eta = null; m.board.update(gone);
+    const afterGone = read(m.root);
+    const noIso = clone(e); noIso.eta.untilIso = null; t = until + 99 * 60000;
+    const noIsoTxt = read(mount(noIso, { now: () => t }).root);
+    const junk = clone(e); junk.eta = { operation: '<b>x</b>', until: 5 };
+    const hostile = clone(e); hostile.eta.operation = '<img src=x onerror=alert(1)>';
+    const hm = mount(hostile, { now: () => until - 1000 });
+    const viewer = clone(e); viewer.approvals.viewer = true; viewer.approvals.here = false;
+    const old = clone(e); delete old.eta;
+    const withWait = clone(F['cp-ready']); withWait.eta = { operation: 'CP', until: '10:00', untilIso: null, since: '09:00' }; withWait.approvals.here = true;
+    ex.eta = { before, timersAfterMount, atTheMinute, late1, late17, late65, updated, afterGone, noIsoTxt, junk: read(mount(junk, { now: () => t }).root),
+      hostile: read(hm.root), hostileTags: hm.root.querySelectorAll('#waitBanner img').length + hm.root.querySelectorAll('#waitBanner b').length,
+      viewer: read(mount(viewer, { now: () => until - 1000 }).root), absent: read(mount(old, { now: () => t }).root),
+      withWait: { eta: read(mount(withWait, { now: NOW['cp-ready'] }).root).length, items: mount(withWait, { now: NOW['cp-ready'] }).root.querySelectorAll('#waitBanner .wait-item').length } };
+  }
   {
     const m = mount(F['plan-in-progress'], { now: NOW['plan-in-progress'] });
     const det = () => m.root.querySelector('details.substeps');
@@ -892,6 +923,27 @@ function summary(m) {
         twentytwo: chip(22, true, true), zero: chip(0, true, true), unknown: chip(null, null, true), notPushed: chip(0, false, false), direct: chip(3, true, true, { mode: 'direct' }) };
     }
     ex.stab = stab;
+  }
+  // WRITING-UX: pozycje „sesja pracuje” (znacznik zapisu) i „odpowiedź eksperta” w banerze czekania.
+  {
+    const origin = { prototypeOrigin: (port) => `http://127.0.0.1:${port}` };
+    const items = (d, deps) => {
+      const m = mount(d, { now: NOW['questions'], deps: deps || {} });
+      return m.root.querySelectorAll('#waitBanner .wait-item').map((n) => ({ text: text(n), cls: n.getAttribute('class'),
+        hrefs: n.querySelectorAll('a').map((a) => a.getAttribute('href')), expertLinks: n.querySelectorAll('[data-wait-expert]').length }));
+    };
+    const base = clone(F['questions']); base.waiting = []; base.expertQuestions = { open: 0, blocking: 0, runs: [] };
+    const writing = clone(base);
+    writing.prototype = Object.assign({}, writing.prototype, { slug: 'run-alpha', writing: { since: 1, expiresAt: 2, renewedAt: 1 } });
+    writing.waiting = [{ what: 'agent pisze ekrany (do 14:25)', source: 'writing', since: '14:10', action: 'Agent pisze ekrany prototypu; akceptacja wróci, gdy skończy. Nic nie musisz robić.', link: { kind: 'prototype', slug: 'run-alpha' } }];
+    const expert = clone(base);
+    expert.waiting = [{ what: 'odpowiedź eksperta (1 blokujących)', source: 'expert', since: null, action: 'Odpowiedz na pytania eksperta na stronie pytań; sesja czeka na odpowiedź.', link: { kind: 'expert', slug: 'run-alpha', url: '/_experts/run-alpha' } }];
+    const many = clone(expert); many.waiting[0].link = { kind: 'expert', slug: null, url: '/_experts' };
+    const hostile = clone(expert); hostile.waiting[0].link.url = '/_experts/../x';
+    const titleOf = (d) => { const m = mount(d, { now: NOW['questions'] }); return m.calls.titles[m.calls.titles.length - 1]; };
+    const wtitle = { writing: titleOf(writing), expert: titleOf(expert) };
+    ex.wux = { titles: wtitle, writing: items(writing, Object.assign({ prototypeUrl: (port, slug) => `http://127.0.0.1:${port}/${slug}/` }, origin)), expert: items(expert, origin), expertNoOrigin: items(expert), expertMany: items(many, origin),
+      expertHostile: items(hostile, origin), expertBadOrigin: items(expert, { prototypeOrigin: () => 'javascript:alert(2)' }) };
   }
   out.extra = ex;
   // deps.now jest wymagane (renderer nie czyta zegara sam).
@@ -1186,6 +1238,26 @@ class RendererNodeTests(unittest.TestCase):
             self.assertNotIn(tag, x["tags"])
         self.assertNotIn("<img", x["banner"])
 
+    def test_waiting_banner_writing_and_expert_items(self) -> None:
+        w = self.out["extra"]["wux"]
+        writing = w["writing"][0]
+        self.assertNotIn("⏳", w["titles"]["writing"], "praca sesji nie jest czekaniem na człowieka")
+        self.assertIn("⏳ Czeka", w["titles"]["expert"])
+        self.assertIn("Sesja pracuje od 14:10: agent pisze ekrany (do 14:25)", writing["text"])
+        self.assertNotIn("czeka na Ciebie", writing["text"])
+        self.assertIn("Zniknie, gdy agent skończy pisać albo znacznik wygaśnie", writing["text"])
+        self.assertIn("znacznik zapisu ekranów prototypu", writing["text"])
+        self.assertEqual(writing["hrefs"], ["http://127.0.0.1:5130/run-alpha/"])
+        expert = w["expert"][0]
+        self.assertIn("Sesja czeka na Ciebie: odpowiedź eksperta (1 blokujących)", expert["text"])
+        self.assertEqual(expert["hrefs"], ["http://127.0.0.1:5130/_experts/run-alpha"])
+        self.assertEqual(expert["expertLinks"], 1)
+        self.assertEqual(w["expertMany"][0]["hrefs"], ["http://127.0.0.1:5130/_experts"])
+        self.assertEqual(w["expertHostile"][0]["hrefs"], ["http://127.0.0.1:5130/_experts"], "zła ścieżka wraca do listy")
+        self.assertEqual(w["expertNoOrigin"][0]["hrefs"], [], "bez adresu serwera prototypów nie ma odnośnika")
+        self.assertEqual(w["expertNoOrigin"][0]["expertLinks"], 0)
+        self.assertNotIn("javascript", " ".join(w["expertBadOrigin"][0]["hrefs"]))
+
     def test_questions_toast_counts_all_runs(self) -> None:
         d = self.fixtures["questions"]["expertQuestions"]
         self.assertEqual((d["open"], d["blocking"], len(d["runs"])), (3, 2, 2))
@@ -1219,6 +1291,31 @@ class RendererNodeTests(unittest.TestCase):
         self.assertEqual(len(both["toast"]), 1)
         self.assertGreaterEqual(both["items"], 2)  # obok innych elementów banera
         self.assertEqual(len(self.out["extra"]["qviewer"]["qtoast"]), 1)  # widz widzi to samo
+
+    def test_eta_toast_shows_the_estimate_and_counts_the_overrun_from_now(self) -> None:
+        e = self.out["extra"]["eta"]
+        self.assertEqual(self.fixtures["eta"]["eta"]["until"], "11:40")
+        self.assertEqual([x["text"] for x in e["before"]], ["parsowanie fixtures, koniec ok. 11:40"])
+        self.assertEqual(e["timersAfterMount"], 0)  # bez timera, bez „×”, bez roli
+        self.assertEqual((e["before"][0]["close"], e["before"][0]["role"]), (0, None))
+        self.assertIn("is-info", e["before"][0]["cls"])
+        self.assertEqual([x["text"] for x in e["atTheMinute"]], ["parsowanie fixtures, koniec ok. 11:40"])  # jeszcze nie po terminie
+        self.assertEqual([x["text"] for x in e["late1"]], ["parsowanie fixtures: przekroczono ETA o 1 min"])
+        self.assertEqual([x["text"] for x in e["late17"]], ["parsowanie fixtures: przekroczono ETA o 17 min"])  # tick odświeża co minutę
+        self.assertEqual([x["text"] for x in e["late65"]], ["parsowanie fixtures: przekroczono ETA o 1 h 5 min"])
+        self.assertEqual([x["text"] for x in e["updated"]], ["prototyp, koniec ok. 12:30"])  # nowe ETA zastępuje stare (bez STOP)
+        self.assertEqual(e["afterGone"], [])  # następny checkpoint bez eta: zdejmuje toast
+        self.assertEqual([x["text"] for x in e["noIsoTxt"]], ["parsowanie fixtures, koniec ok. 11:40"])  # bez untilIso tylko godzina
+
+    def test_eta_toast_is_text_only_for_everybody(self) -> None:
+        e = self.out["extra"]["eta"]
+        self.assertEqual(e["junk"], [])
+        self.assertEqual(e["absent"], [])
+        self.assertEqual(e["hostileTags"], 0)
+        self.assertEqual(e["hostile"][0]["text"], "<img src=x onerror=alert(1)>, koniec ok. 11:40")
+        self.assertEqual(len(e["viewer"]), 1)  # widz widzi to samo
+        self.assertEqual(e["withWait"]["eta"], 1)
+        self.assertGreaterEqual(e["withWait"]["items"], 2)  # obok baneru zgody
 
     def test_substeps_section(self) -> None:
         got = self.out["fixtures"]["plan-in-progress"]["substeps"]

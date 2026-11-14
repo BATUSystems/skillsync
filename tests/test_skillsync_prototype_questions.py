@@ -155,6 +155,20 @@ class ValidationTests(unittest.TestCase):
         self.check(answer(optionId='o1'), {Q1: {'options': [{'id': 'o1', 'label': 'a'}], 'assumed': 'x'}})
         self.check(answer(confirm=True), {Q1: {'options': [], 'assumed': 'x'}})
 
+    def test_withdraw_reason_is_optional_and_validated(self):
+        self.check(withdraw())
+        self.check(dict(withdraw(), reason='pytanie zdublowane'))
+        self.check(dict(withdraw(), reason='x' * 500))
+        self.check(dict(withdraw(), reason='\U0001F600' * 250))   # 500 UTF-16 units
+        for bad in ('', '   ', 'x' * 501, '\U0001F600' * 251, 5, None, ['a'], True):
+            with self.subTest(reason=bad):
+                self.reject(dict(withdraw(), reason=bad))
+
+    def test_reason_belongs_to_withdraw_only(self):
+        for op in (ask(), answer(), comment(), recorded()):
+            with self.subTest(type=op['type']):
+                self.reject(dict(op, reason='powód'))
+
     def test_unknown_type_field_and_number(self):
         for bad in ('edit', 'invalidate', 'retract', 'reopen', '', None, 5):
             self.reject(dict(ask(), type=bad))
@@ -800,12 +814,15 @@ class VisibilityTests(QuestionsCase):
         self.assertEqual(ps.get_question_view(self.snap, Q4, viewer(ACC, 'acceptor'))['refersTo'], Q3)
         self.assertEqual(ps.get_question_view(self.snap, Q5, viewer(DEV, 'developer'))['state'], 'withdrawn')
 
-    def test_expert_sees_all_and_own_but_not_foreign_or_withdrawn(self):
-        self.assertEqual(self.ids(viewer(EWA, 'expert')), [Q1, Q2, Q4])
-        self.assertEqual(self.ids(viewer(OLA, 'expert')), [Q1, Q3])
-        self.assertEqual(self.ids(viewer(IWO, 'expert')), [Q1])
+    def test_expert_sees_all_and_own_and_withdrawn_but_not_foreign(self):
+        self.assertEqual(self.ids(viewer(EWA, 'expert')), [Q1, Q2, Q4, Q5])
+        self.assertEqual(self.ids(viewer(OLA, 'expert')), [Q1, Q3, Q5])
+        self.assertEqual(self.ids(viewer(IWO, 'expert')), [Q1, Q5])
         self.assertIsNone(ps.get_question_view(self.snap, Q3, viewer(EWA, 'expert')))      # cudze
-        self.assertIsNone(ps.get_question_view(self.snap, Q5, viewer(EWA, 'expert')))      # wycofane
+        withdrawn = ps.get_question_view(self.snap, Q5, viewer(EWA, 'expert'))               # wycofane: widoczne jako wycofane
+        self.assertEqual((withdrawn['state'], withdrawn['canAnswer']), ('withdrawn', False))
+        self.assertEqual(set(withdrawn['withdrawn']), {'at', 'reason'}, 'ekspert nie widzi autora ani identyfikatorów operacji')
+        self.assertIsNone(withdrawn['withdrawn']['reason'])
         self.assertIsNone(ps.get_question_view(self.snap, 'qn-0000deadbeef', viewer(EWA, 'expert')))  # nieistniejące: to samo
 
     def test_expert_view_has_no_addressees_only_for_all(self):
@@ -845,12 +862,12 @@ class VisibilityTests(QuestionsCase):
         self.assertIsNone(ps.get_question_view(self.snap, Q4, who)['refersTo'])
         self.assertNotIn(Q3, json.dumps(ps.visible_questions(self.snap, who)))
 
-    def test_refers_to_withdrawn_question_is_none_for_expert(self):
+    def test_refers_to_withdrawn_question_stays_for_the_addressed_expert(self):
         snap = self.store.snapshot()
         self.assertEqual(ps.get_question_view(snap, Q2, viewer(EWA, 'expert'))['refersTo'], Q1)
         self.add(withdraw(Q1))
         snap = self.store.snapshot()
-        self.assertIsNone(ps.get_question_view(snap, Q2, viewer(EWA, 'expert'))['refersTo'])
+        self.assertEqual(ps.get_question_view(snap, Q2, viewer(EWA, 'expert'))['refersTo'], Q1, 'wycofane pytanie jest widoczne')
         self.assertEqual(ps.get_question_view(snap, Q2, viewer(DEV, 'developer'))['refersTo'], Q1)
 
     def test_commenter_and_unknown_roles_see_nothing(self):
@@ -885,6 +902,15 @@ class FoldTests(unittest.TestCase):
     def build(self, specs):
         """specs: lista (n, partial); `at` rośnie z n, `id` z n (kolejność plikowa nie ma znaczenia)."""
         return [full(p, n) for n, p in specs]
+
+    def test_withdraw_reason_lands_in_the_entry_only_for_an_effective_withdraw(self):
+        ops = self.build([(1, ask(Q1)), (2, dict(withdraw(Q1), reason='zdublowane')), (3, ask(Q2)), (4, answer(Q2, EWA, text='ok')),
+                          (5, dict(withdraw(Q2), reason='za późno'))])
+        by_id = ps.fold_questions(ops)['byId']
+        self.assertEqual((by_id[Q1]['state'], by_id[Q1]['withdrawn']['reason']), ('withdrawn', 'zdublowane'))
+        self.assertEqual((by_id[Q2]['state'], by_id[Q2]['withdrawn']), ('answered', None))
+        plain = ps.fold_questions(self.build([(1, ask(Q3)), (2, withdraw(Q3))]))['byId'][Q3]
+        self.assertNotIn('reason', plain['withdrawn'])
 
     def test_order_is_by_at_then_id_regardless_of_file_order(self):
         a, b, c = full(ask(Q1), 1), full(ask(Q2), 1), full(ask(Q3), 2)
@@ -1050,6 +1076,15 @@ class ExportTests(QuestionsCase):
 
     def export(self, **kwargs):
         return ps.export_questions(self.snap, 'root', **kwargs)
+
+    def test_withdrawn_question_exports_time_and_reason(self):
+        self.add(ask(Q4), dict(withdraw(Q4), reason='zdublowane z Q1'))
+        snap = self.store.snapshot()
+        items = dict((q['id'], q) for q in ps.export_questions(snap, 'root')['questions'])
+        self.assertEqual(set(items[Q4]['withdrawn']), {'at', 'reason'})
+        self.assertEqual(items[Q4]['withdrawn']['reason'], 'zdublowane z Q1')
+        self.assertEqual(set(items[Q3]['withdrawn']), {'at'})
+        self.assertNotIn('withdrawn', items[Q1])
 
     def by_id(self, result):
         return dict((q['id'], q) for q in result['questions'])
