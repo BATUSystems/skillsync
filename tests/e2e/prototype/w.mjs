@@ -1,4 +1,4 @@
-// Znacznik zapisu „agent jeszcze pisze ekrany”: W-01 … W-04.
+// Znacznik zapisu „agent jeszcze pisze ekrany”: W-01 … W-04; W-05: widoczny stan przełączników paska (aria-pressed, aria-expanded).
 // W-01 tor (a): marker bez zmiany plików, W-02 tor (b): pliki zmieniły się w trakcie zapisu (prototyp `beta` we własnym workspace skryptu),
 // W-03: serwer odrzuca akceptację przez HTTP (409 writing_in_progress) i przyjmuje ją po `writing done`.
 // W-04: baner z godziną „do HH:MM” i przycisk „Zwolnij” (akceptujący zwalnia marker, komentujący przycisku nie widzi).
@@ -149,6 +149,43 @@ suite.add('W-04', 'Baner „do HH:MM” i „Zwolnij”: akceptujący zwalnia ma
     && listing.writing == null;
   return { ok: restOk, startExit: start.code, accBanner: (accText || '').slice(0, 100), accButtons, comButtons, goneAfterRelease: gone.ok, statusExit: status.code,
     writingAfterRelease: listing.writing ?? null };
+}, { timeout: 120000 });
+
+// Przełączniki paska: po kliknięciu atrybut aria-pressed/aria-expanded się zmienia, a wygląd (tło, pierścień, grubość pisma) też; kontrast wciśniętego ≥ 4,5:1.
+const toggleProbe = `(() => {
+  const lum = (rgb) => { const v = rgb.match(/[\\d.]+/g).slice(0, 3).map(Number).map((x) => { x /= 255; return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4); }); return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2]; };
+  const contrast = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+  return [...document.querySelectorAll('.doc-toolbar button[aria-pressed], .doc-toolbar button[aria-expanded]')].map((b, index) => {
+    const s = getComputedStyle(b);
+    return { index, label: b.textContent.trim().slice(0, 24), state: b.getAttribute('aria-pressed') ?? b.getAttribute('aria-expanded'), attr: b.hasAttribute('aria-pressed') ? 'pressed' : 'expanded',
+      look: [s.backgroundColor, s.borderTopColor, s.boxShadow, s.fontWeight].join('|'), contrast: contrast(s.color, s.backgroundColor) };
+  });
+})()`;
+const clickToggle = (index) => `(() => { const b = [...document.querySelectorAll('.doc-toolbar button[aria-pressed], .doc-toolbar button[aria-expanded]')][${index}]; b.click(); return 1; })()`;
+
+suite.add('W-05', 'Przełączniki paska: stan wciśnięcia jest widoczny (jasny i ciemny motyw)', async () => {
+  const slug = 'demo';
+  const report = {};
+  let allOk = true;
+  for (const dark of [false, true]) {
+    const { p } = await sessionPage(c, dark ? 'w05d' : 'w05l', srv.base, 'celina', { dark }); await p.go(url(slug));
+    await p.waitFor(`document.querySelectorAll('.doc-toolbar button[aria-pressed], .doc-toolbar button[aria-expanded]').length > 0`, 20000);
+    const before = await p.evaluate(toggleProbe);
+    const rows = [];
+    for (const item of before) {
+      await p.evaluate(clickToggle(item.index)); await sleep(500);
+      const after = (await p.evaluate(toggleProbe))[item.index];
+      const pressed = (x) => x.state === 'true';
+      const [on, off] = pressed(item) ? [item, after] : [after, item];
+      rows.push({ label: item.label, attr: item.attr, flipped: item.state !== after.state, looksDiffer: on.look !== off.look, contrastOn: Math.round(on.contrast * 100) / 100 });
+      await p.evaluate(clickToggle(item.index)); await sleep(300);
+    }
+    await p.dispose();
+    const ok = rows.length >= 2 && rows.some((r) => r.attr === 'expanded') && rows.every((r) => r.flipped && r.looksDiffer && r.contrastOn >= 4.5);
+    report[dark ? 'dark' : 'light'] = { ok, rows };
+    allOk = allOk && ok;
+  }
+  return { ok: allOk, ...report };
 }, { timeout: 120000 });
 
 await suite.main();
