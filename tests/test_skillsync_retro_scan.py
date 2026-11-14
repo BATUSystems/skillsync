@@ -1530,12 +1530,12 @@ class MainCheckoutReading(WorktreeBase):
         fake = self.base / 'fakebin'
         fake.mkdir()
         real = shutil.which('git')
-        (fake / 'git').write_text('#!/bin/sh\ncase "$*" in *--show-prefix*) sleep 4;; esac\nexec %s "$@"\n' % real)
+        (fake / 'git').write_text('#!/bin/sh\ncase "$*" in *--show-prefix*) sleep 30;; esac\nexec %s "$@"\n' % real)
         (fake / 'git').chmod(0o755)
         started = time.monotonic()
         with mock.patch.dict(os.environ, {'PATH': str(fake) + os.pathsep + os.environ['PATH']}):
             code, data = self.in_process([sig('S1', 'flaky')], [mock.patch.object(retro, 'GIT_TIMEOUT', 0.3)])
-        self.assertLess(time.monotonic() - started, 3.5, 'polecenia git muszą mieć limit GIT_TIMEOUT')
+        self.assertLess(time.monotonic() - started, 15, 'polecenia git muszą mieć limit GIT_TIMEOUT')  # bez limitu czekałoby 30 s
         self.assertEqual((code, data['status']), (0, 'PASS'))
 
 

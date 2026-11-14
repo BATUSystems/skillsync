@@ -429,7 +429,7 @@ class SecretScanUnitTests(unittest.TestCase):
             with self.subTest(text=text[:8]):
                 started = time.monotonic()
                 pt._has_secret(text)
-                self.assertLess(time.monotonic() - started, 0.5)
+                self.assertLess(time.monotonic() - started, 5)  # catastrophic backtracking would take minutes; 5 s survives a loaded runner
 
     def test_control_and_bidi_characters_are_removed_from_spec_cells(self):
         hostile = 'a\x00b\x1b[2Kc\u202ed\x7fe\u2066f\u2069 g\nh'

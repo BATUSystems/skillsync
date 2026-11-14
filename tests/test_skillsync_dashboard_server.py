@@ -1690,7 +1690,7 @@ class HttpHardeningTests(HttpCase):
     def test_idle_connection_is_closed_after_the_handler_timeout(self) -> None:
         self.assertEqual(srv.Handler.timeout, 30)
         with mock.patch.object(srv.Handler, "timeout", 0.3):
-            with socket.create_connection(("127.0.0.1", self.port), timeout=5) as conn:
+            with socket.create_connection(("127.0.0.1", self.port), timeout=20) as conn:
                 start = time.monotonic()
                 try:
                     data = conn.recv(1)  # bez treści żądania: serwer zamyka połączenie po timeoucie
@@ -1698,7 +1698,7 @@ class HttpHardeningTests(HttpCase):
                     data = b""
                 elapsed = time.monotonic() - start
         self.assertEqual(data, b"")
-        self.assertLess(elapsed, 4)
+        self.assertLess(elapsed, 15)  # the default timeout is 30 s, so 15 s still proves the shortened one applied
 
 
 @needs_os_symlinks

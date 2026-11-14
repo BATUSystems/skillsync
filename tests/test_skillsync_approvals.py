@@ -66,7 +66,7 @@ class Approvals(WorkflowFixture):
         finally:
             writer.cancel()
         self.assertEqual(report['approval']['word'], 'READY')
-        self.assertLess(time.monotonic() - started, 15)
+        self.assertLess(time.monotonic() - started, 18)  # the wait is limited to 20 s; the entry appears after 1 s
 
     def test_go_wait_also_ends_on_an_approved_status(self):
         plan = self.root / 'docs/plans/p.md'
