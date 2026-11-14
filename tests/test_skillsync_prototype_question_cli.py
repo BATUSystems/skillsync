@@ -719,6 +719,52 @@ class RecordTests(QuestionCase):
         self.rec(QA, 12)  # kontrola: po odpowiedzi przechodzi
 
 
+class WithdrawReasonTests(QuestionCase):
+    """QUICK-140 (S15): optional `question withdraw --reason` (field `reason` of the `withdraw` operation)."""
+
+    def test_reason_is_stored_reported_and_shown(self):
+        self.add()
+        out = self.q('withdraw', QA, '--reason', 'pytanie zdublowane z Q2')
+        self.assertEqual(out['reason'], 'pytanie zdublowane z Q2')
+        self.assertEqual(self.question()['state'], 'withdrawn')
+        shown = self.q('show', QA)['questions'][0]
+        self.assertEqual(shown['withdrawn']['reason'], 'pytanie zdublowane z Q2')
+
+    def test_without_reason_nothing_changes(self):
+        self.add()
+        out = self.q('withdraw', QA)
+        self.assertNotIn('reason', out)
+        self.assertEqual(self.question()['state'], 'withdrawn')
+
+    def test_reason_length_and_blank_are_refused_and_write_nothing(self):
+        self.add()
+        before = self.file_bytes()
+        for value in ('', '   ', 'x' * 501):
+            with self.subTest(length=len(value)):
+                out = self.q('withdraw', QA, '--reason', value, code=2)
+                self.assertEqual(out['error'], 'invalid_reason')
+                self.assertEqual(self.file_bytes(), before)
+        self.q('withdraw', QA, '--reason', 'x' * 500)   # kontrola: dokładnie 500 przechodzi
+
+    def test_a_secret_in_the_reason_is_refused_unless_forced(self):
+        self.add()
+        before = self.file_bytes()
+        secret = 'token ' + 'ghp_' + 'a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8'
+        out = self.q('withdraw', QA, '--reason', secret, code=2)
+        self.assertEqual((out['error'], out['fields']), ('secret_detected', ['reason']))
+        self.assertEqual(self.file_bytes(), before)
+        forced = self.q('withdraw', QA, '--reason', secret, '--force')
+        self.assertTrue(forced['warnings'])
+
+    def test_a_repeated_withdraw_is_idempotent_and_keeps_the_first_reason(self):
+        self.add()
+        self.q('withdraw', QA, '--reason', 'pierwszy powód')
+        before = self.file_bytes()
+        again = self.q('withdraw', QA, '--reason', 'inny powód')
+        self.assertFalse(again['changed'])
+        self.assertEqual(self.file_bytes(), before)
+
+
 class WithdrawTests(QuestionCase):
     def test_withdraw_an_open_assumption_returns_the_plain_assumption_row(self):
         report = self.add('Numer?', QA, origin=SPEC + ':Q4', mode=('--assume', 'nowy'))

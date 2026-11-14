@@ -2331,6 +2331,7 @@ MAX_QUESTION_OPTIONS = 8
 MAX_QUESTION_OPTION_LABEL = 200
 MAX_QUESTION_ANSWER_TEXT = 4000
 MAX_QUESTION_COMMENT = 2000
+MAX_QUESTION_WITHDRAW_REASON = 500
 MAX_QUESTION_ADDRESSEES = 50
 MAX_QUESTION_LOGIN = 320
 QUESTIONS_MAX_FILE_BYTES = 1024 * 1024
@@ -2347,14 +2348,14 @@ _QUESTION_SCHEME_RE = re.compile(r'[A-Za-z][A-Za-z0-9+.-]*:')
 _QUESTION_CONTROL_RE = re.compile('[\x00-\x1f\x7f]')
 # key order of a stored line: the common keys first, then the fields of the type
 QUESTION_KEYS = ('id', 'type', 'questionId', 'at', 'by', 'cid', 'text', 'blocking', 'assumed', 'addressees',
-                 'refs', 'options', 'refersTo', 'origin', 'multi', 'optionId', 'optionIds', 'confirm', 'comment', 'spec', 'line')
+                 'refs', 'options', 'refersTo', 'origin', 'multi', 'optionId', 'optionIds', 'confirm', 'comment', 'spec', 'line', 'reason')
 _QUESTION_COMMON = ('id', 'type', 'questionId', 'at', 'by', 'cid')
 _QUESTION_FIELDS = {
     'ask': (('text', 'blocking', 'assumed', 'addressees', 'refs', 'options', 'origin'), ('refersTo', 'multi')),
     'answer': ((), ('optionId', 'optionIds', 'text', 'confirm', 'comment')),
     'comment': (('text',), ()),
     'recorded': (('spec', 'line'), ()),
-    'withdraw': ((), ()),
+    'withdraw': ((), ('reason',)),
 }
 
 
@@ -2592,6 +2593,9 @@ def validate_question_operation(operation, known=None):
             _bad('an answer comes from an expert, not from "%s"' % operation['by'])
     elif kind == 'comment':
         _check_string(operation['text'], 'text', maximum=MAX_QUESTION_COMMENT, strip_empty=True)
+    elif kind == 'withdraw':
+        if 'reason' in operation:
+            _check_string(operation['reason'], 'reason', maximum=MAX_QUESTION_WITHDRAW_REASON, strip_empty=True)
     elif kind == 'recorded':
         _check_question_path(operation['spec'], 'spec')
         _check_int(operation['line'], 'line')
@@ -2715,6 +2719,8 @@ def fold_questions(operations):
         elif kind == 'withdraw':
             if question['state'] == 'open':
                 question['state'] = 'withdrawn'
+                if isinstance(operation.get('reason'), str):
+                    entry['reason'] = operation['reason']
                 question['withdrawn'] = entry
         elif kind == 'recorded':
             if question['state'] == 'answered' and question['recorded'] is None:
@@ -2750,12 +2756,12 @@ def _is_addressed(question, viewer):
 
 def can_view_question(question, viewer):
     """D13: `developer`/`acceptor` see every question; an `expert` sees the ones addressed to them or to
-    all, never a withdrawn one; `commenter` (and anybody else) sees none."""
+    all, a withdrawn one too (as `withdrawn`, with the reason, nothing to answer); `commenter` (and anybody else) sees none."""
     if _is_admin_viewer(viewer):
         return True
     if 'expert' not in _viewer_roles(viewer):
         return False
-    return question['state'] != 'withdrawn' and _is_addressed(question, viewer)
+    return _is_addressed(question, viewer)
 
 
 def can_answer(question, viewer):
@@ -2794,6 +2800,8 @@ def question_view(question, viewer, by_id=None, slug=None):
     if admin:
         view['addressees'] = _clone(question['addressees'])
         view['withdrawn'] = _clone(question['withdrawn'])
+    elif question['withdrawn'] is not None:   # the expert sees when and why, not who (the agent) nor the operation ids
+        view['withdrawn'] = {'at': question['withdrawn']['at'], 'reason': question['withdrawn'].get('reason')}
     return view
 
 
@@ -2900,6 +2908,10 @@ def export_questions(snapshot, project, url=None, users=None, slug=None):
                                  + ([('late', True)] if c.get('late') else [])) for c in question['comments']]
         if question['refersTo'] is not None:
             item['refersTo'] = question['refersTo']
+        if question['withdrawn'] is not None:
+            item['withdrawn'] = {'at': question['withdrawn']['at']}
+            if 'reason' in question['withdrawn']:
+                item['withdrawn']['reason'] = question['withdrawn']['reason']
         item['origin'] = _clone(question['origin'])
         if question['recorded'] is not None:
             recorded = question['recorded']
@@ -6987,6 +6999,8 @@ class PrototypeRequestHandler(BaseHTTPRequestHandler):
                     raise OperationError(409, 'cid_conflict', 'cid was already used for another operation')
                 return Existing(found)
             check_question_state(snapshot.fold, {'type': kind, 'questionId': question_id})
+            if kind == 'comment' and question['state'] == 'withdrawn' and not _is_admin_viewer(viewer):
+                raise OperationError(409, 'withdrawn', 'the question was withdrawn')
             if kind == 'comment' and len(question['comments']) >= QUESTION_COMMENT_MAX:
                 raise OperationError(409, 'comment_limit', 'the question has reached the comment limit')
             partial = {'type': kind, 'questionId': question_id, 'by': login, 'cid': cid}
@@ -7446,7 +7460,8 @@ EXPERTS_SCRIPT = r"""
       return 'Sesja się zmieniła. Odśwież stronę i spróbuj ponownie.';
     }
     if (status === 403) return 'Brak uprawnień: ta akcja wymaga roli ekspert i pytania skierowanego do Ciebie.';
-    if (status === 404) return 'Nie znaleziono pytania (mogło zostać wycofane albo nie jest do Ciebie).';
+    if (status === 404) return 'Nie znaleziono pytania (nie istnieje albo nie jest do Ciebie).';
+    if (status === 409 && code === 'withdrawn') return 'To pytanie zostało wycofane: nie można już na nie odpowiedzieć ani go skomentować.';
     if (status === 409 && code === 'migration_required') return 'To pytanie jest w starym pliku, tylko do odczytu. Programista musi je przenieść (skillsync prototype question migrate).';
     if (status === 409 && code === 'already_answered') return 'Ktoś już odpowiedział na to pytanie. Widok został odświeżony.';
     if (status === 409 && code === 'comment_limit') return 'Pytanie osiągnęło limit komentarzy.';
@@ -7481,7 +7496,7 @@ EXPERTS_SCRIPT = r"""
     if (question.slug) items.push(el('span', { 'class': 'badge', text: 'Przebieg: ' + question.slug }));
     if (question.blocking) items.push(el('span', { 'class': 'badge block', text: 'Blokujące' }));
     items.push(el('span', { 'class': 'badge' + (question.state === 'open' ? '' : ' done'),
-                            text: question.state === 'open' ? 'Otwarte' : 'Odpowiedziane' }));
+                            text: question.state === 'open' ? 'Otwarte' : (question.state === 'withdrawn' ? 'Wycofane' : 'Odpowiedziane') }));
     if (question.assumed !== null && question.assumed !== undefined) {
       items.push(el('span', { 'class': 'badge', text: 'Przyjęto: ' + question.assumed }));
     }
@@ -7596,6 +7611,10 @@ EXPERTS_SCRIPT = r"""
       detail.appendChild(el('h3', { text: 'Odpowiedź' }));
       detail.appendChild(answerSummary(question));
       detail.appendChild(el('p', { 'class': 'muted', text: 'Pytanie jest zamknięte. Można dodawać tylko komentarze.' }));
+    } else if (question.state === 'withdrawn') {
+      detail.appendChild(el('h3', { text: 'Pytanie wycofane' }));
+      detail.appendChild(el('p', { 'class': 'qtext', text: (question.withdrawn && question.withdrawn.reason) ? 'Powód: ' + question.withdrawn.reason : 'Pytanie wycofał programista (bez podania powodu).' }));
+      detail.appendChild(el('p', { 'class': 'muted', text: 'Nie można już na nie odpowiedzieć ani go skomentować.' }));
     } else if (question.canAnswer) {
       detail.appendChild(answerForm(question));
     } else {
@@ -7611,7 +7630,7 @@ EXPERTS_SCRIPT = r"""
       ]));
     });
     detail.appendChild(comments);
-    detail.appendChild(commentForm(question));
+    if (question.state !== 'withdrawn') detail.appendChild(commentForm(question));   // nothing to say on a withdrawn question
     if (!keepFocus) heading.focus();
     syncBusy();
   }
@@ -7818,7 +7837,7 @@ EXPERTS_SCRIPT = r"""
   // What the open detail shows of a question: a change of it is what the expert must hear about.
   function signature(question) {
     return JSON.stringify([question.state, question.answer ? question.answer.at : null, (question.comments || []).length,
-                           !!question.recorded]);
+                           !!question.recorded, question.withdrawn ? question.withdrawn.reason || true : null]);
   }
 
   function findQuestion(id) {
@@ -7855,7 +7874,7 @@ EXPERTS_SCRIPT = r"""
     if (!now) {
       var gone = 'gone:' + state.current;
       if (state.notedSig !== gone) {
-        say('To pytanie zniknęło z listy (wycofane albo nie jest już do Ciebie).' + (formDirty() ? ' Rozpoczęta odpowiedź zostaje na ekranie.' : ''));
+        say('To pytanie nie jest już na Twojej liście (nie istnieje albo nie jest do Ciebie).' + (formDirty() ? ' Rozpoczęta odpowiedź zostaje na ekranie.' : ''));
       }
       state.notedSig = gone;
       return;

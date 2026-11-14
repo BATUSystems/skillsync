@@ -800,12 +800,15 @@ class VisibilityTests(QuestionsCase):
         self.assertEqual(ps.get_question_view(self.snap, Q4, viewer(ACC, 'acceptor'))['refersTo'], Q3)
         self.assertEqual(ps.get_question_view(self.snap, Q5, viewer(DEV, 'developer'))['state'], 'withdrawn')
 
-    def test_expert_sees_all_and_own_but_not_foreign_or_withdrawn(self):
-        self.assertEqual(self.ids(viewer(EWA, 'expert')), [Q1, Q2, Q4])
-        self.assertEqual(self.ids(viewer(OLA, 'expert')), [Q1, Q3])
-        self.assertEqual(self.ids(viewer(IWO, 'expert')), [Q1])
+    def test_expert_sees_all_and_own_and_withdrawn_but_not_foreign(self):
+        self.assertEqual(self.ids(viewer(EWA, 'expert')), [Q1, Q2, Q4, Q5])
+        self.assertEqual(self.ids(viewer(OLA, 'expert')), [Q1, Q3, Q5])
+        self.assertEqual(self.ids(viewer(IWO, 'expert')), [Q1, Q5])
         self.assertIsNone(ps.get_question_view(self.snap, Q3, viewer(EWA, 'expert')))      # cudze
-        self.assertIsNone(ps.get_question_view(self.snap, Q5, viewer(EWA, 'expert')))      # wycofane
+        withdrawn = ps.get_question_view(self.snap, Q5, viewer(EWA, 'expert'))               # wycofane: widoczne jako wycofane
+        self.assertEqual((withdrawn['state'], withdrawn['canAnswer']), ('withdrawn', False))
+        self.assertEqual(set(withdrawn['withdrawn']), {'at', 'reason'}, 'ekspert nie widzi autora ani identyfikatorów operacji')
+        self.assertIsNone(withdrawn['withdrawn']['reason'])
         self.assertIsNone(ps.get_question_view(self.snap, 'qn-0000deadbeef', viewer(EWA, 'expert')))  # nieistniejące: to samo
 
     def test_expert_view_has_no_addressees_only_for_all(self):
@@ -845,12 +848,12 @@ class VisibilityTests(QuestionsCase):
         self.assertIsNone(ps.get_question_view(self.snap, Q4, who)['refersTo'])
         self.assertNotIn(Q3, json.dumps(ps.visible_questions(self.snap, who)))
 
-    def test_refers_to_withdrawn_question_is_none_for_expert(self):
+    def test_refers_to_withdrawn_question_stays_for_the_addressed_expert(self):
         snap = self.store.snapshot()
         self.assertEqual(ps.get_question_view(snap, Q2, viewer(EWA, 'expert'))['refersTo'], Q1)
         self.add(withdraw(Q1))
         snap = self.store.snapshot()
-        self.assertIsNone(ps.get_question_view(snap, Q2, viewer(EWA, 'expert'))['refersTo'])
+        self.assertEqual(ps.get_question_view(snap, Q2, viewer(EWA, 'expert'))['refersTo'], Q1, 'wycofane pytanie jest widoczne')
         self.assertEqual(ps.get_question_view(snap, Q2, viewer(DEV, 'developer'))['refersTo'], Q1)
 
     def test_commenter_and_unknown_roles_see_nothing(self):

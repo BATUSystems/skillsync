@@ -498,6 +498,7 @@ odpowiedź na takie pytanie to 409 `migration_required`. `skillsync prototype qu
 (przebieg, którego `requirements` to ten spec). Pytanie bez jednoznacznego przebiegu blokuje całość (BLOCKED `unassigned`, nic nie zapisane);
 `--slug-for SPEC=SLUG` rozstrzyga jawnie. Stary plik trafia do kosza dopiero po odczycie zwrotnym, że wszystkie operacje są w plikach przebiegów.
 
+Wycofane pytanie zostaje na liście eksperta, do którego było skierowane, jako „Wycofane” z powodem (`question withdraw --reason`), bez możliwości odpowiedzi i komentarza; pytanie nieskierowane do niego nadal jest niewidoczne (komunikaty rozróżniają „wycofane” od „nie istnieje albo nie jest do Ciebie”).
 `skillsync prototype question purge --slug <slug>` pokazuje, co usunąłby z dziennika przebiegu: domyślnie tylko pytania wycofane, a z `--include-open` także otwarte bez odpowiedzi
 i bez komentarza (pominięte pytania i powód są w `skipped`). Pytanie z odpowiedzią lub komentarzem zostaje, tak samo pytanie, do którego ono się odwołuje. Usuwa dopiero `--yes`.
 

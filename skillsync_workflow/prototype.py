@@ -4016,11 +4016,28 @@ def record_question(root, manifest, question_id, spec, line, slug=None):
     return report
 
 
-def withdraw_question(root, manifest, question_id, slug=None):
+WITHDRAW_REASON_MAX = server.MAX_QUESTION_WITHDRAW_REASON
+
+
+def withdraw_question(root, manifest, question_id, slug=None, reason=None, force=False):
     """`question withdraw` (K17): only an open question; `specLine` returns the row to the plain `Q`/`[ZAŁOŻENIE]`.
-    The report carries the state after the operation (`state`, `questions[0].state`: `withdrawn`)."""
+    The report carries the state after the operation (`state`, `questions[0].state`: `withdrawn`).
+    `reason` (optional, 1-500 characters, no secret unless `force`) is stored in the operation and shown to the experts."""
     repo = Path(root).resolve()
     settings = _settings(repo, manifest)
+    warnings = []
+    if reason is not None:
+        reason = reason.strip()
+        if not reason or len(reason) > WITHDRAW_REASON_MAX:
+            return {'status': 'BLOCKED', 'error': 'invalid_reason',
+                    'reason': f'--reason must be 1-{WITHDRAW_REASON_MAX} characters (not blank)'}
+        secrets_found = _secret_fields([('reason', reason)])
+        if secrets_found:
+            if not force:
+                return {'status': 'BLOCKED', 'error': 'secret_detected', 'fields': secrets_found,
+                        'reason': 'the reason looks like it holds a secret (reason); this is a heuristic that can be wrong: '
+                                  'remove the secret, or pass --force after checking that it is not one'}
+            warnings.append('--force: a possible secret in the reason went to the question file')
     found = _find_question(settings, question_id, slug)
     if found is None:
         return _question_fail('not_found', f'no question {question_id}')
@@ -4028,15 +4045,23 @@ def withdraw_question(root, manifest, question_id, slug=None):
         return _migration_required(question_id)
     store = found[1]
     partial = {'type': 'withdraw', 'questionId': question_id, 'by': 'agent', 'cid': 'withdraw-' + question_id}
+    if reason is not None:
+        partial['reason'] = reason
     try:
         result = store.transaction(lambda snapshot: partial)
     except server.PrototypeServerError as error:
         return _question_failure(error)
     question = store.snapshot().fold['byId'][question_id]
-    return {'status': 'PASS', 'questionId': question_id, 'slug': found[0], 'state': question['state'],
-            'questions': [{'id': question_id, 'slug': found[0], 'state': question['state']}],
-            'changed': bool(result.operations), 'specLine': question_spec_line(question, expert=False),
-            'files': [_relative(store.path, repo)] if result.operations else []}
+    report = {'status': 'PASS', 'questionId': question_id, 'slug': found[0], 'state': question['state'],
+              'questions': [{'id': question_id, 'slug': found[0], 'state': question['state']}],
+              'changed': bool(result.operations), 'specLine': question_spec_line(question, expert=False),
+              'files': [_relative(store.path, repo)] if result.operations else []}
+    stored = (question.get('withdrawn') or {}).get('reason')
+    if stored is not None:
+        report['reason'] = stored
+    if warnings:
+        report['warnings'] = warnings
+    return report
 
 
 def url_question(root, manifest, users=None):
@@ -4567,7 +4592,7 @@ def _cmd_question(args, root, manifest, layerset):
     if action == 'record':
         return record_question(root, manifest, args.question, args.spec, args.line, args.slug)
     if action == 'withdraw':
-        return withdraw_question(root, manifest, args.question, args.slug)
+        return withdraw_question(root, manifest, args.question, args.slug, args.reason, args.force)
     if action == 'url':
         return url_question(root, manifest, args.users)
     if action == 'purge':
@@ -4821,7 +4846,9 @@ def register(subparsers):
     qrecord = question_parser('record', 'Mark the answer as written to the spec (idempotent)', subject=True)
     qrecord.add_argument('--spec', required=True, help='Spec path, relative to the project')
     qrecord.add_argument('--line', required=True, type=int, help='Line of the spec row')
-    question_parser('withdraw', 'Withdraw an open question (an answered one cannot be); prints the plain spec row', subject=True)
+    qwithdraw = question_parser('withdraw', 'Withdraw an open question (an answered one cannot be); prints the plain spec row', subject=True)
+    qwithdraw.add_argument('--reason', help='Why (1-500 characters): shown to the experts the question was addressed to')
+    qwithdraw.add_argument('--force', action='store_true', help='Go on although the reason looks like it holds a secret (warning in the report)')
     qmigrate = question_parser('migrate', 'Split the old <root>/questions.json into <root>/<slug>/questions.json by origin.spec (idempotent; BLOCKED when not unambiguous)', slug=False)
     qmigrate.add_argument('--dry-run', action='store_true', help='Show the plan, write nothing')
     qmigrate.add_argument('--slug-for', action='append', metavar='SPEC=SLUG', help='Decide the run of a spec that has no single prototype (repeatable)')

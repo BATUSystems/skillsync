@@ -80,10 +80,12 @@ class PerRunApiTests(RunsCase):
 
     def test_a_run_with_only_invisible_questions_is_absent_from_the_experts_runs(self):
         make_run(self.root, 'etap-3')
-        self.app.questions_store('etap-3').append([Q.ask('qn-0000000000c1', to=[Q.EX2]),
-                                                   Q.ask('qn-0000000000c2'), {'type': 'withdraw', 'questionId': 'qn-0000000000c2',
-                                                                           'by': 'agent', 'cid': 'wd-c2'}])
+        self.app.questions_store('etap-3').append([Q.ask('qn-0000000000c1', to=[Q.EX2])])
         self.assertNotIn('etap-3', [run['slug'] for run in self.listing(self.who(Q.EX))['runs']])
+        # a withdrawn question addressed to the expert is visible (as withdrawn), so its run is listed
+        self.app.questions_store('etap-3').append([Q.ask('qn-0000000000c2'), {'type': 'withdraw', 'questionId': 'qn-0000000000c2',
+                                                                           'by': 'agent', 'cid': 'wd-c2'}])
+        self.assertIn('etap-3', [run['slug'] for run in self.listing(self.who(Q.EX))['runs']])
         self.assertIn('etap-3', [run['slug'] for run in self.listing(self.who(Q.EX2))['runs']])
         self.assertIn('etap-3', [run['slug'] for run in self.listing(self.who(Q.DE))['runs']])
         self.check(self.who(Q.EX).get('/_api/v1/questions?slug=etap-3'), 200)   # istnienie prototypu nie jest tajemnicą
