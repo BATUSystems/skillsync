@@ -17,6 +17,7 @@ import uuid
 import sys
 import yaml
 from .common import add_project_arguments, changed_files, emit, load_layer_project, matches, workflow_config, contained, normalize_files, read_yaml, strings, redact, expand_project_skills, require_layerset, WORKFLOW_SKILL, LEGACY_WORKFLOW_SKILL
+from .pathfmt import posix
 from .selfcmd import self_argv
 from . import layers as _layers
 from .ceremony import ceremony_info, validate_ceremony
@@ -471,7 +472,7 @@ def _layer_lessons(layerset, kind, key):
         found = layerset.lesson_file(rel)
         if not found:
             raise ValueError(f'Missing indexed {kind}: workflow/lessons/{rel}')
-        selected.append({**record, 'path': str(found[1]), 'index': str(index)})
+        selected.append({**record, 'path': posix(found[1]), 'index': posix(index)})
     return selected
 
 
@@ -499,7 +500,7 @@ def knowledge_indexes(root, library, kind, manifest=None):
             path = contained(directory, record['path'])
             if not path.is_file():
                 raise ValueError(f'Missing indexed {kind}: {path}')
-            selected.append({**record, 'path': str(path), 'index': str(index)})
+            selected.append({**record, 'path': posix(path), 'index': posix(index)})
     return selected
 
 

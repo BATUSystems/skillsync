@@ -581,7 +581,10 @@ def _is_abs_text(text):
 def normalize_path(path, system=None):
     """Resolved path as a `/`-separated string, case-folded on Windows and macOS."""
     system = system or current_system()
-    return _norm_text(os.path.realpath(os.path.expanduser(str(path))), system)
+    text = os.path.realpath(os.path.expanduser(str(path)))
+    # On a Windows host a backslash is a separator whatever system the result is computed for (a test or a rule of
+    # another system still gets real host paths): only on a POSIX host does it stay a part of a name.
+    return _norm_text(text.replace('\\', '/') if os.name == 'nt' else text, system)
 
 
 def _segment_regex(segment):
@@ -601,7 +604,7 @@ def glob_regex(pattern, system=None):
     `**` any number of segments (like `.gitignore`); a relative pattern may match anywhere."""
     system = system or current_system()
     text = os.path.expanduser(pattern)
-    text = text.replace('\\', '/') if system == 'Windows' else text
+    text = text.replace('\\', '/') if system == 'Windows' or os.name == 'nt' else text   # a Windows host: `\\` always separates
     if text == '**':
         return re.compile(r'.*', re.S)
     segments = text.split('/')
