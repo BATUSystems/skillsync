@@ -321,7 +321,8 @@
   "prototype": {
     "port": 5130,
     "slug": null,
-    "up": false
+    "up": false,
+    "writing": null
   },
   "readiness": {
     "date": null,
