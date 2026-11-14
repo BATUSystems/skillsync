@@ -117,15 +117,15 @@ html[data-prototype-frozen] .doc-toolbar {
   color: var(--accent-foreground);
 }
 
-/* Stan wciśnięcia przełącznika (aria-pressed, aria-expanded): swoistość (0,2,1) wygrywa z `.btn-outline`, `.btn-ghost` i `.btn-primary` z
-   components.css (ładowanego później); samo tło nie wystarcza, bo najechanie też daje tło akcentu, więc dochodzi pierścień i grubsza czcionka. */
-:is(.doc-toolbar, .anno-panel, .anno-composer-pop, .anno-banners, .anno-user-menu, dialog) button[aria-pressed="true"],
-:is(.doc-toolbar, .anno-panel, .anno-composer-pop, .anno-banners, .anno-user-menu, dialog) button[aria-expanded="true"] {
+/* Stan wciśnięcia przełącznika (aria-pressed, aria-expanded): swoistość (0,3,1) wygrywa z `.btn`, `.btn-outline`, `.btn-ghost` i `.btn-primary`
+   z components.css (ładowanego później) także przy najechaniu (`:hover:not(…)` ma (0,3,0)); podwojony atrybut podnosi swoistość bez `!important`.
+   Samo tło nie wystarcza, bo najechanie też daje tło akcentu, więc dochodzi pierścień (bez zmiany grubości pisma: układ paska się nie przesuwa). */
+:is(.doc-toolbar, .anno-panel, .anno-composer-pop, .anno-banners, .anno-user-menu, dialog) button[aria-pressed="true"][aria-pressed="true"],
+:is(.doc-toolbar, .anno-panel, .anno-composer-pop, .anno-banners, .anno-user-menu, dialog) button[aria-expanded="true"][aria-expanded="true"] {
   background: var(--accent);
   border-color: var(--ring);
   color: var(--accent-foreground);
   box-shadow: inset 0 0 0 1px var(--ring);
-  font-weight: 600;
 }
 
 :where(.doc-toolbar, .anno-panel, .anno-composer-pop, .anno-banners, .anno-user-menu, dialog) :where(button:disabled, button[aria-disabled="true"]) {

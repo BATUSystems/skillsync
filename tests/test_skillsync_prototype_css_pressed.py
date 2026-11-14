@@ -65,6 +65,7 @@ class SpecificityHelper(unittest.TestCase):
         self.assertEqual(specificity('.btn-outline'), (0, 1, 0))
         self.assertEqual(specificity(':where(.a, .b) :where(button[aria-pressed="true"])'), (0, 0, 0))
         self.assertEqual(specificity(':is(.doc-toolbar, .anno-panel) button[aria-pressed="true"]'), (0, 2, 1))
+        self.assertEqual(specificity(':is(.doc-toolbar) button[aria-pressed="true"][aria-pressed="true"]'), (0, 3, 1))
         self.assertEqual(specificity('.btn-outline:hover:not(:disabled, .is-disabled, [aria-disabled="true"])'), (0, 3, 0))
         self.assertEqual(specificity('.segmented > [aria-pressed="true"]'), (0, 2, 0))
 
@@ -85,9 +86,10 @@ class PressedRule(unittest.TestCase):
         self.assertEqual(kinds, {'pressed', 'expanded'})
 
     def test_they_beat_the_button_classes_of_components_css(self):
+        # the button classes of components.css, with their hover and focus variants (`.btn-outline:hover:not(…)` is (0,3,0))
         ceiling = max(specificity(part) for selector, _body in rules(COMPONENTS) for part in split_top(selector)
-                      if re.fullmatch(r'\.btn-(outline|ghost|primary)', part))
-        self.assertEqual(ceiling, (0, 1, 0), 'zakładana swoistość klas przycisków')
+                      if re.match(r'\.btn(-outline|-ghost|-primary)?(:hover|:focus|:active|\[|\.|$)', part) and 'doc-toolbar' not in part)
+        self.assertEqual(ceiling, (0, 3, 0), 'zakładana najwyższa swoistość klas przycisków z najechaniem')
         for part, _body in self.pressed_selectors():
             with self.subTest(selector=part):
                 self.assertGreater(specificity(part), ceiling)
@@ -97,6 +99,7 @@ class PressedRule(unittest.TestCase):
             with self.subTest(selector=part):
                 self.assertRegex(body, r'box-shadow\s*:')
                 self.assertRegex(body, r'border-color\s*:\s*var\(--ring\)')
+                self.assertNotRegex(body, r'font-weight', 'grubsze pismo poszerzałoby przycisk i przesuwało pasek')
 
     def test_every_pressed_rule_comes_before_components_css_in_the_cascade_only_by_specificity(self):
         index = (ASSETS / 'index.html').read_text(encoding='utf-8')
@@ -104,6 +107,11 @@ class PressedRule(unittest.TestCase):
 
 
 class ComposerSize(unittest.TestCase):
+    def test_the_composer_textarea_has_two_rows(self):
+        js = (ASSETS / 'prototype.js').read_text(encoding='utf-8')
+        self.assertRegex(js, r"aria-label': 'Komentarz', maxlength: MAX_TEXT, rows: 2,")
+
+
     def test_the_comment_popup_and_textarea_are_smaller(self):
         popup = [body for selector, body in rules(CSS) if split_top(selector) == ['.anno-composer-pop']]
         self.assertTrue(popup)

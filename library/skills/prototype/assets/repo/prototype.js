@@ -3339,7 +3339,7 @@
       const decision = Views.createDecision(spec.view, Remote.state.server);
       if (!decision.allowed) { Toast.show(decision.reason); return; }   // mobile bez obsługi serwera: bez okienka, kolejki i zapisu
       close(false);
-      const area = Dom.make('textarea', { 'aria-label': 'Komentarz', maxlength: MAX_TEXT, rows: 4, placeholder: 'Napisz komentarz…' });
+      const area = Dom.make('textarea', { 'aria-label': 'Komentarz', maxlength: MAX_TEXT, rows: 2, placeholder: 'Napisz komentarz…' });
       const send = Dom.make('button', { type: 'button', class: 'btn btn-primary btn-sm', text: 'Wyślij' });
       const cancel = Dom.make('button', { type: 'button', class: 'btn btn-outline btn-sm', text: 'Anuluj' });
       const hint = Dom.make('span', { class: 't-hint', text: 'Ctrl+Enter wysyła, Esc zamyka' });

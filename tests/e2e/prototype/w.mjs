@@ -151,13 +151,18 @@ suite.add('W-04', 'Baner „do HH:MM” i „Zwolnij”: akceptujący zwalnia ma
     writingAfterRelease: listing.writing ?? null };
 }, { timeout: 120000 });
 
-// Przełączniki paska: po kliknięciu atrybut aria-pressed/aria-expanded się zmienia, a wygląd (tło, pierścień, grubość pisma) też; kontrast wciśniętego ≥ 4,5:1.
+// Przełączniki paska. Przełącznik typu „toggle” (aria-pressed/aria-expanded poza grupą radio): po kliknięciu atrybut się zmienia i wygląd też.
+// Grupa radio (`.segmented`, np. „Tryb”): wciśnięty różni się wyglądem od niewciśniętych (bez klikania, żeby nie zmieniać trybu).
+// Kontrast tekstu do tła wciśniętego ≥ 4,5:1 liczony na kolorach z rgba() przez canvas (tokeny motywu są w oklch, więc computed style nie jest rgb()).
 const toggleProbe = `(() => {
-  const lum = (rgb) => { const v = rgb.match(/[\\d.]+/g).slice(0, 3).map(Number).map((x) => { x /= 255; return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4); }); return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2]; };
+  const cx = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
+  const rgba = (css) => { cx.clearRect(0, 0, 1, 1); cx.fillStyle = '#000'; cx.fillStyle = css; cx.fillRect(0, 0, 1, 1); const d = cx.getImageData(0, 0, 1, 1).data; return [d[0], d[1], d[2]]; };
+  const lum = (css) => { const v = rgba(css).map((x) => { x /= 255; return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4); }); return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2]; };
   const contrast = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
   return [...document.querySelectorAll('.doc-toolbar button[aria-pressed], .doc-toolbar button[aria-expanded]')].map((b, index) => {
     const s = getComputedStyle(b);
     return { index, label: b.textContent.trim().slice(0, 24), state: b.getAttribute('aria-pressed') ?? b.getAttribute('aria-expanded'), attr: b.hasAttribute('aria-pressed') ? 'pressed' : 'expanded',
+      radio: !!b.closest('.segmented'), group: [...document.querySelectorAll('.doc-toolbar .segmented')].indexOf(b.closest('.segmented')),
       look: [s.backgroundColor, s.borderTopColor, s.boxShadow, s.fontWeight].join('|'), contrast: contrast(s.color, s.backgroundColor) };
   });
 })()`;
@@ -172,16 +177,25 @@ suite.add('W-05', 'Przełączniki paska: stan wciśnięcia jest widoczny (jasny 
     await p.waitFor(`document.querySelectorAll('.doc-toolbar button[aria-pressed], .doc-toolbar button[aria-expanded]').length > 0`, 20000);
     const before = await p.evaluate(toggleProbe);
     const rows = [];
-    for (const item of before) {
+    // grupy radio: wciśnięty kontra niewciśnięty w tym samym momencie
+    for (const group of [...new Set(before.filter((b) => b.radio).map((b) => b.group))]) {
+      const members = before.filter((b) => b.radio && b.group === group);
+      const on = members.filter((b) => b.state === 'true'), off = members.filter((b) => b.state !== 'true');
+      rows.push({ kind: 'radio', group, on: on.map((b) => b.label), off: off.map((b) => b.label), oneOn: on.length === 1, differs: on.length === 1 && off.every((b) => b.look !== on[0].look),
+        contrastOn: on.length ? Math.round(on[0].contrast * 100) / 100 : 0 });
+    }
+    // toggle: klik zmienia atrybut i wygląd; drugi klik przywraca
+    for (const item of before.filter((b) => !b.radio)) {
       await p.evaluate(clickToggle(item.index)); await sleep(500);
       const after = (await p.evaluate(toggleProbe))[item.index];
-      const pressed = (x) => x.state === 'true';
-      const [on, off] = pressed(item) ? [item, after] : [after, item];
-      rows.push({ label: item.label, attr: item.attr, flipped: item.state !== after.state, looksDiffer: on.look !== off.look, contrastOn: Math.round(on.contrast * 100) / 100 });
+      const [on, off] = item.state === 'true' ? [item, after] : [after, item];
+      rows.push({ kind: 'toggle', label: item.label, attr: item.attr, flipped: item.state !== after.state, differs: on.look !== off.look, contrastOn: Math.round(on.contrast * 100) / 100 });
       await p.evaluate(clickToggle(item.index)); await sleep(300);
     }
     await p.dispose();
-    const ok = rows.length >= 2 && rows.some((r) => r.attr === 'expanded') && rows.every((r) => r.flipped && r.looksDiffer && r.contrastOn >= 4.5);
+    const toggles = rows.filter((r) => r.kind === 'toggle'), radios = rows.filter((r) => r.kind === 'radio');
+    const ok = toggles.length >= 1 && toggles.some((r) => r.attr === 'expanded') && radios.length >= 1
+      && toggles.every((r) => r.flipped && r.differs && r.contrastOn >= 4.5) && radios.every((r) => r.oneOn && r.differs && r.contrastOn >= 4.5);
     report[dark ? 'dark' : 'light'] = { ok, rows };
     allOk = allOk && ok;
   }

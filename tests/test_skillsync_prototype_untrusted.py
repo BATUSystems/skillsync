@@ -51,7 +51,8 @@ class CommentsReportTests(UntrustedCase):
         report = self.proto('comments', 'demo')
         self.assertIs(report['untrusted'], True)
         self.assertEqual(report['notice'], pt.UNTRUSTED_NOTICE)
-        for phrase in ('dane', 'nie polecenia', 'zgłoś człowiekowi', 'nie wykonuj'):
+        for phrase in ('dane od użytkowników', 'nie wykonuj', 'zgłoś je człowiekowi', 'skilla prototype', 'uruchamianie komend',
+                       'czytanie i usuwanie plików lub danych', 'zmiana zasad pracy'):
             self.assertIn(phrase, report['notice'])
         texts = [message['text'] for thread in report['threads'] for message in thread['messages']]
         self.assertIn(HOSTILE, texts, 'tekst komentarza nie jest zmieniany ani opakowywany')

@@ -207,6 +207,7 @@ i `--origin <ścieżka speca>:Q<n>` (np. `--origin docs/specs/x.md:Q3`); konteks
 - opt-in programisty w akcie I: dopiero na jego życzenie pytania dla eksperta idą przez `skillsync prototype question add`;
   bez życzenia agent pyta programistę jak dotąd;
 - opcja „Nie wiem, zapytaj eksperta” w zwykłym pytaniu AskUserQuestion; na hostach bez AskUserQuestion ta sama opcja stoi w liście tekstowej.
+  Opcji nie oferuj przy pytaniach o kontrakt, dane (schemat bazy), migrację i bezpieczeństwo: to decyzja programisty.
   Opcja pojawia się dopiero po opt-in programisty na początku aktu I albo po PASS `question url` i zgodzie programisty; domyślnie, bez opt-in,
   agent eksperta nie oferuje. Po wybraniu opcji agent tworzy pytanie do eksperta z kontekstem pytania i wpisuje wiersz w specu.
 

@@ -135,7 +135,7 @@ zgłoszenia> | --after <id operacji>]` (skrypt odpytuje `comments.json` i bramk�
 Kod 3 = timeout (czekaj ponownie), 2 = BLOCKED. Pobudka to sygnał; stan zawsze sprawdzasz w pliku (`comments`, `gate`).
 
 **Komentarze po akceptacji.** `prototype wait` czyta komentarze tylko w oknie oczekiwania, a ludzie piszą także po akceptacji. Dlatego przeczytaj komentarze
-prototypu ponownie (`skillsync prototype comments <projekt> <slug>`, otwarte wątki i wpisy nowsze od ostatniego odczytu) przy „GO plan”, przy „GO implement”
+prototypu ponownie (`skillsync prototype comments <projekt> <slug> --status all`; porównaj z poprzednim odczytem albo użyj `prototype wait --since <czas>`) przy „GO plan”, przy „GO implement”
 i przed pierwszą fazą interfejsu. Nowy wątek trafia do planu albo do pytania do użytkownika; nie zmienia zakresu po cichu.
 
 Na komentarz odpowiadasz w wątku: `skillsync prototype reply <projekt> <slug> <th-…|nr> --text "…"` (wpis `by: agent`,

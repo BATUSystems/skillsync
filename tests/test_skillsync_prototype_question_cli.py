@@ -763,6 +763,24 @@ class WithdrawReasonTests(QuestionCase):
         again = self.q('withdraw', QA, '--reason', 'inny powód')
         self.assertFalse(again['changed'])
         self.assertEqual(self.file_bytes(), before)
+        self.assertEqual(again['reason'], 'pierwszy powód')
+        self.assertTrue(any('new reason was not stored' in item for item in again['warnings']), again)
+
+    def test_a_reason_for_a_question_withdrawn_without_one_warns_that_it_was_not_stored(self):
+        self.add()
+        self.q('withdraw', QA)
+        again = self.q('withdraw', QA, '--reason', 'za późno', '--force')
+        self.assertNotIn('reason', again)
+        self.assertEqual([item for item in again['warnings'] if item.startswith('--force')], [])
+        self.assertTrue(any('not stored' in item for item in again['warnings']))
+
+    def test_the_length_counts_utf16_units_like_the_server(self):
+        self.add()
+        before = self.file_bytes()
+        out = self.q('withdraw', QA, '--reason', '\U0001F600' * 300, code=2)   # 300 emoji = 600 UTF-16 units
+        self.assertEqual(out['error'], 'invalid_reason')
+        self.assertEqual(self.file_bytes(), before)
+        self.q('withdraw', QA, '--reason', '\U0001F600' * 250)   # 500 units: exactly the limit
 
 
 class WithdrawTests(QuestionCase):
