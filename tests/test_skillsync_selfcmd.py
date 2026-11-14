@@ -305,7 +305,7 @@ class Launchers(unittest.TestCase):
         root, sh, ps = self.generate(list(INSTALLED))
         import shlex
         self.assertEqual(shlex.split(sh.read_text(encoding='utf-8').splitlines()[1])[1:5],
-                         [sys.executable, '-P', '-m', 'skillsync_workflow'])
+                         [Path(sys.executable).as_posix(), '-P', '-m', 'skillsync_workflow'])   # the shell script uses `/`
         first = ps.read_text(encoding='utf-8').splitlines()[0]
         self.assertIn("'-P' '-m' 'skillsync_workflow' env '", first)
 

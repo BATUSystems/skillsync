@@ -447,7 +447,7 @@ class LayersAddTest(CommandsCase):
                 entry = next(item for item in self.config()['layers'] if item['id'] == layer_id)
                 self.assertEqual((entry['kind'], entry['source']), ('org', str(bare)))
                 stub = self.config()['leakguard']['targets'][layer_id]
-                self.assertEqual((stub['scope'], stub['authors'], stub['remote_match']), ('org-private', ['jan@acme.example'], [str(bare)]))
+                self.assertEqual((stub['scope'], stub['authors'], stub['remote_match']), ('org-private', ['jan@acme.example'], [bare.as_posix()]))   # the match is stored with `/`
                 self.assertEqual(leakguard.hook_state(checkout)['state'], 'ok')
                 self.assertEqual(sorted(item['name'] for item in report['hooks']), ['pre-commit', 'pre-push'])
                 self.assertEqual(report['layer']['writable'], True)

@@ -1,24 +1,26 @@
 """Azure DevOps pull-request operations of the library tracker descriptor, run against a fake `az`.
 
 The fake CLI proves our argv templates, result contracts and readback guards; it does not prove
-the real `az` output (no live Azure access in tests). The library descriptor is copied from the
-machine library, so the tests are skipped when it is absent.
+the real `az` output (no live Azure access in tests). The descriptor is the one of the library under test
+(`SKILLSYNC_TEST_LIBRARY` or the checkout's `library/`), not of the machine: the tests never depend on an installed
+library or on a real `az`. The fake runs as `python fake_az.py …` (argv[0] of every `az` operation is replaced in the copy
+of the descriptor), so it needs neither a shebang nor `az` on PATH and works the same on Windows.
 """
 import json
 import os
 from pathlib import Path
-import shutil
-import stat
 import sys
 import unittest
 from unittest.mock import patch
 
+import yaml
+
 from tests.test_skillsync_workflow import WorkflowFixture
 
-LIBRARY_DESCRIPTOR = Path.home() / '.local/copilot-library/workflow/trackers/azure.yaml'
+LIBRARY_DESCRIPTOR = (Path(os.environ.get('SKILLSYNC_TEST_LIBRARY') or Path(__file__).resolve().parents[1] / 'library')
+                      / 'workflow/trackers/azure.yaml')
 
-FAKE_AZ = '''#!{python}
-import json, os, sys
+FAKE_AZ = '''import json, os, sys
 state_path = os.environ['FAKE_AZ_STATE']
 state = json.load(open(state_path)) if os.path.exists(state_path) else {{'prs': [], 'threads': [], 'calls': []}}
 args = sys.argv[1:]
@@ -57,7 +59,7 @@ print(json.dumps(out))
 '''
 
 
-@unittest.skipUnless(LIBRARY_DESCRIPTOR.is_file(), 'machine library Azure descriptor not installed')
+@unittest.skipUnless(LIBRARY_DESCRIPTOR.is_file(), 'Azure tracker descriptor of the library under test is absent')
 class AzurePullRequestOperations(WorkflowFixture):
     PARAMS = {'organization': 'org', 'project': 'proj', 'repository': 'repo', 'source': 'feat/x', 'target': 'main',
               'title': 'ABC-1: zmiana', 'description': 'Opis\nz nową linią; $(echo nie)'}
@@ -66,15 +68,17 @@ class AzurePullRequestOperations(WorkflowFixture):
         super().setUp()
         target = self.library / 'workflow/trackers/azure.yaml'
         target.parent.mkdir(parents=True)
-        shutil.copy(LIBRARY_DESCRIPTOR, target)
         bin_dir = self.base / 'bin'
         bin_dir.mkdir()
-        az = bin_dir / 'az'
-        az.write_text(FAKE_AZ.format(python=sys.executable))
-        az.chmod(az.stat().st_mode | stat.S_IEXEC)
+        az = bin_dir / 'fake_az.py'
+        az.write_text(FAKE_AZ.format(), encoding='utf-8')   # `{{`: the template is a format string
+        descriptor = yaml.safe_load(LIBRARY_DESCRIPTOR.read_text(encoding='utf-8'))
+        for spec in descriptor['operations'].values():
+            if spec.get('argv') and spec['argv'][0] == 'az':
+                spec['argv'] = [sys.executable, str(az)] + spec['argv'][1:]
+        target.write_text(yaml.safe_dump(descriptor, sort_keys=False, allow_unicode=True), encoding='utf-8')
         self.state = self.base / 'az-state.json'
-        env = patch.dict(os.environ, {'PATH': str(bin_dir) + os.pathsep + os.environ['PATH'],
-                                      'FAKE_AZ_STATE': str(self.state)})
+        env = patch.dict(os.environ, {'FAKE_AZ_STATE': str(self.state)})
         env.start()
         self.addCleanup(env.stop)
 

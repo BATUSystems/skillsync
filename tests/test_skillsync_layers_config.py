@@ -537,7 +537,7 @@ class LayerFlagTest(ConfigCase):
     def test_valid_forms(self):
         cwd = str(self.work)
         absolute = layers.parse_layer_flag('core=/x/y')
-        self.assertEqual((absolute.id, absolute.path, absolute.synthetic), ('core', Path('/x/y'), False))
+        self.assertEqual((absolute.id, absolute.path, absolute.synthetic), ('core', Path(os.path.abspath('/x/y')), False))   # `/x/y` is drive-relative on Windows
         relative = layers.parse_layer_flag('acme-2=rel/dir', cwd=cwd)
         self.assertEqual(relative.path, self.work / 'rel' / 'dir')
         home = layers.parse_layer_flag('me=~/lay')
