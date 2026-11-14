@@ -55,6 +55,9 @@
   ],
   "needs-shellcheck": [
    "shellcheck is not installed"
+  ],
+  "windows-open-file": [
+   "Windows nie pozwala usunąć ani podmienić otwartego pliku"
   ]
  },
  "notes": {
