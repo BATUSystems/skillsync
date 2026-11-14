@@ -46,7 +46,10 @@ class FreePortRangeTests(unittest.TestCase):
         port = self.free(None)
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.addCleanup(sock.close)
+        if os.name != 'nt':
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # the port may be in TIME_WAIT (free_port allows it)
         sock.bind(('127.0.0.1', port))
+        sock.listen(1)
         with self.assertRaises(RuntimeError) as caught:
             self.free(f'{port}-{port}')
         self.assertIn(f'{port}-{port}', str(caught.exception))
@@ -56,6 +59,36 @@ class FreePortRangeTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(ValueError) as caught:
                 self.free(value)
             self.assertIn(ENV, str(caught.exception))
+
+
+    @unittest.skipIf(os.name == 'nt', 'SO_REUSEADDR na Windows pozwala przejąć port z aktywnym nasłuchem')
+    def test_a_port_in_time_wait_counts_as_free_like_for_the_server_that_will_bind_it(self):
+        """A test server that stops leaves its port in TIME_WAIT; `free_port` must not burn the whole range on those
+        (macOS: a slice of 29 ports ran dry in one run), because the server binds with SO_REUSEADDR."""
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        listener.bind(('127.0.0.1', 0))
+        listener.listen(1)
+        port = listener.getsockname()[1]
+        client = socket.create_connection(('127.0.0.1', port))
+        served, _ = listener.accept()
+        served.close()  # the active close on the server side leaves `port` in TIME_WAIT
+        client.close()
+        listener.close()
+        with mock.patch.object(ds, 'port_range', return_value=range(port, port + 1)):
+            self.assertEqual(ds.free_port(), port)
+
+    @unittest.skipIf(os.name == 'nt', 'SO_REUSEADDR na Windows pozwala przejąć port z aktywnym nasłuchem')
+    def test_a_port_with_an_active_listener_is_never_free(self):
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        listener.bind(('127.0.0.1', 0))
+        listener.listen(1)
+        self.addCleanup(listener.close)
+        port = listener.getsockname()[1]
+        with mock.patch.object(ds, 'port_range', return_value=range(port, port + 1)):
+            with self.assertRaises(RuntimeError):
+                ds.free_port()
 
 
 if __name__ == '__main__':

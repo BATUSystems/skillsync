@@ -66,6 +66,10 @@ def free_port() -> int:
         if port == 5140:
             continue
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            if os.name != "nt":
+                # the server binds with SO_REUSEADDR, so a port left in TIME_WAIT by a stopped test server is free for it
+                # (without this a slice of 29 ports ran dry within one macOS run); on Windows the option would steal a port
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             try:
                 s.bind(("127.0.0.1", port))
             except OSError:

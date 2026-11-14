@@ -21,7 +21,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ### Changed
 
-- Testy: zmienna `SKILLSYNC_TEST_DASHBOARD_PORTS` (zakres `<od>-<do>` w 5100-5199) wyznacza porty testów dashboardu, żeby kilka biegów naraz na jednym hoście nie kolidowało; domyślnie bez zmian, produkt bez zmian (docs/development.md).
+- Testy: zmienna `SKILLSYNC_TEST_DASHBOARD_PORTS` (zakres `<od>-<do>` w 5100-5199) wyznacza porty testów dashboardu, żeby kilka biegów naraz na jednym hoście nie kolidowało; domyślnie bez zmian, produkt bez zmian (docs/development.md). `free_port` uznaje też port w TIME_WAIT za wolny (serwer binduje z SO_REUSEADDR), bo na macOS wycinek 29 portów wyczerpywał się w jednym biegu.
 - CI (macOS): `timeout-minutes` jobu `test` dla macOS 30 na 45 (testy trwają tam 20-28 min); `tests/skip-baseline.json` ma teraz zmierzony baseline `macos-latest/symlink` i `macos-latest/copy` (35 skipów z biegu main v1.3.0, identyczne w czterech jobach) zamiast `null`, z nowymi kategoriami `linux-only-env` (testy cyklu życia `env`: backend własności procesów tylko na Linuksie), `bsd-mktemp` i `needs-shellcheck`; progi czasu czterech testów poluzowane (skan sekretów 0,5 → 5 s, git z limitem 3,5 → 15 s przy 30 s snu, nieaktywne połączenie dashboardu 4 → 15 s, `approvals wait` 15 → 18 s). Test strażnika pilnuje teraz nowego limitu i baseline macOS.
 
 ### Compatibility
