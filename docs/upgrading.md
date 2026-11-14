@@ -31,6 +31,16 @@ Pakiet aktualizujesz ponownym zainstalowaniem z tagu (`uv tool install --force g
 3. `skillsync layers check` i `skillsync doctor` w projektach.
 4. `skillsync link <projekt>` w każdym projekcie z `discover_paths` (albo `skillsync link` bez ścieżki).
 
+## Przejście 1.3.0 → 1.4.0
+
+Wydanie 1.4.0 jest MINOR (zgodne wstecz): sekcja **Breaking** w `CHANGELOG.md` to „None.”. Zbiera pięć zmian: szacunek czasu (`eta`) na stronie statusu, drobne poprawki techniczne (publiczny adres prototypów, JSON w `show`/`wait`, port dashboardu), znacznik pisania z odnowieniem i zwolnieniem, polecenia w komentarzach i decyzje programisty, oznaczenie niezaufanej treści w komendach `question`. Warstwa `core` ma `core_min: 1.4.0`:
+
+1. Rdzeń: `uv tool install --force git+https://github.com/BATUSystems/skillsync@v1.4.0`, potem `skillsync layers update core --ref v1.4.0`.
+2. Istniejące prototypy dostają nowy arkusz i silnik (stan przełączników, mniejsze pole komentarza, baner zapisu z godziną i „Zwolnij”) przez `skillsync prototype migrate`.
+3. Pole `reason` w pytaniach do eksperta (`question withdraw --reason`): starsza wersja odrzuci plik `questions.json` z tym polem, więc zaktualizuj rdzeń u wszystkich pracujących na wspólnym projekcie, zanim ktokolwiek go użyje.
+4. Raporty `prototype comments`, `prototype wait` i `question list|show|export|wait` mają dwa nowe klucze na początku (`untrusted`, `notice`); konsument pomijający nieznane klucze nie jest dotknięty.
+5. Uruchom ponownie działający `prototype serve` i serwer strony statusu.
+
 ## Przejście 1.2.x → 1.3.0
 
 Wydanie 1.3.0 jest MINOR (zgodne wstecz): sekcja **Breaking** w `CHANGELOG.md` to „None.”. Dodaje marker „agent pisze ekrany” (`skillsync prototype writing`, blokada akceptacji i przywracania), czas pracy i czekania na stronie statusu, `skillsync leakcheck --text` i profil przeglądu `docs`; repozytorium rdzenia przestaje śledzić `docs/specs/**` i `docs/plans/**`. Warstwa `core` ma `core_min: 1.3.0`:

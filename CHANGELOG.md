@@ -12,8 +12,11 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-11-14
+
 ### Added
 
+- Dashboard: `eta` (JSON schema 1, addytywnie) i toast „<operacja>, koniec ok. HH:MM” z szacunku, który agent zapisuje przed długą operacją w checkpoincie przebiegu (`eta: <operacja> do HH:MM`); po przekroczeniu toast mówi „przekroczono ETA o N min”, znika po następnym checkpoincie bez `eta:`, z `czeka:` i po zamknięciu planu. Serwer nie czyta zegara: przekroczenie liczy renderer. Skille `feature` i `prototype`: reguła „szacuj przed startem, aktualizuj przy przekroczeniu”.
 - Status page and the writing marker: `/api/status` and `dashboard show` have `prototype.writing` (`null` or `{since, expiresAt, renewedAt}`, never `by`). While the
   marker is valid, `waiting` has the item `source: "writing"` ("agent pisze ekrany (do HH:MM)") instead of the call to accept the prototype (also
   when the call came from a checkpoint `czeka:`); the page shows "Sesja pracuje od HH:MM". The page server watches `.writing.json` and its validity, so the page
@@ -28,6 +31,11 @@ Every release has a **Breaking** section that lists incompatible changes. When a
   The text has one source with the one of `prototype comments`/`wait` (`UNTRUSTED_NOTICES`, contexts `comments` and `question`). `add`, `withdraw`, `record`, `purge`, `migrate`, `merge` and `url` return no text of other people and have no fields; TIMEOUT and errors neither.
 - `skillsync prototype question withdraw --reason <text>` (1-500 characters, no secret unless `--force`; BLOCKED `invalid_reason`, `secret_detected`) stores a reason in the `withdraw` operation (field `reason`);
   the report and `show` (the administrator's `withdrawn` entry) and `export` (`withdrawn: {at, reason?}`) return it.
+- Klucz manifestu `prototype.port` (1024-65535) i flaga `dashboard serve --prototype-port`: port serwera prototypów, który sprawdza strona statusu (dotąd na sztywno 5130; domyślnie nadal 5130). `prototype serve` bierze ten klucz jako domyślny port (flaga `--port` wygrywa, bez klucza 4445), więc serwer i strona statusu zgadzają się co do portu; `doctor` waliduje wartość.
+- `question show` ma pole `question` (pierwsze pytanie), a `question wait` pole `questions[]`: oba mają teraz `question`, `questions[]` i `answerLine` na górze (zmiana addytywna, żadne pole nie znika).
+- `question add`: pole `ignored` (utworzone pliki ignorowane przez git, czyli lock); `created` = `files` + `ignored` przy pierwszym użyciu.
+- `skillsync checkpoint` i `resume`: flaga `--manifest PLIK` (manifest projektu spoza repozytorium, np. dla publicznego rdzenia bez `.github/.skillsync.yaml`); bez flagi zachowanie bez zmian.
+- `prototype.public_url` (manifest) i zmienna `SKILLSYNC_PROTOTYPE_PUBLIC_URL` (wygrywa): adres serwera prototypów dla ekspertów za tunelem ssh. Używają go `prototype question url`, pole `url` w `question add` (także bez lokalnego serwera) i dodatkowa linia „Adres publiczny” komunikatu `prototype serve`; błędna zmienna to BLOCKED `invalid_public_url`.
 
 ### Changed
 
@@ -39,43 +47,32 @@ Every release has a **Breaking** section that lists incompatible changes. When a
   and re-reads the prototype comments at "GO plan", "GO implement" and before the first interface phase (`prototype wait` reads them only in its waiting window).
 - Prototype toolbar: the state of a pressed toggle (`aria-pressed="true"`, `aria-expanded="true"`, also "Wątki") is visible: the rule has a higher specificity than `.btn-outline` of `components.css`, and a ring and a heavier weight
   mark it, not only the background. The comment popup is smaller (`textarea` `min-height` 3 rem, popup `min(20rem, …)`). Existing prototypes get `prototype.css` after `skillsync prototype migrate`.
-
 - `prototype writing start` on a valid marker keeps `since` (the start of the writing) and `by` (unless `--by` is given) and sets the new field `renewedAt`; the window
   of at most one hour counts from `renewedAt`, so a long writing renewed again and again stays one marker. `writing` in `list`, the API and `status` has `renewedAt`.
 - `silence` (no report) is also off while a blocking question to an expert is open (the session waits explicitly); the card title gets "⏳ Czeka" only for items that wait for a person, not for the writing item.
 - The engine banner says "Agent jeszcze pisze ekrany (do HH:MM)" (the hour from `expiresAt`, browser time). The 409 `writing_in_progress` has a Polish message for people
   ("Agent jeszcze pisze ekrany tego prototypu (do HH:MM)…", host time of the server), so a copy of the engine without the banner shows readable text; the code and fields are unchanged.
-
-### Compatibility
-- `untrusted` and `notice` in `question list|show|export|wait` are additive (the `expert-questions/1` document keeps its schema version; two keys come first). The text of `notice` for comments of a prototype is unchanged.
-
-- `untrusted` and `notice` are additive; a consumer that ignores unknown keys is not affected (the key order changed only by two new keys near the top).
-- `reason` in the `withdraw` operation is a new optional field of `questions.json`: an older version rejects (its merge driver) a file that holds it, so update the core before using `--reason` in a shared project.
-
-- `.writing.json` stays `version: 1`; `renewedAt` is optional. A core 1.3.0 reads a file renewed for more than an hour after `since` as no marker (acceptance unblocks); do not mix
-  versions while the agent writes for longer than an hour. Times outside 0…2^53 (ms) make the file invalid.
+- Docs: `/_experts/<slug>` bez sesji to 302, zły slug 404 zawsze, nieistniejący poprawny slug po zalogowaniu to pusta strona; `plans[].run` i `run.id` strony statusu są `null` bez linii `Przebieg:` w planie (opis, bez zmiany zachowania).
+- `answerLine` (`question show`/`wait`) podaje czas odpowiedzi lokalny z offsetem (`2026-11-13T13:30+01:00`) zamiast UTC z „Z”; dziennik, kontrakt `expert-questions/1` i `record` bez zmian (starsze wiersze z „Z” zostają poprawne).
+- `checkpoint`: komunikat o złym identyfikatorze nazywa pole (`--step`, `--run-id`) i wzorzec `[A-Za-z0-9][A-Za-z0-9_.-]{0,79}`.
 
 ### Fixed
 
 - Test `dashboard_questions.test_watcher_follows_questions_files` no longer fails on macOS (`/var` versus `/private/var`): the test resolves its temporary root like the watcher does (the watcher is unchanged).
 
-- Klucz manifestu `prototype.port` (1024-65535) i flaga `dashboard serve --prototype-port`: port serwera prototypów, który sprawdza strona statusu (dotąd na sztywno 5130; domyślnie nadal 5130). `prototype serve` bierze ten klucz jako domyślny port (flaga `--port` wygrywa, bez klucza 4445), więc serwer i strona statusu zgadzają się co do portu; `doctor` waliduje wartość.
-- `question show` ma pole `question` (pierwsze pytanie), a `question wait` pole `questions[]`: oba mają teraz `question`, `questions[]` i `answerLine` na górze (zmiana addytywna, żadne pole nie znika).
-- `question add`: pole `ignored` (utworzone pliki ignorowane przez git, czyli lock); `created` = `files` + `ignored` przy pierwszym użyciu.
-- `skillsync checkpoint` i `resume`: flaga `--manifest PLIK` (manifest projektu spoza repozytorium, np. dla publicznego rdzenia bez `.github/.skillsync.yaml`); bez flagi zachowanie bez zmian.
-- `prototype.public_url` (manifest) i zmienna `SKILLSYNC_PROTOTYPE_PUBLIC_URL` (wygrywa): adres serwera prototypów dla ekspertów za tunelem ssh. Używają go `prototype question url`, pole `url` w `question add` (także bez lokalnego serwera) i dodatkowa linia „Adres publiczny” komunikatu `prototype serve`; błędna zmienna to BLOCKED `invalid_public_url`.
+### Compatibility
 
-### Changed
-
-- Docs: `/_experts/<slug>` bez sesji to 302, zły slug 404 zawsze, nieistniejący poprawny slug po zalogowaniu to pusta strona; `plans[].run` i `run.id` strony statusu są `null` bez linii `Przebieg:` w planie (opis, bez zmiany zachowania).
-- `answerLine` (`question show`/`wait`) podaje czas odpowiedzi lokalny z offsetem (`2026-11-13T13:30+01:00`) zamiast UTC z „Z”; dziennik, kontrakt `expert-questions/1` i `record` bez zmian (starsze wiersze z „Z” zostają poprawne).
-- `checkpoint`: komunikat o złym identyfikatorze nazywa pole (`--step`, `--run-id`) i wzorzec `[A-Za-z0-9][A-Za-z0-9_.-]{0,79}`.
+- `untrusted` and `notice` (`prototype comments`, `prototype wait`, `question list|show|export|wait`) are additive; a consumer that ignores unknown keys is not affected (two keys come first in the report; the `expert-questions/1` document keeps its schema version). The text of `notice` is constant and has one source (`UNTRUSTED_NOTICES`).
+- `reason` in the `withdraw` operation is a new optional field of `questions.json`: an older version rejects (its merge driver) a file that holds it, so update the core before using `--reason` in a shared project.
+- `.writing.json` stays `version: 1`; `renewedAt` is optional. A core 1.3.0 reads a file renewed for more than an hour after `since` as no marker (acceptance unblocks); do not mix
+  versions while the agent writes for longer than an hour. Times outside 0…2^53 (ms) make the file invalid.
+- `prototype.css` and the engine (`prototype.js`) change in this release (toolbar state of pressed toggles, smaller comment popup, the writing banner with the hour and the "Zwolnij" button): existing prototypes get them after `skillsync prototype migrate`; an older copy of the engine shows the readable 409 message of the server.
+- `eta` in the status JSON (`schema: 1`) and `prototype.writing` are additive; `waiting` has two new sources (`writing`, `expert`) and a new link kind (`expert`).
+- `answerLine` gives the time of the answer in local time with an offset; older `[EKSPERT]` rows with `Z` stay valid, the journal, `record` and the `expert-questions/1` contract are unchanged.
 
 ### Breaking
 
 None.
-
-- Dashboard: `eta` (JSON schema 1, addytywnie) i toast „<operacja>, koniec ok. HH:MM” z szacunku, który agent zapisuje przed długą operacją w checkpoincie przebiegu (`eta: <operacja> do HH:MM`); po przekroczeniu toast mówi „przekroczono ETA o N min”, znika po następnym checkpoincie bez `eta:`, z `czeka:` i po zamknięciu planu. Serwer nie czyta zegara: przekroczenie liczy renderer. Skille `feature` i `prototype`: reguła „szacuj przed startem, aktualizuj przy przekroczeniu”.
 
 ## [1.3.0] - 2026-11-13
 
