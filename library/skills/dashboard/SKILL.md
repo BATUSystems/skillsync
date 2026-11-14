@@ -271,6 +271,7 @@ Widz zdalny: pole `approvals.viewer` (`dashboard serve --read-host`; starszy ser
 Sekcje aktów rysuje renderer (`readinessTile`, `substepsBlock`, funkcje modułu z kontekstem egzemplarza):
 Readiness w akcie II (`readiness`; link `readiness.source` jak inne dokumenty: podgląd z `loadDoc`, inaczej `openDoc`), Podkroki i czas w akcie III
 (`substeps`, „brak danych” przy `missingData`; rozwinięcie `details` pamiętane w stanie renderera między `update()`),
+Baner czekania ma też pozycje z plików: „agent pisze ekrany (do HH:MM)” (`source: writing`, ważny znacznik `.writing.json`, zastępuje wezwanie do akceptacji prototypu) i „odpowiedź eksperta (N blokujących)” (`source: expert`, gdy `expertQuestions.blocking > 0` bez `czeka:` w checkpoincie), z odnośnikiem jak w toaście pytań; pole `prototype.writing` niesie `{since, expiresAt, renewedAt}`.
 Czas pracy i czekania w akcie III (`timing`: czas pracy i czekania na człowieka per faza i suma przebiegu z checkpointów `czeka:` i `approvals.jsonl`; okno bez zamknięcia i krok bez znaczników to „nieznane”, nigdy zero ani szacunek; sekcja `timingBlock`).
 Poniżej 500 px szerokości akty I i II stoją w jednej kolumnie.
 

@@ -109,14 +109,13 @@ przyjmuje według tabeli stanów i nazywa w odpowiedzi, na co je przyjął; stan
 Spec ma trzy klasy pytań (blokujące `Q<n>`, `[ZAŁOŻENIE]`, `[EKSPERT]`). Blokujące: `- Q<n>: <pytanie>`; dopóki jest otwarte, spec jest „draft z Q” i agent staje (STOP).
 Założenia: `- Q<n> [ZAŁOŻENIE]: <pytanie> — przyjęte: <wartość>`; nie zatrzymują „draft z Q”, ale zostają widoczne do korekty.
 Wiersz jest parsowany dzieleniem po ostatnim ` — przyjęte: `. Pytań o kontrakt, dane, migrację i bezpieczeństwo nie wolno
-oznaczać `[ZAŁOŻENIE]`. Parser `Q` należy do strony statusu, nie do kodu rdzenia (`readiness` go nie egzekwuje).
+oznaczać `[ZAŁOŻENIE]`; to decyzja programisty, zadawana jako zwykłe `Q` w sesji, nie ekspertowi. Parser `Q` należy do strony statusu, nie do kodu rdzenia (`readiness` go nie egzekwuje).
 
 Klasa `[EKSPERT]` to wiersz: pytanie domenowe, na które odpowiada ekspert, a nie programista
 ([prototypes](prototypes.md#pytania-do-eksperta), rekord [expert-questions](domain/expert-questions.md)). Czekające pytanie jest zwykłym
 `- Q<n>: … (ekspert: qn-<hex>)` albo `- Q<n> [ZAŁOŻENIE]: … (ekspert: qn-<hex>) — przyjęte: <wartość>`; po odpowiedzi agent zastępuje je wierszem
 `- Q<n> [EKSPERT]: … (ekspert: qn-<hex>) — odpowiedź: <wartość> — ekspert: <login>, <RRRR-MM-DDTHH:MMZ>`. Parser strony statusu pomija wiersz
-`[EKSPERT]` jak `[ROZSTRZYGNIĘTE]`. Znane ograniczenie: strona statusu nie rozróżnia „czeka na eksperta”, więc blokujące pytanie z `(ekspert: …)`
-pokazuje jako pytanie do odpowiedzi przez użytkownika (osobny wiersz na stronie statusu to dług na kolejne wydanie).
+`[EKSPERT]` jak `[ROZSTRZYGNIĘTE]`. Strona statusu pokazuje otwarte pytania blokujące do eksperta jako osobną pozycję czekania („odpowiedź eksperta (N blokujących)”, z odnośnikiem do strony pytań), gdy najnowszy checkpoint nie ma `czeka:`.
 
 ### „GO plan” i commit
 

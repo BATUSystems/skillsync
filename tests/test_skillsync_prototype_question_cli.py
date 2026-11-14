@@ -674,9 +674,10 @@ class ReadCommandsTests(QuestionCase):
         report = self.q('export')
         self.assertEqual((report['schema'], report['questions']), ('expert-questions/1', []))
 
-    def test_export_adds_only_the_status_field_over_the_contract(self):
+    def test_export_adds_only_the_status_and_the_untrusted_marker_over_the_contract(self):
         report = self.q('export')
-        self.assertEqual(set(report) - {'status'}, {'schema', 'project', 'questions'})
+        self.assertEqual(set(report) - {'status', 'untrusted', 'notice'}, {'schema', 'project', 'questions'})
+        self.assertEqual(list(report)[:2], ['untrusted', 'notice'])
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -717,6 +718,70 @@ class RecordTests(QuestionCase):
         self.assertEqual(self.file_bytes(), before)
         self.answer()
         self.rec(QA, 12)  # kontrola: po odpowiedzi przechodzi
+
+
+class WithdrawReasonTests(QuestionCase):
+    """QUICK-140 (S15): optional `question withdraw --reason` (field `reason` of the `withdraw` operation)."""
+
+    def test_reason_is_stored_reported_and_shown(self):
+        self.add()
+        out = self.q('withdraw', QA, '--reason', 'pytanie zdublowane z Q2')
+        self.assertEqual(out['reason'], 'pytanie zdublowane z Q2')
+        self.assertEqual(self.question()['state'], 'withdrawn')
+        shown = self.q('show', QA)['questions'][0]
+        self.assertEqual(shown['withdrawn']['reason'], 'pytanie zdublowane z Q2')
+
+    def test_without_reason_nothing_changes(self):
+        self.add()
+        out = self.q('withdraw', QA)
+        self.assertNotIn('reason', out)
+        self.assertEqual(self.question()['state'], 'withdrawn')
+
+    def test_reason_length_and_blank_are_refused_and_write_nothing(self):
+        self.add()
+        before = self.file_bytes()
+        for value in ('', '   ', 'x' * 501):
+            with self.subTest(length=len(value)):
+                out = self.q('withdraw', QA, '--reason', value, code=2)
+                self.assertEqual(out['error'], 'invalid_reason')
+                self.assertEqual(self.file_bytes(), before)
+        self.q('withdraw', QA, '--reason', 'x' * 500)   # kontrola: dokładnie 500 przechodzi
+
+    def test_a_secret_in_the_reason_is_refused_unless_forced(self):
+        self.add()
+        before = self.file_bytes()
+        secret = 'token ' + 'ghp_' + 'a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8'
+        out = self.q('withdraw', QA, '--reason', secret, code=2)
+        self.assertEqual((out['error'], out['fields']), ('secret_detected', ['reason']))
+        self.assertEqual(self.file_bytes(), before)
+        forced = self.q('withdraw', QA, '--reason', secret, '--force')
+        self.assertTrue(forced['warnings'])
+
+    def test_a_repeated_withdraw_is_idempotent_and_keeps_the_first_reason(self):
+        self.add()
+        self.q('withdraw', QA, '--reason', 'pierwszy powód')
+        before = self.file_bytes()
+        again = self.q('withdraw', QA, '--reason', 'inny powód')
+        self.assertFalse(again['changed'])
+        self.assertEqual(self.file_bytes(), before)
+        self.assertEqual(again['reason'], 'pierwszy powód')
+        self.assertTrue(any('new reason was not stored' in item for item in again['warnings']), again)
+
+    def test_a_reason_for_a_question_withdrawn_without_one_warns_that_it_was_not_stored(self):
+        self.add()
+        self.q('withdraw', QA)
+        again = self.q('withdraw', QA, '--reason', 'za późno', '--force')
+        self.assertNotIn('reason', again)
+        self.assertEqual([item for item in again['warnings'] if item.startswith('--force')], [])
+        self.assertTrue(any('not stored' in item for item in again['warnings']))
+
+    def test_the_length_counts_utf16_units_like_the_server(self):
+        self.add()
+        before = self.file_bytes()
+        out = self.q('withdraw', QA, '--reason', '\U0001F600' * 300, code=2)   # 300 emoji = 600 UTF-16 units
+        self.assertEqual(out['error'], 'invalid_reason')
+        self.assertEqual(self.file_bytes(), before)
+        self.q('withdraw', QA, '--reason', '\U0001F600' * 250)   # 500 units: exactly the limit
 
 
 class WithdrawTests(QuestionCase):

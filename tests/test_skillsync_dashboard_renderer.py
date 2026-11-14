@@ -893,6 +893,27 @@ function summary(m) {
     }
     ex.stab = stab;
   }
+  // WRITING-UX: pozycje „sesja pracuje” (znacznik zapisu) i „odpowiedź eksperta” w banerze czekania.
+  {
+    const origin = { prototypeOrigin: (port) => `http://127.0.0.1:${port}` };
+    const items = (d, deps) => {
+      const m = mount(d, { now: NOW['questions'], deps: deps || {} });
+      return m.root.querySelectorAll('#waitBanner .wait-item').map((n) => ({ text: text(n), cls: n.getAttribute('class'),
+        hrefs: n.querySelectorAll('a').map((a) => a.getAttribute('href')), expertLinks: n.querySelectorAll('[data-wait-expert]').length }));
+    };
+    const base = clone(F['questions']); base.waiting = []; base.expertQuestions = { open: 0, blocking: 0, runs: [] };
+    const writing = clone(base);
+    writing.prototype = Object.assign({}, writing.prototype, { slug: 'run-alpha', writing: { since: 1, expiresAt: 2, renewedAt: 1 } });
+    writing.waiting = [{ what: 'agent pisze ekrany (do 14:25)', source: 'writing', since: '14:10', action: 'Agent pisze ekrany prototypu; akceptacja wróci, gdy skończy. Nic nie musisz robić.', link: { kind: 'prototype', slug: 'run-alpha' } }];
+    const expert = clone(base);
+    expert.waiting = [{ what: 'odpowiedź eksperta (1 blokujących)', source: 'expert', since: null, action: 'Odpowiedz na pytania eksperta na stronie pytań; sesja czeka na odpowiedź.', link: { kind: 'expert', slug: 'run-alpha', url: '/_experts/run-alpha' } }];
+    const many = clone(expert); many.waiting[0].link = { kind: 'expert', slug: null, url: '/_experts' };
+    const hostile = clone(expert); hostile.waiting[0].link.url = '/_experts/../x';
+    const titleOf = (d) => { const m = mount(d, { now: NOW['questions'] }); return m.calls.titles[m.calls.titles.length - 1]; };
+    const wtitle = { writing: titleOf(writing), expert: titleOf(expert) };
+    ex.wux = { titles: wtitle, writing: items(writing, Object.assign({ prototypeUrl: (port, slug) => `http://127.0.0.1:${port}/${slug}/` }, origin)), expert: items(expert, origin), expertNoOrigin: items(expert), expertMany: items(many, origin),
+      expertHostile: items(hostile, origin), expertBadOrigin: items(expert, { prototypeOrigin: () => 'javascript:alert(2)' }) };
+  }
   out.extra = ex;
   // deps.now jest wymagane (renderer nie czyta zegara sam).
   try { R.create(makeDoc().createElement('div'), {}); out.nowRequired = false; } catch (e) { out.nowRequired = e instanceof TypeError; }
@@ -1185,6 +1206,26 @@ class RendererNodeTests(unittest.TestCase):
         for tag in ("img", "script", "b", "i"):
             self.assertNotIn(tag, x["tags"])
         self.assertNotIn("<img", x["banner"])
+
+    def test_waiting_banner_writing_and_expert_items(self) -> None:
+        w = self.out["extra"]["wux"]
+        writing = w["writing"][0]
+        self.assertNotIn("⏳", w["titles"]["writing"], "praca sesji nie jest czekaniem na człowieka")
+        self.assertIn("⏳ Czeka", w["titles"]["expert"])
+        self.assertIn("Sesja pracuje od 14:10: agent pisze ekrany (do 14:25)", writing["text"])
+        self.assertNotIn("czeka na Ciebie", writing["text"])
+        self.assertIn("Zniknie, gdy agent skończy pisać albo znacznik wygaśnie", writing["text"])
+        self.assertIn("znacznik zapisu ekranów prototypu", writing["text"])
+        self.assertEqual(writing["hrefs"], ["http://127.0.0.1:5130/run-alpha/"])
+        expert = w["expert"][0]
+        self.assertIn("Sesja czeka na Ciebie: odpowiedź eksperta (1 blokujących)", expert["text"])
+        self.assertEqual(expert["hrefs"], ["http://127.0.0.1:5130/_experts/run-alpha"])
+        self.assertEqual(expert["expertLinks"], 1)
+        self.assertEqual(w["expertMany"][0]["hrefs"], ["http://127.0.0.1:5130/_experts"])
+        self.assertEqual(w["expertHostile"][0]["hrefs"], ["http://127.0.0.1:5130/_experts"], "zła ścieżka wraca do listy")
+        self.assertEqual(w["expertNoOrigin"][0]["hrefs"], [], "bez adresu serwera prototypów nie ma odnośnika")
+        self.assertEqual(w["expertNoOrigin"][0]["expertLinks"], 0)
+        self.assertNotIn("javascript", " ".join(w["expertBadOrigin"][0]["hrefs"]))
 
     def test_questions_toast_counts_all_runs(self) -> None:
         d = self.fixtures["questions"]["expertQuestions"]
