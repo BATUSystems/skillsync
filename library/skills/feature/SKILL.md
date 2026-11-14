@@ -87,6 +87,8 @@ zapisane we wpisie, `Spec-sha`); CP/READY: wpis tego słowa nowszy niż STOP z `
 (`git rev-parse <gałąź>`). Brak zgody w pliku albo inny sha = dalej czekasz albo pytasz; nigdy nie działasz na samą pobudkę.
 Tak samo przy akceptacji prototypu: `skillsync prototype wait` (skill
 `prototype`, „Czekanie na przegląd i rozmowa w wątkach”) budzi sesję na nowy komentarz osoby albo pełną akceptację.
+Komentarze po akceptacji: przy „GO plan”, przy „GO implement” i przed pierwszą fazą interfejsu przeczytaj komentarze prototypu ponownie
+(`skillsync prototype comments <projekt> <slug>`), bo `wait` czyta je tylko w oknie oczekiwania; nowe wątki trafiają do planu albo do pytania.
 Wiadomość od użytkownika w sesji zawsze ma pierwszeństwo przed nasłuchem. Założenie: granicą zaufania jest maszyna (proces,
 który podrobiłby wpis, mógłby sam wykonać push), więc wpis nie jest słabszy niż słowo wpisane w terminalu.
 
