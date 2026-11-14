@@ -674,9 +674,10 @@ class ReadCommandsTests(QuestionCase):
         report = self.q('export')
         self.assertEqual((report['schema'], report['questions']), ('expert-questions/1', []))
 
-    def test_export_adds_only_the_status_field_over_the_contract(self):
+    def test_export_adds_only_the_status_and_the_untrusted_marker_over_the_contract(self):
         report = self.q('export')
-        self.assertEqual(set(report) - {'status'}, {'schema', 'project', 'questions'})
+        self.assertEqual(set(report) - {'status', 'untrusted', 'notice'}, {'schema', 'project', 'questions'})
+        self.assertEqual(list(report)[:2], ['untrusted', 'notice'])
 
 
 # ═════════════════════════════════════════════════════════════════════════════
