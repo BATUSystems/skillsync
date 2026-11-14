@@ -7,7 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / 'tests' / 'fixtures' / 'dashboard'
 CONTRACT_DOC = ROOT / 'docs' / 'dashboard-contract.md'
-CASES = ('empty', 'plan-in-progress', 'spec-act', 'run-mode', 'silence', 'readiness-blocked', 'questions', 'cp-ready', 'timing')
+CASES = ('empty', 'plan-in-progress', 'spec-act', 'run-mode', 'silence', 'readiness-blocked', 'questions', 'cp-ready', 'timing', 'eta')
 GENERATED_BY_LINK = {'.mcp.json', '.claude', '.github', '.gitignore', 'AGENTS.md', 'CLAUDE.md'}
 FORBIDDEN_IN_INPUT = ('/home/', '@')  # ogólne wzorce; nazwy prywatne pilnuje leakcheck (strażnik), nie źródło testu
 MODES = {'plan', 'spec', 'run', 'none'}
@@ -27,8 +27,9 @@ TOP = {
     'git': dict, 'plans': list, 'planAuto': bool, 'mode': str, 'plan': (dict, type(None)), 'spec': dict, 'run': dict,
     'progress': dict, 'acts': list, 'waiting': list, 'silence': (dict, type(None)), 'approvals': dict, 'delivery': dict,
     'session': dict, 'prototype': dict, 'docs': list, 'readiness': dict, 'assumptions': dict, 'blockingQuestions': dict,
-    'expertQuestions': dict, 'substeps': list, 'timing': dict,
+    'expertQuestions': dict, 'substeps': list, 'timing': dict, 'eta': (dict, type(None)),
 }
+ETA = ({'operation': str, 'until': str, 'untilIso': STR_OR_NONE, 'since': str}, {})
 # Pola obiektów zagnieżdżonych: wymagane (typ) i opcjonalne (opcjonalne tylko gdy opisane w kontrakcie jako opcjonalne).
 NESTED = {
     'app': ({'name': str, 'version': str}, {}),
@@ -172,6 +173,8 @@ class DashboardContract(unittest.TestCase):
                 self.each(data['assumptions']['items'], ASSUMPTION, 'assumptions.items')
                 self.each(data['blockingQuestions']['items'], BLOCKING, 'blockingQuestions.items')
                 self.each(data['expertQuestions']['runs'], EXPERT_RUN, 'expertQuestions.runs')
+                if data['eta'] is not None:
+                    self.check_shape(data['eta'], ETA, 'eta')
 
     def test_new_fields_are_consistent(self):
         for case in CASES:

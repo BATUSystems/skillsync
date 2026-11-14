@@ -13,6 +13,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 - `skills/dashboard`: pozycje czekania `writing` i `expert` (z plików), pole `prototype.writing`, renderer z odnośnikiem do strony pytań w banerze czekania.
 - `skills/prototype/assets/repo/prototype.js`: baner „do HH:MM”, przycisk „Zwolnij” dla roli `acceptor` i `developer`; istniejące prototypy dostają silnik po `skillsync prototype migrate`.
 
+### Added
+- `skills/dashboard`: toast „szacowany koniec” (`eta:` w checkpoincie, pole `eta` JSON); `skills/feature`, `skills/prototype`: reguła „szacuj przed startem długiej operacji i zapisz `eta: <operacja> do HH:MM` w checkpoincie, aktualizuj przy przekroczeniu, czas z `date`”.
+
 ## [1.3.0] - 2026-11-13
 
 ### Added

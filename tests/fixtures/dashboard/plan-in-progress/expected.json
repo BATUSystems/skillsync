@@ -241,6 +241,7 @@
       "label": "Przebieg 2026-01-10-demo-feature"
     }
   ],
+  "eta": null,
   "expertQuestions": {
     "blocking": 0,
     "open": 0,
