@@ -161,6 +161,8 @@ class LingeringCloseMixin:
         return ok
 
     def handle_one_request(self):
+        # Refusals before `parse_request` finishes (414, 431, a bad request line) are answered by `send_error`, which closes the
+        # connection; they do not linger (the body of such a request is not declared in a header the server accepted).
         self._body_mark = None
         self._linger = False
         super().handle_one_request()

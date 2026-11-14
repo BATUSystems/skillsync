@@ -82,13 +82,13 @@ class LingeringClose(unittest.TestCase):
         return server.port
 
     def test_the_cure_delivers_the_refusal_after_a_whole_body_was_sent(self):
-        data, reset = post_and_read(self.serve(_Lingering))
+        data, reset = post_and_read(self.serve(_Lingering), body=BIG)   # over the handler's own read buffer on every Python
         self.assertFalse(reset)
         self.assertTrue(data.startswith(b'HTTP/1.1 403'), data[:60])
         self.assertTrue(data.endswith(b'{"error": "forbidden"}'), data[-40:])
 
     def test_a_chunked_body_is_drained_within_the_limit_too(self):
-        chunked = b'%x\r\n' % len(BODY) + BODY + b'\r\n0\r\n\r\n'
+        chunked = b'%x\r\n' % len(BIG) + BIG + b'\r\n0\r\n\r\n'
         data, reset = post_and_read(self.serve(_Lingering), body=chunked, chunked=True)
         self.assertFalse(reset)
         self.assertTrue(data.startswith(b'HTTP/1.1 403'), data[:60])
@@ -154,9 +154,9 @@ class _Handlers:
             self.wfile.write(payload)
 
 
-def keep_alive_exchange(port, body, second=True):
+def keep_alive_exchange(port, body, second=True, path='/x'):
     """POST `body` on a keep-alive connection, read one response, then see what the server does with the connection."""
-    head = (b'POST /x HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: ' + str(len(body)).encode() + b'\r\n\r\n')
+    head = (b'POST ' + path.encode() + b' HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: ' + str(len(body)).encode() + b'\r\n\r\n')
     with socket.create_connection(('127.0.0.1', port), timeout=5) as sock:
         sock.sendall(head + body)
         data = b''
@@ -280,7 +280,7 @@ class PrototypeServerLingers(prototype_tests.ServerCase):
 
 
 class PrototypeServerOtherRefusals(prototype_tests.ServerCase):
-    def test_chunked_without_a_length_is_411_and_the_connection_is_closed(self):
+    def test_chunked_body_is_refused_and_drained_on_the_real_server(self):   # no session: the refusal is 401, before the 411
         spy = SpyLinger(self)
         head = (b'POST /_api/v1/prototypes/demo/operations HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\n'
                 b'Transfer-Encoding: chunked\r\n\r\n')
@@ -300,7 +300,7 @@ class PrototypeServerOtherRefusals(prototype_tests.ServerCase):
         self.assertIsNotNone(spy.wait())
 
     def test_an_unknown_endpoint_with_a_body_is_404_and_closed_not_kept_alive(self):
-        header, after = keep_alive_exchange(self.server.port, BIG[:100 * 1024], second=True)
+        header, after = keep_alive_exchange(self.server.port, BIG[:100 * 1024], second=True, path='/_api/v1/nope')
         self.assertTrue(header.startswith(b'HTTP/1.'), header[:30])
         self.assertEqual(after, 'closed')
 
