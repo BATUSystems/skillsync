@@ -40,9 +40,29 @@ FIX = HERE / "fixtures" / "dashboard_server"
 ASSETS, DESCRIPTIONS = srv.skill_assets(as_layerset(ROOT / "library"))
 
 
+TEST_PORTS_ENV = "SKILLSYNC_TEST_DASHBOARD_PORTS"
+
+
+def port_range() -> range:
+    """Porty dla testów: 5101–5199 poza 5140 albo wycinek z SKILLSYNC_TEST_DASHBOARD_PORTS (`5110-5124`, w granicach
+    5100–5199, bo `dashboard serve` nie przyjmie innych); osobny wycinek na bieg pozwala puścić kilka biegów naraz na jednym hoście."""
+    raw = os.environ.get(TEST_PORTS_ENV)
+    if raw is None:
+        return range(5101, 5200)
+    parts = raw.split("-")
+    try:
+        low, high = (int(part) for part in parts) if len(parts) == 2 else (None, None)
+    except ValueError:
+        low = high = None
+    if low is None or not 5100 <= low <= high <= 5199:
+        raise ValueError(f"{TEST_PORTS_ENV}={raw!r}: podaj zakres <od>-<do> w granicach 5100-5199, np. 5110-5124")
+    return range(low, high + 1)
+
+
 def free_port() -> int:
-    """Wolny port z zakresu 5100–5199 poza 5140 (domyślnym portem dashboardu)."""
-    for port in range(5101, 5200):
+    """Wolny port z zakresu 5100–5199 poza 5140 (domyślnym portem dashboardu) albo z SKILLSYNC_TEST_DASHBOARD_PORTS."""
+    ports = port_range()
+    for port in ports:
         if port == 5140:
             continue
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -51,7 +71,7 @@ def free_port() -> int:
             except OSError:
                 continue
             return port
-    raise RuntimeError("brak wolnego portu 5100–5199")
+    raise RuntimeError(f"brak wolnego portu {ports.start}-{ports.stop - 1} ({TEST_PORTS_ENV})")
 
 
 PLAN = "docs/plans/2026-01-10-demo-etap-1.md"

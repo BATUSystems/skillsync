@@ -97,5 +97,79 @@ class QuestionsStoreSharesThePrimitiveTests(unittest.TestCase):
                 self.assertEqual(caught.exception.status, 503)
 
 
+class WaiterFollowsAnUnlinkedLockFileTests(unittest.TestCase):
+    """A holder that unlinks the lock file (the orphan sweep of the questions store) must not leave waiters holding a lock
+    on the unlinked inode: every `FileLock` re-checks, after `flock`, that the path still names the file it locked."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix='filelock-sweep-')
+        self.addCleanup(self.tmp.cleanup)
+        self.path = os.path.join(self.tmp.name, 'questions.json.lock')
+
+    def test_a_default_waiter_locks_the_recreated_file_after_the_holder_unlinked_it(self):
+        import threading
+        holder_in, waiter_started, result = threading.Event(), threading.Event(), {}
+
+        def waiter():
+            lock = ps.FileLock(self.path, 10)
+            waiter_started.set()
+            lock.__enter__()
+            result['same'] = lock._same_file(lock._fd)
+            result['exists'] = os.path.exists(self.path)
+            lock.__exit__(None, None, None)
+
+        with mock.patch.object(ps, '_process_lock', side_effect=lambda path: threading.Lock()):
+            holder = ps.FileLock(self.path, 10)
+            holder.__enter__()  # the sweeper holds the lock ...
+            thread = threading.Thread(target=waiter)
+            thread.start()
+            waiter_started.wait(5)
+            time.sleep(0.3)  # ... the waiter is blocked in flock on the same inode ...
+            os.unlink(self.path)  # ... and the sweeper removes the orphan lock file
+            holder.__exit__(None, None, None)
+            thread.join(10)
+        self.assertEqual(result, {'same': True, 'exists': True}, 'the waiter re-opened the path instead of keeping the unlinked inode')
+
+    def test_the_orphan_sweep_removes_only_a_free_lock_without_its_data_file(self):
+        with tempfile.TemporaryDirectory(prefix='filelock-orphan-') as directory:
+            store = ps.QuestionsStore(directory)
+            open(store.lock_path, 'w').close()
+            self.assertTrue(store.sweep_orphan_lock())
+            self.assertFalse(os.path.exists(store.lock_path))
+            open(store.lock_path, 'w').close()
+            with ps.FileLock(store.lock_path, 5):
+                self.assertFalse(store.sweep_orphan_lock(), 'a held lock is left alone')
+            self.assertTrue(os.path.exists(store.lock_path))
+
+    def test_the_sweep_unlinks_under_the_lock_so_a_waiter_never_keeps_the_dead_inode(self):
+        import threading
+        with tempfile.TemporaryDirectory(prefix='filelock-orphan2-') as directory:
+            store = ps.QuestionsStore(directory)
+            open(store.lock_path, 'w').close()
+            real = ps.FileLock.__exit__
+            waiter_done, result = threading.Event(), {}
+
+            def waiter():
+                lock = ps.FileLock(store.lock_path, 10)
+                lock.__enter__()
+                result['same'] = lock._same_file(lock._fd)
+                lock.__exit__(None, None, None)
+                waiter_done.set()
+
+            def exit_with_a_waiter(lock, *exc):
+                if lock.unlink and 'thread' not in result:  # the sweeper is leaving: start a waiter that blocks on the old inode
+                    result['thread'] = threading.Thread(target=waiter)
+                    result['thread'].start()
+                    time.sleep(0.3)
+                return real(lock, *exc)
+
+            with mock.patch.object(ps, '_process_lock', side_effect=lambda path: threading.Lock()), \
+                    mock.patch.object(ps.FileLock, '__exit__', exit_with_a_waiter):
+                self.assertTrue(store.sweep_orphan_lock())
+            result['thread'].join(10)
+            self.assertTrue(waiter_done.is_set())
+            self.assertEqual(result['same'], True)
+
+
 if __name__ == '__main__':
     unittest.main()

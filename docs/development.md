@@ -63,6 +63,7 @@ python3 scripts/check_skips.py run.log --system ubuntu-latest --mode copy
 | `SKILLSYNC_TEST_LIBRARY` | katalog warstwy `core` z szablonami i skillami (`library/` w repo); część testów pomija się bez niej |
 | `SKILLSYNC_TEST_NODE` | ścieżka do Node ≥ 18 (testy silnika prototypów) |
 | `SKILLSYNC_E2E_CHROME` | binarka Chrome/Chromium dla testów E2E; bez niej przypadki z przeglądarką się pomijają |
+| `SKILLSYNC_TEST_DASHBOARD_PORTS` | zakres portów testów dashboardu, `<od>-<do>` w granicach 5100-5199 (domyślnie 5101-5199 poza 5140): osobny wycinek na bieg pozwala puścić kilka biegów testów naraz na jednym hoście (inaczej `free_port` zgłasza „brak wolnego portu”) |
 | `SKILLSYNC_E2E_PORTS` | porty E2E `<chrome>,<serwer1>,<serwer2>` (domyślnie `9333,4445,4446`) |
 | `SKILLSYNC_E2E_RESULTS_DIR`, `SKILLSYNC_E2E_ONLY` | katalog wyników JSON; lista ID scenariuszy (tylko do debugowania) |
 | `SKILLSYNC_PROTOTYPE_ENGINE_V2_PATH` | plik silnika prototypów ładowany przez testy modułu silnika (domyślnie kopia z `tests/fixtures/prototype/engine-v2/`) |

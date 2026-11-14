@@ -2015,7 +2015,8 @@ class FileLock(object):
     system locks raises `LockUnavailable` at once.
 
     `unlink=True` removes the lock file on release (the approvals lock: a transient file next to the data, like the
-    older O_EXCL lock). That is safe because the holder re-checks, after `flock`, that the path still names the inode it
+    older O_EXCL lock); a holder may also set `lock.unlink = True` while it holds the lock (the orphan sweep of the
+    questions store). That is safe because EVERY lock re-checks, after `flock`, that the path still names the inode it
     locked (a waiter that opened the old file just before it was unlinked retries on the new one); on Windows the
     file is removed after the handle is closed and a failure (someone else has it open) is harmless."""
 
@@ -2056,7 +2057,7 @@ class FileLock(object):
                             os.close(fd)
                             raise LockTimeout()
                         time.sleep(0.02)
-                if not self.unlink or os.name == 'nt' or self._same_file(fd):
+                if os.name == 'nt' or self._same_file(fd):
                     break
                 _unlock_fd(fd)  # the file was unlinked (and maybe recreated) under us: lock the one the path names now
                 os.close(fd)
@@ -3086,10 +3087,10 @@ class QuestionsStore(object):
         if os.path.lexists(self.path) or not os.path.lexists(self.lock_path):
             return False
         try:
-            with FileLock(self.lock_path, 0.2):
+            with FileLock(self.lock_path, 0.2) as lock:
                 if os.path.lexists(self.path):
                     return False
-                os.unlink(self.lock_path)
+                lock.unlink = True  # removed on release, still under the lock; waiters re-open the path (see FileLock)
         except (LockTimeout, OSError):
             return False
         return True
