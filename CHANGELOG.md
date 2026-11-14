@@ -18,6 +18,10 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 - `FileLock`: brak wsparcia blokad przez system plików (ENOTSUP, EOPNOTSUPP, ENOSYS; ENOLCK po połowie czasu oczekiwania) daje od razu `LockUnavailable` (503 `lock_unsupported`, podklasa `LockTimeout`) zamiast czekania do timeoutu; pozostałe błędy to nadal rywalizacja. Dotyczy blokad pytań do eksperta, komentarzy, użytkowników (także poleceń `prototype user`) oraz zgód.
 - `prototype serve` i `dashboard serve`: SIGINT (Ctrl+C) albo SIGTERM tuż po starcie, między instalacją handlera, ogłoszeniem adresu a `serve_forever`, kończy serwer czysto (PASS, `stopped`) zamiast tracebacku i kodu -2; handler jest instalowany przed ogłoszeniem adresu, a start od instalacji handlera do `serve_forever` leży pod `try`. W CI padło tak raz na macOS (okno kilkunastu milisekund).
 
+### Changed
+
+- CI (macOS): `timeout-minutes` jobu `test` dla macOS 30 na 45 (testy trwają tam 20-28 min); `tests/skip-baseline.json` ma teraz zmierzony baseline `macos-latest/symlink` i `macos-latest/copy` (35 skipów z biegu main v1.3.0, identyczne w czterech jobach) zamiast `null`, z nowymi kategoriami `linux-only-env` (testy cyklu życia `env`: backend własności procesów tylko na Linuksie), `bsd-mktemp` i `needs-shellcheck`; progi czasu czterech testów poluzowane (skan sekretów 0,5 → 5 s, git z limitem 3,5 → 15 s przy 30 s snu, nieaktywne połączenie dashboardu 4 → 15 s, `approvals wait` 15 → 18 s). Test strażnika pilnuje teraz nowego limitu i baseline macOS.
+
 ### Compatibility
 
 Systemy plików bez blokad systemowych (część udziałów sieciowych): zapis zgód i blokady serwera prototypów kończą się od razu błędem „file locks are not supported” (`BLOCKED` / 503 `lock_unsupported`); dawna blokada plikowa działała wszędzie. Stary proces `dashboard serve` uruchomiony przed aktualizacją (i starsza kopia `skillsync`) pisze zgody starą blokadą: zrestartuj go i zaktualizuj kopie przed pierwszą zgodą (docs/upgrading.md).
