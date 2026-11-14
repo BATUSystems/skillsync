@@ -114,7 +114,7 @@ oznaczać `[ZAŁOŻENIE]`; to decyzja programisty, zadawana jako zwykłe `Q` w s
 Klasa `[EKSPERT]` to wiersz: pytanie domenowe, na które odpowiada ekspert, a nie programista
 ([prototypes](prototypes.md#pytania-do-eksperta), rekord [expert-questions](domain/expert-questions.md)). Czekające pytanie jest zwykłym
 `- Q<n>: … (ekspert: qn-<hex>)` albo `- Q<n> [ZAŁOŻENIE]: … (ekspert: qn-<hex>) — przyjęte: <wartość>`; po odpowiedzi agent zastępuje je wierszem
-`- Q<n> [EKSPERT]: … (ekspert: qn-<hex>) — odpowiedź: <wartość> — ekspert: <login>, <RRRR-MM-DDTHH:MMZ>`. Parser strony statusu pomija wiersz
+`- Q<n> [EKSPERT]: … (ekspert: qn-<hex>) — odpowiedź: <wartość> — ekspert: <login>, <RRRR-MM-DDTHH:MM±GG:MM>`. Parser strony statusu pomija wiersz
 `[EKSPERT]` jak `[ROZSTRZYGNIĘTE]`. Strona statusu pokazuje otwarte pytania blokujące do eksperta jako osobną pozycję czekania („odpowiedź eksperta (N blokujących)”, z odnośnikiem do strony pytań), gdy najnowszy checkpoint nie ma `czeka:`.
 
 ### „GO plan” i commit
