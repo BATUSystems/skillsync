@@ -24,6 +24,7 @@ from layers_helpers import (LINK_MODES, LayersCase, commit, generator_version, g
                             machine_cache_dir, machine_data_dir, make_layer, needs_sh, write, yaml_text)
 from skillsync_workflow import layers, leakguard  # noqa: E402
 from skillsync_workflow.selfcmd import self_argv  # noqa: E402
+from skillsync_workflow.fsutil import rmtree_force  # noqa: E402  (read-only git objects on Windows)
 
 CLIENT_BETA = 'Brenk' + 'or'
 
@@ -816,7 +817,7 @@ class LayersUpdateTest(CommandsCase):
 
     def test_a_missing_checkout_is_blocked_and_unknown_arguments_are_refused(self):
         self.assertEqual(self.add('acme', 'org', self.bare)[0], 0)
-        shutil.rmtree(self.checkout)
+        rmtree_force(self.checkout)
         code, report = self.update('acme')
         self.assertEqual((code, report['layers'][0]['status'], report['layers'][0]['action']), (2, 'BLOCKED', 'missing'))
         self.assertEqual(self.update('nope')[0], 2)
@@ -870,7 +871,7 @@ class LayersUpdateTest(CommandsCase):
         code, report = self.update()
         self.assertEqual((code, report['status']), (0, 'PASS'))
         self.assertEqual({item['id']: item['status'] for item in report['layers']}, {'acme': 'PASS', 'plain': 'NOT_RUN'})
-        shutil.rmtree(self.checkout)                                       # a BLOCKED layer beats NOT_RUN
+        rmtree_force(self.checkout)                                       # a BLOCKED layer beats NOT_RUN
         self.assertEqual(self.update()[1]['status'], 'BLOCKED')
 
     def test_update_checks_the_bridge_like_every_resolver(self):
@@ -948,7 +949,7 @@ class LayersListTest(CommandsCase):
         self.assertEqual((code, [item['id'] for item in report['layers']], report['origin']), (0, ['core', 'me'], 'override'))
 
     def test_missing_layer_directories_are_reported_as_absent_notes_not_listed(self):
-        shutil.rmtree(self.acme)
+        rmtree_force(self.acme)
         code, report = self.cli_json('layers', 'list', '--project', str(self.project_dir))
         self.assertEqual((code, [item['id'] for item in report['layers']]), (0, ['core', 'me']))
         self.assertIn('layer-absent', codes(report['notes']))
@@ -1313,10 +1314,10 @@ class IsolationTest(CommandsCase):
         layers_dir = machine_data_dir() / 'layers'
         make_layer(layers_dir / 'foreign', 'foreign', 'org')
         self.assert_fail('isolation-foreign-library')
-        shutil.rmtree(layers_dir / 'foreign')
+        rmtree_force(layers_dir / 'foreign')
         (layers_dir / 'stray').mkdir()
         self.assert_fail('isolation-unknown-checkout')
-        shutil.rmtree(layers_dir / 'stray')
+        rmtree_force(layers_dir / 'stray')
         make_layer(layers_dir / 'acme-copy', 'acme', 'org')                     # an allowed id elsewhere is fine
         self.isolation(code=0)
 
@@ -1331,16 +1332,16 @@ class IsolationTest(CommandsCase):
                 write(old / 'skills' / 'x' / 'SKILL.md', 'x\n')
                 setup(old)
                 self.assert_fail('isolation-legacy-library')
-                shutil.rmtree(old)
+                rmtree_force(old)
                 self.isolation(code=0)
         self.configure()
         known = Path(self.env['HOME']) / '.local' / 'copilot-library'
         write(known / 'skills' / 'x' / 'SKILL.md', 'x\n')
         self.assert_fail('isolation-legacy-library')
-        shutil.rmtree(known)
+        rmtree_force(known)
         write(self.repos / 'some-org' / 'CopilotSkills' / 'skills' / 'x' / 'SKILL.md', 'x\n')
         self.assert_fail('isolation-legacy-library')
-        shutil.rmtree(self.repos / 'some-org')
+        rmtree_force(self.repos / 'some-org')
         self.isolation(code=0)
 
     def test_the_copilotskills_search_has_a_depth_limit_and_skips_hidden_directories(self):
@@ -1357,7 +1358,7 @@ class IsolationTest(CommandsCase):
         layers_dir = machine_data_dir() / 'layers'
         write(layers_dir / 'broken' / 'layer.yaml', 'schema: 1\nid: Bad Id\nkind: org\n')
         self.assert_fail('isolation-layer-yaml-invalid')
-        shutil.rmtree(layers_dir / 'broken')
+        rmtree_force(layers_dir / 'broken')
         write(self.acme / 'layer.yaml', 'schema: [\n')
         self.assert_fail('isolation-layer-yaml-invalid')
 
@@ -1417,7 +1418,7 @@ class IsolationTest(CommandsCase):
                     report = layers.layers_check(isolation=True, system=other)
                     expected = 'FAIL' if other == system else 'PASS'
                     self.assertEqual(report['status'], expected, (system, other, report))
-                shutil.rmtree(directory / 'foreign')
+                rmtree_force(directory / 'foreign')
 
     def test_layers_list_isolation_adds_the_field_and_keeps_its_own_status(self):
         self.configure(allowed=('core',))
@@ -1455,7 +1456,7 @@ class TargetStubFillTest(CommandsCase):
         for label, stub in cases.items():
             with self.subTest(label):
                 self.config_file.write_text(yaml_text({'leakguard': {'targets': {'acme': stub}}}), encoding='utf-8')
-                shutil.rmtree(self.default_checkout('acme'), ignore_errors=True)
+                rmtree_force(self.default_checkout('acme'), ignore_errors=True)
                 code, report = self.add('acme', 'org', bare)
                 self.assertEqual(code, 0, report)
                 self.assertEqual(self.config()['leakguard']['targets']['acme'], stub)

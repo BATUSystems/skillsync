@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from layers_helpers import (SKILLSYNC, LayersCase, commit, git, make_layer, needs_os_symlinks)  # noqa: E402
+from skillsync_workflow.fsutil import rmtree_force  # noqa: E402  (read-only git objects on Windows)
 
 CORE_TAG = 'vtest-1'
 SECRET = 'sup3rs3cretpw'
@@ -270,8 +271,7 @@ class SetupBlockedTest(SetupCase):
     def test_9b_org_same_source_unchanged_without_ls_remote(self):
         self.setup_cli(*self.base_args())
         # the source disappears: only a skipped ls-remote can still give `unchanged`
-        import shutil
-        shutil.rmtree(self.org_src)
+        rmtree_force(self.org_src)
         process, report = self.setup_cli(*self.base_args())
         self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
         self.assertEqual(self.results(report)['org'], 'unchanged')
