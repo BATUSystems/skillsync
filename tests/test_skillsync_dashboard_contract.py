@@ -47,7 +47,7 @@ NESTED = {
     'delivery': ({'mode': str, 'base': STR_OR_NONE, 'source': str, 'branch': STR_OR_NONE, 'target': STR_OR_NONE,
                   'remote': STR_OR_NONE, 'pushed': (bool, type(None)), 'ahead': (int, type(None)), 'words': list}, {}),
     'session': ({'url': STR_OR_NONE}, {}),
-    'prototype': ({'slug': STR_OR_NONE, 'port': int, 'up': bool}, {}),
+    'prototype': ({'slug': STR_OR_NONE, 'port': int, 'up': bool, 'writing': (dict, type(None))}, {}),
     'readiness': ({'status': STR_OR_NONE, 'date': STR_OR_NONE, 'planSha': STR_OR_NONE, 'source': STR_OR_NONE}, {}),
     'assumptions': ({'count': int, 'items': list}, {}),
     'blockingQuestions': ({'count': int, 'items': list}, {}),

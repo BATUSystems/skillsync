@@ -421,6 +421,7 @@ class Board:
             paths.extend(protos.glob("*/prototype.json"))
             paths.extend(protos.glob("*/comments.json"))
             paths.extend(protos.glob("*/questions.json"))
+            paths.extend(protos.glob("*/.writing.json"))
         git = self.root / ".git"
         paths.extend([git / "HEAD", git / "packed-refs"])
         branch = engine.read_git(self.root).get("branch")
@@ -440,6 +441,12 @@ class Board:
                 sig.append((str(p), st.st_mtime_ns, st.st_size))
             except OSError:
                 continue
+        # A writing marker expires without any file change: its validity is part of the signature, so the page refreshes then too.
+        protos = self.root / engine.PROTOTYPES_DIR
+        if protos.is_dir():
+            for marker in protos.glob("*/.writing.json"):
+                valid = engine.prototype_writing(self.root, marker.parent.name) is not None
+                sig.append((f"writing:{marker.parent.name}", int(valid), 0))
         return tuple(sorted(sig))
 
     def check_once(self) -> bool:

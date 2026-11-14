@@ -28,7 +28,7 @@ class ExpertQuestions(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='skillsync-expert-questions-')
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()   # macOS: /var/... is a link to /private/var/..., the board resolves its root
 
     def run_dir(self, slug, text=None, operations=None, prototype=True):
         directory = self.root / 'docs' / 'prototypes' / slug
@@ -129,6 +129,20 @@ class ExpertQuestions(unittest.TestCase):
         directory = self.run_dir('run-a', operations=[ask('o1', 'qn-000001')])
         board = dashboard_http.Board(self.root, poll=0.2, heartbeat=0.5, prototype_port=1)
         self.assertIn(directory / 'questions.json', board.watched_paths())
+
+    def test_watcher_resolves_a_root_given_through_a_symbolic_link(self):
+        """The board resolves its root on purpose; a project opened through a link (macOS temp directories) lists resolved paths."""
+        directory = self.run_dir('run-a', operations=[ask('o1', 'qn-000001')])
+        link = self.root.parent / (self.root.name + '-link')
+        try:
+            os.symlink(self.root, link, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            self.skipTest('brak dowiązań symbolicznych')
+        self.addCleanup(lambda: os.path.lexists(link) and os.unlink(link))
+        board = dashboard_http.Board(link, poll=0.2, heartbeat=0.5, prototype_port=1)
+        paths = board.watched_paths()
+        self.assertIn(directory / 'questions.json', paths)
+        self.assertNotIn(link / 'docs' / 'prototypes' / 'run-a' / 'questions.json', paths)
 
 
 if __name__ == '__main__':
