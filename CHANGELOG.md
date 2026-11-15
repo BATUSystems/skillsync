@@ -16,10 +16,13 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 - CI: workflow `.github/workflows/pr-text.yml` (job `pr-text (leakcheck)`) skanuje tytuł i opis pull requesta przez `skillsync leakcheck --text` (wzorce ogólne i dodatki `.leakguard/patterns.yaml` z gałęzi bazowej; uruchamiany także po edycji opisu, bez macierzy testów). Dotąd kontrola opisów była tylko regułą w skillach. Job nie jest wymaganym checkiem rulesetu (zmiana rulesetu to decyzja właściciela).
 - `skillsync layers check --isolation`: pliki tożsamości w `leakguard.identity_dir` należące do skonfigurowanego celu `leakguard.targets`, który nie jest warstwą (np. repo wtyczki), nie dają już `isolation-foreign-identity`; dotąd każdy nowy cel w katalogu tożsamości musiał trafiać do `isolation.allowed_layers`. Właściciel spoza `targets` i spoza listy oraz ta sama tożsamość w bibliotece warstwy nadal dają błąd.
-- Maskowanie sekretów z zmiennych środowiska (`redact`) działa od 8 znaków także w tekście komunikatów (dotąd od 4 w wartościach, 8 w kluczach): krótka wartość, np. równa `root` na runnerze Windows, nie przemianowuje już słów ani pól w wyjściu. Maskowanie wzorcowe (adresy z hasłem, `Authorization`, `password=`, `token=`) bez zmian i bez progu. Uwaga: sekret z środowiska krótszy niż 8 znaków nie jest już maskowany.
 - `scripts/check_release.py` sprawdza też, że linie „Stan opisu: Skillsync `vX.Y.Z`” w docs/workflow.md i docs/workflow-details.md wskazują wersję wydania (dotąd napisy podbijano ręcznie, więc odtwarzały dług przy każdym wydaniu).
 - `skillsync leakcheck` w katalogu roboczym klonu celu o `scope: public` ostrzega (nie blokuje), gdy klon nie ma hooków strażnika (pre-commit/pre-push), i podaje polecenie `skillsync leakguard install-hook <klon>`; wzmianka w CONTRIBUTING.md. Bez hooków push do publicznego repo omija strażnika.
 - Strażnik wycieków: klucz celu `targets.<id>.committer_allow` w configu maszyny (lista adresów): adresy przyjmowane tylko jako committer i tagger (np. przycisk scalania hosta, `noreply`), nigdy jako autor. Dotąd adres `noreply` musiał stać w `authors` i przechodził też jako autor. Domyślnie pusta lista; bez klucza zachowanie bez zmian. Dotyczy `leakcheck` (zakres, historia, tagi); nie dotyczy `pre-commit` (zatrzymane zmiany: tylko `authors`); przy `authors_scope: committer` zwykle bez efektu (sens ma przy `all`).
+
+### Changed
+
+- Maskowanie sekretów z zmiennych środowiska (`redact`) działa od 8 znaków także w tekście komunikatów (dotąd od 4 w wartościach, 8 w kluczach): krótka wartość, np. równa `root` na runnerze Windows, nie przemianowuje już słów ani pól w wyjściu. Maskowanie wzorcowe (adresy z hasłem, `Authorization`, `password=`, `token=`) bez zmian i bez progu. UWAGA (ochrona słabnie): sekret z środowiska krótszy niż 8 znaków nie jest już maskowany nigdzie w wyjściu.
 
 ## [1.4.0] - 2026-11-14
 

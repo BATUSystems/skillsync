@@ -1390,6 +1390,14 @@ class IsolationTest(CommandsCase):
         write(self.acme / 'leakguard' / 'plugin.yaml', yaml_text({'schema': 1, 'layer': 'plugin', 'terms': []}))
         self.assert_fail('isolation-foreign-identity')
 
+    def test_an_identity_dir_inside_a_layer_library_is_still_read_as_part_of_that_layer(self):
+        """The exemption is for the machine's identity directory only: when it lies inside a layer library (`leakguard/`),
+        the same file is found there first and stays a foreign identity."""
+        inside = self.acme / 'leakguard'
+        write(inside / 'plugin.yaml', yaml_text({'schema': 1, 'layer': 'plugin', 'terms': []}))
+        self.configure(leakguard={'identity_dir': str(inside), 'targets': {'plugin': {'scope': 'private'}}})
+        self.assert_fail('isolation-foreign-identity')
+
     def test_a_target_removed_from_the_config_makes_its_identity_file_foreign_again(self):
         identities = self.work / 'identities'
         write(identities / 'plugin.yaml', yaml_text({'schema': 1, 'layer': 'plugin', 'terms': []}))
