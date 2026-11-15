@@ -303,7 +303,9 @@ class LayersInitTest(CommandsCase):
         hint = report['next']
         self.assertLess(hint.index('commit'), hint.index('skillsync layers add notes'), hint)
         git_part = hint.split(' && skillsync ')[0]
-        done = subprocess.run(git_part, shell=True, capture_output=True, text=True, env=dict(os.environ))
+        # the hint is quoted for a POSIX shell (`shlex`): on Windows it is run by the `sh` of Git for Windows, not by cmd.exe
+        argv = ['sh', '-c', git_part] if os.name == 'nt' else git_part
+        done = subprocess.run(argv, shell=os.name != 'nt', capture_output=True, text=True, env=dict(os.environ))
         self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
         code, added = self.add('notes', 'personal', directory)
         self.assertEqual((code, added['status']), (0, 'PASS'), added)
