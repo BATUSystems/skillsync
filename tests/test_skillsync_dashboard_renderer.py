@@ -1036,6 +1036,99 @@ function summary(m) {
       } catch (e) { ex.s160.legacy[name] = { error: String(e && e.stack || e) }; }
     }
   }
+
+  // STATUS-160-A faza 5: blok „Wynik”, legenda pojęć, adresat pytań, toast komentarzy po akceptacji, zakładka „Pytania”.
+  {
+    const base = clone(F['questions']); const nowQ = NOW['questions'];
+    const s5 = {};
+    const msTimers = () => ({ q: new Map(), n: 0, set(fn, ms) { const id = ++this.n; this.q.set(id, { fn, ms }); return id; }, clear(id) { this.q.delete(id); }, list() { return [...this.q.values()].map((x) => x.ms); } });
+    const bare = () => { const d = clone(base); delete d.result; delete d.prototypes; delete d.expertQuestions.items; delete (d.prototype || {}).commentsAfterAcceptance;
+      (d.expertQuestions.runs || []).forEach((r) => { delete r.addressees; }); return d; };
+    const origin = { prototypeOrigin: (port) => `http://127.0.0.1:${port}`, prototypeUrl: (port, slug) => `http://127.0.0.1:${port}/${slug}/` };
+    const mountQ = (d, deps) => mount(d, { now: nowQ, deps: Object.assign({}, deps || {}) });
+    // (a) Wynik + legenda
+    const longText = Array.from({ length: 15 }, (_, i) => (i % 2 ? `- punkt ${i} <b>x</b>` : `linia ${i}`)).join('\n');
+    const resOf = (result, descs) => { const d = bare(); if (result !== undefined) d.result = result; const m = mountQ(d); if (descs) m.board.setDescriptions(descs);
+      const box = m.root.querySelector('#resultBox'); const g = m.root.querySelector('.glossary');
+      const tags = []; walk(m.root, (n) => { if (n instanceof E) tags.push(n.localName); });
+      return { hidden: box.hidden, head: m.root.querySelector('[data-result-head]') ? m.root.querySelector('[data-result-head]').textContent : null,
+        rest: m.root.querySelector('[data-result-rest]') ? m.root.querySelector('[data-result-rest]').textContent : null, details: m.root.querySelectorAll('#resultBox details').length,
+        summary: m.root.querySelector('#resultBox summary') ? text(m.root.querySelector('#resultBox summary')) : null,
+        path: m.root.querySelector('.result-path') ? text(m.root.querySelector('.result-path')) : null, inProgress: m.root.querySelector('#view-progress #resultBox') !== null,
+        glossary: g ? { n: m.root.querySelectorAll('.glossary [data-glossary]').length, keys: m.root.querySelectorAll('.glossary [data-glossary]').map((x) => x.getAttribute('data-glossary')),
+          summary: text(g.querySelector('summary')), open: g.hasAttribute('open'), first: text(m.root.querySelector('.glossary [data-glossary]')) } : null, b: tags.includes('b') }; };
+    s5.result = { long: resOf({ text: longText, path: 'docs/plans/x.md' }), short: resOf({ text: '- a\n- b', path: 'docs/plans/x.md' }), none: resOf(null), absent: resOf(undefined),
+      described: resOf(null, { legend_act: { title: 'Akt (z JSON)', text: 'Tekst z opisów.' } }) };
+    // (b) adresat w toaście
+    const toastOf = (runs, viewer) => { const d = bare(); d.expertQuestions.open = 2; d.expertQuestions.blocking = 1; d.expertQuestions.runs = runs; if (viewer) d.approvals = Object.assign({}, d.approvals, { viewer: true });
+      const m = mountQ(d, origin); const t = m.root.querySelector('[data-questions-toast]'); return { text: text(t), addr: t.querySelector('[data-addressees]') ? text(t.querySelector('[data-addressees]')) : null }; };
+    s5.toast = {
+      all: toastOf([{ slug: 'run-a', open: 2, blocking: 1, url: '/_experts/run-a', addressees: 'all' }]),
+      list: toastOf([{ slug: 'run-a', open: 1, blocking: 1, url: '/_experts/run-a', addressees: ['jan', 'ola'] }, { slug: 'run-b', open: 1, blocking: 0, url: '/_experts/run-b', addressees: ['ola', 'ewa'] }]),
+      empty: toastOf([{ slug: 'run-a', open: 2, blocking: 1, url: '/_experts/run-a', addressees: [] }]),
+      missing: toastOf([{ slug: 'run-a', open: 2, blocking: 1, url: '/_experts/run-a' }]),
+      viewerLogins: toastOf([{ slug: 'run-a', open: 2, blocking: 1, url: '/_experts/run-a', addressees: ['jan'] }], true),
+    };
+    // (c) toast komentarzy po akceptacji
+    const cmtOf = (caa, deps, slug) => { const d = bare(); d.prototype = Object.assign({}, d.prototype, { slug: slug === undefined ? 'run-alpha' : slug, port: 5130, up: true });
+      if (caa !== undefined) d.prototype.commentsAfterAcceptance = caa; const tm = msTimers(); const m = mount(d, { now: nowQ, deps: Object.assign({ timers: tm }, deps || {}) });
+      const t = m.root.querySelector('[data-comments-toast]'); const out = t ? { text: text(t), close: t.querySelectorAll('[data-notice-close], .wait-x').length, hrefs: t.querySelectorAll('a').map((a) => [text(a), a.getAttribute('href')]) } : null;
+      return { toast: out, timers: tm.list(), banner: m.root.querySelector('#waitBanner').hidden }; };
+    s5.comments = {
+      two: cmtOf({ count: 3, screens: [{ id: 's1', count: 2 }, { id: 's3', count: 1 }] }, origin),
+      noHost: cmtOf({ count: 3, screens: [{ id: 's1', count: 3 }] }),
+      zero: cmtOf({ count: 0, screens: [] }, origin), absent: cmtOf(undefined, origin), noSlug: cmtOf({ count: 1, screens: [{ id: 's1', count: 1 }] }, origin, null),
+      hostile: cmtOf({ count: 1, screens: [{ id: '<i>s</i>', count: 1 }] }, origin),
+    };
+    // (d) zakładka „Pytania”
+    const qd = (mut) => { const d = bare(); mut(d); return d; };
+    const tabOf = (d, deps) => { const m = mountQ(d, deps || origin); const tab = m.root.querySelector('#tab-questions'); return { m, hidden: tab.hidden, panelHidden: m.root.querySelector('#view-questions').hidden, role: tab.getAttribute('role'), panelRole: m.root.querySelector('#view-questions').getAttribute('role'),
+      controls: tab.getAttribute('aria-controls'), selected: tab.getAttribute('aria-selected'), count: text(m.root.querySelector('#qCount')) }; };
+    const strip = (o) => { const { m, ...rest } = o; return rest; };
+    s5.tab = { bare: strip(tabOf(bare())), withProtos: strip(tabOf(qd((d) => { d.prototypes = []; }))), withItems: strip(tabOf(qd((d) => { d.expertQuestions.items = []; }))),
+      protosWrongType: strip(tabOf(qd((d) => { d.prototypes = 'x'; }))), itemsWrongType: strip(tabOf(qd((d) => { d.expertQuestions.items = {}; }))) };
+    const longQ = 'x'.repeat(200);
+    const full = qd((d) => {
+      d.expertQuestions.open = 2; d.approvals = Object.assign({}, d.approvals, { viewer: false });
+      d.prototypes = [{ slug: 'run-alpha', iteration: 2, screens: 4, accepted: 3, stale: 1, threads: { open: 2, awaiting: 1, decided: 5 }, commentsAfterAcceptance: { count: 2, screens: [{ id: 's1', count: 2 }] }, writing: { since: 1, expiresAt: 2, renewedAt: 1, screensPlanned: 6, screensDone: 2 } },
+        { slug: 'run-beta', iteration: null, screens: 0, accepted: 0, stale: 0, threads: {}, commentsAfterAcceptance: { count: 0, screens: [] }, writing: null }];
+      d.expertQuestions.items = [
+        { id: 'qn-1', runSlug: 'run-alpha', text: longQ, blocking: true, addressees: ['jan', 'ola'], state: 'open', at: '2026-01-12T11:59:55Z', url: '/_experts/run-alpha' },
+        { id: 'qn-2', runSlug: 'run-beta', text: '<b>krótkie</b>', blocking: false, addressees: [], state: 'answered', at: '2026-01-10T11:00:00Z', url: '/_experts/run-beta' },
+        { id: 'qn-3', runSlug: 'run-beta', blocking: false, addressees: [], state: 'withdrawn', at: 'zły', url: '/_experts/../x' }];
+    });
+    const rows = (d, deps) => { const m = mountQ(d, deps || origin); const tags = []; walk(m.root, (n) => { if (n instanceof E) tags.push(n.localName); });
+      return { protos: m.root.querySelectorAll('#qProtos .q-proto').map((n) => ({ text: text(n), hrefs: n.querySelectorAll('a').map((a) => a.getAttribute('href')) })),
+        items: m.root.querySelectorAll('#qItems .q-item').map((n) => ({ text: text(n), cls: n.getAttribute('class'), hrefs: n.querySelectorAll('a').map((a) => a.getAttribute('href')), to: n.querySelector('[data-addressees]') ? text(n.querySelector('[data-addressees]')) : null, qtext: text(n.querySelector('.q-text')) })),
+        empties: m.root.querySelectorAll('#view-questions .empty').map((n) => text(n)), b: tags.includes('b') }; };
+    s5.rows = { full: rows(full), noHost: rows(full, {}),
+      viewer: rows(qd((d) => { d.approvals = Object.assign({}, d.approvals, { viewer: true }); d.prototypes = [{ slug: 'run-alpha', iteration: 1, screens: 2, accepted: 1, stale: 0, threads: { open: 1 } }];
+        d.expertQuestions.items = [{ id: 'qn-1', runSlug: 'run-alpha', blocking: true, addressees: [], state: 'open', at: '2026-01-12T11:00:00Z', url: '/_experts/run-alpha' }]; })),
+      viewerLeak: rows(qd((d) => { d.approvals = Object.assign({}, d.approvals, { viewer: true }); d.prototypes = [];
+        d.expertQuestions.items = [{ id: 'qn-9', runSlug: 'r', text: 'SEKRET', blocking: false, addressees: ['jan'], state: 'open', at: '2026-01-12T11:00:00Z', url: '/_experts/r' }]; })),
+      empty: rows(qd((d) => { d.prototypes = []; d.expertQuestions.items = []; })),
+      wrongTypes: (() => { try { return rows(qd((d) => { d.prototypes = [null, 7, 'x', { slug: 5, threads: 'a', writing: 3, commentsAfterAcceptance: 'z' }]; d.expertQuestions.items = [null, 3, { id: 1, state: 7, addressees: 5, text: 9, at: {} }]; })); } catch (e) { return { error: String(e && e.stack || e) }; } })(),
+      itemsCap: (() => { const d = qd((d2) => { d2.prototypes = []; d2.expertQuestions.items = Array.from({ length: 60 }, (_, i) => ({ id: 'q' + i, runSlug: 'r', text: 't', blocking: false, addressees: [], state: 'open', at: '2026-01-12T11:00:00Z', url: '/_experts/r' })); }); return rows(d).items.length; })() };
+    // przełączanie i strzałki
+    { const d = clone(full); const m = mountQ(d); const tabs = () => ['progress', 'docs', 'questions'].map((v) => m.root.querySelector('#tab-' + v).getAttribute('aria-selected'));
+      const panels = () => ['progress', 'docs', 'questions'].map((v) => m.root.querySelector('#view-' + v).hidden);
+      const before = { tabs: tabs(), panels: panels() }; m.root.querySelector('#tab-questions').click(); const afterClick = { tabs: tabs(), panels: panels(), nav: m.calls.nav.slice() };
+      const key = (k) => { const e = new Ev('keydown', { key: k }); m.root.querySelector('#tab-questions').dispatchEvent(e); return e.defaultPrevented; };
+      const prevented = key('ArrowRight'); const wrapped = tabs(); key('ArrowLeft'); const back = tabs(); key('Home'); const home = tabs(); key('End'); const end = tabs();
+      m.board.update(bare()); const gone = { view: m.board.state().view, tabs: tabs(), tabHidden: m.root.querySelector('#tab-questions').hidden };
+      s5.nav = { before, afterClick, prevented, wrapped, back, home, end, gone }; }
+    // (e) zgodność: fixtures bez nowych kluczy
+    s5.legacy = {};
+    for (const [name, json] of Object.entries(F)) {
+      const d = clone(json); delete d.result; delete d.prototypes; if (d.prototype) delete d.prototype.commentsAfterAcceptance;
+      if (d.expertQuestions) { delete d.expertQuestions.items; (d.expertQuestions.runs || []).forEach((r) => { delete r.addressees; }); }
+      try { const m = mount(d, { now: NOW[name] }); const tab = m.root.querySelector('#tab-questions');
+        s5.legacy[name] = { tabHidden: tab.hidden, panelHidden: m.root.querySelector('#view-questions').hidden, resultHidden: m.root.querySelector('#resultBox').hidden, comments: m.root.querySelectorAll('[data-comments-toast]').length,
+          addr: m.root.querySelectorAll('[data-addressees]').length, glossary: m.root.querySelectorAll('.glossary [data-glossary]').length, rows: m.root.querySelectorAll('.q-row').length };
+      } catch (e) { s5.legacy[name] = { error: String(e && e.stack || e) }; }
+    }
+    ex.s160b = s5;
+  }
   out.extra = ex;
   // deps.now jest wymagane (renderer nie czyta zegara sam).
   try { R.create(makeDoc().createElement('div'), {}); out.nowRequired = false; } catch (e) { out.nowRequired = e instanceof TypeError; }
@@ -1667,6 +1760,135 @@ class RendererNodeTests(unittest.TestCase):
                 self.assertEqual((got["dots"], got["active"], got["screens"], got["legend"], got["light"]), (0, 0, 0, 0, 0))
                 self.assertTrue(got["warn"])
                 self.assertFalse(got["sessionWait"])
+
+    def test_s160b_result_block_and_glossary(self) -> None:
+        r = self.out["extra"]["s160b"]["result"]
+        long = r["long"]
+        self.assertFalse(long["hidden"])
+        self.assertTrue(long["inProgress"])
+        self.assertEqual(long["path"], "Plan: docs/plans/x.md")
+        self.assertEqual(len(long["head"].split("\n")), 12)
+        self.assertEqual(len(long["rest"].split("\n")), 3)
+        self.assertIn("\n- punkt 1 <b>x</b>\n", "\n" + long["head"] + "\n")
+        self.assertFalse(long["b"])
+        self.assertEqual(long["details"], 1)
+        self.assertEqual(long["summary"], "Pokaż resztę (3 linie)")
+        short = r["short"]
+        self.assertEqual(short["head"], "- a\n- b")
+        self.assertEqual(short["details"], 0)
+        for key in ("none", "absent"):
+            self.assertTrue(r[key]["hidden"], key)
+        for key, got in r.items():  # legenda zawsze, zwinięta, z dziewięcioma pojęciami
+            with self.subTest(case=key):
+                self.assertEqual(got["glossary"]["n"], 9)
+                self.assertEqual(got["glossary"]["summary"], "Pojęcia")
+                self.assertFalse(got["glossary"]["open"])
+        self.assertEqual(r["none"]["glossary"]["keys"], ["legend_act", "legend_stage", "legend_phase", "legend_step", "legend_consent",
+                                                         "legend_result", "legend_debt", "legend_eta", "legend_verify"])
+        self.assertTrue(r["none"]["glossary"]["first"].startswith("AktJeden z trzech"))  # tekst awaryjny
+        self.assertEqual(r["described"]["glossary"]["first"], "Akt (z JSON)Tekst z opisów.")
+
+    def test_s160b_addressees_in_toast(self) -> None:
+        t = self.out["extra"]["s160b"]["toast"]
+        self.assertEqual(t["all"]["addr"], "do wszystkich ekspertów")
+        self.assertEqual(t["list"]["addr"], "do: ewa, jan, ola")
+        for key in ("empty", "missing", "viewerLogins"):
+            self.assertIsNone(t[key]["addr"], key)
+            self.assertNotIn("jan", t[key]["text"])
+        self.assertTrue(t["all"]["text"].startswith("Pytania do eksperta: 2 otwartych (1 blokujących)"))
+
+    def test_s160b_comments_after_acceptance_toast(self) -> None:
+        c = self.out["extra"]["s160b"]["comments"]
+        two = c["two"]
+        self.assertEqual(two["toast"]["text"].split("Otwórz")[0], "3 nowe komentarze po akceptacji (ekrany s1, s3)")
+        self.assertEqual(two["toast"]["close"], 0)
+        self.assertEqual(two["timers"], [])
+        self.assertEqual(two["toast"]["hrefs"], [["Otwórz prototyp run-alpha", "http://127.0.0.1:5130/run-alpha/"]])
+        self.assertEqual(c["noHost"]["toast"]["hrefs"], [])
+        self.assertIn("3 nowe komentarze po akceptacji (ekran s1)", c["noHost"]["toast"]["text"])
+        self.assertEqual(c["noSlug"]["toast"]["hrefs"], [])
+        self.assertIn("<i>s</i>", c["hostile"]["toast"]["text"])
+        for key in ("zero", "absent"):
+            self.assertIsNone(c[key]["toast"], key)
+
+    def test_s160b_questions_tab_visibility_and_a11y(self) -> None:
+        s = self.out["extra"]["s160b"]
+        tab = s["tab"]
+        for key in ("bare", "protosWrongType", "itemsWrongType"):
+            self.assertTrue(tab[key]["hidden"], key)
+            self.assertTrue(tab[key]["panelHidden"], key)
+        for key in ("withProtos", "withItems"):
+            self.assertFalse(tab[key]["hidden"], key)
+            self.assertEqual((tab[key]["role"], tab[key]["panelRole"], tab[key]["controls"], tab[key]["selected"]), ("tab", "tabpanel", "view-questions", "false"))
+            self.assertTrue(tab[key]["panelHidden"], key)
+        nav = s["nav"]
+        self.assertEqual(nav["before"], {"tabs": ["true", "false", "false"], "panels": [False, True, True]})
+        self.assertEqual(nav["afterClick"]["tabs"], ["false", "false", "true"])
+        self.assertEqual(nav["afterClick"]["panels"], [True, True, False])
+        self.assertEqual(nav["afterClick"]["nav"][-1], "questions")
+        self.assertTrue(nav["prevented"])
+        self.assertEqual(nav["wrapped"], ["true", "false", "false"])  # z ostatniej zakładki w prawo na pierwszą
+        self.assertEqual(nav["back"], ["false", "false", "true"])
+        self.assertEqual(nav["home"], ["true", "false", "false"])
+        self.assertEqual(nav["end"], ["false", "false", "true"])
+        self.assertEqual(nav["gone"]["view"], "progress")  # zakładka zniknęła z danych: widok wraca do Postępu
+        self.assertEqual(nav["gone"]["tabs"], ["true", "false", "false"])
+        self.assertTrue(nav["gone"]["tabHidden"])
+
+    def test_s160b_questions_rows(self) -> None:
+        r = self.out["extra"]["s160b"]["rows"]
+        full = r["full"]
+        self.assertEqual(len(full["protos"]), 2)
+        a = full["protos"][0]["text"]
+        for part in ("run-alpha", "iteracja 2", "3 z 4 ekranów zaakceptowanych, nieaktualne 1", "agent pisze… 2 z 6 ekranów", "3 wątki otwarte", "2 komentarze po akceptacji"):
+            self.assertIn(part, a)
+        self.assertEqual(full["protos"][0]["hrefs"], ["http://127.0.0.1:5130/run-alpha/"])
+        self.assertNotIn("po akceptacji", full["protos"][1]["text"])
+        self.assertNotIn("agent pisze", full["protos"][1]["text"])
+        self.assertIn("0 wątków otwartych", full["protos"][1]["text"])
+        q1, q2, q3 = full["items"]
+        self.assertEqual(q1["qtext"], "x" * 160 + "…")
+        self.assertIn("blokujące", q1["text"])
+        self.assertIn("otwarte", q1["text"])
+        self.assertIn("przed chwilą", q1["text"])
+        self.assertEqual(q1["to"], "do: jan, ola")
+        self.assertEqual(q1["hrefs"], ["http://127.0.0.1:5130/_experts/run-alpha"])
+        self.assertEqual(q2["qtext"], "<b>krótkie</b>")
+        self.assertFalse(full["b"])
+        self.assertIn("odpowiedziane", q2["text"])
+        self.assertIn("2 d temu", q2["text"])
+        self.assertEqual(q2["to"], "do wszystkich ekspertów")
+        self.assertEqual(q3["qtext"], "treść niedostępna dla widza")
+        self.assertIn("wycofane", q3["text"])
+        self.assertEqual(q3["hrefs"], ["http://127.0.0.1:5130/_experts"])  # zła ścieżka url spada do listy
+        self.assertEqual(r["noHost"]["items"][0]["hrefs"], [])
+        self.assertEqual(r["noHost"]["protos"][0]["hrefs"], [])
+        self.assertEqual(r["itemsCap"], 50)
+        v = r["viewer"]["items"][0]
+        self.assertEqual(v["qtext"], "treść niedostępna dla widza")
+        self.assertIsNone(v["to"])
+        leak = r["viewerLeak"]["items"][0]
+        self.assertEqual(leak["qtext"], "treść niedostępna dla widza")
+        self.assertIsNone(leak["to"])
+        self.assertNotIn("SEKRET", leak["text"])
+        self.assertNotIn("jan", leak["text"])
+        self.assertEqual(r["empty"]["empties"], ["Brak prototypów", "Brak pytań"])
+        self.assertNotIn("error", r["wrongTypes"], r["wrongTypes"].get("error"))
+
+    def test_s160b_legacy_json_has_no_new_elements(self) -> None:
+        legacy = self.out["extra"]["s160b"]["legacy"]
+        self.assertEqual(set(legacy), set(self.fixtures))
+        for name, got in legacy.items():
+            with self.subTest(fixture=name):
+                self.assertNotIn("error", got, got.get("error"))
+                self.assertTrue(got["tabHidden"] and got["panelHidden"] and got["resultHidden"])
+                self.assertEqual((got["comments"], got["addr"], got["rows"]), (0, 0, 0))
+                self.assertEqual(got["glossary"], 9)  # legenda pojęć jest zawsze
+
+    def test_s160b_css_has_new_blocks(self) -> None:
+        css = (ASSETS / "app.css").read_text(encoding="utf-8")
+        for sel in (".result-box", ".glossary", ".q-row", ".q-list"):
+            self.assertIn(sel, css)
 
     def test_s160_css_pulse_stops_under_reduced_motion(self) -> None:
         css = (ASSETS / "app.css").read_text(encoding="utf-8")

@@ -152,6 +152,6 @@
   const hash = decodeURIComponent(location.hash.slice(1));
   if (hash.startsWith("docs:")) board.setDoc(hash.slice(5));
   setLive("connecting");
-  refresh().then(() => { if (hash.startsWith("docs")) board.setView("docs", false); });
+  refresh().then(() => { if (hash.startsWith("docs")) board.setView("docs", false); else if (hash === "questions") board.setView("questions", false); });
   connect();
 })();

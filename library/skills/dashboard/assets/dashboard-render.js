@@ -300,7 +300,15 @@
     ui["tab-docs"] = h("button", { role: "tab", id: "tab-docs", "aria-controls": "view-docs", "aria-selected": "false",
       "data-tip": "Spec, plan i pliki przebiegu (klawisz D)", on: { click: () => setView("docs") } },
       svg("svg", { class: "ic" }, svg("use", { href: "#i-doc" })), "Dokumenty ", ui.docCount);
+    ui.qCount = h("span", { class: "count", id: "qCount" });
+    ui["tab-questions"] = h("button", { role: "tab", id: "tab-questions", "aria-controls": "view-questions", "aria-selected": "false", hidden: true,
+      "data-tip": "Prototypy i pytania do eksperta", on: { click: () => setView("questions") } },
+      svg("svg", { class: "ic" }, svg("use", { href: "#i-bell" })), "Pytania ", ui.qCount);
     ui.protoLink = h("span", { id: "protoLink", class: "tab-extra", hidden: true });
+    ui.result = h("section", { class: "result-box", id: "resultBox", "aria-labelledby": "resultTitle", hidden: true });
+    ui.glossary = h("div", { class: "glossary-box", id: "glossaryBox" });
+    ui.qProtos = h("div", { class: "q-block", id: "qProtos" });
+    ui.qItems = h("div", { class: "q-block", id: "qItems" });
     ui.acts = h("div", { class: "acts", id: "acts" },
       h("div", { class: "act skeleton" }), h("div", { class: "act skeleton" }), h("div", { class: "act skeleton wide" }));
     ui.phases = h("div", { class: "phases", id: "phases" });
@@ -310,13 +318,15 @@
     ui.docView = h("article", { class: "doc-view", id: "docView", "aria-live": "polite", on: { click: mdClick } },
       h("div", { class: "empty" }, previewMode() ? "Wybierz dokument z listy po lewej. Podgląd odświeża się sam, gdy plik się zmieni." : "Wybierz dokument z listy po lewej."));
     ui["view-progress"] = h("section", { id: "view-progress", role: "tabpanel", "aria-labelledby": "tab-progress" },
-      ui.acts,
+      ui.acts, ui.result, ui.glossary,
       h("div", { class: "work" }, ui.phases,
         h("aside", { class: "feed-box", "aria-labelledby": "feedTitle" },
           h("h2", { id: "feedTitle", "data-desc": "checkpoints", tabindex: "0" }, svg("svg", { class: "ic" }, svg("use", { href: "#i-flag" })), "Ostatnie checkpointy"),
           ui.parseWarn, ui.feed)));
     ui["view-docs"] = h("section", { id: "view-docs", role: "tabpanel", "aria-labelledby": "tab-docs", hidden: true },
       h("div", { class: "docs" }, ui.docList, ui.docView));
+    ui["view-questions"] = h("section", { id: "view-questions", role: "tabpanel", "aria-labelledby": "tab-questions", hidden: true },
+      ui.qProtos, ui.qItems);
     ui.foot = h("footer", { class: "foot", id: "foot" });
     ui.descTip = h("div", { id: "descTip", class: "desc-tip", role: "tooltip", hidden: true });
 
@@ -328,8 +338,8 @@
         h("div", { class: "brand-text" }, ui.title, ui.meta)),
       h("div", { class: "top-right" }, ui.themeBtn || null, ui.live, h("div", { class: "plan-pick" }, ui.planBtn, ui.planMenu))),
       ui.waitBanner,
-      h("nav", { class: "tabs", role: "tablist", "aria-label": "Widok" }, ui["tab-progress"], ui["tab-docs"], ui.protoLink),
-      h("main", null, ui["view-progress"], ui["view-docs"]),
+      h("nav", { class: "tabs", role: "tablist", "aria-label": "Widok", on: { keydown: tabKey } }, ui["tab-progress"], ui["tab-docs"], ui["tab-questions"], ui.protoLink),
+      h("main", null, ui["view-progress"], ui["view-docs"], ui["view-questions"]),
       ui.foot));
     root.appendChild(ui.descTip);
 
@@ -439,6 +449,9 @@
       renderFeed(d);
       renderParseWarn(d);
       renderDocList(d);
+      renderResult(d);
+      renderGlossary();
+      renderQuestionsTab(d);
       const app = d.app || {}, project = d.project || {};
       fill(ui.foot,
         h("span", null, `dashboard ${app.version ?? ""}`),
@@ -746,11 +759,39 @@
       const runs = Array.isArray(eq.runs) ? eq.runs : [];
       const url = safeUrl(expertsUrl(d, runs.length === 1 ? runs[0].url : null));
       const text = `Pytania do eksperta: ${open} otwartych (${blocking} blokujących)`;
+      const to = isViewer(d) ? null : runsAddressees(runs);
       return h("div", { class: "wait-item is-info", "data-questions-toast": "" },
         icon("i-bell"),
-        h("div", { class: "wait-txt" }, h("strong", null, text)),
+        h("div", { class: "wait-txt" }, h("strong", null, text), to ? h("span", { "data-addressees": "" }, to) : null),
         url ? h("a", { class: "wait-go", href: url, target: "_blank", rel: "noopener",
           on: { click: linkClick("experts", runs.length === 1 ? String(runs[0].slug || "") : "", url) } }, "Odpowiedz na pytania") : null);
+    }
+    // Adresaci: "all" = wszyscy eksperci, lista loginów = „do: a, b”, pusta lista albo brak = nic (widok widza dostaje pustą listę).
+    const loginsOf = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === "string" && x.trim()).map((x) => x.trim()) : []);
+    function addresseesText(v) {
+      if (v === "all") return "do wszystkich ekspertów";
+      const l = loginsOf(v);
+      return l.length ? "do: " + l.join(", ") : null;
+    }
+    function runsAddressees(runs) {
+      const vals = runs.map((r) => (r && typeof r === "object" ? r.addressees : null));
+      if (vals.includes("all")) return addresseesText("all");
+      return addresseesText([...new Set(vals.flatMap(loginsOf))].sort());
+    }
+    // Toast „N nowych komentarzy po akceptacji”: stan z `prototype.commentsAfterAcceptance` (bez timera i bez „×”), znika przy count 0 albo braku klucza.
+    function commentsToast(d) {
+      const pr = d.prototype && typeof d.prototype === "object" ? d.prototype : null;
+      const c = pr && pr.commentsAfterAcceptance && typeof pr.commentsAfterAcceptance === "object" ? pr.commentsAfterAcceptance : null;
+      const n = c && Number.isFinite(c.count) ? c.count : 0;
+      if (n <= 0) return null;
+      const ids = (Array.isArray(c.screens) ? c.screens : []).map((x) => (x && typeof x.id === "string" ? x.id : "")).filter(Boolean);
+      const text = `${n} ${plural(n, "nowy komentarz", "nowe komentarze", "nowych komentarzy")} po akceptacji${ids.length ? ` (${plural(ids.length, "ekran", "ekrany", "ekranów")} ${ids.join(", ")})` : ""}`;
+      const slug = typeof pr.slug === "string" && pr.slug ? pr.slug : "";
+      const url = slug ? safeUrl(protoUrl(d, slug)) : null;
+      return h("div", { class: "wait-item is-info", "data-comments-toast": "" },
+        icon("i-bell"),
+        h("div", { class: "wait-txt" }, h("strong", null, text)),
+        url ? h("a", { class: "wait-go", href: url, target: "_blank", rel: "noopener", on: { click: linkClick("prototype", slug, url) } }, `Otwórz prototyp ${slug}`) : null);
     }
     // Toast „szacowany koniec” (`d.eta` z `eta:` najnowszego checkpointu): stan, nie wynik akcji, więc bez timera i bez „×”. Serwer nie czyta
     // zegara, więc przekroczenie liczy `now` względem `untilIso` (bez `untilIso` tylko godzina). Tylko tekst z `h()`.
@@ -790,9 +831,10 @@
         h("button", { class: "wait-x", type: "button", "data-notice-close": "", "aria-label": "Zamknij", on: { click: () => { setNoticeState(null); render(); } } }, "×")) : null;
       const qnote = questionsToast(d);
       const enote = etaToast(d);
-      if (!items.length && !note && !qnote && !enote) { el.hidden = true; fill(el); return; }
+      const cnote = commentsToast(d);
+      if (!items.length && !note && !qnote && !enote && !cnote) { el.hidden = true; fill(el); return; }
       el.hidden = false;
-      fill(el, enote, qnote, note, items.map((w) => {
+      fill(el, enote, qnote, cnote, note, items.map((w) => {
         let link = null;
         if (w.link && w.link.kind === "doc") {
           link = h("button", { class: "wait-go", type: "button", "data-wait-doc": w.link.path, on: { click: () => openDoc(w.link.path) } }, `Otwórz ${baseName(w.link.path)}`);
@@ -840,6 +882,126 @@
         : h("span", { class: "proto-link is-off", "aria-label": `Prototyp ${pr.slug}: serwer wyłączony`,
           "data-tip": `Serwer prototypów (port ${pr.port}) nie działa — uruchom go, żeby otworzyć ${pr.slug}` },
           icon("i-proto"), lbl, accTxt, h("span", { class: "lbl" }, " (serwer wyłączony)")));
+    }
+
+
+    // ---------------------------------------------------------------- Wynik planu i pojęcia (pod aktami)
+    const RESULT_VISIBLE_LINES = 12;
+    // `d.result` = {text, path} albo null: tekst planu bez markdown→HTML (textContent w <pre>), długi w <details> po pierwszych liniach.
+    function renderResult(d) {
+      const r = d.result && typeof d.result === "object" && typeof d.result.text === "string" && d.result.text.trim() ? d.result : null;
+      const el = ui.result;
+      if (!r) { el.hidden = true; fill(el); return; }
+      const lines = r.text.replace(/\s+$/, "").split(/\r?\n/);
+      const head = lines.slice(0, RESULT_VISIBLE_LINES).join("\n"), rest = lines.slice(RESULT_VISIBLE_LINES).join("\n");
+      let more = null;
+      if (lines.length > RESULT_VISIBLE_LINES) {
+        more = h("details", { class: "result-more", open: Boolean(st.resultOpen) },
+          h("summary", null, `Pokaż resztę (${lines.length - RESULT_VISIBLE_LINES} ${plural(lines.length - RESULT_VISIBLE_LINES, "linia", "linie", "linii")})`),
+          h("pre", { class: "result-text", "data-result-rest": "" }, rest));
+        more.addEventListener("toggle", () => { st.resultOpen = more.hasAttribute("open"); });
+      }
+      el.hidden = false;
+      fill(el,
+        h("h2", { id: "resultTitle", ...desc("legend_result") }, icon("i-flag"), "Wynik"),
+        typeof r.path === "string" && r.path ? h("div", { class: "result-path" }, "Plan: ", mono(r.path)) : null,
+        h("pre", { class: "result-text", "data-result-head": "" }, head), more);
+    }
+    // Legenda pojęć (osobna od `legend(p)`, legendy paska): zawsze obecna, zwinięta; teksty z descriptions.json, awaryjnie z renderera.
+    const GLOSSARY = [
+      ["legend_act", "Akt", "Jeden z trzech wielkich kroków przebiegu: spec, plan, realizacja."],
+      ["legend_stage", "Etap", "Kafelek w akcie; pulsujący wskaźnik oznacza etap, który trwa teraz."],
+      ["legend_phase", "Faza", "Grupa kroków w planie; zrobiona, gdy zrobione są wszystkie jej kroki."],
+      ["legend_step", "Krok", "Jedna pozycja listy Progress w planie z identyfikatorem, np. F1.2."],
+      ["legend_consent", "Zgoda GO / CP / READY", "Decyzja człowieka: GO plan, GO implement, CP (commit i push), READY (draft PR gotowy do przeglądu)."],
+      ["legend_result", "Wynik", "Sekcja „Wynik” planu: co faktycznie zrobiono, z kontrolami i odstępstwami."],
+      ["legend_debt", "Dług", "Świadomie odłożona sprawa zapisana w planie albo retrospektywie."],
+      ["legend_eta", "ETA", "Szacowany koniec bieżącej operacji podany przez agenta w raporcie postępu."],
+      ["legend_verify", "Do weryfikacji", "Kroki zgłoszone jako zrobione, ale jeszcze niezaznaczone w planie; jaśniejszy odcień paska."],
+    ];
+    function renderGlossary() {
+      const map = st.desc || {};
+      const box = h("details", { class: "glossary", open: Boolean(st.glossaryOpen) },
+        h("summary", null, icon("i-doc"), "Pojęcia"),
+        h("dl", { class: "glossary-list" }, GLOSSARY.map(([key, title, text]) => {
+          const item = map[key] && typeof map[key] === "object" ? map[key] : null;
+          return h("div", { "data-glossary": key },
+            h("dt", null, item && item.title ? item.title : title), h("dd", null, item && item.text ? item.text : text));
+        })));
+      box.addEventListener("toggle", () => { st.glossaryOpen = box.hasAttribute("open"); });
+      fill(ui.glossary, box);
+    }
+
+    // ---------------------------------------------------------------- zakładka „Pytania” (prototypy i pytania do eksperta)
+    const Q_STATE = { open: "otwarte", answered: "odpowiedziane", withdrawn: "wycofane" };
+    const Q_TEXT_MAX = 160;
+    const nonNeg = (v) => (Number.isFinite(v) && v >= 0 ? v : null);
+    function fmtAge(iso) {
+      const t = typeof iso === "string" ? Date.parse(iso) : NaN;
+      if (!Number.isFinite(t)) return "—";
+      const s = Math.max(0, Math.round((now() - t) / 1000));
+      if (s < 10) return "przed chwilą";
+      if (s < 60) return `${s} s temu`;
+      if (s < 3600) return `${Math.floor(s / 60)} min temu`;
+      if (s < 86400) return `${Math.floor(s / 3600)} h temu`;
+      return `${Math.floor(s / 86400)} d temu`;
+    }
+    const questionsTabShown = (d) => Array.isArray(d.prototypes) || Boolean(d.expertQuestions && typeof d.expertQuestions === "object" && Array.isArray(d.expertQuestions.items));
+    function protoRow(d, p) {
+      const slug = typeof p.slug === "string" ? p.slug : "";
+      const screens = nonNeg(p.screens), accepted = nonNeg(p.accepted), stale = nonNeg(p.stale);
+      const threads = p.threads && typeof p.threads === "object" ? p.threads : {};
+      const openThreads = (nonNeg(threads.open) || 0) + (nonNeg(threads.awaiting) || 0);
+      const wr = p.writing && typeof p.writing === "object" ? p.writing : null;
+      const wDone = wr ? nonNeg(wr.screensDone) : null, wPlan = wr && Number.isFinite(wr.screensPlanned) && wr.screensPlanned > 0 ? wr.screensPlanned : null;
+      const caa = p.commentsAfterAcceptance && typeof p.commentsAfterAcceptance === "object" && Number.isFinite(p.commentsAfterAcceptance.count) ? p.commentsAfterAcceptance.count : 0;
+      const url = slug ? safeUrl(protoUrl(d, slug)) : null;
+      const facts = [
+        p.iteration != null && p.iteration !== "" ? h("span", { class: "q-fact" }, `iteracja ${p.iteration}`) : null,
+        screens != null ? h("span", { class: "q-fact" }, `${accepted || 0} z ${screens} ${plural(screens, "ekranu", "ekranów", "ekranów")} zaakceptowanych`
+          + (stale ? `, nieaktualne ${stale}` : "")) : null,
+        wr ? h("span", { class: "chip s-active q-writing" }, "agent pisze…" + (wDone != null ? ` ${wDone}${wPlan ? " z " + wPlan : ""} ${plural(wPlan || wDone, "ekran", "ekrany", "ekranów")}` : "")) : null,
+        h("span", { class: "q-fact" }, `${openThreads} ${plural(openThreads, "wątek otwarty", "wątki otwarte", "wątków otwartych")}`),
+        caa > 0 ? h("span", { class: "chip s-warn q-after" }, `${caa} ${plural(caa, "komentarz", "komentarze", "komentarzy")} po akceptacji`) : null,
+      ];
+      return h("li", { class: "q-row q-proto", "data-proto": slug },
+        mono(slug || "—"), h("span", { class: "q-facts" }, facts),
+        url ? h("a", { class: "q-go", href: url, target: "_blank", rel: "noopener", "aria-label": `Otwórz prototyp ${slug}`, on: { click: linkClick("prototype", slug, url) } }, "Otwórz prototyp") : null);
+    }
+    function questionRow(d, q, viewer) {
+      const text = !viewer && typeof q.text === "string" ? (q.text.length > Q_TEXT_MAX ? q.text.slice(0, Q_TEXT_MAX) + "…" : q.text) : null;
+      const to = viewer ? null : (q.addressees === "all" || (Array.isArray(q.addressees) && !q.addressees.length)) ? "do wszystkich ekspertów" : addresseesText(q.addressees);
+      const url = safeUrl(expertsUrl(d, q.url));
+      const slug = typeof q.runSlug === "string" ? q.runSlug : "";
+      return h("li", { class: `q-row q-item is-${typeof q.state === "string" ? q.state : "open"}`, "data-question": q.id == null ? "" : String(q.id) },
+        h("span", { class: "q-head" }, mono(q.id == null ? "—" : String(q.id)), slug ? h("span", { class: "q-run" }, slug) : null,
+          q.blocking === true ? h("span", { class: "chip s-warn q-blocking" }, "blokujące") : null,
+          h("span", { class: "chip " + (q.state === "open" ? "s-active" : "s-planned") }, Q_STATE[q.state] || String(q.state ?? "—")),
+          h("span", { class: "q-age" }, fmtAge(q.at))),
+        h("span", { class: "q-text" + (text == null ? " is-missing" : "") }, text == null ? "treść niedostępna dla widza" : text),
+        to ? h("span", { class: "q-to", "data-addressees": "" }, to) : null,
+        url ? h("a", { class: "q-go", href: url, target: "_blank", rel: "noopener", "aria-label": `Otwórz pytania przebiegu ${slug || ""}`.trim(),
+          on: { click: linkClick("experts", slug, url) } }, "Otwórz pytania") : null);
+    }
+    function renderQuestionsTab(d) {
+      const shown = questionsTabShown(d);
+      ui["tab-questions"].hidden = !shown;
+      if (!shown) {
+        fill(ui.qProtos); fill(ui.qItems); ui.qCount.textContent = "";
+        ui["view-questions"].hidden = true;
+        if (st.view === "questions") setView("progress", false);
+        return;
+      }
+      const eq = d.expertQuestions && typeof d.expertQuestions === "object" ? d.expertQuestions : {};
+      const viewer = isViewer(d);
+      const protos = (Array.isArray(d.prototypes) ? d.prototypes : []).filter((p) => p && typeof p === "object");
+      const items = (Array.isArray(eq.items) ? eq.items : []).filter((q) => q && typeof q === "object").slice(0, 50);
+      ui.qCount.textContent = Number.isFinite(eq.open) && eq.open > 0 ? String(eq.open) : "";
+      fill(ui.qProtos, h("h2", { class: "q-title" }, "Prototypy"),
+        protos.length ? h("ul", { class: "q-list" }, protos.map((p) => protoRow(d, p))) : h("div", { class: "empty" }, "Brak prototypów"));
+      fill(ui.qItems, h("h2", { class: "q-title" }, "Pytania do eksperta"),
+        items.length ? h("ul", { class: "q-list" }, items.map((q) => questionRow(d, q, viewer))) : h("div", { class: "empty" }, "Brak pytań"));
+      ui["view-questions"].hidden = st.view !== "questions";
     }
 
     // ---------------------------------------------------------------- dokumenty
@@ -902,12 +1064,25 @@
     // ---------------------------------------------------------------- zakładki, motyw, klawisze
     function setView(view, push = true) {
       st.view = view;
-      ["progress", "docs"].forEach((v) => {
+      if (view === "questions" && ui["tab-questions"].hidden) view = st.view = "progress";
+      ["progress", "docs", "questions"].forEach((v) => {
         ui["view-" + v].hidden = v !== view;
         ui["tab-" + v].setAttribute("aria-selected", String(v === view));
       });
       if (view === "docs" && st.doc) loadDoc(st.doc);
       if (push) navigate(view === "docs" && st.doc ? "docs:" + st.doc : view);
+    }
+    // Strzałki w liście zakładek (WAI-ARIA): lewo/prawo, Home/End przechodzą po widocznych zakładkach i je włączają.
+    function tabKey(e) {
+      const keys = ["ArrowRight", "ArrowLeft", "Home", "End"];
+      if (!keys.includes(e.key)) return;
+      const tabs = ["progress", "docs", "questions"].filter((v) => !ui["tab-" + v].hidden);
+      const cur = tabs.indexOf(st.view);
+      const next = e.key === "Home" ? 0 : e.key === "End" ? tabs.length - 1
+        : (Math.max(cur, 0) + (e.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+      e.preventDefault();
+      setView(tabs[next]);
+      if (typeof ui["tab-" + tabs[next]].focus === "function") ui["tab-" + tabs[next]].focus();
     }
     function syncTheme() { if (theme && ui.themeBtn) ui.themeBtn.setAttribute("aria-pressed", String(Boolean(theme.isDark()))); }
     function toggleTheme() { if (!theme) return; theme.toggle(); syncTheme(); }
@@ -948,7 +1123,7 @@
         render();
         if (st.view === "docs" && st.doc) loadDoc(st.doc, true);
       },
-      setDescriptions(map) { st.desc = map && typeof map === "object" ? map : {}; },
+      setDescriptions(map) { st.desc = map && typeof map === "object" ? map : {}; renderGlossary(); },
       setNotice(notice) { setNoticeState(notice); render(); },
       setVisible(visible) {
         st.visible = visible !== false;

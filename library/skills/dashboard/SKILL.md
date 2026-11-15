@@ -232,6 +232,8 @@ gdy host ma własny) i szkielet ze stałymi identyfikatorami (`title`, `meta`, `
 `elapsed`, `ago`, `retryDoc`, `themeBtn` tylko z `deps.theme`; symbole `i-…`). Identyfikatory są globalne w dokumencie:
 dwa egzemplarze renderera w jednym dokumencie się zderzą (jeden korzeń na dokument/webview).
 
+Treść z JSON-a (addytywnie, brak klucza = zachowanie jak dotąd): pod aktami blok „Wynik” (`result`: tekst planu w `<pre>`, powyżej 12 linii reszta w `<details>`) i zwijana legenda „Pojęcia” (zawsze; teksty z `legend_*` w descriptions.json, awaryjnie z renderera); w toście pytań adresaci (`expertQuestions.runs[].addressees`: „do wszystkich ekspertów” albo „do: login, …”, widz nic); toast „N nowych komentarzy po akceptacji” z `prototype.commentsAfterAcceptance` (bez timera i „×”, odnośnik tylko z `deps.prototypeUrl`); zakładka „Pytania” (`tab-questions`, `view-questions`, `qCount`) widoczna tylko przy tablicy `prototypes` albo `expertQuestions.items`, z listą prototypów i pytań (do 50), nawigacją strzałkami/Home/End w liście zakładek i hashem `questions`.
+
 Kontrakt `deps` (wymagane tylko `now`):
 
 | Pole | Typ | Wymagane | Znaczenie |
