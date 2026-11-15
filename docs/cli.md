@@ -254,6 +254,8 @@ skillsync prototype question add . --slug zwroty --text "Czy zwrot po terminie j
   --ref "Sekcja 3|docs/specs/zwroty.md#3|Zwrot do 14 dni od zakupu." \
   --option "Tak, bez limitu" --option "Tak, do 30 dni:recommended" --option "Nie" \
   --assume "do 30 dni" --origin docs/specs/zwroty.md:Q3                                  # domyślnie agent nie czeka
+skillsync prototype question add . --slug zwroty --text "Czy przycisk „Zwróć” ma być widoczny po terminie?" \
+  --screen zwroty#s4 --assume "nie" --origin docs/specs/zwroty.md:Q6                      # link „Zobacz ekran s4” na stronie eksperta (powtarzalne, z --ref najwyżej 5)
 skillsync prototype question add . --text "W jakich formatach eksport?" --multi \
   --option "CSV:recommended" --option "XLSX:recommended" --option "PDF" \
   --assume "CSV i XLSX" --origin docs/specs/eksport.md:Q4                                 # ekspert zaznacza jeden lub więcej wariantów

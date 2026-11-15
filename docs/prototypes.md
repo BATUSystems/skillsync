@@ -448,6 +448,7 @@ Pytania są osobne dla każdego przebiegu (prototypu o danym slugu): plik `<root
 więc etapy na jednej gałęzi nie mieszają pytań, a ekspert widzi każdy przebieg osobno.
 
 Agent: `skillsync prototype question add|list|show|export|record|withdraw|url|wait|merge|migrate|purge` ([cli](cli.md#pytania-do-eksperta-prototype-question-prototype-user-roles)).
+Pytanie o ekran **musi** mieć link do ekranu: `question add --screen <prototyp>#s<N>` (np. `--screen demo#s4`) zapisuje odnośnik `/<prototyp>/index.html#sN` (ścieżka bezwzględna tego samego serwera; wzorzec ścisły, `..`, `//host`, schematy, spacje, wielkie litery i kotwice bez cyfry są odrzucane), a strona `/_experts/<przebieg>` pokazuje go jako „Zobacz ekran sN” w nowej karcie (`rel="noopener noreferrer"`); inne adresy względne zostają zwykłym tekstem, a `https` jak dotąd. Odnośnik nie uwzględnia prefiksu serwera pośredniczącego (`public_url` z podścieżką). Pytania do eksperta piszemy **bez żargonu technicznego** (zwykłe zdania o tym, co człowiek widzi na ekranie, bez nazw pól, klas, komponentów i endpointów).
 Pytanie jest domyślnie **nieblokujące** (`--assume`: agent idzie dalej z wartością przyjętą, ekspert ją potwierdza albo koryguje);
 pytania o kontrakt, dane (schemat bazy), migrację i bezpieczeństwo to decyzja programisty: agent zadaje je jako zwykłe `Q` w sesji, nie ekspertowi; do eksperta idą tylko pytania domenowe, blokujące (`--blocking`) wtedy, gdy bez odpowiedzi nie da się zaprojektować ekranu. Pytanie jest do wszystkich ekspertów
 albo do wskazanych loginów (`--to`). Pierwsza odpowiedź zamyka pytanie i jest ostateczna: nie ma edycji ani unieważnienia, spór to nowe
@@ -460,6 +461,14 @@ oznacza to przez `question record`; programista dostaje informację, nie pytanie
   `question url` podaje adres strony razem z liczbą kont `expert`. Kolejność odpowiedzi: slug niezgodny z gramatyką slugów to 404 zawsze (także bez sesji);
   poprawny slug bez sesji to 302 do `/_login?next=<ścieżka>` (nie 404, więc bez logowania nie da się sprawdzić, czy przebieg istnieje);
   po zalogowaniu poprawny, ale nieistniejący slug otwiera stronę z pustym przebiegiem (200), bo dane strona czyta dopiero z API.
+- **Podgląd tylko do odczytu.** Zalogowane konto bez roli `developer`, `acceptor` i `expert` (domyślna rola `commenter`) dostaje na tej stronie podgląd: wszystkie pytania przebiegu
+  (treść, opcje, rekomendacja, stan, odpowiedzi i komentarze) bez formularzy i z nagłówkiem „Podgląd: pytania do ekspertów (tylko odczyt)”. API odczytu (`GET /_api/v1/questions` i
+  `/_api/v1/questions/<id>`) zwraca wtedy `preview: true` i widok z białej listy pól: bez loginów i adresów e-mail jakiejkolwiek osoby (adresaci tylko policzeni, autor odpowiedzi
+  i komentarza pokazany jako `name` konta albo „uczestnik”, wycofanie bez autora), bez ścieżki speca (`origin`) i bez `refersTo`; swobodny tekst pytania, odpowiedzi i komentarza nie jest przepisywany
+  (login wpisany tam przez autora byłby widoczny). Zapis odpowiedzi i komentarza zostaje 403 `forbidden` przed jakąkolwiek walidacją; bez sesji nadal 401, a konto z hasłem domyślnym 403
+  `password_change_required`. Jest to zmiana zachowania: dotąd odczyt dla tych kont dawał 403.
+- Galeria (statyczna i na żywo) pokazuje przy prototypie link „Pytania (N)” do `/_experts/<slug>` oraz link „Pytania” w nagłówku, gdy jakiś przebieg ma pytania (N = pytania przebiegu); przebieg bez pytań nie ma linku.
+  Statyczny `index.html` linkuje ścieżki bezwzględne serwera, więc link działa tylko wtedy, gdy galeria jest serwowana przez `prototype serve`.
 - Każde pytanie ma badge „Przebieg: <slug>”. Etykieta pytania: dla administratora nazwa pliku speca i `Q<n>`, dla eksperta `Q<n>`.
   Konto z hasłem domyślnym widzi komunikat i link do zmiany hasła; odpowiadać może dopiero po zmianie (403 `password_change_required`).
 - Lista pytań widocznych dla konta, szczegóły (tekst, linki, wyciągi), wybór wariantu (rekomendacja agenta jest oznaczona; w pytaniu wielokrotnego wyboru pola wyboru, zatwierdzenie

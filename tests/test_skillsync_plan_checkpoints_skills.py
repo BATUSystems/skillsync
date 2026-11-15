@@ -12,6 +12,9 @@ LIB = Path(os.environ.get('SKILLSYNC_TEST_LIBRARY') or ROOT / 'library')
 PLAN_DETAILS = 'skills/feature/references/plan-details.md'
 REVIEW_LOOP = 'skills/feature/references/review-loop.md'
 FEATURE = 'skills/feature/SKILL.md'
+SPEC = 'skills/feature/references/spec.md'
+PROTOTYPE = 'skills/prototype/SKILL.md'
+SKILLSYNC = 'skills/skillsync/SKILL.md'
 
 # (id, file, regular expression after whitespace normalisation)
 REQUIRED = [
@@ -35,6 +38,11 @@ REQUIRED = [
     ('acceptance-not-by-plan', PLAN_DETAILS, r'zaznaczenie kroku ani linia w planie niczego nie gaszą'),
     ('acceptance-vs-closure', PLAN_DETAILS, r'`closure` i `acceptance` nie występują naraz'),
     ('feature-acceptance', FEATURE, r'Końcowe słowo zgody trybu dostarczania \(`READY` w `pr`, `CP` w `direct`\) jest też odbiorem'),
+    ('screen-rule-spec', SPEC, r'\*\*Reguły pytania do eksperta\.\*\* \(a\) Pytanie dotyczące ekranu prototypu \*\*musi\*\* mieć link do tego ekranu: `--screen <prototyp>#s<N>`'),
+    ('jargon-rule-spec', SPEC, r'\(b\) Pytania do eksperta pisz \*\*bez żargonu technicznego\*\*.*bez nazw pól, klas, komponentów, endpointów i skrótów'),
+    ('example-good-bad-spec', SPEC, r'Dobre: „Na tym ekranie klient widzi cenę przesyłki.*Złe: „Czy pole `shippingCost`'),
+    ('screen-rule-prototype-skill', PROTOTYPE, r'Pytanie dotyczące ekranu \*\*musi\*\* mieć link do ekranu \(`prototype question add --screen <prototyp>#s<N>`\).*bez żargonu technicznego'),
+    ('screen-option-skillsync', SKILLSYNC, r'`prototype question add <projekt> \[--slug <slug>\] --text … \[--ref title\|href\|excerpt\] \[--screen <prototyp>#s<N>\]'),
     ('feature-pointer', FEATURE, r'plan zaczyna się sekcją `## Streszczenie dla człowieka`.*„Wynik” ma wzór z blokiem „Uwagi z review” i tabelą pokrycia'),
 ]
 
@@ -64,6 +72,14 @@ class PlanCheckpointsSkills(unittest.TestCase):
                 self.assertIsNotNone(re.search(rx, text), pid)
                 broken = re.sub(rx, '', text)   # every occurrence: a phrase that stays elsewhere would hide the removal
                 self.assertIn(pid, missing({rel: broken}))
+
+    def test_the_user_docs_carry_the_screen_and_plain_language_rules(self):
+        text = norm((ROOT / 'docs/prototypes.md').read_text(encoding='utf-8'))
+        for phrase in ('Pytanie o ekran **musi** mieć link do ekranu: `question add --screen <prototyp>#s<N>`',
+                       'pokazuje go jako „Zobacz ekran sN” w nowej karcie',
+                       'Pytania do eksperta piszemy **bez żargonu technicznego**'):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, text)
 
     def test_the_template_names_no_client_or_event(self):
         for rel in (PLAN_DETAILS, REVIEW_LOOP):

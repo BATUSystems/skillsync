@@ -322,6 +322,15 @@ class GalleryWritingTests(WritingCase):
     def mark(self, slug, **kwargs):
         return put_marker(self.directories[slug], self.clock, **kwargs)
 
+    def test_live_gallery_links_the_questions_only_of_the_runs_that_have_them(self):
+        self.assertNotIn('/_experts', self.check(self.anon.get('/'), 200).text)
+        write(os.path.join(self.directories['alpha'], 'questions.json'),
+              json.dumps({'questionsFormat': 1, 'operations': [{'type': 'ask', 'questionId': 'qn-aaaaaa', 'id': 'o1', 'at': '2026-11-05T09:00:00.000Z'}]}) + '\n')
+        html = self.check(self.anon.get('/'), 200).text
+        self.assertIn('href="/_experts/alpha"', html)
+        self.assertNotIn('/_experts/beta', html)
+        self.assertIn('href="/_experts"', html)
+
     def test_static_gallery_never_renders_the_mark(self):
         self.mark('beta')
         entries, _ = pt.gallery_entries(Path(self.root), Path(self.root))
