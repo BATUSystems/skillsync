@@ -207,12 +207,14 @@ class RoleFromTheSocket(TwoSockets):
 
     def test_the_read_socket_shows_no_token_digest_or_consent_link_whatever_the_host(self) -> None:
         digest = dashboard_token.token_id(TEST_TOKEN)
+        served = 0
         for host in self.hosts(self.read_port):
             with self.subTest(host=host):
                 status, data, _ = request(self.read_port, "GET", "/api/status", {"Host": host})
                 if status == 403:   # a Host the read socket refuses to serve at all shows nothing either
                     continue
                 self.assertEqual(status, 200)
+                served += 1
                 approvals = data["approvals"]
                 self.assertEqual((approvals["here"], approvals["viewer"], approvals["role"], approvals["tokenRequired"]), (False, True, "read", False))
                 body = json.dumps(data)
@@ -227,13 +229,17 @@ class RoleFromTheSocket(TwoSockets):
                 finally:
                     conn.close()
                 self.assertEqual((TEST_TOKEN.encode() in first, digest.encode() in first), (False, False))
+        self.assertGreaterEqual(served, 1, "the read socket answered no Host at all: the checks above proved nothing")
 
     def test_here_and_viewer_follow_the_socket_not_the_host(self) -> None:
+        served = 0
         for host in self.hosts(self.read_port):
             with self.subTest(socket="read", host=host):
                 status, data, _ = request(self.read_port, "GET", "/api/status", {"Host": host})
                 if status == 200:
+                    served += 1
                     self.assertEqual((data["approvals"]["here"], data["approvals"]["viewer"]), (False, True))
+        self.assertGreaterEqual(served, 1, "the read socket answered no Host at all")
         for host in (f"127.0.0.1:{self.approve_port}", "localhost", "demo.example"):
             with self.subTest(socket="approve", host=host):
                 status, data, _ = request(self.approve_port, "GET", "/api/status", {"Host": host})
