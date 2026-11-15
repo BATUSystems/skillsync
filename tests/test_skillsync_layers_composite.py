@@ -27,7 +27,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from layers_helpers import (SKILL_TEXT, ComposeCase, LINK_MODES, composed_root, each_mode, generator_version, link_mode,  # noqa: E402
-                            make_layer, tree_snapshot, write)
+                            make_layer, readlink, tree_snapshot, write)
 from layers_helpers import needs_os_symlinks, require_os_symlinks  # noqa: E402
 
 CORE_FILES = {
@@ -115,7 +115,7 @@ class SingleAndMultiProviderTests(CompositeCase):
             for rel, (_layer_id, path) in wanted.items():
                 entry = composite / rel
                 self.assertTrue(entry.is_symlink(), rel)
-                self.assertEqual(os.readlink(entry), str(path), rel)  # straight to the source file
+                self.assertEqual(readlink(entry), str(path), rel)  # straight to the source file
         else:
             self.assertTrue(skill.is_dir() and not skill.is_symlink())
             self.assertEqual([p for p in skill.rglob('*') if p.is_symlink()], [])
@@ -209,7 +209,7 @@ class CompositeHashRealpathTests(CompositeCase):
         self.link_ok(second)
         composite = self.composite_of(second)
         self.assertEqual(composite.name, name, 'the same files reached through an alias give the same hash')
-        self.assertEqual(os.readlink(composite / 'references/org.md'), str(alias / 'skills/feature/references/org.md'))
+        self.assertEqual(readlink(composite / 'references/org.md'), str(alias / 'skills/feature/references/org.md'))
         self.assertEqual(self.composites('feature'), [name])
 
 
@@ -219,14 +219,14 @@ class CompositeRebuildTests(CompositeCase):
         project = self.new_project('rebuild')
         self.link_ok(project)
         composite = self.composite_of(project)
-        entries = {rel: os.readlink(composite / rel) for rel in ('SKILL.md', 'references/org.md')}
+        entries = {rel: readlink(composite / rel) for rel in ('SKILL.md', 'references/org.md')}
         # a deleted entry, an entry pointing at the wrong file
         (composite / 'references/org.md').unlink()
         (composite / 'SKILL.md').unlink()
         os.symlink(self.layer_paths['core'] / 'skills/feature/references/core.md', composite / 'SKILL.md')
         self.link_ok(project)
         for rel, target in entries.items():
-            self.assertEqual(os.readlink(composite / rel), target, rel)
+            self.assertEqual(readlink(composite / rel), target, rel)
         self.assertIn('feature body', (composite / 'SKILL.md').read_text())
         # the whole composite directory removed
         shutil.rmtree(composite)
@@ -323,7 +323,7 @@ class CompositeOrphanTests(CompositeCase):
         self.assertIn('Adopted', result.stdout)
         self.assertEqual(org_file.read_text(), 'edited in the editor\n')
         self.assertTrue((composite / 'references/org.md').is_symlink(), 'the composite entry is a link again')
-        self.assertEqual(os.readlink(composite / 'references/org.md'), str(org_file))
+        self.assertEqual(readlink(composite / 'references/org.md'), str(org_file))
         self.assertFalse((self.orphans_of(composite) / 'references/org.md').exists())
 
     def test_atomic_editor_save_over_a_core_file_is_never_overwritten_but_kept_as_an_orphan(self):
@@ -621,7 +621,7 @@ class ConcurrentCompositeTests(ReviewCase):
             directory = self.generator.build_composite('feature', files)
         self.assertIsNotNone(directory, 'the link exists with the expected target: nothing to fall back from')
         for rel, (_layer, path) in files.items():
-            self.assertEqual(os.readlink(directory / rel), str(path), rel)
+            self.assertEqual(readlink(directory / rel), str(path), rel)
 
     def test_fallback_without_symlinks_leaves_no_empty_hash_directory(self):
         files = self.layerset().skill_files('feature')
@@ -636,11 +636,11 @@ class ConcurrentCompositeTests(ReviewCase):
         directory = self.generator.build_composite('feature', files)
         victim = directory / 'references' / 'org.md'
         victim.unlink()  # another project's composite is being (re)built: one link is missing
-        kept = {rel: os.readlink(directory / rel) for rel in files if rel != 'references/org.md'}
+        kept = {rel: readlink(directory / rel) for rel in files if rel != 'references/org.md'}
         with mock.patch('os.symlink', side_effect=OSError(errno.EPERM, 'no symlinks')), \
                 mock.patch.object(self.generator, '_composite_warned', False):
             self.assertIsNone(self.generator.build_composite('feature', files))
-        self.assertEqual({rel: os.readlink(directory / rel) for rel in kept}, kept,
+        self.assertEqual({rel: readlink(directory / rel) for rel in kept}, kept,
                          'the fallback must not tear down links other projects use')
 
     def test_two_processes_linking_projects_that_share_a_composite(self):

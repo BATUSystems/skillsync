@@ -638,7 +638,7 @@ class LayersAddTest(CommandsCase):
                         self.assertEqual(leakguard.match_targets(targets, [sibling]), [])
             self.assertEqual(leakguard.match_targets(targets, ['git@example.test:other/skills.git']), [])
         local = layers.remote_patterns(str(self.bare))
-        self.assertEqual(local, [str(self.bare)])
+        self.assertEqual(local, [self.bare.as_posix()])
         targets = {'acme': {'scope': 'org-private', 'kind': 'org', 'authors': [], 'remote_match': local}}
         self.assertEqual(leakguard.match_targets(targets, [str(self.bare)]), ['acme'])
         self.assertEqual(leakguard.match_targets(targets, [str(self.bare) + '-other']), [])
@@ -1444,7 +1444,7 @@ class TargetStubFillTest(CommandsCase):
         code, report = self.add('mine', 'personal', directory)
         self.assertEqual(code, 0, report)
         stub = self.config()['leakguard']['targets']['mine']
-        self.assertEqual(stub, {'scope': 'private', 'remote_match': [str(directory)], 'authors': ['jan@acme.example']})
+        self.assertEqual(stub, {'scope': 'private', 'remote_match': [directory.as_posix()], 'authors': ['jan@acme.example']})
         self.assertTrue(any('remote_match filled' in item for item in report['warnings']), report['warnings'])
         code, report = self.cli_json('leakcheck', str(self.default_checkout('mine')))
         self.assertEqual((code, report['target']), (0, 'mine'), report)
