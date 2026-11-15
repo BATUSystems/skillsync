@@ -17,6 +17,10 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 ### Fixed
 
 - Layer rules, the config and the dangling-link check on Windows with Python 3.13+: a path rooted with `/` or `\` but without a drive (`/a/**` in `layer_rules`, a `/a/b` source or a link target) is absolute again, as it was up to Python 3.12 (`ntpath.isabs('/x')` became False in 3.13). `fsutil.isabs` names the meaning; `layers.path_matches('/a/b/c', '/a/**')` matched nothing on 3.13, `layers` stored `/a/b` as `C:\a\b`, and `link` took a rooted link target for a relative one. POSIX unchanged.
+- `FileLock` on Windows: opening the lock file is retried briefly (at most 0.5 s and never beyond the lock timeout) when the system refuses it for an instant, because the holder
+  that just released the lock is deleting the file (`unlink=True`, the approvals lock; `os.open` answered `PermissionError` EACCES). Before, parallel `approvals record` calls could
+  sporadically end `BLOCKED` ("Permission denied: ...approvals.jsonl.lock"): measured 43 refusals in 24000 acquisitions by 6 processes, always at that `os.open`. A refusal that lasts
+  (a real permission problem) is still raised after the short retry. Single use, the inode check after a delete and the release on process exit are unchanged.
 - `leakguard`: a hook command line containing a path that starts with `/` is checked as an absolute path on Python 3.13+ on Windows too (`os.path.isabs('/x')` is False there since 3.13, so `hook_command_problems` skipped such a path and `hook-command-missing` did not report a missing file); POSIX unchanged.
 - Prototype server on Windows: a refused open, rename or replace of a file that another thread has open or is replacing (`PermissionError`, WinError 5 or 32) is retried for up to half a second (`retry_transient`; other systems and other errors unchanged).
   Before, concurrent requests could fail sporadically: a one-time login link could be lost by every caller at once (nobody got the session, the token stayed valid), reading `questions.json` or `comments.json` during a write ended as a 500 `internal_error`,
