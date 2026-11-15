@@ -236,7 +236,9 @@ class ValidationContracts(WorkflowFixture):
 
     def test_legacy_test_command_still_plans_and_runs(self):
         import shlex
-        self.manifest['tests'] = {'command': shlex.join([Path(sys.executable).as_posix(), '-c', 'print("Ran 1 test\\nOK")'])}
+        argv = [sys.executable, '-c', 'print("Ran 1 test\\nOK")']
+        # the legacy command runs through the shell: cmd.exe on Windows (no single quotes), sh elsewhere
+        self.manifest['tests'] = {'command': subprocess.list2cmdline(argv) if os.name == 'nt' else shlex.join(argv)}
         self.save()
         self.assertEqual(self.report('validate')['checks'][0]['id'], 'legacy-tests')
         self.assertEqual(self.report('validate', '--run')['status'], 'PASS')
