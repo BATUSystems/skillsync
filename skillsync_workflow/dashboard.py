@@ -20,7 +20,7 @@ import time
 import yaml
 
 from . import __version__
-from .common import add_project_arguments, read_project, redact
+from .common import add_project_arguments, plan_section, read_project, redact
 from .layers import add_layer_argument
 from .delivery_mode import delivery_info
 from .status import (APPROVAL_WORDS, APPROVALS_FILE, MAX_APPROVALS_BYTES, _APPROVAL_SHA, _approval_at, _status_fields,
@@ -741,10 +741,10 @@ EXPERT_QUESTION_SLUG = re.compile(r'[a-z0-9]+(?:-[a-z0-9]+)*')
 EXPERT_QUESTION_TYPES = ('ask', 'answer', 'comment', 'recorded', 'withdraw')
 
 
-def _open_questions(path):
-    """`(open, blocking)` of one `questions.json` (`expert-questions/1`), read like the prototype server folds it: a question is
-    open from its first `ask` until an `answer` or `withdraw` of it; operations without id/at/questionId/known type are skipped.
-    None for an unreadable or malformed file."""
+def _read_questions(path):
+    """`(asked, closed)` of one `questions.json` (`expert-questions/1`), read like the prototype server folds it: `asked` = `{questionId: its
+    first `ask` operation}` in order of asking; `closed` = `{questionId: 'answered'|'withdrawn'}` from the first `answer` or `withdraw`
+    of it. Operations without id/at/questionId/known type are skipped. None for an unreadable or malformed file."""
     try:
         with open(path, 'rb') as handle:
             raw = handle.read(EXPERT_QUESTIONS_MAX_BYTES + 1)
@@ -763,22 +763,53 @@ def _open_questions(path):
     usable = [op for op in operations
               if isinstance(op, dict) and isinstance(op.get('id'), str) and isinstance(op.get('at'), str)
               and isinstance(op.get('questionId'), str) and op.get('type') in EXPERT_QUESTION_TYPES]
-    asked, closed, seen = {}, set(), set()
+    asked, closed, seen = {}, {}, set()
     # the same order and de-duplication as the server's fold: operations by (at, id), an `ask` of a question first,
     # an operation whose id was already seen is skipped
     ordered = sorted(usable, key=lambda op: (op['at'], op['id']))
     for op in ordered:
         if op['type'] == 'ask' and op['id'] not in seen:
             seen.add(op['id'])
-            asked.setdefault(op['questionId'], op.get('blocking') is True)
+            asked.setdefault(op['questionId'], op)
     for op in ordered:
         if op['type'] == 'ask' or op['id'] in seen:
             continue
         seen.add(op['id'])
         if op['type'] in ('answer', 'withdraw'):
-            closed.add(op['questionId'])
-    still_open = [qid for qid in asked if qid not in closed]
-    return len(still_open), sum(1 for qid in still_open if asked[qid])
+            closed.setdefault(op['questionId'], 'answered' if op['type'] == 'answer' else 'withdrawn')
+    return asked, closed
+
+
+def _open_questions(path):
+    """`(open, blocking)` of one `questions.json`: a question is open from its first `ask` until an `answer` or `withdraw` of it.
+    None for an unreadable or malformed file."""
+    folded = _read_questions(path)
+    if folded is None:
+        return None
+    asked, closed = folded
+    still_open = [op for qid, op in asked.items() if qid not in closed]
+    return len(still_open), sum(1 for op in still_open if op.get('blocking') is True)
+
+
+def _addressees(op):
+    """Logins an `ask` is addressed to: a sorted list of strings; empty = every expert of the run."""
+    value = op.get('addressees')
+    return sorted({item for item in value if isinstance(item, str) and item}) if isinstance(value, list) else []
+
+
+QUESTION_TEXT_LIMIT = 160
+QUESTION_ITEMS_LIMIT = 50
+
+
+def _question_items(slug, asked, closed):
+    """`expertQuestions.items[]` entries of one run: `{id, runSlug, text (up to 160 characters), blocking, addressees, state, at, url}`;
+    `state` = `open`, `answered` or `withdrawn`."""
+    items = []
+    for qid, op in asked.items():
+        text = ' '.join(str(op.get('text') or '').split())
+        items.append({'id': qid, 'runSlug': slug, 'text': text[:QUESTION_TEXT_LIMIT], 'blocking': op.get('blocking') is True,
+                      'addressees': _addressees(op), 'state': closed.get(qid, 'open'), 'at': op['at'], 'url': f'/_experts/{slug}'})
+    return items
 
 
 def build_expert_questions(root):
@@ -786,7 +817,7 @@ def build_expert_questions(root):
     (`docs/prototypes/<slug>/questions.json`), not only the run of the visible spec. `runs` lists only runs with open
     questions; `url` is the path of that run's page on the prototype server (the consumer adds the origin)."""
     base = prototypes_root(root)
-    runs = []
+    runs, items = [], []
     if base is not None:
         try:
             names = sorted(os.listdir(base))
@@ -801,10 +832,20 @@ def build_expert_questions(root):
                 continue
             if questions.is_symlink() or not questions.is_file():
                 continue
-            counts = _open_questions(questions)
-            if counts and counts[0]:
-                runs.append({'slug': name, 'open': counts[0], 'blocking': counts[1], 'url': f'/_experts/{name}'})
-    return {'open': sum(run['open'] for run in runs), 'blocking': sum(run['blocking'] for run in runs), 'runs': runs}
+            folded = _read_questions(questions)
+            if folded is None:
+                continue
+            asked, closed = folded
+            items += _question_items(name, asked, closed)
+            still_open = [op for qid, op in asked.items() if qid not in closed]
+            if still_open:
+                everyone = any(not _addressees(op) for op in still_open)
+                runs.append({'slug': name, 'open': len(still_open), 'blocking': sum(1 for op in still_open if op.get('blocking') is True),
+                             'url': f'/_experts/{name}',
+                             'addressees': 'all' if everyone else sorted({login for op in still_open for login in _addressees(op)})})
+    items.sort(key=lambda item: (item['at'], item['id']), reverse=True)
+    return {'open': sum(run['open'] for run in runs), 'blocking': sum(run['blocking'] for run in runs), 'runs': runs,
+            'items': items[:QUESTION_ITEMS_LIMIT]}
 
 
 def prototype_acceptance(root, slug):
@@ -823,6 +864,95 @@ def prototype_acceptance(root, slug):
     if not isinstance(acceptance, dict):
         return None
     return {key: int(acceptance.get(key) or 0) for key in ('screens', 'accepted', 'stale')}
+
+
+def _comments_after_acceptance(directory, slug):
+    """`{count, screens: [{id, count}]}` (Q6): messages (a new thread or a reply, not retracted) newer than the last VALID acceptance of
+    their screen, in threads that are still undecided (`open`, `awaiting`); stateless (no "read" mark), so it goes away when the thread is
+    decided. None when the comment log cannot be read."""
+    from . import prototype_server as server
+    from .prototype import MAX_COMMENTS_READ, read_regular_bytes
+    path = directory / server.COMMENTS_FILE
+    if not os.path.lexists(path):
+        return {'count': 0, 'screens': []}
+    data, _reason = read_regular_bytes(path, MAX_COMMENTS_READ)
+    if data is None:
+        return None
+    fold = server.fold_operations(server.parse_document(data.decode('utf-8'), slug).operations)
+    hashes = server.screen_hashes(str(directory))
+    accepted = server.acceptance_state(fold, hashes['screens'], hashes.get('aliases'))
+    per_screen = {}
+    for thread in fold['threads']:
+        entry = accepted.get(thread.get('screen'))
+        if not entry or not entry['valid'] or thread['status'] not in ('open', 'awaiting'):
+            continue
+        since = parse_iso(entry['at'])
+        if since is None:
+            continue
+        newer = sum(1 for message in thread['messages']
+                    if not message.get('retracted') and (parse_iso(message.get('at')) or since) > since)
+        if newer:
+            per_screen[thread['screen']] = per_screen.get(thread['screen'], 0) + newer
+    return {'count': sum(per_screen.values()), 'screens': [{'id': name, 'count': per_screen[name]} for name in sorted(per_screen)]}
+
+
+def _safe_after_acceptance(directory, slug):
+    """`_comments_after_acceptance`, or zero comments when the log is unreadable or malformed (the prototype stays on the page)."""
+    try:
+        return _comments_after_acceptance(directory, slug) or {'count': 0, 'screens': []}
+    except Exception:
+        return {'count': 0, 'screens': []}
+
+
+def prototype_overview(root, slug):
+    """One prototype for the page (`prototypes[]` without `slug` and `writing`): `{iteration, screens, accepted, stale, threads,
+    commentsAfterAcceptance}` (in-process, read-only, the readers of `prototype list` and the prototype server), or None."""
+    if not slug or not re.fullmatch(r'[A-Za-z0-9][\w.-]*', slug):
+        return None
+    base = prototypes_root(root)
+    directory = base / slug if base is not None else None
+    if directory is None or not directory.is_dir() or directory.is_symlink():
+        return None
+    try:
+        from .prototype import prototype_comments_info
+        fields = prototype_comments_info(directory, slug)[0]
+        acceptance = fields.get('acceptance') if isinstance(fields.get('acceptance'), dict) else {}
+        threads = fields.get('threads') if isinstance(fields.get('threads'), dict) else {}
+        return {'iteration': fields.get('iteration'), 'screens': int(acceptance.get('screens') or 0),
+                'accepted': int(acceptance.get('accepted') or 0), 'stale': int(acceptance.get('stale') or 0),
+                'threads': {key: value for key, value in threads.items() if isinstance(value, int) and not isinstance(value, bool)},
+                'commentsAfterAcceptance': _safe_after_acceptance(directory, slug)}
+    except Exception:  # an unreadable prototype must not break the status page
+        return None
+
+
+PROTOTYPES_LIMIT = 50
+
+
+def build_prototypes(root, overview, writing):
+    """`prototypes[]`: every prototype of the project (up to 50, by slug) with its acceptance, threads and comments after acceptance."""
+    base = prototypes_root(root)
+    if base is None:
+        return []
+    try:
+        names = sorted(os.listdir(base))
+    except OSError:
+        return []
+    out = []
+    for name in names:
+        if not EXPERT_QUESTION_SLUG.fullmatch(name):
+            continue
+        directory = base / name
+        meta = directory / 'prototype.json'
+        if directory.is_symlink() or not directory.is_dir() or meta.is_symlink() or not meta.is_file():
+            continue
+        info = overview(name)
+        if info is None:
+            continue
+        out.append({'slug': name, **info, 'writing': writing(name) if writing else None})
+        if len(out) >= PROTOTYPES_LIMIT:
+            break
+    return out
 
 
 def prototype_writing(root, slug, now_ms=None):
@@ -1578,6 +1708,21 @@ def expert_item(expert):
                      'url': single['url'] if single else '/_experts'}}
 
 
+RESULT_STATUSES = ('in_progress', 'done', 'implemented')
+RESULT_MAX_BYTES = 4096
+
+
+def build_result(plan_text, plan_info):
+    """`result {text, path}`: the `## Wynik` section of the chosen plan (up to 4 KiB, as text) once the plan runs or is closed; None without
+    a plan, for a plan that has not started, or without a non-empty section."""
+    if not plan_info or plan_info.get('status') not in RESULT_STATUSES:
+        return None
+    section = plan_section(plan_text, 'Wynik')
+    if not section:
+        return None
+    return {'text': section.encode('utf-8')[:RESULT_MAX_BYTES].decode('utf-8', 'ignore').strip(), 'path': plan_info['path']}
+
+
 def trwa_stages(chronological):
     """`{stage key: HH:MM since}` of the NEWEST checkpoint's `trwa:` segment, or {}: a checkpoint with `czeka:` (the session waits,
     it does not work) or without the segment clears it. `since` = the oldest checkpoint of the unbroken run of newest ones that
@@ -1713,7 +1858,7 @@ def _normal_plan_rel(plan):
 
 
 def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=None, prototype_port=PROTOTYPE_PORT,
-                 version=0, ahead=None, prototype_up=None, acceptance=None, writing=None, now_ms=None):
+                 version=0, ahead=None, prototype_up=None, acceptance=None, writing=None, now_ms=None, overview=None):
     """The dashboard contract (`schema: 1`) for the project at `root`. Read-only: nothing in the project is written.
 
     `plan` = plan path relative to the project (unknown = automatic choice, `planAuto: true`). `version`, `session_url`,
@@ -1735,10 +1880,10 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
     if spec_act or run_act:
         chosen = None
 
-    plan_info, fields, phases = None, {}, []
+    plan_info, fields, phases, plan_text = None, {}, [], ''
     if chosen:
         plan_path = root / chosen['path']
-        text = read_text(plan_path)
+        text = plan_text = read_text(plan_path)
         title, fields = parse_header(text)
         phases = parse_progress(text)
         pr = PLAN_PR_RE.search(text)
@@ -1801,13 +1946,18 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
     writing_state = ((writing or (lambda name: prototype_writing(root, name, now_ms)))(slug)) if slug else None
     if writing_state:
         # `screensDone`: screens of `index.html` without the template example, counted like the acceptance (`prototype list`)
-        screens = (spec.get('prototypeAcceptance') or (acceptance or (lambda name: prototype_acceptance(root, name)))(slug) or {}).get('screens')
-        writing_state = {**writing_state, 'screensDone': int(screens or 0)}
+        counted = spec.get('prototypeAcceptance') or (acceptance or (lambda name: prototype_acceptance(root, name)))(slug)
+        if counted:   # an unreadable prototype has no count: the key is left out rather than claim 0 screens
+            writing_state = {**writing_state, 'screensDone': int(counted.get('screens') or 0)}
     acts = compute_acts(spec, plan_info, progress, run['files'],
                         {'risky': risky_sections(spec_text), 'trwa': trwa_stages(chronological),
                          'writingSince': _local_hhmm(writing_state['since']) if writing_state else None})
     acts[0]['linkWarning'] = link_warning(root, spec, run, bool(spec_path))
     expert_questions = build_expert_questions(root)
+    overview_of = overview or (lambda name: prototype_overview(root, name))
+    writing_of = writing or (lambda name: prototype_writing(root, name, now_ms))
+    prototypes = build_prototypes(root, overview_of, writing_of)
+    current_after = (overview_of(slug) or {}).get('commentsAfterAcceptance') if slug else None
     waiting = waiting_items(run, spec if spec_path else None, plan_info, slug, writing=writing_state, expert=expert_questions)
     git_info = read_git(root)
     delivery = read_delivery(manifest)
@@ -1834,6 +1984,7 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
         'run': run,
         'progress': progress,
         'acts': acts,
+        'result': build_result(plan_text, plan_info),
         'waiting': waiting,
         'eta': build_eta(run['start'], chronological, plan_info['status'] if plan_info else None),
         # Report silence: the consumer counts the minutes (no events arrive when nothing changes).
@@ -1845,7 +1996,8 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
         'delivery': delivery_state,
         'session': {'url': session_url},
         'prototype': {'slug': slug, 'port': prototype_port, 'up': bool(slug) and bool(prototype_up and prototype_up()),
-                      'writing': writing_state},
+                      'writing': writing_state, **({'commentsAfterAcceptance': current_after} if current_after else {})},
+        'prototypes': prototypes,
         'docs': doc_groups(root, [rel for rel in current_docs if rel], run['files'], run_id),
         'readiness': read_readiness(root, run_id, run['exists']),
         'assumptions': {'count': len(assumptions), 'items': assumptions},

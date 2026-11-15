@@ -223,6 +223,12 @@ class WritingScreensTests(WritingCliFixture):
         self.assertEqual(self.writing('start', '--screens', '15')['writing']['screensPlanned'], 15)
         self.assertEqual(self.writing('status')['writing']['screensPlanned'], 15)
 
+    def test_screens_with_done_or_status_is_invalid_args(self):
+        for action in ('done', 'status'):
+            with self.subTest(action=action):
+                report = self.writing(action, '--screens', '5', code=2)
+                self.assertEqual((report['status'], report['error']), ('BLOCKED', 'invalid_args'))
+
     def test_without_screens_the_marker_has_no_field(self):
         self.writing('start')
         self.assertNotIn('screensPlanned', self.stored())

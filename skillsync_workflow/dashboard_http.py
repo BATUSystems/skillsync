@@ -40,6 +40,7 @@ import yaml
 from . import __version__
 from . import dashboard as engine
 from . import dashboard_token
+from .dashboard_view import apply_viewer_view
 from . import status as status_core
 from .common import emit, load_layer_project, read_project, redact
 from .layers import LayerError
@@ -488,18 +489,31 @@ class Board:
         self._proto = (time.time(), up)
         return up
 
-    def prototype_acceptance(self, slug: str) -> dict | None:
-        """Screen acceptance of a prototype (`dashboard.prototype_acceptance`, in-process, read-only), kept in memory until
-        `comments.json`/`index.html` of the prototypes change or for PROTO_CACHE_S seconds."""
+    def _accept_table(self) -> dict:
+        """The in-memory table of the prototype readers: valid until `comments.json`/`index.html` of the prototypes change or for
+        PROTO_CACHE_S seconds."""
         base = self.root / engine.PROTOTYPES_DIR
         key = tuple(sorted((str(f), engine._mtime(f)) for pat in ("*/comments.json", "*/index.html") for f in base.glob(pat)))
         cached_key, ts, table = self._accept
         if key != cached_key or time.time() - ts > PROTO_CACHE_S:
             table = {}
             self._accept = (key, time.time(), table)
+        return table
+
+    def prototype_acceptance(self, slug: str) -> dict | None:
+        """Screen acceptance of a prototype (`dashboard.prototype_acceptance`, in-process, read-only), cached (`_accept_table`)."""
+        table = self._accept_table()
         if slug not in table:
             table[slug] = engine.prototype_acceptance(self.root, slug)
         return table[slug]
+
+    def prototype_overview(self, slug: str) -> dict | None:
+        """`dashboard.prototype_overview` (acceptance, threads, comments after acceptance), cached like the acceptance."""
+        table = self._accept_table()
+        key = ("overview", slug)
+        if key not in table:
+            table[key] = engine.prototype_overview(self.root, slug)
+        return table[key]
 
     def ahead(self, branch: str | None, head: str | None) -> dict:
         """`git_ahead` kept in memory until the branch/HEAD changes or for AHEAD_CACHE_S seconds."""
@@ -516,7 +530,7 @@ class Board:
             self.root, plan_rel or self.default_plan, manifest=self.manifest(), approvals=self.approvals,
             session_url=self.session_url, prototype_port=self.prototype_port, version=self.version,
             ahead=lambda _root, branch, head: self.ahead(branch, head), prototype_up=self.prototype_up,
-            acceptance=lambda slug: self.prototype_acceptance(slug))
+            acceptance=lambda slug: self.prototype_acceptance(slug), overview=lambda slug: self.prototype_overview(slug))
 
     # --- documents
     def doc(self, rel: str | None) -> dict | None:
@@ -662,12 +676,11 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
                 return self._asset(route[len("/assets/"):])
             if route == "/api/status":
                 data = self.board.status((query.get("plan") or [None])[0])
-                host = request_host(self.headers.get("Host"))
-                here = host in self.board.approve_hosts
+                here, viewer = self._approvals_role()
                 data["approvals"]["here"] = here
-                data["approvals"]["viewer"] = not here and host in self.board.read_hosts  # read-only Host (--read-host)
+                data["approvals"]["viewer"] = viewer
                 data["approvals"]["tokenRequired"] = bool(self.board.approve_token)  # only the fact: the value never leaves the process
-                return self._json(200, redact(data))  # secrets masked as in `dashboard show`
+                return self._json(200, redact(apply_viewer_view(data, viewer)))  # viewer: no logins or question texts (a copy); secrets masked as in `dashboard show`
             if route == "/api/doc":
                 doc = self.board.doc((query.get("path") or [None])[0])
                 if doc is None:
@@ -693,6 +706,13 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
                 return self._json(500, {"error": "Błąd serwera statusu; szczegóły w konsoli."})
             except OSError:
                 return None
+
+    def _approvals_role(self) -> tuple[bool, bool]:
+        """`(here, viewer)` of this request: `here` = may give consents (Host of loopback or `--approve-host`), `viewer` = read-only
+        (Host of `--read-host` only). The one place that decides the role of `/api/status`."""
+        host = request_host(self.headers.get("Host"))
+        here = host in self.board.approve_hosts
+        return here, not here and host in self.board.read_hosts
 
     def _approve_allowed(self) -> str | None:
         """Reason to refuse a write or None: loopback Host (also against DNS rebinding and tunnels), own header (forces

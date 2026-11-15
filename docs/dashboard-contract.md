@@ -113,6 +113,8 @@ projektu lub przebiegu). Raport komend zapisujących i `metrics --json` to JSON 
 | `assumptions` | obiekt | NOWE: założenia ze speca |
 | `blockingQuestions` | obiekt | NOWE: pytania blokujące ze speca |
 | `expertQuestions` | obiekt | NOWE: otwarte pytania do eksperta ze wszystkich przebiegów |
+| `prototypes` | tablica | wszystkie prototypy projektu (do 50, wg `slug`): `{slug, iteration, screens, accepted, stale, threads, commentsAfterAcceptance, writing}`; `threads` = liczby wątków wg statusu (open, awaiting, decided, closed…), `writing` jak w `prototype.writing`; odnośnik buduje host z `slug` (`deps.prototypeUrl`) |
+| `result` | obiekt albo null | `{text, path}`: sekcja `## Wynik` wybranego planu (do 4 KiB, tekst), gdy plan jest `in_progress`, `done` albo `implemented`; null bez planu, bez sekcji albo dla planu, który nie ruszył |
 | `eta` | obiekt albo null | NOWE (addytywnie, `schema: 1`): szacowany koniec bieżącej operacji z najnowszego checkpointu (`eta:`) |
 | `substeps` | tablica | NOWE: podkroki `Fn.k` z czasem |
 | `timing` | obiekt | NOWE (addytywnie, `schema: 1`): czas pracy i czas czekania na człowieka per krok i per faza planu |
@@ -288,6 +290,10 @@ tablica).
 dowiązanie symboliczne). Odczyt jest tym samym kodem co w serwerze prototypów, tylko do odczytu; serwer strony śledzi plik znacznika i jego ważność,
 więc strona odświeża się też przy wygaśnięciu.
 
+`commentsAfterAcceptance` (opcjonalne w `prototype` i w `prototypes[]`): `{count, screens: [{id, count}]}`; wiadomości (nowy wątek albo odpowiedź, bez wycofanych)
+późniejsze niż ostatnia WAŻNA akceptacja ekranu, w wątkach niezałatwionych (`open`, `awaiting`; nie `decided` ani `closed`). Bezstanowe: bez znacznika
+„przeczytane”, znika po załatwieniu wątku albo nowej akceptacji. W `prototype` tylko gdy `count > 0`.
+
 ### `docs[]`
 
 Grupy `{key, label, items[]}`; `key`: `task` (bieżący spec i plan), `run` (pliki przebiegu), `specs`, `plans`, `design`,
@@ -339,8 +345,13 @@ bez dowiązań symbolicznych, `prototype.json` obok, plik do 2 MiB (serwer zapis
   blokujące = `blocking: true` w `ask`.
 - `open`, `blocking`: sumy po wszystkich przebiegach; zawsze obecne, `0` bez pytań. Pytania do eksperta nie zależą od
   wybranego planu ani speca, więc pytanie z przebiegu A nie znika po starcie przebiegu B.
-- `runs[]`: tylko przebiegi z otwartymi pytaniami, w kolejności `slug`: `{slug, open, blocking, url}`; `url` to ścieżka
-  strony przebiegu na serwerze prototypów (`/_experts/<slug>`), host dokłada konsument.
+- `runs[]`: tylko przebiegi z otwartymi pytaniami, w kolejności `slug`: `{slug, open, blocking, url, addressees}`; `url` to ścieżka
+  strony przebiegu na serwerze prototypów (`/_experts/<slug>`), host dokłada konsument. `addressees` (opcjonalne): `"all"`, gdy któreś otwarte
+  pytanie przebiegu nie ma adresatów, inaczej posortowana suma loginów adresatów otwartych pytań.
+- `items[]` (opcjonalne): do 50 najnowszych pytań wszystkich przebiegów, najnowsze pierwsze: `{id, runSlug, text (do 160 znaków), blocking,
+  addressees (lista loginów, pusta = wszyscy eksperci), state (open, answered, withdrawn), at, url}`.
+- Widok widza (`approvals.viewer`): `runs[].addressees` puste, `items[]` bez `text` i z pustymi `addressees`, `waiting[].who.login` null
+  (także w surowych tekstach `run.checkpoints[].text` i `timing.windows[].what` sufiks `(kto: rola login)` traci login), `prototypes[]` tylko z liczbami wątków. `dashboard show --json` (lokalne CLI operatora) niczego nie ukrywa.
 - Renderer pokazuje toast „Pytania do eksperta: N otwartych (M blokujących)” w banerze, gdy `open > 0`: to stan, nie wynik
   akcji, więc bez timera i bez „×”; znika, gdy `open` spadnie do `0`. Odnośnik „Odpowiedz na pytania” prowadzi do
   `/_experts/<slug>` przy jednym przebiegu albo do `/_experts` przy kilku, o ile host zna adres serwera prototypów

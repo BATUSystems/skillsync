@@ -185,6 +185,18 @@ class WritingScreens(Project):
         item = next(w for w in status['waiting'] if w['source'] == 'writing')
         self.assertNotIn(' z ', item['what'].split('(')[1].split(',')[0])
 
+    def test_unreadable_prototype_leaves_screens_done_out(self):
+        root = self.project('spec-act')
+        self.add_prototype(root)
+        mark = {'since': 1_700_000_000_000, 'expiresAt': 1_700_000_900_000, 'renewedAt': 1_700_000_000_000, 'screensPlanned': 12}
+        status = dashboard.build_status(root, prototype_port=1, writing=lambda slug: dict(mark), acceptance=lambda slug: None,
+                                        ahead=lambda *args: {})
+        writing = status['prototype']['writing']
+        self.assertNotIn('screensDone', writing)
+        self.assertEqual(writing['screensPlanned'], 12)
+        item = next(w for w in status['waiting'] if w['source'] == 'writing')
+        self.assertNotIn(' z ', item['what'].split('(')[1].split(',')[0])
+
     def test_waiting_item_names_done_of_planned(self):
         root = self.project('spec-act')
         self.add_prototype(root)

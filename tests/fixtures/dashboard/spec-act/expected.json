@@ -185,6 +185,7 @@
   "eta": null,
   "expertQuestions": {
     "blocking": 0,
+    "items": [],
     "open": 0,
     "runs": []
   },
@@ -226,12 +227,14 @@
     "up": false,
     "writing": null
   },
+  "prototypes": [],
   "readiness": {
     "date": null,
     "planSha": null,
     "source": null,
     "status": null
   },
+  "result": null,
   "run": {
     "checkpoints": [
       {

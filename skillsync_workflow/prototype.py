@@ -2823,6 +2823,8 @@ def writing_prototype(root, manifest, slug, action, ttl=None, by=None, screens=N
     if planned is False:
         return _blocked('invalid_args', f'--screens must be a whole number from {server.WRITING_SCREENS_MIN} '
                                         f'to {server.WRITING_SCREENS_MAX}')
+    if planned is not None and action != 'start':
+        return _blocked('invalid_args', '--screens applies to `start` only')
     who = by
     if who is not None and (not isinstance(who, str) or not server.WRITING_BY_RE.fullmatch(who)):
         return _blocked('invalid_args', '--by must be 1-64 characters of letters, digits and . _ @ + -')

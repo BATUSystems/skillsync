@@ -254,6 +254,7 @@
   "eta": null,
   "expertQuestions": {
     "blocking": 0,
+    "items": [],
     "open": 0,
     "runs": []
   },
@@ -393,12 +394,14 @@
     "up": false,
     "writing": null
   },
+  "prototypes": [],
   "readiness": {
     "date": "2026-01-10",
     "planSha": "0123456789abcdef0123456789abcdef01234567",
     "source": ".skillsync/runs/2026-01-10-demo-feature/readiness.md",
     "status": "PASS"
   },
+  "result": null,
   "run": {
     "checkpoints": [
       {

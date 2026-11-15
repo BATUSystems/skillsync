@@ -198,6 +198,7 @@
   "eta": null,
   "expertQuestions": {
     "blocking": 0,
+    "items": [],
     "open": 0,
     "runs": []
   },
@@ -288,12 +289,14 @@
     "up": false,
     "writing": null
   },
+  "prototypes": [],
   "readiness": {
     "date": "2026-01-11",
     "planSha": "2222222222222222222222222222222222222222",
     "source": ".skillsync/runs/2026-01-11-demo-export/readiness.md",
     "status": "BLOCKED"
   },
+  "result": null,
   "run": {
     "checkpoints": [
       {

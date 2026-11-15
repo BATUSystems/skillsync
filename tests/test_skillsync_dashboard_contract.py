@@ -25,9 +25,9 @@ STR_OR_NONE = (str, type(None))
 TOP = {
     'schema': int, 'app': dict, 'project': dict, 'generatedAt': str, 'version': int, 'lastUpdate': STR_OR_NONE,
     'git': dict, 'plans': list, 'planAuto': bool, 'mode': str, 'plan': (dict, type(None)), 'spec': dict, 'run': dict,
-    'progress': dict, 'acts': list, 'waiting': list, 'silence': (dict, type(None)), 'approvals': dict, 'delivery': dict,
+    'progress': dict, 'acts': list, 'result': (dict, type(None)), 'waiting': list, 'silence': (dict, type(None)), 'approvals': dict, 'delivery': dict,
     'session': dict, 'prototype': dict, 'docs': list, 'readiness': dict, 'assumptions': dict, 'blockingQuestions': dict,
-    'expertQuestions': dict, 'substeps': list, 'timing': dict, 'eta': (dict, type(None)),
+    'expertQuestions': dict, 'prototypes': list, 'substeps': list, 'timing': dict, 'eta': (dict, type(None)),
 }
 ETA = ({'operation': str, 'until': str, 'untilIso': STR_OR_NONE, 'since': str}, {})
 # Pola obiektów zagnieżdżonych: wymagane (typ) i opcjonalne (opcjonalne tylko gdy opisane w kontrakcie jako opcjonalne).
@@ -48,11 +48,11 @@ NESTED = {
     'delivery': ({'mode': str, 'base': STR_OR_NONE, 'source': str, 'branch': STR_OR_NONE, 'target': STR_OR_NONE,
                   'remote': STR_OR_NONE, 'pushed': (bool, type(None)), 'ahead': (int, type(None)), 'words': list}, {}),
     'session': ({'url': STR_OR_NONE}, {}),
-    'prototype': ({'slug': STR_OR_NONE, 'port': int, 'up': bool, 'writing': (dict, type(None))}, {}),
+    'prototype': ({'slug': STR_OR_NONE, 'port': int, 'up': bool, 'writing': (dict, type(None))}, {'commentsAfterAcceptance': dict}),
     'readiness': ({'status': STR_OR_NONE, 'date': STR_OR_NONE, 'planSha': STR_OR_NONE, 'source': STR_OR_NONE}, {}),
     'assumptions': ({'count': int, 'items': list}, {}),
     'blockingQuestions': ({'count': int, 'items': list}, {}),
-    'expertQuestions': ({'open': int, 'blocking': int, 'runs': list}, {}),
+    'expertQuestions': ({'open': int, 'blocking': int, 'runs': list}, {'items': list}),
 }
 PLAN = ({'path': str, 'title': str, 'status': STR_OR_NONE, 'statusText': STR_OR_NONE, 'date': STR_OR_NONE, 'mtime': str,
          'fileSha': STR_OR_NONE, 'pr': (dict, type(None))}, {})
@@ -84,7 +84,7 @@ CHECKPOINT = ({'time': str, 'text': str}, {})
 DELIVERY_WORD = ({'word': str, 'active': bool, 'tip': str, 'target': STR_OR_NONE}, {})
 ASSUMPTION = ({'id': str, 'question': str, 'accepted': str}, {})
 BLOCKING = ({'id': str, 'question': str}, {})
-EXPERT_RUN = ({'slug': str, 'open': int, 'blocking': int, 'url': str}, {})
+EXPERT_RUN = ({'slug': str, 'open': int, 'blocking': int, 'url': str}, {'addressees': (str, list)})
 
 
 def load(case):
@@ -238,7 +238,7 @@ class DashboardContract(unittest.TestCase):
         self.assertFalse(any('pytania' in w['action'] for w in questions['waiting']))
         self.assertEqual([(r['slug'], r['open'], r['blocking']) for r in questions['expertQuestions']['runs']],
                          [('run-alpha', 2, 1), ('run-beta', 1, 1)])  # dwa przebiegi, zamknięty run-gamma pominięty
-        self.assertEqual({k: v for k, v in json.loads(load('empty')[1])['expertQuestions'].items()}, {'open': 0, 'blocking': 0, 'runs': []})
+        self.assertEqual({k: v for k, v in json.loads(load('empty')[1])['expertQuestions'].items()}, {'open': 0, 'blocking': 0, 'runs': [], 'items': []})
         cp_ready = json.loads(load('cp-ready')[1])
         self.assertEqual([(a['kind'], a['state']) for a in cp_ready['approvals']['actions'][2:]],
                          [('cp', 'waiting'), ('ready', 'waiting')])
