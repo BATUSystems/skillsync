@@ -706,6 +706,23 @@ class Process(unittest.TestCase):
                     time.sleep(0.1)
         self.assertFalse(pending, f"not listening: {pending}")
 
+    def console_until(self, proc, *needles, timeout=30):
+        """Reads the console (stderr) of `proc` until every needle was printed (the start logs after the sockets are up, and a slow name
+        lookup delays the later lines); returns `(lines, finish)`: `finish()` stops the process and returns the whole console text."""
+        lines: list[str] = []
+        reader = threading.Thread(target=lambda: lines.extend(iter(proc.stderr.readline, "")), daemon=True)
+        reader.start()
+        deadline = time.time() + timeout
+        while time.time() < deadline and not all(any(needle in line for line in list(lines)) for needle in needles):
+            time.sleep(0.05)
+
+        def finish() -> str:
+            proc.terminate()
+            proc.wait(timeout=30)
+            reader.join(10)
+            return "".join(lines)
+        return lines, finish
+
     def blocked(self, *flags) -> dict:
         done = subprocess.run([sys.executable, str(CLI), "dashboard", "serve", str(self.root), *flags, *self.layer], capture_output=True, text=True,
                               env=self.env, timeout=60)
@@ -805,9 +822,8 @@ class Process(unittest.TestCase):
         read_port, approve_port = two_ports()
         proc = self.serve("--read-port", str(read_port), "--approve-port", str(approve_port), "--approve-bind", "127.0.0.1", "--read-bind", "127.0.0.1")
         self.wait_up(read_port, approve_port)
-        time.sleep(0.5)
-        proc.terminate()
-        _out, err = proc.communicate(timeout=30)
+        _lines, finish = self.console_until(proc, "odczyt (do tunelu", "zgody (przyciski")
+        err = finish()
         lines = err.splitlines()
         read_lines = [line for line in lines if "odczyt (do tunelu" in line]
         approve_lines = [line for line in lines if line.count("zgody (przyciski") and "#zgoda=" in line]
@@ -819,15 +835,14 @@ class Process(unittest.TestCase):
         read_port, approve_port = two_ports()
         proc = self.serve("--read-port", str(read_port), "--approve-port", str(approve_port))
         self.wait_up(read_port, approve_port)
-        time.sleep(0.5)
         address = lan_address()
         if address is None:
             self.skipTest("no non-loopback address on this machine; deliberately not in skip-baseline, so on CI runners (which have one) a skip is an error")
         for port in (read_port, approve_port):   # the default of the two-port mode: every interface
             with socket.create_connection((address, port), timeout=2):
                 pass
-        proc.terminate()
-        _out, err = proc.communicate(timeout=30)
+        _lines, finish = self.console_until(proc, f"UWAGA: port zgód {approve_port}", f"UWAGA: port odczytu {read_port}")
+        err = finish()
         self.assertIn(f"UWAGA: port zgód {approve_port} słucha na 0.0.0.0", err)
         self.assertIn(f"UWAGA: port odczytu {read_port} słucha na 0.0.0.0", err)
 
