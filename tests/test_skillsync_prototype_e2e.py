@@ -27,6 +27,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from tests.layers_helpers import needs_mode_enforcement
+
 REPO = Path(__file__).resolve().parents[1]
 E2E_DIR = REPO / 'tests' / 'e2e' / 'prototype'
 SCRIPT_TIMEOUT = 1000
@@ -184,8 +186,6 @@ class EnvironmentTests(unittest.TestCase):
             work = Path(tmp) / 'w'
             env = env_module.prepare(work, LIBRARY, 9333, 4445, 4446)
             secrets_path = Path(env['secrets'])
-            self.assertEqual(secrets_path.stat().st_mode & 0o777, 0o600)
-            self.assertEqual(Path(env['config']).stat().st_mode & 0o777, 0o600)
             passwords = json.loads(secrets_path.read_text())
             self.assertGreaterEqual(len(passwords), 7)
             visible = (work / 'env.json').read_text()
@@ -200,6 +200,14 @@ class EnvironmentTests(unittest.TestCase):
             self.assertEqual(roles['marta@example.com'], ('acceptor', True))
             for password in passwords.values():
                 self.assertNotIn(password, json.dumps(users), 'the users file stores hashes only')
+
+    @needs_mode_enforcement   # Windows does not enforce POSIX modes (a file made there is 0o666): the mode is not checked
+    def test_secret_files_have_a_private_mode(self):
+        env_module = load_env_module()
+        with tempfile.TemporaryDirectory(prefix='skillsync-e2e-env-') as tmp:
+            env = env_module.prepare(Path(tmp) / 'w', LIBRARY, 9333, 4445, 4446)
+            self.assertEqual(Path(env['secrets']).stat().st_mode & 0o777, 0o600)
+            self.assertEqual(Path(env['config']).stat().st_mode & 0o777, 0o600)
 
 
 def list_scenarios(script, env_path):
