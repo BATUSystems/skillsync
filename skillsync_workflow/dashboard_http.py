@@ -958,5 +958,5 @@ def serve_command(args) -> int:
         with board.cond:
             board.cond.notify_all()
         server.server_close()
-        dashboard_token.remove_state(board.root, port)
+        dashboard_token.remove_state(board.root, port, os.getpid())
     return emit({"status": "PASS", "url": url, "stopped": True})

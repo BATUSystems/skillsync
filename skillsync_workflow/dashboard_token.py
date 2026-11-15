@@ -24,7 +24,7 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import layers
+from . import layers, pathfmt
 
 SCHEMA = 1
 TOKEN_BYTES = 24
@@ -64,9 +64,16 @@ def _resolved(root) -> Path:
     return Path(root).resolve()
 
 
+def root_text(root) -> str:
+    """The resolved project root in the one form of the report paths (`/` on Windows, `pathfmt.posix`): the `root` field of the state
+    file, the comparison in `servers` and the input of the digest all use THIS text, so the server and `dashboard url` name the same file
+    (`C:\\x` and `C:/x` would be two files) and the field reads like the other path fields of the reports."""
+    return pathfmt.posix(str(_resolved(root)))
+
+
 def _digest(root) -> str:
-    """16 hex of the SHA-256 of the resolved project root: the name of its state files."""
-    return hashlib.sha256(str(_resolved(root)).encode("utf-8", "surrogatepass")).hexdigest()[:16]
+    """16 hex of the SHA-256 of `root_text(root)`: the name of its state files."""
+    return hashlib.sha256(root_text(root).encode("utf-8", "surrogatepass")).hexdigest()[:16]
 
 
 def state_path(root, port: int) -> Path:
@@ -132,11 +139,12 @@ def write_state(root, port: int, token, host: str = "127.0.0.1", warn=None, host
         directory.mkdir(parents=True, exist_ok=True)
         if not _own_directory(directory):
             if warn:
-                warn("katalog pliku tokenu zgód jest dowiązaniem albo nie należy do użytkownika: pliku nie zapisano; adres z tokenem jest tylko w tej linii konsoli")
+                warn("katalog pliku tokenu zgód jest dowiązaniem albo nie należy do użytkownika: pliku nie zapisano; adres z tokenem jest tylko w tej linii konsoli"
+                     if token is not None else "katalog pliku stanu jest dowiązaniem albo nie należy do użytkownika: pliku nie zapisano (`dashboard url` nie rozpozna tego serwera)")
             return None
         restricted = _restrict(directory)
         _sweep_temporaries(directory, root, port)
-        record = {"schema": SCHEMA, "pid": os.getpid(), "port": int(port), "host": host, "root": str(_resolved(root)),
+        record = {"schema": SCHEMA, "pid": os.getpid(), "port": int(port), "host": host, "root": root_text(root),
                   "startedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"), "approvals": token is not None,
                   "hosts": [str(name) for name in hosts]}
         if token is not None:
@@ -164,9 +172,19 @@ def write_state(root, port: int, token, host: str = "127.0.0.1", warn=None, host
         return None
 
 
-def remove_state(root, port: int) -> None:
+def remove_state(root, port: int, pid: int | None = None) -> None:
+    """Remove the state file of the port. With `pid` (the server that stops) only when the file is its own: a server that lost the port to
+    another one, or an old one that stops late, must not delete the file of the server that holds the port now."""
+    path = state_path(root, port)
+    if pid is not None:
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return
+        if not isinstance(record, dict) or record.get("pid") != pid:
+            return
     try:
-        state_path(root, port).unlink()
+        path.unlink()
     except OSError:
         pass
 
@@ -198,7 +216,7 @@ def servers(root, port: int | None = None, healthy=None) -> list[dict]:
     """The running servers of the project that have a state file: `[{port, pid, host, token, startedAt, hosts, approvals}]`, by port
     (`approvals` False: a `--no-approvals` server, no token)."""
     healthy = healthy or _healthy
-    root_text = str(_resolved(root))
+    expected_root = root_text(root)
     prefix = _digest(root) + "-"
     found = []
     try:
@@ -210,7 +228,7 @@ def servers(root, port: int | None = None, healthy=None) -> list[dict]:
             record = json.loads((state_dir() / name).read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
-        if (not isinstance(record, dict) or record.get("schema") != SCHEMA or record.get("root") != root_text
+        if (not isinstance(record, dict) or record.get("schema") != SCHEMA or record.get("root") != expected_root
                 or not isinstance(record.get("port"), int)):
             continue
         has_token = isinstance(record.get("token"), str) and bool(record["token"])
