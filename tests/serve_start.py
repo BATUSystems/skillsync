@@ -22,14 +22,18 @@ def state_files(env):
     return sorted(directory.glob("*.json")) if directory.is_dir() else []
 
 
-def own_state(env, proc, port):
-    """Is there a state file of THIS process? Only the server that holds the port writes one with its pid."""
+def own_state(env, proc, port, root=None):
+    """Is there a state file of THIS server? Only the server that holds the port writes one with its pid. On Windows `proc.pid` is the launcher of
+    the venv `python.exe`, not the interpreter that serves, so there the port plus the project root of the file identify the server."""
+    from skillsync_workflow import dashboard_token
     for path in state_files(env):
         try:
             record = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
-        if record.get("pid") == proc.pid and record.get("port") == port:
+        if record.get("port") != port:
+            continue
+        if record.get("pid") == proc.pid or (os.name == "nt" and root is not None and record.get("root") == dashboard_token.root_text(root)):
             return True
     return False
 
@@ -51,7 +55,7 @@ def start_serve(case, cli, root, layer, env, free_port, *extra, prepare=None, re
         while time.time() < deadline and proc.poll() is None:
             try:
                 urllib.request.urlopen(f"http://127.0.0.1:{port}/healthz", timeout=1).close()
-                answered = own_state(env, proc, port) and (ready is None or ready(port))
+                answered = own_state(env, proc, port, root) and (ready is None or ready(port))
             except OSError:
                 answered = False
             if answered:
