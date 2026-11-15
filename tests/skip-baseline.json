@@ -641,6 +641,10 @@
     "category": "posix-only"
    },
    {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_the_identity_proved_for_a_plain_number_file_travels_into_the_stop",
+    "category": "posix-only"
+   },
+   {
     "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_the_proc_fallback_works_when_ps_is_missing",
     "category": "posix-only"
    },

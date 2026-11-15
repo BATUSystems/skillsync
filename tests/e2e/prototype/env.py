@@ -657,7 +657,8 @@ def stop_all(env):
             print('env: %s: the leader (pid %d) is gone, stopping %d helper(s) of the record' % (pid_file.name, record['pid'], len(seed)),
                   file=sys.stderr)
         left = stop_tree(record['pid'] if leader else None, seed=seed,
-                         root={'pid': record['pid'], 'start': record['start'], 'uid': record['uid']} if leader and record.get('start') is not None else None)
+                         root=(({'pid': record['pid'], 'start': record['start'], 'uid': record['uid']} if record.get('start') is not None
+                                else identity_of(row)) if leader else None))   # the identity that was proved above travels on
         if left:
             print('env: %s: still alive after SIGKILL: %s; %s kept' % (pid_file.name, ', '.join(str(pid) for pid in sorted(left)), pid_file.name),
                   file=sys.stderr)

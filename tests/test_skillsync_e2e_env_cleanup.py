@@ -407,6 +407,27 @@ class E2eEnvCleanup(unittest.TestCase):
         self.assertFalse(alive(pids['A']) or alive(pids['B']))
         self.assertTrue(alive(pids['C']) and alive(pids['D']))   # not listed, not below A: not ours to touch
 
+    def test_the_identity_proved_for_a_plain_number_file_travels_into_the_stop(self):
+        sentinel = self.sentinel()
+        pid_file = self.work / 'chrome.pid'
+        pid_file.write_text(str(sentinel.pid))
+        real = ENV.process_table
+        calls = []
+        def table():
+            result = real()
+            calls.append(1)
+            if len(calls) > 1 and sentinel.pid in result:   # the number now belongs to a stranger (another start time)
+                result = dict(result)
+                result[sentinel.pid] = dict(result[sentinel.pid], start=result[sentinel.pid]['start'] + 5000)
+            return result
+        sent = []
+        with mock.patch.object(ENV, 'process_table', side_effect=table), mock.patch.object(ENV, '_signal', lambda pid, sig: sent.append(pid)), \
+                mock.patch.object(ENV, '_signal_group', lambda pgid, sig: sent.append(-pgid)), \
+                mock.patch.object(ENV, 'GRACE', 0.1), mock.patch.object(ENV, 'KILL_WAIT', 0.1), contextlib.redirect_stderr(io.StringIO()):
+            ENV.stop_all(self.env)
+        self.assertEqual([item for item in sent if abs(item) == sentinel.pid], [], 'the process behind a replaced number was signalled')
+        self.assertTrue(alive(sentinel.pid))
+
     def synthetic(self, rows):
         """A process table made of `rows` ({pid: (ppid, pgid, uid, state, start)})."""
         return {pid: {'pid': pid, 'ppid': ppid, 'pgid': pgid, 'uid': uid, 'state': state, 'start': start}
@@ -443,8 +464,7 @@ class E2eEnvCleanup(unittest.TestCase):
             self.assertEqual(ENV.orphans_of(record, table), {})
 
     def test_a_record_that_names_an_ancestor_of_the_runner_signals_nothing(self):
-        ancestor = os.getppid()
-        row = ENV.process_table()[ancestor]
+        row = ENV.process_table()[os.getpid()]   # this very process (a record naming it or an ancestor is junk)
         (self.work / 'chrome.pid').write_text(json.dumps(ENV.identity_of(row)))
         err = io.StringIO()
         with mock.patch.object(ENV, '_signal', side_effect=AssertionError('kill')), \
