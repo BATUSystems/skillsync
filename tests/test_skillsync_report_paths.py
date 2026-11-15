@@ -1,9 +1,9 @@
 """Contract guard (DEBT-150 PATHFMT): a path field of a CLI report is written through `pathfmt.posix`, never as `str(path)`.
 
-Since 1.4.1 a path in a report has `/` on every system (`D:/work/docs/README.md`); the fields `root`, `project`, `config`,
-`directory`, `budgets[].path` and the rest were left native. The guard reads the sources of the modules (AST, no run) and
-fails for a dict entry or keyword argument whose key names a path and whose value is `str(...)` / `os.fspath(...)`, so a new
-report field cannot bring the native form back. A field that must stay native (a command to execute, a value read from the
+A path in a report has `/` on every system (`D:/work/docs/README.md`). The guard reads the sources of the modules (AST, no
+run) and fails for a dict entry, an `x['key'] = value` assignment or a keyword argument of `_report`/`update`/`dict` whose key
+names a path and whose value is `str(...)` / `os.fspath(...)` (also under a conditional or in a list), so a new report field
+cannot bring the native form back. A field that must stay native (a command to execute, a value read from the
 configuration) goes to `NATIVE_ALLOWED` with the reason."""
 import ast
 import re
