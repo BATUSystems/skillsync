@@ -59,8 +59,9 @@ class EquivalenceCase(LayersCase):
     def describe(self, library, project):
         tokens = [(str(library), '<LIB>'), (str(project), '<PROJ>'), (str(ROOT), '<GEN>'), (self.env['HOME'], '<HOME>')]
         result = make_baseline.describe(project, tokens)
+        # Windows reports an absolute target as `\\?\C:\...` with backslashes: compare it in the POSIX form of the baseline
         result['symlinks'] = {key: (value[len('<LIB>/'):] if value.startswith('<LIB>/') else value)
-                              for key, value in result['symlinks'].items()}
+                              for key, value in ((k, v.replace('\\\\?\\', '', 1).replace('\\', '/')) for k, v in result['symlinks'].items())}
         self.normalize_task_command(project, tokens, result)
         return result
 

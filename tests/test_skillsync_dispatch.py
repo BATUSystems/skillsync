@@ -564,7 +564,7 @@ class DoctorAgentflowNameTests(WorkflowFixture):
         report = self.report("doctor", code=1)
         self.assertEqual(len(self.deprecation(report)), 1)
         self.assertFalse(any(f["reason"] == "Missing skill" for f in report["findings"]))
-        self.assertTrue(any(f["reason"] == "Missing installed skill" and f["path"].endswith("skills/agentflow")
+        self.assertTrue(any(f["reason"] == "Missing installed skill" and f["path"].replace("\\", "/").endswith("skills/agentflow")
                             for f in report["findings"]))
 
     def test_dispatch_adapters_are_checked_like_feature_adapters(self):

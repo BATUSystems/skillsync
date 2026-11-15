@@ -979,7 +979,7 @@ class TrustModelTest(MergeCase):
 
     def test_junctions_and_reparse_points_are_detected_like_symlinks(self):
         regular = os.lstat(self.work)
-        fake = lambda attributes: types.SimpleNamespace(st_mode=regular.st_mode, st_file_attributes=attributes)   # noqa: E731
+        fake = lambda attributes: types.SimpleNamespace(st_mode=regular.st_mode, st_file_attributes=attributes, st_reparse_tag=0)   # noqa: E731
         with mock.patch.object(os, 'lstat', return_value=fake(0x400)):                     # FILE_ATTRIBUTE_REPARSE_POINT
             self.assertTrue(layers.is_link(self.work / 'x'))
         with mock.patch.object(os, 'lstat', return_value=fake(0x10)):                      # a plain directory attribute
