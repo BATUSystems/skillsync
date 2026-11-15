@@ -16,6 +16,7 @@ z powodem w raporcie.
 | ścieżki, pliki, końce linii, symlinki, blokady | Windows 3.11, 3.12 i 3.13 w środowisku jak runner (pusty profil, PATH bez `skillsync`, TEMP w formie 8.3), punktowo moduły zmienione; pełny bieg po LEASE |
 | HTTP, pliki, sygnały | macOS (CI albo maszyna) dla zmienionych modułów |
 | każdy nowy lub zmieniony skip | `scripts/check_skips.py` z baseline po zmianie na logach `-v` **wszystkich systemów** (Linux, macOS, Windows; klucz `<system>/<tryb>`): rc=0; kategorie sprawdzaj pod kątem przechwytywania (pierwsza pasująca wygrywa) |
+| każda zmiana `tests/skip-baseline.json` (wpis, kategoria, klucz systemu, `null` → lista) | CAŁY moduł `test_skillsync_check_skips` (strażnik kształtu `RealBaselineTests` oczekuje listy albo `null` według krotki `measured`) i `test_skillsync_ci_workflows` na najstarszej i najnowszej wersji Pythona, plus `check_skips.py` na logach wszystkich systemów; sam skrypt na logach nie wystarcza (d6cabea, baseline ubuntu-latest: czerwony strażnik kształtu na origin) |
 | nowa kategoria lub fragment skipa | samospójność: każdy fragment klasyfikuje się do własnej kategorii |
 
 Skrypty pomocnicze leżą w repo operacyjnym `skillsync-ops` (`tools/win-shard/`): `prepush.sh` (macierz Windows i `check_skips` z jednej komendy),
