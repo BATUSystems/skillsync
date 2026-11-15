@@ -214,17 +214,22 @@ def plan_summary(text):
     return redact(result + ('…' if cut else '')) or None
 
 
+def has_acceptance_step(status, text):
+    """A closed plan (`done`) whose `## Progress` has the human acceptance step (`Odbiór`)."""
+    section = plan_section(text, 'Progress') if status == 'done' else None
+    return bool(section) and bool(_ACCEPTANCE_STEP.search(section))
+
+
 def acceptance_pending(status, text, context):
     """True when a closed plan (`done`) that has the human acceptance step (`Odbiór` in `## Progress`: the material, a checklist and the
     coverage table, handed to the person before the closing word) still waits for that word: the closing consent of the delivery mode
     (`READY` in `pr`, `CP` in `direct`) is not in the run's `approvals.jsonl` for the current HEAD. The step's checkbox changes nothing:
     only the approvals entry (written by the status page or `approvals record`) ends the wait, and a new HEAD starts it again.
     `context` = `{'head', 'mode', 'approvals'}`; without it (or without a readable HEAD or a valid delivery mode) there is no signal."""
-    if status != 'done' or not context or not context.get('head'):
+    if not has_acceptance_step(status, text) or not context or not context.get('head'):
         return False
     word = ACCEPTANCE_WORDS.get(context.get('mode'))
-    section = plan_section(text, 'Progress')
-    if word is None or not section or not _ACCEPTANCE_STEP.search(section):
+    if word is None:
         return False
     from .quality import _PLAN_RUN, _RUN_ID  # lazy: quality imports this module
     run = _PLAN_RUN.search(text[:4000])
@@ -265,7 +270,7 @@ def plan_record(root, path, context=None):
             'ticket': {'key': ticket.group(1), 'link': ticket.group(2)} if ticket else None, 'spec': spec,
             'needsHuman': plan_needs_human(status, steps, bool(ticket), bool(pr)) + (['acceptance'] if acceptance_pending(status, text, context) else []),
             'updated': _iso(path.stat().st_mtime),
-            'preImplement': pre, 'summary': plan_summary(text)}
+            'preImplement': pre, 'summary': plan_summary(text), '_acceptanceStep': has_acceptance_step(status, text)}
 
 
 def _plans(root, findings, context=None):
@@ -283,6 +288,13 @@ def _plans(root, findings, context=None):
             rows.append(plan_record(root, path, context))
         except (OSError, UnicodeDecodeError) as error:
             findings.append(f'Plan unreadable: {path.name} ({type(error).__name__})')
+    # only the newest closed plan with the acceptance step can wait for the closing word: an earlier one is history (it would light up
+    # again at every new HEAD); `rows` is newest first
+    newest = next((row for row in rows if row['_acceptanceStep']), None)
+    for row in rows:
+        if row is not newest and 'acceptance' in row['needsHuman']:
+            row['needsHuman'].remove('acceptance')
+        row.pop('_acceptanceStep', None)
     return rows
 
 

@@ -100,6 +100,16 @@ class AcceptanceSignal(unittest.TestCase):
         self.write_plan(plan('in_progress'))
         self.assertEqual(self.needs('pr'), ['closure'])           # all steps checked, not closed: `closure`, never both
 
+    def test_only_the_newest_closed_plan_with_the_step_waits_for_the_closing_word(self):
+        older, newer = self.root / 'docs/plans/2026-10-01-old.md', self.root / 'docs/plans/2026-11-15-new.md'
+        older.write_text(plan(run='OLD-1'), encoding='utf-8')
+        newer.write_text(plan(run='NEW-1'), encoding='utf-8')
+        record = {Path(item['path']).name: item['needsHuman'] for item in status.project_status(self.root, {})['plans']}
+        self.assertEqual(record, {'2026-11-15-new.md': ['acceptance'], '2026-10-01-old.md': []})
+        self.approve('READY', self.git('rev-parse', 'HEAD'), run='NEW-1')
+        record = {Path(item['path']).name: item['needsHuman'] for item in status.project_status(self.root, {})['plans']}
+        self.assertEqual(record, {'2026-11-15-new.md': [], '2026-10-01-old.md': []})   # history stays quiet
+
     def test_an_invalid_delivery_mode_or_a_missing_run_line_gives_no_signal(self):
         self.write_plan(plan())
         self.assertEqual(self.needs('nonsense'), [])

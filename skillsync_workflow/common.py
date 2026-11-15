@@ -120,18 +120,18 @@ def deep_merge(base, override):
 def _append_review_prototype(result, *levels):
     """`review.prototype` only grows: layers (already appended by `merged_defaults`), then the per-file project settings, then the
     manifest. A project adds items, never removes the core ones. Order: core, layers, project, manifest; duplicates (equal text,
-    no normalisation) keep the first occurrence. A level whose value is not a list is left to `validate_workflow` (it rejects it)."""
+    no normalisation) keep the first occurrence. A level whose value is not a list of nonempty strings (null, a scalar, a map, a
+    non-text or empty item) is an error at that level: it is never skipped, because the plain merge would then hand the result to a
+    later valid level and lose the core items without a word."""
     items, seen = [], set()
     for level in levels:
         review = level.get('review') if isinstance(level, dict) else None
         if not isinstance(review, dict) or 'prototype' not in review:
             continue
         value = review['prototype']
-        if not isinstance(value, list):
-            return   # invalid type (null, scalar, map): keep the plain merge result for the validator to refuse
+        if not isinstance(value, list) or not all(isinstance(item, str) and item for item in value):
+            raise ValueError('review.prototype must be a list of nonempty strings')
         for item in value:
-            if not isinstance(item, str):
-                return
             if item not in seen:
                 seen.add(item)
                 items.append(item)
@@ -275,7 +275,7 @@ def validate_workflow(config):
             raise ValueError(f'{section}.{key} must be a mapping')
         for name, value in mapping.items():
             strings(value, f'{section}.{key}.{name}')
-    for section, keys in [('readiness', ('required_sections', 'contract_paths')), ('review', ('core', 'project', 'ui_paths', 'ui_evidence', 'docs_paths', 'docs_checklist', 'prototype'))]:
+    for section, keys in [('readiness', ('required_sections', 'contract_paths')), ('review', ('core', 'project', 'ui_paths', 'ui_evidence', 'docs_paths', 'docs_checklist', 'prototype', 'prototype_paths'))]:
         for key in keys:
             if key in config.get(section, {}):
                 strings(config[section][key], f'{section}.{key}')

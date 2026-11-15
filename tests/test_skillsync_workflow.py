@@ -1136,6 +1136,24 @@ class ReviewPrototypeProfile(WorkflowFixture):
                 self.save()
                 self.rejected('review', '--files', 'helper.py')
 
+    def test_an_invalid_level_is_an_error_even_when_a_later_level_is_valid(self):
+        self.manifest['project'] = {'name': 'Team/Service'}
+        (self.library / 'workflow/projects').mkdir()
+        project = self.library / 'workflow/projects/Team-Service.yaml'
+        self.manifest['workflow']['review'] = {'prototype': ['P: manifest item']}   # a valid manifest after an invalid project file
+        self.save()
+        for value in (None, 'x', ['p1', 3], [''], {'a': 1}, [['n']]):
+            with self.subTest(project_value=value):
+                project.write_text(yaml.safe_dump({'review': {'prototype': value}}, allow_unicode=True), encoding='utf-8')
+                self.rejected('review', '--files', 'helper.py')
+
+    def test_prototype_paths_must_be_a_list_of_texts(self):
+        for value in ('docs/prototypes/**', None, [1], ['']):
+            with self.subTest(value=value):
+                self.manifest['workflow']['review'] = {'prototype_paths': value}
+                self.save()
+                self.rejected('review', '--files', 'helper.py')
+
     def test_an_unknown_profile_is_refused_and_a_scalar_checklist_is_rejected(self):
         self.rejected('review', '--files', 'helper.py', '--profile', 'nonsense')
         self.manifest['workflow']['review'] = {'prototype': 'one item'}
