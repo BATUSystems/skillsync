@@ -10,12 +10,17 @@ Two forms are refused (AST of every `tests/**/*.py`, no run):
    has them: `self.assertEqual(...)`, `self.assertTrue(...)`, ...);
 2. a test method whose only assertions sit inside one conditional on the platform or on a capability, without an `else`
    (the test passes on every other system without checking).
-Exceptions go to `ALLOWED` as `(file, method)` with the reason; the list is empty on purpose."""
+Exceptions go to `ALLOWED` as `(file, method)` with the reason; the list is empty on purpose, and a stale entry fails the guard.
+
+Known limits (a static guard, not a proof): an assertion counts when the call is named `assert*`, `verify*`, `check*`, `expect*`,
+`ensure*`, `must*`, `fail` or `skipTest`; a check made by another name does not count, and a path put through a variable or a helper
+that returns for the test is not followed; form 2 reads only the conditionals at the top level of the method body."""
 import ast
 import re
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -24,7 +29,8 @@ sys.path.insert(0, str(ROOT))
 ALLOWED = {}
 
 CAPABILITY = re.compile(r'os\.name|sys\.platform|platform\.|hasattr\(|IS_WIN|IS_MAC|WINDOWS|MACOS|POSIX|geteuid|getuid|which\(|symlink|tzset|'
-                        r'CHROME|NODE|shellcheck|junction|_available|supports|can_', re.IGNORECASE)
+                        r'CHROME|NODE|shellcheck|junction|_available|supports|can_|\bNO_[A-Z_]+|\bHAS_[A-Z_]+|\bIS_[A-Z_]+', re.IGNORECASE)
+CHECK_HELPERS = ('assert', 'verify', 'check', 'expect', 'ensure', 'must')   # a helper named so counts as an assertion (documented)
 
 
 def _is_assertion(node):
@@ -32,7 +38,7 @@ def _is_assertion(node):
         return False
     func = node.func
     name = func.attr if isinstance(func, ast.Attribute) else func.id if isinstance(func, ast.Name) else ''
-    return name.startswith('assert') or name == 'fail'
+    return name.startswith(CHECK_HELPERS) or name in ('fail', 'skipTest')   # skipTest raises: a return after it is unreachable
 
 
 def _own_nodes(block):
@@ -73,13 +79,16 @@ def silent_returns(function):
 
 
 def only_inside_conditional(function):
-    """Line of a platform/capability `if` without `else` that holds every assertion of the method, else None."""
+    """Line of a platform/capability `if` at the top of the method that holds every assertion of the method while one of its
+    branches checks nothing (no `else`, or an `else`/`if` branch without an assertion, e.g. `if nt: pass / else: asserts`)."""
     body = [s for s in function.body if not (isinstance(s, ast.Expr) and isinstance(s.value, ast.Constant))]
     for statement in body:
-        if isinstance(statement, ast.If) and not statement.orelse and CAPABILITY.search(ast.unparse(statement.test)):
+        if isinstance(statement, ast.If) and CAPABILITY.search(ast.unparse(statement.test)):
             inside = any(_is_assertion(node) for node in _own_nodes([statement]))
             outside = any(_is_assertion(node) for other in body if other is not statement for node in _own_nodes([other]))
-            if inside and not outside:
+            then_checks = any(_is_assertion(node) for node in _own_nodes(statement.body))
+            else_checks = any(_is_assertion(node) for node in _own_nodes(statement.orelse)) if statement.orelse else False
+            if inside and not outside and not (then_checks and else_checks):
                 return statement.lineno
     return None
 
@@ -93,7 +102,7 @@ def test_methods(tree):
                     yield member
 
 
-def findings(tests_dir, root=None):
+def findings(tests_dir, root=None, allowed=None):
     root = Path(root or tests_dir.parent)
     found = []
     for path in sorted(Path(tests_dir).rglob('*.py')):
@@ -103,7 +112,7 @@ def findings(tests_dir, root=None):
         except SyntaxError:
             continue
         for function in test_methods(tree):
-            if (relative, function.name) in ALLOWED:
+            if (relative, function.name) in (ALLOWED if allowed is None else allowed):
                 continue
             for line in silent_returns(function):
                 found.append(f'{relative}:{line} {function.name}: a return with no assertion before it (use self.skipTest(reason))')
@@ -111,6 +120,13 @@ def findings(tests_dir, root=None):
             if line:
                 found.append(f'{relative}:{line} {function.name}: every assertion sits in one platform/capability branch without else (skip instead)')
     return found
+
+
+def stale_allowed(tests_dir=None):
+    """`ALLOWED` entries that no longer name a test with a finding (the test was fixed or renamed): the list must not rot."""
+    tests_dir = Path(tests_dir or ROOT / 'tests')
+    current = {tuple(item.split(' ')[0].rsplit(':', 1)[0:1]) + (item.split(' ')[1].rstrip(':'),) for item in findings(tests_dir, tests_dir.parent, allowed={})}
+    return sorted(entry for entry in ALLOWED if entry not in current)
 
 
 def _first_function(source):
@@ -126,6 +142,19 @@ class NoSilentReturn(unittest.TestCase):
         self.assertEqual(silent_returns(quiet), [3])
         guarded = _first_function("def test_b(self):\n    if sys.platform == 'darwin':\n        self.assertTrue(y)\n")
         self.assertEqual(only_inside_conditional(guarded), 2)
+
+    def test_an_allowed_entry_that_no_longer_has_a_finding_is_stale(self):
+        self.assertEqual(stale_allowed(), [], 'remove the entry from ALLOWED: the test was fixed or renamed')
+        with mock.patch.dict(ALLOWED, {('tests/test_skillsync_no_silent_return.py', 'test_the_guard_sees_the_quiet_forms'): 'x'}):
+            self.assertEqual(stale_allowed(), [('tests/test_skillsync_no_silent_return.py', 'test_the_guard_sees_the_quiet_forms')])
+
+    def test_the_guard_sees_a_pass_branch_with_the_checks_in_the_else_and_counts_skiptest(self):
+        passing = _first_function("def test_f(self):\n    if os.name == 'nt':\n        pass\n    else:\n        self.assertTrue(a)\n")
+        self.assertEqual(only_inside_conditional(passing), 2)
+        flag = _first_function("def test_g(self):\n    if not NO_MODE_ENFORCEMENT:\n        self.verify_mode(a)\n")
+        self.assertEqual(only_inside_conditional(flag), 2)
+        skipped = _first_function("def test_h(self):\n    if os.name == 'nt':\n        self.skipTest('no')\n        return\n    self.assertTrue(a)\n")
+        self.assertEqual(silent_returns(skipped), [])
 
     def test_the_guard_ignores_helpers_fixtures_and_subtests(self):
         source = (
