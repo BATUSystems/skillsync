@@ -1,9 +1,9 @@
 """`common.resolve_loop_checked`: a symlink loop is reported on every Python version.
 
-`Path.resolve()` stopped raising on a loop in newer Pythons (POSIX 3.13, Windows 3.12); the loop then shows only when the result is
-used. The checks inject the `os.stat` failures, so they run the same on every system without needing the right to make symlinks."""
+`Path.resolve()` stopped raising on a loop in newer Pythons (POSIX 3.13, Windows 3.12): it returns the path it got stuck at, which
+still has a symlink among its components. The injected `is_symlink` answers make the checks run the same on every system; one more
+tests that make real loops are in test_skillsync_retro (RetroAll)."""
 import errno
-import os
 import sys
 import tempfile
 import unittest
@@ -26,30 +26,23 @@ class ResolveLoopChecked(unittest.TestCase):
         missing = self.base / 'nie-ma' / 'x'
         self.assertEqual(common.resolve_loop_checked(missing), missing.resolve())
 
-    def test_a_loop_reported_by_stat_raises_on_posix_and_on_windows(self):
-        for error in (OSError(errno.ELOOP, 'Too many levels of symbolic links'), self.windows_error(1921)):
-            with self.subTest(error=repr(error)), mock.patch.object(os, 'stat', side_effect=error):
-                with self.assertRaises((OSError, RuntimeError)):   # older pathlib turns ELOOP into RuntimeError itself
-                    common.resolve_loop_checked(self.base / 'loop' / 'x')
+    def test_a_resolved_path_that_still_has_a_link_is_a_loop(self):
+        stuck = self.base.resolve() / 'loop-b'
+        with mock.patch.object(Path, 'resolve', lambda self, strict=False: stuck / 'x'), \
+                mock.patch.object(Path, 'is_symlink', lambda self: self == stuck):
+            with self.assertRaises(OSError) as caught:
+                common.resolve_loop_checked(self.base / 'loop-a' / 'x')
+        self.assertEqual(caught.exception.errno, errno.ELOOP)
 
-    def test_a_path_that_cannot_be_read_or_does_not_exist_is_not_a_loop(self):
-        for error in (PermissionError(errno.EACCES, 'denied'), FileNotFoundError(errno.ENOENT, 'missing'),
-                      NotADirectoryError(errno.ENOTDIR, 'not a directory')):
-            with self.subTest(error=type(error).__name__), mock.patch.object(os, 'stat', side_effect=error):
-                self.assertEqual(common.resolve_loop_checked(self.base / 'x'), (self.base / 'x').resolve())
+    def test_a_path_without_links_is_not_a_loop(self):
+        with mock.patch.object(Path, 'is_symlink', lambda self: False):
+            self.assertEqual(common.resolve_loop_checked(self.base / 'x'), (self.base / 'x').resolve())
 
     def test_the_users_of_the_helper_treat_a_loop_as_unresolvable(self):
-        loop = OSError(errno.ELOOP, 'Too many levels of symbolic links')
-        with mock.patch.object(os, 'stat', side_effect=loop):
+        with mock.patch.object(common, 'resolve_loop_checked', side_effect=OSError(errno.ELOOP, 'loop')):
             self.assertTrue(common.is_excluded(self.base / 'x', [self.base / 'elsewhere']))
             with self.assertRaises(ValueError):
                 common.discover_excludes({'discover_exclude': [str(self.base / 'x')]})
-
-    @staticmethod
-    def windows_error(code):
-        error = OSError(errno.EINVAL, 'The name of the file cannot be resolved by the system')
-        error.winerror = code   # the attribute exists on Windows only; set by hand so the check runs everywhere
-        return error
 
 
 if __name__ == '__main__':

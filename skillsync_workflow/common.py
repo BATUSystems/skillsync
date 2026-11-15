@@ -349,15 +349,12 @@ def resolve_loop_checked(path):
     """`Path(path).resolve()` that reports a symlink loop on every Python version.
 
     Older Pythons raise `OSError`/`RuntimeError` from `resolve()` on a loop; newer ones (POSIX from 3.13, Windows from
-    3.12) return the unresolved path instead. The loop then shows when the result is used: `os.stat` fails with ELOOP
-    (on Windows with error 1921, "the name of the file cannot be resolved"). A path that merely does not exist, or
-    that cannot be read, still resolves."""
+    3.12) return the path they got stuck at instead. A fully resolved path has no symlink among its components, so one
+    that still has a link has not been resolved: a loop. A path that merely does not exist still resolves."""
     resolved = Path(path).resolve()
-    try:
-        os.stat(resolved)
-    except OSError as exc:
-        if exc.errno == errno.ELOOP or getattr(exc, 'winerror', None) == 1921:
-            raise
+    for part in (resolved, *resolved.parents):
+        if part.is_symlink():
+            raise OSError(errno.ELOOP, 'Too many levels of symbolic links', str(path))
     return resolved
 
 
