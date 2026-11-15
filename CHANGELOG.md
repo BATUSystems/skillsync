@@ -27,7 +27,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ### Changed
 
-- `GET /_api/v1/questions` and `/_api/v1/questions/<id>` for an account without a role of the experts: `200` with the preview instead of `403 forbidden`; the page text of the `403` of a write says what is allowed.
+- `GET /_api/v1/questions` and `/_api/v1/questions/<id>` for an account without a role of the experts: `200` with the preview instead of `403 forbidden`; the preview shows the text of the questions and the authors of answers and comments by the account `name` (first and last name; a `name` that looks like a login or an e-mail address shows the label `uczestnik`), never a login or an e-mail address; the page text of the `403` of a write says what is allowed.
 - `skillsync_workflow/common.py`: `plan_section(text, name)`, the shared reader of a `## <name>` section of a plan.
 - The prototype engine files (`prototype.js`, `prototype.css`) carry the presentation mode: `skillsync prototype migrate` delivers them (the change of the CSS can invalidate the acceptance of screens: the list is `acceptance` of the result).
 
