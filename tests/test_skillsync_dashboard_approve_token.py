@@ -241,6 +241,75 @@ class StateFile(unittest.TestCase):
         path.write_text(json.dumps({**record, "root": "elsewhere", "pid": os.getpid()}), encoding="utf-8")
         self.assertEqual(dashboard_token.servers(self.project, healthy=lambda host, port, token_id=None: True), [])
 
+    def test_address_host_is_a_name_the_page_accepts_and_bind_name_stays_the_probe_address(self) -> None:
+        for host, approve, shown, probed in (("0.0.0.0", (), "127.0.0.1", "127.0.0.1"), ("", (), "127.0.0.1", "127.0.0.1"),
+                                             ("::", (), "127.0.0.1", "127.0.0.1"), ("127.0.0.1", (), "127.0.0.1", "127.0.0.1"),
+                                             ("localhost", (), "localhost", "localhost"),
+                                             ("192.168.1.5", (), "127.0.0.1", "192.168.1.5"),
+                                             ("192.168.1.5", ("192.168.1.5",), "192.168.1.5", "192.168.1.5"),
+                                             ("192.168.1.5", ("DEMO.example",), "127.0.0.1", "192.168.1.5"),
+                                             ("DEMO.example", ("demo.example",), "DEMO.example", "DEMO.example")):
+            with self.subTest(host=host, approve=approve):
+                self.assertEqual(dashboard_token.address_host(host, approve), shown)
+                self.assertEqual(dashboard_token.bind_name(host), probed)
+
+    def test_a_state_file_without_a_token_is_kept_only_when_it_says_no_approvals(self) -> None:
+        path = dashboard_token.write_state(self.project, 5180, None)
+        record = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual((record["approvals"], "token" in record), (False, False))
+        listed = dashboard_token.servers(self.project, healthy=lambda host, port, token_id=None: token_id is None)
+        self.assertEqual([(item["port"], item["approvals"], item["token"]) for item in listed], [(5180, False, None)])
+        del record["approvals"]                      # a record that is neither with a token nor "approvals: false" is broken
+        path.write_text(json.dumps(record), encoding="utf-8")
+        self.assertEqual(dashboard_token.servers(self.project, healthy=lambda host, port, token_id=None: True), [])
+
+    @unittest.skipIf(os.name == "nt", "POSIX: dowiązania i właściciel katalogu")
+    def test_a_state_directory_that_is_a_link_is_refused_and_nothing_is_written_through_it(self) -> None:
+        elsewhere = Path(self.tmp.name) / "elsewhere"
+        elsewhere.mkdir()
+        state = dashboard_token.state_dir()
+        state.parent.mkdir(parents=True, exist_ok=True)
+        os.symlink(elsewhere, state)
+        warnings = []
+        self.assertIsNone(dashboard_token.write_state(self.project, 5181, "tok-link", warn=warnings.append))
+        self.assertEqual(list(elsewhere.iterdir()), [], "the token went nowhere")
+        self.assertEqual(len(warnings), 1)
+        self.assertNotIn("tok-link", warnings[0])
+        self.assertTrue(state.is_symlink(), "the link itself is left alone (not chmod-ed through, not removed)")
+
+    @unittest.skipIf(os.name == "nt", "POSIX: dowiązania i właściciel katalogu")
+    def test_a_state_directory_of_another_user_is_refused(self) -> None:
+        dashboard_token.state_dir().mkdir(parents=True)
+        warnings = []
+        with mock.patch.object(dashboard_token.os, "geteuid", lambda: os.stat(dashboard_token.state_dir()).st_uid + 1):
+            self.assertIsNone(dashboard_token.write_state(self.project, 5182, "tok-uid", warn=warnings.append))
+        self.assertEqual(len(warnings), 1)
+        self.assertEqual(list(dashboard_token.state_dir().iterdir()), [])
+
+    def test_the_ordinary_case_is_not_refused(self) -> None:
+        warnings = []
+        self.assertTrue(dashboard_token.write_state(self.project, 5183, "tok-ok", warn=warnings.append).is_file())
+        self.assertEqual(warnings, [])
+        self.assertTrue(dashboard_token.write_state(self.project, 5183, "tok-ok2", warn=warnings.append).is_file(), "a second write over an existing directory")
+        self.assertEqual(warnings, [])
+
+    def test_a_start_removes_the_leftover_temporary_files_of_its_own_project_and_port_only(self) -> None:
+        other = Path(self.tmp.name) / "other"
+        other.mkdir()
+        dashboard_token.write_state(self.project, 5190, "tok-first")
+        directory = dashboard_token.state_dir()
+        digest = dashboard_token._digest(self.project)
+        mine = directory / f".tmp-{digest}-5190-leftover1.json"
+        mine.write_text('{"token": "dead"}', encoding="utf-8")
+        same_project_other_port = directory / f".tmp-{digest}-5191-leftover2.json"
+        same_project_other_port.write_text("x", encoding="utf-8")
+        other_project = directory / f".tmp-{dashboard_token._digest(other)}-5190-leftover3.json"
+        other_project.write_text("x", encoding="utf-8")
+        dashboard_token.write_state(self.project, 5190, "tok-second")
+        self.assertFalse(mine.exists(), "a temporary file of this project and port is swept")
+        self.assertTrue(same_project_other_port.exists())
+        self.assertTrue(other_project.exists())
+
     def test_the_address_has_the_token_in_the_fragment_only(self) -> None:
         self.assertEqual(dashboard_token.address(5140, "t0k"), "http://127.0.0.1:5140/#zgoda=t0k")
         self.assertEqual(dashboard_token.address(5140, "t0k", "demo.example"), "http://demo.example:5140/#zgoda=t0k")
@@ -307,6 +376,26 @@ class UrlCommand(unittest.TestCase):
         code, out = self.run_url(host="evil.example")
         self.assertEqual((code, json.loads(out[0])["code"]), (2, "host_not_allowed"))
         self.assertNotIn("tok-h", out[0])
+
+    def test_a_server_without_consents_is_approvals_disabled_not_server_not_running(self) -> None:
+        dashboard_token.write_state(self.root, 5175, None)
+        code, out = self.run_url()
+        report = json.loads(out[0])
+        self.assertEqual((code, report["status"], report["code"]), (2, "BLOCKED", "approvals_disabled"))
+        self.assertIn("5175", report["reason"])
+
+    def test_with_a_server_with_and_one_without_consents_the_address_is_of_the_first(self) -> None:
+        dashboard_token.write_state(self.root, 5176, None)
+        dashboard_token.write_state(self.root, 5177, "tok-on")
+        code, out = self.run_url()
+        self.assertEqual((code, json.loads(out[0])["url"]), (0, "http://127.0.0.1:5177/#zgoda=tok-on"))
+        code, out = self.run_url(port=5176)
+        self.assertEqual((code, json.loads(out[0])["code"]), (2, "approvals_disabled"))
+
+    def test_a_server_bound_to_an_address_the_page_refuses_is_offered_on_loopback(self) -> None:
+        dashboard_token.write_state(self.root, 5178, "tok-ip", host="192.168.1.5")    # the probe goes to its own address (the file)
+        code, out = self.run_url()
+        self.assertEqual((code, json.loads(out[0])["url"]), (0, "http://127.0.0.1:5178/#zgoda=tok-ip"))
 
     def test_a_broken_project_is_blocked(self) -> None:
         code, out = self.run_url(path=str(self.tmp / "nope"))
@@ -493,16 +582,26 @@ class ServeWritesAndRemovesTheState(unittest.TestCase):
                 break
             except OSError:
                 time.sleep(0.1)
-        self.assertFalse(stale.exists())
+        record = json.loads(stale.read_text(encoding="utf-8"))
+        self.assertNotIn("token", record, "the token of the dead server is gone, not kept")
+        self.assertIs(record.get("approvals"), False, "a server without consents says so")
+        self.assertEqual(record["pid"] != os.getpid() and record["port"], port)
         proc.terminate()
         proc.communicate(timeout=15)
 
-    def test_no_approvals_prints_no_token_and_writes_no_file(self) -> None:
+    def test_no_approvals_prints_no_token_and_writes_a_file_without_one(self) -> None:
         proc, port = self.start("--no-approvals")
-        self.assertEqual(self.state_files(), [])
+        files = self.state_files()
+        self.assertEqual(len(files), 1)
+        record = json.loads(files[0].read_text(encoding="utf-8"))
+        self.assertEqual((record["approvals"], "token" in record, "tokenId" in record), (False, False, False))
+        url = subprocess.run([sys.executable, str(CLI), "dashboard", "url", str(self.root), "--json", *self.layer], capture_output=True, text=True,
+                             env=self.env, timeout=30)
+        self.assertEqual((url.returncode, json.loads(url.stdout)["code"]), (2, "approvals_disabled"), url.stdout)
         proc.terminate()
         _out, err = proc.communicate(timeout=15)
         self.assertNotIn("#zgoda=", err)
+        self.assertEqual(self.state_files(), [], "removed when the server stops, with or without consents")
 
 
 if __name__ == "__main__":

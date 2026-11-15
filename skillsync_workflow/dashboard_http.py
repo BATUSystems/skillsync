@@ -911,15 +911,17 @@ def serve_command(args) -> int:
         if board.approvals:
             # The only place where the token is printed: a fragment goes neither to the server nor to a proxy. The page keeps it in the
             # browser; `skillsync dashboard url <project>` prints the same address for a running server (state file outside the project).
-            token_host = dashboard_token.bind_name(host)   # where the server really listens (a wildcard bind: loopback)
-            log(f"zgody (przyciski na stronie): otwórz {dashboard_token.address(port, board.approve_token, token_host)} "
+            token_host = dashboard_token.bind_name(host)   # where the server really listens (a wildcard bind: loopback): the probe of `dashboard url`
+            shown_host = dashboard_token.address_host(host, board.approve_hosts)   # a name the page accepts for consents
+            log(f"zgody (przyciski na stronie): otwórz {dashboard_token.address(port, board.approve_token, shown_host)} "
                 f"(bez fragmentu strona działa tylko do odczytu; adres z tokenem: `skillsync dashboard url`)")
             for name in sorted(board.approve_hosts - LOOPBACK_HOSTS):
                 log(f"  zdalnie ({name}, --approve-host): {dashboard_token.address(port, board.approve_token, name)}")
             dashboard_token.write_state(board.root, port, board.approve_token, token_host, warn=lambda text: log(f"UWAGA: {text}"),
                                         hosts=sorted(board.approve_hosts - LOOPBACK_HOSTS))
         else:
-            dashboard_token.remove_state(board.root, port)   # a leftover of a killed server with consents on this port
+            # no token: the file only says `approvals: false` (replaces a leftover of a killed server with consents on this port)
+            dashboard_token.write_state(board.root, port, None, dashboard_token.bind_name(host), warn=lambda text: log(f"UWAGA: {text}"))
         extra = sorted(board.approve_hosts - LOOPBACK_HOSTS)
         readers = sorted(board.read_hosts - board.approve_hosts)
         if extra:
@@ -956,6 +958,5 @@ def serve_command(args) -> int:
         with board.cond:
             board.cond.notify_all()
         server.server_close()
-        if board.approvals:
-            dashboard_token.remove_state(board.root, port)
+        dashboard_token.remove_state(board.root, port)
     return emit({"status": "PASS", "url": url, "stopped": True})

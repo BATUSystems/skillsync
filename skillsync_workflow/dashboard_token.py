@@ -48,6 +48,14 @@ def bind_name(host: str) -> str:
     return host
 
 
+def address_host(host: str, approve_hosts=()) -> str:
+    """The name for the address with the token: the page accepts consents only under loopback and the names of `--approve-host`, so a
+    server bound to another IP is offered on loopback (a name the page refuses would give a dead address)."""
+    name = bind_name(host)
+    allowed = {item.lower() for item in LOOPBACK} | {str(item).lower() for item in approve_hosts}
+    return name if name.lower() in allowed else "127.0.0.1"
+
+
 def state_dir() -> Path:
     return layers.data_home() / "dashboard"
 
@@ -56,9 +64,13 @@ def _resolved(root) -> Path:
     return Path(root).resolve()
 
 
+def _digest(root) -> str:
+    """16 hex of the SHA-256 of the resolved project root: the name of its state files."""
+    return hashlib.sha256(str(_resolved(root)).encode("utf-8", "surrogatepass")).hexdigest()[:16]
+
+
 def state_path(root, port: int) -> Path:
-    digest = hashlib.sha256(str(_resolved(root)).encode("utf-8", "surrogatepass")).hexdigest()[:16]
-    return state_dir() / f"{digest}-{int(port)}.json"
+    return state_dir() / f"{_digest(root)}-{int(port)}.json"
 
 
 def _restrict(path: Path):
@@ -83,17 +95,54 @@ def _restrict(path: Path):
         return False
 
 
-def write_state(root, port: int, token: str, host: str = "127.0.0.1", warn=None, hosts=()):
-    """Write the state file of the server; returns its path, or None when it could not be written (the page still works)."""
+def _own_directory(directory: Path) -> bool:
+    """The state directory is a real directory of this user (POSIX): a link or a stranger's directory would take the token elsewhere."""
+    if directory.is_symlink():
+        return False
+    if os.name != "nt":
+        try:
+            return directory.stat().st_uid == os.geteuid()
+        except OSError:
+            return False
+    return True
+
+
+def _sweep_temporaries(directory: Path, root, port: int) -> None:
+    """Remove `.tmp-*` files of THIS project and port left by a killed server (they hold a token)."""
+    prefix = f".tmp-{_digest(root)}-{int(port)}-"
+    try:
+        for name in os.listdir(directory):
+            if name.startswith(prefix) and name.endswith(".json"):
+                try:
+                    (directory / name).unlink()
+                except OSError:
+                    pass
+    except OSError:
+        pass
+
+
+def write_state(root, port: int, token, host: str = "127.0.0.1", warn=None, hosts=()):
+    """Write the state file of the server; returns its path, or None when it could not be written (the page still works).
+
+    `token=None` (`--no-approvals`): the file says `approvals: false` and holds no token, so `dashboard url` can tell a server without
+    consents from no server."""
     path = state_path(root, port)
     try:
         directory = path.parent
         directory.mkdir(parents=True, exist_ok=True)
+        if not _own_directory(directory):
+            if warn:
+                warn("katalog pliku tokenu zgód jest dowiązaniem albo nie należy do użytkownika: pliku nie zapisano; adres z tokenem jest tylko w tej linii konsoli")
+            return None
         restricted = _restrict(directory)
+        _sweep_temporaries(directory, root, port)
         record = {"schema": SCHEMA, "pid": os.getpid(), "port": int(port), "host": host, "root": str(_resolved(root)),
-                  "startedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"), "token": token,
-                  "tokenId": token_id(token), "hosts": [str(name) for name in hosts]}
-        handle, temporary = tempfile.mkstemp(dir=str(directory), prefix=".tmp-", suffix=".json")
+                  "startedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"), "approvals": token is not None,
+                  "hosts": [str(name) for name in hosts]}
+        if token is not None:
+            record["token"] = token
+            record["tokenId"] = token_id(token)
+        handle, temporary = tempfile.mkstemp(dir=str(directory), prefix=f".tmp-{_digest(root)}-{int(port)}-", suffix=".json")
         try:
             with os.fdopen(handle, "w", encoding="utf-8", newline="\n") as stream:
                 json.dump(record, stream, ensure_ascii=False)
@@ -106,7 +155,7 @@ def write_state(root, port: int, token: str, host: str = "127.0.0.1", warn=None,
             except OSError:
                 pass
             raise
-        if not restricted and warn:
+        if not restricted and warn and token is not None:
             warn("plik tokenu zgód nie ma ograniczonego dostępu do właściciela (ACL/uprawnienia): ustaw je ręcznie albo użyj `--no-approvals`")
         return path
     except OSError as error:
@@ -146,10 +195,11 @@ def _healthy(host: str, port: int, token_id_expected: str | None = None, timeout
 
 
 def servers(root, port: int | None = None, healthy=None) -> list[dict]:
-    """The running servers of the project that have a state file: `[{port, pid, host, token, startedAt}]`, by port."""
+    """The running servers of the project that have a state file: `[{port, pid, host, token, startedAt, hosts, approvals}]`, by port
+    (`approvals` False: a `--no-approvals` server, no token)."""
     healthy = healthy or _healthy
     root_text = str(_resolved(root))
-    prefix = hashlib.sha256(root_text.encode("utf-8", "surrogatepass")).hexdigest()[:16] + "-"
+    prefix = _digest(root) + "-"
     found = []
     try:
         names = sorted(name for name in os.listdir(state_dir()) if name.startswith(prefix) and name.endswith(".json"))
@@ -161,7 +211,10 @@ def servers(root, port: int | None = None, healthy=None) -> list[dict]:
         except (OSError, ValueError):
             continue
         if (not isinstance(record, dict) or record.get("schema") != SCHEMA or record.get("root") != root_text
-                or not isinstance(record.get("port"), int) or not isinstance(record.get("token"), str) or not record["token"]):
+                or not isinstance(record.get("port"), int)):
+            continue
+        has_token = isinstance(record.get("token"), str) and bool(record["token"])
+        if not has_token and record.get("approvals") is not False:
             continue
         if port is not None and record["port"] != port:
             continue
@@ -171,9 +224,9 @@ def servers(root, port: int | None = None, healthy=None) -> list[dict]:
             except OSError:
                 pass
             continue
-        if not healthy(record.get("host") or "127.0.0.1", record["port"], token_id(record["token"])):
+        if not healthy(record.get("host") or "127.0.0.1", record["port"], token_id(record["token"]) if has_token else None):
             continue
-        found.append({key: record.get(key) for key in ("port", "pid", "host", "token", "startedAt", "hosts")})
+        found.append({**{key: record.get(key) for key in ("port", "pid", "host", "token", "startedAt", "hosts")}, "approvals": has_token})
     return found
 
 
@@ -199,9 +252,13 @@ def url_command(args) -> int:
         root, _manifest, _layerset = load_layer_project(args.path, getattr(args, "layers", None))
     except Exception as error:  # noqa: BLE001 - any broken project is BLOCKED, as for the other `dashboard` commands
         return blocked("invalid_project", " ".join(str(error).split())[:300])
-    running = servers(root, getattr(args, "port", None))
+    found = servers(root, getattr(args, "port", None))
+    running = [item for item in found if item.get("approvals")]    # servers with consents: only they have an address with a token
+    if not running and found:
+        return blocked("approvals_disabled", "serwer tego projektu działa z --no-approvals (port " + ", ".join(str(item["port"]) for item in found)
+                       + "): nie ma zgód ani tokenu")
     if not running:
-        return blocked("server_not_running", "brak działającego `dashboard serve` tego projektu z zapisanym tokenem (albo serwer z --no-approvals)")
+        return blocked("server_not_running", "brak działającego `dashboard serve` tego projektu (z zapisanym plikiem stanu)")
     if len(running) > 1:
         return blocked("ambiguous_server", "kilka serwerów tego projektu: podaj --port (" + ", ".join(str(item["port"]) for item in running) + ")")
     chosen = running[0]
@@ -212,7 +269,7 @@ def url_command(args) -> int:
         allowed = set(LOOPBACK) | {chosen.get("host")} | set(chosen.get("hosts") or [])
         if name.lower() not in {str(item).lower() for item in allowed if item}:
             return blocked("host_not_allowed", "--host: tylko loopback albo nazwa z --approve-host tego serwera (" + ", ".join(sorted(chosen.get("hosts") or [])) + ")")
-    url = address(chosen["port"], chosen["token"], name or chosen.get("host") or "127.0.0.1")
+    url = address(chosen["port"], chosen["token"], name or address_host(chosen.get("host") or "127.0.0.1", chosen.get("hosts") or ()))
     if args.json:
         return emit({"schema": 1, "status": "PASS", "url": url, "port": chosen["port"], "pid": chosen["pid"]})
     print(url)
