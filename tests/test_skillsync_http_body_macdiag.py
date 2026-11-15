@@ -74,3 +74,33 @@ class MacDiag(unittest.TestCase):
         for row in server_side:
             say('server', row)
         say('total', now())
+
+
+import test_skillsync_dashboard_server as dashboard_tests  # noqa: E402
+
+
+class DashboardMacDiag(dashboard_tests.HttpCase):
+    """The dashboard test that took 35 s on the macOS runner: phase timings and thread stacks."""
+
+    def test_unknown_route_with_a_body(self):
+        faulthandler.dump_traceback_later(12, repeat=False, file=sys.stderr)
+        self.addCleanup(faulthandler.cancel_dump_traceback_later)
+        t0 = time.monotonic()
+        say('dashboard test: body of the test starts; setUp is already done')
+        original = ps.linger_close
+        seen = []
+
+        def spy(connection, *a, **k):
+            started = time.monotonic()
+            n = original(connection, *a, **k)
+            seen.append((round(started - t0, 3), round(time.monotonic() - started, 3), n))
+            return n
+
+        ps.linger_close = spy
+        self.addCleanup(setattr, ps, 'linger_close', original)
+        a = time.monotonic()
+        data = T.raw_post(self.port, '/nie-ma', T.BIG)
+        say('raw_post took', round(time.monotonic() - a, 3), 'response', data[:15])
+        say('server linger_close (start, duration, discarded):', seen)
+        say('threads alive now:', [t.name for t in threading.enumerate()])
+        self.addCleanup(say, 'tearDown reached at', 'cleanup')
