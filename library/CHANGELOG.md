@@ -8,18 +8,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ### Added
 
-- `skills/feature/references/prepush-matrix.md`: macierz sprawdzeń przed pushem (wersje Pythona, systemy, `check_skips` na logach wszystkich systemów); odnośniki w `skills/feature/references/tests-baseline.md` i w `skills/dispatch/SKILL.md` (przydział `ASSIGN`).
+- `skills/feature/references/prepush-matrix.md`: the matrix of checks before a push (Python versions, systems, `check_skips` on the logs of all systems); references in `skills/feature/references/tests-baseline.md` and in `skills/dispatch/SKILL.md` (the `ASSIGN` assignment).
 
 ### Changed
 
-- `skills/dashboard/assets/app.css`: stan wskaźnika „na żywo” ma własny kształt punktu obok koloru (koło, kwadrat, trójkąt, pierścień), a przyciski i karty w trybie zwartym (≤ 420 px) mają co najmniej 2,75 rem wysokości; wtyczka z własną kopią arkusza musi ją zsynchronizować.
+- `skills/dashboard/assets/app.css`: the state of the live indicator has its own dot shape besides the colour (circle, square, triangle, ring), and buttons and tabs in the compact mode (≤ 420 px) are at least 2.75 rem high; a plugin with its own copy of the stylesheet has to resynchronise it.
 - `skills/prototype/SKILL.md`: the machine config with `prototype.default_password` is private by mode 0600 on POSIX and by an ACL on Windows (set and repaired by the tool).
-- `skills/skillsync/SKILL.md`: polecenie `dashboard url` i token zgód w opisie `dashboard serve`.
-- `skills/dashboard`: zgody ze strony wymagają tokenu (`X-Approve-Token`, adres z fragmentem `#zgoda=<token>` z konsoli `dashboard serve` albo z `skillsync dashboard url`); `app.js` zapamiętuje token, `dashboard-render.js` ma haczyk `deps.hasApproveToken` (przyciski nieaktywne bez tokenu; webview bez haczyka bez zmian); `SKILL.md`: reguła dla agenta.
+- `skills/skillsync/SKILL.md`: the command `dashboard url` and the consent token in the description of `dashboard serve`.
+- `skills/dashboard`: consents from the page need a token (`X-Approve-Token`, an address with the fragment `#zgoda=<token>` from the console of `dashboard serve` or from `skillsync dashboard url`); `app.js` remembers the token, `dashboard-render.js` has the hook `deps.hasApproveToken` (buttons are inactive without a token; a webview without the hook is unchanged); `SKILL.md`: a rule for the agent.
 
 ### Breaking
 
-- `skills/dashboard`: `POST /api/approve` bez nagłówka `X-Approve-Token` zwraca `403`; własne skrypty muszą wziąć token z `skillsync dashboard url`. Strona statusu i wtyczka edytora nie wymagają zmian.
+- `skills/dashboard`: `POST /api/approve` without the header `X-Approve-Token` returns `403`; own scripts have to take the token from `skillsync dashboard url`. The status page and the editor plugin need no change.
 
 ## [1.4.1] - 2026-11-15
 
