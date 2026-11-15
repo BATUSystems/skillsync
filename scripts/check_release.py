@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Check that __version__ (or the given version/tag) has a section in CHANGELOG.md and that install.sh bakes that tag.
+"""Check that __version__ (or the given version/tag) has a section in CHANGELOG.md, that install.sh bakes that tag and that
+the `Stan opisu: Skillsync `vX.Y.Z`` lines of docs/workflow.md and docs/workflow-details.md name that version.
 
 Usage: check_release.py [--version X.Y.Z | --tag vX.Y.Z] [--root DIR]
 Exit 0 = OK, 1 = missing section or version mismatch, 2 = bad argument.
@@ -11,6 +12,8 @@ import sys
 from pathlib import Path
 
 SEMVER = re.compile(r'\d+\.\d+\.\d+')
+DESCRIPTION_STATE_FILES = ('docs/workflow.md', 'docs/workflow-details.md')
+DESCRIPTION_STATE = re.compile(r'^Stan opisu: Skillsync `v(\d+\.\d+\.\d+)`')
 
 
 class Usage(argparse.ArgumentParser):
@@ -71,6 +74,18 @@ def main(argv):
         if baked != wanted:
             print(f'check_release: install.sh bakes the tag v{baked}, expected v{wanted}')
             return 1
+    for rel in DESCRIPTION_STATE_FILES:          # DEBT-142 A4 (D17): the docs name the version they describe
+        path = root / rel
+        if not path.is_file():
+            continue
+        for line in path.read_text(encoding='utf-8').splitlines():
+            if not line.startswith('Stan opisu:'):
+                continue
+            match = DESCRIPTION_STATE.match(line)
+            if match is None or match.group(1) != wanted:
+                found = f'v{match.group(1)}' if match else repr(line[:60])
+                print(f'check_release: {rel} says "Stan opisu" {found}, expected Skillsync `v{wanted}`')
+                return 1
     print(f'check_release: OK {wanted}')
     return 0
 

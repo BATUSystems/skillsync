@@ -14,6 +14,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ### Added
 
+- `scripts/check_release.py` sprawdza też, że linie „Stan opisu: Skillsync `vX.Y.Z`” w docs/workflow.md i docs/workflow-details.md wskazują wersję wydania (dotąd napisy podbijano ręcznie, więc odtwarzały dług przy każdym wydaniu).
 - `skillsync leakcheck` w katalogu roboczym klonu celu o `scope: public` ostrzega (nie blokuje), gdy klon nie ma hooków strażnika (pre-commit/pre-push), i podaje polecenie `skillsync leakguard install-hook <klon>`; wzmianka w CONTRIBUTING.md. Bez hooków push do publicznego repo omija strażnika.
 - Strażnik wycieków: klucz celu `targets.<id>.committer_allow` w configu maszyny (lista adresów): adresy przyjmowane tylko jako committer i tagger (np. przycisk scalania hosta, `noreply`), nigdy jako autor. Dotąd adres `noreply` musiał stać w `authors` i przechodził też jako autor. Domyślnie pusta lista; bez klucza zachowanie bez zmian. Dotyczy `leakcheck` (zakres, historia, tagi) i kontroli zatrzymanych zmian.
 
