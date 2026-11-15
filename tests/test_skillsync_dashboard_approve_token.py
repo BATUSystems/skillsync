@@ -289,9 +289,9 @@ class StateFile(unittest.TestCase):
     def test_the_ordinary_case_is_not_refused(self) -> None:
         warnings = []
         self.assertTrue(dashboard_token.write_state(self.project, 5183, "tok-ok", warn=warnings.append).is_file())
-        self.assertEqual(warnings, [])
         self.assertTrue(dashboard_token.write_state(self.project, 5183, "tok-ok2", warn=warnings.append).is_file(), "a second write over an existing directory")
-        self.assertEqual(warnings, [])
+        # a refusal says "nie zapisano ..."; the note about a missing ACL helper (this branch has none on Windows) is another thing
+        self.assertEqual([text for text in warnings if "nie zapisano" in text], [])
 
     def test_a_start_removes_the_leftover_temporary_files_of_its_own_project_and_port_only(self) -> None:
         other = Path(self.tmp.name) / "other"
