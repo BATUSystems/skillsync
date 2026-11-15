@@ -21,6 +21,19 @@ BODY = b'{"x": "' + b'a' * (60 * 1024) + b'"}'
 BIG = b'{"pad": "' + b'a' * (240 * 1024) + b'"}'   # over the handler's own read buffer, under the lingering limit
 
 
+def connect(port, timeout=5):
+    """A client socket to 127.0.0.1:<port>, connected by the numeric address alone: no `getaddrinfo`, so no name resolution (on the
+    macOS runner a resolver stall of about 35 s hit random tests); `create_connection` always goes through the resolver."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(timeout)
+    try:
+        sock.connect(('127.0.0.1', port))
+    except BaseException:
+        sock.close()
+        raise
+    return sock
+
+
 class _Refusing(http.server.BaseHTTPRequestHandler):
     protocol_version = 'HTTP/1.1'
     timeout = 5
@@ -69,7 +82,7 @@ def post_and_read(port, body=BODY, pause=0.3, chunked=False):
     head = (b'POST /x HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\n'
             + (b'Transfer-Encoding: chunked\r\n' if chunked else b'Content-Length: ' + str(len(body)).encode() + b'\r\n')
             + b'\r\n')
-    with socket.create_connection(('127.0.0.1', port), timeout=5) as sock:
+    with connect(port) as sock:
         try:
             sock.sendall(head + body)
         except OSError:   # the server answered and closed before the whole body was sent (it is allowed to)
@@ -142,7 +155,7 @@ class LingeringClose(unittest.TestCase):
         def sender(port):
             head = (b'POST /x HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: 100000000\r\n\r\n')
             try:
-                with socket.create_connection(('127.0.0.1', port), timeout=5) as sock:
+                with connect(port) as sock:
                     sock.sendall(head)
                     while not stop.is_set():   # never stops sending until the test is over
                         sock.sendall(b'a' * 4096)
@@ -161,7 +174,7 @@ class LingeringClose(unittest.TestCase):
         def sender(port):
             head = (b'POST /x HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: 100000000\r\n\r\n')
             try:
-                with socket.create_connection(('127.0.0.1', port), timeout=5) as sock:
+                with connect(port) as sock:
                     sock.sendall(head)
                     while not stop.is_set():   # about 2 KB/s: the byte limit (256 KiB) can never be what ends the lingering
                         sock.sendall(b'a' * 100)
@@ -224,7 +237,7 @@ class _Handlers:
 def keep_alive_exchange(port, body, second=True, path='/x'):
     """POST `body` on a keep-alive connection, read one response, then see what the server does with the connection."""
     head = (b'POST ' + path.encode() + b' HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: ' + str(len(body)).encode() + b'\r\n\r\n')
-    with socket.create_connection(('127.0.0.1', port), timeout=5) as sock:
+    with connect(port) as sock:
         sock.sendall(head + body)
         data = b''
         while b'\r\n\r\n' not in data:
@@ -269,7 +282,7 @@ class UnreadBodyClosesTheConnection(unittest.TestCase):
     def test_a_get_that_declares_a_body_is_closed_too(self):
         port = self.serve(_Handlers.NotFoundUnread)
         head = b'GET /x HTTP/1.1\r\nHost: x\r\nContent-Length: 5000\r\n\r\n'
-        with socket.create_connection(('127.0.0.1', port), timeout=5) as sock:
+        with connect(port) as sock:
             sock.sendall(head + b'a' * 5000)
             data = b''
             sock.settimeout(3)
@@ -286,7 +299,7 @@ def raw_post(port, path, body, headers=b''):
     """POST `body` whole to a real handler without any cookie or header the handler wants; returns the raw response."""
     head = (b'POST ' + path.encode() + b' HTTP/1.1\r\nHost: 127.0.0.1:' + str(port).encode() + b'\r\nContent-Type: application/json\r\n'
             + headers + b'Content-Length: ' + str(len(body)).encode() + b'\r\n\r\n')
-    with socket.create_connection(('127.0.0.1', port), timeout=5) as sock:
+    with connect(port) as sock:
         try:
             sock.sendall(head + body)
         except OSError:   # a refusal may close before the whole body is sent
@@ -352,7 +365,7 @@ class PrototypeServerOtherRefusals(prototype_tests.ServerCase):
         head = (b'POST /_api/v1/prototypes/demo/operations HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\n'
                 b'Transfer-Encoding: chunked\r\n\r\n')
         chunked = b'%x\r\n' % len(BODY) + BODY + b'\r\n0\r\n\r\n'
-        with socket.create_connection(('127.0.0.1', self.server.port), timeout=5) as sock:
+        with connect(self.server.port) as sock:
             sock.sendall(head + chunked)
             data = b''
             while True:

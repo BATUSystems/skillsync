@@ -56,6 +56,10 @@ python3 -m unittest discover -s tests -p 'test_skillsync*.py' -v 2>&1 | tee run.
 python3 scripts/check_skips.py run.log --system ubuntu-latest --mode copy
 ```
 
+### Serwery w testach
+
+Testy serwerów łączą się po adresie liczbowym (`127.0.0.1`), bez rozwiązywania nazw: bez `localhost` w `create_connection`, `urlopen` i `HTTPConnection`, a gniazdo klienta w testach niskiego poziomu otwieranie przez `connect(('127.0.0.1', port))`. Serwer testowy nie woła `socket.getfqdn` (podklasa `ThreadingHTTPServer` z `server_bind` bez odwrotnego DNS, jak serwery produkcyjne). Na runnerze macOS rozwiązywanie nazw potrafi sporadycznie stanąć na ok. 35 s, a pomiary czasu w testach mierzymy po stronie serwera, nie po stronie klienta.
+
 ### Zmienne testów
 
 | Zmienna | Skutek |
