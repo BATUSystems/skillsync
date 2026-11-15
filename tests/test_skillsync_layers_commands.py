@@ -7,6 +7,7 @@ isolated (layers_helpers). Client names are synthetic and composed at runtime.
 """
 import json
 import os
+import posixpath
 import re
 import shlex
 import shutil
@@ -65,6 +66,8 @@ class CommandsCase(LayersCase):
 
 # a path that does not exist, in the form a hook can name on this system (Windows: a path with a drive; a `/…` word is MSYS there)
 MISSING_FILE = 'D:/nonexistent/checkout/skillsync' if os.name == 'nt' else '/nonexistent/checkout/skillsync'
+MISSING_PYTHON = 'D:/nonexistent/venv/Scripts/python.exe' if os.name == 'nt' else '/nonexistent/venv/bin/python'
+GONE_PYTHON = 'D:/gone/uv/tools/skillsync/Scripts/python.exe' if os.name == 'nt' else '/gone/uv/tools/skillsync/bin/python'
 
 
 class HookCommandMissingTest(CommandsCase):
@@ -94,7 +97,7 @@ class HookCommandMissingTest(CommandsCase):
         self.assertEqual(layers.findings_status(findings), 'PASS')
 
     def test_missing_interpreter_is_an_error_with_the_repair_command(self):
-        self.rewrite('pre-commit', shlex.quote(Path(sys.executable).as_posix()), '/nonexistent/venv/bin/python')
+        self.rewrite('pre-commit', shlex.quote(Path(sys.executable).as_posix()), MISSING_PYTHON)
         found = self.broken(self.findings())
         self.assertEqual([(item['severity'], item['layer']) for item in found], [('error', 'acme')])
         self.assertIn('pre-commit', found[0]['message'])
@@ -119,7 +122,7 @@ class HookCommandMissingTest(CommandsCase):
             (self.hooks / name).write_text(text.replace(wrapper, '-P -m skillsync_workflow'), encoding='utf-8')
         self.assertEqual(self.broken(self.findings()), [])             # installation form, interpreter exists
         for name in ('pre-commit', 'pre-push'):
-            self.rewrite(name, shlex.quote(Path(sys.executable).as_posix()), '/gone/uv/tools/skillsync/bin/python')
+            self.rewrite(name, shlex.quote(Path(sys.executable).as_posix()), GONE_PYTHON)
         self.assertEqual(len(self.broken(self.findings())), 2)
 
     def test_a_bare_command_missing_from_path_is_found_and_a_present_one_is_not(self):
@@ -139,7 +142,8 @@ class HookCommandMissingTest(CommandsCase):
             self.assertEqual(self.broken(self.findings()), [])
 
     def test_hook_words_on_posix(self):
-        with unittest.mock.patch.object(leakguard.os, 'name', 'posix'):
+        # `os.path` is posixpath too (on a real Windows it is ntpath, whose `isabs('/x')` is False since Python 3.13)
+        with unittest.mock.patch.object(leakguard.os, 'name', 'posix'), unittest.mock.patch.object(leakguard.os.path, 'isabs', posixpath.isabs):
             self.assertEqual(leakguard._hook_word('/nonexistent/dev/skillsync'), ('path', '/nonexistent/dev/skillsync'))
             self.assertEqual(leakguard._hook_word('/usr/bin/env'), ('path', '/usr/bin/env'))
             self.assertEqual(leakguard._hook_word('skillsync'), ('plain', None))
@@ -178,20 +182,20 @@ class HookCommandMissingTest(CommandsCase):
         self.assertEqual(self.broken(self.findings()), [])
 
     def test_legacy_blocks_with_a_missing_command_report_both(self):
-        self.rewrite('pre-push', shlex.quote(Path(sys.executable).as_posix()), '/nonexistent/venv/bin/python')
+        self.rewrite('pre-push', shlex.quote(Path(sys.executable).as_posix()), MISSING_PYTHON)
         text = (self.hooks / 'pre-push').read_text(encoding='utf-8')
         (self.hooks / 'pre-push').write_text(text.replace('leakcheck', 'leakcheck --identity /x/id.yaml', 1), encoding='utf-8')
         codes_found = sorted(item['code'] for item in self.findings() if item['code'].startswith('hook-'))
         self.assertEqual(codes_found, ['hook-command-missing', 'hook-legacy'])
 
     def test_the_check_follows_the_hooks_switch(self):
-        self.rewrite('pre-commit', shlex.quote(Path(sys.executable).as_posix()), '/nonexistent/venv/bin/python')
+        self.rewrite('pre-commit', shlex.quote(Path(sys.executable).as_posix()), MISSING_PYTHON)
         self.assertEqual(self.broken(self.findings(hooks=False)), [])
 
     def test_problems_are_listed_without_values_of_other_words(self):
-        self.rewrite('pre-commit', shlex.quote(Path(sys.executable).as_posix()), '/nonexistent/venv/bin/python')
+        self.rewrite('pre-commit', shlex.quote(Path(sys.executable).as_posix()), MISSING_PYTHON)
         problems = leakguard.hook_command_problems(self.path)
-        self.assertEqual(problems, [{'hook': 'pre-commit', 'kind': 'interpreter', 'path': '/nonexistent/venv/bin/python'}])
+        self.assertEqual(problems, [{'hook': 'pre-commit', 'kind': 'interpreter', 'path': MISSING_PYTHON}])
         self.assertEqual(leakguard.hook_command_problems(self.path / 'not-there'), [])
 
 

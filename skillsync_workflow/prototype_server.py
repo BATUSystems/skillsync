@@ -2217,15 +2217,16 @@ class FileLock(object):
                     break
                 # the file was unlinked (and maybe recreated) under us: lock the one the path names now
                 stale, fd = fd, None
-                _unlock_fd(stale)
-                os.close(stale)
+                _discard_fd(stale)
                 if time.monotonic() >= deadline:
                     raise LockTimeout()
             self._fd, fd = fd, None
         except BaseException:
-            if fd is not None:
-                _discard_fd(fd)
-            self._thread_lock.release()
+            try:
+                if fd is not None:
+                    _discard_fd(fd)
+            finally:
+                self._thread_lock.release()   # a second interrupt during the cleanup must not leave the thread lock held
             raise
         return self
 

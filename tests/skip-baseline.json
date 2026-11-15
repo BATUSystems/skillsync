@@ -81,8 +81,8 @@
  "notes": {
   "linux/symlink": "Measured locally (full run 2.4 + step 3.1t): Node 22, SKILLSYNC_TEST_LIBRARY and SKILLSYNC_PROTOTYPE_ENGINE_V2_SOURCE set, no Chrome.",
   "linux/copy": "As linux/symlink with SKILLSYNC_NO_SYMLINK=1. Since step 5.1 the prototype tests that plant hostile links use the OS-level guard (`needs_os_symlinks`), so they run in copy mode and no longer appear here.",
-  "ubuntu-latest/*": "null until the first CI run. Expected skips: the Chrome E2E tests (category e2e-chrome, reason \"set SKILLSYNC_E2E_CHROME…\": they run in the `e2e` job, K11) and whatever the runner lacks.",
-  "windows-latest/*": "null until the first CI run (K13 residual risk).",
+  "ubuntu-latest/*": "Measured from the CI logs of 8 jobs (Python 3.11-3.14, symlink and copy): 14 skips each, identical (12 Chrome E2E tests of category e2e-chrome run in the `e2e` job, the Windows-only test, the zsh hook test: the runner has no zsh).",
+  "windows-latest/*": "windows-latest/copy measured from the CI logs of Python 3.11, 3.12 and 3.13 (identical sets); windows-latest/symlink stays null: the matrix excludes it (no OS symlinks without Developer Mode).",
   "macos-latest/*": "Measured from the CI runs of main (v1.3.0, 12.11): 35 skips, the same in all four jobs (3.11/3.12, symlink/copy): the Chrome E2E scenarios (job e2e), the Azure tests without the machine descriptor, the env lifecycle tests (process ownership backend on Linux only), BSD mktemp, file system limits and shellcheck (not installed on the macOS runner).",
   "e2e-chrome": "The 12 Chrome scenario scripts (one test per tests/e2e/prototype/*.mjs, incl. test_widok and test_w) are allowed: CI runs no Chrome; the prototype E2E runs separately with Chrome and leased ports."
  },

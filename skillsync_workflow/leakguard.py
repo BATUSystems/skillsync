@@ -1574,7 +1574,6 @@ def _hook_word(word):
             return 'path', f'{drive.group(1)}:{drive.group(2) or "/"}'
         if word.startswith('/'):
             return 'unchecked', None
-        return ('path', word) if os.path.isabs(word) else ('plain', None)
     return ('path', word) if os.path.isabs(word) else ('plain', None)
 
 

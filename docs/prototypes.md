@@ -559,7 +559,7 @@ bez tej opcji jest ignorowany, a serwer zapisuje w logu jedno ostrzeżenie.
 **Za tunelem** (`ssh -L`) serwer widzi `127.0.0.1` dla wszystkich osób, więc limit 30 na adres jest wspólny: jedna osoba z 30 błędnymi próbami
 blokuje logowanie pozostałym, także z poprawnym hasłem, na czas do 15 minut. Co zrobić: poczekać na `Retry-After`, zrestartować `serve` (zeruje liczniki)
 albo wystawić serwer przez zaufane proxy z `--trust-proxy` i poprawnym `X-Forwarded-For` (wtedy link logowania jednorazowego jest wyłączony, zob. wyżej).
-Ograniczenie znane: nie ma limitu per login niezależnego od adresu.
+Ten sam limit dotyczy zmiany hasła (błędne hasło dotychczasowe liczy się jak nieudana próba). Ograniczenie znane: nie ma limitu per login niezależnego od adresu.
 
 Serwer działa na kodzie z chwili startu: po aktualizacji skillsync uruchom go ponownie, żeby korzystał z nowej wersji.
 Zmiany plików prototypu (HTML, CSS, `comments.json`, użytkownicy) widzi bez restartu.

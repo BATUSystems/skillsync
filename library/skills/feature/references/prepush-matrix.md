@@ -1,5 +1,9 @@
 # Macierz przed pushem
 
+Dotyczy projektów Pythonowych z baseline skipów i macierzą CI (rdzeń skillsync); w innych projektach zastosuj odpowiednik: najstarsza wspierana
+wersja runtime'u, każdy system z CI, sprawdzenie baseline na logach wszystkich systemów. `PUSH SLOT` występuje w trybie `direct` z dyspozytorem;
+w trybie `pr` ten sam dowód jest warunkiem pushu gałęzi PR.
+
 Lekcja z wydania 1.4.1: trzy czerwone obroty CI wykryły to, czego nie widziała stacja (najnowszy interpreter, jeden system, bez
 sprawdzenia baseline skipów). Paczka nie idzie do `PUSH SLOT`, dopóki nie ma dowodu z poniższej macierzy; brak kombinacji = `NOT_RUN`
 z powodem w raporcie.
@@ -13,6 +17,7 @@ z powodem w raporcie.
 | każdy nowy lub zmieniony skip | `scripts/check_skips.py` z baseline po zmianie na logach `-v` **wszystkich systemów** (Linux, macOS, Windows; klucz `<system>/<tryb>`): rc=0; kategorie sprawdzaj pod kątem przechwytywania (pierwsza pasująca wygrywa) |
 | nowa kategoria lub fragment skipa | samospójność: każdy fragment klasyfikuje się do własnej kategorii |
 
-Skrypty pomocnicze (repo operacyjne): `tools/win-shard/prepush.sh` (macierz Windows i `check_skips` z jednej komendy), `crun4.sh`
-(Windows, środowisko jak runner), `skips_union.py` i `apply_windows_baseline.py` (baseline z logów CI). Raport kroku wymienia
+Skrypty pomocnicze leżą w repo operacyjnym `skillsync-ops` (`tools/win-shard/`): `prepush.sh` (macierz Windows i `check_skips` z jednej komendy),
+`runlike.sh`/`runlike.ps1` (Windows, środowisko jak runner), `skips_union.py` i `apply_windows_baseline.py` (baseline z logów CI); w rdzeniu jest tylko
+`scripts/check_skips.py`. Raport kroku wymienia
 kombinacje z wynikiem (PASS/FAIL/NOT_RUN), wersje interpreterów i komendy.
