@@ -28,6 +28,9 @@ from skillsync_workflow import layers, leakguard  # noqa: E402
 
 HOSTS = ('linux', 'darwin', 'win32')
 FOLDS = {'linux': False, 'darwin': True, 'win32': True}          # case-insensitive file systems
+# Tests on a real file tree: a Windows host cannot show the Linux case (another case is the very same directory there,
+# and `realpath` already returns `\\` separators that the key of a simulated Linux keeps), so it is left out of them.
+FS_HOSTS = tuple(name for name in HOSTS if not (os.name == 'nt' and name == 'linux'))
 SYSTEM = {'linux': 'Linux', 'darwin': 'Darwin', 'win32': 'Windows'}
 
 
@@ -113,7 +116,7 @@ class LayerRulesCaseTest(LayersCase):
         project = self.project('projekt/app')
         self.write_config(layers=[('core', 'core', core), ('acme', 'org', org)],
                           rules=[([f'{self.work}/Projekt/**'], ['core', 'acme'])])
-        for name in HOSTS:
+        for name in FS_HOSTS:
             with self.subTest(system=SYSTEM[name]), mock.patch.object(layers, 'current_system', return_value=SYSTEM[name]):
                 if FOLDS[name]:
                     self.assertEqual(layers.resolve_layers(project).ids, ['core', 'acme'])
@@ -132,7 +135,7 @@ class MatchTargetsCaseTest(unittest.TestCase):
         return {'acme': {'scope': 'org-private', 'kind': 'org', 'authors': [], 'remote_match': list(globs)}}
 
     def test_a_local_remote_match_folds_case_on_macos_and_windows_only(self):
-        for name in HOSTS:
+        for name in FS_HOSTS:
             with self.subTest(host=name), host(name):
                 for pattern, remote in (('/Users/Dev/Repos/Acme', '/users/dev/repos/acme'),
                                         ('/Users/Dev/Repos/Acme*', '/users/dev/repos/acme-tools'),
@@ -147,7 +150,7 @@ class MatchTargetsCaseTest(unittest.TestCase):
 
     def test_urls_and_scp_addresses_stay_literal_on_every_host(self):
         targets = self.targets('example.test/acme/skills*', 'example.test:acme/skills*')
-        for _name in HOSTS:
+        for _name in FS_HOSTS:
             with self.subTest(host=_name), host(_name):
                 self.assertEqual(leakguard.match_targets(targets, ['https://example.test/acme/skills.git']), ['acme'])
                 self.assertEqual(leakguard.match_targets(targets, ['git@example.test:acme/skills.git']), ['acme'])
@@ -163,7 +166,7 @@ class SelectTargetCaseTest(LayersCase):
     def test_the_checkout_is_found_with_another_case_on_macos_and_windows(self):
         repo = self.make_repo('Repo')
         spelled = str(self.work / 'repo')                                  # the same directory on a case-insensitive FS
-        for name in HOSTS:
+        for name in FS_HOSTS:
             with self.subTest(host=name), host(name):
                 self.assertEqual(leakguard.select_target(repo, None, {'acme': spelled}),
                                  ('acme', []) if FOLDS[name] else (None, []))
@@ -192,7 +195,7 @@ class LinkBanCaseTest(LayersCase):
         self.assertIn('skills/x/link.md', str(caught.exception))
 
     def test_the_exact_path_is_blocked_on_every_host(self):
-        for _name in HOSTS:
+        for _name in FS_HOSTS:
             with self.subTest(host=_name), host(_name):
                 self.assert_blocked(self.layer)
                 self.assert_blocked(self.layer / 'skills')                       # scanned inside the layer
@@ -202,7 +205,7 @@ class LinkBanCaseTest(LayersCase):
         spellings = {'the layer': self.work / 'layers' / 'core',
                      'a directory inside': self.work / 'LAYERS' / 'CORE' / 'skills',
                      'a parent of the layer': self.work / 'layers'}
-        for name in HOSTS:
+        for name in FS_HOSTS:
             with self.subTest(host=name), host(name):
                 for label, path in spellings.items():
                     with self.subTest(scan=label):
@@ -212,7 +215,7 @@ class LinkBanCaseTest(LayersCase):
                             self.assertEqual(layers.leakguard_inputs(path=path)['target'], None)
 
     def test_a_sibling_with_a_longer_name_is_not_the_layer(self):
-        for _name in HOSTS:
+        for _name in FS_HOSTS:
             with self.subTest(host=_name), host(_name):
                 for path in (self.work / 'Layers' / 'Core-extra', self.work / 'layers' / 'core-extra'):
                     with self.subTest(path=path.name):
@@ -301,7 +304,7 @@ class HostSimulationTest(unittest.TestCase):
 
         class Planted(unittest.TestCase):
             def test_red(self):
-                for name in HOSTS:
+                for name in FS_HOSTS:
                     with self.subTest(host=name), host(name):
                         self.assertEqual(sys.platform, 'never')             # planted red assertion
 
@@ -342,7 +345,8 @@ class PathKeyTest(PathKeyCase):
         # Linux behaviour unchanged: `\` is an ordinary character of a file name there, so `a\b` and `a/b` are two
         # different directories (before 3.0 `_path_key` was `os.path.normcase(realpath)` = no change on POSIX).
         with host('linux'):
-            self.assertNotEqual(layers._path_key('/w/a\\b'), layers._path_key('/w/a/b'))
+            # the key itself (not `realpath`, which on a Windows host reads `\\` as a separator whatever host is simulated)
+            self.assertNotEqual(layers.path_case_key('/w/a\\b'), layers.path_case_key('/w/a/b'))
 
     def test_isolation_treats_another_spelling_of_a_layer_as_the_same_tree(self):
         core = make_layer(self.work / 'Lib', 'core', 'core')
@@ -351,7 +355,7 @@ class PathKeyTest(PathKeyCase):
         self.config({'layers': [{'id': 'core', 'kind': 'core', 'path': str(core)}],
                      'layer_rules': [{'match': ['**'], 'use': ['core']}],
                      'isolation': {'allowed_layers': ['core']}, 'legacy_library': str(twin)})
-        for name in HOSTS:
+        for name in FS_HOSTS:
             with self.subTest(host=name), host(name):
                 findings = layers.isolation_findings(layers.load_machine_config(), 'Linux')
                 foreign = [item for item in findings if item['code'] == 'isolation-foreign-identity']
@@ -363,7 +367,7 @@ class PathKeyTest(PathKeyCase):
                      'layer_rules': [{'match': ['**'], 'use': ['core']}], 'isolation': {'allowed_layers': ['core']},
                      'library': str(self.work / 'Old-Library'), 'legacy_library': str(self.work / 'old-library')})
         before = self.config_file.read_bytes()
-        for name in HOSTS:
+        for name in FS_HOSTS:
             with self.subTest(host=name), host(name):
                 report = layers.layers_migrate()
                 if FOLDS[name]:
@@ -383,7 +387,7 @@ class PathKeyTest(PathKeyCase):
         sources = {'org layer': f'acme={self.twin(org, self.work / "acme")}',
                    'core layer': f'core={self.twin(core, self.work / "core")}'}
         before = self.config_file.read_bytes()
-        for name in HOSTS:
+        for name in FS_HOSTS:
             with self.subTest(host=name), host(name):
                 for label, source in sources.items():
                     with self.subTest(source=label):
@@ -401,7 +405,7 @@ class PathKeyTest(PathKeyCase):
                      'layer_rules': [{'match': ['**'], 'use': ['core']}], 'isolation': {'allowed_layers': ['core']},
                      'legacy_library': str(twin)})
         before = self.config_file.read_bytes()
-        for name in HOSTS:
+        for name in FS_HOSTS:
             with self.subTest(host=name), host(name):
                 report = layers.layers_migrate(finish=True)
                 if FOLDS[name]:
