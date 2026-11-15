@@ -304,7 +304,7 @@ Zalecenia:
 token zgód i zatwierdzić CP, GO albo READY na Twoim koncie, dopóki serwer działa. Zgoda dotyczy bieżącego `sha` (HEAD albo
 wersji pliku), czyli tego, na którym agent pcha kod. W zaufanej sieci domowej lub biurowej ryzyko jest małe; w sieci
 gościnnej, hotelowej, na konferencji albo przy hotspocie jest realne. Wtedy uruchom z `--approve-bind 127.0.0.1` albo
-przez tunel SSH. Produkt nie szyfruje ruchu i nie ma logowania; to poza zakresem 1.6.0 (TLS i parowanie urządzeń
+przez tunel SSH. Przy nasłuchu w sieci nagłówek `Host` nie jest barierą (klient spoza przeglądarki ustawia go sam), a lista nagłówków pośrednika jest heurystyką: na porcie zgód chroni token. Produkt nie szyfruje ruchu i nie ma logowania; to poza zakresem 1.6.0 (TLS i parowanie urządzeń
 są planowane osobno).
 
 ### Migracja z dwóch instancji
