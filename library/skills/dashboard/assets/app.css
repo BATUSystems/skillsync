@@ -108,6 +108,11 @@ a.chip.git-link { text-decoration: none; }
 .live.is-polling { color: var(--warn); }
 .live.is-down .live-dot { background: var(--bad); }
 .live.is-down { color: var(--bad); }
+/* stan „na żywo” nie tylko kolorem (WCAG 1.4.1; w trybie zwartym tekst jest ukryty): kształt punktu zależy od stanu —
+   koło (na żywo), kwadrat (odświeżanie), trójkąt (brak połączenia), pusty pierścień (łączę) */
+.live.is-polling .live-dot { border-radius: 2px; }
+.live.is-down .live-dot { clip-path: polygon(50% 0, 100% 100%, 0 100%); }
+.live.is-connecting .live-dot { background: transparent; border: 2px solid var(--planned); box-sizing: border-box; }   /* border, nie box-shadow: widoczne też w trybie wymuszonych kolorów */
 
 .btn {
   display: inline-flex; align-items: center; gap: .4rem; border: 1px solid var(--line); background: var(--panel);
@@ -458,13 +463,13 @@ main { flex: 1; padding: 1.1rem 1.4rem; min-width: 0; }
   .live { padding: .25rem .5rem; }
   .live .live-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .plan-auto { display: none; }
-  .btn { padding: .3rem .55rem; font-size: .84rem; }
+  .btn { padding: .3rem .55rem; font-size: .84rem; min-height: 2.75rem; }
   .tabs { padding: .2rem 10px 0; gap: 0; }
-  .tabs [role="tab"] { padding: .45rem .3rem; font-size: .85rem; gap: .3rem; }
+  .tabs [role="tab"] { padding: .45rem .3rem; font-size: .85rem; gap: .3rem; min-height: 2.75rem; }
   .wait { padding: .4rem 10px 0; gap: .35rem; }
   .wait-item { padding: .45rem .55rem; gap: .45rem; }
   .wait-txt strong { font-size: .84rem; } .wait-txt span { font-size: .78rem; }
-  .wait-go, .act-approve, .act-doc { min-height: 2.2rem; justify-content: center; }
+  .wait-go, .act-approve, .act-doc { min-height: 2.75rem; justify-content: center; }   /* cel dotyku co najmniej 44 px */
   .wait-go { font-size: .82rem; }
   .act-actions { gap: .35rem; } .act-actions > * { flex: 1 1 auto; margin-top: .45rem; }
   .act-actions .act-doc, .readiness .act-doc { margin-top: .45rem; }

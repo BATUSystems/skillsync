@@ -75,6 +75,18 @@ None.
 ### Changed
 
 - Maskowanie sekretów z zmiennych środowiska (`redact`) działa od 8 znaków także w tekście komunikatów (dotąd od 4 w wartościach, 8 w kluczach): krótka wartość, np. równa `root` na runnerze Windows, nie przemianowuje już słów ani pól w wyjściu. Maskowanie wzorcowe (adresy z hasłem, `Authorization`, `password=`, `token=`) bez zmian i bez progu. UWAGA (ochrona słabnie): sekret z środowiska krótszy niż 8 znaków nie jest już maskowany nigdzie w wyjściu.
+### Added
+
+- `dashboard show` (and `/api/status`): `substeps[].noData` (`true` ⇔ `seconds` is null, also for a planned sub-step), the same meaning as `noData` in `dashboard metrics`. Additive (schema 1): `missingData` is unchanged. Compatibility: a consumer that rejects unknown keys of `substeps[]` must accept `noData`.
+
+### Fixed
+
+- `dashboard`: `run.checkpoints[].time` is always `HH:MM` as the contract says (a checkpoint written with a one-digit hour, `- 9:05 …`, was reported as `9:05`); the same for `startedAt`/`finishedAt` of the sub-steps, `waiting[].since`, `run.inProgressFrom` and `eta.since`. Compatibility: a consumer that compared these values as strings against a one-digit hour must compare `09:05`.
+
+### Changed
+
+- Status page (`app.css`): the state of the live indicator has its own dot shape besides the colour (circle: live, square: polling, triangle: down, ring: connecting), which matters in the compact mode (≤ 420 px) where the text is hidden; interactive buttons and tabs of the compact mode (`.btn`, tabs, consent and document buttons) are at least 2.75rem (44 px) high. A plugin that keeps its own copy of the stylesheet has to resynchronise it.
+- `dashboard` (`build_status`, `show`): the plans listed for choosing are parsed once per (path, `mtime_ns`, size) instead of on every build of the status (the page rebuilds it on each change and poll; the chosen plan is still read fresh); the activity of a run (`activity`, `runAlive`) is still read on every call. A plan rewritten with the same size inside the timestamp resolution of the file system is seen at its next change.
 
 ## [1.4.0] - 2026-11-14
 

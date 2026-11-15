@@ -239,8 +239,13 @@ class NewFields(unittest.TestCase):
         checkpoints = [{'time': '23:50', 'text': 'w toku: F1.1'}, {'time': '00:10', 'text': 'zrobione: F1.1, F1.2'}]
         rows = {row['id']: row for row in dashboard.build_substeps(progress, checkpoints)}
         self.assertEqual(set(rows), {'F1.1', 'F1.2'})
-        self.assertEqual((rows['F1.1']['seconds'], rows['F1.1']['missingData']), (1200, False))
-        self.assertEqual((rows['F1.2']['state'], rows['F1.2']['seconds'], rows['F1.2']['missingData']), ('reported', None, True))
+        self.assertEqual((rows['F1.1']['seconds'], rows['F1.1']['missingData'], rows['F1.1']['noData']), (1200, False, False))
+        self.assertEqual((rows['F1.2']['state'], rows['F1.2']['seconds'], rows['F1.2']['missingData'], rows['F1.2']['noData']),
+                         ('reported', None, True, True))
+        # `noData` is every sub-step without a time (also a planned one), `missingData` only a done one
+        planned = dashboard.build_substeps(dashboard.build_progress(
+            [{'name': 'Faza 1: A', 'steps': [{'id': 'F1.1', 'title': 'x', 'done': False, 'note': '', 'sha': None}]}], None, None, []), [])
+        self.assertEqual((planned[0]['missingData'], planned[0]['noData']), (False, True))
 
     def test_approvals_rows_follow_status_rules(self):
         with tempfile.TemporaryDirectory(prefix='skillsync-dashboard-') as temp:
@@ -252,6 +257,29 @@ class NewFields(unittest.TestCase):
             (run / 'approvals.jsonl').write_text('\n'.join(json.dumps(row) for row in lines) + '\nnot json\n', encoding='utf-8')
             self.assertEqual(dashboard.run_approvals(root, 'r1'), [good])
             self.assertEqual([row['word'] for row in status.read_approvals(root)], ['GO plan'])
+
+
+class CheckpointEdges(DashboardFixture):
+    """D32: a one-digit clock and a missing `RUN=` line (contract: `time` is `HH:MM`, `startIso` may be null)."""
+
+    def checkpoints(self, text):
+        root = self.project('plan-in-progress')
+        (root / '.skillsync/runs/2026-01-10-demo-feature/checkpoints.md').write_text(text, encoding='utf-8')
+        return self.cli('dashboard', 'show', root, '--json')
+
+    def test_a_one_digit_hour_is_reported_as_hh_mm(self):
+        self.assertEqual(dashboard.parse_checkpoints('- 9:05 start\n- 10:00 x\n')[1],
+                         [{'time': '09:05', 'text': 'start'}, {'time': '10:00', 'text': 'x'}])
+        report = self.checkpoints('RUN=2026-01-10T09:00:00Z\n- 9:05 start planu; w toku: F1.1\n- 9:20 zrobione: F1.1\n')
+        times = [item['time'] for item in report['run']['checkpoints']]
+        self.assertEqual(times, ['09:20', '09:05'], 'newest first, all HH:MM')
+        sub = {row['id']: row for row in report['substeps']}
+        self.assertEqual((sub['F1.1']['startedAt'], sub['F1.1']['finishedAt'], sub['F1.1']['seconds']), ('09:05', '09:20', 900))
+
+    def test_without_a_run_line_the_start_is_null_and_nothing_is_guessed(self):
+        report = self.checkpoints('- 09:05 start planu; w toku: F1.1\n- 09:20 zrobione: F1.1\n')
+        self.assertEqual((report['run']['start'], report['run']['startIso']), (None, None))
+        self.assertEqual(len(report['run']['checkpoints']), 2)
 
 
 if __name__ == '__main__':
