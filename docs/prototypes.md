@@ -236,8 +236,18 @@ albo `acceptor`; konto z `expert` i `developer`/`acceptor` nie jest doradcze. Dz
 najwyższa rola, `authorRoles` lista).
 
 Konta są w pliku użytkowników serwera: domyślnie `<projekt>/.skillsync/prototype/users.json` (inny plik: `--users`,
-ścieżka względem projektu). Plik ma tryb 0600, nie może leżeć w katalogu prototypów, a w repo gita musi być
+ścieżka względem projektu). Plik jest prywatny (POSIX: tryb 0600; Windows: ACL tylko dla użytkownika, SYSTEM i administratorów), nie może leżeć w katalogu prototypów, a w repo gita musi być
 ignorowany (`.gitignore`) i nieśledzony.
+
+Na Windows tryb pliku nic nie znaczy, więc dostęp ogranicza ACL (przez SID, bez zależności od nazw grup systemu):
+tylko użytkownik, który uruchamia komendę, `SYSTEM` i administratorzy lokalni; bez dziedziczenia z katalogu. ACL jest
+ustawiany przy utworzeniu i przy każdym zapisie pliku użytkowników i jego kopii `users.json.bak` (plik tymczasowy dostaje
+ACL przed zapisem danych, bo przy podmianie pliku Windows przenosi ACL pliku tymczasowego), a stary plik z szerokim ACL
+jest naprawiany przy pierwszym zapisie albo odczycie (komenda wypisuje wtedy jedną linię o naprawie). Ostrzeżenie pojawia
+się tylko wtedy, gdy ACL nie da się ustawić (wolumin bez ACL, np. FAT/exFAT, udział sieciowy bez obsługi, brak
+uprawnień): zapis pliku i tak się udaje, ale plik może być czytelny dla innych użytkowników komputera. Tak samo
+chronione są pliki logowania jednorazowym linkiem (stan, tokeny, `audit.jsonl`) i plik `prototype.default_password`
+(sprawdzany i naprawiany jak plik użytkowników).
 
 ```bash
 skillsync prototype user add . anna.nowak@szkola.example                       # commenter, hasło domyślne
@@ -252,7 +262,7 @@ skillsync prototype user roles . ewa.ekspert@example.com --role acceptor      # 
 
 - Hasło podaje `--password-prompt` (pytanie w terminalu) albo `--password-stdin` (ze standardowego wejścia);
   minimum 10 znaków.
-- Bez tych flag konto dostaje hasło domyślne z configu maszyny (`prototype.default_password`, plik 0600) i musi je
+- Bez tych flag konto dostaje hasło domyślne z configu maszyny (`prototype.default_password`, plik prywatny: 0600 na POSIX, ACL na Windows) i musi je
   zmienić przy pierwszym logowaniu. Żadna komenda nie wypisuje hasła domyślnego.
 - Dla ról `acceptor`, `developer` i `expert` ustaw hasło od razu (`--password-prompt`); `add` i `import` ostrzegają o haśle domyślnym także dla `expert`.
 - `--role` domyślnie wynosi `commenter`; `user roles` wymaga co najmniej jednej roli i zmienia tylko wskazane konto.
@@ -561,7 +571,7 @@ Zmiany plików prototypu (HTML, CSS, `comments.json`, użytkownicy) widzi bez re
 | Akceptacja albo przywracanie daje 409 `writing_in_progress`, przyciski są wyłączone z banerem „Agent jeszcze pisze ekrany” | agent ma ważny marker zapisu | poczekaj na `prototype writing … done` albo wygaśnięcie markera (do 15 min domyślnie); gdy agent padł, zdejmij marker: `skillsync prototype writing . <slug> done` albo (akceptujący i deweloper) przyciskiem „Zwolnij” w banerze |
 | `writing start` kończy się `BLOCKED` `lock_timeout` albo `needs_migration` | zajęta blokada prototypu (`iterate`, `restore`) albo prototyp w starym formacie | ponów komendę; `migrate` |
 | Zapis komentarza daje 409 `needs_migration` | prototyp w starym formacie (`comments.js`) | `migrate` |
-| `serve` kończy się `BLOCKED` przy starcie | zajęty port, brak pliku użytkowników, plik z trybem szerszym niż 0600, śledzony albo nieignorowany przez git | wybierz inny port, utwórz konto (`user add`), `chmod 600`, dodaj plik do `.gitignore` |
+| `serve` kończy się `BLOCKED` przy starcie | zajęty port, brak pliku użytkowników, plik z trybem szerszym niż 0600 (POSIX), śledzony albo nieignorowany przez git | wybierz inny port, utwórz konto (`user add`), `chmod 600`, dodaj plik do `.gitignore` |
 | `login-link` kończy się `BLOCKED` | `server_not_running` (serwer nie działa albo czyta inny plik użytkowników), `ambiguous_server` (kilka serwerów: dodaj `--port`), `link_needs_loopback` (`--host` z adresem LAN), `run_dir_unsafe` (`.skillsync/prototype/run/` z prawami ≠ 0700 lub dowiązanie), `unknown_user`, `password_change_required`, `invalid_port`, `link_unavailable` (serwer z `--trust-proxy`), `too_many_pending` | uruchom `serve`, dodaj `--port`, popraw katalog `run/`, utwórz konto albo zmień hasło |
 | `accept` kończy się `BLOCKED tty_required` | komenda nie dostała terminala (np. uruchomiona przez skrypt albo agenta) | człowiek: uruchom ją samodzielnie w terminalu albo kliknij Akceptacja na stronie prototypu; agent nie ponawia komendy i mówi „kliknij Akceptacja na stronie prototypu” |
 | Pasek „Prototyp zmieniono”, zapis daje 409 `stale_view` | ktoś zmienił pliki prototypu po wczytaniu strony | przeładuj stronę i powtórz działanie |

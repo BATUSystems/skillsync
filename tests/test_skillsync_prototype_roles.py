@@ -321,9 +321,10 @@ class UserRolesCommandTests(S.UsersCase):
 # ═════════════════════════════════════════════════════════════════════════════
 
 def password_warnings(stderr):
-    """stderr without the note that Windows has no 0600 check (`ostrzeżenie: kontrola uprawnień 0600 pominięta na Windows`):
-    it is printed by every user command there and says nothing about the password."""
-    return ''.join(line for line in stderr.splitlines(True) if 'uprawnień 0600' not in line)
+    """stderr without the ACL notes of Windows (a repair of a wide file or a failed ACL: `ACL Windows: ...`,
+    `nie udało się ograniczyć dostępu ...`): they say nothing about the password."""
+    return ''.join(line for line in stderr.splitlines(True)
+                   if 'ACL Windows' not in line and 'nie udało się ograniczyć dostępu' not in line)
 
 
 class WarningTests(S.UsersCase):

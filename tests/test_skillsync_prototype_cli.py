@@ -1393,9 +1393,8 @@ class UserTests(PrototypeFixture):
         self.assertNotIn('password', report['user'])
         self.assertNoSecret(self.users_text())
         self.assertIn('pbkdf2', self.users_text().lower(), 'the stored value is a hash')
-        # Windows adds the note that it has no 0600 check to `warnings`; it says nothing about the password
-        self.assertEqual([w for w in report.get('warnings', []) if w != ps.PRIVATE_CHECK_SKIPPED], [],
-                         'a commenter is not a privileged role')
+        # on Windows the file is restricted by an ACL when it is written: no note either (the notes are for a repair or a failure)
+        self.assertEqual(report.get('warnings', []), [], 'a commenter is not a privileged role')
 
     def test_privileged_roles_get_a_warning_about_the_shared_password(self):
         for role in ('acceptor', 'developer'):

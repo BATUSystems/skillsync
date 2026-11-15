@@ -9,6 +9,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 No changes to the library in this release (the version follows the core).
 ### Changed
 - `skills/dashboard/assets/app.css`: stan wskaźnika „na żywo” ma własny kształt punktu obok koloru (koło, kwadrat, trójkąt, pierścień), a przyciski i karty w trybie zwartym (≤ 420 px) mają co najmniej 2,75 rem wysokości; wtyczka z własną kopią arkusza musi ją zsynchronizować.
+### Changed
+- `skills/prototype/SKILL.md`: the machine config with `prototype.default_password` is private by mode 0600 on POSIX and by an ACL on Windows (set and repaired by the tool).
+
+## [1.4.1] - 2026-11-15
+
+No changes to the library in this release (the version follows the core).
 
 ## [1.4.0] - 2026-11-14
 

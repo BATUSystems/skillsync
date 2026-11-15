@@ -32,6 +32,7 @@ import errno
 import getpass
 import hashlib
 import hmac
+import importlib
 import ipaddress
 import json
 import math
@@ -61,6 +62,140 @@ try:  # Windows
     import msvcrt
 except ImportError:
     msvcrt = None
+
+try:   # private files on Windows (ACL). A dynamic import on purpose: this module stays stand-alone (no static import of the
+    # package, see `CompatibilityTests`); copied alone, or run as a script, `__package__` is empty and the helper is absent
+    _winacl = importlib.import_module('.winacl', __package__) if __package__ else None
+except ImportError:
+    _winacl = None
+
+
+# ── Lingering close (shared with the status page) ───────────────────────────
+#
+# A handler that answers an error (401, 403, 405, 411, 413, ...) before it has read the request body and then closes
+# the connection leaves the client's bytes unread in the socket. The kernel answers such a close with a TCP reset,
+# and on Windows the client then sees ConnectionResetError (WinError 10054) instead of the response it was sent.
+# The cure is the one of RFC 9112 section 9.6: after the response, half-close the sending side and discard what the
+# client still sends, within hard limits, before closing. The limits are small and fixed, so a client without any
+# rights cannot hold a worker or make the server read an unbounded body.
+#
+# The status page (`dashboard_http`) imports `LingeringCloseMixin` from here: one source, this module stays standalone.
+
+LINGER_BYTES = 256 * 1024   # a body over this is not drained (the reset is then the client's own doing); above the handler's own read buffer
+LINGER_SECONDS = 1.0        # all of the discarding, not per read
+_CHUNK = 64 * 1024
+
+
+def linger_close(connection, limit=LINGER_BYTES, seconds=LINGER_SECONDS):
+    """Half-close `connection` for writing and discard the client's remaining bytes (bounded); never raises.
+
+    Returns the number of bytes discarded. The caller closes the connection afterwards."""
+    discarded = 0
+    deadline = time.monotonic() + seconds
+    try:
+        connection.shutdown(socket.SHUT_WR)
+        while discarded < limit:
+            left = deadline - time.monotonic()
+            if left <= 0:
+                break
+            connection.settimeout(left)
+            data = connection.recv(min(_CHUNK, limit - discarded))
+            if not data:   # the client has closed its side: nothing is left to reset
+                break
+            discarded += len(data)
+    except OSError:   # includes timeouts, resets and a connection that is already gone
+        pass
+    return discarded
+
+
+class _CountingReader:
+    """Proxy of a handler's `rfile` that counts the bytes handed out, to tell whether a request body was read."""
+
+    def __init__(self, raw):
+        self._raw = raw
+        self.count = 0
+
+    def read(self, *args):
+        data = self._raw.read(*args)
+        self.count += len(data)
+        return data
+
+    def read1(self, *args):
+        data = self._raw.read1(*args)
+        self.count += len(data)
+        return data
+
+    def readline(self, *args):
+        data = self._raw.readline(*args)
+        self.count += len(data)
+        return data
+
+    def readinto(self, buffer):
+        size = self._raw.readinto(buffer)
+        self.count += size or 0
+        return size
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        line = self.readline()
+        if not line:
+            raise StopIteration
+        return line
+
+    def __getattr__(self, name):
+        return getattr(self._raw, name)
+
+
+class LingeringCloseMixin:
+    """Mixin for `BaseHTTPRequestHandler` subclasses (list it BEFORE the handler base class).
+
+    After each request it checks whether the declared body was read. A body that is left unread would be parsed
+    as the next request on a kept-alive connection and, at the close, answered with a reset; so such a connection
+    is closed (`close_connection`) and, in `finish`, closed with a lingering close. A request whose body the
+    handler read, or that has none, is not touched."""
+
+    _body_mark = None
+    _linger = False
+
+    def setup(self):
+        super().setup()
+        self.rfile = _CountingReader(self.rfile)
+
+    def parse_request(self):
+        ok = super().parse_request()
+        self._body_mark = self.rfile.count if ok else None
+        return ok
+
+    def handle_one_request(self):
+        # Refusals before `parse_request` finishes (414, 431, a bad request line) are answered by `send_error`, which closes the
+        # connection; they do not linger (the body of such a request is not declared in a header the server accepted).
+        self._body_mark = None
+        self._linger = False
+        super().handle_one_request()
+        if self._body_mark is not None and self._body_unread():
+            self.close_connection = True
+            self._linger = True
+
+    def _body_unread(self):
+        headers = getattr(self, 'headers', None)
+        if headers is None:
+            return False
+        if headers.get('Transfer-Encoding'):
+            return True   # a chunked body is never read by these handlers (411); count it as unread
+        try:
+            declared = int(headers.get('Content-Length') or 0)
+        except ValueError:
+            return True
+        return declared > 0 and self.rfile.count - self._body_mark < declared
+
+    def finish(self):
+        try:
+            if self._linger:
+                linger_close(self.connection)
+        finally:
+            super().finish()
 
 
 # ── Lingering close (shared with the status page) ───────────────────────────
@@ -2273,6 +2408,10 @@ def atomic_write_bytes(path, data, mode=None, default_mode=0o644):
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_BINARY', 0)
     fd = os.open(temporary, flags, 0o600)
     try:
+        if _winacl is not None and final_mode & 0o077 == 0:
+            # Windows: `os.replace` hands the ACL of THIS file to the target (measured), so it is set now, before any data
+            # is written; a failure is one warning for the target and never fails the write
+            _winacl.restrict_to_owner(temporary, label=path)
         try:
             view = memoryview(data)
             while view:
@@ -4887,8 +5026,8 @@ def verify_password(password, encoded):
 def private_file_problem(path):
     """None when `path` is private (no group/other bits), else a message with `chmod 600`.
 
-    On Windows (`os.name == 'nt'`) `st_mode` carries no permissions: returns None and
-    callers print `PRIVATE_CHECK_SKIPPED` as a warning.
+    On Windows (`os.name == 'nt'`) `st_mode` carries no permissions and the ACL is handled by `private_file_notes`: this
+    never reports a problem there (a file system without ACLs must not block a command).
     """
     if os.name == 'nt':
         return None
@@ -4899,7 +5038,27 @@ def private_file_problem(path):
     return None
 
 
-PRIVATE_CHECK_SKIPPED = 'kontrola uprawnień 0600 pominięta na Windows'
+def _private_existing(path):
+    """An existing directory this module owns (run/, login/): repaired when its ACL is wide (Windows; a no-op elsewhere)."""
+    if _winacl is not None:
+        _winacl.ensure_private(path)
+
+
+def _private_path(path):
+    """Restrict a file or directory this module creates to the user (Windows ACL; a no-op elsewhere, never raises)."""
+    if _winacl is not None:
+        _winacl.restrict_to_owner(path)
+
+
+def private_file_notes(path):
+    """Lines a command adds to its `warnings` for an existing private file: on Windows the ACL is checked and, when it is
+    wider than the user, SYSTEM and the administrators, repaired in place (one line about the repair) or, when that fails,
+    one warning; `[]` for a file that is private already and on other systems (the mode check covers them)."""
+    if _winacl is None:
+        # a stand-alone copy of this module (no package): no ACL helper, say so instead of silently losing the protection
+        return ['ACL Windows: brak pomocnika winacl w tej kopii serwera; plik %s może być czytelny dla innych użytkowników '
+                'tego komputera' % path] if os.name == 'nt' else []
+    return _winacl.private_notes(path)
 
 
 def roles_of(record):
@@ -5099,6 +5258,7 @@ class UsersFile(object):
         directory = os.path.dirname(self.path)
         if not os.path.isdir(directory):
             os.makedirs(directory, mode=0o700, exist_ok=True)
+            _private_path(directory)    # Windows: files created in it (temporary ones too) inherit the private ACL
         with FileLock(self.lock_path, self.lock_timeout, mode=0o600):
             if os.path.lexists(self.path):
                 data, _key = self._read_file()
@@ -5608,6 +5768,7 @@ def _link_make_private_dir(path):
     os.mkdir(path, 0o700)
     if _LINK_POSIX:
         os.chmod(path, 0o700)   # the umask must not narrow or widen it
+    _private_path(path)         # Windows: an inheriting ACL (the user, SYSTEM, the administrators); a no-op elsewhere
 
 
 def link_prepare_run_dir(path):
@@ -5652,6 +5813,7 @@ def link_login_dir(run_dir, create=False):
         problem = link_directory_problem(path)
     if problem is not None:
         raise LoginLinkError('run_dir_unsafe', 'katalog login/ jest niebezpieczny (%s): %s' % (problem, path))
+    _private_existing(path)      # a directory made by an older version (wide ACL on Windows) is repaired
     return path
 
 
@@ -5666,6 +5828,7 @@ def _link_write_private(path, data):
     temporary = os.path.join(os.path.dirname(path), '.%s.%s.tmp' % (os.path.basename(path), secrets.token_hex(4)))
     descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _LINK_NOFOLLOW, 0o600)
     try:
+        _private_path(temporary)    # Windows: before the data (`os.replace` hands this ACL to `path`)
         with os.fdopen(descriptor, 'wb') as handle:
             handle.write(data)
             handle.flush()
@@ -5900,6 +6063,7 @@ def link_issue(run_dir, login, path, now=None, ttl=LINK_TTL_DEFAULT, instance=No
     temporary = os.path.join(directory, '.%s.%s.tmp' % (digest, secrets.token_hex(4)))
     try:
         descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _LINK_NOFOLLOW, 0o600)
+        _private_path(temporary)    # Windows: before the token record is written
         with os.fdopen(descriptor, 'wb') as handle:
             handle.write(data)
             handle.flush()
@@ -5966,6 +6130,8 @@ def link_audit_append(run_dir, record, lock_timeout=None):
             info = os.fstat(descriptor)
             if not stat.S_ISREG(info.st_mode):
                 raise OSError('audit.jsonl nie jest zwykłym plikiem')
+            if info.st_size == 0:
+                _private_path(path)     # Windows: the new file is restricted before the first record
             os.write(descriptor, data)
             os.fsync(descriptor)
         finally:
@@ -6103,8 +6269,7 @@ def startup_checks(config):
         problem = users.permissions_problem()
         if problem:
             errors.append(problem)
-        if os.name == 'nt':
-            warnings.append(PRIVATE_CHECK_SKIPPED)
+        warnings.extend(private_file_notes(users.path))
         try:
             records = users.users(strict=True)
         except UserError as error:
@@ -8251,8 +8416,7 @@ def _users_for_cli(path, iterations, must_exist):
         problem = users.permissions_problem()
         if problem:
             raise UserError('insecure_permissions', problem)
-        if os.name == 'nt':
-            warnings.append(PRIVATE_CHECK_SKIPPED)
+        warnings.extend(private_file_notes(users.path))
     elif must_exist:
         raise UserError('users_file_missing', 'users file does not exist: %s' % users.path)
     return users, warnings

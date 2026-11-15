@@ -1457,8 +1457,8 @@ def machine_config_path(environ=None):
 def default_password(environ=None):
     """`(value, warnings)` of `prototype.default_password` from the machine config (D17, K10).
 
-    The file must be private (0600; wider = `PrototypeError` with `chmod 600`; skipped with a
-    warning on Windows).  The value never appears in any message: YAML errors are reported
+    The file must be private (0600; wider = `PrototypeError` with `chmod 600`; on Windows the ACL is checked and repaired,
+    see `private_file_notes`).  The value never appears in any message: YAML errors are reported
     without the parser's excerpt of the file.
     """
     path = machine_config_path(environ)
@@ -1469,8 +1469,7 @@ def default_password(environ=None):
     problem = server.private_file_problem(str(path))
     if problem:
         raise PrototypeError(problem)
-    if os.name == 'nt':
-        warnings.append(server.PRIVATE_CHECK_SKIPPED)
+    warnings.extend(server.private_file_notes(str(path)))
     try:
         data = read_yaml(path)
     except (yaml.YAMLError, ValueError, OSError):
@@ -2334,8 +2333,7 @@ def _users(repo, value):
         problem = users.permissions_problem()
         if problem:
             raise PrototypeError(problem)
-        if os.name == 'nt':
-            warnings.append(server.PRIVATE_CHECK_SKIPPED)
+        warnings.extend(server.private_file_notes(users.path))
     return users, warnings
 
 

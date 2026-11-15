@@ -67,7 +67,7 @@ Warstw nie przekazuje się zmiennymi środowiskowymi. Procesy potomne `skillsync
 | `entrypoint` | `inline` \| `agents` | domyślny tryb wejścia instrukcji, gdy manifest nie podaje `instructions.entrypoint` |
 | `legacy_library` | ścieżka | katalog starej biblioteki zapisany przez `layers migrate`; do rozpoznawania dowiązań i `--finish` |
 | `memory_sync` | mapa | kopiowanie plików pamięci na hosty (`skillsync memory-sync`) |
-| `prototype.default_password` | string | hasło domyślne kont `skillsync prototype user`; tylko w configu maszyny; plik nie może mieć uprawnień dla grupy ani innych (0600 lub ściślej; szerszy = BLOCKED z `chmod 600`; na Windows kontrola pominięta z ostrzeżeniem) |
+| `prototype.default_password` | string | hasło domyślne kont `skillsync prototype user`; tylko w configu maszyny; plik nie może mieć uprawnień dla grupy ani innych (0600 lub ściślej; szerszy = BLOCKED z `chmod 600`; na Windows plik jest sprawdzany przez ACL (tylko użytkownik, SYSTEM i administratorzy) i naprawiany w miejscu, jedna linia o naprawie, ostrzeżenie tylko gdy ACL nie da się ustawić; `private_file_problem` nigdy tam nie blokuje) |
 
 `prototype.default_password`: brak pliku, brak klucza lub wartość niebędąca napisem = BLOCKED. Wartość nie trafia do żadnego
 komunikatu ani wyniku JSON; błąd składni YAML configu zastępuje komunikat ogólny, bo PyYAML cytuje wiersz pliku

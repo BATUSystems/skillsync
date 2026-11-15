@@ -101,7 +101,7 @@ w ekranach, uchwytach ani akceptacji. Usuń go albo zostaw; własne ekrany to ko
 - `skillsync prototype user add <projekt> <login> --role commenter|acceptor|developer|expert` zakłada konto (login to e-mail; `--role` można powtórzyć,
   a `user roles <projekt> <login> --role …` zmienia zbiór ról istniejącego konta); `user list`, `user passwd`, `user remove`, `user import` obsługują resztę. Hasła nigdy nie wypisuj ani nie przekazuj jako argumentu:
   własne hasło podaje `--password-prompt` albo `--password-stdin`. Bez tych flag konto dostaje hasło domyślne z configu maszyny
-  (`prototype.default_password`, plik configu z trybem 0600, inaczej BLOCKED) i musi je zmienić przy pierwszym logowaniu.
+  (`prototype.default_password`, plik configu prywatny: tryb 0600 na POSIX, inaczej BLOCKED; na Windows ACL ustawiany i naprawiany przez narzędzie) i musi je zmienić przy pierwszym logowaniu.
 - `skillsync prototype serve <projekt>` uruchamia serwer wspólnych komentarzy (domyślnie `127.0.0.1:4445`). Plik kont
   (`.skillsync/prototype/users.json`) musi być ignorowany przez git i nieśledzony (np. `.skillsync/` w `.gitignore`), inaczej
   `serve` kończy się BLOCKED. Odczyt jest publiczny, więc dla prototypów klienta dodaj `--login-to-view`. Za proxy z TLS użyj

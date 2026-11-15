@@ -164,6 +164,12 @@ def prepare(workdir, library, chrome_port, port1, port2):
     workdir = Path(workdir).resolve()
     workdir.mkdir(parents=True, exist_ok=True)
     os.chmod(workdir, 0o700)
+    try:   # Windows: the mode means nothing there; an inheriting ACL makes secrets.json and config.yaml private (a no-op elsewhere)
+        sys.path.insert(0, str(REPO))
+        from skillsync_workflow import winacl
+        winacl.restrict_to_owner(str(workdir))
+    except ImportError:
+        pass
     base = workdir / 'base'
     if base.exists():
         shutil.rmtree(base)
