@@ -45,7 +45,6 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 - Fixtures `tests/fixtures/dashboard/*/expected*.json` only gained keys (no line removed).
 - `prototype writing … --screens` is refused (`invalid_args`) for `done` and `status`.
-- `skillsync_workflow/common.py`: `plan_section(text, name)`, the shared reader of a `## <name>` section of a plan.
 - The prototype engine files (`prototype.js`, `prototype.css`) carry the presentation mode: `skillsync prototype migrate` delivers them (the change of the CSS can invalidate the acceptance of screens: the list is `acceptance` of the result).
 
 ### Fixed
@@ -57,6 +56,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 - Two-port mode: a request on the read socket cannot write anything (no route, no token); on the consent socket the `Origin` must match the `Host` exactly, a request with intermediary headers is refused, and `via.peer` is the address of the connection, so `X-Forwarded-For` cannot change it.
 - Question preview on `/_experts`: a signed-in account without a role of the experts (`200` instead of `403`) sees the text of the questions and the names of the accounts that wrote the answers and comments (the account `name`, never a login or an e-mail address; a `name` that looks like a login or an address shows as a plain label); it still cannot write (`403`).
+- Status page, read socket of the two-port mode: it needs no sign-in and listens on every interface by default, and the page shows the same content to a viewer as to the operator (plans, the text of expert questions, the logins of their addressees). Anyone who can reach the port can read it. On a network that is not trusted narrow the socket with `--read-bind 127.0.0.1` or use a tunnel.
 - Known residual risk, documented in `docs/workflow.md` (section "Strona statusu: dwa tryby"): the consent token travels in plain HTTP. With the default `0.0.0.0` listen address on an untrusted network, anyone who can sniff the traffic can capture the token and give consents while the server runs. Use `--approve-bind 127.0.0.1` or an SSH tunnel (`ssh -L 5141:127.0.0.1:5141`) there, and point tunnels at the read port only.
 
 ### Compatibility
