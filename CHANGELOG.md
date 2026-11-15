@@ -16,6 +16,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 - Prototype server: `FileLock` closes (and unlocks) the descriptor it opened when anything, `KeyboardInterrupt` included, interrupts the acquisition before the lock object holds it; before, such a descriptor kept the system lock until the process ended.
 - Prototype server: the request-body counter that decides on a lingering close counts `readlines` and `readinto1` too (`peek` consumes nothing and stays uncounted).
+- `common.resolve_loop_checked` (used by `discover_exclude` and the retro scan): a loop of Windows junctions is reported on Python 3.12 and 3.13 too (`resolve()` returns the stuck path there and a junction is not a symlink; `os.path.isjunction` now counts as a link); measured: 3.11 raised, 3.12/3.13 did not.
 - `layers init`: the `next` hint is quoted for Windows with double quotes and `/` (it ran in PowerShell and Git bash but not in cmd.exe when the path had a space); POSIX unchanged.
 - `leakguard` (hook check, Windows): a word of a hook line such as `/c/dir/x` is checked as `C:/dir/x`, and a path in the MSYS root (`/usr/bin/env`, `/bin/sh`, `/mingw64/...`), which exists only inside Git for Windows, is no longer reported as a missing command. Compatibility: on Windows a hook that names a missing file with a `/…` path outside a drive form is no longer reported (use `C:/…`); POSIX unchanged.
 
