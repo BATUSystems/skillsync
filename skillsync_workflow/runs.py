@@ -5,7 +5,7 @@ import json
 import math
 import os
 import shlex
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 import re
 import signal
 import shutil
@@ -116,6 +116,15 @@ def _hash_file(path):
     return digest.hexdigest()
 
 
+def _is_rooted(value):
+    """True for a path that does not stay relative: absolute, POSIX-rooted (`/etc/x`) and, on Windows, rooted (`\\x`)
+    or with a drive (`C:x`); `Path("/etc/x").is_absolute()` alone is False on Windows."""
+    text = str(value)
+    if Path(text).is_absolute() or PurePosixPath(text).is_absolute():
+        return True
+    return os.name == "nt" and bool(PureWindowsPath(text).anchor)
+
+
 def _inside(root, value, existing=True):
     path = Path(value)
     if ".." in path.parts:
@@ -216,7 +225,7 @@ def _read(path):
     if path.stat().st_size > MAX_METADATA:
         raise ValueError("Przekroczono limit metadanych")
     try:
-        data = json.loads(path.read_text(), object_pairs_hook=_unique_pairs)
+        data = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=_unique_pairs)
     except RecursionError:
         raise ValueError("Przebieg jest zbyt głęboko zagnieżdżony") from None
     if not isinstance(data, dict) or data.get("schema_version") != 1 or not isinstance(data.get("checkpoints"), list):
@@ -266,7 +275,7 @@ def _read(path):
                 raise ValueError("Nieprawidłowy dowód")
             if "\x00" in item["path"]:
                 raise ValueError("Nieprawidłowa ścieżka dowodu")
-            if Path(item["path"]).is_absolute() or ".." in Path(item["path"]).parts:
+            if _is_rooted(item["path"]) or ".." in Path(item["path"]).parts:
                 raise ValueError("Nieprawidłowa ścieżka dowodu")
             if not re.fullmatch(r"[0-9a-f]{64}", str(item.get("sha256", ""))):
                 raise ValueError("Nieprawidłowy hash dowodu")
@@ -692,7 +701,7 @@ def _suite(path):
     path = Path(path)
     if path.stat().st_size > MAX_METADATA:
         raise ValueError("Suite przekracza limit rozmiaru")
-    data = yaml.safe_load(path.read_text())
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict) or not isinstance(data.get("cases"), list) or not data["cases"]:
         raise ValueError("Suite wymaga niepustej listy cases")
     if len(data["cases"]) > 100:
@@ -751,7 +760,7 @@ def benchmark(args):
         if not isinstance(fixture, dict) or len(fixture) > 100:
             raise ValueError("Nieprawidłowa fixture")
         for name, content in fixture.items():
-            if not isinstance(name, str) or Path(name).is_absolute() or ".." in Path(name).parts:
+            if not isinstance(name, str) or _is_rooted(name) or ".." in Path(name).parts:
                 raise ValueError("Fixture wychodzi poza izolowany katalog")
             if not isinstance(content, str) or len(content.encode()) > MAX_METADATA:
                 raise ValueError("Nieprawidłowa zawartość fixture")
@@ -793,7 +802,7 @@ def benchmark(args):
                 for name, content in case.get("fixture", {}).items():
                     target = _inside(fixture_root, name, existing=False)
                     target.parent.mkdir(parents=True, exist_ok=True)
-                    target.write_text(content)
+                    target.write_text(content, encoding="utf-8", newline="")
                 cwd = _inside(fixture_root, replace(case.get("cwd", ".")), existing=False)
                 if not cwd.is_dir():
                     raise ValueError("cwd benchmarku musi istnieć w fixture")

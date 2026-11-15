@@ -149,7 +149,8 @@ class DispatchState(WorkflowFixture):
 
     def test_filename_with_free_text_and_bad_bytes_never_leaves(self):
         self.put(f'hasło {SENT} incydent.yaml', state(run_id='2026-10-31-a'))
-        self.put(f'{SENT[:8]}\nnewline.yaml', None, raw='a: [broken')
+        if os.name != 'nt':   # Windows file names cannot contain a newline
+            self.put(f'{SENT[:8]}\nnewline.yaml', None, raw='a: [broken')
         raw = self.root / '.skillsync' / 'dispatch'
         try:
             (raw / b'\xff.yaml'.decode('utf-8', 'surrogateescape')).write_text('x: 1', encoding='utf-8')

@@ -690,7 +690,7 @@ class SessionContentStaysOut(RetroBase):
             os.mkdir(runs + b'/rd')
             with open(runs + b'/rd/\xff\xfe-file.md', 'wb') as stream:
                 stream.write(b'Status: PASS\n')
-        except OSError:
+        except (OSError, UnicodeError):   # Windows: names are UTF-16, bytes that are not UTF-8 cannot be a name
             self.skipTest('system plików nie przyjmuje nazw spoza UTF-8')
         self.run_file('real', rec('a'))
         data = self.full(code=2)
@@ -705,7 +705,7 @@ class SessionContentStaysOut(RetroBase):
         try:
             with open(runs + b'/\xff-bad.json', 'wb') as stream:
                 stream.write(b'{}')
-        except OSError:
+        except (OSError, UnicodeError):   # Windows: names are UTF-16, bytes that are not UTF-8 cannot be a name
             self.skipTest('system plików nie przyjmuje nazw spoza UTF-8')
         self.run_file('real', rec('a'))
         data = self.full('--run-id', 'real')
@@ -2130,7 +2130,9 @@ class CorruptRecords(RetroBase):
         if item['class'] == 'unreadable':
             self.assertEqual(item['reason'], 'malformed')
         else:
-            self.assertEqual(item['rubric']['evidence']['refused'], 1)
+            # POSIX refuses the name (cannot be encoded); on Windows the file simply does not exist: not read either way
+            evidence = item['rubric']['evidence']
+            self.assertEqual(evidence['refused'] + evidence['missing'], 1)
         self.assert_absent('embedded null', 'surrogate')
 
     def test_huge_duration_sum_does_not_break_the_report(self):
@@ -2344,7 +2346,7 @@ class RetroDecide(CandidateBase):
         self.pair()
         before = self.tree()
         self.decide(*self.good())
-        added = self.tree() - before
+        added = {name.replace(os.sep, '/') for name in self.tree() - before}
         self.assertEqual(added, {'docs', 'docs/retro', self.PATH})
         self.assertEqual(sorted(os.listdir(self.root / 'docs/retro')), ['decisions.yaml'])
         # też przy nadpisaniu istniejącego pliku

@@ -1,4 +1,5 @@
 """feature rename (alias `agentflow`), dispatch auto-companion, cleanup, `.skillsync/` ignore, `dispatch:` manifest section."""
+import os
 import copy
 import json
 import sys
@@ -315,12 +316,24 @@ class LinkAfterRenameTests(TempProjectMixin, unittest.TestCase):
         write_skill(self.library_dir, "agentflow")
         write_skill(self.library_dir, "workflow")
 
+    def describe_link(self, path):
+        """Formy ścieżek osieroconego dowiązania (diagnostyka porażki: Windows pokazuje tu 8.3 vs forma długa)."""
+        def safe(fn):
+            try:
+                return fn()
+            except (OSError, RuntimeError) as exc:
+                return f"{type(exc).__name__}"
+        return (f"lexists={os.path.lexists(path)} is_symlink={path.is_symlink()} exists={path.exists()} "
+                f"readlink={safe(lambda: os.readlink(path))!r} resolve={safe(lambda: str(path.resolve()))!r} "
+                f"library={safe(lambda: str(self.library_dir.resolve()))!r}")
+
     def assert_migrated(self):
         for host, directory in self.installed().items():
             with self.subTest(host=host):
                 for name in self.SKILLS:
                     self.assertTrue((directory / name).exists(), f"{host}/{name}")
-                self.assertFalse((directory / "agentflow").exists() or (directory / "agentflow").is_symlink(), host)
+                orphan = directory / "agentflow"
+                self.assertFalse(orphan.exists() or orphan.is_symlink(), f"{host}: {self.describe_link(orphan)}")
 
     @needs_os_symlinks
     @link_mode('symlink')  # asserts links: pinned, so SKILLSYNC_NO_SYMLINK=1 in the run does not change it
@@ -551,7 +564,7 @@ class DoctorAgentflowNameTests(WorkflowFixture):
         report = self.report("doctor", code=1)
         self.assertEqual(len(self.deprecation(report)), 1)
         self.assertFalse(any(f["reason"] == "Missing skill" for f in report["findings"]))
-        self.assertTrue(any(f["reason"] == "Missing installed skill" and f["path"].endswith("skills/agentflow")
+        self.assertTrue(any(f["reason"] == "Missing installed skill" and f["path"].replace("\\", "/").endswith("skills/agentflow")
                             for f in report["findings"]))
 
     def test_dispatch_adapters_are_checked_like_feature_adapters(self):
