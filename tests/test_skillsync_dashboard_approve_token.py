@@ -26,6 +26,7 @@ sys.path.insert(0, str(ROOT / "tests"))
 
 from skillsync_workflow import dashboard_http as srv  # noqa: E402
 from skillsync_workflow import dashboard_token  # noqa: E402
+from tests.serve_start import start_serve  # noqa: E402
 from tests.test_skillsync_dashboard_server import (CLI, PLAN, TEST_TOKEN, HttpCase, ProjectCase, free_port,  # noqa: E402
                                                    install_fake_cli, make_project, raw_post, spy_core)
 
@@ -591,31 +592,7 @@ class ServeWritesAndRemovesTheState(unittest.TestCase):
         before the server binds. The server then exits at once, while the OTHER server on that port still answers `/healthz` and a test that
         trusts the answer reads state that is not its own (measured: the leftover test saw the stale file of the previous server). So the
         answer must be backed by the state file of our own pid (a server that lost the bind never writes one, and it takes longer than any fixed pause to import and exit), and a start that failed is retried on another port; `prepare(port)` runs before every try."""
-        last = ""
-        for _attempt in range(4):
-            port = free_port()
-            if prepare:
-                prepare(port)
-            proc = subprocess.Popen([sys.executable, str(CLI), "dashboard", "serve", str(self.root), "--port", str(port), *extra, *self.layer],
-                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=self.env)
-            self.addCleanup(lambda proc=proc: proc.poll() is None and proc.kill())
-            deadline = time.time() + 20
-            while time.time() < deadline and proc.poll() is None:
-                try:
-                    urllib.request.urlopen(f"http://127.0.0.1:{port}/healthz", timeout=1).close()
-                    answered = self.own_state(proc, port) and (ready is None or ready(port))
-                except OSError:
-                    answered = False
-                if answered:
-                    return proc, port
-                time.sleep(0.1)
-            if proc.poll() is None:
-                proc.kill()
-            out, err = proc.communicate(timeout=10)
-            last = f"{out}\n{err}"   # a lost bind is reported as BLOCKED on stdout, stderr stays empty
-            if "BLOCKED" not in last:   # a start that failed for another reason is not retried
-                break
-        self.fail(f"dashboard serve did not start (last port {port}): {last.strip()[-600:]}")
+        return start_serve(self, CLI, self.root, self.layer, self.env, free_port, *extra, prepare=prepare, ready=ready)
 
     def own_state(self, proc, port):
         """The state file of THIS server process: only the server that holds the port writes one with its pid, so an answer of `/healthz`

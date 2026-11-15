@@ -35,6 +35,7 @@ from skillsync_workflow.common import as_layerset  # noqa: E402
 
 sys.path.insert(0, str(HERE))
 from layers_helpers import needs_os_symlinks  # noqa: E402
+from serve_start import start_serve  # noqa: E402
 
 FIX = HERE / "fixtures" / "dashboard_server"
 ASSETS, DESCRIPTIONS = srv.skill_assets(as_layerset(ROOT / "library"))
@@ -1978,18 +1979,10 @@ class ServeCommandTests(unittest.TestCase):
 
     @unittest.skipIf(os.name == "nt", "SIGTERM kończy proces na Windows bez obsługi")
     def test_serve_answers_and_stops_on_sigterm(self) -> None:
-        port = free_port()
-        proc = subprocess.Popen([sys.executable, str(CLI), "dashboard", "serve", str(self.root), "--port", str(port),
-                                 *self.layer], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=self.env)
-        self.addCleanup(lambda: proc.poll() is None and proc.kill())
-        base, deadline, health = f"http://127.0.0.1:{port}", time.time() + 20, None
-        while time.time() < deadline and proc.poll() is None:
-            try:
-                with urllib.request.urlopen(base + "/healthz", timeout=1) as r:
-                    health = json.load(r)
-                break
-            except OSError:
-                time.sleep(0.1)
+        proc, port = start_serve(self, CLI, self.root, self.layer, self.env, free_port)
+        base = f"http://127.0.0.1:{port}"
+        with urllib.request.urlopen(base + "/healthz", timeout=5) as r:
+            health = json.load(r)
         self.assertEqual({k: v for k, v in health.items() if k != "tokenId"}, {"ok": True, "version": 0}, proc.stderr.read() if proc.poll() is not None else "")
         with urllib.request.urlopen(base + "/", timeout=5) as r:
             self.assertIn("text/html", r.headers["Content-Type"])
@@ -2006,19 +1999,9 @@ class ServeCommandTests(unittest.TestCase):
 
     @unittest.skipIf(os.name == "nt", "SIGTERM kończy proces na Windows bez obsługi")
     def test_serve_read_host_reads_and_lists_hosts_separately(self) -> None:
-        port = free_port()
-        proc = subprocess.Popen([sys.executable, str(CLI), "dashboard", "serve", str(self.root), "--port", str(port),
-                                 "--read-host", "Viewer.Example", "--read-host", "viewer2.example",
-                                 "--approve-host", "demo.example", *self.layer],
-                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=self.env)
-        self.addCleanup(lambda: proc.poll() is None and proc.kill())
-        deadline, code = time.time() + 20, None
-        while time.time() < deadline and proc.poll() is None:
-            try:
-                code, _, body = raw_get(port, "/api/status", f"viewer.example:{port}")
-                break
-            except OSError:
-                time.sleep(0.1)
+        proc, port = start_serve(self, CLI, self.root, self.layer, self.env, free_port, "--read-host", "Viewer.Example",
+                                 "--read-host", "viewer2.example", "--approve-host", "demo.example")
+        code, _, body = raw_get(port, "/api/status", f"viewer.example:{port}")
         self.assertEqual(code, 200, proc.stderr.read() if proc.poll() is not None else "")
         approvals = json.loads(body)["approvals"]
         self.assertEqual((approvals["here"], approvals["viewer"]), (False, True))
