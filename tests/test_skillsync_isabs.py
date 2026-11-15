@@ -2,6 +2,7 @@
 
 The 3.13 behaviour is simulated on every system (a mock of `os.path.isabs`, `os.name` and a `realpath` that puts a drive in front of a
 rooted path as Windows does); nothing here instantiates a foreign `Path` class."""
+import posixpath
 import re
 import sys
 import unittest
@@ -47,7 +48,7 @@ class IsabsHelper(Windows313):
                 self.assertFalse(fsutil.isabs(value))
 
     def test_posix_is_unchanged(self):
-        with unittest.mock.patch.object(fsutil.os, 'name', 'posix'):
+        with unittest.mock.patch.object(fsutil.os, 'name', 'posix'), unittest.mock.patch.object(fsutil.os.path, 'isabs', posixpath.isabs):
             self.assertTrue(fsutil.isabs('/a/b'))
             self.assertFalse(fsutil.isabs('\\a'), 'a backslash is a name character there')
             self.assertFalse(fsutil.isabs('a/b'))
