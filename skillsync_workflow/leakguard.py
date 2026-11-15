@@ -1298,12 +1298,21 @@ def scan_texts(items, prepared, surface='content'):
 
 def _hook_warnings(top, target):
     """DEBT-142 A3 (D12): a clone of a public target without the leakguard hooks lets a push bypass the guard. Read-only
-    (`hook_state`); a layer or a project that installs the hooks itself (`layers add`, `install-hook`) stays silent."""
-    state = hook_state(top)
+    (`hook_state`); advisory only: any failure to read the hook state means no warning, never a blocked scan. No local path
+    in the text (reports and CI logs are public). A `core.hooksPath` outside `.git` is named, because `install-hook` refuses
+    there and the guard must be called from the shared hook by hand."""
+    try:
+        state = hook_state(top)
+    except LeakguardError:
+        return []
     if state['state'] != 'missing':
         return []
-    return [f'The clone of the public target {target} lacks the leakguard hooks ({", ".join(state["missing"])}): a push '
-            f'would bypass the guard; run `skillsync leakguard install-hook {top}`']
+    missing = ", ".join(state['missing'])
+    if state.get('reason'):
+        return [f'The clone of the public target {target} lacks the leakguard hooks ({missing}): a push would bypass the '
+                f'guard; {state["reason"]}']
+    return [f'The clone of the public target {target} lacks the leakguard hooks ({missing}): a push would bypass the guard; '
+            'run `skillsync leakguard install-hook <clone>`']
 
 
 def leakcheck(path='.', *, mode='worktree', rev_range=None, target=None, targets=None,

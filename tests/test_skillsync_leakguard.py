@@ -1445,6 +1445,65 @@ class HooksMissingWarningTest(LeakTestCase):
         self.assertEqual(self.hook_warnings(self.scan(repo, scope='org-private')), [])
         self.assertEqual(self.hook_warnings(self.scan(repo, mode='history')), [])
 
+    def test_a_single_missing_hook_is_named_and_the_text_has_no_local_path(self):
+        repo = self.make_repo(email=self.DEV)
+        commit_file(repo, 'a.md', 'x\n', 'base')
+        leakguard.install_hook(repo, targets_json=self.targets_file(self.targets()), target='core')
+        hook = leakguard.hook_state(repo)['directory']
+        (Path(hook) / 'pre-push').unlink()
+        warnings = self.hook_warnings(self.scan(repo))
+        self.assertEqual(len(warnings), 1, warnings)
+        self.assertIn('pre-push', warnings[0])
+        self.assertNotIn('pre-commit', warnings[0])
+        self.assertNotIn(str(repo), warnings[0], 'reports and CI logs are public: no local path')
+        self.assertNotIn(str(Path.home()), warnings[0])
+
+    def test_a_legacy_state_and_an_unreadable_state_stay_silent(self):
+        repo = self.make_repo(email=self.DEV)
+        commit_file(repo, 'a.md', 'x\n', 'base')
+        legacy = {'state': 'legacy', 'hooks': {}, 'missing': []}
+        with mock.patch.object(leakguard, 'hook_state', return_value=legacy):
+            self.assertEqual(self.hook_warnings(self.scan(repo)), [])
+        with mock.patch.object(leakguard, 'hook_state', side_effect=leakguard.LeakguardError('cannot read')):
+            report = self.scan(repo)
+        self.assertEqual(self.hook_warnings(report), [])
+        self.assertEqual(report['status'], 'PASS', 'an advisory warning never turns a scan into BLOCKED')
+
+    def test_a_hooks_path_outside_git_names_the_manual_call_instead_of_a_useless_command(self):
+        repo = self.make_repo(email=self.DEV)
+        commit_file(repo, 'a.md', 'x\n', 'base')
+        shared = self.fresh_dir('shared-hooks')
+        git(repo, 'config', 'core.hooksPath', str(shared))
+        warnings = self.hook_warnings(self.scan(repo))
+        self.assertEqual(len(warnings), 1, warnings)
+        self.assertIn('core.hooksPath', warnings[0])
+        self.assertIn('leakcheck --staged', warnings[0])
+        self.assertNotIn('install-hook', warnings[0])
+        self.assertNotIn(str(shared), warnings[0])
+        (shared / 'pre-commit').write_text('#!/bin/sh\nskillsync leakcheck --staged\n', encoding='utf-8')
+        (shared / 'pre-push').write_text('#!/bin/sh\nskillsync leakcheck --range "$1"\n', encoding='utf-8')
+        self.assertEqual(self.hook_warnings(self.scan(repo)), [], 'a shared hook that calls leakcheck is accepted')
+
+    def test_hooks_installed_in_the_clone_cover_its_git_worktrees(self):
+        repo = self.make_repo(email=self.DEV)
+        commit_file(repo, 'a.md', 'x\n', 'base')
+        other = self.fresh_dir('linked') / 'wt'
+        git(repo, 'worktree', 'add', '-q', '-b', 'side', str(other))
+        self.assertEqual(len(self.hook_warnings(self.scan(other))), 1)
+        leakguard.install_hook(repo, targets_json=self.targets_file(self.targets()), target='core')
+        self.assertEqual(self.hook_warnings(self.scan(other)), [])
+
+    def test_the_cli_warns_with_a_target_and_stays_silent_without_one(self):
+        repo = self.make_repo(email=self.DEV)
+        commit_file(repo, 'a.md', 'x\n', 'base')
+        path = self.targets_file(self.targets())
+        with_target = self.cli('leakcheck', str(repo), '--worktree', '--targets-json', str(path), '--target', 'core', '--json')
+        self.assertEqual(with_target.returncode, 0, with_target.stderr)
+        self.assertEqual(len(self.hook_warnings(json.loads(with_target.stdout))), 1)
+        plain = self.cli('leakcheck', str(repo), '--worktree', '--no-config', '--json')       # as the CI job does
+        self.assertEqual(plain.returncode, 0, plain.stderr)
+        self.assertEqual(self.hook_warnings(json.loads(plain.stdout)), [])
+
     def test_a_directory_that_is_not_a_git_repository_does_not_warn(self):
         path = self.tree({'a.md': 'x\n'})
         self.assertEqual(self.hook_warnings(self.scan(path)), [])
@@ -1561,8 +1620,8 @@ class CommitterAllowTest(LeakTestCase):
         repo = self.make_repo(email=self.DEV)
         base = commit_file(repo, 'a.md', 'x\n', 'base')
         head = commit_file(repo, 'b.md', 'y\n', 'next')
-        inner = self.make_tag_object(repo, head, 'inner', tagger=self.DEV)
-        self.make_tag_object(repo, inner, 'outer', tagger=self.BOT)
+        inner = self.make_tag_object(repo, head, 'inner', tagger=self.BOT)      # the listed address is on the INNER tag:
+        self.make_tag_object(repo, inner, 'outer', tagger=self.DEV)             # only a walk of the chain can see it
         kwargs = {'mode': 'range', 'rev_range': f'{base}..refs/tags/outer'}
         self.assertEqual(self.scan(repo, self.targets(allow=[self.BOT]), **kwargs)['status'], 'PASS')
         self.assertEqual(self.scan(repo, self.targets(), **kwargs)['status'], 'FAIL')
