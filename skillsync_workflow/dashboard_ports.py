@@ -19,9 +19,12 @@ ROLE_BOTH = "both"
 ALL_INTERFACES = "0.0.0.0"
 LOOPBACK_BIND = "127.0.0.1"
 LOOPBACK_NAMES = frozenset({"127.0.0.1", "localhost", "::1"})
-# Headers an intermediary (a tunnel, a reverse proxy) adds: a write that carries one is refused unless `--allow-proxy-headers`.
-PROXY_HEADERS = ("Forwarded", "X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto", "X-Forwarded-Port", "X-Forwarded-Server",
-                 "X-Real-IP", "X-Client-IP", "True-Client-IP", "CF-Connecting-IP", "Via")
+# Headers an intermediary (a tunnel, a reverse proxy) adds: a write that carries one is refused unless `--allow-proxy-headers`. A closed list is a
+# heuristic (an intermediary can add none of them): the barrier is the token and the strict `Origin`, not this list.
+PROXY_HEADERS = ("Forwarded", "Forwarded-For", "X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto", "X-Forwarded-Port",
+                 "X-Forwarded-Server", "X-Forwarded-Scheme", "X-Forwarded-Prefix", "X-Original-Forwarded-For", "X-Original-Host",
+                 "X-Real-IP", "X-Client-IP", "X-Cluster-Client-IP", "True-Client-IP", "CF-Connecting-IP", "Fastly-Client-IP",
+                 "X-Envoy-External-Address", "Via")
 FAILED_TOKEN_REPORT_S = 60.0
 
 
@@ -30,18 +33,55 @@ def proxy_headers(headers) -> list[str]:
     return [name for name in PROXY_HEADERS if headers.get(name) is not None]
 
 
+def _nonlocal_bind_allowed() -> bool:
+    """Linux `ip_nonlocal_bind` makes `bind` succeed for ANY address, so the bind probe proves nothing there."""
+    for name in ("ipv4", "ipv6"):
+        try:
+            with open(f"/proc/sys/net/{name}/ip_nonlocal_bind", encoding="ascii") as handle:
+                if handle.read().strip() not in ("", "0"):
+                    return True
+        except OSError:
+            continue
+    return False
+
+
+def _enumerated_addresses() -> set[str]:
+    """Addresses of this machine by name resolution plus the route probe: the fallback when the bind probe is unreliable."""
+    found: set[str] = set()
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None):
+            found.add(info[4][0].split("%")[0])
+    except OSError:
+        pass
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            probe.connect(("192.0.2.1", 9))   # TEST-NET-1: nothing is sent, the route only picks the local address
+            found.add(probe.getsockname()[0])
+    except OSError:
+        pass
+    return found
+
+
 def is_local_ip(name: str) -> bool:
     """Is `name` (a `Host` without port) an IP literal of THIS machine? A literal cannot come from DNS rebinding (the browser sends the
     name it was given), so it is safe to accept under a server that listens beyond loopback. Tested by binding a throwaway UDP socket:
-    it succeeds only for an address that belongs to an interface of this machine."""
+    it succeeds for an address that belongs to an interface of this machine, but also for multicast and broadcast ones and, with
+    `ip_nonlocal_bind`, for any address: those are refused first (multicast, reserved, unspecified, the limited broadcast and, because
+    the netmask is not known, every IPv4 address ending in .255) and the probe is replaced by the enumerated addresses where it proves nothing."""
     try:
         ip = ipaddress.ip_address(name.strip("[]"))
     except ValueError:
         return False
-    if ip.is_unspecified:   # 0.0.0.0 / :: reach this machine from a browser but name no interface
+    if ip.is_unspecified or ip.is_multicast:   # 0.0.0.0, ::, 224/4, ff00::/8
         return False
     if ip.is_loopback:
         return True
+    if ip.is_reserved:   # 240/4 (also 255.255.255.255) and the reserved IPv6 blocks; checked after the loopback: `::1` lies in ::/8
+        return False
+    if ip.version == 4 and int(ip) & 0xFF == 0xFF:   # a subnet broadcast (the mask is unknown: any `.255` is refused)
+        return False
+    if _nonlocal_bind_allowed():
+        return str(ip) in _enumerated_addresses()
     family = socket.AF_INET6 if ip.version == 6 else socket.AF_INET
     try:
         with socket.socket(family, socket.SOCK_DGRAM) as probe:

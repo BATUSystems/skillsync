@@ -65,6 +65,9 @@ ASSET_TYPES = {
 MAX_ASSET_BYTES = 2_000_000
 MAX_DOC_BYTES = engine.MAX_DOC_BYTES
 MAX_SSE_CLIENTS = 64
+# Two-port mode: each socket has its own share of the streams, so devices that fill the read socket cannot take the live refresh of the page that
+# gives consents (the single-port mode keeps the one pool of 64).
+SSE_ROLE_LIMITS = {ports.ROLE_READ: 48, ports.ROLE_APPROVE: 16}
 MAX_BODY = 4096
 LOOPBACK_HOSTS = frozenset({'127.0.0.1', 'localhost', '::1'})
 APPROVE_KINDS = engine.APPROVE_KINDS
@@ -404,6 +407,7 @@ class Board:
         self.cond = threading.Condition()
         self.stop = threading.Event()
         self.sse_clients = 0
+        self.sse_by_role: dict[str, int] = {}   # streams of the two-port sockets, by role (`sse_clients` stays the total)
         self._proto = (0.0, False)
         self._accept: tuple[tuple, float, dict] = ((), 0.0, {})
         self._sig = self.signature()
@@ -796,9 +800,12 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
     def _events(self) -> None:
         board = self.board
         with board.cond:
-            if board.sse_clients >= MAX_SSE_CLIENTS:
+            limit = SSE_ROLE_LIMITS.get(self.role)
+            if board.sse_clients >= MAX_SSE_CLIENTS or (limit is not None and board.sse_by_role.get(self.role, 0) >= limit):
                 return self._json(503, {"error": "Za dużo podłączonych przeglądarek."})
             board.sse_clients += 1
+            if limit is not None:
+                board.sse_by_role[self.role] = board.sse_by_role.get(self.role, 0) + 1
         try:
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream; charset=utf-8")
@@ -824,6 +831,8 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
         finally:
             with board.cond:
                 board.sse_clients -= 1
+                if self.role in SSE_ROLE_LIMITS:
+                    board.sse_by_role[self.role] = board.sse_by_role.get(self.role, 0) - 1
             self.close_connection = True
 
     def _sse(self, event: str, data: dict, retry: int | None = None) -> None:
@@ -893,7 +902,13 @@ class ReadHandler(Handler):
     def _no_route(self) -> None:
         self._json(404, {"error": "Nie ma takiej strony."})
 
-    do_POST = do_PUT = do_DELETE = do_PATCH = do_OPTIONS = _no_route  # noqa: N815
+    do_POST = do_PUT = do_DELETE = do_PATCH = do_OPTIONS = do_TRACE = do_CONNECT = _no_route  # noqa: N815
+
+    def send_error(self, code, message=None, explain=None):   # any other method (unknown verbs) is the same plain 404 as a write route
+        if code == 501:
+            self._json(404, {"error": "Nie ma takiej strony."})
+            return
+        super().send_error(code, message, explain)
 
 
 def make_server(board: Board, host: str, port: int, verbose: bool = False, role: str = ports.ROLE_BOTH,
@@ -936,7 +951,7 @@ def serve_command(args) -> int:
         return _serve_ports(args, mode)
     if getattr(args, "port", None) is None:   # the single-port defaults (the parser leaves them unset to tell the modes apart)
         args.port = DEFAULT_PORT
-    if not getattr(args, "host", None):
+    if getattr(args, "host", None) is None:   # only "not given": an explicit `--host ''` keeps meaning every interface, as in 1.5.0
         args.host = "127.0.0.1"
     try:
         root, manifest, layerset = load_layer_project(args.path, args.layers)

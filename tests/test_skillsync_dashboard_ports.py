@@ -141,6 +141,12 @@ class ReadSocket(TwoSockets):
                         status, data, _ = request(self.read_port, method, "/api/approve", merged, b"{}")
                         self.assertEqual((status, data), (404, wrong))
 
+    def test_unknown_and_exotic_methods_are_the_same_404(self) -> None:
+        for method in ("TRACE", "CONNECT", "PROPFIND", "FOO"):
+            with self.subTest(method=method):
+                status, data, _ = request(self.read_port, method, "/api/approve", {}, b"")
+                self.assertEqual((status, data), (404, {"error": "Nie ma takiej strony."}))
+
     def test_the_other_routes_of_a_write_are_also_404(self) -> None:
         for path in ("/api/approve", "/anything", "/"):
             status, data, _ = request(self.read_port, "POST", path, OK, b"{}")
@@ -178,6 +184,47 @@ class ReadSocket(TwoSockets):
         for needle in ("/api/approve", "board.approve", "_approve_allowed", "TOKEN_HEADER"):
             self.assertNotIn(needle, source)
         self.assertEqual(srv.ReadHandler.role, ports.ROLE_READ)
+
+
+class StreamShares(TwoSockets):
+    def test_a_full_read_share_leaves_the_streams_of_the_consent_socket(self) -> None:
+        self.assertEqual(srv.SSE_ROLE_LIMITS, {"read": 48, "approve": 16})
+        self.board.sse_by_role["read"] = srv.SSE_ROLE_LIMITS["read"]
+        self.board.sse_clients = srv.SSE_ROLE_LIMITS["read"]
+        status, _data, _ = request(self.read_port, "GET", "/events", {})
+        self.assertEqual(status, 503)
+        conn = http.client.HTTPConnection("127.0.0.1", self.approve_port, timeout=5)
+        try:
+            conn.request("GET", "/events")
+            response = conn.getresponse()
+            self.assertEqual(response.status, 200)
+            self.assertIn(b"hello", response.fp.readline() + response.fp.readline())
+        finally:
+            conn.close()
+        status, _data, _ = request(self.approve_port, "GET", "/healthz", {})
+        self.assertEqual(status, 200)
+
+    def test_a_full_approve_share_does_not_block_the_read_socket(self) -> None:
+        self.board.sse_by_role["approve"] = srv.SSE_ROLE_LIMITS["approve"]
+        self.board.sse_clients = srv.SSE_ROLE_LIMITS["approve"]
+        self.assertEqual(request(self.approve_port, "GET", "/events", {})[0], 503)
+        conn = http.client.HTTPConnection("127.0.0.1", self.read_port, timeout=5)
+        try:
+            conn.request("GET", "/events")
+            self.assertEqual(conn.getresponse().status, 200)
+        finally:
+            conn.close()
+
+    def test_the_stream_of_the_read_socket_carries_no_token(self) -> None:
+        conn = http.client.HTTPConnection("127.0.0.1", self.read_port, timeout=5)
+        try:
+            conn.request("GET", "/events")
+            response = conn.getresponse()
+            first = b"".join(response.fp.readline() for _ in range(4))
+        finally:
+            conn.close()
+        self.assertNotIn(TEST_TOKEN.encode(), first)
+        self.assertNotIn(dashboard_token.token_id(TEST_TOKEN).encode(), first)
 
 
 class ApproveSocket(TwoSockets):
@@ -270,8 +317,10 @@ class ApproveSocket(TwoSockets):
                     with self.subTest(header=spelling, value=value):
                         status, answer = self.post(self.approve_port, {**self.ok, spelling: value}, self.offer())
                         self.assertEqual((status, answer["error"]), (403, srv.PROXY_REFUSED))
-        self.assertEqual(set(ports.PROXY_HEADERS), {"Forwarded", "X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto", "X-Forwarded-Port",
-                                                    "X-Forwarded-Server", "X-Real-IP", "X-Client-IP", "True-Client-IP", "CF-Connecting-IP", "Via"})
+        self.assertEqual(set(ports.PROXY_HEADERS), {"Forwarded", "Forwarded-For", "X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto",
+                                                    "X-Forwarded-Port", "X-Forwarded-Server", "X-Forwarded-Scheme", "X-Forwarded-Prefix",
+                                                    "X-Original-Forwarded-For", "X-Original-Host", "X-Real-IP", "X-Client-IP", "X-Cluster-Client-IP",
+                                                    "True-Client-IP", "CF-Connecting-IP", "Fastly-Client-IP", "X-Envoy-External-Address", "Via"})
         self.set_doc.assert_not_called()
 
     def test_host_rule(self) -> None:
@@ -337,12 +386,34 @@ class FailedTokens(unittest.TestCase):
         self.assertEqual(sorted(vars(counter)), sorted(["_lock", "_count", "_reported_at", "_interval", "_clock"]))   # no per-address map
 
 
+class DefaultInterval(TwoSockets):
+    def test_the_board_counter_reports_at_most_once_a_minute_by_default(self) -> None:
+        counter = self.board.token_failures
+        self.assertEqual(counter._interval, 60.0)
+        self.assertIsNotNone(counter.add("10.0.0.5"))   # the first one at once
+        self.assertIsNone(counter.add("10.0.0.5"))      # the next ones within the minute are summed up
+
+
 class LocalIp(unittest.TestCase):
     def test_loopback_unspecified_names_and_zones(self) -> None:
         for name, expected in (("127.0.0.1", True), ("::1", True), ("0.0.0.0", False), ("::", False), ("evil.example", False), ("localhost", False),
                                ("fe80::1%25eth0", False), ("203.0.113.9", False), ("", False)):
             with self.subTest(name=name):
                 self.assertEqual(ports.is_local_ip(name), expected)
+
+    def test_multicast_broadcast_reserved_and_subnet_broadcast_are_refused(self) -> None:
+        for name in ("224.0.0.1", "239.255.255.250", "255.255.255.255", "240.0.0.1", "192.168.1.255", "10.255.255.255", "ff02::1", "ff05::2"):
+            with self.subTest(name=name):
+                self.assertFalse(ports.is_local_ip(name))
+        self.assertTrue(ports.is_local_ip("::1"))   # lies in the reserved ::/8 block, still the loopback
+        self.assertTrue(ports.is_local_ip("127.0.0.2"))
+
+    def test_where_the_bind_probe_proves_nothing_only_the_enumerated_addresses_count(self) -> None:
+        with mock.patch.object(ports, "_nonlocal_bind_allowed", return_value=True), \
+                mock.patch.object(ports, "_enumerated_addresses", return_value={"192.0.2.77"}):
+            self.assertTrue(ports.is_local_ip("192.0.2.77"))
+            self.assertFalse(ports.is_local_ip("198.51.100.9"))   # a bind would succeed here (non-local bind), the list says no
+            self.assertTrue(ports.is_local_ip("127.0.0.1"))
 
     def test_an_address_of_this_machine_is_accepted(self) -> None:
         address = lan_address()
@@ -392,6 +463,36 @@ class Flags(unittest.TestCase):
         self.assertIsNotNone(self.resolve(read_port=5151, approve_host=["phone.example"]))
         self.assertIsNotNone(self.resolve(approve_port=5152, allow_proxy_headers=True))
         self.assertIsNotNone(self.resolve(read_port=5151, read_host=["*"]))
+
+
+class SinglePortHost(unittest.TestCase):
+    def listen_host(self, host):
+        """The `--host` that `serve_command` gives to `make_server` in the single-port mode (the server itself is replaced)."""
+        args = SimpleNamespace(path=".", layers=None, plan=None, session_url=None, approve_host=[], read_host=[], poll=1.0, verbose=False,
+                               prototype_port=None, read_port=None, approve_port=None, read_bind=None, approve_bind=None, allow_proxy_headers=False,
+                               host=host, port=5155, no_approvals=False)
+        seen = {}
+
+        def fake(board, listen, port, *rest, **kwargs):
+            seen["host"] = listen
+            raise OSError(98, "busy")
+
+        root = Path(tempfile.mkdtemp(prefix="dashboard-host-"))
+        self.addCleanup(lambda: __import__("shutil").rmtree(root, ignore_errors=True))
+        project = make_project(root)
+        manifest = project / srv.MANIFEST
+        manifest.parent.mkdir(parents=True, exist_ok=True)
+        manifest.write_text("skills: [dashboard]\n", encoding="utf-8")
+        args.path = str(project)
+        args.layers = [f"core={ROOT / 'library'}"]
+        with mock.patch.object(srv, "make_server", fake), mock.patch("sys.stdout", new=__import__("io").StringIO()):
+            srv.serve_command(args)
+        return seen.get("host")
+
+    def test_not_given_is_loopback_and_an_explicit_empty_host_is_every_interface_as_before(self) -> None:
+        self.assertEqual(self.listen_host(None), "127.0.0.1")
+        self.assertEqual(self.listen_host(""), "")
+        self.assertEqual(self.listen_host("0.0.0.0"), "0.0.0.0")
 
 
 class Process(unittest.TestCase):
