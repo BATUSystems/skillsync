@@ -58,6 +58,16 @@ class ResolveLoopChecked(unittest.TestCase):
         with self.assertRaises((OSError, RuntimeError)):   # Python 3.11: `resolve()` itself raises RuntimeError on the loop
             common.resolve_loop_checked(a / 'x')
 
+    def test_a_working_junction_is_not_a_loop_on_windows(self):
+        if os.name != 'nt':
+            return
+        real = self.base / 'real'
+        real.mkdir()
+        link = self.base / 'ok'
+        subprocess.run(['cmd', '/c', 'mklink', '/J', str(link), str(real)], check=True, capture_output=True)
+        self.assertEqual(common.resolve_loop_checked(link / 'y'), (real / 'y').resolve(), 'resolve() goes through the junction to its target')
+        self.assertEqual(common.resolve_loop_checked(link), real.resolve())
+
     def test_a_python_without_isjunction_keeps_working(self):
         with mock.patch.object(Path, 'is_symlink', lambda self: False), mock.patch.object(common.os.path, 'isjunction', None, create=True):
             self.assertEqual(common.resolve_loop_checked(self.base / 'x'), (self.base / 'x').resolve())
