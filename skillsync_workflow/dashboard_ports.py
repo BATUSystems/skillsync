@@ -54,16 +54,19 @@ _lookup = {"value": None, "until": 0.0, "pending": None}
 
 def _resolve_into_cache(done: threading.Event) -> None:
     found: set[str] = set()
+    ttl = HOST_LOOKUP_NEGATIVE_TTL   # a failed lookup is remembered as briefly as a slow one
     try:
         for info in socket.getaddrinfo(socket.gethostname(), None):
             found.add(info[4][0].split("%")[0])
-    except OSError:
-        pass
-    with _lookup_lock:
-        if _lookup["pending"] is done:   # not after a reset (tests): a stale lookup never writes into a newer cache
-            _lookup["value"], _lookup["until"] = found, time.monotonic() + HOST_LOOKUP_TTL
-            _lookup["pending"] = None
-    done.set()
+        ttl = HOST_LOOKUP_TTL
+    except Exception:  # noqa: BLE001 - OSError (gaierror), UnicodeError, ValueError: whatever the resolver raises is "no addresses"
+        found = set()
+    finally:
+        with _lookup_lock:
+            if _lookup["pending"] is done:   # not after a reset (tests): a stale lookup never writes into a newer cache
+                _lookup["value"], _lookup["until"] = found, time.monotonic() + ttl
+                _lookup["pending"] = None
+        done.set()   # always: a waiter must never be left behind by a lookup that raised
 
 
 def host_addresses() -> set[str]:
@@ -81,8 +84,9 @@ def host_addresses() -> set[str]:
     pending.wait(HOST_LOOKUP_TIMEOUT)
     with _lookup_lock:
         if not pending.is_set():   # too slow: remember it for a while (the thread goes on and may still fill the cache)
-            _lookup["value"], _lookup["until"] = set(), time.monotonic() + HOST_LOOKUP_NEGATIVE_TTL
-            return set()
+            kept = set(_lookup["value"] or ())   # an older good answer is better than none
+            _lookup["value"], _lookup["until"] = kept, time.monotonic() + HOST_LOOKUP_NEGATIVE_TTL
+            return set(kept)
         return set(_lookup["value"] or ())
 
 
