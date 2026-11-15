@@ -14,6 +14,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from skillsync_workflow import prototype_server as ps  # noqa: E402
 from skillsync_workflow import winacl  # noqa: E402
 
 USER = 'S-1-5-21-1-2-3-1001'
@@ -162,6 +163,88 @@ class OtherSystemsTests(unittest.TestCase):
             self.assertFalse(winacl.is_owner_only(os.path.join(tmp, 'missing')))
 
 
+class AtomicWriteTests(unittest.TestCase):
+    """`atomic_write_bytes` sets the ACL of the temporary file BEFORE the data is written (measured: `os.replace` hands the
+    ACL of the source to the target), only for a private mode, and a failed ACL never fails the write."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix='winacl-')
+        self.addCleanup(self.tmp.cleanup)
+        self.target = os.path.join(self.tmp.name, 'users.json')
+
+    def spy(self, result=True):
+        seen = []
+
+        def restrict(path, *args, **kwargs):
+            seen.append((os.path.basename(path), os.path.getsize(path)))   # the size at the moment of the call
+            return result
+        helper = mock.Mock(spec=winacl)
+        helper.restrict_to_owner.side_effect = restrict
+        patch = mock.patch.object(ps, '_winacl', helper)
+        patch.start()
+        self.addCleanup(patch.stop)
+        return seen
+
+    def test_the_acl_is_set_on_the_temporary_file_before_any_data_is_written(self):
+        seen = self.spy()
+        ps.atomic_write_bytes(self.target, b'{"users": []}', mode=0o600)
+        self.assertEqual(len(seen), 1, seen)
+        name, size = seen[0]
+        self.assertTrue(name.startswith('.users.json.') and name.endswith('.tmp'), name)
+        self.assertEqual(size, 0, 'the file is still empty when its ACL is set')
+        self.assertEqual(Path(self.target).read_bytes(), b'{"users": []}')
+
+    def test_a_default_or_wide_mode_is_not_restricted(self):
+        seen = self.spy()
+        ps.atomic_write_bytes(self.target, b'a')                       # default 0644
+        ps.atomic_write_bytes(self.target, b'b', mode=0o666)
+        self.assertEqual(seen, [])
+
+    def test_a_failed_acl_does_not_fail_the_write(self):
+        seen = self.spy(result=False)
+        ps.atomic_write_bytes(self.target, b'data', mode=0o600)
+        self.assertEqual(len(seen), 1)
+        self.assertEqual(Path(self.target).read_bytes(), b'data')
+        self.assertEqual([name for name in os.listdir(self.tmp.name) if name.endswith('.tmp')], [])
+
+    def test_without_the_helper_the_write_works(self):
+        with mock.patch.object(ps, '_winacl', None):
+            ps.atomic_write_bytes(self.target, b'data', mode=0o600)
+        self.assertEqual(Path(self.target).read_bytes(), b'data')
+
+    def test_the_users_file_and_its_backup_are_both_restricted(self):
+        seen = self.spy()
+        users = ps.UsersFile(self.target, iterations=1)
+        users.update(lambda records: None)
+        users.update(lambda records: None)          # the second write also writes users.json.bak
+        names = [name for name, _size in seen]
+        self.assertEqual(len([n for n in names if n.startswith('.users.json.') and not n.startswith('.users.json.bak.')]), 2, names)
+        self.assertEqual(len([n for n in names if n.startswith('.users.json.bak.')]), 1, names)
+
+
+class CommandNotesTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix='winacl-')
+        self.addCleanup(self.tmp.cleanup)
+        self.path = os.path.join(self.tmp.name, 'users.json')
+        Path(self.path).write_text('{}', encoding='utf-8')
+
+    def test_private_file_problem_never_blocks_on_windows(self):
+        with mock.patch.object(ps.os, 'name', 'nt'):      # only around the call: pathlib breaks under a patched name
+            self.assertIsNone(ps.private_file_problem(self.path))
+
+    def test_private_file_notes_come_from_the_helper(self):
+        helper = mock.Mock(spec=winacl)
+        helper.private_notes.return_value = ['note']
+        with mock.patch.object(ps, '_winacl', helper):
+            self.assertEqual(ps.private_file_notes(self.path), ['note'])
+        with mock.patch.object(ps, '_winacl', None):
+            self.assertEqual(ps.private_file_notes(self.path), [])
+
+    def test_the_old_warning_about_a_skipped_check_is_gone(self):
+        self.assertFalse(hasattr(ps, 'PRIVATE_CHECK_SKIPPED'))
+
+
 @unittest.skipUnless(os.name == 'nt', 'tylko na Windows (ACL)')
 class RealWindowsTests(unittest.TestCase):
     """The real `advapi32` calls (measured 15.11: 0.5-0.8 ms, SID only)."""
@@ -215,6 +298,13 @@ class RealWindowsTests(unittest.TestCase):
         os.replace(temporary, target)
         self.assertTrue(winacl.is_owner_only(target))
         self.assertIsInstance(wide_now, bool)       # the first outcome depends on where the directory is; only the second is asserted
+
+    def test_atomic_write_leaves_a_users_file_owner_only_after_five_writes(self):
+        target = os.path.join(self.dir, 'users.json')
+        for index in range(5):
+            ps.atomic_write_bytes(target, ('{"n": %d}' % index).encode(), mode=0o600)
+            self.assertTrue(winacl.is_owner_only(target), 'write %d' % index)
+        self.assertEqual(Path(target).read_text(encoding='utf-8'), '{"n": 4}')
 
 
 if __name__ == '__main__':

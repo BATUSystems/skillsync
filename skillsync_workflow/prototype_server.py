@@ -62,6 +62,11 @@ try:  # Windows
 except ImportError:
     msvcrt = None
 
+try:   # private files on Windows (ACL); this module also runs as a stand-alone script, where the helper is simply absent
+    from . import winacl as _winacl
+except ImportError:
+    _winacl = None
+
 
 # ── Lingering close (shared with the status page) ───────────────────────────
 #
@@ -2272,6 +2277,10 @@ def atomic_write_bytes(path, data, mode=None, default_mode=0o644):
     temporary = os.path.join(directory, '.%s.%s.tmp' % (name, secrets.token_hex(6)))
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_BINARY', 0)
     fd = os.open(temporary, flags, 0o600)
+    if _winacl is not None and final_mode & 0o077 == 0:
+        # Windows: `os.replace` hands the ACL of THIS file to the target (measured), so it is set now, before any data is
+        # written; a failure is a warning and never fails the write
+        _winacl.restrict_to_owner(temporary)
     try:
         try:
             view = memoryview(data)
@@ -4887,8 +4896,8 @@ def verify_password(password, encoded):
 def private_file_problem(path):
     """None when `path` is private (no group/other bits), else a message with `chmod 600`.
 
-    On Windows (`os.name == 'nt'`) `st_mode` carries no permissions: returns None and
-    callers print `PRIVATE_CHECK_SKIPPED` as a warning.
+    On Windows (`os.name == 'nt'`) `st_mode` carries no permissions and the ACL is handled by `private_file_notes`: this
+    never reports a problem there (a file system without ACLs must not block a command).
     """
     if os.name == 'nt':
         return None
@@ -4899,7 +4908,11 @@ def private_file_problem(path):
     return None
 
 
-PRIVATE_CHECK_SKIPPED = 'kontrola uprawnień 0600 pominięta na Windows'
+def private_file_notes(path):
+    """Lines a command adds to its `warnings` for an existing private file: on Windows the ACL is checked and, when it is
+    wider than the user, SYSTEM and the administrators, repaired in place (one line about the repair) or, when that fails,
+    one warning; `[]` for a file that is private already and on other systems (the mode check covers them)."""
+    return _winacl.private_notes(path) if _winacl is not None else []
 
 
 def roles_of(record):
@@ -6103,8 +6116,7 @@ def startup_checks(config):
         problem = users.permissions_problem()
         if problem:
             errors.append(problem)
-        if os.name == 'nt':
-            warnings.append(PRIVATE_CHECK_SKIPPED)
+        warnings.extend(private_file_notes(users.path))
         try:
             records = users.users(strict=True)
         except UserError as error:
@@ -8251,8 +8263,7 @@ def _users_for_cli(path, iterations, must_exist):
         problem = users.permissions_problem()
         if problem:
             raise UserError('insecure_permissions', problem)
-        if os.name == 'nt':
-            warnings.append(PRIVATE_CHECK_SKIPPED)
+        warnings.extend(private_file_notes(users.path))
     elif must_exist:
         raise UserError('users_file_missing', 'users file does not exist: %s' % users.path)
     return users, warnings
