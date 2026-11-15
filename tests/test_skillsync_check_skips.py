@@ -232,7 +232,8 @@ class RealBaselineTests(unittest.TestCase):
                 self.assertIn(f'{system}/{mode}', self.data['baselines'])
 
     def test_unmeasured_runners_are_null_and_the_measured_ones_are_lists(self):
-        measured = ('linux/', 'macos-latest/')  # macOS: measured from the CI runs of main v1.3.0 (MAC-141)
+        # macOS: measured from the CI runs of main v1.3.0 (MAC-141); Windows copy mode: measured on the release 1.4.1 branch (WIN-141)
+        measured = ('linux/', 'macos-latest/', 'windows-latest/copy')
         for key, entries in self.data['baselines'].items():
             if key.startswith(measured):
                 self.assertIsInstance(entries, list, key)
