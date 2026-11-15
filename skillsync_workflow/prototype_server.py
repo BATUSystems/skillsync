@@ -2152,13 +2152,15 @@ def _unlock_fd(fd):
 def _discard_fd(fd):
     """Release the system lock (if held) and close a descriptor that was never handed to a `FileLock` (best effort, never raises)."""
     try:
-        _unlock_fd(fd)
-    except OSError:
-        pass
-    try:
-        os.close(fd)
-    except OSError:
-        pass
+        try:
+            _unlock_fd(fd)
+        except OSError:
+            pass
+    finally:
+        try:
+            os.close(fd)   # a second interrupt during the unlock must not leave the descriptor open
+        except OSError:
+            pass
 
 
 class FileLock(object):
@@ -2220,7 +2222,7 @@ class FileLock(object):
                 _discard_fd(stale)
                 if time.monotonic() >= deadline:
                     raise LockTimeout()
-            self._fd, fd = fd, None
+            self._fd, fd = fd, None   # two plain assignments' worth of window: an interrupt exactly between them is practically unreachable (accepted)
         except BaseException:
             try:
                 if fd is not None:

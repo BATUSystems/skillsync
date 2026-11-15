@@ -91,6 +91,32 @@ class FileLockDescriptor(unittest.TestCase):
                     pass
         self.assert_discarded_once()
 
+    def test_a_second_interrupt_inside_the_discard_still_closes_the_descriptor(self):
+        fd = os.open(self.path, os.O_RDWR | os.O_CREAT, 0o600)
+        with mock.patch.object(ps, '_unlock_fd', side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                ps._discard_fd(fd)
+        self.assertEqual(self.closed.count(fd), 1)
+
+    def test_a_file_unlinked_under_the_waiter_closes_the_old_descriptor_once_and_locks_the_new_file(self):
+        if os.name == 'nt':
+            self.skipTest('POSIX: the same-file check is skipped on Windows')
+        real = ps.FileLock._same_file
+        calls = []
+
+        def unlink_once(lock, fd):
+            calls.append(fd)
+            if len(calls) == 1:
+                os.unlink(self.path)   # the holder released and removed the file between our open and our check
+                return False
+            return real(lock, fd)
+
+        with mock.patch.object(ps.FileLock, '_same_file', unlink_once):
+            with ps.FileLock(self.path, 2, 0o600):
+                self.assertEqual(len(self.opened), 2)
+                self.assertEqual(self.closed, [self.opened[0]], 'only the stale descriptor is closed while the new file is locked')
+        self.assertEqual(len(self.closed), 2, 'the new descriptor is closed once, on exit (a number may be reused by the system)')
+
     def test_a_normal_acquisition_hands_the_descriptor_over_and_closes_it_on_exit(self):
         with ps.FileLock(self.path, 1, 0o600):
             self.assertEqual(self.closed, [], 'held while the lock is held')
