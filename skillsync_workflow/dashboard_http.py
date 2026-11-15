@@ -39,6 +39,7 @@ import yaml
 
 from . import __version__
 from . import dashboard as engine
+from . import dashboard_ports as ports
 from . import dashboard_token
 from . import status as status_core
 from .common import emit, load_layer_project, read_project, redact
@@ -76,6 +77,7 @@ CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';
        "connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
 HOST_REFUSED = "Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host)."
 TOKEN_HEADER = "X-Approve-Token"
+PROXY_REFUSED = "Zapis przez pośrednika (Forwarded, X-Forwarded-*, X-Real-IP) jest odrzucony; uruchom serwer z --allow-proxy-headers, jeśli to zaufany odwrotny proxy."
 TOKEN_REFUSED = "Brak albo zły token zgody: otwórz adres z konsoli serwera albo z `skillsync dashboard url`."
 NEXT_HINT = ("Zgoda zapisana w pliku. Sesja czekająca na nią rusza sama (nasłuch zmian i budzik co 30 min); "
              "jeśli nie ruszy w ciągu minuty, napisz w sesji „dalej”.")
@@ -387,6 +389,7 @@ class Board:
         self.descriptions = descriptions
         self._manifest = manifest
         self._approve_lock = threading.Lock()
+        self.token_failures = ports.TokenFailures()
         self._ahead: tuple[tuple, float, dict] = ((), 0.0, {})
         self.approve_hosts = LOOPBACK_HOSTS | {h.strip().lower() for h in approve_hosts if h.strip()}
         # Read-only Host names (viewers through a tunnel): every read, never a write. A name that is also loopback or in
@@ -531,7 +534,7 @@ class Board:
                 "html": render_markdown(text, rel or "")}
 
     # --- consents (in-process, the shared core functions of status.py; no subprocess, no own jsonl writer)
-    def approve(self, kind: str, rel: str, sha: str, plan: str | None = None) -> tuple[int, dict]:
+    def approve(self, kind: str, rel: str, sha: str, plan: str | None = None, via: dict | None = None) -> tuple[int, dict]:
         """Consent from a button: only the action the page offers right now (the same file and sha).
 
         GO: `status.set_doc_status(..., expect_sha=sha)` rewrites the Status line (the consent itself), then
@@ -542,7 +545,7 @@ class Board:
         if kind not in APPROVE_KINDS or not isinstance(rel, str) or not isinstance(sha, str):
             return 400, {"error": "Nieprawidłowe żądanie."}
         if kind in ("cp", "ready"):
-            return self._approve_delivery(kind, rel, sha, plan if isinstance(plan, str) else None)
+            return self._approve_delivery(kind, rel, sha, plan if isinstance(plan, str) else None, via)
         word = APPROVE_KINDS[kind]
         with self._approve_lock:
             current = self.status(rel if kind == "plan" else None)
@@ -562,7 +565,7 @@ class Board:
             trail = None
             if run_id:
                 record = status_core.record_approval(self.root, word, run_id, sha=sha, source="dashboard", file=rel,
-                                                     sha_after=report.get("sha"))
+                                                     sha_after=report.get("sha"), via=via)
                 if record["status"] == "PASS":
                     trail = record["path"]
                 else:
@@ -571,7 +574,7 @@ class Board:
         self.check_once()
         return 200, {"ok": True, "word": word, "file": rel, "trail": trail, "next": NEXT_HINT}
 
-    def _approve_delivery(self, kind: str, run_id: str, sha: str, plan: str | None = None) -> tuple[int, dict]:
+    def _approve_delivery(self, kind: str, run_id: str, sha: str, plan: str | None = None, via: dict | None = None) -> tuple[int, dict]:
         """CP / READY: `status.record_approval` into `.skillsync/runs/<run-id>/approvals.jsonl` with the sha of the HEAD
         shown on the page. The session checks the entry (word, sha = its HEAD) instead of a word typed in the terminal."""
         word = APPROVE_KINDS[kind]
@@ -588,7 +591,7 @@ class Board:
             record = status_core.record_approval(
                 self.root, word, run_id, sha=sha, source="dashboard", target=d.get("target") if kind == "cp" else None,
                 branch=d.get("branch"), plan=(current.get("plan") or {}).get("path"), ahead=d.get("ahead"),
-                mode=d.get("mode"))
+                mode=d.get("mode"), via=via)
             if record["status"] != "PASS":
                 log(f"wpis zgody „{word}” nie zapisany: {record['reason']}")
                 return 500, {"error": f"Nie udało się zapisać zgody ({record['reason']}); wpisz słowo w sesji."}
@@ -603,6 +606,12 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
     server_version = f"dashboard/{__version__}"
     board: Board  # set in make_server
     verbose = False
+    # Role of the socket (two-port mode): "read" has no write route at all, "approve" is the strict consent socket, "both" is the
+    # single-port server of 1.5.0 (the role comes from `Host`, as before). Set by `make_server`.
+    role = ports.ROLE_BOTH
+    allow_proxy_headers = False
+    own_port = 0
+    peer_port = None
     # Socket timeout of every connection (`StreamRequestHandler.setup`): a client that opens a connection and sends no
     # request (or stops in the middle of it) is closed after 30 s instead of holding a thread. SSE only writes.
     timeout = 30
@@ -636,7 +645,7 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
         tunnel or LAN name) gets 403 without any content; the refusal goes to the verbose log only. Passing this check is
         enough for reads; a write also needs `_approve_allowed` (loopback or `--approve-host`)."""
         host = request_host(self.headers.get("Host"))
-        if host in self.board.approve_hosts or host in self.board.read_hosts:
+        if self._host_allowed(host):
             return False
         if self.verbose:
             log(f"odmowa {self.command} {urlparse(self.path).path[:120]!r}: Host spoza listy ({host[:80]!r})")
@@ -645,6 +654,17 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
         except OSError:
             pass
         return True
+
+    def _host_allowed(self, host: str) -> bool:
+        """May this `Host` open the page on this socket? Single-port: loopback, `--approve-host`, `--read-host` (as in 1.5.0). Two-port
+        sockets add the IP literals of this machine (a phone opens `http://<IP>:<port>/` without being listed; a literal cannot come
+        from DNS rebinding) and differ by role: the read socket accepts `--read-host` (also `'*'`), the consent socket never does."""
+        board = self.board
+        if self.role == ports.ROLE_BOTH:
+            return host in board.approve_hosts or host in board.read_hosts
+        if host in board.approve_hosts or ports.is_local_ip(host):
+            return True
+        return self.role == ports.ROLE_READ and (host in board.read_hosts or "*" in board.read_hosts)
 
     def do_HEAD(self) -> None:  # noqa: N802
         self.do_GET()
@@ -667,6 +687,11 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
                 data["approvals"]["here"] = here
                 data["approvals"]["viewer"] = not here and host in self.board.read_hosts  # read-only Host (--read-host)
                 data["approvals"]["tokenRequired"] = bool(self.board.approve_token)  # only the fact: the value never leaves the process
+                if self.role != ports.ROLE_BOTH:   # two-port mode: the role is the socket, never the header
+                    data["approvals"]["role"] = self.role
+                    data["approvals"]["here"] = self.role == ports.ROLE_APPROVE
+                    data["approvals"]["viewer"] = self.role == ports.ROLE_READ
+                    data["approvals"]["tokenRequired"] = self.role == ports.ROLE_APPROVE and bool(self.board.approve_token)
                 return self._json(200, redact(data))  # secrets masked as in `dashboard show`
             if route == "/api/doc":
                 doc = self.board.doc((query.get("path") or [None])[0])
@@ -681,7 +706,7 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
                 return self._json(200, load_descriptions(self.board.descriptions))
             if route == "/healthz":
                 answer = {"ok": True, "version": self.board.version}
-                if self.board.approve_token:   # a short digest, never the token: `dashboard url` tells its server from a stranger on the port
+                if self.board.approve_token and self.role != ports.ROLE_READ:   # a short digest, never the token: `dashboard url` tells its server from a stranger on the port
                     answer["tokenId"] = dashboard_token.token_id(self.board.approve_token)
                 return self._json(200, answer)
             return self._json(404, {"error": "Nie ma takiej strony."})
@@ -699,12 +724,18 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
         a CORS preflight the server does not answer), matching Origin when the browser sent one, JSON content type."""
         allowed = self.board.approve_hosts
         host = request_host(self.headers.get("Host"))
-        if host not in allowed:  # foreign Host: do_POST already refused it; --read-host: refused here, same message
+        strict = self.role == ports.ROLE_APPROVE   # the consent socket of the two-port mode: exact Origin, no intermediary headers
+        if host not in allowed and not (strict and self._host_allowed(host)):  # foreign Host: do_POST already refused it; --read-host: refused here, same message
             return HOST_REFUSED
         if self.headers.get("X-Status-Board") != "1":
             return "Brak nagłówka X-Status-Board."
         origin = self.headers.get("Origin")
-        if origin and request_host(urlparse(origin).netloc) not in allowed:
+        if strict:
+            if not ports.strict_origin_ok(self.headers.get_all("Origin"), self.headers.get("Host")):
+                return "Obcy Origin."
+            if not self.allow_proxy_headers and ports.proxy_headers(self.headers):
+                return PROXY_REFUSED
+        elif origin and request_host(urlparse(origin).netloc) not in allowed:
             return "Obcy Origin."
         if not (self.headers.get("Content-Type") or "").startswith("application/json"):
             return "Oczekiwano application/json."
@@ -712,6 +743,10 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
         if self.board.approve_token:   # `--no-approvals` has no token: it is refused after the body, as before
             given = self.headers.get(TOKEN_HEADER) or ""
             if not hmac.compare_digest(given.encode("utf-8", "replace"), self.board.approve_token.encode("utf-8")):
+                if strict:
+                    line = self.board.token_failures.add(self.client_address[0])
+                    if line:
+                        log(line)
                 return TOKEN_REFUSED
         return None
 
@@ -731,7 +766,10 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(length).decode("utf-8"))
             if not isinstance(body, dict):
                 return self._json(400, {"error": "Nieprawidłowe żądanie."})
-            code, data = self.board.approve(body.get("kind"), body.get("path"), body.get("sha"), body.get("plan"))
+            via = self._via() if self.role == ports.ROLE_APPROVE else None
+            code, data = self.board.approve(body.get("kind"), body.get("path"), body.get("sha"), body.get("plan"), via)
+            if code == 200 and via and not ports.is_loopback_bind(str(via.get("peer", ""))):
+                log(f"zgoda z sieci: {via['peer']} (port {via['port']}, Host {via['host']})")
             return self._json(code, data)
         except (BrokenPipeError, ConnectionResetError):
             return None
@@ -740,6 +778,11 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
         except Exception as exc:
             log(f"błąd {route}: {exc!r}")
             return self._json(500, {"error": "Błąd serwera statusu; szczegóły w konsoli."})
+
+    def _via(self) -> dict:
+        """Where a consent came from, for `approvals.jsonl`: this socket's port, the Host asked for, and the peer address of the
+        connection itself (never a header: `X-Forwarded-For` cannot change it)."""
+        return {"port": self.own_port, "host": request_host(self.headers.get("Host"))[:80], "peer": str(self.client_address[0])[:64]}
 
     def _asset(self, name: str) -> None:
         """Only allowlisted names found in the skill's `assets/` of the active layers (no paths, no traversal)."""
@@ -842,9 +885,22 @@ def validate_port(port: int) -> None:
         raise SystemExit(problem)
 
 
-def make_server(board: Board, host: str, port: int, verbose: bool = False) -> Server:
+class ReadHandler(Handler):
+    """The read socket: GET/HEAD as the page needs them, and NO other route. Every other method (POST, PUT, DELETE, PATCH, OPTIONS) is a
+    plain 404 before any other logic (also before the `Host` check), whatever the headers or the token."""
+    role = ports.ROLE_READ
+
+    def _no_route(self) -> None:
+        self._json(404, {"error": "Nie ma takiej strony."})
+
+    do_POST = do_PUT = do_DELETE = do_PATCH = do_OPTIONS = _no_route  # noqa: N815
+
+
+def make_server(board: Board, host: str, port: int, verbose: bool = False, role: str = ports.ROLE_BOTH,
+                allow_proxy_headers: bool = False, peer_port: int | None = None) -> Server:
     validate_port(port)
-    handler = type("BoundHandler", (Handler,), {"board": board, "verbose": verbose})
+    handler = type("BoundHandler", (ReadHandler if role == ports.ROLE_READ else Handler,), {"board": board, "verbose": verbose, "role": role, "own_port": port,
+                                                "allow_proxy_headers": allow_proxy_headers, "peer_port": peer_port})
     return Server((host, port), handler)
 
 
@@ -870,7 +926,18 @@ def _prototype_port(args, manifest, root=".") -> int:
 
 
 def serve_command(args) -> int:
-    """`skillsync dashboard serve`: foreground server (Ctrl+C or SIGTERM stops); BLOCKED (exit 2) when it may not start."""
+    """`skillsync dashboard serve`: foreground server (Ctrl+C or SIGTERM stops); BLOCKED (exit 2) when it may not start.
+    `--read-port` / `--approve-port`: the two-port mode (`_serve_ports`); otherwise the single-port mode of 1.5.0, unchanged."""
+    try:
+        mode = ports.resolve(args, port_problem)
+    except ValueError as error:
+        return emit({"status": "BLOCKED", "reason": " ".join(str(error).split())[:500]})
+    if mode is not None:
+        return _serve_ports(args, mode)
+    if getattr(args, "port", None) is None:   # the single-port defaults (the parser leaves them unset to tell the modes apart)
+        args.port = DEFAULT_PORT
+    if not getattr(args, "host", None):
+        args.host = "127.0.0.1"
     try:
         root, manifest, layerset = load_layer_project(args.path, args.layers)
         problem = port_problem(args.port)
@@ -960,3 +1027,96 @@ def serve_command(args) -> int:
         server.server_close()
         dashboard_token.remove_state(board.root, port, os.getpid())
     return emit({"status": "PASS", "url": url, "stopped": True})
+
+
+def _serve_ports(args, mode: dict) -> int:
+    """The two-port mode: one `Board`, one watcher, a server per socket (`read`: no write route at all; `approve`: token, strict Origin,
+    no proxy headers). Both sockets are bound BEFORE any thread, state file or console line, so a failure of the second leaves nothing."""
+    servers: list[tuple[str, Server, int, str]] = []
+    try:
+        root, manifest, layerset = load_layer_project(args.path, args.layers)
+        if args.session_url and not session_url_ok(args.session_url):
+            raise ValueError("--session-url: tylko adres https bez danych logowania.")
+        plan = args.plan.replace(os.sep, "/").removeprefix("./") if args.plan else None
+        if plan and engine.resolve_doc(root, plan) is None:
+            raise ValueError(f"Plan {args.plan} nie istnieje albo leży poza dozwolonymi katalogami dokumentów.")
+        for flag, names in (("--approve-host", args.approve_host), ("--read-host", getattr(args, "read_host", None) or ())):
+            for name in names:
+                if flag == "--read-host" and name.strip() == "*":
+                    continue   # any Host name, on the read socket only
+                if not name.strip() or any(c in name for c in ":[]/*") or any(c.isspace() for c in name.strip()):
+                    raise ValueError(f"{flag} {name!r}: podaj samą nazwę hosta, bez portu, nawiasów, ukośników i spacji.")
+        assets, descriptions = skill_assets(layerset)
+        if "index.html" not in assets:
+            raise ValueError(f"Brak strony: żadna aktywna warstwa nie ma skills/{SKILL}/assets/index.html "
+                             f"(warstwy: {', '.join(layerset.ids) or 'brak'}).")
+        board = Board(root, plan, poll=max(0.2, args.poll), approvals=mode["approve"] is not None,
+                      prototype_port=_prototype_port(args, manifest, root), session_url=args.session_url,
+                      approve_hosts=tuple(args.approve_host), read_hosts=tuple(getattr(args, "read_host", None) or ()),
+                      assets=assets, descriptions=descriptions, manifest=manifest)
+        read_port = mode["read"]["port"] if mode["read"] else None
+        approve_port = mode["approve"]["port"] if mode["approve"] else None
+        for role, peer in ((ports.ROLE_READ, approve_port), (ports.ROLE_APPROVE, read_port)):
+            spec = mode[role]
+            if spec:
+                servers.append((role, make_server(board, spec["bind"], spec["port"], args.verbose, role=role, peer_port=peer,
+                                                  allow_proxy_headers=mode["allow_proxy"] and role == ports.ROLE_APPROVE), spec["port"], spec["bind"]))
+    except OSError as error:
+        for _role, server, _port, _bind in servers:
+            server.server_close()
+        wanted = "/".join(str(mode[role]["port"]) for role in (ports.ROLE_READ, ports.ROLE_APPROVE) if mode[role])
+        return emit({"status": "BLOCKED", "reason": f"nie można nasłuchiwać ({error.strerror or error}); porty {wanted} muszą być wolne"})
+    except (LayerError, ValueError, TypeError, yaml.YAMLError) as error:
+        for _role, server, _port, _bind in servers:
+            server.server_close()
+        return emit({"status": "BLOCKED", "reason": " ".join(str(error).split())[:500]})
+    running: list[Server] = []   # servers whose `serve_forever` thread started (only those can be `shutdown()`)
+    states: list[int] = []
+    try:
+        if threading.current_thread() is threading.main_thread():
+            signal.signal(signal.SIGTERM, _stop_on_sigterm)
+        threading.Thread(target=board.watch_loop, name="watcher", daemon=True).start()
+        for role, server, port, bind in servers:
+            thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.5}, name=f"serve-{role}", daemon=True)
+            thread.start()
+            running.append(server)
+        warn = lambda text: log(f"UWAGA: {text}")  # noqa: E731
+        log(f"projekt {board.root} (Ctrl+C kończy)")
+        approve_hosts = sorted(board.approve_hosts - LOOPBACK_HOSTS)
+        for role, server, port, bind in servers:
+            local = dashboard_token.bind_name(bind)
+            peer = mode["approve" if role == ports.ROLE_READ else "read"]
+            peer_port = peer["port"] if peer else None
+            if role == ports.ROLE_READ:
+                log(f"odczyt (do tunelu i linków): {dashboard_token.read_address(port, local)}  [nasłuch {bind}:{port}, bez zgód i tokenu]")
+                dashboard_token.write_state(board.root, port, None, local, warn=warn, hosts=approve_hosts, role=role, peer=peer_port)
+            else:
+                shown = dashboard_token.address_host(bind, board.approve_hosts)
+                log(f"zgody (przyciski, tylko dla Ciebie, nigdy do tunelu): {dashboard_token.address(port, board.approve_token, shown)}  [nasłuch {bind}:{port}]")
+                dashboard_token.write_state(board.root, port, board.approve_token, local, warn=warn, hosts=approve_hosts, role=role, peer=peer_port)
+            states.append(port)
+            if not ports.is_loopback_bind(bind):
+                if role == ports.ROLE_APPROVE:
+                    log(f"UWAGA: port zgód {port} słucha na {bind}: widzi go każde urządzenie w sieci, a jedyną barierą jest token przesyłany "
+                        f"nieszyfrowanym HTTP (podsłuch w tej sieci wystarczy do przechwycenia go). W nieufnej sieci uruchom z "
+                        f"--approve-bind 127.0.0.1 albo użyj tunelu SSH; nigdy nie kieruj tunelu publicznego na ten port.")
+                else:
+                    log(f"UWAGA: port odczytu {port} słucha na {bind}: każde urządzenie w sieci zobaczy plany i statusy (tajne dane zredagowane).")
+                if bind in ("0.0.0.0", "::", ""):
+                    for ip in lan_addresses():
+                        log(f"  z innego urządzenia: http://{ip}:{port}/")
+        while not board.stop.is_set():
+            board.stop.wait(0.5)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        board.stop.set()
+        with board.cond:
+            board.cond.notify_all()
+        for server in running:
+            server.shutdown()
+        for _role, server, _port, _bind in servers:
+            server.server_close()
+        for port in states:
+            dashboard_token.remove_state(board.root, port, os.getpid())
+    return emit({"status": "PASS", "stopped": True, "ports": {role: port for role, _server, port, _bind in servers}})
