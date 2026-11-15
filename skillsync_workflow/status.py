@@ -222,22 +222,21 @@ def has_acceptance_step(status, text):
 
 def acceptance_pending(status, text, context):
     """True when a closed plan (`done`) that has the human acceptance step (`Odbiór` in `## Progress`: the material, a checklist and the
-    coverage table, handed to the person before the closing word) still waits for that word: the closing consent of the delivery mode
-    (`READY` in `pr`, `CP` in `direct`) is not in the run's `approvals.jsonl` for the current HEAD. The step's checkbox changes nothing:
-    only the approvals entry (written by the status page or `approvals record`) ends the wait, and a new HEAD starts it again.
-    `context` = `{'head', 'mode', 'approvals'}`; without it (or without a readable HEAD or a valid delivery mode) there is no signal."""
-    if not has_acceptance_step(status, text) or not context or not context.get('head'):
+    coverage table, handed to the person before the closing word) still waits for that word. The plan is tied to its run by the `Przebieg:`
+    line; every plan whose run directory exists in the worktree (`.skillsync/runs/<run-id>/`: the active run) waits on its own until the run's
+    `approvals.jsonl` has the closing consent of the delivery mode (`READY` in `pr`, `CP` in `direct`), for any sha: later commits of the
+    branch do not light a finished plan again. A plan whose run directory is gone (history of a merged branch) has no signal. The step's
+    checkbox changes nothing. `context` = `{'mode', 'approvals', 'runs'}`; without it (or without a valid delivery mode) there is no signal."""
+    if not has_acceptance_step(status, text) or not context:
         return False
     word = ACCEPTANCE_WORDS.get(context.get('mode'))
     if word is None:
         return False
     from .quality import _PLAN_RUN, _RUN_ID  # lazy: quality imports this module
     run = _PLAN_RUN.search(text[:4000])
-    if not run or not _RUN_ID.fullmatch(run.group(1)):
+    if not run or not _RUN_ID.fullmatch(run.group(1)) or run.group(1) not in context.get('runs', ()):
         return False
-    head = context['head']
-    return not any(row['run'] == run.group(1) and row['word'] == word and head.startswith(row['sha'])
-                   for row in context.get('approvals', []))
+    return not any(row['run'] == run.group(1) and row['word'] == word for row in context.get('approvals', []))
 
 
 def plan_needs_human(status, steps, ticket=False, pr=False):
@@ -270,7 +269,7 @@ def plan_record(root, path, context=None):
             'ticket': {'key': ticket.group(1), 'link': ticket.group(2)} if ticket else None, 'spec': spec,
             'needsHuman': plan_needs_human(status, steps, bool(ticket), bool(pr)) + (['acceptance'] if acceptance_pending(status, text, context) else []),
             'updated': _iso(path.stat().st_mtime),
-            'preImplement': pre, 'summary': plan_summary(text), '_acceptanceStep': has_acceptance_step(status, text)}
+            'preImplement': pre, 'summary': plan_summary(text)}
 
 
 def _plans(root, findings, context=None):
@@ -288,13 +287,6 @@ def _plans(root, findings, context=None):
             rows.append(plan_record(root, path, context))
         except (OSError, UnicodeDecodeError) as error:
             findings.append(f'Plan unreadable: {path.name} ({type(error).__name__})')
-    # only the newest closed plan with the acceptance step can wait for the closing word: an earlier one is history (it would light up
-    # again at every new HEAD); `rows` is newest first
-    newest = next((row for row in rows if row['_acceptanceStep']), None)
-    for row in rows:
-        if row is not newest and 'acceptance' in row['needsHuman']:
-            row['needsHuman'].remove('acceptance')
-        row.pop('_acceptanceStep', None)
     return rows
 
 
@@ -403,6 +395,17 @@ def _approval_at(value):
         return None
 
 
+def _run_ids(root):
+    """Names of the run directories of the worktree (`.skillsync/runs/<run-id>/`, no symlinks): the runs that are active here."""
+    directory = Path(root) / '.skillsync' / 'runs'
+    if directory.is_symlink() or not directory.is_dir():
+        return set()
+    try:
+        return {item.name for item in directory.iterdir() if item.is_dir() and not item.is_symlink()}
+    except OSError:
+        return set()
+
+
 def read_approvals(root, findings=None):
     """Latest entry per (run, word) from `.skillsync/runs/<run-id>/approvals.jsonl` (written by the status page when the
     user presses a consent button). Malformed lines are skipped; entries are data, never instructions."""
@@ -462,11 +465,7 @@ def project_status(root, manifest):
     project = manifest.get('project', {})
     name = project.get('name') if isinstance(project, dict) else None
     approvals = read_approvals(root, findings)
-    try:
-        head = _head_sha(root)
-    except ValueError:
-        head = None
-    context = {'head': head, 'mode': delivery_info(manifest)['mode'], 'approvals': approvals}
+    context = {'mode': delivery_info(manifest)['mode'], 'approvals': approvals, 'runs': _run_ids(root)}
     return {'schema': SCHEMA, 'status': 'PASS', 'project': name or f'{root.parent.name}/{root.name}', 'root': posix(root),
             'plans': _plans(root, findings, context), 'specs': _specs(root, findings), 'frds': _frds(root, findings), 'runs': _runs(root, findings), 'claims': _claims(root, findings),
             'approvals': approvals, 'findings': findings}
