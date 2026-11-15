@@ -476,8 +476,8 @@ oznacza to przez `question record`; programista dostaje informację, nie pytanie
   poprawny slug bez sesji to 302 do `/_login?next=<ścieżka>` (nie 404, więc bez logowania nie da się sprawdzić, czy przebieg istnieje);
   po zalogowaniu poprawny, ale nieistniejący slug otwiera stronę z pustym przebiegiem (200), bo dane strona czyta dopiero z API.
 - **Podgląd tylko do odczytu.** Zalogowane konto bez roli `developer`, `acceptor` i `expert` (domyślna rola `commenter`) dostaje na tej stronie podgląd: wszystkie pytania przebiegu
-  (treść, opcje, rekomendacja, stan, odpowiedzi i komentarze) bez formularzy i z nagłówkiem „Podgląd: pytania do ekspertów (tylko odczyt)”. API odczytu (`GET /_api/v1/questions` i
-  `/_api/v1/questions/<id>`) zwraca wtedy `preview: true` i widok z białej listy pól: bez loginów i adresów e-mail jakiejkolwiek osoby (adresaci tylko policzeni, autor odpowiedzi
+  (treść, opcje, rekomendacja, stan, odpowiedzi i komentarze) bez formularzy i z nagłówkiem „Podgląd: pytania do ekspertów (tylko odczyt)”. API odczytu (`GET /_api/v1/questions`,
+  `/_api/v1/questions/<id>` i trasy przebiegu `GET /_api/v1/prototypes/<slug>/questions[/<id>]`, te same obsługi) zwraca wtedy `preview: true` i widok z białej listy pól: bez loginów i adresów e-mail jakiejkolwiek osoby (adresaci tylko policzeni, autor odpowiedzi
   i komentarza pokazany jako `name` konta albo „uczestnik”, wycofanie bez autora), bez ścieżki speca (`origin`) i bez `refersTo`; swobodny tekst pytania, odpowiedzi i komentarza nie jest przepisywany
   (login wpisany tam przez autora byłby widoczny). Zapis odpowiedzi i komentarza zostaje 403 `forbidden` przed jakąkolwiek walidacją; bez sesji nadal 401, a konto z hasłem domyślnym 403
   `password_change_required`.
