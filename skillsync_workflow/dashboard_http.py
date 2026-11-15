@@ -702,10 +702,11 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
                 here, viewer = self._approvals_role()
                 data["approvals"]["here"] = here
                 data["approvals"]["viewer"] = viewer
-                data["approvals"]["tokenRequired"] = bool(self.board.approve_token)  # only the fact: the value never leaves the process
+                token_required = bool(self.board.approve_token)   # only the fact: the value never leaves the process
                 if self.role != ports.ROLE_BOTH:   # two-port mode: the role is the socket, never the header
                     data["approvals"]["role"] = self.role
-                    data["approvals"]["tokenRequired"] = self.role == ports.ROLE_APPROVE and bool(self.board.approve_token)
+                    token_required = token_required and self.role == ports.ROLE_APPROVE
+                data["approvals"]["tokenRequired"] = token_required
                 return self._json(200, redact(data))  # the viewer sees the same content as the operator; secrets masked as in `dashboard show`
             if route == "/api/doc":
                 doc = self.board.doc((query.get("path") or [None])[0])
