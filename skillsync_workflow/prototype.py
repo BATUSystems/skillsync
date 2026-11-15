@@ -4340,7 +4340,8 @@ def merge_questions_driver(ancestor, current, other):
     except server.MergeConflict as error:
         return _question_failure(error)
     data = server.serialize_questions(merged).encode('utf-8')
-    if data != original:
+    # a file with CRLF (checkout with `core.autocrlf` on Windows) that gets nothing new stays as it is, byte for byte
+    if data != original.replace(b'\r\n', b'\n') or (added and data != original):
         server.atomic_write_bytes(str(current), data)
     return {'status': 'PASS', 'driver': True, 'added': len(added), 'total': len(merged)}
 

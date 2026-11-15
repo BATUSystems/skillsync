@@ -5,7 +5,7 @@ import json
 import math
 import os
 import shlex
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 import re
 import signal
 import shutil
@@ -114,6 +114,15 @@ def _hash_file(path):
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _is_rooted(value):
+    """True for a path that does not stay relative: absolute, POSIX-rooted (`/etc/x`) and, on Windows, rooted (`\\x`)
+    or with a drive (`C:x`); `Path("/etc/x").is_absolute()` alone is False on Windows."""
+    text = str(value)
+    if Path(text).is_absolute() or PurePosixPath(text).is_absolute():
+        return True
+    return os.name == "nt" and bool(PureWindowsPath(text).anchor)
 
 
 def _inside(root, value, existing=True):
@@ -266,7 +275,7 @@ def _read(path):
                 raise ValueError("Nieprawidłowy dowód")
             if "\x00" in item["path"]:
                 raise ValueError("Nieprawidłowa ścieżka dowodu")
-            if Path(item["path"]).is_absolute() or ".." in Path(item["path"]).parts:
+            if _is_rooted(item["path"]) or ".." in Path(item["path"]).parts:
                 raise ValueError("Nieprawidłowa ścieżka dowodu")
             if not re.fullmatch(r"[0-9a-f]{64}", str(item.get("sha256", ""))):
                 raise ValueError("Nieprawidłowy hash dowodu")
@@ -751,7 +760,7 @@ def benchmark(args):
         if not isinstance(fixture, dict) or len(fixture) > 100:
             raise ValueError("Nieprawidłowa fixture")
         for name, content in fixture.items():
-            if not isinstance(name, str) or Path(name).is_absolute() or ".." in Path(name).parts:
+            if not isinstance(name, str) or _is_rooted(name) or ".." in Path(name).parts:
                 raise ValueError("Fixture wychodzi poza izolowany katalog")
             if not isinstance(content, str) or len(content.encode()) > MAX_METADATA:
                 raise ValueError("Nieprawidłowa zawartość fixture")

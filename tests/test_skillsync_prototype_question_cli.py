@@ -1517,6 +1517,16 @@ class MergeDriverTests(QuestionCase):
         self.assertEqual(report['added'], 0)
         self.assertEqual(ours.read_bytes(), before)
 
+    def test_driver_leaves_a_crlf_file_untouched_when_b_adds_nothing(self):
+        base = self.ops()
+        ours = self.put('a.json', base)
+        ours.write_bytes(ours.read_bytes().replace(b'\r\n', b'\n').replace(b'\n', b'\r\n'))  # the file as a Windows checkout has it
+        before = ours.read_bytes()
+        self.assertIn(b'\r\n', before)
+        report = self.driver(self.put('o.json', base), ours, self.put('b.json', base))
+        self.assertEqual(report['added'], 0)
+        self.assertEqual(ours.read_bytes(), before)
+
     def test_driver_form_with_a_project_argument_is_refused(self):
         a, b = self.put('a.json', self.ops()), self.put('b.json', self.ops())
         before = a.read_bytes()
