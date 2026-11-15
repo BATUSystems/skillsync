@@ -78,7 +78,7 @@ class ResolveLoopChecked(unittest.TestCase):
         link = self.base / 'dangling'
         subprocess.run(['cmd', '/c', 'mklink', '/J', str(link), str(gone)], check=True, capture_output=True)
         gone.rmdir()
-        self.assertEqual(common.resolve_loop_checked(link / 'x'), (gone / 'x').resolve())
+        self.assertEqual(common.resolve_loop_checked(link / 'x').parts[-2:], ('gone', 'x'))   # not compared whole: a short 8.3 profile name differs from the long one
 
     def test_a_python_without_isjunction_keeps_working(self):
         with mock.patch.object(Path, 'is_symlink', lambda self: False), mock.patch.object(common.os.path, 'isjunction', None, create=True):
