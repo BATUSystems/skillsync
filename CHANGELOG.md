@@ -22,6 +22,8 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 - `dashboard show` (and `/api/status`): `substeps[].noData` (`true` ⇔ `seconds` is null, also for a planned sub-step), the same meaning as `noData` in `dashboard metrics`. Additive (schema 1): `missingData` is unchanged. Compatibility: a consumer that rejects unknown keys of `substeps[]` must accept `noData`.
 - Testy-strażnicy: rozmiar rekordów domeny `load: bootstrap` (każdy rekord ≤ 12 KiB, glosariusz ≤ 95%), reguły bramki po `/clear` w skillach `feature` i `dispatch`, reguła `chrome-headless-shell` w skillu `agent-runtime-pitfalls`.
 - Test: `checkpoint --final` i `retro-quality` działają z manifestem poza repozytorium (`--manifest`).
+- `skillsync dashboard url <project> [--port N] [--host NAME] [--json]`: the address with the consent token of a running `dashboard serve` (`http://127.0.0.1:<port>/#zgoda=<token>`), read from a state file in the machine data directory (outside the project, 0600 in a 0700 directory, ACL on Windows through the shared helper when present); `BLOCKED` (exit 2) `server_not_running`, `approvals_disabled` (the server runs with `--no-approvals`: its state file says `"approvals": false` and holds no token), `ambiguous_server`, `host_not_allowed`, `invalid_project`. A state directory that is a link or belongs to another user (POSIX) is refused with one warning (nothing is written), a server start removes the leftover temporary files of its own project and port, and the address with the token uses loopback or a name of `--approve-host` (the page answers on no other).
+- `/api/status`: `approvals.tokenRequired` (HTTP only; `dashboard show` unchanged); `/healthz`: `tokenId` (an 8-hex digest of the token, never the token) for a server with consents; the refusal of a token has `code: "approve_token"` in its body.
 
 ### Changed
 
@@ -70,7 +72,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ### Breaking
 
-None.
+- `POST /api/approve` without the header `X-Approve-Token` now gets `403` (`code: "approve_token"`): a client that posted consents without a token stops approving. Adjust: read the address with `skillsync dashboard url <project>` (the token is the fragment `#zgoda=<token>`) and send its value in the header; the status page and the editor plugin need no change. The token is made per server process and printed once in the console of `dashboard serve` as the fragment of an address (`#zgoda=<token>`; a service journal or CI log that keeps stderr keeps it too: use `dashboard url` there); the page keeps it in `localStorage` and sends it; an open tab with an old page gets the same `403` with the reason in its message until it is reopened from the address. The refusals before the token are unchanged, `--no-approvals` is unchanged (403 as before), `--approve-host` sends the token over plain HTTP (trusted network only).
 
 ## [1.4.1] - 2026-11-15
 

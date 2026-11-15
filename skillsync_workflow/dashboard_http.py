@@ -18,6 +18,7 @@ application/json`, body <= 4096 bytes; `--no-approvals` turns it off. Standard l
 """
 from __future__ import annotations
 
+import hmac
 import html
 import json
 import os
@@ -38,6 +39,7 @@ import yaml
 
 from . import __version__
 from . import dashboard as engine
+from . import dashboard_token
 from . import status as status_core
 from .common import emit, load_layer_project, read_project, redact
 from .layers import LayerError
@@ -73,6 +75,8 @@ AHEAD_CACHE_S = 10
 CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
        "connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
 HOST_REFUSED = "Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host)."
+TOKEN_HEADER = "X-Approve-Token"
+TOKEN_REFUSED = "Brak albo zły token zgody: otwórz adres z konsoli serwera albo z `skillsync dashboard url`."
 NEXT_HINT = ("Zgoda zapisana w pliku. Sesja czekająca na nią rusza sama (nasłuch zmian i budzik co 30 min); "
              "jeśli nie ruszy w ciągu minuty, napisz w sesji „dalej”.")
 
@@ -372,9 +376,12 @@ class Board:
                  heartbeat: float = 15.0, prototype_port: int = engine.PROTOTYPE_PORT,
                  approvals: bool = True, session_url: str | None = None, approve_hosts: tuple[str, ...] = (),
                  read_hosts: tuple[str, ...] = (),
-                 assets: dict[str, Path] | None = None, descriptions: Path | None = None, manifest: dict | None = None):
+                 assets: dict[str, Path] | None = None, descriptions: Path | None = None, manifest: dict | None = None,
+                 approve_token: str | None = None):
         self.root = Path(root).resolve()
         self.approvals = approvals
+        # Per process, never in a status, asset, log or error report (see `dashboard_token`); None = no consents at all.
+        self.approve_token = (approve_token or dashboard_token.new_token()) if approvals else None
         self.session_url = session_url if session_url_ok(session_url) else None
         self.assets = dict(assets or {})
         self.descriptions = descriptions
@@ -659,6 +666,7 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
                 here = host in self.board.approve_hosts
                 data["approvals"]["here"] = here
                 data["approvals"]["viewer"] = not here and host in self.board.read_hosts  # read-only Host (--read-host)
+                data["approvals"]["tokenRequired"] = bool(self.board.approve_token)  # only the fact: the value never leaves the process
                 return self._json(200, redact(data))  # secrets masked as in `dashboard show`
             if route == "/api/doc":
                 doc = self.board.doc((query.get("path") or [None])[0])
@@ -672,7 +680,10 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
             if route == "/api/descriptions":
                 return self._json(200, load_descriptions(self.board.descriptions))
             if route == "/healthz":
-                return self._json(200, {"ok": True, "version": self.board.version})
+                answer = {"ok": True, "version": self.board.version}
+                if self.board.approve_token:   # a short digest, never the token: `dashboard url` tells its server from a stranger on the port
+                    answer["tokenId"] = dashboard_token.token_id(self.board.approve_token)
+                return self._json(200, answer)
             return self._json(404, {"error": "Nie ma takiej strony."})
         except (BrokenPipeError, ConnectionResetError):
             return None
@@ -697,6 +708,11 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
             return "Obcy Origin."
         if not (self.headers.get("Content-Type") or "").startswith("application/json"):
             return "Oczekiwano application/json."
+        # Last: every refusal above is the same as before for a client without the token. The compare takes the same time for any input.
+        if self.board.approve_token:   # `--no-approvals` has no token: it is refused after the body, as before
+            given = self.headers.get(TOKEN_HEADER) or ""
+            if not hmac.compare_digest(given.encode("utf-8", "replace"), self.board.approve_token.encode("utf-8")):
+                return TOKEN_REFUSED
         return None
 
     def do_POST(self) -> None:  # noqa: N802
@@ -708,7 +724,7 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
                 return self._json(404, {"error": "Nie ma takiej strony."})
             refused = self._approve_allowed()
             if refused:
-                return self._json(403, {"error": refused})
+                return self._json(403, {"error": refused, "code": "approve_token"} if refused == TOKEN_REFUSED else {"error": refused})
             length = int(self.headers.get("Content-Length") or 0)
             if not 0 < length <= MAX_BODY:
                 return self._json(400, {"error": "Nieprawidłowa długość żądania."})
@@ -892,6 +908,20 @@ def serve_command(args) -> int:
             signal.signal(signal.SIGTERM, _stop_on_sigterm)
         threading.Thread(target=board.watch_loop, name="watcher", daemon=True).start()
         log(f"projekt {board.root} → {url}  (Ctrl+C kończy)")
+        if board.approvals:
+            # The only place where the token is printed: a fragment goes neither to the server nor to a proxy. The page keeps it in the
+            # browser; `skillsync dashboard url <project>` prints the same address for a running server (state file outside the project).
+            token_host = dashboard_token.bind_name(host)   # where the server really listens (a wildcard bind: loopback): the probe of `dashboard url`
+            shown_host = dashboard_token.address_host(host, board.approve_hosts)   # a name the page accepts for consents
+            log(f"zgody (przyciski na stronie): otwórz {dashboard_token.address(port, board.approve_token, shown_host)} "
+                f"(bez fragmentu strona działa tylko do odczytu; adres z tokenem: `skillsync dashboard url`)")
+            for name in sorted(board.approve_hosts - LOOPBACK_HOSTS):
+                log(f"  zdalnie ({name}, --approve-host): {dashboard_token.address(port, board.approve_token, name)}")
+            dashboard_token.write_state(board.root, port, board.approve_token, token_host, warn=lambda text: log(f"UWAGA: {text}"),
+                                        hosts=sorted(board.approve_hosts - LOOPBACK_HOSTS))
+        else:
+            # no token: the file only says `approvals: false` (replaces a leftover of a killed server with consents on this port)
+            dashboard_token.write_state(board.root, port, None, dashboard_token.bind_name(host), warn=lambda text: log(f"UWAGA: {text}"))
         extra = sorted(board.approve_hosts - LOOPBACK_HOSTS)
         readers = sorted(board.read_hosts - board.approve_hosts)
         if extra:
@@ -928,4 +958,5 @@ def serve_command(args) -> int:
         with board.cond:
             board.cond.notify_all()
         server.server_close()
+        dashboard_token.remove_state(board.root, port)
     return emit({"status": "PASS", "url": url, "stopped": True})

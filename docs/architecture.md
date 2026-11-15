@@ -14,6 +14,7 @@ i kto jest jego właścicielem.
 | `skillsync_workflow/dashboard.py` | stan projektu jako kontrakt JSON `schema: 1` (`dashboard show`, `dashboard metrics`) i polecenia `dashboard`; tylko odczyt, bez zapisu zgód; kontrakt: [dashboard-contract](dashboard-contract.md) |
 | `skillsync_workflow/status.py` | raport `status`, zmiana linii `Status:` (`plan`/`spec approve`) i zgody: `approvals wait` oraz `approvals record`, którego jedyny zapis `status.record_approval` woła też serwer dashboardu |
 | `skillsync_workflow/dashboard_http.py` | serwer HTTP strony statusu (`dashboard serve`, tylko biblioteka standardowa, ładowany leniwie); strona i zasoby pochodzą ze skilla `dashboard` aktywnych warstw; model zaufania: [domain/dashboard-server.md](domain/dashboard-server.md) |
+| `skillsync_workflow/dashboard_token.py` | token zgód strony statusu (`X-Approve-Token`): tworzenie, plik stanu w katalogu danych maszyny (0600/ACL), `skillsync dashboard url`; adres z fragmentem `#zgoda=` |
 | warstwy | repo z układem `skills/`, `instructions/`, `agents/`, `workflow/` i plikiem `layer.yaml`; patrz [layers-authoring](layers-authoring.md) |
 | usługa watch | ciągła synchronizacja po zmianach w warstwach; szczegóły usługi per system: [installation](installation.md) |
 | `skillsync-ctl` | sterowanie usługą watch na Linuksie (`start`, `stop`, `restart`, `enable`, `disable`, `status`, `logs`); dostępne tylko w checkoucie repo |

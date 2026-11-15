@@ -12,6 +12,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 - `skills/dashboard/assets/app.css`: stan wskaźnika „na żywo” ma własny kształt punktu obok koloru (koło, kwadrat, trójkąt, pierścień), a przyciski i karty w trybie zwartym (≤ 420 px) mają co najmniej 2,75 rem wysokości; wtyczka z własną kopią arkusza musi ją zsynchronizować.
 - `skills/prototype/SKILL.md`: the machine config with `prototype.default_password` is private by mode 0600 on POSIX and by an ACL on Windows (set and repaired by the tool).
+- `skills/skillsync/SKILL.md`: polecenie `dashboard url` i token zgód w opisie `dashboard serve`.
+- `skills/dashboard`: zgody ze strony wymagają tokenu (`X-Approve-Token`, adres z fragmentem `#zgoda=<token>` z konsoli `dashboard serve` albo z `skillsync dashboard url`); `app.js` zapamiętuje token, `dashboard-render.js` ma haczyk `deps.hasApproveToken` (przyciski nieaktywne bez tokenu; webview bez haczyka bez zmian); `SKILL.md`: reguła dla agenta.
+
+### Breaking
+
+- `skills/dashboard`: `POST /api/approve` bez nagłówka `X-Approve-Token` zwraca `403`; własne skrypty muszą wziąć token z `skillsync dashboard url`. Strona statusu i wtyczka edytora nie wymagają zmian.
 
 ## [1.4.1] - 2026-11-15
 

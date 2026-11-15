@@ -370,6 +370,38 @@
     "category": "posix-only"
    },
    {
+    "id": "test_skillsync_dashboard_approve_token.HealthAndLeftovers.test_a_dead_process_leftover_is_removed",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_dashboard_approve_token.ServeWritesAndRemovesTheState.test_a_leftover_of_a_killed_server_is_removed_by_a_server_without_consents",
+    "category": "windows-no-mechanism"
+   },
+   {
+    "id": "test_skillsync_dashboard_approve_token.ServeWritesAndRemovesTheState.test_an_approve_host_gets_its_own_address_and_the_state_lists_it",
+    "category": "windows-no-mechanism"
+   },
+   {
+    "id": "test_skillsync_dashboard_approve_token.ServeWritesAndRemovesTheState.test_no_approvals_prints_no_token_and_writes_a_file_without_one",
+    "category": "windows-no-mechanism"
+   },
+   {
+    "id": "test_skillsync_dashboard_approve_token.ServeWritesAndRemovesTheState.test_serve_prints_the_address_with_the_token_writes_the_file_and_removes_it",
+    "category": "windows-no-mechanism"
+   },
+   {
+    "id": "test_skillsync_dashboard_approve_token.StateFile.test_a_state_directory_of_another_user_is_refused",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_dashboard_approve_token.StateFile.test_a_state_directory_that_is_a_link_is_refused_and_nothing_is_written_through_it",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_dashboard_approve_token.StateFile.test_the_file_is_private_on_posix",
+    "category": "posix-only"
+   },
+   {
     "id": "test_skillsync_dashboard_server.ServeCommandTests.test_serve_answers_and_stops_on_sigterm",
     "category": "windows-no-mechanism"
    },
