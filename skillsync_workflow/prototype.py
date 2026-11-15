@@ -35,6 +35,7 @@ import time
 import urllib.parse
 import yaml
 from .common import append_missing_lines, contained, emit, load_layer_project, read_project, read_yaml, require_layerset
+from .pathfmt import posix
 from . import layers as _layers
 from . import prototype_server as server
 from .plan_phases import parse_plan_phases
@@ -1457,8 +1458,8 @@ def machine_config_path(environ=None):
 def default_password(environ=None):
     """`(value, warnings)` of `prototype.default_password` from the machine config (D17, K10).
 
-    The file must be private (0600; wider = `PrototypeError` with `chmod 600`; skipped with a
-    warning on Windows).  The value never appears in any message: YAML errors are reported
+    The file must be private (0600; wider = `PrototypeError` with `chmod 600`; on Windows the ACL is checked and repaired,
+    see `private_file_notes`).  The value never appears in any message: YAML errors are reported
     without the parser's excerpt of the file.
     """
     path = machine_config_path(environ)
@@ -1469,8 +1470,7 @@ def default_password(environ=None):
     problem = server.private_file_problem(str(path))
     if problem:
         raise PrototypeError(problem)
-    if os.name == 'nt':
-        warnings.append(server.PRIVATE_CHECK_SKIPPED)
+    warnings.extend(server.private_file_notes(str(path)))
     try:
         data = read_yaml(path)
     except (yaml.YAMLError, ValueError, OSError):
@@ -2334,8 +2334,7 @@ def _users(repo, value):
         problem = users.permissions_problem()
         if problem:
             raise PrototypeError(problem)
-        if os.name == 'nt':
-            warnings.append(server.PRIVATE_CHECK_SKIPPED)
+        warnings.extend(server.private_file_notes(users.path))
     return users, warnings
 
 
@@ -2398,7 +2397,7 @@ def _relative_or_absolute(path, repo):
     try:
         return Path(path).resolve().relative_to(repo).as_posix()
     except ValueError:
-        return str(path)
+        return posix(path)   # outside the repository: still a report field, so `/` on Windows
 
 
 def _in_git_worktree(path):

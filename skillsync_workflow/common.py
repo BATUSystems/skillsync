@@ -264,6 +264,9 @@ def validate_workflow(config):
         strings(risk_sections, 'readiness.risk_sections')
 
 
+SECRET_MIN_LENGTH = 8
+
+
 def detect_eol(text):
     """Line ending of the last line of `text` ("\\r\\n" or "\\n"); LF for an empty text or one without a newline."""
     last_lf = text.rfind("\n")
@@ -287,9 +290,9 @@ def append_missing_lines(text, entries, key=None):
 
 
 def redact(value, _key=False):
-    """Masks secrets in strings. Dict keys get the environment-secret substitution only for secrets of
-    8+ characters: a short secret value (the Windows runner has one equal to `root`) must not rename
-    structural keys such as `root`, while a real token used as a key is still masked."""
+    """Masks secrets in strings. A secret from the environment is substituted only when it has 8+ characters, in keys and
+    in text alike (D6): a short value (the Windows runner has one equal to `root`) must not rename structural keys or
+    ordinary words. Pattern-based masking (URL credentials, `Authorization`, `password=`...) has no length floor."""
     if isinstance(value, dict):
         return {redact(key, True): redact(item) for key, item in value.items()}
     if isinstance(value, list):
@@ -300,7 +303,7 @@ def redact(value, _key=False):
         return value
     text = value
     for name, secret in os.environ.items():
-        if len(secret) >= (8 if _key else 4) and re.search(r'(?i)token|secret|password|passwd|api_?key|credential', name):
+        if len(secret) >= SECRET_MIN_LENGTH and re.search(r'(?i)token|secret|password|passwd|api_?key|credential', name):
             text = text.replace(secret, '[REDACTED]')
     text = re.sub(r'(https?://)[^/@\s]+:[^/@\s]+@', r'\1[REDACTED]@', text)
     text = re.sub(r'(?i)(authorization\s*[:=]\s*(?:bearer\s+)?)[^\s\x22\x27,;]+', r'\1[REDACTED]', text)
@@ -372,10 +375,14 @@ def resolve_loop_checked(path):
 
     Older Pythons raise `OSError`/`RuntimeError` from `resolve()` on a loop; newer ones (POSIX from 3.13, Windows from
     3.12) return the path they got stuck at instead. A fully resolved path has no symlink among its components, so one
-    that still has a link has not been resolved: a loop. A path that merely does not exist still resolves."""
+    that still has a link has not been resolved: a loop. A path that merely does not exist still resolves.
+    A Windows junction is no symlink (`is_symlink()` is False) but loops the same way (measured: Python 3.12 and 3.13 return the stuck path
+    of a loop of two junctions, 3.11 raises), so `os.path.isjunction` (3.12+) counts as a link.
+    A junction whose target is gone (dangling) is not a loop: `resolve()` returns the missing target path (measured on 3.11-3.13), which has no link."""
     resolved = Path(path).resolve()
+    isjunction = getattr(os.path, 'isjunction', None)
     for part in (resolved, *resolved.parents):
-        if part.is_symlink():
+        if part.is_symlink() or (isjunction is not None and isjunction(part)):
             raise OSError(errno.ELOOP, 'Too many levels of symbolic links', str(path))
     return resolved
 

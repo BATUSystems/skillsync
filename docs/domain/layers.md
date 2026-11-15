@@ -217,7 +217,7 @@ per plik w kompozycie skilla.
 
 - PASS tylko gdy: (1) każdy `layers[].path` ma `layer.yaml` o `id` z `isolation.allowed_layers`; (2) w katalogu warstw
   systemu, w `legacy_library` i w znanych lokalizacjach legacy nie ma biblioteki o `id` spoza listy ani katalogu bez
-  `layer.yaml`; (3) w drzewie nie ma pliku `identity` obcej warstwy.
+  `layer.yaml`; (3) w drzewie nie ma pliku `identity` obcej warstwy (wyjątek od 1.5.0: pliki w `leakguard.identity_dir`, czyli tożsamości wszystkich celów maszyny, których właściciel jest skonfigurowanym `leakguard.targets`, są pomijane, bo cel niebędący warstwą nie jest obcą biblioteką; ta sama tożsamość w bibliotece warstwy nadal daje błąd).
 - Bez `isolation.allowed_layers` wynik to **NOT_RUN** (exit 0).
 - Wpis `synthetic` (config 0.9.x) daje FAIL `isolation-legacy-bridge`, także gdy katalog nie istnieje.
 - `--project` i `--layer` z `--isolation` są ignorowane z ostrzeżeniem.

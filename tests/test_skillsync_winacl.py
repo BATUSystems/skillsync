@@ -1,0 +1,430 @@
+"""`winacl`: private files on Windows through an ACL (DEBT-150-ACL). The Windows behaviour is switched on with the module seam
+(`IS_WINDOWS`, `_backend`) so the logic runs on every system; the real `advapi32` calls are tested on Windows only.
+Uruchamianie: `python3 -m unittest discover -s tests -p test_skillsync_winacl.py`."""
+import importlib.util
+import io
+import os
+import stat
+import sys
+import tempfile
+import unittest
+from contextlib import redirect_stderr
+from pathlib import Path
+from unittest import mock
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from skillsync_workflow import prototype_server as ps  # noqa: E402
+from skillsync_workflow import winacl  # noqa: E402
+
+USER = 'S-1-5-21-1-2-3-1001'
+OTHER = 'S-1-5-32-545'
+
+
+class FakeBackend(object):
+    def __init__(self, acls=True, code=0, fail=None, dacl=()):
+        self.acls, self.code, self.fail, self.dacl = acls, code, fail, dacl
+        self.calls = []
+
+    def user_sid(self):
+        return USER
+
+    def volume_has_acls(self, path):
+        self.calls.append(('volume', path))
+        if self.fail:
+            raise self.fail
+        return self.acls
+
+    def set_dacl(self, path, sddl):
+        self.calls.append(('set', path, sddl))
+        return self.code
+
+    def read_dacl(self, path):
+        self.calls.append(('read', path))
+        return self.dacl if self.dacl is None else list(self.dacl)
+
+
+class WindowsLogicTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix='winacl-')
+        self.addCleanup(self.tmp.cleanup)
+        self.file = os.path.join(self.tmp.name, 'users.json')
+        Path(self.file).write_text('x', encoding='utf-8')
+        for patch in (mock.patch.object(winacl, 'IS_WINDOWS', True), mock.patch.object(winacl, '_warned', set())):
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def use(self, backend):
+        patch = mock.patch.object(winacl, '_backend', backend)
+        patch.start()
+        self.addCleanup(patch.stop)
+        return backend
+
+    def test_a_file_gets_a_protected_acl_by_sid_for_the_user_system_and_administrators(self):
+        backend = self.use(FakeBackend())
+        self.assertTrue(winacl.restrict_to_owner(self.file))
+        sddl = [call for call in backend.calls if call[0] == 'set'][0][2]
+        self.assertEqual(sddl, 'D:P(A;;FA;;;%s)(A;;FA;;;S-1-5-18)(A;;FA;;;S-1-5-32-544)' % USER)
+
+    def test_a_directory_gets_inheriting_aces(self):
+        backend = self.use(FakeBackend())
+        self.assertTrue(winacl.restrict_to_owner(self.tmp.name))
+        sddl = [call for call in backend.calls if call[0] == 'set'][0][2]
+        self.assertEqual(sddl.count('(A;OICI;FA;;;'), 3, sddl)
+
+    def test_a_volume_without_acls_is_false_without_touching_the_file_and_warns_once(self):
+        backend = self.use(FakeBackend(acls=False))
+        buffer = io.StringIO()
+        with redirect_stderr(buffer):
+            self.assertFalse(winacl.restrict_to_owner(self.file))
+            self.assertFalse(winacl.restrict_to_owner(self.file))
+        self.assertEqual([call for call in backend.calls if call[0] == 'set'], [])
+        self.assertEqual(buffer.getvalue().count('nie udało się ograniczyć dostępu'), 1, buffer.getvalue())
+        self.assertIn('wolumin bez list ACL', buffer.getvalue())
+
+    def test_an_error_code_is_false_and_never_raises(self):
+        self.use(FakeBackend(code=5))
+        with redirect_stderr(io.StringIO()) as buffer:
+            self.assertFalse(winacl.restrict_to_owner(self.file))
+        self.assertIn('kod błędu 5', buffer.getvalue())
+
+    def test_an_exception_in_the_backend_is_false_and_never_raises(self):
+        self.use(FakeBackend(fail=OSError(2, 'boom')))
+        with redirect_stderr(io.StringIO()):
+            self.assertFalse(winacl.restrict_to_owner(self.file))
+            self.assertFalse(winacl.restrict_to_owner(os.path.join(self.tmp.name, 'missing.json')))
+
+    def test_a_missing_backend_library_is_false(self):
+        with mock.patch.object(winacl, '_get_backend', side_effect=ImportError('no ctypes')), redirect_stderr(io.StringIO()):
+            self.assertFalse(winacl.restrict_to_owner(self.file))
+
+    def test_is_owner_only_checks_every_ace(self):
+        private = [(0, 0, 0x1f01ff, USER), (0, 0, 0x1f01ff, 'S-1-5-18'), (0, 0x10, 0x1f01ff, 'S-1-3-4')]
+        self.use(FakeBackend(dacl=private))
+        self.assertTrue(winacl.is_owner_only(self.file))
+        for wide in (private + [(0, 0, 0x1200a9, OTHER)],                  # Users
+                     private + [(1, 0, 0x1f01ff, USER)],                    # a deny ACE is not "allow only"
+                     private + [(5, 0, 0, '')],                             # an unknown ACE type
+                     [],                                                    # an empty DACL: nobody, the user included
+                     None):                                                # no DACL at all = everyone
+            with self.subTest(dacl=wide):
+                self.use(FakeBackend(dacl=wide))
+                self.assertFalse(winacl.is_owner_only(self.file))
+
+    def test_is_owner_only_is_false_on_an_error(self):
+        backend = self.use(FakeBackend())
+        backend.read_dacl = mock.Mock(side_effect=OSError(5, 'denied'))
+        self.assertFalse(winacl.is_owner_only(self.file))
+
+    def test_ensure_private_repairs_a_wide_file_and_leaves_a_private_one(self):
+        wide = [(0, 0, 0x1200a9, OTHER)]
+        backend = self.use(FakeBackend(dacl=wide))
+        self.assertEqual(winacl.ensure_private(self.file), (True, True))
+        self.assertEqual(len([call for call in backend.calls if call[0] == 'set']), 1)
+        backend = self.use(FakeBackend(dacl=[(0, 0, 1, USER)]))
+        self.assertEqual(winacl.ensure_private(self.file), (True, False))
+        self.assertEqual([call for call in backend.calls if call[0] == 'set'], [])
+
+    def test_private_notes_report_a_repair_once_and_nothing_for_a_private_file(self):
+        self.use(FakeBackend(dacl=[(0, 0, 1, OTHER)]))
+        notes = winacl.private_notes(self.file)
+        self.assertEqual(len(notes), 1)
+        self.assertIn('ograniczono dostęp', notes[0])
+        self.use(FakeBackend(dacl=[(0, 0, 1, USER)]))
+        self.assertEqual(winacl.private_notes(self.file), [])
+        self.assertEqual(winacl.private_notes(os.path.join(self.tmp.name, 'missing.json')), [])
+
+    def test_a_symlink_is_never_restricted(self):
+        target = os.path.join(self.tmp.name, 'target.json')
+        Path(target).write_text('x', encoding='utf-8')
+        link = os.path.join(self.tmp.name, 'link.json')
+        try:
+            os.symlink(target, link)
+        except (OSError, NotImplementedError):
+            self.skipTest('OS cannot create symlinks')   # reason of the `no-os-symlinks` category
+        backend = self.use(FakeBackend(dacl=[(0, 0, 1, OTHER)]))
+        self.assertFalse(winacl.restrict_to_owner(link))
+        self.assertEqual(winacl.private_notes(link), [])
+        self.assertEqual([call for call in backend.calls if call[0] == 'set'], [])
+
+    def test_a_label_names_the_file_a_temporary_one_is_renamed_over(self):
+        self.use(FakeBackend(acls=False))
+        buffer = io.StringIO()
+        with redirect_stderr(buffer):
+            for index in range(3):
+                temporary = os.path.join(self.tmp.name, '.users.json.%d.tmp' % index)
+                Path(temporary).write_text('x', encoding='utf-8')
+                self.assertFalse(winacl.restrict_to_owner(temporary, label=self.file))
+        self.assertEqual(buffer.getvalue().count('nie udało się ograniczyć dostępu'), 1, buffer.getvalue())
+        self.assertIn(self.file, buffer.getvalue())
+
+    def test_private_notes_warn_once_when_the_repair_fails(self):
+        self.use(FakeBackend(dacl=[(0, 0, 1, OTHER)], acls=False))
+        first = winacl.private_notes(self.file)
+        self.assertEqual(len(first), 1)
+        self.assertIn('nie udało się ograniczyć', first[0])
+        self.assertEqual(winacl.private_notes(self.file), [], 'the same file warns once per process')
+
+
+class OtherSystemsTests(unittest.TestCase):
+    def test_off_windows_restrict_is_true_and_touches_nothing(self):
+        with mock.patch.object(winacl, 'IS_WINDOWS', False), mock.patch.object(winacl, '_get_backend') as backend:
+            self.assertTrue(winacl.restrict_to_owner('/nonexistent/x'))
+            self.assertEqual(winacl.private_notes('/nonexistent/x'), [])
+            backend.assert_not_called()
+
+    def test_the_module_does_not_import_ctypes_at_import_time(self):
+        self.assertFalse(hasattr(winacl, 'ctypes'))
+
+    @unittest.skipIf(os.name == 'nt', 'tryb POSIX: bity grupy i innych')
+    def test_off_windows_is_owner_only_reads_the_mode(self):
+        with tempfile.TemporaryDirectory(prefix='winacl-') as tmp:
+            path = os.path.join(tmp, 'f')
+            Path(path).write_text('x', encoding='utf-8')
+            os.chmod(path, 0o600)
+            self.assertTrue(winacl.is_owner_only(path))
+            os.chmod(path, 0o640)
+            self.assertFalse(winacl.is_owner_only(path))
+            self.assertFalse(winacl.is_owner_only(os.path.join(tmp, 'missing')))
+
+
+class AtomicWriteTests(unittest.TestCase):
+    """`atomic_write_bytes` sets the ACL of the temporary file BEFORE the data is written (measured: `os.replace` hands the
+    ACL of the source to the target), only for a private mode, and a failed ACL never fails the write."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix='winacl-')
+        self.addCleanup(self.tmp.cleanup)
+        self.target = os.path.join(self.tmp.name, 'users.json')
+
+    def spy(self, result=True):
+        seen = []
+
+        def restrict(path, *args, **kwargs):
+            seen.append((os.path.basename(path), os.path.getsize(path)))   # the size at the moment of the call
+            return result
+        helper = mock.Mock(spec=winacl)
+        helper.restrict_to_owner.side_effect = restrict
+        patch = mock.patch.object(ps, '_winacl', helper)
+        patch.start()
+        self.addCleanup(patch.stop)
+        return seen
+
+    def test_the_acl_is_set_on_the_temporary_file_before_any_data_is_written(self):
+        seen = self.spy()
+        ps.atomic_write_bytes(self.target, b'{"users": []}', mode=0o600)
+        self.assertEqual(len(seen), 1, seen)
+        name, size = seen[0]
+        self.assertTrue(name.startswith('.users.json.') and name.endswith('.tmp'), name)
+        self.assertEqual(size, 0, 'the file is still empty when its ACL is set')
+        self.assertEqual(Path(self.target).read_bytes(), b'{"users": []}')
+
+    def test_a_default_or_wide_mode_is_not_restricted(self):
+        seen = self.spy()
+        ps.atomic_write_bytes(self.target, b'a')                       # default 0644
+        ps.atomic_write_bytes(self.target, b'b', mode=0o666)
+        self.assertEqual(seen, [])
+
+    def test_a_failed_acl_does_not_fail_the_write(self):
+        seen = self.spy(result=False)
+        ps.atomic_write_bytes(self.target, b'data', mode=0o600)
+        self.assertEqual(len(seen), 1)
+        self.assertEqual(Path(self.target).read_bytes(), b'data')
+        self.assertEqual([name for name in os.listdir(self.tmp.name) if name.endswith('.tmp')], [])
+
+    def test_a_failing_acl_warns_once_for_the_target_over_many_writes(self):
+        with mock.patch.object(winacl, 'IS_WINDOWS', True), mock.patch.object(winacl, '_warned', set()), \
+                mock.patch.object(winacl, '_backend', FakeBackend(acls=False)):
+            buffer = io.StringIO()
+            with redirect_stderr(buffer):
+                for index in range(4):
+                    ps.atomic_write_bytes(self.target, b'x%d' % index, mode=0o600)
+        self.assertEqual(buffer.getvalue().count('nie udało się ograniczyć dostępu'), 1, buffer.getvalue())
+        self.assertIn(self.target, buffer.getvalue())
+        self.assertEqual(Path(self.target).read_bytes(), b'x3')
+
+    def test_a_new_users_directory_is_restricted(self):
+        seen = self.spy()
+        users = ps.UsersFile(os.path.join(self.tmp.name, 'new', 'users.json'), iterations=1)
+        users.update(lambda records: None)
+        self.assertIn(('new', None), [(name, None) for name, _size in seen], seen)
+
+    def test_without_the_helper_the_write_works(self):
+        with mock.patch.object(ps, '_winacl', None):
+            ps.atomic_write_bytes(self.target, b'data', mode=0o600)
+        self.assertEqual(Path(self.target).read_bytes(), b'data')
+
+    def test_the_users_file_and_its_backup_are_both_restricted(self):
+        seen = self.spy()
+        users = ps.UsersFile(self.target, iterations=1)
+        users.update(lambda records: None)
+        users.update(lambda records: None)          # the second write also writes users.json.bak
+        names = [name for name, _size in seen]
+        self.assertEqual(len([n for n in names if n.startswith('.users.json.') and not n.startswith('.users.json.bak.')]), 2, names)
+        self.assertEqual(len([n for n in names if n.startswith('.users.json.bak.')]), 1, names)
+
+
+class CommandNotesTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix='winacl-')
+        self.addCleanup(self.tmp.cleanup)
+        self.path = os.path.join(self.tmp.name, 'users.json')
+        Path(self.path).write_text('{}', encoding='utf-8')
+
+    def test_private_file_problem_never_blocks_on_windows(self):
+        with mock.patch.object(ps.os, 'name', 'nt'):      # only around the call: pathlib breaks under a patched name
+            self.assertIsNone(ps.private_file_problem(self.path))
+
+    def test_private_file_notes_come_from_the_helper(self):
+        helper = mock.Mock(spec=winacl)
+        helper.private_notes.return_value = ['note']
+        with mock.patch.object(ps, '_winacl', helper):
+            self.assertEqual(ps.private_file_notes(self.path), ['note'])
+        with mock.patch.object(ps, '_winacl', None):      # a stand-alone copy: nothing off Windows, one warning there
+            self.assertEqual(len(ps.private_file_notes(self.path)), 1 if os.name == 'nt' else 0)
+
+    def test_a_standalone_copy_without_the_helper_says_so_on_windows_only(self):
+        with mock.patch.object(ps, '_winacl', None), mock.patch.object(ps.os, 'name', 'nt'):
+            notes = ps.private_file_notes(self.path)
+        self.assertEqual(len(notes), 1)
+        self.assertIn('winacl', notes[0])
+
+    def test_the_old_warning_about_a_skipped_check_is_gone(self):
+        self.assertFalse(hasattr(ps, 'PRIVATE_CHECK_SKIPPED'))
+
+
+class LinkFilesTests(unittest.TestCase):
+    """The files of the one-time login link feature (state, tokens, audit) are private on Windows as well."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix='winacl-')
+        self.addCleanup(self.tmp.cleanup)
+        self.calls = []
+
+        def restrict(path, *args, **kwargs):
+            self.calls.append((os.path.basename(path), os.path.getsize(path) if os.path.isfile(path) else None))
+            return True
+        helper = mock.Mock(spec=winacl)
+        helper.restrict_to_owner.side_effect = restrict
+        patch = mock.patch.object(ps, '_winacl', helper)
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def test_a_private_directory_is_restricted(self):
+        ps._link_make_private_dir(os.path.join(self.tmp.name, 'login'))
+        self.assertEqual(self.calls, [('login', None)])
+
+    def test_a_private_write_restricts_the_temporary_file_before_the_data(self):
+        path = os.path.join(self.tmp.name, 'server-1.json')
+        ps._link_write_private(path, b'{"a": 1}')
+        self.assertEqual(len(self.calls), 1, self.calls)
+        name, size = self.calls[0]
+        self.assertTrue(name.startswith('.server-1.json.') and name.endswith('.tmp'), name)
+        self.assertEqual(size, 0)
+        self.assertEqual(Path(path).read_bytes(), b'{"a": 1}')
+
+    def test_an_existing_login_directory_is_repaired(self):
+        run_dir = os.path.join(self.tmp.name, 'run')
+        os.mkdir(run_dir, 0o700)
+        os.chmod(run_dir, 0o700)
+        os.mkdir(os.path.join(run_dir, 'login'), 0o700)
+        os.chmod(os.path.join(run_dir, 'login'), 0o700)
+        ps._winacl.ensure_private.return_value = (True, True)
+        ps.link_login_dir(run_dir)
+        ps._winacl.ensure_private.assert_called_once()
+        self.assertEqual(os.path.basename(ps._winacl.ensure_private.call_args[0][0]), 'login')
+
+    def test_a_token_record_is_restricted_before_it_is_written(self):
+        run_dir = os.path.join(self.tmp.name, 'run')
+        os.mkdir(run_dir, 0o700)
+        os.chmod(run_dir, 0o700)
+        ps.link_issue(run_dir, 'ala@example.com', '/', now=1700000000, instance='instance-1')
+        names = [name for name, _size in self.calls]
+        self.assertTrue(any(name.startswith('.') and name.endswith('.tmp') for name in names), names)
+        sizes = [size for name, size in self.calls if name.endswith('.tmp')]
+        self.assertEqual(sizes, [0] * len(sizes))
+
+    def test_the_audit_file_is_restricted_when_it_is_created_only(self):
+        run_dir = os.path.join(self.tmp.name, 'run')
+        os.mkdir(run_dir, 0o700)
+        os.chmod(run_dir, 0o700)
+        ps.link_audit_append(run_dir, {'event': 'one'})
+        ps.link_audit_append(run_dir, {'event': 'two'})
+        self.assertEqual([name for name, _ in self.calls], ['audit.jsonl'], self.calls)
+
+
+@unittest.skipUnless(os.name == 'nt', 'tylko na Windows (ACL)')
+class RealWindowsTests(unittest.TestCase):
+    """The real `advapi32` calls (measured 15.11: 0.5-0.8 ms, SID only)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix='winacl-real-')
+        self.addCleanup(self.tmp.cleanup)
+        # a plain os.mkdir directory: tempfile.mkdtemp is already private on 3.12+, which would hide a failure
+        self.dir = os.path.join(self.tmp.name, 'plain')
+        os.mkdir(self.dir)
+
+    def make(self, name, text='x'):
+        path = os.path.join(self.dir, name)
+        Path(path).write_text(text, encoding='utf-8')
+        return path
+
+    def test_a_file_becomes_owner_only_and_stays_usable(self):
+        path = self.make('users.json')
+        self.assertTrue(winacl.restrict_to_owner(path))
+        self.assertTrue(winacl.is_owner_only(path))
+        self.assertEqual(Path(path).read_text(encoding='utf-8'), 'x')
+        Path(path).write_text('y', encoding='utf-8')
+
+    def test_the_dacl_is_exactly_user_system_administrators(self):
+        path = self.make('users.json')
+        winacl.restrict_to_owner(path)
+        backend = winacl._get_backend()
+        sids = sorted(sid for _kind, _flags, _mask, sid in backend.read_dacl(path))
+        self.assertEqual(sids, sorted([backend.user_sid(), winacl.SYSTEM_SID, winacl.ADMINISTRATORS_SID]))
+
+    def test_a_directory_is_inherited_by_new_files_and_repairs_existing_ones(self):
+        old = self.make('old.json')
+        self.assertTrue(winacl.restrict_to_owner(self.dir))
+        new = self.make('new.json')
+        self.assertTrue(winacl.is_owner_only(new))
+        self.assertTrue(winacl.is_owner_only(old), 'an existing file that inherits follows the directory')
+
+    def test_a_missing_path_is_false_without_raising(self):
+        with redirect_stderr(io.StringIO()):
+            self.assertFalse(winacl.restrict_to_owner(os.path.join(self.dir, 'nope.json')))
+        self.assertFalse(winacl.is_owner_only(os.path.join(self.dir, 'nope.json')))
+
+    def test_os_replace_hands_over_the_acl_of_the_source(self):
+        """Measured: the target takes the ACL of the temporary file, so it has to be set before the rename."""
+        target, temporary = self.make('target.json'), self.make('temporary.json', 'new')
+        winacl.restrict_to_owner(target)
+        os.replace(temporary, target)               # a temporary file with the directory's default ACL
+        temporary = self.make('temporary.json', 'newer')
+        winacl.restrict_to_owner(temporary)
+        os.replace(temporary, target)               # a restricted temporary file: the target is restricted again
+        self.assertTrue(winacl.is_owner_only(target))
+
+    def test_atomic_write_leaves_a_users_file_owner_only_after_five_writes(self):
+        target = os.path.join(self.dir, 'users.json')
+        for index in range(5):
+            ps.atomic_write_bytes(target, ('{"n": %d}' % index).encode(), mode=0o600)
+            self.assertTrue(winacl.is_owner_only(target), 'write %d' % index)
+        self.assertEqual(Path(target).read_text(encoding='utf-8'), '{"n": 4}')
+
+    def test_the_secret_files_of_the_e2e_environment_are_owner_only_by_acl(self):
+        """The environment of the prototype E2E harness (`tests/e2e/prototype/env.py`) writes its password and config files through the
+        shared ACL helper. This test lives here, not in `test_skillsync_prototype_e2e`: that module is run by the `e2e` CI job, which
+        refuses every skipped test of the module, and this one is Windows only."""
+        spec = importlib.util.spec_from_file_location('skillsync_e2e_env', ROOT / 'tests' / 'e2e' / 'prototype' / 'env.py')
+        env_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(env_module)
+        library = os.environ.get('SKILLSYNC_TEST_LIBRARY') or str(ROOT / 'library')
+        env = env_module.prepare(Path(self.dir) / 'w', library, 9333, 4445, 4446)
+        self.assertTrue(winacl.is_owner_only(env['secrets']))
+        self.assertTrue(winacl.is_owner_only(env['config']))
+
+
+if __name__ == '__main__':
+    unittest.main()

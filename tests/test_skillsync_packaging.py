@@ -195,6 +195,42 @@ class CheckReleaseTests(TempDirCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn('1.0.2', result.stdout)
 
+    def docs(self, workflow, details=None):
+        folder = self.tmp / 'docs'
+        folder.mkdir(exist_ok=True)
+        (folder / 'workflow.md').write_text(workflow, encoding='utf-8')
+        if details is not None:
+            (folder / 'workflow-details.md').write_text(details, encoding='utf-8')
+
+    def test_the_description_state_must_name_the_release_version(self):
+        """DEBT-142 A4 (D17): `Stan opisu: Skillsync `vX.Y.Z`` in docs/workflow.md and docs/workflow-details.md follows the version."""
+        self.project()
+        self.docs('# W\n\nStan opisu: Skillsync `v1.0.1`.\n', '# D\n\nStan opisu: Skillsync `v1.0.1`.\n')
+        self.assertEqual(self.check().returncode, 0)
+        self.docs('Stan opisu: Skillsync `v1.0.0`.\n', 'Stan opisu: Skillsync `v1.0.1`.\n')
+        result = self.check()
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn('docs/workflow.md', result.stdout)
+        self.assertIn('v1.0.0', result.stdout)
+        self.docs('Stan opisu: Skillsync `v1.0.1`.\n', 'Stan opisu: Skillsync `v0.9.0`.\n')
+        result = self.check()
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn('docs/workflow-details.md', result.stdout)
+
+    def test_a_missing_description_line_or_file_is_not_a_failure_but_a_line_with_another_form_is(self):
+        self.project()
+        self.assertEqual(self.check().returncode, 0, 'project without docs: nothing to check')
+        self.docs('# no state line here\n')
+        self.assertEqual(self.check().returncode, 0)
+        self.docs('Stan opisu: Skillsync `1.0.1`.\n')       # without `v`: a different form, reported
+        self.assertEqual(self.check().returncode, 1)
+
+    def test_the_description_state_is_checked_against_the_given_tag_too(self):
+        self.project(changelog='## [1.0.1]\n## [1.0.2]\n')
+        self.docs('Stan opisu: Skillsync `v1.0.1`.\n')
+        result = self.check('--version', '1.0.1')
+        self.assertEqual(result.returncode, 0, result.stdout)
+
     def test_tag_without_v_is_a_usage_error(self):
         self.project()
         self.assertEqual(self.check('--tag', '1.0.1').returncode, 2)

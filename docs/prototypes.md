@@ -236,8 +236,18 @@ albo `acceptor`; konto z `expert` i `developer`/`acceptor` nie jest doradcze. Dz
 najwyższa rola, `authorRoles` lista).
 
 Konta są w pliku użytkowników serwera: domyślnie `<projekt>/.skillsync/prototype/users.json` (inny plik: `--users`,
-ścieżka względem projektu). Plik ma tryb 0600, nie może leżeć w katalogu prototypów, a w repo gita musi być
+ścieżka względem projektu). Plik jest prywatny (POSIX: tryb 0600; Windows: ACL tylko dla użytkownika, SYSTEM i administratorów), nie może leżeć w katalogu prototypów, a w repo gita musi być
 ignorowany (`.gitignore`) i nieśledzony.
+
+Na Windows tryb pliku nic nie znaczy, więc dostęp ogranicza ACL (przez SID, bez zależności od nazw grup systemu):
+tylko użytkownik, który uruchamia komendę, `SYSTEM` i administratorzy lokalni; bez dziedziczenia z katalogu. ACL jest
+ustawiany przy utworzeniu i przy każdym zapisie pliku użytkowników i jego kopii `users.json.bak` (plik tymczasowy dostaje
+ACL przed zapisem danych, bo przy podmianie pliku Windows przenosi ACL pliku tymczasowego), a stary plik z szerokim ACL
+jest naprawiany przy pierwszym zapisie albo odczycie (komenda wypisuje wtedy jedną linię o naprawie). Ostrzeżenie pojawia
+się tylko wtedy, gdy ACL nie da się ustawić (wolumin bez ACL, np. FAT/exFAT, udział sieciowy bez obsługi, brak
+uprawnień): zapis pliku i tak się udaje, ale plik może być czytelny dla innych użytkowników komputera. Tak samo
+chronione są pliki logowania jednorazowym linkiem (stan, tokeny, `audit.jsonl`) i plik `prototype.default_password`
+(sprawdzany i naprawiany jak plik użytkowników).
 
 ```bash
 skillsync prototype user add . anna.nowak@szkola.example                       # commenter, hasło domyślne
@@ -252,7 +262,7 @@ skillsync prototype user roles . ewa.ekspert@example.com --role acceptor      # 
 
 - Hasło podaje `--password-prompt` (pytanie w terminalu) albo `--password-stdin` (ze standardowego wejścia);
   minimum 10 znaków.
-- Bez tych flag konto dostaje hasło domyślne z configu maszyny (`prototype.default_password`, plik 0600) i musi je
+- Bez tych flag konto dostaje hasło domyślne z configu maszyny (`prototype.default_password`, plik prywatny: 0600 na POSIX, ACL na Windows) i musi je
   zmienić przy pierwszym logowaniu. Żadna komenda nie wypisuje hasła domyślnego.
 - Dla ról `acceptor`, `developer` i `expert` ustaw hasło od razu (`--password-prompt`); `add` i `import` ostrzegają o haśle domyślnym także dla `expert`.
 - `--role` domyślnie wynosi `commenter`; `user roles` wymaga co najmniej jednej roli i zmienia tylko wskazane konto.
@@ -531,7 +541,8 @@ skillsync prototype serve . --host 192.168.1.10 --port 4445 --login-to-view
   wszystkich interfejsach naraz, więc podawaj konkretny adres. `--port 0` wybiera dowolny wolny port.
 - `serve` mówi HTTP bez szyfrowania: hasła i ciasteczko sesji idą po sieci jawnym tekstem. W zaufanej sieci lokalnej
   to akceptowalne dla makiet; poza nią postaw serwer za odwrotnym proxy z TLS i dodaj `--secure-cookies`.
-  `--trust-proxy` (adres klienta z `X-Forwarded-For` do limitu prób logowania) włączaj tylko za zaufanym proxy.
+  `--trust-proxy` (adres klienta z `X-Forwarded-For` do limitu prób logowania) włączaj tylko za zaufanym proxy; limit i tunel `ssh -L`:
+  [Limit prób logowania i tunel ssh](#limit-prób-logowania-i-tunel-ssh).
   Serwer ostrzega przy starcie o HTTP poza loopbackiem.
 - `--login-to-view` wymaga logowania także do oglądania; używaj go dla prototypów pokazywanych poza zespołem.
 - Za proxy przekaż oryginalny nagłówek `Host` (nginx: `proxy_set_header Host $host;`), bo ochrona zapisu porównuje
@@ -545,6 +556,20 @@ skillsync prototype serve . --host 192.168.1.10 --port 4445 --login-to-view
   i z `Host` wskazującym pętlę. Przy `--host` z adresem LAN komenda kończy się `BLOCKED link_needs_loopback`; zaloguj
   się wtedy hasłem. Link działa 60 s, raz, i daje sesję z pełnymi uprawnieniami konta; wydaje go człowiek, agent
   tej komendy nie uruchamia.
+
+### Limit prób logowania i tunel ssh
+
+Serwer liczy **nieudane** próby logowania w oknie przesuwnym 15 minut (`RATE_WINDOW`): 5 na parę (login, adres klienta) i 30 na sam adres.
+Udane logowanie czyści licznik pary, ale nie licznik adresu. Po przekroczeniu serwer odpowiada `429` z nagłówkiem `Retry-After` (sekundy do końca
+najstarszej próby w oknie). Stan jest tylko w pamięci procesu: restart `prototype serve` zeruje liczniki.
+
+Adres klienta to adres połączenia TCP. Nagłówek `X-Forwarded-For` liczy się wyłącznie z `--trust-proxy` (bierze się jego ostatni element);
+bez tej opcji jest ignorowany, a serwer zapisuje w logu jedno ostrzeżenie.
+
+**Za tunelem** (`ssh -L`) serwer widzi `127.0.0.1` dla wszystkich osób, więc limit 30 na adres jest wspólny: jedna osoba z 30 błędnymi próbami
+blokuje logowanie pozostałym, także z poprawnym hasłem, na czas do 15 minut. Co zrobić: poczekać na `Retry-After`, zrestartować `serve` (zeruje liczniki)
+albo wystawić serwer przez zaufane proxy z `--trust-proxy` i poprawnym `X-Forwarded-For` (wtedy link logowania jednorazowego jest wyłączony, zob. wyżej).
+Ten sam limit dotyczy zmiany hasła (błędne hasło dotychczasowe liczy się jak nieudana próba). Ograniczenie znane: nie ma limitu per login niezależnego od adresu.
 
 Serwer działa na kodzie z chwili startu: po aktualizacji skillsync uruchom go ponownie, żeby korzystał z nowej wersji.
 Zmiany plików prototypu (HTML, CSS, `comments.json`, użytkownicy) widzi bez restartu.
@@ -561,7 +586,7 @@ Zmiany plików prototypu (HTML, CSS, `comments.json`, użytkownicy) widzi bez re
 | Akceptacja albo przywracanie daje 409 `writing_in_progress`, przyciski są wyłączone z banerem „Agent jeszcze pisze ekrany” | agent ma ważny marker zapisu | poczekaj na `prototype writing … done` albo wygaśnięcie markera (do 15 min domyślnie); gdy agent padł, zdejmij marker: `skillsync prototype writing . <slug> done` albo (akceptujący i deweloper) przyciskiem „Zwolnij” w banerze |
 | `writing start` kończy się `BLOCKED` `lock_timeout` albo `needs_migration` | zajęta blokada prototypu (`iterate`, `restore`) albo prototyp w starym formacie | ponów komendę; `migrate` |
 | Zapis komentarza daje 409 `needs_migration` | prototyp w starym formacie (`comments.js`) | `migrate` |
-| `serve` kończy się `BLOCKED` przy starcie | zajęty port, brak pliku użytkowników, plik z trybem szerszym niż 0600, śledzony albo nieignorowany przez git | wybierz inny port, utwórz konto (`user add`), `chmod 600`, dodaj plik do `.gitignore` |
+| `serve` kończy się `BLOCKED` przy starcie | zajęty port, brak pliku użytkowników, plik z trybem szerszym niż 0600 (POSIX), śledzony albo nieignorowany przez git | wybierz inny port, utwórz konto (`user add`), `chmod 600`, dodaj plik do `.gitignore` |
 | `login-link` kończy się `BLOCKED` | `server_not_running` (serwer nie działa albo czyta inny plik użytkowników), `ambiguous_server` (kilka serwerów: dodaj `--port`), `link_needs_loopback` (`--host` z adresem LAN), `run_dir_unsafe` (`.skillsync/prototype/run/` z prawami ≠ 0700 lub dowiązanie), `unknown_user`, `password_change_required`, `invalid_port`, `link_unavailable` (serwer z `--trust-proxy`), `too_many_pending` | uruchom `serve`, dodaj `--port`, popraw katalog `run/`, utwórz konto albo zmień hasło |
 | `accept` kończy się `BLOCKED tty_required` | komenda nie dostała terminala (np. uruchomiona przez skrypt albo agenta) | człowiek: uruchom ją samodzielnie w terminalu albo kliknij Akceptacja na stronie prototypu; agent nie ponawia komendy i mówi „kliknij Akceptacja na stronie prototypu” |
 | Pasek „Prototyp zmieniono”, zapis daje 409 `stale_view` | ktoś zmienił pliki prototypu po wczytaniu strony | przeładuj stronę i powtórz działanie |

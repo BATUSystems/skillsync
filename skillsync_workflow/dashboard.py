@@ -14,6 +14,7 @@ from pathlib import Path
 import posixpath
 import re
 import subprocess
+import threading
 import time
 
 import yaml
@@ -24,6 +25,7 @@ from .layers import add_layer_argument
 from .delivery_mode import delivery_info
 from .status import (APPROVAL_WORDS, APPROVALS_FILE, MAX_APPROVALS_BYTES, _APPROVAL_SHA, _approval_at, _status_fields,
                      git_blob_sha)
+from .pathfmt import posix
 
 SCHEMA = 1
 APP_NAME = 'dashboard'
@@ -191,7 +193,8 @@ def parse_checkpoints(text):
             continue
         match = CHECKPOINT_RE.match(line)
         if match:
-            items.append({'time': match.group('time'), 'text': match.group('text').strip()})
+            hours, minutes = match.group('time').split(':')
+            items.append({'time': f'{int(hours):02d}:{minutes}', 'text': match.group('text').strip()})   # contract: HH:MM
         elif items and stripped and line[:1] in (' ', '\t'):
             items[-1]['text'] += ' ' + stripped
     return run_start, items
@@ -423,32 +426,61 @@ def file_sha(path):
 
 # --------------------------------------------------------------------------- project documents
 
+PLAN_CACHE_MAX = 512
+_PLAN_CACHE: dict = {}
+_PLAN_CACHE_LOCK = threading.Lock()
+
+
+def _plan_content(path):
+    """(title, status, spec, run, complete) of a plan file, parsed once per (path, mtime_ns, size): `build_status` runs on
+    every change of the project and on every poll, and a plan is read whole to count its steps. None when unreadable.
+    Time-dependent parts (`activity`, `runAlive`) are never cached: they come from the run directory on every call."""
+    try:
+        info = path.stat()
+    except OSError:
+        return None
+    key, stamp = str(path), (info.st_mtime_ns, info.st_size)
+    with _PLAN_CACHE_LOCK:
+        hit = _PLAN_CACHE.get(key)
+    if hit is not None and hit[0] == stamp:
+        return hit[1]
+    try:
+        text = read_text(path, HEADER_BYTES)
+    except OSError:
+        return None
+    title, fields = parse_header(text)
+    try:
+        steps = [step for phase in parse_progress(read_text(path)) for step in phase['steps']]
+    except OSError:
+        steps = []
+    content = (title, doc_status(text)[0], first_token(fields.get('spec')), first_token(fields.get('przebieg')),
+               bool(steps) and all(step['done'] for step in steps))
+    with _PLAN_CACHE_LOCK:
+        if len(_PLAN_CACHE) >= PLAN_CACHE_MAX:
+            _PLAN_CACHE.clear()
+        _PLAN_CACHE[key] = (stamp, content)
+    return content
+
+
 def list_plans(root):
     plans = []
     for path in sorted((root / 'docs/plans').glob('*.md')):
         rel = _posix_rel(root, path)
         if rel is None or resolve_doc(root, rel) is None:
             continue
-        try:
-            text = read_text(path, HEADER_BYTES)
-        except OSError:
+        content = _plan_content(path)
+        if content is None:
             continue
-        title, fields = parse_header(text)
-        run = first_token(fields.get('przebieg'))
+        title, status, spec, run, complete = content
         mtime = _mtime(path) or 0
         alive, activity = False, mtime
-        try:
-            steps = [step for phase in parse_progress(read_text(path)) for step in phase['steps']]
-        except OSError:
-            steps = []
-        complete = bool(steps) and all(step['done'] for step in steps)
         directory = run_dir(root, run)
         if directory is not None:
             alive = True
             activity = max([activity] + [stamp for stamp in (_mtime(directory / name) for name in ('checkpoints.md', 'approvals.jsonl'))
                                          if stamp])
-        plans.append({'path': rel, 'title': title or path.stem, 'status': doc_status(text)[0],
-                      'spec': first_token(fields.get('spec')), 'run': run, 'mtime': mtime,
+        plans.append({'path': rel, 'title': title or path.stem, 'status': status,
+                      'spec': spec, 'run': run, 'mtime': mtime,
                       'complete': complete, 'runAlive': alive, 'activity': activity})
     return plans
 
@@ -1183,7 +1215,8 @@ def build_substeps(progress, checkpoints):
             out.append({'id': step['id'], 'title': step['title'], 'phase': phase['label'] or phase['name'],
                         'state': step['state'], 'done': done, 'startedAt': start, 'finishedAt': finish,
                         'seconds': seconds,
-                        'missingData': seconds is None and (done or step['state'] == 'reported')})
+                        'missingData': seconds is None and (done or step['state'] == 'reported'),
+                        'noData': seconds is None})
     return out
 
 
@@ -1559,7 +1592,7 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
     return {
         'schema': SCHEMA,
         'app': {'name': APP_NAME, 'version': __version__},
-        'project': {'name': root.name, 'path': str(root)},
+        'project': {'name': root.name, 'path': posix(root)},
         'generatedAt': datetime.now().astimezone().isoformat(timespec='seconds'),
         'version': version,
         'lastUpdate': _iso(max((stamp for stamp in last_change if stamp), default=None)),
@@ -1749,6 +1782,11 @@ def _cmd_serve(args):
     return serve_command(args)
 
 
+def _cmd_url(args):
+    from .dashboard_token import url_command
+    return url_command(args)
+
+
 def register(subparsers):
     parser = subparsers.add_parser('dashboard', help='Project status page (JSON contract schema 1, docs/dashboard-contract.md)')
     actions = parser.add_subparsers(dest='dashboard_action', required=True)
@@ -1784,3 +1822,11 @@ def register(subparsers):
     serve.add_argument('--poll', type=float, default=1.0, help='seconds between file change checks (min 0.2)')
     serve.add_argument('--verbose', action='store_true', help='log every request to stderr')
     serve.set_defaults(func=_cmd_serve)
+    url = actions.add_parser('url', help='Print the address with the consent token of a running `dashboard serve` of the project '
+                                         '(read from the machine state; the token is in the fragment `#zgoda=`)')
+    url.add_argument('path', nargs='?', default='.')
+    add_layer_argument(url)
+    url.add_argument('--port', type=int, default=None, help='port of the server (needed when several servers of the project run)')
+    url.add_argument('--host', default=None, metavar='NAME', help='Host name of the address (a name given to `serve --approve-host`; default 127.0.0.1)')
+    url.add_argument('--json', action='store_true', help='JSON {schema, status, url, port, pid} or BLOCKED {code, reason} (exit 2)')
+    url.set_defaults(func=_cmd_url)

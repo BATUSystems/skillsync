@@ -17,6 +17,8 @@ plik `skillsync` w korzeniu repo to wrapper, który uruchamia pakiet z checkoutu
 
 Instalacja deweloperska: `uv tool install -e .` (polecenie `skillsync` wskazuje wtedy checkout). Jeśli `~/.local/bin/skillsync` jest starym dowiązaniem do checkoutu, usuń je przed instalacją; sprawdź `which skillsync`.
 
+Hooki strażnika wycieków: po sklonowaniu zainstaluj je poleceniem `skillsync leakguard install-hook .` (jedna instalacja obejmuje worktree klonu). Bez nich push do publicznego repo omija strażnika; `skillsync leakcheck` w katalogu roboczym ostrzega o ich braku.
+
 ## Testy i kontrole
 
 Kody wyjścia kontroli: PASS i NOT_RUN = 0, FAIL = 1, BLOCKED = 2.
@@ -73,6 +75,6 @@ Zadania CI opisuje [development](docs/development.md#ci). Zadanie `leakcheck` dz
 External pull requests are welcome; CI runs the tests and `leakcheck` on pull requests. You need Python 3.11+ and PyYAML;
 run Skillsync from the checkout (`./skillsync`), run the checks from „Testy i kontrole” (`py_compile`, `tests/k1_grep.py`, unit tests), keep all content neutral (no company or client names,
 no local paths, no personal data), run `skillsync leakcheck . --target core` before opening a PR, and
-update `docs/` and `CHANGELOG.md` for any contract change. Tests use temporary directories only and never touch
+update `docs/` and `CHANGELOG.md` for any contract change. After cloning, install the leak-guard hooks with `skillsync leakguard install-hook .` (without them a push to the public repository bypasses the guard; `skillsync leakcheck` in the working tree warns when they are missing). Tests use temporary directories only and never touch
 your own config or layers. Report bugs in GitHub Issues; report vulnerabilities only as described in
 [SECURITY.md](SECURITY.md).

@@ -46,6 +46,10 @@ Konwencje testów jednostkowych projektu (np. `TestCase` z rollbackiem i fixture
 - Timeout i ponowienia ustawia konfiguracja runnera, nie kod testu; testy są deterministyczne i niezależne od kolejności uruchomienia.
 - Jeden scenariusz na test; nazwa opisuje zachowanie.
 
+## Macierz przed pushem
+
+Przed `PUSH SLOT` paczka ma dowód z macierzy wersji i systemów: [prepush-matrix](prepush-matrix.md).
+
 ## Baseline i stare porażki
 
 Stare porażki porównuj według identyfikatorów testów i przyczyn w tym samym środowisku,

@@ -164,6 +164,12 @@ def prepare(workdir, library, chrome_port, port1, port2):
     workdir = Path(workdir).resolve()
     workdir.mkdir(parents=True, exist_ok=True)
     os.chmod(workdir, 0o700)
+    try:   # Windows: the mode means nothing there; an inheriting ACL makes secrets.json and config.yaml private (a no-op elsewhere)
+        sys.path.insert(0, str(REPO))
+        from skillsync_workflow import winacl
+        winacl.restrict_to_owner(str(workdir))
+    except ImportError:
+        pass
     base = workdir / 'base'
     if base.exists():
         shutil.rmtree(base)
@@ -254,10 +260,13 @@ def start_chrome(env, binary):
     # GitHub runners (Ubuntu 24.04) restrict unprivileged user namespaces, so the Chrome sandbox cannot start there.
     # The flag is added only in CI (CI=true), never on a developer machine.
     sandbox = ['--no-sandbox'] if os.environ.get('CI') == 'true' else []
+    # Light colour scheme forced: headless Chrome follows the desktop preference (e.g. GNOME `prefer-dark`), which turns the test pages
+    # dark and fails the light-background assertions (DR-start, DR-późny) on such a machine; CI is light by default (DEBT-142 D7).
     child = subprocess.Popen([binary, '--headless=new', *sandbox, '--remote-debugging-port=%d' % port, '--remote-debugging-address=127.0.0.1',
                               '--user-data-dir=%s' % profile, '--no-first-run', '--no-default-browser-check', '--disable-extensions',
                               '--disable-gpu', '--disable-background-timer-throttling', '--disable-renderer-backgrounding',
-                              '--disable-backgrounding-occluded-windows', '--window-size=1440,900', 'about:blank'],
+                              '--disable-backgrounding-occluded-windows', '--blink-settings=preferredColorScheme=1', '--window-size=1440,900',
+                              'about:blank'],
                              stdout=log, stderr=log, stdin=subprocess.DEVNULL, start_new_session=True, env=child_env)
     log.close()   # the child has its own copy of the descriptor
     CHILDREN[child.pid] = child

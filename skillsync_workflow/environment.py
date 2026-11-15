@@ -17,6 +17,7 @@ from .common import add_project_arguments, contained, emit, load_layer_project, 
 from .quality import _locks, plan_validation, run_validation, _reap_after_termination
 from .selfcmd import self_argv
 from .storage import digest, read_json, state_path, write_json
+from .pathfmt import posix
 
 
 def limit(value, name, maximum=86400):
@@ -175,7 +176,7 @@ def generate(root):
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, 'O_NOFOLLOW', 0), 0o700)
         with os.fdopen(fd, 'w') as handle:
             handle.write(text)
-        paths.append(str(path))
+        paths.append(posix(path))
     return {'status': 'PASS', 'launchers': paths, 'windows_backend': 'BLOCKED', 'reason': 'Windows lifecycle needs a verified process ownership backend'}
 
 

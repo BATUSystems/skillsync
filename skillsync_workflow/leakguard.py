@@ -27,6 +27,7 @@ import yaml
 
 from .common import exit_code, redact
 from .selfcmd import self_argv
+from .pathfmt import posix
 
 SCHEMA = 1
 DATA_DIR = Path(__file__).resolve().parent / 'data'
@@ -611,7 +612,7 @@ def validate_targets(targets):
         if kind is not None and kind not in LAYER_KINDS:
             raise LeakguardError(f'Target {target_id}: kind must be one of: {", ".join(LAYER_KINDS)}')
         values = {}
-        for key in ('authors', 'remote_match'):
+        for key in ('authors', 'remote_match', 'committer_allow'):
             value = entry.get(key, [])
             if not isinstance(value, list) or not all(isinstance(item, str) and item for item in value):
                 raise LeakguardError(f'Target {target_id}: {key} must be a list of nonempty strings')
@@ -962,13 +963,14 @@ def _exempt_rel(rel_git, text, git_top):
 
 
 class _Context:
-    def __init__(self, root, git_top, prefix, scanner, authors, authors_scope='committer'):
+    def __init__(self, root, git_top, prefix, scanner, authors, authors_scope='committer', committer_allow=frozenset()):
         self.root = root
         self.git_top = git_top
         self.prefix = prefix
         self.scanner = scanner
         self.authors = authors
         self.authors_scope = authors_scope
+        self.committer_allow = committer_allow  # DEBT-142 A2: accepted as committer/tagger only, never as an author
         self.notices = set()
         self.warnings = []
 
@@ -1053,7 +1055,7 @@ def _scan_staged(ctx):
         email = _ident_email(ctx.git_top, var)
         if email is None:
             ctx.warnings.append(f'Cannot read the {name} identity; authors not checked')
-        elif email not in ctx.authors:
+        elif email not in ctx.authors:  # `committer_allow` does not apply here: a staged commit is made by the local user, not by a host button
             ctx.scanner.findings.add(('@staged', 'author', name))
     if not local:
         ctx.warnings.append('git user.email is not set')
@@ -1131,7 +1133,8 @@ def _scan_commits(ctx, revs):
         # a merge button) has its author checked; the foreign committer stays a notice.
         if every or (local and committer_email.strip().lower() == local):
             for name, email in (('author', author_email), ('committer', committer_email)):
-                if email.strip().lower() not in ctx.authors:
+                email = email.strip().lower()
+                if email not in ctx.authors and not (name == 'committer' and email in ctx.committer_allow):
                     ctx.scanner.findings.add((path, 'author', name))
         else:
             if local and author_email.strip().lower() == local and local not in ctx.authors:
@@ -1169,7 +1172,7 @@ def _tag_message(body):
 def _scan_tags(ctx, rev):
     """D173: annotated tags pushed as range tips. The tag message and the tagger go
     through the commit surface (class `atrybucje`, path `@tag:<sha>`); the tagger e-mail
-    is checked against `authors` like a committer (D86); the tag name (header `tag`) goes
+    is checked against `authors` (plus `committer_allow`) like a committer (D86); the tag name (header `tag`) goes
     through the filename surface (D174). A tag chain (tag of a tag) is
     followed; the tagged commit itself is not a reason to scan more history (the commit
     range is resolved separately). Lightweight tags are plain commits: nothing to add."""
@@ -1212,7 +1215,7 @@ def _scan_tags(ctx, rev):
                 path = f'@tag:{sha[:12]}'
                 email = tagger.group(2).strip().lower() if tagger else ''
                 if every or (local and email == local):
-                    if email not in ctx.authors:
+                    if email not in ctx.authors and email not in ctx.committer_allow:
                         ctx.scanner.findings.add((path, 'author', 'tagger'))
                 else:
                     ctx.notices.add((path, 'foreign-tag', 'tagger'))
@@ -1237,6 +1240,7 @@ class Prepared:
     authors: set
     trailer_allow: tuple
     authors_scope: str = None
+    committer_allow: frozenset = frozenset()
 
     def scanner(self):
         return _Scanner(self.patterns, self.matcher, self.target, self.target_kind, self.trailer_allow)
@@ -1267,8 +1271,9 @@ def prepare(*, target=None, targets=None, identity_files=(), target_patterns=Non
             authors = {item.lower() for item in entry['authors']}
         else:
             warnings.append(f'Target {target} has no authors; commit authors are not checked')
+    allow = frozenset(item.lower() for item in entry['committer_allow']) if entry else frozenset()
     return Prepared(patterns, matcher, target, entry['kind'] if entry else None, coverage, warnings,
-                    authors, tuple(trailer_allow), entry['authors_scope'] if entry else None)
+                    authors, tuple(trailer_allow), entry['authors_scope'] if entry else None, allow)
 
 
 def scan_texts(items, prepared, surface='content'):
@@ -1290,6 +1295,25 @@ def scan_texts(items, prepared, surface='content'):
     findings = [{'path': p, 'category': c, 'location': l} for p, c, l in sorted(scanner.findings, key=_finding_key)]
     return {'schema': SCHEMA, 'status': 'FAIL' if findings else 'PASS', 'coverage': prepared.coverage,
             'target': prepared.target, 'findings': findings, 'warnings': list(prepared.warnings)}
+
+
+def _hook_warnings(top, target):
+    """DEBT-142 A3 (D12): a clone of a public target without the leakguard hooks lets a push bypass the guard. Read-only
+    (`hook_state`); advisory only: any failure to read the hook state means no warning, never a blocked scan. No local path
+    in the text (reports and CI logs are public). A `core.hooksPath` outside `.git` is named, because `install-hook` refuses
+    there and the guard must be called from the shared hook by hand."""
+    try:
+        state = hook_state(top)
+    except LeakguardError:
+        return []
+    if state['state'] != 'missing':
+        return []
+    missing = ", ".join(state['missing'])
+    if state.get('reason'):
+        return [f'The clone of the public target {target} lacks the leakguard hooks ({missing}): a push would bypass the '
+                f'guard; {state["reason"]}']
+    return [f'The clone of the public target {target} lacks the leakguard hooks ({missing}): a push would bypass the guard; '
+            'run `skillsync leakguard install-hook <clone>`']
 
 
 def leakcheck(path='.', *, mode='worktree', rev_range=None, target=None, targets=None,
@@ -1337,13 +1361,16 @@ def leakcheck(path='.', *, mode='worktree', rev_range=None, target=None, targets
         report['target'] = target
         report['coverage'] = prepared.coverage
         report['warnings'].extend(prepared.warnings)
+        if mode == 'worktree' and top is not None and (targets or {}).get(target, {}).get('scope') == 'public':
+            report['warnings'].extend(_hook_warnings(top, target))
         if require == 'full' and prepared.coverage != 'full':
             report['reason'] = (f'Coverage is {prepared.coverage}; --require full needs identity files '
                                 'for every non-public target')
             return report
         scanner = prepared.scanner()
         prefix = _git_prefix(root) if top is not None else ''
-        ctx = _Context(root, top, prefix, scanner, prepared.authors, prepared.authors_scope or 'committer')
+        ctx = _Context(root, top, prefix, scanner, prepared.authors, prepared.authors_scope or 'committer',
+                       prepared.committer_allow)
         report['authors_scope'] = prepared.authors_scope
         if mode == 'text':
             if not texts:
@@ -1540,7 +1567,7 @@ def hook_state(repo):
             hooks[name] = 'missing'
     missing = [name for name, value in hooks.items() if value in ('missing', 'unreadable')]
     state = 'missing' if missing else ('legacy' if 'legacy' in hooks.values() else 'ok')
-    result = {'state': state, 'hooks': hooks, 'missing': missing, 'directory': str(directory)}
+    result = {'state': state, 'hooks': hooks, 'missing': missing, 'directory': posix(directory)}
     if refusal and missing:
         result['reason'] = refusal
     return result
@@ -1559,10 +1586,24 @@ def _leakcheck_prefix(line):
     return tokens[:tokens.index('leakcheck')]
 
 
-def _hook_path_word(word):
-    """A word of a hook line that is a path to check: absolute for the system, rooted with `/` (a POSIX path in a hook run by
-    `sh`; `os.path.isabs('/x')` is False on Windows since Python 3.13 and was True before, so it is named here) or with a drive."""
-    return os.path.isabs(word) or word.startswith('/') or bool(re.match(r'^[A-Za-z]:[\\/]', word))
+def _hook_word(word):
+    """What a word of a hook line is, for the check of its existence: `('path', native_path)`, `('unchecked', None)` or `('plain', None)`.
+
+    A path with a drive (`C:/x`) or absolute for the system is checked as it is. On Windows a hook is run by the `sh` of Git for
+    Windows (MSYS), where `/c/dir/x` means `C:/dir/x` (checked as such) and the MSYS root (`/usr/bin/env`, `/bin/sh`, `/mingw64/...`)
+    exists only inside it: it cannot be judged natively, so it is `unchecked` (never reported missing). On POSIX a word rooted with `/` is
+    a path. `os.path.isabs('/x')` is False on Windows since Python 3.13 and was True before, which is why the rooted form is named here."""
+    if re.match(r'^[A-Za-z]:[\\/]', word):
+        return 'path', word
+    if os.name == 'nt':
+        drive = re.fullmatch(r'/([A-Za-z])(/.*)?', word)
+        if drive:
+            return 'path', f'{drive.group(1)}:{drive.group(2) or "/"}'
+        if word.startswith('//'):
+            return 'path', word   # UNC (`//server/share/x`): a native path, checked as before the MSYS change
+        if word.startswith('/'):
+            return 'unchecked', None
+    return ('path', word) if os.path.isabs(word) else ('plain', None)
 
 
 def hook_command_problems(repo):
@@ -1592,12 +1633,14 @@ def hook_command_problems(repo):
             if not prefix:
                 continue
             for index, word in enumerate(prefix):
+                what, native = _hook_word(word)
+                if what == 'unchecked':
+                    continue
                 if index == 0:
-                    absolute = _hook_path_word(word)
-                    missing = (not Path(word).exists()) if absolute else (shutil.which(word) is None)
+                    missing = (not Path(native).exists()) if what == 'path' else (shutil.which(word) is None)
                     kind = 'interpreter'
-                elif _hook_path_word(word):
-                    missing, kind = not Path(word).exists(), 'file'
+                elif what == 'path':
+                    missing, kind = not Path(native).exists(), 'file'
                 else:
                     continue
                 if missing and (name, kind, word) not in seen:
@@ -1615,14 +1658,14 @@ def install_hook(repo, *, remove=False, identity_files=(), targets_json=None, ta
         if targets_json:
             validate_targets(_read_yaml(targets_json, 'Targets file'))
         top, directory, refusal = hooks_dir(repo)
-        report['repo'] = str(top)
+        report['repo'] = posix(top)
         if refusal:
             report.update(status='NOT_RUN', reason=refusal, info=True)
             return report
         directory.mkdir(parents=True, exist_ok=True)
         for name in HOOK_NAMES:
             path = directory / name
-            entry = {'name': name, 'path': str(path)}
+            entry = {'name': name, 'path': posix(path)}
             if path.is_symlink():
                 entry['action'] = 'skipped'
                 entry['reason'] = 'existing hook is a symlink (shared hook); add the call manually'

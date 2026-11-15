@@ -132,9 +132,8 @@ Dwie różne flagi warstw:
 
 ## Ścieżki w raportach
 
-Tylko wymienione pola ścieżek w raportach JSON mają na Windows ukośnik `/` (`knowledge init`: `created`, `existing`; `route`: `lessons[].path`, `domain[].path`, `index`; `doctor`: `findings[].path`;
-komunikat `prototype serve` o pliku użytkowników w serwowanym katalogu). Pomocnik: `skillsync_workflow/pathfmt.py` (`posix`). Wyjątek: komendy do wykonania (zadanie `skillsync: link`, komendy hooków,
-`selfcmd`) i ścieżki, które produkt sam otwiera, zostają w postaci natywnej. Na Linuksie i macOS pola ścieżek się nie zmieniają.
+Każde pole ścieżki w raportach JSON ma na Windows ukośnik `/`: `root` i `project` (`status`, `dashboard show`, `catalog list`, `layers *`, `dispatch`, `runs`), `composed_root`, `config`, `manifest`, `backup`, `layers[].path` i `layers[].root` (`layers *`), `budgets[].path` (`doctor`), `log` (`workflow validate`), `checkpoint` (`checkpoint`), `targets` (plan wycofania `upgrade`), `knowledge init` (`created`, `existing`), `route` (`lessons[].path`, `domain[].path`, `index`), `doctor` (`findings[].path`), `leakcheck` (`directory`, `repo`, `hooks[].path`), `env` (`launchers[]`), `e2e` (`recorded`, `scenario`, `report`), `repomap` (`path`) oraz komunikat `prototype serve` o pliku użytkowników; test `tests/test_skillsync_report_paths.py` pilnuje, żeby nowe pole nie wróciło do postaci natywnej. Pomocnik: `skillsync_workflow/pathfmt.py` (`posix`). Wyjątek: komendy do wykonania (zadanie `skillsync: link`, komendy hooków,
+`selfcmd`, `cwd` w `checks[]` raportów `smart-test` i `validate`) i ścieżki, które produkt sam otwiera, zostają w postaci natywnej. Na Linuksie i macOS pola ścieżek się nie zmieniają.
 
 ## Kontrola konfiguracji i kontekstu
 
@@ -187,6 +186,7 @@ Szczegóły: [workflow](workflow.md).
 |---|---|
 | `dashboard show <projekt> [--json] [--plan <rel>]` | stan projektu jako JSON `schema: 1` ([dashboard-contract](dashboard-contract.md)); tylko odczyt |
 | `dashboard serve <projekt> [--port 5140] [--prototype-port N] [--host 127.0.0.1] [--approve-host H] [--read-host H] [--no-approvals] [--plan <rel>] [--session-url URL]` | strona statusu z żywym odświeżaniem (SSE) i przyciskami zgód |
+| `dashboard url <projekt> [--port N] [--host NAZWA] [--json]` | adres z tokenem zgód (`http://127.0.0.1:<port>/#zgoda=<token>`) działającego `dashboard serve` projektu (z pliku stanu w katalogu danych maszyny); `BLOCKED` (exit 2): `server_not_running`, `approvals_disabled` (serwer z `--no-approvals`), `ambiguous_server`, `host_not_allowed`, `invalid_project`; zob. [dashboard-contract](dashboard-contract.md) |
 | `dashboard metrics <projekt> <run-id> [--json] [--plan <rel>]` | czasy podkroków `Fn.k`, liczby rund i porażek przebiegu; podkrok bez danych jest oznaczony jawnie |
 | `approvals record <projekt> --word "GO plan\|GO implement\|CP\|READY" --run <run-id> --source cli\|ide [--sha SHA] [--file PLIK] [--target X] [--branch Y]` | zapis zgody użytkownika w `.skillsync/runs/<run-id>/approvals.jsonl` |
 | `approvals wait …` | czekanie na zgodę (odczyt tego samego pliku), opis w [workflow](workflow.md) |
@@ -273,6 +273,9 @@ skillsync prototype question purge . --slug zwroty                              
 skillsync prototype question purge . --slug zwroty --yes                                 # usuwa wycofane
 skillsync prototype question purge . --slug zwroty --include-open --yes                  # także otwarte bez odpowiedzi i komentarza
 ```
+
+Plik użytkowników jest prywatny: na POSIX tryb 0600, na Windows ACL (tylko użytkownik, SYSTEM i administratorzy lokalni). Komendy `prototype user ...` i `prototype serve` na Windows nie wypisują ostrzeżenia o pominiętej kontroli; stary plik z szerokim ACL jest naprawiany przy pierwszym zapisie albo odczycie (jedna linia `ACL Windows: ograniczono dostęp do pliku ...` w `warnings`), a ostrzeżenie `nie udało się ograniczyć dostępu do pliku ...` pojawia się tylko, gdy ACL nie da się ustawić (FAT/exFAT, udział sieciowy bez obsługi, brak uprawnień). Zapis pliku i tak się udaje. Szczegóły: `docs/prototypes.md`.
+
 
 - `add`: dokładnie jedno z `--assume <wartość>` (pytanie nie zatrzymuje agenta; ekspert potwierdza albo koryguje) i `--blocking`
   (agent czeka). `--slug <slug>` wybiera przebieg, którego `<root>/<slug>/questions.json` dostaje pytanie. Bez `--slug` przebieg

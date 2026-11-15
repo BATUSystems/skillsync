@@ -555,6 +555,34 @@ function summary(m) {
     }
     out.viewer[name] = res;
   }
+  // Token zgód (approvals.tokenRequired, B1): bez tokenu w tej karcie (deps.hasApproveToken() === false) przyciski zgód są nieaktywne z jednym
+  // powodem i nie wołają approve; z tokenem albo gdy serwer go nie wymaga zachowują się jak dotąd. Host bez deps.hasApproveToken (webview) nie jest „bez tokenu”.
+  out.token = {};
+  for (const name of ['cp-ready', 'plan-in-progress', 'questions', 'silence']) {
+    const res = {};
+    for (const mode of ['missing', 'present', 'notRequired', 'noHook']) {
+      const j = JSON.parse(JSON.stringify(input.fixtures[name]));
+      j.approvals.here = true;
+      j.approvals.tokenRequired = mode !== 'notRequired';
+      const deps = mode === 'missing' ? { hasApproveToken: () => false } : mode === 'present' ? { hasApproveToken: () => true } : {};
+      const m = mount(j, { now: input.now[name], deps });
+      res[mode] = summary(m);
+      m.board.destroy();
+      let calls = 0;
+      for (const a of j.approvals.actions) {
+        for (const scope of ['#acts', '#waitBanner']) {
+          const c = mount(j, { now: input.now[name], deps });
+          const btn = () => c.root.querySelector(`${scope} button[data-gate="${a.kind}"]`);
+          if (btn()) { btn().dispatchEvent(new Ev('click')); if (btn()) btn().dispatchEvent(new Ev('click')); }
+          await tick(); await tick();
+          calls += c.calls.approve.length;
+          c.board.destroy();
+        }
+      }
+      res[mode].approveCalls = calls;
+    }
+    out.token[name] = res;
+  }
   // Uzbrojenie wygasa po 5 s (zegar realny w rendererze: tu tylko destroy() czyści timery i nie trzyma procesu).
   // Dane jako tekst: znacznik w tytule i checkpoincie nie tworzy elementu.
   {
@@ -1395,6 +1423,36 @@ class RendererNodeTests(unittest.TestCase):
                 self.assertTrue(got["viewerApproveButtons"] or name == "cp-ready")
 
     VIEWER_TEXT = "Zgody daje prowadzący na komputerze z sesją."
+    TOKEN_TEXT_START = "Zgody wymagają adresu z tokenem"
+
+    def test_missing_token_disables_the_approve_buttons_with_one_reason(self) -> None:
+        waiting_seen = 0
+        for name, modes in self.out["token"].items():
+            with self.subTest(fixture=name, mode="missing"):
+                got = modes["missing"]
+                self.assertNotIn("error", got, got.get("error"))
+                self.assertEqual(got["approveCalls"], 0)   # a click on a disabled button does not reach approve
+                buttons = [b for a in got["acts"] for b in a["buttons"]] + got["bannerButtons"]
+                for b in buttons:
+                    self.assertFalse(b["approveAttr"], b)
+                    if b["state"] == "waiting":
+                        waiting_seen += 1
+                        self.assertTrue(b["disabled"], b)
+                        self.assertTrue((b["extra"] or "").startswith(self.TOKEN_TEXT_START), b)
+        self.assertGreater(waiting_seen, 0, "at least one fixture offers a consent that waits")
+
+    def test_with_a_token_or_without_the_requirement_the_buttons_work_as_before(self) -> None:
+        for name, modes in self.out["token"].items():
+            for mode in ("present", "notRequired", "noHook"):
+                with self.subTest(fixture=name, mode=mode):
+                    got = modes[mode]
+                    self.assertNotIn("error", got, got.get("error"))
+                    reference = self.out["viewer"][name]["absent"]
+                    self.assertEqual(got["approveCalls"], reference["approveCalls"])
+                    buttons = [b for a in got["acts"] for b in a["buttons"]] + got["bannerButtons"]
+                    for b in buttons:
+                        self.assertFalse((b["extra"] or "").startswith(self.TOKEN_TEXT_START), b)
+        self.assertTrue(any(m["present"]["approveCalls"] > 0 for m in self.out["token"].values()))
 
     def test_remote_viewer_cannot_approve(self) -> None:
         for name, modes in self.out["viewer"].items():

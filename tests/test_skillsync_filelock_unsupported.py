@@ -249,6 +249,9 @@ class OpenRefusedForAnInstantTests(unittest.TestCase):
         self.assertEqual(len(calls), 4, 'three refusals, then the open succeeds')
         self.assertFalse(os.path.exists(self.path), 'unlink=True still removes the file')
 
+    # Guard of the bound: a permanent refusal (a real permission problem, e.g. an ACL) must not be retried for the whole lock
+    # timeout (5 s here): it costs at most TRANSIENT_RETRY_SECONDS per call plus one second of slack for a loaded runner. If this
+    # fails with a long `elapsed`, `retry_transient` lost its deadline; if it fails on `len(calls)`, it stopped retrying at all.
     def test_a_lasting_refusal_is_raised_after_the_short_retry_only(self):
         calls, patch = self.refuse_first(10 ** 6)
         started = time.monotonic()
@@ -260,6 +263,9 @@ class OpenRefusedForAnInstantTests(unittest.TestCase):
         self.assertGreater(len(calls), 3, 'it was retried')
         self.assertLess(elapsed, ps.TRANSIENT_RETRY_SECONDS + 1.0, 'not for the whole lock timeout')
 
+    # Guard of the timeout: the retry budget is cut to what is left of the lock timeout (0.1 s here), so a short timeout is
+    # never stretched to TRANSIENT_RETRY_SECONDS; the 0.5 s limit is the retry budget itself (the timing is wall clock: a
+    # failure on a very loaded machine is a reason to look at the load first, then at `min(TRANSIENT_RETRY_SECONDS, ...)`).
     def test_the_retry_never_outlasts_a_short_lock_timeout(self):
         calls, patch = self.refuse_first(10 ** 6)
         started = time.monotonic()

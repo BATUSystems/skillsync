@@ -20,6 +20,7 @@ from .common import load_layer_project, read_project
 from . import layers as _layers
 from .quality import _redact
 from .selfcmd import self_argv
+from .pathfmt import posix
 
 STATUSES = ("PASS", "FAIL", "BLOCKED", "NOT_RUN")
 MAX_RECORDS = 1000
@@ -430,13 +431,13 @@ def _checkpoint_locked(args):
         raise ValueError("Numer próby musi być dodatni")
     if not re.fullmatch(r"[A-Z]{3}", record["cost_unit"]):
         raise ValueError("Jednostka kosztu musi być trzyznakowym kodem waluty")
-    data.update({"run_id": args.run_id, "project": str(root)})
+    data.update({"run_id": args.run_id, "project": posix(root)})
     data["checkpoints"].append(record)
     warnings = _write_warnings(data["checkpoints"], record["step"], record.get("final") is True)
     if record.get("final") is True:
         warnings += _retro_warnings(path, args.run_id, data["checkpoints"])
     _write(path, data)
-    result = {"status": args.status, "checkpoint": str(path), "record": record}
+    result = {"status": args.status, "checkpoint": posix(path), "record": record}
     if warnings:
         result["warnings"] = warnings
     _emit(args, result)
@@ -839,7 +840,7 @@ def benchmark(args):
               "status": "NOT_RUN" if not args.run else ("BLOCKED" if any(c["status"] == "BLOCKED" for c in results)
                          else ("PASS" if all(c["status"] == "PASS" for c in results) else "FAIL")),
               "suite_sha256": _hash_file(Path(args.suite)), "cases": results,
-              "cost": None, "project": str(root)}
+              "cost": None, "project": posix(root)}
     if args.run:
         path = _store_path(Path(root).resolve(), "benchmark-" + str(time.time_ns()))
         _write(path, {"schema_version": 1, "checkpoints": [], "benchmark": result})

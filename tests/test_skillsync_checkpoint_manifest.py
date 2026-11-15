@@ -44,6 +44,26 @@ class ManifestFlagTests(WorkflowFixture):
         self.assertEqual((report['run_id'], report['step']), ('task', 'verify'), resumed.stdout + resumed.stderr)
         self.assertNotIn('Missing manifest', resumed.stdout + resumed.stderr)
 
+    def passing(self, step, *extra, run='task'):
+        return self.run_cli('checkpoint', '--run-id', run, '--step', step, '--status', 'PASS', '--next', 'next',
+                            '--evidence', '.skillsync/evidence/result.log', '--manifest', self.copy, *extra)
+
+    def test_final_and_retro_quality_work_with_a_manifest_outside_the_repository(self):
+        """DEBT-142 D57: the public core (no `.github/.skillsync.yaml`) closes a run: `retro-quality` PASS, then `--final`."""
+        self.write('.skillsync/evidence/result.log', 'Ran 1 test\nOK\n')
+        self.git('add', '-A')
+        self.git('commit', '-qm', 'evidence')
+        without = self.passing('verify', '--final')
+        self.assertEqual(without.returncode, 0, without.stdout + without.stderr)
+        warned = json.loads(without.stdout)
+        self.assertTrue(any(w.startswith('retro-quality-missing') for w in warned.get('warnings', [])), warned)
+        self.assertEqual(self.passing('retro-quality', run='closed').returncode, 0)     # another run: the first one is final already
+        final = self.passing('closure', '--final', run='closed')
+        self.assertEqual(final.returncode, 0, final.stdout + final.stderr)
+        report = json.loads(final.stdout)
+        self.assertFalse([w for w in report.get('warnings', []) if w.startswith('retro-quality')], report)
+        self.assertTrue((self.root / '.skillsync' / 'runs' / 'closed.json').is_file())
+
     def test_a_bad_manifest_path_is_refused_with_the_flag_named(self):
         for value in (self.base / 'nie-ma.yaml', self.base):
             with self.subTest(value=str(value)):
