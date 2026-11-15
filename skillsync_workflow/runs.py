@@ -5,7 +5,7 @@ import json
 import math
 import os
 import shlex
-from pathlib import Path, PurePosixPath, PureWindowsPath
+from pathlib import Path, PurePath, PurePosixPath, PureWindowsPath
 import re
 import signal
 import shutil
@@ -120,7 +120,7 @@ def _is_rooted(value):
     """True for a path that does not stay relative: absolute, POSIX-rooted (`/etc/x`) and, on Windows, rooted (`\\x`)
     or with a drive (`C:x`); `Path("/etc/x").is_absolute()` alone is False on Windows."""
     text = str(value)
-    if Path(text).is_absolute() or PurePosixPath(text).is_absolute():
+    if PurePath(text).is_absolute() or PurePosixPath(text).is_absolute():   # PurePath: no instance of a foreign Path class
         return True
     return os.name == "nt" and bool(PureWindowsPath(text).anchor)
 
