@@ -550,8 +550,8 @@ def _wait_gone(root_pid, members, seconds):
 
 def orphans_of(record, table):
     """What lives of a recorded run when its leader may be gone: the recorded helpers whose identity still matches and the processes of the
-    recorded group that started after the leader (a group number is not reused while the group has members). Never this process, its
-    ancestors or another user's process."""
+    recorded group that started after the leader, unless the leader's number now belongs to another process (then no group is touched; the
+    helpers of the record are still checked one by one). Never this process, its ancestors or another user's process."""
     found = {}
     protected = _protected()
     for item in record.get('members') or []:
@@ -559,7 +559,12 @@ def orphans_of(record, table):
         if same_identity(row, item) and item['pid'] not in protected and item['pid'] > 1:
             found[item['pid']] = identity_of(row)
     pgid = record.get('pgid')
-    if pgid and pgid > 1 and pgid == record['pid'] and pgid != os.getpgrp():   # only a group the leader founded itself, never the one of this process
+    leader = table.get(record['pid'])
+    stranger = leader is not None and not leader['state'].startswith('Z') and not same_identity(leader, record)
+    # The group is swept only when its number still means the leader of the record: a living process with the leader's number but another
+    # identity is a stranger (the number was reused) and so is everything in its group. Only a group the leader founded itself, never the
+    # one of this process.
+    if pgid and pgid > 1 and pgid == record['pid'] and pgid != os.getpgrp() and not stranger:
         for row in table.values():
             if (row['pgid'] == pgid and row['pid'] != record['pid'] and row['pid'] > 1 and row['pid'] not in protected
                     and row['uid'] == os.getuid() and not row['state'].startswith('Z') and row['start'] >= record['start'] - START_TOLERANCE):
