@@ -12,12 +12,14 @@
   // serwera ani do proxy; strona zapamiętuje token w localStorage tego originu i czyści pasek adresu. Bez tokenu strona jest tylko do odczytu.
   const TOKEN_KEY = "approveToken";
   const approveToken = () => store.get(TOKEN_KEY);
-  (() => {
+  function takeTokenFromHash() {
     const found = /^#zgoda=([A-Za-z0-9_-]{16,128})$/.exec(location.hash || "");
-    if (!found) return;
+    if (!found) return false;
     store.set(TOKEN_KEY, found[1]);
     try { history.replaceState(null, "", location.pathname + location.search); } catch { location.hash = ""; }
-  })();
+    return true;
+  }
+  takeTokenFromHash();
   const st = { plan: store.get("plan"), live: "connecting", es: null, pollTimer: null, lastEvent: 0, fetching: null, again: false, lastFetchOk: 0 };
 
   // ------------------------------------------------------------------ motyw (pierwszy wybór ustawia theme.js w <head>)
@@ -41,7 +43,7 @@
       const r = await fetch("/api/approve", { method: "POST", cache: "no-store", headers,
         body: JSON.stringify({ kind, path, sha, plan: st.plan || null }) });
       const body = await r.json().catch(() => ({}));
-      if (r.status === 403 && token && typeof body.error === "string" && body.error.includes("token")) { store.set(TOKEN_KEY, null); refresh(); }  // nieaktualny (restart serwera)
+      if (r.status === 403 && token && body.code === "approve_token") { store.set(TOKEN_KEY, null); refresh(); }  // nieaktualny (restart serwera)
       return r.ok ? { ok: true, word: body.word, text: body.next } : { ok: false, word, text: body.error || `Błąd ${r.status}` };
     } catch {
       return { ok: false, word, text: "Brak połączenia z serwerem statusu." };
@@ -142,6 +144,9 @@
   window.addEventListener("scroll", () => board.hideTip(), { passive: true });
   if (darkQuery && darkQuery.addEventListener) darkQuery.addEventListener("change", () => board.syncTheme());
   setInterval(() => board.tick(), 1000);
+
+  // Nowy adres z tokenem wklejony do tej samej karty (po restarcie serwera) zmienia tylko fragment: bez przeładowania, więc czytamy go tu.
+  window.addEventListener("hashchange", () => { if (takeTokenFromHash()) refresh(); });
 
   // ------------------------------------------------------------------ start
   const hash = decodeURIComponent(location.hash.slice(1));

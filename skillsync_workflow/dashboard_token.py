@@ -13,6 +13,7 @@ removed when the server stops, and a leftover of a killed process is ignored: th
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import json
 import os
 import secrets
@@ -33,6 +34,18 @@ LOOPBACK = ("127.0.0.1", "localhost", "::1")
 
 def new_token() -> str:
     return secrets.token_urlsafe(TOKEN_BYTES)
+
+
+def token_id(token: str) -> str:
+    """A short digest of the token for `/healthz` and the state file (never the token): 32 bits of a 192-bit hash tell nothing about it."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()[:8]
+
+
+def bind_name(host: str) -> str:
+    """The name of the address a server really listens on, for an address with the token: a wildcard bind answers on loopback."""
+    if host in ("", "0.0.0.0", "::"):
+        return "127.0.0.1"
+    return host
 
 
 def state_dir() -> Path:
@@ -62,12 +75,15 @@ def _restrict(path: Path):
     except ImportError:
         return False
     try:
-        return bool(winacl.restrict_to_owner(path))
+        try:
+            return bool(winacl.restrict_to_owner(path, emit=False))   # we warn once ourselves (`write_state`)
+        except TypeError:   # a helper without the `emit` parameter
+            return bool(winacl.restrict_to_owner(path))
     except Exception:  # noqa: BLE001 - an ACL helper must never stop the server
         return False
 
 
-def write_state(root, port: int, token: str, host: str = "127.0.0.1", warn=None):
+def write_state(root, port: int, token: str, host: str = "127.0.0.1", warn=None, hosts=()):
     """Write the state file of the server; returns its path, or None when it could not be written (the page still works)."""
     path = state_path(root, port)
     try:
@@ -75,7 +91,8 @@ def write_state(root, port: int, token: str, host: str = "127.0.0.1", warn=None)
         directory.mkdir(parents=True, exist_ok=True)
         restricted = _restrict(directory)
         record = {"schema": SCHEMA, "pid": os.getpid(), "port": int(port), "host": host, "root": str(_resolved(root)),
-                  "startedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"), "token": token}
+                  "startedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"), "token": token,
+                  "tokenId": token_id(token), "hosts": [str(name) for name in hosts]}
         handle, temporary = tempfile.mkstemp(dir=str(directory), prefix=".tmp-", suffix=".json")
         try:
             with os.fdopen(handle, "w", encoding="utf-8", newline="\n") as stream:
@@ -110,12 +127,20 @@ def _pid_alive(pid) -> bool:
     return link_pid_alive(pid)
 
 
-def _healthy(host: str, port: int, timeout: float = 1.0) -> bool:
-    """Does a status page answer `/healthz` on this port? (A leftover file of a killed server must not be offered.)"""
-    target = "[::1]" if host == "::1" else "127.0.0.1"
+def _healthy(host: str, port: int, token_id_expected: str | None = None, timeout: float = 1.0) -> bool:
+    """Does the status page of THIS server answer `/healthz` on this address? A leftover file of a killed server must not be offered:
+    a stranger on the port is told apart by `tokenId` (a digest, never the token); the token itself is never sent. `Host: localhost` is
+    what the page accepts whatever address it is reached on."""
     try:
-        with urllib.request.urlopen(f"http://{target}:{port}/healthz", timeout=timeout) as response:
-            return response.status == 200 and bool(json.load(response).get("ok"))
+        ip = ipaddress.ip_address(host.strip("[]"))
+    except ValueError:
+        ip = ipaddress.ip_address("127.0.0.1")   # a name from the file is never connected to
+    target = f"[{ip}]" if ip.version == 6 else str(ip)
+    request = urllib.request.Request(f"http://{target}:{port}/healthz", headers={"Host": "localhost"})
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            data = json.load(response)
+            return response.status == 200 and bool(data.get("ok")) and (token_id_expected is None or data.get("tokenId") == token_id_expected)
     except (OSError, ValueError, urllib.error.URLError):
         return False
 
@@ -141,10 +166,14 @@ def servers(root, port: int | None = None, healthy=None) -> list[dict]:
         if port is not None and record["port"] != port:
             continue
         if os.name != "nt" and not _pid_alive(record.get("pid")):   # Windows: `os.kill(pid, 0)` would terminate the process; `/healthz` decides there
+            try:
+                (state_dir() / name).unlink()   # the leftover of a killed server
+            except OSError:
+                pass
             continue
-        if not healthy(record.get("host") or "127.0.0.1", record["port"]):
+        if not healthy(record.get("host") or "127.0.0.1", record["port"], token_id(record["token"])):
             continue
-        found.append({key: record.get(key) for key in ("port", "pid", "host", "token", "startedAt")})
+        found.append({key: record.get(key) for key in ("port", "pid", "host", "token", "startedAt", "hosts")})
     return found
 
 
@@ -176,7 +205,14 @@ def url_command(args) -> int:
     if len(running) > 1:
         return blocked("ambiguous_server", "kilka serwerów tego projektu: podaj --port (" + ", ".join(str(item["port"]) for item in running) + ")")
     chosen = running[0]
-    url = address(chosen["port"], chosen["token"], getattr(args, "host", None) or "127.0.0.1")
+    name = getattr(args, "host", None) or None
+    if name is not None:
+        # The name only makes text, but a browser sends the fragment to that site's script: only the loopback and the names the server was
+        # started with (`--approve-host`, kept in its state file) are accepted.
+        allowed = set(LOOPBACK) | {chosen.get("host")} | set(chosen.get("hosts") or [])
+        if name.lower() not in {str(item).lower() for item in allowed if item}:
+            return blocked("host_not_allowed", "--host: tylko loopback albo nazwa z --approve-host tego serwera (" + ", ".join(sorted(chosen.get("hosts") or [])) + ")")
+    url = address(chosen["port"], chosen["token"], name or chosen.get("host") or "127.0.0.1")
     if args.json:
         return emit({"schema": 1, "status": "PASS", "url": url, "port": chosen["port"], "pid": chosen["pid"]})
     print(url)

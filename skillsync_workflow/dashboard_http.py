@@ -680,7 +680,10 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
             if route == "/api/descriptions":
                 return self._json(200, load_descriptions(self.board.descriptions))
             if route == "/healthz":
-                return self._json(200, {"ok": True, "version": self.board.version})
+                answer = {"ok": True, "version": self.board.version}
+                if self.board.approve_token:   # a short digest, never the token: `dashboard url` tells its server from a stranger on the port
+                    answer["tokenId"] = dashboard_token.token_id(self.board.approve_token)
+                return self._json(200, answer)
             return self._json(404, {"error": "Nie ma takiej strony."})
         except (BrokenPipeError, ConnectionResetError):
             return None
@@ -721,7 +724,7 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
                 return self._json(404, {"error": "Nie ma takiej strony."})
             refused = self._approve_allowed()
             if refused:
-                return self._json(403, {"error": refused})
+                return self._json(403, {"error": refused, "code": "approve_token"} if refused == TOKEN_REFUSED else {"error": refused})
             length = int(self.headers.get("Content-Length") or 0)
             if not 0 < length <= MAX_BODY:
                 return self._json(400, {"error": "Nieprawidłowa długość żądania."})
@@ -908,10 +911,15 @@ def serve_command(args) -> int:
         if board.approvals:
             # The only place where the token is printed: a fragment goes neither to the server nor to a proxy. The page keeps it in the
             # browser; `skillsync dashboard url <project>` prints the same address for a running server (state file outside the project).
-            token_host = "::1" if host == "::1" else "127.0.0.1"
+            token_host = dashboard_token.bind_name(host)   # where the server really listens (a wildcard bind: loopback)
             log(f"zgody (przyciski na stronie): otwórz {dashboard_token.address(port, board.approve_token, token_host)} "
                 f"(bez fragmentu strona działa tylko do odczytu; adres z tokenem: `skillsync dashboard url`)")
-            dashboard_token.write_state(board.root, port, board.approve_token, token_host, warn=lambda text: log(f"UWAGA: {text}"))
+            for name in sorted(board.approve_hosts - LOOPBACK_HOSTS):
+                log(f"  zdalnie ({name}, --approve-host): {dashboard_token.address(port, board.approve_token, name)}")
+            dashboard_token.write_state(board.root, port, board.approve_token, token_host, warn=lambda text: log(f"UWAGA: {text}"),
+                                        hosts=sorted(board.approve_hosts - LOOPBACK_HOSTS))
+        else:
+            dashboard_token.remove_state(board.root, port)   # a leftover of a killed server with consents on this port
         extra = sorted(board.approve_hosts - LOOPBACK_HOSTS)
         readers = sorted(board.read_hosts - board.approve_hosts)
         if extra:

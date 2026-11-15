@@ -1118,7 +1118,7 @@ class HttpSecurityTests(HttpCase):
         self.assertEqual(ctx.exception.headers["X-Frame-Options"], "DENY")
         self.assertEqual(ctx.exception.headers["X-Content-Type-Options"], "nosniff")
         with self.get("/healthz") as r:
-            self.assertEqual(json.load(r), {"ok": True, "version": self.board.version})
+            self.assertEqual(json.load(r), {"ok": True, "version": self.board.version, "tokenId": srv.dashboard_token.token_id(TEST_TOKEN)})
         with self.get("/api/status") as r:
             data = json.load(r)
         self.assertEqual((data["schema"], data["app"]["name"]), (1, "dashboard"))  # ten sam kontrakt co `dashboard show`
@@ -1948,7 +1948,7 @@ class ServeCommandTests(unittest.TestCase):
                 break
             except OSError:
                 time.sleep(0.1)
-        self.assertEqual(health, {"ok": True, "version": 0}, proc.stderr.read() if proc.poll() is not None else "")
+        self.assertEqual({k: v for k, v in health.items() if k != "tokenId"}, {"ok": True, "version": 0}, proc.stderr.read() if proc.poll() is not None else "")
         with urllib.request.urlopen(base + "/", timeout=5) as r:
             self.assertIn("text/html", r.headers["Content-Type"])
         with urllib.request.urlopen(base + "/api/status", timeout=5) as r:

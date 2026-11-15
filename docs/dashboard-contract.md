@@ -569,9 +569,9 @@ oba wymuszają preflight CORS, na który serwer nie odpowiada; brak `Origin` (kl
 **Token zgód.** Serwer tworzy go na proces (`secrets.token_urlsafe(24)`); nie ma go w `/api/status`, assetach, logu ani raporcie błędu. Użytkownik dostaje go w adresie z fragmentem
 `http://127.0.0.1:<port>/#zgoda=<token>` (fragment nie trafia do serwera ani do proxy, więc klient z podrobionym `Host` go nie zna): z linii konsoli `dashboard serve`
 albo z `skillsync dashboard url <projekt> [--port N] [--host NAZWA] [--json]`, który czyta plik stanu `<katalog danych maszyny>/dashboard/<skrót katalogu projektu>-<port>.json`
-(poza drzewem projektu; 0600 w katalogu 0700, na Windows ACL właściciela; zapis atomowy, ACL na pliku tymczasowym przed `os.replace`; usuwany przy zamknięciu serwera;
-pozostałość po zabitym procesie jest ignorowana: serwer musi odpowiadać `/healthz`). `dashboard url`: `PASS {url, port, pid}` albo `BLOCKED` (exit 2) z kodem
-`server_not_running` (też serwer z `--no-approvals`), `ambiguous_server` (kilka serwerów projektu, podaj `--port`), `invalid_project`. Strona (`app.js`) czyta fragment `#zgoda=`,
+(poza drzewem projektu; 0600 w katalogu 0700, na Windows ACL właściciela przez wspólny pomocnik, gdy jest; zapis atomowy, ACL na pliku tymczasowym przed `os.replace`; usuwany przy zamknięciu serwera i przy starcie serwera z `--no-approvals`;
+pozostałość po zabitym procesie jest ignorowana albo usuwana: serwer musi odpowiadać `/healthz` z tym samym skrótem tokenu `tokenId` (8 znaków hex, nie token); plik zawiera też adres bindu i nazwy z `--approve-host`). `dashboard url`: `PASS {url, port, pid}` albo `BLOCKED` (exit 2) z kodem
+`server_not_running` (też serwer z `--no-approvals`), `ambiguous_server` (kilka serwerów projektu, podaj `--port`), `host_not_allowed` (`--host` spoza loopbacku i nazw z `--approve-host` tego serwera), `invalid_project`. Odmowa tokenu ma w treści `code: "approve_token"` (strona po nim, nie po tekście, zapomina nieaktualny token). `/healthz` ma `tokenId` przy serwerze ze zgodami. Strona (`app.js`) czyta fragment `#zgoda=`,
 zapisuje token w `localStorage` swojego originu, czyści pasek adresu (`history.replaceState`) i wysyła `X-Approve-Token`; bez tokenu (albo po jego odrzuceniu po restarcie serwera)
 przyciski zgód są nieaktywne z jednym powodem, a odczyt działa w pełni. `--approve-host`: zdalna przeglądarka potrzebuje `Host` na liście i adresu z tokenem (`dashboard url --host NAZWA`).
 Dalej `Content-Length` 1–4096 (inaczej 400), treść JSON-obiekt (inaczej 400), `--no-approvals` = 403, akcja

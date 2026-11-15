@@ -35,11 +35,13 @@ const ctx = {
   },
 };
 ctx.window = ctx;
-ctx.addEventListener = () => {};
+const listeners = {};
+ctx.addEventListener = (name, fn) => { listeners[name] = fn; };
 ctx.DashboardRenderer = { create: (el, deps) => { ctx.deps = deps; return new Proxy({}, { get: () => () => {} }); } };
 vm.createContext(ctx);
 vm.runInContext(src, ctx);
 (async () => {
+  if (sc.laterHash) { location.hash = sc.laterHash; listeners.hashchange && listeners.hashchange(); }
   const result = sc.approve ? await ctx.deps.actions.approve({ kind: 'spec', path: 'p', sha: 's', word: 'GO plan' }) : null;
   await new Promise((r) => setImmediate(r));
   const approveCall = calls.fetch.find((c) => c.url === '/api/approve') || null;
@@ -92,7 +94,7 @@ class AppToken(unittest.TestCase):
                 self.assertFalse(out["hasToken"])
 
     def test_a_refused_token_is_forgotten_and_the_status_is_fetched_again(self) -> None:
-        refused = {"error": "Brak albo zły token zgody: otwórz adres z konsoli serwera albo z `skillsync dashboard url`."}
+        refused = {"error": "Brak albo zły token zgody: otwórz adres z konsoli serwera albo z `skillsync dashboard url`.", "code": "approve_token"}
         out = self.run_app(storage={"dashboard:approveToken": TOKEN}, ok=False, status=403, body=refused)
         self.assertEqual(out["storage"], {})
         self.assertFalse(out["hasToken"])
@@ -102,6 +104,18 @@ class AppToken(unittest.TestCase):
     def test_another_refusal_keeps_the_token(self) -> None:
         out = self.run_app(storage={"dashboard:approveToken": TOKEN}, ok=False, status=403, body={"error": "Obcy Origin."})
         self.assertEqual(out["storage"], {"dashboard:approveToken": TOKEN})
+        out = self.run_app(storage={"dashboard:approveToken": TOKEN}, ok=False, status=403,
+                           body={"error": "Brak albo zły token zgody (tekst bez kodu)."})
+        self.assertEqual(out["storage"], {"dashboard:approveToken": TOKEN}, "only the code, not a word of the text, makes the page forget the token")
+
+    def test_a_new_address_pasted_into_the_same_tab_is_taken(self) -> None:
+        out = self.run_app(laterHash="#zgoda=" + TOKEN, approve=False)
+        self.assertEqual(out["storage"], {"dashboard:approveToken": TOKEN})
+        self.assertEqual(out["replaced"], ["/?plan=x"])
+        self.assertTrue(out["hasToken"])
+        self.assertGreaterEqual(out["statusFetches"], 2, "the page refreshes so that the buttons become active")
+        out = self.run_app(laterHash="#docs:docs/plans/x.md", approve=False)
+        self.assertEqual(out["storage"], {})
 
     def test_the_page_source_never_prints_or_logs_the_token(self) -> None:
         source = APP.read_text(encoding="utf-8")

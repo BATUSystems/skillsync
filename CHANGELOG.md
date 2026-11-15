@@ -15,7 +15,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 ### Added
 
 - `skillsync dashboard url <project> [--port N] [--host NAME] [--json]`: the address with the consent token of a running `dashboard serve` (`http://127.0.0.1:<port>/#zgoda=<token>`), read from a state file in the machine data directory (outside the project, 0600 in a 0700 directory, ACL on Windows through the shared helper when present); `BLOCKED` (exit 2) `server_not_running`, `ambiguous_server`, `invalid_project`.
-- `/api/status`: `approvals.tokenRequired` (HTTP only; `dashboard show` unchanged).
+- `/api/status`: `approvals.tokenRequired` (HTTP only; `dashboard show` unchanged); `/healthz`: `tokenId` (an 8-hex digest of the token, never the token) for a server with consents; the refusal of a token has `code: "approve_token"` in its body.
 
 ### Changed
 
