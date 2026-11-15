@@ -121,12 +121,13 @@ class HookCommandMissingTest(CommandsCase):
         bin_dir = self.path.parent / 'path-bin'
         bin_dir.mkdir()
         full_path = os.pathsep.join([str(bin_dir), os.environ.get('PATH', '')])      # git stays reachable
-        write(self.hooks / 'pre-commit', '#!/bin/sh\nskillsync.py leakcheck "$PWD" --staged || exit $?\n', executable=True)
+        command = 'skillsync.exe' if os.name == 'nt' else 'skillsync.py'      # `which` needs an extension of PATHEXT on Windows
+        write(self.hooks / 'pre-commit', f'#!/bin/sh\n{command} leakcheck "$PWD" --staged || exit $?\n', executable=True)
         with unittest.mock.patch.dict(os.environ, {'PATH': full_path}):
             found = self.broken(self.findings())
         self.assertEqual(len(found), 1)
         self.assertIn('pre-commit', found[0]['message'])
-        write(bin_dir / 'skillsync.py', '#!/bin/sh\nexit 0\n', executable=True)
+        write(bin_dir / command, '#!/bin/sh\nexit 0\n', executable=True)
         with unittest.mock.patch.dict(os.environ, {'PATH': full_path}):
             self.assertEqual(self.broken(self.findings()), [])
 
@@ -401,7 +402,7 @@ class LayersInitTest(CommandsCase):
     def test_shared_hooks_path_is_never_written_and_init_still_succeeds(self):
         shared = self.work / 'shared-hooks'
         shared.mkdir()
-        Path(self.env['GIT_CONFIG_GLOBAL']).write_text(f'[core]\n\thooksPath = {shared}\n', encoding='utf-8')
+        Path(self.env['GIT_CONFIG_GLOBAL']).write_text(f'[core]\n\thooksPath = {shared.as_posix()}\n', encoding='utf-8')
         code, report = self.cli_json('layers', 'init', str(self.work / 'mine'), '--kind', 'personal')
         self.assertEqual((code, report['status']), (0, 'PASS'))
         self.assertTrue(any(item.startswith('hooks:') and 'core.hooksPath' in item for item in report['warnings']), report['warnings'])
