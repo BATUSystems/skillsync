@@ -198,13 +198,13 @@ class BuildStatus(unittest.TestCase):
 
     def test_marker_shows_in_prototype_and_waiting(self):
         data = self.status(writing=lambda slug: MARK if slug == 'demo' else None)
-        self.assertEqual(data['prototype']['writing'], MARK)
+        self.assertEqual(data['prototype']['writing'], {**MARK, 'screensDone': 2})  # screensDone: screens of the acceptance (STATUS-160-A)
         self.assertEqual([item['source'] for item in data['waiting']], ['writing'])
 
     def test_real_marker_file_is_read_with_the_injected_clock(self):
         prototype_server.write_writing(str(self.root / 'docs' / 'prototypes' / 'demo'), NOW, 900, 'zz-writer')
         data = self.status(now_ms=NOW + 1000)
-        self.assertEqual(data['prototype']['writing'], {'since': NOW, 'expiresAt': NOW + 900_000, 'renewedAt': NOW})
+        self.assertEqual(data['prototype']['writing'], {'since': NOW, 'expiresAt': NOW + 900_000, 'renewedAt': NOW, 'screensDone': 2})
         self.assertNotIn('zz-writer', str(data))
         self.assertEqual([item['source'] for item in data['waiting']], ['writing'])
         gone = self.status(now_ms=NOW + 900_000)

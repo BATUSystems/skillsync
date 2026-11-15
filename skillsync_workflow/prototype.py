@@ -2795,7 +2795,18 @@ def _writing_ttl(value):
     return seconds if server.WRITING_TTL_MIN <= seconds <= server.WRITING_TTL_MAX else None
 
 
-def writing_prototype(root, manifest, slug, action, ttl=None, by=None):
+def _writing_screens(value):
+    """The `--screens` number of `writing start` (1-200), None when absent, False when invalid."""
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not re.fullmatch(r'[0-9]{1,4}', text):
+        return False
+    number = int(text)
+    return number if server.WRITING_SCREENS_MIN <= number <= server.WRITING_SCREENS_MAX else False
+
+
+def writing_prototype(root, manifest, slug, action, ttl=None, by=None, screens=None):
     """`writing <slug> start|done|status`: the marker "the agent is still writing screens" (`.writing.json`).
 
     `start` writes it under the prototype lock (`expiresAt = now + ttl`; a repeated `start` on a valid marker keeps
@@ -2808,6 +2819,10 @@ def writing_prototype(root, manifest, slug, action, ttl=None, by=None):
     if seconds is None:
         return _blocked('invalid_args', f'--ttl must be a whole number of seconds from {server.WRITING_TTL_MIN} '
                                         f'to {server.WRITING_TTL_MAX}')
+    planned = _writing_screens(screens)
+    if planned is False:
+        return _blocked('invalid_args', f'--screens must be a whole number from {server.WRITING_SCREENS_MIN} '
+                                        f'to {server.WRITING_SCREENS_MAX}')
     who = by
     if who is not None and (not isinstance(who, str) or not server.WRITING_BY_RE.fullmatch(who)):
         return _blocked('invalid_args', '--by must be 1-64 characters of letters, digits and . _ @ + -')
@@ -2819,7 +2834,7 @@ def writing_prototype(root, manifest, slug, action, ttl=None, by=None):
     try:
         if action == 'start':
             with store.lock():
-                writing = server.write_writing(str(directory), now_ms, seconds, who)
+                writing = server.write_writing(str(directory), now_ms, seconds, who, planned)
             try:
                 gitignore = directory / '.gitignore'
                 text = _ensure_lines(gitignore, (server.WRITING_MARKER,), server.WRITING_MARKER + '\n')
@@ -2838,6 +2853,8 @@ def writing_prototype(root, manifest, slug, action, ttl=None, by=None):
     if writing is not None and action == 'status':
         report['writing'] = {'since': writing['since'], 'expiresAt': writing['expiresAt'],
                              'renewedAt': writing['renewedAt'], 'by': writing['by']}
+        if 'screensPlanned' in writing:
+            report['writing']['screensPlanned'] = writing['screensPlanned']
     if warnings:
         report['warnings'] = warnings
     return report
@@ -4646,7 +4663,8 @@ def _cmd_reply(args, root, manifest, layerset):
 
 
 def _cmd_writing(args, root, manifest, layerset):
-    return writing_prototype(root, manifest, args.slug, args.writing_action, ttl=args.ttl, by=args.by)
+    return writing_prototype(root, manifest, args.slug, args.writing_action, ttl=args.ttl, by=args.by,
+                             screens=getattr(args, 'screens', None))
 
 
 def _cmd_wait(args, root, manifest, layerset):
@@ -4903,6 +4921,8 @@ def register(subparsers):
     writing.add_argument('writing_action', choices=('start', 'done', 'status'), metavar='start|done|status')
     writing.add_argument('--ttl', help='Seconds the marker lasts, 60-3600 (default 900; start again to renew)')
     writing.add_argument('--by', help='Who writes (letters, digits and . _ @ + -, at most 64; default agent)')
+    writing.add_argument('--screens', help='start: how many screens you plan to write, 1-200 (the status page shows N of M; '
+                                           'a renewal without it keeps the number)')
     writing.set_defaults(func=_run(_cmd_writing))
     wait = actions.add_parser('wait', help='Wait for a new comment by a person or for the acceptance of all screens '
                                            '(exit 0 with event comment|accepted, 3 on timeout)')

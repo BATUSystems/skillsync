@@ -155,5 +155,50 @@ class ActivePercent(Project):
         self.assertEqual(dashboard._active_percent(0, 1, 0), 0)
 
 
+class WritingScreens(Project):
+    """`prototype.writing.screensPlanned/screensDone`, the waiting item "agent pisze ekrany (N z M, …)" and the active prototype tile."""
+
+    def add_prototype(self, root):
+        spec = next(root.glob('docs/specs/*.md')).relative_to(root).as_posix()
+        directory = root / 'docs' / 'prototypes' / 'demo'
+        directory.mkdir(parents=True)
+        (directory / 'prototype.json').write_text('{"slug": "demo", "requirements": "%s"}\n' % spec, encoding='utf-8')
+
+    def status_with(self, root, planned, screens):
+        mark = {'since': 1_700_000_000_000, 'expiresAt': 1_700_000_900_000, 'renewedAt': 1_700_000_000_000}
+        if planned is not None:
+            mark['screensPlanned'] = planned
+        return dashboard.build_status(root, prototype_port=1, writing=lambda slug: dict(mark),
+                                      acceptance=lambda slug: {'screens': screens, 'accepted': 0, 'stale': 0}, ahead=lambda *args: {})
+
+    def test_screens_done_is_the_acceptance_screen_count_and_planned_is_passed_through(self):
+        root = self.project('spec-act')
+        self.add_prototype(root)
+        writing = self.status_with(root, 12, 5)['prototype']['writing']
+        self.assertEqual((writing['screensPlanned'], writing['screensDone']), (12, 5))
+
+    def test_without_a_plan_the_item_has_no_counts_and_the_marker_no_planned_field(self):
+        root = self.project('spec-act')
+        self.add_prototype(root)
+        status = self.status_with(root, None, 3)
+        self.assertNotIn('screensPlanned', status['prototype']['writing'])
+        item = next(w for w in status['waiting'] if w['source'] == 'writing')
+        self.assertNotIn(' z ', item['what'].split('(')[1].split(',')[0])
+
+    def test_waiting_item_names_done_of_planned(self):
+        root = self.project('spec-act')
+        self.add_prototype(root)
+        item = next(w for w in self.status_with(root, 12, 5)['waiting'] if w['source'] == 'writing')
+        self.assertIn('(5 z 12, do ', item['what'])
+        self.assertEqual(item['who']['role'], 'agent')
+
+    def test_the_prototype_stage_is_active_while_the_marker_is_valid(self):
+        root = self.project('spec-act')
+        self.add_prototype(root)
+        stages = {s['key']: s for s in self.status_with(root, 12, 5)['acts'][0]['stages']}
+        self.assertEqual(stages['stage_prototype']['state'], 'active')
+        self.assertTrue(stages['stage_prototype']['since'])
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -1559,7 +1559,9 @@ def _local_hhmm(millis):
 
 def writing_item(slug, writing):
     """Banner entry for a valid writing marker: the agent is still writing screens, nothing to accept yet."""
-    return {'what': f"agent pisze ekrany (do {_local_hhmm(writing['expiresAt'])})", 'source': 'writing',
+    planned, done = writing.get('screensPlanned'), writing.get('screensDone')
+    count = f'{done} z {planned}, ' if planned and done is not None else ''
+    return {'what': f"agent pisze ekrany ({count}do {_local_hhmm(writing['expiresAt'])})", 'source': 'writing',
             'since': _local_hhmm(writing['since']),
             'action': 'Agent pisze ekrany prototypu; akceptacja wróci, gdy skończy. Nic nie musisz robić.',
             'link': {'kind': 'prototype', 'slug': slug}}
@@ -1797,6 +1799,10 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
 
     progress = build_progress(phases, in_progress, plan_info['status'] if plan_info else None, reported)
     writing_state = ((writing or (lambda name: prototype_writing(root, name, now_ms)))(slug)) if slug else None
+    if writing_state:
+        # `screensDone`: screens of `index.html` without the template example, counted like the acceptance (`prototype list`)
+        screens = (spec.get('prototypeAcceptance') or (acceptance or (lambda name: prototype_acceptance(root, name)))(slug) or {}).get('screens')
+        writing_state = {**writing_state, 'screensDone': int(screens or 0)}
     acts = compute_acts(spec, plan_info, progress, run['files'],
                         {'risky': risky_sections(spec_text), 'trwa': trwa_stages(chronological),
                          'writingSince': _local_hhmm(writing_state['since']) if writing_state else None})
