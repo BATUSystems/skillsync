@@ -274,6 +274,9 @@ skillsync prototype question purge . --slug zwroty --yes                        
 skillsync prototype question purge . --slug zwroty --include-open --yes                  # także otwarte bez odpowiedzi i komentarza
 ```
 
+Plik użytkowników jest prywatny: na POSIX tryb 0600, na Windows ACL (tylko użytkownik, SYSTEM i administratorzy lokalni). Komendy `prototype user ...` i `prototype serve` na Windows nie wypisują ostrzeżenia o pominiętej kontroli; stary plik z szerokim ACL jest naprawiany przy pierwszym zapisie albo odczycie (jedna linia `ACL Windows: ograniczono dostęp do pliku ...` w `warnings`), a ostrzeżenie `nie udało się ograniczyć dostępu do pliku ...` pojawia się tylko, gdy ACL nie da się ustawić (FAT/exFAT, udział sieciowy bez obsługi, brak uprawnień). Zapis pliku i tak się udaje. Szczegóły: `docs/prototypes.md`.
+
+
 - `add`: dokładnie jedno z `--assume <wartość>` (pytanie nie zatrzymuje agenta; ekspert potwierdza albo koryguje) i `--blocking`
   (agent czeka). `--slug <slug>` wybiera przebieg, którego `<root>/<slug>/questions.json` dostaje pytanie. Bez `--slug` przebieg
   to jedyny prototyp, którego `requirements` równa się ścieżce z `--origin`; zero dopasowań = BLOCKED `slug_required` (z listą

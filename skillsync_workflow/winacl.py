@@ -67,19 +67,22 @@ def _get_backend():
     return _backend
 
 
-def restrict_to_owner(path, emit=True):
+def restrict_to_owner(path, emit=True, label=None):
     """ACL of `path`: the user, SYSTEM and the administrators only, protected (no inheritance from the parent). A directory
-    gets inheriting ACEs. Returns True on success (and off Windows, where nothing is done), False on any failure."""
+    gets inheriting ACEs. Returns True on success (and off Windows, where nothing is done), False on any failure.
+    `label` is the path a warning is about and counted for (a temporary file that is renamed over `label` warns once for `label`)."""
     if not IS_WINDOWS:
         return True
-    return _restrict(path, emit)[0]
+    return _restrict(path, emit, label)[0]
 
 
-def _restrict(path, emit):
-    """`(ok, note)`: `note` is the warning text the first time a failure is seen, else None."""
+def _restrict(path, emit, label=None):
+    """`(ok, note)`: `note` is the warning text the first time a failure is seen (for `label` or `path`), else None."""
     reason = 'nieznany błąd'
     try:
         path = os.path.abspath(os.fspath(path))
+        if os.path.islink(path):      # never change the ACL of a link's target
+            return False, None
         backend = _get_backend()
         if not backend.volume_has_acls(path):
             reason = 'wolumin bez list ACL (FAT/exFAT lub udział bez obsługi)'
@@ -90,7 +93,7 @@ def _restrict(path, emit):
             reason = 'kod błędu %s' % code
     except Exception as error:   # never raises: a failed ACL must not fail the write
         reason = '%s: %s' % (type(error).__name__, error)
-    return False, warn_once(path, reason, emit)
+    return False, warn_once(label or path, reason, emit)
 
 
 def is_owner_only(path):
@@ -104,7 +107,7 @@ def is_owner_only(path):
         if aces is None:     # no DACL: everyone has full access
             return False
         allowed = {backend.user_sid(), SYSTEM_SID, ADMINISTRATORS_SID} | _NEUTRAL_SIDS
-        return all(kind == 0 and sid in allowed for kind, _flags, _mask, sid in aces)
+        return bool(aces) and all(kind == 0 and sid in allowed for kind, _flags, _mask, sid in aces)
     except Exception:
         return False
 
@@ -122,7 +125,7 @@ def ensure_private(path, emit=False):
 def private_notes(path):
     """Lines a command adds to its `warnings` for a private file: a note about a repair, or the warning of a failed ACL
     (once per process and path). Nothing off Windows, nothing for a file that is private already."""
-    if not IS_WINDOWS or not os.path.lexists(path):
+    if not IS_WINDOWS or not os.path.lexists(path) or os.path.islink(path):
         return []
     if is_owner_only(path):
         return []
@@ -176,6 +179,10 @@ class _Win32(object):
         k32.GetVolumeInformationW.restype = w.BOOL
         self.adv, self.k32 = adv, k32
         self._sid = None
+
+        class AclSizeInformation(ctypes.Structure):
+            _fields_ = [('AceCount', w.DWORD), ('AclBytesInUse', w.DWORD), ('AclBytesFree', w.DWORD)]
+        self._AclSizeInformation = AclSizeInformation
 
     def _sid_text(self, sid_pointer):
         ctypes, w = self.ctypes, self.w
@@ -242,9 +249,7 @@ class _Win32(object):
             if not dacl.value:
                 return None
 
-            class AclSizeInformation(ctypes.Structure):
-                _fields_ = [('AceCount', self.w.DWORD), ('AclBytesInUse', self.w.DWORD), ('AclBytesFree', self.w.DWORD)]
-            info = AclSizeInformation()
+            info = self._AclSizeInformation()
             if not self.adv.GetAclInformation(dacl, ctypes.byref(info), ctypes.sizeof(info), 2):   # AclSizeInformation
                 raise OSError(ctypes.get_last_error(), 'GetAclInformation')
             aces = []

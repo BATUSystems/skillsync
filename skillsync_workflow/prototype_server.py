@@ -2277,11 +2277,11 @@ def atomic_write_bytes(path, data, mode=None, default_mode=0o644):
     temporary = os.path.join(directory, '.%s.%s.tmp' % (name, secrets.token_hex(6)))
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_BINARY', 0)
     fd = os.open(temporary, flags, 0o600)
-    if _winacl is not None and final_mode & 0o077 == 0:
-        # Windows: `os.replace` hands the ACL of THIS file to the target (measured), so it is set now, before any data is
-        # written; a failure is a warning and never fails the write
-        _winacl.restrict_to_owner(temporary)
     try:
+        if _winacl is not None and final_mode & 0o077 == 0:
+            # Windows: `os.replace` hands the ACL of THIS file to the target (measured), so it is set now, before any data
+            # is written; a failure is one warning for the target and never fails the write
+            _winacl.restrict_to_owner(temporary, label=path)
         try:
             view = memoryview(data)
             while view:
@@ -4908,6 +4908,12 @@ def private_file_problem(path):
     return None
 
 
+def _private_existing(path):
+    """An existing directory this module owns (run/, login/): repaired when its ACL is wide (Windows; a no-op elsewhere)."""
+    if _winacl is not None:
+        _winacl.ensure_private(path)
+
+
 def _private_path(path):
     """Restrict a file or directory this module creates to the user (Windows ACL; a no-op elsewhere, never raises)."""
     if _winacl is not None:
@@ -4918,7 +4924,11 @@ def private_file_notes(path):
     """Lines a command adds to its `warnings` for an existing private file: on Windows the ACL is checked and, when it is
     wider than the user, SYSTEM and the administrators, repaired in place (one line about the repair) or, when that fails,
     one warning; `[]` for a file that is private already and on other systems (the mode check covers them)."""
-    return _winacl.private_notes(path) if _winacl is not None else []
+    if _winacl is None:
+        # a stand-alone copy of this module (no package): no ACL helper, say so instead of silently losing the protection
+        return ['ACL Windows: brak pomocnika winacl w tej kopii serwera; plik %s może być czytelny dla innych użytkowników '
+                'tego komputera' % path] if os.name == 'nt' else []
+    return _winacl.private_notes(path)
 
 
 def roles_of(record):
@@ -5118,6 +5128,7 @@ class UsersFile(object):
         directory = os.path.dirname(self.path)
         if not os.path.isdir(directory):
             os.makedirs(directory, mode=0o700, exist_ok=True)
+            _private_path(directory)    # Windows: files created in it (temporary ones too) inherit the private ACL
         with FileLock(self.lock_path, self.lock_timeout, mode=0o600):
             if os.path.lexists(self.path):
                 data, _key = self._read_file()
@@ -5672,6 +5683,7 @@ def link_login_dir(run_dir, create=False):
         problem = link_directory_problem(path)
     if problem is not None:
         raise LoginLinkError('run_dir_unsafe', 'katalog login/ jest niebezpieczny (%s): %s' % (problem, path))
+    _private_existing(path)      # a directory made by an older version (wide ACL on Windows) is repaired
     return path
 
 
@@ -5685,8 +5697,8 @@ def _link_write_private(path, data):
     """Atomic private write: `O_EXCL` temporary file, fsync, rename onto `path`."""
     temporary = os.path.join(os.path.dirname(path), '.%s.%s.tmp' % (os.path.basename(path), secrets.token_hex(4)))
     descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _LINK_NOFOLLOW, 0o600)
-    _private_path(temporary)    # Windows: before the data (`os.replace` hands this ACL to `path`)
     try:
+        _private_path(temporary)    # Windows: before the data (`os.replace` hands this ACL to `path`)
         with os.fdopen(descriptor, 'wb') as handle:
             handle.write(data)
             handle.flush()
@@ -5921,6 +5933,7 @@ def link_issue(run_dir, login, path, now=None, ttl=LINK_TTL_DEFAULT, instance=No
     temporary = os.path.join(directory, '.%s.%s.tmp' % (digest, secrets.token_hex(4)))
     try:
         descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _LINK_NOFOLLOW, 0o600)
+        _private_path(temporary)    # Windows: before the token record is written
         with os.fdopen(descriptor, 'wb') as handle:
             handle.write(data)
             handle.flush()

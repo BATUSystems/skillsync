@@ -178,7 +178,7 @@ w repo publicznym; tożsamości żyją w prywatnych warstwach i w `identity_dir`
 | `allow_override` | lista | identyfikatory elementów rdzenia i ścieżki plików, które warstwa `org` może nadpisać; domyślnie żadne |
 | `legacy_library` | ścieżka | katalog starej biblioteki zapisany przez `layers migrate`; służy do rozpoznawania dowiązań starej konfiguracji i do `layers migrate --finish` |
 | `memory_sync` | mapa | kopiowanie plików pamięci na hosty (niżej) |
-| `prototype.default_password` | string | hasło domyślne kont tworzonych przez `prototype user add\|import`, gdy nie podano innego; plik configu musi mieć uprawnienia 0600; wartość nigdy nie jest wypisywana |
+| `prototype.default_password` | string | hasło domyślne kont tworzonych przez `prototype user add\|import`, gdy nie podano innego; plik configu musi być prywatny (POSIX: uprawnienia 0600; Windows: ACL tylko dla użytkownika, SYSTEM i administratorów, ustawiany i naprawiany przez narzędzie); wartość nigdy nie jest wypisywana |
 
 ### Kopiowanie plików pamięci (`memory_sync`)
 
