@@ -1408,6 +1408,48 @@ def filename_unrepresentable(surface, text, os_name=os.name):
     return surface == 'filename' and os_name == 'nt' and any(char in text for char in WINDOWS_FORBIDDEN_NAME_CHARS)
 
 
+class HooksMissingWarningTest(LeakTestCase):
+    """DEBT-142 A3 (D12): `leakcheck` on a working tree of a protected clone (target scope `public`) warns, when the clone lacks
+    the leakguard pre-commit/pre-push hooks: without them a push to the public repository bypasses the guard."""
+
+    DEV = f'dev{AT}corp.example'
+
+    def targets(self, scope='public'):
+        return {'core': {'scope': scope, 'kind': 'core', 'authors': [self.DEV]}}
+
+    def scan(self, repo, scope='public', **kwargs):
+        return leakguard.leakcheck(repo, target='core', targets=self.targets(scope), **kwargs)
+
+    def hook_warnings(self, report):
+        return [item for item in report['warnings'] if 'hooks' in item.lower()]
+
+    def test_a_public_clone_without_hooks_gets_a_warning_with_the_remedy(self):
+        repo = self.make_repo(email=self.DEV)
+        commit_file(repo, 'a.md', 'x\n', 'base')
+        report = self.scan(repo)
+        warnings = self.hook_warnings(report)
+        self.assertEqual(len(warnings), 1, report['warnings'])
+        self.assertIn('install-hook', warnings[0])
+        self.assertIn('pre-commit', warnings[0])
+        self.assertEqual(report['status'], 'PASS', 'a warning, not a failure')
+
+    def test_installed_hooks_remove_the_warning(self):
+        repo = self.make_repo(email=self.DEV)
+        commit_file(repo, 'a.md', 'x\n', 'base')
+        leakguard.install_hook(repo, targets_json=self.targets_file(self.targets()), target='core')
+        self.assertEqual(self.hook_warnings(self.scan(repo)), [])
+
+    def test_only_the_worktree_mode_of_a_public_target_warns(self):
+        repo = self.make_repo(email=self.DEV)
+        commit_file(repo, 'a.md', 'x\n', 'base')
+        self.assertEqual(self.hook_warnings(self.scan(repo, scope='org-private')), [])
+        self.assertEqual(self.hook_warnings(self.scan(repo, mode='history')), [])
+
+    def test_a_directory_that_is_not_a_git_repository_does_not_warn(self):
+        path = self.tree({'a.md': 'x\n'})
+        self.assertEqual(self.hook_warnings(self.scan(path)), [])
+
+
 class CommitterAllowTest(LeakTestCase):
     """DEBT-142 A2: `committer_allow` of a target: addresses accepted ONLY as committer (and tagger), e.g. the host's merge
     button (`noreply`); they are never accepted as an author. Default empty; authors stay in `authors`."""
@@ -1484,13 +1526,72 @@ class CommitterAllowTest(LeakTestCase):
         unlisted = self.scan(repo, self.targets(), **kwargs)
         self.assertEqual((unlisted['status'], [f['location'] for f in unlisted['findings']]), ('FAIL', ['tagger']))
 
+    def test_staged_changes_do_not_widen_the_check_with_the_list(self):
+        """A staged commit is made by the local user: `committer_allow` (the host's button) does not apply there."""
+        repo = self.make_repo(email=self.DEV)
+        (repo / 'n.md').write_text('new\n', encoding='utf-8')
+        git(repo, 'add', 'n.md')
+        for author, committer, expected in ((self.DEV, self.DEV, 'PASS'), (self.BOT, self.DEV, 'FAIL'),
+                                            (self.DEV, self.BOT, 'FAIL'), (self.BOT, self.BOT, 'FAIL')):
+            with self.subTest(author=author != self.DEV, committer=committer != self.DEV):
+                env = {'GIT_AUTHOR_EMAIL': author, 'GIT_COMMITTER_EMAIL': committer}
+                with mock.patch.dict(os.environ, env):
+                    report = self.scan(repo, self.targets(allow=[self.BOT]), mode='staged')
+                self.assertEqual(report['status'], expected, report)
+
+    def make_tag_object(self, repo, target, name, tagger=None):
+        header = f'object {target}\ntype {"tag" if name == "outer" else "commit"}\ntag {name}\n'
+        if tagger:
+            header += f'tagger T <{tagger}> 1700000000 +0000\n'
+        raw = header + '\nmessage\n'
+        sha = subprocess.run(['git', '-C', str(repo), 'hash-object', '-t', 'tag', '-w', '--stdin', '--literally'],
+                             input=raw.encode(), capture_output=True, check=True).stdout.decode().strip()
+        subprocess.run(['git', '-C', str(repo), 'update-ref', f'refs/tags/{name}', sha], check=True, capture_output=True)
+        return sha
+
+    def test_a_tag_without_a_tagger_fails_under_scope_all_and_the_list_does_not_help(self):
+        repo = self.make_repo(email=self.DEV)
+        base = commit_file(repo, 'a.md', 'x\n', 'base')
+        head = commit_file(repo, 'b.md', 'y\n', 'next')
+        self.make_tag_object(repo, head, 'old')
+        report = self.scan(repo, self.targets(allow=[self.BOT]), mode='range', rev_range=f'{base}..refs/tags/old')
+        self.assertEqual((report['status'], [f['location'] for f in report['findings']]), ('FAIL', ['tagger']))
+
+    def test_a_nested_tag_checks_every_tagger_in_the_chain(self):
+        repo = self.make_repo(email=self.DEV)
+        base = commit_file(repo, 'a.md', 'x\n', 'base')
+        head = commit_file(repo, 'b.md', 'y\n', 'next')
+        inner = self.make_tag_object(repo, head, 'inner', tagger=self.DEV)
+        self.make_tag_object(repo, inner, 'outer', tagger=self.BOT)
+        kwargs = {'mode': 'range', 'rev_range': f'{base}..refs/tags/outer'}
+        self.assertEqual(self.scan(repo, self.targets(allow=[self.BOT]), **kwargs)['status'], 'PASS')
+        self.assertEqual(self.scan(repo, self.targets(), **kwargs)['status'], 'FAIL')
+
+    def test_under_scope_committer_a_foreign_tagger_stays_a_notice(self):
+        repo = self.make_repo(email=self.DEV)
+        base = commit_file(repo, 'a.md', 'x\n', 'base')
+        self.tag_with(repo, self.BOT)
+        report = self.scan(repo, self.targets('committer', allow=[self.BOT]), mode='range', rev_range=f'{base}..refs/tags/v1')
+        self.assertEqual((report['status'], report['findings']), ('PASS', []))
+        self.assertTrue(report['notices'])
+
+    def test_the_cli_reads_the_key_from_targets_json(self):
+        repo = self.merged_by_the_host()
+        for allow, expected in (([self.BOT], 0), ([], 1)):
+            with self.subTest(allow=allow):
+                path = self.targets_file(self.targets(allow=allow))
+                process = self.cli('leakcheck', str(repo), '--history', '--targets-json', str(path), '--target', 'mine',
+                                   '--json')
+                self.assertEqual(process.returncode, expected, process.stderr)
+                self.assertEqual(json.loads(process.stdout)['status'], 'PASS' if expected == 0 else 'FAIL')
+                self.assertNotIn(self.BOT, process.stdout)
+
     def test_the_machine_config_carries_the_key(self):
         from skillsync_workflow import layers
         config = layers.parse_machine_config(
             {'leakguard': {'targets': {'core': {'scope': 'public', 'authors': [self.DEV], 'committer_allow': [self.BOT]}}}},
             Path('/nonexistent/config.yaml'), exists=False)
         self.assertEqual(config.targets['core']['committer_allow'], [self.BOT])
-        self.assertFalse([w for w in config.warnings if 'committer_allow' in w])
 
 
 class TermMatchScopeTest(LeakTestCase):

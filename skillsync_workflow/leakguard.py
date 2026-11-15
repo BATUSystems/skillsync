@@ -1054,7 +1054,7 @@ def _scan_staged(ctx):
         email = _ident_email(ctx.git_top, var)
         if email is None:
             ctx.warnings.append(f'Cannot read the {name} identity; authors not checked')
-        elif email not in ctx.authors and not (name == 'committer' and email in ctx.committer_allow):
+        elif email not in ctx.authors:  # `committer_allow` does not apply here: a staged commit is made by the local user, not by a host button
             ctx.scanner.findings.add(('@staged', 'author', name))
     if not local:
         ctx.warnings.append('git user.email is not set')
@@ -1171,7 +1171,7 @@ def _tag_message(body):
 def _scan_tags(ctx, rev):
     """D173: annotated tags pushed as range tips. The tag message and the tagger go
     through the commit surface (class `atrybucje`, path `@tag:<sha>`); the tagger e-mail
-    is checked against `authors` like a committer (D86); the tag name (header `tag`) goes
+    is checked against `authors` (plus `committer_allow`) like a committer (D86); the tag name (header `tag`) goes
     through the filename surface (D174). A tag chain (tag of a tag) is
     followed; the tagged commit itself is not a reason to scan more history (the commit
     range is resolved separately). Lightweight tags are plain commits: nothing to add."""
@@ -1296,6 +1296,16 @@ def scan_texts(items, prepared, surface='content'):
             'target': prepared.target, 'findings': findings, 'warnings': list(prepared.warnings)}
 
 
+def _hook_warnings(top, target):
+    """DEBT-142 A3 (D12): a clone of a public target without the leakguard hooks lets a push bypass the guard. Read-only
+    (`hook_state`); a layer or a project that installs the hooks itself (`layers add`, `install-hook`) stays silent."""
+    state = hook_state(top)
+    if state['state'] != 'missing':
+        return []
+    return [f'The clone of the public target {target} lacks the leakguard hooks ({", ".join(state["missing"])}): a push '
+            f'would bypass the guard; run `skillsync leakguard install-hook {top}`']
+
+
 def leakcheck(path='.', *, mode='worktree', rev_range=None, target=None, targets=None,
               identity_files=(), target_patterns=None, require=None, trailer_allow=(),
               patterns_file=None, suffixes_file=None, select=True, texts=None):
@@ -1341,6 +1351,8 @@ def leakcheck(path='.', *, mode='worktree', rev_range=None, target=None, targets
         report['target'] = target
         report['coverage'] = prepared.coverage
         report['warnings'].extend(prepared.warnings)
+        if mode == 'worktree' and top is not None and (targets or {}).get(target, {}).get('scope') == 'public':
+            report['warnings'].extend(_hook_warnings(top, target))
         if require == 'full' and prepared.coverage != 'full':
             report['reason'] = (f'Coverage is {prepared.coverage}; --require full needs identity files '
                                 'for every non-public target')

@@ -147,12 +147,13 @@ leakguard:
 - `remote_match` rozpoznaje cel po adresie remote; cel `leakcheck` bez dopasowania = warstwa, której checkout jest git rootem skanu.
 - Lokalne ścieżki celu (`remote_match`, wybór celu) są porównywane: Windows `normcase`, macOS NFD + `casefold`, Linux dosłownie; URL-e i adresy scp zawsze dosłownie.
 - `authors`: adresy dozwolonych autorów i committerów celu.
+- `committer_allow` (DEBT-142, 1.5.0): adresy przyjmowane TYLKO jako committer i tagger (np. `noreply` przycisku scalania hosta), nigdy jako autor; domyślnie pusta lista, porównanie bez rozróżniania wielkości liter. Działa w kontroli zakresu/historii (`--range`, `--history`: committer) i tagów (tagger, także w łańcuchu tag→tag); NIE działa w `pre-commit` (`--staged`: zatrzymany commit robi lokalny użytkownik, więc obie tożsamości wobec samego `authors`). Przy `authors_scope: committer` ma efekt tylko dla commitów, których committerem jest lokalny użytkownik, więc dla domyślnego `scope: public` zwykle bez efektu; sens ma przy `authors_scope: all`. Zamyka dług LEAKGUARD-COMMITTER-ALLOWLIST (adres `noreply` nie musi już stać w `authors`, więc nie przechodzi jako autor).
 - `authors_scope` (D86): `all` lub `committer`. Domyślnie `all` dla `private` i `org-private`; `committer` dla `public`.
   `all`: każdy commit w zakresie musi mieć autora i committera z `authors`. `committer`: kontrola dotyczy commitów, których
   committerem jest lokalny użytkownik (autor i committer); commit, którego autorem jest lokalny użytkownik, a committerem
   ktoś inny (cherry-pick, rebase, przycisk merge), ma sprawdzanego autora, a obcy committer jest informacją (D239);
   commity innych osób są informacją.
-- Adres autora i committera nie jest sprawdzany przez wzorce `email` (tylko przez `authors`); bez `authors` (cel nieznany)
+- Adres autora i committera nie jest sprawdzany przez wzorce `email` (tylko przez `authors` i `committer_allow`); bez `authors` (cel nieznany)
   adres autora nie jest sprawdzany i jest to ostrzeżenie w `warnings`.
 
 Poziomy `coverage` (K7):
@@ -201,7 +202,7 @@ skillsync leakcheck --text <plik>|--stdin [--target ID] [--require full] [--json
 - Tryby: `--worktree` (domyślnie), `--staged`, `--range A..B`, `--history`. Skan obejmuje treść, nazwy plików i metadane
   commitów (autor, committer, trailery, komunikat). W `--range` i w `pre-push` skanowane są też adnotowane tagi wskazujące
   na wypychane commity: komunikat tagu (podpis odcinany od ostatniego markera) i nazwa tagu (tak jak nazwa pliku), w raporcie
-  ze ścieżką `@tag:<sha>`. Pozostała obsługa tagów (tagger i `authors` dla taggera, łańcuch tag→tag, notice `foreign-tag`)
+  ze ścieżką `@tag:<sha>`. Pozostała obsługa tagów (tagger wobec `authors` i `committer_allow`, łańcuch tag→tag, notice `foreign-tag`)
   działa, ale jest nieobjęta gwarancją 1.0.0.
 - Kody: PASS 0, FAIL 1 (wyciek: `{path, category, location}`), BLOCKED 2 (`--require full` przy niepełnym pokryciu,
   brak lub błędny plik wzorców, niepoprawny `layer.yaml` z configu: fail-closed dla tożsamości; D73: link (symlink)
@@ -241,8 +242,9 @@ skillsync leakguard install-hook <repo> [--remove] [--json]
   wywołanie trzeba dodać ręcznie. Gdy oba hooki są `skipped`, wynik to `NOT_RUN`.
 - `--remove` kasuje plik hooka (`deleted`), gdy po usunięciu bloku zostaje tylko `#!/bin/sh` lub nic; w innym przypadku usuwa
   sam blok (`removed`).
-- `pre-commit` (`--staged`), gdy cel ma `authors`, sprawdza `GIT_AUTHOR_IDENT` i `GIT_COMMITTER_IDENT` wobec `authors` niezależnie
+- `pre-commit` (`--staged`), gdy cel ma `authors`, sprawdza `GIT_AUTHOR_IDENT` i `GIT_COMMITTER_IDENT` wobec samego `authors` (bez `committer_allow`) niezależnie
   od `authors_scope`. Nieczytelna tożsamość daje ostrzeżenie; adres spoza `authors` daje wyciek kategorii `author`.
+- `leakcheck` w trybie drzewa roboczego (`--worktree`) w klonie celu o `scope: public` bez hooków (`hook_state`: `missing`) dodaje ostrzeżenie (nie błąd) z poleceniem `skillsync leakguard install-hook <klon>`: bez hooków push do publicznego repo omija strażnika (DEBT-142 A3, dług D12). Rdzeń nie ma manifestu, więc `doctor` go nie obejmuje; ostrzeżenie widzi każdy, kto uruchamia `leakcheck` w klonie.
 - `--identity` i `--targets-json` w `install-hook` to tryb diagnostyczny: wpisują blok bez configu, który `layers check`
   oznacza jako `hook-legacy`. W normalnej pracy hook czyta wyłącznie config.
 - Brak hooka w zapisywalnej warstwie to `hook-missing` (FAIL w `layers check`, `_hook_findings`). Wykrywanie, czy hook
