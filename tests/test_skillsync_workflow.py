@@ -456,7 +456,7 @@ class ContextContracts(WorkflowFixture):
         self.manifest['workflow']['knowledge'] = {'domain': '../docs/domain'}
         self.save()
         report = self.report('route', '--topics', 'implementation')
-        self.assertEqual([record['path'] for record in report['domain']], [str(shared.resolve() / 'glossary.md')])
+        self.assertEqual([record['path'] for record in report['domain']], [(shared.resolve() / 'glossary.md').as_posix()])
 
     def test_domain_records_without_load_keep_existing_routing_and_pass_doctor(self):
         self.write('docs/domain/billing.md', '---\ntags: [billing]\n---\nInvoice numbering rule')

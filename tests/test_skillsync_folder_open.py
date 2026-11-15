@@ -16,6 +16,7 @@ TAIL = ["link", "${workspaceFolder}"]
 PYTHON = "/opt/py/bin/python"
 CHECKOUT = [PYTHON, "/work/Skillsync/skillsync"]
 INSTALLED = [PYTHON, "-P", "-m", "skillsync_workflow"]
+ENTRY_NAME = "skillsync.exe" if os.name == "nt" else "skillsync"  # the entry file of the installation
 ENTRY = ["/home/runner/.local/bin/skillsync"]  # the user's entry: no interpreter in the task
 
 
@@ -124,7 +125,7 @@ class FolderOpenTaskTests(TempProjectMixin, unittest.TestCase):
 
     def install_entry(self, symlink=True):
         """Put `~/.local/bin/skillsync` into the tmp HOME: a symlink to the wrapper or a plain executable file."""
-        entry = self.home / ".local" / "bin" / "skillsync"
+        entry = self.home / ".local" / "bin" / ENTRY_NAME
         entry.parent.mkdir(parents=True, exist_ok=True)
         if symlink:
             entry.symlink_to(SKILLSYNC_PATH)
@@ -170,7 +171,7 @@ class FolderOpenTaskTests(TempProjectMixin, unittest.TestCase):
         self.assertNotEqual(task["command"], str(SKILLSYNC_PATH.resolve()))  # the symlink itself, not its target
 
     def test_entry_found_on_path_is_used_when_home_has_none(self):
-        found = self.tmp / "bin" / "skillsync"
+        found = self.tmp / "bin" / ENTRY_NAME
         found.parent.mkdir()
         found.write_text("#!/bin/sh\n")
         found.chmod(0o755)
