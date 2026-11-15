@@ -45,14 +45,56 @@ def _nonlocal_bind_allowed() -> bool:
     return False
 
 
-def _enumerated_addresses() -> set[str]:
-    """Addresses of this machine by name resolution plus the route probe: the fallback when the bind probe is unreliable."""
+HOST_LOOKUP_TIMEOUT = 2.0    # seconds a caller waits for the resolver (a name that does not resolve can take half a minute)
+HOST_LOOKUP_TTL = 60.0       # a resolved answer is kept this long
+HOST_LOOKUP_NEGATIVE_TTL = 15.0   # "the resolver was too slow" is kept this long, so a series of requests starts at most one lookup
+_lookup_lock = threading.Lock()
+_lookup = {"value": None, "until": 0.0, "pending": None}
+
+
+def _resolve_into_cache(done: threading.Event) -> None:
     found: set[str] = set()
     try:
         for info in socket.getaddrinfo(socket.gethostname(), None):
             found.add(info[4][0].split("%")[0])
     except OSError:
         pass
+    with _lookup_lock:
+        if _lookup["pending"] is done:   # not after a reset (tests): a stale lookup never writes into a newer cache
+            _lookup["value"], _lookup["until"] = found, time.monotonic() + HOST_LOOKUP_TTL
+            _lookup["pending"] = None
+    done.set()
+
+
+def host_addresses() -> set[str]:
+    """Addresses of the name of this machine, WITHOUT ever blocking the caller for longer than `HOST_LOOKUP_TIMEOUT`: the lookup runs in a
+    daemon thread (one at a time, its answer cached for `HOST_LOOKUP_TTL`); when the resolver is too slow the answer is the empty set, kept for
+    `HOST_LOOKUP_NEGATIVE_TTL`, and a late answer still fills the cache. A resolver that blocks for tens of seconds (a name that does not
+    resolve) therefore delays neither the start nor the stop of the server, and N requests start at most one lookup."""
+    with _lookup_lock:
+        if _lookup["value"] is not None and time.monotonic() < _lookup["until"]:
+            return set(_lookup["value"])
+        pending = _lookup["pending"]
+        if pending is None:
+            pending = _lookup["pending"] = threading.Event()
+            threading.Thread(target=_resolve_into_cache, args=(pending,), name="host-lookup", daemon=True).start()
+    pending.wait(HOST_LOOKUP_TIMEOUT)
+    with _lookup_lock:
+        if not pending.is_set():   # too slow: remember it for a while (the thread goes on and may still fill the cache)
+            _lookup["value"], _lookup["until"] = set(), time.monotonic() + HOST_LOOKUP_NEGATIVE_TTL
+            return set()
+        return set(_lookup["value"] or ())
+
+
+def _reset_host_lookup() -> None:   # tests
+    with _lookup_lock:
+        _lookup.update(value=None, until=0.0, pending=None)
+
+
+def _enumerated_addresses() -> set[str]:
+    """Addresses of this machine by name resolution (bounded, see `host_addresses`) plus the route probe: the fallback when the bind probe is
+    unreliable. When the resolver is too slow only the route address counts: an address that is not found is refused (fail closed)."""
+    found = host_addresses()
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
             probe.connect(("192.0.2.1", 9))   # TEST-NET-1: nothing is sent, the route only picks the local address

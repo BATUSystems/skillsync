@@ -893,13 +893,9 @@ def lan_addresses() -> list[str]:
             found.append(probe.getsockname()[0])
     except OSError:
         pass
-    try:
-        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
-            ip = info[4][0]
-            if not ip.startswith("127.") and ip not in found:
-                found.append(ip)
-    except OSError:
-        pass
+    for ip in sorted(ports.host_addresses()):   # bounded: a resolver that blocks must not delay the start or the stop (SIGTERM)
+        if ":" not in ip and not ip.startswith("127.") and ip not in found:
+            found.append(ip)
     return found or ["<adres-tej-maszyny>"]
 
 

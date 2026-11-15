@@ -565,6 +565,61 @@ class LocalIp(unittest.TestCase):
         self.assertTrue(ports.is_local_ip(address))
 
 
+class SlowResolver(unittest.TestCase):
+    """The name of this machine may not resolve for tens of seconds: nothing on the start, the stop or the request path may wait for it."""
+
+    def setUp(self) -> None:
+        ports._reset_host_lookup()
+        self.addCleanup(ports._reset_host_lookup)
+        patch = mock.patch.object(ports, "HOST_LOOKUP_TIMEOUT", 0.3)
+        patch.start()
+        self.addCleanup(patch.stop)
+        self.release = threading.Event()
+        self.addCleanup(self.release.set)   # the lookup thread of a test never outlives it
+        self.calls = 0
+        real = socket.getaddrinfo
+
+        def slow(host, *args, **kwargs):
+            if host == socket.gethostname():
+                self.calls += 1
+                self.release.wait(30)
+                return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.0.2.77", 0))]
+            return real(host, *args, **kwargs)
+        resolver = mock.patch.object(socket, "getaddrinfo", slow)
+        resolver.start()
+        self.addCleanup(resolver.stop)
+
+    def test_lan_addresses_does_not_wait_for_the_resolver(self) -> None:
+        started = time.monotonic()
+        found = srv.lan_addresses()
+        self.assertLess(time.monotonic() - started, 2.0)
+        self.assertNotIn("192.0.2.77", found)   # not resolved yet: only the route address (or the placeholder)
+
+    def test_a_slow_resolver_refuses_a_255_address_that_no_other_way_found_and_does_not_multiply_lookups(self) -> None:
+        started = time.monotonic()
+        with mock.patch.object(ports.socket, "socket", side_effect=OSError("no route")):   # the route probe finds nothing either
+            answers = [ports.is_local_ip("10.0.1.255") for _ in range(10)]
+        self.assertEqual(answers, [False] * 10)   # fail closed
+        self.assertLess(time.monotonic() - started, 3.0)   # the first call waits once, the negative answer serves the rest
+        self.assertEqual(self.calls, 1)   # N requests, at most one resolution
+
+    def test_a_late_answer_fills_the_cache(self) -> None:
+        with mock.patch.object(ports, "HOST_LOOKUP_NEGATIVE_TTL", 0.0):
+            self.assertEqual(ports.host_addresses(), set())   # too slow
+            self.release.set()
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline and ports.host_addresses() != {"192.0.2.77"}:
+                time.sleep(0.05)
+        self.assertEqual(ports.host_addresses(), {"192.0.2.77"})
+        self.assertEqual(self.calls, 1)
+
+    def test_a_resolved_answer_is_remembered(self) -> None:
+        self.release.set()
+        self.assertEqual(ports.host_addresses(), {"192.0.2.77"})
+        self.assertEqual(ports.host_addresses(), {"192.0.2.77"})
+        self.assertEqual(self.calls, 1)
+
+
 class Flags(unittest.TestCase):
     def resolve(self, **kwargs):
         values = dict(port=None, read_port=None, approve_port=None, read_bind=None, approve_bind=None, host=None, no_approvals=False,
@@ -807,6 +862,45 @@ class Process(unittest.TestCase):
         _out, err = proc.communicate(timeout=30)
         self.assertIn(f"UWAGA: port zgód {approve_port} słucha na 0.0.0.0", err)
         self.assertIn(f"UWAGA: port odczytu {read_port} słucha na 0.0.0.0", err)
+
+    def slow_resolver_env(self) -> dict:
+        directory = self.tmp / "slow-dns"
+        directory.mkdir()
+        (directory / "sitecustomize.py").write_text(
+            "import signal, socket, threading, time\n_real = socket.getaddrinfo\n_host = socket.gethostname()\n"
+            "def slow(host, *a, **k):\n    if host == _host:\n"
+            # like a blocking C resolver: a signal is seen only after the call returns
+            "        main = threading.current_thread() is threading.main_thread()\n"
+            "        if main:\n            signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGTERM, signal.SIGINT})\n"
+            "        try:\n            time.sleep(25)\n"
+            "        finally:\n            if main:\n                signal.pthread_sigmask(signal.SIG_UNBLOCK, {signal.SIGTERM, signal.SIGINT})\n"
+            "    return _real(host, *a, **k)\n"
+            "socket.getaddrinfo = slow\n", encoding="utf-8")
+        return {**self.env, "PYTHONPATH": str(directory)}
+
+    @unittest.skipIf(os.name == "nt", "SIGTERM kończy proces na Windows bez obsługi")
+    def test_a_slow_resolver_does_not_delay_the_stop_with_two_ports(self) -> None:
+        self.env = self.slow_resolver_env()
+        read_port, approve_port = two_ports()
+        proc = self.serve("--read-port", str(read_port), "--approve-port", str(approve_port))
+        self.wait_up(read_port, approve_port)
+        time.sleep(0.5)
+        started = time.monotonic()
+        proc.terminate()
+        proc.communicate(timeout=20)
+        self.assertLess(time.monotonic() - started, 5.0)
+
+    @unittest.skipIf(os.name == "nt", "SIGTERM kończy proces na Windows bez obsługi")
+    def test_a_slow_resolver_does_not_delay_the_stop_with_one_port_on_every_interface(self) -> None:
+        self.env = self.slow_resolver_env()
+        port, _unused = two_ports()
+        proc = self.serve("--port", str(port), "--host", "0.0.0.0")
+        self.wait_up(port)
+        time.sleep(0.5)
+        started = time.monotonic()
+        proc.terminate()
+        proc.communicate(timeout=20)
+        self.assertLess(time.monotonic() - started, 5.0)
 
     def test_approve_bind_loopback_leaves_only_the_read_socket_in_the_network(self) -> None:
         address = lan_address()

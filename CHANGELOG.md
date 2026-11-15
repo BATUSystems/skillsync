@@ -47,6 +47,10 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 - `prototype writing … --screens` is refused (`invalid_args`) for `done` and `status`.
 - The prototype engine files (`prototype.js`, `prototype.css`) carry the presentation mode: `skillsync prototype migrate` delivers them (the change of the CSS can invalidate the acceptance of screens: the list is `acceptance` of the result).
 
+### Fixed
+
+- `dashboard serve`: the start and the stop of the server no longer wait for the resolution of the name of this machine (a name that does not resolve can block for tens of seconds, which delayed `SIGTERM`; this also concerned `--host 0.0.0.0` since 1.5.0). The lookup runs in the background with a limit of 2 seconds, one at a time and with a cached answer; when it is too slow, a `Host` that is an address ending in `.255` and is not found by the route probe is refused (fail closed).
+
 ### Security
 
 - Two-port mode: a request on the read socket cannot write anything (no route, no token); on the consent socket the `Origin` must match the `Host` exactly, a request with intermediary headers is refused, and `via.peer` is the address of the connection, so `X-Forwarded-For` cannot change it.
