@@ -58,6 +58,8 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 - `tests/skip-baseline.json`: `ubuntu-latest/symlink` and `ubuntu-latest/copy` are measured (14 entries each, identical on Python 3.11 to 3.14), so the skip check is enforced there; before they were `null`.
 - Regression tests for `fsutil.isabs` at its sites (`_env_dir`, dangling-link target) and a guard against a new `os.path.isabs`; comments at the two guard tests of the lock retry.
 - The matrix to run before a push (Python 3.11 and the station's interpreter, Windows 3.11/3.12/3.13 as on the runner, macOS for HTTP/files/signals, `check_skips` on the logs of all systems) is written in `library/skills/feature/references/prepush-matrix.md` and linked from `feature/references/tests-baseline.md` and the `dispatch` skill (`ASSIGN`).
+- `tests/test_skillsync_duplicate_defs.py`: no `.py` file in `skillsync_workflow/`, `scripts/` or the `skillsync` entry point defines a top-level function, class or UPPER_CASE constant twice (the later definition silently wins, so a block duplicated by a merge works and stays as dead code). An explicit `ALLOWED` list (empty) is for deliberate redefinitions, each with a reason; the scanner itself is tested (duplicates found with their lines, conditional and class-level names ignored).
+  Found by the trial integration of 1.5.0 (a block duplicated by a merge); fixes the existing duplicate `_is_int` in `prototype_server.py` (identical copies, the second removed).
 
 ### Compatibility
 

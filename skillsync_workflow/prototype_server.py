@@ -3955,10 +3955,6 @@ WRITING_TTL_DEFAULT = 900
 WRITING_BY_RE = re.compile(r'[A-Za-z0-9][A-Za-z0-9._@+-]{0,63}')
 
 
-def _is_int(value):
-    return isinstance(value, int) and not isinstance(value, bool)
-
-
 def read_writing(directory, now_ms):
     """`{since, expiresAt, renewedAt, by}` of a valid writing marker, else None (see "Ważny marker" in the spec).
 
