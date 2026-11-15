@@ -1990,6 +1990,7 @@ class CrossProjectSelection(CrossBase):
         self.excluding([str(link)])
         self.assertEqual(self.cross([sig('S1', 'flaky')])['sources']['projects'], 1)
 
+    @unittest.skipIf(os.name == 'nt', '`~name` always resolves on Windows (ntpath.expanduser builds a profile folder path from the name): there is no per-user lookup that can fail')
     def test_unresolvable_exclusion_is_blocked_with_a_fixed_reason(self):
         self.archive_fixture()
         self.excluding(['~no-such-user-zz/x'])
