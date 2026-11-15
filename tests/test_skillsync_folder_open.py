@@ -331,7 +331,9 @@ class FolderOpenTaskTests(TempProjectMixin, unittest.TestCase):
     @needs_os_symlinks
     def test_a_python_plus_wrapper_task_from_the_repo_is_refreshed_once_to_the_entry_shape(self):
         entry = self.install_entry()
-        legacy = generated_task(str(entry), python="/home/user/Repos/x/.venv/bin/python")
+        # the legacy task ran the wrapper of the checkout (`skillsync`), never the installed entry (`skillsync.exe` on Windows:
+        # a different name that `is_managed_link_task` rightly does not take for the old shape)
+        legacy = generated_task(str(SKILLSYNC_PATH), python="/home/user/Repos/x/.venv/bin/python")
         original = self.write_tasks([{"label": "build", "command": "make"}, legacy])
         self.run_hook()
         data = json.loads(self.target.read_text())
