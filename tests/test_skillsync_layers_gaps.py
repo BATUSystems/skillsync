@@ -41,6 +41,13 @@ print('OK')
 '''
 
 
+def relative_symlink(target, link, **kwargs):
+    """`os.symlink`; on Windows with a relative target, so the link text holds no profile path (owner-path pattern)."""
+    if os.name == 'nt':
+        target = os.path.relpath(target, os.path.dirname(link))
+    os.symlink(target, link, **kwargs)
+
+
 def git_project(path, manifest):
     """Project with a manifest, `app.py` and `probe.py`, committed in a fresh git repository."""
     write(path / '.github' / '.skillsync.yaml', yaml_text(manifest))
@@ -243,7 +250,7 @@ class LeakcheckLinkBlockedTest(LayersCase):
         return report
 
     def test_a_link_in_the_layer_is_blocked_in_worktree_and_staged_mode(self):
-        os.symlink(self.outside, self.org / 'skills' / 'y' / 'link.md')
+        relative_symlink(self.outside, self.org / 'skills' / 'y' / 'link.md')
         self.assertEqual(self.leakcheck(self.org, '--no-config')[0], 0, 'generic mode: the link alone is no leak')
         for state in ('untracked', 'staged'):
             if state == 'staged':

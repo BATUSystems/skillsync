@@ -28,6 +28,13 @@ CLIENT_BETA = 'Brenk' + 'or'          # synthetic client term (identity of layer
 CLIENT_GAMMA = 'Zulv' + 'ek'
 
 
+def relative_symlink(target, link, **kwargs):
+    """`os.symlink`; on Windows with a relative target, so the link text holds no profile path (owner-path pattern)."""
+    if os.name == 'nt':
+        target = os.path.relpath(target, os.path.dirname(link))
+    os.symlink(target, link, **kwargs)
+
+
 def codes(findings):
     return {item['code'] for item in findings}
 
@@ -912,7 +919,7 @@ class GuardSourcesTest(GuardSourcesCase):
 
     @needs_os_symlinks
     def test_a_link_in_a_layer_blocks_leakcheck_from_the_config(self):
-        os.symlink(self.beta / 'README.md', self.core / 'skills' / 'x' / 'link.md')            # a link inside the scanned layer
+        relative_symlink(self.beta / 'README.md', self.core / 'skills' / 'x' / 'link.md')            # a link inside the scanned layer
         for mode in LINK_MODES:
             with self.subTest(mode), link_mode(mode):
                 code, report = self.leakcheck(self.core)
@@ -971,11 +978,11 @@ class GuardSourcesTest(GuardSourcesCase):
     def test_untracked_links_outside_subdir_do_not_block_leakcheck_but_tracked_ones_do(self):
         repo = self.subdir_repo()
         (repo / '.claude' / 'skills').mkdir(parents=True)
-        os.symlink(repo / 'library', repo / '.claude' / 'skills' / 'z')                     # what `skillsync link` leaves behind
+        relative_symlink(repo / 'library', repo / '.claude' / 'skills' / 'z')                     # what `skillsync link` leaves behind
         for mode in LINK_MODES:
             with self.subTest(mode), link_mode(mode):
                 self.assertEqual(self.leakcheck(repo)[0], 0, 'untracked artefact links are not violations')
-        os.symlink(repo / 'library', repo / 'tracked-link')
+        relative_symlink(repo / 'library', repo / 'tracked-link')
         git(repo, 'add', 'tracked-link')
         code, report = self.leakcheck(repo)
         self.assertEqual((code, report['status']), (2, 'BLOCKED'))
