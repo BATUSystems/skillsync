@@ -14,6 +14,7 @@ from pathlib import Path
 import posixpath
 import re
 import subprocess
+import threading
 import time
 
 import yaml
@@ -423,32 +424,61 @@ def file_sha(path):
 
 # --------------------------------------------------------------------------- project documents
 
+PLAN_CACHE_MAX = 512
+_PLAN_CACHE: dict = {}
+_PLAN_CACHE_LOCK = threading.Lock()
+
+
+def _plan_content(path):
+    """(title, status, spec, run, complete) of a plan file, parsed once per (path, mtime_ns, size): `build_status` runs on
+    every change of the project and on every poll, and a plan is read whole to count its steps. None when unreadable.
+    Time-dependent parts (`activity`, `runAlive`) are never cached: they come from the run directory on every call."""
+    try:
+        info = path.stat()
+    except OSError:
+        return None
+    key, stamp = str(path), (info.st_mtime_ns, info.st_size)
+    with _PLAN_CACHE_LOCK:
+        hit = _PLAN_CACHE.get(key)
+    if hit is not None and hit[0] == stamp:
+        return hit[1]
+    try:
+        text = read_text(path, HEADER_BYTES)
+    except OSError:
+        return None
+    title, fields = parse_header(text)
+    try:
+        steps = [step for phase in parse_progress(read_text(path)) for step in phase['steps']]
+    except OSError:
+        steps = []
+    content = (title, doc_status(text)[0], first_token(fields.get('spec')), first_token(fields.get('przebieg')),
+               bool(steps) and all(step['done'] for step in steps))
+    with _PLAN_CACHE_LOCK:
+        if len(_PLAN_CACHE) >= PLAN_CACHE_MAX:
+            _PLAN_CACHE.clear()
+        _PLAN_CACHE[key] = (stamp, content)
+    return content
+
+
 def list_plans(root):
     plans = []
     for path in sorted((root / 'docs/plans').glob('*.md')):
         rel = _posix_rel(root, path)
         if rel is None or resolve_doc(root, rel) is None:
             continue
-        try:
-            text = read_text(path, HEADER_BYTES)
-        except OSError:
+        content = _plan_content(path)
+        if content is None:
             continue
-        title, fields = parse_header(text)
-        run = first_token(fields.get('przebieg'))
+        title, status, spec, run, complete = content
         mtime = _mtime(path) or 0
         alive, activity = False, mtime
-        try:
-            steps = [step for phase in parse_progress(read_text(path)) for step in phase['steps']]
-        except OSError:
-            steps = []
-        complete = bool(steps) and all(step['done'] for step in steps)
         directory = run_dir(root, run)
         if directory is not None:
             alive = True
             activity = max([activity] + [stamp for stamp in (_mtime(directory / name) for name in ('checkpoints.md', 'approvals.jsonl'))
                                          if stamp])
-        plans.append({'path': rel, 'title': title or path.stem, 'status': doc_status(text)[0],
-                      'spec': first_token(fields.get('spec')), 'run': run, 'mtime': mtime,
+        plans.append({'path': rel, 'title': title or path.stem, 'status': status,
+                      'spec': spec, 'run': run, 'mtime': mtime,
                       'complete': complete, 'runAlive': alive, 'activity': activity})
     return plans
 

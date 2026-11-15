@@ -16,6 +16,10 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 - `dashboard show` (and `/api/status`): `substeps[].noData` (`true` ⇔ `seconds` is null, also for a planned sub-step), the same meaning as `noData` in `dashboard metrics`. Additive (schema 1): `missingData` is unchanged. Compatibility: a consumer that rejects unknown keys of `substeps[]` must accept `noData`.
 
+### Changed
+
+- `dashboard` (`build_status`, `show`): plans are parsed once per (path, `mtime_ns`, size) instead of on every build of the status (the page rebuilds it on each change and poll); the activity of a run (`activity`, `runAlive`) is still read on every call. A plan rewritten with the same size inside the timestamp resolution of the file system is seen at its next change.
+
 ## [1.4.0] - 2026-11-14
 
 ### Added
