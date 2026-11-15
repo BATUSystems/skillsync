@@ -1242,7 +1242,9 @@ class IndexTests(PrototypeFixture):
         self.assertIn('/_experts/demo-a', page.hrefs)
         self.assertNotIn('/_experts/demo-b', page.hrefs)
         self.assertIn('/_experts', page.hrefs)   # the link in the header, because some run has questions
-        self.assertIn('Pytania (2)', ' '.join(page.text))   # distinct questions of the run, not operations
+        text = ' '.join(page.text)
+        self.assertIn('Pytania', text)
+        self.assertNotRegex(text, r'Pytania \(\d')   # only whether there are questions, never how many
 
     def test_gallery_has_no_questions_link_without_questions_or_with_a_broken_file(self):
         self.init('demo')
@@ -1253,14 +1255,24 @@ class IndexTests(PrototypeFixture):
             self.proto('index')
             self.assertFalse([href for href in parse_html(self.gallery()).hrefs if href.startswith('/_experts')], broken)
 
+    def test_has_questions_is_cached_by_mtime_and_refuses_a_file_above_the_server_limit(self):
+        self.init('demo')
+        self.write_questions('demo', [{'type': 'ask', 'questionId': 'qn-aaaaaa', 'id': 'o1', 'at': '2026-11-03T10:00:00.000Z'}])
+        self.assertTrue(engine.has_questions(self.proto_dir()))
+        with mock.patch.object(json, 'loads', side_effect=AssertionError('parsed again')):
+            self.assertTrue(engine.has_questions(self.proto_dir()))   # unchanged file: answered from the cache
+        big = [{'type': 'ask', 'questionId': 'qn-aaaaaa', 'id': 'o1', 'at': 'x' * 1100000}]
+        self.write_questions('demo', big)
+        self.assertFalse(engine.has_questions(self.proto_dir()))   # above the size the server writes: not read at all
+
     @needs_os_symlinks
-    def test_question_count_ignores_a_symlinked_questions_file(self):
+    def test_has_questions_ignores_a_symlinked_questions_file(self):
         self.init('demo')
         outside = self.base / 'outside.json'
         outside.write_text(json.dumps({'operations': [{'type': 'ask', 'questionId': 'qn-aaaaaa'}]}), encoding='utf-8')
         target = self.proto_dir() / 'questions.json'
         target.symlink_to(outside)
-        self.assertEqual(engine.question_count(self.proto_dir()), 0)
+        self.assertEqual(engine.has_questions(self.proto_dir()), False)
 
     def test_gallery_does_not_count_example_screen(self):
         self.init('demo')

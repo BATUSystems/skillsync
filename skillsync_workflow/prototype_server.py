@@ -3031,8 +3031,14 @@ PREVIEW_LABEL = 'uczestnik'   # what the read-only preview shows for a person wi
 
 def _preview_name(login, names):
     """Display name of a person in the preview: the `name` of the account (`names` is `{normalized login: name}`), else a plain label."""
-    name = names.get(normalize_login(login)) if isinstance(login, str) else None
-    return name if isinstance(name, str) and name.strip() else PREVIEW_LABEL
+    key = normalize_login(login) if isinstance(login, str) else None
+    name = names.get(key) if key else None
+    if not isinstance(name, str) or not name.strip():
+        return PREVIEW_LABEL
+    # a name that is (or contains) an address, or equals the login, is no better than the login: `users add --name` takes any text
+    if '@' in name or normalize_login(name) in (key, key.split('@')[0]):
+        return PREVIEW_LABEL
+    return name
 
 
 def preview_view(question, slug, names):

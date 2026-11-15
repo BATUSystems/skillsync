@@ -480,8 +480,8 @@ oznacza to przez `question record`; programista dostaje informację, nie pytanie
   `/_api/v1/questions/<id>`) zwraca wtedy `preview: true` i widok z białej listy pól: bez loginów i adresów e-mail jakiejkolwiek osoby (adresaci tylko policzeni, autor odpowiedzi
   i komentarza pokazany jako `name` konta albo „uczestnik”, wycofanie bez autora), bez ścieżki speca (`origin`) i bez `refersTo`; swobodny tekst pytania, odpowiedzi i komentarza nie jest przepisywany
   (login wpisany tam przez autora byłby widoczny). Zapis odpowiedzi i komentarza zostaje 403 `forbidden` przed jakąkolwiek walidacją; bez sesji nadal 401, a konto z hasłem domyślnym 403
-  `password_change_required`. Jest to zmiana zachowania: dotąd odczyt dla tych kont dawał 403.
-- Galeria (statyczna i na żywo) pokazuje przy prototypie link „Pytania (N)” do `/_experts/<slug>` oraz link „Pytania” w nagłówku, gdy jakiś przebieg ma pytania (N = pytania przebiegu); przebieg bez pytań nie ma linku.
+  `password_change_required`.
+- Galeria (statyczna i na żywo) pokazuje przy prototypie link „Pytania” do `/_experts/<slug>` oraz link „Pytania” w nagłówku, gdy jakiś przebieg ma pytania (tylko tak albo nie: galeria nie podaje liczby ani treści, więc nic nie zdradza anonimowemu odwiedzającemu; strona `/_experts` wymaga logowania); przebieg bez pytań nie ma linku.
   Statyczny `index.html` linkuje ścieżki bezwzględne serwera, więc link działa tylko wtedy, gdy galeria jest serwowana przez `prototype serve`.
 - Każde pytanie ma badge „Przebieg: <slug>”. Etykieta pytania: dla administratora nazwa pliku speca i `Q<n>`, dla eksperta `Q<n>`.
   Konto z hasłem domyślnym widzi komunikat i link do zmiany hasła; odpowiadać może dopiero po zmianie (403 `password_change_required`).

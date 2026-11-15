@@ -276,6 +276,17 @@ class RoleAndVisibilityTests(QCase):
         withdrawn = commenter.get('/_api/v1/questions/%s' % qb).json['question']
         self.assertEqual(set(withdrawn['withdrawn']), {'at', 'reason'})   # the withdrawal has no author
 
+    def test_a_name_that_is_a_login_or_an_address_is_not_shown_as_a_name(self):
+        users = ps.UsersFile(self.users_path, iterations=S.ITER, clock=self.clock)
+        for login, name in (('jan.kowalski@example.com', 'jan.kowalski@example.com'), ('ewa.test@example.com', 'Ewa <ewa.test@example.com>'),
+                            ('adam.nowak@example.com', 'adam.nowak'), ('ola.zielona@example.com', 'Ola Zielona')):
+            ps.add_user(users, login, roles=['expert'], password=PW, name=name)
+        self.seed_questions([ask('qn-0000000000b1', to='all')] + [
+            {'type': 'comment', 'questionId': 'qn-0000000000b1', 'by': login, 'cid': 'cm-' + login[:3], 'text': 'x'}
+            for login in ('jan.kowalski@example.com', 'ewa.test@example.com', 'adam.nowak@example.com', 'ola.zielona@example.com')])
+        shown = [item['by'] for item in self.check(self.who(S.A).get('/_api/v1/questions/qn-0000000000b1'), 200).json['question']['comments']]
+        self.assertEqual(sorted(shown), sorted([ps.PREVIEW_LABEL, ps.PREVIEW_LABEL, ps.PREVIEW_LABEL, 'Ola Zielona']))
+
     def test_the_preview_keys_are_a_white_list_and_the_spec_path_is_not_shown(self):
         commenter = self.who(S.A)
         for item in self.check(commenter.get('/_api/v1/questions'), 200).json['questions']:

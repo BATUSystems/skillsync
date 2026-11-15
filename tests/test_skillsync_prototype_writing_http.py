@@ -330,6 +330,7 @@ class GalleryWritingTests(WritingCase):
         self.assertIn('href="/_experts/alpha"', html)
         self.assertNotIn('/_experts/beta', html)
         self.assertIn('href="/_experts"', html)
+        self.assertNotRegex(html, r'Pytania \(\d')   # existence only, no count for an anonymous visitor
 
     def test_static_gallery_never_renders_the_mark(self):
         self.mark('beta')

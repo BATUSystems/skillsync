@@ -254,7 +254,7 @@ class AddRefsOptionsTests(QuestionCase):
     def test_screen_values_outside_the_pattern_are_refused_and_nothing_is_written(self):
         attacks = ('../x#s4', 'demo/../x#s4', '//host#s4', 'https://example.com#s4', 'javascript:x#s4', 'de mo#s4', 'demo #s4', 'demo\\x#s4',
                    'Demo#s4', 'demo_x#s4', 'demo.x#s4', '-demo#s4', 'demo-#s4', 'demo--x#s4', '#s4', 'demo', 'demo#', 'demo#s', 'demo#sx',
-                   'demo#S4', 'demo#4', 'demo#s4\n', 'demo#s4 ', 'demo#s4#s5', 'demo#s4/x', '/demo#s4', 'demo/index.html#s4', 'demo#s-1', 'demo#s4?x=1')
+                   'demo#S4', 'demo#4', 'demo#s4\n', 'demo#s4 ', 'demo#s4#s5', 'demo#s4/x', 'a' * 600 + '#s4', 'demo#s' + '1' * 2000, '/demo#s4', 'demo/index.html#s4', 'demo#s-1', 'demo#s4?x=1')
         for value in attacks:
             with self.subTest(value=value):
                 self.add('Q?', QA, '--screen=' + value, code=2)   # a malformed option: BLOCKED, like a malformed --ref

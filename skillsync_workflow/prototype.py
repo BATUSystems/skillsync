@@ -1309,7 +1309,7 @@ def render_gallery(entries):
             f'  <h2><a href="{slug}/index.html">{html_escape(entry["title"])}</a></h2>',
             *(['  <p class="writing" data-writing="true">W trakcie zapisu: agent jeszcze pisze ekrany</p>']
               if entry.get('writing') else []),
-            *([f'  <p class="questions"><a href="/_experts/{slug}">Pytania ({entry["questions"]})</a></p>']
+            *([f'  <p class="questions"><a href="/_experts/{slug}">Pytania</a></p>']
               if entry.get('questions') else []),
             '  <dl>',
             f'    <dt>Slug</dt><dd><code>{slug}</code></dd>',
@@ -1346,20 +1346,32 @@ def render_gallery(entries):
         ''])
 
 
-def question_count(directory):
-    """Number of questions asked in the run `directory` (distinct `ask` operations of its `questions.json`); 0 for a missing,
-    unreadable or malformed file or an oversized one: the gallery only needs to know whether there is anything to open."""
+_QUESTION_PRESENCE = {}   # (path, mtime_ns, size) -> bool: the live gallery asks on every request
+
+
+def has_questions(directory):
+    """Does the run `directory` have a question (an `ask` operation in its `questions.json`)? False for a missing, unreadable, malformed,
+    oversized (above the size the server itself writes) or symlinked file. Only a yes or no: the gallery tells nothing else about the
+    questions (no count, no text). Cached by (path, mtime, size), so a request of the live gallery parses a file only after it changed."""
     path = Path(directory) / server.QUESTIONS_FILE
     try:
-        if path.is_symlink() or not path.is_file() or path.stat().st_size > 8 * 1024 * 1024:
-            return 0
+        if path.is_symlink() or not path.is_file():
+            return False
+        stat = path.stat()
+        if stat.st_size > server.QUESTIONS_MAX_FILE_BYTES:
+            return False
+        key = (str(path), stat.st_mtime_ns, stat.st_size)
+        if key in _QUESTION_PRESENCE:
+            return _QUESTION_PRESENCE[key]
         operations = json.loads(path.read_text(encoding='utf-8')).get('operations')
     except (OSError, ValueError, AttributeError):
-        return 0
-    if not isinstance(operations, list):
-        return 0
-    return len({item.get('questionId') for item in operations
-                if isinstance(item, dict) and item.get('type') == 'ask' and isinstance(item.get('questionId'), str)})
+        return False
+    found = isinstance(operations, list) and any(isinstance(item, dict) and item.get('type') == 'ask'
+                                                 and isinstance(item.get('questionId'), str) for item in operations)
+    if len(_QUESTION_PRESENCE) > 512:
+        _QUESTION_PRESENCE.clear()
+    _QUESTION_PRESENCE[key] = found
+    return found
 
 
 def gallery_entries(prototypes_root, repo, now_ms=None):
@@ -1373,7 +1385,7 @@ def gallery_entries(prototypes_root, repo, now_ms=None):
             warnings.append(f'{entry["path"]}: {entry["error"]} (skipped in index)')
             continue
         warnings.extend(entry_warnings)
-        entry['questions'] = question_count(directory)
+        entry['questions'] = has_questions(directory)
         if now_ms is not None:
             entry['writing'] = server.public_writing(directory, now_ms)
         entries.append(entry)
@@ -3862,7 +3874,7 @@ def _parse_question_screen(value):
     experts renders it as a link to that screen. Strict: the slug grammar of the server, `#s` and at least one digit, nothing else
     (`fullmatch`, so no trailing newline); anything else is refused."""
     match = re.fullmatch(r'([^#]*)#s([0-9]+)', value)
-    if not match or not server.SLUG_RE.fullmatch(match.group(1)):
+    if not match or not server.SLUG_RE.fullmatch(match.group(1)) or len(f'/{match.group(1)}/index.html#s{match.group(2)}') > server.MAX_QUESTION_REF_HREF:
         raise PrototypeError(f'--screen {value!r}: use <prototype>#s<number> (lowercase letters, digits and single hyphens, e.g. demo#s4)')
     return {'title': f'Ekran s{match.group(2)}', 'href': f'/{match.group(1)}/index.html#s{match.group(2)}'}
 
