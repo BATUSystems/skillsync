@@ -12,6 +12,10 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Tests and process
+
+- `tests/test_skillsync_no_silent_return.py`: a guard (AST of `tests/**/*.py`) against a test that passes silently where it checks nothing. A quiet `return` in a test method (for example `if os.name == 'nt': return`) was reported as PASS, so the skip baseline never counted it; now a mechanism the system lacks is `self.skipTest(reason)` or `@unittest.skipUnless(...)` with a reason from a category of `tests/skip-baseline.json`. Also refused: a test whose every assertion sits in one platform or capability branch without `else`. An early return after the assertions of its own branch is allowed. Audit of `main` (1.4.1): no silent return in `tests/` (the four found in the open 1.5.0 branches are skips now).
+
 ## [1.4.1] - 2026-11-15
 
 ### Fixed
