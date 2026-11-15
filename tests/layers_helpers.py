@@ -96,8 +96,16 @@ def _platform_dir(function, env):
         return getattr(layers, function)()
 
 
+def _refreshed_by_read_only_git(path):
+    """`FETCH_HEAD` and `.git/index` are touched by `git fetch`/`git status` of other processes (another session, the watch
+    service) on the real layer clones: no write of the test under guard, so the snapshot leaves them out (DEBT-142 D67).
+    Everything else under `.git` (HEAD, refs, objects) and every file of a layer is still compared."""
+    return path.name == 'FETCH_HEAD' or (path.name == 'index' and path.parent.name == '.git')
+
+
 def real_state_snapshot():
-    """Stable description of the real per-user state dirs (None = directory absent)."""
+    """Stable description of the real per-user state dirs (None = directory absent), without the files that read-only git
+    commands of other processes refresh (`_refreshed_by_read_only_git`)."""
     snapshot = {}
     for directory in REAL_STATE_DIRS:
         if not directory.exists():
@@ -105,9 +113,17 @@ def real_state_snapshot():
             continue
         entries = []
         for path in sorted(directory.rglob('*')):
+            if _refreshed_by_read_only_git(path):
+                continue
             try:
                 stat = path.lstat()
             except OSError:
+                continue
+            if path.is_dir() and ('.git' in path.relative_to(directory).parts):
+                # `git status`/`git fetch` create and rename lock and temporary files inside `.git` (`index.lock`, `objects`,
+                # `refs/remotes`), which moves the mtime and size of those DIRECTORIES; a real write still shows up as a
+                # changed or new file (a ref, an object, a layer file), so inside `.git` only files are compared
+                entries.append((path.relative_to(directory).as_posix(), 0, 0))
                 continue
             entries.append((path.relative_to(directory).as_posix(), stat.st_size, stat.st_mtime_ns))
         snapshot[str(directory)] = tuple(entries)

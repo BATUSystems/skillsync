@@ -2138,6 +2138,58 @@ class IsolationTest(LeakTestCase):
             (watched / 'cache.json').write_text('{}', encoding='utf-8')
             self.assertNotEqual(real_state_snapshot(), before)
 
+    def test_the_snapshot_ignores_what_read_only_git_commands_of_other_processes_refresh(self):
+        """DEBT-142 D67: `git fetch`/`git status` of another session or the watch service touch `FETCH_HEAD` and `.git/index`
+        of the real layer clones while a test runs; that is no write of the test under guard (one false FAIL per run)."""
+        watched = self.root / 'fake-real-state'
+        clone = watched / 'layers' / 'core'
+        (clone / '.git' / 'refs' / 'heads').mkdir(parents=True)
+        (clone / 'skills').mkdir()
+        for rel in ('.git/FETCH_HEAD', '.git/index', '.git/HEAD', '.git/refs/heads/main', 'skills/a.md'):
+            (clone / rel).write_text('x', encoding='utf-8')
+        with mock.patch('layers_helpers.REAL_STATE_DIRS', (watched,)):
+            before = real_state_snapshot()
+            for rel in ('.git/FETCH_HEAD', '.git/index'):
+                (clone / rel).write_text('refreshed by another process, longer', encoding='utf-8')
+                os.utime(clone / rel, ns=(1, 1))
+            self.assertEqual(real_state_snapshot(), before)
+            for rel in ('.git/HEAD', '.git/refs/heads/main', 'skills/a.md'):       # a real write is still detected
+                with self.subTest(rel=rel):
+                    (clone / rel).write_text('changed by the test under guard', encoding='utf-8')
+                    self.assertNotEqual(real_state_snapshot(), before)
+                    (clone / rel).write_text('x', encoding='utf-8')
+                    os.utime(clone / rel, ns=(1, 1))
+                    before = real_state_snapshot()
+
+    def test_real_git_status_and_fetch_in_a_watched_clone_do_not_change_the_snapshot(self):
+        """The case that failed full runs: `git status` and `git fetch` of another process on a real layer clone."""
+        origin = self.make_repo()
+        commit_file(origin, 'a.md', 'x\n', 'base')
+        watched = self.root / 'fake-real-state'
+        clone = watched / 'layers' / 'core'
+        clone.parent.mkdir(parents=True)
+        subprocess.run(['git', 'clone', '-q', str(origin), str(clone)], check=True, capture_output=True)
+        git(clone, 'config', 'user.name', 'Tester')
+        git(clone, 'config', 'user.email', 'tester@example.invalid')
+        with mock.patch('layers_helpers.REAL_STATE_DIRS', (watched,)):
+            before = real_state_snapshot()
+            for _ in range(2):
+                git(clone, 'status', '--short')
+                git(clone, 'fetch', '-q', 'origin')
+            self.assertEqual(real_state_snapshot(), before)
+            commit_file(clone, 'b.md', 'y\n', 'a write under guard')
+            self.assertNotEqual(real_state_snapshot(), before, 'a commit is still detected')
+
+    def test_a_new_fetch_head_or_index_appearing_is_ignored_too(self):
+        watched = self.root / 'fake-real-state'
+        clone = watched / 'layers' / 'org'
+        (clone / '.git').mkdir(parents=True)
+        with mock.patch('layers_helpers.REAL_STATE_DIRS', (watched,)):
+            before = real_state_snapshot()
+            (clone / '.git' / 'FETCH_HEAD').write_text('x', encoding='utf-8')
+            (clone / '.git' / 'index').write_text('x', encoding='utf-8')
+            self.assertEqual(real_state_snapshot(), before)
+
     def test_link_modes_helper_sets_and_clears_the_variable(self):
         original = os.environ.get('SKILLSYNC_NO_SYMLINK')
         self.assertEqual(LINK_MODES, ('symlink', 'copy'))

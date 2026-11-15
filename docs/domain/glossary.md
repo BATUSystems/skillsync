@@ -47,13 +47,6 @@ znaczenia pojęcia. Termin, którego nie ma tutaj, nie jest zdefiniowany.
   Dopasowanie wyłącznie po rozwiązanej ścieżce projektu, nie po `project.name`.
 - **Źródło:** spec A, K3, D36, 2026-11-05; `match_rule` w `skillsync_workflow/layers.py`. Szczegóły: [layers](layers.md).
 
-### wpis `synthetic` (config 0.9.x)
-- **Znaczenie:** wpis `core` z `synthetic: {version, core_min}` i `writable: false` w configu zapisanym przez generator 0.9.x.
-  Generator go rozpoznaje (`link` i `layers` = BLOCKED `legacy-config`) i zastępuje prawdziwą warstwą core przez
-  `layers migrate --layer-source core=PATH`.
-- **Nie oznacza:** warstwy docelowej core ani poprawnej konfiguracji.
-- **Źródło:** kod `skillsync_workflow/layers.py` (`_check_bridge`, `parse_layer_flag`, `migrate_config`), 2026-11-06. Szczegóły: [layers](layers.md).
-
 ### właściciel pliku
 - **Znaczenie:** warstwa, z której plik został rozwiązany. Zapis (`push`) trafia do właściciela.
 - **Nie oznacza:** autora pliku.
@@ -118,8 +111,7 @@ znaczenia pojęcia. Termin, którego nie ma tutaj, nie jest zdefiniowany.
 - **Znaczenie:** plik z terminami, których nie może zawierać repo niepubliczne: organizacje, projekty, osoby, domeny, nick
   i imię właściciela. Czytany z każdej obecnej lokalnie warstwy (domyślnie `leakguard/identity.yaml`, ścieżka nadpisywalna
   polem `identity` w `layer.yaml`) oraz z plików w `leakguard.identity_dir`.
-- **Źródło:** spec A, K7, 2026-11-05; `skillsync_workflow/layers.py` (`DEFAULT_IDENTITY`, `leakguard_inputs`), 2026-11-06.
-  Szczegóły: [leakguard](leakguard.md).
+- **Źródło:** spec A, K7, 2026-11-05; `skillsync_workflow/layers.py` (`leakguard_inputs`), 2026-11-06. [leakguard](leakguard.md).
 
 ### klasa ścieżki
 - **Znaczenie:** `instrukcje`, `atrybucje` lub `inne` (K8); określa, które tożsamości są dozwolone w danym pliku.
@@ -139,35 +131,33 @@ znaczenia pojęcia. Termin, którego nie ma tutaj, nie jest zdefiniowany.
 ## Instalacja
 
 ### instalator (install.sh)
-- **Znaczenie:** skrypt `install.sh` z niezmiennego tagu wydania (Linux, WSL2, macOS): instaluje `uv` (gdy brak),
-  narzędzie `skillsync` z tagu przez `uv tool install` i uruchamia `skillsync setup` z przekazanymi opcjami.
-- **Nie oznacza:** instalatora z PyPI ani wsparcia natywnego Windows (tam wymagany WSL2).
-- **Źródło:** `install.sh` (nagłówek i funkcje), INST-1, 2026-11-09. Szczegóły: [installation](../installation.md).
+- **Znaczenie:** skrypt `install.sh` z tagu wydania (Linux, WSL2, macOS): instaluje `uv` (gdy brak), `skillsync` przez
+  `uv tool install` i uruchamia `skillsync setup`.
+- **Nie oznacza:** instalatora z PyPI ani natywnego Windows (tam WSL2).
+- **Źródło:** `install.sh`, INST-1, 2026-11-09. [installation](../installation.md).
 
 ### kreator setup (`skillsync setup`)
-- **Znaczenie:** polecenie konfigurujące maszynę: warstwa core, opcjonalnie warstwa organizacji (tylko do odczytu),
-  reguła doboru warstw i `layers check`; idempotentne, bez własnej logiki warstw.
+- **Znaczenie:** polecenie konfigurujące maszynę: warstwa core, opcjonalnie organizacji (tylko odczyt), reguła doboru
+  warstw i `layers check`; idempotentne.
 - **Nie oznacza:** konfiguracji projektu ani `link`; projekt linkuje się osobno.
-- **Źródło:** `skillsync_workflow/setup_wizard.py`, INST-1, 2026-11-09. Szczegóły: [cli](../cli.md#konfiguracja-maszyny-setup).
+- **Źródło:** `skillsync_workflow/setup_wizard.py`, INST-1, 2026-11-09. [cli](../cli.md#konfiguracja-maszyny-setup).
 
 ## Workflow i agenci
 
 ### podagent (podumysł)
-- **Znaczenie:** wykonawca delegowany przez sesję główną. W dokumentacji i rozmowie nazywany **podumysłem**.
-  Nazwy techniczne narzędzi (`Agent`, `subagent_type`) pozostają bez zmian.
+- **Znaczenie:** wykonawca delegowany przez sesję główną; nazywany **podumysłem**. Nazwy techniczne (`Agent`, `subagent_type`) bez zmian.
 - **Źródło:** AGENTS.md projektu (sekcja „Workflow agentowy”), 2026-11-05.
 
 ### karta
-- **Znaczenie:** sesja robocza skilla `dispatch`, wykonująca paczkę przez `feature` (`dispatch/SKILL.md:9`), przydzielana
-  przez dyspozytora; w zapisach występuje z aliasem `karta-N`.
-- **Źródło:** skill `dispatch`, `library/skills/dispatch/SKILL.md:9, :65, :101` (biblioteka), 2026-11-05; alias `karta-N` i brak
-  imion poza warstwą personal: spec A, K5, 2026-11-05.
+- **Znaczenie:** sesja robocza skilla `dispatch`, wykonująca paczkę przez `feature`, przydzielana przez dyspozytora; w zapisach
+  z aliasem `karta-N`.
+- **Źródło:** skill `dispatch` (`library/skills/dispatch/SKILL.md`), 2026-11-05; alias `karta-N`: spec A, K5, 2026-11-05.
 
 ## Prototypy
 
 ### widok
 - **Znaczenie:** stan oglądania ramki ekranu prototypu: `desktop` (pełna szerokość) albo `mobile` (iframe 375 px z media
-  queries makiety). Ustawia go przełącznik przy ekranie (nagłówek ekranu); start strony zawsze `desktop`.
+  queries makiety). Ustawia go przełącznik w nagłówku ekranu; start zawsze `desktop`.
 - **Nie oznacza:** „trybu” (Klikalny / Komentarze). Spec widoku makiety, Terminologia, 2026-11-06.
 
 ### widok wątku
@@ -175,22 +165,18 @@ znaczenia pojęcia. Termin, którego nie ma tutaj, nie jest zdefiniowany.
 - **Źródło:** `library/skills/prototype/references/comments-format.md` (biblioteka), 2026-11-06.
 
 ### iframe widoku, instancja osadzona
-- **Znaczenie:** iframe w ramce ekranu w widoku `mobile` (`?embed=view#view-sN`) i silnik działający w nim bez zapisów i sesji;
-  dane i zapisy ma strona. Haki: [słownik](../prototype-contract/slownik-html-css.md), część C. Fragment adresu `#view-sN` (stary `#sN` nadal przyjmowany): lekcja o skoku strony, NR1-V23, 2026-11-09. Spec, D1–D2, 2026-11-06.
-
-Gdzie w kodzie: `skillsync_workflow/layers.py` (`match_rule`, `LayerSet`, `check_layers`, `leakguard_inputs`);
-`skillsync_workflow/leakguard.py` (strażnik).
+- **Znaczenie:** iframe w ramce ekranu w widoku `mobile` (`?embed=view#view-sN`) i silnik w nim bez zapisów i sesji; dane i zapisy ma strona. Haki: [słownik](../prototype-contract/slownik-html-css.md), część C; fragment `#view-sN` (stary `#sN` nadal przyjmowany): lekcja o skoku strony, NR1-V23.
 
 ## Retrospektywa
 
 ### pętla jednorundowa
 - **Znaczenie:** pętla przeglądu bez pełnej kontroli; kończy się weryfikacją zamknięć, a druga runda tylko po blockerze.
-- **Źródło:** `library/skills/feature/references/review-loop.md`, sekcja „Kategoria pętli i przejścia” (biblioteka), 2026-11-06. Szczegóły: [retro-proposals](retro-proposals.md).
+- **Źródło:** `library/skills/feature/references/review-loop.md`, 2026-11-06. [retro-proposals](retro-proposals.md).
 
 ### nadmiar ceremonii (`ceremony-excess`)
-- **Znaczenie:** kontrola wykraczająca ponad to, czego wymaga kategoria pętli (pełna albo jednorundowa); klucz przyczyny w retrospektywie.
-- **Nie oznacza:** `review-rounds` (rundy z uwagami bez wspólnej przyczyny merytorycznej).
-- **Źródło:** `library/skills/feature/references/retro-quality.md`, wyzwalacz 7 (biblioteka), 2026-11-06.
+- **Znaczenie:** kontrola ponad wymóg kategorii pętli; klucz przyczyny w retrospektywie.
+- **Nie oznacza:** `review-rounds`.
+- **Źródło:** `library/skills/feature/references/retro-quality.md`, wyzwalacz 7, 2026-11-06.
 
 ### propozycja retrospektywy
 - **Znaczenie:** gotowa zmiana jednego pliku z id `<run-id>/P<n>`, zatwierdzana lub odrzucana decyzją.
@@ -198,18 +184,18 @@ Gdzie w kodzie: `skillsync_workflow/layers.py` (`match_rule`, `LayerSet`, `check
 - **Źródło:** [retro-proposals](retro-proposals.md), 2026-11-06.
 
 ### rejestr propozycji
-- **Znaczenie:** sekcja `proposals:` pliku rejestru decyzji `docs/retro/decisions.yaml` (cały plik to rejestr decyzji); decyzje końcowe, źródło stanu pary.
-- **Nie oznacza:** `retro-decisions.json` przebiegu (historia stanów).
+- **Znaczenie:** sekcja `proposals:` pliku `docs/retro/decisions.yaml`; decyzje końcowe, źródło stanu pary.
+- **Nie oznacza:** `retro-decisions.json` przebiegu.
 - **Źródło:** [retro-proposals](retro-proposals.md), 2026-11-06.
 
 ## Dashboard i zgody
 
 ### dashboard
-- **Znaczenie:** strona statusu projektu: ten sam stan workflow (plany, specyfikacje, kroki z postępem, checkpointy, zgody, gotowość) jako JSON `schema: 1` (`skillsync dashboard show`), jako żywa strona (`dashboard serve`) i jako metryki przebiegu (`dashboard metrics`); jedyny zapis to zgody użytkownika.
-- **Nie oznacza:** skilla `status-board` (nazwa starszego skilla, alias warunkowy `status-board` → `dashboard`).
+- **Znaczenie:** strona statusu projektu: stan workflow (plany, specyfikacje, kroki, checkpointy, zgody, gotowość) jako JSON `schema: 1` (`dashboard show`), żywa strona (`dashboard serve`) i metryki przebiegu (`dashboard metrics`); jedyny zapis to zgody.
+- **Nie oznacza:** skilla `status-board` (alias warunkowy → `dashboard`).
 - **Źródło:** [dashboard-server](dashboard-server.md), `docs/dashboard-contract.md`, 2026-11-11.
 
 ### approvals.jsonl
-- **Znaczenie:** dziennik zgód przebiegu `.skillsync/runs/<run-id>/approvals.jsonl`: jedna linia JSON na zgodę (słowo GO plan, GO implement, CP lub READY, sha pokazanej wersji, kto, źródło cli, ide lub dashboard, czas); pisany przez `skillsync approvals record` (blokada plikowa, odmowa duplikatu), czytany przez `approvals wait` i dashboard. Zgodę wyraża tylko użytkownik, ale reguła nie jest egzekwowana technicznie: proces tego samego użytkownika systemu może zapisać wpis (granicą zaufania jest maszyna).
+- **Znaczenie:** dziennik zgód przebiegu `.skillsync/runs/<run-id>/approvals.jsonl`: jedna linia JSON na zgodę (słowo GO plan, GO implement, CP lub READY, sha, kto, źródło, czas); pisany przez `skillsync approvals record` (pod blokadą, odmowa duplikatu), czytany przez `approvals wait` i dashboard. Zgodę wyraża tylko użytkownik; technicznie niewymuszone (granicą zaufania jest maszyna).
 - **Nie oznacza:** dowodu tożsamości ani niepodrabialnego śladu.
 - **Źródło:** [dashboard-server](dashboard-server.md), `skillsync_workflow/status.py` (`record_approval`), 2026-11-11.

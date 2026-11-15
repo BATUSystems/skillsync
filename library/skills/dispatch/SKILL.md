@@ -82,6 +82,7 @@ Przed przydziałem sonda świeża (nie starsza niż ostatnie zdarzenie karty) i 
 - pliki/obszary zakazane (zajęte przez inne karty), „tylko addytywne”, pliki dyspozytora;
 - wymóg utrwalenia wiedzy: reguły domenowe → `docs/domain`, potwierdzone awarie techniczne →
   `docs/lessons` (indeks addytywnie), wiedza kilku repo → propozycja do biblioteki;
+- stan zgód: czy użytkownik dał „GO plan” i „GO implement” (z cytatem), czy karta ma przygotować tylko spec i plan; zlecenie bez cytatu zgody znaczy: tylko spec i plan, bez kodu (karta po `/clear` bez tego zatrzymuje się przed kodem; sygnał CORE-1.1.1);
 - zasady z multi-session.md: dzierżawy, PUSH SLOT, ID REQUEST, format raportu, podpis
   `<Alias>/<paczka>`; GO/decyzje/commit/`READY` daje użytkownik **w tej karcie**.
 

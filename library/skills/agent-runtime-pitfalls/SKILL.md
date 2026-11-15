@@ -64,6 +64,10 @@ pasować do środowiska, popraw ją tutaj zamiast obchodzić.
   a kolory weryfikuj z tokenów i computed styles (`getComputedStyle`), nie ze zrzutu. Rozszerzenie
   zmieniające motyw (np. dark mode) przekolorowuje stronę i fałszuje zrzuty, więc „zły kolor” bywa
   skutkiem rozszerzenia w profilu, a nie błędem strony. Profil użytkownika ma takie rozszerzenia.
+- **`chrome --headless=new` ma minimalne okno 500 px.** Zrzuty i pomiary układu węższe niż 500 px (telefon 360-420 px,
+  reguły `@media`/`@container` poniżej tej szerokości) kłamią: `--window-size=360,800` jest ignorowane, a `window.innerWidth` zostaje 500, więc
+  breakpointy nie odpalają, a test wychodzi fałszywie zielony. Do 360 px używaj `chrome-headless-shell` (z cache playwright albo puppeteer,
+  np. `~/.cache/ms-playwright/chromium_headless_shell-*/`) i potwierdź szerokość odczytem `window.innerWidth` przed pomiarem.
 - **`python3 -m http.server` nie wyłącza cache przeglądarki.** Chrome serwuje wtedy stare
   `prototype.js`/CSS po zmianie pliku. Skutek to fałszywa czerwień albo fałszywa zieleń
   przy powtórnym teście. Przed pomiarem włącz `Network.setCacheDisabled({cacheDisabled: true})` przez CDP
