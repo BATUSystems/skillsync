@@ -2468,10 +2468,19 @@ def _init_layer(directory, kind, layer_id, register_target):
         report['target'] = stub
     elif layer_id in config.targets:
         report['warnings'].append(f'leakguard.targets.{layer_id} already exists; left unchanged')
-    quoted = shlex.quote(str(directory))
+    quoted = _quote_arg(str(directory))
     report['next'] = (f'git -C {quoted} add -A && git -C {quoted} commit -m "Layer skeleton" && '
                       f'skillsync layers add {layer_id} --kind {kind} --source {quoted}')
     return report
+
+
+def _quote_arg(value):
+    """One command-line argument for the `next` hint. POSIX: `shlex.quote`. Windows: the path with `/` in double quotes when it needs
+    quoting: `git -C "C:/My Repos/x"` runs in cmd.exe, PowerShell and Git bash alike (apostrophes do not in cmd.exe)."""
+    if os.name != 'nt':
+        return shlex.quote(value)
+    text = value.replace('\\', '/')
+    return f'"{text}"' if re.search(r'[\s&|<>()^%!";,]', text) else text
 
 
 def layers_add(layer_id, kind, source, *, subdir=None, ref=None, path=None, writable=None):

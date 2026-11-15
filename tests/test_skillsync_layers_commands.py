@@ -7,6 +7,7 @@ isolated (layers_helpers). Client names are synthetic and composed at runtime.
 """
 import json
 import os
+import posixpath
 import re
 import shlex
 import shutil
@@ -64,6 +65,12 @@ class CommandsCase(LayersCase):
 # ====================================================================== hooks and orphans in the findings engine
 
 
+# a path that does not exist, in the form a hook can name on this system (Windows: a path with a drive; a `/…` word is MSYS there)
+MISSING_FILE = 'D:/nonexistent/checkout/skillsync' if os.name == 'nt' else '/nonexistent/checkout/skillsync'
+MISSING_PYTHON = 'D:/nonexistent/venv/Scripts/python.exe' if os.name == 'nt' else '/nonexistent/venv/bin/python'
+GONE_PYTHON = 'D:/gone/uv/tools/skillsync/Scripts/python.exe' if os.name == 'nt' else '/gone/uv/tools/skillsync/bin/python'
+
+
 class HookCommandMissingTest(CommandsCase):
     """K8: a hook whose interpreter or wrapper no longer exists is `hook-command-missing` (error, FAIL)."""
 
@@ -91,7 +98,7 @@ class HookCommandMissingTest(CommandsCase):
         self.assertEqual(layers.findings_status(findings), 'PASS')
 
     def test_missing_interpreter_is_an_error_with_the_repair_command(self):
-        self.rewrite('pre-commit', shlex.quote(Path(sys.executable).as_posix()), '/nonexistent/venv/bin/python')
+        self.rewrite('pre-commit', shlex.quote(Path(sys.executable).as_posix()), MISSING_PYTHON)
         found = self.broken(self.findings())
         self.assertEqual([(item['severity'], item['layer']) for item in found], [('error', 'acme')])
         self.assertIn('pre-commit', found[0]['message'])
@@ -103,7 +110,7 @@ class HookCommandMissingTest(CommandsCase):
     def test_missing_wrapper_file_is_reported_for_each_hook(self):
         wrapper = self_argv()[1]
         for name in ('pre-commit', 'pre-push'):
-            self.rewrite(name, shlex.quote(Path(wrapper).as_posix()), '/nonexistent/checkout/skillsync')
+            self.rewrite(name, shlex.quote(Path(wrapper).as_posix()), MISSING_FILE)
         found = self.broken(self.findings())
         self.assertEqual(sorted((item['message'].split(' hook')[0]) for item in found),
                          ['The pre-commit', 'The pre-push'])
@@ -116,7 +123,7 @@ class HookCommandMissingTest(CommandsCase):
             (self.hooks / name).write_text(text.replace(wrapper, '-P -m skillsync_workflow'), encoding='utf-8')
         self.assertEqual(self.broken(self.findings()), [])             # installation form, interpreter exists
         for name in ('pre-commit', 'pre-push'):
-            self.rewrite(name, shlex.quote(Path(sys.executable).as_posix()), '/gone/uv/tools/skillsync/bin/python')
+            self.rewrite(name, shlex.quote(Path(sys.executable).as_posix()), GONE_PYTHON)
         self.assertEqual(len(self.broken(self.findings())), 2)
 
     def test_a_bare_command_missing_from_path_is_found_and_a_present_one_is_not(self):
@@ -135,17 +142,36 @@ class HookCommandMissingTest(CommandsCase):
         with unittest.mock.patch.dict(os.environ, {'PATH': full_path}):
             self.assertEqual(self.broken(self.findings()), [])
 
-    def test_a_posix_rooted_word_is_a_path_whatever_isabs_says(self):
-        # Windows with Python >= 3.13: `os.path.isabs('/x')` is False (was True): a hook line `... /nonexistent/skillsync` is still checked
-        windows_313 = lambda word: bool(re.match(r'^[A-Za-z]:[\\/]', word))   # noqa: E731
-        with unittest.mock.patch.object(leakguard.os.path, 'isabs', windows_313):
-            self.assertTrue(leakguard._hook_path_word('/nonexistent/dev/skillsync'))
-            self.assertTrue(leakguard._hook_path_word('C:/tools/skillsync'))
-            self.assertFalse(leakguard._hook_path_word('skillsync'))
-            self.assertFalse(leakguard._hook_path_word('leakcheck'))
+    def test_hook_words_on_posix(self):
+        # `os.path` is posixpath too (on a real Windows it is ntpath, whose `isabs('/x')` is False since Python 3.13)
+        with unittest.mock.patch.object(leakguard.os, 'name', 'posix'), unittest.mock.patch.object(leakguard.os.path, 'isabs', posixpath.isabs):
+            self.assertEqual(leakguard._hook_word('/nonexistent/dev/skillsync'), ('path', '/nonexistent/dev/skillsync'))
+            self.assertEqual(leakguard._hook_word('/usr/bin/env'), ('path', '/usr/bin/env'))
+            self.assertEqual(leakguard._hook_word('skillsync'), ('plain', None))
+            self.assertEqual(leakguard._hook_word('C:/tools/skillsync'), ('path', 'C:/tools/skillsync'))
+
+    def test_hook_words_on_windows_python_313_and_older(self):
+        # Windows: `os.path.isabs('/x')` is True up to Python 3.12 and False from 3.13; a hook is run by the MSYS `sh` of Git for Windows,
+        # so `/c/dir/x` is `C:/dir/x` and the MSYS root (`/usr/bin/env`) cannot be judged natively: neither depends on `isabs`
+        drive = lambda word: bool(re.match(r'^[A-Za-z]:[\\/]', word))   # noqa: E731
+        for isabs in (lambda word: drive(word) or word.startswith('/'), drive):
+            with unittest.mock.patch.object(leakguard.os, 'name', 'nt'), unittest.mock.patch.object(leakguard.os.path, 'isabs', isabs):
+                with self.subTest(isabs_of_slash=isabs('/x')):
+                    self.assertEqual(leakguard._hook_word('C:/tools/skillsync'), ('path', 'C:/tools/skillsync'))
+                    self.assertEqual(leakguard._hook_word('c:\\tools\\skillsync'), ('path', 'c:\\tools\\skillsync'))
+                    self.assertEqual(leakguard._hook_word('/c/tools/skillsync'), ('path', 'c:/tools/skillsync'))
+                    self.assertEqual(leakguard._hook_word('/d'), ('path', 'd:/'))
+                    self.assertEqual(leakguard._hook_word('/usr/bin/env'), ('unchecked', None))
+                    self.assertEqual(leakguard._hook_word('/mingw64/bin/git'), ('unchecked', None))
+                    self.assertEqual(leakguard._hook_word('/bin/sh'), ('unchecked', None))
+                    self.assertEqual(leakguard._hook_word('skillsync'), ('plain', None))
+
+    def test_msys_root_words_in_a_hook_are_never_reported_missing(self):
+        with unittest.mock.patch.object(leakguard.os, 'name', 'nt'):
+            self.assertEqual(leakguard._hook_word('/usr/bin/env')[0], 'unchecked')
 
     def test_a_hand_written_call_is_checked_too(self):
-        write(self.hooks / 'pre-push', f'#!/bin/sh\n{shlex.quote(sys.executable)} /nonexistent/dev/skillsync leakcheck "$PWD" --range HEAD\n',
+        write(self.hooks / 'pre-push', f'#!/bin/sh\n{shlex.quote(sys.executable)} {MISSING_FILE} leakcheck "$PWD" --range HEAD\n',
               executable=True)
         found = self.broken(self.findings())
         self.assertEqual(len(found), 1)
@@ -157,20 +183,20 @@ class HookCommandMissingTest(CommandsCase):
         self.assertEqual(self.broken(self.findings()), [])
 
     def test_legacy_blocks_with_a_missing_command_report_both(self):
-        self.rewrite('pre-push', shlex.quote(Path(sys.executable).as_posix()), '/nonexistent/venv/bin/python')
+        self.rewrite('pre-push', shlex.quote(Path(sys.executable).as_posix()), MISSING_PYTHON)
         text = (self.hooks / 'pre-push').read_text(encoding='utf-8')
         (self.hooks / 'pre-push').write_text(text.replace('leakcheck', 'leakcheck --identity /x/id.yaml', 1), encoding='utf-8')
         codes_found = sorted(item['code'] for item in self.findings() if item['code'].startswith('hook-'))
         self.assertEqual(codes_found, ['hook-command-missing', 'hook-legacy'])
 
     def test_the_check_follows_the_hooks_switch(self):
-        self.rewrite('pre-commit', shlex.quote(Path(sys.executable).as_posix()), '/nonexistent/venv/bin/python')
+        self.rewrite('pre-commit', shlex.quote(Path(sys.executable).as_posix()), MISSING_PYTHON)
         self.assertEqual(self.broken(self.findings(hooks=False)), [])
 
     def test_problems_are_listed_without_values_of_other_words(self):
-        self.rewrite('pre-commit', shlex.quote(Path(sys.executable).as_posix()), '/nonexistent/venv/bin/python')
+        self.rewrite('pre-commit', shlex.quote(Path(sys.executable).as_posix()), MISSING_PYTHON)
         problems = leakguard.hook_command_problems(self.path)
-        self.assertEqual(problems, [{'hook': 'pre-commit', 'kind': 'interpreter', 'path': '/nonexistent/venv/bin/python'}])
+        self.assertEqual(problems, [{'hook': 'pre-commit', 'kind': 'interpreter', 'path': MISSING_PYTHON}])
         self.assertEqual(leakguard.hook_command_problems(self.path / 'not-there'), [])
 
 

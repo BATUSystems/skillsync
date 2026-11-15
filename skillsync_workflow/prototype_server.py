@@ -128,6 +128,18 @@ class _CountingReader:
         self.count += size or 0
         return size
 
+    def readinto1(self, buffer):
+        size = self._raw.readinto1(buffer)
+        self.count += size or 0
+        return size
+
+    def readlines(self, hint=-1):
+        lines = self._raw.readlines(hint)
+        self.count += sum(len(line) for line in lines)
+        return lines
+
+    # `peek` hands out the buffered bytes without consuming them: it does not count (a later read does).
+
     def __iter__(self):
         return self
 
@@ -2137,6 +2149,18 @@ def _unlock_fd(fd):
         msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
 
 
+def _discard_fd(fd):
+    """Release the system lock (if held) and close a descriptor that was never handed to a `FileLock` (best effort, never raises)."""
+    try:
+        _unlock_fd(fd)
+    except OSError:
+        pass
+    try:
+        os.close(fd)
+    except OSError:
+        pass
+
+
 class FileLock(object):
     """`threading.Lock` per path in this process plus an exclusive lock on `path`
     (`fcntl.flock` on POSIX, `msvcrt.locking` on Windows).  Waits up to `timeout`
@@ -2168,6 +2192,7 @@ class FileLock(object):
         deadline = time.monotonic() + self.timeout
         if not self._thread_lock.acquire(timeout=max(0.0, self.timeout)):
             raise LockTimeout()
+        fd = None   # the descriptor opened here and not yet handed to `self._fd`: any exception (`KeyboardInterrupt` too) discards it
         try:
             flags = os.O_RDWR | os.O_CREAT | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_BINARY', 0)
             while True:
@@ -2184,21 +2209,24 @@ class FileLock(object):
                         if error.errno in _LOCK_UNSUPPORTED_ERRNOS or (
                                 error.errno in _LOCK_MAYBE_UNSUPPORTED_ERRNOS
                                 and time.monotonic() >= deadline - self.timeout / 2):
-                            os.close(fd)
                             raise LockUnavailable()
                         if time.monotonic() >= deadline:
-                            os.close(fd)
                             raise LockTimeout()
                         time.sleep(0.02)
                 if os.name == 'nt' or self._same_file(fd):
                     break
-                _unlock_fd(fd)  # the file was unlinked (and maybe recreated) under us: lock the one the path names now
-                os.close(fd)
+                # the file was unlinked (and maybe recreated) under us: lock the one the path names now
+                stale, fd = fd, None
+                _discard_fd(stale)
                 if time.monotonic() >= deadline:
                     raise LockTimeout()
-            self._fd = fd
+            self._fd, fd = fd, None
         except BaseException:
-            self._thread_lock.release()
+            try:
+                if fd is not None:
+                    _discard_fd(fd)
+            finally:
+                self._thread_lock.release()   # a second interrupt during the cleanup must not leave the thread lock held
             raise
         return self
 
