@@ -22,6 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from skillsync_workflow import prototype_server as ps  # noqa: E402
+from skillsync_workflow.fsutil import rmtree_force  # noqa: E402
 from tests.test_skillsync_prototype import CLI, PrototypeFixture, tree  # noqa: E402
 from tests.test_skillsync_prototype_server import setUpModule, tearDownModule  # noqa: E402,F401  (strażnik katalogu tymczasowego)
 
@@ -882,7 +883,7 @@ class CommitBeforeIterationTests(RestoreFixture):
         # Background `git maintenance` may delete its own lock mid-walk (seen on macOS): retry the rest.
         for _ in range(5):
             try:
-                shutil.rmtree(self.base / '.git')
+                rmtree_force(self.base / '.git')   # git writes loose objects read-only: Windows refuses to unlink them
                 break
             except FileNotFoundError:
                 continue
