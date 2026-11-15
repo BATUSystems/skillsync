@@ -16,6 +16,8 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from skillsync_workflow import prototype_server as ps  # noqa: E402
+from tests.test_skillsync_prototype_questions import NOON, ask  # noqa: E402
+from tests.test_skillsync_prototype_server import FakeClock  # noqa: E402
 
 
 def refusal():
@@ -76,7 +78,7 @@ class RetryTransient(unittest.TestCase):
 
 
 class FlakyOs:
-    """`os.rename`/`os.replace`/`os.open` that refuse (PermissionError) a share of the calls, then do the real work."""
+    """`os.rename`/`os.replace`/`os.open` that refuse (PermissionError) a share of the calls, then do the real work (`os.open` and `os.unlink` too)."""
 
     def __init__(self, every=3):
         self.counter = 0
@@ -184,6 +186,45 @@ class AtomicWriteUnderTransientRefusals(unittest.TestCase):
         for thread in threads:
             thread.join(60)
         self.assertEqual(errors, [])
+
+
+class StoresRetryTheRead(unittest.TestCase):
+    """The 500 of the defect: a store reading its file in the instant of another thread's replace."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix='skillsync-retry-')
+        self.addCleanup(self.tmp.cleanup)
+
+    def test_the_questions_store_reads_through_a_refused_open(self):
+        directory = os.path.join(self.tmp.name, 'root')
+        clock = FakeClock(NOON)
+        ps.QuestionsStore(directory, clock=clock).append([ask()])
+        fresh = ps.QuestionsStore(directory, clock=clock)   # no cache: the first snapshot opens the file
+        flaky = FlakyOs(every=3)
+        with mock.patch.object(ps, '_WINDOWS', True), mock.patch.object(os, 'open', flaky.wrap(os.open)):
+            snapshot = fresh.snapshot()
+        self.assertTrue(snapshot.exists)
+        self.assertGreaterEqual(flaky.counter, 3)   # the open was refused twice and went through
+
+    def test_a_questions_store_reports_a_refusal_that_lasts(self):
+        directory = os.path.join(self.tmp.name, 'root')
+        clock = FakeClock(NOON)
+        ps.QuestionsStore(directory, clock=clock).append([ask()])
+        fresh = ps.QuestionsStore(directory, clock=clock)
+        with mock.patch.object(ps, '_WINDOWS', True), mock.patch.object(ps, 'TRANSIENT_RETRY_SECONDS', 0.05), \
+                mock.patch.object(os, 'open', side_effect=refusal()):
+            with self.assertRaises(PermissionError):
+                fresh.snapshot()
+
+    def test_the_writing_marker_is_read_and_removed_through_refusals(self):
+        directory = self.tmp.name
+        payload = ps.write_writing(directory, int(time.time() * 1000), 600, 'agent')
+        flaky = FlakyOs(every=3)
+        with mock.patch.object(ps, '_WINDOWS', True), mock.patch.object(os, 'open', flaky.wrap(os.open)):
+            marker = ps.read_writing(directory, int(time.time() * 1000))
+        self.assertEqual((marker['by'], marker['expiresAt']), ('agent', payload['expiresAt']))
+        with mock.patch.object(ps, '_WINDOWS', True), mock.patch.object(os, 'unlink', flaky.wrap(os.unlink)):
+            self.assertTrue(ps.remove_writing(directory))
 
 
 if __name__ == '__main__':

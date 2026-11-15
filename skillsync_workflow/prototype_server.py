@@ -3763,7 +3763,7 @@ def remove_restore_marker(directory):
     try:
         if os.path.islink(path) or os.path.isdir(path):
             return
-        os.unlink(path)
+        retry_transient(lambda: os.unlink(path))
     except FileNotFoundError:
         return
     _fsync_directory(directory)
@@ -3846,8 +3846,8 @@ def read_writing(directory, now_ms):
 
 
 def write_writing(directory, now_ms, ttl_s, by=None):
-    """Atomically (re)write the marker; a short retry on Windows where `os.replace` can fail while a reader holds the
-    file.  A repeated call on a marker that is still valid keeps its `since` (and its `by`, unless `by` is given) and sets
+    """Atomically (re)write the marker (`atomic_write_bytes` retries briefly on Windows where `os.replace` can fail while a
+    reader holds the file).  A repeated call on a marker that is still valid keeps its `since` (and its `by`, unless `by` is given) and sets
     `renewedAt = now`; otherwise `since = renewedAt = now`.  `expiresAt = now + ttl`.
     Returns `{since, expiresAt, renewedAt, by}`."""
     now_ms = int(now_ms)
@@ -3857,15 +3857,7 @@ def write_writing(directory, now_ms, ttl_s, by=None):
     payload = {'version': 1, 'since': since, 'renewedAt': now_ms, 'expiresAt': now_ms + int(ttl_s) * 1000, 'by': who}
     data = (js_stringify(payload) + '\n').encode('utf-8')
     path = os.path.join(directory, WRITING_MARKER)
-    attempts = 5 if os.name == 'nt' else 1
-    for attempt in range(attempts):
-        try:
-            atomic_write_bytes(path, data)
-            break
-        except PermissionError:
-            if attempt + 1 >= attempts:
-                raise
-            time.sleep(0.05 * (attempt + 1))
+    atomic_write_bytes(path, data)   # the short retry on Windows is inside (`retry_transient`)
     return {'since': since, 'expiresAt': payload['expiresAt'], 'renewedAt': now_ms, 'by': who}
 
 
@@ -3875,7 +3867,7 @@ def remove_writing(directory):
     try:
         if os.path.islink(path) or os.path.isdir(path):
             return False
-        os.unlink(path)
+        retry_transient(lambda: os.unlink(path))   # Windows refuses the unlink while a status poll has the marker open
     except FileNotFoundError:
         return False
     _fsync_directory(directory)
