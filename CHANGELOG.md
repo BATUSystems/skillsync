@@ -18,6 +18,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ### Changed
 
+- Status page (`app.css`): the state of the live indicator has its own dot shape besides the colour (circle: live, square: polling, triangle: down, ring: connecting), which matters in the compact mode (≤ 420 px) where the text is hidden; interactive controls of the compact mode (`.btn`, tabs, consent and document buttons, the live indicator) are at least 2.75rem (44 px) high. A plugin that keeps its own copy of the stylesheet has to resynchronise it.
 - `dashboard` (`build_status`, `show`): plans are parsed once per (path, `mtime_ns`, size) instead of on every build of the status (the page rebuilds it on each change and poll); the activity of a run (`activity`, `runAlive`) is still read on every call. A plan rewritten with the same size inside the timestamp resolution of the file system is seen at its next change.
 
 ## [1.4.0] - 2026-11-14
