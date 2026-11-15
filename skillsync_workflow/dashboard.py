@@ -20,7 +20,7 @@ import time
 import yaml
 
 from . import __version__
-from .common import add_project_arguments, read_project, redact
+from .common import add_project_arguments, plan_section, read_project, redact
 from .layers import add_layer_argument
 from .delivery_mode import delivery_info
 from .status import (APPROVAL_WORDS, APPROVALS_FILE, MAX_APPROVALS_BYTES, _APPROVAL_SHA, _approval_at, _status_fields,
@@ -46,16 +46,23 @@ STEP_ID = r'[A-Z]{1,3}-?\d+[a-z]?(?:\.\d+[a-z]?)?'  # S1, S2a, A-1 and phase sub
 STEP_RE = re.compile(rf'^\s*[-*]\s+\[(?P<mark>[ xX])\]\s+(?P<id>{STEP_ID})(?![\w-])\s*(?P<rest>.*)$')
 HEADER_RE = re.compile(r'^(?P<key>[^\s:#|>*`-][^:|]{0,40}):\s+(?P<val>\S.*?)\s*$')
 CHECKPOINT_RE = re.compile(r'^\s*[-*]\s+(?P<time>\d{1,2}:\d{2})\b\s*(?P<text>.*)$')
-IN_PROGRESS_RE = re.compile(r'w\s+toku\s*:?\s*(?P<seg>[^;]*)', re.IGNORECASE)
-DONE_RE = re.compile(r'(?<![\w])zrobion[eya]\s*:?\s*(?P<seg>[^;]*)', re.IGNORECASE)
-ID_LIST_RE = re.compile(rf'^\s*(?P<ids>{STEP_ID}(?:(?:\s*[/+&]\s*|\s+(?:i|oraz)\s+){STEP_ID})*)(?![\w-])')
+IN_PROGRESS_RE = re.compile(r'w\s+toku\s*:?\s*(?P<seg>.*)', re.IGNORECASE)   # a segment of `split_segments`: `;` inside brackets is part of it
+DONE_RE = re.compile(r'(?<![\w])zrobion[eya]\s*:?\s*(?P<seg>.*)', re.IGNORECASE)
+ID_LIST_RE = re.compile(rf'^\s*(?P<ids>{STEP_ID}(?:(?:\s*(?:[/+&‖]|\|\|)\s*|\s+(?:i|oraz)\s+){STEP_ID})*)(?![\w-])')
 # "The session waits for a human" in a checkpoint: segment `czeka: <what>` (segments are split by `;`, like
 # "zrobione" / "w toku"). The newest checkpoint without `czeka:` clears the banner.
-WAIT_RE = re.compile(r'(?:^|;)\s*czeka\s*:\s*(?P<seg>[^;]+)', re.IGNORECASE)
+WAIT_RE = re.compile(r'^\s*czeka\s*:\s*(?P<seg>.+)', re.IGNORECASE)   # matched against one segment of `split_segments`
 WAIT_NONE = {'', '-', '—', 'nic', 'brak', 'nie'}
 # "The session works until HH:MM" in a checkpoint: segment `eta: <operation> do HH:MM` (like `czeka:`, split by `;`).
-ETA_RE = re.compile(r'(?:^|;)\s*eta\s*:\s*(?P<seg>[^;]+)', re.IGNORECASE)
+ETA_RE = re.compile(r'^\s*eta\s*:\s*(?P<seg>.+)', re.IGNORECASE)
 ETA_AT_RE = re.compile(r'^(?P<operation>.*?\S)\s+do\s+(?P<time>\d{1,2}:\d{2})\.?$', re.IGNORECASE)
+# "A stage is going on now": segment `trwa: <stage key>[, <key>…]` of a checkpoint (a segment of `split_segments`, like `czeka:`).
+TRWA_RE = re.compile(r'^\s*trwa\s*:\s*(?P<seg>.+)', re.IGNORECASE)
+# Who the waiting item is addressed to: suffix `(kto: <role>[ <login>])` of a `czeka:` value.
+WHO_RE = re.compile(r'\s*\(\s*kto\s*:\s*(?P<who>[^()]*?)\s*\)\s*\.?\s*$', re.IGNORECASE)
+WHO_ROLES = {'acceptor': 'akceptujący', 'developer': 'programista', 'expert': 'ekspert', 'commenter': 'komentujący', 'agent': 'agent'}
+WHO_ALIASES = {'akceptujący': 'acceptor', 'akceptujacy': 'acceptor', 'programista': 'developer', 'ekspert': 'expert',
+               'komentujący': 'commenter', 'komentujacy': 'commenter', 'odbiór': 'acceptor', 'odbior': 'acceptor'}
 STATUS_WAIT_RE = re.compile(r'czeka\s+na\s+(?P<what>[^);,]+)', re.IGNORECASE)
 ID_FIND_RE = re.compile(rf'(?<![\w-]){STEP_ID}(?![\w-])')
 SHA_RE = re.compile(r'^[0-9a-f]{7,40}$')
@@ -202,7 +209,7 @@ def parse_checkpoints(text):
 
 def wait_marker(text):
     """Value of the `czeka:` segment of a checkpoint text, or None."""
-    match = WAIT_RE.search(text)
+    match = _first_segment_match(WAIT_RE, text)
     if not match:
         return None
     value = match.group('seg').strip().rstrip('.')
@@ -212,7 +219,7 @@ def wait_marker(text):
 def parse_eta(text):
     """`(operation, "HH:MM")` of the `eta: <operation> do HH:MM` segment of a checkpoint text, or None (no segment, no
     readable time, an empty operation, or the "nothing" values of `czeka:`)."""
-    match = ETA_RE.search(text)
+    match = _first_segment_match(ETA_RE, text)
     found = ETA_AT_RE.match(match.group('seg').strip()) if match else None
     if not found:
         return None
@@ -220,6 +227,38 @@ def parse_eta(text):
     if hours > 23 or minutes > 59:
         return None
     return found.group('operation').strip(), f'{hours:02d}:{minutes:02d}'
+
+
+def trwa_marker(text):
+    """Stage keys of the `trwa:` segment of a checkpoint text (lower case, comma separated; `‖` also joins), or None."""
+    match = _first_segment_match(TRWA_RE, text)
+    if not match:
+        return None
+    keys = []
+    for part in split_top_level(match.group('seg').replace('‖', ',')):
+        key = ' '.join(part.split()).strip(' .').lower()
+        if key and key not in NO_ITEMS and key not in keys:
+            keys.append(key)
+    return keys or None
+
+
+def split_who(value):
+    """`(text without the suffix, who)` for a `czeka:` value: `who` = `{role, login, label}` from `(kto: <role>[ <login>])`, or None
+    without a suffix. An unknown role keeps its text as `label` with `role: None` (no error)."""
+    match = WHO_RE.search(value)
+    if not match:
+        return value, None
+    clean = value[:match.start()].rstrip()
+    words = match.group('who').split()
+    if not words or not clean:
+        return value, None
+    head = words[0].lower()
+    role = head if head in WHO_ROLES else WHO_ALIASES.get(head)
+    login = ' '.join(words[1:]) or None if role else None
+    label = WHO_ROLES[role] if role else ' '.join(words)
+    if head in ('odbiór', 'odbior'):
+        label = 'odbiór'
+    return clean, {'role': role, 'login': login, 'label': label}
 
 
 def build_eta(run_start, chronological, plan_status):
@@ -275,7 +314,23 @@ def wait_item(what, source, since=None, ctx=None):
     return item
 
 
-def split_top_level(segment, sep=','):
+def split_segments(text):
+    """Segments of a checkpoint text: `;` ends a segment only outside brackets (`(`, `[`, `{`), so `w toku: F1.1 (a; b), F1.3`
+    stays one segment. A line whose brackets do not balance (an unclosed `(` would swallow the rest of the line) is split at
+    every `;`, as before the brackets were honoured."""
+    parts = split_top_level(text, ';', balanced=True)
+    return parts if parts is not None else text.split(';')
+
+
+def _first_segment_match(pattern, text):
+    for segment in split_segments(text):
+        match = pattern.search(segment)
+        if match:
+            return match
+    return None
+
+
+def split_top_level(segment, sep=',', balanced=False):
     parts, depth, buf = [], 0, []
     for char in segment:
         if char in '([{':
@@ -288,7 +343,7 @@ def split_top_level(segment, sep=','):
         else:
             buf.append(char)
     parts.append(''.join(buf))
-    return parts
+    return None if balanced and depth else parts
 
 
 def _lead_ids(segment):
@@ -302,15 +357,67 @@ def _lead_ids(segment):
     return ids
 
 
+PARSE_WARNING_LIMIT = 10
+PARSE_WARNING_FRAGMENT = 80
+NO_ITEMS = {'', '-', '—', 'nic', 'brak', 'nie', 'żadne', 'żaden'}
+
+
+def report_warnings(text):
+    """Pieces of the `w toku` / `zrobione` lists of one checkpoint text that the id reading skips: `[{segment, fragment, reason}]`.
+    `no-step-id`: an element without a step id at its start; `later-id`: an element that starts with an id and names another one
+    further on outside brackets (only the leading ids count). The skip stays (no guessing from descriptions); the warning makes it visible."""
+    found = []
+    for label, pattern in (('w toku', IN_PROGRESS_RE), ('zrobione', DONE_RE)):
+        match = _first_segment_match(pattern, text)
+        if not match:
+            continue
+        for item in split_top_level(match.group('seg')):
+            piece = ' '.join(item.split())
+            if piece.rstrip('.').lower() in NO_ITEMS:
+                continue
+            lead = ID_LIST_RE.match(item)
+            if not lead:
+                reason = 'no-step-id'
+            elif ID_FIND_RE.search(_without_brackets(item[lead.end():])):
+                reason = 'later-id'
+            else:
+                continue
+            found.append({'segment': label, 'fragment': redact(piece)[:PARSE_WARNING_FRAGMENT], 'reason': reason})
+    return found
+
+
+def _without_brackets(text):
+    out, depth = [], 0
+    for char in text:
+        if char in '([{':
+            depth += 1
+        elif char in ')]}' and depth:
+            depth -= 1
+        elif not depth:
+            out.append(char)
+    return ''.join(out)
+
+
+def checkpoint_warnings(chronological):
+    """`run.parseWarnings`: the newest `PARSE_WARNING_LIMIT` warnings of the run, newest first, each with the checkpoint `time`."""
+    out = []
+    for item in reversed(chronological):
+        for warning in report_warnings(item['text']):
+            out.append({'time': item['time'], **warning})
+            if len(out) >= PARSE_WARNING_LIMIT:
+                return out
+    return out
+
+
 def ids_reported_done(text):
     """Ids after "zrobione" (up to `;`): a visual hint only, it does not change the percentage."""
-    match = DONE_RE.search(text)
+    match = _first_segment_match(DONE_RE, text)
     return _lead_ids(match.group('seg')) if match else []
 
 
 def ids_in_progress(text):
     """Step ids after "w toku" up to the next `;`, only items that start with an id; None when the phrase is absent."""
-    match = IN_PROGRESS_RE.search(text)
+    match = _first_segment_match(IN_PROGRESS_RE, text)
     return _lead_ids(match.group('seg')) if match else None
 
 
@@ -634,10 +741,10 @@ EXPERT_QUESTION_SLUG = re.compile(r'[a-z0-9]+(?:-[a-z0-9]+)*')
 EXPERT_QUESTION_TYPES = ('ask', 'answer', 'comment', 'recorded', 'withdraw')
 
 
-def _open_questions(path):
-    """`(open, blocking)` of one `questions.json` (`expert-questions/1`), read like the prototype server folds it: a question is
-    open from its first `ask` until an `answer` or `withdraw` of it; operations without id/at/questionId/known type are skipped.
-    None for an unreadable or malformed file."""
+def _read_questions(path):
+    """`(asked, closed)` of one `questions.json` (`expert-questions/1`), read like the prototype server folds it: `asked` = `{questionId: its
+    first `ask` operation}` in order of asking; `closed` = `{questionId: 'answered'|'withdrawn'}` from the first `answer` or `withdraw`
+    of it. Operations without id/at/questionId/known type are skipped. None for an unreadable or malformed file."""
     try:
         with open(path, 'rb') as handle:
             raw = handle.read(EXPERT_QUESTIONS_MAX_BYTES + 1)
@@ -656,22 +763,53 @@ def _open_questions(path):
     usable = [op for op in operations
               if isinstance(op, dict) and isinstance(op.get('id'), str) and isinstance(op.get('at'), str)
               and isinstance(op.get('questionId'), str) and op.get('type') in EXPERT_QUESTION_TYPES]
-    asked, closed, seen = {}, set(), set()
+    asked, closed, seen = {}, {}, set()
     # the same order and de-duplication as the server's fold: operations by (at, id), an `ask` of a question first,
     # an operation whose id was already seen is skipped
     ordered = sorted(usable, key=lambda op: (op['at'], op['id']))
     for op in ordered:
         if op['type'] == 'ask' and op['id'] not in seen:
             seen.add(op['id'])
-            asked.setdefault(op['questionId'], op.get('blocking') is True)
+            asked.setdefault(op['questionId'], op)
     for op in ordered:
         if op['type'] == 'ask' or op['id'] in seen:
             continue
         seen.add(op['id'])
         if op['type'] in ('answer', 'withdraw'):
-            closed.add(op['questionId'])
-    still_open = [qid for qid in asked if qid not in closed]
-    return len(still_open), sum(1 for qid in still_open if asked[qid])
+            closed.setdefault(op['questionId'], 'answered' if op['type'] == 'answer' else 'withdrawn')
+    return asked, closed
+
+
+def _open_questions(path):
+    """`(open, blocking)` of one `questions.json`: a question is open from its first `ask` until an `answer` or `withdraw` of it.
+    None for an unreadable or malformed file."""
+    folded = _read_questions(path)
+    if folded is None:
+        return None
+    asked, closed = folded
+    still_open = [op for qid, op in asked.items() if qid not in closed]
+    return len(still_open), sum(1 for op in still_open if op.get('blocking') is True)
+
+
+def _addressees(op):
+    """Logins an `ask` is addressed to: a sorted list of strings; empty = every expert of the run."""
+    value = op.get('addressees')
+    return sorted({item for item in value if isinstance(item, str) and item}) if isinstance(value, list) else []
+
+
+QUESTION_TEXT_LIMIT = 160
+QUESTION_ITEMS_LIMIT = 50
+
+
+def _question_items(slug, asked, closed):
+    """`expertQuestions.items[]` entries of one run: `{id, runSlug, text (up to 160 characters), blocking, addressees, state, at, url}`;
+    `state` = `open`, `answered` or `withdrawn`."""
+    items = []
+    for qid, op in asked.items():
+        text = ' '.join(str(op.get('text') or '').split())
+        items.append({'id': qid, 'runSlug': slug, 'text': text[:QUESTION_TEXT_LIMIT], 'blocking': op.get('blocking') is True,
+                      'addressees': _addressees(op), 'state': closed.get(qid, 'open'), 'at': op['at'], 'url': f'/_experts/{slug}'})
+    return items
 
 
 def build_expert_questions(root):
@@ -679,7 +817,7 @@ def build_expert_questions(root):
     (`docs/prototypes/<slug>/questions.json`), not only the run of the visible spec. `runs` lists only runs with open
     questions; `url` is the path of that run's page on the prototype server (the consumer adds the origin)."""
     base = prototypes_root(root)
-    runs = []
+    runs, items = [], []
     if base is not None:
         try:
             names = sorted(os.listdir(base))
@@ -694,10 +832,20 @@ def build_expert_questions(root):
                 continue
             if questions.is_symlink() or not questions.is_file():
                 continue
-            counts = _open_questions(questions)
-            if counts and counts[0]:
-                runs.append({'slug': name, 'open': counts[0], 'blocking': counts[1], 'url': f'/_experts/{name}'})
-    return {'open': sum(run['open'] for run in runs), 'blocking': sum(run['blocking'] for run in runs), 'runs': runs}
+            folded = _read_questions(questions)
+            if folded is None:
+                continue
+            asked, closed = folded
+            items += _question_items(name, asked, closed)
+            still_open = [op for qid, op in asked.items() if qid not in closed]
+            if still_open:
+                everyone = any(not _addressees(op) for op in still_open)
+                runs.append({'slug': name, 'open': len(still_open), 'blocking': sum(1 for op in still_open if op.get('blocking') is True),
+                             'url': f'/_experts/{name}',
+                             'addressees': 'all' if everyone else sorted({login for op in still_open for login in _addressees(op)})})
+    items.sort(key=lambda item: (item['at'], item['id']), reverse=True)
+    return {'open': sum(run['open'] for run in runs), 'blocking': sum(run['blocking'] for run in runs), 'runs': runs,
+            'items': items[:QUESTION_ITEMS_LIMIT]}
 
 
 def prototype_acceptance(root, slug):
@@ -716,6 +864,95 @@ def prototype_acceptance(root, slug):
     if not isinstance(acceptance, dict):
         return None
     return {key: int(acceptance.get(key) or 0) for key in ('screens', 'accepted', 'stale')}
+
+
+def _comments_after_acceptance(directory, slug):
+    """`{count, screens: [{id, count}]}` (Q6): messages (a new thread or a reply, not retracted) newer than the last VALID acceptance of
+    their screen, in threads that are still undecided (`open`, `awaiting`); stateless (no "read" mark), so it goes away when the thread is
+    decided. None when the comment log cannot be read."""
+    from . import prototype_server as server
+    from .prototype import MAX_COMMENTS_READ, read_regular_bytes
+    path = directory / server.COMMENTS_FILE
+    if not os.path.lexists(path):
+        return {'count': 0, 'screens': []}
+    data, _reason = read_regular_bytes(path, MAX_COMMENTS_READ)
+    if data is None:
+        return None
+    fold = server.fold_operations(server.parse_document(data.decode('utf-8'), slug).operations)
+    hashes = server.screen_hashes(str(directory))
+    accepted = server.acceptance_state(fold, hashes['screens'], hashes.get('aliases'))
+    per_screen = {}
+    for thread in fold['threads']:
+        entry = accepted.get(thread.get('screen'))
+        if not entry or not entry['valid'] or thread['status'] not in ('open', 'awaiting'):
+            continue
+        since = parse_iso(entry['at'])
+        if since is None:
+            continue
+        newer = sum(1 for message in thread['messages']
+                    if not message.get('retracted') and (parse_iso(message.get('at')) or since) > since)
+        if newer:
+            per_screen[thread['screen']] = per_screen.get(thread['screen'], 0) + newer
+    return {'count': sum(per_screen.values()), 'screens': [{'id': name, 'count': per_screen[name]} for name in sorted(per_screen)]}
+
+
+def _safe_after_acceptance(directory, slug):
+    """`_comments_after_acceptance`, or zero comments when the log is unreadable or malformed (the prototype stays on the page)."""
+    try:
+        return _comments_after_acceptance(directory, slug) or {'count': 0, 'screens': []}
+    except Exception:
+        return {'count': 0, 'screens': []}
+
+
+def prototype_overview(root, slug):
+    """One prototype for the page (`prototypes[]` without `slug` and `writing`): `{iteration, screens, accepted, stale, threads,
+    commentsAfterAcceptance}` (in-process, read-only, the readers of `prototype list` and the prototype server), or None."""
+    if not slug or not re.fullmatch(r'[A-Za-z0-9][\w.-]*', slug):
+        return None
+    base = prototypes_root(root)
+    directory = base / slug if base is not None else None
+    if directory is None or not directory.is_dir() or directory.is_symlink():
+        return None
+    try:
+        from .prototype import prototype_comments_info
+        fields = prototype_comments_info(directory, slug)[0]
+        acceptance = fields.get('acceptance') if isinstance(fields.get('acceptance'), dict) else {}
+        threads = fields.get('threads') if isinstance(fields.get('threads'), dict) else {}
+        return {'iteration': fields.get('iteration'), 'screens': int(acceptance.get('screens') or 0),
+                'accepted': int(acceptance.get('accepted') or 0), 'stale': int(acceptance.get('stale') or 0),
+                'threads': {key: value for key, value in threads.items() if isinstance(value, int) and not isinstance(value, bool)},
+                'commentsAfterAcceptance': _safe_after_acceptance(directory, slug)}
+    except Exception:  # an unreadable prototype must not break the status page
+        return None
+
+
+PROTOTYPES_LIMIT = 50
+
+
+def build_prototypes(root, overview, writing):
+    """`prototypes[]`: every prototype of the project (up to 50, by slug) with its acceptance, threads and comments after acceptance."""
+    base = prototypes_root(root)
+    if base is None:
+        return []
+    try:
+        names = sorted(os.listdir(base))
+    except OSError:
+        return []
+    out = []
+    for name in names:
+        if not EXPERT_QUESTION_SLUG.fullmatch(name):
+            continue
+        directory = base / name
+        meta = directory / 'prototype.json'
+        if directory.is_symlink() or not directory.is_dir() or meta.is_symlink() or not meta.is_file():
+            continue
+        info = overview(name)
+        if info is None:
+            continue
+        out.append({'slug': name, **info, 'writing': writing(name) if writing else None})
+        if len(out) >= PROTOTYPES_LIMIT:
+            break
+    return out
 
 
 def prototype_writing(root, slug, now_ms=None):
@@ -1028,6 +1265,26 @@ def approvals_state(root, spec, plan, delivery, run_id, head_full, log, waiting,
 
 # --------------------------------------------------------------------------- model
 
+def _stage_token(text):
+    return re.sub(r'[\s\-]+', '_', re.sub(r'\s*(×\d+|\d+/\d+)\s*$', '', str(text or '').strip().lower())).strip('_')
+
+
+def _trwa_since(trwa, act, open_act, key, label):
+    """Time of the checkpoint since which `trwa:` names this stage, or None: the key of the stage (`stage_` dropped) or its label
+    (`Review ×2` = `review`); a plain `review` means the review of the act that is still open."""
+    if not trwa:
+        return None
+    names = {_stage_token(label)}
+    if key:
+        names.add(_stage_token(key[6:] if key.startswith('stage_') else key))
+    for name in names:
+        if name in trwa:
+            if name == 'review' and act != open_act:
+                continue
+            return trwa[name] or ''
+    return None
+
+
 def _stage(label, done, tip='', key=None):
     """Stage tile; `key` = description key in the skill's `descriptions.json`."""
     return {'label': label, 'done': done, 'tip': tip, 'key': key}
@@ -1060,34 +1317,53 @@ def compute_acts(spec, plan, progress, run_files, extra=None):
         plan_state = 'active'
     real_state = 'done' if plan_status == 'done' else 'active' if plan_status == 'in_progress' else 'planned'
 
+    trwa = extra.get('trwa') or {}
+    writing_on = extra.get('writingSince')   # HH:MM of a valid writing marker (the prototype stage is going on) or None
+    open_act = next((key for key, state in (('spec', spec_state), ('plan', plan_state), ('real', real_state)) if state != 'done'), 'real')
+
+    def stage(act, label, done, tip='', key=None, auto=None):
+        """`_stage` plus `state` (`done`, `active`, `planned`) and `since` (HH:MM) of an active one: `active` from a `trwa:` key of the
+        newest checkpoint or from a fact of the files (`auto`); a stage that is done stays `done` whatever the checkpoint says."""
+        item = _stage(label, done, tip, key)
+        since = _trwa_since(trwa, act, open_act, key, label)
+        if done:
+            item['state'] = 'done'
+        elif since is not None or auto is not None:
+            item['state'] = 'active'
+            if since or auto:
+                item['since'] = since or auto
+        else:
+            item['state'] = 'planned'
+        return item
+
     spec_stages = [
-        _stage('Szkic', spec.get('exists', False), spec.get('path') or 'brak speca', key='stage_spec_draft'),
-        _stage(f'Review ×{spec_reviews}' if spec_reviews > 1 else 'Review', spec_reviews > 0,
+        stage('spec', 'Szkic', spec.get('exists', False), spec.get('path') or 'brak speca', key='stage_spec_draft', auto='' if spec.get('preparing') else None),
+        stage('spec', f'Review ×{spec_reviews}' if spec_reviews > 1 else 'Review', spec_reviews > 0,
                'rundy review speca w katalogu przebiegu', key='stage_spec_review'),
     ]
     acc = spec.get('prototypeAcceptance')
     if acc and acc.get('screens'):
         accepted = acc['accepted'] == acc['screens'] and not acc.get('stale')
-        spec_stages.append(_stage(f"Prototyp {acc['accepted']}/{acc['screens']}", accepted, key='stage_prototype',
+        spec_stages.append(stage('spec', f"Prototyp {acc['accepted']}/{acc['screens']}", accepted, key='stage_prototype', auto=writing_on,
                                   tip=f"{spec.get('prototype')}: zaakceptowane ekrany {acc['accepted']} z {acc['screens']}"
                                   + (f", nieaktualne {acc['stale']}" if acc.get('stale') else '')))
     elif spec.get('prototype') or proto_rounds:
-        spec_stages.append(_stage('Prototyp', bool(proto_rounds) or spec_state == 'done',
-                                  spec.get('prototype') or 'uwagi do prototypu w przebiegu', key='stage_prototype'))
-    spec_stages.append(_stage('Zatwierdzony', spec_state == 'done', f"Status speca: {spec_status or '—'}",
+        spec_stages.append(stage('spec', 'Prototyp', bool(proto_rounds) or spec_state == 'done',
+                                  spec.get('prototype') or 'uwagi do prototypu w przebiegu', key='stage_prototype', auto=writing_on))
+    spec_stages.append(stage('spec', 'Zatwierdzony', spec_state == 'done', f"Status speca: {spec_status or '—'}",
                               key='stage_spec_approved'))
     plan_stages = [
-        _stage('Plan', plan is not None, plan.get('path') if plan else 'brak planu', key='stage_plan'),
-        _stage('Review', plan_reviews > 0, 'rundy review planu w katalogu przebiegu', key='stage_plan_review'),
-        _stage('Pre-implement', pre_impl, 'bramka gotowości przed ryzykowną zmianą', key='stage_pre_implement'),
-        _stage('GO implement', plan_status in ('in_progress', 'done'), f"Status planu: {plan_status or '—'}",
+        stage('plan', 'Plan', plan is not None, plan.get('path') if plan else 'brak planu', key='stage_plan'),
+        stage('plan', 'Review', plan_reviews > 0, 'rundy review planu w katalogu przebiegu', key='stage_plan_review'),
+        stage('plan', 'Pre-implement', pre_impl, 'bramka gotowości przed ryzykowną zmianą', key='stage_pre_implement'),
+        stage('plan', 'GO implement', plan_status in ('in_progress', 'done'), f"Status planu: {plan_status or '—'}",
                key='stage_go_implement'),
     ]
     code_reviews = sum(1 for name in names if 'code-review' in name or name.startswith('final-review'))
     real_stages = [
-        _stage(f'Review kodu ×{code_reviews}' if code_reviews > 1 else 'Review kodu', code_reviews > 0,
+        stage('real', f'Review kodu ×{code_reviews}' if code_reviews > 1 else 'Review kodu', code_reviews > 0,
                'raporty code-review*/final-review* w katalogu przebiegu', key='code_review'),
-        _stage('Zamknięcie', plan_status == 'done', f"Status planu: {plan_status or '—'}", key='closure'),
+        stage('real', 'Zamknięcie', plan_status == 'done', f"Status planu: {plan_status or '—'}", key='closure'),
     ]
     risky = extra.get('risky') or []
     spec_warning = (f"brak pre-implement przed GO plan: spec ma sekcje {', '.join(risky)}"
@@ -1116,6 +1392,14 @@ def _pending_percent(done, pending, total):
     if not total:
         return 0
     return round(100 * (done + pending) / total) - round(100 * done / total)
+
+
+def _active_percent(settled, working, total):
+    """Third segment of the progress bar: steps in progress count as half a step (a difference of roundings, so the three segments
+    add up and never pass 100)."""
+    if not total or not working:
+        return 0
+    return min(round(100 * (settled + working / 2) / total), 100) - round(100 * settled / total)
 
 
 def build_progress(phases, in_progress, plan_status, reported=None):
@@ -1163,9 +1447,11 @@ def build_progress(phases, in_progress, plan_status, reported=None):
         })
     total = len(steps)
     done_total = sum(1 for step in steps if step['done'])
+    working = sum(1 for phase in out_phases for step in phase['steps'] if step['state'] == 'active')
     return {
         'total': total, 'done': done_total, 'percent': round(100 * done_total / total) if total else 0,
         'pending': len(reported_set), 'pendingPercent': _pending_percent(done_total, len(reported_set), total),
+        'activePercent': _active_percent(done_total + len(reported_set), working, total),
         'phases': out_phases, 'active': active, 'activeSource': source, 'current': current,
         'parallel': max(0, len(active) - 1), 'reported': sorted(reported_set),
     }
@@ -1403,7 +1689,9 @@ def _local_hhmm(millis):
 
 def writing_item(slug, writing):
     """Banner entry for a valid writing marker: the agent is still writing screens, nothing to accept yet."""
-    return {'what': f"agent pisze ekrany (do {_local_hhmm(writing['expiresAt'])})", 'source': 'writing',
+    planned, done = writing.get('screensPlanned'), writing.get('screensDone')
+    count = f'{done} z {planned}, ' if planned and done is not None else ''
+    return {'what': f"agent pisze ekrany ({count}do {_local_hhmm(writing['expiresAt'])})", 'source': 'writing',
             'since': _local_hhmm(writing['since']),
             'action': 'Agent pisze ekrany prototypu; akceptacja wróci, gdy skończy. Nic nie musisz robić.',
             'link': {'kind': 'prototype', 'slug': slug}}
@@ -1420,6 +1708,74 @@ def expert_item(expert):
                      'url': single['url'] if single else '/_experts'}}
 
 
+RESULT_STATUSES = ('in_progress', 'done', 'implemented')
+RESULT_MAX_BYTES = 4096
+
+
+def build_result(plan_text, plan_info):
+    """`result {text, path}`: the `## Wynik` section of the chosen plan (up to 4 KiB, as text) once the plan runs or is closed; None without
+    a plan, for a plan that has not started, or without a non-empty section."""
+    if not plan_info or plan_info.get('status') not in RESULT_STATUSES:
+        return None
+    section = plan_section(plan_text, 'Wynik')
+    if not section:
+        return None
+    return {'text': section.encode('utf-8')[:RESULT_MAX_BYTES].decode('utf-8', 'ignore').strip(), 'path': plan_info['path']}
+
+
+def trwa_stages(chronological):
+    """`{stage key: HH:MM since}` of the NEWEST checkpoint's `trwa:` segment, or {}: a checkpoint with `czeka:` (the session waits,
+    it does not work) or without the segment clears it. `since` = the oldest checkpoint of the unbroken run of newest ones that
+    names the key."""
+    if not chronological:
+        return {}
+    def names(item):
+        return [] if wait_marker(item['text']) else [_stage_token(key) for key in trwa_marker(item['text']) or []]
+    found = {key: chronological[-1]['time'] for key in names(chronological[-1])}
+    running = set(found)
+    for item in reversed(chronological[:-1]):
+        here = names(item)
+        for key in list(running):
+            if key in here:
+                found[key] = item['time']
+            else:
+                running.discard(key)   # the run of newest checkpoints naming the key ends here: `since` stays at the later time
+        if not running:
+            break
+    return found
+
+
+def link_warning(root, spec, run, spec_exists):
+    """One sentence about the spec -> run -> prototype link that fails, or None when the link is complete (act I only)."""
+    if not spec_exists:
+        return None
+    if not run.get('id'):
+        return 'Spec nie wskazuje przebiegu (brak linii „Przebieg:”), więc strona nie widzi checkpointów ani raportów.'
+    if not run.get('exists'):
+        return f"Katalog przebiegu {run['id']} nie istnieje w {RUNS_DIR}/, więc strona nie widzi checkpointów ani raportów."
+    proto = spec.get('prototype')
+    base = prototypes_root(root)
+    if proto and (base is None or not (base / proto.rstrip('/').rsplit('/', 1)[-1] / 'prototype.json').is_file()):
+        return f'Spec wskazuje prototyp {proto}, którego nie ma w {PROTOTYPES_DIR}/.'
+    return None
+
+
+def default_who(item):
+    """`who` of a waiting item without a `(kto: …)` suffix, from its `source` (and consent word): the expert answers `expert` items,
+    the session writes `writing` items, `acceptance` (a human acceptance step) goes to the acceptor labelled "odbiór"; consents and
+    prototype acceptance belong to the acceptor. None = the page keeps the generic "Sesja czeka na Ciebie"."""
+    source = item.get('source')
+    if source == 'expert':
+        return {'role': 'expert', 'login': None, 'label': WHO_ROLES['expert']}
+    if source == 'writing':
+        return {'role': 'agent', 'login': None, 'label': WHO_ROLES['agent']}
+    if source == 'acceptance':
+        return {'role': 'acceptor', 'login': None, 'label': 'odbiór'}
+    if source in ('prototype', 'plan', 'spec') or item.get('word') or item.get('approve'):
+        return {'role': 'acceptor', 'login': None, 'label': WHO_ROLES['acceptor']}
+    return None
+
+
 def waiting_items(run, spec, plan, slug, writing=None, expert=None):
     """What the session waits for: the `czeka:` marker of the newest checkpoint wins; otherwise facts from the files:
     `Status: … (czeka na …)` of the plan or spec, a prototype with unaccepted screens before "GO implement" and open
@@ -1430,7 +1786,10 @@ def waiting_items(run, spec, plan, slug, writing=None, expert=None):
     marker = wait_marker(newest['text']) if newest else None
     items = []
     if marker:
-        items = [wait_item(marker, 'checkpoint', newest['time'], ctx)]
+        clean, who = split_who(marker)
+        items = [wait_item(clean, 'checkpoint', newest['time'], ctx)]
+        if who:
+            items[0]['who'] = who
     else:
         for doc, source in ((plan, 'plan'), (spec, 'spec')):
             text = (doc or {}).get('statusText') or ''
@@ -1452,6 +1811,11 @@ def waiting_items(run, spec, plan, slug, writing=None, expert=None):
         items = [item for item in items if item['source'] != 'prototype'
                  and not (item.get('link') or {}).get('kind') == 'prototype']
         items.insert(0, writing_item(slug, writing))
+    for item in items:
+        if 'who' not in item:
+            who = default_who(item)
+            if who:
+                item['who'] = who
     return items
 
 
@@ -1494,7 +1858,7 @@ def _normal_plan_rel(plan):
 
 
 def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=None, prototype_port=PROTOTYPE_PORT,
-                 version=0, ahead=None, prototype_up=None, acceptance=None, writing=None, now_ms=None):
+                 version=0, ahead=None, prototype_up=None, acceptance=None, writing=None, now_ms=None, overview=None):
     """The dashboard contract (`schema: 1`) for the project at `root`. Read-only: nothing in the project is written.
 
     `plan` = plan path relative to the project (unknown = automatic choice, `planAuto: true`). `version`, `session_url`,
@@ -1516,10 +1880,10 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
     if spec_act or run_act:
         chosen = None
 
-    plan_info, fields, phases = None, {}, []
+    plan_info, fields, phases, plan_text = None, {}, [], ''
     if chosen:
         plan_path = root / chosen['path']
-        text = read_text(plan_path)
+        text = plan_text = read_text(plan_path)
         title, fields = parse_header(text)
         phases = parse_progress(text)
         pr = PLAN_PR_RE.search(text)
@@ -1564,6 +1928,9 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
             run['checkpoints'] = list(reversed(chronological))
             last_change.append(_mtime(checkpoints))
             run['lastReportAt'] = _iso(_mtime(checkpoints))
+            warnings = checkpoint_warnings(chronological)
+            if warnings:
+                run['parseWarnings'] = warnings
             for item in chronological:
                 reported += [sid for sid in ids_reported_done(item['text']) if sid not in reported]
             for item in reversed(chronological):
@@ -1576,9 +1943,21 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
     run['startIso'] = start_dt.isoformat() if start_dt else None
 
     progress = build_progress(phases, in_progress, plan_info['status'] if plan_info else None, reported)
-    acts = compute_acts(spec, plan_info, progress, run['files'], {'risky': risky_sections(spec_text)})
     writing_state = ((writing or (lambda name: prototype_writing(root, name, now_ms)))(slug)) if slug else None
+    if writing_state:
+        # `screensDone`: screens of `index.html` without the template example, counted like the acceptance (`prototype list`)
+        counted = spec.get('prototypeAcceptance') or (acceptance or (lambda name: prototype_acceptance(root, name)))(slug)
+        if counted:   # an unreadable prototype has no count: the key is left out rather than claim 0 screens
+            writing_state = {**writing_state, 'screensDone': int(counted.get('screens') or 0)}
+    acts = compute_acts(spec, plan_info, progress, run['files'],
+                        {'risky': risky_sections(spec_text), 'trwa': trwa_stages(chronological),
+                         'writingSince': _local_hhmm(writing_state['since']) if writing_state else None})
+    acts[0]['linkWarning'] = link_warning(root, spec, run, bool(spec_path))
     expert_questions = build_expert_questions(root)
+    overview_of = overview or (lambda name: prototype_overview(root, name))
+    writing_of = writing or (lambda name: prototype_writing(root, name, now_ms))
+    prototypes = build_prototypes(root, overview_of, writing_of)
+    current_after = (overview_of(slug) or {}).get('commentsAfterAcceptance') if slug else None
     waiting = waiting_items(run, spec if spec_path else None, plan_info, slug, writing=writing_state, expert=expert_questions)
     git_info = read_git(root)
     delivery = read_delivery(manifest)
@@ -1605,6 +1984,7 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
         'run': run,
         'progress': progress,
         'acts': acts,
+        'result': build_result(plan_text, plan_info),
         'waiting': waiting,
         'eta': build_eta(run['start'], chronological, plan_info['status'] if plan_info else None),
         # Report silence: the consumer counts the minutes (no events arrive when nothing changes).
@@ -1616,7 +1996,8 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
         'delivery': delivery_state,
         'session': {'url': session_url},
         'prototype': {'slug': slug, 'port': prototype_port, 'up': bool(slug) and bool(prototype_up and prototype_up()),
-                      'writing': writing_state},
+                      'writing': writing_state, **({'commentsAfterAcceptance': current_after} if current_after and current_after.get('count') else {})},
+        'prototypes': prototypes,
         'docs': doc_groups(root, [rel for rel in current_docs if rel], run['files'], run_id),
         'readiness': read_readiness(root, run_id, run['exists']),
         'assumptions': {'count': len(assumptions), 'items': assumptions},

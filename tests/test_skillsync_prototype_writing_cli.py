@@ -209,5 +209,61 @@ class WritingClockAndLockTests(WritingCliFixture):
         self.assertEqual(ok['status'], 'PASS')
 
 
+
+class WritingScreensTests(WritingCliFixture):
+    """`writing start --screens N` (STATUS-160-A): the planned number of screens is an optional marker field."""
+
+    def test_screens_is_stored_and_a_renewal_without_it_keeps_the_value(self):
+        started = self.writing('start', '--screens', '12')
+        self.assertEqual(started['writing']['screensPlanned'], 12)
+        self.assertEqual(self.stored()['screensPlanned'], 12)
+        self.assertEqual(self.stored()['version'], 1)
+        renewed = self.writing('start')
+        self.assertEqual(renewed['writing']['screensPlanned'], 12)
+        self.assertEqual(self.writing('start', '--screens', '15')['writing']['screensPlanned'], 15)
+        self.assertEqual(self.writing('status')['writing']['screensPlanned'], 15)
+
+    def test_screens_with_done_or_status_is_invalid_args(self):
+        for action in ('done', 'status'):
+            with self.subTest(action=action):
+                report = self.writing(action, '--screens', '5', code=2)
+                self.assertEqual((report['status'], report['error']), ('BLOCKED', 'invalid_args'))
+
+    def test_without_screens_the_marker_has_no_field(self):
+        self.writing('start')
+        self.assertNotIn('screensPlanned', self.stored())
+
+    def test_out_of_range_or_malformed_screens_is_invalid_args(self):
+        for value in ('0', '201', '-1', 'abc', '1.5', ''):
+            with self.subTest(value=value):
+                report = self.writing('start', '--screens', value, code=2)
+                self.assertEqual((report['status'], report['error']), ('BLOCKED', 'invalid_args'))
+        self.assertFalse(self.marker.exists())
+        for value in ('1', '200'):
+            with self.subTest(value=value):
+                self.assertEqual(self.writing('start', '--screens', value)['writing']['screensPlanned'], int(value))
+
+    def test_the_reader_ignores_a_bad_value_and_keeps_the_marker_valid(self):
+        self.writing('start')
+        data = self.stored()
+        data['screensPlanned'] = 'dużo'
+        self.marker.write_text(json.dumps(data), encoding='utf-8')
+        marker = ps.read_writing(str(self.dir), int(time.time() * 1000))
+        self.assertIsNotNone(marker)
+        self.assertNotIn('screensPlanned', marker)
+        data['screensPlanned'] = 999
+        self.marker.write_text(json.dumps(data), encoding='utf-8')
+        self.assertNotIn('screensPlanned', ps.read_writing(str(self.dir), int(time.time() * 1000)))
+
+    def test_public_writing_exposes_the_field_only_when_set(self):
+        self.writing('start', '--screens', '7')
+        now = int(time.time() * 1000)
+        self.assertEqual(ps.public_writing(str(self.dir), now)['screensPlanned'], 7)
+        self.writing('start')
+        self.assertEqual(ps.public_writing(str(self.dir), now)['screensPlanned'], 7)
+        self.writing('done')
+        self.writing('start')
+        self.assertNotIn('screensPlanned', ps.public_writing(str(self.dir), now))
+
 if __name__ == '__main__':
     unittest.main()

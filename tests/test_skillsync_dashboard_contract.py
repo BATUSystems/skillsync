@@ -25,9 +25,9 @@ STR_OR_NONE = (str, type(None))
 TOP = {
     'schema': int, 'app': dict, 'project': dict, 'generatedAt': str, 'version': int, 'lastUpdate': STR_OR_NONE,
     'git': dict, 'plans': list, 'planAuto': bool, 'mode': str, 'plan': (dict, type(None)), 'spec': dict, 'run': dict,
-    'progress': dict, 'acts': list, 'waiting': list, 'silence': (dict, type(None)), 'approvals': dict, 'delivery': dict,
+    'progress': dict, 'acts': list, 'result': (dict, type(None)), 'waiting': list, 'silence': (dict, type(None)), 'approvals': dict, 'delivery': dict,
     'session': dict, 'prototype': dict, 'docs': list, 'readiness': dict, 'assumptions': dict, 'blockingQuestions': dict,
-    'expertQuestions': dict, 'substeps': list, 'timing': dict, 'eta': (dict, type(None)),
+    'expertQuestions': dict, 'prototypes': list, 'substeps': list, 'timing': dict, 'eta': (dict, type(None)),
 }
 ETA = ({'operation': str, 'until': str, 'untilIso': STR_OR_NONE, 'since': str}, {})
 # Pola obiektów zagnieżdżonych: wymagane (typ) i opcjonalne (opcjonalne tylko gdy opisane w kontrakcie jako opcjonalne).
@@ -37,34 +37,34 @@ NESTED = {
     'git': ({'branch': STR_OR_NONE, 'head': STR_OR_NONE, 'headFull': STR_OR_NONE, 'remote': (dict, type(None)),
              'branchUrl': STR_OR_NONE, 'branchPushed': (bool, type(None))}, {}),
     'run': ({'id': STR_OR_NONE, 'exists': bool, 'start': STR_OR_NONE, 'startIso': STR_OR_NONE, 'checkpoints': list,
-             'files': list}, {'lastReportAt': str, 'inProgressFrom': str}),
+             'files': list}, {'lastReportAt': str, 'inProgressFrom': str, 'parseWarnings': list}),
     'spec': ({'path': STR_OR_NONE, 'exists': bool, 'preparing': bool, 'sha': STR_OR_NONE, 'prototype': STR_OR_NONE},
              {'title': STR_OR_NONE, 'status': STR_OR_NONE, 'statusText': STR_OR_NONE, 'mtime': STR_OR_NONE,
               'fileSha': STR_OR_NONE, 'prototypeAcceptance': (dict, type(None))}),
     'progress': ({'total': int, 'done': int, 'percent': int, 'pending': int, 'pendingPercent': int, 'phases': list,
                   'active': list, 'activeSource': STR_OR_NONE, 'current': (dict, type(None)), 'parallel': int,
-                  'reported': list}, {}),
+                  'reported': list}, {'activePercent': int}),
     'approvals': ({'enabled': bool, 'actions': list, 'last': (dict, type(None))}, {}),
     'delivery': ({'mode': str, 'base': STR_OR_NONE, 'source': str, 'branch': STR_OR_NONE, 'target': STR_OR_NONE,
                   'remote': STR_OR_NONE, 'pushed': (bool, type(None)), 'ahead': (int, type(None)), 'words': list}, {}),
     'session': ({'url': STR_OR_NONE}, {}),
-    'prototype': ({'slug': STR_OR_NONE, 'port': int, 'up': bool, 'writing': (dict, type(None))}, {}),
+    'prototype': ({'slug': STR_OR_NONE, 'port': int, 'up': bool, 'writing': (dict, type(None))}, {'commentsAfterAcceptance': dict}),
     'readiness': ({'status': STR_OR_NONE, 'date': STR_OR_NONE, 'planSha': STR_OR_NONE, 'source': STR_OR_NONE}, {}),
     'assumptions': ({'count': int, 'items': list}, {}),
     'blockingQuestions': ({'count': int, 'items': list}, {}),
-    'expertQuestions': ({'open': int, 'blocking': int, 'runs': list}, {}),
+    'expertQuestions': ({'open': int, 'blocking': int, 'runs': list}, {'items': list}),
 }
 PLAN = ({'path': str, 'title': str, 'status': STR_OR_NONE, 'statusText': STR_OR_NONE, 'date': STR_OR_NONE, 'mtime': str,
          'fileSha': STR_OR_NONE, 'pr': (dict, type(None))}, {})
 PLAN_ROW = ({'path': str, 'title': str, 'status': STR_OR_NONE, 'spec': STR_OR_NONE, 'run': STR_OR_NONE}, {})
 ACT = ({'key': str, 'roman': str, 'name': str, 'state': str, 'status': STR_OR_NONE, 'detail': STR_OR_NONE,
-        'stages': list}, {'warning': STR_OR_NONE, 'percent': int})
-STAGE = ({'label': str, 'done': bool, 'tip': str, 'key': STR_OR_NONE}, {})
+        'stages': list}, {'warning': STR_OR_NONE, 'percent': int, 'linkWarning': STR_OR_NONE})
+STAGE = ({'label': str, 'done': bool, 'tip': str, 'key': STR_OR_NONE}, {'state': str, 'since': str})
 PHASE = ({'name': str, 'label': str, 'short': str, 'total': int, 'done': int, 'percent': int, 'pending': int,
           'pendingPercent': int, 'state': str, 'steps': list}, {})
 STEP = ({'id': str, 'title': str, 'done': bool, 'note': str, 'sha': STR_OR_NONE, 'index': int, 'state': str}, {})
 WAITING = ({'what': str, 'source': str, 'since': STR_OR_NONE, 'action': str, 'link': (dict, type(None))},
-           {'word': str, 'approve': STR_OR_NONE})
+           {'word': str, 'approve': STR_OR_NONE, 'who': dict})
 ACTION = ({'kind': str, 'word': str, 'state': str, 'reason': STR_OR_NONE, 'blocked': STR_OR_NONE, 'path': STR_OR_NONE,
            'sha': str, 'given': (dict, type(None)), 'run': STR_OR_NONE}, {'target': STR_OR_NONE})
 DOC_GROUP = ({'key': str, 'label': str, 'items': list}, {})
@@ -84,7 +84,7 @@ CHECKPOINT = ({'time': str, 'text': str}, {})
 DELIVERY_WORD = ({'word': str, 'active': bool, 'tip': str, 'target': STR_OR_NONE}, {})
 ASSUMPTION = ({'id': str, 'question': str, 'accepted': str}, {})
 BLOCKING = ({'id': str, 'question': str}, {})
-EXPERT_RUN = ({'slug': str, 'open': int, 'blocking': int, 'url': str}, {})
+EXPERT_RUN = ({'slug': str, 'open': int, 'blocking': int, 'url': str}, {'addressees': (str, list)})
 
 
 def load(case):
@@ -238,7 +238,7 @@ class DashboardContract(unittest.TestCase):
         self.assertFalse(any('pytania' in w['action'] for w in questions['waiting']))
         self.assertEqual([(r['slug'], r['open'], r['blocking']) for r in questions['expertQuestions']['runs']],
                          [('run-alpha', 2, 1), ('run-beta', 1, 1)])  # dwa przebiegi, zamknięty run-gamma pominięty
-        self.assertEqual({k: v for k, v in json.loads(load('empty')[1])['expertQuestions'].items()}, {'open': 0, 'blocking': 0, 'runs': []})
+        self.assertEqual({k: v for k, v in json.loads(load('empty')[1])['expertQuestions'].items()}, {'open': 0, 'blocking': 0, 'runs': [], 'items': []})
         cp_ready = json.loads(load('cp-ready')[1])
         self.assertEqual([(a['kind'], a['state']) for a in cp_ready['approvals']['actions'][2:]],
                          [('cp', 'waiting'), ('ready', 'waiting')])

@@ -12,6 +12,26 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Added
+
+- Status page, progress report parser: `;` inside brackets `()`, `[]`, `{}` no longer ends a segment of a checkpoint line (a line whose brackets do not balance is split at every `;` as before); `‖` and `||` join step ids; `run.parseWarnings[]` (up to 10 newest, fragment up to 80 characters, redacted before the cut; reasons `no-step-id`, `later-id`) names the elements of the "w toku" / "zrobione" lists that the id reading skips. The page shows one line about them. Additive (schema 1).
+- `dashboard show` and `/api/status`: `acts[].stages[].state` (`done`, `active`, `planned`) and `since`, from the new checkpoint segment `trwa: <stage>` (a `czeka:` in the same line wins), from a spec in preparation, or from a valid writing marker; `acts[0].linkWarning`; `waiting[].who` (`{role, login, label}`, from the suffix `(kto: <role> [<login>])` of `czeka:` or from the source of the item); `progress.activePercent` (a step in progress counts as half a step); `result` (the `## Wynik` section of the chosen plan, up to 4 KiB); `prototypes[]` and `prototype.commentsAfterAcceptance` (comments newer than the last valid acceptance of a screen, in undecided threads); `expertQuestions.items[]` and `expertQuestions.runs[].addressees`. All optional (schema 1).
+- `skillsync prototype writing <project> <slug> start --screens N` (1-200): the planned number of screens (`prototype.writing.screensPlanned`, `screensDone` counted like the acceptance); the page shows "N z M ekranów". The marker `.writing.json` stays at version 1; a renewal without `--screens` keeps the value.
+- Status page: a pulsing indicator on a stage that is going on (stopped when the run is silent), "Czeka na: <role>", the progress bar in two shades (hatching and outline, contrast of the accent with the track at least 3:1 in both themes), the block "Wynik", a collapsible glossary, the addressee of an expert question, the toast "N nowych komentarzy po akceptacji", the tab "Pytania" (prototypes and expert questions; only when the JSON has `prototypes` or `expertQuestions.items`).
+- The expert questions page `/_experts` shows to whom a question is addressed (`addresseesNode`).
+- `common.plan_section(text, name)`: the one reader of the `## <name>` sections of a plan.
+- `Handler._approvals_role()` is the one place that decides `here` and `viewer`; the viewer gets the same `/api/status` content as the operator (no filtering of logins or texts), only without writing consents.
+- Tests: the contract of the new fields, the renderer (a frozen copy of the 1.5.0 renderer on the current fixtures), the contrast of the progress bar, the syntax of the progress report in the docs.
+
+### Changed
+
+- Fixtures `tests/fixtures/dashboard/*/expected*.json` only gained keys (no line removed).
+- `prototype writing … --screens` is refused (`invalid_args`) for `done` and `status`.
+
+### Compatibility
+
+- All new keys are optional in `schema: 1`; a renderer of 1.5.0 (including the copies in editor plugins) ignores them, and the current renderer shows the old page for a JSON without them. A core older than 1.6.0 does not know `--screens` (the skill `prototype` says to repeat the command without it).
+
 ## [1.5.0] - 2026-11-15
 
 ### Added

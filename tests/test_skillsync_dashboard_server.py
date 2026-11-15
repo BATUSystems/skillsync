@@ -254,6 +254,25 @@ class ActTests(unittest.TestCase):
         self.assertTrue(plan_stages["GO implement"])
 
 
+class ParseWarningsTests(ProjectCase):
+    """`run.parseWarnings` (STATUS-160-A, P8): the status names what the id reading skipped."""
+
+    def test_skipped_elements_show_up_in_the_run_newest_first(self) -> None:
+        run = self.root / RUN / "checkpoints.md"
+        fixture = [(w["time"], w["reason"], w["fragment"]) for w in self.board.status()["run"]["parseWarnings"]]
+        self.assertEqual(fixture, [("10:25", "no-step-id", "szczebel 3 S1 na migawce"), ("10:25", "no-step-id", "baseline")])
+        run.write_text(run.read_text(encoding="utf-8") + "- 23:50 w toku: implementer: S4, S3b (a; b)\n", encoding="utf-8")
+        found = self.board.status()["run"]["parseWarnings"]
+        self.assertEqual([(w["time"], w["segment"], w["reason"]) for w in found][0], ("23:50", "w toku", "no-step-id"))
+        self.assertEqual(len(found), 3)
+        self.assertEqual(self.board.status()["progress"]["active"], ["S3b"])
+
+    def test_clean_checkpoints_leave_no_key(self) -> None:
+        run = self.root / RUN / "checkpoints.md"
+        run.write_text("RUN=2026-01-10T10:00:00+01:00\n- 10:00 start; w toku: S1, S2a (a; b); zrobione: S0\n", encoding="utf-8")
+        self.assertNotIn("parseWarnings", self.board.status()["run"])
+
+
 class SpecActTests(ProjectCase):
     """Akt I: spec bez planu (plan powstaje dopiero przy „GO plan”)."""
     SPEC2 = "docs/specs/demo-etap-2.md"
@@ -1470,6 +1489,27 @@ class HttpReadHostTests(HttpCase):
                 approvals = self.status_as(host)["approvals"]
                 self.assertEqual((approvals["here"], approvals["viewer"]), expected)
 
+    def test_viewer_gets_the_same_logins_and_question_texts_as_the_host(self) -> None:
+        """Decision 15.11 (STATUS-160-A): no filter for the viewer; the page is internal, only the consents differ."""
+        cp = self.root / RUN / "checkpoints.md"
+        cp.write_text(cp.read_text(encoding="utf-8") + "- 23:50 czeka: GO plan (kto: akceptujący jan.kowalski)\n", encoding="utf-8")
+        proto = self.root / "docs" / "prototypes" / "demo"
+        proto.mkdir(parents=True)
+        (proto / "prototype.json").write_text("{}\n", encoding="utf-8")
+        ask = {"id": "o1", "type": "ask", "questionId": "qn-000001", "at": "2026-01-11T09:00:00Z", "by": "agent", "text": "Czy tak?",
+               "blocking": True, "assumed": None, "addressees": ["ewa.nowak"], "refs": [], "options": []}
+        (proto / "questions.json").write_text(json.dumps({"questionsFormat": 1, "operations": [ask]}), encoding="utf-8")
+        host, viewer = self.status_as("127.0.0.1"), self.status_as(self.READ)
+        self.assertEqual(host["waiting"][0]["who"]["login"], "jan.kowalski")
+        self.assertEqual(host["expertQuestions"]["runs"][0]["addressees"], ["ewa.nowak"])
+        self.assertEqual(host["expertQuestions"]["items"][0]["text"], "Czy tak?")
+        text = json.dumps(viewer, ensure_ascii=False)
+        for visible in ("jan.kowalski", "ewa.nowak", "Czy tak?"):
+            self.assertIn(visible, text)
+        self.assertEqual(viewer["waiting"], host["waiting"])
+        self.assertEqual(viewer["expertQuestions"], host["expertQuestions"])
+        self.assertEqual((viewer["approvals"]["viewer"], host["approvals"]["viewer"]), (True, False))
+
     def test_read_host_sees_assumptions_questions_waiting_and_silence(self) -> None:
         local, viewer = self.status_as("127.0.0.1"), self.status_as(self.READ)
         for key in ("assumptions", "blockingQuestions", "waiting", "silence"):
@@ -1590,7 +1630,7 @@ class AssetsRenderTests(unittest.TestCase):
             self.assertIn(f'desc("{key}"', self.js)
         for cls in (".readiness.is-pass", ".readiness.is-blocked", ".readiness.is-none", ".substeps"):
             self.assertIn(cls, self.css)
-        for cls in (".questions", ".q-none", ".q-group", ".q-list"):
+        for cls in (".questions", ".q-none", ".q-group"):   # `.q-list` jest teraz w zakładce „Pytania” (STATUS-160-A)
             self.assertNotIn(cls, self.css)
 
     def test_new_templates_escape_data(self) -> None:

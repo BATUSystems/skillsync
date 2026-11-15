@@ -21,7 +21,7 @@ PLAN_DETAILS = 'skills/feature/references/plan-details.md'
 DECISIONS = 'skills/prototype/references/decisions.md'
 
 REQUIRED = [
-    ('skill-start', SKILL, r'`skillsync prototype writing <projekt> <slug> start` PRZED edycją ekranów'),
+    ('skill-start', SKILL, r'`skillsync prototype writing <projekt> <slug> start --screens <N>` PRZED edycją ekranów'),
     ('skill-done', SKILL, r'`skillsync prototype writing <projekt> <slug> done`\. DOPIERO POTEM zgłoś „prototyp gotowy”'),
     ('skill-iterate-przed-start', SKILL, r'W rundzie po przeglądzie najpierw `iterate` \(zamrożenie rundy\), dopiero potem `writing start`'),
     ('skill-odnowienie', SKILL, r'Przy każdej większej partii zmian wykonaj `start` ponownie \(odnawia czas\) albo od razu `start --ttl 1800`'),

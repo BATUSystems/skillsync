@@ -192,6 +192,12 @@ była, a nie, że pętla dała PASS.
 - Kafelek Aktu II ma „Readiness” z `readiness.md` przebiegu: PASS zielony, BLOCKED ostrzeżenie, bez pliku neutralny; data,
   skrót Plan-sha (ostrzeżenie, gdy różni się od sha pliku planu) i link do podglądu pliku.
 - Kafelek Aktu III ma rozwijaną listę podkroków `Fn.k` z czasem z checkpointów albo „brak danych”.
+- Kafelek etapu z `state: active` ma pulsujący wskaźnik (animacja wyłączona przy `prefers-reduced-motion`) i dymek „trwa od HH:MM” (`since`);
+  etap „Prototyp” przy ważnym znaczniku zapisu pokazuje „N z M ekranów” z paskiem (bez `screensPlanned`: „N ekranów”) i szacowany koniec z `eta`.
+- Baner czekania przy `waiting[].who` pisze „Czeka na: <label> (login)” (wpis `writing` zostaje „Sesja pracuje”); brak `who` = „Sesja czeka na Ciebie”.
+- Pasek postępu Aktu III przy `progress.activePercent` > 0 ma dwa odcienie (ciemny = zweryfikowane, jasny = zgłoszone i w toku) i podpis
+  „N% zweryfikowane, M% zgłoszone lub w toku”; `run.parseWarnings` daje jedną linię „N fragmentów raportu pominięto” nad checkpointami (szczegóły w dymku).
+  Brak każdego z tych pól daje wygląd jak dotąd.
 
 ## Interfejs i API
 
@@ -225,6 +231,8 @@ gdy host ma własny) i szkielet ze stałymi identyfikatorami (`title`, `meta`, `
 `tab-progress`, `tab-docs`, `protoLink`, `acts`, `phases`, `feed`, `feedTitle`, `docList`, `docView`, `foot`, `descTip`,
 `elapsed`, `ago`, `retryDoc`, `themeBtn` tylko z `deps.theme`; symbole `i-…`). Identyfikatory są globalne w dokumencie:
 dwa egzemplarze renderera w jednym dokumencie się zderzą (jeden korzeń na dokument/webview).
+
+Treść z JSON-a (addytywnie, brak klucza = zachowanie jak dotąd): pod aktami blok „Wynik” (`result`: tekst planu w `<pre>`, powyżej 12 linii reszta w `<details>`) i zwijana legenda „Pojęcia” (zawsze; teksty z `legend_*` w descriptions.json, awaryjnie z renderera); w toście pytań adresaci (`expertQuestions.runs[].addressees`: „do wszystkich ekspertów” albo „do: login, …”, widz nic); toast „N nowych komentarzy po akceptacji” z `prototype.commentsAfterAcceptance` (bez timera i „×”, odnośnik tylko z `deps.prototypeUrl`); zakładka „Pytania” (`tab-questions`, `view-questions`, `qCount`) widoczna tylko przy tablicy `prototypes` albo `expertQuestions.items`, z listą prototypów i pytań (do 50), nawigacją strzałkami/Home/End w liście zakładek i hashem `questions`.
 
 Kontrakt `deps` (wymagane tylko `now`):
 
@@ -337,3 +345,5 @@ są zanonimizowanymi kopiami formatów.
 - Renderer Markdown jest prosty (nagłówki, akapity, listy z checkboxami, tabele, kod, cytaty, linki); brak obrazów i HTML.
 - Etapy aktów I i II są wnioskowane z nazw plików w katalogu przebiegu; inne nazewnictwo da „niezaliczone” etapy, nie błąd.
 - Procent zależy od dyscypliny zaznaczania `[x]` w planie po każdym kroku.
+
+- Kafelek etapu `active` pulsuje tylko, dopóki przebieg nie jest cichy (`silence`, a bez niego `run.lastReportAt` i próg 35 min); potem pusta kropka i „brak aktywności od N min”, stan w danych zostaje. Jasny odcień paska postępu (zgłoszone lub w toku) ma kreskowanie i obrys w kolorze akcentu (kontrast akcentu z torem ≥ 3:1 w obu motywach), a próbka w legendzie ma tę samą definicję (`--bar-light`).

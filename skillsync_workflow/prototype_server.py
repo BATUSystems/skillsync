@@ -3955,6 +3955,7 @@ WRITING_TTL_MIN = 60
 WRITING_TTL_MAX = 3600
 WRITING_TTL_DEFAULT = 900
 WRITING_BY_RE = re.compile(r'[A-Za-z0-9][A-Za-z0-9._@+-]{0,63}')
+WRITING_SCREENS_MIN, WRITING_SCREENS_MAX = 1, 200   # `writing start --screens N`: how many screens the agent plans to write
 
 
 def read_writing(directory, now_ms):
@@ -4010,24 +4011,35 @@ def read_writing(directory, now_ms):
     if not 0 < expires - renewed <= WRITING_MAX_WINDOW_MS:
         return None
     by = value.get('by')
-    return {'since': since, 'expiresAt': expires, 'renewedAt': renewed,
-            'by': by if isinstance(by, str) and WRITING_BY_RE.fullmatch(by) else 'agent'}
+    marker = {'since': since, 'expiresAt': expires, 'renewedAt': renewed,
+              'by': by if isinstance(by, str) and WRITING_BY_RE.fullmatch(by) else 'agent'}
+    planned = value.get('screensPlanned')   # optional (1.6.0): a value outside 1-200 is ignored, the marker stays valid
+    if _is_int(planned) and WRITING_SCREENS_MIN <= planned <= WRITING_SCREENS_MAX:
+        marker['screensPlanned'] = planned
+    return marker
 
 
-def write_writing(directory, now_ms, ttl_s, by=None):
+def write_writing(directory, now_ms, ttl_s, by=None, screens=None):
     """Atomically (re)write the marker (`atomic_write_bytes` retries briefly on Windows where `os.replace` can fail while a
     reader holds the file).  A repeated call on a marker that is still valid keeps its `since` (and its `by`, unless `by` is given) and sets
-    `renewedAt = now`; otherwise `since = renewedAt = now`.  `expiresAt = now + ttl`.
-    Returns `{since, expiresAt, renewedAt, by}`."""
+    `renewedAt = now`; otherwise `since = renewedAt = now`.  `expiresAt = now + ttl`.  `screens` (1-200) is the planned number of screens
+    (`screensPlanned`); a renewal without it keeps the value of a still valid marker.
+    Returns `{since, expiresAt, renewedAt, by}` (+ `screensPlanned` when set)."""
     now_ms = int(now_ms)
     current = read_writing(directory, now_ms)
     since = min(current['since'], now_ms) if current is not None else now_ms   # a clock that went back keeps since <= renewedAt
     who = by if by is not None else (current['by'] if current is not None else 'agent')
     payload = {'version': 1, 'since': since, 'renewedAt': now_ms, 'expiresAt': now_ms + int(ttl_s) * 1000, 'by': who}
+    planned = screens if screens is not None else (current or {}).get('screensPlanned')
+    if planned is not None:
+        payload['screensPlanned'] = int(planned)
     data = (js_stringify(payload) + '\n').encode('utf-8')
     path = os.path.join(directory, WRITING_MARKER)
     atomic_write_bytes(path, data)   # the short retry on Windows is inside (`retry_transient`)
-    return {'since': since, 'expiresAt': payload['expiresAt'], 'renewedAt': now_ms, 'by': who}
+    written = {'since': since, 'expiresAt': payload['expiresAt'], 'renewedAt': now_ms, 'by': who}
+    if planned is not None:
+        written['screensPlanned'] = int(planned)
+    return written
 
 
 def remove_writing(directory):
@@ -4045,10 +4057,14 @@ def remove_writing(directory):
 
 def public_writing(directory, now_ms):
     """The `writing` field of the API, `prototype list`, the status page and the live gallery: `None` or
-    `{since, expiresAt, renewedAt}` (never `by`).  The one helper of that shape."""
+    `{since, expiresAt, renewedAt[, screensPlanned]}` (never `by`).  The one helper of that shape."""
     marker = read_writing(directory, now_ms)
-    return None if marker is None else {'since': marker['since'], 'expiresAt': marker['expiresAt'],
-                                        'renewedAt': marker['renewedAt']}
+    if marker is None:
+        return None
+    public = {'since': marker['since'], 'expiresAt': marker['expiresAt'], 'renewedAt': marker['renewedAt']}
+    if 'screensPlanned' in marker:
+        public['screensPlanned'] = marker['screensPlanned']
+    return public
 
 
 def _local_hhmm(millis):
@@ -7671,7 +7687,7 @@ EXPERTS_SCRIPT = r"""
     var rest = location.pathname.slice(BASE.length).replace(/^\//, '');
     return /^[a-z0-9]+(-[a-z0-9]+)*$/.test(rest) ? rest : null;
   })();
-  var state = { csrf: null, questions: [], runs: [], legacy: null, current: null, pending: {}, busy: {} };
+  var state = { csrf: null, viewer: null, questions: [], runs: [], legacy: null, current: null, pending: {}, busy: {} };
   var listBox = document.getElementById('list');
   var detail = document.getElementById('detail');
   var alertBox = document.getElementById('alert');
@@ -7819,6 +7835,18 @@ EXPERTS_SCRIPT = r"""
     listBox.appendChild(ul);
   }
 
+  // Who the question is addressed to (STATUS-160-A): developer/acceptor see the logins, an expert sees "Do Ciebie" (an expert is shown only
+  // the questions addressed to them or to all), a view without logins says only that experts were named. Text only (textContent).
+  function addresseesNode(question, viewer) {
+    var roles = (viewer && viewer.roles) || [];
+    var privileged = roles.indexOf('developer') !== -1 || roles.indexOf('acceptor') !== -1;
+    var text = '';
+    if (question.forAll) text = 'Do wszystkich ekspertów';
+    else if (privileged && Array.isArray(question.addressees) && question.addressees.length) text = 'Do: ' + question.addressees.join(', ');
+    else if (roles.indexOf('expert') !== -1 && !privileged) text = 'Do Ciebie';
+    else if (Array.isArray(question.addressees) || question.addresseeCount > 0) text = 'Do wskazanych ekspertów';
+    return text ? el('p', { 'class': 'muted addressees', text: text }) : null;
+  }
   function refNode(ref) {
     var box = el('div', { 'class': 'entry' });
     var title = el('strong', { text: ref.title || '' });
@@ -7873,6 +7901,7 @@ EXPERTS_SCRIPT = r"""
     detail.appendChild(heading);
     badges(question).forEach(function (badge) { detail.appendChild(badge); });
     detail.appendChild(el('p', { 'class': 'qtext', text: question.text }));
+    var addressed = addresseesNode(question, state.viewer); if (addressed) detail.appendChild(addressed);
     if (question.refs && question.refs.length) {
       detail.appendChild(el('h3', { text: 'Źródła' }));
       question.refs.forEach(function (ref) { detail.appendChild(refNode(ref)); });
@@ -8221,6 +8250,7 @@ EXPERTS_SCRIPT = r"""
     }).then(function (data) {
       if (!data || !data.user) { toLogin(); return; }
       state.csrf = data.csrf;
+      state.viewer = data.user;
       whoBox.textContent = 'Zalogowano jako ' + (data.user.name || data.user.login);
       if (data.user.mustChange) { showMustChange(); return; }
       return loadList().then(function (ok) {
