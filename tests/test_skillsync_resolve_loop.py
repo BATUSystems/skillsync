@@ -68,6 +68,18 @@ class ResolveLoopChecked(unittest.TestCase):
         self.assertEqual(common.resolve_loop_checked(link / 'y'), (real / 'y').resolve(), 'resolve() goes through the junction to its target')
         self.assertEqual(common.resolve_loop_checked(link), real.resolve())
 
+    def test_a_dangling_junction_is_not_a_loop_on_windows(self):
+        # measured on Windows 3.11, 3.12 and 3.13: `resolve()` of a junction whose target was removed returns the (missing) target path,
+        # not the junction, so it is no false "Too many levels": it resolves like any path that does not exist
+        if os.name != 'nt':
+            return
+        gone = self.base / 'gone'
+        gone.mkdir()
+        link = self.base / 'dangling'
+        subprocess.run(['cmd', '/c', 'mklink', '/J', str(link), str(gone)], check=True, capture_output=True)
+        gone.rmdir()
+        self.assertEqual(common.resolve_loop_checked(link / 'x'), (gone / 'x').resolve())
+
     def test_a_python_without_isjunction_keeps_working(self):
         with mock.patch.object(Path, 'is_symlink', lambda self: False), mock.patch.object(common.os.path, 'isjunction', None, create=True):
             self.assertEqual(common.resolve_loop_checked(self.base / 'x'), (self.base / 'x').resolve())

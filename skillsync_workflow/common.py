@@ -374,7 +374,8 @@ def resolve_loop_checked(path):
     3.12) return the path they got stuck at instead. A fully resolved path has no symlink among its components, so one
     that still has a link has not been resolved: a loop. A path that merely does not exist still resolves.
     A Windows junction is no symlink (`is_symlink()` is False) but loops the same way (measured: Python 3.12 and 3.13 return the stuck path
-    of a loop of two junctions, 3.11 raises), so `os.path.isjunction` (3.12+) counts as a link."""
+    of a loop of two junctions, 3.11 raises), so `os.path.isjunction` (3.12+) counts as a link.
+    A junction whose target is gone (dangling) is not a loop: `resolve()` returns the missing target path (measured on 3.11-3.13), which has no link."""
     resolved = Path(path).resolve()
     isjunction = getattr(os.path, 'isjunction', None)
     for part in (resolved, *resolved.parents):
