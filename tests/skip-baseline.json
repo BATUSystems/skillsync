@@ -61,6 +61,9 @@
   "needs-shellcheck": [
    "shellcheck is not installed"
   ],
+  "needs-dash": [
+   "dash is not installed"
+  ],
   "windows-open-file": [
    "Windows nie pozwala usunąć ani podmienić otwartego pliku"
   ],
@@ -89,7 +92,15 @@
  "baselines": {
   "linux/symlink": [
    {
+    "id": "test_skillsync_install_sh.TestStatic.test_dash_syntax",
+    "category": "needs-dash"
+   },
+   {
     "id": "test_skillsync_layers_merge.TrustModelTest.test_a_real_junction_is_skipped_and_reported",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.EnvironmentTests.test_secret_files_are_owner_only_by_acl_on_windows",
     "category": "windows-only"
    },
    {
@@ -150,12 +161,44 @@
    },
    {
     "id": "test_skillsync_resolve_loop.ResolveLoopChecked.test_a_working_junction_is_not_a_loop_on_windows",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_a_directory_is_inherited_by_new_files_and_repairs_existing_ones",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_a_file_becomes_owner_only_and_stays_usable",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_a_missing_path_is_false_without_raising",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_atomic_write_leaves_a_users_file_owner_only_after_five_writes",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_os_replace_hands_over_the_acl_of_the_source",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_the_dacl_is_exactly_user_system_administrators",
     "category": "windows-only"
    }
   ],
   "linux/copy": [
    {
+    "id": "test_skillsync_install_sh.TestStatic.test_dash_syntax",
+    "category": "needs-dash"
+   },
+   {
     "id": "test_skillsync_layers_merge.TrustModelTest.test_a_real_junction_is_skipped_and_reported",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.EnvironmentTests.test_secret_files_are_owner_only_by_acl_on_windows",
     "category": "windows-only"
    },
    {
@@ -216,6 +259,30 @@
    },
    {
     "id": "test_skillsync_resolve_loop.ResolveLoopChecked.test_a_working_junction_is_not_a_loop_on_windows",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_a_directory_is_inherited_by_new_files_and_repairs_existing_ones",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_a_file_becomes_owner_only_and_stays_usable",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_a_missing_path_is_false_without_raising",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_atomic_write_leaves_a_users_file_owner_only_after_five_writes",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_os_replace_hands_over_the_acl_of_the_source",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_the_dacl_is_exactly_user_system_administrators",
     "category": "windows-only"
    }
   ],
@@ -229,6 +296,10 @@
     "category": "posix-only"
    },
    {
+    "id": "test_skillsync_prototype_e2e.EnvironmentTests.test_secret_files_are_owner_only_by_acl_on_windows",
+    "category": "windows-only"
+   },
+   {
     "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_d23",
     "category": "e2e-chrome"
    },
@@ -286,6 +357,30 @@
    },
    {
     "id": "test_skillsync_resolve_loop.ResolveLoopChecked.test_a_working_junction_is_not_a_loop_on_windows",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_a_directory_is_inherited_by_new_files_and_repairs_existing_ones",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_a_file_becomes_owner_only_and_stays_usable",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_a_missing_path_is_false_without_raising",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_atomic_write_leaves_a_users_file_owner_only_after_five_writes",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_os_replace_hands_over_the_acl_of_the_source",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_the_dacl_is_exactly_user_system_administrators",
     "category": "windows-only"
    }
   ],
@@ -299,6 +394,10 @@
     "category": "posix-only"
    },
    {
+    "id": "test_skillsync_prototype_e2e.EnvironmentTests.test_secret_files_are_owner_only_by_acl_on_windows",
+    "category": "windows-only"
+   },
+   {
     "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_d23",
     "category": "e2e-chrome"
    },
@@ -356,6 +455,30 @@
    },
    {
     "id": "test_skillsync_resolve_loop.ResolveLoopChecked.test_a_working_junction_is_not_a_loop_on_windows",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_a_directory_is_inherited_by_new_files_and_repairs_existing_ones",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_a_file_becomes_owner_only_and_stays_usable",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_a_missing_path_is_false_without_raising",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_atomic_write_leaves_a_users_file_owner_only_after_five_writes",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_os_replace_hands_over_the_acl_of_the_source",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_the_dacl_is_exactly_user_system_administrators",
     "category": "windows-only"
    }
   ],
@@ -374,6 +497,10 @@
     "category": "posix-only"
    },
    {
+    "id": "test_skillsync_dashboard_approve_token.ServeWritesAndRemovesTheState.test_a_foreign_server_on_the_chosen_port_does_not_fool_the_start",
+    "category": "windows-no-mechanism"
+   },
+   {
     "id": "test_skillsync_dashboard_approve_token.ServeWritesAndRemovesTheState.test_a_leftover_of_a_killed_server_is_removed_by_a_server_without_consents",
     "category": "windows-no-mechanism"
    },
@@ -388,6 +515,10 @@
    {
     "id": "test_skillsync_dashboard_approve_token.ServeWritesAndRemovesTheState.test_serve_prints_the_address_with_the_token_writes_the_file_and_removes_it",
     "category": "windows-no-mechanism"
+   },
+   {
+    "id": "test_skillsync_dashboard_approve_token.StateFile.test_a_posix_root_is_unchanged",
+    "category": "posix-only"
    },
    {
     "id": "test_skillsync_dashboard_approve_token.StateFile.test_a_state_directory_of_another_user_is_refused",
@@ -1002,6 +1133,10 @@
     "category": "posix-only"
    },
    {
+    "id": "test_skillsync_winacl.OtherSystemsTests.test_off_windows_is_owner_only_reads_the_mode",
+    "category": "posix-only"
+   },
+   {
     "id": "test_skillsync_workflow.ReadinessSpecContracts.test_fifo_spec_is_blocked_without_hanging",
     "category": "posix-only"
    },
@@ -1112,6 +1247,10 @@
     "category": "filesystem"
    },
    {
+    "id": "test_skillsync_prototype_e2e.EnvironmentTests.test_secret_files_are_owner_only_by_acl_on_windows",
+    "category": "windows-only"
+   },
+   {
     "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_d23",
     "category": "e2e-chrome"
    },
@@ -1178,6 +1317,30 @@
    {
     "id": "test_skillsync_retro.SessionContentStaysOut.test_non_utf8_name_outside_scope_does_not_break_scoped_report",
     "category": "filesystem"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_a_directory_is_inherited_by_new_files_and_repairs_existing_ones",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_a_file_becomes_owner_only_and_stays_usable",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_a_missing_path_is_false_without_raising",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_atomic_write_leaves_a_users_file_owner_only_after_five_writes",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_os_replace_hands_over_the_acl_of_the_source",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_the_dacl_is_exactly_user_system_administrators",
+    "category": "windows-only"
    }
   ],
   "macos-latest/copy": [
@@ -1266,6 +1429,10 @@
     "category": "filesystem"
    },
    {
+    "id": "test_skillsync_prototype_e2e.EnvironmentTests.test_secret_files_are_owner_only_by_acl_on_windows",
+    "category": "windows-only"
+   },
+   {
     "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_d23",
     "category": "e2e-chrome"
    },
@@ -1332,6 +1499,30 @@
    {
     "id": "test_skillsync_retro.SessionContentStaysOut.test_non_utf8_name_outside_scope_does_not_break_scoped_report",
     "category": "filesystem"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_a_directory_is_inherited_by_new_files_and_repairs_existing_ones",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_a_file_becomes_owner_only_and_stays_usable",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_a_missing_path_is_false_without_raising",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_atomic_write_leaves_a_users_file_owner_only_after_five_writes",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_os_replace_hands_over_the_acl_of_the_source",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_the_dacl_is_exactly_user_system_administrators",
+    "category": "windows-only"
    }
   ]
  }
