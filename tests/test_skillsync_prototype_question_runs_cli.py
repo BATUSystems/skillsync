@@ -20,7 +20,6 @@ sys.path.insert(0, str(ROOT))
 from skillsync_workflow import prototype as pt  # noqa: E402
 from skillsync_workflow import prototype_server as ps  # noqa: E402
 from tests import test_skillsync_prototype_question_cli as C  # noqa: E402
-from tests.layers_helpers import skip_open_file  # noqa: E402
 from tests.test_skillsync_prototype_question_cli import (QA, QB, QC, RUN, SPEC, QN, QuestionCase,  # noqa: E402,F401
                                                          setUpModule, tearDownModule)
 
@@ -124,7 +123,6 @@ class CreatedFilesTests(RunsCliCase):
         again = self.add('Druga?', QB)
         self.assertEqual(again['created'], [], 'drugi add niczego nie tworzy')
 
-    @skip_open_file('plik blokady trzymany przez FileLock nie da się usunąć (sweep_orphan_lock zostawia go)')
     def test_an_orphaned_lock_is_removed_by_the_next_add(self):
         self.add()
         data = self.qroot / QN
@@ -143,7 +141,6 @@ class CreatedFilesTests(RunsCliCase):
         self.assertFalse(store.sweep_orphan_lock())
         self.assertTrue(lock.exists())
 
-    @skip_open_file('plik blokady trzymany przez FileLock nie da się usunąć (sweep_orphan_lock zostawia go)')
     def test_a_held_orphan_lock_is_not_removed(self):
         self.add()
         data = self.qroot / QN

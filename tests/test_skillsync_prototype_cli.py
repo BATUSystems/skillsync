@@ -1386,13 +1386,16 @@ class UserTests(PrototypeFixture):
             self.assertNoSecret(f'{{"reason": "x {SECRET} y"}}')
 
     def test_add_without_a_password_flag_uses_the_default_password_and_sets_must_change(self):
+        from skillsync_workflow import prototype_server as ps
         report = self.user('add', 'Ala.Kowalska@Example.PL')
         self.assertEqual(report['user']['login'], 'ala.kowalska@example.pl')
         self.assertEqual((report['user']['role'], report['user']['mustChange']), ('commenter', True))
         self.assertNotIn('password', report['user'])
         self.assertNoSecret(self.users_text())
         self.assertIn('pbkdf2', self.users_text().lower(), 'the stored value is a hash')
-        self.assertNotIn('warnings', report, 'a commenter is not a privileged role')
+        # Windows adds the note that it has no 0600 check to `warnings`; it says nothing about the password
+        self.assertEqual([w for w in report.get('warnings', []) if w != ps.PRIVATE_CHECK_SKIPPED], [],
+                         'a commenter is not a privileged role')
 
     def test_privileged_roles_get_a_warning_about_the_shared_password(self):
         for role in ('acceptor', 'developer'):
