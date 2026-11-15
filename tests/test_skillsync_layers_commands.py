@@ -164,6 +164,7 @@ class HookCommandMissingTest(CommandsCase):
                     self.assertEqual(leakguard._hook_word('/usr/bin/env'), ('unchecked', None))
                     self.assertEqual(leakguard._hook_word('/mingw64/bin/git'), ('unchecked', None))
                     self.assertEqual(leakguard._hook_word('/bin/sh'), ('unchecked', None))
+                    self.assertEqual(leakguard._hook_word('//server/share/tools/skillsync'), ('path', '//server/share/tools/skillsync'))
                     self.assertEqual(leakguard._hook_word('skillsync'), ('plain', None))
 
     def test_msys_root_words_in_a_hook_are_never_reported_missing(self):

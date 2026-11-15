@@ -1599,6 +1599,8 @@ def _hook_word(word):
         drive = re.fullmatch(r'/([A-Za-z])(/.*)?', word)
         if drive:
             return 'path', f'{drive.group(1)}:{drive.group(2) or "/"}'
+        if word.startswith('//'):
+            return 'path', word   # UNC (`//server/share/x`): a native path, checked as before the MSYS change
         if word.startswith('/'):
             return 'unchecked', None
     return ('path', word) if os.path.isabs(word) else ('plain', None)
