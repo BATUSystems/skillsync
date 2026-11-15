@@ -113,7 +113,8 @@ class LinkConsumeKeepsExclusivity(unittest.TestCase):
             results.append(ps.link_consume(self.run_dir, token, time.time(), instance=instance))
 
         threads = [threading.Thread(target=work) for _ in range(workers)]
-        with mock.patch.object(ps, '_WINDOWS', flaky is not None), \
+        # Without `flaky` nothing is patched: on Windows the real retry meets the real refusals of the system.
+        with mock.patch.object(ps, '_WINDOWS', True if flaky is not None else ps._WINDOWS), \
                 mock.patch.object(os, 'rename', flaky.wrap(os.rename) if flaky is not None else os.rename):
             for thread in threads:
                 thread.start()
