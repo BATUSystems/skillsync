@@ -21,6 +21,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 - Strażnik izolacji w testach (`real_state_snapshot`) pomija pliki odświeżane przez operacje git tylko do odczytu (`FETCH_HEAD`, `.git/index`) w innych procesach.
 - Skille `feature`, `dispatch` i tryb karty: po `/clear` albo w nowej sesji bez słowa zgody użytkownika nie powstaje kod; cytat w ASSIGN to wskazówka do sprawdzenia, nie zgoda.
+- Harness E2E prototypów (`env.py`) wymusza jasny schemat kolorów Chrome (`--blink-settings=preferredColorScheme=1`), więc DR-start i DR-późny przechodzą także na stacji z ciemnym motywem.
 - `docs/domain/glossary.md` skrócony poniżej limitu; usunięto hasło `synthetic`.
 
 ## [1.4.0] - 2026-11-14
