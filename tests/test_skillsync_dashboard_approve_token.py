@@ -179,10 +179,11 @@ class StateFile(unittest.TestCase):
         path = dashboard_token.write_state(self.project, 5140, "tok-1")
         self.assertIsNotNone(path)
         self.assertEqual(path.parent, dashboard_token.state_dir())
-        self.assertNotIn(str(self.project.resolve()), str(path))
+        for form in (str(self.project.resolve()), dashboard_token.root_text(self.project)):   # native and report form (`/` on Windows)
+            self.assertNotIn(form, str(path))
         record = json.loads(path.read_text(encoding="utf-8"))
         self.assertEqual((record["schema"], record["port"], record["token"], record["root"], record["pid"]),
-                         (1, 5140, "tok-1", str(self.project.resolve()), os.getpid()))
+                         (1, 5140, "tok-1", dashboard_token.root_text(self.project), os.getpid()))   # the report form of the path
         self.assertEqual([p.name for p in path.parent.iterdir()], [path.name], "no temporary file is left")
 
     @unittest.skipIf(os.name == "nt", "POSIX: tryb 0600 pliku i 0700 katalogu stanu (na Windows ACL: test_skillsync_winacl)")
