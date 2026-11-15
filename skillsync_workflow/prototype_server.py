@@ -112,6 +112,7 @@ MAX_BODY = 64 * 1024
 WARN_FILE_BYTES = 10 * 1024 * 1024
 MAX_FILE_BYTES = 20 * 1024 * 1024
 LOCK_TIMEOUT = 5.0
+TRANSIENT_RETRY_SECONDS = 0.5   # Windows: how long a refused open/rename/replace of a file another thread holds is retried
 DEFAULT_ITERATIONS = 600000
 SALT_BYTES = 16
 MIN_PASSWORD = 10
@@ -2092,6 +2093,33 @@ class FileLock(object):
         return False
 
 
+
+# ── Transient refusals on Windows ──────────────────────────────────────────
+
+_WINDOWS = os.name == 'nt'
+
+
+def retry_transient(operation, seconds=None):
+    """Run `operation()`; on Windows retry briefly while the system refuses a file that another thread has open or is replacing.
+
+    Windows answers `open`, `rename` and `replace` on such a file with `PermissionError` (WinError 5 or 32) for the instant
+    of the other thread's work, where POSIX hands over the old or the new file. The retry is short and bounded (about half a
+    second, doubling pauses of 1 to 20 ms); a refusal that outlasts it (a real permission problem) is raised as before, and
+    so is every other error. On other systems the operation runs once. It holds no lock of its own."""
+    if not _WINDOWS:
+        return operation()
+    deadline = time.monotonic() + (TRANSIENT_RETRY_SECONDS if seconds is None else seconds)
+    delay = 0.001
+    while True:
+        try:
+            return operation()
+        except PermissionError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(delay)
+            delay = min(delay * 2, 0.02)
+
+
 def atomic_write_bytes(path, data, mode=None, default_mode=0o644):
     """Atomic replace of `path` with `data`.
 
@@ -2122,7 +2150,7 @@ def atomic_write_bytes(path, data, mode=None, default_mode=0o644):
         finally:
             os.close(fd)
         os.chmod(temporary, final_mode)
-        os.replace(temporary, path)
+        retry_transient(lambda: os.replace(temporary, path))
     except BaseException:
         try:
             os.unlink(temporary)
@@ -2270,7 +2298,7 @@ class CommentsStore(object):
             if self._cache is not None and self._cache.key == key:
                 return self._cache
         flags = os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_BINARY', 0)
-        fd = os.open(self.path, flags)
+        fd = retry_transient(lambda: os.open(self.path, flags))
         with os.fdopen(fd, 'rb') as handle:
             info = os.fstat(handle.fileno())
             data = handle.read()
@@ -3075,7 +3103,7 @@ class QuestionsStore(object):
             if self._cache is not None and self._cache.key == key:
                 return self._cache
         flags = os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_BINARY', 0)
-        fd = os.open(self.path, flags)
+        fd = retry_transient(lambda: os.open(self.path, flags))
         with os.fdopen(fd, 'rb') as handle:
             info = os.fstat(handle.fileno())
             data = handle.read()
@@ -3718,7 +3746,7 @@ def read_restore_marker(directory):
     if not stat.S_ISREG(info.st_mode) or info.st_size > 4096:
         return {}
     try:
-        with open(path, 'rb') as handle:
+        with retry_transient(lambda: open(path, 'rb')) as handle:
             value = strict_json_loads(handle.read().decode('utf-8'))
     except (OSError, ValueError, UnicodeDecodeError, RecursionError):
         return {}
@@ -3735,7 +3763,7 @@ def remove_restore_marker(directory):
     try:
         if os.path.islink(path) or os.path.isdir(path):
             return
-        os.unlink(path)
+        retry_transient(lambda: os.unlink(path))
     except FileNotFoundError:
         return
     _fsync_directory(directory)
@@ -3775,8 +3803,8 @@ def read_writing(directory, now_ms):
         info = os.lstat(path)
         if not stat.S_ISREG(info.st_mode) or info.st_size > WRITING_MAX_BYTES:
             return None
-        fd = os.open(path, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_NONBLOCK', 0)
-                     | getattr(os, 'O_BINARY', 0))
+        fd = retry_transient(lambda: os.open(path, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_NONBLOCK', 0)
+                                             | getattr(os, 'O_BINARY', 0)))
         try:
             opened = os.fstat(fd)
             if not stat.S_ISREG(opened.st_mode) or opened.st_size > WRITING_MAX_BYTES:
@@ -3818,8 +3846,8 @@ def read_writing(directory, now_ms):
 
 
 def write_writing(directory, now_ms, ttl_s, by=None):
-    """Atomically (re)write the marker; a short retry on Windows where `os.replace` can fail while a reader holds the
-    file.  A repeated call on a marker that is still valid keeps its `since` (and its `by`, unless `by` is given) and sets
+    """Atomically (re)write the marker (`atomic_write_bytes` retries briefly on Windows where `os.replace` can fail while a
+    reader holds the file).  A repeated call on a marker that is still valid keeps its `since` (and its `by`, unless `by` is given) and sets
     `renewedAt = now`; otherwise `since = renewedAt = now`.  `expiresAt = now + ttl`.
     Returns `{since, expiresAt, renewedAt, by}`."""
     now_ms = int(now_ms)
@@ -3829,15 +3857,7 @@ def write_writing(directory, now_ms, ttl_s, by=None):
     payload = {'version': 1, 'since': since, 'renewedAt': now_ms, 'expiresAt': now_ms + int(ttl_s) * 1000, 'by': who}
     data = (js_stringify(payload) + '\n').encode('utf-8')
     path = os.path.join(directory, WRITING_MARKER)
-    attempts = 5 if os.name == 'nt' else 1
-    for attempt in range(attempts):
-        try:
-            atomic_write_bytes(path, data)
-            break
-        except PermissionError:
-            if attempt + 1 >= attempts:
-                raise
-            time.sleep(0.05 * (attempt + 1))
+    atomic_write_bytes(path, data)   # the short retry on Windows is inside (`retry_transient`)
     return {'since': since, 'expiresAt': payload['expiresAt'], 'renewedAt': now_ms, 'by': who}
 
 
@@ -3847,7 +3867,7 @@ def remove_writing(directory):
     try:
         if os.path.islink(path) or os.path.isdir(path):
             return False
-        os.unlink(path)
+        retry_transient(lambda: os.unlink(path))   # Windows refuses the unlink while a status poll has the marker open
     except FileNotFoundError:
         return False
     _fsync_directory(directory)
@@ -4882,7 +4902,7 @@ class UsersFile(object):
         info = os.lstat(self.path)
         if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
             raise UserError('invalid_users_file', 'users file must be a regular file')
-        with open(self.path, 'rb') as handle:
+        with retry_transient(lambda: open(self.path, 'rb')) as handle:
             data = handle.read()
         try:
             parsed = strict_json_loads(data.decode('utf-8-sig'))
@@ -4950,7 +4970,7 @@ class UsersFile(object):
         with FileLock(self.lock_path, self.lock_timeout, mode=0o600):
             if os.path.lexists(self.path):
                 data, _key = self._read_file()
-                with open(self.path, 'rb') as handle:
+                with retry_transient(lambda: open(self.path, 'rb')) as handle:
                     previous = handle.read()
             else:
                 data, previous = {'version': 1, 'users': []}, None
@@ -5518,7 +5538,7 @@ def _link_write_private(path, data):
             handle.write(data)
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temporary, path)
+        retry_transient(lambda: os.replace(temporary, path))
     except BaseException:
         try:
             os.unlink(temporary)
@@ -5536,7 +5556,7 @@ def link_write_state(run_dir, state):
 def link_remove_state(path, instance):
     """Remove our own state file (same `instance`); a file of another server stays."""
     try:
-        with open(path, 'rb') as handle:
+        with retry_transient(lambda: open(path, 'rb')) as handle:
             data = json.loads(handle.read(65536).decode('utf-8'))
         if isinstance(data, dict) and data.get('instance') == instance:
             os.unlink(path)
@@ -5557,7 +5577,7 @@ def link_read_states(run_dir):
             continue
         path = os.path.join(run_dir, name)
         try:
-            descriptor = os.open(path, os.O_RDONLY | _LINK_NOFOLLOW)
+            descriptor = retry_transient(lambda: os.open(path, os.O_RDONLY | _LINK_NOFOLLOW))
         except OSError:
             continue
         try:
@@ -5673,7 +5693,7 @@ def link_path_allowed(path):
 def _link_read_token_file(path, limit=LINK_MAX_TOKEN_FILE):
     """`dict` of a private regular token file, or None."""
     try:
-        descriptor = os.open(path, os.O_RDONLY | _LINK_NOFOLLOW)
+        descriptor = retry_transient(lambda: os.open(path, os.O_RDONLY | _LINK_NOFOLLOW))
     except OSError:
         return None
     try:
@@ -5781,7 +5801,7 @@ def link_consume(run_dir, token, now, instance=None):
         if peek is not None and peek.get('instance') != instance:
             return None
     try:
-        os.rename(source, taken)
+        retry_transient(lambda: os.rename(source, taken))   # Windows refuses it while another thread reads the token file
     except OSError:
         return None
     try:
