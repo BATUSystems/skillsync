@@ -8,6 +8,7 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import stat
+import subprocess
 import tempfile
 import time
 import yaml
@@ -220,13 +221,29 @@ def has_acceptance_step(status, text):
     return bool(section) and bool(_ACCEPTANCE_STEP.search(section))
 
 
-def acceptance_pending(status, text, context):
+def _plan_done_at(root, sha, rel):
+    """True when the plan file `rel` read from the commit `sha` (git, no working tree) has the status `done`. An unknown, junk or non-commit
+    sha, a plan missing there or any other status is False: such an entry says nothing about the closing of this plan."""
+    if not root or not isinstance(sha, str) or not _APPROVAL_SHA.fullmatch(sha):
+        return False
+    try:
+        result = subprocess.run(['git', '-C', str(root), 'show', f'{sha}^{{commit}}:{rel}'], capture_output=True, timeout=10, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    if result.returncode != 0:
+        return False
+    return _status_fields(result.stdout.decode('utf-8', 'replace'), PLAN_STATUSES)[0] == 'done'
+
+
+def acceptance_pending(status, text, context, rel=None):
     """True when a closed plan (`done`) that has the human acceptance step (`Odbiór` in `## Progress`: the material, a checklist and the
     coverage table, handed to the person before the closing word) still waits for that word. The plan is tied to its run by the `Przebieg:`
     line; every plan whose run directory exists in the worktree (`.skillsync/runs/<run-id>/`: the active run) waits on its own until the run's
-    `approvals.jsonl` has the closing consent of the delivery mode (`READY` in `pr`, `CP` in `direct`), for any sha: later commits of the
-    branch do not light a finished plan again. A plan whose run directory is gone (history of a merged branch) has no signal. The step's
-    checkbox changes nothing. `context` = `{'mode', 'approvals', 'runs'}`; without it (or without a valid delivery mode) there is no signal."""
+    `approvals.jsonl` has the closing consent of the delivery mode (`READY` in `pr`, `CP` in `direct`) whose sha is a commit where this plan
+    (`rel`) already has the status `done`: a `CP` given earlier in the run (it is said many times) or an entry with a junk sha closes nothing, and
+    later commits of the branch do not light a finished plan again. A plan whose run directory is gone (history of a merged branch) has no
+    signal. The step's checkbox changes nothing. `context` = `{'mode', 'approvals', 'runs', 'root'}`; without it (or without a valid delivery
+    mode) there is no signal."""
     if not has_acceptance_step(status, text) or not context:
         return False
     word = ACCEPTANCE_WORDS.get(context.get('mode'))
@@ -236,7 +253,8 @@ def acceptance_pending(status, text, context):
     run = _PLAN_RUN.search(text[:4000])
     if not run or not _RUN_ID.fullmatch(run.group(1)) or run.group(1) not in context.get('runs', ()):
         return False
-    return not any(row['run'] == run.group(1) and row['word'] == word for row in context.get('approvals', []))
+    return not any(row['run'] == run.group(1) and row['word'] == word and _plan_done_at(context.get('root'), row.get('sha'), rel)
+                   for row in context.get('approvals', []))
 
 
 def plan_needs_human(status, steps, ticket=False, pr=False):
@@ -267,7 +285,7 @@ def plan_record(root, path, context=None):
     return {'path': path.relative_to(root).as_posix(), 'title': title.group(1) if title else path.stem, 'status': status,
             'statusText': status_text, 'steps': steps, 'pr': {'number': int(pr.group(1)), 'link': pr.group(2)} if pr else None,
             'ticket': {'key': ticket.group(1), 'link': ticket.group(2)} if ticket else None, 'spec': spec,
-            'needsHuman': plan_needs_human(status, steps, bool(ticket), bool(pr)) + (['acceptance'] if acceptance_pending(status, text, context) else []),
+            'needsHuman': plan_needs_human(status, steps, bool(ticket), bool(pr)) + (['acceptance'] if acceptance_pending(status, text, context, path.relative_to(root).as_posix()) else []),
             'updated': _iso(path.stat().st_mtime),
             'preImplement': pre, 'summary': plan_summary(text)}
 
@@ -465,7 +483,7 @@ def project_status(root, manifest):
     project = manifest.get('project', {})
     name = project.get('name') if isinstance(project, dict) else None
     approvals = read_approvals(root, findings)
-    context = {'mode': delivery_info(manifest)['mode'], 'approvals': approvals, 'runs': _run_ids(root)}
+    context = {'mode': delivery_info(manifest)['mode'], 'approvals': approvals, 'runs': _run_ids(root), 'root': root}
     return {'schema': SCHEMA, 'status': 'PASS', 'project': name or f'{root.parent.name}/{root.name}', 'root': posix(root),
             'plans': _plans(root, findings, context), 'specs': _specs(root, findings), 'frds': _frds(root, findings), 'runs': _runs(root, findings), 'claims': _claims(root, findings),
             'approvals': approvals, 'findings': findings}

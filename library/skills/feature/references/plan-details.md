@@ -93,7 +93,7 @@ PR: #123 (link: https://example.com/pr/123)
   dowód automatyczny i jak go zobaczyć) oraz tabelę pokrycia „kryterium → test(y) → wynik” (wzór w „Wyniku”). Agent zaznacza go `[x]` po
   przekazaniu materiału; to przygotowanie, nie zgoda. **Odbiorem jest końcowe słowo zgody trybu dostarczania**, to samo, które już dziś kończy
   przebieg: `READY` w trybie `pr`, `CP` w trybie `direct` (żadnego nowego słowa, przycisku ani rodzaju zgody). Po zamknięciu przebiegu (`done`) plan z
-  krokiem „Odbiór” i aktywnym przebiegiem (istnieje `.skillsync/runs/<run-id>/`) ma `needsHuman: acceptance` do czasu wpisu tego słowa w `.skillsync/runs/<run-id>/approvals.jsonl` (dowolne sha)
+  krokiem „Odbiór” i aktywnym przebiegiem (istnieje `.skillsync/runs/<run-id>/`) ma `needsHuman: acceptance` do czasu wpisu tego słowa w `.skillsync/runs/<run-id>/approvals.jsonl` (z sha commitu, w którym plan jest już `done`)
   (przycisk strony statusu albo `skillsync approvals record` po słowie wpisanym przez użytkownika w sesji); kolejne commity nie zapalają zamkniętego planu od nowa, a
   zaznaczenie kroku ani linia w planie niczego nie gaszą. `closure` i `acceptance` nie występują naraz: najpierw zamknięcie (`in_progress`, wszystkie `[x]`),
   potem `acceptance` (`done`). Uwagi z odbioru wracają jako nowe kroki planu, nie jako zgoda.

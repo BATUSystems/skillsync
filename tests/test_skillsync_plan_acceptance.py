@@ -1,5 +1,5 @@
 """`needsHuman: acceptance` of `skillsync status` (S33): a closed plan with the human acceptance step waits for the closing consent word
-of its delivery mode (`READY` in `pr`, `CP` in `direct`), recorded in the run's `approvals.jsonl` (any sha). Every plan of an active run (its run directory exists)
+of its delivery mode (`READY` in `pr`, `CP` in `direct`), recorded in the run's `approvals.jsonl` (its sha is a commit where the plan is `done`). Every plan of an active run (its run directory exists)
 waits on its own; the plan text never ends the wait."""
 import json
 import os
@@ -47,6 +47,8 @@ class AcceptanceSignal(unittest.TestCase):
         (self.root / 'docs/plans' / name).write_text(text, encoding='utf-8')
         if run:
             (self.root / '.skillsync/runs' / run).mkdir(parents=True, exist_ok=True)   # the run is active in this worktree
+        self.git('add', 'docs')
+        self.git('commit', '-q', '--allow-empty', '-m', f'plan {name}')   # an entry counts only for a commit that holds the plan as done
 
     def approve(self, word, sha, run='ACC-1'):
         directory = self.root / '.skillsync/runs' / run
@@ -80,6 +82,32 @@ class AcceptanceSignal(unittest.TestCase):
         self.approve('READY', self.git('rev-parse', 'HEAD'))
         self.assertEqual(self.needs('pr'), [])
         self.commit('later')
+        self.assertEqual(self.needs('pr'), [])
+
+    def test_direct_cp_given_before_the_plan_was_closed_closes_nothing(self):
+        self.write_plan(plan('in_progress', steps=['- [x] F1.1 Kod', '- [ ] F4.3 Odbiór', '- [ ] F4.4 Zamknięcie']))
+        self.approve('CP', self.git('rev-parse', 'HEAD'))                  # CP is said many times during a run
+        self.write_plan(plan())                                            # the plan is closed later
+        self.assertEqual(self.needs('direct'), ['acceptance'])
+
+    def test_direct_cp_on_the_commit_where_the_plan_is_done_closes_it_and_a_later_commit_does_not_light_it(self):
+        self.write_plan(plan('in_progress', steps=['- [x] F1.1 Kod', '- [ ] F4.3 Odbiór', '- [ ] F4.4 Zamknięcie']))
+        self.write_plan(plan())
+        self.approve('CP', self.git('rev-parse', 'HEAD'))
+        self.assertEqual(self.needs('direct'), [])
+        self.commit('later')
+        self.assertEqual(self.needs('direct'), [])
+
+    def test_a_sha_outside_the_repo_or_junk_closes_nothing(self):
+        self.write_plan(plan())
+        for sha in ('f' * 40, 'abcdef1', 'not-a-sha', '', '--help'):
+            with self.subTest(sha=sha):
+                self.approve('READY', sha)
+                self.assertEqual(self.needs('pr'), ['acceptance'])
+
+    def test_pr_ready_on_the_done_commit_still_closes(self):
+        self.write_plan(plan())
+        self.approve('READY', self.git('rev-parse', 'HEAD'))
         self.assertEqual(self.needs('pr'), [])
 
     def test_an_entry_of_another_run_does_not_count(self):

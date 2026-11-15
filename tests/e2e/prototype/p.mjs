@@ -130,12 +130,13 @@ suite.add('P-06', 'Prezentacja: po kliknięciu myszą klawisze nadal działają;
   const afterKey = await p.evaluate(snapshot);
   await p.clickEl(`document.querySelector('.proto-presentation-bar [aria-label="Następny ekran"]')`, 'przycisk ›'); await sleep(250);
   const afterClick = await p.evaluate(snapshot);
+  const focusOnButton = await p.evaluate(`document.activeElement && document.activeElement.tagName === 'BUTTON' && !!document.activeElement.closest('.proto-presentation-bar')`);
   await p.key('ArrowLeft'); await sleep(250);
   const afterBack = await p.evaluate(snapshot);
   await p.key('ArrowRight', { shift: true }); await sleep(250);
   const afterShift = await p.evaluate(snapshot);
-  const ok = entered.cls && same(entered.vis, ['s1']) && same(afterKey.vis, ['s2']) && same(afterClick.vis, ['s3']) && same(afterBack.vis, ['s2']) && same(afterShift.vis, ['s2']);
-  return { ok, entered, afterKey, afterClick, afterBack, afterShift };
+  const ok = entered.cls && same(entered.vis, ['s1']) && same(afterKey.vis, ['s2']) && same(afterClick.vis, ['s3']) && focusOnButton && same(afterBack.vis, ['s2']) && same(afterShift.vis, ['s2']);
+  return { ok, focusOnButton, entered, afterKey, afterClick, afterBack, afterShift };
 });
 
 await suite.main();
