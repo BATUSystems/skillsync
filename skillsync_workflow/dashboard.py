@@ -46,15 +46,15 @@ STEP_ID = r'[A-Z]{1,3}-?\d+[a-z]?(?:\.\d+[a-z]?)?'  # S1, S2a, A-1 and phase sub
 STEP_RE = re.compile(rf'^\s*[-*]\s+\[(?P<mark>[ xX])\]\s+(?P<id>{STEP_ID})(?![\w-])\s*(?P<rest>.*)$')
 HEADER_RE = re.compile(r'^(?P<key>[^\s:#|>*`-][^:|]{0,40}):\s+(?P<val>\S.*?)\s*$')
 CHECKPOINT_RE = re.compile(r'^\s*[-*]\s+(?P<time>\d{1,2}:\d{2})\b\s*(?P<text>.*)$')
-IN_PROGRESS_RE = re.compile(r'w\s+toku\s*:?\s*(?P<seg>[^;]*)', re.IGNORECASE)
-DONE_RE = re.compile(r'(?<![\w])zrobion[eya]\s*:?\s*(?P<seg>[^;]*)', re.IGNORECASE)
-ID_LIST_RE = re.compile(rf'^\s*(?P<ids>{STEP_ID}(?:(?:\s*[/+&]\s*|\s+(?:i|oraz)\s+){STEP_ID})*)(?![\w-])')
+IN_PROGRESS_RE = re.compile(r'w\s+toku\s*:?\s*(?P<seg>.*)', re.IGNORECASE)   # a segment of `split_segments`: `;` inside brackets is part of it
+DONE_RE = re.compile(r'(?<![\w])zrobion[eya]\s*:?\s*(?P<seg>.*)', re.IGNORECASE)
+ID_LIST_RE = re.compile(rf'^\s*(?P<ids>{STEP_ID}(?:(?:\s*(?:[/+&‖]|\|\|)\s*|\s+(?:i|oraz)\s+){STEP_ID})*)(?![\w-])')
 # "The session waits for a human" in a checkpoint: segment `czeka: <what>` (segments are split by `;`, like
 # "zrobione" / "w toku"). The newest checkpoint without `czeka:` clears the banner.
-WAIT_RE = re.compile(r'(?:^|;)\s*czeka\s*:\s*(?P<seg>[^;]+)', re.IGNORECASE)
+WAIT_RE = re.compile(r'^\s*czeka\s*:\s*(?P<seg>.+)', re.IGNORECASE)   # matched against one segment of `split_segments`
 WAIT_NONE = {'', '-', '—', 'nic', 'brak', 'nie'}
 # "The session works until HH:MM" in a checkpoint: segment `eta: <operation> do HH:MM` (like `czeka:`, split by `;`).
-ETA_RE = re.compile(r'(?:^|;)\s*eta\s*:\s*(?P<seg>[^;]+)', re.IGNORECASE)
+ETA_RE = re.compile(r'^\s*eta\s*:\s*(?P<seg>.+)', re.IGNORECASE)
 ETA_AT_RE = re.compile(r'^(?P<operation>.*?\S)\s+do\s+(?P<time>\d{1,2}:\d{2})\.?$', re.IGNORECASE)
 STATUS_WAIT_RE = re.compile(r'czeka\s+na\s+(?P<what>[^);,]+)', re.IGNORECASE)
 ID_FIND_RE = re.compile(rf'(?<![\w-]){STEP_ID}(?![\w-])')
@@ -202,7 +202,7 @@ def parse_checkpoints(text):
 
 def wait_marker(text):
     """Value of the `czeka:` segment of a checkpoint text, or None."""
-    match = WAIT_RE.search(text)
+    match = _first_segment_match(WAIT_RE, text)
     if not match:
         return None
     value = match.group('seg').strip().rstrip('.')
@@ -212,7 +212,7 @@ def wait_marker(text):
 def parse_eta(text):
     """`(operation, "HH:MM")` of the `eta: <operation> do HH:MM` segment of a checkpoint text, or None (no segment, no
     readable time, an empty operation, or the "nothing" values of `czeka:`)."""
-    match = ETA_RE.search(text)
+    match = _first_segment_match(ETA_RE, text)
     found = ETA_AT_RE.match(match.group('seg').strip()) if match else None
     if not found:
         return None
@@ -275,7 +275,23 @@ def wait_item(what, source, since=None, ctx=None):
     return item
 
 
-def split_top_level(segment, sep=','):
+def split_segments(text):
+    """Segments of a checkpoint text: `;` ends a segment only outside brackets (`(`, `[`, `{`), so `w toku: F1.1 (a; b), F1.3`
+    stays one segment. A line whose brackets do not balance (an unclosed `(` would swallow the rest of the line) is split at
+    every `;`, as before the brackets were honoured."""
+    parts = split_top_level(text, ';', balanced=True)
+    return parts if parts is not None else text.split(';')
+
+
+def _first_segment_match(pattern, text):
+    for segment in split_segments(text):
+        match = pattern.search(segment)
+        if match:
+            return match
+    return None
+
+
+def split_top_level(segment, sep=',', balanced=False):
     parts, depth, buf = [], 0, []
     for char in segment:
         if char in '([{':
@@ -288,7 +304,7 @@ def split_top_level(segment, sep=','):
         else:
             buf.append(char)
     parts.append(''.join(buf))
-    return parts
+    return None if balanced and depth else parts
 
 
 def _lead_ids(segment):
@@ -302,15 +318,67 @@ def _lead_ids(segment):
     return ids
 
 
+PARSE_WARNING_LIMIT = 10
+PARSE_WARNING_FRAGMENT = 80
+NO_ITEMS = {'', '-', '—', 'nic', 'brak', 'nie', 'żadne', 'żaden'}
+
+
+def report_warnings(text):
+    """Pieces of the `w toku` / `zrobione` lists of one checkpoint text that the id reading skips: `[{segment, fragment, reason}]`.
+    `no-step-id`: an element without a step id at its start; `later-id`: an element that starts with an id and names another one
+    further on outside brackets (only the leading ids count). The skip stays (no guessing from descriptions); the warning makes it visible."""
+    found = []
+    for label, pattern in (('w toku', IN_PROGRESS_RE), ('zrobione', DONE_RE)):
+        match = _first_segment_match(pattern, text)
+        if not match:
+            continue
+        for item in split_top_level(match.group('seg')):
+            piece = ' '.join(item.split())
+            if piece.rstrip('.').lower() in NO_ITEMS:
+                continue
+            lead = ID_LIST_RE.match(item)
+            if not lead:
+                reason = 'no-step-id'
+            elif ID_FIND_RE.search(_without_brackets(item[lead.end():])):
+                reason = 'later-id'
+            else:
+                continue
+            found.append({'segment': label, 'fragment': piece[:PARSE_WARNING_FRAGMENT], 'reason': reason})
+    return found
+
+
+def _without_brackets(text):
+    out, depth = [], 0
+    for char in text:
+        if char in '([{':
+            depth += 1
+        elif char in ')]}' and depth:
+            depth -= 1
+        elif not depth:
+            out.append(char)
+    return ''.join(out)
+
+
+def checkpoint_warnings(chronological):
+    """`run.parseWarnings`: the newest `PARSE_WARNING_LIMIT` warnings of the run, newest first, each with the checkpoint `time`."""
+    out = []
+    for item in reversed(chronological):
+        for warning in report_warnings(item['text']):
+            out.append({'time': item['time'], **warning})
+            if len(out) >= PARSE_WARNING_LIMIT:
+                return out
+    return out
+
+
 def ids_reported_done(text):
     """Ids after "zrobione" (up to `;`): a visual hint only, it does not change the percentage."""
-    match = DONE_RE.search(text)
+    match = _first_segment_match(DONE_RE, text)
     return _lead_ids(match.group('seg')) if match else []
 
 
 def ids_in_progress(text):
     """Step ids after "w toku" up to the next `;`, only items that start with an id; None when the phrase is absent."""
-    match = IN_PROGRESS_RE.search(text)
+    match = _first_segment_match(IN_PROGRESS_RE, text)
     return _lead_ids(match.group('seg')) if match else None
 
 
@@ -1564,6 +1632,9 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
             run['checkpoints'] = list(reversed(chronological))
             last_change.append(_mtime(checkpoints))
             run['lastReportAt'] = _iso(_mtime(checkpoints))
+            warnings = checkpoint_warnings(chronological)
+            if warnings:
+                run['parseWarnings'] = warnings
             for item in chronological:
                 reported += [sid for sid in ids_reported_done(item['text']) if sid not in reported]
             for item in reversed(chronological):

@@ -254,6 +254,25 @@ class ActTests(unittest.TestCase):
         self.assertTrue(plan_stages["GO implement"])
 
 
+class ParseWarningsTests(ProjectCase):
+    """`run.parseWarnings` (STATUS-160-A, P8): the status names what the id reading skipped."""
+
+    def test_skipped_elements_show_up_in_the_run_newest_first(self) -> None:
+        run = self.root / RUN / "checkpoints.md"
+        fixture = [(w["time"], w["reason"], w["fragment"]) for w in self.board.status()["run"]["parseWarnings"]]
+        self.assertEqual(fixture, [("10:25", "no-step-id", "szczebel 3 S1 na migawce"), ("10:25", "no-step-id", "baseline")])
+        run.write_text(run.read_text(encoding="utf-8") + "- 23:50 w toku: implementer: S4, S3b (a; b)\n", encoding="utf-8")
+        found = self.board.status()["run"]["parseWarnings"]
+        self.assertEqual([(w["time"], w["segment"], w["reason"]) for w in found][0], ("23:50", "w toku", "no-step-id"))
+        self.assertEqual(len(found), 3)
+        self.assertEqual(self.board.status()["progress"]["active"], ["S3b"])
+
+    def test_clean_checkpoints_leave_no_key(self) -> None:
+        run = self.root / RUN / "checkpoints.md"
+        run.write_text("RUN=2026-01-10T10:00:00+01:00\n- 10:00 start; w toku: S1, S2a (a; b); zrobione: S0\n", encoding="utf-8")
+        self.assertNotIn("parseWarnings", self.board.status()["run"])
+
+
 class SpecActTests(ProjectCase):
     """Akt I: spec bez planu (plan powstaje dopiero przy „GO plan”)."""
     SPEC2 = "docs/specs/demo-etap-2.md"
