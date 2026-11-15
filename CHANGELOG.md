@@ -12,6 +12,26 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Added
+
+- `dashboard serve --read-port N --approve-port M`: two-port mode of the status page. One process, one shared state, two HTTP sockets. The role comes from the port, not from the `Host` header: the read socket has no consent route (`POST /api/approve` returns 404) and no token; the consent socket keeps the 1.5.0 checks, adds an exact `Origin` check (`http://<Host>` with the port), refuses intermediary headers (`Forwarded`, `X-Forwarded-*`, `X-Real-IP`, `Via` and others) unless `--allow-proxy-headers` is given, and records where each consent came from. The port numbers are given explicitly (the flags have no default value; 5140 for reading and 5141 for consents are the usual pair). Combinations that make no sense end with `BLOCKED` (exit 2) before anything is bound.
+- `dashboard serve --read-bind ADDR` and `--approve-bind ADDR` (listen address of each socket), and `--allow-proxy-headers` (consent socket only). In two-port mode both sockets listen on `0.0.0.0` by default; `--host` sets both, `127.0.0.1` narrows a socket to this machine. A startup warning is printed for every socket that listens beyond loopback.
+- Single-port mode is unchanged: `dashboard serve` without the new flags, or with `--port`, still has one socket, listens on `127.0.0.1` unless `--host` is given, and takes the role from the `Host` header.
+- Migration from two instances (one of them with `--no-approvals`): one call `dashboard serve <project> --read-port 5140 --approve-port 5141` replaces both. Stop the old processes first; both ports must be free, otherwise the start is `BLOCKED` with no side effects.
+- Console: one line per socket at start (the read address without a token, and the consent address with the token); a line for every consent given from a non-loopback peer; a count of refused consent tokens, reported at most once a minute, without the token.
+- `dashboard url <project> --read` prints the read address (no fragment, no token). In two-port mode `dashboard url --json` adds `role` and `readUrl`.
+- State files: additive `role` (`read` or `approve`) and `peer` fields (`schema: 1`); a file without `role` is a single-port file.
+- `/api/status`: `approvals.role` in two-port mode (`here`, `viewer` and `tokenRequired` then follow the socket, not the `Host`). `approvals.jsonl`: optional `via` object (`port`, `host`, `peer`) on consents from the consent socket; entries without `via` are read as before.
+
+### Security
+
+- Two-port mode: a request on the read socket cannot write anything (no route, no token); on the consent socket the `Origin` must match the `Host` exactly, a request with intermediary headers is refused, and `via.peer` is the address of the connection, so `X-Forwarded-For` cannot change it.
+- Known residual risk, documented in `docs/workflow.md` (section "Strona statusu: dwa tryby"): the consent token travels in plain HTTP. With the default `0.0.0.0` listen address on an untrusted network, anyone who can sniff the traffic can capture the token and give consents while the server runs. Use `--approve-bind 127.0.0.1` or an SSH tunnel (`ssh -L 5141:127.0.0.1:5141`) there, and point tunnels at the read port only.
+
+### Breaking
+
+None.
+
 ## [1.5.0] - 2026-11-15
 
 ### Added

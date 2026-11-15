@@ -71,7 +71,7 @@ entries:
   - path: dashboard-server.md
     title: "Serwer strony statusu (dashboard serve): Host, Origin, X-Status-Board, CSP, allowlista, limity, zgody tylko użytkownika"
     tags: [skillsync, dashboard, server, security, approvals, workflow]
-    paths: ['skillsync_workflow/dashboard_http.py', 'skillsync_workflow/dashboard.py', 'skillsync_workflow/status.py', 'tests/test_skillsync_dashboard*.py']
+    paths: ['skillsync_workflow/dashboard_http.py', 'skillsync_workflow/dashboard_ports.py', 'skillsync_workflow/dashboard_token.py', 'skillsync_workflow/dashboard.py', 'skillsync_workflow/status.py', 'tests/test_skillsync_dashboard*.py']
   - path: run-classes.md
     title: Klasy przebiegów, final, kandydaci zmian (metrics --classify, retro)
     tags: [skillsync, workflow, retro, classify, checkpoints, runs]
