@@ -21,11 +21,18 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 - `QuestionsStore.sweep_orphan_lock` (usuwanie osieroconego `questions.json.lock`) usuwa plik jeszcze pod blokadą, a każda `FileLock` po `flock` sprawdza, że ścieżka nadal wskazuje zablokowany i-węzeł (czekający pisarz nie zostaje z blokadą na usuniętym pliku).
 - `FileLock`: brak wsparcia blokad przez system plików (ENOTSUP, EOPNOTSUPP, ENOSYS; ENOLCK po połowie czasu oczekiwania) daje od razu `LockUnavailable` (503 `lock_unsupported`, podklasa `LockTimeout`) zamiast czekania do timeoutu; pozostałe błędy to nadal rywalizacja. Dotyczy blokad pytań do eksperta, komentarzy, użytkowników (także poleceń `prototype user`) oraz zgód.
 - `prototype serve` i `dashboard serve`: SIGINT (Ctrl+C) albo SIGTERM tuż po starcie, między instalacją handlera, ogłoszeniem adresu a `serve_forever`, kończy serwer czysto (PASS, `stopped`) zamiast tracebacku i kodu -2; handler jest instalowany przed ogłoszeniem adresu, a start od instalacji handlera do `serve_forever` leży pod `try`. W CI padło tak raz na macOS (okno kilkunastu milisekund).
+- A symlink loop in a `discover_exclude` entry or in a project path is again treated as unresolvable (`common.discover_excludes`, `common.is_excluded`) on newer Pythons:
+  `Path.resolve()` stopped raising on a loop in POSIX 3.13 and Windows 3.12, so the loop is now detected by a symlink that is left among the components of the resolved path.
+- Prototype server and status page: a request that the server refused before reading its body (401, 403, 404, 405, 411, 413, a refused approval) could leave the declared body unread in the connection.
+  On Windows the client then got a connection reset (WinError 10054) instead of the answer; on a kept-alive connection the leftover bytes were read as the start of the next request. Now a connection with an unread declared body
+  is closed after the answer, with a lingering close (RFC 9112 section 9.6: the server half-closes, discards what the client still sends and then closes), bounded to 256 KiB and one second so that it cannot be used to hold a server thread.
+  Requests whose body the handler read are not affected.
 
 ### Changed
 
 - Testy: zmienna `SKILLSYNC_TEST_DASHBOARD_PORTS` (zakres `<od>-<do>` w 5100-5199) wyznacza porty testów dashboardu, żeby kilka biegów naraz na jednym hoście nie kolidowało; domyślnie bez zmian, produkt bez zmian (docs/development.md). `free_port` uznaje też port w TIME_WAIT za wolny (serwer binduje z SO_REUSEADDR), bo na macOS wycinek 29 portów wyczerpywał się w jednym biegu.
 - CI (macOS): `timeout-minutes` jobu `test` dla macOS 30 na 45 (testy trwają tam 20-28 min); `tests/skip-baseline.json` ma teraz zmierzony baseline `macos-latest/symlink` i `macos-latest/copy` (35 skipów z biegu main v1.3.0, identyczne w czterech jobach) zamiast `null`, z nowymi kategoriami `linux-only-env` (testy cyklu życia `env`: backend własności procesów tylko na Linuksie), `bsd-mktemp` i `needs-shellcheck`; progi czasu czterech testów poluzowane (skan sekretów 0,5 → 5 s, git z limitem 3,5 → 15 s przy 30 s snu, nieaktywne połączenie dashboardu 4 → 15 s, `approvals wait` 15 → 18 s). Test strażnika pilnuje teraz nowego limitu i baseline macOS.
+- CI: the test matrix adds Python 3.13 (blocks like 3.11 and 3.12) and Python 3.14 (informational, `continue-on-error`, Ubuntu only, both modes).
 
 ### Compatibility
 

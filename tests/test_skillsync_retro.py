@@ -3132,7 +3132,8 @@ class RetroAll(CandidateBase):
         loop_a, loop_b = self.base / 'loop-a', self.base / 'loop-b'
         os.symlink(loop_b, loop_a)
         os.symlink(loop_a, loop_b)
-        for bad in ('~no-such-user-zz/x', str(loop_a / 'x')):
+        # `~name` always resolves on Windows (ntpath.expanduser builds a profile folder path from the name): only POSIX has a per-user lookup that can fail
+        for bad in (() if os.name == 'nt' else ('~no-such-user-zz/x',)) + (str(loop_a / 'x'),):
             self.excluding(bad)
             data = self.run_all(code=2)
             self.assertEqual(data['reason'],

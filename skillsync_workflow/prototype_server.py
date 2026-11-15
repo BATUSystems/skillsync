@@ -63,6 +63,134 @@ except ImportError:
     msvcrt = None
 
 
+# ── Lingering close (shared with the status page) ───────────────────────────
+#
+# A handler that answers an error (401, 403, 405, 411, 413, ...) before it has read the request body and then closes
+# the connection leaves the client's bytes unread in the socket. The kernel answers such a close with a TCP reset,
+# and on Windows the client then sees ConnectionResetError (WinError 10054) instead of the response it was sent.
+# The cure is the one of RFC 9112 section 9.6: after the response, half-close the sending side and discard what the
+# client still sends, within hard limits, before closing. The limits are small and fixed, so a client without any
+# rights cannot hold a worker or make the server read an unbounded body.
+#
+# The status page (`dashboard_http`) imports `LingeringCloseMixin` from here: one source, this module stays standalone.
+
+LINGER_BYTES = 256 * 1024   # a body over this is not drained (the reset is then the client's own doing); above the handler's own read buffer
+LINGER_SECONDS = 1.0        # all of the discarding, not per read
+_CHUNK = 64 * 1024
+
+
+def linger_close(connection, limit=LINGER_BYTES, seconds=LINGER_SECONDS):
+    """Half-close `connection` for writing and discard the client's remaining bytes (bounded); never raises.
+
+    Returns the number of bytes discarded. The caller closes the connection afterwards."""
+    discarded = 0
+    deadline = time.monotonic() + seconds
+    try:
+        connection.shutdown(socket.SHUT_WR)
+        while discarded < limit:
+            left = deadline - time.monotonic()
+            if left <= 0:
+                break
+            connection.settimeout(left)
+            data = connection.recv(min(_CHUNK, limit - discarded))
+            if not data:   # the client has closed its side: nothing is left to reset
+                break
+            discarded += len(data)
+    except OSError:   # includes timeouts, resets and a connection that is already gone
+        pass
+    return discarded
+
+
+class _CountingReader:
+    """Proxy of a handler's `rfile` that counts the bytes handed out, to tell whether a request body was read."""
+
+    def __init__(self, raw):
+        self._raw = raw
+        self.count = 0
+
+    def read(self, *args):
+        data = self._raw.read(*args)
+        self.count += len(data)
+        return data
+
+    def read1(self, *args):
+        data = self._raw.read1(*args)
+        self.count += len(data)
+        return data
+
+    def readline(self, *args):
+        data = self._raw.readline(*args)
+        self.count += len(data)
+        return data
+
+    def readinto(self, buffer):
+        size = self._raw.readinto(buffer)
+        self.count += size or 0
+        return size
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        line = self.readline()
+        if not line:
+            raise StopIteration
+        return line
+
+    def __getattr__(self, name):
+        return getattr(self._raw, name)
+
+
+class LingeringCloseMixin:
+    """Mixin for `BaseHTTPRequestHandler` subclasses (list it BEFORE the handler base class).
+
+    After each request it checks whether the declared body was read. A body that is left unread would be parsed
+    as the next request on a kept-alive connection and, at the close, answered with a reset; so such a connection
+    is closed (`close_connection`) and, in `finish`, closed with a lingering close. A request whose body the
+    handler read, or that has none, is not touched."""
+
+    _body_mark = None
+    _linger = False
+
+    def setup(self):
+        super().setup()
+        self.rfile = _CountingReader(self.rfile)
+
+    def parse_request(self):
+        ok = super().parse_request()
+        self._body_mark = self.rfile.count if ok else None
+        return ok
+
+    def handle_one_request(self):
+        # Refusals before `parse_request` finishes (414, 431, a bad request line) are answered by `send_error`, which closes the
+        # connection; they do not linger (the body of such a request is not declared in a header the server accepted).
+        self._body_mark = None
+        self._linger = False
+        super().handle_one_request()
+        if self._body_mark is not None and self._body_unread():
+            self.close_connection = True
+            self._linger = True
+
+    def _body_unread(self):
+        headers = getattr(self, 'headers', None)
+        if headers is None:
+            return False
+        if headers.get('Transfer-Encoding'):
+            return True   # a chunked body is never read by these handlers (411); count it as unread
+        try:
+            declared = int(headers.get('Content-Length') or 0)
+        except ValueError:
+            return True
+        return declared > 0 and self.rfile.count - self._body_mark < declared
+
+    def finish(self):
+        try:
+            if self._linger:
+                linger_close(self.connection)
+        finally:
+            super().finish()
+
+
 # ── Constants ────────────────────────────────────────────────────────────────
 
 SERVER_VERSION = '1'
@@ -6370,7 +6498,7 @@ _LOGIN_TO_VIEW_EXCEPTIONS = ('/_login', _API_PREFIX + '/login', _API_PREFIX + '/
 
 # ── HTTP handler ─────────────────────────────────────────────────────────────
 
-class PrototypeRequestHandler(BaseHTTPRequestHandler):
+class PrototypeRequestHandler(LingeringCloseMixin, BaseHTTPRequestHandler):
     server_version = 'skillsync-prototype/' + SERVER_VERSION
     sys_version = ''
     timeout = 30

@@ -1,5 +1,6 @@
 """Shared local workflow configuration and report helpers."""
 import copy
+import errno
 import fnmatch
 import json
 import math
@@ -344,6 +345,19 @@ def expand_project_skills(manifest, layerset):
     return expanded
 
 
+def resolve_loop_checked(path):
+    """`Path(path).resolve()` that reports a symlink loop on every Python version.
+
+    Older Pythons raise `OSError`/`RuntimeError` from `resolve()` on a loop; newer ones (POSIX from 3.13, Windows from
+    3.12) return the path they got stuck at instead. A fully resolved path has no symlink among its components, so one
+    that still has a link has not been resolved: a loop. A path that merely does not exist still resolves."""
+    resolved = Path(path).resolve()
+    for part in (resolved, *resolved.parents):
+        if part.is_symlink():
+            raise OSError(errno.ELOOP, 'Too many levels of symbolic links', str(path))
+    return resolved
+
+
 def discover_excludes(config):
     """Ścieżki z klucza `discover_exclude` configu maszyny (lista, `~` rozwijane, domyślnie pusta), jako rozwiązane `Path`.
 
@@ -354,7 +368,7 @@ def discover_excludes(config):
     if not isinstance(value, list) or not all(isinstance(item, str) and item.strip() for item in value):
         raise ValueError("Konfiguracja maszyny: discover_exclude musi być listą niepustych ścieżek")
     try:  # wykluczenia rozwiązujemy raz; `~nieznany` i pętla dowiązań nie kończą się tracebackiem
-        return [Path(item).expanduser().resolve() for item in value]
+        return [resolve_loop_checked(Path(item).expanduser()) for item in value]
     except (OSError, RuntimeError):
         raise ValueError("Konfiguracja maszyny: discover_exclude zawiera ścieżkę, której nie da się rozwiązać") from None
 
@@ -366,7 +380,7 @@ def is_excluded(path, excludes):
     if not excludes:
         return False
     try:
-        resolved = Path(path).resolve()
+        resolved = resolve_loop_checked(path)
     except (OSError, RuntimeError):
         return True
     return any(resolved == excluded or excluded in resolved.parents for excluded in excludes)
