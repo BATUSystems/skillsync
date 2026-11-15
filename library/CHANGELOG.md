@@ -4,6 +4,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+### Changed
+- `skills/dashboard`: zgody ze strony wymagają tokenu (`X-Approve-Token`, adres z fragmentem `#zgoda=<token>` z konsoli `dashboard serve` albo z `skillsync dashboard url`); `app.js` zapamiętuje token, `dashboard-render.js` ma haczyk `deps.hasApproveToken` (przyciski nieaktywne bez tokenu; webview bez haczyka bez zmian); `SKILL.md`: reguła dla agenta.
+
 ## [1.4.1] - 2026-11-15
 
 No changes to the library in this release (the version follows the core).

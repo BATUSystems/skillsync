@@ -12,6 +12,15 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Added
+
+- `skillsync dashboard url <project> [--port N] [--host NAME] [--json]`: the address with the consent token of a running `dashboard serve` (`http://127.0.0.1:<port>/#zgoda=<token>`), read from a state file in the machine data directory (outside the project, 0600 in a 0700 directory, ACL on Windows through the shared helper when present); `BLOCKED` (exit 2) `server_not_running`, `ambiguous_server`, `invalid_project`.
+- `/api/status`: `approvals.tokenRequired` (HTTP only; `dashboard show` unchanged).
+
+### Changed
+
+- **Compatibility**: `POST /api/approve` of the status page needs the header `X-Approve-Token` (checked last, after the existing checks), otherwise `403`. The token is made per server process and printed in the console of `dashboard serve` as the fragment of an address (`#zgoda=<token>`); the page keeps it in `localStorage` and sends it. A script that posts to `/api/approve` has to read the token from `skillsync dashboard url` and send the header; an open tab with an old page gets the same `403` with the reason in its message until it is reopened from the printed address. The refusals before the token are unchanged, `--no-approvals` is unchanged, and the plugin of the editor (consents through the CLI) is not affected.
+
 ## [1.4.1] - 2026-11-15
 
 ### Fixed

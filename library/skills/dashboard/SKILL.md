@@ -305,6 +305,8 @@ zmiana kontraktu ze Skippsterem (zgłoszenie przed zapisem).
   być `localhost`/`127.0.0.1`/`[::1]` (dowolny port) albo nazwą podaną jawnie w `--approve-host` lub `--read-host` (np. nazwa
   maszyny przy tunelu, IP w LAN); inny = 403 bez treści (ochrona przed DNS rebinding), odmowa w logu przy `--verbose`.
   Zapis zgody tylko z loopbacku albo `--approve-host`; host z `--read-host` czyta, ale nie zapisuje z przeglądarki (klienta podrabiającego `Host` nie powstrzyma; nieufni widzowie = `--no-approvals`).
+- Zapis zgody wymaga też tokenu serwera (`X-Approve-Token`): adres z fragmentem `#zgoda=<token>` drukuje `dashboard serve` w konsoli, a działający serwer podaje `skillsync dashboard url <projekt>`.
+  Agent daje użytkownikowi ten adres (nie wkleja go poza rozmowę); bez tokenu strona jest tylko do odczytu, przyciski zgód są nieaktywne.
 - Zapis zgody dodatkowo: wymagany nagłówek `X-Status-Board: 1` (preflight CORS, którego
   serwer nie obsługuje, blokuje obce strony), `Origin` — jeśli jest — z tej samej listy hostów, `Content-Type: application/json`, limit 4 KB.
   Bez uwierzytelnienia z decyzji właściciela: narzędzie programisty na jego maszynie; agent i tak może wywołać CLI.
