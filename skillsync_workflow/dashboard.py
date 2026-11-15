@@ -1749,6 +1749,11 @@ def _cmd_serve(args):
     return serve_command(args)
 
 
+def _cmd_url(args):
+    from .dashboard_token import url_command
+    return url_command(args)
+
+
 def register(subparsers):
     parser = subparsers.add_parser('dashboard', help='Project status page (JSON contract schema 1, docs/dashboard-contract.md)')
     actions = parser.add_subparsers(dest='dashboard_action', required=True)
@@ -1784,3 +1789,11 @@ def register(subparsers):
     serve.add_argument('--poll', type=float, default=1.0, help='seconds between file change checks (min 0.2)')
     serve.add_argument('--verbose', action='store_true', help='log every request to stderr')
     serve.set_defaults(func=_cmd_serve)
+    url = actions.add_parser('url', help='Print the address with the consent token of a running `dashboard serve` of the project '
+                                         '(read from the machine state; the token is in the fragment `#zgoda=`)')
+    url.add_argument('path', nargs='?', default='.')
+    add_layer_argument(url)
+    url.add_argument('--port', type=int, default=None, help='port of the server (needed when several servers of the project run)')
+    url.add_argument('--host', default=None, metavar='NAME', help='Host name of the address (a name given to `serve --approve-host`; default 127.0.0.1)')
+    url.add_argument('--json', action='store_true', help='JSON {schema, status, url, port, pid} or BLOCKED {code, reason} (exit 2)')
+    url.set_defaults(func=_cmd_url)

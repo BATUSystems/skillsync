@@ -38,6 +38,7 @@ from layers_helpers import needs_os_symlinks  # noqa: E402
 
 FIX = HERE / "fixtures" / "dashboard_server"
 ASSETS, DESCRIPTIONS = srv.skill_assets(as_layerset(ROOT / "library"))
+TEST_TOKEN = "test-token-for-the-consent-header"   # `Board(approve_token=...)`: a fixed value so that the header dicts can be written down
 
 
 TEST_PORTS_ENV = "SKILLSYNC_TEST_DASHBOARD_PORTS"
@@ -947,7 +948,7 @@ class HttpCase(ProjectCase):
         super().setUp()
         self.port = free_port()
         self.board = srv.Board(self.root, poll=0.2, heartbeat=0.5, prototype_port=1, assets=ASSETS,
-                               descriptions=DESCRIPTIONS, approvals=self.APPROVALS)
+                               descriptions=DESCRIPTIONS, approvals=self.APPROVALS, approve_token=TEST_TOKEN)
         self.server = srv.make_server(self.board, "127.0.0.1", self.port)
         threading.Thread(target=self.server.serve_forever, kwargs={"poll_interval": 0.1}, daemon=True).start()
         threading.Thread(target=self.board.watch_loop, daemon=True).start()
@@ -1012,7 +1013,7 @@ class HttpTests(HttpCase):
     def test_approve_endpoint_guards(self) -> None:
         with self.get("/api/status") as r:
             self.assertTrue(json.load(r)["approvals"]["here"])
-        ok = {"Content-Type": "application/json", "X-Status-Board": "1"}
+        ok = {"Content-Type": "application/json", "X-Status-Board": "1", "X-Approve-Token": TEST_TOKEN}
         data = {"kind": "plan", "path": PLAN, "sha": "0" * 40}
         for headers in ({"Content-Type": "application/json"}, {**ok, "Host": "evil.example"},
                         {**ok, "Origin": "https://evil.example"}, {**ok, "Content-Type": "text/plain"}):
@@ -1090,7 +1091,7 @@ def raw_post(port: int, headers: dict, body: bytes = b"") -> tuple[int, dict]:
 
 class HttpSecurityTests(HttpCase):
     """K4: nagłówki bezpieczeństwa, Content-Type, allowlista assetów i dokumentów, limit SSE i treści POST."""
-    OK = {"Content-Type": "application/json", "X-Status-Board": "1"}
+    OK = {"Content-Type": "application/json", "X-Status-Board": "1", "X-Approve-Token": TEST_TOKEN}
 
     def test_security_headers_and_content_types(self) -> None:
         expected = {"/": "text/html; charset=utf-8", "/index.html": "text/html; charset=utf-8",
@@ -1205,7 +1206,7 @@ class HttpApprovalTests(HttpCase):
         super().setUp()
         install_fake_cli(self)
         spy_core(self)
-        self.ok = {"Content-Type": "application/json", "X-Status-Board": "1", "Origin": f"http://127.0.0.1:{self.port}"}
+        self.ok = {"Content-Type": "application/json", "X-Status-Board": "1", "X-Approve-Token": TEST_TOKEN, "Origin": f"http://127.0.0.1:{self.port}"}
 
     def go_plan_waiting(self) -> str:
         spec = self.root / self.SPEC2
@@ -1233,7 +1234,7 @@ class HttpApprovalTests(HttpCase):
         self.assertEqual(cli_calls(self), [])
         # bez Origin (np. curl na tej maszynie) też przechodzi; Host z --approve-host także
         self.board.approve_hosts = srv.LOOPBACK_HOSTS | {"lan-host"}
-        code, _ = raw_post(self.port, {"Host": "lan-host:5140", "Content-Type": "application/json", "X-Status-Board": "1",
+        code, _ = raw_post(self.port, {"Host": "lan-host:5140", "Content-Type": "application/json", "X-Status-Board": "1", "X-Approve-Token": TEST_TOKEN,
                                        "Content-Length": "2"}, b"{}")
         self.assertEqual(code, 400)  # przeszło strażników nagłówków; puste żądanie odrzuca dopiero walidacja treści
 
@@ -1338,7 +1339,7 @@ class HttpHostTests(HttpCase):
         spy_core(self)
         for host in ("evil.example", "evil.example:5140", ""):
             with self.subTest(host=host):
-                code, body = raw_post(self.port, {"Host": host, "Content-Type": "application/json", "X-Status-Board": "1",
+                code, body = raw_post(self.port, {"Host": host, "Content-Type": "application/json", "X-Status-Board": "1", "X-Approve-Token": TEST_TOKEN,
                                                   "Content-Length": str(srv.MAX_BODY + 1)})
                 self.assertEqual((code, body), (403, {"error": srv.HOST_REFUSED}))  # 403, nie 400: Host przed długością
         self.set_doc.assert_not_called()
@@ -1361,7 +1362,7 @@ class HttpReadOnlyTests(HttpCase):
         with self.get("/api/status") as r:
             approvals = json.load(r)["approvals"]
         self.assertEqual((approvals["enabled"], approvals["actions"]), (False, []))
-        ok = {"Content-Type": "application/json", "X-Status-Board": "1"}
+        ok = {"Content-Type": "application/json", "X-Status-Board": "1", "X-Approve-Token": TEST_TOKEN}
         code, body = self.post({"kind": "cp", "path": "2026-01-10-demo-etap-1", "sha": "abc1234def5678"}, ok)
         self.assertEqual(code, 403)
         self.assertIn("--no-approvals", body["error"])
@@ -1372,7 +1373,7 @@ class HttpReadOnlyTests(HttpCase):
         for host in ("localhost", f"localhost:{self.port}", "127.0.0.1", "[::1]"):
             with self.subTest(host=host):
                 code, body = raw_post(self.port, {"Host": host, "Origin": f"http://{host}", "Content-Type": "application/json",
-                                                  "X-Status-Board": "1", "Content-Length": str(len(data))}, data)
+                                                  "X-Status-Board": "1", "X-Approve-Token": TEST_TOKEN, "Content-Length": str(len(data))}, data)
                 self.assertEqual(code, 403)
                 self.assertIn("--no-approvals", body["error"])
         self.assertFalse((self.root / RUN / "approvals.jsonl").exists())
@@ -1407,7 +1408,7 @@ class HttpReadHostTests(HttpCase):
         install_fake_cli(self)
         spy_core(self)
         self.board.read_hosts = frozenset({self.READ})
-        self.ok = {"Content-Type": "application/json", "X-Status-Board": "1"}
+        self.ok = {"Content-Type": "application/json", "X-Status-Board": "1", "X-Approve-Token": TEST_TOKEN}
 
     def status_as(self, host: str) -> dict:
         code, _, body = raw_get(self.port, "/api/status", host)
@@ -1665,7 +1666,7 @@ def cli_show(tmp: Path, root: Path) -> dict:
 class HttpHardeningTests(HttpCase):
     """Poprawki review r1: maskowanie sekretów w /api/status jak w `show`, limit treści POST na granicy, timeout
     połączenia, HEAD /events bez strumienia."""
-    OK = {"Content-Type": "application/json", "X-Status-Board": "1"}
+    OK = {"Content-Type": "application/json", "X-Status-Board": "1", "X-Approve-Token": TEST_TOKEN}
 
     def test_api_status_is_redacted_like_show(self) -> None:
         fake = "Qw7" + "xZ9" + "pL4" + "mN2"  # atrapa składana w czasie wykonania (skaner sekretów nie widzi literału)
@@ -1685,6 +1686,7 @@ class HttpHardeningTests(HttpCase):
                 data.pop(key, None)
             data["approvals"].pop("here", None)
             data["approvals"].pop("viewer", None)  # pole dodawane przez serwer zależnie od Host (jak here)
+            data["approvals"].pop("tokenRequired", None)  # tylko HTTP: `show` nie zna tokenu
             return data
 
         self.assertEqual(volatile(api), volatile(shown))
@@ -1795,11 +1797,11 @@ class HttpTwoInstancesTests(ProjectCase):
     VIEWER = "viewer.example"
     SPEC2 = "docs/specs/demo-etap-2.md"
     PLAN2 = "docs/plans/2026-01-20-demo-etap-2.md"
-    OK = {"Content-Type": "application/json", "X-Status-Board": "1"}
+    OK = {"Content-Type": "application/json", "X-Status-Board": "1", "X-Approve-Token": TEST_TOKEN}
 
     def start(self, **kwargs) -> tuple[srv.Board, int]:
         board = srv.Board(self.root, poll=0.2, heartbeat=0.5, prototype_port=1, assets=ASSETS,
-                          descriptions=DESCRIPTIONS, **kwargs)
+                          descriptions=DESCRIPTIONS, approve_token=TEST_TOKEN, **kwargs)
         board.prototype_acceptance = lambda slug: None
         port = free_port()
         server = srv.make_server(board, "127.0.0.1", port)
@@ -1980,7 +1982,7 @@ class ServeCommandTests(unittest.TestCase):
         self.assertEqual((approvals["here"], approvals["viewer"]), (False, True))
         self.assertEqual(raw_get(port, "/api/status", "viewer2.example")[0], 200)
         self.assertEqual(raw_get(port, "/api/status", "evil.example")[0], 403)
-        code, answer = raw_post(port, {"Host": "viewer.example", "Content-Type": "application/json", "X-Status-Board": "1",
+        code, answer = raw_post(port, {"Host": "viewer.example", "Content-Type": "application/json", "X-Status-Board": "1", "X-Approve-Token": TEST_TOKEN,
                                        "Content-Length": "2"}, b"{}")
         self.assertEqual((code, answer), (403, {"error": srv.HOST_REFUSED}))
         proc.terminate()

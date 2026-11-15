@@ -1,0 +1,368 @@
+"""B1: the token of the consents of the status page (`X-Approve-Token`), the state file and `skillsync dashboard url`.
+
+The token is made per process, is checked LAST (every refusal before it stays as it was), never appears in a status, an asset or a log, and
+reaches the user in the fragment of an address (`#zgoda=<token>`) from the console of `dashboard serve` or from `dashboard url`."""
+from __future__ import annotations
+
+import json
+import os
+import re
+import stat
+import subprocess
+import sys
+import tempfile
+import time
+import unittest
+import urllib.request
+from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "tests"))
+
+from skillsync_workflow import dashboard_http as srv  # noqa: E402
+from skillsync_workflow import dashboard_token  # noqa: E402
+from tests.test_skillsync_dashboard_server import (CLI, PLAN, TEST_TOKEN, HttpCase, ProjectCase, free_port,  # noqa: E402
+                                                   install_fake_cli, make_project, raw_post, spy_core)
+
+HEADERS = {"Content-Type": "application/json", "X-Status-Board": "1"}
+
+
+class TokenCase(HttpCase):
+    SPEC2 = "docs/specs/demo-etap-2.md"
+    PLAN2 = "docs/plans/2026-01-20-demo-etap-2.md"
+
+    def setUp(self) -> None:
+        super().setUp()
+        install_fake_cli(self)
+        spy_core(self)
+        self.ok = {**HEADERS, "Origin": f"http://127.0.0.1:{self.port}"}
+
+    def offer(self) -> dict:
+        (self.root / srv.RUNS_DIR / "2026-01-20-demo-etap-2").mkdir(parents=True, exist_ok=True)
+        spec = self.root / self.SPEC2
+        spec.write_text(f"# Spec: Demo 2\n\nStatus: draft (czeka na GO plan)\nPlan: {self.PLAN2}\n", encoding="utf-8")
+        later = (self.root / PLAN).stat().st_mtime + 100
+        os.utime(spec, (later, later))
+        with self.get("/api/status") as r:
+            action = next(a for a in json.load(r)["approvals"]["actions"] if a["kind"] == "spec")
+        return {"kind": "spec", "path": self.SPEC2, "sha": action["sha"]}
+
+
+class TokenRequired(TokenCase):
+    def test_post_without_a_token_is_refused_with_the_token_message_and_writes_nothing(self) -> None:
+        code, body = self.post(self.offer(), self.ok)
+        self.assertEqual((code, body), (403, {"error": srv.TOKEN_REFUSED}))
+        self.set_doc.assert_not_called()
+
+    def test_a_wrong_token_gets_the_same_answer_as_a_missing_one(self) -> None:
+        data = self.offer()
+        answers = {json.dumps(self.post(data, {**self.ok, **extra}))
+                   for extra in ({}, {"X-Approve-Token": ""}, {"X-Approve-Token": "x"}, {"X-Approve-Token": TEST_TOKEN + "x"},
+                                 {"X-Approve-Token": TEST_TOKEN[:-1]}, {"X-Approve-Token": TEST_TOKEN.upper()})}
+        self.assertEqual(answers, {json.dumps([403, {"error": srv.TOKEN_REFUSED}])})
+        self.set_doc.assert_not_called()
+
+    def test_the_right_token_keeps_every_existing_behaviour(self) -> None:
+        data = self.offer()
+        code, body = self.post(data, {**self.ok, "X-Approve-Token": TEST_TOKEN})
+        self.assertEqual((code, body["word"], body["file"]), (200, "GO plan", self.SPEC2), body)
+        self.set_doc.assert_called_once()
+
+    def test_the_token_is_compared_in_constant_time(self) -> None:
+        with mock.patch.object(srv.hmac, "compare_digest", wraps=srv.hmac.compare_digest) as compare:
+            self.post(self.offer(), {**self.ok, "X-Approve-Token": "wrong"})
+        self.assertEqual(compare.call_count, 1)
+        self.assertEqual(compare.call_args.args[1], TEST_TOKEN.encode("utf-8"))
+
+    def test_every_refusal_before_the_token_is_the_same_with_and_without_it(self) -> None:
+        data = self.offer()
+        cases = {
+            "Host": ({"Host": "evil.example"}, srv.HOST_REFUSED),
+            "X-Status-Board": ({"X-Status-Board": "0"}, "Brak nagłówka X-Status-Board."),
+            "Origin": ({"Origin": "https://evil.example"}, "Obcy Origin."),
+            "Content-Type": ({"Content-Type": "text/plain"}, "Oczekiwano application/json."),
+        }
+        for name, (change, message) in cases.items():
+            for token in (None, TEST_TOKEN, "wrong"):
+                with self.subTest(refusal=name, token=token):
+                    headers = {**self.ok, **change}
+                    if token:
+                        headers["X-Approve-Token"] = token
+                    self.assertEqual(self.post(data, headers), (403, {"error": message}))
+        self.set_doc.assert_not_called()
+
+    def test_the_token_is_checked_before_the_body_is_read(self) -> None:
+        code, body = raw_post(self.port, {**self.ok, "Content-Length": str(srv.MAX_BODY + 1)})
+        self.assertEqual((code, body), (403, {"error": srv.TOKEN_REFUSED}))   # 403, not 400: the token before the length
+        code, body = raw_post(self.port, {**self.ok, "X-Approve-Token": TEST_TOKEN, "Content-Length": str(srv.MAX_BODY + 1)})
+        self.assertEqual(code, 400)   # with the token the length is judged as before
+
+
+class TokenNeverLeaves(TokenCase):
+    def test_status_says_a_token_is_required_but_never_shows_it(self) -> None:
+        with self.get("/api/status") as r:
+            raw = r.read().decode("utf-8")
+        self.assertIs(json.loads(raw)["approvals"]["tokenRequired"], True)
+        self.assertNotIn(TEST_TOKEN, raw)
+
+    def test_no_response_of_a_get_contains_the_token(self) -> None:
+        paths = ["/", "/index.html", "/api/status", "/api/descriptions", "/healthz", "/assets/app.js", "/assets/dashboard-render.js",
+                 "/assets/app.css", "/assets/theme.js"]
+        for path in paths:
+            with self.subTest(path=path):
+                with self.get(path) as r:
+                    body = r.read().decode("utf-8", "replace")
+                    headers = str(r.headers)
+                self.assertNotIn(TEST_TOKEN, body)
+                self.assertNotIn(TEST_TOKEN, headers)
+
+    def test_the_token_never_reaches_the_log_or_an_error_answer(self) -> None:
+        logged = []
+        data = self.offer()
+        with mock.patch.object(srv, "log", lambda text, *a, **k: logged.append(str(text))):
+            for token in ("wrong", TEST_TOKEN):
+                code, body = self.post(data, {**self.ok, "X-Approve-Token": token})
+                self.assertNotIn(TEST_TOKEN, json.dumps(body) if code != 200 else "")
+            self.post({"kind": "rm"}, {**self.ok, "X-Approve-Token": TEST_TOKEN})
+        self.assertFalse([line for line in logged if TEST_TOKEN in line or "wrong" in line])
+
+
+class NoApprovals(HttpCase):
+    APPROVALS = False
+
+    def test_a_read_only_page_has_no_token_and_says_so(self) -> None:
+        self.assertIsNone(self.board.approve_token)
+        with self.get("/api/status") as r:
+            self.assertIs(json.load(r)["approvals"]["tokenRequired"], False)
+        code, body = self.post({"kind": "cp", "path": "x", "sha": "a" * 7}, {**HEADERS, "X-Approve-Token": "anything"})
+        self.assertEqual(code, 403)
+        self.assertIn("--no-approvals", body["error"])   # refused as before, not as a token problem
+
+
+class TokenPerProcess(ProjectCase):
+    def test_every_board_gets_its_own_urlsafe_token(self) -> None:
+        tokens = {srv.Board(self.root, prototype_port=1).approve_token for _ in range(5)}
+        self.assertEqual(len(tokens), 5)
+        for token in tokens:
+            self.assertRegex(token, r"^[A-Za-z0-9_-]{32,}$")
+
+    def test_show_knows_nothing_about_the_token(self) -> None:
+        self.assertNotIn("tokenRequired", self.board.status()["approvals"])
+
+
+class StateFile(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory(prefix="dashboard-token-")
+        self.addCleanup(self.tmp.cleanup)
+        self.home = Path(self.tmp.name) / "home"
+        self.project = Path(self.tmp.name) / "project"
+        self.project.mkdir()
+        patch = mock.patch.dict(os.environ, {"XDG_DATA_HOME": str(self.home), "LOCALAPPDATA": str(self.home)})
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def test_the_file_is_outside_the_project_and_has_the_record(self) -> None:
+        path = dashboard_token.write_state(self.project, 5140, "tok-1")
+        self.assertIsNotNone(path)
+        self.assertEqual(path.parent, dashboard_token.state_dir())
+        self.assertNotIn(str(self.project.resolve()), str(path))
+        record = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual((record["schema"], record["port"], record["token"], record["root"], record["pid"]),
+                         (1, 5140, "tok-1", str(self.project.resolve()), os.getpid()))
+        self.assertEqual([p.name for p in path.parent.iterdir()], [path.name], "no temporary file is left")
+
+    def test_the_file_is_private_on_posix(self) -> None:
+        if os.name == "nt":
+            return
+        path = dashboard_token.write_state(self.project, 5140, "tok-1")
+        self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+        self.assertEqual(stat.S_IMODE(path.parent.stat().st_mode), 0o700)
+
+    def test_the_restriction_is_made_on_the_temporary_file_before_the_replace(self) -> None:
+        events = []
+        real_replace = os.replace
+        with mock.patch.object(dashboard_token, "_restrict", lambda path: events.append(("restrict", Path(path).name)) or True), \
+                mock.patch.object(dashboard_token.os, "replace", lambda a, b: events.append(("replace", Path(a).name)) or real_replace(a, b)):
+            path = dashboard_token.write_state(self.project, 5141, "tok-2")
+        kinds = [kind for kind, _ in events]
+        self.assertEqual(kinds, ["restrict", "restrict", "replace"], events)   # the directory, the temporary file, then the replace
+        self.assertTrue(events[1][1].startswith(".tmp-") and events[2][1] == events[1][1])
+        self.assertTrue(path.is_file())
+
+    def test_a_failed_restriction_warns_once_and_the_file_is_still_written(self) -> None:
+        warnings = []
+        with mock.patch.object(dashboard_token, "_restrict", lambda path: False):
+            path = dashboard_token.write_state(self.project, 5142, "tok-3", warn=warnings.append)
+        self.assertTrue(path.is_file())
+        self.assertEqual(len(warnings), 1)
+        self.assertNotIn("tok-3", warnings[0])
+
+    def test_an_unwritable_state_directory_does_not_stop_the_server(self) -> None:
+        warnings = []
+        with mock.patch.object(dashboard_token.tempfile, "mkstemp", side_effect=PermissionError(13, "denied")):
+            self.assertIsNone(dashboard_token.write_state(self.project, 5143, "tok-4", warn=warnings.append))
+        self.assertEqual(len(warnings), 1)
+        self.assertNotIn("tok-4", warnings[0])
+
+    def test_remove_state_deletes_the_file_and_is_quiet_when_it_is_gone(self) -> None:
+        path = dashboard_token.write_state(self.project, 5144, "tok-5")
+        dashboard_token.remove_state(self.project, 5144)
+        self.assertFalse(path.exists())
+        dashboard_token.remove_state(self.project, 5144)
+
+    def test_servers_lists_only_healthy_servers_of_this_project(self) -> None:
+        other = Path(self.tmp.name) / "other"
+        other.mkdir()
+        dashboard_token.write_state(self.project, 5150, "tok-a")
+        dashboard_token.write_state(self.project, 5151, "tok-b")
+        dashboard_token.write_state(other, 5152, "tok-c")
+        everything = dashboard_token.servers(self.project, healthy=lambda host, port: True)
+        self.assertEqual([(s["port"], s["token"]) for s in everything], [(5150, "tok-a"), (5151, "tok-b")])
+        only = dashboard_token.servers(self.project, 5151, healthy=lambda host, port: True)
+        self.assertEqual([s["port"] for s in only], [5151])
+        self.assertEqual(dashboard_token.servers(self.project, healthy=lambda host, port: port == 5150)[0]["port"], 5150,
+                         "a leftover whose port answers no status page is ignored")
+        self.assertEqual(dashboard_token.servers(self.project, healthy=lambda host, port: False), [])
+
+    def test_a_dead_process_and_a_foreign_or_broken_file_are_ignored(self) -> None:
+        path = dashboard_token.write_state(self.project, 5160, "tok-d")
+        record = json.loads(path.read_text(encoding="utf-8"))
+        if os.name != "nt":   # Windows decides by /healthz only
+            record["pid"] = 2 ** 22 + 12345
+            path.write_text(json.dumps(record), encoding="utf-8")
+            self.assertEqual(dashboard_token.servers(self.project, healthy=lambda host, port: True), [])
+        path.write_text("not json", encoding="utf-8")
+        self.assertEqual(dashboard_token.servers(self.project, healthy=lambda host, port: True), [])
+        path.write_text(json.dumps({**record, "schema": 2, "pid": os.getpid()}), encoding="utf-8")
+        self.assertEqual(dashboard_token.servers(self.project, healthy=lambda host, port: True), [])
+        path.write_text(json.dumps({**record, "root": "elsewhere", "pid": os.getpid()}), encoding="utf-8")
+        self.assertEqual(dashboard_token.servers(self.project, healthy=lambda host, port: True), [])
+
+    def test_the_address_has_the_token_in_the_fragment_only(self) -> None:
+        self.assertEqual(dashboard_token.address(5140, "t0k"), "http://127.0.0.1:5140/#zgoda=t0k")
+        self.assertEqual(dashboard_token.address(5140, "t0k", "demo.example"), "http://demo.example:5140/#zgoda=t0k")
+        self.assertEqual(dashboard_token.address(5140, "t0k", "::1"), "http://[::1]:5140/#zgoda=t0k")
+
+
+class UrlCommand(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp(prefix="dashboard-url-"))
+        self.addCleanup(lambda: __import__("shutil").rmtree(self.tmp, ignore_errors=True))
+        self.root = make_project(self.tmp)
+        manifest = self.root / srv.MANIFEST
+        manifest.parent.mkdir(parents=True, exist_ok=True)
+        manifest.write_text("skills: [dashboard]\n", encoding="utf-8")
+        patch = mock.patch.dict(os.environ, {"XDG_DATA_HOME": str(self.tmp / "xdg-data"), "LOCALAPPDATA": str(self.tmp / "xdg-data")})
+        patch.start()
+        self.addCleanup(patch.stop)
+        self.layer = ["--layer", f"core={ROOT / 'library'}"]
+
+    def args(self, **kwargs):
+        values = {"path": str(self.root), "layers": [f"core={ROOT / 'library'}"], "port": None, "host": None, "json": True}
+        return SimpleNamespace(**{**values, **kwargs})
+
+    def run_url(self, **kwargs):
+        out = []
+        with mock.patch("builtins.print", lambda text="", *a, **k: out.append(str(text))), \
+                mock.patch.object(dashboard_token, "_healthy", lambda host, port, timeout=1.0: True):
+            code = dashboard_token.url_command(self.args(**kwargs))
+        return code, out
+
+    def test_a_running_server_gives_its_address(self) -> None:
+        dashboard_token.write_state(self.root, 5170, "tok-url")
+        code, out = self.run_url()
+        report = json.loads(out[0]) if out else {}
+        self.assertEqual(code, 0, out)
+        self.assertEqual((report["status"], report["url"], report["port"]), ("PASS", "http://127.0.0.1:5170/#zgoda=tok-url", 5170))
+
+    def test_plain_output_is_just_the_address(self) -> None:
+        dashboard_token.write_state(self.root, 5171, "tok-plain")
+        code, out = self.run_url(json=False)
+        self.assertEqual((code, out), (0, ["http://127.0.0.1:5171/#zgoda=tok-plain"]))
+
+    def test_no_server_gives_blocked_server_not_running(self) -> None:
+        code, out = self.run_url()
+        report = json.loads(out[0])
+        self.assertEqual((code, report["status"], report["code"]), (2, "BLOCKED", "server_not_running"))
+
+    def test_two_servers_need_a_port(self) -> None:
+        dashboard_token.write_state(self.root, 5172, "tok-1")
+        dashboard_token.write_state(self.root, 5173, "tok-2")
+        code, out = self.run_url()
+        self.assertEqual((code, json.loads(out[0])["code"]), (2, "ambiguous_server"))
+        code, out = self.run_url(port=5173)
+        self.assertEqual((code, json.loads(out[0])["url"]), (0, "http://127.0.0.1:5173/#zgoda=tok-2"))
+
+    def test_a_named_host_is_used_in_the_address(self) -> None:
+        dashboard_token.write_state(self.root, 5174, "tok-h")
+        code, out = self.run_url(host="demo.example")
+        self.assertEqual((code, json.loads(out[0])["url"]), (0, "http://demo.example:5174/#zgoda=tok-h"))
+
+    def test_a_broken_project_is_blocked(self) -> None:
+        code, out = self.run_url(path=str(self.tmp / "nope"))
+        self.assertEqual((code, json.loads(out[0])["code"]), (2, "invalid_project"))
+
+
+@unittest.skipIf(os.name == "nt", "SIGTERM kończy proces na Windows bez obsługi")
+class ServeWritesAndRemovesTheState(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp(prefix="dashboard-serve-token-"))
+        self.addCleanup(lambda: __import__("shutil").rmtree(self.tmp, ignore_errors=True))
+        self.root = make_project(self.tmp)
+        manifest = self.root / srv.MANIFEST
+        manifest.parent.mkdir(parents=True, exist_ok=True)
+        manifest.write_text("skills: [dashboard]\n", encoding="utf-8")
+        self.data = self.tmp / "xdg-data"
+        self.env = {**os.environ, "SKILLSYNC_CONFIG": str(self.tmp / "machine-config.yaml"),
+                    "XDG_CACHE_HOME": str(self.tmp / "xdg-cache"), "XDG_DATA_HOME": str(self.data)}
+        self.layer = ["--layer", f"core={ROOT / 'library'}"]
+
+    def start(self, *extra):
+        port = free_port()
+        proc = subprocess.Popen([sys.executable, str(CLI), "dashboard", "serve", str(self.root), "--port", str(port), *extra, *self.layer],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=self.env)
+        self.addCleanup(lambda: proc.poll() is None and proc.kill())
+        deadline = time.time() + 20
+        while time.time() < deadline and proc.poll() is None:
+            try:
+                urllib.request.urlopen(f"http://127.0.0.1:{port}/healthz", timeout=1).close()
+                break
+            except OSError:
+                time.sleep(0.1)
+        return proc, port
+
+    def state_files(self):
+        directory = self.data / "skillsync" / "dashboard"
+        return sorted(directory.glob("*.json")) if directory.is_dir() else []
+
+    def test_serve_prints_the_address_with_the_token_writes_the_file_and_removes_it(self) -> None:
+        proc, port = self.start()
+        files = self.state_files()
+        self.assertEqual(len(files), 1)
+        token = json.loads(files[0].read_text(encoding="utf-8"))["token"]
+        env = {**self.env}
+        url = subprocess.run([sys.executable, str(CLI), "dashboard", "url", str(self.root), *self.layer], capture_output=True, text=True,
+                             env=env, timeout=30)
+        self.assertEqual((url.returncode, url.stdout.strip()), (0, f"http://127.0.0.1:{port}/#zgoda={token}"), url.stderr)
+        proc.terminate()
+        _out, err = proc.communicate(timeout=15)
+        self.assertEqual(proc.returncode, 0, err)
+        self.assertEqual(err.count(f"http://127.0.0.1:{port}/#zgoda={token}"), 1, "the address with the token is printed once")
+        self.assertEqual(self.state_files(), [], "the state file is removed when the server stops")
+        after = subprocess.run([sys.executable, str(CLI), "dashboard", "url", str(self.root), "--json", *self.layer], capture_output=True,
+                               text=True, env=env, timeout=30)
+        self.assertEqual((after.returncode, json.loads(after.stdout)["code"]), (2, "server_not_running"))
+
+    def test_no_approvals_prints_no_token_and_writes_no_file(self) -> None:
+        proc, port = self.start("--no-approvals")
+        self.assertEqual(self.state_files(), [])
+        proc.terminate()
+        _out, err = proc.communicate(timeout=15)
+        self.assertNotIn("#zgoda=", err)
+
+
+if __name__ == "__main__":
+    unittest.main()
