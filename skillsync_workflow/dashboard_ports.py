@@ -67,7 +67,7 @@ def is_local_ip(name: str) -> bool:
     name it was given), so it is safe to accept under a server that listens beyond loopback. Tested by binding a throwaway UDP socket:
     it succeeds for an address that belongs to an interface of this machine, but also for multicast and broadcast ones and, with
     `ip_nonlocal_bind`, for any address: those are refused first (multicast, reserved, unspecified, the limited broadcast and, because
-    the netmask is not known, every IPv4 address ending in .255) and the probe is replaced by the enumerated addresses where it proves nothing."""
+    the netmask is not known, every IPv4 address ending in .255 unless it is one of the enumerated addresses) and the probe is replaced by the enumerated addresses where it proves nothing."""
     try:
         ip = ipaddress.ip_address(name.strip("[]"))
     except ValueError:
@@ -78,8 +78,10 @@ def is_local_ip(name: str) -> bool:
         return True
     if ip.is_reserved:   # 240/4 (also 255.255.255.255) and the reserved IPv6 blocks; checked after the loopback: `::1` lies in ::/8
         return False
-    if ip.version == 4 and int(ip) & 0xFF == 0xFF:   # a subnet broadcast (the mask is unknown: any `.255` is refused)
-        return False
+    if ip.version == 4 and int(ip) & 0xFF == 0xFF:
+        # A subnet broadcast looks the same (the mask is unknown), but in a /23 or wider the real address of this machine may end in .255:
+        # only an address found by name resolution or by the route probe (never a broadcast) counts.
+        return str(ip) in _enumerated_addresses()
     if _nonlocal_bind_allowed():
         return str(ip) in _enumerated_addresses()
     family = socket.AF_INET6 if ip.version == 6 else socket.AF_INET

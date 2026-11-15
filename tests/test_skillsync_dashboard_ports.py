@@ -204,6 +204,66 @@ class StreamShares(TwoSockets):
         status, _data, _ = request(self.approve_port, "GET", "/healthz", {})
         self.assertEqual(status, 200)
 
+    def wait_shares(self, role, expected, total=None):
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            with self.board.cond:
+                if self.board.sse_by_role.get(role, 0) == expected and (total is None or self.board.sse_clients == total):
+                    return True
+            time.sleep(0.05)
+        return False
+
+    def open_streams(self, port, count):
+        streams = []
+        for _ in range(count):
+            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+            conn.request("GET", "/events")
+            response = conn.getresponse()
+            self.assertEqual(response.status, 200)
+            response.fp.readline()
+            streams.append(conn)
+        return streams
+
+    def test_the_share_is_released_when_streams_close_so_a_full_share_serves_again(self) -> None:
+        limit = srv.SSE_ROLE_LIMITS["approve"]
+        streams = self.open_streams(self.approve_port, limit)
+        self.assertTrue(self.wait_shares("approve", limit, limit))
+        self.assertEqual(request(self.approve_port, "GET", "/events", {})[0], 503)
+        for conn in streams:
+            conn.close()
+        self.assertTrue(self.wait_shares("approve", 0, 0), dict(self.board.sse_by_role))
+        again = self.open_streams(self.approve_port, 1)
+        again[0].close()
+
+    def test_the_share_is_released_when_the_connection_is_torn_down(self) -> None:
+        import struct
+        raw = []
+        for _ in range(3):
+            sock = socket.create_connection(("127.0.0.1", self.read_port), timeout=5)
+            sock.sendall(b"GET /events HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
+            seen = b""
+            while b"hello" not in seen:
+                seen += sock.recv(4096)
+            raw.append(sock)
+        self.assertTrue(self.wait_shares("read", 3, 3))
+        for sock in raw:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))   # close sends RST
+            sock.close()
+        self.assertTrue(self.wait_shares("read", 0, 0), dict(self.board.sse_by_role))
+
+    def test_the_share_is_released_when_the_stream_raises(self) -> None:
+        with mock.patch.object(srv.Handler, "_sse", side_effect=[None, RuntimeError("boom")]):   # hello passes, the first ping raises
+            conn = http.client.HTTPConnection("127.0.0.1", self.read_port, timeout=5)
+            try:
+                conn.request("GET", "/events")
+                try:
+                    conn.getresponse().fp.read(1)
+                except (OSError, ValueError, http.client.HTTPException):
+                    pass
+                self.assertTrue(self.wait_shares("read", 0, 0), dict(self.board.sse_by_role))
+            finally:
+                conn.close()
+
     def test_a_full_approve_share_does_not_block_the_read_socket(self) -> None:
         self.board.sse_by_role["approve"] = srv.SSE_ROLE_LIMITS["approve"]
         self.board.sse_clients = srv.SSE_ROLE_LIMITS["approve"]
@@ -407,6 +467,12 @@ class LocalIp(unittest.TestCase):
                 self.assertFalse(ports.is_local_ip(name))
         self.assertTrue(ports.is_local_ip("::1"))   # lies in the reserved ::/8 block, still the loopback
         self.assertTrue(ports.is_local_ip("127.0.0.2"))
+
+    def test_a_real_address_ending_in_255_is_accepted_only_when_enumerated(self) -> None:
+        with mock.patch.object(ports, "_enumerated_addresses", return_value={"10.0.1.255"}):
+            self.assertTrue(ports.is_local_ip("10.0.1.255"))    # a /23 or wider: the real address of this machine
+            self.assertFalse(ports.is_local_ip("10.0.0.255"))   # a broadcast-looking address that is not ours
+            self.assertFalse(ports.is_local_ip("255.255.255.255"))
 
     def test_where_the_bind_probe_proves_nothing_only_the_enumerated_addresses_count(self) -> None:
         with mock.patch.object(ports, "_nonlocal_bind_allowed", return_value=True), \
