@@ -4908,6 +4908,12 @@ def private_file_problem(path):
     return None
 
 
+def _private_path(path):
+    """Restrict a file or directory this module creates to the user (Windows ACL; a no-op elsewhere, never raises)."""
+    if _winacl is not None:
+        _winacl.restrict_to_owner(path)
+
+
 def private_file_notes(path):
     """Lines a command adds to its `warnings` for an existing private file: on Windows the ACL is checked and, when it is
     wider than the user, SYSTEM and the administrators, repaired in place (one line about the repair) or, when that fails,
@@ -5621,6 +5627,7 @@ def _link_make_private_dir(path):
     os.mkdir(path, 0o700)
     if _LINK_POSIX:
         os.chmod(path, 0o700)   # the umask must not narrow or widen it
+    _private_path(path)         # Windows: an inheriting ACL (the user, SYSTEM, the administrators); a no-op elsewhere
 
 
 def link_prepare_run_dir(path):
@@ -5678,6 +5685,7 @@ def _link_write_private(path, data):
     """Atomic private write: `O_EXCL` temporary file, fsync, rename onto `path`."""
     temporary = os.path.join(os.path.dirname(path), '.%s.%s.tmp' % (os.path.basename(path), secrets.token_hex(4)))
     descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _LINK_NOFOLLOW, 0o600)
+    _private_path(temporary)    # Windows: before the data (`os.replace` hands this ACL to `path`)
     try:
         with os.fdopen(descriptor, 'wb') as handle:
             handle.write(data)
@@ -5979,6 +5987,8 @@ def link_audit_append(run_dir, record, lock_timeout=None):
             info = os.fstat(descriptor)
             if not stat.S_ISREG(info.st_mode):
                 raise OSError('audit.jsonl nie jest zwykłym plikiem')
+            if info.st_size == 0:
+                _private_path(path)     # Windows: the new file is restricted before the first record
             os.write(descriptor, data)
             os.fsync(descriptor)
         finally:

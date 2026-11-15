@@ -201,6 +201,15 @@ class EnvironmentTests(unittest.TestCase):
             for password in passwords.values():
                 self.assertNotIn(password, json.dumps(users), 'the users file stores hashes only')
 
+    @unittest.skipUnless(os.name == 'nt', 'tylko na Windows (ACL)')
+    def test_secret_files_are_owner_only_by_acl_on_windows(self):
+        from skillsync_workflow import winacl
+        env_module = load_env_module()
+        with tempfile.TemporaryDirectory(prefix='skillsync-e2e-env-') as tmp:
+            env = env_module.prepare(Path(tmp) / 'w', LIBRARY, 9333, 4445, 4446)
+            self.assertTrue(winacl.is_owner_only(env['secrets']))
+            self.assertTrue(winacl.is_owner_only(env['config']))
+
     @needs_mode_enforcement   # Windows does not enforce POSIX modes (a file made there is 0o666): the mode is not checked
     def test_secret_files_have_a_private_mode(self):
         env_module = load_env_module()

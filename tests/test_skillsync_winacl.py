@@ -245,6 +245,45 @@ class CommandNotesTests(unittest.TestCase):
         self.assertFalse(hasattr(ps, 'PRIVATE_CHECK_SKIPPED'))
 
 
+class LinkFilesTests(unittest.TestCase):
+    """The files of the one-time login link feature (state, tokens, audit) are private on Windows as well."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix='winacl-')
+        self.addCleanup(self.tmp.cleanup)
+        self.calls = []
+
+        def restrict(path, *args, **kwargs):
+            self.calls.append((os.path.basename(path), os.path.getsize(path) if os.path.isfile(path) else None))
+            return True
+        helper = mock.Mock(spec=winacl)
+        helper.restrict_to_owner.side_effect = restrict
+        patch = mock.patch.object(ps, '_winacl', helper)
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def test_a_private_directory_is_restricted(self):
+        ps._link_make_private_dir(os.path.join(self.tmp.name, 'login'))
+        self.assertEqual(self.calls, [('login', None)])
+
+    def test_a_private_write_restricts_the_temporary_file_before_the_data(self):
+        path = os.path.join(self.tmp.name, 'server-1.json')
+        ps._link_write_private(path, b'{"a": 1}')
+        self.assertEqual(len(self.calls), 1, self.calls)
+        name, size = self.calls[0]
+        self.assertTrue(name.startswith('.server-1.json.') and name.endswith('.tmp'), name)
+        self.assertEqual(size, 0)
+        self.assertEqual(Path(path).read_bytes(), b'{"a": 1}')
+
+    def test_the_audit_file_is_restricted_when_it_is_created_only(self):
+        run_dir = os.path.join(self.tmp.name, 'run')
+        os.mkdir(run_dir, 0o700)
+        os.chmod(run_dir, 0o700)
+        ps.link_audit_append(run_dir, {'event': 'one'})
+        ps.link_audit_append(run_dir, {'event': 'two'})
+        self.assertEqual([name for name, _ in self.calls], ['audit.jsonl'], self.calls)
+
+
 @unittest.skipUnless(os.name == 'nt', 'tylko na Windows (ACL)')
 class RealWindowsTests(unittest.TestCase):
     """The real `advapi32` calls (measured 15.11: 0.5-0.8 ms, SID only)."""
