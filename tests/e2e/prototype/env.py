@@ -489,30 +489,39 @@ def own_group_leader(row):
     return (row['pid'] > 1 and row['pgid'] == row['pid'] and row['pid'] != os.getpgrp() and row['pid'] not in _protected())
 
 
-def collect_members(root_pid, table, known=None):
-    """`{pid: identity}` of `root_pid`, of its descendants and (for a group leader) of its group, added to `known`; never this process or
-    its ancestors, never another user's process."""
-    members = dict(known or {})
-    root = table.get(root_pid)
-    if root is None:
-        return members
-    protected = _protected()
+def _eligible(pid, row, protected):
+    return pid > 1 and pid not in protected and row['uid'] == os.getuid() and not row['state'].startswith('Z')
+
+
+def _below(pids, table):
+    """`pids` and everything below them (by parent), as a set of pids."""
     children = {}
     for row in table.values():
-        children.setdefault(row['ppid'], []).append(row)
-    queue, seen = [root], {root_pid}
+        children.setdefault(row['ppid'], []).append(row['pid'])
+    seen, queue = set(pids), list(pids)
     while queue:
-        row = queue.pop()
-        for child in children.get(row['pid'], []):
-            if child['pid'] not in seen:
-                seen.add(child['pid'])
+        for child in children.get(queue.pop(), []):
+            if child not in seen:
+                seen.add(child)
                 queue.append(child)
-    if own_group_leader(root):
-        seen |= {row['pid'] for row in table.values() if row['pgid'] == root_pid}
+    return seen
+
+
+def collect_members(root_pid, table, known=None, root=None):
+    """`{pid: identity}` of `root_pid`, of its descendants and (for a group leader of its own group) of its group, added to `known`. With
+    `root` (the recorded identity) the tree is taken only when the process of that number still IS the recorded one. Never this process or
+    its ancestors, never another user's process."""
+    members = dict(known or {})
+    row = table.get(root_pid)
+    if row is None or (root is not None and not same_identity(row, root)):
+        return members
+    seen = _below([root_pid], table)
+    if own_group_leader(row):
+        seen |= {item['pid'] for item in table.values() if item['pgid'] == root_pid}
+    protected = _protected()
     for pid in seen:
-        row = table[pid]
-        if pid > 1 and pid not in protected and row['uid'] == os.getuid() and not row['state'].startswith('Z'):
-            members.setdefault(pid, identity_of(row))
+        if _eligible(pid, table[pid], protected):
+            members.setdefault(pid, identity_of(table[pid]))
     return members
 
 
@@ -530,8 +539,9 @@ def _send(members, sig):
         _signal(pid, sig)
 
 
-def _wait_gone(root_pid, members, seconds):
-    """Waits until no member lives; the tree is re-read so that what a member spawned meanwhile is added. Returns the living members."""
+def _wait_gone(root_pid, root, members, seconds):
+    """Waits until no member lives; what the recorded root spawned meanwhile is added (only while the root is still the recorded process).
+    Returns the living members."""
     deadline = time.time() + seconds
     while True:
         child = CHILDREN.get(root_pid)
@@ -541,56 +551,62 @@ def _wait_gone(root_pid, members, seconds):
             table = process_table()
         except RuntimeError:
             return members
-        members = collect_members(root_pid, table, _alive(members, table)) if root_pid in table else _alive(members, table)
         members = _alive(members, table)
+        if root_pid is not None:
+            members = _alive(collect_members(root_pid, table, members, root), table)
         if not members or time.time() >= deadline:
             return members
         time.sleep(0.2)
 
 
 def orphans_of(record, table):
-    """What lives of a recorded run when its leader may be gone: the recorded helpers whose identity still matches and the processes of the
-    recorded group that started after the leader, unless the leader's number now belongs to another process (then no group is touched; the
-    helpers of the record are still checked one by one). Never this process, its ancestors or another user's process."""
+    """What lives of a recorded run when its leader is gone: ONLY the helpers the record lists, each by its own identity (pid, start time,
+    uid; never this process or its ancestors, never another user's process). No group is swept: a group number can be reused, and real
+    helpers end by themselves when their browser dies."""
     found = {}
     protected = _protected()
     for item in record.get('members') or []:
         row = table.get(item['pid'])
-        if same_identity(row, item) and item['pid'] not in protected and item['pid'] > 1:
+        if item['pid'] > 1 and item['pid'] not in protected and item['uid'] == os.getuid() and same_identity(row, item):
             found[item['pid']] = identity_of(row)
-    pgid = record.get('pgid')
-    leader = table.get(record['pid'])
-    stranger = leader is not None and not leader['state'].startswith('Z') and not same_identity(leader, record)
-    # The group is swept only when its number still means the leader of the record: a living process with the leader's number but another
-    # identity is a stranger (the number was reused) and so is everything in its group. Only a group the leader founded itself, never the
-    # one of this process.
-    if pgid and pgid > 1 and pgid == record['pid'] and pgid != os.getpgrp() and not stranger:
-        for row in table.values():
-            if (row['pgid'] == pgid and row['pid'] != record['pid'] and row['pid'] > 1 and row['pid'] not in protected
-                    and row['uid'] == os.getuid() and not row['state'].startswith('Z') and row['start'] >= record['start'] - START_TOLERANCE):
-                found.setdefault(row['pid'], identity_of(row))
     return found
 
 
-def stop_tree(root_pid, grace=None, seed=None):
+def stop_tree(root_pid, grace=None, seed=None, root=None):
     """SIGTERM, after `grace` seconds SIGKILL, to the process `root_pid` (None: its leader is gone) and everything below it (listed first),
-    plus the `seed` members (identities from the record). Returns the members that still live afterwards (empty = confirmed dead). A process
-    whose identity changed meanwhile is not signalled."""
+    plus the `seed` helpers (identities from the record) and what lives below them. `root` is the recorded identity of `root_pid`: the
+    tree and the group are taken only while the process of that number still matches it (checked on a fresh table before each use).
+    Returns the members that still live afterwards (empty = confirmed dead). A process whose identity changed meanwhile is not signalled."""
     grace = GRACE if grace is None else grace
     try:
         table = process_table()
     except RuntimeError:
         return {root_pid: None}
-    members = collect_members(root_pid, table, seed) if root_pid is not None else dict(seed or {})
-    root = table.get(root_pid) if root_pid is not None else None
+    if root_pid is not None:
+        row = table.get(root_pid)
+        if row is None or (root is not None and not same_identity(row, root)):
+            root_pid, root = None, None
+        elif root is None:
+            root = identity_of(row)
+    protected = _protected()
+    alive_seed = _alive(seed or {}, table)
+    members = {pid: identity_of(table[pid]) for pid in _below(list(alive_seed), table) if _eligible(pid, table[pid], protected)}
+    if root_pid is not None:
+        members = collect_members(root_pid, table, members, root)
+    group = root_pid is not None
     for sig, wait in ((signal.SIGTERM, grace), (signal.SIGKILL, KILL_WAIT)):
         if not members:
             break
-        if root is not None and own_group_leader(root) and same_identity(root, members.get(root_pid) or identity_of(root)):
-            _signal_group(root_pid, sig)
+        if group:
+            try:
+                fresh = process_table().get(root_pid)
+            except RuntimeError:
+                fresh = None
+            if fresh is not None and same_identity(fresh, root) and own_group_leader(fresh):
+                _signal_group(root_pid, sig)
         _send(members, sig)
-        members = _wait_gone(root_pid, members, wait)
-        root = None   # the group is signalled with the first signal only; later rounds go member by member
+        members = _wait_gone(root_pid, root, members, wait)
+        group = False   # the group is signalled with the first signal only; later rounds go member by member
     child = CHILDREN.pop(root_pid, None) if root_pid is not None else None
     if child is not None and not members:
         try:
@@ -624,6 +640,11 @@ def stop_all(env):
             print('env: %s: %s; %s kept' % (pid_file.name, error, pid_file.name), file=sys.stderr)
             survivors[record['pid']] = None
             continue
+        if record['pid'] in _protected():   # a record that names this process or one of its ancestors is junk, whatever it says
+            print('env: %s: pid %d is this process or one of its ancestors; not signalled, file removed' % (pid_file.name, record['pid']),
+                  file=sys.stderr)
+            pid_file.unlink(missing_ok=True)
+            continue
         leader = is_ours(pid_file, record, row)
         seed = orphans_of(record, table) if record.get('start') is not None else {}
         if not leader and not seed:
@@ -633,9 +654,10 @@ def stop_all(env):
             pid_file.unlink(missing_ok=True)   # nothing of ours lives behind it: never signalled
             continue
         if not leader:
-            print('env: %s: the leader (pid %d) is gone, stopping %d helper(s) of its group and record' % (pid_file.name, record['pid'], len(seed)),
+            print('env: %s: the leader (pid %d) is gone, stopping %d helper(s) of the record' % (pid_file.name, record['pid'], len(seed)),
                   file=sys.stderr)
-        left = stop_tree(record['pid'] if leader else None, seed=seed)
+        left = stop_tree(record['pid'] if leader else None, seed=seed,
+                         root={'pid': record['pid'], 'start': record['start'], 'uid': record['uid']} if leader and record.get('start') is not None else None)
         if left:
             print('env: %s: still alive after SIGKILL: %s; %s kept' % (pid_file.name, ', '.join(str(pid) for pid in sorted(left)), pid_file.name),
                   file=sys.stderr)

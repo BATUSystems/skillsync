@@ -557,15 +557,15 @@
     "category": "posix-only"
    },
    {
-    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_a_group_whose_leader_number_was_reused_by_a_stranger_is_not_swept",
-    "category": "posix-only"
-   },
-   {
     "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_a_member_whose_identity_changed_before_the_signal_is_not_signalled",
     "category": "posix-only"
    },
    {
     "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_a_partial_ps_table_is_not_taken_for_the_whole_one",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_a_plain_number_file_needs_the_expected_command_line_too",
     "category": "posix-only"
    },
    {
@@ -589,7 +589,7 @@
     "category": "posix-only"
    },
    {
-    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_a_recorded_group_that_the_process_did_not_found_is_not_swept",
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_a_record_that_names_an_ancestor_of_the_runner_signals_nothing",
     "category": "posix-only"
    },
    {
@@ -597,7 +597,19 @@
     "category": "posix-only"
    },
    {
-    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_group_members_that_started_before_the_recorded_leader_are_not_taken",
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_a_root_replaced_between_the_tables_is_neither_signalled_nor_taken_with_its_group",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_a_stranger_that_took_the_number_of_the_dead_leader_and_its_group_are_left_alone",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_a_zombie_with_the_number_of_the_leader_does_not_bring_its_group_into_play",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_after_the_leader_died_only_the_listed_helpers_are_signalled_and_no_group_is_swept",
     "category": "posix-only"
    },
    {
@@ -606,6 +618,10 @@
    },
    {
     "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_it_works_without_proc_and_with_ps_only",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_orphans_are_only_the_listed_helpers_with_the_matching_identity_and_the_own_user",
     "category": "posix-only"
    },
    {
@@ -629,11 +645,11 @@
     "category": "posix-only"
    },
    {
-    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_the_start_writes_the_helper_list_into_the_record",
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_the_start_time_tolerance_is_a_few_seconds_not_an_hour",
     "category": "posix-only"
    },
    {
-    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_the_sweep_of_a_group_spares_this_process_its_ancestors_and_the_group_of_the_runner",
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_the_start_writes_the_helper_list_into_the_record",
     "category": "posix-only"
    },
    {
@@ -641,15 +657,15 @@
     "category": "posix-only"
    },
    {
-    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_this_process_and_its_ancestors_are_never_orphans_even_when_recorded",
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_this_process_its_parent_and_its_grandparent_are_protected",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_what_lives_below_a_listed_helper_is_stopped_with_it_and_nothing_else",
     "category": "posix-only"
    },
    {
     "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_when_no_process_list_is_available_nothing_is_signalled_and_the_files_stay",
-    "category": "posix-only"
-   },
-   {
-    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_without_a_recorded_helper_list_the_group_of_the_dead_leader_is_still_swept",
     "category": "posix-only"
    },
    {

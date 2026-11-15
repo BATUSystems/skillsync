@@ -288,18 +288,6 @@ class E2eEnvCleanup(unittest.TestCase):
         self.assertTrue(alive(sentinel.pid))
         self.assertFalse((self.work / 'chrome.pid').exists())
 
-    def test_without_a_recorded_helper_list_the_group_of_the_dead_leader_is_still_swept(self):
-        pids = self.start_fake_chrome()
-        record = json.loads((self.work / 'chrome.pid').read_text())
-        record.pop('members')
-        (self.work / 'chrome.pid').write_text(json.dumps(record))   # a record without helpers: only the group can name them
-        os.kill(pids['main'], signal.SIGKILL)
-        time.sleep(0.5)
-        with contextlib.redirect_stderr(io.StringIO()):
-            self.assertEqual(ENV.stop_all(self.env), {})
-        self.assertFalse(any(alive(pids[tag]) for tag in 'ABD'))   # in the group (also the re-parented one)
-        self.assertTrue(alive(pids['C']))                          # left the group: only the record could name it (limit of the method)
-
     def test_a_dead_leader_without_helpers_removes_the_file_quietly(self):
         sentinel = self.sentinel()
         row = ENV.process_table()[sentinel.pid]
@@ -376,67 +364,135 @@ class E2eEnvCleanup(unittest.TestCase):
         self.assertTrue(ENV.is_ours(pid_file, record, row))
         self.assertFalse(ENV.is_ours(pid_file, record, dict(row, uid=row['uid'] + 1)))
 
-    def test_a_recorded_group_that_the_process_did_not_found_is_not_swept(self):
-        proc = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(600)', 'chrome', '--remote-debugging-port=4'],
-                                start_new_session=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        self.spawned.append(proc)
-        self.wait_listed(proc.pid)
-        ENV.CHILDREN[proc.pid] = proc
-        neighbour = self.sentinel()   # leads its own group, started after `proc`
-        record = dict(ENV.identity_of(ENV.process_table()[proc.pid]), pgid=neighbour.pid, members=[])   # a record that names ANOTHER group
+    def test_after_the_leader_died_only_the_listed_helpers_are_signalled_and_no_group_is_swept(self):
+        pids = self.start_fake_chrome()
+        record = json.loads((self.work / 'chrome.pid').read_text())
+        os.kill(pids['main'], signal.SIGKILL)
+        time.sleep(0.5)
+        record.update(members=[])   # nothing listed: nothing to prove, so nothing is signalled (real helpers end by themselves)
         (self.work / 'chrome.pid').write_text(json.dumps(record))
-        self.assertEqual(ENV.stop_all(self.env), {})
-        proc.wait(timeout=5)
-        self.assertTrue(alive(neighbour.pid))
+        with mock.patch.object(ENV, '_signal', side_effect=AssertionError('nothing may be signalled')), \
+                mock.patch.object(ENV, '_signal_group', side_effect=AssertionError('no group may be signalled')):
+            self.assertEqual(ENV.stop_all(self.env), {})
+        self.assertTrue(all(alive(pids[tag]) for tag in 'ABCD'))
+        self.assertFalse((self.work / 'chrome.pid').exists())
 
-    def test_a_group_whose_leader_number_was_reused_by_a_stranger_is_not_swept(self):
+    def test_a_stranger_that_took_the_number_of_the_dead_leader_and_its_group_are_left_alone(self):
         stranger = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(600)', 'chrome', '--remote-debugging-port=6'],
                                     process_group=0, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        self.spawned.append(stranger)   # leads its own group (same session); its number is the one the old record names
+        self.spawned.append(stranger)
         self.wait_listed(stranger.pid)
         row = ENV.process_table()[stranger.pid]
-        child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(600)', 'chrome', '--remote-debugging-port=5'],
-                                 process_group=stranger.pid, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                                 stderr=subprocess.DEVNULL)   # a process of the stranger's group, started later
+        child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(600)'], process_group=stranger.pid,
+                                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         self.spawned.append(child)
         self.wait_listed(child.pid)
-        self.assertEqual(ENV.process_table()[child.pid]['pgid'], stranger.pid)
         old_leader = {'pid': stranger.pid, 'start': row['start'] - 3600, 'uid': row['uid'], 'pgid': stranger.pid, 'members': []}
-        (self.work / 'chrome.pid').write_text(json.dumps(old_leader))   # the recorded leader died long ago; its number now lives on as the stranger
+        (self.work / 'chrome.pid').write_text(json.dumps(old_leader))
         err = io.StringIO()
         with contextlib.redirect_stderr(err):
             self.assertEqual(ENV.stop_all(self.env), {})
-        self.assertTrue(alive(stranger.pid))
-        self.assertTrue(alive(child.pid), 'a member of the group of a stranger was killed')
+        self.assertTrue(alive(stranger.pid) and alive(child.pid), 'a process of a stranger was killed')
         self.assertIn('not the recorded process', err.getvalue())
-        self.assertFalse((self.work / 'chrome.pid').exists())
 
-    def test_group_members_that_started_before_the_recorded_leader_are_not_taken(self):
+    def test_what_lives_below_a_listed_helper_is_stopped_with_it_and_nothing_else(self):
         pids = self.start_fake_chrome()
+        record = json.loads((self.work / 'chrome.pid').read_text())
         os.kill(pids['main'], signal.SIGKILL)
         time.sleep(0.5)
-        record = json.loads((self.work / 'chrome.pid').read_text())
-        record.update(start=record['start'] + 3600, members=[])   # a record of a LATER run: these helpers are older than its leader
+        record['members'] = [item for item in record['members'] if item['pid'] == pids['A']]   # only A is listed; B is A's child
         (self.work / 'chrome.pid').write_text(json.dumps(record))
         with contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(ENV.stop_all(self.env), {})
-        self.assertTrue(all(alive(pids[tag]) for tag in 'ABCD'))   # nothing of this record
+        self.assertFalse(alive(pids['A']) or alive(pids['B']))
+        self.assertTrue(alive(pids['C']) and alive(pids['D']))   # not listed, not below A: not ours to touch
 
-    def test_this_process_and_its_ancestors_are_never_orphans_even_when_recorded(self):
-        table = ENV.process_table()
-        members = [ENV.identity_of(table[pid]) for pid in (os.getpid(), os.getppid()) if pid in table and pid > 1]
-        record = {'pid': 2 ** 22 - 5, 'start': 0, 'uid': os.getuid(), 'pgid': None, 'members': members}
+    def synthetic(self, rows):
+        """A process table made of `rows` ({pid: (ppid, pgid, uid, state, start)})."""
+        return {pid: {'pid': pid, 'ppid': ppid, 'pgid': pgid, 'uid': uid, 'state': state, 'start': start}
+                for pid, (ppid, pgid, uid, state, start) in rows.items()}
+
+    def test_orphans_are_only_the_listed_helpers_with_the_matching_identity_and_the_own_user(self):
+        me = os.getuid()
+        table = self.synthetic({
+            1000001: (1, 1, me, 'S', 100), 1000002: (1, 1000001, me, 'S', 105), 1000003: (1, 1000001, me + 1, 'S', 105),
+            1000004: (1, 1000001, me, 'Z', 105), 1000005: (1, 1000001, me, 'S', 105), 1000006: (1, 1000001, me, 'S', 109)})
+        # the leader (1000001) is gone from the table; 1000002 is in its group and listed, the others are in the group but not (or wrongly) listed
+        listed = lambda pid, start, uid=me: {'pid': pid, 'start': start, 'uid': uid}
+        record = {'pid': 999999, 'start': 100, 'uid': me, 'pgid': 1000001, 'members': [
+            listed(1000002, 105), listed(1000003, 105, me + 1),   # another user's process with a matching identity
+            listed(1000004, 105),                                  # a zombie
+            listed(1000006, 100)]}                                 # a process of the number whose start time differs
+        self.assertEqual(set(ENV.orphans_of(record, table)), {1000002})   # 1000005 is in the group but not listed: not ours
+
+    def test_a_zombie_with_the_number_of_the_leader_does_not_bring_its_group_into_play(self):
+        me = os.getuid()
+        table = self.synthetic({777777: (1, 777777, me, 'Z', 5000), 777778: (777777, 777777, me, 'S', 5001)})   # a stranger zombie and its child
+        record = {'pid': 777777, 'start': 100, 'uid': me, 'pgid': 777777, 'members': []}
         self.assertEqual(ENV.orphans_of(record, table), {})
 
-    def test_the_sweep_of_a_group_spares_this_process_its_ancestors_and_the_group_of_the_runner(self):
-        group, stranger_pid = 2 ** 22 - 7, 2 ** 22 - 9
-        def row(pid, pgid=group):
-            return {'pid': pid, 'ppid': 1, 'pgid': pgid, 'uid': os.getuid(), 'state': 'S', 'start': 10 ** 9 + 100}
-        table = {os.getpid(): row(os.getpid()), os.getppid(): row(os.getppid()), stranger_pid: row(stranger_pid)}   # the leader itself is gone
-        record = {'pid': group, 'start': 10 ** 9, 'uid': os.getuid(), 'pgid': group, 'members': []}
-        self.assertEqual(set(ENV.orphans_of(record, table)), {stranger_pid})          # not this process, not its parent
-        with mock.patch.object(os, 'getpgrp', return_value=group):                    # the group IS the group of the runner
+    def test_this_process_its_parent_and_its_grandparent_are_protected(self):
+        me = os.getuid()
+        table = self.synthetic({os.getpid(): (4000002, 4000002, me, 'S', 10), 4000002: (4000001, 4000002, me, 'S', 5),
+                                4000001: (1, 4000001, me, 'S', 1), 1: (0, 1, 0, 'S', 0)})
+        with mock.patch.object(ENV, 'process_table', return_value=table):
+            protected = ENV._protected()
+        self.assertTrue({os.getpid(), 4000002, 4000001} <= protected)   # the grandparent too, not only the parent
+        record = {'pid': 999999, 'start': 1, 'uid': me, 'pgid': None, 'members': [{'pid': 4000001, 'start': 1, 'uid': me}]}
+        with mock.patch.object(ENV, 'process_table', return_value=table):
             self.assertEqual(ENV.orphans_of(record, table), {})
+
+    def test_a_record_that_names_an_ancestor_of_the_runner_signals_nothing(self):
+        ancestor = os.getppid()
+        row = ENV.process_table()[ancestor]
+        (self.work / 'chrome.pid').write_text(json.dumps(ENV.identity_of(row)))
+        err = io.StringIO()
+        with mock.patch.object(ENV, '_signal', side_effect=AssertionError('kill')), \
+                mock.patch.object(ENV, '_signal_group', side_effect=AssertionError('killpg')), contextlib.redirect_stderr(err):
+            self.assertEqual(ENV.stop_all(self.env), {})
+        self.assertIn('ancestors', err.getvalue())
+        self.assertFalse((self.work / 'chrome.pid').exists())
+
+    def test_a_root_replaced_between_the_tables_is_neither_signalled_nor_taken_with_its_group(self):
+        me = os.getuid()
+        leader = {'pid': 888888, 'start': 100, 'uid': me}
+        first = self.synthetic({888888: (1, 888888, me, 'S', 100), 888889: (888888, 888888, me, 'S', 101)})
+        replaced = self.synthetic({888888: (1, 888888, me, 'S', 5000), 888889: (888888, 888888, me, 'S', 5001)})   # the number now means a stranger
+        tables = iter([first, replaced])
+        last = [replaced]
+        def table():
+            last[0] = next(tables, last[0])
+            return last[0]
+        sent = []
+        with mock.patch.object(ENV, 'process_table', side_effect=table), mock.patch.object(ENV, '_signal', lambda pid, sig: sent.append(pid)), \
+                mock.patch.object(ENV, '_signal_group', lambda pgid, sig: sent.append(-pgid)), \
+                mock.patch.object(ENV, 'GRACE', 0.1), mock.patch.object(ENV, 'KILL_WAIT', 0.1):
+            ENV.stop_tree(888888, root=leader)
+        self.assertEqual([item for item in sent if abs(item) in (888888, 888889)], [], 'the stranger behind the old number was signalled')
+
+    def test_the_start_time_tolerance_is_a_few_seconds_not_an_hour(self):
+        row = ENV.process_table()[os.getpid()]
+        record = ENV.identity_of(row)
+        self.assertTrue(ENV.same_identity(row, dict(record, start=record['start'] + ENV.START_TOLERANCE)))
+        self.assertFalse(ENV.same_identity(row, dict(record, start=record['start'] + ENV.START_TOLERANCE + 1)))
+        sentinel = self.sentinel()
+        pid_file = self.work / 'chrome.pid'
+        pid_file.write_text(str(sentinel.pid))
+        plain = ENV.read_pid_file(pid_file)
+        live = ENV.process_table()[sentinel.pid]
+        edge = dict(plain, mtime=live['start'] - ENV.START_TOLERANCE)       # the process started exactly the tolerance after the file
+        beyond = dict(plain, mtime=live['start'] - ENV.START_TOLERANCE - 1)  # one second more: the number was reused
+        self.assertTrue(ENV.is_ours(pid_file, edge, live))
+        self.assertFalse(ENV.is_ours(pid_file, beyond, live))
+
+    def test_a_plain_number_file_needs_the_expected_command_line_too(self):
+        plain = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(600)'], start_new_session=True,
+                                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)   # nothing Chrome-like in its command
+        self.spawned.append(plain)
+        self.wait_listed(plain.pid)
+        pid_file = self.work / 'chrome.pid'
+        pid_file.write_text(str(plain.pid))
+        self.assertFalse(ENV.is_ours(pid_file, ENV.read_pid_file(pid_file), ENV.process_table()[plain.pid]))
 
     def test_when_no_process_list_is_available_nothing_is_signalled_and_the_files_stay(self):
         sentinel = self.sentinel()
