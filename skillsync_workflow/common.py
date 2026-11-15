@@ -117,6 +117,28 @@ def deep_merge(base, override):
     return result
 
 
+def _append_review_prototype(result, *levels):
+    """`review.prototype` only grows: layers (already appended by `merged_defaults`), then the per-file project settings, then the
+    manifest. A project adds items, never removes the core ones. Order: core, layers, project, manifest; duplicates (equal text,
+    no normalisation) keep the first occurrence. A level whose value is not a list is left to `validate_workflow` (it rejects it)."""
+    items, seen = [], set()
+    for level in levels:
+        review = level.get('review') if isinstance(level, dict) else None
+        if not isinstance(review, dict) or 'prototype' not in review:
+            continue
+        value = review['prototype']
+        if not isinstance(value, list):
+            return   # invalid type (null, scalar, map): keep the plain merge result for the validator to refuse
+        for item in value:
+            if not isinstance(item, str):
+                return
+            if item not in seen:
+                seen.add(item)
+                items.append(item)
+    if items:
+        result.setdefault('review', {})['prototype'] = items
+
+
 def workflow_config(root, manifest, layerset):
     """Effective workflow settings: merged `workflow/defaults.yaml` of the layers, the per-file
     `workflow/projects/<slug>.yaml` (later layer wins), then the manifest `workflow:`."""
@@ -143,6 +165,7 @@ def workflow_config(root, manifest, layerset):
         if not isinstance(source, dict):
             raise ValueError('Project workflow settings must be mapping')
     result = deep_merge(deep_merge(defaults, source), override)
+    _append_review_prototype(result, defaults, source, override)
     validate_workflow(result)
     return result
 

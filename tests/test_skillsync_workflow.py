@@ -1059,15 +1059,27 @@ class ReviewDocsProfile(WorkflowFixture):
 class ReviewPrototypeProfile(WorkflowFixture):
     """`skillsync review`: profil `prototyp` (zmiana tylko w katalogu prototypu albo `--profile prototyp`) z rdzeniową listą kontrolną."""
 
+    CORE = ['Każdy ekran ma odpowiednik w wymaganiach.', 'Nawigacja i kotwice sN są spójne.', 'Teksty są bez żargonu.']
+
+    def setUp(self):
+        super().setUp()
+        self.defaults({'review': {'prototype': list(self.CORE)}})
+
+    def defaults(self, data):
+        (self.library / 'workflow').mkdir(exist_ok=True)
+        (self.library / 'workflow/defaults.yaml').write_text(yaml.safe_dump(data, allow_unicode=True), encoding='utf-8')
+
     def review(self, *args):
         return self.report('review', *args)
+
+    def prototype_items(self, *args):
+        return [item for item in self.review(*args)['checklist'] if item in self.CORE]
 
     def test_a_change_inside_the_prototype_root_selects_the_prototype_profile(self):
         report = self.review('--files', 'docs/prototypes/demo/index.html', 'docs/prototypes/demo/project.css')
         self.assertEqual(report['profile'], 'prototyp')
         self.assertEqual(sorted(report['prototypeFiles']), ['docs/prototypes/demo/index.html', 'docs/prototypes/demo/project.css'])
-        self.assertTrue(any('kotwice sN' in item for item in report['checklist']), report['checklist'])
-        self.assertTrue(any('bez żargonu' in item for item in report['checklist']))
+        self.assertEqual(self.prototype_items('--files', 'docs/prototypes/demo/index.html'), self.CORE)
 
     def test_the_profile_can_be_chosen_and_other_changes_keep_theirs(self):
         self.assertEqual(self.review('--files', 'helper.py')['profile'], 'kod')
@@ -1089,6 +1101,40 @@ class ReviewPrototypeProfile(WorkflowFixture):
         self.manifest['workflow']['review'] = {'prototype_paths': ['screens/**']}
         self.save()
         self.assertEqual(self.review('--files', 'screens/a.html')['profile'], 'prototyp')
+
+    def test_project_and_manifest_only_add_items_and_never_remove_the_core_ones(self):
+        self.manifest['project'] = {'name': 'Team/Service'}
+        (self.library / 'workflow/projects').mkdir()
+        (self.library / 'workflow/projects/Team-Service.yaml').write_text(yaml.safe_dump(
+            {'review': {'prototype': ['P: project item', self.CORE[0]]}}, allow_unicode=True), encoding='utf-8')
+        self.manifest['workflow']['review'] = {'prototype': ['P: manifest item', 'P: project item', 'p: manifest item', 'P:  manifest item']}
+        self.save()
+        # core first, then project, then manifest; the equal text keeps its first place; spacing/case variants are new items
+        universe = self.CORE + ['P: project item', 'P: manifest item', 'p: manifest item', 'P:  manifest item']
+        checklist = self.review('--files', 'docs/prototypes/d/index.html')['checklist']
+        self.assertEqual([item for item in checklist if item in universe], universe)
+
+    def test_other_review_lists_are_still_replaced_by_the_manifest(self):
+        self.defaults({'review': {'core': ['default core'], 'prototype': list(self.CORE)}})
+        self.manifest['workflow']['review'] = {'core': ['manifest core']}
+        self.save()
+        checklist = self.review('--files', 'docs/prototypes/d/index.html')['checklist']
+        self.assertIn('manifest core', checklist)
+        self.assertNotIn('default core', checklist)
+        self.assertEqual([i for i in checklist if i in self.CORE], self.CORE)
+
+    def test_a_library_without_the_key_gives_no_prototype_items(self):
+        self.defaults({'review': {'core': ['c']}})
+        report = self.review('--files', 'docs/prototypes/d/index.html')
+        self.assertEqual(report['profile'], 'prototyp')
+        self.assertEqual(report['checklist'], ['c'])
+
+    def test_invalid_prototype_values_are_rejected(self):
+        for value in (None, 'one item', [''], [None], ['a', ['b']], [1]):
+            with self.subTest(value=value):
+                self.manifest['workflow']['review'] = {'prototype': value}
+                self.save()
+                self.rejected('review', '--files', 'helper.py')
 
     def test_an_unknown_profile_is_refused_and_a_scalar_checklist_is_rejected(self):
         self.rejected('review', '--files', 'helper.py', '--profile', 'nonsense')

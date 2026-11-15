@@ -1288,17 +1288,8 @@ DOCS_CHECKLIST = [
 
 # Profil `prototyp`: zmiana dotyka wyłącznie prototypu (`prototype.root` z manifestu, domyślnie `docs/prototypes`) albo profil jest wskazany
 # jawnie (`--profile prototyp`). Lista rdzeniowa leży w `workflow/defaults.yaml` (`review.prototype`, warstwy DOPISUJĄ pozycje);
-# poniższa stała to rezerwa, gdy biblioteka jej nie ma. Nadpisanie ścieżek: `workflow.review.prototype_paths`.
+# kod nie ma jej kopii (brak klucza w bibliotece = brak pozycji prototypu). Nadpisanie ścieżek: `workflow.review.prototype_paths`.
 PROTOTYPE_PATHS = ['docs/prototypes/**']
-PROTOTYPE_CHECKLIST = [
-    'Każdy ekran z kryterium akceptacji ma odpowiednik w prototypie, a każdy ekran odpowiada jakiemuś wymaganiu.',
-    'Stany brzegowe (pusty, błąd, ładowanie, brak uprawnień) są pokazane jawnie, zgodnie z regułą rdzenia.',
-    'Teksty są zwykłymi zdaniami, bez żargonu technicznego (nazw pól, klas, endpointów, skrótów).',
-    'Nawigacja i kotwice sN są spójne: każdy odnośnik prowadzi do istniejącego ekranu, id ekranów nie zmieniono po starcie przeglądu.',
-    'Dostępność podstawowa: kontrast, etykiety pól, kolejność fokusu, cele dotyku.',
-    'Treści nie zawierają danych wrażliwych ani prawdziwych danych osobowych.',
-    'Zgodność z kontraktem silnika: słownik HTML/CSS, uchwyty `data-proto-id`, `skillsync prototype ids --check`.',
-]
 REVIEW_PROFILES = ('kod', 'docs', 'prototyp')
 
 
@@ -1342,7 +1333,7 @@ def review(root, manifest, library, files, risk=None, profile=None):
     if profile is None:
         profile = 'prototyp' if files and len(prototype_files) == len(files) else detected
     if profile == 'prototyp' or (profile != 'docs' and prototype_files):
-        checklist.extend(config.get('prototype', PROTOTYPE_CHECKLIST))
+        checklist.extend(config.get('prototype', []))
     if docs_files:
         checklist.extend(config.get('docs_checklist', DOCS_CHECKLIST))
     ui_evidence = config.get('ui_evidence', ['Critical UI path executed in browser', 'Error states verified', 'Keyboard accessibility verified']) if 'ui' in areas else []
