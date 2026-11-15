@@ -1386,7 +1386,6 @@ class UserTests(PrototypeFixture):
             self.assertNoSecret(f'{{"reason": "x {SECRET} y"}}')
 
     def test_add_without_a_password_flag_uses_the_default_password_and_sets_must_change(self):
-        from skillsync_workflow import prototype_server as ps
         report = self.user('add', 'Ala.Kowalska@Example.PL')
         self.assertEqual(report['user']['login'], 'ala.kowalska@example.pl')
         self.assertEqual((report['user']['role'], report['user']['mustChange']), ('commenter', True))
