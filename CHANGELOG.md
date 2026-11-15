@@ -50,6 +50,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 ### Security
 
 - Two-port mode: a request on the read socket cannot write anything (no route, no token); on the consent socket the `Origin` must match the `Host` exactly, a request with intermediary headers is refused, and `via.peer` is the address of the connection, so `X-Forwarded-For` cannot change it.
+- Question preview on `/_experts`: a signed-in account without a role of the experts (`200` instead of `403`) sees the text of the questions and the names of the accounts that wrote the answers and comments (the account `name`, never a login or an e-mail address; a `name` that looks like a login or an address shows as a plain label); it still cannot write (`403`).
 - Known residual risk, documented in `docs/workflow.md` (section "Strona statusu: dwa tryby"): the consent token travels in plain HTTP. With the default `0.0.0.0` listen address on an untrusted network, anyone who can sniff the traffic can capture the token and give consents while the server runs. Use `--approve-bind 127.0.0.1` or an SSH tunnel (`ssh -L 5141:127.0.0.1:5141`) there, and point tunnels at the read port only.
 
 ### Compatibility
@@ -59,6 +60,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 - Layers: a layer that adds items to `workflow.review.prototype` needs `core_min` 1.6.0 (an older core has no profile and `check_layers` blocks the layer); the old lists of a layer keep working.
 - A server older than 1.6.0 shows a screen ref of `question add --screen` as plain text.
 - A prototype gets the presentation mode only after `skillsync prototype migrate`.
+- Two-port mode: both ports (`--read-port`, `--approve-port`; the migration example uses 5140 and 5141, the ports of the two old instances) must be free. A port taken by another service, or by an old instance that is still running, makes the start `BLOCKED` with no side effects (nothing is left bound or written).
 
 ### Breaking
 
