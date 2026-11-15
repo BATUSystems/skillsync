@@ -981,10 +981,19 @@ function summary(m) {
       screens: n.querySelector('.stage-screens') ? text(n.querySelector('.stage-screens')) : null, meter: n.querySelector('.stage-bar') ? { max: n.querySelector('.stage-bar').getAttribute('aria-valuemax'), now: n.querySelector('.stage-bar').getAttribute('aria-valuenow'), w: n.querySelector('.stage-bar .fill').style.width } : null,
       text: text(n) } : null;
     const withStages = (mut) => { const d = clone(base); mut(d); return d; };
-    const states = withStages((d) => { const st = d.acts[0].stages; st[0].state = 'done'; st[1].state = 'active'; st[1].since = '10:05'; st[2].state = 'planned'; st[2].done = false; });
+    const nowMs = Number(typeof nowP === 'function' ? nowP() : nowP);
+    const states = withStages((d) => { d.run = Object.assign({}, d.run, { lastReportAt: new Date(nowMs - 5 * 60000).toISOString() }); const st = d.acts[0].stages; st[0].state = 'done'; st[1].state = 'active'; st[1].since = '10:05'; st[2].state = 'planned'; st[2].done = false; });
     const ms = mount(states, { now: nowP });
     const k = states.acts[0].stages.map((x) => x.key);
     ex.s160 = { stages: k.map((key) => tile(stageOf(ms, key))) };
+    // M2: an active stage stops pulsing when the run is silent (the data keeps `state: active`)
+    const quietOf = (lastReportAt, silence) => { const d = clone(states); d.run = Object.assign({}, d.run, { lastReportAt }); if (silence === undefined) delete d.silence; else d.silence = silence;
+      return tile(stageOf(mount(d, { now: nowP }), k[1])); };
+    ex.s160.quiet = {
+      old: quietOf(new Date(nowMs - 90 * 60000).toISOString()),
+      fresh: quietOf(new Date(nowMs - 5 * 60000).toISOString()),
+      silenceKey: quietOf(new Date(nowMs - 5 * 60000).toISOString(), { since: new Date(nowMs - 50 * 60000).toISOString(), thresholdMin: 30 }),
+    };
     const proto = (writing, eta) => withStages((d) => {
       d.acts[0].stages[1] = { key: 'stage_prototype', label: 'Prototyp', done: false, tip: 'ekrany', state: 'active', since: '10:10' };
       d.prototype = Object.assign({}, d.prototype, { slug: 'x', writing });
@@ -1707,6 +1716,17 @@ class RendererNodeTests(unittest.TestCase):
         self.assertIn("is-done", done["cls"].split())
         self.assertNotIn("is-done", planned["cls"].split())
 
+    def test_s160_active_stage_stops_pulsing_when_the_run_is_silent(self) -> None:
+        q = self.out["extra"]["s160"]["quiet"]
+        self.assertIn("is-quiet", q["old"]["cls"].split())
+        self.assertIn("brak aktywności od 90 min", q["old"]["text"])
+        self.assertTrue(q["old"]["tip"].startswith("brak aktywności od 90 min"), q["old"]["tip"])
+        self.assertEqual(q["old"]["dataState"], "active")  # the data stays `active`
+        self.assertNotIn("is-quiet", q["fresh"]["cls"].split())
+        self.assertIn("w trakcie", q["fresh"]["text"])
+        self.assertIn("is-quiet", q["silenceKey"]["cls"].split(), "the silence signal of the plan decides when it is present")
+        self.assertIn("brak aktywności od 50 min", q["silenceKey"]["text"])
+
     def test_s160_prototype_screens_bar(self) -> None:
         s = self.out["extra"]["s160"]
         full = s["screens"]
@@ -1896,6 +1916,45 @@ class RendererNodeTests(unittest.TestCase):
         block = re.search(r"@media \(prefers-reduced-motion: reduce\)\s*\{(.*?)\n\}", css, re.S)
         self.assertIsNotNone(block)
         self.assertRegex(block.group(1), r"\.stage-dot[^{]*\{[^}]*animation:\s*none")
+
+
+OLD_RENDERER = ROOT / "tests" / "fixtures" / "renderer-1.5.0" / "dashboard-render.js"
+
+
+@unittest.skipUnless(NODE_MAJOR >= 18, "set SKILLSYNC_TEST_NODE (or have node on PATH), node >= 18")
+class OldRendererOnNewJson(unittest.TestCase):
+    """A-K11, the other direction (review T1): the renderer of 1.5.0 (frozen copy) shows the current fixtures, which carry the new keys of
+    the contract (`state`, `who`, `activePercent`, `result`, `prototypes`, `expertQuestions.items`, ...), without an exception: unknown keys are ignored."""
+
+    def test_old_renderer_renders_every_current_fixture(self) -> None:
+        self.assertTrue(OLD_RENDERER.is_file())
+        fixtures = fixture_files()
+        head = HARNESS[:HARNESS.index("  const F = input.fixtures")]
+        tail = """
+  const res = {};
+  for (const [name, d] of Object.entries(input.fixtures)) {
+    try { const m = mount(d, { now: input.now[name] }); res[name] = { ok: true, acts: m.root.querySelectorAll('#acts .act').length,
+      stages: m.root.querySelectorAll('#acts .stage').length, newTab: !!m.root.querySelector('#tab-questions'), parseWarn: !!m.root.querySelector('#parseWarn') }; m.board.destroy(); }
+    catch (e) { res[name] = { error: String(e && e.stack || e) }; }
+  }
+  process.stdout.write(JSON.stringify({ res, violations }));
+})().catch((e) => { process.stdout.write(JSON.stringify({ fatal: String(e && e.stack || e) })); });
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            harness, data = Path(tmp) / "old.cjs", Path(tmp) / "input.json"
+            harness.write_text(head + tail, encoding="utf-8")
+            data.write_text(json.dumps({"fixtures": fixtures, "now": {n: ms(d["generatedAt"]) for n, d in fixtures.items()}}), encoding="utf-8")
+            proc = subprocess.run([NODE, str(harness), str(OLD_RENDERER), str(data)], capture_output=True, text=True, timeout=60, cwd=tmp)
+        self.assertEqual(proc.returncode, 0, proc.stderr[-1500:])
+        out = json.loads(proc.stdout)
+        self.assertNotIn("fatal", out)
+        self.assertEqual(out["violations"], [])
+        self.assertEqual(set(out["res"]), set(fixtures))
+        for name, got in out["res"].items():
+            with self.subTest(fixture=name):
+                self.assertTrue(got.get("ok"), got)
+                self.assertGreaterEqual(got["acts"], 1)
+                self.assertFalse(got["newTab"] or got["parseWarn"], "the old renderer knows no new elements")
 
 
 if __name__ == "__main__":

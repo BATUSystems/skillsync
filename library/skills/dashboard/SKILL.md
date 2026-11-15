@@ -345,3 +345,5 @@ są zanonimizowanymi kopiami formatów.
 - Renderer Markdown jest prosty (nagłówki, akapity, listy z checkboxami, tabele, kod, cytaty, linki); brak obrazów i HTML.
 - Etapy aktów I i II są wnioskowane z nazw plików w katalogu przebiegu; inne nazewnictwo da „niezaliczone” etapy, nie błąd.
 - Procent zależy od dyscypliny zaznaczania `[x]` w planie po każdym kroku.
+
+- Kafelek etapu `active` pulsuje tylko, dopóki przebieg nie jest cichy (`silence`, a bez niego `run.lastReportAt` i próg 35 min); potem pusta kropka i „brak aktywności od N min”, stan w danych zostaje. Jasny odcień paska postępu (zgłoszone lub w toku) ma kreskowanie i obrys w kolorze akcentu (kontrast akcentu z torem ≥ 3:1 w obu motywach), a próbka w legendzie ma tę samą definicję (`--bar-light`).

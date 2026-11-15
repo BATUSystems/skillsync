@@ -228,6 +228,7 @@ main { flex: 1; padding: 1.1rem 1.4rem; min-width: 0; }
 .stage .ic { width: .85em; height: .85em; }
 .stage.is-active { border-color: var(--accent); background: var(--accent-soft); color: var(--text); font-weight: 600; }
 .stage-dot { width: .5rem; height: .5rem; border-radius: 50%; background: var(--accent); flex: none; animation: pulse 1.6s ease-in-out infinite; }
+.stage.is-quiet .stage-dot { animation: none; background: transparent; box-shadow: inset 0 0 0 2px var(--accent); }   /* brak aktywności: pusta kropka, bez pulsu */
 .stage.has-screens { gap: .45rem; }
 .stage-screens { display: inline-flex; align-items: center; gap: .4rem; margin-left: .15rem; padding-left: .45rem; border-left: 1px solid var(--line, currentColor); font-size: .72rem; font-weight: 500; color: var(--muted); }
 .stage-screens .stage-bar { width: 4.5rem; flex: none; }
@@ -236,8 +237,8 @@ main { flex: 1; padding: 1.1rem 1.4rem; min-width: 0; }
 .bar-legend { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; margin-top: .4rem; color: var(--muted); font-size: .8rem; }
 .bar-legend .sw { width: .7rem; height: .7rem; border-radius: 3px; display: inline-block; }
 .bar-legend .sw + .sw, .bar-legend .sw-light { margin-left: .4rem; }
-.bar-legend .sw-dark { background: var(--accent); }
-.bar-legend .sw-light { background: color-mix(in srgb, var(--accent) 38%, var(--panel-2)); border: 1px solid var(--accent); }
+.bar-legend .sw-dark { background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
+.bar-legend .sw-light { background: var(--bar-light); box-shadow: inset 0 0 0 1px var(--accent); }
 .parse-warn { display: flex; align-items: flex-start; gap: .4rem; margin: 0 0 .6rem; font-size: .8rem; color: var(--warn); }
 .parse-warn[hidden] { display: none; }
 /* ---------- Wynik planu, pojęcia, zakładka „Pytania” */
@@ -323,9 +324,13 @@ main { flex: 1; padding: 1.1rem 1.4rem; min-width: 0; }
   background: repeating-linear-gradient(45deg, var(--pending-a) 0 6px, var(--pending-b) 6px 12px);
 }
 .bar .fill + .fill-pending { border-left: 2px solid var(--panel); }
-.bar .fill-active { height: 100%; width: 0; flex: none; transition: width 1s cubic-bezier(.2,.8,.2,1); border-radius: 0 999px 999px 0; background: color-mix(in srgb, var(--accent) 38%, var(--panel-2)); }
+/* Jasny odcień paska (zgłoszone lub w toku) ma KSZTAŁT (akcentowe kreskowanie) i obrys w kolorze akcentu: odróżnia się od ciemnego wypełnienia i od toru
+   nie samą jasnością; kontrast akcentu z torem >= 3:1 w obu motywach (WCAG 1.4.11, pilnuje test). Ta sama definicja w legendzie. */
+.bar { --bar-light: repeating-linear-gradient(135deg, var(--accent) 0 3px, transparent 3px 7px); }
+.bar-legend { --bar-light: repeating-linear-gradient(135deg, var(--accent) 0 3px, transparent 3px 7px); }
+.bar .fill-active { height: 100%; width: 0; flex: none; transition: width 1s cubic-bezier(.2,.8,.2,1); border-radius: 0 999px 999px 0; background: var(--bar-light); box-shadow: inset 0 0 0 1px var(--accent); }
 .bar .fill + .fill-active, .bar .fill-pending + .fill-active { border-left: 2px solid var(--panel); }
-.bar.has-active .fill-pending { background: color-mix(in srgb, var(--accent) 38%, var(--panel-2)); border-radius: 0; }
+.bar.has-active .fill-pending { background: var(--bar-light); box-shadow: inset 0 0 0 1px var(--accent); border-radius: 0; }
 .bar.has-active .fill-active { border-left-width: 0; }
 .big .pend { font-size: 1.15rem; font-weight: 700; color: var(--done); white-space: nowrap; }
 

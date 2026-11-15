@@ -483,10 +483,11 @@
         }
         screens = h("span", { class: "stage-screens", "data-screens": "", title: eta || null }, meter, h("span", { class: "stage-screens-txt" }, label));
       }
-      const tip = isActive ? `trwa od ${since || "—"}${s.tip ? " · " + s.tip : ""}` : s.tip;
-      return h("span", { class: "stage" + (isDone ? " is-done" : "") + (isActive ? " is-active" : "") + (screens ? " has-screens" : ""), "data-state": s.state ? state : null, ...desc(s.key, tip) },
+      const quiet = isActive ? quietMinutes(d) : 0;
+      const tip = isActive ? (quiet ? `brak aktywności od ${quiet} min (ostatni raport), etap oznaczony jako trwający${since ? " od " + since : ""}` : `trwa od ${since || "—"}`) + (s.tip ? " · " + s.tip : "") : s.tip;
+      return h("span", { class: "stage" + (isDone ? " is-done" : "") + (isActive ? " is-active" : "") + (quiet ? " is-quiet" : "") + (screens ? " has-screens" : ""), "data-state": s.state ? state : null, ...desc(s.key, tip) },
         isDone ? icon("i-check") : null, isActive ? h("span", { class: "stage-dot", "aria-hidden": "true" }) : null, s.label,
-        isActive ? h("span", { class: "sr-only" }, " (w trakcie" + (since ? ", od " + since : "") + ")") : null, screens);
+        isActive ? h("span", { class: "sr-only" }, quiet ? ` (brak aktywności od ${quiet} min)` : " (w trakcie" + (since ? ", od " + since : "") + ")") : null, screens);
     }
     function renderActs(d) {
       const acts = d.acts || [];
@@ -736,6 +737,19 @@
         on: { click: linkClick("session", url, url) } }, "Otwórz sesję") : null;
     }
     // Brak raportu postępu od N min (plan in_progress, sesja nie zgłosiła „czeka:”): sesja mogła się zawiesić.
+    // M2 (review): a stage that is `active` keeps its state in the data (a dead session leaves `trwa:` behind), but the pulse ends with the
+    // run's silence: `silence.since`/`thresholdMin` when the plan runs, else the last report time of the run with the same 35 minutes the server
+    // uses for `silence` (SILENCE_MIN). Returns the minutes of silence or 0.
+    const QUIET_DEFAULT_MIN = 35;
+    function quietMinutes(d) {
+      const sil = d && d.silence && d.silence.since ? d.silence : null;
+      const since = sil ? sil.since : d && d.run && typeof d.run.lastReportAt === "string" ? d.run.lastReportAt : null;
+      const threshold = sil && Number.isFinite(sil.thresholdMin) ? sil.thresholdMin : QUIET_DEFAULT_MIN;
+      const t = since ? Date.parse(since) : NaN;
+      if (!Number.isFinite(t)) return 0;
+      const minutes = Math.floor((now() - t) / 60000);
+      return minutes >= threshold ? minutes : 0;
+    }
     function silenceMinutes(d) {
       const s = d && d.silence;
       if (!s || !s.since) return 0;
