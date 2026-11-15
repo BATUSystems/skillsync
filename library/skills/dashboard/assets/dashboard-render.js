@@ -773,7 +773,7 @@
       const runs = Array.isArray(eq.runs) ? eq.runs : [];
       const url = safeUrl(expertsUrl(d, runs.length === 1 ? runs[0].url : null));
       const text = `Pytania do eksperta: ${open} otwartych (${blocking} blokujących)`;
-      const to = isViewer(d) ? null : runsAddressees(runs);
+      const to = runsAddressees(runs);
       return h("div", { class: "wait-item is-info", "data-questions-toast": "" },
         icon("i-bell"),
         h("div", { class: "wait-txt" }, h("strong", null, text), to ? h("span", { "data-addressees": "" }, to) : null),
@@ -982,9 +982,9 @@
         mono(slug || "—"), h("span", { class: "q-facts" }, facts),
         url ? h("a", { class: "q-go", href: url, target: "_blank", rel: "noopener", "aria-label": `Otwórz prototyp ${slug}`, on: { click: linkClick("prototype", slug, url) } }, "Otwórz prototyp") : null);
     }
-    function questionRow(d, q, viewer) {
-      const text = !viewer && typeof q.text === "string" ? (q.text.length > Q_TEXT_MAX ? q.text.slice(0, Q_TEXT_MAX) + "…" : q.text) : null;
-      const to = viewer ? null : (q.addressees === "all" || (Array.isArray(q.addressees) && !q.addressees.length)) ? "do wszystkich ekspertów" : addresseesText(q.addressees);
+    function questionRow(d, q) {
+      const text = typeof q.text === "string" ? (q.text.length > Q_TEXT_MAX ? q.text.slice(0, Q_TEXT_MAX) + "…" : q.text) : null;
+      const to = (q.addressees === "all" || (Array.isArray(q.addressees) && !q.addressees.length)) ? "do wszystkich ekspertów" : addresseesText(q.addressees);
       const url = safeUrl(expertsUrl(d, q.url));
       const slug = typeof q.runSlug === "string" ? q.runSlug : "";
       return h("li", { class: `q-row q-item is-${typeof q.state === "string" ? q.state : "open"}`, "data-question": q.id == null ? "" : String(q.id) },
@@ -1007,14 +1007,13 @@
         return;
       }
       const eq = d.expertQuestions && typeof d.expertQuestions === "object" ? d.expertQuestions : {};
-      const viewer = isViewer(d);
       const protos = (Array.isArray(d.prototypes) ? d.prototypes : []).filter((p) => p && typeof p === "object");
       const items = (Array.isArray(eq.items) ? eq.items : []).filter((q) => q && typeof q === "object").slice(0, 50);
       ui.qCount.textContent = Number.isFinite(eq.open) && eq.open > 0 ? String(eq.open) : "";
       fill(ui.qProtos, h("h2", { class: "q-title" }, "Prototypy"),
         protos.length ? h("ul", { class: "q-list" }, protos.map((p) => protoRow(d, p))) : h("div", { class: "empty" }, "Brak prototypów"));
       fill(ui.qItems, h("h2", { class: "q-title" }, "Pytania do eksperta"),
-        items.length ? h("ul", { class: "q-list" }, items.map((q) => questionRow(d, q, viewer))) : h("div", { class: "empty" }, "Brak pytań"));
+        items.length ? h("ul", { class: "q-list" }, items.map((q) => questionRow(d, q))) : h("div", { class: "empty" }, "Brak pytań"));
       ui["view-questions"].hidden = st.view !== "questions";
     }
 

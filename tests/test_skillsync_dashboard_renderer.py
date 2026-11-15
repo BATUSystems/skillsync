@@ -1812,9 +1812,9 @@ class RendererNodeTests(unittest.TestCase):
         t = self.out["extra"]["s160b"]["toast"]
         self.assertEqual(t["all"]["addr"], "do wszystkich ekspertów")
         self.assertEqual(t["list"]["addr"], "do: ewa, jan, ola")
-        for key in ("empty", "missing", "viewerLogins"):
+        for key in ("empty", "missing"):
             self.assertIsNone(t[key]["addr"], key)
-            self.assertNotIn("jan", t[key]["text"])
+        self.assertEqual(t["viewerLogins"]["addr"], "do: jan", "viewer sees the addressees like the operator (decision 15.11)")
         self.assertTrue(t["all"]["text"].startswith("Pytania do eksperta: 2 otwartych (1 blokujących)"))
 
     def test_s160b_comments_after_acceptance_toast(self) -> None:
@@ -1885,13 +1885,11 @@ class RendererNodeTests(unittest.TestCase):
         self.assertEqual(r["noHost"]["protos"][0]["hrefs"], [])
         self.assertEqual(r["itemsCap"], 50)
         v = r["viewer"]["items"][0]
-        self.assertEqual(v["qtext"], "treść niedostępna")
-        self.assertIsNone(v["to"])
+        self.assertEqual(v["qtext"], "treść niedostępna", "no text in the JSON: neutral caption")
+        self.assertEqual(v["to"], "do wszystkich ekspertów")
         leak = r["viewerLeak"]["items"][0]
-        self.assertEqual(leak["qtext"], "treść niedostępna")
-        self.assertIsNone(leak["to"])
-        self.assertNotIn("SEKRET", leak["text"])
-        self.assertNotIn("jan", leak["text"])
+        self.assertEqual(leak["qtext"], "SEKRET", "viewer sees the question text like the operator (decision 15.11)")
+        self.assertEqual(leak["to"], "do: jan")
         self.assertEqual(r["empty"]["empties"], ["Brak prototypów", "Brak pytań"])
         self.assertNotIn("error", r["wrongTypes"], r["wrongTypes"].get("error"))
 
