@@ -290,6 +290,27 @@ def validate_workflow(config):
 SECRET_MIN_LENGTH = 8
 
 
+def plan_section(text, name):
+    """Body of the `## <name>` section of a Markdown document (heading compared without case, up to the next `## ` heading;
+    fenced blocks are skipped when looking for headings), stripped of blank lines at both ends; None when the section is absent.
+    The one reader of plan sections (`## Wynik`, the plan summary): `dashboard`, `status` and the prototype tools use it."""
+    wanted = ' '.join(str(name).split()).lower()
+    lines, inside, in_fence, body = str(text).splitlines(), False, False, []
+    for line in lines:
+        if line.lstrip().startswith(('```', '~~~')):
+            in_fence = not in_fence
+        elif not in_fence and line.startswith('## '):
+            if inside:
+                break
+            inside = ' '.join(line[3:].split()).lower() == wanted
+            continue
+        if inside:
+            body.append(line)
+    if not inside:
+        return None
+    return '\n'.join(body).strip('\n') if '\n'.join(body).strip() else ''
+
+
 def detect_eol(text):
     """Line ending of the last line of `text` ("\\r\\n" or "\\n"); LF for an empty text or one without a newline."""
     last_lf = text.rfind("\n")
