@@ -280,8 +280,8 @@ class CommandNotesTests(unittest.TestCase):
         helper.private_notes.return_value = ['note']
         with mock.patch.object(ps, '_winacl', helper):
             self.assertEqual(ps.private_file_notes(self.path), ['note'])
-        with mock.patch.object(ps, '_winacl', None):
-            self.assertEqual(ps.private_file_notes(self.path), [])
+        with mock.patch.object(ps, '_winacl', None):      # a stand-alone copy: nothing off Windows, one warning there
+            self.assertEqual(len(ps.private_file_notes(self.path)), 1 if os.name == 'nt' else 0)
 
     def test_a_standalone_copy_without_the_helper_says_so_on_windows_only(self):
         with mock.patch.object(ps, '_winacl', None), mock.patch.object(ps.os, 'name', 'nt'):
