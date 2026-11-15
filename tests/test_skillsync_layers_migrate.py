@@ -34,7 +34,6 @@ sys.path.insert(0, str(ROOT))
 from layers_helpers import (LINK_MODES, SKILL_TEXT, LayersCase, commit, each_mode, generator_version, git, machine_data_dir,  # noqa: E402
                             link_mode, make_layer, tree_snapshot, write, yaml_text)
 from skillsync_workflow import layers  # noqa: E402
-from skillsync_workflow.pathfmt import posix  # noqa: E402
 from layers_helpers import needs_os_symlinks  # noqa: E402
 
 OLD_LIBRARY_FILES = {
@@ -294,7 +293,7 @@ class DryRunAndApplyTest(MigrateCase):
         self.old_config()
         report = self.migrate('--apply')
         core = self.bridge()
-        self.assertEqual((core['kind'], core['path']), ('core', posix(self.library)), report)
+        self.assertEqual((core['kind'], core['path']), ('core', str(self.library)), report)
         self.assertNotIn('synthetic', core)
         self.assertEqual(self.config()['legacy_library'], str(self.library))
 
@@ -313,8 +312,8 @@ class LayerSourceTest(MigrateCase):
         config = self.config()
         entries = {item['id']: item for item in config['layers']}
         self.assertEqual(sorted(entries), ['acme', 'core', 'me'], report)
-        self.assertEqual((entries['acme']['kind'], entries['acme']['path']), ('org', posix(org)))
-        self.assertEqual((entries['me']['kind'], entries['me']['path']), ('personal', posix(me)))
+        self.assertEqual((entries['acme']['kind'], entries['acme']['path']), ('org', str(org)))
+        self.assertEqual((entries['me']['kind'], entries['me']['path']), ('personal', str(me)))
         self.assertEqual(config['layer_rules'], [{'match': [glob], 'use': ['core', 'acme', 'me']},
                                                  {'match': ['**'], 'use': ['core', 'me']}])
         self.assertEqual(config['isolation']['allowed_layers'], ['core', 'acme', 'me'])
@@ -394,7 +393,7 @@ class LayerSourceTest(MigrateCase):
         real = self.core_layer()
         report = self.migrate('--layer-source', f'core={real}', '--apply')
         core = self.bridge()
-        self.assertEqual(core['path'], posix(real), report)
+        self.assertEqual(core['path'], str(real), report)
         self.assertNotIn('synthetic', core)
         self.assertEqual(self.config()['legacy_library'], str(self.library), 'kept until --finish')
         again = self.migrate('--layer-source', f'core={real}', '--apply')
@@ -826,7 +825,7 @@ class LegacyBridgeConfigTest(MigrateCase):
     def test_the_bridge_config_is_the_one_0_9_x_wrote(self):
         entry = self.bridge()
         version = generator_version()
-        self.assertEqual((entry['kind'], entry['writable'], entry['path']), ('core', False, posix(self.library)))
+        self.assertEqual((entry['kind'], entry['writable'], entry['path']), ('core', False, str(self.library)))
         self.assertEqual(entry['synthetic'], {'version': version, 'core_min': version})
         self.assertEqual(self.config()['legacy_library'], str(self.library))
         parsed = layers.load_machine_config(self.config_file)
@@ -984,7 +983,7 @@ class LegacyBridgeConfigTest(MigrateCase):
         report = self.migrate('--layer-source', f'core={real}', '--apply')
         self.assertTrue(any('the bridge core replaced by the core layer core' in item for item in report['changes']), report)
         self.assertNotIn('synthetic', self.bridge())
-        self.assertEqual((self.bridge()['path'], self.config()['legacy_library']), (posix(real), str(self.library)))
+        self.assertEqual((self.bridge()['path'], self.config()['legacy_library']), (str(real), str(self.library)))
         code, listing = self.cli_json('layers', 'list', '--project', str(project))
         self.assertEqual((code, [item['id'] for item in listing['layers']]), (0, ['core']), listing)
         self.assertEqual(self.link(project).returncode, 0)

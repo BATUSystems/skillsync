@@ -2190,7 +2190,7 @@ def edit_config(path, operations, *, apply=True):
         return result
     if changed:
         backup = _write_with_backup(path, original, text)
-        result['backup'] = str(backup) if backup else None
+        result['backup'] = posix(backup) if backup else None
     return result
 
 
@@ -3366,7 +3366,7 @@ def migrate_manifests(projects=(), *, apply=False):
                 backup = backup_root / migrate_encode_path(project) / manifest.name
                 backup.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(manifest, backup)  # a symlinked manifest: the target's content
-                item['backup'] = str(backup)
+                item['backup'] = posix(backup)
                 _write_atomic(manifest, new_text)  # a symlinked manifest is written at its target
             except OSError as exc:
                 # Stop at the first IO error; the report keeps every backup written so far (and this one, if any).

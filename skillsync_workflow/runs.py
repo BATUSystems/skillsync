@@ -437,7 +437,7 @@ def _checkpoint_locked(args):
     if record.get("final") is True:
         warnings += _retro_warnings(path, args.run_id, data["checkpoints"])
     _write(path, data)
-    result = {"status": args.status, "checkpoint": str(path), "record": record}
+    result = {"status": args.status, "checkpoint": posix(path), "record": record}
     if warnings:
         result["warnings"] = warnings
     _emit(args, result)

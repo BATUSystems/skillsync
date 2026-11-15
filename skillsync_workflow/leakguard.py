@@ -1616,7 +1616,7 @@ def install_hook(repo, *, remove=False, identity_files=(), targets_json=None, ta
         if targets_json:
             validate_targets(_read_yaml(targets_json, 'Targets file'))
         top, directory, refusal = hooks_dir(repo)
-        report['repo'] = str(top)
+        report['repo'] = posix(top)
         if refusal:
             report.update(status='NOT_RUN', reason=refusal, info=True)
             return report

@@ -9,6 +9,7 @@ import uuid
 import yaml
 from .common import (add_project_arguments, changed_files, emit, layer_file, load_layer_project,
                      matches, read_yaml, strings, workflow_config)
+from .pathfmt import posix
 from .quality import _locks, plan_validation, run_validation
 from .storage import read_json, state_path, write_json
 
@@ -147,7 +148,7 @@ def upgrade(root, manifest, library, action='plan', run=False, backup=None):
                     return {'status': 'BLOCKED', 'reason': 'Later local edits prevent rollback', 'target': item['target']}
                 restore.append((target, before, item.get('mode', 0o600)))
             if not run:
-                return {'status': 'NOT_RUN', 'backup': identity, 'targets': [str(x[0]) for x in restore]}
+                return {'status': 'NOT_RUN', 'backup': identity, 'targets': [posix(x[0]) for x in restore]}
             write_json(state_file, dict(state, pending=True, backup=identity))
             for target, before, mode in restore:
                 _replace(target, before, mode)

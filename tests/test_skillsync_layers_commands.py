@@ -520,7 +520,7 @@ class LayersAddTest(CommandsCase):
         self.assertTrue(self.detached(target))                                           # a tag is a detached checkout
         self.assertFalse((target / 'library' / 'extra.md').exists())
         entry = self.config()['layers'][0]
-        self.assertEqual((entry['subdir'], entry['ref'], entry['path']), ('library', 'v1', posix(target)))
+        self.assertEqual((entry['subdir'], entry['ref'], entry['path']), ('library', 'v1', str(target)))
         layer = layers.load_machine_config().layers['lib']
         self.assertEqual(layer.root, target / 'library')
 
@@ -929,13 +929,13 @@ class LayersListTest(CommandsCase):
                 for key in ('schema', 'generator_version', 'layers', 'composed_root', 'status'):
                     self.assertIn(key, report)
                 self.assertEqual((report['schema'], report['status'], report['generator_version']), (1, 'PASS', generator_version()))
-                self.assertEqual(report['composed_root'], str(machine_cache_dir() / 'composed'), report)
+                self.assertEqual(report['composed_root'], posix(machine_cache_dir() / 'composed'), report)
                 self.assertEqual([item['id'] for item in report['layers']], ['core', 'acme', 'me'], report)
                 acme = report['layers'][1]
                 for key in ('id', 'kind', 'path', 'subdir', 'version', 'writable'):
                     self.assertIn(key, acme)
                 self.assertEqual((acme['kind'], acme['path'], acme['subdir'], acme['version'], acme['writable']),
-                                 ('org', str(self.acme), '', '2.1.0', True), report)
+                                 ('org', posix(self.acme), '', '2.1.0', True), report)
                 self.assertEqual([item['writable'] for item in report['layers']], [False, True, True], report)
 
     def test_the_effective_list_depends_on_the_project(self):

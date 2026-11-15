@@ -14,7 +14,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ### Changed
 
-- Every path field of a CLI report uses `/` on Windows, not only the fields listed in 1.4.1: `root` and `project` (`status`, `dashboard show`, `catalog list`, `layers *`, `dispatch`, `runs`), `composed_root`, `config` and `manifest` (`layers *`), `layers[].path`, `layer.path`, `budgets[].path` and `log` (`workflow validate`), `directory` and `hooks[].path` (`leakcheck` hooks), `launchers[]` (`env`), `recorded`, `scenario` and `report` (`e2e`), `path` (`repomap`). Linux and macOS are unchanged. New guard `tests/test_skillsync_report_paths.py` fails when a report path field is written as `str(path)`; commands to execute and paths the product opens stay native.
+- Every path field of a CLI report uses `/` on Windows, not only the fields listed in 1.4.1: `root` and `project` (`status`, `dashboard show`, `catalog list`, `layers *`, `dispatch`, `runs`), `composed_root`, `config`, `manifest` and `backup` (`layers *`), `layers[].path`, `layers[].root`, `layer.path`, `budgets[].path` (`doctor`), `log` (`workflow validate`), `directory`, `repo` and `hooks[].path` (`leakcheck` hooks), `launchers[]` (`env`), `recorded`, `scenario` and `report` (`e2e`), `path` (`repomap`), `checkpoint` (`checkpoint`) and `targets` (`upgrade` rollback plan). Linux and macOS are unchanged. New guard `tests/test_skillsync_report_paths.py` fails when a report path field is written as `str(path)`; commands to execute and paths the product opens stay native.
 
 ### Compatibility
 
