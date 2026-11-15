@@ -93,20 +93,55 @@ class LingeringClose(unittest.TestCase):
         self.assertFalse(reset)
         self.assertTrue(data.startswith(b'HTTP/1.1 403'), data[:60])
 
-    def test_a_body_over_the_limit_is_not_read_to_the_end_and_does_not_hold_the_server(self):
-        started = time.monotonic()
-        discarded = []
+    def hold_times(self, sender, limit=None, seconds=None, wait=12.0):
+        """Run `sender(port)` against a refusing server whose `finish` times the lingering close; returns `(discarded, held)`
+        measured ON THE SERVER SIDE (how long the handler thread stayed in the lingering close), whatever the client does."""
+        record = []
         original = http_body.linger_close
+        arguments = {} if limit is None else {'limit': limit, 'seconds': seconds}
 
         class Spy(http_body.LingeringCloseMixin, _Refusing):
             def finish(self):
-                discarded.append(original(self.connection, limit=1024, seconds=0.5))
+                started = time.monotonic()
+                discarded = original(self.connection, **arguments)
+                record.append((discarded, time.monotonic() - started))
                 _Refusing.finish(self)
 
         port = self.serve(Spy)
-        post_and_read(port, body=b'a' * (512 * 1024), pause=0.1)
-        self.assertLess(time.monotonic() - started, 5)
-        self.assertEqual(discarded, [1024])   # it stopped at the limit it was given
+        thread = threading.Thread(target=sender, args=(port,), daemon=True)
+        thread.start()
+        deadline = time.monotonic() + wait
+        while not record and time.monotonic() < deadline:
+            time.sleep(0.02)
+        self.assertTrue(record, 'the handler never reached the lingering close')
+        return record[0]
+
+    def test_a_body_over_the_limit_is_not_read_to_the_end_and_does_not_hold_the_server(self):
+        def sender(port):
+            post_and_read(port, body=b'a' * (512 * 1024), pause=0.1)   # the client may block in sendall: it is the server that is measured
+
+        discarded, held = self.hold_times(sender, limit=1024, seconds=0.5)
+        self.assertLessEqual(discarded, 1024, (discarded, held))   # it stopped at the limit it was given
+        self.assertLess(held, 0.5 + 1.0, (discarded, held))        # and within the time it was given (plus scheduling slack)
+
+    def test_a_client_that_keeps_sending_does_not_hold_the_thread_longer_than_the_limits(self):
+        stop = threading.Event()
+
+        def sender(port):
+            head = (b'POST /x HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: 100000000\r\n\r\n')
+            try:
+                with socket.create_connection(('127.0.0.1', port), timeout=5) as sock:
+                    sock.sendall(head)
+                    while not stop.is_set():   # never stops sending until the test is over
+                        sock.sendall(b'a' * 4096)
+                        time.sleep(0.001)
+            except OSError:
+                pass
+
+        self.addCleanup(stop.set)
+        discarded, held = self.hold_times(sender)   # the default limits: 256 KiB and one second
+        self.assertLessEqual(discarded, http_body.LINGER_BYTES, (discarded, held))
+        self.assertLess(held, http_body.LINGER_SECONDS + 1.0, (discarded, held))
 
     def test_linger_close_is_bounded_by_bytes_and_time_and_never_raises(self):
         server, client = socket.socketpair()
