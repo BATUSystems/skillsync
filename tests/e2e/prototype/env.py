@@ -244,13 +244,38 @@ def wait_port(port, seconds=20):
     return False
 
 
-def _pid_record(pid):
-    """The text of a PID file: JSON with the identity (pid, start time, uid) of the live process, or the bare number when `ps` fails."""
+def _pid_record(pid, members=None):
+    """The text of a PID file: JSON with the identity (pid, start time, uid) and the process group of the live process and, when given,
+    the identities of its descendants (`members`); the bare number when `ps` fails."""
     try:
         row = process_table().get(pid)
     except RuntimeError:
         row = None
-    return json.dumps(identity_of(row)) if row else str(pid)
+    if not row:
+        return str(pid)
+    record = dict(identity_of(row), pgid=row['pgid'])
+    if members:
+        record['members'] = [identity for member, identity in sorted(members.items()) if member != pid]
+    return json.dumps(record)
+
+
+def record_members(env):
+    """Writes the helpers that live now into `chrome.pid`: a helper that left the process group cannot be found by anything else once the
+    leader has died (the tree is gone, the group no longer names it). Called after the start; may be called again."""
+    pid_file = Path(env['workdir']) / 'chrome.pid'
+    record = read_pid_file(pid_file)
+    if record is None or record.get('start') is None:
+        return False
+    try:
+        table = process_table()
+    except RuntimeError:
+        return False
+    if not is_ours(pid_file, record, table.get(record['pid'])):
+        return False
+    temporary = pid_file.with_name('chrome.pid.tmp')
+    temporary.write_text(_pid_record(record['pid'], collect_members(record['pid'], table)))
+    os.replace(temporary, pid_file)
+    return True
 
 
 def start_chrome(env, binary):
@@ -285,6 +310,7 @@ def start_chrome(env, binary):
     if not wait_port(port):
         stop_pid(child.pid)
         raise RuntimeError('Chrome did not open the debugging port %d' % port)
+    record_members(env)
     return child.pid
 
 
@@ -309,17 +335,26 @@ def _parse_start(text):
 
 
 def _table_from_ps():
-    result = subprocess.run(['ps', '-A', '-o', 'pid=,ppid=,pgid=,uid=,stat=,lstart='], capture_output=True, text=True, timeout=15,
-                            env=dict(os.environ, LC_ALL='C', LANG='C'), check=False)
-    table = {}
-    for line in result.stdout.splitlines():
-        match = _PS_ROW.match(line)
-        start = _parse_start(match.group(6)) if match else None
-        if match and start is not None:
-            pid = int(match.group(1))
-            table[pid] = {'pid': pid, 'ppid': int(match.group(2)), 'pgid': int(match.group(3)), 'uid': int(match.group(4)),
-                          'state': match.group(5), 'start': start}
-    return table
+    """The complete table or OSError: a non-zero exit status or a line that cannot be read means the table may be partial, and a partial
+    table would make a living process look gone. One retry (a process that exits while `ps` runs can print a half line)."""
+    for attempt in (1, 2):
+        result = subprocess.run(['ps', '-A', '-o', 'pid=,ppid=,pgid=,uid=,stat=,lstart='], capture_output=True, text=True, timeout=15,
+                                env=dict(os.environ, LC_ALL='C', LANG='C'), check=False)
+        table, unreadable = {}, 0
+        for line in result.stdout.splitlines():
+            if not line.strip():
+                continue
+            match = _PS_ROW.match(line)
+            start = _parse_start(match.group(6)) if match else None
+            if match and start is not None:
+                pid = int(match.group(1))
+                table[pid] = {'pid': pid, 'ppid': int(match.group(2)), 'pgid': int(match.group(3)), 'uid': int(match.group(4)),
+                              'state': match.group(5), 'start': start}
+            else:
+                unreadable += 1
+        if result.returncode == 0 and not unreadable and table:
+            return table
+    raise OSError('ps gave an incomplete table (exit status %s, %d unreadable lines)' % (result.returncode, unreadable))
 
 
 def _table_from_proc():
@@ -369,15 +404,21 @@ def identity_of(row):
 
 
 def read_pid_file(pid_file):
-    """`{pid, start, uid}` from the JSON a record of this module wrote, or `{pid, mtime}` for a plain number (a file written by a
+    """`{pid, start, uid, pgid, members}` from the JSON a record of this module wrote, or `{pid, mtime}` for a plain number (a file written by a
     server script right after the spawn); None for anything else."""
     try:
         text = pid_file.read_text().strip()
         if text.startswith('{'):
             data = json.loads(text)
-            return {'pid': int(data['pid']), 'start': int(data['start']), 'uid': int(data['uid'])}
-        return {'pid': int(text), 'start': None, 'uid': None, 'mtime': pid_file.stat().st_mtime}
-    except (OSError, ValueError, KeyError, TypeError):
+            record = {'pid': int(data['pid']), 'start': int(data['start']), 'uid': int(data['uid'])}
+            pgid = int(data['pgid']) if data.get('pgid') is not None else None
+            record['pgid'] = pgid if pgid is not None and pgid > 1 else None
+            record['members'] = [{'pid': int(item['pid']), 'start': int(item['start']), 'uid': int(item['uid'])}
+                                 for item in data.get('members') or [] if int(item['pid']) > 1]
+        else:
+            record = {'pid': int(text), 'start': None, 'uid': None, 'mtime': pid_file.stat().st_mtime}
+        return record if record['pid'] > 1 else None   # 0, 1 and negative numbers name no process of ours (kill(0) would be this group)
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
         return None
 
 
@@ -412,6 +453,8 @@ def is_ours(pid_file, record, row):
 
 
 def _signal(pid, sig):
+    if pid <= 1:
+        return
     try:
         os.kill(pid, sig)
     except (ProcessLookupError, PermissionError):
@@ -419,6 +462,8 @@ def _signal(pid, sig):
 
 
 def _signal_group(pgid, sig):
+    if pgid <= 1:
+        return
     try:
         os.killpg(pgid, sig)
     except (ProcessLookupError, PermissionError):
@@ -439,8 +484,9 @@ def _protected():
 
 
 def own_group_leader(row):
-    """The group of `row` is its own (the process started in a new session) and is not the group of this process: only then is the group signalled."""
-    return row['pgid'] == row['pid'] and row['pid'] != os.getpgrp()
+    """The group of `row` is its own (the process started in a new session), is not the group of this process and the process is not an
+    ancestor of this one (a shell with job control leads its own group too): only then is the group signalled."""
+    return (row['pid'] > 1 and row['pgid'] == row['pid'] and row['pid'] != os.getpgrp() and row['pid'] not in _protected())
 
 
 def collect_members(root_pid, table, known=None):
@@ -465,7 +511,7 @@ def collect_members(root_pid, table, known=None):
         seen |= {row['pid'] for row in table.values() if row['pgid'] == root_pid}
     for pid in seen:
         row = table[pid]
-        if pid not in protected and row['uid'] == os.getuid() and not row['state'].startswith('Z'):
+        if pid > 1 and pid not in protected and row['uid'] == os.getuid() and not row['state'].startswith('Z'):
             members.setdefault(pid, identity_of(row))
     return members
 
@@ -502,16 +548,36 @@ def _wait_gone(root_pid, members, seconds):
         time.sleep(0.2)
 
 
-def stop_tree(root_pid, grace=None):
-    """SIGTERM, after `grace` seconds SIGKILL, to the process `root_pid` and everything below it (listed first). Returns the members that
-    still live afterwards (empty = confirmed dead). A process whose identity changed meanwhile is not signalled."""
+def orphans_of(record, table):
+    """What lives of a recorded run when its leader may be gone: the recorded helpers whose identity still matches and the processes of the
+    recorded group that started after the leader (a group number is not reused while the group has members). Never this process, its
+    ancestors or another user's process."""
+    found = {}
+    protected = _protected()
+    for item in record.get('members') or []:
+        row = table.get(item['pid'])
+        if same_identity(row, item) and item['pid'] not in protected and item['pid'] > 1:
+            found[item['pid']] = identity_of(row)
+    pgid = record.get('pgid')
+    if pgid and pgid > 1 and pgid == record['pid'] and pgid != os.getpgrp():   # only a group the leader founded itself, never the one of this process
+        for row in table.values():
+            if (row['pgid'] == pgid and row['pid'] != record['pid'] and row['pid'] > 1 and row['pid'] not in protected
+                    and row['uid'] == os.getuid() and not row['state'].startswith('Z') and row['start'] >= record['start'] - START_TOLERANCE):
+                found.setdefault(row['pid'], identity_of(row))
+    return found
+
+
+def stop_tree(root_pid, grace=None, seed=None):
+    """SIGTERM, after `grace` seconds SIGKILL, to the process `root_pid` (None: its leader is gone) and everything below it (listed first),
+    plus the `seed` members (identities from the record). Returns the members that still live afterwards (empty = confirmed dead). A process
+    whose identity changed meanwhile is not signalled."""
     grace = GRACE if grace is None else grace
     try:
         table = process_table()
     except RuntimeError:
         return {root_pid: None}
-    members = collect_members(root_pid, table)
-    root = table.get(root_pid)
+    members = collect_members(root_pid, table, seed) if root_pid is not None else dict(seed or {})
+    root = table.get(root_pid) if root_pid is not None else None
     for sig, wait in ((signal.SIGTERM, grace), (signal.SIGKILL, KILL_WAIT)):
         if not members:
             break
@@ -520,7 +586,7 @@ def stop_tree(root_pid, grace=None):
         _send(members, sig)
         members = _wait_gone(root_pid, members, wait)
         root = None   # the group is signalled with the first signal only; later rounds go member by member
-    child = CHILDREN.pop(root_pid, None)
+    child = CHILDREN.pop(root_pid, None) if root_pid is not None else None
     if child is not None and not members:
         try:
             child.wait(timeout=5)
@@ -547,15 +613,24 @@ def stop_all(env):
             pid_file.unlink(missing_ok=True)
             continue
         try:
-            row = process_table().get(record['pid'])
+            table = process_table()
+            row = table.get(record['pid'])
         except RuntimeError as error:
             print('env: %s: %s; %s kept' % (pid_file.name, error, pid_file.name), file=sys.stderr)
             survivors[record['pid']] = None
             continue
-        if not is_ours(pid_file, record, row):
+        leader = is_ours(pid_file, record, row)
+        seed = orphans_of(record, table) if record.get('start') is not None else {}
+        if not leader and not seed:
+            if row is not None and not row['state'].startswith('Z'):   # the number lives, but it is not the process of the record
+                print('env: %s: pid %d is alive but is not the recorded process (other start time or user); not signalled, file removed'
+                      % (pid_file.name, record['pid']), file=sys.stderr)
             pid_file.unlink(missing_ok=True)   # nothing of ours lives behind it: never signalled
             continue
-        left = stop_tree(record['pid'])
+        if not leader:
+            print('env: %s: the leader (pid %d) is gone, stopping %d helper(s) of its group and record' % (pid_file.name, record['pid'], len(seed)),
+                  file=sys.stderr)
+        left = stop_tree(record['pid'] if leader else None, seed=seed)
         if left:
             print('env: %s: still alive after SIGKILL: %s; %s kept' % (pid_file.name, ', '.join(str(pid) for pid in sorted(left)), pid_file.name),
                   file=sys.stderr)

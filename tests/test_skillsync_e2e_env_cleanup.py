@@ -143,6 +143,7 @@ class E2eEnvCleanup(unittest.TestCase):
         while not helpers.exists() and time.time() < deadline:
             time.sleep(0.05)
         self.assertTrue(helpers.exists(), 'the stand-in did not start its helpers')
+        ENV.record_members(self.env)   # as a long run does after the helpers exist (the record then names the one that left the group)
         return json.loads(helpers.read_text())
 
     def test_the_whole_tree_dies_and_a_chrome_looking_stranger_survives(self):
@@ -154,7 +155,10 @@ class E2eEnvCleanup(unittest.TestCase):
         self.assertNotEqual(table[pids['C']]['pgid'], pids['main'])   # C really left the group
         self.assertEqual(table[pids['D']]['ppid'] in (pids['main'], pids['A']), False)   # D is re-parented
         record = json.loads((self.work / 'chrome.pid').read_text())
-        self.assertEqual(sorted(record), ['pid', 'start', 'uid'])
+        self.assertEqual(sorted(record), ['members', 'pgid', 'pid', 'start', 'uid'])
+        self.assertEqual(record['pgid'], pids['main'])   # the group of the leader
+        recorded = {item['pid'] for item in record['members']}
+        self.assertTrue({pids['A'], pids['B'], pids['C'], pids['D']} <= recorded, record)   # incl. the helper that left the group
         self.assertEqual(ENV.stop_all(self.env), {})
         self.assertEqual({tag: alive(pid) for tag, pid in pids.items()}, {tag: False for tag in pids})
         self.assertTrue(alive(sentinel.pid), 'a process outside the tree was killed')
@@ -178,7 +182,10 @@ class E2eEnvCleanup(unittest.TestCase):
         row = ENV.process_table()[sentinel.pid]
         stale = dict(ENV.identity_of(row), start=row['start'] - 3600)   # the recorded process started an hour earlier: not this one
         (self.work / 'chrome.pid').write_text(json.dumps(stale))
-        self.assertEqual(ENV.stop_all(self.env), {})
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self.assertEqual(ENV.stop_all(self.env), {})
+        self.assertIn('not the recorded process', err.getvalue())   # a living process behind a removed file is said out loud
         self.assertTrue(alive(sentinel.pid))
         self.assertFalse((self.work / 'chrome.pid').exists())
 
@@ -225,8 +232,15 @@ class E2eEnvCleanup(unittest.TestCase):
         self.assertEqual(os.getpgid(proc.pid), os.getpgrp())
         ENV.CHILDREN[proc.pid] = proc
         (self.work / 'chrome.pid').write_text(ENV._pid_record(proc.pid))
+        record = json.loads((self.work / 'chrome.pid').read_text())
+        self.assertEqual(record['pgid'], os.getpgrp())   # the recorded group IS the group of this runner: it must not be swept either
+        bystander = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(600)'], stdin=subprocess.DEVNULL,
+                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)   # a later process of the same group
+        self.spawned.append(bystander)
+        self.wait_listed(bystander.pid)
         with mock.patch.object(ENV, '_signal_group', side_effect=AssertionError('the group of this process must never be signalled')):
             self.assertEqual(ENV.stop_all(self.env), {})
+        self.assertIsNone(bystander.poll())   # a neighbour in the runner's group is not ours
         self.assertIsNotNone(proc.poll())
         self.assertTrue(alive(os.getpid()))
 
@@ -250,6 +264,130 @@ class E2eEnvCleanup(unittest.TestCase):
         ENV._send(stale, signal.SIGKILL)
         time.sleep(0.3)
         self.assertTrue(alive(sentinel.pid))
+
+    def test_the_start_writes_the_helper_list_into_the_record(self):
+        with mock.patch.object(ENV, 'record_members', wraps=ENV.record_members) as record:
+            ENV.start_chrome(self.env, self.fake)
+        record.assert_called_once_with(self.env)
+        self.assertEqual(ENV.stop_all(self.env), {})
+
+    def test_helpers_are_stopped_when_the_leader_was_killed_before_the_stop(self):
+        sentinel = self.sentinel()
+        pids = self.start_fake_chrome()
+        os.kill(pids['main'], signal.SIGKILL)   # Chrome closed from outside: the helpers live on, the tree below the leader is gone
+        deadline = time.time() + 5
+        while alive(pids['main']) and time.time() < deadline:
+            time.sleep(0.05)
+        self.assertFalse(alive(pids['main']))
+        self.assertTrue(all(alive(pids[tag]) for tag in 'ABCD'))
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self.assertEqual(ENV.stop_all(self.env), {})
+        self.assertFalse(any(alive(pids[tag]) for tag in 'ABCD'), 'a helper survived the death of its leader')
+        self.assertIn('leader', err.getvalue())   # said out loud, not silently
+        self.assertTrue(alive(sentinel.pid))
+        self.assertFalse((self.work / 'chrome.pid').exists())
+
+    def test_without_a_recorded_helper_list_the_group_of_the_dead_leader_is_still_swept(self):
+        pids = self.start_fake_chrome()
+        record = json.loads((self.work / 'chrome.pid').read_text())
+        record.pop('members')
+        (self.work / 'chrome.pid').write_text(json.dumps(record))   # a record without helpers: only the group can name them
+        os.kill(pids['main'], signal.SIGKILL)
+        time.sleep(0.5)
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(ENV.stop_all(self.env), {})
+        self.assertFalse(any(alive(pids[tag]) for tag in 'ABD'))   # in the group (also the re-parented one)
+        self.assertTrue(alive(pids['C']))                          # left the group: only the record could name it (limit of the method)
+
+    def test_a_dead_leader_without_helpers_removes_the_file_quietly(self):
+        sentinel = self.sentinel()
+        row = ENV.process_table()[sentinel.pid]
+        sentinel.kill()
+        sentinel.wait()
+        (self.work / 'chrome.pid').write_text(json.dumps(dict(ENV.identity_of(row), pgid=row['pgid'], members=[])))
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self.assertEqual(ENV.stop_all(self.env), {})
+        self.assertEqual(err.getvalue(), '')
+        self.assertFalse((self.work / 'chrome.pid').exists())
+
+    def fake_ps(self, returncode, keep_lines=None, extra=''):
+        real = ENV.subprocess.run
+        def run(argv, *args, **kwargs):
+            if argv and argv[0] == 'ps' and '-A' in argv:
+                out = real(argv, *args, **kwargs)
+                lines = out.stdout.splitlines()
+                lines = lines[:keep_lines] if keep_lines else lines
+                return subprocess.CompletedProcess(argv, returncode, '\n'.join(lines) + '\n' + extra, '')
+            return real(argv, *args, **kwargs)
+        return mock.patch.object(ENV.subprocess, 'run', run)
+
+    def test_a_partial_ps_table_is_not_taken_for_the_whole_one(self):
+        sentinel = self.sentinel()
+        pid_file = self.work / 'chrome.pid'
+        pid_file.write_text(ENV._pid_record(sentinel.pid))
+        for label, patcher in (('exit status 1 and a cut output', self.fake_ps(1, keep_lines=5)),
+                               ('a line that cannot be read', self.fake_ps(0, extra='garbage that is not a ps row\n'))):
+            with self.subTest(label), patcher, mock.patch.object(ENV, '_table_from_proc', return_value={}), \
+                    contextlib.redirect_stderr(io.StringIO()):
+                survivors = ENV.stop_all(self.env)
+            self.assertEqual(set(survivors), {sentinel.pid})
+            self.assertTrue(pid_file.exists(), label)   # nothing was proved: the file stays, nobody was signalled
+            self.assertTrue(alive(sentinel.pid))
+
+    def test_pid_files_naming_pid_zero_one_or_negative_are_junk_and_nothing_is_signalled_for_them(self):
+        for text in ('0', '1', '-5', json.dumps({'pid': 0, 'start': 1, 'uid': os.getuid(), 'pgid': 0}),
+                     json.dumps({'pid': 1, 'start': 1, 'uid': os.getuid(), 'pgid': 1})):
+            with self.subTest(text):
+                pid_file = self.work / 'chrome.pid'
+                pid_file.write_text(text)
+                self.assertIsNone(ENV.read_pid_file(pid_file))
+        with mock.patch.object(os, 'kill', side_effect=AssertionError('kill')), mock.patch.object(os, 'killpg', side_effect=AssertionError('killpg')):
+            for number in (0, 1, -1):
+                ENV._signal(number, signal.SIGKILL)
+                ENV._signal_group(number, signal.SIGKILL)
+        record = {'pid': 4242, 'start': 1, 'uid': os.getuid(), 'pgid': 1, 'members': [{'pid': 0, 'start': 1, 'uid': os.getuid()}]}
+        (self.work / 'chrome.pid').write_text(json.dumps(record))
+        self.assertIsNone(ENV.read_pid_file(self.work / 'chrome.pid').get('pgid'))   # a group number <= 1 is dropped
+        self.assertEqual(ENV.read_pid_file(self.work / 'chrome.pid')['members'], [])
+
+    def test_the_group_of_this_process_and_of_its_ancestors_is_never_a_group_to_signal(self):
+        protected = ENV._protected()
+        self.assertTrue({os.getpid(), os.getppid()} <= protected)
+        own = {'pid': os.getpgrp(), 'pgid': os.getpgrp()}
+        self.assertFalse(ENV.own_group_leader(own))                                   # the group of the runner
+        with mock.patch.object(ENV, '_protected', return_value=set()):                # on its own, without the ancestors rule
+            self.assertFalse(ENV.own_group_leader(own))
+        if os.getppid() > 1:
+            self.assertFalse(ENV.own_group_leader({'pid': os.getppid(), 'pgid': os.getppid()}))   # a shell above us leads its own group
+        self.assertTrue(ENV.own_group_leader({'pid': 2 ** 22 - 3, 'pgid': 2 ** 22 - 3}))         # a stranger process leading its own group
+        self.assertFalse(ENV.own_group_leader({'pid': 1, 'pgid': 1}))
+        table = ENV.process_table()
+        members = ENV.collect_members(os.getppid(), table)
+        self.assertEqual(set(members) & protected, set())
+
+    def test_a_process_of_another_user_is_never_ours_in_a_plain_number_file(self):
+        sentinel = self.sentinel()
+        pid_file = self.work / 'chrome.pid'
+        pid_file.write_text(str(sentinel.pid))
+        record = ENV.read_pid_file(pid_file)
+        row = ENV.process_table()[sentinel.pid]
+        self.assertTrue(ENV.is_ours(pid_file, record, row))
+        self.assertFalse(ENV.is_ours(pid_file, record, dict(row, uid=row['uid'] + 1)))
+
+    def test_a_recorded_group_that_the_process_did_not_found_is_not_swept(self):
+        proc = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(600)', 'chrome', '--remote-debugging-port=4'],
+                                start_new_session=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.spawned.append(proc)
+        self.wait_listed(proc.pid)
+        ENV.CHILDREN[proc.pid] = proc
+        neighbour = self.sentinel()   # leads its own group, started after `proc`
+        record = dict(ENV.identity_of(ENV.process_table()[proc.pid]), pgid=neighbour.pid, members=[])   # a record that names ANOTHER group
+        (self.work / 'chrome.pid').write_text(json.dumps(record))
+        self.assertEqual(ENV.stop_all(self.env), {})
+        proc.wait(timeout=5)
+        self.assertTrue(alive(neighbour.pid))
 
     def test_when_no_process_list_is_available_nothing_is_signalled_and_the_files_stay(self):
         sentinel = self.sentinel()
