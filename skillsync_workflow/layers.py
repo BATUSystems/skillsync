@@ -2731,7 +2731,8 @@ def isolation_findings(config, system=None):
     location `~/.local/copilot-library` and `CopilotSkills` directories under `discover_paths`
     hold no library with an id outside the list and no library directory without `layer.yaml`;
     (3) no identity file (`leakguard/*.yaml` of these trees, `leakguard.identity_dir`) declares
-    a layer outside the list."""
+    a layer outside the list; owners in `leakguard.identity_dir` that are configured `leakguard.targets`
+    (targets that are no layer) are skipped there."""
     system = system or current_system()
     allowed = set(config.allowed_layers or [])
     findings, seen, trees = [], set(), []
@@ -2800,9 +2801,14 @@ def isolation_findings(config, system=None):
     if config.identity_dir is not None and config.identity_dir.is_dir():
         identity.append((config.identity_dir, True))
     reported = set()
+    targets = set(config.targets or {})
     for tree, everywhere in identity:
         for path in _identity_files(tree, everywhere):
             owner = _identity_layer(path)
+            # D13: `identity_dir` (everywhere=True) holds the identity of every target of the machine, also those that are
+            # no layer; its owners that are configured `leakguard.targets` are not a foreign library
+            if everywhere and owner in targets:
+                continue
             if owner is not None and owner not in allowed and _path_key(path) not in reported:
                 reported.add(_path_key(path))
                 error('isolation-foreign-identity', f'{path}: identity file of layer {owner}, which is not in '
