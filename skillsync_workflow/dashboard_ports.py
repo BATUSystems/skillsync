@@ -122,6 +122,8 @@ def resolve(args, check_port) -> dict | None:
             _port_problem(flag, port, check_port)
     if read_port is not None and read_port == approve_port:
         raise ValueError("--read-port i --approve-port muszą być różnymi portami.")
+    if read_port is None and "*" in {str(name).strip() for name in (getattr(args, "read_host", None) or ())}:
+        raise ValueError("--read-host '*' działa tylko na gnieździe odczytu (--read-port).")
     if approve_port is not None and "*" in {str(name).strip() for name in (getattr(args, "approve_host", None) or ())}:
         raise ValueError("--approve-host '*' jest niedozwolone: nazwa zgód musi być jawna.")
     host = getattr(args, "host", None)

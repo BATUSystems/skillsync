@@ -383,7 +383,7 @@ class Flags(unittest.TestCase):
                        dict(read_port=5151, approve_port=5200), dict(read_bind="127.0.0.1"), dict(approve_bind="127.0.0.1"),
                        dict(read_port=5151, approve_bind="127.0.0.1"), dict(approve_port=5152, read_bind="127.0.0.1"),
                        dict(allow_proxy_headers=True), dict(read_port=5151, allow_proxy_headers=True),
-                       dict(approve_port=5152, approve_host=["*"])):
+                       dict(approve_port=5152, approve_host=["*"]), dict(approve_port=5152, read_host=["*"])):
             with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
                 self.resolve(**kwargs)
 
@@ -451,7 +451,7 @@ class Process(unittest.TestCase):
             directory = dashboard_token.state_dir()
             return [json.loads(path.read_text()) for path in sorted(directory.glob("*.json"))] if directory.is_dir() else []
 
-    def test_two_sockets_state_files_url_and_a_clean_stop(self) -> None:
+    def test_two_sockets_state_files_and_url(self) -> None:
         read_port, approve_port = two_ports()
         proc = self.serve("--read-port", str(read_port), "--approve-port", str(approve_port), "--host", "127.0.0.1")
         self.wait_up(read_port, approve_port)
@@ -478,7 +478,17 @@ class Process(unittest.TestCase):
         self.assertEqual(answer["readUrl"], f"http://127.0.0.1:{read_port}/")
         self.assertEqual(reading.stdout.strip(), f"http://127.0.0.1:{read_port}/")
         self.assertNotIn("#", reading.stdout)
-        proc.send_signal(signal.SIGINT if os.name != "nt" else signal.SIGTERM)
+
+    @unittest.skipIf(os.name == "nt", "SIGTERM kończy proces na Windows bez obsługi")
+    def test_a_signal_stops_both_sockets_and_removes_both_state_files(self) -> None:
+        read_port, approve_port = two_ports()
+        proc = self.serve("--read-port", str(read_port), "--approve-port", str(approve_port), "--host", "127.0.0.1")
+        self.wait_up(read_port, approve_port)
+        deadline = time.time() + 10
+        while len(self.state_files()) < 2 and time.time() < deadline:
+            time.sleep(0.1)
+        self.assertEqual(len(self.state_files()), 2)
+        proc.send_signal(signal.SIGTERM)
         out, err = proc.communicate(timeout=30)
         self.assertEqual(proc.returncode, 0, err)
         self.assertEqual(json.loads(out)["status"], "PASS")
@@ -486,6 +496,40 @@ class Process(unittest.TestCase):
         for port in (read_port, approve_port):   # both sockets are free again
             with socket.socket() as probe:
                 probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)   # a stopped server leaves TIME_WAIT behind
+                probe.bind(("127.0.0.1", port))
+
+    def test_an_interrupt_in_process_stops_both_sockets_and_removes_both_state_files(self) -> None:
+        """The same stop on every system: the interrupt of the main thread (what Ctrl+C does) instead of a signal to a process."""
+        import _thread
+        read_port, approve_port = two_ports()
+        args = SimpleNamespace(path=str(self.root), layers=[f"core={ROOT / 'library'}"], plan=None, session_url=None, approve_host=[], read_host=[],
+                               poll=1.0, verbose=False, prototype_port=None, read_port=read_port, approve_port=approve_port, read_bind=None,
+                               approve_bind=None, allow_proxy_headers=False, host="127.0.0.1", port=None, no_approvals=False)
+        seen: dict = {}
+
+        def interrupt_when_up() -> None:
+            deadline = time.time() + 20
+            while time.time() < deadline:
+                try:
+                    with socket.create_connection(("127.0.0.1", read_port), timeout=0.3), socket.create_connection(("127.0.0.1", approve_port), timeout=0.3):
+                        break
+                except OSError:
+                    time.sleep(0.1)
+            while len(self.state_files()) < 2 and time.time() < deadline:
+                time.sleep(0.1)
+            seen["states"] = len(self.state_files())
+            _thread.interrupt_main()
+
+        with mock.patch.dict(os.environ, home_env(self.tmp)):
+            threading.Thread(target=interrupt_when_up, daemon=True).start()
+            with mock.patch("sys.stdout", new=__import__("io").StringIO()) as out, mock.patch("sys.stderr", new=__import__("io").StringIO()):
+                code = srv.serve_command(args)
+            self.assertEqual(self.state_files(), [])
+        self.assertEqual((code, seen.get("states")), (0, 2))
+        self.assertEqual(json.loads(out.getvalue())["status"], "PASS")
+        for port in (read_port, approve_port):
+            with socket.socket() as probe:
+                probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1) if os.name != "nt" else None
                 probe.bind(("127.0.0.1", port))
 
     def test_console_has_a_line_per_socket_and_no_token_on_the_read_line(self) -> None:
