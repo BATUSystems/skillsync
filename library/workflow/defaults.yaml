@@ -191,6 +191,14 @@ review:
     - współbieżność i transakcje
     - migracja i rollback
     - niezależny test-writer.
+  prototype:
+  - Każdy ekran z kryterium akceptacji ma odpowiednik w prototypie, a każdy ekran odpowiada jakiemuś wymaganiu.
+  - Stany brzegowe (pusty, błąd, ładowanie, brak uprawnień) są pokazane jawnie, zgodnie z regułą rdzenia.
+  - Teksty są zwykłymi zdaniami, bez żargonu technicznego (nazw pól, klas, endpointów, skrótów).
+  - 'Nawigacja i kotwice sN są spójne: każdy odnośnik prowadzi do istniejącego ekranu, id ekranów nie zmieniono po starcie przeglądu.'
+  - 'Dostępność podstawowa: kontrast, etykiety pól, kolejność fokusu, cele dotyku.'
+  - Treści nie zawierają danych wrażliwych ani prawdziwych danych osobowych.
+  - 'Zgodność z kontraktem silnika: słownik HTML/CSS, uchwyty `data-proto-id`, `skillsync prototype ids --check`.'
   ui_paths: *id001
   ui_evidence:
   - Przejście krytycznej ścieżki

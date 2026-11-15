@@ -1286,6 +1286,32 @@ DOCS_CHECKLIST = [
 ]
 
 
+# Profil `prototyp`: zmiana dotyka wyłącznie prototypu (`prototype.root` z manifestu, domyślnie `docs/prototypes`) albo profil jest wskazany
+# jawnie (`--profile prototyp`). Lista rdzeniowa leży w `workflow/defaults.yaml` (`review.prototype`, warstwy DOPISUJĄ pozycje);
+# poniższa stała to rezerwa, gdy biblioteka jej nie ma. Nadpisanie ścieżek: `workflow.review.prototype_paths`.
+PROTOTYPE_PATHS = ['docs/prototypes/**']
+PROTOTYPE_CHECKLIST = [
+    'Każdy ekran z kryterium akceptacji ma odpowiednik w prototypie, a każdy ekran odpowiada jakiemuś wymaganiu.',
+    'Stany brzegowe (pusty, błąd, ładowanie, brak uprawnień) są pokazane jawnie, zgodnie z regułą rdzenia.',
+    'Teksty są zwykłymi zdaniami, bez żargonu technicznego (nazw pól, klas, endpointów, skrótów).',
+    'Nawigacja i kotwice sN są spójne: każdy odnośnik prowadzi do istniejącego ekranu, id ekranów nie zmieniono po starcie przeglądu.',
+    'Dostępność podstawowa: kontrast, etykiety pól, kolejność fokusu, cele dotyku.',
+    'Treści nie zawierają danych wrażliwych ani prawdziwych danych osobowych.',
+    'Zgodność z kontraktem silnika: słownik HTML/CSS, uchwyty `data-proto-id`, `skillsync prototype ids --check`.',
+]
+REVIEW_PROFILES = ('kod', 'docs', 'prototyp')
+
+
+def prototype_profile(manifest, config, files):
+    """`prototype_files`: the changed files that live under the prototype root(s) (never empty when the change is a prototype one)."""
+    paths = list(config.get('prototype_paths', PROTOTYPE_PATHS))
+    prototype = manifest.get('prototype') if isinstance(manifest, dict) else None
+    root = prototype.get('root') if isinstance(prototype, dict) else None
+    if isinstance(root, str) and root.strip().strip('/') and '..' not in root and not root.startswith('/'):
+        paths.append(root.strip().strip('/') + '/**')
+    return [f for f in files if matches(f, paths)]
+
+
 DOCS_CODE_SUFFIXES = ('.py', '.ts', '.js', '.mjs', '.cjs', '.ps1', '.sh', '.css', '.html',
                       '.sql', '.go', '.rs', '.java', '.cs', '.rb', '.php', '.tsx', '.jsx', '.vue')   # kod pod docs/ nie jest dokumentacją
 
@@ -1297,7 +1323,7 @@ def docs_profile(config, files):
     return ('docs' if files and len(docs_files) == len(files) else 'kod'), docs_files
 
 
-def review(root, manifest, library, files, risk=None):
+def review(root, manifest, library, files, risk=None, profile=None):
     files = normalize_files(root, files)
     workflow = workflow_config(root, manifest, library)
     config = workflow.get('review', {})
@@ -1309,12 +1335,19 @@ def review(root, manifest, library, files, risk=None):
     for area in areas:
         checklist.extend(additions.get(area, []))
     checklist.extend(config.get('project', []))
-    profile, docs_files = docs_profile(config, files)
+    if profile is not None and profile not in REVIEW_PROFILES:
+        raise ValueError(f'Unknown review profile: {profile!r} (expected one of {", ".join(REVIEW_PROFILES)})')
+    detected, docs_files = docs_profile(config, files)
+    prototype_files = prototype_profile(manifest, config, files)
+    if profile is None:
+        profile = 'prototyp' if files and len(prototype_files) == len(files) else detected
+    if profile == 'prototyp' or (profile != 'docs' and prototype_files):
+        checklist.extend(config.get('prototype', PROTOTYPE_CHECKLIST))
     if docs_files:
         checklist.extend(config.get('docs_checklist', DOCS_CHECKLIST))
     ui_evidence = config.get('ui_evidence', ['Critical UI path executed in browser', 'Error states verified', 'Keyboard accessibility verified']) if 'ui' in areas else []
     checklist.extend(ui_evidence)
-    return {'status': 'NOT_RUN', 'risk': risk, 'risks': areas, 'areas': areas, 'profile': profile, 'docsFiles': docs_files,
+    return {'status': 'NOT_RUN', 'risk': risk, 'risks': areas, 'areas': areas, 'profile': profile, 'docsFiles': docs_files, 'prototypeFiles': prototype_files,
             'checklist': checklist, 'ui_evidence': ui_evidence,
             'note': 'Review checklist only; independent review and UI evidence still required'}
 
@@ -1343,7 +1376,7 @@ def _cmd(args):
             if run_id is not None:
                 report['reportFile'] = write_readiness_report(root, run_id, report, args.plan)
         else:
-            report = review(root, manifest, library, files, args.risk)
+            report = review(root, manifest, library, files, args.risk, getattr(args, 'profile', None))
     except (OSError, ValueError, TypeError, KeyError, yaml.YAMLError, subprocess.SubprocessError) as error:
         report = {'status': 'BLOCKED', 'reason': _redact(str(error))}
         run_id = getattr(args, 'run_id', None) if args.command == 'readiness' else None
@@ -1366,6 +1399,9 @@ def register(subparsers):
         if name in ('readiness', 'review'):
             parser.add_argument('--base')
             parser.add_argument('--risk', choices=['low', 'medium', 'high'])
+        if name == 'review':
+            parser.add_argument('--profile', choices=list(REVIEW_PROFILES),
+                                help='review profile (default: prototyp for a change inside the prototype root only, docs for documentation only, else kod)')
         if name == 'readiness':
             parser.add_argument('--plan')
             parser.add_argument('--run-id', help='write .skillsync/runs/<run-id>/readiness.md (first line Readiness: PASS|BLOCKED)')

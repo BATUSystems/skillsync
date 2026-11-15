@@ -1031,7 +1031,7 @@ class ReviewDocsProfile(WorkflowFixture):
         self.assertTrue(any('leakcheck --text' in item for item in mixed['checklist']))
 
     def test_library_code_and_non_markdown_skill_files_are_not_docs(self):
-        for files in (['library/skills/feature/scripts/run.py'], ['docs/site/build.py'], ['docs/site/app.js'], ['docs/prototypes/x/theme.css'], ['library/skills/feature/assets/a.json'], ['skillsync_workflow/cli.py']):
+        for files in (['library/skills/feature/scripts/run.py'], ['docs/site/build.py'], ['docs/site/app.js'], ['library/skills/feature/assets/a.json'], ['skillsync_workflow/cli.py']):
             with self.subTest(files=files):
                 self.assertEqual(self.review(*files)['profile'], 'kod')
 
@@ -1054,6 +1054,47 @@ class ReviewDocsProfile(WorkflowFixture):
         self.assertIn('własna pozycja docs', report['checklist'])
         self.assertFalse(any('leakcheck --text' in item for item in report['checklist']))
         self.assertEqual(self.review('docs/cli.md')['profile'], 'kod')
+
+
+class ReviewPrototypeProfile(WorkflowFixture):
+    """`skillsync review`: profil `prototyp` (zmiana tylko w katalogu prototypu albo `--profile prototyp`) z rdzeniową listą kontrolną."""
+
+    def review(self, *args):
+        return self.report('review', *args)
+
+    def test_a_change_inside_the_prototype_root_selects_the_prototype_profile(self):
+        report = self.review('--files', 'docs/prototypes/demo/index.html', 'docs/prototypes/demo/project.css')
+        self.assertEqual(report['profile'], 'prototyp')
+        self.assertEqual(sorted(report['prototypeFiles']), ['docs/prototypes/demo/index.html', 'docs/prototypes/demo/project.css'])
+        self.assertTrue(any('kotwice sN' in item for item in report['checklist']), report['checklist'])
+        self.assertTrue(any('bez żargonu' in item for item in report['checklist']))
+
+    def test_the_profile_can_be_chosen_and_other_changes_keep_theirs(self):
+        self.assertEqual(self.review('--files', 'helper.py')['profile'], 'kod')
+        self.assertEqual(self.review('--files', 'docs/cli.md')['profile'], 'docs')
+        chosen = self.review('--files', 'helper.py', '--profile', 'prototyp')
+        self.assertEqual(chosen['profile'], 'prototyp')
+        self.assertTrue(any('kotwice sN' in item for item in chosen['checklist']))
+        self.assertFalse(any('kotwice sN' in item for item in self.review('--files', 'helper.py')['checklist']))
+
+    def test_mixed_change_keeps_the_code_profile_and_adds_the_prototype_items(self):
+        report = self.review('--files', 'helper.py', 'docs/prototypes/demo/index.html')
+        self.assertEqual(report['profile'], 'kod')
+        self.assertTrue(any('kotwice sN' in item for item in report['checklist']))
+
+    def test_prototype_root_of_the_manifest_and_override_paths(self):
+        self.manifest['prototype'] = {'root': 'mockups'}
+        self.save()
+        self.assertEqual(self.review('--files', 'mockups/a/index.html')['profile'], 'prototyp')
+        self.manifest['workflow']['review'] = {'prototype_paths': ['screens/**']}
+        self.save()
+        self.assertEqual(self.review('--files', 'screens/a.html')['profile'], 'prototyp')
+
+    def test_an_unknown_profile_is_refused_and_a_scalar_checklist_is_rejected(self):
+        self.rejected('review', '--files', 'helper.py', '--profile', 'nonsense')
+        self.manifest['workflow']['review'] = {'prototype': 'one item'}
+        self.save()
+        self.rejected('review', '--files', 'helper.py')
 
 
 class ReadinessPrototypeGate(WorkflowFixture):

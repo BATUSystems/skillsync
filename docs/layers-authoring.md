@@ -90,7 +90,7 @@ Format `identity.yaml`: `schema: 1`, `layer: <id>`, `terms: []`. Każdy termin m
 | fragment instrukcji bazowych | `instructions/_base.d/NN-nazwa.md` | sumowane w kolejności warstw, potem nazw plików |
 | szablon instrukcji | `instructions/<nazwa>.md` | późniejsza warstwa wygrywa |
 | rola agenta | `agents/<nazwa>.md` | |
-| ustawienia workflow | `workflow/defaults.yaml`, `workflow/projects/*.yaml` | zasady scalania: [architecture](architecture.md) |
+| ustawienia workflow | `workflow/defaults.yaml`, `workflow/projects/*.yaml` | zasady scalania: [architecture](architecture.md); listę kontrolną review prototypu rozszerzasz kluczem `review.prototype` (pozycje warstw są dopisywane do listy rdzenia bez `allow_override`; warstwa, która go używa, deklaruje `core_min` co najmniej 1.6.0) |
 | persona i imiona kart (tylko personal) | `instructions/_base.d/10-persona.md`, nakładka imion | |
 
 Zasady treści:
