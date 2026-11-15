@@ -32,6 +32,7 @@ import errno
 import getpass
 import hashlib
 import hmac
+import importlib
 import ipaddress
 import json
 import math
@@ -62,8 +63,9 @@ try:  # Windows
 except ImportError:
     msvcrt = None
 
-try:   # private files on Windows (ACL); this module also runs as a stand-alone script, where the helper is simply absent
-    from . import winacl as _winacl
+try:   # private files on Windows (ACL). A dynamic import on purpose: this module stays stand-alone (no static import of the
+    # package, see `CompatibilityTests`); copied alone, or run as a script, `__package__` is empty and the helper is absent
+    _winacl = importlib.import_module('.winacl', __package__) if __package__ else None
 except ImportError:
     _winacl = None
 
