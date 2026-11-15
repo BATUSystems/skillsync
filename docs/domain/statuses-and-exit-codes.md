@@ -39,6 +39,8 @@ Ostrzeżenie „No checks selected; no validation was performed” pojawia się 
 braku dostępu do `--org-source` (`git ls-remote` bez pytań, limit 30 s), nieznanej wersji core bez zdalnego tagu albo błędzie git.
 `NOT_RUN` `setup` nie zwraca. `--dry-run` nie zapisuje, więc jego wynik nie jest dowodem skonfigurowania maszyny.
 
+`plans[].needsHuman` (`skillsync status`): `approval` (`draft`), `closure` (`in_progress`, wszystkie kroki `[x]`: trzeba zamknąć przebieg), `pull_request` (plan z `Ticket:` bez `PR:`), `acceptance` (plan `done` z krokiem „Odbiór” bez końcowego słowa zgody trybu dostarczania: `READY` w `pr`, `CP` w `direct`, w `approvals.jsonl` przebiegu dla bieżącego HEAD). Odbiorem jest to słowo, nie plan: zaznaczenie kroku ani linia w planie niczego nie gaszą, nowy HEAD zapala sygnał od nowa, `closure` i `acceptance` są kolejne, nigdy naraz. Pole `summary` to sekcja „Streszczenie dla człowieka” (do 40 linii i 4000 znaków) albo `null`.
+
 Dlaczego: PASS/FAIL ma znaczyć wykonaną i dowiedzioną operację; plan lub brak konfiguracji nie może wyglądać jak zielony wynik.
 
 Wyjątki i przykłady: `validate --run` daje `PASS` tylko dla kontroli z policzonymi testami: zero testów, nieznana liczba (bez `success_pattern`) albo pominięte testy bez `allow_skips` → `BLOCKED`.
