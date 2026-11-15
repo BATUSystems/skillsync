@@ -521,9 +521,3 @@ class ComposeCase(LayersCase, LinkModesMixin):
         if not base.is_dir():
             return []
         return sorted(item.name for item in base.iterdir() if item.is_dir() and not item.name.endswith('.orphans'))
-
-
-def readlink(path):
-    """`os.readlink` without the extended-length prefix (`\\\\?\\`) that Windows adds to the target."""
-    target = os.readlink(path)
-    return target[4:] if os.name == 'nt' and target.startswith('\\\\?\\') else target
