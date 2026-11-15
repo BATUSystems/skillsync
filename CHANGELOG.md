@@ -14,6 +14,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ### Fixed
 
+- `leakguard`: a hook command line containing a path that starts with `/` is checked as an absolute path on Python 3.13+ on Windows too (`os.path.isabs('/x')` is False there since 3.13, so `hook_command_problems` skipped such a path and `hook-command-missing` did not report a missing file); POSIX unchanged.
 - Prototype server on Windows: a refused open, rename or replace of a file that another thread has open or is replacing (`PermissionError`, WinError 5 or 32) is retried for up to half a second (`retry_transient`; other systems and other errors unchanged).
   Before, concurrent requests could fail sporadically: a one-time login link could be lost by every caller at once (nobody got the session, the token stayed valid), reading `questions.json` or `comments.json` during a write ended as a 500 `internal_error`,
   and a write could be refused while a reader had the file open. The single use of a login token is unchanged (the atomic rename decides, a missing source file means someone else won). Serving static prototype files and copying screens are not retried (no failure was observed there).
