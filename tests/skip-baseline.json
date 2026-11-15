@@ -537,6 +537,14 @@
     "category": "windows-no-mechanism"
    },
    {
+    "id": "test_skillsync_dashboard_ports.Process.test_a_slow_resolver_does_not_delay_the_stop_with_one_port_on_every_interface",
+    "category": "windows-no-mechanism"
+   },
+   {
+    "id": "test_skillsync_dashboard_ports.Process.test_a_slow_resolver_does_not_delay_the_stop_with_two_ports",
+    "category": "windows-no-mechanism"
+   },
+   {
     "id": "test_skillsync_dashboard_server.ServeCommandTests.test_serve_answers_and_stops_on_sigterm",
     "category": "windows-no-mechanism"
    },

@@ -23,6 +23,10 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 - State files: additive `role` (`read` or `approve`) and `peer` fields (`schema: 1`); a file without `role` is a single-port file.
 - `/api/status`: `approvals.role` in two-port mode (`here`, `viewer` and `tokenRequired` then follow the socket, not the `Host`). `approvals.jsonl`: optional `via` object (`port`, `host`, `peer`) on consents from the consent socket; entries without `via` are read as before.
 
+### Fixed
+
+- `dashboard serve`: the start and the stop of the server no longer wait for the resolution of the name of this machine (a name that does not resolve can block for tens of seconds, which delayed `SIGTERM`; this also concerned `--host 0.0.0.0` since 1.5.0). The lookup runs in the background with a limit of 2 seconds, one at a time and with a cached answer; when it is too slow, a `Host` that is an address ending in `.255` and is not found by the route probe is refused (fail closed).
+
 ### Security
 
 - Two-port mode: a request on the read socket cannot write anything (no route, no token); on the consent socket the `Origin` must match the `Host` exactly, a request with intermediary headers is refused, and `via.peer` is the address of the connection, so `X-Forwarded-For` cannot change it.
