@@ -38,12 +38,19 @@ projektu lub przebiegu). Raport komend zapisujących i `metrics --json` to JSON 
   katalogu przebiegu, dowiązanie na drodze `.skillsync/runs/<run-id>` lub dowiązany `approvals.jsonl`, plik, który
   przekroczyłby 256 KiB (czytelnicy pomijają większy plik w całości), albo blokada trzymana dłużej niż 10 s też kończą się
   `BLOCKED`.
-- Blokada: plik `approvals.jsonl.lock` w katalogu przebiegu z unikalnym tokenem, tworzony wyłącznie (`O_EXCL`; działa
-  na POSIX i Windows) i usuwany po zapisie tylko wtedy, gdy to nadal ta sama blokada (i-węzeł i token). Blokada starsza
-  niż 60 s jest uznana za porzuconą i przejmowana atomowym `os.rename` pod unikalną nazwę: z dwóch czekających przejmuje
-  ją jeden, a świeża blokada innego zapisu, złapana między sprawdzeniem wieku a przemianowaniem, wraca na miejsce
-  (dowiązanie twarde, bez nadpisania). Kontrola duplikatu, dopisanie linii i
-  `fsync` odbywają się pod blokadą; urwana ostatnia linia pliku nie łączy się z nowym wpisem.
+- Blokada: blokada systemowa na pliku `approvals.jsonl.lock` w katalogu przebiegu (`fcntl.flock` na POSIX,
+  `msvcrt.locking` na Windows), ta sama implementacja (`prototype_server.FileLock`) co blokady pliku pytań, komentarzy
+  i użytkowników serwera prototypów. Nie ma pojęcia „porzuconej” blokady ani jej przejmowania: o zajętości decyduje
+  jądro, a zakończenie procesu (także awaria) zwalnia blokadę. Plik `.lock` jest tymczasowy: zapis usuwa go jeszcze
+  pod blokadą, a kolejny pisarz sprawdza po `flock`, że ścieżka nadal wskazuje plik, który zablokował (inaczej
+  otwiera nowy), więc usunięcie nie narusza wzajemnego wykluczania. Treść i wiek istniejącego pliku `.lock` (resztka po
+  starszym zapisie albo po awarii) nie mają znaczenia. Czekanie najwyżej 10 s (`BLOCKED`, powód „locked by another
+  writer”). System plików bez blokad systemowych (część udziałów sieciowych i sterowników FUSE: ENOTSUP, ENOLCK)
+  daje od razu `BLOCKED` z powodem „file locks are not supported”, bez czekania; `.skillsync/` trzymaj wtedy na dysku
+  lokalnym. Kontrola duplikatu, dopisanie linii i `fsync` odbywają się pod blokadą; urwana ostatnia linia pliku nie
+  łączy się z nowym wpisem. Czytelnicy zgód (`read_approvals`, strona statusu) nie biorą blokady, a zdublowany wpis tego samego
+  słowa i sha jest dla nich nieszkodliwy (ostatni wpis na parę przebieg-słowo wygrywa; ślad na stronie pokazuje
+  wpisy tak, jak zapisano).
 - Raport (JSON na stdout, także bez `--json`): `schema`, `status` (`PASS`/`BLOCKED`), `reason`, `entry` (zapisany wpis albo
   `null` przy odmowie), przy `PASS` także `path` (ścieżka pliku względem projektu). Ta sama funkcja rdzenia
   (`status.record_approval`) służy serwerowi dashboardu; polecenie nie uruchamia podprocesów.

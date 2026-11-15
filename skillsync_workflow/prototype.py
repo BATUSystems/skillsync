@@ -2392,6 +2392,8 @@ def user_command(root, args):
             warnings += extra
     except server.UserError as error:
         raise _user_error(error) from None
+    except server.LockUnavailable:
+        raise PrototypeError('lock_unsupported: the file system does not support file locks (keep the users file on a local disk)') from None
     except server.LockTimeout:
         raise PrototypeError('lock_timeout: the users file is locked') from None
     if warnings:
@@ -2456,14 +2458,17 @@ def serve_prototypes(root, manifest, args, err=None):
     if not args.no_source_writes and not source_writes:
         notes.append(f'{_relative(settings["root"], repo)} nie leży w kopii roboczej gita: przywracanie z UI wyłączone '
                      '(source writes off)')
-    for warning in notes:
-        err.write(f'ostrzeżenie: {warning}\n')
-    err.write(f'Serwer prototypów: {instance.url} (Ctrl+C kończy)\n')
-    for line in public_address_lines(settings):
-        err.write(line + '\n')
-    err.flush()
-    previous = _stop_on_sigterm()
+    previous = None
     try:
+        # The handler goes in first and the whole start is under the `try`: a SIGINT/SIGTERM between the announcement
+        # and `serve_forever` (a Ctrl+C right after the address line) stops the server cleanly instead of a traceback.
+        previous = _stop_on_sigterm()
+        for warning in notes:
+            err.write(f'ostrzeżenie: {warning}\n')
+        err.write(f'Serwer prototypów: {instance.url} (Ctrl+C kończy)\n')
+        for line in public_address_lines(settings):
+            err.write(line + '\n')
+        err.flush()
         instance.serve_forever()
     except KeyboardInterrupt:
         pass

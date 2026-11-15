@@ -231,12 +231,19 @@ class RealBaselineTests(unittest.TestCase):
             for mode in ('symlink', 'copy'):
                 self.assertIn(f'{system}/{mode}', self.data['baselines'])
 
-    def test_unmeasured_runners_are_null_and_the_local_linux_is_a_list(self):
+    def test_unmeasured_runners_are_null_and_the_measured_ones_are_lists(self):
+        measured = ('linux/', 'macos-latest/')  # macOS: measured from the CI runs of main v1.3.0 (MAC-141)
         for key, entries in self.data['baselines'].items():
-            if key.startswith('linux/'):
+            if key.startswith(measured):
                 self.assertIsInstance(entries, list, key)
             else:
                 self.assertIsNone(entries, key)
+
+    def test_the_macos_baseline_is_the_same_in_both_link_modes_and_has_no_unclassified_entry(self):
+        symlink, copy = (self.data['baselines'][f'macos-latest/{mode}'] for mode in ('symlink', 'copy'))
+        self.assertEqual(symlink, copy)
+        self.assertEqual([e for e in symlink if e['category'] == 'unclassified'], [])
+        self.assertGreaterEqual(len(symlink), 30)
 
     def test_every_entry_has_a_known_category(self):
         for key, entries in self.data['baselines'].items():
