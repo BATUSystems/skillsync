@@ -16,6 +16,10 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 - `dashboard show` (and `/api/status`): `substeps[].noData` (`true` ⇔ `seconds` is null, also for a planned sub-step), the same meaning as `noData` in `dashboard metrics`. Additive (schema 1): `missingData` is unchanged. Compatibility: a consumer that rejects unknown keys of `substeps[]` must accept `noData`.
 
+### Fixed
+
+- `dashboard`: `run.checkpoints[].time` is always `HH:MM` as the contract says (a checkpoint written with a one-digit hour, `- 9:05 …`, was reported as `9:05`); the same for `startedAt`/`finishedAt` of the sub-steps. Compatibility: a consumer that compared these values as strings against a one-digit hour must compare `09:05`.
+
 ### Changed
 
 - Status page (`app.css`): the state of the live indicator has its own dot shape besides the colour (circle: live, square: polling, triangle: down, ring: connecting), which matters in the compact mode (≤ 420 px) where the text is hidden; interactive controls of the compact mode (`.btn`, tabs, consent and document buttons, the live indicator) are at least 2.75rem (44 px) high. A plugin that keeps its own copy of the stylesheet has to resynchronise it.

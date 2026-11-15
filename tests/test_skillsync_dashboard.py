@@ -259,5 +259,28 @@ class NewFields(unittest.TestCase):
             self.assertEqual([row['word'] for row in status.read_approvals(root)], ['GO plan'])
 
 
+class CheckpointEdges(DashboardFixture):
+    """D32: a one-digit clock and a missing `RUN=` line (contract: `time` is `HH:MM`, `startIso` may be null)."""
+
+    def checkpoints(self, text):
+        root = self.project('plan-in-progress')
+        (root / '.skillsync/runs/2026-01-10-demo-feature/checkpoints.md').write_text(text, encoding='utf-8')
+        return self.cli('dashboard', 'show', root, '--json')
+
+    def test_a_one_digit_hour_is_reported_as_hh_mm(self):
+        self.assertEqual(dashboard.parse_checkpoints('- 9:05 start\n- 10:00 x\n')[1],
+                         [{'time': '09:05', 'text': 'start'}, {'time': '10:00', 'text': 'x'}])
+        report = self.checkpoints('RUN=2026-01-10T09:00:00Z\n- 9:05 start planu; w toku: F1.1\n- 9:20 zrobione: F1.1\n')
+        times = [item['time'] for item in report['run']['checkpoints']]
+        self.assertEqual(times, ['09:20', '09:05'], 'newest first, all HH:MM')
+        sub = {row['id']: row for row in report['substeps']}
+        self.assertEqual((sub['F1.1']['startedAt'], sub['F1.1']['finishedAt'], sub['F1.1']['seconds']), ('09:05', '09:20', 900))
+
+    def test_without_a_run_line_the_start_is_null_and_nothing_is_guessed(self):
+        report = self.checkpoints('- 09:05 start planu; w toku: F1.1\n- 09:20 zrobione: F1.1\n')
+        self.assertEqual((report['run']['start'], report['run']['startIso']), (None, None))
+        self.assertEqual(len(report['run']['checkpoints']), 2)
+
+
 if __name__ == '__main__':
     unittest.main()

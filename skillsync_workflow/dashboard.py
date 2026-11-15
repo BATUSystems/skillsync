@@ -192,7 +192,8 @@ def parse_checkpoints(text):
             continue
         match = CHECKPOINT_RE.match(line)
         if match:
-            items.append({'time': match.group('time'), 'text': match.group('text').strip()})
+            hours, minutes = match.group('time').split(':')
+            items.append({'time': f'{int(hours):02d}:{minutes}', 'text': match.group('text').strip()})   # contract: HH:MM
         elif items and stripped and line[:1] in (' ', '\t'):
             items[-1]['text'] += ' ' + stripped
     return run_start, items
