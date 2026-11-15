@@ -354,7 +354,7 @@ Podkroki o id `Fn.k` z planu (każdy krok z kropką), w kolejności planu. Czas 
 | `finishedAt` | `"HH:MM"` lub null | pierwszy checkpoint z id w „zrobione” |
 | `seconds` | int lub null | `finishedAt − startedAt` w sekundach (przejście przez północ: +24 h); null, gdy brak któregoś znacznika |
 | `missingData` | bool | `true`, gdy podkrok jest zrobiony (zaznaczony albo zgłoszony), a `seconds` = null |
-| `noData` | bool | `true` ⇔ `seconds` = null (także dla podkroku zaplanowanego), to samo znaczenie co `noData` w `metrics`; pole addytywne (od 1.5.0) |
+| `noData` | bool | `true` ⇔ `seconds` = null (także dla podkroku zaplanowanego), to samo znaczenie co `noData` w `metrics`; pole addytywne |
 
 ### `timing`
 
@@ -435,7 +435,7 @@ formatów warstw). Tylko odczyt; bez `--json` drukuje ten sam JSON. Wejście:
 | `source` | `"checkpoints.md"`, `"records"` albo null | skąd pochodzi `seconds`; null przy `noData` |
 
 Różnica wobec `substeps[].missingData` w `show`: `missingData` dotyczy tylko podkroków zrobionych, `noData` każdego podkroku
-bez czasu (także zaplanowanego). `show` ma od 1.5.0 oba pola (`noData` dodane addytywnie, `missingData` bez zmian).
+bez czasu (także zaplanowanego). `show` ma oba pola.
 
 Kody wyjścia: `0` = PASS; `2` = BLOCKED: brak projektu, id przebiegu spoza wzorca (`[A-Za-z0-9][A-Za-z0-9_.-]{0,79}`, np.
 `../x`), brak katalogu `.skillsync/runs/<run-id>`, dowiązanie (`.skillsync`, `.skillsync/runs`, katalog przebiegu,

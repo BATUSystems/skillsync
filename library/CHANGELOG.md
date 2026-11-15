@@ -4,6 +4,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+### Changed
+- `skills/dashboard/assets/app.css`: stan wskaźnika „na żywo” ma własny kształt punktu obok koloru (koło, kwadrat, trójkąt, pierścień), a przyciski i karty w trybie zwartym (≤ 420 px) mają co najmniej 2,75 rem wysokości; wtyczka z własną kopią arkusza musi ją zsynchronizować.
+
 ## [1.4.0] - 2026-11-14
 
 ### Added

@@ -18,12 +18,12 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ### Fixed
 
-- `dashboard`: `run.checkpoints[].time` is always `HH:MM` as the contract says (a checkpoint written with a one-digit hour, `- 9:05 …`, was reported as `9:05`); the same for `startedAt`/`finishedAt` of the sub-steps. Compatibility: a consumer that compared these values as strings against a one-digit hour must compare `09:05`.
+- `dashboard`: `run.checkpoints[].time` is always `HH:MM` as the contract says (a checkpoint written with a one-digit hour, `- 9:05 …`, was reported as `9:05`); the same for `startedAt`/`finishedAt` of the sub-steps, `waiting[].since`, `run.inProgressFrom` and `eta.since`. Compatibility: a consumer that compared these values as strings against a one-digit hour must compare `09:05`.
 
 ### Changed
 
-- Status page (`app.css`): the state of the live indicator has its own dot shape besides the colour (circle: live, square: polling, triangle: down, ring: connecting), which matters in the compact mode (≤ 420 px) where the text is hidden; interactive controls of the compact mode (`.btn`, tabs, consent and document buttons, the live indicator) are at least 2.75rem (44 px) high. A plugin that keeps its own copy of the stylesheet has to resynchronise it.
-- `dashboard` (`build_status`, `show`): plans are parsed once per (path, `mtime_ns`, size) instead of on every build of the status (the page rebuilds it on each change and poll); the activity of a run (`activity`, `runAlive`) is still read on every call. A plan rewritten with the same size inside the timestamp resolution of the file system is seen at its next change.
+- Status page (`app.css`): the state of the live indicator has its own dot shape besides the colour (circle: live, square: polling, triangle: down, ring: connecting), which matters in the compact mode (≤ 420 px) where the text is hidden; interactive buttons and tabs of the compact mode (`.btn`, tabs, consent and document buttons) are at least 2.75rem (44 px) high. A plugin that keeps its own copy of the stylesheet has to resynchronise it.
+- `dashboard` (`build_status`, `show`): the plans listed for choosing are parsed once per (path, `mtime_ns`, size) instead of on every build of the status (the page rebuilds it on each change and poll; the chosen plan is still read fresh); the activity of a run (`activity`, `runAlive`) is still read on every call. A plan rewritten with the same size inside the timestamp resolution of the file system is seen at its next change.
 
 ## [1.4.0] - 2026-11-14
 

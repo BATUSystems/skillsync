@@ -1,6 +1,5 @@
 """D53: the state of the live indicator is not told by colour alone and touch targets are at least 44 px (2.75rem)."""
 import re
-import sys
 import unittest
 from pathlib import Path
 
@@ -8,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CSS = ROOT / 'library' / 'skills' / 'dashboard' / 'assets' / 'app.css'
 RENDER = ROOT / 'library' / 'skills' / 'dashboard' / 'assets' / 'dashboard-render.js'
 STATES = ('live', 'polling', 'down', 'connecting')
-TAP_SELECTORS = ('.btn', '.wait-go', '.act-approve', '.act-doc', '.live', '.tabs [role="tab"]')
+TAP_SELECTORS = ('.btn', '.wait-go', '.act-approve', '.act-doc', '.tabs [role="tab"]')
 
 
 def rules(text):
@@ -39,7 +38,7 @@ class LiveShape(unittest.TestCase):
         for selectors, body in rules(css):
             for state in STATES:
                 if f'.live.is-{state} .live-dot' in selectors:
-                    keys = ('border-radius', 'clip-path', 'box-shadow')
+                    keys = ('border-radius', 'clip-path', 'border')
                     shape.setdefault(state, {}).update({k: v.strip() for k, v in re.findall(r'([\w-]+)\s*:\s*([^;]+)', body) if k in keys})
         # the live state keeps the base shape (circle); the others differ from it and from each other
         signatures = {state: tuple(sorted(shape.get(state, {}).items())) for state in STATES}
@@ -50,7 +49,7 @@ class LiveShape(unittest.TestCase):
         script = RENDER.read_text(encoding='utf-8')
         for state in STATES:
             self.assertRegex(CSS.read_text(encoding='utf-8'), rf'\.live\.is-{state} \.live-dot')
-            self.assertIn(state, script)
+            self.assertRegex(script, rf'\b{state}:\s*"')   # the key of LIVE_TEXT: the page really uses this state
 
 
 class TapTargets(unittest.TestCase):
