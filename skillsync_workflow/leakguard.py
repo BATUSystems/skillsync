@@ -27,6 +27,7 @@ import yaml
 
 from .common import exit_code, redact
 from .selfcmd import self_argv
+from .pathfmt import posix
 
 SCHEMA = 1
 DATA_DIR = Path(__file__).resolve().parent / 'data'
@@ -1540,7 +1541,7 @@ def hook_state(repo):
             hooks[name] = 'missing'
     missing = [name for name, value in hooks.items() if value in ('missing', 'unreadable')]
     state = 'missing' if missing else ('legacy' if 'legacy' in hooks.values() else 'ok')
-    result = {'state': state, 'hooks': hooks, 'missing': missing, 'directory': str(directory)}
+    result = {'state': state, 'hooks': hooks, 'missing': missing, 'directory': posix(directory)}
     if refusal and missing:
         result['reason'] = refusal
     return result
@@ -1622,7 +1623,7 @@ def install_hook(repo, *, remove=False, identity_files=(), targets_json=None, ta
         directory.mkdir(parents=True, exist_ok=True)
         for name in HOOK_NAMES:
             path = directory / name
-            entry = {'name': name, 'path': str(path)}
+            entry = {'name': name, 'path': posix(path)}
             if path.is_symlink():
                 entry['action'] = 'skipped'
                 entry['reason'] = 'existing hook is a symlink (shared hook); add the call manually'

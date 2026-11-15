@@ -32,6 +32,7 @@ from pathlib import Path, PurePosixPath
 import yaml
 
 from .fsutil import isabs, rmtree_force
+from .pathfmt import posix
 
 # `common` is imported inside functions only, so that `common` can import this module (2.2a).
 
@@ -294,8 +295,8 @@ class Layer:
         return f'{self.id}={self.root}'
 
     def as_json(self):
-        return {'id': self.id, 'kind': self.kind, 'path': str(self.path), 'subdir': self.subdir,
-                'version': self.version, 'writable': bool(self.writable), 'root': str(self.root),
+        return {'id': self.id, 'kind': self.kind, 'path': posix(self.path), 'subdir': self.subdir,
+                'version': self.version, 'writable': bool(self.writable), 'root': posix(self.root),
                 'synthetic': bool(self.synthetic), 'present': self.present}
 
     def __repr__(self):
@@ -843,8 +844,8 @@ class LayerSet:
         """`layers list --json` (K14) plus additive fields."""
         return {'schema': SCHEMA, 'status': 'PASS', 'generator_version': generator_version(),
                 'layers': [layer.as_json() for layer in self.layers],
-                'composed_root': str(composed_root(system)), 'origin': self.origin,
-                'project': str(self.project) if self.project else None,
+                'composed_root': posix(composed_root(system)), 'origin': self.origin,
+                'project': posix(self.project) if self.project else None,
                 'rule': self.rule['index'] if self.rule else None,
                 'notes': list(self.notes)}
 
@@ -2183,7 +2184,7 @@ def edit_config(path, operations, *, apply=True):
     text, expected, rewritten = _edit_text(original, operations, f'Machine config {path}')
     parse_machine_config(expected, path)
     changed = text != (original or '')
-    result = {'config': str(path), 'backup': None, 'rewritten': rewritten, 'changed': changed}
+    result = {'config': posix(path), 'backup': None, 'rewritten': rewritten, 'changed': changed}
     if not apply:
         result['preview'] = text
         return result
@@ -2457,7 +2458,7 @@ def _init_layer(directory, kind, layer_id, register_target):
         raise LayerError(f'git init failed: {_git_tail(initialized)}', 'git-error')
     from . import leakguard
     hooks = leakguard.install_hook(directory, target=layer_id)
-    report = _report('PASS', layer={'id': layer_id, 'kind': kind, 'path': str(directory)}, created=created,
+    report = _report('PASS', layer={'id': layer_id, 'kind': kind, 'path': posix(directory)}, created=created,
                      hooks=hooks.get('hooks', []), warnings=[])
     if hooks['status'] not in ('PASS',):
         report['warnings'].append(f'hooks: {hooks.get("reason") or hooks["status"]}')
@@ -2851,7 +2852,7 @@ def layers_check(project=None, *, layers=None, isolation=False, system=None):
             known = layerset.config.layers.get(note.get('layer') or '')
             if note['code'] == 'layer-absent' and known is not None:
                 per_layer.append({**known.as_json(), 'status': 'NOT_RUN'})
-        return _report(findings_status(findings), project=str(layerset.project) if layerset.project else None,
+        return _report(findings_status(findings), project=posix(layerset.project) if layerset.project else None,
                        rule=layerset.rule['index'] if layerset.rule else None, layers=per_layer,
                        findings=[_public_finding(item) for item in findings])
     except (LayerError, OSError) as exc:
@@ -2908,7 +2909,7 @@ def layers_use(layer_id, match, *, position=None):
         rule = {'match': globs, 'use': _rule_use(config, layer_id, warnings=warnings)}
         for existing in config.rules:
             if existing['match'] == rule['match'] and existing['use'] == rule['use']:
-                return _report('PASS', changed=False, rule=rule, index=existing['index'], config=str(config.path),
+                return _report('PASS', changed=False, rule=rule, index=existing['index'], config=posix(config.path),
                                warnings=warnings + ['An identical layer_rules entry exists; nothing changed'])
         default = _default_rule(config)
         if position is None:
@@ -2935,7 +2936,7 @@ def layers_ensure_core_rule():
             raise LayerError('No core layer is configured; add one with `skillsync layers add core --kind core ...`',
                              'bad-argument')
         if config.rules:
-            return _report('PASS', changed=False, rules=len(config.rules), config=str(config.path))
+            return _report('PASS', changed=False, rules=len(config.rules), config=posix(config.path))
         rule = {'match': ['**'], 'use': [core.id]}
         edited = edit_config(config.path, [_insert_rule_op(rule, 0)])
         return _report('PASS', rule=rule, **edited)   # `edited` carries `changed`
@@ -3238,7 +3239,7 @@ def migrate_config(*, sources=(), kinds=(), matches=(), apply=False):
         changes.append(f'leakguard.targets: + {entry["id"]} (stub, scope {stub["scope"]})')
 
     if not operations:
-        return _report('PASS', dry_run=not apply, changed=False, changes=[], warnings=warnings, config=str(path),
+        return _report('PASS', dry_run=not apply, changed=False, changes=[], warnings=warnings, config=posix(path),
                        message='The machine config is already migrated; nothing to do')
     edited = edit_config(path, operations, apply=apply)
     if apply:
@@ -3357,7 +3358,7 @@ def migrate_manifests(projects=(), *, apply=False):
         if not isinstance(sync, dict) or 'library' not in sync:
             continue
         new_text, _, rewritten = _edit_text(original, [(migrate_manifest_text, (), drop)], str(manifest))
-        item = {'manifest': str(manifest), 'rewritten': rewritten, 'backup': None}
+        item = {'manifest': posix(manifest), 'rewritten': rewritten, 'backup': None}
         if apply:
             try:
                 backup_root = backup_root or migrate_backup_dir()
@@ -3396,7 +3397,7 @@ def migrate_finish(*, apply=False, system=None):
         raise LayerError('The old `library:` key is still in the machine config; run `skillsync layers migrate` first',
                          'legacy-config')
     if config.legacy_library is None:
-        return _report('PASS', dry_run=not apply, changed=False, changes=[], config=str(config.path),
+        return _report('PASS', dry_run=not apply, changed=False, changes=[], config=posix(config.path),
                        message='No legacy_library in the machine config; nothing to do')
     reasons, findings = [], []
     in_use = {_path_key(path) for layer in config.layers.values() for path in (layer.path, layer.root)}

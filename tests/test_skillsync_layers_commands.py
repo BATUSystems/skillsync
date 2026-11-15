@@ -25,6 +25,7 @@ from layers_helpers import (LINK_MODES, LayersCase, commit, generator_version, g
                             machine_cache_dir, machine_data_dir, make_layer, needs_sh, write, yaml_text)
 from skillsync_workflow import layers, leakguard  # noqa: E402
 from skillsync_workflow.selfcmd import self_argv  # noqa: E402
+from skillsync_workflow.pathfmt import posix  # noqa: E402
 from skillsync_workflow.fsutil import rmtree_force  # noqa: E402  (read-only git objects on Windows)
 
 CLIENT_BETA = 'Brenk' + 'or'
@@ -332,7 +333,7 @@ class LayersInitTest(CommandsCase):
                 directory = self.work / f'my-notes-{mode}'
                 code, report = self.cli_json('layers', 'init', str(directory), '--kind', 'personal', '--id', f'notes-{mode}')
                 self.assertEqual((code, report['schema'], report['status']), (0, 1, 'PASS'), report)
-                self.assertEqual(report['layer'], {'id': f'notes-{mode}', 'kind': 'personal', 'path': str(directory)})
+                self.assertEqual(report['layer'], {'id': f'notes-{mode}', 'kind': 'personal', 'path': posix(directory)})
                 for rel in ('layer.yaml', 'README.md', 'CHANGELOG.md', 'instructions/_base.d/10-persona.md', 'leakguard/identity.yaml'):
                     self.assertIn(rel, report['created'])
                     self.assertTrue((directory / rel).is_file(), rel)
@@ -519,7 +520,7 @@ class LayersAddTest(CommandsCase):
         self.assertTrue(self.detached(target))                                           # a tag is a detached checkout
         self.assertFalse((target / 'library' / 'extra.md').exists())
         entry = self.config()['layers'][0]
-        self.assertEqual((entry['subdir'], entry['ref'], entry['path']), ('library', 'v1', str(target)))
+        self.assertEqual((entry['subdir'], entry['ref'], entry['path']), ('library', 'v1', posix(target)))
         layer = layers.load_machine_config().layers['lib']
         self.assertEqual(layer.root, target / 'library')
 

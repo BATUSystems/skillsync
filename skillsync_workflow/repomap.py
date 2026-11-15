@@ -8,6 +8,7 @@ import subprocess
 import yaml
 from .common import add_project_arguments, emit, load_layer_project, read_project, redact, workflow_config
 from .storage import state_path
+from .pathfmt import posix
 
 MAP_LIMIT = 12 * 1024
 MAX_DEPTH = 3
@@ -168,9 +169,9 @@ def _cmd(args):
             current = fingerprint(files, head)
             stored = HEADER.search(path.read_text(encoding='utf-8')) if path.is_file() else None
             if stored and stored.group(1) == current:
-                report = {'status': 'PASS', 'path': str(path), 'fingerprint': current}
+                report = {'status': 'PASS', 'path': posix(path), 'fingerprint': current}
             else:
-                report = {'status': 'FAIL', 'path': str(path), 'fingerprint': current,
+                report = {'status': 'FAIL', 'path': posix(path), 'fingerprint': current,
                           'reason': 'Repository map is stale; run `skillsync map`' if stored else 'Repository map is missing; run `skillsync map`'}
         else:
             _, _, layerset = load_layer_project(args.path, args.layers)
@@ -179,7 +180,7 @@ def _cmd(args):
             temporary = path.with_name('.map.md.tmp')
             temporary.write_text(text, encoding='utf-8', newline='\n')
             os.replace(temporary, path)
-            report = {'status': 'PASS', 'path': str(path), 'fingerprint': key, 'bytes': len(text.encode()), 'truncated': truncated}
+            report = {'status': 'PASS', 'path': posix(path), 'fingerprint': key, 'bytes': len(text.encode()), 'truncated': truncated}
             if not _gitignored(root):
                 report['note'] = 'Add `.skillsync/` to .gitignore: the map is generated'
     except (OSError, ValueError, TypeError, KeyError, yaml.YAMLError, subprocess.SubprocessError) as error:

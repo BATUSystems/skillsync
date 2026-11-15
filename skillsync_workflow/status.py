@@ -15,6 +15,7 @@ import yaml
 from .common import add_project_arguments, read_project, redact
 from .layers import add_layer_argument
 from .storage import read_json
+from .pathfmt import posix
 
 SCHEMA = 1
 PLAN_STATUSES = ('draft', 'approved', 'in_progress', 'done', 'archived')
@@ -401,7 +402,7 @@ def project_status(root, manifest):
     findings = []
     project = manifest.get('project', {})
     name = project.get('name') if isinstance(project, dict) else None
-    return {'schema': SCHEMA, 'status': 'PASS', 'project': name or f'{root.parent.name}/{root.name}', 'root': str(root),
+    return {'schema': SCHEMA, 'status': 'PASS', 'project': name or f'{root.parent.name}/{root.name}', 'root': posix(root),
             'plans': _plans(root, findings), 'specs': _specs(root, findings), 'frds': _frds(root, findings), 'runs': _runs(root, findings), 'claims': _claims(root, findings),
             'approvals': read_approvals(root, findings), 'findings': findings}
 
@@ -497,7 +498,7 @@ def set_doc_status(root, name, action, folder='plans', expect_sha=None):
         os.replace(tmp, path)
     finally:
         Path(tmp).unlink(missing_ok=True)
-    report = {'schema': SCHEMA, 'status': 'PASS', 'reason': f'{kind} status {source} -> {target}', 'root': str(root),
+    report = {'schema': SCHEMA, 'status': 'PASS', 'reason': f'{kind} status {source} -> {target}', 'root': posix(root),
               kind.lower(): path.relative_to(root).as_posix(), 'from': source, 'to': target, 'sha': git_blob_sha(updated)}
     report['warnings'] = _approve_warnings(root, path, updated.decode('utf-8').replace('\r\n', '\n'), folder) if action == 'approve' else []
     return report
@@ -557,7 +558,7 @@ def _cmd_doc(args):
         report, code = set_doc_status(root, args.doc, args.doc_action, folder, args.expect_sha), 0
     except (OSError, ValueError, TypeError, KeyError, yaml.YAMLError) as error:
         report, code = {'schema': SCHEMA, 'status': 'BLOCKED', 'reason': ' '.join(str(error).split())[:500],
-                        'root': str(Path(args.path).expanduser().resolve())}, 2
+                        'root': posix(Path(args.path).expanduser().resolve())}, 2
     print(json.dumps(redact(report), ensure_ascii=False, indent=2))
     return code
 

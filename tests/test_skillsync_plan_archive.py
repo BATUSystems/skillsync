@@ -6,6 +6,7 @@ import sys
 import unittest
 
 from skillsync_workflow.status import git_blob_sha
+from skillsync_workflow.pathfmt import posix  # noqa: E402
 from tests.test_skillsync_workflow import CLI, WorkflowFixture
 from tests.layers_helpers import needs_os_symlinks, needs_posix  # noqa: E402
 
@@ -153,7 +154,7 @@ class PlanArchive(WorkflowFixture):
         path = self.plan('d.md', b'# D\n\nbrak\n')
         report = self.cli('plan', 'archive', self.root, 'docs/plans/d.md', code=2)
         self.assertIn('root', report, report)  # the message shows the actual BLOCKED report on a failing platform
-        self.assertEqual((report['status'], report['root']), ('BLOCKED', str(self.root.resolve())))
+        self.assertEqual((report['status'], report['root']), ('BLOCKED', posix(self.root.resolve())))
         self.assertIn('Status', report['reason'])
         self.assertEqual(path.read_bytes(), b'# D\n\nbrak\n')
 
