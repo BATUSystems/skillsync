@@ -7687,7 +7687,7 @@ EXPERTS_SCRIPT = r"""
     var rest = location.pathname.slice(BASE.length).replace(/^\//, '');
     return /^[a-z0-9]+(-[a-z0-9]+)*$/.test(rest) ? rest : null;
   })();
-  var state = { csrf: null, questions: [], runs: [], legacy: null, current: null, pending: {}, busy: {} };
+  var state = { csrf: null, viewer: null, questions: [], runs: [], legacy: null, current: null, pending: {}, busy: {} };
   var listBox = document.getElementById('list');
   var detail = document.getElementById('detail');
   var alertBox = document.getElementById('alert');
@@ -7835,6 +7835,18 @@ EXPERTS_SCRIPT = r"""
     listBox.appendChild(ul);
   }
 
+  // Who the question is addressed to (STATUS-160-A): developer/acceptor see the logins, an expert sees "Do Ciebie" (an expert is shown only
+  // the questions addressed to them or to all), a view without logins says only that experts were named. Text only (textContent).
+  function addresseesNode(question, viewer) {
+    var roles = (viewer && viewer.roles) || [];
+    var privileged = roles.indexOf('developer') !== -1 || roles.indexOf('acceptor') !== -1;
+    var text = '';
+    if (question.forAll) text = 'Do wszystkich ekspertów';
+    else if (privileged && Array.isArray(question.addressees) && question.addressees.length) text = 'Do: ' + question.addressees.join(', ');
+    else if (roles.indexOf('expert') !== -1 && !privileged) text = 'Do Ciebie';
+    else if (Array.isArray(question.addressees)) text = 'Do wskazanych ekspertów';
+    return text ? el('p', { 'class': 'muted addressees', text: text }) : null;
+  }
   function refNode(ref) {
     var box = el('div', { 'class': 'entry' });
     var title = el('strong', { text: ref.title || '' });
@@ -7889,6 +7901,7 @@ EXPERTS_SCRIPT = r"""
     detail.appendChild(heading);
     badges(question).forEach(function (badge) { detail.appendChild(badge); });
     detail.appendChild(el('p', { 'class': 'qtext', text: question.text }));
+    var addressed = addresseesNode(question, state.viewer); if (addressed) detail.appendChild(addressed);
     if (question.refs && question.refs.length) {
       detail.appendChild(el('h3', { text: 'Źródła' }));
       question.refs.forEach(function (ref) { detail.appendChild(refNode(ref)); });
@@ -8237,6 +8250,7 @@ EXPERTS_SCRIPT = r"""
     }).then(function (data) {
       if (!data || !data.user) { toLogin(); return; }
       state.csrf = data.csrf;
+      state.viewer = data.user;
       whoBox.textContent = 'Zalogowano jako ' + (data.user.name || data.user.login);
       if (data.user.mustChange) { showMustChange(); return; }
       return loadList().then(function (ok) {

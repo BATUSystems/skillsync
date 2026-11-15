@@ -713,7 +713,7 @@ class ScriptBehaviorTests(ExpertsPageBase):
         self.script = split_page(self.page().text)[0][0][1]
 
     def test_race_guard_and_per_question_busy_are_present(self):
-        self.assertIn('var state = { csrf: null, questions: [], runs: [], legacy: null, current: null, pending: {}, busy: {} };', self.script)
+        self.assertIn('var state = { csrf: null, viewer: null, questions: [], runs: [], legacy: null, current: null, pending: {}, busy: {} };', self.script)
         self.assertIn('if (state.busy[id]) { say(\'Trwa zapis poprzedniej odpowiedzi.\'); return; }', self.script)
         self.assertIn('var viewing = state.current === id;', self.script)
         self.assertRegex(self.script, r"if \(viewing\) \{ renderDetail\(updated, false\); say\(done\); \}")
