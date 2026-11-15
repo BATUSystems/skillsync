@@ -3,6 +3,7 @@
     {
       "detail": null,
       "key": "spec",
+      "linkWarning": null,
       "name": "Spec",
       "roman": "I",
       "stages": [
@@ -10,18 +11,21 @@
           "done": false,
           "key": "stage_spec_draft",
           "label": "Szkic",
+          "state": "planned",
           "tip": "brak speca"
         },
         {
           "done": false,
           "key": "stage_spec_review",
           "label": "Review",
+          "state": "planned",
           "tip": "rundy review speca w katalogu przebiegu"
         },
         {
           "done": false,
           "key": "stage_spec_approved",
           "label": "Zatwierdzony",
+          "state": "planned",
           "tip": "Status speca: —"
         }
       ],
@@ -39,24 +43,28 @@
           "done": true,
           "key": "stage_plan",
           "label": "Plan",
+          "state": "done",
           "tip": "docs/plans/2026-01-11-demo-report.md"
         },
         {
           "done": false,
           "key": "stage_plan_review",
           "label": "Review",
+          "state": "planned",
           "tip": "rundy review planu w katalogu przebiegu"
         },
         {
           "done": false,
           "key": "stage_pre_implement",
           "label": "Pre-implement",
+          "state": "planned",
           "tip": "bramka gotowości przed ryzykowną zmianą"
         },
         {
           "done": true,
           "key": "stage_go_implement",
           "label": "GO implement",
+          "state": "done",
           "tip": "Status planu: in_progress"
         }
       ],
@@ -74,12 +82,14 @@
           "done": false,
           "key": "code_review",
           "label": "Review kodu",
+          "state": "planned",
           "tip": "raporty code-review*/final-review* w katalogu przebiegu"
         },
         {
           "done": false,
           "key": "closure",
           "label": "Zamknięcie",
+          "state": "planned",
           "tip": "Status planu: in_progress"
         }
       ],
@@ -233,6 +243,7 @@
     "active": [
       "F1.2"
     ],
+    "activePercent": 25,
     "activeSource": "checkpoint",
     "current": {
       "id": "F1.2",

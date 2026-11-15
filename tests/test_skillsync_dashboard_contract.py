@@ -37,13 +37,13 @@ NESTED = {
     'git': ({'branch': STR_OR_NONE, 'head': STR_OR_NONE, 'headFull': STR_OR_NONE, 'remote': (dict, type(None)),
              'branchUrl': STR_OR_NONE, 'branchPushed': (bool, type(None))}, {}),
     'run': ({'id': STR_OR_NONE, 'exists': bool, 'start': STR_OR_NONE, 'startIso': STR_OR_NONE, 'checkpoints': list,
-             'files': list}, {'lastReportAt': str, 'inProgressFrom': str}),
+             'files': list}, {'lastReportAt': str, 'inProgressFrom': str, 'parseWarnings': list}),
     'spec': ({'path': STR_OR_NONE, 'exists': bool, 'preparing': bool, 'sha': STR_OR_NONE, 'prototype': STR_OR_NONE},
              {'title': STR_OR_NONE, 'status': STR_OR_NONE, 'statusText': STR_OR_NONE, 'mtime': STR_OR_NONE,
               'fileSha': STR_OR_NONE, 'prototypeAcceptance': (dict, type(None))}),
     'progress': ({'total': int, 'done': int, 'percent': int, 'pending': int, 'pendingPercent': int, 'phases': list,
                   'active': list, 'activeSource': STR_OR_NONE, 'current': (dict, type(None)), 'parallel': int,
-                  'reported': list}, {}),
+                  'reported': list}, {'activePercent': int}),
     'approvals': ({'enabled': bool, 'actions': list, 'last': (dict, type(None))}, {}),
     'delivery': ({'mode': str, 'base': STR_OR_NONE, 'source': str, 'branch': STR_OR_NONE, 'target': STR_OR_NONE,
                   'remote': STR_OR_NONE, 'pushed': (bool, type(None)), 'ahead': (int, type(None)), 'words': list}, {}),
@@ -58,13 +58,13 @@ PLAN = ({'path': str, 'title': str, 'status': STR_OR_NONE, 'statusText': STR_OR_
          'fileSha': STR_OR_NONE, 'pr': (dict, type(None))}, {})
 PLAN_ROW = ({'path': str, 'title': str, 'status': STR_OR_NONE, 'spec': STR_OR_NONE, 'run': STR_OR_NONE}, {})
 ACT = ({'key': str, 'roman': str, 'name': str, 'state': str, 'status': STR_OR_NONE, 'detail': STR_OR_NONE,
-        'stages': list}, {'warning': STR_OR_NONE, 'percent': int})
-STAGE = ({'label': str, 'done': bool, 'tip': str, 'key': STR_OR_NONE}, {})
+        'stages': list}, {'warning': STR_OR_NONE, 'percent': int, 'linkWarning': STR_OR_NONE})
+STAGE = ({'label': str, 'done': bool, 'tip': str, 'key': STR_OR_NONE}, {'state': str, 'since': str})
 PHASE = ({'name': str, 'label': str, 'short': str, 'total': int, 'done': int, 'percent': int, 'pending': int,
           'pendingPercent': int, 'state': str, 'steps': list}, {})
 STEP = ({'id': str, 'title': str, 'done': bool, 'note': str, 'sha': STR_OR_NONE, 'index': int, 'state': str}, {})
 WAITING = ({'what': str, 'source': str, 'since': STR_OR_NONE, 'action': str, 'link': (dict, type(None))},
-           {'word': str, 'approve': STR_OR_NONE})
+           {'word': str, 'approve': STR_OR_NONE, 'who': dict})
 ACTION = ({'kind': str, 'word': str, 'state': str, 'reason': STR_OR_NONE, 'blocked': STR_OR_NONE, 'path': STR_OR_NONE,
            'sha': str, 'given': (dict, type(None)), 'run': STR_OR_NONE}, {'target': STR_OR_NONE})
 DOC_GROUP = ({'key': str, 'label': str, 'items': list}, {})
