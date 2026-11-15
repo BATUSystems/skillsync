@@ -15,7 +15,7 @@ from pathlib import Path
 
 import yaml
 
-from .fsutil import ensure_utf8_streams, rmtree_force
+from .fsutil import ensure_utf8_streams, isabs, rmtree_force
 from .common import CONDITIONAL_SKILL_ALIASES, append_missing_lines, conditional_skill_alias, detect_eol, discover_excludes, is_excluded
 
 CONFIG_PATH = Path(os.environ.get("SKILLSYNC_CONFIG") or (Path.home() / ".config" / "skillsync" / "config.yaml"))
@@ -1526,7 +1526,7 @@ def is_library_symlink(path: Path, library_root) -> bool:
     if not path.exists():
         try:
             target = os.readlink(path)
-            if not os.path.isabs(target):
+            if not isabs(target):
                 target = os.path.join(os.path.realpath(os.path.dirname(path)), target)
             target = os.path.normpath(target)
             candidates.append(_link_text(target))
