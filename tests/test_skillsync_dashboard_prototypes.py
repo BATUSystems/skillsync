@@ -250,6 +250,35 @@ class PrototypesList(PrototypeCase):
         self.assertEqual(view['prototypes'][0]['commentsAfterAcceptance']['count'], 1)
 
 
+class ScreensDoneOnRealFiles(PrototypeCase):
+    """T2 (review): `screensDone` comes from the real `index.html` (the acceptance count of `prototype list`), not from a mock."""
+
+    def acceptance(self, slug='alfa'):
+        return dashboard.prototype_acceptance(self.root, slug)
+
+    def test_screens_of_a_real_index_html_are_counted(self):
+        self.journal(self.make(screens=('s1', 's2', 's3')))
+        self.assertEqual(self.acceptance()['screens'], 3)
+        self.assertEqual(self.overview()['screens'], 3)
+
+    def test_prototype_without_screens_counts_zero_and_a_missing_one_is_none(self):
+        directory = self.make(screens=())
+        self.assertIsNone(self.acceptance(), 'no comment log yet: no acceptance, so no screensDone (the page omits the key)')
+        self.journal(directory)
+        self.assertEqual(self.acceptance()['screens'], 0)
+        self.assertIsNone(self.acceptance('nie-ma'))
+        self.assertIsNone(dashboard.prototype_overview(self.root, 'nie-ma'))
+
+    def test_marker_and_real_file_give_n_of_m(self):
+        directory = self.make(screens=('s1', 's2'))
+        self.journal(directory)
+        now = 1_800_000_000_000
+        ps.write_writing(str(directory), now, 900, None, 12)
+        marker = dashboard.prototype_writing(self.root, 'alfa', now + 1000)
+        self.assertEqual(marker['screensPlanned'], 12)
+        self.assertEqual(self.acceptance()['screens'], 2)
+
+
 class Result(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='skillsync-result-')
