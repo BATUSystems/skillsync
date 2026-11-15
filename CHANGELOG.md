@@ -12,6 +12,8 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-11-15
+
 ### Added
 
 - Status page, progress report parser: `;` inside brackets `()`, `[]`, `{}` no longer ends a segment of a checkpoint line (a line whose brackets do not balance is split at every `;` as before); `‖` and `||` join step ids; `run.parseWarnings[]` (up to 10 newest, fragment up to 80 characters, redacted before the cut; reasons `no-step-id`, `later-id`) names the elements of the "w toku" / "zrobione" lists that the id reading skips. The page shows one line about them. Additive (schema 1).
