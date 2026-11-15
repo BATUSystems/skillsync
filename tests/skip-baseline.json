@@ -6,8 +6,7 @@
    "symlinks unavailable (Windows without Developer Mode)",
    "brak dowiązań symbolicznych",
    "symlinks unavailable",
-   "symlinki wymagają uprawnień",
-   "symlinks"
+   "symlinki wymagają uprawnień"
   ],
   "no-os-symlinks": [
    "OS cannot create symlinks",
@@ -74,6 +73,9 @@
    "always resolves on Windows",
    "dowiązania i O_NOFOLLOW niedostępne",
    "cannot be shown on a real Windows file tree"
+  ],
+  "symlinks-reason": [
+   "symlinks"
   ]
  },
  "notes": {
@@ -507,7 +509,7 @@
    },
    {
     "id": "test_skillsync_prototype_cli.ListAndIndexTests.test_symlinked_comments_json_is_not_read",
-    "category": "needs-symlinks"
+    "category": "symlinks-reason"
    },
    {
     "id": "test_skillsync_prototype_cli.ServeTests.test_serve_starts_serves_a_v1_prototype_with_a_migrate_warning_and_stops_on_sigint",
