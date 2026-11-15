@@ -10,6 +10,8 @@ const snapshot = `(() => ({ vis: ${visibleScreens}, hash: location.hash, search:
   count: (document.querySelector('.proto-presentation-count') || {}).textContent || '', total: document.querySelectorAll('section.screen').length }))()`;
 const toggleButton = `[...document.querySelectorAll('.proto-toolbar button')].find((b) => /^Prezentacja/.test(b.textContent.trim()))`;
 const barButton = (label) => `document.querySelector('.proto-presentation-bar [aria-label=${JSON.stringify(label)}]')`;
+// Stan trybu pamięta `sessionStorage` karty (odświeżenie ma wracać na ekran): scenariusze na tej samej karcie zaczynają od czystej pamięci.
+const fresh = async (page, url) => { await page.go(url); await page.evaluate(`sessionStorage.clear(); true`); await page.go(url); };
 const enter = async (page) => { await page.evaluate(`${toggleButton}.click(); true`); await sleep(400); };
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
@@ -25,7 +27,7 @@ suite.setup(async () => {
 suite.teardown(async () => { if (c) await c.closeAll(); if (srv) await srv.stop(); });
 
 suite.add('P-01', 'Prezentacja: jeden widoczny ekran po włączeniu przyciskiem', async () => {
-  await p.go(fileUrl());
+  await fresh(p, fileUrl());
   const before = await p.evaluate(snapshot);
   await enter(p);
   const after = await p.evaluate(snapshot);
@@ -33,7 +35,7 @@ suite.add('P-01', 'Prezentacja: jeden widoczny ekran po włączeniu przyciskiem'
 });
 
 suite.add('P-02', 'Prezentacja: strzałki, przyciski ‹ ›, Home/End, licznik i hash', async () => {
-  await p.go(fileUrl()); await enter(p);
+  await fresh(p, fileUrl()); await enter(p);
   const seen = [];
   const mark = async (step) => { const s = await p.evaluate(snapshot); seen.push({ step, vis: s.vis, hash: s.hash, count: s.count }); return s; };
   await p.key('ArrowRight'); await sleep(250); const right = await mark('→');
@@ -52,7 +54,7 @@ suite.add('P-02', 'Prezentacja: strzałki, przyciski ‹ ›, Home/End, licznik 
 });
 
 suite.add('P-03', 'Prezentacja: wyjście przywraca wszystkie ekrany; wejście z adresu i odświeżenie zostają na ekranie z hasha; klawisz P', async () => {
-  await p.go(fileUrl()); await enter(p); await p.key('ArrowRight'); await sleep(250);
+  await fresh(p, fileUrl()); await enter(p); await p.key('ArrowRight'); await sleep(250);
   await p.key('Escape'); await sleep(400);
   const exited = await p.evaluate(snapshot);
   await p.go(fileUrl() + '?mode=presentation#s4'); await sleep(500);
@@ -98,7 +100,7 @@ suite.add('P-04', 'Prezentacja: pinezki i wątki ukrytych ekranów znikają z ek
 });
 
 suite.add('P-05', 'Prezentacja: klawisze pomijają pola tekstowe, modyfikatory i wyłączone skróty; Esc zamyka najpierw listę ekranów', async () => {
-  await p.go(fileUrl());
+  await fresh(p, fileUrl());
   await p.evaluate(`(() => { const i = document.createElement('input'); i.id = 'p05-probe'; i.type = 'text'; document.body.insertBefore(i, document.body.firstChild); i.focus(); return true; })()`);
   await p.key('p'); await sleep(250);
   const typing = await p.evaluate(snapshot);
@@ -110,7 +112,7 @@ suite.add('P-05', 'Prezentacja: klawisze pomijają pola tekstowe, modyfikatory i
   await p.key('p'); await sleep(250);
   const disabled = await p.evaluate(snapshot);
   await p.evaluate(`localStorage.removeItem('skillsync-prototype-shortcuts'); true`);
-  await p.go(fileUrl()); await enter(p); await p.key('ArrowRight'); await sleep(250);
+  await fresh(p, fileUrl()); await enter(p); await p.key('ArrowRight'); await sleep(250);
   await p.evaluate(`document.querySelector('.proto-screens-main').click(); true`); await sleep(300);
   await p.key('Escape'); await sleep(300);
   const listClosedFirst = await p.evaluate(`(() => ({ expanded: document.querySelector('.proto-screens-main').getAttribute('aria-expanded'), cls: document.documentElement.classList.contains('proto-presentation') }))()`);
