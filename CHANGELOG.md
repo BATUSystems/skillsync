@@ -12,6 +12,34 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Added
+
+- `skillsync status`: `plans[].summary`, the text of the plan section `## Streszczenie dla człowieka` (at most 40 lines and 4000 characters, heading markers removed, a cut text ends with `…`; `null` when the section is absent or empty). Additive (schema 1).
+- `skillsync status`: `plans[].needsHuman` has the new value `acceptance` for a closed plan (`done`) that has the human acceptance step (`Odbiór` in `## Progress`) and no closing consent word of the delivery mode (`READY` in `pr`, `CP` in `direct`, a missing `delivery` is `pr`) in the run's `approvals.jsonl` for the current HEAD. The checkbox and any line of the plan never end the wait; a new HEAD starts it again; `closure` and `acceptance` never occur together. A consumer that does not know the value shows it raw or ignores it.
+- `skillsync readiness --plan` and `skillsync doctor` warn (a warning, never a block) when a plan with the status `draft` or `approved` has no `## Streszczenie dla człowieka` section or an empty one.
+- `skillsync review`: the profile `prototyp` (a change only inside the prototype root, `docs/prototypes` by default, or `--profile kod|docs|prototyp`; the report has `prototypeFiles`). The checklist is `workflow.review.prototype` of `workflow/defaults.yaml`; a mixed change gets its items for the prototype files. Paths: `workflow.review.prototype_paths`.
+- `workflow.review.prototype` grows on every level: the layers, `workflow/projects/<slug>.yaml` and the manifest only add items (order: core, layers, project, manifest; equal text keeps the first place; no normalisation); a project cannot remove a core item. Layer rule `('review', 'prototype')` in `layers.DEFAULTS_APPEND_LISTS`; a layer that uses the key sets `core_min` to at least 1.6.0.
+- `skillsync prototype question add --screen <prototype>#s<N>` (repeatable, together with `--ref` at most 5): a link to a screen of a prototype on the server, stored as the ref `/<prototype>/index.html#sN` (strict `fullmatch`, the slug grammar of the server). The page `/_experts` renders it as the link "Zobacz ekran sN" (`rel="noopener noreferrer"`, new tab); any other relative address stays plain text.
+- Read-only preview of the questions on `/_experts` for a signed-in account without the role `developer`, `acceptor` or `expert` (the default `commenter`): the API (`GET /_api/v1/questions`, `/_api/v1/questions/<id>`) answers 200 with `preview: true` and a view built from a white list of fields: no login or e-mail address of any person (addressees are counted, the author of an answer or a comment is the account `name` or a plain label, a withdrawal has no author), no `origin`, no `refersTo`. Writes stay `403 forbidden` before anything else.
+- The prototype gallery (static and live) links "Pytania (N)" to `/_experts/<slug>` and "Pytania" in the header when a run has questions.
+- Prototype engine: the presentation mode shows one screen at a time (`proto-screen-hidden`), with ←/→, ‹ ›, Home/End, the counter "N / M", the key P and `?mode=presentation` as entries, Esc/P/"Wyjdź (Esc)" as exits, the screen in `#sN`, the state in `sessionStorage` of the tab, and one printed screen. E2E scenarios `P-01` to `P-05` (`docs/prototype-contract/scenariusze-e2e.md`, section 16).
+- Tests: phrase guard of the library for the plan summary, the review profile and the question rules (`tests/test_skillsync_plan_checkpoints_skills.py`); `tests/test_skillsync_plan_summary.py`, `tests/test_skillsync_plan_acceptance.py`.
+
+### Changed
+
+- `GET /_api/v1/questions` and `/_api/v1/questions/<id>` for an account without a role of the experts: `200` with the preview instead of `403 forbidden`; the page text of the `403` of a write says what is allowed.
+- `skillsync_workflow/common.py`: `plan_section(text, name)`, the shared reader of a `## <name>` section of a plan.
+- The prototype engine files (`prototype.js`, `prototype.css`) carry the presentation mode: `skillsync prototype migrate` delivers them (the change of the CSS can invalidate the acceptance of screens: the list is `acceptance` of the result).
+
+### Compatibility
+
+- `plans[].summary` is additive; `plans[].needsHuman` may contain `acceptance` (a consumer must accept an unknown value).
+- Layers: a layer that adds items to `workflow.review.prototype` needs `core_min` 1.6.0 (an older core has no profile and `check_layers` blocks the layer); the old lists of a layer keep working.
+- A server older than 1.6.0 shows a screen ref of `question add --screen` as plain text.
+- Behaviour change: the read of the questions by an account without a role of the experts is `200` (preview), not `403`.
+- A prototype gets the presentation mode only after `skillsync prototype migrate`.
+
+
 ## [1.5.0] - 2026-11-15
 
 ### Added

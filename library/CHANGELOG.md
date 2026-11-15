@@ -4,6 +4,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+### Added
+
+- `workflow/defaults.yaml`: `review.prototype`, the core checklist of the review profile `prototyp` (screens and criteria, edge states, plain texts, navigation and anchors, basic accessibility, no sensitive data, the engine contract).
+- `skills/feature/references/plan-details.md`: the required section `## Streszczenie dla człowieka` of a plan, the template of `## Wynik` (the block "Uwagi z review" and the table of the coverage of the criteria), the acceptance step `Odbiór` (the closing consent word is the acceptance).
+- `skills/feature/references/review-loop.md`: the profile `prototyp`, the report `prototype-review-N.md` and the rule that names the review remarks (blocker and major, and every remark that changed a screen, a spec or a plan, with title, weight and what was done).
+- `skills/feature/references/spec.md`, `skills/prototype/SKILL.md`, `skills/skillsync/SKILL.md`: the question rules for the experts (a question about a screen carries `--screen`; plain language, an example of a good and a bad question) and the option `--screen`.
+- `skills/prototype/assets/repo/prototype.js`, `prototype.css`: the presentation mode (one screen at a time).
+
+### Changed
+
+- `skills/skillsync/SKILL.md`: `status` (`summary`, `acceptance`), `review --profile`.
+
+
 ## [1.5.0] - 2026-11-15
 
 ### Added
