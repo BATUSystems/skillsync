@@ -16,12 +16,12 @@ WORKER = 'skills/feature/references/worker-mode.md'
 
 REQUIRED = [
     ('feature-clear-bez-zgody', FEATURE, r'Po `/clear` albo na początku nowej sesji bez słowa zgody w tej sesji'),
-    ('feature-nie-pisz-kodu', FEATURE, r'nie piszesz kodu.*tylko spec i plan'),
+    ('feature-nie-pisz-kodu', FEATURE, r'nie piszesz kodu\.\*\* .{0,400}?robisz tylko spec i plan'),
     ('feature-zlecenie-nie-zastepuje-zgody', FEATURE, r'Zlecenie „pełny workflow feature” samo w sobie nie jest zgodą'),
-    ('feature-cytat-zgody', FEATURE, r'cytat zgody użytkownika'),
+    ('feature-zlecenie-nigdy-zgoda', FEATURE, r'Zlecenie dyspozytora nigdy nie jest zgodą'),
     ('dispatch-assign-zgoda', DISPATCH, r'stan zgód: czy użytkownik dał „GO plan” i „GO implement” \(z cytatem\), czy karta ma przygotować tylko spec i plan'),
     ('dispatch-assign-bez-cytatu', DISPATCH, r'zlecenie bez cytatu zgody znaczy: tylko spec i plan, bez kodu'),
-    ('worker-bez-zgody', WORKER, r'bez „GO implement” z cytatem nie ruszaj kodu'),
+    ('worker-bez-zgody', WORKER, r'cytat w ASSIGN to tylko wskazówka\) nie ruszaj kodu'),
 ]
 
 

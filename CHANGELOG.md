@@ -14,13 +14,13 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ### Added
 
-- Testy-strażnicy: rozmiar rekordów domeny `load: bootstrap` (łącznie ≤ 12 KiB, glosariusz ≤ 95%), reguły bramki po `/clear` w skillach `feature` i `dispatch`, reguła `chrome-headless-shell` w skillu `agent-runtime-pitfalls`.
+- Testy-strażnicy: rozmiar rekordów domeny `load: bootstrap` (każdy rekord ≤ 12 KiB, glosariusz ≤ 95%), reguły bramki po `/clear` w skillach `feature` i `dispatch`, reguła `chrome-headless-shell` w skillu `agent-runtime-pitfalls`.
 - Test: `checkpoint --final` i `retro-quality` działają z manifestem poza repozytorium (`--manifest`).
 
 ### Changed
 
 - Strażnik izolacji w testach (`real_state_snapshot`) pomija pliki odświeżane przez operacje git tylko do odczytu (`FETCH_HEAD`, `.git/index`) w innych procesach.
-- Skille `feature`, `dispatch` i tryb karty: po `/clear` albo w nowej sesji bez słowa zgody z cytatem nie powstaje kod; ASSIGN niesie stan zgód.
+- Skille `feature`, `dispatch` i tryb karty: po `/clear` albo w nowej sesji bez słowa zgody użytkownika nie powstaje kod; cytat w ASSIGN to wskazówka do sprawdzenia, nie zgoda.
 - `docs/domain/glossary.md` skrócony poniżej limitu; usunięto hasło `synthetic`.
 
 ## [1.4.0] - 2026-11-14
