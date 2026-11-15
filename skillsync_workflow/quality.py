@@ -24,7 +24,7 @@ from .ceremony import ceremony_info, validate_ceremony
 from .delivery_mode import delivery_info, validate_delivery_mode
 from .dispatch import validate_dispatch
 from .prototype import validate_prototype
-from .status import MAX_PLAN_BYTES, git_blob_sha, SPEC_FULL, SPEC_LINE, _STATUS, is_spec_path, plan_text_needs_human
+from .status import MAX_PLAN_BYTES, PLAN_SUMMARY, git_blob_sha, SPEC_FULL, SPEC_LINE, _STATUS, is_spec_path, plan_summary, plan_text_needs_human
 
 
 def plan_validation(root, manifest, library, profile='quick', files=None, check_ids=None):
@@ -741,6 +741,37 @@ def _closure_run_state(root, head):
     return f'run `{run_id}` has no `final` record'
 
 
+SUMMARY_MISSING = f'plan nie ma sekcji „## {PLAN_SUMMARY}” albo jest ona pusta (Co zmieniamy, Czego nie robimy, Ryzyka, Decyzje do podjęcia)'
+
+
+def plan_summary_missing(text):
+    """True when a plan being prepared (`draft`, `approved`) has no (or an empty) `## Streszczenie dla człowieka`; older plans
+    (`in_progress`, `done`, `archived`) are not asked for it."""
+    status = _STATUS.search(text[:4000])
+    word = status.group('word').lower() if status else ''
+    return word in ('draft', 'approved') and plan_summary(text) is None
+
+
+def plan_summary_findings(root):
+    """Paths of the plans in `docs/plans` that miss the human summary (see `plan_summary_missing`). Read only."""
+    directory = Path(root) / 'docs' / 'plans'
+    if directory.is_symlink() or not directory.is_dir():
+        return []
+    found = []
+    for path in sorted(directory.glob('*.md')):
+        if path.is_symlink() or not path.is_file() or path.name.lower() == 'readme.md':
+            continue
+        try:
+            if path.stat().st_size > MAX_PLAN_BYTES:
+                continue
+            text = path.read_text(encoding='utf-8')
+        except (OSError, UnicodeDecodeError):
+            continue
+        if plan_summary_missing(text):
+            found.append(f'docs/plans/{path.name}')
+    return found
+
+
 def plan_closure_findings(root, agentflow=False):
     """Ostrzeżenia o niezamkniętych planach: `done` bez zamknięcia przebiegu albo `in_progress` ze wszystkimi krokami
     `Progress` odhaczonymi: [(ścieżka, powód)]. Tylko odczyt."""
@@ -1084,6 +1115,8 @@ def doctor(root, manifest, library):
         finding('warning', 'instructions', message)
     for plan_path, reason in plan_closure_findings(root, agentflow):
         finding('warning', plan_path, reason)
+    for plan_path in plan_summary_findings(root):
+        finding('warning', plan_path, SUMMARY_MISSING)
     return {'status': 'FAIL' if any(f['level'] == 'error' for f in findings) else 'PASS', 'findings': findings, 'budgets': sizes}
 
 
@@ -1208,6 +1241,8 @@ def readiness(root, manifest, library, files, plan=None, risk=None):
                                  'faza nie jest rozpoznana jako [UI]')
         if ui_phases and gate is not None and gate.get('bypassed'):
             gate_warnings.append('bramka pominięta przez właściciela')
+        if plan_summary_missing(text):
+            gate_warnings.append(SUMMARY_MISSING)
         if gate_warnings:
             report['warnings'] = gate_warnings
     return report

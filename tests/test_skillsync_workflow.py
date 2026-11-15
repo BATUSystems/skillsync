@@ -1143,6 +1143,38 @@ class ReviewPrototypeProfile(WorkflowFixture):
         self.rejected('review', '--files', 'helper.py')
 
 
+class ReadinessSummaryWarning(WorkflowFixture):
+    """`readiness --plan` and `doctor`: a plan being prepared without `## Streszczenie dla człowieka` gets a warning, never a block."""
+
+    BODY = '# Contracts\ncontract\n# Risks\nrisk\n# Evidence\nevidence\n'
+
+    def plan(self, status, summary=''):
+        (self.root / 'plan.md').write_text(f'# Plan\n\nStatus: {status}\n\n{summary}{self.BODY}', encoding='utf-8')
+        return self.report('readiness', '--files', 'helper.py', '--plan', 'plan.md')
+
+    def test_a_draft_or_approved_plan_without_the_summary_warns_and_still_passes(self):
+        for status in ('draft', 'approved'):
+            with self.subTest(status=status):
+                report = self.plan(status)
+                self.assertEqual(report['status'], 'PASS')
+                self.assertTrue(any('Streszczenie dla człowieka' in item for item in report.get('warnings', [])), report)
+
+    def test_no_warning_with_the_summary_or_for_a_plan_past_preparation(self):
+        self.assertNotIn('warnings', self.plan('draft', '## Streszczenie dla człowieka\nCo zmieniamy: x\n\n'))
+        for status in ('in_progress', 'done', 'archived'):
+            with self.subTest(status=status):
+                self.assertNotIn('warnings', self.plan(status))
+
+    def test_doctor_warns_about_a_plan_without_the_summary(self):
+        (self.root / 'docs/plans').mkdir(parents=True)
+        (self.root / 'docs/plans/2026-11-15-a.md').write_text('# A\n\nStatus: draft\n', encoding='utf-8')
+        (self.root / 'docs/plans/2026-11-15-b.md').write_text('# B\n\nStatus: draft\n\n## Streszczenie dla człowieka\nx\n', encoding='utf-8')
+        doctor = self.cli('doctor')
+        findings = json.loads(doctor.stdout)['findings']
+        paths = [f['path'] for f in findings if 'Streszczenie dla człowieka' in f['reason']]
+        self.assertEqual(paths, ['docs/plans/2026-11-15-a.md'])
+
+
 class ReadinessPrototypeGate(WorkflowFixture):
     """F3 (K26, kontrakt G): `readiness --plan` woła bramkę prototypu, gdy nagłówek planu ma linię `Prototyp:` albo obejścia."""
     FULL = '# Contracts\ncontract text\n# Risks\nrisk text\n# Evidence\nevidence text\n'

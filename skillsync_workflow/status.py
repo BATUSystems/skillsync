@@ -12,7 +12,7 @@ import tempfile
 import time
 import yaml
 
-from .common import add_project_arguments, read_project, redact
+from .common import add_project_arguments, plan_section, read_project, redact
 from .layers import add_layer_argument
 from .storage import read_json
 from .pathfmt import posix
@@ -30,6 +30,9 @@ _STATUS = re.compile(r'^(?:[-*>][ \t]+)?(?:\*\*|__)?status(?:\*\*|__)?[ \t]*:[ \
 STATUS_TEXT_MAX = 80
 _TITLE = re.compile(r'^#\s+(.+?)\s*$', re.MULTILINE)
 _STEP = re.compile(r'^\s*-\s\[([ xX])\]\s+\S', re.MULTILINE)
+PLAN_SUMMARY = 'Streszczenie dla człowieka'
+SUMMARY_MAX_LINES = 40
+SUMMARY_MAX_CHARS = 4000
 _PR = re.compile(r'^PR:\s*#(\d+)\s*\(link:\s*(\S+?)\)\s*$', re.MULTILINE)
 _TICKET = re.compile(r'^Ticket:\s*([A-Z][A-Z0-9_]+-\d+)\s*\(link:\s*(\S+?)\)\s*$', re.MULTILINE)
 SPEC_LINE = re.compile(r'^Spec:(.*)$', re.MULTILINE)
@@ -189,6 +192,25 @@ def pre_implement_state(root, spec_rel, plan_text, status):
     return {'required': required, 'sections': sections, 'run': run, 'report': report, 'verdict': verdict, 'warning': warning}
 
 
+def plan_summary(text):
+    """The `## Streszczenie dla człowieka` section as plain text for the status page: heading markers removed, at most 40 lines and
+    4000 characters (a cut one ends with `…`); None when the section is absent or empty."""
+    body = plan_section(text, PLAN_SUMMARY)
+    if not body:
+        return None
+    lines, fence = [], None
+    for line in body.splitlines():
+        marker = re.match(r'^\s*(```+|~~~+)', line)
+        if marker:
+            fence = None if fence == marker.group(1)[0] else (fence or marker.group(1)[0])
+        lines.append(line.rstrip() if fence or marker else re.sub(r'^\s*#{1,6}\s+', '', line).rstrip())   # a code block stays as written
+    cut = len(lines) > SUMMARY_MAX_LINES
+    result = '\n'.join(lines[:SUMMARY_MAX_LINES]).strip()
+    if len(result) > SUMMARY_MAX_CHARS:
+        result, cut = result[:SUMMARY_MAX_CHARS].rstrip(), True
+    return redact(result + ('…' if cut else '')) or None
+
+
 def plan_needs_human(status, steps, ticket=False, pr=False):
     """`approval` for a draft; for an `in_progress` plan whose Progress steps are all checked: `closure` (Result,
     `--final` and `done` are still missing), or `pull_request` when it came from a ticket and has no `PR:` line yet
@@ -218,7 +240,7 @@ def plan_record(root, path):
             'statusText': status_text, 'steps': steps, 'pr': {'number': int(pr.group(1)), 'link': pr.group(2)} if pr else None,
             'ticket': {'key': ticket.group(1), 'link': ticket.group(2)} if ticket else None, 'spec': spec,
             'needsHuman': plan_needs_human(status, steps, bool(ticket), bool(pr)), 'updated': _iso(path.stat().st_mtime),
-            'preImplement': pre}
+            'preImplement': pre, 'summary': plan_summary(text)}
 
 
 def _plans(root, findings):
