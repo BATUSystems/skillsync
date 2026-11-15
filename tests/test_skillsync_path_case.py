@@ -28,9 +28,9 @@ from skillsync_workflow import layers, leakguard  # noqa: E402
 
 HOSTS = ('linux', 'darwin', 'win32')
 FOLDS = {'linux': False, 'darwin': True, 'win32': True}          # case-insensitive file systems
-# Tests on a real file tree: a Windows host cannot show the Linux case (another case is the very same directory there,
-# and `realpath` already returns `\\` separators that the key of a simulated Linux keeps), so it is left out of them.
-FS_HOSTS = tuple(name for name in HOSTS if not (os.name == 'nt' and name == 'linux'))
+# Tests on a real file tree: a Windows host can show only itself: another case is the very same directory there, and
+# `realpath` already returns `\\` separators that the keys of a simulated Linux or macOS keep, so those hosts are skipped.
+FS_HOSTS = tuple(name for name in HOSTS if os.name != 'nt' or name == 'win32')
 
 
 def skip_unreal(test, name):
@@ -296,6 +296,7 @@ class UnicodeFormTest(LayersCase):
         self.write_config(layers=[('core', 'core', layer)], rules=[(['**'], ['core'])])
         for name in NORMALIZES:
             with self.subTest(host=name), host(name):
+                skip_unreal(self, name)
                 for path in (self.work / NFD_NAME, self.work / NFD_NAME / 'skills'):
                     with self.subTest(path=str(path.relative_to(self.work))):
                         if name == 'darwin':

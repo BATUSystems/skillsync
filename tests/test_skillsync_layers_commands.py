@@ -121,7 +121,7 @@ class HookCommandMissingTest(CommandsCase):
         bin_dir = self.path.parent / 'path-bin'
         bin_dir.mkdir()
         full_path = os.pathsep.join([str(bin_dir), os.environ.get('PATH', '')])      # git stays reachable
-        command = 'skillsync.exe' if os.name == 'nt' else 'skillsync.py'      # `which` needs an extension of PATHEXT on Windows
+        command = 'hook-probe.exe' if os.name == 'nt' else 'skillsync.py'      # `which` needs a PATHEXT extension on Windows; not a real command there
         write(self.hooks / 'pre-commit', f'#!/bin/sh\n{command} leakcheck "$PWD" --staged || exit $?\n', executable=True)
         with unittest.mock.patch.dict(os.environ, {'PATH': full_path}):
             found = self.broken(self.findings())
