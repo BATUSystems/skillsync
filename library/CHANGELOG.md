@@ -4,6 +4,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+### Breaking
+- `skills/dashboard`: `POST /api/approve` bez nagłówka `X-Approve-Token` zwraca `403`; własne skrypty muszą wziąć token z `skillsync dashboard url`. Strona statusu i wtyczka edytora nie wymagają zmian.
+
 ### Changed
 - `skills/skillsync/SKILL.md`: polecenie `dashboard url` i token zgód w opisie `dashboard serve`.
 - `skills/dashboard`: zgody ze strony wymagają tokenu (`X-Approve-Token`, adres z fragmentem `#zgoda=<token>` z konsoli `dashboard serve` albo z `skillsync dashboard url`); `app.js` zapamiętuje token, `dashboard-render.js` ma haczyk `deps.hasApproveToken` (przyciski nieaktywne bez tokenu; webview bez haczyka bez zmian); `SKILL.md`: reguła dla agenta.
