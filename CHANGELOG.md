@@ -12,8 +12,26 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Added
+
+- CI: workflow `.github/workflows/pr-text.yml` (job `pr-text (leakcheck)`) skanuje tytuł i opis pull requesta przez `skillsync leakcheck --text` (wzorce ogólne i dodatki `.leakguard/patterns.yaml` z gałęzi bazowej; uruchamiany także po edycji opisu, bez macierzy testów). Dotąd kontrola opisów była tylko regułą w skillach. Job nie jest wymaganym checkiem rulesetu (zmiana rulesetu to decyzja właściciela).
+- `skillsync layers check --isolation`: pliki tożsamości w `leakguard.identity_dir` należące do skonfigurowanego celu `leakguard.targets`, który nie jest warstwą (np. repo wtyczki), nie dają już `isolation-foreign-identity`; dotąd każdy nowy cel w katalogu tożsamości musiał trafiać do `isolation.allowed_layers`. Właściciel spoza `targets` i spoza listy oraz ta sama tożsamość w bibliotece warstwy nadal dają błąd.
+- `scripts/check_release.py` sprawdza też, że linie „Stan opisu: Skillsync `vX.Y.Z`” w docs/workflow.md i docs/workflow-details.md wskazują wersję wydania (dotąd napisy podbijano ręcznie, więc odtwarzały dług przy każdym wydaniu).
+- `skillsync leakcheck` w katalogu roboczym klonu celu o `scope: public` ostrzega (nie blokuje), gdy klon nie ma hooków strażnika (pre-commit/pre-push), i podaje polecenie `skillsync leakguard install-hook <klon>`; wzmianka w CONTRIBUTING.md. Bez hooków push do publicznego repo omija strażnika.
+- Strażnik wycieków: klucz celu `targets.<id>.committer_allow` w configu maszyny (lista adresów): adresy przyjmowane tylko jako committer i tagger (np. przycisk scalania hosta, `noreply`), nigdy jako autor. Dotąd adres `noreply` musiał stać w `authors` i przechodził też jako autor. Domyślnie pusta lista; bez klucza zachowanie bez zmian. Dotyczy `leakcheck` (zakres, historia, tagi); nie dotyczy `pre-commit` (zatrzymane zmiany: tylko `authors`); przy `authors_scope: committer` zwykle bez efektu (sens ma przy `all`).
+- `dashboard show` (and `/api/status`): `substeps[].noData` (`true` ⇔ `seconds` is null, also for a planned sub-step), the same meaning as `noData` in `dashboard metrics`. Additive (schema 1): `missingData` is unchanged. Compatibility: a consumer that rejects unknown keys of `substeps[]` must accept `noData`.
+- Testy-strażnicy: rozmiar rekordów domeny `load: bootstrap` (każdy rekord ≤ 12 KiB, glosariusz ≤ 95%), reguły bramki po `/clear` w skillach `feature` i `dispatch`, reguła `chrome-headless-shell` w skillu `agent-runtime-pitfalls`.
+- Test: `checkpoint --final` i `retro-quality` działają z manifestem poza repozytorium (`--manifest`).
+
 ### Changed
 
+- Maskowanie sekretów z zmiennych środowiska (`redact`) działa od 8 znaków także w tekście komunikatów (dotąd od 4 w wartościach, 8 w kluczach): krótka wartość, np. równa `root` na runnerze Windows, nie przemianowuje już słów ani pól w wyjściu. Maskowanie wzorcowe (adresy z hasłem, `Authorization`, `password=`, `token=`) bez zmian i bez progu. UWAGA (ochrona słabnie): sekret z środowiska krótszy niż 8 znaków nie jest już maskowany nigdzie w wyjściu.
+- Status page (`app.css`): the state of the live indicator has its own dot shape besides the colour (circle: live, square: polling, triangle: down, ring: connecting), which matters in the compact mode (≤ 420 px) where the text is hidden; interactive buttons and tabs of the compact mode (`.btn`, tabs, consent and document buttons) are at least 2.75rem (44 px) high. A plugin that keeps its own copy of the stylesheet has to resynchronise it.
+- `dashboard` (`build_status`, `show`): the plans listed for choosing are parsed once per (path, `mtime_ns`, size) instead of on every build of the status (the page rebuilds it on each change and poll; the chosen plan is still read fresh); the activity of a run (`activity`, `runAlive`) is still read on every call. A plan rewritten with the same size inside the timestamp resolution of the file system is seen at its next change.
+- Strażnik izolacji w testach (`real_state_snapshot`) pomija pliki odświeżane przez operacje git tylko do odczytu (`FETCH_HEAD`, `.git/index`) w innych procesach.
+- Skille `feature`, `dispatch` i tryb karty: po `/clear` albo w nowej sesji bez słowa zgody użytkownika nie powstaje kod; cytat w ASSIGN to wskazówka do sprawdzenia, nie zgoda.
+- Harness E2E prototypów (`env.py`) wymusza jasny schemat kolorów Chrome (`--blink-settings=preferredColorScheme=1`), więc DR-start i DR-późny przechodzą także na stacji z ciemnym motywem.
+- `docs/domain/glossary.md` skrócony poniżej limitu; usunięto hasło `synthetic`.
 - Windows: the files that POSIX keeps at mode 0600 are private through an ACL (the user, `SYSTEM` and the local administrators, by SID; no inheritance from the directory):
   the users file `users.json` and its backup `users.json.bak` (the temporary file gets the ACL before the data is written, because `os.replace` hands the ACL of the
   temporary file to the target), the state, token and `audit.jsonl` files of the one-time login link, and the machine config with `prototype.default_password` (checked and repaired
@@ -21,20 +39,10 @@ Every release has a **Breaking** section that lists incompatible changes. When a
   `ensure_private`, `private_notes`; `ctypes`, never raises: every failure is `False` and one warning). A file system without ACLs (FAT, exFAT, a share without support) or a refused call gives
   one warning per file and process (`nie udało się ograniczyć dostępu do pliku ...`); the write itself always succeeds. A users file that was written by an older version is repaired
   on the first write or read (one line `ACL Windows: ograniczono dostęp do pliku ...`).
-
-### Compatibility
-
-- The warning `kontrola uprawnień 0600 pominięta na Windows` (and the constant `PRIVATE_CHECK_SKIPPED`) is gone: on Windows `prototype user ...`, `prototype serve` and the read of
-  `prototype.default_password` no longer print it; a warning appears only after a failed ACL, and one line after a repair. A consumer that filtered the old text must be updated.
-  `private_file_problem` never reports a problem on Windows (a volume without ACLs must not block a command). JSON fields are unchanged.
-
-### Breaking
-
-None.
 - Every path field of a CLI report uses `/` on Windows, not only the fields listed in 1.4.1: `root` and `project` (`status`, `dashboard show`, `catalog list`, `layers *`, `dispatch`, `runs`), `composed_root`, `config`, `manifest` and `backup` (`layers *`), `layers[].path`, `layers[].root`, `layer.path`, `budgets[].path` (`doctor`), `log` (`workflow validate`), `directory`, `repo` and `hooks[].path` (`leakcheck` hooks), `launchers[]` (`env`), `recorded`, `scenario` and `report` (`e2e`), `path` (`repomap`), `checkpoint` (`checkpoint`) and `targets` (`upgrade` rollback plan). Linux and macOS are unchanged. New guard `tests/test_skillsync_report_paths.py` fails when a report path field is written as `str(path)`; commands to execute and paths the product opens stay native.
-
 ### Fixed
 
+- `dashboard`: `run.checkpoints[].time` is always `HH:MM` as the contract says (a checkpoint written with a one-digit hour, `- 9:05 …`, was reported as `9:05`); the same for `startedAt`/`finishedAt` of the sub-steps, `waiting[].since`, `run.inProgressFrom` and `eta.since`. Compatibility: a consumer that compared these values as strings against a one-digit hour must compare `09:05`.
 - Prototype server: `FileLock` closes (and unlocks) the descriptor it opened when anything, `KeyboardInterrupt` included, interrupts the acquisition before the lock object holds it; before, such a descriptor kept the system lock until the process ended.
 - Prototype server: the request-body counter that decides on a lingering close counts `readlines` and `readinto1` too (`peek` consumes nothing and stays uncounted).
 - `common.resolve_loop_checked` (used by `discover_exclude` and the retro scan): a loop of Windows junctions is reported on Python 3.12 and 3.13 too (`resolve()` returns the stuck path there and a junction is not a symlink; `os.path.isjunction` now counts as a link); measured: 3.11 raised, 3.12/3.13 did not.
@@ -53,7 +61,14 @@ None.
 
 ### Compatibility
 
+- The warning `kontrola uprawnień 0600 pominięta na Windows` (and the constant `PRIVATE_CHECK_SKIPPED`) is gone: on Windows `prototype user ...`, `prototype serve` and the read of
+  `prototype.default_password` no longer print it; a warning appears only after a failed ACL, and one line after a repair. A consumer that filtered the old text must be updated.
+  `private_file_problem` never reports a problem on Windows (a volume without ACLs must not block a command). JSON fields are unchanged.
 - On Windows, a consumer that compared these fields with a native path (`C:\...`) must compare with `/` or normalise (`Path(value)`); Linux and macOS are unchanged.
+
+### Breaking
+
+None.
 
 ## [1.4.1] - 2026-11-15
 
@@ -107,40 +122,6 @@ None.
 ### Breaking
 
 None.
-### Added
-
-- CI: workflow `.github/workflows/pr-text.yml` (job `pr-text (leakcheck)`) skanuje tytuł i opis pull requesta przez `skillsync leakcheck --text` (wzorce ogólne i dodatki `.leakguard/patterns.yaml` z gałęzi bazowej; uruchamiany także po edycji opisu, bez macierzy testów). Dotąd kontrola opisów była tylko regułą w skillach. Job nie jest wymaganym checkiem rulesetu (zmiana rulesetu to decyzja właściciela).
-- `skillsync layers check --isolation`: pliki tożsamości w `leakguard.identity_dir` należące do skonfigurowanego celu `leakguard.targets`, który nie jest warstwą (np. repo wtyczki), nie dają już `isolation-foreign-identity`; dotąd każdy nowy cel w katalogu tożsamości musiał trafiać do `isolation.allowed_layers`. Właściciel spoza `targets` i spoza listy oraz ta sama tożsamość w bibliotece warstwy nadal dają błąd.
-- `scripts/check_release.py` sprawdza też, że linie „Stan opisu: Skillsync `vX.Y.Z`” w docs/workflow.md i docs/workflow-details.md wskazują wersję wydania (dotąd napisy podbijano ręcznie, więc odtwarzały dług przy każdym wydaniu).
-- `skillsync leakcheck` w katalogu roboczym klonu celu o `scope: public` ostrzega (nie blokuje), gdy klon nie ma hooków strażnika (pre-commit/pre-push), i podaje polecenie `skillsync leakguard install-hook <klon>`; wzmianka w CONTRIBUTING.md. Bez hooków push do publicznego repo omija strażnika.
-- Strażnik wycieków: klucz celu `targets.<id>.committer_allow` w configu maszyny (lista adresów): adresy przyjmowane tylko jako committer i tagger (np. przycisk scalania hosta, `noreply`), nigdy jako autor. Dotąd adres `noreply` musiał stać w `authors` i przechodził też jako autor. Domyślnie pusta lista; bez klucza zachowanie bez zmian. Dotyczy `leakcheck` (zakres, historia, tagi); nie dotyczy `pre-commit` (zatrzymane zmiany: tylko `authors`); przy `authors_scope: committer` zwykle bez efektu (sens ma przy `all`).
-
-### Changed
-
-- Maskowanie sekretów z zmiennych środowiska (`redact`) działa od 8 znaków także w tekście komunikatów (dotąd od 4 w wartościach, 8 w kluczach): krótka wartość, np. równa `root` na runnerze Windows, nie przemianowuje już słów ani pól w wyjściu. Maskowanie wzorcowe (adresy z hasłem, `Authorization`, `password=`, `token=`) bez zmian i bez progu. UWAGA (ochrona słabnie): sekret z środowiska krótszy niż 8 znaków nie jest już maskowany nigdzie w wyjściu.
-### Added
-
-- `dashboard show` (and `/api/status`): `substeps[].noData` (`true` ⇔ `seconds` is null, also for a planned sub-step), the same meaning as `noData` in `dashboard metrics`. Additive (schema 1): `missingData` is unchanged. Compatibility: a consumer that rejects unknown keys of `substeps[]` must accept `noData`.
-
-### Fixed
-
-- `dashboard`: `run.checkpoints[].time` is always `HH:MM` as the contract says (a checkpoint written with a one-digit hour, `- 9:05 …`, was reported as `9:05`); the same for `startedAt`/`finishedAt` of the sub-steps, `waiting[].since`, `run.inProgressFrom` and `eta.since`. Compatibility: a consumer that compared these values as strings against a one-digit hour must compare `09:05`.
-
-### Changed
-
-- Status page (`app.css`): the state of the live indicator has its own dot shape besides the colour (circle: live, square: polling, triangle: down, ring: connecting), which matters in the compact mode (≤ 420 px) where the text is hidden; interactive buttons and tabs of the compact mode (`.btn`, tabs, consent and document buttons) are at least 2.75rem (44 px) high. A plugin that keeps its own copy of the stylesheet has to resynchronise it.
-- `dashboard` (`build_status`, `show`): the plans listed for choosing are parsed once per (path, `mtime_ns`, size) instead of on every build of the status (the page rebuilds it on each change and poll; the chosen plan is still read fresh); the activity of a run (`activity`, `runAlive`) is still read on every call. A plan rewritten with the same size inside the timestamp resolution of the file system is seen at its next change.
-### Added
-
-- Testy-strażnicy: rozmiar rekordów domeny `load: bootstrap` (każdy rekord ≤ 12 KiB, glosariusz ≤ 95%), reguły bramki po `/clear` w skillach `feature` i `dispatch`, reguła `chrome-headless-shell` w skillu `agent-runtime-pitfalls`.
-- Test: `checkpoint --final` i `retro-quality` działają z manifestem poza repozytorium (`--manifest`).
-
-### Changed
-
-- Strażnik izolacji w testach (`real_state_snapshot`) pomija pliki odświeżane przez operacje git tylko do odczytu (`FETCH_HEAD`, `.git/index`) w innych procesach.
-- Skille `feature`, `dispatch` i tryb karty: po `/clear` albo w nowej sesji bez słowa zgody użytkownika nie powstaje kod; cytat w ASSIGN to wskazówka do sprawdzenia, nie zgoda.
-- Harness E2E prototypów (`env.py`) wymusza jasny schemat kolorów Chrome (`--blink-settings=preferredColorScheme=1`), więc DR-start i DR-późny przechodzą także na stacji z ciemnym motywem.
-- `docs/domain/glossary.md` skrócony poniżej limitu; usunięto hasło `synthetic`.
 
 ## [1.4.0] - 2026-11-14
 
