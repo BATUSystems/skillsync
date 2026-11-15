@@ -3,6 +3,7 @@
     {
       "detail": null,
       "key": "spec",
+      "linkWarning": null,
       "name": "Spec",
       "roman": "I",
       "stages": [
@@ -10,18 +11,21 @@
           "done": true,
           "key": "stage_spec_draft",
           "label": "Szkic",
+          "state": "done",
           "tip": "docs/specs/2026-01-12-demo-release.md"
         },
         {
           "done": false,
           "key": "stage_spec_review",
           "label": "Review",
+          "state": "planned",
           "tip": "rundy review speca w katalogu przebiegu"
         },
         {
           "done": true,
           "key": "stage_spec_approved",
           "label": "Zatwierdzony",
+          "state": "done",
           "tip": "Status speca: approved"
         }
       ],
@@ -39,24 +43,28 @@
           "done": true,
           "key": "stage_plan",
           "label": "Plan",
+          "state": "done",
           "tip": "docs/plans/2026-01-12-demo-release.md"
         },
         {
           "done": false,
           "key": "stage_plan_review",
           "label": "Review",
+          "state": "planned",
           "tip": "rundy review planu w katalogu przebiegu"
         },
         {
           "done": false,
           "key": "stage_pre_implement",
           "label": "Pre-implement",
+          "state": "planned",
           "tip": "bramka gotowości przed ryzykowną zmianą"
         },
         {
           "done": true,
           "key": "stage_go_implement",
           "label": "GO implement",
+          "state": "done",
           "tip": "Status planu: in_progress"
         }
       ],
@@ -74,12 +82,14 @@
           "done": false,
           "key": "code_review",
           "label": "Review kodu",
+          "state": "planned",
           "tip": "raporty code-review*/final-review* w katalogu przebiegu"
         },
         {
           "done": false,
           "key": "closure",
           "label": "Zamknięcie",
+          "state": "planned",
           "tip": "Status planu: in_progress"
         }
       ],
@@ -244,6 +254,7 @@
   "eta": null,
   "expertQuestions": {
     "blocking": 0,
+    "items": [],
     "open": 0,
     "runs": []
   },
@@ -280,6 +291,7 @@
   ],
   "progress": {
     "active": [],
+    "activePercent": 0,
     "activeSource": null,
     "current": null,
     "done": 2,
@@ -333,12 +345,14 @@
     "up": false,
     "writing": null
   },
+  "prototypes": [],
   "readiness": {
     "date": null,
     "planSha": null,
     "source": null,
     "status": null
   },
+  "result": null,
   "run": {
     "checkpoints": [
       {
@@ -470,6 +484,11 @@
       "since": "10:00",
       "source": "checkpoint",
       "what": "CP",
+      "who": {
+        "label": "akceptujący",
+        "login": null,
+        "role": "acceptor"
+      },
       "word": "CP"
     }
   ]
