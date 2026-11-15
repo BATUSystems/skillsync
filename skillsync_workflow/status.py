@@ -13,6 +13,7 @@ import time
 import yaml
 
 from .common import add_project_arguments, plan_section, read_project, redact
+from .delivery_mode import delivery_info
 from .layers import add_layer_argument
 from .storage import read_json
 from .pathfmt import posix
@@ -30,6 +31,8 @@ _STATUS = re.compile(r'^(?:[-*>][ \t]+)?(?:\*\*|__)?status(?:\*\*|__)?[ \t]*:[ \
 STATUS_TEXT_MAX = 80
 _TITLE = re.compile(r'^#\s+(.+?)\s*$', re.MULTILINE)
 _STEP = re.compile(r'^\s*-\s\[([ xX])\]\s+\S', re.MULTILINE)
+_ACCEPTANCE_STEP = re.compile(r'^\s*-\s\[[ xX]\]\s+(?:[A-Za-z]+\d+(?:\.\d+)?\s+)?Odbi[oó]r\b', re.MULTILINE | re.IGNORECASE)
+ACCEPTANCE_WORDS = {'pr': 'READY', 'direct': 'CP'}   # the closing consent word of a delivery mode: it is also the acceptance
 PLAN_SUMMARY = 'Streszczenie dla człowieka'
 SUMMARY_MAX_LINES = 40
 SUMMARY_MAX_CHARS = 4000
@@ -211,6 +214,27 @@ def plan_summary(text):
     return redact(result + ('…' if cut else '')) or None
 
 
+def acceptance_pending(status, text, context):
+    """True when a closed plan (`done`) that has the human acceptance step (`Odbiór` in `## Progress`: the material, a checklist and the
+    coverage table, handed to the person before the closing word) still waits for that word: the closing consent of the delivery mode
+    (`READY` in `pr`, `CP` in `direct`) is not in the run's `approvals.jsonl` for the current HEAD. The step's checkbox changes nothing:
+    only the approvals entry (written by the status page or `approvals record`) ends the wait, and a new HEAD starts it again.
+    `context` = `{'head', 'mode', 'approvals'}`; without it (or without a readable HEAD or a valid delivery mode) there is no signal."""
+    if status != 'done' or not context or not context.get('head'):
+        return False
+    word = ACCEPTANCE_WORDS.get(context.get('mode'))
+    section = plan_section(text, 'Progress')
+    if word is None or not section or not _ACCEPTANCE_STEP.search(section):
+        return False
+    from .quality import _PLAN_RUN, _RUN_ID  # lazy: quality imports this module
+    run = _PLAN_RUN.search(text[:4000])
+    if not run or not _RUN_ID.fullmatch(run.group(1)):
+        return False
+    head = context['head']
+    return not any(row['run'] == run.group(1) and row['word'] == word and head.startswith(row['sha'])
+                   for row in context.get('approvals', []))
+
+
 def plan_needs_human(status, steps, ticket=False, pr=False):
     """`approval` for a draft; for an `in_progress` plan whose Progress steps are all checked: `closure` (Result,
     `--final` and `done` are still missing), or `pull_request` when it came from a ticket and has no `PR:` line yet
@@ -227,7 +251,7 @@ def plan_text_needs_human(status, text):
     return plan_needs_human(status, _progress(text), bool(_TICKET.search(text)), bool(_PR.search(text)))
 
 
-def plan_record(root, path):
+def plan_record(root, path, context=None):
     text = path.read_text(encoding='utf-8')
     status, status_text = _status_fields(text, PLAN_STATUSES)
     title = _TITLE.search(text)
@@ -239,11 +263,12 @@ def plan_record(root, path):
     return {'path': path.relative_to(root).as_posix(), 'title': title.group(1) if title else path.stem, 'status': status,
             'statusText': status_text, 'steps': steps, 'pr': {'number': int(pr.group(1)), 'link': pr.group(2)} if pr else None,
             'ticket': {'key': ticket.group(1), 'link': ticket.group(2)} if ticket else None, 'spec': spec,
-            'needsHuman': plan_needs_human(status, steps, bool(ticket), bool(pr)), 'updated': _iso(path.stat().st_mtime),
+            'needsHuman': plan_needs_human(status, steps, bool(ticket), bool(pr)) + (['acceptance'] if acceptance_pending(status, text, context) else []),
+            'updated': _iso(path.stat().st_mtime),
             'preImplement': pre, 'summary': plan_summary(text)}
 
 
-def _plans(root, findings):
+def _plans(root, findings, context=None):
     directory = root / 'docs' / 'plans'
     if directory.is_symlink() or not directory.is_dir():
         return []
@@ -255,7 +280,7 @@ def _plans(root, findings):
             if path.stat().st_size > MAX_PLAN_BYTES:
                 findings.append(f'Plan skipped (over {MAX_PLAN_BYTES // 1024} KiB): {path.name}')
                 continue
-            rows.append(plan_record(root, path))
+            rows.append(plan_record(root, path, context))
         except (OSError, UnicodeDecodeError) as error:
             findings.append(f'Plan unreadable: {path.name} ({type(error).__name__})')
     return rows
@@ -424,9 +449,15 @@ def project_status(root, manifest):
     findings = []
     project = manifest.get('project', {})
     name = project.get('name') if isinstance(project, dict) else None
+    approvals = read_approvals(root, findings)
+    try:
+        head = _head_sha(root)
+    except ValueError:
+        head = None
+    context = {'head': head, 'mode': delivery_info(manifest)['mode'], 'approvals': approvals}
     return {'schema': SCHEMA, 'status': 'PASS', 'project': name or f'{root.parent.name}/{root.name}', 'root': posix(root),
-            'plans': _plans(root, findings), 'specs': _specs(root, findings), 'frds': _frds(root, findings), 'runs': _runs(root, findings), 'claims': _claims(root, findings),
-            'approvals': read_approvals(root, findings), 'findings': findings}
+            'plans': _plans(root, findings, context), 'specs': _specs(root, findings), 'frds': _frds(root, findings), 'runs': _runs(root, findings), 'claims': _claims(root, findings),
+            'approvals': approvals, 'findings': findings}
 
 
 def _cmd_status(args):

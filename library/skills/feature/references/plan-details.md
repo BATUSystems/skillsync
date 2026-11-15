@@ -88,6 +88,15 @@ PR: #123 (link: https://example.com/pr/123)
 - Ostatni krok `Progress` to zamknięcie przebiegu (rola: orkiestrator): „Wynik”, `retro-quality`, checkpoint `--final`,
   `Status: done` planu i `implemented` speca. Bez niego plan po ostatnim `[x]` zostaje `in_progress` i `skillsync status`
   zgłasza `needsHuman: closure`. Przy `ceremony: demo` `retro-quality` jest odroczone do podsekcji „Dług (ceremony: demo)” w „Wyniku” ([ceremonia demo](ceremony-demo.md)).
+- **Krok „Odbiór”** (rola: orkiestrator; plan z nim jest opcjonalny, plany bez niego działają jak dotąd) stoi przed krokami zamknięcia przebiegu
+  i kończy się, gdy człowiek dostał materiał do odbioru: **listę kontrolną** (jedna linia na kryterium speca: co sprawdzić ręcznie albo gdzie jest
+  dowód automatyczny i jak go zobaczyć) oraz tabelę pokrycia „kryterium → test(y) → wynik” (wzór w „Wyniku”). Agent zaznacza go `[x]` po
+  przekazaniu materiału; to przygotowanie, nie zgoda. **Odbiorem jest końcowe słowo zgody trybu dostarczania**, to samo, które już dziś kończy
+  przebieg: `READY` w trybie `pr`, `CP` w trybie `direct` (żadnego nowego słowa, przycisku ani rodzaju zgody). Po zamknięciu przebiegu (`done`) plan z
+  krokiem „Odbiór” ma `needsHuman: acceptance` do czasu wpisu tego słowa w `.skillsync/runs/<run-id>/approvals.jsonl` dla bieżącego HEAD
+  (przycisk strony statusu albo `skillsync approvals record` po słowie wpisanym przez użytkownika w sesji); nowy HEAD uruchamia czekanie od nowa, a
+  zaznaczenie kroku ani linia w planie niczego nie gaszą. `closure` i `acceptance` nie występują naraz: najpierw zamknięcie (`in_progress`, wszystkie `[x]`),
+  potem `acceptance` (`done`). Uwagi z odbioru wracają jako nowe kroki planu, nie jako zgoda.
 - Fazy to nagłówki poziomu 3 lub niższego; nagłówek poziomu 2 zamyka sekcję `Progress`.
 - Linia `PR: #<n> (link: <url>)` zaczyna wiersz (nie jest punktem listy ani cytatem) i stoi pod `## Progress`; opcjonalna `Ticket: <KEY> (link: <url>)` ma klucz Jira, np. `ABC-123`.
 - Plany bez `Progress` (starsze) są poprawne i nie wymagają migracji; opcjonalny przebieg do PR-a opisuje [pr-run](../../pr-run/SKILL.md).

@@ -29,6 +29,12 @@ REQUIRED = [
     ('review-report-name', REVIEW_LOOP, r'`prototype-review-N\.md`'),
     ('review-core-list', REVIEW_LOOP, r'`workflow\.review\.prototype`.*warstwy, projekt i manifest tylko dopisują pozycje'),
     ('review-naming-rule', REVIEW_LOOP, r'\*\*Reguła wymieniania uwag:\*\*.*`blocker` i `major`.*także gdy została naniesiona; `minor` tylko liczbą'),
+    ('acceptance-step', PLAN_DETAILS, r'\*\*Krok „Odbiór”\*\*.*\*\*listę kontrolną\*\*.*tabelę pokrycia'),
+    ('acceptance-is-closing-word', PLAN_DETAILS, r'\*\*Odbiorem jest końcowe słowo zgody trybu dostarczania\*\*.*`READY` w trybie `pr`, `CP` w trybie `direct` \(żadnego nowego słowa'),
+    ('acceptance-needs-human', PLAN_DETAILS, r'`needsHuman: acceptance` do czasu wpisu tego słowa w `\.skillsync/runs/<run-id>/approvals\.jsonl` dla bieżącego HEAD'),
+    ('acceptance-not-by-plan', PLAN_DETAILS, r'zaznaczenie kroku ani linia w planie niczego nie gaszą'),
+    ('acceptance-vs-closure', PLAN_DETAILS, r'`closure` i `acceptance` nie występują naraz'),
+    ('feature-acceptance', FEATURE, r'Końcowe słowo zgody trybu dostarczania \(`READY` w `pr`, `CP` w `direct`\) jest też odbiorem'),
     ('feature-pointer', FEATURE, r'plan zaczyna się sekcją `## Streszczenie dla człowieka`.*„Wynik” ma wzór z blokiem „Uwagi z review” i tabelą pokrycia'),
 ]
 
