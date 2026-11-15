@@ -174,9 +174,8 @@ class StateFile(unittest.TestCase):
                          (1, 5140, "tok-1", str(self.project.resolve()), os.getpid()))
         self.assertEqual([p.name for p in path.parent.iterdir()], [path.name], "no temporary file is left")
 
+    @unittest.skipIf(os.name == "nt", "POSIX: tryb 0600 pliku i 0700 katalogu stanu (na Windows ACL: test_skillsync_winacl)")
     def test_the_file_is_private_on_posix(self) -> None:
-        if os.name == "nt":
-            return
         path = dashboard_token.write_state(self.project, 5140, "tok-1")
         self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
         self.assertEqual(stat.S_IMODE(path.parent.stat().st_mode), 0o700)
@@ -442,9 +441,8 @@ class HealthAndLeftovers(unittest.TestCase):
                                                      "http://127.0.0.1:5202/healthz"])
         self.assertEqual({host for _, host in seen}, {"localhost"})
 
+    @unittest.skipIf(os.name == "nt", "POSIX: sprawdzenie PID (`os.kill(pid, 0)`); na Windows decyduje /healthz")
     def test_a_dead_process_leftover_is_removed(self) -> None:
-        if os.name == "nt":
-            return
         path = dashboard_token.write_state(self.project, 5210, "tok-dead")
         record = json.loads(path.read_text(encoding="utf-8"))
         record["pid"] = 2 ** 22 + 4321
