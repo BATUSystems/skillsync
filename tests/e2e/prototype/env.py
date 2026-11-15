@@ -5,13 +5,15 @@ Used by `tests/test_skillsync_prototype_e2e.py` and runnable by hand:
 
     python3 env.py prepare  <workdir> <library> <chrome-port> <port1> <port2>   # writes <workdir>/env.json
     python3 env.py chrome   <workdir>/env.json <chrome-binary>                  # starts Chrome, writes chrome.pid
-    python3 env.py stop     <workdir>/env.json                                  # stops Chrome and servers by PID
+    python3 env.py stop     <workdir>/env.json                                  # stops Chrome and servers (PID file + descendants)
 
 Passwords of the test accounts are generated here, written to `secrets.json` (mode 0600) in the
-private working directory and never printed. Servers and Chrome are stopped by PID, never by name.
+private working directory and never printed. Servers and Chrome are stopped by the identity (pid, start time, uid) of their PID file and
+their listed descendants, never by name.
 """
 import json
 import os
+import re
 import secrets as _secrets
 import shutil
 import signal
@@ -242,6 +244,15 @@ def wait_port(port, seconds=20):
     return False
 
 
+def _pid_record(pid):
+    """The text of a PID file: JSON with the identity (pid, start time, uid) of the live process, or the bare number when `ps` fails."""
+    try:
+        row = process_table().get(pid)
+    except RuntimeError:
+        row = None
+    return json.dumps(identity_of(row)) if row else str(pid)
+
+
 def start_chrome(env, binary):
     port = env['chromePort']
     workdir = Path(env['workdir'])
@@ -270,7 +281,7 @@ def start_chrome(env, binary):
                              stdout=log, stderr=log, stdin=subprocess.DEVNULL, start_new_session=True, env=child_env)
     log.close()   # the child has its own copy of the descriptor
     CHILDREN[child.pid] = child
-    (workdir / 'chrome.pid').write_text(str(child.pid))
+    (workdir / 'chrome.pid').write_text(_pid_record(child.pid))
     if not wait_port(port):
         stop_pid(child.pid)
         raise RuntimeError('Chrome did not open the debugging port %d' % port)
@@ -279,71 +290,283 @@ def start_chrome(env, binary):
 
 CHILDREN = {}   # Popen objects of the processes started here (waited for after the stop, no zombie or ResourceWarning)
 
+# --- Process ownership without /proc (Linux, macOS) -----------------------------------------------------------------------------------
+# A process is "ours" when its identity (pid, start time, uid) matches the one recorded when it was started. The table of processes comes
+# from `ps` (the same flags work on Linux and macOS); `/proc` is only the fallback where `ps` is missing. Nothing is ever chosen by name:
+# what is signalled is the process of a PID file and its descendants, listed BEFORE the first signal (after the leader dies its
+# children are re-parented and the tree is gone), each of them only while its identity still matches.
+START_TOLERANCE = 2   # seconds: `ps` start times have a one second resolution
+GRACE = 6             # seconds between SIGTERM and SIGKILL
+KILL_WAIT = 5         # seconds to wait for the death after SIGKILL
+_PS_ROW = re.compile(r'^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(.+?)\s*$')
 
-def stop_pid(pid, grace=6, group=False):
-    """SIGTERM, then SIGKILL after `grace` seconds; `group=True` signals the whole process group (Chrome starts in its own session).
-    A child started by this module is waited for, so no zombie remains."""
-    send = (lambda sig: os.killpg(pid, sig)) if group else (lambda sig: os.kill(pid, sig))
-    child = CHILDREN.pop(pid, None)
+
+def _parse_start(text):
     try:
-        send(signal.SIGTERM)
-    except ProcessLookupError:
-        if child:
-            child.wait()
-        return
-    deadline = time.time() + grace
-    while time.time() < deadline:
-        if child:
-            if child.poll() is not None:
-                return
-        else:
-            try:
-                os.kill(pid, 0)
-            except ProcessLookupError:
-                return
-        time.sleep(0.2)
+        return int(time.mktime(time.strptime(' '.join(text.split()), '%a %b %d %H:%M:%S %Y')))
+    except ValueError:
+        return None
+
+
+def _table_from_ps():
+    result = subprocess.run(['ps', '-A', '-o', 'pid=,ppid=,pgid=,uid=,stat=,lstart='], capture_output=True, text=True, timeout=15,
+                            env=dict(os.environ, LC_ALL='C', LANG='C'), check=False)
+    table = {}
+    for line in result.stdout.splitlines():
+        match = _PS_ROW.match(line)
+        start = _parse_start(match.group(6)) if match else None
+        if match and start is not None:
+            pid = int(match.group(1))
+            table[pid] = {'pid': pid, 'ppid': int(match.group(2)), 'pgid': int(match.group(3)), 'uid': int(match.group(4)),
+                          'state': match.group(5), 'start': start}
+    return table
+
+
+def _table_from_proc():
+    """Linux fallback when `ps` is not installed; empty elsewhere."""
+    table = {}
+    root = Path('/proc')
     try:
-        send(signal.SIGKILL)
-    except ProcessLookupError:
+        boot = next(int(line.split()[1]) for line in (root / 'stat').read_text().splitlines() if line.startswith('btime '))
+        ticks = os.sysconf('SC_CLK_TCK')
+        entries = [item for item in root.iterdir() if item.name.isdigit()]
+    except (OSError, StopIteration, ValueError):
+        return table
+    for entry in entries:
+        try:
+            raw = (entry / 'stat').read_text(encoding='utf-8', errors='replace')
+            fields = raw[raw.rfind(')') + 2:].split()
+            pid = int(entry.name)
+            table[pid] = {'pid': pid, 'ppid': int(fields[1]), 'pgid': int(fields[2]), 'uid': entry.stat().st_uid, 'state': fields[0],
+                          'start': boot + int(fields[19]) // ticks}
+        except (OSError, ValueError, IndexError):
+            continue
+    return table
+
+
+def process_table():
+    """`{pid: {pid, ppid, pgid, uid, state, start}}`; RuntimeError when no source can list processes (nothing is then decided)."""
+    table = {}
+    try:
+        table = _table_from_ps()
+    except (OSError, subprocess.SubprocessError):
         pass
-    if child:
+    if not table:
+        table = _table_from_proc()
+    if not table:
+        raise RuntimeError('cannot list processes (neither `ps` nor /proc worked)')
+    return table
+
+
+def same_identity(row, record):
+    """`row` (live) is the process of `record` ({pid, start, uid}): same start time (within the resolution of `ps`) and the same owner."""
+    return (row is not None and not row['state'].startswith('Z') and row['uid'] == record['uid']
+            and abs(row['start'] - record['start']) <= START_TOLERANCE)
+
+
+def identity_of(row):
+    return {'pid': row['pid'], 'start': row['start'], 'uid': row['uid']}
+
+
+def read_pid_file(pid_file):
+    """`{pid, start, uid}` from the JSON a record of this module wrote, or `{pid, mtime}` for a plain number (a file written by a
+    server script right after the spawn); None for anything else."""
+    try:
+        text = pid_file.read_text().strip()
+        if text.startswith('{'):
+            data = json.loads(text)
+            return {'pid': int(data['pid']), 'start': int(data['start']), 'uid': int(data['uid'])}
+        return {'pid': int(text), 'start': None, 'uid': None, 'mtime': pid_file.stat().st_mtime}
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+# PID file -> text that must occur in the command line (only for a plain-number file, whose identity has no start time)
+EXPECTED_CMDLINE = (('chrome', '--remote-debugging-port'), ('static-', 'http.server'), ('serve-', 'serve'))
+
+
+def _command_of(pid):
+    try:
+        return Path('/proc/%d/cmdline' % pid).read_bytes().replace(b'\0', b' ').decode('utf-8', 'replace')
+    except OSError:
+        pass
+    try:
+        result = subprocess.run(['ps', '-o', 'command=', '-p', str(pid)], capture_output=True, text=True, timeout=10, check=False,
+                                env=dict(os.environ, LC_ALL='C'))
+        return result.stdout if result.returncode == 0 else ''
+    except (OSError, subprocess.SubprocessError):
+        return ''
+
+
+def is_ours(pid_file, record, row):
+    """The live `row` is the process this PID file stands for. A JSON record: identity (pid, start, uid). A plain number: the process
+    must be ours, must have started before the file was written (a reused PID starts later) and must have the expected command line."""
+    if row is None or row['state'].startswith('Z') or row['uid'] != os.getuid():
+        return False
+    if record.get('start') is not None:
+        return same_identity(row, record)
+    if row['start'] > record['mtime'] + START_TOLERANCE:
+        return False
+    command = _command_of(record['pid'])
+    return any(pid_file.name.startswith(prefix) and needle in command for prefix, needle in EXPECTED_CMDLINE)
+
+
+def _signal(pid, sig):
+    try:
+        os.kill(pid, sig)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
+def _signal_group(pgid, sig):
+    try:
+        os.killpg(pgid, sig)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
+def _protected():
+    """This process and its ancestors: never signalled, whatever the tree says."""
+    pids, pid = set(), os.getpid()
+    try:
+        table = process_table()
+    except RuntimeError:
+        return {pid, os.getppid()}
+    while pid in table and pid not in pids and pid > 1:
+        pids.add(pid)
+        pid = table[pid]['ppid']
+    return pids | {os.getpid(), os.getppid()}
+
+
+def own_group_leader(row):
+    """The group of `row` is its own (the process started in a new session) and is not the group of this process: only then is the group signalled."""
+    return row['pgid'] == row['pid'] and row['pid'] != os.getpgrp()
+
+
+def collect_members(root_pid, table, known=None):
+    """`{pid: identity}` of `root_pid`, of its descendants and (for a group leader) of its group, added to `known`; never this process or
+    its ancestors, never another user's process."""
+    members = dict(known or {})
+    root = table.get(root_pid)
+    if root is None:
+        return members
+    protected = _protected()
+    children = {}
+    for row in table.values():
+        children.setdefault(row['ppid'], []).append(row)
+    queue, seen = [root], {root_pid}
+    while queue:
+        row = queue.pop()
+        for child in children.get(row['pid'], []):
+            if child['pid'] not in seen:
+                seen.add(child['pid'])
+                queue.append(child)
+    if own_group_leader(root):
+        seen |= {row['pid'] for row in table.values() if row['pgid'] == root_pid}
+    for pid in seen:
+        row = table[pid]
+        if pid not in protected and row['uid'] == os.getuid() and not row['state'].startswith('Z'):
+            members.setdefault(pid, identity_of(row))
+    return members
+
+
+def _alive(members, table):
+    return {pid: identity for pid, identity in members.items() if same_identity(table.get(pid), identity)}
+
+
+def _send(members, sig):
+    """`sig` to every member whose identity still matches (the table is read just before)."""
+    try:
+        table = process_table()
+    except RuntimeError:
+        return
+    for pid in _alive(members, table):
+        _signal(pid, sig)
+
+
+def _wait_gone(root_pid, members, seconds):
+    """Waits until no member lives; the tree is re-read so that what a member spawned meanwhile is added. Returns the living members."""
+    deadline = time.time() + seconds
+    while True:
+        child = CHILDREN.get(root_pid)
+        if child is not None:
+            child.poll()   # reaps our own child
+        try:
+            table = process_table()
+        except RuntimeError:
+            return members
+        members = collect_members(root_pid, table, _alive(members, table)) if root_pid in table else _alive(members, table)
+        members = _alive(members, table)
+        if not members or time.time() >= deadline:
+            return members
+        time.sleep(0.2)
+
+
+def stop_tree(root_pid, grace=None):
+    """SIGTERM, after `grace` seconds SIGKILL, to the process `root_pid` and everything below it (listed first). Returns the members that
+    still live afterwards (empty = confirmed dead). A process whose identity changed meanwhile is not signalled."""
+    grace = GRACE if grace is None else grace
+    try:
+        table = process_table()
+    except RuntimeError:
+        return {root_pid: None}
+    members = collect_members(root_pid, table)
+    root = table.get(root_pid)
+    for sig, wait in ((signal.SIGTERM, grace), (signal.SIGKILL, KILL_WAIT)):
+        if not members:
+            break
+        if root is not None and own_group_leader(root) and same_identity(root, members.get(root_pid) or identity_of(root)):
+            _signal_group(root_pid, sig)
+        _send(members, sig)
+        members = _wait_gone(root_pid, members, wait)
+        root = None   # the group is signalled with the first signal only; later rounds go member by member
+    child = CHILDREN.pop(root_pid, None)
+    if child is not None and not members:
         try:
             child.wait(timeout=5)
         except subprocess.TimeoutExpired:
             pass
+    return members
 
 
-# PID file -> text that must occur in /proc/<pid>/cmdline (a stale file whose PID was reused is not killed)
-EXPECTED_CMDLINE = (('chrome', '--remote-debugging-port'), ('static-', 'http.server'), ('serve-', 'serve'))
-
-
-def is_ours(pid_file, pid):
-    try:
-        cmdline = Path('/proc/%d/cmdline' % pid).read_bytes().replace(b'\0', b' ').decode('utf-8', 'replace')
-    except OSError:
-        return False
-    for prefix, needle in EXPECTED_CMDLINE:
-        if pid_file.name.startswith(prefix):
-            return needle in cmdline
-    return False
+def stop_pid(pid, grace=None):
+    """Stops the process `pid` started by this module (and its descendants); returns the survivors."""
+    return stop_tree(pid, grace)
 
 
 def stop_all(env):
+    """Stops every process of a PID file in the working directory. A file is removed only when its process is confirmed gone (or never
+    was ours: gone, a reused PID, junk); a process that survives keeps its file, is reported on stderr and is returned."""
     workdir = Path(env['workdir'])
+    survivors = {}
     for pid_file in sorted(set(workdir.glob('*.pid')) | set(workdir.glob('run-*/*.pid'))):
         if not pid_file.exists():
             continue
+        record = read_pid_file(pid_file)
+        if record is None:
+            pid_file.unlink(missing_ok=True)
+            continue
         try:
-            pid = int(pid_file.read_text().strip())
-            if is_ours(pid_file, pid):
-                stop_pid(pid, group=pid_file.name.startswith('chrome'))
-        except (ValueError, OSError):
-            pass
+            row = process_table().get(record['pid'])
+        except RuntimeError as error:
+            print('env: %s: %s; %s kept' % (pid_file.name, error, pid_file.name), file=sys.stderr)
+            survivors[record['pid']] = None
+            continue
+        if not is_ours(pid_file, record, row):
+            pid_file.unlink(missing_ok=True)   # nothing of ours lives behind it: never signalled
+            continue
+        left = stop_tree(record['pid'])
+        if left:
+            print('env: %s: still alive after SIGKILL: %s; %s kept' % (pid_file.name, ', '.join(str(pid) for pid in sorted(left)), pid_file.name),
+                  file=sys.stderr)
+            survivors.update(left)
+            continue
         pid_file.unlink(missing_ok=True)
     link = workdir / 'chrome-tmp.link'
     if link.exists():
         Path(link.read_text().strip()).unlink(missing_ok=True)
         link.unlink()
+    return survivors
 
 
 if __name__ == '__main__':
@@ -354,6 +577,6 @@ if __name__ == '__main__':
     elif command == 'chrome':
         print('chrome pid', start_chrome(json.loads(Path(sys.argv[2]).read_text()), sys.argv[3]))
     elif command == 'stop':
-        stop_all(json.loads(Path(sys.argv[2]).read_text()))
+        sys.exit(1 if stop_all(json.loads(Path(sys.argv[2]).read_text())) else 0)
     else:
         sys.exit('unknown command')
