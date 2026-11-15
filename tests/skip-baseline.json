@@ -42,8 +42,6 @@
    "mkfifo",
    "FIFO",
    "`sh`",
-   "Linux ownership backend",
-   "ownership backend on Linux only",
    "no /bin/bash",
    "no /bin/sh",
    "no /bin/zsh"
@@ -229,23 +227,23 @@
    },
    {
     "id": "test_skillsync_eight.EightContracts.test_environment_child_resisting_term_is_cleaned",
-    "category": "posix-only"
+    "category": "linux-only-env"
    },
    {
     "id": "test_skillsync_eight.EightContracts.test_environment_cold_warm_freshness_and_cleanup",
-    "category": "posix-only"
+    "category": "linux-only-env"
    },
    {
     "id": "test_skillsync_eight.EightContracts.test_environment_failed_health_cleans_own_process",
-    "category": "posix-only"
+    "category": "linux-only-env"
    },
    {
     "id": "test_skillsync_eight.EightContracts.test_environment_foreign_record_never_signalled",
-    "category": "posix-only"
+    "category": "linux-only-env"
    },
    {
     "id": "test_skillsync_eight.EightContracts.test_environment_prepare_can_share_parent_resource",
-    "category": "posix-only"
+    "category": "linux-only-env"
    },
    {
     "id": "test_skillsync_filelock_unsupported.WaiterFollowsAnUnlinkedLockFileTests.test_a_default_waiter_locks_the_recreated_file_after_the_holder_unlinked_it",
@@ -293,7 +291,7 @@
    },
    {
     "id": "test_skillsync_layers_consumers.OrgDataPositiveControls.test_e2e_and_env_plans_use_the_org_configuration",
-    "category": "posix-only"
+    "category": "linux-only-env"
    },
    {
     "id": "test_skillsync_layers_merge.TrustModelTest.test_case_collisions_inside_one_layer",
