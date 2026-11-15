@@ -86,5 +86,21 @@ class CrLfCheckpoints(unittest.TestCase):
         self.assertEqual(dashboard.parse_eta(items[1]["text"]), ("bieg", "10:00"))
 
 
+class ParseWarningsRedaction(unittest.TestCase):
+    """M1 (review): the fragment is redacted BEFORE it is cut, so a secret split by the 80-character cut leaves no prefix."""
+
+    def test_secret_on_the_cut_boundary_is_masked_whole(self):
+        import os
+        from unittest import mock
+        secret = ''.join(('Zq9Xw3', 'Lm7Rt2', 'Vb5Nc8', 'Kd'))   # assembled at run time: no literal token for the secret scanners
+        with mock.patch.dict(os.environ, {'SOME_API_TOKEN': secret}):
+            for pad in range(40, 70):
+                text = 'w toku: opis bez id ' + 'x' * pad + ' ' + secret + ' koniec'
+                fragment = dashboard.report_warnings(text)[0]['fragment']
+                with self.subTest(pad=pad):
+                    self.assertNotIn(secret[:6], fragment)
+                    self.assertLessEqual(len(fragment), dashboard.PARSE_WARNING_FRAGMENT)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -382,7 +382,7 @@ def report_warnings(text):
                 reason = 'later-id'
             else:
                 continue
-            found.append({'segment': label, 'fragment': piece[:PARSE_WARNING_FRAGMENT], 'reason': reason})
+            found.append({'segment': label, 'fragment': redact(piece)[:PARSE_WARNING_FRAGMENT], 'reason': reason})
     return found
 
 
