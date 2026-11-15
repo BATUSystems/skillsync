@@ -32,6 +32,14 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 - The prototype gallery (static and live) links "Pytania" to `/_experts/<slug>` and "Pytania" in the header when a run has questions.
 - Prototype engine: the presentation mode shows one screen at a time (`proto-screen-hidden`), with ←/→, ‹ ›, Home/End, the counter "N / M", the key P and `?mode=presentation` as entries, Esc/P/"Wyjdź (Esc)" as exits, the screen in `#sN`, the state in `sessionStorage` of the tab, and one printed screen. E2E scenarios `P-01` to `P-06` (`docs/prototype-contract/scenariusze-e2e.md`, section 16).
 - Tests: phrase guard of the library for the plan summary, the review profile and the question rules (`tests/test_skillsync_plan_checkpoints_skills.py`); `tests/test_skillsync_plan_summary.py`, `tests/test_skillsync_plan_acceptance.py`.
+- `dashboard serve --read-port N --approve-port M`: two-port mode of the status page. One process, one shared state, two HTTP sockets. The role comes from the port, not from the `Host` header: the read socket has no consent route (`POST /api/approve` returns 404) and no token; the consent socket keeps the 1.5.0 checks, adds an exact `Origin` check (`http://<Host>` with the port), refuses intermediary headers (`Forwarded`, `X-Forwarded-*`, `X-Real-IP`, `Via` and others) unless `--allow-proxy-headers` is given, and records where each consent came from. The port numbers are given explicitly (the flags have no default value; 5140 for reading and 5141 for consents are the usual pair). Combinations that make no sense end with `BLOCKED` (exit 2) before anything is bound.
+- `dashboard serve --read-bind ADDR` and `--approve-bind ADDR` (listen address of each socket), and `--allow-proxy-headers` (consent socket only). In two-port mode both sockets listen on `0.0.0.0` by default; `--host` sets both, `127.0.0.1` narrows a socket to this machine. A startup warning is printed for every socket that listens beyond loopback.
+- Single-port mode is unchanged: `dashboard serve` without the new flags, or with `--port`, still has one socket, listens on `127.0.0.1` unless `--host` is given, and takes the role from the `Host` header.
+- Migration from two instances (one of them with `--no-approvals`): one call `dashboard serve <project> --read-port 5140 --approve-port 5141` replaces both. Stop the old processes first; both ports must be free, otherwise the start is `BLOCKED` with no side effects.
+- Console: one line per socket at start (the read address without a token, and the consent address with the token); a line for every consent given from a non-loopback peer; a count of refused consent tokens, reported at most once a minute, without the token.
+- `dashboard url <project> --read` prints the read address (no fragment, no token). In two-port mode `dashboard url --json` adds `role` and `readUrl`.
+- State files: additive `role` (`read` or `approve`) and `peer` fields (`schema: 1`); a file without `role` is a single-port file.
+- `/api/status`: `approvals.role` in two-port mode (`here`, `viewer` and `tokenRequired` then follow the socket, not the `Host`). `approvals.jsonl`: optional `via` object (`port`, `host`, `peer`) on consents from the consent socket; entries without `via` are read as before.
 
 ### Changed
 
@@ -41,6 +49,11 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 - `skillsync_workflow/common.py`: `plan_section(text, name)`, the shared reader of a `## <name>` section of a plan.
 - The prototype engine files (`prototype.js`, `prototype.css`) carry the presentation mode: `skillsync prototype migrate` delivers them (the change of the CSS can invalidate the acceptance of screens: the list is `acceptance` of the result).
 
+### Security
+
+- Two-port mode: a request on the read socket cannot write anything (no route, no token); on the consent socket the `Origin` must match the `Host` exactly, a request with intermediary headers is refused, and `via.peer` is the address of the connection, so `X-Forwarded-For` cannot change it.
+- Known residual risk, documented in `docs/workflow.md` (section "Strona statusu: dwa tryby"): the consent token travels in plain HTTP. With the default `0.0.0.0` listen address on an untrusted network, anyone who can sniff the traffic can capture the token and give consents while the server runs. Use `--approve-bind 127.0.0.1` or an SSH tunnel (`ssh -L 5141:127.0.0.1:5141`) there, and point tunnels at the read port only.
+
 ### Compatibility
 
 - All new keys are optional in `schema: 1`; a renderer of 1.5.0 (including the copies in editor plugins) ignores them, and the current renderer shows the old page for a JSON without them. A core older than 1.6.0 does not know `--screens` (the skill `prototype` says to repeat the command without it).
@@ -49,6 +62,10 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 - A server older than 1.6.0 shows a screen ref of `question add --screen` as plain text.
 - Behaviour change: the read of the questions by an account without a role of the experts is `200` (preview), not `403`.
 - A prototype gets the presentation mode only after `skillsync prototype migrate`.
+
+### Breaking
+
+- `GET /_api/v1/questions` and `/_api/v1/questions/<id>` of the prototype server: a signed-in account without a role of the experts gets `200` with a read-only preview (`preview: true`) instead of `403 forbidden`. A client that used the `403` to tell the missing role must read `preview`. Writes are still refused with `403`. Nothing else in this release is incompatible: the two-port mode of the status page is opt-in and the single-port mode is unchanged.
 
 ## [1.5.0] - 2026-11-15
 

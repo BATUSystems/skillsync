@@ -1,0 +1,595 @@
+{
+ "healthz": {
+  "127.0.0.1": [
+   200,
+   {
+    "keys": [
+     "ok",
+     "tokenId",
+     "version"
+    ],
+    "ok": true,
+    "tokenIdLen": 8
+   }
+  ],
+  "[::1]": [
+   200,
+   {
+    "keys": [
+     "ok",
+     "tokenId",
+     "version"
+    ],
+    "ok": true,
+    "tokenIdLen": 8
+   }
+  ],
+  "evil.example": [
+   403,
+   {
+    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host)."
+   }
+  ],
+  "localhost": [
+   200,
+   {
+    "keys": [
+     "ok",
+     "tokenId",
+     "version"
+    ],
+    "ok": true,
+    "tokenIdLen": 8
+   }
+  ],
+  "phone.example": [
+   200,
+   {
+    "keys": [
+     "ok",
+     "tokenId",
+     "version"
+    ],
+    "ok": true,
+    "tokenIdLen": 8
+   }
+  ],
+  "viewer.example": [
+   200,
+   {
+    "keys": [
+     "ok",
+     "tokenId",
+     "version"
+    ],
+    "ok": true,
+    "tokenIdLen": 8
+   }
+  ]
+ },
+ "post": {
+  "(none)|forwarded": [
+   400,
+   {
+    "error": "Nieprawidłowe żądanie."
+   }
+  ],
+  "(none)|no-board-header": [
+   403,
+   {
+    "error": "Brak nagłówka X-Status-Board."
+   }
+  ],
+  "(none)|no-token": [
+   403,
+   {
+    "code": "approve_token",
+    "error": "Brak albo zły token zgody: otwórz adres z konsoli serwera albo z `skillsync dashboard url`."
+   }
+  ],
+  "(none)|ok": [
+   400,
+   {
+    "error": "Nieprawidłowe żądanie."
+   }
+  ],
+  "(none)|origin-evil": [
+   403,
+   {
+    "error": "Obcy Origin."
+   }
+  ],
+  "(none)|origin-null": [
+   403,
+   {
+    "error": "Obcy Origin."
+   }
+  ],
+  "(none)|origin-own": [
+   400,
+   {
+    "error": "Nieprawidłowe żądanie."
+   }
+  ],
+  "(none)|origin-viewer": [
+   403,
+   {
+    "error": "Obcy Origin."
+   }
+  ],
+  "(none)|wrong-token": [
+   403,
+   {
+    "code": "approve_token",
+    "error": "Brak albo zły token zgody: otwórz adres z konsoli serwera albo z `skillsync dashboard url`."
+   }
+  ],
+  "(none)|wrong-type": [
+   403,
+   {
+    "error": "Oczekiwano application/json."
+   }
+  ],
+  "127.0.0.1|forwarded": [
+   400,
+   {
+    "error": "Nieprawidłowe żądanie."
+   }
+  ],
+  "127.0.0.1|no-board-header": [
+   403,
+   {
+    "error": "Brak nagłówka X-Status-Board."
+   }
+  ],
+  "127.0.0.1|no-token": [
+   403,
+   {
+    "code": "approve_token",
+    "error": "Brak albo zły token zgody: otwórz adres z konsoli serwera albo z `skillsync dashboard url`."
+   }
+  ],
+  "127.0.0.1|ok": [
+   400,
+   {
+    "error": "Nieprawidłowe żądanie."
+   }
+  ],
+  "127.0.0.1|origin-evil": [
+   403,
+   {
+    "error": "Obcy Origin."
+   }
+  ],
+  "127.0.0.1|origin-null": [
+   403,
+   {
+    "error": "Obcy Origin."
+   }
+  ],
+  "127.0.0.1|origin-own": [
+   400,
+   {
+    "error": "Nieprawidłowe żądanie."
+   }
+  ],
+  "127.0.0.1|origin-viewer": [
+   403,
+   {
+    "error": "Obcy Origin."
+   }
+  ],
+  "127.0.0.1|wrong-token": [
+   403,
+   {
+    "code": "approve_token",
+    "error": "Brak albo zły token zgody: otwórz adres z konsoli serwera albo z `skillsync dashboard url`."
+   }
+  ],
+  "127.0.0.1|wrong-type": [
+   403,
+   {
+    "error": "Oczekiwano application/json."
+   }
+  ],
+  "[::1]|forwarded": [
+   400,
+   {
+    "error": "Nieprawidłowe żądanie."
+   }
+  ],
+  "[::1]|no-board-header": [
+   403,
+   {
+    "error": "Brak nagłówka X-Status-Board."
+   }
+  ],
+  "[::1]|no-token": [
+   403,
+   {
+    "code": "approve_token",
+    "error": "Brak albo zły token zgody: otwórz adres z konsoli serwera albo z `skillsync dashboard url`."
+   }
+  ],
+  "[::1]|ok": [
+   400,
+   {
+    "error": "Nieprawidłowe żądanie."
+   }
+  ],
+  "[::1]|origin-evil": [
+   403,
+   {
+    "error": "Obcy Origin."
+   }
+  ],
+  "[::1]|origin-null": [
+   403,
+   {
+    "error": "Obcy Origin."
+   }
+  ],
+  "[::1]|origin-own": [
+   400,
+   {
+    "error": "Nieprawidłowe żądanie."
+   }
+  ],
+  "[::1]|origin-viewer": [
+   403,
+   {
+    "error": "Obcy Origin."
+   }
+  ],
+  "[::1]|wrong-token": [
+   403,
+   {
+    "code": "approve_token",
+    "error": "Brak albo zły token zgody: otwórz adres z konsoli serwera albo z `skillsync dashboard url`."
+   }
+  ],
+  "[::1]|wrong-type": [
+   403,
+   {
+    "error": "Oczekiwano application/json."
+   }
+  ],
+  "evil.example|forwarded": [
+   403,
+   {
+    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host)."
+   }
+  ],
+  "evil.example|no-board-header": [
+   403,
+   {
+    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host)."
+   }
+  ],
+  "evil.example|no-token": [
+   403,
+   {
+    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host)."
+   }
+  ],
+  "evil.example|ok": [
+   403,
+   {
+    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host)."
+   }
+  ],
+  "evil.example|origin-evil": [
+   403,
+   {
+    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host)."
+   }
+  ],
+  "evil.example|origin-null": [
+   403,
+   {
+    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host)."
+   }
+  ],
+  "evil.example|origin-own": [
+   403,
+   {
+    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host)."
+   }
+  ],
+  "evil.example|origin-viewer": [
+   403,
+   {
+    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host)."
+   }
+  ],
+  "evil.example|wrong-token": [
+   403,
+   {
+    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host)."
+   }
+  ],
+  "evil.example|wrong-type": [
+   403,
+   {
+    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host)."
+   }
+  ],
+  "localhost|forwarded": [
+   400,
+   {
+    "error": "Nieprawidłowe żądanie."
+   }
+  ],
+  "localhost|no-board-header": [
+   403,
+   {
+    "error": "Brak nagłówka X-Status-Board."
+   }
+  ],
+  "localhost|no-token": [
+   403,
+   {
+    "code": "approve_token",
+    "error": "Brak albo zły token zgody: otwórz adres z konsoli serwera albo z `skillsync dashboard url`."
+   }
+  ],
+  "localhost|ok": [
+   400,
+   {
+    "error": "Nieprawidłowe żądanie."
+   }
+  ],
+  "localhost|origin-evil": [
+   403,
+   {
+    "error": "Obcy Origin."
+   }
+  ],
+  "localhost|origin-null": [
+   403,
+   {
+    "error": "Obcy Origin."
+   }
+  ],
+  "localhost|origin-own": [
+   400,
+   {
+    "error": "Nieprawidłowe żądanie."
+   }
+  ],
+  "localhost|origin-viewer": [
+   403,
+   {
+    "error": "Obcy Origin."
+   }
+  ],
+  "localhost|wrong-token": [
+   403,
+   {
+    "code": "approve_token",
+    "error": "Brak albo zły token zgody: otwórz adres z konsoli serwera albo z `skillsync dashboard url`."
+   }
+  ],
+  "localhost|wrong-type": [
+   403,
+   {
+    "error": "Oczekiwano application/json."
+   }
+  ],
+  "phone.example|forwarded": [
+   400,
+   {
+    "error": "Nieprawidłowe żądanie."
+   }
+  ],
+  "phone.example|no-board-header": [
+   403,
+   {
+    "error": "Brak nagłówka X-Status-Board."
+   }
+  ],
+  "phone.example|no-token": [
+   403,
+   {
+    "code": "approve_token",
+    "error": "Brak albo zły token zgody: otwórz adres z konsoli serwera albo z `skillsync dashboard url`."
+   }
+  ],
+  "phone.example|ok": [
+   400,
+   {
+    "error": "Nieprawidłowe żądanie."
+   }
+  ],
+  "phone.example|origin-evil": [
+   403,
+   {
+    "error": "Obcy Origin."
+   }
+  ],
+  "phone.example|origin-null": [
+   403,
+   {
+    "error": "Obcy Origin."
+   }
+  ],
+  "phone.example|origin-own": [
+   400,
+   {
+    "error": "Nieprawidłowe żądanie."
+   }
+  ],
+  "phone.example|origin-viewer": [
+   403,
+   {
+    "error": "Obcy Origin."
+   }
+  ],
+  "phone.example|wrong-token": [
+   403,
+   {
+    "code": "approve_token",
+    "error": "Brak albo zły token zgody: otwórz adres z konsoli serwera albo z `skillsync dashboard url`."
+   }
+  ],
+  "phone.example|wrong-type": [
+   403,
+   {
+    "error": "Oczekiwano application/json."
+   }
+  ],
+  "viewer.example|forwarded": [
+   403,
+   {
+    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host)."
+   }
+  ],
+  "viewer.example|no-board-header": [
+   403,
+   {
+    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host)."
+   }
+  ],
+  "viewer.example|no-token": [
+   403,
+   {
+    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host)."
+   }
+  ],
+  "viewer.example|ok": [
+   403,
+   {
+    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host)."
+   }
+  ],
+  "viewer.example|origin-evil": [
+   403,
+   {
+    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host)."
+   }
+  ],
+  "viewer.example|origin-null": [
+   403,
+   {
+    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host)."
+   }
+  ],
+  "viewer.example|origin-own": [
+   403,
+   {
+    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host)."
+   }
+  ],
+  "viewer.example|origin-viewer": [
+   403,
+   {
+    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host)."
+   }
+  ],
+  "viewer.example|wrong-token": [
+   403,
+   {
+    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host)."
+   }
+  ],
+  "viewer.example|wrong-type": [
+   403,
+   {
+    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host)."
+   }
+  ]
+ },
+ "status": {
+  "127.0.0.1": [
+   200,
+   {
+    "approvalKeys": [
+     "actions",
+     "enabled",
+     "here",
+     "last",
+     "tokenRequired",
+     "viewer"
+    ],
+    "enabled": true,
+    "here": true,
+    "tokenRequired": true,
+    "viewer": false
+   }
+  ],
+  "[::1]": [
+   200,
+   {
+    "approvalKeys": [
+     "actions",
+     "enabled",
+     "here",
+     "last",
+     "tokenRequired",
+     "viewer"
+    ],
+    "enabled": true,
+    "here": true,
+    "tokenRequired": true,
+    "viewer": false
+   }
+  ],
+  "evil.example": [
+   403,
+   {
+    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host)."
+   }
+  ],
+  "localhost": [
+   200,
+   {
+    "approvalKeys": [
+     "actions",
+     "enabled",
+     "here",
+     "last",
+     "tokenRequired",
+     "viewer"
+    ],
+    "enabled": true,
+    "here": true,
+    "tokenRequired": true,
+    "viewer": false
+   }
+  ],
+  "phone.example": [
+   200,
+   {
+    "approvalKeys": [
+     "actions",
+     "enabled",
+     "here",
+     "last",
+     "tokenRequired",
+     "viewer"
+    ],
+    "enabled": true,
+    "here": true,
+    "tokenRequired": true,
+    "viewer": false
+   }
+  ],
+  "viewer.example": [
+   200,
+   {
+    "approvalKeys": [
+     "actions",
+     "enabled",
+     "here",
+     "last",
+     "tokenRequired",
+     "viewer"
+    ],
+    "enabled": true,
+    "here": false,
+    "tokenRequired": true,
+    "viewer": true
+   }
+  ]
+ }
+}

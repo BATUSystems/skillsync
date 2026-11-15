@@ -549,6 +549,10 @@
     "category": "posix-only"
    },
    {
+    "id": "test_skillsync_dashboard_ports.Process.test_a_signal_stops_both_sockets_and_removes_both_state_files",
+    "category": "windows-no-mechanism"
+   },
+   {
     "id": "test_skillsync_dashboard_server.ServeCommandTests.test_serve_answers_and_stops_on_sigterm",
     "category": "windows-no-mechanism"
    },

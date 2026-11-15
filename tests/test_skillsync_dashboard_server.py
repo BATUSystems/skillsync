@@ -1,7 +1,7 @@
 """Testy serwera dashboard (`skillsync dashboard serve`, skillsync_workflow/dashboard_http.py) i silnika, na którym stoi
 (skillsync_workflow/dashboard.py): python3 -m unittest tests.test_skillsync_dashboard_server
 
-Testy HTTP startują serwer na 127.0.0.1 na wolnym porcie z zakresu 5100–5199 (nigdy 5140), wybieranym dynamicznie, i zamykają
+Testy HTTP startują serwer na 127.0.0.1 na wolnym porcie z zakresu 5100–5199 (nigdy 5140–5142), wybieranym dynamicznie, i zamykają
 go po teście. Assety i descriptions.json pochodzą z warstwy `library/` repo przez `LayerSet.skill_files`, jak w komendzie.
 """
 from __future__ import annotations
@@ -42,6 +42,7 @@ TEST_TOKEN = "test-token-for-the-consent-header"   # `Board(approve_token=...)`:
 
 
 TEST_PORTS_ENV = "SKILLSYNC_TEST_DASHBOARD_PORTS"
+RESERVED_PORTS = (5140, 5141, 5142)   # defaults of `dashboard serve` (read 5140, consents 5141) and the second project of the station
 
 
 def port_range() -> range:
@@ -61,10 +62,10 @@ def port_range() -> range:
 
 
 def free_port() -> int:
-    """Wolny port z zakresu 5100–5199 poza 5140 (domyślnym portem dashboardu) albo z SKILLSYNC_TEST_DASHBOARD_PORTS."""
+    """Wolny port z zakresu 5100–5199 poza 5140–5142 (domyślne porty dashboardu i drugi projekt stacji) albo z SKILLSYNC_TEST_DASHBOARD_PORTS."""
     ports = port_range()
     for port in ports:
-        if port == 5140:
+        if port in RESERVED_PORTS:
             continue
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             if os.name != "nt":
