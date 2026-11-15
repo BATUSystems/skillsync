@@ -202,9 +202,11 @@ leakguard:
 ```
 
 Z ustawionym `identity_dir` `--require full` działa bez osobnego configu pomocniczego. Szczegóły pola: [configuration](configuration.md#strażnik-wycieków-leakguard).
-`skillsync layers check --isolation` szuka plików tożsamości w katalogu biblioteki warstwy (korzeń `layer.yaml`), nie w całym klonie.
+`skillsync layers check --isolation` szuka plików tożsamości w katalogu biblioteki warstwy (korzeń `layer.yaml`), nie w całym klonie. Pliki w `leakguard.identity_dir` (tożsamości wszystkich celów maszyny, także tych, które nie są warstwami, np. repo wtyczki) są pomijane, gdy ich właściciel jest skonfigurowanym `leakguard.targets` (od 1.5.0); właściciel spoza `targets` i spoza `isolation.allowed_layers` nadal daje `isolation-foreign-identity`, a ta sama tożsamość w bibliotece warstwy też.
 
 Po sklonowaniu repo do rozwoju zainstaluj hooki strażnika: `skillsync leakguard install-hook <klon>`. Worktree dzielą `.git/hooks` klonu, więc jedna instalacja obejmuje wszystkie; bez niej push nie przechodzi przez strażnika (przy `core.hooksPath` poza `.git` komenda odmówi i trzeba wołać `leakcheck` ręcznie). `skillsync leakcheck` w katalogu roboczym klonu celu `public` ostrzega o braku hooków (ostrzeżenie, nie błąd) i podaje polecenie instalacji.
+
+Treść tytułu i opisu każdego PR do publicznego rdzenia skanuje workflow `.github/workflows/pr-text.yml` (job `pr-text (leakcheck)`, `skillsync leakcheck --text`, narzędzie i dodatki `.leakguard/patterns.yaml` z gałęzi bazowej; uruchamia się też po edycji opisu, bez macierzy testów). To nie jest wymagany check rulesetu (jego dodanie to decyzja właściciela); definicja workflow pochodzi z merge ref PR-a, więc job działa już w PR-ze, który go wprowadza, a narzędzie z bazy musi mieć `--text` (1.3.0+).
 
 ## Flagi dla narzędzi integracyjnych
 

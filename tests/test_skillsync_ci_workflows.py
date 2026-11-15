@@ -405,7 +405,12 @@ class PrTextWorkflowTests(unittest.TestCase):
         pull = triggers(self.wf)["pull_request"]
         self.assertTrue({"opened", "edited", "reopened", "synchronize"} <= set(pull["types"]), pull)
         self.assertEqual(self.wf["permissions"], {"contents": "read"})
-        self.assertNotIn("secrets.", yaml.safe_dump(self.wf))
+        # `edited` also fires when the base branch changes; whatever starts it, the job has no secrets and no write token
+        dump = yaml.safe_dump(self.wf)
+        self.assertNotIn("secrets.", dump)
+        self.assertNotIn("GITHUB_TOKEN", dump)
+        self.assertNotIn("pull_request_target", dump)
+        self.assertNotIn("permissions", self.job, "the job does not widen the workflow permissions")
 
     def test_the_text_reaches_the_script_only_through_environment_variables(self):
         env = self.job["env"]

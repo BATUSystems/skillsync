@@ -1,7 +1,10 @@
 # Kontrola treści tytułu i opisu pull requesta (DEBT-142 D49): `skillsync leakcheck --text`, te same wzorce ogólne i dodatki
 # z gałęzi bazowej co job `leakcheck` w ci.yml. Osobny workflow, bo zdarzenie `edited` (edycja opisu) nie może uruchamiać
 # całej macierzy testów. Narzędzie i dodatki bierzemy z gałęzi bazowej (zewnętrzny autor nie rozluźni kontroli);
-# tytuł i opis idą przez zmienne środowiskowe, nigdy przez interpolację w skrypcie.
+# tytuł i opis idą przez zmienne środowiskowe, nigdy przez interpolację w skrypcie. Wyzwalacz `pull_request` (nie
+# `_target`): definicja workflow pochodzi z merge ref PR-a, więc job działa już w PR-ze, który go wprowadza (narzędzie z
+# bazy musi mieć `leakcheck --text`, czyli 1.3.0+). Job nie jest wymaganym checkiem rulesetu; `edited` uruchamia go też
+# przy zmianie gałęzi bazowej (job nie ma sekretów ani tokenu do zapisu).
 name: pr-text
 
 on:
