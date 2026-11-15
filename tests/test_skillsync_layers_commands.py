@@ -120,8 +120,10 @@ class HookCommandMissingTest(CommandsCase):
     def test_a_bare_command_missing_from_path_is_found_and_a_present_one_is_not(self):
         bin_dir = self.path.parent / 'path-bin'
         bin_dir.mkdir()
-        full_path = os.pathsep.join([str(bin_dir), os.environ.get('PATH', '')])      # git stays reachable
-        command = 'hook-probe.exe' if os.name == 'nt' else 'skillsync.py'      # `which` needs a PATHEXT extension on Windows; not a real command there
+        command = 'skillsync.exe' if os.name == 'nt' else 'skillsync.py'      # the hook line must call `skillsync`; `which` needs a PATHEXT extension on Windows
+        kept = [item for item in os.environ.get('PATH', '').split(os.pathsep)
+                if not item or not (Path(item) / command).exists()]        # an installed `skillsync.exe` must not hide the missing one
+        full_path = os.pathsep.join([str(bin_dir), *kept])                  # git stays reachable
         write(self.hooks / 'pre-commit', f'#!/bin/sh\n{command} leakcheck "$PWD" --staged || exit $?\n', executable=True)
         with unittest.mock.patch.dict(os.environ, {'PATH': full_path}):
             found = self.broken(self.findings())
