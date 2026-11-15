@@ -195,8 +195,122 @@
     "category": "e2e-chrome"
    }
   ],
-  "ubuntu-latest/symlink": null,
-  "ubuntu-latest/copy": null,
+  "ubuntu-latest/symlink": [
+   {
+    "id": "test_skillsync_layers_merge.TrustModelTest.test_a_real_junction_is_skipped_and_reported",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_leakguard.ConfigPrePushHookTest.test_pre_push_under_a_zsh_hook_fails_closed_without_a_temporary_file",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_d23",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_dr",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_f1",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_f2",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_f3",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_final",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_layout_probe",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_n",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_nr",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_ryzyka",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_w",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_widok",
+    "category": "e2e-chrome"
+   }
+  ],
+  "ubuntu-latest/copy": [
+   {
+    "id": "test_skillsync_layers_merge.TrustModelTest.test_a_real_junction_is_skipped_and_reported",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_leakguard.ConfigPrePushHookTest.test_pre_push_under_a_zsh_hook_fails_closed_without_a_temporary_file",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_d23",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_dr",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_f1",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_f2",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_f3",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_final",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_layout_probe",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_n",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_nr",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_ryzyka",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_w",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_widok",
+    "category": "e2e-chrome"
+   }
+  ],
   "windows-latest/symlink": null,
   "windows-latest/copy": [
    {
