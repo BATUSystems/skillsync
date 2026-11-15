@@ -12,6 +12,28 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Fixed
+
+- Windows (Python 3.11 and 3.12): the test suite no longer fails for reasons of the platform that are not defects of the product. Tests were fixed (isolated
+  `USERPROFILE`/`LOCALAPPDATA`, interpreter from `sys.executable`, quoted paths in YAML, a fake `az` and `git` that run on Windows, links with a relative target, `skillsync.exe` as the entry file, case-insensitive file
+  trees); no test was removed or disabled, the simulated hosts that a real Windows file tree cannot show are skipped as subtests with a reason.
+- `status plan approve`/`spec approve`: the warning about the pre-implement report no longer misreads a plan saved with CRLF line endings (the `Przebieg:` line was not found).
+- `layers`: on a Windows host a backslash is a separator when paths are normalised and in `layer_rules` globs, whichever system is simulated.
+
+### Changed
+
+- Path fields in reports use `/` on Windows: `knowledge init` (`created`, `existing`), `route` (`lessons[].path`, `domain[].path`, `index`), `doctor` (`findings[].path`) and the message about the users file inside the served root of
+  `prototype serve`. Helper: `skillsync_workflow/pathfmt.py` (`posix`). Commands that are to be executed (`selfcmd`, the `skillsync: link` task, hook commands) and paths the product opens stay native.
+
+### Compatibility
+
+- On Windows, a consumer that compares the path fields above with a native path (`C:\...`) must compare with `/` or normalise (`Path(value)`); on Linux and macOS nothing changes. Commands to execute are not
+  affected: they keep the native form.
+
+### Breaking
+
+None.
+
 ## [1.4.0] - 2026-11-14
 
 ### Added

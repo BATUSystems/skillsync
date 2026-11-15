@@ -130,6 +130,12 @@ Dwie różne flagi warstw:
   tylko warstwy z flag (kolejność flag = rosnące pierwszeństwo), a `layer_rules` z configu są pomijane. `core` też trzeba
   wtedy podać.
 
+## Ścieżki w raportach
+
+Pola ścieżek w raportach JSON mają na Windows ukośnik `/` (`knowledge init`: `created`, `existing`; `route`: `lessons[].path`, `domain[].path`, `index`; `doctor`: `findings[].path`;
+komunikat `prototype serve` o pliku użytkowników w serwowanym katalogu). Pomocnik: `skillsync_workflow/pathfmt.py` (`posix`). Wyjątek: komendy do wykonania (zadanie `skillsync: link`, komendy hooków,
+`selfcmd`) i ścieżki, które produkt sam otwiera, zostają w postaci natywnej. Na Linuksie i macOS nic się nie zmienia.
+
 ## Kontrola konfiguracji i kontekstu
 
 | Komenda | Skutek |
