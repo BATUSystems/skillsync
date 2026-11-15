@@ -1,6 +1,7 @@
 """`winacl`: private files on Windows through an ACL (DEBT-150-ACL). The Windows behaviour is switched on with the module seam
 (`IS_WINDOWS`, `_backend`) so the logic runs on every system; the real `advapi32` calls are tested on Windows only.
 Uruchamianie: `python3 -m unittest discover -s tests -p test_skillsync_winacl.py`."""
+import importlib.util
 import io
 import os
 import stat
@@ -411,6 +412,18 @@ class RealWindowsTests(unittest.TestCase):
             ps.atomic_write_bytes(target, ('{"n": %d}' % index).encode(), mode=0o600)
             self.assertTrue(winacl.is_owner_only(target), 'write %d' % index)
         self.assertEqual(Path(target).read_text(encoding='utf-8'), '{"n": 4}')
+
+    def test_the_secret_files_of_the_e2e_environment_are_owner_only_by_acl(self):
+        """The environment of the prototype E2E harness (`tests/e2e/prototype/env.py`) writes its password and config files through the
+        shared ACL helper. This test lives here, not in `test_skillsync_prototype_e2e`: that module is run by the `e2e` CI job, which
+        refuses every skipped test of the module, and this one is Windows only."""
+        spec = importlib.util.spec_from_file_location('skillsync_e2e_env', ROOT / 'tests' / 'e2e' / 'prototype' / 'env.py')
+        env_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(env_module)
+        library = os.environ.get('SKILLSYNC_TEST_LIBRARY') or str(ROOT / 'library')
+        env = env_module.prepare(Path(self.dir) / 'w', library, 9333, 4445, 4446)
+        self.assertTrue(winacl.is_owner_only(env['secrets']))
+        self.assertTrue(winacl.is_owner_only(env['config']))
 
 
 if __name__ == '__main__':

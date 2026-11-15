@@ -100,10 +100,6 @@
     "category": "windows-only"
    },
    {
-    "id": "test_skillsync_prototype_e2e.EnvironmentTests.test_secret_files_are_owner_only_by_acl_on_windows",
-    "category": "windows-only"
-   },
-   {
     "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_d23",
     "category": "e2e-chrome"
    },
@@ -185,6 +181,10 @@
    },
    {
     "id": "test_skillsync_winacl.RealWindowsTests.test_the_dacl_is_exactly_user_system_administrators",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_the_secret_files_of_the_e2e_environment_are_owner_only_by_acl",
     "category": "windows-only"
    }
   ],
@@ -198,10 +198,6 @@
     "category": "windows-only"
    },
    {
-    "id": "test_skillsync_prototype_e2e.EnvironmentTests.test_secret_files_are_owner_only_by_acl_on_windows",
-    "category": "windows-only"
-   },
-   {
     "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_d23",
     "category": "e2e-chrome"
    },
@@ -283,6 +279,10 @@
    },
    {
     "id": "test_skillsync_winacl.RealWindowsTests.test_the_dacl_is_exactly_user_system_administrators",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_the_secret_files_of_the_e2e_environment_are_owner_only_by_acl",
     "category": "windows-only"
    }
   ],
@@ -296,10 +296,6 @@
     "category": "posix-only"
    },
    {
-    "id": "test_skillsync_prototype_e2e.EnvironmentTests.test_secret_files_are_owner_only_by_acl_on_windows",
-    "category": "windows-only"
-   },
-   {
     "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_d23",
     "category": "e2e-chrome"
    },
@@ -381,6 +377,10 @@
    },
    {
     "id": "test_skillsync_winacl.RealWindowsTests.test_the_dacl_is_exactly_user_system_administrators",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_the_secret_files_of_the_e2e_environment_are_owner_only_by_acl",
     "category": "windows-only"
    }
   ],
@@ -394,10 +394,6 @@
     "category": "posix-only"
    },
    {
-    "id": "test_skillsync_prototype_e2e.EnvironmentTests.test_secret_files_are_owner_only_by_acl_on_windows",
-    "category": "windows-only"
-   },
-   {
     "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_d23",
     "category": "e2e-chrome"
    },
@@ -479,6 +475,10 @@
    },
    {
     "id": "test_skillsync_winacl.RealWindowsTests.test_the_dacl_is_exactly_user_system_administrators",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_the_secret_files_of_the_e2e_environment_are_owner_only_by_acl",
     "category": "windows-only"
    }
   ],
@@ -1247,10 +1247,6 @@
     "category": "filesystem"
    },
    {
-    "id": "test_skillsync_prototype_e2e.EnvironmentTests.test_secret_files_are_owner_only_by_acl_on_windows",
-    "category": "windows-only"
-   },
-   {
     "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_d23",
     "category": "e2e-chrome"
    },
@@ -1340,6 +1336,10 @@
    },
    {
     "id": "test_skillsync_winacl.RealWindowsTests.test_the_dacl_is_exactly_user_system_administrators",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_the_secret_files_of_the_e2e_environment_are_owner_only_by_acl",
     "category": "windows-only"
    }
   ],
@@ -1429,10 +1429,6 @@
     "category": "filesystem"
    },
    {
-    "id": "test_skillsync_prototype_e2e.EnvironmentTests.test_secret_files_are_owner_only_by_acl_on_windows",
-    "category": "windows-only"
-   },
-   {
     "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_d23",
     "category": "e2e-chrome"
    },
@@ -1522,6 +1518,10 @@
    },
    {
     "id": "test_skillsync_winacl.RealWindowsTests.test_the_dacl_is_exactly_user_system_administrators",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_the_secret_files_of_the_e2e_environment_are_owner_only_by_acl",
     "category": "windows-only"
    }
   ]
