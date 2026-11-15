@@ -468,7 +468,7 @@
           meter = h("span", { class: "bar thin stage-bar", role: "progressbar", "aria-valuemin": "0", "aria-valuemax": String(planned), "aria-valuenow": String(Math.min(done, planned)),
             "aria-label": `Ekrany prototypu: ${label}` }, fillEl);
         }
-        screens = h("span", { class: "stage-screens", "data-screens": "" }, meter, h("span", { class: "stage-screens-txt" }, label + (eta ? ` · ${eta}` : "")));
+        screens = h("span", { class: "stage-screens", "data-screens": "", title: eta || null }, meter, h("span", { class: "stage-screens-txt" }, label));
       }
       const tip = isActive ? `trwa od ${since || "—"}${s.tip ? " · " + s.tip : ""}` : s.tip;
       return h("span", { class: "stage" + (isDone ? " is-done" : "") + (isActive ? " is-active" : "") + (screens ? " has-screens" : ""), "data-state": s.state ? state : null, ...desc(s.key, tip) },

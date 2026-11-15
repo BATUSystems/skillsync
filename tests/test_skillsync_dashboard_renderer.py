@@ -1617,7 +1617,7 @@ class RendererNodeTests(unittest.TestCase):
     def test_s160_prototype_screens_bar(self) -> None:
         s = self.out["extra"]["s160"]
         full = s["screens"]
-        self.assertEqual(full["screens"], "3 z 8 ekranów · prototyp, koniec ok. 23:59")
+        self.assertEqual(full["screens"], "3 z 8 ekranów")  # koniec (eta) w atrybucie title
         self.assertEqual(full["meter"], {"max": "8", "now": "3", "w": "38%"})
         part = s["screensNoPlan"]
         self.assertEqual(part["screens"], "3 ekrany")
