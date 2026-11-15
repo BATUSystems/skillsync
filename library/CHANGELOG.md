@@ -4,6 +4,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-11-15
+
 ### Added
 
 - `skills/feature/references/prepush-matrix.md`: macierz sprawdzeń przed pushem (wersje Pythona, systemy, `check_skips` na logach wszystkich systemów); odnośniki w `skills/feature/references/tests-baseline.md` i w `skills/dispatch/SKILL.md` (przydział `ASSIGN`).

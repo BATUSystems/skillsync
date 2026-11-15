@@ -1,7 +1,7 @@
 """Local workflow commands for skillsync."""
 
 # Generator version (SemVer, K12): `core_min` of layers is compared with it.
-__version__ = "1.4.1"
+__version__ = "1.5.0"
 
 
 def register_subcommands(subparsers):

@@ -12,6 +12,8 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-11-15
+
 ### Added
 
 - CI: workflow `.github/workflows/pr-text.yml` (job `pr-text (leakcheck)`) skanuje tytuł i opis pull requesta przez `skillsync leakcheck --text` (wzorce ogólne i dodatki `.leakguard/patterns.yaml` z gałęzi bazowej; uruchamiany także po edycji opisu, bez macierzy testów). Dotąd kontrola opisów była tylko regułą w skillach. Job nie jest wymaganym checkiem rulesetu (zmiana rulesetu to decyzja właściciela).
@@ -73,7 +75,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ### Breaking
 
-- `POST /api/approve` without the header `X-Approve-Token` now gets `403` (`code: "approve_token"`): a client that posted consents without a token stops approving. Adjust: read the address with `skillsync dashboard url <project>` (the token is the fragment `#zgoda=<token>`) and send its value in the header; the status page and the editor plugin need no change. The token is made per server process and printed once in the console of `dashboard serve` as the fragment of an address (`#zgoda=<token>`; a service journal or CI log that keeps stderr keeps it too: use `dashboard url` there); the page keeps it in `localStorage` and sends it; an open tab with an old page gets the same `403` with the reason in its message until it is reopened from the address. The refusals before the token are unchanged, `--no-approvals` is unchanged (403 as before), `--approve-host` sends the token over plain HTTP (trusted network only).
+- `POST /api/approve` without the header `X-Approve-Token` now gets `403` (`code: "approve_token"`): a client that posted consents without a token stops approving. Adjust: read the address with `skillsync dashboard url <project>` (the token is the fragment `#zgoda=<token>`) and send its value in the header; the status page and the editor plugin need no change. The token is made per server process and printed once in the console of `dashboard serve` as the fragment of an address (`#zgoda=<token>`; a service journal or CI log that keeps stderr keeps it too: use `dashboard url` there); the page keeps it in `localStorage` and sends it; an open tab with an old page gets the same `403` with the reason in its message until it is reopened from the address. The refusals before the token are unchanged, `--no-approvals` is unchanged (403 as before), `--approve-host` sends the token over plain HTTP (trusted network only). This release is MINOR, not MAJOR, by the owner's decision, although the change breaks own scripts and clients that post to `/api/approve` (the status page and the editor plugin of the same release are not affected).
 
 ## [1.4.1] - 2026-11-15
 
