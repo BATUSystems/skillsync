@@ -192,6 +192,12 @@ była, a nie, że pętla dała PASS.
 - Kafelek Aktu II ma „Readiness” z `readiness.md` przebiegu: PASS zielony, BLOCKED ostrzeżenie, bez pliku neutralny; data,
   skrót Plan-sha (ostrzeżenie, gdy różni się od sha pliku planu) i link do podglądu pliku.
 - Kafelek Aktu III ma rozwijaną listę podkroków `Fn.k` z czasem z checkpointów albo „brak danych”.
+- Kafelek etapu z `state: active` ma pulsujący wskaźnik (animacja wyłączona przy `prefers-reduced-motion`) i dymek „trwa od HH:MM” (`since`);
+  etap „Prototyp” przy ważnym znaczniku zapisu pokazuje „N z M ekranów” z paskiem (bez `screensPlanned`: „N ekranów”) i szacowany koniec z `eta`.
+- Baner czekania przy `waiting[].who` pisze „Czeka na: <label> (login)” (wpis `writing` zostaje „Sesja pracuje”); brak `who` = „Sesja czeka na Ciebie”.
+- Pasek postępu Aktu III przy `progress.activePercent` > 0 ma dwa odcienie (ciemny = zweryfikowane, jasny = zgłoszone i w toku) i podpis
+  „N% zweryfikowane, M% zgłoszone lub w toku”; `run.parseWarnings` daje jedną linię „N fragmentów raportu pominięto” nad checkpointami (szczegóły w dymku).
+  Brak każdego z tych pól daje wygląd jak dotąd.
 
 ## Interfejs i API
 

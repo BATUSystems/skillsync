@@ -973,6 +973,69 @@ function summary(m) {
     ex.wux = { titles: wtitle, writing: items(writing, Object.assign({ prototypeUrl: (port, slug) => `http://127.0.0.1:${port}/${slug}/` }, origin)), expert: items(expert, origin), expertNoOrigin: items(expert), expertMany: items(many, origin),
       expertHostile: items(hostile, origin), expertBadOrigin: items(expert, { prototypeOrigin: () => 'javascript:alert(2)' }) };
   }
+  // STATUS-160-A: stan etapu, pasek ekranów, „Czeka na”, dwa odcienie paska, parseWarnings, zgodność ze starym JSON-em.
+  {
+    const base = clone(F['plan-in-progress']); const nowP = NOW['plan-in-progress'];
+    const stageOf = (m, key) => m.root.querySelectorAll('#acts .stage').filter((n) => n.getAttribute('data-desc') === key)[0] || null;
+    const tile = (n) => n ? { cls: n.getAttribute('class'), dot: n.querySelectorAll('.stage-dot').length, tip: n.getAttribute('data-desc-extra'), dataState: n.getAttribute('data-state'),
+      screens: n.querySelector('.stage-screens') ? text(n.querySelector('.stage-screens')) : null, meter: n.querySelector('.stage-bar') ? { max: n.querySelector('.stage-bar').getAttribute('aria-valuemax'), now: n.querySelector('.stage-bar').getAttribute('aria-valuenow'), w: n.querySelector('.stage-bar .fill').style.width } : null,
+      text: text(n) } : null;
+    const withStages = (mut) => { const d = clone(base); mut(d); return d; };
+    const states = withStages((d) => { const st = d.acts[0].stages; st[0].state = 'done'; st[1].state = 'active'; st[1].since = '10:05'; st[2].state = 'planned'; st[2].done = false; });
+    const ms = mount(states, { now: nowP });
+    const k = states.acts[0].stages.map((x) => x.key);
+    ex.s160 = { stages: k.map((key) => tile(stageOf(ms, key))) };
+    const proto = (writing, eta) => withStages((d) => {
+      d.acts[0].stages[1] = { key: 'stage_prototype', label: 'Prototyp', done: false, tip: 'ekrany', state: 'active', since: '10:10' };
+      d.prototype = Object.assign({}, d.prototype, { slug: 'x', writing });
+      if (eta) d.eta = eta; else delete d.eta;
+    });
+    const protoTile = (d) => tile(stageOf(mount(d, { now: nowP }), 'stage_prototype'));
+    ex.s160.screens = protoTile(proto({ since: 1, expiresAt: 2, renewedAt: 1, screensPlanned: 8, screensDone: 3 }, { operation: 'prototyp', until: '23:59', untilIso: '2099-01-01T23:59:00Z' }));
+    ex.s160.screensNoPlan = protoTile(proto({ since: 1, expiresAt: 2, renewedAt: 1, screensDone: 3 }));
+    ex.s160.screensNoWriting = protoTile(proto(null));
+    // czeka na
+    const waitText = (w, extra) => { const d = clone(base); d.waiting = [Object.assign({ what: 'odpowiedź Q3', source: 'checkpoint', since: '09:50', action: 'a', link: null }, w)]; const m = mount(d, { now: nowP });
+      return text(m.root.querySelector('#waitBanner .wait-item strong')); };
+    ex.s160.who = {
+      label: waitText({ who: { role: 'acceptor', login: null, label: 'akceptujący' } }),
+      login: waitText({ who: { role: 'expert', login: 'jan', label: 'ekspert' } }),
+      none: waitText({}),
+      writing: waitText({ source: 'writing', what: 'agent pisze ekrany (do 14:25)', who: { role: 'agent', login: null, label: 'agent' } }),
+      hostile: waitText({ who: { role: 'x', login: '<b>z</b>', label: '<i>q</i>' } }),
+    };
+    // dwa odcienie
+    const barOf = (d) => { const m = mount(d, { now: nowP }); const b = m.root.querySelector('#acts .act[data-key="real"] .bar'); const lg = m.root.querySelector('#acts [data-bar-legend]');
+      return { cls: b.getAttribute('class'), valuetext: b.getAttribute('aria-valuetext'), fills: b.querySelectorAll('.fill, .fill-pending, .fill-active').map((f) => [f.getAttribute('class'), f.style.width]),
+        legend: lg ? text(lg) : null, pend: m.root.querySelector('#acts .pend') ? text(m.root.querySelector('#acts .pend')) : null }; };
+    const two = withStages((d) => { d.progress.percent = 40; d.progress.pendingPercent = 10; d.progress.activePercent = 15; d.progress.pending = 1; });
+    const noActive = withStages((d) => { d.progress.percent = 40; d.progress.pendingPercent = 10; delete d.progress.activePercent; });
+    ex.s160.bars = { two: barOf(two), none: barOf(noActive) };
+    // parseWarnings
+    const warnOf = (list) => { const d = clone(base); if (list === undefined) delete d.run.parseWarnings; else d.run.parseWarnings = list; const m = mount(d, { now: nowP });
+      const el = m.root.querySelector('#parseWarn'); const tags = []; walk(m.root, (n) => { if (n instanceof E) tags.push(n.localName); });
+      return { hidden: el.hidden, text: text(el), tip: el.querySelector('[data-desc]') ? el.querySelector('[data-desc]').getAttribute('data-desc-extra') : null, lines: m.root.querySelectorAll('.parse-warn').length, img: tags.includes('img') }; };
+    ex.s160.warn = {
+      two: warnOf([{ time: '10:01', segment: 'w toku', fragment: 'bez id <img src=x>', reason: 'no-step-id' }, { time: '10:02', segment: 'zrobione', fragment: 'x F1.1', reason: 'later-id' }]),
+      none: warnOf(undefined), empty: warnOf([]),
+    };
+    // zgodność: fixture sprzed zmian (bez nowych kluczy) renderuje się bez wyjątku i bez nowych elementów
+    ex.s160.legacy = {};
+    for (const [name, json] of Object.entries(F)) {
+      const d = clone(json);
+      d.acts.forEach((a) => (a.stages || []).forEach((s) => { delete s.state; delete s.since; }));
+      (d.waiting || []).forEach((w) => { delete w.who; });
+      if (d.progress) delete d.progress.activePercent;
+      if (d.run) delete d.run.parseWarnings;
+      if (d.prototype && d.prototype.writing) { delete d.prototype.writing.screensPlanned; delete d.prototype.writing.screensDone; }
+      try {
+        const m = mount(d, { now: NOW[name] });
+        ex.s160.legacy[name] = { dots: m.root.querySelectorAll('.stage-dot').length, active: m.root.querySelectorAll('.stage.is-active').length, screens: m.root.querySelectorAll('.stage-screens').length,
+          legend: m.root.querySelectorAll('[data-bar-legend]').length, warn: m.root.querySelector('#parseWarn').hidden, light: m.root.querySelectorAll('.fill-active').length,
+          sessionWait: /Czeka na:/.test(text(m.root.querySelector('#waitBanner'))), doneVsDone: m.root.querySelectorAll('.stage.is-done').length };
+      } catch (e) { ex.s160.legacy[name] = { error: String(e && e.stack || e) }; }
+    }
+  }
   out.extra = ex;
   // deps.now jest wymagane (renderer nie czyta zegara sam).
   try { R.create(makeDoc().createElement('div'), {}); out.nowRequired = false; } catch (e) { out.nowRequired = e instanceof TypeError; }
@@ -1535,6 +1598,82 @@ class RendererNodeTests(unittest.TestCase):
         self.assertTrue(self.out["nowRequired"])
         self.assertIn("create", self.out["exports"])
         self.assertIn("createDashboard", self.out["exports"])
+
+    def test_s160_stage_state_indicator_and_tip(self) -> None:
+        done, active, planned = self.out["extra"]["s160"]["stages"]
+        self.assertIn("is-active", active["cls"].split())
+        self.assertEqual(active["dot"], 1)
+        self.assertEqual(active["dataState"], "active")
+        self.assertTrue(active["tip"].startswith("trwa od 10:05"), active["tip"])
+        self.assertIn("w trakcie, od 10:05", active["text"])
+        for tile, state in ((done, "done"), (planned, "planned")):
+            self.assertEqual(tile["dot"], 0)
+            self.assertNotIn("is-active", tile["cls"].split())
+            self.assertEqual(tile["dataState"], state)
+            self.assertNotIn("trwa od", tile["tip"] or "")
+        self.assertIn("is-done", done["cls"].split())
+        self.assertNotIn("is-done", planned["cls"].split())
+
+    def test_s160_prototype_screens_bar(self) -> None:
+        s = self.out["extra"]["s160"]
+        full = s["screens"]
+        self.assertEqual(full["screens"], "3 z 8 ekranów · prototyp, koniec ok. 23:59")
+        self.assertEqual(full["meter"], {"max": "8", "now": "3", "w": "38%"})
+        part = s["screensNoPlan"]
+        self.assertEqual(part["screens"], "3 ekrany")
+        self.assertIsNone(part["meter"])
+        self.assertIsNone(s["screensNoWriting"]["screens"])
+        self.assertIsNone(s["screensNoWriting"]["meter"])
+
+    def test_s160_waiting_who(self) -> None:
+        w = self.out["extra"]["s160"]["who"]
+        self.assertEqual(w["label"], "Czeka na: akceptujący od 09:50: odpowiedź Q3")
+        self.assertEqual(w["login"], "Czeka na: ekspert (jan) od 09:50: odpowiedź Q3")
+        self.assertEqual(w["none"], "Sesja czeka na Ciebie od 09:50: odpowiedź Q3")
+        self.assertEqual(w["writing"], "Sesja pracuje od 09:50: agent pisze ekrany (do 14:25)")
+        self.assertEqual(w["hostile"], "Czeka na: <i>q</i> (<b>z</b>) od 09:50: odpowiedź Q3")
+
+    def test_s160_two_shades_and_caption(self) -> None:
+        two, none = self.out["extra"]["s160"]["bars"]["two"], self.out["extra"]["s160"]["bars"]["none"]
+        self.assertIn("has-active", two["cls"].split())
+        self.assertEqual(two["legend"], "40% zweryfikowane, 25% zgłoszone lub w toku")
+        self.assertEqual(two["valuetext"], "40% zweryfikowane, 25% zgłoszone lub w toku")
+        self.assertEqual([f[1] for f in two["fills"]], ["40%", "10%", "15%"])
+        self.assertEqual(two["pend"], "(+10% do weryfikacji)")
+        self.assertNotIn("has-active", none["cls"].split())
+        self.assertIsNone(none["legend"])
+        self.assertEqual(none["valuetext"], "40%, plus 10% do weryfikacji")
+        self.assertEqual([f[0] for f in none["fills"]], ["fill", "fill-pending"])
+
+    def test_s160_parse_warnings_line(self) -> None:
+        w = self.out["extra"]["s160"]["warn"]
+        two = w["two"]
+        self.assertFalse(two["hidden"])
+        self.assertEqual(two["lines"], 1)
+        self.assertEqual(two["text"], "2 fragmenty raportu pominięto (bez id kroku na początku; id kroku nie na początku elementu)")
+        self.assertIn("bez id <img src=x>", two["tip"])
+        self.assertIn("10:02 zrobione", two["tip"])
+        self.assertFalse(two["img"])
+        for key in ("none", "empty"):
+            self.assertTrue(w[key]["hidden"], key)
+            self.assertIn(w[key]["text"], ("", None))
+
+    def test_s160_legacy_json_renders_without_new_elements(self) -> None:
+        legacy = self.out["extra"]["s160"]["legacy"]
+        self.assertEqual(set(legacy), set(self.fixtures))
+        for name, got in legacy.items():
+            with self.subTest(fixture=name):
+                self.assertNotIn("error", got, got.get("error"))
+                self.assertEqual((got["dots"], got["active"], got["screens"], got["legend"], got["light"]), (0, 0, 0, 0, 0))
+                self.assertTrue(got["warn"])
+                self.assertFalse(got["sessionWait"])
+
+    def test_s160_css_pulse_stops_under_reduced_motion(self) -> None:
+        css = (ASSETS / "app.css").read_text(encoding="utf-8")
+        self.assertRegex(css, r"\.stage-dot\s*\{[^}]*animation:\s*pulse")
+        block = re.search(r"@media \(prefers-reduced-motion: reduce\)\s*\{(.*?)\n\}", css, re.S)
+        self.assertIsNotNone(block)
+        self.assertRegex(block.group(1), r"\.stage-dot[^{]*\{[^}]*animation:\s*none")
 
 
 if __name__ == "__main__":

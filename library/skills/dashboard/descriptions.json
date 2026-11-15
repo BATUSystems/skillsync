@@ -102,5 +102,9 @@
  "checkpoints": {
   "title": "Ostatnie checkpointy",
   "text": "Linie raportu postępu z .skillsync/runs/<run>/checkpoints.md w formacie `- HH:MM zrobione: …; w toku: …; ryzyko: …`.\nSesja główna dopisuje je po każdym kroku albo co 30 minut; nie zastępują rekordu skillsync checkpoint.\nŹródło: ten plik."
+ },
+ "parse_warnings": {
+  "title": "Pominięte fragmenty raportu",
+  "text": "Parser checkpoints.md pomija elementy list „w toku:” i „zrobione:”, które nie zaczynają się od id kroku (np. F1.2), albo mają id dalej w elemencie. Takie fragmenty nie liczą się do postępu.\nPoprawka: zacznij każdy element od id kroku i dopiero potem dodaj opis."
  }
 }

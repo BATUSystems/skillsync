@@ -305,6 +305,7 @@
       h("div", { class: "act skeleton" }), h("div", { class: "act skeleton" }), h("div", { class: "act skeleton wide" }));
     ui.phases = h("div", { class: "phases", id: "phases" });
     ui.feed = h("ol", { class: "feed", id: "feed" });
+    ui.parseWarn = h("div", { class: "parse-warn", id: "parseWarn", hidden: true });
     ui.docList = h("nav", { class: "doc-list", id: "docList", "aria-label": "Dokumenty zadania" });
     ui.docView = h("article", { class: "doc-view", id: "docView", "aria-live": "polite", on: { click: mdClick } },
       h("div", { class: "empty" }, previewMode() ? "Wybierz dokument z listy po lewej. Podgląd odświeża się sam, gdy plik się zmieni." : "Wybierz dokument z listy po lewej."));
@@ -313,7 +314,7 @@
       h("div", { class: "work" }, ui.phases,
         h("aside", { class: "feed-box", "aria-labelledby": "feedTitle" },
           h("h2", { id: "feedTitle", "data-desc": "checkpoints", tabindex: "0" }, svg("svg", { class: "ic" }, svg("use", { href: "#i-flag" })), "Ostatnie checkpointy"),
-          ui.feed)));
+          ui.parseWarn, ui.feed)));
     ui["view-docs"] = h("section", { id: "view-docs", role: "tabpanel", "aria-labelledby": "tab-docs", hidden: true },
       h("div", { class: "docs" }, ui.docList, ui.docView));
     ui.foot = h("footer", { class: "foot", id: "foot" });
@@ -436,6 +437,7 @@
       renderActs(d);
       renderPhases(d);
       renderFeed(d);
+      renderParseWarn(d);
       renderDocList(d);
       const app = d.app || {}, project = d.project || {};
       fill(ui.foot,
@@ -445,13 +447,41 @@
     }
 
     // ---------------------------------------------------------------- akty
+    // Kafelek etapu: `state` (done/active/planned) i `since` są opcjonalne; bez `state` stan wynika z `done` (jak dotąd). Etap „Prototyp”
+    // (`stage_prototype`) przy aktywnym znaczniku zapisu pokazuje „N z M ekranów” (bez M: „N ekranów”) i szacowany koniec z `eta`.
+    function stageTile(d, s, fills) {
+      const state = s.state === "done" || s.state === "active" || s.state === "planned" ? s.state : s.done ? "done" : "planned";
+      const isDone = state === "done", isActive = state === "active";
+      const since = isActive && typeof s.since === "string" && s.since ? s.since : "";
+      const wr = s.key === "stage_prototype" && d.prototype && d.prototype.writing && typeof d.prototype.writing === "object" ? d.prototype.writing : null;
+      const done = wr && Number.isFinite(wr.screensDone) && wr.screensDone >= 0 ? wr.screensDone : null;
+      const planned = wr && Number.isFinite(wr.screensPlanned) && wr.screensPlanned > 0 ? wr.screensPlanned : null;
+      let screens = null;
+      if (done != null) {
+        const eta = etaText(d);
+        const label = planned ? `${done} z ${planned} ekranów` : `${done} ${plural(done, "ekran", "ekrany", "ekranów")}`;
+        let meter = null;
+        if (planned) {
+          const pct = Math.max(0, Math.min(100, Math.round((done / planned) * 100)));
+          const fillEl = h("span", { class: "fill", "data-w": String(pct) });
+          fills.push(fillEl);
+          meter = h("span", { class: "bar thin stage-bar", role: "progressbar", "aria-valuemin": "0", "aria-valuemax": String(planned), "aria-valuenow": String(Math.min(done, planned)),
+            "aria-label": `Ekrany prototypu: ${label}` }, fillEl);
+        }
+        screens = h("span", { class: "stage-screens", "data-screens": "" }, meter, h("span", { class: "stage-screens-txt" }, label + (eta ? ` · ${eta}` : "")));
+      }
+      const tip = isActive ? `trwa od ${since || "—"}${s.tip ? " · " + s.tip : ""}` : s.tip;
+      return h("span", { class: "stage" + (isDone ? " is-done" : "") + (isActive ? " is-active" : "") + (screens ? " has-screens" : ""), "data-state": s.state ? state : null, ...desc(s.key, tip) },
+        isDone ? icon("i-check") : null, isActive ? h("span", { class: "stage-dot", "aria-hidden": "true" }) : null, s.label,
+        isActive ? h("span", { class: "sr-only" }, " (w trakcie" + (since ? ", od " + since : "") + ")") : null, screens);
+    }
     function renderActs(d) {
       const acts = d.acts || [];
       const anyActive = acts.some((a) => a.state === "active");
       const fills = [];
       fill(ui.acts, acts.map((a) => {
         const glow = a.state === "active" || (!anyActive && a.key === "real" && a.state === "done");
-        const stages = (a.stages || []).map((s) => h("span", { class: "stage" + (s.done ? " is-done" : ""), ...desc(s.key, s.tip) }, s.done ? icon("i-check") : null, s.label));
+        const stages = (a.stages || []).map((s) => stageTile(d, s, fills));
         const warn = a.warning ? h("div", { class: "act-warn", ...desc("warning_pre_implement", a.warning) }, "⚠ " + a.warning) : null;
         let body;
         if (a.key === "real") {
@@ -463,7 +493,8 @@
               h("span", { class: "pct" }, `${a.state === "done" && p.percent < 100 ? "✓ " : ""}${p.percent}%`),
               p.pendingPercent ? h("span", { class: "pend", "data-tip": `Kroki zgłoszone jako zrobione w checkpointach (${(p.reported || []).join(", ")}), jeszcze niezaznaczone [x] w planie — czekają na review` }, `(+${p.pendingPercent}% do weryfikacji)`) : null,
               h("span", { class: "of", "data-tip": "Kroki odhaczone [x] w planie" }, `${p.done} z ${p.total} kroków zrobionych`)),
-            bar(p.percent, p.pendingPercent, barCls, "Postęp realizacji", fills),
+            bar(p.percent, p.pendingPercent, barCls, "Postęp realizacji", fills, p.activePercent),
+            legend(p),
             cur ? h("div", { class: "now", "data-tip": `Teraz wykonywane: ${(p.active || []).join(", ")}, ${cur.index}. pozycja z ${p.total} w planie (${p.activeSource === "checkpoint" ? "z ostatniego checkpointu „w toku”" : "pierwszy niezaznaczony krok"})` },
               h("span", { class: "dot-live" }), h("span", { class: "txt" }, "teraz: ", mono(cur.id), " " + (cur.title ?? "")),
               p.parallel ? h("span", { class: "par" }, `+${p.parallel} równolegle`) : null)
@@ -541,17 +572,32 @@
       animateBars(fills);
     }
 
-    function bar(pct, pending, cls, label, fills) {
-      const attrs = { class: `bar ${cls}`, role: "progressbar", "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(pct), "aria-label": String(label ?? "") };
+    // Dwa odcienie paska (tylko gdy `activePercent` > 0): ciemniejszy = zweryfikowane, jaśniejszy = zgłoszone i w toku (pending + active).
+    const activeOf = (v) => (Number.isFinite(v) && v > 0 ? v : 0);
+    function legend(p) {
+      const active = activeOf(p.activePercent);
+      if (!active) return null;
+      return h("div", { class: "bar-legend", "data-bar-legend": "" }, h("span", { class: "sw sw-dark", "aria-hidden": "true" }), `${p.percent}% zweryfikowane, `,
+        h("span", { class: "sw sw-light", "aria-hidden": "true" }), `${(p.pendingPercent || 0) + active}% zgłoszone lub w toku`);
+    }
+    function bar(pct, pending, cls, label, fills, activePct) {
+      const active = activeOf(activePct);
+      const attrs = { class: `bar ${cls}${active ? " has-active" : ""}`, role: "progressbar", "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(pct), "aria-label": String(label ?? "") };
       if (pending) {
         attrs["aria-valuetext"] = `${pct}%, plus ${pending}% do weryfikacji`;
         attrs["data-tip"] = `${pct}% zaznaczone w planie + ${pending}% zrobione wg checkpointu (czeka na weryfikację)`;
+      }
+      if (active) {
+        attrs["aria-valuetext"] = `${pct}% zweryfikowane, ${(pending || 0) + active}% zgłoszone lub w toku`;
+        attrs["data-tip"] = `${pct}% zaznaczone w planie; ${(pending || 0) + active}% to kroki zgłoszone w checkpointach (${pending || 0}% zrobione, czeka na weryfikację) lub w toku (${active}%)`;
       }
       const done = h("div", { class: "fill", "data-w": String(pct) });
       fills.push(done);
       const pend = pending ? h("div", { class: "fill-pending", "data-w": String(pending) }) : null;
       if (pend) fills.push(pend);
-      return h("div", attrs, done, pend);
+      const act = active ? h("div", { class: "fill-active", "data-w": String(active) }) : null;
+      if (act) fills.push(act);
+      return h("div", attrs, done, pend, act);
     }
     // Szerokość paska przez CSSOM (dozwolone w CSP bez 'unsafe-inline'), w następnej klatce, żeby zadziałało przejście.
     function animateBars(fills) {
@@ -574,6 +620,21 @@
         ? items.map((c, i) => h("li", { class: i < fresh || (i === 0 && prevTop && prevTop.text !== c.text) ? "is-new" : "" },
           h("span", { class: "t" }, c.time), h("span", null, decorateCheckpoint(c.text))))
         : h("li", null, h("span"), h("span", { class: "empty" }, "Brak checkpointów — pojawią się, gdy przebieg zapisze ", mono("checkpoints.md"), ".")));
+    }
+
+    // Fragmenty checkpointów pominięte przez parser (run.parseWarnings): jedna linia, szczegóły w dymku (tylko tekst).
+    const PARSE_REASON = { "no-step-id": "bez id kroku na początku", "later-id": "id kroku nie na początku elementu" };
+    function renderParseWarn(d) {
+      const list = d.run && Array.isArray(d.run.parseWarnings) ? d.run.parseWarnings.filter((x) => x && typeof x === "object") : [];
+      const el = ui.parseWarn;
+      if (!list.length) { el.hidden = true; fill(el); return; }
+      const reasons = [...new Set(list.map((x) => PARSE_REASON[x.reason] || String(x.reason ?? "")))].filter(Boolean);
+      const lines = list.map((x) => `${x.time ?? ""} ${x.segment ?? ""}: „${x.fragment ?? ""}” (${PARSE_REASON[x.reason] || String(x.reason ?? "")})`.trim());
+      el.hidden = false;
+      el.setAttribute("data-count", String(list.length));
+      const n = list.length;
+      fill(el, icon("i-flag"), h("span", { ...desc("parse_warnings", lines.join("\n")) },
+        `${n} ${plural(n, "fragment raportu pominięto", "fragmenty raportu pominięto", "fragmentów raportu pominięto")}${reasons.length ? ` (${reasons.join("; ")})` : ""}`));
     }
 
     // ---------------------------------------------------------------- wybór planu
@@ -705,6 +766,14 @@
       st.etaText = text;
       return text ? h("div", { class: "wait-item is-info", "data-eta-toast": "" }, icon("i-clock"), h("div", { class: "wait-txt" }, h("strong", null, text))) : null;
     }
+    // „Czeka na: <label> (login)” z waiting[].who; bez who (albo bez label) null = dotychczasowy tekst.
+    function whoText(w) {
+      const who = w && w.who && typeof w.who === "object" ? w.who : null;
+      const label = who && typeof who.label === "string" ? who.label.trim() : "";
+      if (!label) return null;
+      const login = typeof who.login === "string" ? who.login.trim() : "";
+      return `Czeka na: ${label}${login ? ` (${login})` : ""}`;
+    }
     function renderWaiting(d) {
       const el = ui.waitBanner;
       const quiet = silenceMinutes(d);
@@ -747,7 +816,7 @@
           icon("i-bell"),
           h("div", { class: "wait-txt" },
             h("strong", null, silence ? `Brak raportu postępu: ${String(w.what).replace(/^brak raportu /, "")}`
-              : w.source === "writing" ? `Sesja pracuje${since}: ${w.what}` : `Sesja czeka na Ciebie${since}: ${w.what}`),
+              : w.source === "writing" ? `Sesja pracuje${since}: ${w.what}` : `${whoText(w) || "Sesja czeka na Ciebie"}${since}: ${w.what}`),
             h("span", null, action),
             h("small", null, `Źródło: ${WAIT_SOURCE[w.source] || w.source}. ${silence ? "Zniknie po następnym raporcie." : w.source === "writing" ? "Zniknie, gdy agent skończy pisać albo znacznik wygaśnie." : "Baner zniknie, gdy sesja ruszy."}`)),
           h("div", { class: "wait-actions" }, link, tools));
