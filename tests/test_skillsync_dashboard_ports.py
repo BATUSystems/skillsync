@@ -520,6 +520,8 @@ class Process(unittest.TestCase):
             seen["states"] = len(self.state_files())
             _thread.interrupt_main()
 
+        previous = signal.signal(signal.SIGINT, signal.default_int_handler)   # a runner started with `&` ignores SIGINT, and then interrupt_main does nothing
+        self.addCleanup(signal.signal, signal.SIGINT, previous)
         with mock.patch.dict(os.environ, home_env(self.tmp)):
             threading.Thread(target=interrupt_when_up, daemon=True).start()
             with mock.patch("sys.stdout", new=__import__("io").StringIO()) as out, mock.patch("sys.stderr", new=__import__("io").StringIO()):
