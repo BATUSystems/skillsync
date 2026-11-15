@@ -12,3 +12,5 @@ verified: 2026-11-15
 **Jak wykryć:** `python3 -m unittest discover -s tests -p test_skillsync_<moduł>.py` na `python3.11`; grep po `os.path.isabs` w produkcie; `scripts/check_skips.py <log> --system <os> --mode <tryb>` na logach CI (`gh api --allow-escape-sequences repos/<org>/<repo>/actions/jobs/<id>/logs`).
 
 **Biegi na wspólnej maszynie:** procesy zatrzymuj tylko po własnym PID (albo własnej grupie lub scope `systemd-run`), nigdy `pkill -f` po wzorcu nazwy (zabija cudze biegi); równoległe biegi dostają rozłączne plasterki portów (`SKILLSYNC_TEST_DASHBOARD_PORTS`).
+
+**Zakres macierzy:** pełna macierz idzie raz, na gałąź wydania; gałąź robocza dostaje dowód punktowy (zmienione moduły na Windows 3.11/3.12/3.13 i macOS dla HTTP, plików i sygnałów), bo maszyny są wspólne dla projektów.
