@@ -128,6 +128,18 @@ class _CountingReader:
         self.count += size or 0
         return size
 
+    def readinto1(self, buffer):
+        size = self._raw.readinto1(buffer)
+        self.count += size or 0
+        return size
+
+    def readlines(self, hint=-1):
+        lines = self._raw.readlines(hint)
+        self.count += sum(len(line) for line in lines)
+        return lines
+
+    # `peek` hands out the buffered bytes without consuming them: it does not count (a later read does).
+
     def __iter__(self):
         return self
 
