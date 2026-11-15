@@ -228,3 +228,7 @@ lessons:
     title: "Trzy czerwone obroty CI 1.4.1: macierz przed pushem (Python 3.11, Windows 3.13, macOS, check_skips na logach wszystkich systemów)"
     tags: [skillsync, ci, windows, macos, python, tests, skips, process]
     paths: ['tests/test_skillsync_runs_rooted.py', 'tests/test_skillsync_isabs.py', 'tests/skip-baseline.json', 'scripts/check_skips.py', 'skillsync_workflow/fsutil.py']
+  - path: konsumenci-fixtures-kontraktu-w-punktowym-zestawie.md
+    title: "Punktowy zestaw testów pomija konsumentów fixtures kontraktu: zmiana expected.json bez expected-after.json (CI czerwone na approvals_record)"
+    tags: [skillsync, tests, dashboard, fixtures, ci]
+    paths: ['tests/fixtures/dashboard/**', 'tests/test_skillsync_approvals_record.py', 'tests/test_skillsync_dashboard*.py']

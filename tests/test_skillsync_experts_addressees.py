@@ -36,7 +36,7 @@ class AddresseesNode(unittest.TestCase):
         self.assertIn('addresseesNode(question, state.viewer)', source)
         self.assertIn('state.viewer = data.user;', source)
 
-    @unittest.skipUnless(NODE, 'node not found')
+    @unittest.skipUnless(NODE, 'node >= 18 is not available (set SKILLSYNC_TEST_NODE)')
     def test_text_by_role(self):
         harness = ("var el = function (tag, props) { return { tag: tag, text: props.text, cls: props['class'] }; };\n" + function_source() + """
 var cases = [
