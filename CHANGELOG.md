@@ -12,6 +12,15 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Fixed
+
+- `link` appends to a user's `.gitignore` (project root, `.github/`, `.claude/`, `.cursor/rules/`, the state folder) without rewriting it: the existing bytes and line endings (CRLF, LF or mixed) stay as they are and new lines follow the last line's ending. Before, the whole file was rewritten with LF, so a Windows project with `core.autocrlf=true` got a diff of the whole file instead of the added lines. The prototype ignore files (`.gitignore`, `.gitattributes`) use the same appending rule.
+- `link` keeps the line endings and bytes of the user's `AGENTS.md`, `.codex/config.toml`, `.vscode/tasks.json`, `.claude/settings.json` and `.mcp.json`: the managed block or JSON is written in the file's own line ending (CRLF stays CRLF, a new file is LF) and the `*.skillsync-backup` copies are byte copies.
+- `link` recognises a dangling library symlink written in the 8.3 short form (`RUNNER~1`) on Windows, so `link` after a skill rename removes the orphan.
+- Run metadata (`runs`, the `benchmark` suite and fixtures) and `/proc` identity are read and written as UTF-8 explicitly (Windows used the code page).
+- A path in run metadata that is rooted but not absolute on Windows (`/etc/hostname`, `\\x`, `C:x`) is refused as an evidence path or a benchmark fixture name on every system.
+- `prototype question merge --driver` leaves a questions file with CRLF line endings byte for byte when the other side adds nothing (it rewrote the file with LF).
+
 ## [1.4.0] - 2026-11-14
 
 ### Added
