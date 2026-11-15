@@ -57,9 +57,8 @@ class FileLockDescriptor(unittest.TestCase):
         self.assert_lock_is_free()
 
     def test_an_interrupt_after_the_lock_and_before_the_hand_over_does_not_leak_it(self):
-        with mock.patch.object(ps.FileLock, '_same_file', side_effect=KeyboardInterrupt):
-            if os.name == 'nt':
-                self.skipTest('Windows skips the same-file check')
+        # `os.name` is 'posix' for the call: on Windows the same-file check is skipped, and this is the point between the lock and the hand over
+        with mock.patch.object(ps.FileLock, '_same_file', side_effect=KeyboardInterrupt), mock.patch.object(ps.os, 'name', 'posix'):
             with self.assertRaises(KeyboardInterrupt):
                 with ps.FileLock(self.path, 1, 0o600):
                     self.fail('the lock must not be taken')
