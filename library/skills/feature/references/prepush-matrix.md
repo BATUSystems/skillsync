@@ -10,6 +10,7 @@ z powodem w raporcie.
 
 | Zmiana dotyczy | Wymagane przed pushem |
 |---|---|
+| zmiana funkcji produktu | po KAŻDEJ zmianie funkcji uruchom ponownie wszystkie moduły, które ją dotykają (`grep` po nazwie w `tests/`), także strażniki (np. test AST), nie tylko moduł napisany do tej zmiany |
 | każdy kod | Linux na **najstarszej wspieranej wersji Pythona** (3.11) i na interpreterze stacji: `py_compile` zmienionych plików i moduły zmienione/nowe (uv: `uv python install 3.11` poza repo, venv z PyYAML) |
 | testy podmieniające `os.name`, `sys.platform`, `os.path.isabs` | pełny moduł na 3.11 i na najnowszym (Windows 3.13 zmienia `isabs`; `Path` pod podmienionym `os.name` na 3.11 nie działa) |
 | ścieżki, pliki, końce linii, symlinki, blokady | Windows 3.11, 3.12 i 3.13 w środowisku jak runner (pusty profil, PATH bez `skillsync`, TEMP w formie 8.3), punktowo moduły zmienione; pełny bieg po LEASE |
