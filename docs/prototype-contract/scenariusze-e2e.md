@@ -310,3 +310,20 @@ Haki: słownik, część C (`data-banner="writing"`, `aria-disabled`, przycisk �
 Zgodność wsteczna (K11) nie ma scenariusza E2E: stary silnik (kopia `tests/fixtures/prototype/engine-v2-prev/prototype.js`) nie potrafi pokazać banera, a stary
 serwer to inna wersja procesu niż w biegu; sprawdza ją test węzłowy na fiksturze z odpowiedzią serwera bez pola `writing` i z 409 `writing_in_progress`
 (`tests/test_skillsync_prototype_engine.py`). Dlatego w tej sekcji nie ma pominiętych scenariuszy.
+
+## 16. Tryb prezentacji: jeden ekran naraz (`tests/e2e/prototype/p.mjs`)
+
+Kryteria: w trybie prezentacji widoczny jest jeden `section.screen` (obliczony `display`, nie klasa silnika); ←/→, przyciski ‹ › paska prezentacji, Home/End zmieniają ekran, licznik „N / M”
+i adres `#sN` pokazują bieżący; wyjście (Esc, P, przycisk) przywraca wszystkie ekrany i zdejmuje `?mode=presentation`; wejście z adresu i odświeżenie zostają na ekranie z hasha (stan w
+`sessionStorage` karty, nigdy `localStorage`); pinezki i wątki ukrytych ekranów znikają razem z ekranem, wybór wątku z panelu przełącza ekran, akceptacja zostaje dostępna; klawisze pomijają
+pola tekstowe, kombinacje z modyfikatorem i wyłączone skróty jednoznakowe (WCAG 2.1.4), a Esc zamyka najpierw listę ekranów. Skrypt ma własny workspace: P-01…P-03 i P-05 na prototypie `plan`
+(28 ekranów, `file://`), P-04 na `demo` z serwera (wątki `anna`, strona jako akceptujący `celina`). Drukowanie (bieżący ekran w prezentacji) sprawdza test CSS w `tests/test_skillsync_prototype_engine.py`
+(`@media print`), bo emulacja druku nie jest częścią zestawu. Uruchomienie pojedynczo: `SKILLSYNC_E2E_ONLY=P-01` (scenariusze są niezależne).
+
+| ID | Nazwa | Kroki | Oczekiwany wynik | Spec | Krytyczny |
+|---|---|---|---|---|---|
+| P-01 | Jeden widoczny ekran po włączeniu przyciskiem | strona `plan` (28 ekranów); przycisk „Prezentacja” | przed: widoczne wszystkie ekrany; po: klasa `proto-presentation`, widoczny tylko `s1`, licznik „1 / 28” | K22 | tak |
+| P-02 | Strzałki, ‹ ›, Home/End, licznik i hash | prezentacja; → ; przycisk „Następny ekran”; „Poprzedni ekran”; End; → na końcu; Home; ← na początku | kolejno `s2`, `s3`, `s2`, `s28`, `s28` (bez zmiany), `s1`, `s1`; licznik „N / 28” i `#sN` za każdym razem | K23 | tak |
+| P-03 | Wyjście, wejście z adresu, odświeżenie, klawisz P | Esc; `?mode=presentation#s4`; odświeżenie; P (wyjście); odświeżenie; P (wejście) | po Esc: 28 widocznych ekranów, bez klasy; z adresu i po odświeżeniu: tylko `s4`, „4 / 28”; po P: wszystkie ekrany, bez `?mode=presentation`, odświeżenie nie wraca do trybu; ponowne P: tryb na `s4` | K24, K27 | tak |
+| P-04 | Pinezki i wątki ukrytych ekranów, wybór wątku, akceptacja | `demo`, wątki na `s1` i `s2`; prezentacja na `s1`; →; Home; panel „Wątki”, karta wątku `s2` | poza prezentacją pinezki na obu ekranach; w prezentacji na `s1` tylko pinezka `s1`, po → tylko `s2`; chip „Akceptacja” widoczny; wybór wątku `s2` z panelu pokazuje `s2` (`#s2`) | K25, K26 | tak |
+| P-05 | Klawisze: pola tekstowe, modyfikatory, wyłączone skróty, Esc i lista ekranów | P w polu tekstowym; Ctrl+P; P po wyłączeniu skrótów jednoznakowych; w prezentacji lista ekranów otwarta i Esc dwa razy | żadne z trzech pierwszych nie włącza trybu; pierwszy Esc zamyka listę (tryb zostaje), drugi wychodzi z trybu | K22–K24 | tak |

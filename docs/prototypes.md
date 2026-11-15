@@ -136,8 +136,22 @@ Pasek u góry strony ma przełącznik ekranów (poprzedni, lista z wyszukiwaniem
 akceptujących) oraz przyciski „Pokaż hotspoty”, „Prezentacja”, „Ukryj pinezki” i „Motyw”.
 
 Pasek ekranów zaczyna się od linku „⌂” do galerii prototypów: pod `serve` to strona główna liczona na żywo (akceptacje i komentarze bez `index`), z `file://` link otwiera katalog nadrzędny, gdzie `skillsync prototype index` zostawia statyczny `index.html`. W iframe widoku mobile i w porównaniu iteracji paska nie ma, więc linku też nie.
-Skróty klawiszowe (poza polem tekstowym): ← i → poprzedni i następny ekran, G lista ekranów, C tryb komentarzy,
-`[` i `]` poprzedni i następny wątek w panelu, Esc zamyka okienko, a drugi Esc wyłącza tryb komentarzy.
+Skróty klawiszowe (poza polem tekstowym i bez Ctrl, Meta i Alt): ← i → poprzedni i następny ekran, G lista ekranów, C tryb komentarzy, P tryb prezentacji,
+`[` i `]` poprzedni i następny wątek w panelu, Esc zamyka okienko, a drugi Esc wyłącza tryb komentarzy. Skróty jednoznakowe (także P, Home i End w prezentacji)
+można wyłączyć (WCAG 2.1.4); wybór zapamiętuje przeglądarka.
+
+### Tryb prezentacji: jeden ekran naraz
+
+„Prezentacja” (przycisk w pasku albo w menu „⋯”, klawisz P, adres z `?mode=presentation`) pokazuje **jeden ekran**: bieżący; pozostałe `section.screen` mają klasę
+`proto-screen-hidden` (`display: none`), więc znikają razem ze swoimi pinezkami i wątkami. Nagłówek dokumentu, odnośniki do wymagań i notatki są ukryte jak dotąd. Ekran zmieniają
+← i → (także gdy lista ekranów jest zamknięta), Home i End (pierwszy i ostatni), przyciski ‹ › paska ekranów i paska prezentacji; licznik „N / M” jest w obu paskach, a adres
+`#sN` pokazuje bieżący ekran, więc odświeżenie i link wracają do tego samego ekranu. Wyjście: Esc (przy otwartej liście ekranów pierwszy Esc zamyka listę), P albo „Wyjdź (Esc)”;
+wyjście przywraca wszystkie ekrany, przewija do bieżącego i zdejmuje `?mode=presentation` z adresu. Stan trzyma `sessionStorage` karty (klucz osobny dla prototypu, nigdy
+`localStorage`; w przeglądarce bez pamięci tryb trwa do końca strony). Wybór wątku z panelu „Wątki” przełącza ekran, a chip akceptacji i „Wątki” działają jak zawsze (akceptacja dotyczy bieżącego
+ekranu). Przy ustawieniach wydruku w prezentacji drukuje się bieżący ekran bez paska prezentacji. Tryb działa także przy pasku linków (`data-proto-nav="strip"`).
+
+**Wdrożenie.** Tryb jest w silniku (`prototype.js`, `prototype.css`), więc istniejące prototypy dostają go przez `skillsync prototype migrate` (kopia plików silnika; drugi bieg nic nie zmienia);
+zmiana CSS może unieważnić akceptacje ekranów, lista jest w `acceptance` wyniku `migrate` ([sekcja „Aktualizacja silnika”](#aktualizacja-silnika-i-migracja-starego-prototypu)).
 
 ### Widok desktop / mobile
 

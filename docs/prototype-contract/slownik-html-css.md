@@ -117,6 +117,9 @@ Uzupełnienia (panel komentarzy, N-R1 do N-R8):
   - chip konta albo „Zaloguj”;
   - chip akceptacji.
 
+  Tryb prezentacji (jeden ekran naraz): klasa `proto-presentation` na `<html>`, klasa `proto-screen-hidden` na ukrytych `section.screen`, pasek `.proto-presentation-bar` (przyciski z
+  nazwami dostępnymi „Poprzedni ekran”, „Następny ekran”, licznik `.proto-presentation-count`, „Wyjdź (Esc)”); autor ekranów tych klas nie ustawia.
+
   Przyciski „Pokaż hotspoty”, „Prezentacja”, „Ukryj pinezki” i „Motyw” przechodzą do menu. Otwiera je `button` w
   `.doc-toolbar` z `aria-haspopup="menu"` i `aria-expanded` oraz nazwą dostępną „Więcej” (tekst przycisku „⋯”).
   Menu ma `role="menu"`, a pozycje `role="menuitem"` z tymi samymi tekstami co przyciski (stan przełączników przez

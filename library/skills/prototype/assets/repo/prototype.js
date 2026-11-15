@@ -36,7 +36,7 @@
   });
   const STORAGE = Object.freeze({
     queue: versionedPrefix('queue', 2), rejected: versionedPrefix('rejected', 2), seen: versionedPrefix('seen', 2),
-    v1Comments: versionedPrefix('comments', 1), theme: NAMESPACE + '-theme', shortcuts: NAMESPACE + '-shortcuts'
+    v1Comments: versionedPrefix('comments', 1), theme: NAMESPACE + '-theme', shortcuts: NAMESPACE + '-shortcuts', presentation: NAMESPACE + '-presentation'
   });
   const LIMITS = Object.freeze({ text: 4000, label: 200, restoreReason: 500 });
 
@@ -1545,7 +1545,7 @@
 
   // Skróty jednoznakowe (C, G, [, ], strzałki ←/→ poza polami) można wyłączyć (WCAG 2.1.4); wybór jest zapamiętany w przeglądarce.
   const Shortcuts = (() => {
-    const SINGLE = words('c C g G [ ] ArrowLeft ArrowRight');
+    const SINGLE = words('c C g G p P [ ] ArrowLeft ArrowRight Home End');
     const enabled = () => {
       try { return window.localStorage.getItem(STORAGE.shortcuts) !== 'off'; } catch (error) { return true; }
     };
@@ -1936,6 +1936,7 @@
     };
 
     const follow = () => {
+      if (PageState.flags.presentation) return;   // presentation: the hidden screens have no box; the screen is chosen, not found by scrolling
       const bar = ToolbarUi.refs.bar;
       // Linia, na którą ląduje początek ekranu po przejściu (margines przewijania ekranu + dopełnienie dokumentu).
       const px = (value) => parseFloat(value) || 0;
@@ -1949,6 +1950,7 @@
 
     let framePending = false;
     const onScroll = () => {
+      if (PageState.flags.presentation) return;
       lastScrollAt = Date.now();
       if (state.forced) {
         if (state.forced.y === null) {
@@ -2085,7 +2087,138 @@
       return true;
     };
 
-    return Object.freeze({ start: start, goTo: goTo, state: state });
+    // `select`: the presentation mode chooses the screen itself (nothing to scroll to); the switcher only repaints.
+    return Object.freeze({ start: start, goTo: goTo, select: (id) => setCurrent(id), state: state });
+  })();
+
+  // ── 13e. UI: tryb prezentacji (jeden ekran naraz) ─────────────────────────────────────────────────────────────
+
+  // Włączany przyciskiem „Prezentacja”, klawiszem P albo adresem `?mode=presentation`; wyjście: Esc, P albo przycisk „Wyjdź”.
+  // Widoczny jest jeden `section.screen` (pozostałe dostają klasę `proto-screen-hidden`, CSS: display:none, więc ich pinezki i wątki
+  // znikają razem z ekranem); ←/→ (także ‹ ›), Home/End zmieniają ekran, adres `#sN` pokazuje bieżący, a stan trzyma `sessionStorage` karty
+  // (nigdy `localStorage`; brak pamięci = tryb tylko do końca tej strony). Przy zamkniętym przełączniku ekranów (pasek `strip`) tryb działa sam.
+  const Presentation = (() => {
+    const HIDDEN = 'proto-screen-hidden';
+    const state = { current: null, bar: null, count: null, prev: null, next: null };
+    const screens = () => Array.prototype.slice.call(document.querySelectorAll('section.screen[id]:not([data-prototype-example])'));
+    const storageKey = () => STORAGE.presentation + ':' + (document.documentElement.getAttribute('data-prototype-id') || '');
+    const remember = (on) => {
+      try {
+        if (on) window.sessionStorage.setItem(storageKey(), '1'); else window.sessionStorage.removeItem(storageKey());
+      } catch (error) { /* pamięć karty niedostępna: tryb tylko do końca strony */ }
+    };
+    const remembered = () => {
+      try { return window.sessionStorage.getItem(storageKey()) === '1'; } catch (error) { return false; }
+    };
+    const requested = () => {
+      try { return new URLSearchParams(location.search).get('mode') === 'presentation'; } catch (error) { return false; }
+    };
+    const hashId = () => {
+      const id = String(location.hash || '').slice(1);
+      return screens().some((section) => section.id === id) ? id : null;
+    };
+    const stripModeParam = () => {
+      try {
+        const url = new URL(location.href);
+        if (url.searchParams.get('mode') !== 'presentation') return;
+        url.searchParams.delete('mode');
+        history.replaceState(null, '', url.pathname + url.search + url.hash);
+      } catch (error) { /* adres niezmienny */ }
+    };
+
+    const label = () => {
+      const list = screens();
+      const at = list.findIndex((section) => section.id === state.current);
+      return { at: at, total: list.length };
+    };
+
+    const paint = () => {
+      const info = label();
+      screens().forEach((section) => section.classList.toggle(HIDDEN, section.id !== state.current));
+      if (!state.bar) return;
+      state.count.textContent = info.at >= 0 ? (info.at + 1) + ' / ' + info.total : '';
+      state.prev.setAttribute('aria-disabled', String(info.at <= 0));
+      state.next.setAttribute('aria-disabled', String(info.at < 0 || info.at >= info.total - 1));
+    };
+
+    const show = (id) => {
+      if (!PageState.flags.presentation || !id || id === state.current) return;
+      if (!screens().some((section) => section.id === id)) return;
+      state.current = id;
+      paint();
+      try { history.replaceState(null, '', '#' + id); } catch (error) { /* adres niezmienny */ }
+      if (ScreenNav.state.entries.length) ScreenNav.select(id);
+      window.scrollTo(0, 0);
+    };
+
+    const move = (target) => {
+      const list = screens();
+      const at = list.findIndex((section) => section.id === state.current);
+      const to = target === 'first' ? 0 : target === 'last' ? list.length - 1 : at + target;
+      if (to >= 0 && to < list.length && to !== at) show(list[to].id);
+    };
+
+    const enter = () => {
+      const list = screens();
+      if (!list.length) return;
+      const own = hashId() || ScreenNav.state.current;
+      state.current = null;
+      PageState.flags.presentation = true;
+      show(list.some((section) => section.id === own) ? own : list[0].id);
+      remember(true);
+    };
+
+    const leave = () => {
+      const keep = state.current;
+      screens().forEach((section) => section.classList.remove(HIDDEN));
+      state.current = null;
+      remember(false);
+      stripModeParam();
+      const section = keep ? document.getElementById(keep) : null;
+      if (section && typeof section.scrollIntoView === 'function') section.scrollIntoView({ block: 'start', behavior: 'instant' });
+    };
+
+    const build = () => {
+      state.prev = Dom.make('button', { type: 'button', class: 'btn-outline', 'aria-label': 'Poprzedni ekran', text: '‹' });
+      state.next = Dom.make('button', { type: 'button', class: 'btn-outline', 'aria-label': 'Następny ekran', text: '›' });
+      state.count = Dom.make('span', { class: 'proto-presentation-count', role: 'status', 'aria-live': 'polite' });
+      const exit = Dom.make('button', { type: 'button', class: 'btn-outline', text: 'Wyjdź (Esc)' });
+      state.prev.addEventListener('click', () => { if (state.prev.getAttribute('aria-disabled') !== 'true') move(-1); });
+      state.next.addEventListener('click', () => { if (state.next.getAttribute('aria-disabled') !== 'true') move(1); });
+      exit.addEventListener('click', () => PageState.setFlag('presentation', false));
+      state.bar = Dom.make('div', { class: 'proto-presentation-bar', role: 'group', 'aria-label': 'Prezentacja' },
+        [state.prev, state.count, state.next, exit]);
+      document.body.appendChild(state.bar);
+    };
+
+    // Wywołaj PRZED `ScreenNav.start()`: obsługa klawiszy ma pierwszeństwo przed skrótami przełącznika ekranów.
+    const start = () => {
+      build();
+      Bus.on('flag:presentation', (on) => { if (on) enter(); else leave(); });
+      Bus.on('screen', (id) => show(id));
+      window.addEventListener('hashchange', () => { const id = hashId(); if (id) show(id); });
+      Keyboard.register((event, facts) => {
+        if (facts.typing || facts.isComposing || facts.dialog || event.ctrlKey || event.metaKey || event.altKey) return false;
+        if (event.key === 'p' || event.key === 'P') {
+          PageState.setFlag('presentation', !PageState.flags.presentation);
+          return true;
+        }
+        if (!PageState.flags.presentation) return false;
+        if (event.key === 'Escape') {
+          if (ScreenNav.state.open) return false;   // Esc zamyka najpierw listę ekranów
+          PageState.setFlag('presentation', false);
+          return true;
+        }
+        if (facts.neutralFocus === false) return false;
+        const moves = { ArrowLeft: -1, ArrowRight: 1, Home: 'first', End: 'last' };
+        if (!has(moves, event.key)) return false;
+        move(moves[event.key]);
+        return true;
+      });
+      if (requested() || remembered()) PageState.setFlag('presentation', true);
+    };
+
+    return Object.freeze({ start: start, state: state });
   })();
 
   // ── 13e. UI: tryb klikalny (przejścia `data-goto`) i skróty paska ─────────────────────────────────────────────
@@ -5225,6 +5358,7 @@
     }
     Toast.init();
     ToolbarUi.build();
+    Presentation.start();
     ScreenNav.start();
     Navigation.start();
     AuthUi.start();
