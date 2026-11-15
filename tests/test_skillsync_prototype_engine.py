@@ -49,7 +49,7 @@ def find_node():
 # Kopia: tests/fixtures/prototype/engine-v2/ (SOURCE.md). Strona Pythona: skillsync_workflow/prototype_server.py.
 
 ENGINE_V2_DIR = Path(__file__).resolve().parent / 'fixtures' / 'prototype' / 'engine-v2'
-ENGINE_V2_SHA256 = 'aa632fdcef7b8b740b33c200223cd1bb2eabdf877200a1ae8d96ab6c8e3a56de'
+ENGINE_V2_SHA256 = 'c7aaa1affae570ca946ca0f6477f4f704a40532417ddc4c647284ac0bb6ef1e5'
 REFRESH_V2 = 'Odśwież kopię wg tests/fixtures/prototype/engine-v2/SOURCE.md i zaktualizuj ENGINE_V2_SHA256.'
 ENGINE_V2_PATH_ENV = 'SKILLSYNC_PROTOTYPE_ENGINE_V2_PATH'
 DIFF_SEEDS = (20261104, 7, 1234567, 99, 424242, 31337)
@@ -3246,6 +3246,13 @@ class PresentationModeSourceTests(unittest.TestCase):
         self.assertIn("if (facts.typing || facts.isComposing || facts.dialog || event.ctrlKey || event.metaKey || event.altKey) return false;", self.js)
         self.assertIn("words('c C g G p P [ ] ArrowLeft ArrowRight Home End')", self.js)
         self.assertIn('Presentation.start();\n    ScreenNav.start();', self.js)   # the key handler of the mode goes before the one of the switcher
+
+    def test_arrows_work_on_the_bar_buttons_but_not_with_shift_and_the_mode_flag_is_cleared_without_screens(self):
+        block = self.js[self.js.index('const Presentation = (() => {'):self.js.index('return Object.freeze({ start: start, state: state });')]
+        self.assertIn("facts.neutralFocus === false && !onBarButton", block)   # a click leaves the focus on the button: the arrows keep working
+        self.assertIn("if (event.shiftKey) return false;", block)
+        self.assertIn("if (!list.length) { PageState.setFlag('presentation', false); return; }", block)
+        self.assertIn("ScreenNav.state.forced = null;", block)
 
     def test_the_engine_exports_no_new_names_for_the_mode(self):
         self.assertNotIn('Presentation', self.js[self.js.index('const EXPORT_MAP = {'):])

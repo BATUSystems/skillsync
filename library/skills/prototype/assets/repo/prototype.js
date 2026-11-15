@@ -2148,6 +2148,7 @@
       paint();
       try { history.replaceState(null, '', '#' + id); } catch (error) { /* adres niezmienny */ }
       if (ScreenNav.state.entries.length) ScreenNav.select(id);
+      ScreenNav.state.forced = null;   // w trybie nie ma śledzenia przewijania: stary cel z `goTo` nie może wrócić po wyjściu
       window.scrollTo(0, 0);
     };
 
@@ -2160,7 +2161,7 @@
 
     const enter = () => {
       const list = screens();
-      if (!list.length) return;
+      if (!list.length) { PageState.setFlag('presentation', false); return; }
       const own = hashId() || ScreenNav.state.current;
       state.current = null;
       PageState.flags.presentation = true;
@@ -2209,7 +2210,13 @@
           PageState.setFlag('presentation', false);
           return true;
         }
-        if (facts.neutralFocus === false) return false;
+        // Nawigacja działa przy fokusie neutralnym i na przyciskach pasków (po kliknięciu myszą fokus zostaje na przycisku);
+        // lista ekranów, pola i okna zachowują własne strzałki.
+        const target = event.target;
+        const onBarButton = !!target && target.tagName === 'BUTTON' && !!target.closest && !!target.closest('.proto-presentation-bar, .proto-toolbar') &&
+          !ScreenNav.state.open && target.getAttribute('aria-haspopup') === null;
+        if (facts.neutralFocus === false && !onBarButton) return false;
+        if (event.shiftKey) return false;   // Shift + strzałki to zaznaczanie tekstu przeglądarki
         const moves = { ArrowLeft: -1, ArrowRight: 1, Home: 'first', End: 'last' };
         if (!has(moves, event.key)) return false;
         move(moves[event.key]);

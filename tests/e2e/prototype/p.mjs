@@ -122,4 +122,20 @@ suite.add('P-05', 'Prezentacja: klawisze pomijają pola tekstowe, modyfikatory i
   return { ok, typing, withCtrl, disabled, listClosedFirst, thenExit };
 });
 
+suite.add('P-06', 'Prezentacja: po kliknięciu myszą klawisze nadal działają; Shift+strzałka nie nawiguje; lista ekranów zachowuje strzałki', async () => {
+  await fresh(p, fileUrl());
+  await p.clickEl(toggleButton, 'przycisk Prezentacja'); await sleep(400);
+  const entered = await p.evaluate(snapshot);
+  await p.key('ArrowRight'); await sleep(250);
+  const afterKey = await p.evaluate(snapshot);
+  await p.clickEl(`document.querySelector('.proto-presentation-bar [aria-label="Następny ekran"]')`, 'przycisk ›'); await sleep(250);
+  const afterClick = await p.evaluate(snapshot);
+  await p.key('ArrowLeft'); await sleep(250);
+  const afterBack = await p.evaluate(snapshot);
+  await p.key('ArrowRight', { shift: true }); await sleep(250);
+  const afterShift = await p.evaluate(snapshot);
+  const ok = entered.cls && same(entered.vis, ['s1']) && same(afterKey.vis, ['s2']) && same(afterClick.vis, ['s3']) && same(afterBack.vis, ['s2']) && same(afterShift.vis, ['s2']);
+  return { ok, entered, afterKey, afterClick, afterBack, afterShift };
+});
+
 await suite.main();
