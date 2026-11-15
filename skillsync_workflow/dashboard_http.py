@@ -40,7 +40,6 @@ import yaml
 from . import __version__
 from . import dashboard as engine
 from . import dashboard_token
-from .dashboard_view import apply_viewer_view
 from . import status as status_core
 from .common import emit, load_layer_project, read_project, redact
 from .layers import LayerError
@@ -680,7 +679,7 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
                 data["approvals"]["here"] = here
                 data["approvals"]["viewer"] = viewer
                 data["approvals"]["tokenRequired"] = bool(self.board.approve_token)  # only the fact: the value never leaves the process
-                return self._json(200, redact(apply_viewer_view(data, viewer)))  # viewer: no logins or question texts (a copy); secrets masked as in `dashboard show`
+                return self._json(200, redact(data))  # the viewer sees the same content as the operator (decision 15.11); secrets masked as in `dashboard show`
             if route == "/api/doc":
                 doc = self.board.doc((query.get("path") or [None])[0])
                 if doc is None:

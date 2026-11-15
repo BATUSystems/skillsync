@@ -20,7 +20,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 - Status page: a pulsing indicator on a stage that is going on (stopped when the run is silent), "Czeka na: <role>", the progress bar in two shades (hatching and outline, contrast of the accent with the track at least 3:1 in both themes), the block "Wynik", a collapsible glossary, the addressee of an expert question, the toast "N nowych komentarzy po akceptacji", the tab "Pytania" (prototypes and expert questions; only when the JSON has `prototypes` or `expertQuestions.items`).
 - The expert questions page `/_experts` shows to whom a question is addressed (`addresseesNode`).
 - `common.plan_section(text, name)`: the one reader of the `## <name>` sections of a plan.
-- `skillsync_workflow/dashboard_view.py`: the viewer's view of `/api/status` (`approvals.viewer`): no logins and no question texts, applied to a copy in the handler; `Handler._approvals_role()` is the one place that decides `here` and `viewer`.
+- `Handler._approvals_role()` is the one place that decides `here` and `viewer`; the viewer gets the same `/api/status` content as the operator (no filtering of logins or texts), only without writing consents.
 - Tests: the contract of the new fields, the viewer's view, the renderer (a frozen copy of the 1.5.0 renderer on the current fixtures), the contrast of the progress bar, the syntax of the progress report in the docs.
 
 ### Changed

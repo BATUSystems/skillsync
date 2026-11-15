@@ -31,7 +31,7 @@ Reguła: `skillsync dashboard serve` to lokalny serwer strony statusu (bibliotek
 - **`--approve-host`**: lista nazw dopuszczonych w nagłówku `Host` do odczytu i zgód; **nie oznacza** adresu nasłuchu (`--host`).
 - **`--read-host`**: lista nazw dopuszczonych w nagłówku `Host` wyłącznie do odczytu (widzowie przez tunel); **nie oznacza** prawa do zgód ani adresu nasłuchu.
 - **zgoda** (`approvals.jsonl`): wpis użytkownika o słowie `GO plan`, `GO implement`, `CP` albo `READY`; **nie oznacza** akceptacji prototypu (`accept`).
-- **widok widza** (`approvals.viewer`, `dashboard_view.apply_viewer_view`): odpowiedź `/api/status` bez loginów i treści pytań (liczby, role, stany), liczona na kopii w handlerze; **nie oznacza** ukrywania w rendererze ani zmiany `dashboard show --json` (widok operatora). Rolę `here`/`viewer` wyznacza jedna metoda `Handler._approvals_role()`.
+- **widok widza** (`approvals.viewer`): ta sama treść `/api/status` co u operatora (bez filtra loginów i treści); rola wpływa tylko na zgody (brak zapisu). Rolę `here`/`viewer` wyznacza jedna metoda `Handler._approvals_role()`.
 - **`trwa:`** (segment raportu postępu): etap, który trwa teraz (`stages[].state: active`); **nie oznacza** kroku „w toku”; gaśnie przy `czeka:` w tej samej linii, a pulsowanie przy ciszy przebiegu.
 - **`run.parseWarnings`**: lista fragmentów list „w toku/zrobione”, które parser pominął (`no-step-id`, `later-id`); **nie oznacza** błędu przebiegu.
 

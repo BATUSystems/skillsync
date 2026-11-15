@@ -351,8 +351,7 @@ bez dowiązań symbolicznych, `prototype.json` obok, plik do 2 MiB (serwer zapis
   pytanie przebiegu nie ma adresatów, inaczej posortowana suma loginów adresatów otwartych pytań.
 - `items[]` (opcjonalne): do 50 najnowszych pytań wszystkich przebiegów, najnowsze pierwsze: `{id, runSlug, text (do 160 znaków), blocking,
   addressees (lista loginów, pusta = wszyscy eksperci), state (open, answered, withdrawn), at, url}`.
-- Widok widza (`approvals.viewer`): `runs[].addressees` puste, `items[]` bez `text` i z pustymi `addressees`, `waiting[].who.login` null
-  (także w surowych tekstach `run.checkpoints[].text` i `timing.windows[].what` sufiks `(kto: rola login)` traci login), `prototypes[]` tylko z liczbami wątków. `dashboard show --json` (lokalne CLI operatora) niczego nie ukrywa.
+- Widok widza (`approvals.viewer`): ta sama odpowiedź co dla operatora (loginy, nazwiska, treści pytań, plany i teksty checkpointów są widoczne; strona jest wewnątrzfirmowa). Różni się tylko flaga `approvals.viewer` (bez zapisu zgód) i `approvals.here`.
 - Renderer pokazuje toast „Pytania do eksperta: N otwartych (M blokujących)” w banerze, gdy `open > 0`: to stan, nie wynik
   akcji, więc bez timera i bez „×”; znika, gdy `open` spadnie do `0`. Odnośnik „Odpowiedz na pytania” prowadzi do
   `/_experts/<slug>` przy jednym przebiegu albo do `/_experts` przy kilku, o ile host zna adres serwera prototypów

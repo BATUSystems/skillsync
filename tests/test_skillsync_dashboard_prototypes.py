@@ -13,7 +13,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from skillsync_workflow import dashboard, dashboard_view  # noqa: E402
+from skillsync_workflow import dashboard  # noqa: E402
 from skillsync_workflow import prototype_server as ps  # noqa: E402
 
 FIXTURES = ROOT / 'tests' / 'fixtures' / 'dashboard'
@@ -235,19 +235,6 @@ class PrototypesList(PrototypeCase):
                                         ahead=lambda *args: {})
         entry = next(item for item in status['prototypes'] if item['slug'] == 'alfa')
         self.assertEqual(entry['commentsAfterAcceptance']['count'], 1)
-        # the page data can carry a login-like field in threads: the viewer's view drops it, the owner's view keeps the data intact
-        data = json.loads(json.dumps(status))
-        data['prototypes'][0]['threads']['logins'] = ['anna@example.com']
-        data['prototypes'][0]['threads']['by'] = 'anna@example.com'
-        owner = dashboard_view.apply_viewer_view(data, False)
-        self.assertIn('logins', owner['prototypes'][0]['threads'], 'control: no viewer, no filtering')
-        view = dashboard_view.apply_viewer_view(data, True)
-        threads = view['prototypes'][0]['threads']
-        self.assertNotIn('logins', threads)
-        self.assertNotIn('by', threads)
-        self.assertTrue(all(isinstance(value, int) for value in threads.values()))
-        self.assertEqual(threads.get('open'), 1)
-        self.assertEqual(view['prototypes'][0]['commentsAfterAcceptance']['count'], 1)
 
 
 class ScreensDoneOnRealFiles(PrototypeCase):

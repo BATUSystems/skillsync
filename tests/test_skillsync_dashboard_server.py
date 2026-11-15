@@ -1489,8 +1489,8 @@ class HttpReadHostTests(HttpCase):
                 approvals = self.status_as(host)["approvals"]
                 self.assertEqual((approvals["here"], approvals["viewer"]), expected)
 
-    def test_viewer_gets_no_logins_or_question_texts_and_the_host_gets_them(self) -> None:
-        """K18 (STATUS-160-A): the filter works on the output of the handler, not only in the renderer."""
+    def test_viewer_gets_the_same_logins_and_question_texts_as_the_host(self) -> None:
+        """Decision 15.11 (STATUS-160-A): no filter for the viewer; the page is internal, only the consents differ."""
         cp = self.root / RUN / "checkpoints.md"
         cp.write_text(cp.read_text(encoding="utf-8") + "- 23:50 czeka: GO plan (kto: akceptujący jan.kowalski)\n", encoding="utf-8")
         proto = self.root / "docs" / "prototypes" / "demo"
@@ -1504,10 +1504,11 @@ class HttpReadHostTests(HttpCase):
         self.assertEqual(host["expertQuestions"]["runs"][0]["addressees"], ["ewa.nowak"])
         self.assertEqual(host["expertQuestions"]["items"][0]["text"], "Czy tak?")
         text = json.dumps(viewer, ensure_ascii=False)
-        for secret in ("jan.kowalski", "ewa.nowak", "Czy tak?"):
-            self.assertNotIn(secret, text)
-        self.assertEqual(viewer["waiting"][0]["who"]["role"], "acceptor")
-        self.assertEqual(viewer["expertQuestions"]["items"][0]["state"], "open")
+        for visible in ("jan.kowalski", "ewa.nowak", "Czy tak?"):
+            self.assertIn(visible, text)
+        self.assertEqual(viewer["waiting"], host["waiting"])
+        self.assertEqual(viewer["expertQuestions"], host["expertQuestions"])
+        self.assertEqual((viewer["approvals"]["viewer"], host["approvals"]["viewer"]), (True, False))
 
     def test_read_host_sees_assumptions_questions_waiting_and_silence(self) -> None:
         local, viewer = self.status_as("127.0.0.1"), self.status_as(self.READ)
