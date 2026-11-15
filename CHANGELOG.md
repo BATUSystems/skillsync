@@ -12,6 +12,8 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-11-15
+
 ### Fixed
 
 - `leakguard`: a hook command line containing a path that starts with `/` is checked as an absolute path on Python 3.13+ on Windows too (`os.path.isabs('/x')` is False there since 3.13, so `hook_command_problems` skipped such a path and `hook-command-missing` did not report a missing file); POSIX unchanged.
