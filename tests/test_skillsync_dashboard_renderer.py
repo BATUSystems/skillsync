@@ -1878,17 +1878,17 @@ class RendererNodeTests(unittest.TestCase):
         self.assertIn("odpowiedziane", q2["text"])
         self.assertIn("2 d temu", q2["text"])
         self.assertEqual(q2["to"], "do wszystkich ekspertów")
-        self.assertEqual(q3["qtext"], "treść niedostępna dla widza")
+        self.assertEqual(q3["qtext"], "treść niedostępna")
         self.assertIn("wycofane", q3["text"])
         self.assertEqual(q3["hrefs"], ["http://127.0.0.1:5130/_experts"])  # zła ścieżka url spada do listy
         self.assertEqual(r["noHost"]["items"][0]["hrefs"], [])
         self.assertEqual(r["noHost"]["protos"][0]["hrefs"], [])
         self.assertEqual(r["itemsCap"], 50)
         v = r["viewer"]["items"][0]
-        self.assertEqual(v["qtext"], "treść niedostępna dla widza")
+        self.assertEqual(v["qtext"], "treść niedostępna")
         self.assertIsNone(v["to"])
         leak = r["viewerLeak"]["items"][0]
-        self.assertEqual(leak["qtext"], "treść niedostępna dla widza")
+        self.assertEqual(leak["qtext"], "treść niedostępna")
         self.assertIsNone(leak["to"])
         self.assertNotIn("SEKRET", leak["text"])
         self.assertNotIn("jan", leak["text"])

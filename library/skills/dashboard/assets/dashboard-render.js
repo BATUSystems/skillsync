@@ -992,7 +992,7 @@
           q.blocking === true ? h("span", { class: "chip s-warn q-blocking" }, "blokujące") : null,
           h("span", { class: "chip " + (q.state === "open" ? "s-active" : "s-planned") }, Q_STATE[q.state] || String(q.state ?? "—")),
           h("span", { class: "q-age" }, fmtAge(q.at))),
-        h("span", { class: "q-text" + (text == null ? " is-missing" : "") }, text == null ? "treść niedostępna dla widza" : text),
+        h("span", { class: "q-text" + (text == null ? " is-missing" : "") }, text == null ? "treść niedostępna" : text),
         to ? h("span", { class: "q-to", "data-addressees": "" }, to) : null,
         url ? h("a", { class: "q-go", href: url, target: "_blank", rel: "noopener", "aria-label": `Otwórz pytania przebiegu ${slug || ""}`.trim(),
           on: { click: linkClick("experts", slug, url) } }, "Otwórz pytania") : null);
