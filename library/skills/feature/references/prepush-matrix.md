@@ -18,6 +18,8 @@ z powodem w raporcie.
 | każdy nowy lub zmieniony skip | `scripts/check_skips.py` z baseline po zmianie na logach `-v` **wszystkich systemów** (Linux, macOS, Windows; klucz `<system>/<tryb>`): rc=0; kategorie sprawdzaj pod kątem przechwytywania (pierwsza pasująca wygrywa) |
 | nowa kategoria lub fragment skipa | samospójność: każdy fragment klasyfikuje się do własnej kategorii |
 
+Zasady biegów: procesy testów zatrzymujesz **wyłącznie po własnym PID** (albo własnej grupie procesów lub scope `systemd-run`), nigdy po wzorcu nazwy (`pkill -f`): na wspólnej stacji zabijesz cudzy bieg. Równoległe biegi na jednej maszynie (np. Windows 3.11, 3.12 i 3.13 naraz) dostają rozłączne plasterki portów testowych serwerów (`SKILLSYNC_TEST_DASHBOARD_PORTS=<od>-<do>`), inaczej moduły z serwerem dają `WinError 10048` (zajęty port), co nie jest porażką produktu.
+
 Skrypty pomocnicze leżą w repo operacyjnym `skillsync-ops` (`tools/win-shard/`): `prepush.sh` (macierz Windows i `check_skips` z jednej komendy),
 `runlike.sh`/`runlike.ps1` (Windows, środowisko jak runner), `skips_union.py` i `apply_windows_baseline.py` (baseline z logów CI); w rdzeniu jest tylko
 `scripts/check_skips.py`. Raport kroku wymienia
