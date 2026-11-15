@@ -1996,7 +1996,7 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
         'delivery': delivery_state,
         'session': {'url': session_url},
         'prototype': {'slug': slug, 'port': prototype_port, 'up': bool(slug) and bool(prototype_up and prototype_up()),
-                      'writing': writing_state, **({'commentsAfterAcceptance': current_after} if current_after else {})},
+                      'writing': writing_state, **({'commentsAfterAcceptance': current_after} if current_after and current_after.get('count') else {})},
         'prototypes': prototypes,
         'docs': doc_groups(root, [rel for rel in current_docs if rel], run['files'], run_id),
         'readiness': read_readiness(root, run_id, run['exists']),

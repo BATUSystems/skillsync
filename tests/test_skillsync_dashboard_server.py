@@ -1629,7 +1629,7 @@ class AssetsRenderTests(unittest.TestCase):
             self.assertIn(f'desc("{key}"', self.js)
         for cls in (".readiness.is-pass", ".readiness.is-blocked", ".readiness.is-none", ".substeps"):
             self.assertIn(cls, self.css)
-        for cls in (".questions", ".q-none", ".q-group", ".q-list"):
+        for cls in (".questions", ".q-none", ".q-group"):   # `.q-list` jest teraz w zakładce „Pytania” (STATUS-160-A)
             self.assertNotIn(cls, self.css)
 
     def test_new_templates_escape_data(self) -> None:
