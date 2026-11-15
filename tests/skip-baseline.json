@@ -81,7 +81,7 @@
  "notes": {
   "linux/symlink": "Measured locally (full run 2.4 + step 3.1t): Node 22, SKILLSYNC_TEST_LIBRARY and SKILLSYNC_PROTOTYPE_ENGINE_V2_SOURCE set, no Chrome.",
   "linux/copy": "As linux/symlink with SKILLSYNC_NO_SYMLINK=1. Since step 5.1 the prototype tests that plant hostile links use the OS-level guard (`needs_os_symlinks`), so they run in copy mode and no longer appear here.",
-  "ubuntu-latest/*": "Measured from the CI logs of 8 jobs (Python 3.11-3.14, symlink and copy): 14 skips each, identical (12 Chrome E2E tests of category e2e-chrome run in the `e2e` job, the Windows-only test, the zsh hook test: the runner has no zsh).",
+  "ubuntu-latest/*": "Measured from the CI logs of 8 jobs (Python 3.11-3.14, symlink and copy): 14 skips each, identical (12 Chrome E2E tests of category e2e-chrome run in the `e2e` job, the Windows-only test, the zsh hook test: the runner has no zsh); plus 3 Windows-only junction tests of test_skillsync_resolve_loop (not in those logs, same behaviour as the Linux entries).",
   "windows-latest/*": "windows-latest/copy measured from the CI logs of Python 3.11, 3.12 and 3.13 (identical sets); windows-latest/symlink stays null: the matrix excludes it (no OS symlinks without Developer Mode).",
   "macos-latest/*": "Measured from the CI runs of main (v1.3.0, 12.11): 35 skips, the same in all four jobs (3.11/3.12, symlink/copy): the Chrome E2E scenarios (job e2e), the Azure tests without the machine descriptor, the env lifecycle tests (process ownership backend on Linux only), BSD mktemp, file system limits and shellcheck (not installed on the macOS runner).",
   "e2e-chrome": "The 12 Chrome scenario scripts (one test per tests/e2e/prototype/*.mjs, incl. test_widok and test_w) are allowed: CI runs no Chrome; the prototype E2E runs separately with Chrome and leased ports."
@@ -139,6 +139,18 @@
    {
     "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_widok",
     "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_resolve_loop.ResolveLoopChecked.test_a_dangling_junction_is_not_a_loop_on_windows",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_resolve_loop.ResolveLoopChecked.test_a_real_loop_of_junctions_is_reported_on_windows",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_resolve_loop.ResolveLoopChecked.test_a_working_junction_is_not_a_loop_on_windows",
+    "category": "windows-only"
    }
   ],
   "linux/copy": [
@@ -193,6 +205,18 @@
    {
     "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_widok",
     "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_resolve_loop.ResolveLoopChecked.test_a_dangling_junction_is_not_a_loop_on_windows",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_resolve_loop.ResolveLoopChecked.test_a_real_loop_of_junctions_is_reported_on_windows",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_resolve_loop.ResolveLoopChecked.test_a_working_junction_is_not_a_loop_on_windows",
+    "category": "windows-only"
    }
   ],
   "ubuntu-latest/symlink": [
@@ -251,6 +275,18 @@
    {
     "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_widok",
     "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_resolve_loop.ResolveLoopChecked.test_a_dangling_junction_is_not_a_loop_on_windows",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_resolve_loop.ResolveLoopChecked.test_a_real_loop_of_junctions_is_reported_on_windows",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_resolve_loop.ResolveLoopChecked.test_a_working_junction_is_not_a_loop_on_windows",
+    "category": "windows-only"
    }
   ],
   "ubuntu-latest/copy": [
@@ -309,6 +345,18 @@
    {
     "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_widok",
     "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_resolve_loop.ResolveLoopChecked.test_a_dangling_junction_is_not_a_loop_on_windows",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_resolve_loop.ResolveLoopChecked.test_a_real_loop_of_junctions_is_reported_on_windows",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_resolve_loop.ResolveLoopChecked.test_a_working_junction_is_not_a_loop_on_windows",
+    "category": "windows-only"
    }
   ],
   "windows-latest/symlink": null,
@@ -360,6 +408,10 @@
    {
     "id": "test_skillsync_eight.EightContracts.test_environment_prepare_can_share_parent_resource",
     "category": "linux-only-env"
+   },
+   {
+    "id": "test_skillsync_filelock_fd.FileLockDescriptor.test_a_file_unlinked_under_the_waiter_closes_the_old_descriptor_once_and_locks_the_new_file",
+    "category": "posix-only"
    },
    {
     "id": "test_skillsync_filelock_unsupported.WaiterFollowsAnUnlinkedLockFileTests.test_a_default_waiter_locks_the_recreated_file_after_the_holder_unlinked_it",
@@ -1076,6 +1128,18 @@
     "category": "e2e-chrome"
    },
    {
+    "id": "test_skillsync_resolve_loop.ResolveLoopChecked.test_a_dangling_junction_is_not_a_loop_on_windows",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_resolve_loop.ResolveLoopChecked.test_a_real_loop_of_junctions_is_reported_on_windows",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_resolve_loop.ResolveLoopChecked.test_a_working_junction_is_not_a_loop_on_windows",
+    "category": "windows-only"
+   },
+   {
     "id": "test_skillsync_retro.SessionContentStaysOut.test_non_utf8_file_and_directory_names_do_not_break_the_report",
     "category": "filesystem"
    },
@@ -1216,6 +1280,18 @@
    {
     "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_widok",
     "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_resolve_loop.ResolveLoopChecked.test_a_dangling_junction_is_not_a_loop_on_windows",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_resolve_loop.ResolveLoopChecked.test_a_real_loop_of_junctions_is_reported_on_windows",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_resolve_loop.ResolveLoopChecked.test_a_working_junction_is_not_a_loop_on_windows",
+    "category": "windows-only"
    },
    {
     "id": "test_skillsync_retro.SessionContentStaysOut.test_non_utf8_file_and_directory_names_do_not_break_the_report",

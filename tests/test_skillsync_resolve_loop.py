@@ -47,8 +47,8 @@ class ResolveLoopChecked(unittest.TestCase):
         self.assertEqual(caught.exception.errno, errno.ELOOP)
 
     def test_a_real_loop_of_junctions_is_reported_on_windows(self):
-        if os.name != 'nt':   # no junctions elsewhere; not a skip, so that no baseline entry is needed
-            return
+        if os.name != 'nt':
+            self.skipTest('tylko na Windows: junction')
         a, b = self.base / 'a', self.base / 'b'
         b.mkdir()
         for link, target in ((a, b),):
@@ -60,7 +60,7 @@ class ResolveLoopChecked(unittest.TestCase):
 
     def test_a_working_junction_is_not_a_loop_on_windows(self):
         if os.name != 'nt':
-            return
+            self.skipTest('tylko na Windows: junction')
         real = self.base / 'real'
         real.mkdir()
         link = self.base / 'ok'
@@ -72,7 +72,7 @@ class ResolveLoopChecked(unittest.TestCase):
         # measured on Windows 3.11, 3.12 and 3.13: `resolve()` of a junction whose target was removed returns the (missing) target path,
         # not the junction, so it is no false "Too many levels": it resolves like any path that does not exist
         if os.name != 'nt':
-            return
+            self.skipTest('tylko na Windows: junction')
         gone = self.base / 'gone'
         gone.mkdir()
         link = self.base / 'dangling'
