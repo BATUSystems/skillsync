@@ -132,7 +132,8 @@ def write_state(root, port: int, token, host: str = "127.0.0.1", warn=None, host
         directory.mkdir(parents=True, exist_ok=True)
         if not _own_directory(directory):
             if warn:
-                warn("katalog pliku tokenu zgód jest dowiązaniem albo nie należy do użytkownika: pliku nie zapisano; adres z tokenem jest tylko w tej linii konsoli")
+                warn("katalog pliku tokenu zgód jest dowiązaniem albo nie należy do użytkownika: pliku nie zapisano; adres z tokenem jest tylko w tej linii konsoli"
+                     if token is not None else "katalog pliku stanu jest dowiązaniem albo nie należy do użytkownika: pliku nie zapisano (`dashboard url` nie rozpozna tego serwera)")
             return None
         restricted = _restrict(directory)
         _sweep_temporaries(directory, root, port)
@@ -164,9 +165,19 @@ def write_state(root, port: int, token, host: str = "127.0.0.1", warn=None, host
         return None
 
 
-def remove_state(root, port: int) -> None:
+def remove_state(root, port: int, pid: int | None = None) -> None:
+    """Remove the state file of the port. With `pid` (the server that stops) only when the file is its own: a server that lost the port to
+    another one, or an old one that stops late, must not delete the file of the server that holds the port now."""
+    path = state_path(root, port)
+    if pid is not None:
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return
+        if not isinstance(record, dict) or record.get("pid") != pid:
+            return
     try:
-        state_path(root, port).unlink()
+        path.unlink()
     except OSError:
         pass
 

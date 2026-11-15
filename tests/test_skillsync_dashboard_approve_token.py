@@ -11,9 +11,11 @@ import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 import urllib.request
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -28,6 +30,15 @@ from tests.test_skillsync_dashboard_server import (CLI, PLAN, TEST_TOKEN, HttpCa
                                                    install_fake_cli, make_project, raw_post, spy_core)
 
 HEADERS = {"Content-Type": "application/json", "X-Status-Board": "1"}
+
+
+def home_env(base) -> dict:
+    """The directories of the machine state under `base`: on macOS the data directory is `~/Library/Application Support` and on Windows
+    `LOCALAPPDATA` (`Path.home()` follows `HOME`/`USERPROFILE`), so `XDG_DATA_HOME` alone leaves the real home to the tests (state files of
+    the server pile up there, and two runs at once see each other's)."""
+    base = Path(base)
+    return {"XDG_DATA_HOME": str(base / "xdg-data"), "LOCALAPPDATA": str(base / "xdg-data"), "HOME": str(base / "home"),
+            "USERPROFILE": str(base / "home")}
 
 
 class TokenCase(HttpCase):
@@ -160,7 +171,7 @@ class StateFile(unittest.TestCase):
         self.home = Path(self.tmp.name) / "home"
         self.project = Path(self.tmp.name) / "project"
         self.project.mkdir()
-        patch = mock.patch.dict(os.environ, {"XDG_DATA_HOME": str(self.home), "LOCALAPPDATA": str(self.home)})
+        patch = mock.patch.dict(os.environ, home_env(self.tmp.name))
         patch.start()
         self.addCleanup(patch.stop)
 
@@ -211,6 +222,26 @@ class StateFile(unittest.TestCase):
         dashboard_token.remove_state(self.project, 5144)
         self.assertFalse(path.exists())
         dashboard_token.remove_state(self.project, 5144)
+
+    def test_remove_state_with_a_pid_deletes_only_the_file_of_that_process(self) -> None:
+        """An old server that stops late (or one that lost the port) must not delete the file of the server that holds the port now."""
+        path = dashboard_token.write_state(self.project, 5145, "tok-new")
+        dashboard_token.remove_state(self.project, 5145, os.getpid() + 1)   # a stopping server that is not the writer
+        self.assertTrue(path.is_file(), "the file of another process stays")
+        self.assertEqual(json.loads(path.read_text(encoding="utf-8"))["token"], "tok-new")
+        dashboard_token.remove_state(self.project, 5145, os.getpid())
+        self.assertFalse(path.exists(), "the writer removes its own file")
+        dashboard_token.remove_state(self.project, 5145, os.getpid())   # gone: quiet
+
+    def test_the_refusal_without_consents_does_not_speak_of_a_token(self) -> None:
+        state = dashboard_token.state_dir()
+        state.mkdir(parents=True)
+        warnings = []
+        with mock.patch.object(dashboard_token, "_own_directory", lambda directory: False):
+            self.assertIsNone(dashboard_token.write_state(self.project, 5183, None, warn=warnings.append))
+            self.assertIsNone(dashboard_token.write_state(self.project, 5184, "tok-x", warn=warnings.append))
+        self.assertNotIn("token", warnings[0].lower())
+        self.assertIn("tokenu", warnings[1])
 
     def test_servers_lists_only_healthy_servers_of_this_project(self) -> None:
         other = Path(self.tmp.name) / "other"
@@ -323,7 +354,7 @@ class UrlCommand(unittest.TestCase):
         manifest = self.root / srv.MANIFEST
         manifest.parent.mkdir(parents=True, exist_ok=True)
         manifest.write_text("skills: [dashboard]\n", encoding="utf-8")
-        patch = mock.patch.dict(os.environ, {"XDG_DATA_HOME": str(self.tmp / "xdg-data"), "LOCALAPPDATA": str(self.tmp / "xdg-data")})
+        patch = mock.patch.dict(os.environ, home_env(self.tmp))
         patch.start()
         self.addCleanup(patch.stop)
         self.layer = ["--layer", f"core={ROOT / 'library'}"]
@@ -409,7 +440,7 @@ class HealthAndLeftovers(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.project = Path(self.tmp.name) / "project"
         self.project.mkdir()
-        patch = mock.patch.dict(os.environ, {"XDG_DATA_HOME": str(Path(self.tmp.name) / "data"), "LOCALAPPDATA": str(Path(self.tmp.name) / "data")})
+        patch = mock.patch.dict(os.environ, home_env(self.tmp.name))
         patch.start()
         self.addCleanup(patch.stop)
 
@@ -514,25 +545,57 @@ class ServeWritesAndRemovesTheState(unittest.TestCase):
         manifest.write_text("skills: [dashboard]\n", encoding="utf-8")
         self.data = self.tmp / "xdg-data"
         self.env = {**os.environ, "SKILLSYNC_CONFIG": str(self.tmp / "machine-config.yaml"),
-                    "XDG_CACHE_HOME": str(self.tmp / "xdg-cache"), "XDG_DATA_HOME": str(self.data)}
+                    "XDG_CACHE_HOME": str(self.tmp / "xdg-cache"), **home_env(self.tmp)}
         self.layer = ["--layer", f"core={ROOT / 'library'}"]
 
-    def start(self, *extra):
-        port = free_port()
-        proc = subprocess.Popen([sys.executable, str(CLI), "dashboard", "serve", str(self.root), "--port", str(port), *extra, *self.layer],
-                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=self.env)
-        self.addCleanup(lambda: proc.poll() is None and proc.kill())
-        deadline = time.time() + 20
-        while time.time() < deadline and proc.poll() is None:
-            try:
-                urllib.request.urlopen(f"http://127.0.0.1:{port}/healthz", timeout=1).close()
-                break
-            except OSError:
+    def start(self, *extra, prepare=None, ready=None):
+        """Start `dashboard serve` on a free port and wait until it is ready (`/healthz` answers, the state file of this very process exists, and `ready(port)` holds).
+
+        `free_port()` only says that a port WAS free: another process of the machine (a second run of this module, a parallel module) can take it
+        before the server binds. The server then exits at once, while the OTHER server on that port still answers `/healthz` and a test that
+        trusts the answer reads state that is not its own (measured: the leftover test saw the stale file of the previous server). So the
+        answer must be backed by the state file of our own pid (a server that lost the bind never writes one, and it takes longer than any fixed pause to import and exit), and a start that failed is retried on another port; `prepare(port)` runs before every try."""
+        last = ""
+        for _attempt in range(4):
+            port = free_port()
+            if prepare:
+                prepare(port)
+            proc = subprocess.Popen([sys.executable, str(CLI), "dashboard", "serve", str(self.root), "--port", str(port), *extra, *self.layer],
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=self.env)
+            self.addCleanup(lambda proc=proc: proc.poll() is None and proc.kill())
+            deadline = time.time() + 20
+            while time.time() < deadline and proc.poll() is None:
+                try:
+                    urllib.request.urlopen(f"http://127.0.0.1:{port}/healthz", timeout=1).close()
+                    answered = self.own_state(proc, port) and (ready is None or ready(port))
+                except OSError:
+                    answered = False
+                if answered:
+                    return proc, port
                 time.sleep(0.1)
-        return proc, port
+            if proc.poll() is None:
+                proc.kill()
+            out, err = proc.communicate(timeout=10)
+            last = f"{out}\n{err}"   # a lost bind is reported as BLOCKED on stdout, stderr stays empty
+            if "BLOCKED" not in last:   # a start that failed for another reason is not retried
+                break
+        self.fail(f"dashboard serve did not start (last port {port}): {last.strip()[-600:]}")
+
+    def own_state(self, proc, port):
+        """The state file of THIS server process: only the server that holds the port writes one with its pid, so an answer of `/healthz`
+        from a foreign server on the same port (a lost race for the port) is not taken for ours."""
+        for path in self.state_files():
+            try:
+                record = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if record.get("pid") == proc.pid and record.get("port") == port:
+                return True
+        return False
 
     def state_files(self):
-        directory = self.data / "skillsync" / "dashboard"
+        with mock.patch.dict(os.environ, home_env(self.tmp)):   # where the server of this test writes (XDG, LOCALAPPDATA or ~/Library)
+            directory = dashboard_token.state_dir()
         return sorted(directory.glob("*.json")) if directory.is_dir() else []
 
     def test_serve_prints_the_address_with_the_token_writes_the_file_and_removes_it(self) -> None:
@@ -565,25 +628,52 @@ class ServeWritesAndRemovesTheState(unittest.TestCase):
         _out, err = proc.communicate(timeout=15)
         self.assertIn(f"http://demo.example:{port}/#zgoda={record['token']}", err)
 
+    def test_a_foreign_server_on_the_chosen_port_does_not_fool_the_start(self) -> None:
+        """The race of the flake: `free_port()` returns a port, another process takes it before the bind, the server of the test exits, and
+        the foreign `/healthz` answers. The start must notice and move on to another port."""
+        class Foreign(BaseHTTPRequestHandler):
+            def do_GET(self):  # noqa: N802
+                body = b'{"ok": true}'
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args):
+                pass
+
+        foreign = ThreadingHTTPServer(("127.0.0.1", 0), Foreign)
+        threading.Thread(target=foreign.serve_forever, daemon=True).start()
+        self.addCleanup(foreign.server_close)
+        self.addCleanup(foreign.shutdown)
+        taken = foreign.server_address[1]
+        first = [taken]
+        real = free_port
+        with mock.patch.object(sys.modules[__name__], "free_port", lambda: first.pop() if first else real()):
+            proc, port = self.start("--no-approvals")
+        self.assertNotEqual(port, taken, "the start trusted the answer of a foreign server")
+        self.assertIsNone(proc.poll(), "the server of the test is the one that runs")
+        self.assertEqual([json.loads(path.read_text(encoding="utf-8"))["port"] for path in self.state_files()], [port])
+        proc.terminate()
+        proc.communicate(timeout=15)
+
     def test_a_leftover_of_a_killed_server_is_removed_by_a_server_without_consents(self) -> None:
-        port = free_port()
-        with mock.patch.dict(os.environ, {"XDG_DATA_HOME": str(self.data)}):
-            stale = dashboard_token.write_state(self.root, port, "dead-token")
-        self.assertTrue(stale.is_file())
-        proc = subprocess.Popen([sys.executable, str(CLI), "dashboard", "serve", str(self.root), "--port", str(port), "--no-approvals", *self.layer],
-                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=self.env)
-        self.addCleanup(lambda: proc.poll() is None and proc.kill())
-        deadline = time.time() + 20
-        while time.time() < deadline and proc.poll() is None:
-            try:
-                urllib.request.urlopen(f"http://127.0.0.1:{port}/healthz", timeout=1).close()
-                break
-            except OSError:
-                time.sleep(0.1)
-        record = json.loads(stale.read_text(encoding="utf-8"))
+        stale = []
+
+        def leave_a_leftover(port):
+            with mock.patch.dict(os.environ, home_env(self.tmp)):
+                stale[:] = [dashboard_token.write_state(self.root, port, "dead-token")]
+            self.assertTrue(stale[0].is_file())
+
+        def replaced(_port):    # the new server has written its own record over the leftover
+            return json.loads(stale[0].read_text(encoding="utf-8")).get("approvals") is False
+
+        proc, port = self.start("--no-approvals", prepare=leave_a_leftover, ready=replaced)
+        record = json.loads(stale[0].read_text(encoding="utf-8"))
         self.assertNotIn("token", record, "the token of the dead server is gone, not kept")
         self.assertIs(record.get("approvals"), False, "a server without consents says so")
-        self.assertEqual(record["pid"] != os.getpid() and record["port"], port)
+        self.assertEqual((record["pid"] != os.getpid(), record["port"]), (True, port))
         proc.terminate()
         proc.communicate(timeout=15)
 

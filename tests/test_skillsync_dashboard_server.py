@@ -1648,7 +1648,7 @@ class AssetsRenderTests(unittest.TestCase):
 
 def cli_env(tmp: Path) -> dict:
     return {**os.environ, "SKILLSYNC_CONFIG": str(tmp / "machine-config.yaml"), "XDG_CACHE_HOME": str(tmp / "xdg-cache"),
-            "XDG_DATA_HOME": str(tmp / "xdg-data")}
+            "XDG_DATA_HOME": str(tmp / "xdg-data"), "HOME": str(tmp / "home"), "USERPROFILE": str(tmp / "home"), "LOCALAPPDATA": str(tmp / "xdg-data")}
 
 
 def cli_show(tmp: Path, root: Path) -> dict:
@@ -1890,7 +1890,8 @@ class ServeCommandTests(unittest.TestCase):
         manifest.parent.mkdir(parents=True, exist_ok=True)
         manifest.write_text("skills: [dashboard]\n", encoding="utf-8")
         self.env = {**os.environ, "SKILLSYNC_CONFIG": str(self.tmp / "machine-config.yaml"),
-                    "XDG_CACHE_HOME": str(self.tmp / "xdg-cache"), "XDG_DATA_HOME": str(self.tmp / "xdg-data")}
+                    "XDG_CACHE_HOME": str(self.tmp / "xdg-cache"), "XDG_DATA_HOME": str(self.tmp / "xdg-data"),
+                    "HOME": str(self.tmp / "home"), "USERPROFILE": str(self.tmp / "home"), "LOCALAPPDATA": str(self.tmp / "xdg-data")}
         self.layer = ["--layer", f"core={ROOT / 'library'}"]
 
     def cli(self, *args: str, timeout: float = 60) -> subprocess.CompletedProcess:
