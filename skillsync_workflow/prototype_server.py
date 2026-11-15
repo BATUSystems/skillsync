@@ -2171,7 +2171,11 @@ class FileLock(object):
         try:
             flags = os.O_RDWR | os.O_CREAT | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_BINARY', 0)
             while True:
-                fd = os.open(self.path, flags, self.mode)
+                # Windows: the file may be just being deleted by the holder that released it (unlink=True): the open is refused
+                # (EACCES) for that instant. Retried within the lock timeout (at most TRANSIENT_RETRY_SECONDS); a refusal
+                # that lasts (a real permission problem) is raised as before.
+                fd = retry_transient(lambda: os.open(self.path, flags, self.mode),
+                                     min(TRANSIENT_RETRY_SECONDS, max(0.0, deadline - time.monotonic())))
                 while True:
                     try:
                         _try_lock_fd(fd)

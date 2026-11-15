@@ -215,5 +215,69 @@ class WaiterEntersAfterReleaseTests(unittest.TestCase):
         self.check(True)
 
 
+class OpenRefusedForAnInstantTests(unittest.TestCase):
+    """Windows: the holder that released the lock deletes the file (`unlink=True`); an open in that instant is refused with
+    EACCES (measured: 43 of 24000 acquisitions by 6 processes, always at the `os.open` of the lock file). The open is retried
+    briefly; a refusal that lasts is still raised. The Windows behaviour of `retry_transient` is switched on here, so the
+    tests run on every system."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix='filelock-')
+        self.addCleanup(self.tmp.cleanup)
+        self.path = os.path.join(self.tmp.name, 'x.lock')
+        patch = mock.patch.object(ps, '_WINDOWS', True)
+        patch.start()
+        self.addCleanup(patch.stop)
+        self.real_open = os.open
+
+    def refuse_first(self, count):
+        calls = []
+
+        def fake(path, *args, **kwargs):
+            if os.fspath(path) == self.path:
+                calls.append(path)
+                if len(calls) <= count:
+                    raise PermissionError(errno.EACCES, 'Permission denied', path)
+            return self.real_open(path, *args, **kwargs)
+        return calls, mock.patch.object(ps.os, 'open', side_effect=fake)
+
+    def test_a_refused_open_for_an_instant_is_retried_and_the_lock_is_taken(self):
+        calls, patch = self.refuse_first(3)
+        with patch:
+            with ps.FileLock(self.path, 5, 0o600, unlink=True):
+                pass
+        self.assertEqual(len(calls), 4, 'three refusals, then the open succeeds')
+        self.assertFalse(os.path.exists(self.path), 'unlink=True still removes the file')
+
+    def test_a_lasting_refusal_is_raised_after_the_short_retry_only(self):
+        calls, patch = self.refuse_first(10 ** 6)
+        started = time.monotonic()
+        with patch:
+            with self.assertRaises(PermissionError):
+                with ps.FileLock(self.path, 5, 0o600, unlink=True):
+                    self.fail('the lock must not be taken')
+        elapsed = time.monotonic() - started
+        self.assertGreater(len(calls), 3, 'it was retried')
+        self.assertLess(elapsed, ps.TRANSIENT_RETRY_SECONDS + 1.0, 'not for the whole lock timeout')
+
+    def test_the_retry_never_outlasts_a_short_lock_timeout(self):
+        calls, patch = self.refuse_first(10 ** 6)
+        started = time.monotonic()
+        with patch:
+            with self.assertRaises(PermissionError):
+                with ps.FileLock(self.path, 0.1, 0o600):
+                    pass
+        self.assertLess(time.monotonic() - started, 0.5)
+
+    def test_the_thread_lock_is_released_after_a_refusal(self):
+        _calls, patch = self.refuse_first(10 ** 6)
+        with patch:
+            with self.assertRaises(PermissionError):
+                with ps.FileLock(self.path, 0.1, 0o600):
+                    pass
+        with ps.FileLock(self.path, 1, 0o600):   # the same path, the real open: not blocked by the failed attempt
+            pass
+
+
 if __name__ == '__main__':
     unittest.main()
