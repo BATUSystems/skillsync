@@ -26,6 +26,11 @@ class ViewerView(unittest.TestCase):
     def test_host_that_gives_consents_gets_the_same_object(self):
         self.assertIs(dashboard_view.apply_viewer_view(DATA, False), DATA)
 
+    def test_suffix_with_nested_parentheses_and_unknown_role(self):
+        text = 'czeka: GO (kto: expert bob (x)); dalej (kto: nieznana) i (kto: ekspert)'
+        self.assertEqual(dashboard_view.apply_viewer_view({'run': {'checkpoints': [{'text': text}]}}, True)['run']['checkpoints'][0]['text'],
+                         'czeka: GO (kto: expert); dalej (kto: nieznana) i (kto: ekspert)')
+
     def test_viewer_gets_no_logins_and_no_question_texts(self):
         before = copy.deepcopy(DATA)
         view = dashboard_view.apply_viewer_view(DATA, True)

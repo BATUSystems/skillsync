@@ -43,7 +43,8 @@ var cases = [
   [{ forAll: true }, { roles: ['expert'] }], [{ forAll: true }, { roles: ['developer'] }],
   [{ forAll: false, addressees: ['ewa.nowak', 'jan'] }, { roles: ['developer'] }], [{ forAll: false, addressees: ['ewa.nowak'] }, { roles: ['acceptor'] }],
   [{ forAll: false }, { roles: ['expert'] }], [{ forAll: false, addressees: ['ewa.nowak'] }, { roles: ['commenter'] }],
-  [{ forAll: false }, { roles: ['commenter'] }], [{ forAll: false, addressees: ['a'] }, null]
+  [{ forAll: false }, { roles: ['commenter'] }], [{ forAll: false, addressees: ['a'] }, null],
+  [{ forAll: false, addresseeCount: 2 }, { roles: ['commenter'] }]
 ];
 process.stdout.write(JSON.stringify(cases.map(function (c) { var n = addresseesNode(c[0], c[1]); return n ? n.text : null; })));
 """)
@@ -54,7 +55,7 @@ process.stdout.write(JSON.stringify(cases.map(function (c) { var n = addresseesN
         self.assertEqual(proc.returncode, 0, proc.stderr)
         got = json.loads(proc.stdout)
         self.assertEqual(got, ['Do wszystkich ekspertów', 'Do wszystkich ekspertów', 'Do: ewa.nowak, jan', 'Do: ewa.nowak', 'Do Ciebie',
-                               'Do wskazanych ekspertów', None, 'Do wskazanych ekspertów'])
+                               'Do wskazanych ekspertów', None, 'Do wskazanych ekspertów', 'Do wskazanych ekspertów'])
         self.assertNotIn('ewa.nowak', ' '.join(t for t in got[5:7] if t), 'a view without the privileged role never shows the logins')
 
 

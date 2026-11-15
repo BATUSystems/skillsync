@@ -9,7 +9,7 @@ import copy
 import re
 
 # The raw text of a checkpoint keeps `(kto: <role> <login>)`: the viewer sees the role only.
-WHO_LOGIN_RE = re.compile(r'\(\s*kto\s*:\s*(?P<role>[^\s()]+)\s+[^()]*\)', re.IGNORECASE)
+WHO_LOGIN_RE = re.compile(r'\(\s*kto\s*:\s*(?P<role>[^\s()]+)(?:\s+[^()]*(?:\([^()]*\)[^()]*)*)?\)', re.IGNORECASE)
 
 
 def _scrub(text):

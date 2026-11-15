@@ -7844,7 +7844,7 @@ EXPERTS_SCRIPT = r"""
     if (question.forAll) text = 'Do wszystkich ekspertów';
     else if (privileged && Array.isArray(question.addressees) && question.addressees.length) text = 'Do: ' + question.addressees.join(', ');
     else if (roles.indexOf('expert') !== -1 && !privileged) text = 'Do Ciebie';
-    else if (Array.isArray(question.addressees)) text = 'Do wskazanych ekspertów';
+    else if (Array.isArray(question.addressees) || question.addresseeCount > 0) text = 'Do wskazanych ekspertów';
     return text ? el('p', { 'class': 'muted addressees', text: text }) : null;
   }
   function refNode(ref) {
