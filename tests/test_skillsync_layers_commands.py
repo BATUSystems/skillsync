@@ -1390,6 +1390,38 @@ class IsolationTest(CommandsCase):
         write(self.acme / 'leakguard' / 'other.yaml', yaml_text({'schema': 1, 'layer': 'client', 'empty': 'celowo pusta'}))
         self.assert_fail('isolation-foreign-identity')
 
+    def test_identity_dir_files_of_configured_targets_that_are_not_layers_are_not_foreign(self):
+        """D13 (DEBT-142): `leakguard.identity_dir` holds the identity of EVERY target of the machine, also the ones that
+        are no layer (a plugin repository, a client repository). Such a file is no sign of a foreign library, so the
+        isolation check skips owners that are configured `leakguard.targets`; an unknown owner still fails."""
+        identities = self.work / 'identities'
+        write(identities / 'plugin.yaml', yaml_text({'schema': 1, 'layer': 'plugin', 'terms': [{'term': CLIENT_BETA}]}))
+        self.configure(leakguard={'identity_dir': str(identities), 'targets': {'plugin': {'scope': 'private'}}})
+        self.isolation(code=0)
+        write(identities / 'unknown.yaml', yaml_text({'schema': 1, 'layer': 'client', 'terms': []}))
+        self.assert_fail('isolation-foreign-identity')
+        (identities / 'unknown.yaml').unlink()
+        self.isolation(code=0)
+        # the same owner INSIDE a layer library is still a foreign identity: only the identity directory is exempt
+        write(self.acme / 'leakguard' / 'plugin.yaml', yaml_text({'schema': 1, 'layer': 'plugin', 'terms': []}))
+        self.assert_fail('isolation-foreign-identity')
+
+    def test_an_identity_dir_inside_a_layer_library_is_still_read_as_part_of_that_layer(self):
+        """The exemption is for the machine's identity directory only: when it lies inside a layer library (`leakguard/`),
+        the same file is found there first and stays a foreign identity."""
+        inside = self.acme / 'leakguard'
+        write(inside / 'plugin.yaml', yaml_text({'schema': 1, 'layer': 'plugin', 'terms': []}))
+        self.configure(leakguard={'identity_dir': str(inside), 'targets': {'plugin': {'scope': 'private'}}})
+        self.assert_fail('isolation-foreign-identity')
+
+    def test_a_target_removed_from_the_config_makes_its_identity_file_foreign_again(self):
+        identities = self.work / 'identities'
+        write(identities / 'plugin.yaml', yaml_text({'schema': 1, 'layer': 'plugin', 'terms': []}))
+        self.configure(leakguard={'identity_dir': str(identities), 'targets': {'plugin': {'scope': 'private'}}})
+        self.isolation(code=0)
+        self.configure(leakguard={'identity_dir': str(identities)})
+        self.assert_fail('isolation-foreign-identity')
+
     def test_identity_files_are_looked_up_in_the_layer_library_not_the_whole_clone(self):
         """SEC-1: a clone of the core repository holds the library in `library/`; an example identity under
         `docs/` of the clone is no identity of the machine, a foreign one in the library still fails."""

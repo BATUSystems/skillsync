@@ -8,7 +8,7 @@ innej, a prywatne nawyki użytkownika nie mogą trafić do repo publicznego.
 | Mechanizm | Chroni przed |
 |---|---|
 | dobór warstw po ścieżce projektu (config maszyny) | podpięciem obcej warstwy przez manifest w repo |
-| `isolation.allowed_layers` + `layers check --isolation` | obecnością cudzej warstwy na maszynie organizacji |
+| `isolation.allowed_layers` + `layers check --isolation` | obecnością cudzej warstwy na maszynie organizacji (w `leakguard.identity_dir` skonfigurowane `leakguard.targets` są zaufane jak `allowed_layers`: dopisanie nazwy do `targets` ukrywa jej plik tożsamości przed tą kontrolą, ale nie jej bibliotekę) |
 | model zaufania warstw | nadpisaniem kontroli, ról i hooków rdzenia przez warstwę org bez zgody |
 | `leakcheck` + hooki git + CI | wyciekiem nazw, ścieżek, tożsamości i metadanych commitów do repo docelowego |
 | repo warstwy bez symlinków i reparse points | treścią spoza repo warstwy podpiętą linkiem i ominięciem strażnika |

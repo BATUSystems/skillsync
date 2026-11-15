@@ -294,11 +294,25 @@ class ValidationContracts(WorkflowFixture):
         self.assertEqual(report['status'], 'FAIL')
         self.assertEqual([r['exit_code'] for r in report['results']], [3, 5])
 
-    def test_redact_keeps_structural_keys_when_a_short_env_secret_equals_one(self):
+    def test_redact_ignores_a_short_env_secret_in_keys_and_values(self):
+        """D6 (DEBT-142): an env secret shorter than 8 characters (the Windows runner has one equal to `root`) is masked
+        neither as a key nor inside text: it would rewrite ordinary words and structural keys."""
         from skillsync_workflow.common import redact
         with mock.patch.dict(os.environ, {'SKILLSYNC_TEST_SECRET': 'root'}):
-            masked = redact({'root': 'root', 'composed_root': 'x'})
-        self.assertEqual(masked, {'root': '[REDACTED]', 'composed_root': 'x'})  # value masked, key kept
+            masked = redact({'root': 'root', 'composed_root': 'x', 'note': 'the root of the tree'})
+        self.assertEqual(masked, {'root': 'root', 'composed_root': 'x', 'note': 'the root of the tree'})
+
+    def test_redact_text_threshold_is_eight_characters(self):
+        from skillsync_workflow.common import redact
+        with mock.patch.dict(os.environ, {'SKILLSYNC_TEST_TOKEN': 'abcdefg', 'SKILLSYNC_TEST_SECRET': 'ABCDEFGH'}):
+            self.assertEqual(redact('abcdefg and ABCDEFGH'), 'abcdefg and [REDACTED]')  # 7 keeps the text, 8 masks it
+            self.assertEqual(redact(['x abcdefg', 'x ABCDEFGH']), ['x abcdefg', 'x [REDACTED]'])
+
+    def test_redact_still_masks_pattern_based_secrets_whatever_the_length(self):
+        from skillsync_workflow.common import redact
+        with mock.patch.dict(os.environ, {'SKILLSYNC_TEST_SECRET': 'ab'}):
+            self.assertEqual(redact('password=ab12'), 'password=[REDACTED]')
+            self.assertEqual(redact('Authorization: Bearer x1'), 'Authorization: Bearer [REDACTED]')
 
     def test_redact_masks_a_long_env_secret_used_as_key_and_as_value(self):
         from skillsync_workflow.common import redact
@@ -316,7 +330,7 @@ class ValidationContracts(WorkflowFixture):
     def test_delivery_scrub_keeps_structural_keys_like_redact(self):
         from skillsync_workflow import delivery
         with mock.patch.dict(os.environ, {'SKILLSYNC_TEST_SECRET': 'root'}):
-            self.assertEqual(delivery._scrub({'root': {'data': 'root'}}), {'root': {'data': '[REDACTED]'}})
+            self.assertEqual(delivery._scrub({'root': {'data': 'root'}}), {'root': {'data': 'root'}})
         secret = 'tok-' + uuid.uuid4().hex
         with mock.patch.dict(os.environ, {'SKILLSYNC_TEST_TOKEN': secret}):
             self.assertEqual(delivery._scrub({secret: 1}), {'[REDACTED]': 1})

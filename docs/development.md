@@ -163,7 +163,7 @@ Na macOS i Windows usługi watch nie ma; `skillsync watch` uruchamia się tam r�
 - Bootstrapper `skillsync-windows.ps1` z Pythonem 3 i plikiem `skillsync` obok woła `skillsync link <projekt>` i tworzy config, jeśli go brak.
 - Nieudany `git pull` warstwy nie przerywa synchronizacji, ale skrypt kończy się kodem 3 i ostrzeżeniem o starych artefaktach. Nieudany `git clone` daje kod 1.
 - Bez Developer Mode dowiązania nie działają: generator przechodzi w tryb kopii; wymusisz go `SKILLSYNC_NO_SYMLINK=1` lub `sync.method: copy`.
-- Ścieżki w wyjściach JSON i w zapisywanym stanie przechodzą przez `.as_posix()` (nie `str(relative_to(...))`); wywołanie `redact` na kluczu słownika przekazuje `True` (próg sekretu z env 8 znaków). Szczegóły: `docs/lessons/windows-sciezki-json-i-redact-kluczy.md`.
+- Ścieżki w wyjściach JSON i w zapisywanym stanie przechodzą przez `.as_posix()` (nie `str(relative_to(...))`); wywołanie `redact` na kluczu słownika przekazuje `True` (próg sekretu z env 8 znaków dla kluczy i tekstu, od 1.5.0). Szczegóły: `docs/lessons/windows-sciezki-json-i-redact-kluczy.md`.
 - Test środowiska: `tests/windows/skillsync-windows-check.ps1` (raport `[PASS]/[FAIL]/[SKIP]/[INFO]`, praca na kopii w katalogu tymczasowym).
   Uruchomienie z korzenia repo: `powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\windows\skillsync-windows-check.ps1`.
 - Windows nie ma backendu własności procesów: `env up` i `env down` zwracają BLOCKED.
@@ -207,9 +207,11 @@ leakguard:
 ```
 
 Z ustawionym `identity_dir` `--require full` działa bez osobnego configu pomocniczego. Szczegóły pola: [configuration](configuration.md#strażnik-wycieków-leakguard).
-`skillsync layers check --isolation` szuka plików tożsamości w katalogu biblioteki warstwy (korzeń `layer.yaml`), nie w całym klonie.
+`skillsync layers check --isolation` szuka plików tożsamości w katalogu biblioteki warstwy (korzeń `layer.yaml`), nie w całym klonie. Pliki w `leakguard.identity_dir` (tożsamości wszystkich celów maszyny, także tych, które nie są warstwami, np. repo wtyczki) są pomijane, gdy ich właściciel jest skonfigurowanym `leakguard.targets` (od 1.5.0); właściciel spoza `targets` i spoza `isolation.allowed_layers` nadal daje `isolation-foreign-identity`, a ta sama tożsamość w bibliotece warstwy też.
 
-Po sklonowaniu repo do rozwoju zainstaluj hooki strażnika: `skillsync leakguard install-hook <klon>`. Worktree dzielą `.git/hooks` klonu, więc jedna instalacja obejmuje wszystkie; bez niej push nie przechodzi przez strażnika (przy `core.hooksPath` poza `.git` komenda odmówi i trzeba wołać `leakcheck` ręcznie).
+Po sklonowaniu repo do rozwoju zainstaluj hooki strażnika: `skillsync leakguard install-hook <klon>`. Worktree dzielą `.git/hooks` klonu, więc jedna instalacja obejmuje wszystkie; bez niej push nie przechodzi przez strażnika (przy `core.hooksPath` poza `.git` komenda odmówi i trzeba wołać `leakcheck` ręcznie). `skillsync leakcheck` w katalogu roboczym klonu celu `public` ostrzega o braku hooków (ostrzeżenie, nie błąd) i podaje polecenie instalacji.
+
+Treść tytułu i opisu każdego PR do publicznego rdzenia skanuje workflow `.github/workflows/pr-text.yml` (job `pr-text (leakcheck)`, `skillsync leakcheck --text`, narzędzie i dodatki `.leakguard/patterns.yaml` z gałęzi bazowej; uruchamia się też po edycji opisu, bez macierzy testów). To nie jest wymagany check rulesetu (jego dodanie to decyzja właściciela); definicja workflow pochodzi z merge ref PR-a, więc job działa już w PR-ze, który go wprowadza, a narzędzie z bazy musi mieć `--text` (1.3.0+).
 
 ## Flagi dla narzędzi integracyjnych
 

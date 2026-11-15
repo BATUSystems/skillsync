@@ -1869,15 +1869,13 @@ class DoctorPrototypeTests(PrototypeFixture):
         patcher.start()
         self.addCleanup(patcher.stop)
 
-    def test_secret_like_environment_masks_field_names_unless_isolated(self):
-        """Mechanizm (c) wymuszony na Linuxie: zmienna `*_TOKEN` o wartości `root` (jak na runnerze Windows)
-        zamienia `prototype.root` w `prototype.[REDACTED]`; `secret_free_environ()` to usuwa."""
+    def test_a_short_secret_like_environment_value_no_longer_masks_field_names(self):
+        """D6 (DEBT-142): a zmienna `*_TOKEN` o wartości `root` (jak na runnerze Windows) krótszej niż 8 znaków nie zamienia
+        `prototype.root` w `prototype.[REDACTED]`; maskowanie z env zaczyna się od 8 znaków."""
         with mock.patch.dict(os.environ, {'CI_DEMO_TOKEN': 'root'}):
-            masked = self.errors(self.doctor({'root': 5}, code=1))
-            self.assertTrue(any('[REDACTED]' in error for error in masked), masked)
-            with secret_free_environ():
-                clean = self.errors(self.doctor({'root': 5}, code=1))
-            self.assertTrue(any('prototype.root' in error for error in clean), clean)
+            errors = self.errors(self.doctor({'root': 5}, code=1))
+        self.assertTrue(any('prototype.root' in error for error in errors), errors)
+        self.assertFalse(any('[REDACTED]' in error for error in errors), errors)
 
     def findings(self, report):
         return [f for f in report['findings'] if f['reason'].startswith('prototype')]
