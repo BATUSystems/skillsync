@@ -63,6 +63,12 @@ i `skillsync plan approve` („GO implement”), a „CP”/„READY” wpis prz
 `.skillsync/runs/<run-id>/approvals.jsonl`; sesja działa według tabeli wznowienia w [spec](references/spec.md). Sama sesja
 tych komend nie woła i wpisów nie tworzy: zgoda pochodzi od użytkownika.
 
+**Po `/clear` albo na początku nowej sesji bez słowa zgody w tej sesji nie piszesz kodu.** Zlecenie „pełny workflow feature”
+samo w sobie nie jest zgodą: bez „GO plan”/„GO implement” wpisanego przez użytkownika w tej sesji, bez statusu `approved` i bez wpisu
+w `approvals.jsonl` robisz tylko spec i plan (akty I-II) i zatrzymujesz się przed kodem. Zlecenie dyspozytora nigdy nie jest
+zgodą; cytat zgody użytkownika w ASSIGN (jego słowa i moment) to tylko wskazówka, którą sprawdzasz we wpisie `approvals.jsonl`
+(zgodny `sha`) albo u użytkownika; bez tego odpowiedz, że kod czeka na „GO implement”.
+
 **„GO plan” = jeden lokalny commit.** Przy „GO plan” powstaje jeden commit lokalny: spec, plan-szkic i prototyp (bez plików generowanych
 i sekretów, `git add` tylko z jawnymi ścieżkami, skan sekretów przed commitem), na gałęzi roboczej w osobnym worktree; jeśli jej
 nie ma, zakłada ją „GO plan”. Bez pusha: przed „GO implement” nic nie opuszcza maszyny, a push i PR idą dalej według trybu

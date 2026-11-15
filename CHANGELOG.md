@@ -87,6 +87,17 @@ None.
 
 - Status page (`app.css`): the state of the live indicator has its own dot shape besides the colour (circle: live, square: polling, triangle: down, ring: connecting), which matters in the compact mode (≤ 420 px) where the text is hidden; interactive buttons and tabs of the compact mode (`.btn`, tabs, consent and document buttons) are at least 2.75rem (44 px) high. A plugin that keeps its own copy of the stylesheet has to resynchronise it.
 - `dashboard` (`build_status`, `show`): the plans listed for choosing are parsed once per (path, `mtime_ns`, size) instead of on every build of the status (the page rebuilds it on each change and poll; the chosen plan is still read fresh); the activity of a run (`activity`, `runAlive`) is still read on every call. A plan rewritten with the same size inside the timestamp resolution of the file system is seen at its next change.
+### Added
+
+- Testy-strażnicy: rozmiar rekordów domeny `load: bootstrap` (każdy rekord ≤ 12 KiB, glosariusz ≤ 95%), reguły bramki po `/clear` w skillach `feature` i `dispatch`, reguła `chrome-headless-shell` w skillu `agent-runtime-pitfalls`.
+- Test: `checkpoint --final` i `retro-quality` działają z manifestem poza repozytorium (`--manifest`).
+
+### Changed
+
+- Strażnik izolacji w testach (`real_state_snapshot`) pomija pliki odświeżane przez operacje git tylko do odczytu (`FETCH_HEAD`, `.git/index`) w innych procesach.
+- Skille `feature`, `dispatch` i tryb karty: po `/clear` albo w nowej sesji bez słowa zgody użytkownika nie powstaje kod; cytat w ASSIGN to wskazówka do sprawdzenia, nie zgoda.
+- Harness E2E prototypów (`env.py`) wymusza jasny schemat kolorów Chrome (`--blink-settings=preferredColorScheme=1`), więc DR-start i DR-późny przechodzą także na stacji z ciemnym motywem.
+- `docs/domain/glossary.md` skrócony poniżej limitu; usunięto hasło `synthetic`.
 
 ## [1.4.0] - 2026-11-14
 
