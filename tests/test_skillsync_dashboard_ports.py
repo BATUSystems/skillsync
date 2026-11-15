@@ -186,6 +186,83 @@ class ReadSocket(TwoSockets):
         self.assertEqual(srv.ReadHandler.role, ports.ROLE_READ)
 
 
+class RoleFromTheSocket(TwoSockets):
+    """The role of a request in the two-port mode is the SOCKET, never the `Host` (integration 1.6.0: A's viewer role meets C's sockets)."""
+    APPROVE_HOSTS = ("demo.example",)
+    READ_HOSTS = ("viewer.example",)
+
+    def hosts(self, port):
+        names = [f"127.0.0.1:{port}", "localhost", "demo.example", "viewer.example"]
+        lan = lan_address()
+        return names + ([lan] if lan else [])
+
+    def test_the_read_socket_takes_no_write_whatever_the_host(self) -> None:
+        offer = json.dumps(self.offer()).encode()
+        for host in self.hosts(self.read_port):
+            with self.subTest(host=host):
+                status, data, _ = request(self.read_port, "POST", "/api/approve", {**OK, "Host": host}, offer)
+                self.assertEqual((status, data), (404, {"error": "Nie ma takiej strony."}))
+        self.set_doc.assert_not_called()
+        self.record.assert_not_called()
+
+    def test_the_read_socket_shows_no_token_digest_or_consent_link_whatever_the_host(self) -> None:
+        digest = dashboard_token.token_id(TEST_TOKEN)
+        for host in self.hosts(self.read_port):
+            with self.subTest(host=host):
+                status, data, _ = request(self.read_port, "GET", "/api/status", {"Host": host})
+                if status == 403:   # a Host the read socket refuses to serve at all shows nothing either
+                    continue
+                self.assertEqual(status, 200)
+                approvals = data["approvals"]
+                self.assertEqual((approvals["here"], approvals["viewer"], approvals["role"], approvals["tokenRequired"]), (False, True, "read", False))
+                body = json.dumps(data)
+                self.assertEqual((TEST_TOKEN in body, digest in body, "#zgoda=" in body, "approveUrl" in body), (False, False, False, False))
+                conn = http.client.HTTPConnection("127.0.0.1", self.read_port, timeout=5)
+                try:
+                    conn.putrequest("GET", "/events", skip_host=True, skip_accept_encoding=True)
+                    conn.putheader("Host", host)
+                    conn.endheaders()
+                    response = conn.getresponse()
+                    first = b"".join(response.fp.readline() for _ in range(4))
+                finally:
+                    conn.close()
+                self.assertEqual((TEST_TOKEN.encode() in first, digest.encode() in first), (False, False))
+
+    def test_here_and_viewer_follow_the_socket_not_the_host(self) -> None:
+        for host in self.hosts(self.read_port):
+            with self.subTest(socket="read", host=host):
+                status, data, _ = request(self.read_port, "GET", "/api/status", {"Host": host})
+                if status == 200:
+                    self.assertEqual((data["approvals"]["here"], data["approvals"]["viewer"]), (False, True))
+        for host in (f"127.0.0.1:{self.approve_port}", "localhost", "demo.example"):
+            with self.subTest(socket="approve", host=host):
+                status, data, _ = request(self.approve_port, "GET", "/api/status", {"Host": host})
+                self.assertEqual(status, 200)
+                self.assertEqual((data["approvals"]["here"], data["approvals"]["viewer"]), (True, False))
+
+    def test_the_viewer_sees_the_same_content_as_the_operator_no_filter(self) -> None:
+        """DECISION OF THE OWNER (15.11.2026): the status page is internal, the read socket shows logins and question texts as the consent
+        socket does. A filter added by accident must fail here as a change of the contract."""
+        fixture = {"approvals": {"actions": []},
+                   "waiting": [{"what": "GO plan", "who": {"role": "expert", "login": "ewa.test", "label": "ekspert"}}],
+                   "run": {"checkpoints": [{"time": "10:00", "text": "czeka: GO plan (kto: ekspert ewa.test)"}]},
+                   "expertQuestions": {"open": 1, "blocking": 0, "runs": [{"slug": "demo", "addressees": ["ewa.test"]}],
+                                       "items": [{"id": "qn-1", "text": "Czy to ma tak działać?", "addressees": ["ewa.test"]}]}}
+        with mock.patch.object(self.board, "status", side_effect=lambda plan=None: json.loads(json.dumps(fixture))):
+            _s, read, _ = request(self.read_port, "GET", "/api/status", {})
+            _s, approve, _ = request(self.approve_port, "GET", "/api/status", {})
+        for key in ("waiting", "run", "expertQuestions"):
+            self.assertEqual(read[key], approve[key], key)
+        self.assertIn("ewa.test", json.dumps(read))
+        self.assertEqual(read["expertQuestions"]["items"][0]["text"], "Czy to ma tak działać?")
+
+    def test_the_role_is_not_counted_from_the_host_in_the_two_port_mode(self) -> None:
+        """Control of the mutation: with `_approvals_role` counted from the Host this fails (`demo.example` would make the read socket `here`)."""
+        status, data, _ = request(self.read_port, "GET", "/api/status", {"Host": "demo.example"})
+        self.assertEqual(status, 200)
+        self.assertEqual((data["approvals"]["here"], data["approvals"]["viewer"]), (False, True))
+
+
 class StreamShares(TwoSockets):
     def test_a_full_read_share_leaves_the_streams_of_the_consent_socket(self) -> None:
         self.assertEqual(srv.SSE_ROLE_LIMITS, {"read": 48, "approve": 16})

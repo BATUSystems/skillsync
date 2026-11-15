@@ -41,7 +41,7 @@ a jego jawny transport opisuje `docs/workflow.md`. Tryb `--port`: `127.0.0.1`, r
 - **gniazdo odczytu / zgód** (`--read-port` / `--approve-port`): dwa porty jednego procesu; rola `read`/`approve` w pliku stanu i w `approvals.role`; **nie oznacza** dwóch stanów.
 - **`via`** (`approvals.jsonl`): ślad źródła zgody z gniazda zgód (`port`, `host`, `peer`); **nie oznacza** uwierzytelnienia klienta.
 - **zgoda** (`approvals.jsonl`): wpis użytkownika o słowie `GO plan`, `GO implement`, `CP` albo `READY`; **nie oznacza** akceptacji prototypu (`accept`).
-- **widok widza** (`approvals.viewer`): ta sama treść `/api/status` co u operatora (bez filtra loginów i treści); rola wpływa tylko na zgody (brak zapisu). Rolę `here`/`viewer` wyznacza jedna metoda `Handler._approvals_role()`.
+- **widok widza** (`approvals.viewer`): ta sama treść `/api/status` co u operatora (bez filtra loginów i treści); rola wpływa tylko na zgody (brak zapisu). Rolę `here`/`viewer` wyznacza jedna metoda `Handler._approvals_role()`: w trybie dwóch gniazd rolę daje gniazdo (zgody = `here`, odczyt = `viewer`), nigdy nagłówek `Host`; w trybie jednego portu `Host` jak w 1.5.0. Brak filtra to decyzja właściciela z 15.11.2026 (strona wewnątrzfirmowa).
 - **`trwa:`** (segment raportu postępu): etap, który trwa teraz (`stages[].state: active`); **nie oznacza** kroku „w toku”; gaśnie przy `czeka:` w tej samej linii, a pulsowanie przy ciszy przebiegu.
 - **`run.parseWarnings`**: lista fragmentów list „w toku/zrobione”, które parser pominął (`no-step-id`, `later-id`); **nie oznacza** błędu przebiegu.
 
