@@ -780,7 +780,7 @@
         url ? h("a", { class: "wait-go", href: url, target: "_blank", rel: "noopener",
           on: { click: linkClick("experts", runs.length === 1 ? String(runs[0].slug || "") : "", url) } }, "Odpowiedz na pytania") : null);
     }
-    // Adresaci: "all" = wszyscy eksperci, lista loginów = „do: a, b”, pusta lista albo brak = nic (widok widza dostaje pustą listę).
+    // Adresaci: "all" = wszyscy eksperci, lista loginów = „do: a, b”, pusta lista albo brak = nic.
     const loginsOf = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === "string" && x.trim()).map((x) => x.trim()) : []);
     function addresseesText(v) {
       if (v === "all") return "do wszystkich ekspertów";
