@@ -144,7 +144,6 @@ class MatchTargetsCaseTest(unittest.TestCase):
     def test_a_local_remote_match_folds_case_on_macos_and_windows_only(self):
         for name in HOSTS:
             with self.subTest(host=name), host(name):
-                skip_unreal(self, name)
                 for pattern, remote in (('/Users/Dev/Repos/Acme', '/users/dev/repos/acme'),
                                         ('/Users/Dev/Repos/Acme*', '/users/dev/repos/acme-tools'),
                                         ('/w/Łódź/acme', '/w/łódź/ACME'), ('C:/Users/User/Acme', 'c:/users/user/acme')):
@@ -160,7 +159,6 @@ class MatchTargetsCaseTest(unittest.TestCase):
         targets = self.targets('example.test/acme/skills*', 'example.test:acme/skills*')
         for _name in HOSTS:
             with self.subTest(host=_name), host(_name):
-                skip_unreal(self, _name)
                 self.assertEqual(leakguard.match_targets(targets, ['https://example.test/acme/skills.git']), ['acme'])
                 self.assertEqual(leakguard.match_targets(targets, ['git@example.test:acme/skills.git']), ['acme'])
                 for remote in ('https://example.test/Acme/skills.git', 'https://Example.test/acme/skills.git',

@@ -1043,7 +1043,9 @@ class SinceFormatTests(QuestionCase):
         answer = self.answer(QA)
         self.rec(QA, 5)
         comment = self.expert_write('comment', QA, OLA, text='uwaga')
-        before = answer['at'][:19] + 'Z'   # sekundy, bez milisekund, nie później niż odpowiedź: jej zdarzenie jest nowsze
+        # sekundy, bez milisekund, ściśle przed odpowiedzią: jej zdarzenie jest nowsze (obcięcie `at` do sekund dawało czas
+        # równy odpowiedzi, gdy jej milisekundy wynosiły 000: `--since` jest ostre i odpowiedź odpadała, ok. 1 na 1000 biegów)
+        before = ps.format_at(ps.parse_at(answer['at']) - 1)[:19] + 'Z'
         report = self.q('wait', '--all', '--since', before, '--timeout', '0', '--interval', '0.2')
         self.assertEqual((report['event'], report['opId']), ('answer', answer['id']))
         # sekundy zaokrąglone w górę do chwili po odpowiedzi i po komentarzu: nic nowszego
