@@ -333,12 +333,16 @@ class IsolationTests(ExpertsPageBase):
 class AccountKindTests(ExpertsPageBase):
     """Decyzja implementacji: strona jest dla każdego zalogowanego (200); odmowę pokazuje API (403)."""
 
-    def test_commenter_gets_the_page_and_api_refuses(self):
+    def test_commenter_gets_the_page_and_the_read_only_preview_but_writes_are_refused(self):
         client = self.who(S.A)
         page = client.get(PAGE)
         self.assertEqual(page.status, 200)
         self.assertEqual(page.body, self.page().body, 'ta sama treść co dla eksperta')
-        self.assertEqual(client.get('/_api/v1/questions').status, 403)
+        listing = client.get('/_api/v1/questions')
+        self.assertEqual(listing.status, 200)
+        self.assertIs(listing.json['preview'], True)
+        refused = client.post('/_api/v1/questions/qn-000000000001/comment', {'cid': 'c-1', 'text': 'x'})
+        self.assertEqual((refused.status, refused.json['error']), (403, 'forbidden'))
 
     def test_must_change_account_gets_the_page_and_api_refuses(self):
         client = self.who(Q.MX)
@@ -429,7 +433,7 @@ class ScriptStaticTests(ExpertsPageBase):
     def test_record_fields_never_become_attributes_except_checked_href(self):
         # w `el(...)` pola rekordów nie trafiają do atrybutów; jedyny href z rekordu to `url.href` po sprawdzeniu https
         for match in re.finditer(r"href:\s*([^,}]+)", self.script):
-            self.assertIn(match.group(1).strip(), ("url.href", "LOGIN", "'#' + encodeURIComponent(question.id)", "BASE",
+            self.assertIn(match.group(1).strip(), ("url.href", "href", "LOGIN", "'#' + encodeURIComponent(question.id)", "BASE",
                                                    "BASE + '/' + encodeURIComponent(run.slug)"))
         self.assertNotRegex(self.script, r"setAttribute\(\s*['\"](?:href|src|on\w+|style)['\"]")
         self.assertNotRegex(self.script, r"\.(?:href|src)\s*=(?!=)")
@@ -438,13 +442,24 @@ class ScriptStaticTests(ExpertsPageBase):
         self.assertRegex(self.script, r"url\.protocol\s*===\s*'https:'")
         self.assertRegex(self.script, r"href:\s*url\.href,\s*target:\s*'_blank',\s*rel:\s*'noopener noreferrer'")
         self.assertNotRegex(self.script, r"protocol\s*!==?\s*'(?:javascript|http|data):'")
-        self.assertEqual(len(re.findall(r"target:\s*'_blank'", self.script)), 1)
-        self.assertEqual(len(re.findall(r"rel:\s*'noopener noreferrer'", self.script)), 1)
+        # the second link is the screen of a prototype on this server: only the strict path pattern `/<slug>/index.html#sN`
+        self.assertEqual(len(re.findall(r"target:\s*'_blank'", self.script)), 2)
+        self.assertEqual(len(re.findall(r"rel:\s*'noopener noreferrer'", self.script)), 2)
+        self.assertRegex(self.script, r"/\^\\/\(\[a-z0-9\]\+\(\?:-\[a-z0-9\]\+\)\*\)\\/index\\\.html#s\(\[0-9\]\+\)\$/\.exec\(href\)")
+        self.assertRegex(self.script, r"href:\s*href,\s*target:\s*'_blank',\s*rel:\s*'noopener noreferrer',\s*text:\s*'Zobacz ekran s'")
 
     def test_href_pattern_rejects_a_bad_sample(self):
         bad = "el('a', { href: ref.href, target: '_blank', text: ref.title })"
         self.assertNotRegex(bad, r"url\.protocol\s*===\s*'https:'")
         self.assertNotRegex(bad, r"href:\s*url\.href,\s*target:\s*'_blank',\s*rel:\s*'noopener noreferrer'")
+
+    def test_script_shows_the_preview_note_and_no_forms_for_a_read_only_account(self):
+        self.assertIn("state.preview = result.data.preview === true;", self.script)
+        self.assertIn("Podgląd: pytania do ekspertów (tylko odczyt).", self.script)
+        self.assertIn("else if (state.preview) {", self.script)                                   # no answer form in the preview
+        self.assertIn("if (question.state !== 'withdrawn' && !state.preview) detail.appendChild(commentForm(question));", self.script)
+        self.assertIn("odpowiedzi udzielają eksperci, do których pytanie jest skierowane", self.script)
+        self.assertIn('id="preview-note" hidden', self.page().body.decode('utf-8'))
 
     def test_script_makes_only_same_origin_api_requests(self):
         self.assertIn("var API = '/_api/v1';", self.script)
@@ -511,7 +526,8 @@ function render(href) {
   const a = box.children.find(c => c.tag === 'a'); const sp = box.children.find(c => c.tag === 'span');
   return a ? { link: a.attrs.href, text: a.textContent, rel: a.attrs.rel } : { plain: sp ? sp.textContent : null };
 }
-for (const href of ['https://example.com/a?b=1', 'https://user:pw@example.com/', 'https://user@example.com/', 'http://example.com/', 'javascript:alert(1)', 'HTTPS://Example.com']) refs[href] = render(href);
+for (const href of ['https://example.com/a?b=1', 'https://user:pw@example.com/', 'https://user@example.com/', 'http://example.com/', 'javascript:alert(1)', 'HTTPS://Example.com',
+  '/demo/index.html#s4', '/zamawianie-przesylek/index.html#s12', '/demo/index.html#s', '/demo/index.html#s4\n', '//evil.example/index.html#s4', '/../index.html#s4', '/Demo/index.html#s4', '/demo/x/index.html#s4', '/demo/index.html#s4#s5', '/demo/index.html?x=1#s4', 'demo/index.html#s4', '/demo/index.html#S4', '/de mo/index.html#s4', '/demo/index.html#s4 ']) refs[href] = render(href);
 out.refs = refs;
 out.valid = [null, {}, { id: 'a', text: 'b' }].map(q => { ctx.qq = q; return vm.runInContext('validQuestion(qq)', ctx); });
 setTimeout(() => { out.csrf = ctx.state.csrf; console.log(JSON.stringify(out)); }, 20);
@@ -713,7 +729,7 @@ class ScriptBehaviorTests(ExpertsPageBase):
         self.script = split_page(self.page().text)[0][0][1]
 
     def test_race_guard_and_per_question_busy_are_present(self):
-        self.assertIn('var state = { csrf: null, questions: [], runs: [], legacy: null, current: null, pending: {}, busy: {} };', self.script)
+        self.assertIn('var state = { csrf: null, questions: [], runs: [], legacy: null, preview: false, current: null, pending: {}, busy: {} };', self.script)
         self.assertIn('if (state.busy[id]) { say(\'Trwa zapis poprzedniej odpowiedzi.\'); return; }', self.script)
         self.assertIn('var viewing = state.current === id;', self.script)
         self.assertRegex(self.script, r"if \(viewing\) \{ renderDetail\(updated, false\); say\(done\); \}")
@@ -849,6 +865,13 @@ class ScriptBehaviorTests(ExpertsPageBase):
         for bad in ('https://user:pw@example.com/', 'https://user@example.com/', 'http://example.com/', 'javascript:alert(1)'):
             self.assertIn('plain', refs[bad], bad)
         self.assertEqual(out['valid'], [False, False, True])
+        # a screen of a prototype on this server is a link to that path with the text derived from the number, never from the record
+        self.assertEqual(refs['/demo/index.html#s4'], {'link': '/demo/index.html#s4', 'text': 'Zobacz ekran s4', 'rel': 'noopener noreferrer'})
+        self.assertEqual(refs['/zamawianie-przesylek/index.html#s12']['text'], 'Zobacz ekran s12')
+        for bad in ('/demo/index.html#s', '/demo/index.html#s4\n', '//evil.example/index.html#s4', '/../index.html#s4', '/Demo/index.html#s4',
+                    '/demo/x/index.html#s4', '/demo/index.html#s4#s5', '/demo/index.html?x=1#s4', 'demo/index.html#s4',
+                    '/demo/index.html#S4', '/de mo/index.html#s4', '/demo/index.html#s4 '):
+            self.assertIn('plain', refs[bad], bad)   # any other relative address stays grey text
 
 
 class StrictFlagExceptionTests(ExpertsPageBase):
