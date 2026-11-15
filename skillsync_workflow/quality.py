@@ -855,7 +855,7 @@ def doctor(root, manifest, library):
     config = workflow_config(root, manifest, layerset)
     findings = []
     def finding(level, path, reason):
-        findings.append({'level': level, 'path': str(path), 'reason': reason})
+        findings.append({'level': level, 'path': posix(path), 'reason': reason})
     for level, path, reason in layer_findings(root, manifest, layerset):
         finding(level, path, reason)
     skills = expand_project_skills(manifest, library)
