@@ -12,6 +12,26 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Changed
+
+- Windows: the files that POSIX keeps at mode 0600 are private through an ACL (the user, `SYSTEM` and the local administrators, by SID; no inheritance from the directory):
+  the users file `users.json` and its backup `users.json.bak` (the temporary file gets the ACL before the data is written, because `os.replace` hands the ACL of the
+  temporary file to the target), the state, token and `audit.jsonl` files of the one-time login link, and the machine config with `prototype.default_password` (checked and repaired
+  in place like the users file). A directory created for them is restricted with inheritance. New module `skillsync_workflow/winacl.py` (`restrict_to_owner`, `is_owner_only`,
+  `ensure_private`, `private_notes`; `ctypes`, never raises: every failure is `False` and one warning). A file system without ACLs (FAT, exFAT, a share without support) or a refused call gives
+  one warning per file and process (`nie udało się ograniczyć dostępu do pliku ...`); the write itself always succeeds. A users file that was written by an older version is repaired
+  on the first write or read (one line `ACL Windows: ograniczono dostęp do pliku ...`).
+
+### Compatibility
+
+- The warning `kontrola uprawnień 0600 pominięta na Windows` (and the constant `PRIVATE_CHECK_SKIPPED`) is gone: on Windows `prototype user ...`, `prototype serve` and the read of
+  `prototype.default_password` no longer print it; a warning appears only after a failed ACL, and one line after a repair. A consumer that filtered the old text must be updated.
+  `private_file_problem` never reports a problem on Windows (a volume without ACLs must not block a command). JSON fields are unchanged.
+
+### Breaking
+
+None.
+
 ## [1.4.1] - 2026-11-15
 
 ### Fixed

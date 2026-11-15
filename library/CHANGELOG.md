@@ -4,6 +4,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+### Changed
+- `skills/prototype/SKILL.md`: the machine config with `prototype.default_password` is private by mode 0600 on POSIX and by an ACL on Windows (set and repaired by the tool).
+
 ## [1.4.1] - 2026-11-15
 
 No changes to the library in this release (the version follows the core).
