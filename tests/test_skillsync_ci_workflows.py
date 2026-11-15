@@ -393,5 +393,57 @@ class MutationTests(unittest.TestCase):
         self.assertTrue(problems_bash_syntax({"ci.yml": ci}, shutil.which("bash")))
 
 
+class PrTextWorkflowTests(unittest.TestCase):
+    """DEBT-142 A4 (D49): `pr-text.yml` scans the title and the description of a pull request with `leakcheck --text`."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.wf = load("pr-text.yml")
+        cls.job = cls.wf["jobs"]["pr-text"]
+
+    def test_it_runs_on_edits_of_the_description_and_has_no_write_permissions(self):
+        pull = triggers(self.wf)["pull_request"]
+        self.assertTrue({"opened", "edited", "reopened", "synchronize"} <= set(pull["types"]), pull)
+        self.assertEqual(self.wf["permissions"], {"contents": "read"})
+        self.assertNotIn("secrets.", yaml.safe_dump(self.wf))
+
+    def test_the_text_reaches_the_script_only_through_environment_variables(self):
+        env = self.job["env"]
+        self.assertIn("github.event.pull_request.title", env["PR_TITLE"])
+        self.assertIn("github.event.pull_request.body", env["PR_BODY"])
+        for step in steps_of(self.job):
+            run = step.get("run", "")
+            self.assertNotIn("github.event", run, step)      # no interpolation of attacker-controlled text in a script
+            self.assertNotIn("${{", run, step)
+
+    def test_the_tool_and_the_additions_come_from_the_base_branch(self):
+        checkout = next(step for step in steps_of(self.job) if str(step.get("uses", "")).startswith("actions/checkout"))
+        self.assertIn("pull_request.base.sha", checkout["with"]["ref"])
+        self.assertIs(checkout["with"]["persist-credentials"], False)
+        script = " ".join(step.get("run", "") for step in steps_of(self.job))
+        self.assertIn("leakcheck", script)
+        self.assertIn("--text", script)
+        self.assertIn("--no-config", script)
+        self.assertIn(".leakguard/patterns.yaml", script)
+
+    def test_it_runs_only_in_the_public_repository_and_does_not_start_the_test_matrix(self):
+        self.assertIn("github.repository == 'BATUSystems/skillsync'", self.job["if"])
+        self.assertNotIn("matrix", self.job.get("strategy", {}))
+        self.assertLessEqual(self.job["timeout-minutes"], 15)
+
+    def test_actions_are_pinned_like_in_the_other_workflows(self):
+        self.assertEqual(problems_uses({"pr-text.yml": self.wf}), [])
+
+    def test_the_script_is_valid_bash_and_the_command_flags_exist(self):
+        script = "\n".join(step.get("run", "") for step in steps_of(self.job))
+        bash = shutil.which("bash")
+        if bash:
+            self.assertEqual(subprocess.run([bash, "-n"], input=script, text=True, capture_output=True).returncode, 0)
+        help_text = subprocess.run([sys.executable, str(ROOT / "skillsync"), "leakcheck", "--help"], capture_output=True,
+                                   text=True).stdout
+        for flag in ("--text", "--no-config", "--json"):                 # --target-patterns is a hidden flag (ci.yml uses it too)
+            self.assertIn(flag, help_text)
+
+
 if __name__ == "__main__":
     unittest.main()

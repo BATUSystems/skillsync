@@ -1,0 +1,49 @@
+# Kontrola treści tytułu i opisu pull requesta (DEBT-142 D49): `skillsync leakcheck --text`, te same wzorce ogólne i dodatki
+# z gałęzi bazowej co job `leakcheck` w ci.yml. Osobny workflow, bo zdarzenie `edited` (edycja opisu) nie może uruchamiać
+# całej macierzy testów. Narzędzie i dodatki bierzemy z gałęzi bazowej (zewnętrzny autor nie rozluźni kontroli);
+# tytuł i opis idą przez zmienne środowiskowe, nigdy przez interpolację w skrypcie.
+name: pr-text
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-text-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: '3.11'
+  PYYAML_VERSION: '6.0.2'
+  PYTHONUTF8: '1'
+
+jobs:
+  pr-text:
+    if: github.repository == 'BATUSystems/skillsync'
+    name: pr-text (leakcheck)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PR_TITLE: ${{ github.event.pull_request.title }}
+      PR_BODY: ${{ github.event.pull_request.body }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install PyYAML
+        run: python3 -m pip install "PyYAML==${PYYAML_VERSION}"
+      - name: leakcheck (title and description of the PR)
+        run: |
+          printf '%s\n\n%s\n' "$PR_TITLE" "$PR_BODY" > "$RUNNER_TEMP/pr-text.md"
+          if [ -f .leakguard/patterns.yaml ]; then
+            python3 skillsync leakcheck --no-config --text "$RUNNER_TEMP/pr-text.md" --target-patterns .leakguard/patterns.yaml --json
+          else
+            python3 skillsync leakcheck --no-config --text "$RUNNER_TEMP/pr-text.md" --json
+          fi
