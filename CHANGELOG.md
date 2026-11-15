@@ -12,6 +12,10 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Added
+
+- `dashboard show` (and `/api/status`): `substeps[].noData` (`true` ⇔ `seconds` is null, also for a planned sub-step), the same meaning as `noData` in `dashboard metrics`. Additive (schema 1): `missingData` is unchanged. Compatibility: a consumer that rejects unknown keys of `substeps[]` must accept `noData`.
+
 ## [1.4.0] - 2026-11-14
 
 ### Added

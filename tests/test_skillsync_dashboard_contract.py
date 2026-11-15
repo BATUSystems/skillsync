@@ -79,7 +79,7 @@ TIMING_STAGE = ({'phase': str, 'name': str, 'workSeconds': (int, type(None)), 'w
 TIMING_TOTALS = ({'workSeconds': (int, type(None)), 'waitSeconds': (int, type(None)), 'windows': int, 'unknownWindows': int,
                   'unknownSteps': int, 'complete': bool}, {})
 SUBSTEP = ({'id': str, 'title': str, 'phase': str, 'state': str, 'done': bool, 'startedAt': STR_OR_NONE,
-            'finishedAt': STR_OR_NONE, 'seconds': (int, type(None)), 'missingData': bool}, {})
+            'finishedAt': STR_OR_NONE, 'seconds': (int, type(None)), 'missingData': bool, 'noData': bool}, {})
 CHECKPOINT = ({'time': str, 'text': str}, {})
 DELIVERY_WORD = ({'word': str, 'active': bool, 'tip': str, 'target': STR_OR_NONE}, {})
 ASSUMPTION = ({'id': str, 'question': str, 'accepted': str}, {})
@@ -194,6 +194,7 @@ class DashboardContract(unittest.TestCase):
                     self.assertEqual(run['url'], '/_experts/' + run['slug'])
                 for sub in data['substeps']:
                     self.assertRegex(sub['id'], r'^[A-Z]{1,3}-?\d+[a-z]?\.\d+[a-z]?$')
+                    self.assertEqual(sub['noData'], sub['seconds'] is None, sub['id'])   # same meaning as `noData` in `metrics`
                     if sub['seconds'] is not None:
                         self.assertFalse(sub['missingData'], sub['id'])
                     self.assertTrue(not sub['missingData'] or sub['done'] or sub['state'] == 'reported', sub['id'])

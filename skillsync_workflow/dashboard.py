@@ -1183,7 +1183,8 @@ def build_substeps(progress, checkpoints):
             out.append({'id': step['id'], 'title': step['title'], 'phase': phase['label'] or phase['name'],
                         'state': step['state'], 'done': done, 'startedAt': start, 'finishedAt': finish,
                         'seconds': seconds,
-                        'missingData': seconds is None and (done or step['state'] == 'reported')})
+                        'missingData': seconds is None and (done or step['state'] == 'reported'),
+                        'noData': seconds is None})
     return out
 
 

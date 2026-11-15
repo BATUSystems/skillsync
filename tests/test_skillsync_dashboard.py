@@ -239,8 +239,13 @@ class NewFields(unittest.TestCase):
         checkpoints = [{'time': '23:50', 'text': 'w toku: F1.1'}, {'time': '00:10', 'text': 'zrobione: F1.1, F1.2'}]
         rows = {row['id']: row for row in dashboard.build_substeps(progress, checkpoints)}
         self.assertEqual(set(rows), {'F1.1', 'F1.2'})
-        self.assertEqual((rows['F1.1']['seconds'], rows['F1.1']['missingData']), (1200, False))
-        self.assertEqual((rows['F1.2']['state'], rows['F1.2']['seconds'], rows['F1.2']['missingData']), ('reported', None, True))
+        self.assertEqual((rows['F1.1']['seconds'], rows['F1.1']['missingData'], rows['F1.1']['noData']), (1200, False, False))
+        self.assertEqual((rows['F1.2']['state'], rows['F1.2']['seconds'], rows['F1.2']['missingData'], rows['F1.2']['noData']),
+                         ('reported', None, True, True))
+        # `noData` is every sub-step without a time (also a planned one), `missingData` only a done one
+        planned = dashboard.build_substeps(dashboard.build_progress(
+            [{'name': 'Faza 1: A', 'steps': [{'id': 'F1.1', 'title': 'x', 'done': False, 'note': '', 'sha': None}]}], None, None, []), [])
+        self.assertEqual((planned[0]['missingData'], planned[0]['noData']), (False, True))
 
     def test_approvals_rows_follow_status_rules(self):
         with tempfile.TemporaryDirectory(prefix='skillsync-dashboard-') as temp:
