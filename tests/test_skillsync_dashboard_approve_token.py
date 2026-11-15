@@ -217,6 +217,41 @@ class StateFile(unittest.TestCase):
         self.assertEqual(len(warnings), 1)
         self.assertNotIn("tok-4", warnings[0])
 
+    def test_the_root_has_one_form_everywhere_and_the_file_is_the_same_on_windows(self) -> None:
+        """PATHFMT: the `root` of the record is `pathfmt.posix` (`C:/work/proj`), and the digest that names the file comes from that
+        same text, so the server and `dashboard url` find one file whatever spelling the system gives (`C:\\work\\proj` or `C:/work/proj`).
+        Windows is imitated without a Path under a replaced `os.name`: a stand-in for the resolved path and `posix` run as on `nt`."""
+        class Resolved:
+            def __init__(self, text):
+                self.text = text
+
+            def __str__(self):
+                return self.text
+
+        real = dashboard_token.pathfmt.posix
+
+        def as_on_windows(value):
+            with mock.patch.object(os, "name", "nt"):   # only the pure string function runs under it
+                return real(value)
+
+        digests = set()
+        for spelling in ("C:\\work\\proj", "C:/work/proj"):
+            with mock.patch.object(dashboard_token, "_resolved", lambda root, spelling=spelling: Resolved(spelling)), \
+                    mock.patch.object(dashboard_token.pathfmt, "posix", as_on_windows):
+                self.assertEqual(dashboard_token.root_text("ignored"), "C:/work/proj")
+                digests.add(dashboard_token._digest("ignored"))
+                path = dashboard_token.write_state("ignored", 5190, "tok-win")
+                self.assertEqual(json.loads(path.read_text(encoding="utf-8"))["root"], "C:/work/proj")
+                found = dashboard_token.servers("ignored", healthy=lambda host, port, token_id=None: True)
+                self.assertEqual([item["port"] for item in found], [5190], f"the record written for {spelling!r} is not found")
+        self.assertEqual(len(digests), 1, "two spellings of one root name two different state files")
+        self.assertEqual(len(list(dashboard_token.state_dir().glob("*-5190.json"))), 1)
+
+    def test_a_posix_root_is_unchanged(self) -> None:
+        if os.name == "nt":
+            self.skipTest("POSIX: a backslash is a part of a name there")
+        self.assertEqual(dashboard_token.root_text(self.project), str(Path(self.project).resolve()))
+
     def test_remove_state_deletes_the_file_and_is_quiet_when_it_is_gone(self) -> None:
         path = dashboard_token.write_state(self.project, 5144, "tok-5")
         dashboard_token.remove_state(self.project, 5144)
