@@ -3,6 +3,7 @@ as a response, not as a connection reset (WinError 10054 on Windows). The mixin 
 answers every POST with 403 without reading the body, which is exactly what the real handlers do on their early refusals."""
 import http.server
 import socket
+import socketserver
 import sys
 import threading
 import time
@@ -41,9 +42,19 @@ class _Lingering(http_body.LingeringCloseMixin, _Refusing):
     pass
 
 
+class _QuickBindServer(http.server.ThreadingHTTPServer):
+    def server_bind(self):
+        # like the real servers: no `socket.getfqdn` of HTTPServer.server_bind (a reverse DNS lookup of 127.0.0.1 took about
+        # 30 s on the macOS runner, once per server, which also made the old client-side time measurement meaningless)
+        socketserver.TCPServer.server_bind(self)
+        host, port = self.server_address[:2]
+        self.server_name = host
+        self.server_port = port
+
+
 class _Server:
     def __init__(self, handler):
-        self.httpd = http.server.ThreadingHTTPServer(('127.0.0.1', 0), handler)
+        self.httpd = _QuickBindServer(('127.0.0.1', 0), handler)
         self.httpd.daemon_threads = True
         self.port = self.httpd.server_address[1]
         threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
@@ -94,7 +105,8 @@ class LingeringClose(unittest.TestCase):
         self.assertTrue(data.startswith(b'HTTP/1.1 403'), data[:60])
 
     def hold_times(self, sender, limit=None, seconds=None, wait=12.0):
-        """Run `sender(port)` against a refusing server whose `finish` times the lingering close; returns `(discarded, held)`
+        """(Calls `linger_close` itself, not the mixin's `finish`: the wiring of the mixin is tested by `SpyLinger` and the keep-alive tests.)
+        Run `sender(port)` against a refusing server whose `finish` times the lingering close; returns `(discarded, held)`
         measured ON THE SERVER SIDE (how long the handler thread stayed in the lingering close), whatever the client does."""
         record = []
         original = http_body.linger_close
@@ -141,6 +153,26 @@ class LingeringClose(unittest.TestCase):
         self.addCleanup(stop.set)
         discarded, held = self.hold_times(sender)   # the default limits: 256 KiB and one second
         self.assertLessEqual(discarded, http_body.LINGER_BYTES, (discarded, held))
+        self.assertLess(held, http_body.LINGER_SECONDS + 1.0, (discarded, held))
+
+    def test_a_client_that_dribbles_slowly_is_cut_off_by_the_time_limit_not_the_byte_limit(self):
+        stop = threading.Event()
+
+        def sender(port):
+            head = (b'POST /x HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: 100000000\r\n\r\n')
+            try:
+                with socket.create_connection(('127.0.0.1', port), timeout=5) as sock:
+                    sock.sendall(head)
+                    while not stop.is_set():   # about 2 KB/s: the byte limit (256 KiB) can never be what ends the lingering
+                        sock.sendall(b'a' * 100)
+                        time.sleep(0.05)
+            except OSError:
+                pass
+
+        self.addCleanup(stop.set)
+        discarded, held = self.hold_times(sender)
+        self.assertLess(discarded, http_body.LINGER_BYTES // 8, (discarded, held))
+        self.assertGreaterEqual(held, http_body.LINGER_SECONDS * 0.8, (discarded, held))   # it waited for the clock, not for the bytes
         self.assertLess(held, http_body.LINGER_SECONDS + 1.0, (discarded, held))
 
     def test_linger_close_is_bounded_by_bytes_and_time_and_never_raises(self):
