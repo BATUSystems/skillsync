@@ -35,6 +35,7 @@ import time
 import urllib.parse
 import yaml
 from .common import append_missing_lines, contained, emit, load_layer_project, read_project, read_yaml, require_layerset
+from .pathfmt import posix
 from . import layers as _layers
 from . import prototype_server as server
 from .plan_phases import parse_plan_phases
@@ -2396,7 +2397,7 @@ def _relative_or_absolute(path, repo):
     try:
         return Path(path).resolve().relative_to(repo).as_posix()
     except ValueError:
-        return str(path)
+        return posix(path)   # outside the repository: still a report field, so `/` on Windows
 
 
 def _in_git_worktree(path):

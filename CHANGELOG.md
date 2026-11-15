@@ -31,6 +31,29 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 ### Breaking
 
 None.
+- Every path field of a CLI report uses `/` on Windows, not only the fields listed in 1.4.1: `root` and `project` (`status`, `dashboard show`, `catalog list`, `layers *`, `dispatch`, `runs`), `composed_root`, `config`, `manifest` and `backup` (`layers *`), `layers[].path`, `layers[].root`, `layer.path`, `budgets[].path` (`doctor`), `log` (`workflow validate`), `directory`, `repo` and `hooks[].path` (`leakcheck` hooks), `launchers[]` (`env`), `recorded`, `scenario` and `report` (`e2e`), `path` (`repomap`), `checkpoint` (`checkpoint`) and `targets` (`upgrade` rollback plan). Linux and macOS are unchanged. New guard `tests/test_skillsync_report_paths.py` fails when a report path field is written as `str(path)`; commands to execute and paths the product opens stay native.
+
+### Fixed
+
+- Prototype server: `FileLock` closes (and unlocks) the descriptor it opened when anything, `KeyboardInterrupt` included, interrupts the acquisition before the lock object holds it; before, such a descriptor kept the system lock until the process ended.
+- Prototype server: the request-body counter that decides on a lingering close counts `readlines` and `readinto1` too (`peek` consumes nothing and stays uncounted).
+- `common.resolve_loop_checked` (used by `discover_exclude` and the retro scan): a loop of Windows junctions is reported on Python 3.12 and 3.13 too (`resolve()` returns the stuck path there and a junction is not a symlink; `os.path.isjunction` now counts as a link); measured: 3.11 raised, 3.12/3.13 did not.
+- `layers init`: the `next` hint is quoted for Windows with double quotes and `/` (it ran in PowerShell and Git bash but not in cmd.exe when the path had a space); POSIX unchanged.
+- `leakguard` (hook check, Windows): a word of a hook line such as `/c/dir/x` is checked as `C:/dir/x`, and a path in the MSYS root (`/usr/bin/env`, `/bin/sh`, `/mingw64/...`), which exists only inside Git for Windows, is no longer reported as a missing command. Compatibility: on Windows a hook that names a missing file with a `/…` path outside a drive form is no longer reported (use `C:/…`); POSIX unchanged.
+
+### Docs
+
+- `docs/prototypes.md`: the login rate limit (5 failed attempts per login and address, 30 per address, 15-minute window, `429` with `Retry-After`, memory only) and its effect behind an `ssh -L` tunnel, where every user is `127.0.0.1`. No code change.
+
+### Tests and process
+
+- `tests/skip-baseline.json`: `ubuntu-latest/symlink` and `ubuntu-latest/copy` are measured (14 entries each, identical on Python 3.11 to 3.14), so the skip check is enforced there; before they were `null`.
+- Regression tests for `fsutil.isabs` at its sites (`_env_dir`, dangling-link target) and a guard against a new `os.path.isabs`; comments at the two guard tests of the lock retry.
+- The matrix to run before a push (Python 3.11 and the station's interpreter, Windows 3.11/3.12/3.13 as on the runner, macOS for HTTP/files/signals, `check_skips` on the logs of all systems) is written in `library/skills/feature/references/prepush-matrix.md` and linked from `feature/references/tests-baseline.md` and the `dispatch` skill (`ASSIGN`).
+
+### Compatibility
+
+- On Windows, a consumer that compared these fields with a native path (`C:\...`) must compare with `/` or normalise (`Path(value)`); Linux and macOS are unchanged.
 
 ## [1.4.1] - 2026-11-15
 

@@ -15,6 +15,7 @@ import time
 import yaml
 
 from .common import add_project_arguments, exit_code, read_project, redact
+from .pathfmt import posix
 
 SCHEMA = 1
 MAX_FILE_BYTES = 256 * 1024
@@ -297,7 +298,7 @@ def dispatch_report(root, manifest, run_id=None):
         raise ValueError('.skillsync and .skillsync/dispatch must not be symlinks')
     project = manifest.get('project', {})
     name = project.get('name') if isinstance(project, dict) else None
-    report = {'schema': SCHEMA, 'status': 'NOT_RUN', 'project': name or f'{root.parent.name}/{root.name}', 'root': str(root),
+    report = {'schema': SCHEMA, 'status': 'NOT_RUN', 'project': name or f'{root.parent.name}/{root.name}', 'root': posix(root),
               'generatedAt': _iso(time.time()), 'authoritative': False, 'dispatches': [], 'findings': []}
     if not directory.is_dir():
         return report

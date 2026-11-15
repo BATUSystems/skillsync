@@ -10,6 +10,7 @@ from . import layers as _layers
 from .common import (CONDITIONAL_SKILL_ALIASES, LEGACY_WORKFLOW_SKILL, REMOVED_SKILL_ALIASES, WORKFLOW_SKILL,
                      add_project_arguments, config_file,
                      expand_project_skills, load_layer_project, read_yaml, redact, require_layerset, strings)
+from .pathfmt import posix
 
 SCOPES = ('org', 'client', 'project', 'tech', 'workflow', 'tool', 'personal')
 SCOPE_TITLES = {
@@ -357,7 +358,7 @@ def skills_list(root, manifest, library, statuses=SKILL_STATUSES):
             'description': description, 'descriptionBytes': len(description.encode('utf-8')),
             'path': f'skills/{name}/SKILL.md', 'references': _skill_references(library, name), 'findings': findings})
     return {'schema': LIST_SCHEMA, 'status': 'PASS', 'project': project_name(root, manifest) or f'{Path(root).parent.name}/{Path(root).name}',
-            'root': str(Path(root).resolve()), 'skills': rows}
+            'root': posix(Path(root).resolve()), 'skills': rows}
 
 
 def _cmd_skills_list(args):

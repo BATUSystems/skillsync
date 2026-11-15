@@ -11,6 +11,7 @@ from .environment import checks, limit
 from .quality import _locks, run_validation
 from .runs import fingerprint
 from .storage import digest, read_json, state_path, write_json
+from .pathfmt import posix
 
 
 def _step_redact(value):
@@ -127,7 +128,7 @@ def e2e(root, manifest, library, action='plan', run=False, observation_path=None
             scenario = state_path(root, config['scenarios'] + '/' + data['id'] + '.json', create=True)
             write_json(path, data)
             write_json(scenario, {'version': 1, 'source_observation': path.relative_to(root).as_posix(), 'observation_digest': digest(data), 'source_fingerprint': data['source_fingerprint'], 'URL': data['URL'], 'steps': data['steps'], 'evidence': data['evidence'], 'runner': 'Configured native e2e checks consume this observation; steps are not commands'})
-            return {'status': 'NOT_RUN', 'recorded': str(path), 'scenario': str(scenario), 'reason': 'Observation recorded; no E2E tests executed'}
+            return {'status': 'NOT_RUN', 'recorded': posix(path), 'scenario': posix(scenario), 'reason': 'Observation recorded; no E2E tests executed'}
         directory = state_path(root, config['observations'] + '/probe.json').parent
         if observation_path:
             relative = str(observation_path).removeprefix('.skillsync/')
@@ -158,7 +159,7 @@ def e2e(root, manifest, library, action='plan', run=False, observation_path=None
         result['browser_verification'] = 'Recorded observations; native runner evidence reported separately'
         path = state_path(root, 'e2e/last-run.json', create=True)
         write_json(path, redact(result))
-        result['report'] = str(path)
+        result['report'] = posix(path)
         return result
 
 

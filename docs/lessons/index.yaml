@@ -224,3 +224,7 @@ lessons:
     title: "link przepisywał cały .gitignore projektu: dopisuj do plików użytkownika bez zmiany istniejących bajtów"
     tags: [skillsync, windows, gitignore, crlf, link]
     paths: ['skillsync_workflow/cli.py', 'tests/test_skillsync_gitignore_eol.py']
+  - path: macierz-przed-pushem-wersje-pythona-systemy-i-baseline-skipow.md
+    title: "Trzy czerwone obroty CI 1.4.1: macierz przed pushem (Python 3.11, Windows 3.13, macOS, check_skips na logach wszystkich systemów)"
+    tags: [skillsync, ci, windows, macos, python, tests, skips, process]
+    paths: ['tests/test_skillsync_runs_rooted.py', 'tests/test_skillsync_isabs.py', 'tests/skip-baseline.json', 'scripts/check_skips.py', 'skillsync_workflow/fsutil.py']

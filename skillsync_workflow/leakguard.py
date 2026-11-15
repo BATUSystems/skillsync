@@ -27,6 +27,7 @@ import yaml
 
 from .common import exit_code, redact
 from .selfcmd import self_argv
+from .pathfmt import posix
 
 SCHEMA = 1
 DATA_DIR = Path(__file__).resolve().parent / 'data'
@@ -1566,7 +1567,7 @@ def hook_state(repo):
             hooks[name] = 'missing'
     missing = [name for name, value in hooks.items() if value in ('missing', 'unreadable')]
     state = 'missing' if missing else ('legacy' if 'legacy' in hooks.values() else 'ok')
-    result = {'state': state, 'hooks': hooks, 'missing': missing, 'directory': str(directory)}
+    result = {'state': state, 'hooks': hooks, 'missing': missing, 'directory': posix(directory)}
     if refusal and missing:
         result['reason'] = refusal
     return result
@@ -1585,10 +1586,22 @@ def _leakcheck_prefix(line):
     return tokens[:tokens.index('leakcheck')]
 
 
-def _hook_path_word(word):
-    """A word of a hook line that is a path to check: absolute for the system, rooted with `/` (a POSIX path in a hook run by
-    `sh`; `os.path.isabs('/x')` is False on Windows since Python 3.13 and was True before, so it is named here) or with a drive."""
-    return os.path.isabs(word) or word.startswith('/') or bool(re.match(r'^[A-Za-z]:[\\/]', word))
+def _hook_word(word):
+    """What a word of a hook line is, for the check of its existence: `('path', native_path)`, `('unchecked', None)` or `('plain', None)`.
+
+    A path with a drive (`C:/x`) or absolute for the system is checked as it is. On Windows a hook is run by the `sh` of Git for
+    Windows (MSYS), where `/c/dir/x` means `C:/dir/x` (checked as such) and the MSYS root (`/usr/bin/env`, `/bin/sh`, `/mingw64/...`)
+    exists only inside it: it cannot be judged natively, so it is `unchecked` (never reported missing). On POSIX a word rooted with `/` is
+    a path. `os.path.isabs('/x')` is False on Windows since Python 3.13 and was True before, which is why the rooted form is named here."""
+    if re.match(r'^[A-Za-z]:[\\/]', word):
+        return 'path', word
+    if os.name == 'nt':
+        drive = re.fullmatch(r'/([A-Za-z])(/.*)?', word)
+        if drive:
+            return 'path', f'{drive.group(1)}:{drive.group(2) or "/"}'
+        if word.startswith('/'):
+            return 'unchecked', None
+    return ('path', word) if os.path.isabs(word) else ('plain', None)
 
 
 def hook_command_problems(repo):
@@ -1618,12 +1631,14 @@ def hook_command_problems(repo):
             if not prefix:
                 continue
             for index, word in enumerate(prefix):
+                what, native = _hook_word(word)
+                if what == 'unchecked':
+                    continue
                 if index == 0:
-                    absolute = _hook_path_word(word)
-                    missing = (not Path(word).exists()) if absolute else (shutil.which(word) is None)
+                    missing = (not Path(native).exists()) if what == 'path' else (shutil.which(word) is None)
                     kind = 'interpreter'
-                elif _hook_path_word(word):
-                    missing, kind = not Path(word).exists(), 'file'
+                elif what == 'path':
+                    missing, kind = not Path(native).exists(), 'file'
                 else:
                     continue
                 if missing and (name, kind, word) not in seen:
@@ -1641,14 +1656,14 @@ def install_hook(repo, *, remove=False, identity_files=(), targets_json=None, ta
         if targets_json:
             validate_targets(_read_yaml(targets_json, 'Targets file'))
         top, directory, refusal = hooks_dir(repo)
-        report['repo'] = str(top)
+        report['repo'] = posix(top)
         if refusal:
             report.update(status='NOT_RUN', reason=refusal, info=True)
             return report
         directory.mkdir(parents=True, exist_ok=True)
         for name in HOOK_NAMES:
             path = directory / name
-            entry = {'name': name, 'path': str(path)}
+            entry = {'name': name, 'path': posix(path)}
             if path.is_symlink():
                 entry['action'] = 'skipped'
                 entry['reason'] = 'existing hook is a symlink (shared hook); add the call manually'

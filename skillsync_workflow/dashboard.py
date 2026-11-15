@@ -25,6 +25,7 @@ from .layers import add_layer_argument
 from .delivery_mode import delivery_info
 from .status import (APPROVAL_WORDS, APPROVALS_FILE, MAX_APPROVALS_BYTES, _APPROVAL_SHA, _approval_at, _status_fields,
                      git_blob_sha)
+from .pathfmt import posix
 
 SCHEMA = 1
 APP_NAME = 'dashboard'
@@ -1591,7 +1592,7 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
     return {
         'schema': SCHEMA,
         'app': {'name': APP_NAME, 'version': __version__},
-        'project': {'name': root.name, 'path': str(root)},
+        'project': {'name': root.name, 'path': posix(root)},
         'generatedAt': datetime.now().astimezone().isoformat(timespec='seconds'),
         'version': version,
         'lastUpdate': _iso(max((stamp for stamp in last_change if stamp), default=None)),

@@ -264,7 +264,7 @@ def run_validation(root, checks, *, log_dir=None):
                 fd = os.open(log, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, 'O_NOFOLLOW', 0), 0o600)
                 with os.fdopen(fd, 'w', encoding='utf-8') as handle:
                     handle.write(_redact(output))
-                result.update(exit_code=code, log=str(log))
+                result.update(exit_code=code, log=posix(log))
                 result['tests_run'], result['tests_skipped'] = _test_counts(output)
                 if timeout:
                     result['reason'] = 'Timeout; process group terminated'
@@ -1041,7 +1041,7 @@ def doctor(root, manifest, library):
             # AGENTS.md in `agents` mode: count the instruction body only (as CLAUDE.md did), not markers or the Codex note.
             agents_body = name == 'AGENTS.md' and claude_imports_agents(root)
             size = len(agents_block_body(root).encode('utf-8')) if agents_body else path.stat().st_size
-            sizes.append({'path': str(path), 'bytes': size, 'limit': int(maximum)})
+            sizes.append({'path': posix(path), 'bytes': size, 'limit': int(maximum)})
             if size > int(maximum):
                 finding('error', path, 'Instruction budget exceeded')
     for rule in config.get('routing', {}).get('rules', []):

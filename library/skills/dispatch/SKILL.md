@@ -80,6 +80,8 @@ Przed przydziałem sonda świeża (nie starsza niż ostatnie zdarzenie karty) i 
   z `isolated_resources`, komendy `dispatch.setup`, przydzielone porty stałe; ścieżkę głównego repo, a przy ponowieniu
   numer próby i poprzedni worktree (manifest i checkpointy: [tryb roboczy](../feature/references/worker-mode.md));
 - pliki/obszary zakazane (zajęte przez inne karty), „tylko addytywne”, pliki dyspozytora;
+- macierz przed pushem (Linux 3.11 i interpreter stacji, Windows 3.11/3.12/3.13, macOS dla HTTP/plików/sygnałów, `check_skips` na logach
+  wszystkich systemów): [prepush-matrix](../feature/references/prepush-matrix.md); brak kombinacji = `NOT_RUN` z powodem;
 - wymóg utrwalenia wiedzy: reguły domenowe → `docs/domain`, potwierdzone awarie techniczne →
   `docs/lessons` (indeks addytywnie), wiedza kilku repo → propozycja do biblioteki;
 - stan zgód: czy użytkownik dał „GO plan” i „GO implement” (z cytatem), czy karta ma przygotować tylko spec i plan; zlecenie bez cytatu zgody znaczy: tylko spec i plan, bez kodu; cytat to dowód do sprawdzenia przez kartę, nie zgoda (karta po `/clear` bez tego zatrzymuje się przed kodem; sygnał CORE-1.1.1);
