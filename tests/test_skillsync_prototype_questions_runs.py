@@ -106,13 +106,30 @@ class PerRunApiTests(RunsCase):
         runs = {run['slug']: run for run in self.listing(self.who(Q.EX))['runs']}
         self.assertEqual(runs['etap-3']['open'], 2)
 
-    def test_a_commenter_gets_403_on_the_run_routes(self):
+    def test_a_commenter_gets_the_read_only_preview_on_the_run_routes_and_cannot_write(self):
+        """The run routes use the same handlers and the same white-listed preview as the general ones (decision "Pełny podgląd dla zalogowanych")."""
         commenter = [login for login, role in S.ROLES.items() if role == 'commenter'][0]
         client = self.client(commenter)
-        for path in ('/_api/v1/prototypes/%s/questions' % SECOND, '/_api/v1/questions?slug=' + SECOND,
-                     '/_api/v1/prototypes/%s/questions/%s' % (SECOND, NEW_Q)):
+        listed = ('/_api/v1/prototypes/%s/questions' % SECOND, '/_api/v1/questions?slug=' + SECOND)
+        single = '/_api/v1/prototypes/%s/questions/%s' % (SECOND, NEW_Q)
+        sensitive = ('origin', 'refersTo')
+        for path in listed:
             with self.subTest(path=path):
-                self.check(client.get(path), 403)
+                data = self.check(client.get(path), 200).json
+                self.assertIs(data['preview'], True)
+                self.assertTrue(data['questions'])
+                for question in data['questions']:
+                    self.assertEqual(question['slug'], SECOND)
+                    self.assertIs(question['preview'], True)
+                    self.assertFalse(question['canAnswer'])
+                    for key in sensitive:
+                        self.assertFalse(question.get(key), key)
+        with self.subTest(path=single):
+            question = self.check(client.get(single), 200).json['question']
+            self.assertEqual((question['id'], question['preview'], question['canAnswer']), (NEW_Q, True, False))
+            for key in sensitive:
+                self.assertFalse(question.get(key), key)
+            self.assertNotIn('docs/specs/b.md', json.dumps(question))   # the origin of the question stays out of the preview
         self.check(S.Client(self.server).get('/_api/v1/prototypes/%s/questions' % SECOND), 401)
 
     def test_a_directory_without_prototype_json_does_not_break_the_list(self):
