@@ -21,8 +21,10 @@ class PosixTests(unittest.TestCase):
             self.assertEqual(posix('/w/a\\b'), '/w/a\\b')
 
     def test_a_path_object_gives_text(self):
+        path = Path('/w/a')       # made before the patch: pathlib cannot make a PosixPath under a patched `os.name` on Windows
+        expected = str(path)
         with mock.patch.object(os, 'name', 'posix'):
-            self.assertEqual(posix(Path('/w/a')), str(Path('/w/a')))
+            self.assertEqual(posix(path), expected)
 
 
 if __name__ == '__main__':
