@@ -56,7 +56,10 @@ def tree(path):
             elif full.is_dir():
                 result[rel] = ('d',)
             else:
-                result[rel] = ('f', full.read_bytes())
+                try:
+                    result[rel] = ('f', full.read_bytes())
+                except PermissionError:   # Windows: a file held under an exclusive lock (`*.lock`) cannot be read by others
+                    result[rel] = ('locked',)
     return result
 
 
