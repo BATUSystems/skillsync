@@ -53,6 +53,12 @@ class WorkflowFixture(unittest.TestCase):
             home = self.base / 'machine-home'
             home.mkdir()
             isolated['HOME'] = str(home)
+        elif os.name == 'nt':
+            # Windows keeps them under `%LOCALAPPDATA%` (and `Path.home()` is `%USERPROFILE%`): both move into the fixture.
+            home = self.base / 'machine-home'
+            (home / 'localappdata').mkdir(parents=True)
+            isolated['USERPROFILE'] = str(home)
+            isolated['LOCALAPPDATA'] = str(home / 'localappdata')
         environ = mock.patch.dict(os.environ, isolated)
         environ.start()
         self.addCleanup(environ.stop)
@@ -231,7 +237,9 @@ class ValidationContracts(WorkflowFixture):
 
     def test_legacy_test_command_still_plans_and_runs(self):
         import shlex
-        self.manifest['tests'] = {'command': shlex.join([sys.executable, '-c', 'print("Ran 1 test\\nOK")'])}
+        argv = [sys.executable, '-c', 'print("Ran 1 test\\nOK")']
+        # the legacy command runs through the shell: cmd.exe on Windows (no single quotes), sh elsewhere
+        self.manifest['tests'] = {'command': subprocess.list2cmdline(argv) if os.name == 'nt' else shlex.join(argv)}
         self.save()
         self.assertEqual(self.report('validate')['checks'][0]['id'], 'legacy-tests')
         self.assertEqual(self.report('validate', '--run')['status'], 'PASS')
@@ -451,7 +459,7 @@ class ContextContracts(WorkflowFixture):
         self.manifest['workflow']['knowledge'] = {'domain': '../docs/domain'}
         self.save()
         report = self.report('route', '--topics', 'implementation')
-        self.assertEqual([record['path'] for record in report['domain']], [str(shared.resolve() / 'glossary.md')])
+        self.assertEqual([record['path'] for record in report['domain']], [(shared.resolve() / 'glossary.md').as_posix()])
 
     def test_domain_records_without_load_keep_existing_routing_and_pass_doctor(self):
         self.write('docs/domain/billing.md', '---\ntags: [billing]\n---\nInvoice numbering rule')

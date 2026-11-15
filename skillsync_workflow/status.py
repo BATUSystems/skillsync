@@ -499,7 +499,7 @@ def set_doc_status(root, name, action, folder='plans', expect_sha=None):
         Path(tmp).unlink(missing_ok=True)
     report = {'schema': SCHEMA, 'status': 'PASS', 'reason': f'{kind} status {source} -> {target}', 'root': str(root),
               kind.lower(): path.relative_to(root).as_posix(), 'from': source, 'to': target, 'sha': git_blob_sha(updated)}
-    report['warnings'] = _approve_warnings(root, path, updated.decode('utf-8'), folder) if action == 'approve' else []
+    report['warnings'] = _approve_warnings(root, path, updated.decode('utf-8').replace('\r\n', '\n'), folder) if action == 'approve' else []
     return report
 
 

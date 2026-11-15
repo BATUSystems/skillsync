@@ -212,7 +212,7 @@ class UserEntry(unittest.TestCase):
     @needs_os_symlinks
     def test_a_symlink_entry_stays_unresolved_whatever_it_points_at(self):
         target = self.make(self.tmp / 'other-checkout-skillsync')
-        link = self.home / '.local' / 'bin' / 'skillsync'
+        link = self.home / '.local' / 'bin' / ('skillsync.exe' if os.name == 'nt' else 'skillsync')   # the entry is `.exe` on Windows
         os.symlink(target, link)
         self.assertEqual(self.entry(), str(link))
         with mock.patch.object(selfcmd, '_user_entry', return_value=str(link)):
@@ -305,7 +305,7 @@ class Launchers(unittest.TestCase):
         root, sh, ps = self.generate(list(INSTALLED))
         import shlex
         self.assertEqual(shlex.split(sh.read_text(encoding='utf-8').splitlines()[1])[1:5],
-                         [sys.executable, '-P', '-m', 'skillsync_workflow'])
+                         [Path(sys.executable).as_posix(), '-P', '-m', 'skillsync_workflow'])   # the shell script uses `/`
         first = ps.read_text(encoding='utf-8').splitlines()[0]
         self.assertIn("'-P' '-m' 'skillsync_workflow' env '", first)
 

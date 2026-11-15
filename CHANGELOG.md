@@ -33,16 +33,29 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 - Run metadata (`runs`, the `benchmark` suite and fixtures) and `/proc` identity are read and written as UTF-8 explicitly (Windows used the code page).
 - A path in run metadata that is rooted but not absolute on Windows (`/etc/hostname`, `\\x`, `C:x`) is refused as an evidence path or a benchmark fixture name on every system.
 - `prototype question merge --driver` leaves a questions file with CRLF line endings byte for byte when the other side adds nothing (it rewrote the file with LF).
+- Windows (Python 3.11 and 3.12): the test suite no longer fails for reasons of the platform that are not defects of the product. Tests were fixed (isolated
+  `USERPROFILE`/`LOCALAPPDATA`, interpreter from `sys.executable`, quoted paths in YAML, a fake `az` and `git` that run on Windows, links with a relative target, `skillsync.exe` as the entry file, case-insensitive file
+  trees); no test was removed or disabled, the simulated hosts that a real Windows file tree cannot show are skipped as subtests with a reason.
+- `status plan approve`/`spec approve`: the warning about the pre-implement report no longer misreads a plan saved with CRLF line endings (the `Przebieg:` line was not found).
+- `layers`: on a Windows host a backslash is a separator when paths are normalised and in `layer_rules` globs, whichever system is simulated.
 
 ### Changed
 
 - Testy: zmienna `SKILLSYNC_TEST_DASHBOARD_PORTS` (zakres `<od>-<do>` w 5100-5199) wyznacza porty testów dashboardu, żeby kilka biegów naraz na jednym hoście nie kolidowało; domyślnie bez zmian, produkt bez zmian (docs/development.md). `free_port` uznaje też port w TIME_WAIT za wolny (serwer binduje z SO_REUSEADDR), bo na macOS wycinek 29 portów wyczerpywał się w jednym biegu.
 - CI (macOS): `timeout-minutes` jobu `test` dla macOS 30 na 45 (testy trwają tam 20-28 min); `tests/skip-baseline.json` ma teraz zmierzony baseline `macos-latest/symlink` i `macos-latest/copy` (35 skipów z biegu main v1.3.0, identyczne w czterech jobach) zamiast `null`, z nowymi kategoriami `linux-only-env` (testy cyklu życia `env`: backend własności procesów tylko na Linuksie), `bsd-mktemp` i `needs-shellcheck`; progi czasu czterech testów poluzowane (skan sekretów 0,5 → 5 s, git z limitem 3,5 → 15 s przy 30 s snu, nieaktywne połączenie dashboardu 4 → 15 s, `approvals wait` 15 → 18 s). Test strażnika pilnuje teraz nowego limitu i baseline macOS.
 - CI: the test matrix adds Python 3.13 (blocks like 3.11 and 3.12) and Python 3.14 (informational, `continue-on-error`, Ubuntu only, both modes).
+- Path fields in reports use `/` on Windows: `knowledge init` (`created`, `existing`), `route` (`lessons[].path`, `domain[].path`, `index`), `doctor` (`findings[].path`) and the message about the users file inside the served root of
+  `prototype serve`. Helper: `skillsync_workflow/pathfmt.py` (`posix`). Commands that are to be executed (`selfcmd`, the `skillsync: link` task, hook commands) and paths the product opens stay native.
 
 ### Compatibility
 
 Systemy plików bez blokad systemowych (część udziałów sieciowych): zapis zgód i blokady serwera prototypów kończą się od razu błędem „file locks are not supported” (`BLOCKED` / 503 `lock_unsupported`); dawna blokada plikowa działała wszędzie. Stary proces `dashboard serve` uruchomiony przed aktualizacją (i starsza kopia `skillsync`) pisze zgody starą blokadą: zrestartuj go i zaktualizuj kopie przed pierwszą zgodą (docs/upgrading.md).
+- On Windows, a consumer that compares the path fields above with a native path (`C:\...`) must compare with `/` or normalise (`Path(value)`); on Linux and macOS nothing changes. Commands to execute are not
+  affected: they keep the native form.
+
+### Breaking
+
+None.
 
 ## [1.4.0] - 2026-11-14
 

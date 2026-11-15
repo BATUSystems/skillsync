@@ -6091,7 +6091,7 @@ def startup_checks(config):
     users_real = os.path.realpath(config.users)
     records = []
     if _within(users_real, root_real):
-        errors.append('plik użytkowników leży w serwowanym katalogu: %s' % config.users)
+        errors.append('plik użytkowników leży w serwowanym katalogu: %s' % (str(config.users).replace('\\', '/') if os.name == 'nt' else config.users))
     if not os.path.isfile(users_real):
         errors.append('brak pliku użytkowników: %s (utwórz go: user add)' % config.users)
     else:

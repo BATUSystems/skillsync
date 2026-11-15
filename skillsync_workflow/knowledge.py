@@ -5,6 +5,7 @@ from pathlib import Path
 import subprocess
 import yaml
 from .common import add_project_arguments, load_layer_project, redact
+from .pathfmt import posix
 from .quality import domain_location, lessons_location
 
 README = """# Dokumentacja projektu
@@ -44,9 +45,9 @@ def init_knowledge(root, manifest, library, dry_run=False):
     created, existing = [], []
     for path, content in plan:
         if path.exists() or path.is_symlink():
-            existing.append(str(path))
+            existing.append(posix(path))
             continue
-        created.append(str(path))
+        created.append(posix(path))
         if dry_run:
             continue
         if content is None:

@@ -24,6 +24,7 @@ from layers_helpers import (LINK_MODES, LayersCase, commit, generator_version, g
                             machine_cache_dir, machine_data_dir, make_layer, needs_sh, write, yaml_text)
 from skillsync_workflow import layers, leakguard  # noqa: E402
 from skillsync_workflow.selfcmd import self_argv  # noqa: E402
+from skillsync_workflow.fsutil import rmtree_force  # noqa: E402  (read-only git objects on Windows)
 
 CLIENT_BETA = 'Brenk' + 'or'
 
@@ -119,13 +120,16 @@ class HookCommandMissingTest(CommandsCase):
     def test_a_bare_command_missing_from_path_is_found_and_a_present_one_is_not(self):
         bin_dir = self.path.parent / 'path-bin'
         bin_dir.mkdir()
-        full_path = os.pathsep.join([str(bin_dir), os.environ.get('PATH', '')])      # git stays reachable
-        write(self.hooks / 'pre-commit', '#!/bin/sh\nskillsync.py leakcheck "$PWD" --staged || exit $?\n', executable=True)
+        command = 'skillsync.exe' if os.name == 'nt' else 'skillsync.py'      # the hook line must call `skillsync`; `which` needs a PATHEXT extension on Windows
+        kept = [item for item in os.environ.get('PATH', '').split(os.pathsep)
+                if not item or not (Path(item) / command).exists()]        # an installed `skillsync.exe` must not hide the missing one
+        full_path = os.pathsep.join([str(bin_dir), *kept])                  # git stays reachable
+        write(self.hooks / 'pre-commit', f'#!/bin/sh\n{command} leakcheck "$PWD" --staged || exit $?\n', executable=True)
         with unittest.mock.patch.dict(os.environ, {'PATH': full_path}):
             found = self.broken(self.findings())
         self.assertEqual(len(found), 1)
         self.assertIn('pre-commit', found[0]['message'])
-        write(bin_dir / 'skillsync.py', '#!/bin/sh\nexit 0\n', executable=True)
+        write(bin_dir / command, '#!/bin/sh\nexit 0\n', executable=True)
         with unittest.mock.patch.dict(os.environ, {'PATH': full_path}):
             self.assertEqual(self.broken(self.findings()), [])
 
@@ -301,7 +305,9 @@ class LayersInitTest(CommandsCase):
         hint = report['next']
         self.assertLess(hint.index('commit'), hint.index('skillsync layers add notes'), hint)
         git_part = hint.split(' && skillsync ')[0]
-        done = subprocess.run(git_part, shell=True, capture_output=True, text=True, env=dict(os.environ))
+        # the hint is quoted for a POSIX shell (`shlex`): on Windows it is run by the `sh` of Git for Windows, not by cmd.exe
+        argv = ['sh', '-c', git_part] if os.name == 'nt' else git_part
+        done = subprocess.run(argv, shell=os.name != 'nt', capture_output=True, text=True, env=dict(os.environ))
         self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
         code, added = self.add('notes', 'personal', directory)
         self.assertEqual((code, added['status']), (0, 'PASS'), added)
@@ -400,7 +406,7 @@ class LayersInitTest(CommandsCase):
     def test_shared_hooks_path_is_never_written_and_init_still_succeeds(self):
         shared = self.work / 'shared-hooks'
         shared.mkdir()
-        Path(self.env['GIT_CONFIG_GLOBAL']).write_text(f'[core]\n\thooksPath = {shared}\n', encoding='utf-8')
+        Path(self.env['GIT_CONFIG_GLOBAL']).write_text(f'[core]\n\thooksPath = {shared.as_posix()}\n', encoding='utf-8')
         code, report = self.cli_json('layers', 'init', str(self.work / 'mine'), '--kind', 'personal')
         self.assertEqual((code, report['status']), (0, 'PASS'))
         self.assertTrue(any(item.startswith('hooks:') and 'core.hooksPath' in item for item in report['warnings']), report['warnings'])
@@ -447,7 +453,7 @@ class LayersAddTest(CommandsCase):
                 entry = next(item for item in self.config()['layers'] if item['id'] == layer_id)
                 self.assertEqual((entry['kind'], entry['source']), ('org', str(bare)))
                 stub = self.config()['leakguard']['targets'][layer_id]
-                self.assertEqual((stub['scope'], stub['authors'], stub['remote_match']), ('org-private', ['jan@acme.example'], [str(bare)]))
+                self.assertEqual((stub['scope'], stub['authors'], stub['remote_match']), ('org-private', ['jan@acme.example'], [bare.as_posix()]))   # the match is stored with `/`
                 self.assertEqual(leakguard.hook_state(checkout)['state'], 'ok')
                 self.assertEqual(sorted(item['name'] for item in report['hooks']), ['pre-commit', 'pre-push'])
                 self.assertEqual(report['layer']['writable'], True)
@@ -637,7 +643,7 @@ class LayersAddTest(CommandsCase):
                         self.assertEqual(leakguard.match_targets(targets, [sibling]), [])
             self.assertEqual(leakguard.match_targets(targets, ['git@example.test:other/skills.git']), [])
         local = layers.remote_patterns(str(self.bare))
-        self.assertEqual(local, [str(self.bare)])
+        self.assertEqual(local, [self.bare.as_posix()])
         targets = {'acme': {'scope': 'org-private', 'kind': 'org', 'authors': [], 'remote_match': local}}
         self.assertEqual(leakguard.match_targets(targets, [str(self.bare)]), ['acme'])
         self.assertEqual(leakguard.match_targets(targets, [str(self.bare) + '-other']), [])
@@ -816,7 +822,7 @@ class LayersUpdateTest(CommandsCase):
 
     def test_a_missing_checkout_is_blocked_and_unknown_arguments_are_refused(self):
         self.assertEqual(self.add('acme', 'org', self.bare)[0], 0)
-        shutil.rmtree(self.checkout)
+        rmtree_force(self.checkout)
         code, report = self.update('acme')
         self.assertEqual((code, report['layers'][0]['status'], report['layers'][0]['action']), (2, 'BLOCKED', 'missing'))
         self.assertEqual(self.update('nope')[0], 2)
@@ -870,7 +876,7 @@ class LayersUpdateTest(CommandsCase):
         code, report = self.update()
         self.assertEqual((code, report['status']), (0, 'PASS'))
         self.assertEqual({item['id']: item['status'] for item in report['layers']}, {'acme': 'PASS', 'plain': 'NOT_RUN'})
-        shutil.rmtree(self.checkout)                                       # a BLOCKED layer beats NOT_RUN
+        rmtree_force(self.checkout)                                       # a BLOCKED layer beats NOT_RUN
         self.assertEqual(self.update()[1]['status'], 'BLOCKED')
 
     def test_update_checks_the_bridge_like_every_resolver(self):
@@ -948,7 +954,7 @@ class LayersListTest(CommandsCase):
         self.assertEqual((code, [item['id'] for item in report['layers']], report['origin']), (0, ['core', 'me'], 'override'))
 
     def test_missing_layer_directories_are_reported_as_absent_notes_not_listed(self):
-        shutil.rmtree(self.acme)
+        rmtree_force(self.acme)
         code, report = self.cli_json('layers', 'list', '--project', str(self.project_dir))
         self.assertEqual((code, [item['id'] for item in report['layers']]), (0, ['core', 'me']))
         self.assertIn('layer-absent', codes(report['notes']))
@@ -1313,10 +1319,10 @@ class IsolationTest(CommandsCase):
         layers_dir = machine_data_dir() / 'layers'
         make_layer(layers_dir / 'foreign', 'foreign', 'org')
         self.assert_fail('isolation-foreign-library')
-        shutil.rmtree(layers_dir / 'foreign')
+        rmtree_force(layers_dir / 'foreign')
         (layers_dir / 'stray').mkdir()
         self.assert_fail('isolation-unknown-checkout')
-        shutil.rmtree(layers_dir / 'stray')
+        rmtree_force(layers_dir / 'stray')
         make_layer(layers_dir / 'acme-copy', 'acme', 'org')                     # an allowed id elsewhere is fine
         self.isolation(code=0)
 
@@ -1331,16 +1337,16 @@ class IsolationTest(CommandsCase):
                 write(old / 'skills' / 'x' / 'SKILL.md', 'x\n')
                 setup(old)
                 self.assert_fail('isolation-legacy-library')
-                shutil.rmtree(old)
+                rmtree_force(old)
                 self.isolation(code=0)
         self.configure()
         known = Path(self.env['HOME']) / '.local' / 'copilot-library'
         write(known / 'skills' / 'x' / 'SKILL.md', 'x\n')
         self.assert_fail('isolation-legacy-library')
-        shutil.rmtree(known)
+        rmtree_force(known)
         write(self.repos / 'some-org' / 'CopilotSkills' / 'skills' / 'x' / 'SKILL.md', 'x\n')
         self.assert_fail('isolation-legacy-library')
-        shutil.rmtree(self.repos / 'some-org')
+        rmtree_force(self.repos / 'some-org')
         self.isolation(code=0)
 
     def test_the_copilotskills_search_has_a_depth_limit_and_skips_hidden_directories(self):
@@ -1357,7 +1363,7 @@ class IsolationTest(CommandsCase):
         layers_dir = machine_data_dir() / 'layers'
         write(layers_dir / 'broken' / 'layer.yaml', 'schema: 1\nid: Bad Id\nkind: org\n')
         self.assert_fail('isolation-layer-yaml-invalid')
-        shutil.rmtree(layers_dir / 'broken')
+        rmtree_force(layers_dir / 'broken')
         write(self.acme / 'layer.yaml', 'schema: [\n')
         self.assert_fail('isolation-layer-yaml-invalid')
 
@@ -1417,7 +1423,7 @@ class IsolationTest(CommandsCase):
                     report = layers.layers_check(isolation=True, system=other)
                     expected = 'FAIL' if other == system else 'PASS'
                     self.assertEqual(report['status'], expected, (system, other, report))
-                shutil.rmtree(directory / 'foreign')
+                rmtree_force(directory / 'foreign')
 
     def test_layers_list_isolation_adds_the_field_and_keeps_its_own_status(self):
         self.configure(allowed=('core',))
@@ -1443,7 +1449,7 @@ class TargetStubFillTest(CommandsCase):
         code, report = self.add('mine', 'personal', directory)
         self.assertEqual(code, 0, report)
         stub = self.config()['leakguard']['targets']['mine']
-        self.assertEqual(stub, {'scope': 'private', 'remote_match': [str(directory)], 'authors': ['jan@acme.example']})
+        self.assertEqual(stub, {'scope': 'private', 'remote_match': [directory.as_posix()], 'authors': ['jan@acme.example']})
         self.assertTrue(any('remote_match filled' in item for item in report['warnings']), report['warnings'])
         code, report = self.cli_json('leakcheck', str(self.default_checkout('mine')))
         self.assertEqual((code, report['target']), (0, 'mine'), report)
@@ -1455,7 +1461,7 @@ class TargetStubFillTest(CommandsCase):
         for label, stub in cases.items():
             with self.subTest(label):
                 self.config_file.write_text(yaml_text({'leakguard': {'targets': {'acme': stub}}}), encoding='utf-8')
-                shutil.rmtree(self.default_checkout('acme'), ignore_errors=True)
+                rmtree_force(self.default_checkout('acme'), ignore_errors=True)
                 code, report = self.add('acme', 'org', bare)
                 self.assertEqual(code, 0, report)
                 self.assertEqual(self.config()['leakguard']['targets']['acme'], stub)

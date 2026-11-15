@@ -192,7 +192,7 @@ def prepare(workdir, library, chrome_port, port1, port2):
         shutil.copytree(library, core, ignore=shutil.ignore_patterns('.git', 'node_modules', '__pycache__'))
         (core / 'layer.yaml').write_text('schema: 1\nid: core\nkind: core\nversion: %s\ncore_min: %s\n'
                                          % (__version__, __version__), encoding='utf-8')
-        handle.write('layers:\n  - {id: core, kind: core, path: "%s"}\n' % core)
+        handle.write('layers:\n  - {id: core, kind: core, path: %s}\n' % json.dumps(str(core)))   # JSON string = YAML double-quoted: backslashes of Windows paths stay valid
         handle.write('layer_rules:\n  - {match: ["**"], use: [core]}\n')
     environ = dict(os.environ, SKILLSYNC_CONFIG=str(config))
     for slug, screens, extra in (('demo', screens_demo(), None), ('alfa', screens_simple('alfa'), None),
