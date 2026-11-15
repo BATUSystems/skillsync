@@ -1309,6 +1309,8 @@ def render_gallery(entries):
             f'  <h2><a href="{slug}/index.html">{html_escape(entry["title"])}</a></h2>',
             *(['  <p class="writing" data-writing="true">W trakcie zapisu: agent jeszcze pisze ekrany</p>']
               if entry.get('writing') else []),
+            *([f'  <p class="questions"><a href="/_experts/{slug}">Pytania</a></p>']
+              if entry.get('questions') else []),
             '  <dl>',
             f'    <dt>Slug</dt><dd><code>{slug}</code></dd>',
             f'    <dt>Wymagania</dt><dd><code>{html_escape(entry["requirements"])}</code></dd>',
@@ -1335,12 +1337,41 @@ def render_gallery(entries):
         '<body>',
         '<main>',
         '<h1>Prototypy</h1>',
+        *(['<p class="questions-link"><a href="/_experts">Pytania</a></p>'] if any(entry.get('questions') for entry in entries) else []),
         f'<p class="lead">Liczba prototypów: {len(entries)}. Otwórz prototyp, aby przeglądać ekrany i komentarze.</p>',
         body,
         '</main>',
         '</body>',
         '</html>',
         ''])
+
+
+_QUESTION_PRESENCE = {}   # (path, mtime_ns, size) -> bool: the live gallery asks on every request
+
+
+def has_questions(directory):
+    """Does the run `directory` have a question (an `ask` operation in its `questions.json`)? False for a missing, unreadable, malformed,
+    oversized (above the size the server itself writes) or symlinked file. Only a yes or no: the gallery tells nothing else about the
+    questions (no count, no text). Cached by (path, mtime, size), so a request of the live gallery parses a file only after it changed."""
+    path = Path(directory) / server.QUESTIONS_FILE
+    try:
+        if path.is_symlink() or not path.is_file():
+            return False
+        stat = path.stat()
+        if stat.st_size > server.QUESTIONS_MAX_FILE_BYTES:
+            return False
+        key = (str(path), stat.st_mtime_ns, stat.st_size)
+        if key in _QUESTION_PRESENCE:
+            return _QUESTION_PRESENCE[key]
+        operations = json.loads(path.read_text(encoding='utf-8')).get('operations')
+    except (OSError, ValueError, AttributeError):
+        return False
+    found = isinstance(operations, list) and any(isinstance(item, dict) and item.get('type') == 'ask'
+                                                 and isinstance(item.get('questionId'), str) for item in operations)
+    if len(_QUESTION_PRESENCE) > 512:
+        _QUESTION_PRESENCE.clear()
+    _QUESTION_PRESENCE[key] = found
+    return found
 
 
 def gallery_entries(prototypes_root, repo, now_ms=None):
@@ -1354,6 +1385,7 @@ def gallery_entries(prototypes_root, repo, now_ms=None):
             warnings.append(f'{entry["path"]}: {entry["error"]} (skipped in index)')
             continue
         warnings.extend(entry_warnings)
+        entry['questions'] = has_questions(directory)
         if now_ms is not None:
             entry['writing'] = server.public_writing(directory, now_ms)
         entries.append(entry)
@@ -3856,6 +3888,16 @@ def _parse_question_ref(value):
     return ref
 
 
+def _parse_question_screen(value):
+    """`--screen <slug>#s<N>` -> a ref with the absolute path of the screen on the prototype server (`/<slug>/index.html#sN`): the page of the
+    experts renders it as a link to that screen. Strict: the slug grammar of the server, `#s` and at least one digit, nothing else
+    (`fullmatch`, so no trailing newline); anything else is refused."""
+    match = re.fullmatch(r'([^#]*)#s([0-9]+)', value)
+    if not match or not server.SLUG_RE.fullmatch(match.group(1)) or len(f'/{match.group(1)}/index.html#s{match.group(2)}') > server.MAX_QUESTION_REF_HREF:
+        raise PrototypeError(f'--screen {value!r}: use <prototype>#s<number> (lowercase letters, digits and single hyphens, e.g. demo#s4)')
+    return {'title': f'Ekran s{match.group(2)}', 'href': f'/{match.group(1)}/index.html#s{match.group(2)}'}
+
+
 def _parse_question_options(values):
     options = []
     for index, value in enumerate(values or [], 1):
@@ -3888,7 +3930,9 @@ def add_question(root, manifest, args):
     _public, public_error = public_url_of(settings)
     if public_error:
         return _question_fail('invalid_public_url', public_error, status='BLOCKED')
-    refs = [_parse_question_ref(value) for value in args.ref or []]
+    refs = [_parse_question_ref(value) for value in args.ref or []] + [_parse_question_screen(value) for value in getattr(args, 'screen', None) or []]
+    if len(refs) > server.MAX_QUESTION_REFS:
+        return _question_fail('too_many_refs', f'--ref and --screen together: at most {server.MAX_QUESTION_REFS}')
     options = _parse_question_options(args.option)
     origin = _parse_origin(args.origin)
     slug = args.slug
@@ -4954,6 +4998,8 @@ def register(subparsers):
                            slug_help=' (default: the one prototype whose requirements is the --origin spec)')
     qadd.add_argument('--text', required=True, help='The question (at most 2000 characters)')
     qadd.add_argument('--ref', action='append', metavar='TITLE|HREF[|EXCERPT]', help='Context link with an optional excerpt (repeatable, at most 5)')
+    qadd.add_argument('--screen', action='append', metavar='PROTOTYPE#sN', help='Link to a prototype screen (repeatable; counts with --ref, at most 5 together): '
+                      'a question about a screen must carry it, e.g. demo#s4')
     qadd.add_argument('--option', action='append', metavar='LABEL[:recommended]', help='Answer option (repeatable, at most 8; one recommended, several with --multi)')
     qadd.add_argument('--multi', action='store_true', help='Multi-choice: the expert ticks one or more options (at least one; "none" is a free-text answer); needs at least 2 --option')
     qadd.add_argument('--assume', help='Assumed value: the question does not stop the agent (exactly one of --assume, --blocking)')

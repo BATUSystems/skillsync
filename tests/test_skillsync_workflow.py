@@ -1031,7 +1031,7 @@ class ReviewDocsProfile(WorkflowFixture):
         self.assertTrue(any('leakcheck --text' in item for item in mixed['checklist']))
 
     def test_library_code_and_non_markdown_skill_files_are_not_docs(self):
-        for files in (['library/skills/feature/scripts/run.py'], ['docs/site/build.py'], ['docs/site/app.js'], ['docs/prototypes/x/theme.css'], ['library/skills/feature/assets/a.json'], ['skillsync_workflow/cli.py']):
+        for files in (['library/skills/feature/scripts/run.py'], ['docs/site/build.py'], ['docs/site/app.js'], ['library/skills/feature/assets/a.json'], ['skillsync_workflow/cli.py']):
             with self.subTest(files=files):
                 self.assertEqual(self.review(*files)['profile'], 'kod')
 
@@ -1054,6 +1054,143 @@ class ReviewDocsProfile(WorkflowFixture):
         self.assertIn('własna pozycja docs', report['checklist'])
         self.assertFalse(any('leakcheck --text' in item for item in report['checklist']))
         self.assertEqual(self.review('docs/cli.md')['profile'], 'kod')
+
+
+class ReviewPrototypeProfile(WorkflowFixture):
+    """`skillsync review`: profil `prototyp` (zmiana tylko w katalogu prototypu albo `--profile prototyp`) z rdzeniową listą kontrolną."""
+
+    CORE = ['Każdy ekran ma odpowiednik w wymaganiach.', 'Nawigacja i kotwice sN są spójne.', 'Teksty są bez żargonu.']
+
+    def setUp(self):
+        super().setUp()
+        self.defaults({'review': {'prototype': list(self.CORE)}})
+
+    def defaults(self, data):
+        (self.library / 'workflow').mkdir(exist_ok=True)
+        (self.library / 'workflow/defaults.yaml').write_text(yaml.safe_dump(data, allow_unicode=True), encoding='utf-8')
+
+    def review(self, *args):
+        return self.report('review', *args)
+
+    def prototype_items(self, *args):
+        return [item for item in self.review(*args)['checklist'] if item in self.CORE]
+
+    def test_a_change_inside_the_prototype_root_selects_the_prototype_profile(self):
+        report = self.review('--files', 'docs/prototypes/demo/index.html', 'docs/prototypes/demo/project.css')
+        self.assertEqual(report['profile'], 'prototyp')
+        self.assertEqual(sorted(report['prototypeFiles']), ['docs/prototypes/demo/index.html', 'docs/prototypes/demo/project.css'])
+        self.assertEqual(self.prototype_items('--files', 'docs/prototypes/demo/index.html'), self.CORE)
+
+    def test_the_profile_can_be_chosen_and_other_changes_keep_theirs(self):
+        self.assertEqual(self.review('--files', 'helper.py')['profile'], 'kod')
+        self.assertEqual(self.review('--files', 'docs/cli.md')['profile'], 'docs')
+        chosen = self.review('--files', 'helper.py', '--profile', 'prototyp')
+        self.assertEqual(chosen['profile'], 'prototyp')
+        self.assertTrue(any('kotwice sN' in item for item in chosen['checklist']))
+        self.assertFalse(any('kotwice sN' in item for item in self.review('--files', 'helper.py')['checklist']))
+
+    def test_mixed_change_keeps_the_code_profile_and_adds_the_prototype_items(self):
+        report = self.review('--files', 'helper.py', 'docs/prototypes/demo/index.html')
+        self.assertEqual(report['profile'], 'kod')
+        self.assertTrue(any('kotwice sN' in item for item in report['checklist']))
+
+    def test_prototype_root_of_the_manifest_and_override_paths(self):
+        self.manifest['prototype'] = {'root': 'mockups'}
+        self.save()
+        self.assertEqual(self.review('--files', 'mockups/a/index.html')['profile'], 'prototyp')
+        self.manifest['workflow']['review'] = {'prototype_paths': ['screens/**']}
+        self.save()
+        self.assertEqual(self.review('--files', 'screens/a.html')['profile'], 'prototyp')
+
+    def test_project_and_manifest_only_add_items_and_never_remove_the_core_ones(self):
+        self.manifest['project'] = {'name': 'Team/Service'}
+        (self.library / 'workflow/projects').mkdir()
+        (self.library / 'workflow/projects/Team-Service.yaml').write_text(yaml.safe_dump(
+            {'review': {'prototype': ['P: project item', self.CORE[0]]}}, allow_unicode=True), encoding='utf-8')
+        self.manifest['workflow']['review'] = {'prototype': ['P: manifest item', 'P: project item', 'p: manifest item', 'P:  manifest item']}
+        self.save()
+        # core first, then project, then manifest; the equal text keeps its first place; spacing/case variants are new items
+        universe = self.CORE + ['P: project item', 'P: manifest item', 'p: manifest item', 'P:  manifest item']
+        checklist = self.review('--files', 'docs/prototypes/d/index.html')['checklist']
+        self.assertEqual([item for item in checklist if item in universe], universe)
+
+    def test_other_review_lists_are_still_replaced_by_the_manifest(self):
+        self.defaults({'review': {'core': ['default core'], 'prototype': list(self.CORE)}})
+        self.manifest['workflow']['review'] = {'core': ['manifest core']}
+        self.save()
+        checklist = self.review('--files', 'docs/prototypes/d/index.html')['checklist']
+        self.assertIn('manifest core', checklist)
+        self.assertNotIn('default core', checklist)
+        self.assertEqual([i for i in checklist if i in self.CORE], self.CORE)
+
+    def test_a_library_without_the_key_gives_no_prototype_items(self):
+        self.defaults({'review': {'core': ['c']}})
+        report = self.review('--files', 'docs/prototypes/d/index.html')
+        self.assertEqual(report['profile'], 'prototyp')
+        self.assertEqual(report['checklist'], ['c'])
+
+    def test_invalid_prototype_values_are_rejected(self):
+        for value in (None, 'one item', [''], [None], ['a', ['b']], [1]):
+            with self.subTest(value=value):
+                self.manifest['workflow']['review'] = {'prototype': value}
+                self.save()
+                self.rejected('review', '--files', 'helper.py')
+
+    def test_an_invalid_level_is_an_error_even_when_a_later_level_is_valid(self):
+        self.manifest['project'] = {'name': 'Team/Service'}
+        (self.library / 'workflow/projects').mkdir()
+        project = self.library / 'workflow/projects/Team-Service.yaml'
+        self.manifest['workflow']['review'] = {'prototype': ['P: manifest item']}   # a valid manifest after an invalid project file
+        self.save()
+        for value in (None, 'x', ['p1', 3], [''], {'a': 1}, [['n']]):
+            with self.subTest(project_value=value):
+                project.write_text(yaml.safe_dump({'review': {'prototype': value}}, allow_unicode=True), encoding='utf-8')
+                self.rejected('review', '--files', 'helper.py')
+
+    def test_prototype_paths_must_be_a_list_of_texts(self):
+        for value in ('docs/prototypes/**', None, [1], ['']):
+            with self.subTest(value=value):
+                self.manifest['workflow']['review'] = {'prototype_paths': value}
+                self.save()
+                self.rejected('review', '--files', 'helper.py')
+
+    def test_an_unknown_profile_is_refused_and_a_scalar_checklist_is_rejected(self):
+        self.rejected('review', '--files', 'helper.py', '--profile', 'nonsense')
+        self.manifest['workflow']['review'] = {'prototype': 'one item'}
+        self.save()
+        self.rejected('review', '--files', 'helper.py')
+
+
+class ReadinessSummaryWarning(WorkflowFixture):
+    """`readiness --plan` and `doctor`: a plan being prepared without `## Streszczenie dla człowieka` gets a warning, never a block."""
+
+    BODY = '# Contracts\ncontract\n# Risks\nrisk\n# Evidence\nevidence\n'
+
+    def plan(self, status, summary=''):
+        (self.root / 'plan.md').write_text(f'# Plan\n\nStatus: {status}\n\n{summary}{self.BODY}', encoding='utf-8')
+        return self.report('readiness', '--files', 'helper.py', '--plan', 'plan.md')
+
+    def test_a_draft_or_approved_plan_without_the_summary_warns_and_still_passes(self):
+        for status in ('draft', 'approved'):
+            with self.subTest(status=status):
+                report = self.plan(status)
+                self.assertEqual(report['status'], 'PASS')
+                self.assertTrue(any('Streszczenie dla człowieka' in item for item in report.get('warnings', [])), report)
+
+    def test_no_warning_with_the_summary_or_for_a_plan_past_preparation(self):
+        self.assertNotIn('warnings', self.plan('draft', '## Streszczenie dla człowieka\nCo zmieniamy: x\n\n'))
+        for status in ('in_progress', 'done', 'archived'):
+            with self.subTest(status=status):
+                self.assertNotIn('warnings', self.plan(status))
+
+    def test_doctor_warns_about_a_plan_without_the_summary(self):
+        (self.root / 'docs/plans').mkdir(parents=True)
+        (self.root / 'docs/plans/2026-11-15-a.md').write_text('# A\n\nStatus: draft\n', encoding='utf-8')
+        (self.root / 'docs/plans/2026-11-15-b.md').write_text('# B\n\nStatus: draft\n\n## Streszczenie dla człowieka\nx\n', encoding='utf-8')
+        doctor = self.cli('doctor')
+        findings = json.loads(doctor.stdout)['findings']
+        paths = [f['path'] for f in findings if 'Streszczenie dla człowieka' in f['reason']]
+        self.assertEqual(paths, ['docs/plans/2026-11-15-a.md'])
 
 
 class ReadinessPrototypeGate(WorkflowFixture):

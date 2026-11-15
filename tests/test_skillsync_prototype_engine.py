@@ -49,7 +49,7 @@ def find_node():
 # Kopia: tests/fixtures/prototype/engine-v2/ (SOURCE.md). Strona Pythona: skillsync_workflow/prototype_server.py.
 
 ENGINE_V2_DIR = Path(__file__).resolve().parent / 'fixtures' / 'prototype' / 'engine-v2'
-ENGINE_V2_SHA256 = 'd2b8655aa6dcc73fe27cd436a3a00eac64200ebd1d855aaeda0f65d8ca641ddc'
+ENGINE_V2_SHA256 = 'c7aaa1affae570ca946ca0f6477f4f704a40532417ddc4c647284ac0bb6ef1e5'
 REFRESH_V2 = 'Odśwież kopię wg tests/fixtures/prototype/engine-v2/SOURCE.md i zaktualizuj ENGINE_V2_SHA256.'
 ENGINE_V2_PATH_ENV = 'SKILLSYNC_PROTOTYPE_ENGINE_V2_PATH'
 DIFF_SEEDS = (20261104, 7, 1234567, 99, 424242, 31337)
@@ -3218,6 +3218,50 @@ class EngineV2ExportContractTests(unittest.TestCase):
         self.assertEqual(text, 'Ekran w iteracji 4 jest taki sam jak bieżący.')
         self.assertNotEqual(text, self.one('restoreUnchangedText', 5))
         self.assertIn('taki sam', self.one('restoreUnchangedText', None), 'brak numeru nie wywraca komunikatu')
+
+
+class PresentationModeSourceTests(unittest.TestCase):
+    """Presentation mode (one screen at a time): static guards on the engine and the stylesheet; the behaviour is `tests/e2e/prototype/p.mjs`."""
+
+    REPO = Path(__file__).resolve().parents[1] / 'library' / 'skills' / 'prototype' / 'assets' / 'repo'
+
+    def setUp(self):
+        self.js = (self.REPO / 'prototype.js').read_text(encoding='utf-8')
+        self.css = (self.REPO / 'prototype.css').read_text(encoding='utf-8')
+
+    def test_state_lives_in_session_storage_of_the_tab_never_in_local_storage(self):
+        block = self.js[self.js.index('const Presentation = (() => {'):self.js.index('return Object.freeze({ start: start, state: state });')]
+        self.assertIn('window.sessionStorage.setItem', block)
+        self.assertIn('window.sessionStorage.getItem', block)
+        self.assertNotIn('localStorage', block)
+        for call in ('sessionStorage.setItem', 'sessionStorage.getItem', 'sessionStorage.removeItem'):
+            index = block.index(call)
+            self.assertIn('try {', block[max(0, index - 200):index], call + ' must be inside try/catch (private mode throws)')
+
+    def test_scroll_spy_ignores_the_hidden_screens_in_the_mode(self):
+        self.assertIn("if (PageState.flags.presentation) return;   // presentation: the hidden screens have no box", self.js)
+        self.assertIn("      if (PageState.flags.presentation) return;\n      lastScrollAt = Date.now();", self.js)
+
+    def test_keys_skip_typing_dialogs_and_modifiers_and_the_single_key_shortcuts_can_be_switched_off(self):
+        self.assertIn("if (facts.typing || facts.isComposing || facts.dialog || event.ctrlKey || event.metaKey || event.altKey) return false;", self.js)
+        self.assertIn("words('c C g G p P [ ] ArrowLeft ArrowRight Home End')", self.js)
+        self.assertIn('Presentation.start();\n    ScreenNav.start();', self.js)   # the key handler of the mode goes before the one of the switcher
+
+    def test_arrows_work_on_the_bar_buttons_but_not_with_shift_and_the_mode_flag_is_cleared_without_screens(self):
+        block = self.js[self.js.index('const Presentation = (() => {'):self.js.index('return Object.freeze({ start: start, state: state });')]
+        self.assertIn("facts.neutralFocus === false && !onBarButton", block)   # a click leaves the focus on the button: the arrows keep working
+        self.assertIn("if (event.shiftKey) return false;", block)
+        self.assertIn("if (!list.length) { PageState.setFlag('presentation', false); return; }", block)
+        self.assertIn("ScreenNav.state.forced = null;", block)
+
+    def test_the_engine_exports_no_new_names_for_the_mode(self):
+        self.assertNotIn('Presentation', self.js[self.js.index('const EXPORT_MAP = {'):])
+
+    def test_the_stylesheet_hides_other_screens_and_prints_only_the_current_one_without_the_bar(self):
+        self.assertIn('.proto-presentation .proto-screen-hidden { display: none !important; }', self.css)
+        self.assertIn('.proto-presentation-bar { display: none; }', self.css)
+        self.assertRegex(self.css, r'@media print \{\s*\.proto-presentation \.proto-presentation-bar \{ display: none; \}\s*\}')
+        self.assertNotRegex(self.css, r'@media print[^}]*proto-screen-hidden')   # the hiding itself is not print-specific: the same rule prints one screen
 
 
 if __name__ == '__main__':

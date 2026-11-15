@@ -285,6 +285,13 @@ class DefaultsRowTest(MergeCase):
                              {'routing': {'rules': [dict(rule_b), {'topics': ['d']}]}})
         self.assertEqual(merged.data['routing']['rules'], [rule_a, rule_b, rule_c, {'topics': ['d']}])
 
+    def test_review_prototype_items_are_appended_in_use_order_without_duplicates(self):
+        merged = self.merged({'review': {'prototype': ['one', 'two'], 'core': ['c']}},
+                             {'review': {'prototype': ['two', 'three'], 'core': ['replaced']}},
+                             {'review': {'prototype': ['four']}})
+        self.assertEqual(merged.data['review']['prototype'], ['one', 'two', 'three', 'four'])
+        self.assertEqual(merged.data['review']['core'], ['replaced'])   # the other review lists are still replaced
+
     def test_guardrails_checks_without_id_are_appended_with_deduplication(self):
         merged = self.merged({'guardrails': {'checks': [{'run': 'one'}, {'run': 'two'}]}},
                              {'guardrails': {'checks': [{'run': 'two'}, {'run': 'three'}]}})

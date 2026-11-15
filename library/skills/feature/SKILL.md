@@ -141,7 +141,7 @@ określa format; `pre-implement` sprawdza zmiany kontraktów i wysokie ryzyko.
 2. `explore` lokalizuje pliki i wzorce; wnioski architektoniczne wyciąga orkiestrator z kodu.
 3. Zapisz `docs/plans/RRRR-MM-DD-<slug>.md` ze statusem `draft`, przy `plan-large` w akcie II (szkic przy „GO plan”) (cel, kryteria, kroki z rolą i
    plikami, TESTY, zasoby, ryzyka, **Dokumentacja i wiedza**, **Wersja i changelog** z pytaniem do
-   użytkownika); wymagana zawartość: [plan](references/plan-details.md).
+   użytkownika); wymagana zawartość: [plan](references/plan-details.md); plan zaczyna się sekcją `## Streszczenie dla człowieka` (Co zmieniamy, Czego nie robimy, Ryzyka, Decyzje do podjęcia; do 40 linii), a „Wynik” ma wzór z blokiem „Uwagi z review” i tabelą pokrycia kryteriów ([wzór](references/plan-details.md#wynik-wzór)).
    Dodaj „Terminologia domenowa”: potwierdzone terminy, kandydaci do wyjaśnienia albo
    uzasadniony brak nowych terminów ([zasady](../workflow/references/knowledge.md)).
    Bramka planu: `plan-large` (nowa zdolność, architektura, schemat, kontrakt API, wiele
@@ -282,6 +282,8 @@ Commity, push i deploy według trybu dostarczania i słów zgody z rdzenia AGENT
 „CP” wypycha gałąź roboczą na jej zdalny odpowiednik; na bazę tylko `CP <gałąź>` albo zapisana w planie linia `Oddanie: <gałąź>`
 (pytanie przy pierwszym `CP`, gdy `delivery.base` różni się od roboczej). Wyjątek: „TAK P<n>” po retrospektywie jest poleceniem commita tej jednej zmiany tekstowej, bez pusha; działa tylko w głównym checkoucie (w worktree propozycje są `deferred`, a słowa nie działają), a propozycję z innego przebiegu wskaż jako „TAK <run-id>/P<n>” / „NIE <run-id>/P<n>” ([retro-quality](references/retro-quality.md)).
 Przy wejściu z klucza polecenia i ich zakres opisuje [pr-after-approval](references/pr-after-approval.md).
+Końcowe słowo zgody trybu dostarczania (`READY` w `pr`, `CP` w `direct`) jest też odbiorem: plan z krokiem „Odbiór” ([plan](references/plan-details.md)) ma po zamknięciu
+`needsHuman: acceptance`, dopóki słowa nie ma w `approvals.jsonl` przebiegu (plan bez katalogu przebiegu to historia); słowo wpisane przez użytkownika w sesji zapisujesz `skillsync approvals record`.
 Wykonany plan (`done`) można zarchiwizować: `skillsync plan archive <projekt> <plik>` (zmienia tylko `Status:`; `archived` jest poza kolejkami, bez `needsHuman`).
 Po `done` zaproponuj `codereview` (tryb „przed PR”) na gotowych zmianach, zanim powstanie PR.
 Wejście z klucza: agentowe review to zawsze `reviewer`; `codereview` uruchom przy System Impact High albo ryzyku high,

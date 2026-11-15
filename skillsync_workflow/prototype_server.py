@@ -3026,11 +3026,57 @@ def can_answer(question, viewer):
     return 'expert' in _viewer_roles(viewer) and _is_addressed(question, viewer)
 
 
+PREVIEW_LABEL = 'uczestnik'   # what the read-only preview shows for a person without a name in the users file (never a login)
+
+
+def _preview_name(login, names):
+    """Display name of a person in the preview: the `name` of the account (`names` is `{normalized login: name}`), else a plain label."""
+    key = normalize_login(login) if isinstance(login, str) else None
+    name = names.get(key) if key else None
+    if not isinstance(name, str) or not name.strip():
+        return PREVIEW_LABEL
+    # a name that is (or contains) an address, or equals the login, is no better than the login: `users add --name` takes any text
+    if '@' in name or normalize_login(name) in (key, key.split('@')[0]):
+        return PREVIEW_LABEL
+    return name
+
+
+def preview_view(question, slug, names):
+    """Read-only view of a question for an account that is neither developer, acceptor nor expert (`preview`): built from a WHITE list of
+    fields, so nothing else of the record can leak. No login or e-mail address appears anywhere: addressees are only counted (`forAll`
+    or `addresseeCount`), authors of the answer and of the comments are shown by the name of the account or by a plain label,
+    the withdrawal has no author, `origin` (the repository path of the spec), `recorded` (but its time) and `refersTo` are left out."""
+    answer = question['answer']
+    shown_answer = None
+    if answer is not None:
+        shown_answer = {key: _clone(answer[key]) for key in ('at', 'optionId', 'optionIds', 'text', 'comment', 'confirm') if key in answer}
+        shown_answer['by'] = _preview_name(answer.get('by'), names)
+    comments = []
+    for comment in question['comments']:
+        shown = {key: comment[key] for key in ('id', 'at', 'text', 'late') if key in comment}
+        shown['by'] = _preview_name(comment.get('by'), names)
+        comments.append(shown)
+    withdrawn = question['withdrawn']
+    addressees = question['addressees']
+    return {
+        'id': question['id'], 'slug': slug, 'text': question['text'], 'state': question['state'], 'at': question['at'],
+        'blocking': question['blocking'], 'assumed': question['assumed'], 'by': 'agent',
+        'forAll': addressees == 'all', 'addresseeCount': None if addressees == 'all' else len(addressees),
+        'refs': _clone(question['refs']), 'options': _clone(question['options']), 'multi': question['multi'],
+        'answer': shown_answer, 'comments': comments,
+        'withdrawn': None if withdrawn is None else {'at': withdrawn['at'], 'reason': withdrawn.get('reason')},
+        'recorded': None if question['recorded'] is None else {'at': question['recorded']['at']},
+        'refersTo': None, 'origin': None, 'canAnswer': False, 'preview': True,
+    }
+
+
 def question_view(question, viewer, by_id=None, slug=None):
     """JSON model of `question` for `viewer` (`{login, roles}`), or None when the viewer must not see it.
 
     The admin view has `addressees`; the expert view has only `forAll` and no `refersTo` unless the
     referenced question is visible to the viewer (`by_id` is needed to know; without it `refersTo` is dropped)."""
+    if isinstance(viewer, dict) and viewer.get('preview'):
+        return preview_view(question, slug, viewer.get('names') or {})
     if not can_view_question(question, viewer):
         return None
     admin = _is_admin_viewer(viewer)
@@ -6516,6 +6562,8 @@ class PrototypeApp(object):
                 views.extend(old)
         views.sort(key=lambda item: (item['at'], item['id']))
         result = {'questions': views, 'runs': runs, 'legacy': legacy_info}
+        if viewer.get('preview'):
+            result['preview'] = True
         if damaged and any(role in viewer['roles'] for role in PRIVILEGED_ROLES):
             result['damaged'] = [item for item in damaged if item is not None] + (['questions.json'] if None in damaged else [])
         return result
@@ -7216,14 +7264,27 @@ class PrototypeRequestHandler(LingeringCloseMixin, BaseHTTPRequestHandler):
             raise PrototypeServerError(403, 'forbidden', 'your role has no access to expert questions')
         return {'login': user['login'], 'roles': have}
 
+    def _questions_read_gate(self, session, user):
+        """Read gate of the question routes: `developer`/`acceptor`/`expert` get their own view, any other signed-in account (the
+        default role `commenter`) gets the read-only PREVIEW (`viewer.preview`: no login of a person, no forms); no session is still 401
+        and `mustChange` 403. Writes keep `_questions_gate` and its role check."""
+        if session is None or user is None:
+            raise PrototypeServerError(401, 'unauthorized', 'login required')
+        if user['mustChange']:
+            raise PrototypeServerError(403, 'password_change_required', 'change the password first')
+        have = roles_of(user)
+        if any(role in have for role in ('developer', 'acceptor', 'expert')):
+            return {'login': user['login'], 'roles': have}
+        return {'login': user['login'], 'roles': have, 'preview': True, 'names': self.app.users.names()}
+
     def _api_questions_list(self, session, user, slug=None):
-        viewer = self._questions_gate(session, user, ('developer', 'acceptor', 'expert'))
+        viewer = self._questions_read_gate(session, user)
         if slug is not None:
             self.app.questions_store(slug)   # 404 for an invalid slug or a directory that is not a prototype
         self._json(200, self.app.collect_questions(viewer, slug))
 
     def _api_question_get(self, question_id, session, user, slug=None):
-        viewer = self._questions_gate(session, user, ('developer', 'acceptor', 'expert'))
+        viewer = self._questions_read_gate(session, user)
         if slug is not None:
             self.app.questions_store(slug)
         found = self.app.locate_question(question_id, slug)
@@ -7687,7 +7748,7 @@ EXPERTS_SCRIPT = r"""
     var rest = location.pathname.slice(BASE.length).replace(/^\//, '');
     return /^[a-z0-9]+(-[a-z0-9]+)*$/.test(rest) ? rest : null;
   })();
-  var state = { csrf: null, viewer: null, questions: [], runs: [], legacy: null, current: null, pending: {}, busy: {} };
+  var state = { csrf: null, viewer: null, questions: [], runs: [], legacy: null, preview: false, current: null, pending: {}, busy: {} };
   var listBox = document.getElementById('list');
   var detail = document.getElementById('detail');
   var alertBox = document.getElementById('alert');
@@ -7745,7 +7806,7 @@ EXPERTS_SCRIPT = r"""
       refreshSession();
       return 'Sesja się zmieniła. Odśwież stronę i spróbuj ponownie.';
     }
-    if (status === 403) return 'Brak uprawnień: ta akcja wymaga roli ekspert i pytania skierowanego do Ciebie.';
+    if (status === 403) return 'Brak uprawnień: ta akcja wymaga roli ekspert i pytania skierowanego do Ciebie. Możesz przeglądać pytania; odpowiedzi udzielają eksperci, do których pytanie jest skierowane.';
     if (status === 404) return 'Nie znaleziono pytania (nie istnieje albo nie jest do Ciebie).';
     if (status === 409 && code === 'withdrawn') return 'To pytanie zostało wycofane: nie można już na nie odpowiedzieć ani go skomentować.';
     if (status === 409 && code === 'migration_required') return 'To pytanie jest w starym pliku, tylko do odczytu. Programista musi je przenieść (skillsync prototype question migrate).';
@@ -7772,6 +7833,7 @@ EXPERTS_SCRIPT = r"""
   function validQuestion(question) {
     return !!question && typeof question === 'object' && typeof question.id === 'string' && typeof question.text === 'string';
   }
+  var PREVIEW_NOTE = 'Podgląd: pytania do ekspertów (tylko odczyt). Możesz przeglądać pytania; odpowiedzi udzielają eksperci, do których pytanie jest skierowane.';
   var OFFLINE = 'Brak połączenia z serwerem (offline), spróbuj ponownie.';
   var POLL_MS = 15000;
   var BASE_TITLE = 'Pytania do eksperta';
@@ -7854,7 +7916,11 @@ EXPERTS_SCRIPT = r"""
     var url = null;
     try { url = new URL(href); } catch (error) { url = null; }
     box.appendChild(title);
-    if (url && url.protocol === 'https:' && !url.username && !url.password) {
+    var screen = /^\/([a-z0-9]+(?:-[a-z0-9]+)*)\/index\.html#s([0-9]+)$/.exec(href);   // a screen of a prototype on this server: `/<slug>/index.html#sN` (nothing else is a link)
+    if (screen) {
+      box.appendChild(document.createTextNode(' '));
+      box.appendChild(el('a', { href: href, target: '_blank', rel: 'noopener noreferrer', text: 'Zobacz ekran s' + screen[2] }));
+    } else if (url && url.protocol === 'https:' && !url.username && !url.password) {
       box.appendChild(document.createTextNode(' '));
       box.appendChild(el('a', { href: url.href, target: '_blank', rel: 'noopener noreferrer', text: url.href }));
     } else if (href) {
@@ -7916,6 +7982,8 @@ EXPERTS_SCRIPT = r"""
       detail.appendChild(el('p', { 'class': 'muted', text: 'Nie można już na nie odpowiedzieć ani go skomentować.' }));
     } else if (question.canAnswer) {
       detail.appendChild(answerForm(question));
+    } else if (state.preview) {
+      detail.appendChild(el('p', { 'class': 'muted', text: 'Tylko odczyt: odpowiedzi udzielają eksperci, do których pytanie jest skierowane.' }));
     } else {
       detail.appendChild(el('p', { 'class': 'muted', text: 'Nie możesz odpowiedzieć na to pytanie (rola ekspert i adresowanie do Ciebie są wymagane). Możesz je skomentować.' }));
     }
@@ -7929,7 +7997,7 @@ EXPERTS_SCRIPT = r"""
       ]));
     });
     detail.appendChild(comments);
-    if (question.state !== 'withdrawn') detail.appendChild(commentForm(question));   // nothing to say on a withdrawn question
+    if (question.state !== 'withdrawn' && !state.preview) detail.appendChild(commentForm(question));   // nothing to say on a withdrawn question
     if (!keepFocus) heading.focus();
     syncBusy();
   }
@@ -8215,6 +8283,9 @@ EXPERTS_SCRIPT = r"""
         state.questions = result.data.questions;
         state.runs = Array.isArray(result.data.runs) ? result.data.runs : [];
         state.legacy = result.data.legacy || null;
+        state.preview = result.data.preview === true;   // an account without a role of the experts: read only, no forms
+        var note = document.getElementById('preview-note');
+        if (note) { note.textContent = state.preview ? PREVIEW_NOTE : ''; note.hidden = !state.preview; }
         state.listSig = JSON.stringify([state.questions, state.runs, state.legacy]);
         updateTitle();
         return true;
@@ -8282,6 +8353,7 @@ EXPERTS_PAGE = """<!doctype html>
 <header>
 <h1>Pytania do eksperta</h1>
 <p class="who" id="who"></p>
+<p class="muted" id="preview-note" hidden></p>
 </header>
 <div class="layout">
 <nav aria-label="Lista pytań" id="list"><p class="muted">Ładowanie…</p></nav>

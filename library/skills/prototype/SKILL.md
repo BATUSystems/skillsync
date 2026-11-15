@@ -169,7 +169,7 @@ Komentarz konta z rolą `expert` (bez roli programisty ani akceptującego) to **
 i zmienia makietę dopiero po `decide` osoby z rolą programisty albo akceptującego. Rola z `authorRole` (string, najwyższa rola konta) to
 nie wszystko: pełną listę ról podają `authorRoles` (komentarze) i `whoRoles` (decyzje); konto z `expert` **i** programistą/akceptującym nie jest
 doradcze. Akceptuje nadal wyłącznie człowiek z rolą akceptującego albo programisty. Pytania domenowe do eksperta to osobny kanał
-(`prototype question …`, skill `feature`, spec), nie wątki makiety.
+(`prototype question …`, skill `feature`, spec), nie wątki makiety. Pytanie dotyczące ekranu **musi** mieć link do ekranu (`prototype question add --screen <prototyp>#s<N>`), a pytania do eksperta pisz bez żargonu technicznego (zwykłe zdania o tym, co widać na ekranie; reguły i przykład dobrego i złego pytania: [spec](../feature/references/spec.md)).
 
 ### Decyzje i iteracje
 

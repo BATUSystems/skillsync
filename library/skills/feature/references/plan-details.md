@@ -14,6 +14,12 @@ ma dosłowne nagłówki `Cel` (z odnośnikiem do speca), `Kryteria akceptacji (m
 i mapa wymagań FRD są w specu), `TESTY` (komendy), `Dokumentacja i wiedza` oraz kroki, zasoby, wersję, Progress i Wynik. Przy FRD plan
 zapisuje sha pliku FRD i założenia z `LUKI` ([frd-intake](frd-intake.md)). Statusy, sha i wznowienie speca: [spec](spec.md).
 
+**Streszczenie dla człowieka.** Plan zaczyna się sekcją `## Streszczenie dla człowieka` (nagłówek dosłowny, zaraz po liniach metadanych),
+do jednego ekranu: do 40 linii i do 4000 znaków (tyle pokazuje strona statusu; dłuższy tekst jest przycinany znakiem `…`). Cztery bloki:
+**Co zmieniamy**, **Czego nie robimy**, **Ryzyka**, **Decyzje do podjęcia** (każda z rekomendacją). Nie powtarzaj w niej treści planu.
+`skillsync readiness --plan` i `skillsync doctor` ostrzegają (warning, bez blokady), gdy plan `draft` albo `approved` nie ma tej sekcji
+lub jest pusta; plany `in_progress`, `done` i `archived` bez niej są poprawne. `skillsync status` podaje sekcję w `plans[].summary`.
+
 Plan ze statusem `draft` zawiera: cel, kryteria akceptacji (przy specu: mapowanie), kroki z rolą, plikami i ryzykiem kroku, zależności,
 instrukcje/skille do odczytu, TESTY, zasoby, ryzyka, **Dokumentacja i wiedza**, **Wersja i changelog**
 (propozycja wersji; pytanie do właściciela) oraz otwarte pytania. Przy linii `Spec:` zakres, kontrakty, migracja i ryzyka są w specu, a ścieżka jest względna do katalogu projektu. Sekcja wiedzy wskazuje dokumenty
@@ -82,9 +88,44 @@ PR: #123 (link: https://example.com/pr/123)
 - Ostatni krok `Progress` to zamknięcie przebiegu (rola: orkiestrator): „Wynik”, `retro-quality`, checkpoint `--final`,
   `Status: done` planu i `implemented` speca. Bez niego plan po ostatnim `[x]` zostaje `in_progress` i `skillsync status`
   zgłasza `needsHuman: closure`. Przy `ceremony: demo` `retro-quality` jest odroczone do podsekcji „Dług (ceremony: demo)” w „Wyniku” ([ceremonia demo](ceremony-demo.md)).
+- **Krok „Odbiór”** (rola: orkiestrator; plan z nim jest opcjonalny, plany bez niego działają jak dotąd) stoi przed krokami zamknięcia przebiegu
+  i kończy się, gdy człowiek dostał materiał do odbioru: **listę kontrolną** (jedna linia na kryterium speca: co sprawdzić ręcznie albo gdzie jest
+  dowód automatyczny i jak go zobaczyć) oraz tabelę pokrycia „kryterium → test(y) → wynik” (wzór w „Wyniku”). Agent zaznacza go `[x]` po
+  przekazaniu materiału; to przygotowanie, nie zgoda. **Odbiorem jest końcowe słowo zgody trybu dostarczania**, to samo, które już dziś kończy
+  przebieg: `READY` w trybie `pr`, `CP` w trybie `direct` (żadnego nowego słowa, przycisku ani rodzaju zgody). Po zamknięciu przebiegu (`done`) plan z
+  krokiem „Odbiór” i aktywnym przebiegiem (istnieje `.skillsync/runs/<run-id>/`) ma `needsHuman: acceptance` do czasu wpisu tego słowa w `.skillsync/runs/<run-id>/approvals.jsonl` (z sha commitu, w którym plan jest już `done`)
+  (przycisk strony statusu albo `skillsync approvals record` po słowie wpisanym przez użytkownika w sesji); kolejne commity nie zapalają zamkniętego planu od nowa, a
+  zaznaczenie kroku ani linia w planie niczego nie gaszą. `closure` i `acceptance` nie występują naraz: najpierw zamknięcie (`in_progress`, wszystkie `[x]`),
+  potem `acceptance` (`done`). Uwagi z odbioru wracają jako nowe kroki planu, nie jako zgoda.
 - Fazy to nagłówki poziomu 3 lub niższego; nagłówek poziomu 2 zamyka sekcję `Progress`.
 - Linia `PR: #<n> (link: <url>)` zaczyna wiersz (nie jest punktem listy ani cytatem) i stoi pod `## Progress`; opcjonalna `Ticket: <KEY> (link: <url>)` ma klucz Jira, np. `ABC-123`.
 - Plany bez `Progress` (starsze) są poprawne i nie wymagają migracji; opcjonalny przebieg do PR-a opisuje [pr-run](../../pr-run/SKILL.md).
+
+## Wynik: wzór
+
+Sekcja `## Wynik` powstaje przy zamknięciu przebiegu i ma stałe podsekcje (kolejność jak niżej; „brak” zapisz wprost):
+
+```markdown
+## Wynik
+### Zmiany i dowody
+### Uwagi z review
+| Uwaga (tytuł) | Waga | Co zrobiono |
+|---|---|---|
+| Przykład uwagi | major | naniesiono (commit 1a2b3c4) |
+### Pokrycie kryteriów
+| Kryterium | Test(y) | Wynik |
+|---|---|---|
+| K1 | tests/test_x.py::test_a | PASS |
+| K2 | bez testu: ręczny odbiór (uzasadnienie) | — |
+### Stare porażki i ograniczenia
+### Zdobyta wiedza
+```
+
+- **Uwagi z review:** wszystkie uwagi wagi `blocker` i `major` oraz każda uwaga, która zmieniła ekran, spec, plan albo kod, **z tytułem,
+  wagą i tym, co zrobiono** (naniesiono, odrzucono z powodem, odłożono), także gdy uwaga została naniesiona (naniesiona nie znika w liczbie);
+  uwagi `minor` tylko liczbą; liczba rund według [pętli przeglądu](review-loop.md).
+- **Pokrycie kryteriów:** tabela „kryterium → test(y) → wynik”, źródło: kolumna „dowód” mapowania kryteriów planu. Brak testu jest
+  widoczny jako „bez testu” z uzasadnieniem, nie ukryty. To raport i dokumentacja, nie twarda bramka.
 
 ## Bramka prototypu
 

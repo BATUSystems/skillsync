@@ -24,7 +24,7 @@ from .ceremony import ceremony_info, validate_ceremony
 from .delivery_mode import delivery_info, validate_delivery_mode
 from .dispatch import validate_dispatch
 from .prototype import validate_prototype
-from .status import MAX_PLAN_BYTES, git_blob_sha, SPEC_FULL, SPEC_LINE, _STATUS, is_spec_path, plan_text_needs_human
+from .status import MAX_PLAN_BYTES, PLAN_SUMMARY, git_blob_sha, SPEC_FULL, SPEC_LINE, _STATUS, is_spec_path, plan_summary, plan_text_needs_human
 
 
 def plan_validation(root, manifest, library, profile='quick', files=None, check_ids=None):
@@ -741,6 +741,37 @@ def _closure_run_state(root, head):
     return f'run `{run_id}` has no `final` record'
 
 
+SUMMARY_MISSING = f'plan nie ma sekcji „## {PLAN_SUMMARY}” albo jest ona pusta (Co zmieniamy, Czego nie robimy, Ryzyka, Decyzje do podjęcia)'
+
+
+def plan_summary_missing(text):
+    """True when a plan being prepared (`draft`, `approved`) has no (or an empty) `## Streszczenie dla człowieka`; older plans
+    (`in_progress`, `done`, `archived`) are not asked for it."""
+    status = _STATUS.search(text[:4000])
+    word = status.group('word').lower() if status else ''
+    return word in ('draft', 'approved') and plan_summary(text) is None
+
+
+def plan_summary_findings(root):
+    """Paths of the plans in `docs/plans` that miss the human summary (see `plan_summary_missing`). Read only."""
+    directory = Path(root) / 'docs' / 'plans'
+    if directory.is_symlink() or not directory.is_dir():
+        return []
+    found = []
+    for path in sorted(directory.glob('*.md')):
+        if path.is_symlink() or not path.is_file() or path.name.lower() == 'readme.md':
+            continue
+        try:
+            if path.stat().st_size > MAX_PLAN_BYTES:
+                continue
+            text = path.read_text(encoding='utf-8')
+        except (OSError, UnicodeDecodeError):
+            continue
+        if plan_summary_missing(text):
+            found.append(f'docs/plans/{path.name}')
+    return found
+
+
 def plan_closure_findings(root, agentflow=False):
     """Ostrzeżenia o niezamkniętych planach: `done` bez zamknięcia przebiegu albo `in_progress` ze wszystkimi krokami
     `Progress` odhaczonymi: [(ścieżka, powód)]. Tylko odczyt."""
@@ -1084,6 +1115,8 @@ def doctor(root, manifest, library):
         finding('warning', 'instructions', message)
     for plan_path, reason in plan_closure_findings(root, agentflow):
         finding('warning', plan_path, reason)
+    for plan_path in plan_summary_findings(root):
+        finding('warning', plan_path, SUMMARY_MISSING)
     return {'status': 'FAIL' if any(f['level'] == 'error' for f in findings) else 'PASS', 'findings': findings, 'budgets': sizes}
 
 
@@ -1208,6 +1241,8 @@ def readiness(root, manifest, library, files, plan=None, risk=None):
                                  'faza nie jest rozpoznana jako [UI]')
         if ui_phases and gate is not None and gate.get('bypassed'):
             gate_warnings.append('bramka pominięta przez właściciela')
+        if plan_summary_missing(text):
+            gate_warnings.append(SUMMARY_MISSING)
         if gate_warnings:
             report['warnings'] = gate_warnings
     return report
@@ -1286,6 +1321,23 @@ DOCS_CHECKLIST = [
 ]
 
 
+# Profil `prototyp`: zmiana dotyka wyłącznie prototypu (`prototype.root` z manifestu, domyślnie `docs/prototypes`) albo profil jest wskazany
+# jawnie (`--profile prototyp`). Lista rdzeniowa leży w `workflow/defaults.yaml` (`review.prototype`, warstwy DOPISUJĄ pozycje);
+# kod nie ma jej kopii (brak klucza w bibliotece = brak pozycji prototypu). Nadpisanie ścieżek: `workflow.review.prototype_paths`.
+PROTOTYPE_PATHS = ['docs/prototypes/**']
+REVIEW_PROFILES = ('kod', 'docs', 'prototyp')
+
+
+def prototype_profile(manifest, config, files):
+    """`prototype_files`: the changed files that live under the prototype root(s) (never empty when the change is a prototype one)."""
+    paths = list(config.get('prototype_paths', PROTOTYPE_PATHS))
+    prototype = manifest.get('prototype') if isinstance(manifest, dict) else None
+    root = prototype.get('root') if isinstance(prototype, dict) else None
+    if isinstance(root, str) and root.strip().strip('/') and '..' not in root and not root.startswith('/'):
+        paths.append(root.strip().strip('/') + '/**')
+    return [f for f in files if matches(f, paths)]
+
+
 DOCS_CODE_SUFFIXES = ('.py', '.ts', '.js', '.mjs', '.cjs', '.ps1', '.sh', '.css', '.html',
                       '.sql', '.go', '.rs', '.java', '.cs', '.rb', '.php', '.tsx', '.jsx', '.vue')   # kod pod docs/ nie jest dokumentacją
 
@@ -1297,7 +1349,7 @@ def docs_profile(config, files):
     return ('docs' if files and len(docs_files) == len(files) else 'kod'), docs_files
 
 
-def review(root, manifest, library, files, risk=None):
+def review(root, manifest, library, files, risk=None, profile=None):
     files = normalize_files(root, files)
     workflow = workflow_config(root, manifest, library)
     config = workflow.get('review', {})
@@ -1309,12 +1361,19 @@ def review(root, manifest, library, files, risk=None):
     for area in areas:
         checklist.extend(additions.get(area, []))
     checklist.extend(config.get('project', []))
-    profile, docs_files = docs_profile(config, files)
+    if profile is not None and profile not in REVIEW_PROFILES:
+        raise ValueError(f'Unknown review profile: {profile!r} (expected one of {", ".join(REVIEW_PROFILES)})')
+    detected, docs_files = docs_profile(config, files)
+    prototype_files = prototype_profile(manifest, config, files)
+    if profile is None:
+        profile = 'prototyp' if files and len(prototype_files) == len(files) else detected
+    if profile == 'prototyp' or (profile != 'docs' and prototype_files):
+        checklist.extend(config.get('prototype', []))
     if docs_files:
         checklist.extend(config.get('docs_checklist', DOCS_CHECKLIST))
     ui_evidence = config.get('ui_evidence', ['Critical UI path executed in browser', 'Error states verified', 'Keyboard accessibility verified']) if 'ui' in areas else []
     checklist.extend(ui_evidence)
-    return {'status': 'NOT_RUN', 'risk': risk, 'risks': areas, 'areas': areas, 'profile': profile, 'docsFiles': docs_files,
+    return {'status': 'NOT_RUN', 'risk': risk, 'risks': areas, 'areas': areas, 'profile': profile, 'docsFiles': docs_files, 'prototypeFiles': prototype_files,
             'checklist': checklist, 'ui_evidence': ui_evidence,
             'note': 'Review checklist only; independent review and UI evidence still required'}
 
@@ -1343,7 +1402,7 @@ def _cmd(args):
             if run_id is not None:
                 report['reportFile'] = write_readiness_report(root, run_id, report, args.plan)
         else:
-            report = review(root, manifest, library, files, args.risk)
+            report = review(root, manifest, library, files, args.risk, getattr(args, 'profile', None))
     except (OSError, ValueError, TypeError, KeyError, yaml.YAMLError, subprocess.SubprocessError) as error:
         report = {'status': 'BLOCKED', 'reason': _redact(str(error))}
         run_id = getattr(args, 'run_id', None) if args.command == 'readiness' else None
@@ -1366,6 +1425,9 @@ def register(subparsers):
         if name in ('readiness', 'review'):
             parser.add_argument('--base')
             parser.add_argument('--risk', choices=['low', 'medium', 'high'])
+        if name == 'review':
+            parser.add_argument('--profile', choices=list(REVIEW_PROFILES),
+                                help='review profile (default: prototyp for a change inside the prototype root only, docs for documentation only, else kod)')
         if name == 'readiness':
             parser.add_argument('--plan')
             parser.add_argument('--run-id', help='write .skillsync/runs/<run-id>/readiness.md (first line Readiness: PASS|BLOCKED)')

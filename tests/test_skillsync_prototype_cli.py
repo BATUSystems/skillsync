@@ -122,6 +122,26 @@ class IdsTests(PrototypeFixture):
                          ('unchanged', [], []))
         self.assertNotIn('sprite_merge', [step['action'] for step in report['steps']])
 
+    @unittest.skipUnless(os.environ.get('SKILLSYNC_TEST_LIBRARY'),
+                         'set SKILLSYNC_TEST_LIBRARY to a v2 library to test its real engine')
+    def test_migrate_delivers_the_presentation_mode_engine_and_a_second_run_changes_nothing(self):
+        """K29: a prototype with the engine from before the presentation mode gets the current engine files from the library."""
+        assets = Path(os.environ['SKILLSYNC_TEST_LIBRARY']) / 'skills' / 'prototype' / 'assets'
+        self.proto('init', 'real', '--requirements', 'docs/req.md', '--assets', str(assets), assets=False)
+        directory = self.proto_dir('real')
+        for name in ('prototype.js', 'prototype.css'):
+            text = (directory / name).read_text(encoding='utf-8')
+            self.assertIn('proto-screen-hidden' if name.endswith('css') else 'const Presentation = (() => {', text)   # init copies the new engine
+            (directory / name).write_text(text.replace('proto-screen-hidden', 'proto-old-hidden').replace('const Presentation', 'const OldPresentation'), encoding='utf-8')
+        first = self.proto('migrate', 'real', '--assets', str(assets), assets=False)
+        copied = [step.get('path', '') for step in first['steps'] if step['action'] == 'copy_engine']
+        self.assertTrue(any(path.endswith('prototype.js') for path in copied), first['steps'])
+        self.assertTrue(any(path.endswith('prototype.css') for path in copied), first['steps'])
+        for name in ('prototype.js', 'prototype.css'):
+            self.assertEqual((directory / name).read_bytes(), (assets / 'repo' / name).read_bytes(), name)
+        second = self.proto('migrate', 'real', '--assets', str(assets), assets=False)
+        self.assertNotIn('copy_engine', [step['action'] for step in second['steps']])
+
     def test_example_screen_is_skipped_by_check(self):
         self.html(IDS_HTML.replace('<button type="button">Pierwszy</button>', '')
                   .replace('<button type="button">Trzeci</button>', '')

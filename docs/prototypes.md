@@ -136,8 +136,22 @@ Pasek u góry strony ma przełącznik ekranów (poprzedni, lista z wyszukiwaniem
 akceptujących) oraz przyciski „Pokaż hotspoty”, „Prezentacja”, „Ukryj pinezki” i „Motyw”.
 
 Pasek ekranów zaczyna się od linku „⌂” do galerii prototypów: pod `serve` to strona główna liczona na żywo (akceptacje i komentarze bez `index`), z `file://` link otwiera katalog nadrzędny, gdzie `skillsync prototype index` zostawia statyczny `index.html`. W iframe widoku mobile i w porównaniu iteracji paska nie ma, więc linku też nie.
-Skróty klawiszowe (poza polem tekstowym): ← i → poprzedni i następny ekran, G lista ekranów, C tryb komentarzy,
-`[` i `]` poprzedni i następny wątek w panelu, Esc zamyka okienko, a drugi Esc wyłącza tryb komentarzy.
+Skróty klawiszowe (poza polem tekstowym i bez Ctrl, Meta i Alt): ← i → poprzedni i następny ekran, G lista ekranów, C tryb komentarzy, P tryb prezentacji,
+`[` i `]` poprzedni i następny wątek w panelu, Esc zamyka okienko, a drugi Esc wyłącza tryb komentarzy. Skróty jednoznakowe (także P, Home i End w prezentacji)
+można wyłączyć (WCAG 2.1.4); wybór zapamiętuje przeglądarka.
+
+### Tryb prezentacji: jeden ekran naraz
+
+„Prezentacja” (przycisk w pasku albo w menu „⋯”, klawisz P, adres z `?mode=presentation`) pokazuje **jeden ekran**: bieżący; pozostałe `section.screen` mają klasę
+`proto-screen-hidden` (`display: none`), więc znikają razem ze swoimi pinezkami i wątkami. Nagłówek dokumentu, odnośniki do wymagań i notatki są ukryte jak dotąd. Ekran zmieniają
+← i → (także gdy lista ekranów jest zamknięta), Home i End (pierwszy i ostatni), przyciski ‹ › paska ekranów i paska prezentacji; licznik „N / M” jest w obu paskach, a adres
+`#sN` pokazuje bieżący ekran, więc odświeżenie i link wracają do tego samego ekranu. Wyjście: Esc (przy otwartej liście ekranów pierwszy Esc zamyka listę), P albo „Wyjdź (Esc)”;
+wyjście przywraca wszystkie ekrany, przewija do bieżącego i zdejmuje `?mode=presentation` z adresu. Stan trzyma `sessionStorage` karty (klucz osobny dla prototypu, nigdy
+`localStorage`; w przeglądarce bez pamięci tryb trwa do końca strony). Wybór wątku z panelu „Wątki” przełącza ekran, a chip akceptacji i „Wątki” działają jak zawsze (akceptacja dotyczy bieżącego
+ekranu). Przy ustawieniach wydruku w prezentacji drukuje się bieżący ekran bez paska prezentacji. Tryb działa także przy pasku linków (`data-proto-nav="strip"`).
+
+**Wdrożenie.** Tryb jest w silniku (`prototype.js`, `prototype.css`), więc istniejące prototypy dostają go przez `skillsync prototype migrate` (kopia plików silnika; drugi bieg nic nie zmienia);
+zmiana CSS może unieważnić akceptacje ekranów, lista jest w `acceptance` wyniku `migrate` ([sekcja „Aktualizacja silnika”](#aktualizacja-silnika-i-migracja-starego-prototypu)).
 
 ### Widok desktop / mobile
 
@@ -448,6 +462,7 @@ Pytania są osobne dla każdego przebiegu (prototypu o danym slugu): plik `<root
 więc etapy na jednej gałęzi nie mieszają pytań, a ekspert widzi każdy przebieg osobno.
 
 Agent: `skillsync prototype question add|list|show|export|record|withdraw|url|wait|merge|migrate|purge` ([cli](cli.md#pytania-do-eksperta-prototype-question-prototype-user-roles)).
+Pytanie o ekran **musi** mieć link do ekranu: `question add --screen <prototyp>#s<N>` (np. `--screen demo#s4`) zapisuje odnośnik `/<prototyp>/index.html#sN` (ścieżka bezwzględna tego samego serwera; wzorzec ścisły, `..`, `//host`, schematy, spacje, wielkie litery i kotwice bez cyfry są odrzucane), a strona `/_experts/<przebieg>` pokazuje go jako „Zobacz ekran sN” w nowej karcie (`rel="noopener noreferrer"`); inne adresy względne zostają zwykłym tekstem, a `https` jak dotąd. Odnośnik nie uwzględnia prefiksu serwera pośredniczącego (`public_url` z podścieżką). Pytania do eksperta piszemy **bez żargonu technicznego** (zwykłe zdania o tym, co człowiek widzi na ekranie, bez nazw pól, klas, komponentów i endpointów).
 Pytanie jest domyślnie **nieblokujące** (`--assume`: agent idzie dalej z wartością przyjętą, ekspert ją potwierdza albo koryguje);
 pytania o kontrakt, dane (schemat bazy), migrację i bezpieczeństwo to decyzja programisty: agent zadaje je jako zwykłe `Q` w sesji, nie ekspertowi; do eksperta idą tylko pytania domenowe, blokujące (`--blocking`) wtedy, gdy bez odpowiedzi nie da się zaprojektować ekranu. Pytanie jest do wszystkich ekspertów
 albo do wskazanych loginów (`--to`). Pierwsza odpowiedź zamyka pytanie i jest ostateczna: nie ma edycji ani unieważnienia, spór to nowe
@@ -460,6 +475,14 @@ oznacza to przez `question record`; programista dostaje informację, nie pytanie
   `question url` podaje adres strony razem z liczbą kont `expert`. Kolejność odpowiedzi: slug niezgodny z gramatyką slugów to 404 zawsze (także bez sesji);
   poprawny slug bez sesji to 302 do `/_login?next=<ścieżka>` (nie 404, więc bez logowania nie da się sprawdzić, czy przebieg istnieje);
   po zalogowaniu poprawny, ale nieistniejący slug otwiera stronę z pustym przebiegiem (200), bo dane strona czyta dopiero z API.
+- **Podgląd tylko do odczytu.** Zalogowane konto bez roli `developer`, `acceptor` i `expert` (domyślna rola `commenter`) dostaje na tej stronie podgląd: wszystkie pytania przebiegu
+  (treść, opcje, rekomendacja, stan, odpowiedzi i komentarze) bez formularzy i z nagłówkiem „Podgląd: pytania do ekspertów (tylko odczyt)”. API odczytu (`GET /_api/v1/questions` i
+  `/_api/v1/questions/<id>`) zwraca wtedy `preview: true` i widok z białej listy pól: bez loginów i adresów e-mail jakiejkolwiek osoby (adresaci tylko policzeni, autor odpowiedzi
+  i komentarza pokazany jako `name` konta albo „uczestnik”, wycofanie bez autora), bez ścieżki speca (`origin`) i bez `refersTo`; swobodny tekst pytania, odpowiedzi i komentarza nie jest przepisywany
+  (login wpisany tam przez autora byłby widoczny). Zapis odpowiedzi i komentarza zostaje 403 `forbidden` przed jakąkolwiek walidacją; bez sesji nadal 401, a konto z hasłem domyślnym 403
+  `password_change_required`.
+- Galeria (statyczna i na żywo) pokazuje przy prototypie link „Pytania” do `/_experts/<slug>` oraz link „Pytania” w nagłówku, gdy jakiś przebieg ma pytania (tylko tak albo nie: galeria nie podaje liczby ani treści, więc nic nie zdradza anonimowemu odwiedzającemu; strona `/_experts` wymaga logowania); przebieg bez pytań nie ma linku.
+  Statyczny `index.html` linkuje ścieżki bezwzględne serwera, więc link działa tylko wtedy, gdy galeria jest serwowana przez `prototype serve`.
 - Każde pytanie ma badge „Przebieg: <slug>”. Etykieta pytania: dla administratora nazwa pliku speca i `Q<n>`, dla eksperta `Q<n>`.
   Konto z hasłem domyślnym widzi komunikat i link do zmiany hasła; odpowiadać może dopiero po zmianie (403 `password_change_required`).
 - Lista pytań widocznych dla konta, szczegóły (tekst, linki, wyciągi), wybór wariantu (rekomendacja agenta jest oznaczona; w pytaniu wielokrotnego wyboru pola wyboru, zatwierdzenie

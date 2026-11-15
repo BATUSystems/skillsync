@@ -219,18 +219,90 @@ class RoleAndVisibilityTests(QCase):
     def ids(self, response):
         return [item['id'] for item in self.check(response, 200).json['questions']]
 
-    def test_commenter_is_403_forbidden_on_every_route_also_for_unknown_ids(self):
+    def test_commenter_writes_are_403_forbidden_also_for_unknown_ids_and_nothing_is_stored(self):
         commenter = self.who(S.A)
         before = self.stored()
-        for response in (commenter.get('/_api/v1/questions'), commenter.get('/_api/v1/questions/%s' % Q1),
-                         commenter.get('/_api/v1/questions/%s' % QX),
-                         self.answer(commenter, Q1, {'cid': 'c-1', 'confirm': True}),
+        for response in (self.answer(commenter, Q1, {'cid': 'c-1', 'confirm': True}),
                          self.comment(commenter, Q1, {'cid': 'c-2', 'text': 'x'}),
-                         self.comment(commenter, QX, {'cid': 'c-3', 'text': 'x'})):
+                         self.comment(commenter, QX, {'cid': 'c-3', 'text': 'x'}),
+                         self.answer(commenter, QX, {'cid': 'c-4', 'text': 'x'})):
             self.assertEqual(response.status, 403, response.text)
             self.assertEqual(response.json['error'], 'forbidden')
             self.assertNotIn('Pytanie', response.text)
         self.assertEqual(self.stored(), before)
+
+    def test_commenter_reads_the_read_only_preview_and_an_unknown_id_is_404(self):
+        commenter = self.who(S.A)
+        listing = self.check(commenter.get('/_api/v1/questions'), 200).json
+        self.assertIs(listing['preview'], True)
+        ids = [item['id'] for item in listing['questions']]
+        self.assertEqual(ids, [Q1, Q2, Q3, Q4, Q5, Q6, Q7, Q8, Q9])   # every question of the run (decision: full preview for the signed in)
+        self.assertTrue(all(item['canAnswer'] is False and item['preview'] is True for item in listing['questions']))
+        one = self.check(commenter.get('/_api/v1/questions/%s' % Q1), 200).json['question']
+        self.assertEqual((one['id'], one['canAnswer'], one['preview']), (Q1, False, True))
+        self.check(commenter.get('/_api/v1/questions/%s' % QX), 404, 'not_found')
+
+    def test_the_preview_has_no_login_of_any_account_anywhere_in_the_answers_of_the_api(self):
+        users = ps.UsersFile(self.users_path, iterations=S.ITER, clock=self.clock)
+        named = 'nina.nazwana@example.com'
+        ps.add_user(users, named, roles=['expert'], password=PW, name='Nina Nazwana')
+        qa, qb = 'qn-0000000000a1', 'qn-0000000000a2'
+        self.seed_questions([
+            ask(qa, to=[EX, EX2, named], text='Pytanie o numer faktury', blocking=True, assumed=None, options=OPTIONS),
+            {'type': 'answer', 'questionId': qa, 'by': EX, 'cid': 'ans-a', 'optionId': 'o1', 'comment': 'komentarz do odpowiedzi'},
+            {'type': 'comment', 'questionId': qa, 'by': named, 'cid': 'com-a', 'text': 'uwaga nazwanej'},
+            {'type': 'comment', 'questionId': qa, 'by': EX2, 'cid': 'com-b', 'text': 'uwaga bez nazwy'},
+            {'type': 'comment', 'questionId': qa, 'by': DE, 'cid': 'com-c', 'text': 'uwaga programisty'},
+            ask(qb, to=[AE]),
+            {'type': 'withdraw', 'questionId': qb, 'by': 'agent', 'cid': 'wd-b', 'reason': 'przeniesione do specyfikacji'},
+        ])
+        commenter = self.who(S.A)
+        bodies = [commenter.get('/_api/v1/questions').text, commenter.get('/_api/v1/questions/%s' % qa).text,
+                  commenter.get('/_api/v1/questions/%s' % qb).text]
+        every_login = {EX, EX2, EX3, AE, DE, MX, named, *S.PASSWORDS}
+        for body in bodies:
+            lowered = body.lower()
+            for login in every_login:
+                self.assertNotIn(login.lower(), lowered, login)
+                self.assertNotIn(login.split('@')[0].lower() + '@', lowered)
+        one = commenter.get('/_api/v1/questions/%s' % qa).json['question']
+        self.assertEqual(one['answer']['by'], ps.PREVIEW_LABEL)   # EX has no `name`: a plain label
+        authors = {item['id'] or '': item['by'] for item in one['comments']}
+        self.assertEqual(sorted(authors.values()), sorted(['Nina Nazwana', ps.PREVIEW_LABEL, ps.PREVIEW_LABEL]))
+        self.assertEqual((one['forAll'], one['addresseeCount']), (False, 3))
+        self.assertNotIn('addressees', one)
+        for hidden in ('origin', 'refersTo'):
+            self.assertIsNone(one[hidden])
+        withdrawn = commenter.get('/_api/v1/questions/%s' % qb).json['question']
+        self.assertEqual(set(withdrawn['withdrawn']), {'at', 'reason'})   # the withdrawal has no author
+
+    def test_a_name_that_is_a_login_or_an_address_is_not_shown_as_a_name(self):
+        users = ps.UsersFile(self.users_path, iterations=S.ITER, clock=self.clock)
+        for login, name in (('jan.kowalski@example.com', 'jan.kowalski@example.com'), ('ewa.test@example.com', 'Ewa <ewa.test@example.com>'),
+                            ('adam.nowak@example.com', 'adam.nowak'), ('ola.zielona@example.com', 'Ola Zielona')):
+            ps.add_user(users, login, roles=['expert'], password=PW, name=name)
+        self.seed_questions([ask('qn-0000000000b1', to='all')] + [
+            {'type': 'comment', 'questionId': 'qn-0000000000b1', 'by': login, 'cid': 'cm-' + login[:3], 'text': 'x'}
+            for login in ('jan.kowalski@example.com', 'ewa.test@example.com', 'adam.nowak@example.com', 'ola.zielona@example.com')])
+        shown = [item['by'] for item in self.check(self.who(S.A).get('/_api/v1/questions/qn-0000000000b1'), 200).json['question']['comments']]
+        self.assertEqual(sorted(shown), sorted([ps.PREVIEW_LABEL, ps.PREVIEW_LABEL, ps.PREVIEW_LABEL, 'Ola Zielona']))
+
+    def test_the_preview_keys_are_a_white_list_and_the_spec_path_is_not_shown(self):
+        commenter = self.who(S.A)
+        for item in self.check(commenter.get('/_api/v1/questions'), 200).json['questions']:
+            self.assertEqual(set(item), {'id', 'slug', 'text', 'state', 'at', 'blocking', 'assumed', 'by', 'forAll', 'addresseeCount', 'refs',
+                                         'options', 'multi', 'answer', 'comments', 'withdrawn', 'recorded', 'refersTo', 'origin',
+                                         'canAnswer', 'preview'})
+        self.assertNotIn('docs/specs/a.md', commenter.get('/_api/v1/questions').text)
+
+    def test_the_preview_needs_a_session_and_a_changed_password_like_the_other_views(self):
+        self.check(S.Client(self.server).get('/_api/v1/questions'), 401)
+        self.check(S.Client(self.server).get('/_api/v1/questions/%s' % Q1), 401)
+
+    def test_an_account_with_an_expert_role_keeps_its_own_view_not_the_preview(self):
+        listing = self.check(self.who(EX).get('/_api/v1/questions'), 200).json
+        self.assertNotIn('preview', listing)
+        self.assertTrue(all('preview' not in item for item in listing['questions']))
 
     def test_expert_only_sees_all_and_own_and_withdrawn_without_addressees(self):
         expert = self.who(EX)
