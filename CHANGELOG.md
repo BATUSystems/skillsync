@@ -12,7 +12,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
-## [1.6.0] - 2026-11-15
+## [1.6.0] - 2026-11-16
 
 ### Added
 
