@@ -4,6 +4,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+### Added
+
+- Skill `dashboard`: the page renders the stage state (`trwa`), the screens bar, "Czeka na", two shades of the progress bar, the block "Wynik", the glossary (`legend_*` in `descriptions.json`), the addressee of expert questions, the toast of comments after acceptance and the tab "Pytania"; `SKILL.md` describes them.
+- Skill `feature`, reference `measurement.md`: the syntax of the progress report (brackets, an id at the start of every element, `trwa: <stage>`, `czeka: … (kto: <role> [<login>])`).
+- Skill `prototype`: `writing start --screens <N>` before editing screens, with the fallback for an older core; `trwa: prototype` in the progress report.
+
 ## [1.5.0] - 2026-11-15
 
 ### Added
