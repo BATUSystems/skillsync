@@ -29,7 +29,7 @@ class FreePortRangeTests(unittest.TestCase):
 
     def test_default_range_is_unchanged(self):
         port = self.free(None)
-        self.assertTrue(5101 <= port <= 5199 and port != 5140, port)
+        self.assertTrue(5101 <= port <= 5199 and port not in (5140, 5141, 5142), port)
 
     def test_the_range_from_the_variable_is_used(self):
         base = self.free(None)  # a port that is free on this host right now (the station may hold servers on 5130-5150)
@@ -41,6 +41,12 @@ class FreePortRangeTests(unittest.TestCase):
         with self.assertRaises(RuntimeError) as caught:
             self.free('5140-5140')
         self.assertIn('5140-5140', str(caught.exception))
+
+    def test_the_ports_of_the_two_port_mode_stay_excluded_inside_a_range(self):
+        # 5140 (read) and 5141 (consents) are the default ports of `dashboard serve`; 5142 belongs to the second project of the station
+        for port in (5141, 5142):
+            with self.subTest(port=port), self.assertRaises(RuntimeError):
+                self.free(f'{port}-{port}')
 
     def test_a_busy_range_reports_which_range_was_exhausted(self):
         port = self.free(None)
