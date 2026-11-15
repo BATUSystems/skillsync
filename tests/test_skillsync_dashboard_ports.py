@@ -613,6 +613,51 @@ class SlowResolver(unittest.TestCase):
         self.assertEqual(ports.host_addresses(), {"192.0.2.77"})
         self.assertEqual(self.calls, 1)
 
+    def test_an_exception_of_the_resolver_is_an_empty_answer_and_nothing_stays_pending(self) -> None:
+        for error in (UnicodeError("bad name"), ValueError("bad"), socket.gaierror("no name")):
+            with self.subTest(error=type(error).__name__):
+                ports._reset_host_lookup()
+                with mock.patch.object(socket, "getaddrinfo", side_effect=error):
+                    started = time.monotonic()
+                    self.assertEqual(ports.host_addresses(), set())
+                    self.assertLess(time.monotonic() - started, 1.0)   # the waiter is released at once, not after the limit
+                    self.assertIsNone(ports._lookup["pending"])
+        # after the negative memory a new resolution starts and can succeed
+        ports._reset_host_lookup()
+        with mock.patch.object(socket, "getaddrinfo", side_effect=UnicodeError("x")):
+            ports.host_addresses()
+        with mock.patch.object(ports, "time") as clock:
+            clock.monotonic.return_value = time.monotonic() + ports.HOST_LOOKUP_NEGATIVE_TTL + 1
+            self.release.set()
+            self.assertEqual(ports.host_addresses(), {"192.0.2.77"})
+
+    def test_a_failed_lookup_is_remembered_briefly_not_like_a_success(self) -> None:
+        ports._reset_host_lookup()
+        with mock.patch.object(socket, "getaddrinfo", side_effect=socket.gaierror("no name")):
+            ports.host_addresses()
+        self.assertLessEqual(ports._lookup["until"] - time.monotonic(), ports.HOST_LOOKUP_NEGATIVE_TTL + 0.5)
+
+    def test_a_slow_answer_after_the_memory_expired_keeps_the_older_good_answer(self) -> None:
+        self.release.set()
+        self.assertEqual(ports.host_addresses(), {"192.0.2.77"})
+        self.release.clear()
+        ports._lookup["until"] = 0.0   # the good answer is old now
+        self.assertEqual(ports.host_addresses(), {"192.0.2.77"})   # the new lookup is too slow: the old answer stays
+
+    def test_a_stale_lookup_never_writes_into_the_cache_after_a_reset(self) -> None:
+        old = threading.Thread(target=lambda: ports.host_addresses(), daemon=True)
+        old.start()
+        deadline = time.monotonic() + 3
+        while ports._lookup["pending"] is None and time.monotonic() < deadline:
+            time.sleep(0.01)
+        stale = ports._lookup["pending"]
+        self.assertIsNotNone(stale)
+        ports._reset_host_lookup()
+        self.release.set()   # the old lookup returns now
+        self.assertTrue(stale.wait(3))
+        old.join(3)
+        self.assertIsNone(ports._lookup["value"])   # the new (empty) cache was not written by it
+
     def test_a_resolved_answer_is_remembered(self) -> None:
         self.release.set()
         self.assertEqual(ports.host_addresses(), {"192.0.2.77"})
