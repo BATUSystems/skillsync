@@ -418,7 +418,7 @@ class LocalIp(unittest.TestCase):
     def test_an_address_of_this_machine_is_accepted(self) -> None:
         address = lan_address()
         if address is None:
-            self.skipTest("no non-loopback address on this machine")
+            self.skipTest("no non-loopback address on this machine; deliberately not in skip-baseline, so on CI runners (which have one) a skip is an error")
         self.assertTrue(ports.is_local_ip(address))
 
 
@@ -656,7 +656,7 @@ class Process(unittest.TestCase):
         time.sleep(0.5)
         address = lan_address()
         if address is None:
-            self.skipTest("no non-loopback address on this machine")
+            self.skipTest("no non-loopback address on this machine; deliberately not in skip-baseline, so on CI runners (which have one) a skip is an error")
         for port in (read_port, approve_port):   # the default of the two-port mode: every interface
             with socket.create_connection((address, port), timeout=2):
                 pass
@@ -668,7 +668,7 @@ class Process(unittest.TestCase):
     def test_approve_bind_loopback_leaves_only_the_read_socket_in_the_network(self) -> None:
         address = lan_address()
         if address is None:
-            self.skipTest("no non-loopback address on this machine")
+            self.skipTest("no non-loopback address on this machine; deliberately not in skip-baseline, so on CI runners (which have one) a skip is an error")
         read_port, approve_port = two_ports()
         self.serve("--read-port", str(read_port), "--approve-port", str(approve_port), "--approve-bind", "127.0.0.1")
         self.wait_up(read_port, approve_port)
