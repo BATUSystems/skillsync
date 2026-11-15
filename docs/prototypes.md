@@ -531,7 +531,8 @@ skillsync prototype serve . --host 192.168.1.10 --port 4445 --login-to-view
   wszystkich interfejsach naraz, więc podawaj konkretny adres. `--port 0` wybiera dowolny wolny port.
 - `serve` mówi HTTP bez szyfrowania: hasła i ciasteczko sesji idą po sieci jawnym tekstem. W zaufanej sieci lokalnej
   to akceptowalne dla makiet; poza nią postaw serwer za odwrotnym proxy z TLS i dodaj `--secure-cookies`.
-  `--trust-proxy` (adres klienta z `X-Forwarded-For` do limitu prób logowania) włączaj tylko za zaufanym proxy.
+  `--trust-proxy` (adres klienta z `X-Forwarded-For` do limitu prób logowania) włączaj tylko za zaufanym proxy; limit i tunel `ssh -L`:
+  [Limit prób logowania i tunel ssh](#limit-prób-logowania-i-tunel-ssh).
   Serwer ostrzega przy starcie o HTTP poza loopbackiem.
 - `--login-to-view` wymaga logowania także do oglądania; używaj go dla prototypów pokazywanych poza zespołem.
 - Za proxy przekaż oryginalny nagłówek `Host` (nginx: `proxy_set_header Host $host;`), bo ochrona zapisu porównuje
@@ -545,6 +546,20 @@ skillsync prototype serve . --host 192.168.1.10 --port 4445 --login-to-view
   i z `Host` wskazującym pętlę. Przy `--host` z adresem LAN komenda kończy się `BLOCKED link_needs_loopback`; zaloguj
   się wtedy hasłem. Link działa 60 s, raz, i daje sesję z pełnymi uprawnieniami konta; wydaje go człowiek, agent
   tej komendy nie uruchamia.
+
+### Limit prób logowania i tunel ssh
+
+Serwer liczy **nieudane** próby logowania w oknie przesuwnym 15 minut (`RATE_WINDOW`): 5 na parę (login, adres klienta) i 30 na sam adres.
+Udane logowanie czyści licznik pary, ale nie licznik adresu. Po przekroczeniu serwer odpowiada `429` z nagłówkiem `Retry-After` (sekundy do końca
+najstarszej próby w oknie). Stan jest tylko w pamięci procesu: restart `prototype serve` zeruje liczniki.
+
+Adres klienta to adres połączenia TCP. Nagłówek `X-Forwarded-For` liczy się wyłącznie z `--trust-proxy` (bierze się jego ostatni element);
+bez tej opcji jest ignorowany, a serwer zapisuje w logu jedno ostrzeżenie.
+
+**Za tunelem** (`ssh -L`) serwer widzi `127.0.0.1` dla wszystkich osób, więc limit 30 na adres jest wspólny: jedna osoba z 30 błędnymi próbami
+blokuje logowanie pozostałym, także z poprawnym hasłem, na czas do 15 minut. Co zrobić: poczekać na `Retry-After`, zrestartować `serve` (zeruje liczniki)
+albo wystawić serwer przez zaufane proxy z `--trust-proxy` i poprawnym `X-Forwarded-For` (wtedy link logowania jednorazowego jest wyłączony, zob. wyżej).
+Ograniczenie znane: nie ma limitu per login niezależnego od adresu.
 
 Serwer działa na kodzie z chwili startu: po aktualizacji skillsync uruchom go ponownie, żeby korzystał z nowej wersji.
 Zmiany plików prototypu (HTML, CSS, `comments.json`, użytkownicy) widzi bez restartu.
