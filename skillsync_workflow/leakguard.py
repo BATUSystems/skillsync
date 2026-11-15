@@ -611,7 +611,7 @@ def validate_targets(targets):
         if kind is not None and kind not in LAYER_KINDS:
             raise LeakguardError(f'Target {target_id}: kind must be one of: {", ".join(LAYER_KINDS)}')
         values = {}
-        for key in ('authors', 'remote_match'):
+        for key in ('authors', 'remote_match', 'committer_allow'):
             value = entry.get(key, [])
             if not isinstance(value, list) or not all(isinstance(item, str) and item for item in value):
                 raise LeakguardError(f'Target {target_id}: {key} must be a list of nonempty strings')
@@ -962,13 +962,14 @@ def _exempt_rel(rel_git, text, git_top):
 
 
 class _Context:
-    def __init__(self, root, git_top, prefix, scanner, authors, authors_scope='committer'):
+    def __init__(self, root, git_top, prefix, scanner, authors, authors_scope='committer', committer_allow=frozenset()):
         self.root = root
         self.git_top = git_top
         self.prefix = prefix
         self.scanner = scanner
         self.authors = authors
         self.authors_scope = authors_scope
+        self.committer_allow = committer_allow  # DEBT-142 A2: accepted as committer/tagger only, never as an author
         self.notices = set()
         self.warnings = []
 
@@ -1053,7 +1054,7 @@ def _scan_staged(ctx):
         email = _ident_email(ctx.git_top, var)
         if email is None:
             ctx.warnings.append(f'Cannot read the {name} identity; authors not checked')
-        elif email not in ctx.authors:
+        elif email not in ctx.authors and not (name == 'committer' and email in ctx.committer_allow):
             ctx.scanner.findings.add(('@staged', 'author', name))
     if not local:
         ctx.warnings.append('git user.email is not set')
@@ -1131,7 +1132,8 @@ def _scan_commits(ctx, revs):
         # a merge button) has its author checked; the foreign committer stays a notice.
         if every or (local and committer_email.strip().lower() == local):
             for name, email in (('author', author_email), ('committer', committer_email)):
-                if email.strip().lower() not in ctx.authors:
+                email = email.strip().lower()
+                if email not in ctx.authors and not (name == 'committer' and email in ctx.committer_allow):
                     ctx.scanner.findings.add((path, 'author', name))
         else:
             if local and author_email.strip().lower() == local and local not in ctx.authors:
@@ -1212,7 +1214,7 @@ def _scan_tags(ctx, rev):
                 path = f'@tag:{sha[:12]}'
                 email = tagger.group(2).strip().lower() if tagger else ''
                 if every or (local and email == local):
-                    if email not in ctx.authors:
+                    if email not in ctx.authors and email not in ctx.committer_allow:
                         ctx.scanner.findings.add((path, 'author', 'tagger'))
                 else:
                     ctx.notices.add((path, 'foreign-tag', 'tagger'))
@@ -1237,6 +1239,7 @@ class Prepared:
     authors: set
     trailer_allow: tuple
     authors_scope: str = None
+    committer_allow: frozenset = frozenset()
 
     def scanner(self):
         return _Scanner(self.patterns, self.matcher, self.target, self.target_kind, self.trailer_allow)
@@ -1267,8 +1270,9 @@ def prepare(*, target=None, targets=None, identity_files=(), target_patterns=Non
             authors = {item.lower() for item in entry['authors']}
         else:
             warnings.append(f'Target {target} has no authors; commit authors are not checked')
+    allow = frozenset(item.lower() for item in entry['committer_allow']) if entry else frozenset()
     return Prepared(patterns, matcher, target, entry['kind'] if entry else None, coverage, warnings,
-                    authors, tuple(trailer_allow), entry['authors_scope'] if entry else None)
+                    authors, tuple(trailer_allow), entry['authors_scope'] if entry else None, allow)
 
 
 def scan_texts(items, prepared, surface='content'):
@@ -1343,7 +1347,8 @@ def leakcheck(path='.', *, mode='worktree', rev_range=None, target=None, targets
             return report
         scanner = prepared.scanner()
         prefix = _git_prefix(root) if top is not None else ''
-        ctx = _Context(root, top, prefix, scanner, prepared.authors, prepared.authors_scope or 'committer')
+        ctx = _Context(root, top, prefix, scanner, prepared.authors, prepared.authors_scope or 'committer',
+                       prepared.committer_allow)
         report['authors_scope'] = prepared.authors_scope
         if mode == 'text':
             if not texts:

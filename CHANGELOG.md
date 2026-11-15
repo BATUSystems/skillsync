@@ -12,6 +12,10 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Added
+
+- Strażnik wycieków: klucz celu `targets.<id>.committer_allow` w configu maszyny (lista adresów): adresy przyjmowane tylko jako committer i tagger (np. przycisk scalania hosta, `noreply`), nigdy jako autor. Dotąd adres `noreply` musiał stać w `authors` i przechodził też jako autor. Domyślnie pusta lista; bez klucza zachowanie bez zmian. Dotyczy `leakcheck` (zakres, historia, tagi) i kontroli zatrzymanych zmian.
+
 ## [1.4.0] - 2026-11-14
 
 ### Added

@@ -1408,6 +1408,91 @@ def filename_unrepresentable(surface, text, os_name=os.name):
     return surface == 'filename' and os_name == 'nt' and any(char in text for char in WINDOWS_FORBIDDEN_NAME_CHARS)
 
 
+class CommitterAllowTest(LeakTestCase):
+    """DEBT-142 A2: `committer_allow` of a target: addresses accepted ONLY as committer (and tagger), e.g. the host's merge
+    button (`noreply`); they are never accepted as an author. Default empty; authors stay in `authors`."""
+
+    DEV = f'dev{AT}corp.example'
+    BOT = f'noreply{AT}host.example'
+
+    def targets(self, authors_scope='all', allow=None):
+        entry = {'scope': 'public', 'kind': 'org', 'authors': [self.DEV], 'authors_scope': authors_scope}
+        if allow is not None:
+            entry['committer_allow'] = allow
+        return {'mine': entry}
+
+    def scan(self, repo, targets, **kwargs):
+        kwargs.setdefault('mode', 'history')
+        return leakguard.leakcheck(repo, target='mine', targets=targets, **kwargs)
+
+    def merged_by_the_host(self):
+        """A commit authored by the developer and committed by the host's merge button."""
+        repo = self.make_repo(email=self.DEV)
+        commit_file(repo, 'a.md', 'x\n', 'merged', author=('Dev', self.DEV), committer=('GitHub', self.BOT))
+        return repo
+
+    def test_schema_default_and_validation(self):
+        self.assertEqual(leakguard.validate_targets({'t': {'scope': 'public'}})['t']['committer_allow'], [])
+        ok = leakguard.validate_targets({'t': {'scope': 'public', 'committer_allow': [self.BOT]}})
+        self.assertEqual(ok['t']['committer_allow'], [self.BOT])
+        for bad in ('noreply', [''], [1], [self.BOT, None], {'a': 1}):
+            with self.subTest(bad=bad), self.assertRaises(leakguard.LeakguardError):
+                leakguard.validate_targets({'t': {'scope': 'public', 'committer_allow': bad}})
+
+    def test_a_listed_committer_passes_where_it_failed_before(self):
+        repo = self.merged_by_the_host()
+        before = self.scan(repo, self.targets())
+        self.assertEqual((before['status'], categories(before)), ('FAIL', {'author'}))
+        after = self.scan(repo, self.targets(allow=[self.BOT]))
+        self.assertEqual((after['status'], after['findings']), ('PASS', []))
+
+    def test_the_address_is_never_accepted_as_an_author(self):
+        repo = self.make_repo(email=self.DEV)
+        commit_file(repo, 'a.md', 'x\n', 'bot authored', author=('GitHub', self.BOT), committer=('GitHub', self.BOT))
+        report = self.scan(repo, self.targets(allow=[self.BOT]))
+        self.assertEqual((report['status'], [f['location'] for f in report['findings']]), ('FAIL', ['author']))
+        self.assertNotIn(self.BOT, json.dumps(report))
+
+    def test_the_list_is_case_insensitive_and_does_not_widen_to_other_addresses(self):
+        repo = self.make_repo(email=self.DEV)
+        commit_file(repo, 'a.md', 'x\n', 'other bot', author=('Dev', self.DEV),
+                    committer=('Other', f'other{AT}host.example'))
+        self.assertEqual(self.scan(repo, self.targets(allow=[self.BOT]))['status'], 'FAIL')
+        repo = self.merged_by_the_host()
+        self.assertEqual(self.scan(repo, self.targets(allow=[self.BOT.upper()]))['status'], 'PASS')
+
+    def test_scope_committer_is_not_loosened_for_the_local_committer(self):
+        """With `authors_scope: committer` a commit committed by the local user needs a listed committer; the list adds
+        the host's address only for commits committed by it."""
+        repo = self.make_repo(email=f'me{AT}other-org.example')
+        commit_file(repo, 'a.md', 'x\n', 'mine', author=('Me', f'me{AT}other-org.example'))
+        report = self.scan(repo, self.targets('committer', allow=[self.BOT]))
+        self.assertEqual((report['status'], categories(report)), ('FAIL', {'author'}))
+
+    def tag_with(self, repo, tagger_email, name='v1'):
+        env = {**os.environ, 'GIT_COMMITTER_NAME': 'Tagger', 'GIT_COMMITTER_EMAIL': tagger_email}
+        subprocess.run(['git', '-C', str(repo), 'tag', '-a', name, '-m', 'release'], env=env, check=True,
+                       capture_output=True)
+
+    def test_a_listed_tagger_passes_and_an_unlisted_one_fails(self):
+        repo = self.make_repo(email=self.DEV)
+        base = commit_file(repo, 'a.md', 'x\n', 'base')
+        self.tag_with(repo, self.BOT)
+        kwargs = {'mode': 'range', 'rev_range': f'{base}..refs/tags/v1'}
+        listed = self.scan(repo, self.targets(allow=[self.BOT]), **kwargs)
+        self.assertEqual((listed['status'], listed['findings']), ('PASS', []))
+        unlisted = self.scan(repo, self.targets(), **kwargs)
+        self.assertEqual((unlisted['status'], [f['location'] for f in unlisted['findings']]), ('FAIL', ['tagger']))
+
+    def test_the_machine_config_carries_the_key(self):
+        from skillsync_workflow import layers
+        config = layers.parse_machine_config(
+            {'leakguard': {'targets': {'core': {'scope': 'public', 'authors': [self.DEV], 'committer_allow': [self.BOT]}}}},
+            Path('/nonexistent/config.yaml'), exists=False)
+        self.assertEqual(config.targets['core']['committer_allow'], [self.BOT])
+        self.assertFalse([w for w in config.warnings if 'committer_allow' in w])
+
+
 class TermMatchScopeTest(LeakTestCase):
     """D104 (spec A, "Zakres dopasowania terminu"): `match: part` (default) hits a segment of an identifier,
     `match: whole` only a whole token; a glued term (one-letter prefix + camelCase) hits only its glued form.
