@@ -21,7 +21,6 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 - The expert questions page `/_experts` shows to whom a question is addressed (`addresseesNode`).
 - `common.plan_section(text, name)`: the one reader of the `## <name>` sections of a plan.
 - `Handler._approvals_role()` is the one place that decides `here` and `viewer`; the viewer gets the same `/api/status` content as the operator (no filtering of logins or texts), only without writing consents.
-- Tests: the contract of the new fields, the renderer (a frozen copy of the 1.5.0 renderer on the current fixtures), the contrast of the progress bar, the syntax of the progress report in the docs.
 - `skillsync status`: `plans[].summary`, the text of the plan section `## Streszczenie dla człowieka` (at most 40 lines and 4000 characters, heading markers removed, a cut text ends with `…`; `null` when the section is absent or empty). Additive (schema 1).
 - `skillsync status`: `plans[].needsHuman` has the new value `acceptance` for a closed plan (`done`) that has the human acceptance step (`Odbiór` in `## Progress`) whose run (the `Przebieg:` line) is active in the worktree (`.skillsync/runs/<run-id>/` exists) and has no closing consent word of the delivery mode (`READY` in `pr`, `CP` in `direct`, a missing `delivery` is `pr`) in its `approvals.jsonl` whose sha is a commit where this plan already has the status `done` (read through git; an earlier `CP` of the run, an unknown or junk sha, or a commit where the plan is not `done` closes nothing). Every such plan waits on its own, so plans of the same date or without a date in the name are independent; a plan whose run directory is gone is history and a later commit does not light a finished plan again. The checkbox and any line of the plan never end the wait; `closure` and `acceptance` never occur together. A consumer that does not know the value shows it raw or ignores it.
 - `skillsync readiness --plan` and `skillsync doctor` warn (a warning, never a block) when a plan with the status `draft` or `approved` has no `## Streszczenie dla człowieka` section or an empty one.
@@ -31,7 +30,6 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 - Read-only preview of the questions on `/_experts` for a signed-in account without the role `developer`, `acceptor` or `expert` (the default `commenter`): the API (`GET /_api/v1/questions`, `/_api/v1/questions/<id>`) answers 200 with `preview: true` and a view built from a white list of fields: no login or e-mail address of any person (addressees are counted, the author of an answer or a comment is the account `name` or a plain label, a withdrawal has no author), no `origin`, no `refersTo`. Writes stay `403 forbidden` before anything else.
 - The prototype gallery (static and live) links "Pytania" to `/_experts/<slug>` and "Pytania" in the header when a run has questions.
 - Prototype engine: the presentation mode shows one screen at a time (`proto-screen-hidden`), with ←/→, ‹ ›, Home/End, the counter "N / M", the key P and `?mode=presentation` as entries, Esc/P/"Wyjdź (Esc)" as exits, the screen in `#sN`, the state in `sessionStorage` of the tab, and one printed screen. E2E scenarios `P-01` to `P-06` (`docs/prototype-contract/scenariusze-e2e.md`, section 16).
-- Tests: phrase guard of the library for the plan summary, the review profile and the question rules (`tests/test_skillsync_plan_checkpoints_skills.py`); `tests/test_skillsync_plan_summary.py`, `tests/test_skillsync_plan_acceptance.py`.
 - `dashboard serve --read-port N --approve-port M`: two-port mode of the status page. One process, one shared state, two HTTP sockets. The role comes from the port, not from the `Host` header: the read socket has no consent route (`POST /api/approve` returns 404) and no token; the consent socket keeps the 1.5.0 checks, adds an exact `Origin` check (`http://<Host>` with the port), refuses intermediary headers (`Forwarded`, `X-Forwarded-*`, `X-Real-IP`, `Via` and others) unless `--allow-proxy-headers` is given, and records where each consent came from. The port numbers are given explicitly (the flags have no default value; 5140 for reading and 5141 for consents are the usual pair). Combinations that make no sense end with `BLOCKED` (exit 2) before anything is bound.
 - `dashboard serve --read-bind ADDR` and `--approve-bind ADDR` (listen address of each socket), and `--allow-proxy-headers` (consent socket only). In two-port mode both sockets listen on `0.0.0.0` by default; `--host` sets both, `127.0.0.1` narrows a socket to this machine. A startup warning is printed for every socket that listens beyond loopback.
 - Single-port mode is unchanged: `dashboard serve` without the new flags, or with `--port`, still has one socket, listens on `127.0.0.1` unless `--host` is given, and takes the role from the `Host` header.
@@ -40,13 +38,13 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 - `dashboard url <project> --read` prints the read address (no fragment, no token). In two-port mode `dashboard url --json` adds `role` and `readUrl`.
 - State files: additive `role` (`read` or `approve`) and `peer` fields (`schema: 1`); a file without `role` is a single-port file.
 - `/api/status`: `approvals.role` in two-port mode (`here`, `viewer` and `tokenRequired` then follow the socket, not the `Host`). `approvals.jsonl`: optional `via` object (`port`, `host`, `peer`) on consents from the consent socket; entries without `via` are read as before.
+- Tests: the contract of the new fields, the renderer (a frozen copy of the 1.5.0 renderer on the current fixtures), the contrast of the progress bar, the syntax of the progress report in the docs.
+- Tests: phrase guard of the library for the plan summary, the review profile and the question rules (`tests/test_skillsync_plan_checkpoints_skills.py`); `tests/test_skillsync_plan_summary.py`, `tests/test_skillsync_plan_acceptance.py`.
 
 ### Changed
 
 - Fixtures `tests/fixtures/dashboard/*/expected*.json` only gained keys (no line removed).
 - `prototype writing … --screens` is refused (`invalid_args`) for `done` and `status`.
-- `GET /_api/v1/questions` and `/_api/v1/questions/<id>` for an account without a role of the experts: `200` with the preview instead of `403 forbidden`; the preview shows the text of the questions and the authors of answers and comments by the account `name` (first and last name; a `name` that looks like a login or an e-mail address shows the label `uczestnik`), never a login or an e-mail address; the page text of the `403` of a write says what is allowed.
-- `skillsync_workflow/common.py`: `plan_section(text, name)`, the shared reader of a `## <name>` section of a plan.
 - The prototype engine files (`prototype.js`, `prototype.css`) carry the presentation mode: `skillsync prototype migrate` delivers them (the change of the CSS can invalidate the acceptance of screens: the list is `acceptance` of the result).
 
 ### Security
@@ -60,7 +58,6 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 - `plans[].summary` is additive; `plans[].needsHuman` may contain `acceptance` (a consumer must accept an unknown value).
 - Layers: a layer that adds items to `workflow.review.prototype` needs `core_min` 1.6.0 (an older core has no profile and `check_layers` blocks the layer); the old lists of a layer keep working.
 - A server older than 1.6.0 shows a screen ref of `question add --screen` as plain text.
-- Behaviour change: the read of the questions by an account without a role of the experts is `200` (preview), not `403`.
 - A prototype gets the presentation mode only after `skillsync prototype migrate`.
 
 ### Breaking
