@@ -478,7 +478,7 @@ class MigrateTests(RunsCliCase):
         real = ps.atomic_write_bytes
 
         def lossy(path, data, *args, **kwargs):
-            if str(path).endswith(RUN + '/' + ps.QUESTIONS_FILE):
+            if str(path).replace(os.sep, '/').endswith(RUN + '/' + ps.QUESTIONS_FILE):
                 data = ps.serialize_questions([]).encode('utf-8')
             return real(path, data, *args, **kwargs)
 

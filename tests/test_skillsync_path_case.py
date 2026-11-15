@@ -28,6 +28,15 @@ from skillsync_workflow import layers, leakguard  # noqa: E402
 
 HOSTS = ('linux', 'darwin', 'win32')
 FOLDS = {'linux': False, 'darwin': True, 'win32': True}          # case-insensitive file systems
+# Tests on a real file tree: a Windows host can show only itself: another case is the very same directory there, and
+# `realpath` already returns `\\` separators that the keys of a simulated Linux or macOS keep, so those hosts are skipped.
+FS_HOSTS = tuple(name for name in HOSTS if os.name != 'nt' or name == 'win32')
+
+
+def skip_unreal(test, name):
+    """Skip the subtest of a simulated host that a real file tree of this machine cannot show."""
+    if name not in FS_HOSTS:
+        test.skipTest(f'the simulated host {name} cannot be shown on a real Windows file tree (see FS_HOSTS)')
 SYSTEM = {'linux': 'Linux', 'darwin': 'Darwin', 'win32': 'Windows'}
 
 
@@ -115,6 +124,7 @@ class LayerRulesCaseTest(LayersCase):
                           rules=[([f'{self.work}/Projekt/**'], ['core', 'acme'])])
         for name in HOSTS:
             with self.subTest(system=SYSTEM[name]), mock.patch.object(layers, 'current_system', return_value=SYSTEM[name]):
+                skip_unreal(self, name)
                 if FOLDS[name]:
                     self.assertEqual(layers.resolve_layers(project).ids, ['core', 'acme'])
                 else:
@@ -165,6 +175,7 @@ class SelectTargetCaseTest(LayersCase):
         spelled = str(self.work / 'repo')                                  # the same directory on a case-insensitive FS
         for name in HOSTS:
             with self.subTest(host=name), host(name):
+                skip_unreal(self, name)
                 self.assertEqual(leakguard.select_target(repo, None, {'acme': spelled}),
                                  ('acme', []) if FOLDS[name] else (None, []))
                 self.assertEqual(leakguard.select_target(repo, None, {'acme': str(repo)}), ('acme', []))
@@ -194,6 +205,7 @@ class LinkBanCaseTest(LayersCase):
     def test_the_exact_path_is_blocked_on_every_host(self):
         for _name in HOSTS:
             with self.subTest(host=_name), host(_name):
+                skip_unreal(self, _name)
                 self.assert_blocked(self.layer)
                 self.assert_blocked(self.layer / 'skills')                       # scanned inside the layer
                 self.assert_blocked(self.layer.parent)                           # the layer inside the scanned tree
@@ -204,6 +216,7 @@ class LinkBanCaseTest(LayersCase):
                      'a parent of the layer': self.work / 'layers'}
         for name in HOSTS:
             with self.subTest(host=name), host(name):
+                skip_unreal(self, name)
                 for label, path in spellings.items():
                     with self.subTest(scan=label):
                         if FOLDS[name]:
@@ -214,6 +227,7 @@ class LinkBanCaseTest(LayersCase):
     def test_a_sibling_with_a_longer_name_is_not_the_layer(self):
         for _name in HOSTS:
             with self.subTest(host=_name), host(_name):
+                skip_unreal(self, _name)
                 for path in (self.work / 'Layers' / 'Core-extra', self.work / 'layers' / 'core-extra'):
                     with self.subTest(path=path.name):
                         layers.leakguard_inputs(path=path)                         # no LayerError
@@ -280,6 +294,7 @@ class UnicodeFormTest(LayersCase):
         self.write_config(layers=[('core', 'core', layer)], rules=[(['**'], ['core'])])
         for name in NORMALIZES:
             with self.subTest(host=name), host(name):
+                skip_unreal(self, name)
                 for path in (self.work / NFD_NAME, self.work / NFD_NAME / 'skills'):
                     with self.subTest(path=str(path.relative_to(self.work))):
                         if name == 'darwin':
@@ -342,7 +357,8 @@ class PathKeyTest(PathKeyCase):
         # Linux behaviour unchanged: `\` is an ordinary character of a file name there, so `a\b` and `a/b` are two
         # different directories (before 3.0 `_path_key` was `os.path.normcase(realpath)` = no change on POSIX).
         with host('linux'):
-            self.assertNotEqual(layers._path_key('/w/a\\b'), layers._path_key('/w/a/b'))
+            # the key itself (not `realpath`, which on a Windows host reads `\\` as a separator whatever host is simulated)
+            self.assertNotEqual(layers.path_case_key('/w/a\\b'), layers.path_case_key('/w/a/b'))
 
     def test_isolation_treats_another_spelling_of_a_layer_as_the_same_tree(self):
         core = make_layer(self.work / 'Lib', 'core', 'core')
@@ -353,6 +369,7 @@ class PathKeyTest(PathKeyCase):
                      'isolation': {'allowed_layers': ['core']}, 'legacy_library': str(twin)})
         for name in HOSTS:
             with self.subTest(host=name), host(name):
+                skip_unreal(self, name)
                 findings = layers.isolation_findings(layers.load_machine_config(), 'Linux')
                 foreign = [item for item in findings if item['code'] == 'isolation-foreign-identity']
                 self.assertEqual(len(foreign), 1 if FOLDS[name] else 2, findings)   # Linux: two trees, two files
@@ -365,6 +382,7 @@ class PathKeyTest(PathKeyCase):
         before = self.config_file.read_bytes()
         for name in HOSTS:
             with self.subTest(host=name), host(name):
+                skip_unreal(self, name)
                 report = layers.layers_migrate()
                 if FOLDS[name]:
                     self.assertEqual(report['status'], 'PASS', report)
@@ -385,6 +403,7 @@ class PathKeyTest(PathKeyCase):
         before = self.config_file.read_bytes()
         for name in HOSTS:
             with self.subTest(host=name), host(name):
+                skip_unreal(self, name)
                 for label, source in sources.items():
                     with self.subTest(source=label):
                         report = layers.layers_migrate(sources=[source])
@@ -403,6 +422,7 @@ class PathKeyTest(PathKeyCase):
         before = self.config_file.read_bytes()
         for name in HOSTS:
             with self.subTest(host=name), host(name):
+                skip_unreal(self, name)
                 report = layers.layers_migrate(finish=True)
                 if FOLDS[name]:
                     self.assertEqual((report['status'], report['dry_run']), ('PASS', True), report)

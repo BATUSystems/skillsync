@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from layers_helpers import (SKILLSYNC, LayersCase, commit, git, make_layer, needs_os_symlinks)  # noqa: E402
+from skillsync_workflow.fsutil import rmtree_force  # noqa: E402  (read-only git objects on Windows)
 
 CORE_TAG = 'vtest-1'
 SECRET = 'sup3rs3cretpw'
@@ -270,8 +271,7 @@ class SetupBlockedTest(SetupCase):
     def test_9b_org_same_source_unchanged_without_ls_remote(self):
         self.setup_cli(*self.base_args())
         # the source disappears: only a skipped ls-remote can still give `unchanged`
-        import shutil
-        shutil.rmtree(self.org_src)
+        rmtree_force(self.org_src)
         process, report = self.setup_cli(*self.base_args())
         self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
         self.assertEqual(self.results(report)['org'], 'unchanged')
@@ -404,14 +404,20 @@ class SetupCheckFailTest(SetupCase):
 class SetupReviewR1Test(SetupCase):
     """Closures of review r1 (INST-1)."""
 
-    def fake_git_dir(self, stderr_lines, code=128):
-        bindir = self.work / 'fakebin'
-        bindir.mkdir(exist_ok=True)
-        script = bindir / 'git'
-        body = '\n'.join(f'echo "{line}" >&2' for line in stderr_lines)
-        script.write_text(f'#!/bin/sh\n{body}\nexit {code}\n', encoding='utf-8')
-        script.chmod(0o755)
-        return bindir
+    def fake_git(self, stderr_lines=(), code=128, only_ls_remote=True, seen=None):
+        """Replaces the `git` the wizard runs (`subprocess.run`) by a result with `stderr_lines` and `code`: no script on PATH,
+        so it works the same where a shell script cannot be started (Windows). `seen` receives the command and the env of the call."""
+        import subprocess as sp
+        from skillsync_workflow import setup_wizard
+        real = sp.run
+
+        def run(command, *args, **kwargs):
+            if command and command[0] == 'git' and (not only_ls_remote or command[:2] == ['git', 'ls-remote']):
+                if seen is not None:
+                    seen.update(command=list(command), env=dict(kwargs.get('env') or {}))
+                return sp.CompletedProcess(command, code, '', ''.join(f'{line}\n' for line in stderr_lines))
+            return real(command, *args, **kwargs)
+        return mock.patch.object(setup_wizard.subprocess, 'run', side_effect=run)
 
     def test_17_ls_remote_reports_the_telling_line_not_the_last_one(self):
         from skillsync_workflow import setup_wizard
@@ -423,8 +429,7 @@ class SetupReviewR1Test(SetupCase):
         }
         for expected, lines in cases.items():
             with self.subTest(expected=expected):
-                bindir = self.fake_git_dir(lines)
-                with mock.patch.dict(os.environ, {'PATH': f'{bindir}:{os.environ["PATH"]}', 'GIT_SSH_COMMAND': 'ssh -F /dev/null'}):
+                with self.fake_git(lines), mock.patch.dict(os.environ, {'GIT_SSH_COMMAND': 'ssh -F /dev/null'}):
                     ok, message = setup_wizard._ls_remote('git@host.invalid:org/repo')
                 self.assertFalse(ok)
                 self.assertNotIn('repository exists', message)
@@ -432,16 +437,11 @@ class SetupReviewR1Test(SetupCase):
 
     def test_17b_ls_remote_extends_an_existing_ssh_command(self):
         from skillsync_workflow import setup_wizard
-        bindir = self.work / 'fakebin'
-        bindir.mkdir(exist_ok=True)
-        (bindir / 'git').write_text('#!/bin/sh\nprintf "%s" "$GIT_SSH_COMMAND" > "$FAKE_OUT"\nexit 0\n', encoding='utf-8')
-        (bindir / 'git').chmod(0o755)
-        out = self.work / 'ssh-cmd.txt'
-        with mock.patch.dict(os.environ, {'PATH': f'{bindir}:{os.environ["PATH"]}', 'GIT_SSH_COMMAND': 'my-ssh-wrapper -v',
-                                          'FAKE_OUT': str(out)}):
+        seen = {}
+        with self.fake_git(code=0, seen=seen), mock.patch.dict(os.environ, {'GIT_SSH_COMMAND': 'my-ssh-wrapper -v'}):
             ok, _ = setup_wizard._ls_remote('x')
         self.assertTrue(ok)
-        self.assertEqual(out.read_text(encoding='utf-8'), 'my-ssh-wrapper -v -o BatchMode=yes -o ConnectTimeout=15')
+        self.assertEqual(seen['env']['GIT_SSH_COMMAND'], 'my-ssh-wrapper -v -o BatchMode=yes -o ConnectTimeout=15')
 
     def test_18_custom_glob_prefix_is_checked_with_a_matching_directory(self):
         projects = self.work / 'projects'
@@ -487,16 +487,12 @@ class SetupReviewR1Test(SetupCase):
         import contextlib
         import io
         from skillsync_workflow import setup_wizard
-        bindir = self.work / 'fakebin'
-        bindir.mkdir(exist_ok=True)
-        (bindir / 'git').write_text('#!/bin/sh\nexit 0\n', encoding='utf-8')   # ls-remote succeeds, user.email empty
-        (bindir / 'git').chmod(0o755)
         url = f'https://user:{SECRET}@setup-host.invalid/org/repo'
         args = argparse.Namespace(yes=True, dry_run=True, core_source=str(self.core_src), core_ref=CORE_TAG,
                                   org='acme', org_source=url, org_ref=None, match=['**'], json=False)
         out, err = io.StringIO(), io.StringIO()
-        with mock.patch.dict(os.environ, {'PATH': f'{bindir}:{os.environ["PATH"]}'}), \
-                contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        with self.fake_git(code=0, only_ls_remote=False), \
+                contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):   # every git call succeeds: ls-remote ok, user.email empty
             code = setup_wizard._cmd(args)
         text = out.getvalue() + err.getvalue()
         self.assertEqual(code, 0, text)

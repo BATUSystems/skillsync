@@ -12,6 +12,59 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-11-15
+
+### Fixed
+
+- Layer rules, the config and the dangling-link check on Windows with Python 3.13+: a path rooted with `/` or `\` but without a drive (`/a/**` in `layer_rules`, a `/a/b` source or a link target) is absolute again, as it was up to Python 3.12 (`ntpath.isabs('/x')` became False in 3.13). `fsutil.isabs` names the meaning; `layers.path_matches('/a/b/c', '/a/**')` matched nothing on 3.13, `layers` stored `/a/b` as `C:\a\b`, and `link` took a rooted link target for a relative one. POSIX unchanged.
+- `FileLock` on Windows: opening the lock file is retried briefly (at most 0.5 s and never beyond the lock timeout) when the system refuses it for an instant, because the holder
+  that just released the lock is deleting the file (`unlink=True`, the approvals lock; `os.open` answered `PermissionError` EACCES). Before, parallel `approvals record` calls could
+  sporadically end `BLOCKED` ("Permission denied: ...approvals.jsonl.lock"): measured 43 refusals in 24000 acquisitions by 6 processes, always at that `os.open`. A refusal that lasts
+  (a real permission problem) is still raised after the short retry. Single use, the inode check after a delete and the release on process exit are unchanged.
+- `leakguard`: a hook command line containing a path that starts with `/` is checked as an absolute path on Python 3.13+ on Windows too (`os.path.isabs('/x')` is False there since 3.13, so `hook_command_problems` skipped such a path and `hook-command-missing` did not report a missing file); POSIX unchanged.
+- Prototype server on Windows: a refused open, rename or replace of a file that another thread has open or is replacing (`PermissionError`, WinError 5 or 32) is retried for up to half a second (`retry_transient`; other systems and other errors unchanged).
+  Before, concurrent requests could fail sporadically: a one-time login link could be lost by every caller at once (nobody got the session, the token stayed valid), reading `questions.json` or `comments.json` during a write ended as a 500 `internal_error`,
+  and a write could be refused while a reader had the file open. The single use of a login token is unchanged (the atomic rename decides, a missing source file means someone else won). Serving static prototype files and copying screens are not retried (no failure was observed there).
+- Approvals file lock: `approvals.jsonl` is locked with a system lock (`flock`; `msvcrt.locking` on Windows), the same lock as the questions, comments and users files of the prototype server, instead of a `.lock` file that was created exclusively and taken over after 60 s. This fixes a race in which a late writer released the lock after its owner and left a stray `.lock` file (up to 60 s of `BLOCKED` for the next writers, and during the takeover the lock path briefly did not exist); in CI it failed this way in 7 of 157 completed macOS 3.12 jobs (about 4.5%) and in 1 of 157 3.11 jobs, 12-13 Nov. Ending the process releases the lock; a leftover `.lock` from an old write does not block; the `.lock` file is still temporary (removed under the lock, the next writer checks the inode). See docs/upgrading.md: after the update restart `dashboard serve` before the first approval.
+- `QuestionsStore.sweep_orphan_lock` (removal of an orphaned `questions.json.lock`) removes the file while still holding the lock, and every `FileLock` checks after `flock` that the path still points at the locked inode (a waiting writer no longer ends up holding a lock on a deleted file).
+- `FileLock`: a file system without lock support (ENOTSUP, EOPNOTSUPP, ENOSYS; ENOLCK after half of the wait) now gives `LockUnavailable` at once (503 `lock_unsupported`, a subclass of `LockTimeout`) instead of waiting for the timeout; other errors are still contention. Applies to the locks of expert questions, comments, users (also the `prototype user` commands) and approvals.
+- `prototype serve` and `dashboard serve`: SIGINT (Ctrl+C) or SIGTERM right after the start, between installing the handler, announcing the address and `serve_forever`, ends the server cleanly (PASS, `stopped`) instead of a traceback and exit code -2; the handler is installed before the address is announced, and the start from installing the handler to `serve_forever` is under a `try`. In CI this failed once on macOS (a window of a few milliseconds).
+- A symlink loop in a `discover_exclude` entry or in a project path is again treated as unresolvable (`common.discover_excludes`, `common.is_excluded`) on newer Pythons:
+  `Path.resolve()` stopped raising on a loop in POSIX 3.13 and Windows 3.12, so the loop is now detected by a symlink that is left among the components of the resolved path.
+- Prototype server and status page: a request that the server refused before reading its body (401, 403, 404, 405, 411, 413, a refused approval) could leave the declared body unread in the connection.
+  On Windows the client then got a connection reset (WinError 10054) instead of the answer; on a kept-alive connection the leftover bytes were read as the start of the next request. Now a connection with an unread declared body
+  is closed after the answer, with a lingering close (RFC 9112 section 9.6: the server half-closes, discards what the client still sends and then closes), bounded to 256 KiB and one second so that it cannot be used to hold a server thread.
+  Requests whose body the handler read are not affected.
+- `link` appends to a user's `.gitignore` (project root, `.github/`, `.claude/`, `.cursor/rules/`, the state folder) without rewriting it: the existing bytes and line endings (CRLF, LF or mixed) stay as they are and new lines follow the last line's ending. Before, the whole file was rewritten with LF, so a Windows project with `core.autocrlf=true` got a diff of the whole file instead of the added lines. The prototype ignore files (`.gitignore`, `.gitattributes`) use the same appending rule.
+- `link` keeps the line endings and bytes of the user's `AGENTS.md`, `.codex/config.toml`, `.vscode/tasks.json`, `.claude/settings.json` and `.mcp.json`: the managed block or JSON is written in the file's own line ending (CRLF stays CRLF, a new file is LF) and the `*.skillsync-backup` copies are byte copies.
+- `link` recognises a dangling library symlink written in the 8.3 short form (`RUNNER~1`) on Windows, so `link` after a skill rename removes the orphan.
+- Run metadata (`runs`, the `benchmark` suite and fixtures) and `/proc` identity are read and written as UTF-8 explicitly (Windows used the code page).
+- A path in run metadata that is rooted but not absolute on Windows (`/etc/hostname`, `\\x`, `C:x`) is refused as an evidence path or a benchmark fixture name on every system.
+- `prototype question merge --driver` leaves a questions file with CRLF line endings byte for byte when the other side adds nothing (it rewrote the file with LF).
+- Windows (Python 3.11 and 3.12): the test suite no longer fails for reasons of the platform that are not defects of the product. Tests were fixed (isolated
+  `USERPROFILE`/`LOCALAPPDATA`, interpreter from `sys.executable`, quoted paths in YAML, a fake `az` and `git` that run on Windows, links with a relative target, `skillsync.exe` as the entry file, case-insensitive file
+  trees); no test was removed or disabled, the simulated hosts that a real Windows file tree cannot show are skipped as subtests with a reason.
+- `status plan approve`/`spec approve`: the warning about the pre-implement report no longer misreads a plan saved with CRLF line endings (the `Przebieg:` line was not found).
+- `layers`: on a Windows host a backslash is a separator when paths are normalised and in `layer_rules` globs, whichever system is simulated.
+
+### Changed
+
+- Tests: the variable `SKILLSYNC_TEST_DASHBOARD_PORTS` (a range `<from>-<to>` within 5100-5199) assigns the ports of the status page tests so that several runs on one host do not collide; the default is unchanged and the product is unchanged (docs/development.md). `free_port` also treats a port in TIME_WAIT as free (the server binds with SO_REUSEADDR), because on macOS a slice of 29 ports ran out within one run.
+- CI (macOS): `timeout-minutes` of the `test` job for macOS from 30 to 45 (the tests take 20-28 min there); `tests/skip-baseline.json` now has a measured baseline for `macos-latest/symlink` and `macos-latest/copy` (35 skips of the main v1.3.0 run, identical in the four jobs) instead of `null`, with the new categories `linux-only-env` (lifecycle tests of `env`: the process ownership backend exists on Linux only), `bsd-mktemp` and `needs-shellcheck`; the time limits of four tests were relaxed (secret scan 0.5 → 5 s, git with a limit of 3.5 → 15 s next to a 30 s sleep, an idle dashboard connection 4 → 15 s, `approvals wait` 15 → 18 s). The guard test now checks the new limit and the macOS baseline.
+- CI: the test matrix adds Python 3.13 (blocks like 3.11 and 3.12) and Python 3.14 (informational, `continue-on-error`, Ubuntu only, both modes).
+- Path fields in reports use `/` on Windows: `knowledge init` (`created`, `existing`), `route` (`lessons[].path`, `domain[].path`, `index`), `doctor` (`findings[].path`) and the message about the users file inside the served root of
+  `prototype serve`. Helper: `skillsync_workflow/pathfmt.py` (`posix`). Commands that are to be executed (`selfcmd`, the `skillsync: link` task, hook commands) and paths the product opens stay native.
+
+### Compatibility
+
+- File systems without system locks (some network shares): writing approvals and the prototype server locks end at once with the error "file locks are not supported" (`BLOCKED` / 503 `lock_unsupported`); the old lock file worked everywhere. An old `dashboard serve` process started before the update (and an older copy of `skillsync`) writes approvals with the old lock: restart it and update the copies before the first approval (docs/upgrading.md).
+- On Windows, a consumer that compares the path fields above with a native path (`C:\...`) must compare with `/` or normalise (`Path(value)`); on Linux and macOS nothing changes. Commands to execute are not
+  affected: they keep the native form.
+
+### Breaking
+
+None.
+
 ## [1.4.0] - 2026-11-14
 
 ### Added

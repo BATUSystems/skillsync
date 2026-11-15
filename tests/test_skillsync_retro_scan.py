@@ -18,7 +18,7 @@ from unittest import mock
 import yaml
 
 from test_skillsync_workflow import CLI, WorkflowFixture
-from layers_helpers import commit_file, git, needs_fifo, needs_os_symlinks, needs_posix
+from layers_helpers import commit_file, git, needs_fifo, needs_os_symlinks, needs_posix, skip_open_file
 
 LIB = 'skills/feature/references/x.md'
 PRJ = 'docs/workflow.md'
@@ -1530,12 +1530,12 @@ class MainCheckoutReading(WorktreeBase):
         fake = self.base / 'fakebin'
         fake.mkdir()
         real = shutil.which('git')
-        (fake / 'git').write_text('#!/bin/sh\ncase "$*" in *--show-prefix*) sleep 4;; esac\nexec %s "$@"\n' % real)
+        (fake / 'git').write_text('#!/bin/sh\ncase "$*" in *--show-prefix*) sleep 30;; esac\nexec %s "$@"\n' % real)
         (fake / 'git').chmod(0o755)
         started = time.monotonic()
         with mock.patch.dict(os.environ, {'PATH': str(fake) + os.pathsep + os.environ['PATH']}):
             code, data = self.in_process([sig('S1', 'flaky')], [mock.patch.object(retro, 'GIT_TIMEOUT', 0.3)])
-        self.assertLess(time.monotonic() - started, 3.5, 'polecenia git muszą mieć limit GIT_TIMEOUT')
+        self.assertLess(time.monotonic() - started, 15, 'polecenia git muszą mieć limit GIT_TIMEOUT')  # bez limitu czekałoby 30 s
         self.assertEqual((code, data['status']), (0, 'PASS'))
 
 
@@ -1587,7 +1587,7 @@ class OutOfRangeTimestamps(WorktreeBase):
                     self.save()
                     self.past('bad-run', [('flaky', 'library', LIB)], created=bad)
                     self.past('good-run', [('flaky', 'library', LIB)])
-                with mock.patch.dict(os.environ, {'HOME': str(self.home)}):
+                with mock.patch.dict(os.environ, {'HOME': str(self.home), 'USERPROFILE': str(self.home)}):
                     data = self.scan([sig('S1', 'flaky')], extra=['--cross-project'])
                 self.assertEqual((self.one(data)['cross_project_repeats'], data['sources']['projects']), (1, 1))
                 self.assertFalse([w for w in data['warnings'] if w.startswith('source-skipped:')], data['warnings'])
@@ -1809,7 +1809,7 @@ class CrossBase(ScanBase):
         self.home = self.base / 'home'
         self.repos = self.home / 'Repos'
         self.repos.mkdir(parents=True)
-        patch = mock.patch.dict(os.environ, {'HOME': str(self.home)})
+        patch = mock.patch.dict(os.environ, {'HOME': str(self.home), 'USERPROFILE': str(self.home)})
         patch.start()
         self.addCleanup(patch.stop)
         self.use_layers(discover_paths=[str(self.repos)], tags={})
@@ -1990,6 +1990,7 @@ class CrossProjectSelection(CrossBase):
         self.excluding([str(link)])
         self.assertEqual(self.cross([sig('S1', 'flaky')])['sources']['projects'], 1)
 
+    @unittest.skipIf(os.name == 'nt', '`~name` always resolves on Windows (ntpath.expanduser builds a profile folder path from the name): there is no per-user lookup that can fail')
     def test_unresolvable_exclusion_is_blocked_with_a_fixed_reason(self):
         self.archive_fixture()
         self.excluding(['~no-such-user-zz/x'])
@@ -2180,7 +2181,7 @@ class UnexpectedForeignErrors(WorktreeBase):
         self.home = self.base / 'home'
         self.repos = self.home / 'Repos'
         self.repos.mkdir(parents=True)
-        patch = mock.patch.dict(os.environ, {'HOME': str(self.home)})
+        patch = mock.patch.dict(os.environ, {'HOME': str(self.home), 'USERPROFILE': str(self.home)})
         patch.start()
         self.addCleanup(patch.stop)
         self.use_layers(discover_paths=[str(self.repos)], tags={})
@@ -2214,12 +2215,13 @@ class UnexpectedForeignErrors(WorktreeBase):
 
 
 class CrossProjectRace(CrossBase):
+    @needs_os_symlinks
     def test_directory_swapped_for_a_symlink_between_check_and_open_is_refused(self):
         alpha = os.path.realpath(self.other('alpha', ('r1', [('other', 'library', 'skills/z.md')], ())))
         with self.at(self.base / 'outside'):
             self.past('r1', [('flaky', 'library', LIB)])
         run_dir = os.path.join(alpha, '.skillsync/runs/r1')
-        target = os.path.join(run_dir, 'retro-signals.json')
+        target = os.path.normpath(os.path.join(run_dir, 'retro-signals.json'))
         real_open, swapped = os.open, []
 
         def swapping_open(path, *args, **kwargs):
@@ -2242,7 +2244,7 @@ class CrossProjectRaceAfterOpen(CrossBase):
     def setup_alpha(self):
         alpha = os.path.realpath(self.other('alpha', ('r1', [('flaky', 'library', LIB)], ())))
         run_dir = os.path.join(alpha, '.skillsync/runs/r1')
-        return run_dir, os.path.join(run_dir, 'retro-signals.json')
+        return run_dir, os.path.normpath(os.path.join(run_dir, 'retro-signals.json'))
 
     def scan_with_hook(self, target, action):
         real, calls = os.path.realpath, []
@@ -2258,6 +2260,7 @@ class CrossProjectRaceAfterOpen(CrossBase):
         self.assertEqual((calls, code), ([True], 0), 'podmiana musiała nastąpić')
         return data
 
+    @skip_open_file('katalog albo plik podmieniany po otwarciu (uchwyt trzyma plik)')
     def test_directory_swapped_after_open_is_refused(self):
         run_dir, target = self.setup_alpha()
         with self.at(self.base / 'outside'):
@@ -2269,6 +2272,7 @@ class CrossProjectRaceAfterOpen(CrossBase):
 
         self.assertEqual(self.local(self.scan_with_hook(target, swap)), (None, 0, None))
 
+    @skip_open_file('katalog albo plik podmieniany po otwarciu (uchwyt trzyma plik)')
     def test_directory_swapped_to_a_symlink_onto_the_same_inode_is_refused_by_path(self):
         run_dir, target = self.setup_alpha()
         evil = self.base / 'outside-same-inode'
@@ -2281,6 +2285,7 @@ class CrossProjectRaceAfterOpen(CrossBase):
 
         self.assertEqual(self.local(self.scan_with_hook(target, swap)), (None, 0, None))
 
+    @skip_open_file('katalog albo plik podmieniany po otwarciu (uchwyt trzyma plik)')
     def test_file_replaced_after_open_is_refused(self):
         run_dir, target = self.setup_alpha()
 

@@ -1059,7 +1059,7 @@ class BridgeWithLayersTest(MigrateCase):
                 self.assertEqual(dry.returncode, 0, output)
                 self.assertNotIn('Missing skill', output)
                 for skill in wanted:
-                    self.assertIn(f'skills/{skill}', output)
+                    self.assertIn(f'skills/{skill}', output.replace('\\', '/'))   # the dry-run text prints native paths
         code, listing = self.cli_json('layers', 'list', cwd=in_org)
         self.assertEqual([item['id'] for item in listing['layers']], ['core', 'acme', 'me'])
         code, listing = self.cli_json('layers', 'list', cwd=other)

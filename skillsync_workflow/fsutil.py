@@ -8,6 +8,16 @@ import sys
 from pathlib import Path
 
 
+def isabs(path) -> bool:
+    """`os.path.isabs` with the meaning of Python <= 3.12 on Windows: a path rooted with `/` or `\\` but without a drive
+    (`/a/b`, `\\a`) is absolute. Python 3.13 stopped taking it for absolute (`ntpath.isabs('/x')` is False), which silently
+    changed every check that relied on it; a rooted path is still a path to the root of the current drive. POSIX: no change."""
+    text = os.fspath(path)
+    if os.path.isabs(text):
+        return True
+    return os.name == 'nt' and text[:1] in ('/', '\\')
+
+
 def ensure_utf8_streams() -> None:
     """Przełącza stdout i stderr na UTF-8, gdy mają inne kodowanie (stdout `errors='replace'`, stderr `backslashreplace`).
 

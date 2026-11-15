@@ -430,7 +430,7 @@ class SecretScanUnitTests(unittest.TestCase):
             with self.subTest(text=text[:8]):
                 started = time.monotonic()
                 pt._has_secret(text)
-                self.assertLess(time.monotonic() - started, 0.5)
+                self.assertLess(time.monotonic() - started, 5)  # catastrophic backtracking would take minutes; 5 s survives a loaded runner
 
     def test_control_and_bidi_characters_are_removed_from_spec_cells(self):
         hostile = 'a\x00b\x1b[2Kc\u202ed\x7fe\u2066f\u2069 g\nh'
@@ -1043,7 +1043,9 @@ class SinceFormatTests(QuestionCase):
         answer = self.answer(QA)
         self.rec(QA, 5)
         comment = self.expert_write('comment', QA, OLA, text='uwaga')
-        before = answer['at'][:19] + 'Z'   # sekundy, bez milisekund, nie później niż odpowiedź: jej zdarzenie jest nowsze
+        # sekundy, bez milisekund, ściśle przed odpowiedzią: jej zdarzenie jest nowsze (obcięcie `at` do sekund dawało czas
+        # równy odpowiedzi, gdy jej milisekundy wynosiły 000: `--since` jest ostre i odpowiedź odpadała, ok. 1 na 1000 biegów)
+        before = ps.format_at(ps.parse_at(answer['at']) - 1)[:19] + 'Z'
         report = self.q('wait', '--all', '--since', before, '--timeout', '0', '--interval', '0.2')
         self.assertEqual((report['event'], report['opId']), ('answer', answer['id']))
         # sekundy zaokrąglone w górę do chwili po odpowiedzi i po komentarzu: nic nowszego
@@ -1513,6 +1515,16 @@ class MergeDriverTests(QuestionCase):
         base = self.ops()
         ours = self.put('a.json', base)
         before = ours.read_bytes()
+        report = self.driver(self.put('o.json', base), ours, self.put('b.json', base))
+        self.assertEqual(report['added'], 0)
+        self.assertEqual(ours.read_bytes(), before)
+
+    def test_driver_leaves_a_crlf_file_untouched_when_b_adds_nothing(self):
+        base = self.ops()
+        ours = self.put('a.json', base)
+        ours.write_bytes(ours.read_bytes().replace(b'\r\n', b'\n').replace(b'\n', b'\r\n'))  # the file as a Windows checkout has it
+        before = ours.read_bytes()
+        self.assertIn(b'\r\n', before)
         report = self.driver(self.put('o.json', base), ours, self.put('b.json', base))
         self.assertEqual(report['added'], 0)
         self.assertEqual(ours.read_bytes(), before)

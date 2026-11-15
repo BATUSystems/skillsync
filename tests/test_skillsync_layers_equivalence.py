@@ -59,8 +59,9 @@ class EquivalenceCase(LayersCase):
     def describe(self, library, project):
         tokens = [(str(library), '<LIB>'), (str(project), '<PROJ>'), (str(ROOT), '<GEN>'), (self.env['HOME'], '<HOME>')]
         result = make_baseline.describe(project, tokens)
+        # Windows reports an absolute target as `\\?\C:\...` with backslashes: compare it in the POSIX form of the baseline
         result['symlinks'] = {key: (value[len('<LIB>/'):] if value.startswith('<LIB>/') else value)
-                              for key, value in result['symlinks'].items()}
+                              for key, value in ((k, v.replace('\\\\?\\', '', 1).replace('\\', '/')) for k, v in result['symlinks'].items())}
         self.normalize_task_command(project, tokens, result)
         return result
 
@@ -76,6 +77,9 @@ class EquivalenceCase(LayersCase):
             data = data.replace(real, token)
         data, count = re.subn(r'("command": )"[^"\n]*"', r'\1"<ENTRY>"', data)
         self.assertEqual(count, 1, 'exactly one task command in the generated tasks.json')
+        # with an interpreter as the command (no `skillsync` entry on the machine: Windows) the args start with the wrapper
+        # of the checkout or `-P -m skillsync_workflow`: the same entry, so it goes before `link`
+        data = re.sub(r'("args": \[\n)(?:\s*"(?!link")[^"\n]*",\n)+(\s*"link")', r'\1\2', data)
         result['files']['.vscode/tasks.json'] = hashlib.sha256(data.encode('utf-8')).hexdigest()
 
     def migrate(self, *flags):

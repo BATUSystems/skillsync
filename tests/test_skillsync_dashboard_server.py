@@ -40,18 +40,42 @@ FIX = HERE / "fixtures" / "dashboard_server"
 ASSETS, DESCRIPTIONS = srv.skill_assets(as_layerset(ROOT / "library"))
 
 
+TEST_PORTS_ENV = "SKILLSYNC_TEST_DASHBOARD_PORTS"
+
+
+def port_range() -> range:
+    """Porty dla testów: 5101–5199 poza 5140 albo wycinek z SKILLSYNC_TEST_DASHBOARD_PORTS (`5110-5124`, w granicach
+    5100–5199, bo `dashboard serve` nie przyjmie innych); osobny wycinek na bieg pozwala puścić kilka biegów naraz na jednym hoście."""
+    raw = os.environ.get(TEST_PORTS_ENV)
+    if raw is None:
+        return range(5101, 5200)
+    parts = raw.split("-")
+    try:
+        low, high = (int(part) for part in parts) if len(parts) == 2 else (None, None)
+    except ValueError:
+        low = high = None
+    if low is None or not 5100 <= low <= high <= 5199:
+        raise ValueError(f"{TEST_PORTS_ENV}={raw!r}: podaj zakres <od>-<do> w granicach 5100-5199, np. 5110-5124")
+    return range(low, high + 1)
+
+
 def free_port() -> int:
-    """Wolny port z zakresu 5100–5199 poza 5140 (domyślnym portem dashboardu)."""
-    for port in range(5101, 5200):
+    """Wolny port z zakresu 5100–5199 poza 5140 (domyślnym portem dashboardu) albo z SKILLSYNC_TEST_DASHBOARD_PORTS."""
+    ports = port_range()
+    for port in ports:
         if port == 5140:
             continue
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            if os.name != "nt":
+                # the server binds with SO_REUSEADDR, so a port left in TIME_WAIT by a stopped test server is free for it
+                # (without this a slice of 29 ports ran dry within one macOS run); on Windows the option would steal a port
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             try:
                 s.bind(("127.0.0.1", port))
             except OSError:
                 continue
             return port
-    raise RuntimeError("brak wolnego portu 5100–5199")
+    raise RuntimeError(f"brak wolnego portu {ports.start}-{ports.stop - 1} ({TEST_PORTS_ENV})")
 
 
 PLAN = "docs/plans/2026-01-10-demo-etap-1.md"
@@ -1690,7 +1714,7 @@ class HttpHardeningTests(HttpCase):
     def test_idle_connection_is_closed_after_the_handler_timeout(self) -> None:
         self.assertEqual(srv.Handler.timeout, 30)
         with mock.patch.object(srv.Handler, "timeout", 0.3):
-            with socket.create_connection(("127.0.0.1", self.port), timeout=5) as conn:
+            with socket.create_connection(("127.0.0.1", self.port), timeout=20) as conn:
                 start = time.monotonic()
                 try:
                     data = conn.recv(1)  # bez treści żądania: serwer zamyka połączenie po timeoucie
@@ -1698,7 +1722,7 @@ class HttpHardeningTests(HttpCase):
                     data = b""
                 elapsed = time.monotonic() - start
         self.assertEqual(data, b"")
-        self.assertLess(elapsed, 4)
+        self.assertLess(elapsed, 15)  # the default timeout is 30 s, so 15 s still proves the shortened one applied
 
 
 @needs_os_symlinks

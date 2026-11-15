@@ -34,7 +34,7 @@ import unicodedata
 import time
 import urllib.parse
 import yaml
-from .common import contained, emit, load_layer_project, read_project, read_yaml, require_layerset
+from .common import append_missing_lines, contained, emit, load_layer_project, read_project, read_yaml, require_layerset
 from . import layers as _layers
 from . import prototype_server as server
 from .plan_phases import parse_plan_phases
@@ -1648,15 +1648,8 @@ def _ensure_lines(path, lines, template):
     data, reason = read_regular_bytes(path, MAX_PROTOTYPE_JSON)
     if data is None:
         raise PrototypeError(f'{Path(path).name}: {reason}')
-    text = data.decode('utf-8', 'surrogateescape')
-    present = {line.strip() for line in text.splitlines()}
-    missing = [line for line in lines if line not in present]
-    if not missing:
-        return None
-    eol = '\r\n' if '\r\n' in text else '\n'
-    if text and not text.endswith('\n'):
-        text += eol
-    return text + ''.join(line + eol for line in missing)
+    # Same appending rule as the `.gitignore` of a project (`link`): existing bytes and line endings stay.
+    return append_missing_lines(data.decode('utf-8', 'surrogateescape'), lines, key=str.strip)
 
 
 LEGACY_COMMENTS_KEPT = 'comments.v1.js'
@@ -2392,6 +2385,8 @@ def user_command(root, args):
             warnings += extra
     except server.UserError as error:
         raise _user_error(error) from None
+    except server.LockUnavailable:
+        raise PrototypeError('lock_unsupported: the file system does not support file locks (keep the users file on a local disk)') from None
     except server.LockTimeout:
         raise PrototypeError('lock_timeout: the users file is locked') from None
     if warnings:
@@ -2456,14 +2451,17 @@ def serve_prototypes(root, manifest, args, err=None):
     if not args.no_source_writes and not source_writes:
         notes.append(f'{_relative(settings["root"], repo)} nie leży w kopii roboczej gita: przywracanie z UI wyłączone '
                      '(source writes off)')
-    for warning in notes:
-        err.write(f'ostrzeżenie: {warning}\n')
-    err.write(f'Serwer prototypów: {instance.url} (Ctrl+C kończy)\n')
-    for line in public_address_lines(settings):
-        err.write(line + '\n')
-    err.flush()
-    previous = _stop_on_sigterm()
+    previous = None
     try:
+        # The handler goes in first and the whole start is under the `try`: a SIGINT/SIGTERM between the announcement
+        # and `serve_forever` (a Ctrl+C right after the address line) stops the server cleanly instead of a traceback.
+        previous = _stop_on_sigterm()
+        for warning in notes:
+            err.write(f'ostrzeżenie: {warning}\n')
+        err.write(f'Serwer prototypów: {instance.url} (Ctrl+C kończy)\n')
+        for line in public_address_lines(settings):
+            err.write(line + '\n')
+        err.flush()
         instance.serve_forever()
     except KeyboardInterrupt:
         pass
@@ -4347,7 +4345,8 @@ def merge_questions_driver(ancestor, current, other):
     except server.MergeConflict as error:
         return _question_failure(error)
     data = server.serialize_questions(merged).encode('utf-8')
-    if data != original:
+    # a file with CRLF (checkout with `core.autocrlf` on Windows) that gets nothing new stays as it is, byte for byte
+    if data != original.replace(b'\r\n', b'\n') or (added and data != original):
         server.atomic_write_bytes(str(current), data)
     return {'status': 'PASS', 'driver': True, 'added': len(added), 'total': len(merged)}
 

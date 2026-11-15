@@ -23,6 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from skillsync_workflow import prototype_server as ps  # noqa: E402
+from tests.layers_helpers import skip_on_windows  # noqa: E402
 from tests.test_skillsync_prototype_server import FakeClock, setUpModule, tearDownModule  # noqa: E402,F401
 
 EWA = 'ewa.ekspert@example.com'
@@ -357,6 +358,7 @@ class StoreBasicsTests(QuestionsCase):
         self.assertIn('questions.json', names)
         json.loads(self.file_bytes().decode('utf-8'))
 
+    @skip_on_windows('POSIX file modes (umask)')
     def test_questions_file_mode_follows_umask_not_0600(self):
         self.add(ask())
         mode = os.stat(os.path.join(self.directory, 'questions.json')).st_mode & 0o777

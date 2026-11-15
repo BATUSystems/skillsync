@@ -320,24 +320,30 @@ class UserRolesCommandTests(S.UsersCase):
 # 6. Ostrzeżenia o haśle domyślnym (K2)
 # ═════════════════════════════════════════════════════════════════════════════
 
+def password_warnings(stderr):
+    """stderr without the note that Windows has no 0600 check (`ostrzeżenie: kontrola uprawnień 0600 pominięta na Windows`):
+    it is printed by every user command there and says nothing about the password."""
+    return ''.join(line for line in stderr.splitlines(True) if 'uprawnień 0600' not in line)
+
+
 class WarningTests(S.UsersCase):
     def test_add_expert_with_default_password_warns_and_with_own_password_does_not(self):
         code, out, err = self.cli(['user', 'add', 'e@example.com', '--users', self.users_path, '--role', 'expert',
                                    '--default-password-stdin'], stdin=DEFAULT + '\n')
         self.assertEqual(code, 0, out + err)
         self.assertIn('e@example.com', err)
-        self.assertIn('ostrzeżenie', err)
+        self.assertIn('ostrzeżenie', password_warnings(err))
         self.assertNotIn(DEFAULT, out + err)
         code, out, err = self.cli(['user', 'add', 'f@example.com', '--users', self.users_path, '--role', 'expert',
                                    '--password-stdin'], stdin=PW + '\n')
         self.assertEqual(code, 0, out + err)
-        self.assertNotIn('ostrzeżenie', err, 'kontrola: własne hasło nie wywołuje ostrzeżenia')
+        self.assertNotIn('ostrzeżenie', password_warnings(err), 'kontrola: własne hasło nie wywołuje ostrzeżenia')
 
     def test_commenter_default_password_does_not_warn(self):
         code, out, err = self.cli(['user', 'add', 'c@example.com', '--users', self.users_path,
                                    '--default-password-stdin'], stdin=DEFAULT + '\n')
         self.assertEqual(code, 0, out + err)
-        self.assertNotIn('ostrzeżenie', err)
+        self.assertNotIn('ostrzeżenie', password_warnings(err))
 
     def test_passwd_reset_of_an_expert_warns(self):
         self.cli_json(['user', 'add', 'e@example.com', '--users', self.users_path, '--role', 'expert',
@@ -357,7 +363,7 @@ class WarningTests(S.UsersCase):
                       stdin=PW + '\n')
         code, out, err = self.cli(['user', 'roles', 'h@example.com', '--users', self.users_path, '--role', 'expert'])
         self.assertEqual(code, 0, out + err)
-        self.assertNotIn('ostrzeżenie', err, 'kontrola: konto z własnym hasłem nie wywołuje ostrzeżenia')
+        self.assertNotIn('ostrzeżenie', password_warnings(err), 'kontrola: konto z własnym hasłem nie wywołuje ostrzeżenia')
 
     def test_import_of_experts_warns_for_every_added_account(self):
         lista = os.path.join(self.tmp, 'lista.txt')

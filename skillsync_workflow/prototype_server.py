@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import errno
 import getpass
 import hashlib
 import hmac
@@ -60,6 +61,134 @@ try:  # Windows
     import msvcrt
 except ImportError:
     msvcrt = None
+
+
+# ── Lingering close (shared with the status page) ───────────────────────────
+#
+# A handler that answers an error (401, 403, 405, 411, 413, ...) before it has read the request body and then closes
+# the connection leaves the client's bytes unread in the socket. The kernel answers such a close with a TCP reset,
+# and on Windows the client then sees ConnectionResetError (WinError 10054) instead of the response it was sent.
+# The cure is the one of RFC 9112 section 9.6: after the response, half-close the sending side and discard what the
+# client still sends, within hard limits, before closing. The limits are small and fixed, so a client without any
+# rights cannot hold a worker or make the server read an unbounded body.
+#
+# The status page (`dashboard_http`) imports `LingeringCloseMixin` from here: one source, this module stays standalone.
+
+LINGER_BYTES = 256 * 1024   # a body over this is not drained (the reset is then the client's own doing); above the handler's own read buffer
+LINGER_SECONDS = 1.0        # all of the discarding, not per read
+_CHUNK = 64 * 1024
+
+
+def linger_close(connection, limit=LINGER_BYTES, seconds=LINGER_SECONDS):
+    """Half-close `connection` for writing and discard the client's remaining bytes (bounded); never raises.
+
+    Returns the number of bytes discarded. The caller closes the connection afterwards."""
+    discarded = 0
+    deadline = time.monotonic() + seconds
+    try:
+        connection.shutdown(socket.SHUT_WR)
+        while discarded < limit:
+            left = deadline - time.monotonic()
+            if left <= 0:
+                break
+            connection.settimeout(left)
+            data = connection.recv(min(_CHUNK, limit - discarded))
+            if not data:   # the client has closed its side: nothing is left to reset
+                break
+            discarded += len(data)
+    except OSError:   # includes timeouts, resets and a connection that is already gone
+        pass
+    return discarded
+
+
+class _CountingReader:
+    """Proxy of a handler's `rfile` that counts the bytes handed out, to tell whether a request body was read."""
+
+    def __init__(self, raw):
+        self._raw = raw
+        self.count = 0
+
+    def read(self, *args):
+        data = self._raw.read(*args)
+        self.count += len(data)
+        return data
+
+    def read1(self, *args):
+        data = self._raw.read1(*args)
+        self.count += len(data)
+        return data
+
+    def readline(self, *args):
+        data = self._raw.readline(*args)
+        self.count += len(data)
+        return data
+
+    def readinto(self, buffer):
+        size = self._raw.readinto(buffer)
+        self.count += size or 0
+        return size
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        line = self.readline()
+        if not line:
+            raise StopIteration
+        return line
+
+    def __getattr__(self, name):
+        return getattr(self._raw, name)
+
+
+class LingeringCloseMixin:
+    """Mixin for `BaseHTTPRequestHandler` subclasses (list it BEFORE the handler base class).
+
+    After each request it checks whether the declared body was read. A body that is left unread would be parsed
+    as the next request on a kept-alive connection and, at the close, answered with a reset; so such a connection
+    is closed (`close_connection`) and, in `finish`, closed with a lingering close. A request whose body the
+    handler read, or that has none, is not touched."""
+
+    _body_mark = None
+    _linger = False
+
+    def setup(self):
+        super().setup()
+        self.rfile = _CountingReader(self.rfile)
+
+    def parse_request(self):
+        ok = super().parse_request()
+        self._body_mark = self.rfile.count if ok else None
+        return ok
+
+    def handle_one_request(self):
+        # Refusals before `parse_request` finishes (414, 431, a bad request line) are answered by `send_error`, which closes the
+        # connection; they do not linger (the body of such a request is not declared in a header the server accepted).
+        self._body_mark = None
+        self._linger = False
+        super().handle_one_request()
+        if self._body_mark is not None and self._body_unread():
+            self.close_connection = True
+            self._linger = True
+
+    def _body_unread(self):
+        headers = getattr(self, 'headers', None)
+        if headers is None:
+            return False
+        if headers.get('Transfer-Encoding'):
+            return True   # a chunked body is never read by these handlers (411); count it as unread
+        try:
+            declared = int(headers.get('Content-Length') or 0)
+        except ValueError:
+            return True
+        return declared > 0 and self.rfile.count - self._body_mark < declared
+
+    def finish(self):
+        try:
+            if self._linger:
+                linger_close(self.connection)
+        finally:
+            super().finish()
 
 
 # ── Constants ────────────────────────────────────────────────────────────────
@@ -111,6 +240,7 @@ MAX_BODY = 64 * 1024
 WARN_FILE_BYTES = 10 * 1024 * 1024
 MAX_FILE_BYTES = 20 * 1024 * 1024
 LOCK_TIMEOUT = 5.0
+TRANSIENT_RETRY_SECONDS = 0.5   # Windows: how long a refused open/rename/replace of a file another thread holds is retried
 DEFAULT_ITERATIONS = 600000
 SALT_BYTES = 16
 MIN_PASSWORD = 10
@@ -170,6 +300,15 @@ class OperationError(PrototypeServerError):
 class LockTimeout(PrototypeServerError):
     def __init__(self, message='lock wait exceeded'):
         super().__init__(503, 'lock_timeout', message, headers={'Retry-After': '1'})
+
+
+class LockUnavailable(LockTimeout):
+    """The file system does not support the system lock (`flock`/`msvcrt.locking`: ENOTSUP, ENOLCK, ...): no point
+    in waiting for the timeout. A `LockTimeout` for every handler that already maps lock failures to 503."""
+
+    def __init__(self, message='file locks are not supported by this file system'):
+        super().__init__(message)
+        self.code = 'lock_unsupported'
 
 
 class FileTooLarge(PrototypeServerError):
@@ -1974,6 +2113,14 @@ def _process_lock(path):
         return lock
 
 
+# `flock`/`LockFileEx` answers with these when the file system cannot lock at all (a network share, some FUSE drivers):
+# retrying cannot help. ENOLCK is ambiguous (no lock manager yet, or no kernel lock records): it is retried for half of the
+# timeout first. Contention (EAGAIN, EACCES, EDEADLK, ...) is anything else and is waited for.
+_LOCK_UNSUPPORTED_ERRNOS = frozenset(
+    code for code in (getattr(errno, name, None) for name in ('ENOTSUP', 'EOPNOTSUPP', 'ENOSYS')) if code is not None)
+_LOCK_MAYBE_UNSUPPORTED_ERRNOS = frozenset(code for code in (getattr(errno, 'ENOLCK', None),) if code is not None)
+
+
 def _try_lock_fd(fd):
     if fcntl is not None:
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -1993,14 +2140,29 @@ def _unlock_fd(fd):
 class FileLock(object):
     """`threading.Lock` per path in this process plus an exclusive lock on `path`
     (`fcntl.flock` on POSIX, `msvcrt.locking` on Windows).  Waits up to `timeout`
-    seconds in total, then raises `LockTimeout` (HTTP 503)."""
+    seconds in total, then raises `LockTimeout` (HTTP 503); a file system without
+    system locks raises `LockUnavailable` at once.
 
-    def __init__(self, path, timeout=LOCK_TIMEOUT, mode=0o666):
+    `unlink=True` removes the lock file on release (the approvals lock: a transient file next to the data, like the
+    older O_EXCL lock); a holder may also set `lock.unlink = True` while it holds the lock (the orphan sweep of the
+    questions store). That is safe because EVERY lock re-checks, after `flock`, that the path still names the inode it
+    locked (a waiter that opened the old file just before it was unlinked retries on the new one); on Windows the
+    file is removed after the handle is closed and a failure (someone else has it open) is harmless."""
+
+    def __init__(self, path, timeout=LOCK_TIMEOUT, mode=0o666, unlink=False):
         self.path = os.path.abspath(path)
         self.timeout = timeout
         self.mode = mode
+        self.unlink = unlink
         self._thread_lock = _process_lock(self.path)
         self._fd = None
+
+    def _same_file(self, fd):
+        try:
+            held, named = os.fstat(fd), os.lstat(self.path)
+        except OSError:
+            return False
+        return (held.st_ino, held.st_dev) == (named.st_ino, named.st_dev) and not stat.S_ISLNK(named.st_mode)
 
     def __enter__(self):
         deadline = time.monotonic() + self.timeout
@@ -2008,16 +2170,32 @@ class FileLock(object):
             raise LockTimeout()
         try:
             flags = os.O_RDWR | os.O_CREAT | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_BINARY', 0)
-            fd = os.open(self.path, flags, self.mode)
             while True:
-                try:
-                    _try_lock_fd(fd)
+                # Windows: the file may be just being deleted by the holder that released it (unlink=True): the open is refused
+                # (EACCES) for that instant. Retried within the lock timeout (at most TRANSIENT_RETRY_SECONDS); a refusal
+                # that lasts (a real permission problem) is raised as before.
+                fd = retry_transient(lambda: os.open(self.path, flags, self.mode),
+                                     min(TRANSIENT_RETRY_SECONDS, max(0.0, deadline - time.monotonic())))
+                while True:
+                    try:
+                        _try_lock_fd(fd)
+                        break
+                    except OSError as error:
+                        if error.errno in _LOCK_UNSUPPORTED_ERRNOS or (
+                                error.errno in _LOCK_MAYBE_UNSUPPORTED_ERRNOS
+                                and time.monotonic() >= deadline - self.timeout / 2):
+                            os.close(fd)
+                            raise LockUnavailable()
+                        if time.monotonic() >= deadline:
+                            os.close(fd)
+                            raise LockTimeout()
+                        time.sleep(0.02)
+                if os.name == 'nt' or self._same_file(fd):
                     break
-                except OSError:
-                    if time.monotonic() >= deadline:
-                        os.close(fd)
-                        raise LockTimeout()
-                    time.sleep(0.02)
+                _unlock_fd(fd)  # the file was unlinked (and maybe recreated) under us: lock the one the path names now
+                os.close(fd)
+                if time.monotonic() >= deadline:
+                    raise LockTimeout()
             self._fd = fd
         except BaseException:
             self._thread_lock.release()
@@ -2028,13 +2206,50 @@ class FileLock(object):
         try:
             if self._fd is not None:
                 try:
+                    if self.unlink and os.name != 'nt':
+                        try:
+                            os.unlink(self.path)  # still holding the lock: waiters re-check the inode
+                        except OSError:
+                            pass
                     _unlock_fd(self._fd)
                 finally:
                     os.close(self._fd)
                     self._fd = None
+                    if self.unlink and os.name == 'nt':  # pragma: no cover - Windows
+                        try:
+                            os.unlink(self.path)
+                        except OSError:
+                            pass
         finally:
             self._thread_lock.release()
         return False
+
+
+
+# ── Transient refusals on Windows ──────────────────────────────────────────
+
+_WINDOWS = os.name == 'nt'
+
+
+def retry_transient(operation, seconds=None):
+    """Run `operation()`; on Windows retry briefly while the system refuses a file that another thread has open or is replacing.
+
+    Windows answers `open`, `rename` and `replace` on such a file with `PermissionError` (WinError 5 or 32) for the instant
+    of the other thread's work, where POSIX hands over the old or the new file. The retry is short and bounded (about half a
+    second, doubling pauses of 1 to 20 ms); a refusal that outlasts it (a real permission problem) is raised as before, and
+    so is every other error. On other systems the operation runs once. It holds no lock of its own."""
+    if not _WINDOWS:
+        return operation()
+    deadline = time.monotonic() + (TRANSIENT_RETRY_SECONDS if seconds is None else seconds)
+    delay = 0.001
+    while True:
+        try:
+            return operation()
+        except PermissionError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(delay)
+            delay = min(delay * 2, 0.02)
 
 
 def atomic_write_bytes(path, data, mode=None, default_mode=0o644):
@@ -2067,7 +2282,7 @@ def atomic_write_bytes(path, data, mode=None, default_mode=0o644):
         finally:
             os.close(fd)
         os.chmod(temporary, final_mode)
-        os.replace(temporary, path)
+        retry_transient(lambda: os.replace(temporary, path))
     except BaseException:
         try:
             os.unlink(temporary)
@@ -2215,7 +2430,7 @@ class CommentsStore(object):
             if self._cache is not None and self._cache.key == key:
                 return self._cache
         flags = os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_BINARY', 0)
-        fd = os.open(self.path, flags)
+        fd = retry_transient(lambda: os.open(self.path, flags))
         with os.fdopen(fd, 'rb') as handle:
             info = os.fstat(handle.fileno())
             data = handle.read()
@@ -3020,7 +3235,7 @@ class QuestionsStore(object):
             if self._cache is not None and self._cache.key == key:
                 return self._cache
         flags = os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_BINARY', 0)
-        fd = os.open(self.path, flags)
+        fd = retry_transient(lambda: os.open(self.path, flags))
         with os.fdopen(fd, 'rb') as handle:
             info = os.fstat(handle.fileno())
             data = handle.read()
@@ -3044,10 +3259,10 @@ class QuestionsStore(object):
         if os.path.lexists(self.path) or not os.path.lexists(self.lock_path):
             return False
         try:
-            with FileLock(self.lock_path, 0.2):
+            with FileLock(self.lock_path, 0.2) as lock:
                 if os.path.lexists(self.path):
                     return False
-                os.unlink(self.lock_path)
+                lock.unlink = True  # removed on release, still under the lock; waiters re-open the path (see FileLock)
         except (LockTimeout, OSError):
             return False
         return True
@@ -3663,7 +3878,7 @@ def read_restore_marker(directory):
     if not stat.S_ISREG(info.st_mode) or info.st_size > 4096:
         return {}
     try:
-        with open(path, 'rb') as handle:
+        with retry_transient(lambda: open(path, 'rb')) as handle:
             value = strict_json_loads(handle.read().decode('utf-8'))
     except (OSError, ValueError, UnicodeDecodeError, RecursionError):
         return {}
@@ -3680,7 +3895,7 @@ def remove_restore_marker(directory):
     try:
         if os.path.islink(path) or os.path.isdir(path):
             return
-        os.unlink(path)
+        retry_transient(lambda: os.unlink(path))
     except FileNotFoundError:
         return
     _fsync_directory(directory)
@@ -3720,8 +3935,8 @@ def read_writing(directory, now_ms):
         info = os.lstat(path)
         if not stat.S_ISREG(info.st_mode) or info.st_size > WRITING_MAX_BYTES:
             return None
-        fd = os.open(path, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_NONBLOCK', 0)
-                     | getattr(os, 'O_BINARY', 0))
+        fd = retry_transient(lambda: os.open(path, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_NONBLOCK', 0)
+                                             | getattr(os, 'O_BINARY', 0)))
         try:
             opened = os.fstat(fd)
             if not stat.S_ISREG(opened.st_mode) or opened.st_size > WRITING_MAX_BYTES:
@@ -3763,8 +3978,8 @@ def read_writing(directory, now_ms):
 
 
 def write_writing(directory, now_ms, ttl_s, by=None):
-    """Atomically (re)write the marker; a short retry on Windows where `os.replace` can fail while a reader holds the
-    file.  A repeated call on a marker that is still valid keeps its `since` (and its `by`, unless `by` is given) and sets
+    """Atomically (re)write the marker (`atomic_write_bytes` retries briefly on Windows where `os.replace` can fail while a
+    reader holds the file).  A repeated call on a marker that is still valid keeps its `since` (and its `by`, unless `by` is given) and sets
     `renewedAt = now`; otherwise `since = renewedAt = now`.  `expiresAt = now + ttl`.
     Returns `{since, expiresAt, renewedAt, by}`."""
     now_ms = int(now_ms)
@@ -3774,15 +3989,7 @@ def write_writing(directory, now_ms, ttl_s, by=None):
     payload = {'version': 1, 'since': since, 'renewedAt': now_ms, 'expiresAt': now_ms + int(ttl_s) * 1000, 'by': who}
     data = (js_stringify(payload) + '\n').encode('utf-8')
     path = os.path.join(directory, WRITING_MARKER)
-    attempts = 5 if os.name == 'nt' else 1
-    for attempt in range(attempts):
-        try:
-            atomic_write_bytes(path, data)
-            break
-        except PermissionError:
-            if attempt + 1 >= attempts:
-                raise
-            time.sleep(0.05 * (attempt + 1))
+    atomic_write_bytes(path, data)   # the short retry on Windows is inside (`retry_transient`)
     return {'since': since, 'expiresAt': payload['expiresAt'], 'renewedAt': now_ms, 'by': who}
 
 
@@ -3792,7 +3999,7 @@ def remove_writing(directory):
     try:
         if os.path.islink(path) or os.path.isdir(path):
             return False
-        os.unlink(path)
+        retry_transient(lambda: os.unlink(path))   # Windows refuses the unlink while a status poll has the marker open
     except FileNotFoundError:
         return False
     _fsync_directory(directory)
@@ -4827,7 +5034,7 @@ class UsersFile(object):
         info = os.lstat(self.path)
         if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
             raise UserError('invalid_users_file', 'users file must be a regular file')
-        with open(self.path, 'rb') as handle:
+        with retry_transient(lambda: open(self.path, 'rb')) as handle:
             data = handle.read()
         try:
             parsed = strict_json_loads(data.decode('utf-8-sig'))
@@ -4895,7 +5102,7 @@ class UsersFile(object):
         with FileLock(self.lock_path, self.lock_timeout, mode=0o600):
             if os.path.lexists(self.path):
                 data, _key = self._read_file()
-                with open(self.path, 'rb') as handle:
+                with retry_transient(lambda: open(self.path, 'rb')) as handle:
                     previous = handle.read()
             else:
                 data, previous = {'version': 1, 'users': []}, None
@@ -5463,7 +5670,7 @@ def _link_write_private(path, data):
             handle.write(data)
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temporary, path)
+        retry_transient(lambda: os.replace(temporary, path))
     except BaseException:
         try:
             os.unlink(temporary)
@@ -5481,7 +5688,7 @@ def link_write_state(run_dir, state):
 def link_remove_state(path, instance):
     """Remove our own state file (same `instance`); a file of another server stays."""
     try:
-        with open(path, 'rb') as handle:
+        with retry_transient(lambda: open(path, 'rb')) as handle:
             data = json.loads(handle.read(65536).decode('utf-8'))
         if isinstance(data, dict) and data.get('instance') == instance:
             os.unlink(path)
@@ -5502,7 +5709,7 @@ def link_read_states(run_dir):
             continue
         path = os.path.join(run_dir, name)
         try:
-            descriptor = os.open(path, os.O_RDONLY | _LINK_NOFOLLOW)
+            descriptor = retry_transient(lambda: os.open(path, os.O_RDONLY | _LINK_NOFOLLOW))
         except OSError:
             continue
         try:
@@ -5618,7 +5825,7 @@ def link_path_allowed(path):
 def _link_read_token_file(path, limit=LINK_MAX_TOKEN_FILE):
     """`dict` of a private regular token file, or None."""
     try:
-        descriptor = os.open(path, os.O_RDONLY | _LINK_NOFOLLOW)
+        descriptor = retry_transient(lambda: os.open(path, os.O_RDONLY | _LINK_NOFOLLOW))
     except OSError:
         return None
     try:
@@ -5726,7 +5933,7 @@ def link_consume(run_dir, token, now, instance=None):
         if peek is not None and peek.get('instance') != instance:
             return None
     try:
-        os.rename(source, taken)
+        retry_transient(lambda: os.rename(source, taken))   # Windows refuses it while another thread reads the token file
     except OSError:
         return None
     try:
@@ -5888,7 +6095,7 @@ def startup_checks(config):
     users_real = os.path.realpath(config.users)
     records = []
     if _within(users_real, root_real):
-        errors.append('plik użytkowników leży w serwowanym katalogu: %s' % config.users)
+        errors.append('plik użytkowników leży w serwowanym katalogu: %s' % (str(config.users).replace('\\', '/') if os.name == 'nt' else config.users))
     if not os.path.isfile(users_real):
         errors.append('brak pliku użytkowników: %s (utwórz go: user add)' % config.users)
     else:
@@ -6295,7 +6502,7 @@ _LOGIN_TO_VIEW_EXCEPTIONS = ('/_login', _API_PREFIX + '/login', _API_PREFIX + '/
 
 # ── HTTP handler ─────────────────────────────────────────────────────────────
 
-class PrototypeRequestHandler(BaseHTTPRequestHandler):
+class PrototypeRequestHandler(LingeringCloseMixin, BaseHTTPRequestHandler):
     server_version = 'skillsync-prototype/' + SERVER_VERSION
     sys_version = ''
     timeout = 30
@@ -8096,6 +8303,9 @@ def run_user_command(args, stdin=None, out=None, err=None, iterations=DEFAULT_IT
         return 0
     except UserError as error:
         _emit(out, {'status': 'BLOCKED', 'action': action, 'error': error.code, 'message': error.message})
+        return 2
+    except LockUnavailable:
+        _emit(out, {'status': 'BLOCKED', 'action': action, 'error': 'lock_unsupported'})
         return 2
     except LockTimeout:
         _emit(out, {'status': 'BLOCKED', 'action': action, 'error': 'lock_timeout'})

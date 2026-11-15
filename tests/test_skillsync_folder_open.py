@@ -16,6 +16,7 @@ TAIL = ["link", "${workspaceFolder}"]
 PYTHON = "/opt/py/bin/python"
 CHECKOUT = [PYTHON, "/work/Skillsync/skillsync"]
 INSTALLED = [PYTHON, "-P", "-m", "skillsync_workflow"]
+ENTRY_NAME = "skillsync.exe" if os.name == "nt" else "skillsync"  # the entry file of the installation
 ENTRY = ["/home/runner/.local/bin/skillsync"]  # the user's entry: no interpreter in the task
 
 
@@ -100,7 +101,9 @@ class FolderOpenTaskTests(TempProjectMixin, unittest.TestCase):
         self.manifest = {"skills": ["feature"]}
         self.home = self.tmp / "home"
         self.home.mkdir()
-        env = mock.patch.dict(os.environ, {"HOME": str(self.home)})
+        # `Path.home()` is `%USERPROFILE%` on Windows: both variables point into the fixture, so the real profile
+        # (with a real `~/.local/bin/skillsync.exe`) is never read.
+        env = mock.patch.dict(os.environ, {"HOME": str(self.home), "USERPROFILE": str(self.home)})
         env.start()
         self.addCleanup(env.stop)
         self.target = self.project_dir / ".vscode" / "tasks.json"
@@ -122,7 +125,7 @@ class FolderOpenTaskTests(TempProjectMixin, unittest.TestCase):
 
     def install_entry(self, symlink=True):
         """Put `~/.local/bin/skillsync` into the tmp HOME: a symlink to the wrapper or a plain executable file."""
-        entry = self.home / ".local" / "bin" / "skillsync"
+        entry = self.home / ".local" / "bin" / ENTRY_NAME
         entry.parent.mkdir(parents=True, exist_ok=True)
         if symlink:
             entry.symlink_to(SKILLSYNC_PATH)
@@ -168,7 +171,7 @@ class FolderOpenTaskTests(TempProjectMixin, unittest.TestCase):
         self.assertNotEqual(task["command"], str(SKILLSYNC_PATH.resolve()))  # the symlink itself, not its target
 
     def test_entry_found_on_path_is_used_when_home_has_none(self):
-        found = self.tmp / "bin" / "skillsync"
+        found = self.tmp / "bin" / ENTRY_NAME
         found.parent.mkdir()
         found.write_text("#!/bin/sh\n")
         found.chmod(0o755)
@@ -328,7 +331,9 @@ class FolderOpenTaskTests(TempProjectMixin, unittest.TestCase):
     @needs_os_symlinks
     def test_a_python_plus_wrapper_task_from_the_repo_is_refreshed_once_to_the_entry_shape(self):
         entry = self.install_entry()
-        legacy = generated_task(str(entry), python="/home/user/Repos/x/.venv/bin/python")
+        # the legacy task ran the wrapper of the checkout (`skillsync`), never the installed entry (`skillsync.exe` on Windows:
+        # a different name that `is_managed_link_task` rightly does not take for the old shape)
+        legacy = generated_task(str(SKILLSYNC_PATH), python="/home/user/Repos/x/.venv/bin/python")
         original = self.write_tasks([{"label": "build", "command": "make"}, legacy])
         self.run_hook()
         data = json.loads(self.target.read_text())

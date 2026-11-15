@@ -743,7 +743,7 @@ class ReviewRound1Tests(PushCase):
         before = self.layers_snapshot()
         process = self.push(project, '--dry-run')
         self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
-        self.assertRegex(process.stdout, r'\[dry-run\] Would write: .*skills/team/references/new\.md')
+        self.assertRegex(process.stdout, r'\[dry-run\] Would write: .*skills[\\/]team[\\/]references[\\/]new\.md')
         self.assertEqual(self.layers_snapshot(), before)
         self.assertFalse((composite / 'references/new.md').is_symlink())
 

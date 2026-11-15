@@ -79,7 +79,7 @@ class SmartSelectionFields(WorkflowFixture):
 
     def test_summary_after_run_fail(self):
         self.checks({'id': 'core', 'kind': 'test',
-                     'argv': ['/usr/bin/python3', '-c', 'import sys; sys.exit(1)']})
+                     'argv': [sys.executable, '-c', 'import sys; sys.exit(1)']})
         report = self.report('smart-test', '--files', 'core/base.py', '--run', code=1)
         self.assertEqual(report['status'], 'FAIL')
         summary = report['summary']
@@ -93,7 +93,7 @@ class SmartSelectionFields(WorkflowFixture):
 
     def test_tests_counted_unknown_is_none(self):
         self.checks({'id': 'core', 'kind': 'test', 'success_pattern': 'hello',
-                     'argv': ['/usr/bin/python3', '-c', 'print("hello")']})
+                     'argv': [sys.executable, '-c', 'print("hello")']})
         report = self.report('smart-test', '--files', 'core/base.py', '--run')
         self.assertEqual(report['status'], 'PASS')
         self.assertIsNone(report['summary']['tests_counted'])

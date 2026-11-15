@@ -741,7 +741,7 @@ class ScriptBehaviorTests(ExpertsPageBase):
             self.skipTest('brak node w środowisku')
         import json
         with tempfile.TemporaryDirectory(prefix='experts-js-') as tmp:
-            (Path(tmp) / 'experts.js').write_text(self.script, encoding='utf-8')
+            (Path(tmp) / 'experts.js').write_text(self.script, encoding='utf-8', newline='\n')  # LF: the harness cuts functions at '\n  }\n'
             (Path(tmp) / 'harness.js').write_text(NODE_HARNESS_MULTI, encoding='utf-8')
             done = subprocess.run([node, str(Path(tmp) / 'harness.js'), str(Path(tmp) / 'experts.js')],
                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
@@ -773,7 +773,7 @@ class ScriptBehaviorTests(ExpertsPageBase):
             self.skipTest('brak node w środowisku')
         import json
         with tempfile.TemporaryDirectory(prefix='experts-js-') as tmp:
-            (Path(tmp) / 'experts.js').write_text(self.script, encoding='utf-8')
+            (Path(tmp) / 'experts.js').write_text(self.script, encoding='utf-8', newline='\n')  # LF: the harness cuts functions at '\n  }\n'
             (Path(tmp) / 'harness.js').write_text(NODE_HARNESS_POLL, encoding='utf-8')
             done = subprocess.run([node, str(Path(tmp) / 'harness.js'), str(Path(tmp) / 'experts.js')],
                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
@@ -825,7 +825,7 @@ class ScriptBehaviorTests(ExpertsPageBase):
             self.skipTest('brak node w środowisku')
         import json
         with tempfile.TemporaryDirectory(prefix='experts-js-') as tmp:
-            (Path(tmp) / 'experts.js').write_text(self.script, encoding='utf-8')
+            (Path(tmp) / 'experts.js').write_text(self.script, encoding='utf-8', newline='\n')  # LF: the harness cuts functions at '\n  }\n'
             (Path(tmp) / 'harness.js').write_text(NODE_HARNESS, encoding='utf-8')
             done = subprocess.run([node, str(Path(tmp) / 'harness.js'), str(Path(tmp) / 'experts.js')],
                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)

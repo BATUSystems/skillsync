@@ -3,9 +3,12 @@ Stary wiersz z „Z” zostaje poprawny dla `record` (dopasowanie po `[EKSPERT]`
 Uruchamianie: `python3 -m unittest discover -s tests -p test_skillsync_prototype_answerline_time.py`.
 """
 import os
+import re
+import subprocess
 import sys
 import time
 import unittest
+import unittest.mock
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -56,8 +59,22 @@ class AnswerLineCliTests(QuestionCase):
         self.users((EWA, ['expert'], None))
         self.add()
         self.answer()
-        line = self.q('show', QA, env={'TZ': 'Asia/Kolkata'})['answerLine']
+        # POSIX form of the zone: `TZ=Asia/Kolkata` (an IANA name) is ignored by the C runtime on Windows, `IST-5:30` works everywhere
+        line = self.q('show', QA, env={'TZ': 'IST-5:30'})['answerLine']
         self.assertRegex(line, r', \d{4}-\d\d-\d\dT\d\d:\d\d\+05:30$')
+
+    def test_cli_line_without_tz_uses_the_system_zone(self):
+        self.users((EWA, ['expert'], None))
+        self.add()
+        self.answer()
+        environ = {key: value for key, value in os.environ.items() if key != 'TZ'}
+        probe = subprocess.run([sys.executable, '-c', "from datetime import datetime; print(datetime.now().astimezone().strftime('%z'))"],
+                               capture_output=True, text=True, env=environ, check=True).stdout.strip()
+        expected = probe[:3] + ':' + probe[3:]
+        with unittest.mock.patch.dict(os.environ):
+            os.environ.pop('TZ', None)
+            line = self.q('show', QA)['answerLine']
+        self.assertRegex(line, r', \d{4}-\d\d-\d\dT\d\d:\d\d' + re.escape(expected) + '$')
 
     def test_record_accepts_an_old_row_with_a_z_time(self):
         self.users((EWA, ['expert'], None))

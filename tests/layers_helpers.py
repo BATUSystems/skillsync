@@ -225,6 +225,24 @@ needs_sh = unittest.skipUnless(__import__('shutil').which('sh'), 'no `sh` on PAT
 needs_flock = unittest.skipUnless(_fcntl is not None, 'fcntl.flock unavailable (Windows uses msvcrt)')
 needs_fifo = unittest.skipUnless(hasattr(os, 'mkfifo'), 'mkfifo unavailable (FIFO needs POSIX)')
 needs_mode_enforcement = unittest.skipIf(NO_MODE_ENFORCEMENT, 'chmod does not block reading (root or non-POSIX)')
+IS_WINDOWS = os.name == 'nt'
+
+
+def skip_on_windows(mechanism):
+    """Skip for a mechanism that Windows does not have (never for a defect): the reason names it, and the
+    `windows-no-mechanism` category of `tests/skip-baseline.json` allows exactly these reasons."""
+    return unittest.skipIf(IS_WINDOWS, f'Windows has no {mechanism}')
+
+
+def skip_open_file(detail):
+    """Skip for what Windows refuses on an open file (unlink, rename or replace while a handle is open)."""
+    return unittest.skipIf(IS_WINDOWS, f'Windows nie pozwala usunąć ani podmienić otwartego pliku: {detail}')
+
+
+def readlink_text(path):
+    """`os.readlink` without the `\\\\?\\` prefix that Windows puts before an absolute target."""
+    text = os.readlink(path)
+    return text[4:] if text.startswith('\\\\?\\') else text
 
 
 def require_os_symlinks(test):

@@ -21,7 +21,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from skillsync_workflow import prototype as engine  # noqa: E402
-from layers_helpers import needs_os_symlinks  # noqa: E402
+from layers_helpers import needs_os_symlinks, skip_on_windows  # noqa: E402
 from tests.test_skillsync_workflow import WorkflowFixture  # noqa: E402
 
 CLI = Path(__file__).resolve().parents[1] / 'skillsync'
@@ -56,7 +56,10 @@ def tree(path):
             elif full.is_dir():
                 result[rel] = ('d',)
             else:
-                result[rel] = ('f', full.read_bytes())
+                try:
+                    result[rel] = ('f', full.read_bytes())
+                except PermissionError:   # Windows: a file held under an exclusive lock (`*.lock`) cannot be read by others
+                    result[rel] = ('locked',)
     return result
 
 
@@ -2256,14 +2259,19 @@ class UnicodeSafetyTests(PrototypeFixture):
 
     def test_lone_surrogate_in_manifest_value_gives_valid_json_not_a_traceback(self):
         self.set_prototype({'guidelines': 'x\ud800.md'})
-        report = self.blocked('list')
-        self.assertTrue(report['errors'])
-        self.blocked('index')
+        if os.name == 'nt':   # Windows takes the name as it is (UTF-16): nothing to refuse, the reports stay valid JSON
+            self.proto('list')
+            self.proto('index')
+        else:
+            report = self.blocked('list')
+            self.assertTrue(report['errors'])
+            self.blocked('index')
         result = self.cli('doctor')
         self.assertNotIn('Traceback', result.stderr)
         self.assertIn(result.returncode, (0, 1))
         json.loads(result.stdout)
 
+    @skip_on_windows('file name that is not UTF-8 (names are UTF-16)')
     def test_missing_requirements_with_non_utf8_name_is_blocked_with_escaped_name(self):
         name = os.fsdecode(b'docs/missing\xff.md')
         report = self.blocked('init', 'demo', '--requirements', name)
@@ -2293,7 +2301,7 @@ class UnicodeSafetyTests(PrototypeFixture):
         try:
             with open(raw, 'w') as handle:
                 handle.write('x')
-        except OSError:
+        except (OSError, UnicodeError):   # Windows: names are UTF-16, bytes that are not UTF-8 cannot be a name
             self.skipTest('file system refuses non-UTF-8 names')
         self.blocked('init', 'demo', '--requirements', os.fsdecode(b'docs/bad\xff.md'))
         self.assert_nothing_created(self.protos)
@@ -2305,17 +2313,20 @@ class FileModeTests(PrototypeFixture):
     def mode(self, path):
         return stat.S_IMODE(os.lstat(path).st_mode)
 
+    @skip_on_windows('umask and POSIX file modes (preexec_fn)')
     def test_init_files_and_directory_follow_the_umask(self):
         self.init('demo', umask=self.UMASK)
         self.assertEqual(self.mode(self.proto_dir()), 0o777 & ~self.UMASK)
         for name in PROTOTYPE_FILES:
             self.assertEqual(self.mode(self.proto_dir() / name), 0o666 & ~self.UMASK, name)
 
+    @skip_on_windows('umask and POSIX file modes (preexec_fn)')
     def test_index_gallery_follows_the_umask(self):
         self.init('demo')
         self.proto('index', umask=self.UMASK)
         self.assertEqual(self.mode(self.protos / 'index.html'), 0o666 & ~self.UMASK)
 
+    @skip_on_windows('umask and POSIX file modes (preexec_fn)')
     def test_sync_creates_missing_files_with_umask_and_keeps_mode_of_existing_ones(self):
         self.init('demo')
         self.use_tokens_from()

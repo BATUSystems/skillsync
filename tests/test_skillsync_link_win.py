@@ -80,6 +80,26 @@ class DanglingLibrarySymlinkTests(unittest.TestCase):
         self.assertFalse(skillsync.is_library_symlink(escaping, [self.library]))
         self.assertFalse(skillsync.is_library_symlink(relative, [self.library]))
 
+    def test_dangling_symlink_written_with_a_short_8dot3_form_is_still_managed(self):
+        """LINK-WIN-2: cel wiszącego symlinku zostaje w formie z chwili utworzenia (np. `RUNNER~1`), a `resolve()` nie rozwija nieistniejącego celu;
+        korzeń biblioteki ma formę długą. Atrapa: katalog nadrzędny w krótkiej formie to dowiązanie do długiej, `Path.resolve()` wiszącego linku oddaje tekst celu."""
+        long_dir = self.tmp / 'Users-long'
+        (long_dir / 'library' / 'skills').mkdir(parents=True)
+        short = self.tmp / 'USERS~1'
+        short.symlink_to(long_dir, target_is_directory=True)  # alias 8.3 istniejącego katalogu
+        link = self.skills / 'migrated'
+        link.symlink_to(short / 'library' / 'skills' / 'gone', target_is_directory=True)  # cel nie istnieje, forma krótka
+        real = Path.resolve
+
+        def windows_resolve(path, strict=False):
+            if path == link:
+                return Path(os.readlink(link))  # nierozwinięty tekst celu, jak realpath wiszącego linku na Windows
+            return real(path, strict=strict)
+
+        with mock.patch.object(Path, 'resolve', windows_resolve):
+            self.assertTrue(skillsync.is_library_symlink(link, [long_dir / 'library']))
+            self.assertFalse(skillsync.is_library_symlink(self.foreign, [long_dir / 'library']))
+
     def test_plain_posix_behaviour_is_unchanged(self):
         self.assertTrue(skillsync.is_library_symlink(self.dangling, [self.library]))
         self.assertTrue(skillsync.is_library_symlink(self.live, self.library))

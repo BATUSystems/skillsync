@@ -31,7 +31,7 @@ from pathlib import Path, PurePosixPath
 
 import yaml
 
-from .fsutil import rmtree_force
+from .fsutil import isabs, rmtree_force
 
 # `common` is imported inside functions only, so that `common` can import this module (2.2a).
 
@@ -106,7 +106,7 @@ def current_system():
 
 def _env_dir(name):
     value = os.environ.get(name)
-    return Path(value) if value and os.path.isabs(value) else None
+    return Path(value) if value and isabs(value) else None
 
 
 def data_home(system=None):
@@ -581,7 +581,10 @@ def _is_abs_text(text):
 def normalize_path(path, system=None):
     """Resolved path as a `/`-separated string, case-folded on Windows and macOS."""
     system = system or current_system()
-    return _norm_text(os.path.realpath(os.path.expanduser(str(path))), system)
+    text = os.path.realpath(os.path.expanduser(str(path)))
+    # On a Windows host a backslash is a separator whatever system the result is computed for (a test or a rule of
+    # another system still gets real host paths): only on a POSIX host does it stay a part of a name.
+    return _norm_text(text.replace('\\', '/') if os.name == 'nt' else text, system)
 
 
 def _segment_regex(segment):
@@ -601,7 +604,7 @@ def glob_regex(pattern, system=None):
     `**` any number of segments (like `.gitignore`); a relative pattern may match anywhere."""
     system = system or current_system()
     text = os.path.expanduser(pattern)
-    text = text.replace('\\', '/') if system == 'Windows' else text
+    text = text.replace('\\', '/') if system == 'Windows' or os.name == 'nt' else text   # a Windows host: `\\` always separates
     if text == '**':
         return re.compile(r'.*', re.S)
     segments = text.split('/')
@@ -610,7 +613,7 @@ def glob_regex(pattern, system=None):
         count = next((index for index, segment in enumerate(segments) if any(char in segment for char in '*?')),
                      len(segments))
         literal = '/'.join(segments[:count]) or '/'
-        if os.path.isabs(literal):  # resolve symlinks in the literal prefix (only for native paths)
+        if isabs(literal):  # resolve symlinks in the literal prefix (only for native paths; `/a` counts on Windows too, as before Python 3.13)
             resolved = os.path.realpath(literal).replace('\\', '/')
             rest = segments[count:]
             text = resolved if not rest else resolved.rstrip('/') + '/' + '/'.join(rest)
@@ -2498,7 +2501,7 @@ def layers_add(layer_id, kind, source, *, subdir=None, ref=None, path=None, writ
         clone_source = source
         if _looks_local(source):
             clone_source = str(Path(os.path.abspath(Path(source).expanduser())))
-            if not source.startswith('~') and not os.path.isabs(source):
+            if not source.startswith('~') and not isabs(source):
                 source = clone_source
         if checkout.exists() and (not checkout.is_dir() or any(checkout.iterdir())):
             raise LayerError(f'Checkout path {checkout} exists and is not empty', 'conflict')
@@ -2962,7 +2965,7 @@ def _single(pairs, label):
 
 def _stored_path(value):
     """Path as written in the config: `~` and absolute paths kept, relative paths made absolute."""
-    if value.startswith('~') or os.path.isabs(value):
+    if value.startswith('~') or isabs(value):
         return value
     return str(Path(os.path.abspath(value)))
 

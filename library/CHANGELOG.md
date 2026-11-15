@@ -4,6 +4,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-11-15
+
+No changes to the library in this release (the version follows the core).
+
 ## [1.4.0] - 2026-11-14
 
 ### Added

@@ -1559,6 +1559,12 @@ def _leakcheck_prefix(line):
     return tokens[:tokens.index('leakcheck')]
 
 
+def _hook_path_word(word):
+    """A word of a hook line that is a path to check: absolute for the system, rooted with `/` (a POSIX path in a hook run by
+    `sh`; `os.path.isabs('/x')` is False on Windows since Python 3.13 and was True before, so it is named here) or with a drive."""
+    return os.path.isabs(word) or word.startswith('/') or bool(re.match(r'^[A-Za-z]:[\\/]', word))
+
+
 def hook_command_problems(repo):
     """Hook lines of `repo` whose command cannot run: `[{hook, kind, path}]` (read-only).
 
@@ -1587,10 +1593,10 @@ def hook_command_problems(repo):
                 continue
             for index, word in enumerate(prefix):
                 if index == 0:
-                    absolute = os.path.isabs(word) or bool(re.match(r'^[A-Za-z]:[\\/]', word))
+                    absolute = _hook_path_word(word)
                     missing = (not Path(word).exists()) if absolute else (shutil.which(word) is None)
                     kind = 'interpreter'
-                elif os.path.isabs(word) or re.match(r'^[A-Za-z]:[\\/]', word):
+                elif _hook_path_word(word):
                     missing, kind = not Path(word).exists(), 'file'
                 else:
                     continue

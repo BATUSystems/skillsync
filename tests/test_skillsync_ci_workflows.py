@@ -110,7 +110,7 @@ def problems_job_names(ci, smoke):
 
 
 # Native Windows gets 60 minutes (the suite needs about 40), the other systems 30; the job names stay.
-TEST_TIMEOUT = "${{ matrix.os == 'windows-latest' && 60 || 30 }}"
+TEST_TIMEOUT = "${{ matrix.os == 'windows-latest' && 60 || matrix.os == 'macos-latest' && 45 || 30 }}"
 
 
 def problems_matrix(ci):
@@ -126,18 +126,20 @@ def problems_matrix(ci):
         return errs
     if sorted(matrix["os"]) != ["macos-latest", "ubuntu-latest", "windows-latest"]:
         errs.append(f"os: {matrix['os']}")
-    if sorted(map(str, matrix["python"])) != ["3.11", "3.12"]:
+    if sorted(map(str, matrix["python"])) != ["3.11", "3.12", "3.13", "3.14"]:
         errs.append(f"python: {matrix['python']}")
     if sorted(matrix["mode"]) != ["copy", "symlink"]:
         errs.append(f"mode: {matrix['mode']}")
     combos = expand_matrix(matrix)
-    if len(combos) != 10:
-        errs.append(f"liczba kombinacji {len(combos)} != 10")
+    if len(combos) != 17:
+        errs.append(f"liczba kombinacji {len(combos)} != 17")
     if any(c["os"] == "windows-latest" and c["mode"] == "symlink" for c in combos):
         errs.append("kombinacja windows x symlink nie jest wykluczona")
     keys = {(c["os"], str(c["python"]), c["mode"]) for c in combos}
-    want = {(o, p, m) for o in ("ubuntu-latest", "macos-latest") for p in ("3.11", "3.12")
-            for m in ("symlink", "copy")} | {("windows-latest", p, "copy") for p in ("3.11", "3.12")}
+    # 3.13 blocks like 3.11 and 3.12 on every system; 3.14 is informational and runs on Ubuntu only (both modes).
+    want = ({(o, p, m) for o in ("ubuntu-latest", "macos-latest") for p in ("3.11", "3.12", "3.13") for m in ("symlink", "copy")}
+            | {("windows-latest", p, "copy") for p in ("3.11", "3.12", "3.13")}
+            | {("ubuntu-latest", "3.14", m) for m in ("symlink", "copy")})
     if keys != want:
         errs.append(f"zbiór kombinacji różni się od oczekiwanego: brak {sorted(want - keys)}, nadmiar {sorted(keys - want)}")
     if job.get("timeout-minutes") != TEST_TIMEOUT:
@@ -318,8 +320,11 @@ class MutationTests(unittest.TestCase):
     def mut(self):
         return copy.deepcopy(self.ci), copy.deepcopy(self.smoke)
 
-    def test_expand_matrix_has_ten(self):
-        self.assertEqual(len(expand_matrix(self.ci["jobs"]["test"]["strategy"]["matrix"])), 10)
+    def test_expand_matrix_has_seventeen(self):
+        self.assertEqual(len(expand_matrix(self.ci["jobs"]["test"]["strategy"]["matrix"])), 17)
+
+    def test_python_314_is_informational_and_the_other_pythons_are_not(self):
+        self.assertIn("matrix.python == '3.14'", self.ci["jobs"]["test"]["continue-on-error"])
 
     def test_drop_matrix_combination(self):
         ci, _ = self.mut()
@@ -348,6 +353,9 @@ class MutationTests(unittest.TestCase):
         self.assertTrue(problems_matrix(ci))
         ci, _ = self.mut()
         ci["jobs"]["test"]["timeout-minutes"] = 30
+        self.assertTrue(problems_matrix(ci))
+        ci, _ = self.mut()
+        ci["jobs"]["test"]["timeout-minutes"] = "${{ matrix.os == 'windows-latest' && 60 || 30 }}"  # macOS back at 30
         self.assertTrue(problems_matrix(ci))
         ci, _ = self.mut()
         ci["concurrency"]["cancel-in-progress"] = False

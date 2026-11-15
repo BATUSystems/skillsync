@@ -14,6 +14,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / 'tests'))
+from skillsync_workflow import prototype_server as server  # noqa: E402
 from skillsync_workflow import quality, status  # noqa: E402
 from tests.test_skillsync_dashboard import FIXTURES, DashboardFixture, git_commit_all, normalized  # noqa: E402
 from layers_helpers import needs_os_symlinks  # noqa: E402
@@ -224,60 +225,134 @@ class RecordLock(RecordFixture):
         self.assertEqual([proc.wait(timeout=60) for proc in procs], [0] * 6, [proc.communicate() for proc in procs])
         self.assertEqual(sorted(row['sha'][0] for row in self.lines()), list('123456'))
 
-    def test_a_held_lock_blocks_after_the_timeout_and_a_stale_lock_is_removed(self):
+    def test_a_held_lock_blocks_after_the_timeout_and_is_free_again_after_release(self):
         lock = self.log.parent / 'approvals.jsonl.lock'
-        lock.write_text('1', encoding='utf-8')
-        with mock.patch.object(status, 'APPROVAL_LOCK_TIMEOUT', 0.1):
-            report = self.record()
-        self.assertEqual(report['status'], 'BLOCKED')
-        self.assertIn('locked', report['reason'])
-        self.assertTrue(lock.exists(), 'a live lock of another writer is not removed')
-        old = time.time() - status.APPROVAL_LOCK_STALE - 5
-        os.utime(lock, (old, old))
+        holder = subprocess.Popen(  # another PROCESS holds the system lock (an in-process holder would stop on the thread lock)
+            [sys.executable, '-c',
+             'import sys\nfrom skillsync_workflow import prototype_server as ps\n'
+             'with ps.FileLock(sys.argv[1], 30, 0o600):\n    print("ready", flush=True)\n    sys.stdin.readline()\n', str(lock)],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, cwd=ROOT, env={**self.env, 'PYTHONPATH': str(ROOT)})
+        try:
+            self.assertEqual(holder.stdout.readline().strip(), 'ready')
+            with mock.patch.object(status, 'APPROVAL_LOCK_TIMEOUT', 0.3):
+                report = self.record()
+            self.assertEqual(report['status'], 'BLOCKED')
+            self.assertIn('locked', report['reason'])
+            self.assertEqual(self.lines(), [], 'nothing is written without the lock')
+        finally:
+            holder.stdin.write('\n')
+            holder.stdin.close()
+            holder.wait(timeout=30)
+            holder.stdout.close()
         self.assertEqual(self.record()['status'], 'PASS')
+
+    def test_a_leftover_lock_file_without_an_owner_never_blocks(self):
+        lock = self.log.parent / 'approvals.jsonl.lock'
+        for index, (content, age) in enumerate((('1', 0), ('token-from-an-old-writer', 3600), ('', 0)), 1):
+            with self.subTest(content=content, age=age):
+                lock.write_text(content, encoding='utf-8')
+                old = time.time() - age
+                os.utime(lock, (old, old))
+                started = time.monotonic()
+                self.assertEqual(self.record(sha=f'{index:x}' * 40)['status'], 'PASS')
+                self.assertLess(time.monotonic() - started, 2, 'no waiting for a "stale" lock')
+        self.assertEqual(sorted(p.name for p in lock.parent.iterdir() if '.stale-' in p.name), [])
+
+    def test_the_lock_file_is_removed_after_the_write_and_taken_again_by_the_next(self):
+        lock = self.log.parent / 'approvals.jsonl.lock'
+        self.assertEqual(self.record()['status'], 'PASS')
+        self.assertFalse(lock.exists(), 'transient: removed while still holding the lock')
+        self.assertEqual(self.record(sha='a' * 40)['status'], 'PASS')
         self.assertFalse(lock.exists())
 
+    def test_unlinking_the_lock_file_never_breaks_mutual_exclusion_between_processes(self):
+        counter = self.log.parent / 'counter.txt'
+        counter.write_text('0', encoding='utf-8')
+        lock = self.log.parent / 'approvals.jsonl.lock'
+        code = (
+            'import sys, time\nfrom pathlib import Path\nfrom skillsync_workflow import prototype_server as ps\n'
+            'counter, lock = Path(sys.argv[1]), sys.argv[2]\n'
+            'for _ in range(25):\n'
+            '    with ps.FileLock(lock, 60, 0o600, unlink=True):\n'
+            '        value = int(counter.read_text())\n        time.sleep(0.002)\n        counter.write_text(str(value + 1))\n')
+        procs = [subprocess.Popen([sys.executable, '-c', code, str(counter), str(lock)], cwd=ROOT,
+                                  env={**self.env, 'PYTHONPATH': str(ROOT)}, stderr=subprocess.PIPE, text=True)
+                 for _ in range(4)]
+        errors = [proc.communicate(timeout=120)[1] for proc in procs]
+        self.assertEqual([proc.returncode for proc in procs], [0] * 4, errors)
+        self.assertEqual(int(counter.read_text(encoding='utf-8')), 4 * 25, 'no lost update across unlink/recreate')
+        self.assertFalse(lock.exists())
 
-class RecordLockTakeOver(RecordFixture):
-    """m1: a stale lock is taken over by an atomic rename; a fresh lock of another writer is never removed."""
+    def test_unlinking_the_lock_file_never_breaks_mutual_exclusion_with_a_real_flock_between_threads(self):
+        import threading
+        counter = self.log.parent / 'counter.txt'
+        counter.write_text('0', encoding='utf-8')
+        lock = self.log.parent / 'approvals.jsonl.lock'
+        errors = []
 
-    def stale_lock(self):
+        def work():
+            try:
+                for _ in range(15):
+                    with server.FileLock(str(lock), 30, 0o600, unlink=True):
+                        value = int(counter.read_text(encoding='utf-8'))
+                        time.sleep(0.001)
+                        counter.write_text(str(value + 1), encoding='utf-8')
+            except BaseException as error:  # noqa: BLE001
+                errors.append(repr(error))
+
+        # a fresh thread lock per instance: the threads no longer serialise on it, so the system lock and the inode check decide
+        with mock.patch.object(server, '_process_lock', side_effect=lambda path: threading.Lock()):
+            threads = [threading.Thread(target=work) for _ in range(8)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(timeout=120)
+        self.assertEqual(errors, [])
+        self.assertEqual(int(counter.read_text(encoding='utf-8')), 8 * 15, 'no lost update across unlink/recreate')
+
+    @unittest.skipIf(os.name == 'nt', 'Windows nie pozwala usunąć ani podmienić otwartego pliku')
+    def test_a_lock_file_replaced_between_open_and_flock_is_locked_again_on_the_new_file(self):
+        lock = self.log.parent / 'approvals.jsonl.lock'
+        real, calls = server._try_lock_fd, []
+
+        def replace_then_lock(fd):
+            if not calls:  # the first writer unlinks and recreates the file after we opened it, before our flock
+                os.unlink(lock)
+                lock.write_text('', encoding='utf-8')
+            calls.append(fd)
+            return real(fd)
+
+        with mock.patch.object(server, '_try_lock_fd', side_effect=replace_then_lock):
+            held = server.FileLock(str(lock), 5, 0o600, unlink=True)
+            held.__enter__()
+            try:
+                self.assertEqual(len(calls), 2, 'locked once on the old inode, then again on the new one')
+                self.assertTrue(held._same_file(held._fd))
+            finally:
+                held.__exit__(None, None, None)
+        self.assertFalse(lock.exists())
+
+    def test_a_failed_unlink_on_release_still_frees_the_lock(self):
+        lock = self.log.parent / 'approvals.jsonl.lock'
+        with mock.patch.object(server.os, 'unlink', side_effect=OSError('denied')):
+            with server.FileLock(str(lock), 5, 0o600, unlink=True):
+                pass
+        self.assertTrue(lock.exists(), 'the file stays when it cannot be removed')
+        with server.FileLock(str(lock), 1, 0o600, unlink=True):  # and it is not stuck
+            pass
+
+
+
+class RecordLockSystem(RecordFixture):
+    """The approvals lock is a system lock (`flock` on POSIX, `msvcrt.locking` on Windows) shared with the prototype
+    server's `FileLock`: no stale-lock takeover, a crashed writer frees it in the kernel."""
+
+    def test_two_threads_and_a_leftover_lock_file_write_exactly_once(self):
+        import threading
         lock = self.log.parent / 'approvals.jsonl.lock'
         lock.write_text('1', encoding='utf-8')
-        old = time.time() - status.APPROVAL_LOCK_STALE - 5
+        old = time.time() - 600
         os.utime(lock, (old, old))
-        return lock
-
-    def test_a_late_take_over_does_not_remove_the_fresh_lock_of_another_writer(self):
-        lock = self.stale_lock()
-        seen = lock.lstat()  # waiter B judged this lock stale ...
-        first = status._ApprovalLock(lock)
-        first.__enter__()  # ... but waiter A took it over first and holds a fresh lock
-        fresh = lock.read_bytes()
-        late = status._ApprovalLock(lock, timeout=0)
-        late._take_over(seen)  # B's rename now catches A's lock and has to put it back
-        self.assertEqual(lock.read_bytes(), fresh)
-        self.assertTrue(first._owned(), 'A still owns its lock')
-        with self.assertRaises(ValueError):
-            late.__enter__()  # a fresh lock is waited for, not taken over
-        late.__exit__(None, None, None)
-        self.assertTrue(lock.exists(), 'a writer that never got the lock does not remove it')
-        first.__exit__(None, None, None)
-        self.assertFalse(lock.exists())
-        self.assertEqual(sorted(path.name for path in lock.parent.iterdir() if '.stale-' in path.name), [])
-
-    def test_exit_keeps_a_lock_that_is_no_longer_ours(self):
-        lock = self.log.parent / 'approvals.jsonl.lock'
-        held = status._ApprovalLock(lock)
-        held.__enter__()
-        lock.unlink()
-        lock.write_text('other-writer', encoding='utf-8')
-        held.__exit__(None, None, None)
-        self.assertEqual(lock.read_text(encoding='utf-8'), 'other-writer')
-
-    def test_two_threads_and_a_stale_lock_write_exactly_once(self):
-        import threading
-        self.stale_lock()
         barrier = threading.Barrier(2)
         reports = []
 
@@ -292,7 +367,72 @@ class RecordLockTakeOver(RecordFixture):
             thread.join(timeout=30)
         self.assertEqual(sorted(report['status'] for report in reports), ['BLOCKED', 'PASS'], reports)
         self.assertEqual(len(self.lines()), 1)
-        self.assertEqual([path.name for path in self.log.parent.iterdir() if 'lock' in path.name], [])
+        self.assertEqual([p.name for p in lock.parent.iterdir() if '.stale-' in p.name], [])
+
+    def test_many_threads_with_different_keys_lose_no_entry(self):
+        import threading
+        shas = [f'{index:x}' * 40 for index in range(1, 9)]
+        reports = []
+
+        def write(sha):
+            reports.append(self.record(sha=sha))
+
+        threads = [threading.Thread(target=write, args=(sha,)) for sha in shas]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=60)
+        self.assertEqual([report['status'] for report in reports], ['PASS'] * 8, reports)
+        self.assertEqual(sorted(row['sha'] for row in self.lines()), sorted(shas))
+
+    def test_a_file_system_without_locks_is_blocked_with_a_clear_reason(self):
+        import errno
+        with mock.patch.object(server, '_try_lock_fd', side_effect=OSError(errno.ENOTSUP, 'Operation not supported')):
+            started = time.monotonic()
+            report = self.record()
+        self.assertEqual(report['status'], 'BLOCKED')
+        self.assertIn('not supported', report['reason'])
+        self.assertNotIn('locked by another writer', report['reason'])
+        self.assertLess(time.monotonic() - started, 5, 'no waiting for the timeout')
+        self.assertEqual(self.lines(), [])
+
+    def test_contention_errors_still_wait_for_the_timeout(self):
+        import errno
+        with mock.patch.object(server, '_try_lock_fd', side_effect=OSError(errno.EAGAIN, 'busy')), \
+                mock.patch.object(status, 'APPROVAL_LOCK_TIMEOUT', 0.2):
+            report = self.record()
+        self.assertEqual(report['status'], 'BLOCKED')
+        self.assertIn('locked by another writer', report['reason'])
+
+    def test_importing_the_lock_module_has_no_side_effects(self):
+        code = (
+            "import signal, threading, socket\n"
+            "before = (signal.getsignal(signal.SIGINT), signal.getsignal(signal.SIGTERM), threading.active_count())\n"
+            "opened = []\n"
+            "real = socket.socket.bind\n"
+            "socket.socket.bind = lambda self, *a, **k: (opened.append(a), real(self, *a, **k))[1]\n"
+            "from skillsync_workflow import status\n"
+            "status._lock_module()\n"
+            "after = (signal.getsignal(signal.SIGINT), signal.getsignal(signal.SIGTERM), threading.active_count())\n"
+            "assert before == after, (before, after)\n"
+            "assert not opened, opened\n"
+            "print('ok')\n")
+        result = subprocess.run([sys.executable, '-c', code], capture_output=True, text=True, timeout=60, cwd=ROOT,
+                                env={**self.env, 'PYTHONPATH': str(ROOT)})
+        self.assertEqual((result.returncode, result.stdout.strip(), result.stderr), (0, 'ok', ''), result)
+
+    def test_approvals_record_works_without_a_configured_prototype_server(self):
+        report = self.record_cli('--sha', HEAD)
+        self.assertEqual(report['status'], 'PASS')
+        self.assertEqual(self.record_cli('--sha', HEAD, code=2)['status'], 'BLOCKED', 'a repeat is still refused')
+
+    def test_a_duplicate_entry_in_the_file_is_harmless_for_the_readers(self):
+        entry = {'schema': 1, 'at': '2026-01-12T12:00:00Z', 'word': 'CP', 'sha': HEAD, 'by': 'user', 'source': 'cli', 'run': RUN}
+        self.log.write_text((json.dumps(entry) + '\n') * 2, encoding='utf-8')
+        rows = status.read_approvals(self.root)
+        self.assertEqual([(row['word'], row['sha']) for row in rows], [('CP', HEAD)], 'collapsed to the latest per (run, word)')
+        from skillsync_workflow import dashboard
+        self.assertEqual(len(dashboard.run_approvals(self.root, RUN)), 2, 'the trail lists what was written, without a crash')
 
 
 class RecordCli(RecordFixture):
