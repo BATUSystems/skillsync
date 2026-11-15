@@ -141,7 +141,7 @@ określa format; `pre-implement` sprawdza zmiany kontraktów i wysokie ryzyko.
 2. `explore` lokalizuje pliki i wzorce; wnioski architektoniczne wyciąga orkiestrator z kodu.
 3. Zapisz `docs/plans/RRRR-MM-DD-<slug>.md` ze statusem `draft`, przy `plan-large` w akcie II (szkic przy „GO plan”) (cel, kryteria, kroki z rolą i
    plikami, TESTY, zasoby, ryzyka, **Dokumentacja i wiedza**, **Wersja i changelog** z pytaniem do
-   użytkownika); wymagana zawartość: [plan](references/plan-details.md).
+   użytkownika); wymagana zawartość: [plan](references/plan-details.md); plan zaczyna się sekcją `## Streszczenie dla człowieka` (Co zmieniamy, Czego nie robimy, Ryzyka, Decyzje do podjęcia; do 40 linii), a „Wynik” ma wzór z blokiem „Uwagi z review” i tabelą pokrycia kryteriów ([wzór](references/plan-details.md#wynik-wzór)).
    Dodaj „Terminologia domenowa”: potwierdzone terminy, kandydaci do wyjaśnienia albo
    uzasadniony brak nowych terminów ([zasady](../workflow/references/knowledge.md)).
    Bramka planu: `plan-large` (nowa zdolność, architektura, schemat, kontrakt API, wiele

@@ -14,6 +14,12 @@ ma dosłowne nagłówki `Cel` (z odnośnikiem do speca), `Kryteria akceptacji (m
 i mapa wymagań FRD są w specu), `TESTY` (komendy), `Dokumentacja i wiedza` oraz kroki, zasoby, wersję, Progress i Wynik. Przy FRD plan
 zapisuje sha pliku FRD i założenia z `LUKI` ([frd-intake](frd-intake.md)). Statusy, sha i wznowienie speca: [spec](spec.md).
 
+**Streszczenie dla człowieka.** Plan zaczyna się sekcją `## Streszczenie dla człowieka` (nagłówek dosłowny, zaraz po liniach metadanych),
+do jednego ekranu: do 40 linii i do 4000 znaków (tyle pokazuje strona statusu; dłuższy tekst jest przycinany znakiem `…`). Cztery bloki:
+**Co zmieniamy**, **Czego nie robimy**, **Ryzyka**, **Decyzje do podjęcia** (każda z rekomendacją). Nie powtarzaj w niej treści planu.
+`skillsync readiness --plan` i `skillsync doctor` ostrzegają (warning, bez blokady), gdy plan `draft` albo `approved` nie ma tej sekcji
+lub jest pusta; plany `in_progress`, `done` i `archived` bez niej są poprawne. `skillsync status` podaje sekcję w `plans[].summary`.
+
 Plan ze statusem `draft` zawiera: cel, kryteria akceptacji (przy specu: mapowanie), kroki z rolą, plikami i ryzykiem kroku, zależności,
 instrukcje/skille do odczytu, TESTY, zasoby, ryzyka, **Dokumentacja i wiedza**, **Wersja i changelog**
 (propozycja wersji; pytanie do właściciela) oraz otwarte pytania. Przy linii `Spec:` zakres, kontrakty, migracja i ryzyka są w specu, a ścieżka jest względna do katalogu projektu. Sekcja wiedzy wskazuje dokumenty
@@ -85,6 +91,32 @@ PR: #123 (link: https://example.com/pr/123)
 - Fazy to nagłówki poziomu 3 lub niższego; nagłówek poziomu 2 zamyka sekcję `Progress`.
 - Linia `PR: #<n> (link: <url>)` zaczyna wiersz (nie jest punktem listy ani cytatem) i stoi pod `## Progress`; opcjonalna `Ticket: <KEY> (link: <url>)` ma klucz Jira, np. `ABC-123`.
 - Plany bez `Progress` (starsze) są poprawne i nie wymagają migracji; opcjonalny przebieg do PR-a opisuje [pr-run](../../pr-run/SKILL.md).
+
+## Wynik: wzór
+
+Sekcja `## Wynik` powstaje przy zamknięciu przebiegu i ma stałe podsekcje (kolejność jak niżej; „brak” zapisz wprost):
+
+```markdown
+## Wynik
+### Zmiany i dowody
+### Uwagi z review
+| Uwaga (tytuł) | Waga | Co zrobiono |
+|---|---|---|
+| Przykład uwagi | major | naniesiono (commit 1a2b3c4) |
+### Pokrycie kryteriów
+| Kryterium | Test(y) | Wynik |
+|---|---|---|
+| K1 | tests/test_x.py::test_a | PASS |
+| K2 | bez testu: ręczny odbiór (uzasadnienie) | — |
+### Stare porażki i ograniczenia
+### Zdobyta wiedza
+```
+
+- **Uwagi z review:** wszystkie uwagi wagi `blocker` i `major` oraz każda uwaga, która zmieniła ekran, spec, plan albo kod, **z tytułem,
+  wagą i tym, co zrobiono** (naniesiono, odrzucono z powodem, odłożono), także gdy uwaga została naniesiona (naniesiona nie znika w liczbie);
+  uwagi `minor` tylko liczbą; liczba rund według [pętli przeglądu](review-loop.md).
+- **Pokrycie kryteriów:** tabela „kryterium → test(y) → wynik”, źródło: kolumna „dowód” mapowania kryteriów planu. Brak testu jest
+  widoczny jako „bez testu” z uzasadnieniem, nie ukryty. To raport i dokumentacja, nie twarda bramka.
 
 ## Bramka prototypu
 
