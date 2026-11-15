@@ -7,6 +7,7 @@ isolated (layers_helpers). Client names are synthetic and composed at runtime.
 """
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -132,6 +133,15 @@ class HookCommandMissingTest(CommandsCase):
         write(bin_dir / command, '#!/bin/sh\nexit 0\n', executable=True)
         with unittest.mock.patch.dict(os.environ, {'PATH': full_path}):
             self.assertEqual(self.broken(self.findings()), [])
+
+    def test_a_posix_rooted_word_is_a_path_whatever_isabs_says(self):
+        # Windows with Python >= 3.13: `os.path.isabs('/x')` is False (was True): a hook line `... /nonexistent/skillsync` is still checked
+        windows_313 = lambda word: bool(re.match(r'^[A-Za-z]:[\\/]', word))   # noqa: E731
+        with unittest.mock.patch.object(leakguard.os.path, 'isabs', windows_313):
+            self.assertTrue(leakguard._hook_path_word('/nonexistent/dev/skillsync'))
+            self.assertTrue(leakguard._hook_path_word('C:/tools/skillsync'))
+            self.assertFalse(leakguard._hook_path_word('skillsync'))
+            self.assertFalse(leakguard._hook_path_word('leakcheck'))
 
     def test_a_hand_written_call_is_checked_too(self):
         write(self.hooks / 'pre-push', f'#!/bin/sh\n{shlex.quote(sys.executable)} /nonexistent/dev/skillsync leakcheck "$PWD" --range HEAD\n',
