@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from layers_helpers import SKILL_TEXT, ComposeCase, commit, each_mode, generator_version, git, link_mode, write  # noqa: E402
 from layers_helpers import needs_os_symlinks  # noqa: E402
+from skillsync_workflow.pathfmt import posix  # noqa: E402
 
 MANIFEST = '.github/.skillsync.yaml'
 CORE_FILES = {
@@ -70,7 +71,7 @@ class DoctorCase(ComposeCase):
     def found(report, text, path=None):
         """Findings whose reason contains `text` (and with `path`, when given)."""
         return [item for item in report.get('findings', [])
-                if text in item['reason'] and (path is None or item['path'] == path)]
+                if text in item['reason'] and (path is None or item['path'] == posix(path))]
 
     def levels(self, report, text, path=None):
         return [item['level'] for item in self.found(report, text, path)]
