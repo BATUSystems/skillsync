@@ -34,6 +34,8 @@
   // z jednym powodem, a renderer nie woła actions.approve.
   const isViewer = (d) => { const ap = d && d.approvals; return Boolean(ap && ap.viewer === true); };
   const VIEWER_TEXT = "Zgody daje prowadzący na komputerze z sesją.";
+  // Strona serwera wymaga tokenu zgód (approvals.tokenRequired), a ta karta go nie ma: przyciski nieaktywne z jednym powodem.
+  const TOKEN_TEXT = "Zgody wymagają adresu z tokenem: otwórz adres z konsoli serwera albo z `skillsync dashboard url` (bez niego strona jest tylko do odczytu).";
   const ID_RE = /(?<![\w-])([A-Z]{1,3}-?\d+[a-z]?)(?![\w-])/g;
   const PHRASE_RE = /\b(zrobione|w toku|ryzyko|PASS|FAIL|BLOCKED|restart sesji)\b/gi;
   const FORBIDDEN_ATTR = /^(?:on|style$|srcdoc$)/i;
@@ -617,9 +619,11 @@
       if (a.state !== "waiting") {
         return h("button", { class: `${cls} is-waiting`, type: "button", disabled: true, "data-state": "running", "data-gate": kind, ...desc(GATE_KEY[kind], viewer ? VIEWER_TEXT : a.reason) }, `${a.word}${to}`);
       }
-      if (!canApprove(d) || viewer) {
-        return h("button", { class: cls, type: "button", disabled: true, "data-state": "waiting", "data-gate": kind,
-          ...desc(GATE_KEY[kind], viewer ? VIEWER_TEXT : `Zgoda tylko z przeglądarki na komputerze z sesją (localhost albo --approve-host); tu wpisz „${a.word}” w sesji`) }, icon("i-check"), a.word);
+      // Host bez hasApproveToken (webview Skippstera: zgody idą przez CLI) nigdy nie jest „bez tokenu”.
+      const needsToken = !viewer && Boolean(ap.here && ap.tokenRequired && typeof deps.hasApproveToken === "function" && !deps.hasApproveToken());
+      if (!canApprove(d) || viewer || needsToken) {
+        return h("button", { class: cls, type: "button", disabled: true, "aria-disabled": "true", "data-state": "waiting", "data-gate": kind,
+          ...desc(GATE_KEY[kind], viewer ? VIEWER_TEXT : needsToken ? TOKEN_TEXT : `Zgoda tylko z przeglądarki na komputerze z sesją (localhost albo --approve-host); tu wpisz „${a.word}” w sesji`) }, icon("i-check"), a.word);
       }
       const armed = st.armed === kind;
       const label = st.approving && armed ? "Zapisuję…" : armed ? `Na pewno? Kliknij, by dać „${a.word}”${to}` : `Zatwierdź „${a.word}”${to}`;

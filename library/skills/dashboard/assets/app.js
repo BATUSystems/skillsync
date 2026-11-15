@@ -8,6 +8,16 @@
     set(k, v) { try { v == null ? localStorage.removeItem("dashboard:" + k) : localStorage.setItem("dashboard:" + k, v); } catch { /* brak pamięci */ } },
   };
   const POLL_MS = 5000, WATCHDOG_MS = 40000;
+  // Token zgód (approvals.tokenRequired): serwer drukuje adres z fragmentem `#zgoda=<token>` (`skillsync dashboard url` też). Fragment nie trafia do
+  // serwera ani do proxy; strona zapamiętuje token w localStorage tego originu i czyści pasek adresu. Bez tokenu strona jest tylko do odczytu.
+  const TOKEN_KEY = "approveToken";
+  const approveToken = () => store.get(TOKEN_KEY);
+  (() => {
+    const found = /^#zgoda=([A-Za-z0-9_-]{16,128})$/.exec(location.hash || "");
+    if (!found) return;
+    store.set(TOKEN_KEY, found[1]);
+    try { history.replaceState(null, "", location.pathname + location.search); } catch { location.hash = ""; }
+  })();
   const st = { plan: store.get("plan"), live: "connecting", es: null, pollTimer: null, lastEvent: 0, fetching: null, again: false, lastFetchOk: 0 };
 
   // ------------------------------------------------------------------ motyw (pierwszy wybór ustawia theme.js w <head>)
@@ -25,9 +35,13 @@
   // ------------------------------------------------------------------ transport
   async function postApprove({ kind, path, sha, word }) {
     try {
-      const r = await fetch("/api/approve", { method: "POST", cache: "no-store", headers: { "Content-Type": "application/json", "X-Status-Board": "1" },
+      const token = approveToken();
+      const headers = { "Content-Type": "application/json", "X-Status-Board": "1" };
+      if (token) headers["X-Approve-Token"] = token;
+      const r = await fetch("/api/approve", { method: "POST", cache: "no-store", headers,
         body: JSON.stringify({ kind, path, sha, plan: st.plan || null }) });
       const body = await r.json().catch(() => ({}));
+      if (r.status === 403 && token && typeof body.error === "string" && body.error.includes("token")) { store.set(TOKEN_KEY, null); refresh(); }  // nieaktualny (restart serwera)
       return r.ok ? { ok: true, word: body.word, text: body.next } : { ok: false, word, text: body.error || `Błąd ${r.status}` };
     } catch {
       return { ok: false, word, text: "Brak połączenia z serwerem statusu." };
@@ -48,6 +62,7 @@
       selectPlan: (path) => { st.plan = path || null; refresh(); },
     },
     storage: store,
+    hasApproveToken: () => Boolean(approveToken()),
     theme,
     now: () => Date.now(),
     prototypeOrigin: (port) => `${location.protocol}//${location.hostname}:${port}`,
