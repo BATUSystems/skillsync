@@ -132,8 +132,7 @@ Dwie różne flagi warstw:
 
 ## Ścieżki w raportach
 
-Tylko wymienione pola ścieżek w raportach JSON mają na Windows ukośnik `/` (`knowledge init`: `created`, `existing`; `route`: `lessons[].path`, `domain[].path`, `index`; `doctor`: `findings[].path`;
-komunikat `prototype serve` o pliku użytkowników w serwowanym katalogu). Pomocnik: `skillsync_workflow/pathfmt.py` (`posix`). Wyjątek: komendy do wykonania (zadanie `skillsync: link`, komendy hooków,
+Każde pole ścieżki w raportach JSON ma na Windows ukośnik `/`: `root` i `project` (`status`, `dashboard show`, `catalog list`, `layers *`, `dispatch`, `runs`), `composed_root`, `config`, `manifest` i `layers[].path` (`layers *`), `budgets[].path` i `log` (`workflow validate`), `knowledge init` (`created`, `existing`), `route` (`lessons[].path`, `domain[].path`, `index`), `doctor` (`findings[].path`), `leakcheck` (`directory`, `hooks[].path`), `env` (`launchers[]`), `e2e` (`recorded`, `scenario`, `report`), `repomap` (`path`) oraz komunikat `prototype serve` o pliku użytkowników; test `tests/test_skillsync_report_paths.py` pilnuje, żeby nowe pole nie wróciło do postaci natywnej. Pomocnik: `skillsync_workflow/pathfmt.py` (`posix`). Wyjątek: komendy do wykonania (zadanie `skillsync: link`, komendy hooków,
 `selfcmd`) i ścieżki, które produkt sam otwiera, zostają w postaci natywnej. Na Linuksie i macOS pola ścieżek się nie zmieniają.
 
 ## Kontrola konfiguracji i kontekstu
