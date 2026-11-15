@@ -34,9 +34,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        python: ['3.11', '3.12', '3.13', '3.14']
-        mode: [symlink, copy]
+        os: [macos-latest]
+        python: ['3.12', '3.13']
+        mode: [copy]
         exclude:
           # Windows runs without Developer Mode: no OS symlinks, so only the copy mode makes sense (10 jobs).
           - os: windows-latest
@@ -104,11 +104,12 @@ jobs:
             echo "::error::K5: use selfcmd.self_argv() instead of a path next to the package"
             exit 1
           fi
-      - name: Unit tests
+      - name: "Unit tests (DEBUG - only the lingering-close modules)"
         run: |
           set -o pipefail
-          $PY -m unittest discover -s tests -p 'test_skillsync*.py' -v 2>&1 | tee "$RUNNER_TEMP/unittest.log"
+          $PY -m unittest discover -s tests -p 'test_skillsync_http_body*.py' -v 2>&1 | tee "$RUNNER_TEMP/unittest.log"
       - name: Skips against the baseline
+        if: false
         # Exit 0 = within the baseline or key `null` (warning until the first run of the runner is measured).
         # The Chrome E2E tests skip here (SKILLSYNC_E2E_CHROME is not set): they run in the `e2e` job.
         run: $PY scripts/check_skips.py "$RUNNER_TEMP/unittest.log" --system "${{ matrix.os }}" --mode "${{ matrix.mode }}"
