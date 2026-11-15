@@ -4,6 +4,8 @@
 still has a symlink among its components. The injected `is_symlink` answers make the checks run the same on every system; one more
 tests that make real loops are in test_skillsync_retro (RetroAll)."""
 import errno
+import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -33,6 +35,33 @@ class ResolveLoopChecked(unittest.TestCase):
             with self.assertRaises(OSError) as caught:
                 common.resolve_loop_checked(self.base / 'loop-a' / 'x')
         self.assertEqual(caught.exception.errno, errno.ELOOP)
+
+    def test_a_resolved_path_that_still_has_a_junction_is_a_loop(self):
+        # Windows, Python 3.12+: a loop of junctions comes back as the stuck path; a junction is not a symlink but `os.path.isjunction`
+        stuck = self.base.resolve() / 'loop-b'
+        with mock.patch.object(Path, 'resolve', lambda self, strict=False: stuck / 'x'), \
+                mock.patch.object(Path, 'is_symlink', lambda self: False), \
+                mock.patch.object(common.os.path, 'isjunction', lambda part: Path(part) == stuck, create=True):
+            with self.assertRaises(OSError) as caught:
+                common.resolve_loop_checked(self.base / 'loop-a' / 'x')
+        self.assertEqual(caught.exception.errno, errno.ELOOP)
+
+    def test_a_real_loop_of_junctions_is_reported_on_windows(self):
+        if os.name != 'nt':   # no junctions elsewhere; not a skip, so that no baseline entry is needed
+            return
+        a, b = self.base / 'a', self.base / 'b'
+        b.mkdir()
+        for link, target in ((a, b),):
+            subprocess.run(['cmd', '/c', 'mklink', '/J', str(link), str(target)], check=True, capture_output=True)
+        b.rmdir()
+        subprocess.run(['cmd', '/c', 'mklink', '/J', str(b), str(a)], check=True, capture_output=True)
+        with self.assertRaises(OSError) as caught:
+            common.resolve_loop_checked(a / 'x')
+        self.assertEqual(caught.exception.errno, errno.ELOOP)
+
+    def test_a_python_without_isjunction_keeps_working(self):
+        with mock.patch.object(Path, 'is_symlink', lambda self: False), mock.patch.object(common.os.path, 'isjunction', None, create=True):
+            self.assertEqual(common.resolve_loop_checked(self.base / 'x'), (self.base / 'x').resolve())
 
     def test_a_path_without_links_is_not_a_loop(self):
         with mock.patch.object(Path, 'is_symlink', lambda self: False):
