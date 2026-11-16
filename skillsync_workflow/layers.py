@@ -2909,7 +2909,9 @@ def _rule_use(config, layer_id, base=None, warnings=None):
 def layers_use(layer_id, match, *, position=None):
     """`layers use <id> --match G [--position N]` (K9): a new `layer_rules` entry with the `use` of the
     default rule (`**`) and `<id>` before the personal layer, inserted before the default rule (or at
-    index N, 0-based). An identical existing rule = PASS without a change."""
+    index N, 0-based). When a rule with exactly the same `match` exists, the first of them (the one that wins)
+    gets `<id>` in its own `use` instead (no duplicate, core, org, personal order; a personal id replaces the
+    personal layer); `--position` is refused then. No change of `use` = PASS without a change."""
     try:
         config = load_machine_config()
         if not config.layers:
@@ -2921,6 +2923,19 @@ def layers_use(layer_id, match, *, position=None):
                              'bad-argument')
         globs = _string_list(list(match or []), '--match')
         warnings = []
+        same = next((item for item in config.rules if item['match'] == globs), None)
+        if same is not None:   # the first matching rule wins, so a second one with this `match` would never take effect
+            if position is not None:
+                raise LayerError(f'--position applies to a new rule; layer_rules[{same["index"]}] already has this --match '
+                                 f'and {layer_id} is added to its `use`', 'bad-argument')
+            use = _rule_use(config, layer_id, base=list(same['use']))
+            rule = {'match': globs, 'use': use}
+            if use == list(same['use']):
+                return _report('PASS', changed=False, rule=rule, index=same['index'], config=posix(config.path),
+                               warnings=['The layer_rules entry with this match already uses the layer; nothing changed'])
+            edited = edit_config(config.path, [_set_rule_use_op({same['index']: use})])
+            return _report('PASS', rule=rule, index=same['index'],
+                           warnings=[f'Added to the existing layer_rules entry {same["index"]} with this match (no second rule)'], **edited)
         rule = {'match': globs, 'use': _rule_use(config, layer_id, warnings=warnings)}
         for existing in config.rules:
             if existing['match'] == rule['match'] and existing['use'] == rule['use']:

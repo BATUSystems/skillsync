@@ -1143,6 +1143,59 @@ class LayersUseTest(CommandsCase):
         self.assertEqual((code, report['status'], report['changed']), (0, 'PASS', False), report)
         self.assertEqual((self.config_file.read_bytes(), sorted(self.config_file.parent.glob('*.bak-*'))), (before, backups))
 
+    def rules(self):
+        return [(rule['match'], rule['use']) for rule in self.config()['layer_rules']]
+
+    def test_a_layer_is_added_to_the_existing_rule_with_the_same_match(self):
+        self.write_config(self.layers, [([self.glob], ['core', 'acme']), (['**'], ['core', 'me'])])
+        code, report = self.use('me', '--match', self.glob)
+        self.assertEqual((code, report['status'], report['index']), (0, 'PASS', 0), report)
+        self.assertEqual(report['rule'], {'match': [self.glob], 'use': ['core', 'acme', 'me']})
+        self.assertEqual(self.rules(), [([self.glob], ['core', 'acme', 'me']), (['**'], ['core', 'me'])])
+        code, listing = self.cli_json('layers', 'list', '--project', str(self.project('clients/acme/app')))
+        self.assertEqual((code, [item['id'] for item in listing['layers']]), (0, ['core', 'acme', 'me']))
+
+    def test_an_org_layer_goes_before_the_personal_one_and_a_personal_id_replaces_it_in_the_existing_rule(self):
+        self.write_config(self.layers, [([self.glob], ['core', 'acme', 'me']), (['**'], ['core'])])
+        self.assertEqual(self.use('beta', '--match', self.glob)[0], 0)
+        self.assertEqual(self.rules()[0], ([self.glob], ['core', 'acme', 'beta', 'me']))
+        self.assertEqual(self.use('other-me', '--match', self.glob)[0], 0)
+        self.assertEqual(self.rules()[0], ([self.glob], ['core', 'acme', 'beta', 'other-me']))
+        self.assertEqual(len(self.rules()), 2)
+
+    def test_the_default_rule_is_extended_instead_of_a_second_double_star_rule(self):
+        self.write_config(self.layers, [(['**'], ['core', 'acme'])])
+        code, report = self.use('me', '--match', '**')
+        self.assertEqual((code, report['status']), (0, 'PASS'), report)
+        self.assertEqual(self.rules(), [(['**'], ['core', 'acme', 'me'])])
+
+    def test_with_two_rules_of_the_same_match_the_first_one_is_changed(self):
+        self.write_config(self.layers, [([self.glob], ['core']), ([self.glob], ['core', 'beta'])])
+        self.assertEqual(self.use('acme', '--match', self.glob)[0], 0)
+        self.assertEqual(self.rules(), [([self.glob], ['core', 'acme']), ([self.glob], ['core', 'beta'])])
+
+    def test_a_layer_already_in_the_existing_rule_changes_nothing(self):
+        self.write_config(self.layers, [([self.glob], ['core', 'acme', 'me']), (['**'], ['core'])])
+        before, backups = self.config_file.read_bytes(), sorted(self.config_file.parent.glob('*.bak-*'))
+        code, report = self.use('acme', '--match', self.glob)
+        self.assertEqual((code, report['status'], report['changed']), (0, 'PASS', False), report)
+        self.assertEqual((self.config_file.read_bytes(), sorted(self.config_file.parent.glob('*.bak-*'))), (before, backups))
+
+    def test_another_match_still_creates_a_new_rule_before_the_default(self):
+        self.write_config(self.layers, [([self.glob], ['core', 'acme']), (['**'], ['core', 'me'])])
+        other = f'{self.work}/clients/beta/**'
+        code, report = self.use('beta', '--match', other)
+        self.assertEqual((code, report['index']), (0, 1), report)
+        self.assertEqual(self.rules(), [([self.glob], ['core', 'acme']), ([other], ['core', 'beta', 'me']), (['**'], ['core', 'me'])])
+
+    def test_position_with_an_existing_rule_of_the_same_match_is_refused_and_changes_nothing(self):
+        self.write_config(self.layers, [([self.glob], ['core', 'acme']), (['**'], ['core', 'me'])])
+        before = self.config_file.read_bytes()
+        code, report = self.use('me', '--match', self.glob, '--position', '0')
+        self.assertEqual((code, report['status'], report['code']), (2, 'BLOCKED', 'bad-argument'), report)
+        self.assertIn('--position', report['reason'])
+        self.assertEqual(self.config_file.read_bytes(), before)
+
     def test_position_is_a_zero_based_index(self):
         self.write_config(self.layers, [([f'{self.work}/x/**'], ['core']), (['**'], ['core', 'me'])])
         code, report = self.use('acme', '--match', self.glob, '--position', '0')

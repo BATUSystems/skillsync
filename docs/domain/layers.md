@@ -83,7 +83,10 @@ Zasady configu:
 ## Dodawanie reguł (`layers use`, `layers add`, `layers init`)
 
 - `layers use <id> --match GLOB` (powtarzalne, wymagane) tworzy regułę; bez `--position` wstawia ją **przed** regułą `**`.
-  `--position` liczone od 0 (indeks w `layer_rules`).
+  `--position` liczone od 0 (indeks w `layer_rules`). Gdy reguła o dokładnie tym samym `match` (równość listy globów) już
+  istnieje, `layers use` nie tworzy drugiej, tylko dopisuje warstwę do `use` pierwszej takiej reguły (tej, która obowiązuje):
+  bez duplikatu, w kolejności core, org, personal (warstwa personal zastępuje personal); brak zmiany `use` = PASS bez zmiany;
+  `--position` przy istniejącej regule = BLOCKED `bad-argument`.
 - `layers use` bez reguły `**` buduje regułę na `[core]` + jedyną skonfigurowaną warstwę personal; przy kilku warstwach
   personal wypisuje ostrzeżenie z instrukcją `layers use <personal> --match '**'`.
 - `layers add` i `layers init` **nie tworzą reguły `**`**; `layers add` warstwy org albo personal wypisuje ostrzeżenie
