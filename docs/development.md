@@ -62,9 +62,9 @@ python3 scripts/check_skips.py run.log --system ubuntu-latest --mode copy
 `python3 scripts/merge_modules.py --base <baza> --head <sha> [--json | --names]` wylicza z diffu `<baza>..<sha>` moduły testowe do uruchomienia
 przy scalaniu, z uzasadnieniem na moduł. Reguły: zmieniony test; test importujący zmieniony moduł produktu, skryptu lub pomocnika
 `tests/` (statycznie, bezpośrednio albo przez inne moduły); test nazywający zmieniony plik w napisie (uruchamia kod podprocesem);
-literał komunikatu z dodanego lub usuniętego wiersza zmienionego pliku produktu w teście albo w fiksturze, którą czyta; zmieniona
+literał komunikatu z dodanego lub usuniętego wiersza zmienionego pliku produktu w teście albo w fiksturze `*.json` nazwanej w teście; zmieniona
 fikstura i testy czytające `expected*` przy zmianie produktu; stały zestaw strażników (`GUARDS` w skrypcie). Przykład uruchomienia:
-`python3 -m unittest $(python3 scripts/merge_modules.py --base <baza> --head <sha> --names)`. Zestaw to dolna granica, nie zastępuje pełnego
+`python3 -m unittest $(python3 scripts/merge_modules.py --base <baza> --head <sha> --names)`. Analiza czyta drzewo robocze, więc checkout musi być `--head` (inaczej kod 2); diff liczony od merge-base. Usunięty lub przemianowany moduł produktu wybiera testy, które go importują albo nazywają. Zestaw to dolna granica, nie zastępuje pełnego
 biegu przed wydaniem; nie widzi importów dynamicznych ani poleceń znanych tylko z nazwy (np. `skillsync status` w napisie). Szeroko
 importowany moduł (`cli.py`, `common.py`) daje szeroki zestaw, co jest zamierzone.
 

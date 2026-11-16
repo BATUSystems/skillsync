@@ -20,7 +20,8 @@ Rules (a module is selected when at least one holds; every hit is listed as its 
   expected     any product file changed and the test reads `expected*` fixtures (their content mirrors the product output);
   unparsable   the test file does not parse - selected for safety;
   guard        the fixed guard set (GUARDS below), always.
-Limits: dynamic imports and commands named only by a string (`skillsync status`) are not seen except through the `path`,
+The analysis reads the working tree, so the checkout must be `--head` (otherwise exit 2); the diff is `base...head` (from the merge base).
+Deleted or renamed product modules select the tests that import or name them. Limits: dynamic imports and commands named only by a string (`skillsync status`) are not seen except through the `path`,
 `literal` and `expected` rules; a deleted test is never selected. The set is a floor for the merge run, not a replacement for
 the full suite before a release.
 Exit codes: 0 = computed, 2 = unusable input (no git, unknown revision). Standard library only."""
@@ -34,7 +35,7 @@ from pathlib import Path
 
 GUARDS = ('test_skillsync_repo_hygiene', 'test_skillsync_packaging', 'test_skillsync_check_skips',
           'test_skillsync_dashboard_contract', 'test_skillsync_line_ends', 'test_skillsync_line_ends_rest',
-          'test_skillsync_line_ends_checkers')
+          'test_skillsync_line_ends_checkers', 'test_skillsync_measurements', 'test_skillsync_ci_workflows')
 PRODUCT_DIRS = ('skillsync_workflow', 'scripts', 'tests')
 MIN_LITERAL = 12
 STRING = re.compile(r"""(?P<q>'|")(?P<s>(?:\\.|(?!(?P=q)).)*)(?P=q)""")
@@ -47,7 +48,7 @@ class GitError(RuntimeError):
 
 def git(repo, *args):
     try:
-        done = subprocess.run(['git', '-C', str(repo), *args], capture_output=True, text=True, encoding='utf-8', timeout=120)
+        done = subprocess.run(['git', '-C', str(repo), *args], capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=120)
     except (OSError, subprocess.SubprocessError) as error:
         raise GitError(str(error))
     if done.returncode != 0:
@@ -57,7 +58,7 @@ def git(repo, *args):
 
 def changed_files(repo, base, head):
     """`{path: status}` with status A/M/D (renames count as delete + add)."""
-    out = git(repo, 'diff', '--name-status', '--no-renames', '-z', f'{base}..{head}').split('\0')
+    out = git(repo, 'diff', '--name-status', '--no-renames', '-z', f'{base}...{head}', '--').split('\0')
     result = {}
     for status, path in zip(out[0::2], out[1::2]):
         if status:
@@ -69,8 +70,8 @@ def diff_literals(repo, base, head, paths):
     """Static parts of string literals on added or removed lines of the given Python files."""
     found = set()
     for path in paths:
-        text = git(repo, 'diff', '-U0', '--no-renames', f'{base}..{head}', '--', path)
-        for line in text.splitlines():
+        text = git(repo, 'diff', '-U0', '--no-renames', f'{base}...{head}', '--', path)
+        for line in text.split('\n'):
             if not line or line[0] not in '+-' or line.startswith(('+++', '---')) or line[1:].lstrip().startswith('#'):
                 continue
             for match in STRING.finditer(line[1:]):
@@ -96,32 +97,40 @@ def internal_modules(repo):
     return found
 
 
-def imports_of(tree, own, modules):
-    """Internal modules imported by a parsed file (own = its dotted name, for relative imports)."""
+def imports_of(tree, own, modules, is_package=False):
+    """`(resolved, raw)`: internal modules imported by a parsed file and every dotted name it mentions
+    (own = its dotted name, for relative imports; is_package = the file is an `__init__.py`)."""
     names = set()
-    package = own.rsplit('.', 1)[0] if '.' in own else ''
+    package = own if is_package else (own.rsplit('.', 1)[0] if '.' in own else '')
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             names.update(alias.name for alias in node.names)
         elif isinstance(node, ast.ImportFrom):
             if node.level:
                 base_parts = package.split('.') if package else []
-                base_parts = base_parts[:len(base_parts) - (node.level - 1)] if node.level > 1 else base_parts
+                if node.level > 1:
+                    base_parts = base_parts[:len(base_parts) - (node.level - 1)]
                 base = '.'.join(base_parts + ([node.module] if node.module else []))
             else:
                 base = node.module or ''
             if base:
                 names.add(base)
             names.update((base + '.' + alias.name) if base else alias.name for alias in node.names)
+    expanded = set()
+    for name in names:  # `import a.b.c` also runs a and a.b
+        parts = name.split('.')
+        expanded.update('.'.join(parts[:i]) for i in range(1, len(parts) + 1))
+    by_last = {}
+    for dotted_name in modules:
+        by_last.setdefault(dotted_name.rsplit('.', 1)[-1], []).append(dotted_name)
     resolved = set()
-    for name in names:
+    for name in expanded:
         if name in modules:
             resolved.add(name)
-            continue
-        # a bare `import helper` inside tests/ (unittest discovery puts tests/ on sys.path)
-        if '.' not in name and 'tests.' + name in modules:
-            resolved.add('tests.' + name)
-    return resolved
+        elif '.' not in name and name not in ('tests', 'scripts', 'skillsync_workflow'):
+            # a bare `import helper`: unittest discovery and sys.path.insert put tests/ (or a fixture directory) on the path
+            resolved.update(candidate for candidate in by_last.get(name, []) if candidate.startswith('tests.'))
+    return resolved, expanded
 
 
 def string_constants(tree):
@@ -147,14 +156,17 @@ def select(repo, base, head):
 
     changed_py = {path for path, status in changed.items() if path.endswith('.py') and status != 'D'}
     changed_modules = {by_path[path] for path in changed_py if path in by_path}
-    changed_product = sorted(path for path in changed_py if path.startswith(('skillsync_workflow/', 'scripts/')))
-    changed_fixtures = sorted(path for path, status in changed.items() if status != 'D' and path.startswith('tests/') and not path.endswith('.py'))
+    deleted_py = {path for path, status in changed.items() if path.endswith('.py') and status == 'D'}
+    deleted_modules = {dotted(path) for path in deleted_py}
+    # deleted product files count too: tests that named or imported them break at the merge
+    changed_product = sorted(path for path in changed_py | deleted_py if path.startswith(('skillsync_workflow/', 'scripts/')))
+    changed_fixtures = sorted(path for path in changed if path.startswith('tests/') and not path.endswith('.py'))
     literals = diff_literals(repo, base, head, changed_product)
 
-    parsed, constants, imports = {}, {}, {}
+    parsed, constants, imports, raw_imports = {}, {}, {}, {}
     for name, path in tests.items():
         try:
-            tree = ast.parse((repo / path).read_text(encoding='utf-8'), filename=path)
+            tree = ast.parse((repo / path).read_text(encoding='utf-8-sig', errors='replace'), filename=path)
         except (SyntaxError, ValueError, OSError):
             parsed[name] = None
             continue
@@ -164,11 +176,11 @@ def select(repo, base, head):
         tree = parsed.get(name)
         if tree is None and name not in parsed:
             try:
-                tree = ast.parse((repo / path).read_text(encoding='utf-8'), filename=path)
+                tree = ast.parse((repo / path).read_text(encoding='utf-8-sig', errors='replace'), filename=path)
             except (SyntaxError, ValueError, OSError):
                 tree = None
         if tree is not None:
-            imports[name] = imports_of(tree, name, modules)
+            imports[name], raw_imports[name] = imports_of(tree, name, modules, path.endswith('__init__.py'))
 
     # reverse closure: module -> the changed module it depends on (first found), with the chain for the reason
     def chain_to_changed(start):
@@ -185,12 +197,6 @@ def select(repo, base, head):
                     queue.append((target, trail + [target]))
         return None
 
-    fixture_text = {}
-    for path in changed_fixtures:
-        try:
-            fixture_text[path] = (repo / path).read_text(encoding='utf-8', errors='replace')
-        except OSError:
-            pass
     all_fixtures = sorted((repo / 'tests').rglob('*.json')) if (repo / 'tests').is_dir() else []
     fixture_by_name = {}
     for file in all_fixtures:
@@ -206,6 +212,9 @@ def select(repo, base, head):
             trail = chain_to_changed(name)
             if trail:
                 add(name, 'import: ' + ' -> '.join(trail))
+        gone = sorted(raw_imports.get(name, set()) & deleted_modules)
+        if gone:
+            add(name, 'import: imports deleted ' + ', '.join(gone))
         values = constants[name]
         for product in changed_product:
             stem = Path(product).name
@@ -249,10 +258,17 @@ def main(argv=None):
     parser.add_argument('--names', action='store_true', help='only dotted module names (for `python -m unittest`), one per line')
     args = parser.parse_args(argv)
     try:
+        head = git(args.repo, 'rev-parse', '--verify', '--end-of-options', args.head + '^{commit}').strip()
+        current = git(args.repo, 'rev-parse', 'HEAD').strip()
+        if head != current:
+            raise GitError(f'the checkout is {current[:10]}, not --head {args.head} ({head[:10]}): the analysis reads the working tree, check out the merged tree first')
         result = select(args.repo, args.base, args.head)
     except GitError as error:
         print(f'merge_modules: {error}', file=sys.stderr)
         return 2
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, 'reconfigure'):
+            stream.reconfigure(encoding='utf-8', newline='\n')
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=1))
     elif args.names:

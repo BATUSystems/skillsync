@@ -10,15 +10,17 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-MEASURED = re.compile(r'(?<![\w])(zmierzone|zmierzono|measured)(?![\w])', re.IGNORECASE)
+MEASURED = re.compile(r'(?<![\w])(zmierzon\w*|measured)(?![\w])', re.IGNORECASE)
 UNMEASURED = re.compile(r'(?<![\w])(niezmierzon\w*|oczekiwane|unmeasured|expected)(?![\w])', re.IGNORECASE)
 HEADER = re.compile(r'^(pomiar|measurement)$', re.IGNORECASE)
-LINK = re.compile(r'\]\(([^)\s]*measurements/[A-Za-z0-9._-]+\.md)\)')
+LINK = re.compile(r'\]\(([^)\s#]*measurements/(?!README\.md)[A-Za-z0-9._-]+\.md)(?:#[^)\s]*)?\)')
 FIELDS = ('Data:', 'System:', 'Wersja:', 'Polecenie:', 'Wynik:')
 
 
 def cells(line):
-    return [cell.strip() for cell in line.strip().strip('|').split('|')]
+    # `\|` is a literal pipe and a pipe inside backticks is not a separator
+    text = re.sub(r'`[^`]*`', lambda m: m.group(0).replace('|', '\x00'), line.strip().strip('|').replace('\\|', '\x00'))
+    return [cell.replace('\x00', '|').strip() for cell in text.split('|')]
 
 
 def is_separator(line):
@@ -28,10 +30,12 @@ def is_separator(line):
 def tables(text):
     """`(header cells, [(line number, row text, cells)])` for every pipe table (fenced code blocks skipped)."""
     lines = text.splitlines()
-    found, fenced, i = [], False, 0
+    found, fence, i = [], None, 0
     while i < len(lines):
-        if lines[i].lstrip().startswith(('```', '~~~')):
-            fenced = not fenced
+        marker = re.match(r'\s*(`{3,}|~{3,})', lines[i])
+        if marker and (fence is None or marker.group(1)[0] == fence[0]):
+            fence = None if fence else marker.group(1)
+        fenced = fence is not None
         if not fenced and lines[i].lstrip().startswith('|') and i + 1 < len(lines) and is_separator(lines[i + 1]):
             header, rows, j = cells(lines[i]), [], i + 2
             while j < len(lines) and lines[j].lstrip().startswith('|'):
@@ -88,7 +92,7 @@ class MeasurementTables(unittest.TestCase):
                 continue
             text = record.read_text(encoding='utf-8')
             for field in FIELDS:
-                self.assertRegex(text, r'(?m)^' + re.escape(field) + r'\s*\S', f'{record.name}: missing {field}')
+                self.assertRegex(text, r'(?m)^' + re.escape(field) + r'[ \t]*\S', f'{record.name}: missing {field}')
 
 
 class RuleBehaviour(unittest.TestCase):
@@ -124,6 +128,15 @@ class RuleBehaviour(unittest.TestCase):
 
     def test_prose_and_code_fences_are_ignored(self):
         self.assertEqual(self.check('Zmierzone w prozie.\n```\n| a | b |\n|---|---|\n| x | zmierzone |\n```\n'), [])
+
+    def test_escaped_pipe_and_inflected_forms_and_anchor(self):
+        self.assertEqual(self.check(self.TABLE.format('| a \\| b | c | zmierzone: [x](measurements/x.md#wynik) |'), ['x.md']), [])
+        self.assertEqual(len(self.check(self.TABLE.format('| a | b | zmierzona na laptopie |'))), 1)
+        self.assertEqual(len(self.check(self.TABLE.format('| a | b | zmierzone: [r](measurements/README.md) |'), ['README.md'])), 1)
+
+    def test_tilde_fence_inside_backtick_fence(self):
+        text = '```\n~~~\n```\n| a | b |\n|---|---|\n| x | zmierzone |\n'
+        self.assertEqual(len(self.check(text)), 1)
 
     def test_not_a_substring_match(self):
         self.assertEqual(self.check('| a | b |\n|---|---|\n| x | niezmierzone, pomierzone |\n'), [])

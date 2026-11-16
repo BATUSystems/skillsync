@@ -138,6 +138,39 @@ class MergeModules(unittest.TestCase):
         self.assertIn('unparsable: test file does not parse', found['tests.test_skillsync_broken'])
         self.assertNotIn('tests.test_skillsync_unrelated', found)
 
+    def test_deleted_product_module_selects_its_importer(self):
+        run_git(self.repo.dir, 'mv', 'skillsync_workflow/status.py', 'skillsync_workflow/state.py')
+        self.repo.commit('rename')
+        self.repo.write({'tests/test_skillsync_old_import.py': 'from skillsync_workflow import status\n'})
+        base = self.base
+        self.repo.commit('x')
+        _, result, _ = self.repo.select(base)
+        found = modules(result)
+        self.assertTrue(any('imports deleted skillsync_workflow.status' in r for r in found['tests.test_skillsync_old_import']), found)
+        self.assertNotIn('tests.test_skillsync_unrelated', found)
+
+    def test_checkout_must_be_head(self):
+        run_git(self.repo.dir, 'checkout', '-q', '-b', 'feature')
+        self.repo.write({'skillsync_workflow/status.py': 'VALUE = 3\n'})
+        self.repo.commit('f')
+        run_git(self.repo.dir, 'checkout', '-q', self.base)
+        code, _, error = self.repo.select(self.base, 'feature')
+        self.assertEqual(code, 2)
+        self.assertIn('check out the merged tree', error)
+
+    def test_package_init_relative_import_and_bare_fixture_helper(self):
+        self.repo.write({'skillsync_workflow/__init__.py': 'from .status import VALUE\n',
+                         'tests/fixtures/layers/make_baseline.py': 'X = 1\n',
+                         'tests/test_skillsync_baseline.py': 'import make_baseline\n',
+                         'tests/test_skillsync_sub_only.py': 'import skillsync_workflow.cli\n'})
+        base = self.repo.commit('add')
+        self.repo.write({'tests/fixtures/layers/make_baseline.py': 'X = 2\n', 'skillsync_workflow/status.py': 'VALUE = 9\n'})
+        self.repo.commit()
+        _, result, _ = self.repo.select(base)
+        found = modules(result)
+        self.assertIn('tests.test_skillsync_baseline', found)
+        self.assertIn('tests.test_skillsync_sub_only', found)  # runs the package __init__, which imports status
+
     def test_unknown_revision_is_exit_2_and_text_output(self):
         code, _, error = self.repo.select('nonexistent')
         self.assertEqual(code, 2)
