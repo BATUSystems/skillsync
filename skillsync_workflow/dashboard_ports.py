@@ -48,23 +48,26 @@ def _nonlocal_bind_allowed() -> bool:
 HOST_LOOKUP_TIMEOUT = 2.0    # seconds a caller waits for the resolver (a name that does not resolve can take half a minute)
 HOST_LOOKUP_TTL = 60.0       # a resolved answer is kept this long
 HOST_LOOKUP_NEGATIVE_TTL = 15.0   # "the resolver was too slow" is kept this long, so a series of requests starts at most one lookup
+HOST_LOOKUP_STALE_MAX = 300.0   # an older good answer serves a resolver that is too slow only this long after the last SUCCESSFUL lookup
 _lookup_lock = threading.Lock()
-_lookup = {"value": None, "until": 0.0, "pending": None}
+_lookup = {"value": None, "until": 0.0, "pending": None, "good_at": None}
 
 
 def _resolve_into_cache(done: threading.Event) -> None:
     found: set[str] = set()
     ttl = HOST_LOOKUP_NEGATIVE_TTL   # a failed lookup is remembered as briefly as a slow one
+    good = False
     try:
         for info in socket.getaddrinfo(socket.gethostname(), None):
             found.add(info[4][0].split("%")[0])
-        ttl = HOST_LOOKUP_TTL
+        ttl, good = HOST_LOOKUP_TTL, True
     except Exception:  # noqa: BLE001 - OSError (gaierror), UnicodeError, ValueError: whatever the resolver raises is "no addresses"
         found = set()
     finally:
         with _lookup_lock:
             if _lookup["pending"] is done:   # not after a reset (tests): a stale lookup never writes into a newer cache
                 _lookup["value"], _lookup["until"] = found, time.monotonic() + ttl
+                _lookup["good_at"] = time.monotonic() if good else None   # a failure is no "good answer" to fall back on
                 _lookup["pending"] = None
         done.set()   # always: a waiter must never be left behind by a lookup that raised
 
@@ -72,7 +75,7 @@ def _resolve_into_cache(done: threading.Event) -> None:
 def host_addresses() -> set[str]:
     """Addresses of the name of this machine, WITHOUT ever blocking the caller for longer than `HOST_LOOKUP_TIMEOUT`: the lookup runs in a
     daemon thread (one at a time, its answer cached for `HOST_LOOKUP_TTL`); when the resolver is too slow the answer is the empty set, kept for
-    `HOST_LOOKUP_NEGATIVE_TTL`, and a late answer still fills the cache. A resolver that blocks for tens of seconds (a name that does not
+    `HOST_LOOKUP_NEGATIVE_TTL` (an older good answer serves instead only up to `HOST_LOOKUP_STALE_MAX` after the last successful lookup), and a late answer still fills the cache. A resolver that blocks for tens of seconds (a name that does not
     resolve) therefore delays neither the start nor the stop of the server, and N requests start at most one lookup."""
     with _lookup_lock:
         if _lookup["value"] is not None and time.monotonic() < _lookup["until"]:
@@ -84,15 +87,22 @@ def host_addresses() -> set[str]:
     pending.wait(HOST_LOOKUP_TIMEOUT)
     with _lookup_lock:
         if not pending.is_set():   # too slow: remember it for a while (the thread goes on and may still fill the cache)
-            kept = set(_lookup["value"] or ())   # an older good answer is better than none
-            _lookup["value"], _lookup["until"] = kept, time.monotonic() + HOST_LOOKUP_NEGATIVE_TTL
+            # an older good answer is better than none, but only for `HOST_LOOKUP_STALE_MAX` after the last successful lookup: a resolver that
+            # stays slow must not keep an address that no longer belongs to this machine alive for ever (renewed every negative TTL)
+            good_at = _lookup["good_at"]
+            fresh = good_at is not None and time.monotonic() - good_at <= HOST_LOOKUP_STALE_MAX
+            kept = set(_lookup["value"] or ()) if fresh else set()
+            until = time.monotonic() + HOST_LOOKUP_NEGATIVE_TTL
+            if kept:
+                until = min(until, good_at + HOST_LOOKUP_STALE_MAX)   # a renewal never carries the old answer beyond the limit
+            _lookup["value"], _lookup["until"] = kept, until
             return set(kept)
         return set(_lookup["value"] or ())
 
 
 def _reset_host_lookup() -> None:   # tests
     with _lookup_lock:
-        _lookup.update(value=None, until=0.0, pending=None)
+        _lookup.update(value=None, until=0.0, pending=None, good_at=None)
 
 
 def _enumerated_addresses() -> set[str]:
