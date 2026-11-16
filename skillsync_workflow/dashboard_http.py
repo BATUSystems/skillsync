@@ -86,9 +86,9 @@ HOST_REFUSED = "Strona odpowiada tylko pod localhost albo hostem z --approve-hos
 
 def host_refused_message(role: str, host_header: str | None) -> str:
     """The 403 text of a `Host` outside the list of THIS socket: names the flag that opens it for the socket and the `Host` of the request.
-    The name is cleaned before it goes into the answer (letters, digits, dot, dash, underscore; everything else `?`; at most 64 characters),
+    The name is cleaned before it goes into the answer (letters, digits, dot, colon, dash, underscore; everything else `?`; at most 64 characters),
     so it cannot carry a control character, markup or a log injection; the answer is JSON with no page content."""
-    shown = re.sub(r"[^A-Za-z0-9._-]", "?", request_host(host_header))
+    shown = re.sub(r"[^A-Za-z0-9._:-]", "?", request_host(host_header))
     shown = (shown[:61] + "...") if len(shown) > 64 else (shown or "(brak)")
     if role == ports.ROLE_READ:
         return f"Gniazdo odczytu odpowiada tylko pod localhost, adresem IP tej maszyny, jej własną nazwą albo hostem z --read-host (nagłówek Host: {shown})."
@@ -767,7 +767,7 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
         allowed = self.board.approve_hosts
         host = request_host(self.headers.get("Host"))
         strict = self.role == ports.ROLE_APPROVE   # the consent socket of the two-port mode: exact Origin, no intermediary headers
-        if host not in allowed and not (strict and self._host_allowed(host)):  # foreign Host: do_POST already refused it; --read-host: refused here, same message
+        if host not in allowed and not (strict and self._host_allowed(host)):  # foreign Host: do_POST already refused it; --read-host: refused here with the fixed HOST_REFUSED text (no name of the request)
             return HOST_REFUSED
         if self.headers.get("X-Status-Board") != "1":
             return "Brak nagłówka X-Status-Board."

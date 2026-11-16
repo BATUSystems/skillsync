@@ -276,8 +276,8 @@ class HostRefusedMessage(unittest.TestCase):
         for raw in ("<script>alert(1)</script>", 'a"b', "a\r\nSet-Cookie: x=1", "a\x00b", "ev\u0131l.example", "a b"):
             with self.subTest(raw=raw):
                 text = srv.host_refused_message(ports.ROLE_READ, raw)
-                shown = text.split("(nagłówek Host: ")[1].rstrip(").")
-                self.assertRegex(shown, r"^[A-Za-z0-9._?-]+$")
+                shown = text.split("(nagłówek Host: ")[1][:-2]
+                self.assertRegex(shown, r"^[A-Za-z0-9._:?-]+$")
         self.assertIn("Host: (brak)", srv.host_refused_message(ports.ROLE_READ, ""))
         self.assertIn("Host: (brak)", srv.host_refused_message(ports.ROLE_READ, None))
         long = srv.host_refused_message(ports.ROLE_READ, "a" * 500 + ".example")

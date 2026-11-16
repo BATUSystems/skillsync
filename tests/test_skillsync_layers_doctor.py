@@ -316,6 +316,7 @@ class InstalledSkillTargets(DoctorCase):
         self.assertEqual(self.levels(report, 'Installed skill copy differs from source'), ['error'], report)
         hint = self.found(report, 'Installed skill copy differs from source')[0]['reason']
         self.assertIn('delete this directory and run `skillsync link', hint)
+        self.assertIn('(changes made by hand in it are lost)', hint)
 
 
 class LayerReferences(DoctorCase):

@@ -726,15 +726,15 @@ nazwę z `--read-host` (obie listy: port pomijany, bez rozróżniania wielkości
 brakujący `Host` (DNS rebinding, tunel lub nazwa LAN spoza list) = 403 `{"error": "<tekst>"}` bez treści strony,
 dokumentu ani statusu. Tekst wskazuje, która flaga otwiera TO gniazdo: odczyt (`--read-port`) `--read-host` (oraz adres IP i własną nazwę maszyny),
 zgody (`--approve-port`) `--approve-host`, tryb jednego portu (`--port`) obie (`--approve-host`: odczyt i zgody, `--read-host`: tylko odczyt); kończy go
-`(nagłówek Host: <nazwa>)`. Nazwa pochodzi z żądania i przed wpisaniem do odpowiedzi jest oczyszczona (małe litery bez portu, tylko litery, cyfry, `.`, `-`, `_`,
-reszta `?`, najwyżej 64 znaki, brak = `(brak)`), więc nie niesie znaków sterujących ani znaczników; odpowiedź nie ma nagłówków CORS, więc obca strona jej nie odczyta.
+`(nagłówek Host: <nazwa>)`. Nazwa pochodzi z żądania i przed wpisaniem do odpowiedzi jest oczyszczona (małe litery bez portu, tylko litery, cyfry, `.`, `:`, `-`, `_`,
+reszta `?`, najwyżej 64 znaki, brak = `(brak)`), więc nie niesie znaków sterujących ani znaczników; odpowiedź niesie tylko nazwę flagi i oczyszczony `Host` z żądania (nic, czego żądający sam nie wysłał).
 Odmowa zapisu z hosta, który może tylko czytać (`POST /api/approve` z `--read-host`), ma stały tekst „Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host).”; przy `--verbose` odmowa trafia do logu stderr (metoda, ścieżka, host).
 
 | Klasa `Host` (tryb `--port`) | Odczyt (`GET`, `HEAD`, `/events`, `/api/*`, `/healthz`, assety) | Zapis (`POST /api/approve`) | `approvals.here` / `approvals.viewer` |
 |---|---|---|---|
 | loopback | tak | tak (chyba że `--no-approvals`) | `true` / `false` |
 | `--approve-host` | tak | tak (chyba że `--no-approvals`) | `true` / `false` |
-| `--read-host` | tak | w przeglądarce widza nigdy: 403 z tym samym komunikatem co obcy `Host`, także z poprawnymi `Origin`, `X-Status-Board` i `Content-Type` | `false` / `true` |
+| `--read-host` | tak | w przeglądarce widza nigdy: 403 ze stałym tekstem („Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host).”, bez nazwy z żądania), także z poprawnymi `Origin`, `X-Status-Board` i `Content-Type` | `false` / `true` |
 | inny albo brak | 403 | 403 | (brak odpowiedzi z danymi) |
 
 `--read-host` służy pokazowi przez tunel: połączenie przychodzi z loopbacku, ale przeglądarka widza wysyła `Host:

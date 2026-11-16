@@ -1537,7 +1537,7 @@ class HttpReadHostTests(HttpCase):
             with self.subTest(headers=headers):
                 body = json.dumps(data).encode("utf-8")
                 code, answer = raw_post(self.port, {**headers, "Content-Length": str(len(body))}, body)
-                self.assertEqual((code, answer), (403, {"error": srv.HOST_REFUSED}))  # ten sam komunikat co obcy Host
+                self.assertEqual((code, answer), (403, {"error": srv.HOST_REFUSED}))  # stały tekst zapisu (nie komunikat obcego Host z nazwą)
         # Origin z --read-host przy hoście loopback też nie przechodzi (Origin musi być z listy zgód).
         self.assertEqual(self.post(data, {**self.ok, "Origin": f"http://{self.READ}:5140"})[0], 403)
         self.set_doc.assert_not_called()
