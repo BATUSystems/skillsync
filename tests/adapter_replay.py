@@ -30,16 +30,16 @@ class Recorder:
     def counts(self, **kw):
         self.calls.append(('counts', kw))
 
-    def tests(self):
+    def emitted(self):
         return [c for c in self.calls if c[0] == 'test']
 
     def states(self, test_id):
-        return [c[3] for c in self.tests() if c[1] == test_id]
+        return [c[3] for c in self.emitted() if c[1] == test_id]
 
     def last(self):
         """`{id: (state, msg)}` the page would show (the last state wins)."""
         final = {}
-        for c in self.tests():
+        for c in self.emitted():
             final[c[1]] = (c[3], c[6] if c[6] else final.get(c[1], (None, None))[1])
         return final
 

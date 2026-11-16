@@ -61,7 +61,7 @@ class RecordedStreams(unittest.TestCase):
         for name in ('test_adds', 'test_prints', 'test_slow'):
             self.assertEqual(rec.states(GREEN + name), ['running', 'passed'])
         # the start was emitted BEFORE the result of the same test and after the result of the previous one
-        order = [(c[1], c[3]) for c in rec.tests()]
+        order = [(c[1], c[3]) for c in rec.emitted()]
         self.assertEqual(order[:3], [(GREEN + 'test_adds', 'running'), (GREEN + 'test_adds', 'passed'), (GREEN + 'test_prints', 'running')])
 
     def test_start_is_seen_before_the_result_arrives(self):
@@ -116,7 +116,7 @@ class RecordedStreams(unittest.TestCase):
         self.assertIsNone(test_adapters.resolve('auto', meta['command'], 'unittest'))
         rec, adapter, *_ = replay('unittest', chunks, argv=['python', '-m', 'unittest', '-v'], adapter=test_adapters.REGISTRY['unittest']())
         # forced, the dots carry no names; only the `FAIL:`/`ERROR:` blocks of the summary name tests, and those are failures
-        self.assertTrue(rec.tests() and all(c[3] == 'failed' for c in rec.tests()))
+        self.assertTrue(rec.emitted() and all(c[3] == 'failed' for c in rec.emitted()))
         self.assertNotIn('test_green.GreenTests::test_adds', rec.last())
 
     def test_a_name_that_is_not_a_module_is_one_failed_test(self):
@@ -154,7 +154,7 @@ class Hostile(unittest.TestCase):
         for _ in range(300):
             lines = [''.join(rng.choice(fragments) for _ in range(rng.randint(0, 6))) for _ in range(rng.randint(1, 25))]
             rec = self.feed_lines(lines, tail=rng.choice(['', 'test_y (m.C.test_y) ... ', 'ok']))
-            for call in rec.tests():
+            for call in rec.emitted():
                 self.assertIn(call[3], ('running', 'passed', 'failed', 'skipped'))
                 self.assertTrue(call[1] and call[2])
 
@@ -176,7 +176,7 @@ class Hostile(unittest.TestCase):
 
     def test_a_very_long_name_is_cut_not_crashing(self):
         rec = self.feed_lines(['test_' + 'a' * 5000 + ' (m.C.' + 'b' * 5000 + ') ... ok'])
-        self.assertEqual(rec.tests(), [])   # cut at 2000 characters the line no longer closes its parenthesis: nothing is reported
+        self.assertEqual(rec.emitted(), [])   # cut at 2000 characters the line no longer closes its parenthesis: nothing is reported
 
 
 class LooksLikeUnittest(unittest.TestCase):

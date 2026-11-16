@@ -288,7 +288,7 @@ class Hostile(unittest.TestCase):
         alphabet = list(' \t_:.[]()%\'"\\-=PASEDFILRORXpyt/::0123456789') + ['ą', '\x00', '\x1b[31m', '\r', '\n', '\n', '::']
         for _ in range(60):
             rec = self.feed(''.join(rng.choice(alphabet) for _ in range(rng.randint(0, 400))), size=rng.randint(1, 30))
-            for call in rec.tests():
+            for call in rec.emitted():
                 self.assertIn(call[3], ('running', 'passed', 'failed', 'skipped'))
 
     def test_lines_cut_in_the_middle_never_invent_a_state(self):
@@ -315,7 +315,7 @@ class Hostile(unittest.TestCase):
 
     def test_a_very_long_parameter_id_is_cut_and_not_reported(self):
         rec = self.feed('t.py::test_len[' + 'x' * 3000 + '] PASSED  [100%]\n')
-        self.assertEqual(rec.tests(), [])   # the line is cut at 2000 characters: it no longer closes its bracket
+        self.assertEqual(rec.emitted(), [])   # the line is cut at 2000 characters: it no longer closes its bracket
 
 
 class ThroughTheWriter(unittest.TestCase):

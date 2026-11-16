@@ -50,12 +50,12 @@ class VSTest(unittest.TestCase):
                      'dotnet-mtp-mixed-en.jsonl', 'dotnet-mtp-mixed-detailed-en.jsonl'):
             with self.subTest(name=name):
                 rec, *_ = replay_fixture('dotnet', name, collect=NOCOLLECT)
-                self.assertNotIn('running', [c[3] for c in rec.tests()])
+                self.assertNotIn('running', [c[3] for c in rec.emitted()])
 
     def test_default_verbosity_prints_no_tests_and_nothing_is_invented(self):
         for name in ('dotnet-vstest-green-default-en.jsonl', 'dotnet-vstest-green-default-pl.jsonl'):
             rec, *_ = replay_fixture('dotnet', name, collect=NOCOLLECT)
-            self.assertEqual(rec.tests(), [])
+            self.assertEqual(rec.emitted(), [])
 
     def test_green_normal(self):
         rec, *_ = replay_fixture('dotnet', 'dotnet-vstest-green-normal-en.jsonl', collect=NOCOLLECT)
@@ -72,12 +72,12 @@ class VSTest(unittest.TestCase):
         first_console_result = next(i for i, c in enumerate(chunks) if c['fd'] == 'out' and '  Failed Demo.RedTests.Throws' in c['data'])
         rec, *_ = replay('dotnet', chunks[:first_console_result], argv=meta['command'], collect=NOCOLLECT)
         self.assertEqual(final_states(rec), {RED + 'Throws': 'failed', RED + 'Boom': 'failed'})   # before any result line of the console batch
-        self.assertEqual([c[6] for c in rec.tests()], [None, None])
+        self.assertEqual([c[6] for c in rec.emitted()], [None, None])
 
     def test_the_console_result_adds_the_message_without_a_second_result(self):
         rec, *_ = replay_fixture('dotnet', 'dotnet-vstest-red-detailed-en.jsonl', collect=NOCOLLECT)
         for ident in (RED + 'Throws', RED + 'Boom', RED + 'SlowRed'):
-            calls = [c for c in rec.tests() if c[1] == ident]
+            calls = [c for c in rec.emitted() if c[1] == ident]
             self.assertEqual([c[3] for c in calls], ['failed', 'failed'])
             self.assertEqual([c[6] is not None for c in calls], [False, True])   # the message arrives once
         last = rec.last()
@@ -118,7 +118,7 @@ class VSTest(unittest.TestCase):
     def test_runs_without_results_emit_nothing(self):
         for name in ('dotnet-vstest-nomatch-en.jsonl', 'dotnet-vstest-build-error-en.jsonl', 'dotnet-vstest-missing-project-en.jsonl', 'dotnet-vstest-list-en.jsonl'):
             with self.subTest(name=name):
-                self.assertEqual(replay_fixture('dotnet', name, collect=NOCOLLECT)[0].tests(), [])
+                self.assertEqual(replay_fixture('dotnet', name, collect=NOCOLLECT)[0].emitted(), [])
 
     def test_an_interrupted_run_reports_what_was_read(self):
         rec, *_ = replay_fixture('dotnet', 'dotnet-vstest-interrupted-en.jsonl', collect=NOCOLLECT)
@@ -141,7 +141,7 @@ class MTP(unittest.TestCase):
         self.assertEqual(got, {SKIP + 'Later': 'skipped', **{k: 'failed' for k in RED_IDS}})
 
     def test_green_normal_prints_only_the_assembly_line(self):
-        self.assertEqual(replay_fixture('dotnet', 'dotnet-mtp-green-en.jsonl', collect=NOCOLLECT)[0].tests(), [])
+        self.assertEqual(replay_fixture('dotnet', 'dotnet-mtp-green-en.jsonl', collect=NOCOLLECT)[0].emitted(), [])
 
 
 class Collector(unittest.TestCase):
@@ -201,14 +201,14 @@ class Hostile(unittest.TestCase):
     def test_lines_that_only_look_like_results(self):
         rec = self.feed('Total tests: 3\n     Passed: 3\nPassed!  - Failed:     0, Passed:     3, Skipped:     0, Total:     3, Duration: 1 s - demo.dll (net10.0)\n'
                         'Test run for /x/demo.dll (.NETCoreApp,Version=v10.0)\nRunning tests from /x/demo.dll (net10.0|x64)\n  from /x/demo.dll (net10.0|x64)\n')
-        self.assertEqual(rec.tests(), [])
+        self.assertEqual(rec.emitted(), [])
 
     def test_garbage_does_not_raise_and_states_are_valid(self):
         rng = random.Random(11)
         alphabet = list(' \t.()[]{}:,;"\'`<>=_-/\\0123456789ms Passed Failed Skipped passed failed skipped xUnit.net FAIL SKIP Error Message Demo.A') + ['ą', '\x00', '\x1b[0m', '\r', '\n', '\n']
         for _ in range(80):
             rec = self.feed(''.join(rng.choice(alphabet) for _ in range(rng.randint(0, 500))), size=rng.randint(1, 40))
-            for call in rec.tests():
+            for call in rec.emitted():
                 self.assertIn(call[3], ('passed', 'failed', 'skipped'))
 
     def test_lines_cut_in_the_middle_never_invent_a_state(self):
@@ -233,7 +233,7 @@ class Hostile(unittest.TestCase):
 
     def test_names_that_cannot_be_matched_with_the_trx_are_not_reported(self):
         rec = self.feed('  Passed Add [3 ms]\n  Failed Adds_two [2 ms]\npassed Subtract (1ms)\n')
-        self.assertEqual(rec.tests(), [])   # NUnit/MSTest print the bare method, DisplayName is free text: the id would not match the TRX one
+        self.assertEqual(rec.emitted(), [])   # NUnit/MSTest print the bare method, DisplayName is free text: the id would not match the TRX one
 
     def test_nested_and_generic_classes(self):
         rec = self.feed('  Passed Demo.Outer+Inner.Method [1 ms]\n  Passed Demo.Box<int>.Get(x: 1) [1 ms]\n')
@@ -256,7 +256,7 @@ class Hostile(unittest.TestCase):
     def test_build_output_and_summaries_of_mtp_are_not_results(self):
         rec = self.feed('Restore complete (0,3s)\n  mtp net10.0 succeeded (4,5s) -> bin/Debug/net10.0/mtp.dll\nwarning CS8618: Non-nullable field \'x\' must contain a value\n'
                         'Test run summary: Failed!\n  total: 15\n  failed: 4\nExit code: 2\nTest run completed with non-success exit code: 2 (see: https://aka.ms/testingplatform/exitcodes)\n')
-        self.assertEqual(rec.tests(), [])
+        self.assertEqual(rec.emitted(), [])
 
     def test_skipped_tests_of_the_xunit_line_arrive_before_the_console_result(self):
         meta, chunks = load('dotnet-vstest-skipped-detailed-en.jsonl')
