@@ -41,6 +41,7 @@ from . import __version__
 from . import dashboard as engine
 from . import dashboard_ports as ports
 from . import dashboard_token
+from . import stopsignal
 from . import status as status_core
 from .common import emit, load_layer_project, read_project, redact
 from .layers import LayerError
@@ -943,6 +944,14 @@ def _stop_on_sigterm(_signum, _frame):
     raise KeyboardInterrupt
 
 
+def _install_stop_handlers():
+    """The stop signals of the foreground server, main thread only: `SIGTERM` as before, and on Windows also CTRL_BREAK (`SIGBREAK`, see
+    `stopsignal`); Linux and macOS register nothing else."""
+    if threading.current_thread() is threading.main_thread():
+        signal.signal(signal.SIGTERM, _stop_on_sigterm)
+    stopsignal.install_sigbreak()
+
+
 def _prototype_port(args, manifest, root=".") -> int:
     """Port of the prototype server: `--prototype-port`, else `prototype.port` of the manifest, else 5130."""
     flag = getattr(args, "prototype_port", None)
@@ -1004,8 +1013,7 @@ def serve_command(args) -> int:
     url = f"http://{'[%s]' % host if ':' in host else host}:{port}/"
     try:
         # Everything from the SIGTERM handler to `serve_forever` is under the `try` (SIGINT in the start window stops cleanly).
-        if threading.current_thread() is threading.main_thread():
-            signal.signal(signal.SIGTERM, _stop_on_sigterm)
+        _install_stop_handlers()
         threading.Thread(target=board.watch_loop, name="watcher", daemon=True).start()
         log(f"projekt {board.root} → {url}  (Ctrl+C kończy)")
         if board.approvals:
@@ -1106,8 +1114,7 @@ def _serve_ports(args, mode: dict) -> int:
     running: list[Server] = []   # servers whose `serve_forever` thread started (only those can be `shutdown()`)
     states: list[int] = []
     try:
-        if threading.current_thread() is threading.main_thread():
-            signal.signal(signal.SIGTERM, _stop_on_sigterm)
+        _install_stop_handlers()
         threading.Thread(target=board.watch_loop, name="watcher", daemon=True).start()
         for role, server, port, bind in servers:
             thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.5}, name=f"serve-{role}", daemon=True)
