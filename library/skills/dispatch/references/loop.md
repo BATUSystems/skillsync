@@ -4,7 +4,7 @@ Czytaj przy każdej wiadomości od karty (tabela reakcji dyspozytora).
 
 | Wiadomość karty | Reakcja dyspozytora |
 |---|---|
-| `FREE` / `BUSY` / `STATUS` | aktualizacja stanu; przy `czeka-na=użytkownik` nie ponaglaj |
+| `FREE` / `BUSY` / `STATUS` | aktualizacja stanu; przy `czeka-na=użytkownik` nie ponaglaj; wiadomość bez pierwszej linii `date:` (wynik `date`) → poproś o powtórzenie, godzin z treści nie wpisuj do stanu |
 | `LEASE REQUEST` | sprawdź faktyczny stan (porty, procesy, dysk, load, baza) → `LEASE GRANT` albo `LEASE QUEUED` |
 | `LEASE RELEASE` | zweryfikuj exit code i log, procesy zatrzymane, porty wolne → dopiero potem następny GRANT |
 | `PUSH SLOT` | kolejka merge (tryb `direct`; w `pr` brak `PUSH SLOT` na bazę, gotowość = status `review`); `PUSH GRANT` po jednym; zmiany kontraktów ostatnie |
@@ -23,6 +23,7 @@ Sprawdź dowody w logach i `skillsync retro <główne repo> --run-id <run>.<pacz
 Wcześniejsza próba `incomplete` jest dozwolona, a jej brak przy znanym ponowieniu oznacza odrzucenie; gdy poprzedni worktree i kopia nie istnieją, decyduje użytkownik. Odrzucenie: `REPORT REJECTED` z powodem.
 - `incomplete` przez krok kończący się `NOT_RUN` lub `BLOCKED`: `REPORT BLOCKED` albo decyzja użytkownika; nigdy zamiana na `PASS`.
 - Każde inne `incomplete`, także krok kończący się `FAIL` przy obecnym `--final`, oraz `no_data`, `unreadable`, brak przebiegu albo `rubric.evidence.status` inny niż `available`: odrzucenie. Dowód utracony lub zmieniony daje `partial` na stałe: nowa próba `.N` albo decyzja użytkownika.
+- Raport bez pierwszej linii `date: <wynik date>` albo z godzinami w treści, których nie ma w logach ani w tym `date`: `REPORT REJECTED powód=brak linii date` (reguła: [multi-session](../../feature/references/multi-session.md#weryfikacja-i-raporty)). Czasy w stanie dyspozycji też tylko z `date` albo logów.
 - `unexplained`: karta uzupełnia przyczynę albo nowy dowód nowym rekordem, nie edycją pliku.
 - Brak logu albo log starszy niż kod: odrzucenie z żądaniem rekordu `evidence-gap`; wpis o luce w `evidence` paczki zostaje po uzupełnieniu.
 - Przy `retro=<n>` > 0 sprawdź, czy pliki `retro-*` są w kopii przebiegu w głównym checkoucie, i przekaż użytkownikowi listę poleceń „TAK <run-id>/P<n>” do wydania w zwykłej sesji `feature` w głównym checkoucie (nie dyspozytorowi) dla propozycji w stanie `deferred` z kopii `retro-signals.json` i `retro-decisions.json` (zgody nie udzielasz sam; karty dają propozycje także z powtórzeń sygnału, nie tylko z korekt użytkownika); brak plików przy `retro=<n>` > 0 to odrzucenie jak przy braku dowodu. `REPORT DONE` bez pola `retro=` to odrzucenie z żądaniem uzupełnienia raportu.

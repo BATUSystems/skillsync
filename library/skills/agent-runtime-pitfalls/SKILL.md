@@ -114,6 +114,13 @@ pasować do środowiska, popraw ją tutaj zamiast obchodzić.
   wrappera, raz fałszywy alarm o trzech równoległych biegach). Podawaj PID z
   `pgrep -f 'venv/bin/python -m pytest'` i jego cwd.
 
+## Czas w raportach
+
+- **Godzin nie wpisuj z pamięci ani z szacunku.** Zegar sesji i zegar maszyny rozjeżdżają się („około 09:50” przy 20:26).
+  Czas pochodzi z wyniku `date` uruchomionego tuż przed napisaniem raportu albo z logu (znaczniki, `ls -l --time-style=full-iso`).
+  Raport do dyspozytora zaczyna się linią `date: <dosłowny wynik polecenia date>`; wzorzec w skillu `feature`
+  (`references/multi-session.md`, „Weryfikacja i raporty”).
+
 ## Podumysły w tle
 
 - **Review lub inny podumysł w tle może nie wrócić** (zerwana sesja, restart). Ustal termin w zleceniu;

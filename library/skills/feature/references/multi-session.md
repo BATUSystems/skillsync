@@ -123,6 +123,20 @@ własnej kopii repozytorium, bo równoległe gałęzie widzą różne „wolne�
 - Raport DONE/BLOCKED: status, commit/gałąź, kontrole z exit code i ścieżkami logów,
   zmiany w plikach wspólnych, dług i nowe pozycje do rejestrów (z etykietami roboczymi).
   Pole `retro=` podaje liczbę propozycji retrospektywy jakościowej ([retro-quality](retro-quality.md)); pliki `retro-*` idą z kopią przebiegu, a polecenia „TAK <run-id>/P<n>” są w treści raportu pod linią `REPORT DONE`.
+- **Czas w raporcie pochodzi z `date`.** Pierwsza linia każdej wiadomości karty do dyspozytora, która niesie czas
+  lub wynik (`STATUS`, `LEASE REQUEST|RELEASE`, `REPORT DONE|BLOCKED`, „gotowe do scalenia”), to
+  `date: <dosłowny wynik polecenia date, uruchomionego tuż przed wysłaniem>`; druga linia to komunikat z gramatyki.
+  Godziny zdarzeń w treści (początek i koniec biegu, miejsce w kolejce) pochodzą z logów (znaczniki `LEASE START`/`RELEASE`,
+  czas pliku z `ls -l --time-style=full-iso`) albo z osobnego wyniku `date`, nigdy z pamięci ani z szacunku („około 09:50”).
+  Wzorzec:
+
+  ```
+  date: <wynik polecenia date>
+  STATUS <paczka> <akt> <czeka-na>
+  <treść: liczby, exit code, ścieżki logów; godziny tylko z logów albo z date>
+  ```
+
+  Dyspozytor odrzuca raport bez linii `date:` (`REPORT REJECTED powód=brak linii date`), a przy `STATUS` prosi o powtórzenie.
 - Dyspozytor sprawdza logi (liczby, exit code, czas względem ostatniej zmiany kodu) przed
   zmianą statusu. Zmiana kodu po końcowym przebiegu unieważnia dowód.
 - Porażkę „znaną/zastaną” przyjmuj tylko z dowodem z czystej gałęzi głównej; niestabilny
