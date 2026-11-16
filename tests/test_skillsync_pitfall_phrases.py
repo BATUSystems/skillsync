@@ -15,6 +15,9 @@ REQUIRED = [
     ('chrome-headless-shell', r'Do 360 px używaj `chrome-headless-shell`'),
     ('chrome-skad-wziac', r'playwright albo puppeteer'),
     ('chrome-objaw', r'`window\.innerWidth` zostaje 500'),
+    ('kosz-nie-na-stale', r'Do kosza, nie na stałe'),
+    ('hook-wyjatek-prefiks', r'powtórz komendę z prefiksem `SKILLSYNC_GUARD_EXCEPT='),
+    ('hook-wyjatek-zgoda', r'zapytaj użytkownika w oknie wyboru\*\* \(AskUserQuestion\)'),
     ('czas-z-date', r'Godzin nie wpisuj z pamięci ani z szacunku'),
     ('czas-linia-date', r'Raport do dyspozytora zaczyna się linią `date: <dosłowny wynik polecenia date>`'),
 ]

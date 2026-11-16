@@ -114,6 +114,16 @@ pasować do środowiska, popraw ją tutaj zamiast obchodzić.
   wrappera, raz fałszywy alarm o trzech równoległych biegach). Podawaj PID z
   `pgrep -f 'venv/bin/python -m pytest'` i jego cwd.
 
+## Trwałe usuwanie i hook ochronny
+
+- **Do kosza, nie na stałe.** Zamiast `rm -r`, `command rm -rf`, `git clean -fd` i `git worktree remove --force` używaj `trash -- <ścieżki>`
+  albo `git worktree remove <ścieżka>` (bez `--force`; brudny worktree zgłoś użytkownikowi). Katalogi tymczasowe, scratchpad i katalogi
+  odtwarzalne (`node_modules`, `__pycache__`, `dist`, `build`) usuwasz zwykłym `rm -r`.
+- **Hook `guard-commands.py` odmawia reszty** (projekty ze skillem `feature` lub `dispatch`) i podaje gotową komendę kosza. To siatka
+  przeciw pomyłce, nie zakaz: gdy trwałe usunięcie jest naprawdę potrzebne, **zapytaj użytkownika w oknie wyboru** (AskUserQuestion),
+  a po zgodzie powtórz komendę z prefiksem `SKILLSYNC_GUARD_EXCEPT='<powód i cytat zgody>' <komenda>`. Hook dopisze wiersz do
+  `.skillsync/hook-exceptions.jsonl` (komenda, czas, powód). Prefiks dopisujesz tylko po zgodzie; podumysł zgłasza sprawę sesji głównej.
+
 ## Czas w raportach
 
 - **Godzin nie wpisuj z pamięci ani z szacunku.** Zegar sesji i zegar maszyny rozjeżdżają się („około 09:50” przy 20:26).

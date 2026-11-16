@@ -33,6 +33,8 @@ Po zapisaniu manifestu: `skillsync link <projekt> --dry-run`, potem `skillsync l
 | `sync.library` | — | **ignorowane** z ostrzeżeniem; dobór warstw jest tylko w configu maszyny |
 | `agents` | lista nazw ról | zawęża role dla obu hostów; pusta lista = brak ról; brak klucza przy `feature` = wszystkie role z `codex.yaml` |
 | `hooks.stop_closure` | bool | projekty z `feature`: kopiuje `check-closure.py` i dopisuje hook Stop; `false` go usuwa |
+| `hooks.guard_delete` | `deny` \| `off` | hook PreToolUse na `Bash` odmawiający trwałego usunięcia (`rm -r`, `git clean -f`, `git worktree remove --force`, …) z gotową komendą kosza; brak klucza: `deny` w projektach ze skillem `feature` albo `dispatch`, `off` w pozostałych; `off` usuwa wpis i skrypt przy `link` |
+| `hooks.delete_allow` | lista napisów | dodatkowe cele wolne od blokady: nazwa katalogu (np. `coverage`), ścieżka względna od korzenia projektu (`out/cache`) albo bezwzględna (jak katalog tymczasowy); domyślnie `node_modules`, `.venv`, `__pycache__`, `dist`, `build` i katalogi tymczasowe |
 | `hooks.stop_tests` | bool | kopiuje `check-tests.py` i dopisuje hook Stop; tylko projekty **bez** `feature`, wymaga `tests.command` |
 | `tests.command` | string | komenda dla hooka Stop i fallback `legacy-tests` dla `validate` i `smart-test` |
 | `claude` | `false` \| `{enabled: false}` | wyłącza `CLAUDE.md` i wszystko w `.claude/`, w tym `.mcp.json` |

@@ -1049,6 +1049,9 @@ def doctor(root, manifest, library):
                     finding('error', instruction, 'Missing enabled Codex entrypoint/instructions')
     if (Path(root) / 'AGENTS.md').is_symlink():
         finding('warning', 'AGENTS.md', 'Symlinked AGENTS.md: skillsync does not write its instructions block there')
+    from .guardhook import doctor_findings as guard_findings
+    for level, path, reason in guard_findings(root, manifest, skills):
+        finding(level, path, reason)
     tracked = tracked_generated_files(root)
     if tracked:
         finding('warning', '.gitignore', untrack_message(root, tracked))
