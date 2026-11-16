@@ -6,7 +6,7 @@ from pathlib import Path
 import re
 import subprocess
 import yaml
-from .common import add_project_arguments, emit, load_layer_project, read_project, redact, workflow_config
+from .common import add_project_arguments, emit, file_lines, load_layer_project, read_project, redact, workflow_config
 from .storage import state_path
 from .pathfmt import posix
 
@@ -54,7 +54,7 @@ def _purpose(root, directory, files):
         if base.lower().startswith('readme') and base.lower().endswith('.md'):
             try:
                 with (Path(root) / name).open(encoding='utf-8', errors='replace') as handle:
-                    for line in handle.read(4096).splitlines():
+                    for line in file_lines(handle.read(4096)):
                         line = re.sub(r'^[#>\s*_-]+', '', line.strip()).strip()
                         if line and not line.startswith(('<', '[!', '![')):
                             return line[:100]

@@ -17,7 +17,7 @@ import yaml
 
 from .fsutil import ensure_utf8_streams, isabs, rmtree_force
 from .common import (CONDITIONAL_SKILL_ALIASES, append_missing_lines, checked_out_link, conditional_skill_alias, detect_eol, discover_excludes,
-                     is_excluded)
+                     file_lines, is_excluded)
 
 CONFIG_PATH = Path(os.environ.get("SKILLSYNC_CONFIG") or (Path.home() / ".config" / "skillsync" / "config.yaml"))
 STATE_FILE = Path(".github") / ".skillsync-state.json"
@@ -3040,7 +3040,7 @@ def cmd_list(args: argparse.Namespace) -> None:
         found = layerset.resolve(f"skills/{skill}/SKILL.md")
         if found is not None:
             skill_md = found[1]
-            first_line = skill_md.read_text(encoding="utf-8").splitlines()[0] if skill_md.stat().st_size > 0 else ""
+            first_line = file_lines(skill_md.read_text(encoding="utf-8"))[0] if skill_md.stat().st_size > 0 else ""
             print(f"  • {skill:30s} [{owners}] {first_line[:60]}")
         else:
             print(f"  • {skill:30s} [{owners}]")

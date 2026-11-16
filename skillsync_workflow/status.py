@@ -140,7 +140,7 @@ def pre_implement_sections(spec_text):
         level = len(mark.group('hashes'))
         end = next((later.start() for later in marks[index + 1:] if len(later.group('hashes')) <= level), len(spec_text))
         body = spec_text[mark.end():end]
-        lines = [re.sub(r'^[*_`>\s]+', '', line).rstrip('*_` \t') for line in body.splitlines()]
+        lines = [re.sub(r'^[*_`>\s]+', '', line).rstrip('*_` \t') for line in file_lines(body)]
         lines = [line for line in lines if line.strip()]
         # a heading-only subsection (no text under it) does not make the section non-empty
         content = [line for line in lines if not _PRE_HEADING.match(line)]
@@ -166,7 +166,7 @@ def _pre_implement_reports(root, run_id):
     rows = []
     for path in names:
         text = _read_text_safe(path, MAX_PRE_REPORT_BYTES)
-        first = next((line.strip() for line in (text or '').splitlines() if line.strip()), '')
+        first = next((line.strip() for line in file_lines(text or '') if line.strip()), '')
         match = _PRE_VERDICT.match(first)
         if match:
             rows.append((path.name, match.group('word')))
