@@ -403,7 +403,7 @@ class ApproveSocket(TwoSockets):
     def test_the_order_of_refusals(self) -> None:
         good = self.ok
         cases = [
-            ("host", {**good, "Host": "evil.example"}, 403, srv.HOST_REFUSED),
+            ("host", {**good, "Host": "evil.example"}, 403, srv.host_refused_message(srv.ports.ROLE_APPROVE, "evil.example")),
             ("board header", {k: v for k, v in good.items() if k != "X-Status-Board"}, 403, "Brak nagłówka X-Status-Board."),
             ("origin", {**good, "Origin": "http://evil.example"}, 403, "Obcy Origin."),
             ("proxy", {**good, "Forwarded": "for=1.2.3.4"}, 403, srv.PROXY_REFUSED),
@@ -411,7 +411,7 @@ class ApproveSocket(TwoSockets):
             ("token", {k: v for k, v in good.items() if k != "X-Approve-Token"}, 403, srv.TOKEN_REFUSED),
         ]
         # layered breakage: each earlier check hides every later one
-        layered = [({**good, "Host": "evil.example", "Origin": "http://x", "Forwarded": "x", "Content-Type": "t", "X-Approve-Token": "z"}, srv.HOST_REFUSED),
+        layered = [({**good, "Host": "evil.example", "Origin": "http://x", "Forwarded": "x", "Content-Type": "t", "X-Approve-Token": "z"}, srv.host_refused_message(srv.ports.ROLE_APPROVE, "evil.example")),
                    ({k: v for k, v in {**good, "Origin": "http://x", "Forwarded": "x", "Content-Type": "t", "X-Approve-Token": "z"}.items() if k != "X-Status-Board"}, "Brak nagłówka X-Status-Board."),
                    ({**good, "Origin": "http://x", "Forwarded": "x", "Content-Type": "t", "X-Approve-Token": "z"}, "Obcy Origin."),
                    ({**good, "Forwarded": "x", "Content-Type": "t", "X-Approve-Token": "z"}, srv.PROXY_REFUSED),
@@ -475,9 +475,9 @@ class ApproveSocket(TwoSockets):
             with self.subTest(host=host):
                 status, _answer = self.post(self.approve_port, {**self.ok, "Host": host, "Origin": f"http://{host}"}, {"kind": "spec"})
                 if accepted:
-                    self.assertNotEqual(_answer.get("error"), srv.HOST_REFUSED)
+                    self.assertNotEqual(_answer.get("error"), srv.host_refused_message(srv.ports.ROLE_APPROVE, host))
                 else:
-                    self.assertEqual(_answer.get("error"), srv.HOST_REFUSED)
+                    self.assertEqual(_answer.get("error"), srv.host_refused_message(srv.ports.ROLE_APPROVE, host))
 
 
 class ReadHostsOnTheReadSocket(TwoSockets):
@@ -496,7 +496,7 @@ class StarReadHost(TwoSockets):
         self.assertEqual(request(self.read_port, "GET", "/healthz", {"Host": "tunnel.example"})[0], 200)
         self.assertEqual(request(self.approve_port, "GET", "/healthz", {"Host": "tunnel.example"})[0], 403)
         status, answer = self.post(self.approve_port, {**self.ok, "Host": "tunnel.example", "Origin": "http://tunnel.example"})
-        self.assertEqual((status, answer["error"]), (403, srv.HOST_REFUSED))
+        self.assertEqual((status, answer["error"]), (403, srv.host_refused_message(srv.ports.ROLE_APPROVE, "tunnel.example")))
 
 
 class AllowedProxy(TwoSockets):
@@ -508,7 +508,7 @@ class AllowedProxy(TwoSockets):
         self.assertEqual(status, 200, answer)
         for name, headers, text in (("token", {**with_proxy, "X-Approve-Token": "x"}, srv.TOKEN_REFUSED),
                                     ("origin", {**with_proxy, "Origin": "http://evil.example"}, "Obcy Origin."),
-                                    ("host", {**with_proxy, "Host": "evil.example"}, srv.HOST_REFUSED)):
+                                    ("host", {**with_proxy, "Host": "evil.example"}, srv.host_refused_message(srv.ports.ROLE_APPROVE, "evil.example"))):
             with self.subTest(name=name):
                 self.assertEqual(self.post(self.approve_port, headers)[1]["error"], text)
         entries = [json.loads(line) for line in (self.root / srv.RUNS_DIR / "2026-01-20-demo-etap-2" / srv.RUN_APPROVALS).read_text().splitlines()]

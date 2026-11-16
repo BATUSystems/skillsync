@@ -1344,7 +1344,7 @@ class HttpHostTests(HttpCase):
                     self.assertEqual(code, 403)
                     self.assertEqual(headers["content-type"], "application/json; charset=utf-8")
                     self.assertEqual(headers["x-frame-options"], "DENY")
-                    self.assertEqual(json.loads(body), {"error": srv.HOST_REFUSED})  # bez treści strony/statusu
+                    self.assertEqual(json.loads(body), {"error": srv.host_refused_message(srv.ports.ROLE_BOTH, host)})  # bez treści strony/statusu
         self.assertEqual(self.board.sse_clients, 0)  # odmowa SSE nie zajmuje miejsca
 
     def test_loopback_host_with_any_port_is_served(self) -> None:
@@ -1373,7 +1373,7 @@ class HttpHostTests(HttpCase):
             with self.subTest(host=host):
                 code, body = raw_post(self.port, {"Host": host, "Content-Type": "application/json", "X-Status-Board": "1", "X-Approve-Token": TEST_TOKEN,
                                                   "Content-Length": str(srv.MAX_BODY + 1)})
-                self.assertEqual((code, body), (403, {"error": srv.HOST_REFUSED}))  # 403, nie 400: Host przed długością
+                self.assertEqual((code, body), (403, {"error": srv.host_refused_message(srv.ports.ROLE_BOTH, host)}))  # 403, nie 400: Host przed długością
         self.set_doc.assert_not_called()
         self.record.assert_not_called()
 
@@ -1538,7 +1538,7 @@ class HttpReadHostTests(HttpCase):
             with self.subTest(headers=headers):
                 body = json.dumps(data).encode("utf-8")
                 code, answer = raw_post(self.port, {**headers, "Content-Length": str(len(body))}, body)
-                self.assertEqual((code, answer), (403, {"error": srv.HOST_REFUSED}))  # ten sam komunikat co obcy Host
+                self.assertEqual((code, answer), (403, {"error": srv.HOST_REFUSED}))  # stały tekst zapisu (nie komunikat obcego Host z nazwą)
         # Origin z --read-host przy hoście loopback też nie przechodzi (Origin musi być z listy zgód).
         self.assertEqual(self.post(data, {**self.ok, "Origin": f"http://{self.READ}:5140"})[0], 403)
         self.set_doc.assert_not_called()
@@ -1555,10 +1555,10 @@ class HttpReadHostTests(HttpCase):
             for path in (*self.READS, "/events"):
                 with self.subTest(host=host, path=path):
                     code, _, body = raw_get(self.port, path, host)
-                    self.assertEqual((code, json.loads(body)), (403, {"error": srv.HOST_REFUSED}))
+                    self.assertEqual((code, json.loads(body)), (403, {"error": srv.host_refused_message(srv.ports.ROLE_BOTH, host)}))
             with self.subTest(host=host, method="POST"):
                 code, body = raw_post(self.port, {**self.ok, "Host": host, "Content-Length": "2"}, b"{}")
-                self.assertEqual((code, body), (403, {"error": srv.HOST_REFUSED}))
+                self.assertEqual((code, body), (403, {"error": srv.host_refused_message(srv.ports.ROLE_BOTH, host)}))
         self.assertEqual(self.board.sse_clients, 0)
         self.set_doc.assert_not_called()
         self.record.assert_not_called()

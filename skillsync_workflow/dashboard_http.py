@@ -81,7 +81,20 @@ PROTO_CACHE_S = 30
 AHEAD_CACHE_S = 10
 CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
        "connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
-HOST_REFUSED = "Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host)."
+HOST_REFUSED = "Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host)."   # a write from a host that may only read (the reason of `_approve_allowed`)
+
+
+def host_refused_message(role: str, host_header: str | None) -> str:
+    """The 403 text of a `Host` outside the list of THIS socket: names the flag that opens it for the socket and the `Host` of the request.
+    The name is cleaned before it goes into the answer (letters, digits, dot, colon, dash, underscore; everything else `?`; at most 64 characters),
+    so it cannot carry a control character, markup or a log injection; the answer is JSON with no page content."""
+    shown = re.sub(r"[^A-Za-z0-9._:-]", "?", request_host(host_header))
+    shown = (shown[:61] + "...") if len(shown) > 64 else (shown or "(brak)")
+    if role == ports.ROLE_READ:
+        return f"Gniazdo odczytu odpowiada tylko pod localhost, adresem IP tej maszyny, jej własną nazwą albo hostem z --read-host (nagłówek Host: {shown})."
+    if role == ports.ROLE_APPROVE:
+        return f"Gniazdo zgód odpowiada tylko pod localhost, adresem IP tej maszyny albo hostem z --approve-host (nagłówek Host: {shown})."
+    return f"Strona odpowiada tylko pod localhost albo hostem z --approve-host (odczyt i zgody) lub --read-host (tylko odczyt) (nagłówek Host: {shown})."
 TOKEN_HEADER = "X-Approve-Token"
 PROXY_REFUSED = "Zapis przez pośrednika (Forwarded, X-Forwarded-*, X-Real-IP) jest odrzucony; uruchom serwer z --allow-proxy-headers, jeśli to zaufany odwrotny proxy."
 TOKEN_REFUSED = "Brak albo zły token zgody: otwórz adres z konsoli serwera albo z `skillsync dashboard url`."
@@ -671,7 +684,7 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
         if self.verbose:
             log(f"odmowa {self.command} {urlparse(self.path).path[:120]!r}: Host spoza listy ({host[:80]!r})")
         try:
-            self._json(403, {"error": HOST_REFUSED})
+            self._json(403, {"error": host_refused_message(self.role, self.headers.get("Host"))})
         except OSError:
             pass
         return True
@@ -754,7 +767,7 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
         allowed = self.board.approve_hosts
         host = request_host(self.headers.get("Host"))
         strict = self.role == ports.ROLE_APPROVE   # the consent socket of the two-port mode: exact Origin, no intermediary headers
-        if host not in allowed and not (strict and self._host_allowed(host)):  # foreign Host: do_POST already refused it; --read-host: refused here, same message
+        if host not in allowed and not (strict and self._host_allowed(host)):  # foreign Host: do_POST already refused it; --read-host: refused here with the fixed HOST_REFUSED text (no name of the request)
             return HOST_REFUSED
         if self.headers.get("X-Status-Board") != "1":
             return "Brak nagłówka X-Status-Board."

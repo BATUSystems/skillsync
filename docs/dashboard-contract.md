@@ -645,7 +645,7 @@ Każda odmowa kończy żądanie; odpowiedź nie mówi, które warstwy przeszły.
 
 | Krok | Warunek | Odpowiedź |
 |---|---|---|
-| 1 | `Host` spoza: loopback, literał IP tej maszyny, nazwa z `--approve-host` | 403 `HOST_REFUSED` („Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host).”) |
+| 1 | `Host` spoza: loopback, literał IP tej maszyny, nazwa z `--approve-host` | 403 `{"error": <tekst gniazda>}`: nazywa flagę właściwą dla gniazda i `Host` z żądania (niżej) |
 | 2 | trasa inna niż `POST /api/approve` | 404 |
 | 3 | brak `X-Status-Board: 1` | 403 „Brak nagłówka X-Status-Board.” |
 | 4 | `Origin` niezgodny (tabela niżej) | 403 „Obcy Origin.” |
@@ -723,15 +723,18 @@ Endpointy:
 W trybie `--port` kontrola `Host` na wszystkich endpointach (`GET`, `HEAD`, SSE `/events`, `POST`; w trybie dwóch gniazd zob. „Reguła `Host` w trybie dwóch gniazd”): nagłówek `Host` musi wskazywać loopback
 (`localhost`, `127.0.0.1`, `[::1]`, z dowolnym portem; bez rozróżniania wielkości liter), nazwę z `--approve-host` albo
 nazwę z `--read-host` (obie listy: port pomijany, bez rozróżniania wielkości liter, flagi powtarzalne). Inny albo
-brakujący `Host` (DNS rebinding, tunel lub nazwa LAN spoza list) = 403
-`{"error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host)."}` bez treści strony,
-dokumentu ani statusu; przy `--verbose` odmowa trafia do logu stderr (metoda, ścieżka, host).
+brakujący `Host` (DNS rebinding, tunel lub nazwa LAN spoza list) = 403 `{"error": "<tekst>"}` bez treści strony,
+dokumentu ani statusu. Tekst wskazuje, która flaga otwiera TO gniazdo: odczyt (`--read-port`) `--read-host` (oraz adres IP i własną nazwę maszyny),
+zgody (`--approve-port`) `--approve-host`, tryb jednego portu (`--port`) obie (`--approve-host`: odczyt i zgody, `--read-host`: tylko odczyt); kończy go
+`(nagłówek Host: <nazwa>)`. Nazwa pochodzi z żądania i przed wpisaniem do odpowiedzi jest oczyszczona (małe litery bez portu, tylko litery, cyfry, `.`, `:`, `-`, `_`,
+reszta `?`, najwyżej 64 znaki, brak = `(brak)`), więc nie niesie znaków sterujących ani znaczników; odpowiedź niesie tylko nazwę flagi i oczyszczony `Host` z żądania (nic, czego żądający sam nie wysłał).
+Odmowa zapisu z hosta, który może tylko czytać (`POST /api/approve` z `--read-host`), ma stały tekst „Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host).”; przy `--verbose` odmowa trafia do logu stderr (metoda, ścieżka, host).
 
 | Klasa `Host` (tryb `--port`) | Odczyt (`GET`, `HEAD`, `/events`, `/api/*`, `/healthz`, assety) | Zapis (`POST /api/approve`) | `approvals.here` / `approvals.viewer` |
 |---|---|---|---|
 | loopback | tak | tak (chyba że `--no-approvals`) | `true` / `false` |
 | `--approve-host` | tak | tak (chyba że `--no-approvals`) | `true` / `false` |
-| `--read-host` | tak | w przeglądarce widza nigdy: 403 z tym samym komunikatem co obcy `Host`, także z poprawnymi `Origin`, `X-Status-Board` i `Content-Type` | `false` / `true` |
+| `--read-host` | tak | w przeglądarce widza nigdy: 403 ze stałym tekstem („Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host).”, bez nazwy z żądania), także z poprawnymi `Origin`, `X-Status-Board` i `Content-Type` | `false` / `true` |
 | inny albo brak | 403 | 403 | (brak odpowiedzi z danymi) |
 
 `--read-host` służy pokazowi przez tunel: połączenie przychodzi z loopbacku, ale przeglądarka widza wysyła `Host:

@@ -1462,7 +1462,7 @@ def place(src, dest: Path, method: str, state: dict, key: str, owned: bool, dry_
             merge_copy(src, dest, state, key, dry_run)  # per file `{owner, base}` (K4)
             return
         if not owned and not checked_out_link(dest):   # a link that git checked out as a file (core.symlinks off) is replaced, the user's file is not
-            print(f"[warn] Skipping {dest}: exists and is not managed by skillsync")
+            print(f"[warn] Skipping {dest}: exists and is not managed by skillsync; to let skillsync manage it, delete it (keep your own changes elsewhere) and run `skillsync link` again")
             return
         if dry_run:
             print(f"[dry-run] Would replace: {dest}")

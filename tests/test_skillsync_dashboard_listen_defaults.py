@@ -258,6 +258,34 @@ class ServeCommand(unittest.TestCase):
             self.assertIsNone(dashboard_token.port_owner(5199))
 
 
+class HostRefusedMessage(unittest.TestCase):
+    """180-N: the 403 text names the flag of THIS socket and the (cleaned) Host of the request."""
+
+    def test_each_socket_names_its_own_flag_and_the_host(self) -> None:
+        read = srv.host_refused_message(ports.ROLE_READ, "Evil.Example:5140")
+        approve = srv.host_refused_message(ports.ROLE_APPROVE, "evil.example")
+        both = srv.host_refused_message(ports.ROLE_BOTH, "evil.example")
+        self.assertIn("--read-host", read)
+        self.assertNotIn("--approve-host", read)
+        self.assertIn("(nagłówek Host: evil.example)", read)   # lower case, no port
+        self.assertIn("--approve-host", approve)
+        self.assertNotIn("--read-host", approve)
+        self.assertIn("--approve-host", both)
+        self.assertIn("--read-host", both)
+
+    def test_the_host_is_cleaned_before_it_goes_into_the_answer(self) -> None:
+        for raw in ("<script>alert(1)</script>", 'a"b', "a\r\nSet-Cookie: x=1", "a\x00b", "ev\u0131l.example", "a b"):
+            with self.subTest(raw=raw):
+                text = srv.host_refused_message(ports.ROLE_READ, raw)
+                shown = text.split("(nagłówek Host: ")[1][:-2]
+                self.assertRegex(shown, r"^[A-Za-z0-9._:?-]+$")
+        self.assertIn("Host: (brak)", srv.host_refused_message(ports.ROLE_READ, ""))
+        self.assertIn("Host: (brak)", srv.host_refused_message(ports.ROLE_READ, None))
+        long = srv.host_refused_message(ports.ROLE_READ, "a" * 500 + ".example")
+        self.assertLessEqual(len(long.split("Host: ")[1]), 70)
+        self.assertIn("...", long)
+
+
 class SmallRules(unittest.TestCase):
     def test_the_sentence_about_the_changed_default_ends_with_1_10(self) -> None:
         self.assertEqual(srv._version_tuple("1.8.0"), (1, 8))

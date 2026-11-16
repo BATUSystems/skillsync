@@ -2366,6 +2366,10 @@ def apply_ref(path, ref, fetch=True):
     if status.stdout.strip():
         return 'BLOCKED', 'dirty', 'Working tree has uncommitted changes; commit or stash them first'
     if ref is None:
+        if fetch:   # a remote that cannot be reached is `fetch-failed` (with git's reason), not a diverged history
+            fetched = _git(path, 'fetch', '--quiet')
+            if fetched.returncode:
+                return 'BLOCKED', 'fetch-failed', _git_tail(fetched)
         pulled = _git(path, 'pull', '--ff-only', '--quiet')
         return ('PASS', 'pulled', None) if not pulled.returncode else ('BLOCKED', 'no-fast-forward', _git_tail(pulled))
     if fetch:

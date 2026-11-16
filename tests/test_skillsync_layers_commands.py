@@ -798,6 +798,18 @@ class LayersUpdateTest(CommandsCase):
         self.assertEqual(report['layers'][0]['action'], 'no-fast-forward')
         self.assertEqual(self.head(self.checkout), local_head)
 
+    def test_an_unreachable_remote_is_fetch_failed_not_a_diverged_history(self):
+        self.assertEqual(self.add('acme', 'org', self.bare)[0], 0)
+        head = self.head(self.checkout)
+        gone = Path(str(self.bare) + '.gone')
+        Path(self.bare).rename(gone)
+        self.addCleanup(lambda: gone.exists() and gone.rename(self.bare))
+        code, report = self.update('acme')
+        item = report['layers'][0]
+        self.assertEqual((code, report['status'], item['action']), (2, 'BLOCKED', 'fetch-failed'), report)
+        self.assertTrue(item.get('reason'), item)
+        self.assertEqual(self.head(self.checkout), head)
+
     def test_a_branch_ref_fast_forwards_to_the_remote_branch(self):
         self.assertEqual(self.add('acme', 'org', self.bare, '--ref', 'main')[0], 0)
         new = self.push_commit(self.src, 'skills/s/SKILL.md', 'v2\n')
