@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="Mocha Tests" time="2.025" tests="10" failures="2" skipped="2">
+  <testsuite name="Root Suite" timestamp="2026-11-16T21:57:41" tests="0" file="cypress/e2e/math.cy.js" time="0.000" failures="0">
+  </testsuite>
+  <testsuite name="math" timestamp="2026-11-16T21:57:41" tests="9" time="0.000" failures="2">
+    <testcase name="math adds" time="0.429" classname="adds">
+    </testcase>
+    <testcase name="math subtracts" time="0.436" classname="subtracts">
+    </testcase>
+    <testcase name="math fails with a message" time="0.000" classname="fails with a message">
+      <failure message="expected 4 to equal 5" type="AssertionError"><![CDATA[AssertionError: expected 4 to equal 5
+    at Context.eval (webpack://cypress/./cypress/e2e/math.cy.js:5:80)
+    at getRet (http://localhost:PORT/__cypress/runner/cypress_runner.js:122309:22)
+    at tryCatcher (http://localhost:PORT/__cypress/runner/cypress_runner.js:1776:23)
+    at Promise.attempt.Promise.try (http://localhost:PORT/__cypress/runner/cypress_runner.js:4284:29)
+    at Context.thenFn (http://localhost:PORT/__cypress/runner/cypress_runner.js:122321:66)
+    at Context.then (http://localhost:PORT/__cypress/runner/cypress_runner.js:122570:21)]]></failure>
+    </testcase>
+    <testcase name="math adds 1 + 1 = 2" time="0.212" classname="adds 1 + 1 = 2">
+    </testcase>
+    <testcase name="math adds 2 + 3 = 5" time="0.210" classname="adds 2 + 3 = 5">
+    </testcase>
+    <testcase name="math adds 2 + 2 = 5" time="0.000" classname="adds 2 + 2 = 5">
+      <failure message="expected 4 to equal 5" type="AssertionError"><![CDATA[AssertionError: expected 4 to equal 5
+    at Context.eval (webpack://cypress/./cypress/e2e/math.cy.js:8:85)
+    at getRet (http://localhost:PORT/__cypress/runner/cypress_runner.js:122309:22)
+    at tryCatcher (http://localhost:PORT/__cypress/runner/cypress_runner.js:1776:23)
+    at Promise.attempt.Promise.try (http://localhost:PORT/__cypress/runner/cypress_runner.js:4284:29)
+    at Context.thenFn (http://localhost:PORT/__cypress/runner/cypress_runner.js:122321:66)
+    at Context.then (http://localhost:PORT/__cypress/runner/cypress_runner.js:122570:21)]]></failure>
+    </testcase>
+    <testcase name="math żółć – unicode name" time="0.008" classname="żółć – unicode name">
+    </testcase>
+  </testsuite>
+  <testsuite name="nested" timestamp="2026-11-16T21:57:43" tests="1" time="0.016" failures="0">
+    <testcase name="math nested deep ok" time="0.006" classname="deep ok">
+    </testcase>
+  </testsuite>
+</testsuites>

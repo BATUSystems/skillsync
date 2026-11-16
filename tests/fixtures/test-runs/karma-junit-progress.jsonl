@@ -1,0 +1,17 @@
+{"meta": {"tool": "karma", "version": "karma 6.4.4, karma-jasmine 5.1.0, jasmine-core 5.6.0, Chrome Headless 157, karma-junit-reporter 2.0.1", "command": ["karma", "start", "karma.conf.js"], "exit": 1, "merged": false, "env": {"LANG": "pl_PL.UTF-8", "NO_COLOR": "1", "stdout_stderr": "pipes (not a terminal)"}, "note": "progress and junit reporters together; the report is karma-junit.xml", "scrubbed": "paths, host and user names are replaced", "format": "one record per chunk read from the pipe: t = seconds since the start, fd = out|err, data = the text of the chunk"}}
+{"t": 0.191, "fd": "out", "data": "\u001b[32m16 11 2026 22:53:52.974:INFO [karma-server]: \u001b[39mKarma v6.4.4 server started at http://localhost:PORT/\n"}
+{"t": 0.192, "fd": "out", "data": "\u001b[32m16 11 2026 22:53:52.975:INFO [launcher]: \u001b[39mLaunching browsers HeadlessIsolated with concurrency unlimited\n"}
+{"t": 0.196, "fd": "out", "data": "\u001b[32m16 11 2026 22:53:52.979:INFO [launcher]: \u001b[39mStarting browser ChromeHeadless\n"}
+{"t": 0.506, "fd": "out", "data": "\u001b[32m16 11 2026 22:53:53.289:INFO [Chrome Headless 157.0.0.0 (Linux 0.0.0)]: \u001b[39mConnected on socket SOCKET with id ID\n"}
+{"t": 0.547, "fd": "out", "data": "Chrome Headless 157.0.0.0 (Linux 0.0.0): Executed 0 of 11 SUCCESS (0 secs / 0 secs)\n"}
+{"t": 0.951, "fd": "out", "data": "\u001b[1A\u001b[2KChrome Headless 157.0.0.0 (Linux 0.0.0): Executed 1 of 11 SUCCESS (0 secs / 0.402 secs)\n"}
+{"t": 1.353, "fd": "out", "data": "\u001b[1A\u001b[2KChrome Headless 157.0.0.0 (Linux 0.0.0): Executed 2 of 11 SUCCESS (0 secs / 0.802 secs)\n"}
+{"t": 1.759, "fd": "out", "data": "\u001b[1A\u001b[2KChrome Headless 157.0.0.0 (Linux 0.0.0) math fails with a message FAILED\n\tExpected 4 to be 5.\n\t    at <Jasmine>\n\t    at UserContext.<anonymous> (spec/math.spec.js:7:74)\nChrome Headless 157.0.0.0 (Linux 0.0.0): Executed 3 of 11 (1 FAILED) (skipped 2) (0 secs / 1.203 secs)\n"}
+{"t": 2.059, "fd": "out", "data": "\u001b[1A\u001b[2KChrome Headless 157.0.0.0 (Linux 0.0.0): Executed 4 of 11 (1 FAILED) (skipped 2) (0 secs / 1.504 secs)\n"}
+{"t": 2.261, "fd": "out", "data": "\u001b[1A\u001b[2KChrome Headless 157.0.0.0 (Linux 0.0.0): Executed 5 of 11 (1 FAILED) (skipped 2) (0 secs / 1.705 secs)\n"}
+{"t": 2.463, "fd": "out", "data": "\u001b[1A\u001b[2KChrome Headless 157.0.0.0 (Linux 0.0.0): Executed 6 of 11 (1 FAILED) (skipped 2) (0 secs / 1.905 secs)\n"}
+{"t": 2.665, "fd": "out", "data": "\u001b[1A\u001b[2KChrome Headless 157.0.0.0 (Linux 0.0.0) math adds 2 + 2 = 5 FAILED\n\tExpected 4 to be 5.\n\t    at <Jasmine>\n\t    at UserContext.<anonymous> (spec/math.spec.js:12:79)\nChrome Headless 157.0.0.0 (Linux 0.0.0): Executed 7 of 11 (2 FAILED) (skipped 2) (0 secs / 2.107 secs)\n"}
+{"t": 2.666, "fd": "out", "data": "\u001b[1A\u001b[2KChrome Headless 157.0.0.0 (Linux 0.0.0): Executed 8 of 11 (2 FAILED) (skipped 2) (0 secs / 2.107 secs)\n"}
+{"t": 2.968, "fd": "out", "data": "\u001b[1A\u001b[2KChrome Headless 157.0.0.0 (Linux 0.0.0): Executed 9 of 11 (2 FAILED) (skipped 2) (0 secs / 2.407 secs)\n"}
+{"t": 2.97, "fd": "out", "data": "\u001b[1A\u001b[2KChrome Headless 157.0.0.0 (Linux 0.0.0): Executed 9 of 11 (2 FAILED) (skipped 2) (2.424 secs / 2.407 secs)\n"}
+{"t": 2.971, "fd": "out", "data": "TOTAL: 2 FAILED, 7 SUCCESS\n"}

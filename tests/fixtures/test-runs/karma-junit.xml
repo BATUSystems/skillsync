@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<testsuite name="Chrome Headless 157.0.0.0 (Linux 0.0.0)" package="" timestamp="2026-11-16T21:53:53" id="0" hostname="HOST" tests="11" errors="0" failures="2" time="2.407">
+  <properties>
+    <property name="browser.fullName" value="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/157.0.0.0 Safari/537.36"/>
+  </properties>
+  <testcase name="math adds" time="0.402" classname="math"/>
+  <testcase name="math subtracts" time="0.4" classname="math"/>
+  <testcase name="math is skipped" time="0" classname="math">
+    <skipped/>
+  </testcase>
+  <testcase name="math has no expectations and is pending" time="0" classname="math">
+    <skipped/>
+  </testcase>
+  <testcase name="math fails with a message" time="0.401" classname="math">
+    <failure type="">Expected 4 to be 5.
+    at &lt;Jasmine&gt;
+    at UserContext.&lt;anonymous&gt; (spec/math.spec.js:7:74)
+</failure>
+  </testcase>
+  <testcase name="math nested deep ok" time="0.301" classname="math nested"/>
+  <testcase name="math adds 1 + 1 = 2" time="0.201" classname="math"/>
+  <testcase name="math adds 2 + 3 = 5" time="0.2" classname="math"/>
+  <testcase name="math adds 2 + 2 = 5" time="0.202" classname="math">
+    <failure type="">Expected 4 to be 5.
+    at &lt;Jasmine&gt;
+    at UserContext.&lt;anonymous&gt; (spec/math.spec.js:12:79)
+</failure>
+  </testcase>
+  <testcase name="math żółć – unicode name" time="0" classname="math"/>
+  <testcase name="second second ok" time="0.3" classname="second"/>
+  <system-out>
+    <![CDATA[
+]]>
+  </system-out>
+  <system-err/>
+</testsuite>

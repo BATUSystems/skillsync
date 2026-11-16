@@ -1,0 +1,6 @@
+{"meta": {"tool": "vitest", "version": "vitest 4.1.12, Node 22.22.0", "command": ["vitest", "run", "--reporter=verbose", "tests/hang.test.js"], "exit": 143, "merged": false, "env": {"LANG": "pl_PL.UTF-8", "NO_COLOR": "1", "stdout_stderr": "pipes (not a terminal)"}, "note": "SIGTERM after 2.5 s while a test hangs: the hanging test never appears", "scrubbed": "paths, host and user names are replaced", "format": "one record per chunk read from the pipe: t = seconds since the start, fd = out|err, data = the text of the chunk"}}
+{"t": 0.265, "fd": "err", "data": "(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:\n  - ESM syntax in a file loaded as CommonJS (vitest.config.js:1:1). Use a `.mjs` extension or set `\"type\": \"module\"` in the closest package.json\nSet `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.\n"}
+{"t": 0.291, "fd": "out", "data": "\n"}
+{"t": 0.291, "fd": "out", "data": " RUN  v4.1.12 /TOOLS/tools/vitest\n"}
+{"t": 0.291, "fd": "out", "data": "\n"}
+{"t": 0.554, "fd": "out", "data": " ✓ tests/hang.test.js > first quick 2ms\n"}

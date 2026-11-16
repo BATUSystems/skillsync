@@ -1,0 +1,16 @@
+{"meta": {"tool": "cypress", "version": "cypress 16.3.0, Electron 150 (headless), Node 22.22.0", "command": ["cypress", "run", "--browser", "electron", "--spec", "cypress/e2e/math.cy.js"], "exit": 132, "merged": false, "env": {"LANG": "pl_PL.UTF-8", "NO_COLOR": "1", "stdout_stderr": "pipes (not a terminal)"}, "note": "SIGTERM after 5.8 s in the middle of the first file", "scrubbed": "paths, host and user names are replaced", "format": "one record per chunk read from the pipe: t = seconds since the start, fd = out|err, data = the text of the chunk"}}
+{"t": 2.244, "fd": "out", "data": "\n"}
+{"t": 2.259, "fd": "out", "data": "================================================================================\n\n"}
+{"t": 2.259, "fd": "out", "data": "  (Run Starting)\n"}
+{"t": 2.259, "fd": "out", "data": "\n"}
+{"t": 2.267, "fd": "out", "data": "  ┌────────────────────────────────────────────────────────────────────────────────────────────────┐\n  │ Cypress:        16.3.0                                                                         │\n  │ Browser:        Electron 150 (headless) (deprecated)                                           │\n  │ Node Version:   v22.22.0 (/HOME)                   │\n  │ Specs:          1 found (math.cy.js)                                                           │\n  │ Searched:       cypress/e2e/math.cy.js                                                         │\n  └────────────────────────────────────────────────────────────────────────────────────────────────┘\n\n"}
+{"t": 2.269, "fd": "out", "data": "Warning: The Electron browser is deprecated as a test browser and will be removed in a future version of Cypress.\n\nSwitch to Chrome or another installed browser to avoid a breaking change when you upgrade.\n\nRead more about supported browsers: https://on.cypress.io/launching-browsers\n\n"}
+{"t": 2.269, "fd": "out", "data": "\n"}
+{"t": 2.27, "fd": "out", "data": "────────────────────────────────────────────────────────────────────────────────────────────────────\n                                                                                                    \n  Running:  math.cy.js                                                                      (1 of 1)\n"}
+{"t": 4.876, "fd": "out", "data": "\n"}
+{"t": 4.877, "fd": "out", "data": "\n"}
+{"t": 4.877, "fd": "out", "data": "  math\n"}
+{"t": 5.326, "fd": "out", "data": "    ✓ adds (454ms)\n"}
+{"t": 5.765, "fd": "out", "data": "    ✓ subtracts (417ms)\n"}
+{"t": 5.777, "fd": "out", "data": "    - is skipped\n"}
+{"t": 6.078, "fd": "out", "data": "\n\nSIGTERM received; Attempting to exit gracefully. Force exit with ^C again if needed.\n\n\n"}

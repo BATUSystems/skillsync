@@ -1,0 +1,104 @@
+"""180-A3: the adapter of Cypress 16.3.0 on recorded streams (the `spec` reporter in Electron and Chrome, two files, retries, an interrupted run, the junit report)."""
+import sys
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import adapter_replay as ar  # noqa: E402
+from adapter_replay import replay_fixture, replay, load, chunks_from_text, rechunk  # noqa: E402
+
+from skillsync_workflow import test_adapters, test_reports  # noqa: E402
+
+ADAPTER_FILE = Path(test_adapters.__file__).parent / 'cypress.py'
+M, S = 'math.cy.js::math > ', 'second.cy.js::'
+MATH = {M + 'adds': 'passed', M + 'subtracts': 'passed', M + 'is skipped': 'skipped', M + 'fails with a message': 'failed', M + 'adds 1 + 1 = 2': 'passed',
+        M + 'adds 2 + 3 = 5': 'passed', M + 'adds 2 + 2 = 5': 'failed', M + 'żółć – unicode name': 'passed', M + 'is pending without a body': 'skipped',
+        M + 'nested > deep ok': 'passed'}
+
+
+def states(recorder):
+    return {k: v[0] for k, v in recorder.last().items()}
+
+
+class Registration(unittest.TestCase):
+    def test_name_liveness_and_selection(self):
+        for argv, tool in ((['cypress', 'run'], 'cypress'), (['npx', 'cypress', 'run', '--browser', 'chrome'], 'npx')):
+            with self.subTest(argv=argv):
+                adapter = test_adapters.resolve('auto', argv, tool)
+                self.assertEqual((adapter.name, adapter.live), ('cypress', 'completion'))
+                self.assertEqual(adapter.env(), {})
+
+    def test_other_commands_are_not_taken(self):
+        cls = test_adapters.REGISTRY['cypress']
+        for argv, expected in ((['npx', 'cypress', 'open'], False), (['npx', 'cypress', 'install'], False), (['npx', 'playwright', 'test'], False), (['cypress', 'run'], True)):
+            with self.subTest(argv=argv):
+                self.assertEqual(cls().accepts(argv), expected)
+
+    def test_the_module_only_reads_text_and_emits(self):
+        self.assertEqual(ar.audit(ADAPTER_FILE), [])
+
+
+class Spec(unittest.TestCase):
+    def test_two_files_final_states_names_from_the_indentation_and_the_messages(self):
+        recorder, _, _, complete = replay_fixture('cypress', 'cypress-spec.jsonl')
+        self.assertEqual(states(recorder), {**MATH, S + 'second ok': 'passed'})
+        self.assertTrue(complete)   # 11 lines = 9 passing/pending/failing of math + 1 of second... summed per file
+        self.assertEqual(recorder.last()[M + 'fails with a message'][1], 'AssertionError: expected 4 to equal 5')
+        self.assertNotIn('running', {c[3] for c in recorder.tests()})
+
+    def test_the_failure_listing_after_the_summary_is_not_read_as_tests(self):
+        recorder = replay_fixture('cypress', 'cypress-spec.jsonl')[0]
+        self.assertEqual(len(states(recorder)), 11)
+        self.assertFalse([k for k in states(recorder) if k.endswith('> math') or k == 'math.cy.js::math'])
+
+    def test_attempt_lines_are_ignored_and_the_final_line_decides(self):
+        recorder, _, _, complete = replay_fixture('cypress', 'cypress-spec-retries1.jsonl')
+        self.assertEqual(states(recorder), MATH)
+        self.assertTrue(complete)
+        self.assertFalse([k for k in states(recorder) if 'Attempt' in k])
+
+    def test_chrome_gives_the_same_line_shape(self):
+        recorder, _, _, complete = replay_fixture('cypress', 'cypress-spec-chrome.jsonl')
+        self.assertEqual(states(recorder), {S + 'second ok': 'passed'})
+        self.assertTrue(complete)
+
+    def test_an_interrupted_run_keeps_what_finished_and_has_no_summary(self):
+        recorder, _, _, complete = replay_fixture('cypress', 'cypress-spec-interrupted.jsonl')
+        self.assertEqual(states(recorder), {M + 'adds': 'passed', M + 'subtracts': 'passed', M + 'is skipped': 'skipped'})
+        self.assertFalse(complete)
+
+    def test_the_same_result_for_any_chunking(self):
+        meta, chunks = load('cypress-spec.jsonl')
+        want = replay_fixture('cypress', 'cypress-spec.jsonl')[0].calls
+        for size in (1, 9, 128, 8000):
+            with self.subTest(size=size):
+                self.assertEqual(replay('cypress', rechunk(chunks, size), argv=meta['command'], tool='cypress')[0].calls, want)
+
+    def test_ansi_colours_change_nothing(self):
+        text = ''.join(c['data'] for c in load('cypress-spec-chrome.jsonl')[1])
+        coloured = text.replace('✓', '\x1b[32m✓\x1b[39m')
+        self.assertEqual(replay('cypress', chunks_from_text(coloured), tool='cypress')[0].calls, replay('cypress', chunks_from_text(text), tool='cypress')[0].calls)
+
+
+class Report(unittest.TestCase):
+    def test_the_mocha_junit_ids_do_not_carry_the_file(self):
+        report = {r['id']: r['state'] for r in test_reports.parse_junit(ar.FIXTURES / 'cypress-junit.xml')}
+        self.assertEqual(report['adds::math adds'], 'passed')
+        self.assertEqual(report['fails with a message::math fails with a message'], 'failed')   # `classname` is the test title: why the stream is read for the ids
+
+
+class Hostile(unittest.TestCase):
+    def test_garbage_before_a_running_header_and_long_lines_emit_nothing(self):
+        for text in ('', '    ✓ not in a file (1ms)\n', '  Running:  \n', '  Running:  a.cy.js  (1 of 1)\n' + '    ✓ ' + 'x' * 100000 + ' (1ms)\n'):
+            with self.subTest(text=text[:20]):
+                self.assertLessEqual(len(replay('cypress', chunks_from_text(text, size=999), tool='cypress')[0].calls), 1)
+
+    def test_deeply_nested_suites_are_bounded(self):
+        text = '  Running:  a.cy.js  (1 of 1)\n' + ''.join(' ' * (2 + i) + f's{i}\n' for i in range(200)) + ' ' * 300 + '✓ t (1ms)\n'
+        recorder = replay('cypress', chunks_from_text(text), tool='cypress')[0]
+        self.assertEqual(len(recorder.tests()), 1)
+        self.assertLessEqual(recorder.tests()[0][2].count(' > '), 32)
+
+
+if __name__ == '__main__':
+    unittest.main()
