@@ -4,6 +4,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+### Added
+
+- Skill `feature` (`references/multi-session.md`) and skill `dispatch` (`references/loop.md`, `references/lessons.md`): a card report to the dispatcher starts with the line `date: <literal output of date>`; times of events in the body come from logs or from `date`, never from memory; a report without the line is rejected (`REPORT REJECTED powód=brak linii date`). Skill `agent-runtime-pitfalls`: section "Czas w raportach".
+
 ## [1.7.0] - 2026-11-16
 
 ### Added
