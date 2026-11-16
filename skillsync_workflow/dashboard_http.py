@@ -944,12 +944,14 @@ def _stop_on_sigterm(_signum, _frame):
     raise KeyboardInterrupt
 
 
-def _install_stop_handlers():
+def _install_stop_handlers(cleanup_done=None):
     """The stop signals of the foreground server, main thread only: `SIGTERM` as before, and on Windows also CTRL_BREAK (`SIGBREAK`, see
-    `stopsignal`); Linux and macOS register nothing else."""
+    `stopsignal`) and, when `cleanup_done` (a `threading.Event`) is given, the closing of the console window; Linux and macOS register nothing else.
+    Returns the registration of the console handler (or None); the server ends with `stopsignal.cleanup_finished(registration, cleanup_done)`."""
     if threading.current_thread() is threading.main_thread():
         signal.signal(signal.SIGTERM, _stop_on_sigterm)
     stopsignal.install_sigbreak()
+    return stopsignal.install_console_close(cleanup_done) if cleanup_done is not None else None
 
 
 def _prototype_port(args, manifest, root=".") -> int:
@@ -1011,9 +1013,10 @@ def serve_command(args) -> int:
         return emit({"status": "BLOCKED", "reason": " ".join(str(error).split())[:500]})
     host, port = server.server_address[:2]
     url = f"http://{'[%s]' % host if ':' in host else host}:{port}/"
+    cleanup_done, console_close = threading.Event(), None
     try:
         # Everything from the SIGTERM handler to `serve_forever` is under the `try` (SIGINT in the start window stops cleanly).
-        _install_stop_handlers()
+        console_close = _install_stop_handlers(cleanup_done)
         threading.Thread(target=board.watch_loop, name="watcher", daemon=True).start()
         log(f"projekt {board.root} → {url}  (Ctrl+C kończy)")
         if board.approvals:
@@ -1062,11 +1065,15 @@ def serve_command(args) -> int:
     except KeyboardInterrupt:
         pass
     finally:
-        board.stop.set()
-        with board.cond:
-            board.cond.notify_all()
-        server.server_close()
-        dashboard_token.remove_state(board.root, port, os.getpid())
+        stopsignal.cleanup_begun(console_close)   # a closed console window only waits from here on
+        try:
+            board.stop.set()
+            with board.cond:
+                board.cond.notify_all()
+            server.server_close()
+            dashboard_token.remove_state(board.root, port, os.getpid())
+        finally:
+            stopsignal.cleanup_finished(console_close, cleanup_done)   # last, even when a step above failed: a closed console window waits for this
     return emit({"status": "PASS", "url": url, "stopped": True})
 
 
@@ -1113,8 +1120,9 @@ def _serve_ports(args, mode: dict) -> int:
         return emit({"status": "BLOCKED", "reason": " ".join(str(error).split())[:500]})
     running: list[Server] = []   # servers whose `serve_forever` thread started (only those can be `shutdown()`)
     states: list[int] = []
+    cleanup_done, console_close = threading.Event(), None
     try:
-        _install_stop_handlers()
+        console_close = _install_stop_handlers(cleanup_done)
         threading.Thread(target=board.watch_loop, name="watcher", daemon=True).start()
         for role, server, port, bind in servers:
             thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.5}, name=f"serve-{role}", daemon=True)
@@ -1150,13 +1158,17 @@ def _serve_ports(args, mode: dict) -> int:
     except KeyboardInterrupt:
         pass
     finally:
-        board.stop.set()
-        with board.cond:
-            board.cond.notify_all()
-        for server in running:
-            server.shutdown()
-        for _role, server, _port, _bind in servers:
-            server.server_close()
-        for port in states:
-            dashboard_token.remove_state(board.root, port, os.getpid())
+        stopsignal.cleanup_begun(console_close)   # a closed console window only waits from here on
+        try:
+            board.stop.set()
+            with board.cond:
+                board.cond.notify_all()
+            for server in running:
+                server.shutdown()
+            for _role, server, _port, _bind in servers:
+                server.server_close()
+            for port in states:
+                dashboard_token.remove_state(board.root, port, os.getpid())
+        finally:
+            stopsignal.cleanup_finished(console_close, cleanup_done)   # last, even when a step above failed: a closed console window waits for this
     return emit({"status": "PASS", "stopped": True, "ports": {role: port for role, _server, port, _bind in servers}})
