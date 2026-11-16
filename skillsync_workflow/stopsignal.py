@@ -7,8 +7,9 @@ handler installed here `SIGBREAK` takes the same road as Ctrl+C: `KeyboardInterr
 (state files removed, sockets closed) and exit code 0.
 
 Closing the console window (and "End task" of Task Manager for a console application, per the Windows documentation) is a third way: the system sends
-`CTRL_CLOSE_EVENT` to a handler registered with `SetConsoleCtrlHandler`, in a NEW thread, waits at most the "hung application timeout"
-(`SPI_GETHUNGAPPTIMEOUT`, 5000 ms by default) and ends the process as soon as the handler returns TRUE. Without a handler the default handler ends it at
+`CTRL_CLOSE_EVENT` to a handler registered with `SetConsoleCtrlHandler`, in a NEW thread, and ends the process as soon as the handler returns TRUE
+(the documentation lists the limit `SPI_GETHUNGAPPTIMEOUT`, 5000 ms by default, for this event; that the console host honours exactly this value is an
+assumption, measured only as far as the cleanup takes 0.1 to 0.6 s). Without a handler the default handler ends it at
 once (measured: exit code 0xC000013A, the state file stays). `install_console_close(cleanup_done)` registers such a handler: it hands the stop to the main
 thread by the road of `SIGBREAK` and returns TRUE only after the server has finished its cleanup (`cleanup_done`) or the wait ran out.
 
@@ -58,7 +59,7 @@ SPI_GETHUNGAPPTIMEOUT = 0x0078
 DEFAULT_HUNG_APP_MS = 5000
 MAX_WAIT_SECONDS = 4.0     # the wait for the cleanup; the system limit minus one second when that is lower
 MIN_WAIT_SECONDS = 0.5
-_console = None            # the live registration (module level: the ctypes callback must not be collected while it is registered)
+_console = None            # the last registration (module level: the ctypes callback must not be collected while it is registered or still returning)
 
 
 def close_wait_seconds(limit_ms):
@@ -85,18 +86,20 @@ class ConsoleClose:
     def __init__(self, cleanup_done, wait_seconds):
         self.cleanup_done = cleanup_done
         self.wait_seconds = wait_seconds
-        self.callback = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_uint)(self._handle)   # kept in `self` and in the module: alive until `uninstall`
+        self.cleanup_started = threading.Event()   # set by the server at the start of its `finally`: a close then only waits, it does not interrupt again
+        self.callback = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_uint)(self._handle)   # kept in `self` and in the module (`_console`)
         self.active = False
 
     def _handle(self, event):
-        """Runs in a thread made by the system (not the main one). Any exception is swallowed: the process ends right after this returns anyway, and
-        an exception here must not skip the wait for the cleanup."""
+        """Runs in a thread made by the system (not the main one; `Event.wait` makes a dummy `threading` thread object for it, harmless). Any exception is
+        swallowed: the process ends right after this returns anyway, and an exception here must not skip the wait for the cleanup."""
         if event != CTRL_CLOSE_EVENT:
             return 0
-        try:
-            _thread.interrupt_main(signal.SIGBREAK)   # the SIGBREAK handler of the main thread raises `KeyboardInterrupt`: the road of Ctrl+C
-        except BaseException:   # noqa: BLE001 - nothing may escape into the system thread
-            pass
+        if not self.cleanup_started.is_set():   # not while the server already cleans up (Ctrl+C, an earlier CTRL_BREAK): a second interrupt would cut it short
+            try:
+                _thread.interrupt_main(signal.SIGBREAK)   # the SIGBREAK handler of the main thread raises `KeyboardInterrupt`: the road of Ctrl+C
+            except BaseException:   # noqa: BLE001 - nothing may escape into the system thread
+                pass
         try:
             self.cleanup_done.wait(self.wait_seconds)
         except BaseException:   # noqa: BLE001
@@ -111,8 +114,8 @@ class ConsoleClose:
                 ctypes.windll.kernel32.SetConsoleCtrlHandler(self.callback, 0)
             except (AttributeError, OSError):
                 pass
-        if _console is self:
-            _console = None
+        # `_console` keeps the last registration (and so its callback) alive on purpose: the system thread of a handler that is still returning must not
+        # find its thunk collected; the next `install_console_close` replaces it
 
 
 def install_console_close(cleanup_done):
@@ -131,6 +134,12 @@ def install_console_close(cleanup_done):
     registration.active = True
     _console = registration
     return registration
+
+
+def cleanup_begun(registration):
+    """The first thing a server does in its `finally`: from now on a closed console window only waits for the cleanup (it does not interrupt it)."""
+    if registration is not None:
+        registration.cleanup_started.set()
 
 
 def cleanup_finished(registration, cleanup_done):

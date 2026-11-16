@@ -2501,6 +2501,7 @@ def serve_prototypes(root, manifest, args, err=None):
     except KeyboardInterrupt:
         pass
     finally:
+        stopsignal.cleanup_begun(console_close)   # a closed console window only waits from here on
         if previous is not None and previous[0] is not None:
             signal.signal(signal.SIGTERM, previous[0])
         try:

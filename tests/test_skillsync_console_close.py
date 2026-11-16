@@ -15,6 +15,7 @@ import time
 import unittest
 from argparse import Namespace
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -78,7 +79,8 @@ class Registration(unittest.TestCase):
             registration.uninstall()                                              # idempotent
             self.assertEqual(kernel32.SetConsoleCtrlHandler.call_args_list[-1].args, (registration.callback, 0))
             self.assertEqual(kernel32.SetConsoleCtrlHandler.call_count, 2)
-            self.assertIsNone(stopsignal._console)
+            self.assertFalse(registration.active)
+            self.assertIs(stopsignal._console, registration)                      # kept on purpose (the callback must outlive a handler that is still returning)
 
     def test_without_the_sigbreak_handler_of_ours_nothing_is_registered(self):
         with fake_windows(handler_is_ours=False) as kernel32:
@@ -110,7 +112,7 @@ class TheHandler(unittest.TestCase):
         with fake_windows():
             self.registration = stopsignal.install_console_close(self.done)
         self.addCleanup(lambda: setattr(stopsignal, '_console', None))
-        self.registration.wait_seconds = 0.3
+        self.registration.wait_seconds = 3.0
 
     def test_other_events_are_left_to_the_default_and_to_python(self):
         for event in (0, 1, 5, 6):                                                # CTRL_C, CTRL_BREAK, LOGOFF, SHUTDOWN
@@ -127,10 +129,11 @@ class TheHandler(unittest.TestCase):
             self.addCleanup(timer.cancel)
             started = time.monotonic()
             self.assertEqual(self.registration.callback(stopsignal.CTRL_CLOSE_EVENT), 1)
-            self.assertLess(time.monotonic() - started, 0.25)                     # back as soon as the cleanup is done, not after the whole wait
+            self.assertLess(time.monotonic() - started, 1.5)                      # back as soon as the cleanup is done, not after the whole wait (3 s)
             interrupt.assert_called_once_with(FAKE_SIGBREAK)
 
     def test_a_cleanup_that_never_ends_gives_up_after_the_wait_and_still_returns_true(self):
+        self.registration.wait_seconds = 0.3
         with mock.patch.object(stopsignal.signal, 'SIGBREAK', FAKE_SIGBREAK, create=True), mock.patch.object(stopsignal._thread, 'interrupt_main'):
             started = time.monotonic()
             self.assertEqual(self.registration.callback(stopsignal.CTRL_CLOSE_EVENT), 1)
@@ -148,6 +151,48 @@ class TheHandler(unittest.TestCase):
         self.registration.cleanup_done = broken
         with mock.patch.object(stopsignal.signal, 'SIGBREAK', FAKE_SIGBREAK, create=True), mock.patch.object(stopsignal._thread, 'interrupt_main'):
             self.assertEqual(self.registration.callback(stopsignal.CTRL_CLOSE_EVENT), 1)
+
+
+    def test_a_close_while_the_server_already_cleans_up_only_waits(self):
+        self.registration.wait_seconds = 0.3
+        self.registration.cleanup_started.set()
+        with mock.patch.object(stopsignal.signal, 'SIGBREAK', FAKE_SIGBREAK, create=True), mock.patch.object(stopsignal._thread, 'interrupt_main') as interrupt:
+            self.assertEqual(self.registration.callback(stopsignal.CTRL_CLOSE_EVENT), 1)
+            interrupt.assert_not_called()
+
+    def test_cleanup_begun_marks_the_registration_and_accepts_none(self):
+        stopsignal.cleanup_begun(self.registration)
+        self.assertTrue(self.registration.cleanup_started.is_set())
+        stopsignal.cleanup_begun(None)
+
+
+if hasattr(signal, 'SIGUSR1'):
+    class TheChainOnPosix(unittest.TestCase):
+        """The whole chain without Windows: a thread calls the handler, `interrupt_main` runs the Python handler of the stand-in signal and the main thread
+        gets `KeyboardInterrupt` (the cleanup of the server then runs in its `finally`)."""
+
+        def test_a_close_event_raises_keyboardinterrupt_in_the_main_thread_and_returns_after_the_cleanup(self):
+            done = threading.Event()
+            with fake_windows():
+                registration = stopsignal.install_console_close(done)
+            self.addCleanup(lambda: setattr(stopsignal, '_console', None))
+            saved = signal.signal(signal.SIGUSR1, stopsignal._stop_on_sigbreak)
+            self.addCleanup(signal.signal, signal.SIGUSR1, saved)
+            self.addCleanup(setattr, stopsignal, '_stopped_at', stopsignal._stopped_at)
+            stopsignal._stopped_at = None
+            results = []
+            with mock.patch.object(stopsignal.signal, 'SIGBREAK', signal.SIGUSR1, create=True):
+                worker = threading.Thread(target=lambda: results.append(registration.callback(stopsignal.CTRL_CLOSE_EVENT)))
+                try:
+                    worker.start()                                                                        # the interrupt may arrive even before start() returns
+                    time.sleep(5)
+                    self.fail('the main thread was not interrupted')
+                except KeyboardInterrupt:
+                    pass                                                                                  # the cleanup would run here
+                self.assertEqual(results, [])                                                             # the handler is still waiting for the cleanup
+                done.set()
+                worker.join(5)
+            self.assertEqual(results, [1])
 
 
 class ServersCallTheHandlerLast(unittest.TestCase):
@@ -176,15 +221,43 @@ class ServersCallTheHandlerLast(unittest.TestCase):
         def finished(registration, done):
             events.append(('cleanup_finished', registration, done is given['done']))
 
+        def begun(registration):
+            events.append('cleanup_begun')
+
         with tempfile.TemporaryDirectory(prefix='console-close-') as tmp:
             repo = Path(tmp)
             (repo / 'docs' / 'prototypes').mkdir(parents=True)
             args = Namespace(no_source_writes=True, users=None, host='127.0.0.1', port=0, secure_cookies=False, trust_proxy=False, login_to_view=False)
             with mock.patch.object(pt.server, 'make_server', return_value=Instance()), mock.patch.object(pt.stopsignal, 'install_console_close', side_effect=install), \
-                    mock.patch.object(pt.stopsignal, 'cleanup_finished', side_effect=finished):
+                    mock.patch.object(pt.stopsignal, 'cleanup_finished', side_effect=finished), mock.patch.object(pt.stopsignal, 'cleanup_begun', side_effect=begun):
                 report = pt.serve_prototypes(repo, {}, args, io.StringIO())
         self.assertEqual((report['status'], report['stopped']), ('PASS', True), report)
-        self.assertEqual(events, ['install_console_close', 'serve_forever', 'server_close', ('cleanup_finished', 'registration', True)])
+        self.assertEqual(events, ['install_console_close', 'serve_forever', 'cleanup_begun', 'server_close', ('cleanup_finished', 'registration', True)])
+
+    def test_prototype_serve_still_tells_the_handler_when_the_cleanup_fails(self):
+        told = []
+        registration = SimpleNamespace(cleanup_started=threading.Event())
+
+        class Instance:
+            url = 'http://127.0.0.1:1/'
+            app = Namespace(warnings=[])
+
+            def serve_forever(self):
+                raise KeyboardInterrupt
+
+            def server_close(self):
+                raise OSError('close failed')
+
+        with tempfile.TemporaryDirectory(prefix='console-close-') as tmp:
+            repo = Path(tmp)
+            (repo / 'docs' / 'prototypes').mkdir(parents=True)
+            args = Namespace(no_source_writes=True, users=None, host='127.0.0.1', port=0, secure_cookies=False, trust_proxy=False, login_to_view=False)
+            with mock.patch.object(pt.server, 'make_server', return_value=Instance()), mock.patch.object(pt.stopsignal, 'install_console_close', return_value=registration), \
+                    mock.patch.object(pt.stopsignal, 'cleanup_finished', side_effect=lambda reg, done: told.append(reg)):
+                with self.assertRaises(OSError):
+                    pt.serve_prototypes(repo, {}, args, io.StringIO())
+        self.assertEqual(told, [registration])
+        self.assertTrue(registration.cleanup_started.is_set())
 
     def test_dashboard_stop_handlers_register_the_console_handler_only_when_asked(self):
         done = threading.Event()
@@ -200,8 +273,10 @@ class ServersCallTheHandlerLast(unittest.TestCase):
 
         case = base.ServeCommandTests('test_help_lists_serve_and_its_flags')
         case.setUp()
+        self.addCleanup(case.doCleanups)
         self.addCleanup(case.tearDown)
         calls = []
+        registration = SimpleNamespace(cleanup_started=threading.Event())
 
         def interrupted(_message):
             calls.append('log')
@@ -213,7 +288,7 @@ class ServersCallTheHandlerLast(unittest.TestCase):
             out = io.StringIO()
             seen = []
             with mock.patch.object(dh, 'log', side_effect=interrupted), contextlib.redirect_stdout(out), \
-                    mock.patch.object(dh.stopsignal, 'install_console_close', return_value='registration') as install, \
+                    mock.patch.object(dh.stopsignal, 'install_console_close', return_value=registration) as install, \
                     mock.patch.object(dh.stopsignal, 'cleanup_finished', side_effect=lambda registration, done: seen.append((registration, done))):
                 code = dh.serve_command(args)
             if calls or '"BLOCKED"' not in out.getvalue():
@@ -222,7 +297,8 @@ class ServersCallTheHandlerLast(unittest.TestCase):
         self.assertEqual(json.loads(out.getvalue())['status'], 'PASS')
         self.assertTrue(calls)
         self.assertEqual(len(seen), 1)
-        self.assertEqual(seen[0][0], 'registration')
+        self.assertIs(seen[0][0], registration)
+        self.assertTrue(registration.cleanup_started.is_set())
         self.assertIsInstance(seen[0][1], threading.Event)
         install.assert_called_once_with(seen[0][1])
 
@@ -287,6 +363,33 @@ else:
     sys.exit(0)
 print(json.dumps(out), flush=True)
 """
+
+    class RealCtypesOnWindows(unittest.TestCase):
+        """The real `WINFUNCTYPE` callback: the signature and the marshalling of the event number and of the return value, called from another thread as
+        the system does. No console window is needed."""
+
+        def test_the_callback_takes_the_event_and_returns_the_answer(self):
+            done = threading.Event()
+            done.set()
+            registration = stopsignal.ConsoleClose(done, 0.5)
+            answers = {}
+            def call():
+                for event in (0, 1, stopsignal.CTRL_CLOSE_EVENT):
+                    answers[event] = registration.callback(event)
+            with mock.patch.object(stopsignal._thread, 'interrupt_main'):
+                worker = threading.Thread(target=call)
+                worker.start()
+                worker.join(10)
+            self.assertEqual(answers, {0: 0, 1: 0, stopsignal.CTRL_CLOSE_EVENT: 1})
+
+        def test_the_handler_registers_and_unregisters_with_the_system(self):
+            handler = signal.signal(signal.SIGBREAK, stopsignal._stop_on_sigbreak)
+            self.addCleanup(signal.signal, signal.SIGBREAK, handler)
+            registration = stopsignal.install_console_close(threading.Event())
+            self.assertIsNotNone(registration)
+            self.assertTrue(registration.active)
+            registration.uninstall()
+            self.assertFalse(registration.active)
 
     class ClosingTheConsoleWindowOnWindows(unittest.TestCase):
         def test_a_child_with_a_hidden_console_cleans_up_when_its_window_is_closed(self):

@@ -1065,12 +1065,15 @@ def serve_command(args) -> int:
     except KeyboardInterrupt:
         pass
     finally:
-        board.stop.set()
-        with board.cond:
-            board.cond.notify_all()
-        server.server_close()
-        dashboard_token.remove_state(board.root, port, os.getpid())
-        stopsignal.cleanup_finished(console_close, cleanup_done)   # last: a closed console window waits for this
+        stopsignal.cleanup_begun(console_close)   # a closed console window only waits from here on
+        try:
+            board.stop.set()
+            with board.cond:
+                board.cond.notify_all()
+            server.server_close()
+            dashboard_token.remove_state(board.root, port, os.getpid())
+        finally:
+            stopsignal.cleanup_finished(console_close, cleanup_done)   # last, even when a step above failed: a closed console window waits for this
     return emit({"status": "PASS", "url": url, "stopped": True})
 
 
@@ -1155,14 +1158,17 @@ def _serve_ports(args, mode: dict) -> int:
     except KeyboardInterrupt:
         pass
     finally:
-        board.stop.set()
-        with board.cond:
-            board.cond.notify_all()
-        for server in running:
-            server.shutdown()
-        for _role, server, _port, _bind in servers:
-            server.server_close()
-        for port in states:
-            dashboard_token.remove_state(board.root, port, os.getpid())
-        stopsignal.cleanup_finished(console_close, cleanup_done)   # last: a closed console window waits for this
+        stopsignal.cleanup_begun(console_close)   # a closed console window only waits from here on
+        try:
+            board.stop.set()
+            with board.cond:
+                board.cond.notify_all()
+            for server in running:
+                server.shutdown()
+            for _role, server, _port, _bind in servers:
+                server.server_close()
+            for port in states:
+                dashboard_token.remove_state(board.root, port, os.getpid())
+        finally:
+            stopsignal.cleanup_finished(console_close, cleanup_done)   # last, even when a step above failed: a closed console window waits for this
     return emit({"status": "PASS", "stopped": True, "ports": {role: port for role, _server, port, _bind in servers}})
