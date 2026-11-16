@@ -1,5 +1,6 @@
 """skillsync retro (R2): kontrakt wyjść, rubryka, K5 (wyciek), K6 (tylko odczyt), sygnały raportów,
 pliki nieczytelne, kandydaci zmiany (K4), koniec do końca i worktree (K11)."""
+import concurrent.futures
 import hashlib
 import io
 import json
@@ -3694,6 +3695,27 @@ class ProposalBase(CandidateBase):
     PATH = 'docs/retro/decisions.yaml'
 
     # ---- uruchamianie ----
+    def decide_all(self, argsets, code=0):
+        """`[(args, (data, text))]`: the `retro-decide` calls of `argsets` run side by side (separate processes, each judged like `decide`). Only for
+        calls that must not write: they would write to the same files at once."""
+        def one(args):
+            command = [sys.executable, str(CLI), 'retro-decide', str(self.root), *map(str, args), '--json']
+            return subprocess.run(command, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=60, cwd=self.root)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(argsets)) as pool:
+            results = list(pool.map(one, argsets))
+        judged = []
+        for args, result in zip(argsets, results):
+            text = result.stdout + result.stderr
+            self.assertNotIn('Traceback', result.stderr, result.stderr)
+            self.assertEqual(result.returncode, code, text)
+            try:
+                data = json.loads(result.stdout)
+            except ValueError:
+                self.fail('stdout nie jest JSON-em: ' + text[:300])
+            self.assertEqual(data['schema'], 1)
+            judged.append((args, (data, text)))
+        return judged
+
     def decide(self, *args, code=0, path=None):
         command = [sys.executable, str(CLI), 'retro-decide', str(path or self.root), *map(str, args), '--json']
         result = subprocess.run(command, capture_output=True, text=True, encoding='utf-8', errors='replace',
@@ -4638,14 +4660,16 @@ class RegistryProposalsSection(ProposalBase):
                 path = self.put_registry(section)
                 before_bytes = path.read_bytes()
                 before = self.disk()
-                for args in (('--cause-key', 'flaky', '--decision', 'rejected'),
-                             ('--cause-key', 'flaky', '--decision', 'rejected', '--replace'),
-                             ('--proposal', 'r1/P1', '--decision', 'rejected'),
-                             ('--proposal', 'r1/P1', '--decision', 'rejected', '--replace')):
-                    data = self.decide(*args, code=2)
+                # The four forms are four child processes started together (each one is a refusal that must write nothing: the state of the
+                # disk is compared after all of them, so a write by any of them is still caught); 78 sections x 4 forms made this test the
+                # slowest of the suite (54 s, the start of an interpreter per call).
+                for args, (data, text) in self.decide_all((('--cause-key', 'flaky', '--decision', 'rejected'),
+                                                          ('--cause-key', 'flaky', '--decision', 'rejected', '--replace'),
+                                                          ('--proposal', 'r1/P1', '--decision', 'rejected'),
+                                                          ('--proposal', 'r1/P1', '--decision', 'rejected', '--replace')), code=2):
                     self.assertEqual(data['status'], 'BLOCKED', (label, args))
                     self.assertTrue(data['reason'])
-                    self.assertNotIn(str(self.base), self.text)
+                    self.assertNotIn(str(self.base), text)
                 self.assertEqual(path.read_bytes(), before_bytes, label)
                 self.assertEqual(self.disk(), before, label)
 

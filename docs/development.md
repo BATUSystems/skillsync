@@ -108,6 +108,7 @@ Port z `free_port()` był wolny tylko w chwili próby. Serwer w wątku binduje p
 | `SKILLSYNC_TEST_NODE` | ścieżka do Node ≥ 18 (testy silnika prototypów) |
 | `SKILLSYNC_E2E_CHROME` | binarka Chrome/Chromium dla testów E2E; bez niej przypadki z przeglądarką się pomijają |
 | `SKILLSYNC_TEST_DASHBOARD_PORTS` | zakres portów testów dashboardu, `<od>-<do>` w granicach 5100-5199 (domyślnie 5101-5199 poza 5140): osobny wycinek na bieg pozwala puścić kilka biegów testów naraz na jednym hoście (inaczej `free_port` zgłasza „brak wolnego portu”) |
+| `SKILLSYNC_TEST_CLI_SUBPROCESS` | `1` wymusza podprocesy w testach, które wołają CLI w procesie przez `tests/cli_inprocess.py` (dziś `test_skillsync_retro_scan.py`): porównanie obu trybów i pomiar; bez zmiennej te testy oszczędzają start interpretera |
 | `SKILLSYNC_E2E_PORTS` | porty E2E `<chrome>,<serwer1>,<serwer2>` (domyślnie `9333,4445,4446`) |
 | `SKILLSYNC_E2E_RESULTS_DIR`, `SKILLSYNC_E2E_ONLY` | katalog wyników JSON; lista ID scenariuszy (tylko do debugowania) |
 | `SKILLSYNC_PROTOTYPE_ENGINE_V2_PATH` | plik silnika prototypów ładowany przez testy modułu silnika (domyślnie kopia z `tests/fixtures/prototype/engine-v2/`) |
