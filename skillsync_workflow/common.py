@@ -350,6 +350,14 @@ def append_missing_lines(text, entries, key=None):
     return text + prefix + eol.join(missing) + eol
 
 
+def decode_text(data):
+    """Text of the bytes of a file: UTF-16 with a byte order mark (the default output of `>` and `Out-File` in Windows PowerShell 5) is
+    decoded as such, anything else as UTF-8; NUL characters are dropped (the renderer drops them too, so a secret that a NUL splits
+    would otherwise be glued together again AFTER the masking)."""
+    text = data.decode('utf-16' if data[:2] in (b'\xff\xfe', b'\xfe\xff') else 'utf-8', errors='replace')
+    return text.replace('\x00', '')
+
+
 def redact(value, _key=False):
     """Masks secrets in strings. A secret from the environment is substituted only when it has 8+ characters, in keys and
     in text alike (D6): a short value (the Windows runner has one equal to `root`) must not rename structural keys or
@@ -366,10 +374,31 @@ def redact(value, _key=False):
     for name, secret in os.environ.items():
         if len(secret) >= SECRET_MIN_LENGTH and re.search(r'(?i)token|secret|password|passwd|api_?key|credential', name):
             text = text.replace(secret, '[REDACTED]')
+            if '\n' in secret:   # a multi-line secret (a PEM key) in a file with Windows line ends
+                text = text.replace(secret.replace('\n', '\r\n'), '[REDACTED]')
     text = re.sub(r'(https?://)[^/@\s]+:[^/@\s]+@', r'\1[REDACTED]@', text)
-    text = re.sub(r'(?i)(authorization\s*[:=]\s*(?:bearer\s+)?)[^\s\x22\x27,;]+', r'\1[REDACTED]', text)
+    text = re.sub(r'(?i)(authorization\s*[:=]\s*(?:(?:bearer|basic|digest)\s+)?)[^\s\x22\x27,;]+', r'\1[REDACTED]', text)
     text = re.sub(r'(?i)(\bbearer\s+)[^\s\x22\x27,;]+', r'\1[REDACTED]', text)
-    return re.sub(r'(?i)((?:password|passwd|token|secret|api_key)\s*[=:]\s*)[^\s\x22\x27,;]+', r'\1[REDACTED]', text)
+    return _SECRET_KEY_VALUE.sub(_mask_value, text)
+
+
+# Key names whose value is masked: `password`, `passwd`, `token`, `secret`, `api_key`/`api-key`/`apikey`, `secret_key`, `access_key`,
+# `private_key` (a longer name that ends in one of them, e.g. `client_secret`, matches too). After the key: an optional quote (JSON),
+# `=` or `:`, and a value that is quoted (the whole quoted text, spaces included, up to the first closing quote that no backslash escapes, so
+# `\\"` inside a JSON string stays in the value and `\\\\"` closes it; an unterminated quote takes the rest of the line, before `\\n` or `\\r\\n`) or
+# a word up to a space, `,` or `;` (quotes inside it belong to the value). Every part of the quoted alternatives starts with a different
+# character, so the match is linear (no catastrophic backtracking).
+_SECRET_KEY_VALUE = re.compile(
+    r'(?im)((?:password|passwd|token|secret|api[-_]?key|secret[-_]?key|access[-_]?key|private[-_]?key)[\x22\x27]?\s*[=:]\s*)'
+    r'(?:\x22(?:\\.|[^\x22\\\r\n])*(?:\x22|(?=\r?$))|\x27(?:\\.|[^\x27\\\r\n])*(?:\x27|(?=\r?$))|[^\s\x22\x27,;][^\s,;]*)')
+
+
+def _mask_value(match):
+    value = match.group(0)[len(match.group(1)):]
+    quote = value[0] if value[:1] in ('"', "'") else ''
+    escapes = len(value) - len(value[:-1].rstrip('\\')) - 1 if quote and len(value) > 1 else 0   # backslashes right before the last character
+    closed = bool(quote) and len(value) > 1 and value.endswith(quote) and escapes % 2 == 0   # an unterminated quote masks the rest of the line and adds no closing one
+    return f'{match.group(1)}{quote}[REDACTED]{quote if closed else ""}'
 
 
 # Mirrors the constants in the `skillsync` entry script (a test keeps them identical).

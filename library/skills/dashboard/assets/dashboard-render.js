@@ -637,7 +637,7 @@
     }
 
     // Fragmenty checkpointów pominięte przez parser (run.parseWarnings): jedna linia, szczegóły w dymku (tylko tekst).
-    const PARSE_REASON = { "no-step-id": "bez id kroku na początku", "later-id": "id kroku nie na początku elementu" };
+    const PARSE_REASON = { "no-step-id": "bez id kroku na początku", "later-id": "id kroku nie na początku elementu", "unbalanced-bracket": "niezamknięty nawias, lista dzielona po każdym „;”" };
     function renderParseWarn(d) {
       const list = d.run && Array.isArray(d.run.parseWarnings) ? d.run.parseWarnings.filter((x) => x && typeof x === "object") : [];
       const el = ui.parseWarn;

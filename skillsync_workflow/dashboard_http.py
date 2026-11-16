@@ -544,11 +544,12 @@ class Board:
         if not path:
             return None
         size = path.stat().st_size
-        text = engine.read_text(path)
+        text = engine.read_masked(path)   # the whole document is masked BEFORE it is parsed or rendered: this route is served on the read socket without a login
         title, _fields = engine.parse_header(text)
-        return {"path": rel, "title": title or path.stem, "status": engine.doc_status(text)[0],
-                "mtime": engine._iso(engine._mtime(path)), "size": size, "truncated": size > MAX_DOC_BYTES,
-                "html": render_markdown(text, rel or "")}
+        # second layer, like `/api/status`: the whole answer is masked once more (the file name in `path` and in the fallback title is not part of the text)
+        return redact({"path": rel, "title": title or path.stem, "status": engine.doc_status(text)[0],
+                       "mtime": engine._iso(engine._mtime(path)), "size": size, "truncated": size > MAX_DOC_BYTES,
+                       "html": render_markdown(text, rel or "")})
 
     # --- consents (in-process, the shared core functions of status.py; no subprocess, no own jsonl writer)
     def approve(self, kind: str, rel: str, sha: str, plan: str | None = None, via: dict | None = None) -> tuple[int, dict]:
@@ -577,7 +578,7 @@ class Board:
             try:
                 report = status_core.set_doc_status(self.root, rel, "approve", folder, expect_sha=sha)
             except (OSError, ValueError, TypeError, KeyError, UnicodeDecodeError) as error:
-                return 409, {"error": f"Odmowa zmiany statusu: {' '.join(str(error).split())[:300]}"}
+                return 409, {"error": f"Odmowa zmiany statusu: {status_core._message(error, 300)}"}
             run_id = offer.get("run")
             trail = None
             if run_id:

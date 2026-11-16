@@ -20,10 +20,10 @@ import time
 import yaml
 
 from . import __version__
-from .common import add_project_arguments, plan_section, read_project, redact
+from .common import add_project_arguments, decode_text, plan_section, read_project, redact
 from .layers import add_layer_argument
 from .delivery_mode import delivery_info
-from .status import (APPROVAL_WORDS, APPROVALS_FILE, MAX_APPROVALS_BYTES, _APPROVAL_SHA, _approval_at, _status_fields,
+from .status import (APPROVAL_WORDS, APPROVALS_FILE, MAX_APPROVALS_BYTES, _APPROVAL_SHA, _approval_at, _message, _status_fields,
                      git_blob_sha)
 from .pathfmt import posix
 
@@ -113,9 +113,24 @@ ANY_STATUS = _AnyStatus()
 
 # --------------------------------------------------------------------------- parsing
 
+MASK_MARGIN = 4096   # bytes read beyond a limit so that a secret on the limit is masked whole (see `read_masked`)
+
+
 def read_text(path, limit=MAX_DOC_BYTES):
     with open(path, 'rb') as handle:
-        return handle.read(limit).decode('utf-8', errors='replace')
+        return decode_text(handle.read(limit))
+
+
+def read_masked(path, limit=MAX_DOC_BYTES):
+    """`read_text` with every secret masked (`common.redact`) in the WHOLE text, right after reading and before any parser cuts, splits or
+    trims it: a key before a cut keeps masking its value, and a secret from the environment is replaced while it is still in one piece.
+    The text of plans, specs, checkpoints and notes goes through this reader; the final `redact` of the status stays as the second layer.
+    The byte limit is applied AFTER the masking: `MASK_MARGIN` more bytes are read, so a secret that lies on the limit is whole when it is masked
+    (a longer one is cut by the margin and is no longer a secret of this machine), and only then the text is cut to `limit` bytes."""
+    with open(path, 'rb') as handle:
+        data = handle.read(limit + MASK_MARGIN)
+    text = redact(decode_text(data))
+    return text.encode('utf-8')[:limit].decode('utf-8', 'ignore') if len(data) > limit else text
 
 
 def clean_value(value):
@@ -346,6 +361,19 @@ def split_top_level(segment, sep=',', balanced=False):
     return None if balanced and depth else parts
 
 
+def unclosed_bracket_start(text):
+    """Index of the outermost opening bracket that is never closed, None when the brackets balance. Counts like `split_top_level`
+    (any closing bracket closes the innermost open one, a closing bracket at depth 0 is ignored), so the answer is not None exactly
+    when `split_segments` falls back to every `;`."""
+    stack = []
+    for index, char in enumerate(text):
+        if char in '([{':
+            stack.append(index)
+        elif char in ')]}' and stack:
+            stack.pop()
+    return stack[0] if stack else None
+
+
 def _lead_ids(segment):
     ids = []
     for item in split_top_level(segment):
@@ -365,8 +393,16 @@ NO_ITEMS = {'', '-', '—', 'nic', 'brak', 'nie', 'żadne', 'żaden'}
 def report_warnings(text):
     """Pieces of the `w toku` / `zrobione` lists of one checkpoint text that the id reading skips: `[{segment, fragment, reason}]`.
     `no-step-id`: an element without a step id at its start; `later-id`: an element that starts with an id and names another one
-    further on outside brackets (only the leading ids count). The skip stays (no guessing from descriptions); the warning makes it visible."""
+    further on outside brackets (only the leading ids count). The skip stays (no guessing from descriptions); the warning makes it visible.
+    `unbalanced-bracket` (segment `raport`): the text has an opening bracket that is never closed, so `split_segments` falls back to every `;`
+    and a step id after such a `;` is lost without any other trace; the fragment starts at the element that holds the unclosed bracket."""
     found = []
+    unbalanced = unclosed_bracket_start(text) is not None   # decided on the text as written
+    text = redact(text)   # the WHOLE text is masked before anything is cut out of it: a key before the cut (`password: x (a; F1.2`) must still mask its value
+    if unbalanced:
+        opener = unclosed_bracket_start(text)   # the masking can remove brackets that were part of a secret: then the fragment starts at the beginning
+        start = 0 if opener is None else max(text.rfind(sep, 0, opener) for sep in ';,:') + 1   # the element that holds the bracket
+        found.append({'segment': 'raport', 'fragment': ' '.join(text[start:].split())[:PARSE_WARNING_FRAGMENT], 'reason': 'unbalanced-bracket'})
     for label, pattern in (('w toku', IN_PROGRESS_RE), ('zrobione', DONE_RE)):
         match = _first_segment_match(pattern, text)
         if not match:
@@ -382,7 +418,7 @@ def report_warnings(text):
                 reason = 'later-id'
             else:
                 continue
-            found.append({'segment': label, 'fragment': redact(piece)[:PARSE_WARNING_FRAGMENT], 'reason': reason})
+            found.append({'segment': label, 'fragment': piece[:PARSE_WARNING_FRAGMENT], 'reason': reason})
     return found
 
 
@@ -552,12 +588,12 @@ def _plan_content(path):
     if hit is not None and hit[0] == stamp:
         return hit[1]
     try:
-        text = read_text(path, HEADER_BYTES)
+        text = read_masked(path, HEADER_BYTES)
     except OSError:
         return None
     title, fields = parse_header(text)
     try:
-        steps = [step for phase in parse_progress(read_text(path)) for step in phase['steps']]
+        steps = [step for phase in parse_progress(read_masked(path)) for step in phase['steps']]
     except OSError:
         steps = []
     content = (title, doc_status(text)[0], first_token(fields.get('spec')), first_token(fields.get('przebieg')),
@@ -599,7 +635,7 @@ def list_specs(root):
         if rel is None or resolve_doc(root, rel) is None:
             continue
         try:
-            text = read_text(path, HEADER_BYTES)
+            text = read_masked(path, HEADER_BYTES)
         except OSError:
             continue
         title, _ = parse_header(text)
@@ -806,7 +842,7 @@ def _question_items(slug, asked, closed):
     `state` = `open`, `answered` or `withdrawn`."""
     items = []
     for qid, op in asked.items():
-        text = ' '.join(str(op.get('text') or '').split())
+        text = ' '.join(redact(str(op.get('text') or '')).split())   # masked whole, then trimmed and cut
         items.append({'id': qid, 'runSlug': slug, 'text': text[:QUESTION_TEXT_LIMIT], 'blocking': op.get('blocking') is True,
                       'addressees': _addressees(op), 'state': closed.get(qid, 'open'), 'at': op['at'], 'url': f'/_experts/{slug}'})
     return items
@@ -1670,7 +1706,7 @@ def read_readiness(root, run_id, run_exists):
     if path is None:
         return out
     try:
-        text = read_text(path, 64_000)
+        text = read_masked(path, 64_000)
     except OSError:
         return out
     out['source'] = rel
@@ -1824,7 +1860,7 @@ def doc_item(root, rel):
     if not path:
         return None
     try:
-        text = read_text(path, HEADER_BYTES)
+        text = read_masked(path, HEADER_BYTES)
     except OSError:
         return None
     title, _ = parse_header(text)
@@ -1883,7 +1919,7 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
     plan_info, fields, phases, plan_text = None, {}, [], ''
     if chosen:
         plan_path = root / chosen['path']
-        text = plan_text = read_text(plan_path)
+        text = plan_text = read_masked(plan_path)
         title, fields = parse_header(text)
         phases = parse_progress(text)
         pr = PLAN_PR_RE.search(text)
@@ -1899,7 +1935,7 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
             'prototype': first_token(fields.get('prototyp')), 'preparing': bool(run_act)}
     spec_text, spec_fields = '', {}
     if spec_path:
-        spec_text = read_text(spec_path, 400_000)
+        spec_text = read_masked(spec_path, 400_000)
         spec_title, spec_fields = parse_header(spec_text)
         status, status_text = doc_status(spec_text)
         spec.update({'title': spec_title, 'status': status, 'statusText': status_text,
@@ -1923,7 +1959,7 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
                               if resolve_doc(root, rel))
         checkpoints = directory / 'checkpoints.md'
         if checkpoints.is_file() and not checkpoints.is_symlink():
-            start, chronological = parse_checkpoints(read_text(checkpoints))
+            start, chronological = parse_checkpoints(read_masked(checkpoints))
             run['start'] = start
             run['checkpoints'] = list(reversed(chronological))
             last_change.append(_mtime(checkpoints))
@@ -2067,7 +2103,7 @@ def build_metrics(root, run_id, plan=None):
         raise MetricsBlocked(f'{RUNS_DIR}/{run_id}/{CHECKPOINTS_FILE} is a symlink')
     chronological, run_start = [], None
     if checkpoints_path.is_file():
-        run_start, chronological = parse_checkpoints(read_text(checkpoints_path))
+        run_start, chronological = parse_checkpoints(read_masked(checkpoints_path))
     try:
         store = _runs._store_path(root, run_id)
         data = _runs._read(store) if store.exists() or store.is_symlink() else None
@@ -2078,7 +2114,7 @@ def build_metrics(root, run_id, plan=None):
     chosen = _metrics_plan(root, run_id, plan)
     started, finished, mentioned = substep_marks(chronological)
     if chosen:
-        steps = [(step['id'], step['title']) for phase in parse_progress(read_text(root / chosen['path']))
+        steps = [(step['id'], step['title']) for phase in parse_progress(read_masked(root / chosen['path']))
                  for step in phase['steps'] if '.' in step['id']]
     else:  # no plan: the sub-steps named in the checkpoints, in the order of the first mention
         steps = [(sid, None) for sid in mentioned if '.' in sid]
@@ -2132,7 +2168,7 @@ def build_metrics(root, run_id, plan=None):
         'failures': failures,
         'interventions': None,
         'timing': build_timing(run_start, chronological, run_approvals(root, run_id),
-                               parse_progress(read_text(root / chosen['path'])) if chosen else []),
+                               parse_progress(read_masked(root / chosen['path'])) if chosen else []),
     }
 
 
@@ -2143,7 +2179,7 @@ def _cmd_show(args):
         root, manifest = read_project(args.path)
         report, code = build_status(root, args.plan, manifest=manifest), 0
     except (OSError, ValueError, TypeError, KeyError, yaml.YAMLError) as error:
-        report, code = {'schema': SCHEMA, 'status': 'BLOCKED', 'reason': ' '.join(str(error).split())[:500]}, 2
+        report, code = {'schema': SCHEMA, 'status': 'BLOCKED', 'reason': _message(error, 500)}, 2
     print(json.dumps(redact(report), ensure_ascii=False, indent=2))
     return code
 
@@ -2153,7 +2189,7 @@ def _cmd_metrics(args):
         root, _ = read_project(args.path)
         report, code = build_metrics(root, args.run_id, args.plan), 0
     except (OSError, ValueError, TypeError, KeyError, yaml.YAMLError) as error:
-        report, code = {'schema': SCHEMA, 'status': 'BLOCKED', 'reason': ' '.join(str(error).split())[:500]}, 2
+        report, code = {'schema': SCHEMA, 'status': 'BLOCKED', 'reason': _message(error, 500)}, 2
     print(json.dumps(redact(report), ensure_ascii=False, indent=2))
     return code
 

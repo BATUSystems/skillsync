@@ -13,7 +13,7 @@ import tempfile
 import time
 import yaml
 
-from .common import add_project_arguments, plan_section, read_project, redact
+from .common import add_project_arguments, decode_text, plan_section, read_project, redact
 from .delivery_mode import delivery_info
 from .layers import add_layer_argument
 from .storage import read_json
@@ -30,6 +30,7 @@ MAX_PLAN_BYTES = 512 * 1024
 _STATUS = re.compile(r'^(?:[-*>][ \t]+)?(?:\*\*|__)?status(?:\*\*|__)?[ \t]*:[ \t]*(?:\*\*|__)?[ \t]*'
                      r'(?P<raw>[`*_]*(?P<word>[A-Za-z_]+)[^\n]*)', re.MULTILINE | re.IGNORECASE)
 STATUS_TEXT_MAX = 80
+_STATUS_WINDOW_READ = 8192   # characters masked before the 4000-character window of `_status_fields` is cut (a secret on the cut is whole in this span)
 _TITLE = re.compile(r'^#\s+(.+?)\s*$', re.MULTILINE)
 _STEP = re.compile(r'^\s*-\s\[([ xX])\]\s+\S', re.MULTILINE)
 _ACCEPTANCE_STEP = re.compile(r'^\s*-\s\[[ xX]\]\s+(?:[A-Za-z]+\d+(?:\.\d+)?\s+)?Odbi[oó]r\b', re.MULTILINE | re.IGNORECASE)
@@ -66,9 +67,15 @@ def _progress(text):
     return {'total': len(marks), 'done': sum(1 for mark in marks if mark in 'xX')} if marks else None
 
 
+def _message(error, limit):
+    """Text of an error for a report: masked as a whole first, then whitespace is collapsed and the text cut."""
+    return ' '.join(redact(str(error)).split())[:limit]
+
+
 def _status_fields(text, allowed):
     """Return (status, statusText) from the first status line; a word outside `allowed` gives `unknown`."""
-    match = _STATUS.search(text[:4000])
+    window = redact(text[:_STATUS_WINDOW_READ])[:4000]   # masked BEFORE the window is cut and before the markers are stripped (a secret that holds `*` or a backtick)
+    match = _STATUS.search(window)
     status = match.group('word').lower() if match else 'unknown'
     status_text = re.sub(r'[`*]', '', match.group('raw')).strip()[:STATUS_TEXT_MAX] if match else None
     return status if status in allowed else 'unknown', redact(status_text) if status_text else None
@@ -116,7 +123,7 @@ def _read_text_safe(path, limit=MAX_PLAN_BYTES, root=None):
             chain = [Path(root).joinpath(*relative.parts[:i]) for i in range(1, len(relative.parts) + 1)]
         if any(item.is_symlink() for item in chain) or not path.is_file() or path.stat().st_size > limit:
             return None
-        return path.read_text(encoding='utf-8')
+        return decode_text(path.read_bytes())
     except (OSError, ValueError, UnicodeDecodeError):
         return None
 
@@ -199,7 +206,7 @@ def pre_implement_state(root, spec_rel, plan_text, status):
 def plan_summary(text):
     """The `## Streszczenie dla człowieka` section as plain text for the status page: heading markers removed, at most 40 lines and
     4000 characters (a cut one ends with `…`); None when the section is absent or empty."""
-    body = plan_section(text, PLAN_SUMMARY)
+    body = plan_section(redact(text), PLAN_SUMMARY)   # the whole plan is masked before the section is taken, trimmed and cut
     if not body:
         return None
     lines, fence = [], None
@@ -312,7 +319,7 @@ def plan_text_needs_human(status, text):
 
 
 def plan_record(root, path, context=None):
-    text = path.read_text(encoding='utf-8')
+    text = decode_text(path.read_bytes())
     status, status_text = _status_fields(text, PLAN_STATUSES)
     title = _TITLE.search(text)
     steps = _progress(text)
@@ -398,7 +405,7 @@ def _specs(root, findings):
             if path.stat().st_size > MAX_PLAN_BYTES:
                 findings.append(f'Spec skipped (over {MAX_PLAN_BYTES // 1024} KiB): {path.name}')
                 continue
-            text = path.read_text(encoding='utf-8')
+            text = decode_text(path.read_bytes())
             status, status_text = _status_fields(text, SPEC_STATUSES)
             title = _TITLE.search(text)
             rows.append({'path': _doc_path(root, path), 'title': title.group(1) if title else path.stem, 'status': status,
@@ -428,7 +435,7 @@ def _runs(root, findings):
         try:
             data = _read(path)
         except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as error:
-            findings.append(f'Run unreadable: {path.stem} ({" ".join(str(error).split())[:120]})')
+            findings.append(f'Run unreadable: {path.stem} ({_message(error, 120)})')
             continue
         if 'benchmark' in data or not data['checkpoints']:
             continue
@@ -478,7 +485,7 @@ def read_approvals(root, findings=None):
             lines = path.read_text(encoding='utf-8', errors='replace').splitlines()
         except (OSError, ValueError) as error:
             if findings is not None:
-                findings.append(f'Approvals unreadable: {path.parent.name} ({" ".join(str(error).split())[:120]})')
+                findings.append(f'Approvals unreadable: {path.parent.name} ({_message(error, 120)})')
             continue
         for line in lines:
             try:
@@ -491,9 +498,9 @@ def read_approvals(root, findings=None):
             if at is None or not _APPROVAL_SHA.match(sha):
                 continue
             row = {'run': path.parent.name, 'word': item['word'], 'at': at.strftime('%Y-%m-%dT%H:%M:%SZ'), 'sha': sha,
-                   'source': str(item.get('source') or '')[:40]}
+                   'source': redact(str(item.get('source') or ''))[:40]}
             if isinstance(item.get('file'), str):
-                row['file'] = item['file'][:300]
+                row['file'] = redact(item['file'])[:300]
             key = (row['run'], row['word'])
             if key not in latest or latest[key]['at'] <= row['at']:
                 latest[key] = row
@@ -532,7 +539,7 @@ def _cmd_status(args):
         root, manifest = read_project(args.path)
         report, code = project_status(root, manifest), 0
     except (OSError, ValueError, TypeError, KeyError, yaml.YAMLError) as error:
-        report, code = {'schema': SCHEMA, 'status': 'BLOCKED', 'reason': ' '.join(str(error).split())[:500]}, 2
+        report, code = {'schema': SCHEMA, 'status': 'BLOCKED', 'reason': _message(error, 500)}, 2
     print(json.dumps(redact(report), ensure_ascii=False, indent=2))
     return code
 
@@ -677,7 +684,7 @@ def _cmd_doc(args):
         root, _ = read_project(args.path)
         report, code = set_doc_status(root, args.doc, args.doc_action, folder, args.expect_sha), 0
     except (OSError, ValueError, TypeError, KeyError, yaml.YAMLError) as error:
-        report, code = {'schema': SCHEMA, 'status': 'BLOCKED', 'reason': ' '.join(str(error).split())[:500],
+        report, code = {'schema': SCHEMA, 'status': 'BLOCKED', 'reason': _message(error, 500),
                         'root': posix(Path(args.path).expanduser().resolve())}, 2
     print(json.dumps(redact(report), ensure_ascii=False, indent=2))
     return code
@@ -686,7 +693,7 @@ def _cmd_doc(args):
 def _doc_status_word(root, name):
     folder = 'specs' if Path(name).parts[:2] == ('docs', 'specs') else 'plans'
     path = _doc_file(root, name, folder)
-    match = _STATUS.search(path.read_text(encoding='utf-8', errors='replace')[:4000])
+    match = _STATUS.search(decode_text(path.read_bytes())[:4000])
     return (match.group('word').lower() if match else None), git_blob_sha(path.read_bytes())
 
 
@@ -726,7 +733,7 @@ def _cmd_approvals_wait(args):
                 break
             time.sleep(min(max(0.2, args.interval), max(0.0, deadline - time.monotonic())) or 0.2)
     except (OSError, ValueError, TypeError, KeyError, yaml.YAMLError) as error:
-        report, code = {'schema': SCHEMA, 'status': 'BLOCKED', 'reason': ' '.join(str(error).split())[:500]}, 2
+        report, code = {'schema': SCHEMA, 'status': 'BLOCKED', 'reason': _message(error, 500)}, 2
     print(json.dumps(redact(report), ensure_ascii=False, indent=2))
     return code
 
@@ -826,7 +833,7 @@ def record_approval(root, word, run_id, sha=None, source='cli', target=None, bra
             raise ValueError('via must be an object (port, host, peer)')
         moment = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
         entry = {'schema': SCHEMA, 'at': moment.strftime('%Y-%m-%dT%H:%M:%SZ'), 'word': word, 'sha': sha,
-                 'by': str(by if by is not None else _approval_user())[:80], 'source': source}
+                 'by': redact(str(by if by is not None else _approval_user()))[:80], 'source': source}
         extra = {'file': file, 'shaAfter': sha_after, 'run': run_id, 'plan': plan, 'target': target, 'branch': branch, 'ahead': ahead, 'mode': mode, 'via': via}
         entry.update({key: value for key, value in extra.items() if value is not None})
         entry = redact(entry)
@@ -862,7 +869,7 @@ def record_approval(root, word, run_id, sha=None, source='cli', target=None, bra
         except server.LockTimeout:
             raise ValueError(f'Approvals file is locked by another writer: {APPROVALS_FILE}.lock') from None
     except (OSError, ValueError, TypeError, UnicodeDecodeError) as error:
-        return {'schema': SCHEMA, 'status': 'BLOCKED', 'reason': redact(' '.join(str(error).split())[:500]), 'entry': None}
+        return {'schema': SCHEMA, 'status': 'BLOCKED', 'reason': _message(error, 500), 'entry': None}
     return {'schema': SCHEMA, 'status': 'PASS', 'reason': f'Consent {word!r} recorded', 'entry': entry,
             'path': path.relative_to(root).as_posix()}
 
@@ -878,7 +885,7 @@ def _cmd_approvals_record(args):
         root, _ = read_project(args.path)
         report = record_approval(root, args.word, args.run, args.sha, args.source, args.target, args.branch, args.file)
     except (OSError, ValueError, TypeError, KeyError, yaml.YAMLError) as error:
-        report = {'schema': SCHEMA, 'status': 'BLOCKED', 'reason': ' '.join(str(error).split())[:500], 'entry': None}
+        report = {'schema': SCHEMA, 'status': 'BLOCKED', 'reason': _message(error, 500), 'entry': None}
     print(json.dumps(redact(report), ensure_ascii=False, indent=2))
     return 0 if report['status'] == 'PASS' else 2
 

@@ -18,7 +18,7 @@ class SyntaxDocs(unittest.TestCase):
 
     def test_contract_describes_the_same_syntax(self):
         text = CONTRACT.read_text(encoding='utf-8')
-        for phrase in ('`;` kończy segment tylko poza nawiasami', '`parseWarnings`', '`no-step-id`', '`later-id`', '`trwa:`', '(kto: <rola>'):
+        for phrase in ('`;` kończy segment tylko poza nawiasami', '`parseWarnings`', '`no-step-id`', '`later-id`', '`unbalanced-bracket`', '`trwa:`', '(kto: <rola>'):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, text)
 

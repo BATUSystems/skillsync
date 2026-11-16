@@ -176,13 +176,14 @@ zatwierdza zgoda), `pr` (`{number, url}` z linii `PR: #N (link: https://…)` lu
 | `files` | tablica | pliki `*.md` przebiegu (ścieżki względne, posortowane) |
 | `lastReportAt` | string | opcjonalne; czas modyfikacji `checkpoints.md` |
 | `inProgressFrom` | string | opcjonalne; czas checkpointu z ostatnim „w toku” |
-| `parseWarnings` | tablica | opcjonalne (brak klucza = brak ostrzeżeń); do 10 najnowszych: `{time, segment: "w toku"\|"zrobione", fragment (do 80 znaków), reason: "no-step-id"\|"later-id"}` |
+| `parseWarnings` | tablica | opcjonalne (brak klucza = brak ostrzeżeń); do 10 najnowszych: `{time, segment: "w toku"\|"zrobione"\|"raport", fragment (do 80 znaków), reason: "no-step-id"\|"later-id"\|"unbalanced-bracket"}` |
 
 Format checkpointu: `- HH:MM <tekst>`; segmenty `w toku: F1.2, F1.3`, `zrobione: F1.1`, `czeka: <na co>`, `eta: <operacja> do HH:MM`,
 `trwa: <klucz etapu>[, …]`.
 
 Składnia segmentów: `;` kończy segment tylko poza nawiasami `()`, `[]`, `{}` (opis w nawiasie może zawierać `;`); linia z
-niezbalansowanym nawiasem dzieli się po każdym `;`. Każdy element listy „w toku” i „zrobione” zaczyna się od id kroku;
+niezbalansowanym nawiasem dzieli się po każdym `;`, więc id po takim `;` może zginąć z odczytu; `parseWarnings` zgłasza zawsze to dzielenie wpisem
+`unbalanced-bracket` (segment `raport`, fragment od elementu z niezamkniętym nawiasem, raz na checkpoint), także gdy żadne id nie zginęło. Każdy element listy „w toku” i „zrobione” zaczyna się od id kroku;
 elementy rozdziela przecinek, a id w jednym elemencie łączą `/`, `+`, `&`, `‖`, `||`, „i” i „oraz”. Element bez id na początku
 (`no-step-id`) i id dalej w elemencie niż na początku (`later-id`) nie wchodzą do `progress.active`; zgłasza je `parseWarnings`.
 Segment `trwa:` nazywa etapy, które trwają teraz (klucz etapu bez `stage_` albo jego etykieta, np. `spec_review`, `prototyp`); liczy się
@@ -631,7 +632,7 @@ Endpointy:
 | `GET /`, `/index.html` | strona (`assets/index.html` skilla `dashboard`) |
 | `GET /assets/<plik>` | tylko nazwy `[\w-]+.(html\|css\|js\|svg)` z `skills/dashboard/assets/` aktywnych warstw (`LayerSet.skill_files`: późniejsza warstwa wygrywa per plik, dowiązania pomijane); inne = 404 |
 | `GET /api/status[?plan=<rel>]` | kontrakt `schema: 1` (to samo co `show`, z tym samym maskowaniem sekretów, z żywym `version`, `session.url`, `prototype.up`) plus `approvals.here` (bool: nagłówek `Host` żądania jest na liście hostów zgód, czyli loopback albo `--approve-host`; `false` dla hosta z `--read-host`) i `approvals.viewer` (bool: host wyłącznie do odczytu z `--read-host`; wtedy `here` = `false`) oraz `approvals.tokenRequired` (bool: zapis zgody wymaga nagłówka `X-Approve-Token`; `false` przy `--no-approvals`; tylko HTTP, `show` go nie ma; wartość tokenu nigdy nie jest w odpowiedzi); w trybie dwóch gniazd także `approvals.role` (`read`/`approve`), a `here`, `viewer` i `tokenRequired` są z gniazda, nie z `Host` |
-| `GET /api/doc?path=<rel>` | `{path, title, status, mtime, size, truncated, html}`: podgląd `*.md` z `docs/specs`, `docs/plans`, `docs/design`, `docs/domain` i `.skillsync/runs/<run>/`; bez `..`, ścieżek absolutnych, ukrytych katalogów i dowiązań poza listę; limit 2 MB (`truncated`); inne = 404; to celowy podgląd surowy: treść nie przechodzi przez `redact` (inaczej niż `/api/status`) |
+| `GET /api/doc?path=<rel>` | `{path, title, status, mtime, size, truncated, html}`: podgląd `*.md` z `docs/specs`, `docs/plans`, `docs/design`, `docs/domain` i `.skillsync/runs/<run>/`; bez `..`, ścieżek absolutnych, ukrytych katalogów i dowiązań poza listę; limit 2 MB (`truncated`); inne = 404; dokument i cała odpowiedź (także `path` i `title`) są maskowane (`redact`), tak jak `/api/status`; zasady odczytu tekstu niżej |
 | `GET /events` | SSE: `hello {version, heartbeat}` (z `retry: 3000`), `change {version}` po zmianie obserwowanych plików, `ping {version, t}` co 15 s; najwyżej 64 połączenia (dalej 503; w trybie dwóch gniazd osobne udziały: 48 na gnieździe odczytu i 16 na gnieździe zgód, więc urządzenie zapełniające odczyt nie odbierze odświeżania stronie zatwierdzającego); `HEAD /events` = same nagłówki (200, `text/event-stream`), bez strumienia i bez zajmowania miejsca |
 | `GET /api/descriptions` | `descriptions.json` skilla (`{klucz: {title, text}}`) |
 | `GET /healthz` | `{ok: true, version}`; `tokenId` tylko na gnieździe zgód (lub w trybie `--port` z zgodami) |
@@ -662,8 +663,10 @@ przeglądarka wysyła `Host: localhost:<port>`, działa bez flagi (i daje zgody)
 Granica `--read-host`: gwarancja dotyczy zapisu z przeglądarki widza. Serwer odróżnia widza tylko po nagłówku `Host`,
 więc klient, który go podrobi (np. `curl -H 'Host: localhost'` przez tunel), zapisze zgodę; tunel przepisujący `Host` na
 `localhost` daje zapis każdemu widzowi. Serwer ostrzega o tym przy starcie (gdy są hosty `--read-host`, a zgody włączone).
-Przy nieufnych widzach użyj `--no-approvals`. Model dwóch instancji dla nieufnych widzów: prowadzący na loopbacku ze zgodami, widzowie na osobnej instancji `skillsync dashboard serve <projekt> --port <inny port> --no-approvals --read-host <host>` (bez zapisu, ten sam projekt; wspólny jest tylko `approvals.jsonl`). Widz z odczytem widzi też podgląd dokumentów `/api/doc` bez maskowania
-sekretów (surowy podgląd). Wartości `--read-host` i `--approve-host` to same nazwy hostów: z portem, nawiasami, `/` albo
+**Odczyt tekstu i maskowanie.** Tekst planów, speców, checkpointów, nagłówków i dokumentów podglądu czyta `dashboard.read_masked`: bajty są dekodowane (`decode_text`: UTF-16 z BOM jako UTF-16, reszta jako UTF-8 z zastępnikiem dla błędnych bajtów; znaki NUL są zdejmowane, bo renderer też je zdejmuje), cały tekst jest maskowany (`common.redact`), dopiero potem parsowany, renderowany i przycinany do limitu bajtów (czytnik bierze zapas 4 KiB ponad limit, żeby sekret na granicy był maskowany w całości). Odpowiedź `/api/doc` jest maskowana jeszcze raz w całości, tak jak `/api/status`. Maskowanie to heurystyka, nie gwarancja: obejmuje wzorce kluczowe (`password`, `token`, `secret`, `api_key`, `secret_key`, `access_key`, `private_key`, `authorization`, `bearer`, dane w adresach URL, także pary JSON w cudzysłowach) i wartości zmiennych środowiska o nazwach z tych słów, co najmniej 8 znaków; sekretów nie trzyma się w dokumentach projektu.
+
+Przy nieufnych widzach użyj `--no-approvals`. Model dwóch instancji dla nieufnych widzów: prowadzący na loopbacku ze zgodami, widzowie na osobnej instancji `skillsync dashboard serve <projekt> --port <inny port> --no-approvals --read-host <host>` (bez zapisu, ten sam projekt; wspólny jest tylko `approvals.jsonl`). Widz z odczytem widzi też podgląd dokumentów `/api/doc`; jest maskowany jak `/api/status`, ale maskowanie jest
+heurystyką (patrz wyżej), więc nieufni widzowie dostają `--no-approvals`. Wartości `--read-host` i `--approve-host` to same nazwy hostów: z portem, nawiasami, `/` albo
 białym znakiem start kończy się `BLOCKED` (exit 2).
 
 Pola `approvals.here` i `approvals.viewer` dodaje wyłącznie serwer; `dashboard show` z wiersza poleceń ich nie ma (brak
