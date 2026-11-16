@@ -6,10 +6,19 @@ Without a handler the console default handler ends the process at once (exit cod
 handler installed here `SIGBREAK` takes the same road as Ctrl+C: `KeyboardInterrupt` in the main thread, then the `finally` of the server
 (state files removed, sockets closed) and exit code 0.
 
-Nothing here runs on other systems: `install_sigbreak()` returns None unless `sys.platform == 'win32'` (Linux and macOS keep their handlers as they were).
+Closing the console window (and "End task" of Task Manager for a console application, per the Windows documentation) is a third way: the system sends
+`CTRL_CLOSE_EVENT` to a handler registered with `SetConsoleCtrlHandler`, in a NEW thread, waits at most the "hung application timeout"
+(`SPI_GETHUNGAPPTIMEOUT`, 5000 ms by default) and ends the process as soon as the handler returns TRUE. Without a handler the default handler ends it at
+once (measured: exit code 0xC000013A, the state file stays). `install_console_close(cleanup_done)` registers such a handler: it hands the stop to the main
+thread by the road of `SIGBREAK` and returns TRUE only after the server has finished its cleanup (`cleanup_done`) or the wait ran out.
+
+Nothing here runs on other systems: `install_sigbreak()` and `install_console_close()` return None unless `sys.platform == 'win32'` (Linux and macOS keep
+their handlers as they were).
 """
 from __future__ import annotations
 
+import _thread
+import ctypes
 import signal
 import sys
 import threading
@@ -42,3 +51,90 @@ def install_sigbreak():
         return None
     _stopped_at = None
     return (previous if previous is not None else signal.SIG_DFL,)   # None = a handler set outside Python: fall back to the default on restore
+
+
+CTRL_CLOSE_EVENT = 2
+SPI_GETHUNGAPPTIMEOUT = 0x0078
+DEFAULT_HUNG_APP_MS = 5000
+MAX_WAIT_SECONDS = 4.0     # the wait for the cleanup; the system limit minus one second when that is lower
+MIN_WAIT_SECONDS = 0.5
+_console = None            # the live registration (module level: the ctypes callback must not be collected while it is registered)
+
+
+def close_wait_seconds(limit_ms):
+    """How long the handler of the closed console waits for the cleanup: `min(4 s, limit - 1 s)`, never below half a second. `limit_ms` is the system
+    "hung application timeout" (None or a nonsense value: the default 5000 ms)."""
+    if not isinstance(limit_ms, int) or isinstance(limit_ms, bool) or limit_ms <= 0:
+        limit_ms = DEFAULT_HUNG_APP_MS
+    return max(MIN_WAIT_SECONDS, min(MAX_WAIT_SECONDS, limit_ms / 1000.0 - 1.0))
+
+
+def _hung_app_timeout_ms():
+    try:
+        value = ctypes.c_uint(0)
+        if ctypes.windll.user32.SystemParametersInfoW(SPI_GETHUNGAPPTIMEOUT, 0, ctypes.byref(value), 0):
+            return int(value.value)
+    except (AttributeError, OSError, ValueError):
+        pass
+    return DEFAULT_HUNG_APP_MS
+
+
+class ConsoleClose:
+    """A registered `CTRL_CLOSE_EVENT` handler. `uninstall()` removes it (idempotent)."""
+
+    def __init__(self, cleanup_done, wait_seconds):
+        self.cleanup_done = cleanup_done
+        self.wait_seconds = wait_seconds
+        self.callback = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_uint)(self._handle)   # kept in `self` and in the module: alive until `uninstall`
+        self.active = False
+
+    def _handle(self, event):
+        """Runs in a thread made by the system (not the main one). Any exception is swallowed: the process ends right after this returns anyway, and
+        an exception here must not skip the wait for the cleanup."""
+        if event != CTRL_CLOSE_EVENT:
+            return 0
+        try:
+            _thread.interrupt_main(signal.SIGBREAK)   # the SIGBREAK handler of the main thread raises `KeyboardInterrupt`: the road of Ctrl+C
+        except BaseException:   # noqa: BLE001 - nothing may escape into the system thread
+            pass
+        try:
+            self.cleanup_done.wait(self.wait_seconds)
+        except BaseException:   # noqa: BLE001
+            pass
+        return 1
+
+    def uninstall(self):
+        global _console
+        if self.active:
+            self.active = False
+            try:
+                ctypes.windll.kernel32.SetConsoleCtrlHandler(self.callback, 0)
+            except (AttributeError, OSError):
+                pass
+        if _console is self:
+            _console = None
+
+
+def install_console_close(cleanup_done):
+    """Register the handler of the closed console window: Windows only, and only when `install_sigbreak()` has put its handler in (the stop is handed to
+    the main thread by that road). `cleanup_done` is a `threading.Event` that the server sets when its cleanup is finished. Returns a `ConsoleClose`
+    (call `uninstall()` at the end of the server) or None when nothing was registered."""
+    global _console
+    if sys.platform != 'win32' or signal.getsignal(signal.SIGBREAK) is not _stop_on_sigbreak:
+        return None
+    try:
+        registration = ConsoleClose(cleanup_done, close_wait_seconds(_hung_app_timeout_ms()))
+        if not ctypes.windll.kernel32.SetConsoleCtrlHandler(registration.callback, 1):
+            return None
+    except (AttributeError, OSError, ValueError):
+        return None
+    registration.active = True
+    _console = registration
+    return registration
+
+
+def cleanup_finished(registration, cleanup_done):
+    """The last thing a server does in its `finally`: tell the handler of the closed console that the cleanup is done and take the handler out."""
+    cleanup_done.set()
+    if registration is not None:
+        registration.uninstall()

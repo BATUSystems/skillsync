@@ -2483,12 +2483,14 @@ def serve_prototypes(root, manifest, args, err=None):
     if not args.no_source_writes and not source_writes:
         notes.append(f'{_relative(settings["root"], repo)} nie leży w kopii roboczej gita: przywracanie z UI wyłączone '
                      '(source writes off)')
-    previous = previous_break = None
+    previous = previous_break = console_close = None
+    cleanup_done = threading.Event()
     try:
         # The handler goes in first and the whole start is under the `try`: a SIGINT/SIGTERM between the announcement
         # and `serve_forever` (a Ctrl+C right after the address line) stops the server cleanly instead of a traceback.
         previous = _stop_on_sigterm()
         previous_break = stopsignal.install_sigbreak()   # Windows: CTRL_BREAK (SIGBREAK) stops like Ctrl+C; None on other systems
+        console_close = stopsignal.install_console_close(cleanup_done)   # Windows: closing the console window waits for the cleanup below
         for warning in notes:
             err.write(f'ostrzeżenie: {warning}\n')
         err.write(f'Serwer prototypów: {instance.url} (Ctrl+C kończy)\n')
@@ -2504,8 +2506,11 @@ def serve_prototypes(root, manifest, args, err=None):
         try:
             instance.server_close()   # removes the login-link state file: a second CTRL_BREAK is still ignored (stopsignal) until this is done
         finally:
-            if previous_break is not None:
-                signal.signal(signal.SIGBREAK, previous_break[0])
+            try:
+                if previous_break is not None:
+                    signal.signal(signal.SIGBREAK, previous_break[0])
+            finally:
+                stopsignal.cleanup_finished(console_close, cleanup_done)   # last: a closed console window waits for this
     return {'status': 'PASS', 'url': instance.url, 'root': _relative(settings['root'], repo), 'stopped': True}
 
 
