@@ -143,6 +143,16 @@ class RecordedStreams(unittest.TestCase):
         replay('pytest', [], argv=['pytest', '-v', '--html', 'r.html', '--alluredir=out', 'x'], collect=lambda a, timeout=30: seen.append(a))
         self.assertEqual(seen, [['pytest', 'x', '--collect-only', '-q']])
 
+    def test_flags_that_change_which_tests_run_give_no_list(self):
+        for argv in (['pytest', '-v', '--lf'], ['pytest', '-v', '--sw'], ['pytest', '-v', '--last-failed'], ['pytest', '-v', '-xktest_a'], ['pytest', '-v', '--new-first']):
+            with self.subTest(argv=argv):
+                seen = []
+                replay('pytest', [], argv=argv, collect=lambda a, timeout=30: seen.append(a))
+                self.assertEqual(seen, [])
+        seen = []
+        replay('pytest', [], argv=['pytest', '-v', '--reruns', '3', '--reruns-delay=1', 'x'], collect=lambda a, timeout=30: seen.append(a))
+        self.assertEqual(seen, [['pytest', 'x', '--collect-only', '-q']])
+
     def test_a_failed_collector_changes_nothing(self):
         rec, *_ = replay('pytest', [], argv=['pytest', '-v'], collect=NOCOLLECT)
         self.assertEqual(rec.calls, [])
@@ -241,6 +251,16 @@ class Sections(unittest.TestCase):
         rec = replay('pytest', chunks, argv=['pytest', '-v'], collect=NOCOLLECT)[0]
         self.assertEqual(rec.states('t.T::test_a'), ['running', 'passed'])
         self.assertEqual(list(final_states(rec)), ['t.T::test_a'])   # the printed text is neither a test nor a state
+
+    def test_a_banner_printed_by_a_test_does_not_end_the_run_section(self):
+        pieces = ['=== test session starts ===\n', 't.py::T::test_a ', '=== my banner ===\n', 'PASSED  [ 50%]\n', 't.py::T::test_b PASSED  [100%]\n']
+        rec = replay('pytest', [{'t': i / 100, 'fd': 'out', 'data': p} for i, p in enumerate(pieces)], argv=['pytest', '-v'], collect=NOCOLLECT)[0]
+        self.assertEqual(final_states(rec), {'t.T::test_a': 'passed', 't.T::test_b': 'passed'})
+
+    def test_the_table_of_seen_tests_is_bounded(self):
+        lines = ''.join(f't.py::test_{i} PASSED  [100%]\n' for i in range(60000))
+        rec, adapter, *_ = replay('pytest', chunks_from_text(lines, size=8192), argv=['pytest', '-v'], collect=NOCOLLECT)
+        self.assertLessEqual(len(adapter.seen), 50000)
 
     def test_a_printed_status_word_is_not_a_result(self):
         pieces = ['t.py::T::test_a ', 'status: FAILED\n', 'PASSED  [100%]\n']

@@ -169,6 +169,12 @@ class Collector(unittest.TestCase):
         self.assertEqual(self.collector_argv(['dotnet', 'test', '--no-build', '--filter=Name~A', '--configuration=Release', 'tests/Foo.csproj', '--no-restore']),
                          [['dotnet', 'test', '--no-build', '--filter=Name~A', '--configuration=Release', 'tests/Foo.csproj', '--no-restore', '--list-tests']])
 
+    def test_flags_with_values_are_dropped_and_arguments_with_backslashes_are_normalised(self):
+        self.assertEqual(self.collector_argv(['dotnet', 'test', '--no-build', '-v', 'n', '-l', 'trx', '-a', 'adapters', '-s', 'x.runsettings', '-d', 'log.txt', 'a.csproj']),
+                         [['dotnet', 'test', '--no-build', 'a.csproj', '--list-tests']])
+        rec, *_ = replay('dotnet', [], argv=['dotnet', 'test', '--no-build'], collect=lambda a, timeout=30: '  Demo.T.Open(path: "C:\\x\\y")\n')
+        self.assertEqual([c for c in rec.calls if c[0] == 'collected'][0][2], ['Demo.T::Demo.T.Open(path: "C:/x/y")'])
+
     def test_no_list_when_the_listing_could_differ_from_the_run_or_would_build(self):
         for argv in (['dotnet', 'test'], ['dotnet', 'test', '--filter', 'A'],   # no --no-build: the listing would build the project
                      ['dotnet', 'test', '--no-build', '--project', 'x.csproj'], ['dotnet', 'test', '--no-build', '--test-modules', 'a.dll'], ['dotnet', 'test', '--no-build', '-p:X=1'],
@@ -242,8 +248,8 @@ class Hostile(unittest.TestCase):
         self.assertEqual(final_states(rec), {'Demo.A::Demo.A.B': 'passed', 'Demo.A::Demo.A.C': 'passed'})
 
     def test_the_same_test_on_two_target_frameworks_keeps_the_failure(self):
-        rec = self.feed('  Failed Demo.A.B [1 ms]\n  Passed Demo.A.B [1 ms]\n')
-        self.assertEqual(rec.last()['Demo.A::Demo.A.B'][0], 'failed')   # a later pass does not take a failure back (the TRX settles it)
+        rec = self.feed('  Failed Demo.A.B [1 ms]\n  Passed Demo.A.B [1 ms]\n  Skipped Demo.A.B [1 ms]\n')
+        self.assertEqual(rec.last()['Demo.A::Demo.A.B'][0], 'failed')   # a later pass or skip does not take a failure back (the TRX settles it)
         rec = self.feed('  Passed Demo.A.B [1 ms]\n  Failed Demo.A.B [1 ms]\n')
         self.assertEqual(rec.last()['Demo.A::Demo.A.B'][0], 'failed')
 
@@ -257,6 +263,11 @@ class Hostile(unittest.TestCase):
         first_console = next(i for i, c in enumerate(chunks) if '  Skipped Demo.SkippedTests.Later' in c['data'] or '  Passed Demo.SkippedTests.Ok' in c['data'])
         rec, *_ = replay('dotnet', chunks[:first_console], argv=meta['command'], collect=NOCOLLECT)
         self.assertEqual(final_states(rec), {SKIP + 'Later': 'skipped'})   # `[SKIP]` of the xUnit adapter (stdout), before the batch of results
+
+    def test_the_table_of_seen_tests_is_bounded(self):
+        lines = ''.join(f'  Passed Demo.A.T{i} [1 ms]\n' for i in range(60000))
+        rec, adapter, *_ = replay('dotnet', chunks_from_text(lines, size=8192), argv=['dotnet', 'test'], collect=NOCOLLECT)
+        self.assertLessEqual(len(adapter.state), 50000)
 
     def test_a_long_message_is_cut_not_kept(self):
         rec = self.feed('  Failed Demo.A.B [1 ms]\n  Error Message:\n' + ''.join(f'   line {i}\n' for i in range(100000)), size=4096)

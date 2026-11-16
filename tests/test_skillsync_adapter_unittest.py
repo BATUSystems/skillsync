@@ -43,7 +43,7 @@ class Registration(unittest.TestCase):
         for argv, expected in ((['python', '-m', 'unittest', '-v'], True), (['python', '-m', 'unittest', '-vv', 'x'], True), (['python', '-m', 'unittest', '--verbose'], True),
                                (['python', '-m', 'unittest', '-bv'], True), (['python', '-m', 'unittest'], False), (['python', '-m', 'unittest', 'discover'], False),
                                (['python', '-m', 'unittest', '--version'], False), (['python', '-v', '-m', 'unittest'], False), (['python', '-v', '-m', 'unittest', '-v'], True),
-                               (['pytest', '-v'], False)):
+                               (['pytest', '-v'], False), (['python', '-m', 'unittest', '-kview'], False), (['python', '-m', 'unittest', '-bv'], True), (['python', '-m', 'unittest', '-fv'], True)):
             with self.subTest(argv=argv):
                 self.assertEqual(cls().accepts(argv), expected)
 
@@ -211,6 +211,19 @@ class LooksLikeUnittest(unittest.TestCase):
         lines = ['test_s (m.C.test_s) ... ', "  test_s (m.C.test_s) [step one] (i=1) ... FAIL", '  test_s (m.C.test_s) [only msg] ... FAIL', '  test_s (m.C.test_s) (k=2) ... ok']
         rec = replay('unittest', chunks_from_text('\n'.join(lines) + '\n', size=6, fd='err'), argv=['python', '-m', 'unittest', '-v'])[0]
         self.assertEqual(final_states(rec), {'m.C::test_s': 'failed', 'm.C::test_s [step one] (i=1)': 'failed', 'm.C::test_s [only msg]': 'failed', 'm.C::test_s (k=2)': 'passed'})
+
+    def test_subtest_parameters_may_contain_parentheses_and_brackets(self):
+        lines = ['test_s (m.C.test_s) ... ', '  test_s (m.C.test_s) (pair=(1, 2)) ... FAIL', '  test_s (m.C.test_s) [a] b]] (k=[1]) ... FAIL', '', '=' * 70,
+                 'FAIL: test_s (m.C.test_s) (pair=(1, 2))', '-' * 70, 'AssertionError: no', '', '-' * 70, 'Ran 1 test in 0s']
+        rec = replay('unittest', chunks_from_text('\n'.join(lines) + '\n', size=7, fd='err'), argv=['python', '-m', 'unittest', '-v'], exit_code=1)[0]
+        last = rec.last()
+        self.assertEqual(last['m.C::test_s (pair=(1, 2))'], ('failed', 'AssertionError: no'))
+        self.assertEqual(last['m.C::test_s'][0], 'failed')   # no test is left `running`
+        self.assertNotIn('running', {v[0] for v in last.values()})
+
+    def test_a_run_interrupted_before_an_exit_code_closes_the_started_test(self):
+        rec = replay('unittest', [{'t': 0, 'fd': 'err', 'data': 'test_a (m.C.test_a) ... '}], argv=['python', '-m', 'unittest', '-v'], exit_code=None)[0]
+        self.assertEqual(rec.last()['m.C::test_a'][0], 'failed')
 
     def test_the_old_qualified_shape_and_setup_blocks(self):
         lines = ['test_init (m.A) ... ok', 'test_init (m.B) ... FAIL', '', '=' * 70, 'ERROR: setUpClass (m.C)', '-' * 70, 'Traceback (most recent call last):',

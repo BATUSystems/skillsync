@@ -80,10 +80,10 @@ class PytestAdapter(Adapter):
         return ANSI.sub('', text[:MAX_LINE])
 
     # -- the list of the tests to come ------------------------------------------------------------------------------------------------------------------
-    DROP_VALUE = ('-n', '--numprocesses', '--maxfail', '--junit-xml', '--junitxml', '-p', '--tb', '-W', '--durations', '--basetemp', '--html', '--alluredir',
+    DROP_VALUE = ('-n', '--numprocesses', '--reruns', '--reruns-delay', '--maxfail', '--junit-xml', '--junitxml', '-p', '--tb', '-W', '--durations', '--basetemp', '--html', '--alluredir',
                   '--json-report-file', '--report-log', '--log-file', '--cov', '--cov-report', '--timeout', '--color', '--rootdir-ignored')
     KEEP_VALUE = ('-k', '-m', '--ignore', '--ignore-glob', '--deselect', '-c', '--rootdir', '--confcutdir', '-o', '--override-ini')
-    DROP_FLAG = re.compile(r'^(-[vqxslr]\w*|--verbose|--quiet|--exitfirst|--lf|--ff|--nf|--sw|--no-header|--no-summary|--capture=\S+|--tb=\S+|--color=\S+|--durations=\S+|'
+    DROP_FLAG = re.compile(r'^(-[vqxsl]+|-r[a-zA-Z]+|--verbose|--quiet|--exitfirst|--ff|--no-header|--no-summary|--capture=\S+|--tb=\S+|--color=\S+|--durations=\S+|'
                            r'-n\S+|--maxfail=\S+|--junit-xml=\S+|--junitxml=\S+|-p\S+|--timeout=\S+|--cov\S*|-W\S+|--basetemp=\S+|--html=\S+|--alluredir=\S+|--log-file=\S+|'
                            r'--report-log=\S+|--json-report\S*|--reruns\S*|-rA|-ra)$')
 
@@ -111,6 +111,8 @@ class PytestAdapter(Adapter):
                     i += 1
                 else:
                     return None
+            elif name in ('--lf', '--last-failed', '--sw', '--stepwise', '--nf', '--new-first', '--sw-skip', '--stepwise-skip', '--failed-first'):
+                return None   # these change WHICH tests run: a plain listing would show more
             elif name in self.DROP_VALUE and '=' not in word:
                 i += 1
             elif self.DROP_FLAG.match(word):
@@ -193,8 +195,10 @@ class PytestAdapter(Adapter):
         elif re.match(r'^[\d\w ,]*(passed|failed|error|skipped|deselected|xfailed|xpassed|warnings?|no tests ran).* in [\d.]+s', title):
             self.finished = True
             self.section = 'other'
+        elif re.match(r'^(failures|errors|passes|xfailures|xpasses|warnings summary|slowest .*|.*warnings? summary.*|.*captured .*)$', title):
+            self.section = 'other'   # FAILURES, ERRORS, warnings summary...: text of tests, never results
         else:
-            self.section = 'other'   # FAILURES, ERRORS, warnings summary, captured output...: text of tests, never results
+            return False   # any other `=== text ===` line is text printed by a test (a banner): not a section change
         return True
 
     def feed(self, stream, text, ctx):
@@ -213,7 +217,7 @@ class PytestAdapter(Adapter):
                 kind = summary.group('kind')
                 ident, name, group = self._id(summary.group('node'))
                 msg = (summary.group('msg') or '').strip() or None
-                if kind.startswith('SUBFAILED'):
+                if kind.startswith('SUBFAILED') and (ident in self.seen or len(self.seen) < MAX_SEEN):
                     self.seen[ident] = 'failed'
                     ctx.emit.test(ident, name, 'failed', group=group, msg=('sub-test ' + kind[9:] + ': ' + msg) if msg else 'sub-test failed')
                 elif msg and self.seen.get(ident) in ('failed', 'running', None) and (ident in self.seen or len(self.seen) < MAX_SEEN):

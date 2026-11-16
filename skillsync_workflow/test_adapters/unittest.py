@@ -22,7 +22,7 @@ from . import Adapter, register
 MAX_LINE = 2000   # longer lines are cut before matching (a regex on a megabyte line must not stall the reader)
 MAX_SEEN = 50000
 ANSI = re.compile(r'\x1b\[[0-9;?]*[A-Za-z]')
-SUB = r'(?P<sub>(?: \[[^\]]*\])?(?: \([^)]*\))?)'
+SUB = r'(?P<sub>(?: \[.*?\])?(?: \(.*?\))?)'   # lazy: the parameters may hold `)` and `]` (`(pair=(1, 2))`); the line is cut at MAX_LINE first
 # `test_x (pkg.mod.Class.test_x)` + optional sub-test text + ` ... ` + the rest (the result, or nothing while the test runs)
 HEAD = re.compile(r'^(?P<indent> *)(?P<name>[^\s(][^\s]*) \((?P<qual>[\w.]+)\)' + SUB + r' \.\.\. ?(?P<rest>.*)$')
 PENDING = re.compile(r'^(?P<name>[^\s(][^\s]*) \((?P<qual>[\w.]+)\)$')   # a test with a docstring: the name is on its own line
@@ -88,7 +88,7 @@ class UnittestAdapter(Adapter):
         if 'unittest' not in words:
             return False
         for word in words[words.index('unittest') + 1:]:   # the flags of unittest itself, not the `-v` of the interpreter
-            if word == '--verbose' or (word.startswith('-') and not word.startswith('--') and 'v' in word[1:]):
+            if word == '--verbose' or re.fullmatch(r'-[vqfcb]*v[vqfcb]*', word):
                 return True
         return False   # without -v unittest prints dots: no names, nothing to adapt
 
@@ -190,7 +190,7 @@ class UnittestAdapter(Adapter):
     def end(self, ctx, exit_code, output, reports):
         if self.block is not None:   # the output ended inside a block: report what was read
             self._close_block(ctx)
-        if exit_code not in (None, 0) and not self.ran:
+        if exit_code != 0 and not self.ran:   # None (interrupted before an exit code) counts as not successful
             # killed or interrupted: a test started and never finished did not pass (with a summary printed nothing is invented)
             for ident, (label, group) in list(self.open.items()):
                 if self.seen.get(ident) == 'running':

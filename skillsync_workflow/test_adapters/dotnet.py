@@ -86,7 +86,7 @@ class DotnetAdapter(Adapter):
         words = [str(a) for a in argv]
         if not self._is_test_command(words):
             return None
-        out, i, build_off = [], words.index('test') + 1, False
+        out, i, build_off = [], next(k for k, w in enumerate(words) if re.sub(r'\.(exe|dll)$', '', w.replace('\\', '/').rsplit('/', 1)[-1].lower()) == 'dotnet') + 2, False
         out = words[:i]
         while i < len(words):
             word = words[i]
@@ -129,7 +129,7 @@ class DotnetAdapter(Adapter):
             if found:
                 ident = to_id(found.group('name'))
                 if ident:
-                    names.append(ident[0])
+                    names.append(ident[0].replace('\\', '/'))   # the event writer normalises the ids of `test` events the same way
         if names:
             ctx.emit.collected(len(names), names[:MAX_COLLECTED])
 
@@ -138,7 +138,7 @@ class DotnetAdapter(Adapter):
         if ident is None:
             return None
         ident, label, group = ident
-        if self.state.get(ident) == 'failed' and state == 'passed':
+        if self.state.get(ident) == 'failed' and state in ('passed', 'skipped'):
             return ident   # the same test twice (several target frameworks): a failure is not taken back by a later pass; the TRX settles it
         if self.state.get(ident) == state and not msg:
             return ident
