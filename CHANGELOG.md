@@ -12,6 +12,15 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Fixed
+
+- Prototype E2E environment (`tests/e2e/prototype/env.py`): the start time of a process read from `ps` is no longer moved by an hour in the repeated local hour of a DST change or by a zone change (`lstart` is resolved against `etime`); `chrome.pid` is written atomically (temporary file, then `os.replace`); an unreadable PID file is removed with a message on stderr instead of silently; a plain-number PID file of an unknown kind (not `chrome*`, `static-*`, `serve-*`) is kept, reported on stderr and never signalled (it does not count as a survivor).
+- Prototype E2E environment on Windows: every command (`prepare`, `chrome`, `stop`) ends at once with `BLOCKED` on stderr and exit code 2 instead of a stack trace half way through a start; Windows was never supported there.
+
+### Changed
+
+- Tests: the E2E cleanup suite gains parsing of macOS-style `ps` rows from text (BSD `stat`, `etime`, one-digit day), the DST and zone tests, and a stranger-group case where the listed helpers carry another start time. `tests/skip-baseline.json`: nine more `posix-only` entries for `windows-latest/copy`.
+
 ## [1.6.0] - 2026-11-16
 
 ### Added

@@ -1,6 +1,7 @@
 """Cleanup of the prototype E2E environment (`tests/e2e/prototype/env.py`): the processes of a run (Chrome and its helpers, the servers) are
 stopped by identity (pid, start time, uid) and by the tree listed before the first signal, never by name, on Linux and macOS, without
 `/proc` as the only source and without a real Chrome (a stand-in binary with helpers that leave the group or are re-parented)."""
+import calendar
 import contextlib
 import importlib.util
 import io
@@ -81,7 +82,42 @@ def alive(pid):
     return row is not None and not row['state'].startswith('Z')
 
 
-ENV = load_env_module() if os.name != 'nt' else None
+ENV = load_env_module()
+
+
+class E2eEnvWindowsGuard(unittest.TestCase):
+    """On Windows the environment ends at once with a plain message: no Chrome start, no signal, no stack trace."""
+
+    def test_every_command_ends_with_the_unsupported_exit_and_a_message_and_starts_nothing(self):
+        for argv in (['prepare', 'w', 'lib', '1', '2', '3'], ['chrome', 'env.json', 'chrome'], ['stop', 'env.json']):
+            with self.subTest(argv[0]), mock.patch.object(ENV.sys, 'platform', 'win32'), contextlib.redirect_stderr(io.StringIO()) as err, \
+                    mock.patch.object(ENV.subprocess, 'Popen', side_effect=AssertionError('nothing may be started')), \
+                    mock.patch.object(ENV.subprocess, 'run', side_effect=AssertionError('nothing may be run')):
+                self.assertEqual(ENV.main(argv), ENV.UNSUPPORTED_EXIT)
+            self.assertIn('not supported on Windows', err.getvalue())
+            self.assertIn('BLOCKED', err.getvalue())
+            self.assertNotIn('Traceback', err.getvalue())
+
+    def test_the_functions_refuse_on_windows_too(self):
+        with mock.patch.object(ENV.sys, 'platform', 'win32'):
+            with self.assertRaises(ENV.Unsupported):
+                ENV.start_chrome({'workdir': 'w', 'chromePort': 1}, 'chrome')
+            with self.assertRaises(ENV.Unsupported):
+                ENV.stop_all({'workdir': 'w'})
+
+    def test_other_systems_are_not_refused(self):
+        for platform in ('linux', 'darwin'):
+            with mock.patch.object(ENV.sys, 'platform', platform):
+                ENV.require_supported()
+
+    def test_the_script_itself_ends_with_exit_2_and_no_traceback_when_the_system_is_windows(self):
+        """A real interpreter running the script as `__main__` (on Windows the platform is genuine, elsewhere it is set after the standard library was imported)."""
+        code = ('import runpy, shutil, subprocess, urllib.request, secrets, sys; sys.platform = "win32"; sys.argv = [sys.argv[1], "stop", "does-not-exist.json"]; '
+                'runpy.run_path(sys.argv[0], run_name="__main__")')
+        result = subprocess.run([sys.executable, '-c', code, str(ENV_PATH)], capture_output=True, text=True, timeout=60)
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn('not supported on Windows', result.stderr)
+        self.assertNotIn('Traceback', result.stderr)
 
 
 @unittest.skipIf(os.name == 'nt', 'needs POSIX process groups and ps')
@@ -532,6 +568,130 @@ class E2eEnvCleanup(unittest.TestCase):
         self.assertFalse(ENV.same_identity(row, dict(record, uid=record['uid'] + 1)))
         self.assertFalse(ENV.same_identity(row, dict(record, start=record['start'] - 60)))
         self.assertFalse(ENV.same_identity(None, record))
+
+
+    def test_an_unreadable_pid_file_is_removed_with_a_message(self):
+        pid_file = self.work / 'chrome.pid'
+        for text in ('not a number', '{"pid": "x"}', ''):
+            with self.subTest(text):
+                pid_file.write_text(text)
+                err = io.StringIO()
+                with contextlib.redirect_stderr(err):
+                    self.assertEqual(ENV.stop_all(self.env), {})
+                self.assertFalse(pid_file.exists())
+                self.assertIn('chrome.pid: not a PID file this module can read', err.getvalue())
+
+    def test_a_plain_number_file_of_an_unknown_kind_is_kept_reported_and_nothing_is_signalled(self):
+        sentinel = self.sentinel()
+        pid_file = self.work / 'other.pid'
+        pid_file.write_text(str(sentinel.pid))
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), mock.patch.object(ENV, '_signal', side_effect=AssertionError('nothing may be signalled')), \
+                mock.patch.object(ENV, '_signal_group', side_effect=AssertionError('nothing may be signalled')):
+            survivors = ENV.stop_all(self.env)
+        self.assertEqual(survivors, {})   # not a survivor: nothing of ours was proved
+        self.assertTrue(pid_file.exists())
+        self.assertTrue(alive(sentinel.pid))
+        self.assertIn('other.pid: a plain-number PID file of an unknown kind', err.getvalue())
+
+    def test_a_json_record_is_judged_by_identity_whatever_the_file_is_called(self):
+        sentinel = self.sentinel()
+        pid_file = self.work / 'other.pid'
+        pid_file.write_text(json.dumps(dict(ENV.identity_of(ENV.process_table()[sentinel.pid]), start=0)))   # another start time: not ours
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self.assertEqual(ENV.stop_all(self.env), {})
+        self.assertFalse(pid_file.exists())
+        self.assertTrue(alive(sentinel.pid))
+        self.assertIn('not the recorded process', err.getvalue())
+
+    def test_the_pid_file_is_written_atomically_by_the_start_and_an_interrupted_write_leaves_the_old_text(self):
+        pid_file = self.work / 'chrome.pid'
+        with mock.patch.object(ENV, '_write_atomic', wraps=ENV._write_atomic) as spy:
+            self.start_fake_chrome()
+        self.assertEqual(spy.call_args_list[0].args[0], pid_file)
+        self.assertEqual(json.loads(spy.call_args_list[0].args[1])['pid'], json.loads(pid_file.read_text())['pid'])
+        before = pid_file.read_text()
+        with mock.patch.object(ENV.os, 'replace', side_effect=OSError('interrupted')), self.assertRaises(OSError):
+            ENV._write_atomic(pid_file, 'half a record')
+        self.assertEqual(pid_file.read_text(), before)
+        ENV.stop_all(self.env)
+
+    def with_zone(self, zone):
+        previous = os.environ.get('TZ')
+        def restore():
+            if previous is None:
+                os.environ.pop('TZ', None)
+            else:
+                os.environ['TZ'] = previous
+            time.tzset()
+        self.addCleanup(restore)
+        os.environ['TZ'] = zone
+        time.tzset()
+
+    def test_the_start_is_not_moved_by_an_hour_in_the_repeated_local_hour_of_a_dst_change(self):
+        self.with_zone('Europe/Warsaw')
+        text = 'Sun Oct 25 02:30:00 2026'   # happens twice: 00:30 UTC (CEST) and 01:30 UTC (CET)
+        first, second = calendar.timegm((2026, 10, 25, 0, 30, 0)), calendar.timegm((2026, 10, 25, 1, 30, 0))
+        for expected in (first, second):
+            with self.subTest(expected=expected):
+                now = expected + 600
+                self.assertEqual(ENV._parse_start(text, 600, now), expected)
+
+    def test_the_start_does_not_depend_on_the_zone_the_text_was_read_in_when_etime_is_known(self):
+        instant = calendar.timegm((2026, 7, 1, 10, 0, 0))
+        for zone in ('UTC', 'Europe/Warsaw', 'America/New_York', 'Asia/Kolkata'):
+            with self.subTest(zone=zone):
+                self.with_zone(zone)
+                local = time.strftime('%a %b %d %H:%M:%S %Y', time.localtime(instant))
+                self.assertEqual(ENV._parse_start(local, 3661, instant + 3661), instant)
+
+    def test_rows_of_a_macos_style_ps_are_parsed(self):
+        self.with_zone('Europe/Warsaw')
+        now = int(time.mktime(time.strptime('Mon Nov 16 09:12:07 2026', '%a %b %d %H:%M:%S %Y')))
+        text = '\n'.join([
+            '    1     0     1     0 Ss    12-03:04:05 Mon Nov  2 08:15:01 2026',       # launchd, a one-digit day with two spaces
+            '  412     1   412   501 Ss+      01:21:57 Mon Nov 16 07:50:10 2026',      # a foreground session leader
+            '  900   412   900   501 S+          00:07 Mon Nov 16 09:12:00 2026',
+            '  901   412   900   501 Z          00:07 Mon Nov 16 09:12:00 2026',
+            '',
+        ])
+        table, unreadable = ENV.parse_ps_table(text, now)
+        self.assertEqual(unreadable, 0)
+        self.assertEqual(sorted(table), [1, 412, 900, 901])
+        self.assertEqual((table[1]['uid'], table[1]['ppid'], table[1]['state']), (0, 0, 'Ss'))
+        self.assertEqual(table[1]['start'], int(time.mktime(time.strptime('Mon Nov  2 08:15:01 2026', '%a %b %d %H:%M:%S %Y'))))
+        self.assertEqual((table[412]['uid'], table[412]['pgid'], table[412]['state']), (501, 412, 'Ss+'))
+        self.assertEqual(table[900]['start'], now - 7)
+        self.assertTrue(table[901]['state'].startswith('Z'))
+
+    def test_a_row_without_etime_or_with_a_broken_one_is_unreadable_not_guessed(self):
+        now = int(time.time())
+        text = '\n'.join(['  412     1   412   501 S Mon Nov 16 07:50:10 2026',
+                          '  413     1   413   501 S 1:2:3:4 Mon Nov 16 07:50:10 2026',
+                          '  414     1   414   501 S 00:07 Mon Foo 16 07:50:10 2026',
+                          'garbage'])
+        table, unreadable = ENV.parse_ps_table(text, now)
+        self.assertEqual((table, unreadable), ({}, 4))
+
+    def test_members_of_a_stranger_group_listed_with_another_start_time_are_not_signalled(self):
+        stranger = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(600)', 'chrome', '--remote-debugging-port=7'],
+                                    process_group=0, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.spawned.append(stranger)
+        self.wait_listed(stranger.pid)
+        child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(600)'], process_group=stranger.pid,
+                                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.spawned.append(child)
+        self.wait_listed(child.pid)
+        table = ENV.process_table()
+        stale = lambda pid: dict(ENV.identity_of(table[pid]), start=table[pid]['start'] - 3600)   # the numbers were reused: another start time
+        record = dict(stale(stranger.pid), pgid=stranger.pid, members=[stale(child.pid)])
+        (self.work / 'chrome.pid').write_text(json.dumps(record))
+        with contextlib.redirect_stderr(io.StringIO()), mock.patch.object(ENV, '_signal', side_effect=AssertionError('nothing may be signalled')), \
+                mock.patch.object(ENV, '_signal_group', side_effect=AssertionError('nothing may be signalled')):
+            self.assertEqual(ENV.stop_all(self.env), {})
+        self.assertTrue(alive(stranger.pid) and alive(child.pid), 'a process of a stranger was killed')
+        self.assertFalse((self.work / 'chrome.pid').exists())
 
 
 if __name__ == '__main__':

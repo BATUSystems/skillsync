@@ -585,6 +585,10 @@
     "category": "posix-only"
    },
    {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_a_json_record_is_judged_by_identity_whatever_the_file_is_called",
+    "category": "posix-only"
+   },
+   {
     "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_a_member_whose_identity_changed_before_the_signal_is_not_signalled",
     "category": "posix-only"
    },
@@ -594,6 +598,10 @@
    },
    {
     "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_a_plain_number_file_needs_the_expected_command_line_too",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_a_plain_number_file_of_an_unknown_kind_is_kept_reported_and_nothing_is_signalled",
     "category": "posix-only"
    },
    {
@@ -629,6 +637,10 @@
     "category": "posix-only"
    },
    {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_a_row_without_etime_or_with_a_broken_one_is_unreadable_not_guessed",
+    "category": "posix-only"
+   },
+   {
     "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_a_stranger_that_took_the_number_of_the_dead_leader_and_its_group_are_left_alone",
     "category": "posix-only"
    },
@@ -641,6 +653,10 @@
     "category": "posix-only"
    },
    {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_an_unreadable_pid_file_is_removed_with_a_message",
+    "category": "posix-only"
+   },
+   {
     "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_helpers_are_stopped_when_the_leader_was_killed_before_the_stop",
     "category": "posix-only"
    },
@@ -649,11 +665,19 @@
     "category": "posix-only"
    },
    {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_members_of_a_stranger_group_listed_with_another_start_time_are_not_signalled",
+    "category": "posix-only"
+   },
+   {
     "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_orphans_are_only_the_listed_helpers_with_the_matching_identity_and_the_own_user",
     "category": "posix-only"
    },
    {
     "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_pid_files_naming_pid_zero_one_or_negative_are_junk_and_nothing_is_signalled_for_them",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_rows_of_a_macos_style_ps_are_parsed",
     "category": "posix-only"
    },
    {
@@ -673,7 +697,19 @@
     "category": "posix-only"
    },
    {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_the_pid_file_is_written_atomically_by_the_start_and_an_interrupted_write_leaves_the_old_text",
+    "category": "posix-only"
+   },
+   {
     "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_the_proc_fallback_works_when_ps_is_missing",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_the_start_does_not_depend_on_the_zone_the_text_was_read_in_when_etime_is_known",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_the_start_is_not_moved_by_an_hour_in_the_repeated_local_hour_of_a_dst_change",
     "category": "posix-only"
    },
    {

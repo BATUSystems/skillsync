@@ -93,6 +93,16 @@ export TMPDIR="$(mktemp -d -p <katalog spoza repo>)"
 `TMPDIR` ustawiają same testy: `tests/test_skillsync_leakguard.py`, `tests/test_skillsync_closure.py`,
 `tests/test_skillsync_prototype_server.py` i `tests/e2e/prototype/env.py`.
 
+### Środowisko E2E prototypu (`tests/e2e/prototype/env.py`)
+
+`python3 env.py prepare|chrome|stop` przygotowuje projekt testowy, uruchamia Chrome w trybie headless i sprząta po biegu.
+Sprzątanie kończy wyłącznie własne procesy: te z plików `*.pid` w katalogu roboczym i ich potomków wypisanych przed pierwszym
+sygnałem, każdy po tożsamości (pid, czas startu, właściciel), nigdy po nazwie. Plik PID znika dopiero po potwierdzonej śmierci
+procesu; nieczytelny plik jest usuwany z komunikatem na stderr. Plik z samym numerem i nazwą spoza `chrome*`, `static-*`, `serve-*`
+zostaje na miejscu z komunikatem i nic nie jest wtedy sygnalizowane. Czas startu z `ps` (`lstart`, czas lokalny) jest rozstrzygany
+przez `etime`, więc godzina zmiany czasu nie przesuwa go o godzinę. Windows nie jest obsługiwany: każde polecenie kończy się od razu
+komunikatem `BLOCKED` i kodem wyjścia 2, bez startu Chrome.
+
 ### CI
 
 Workflow `ci` (`.github/workflows/ci.yml`) ma zadania:
