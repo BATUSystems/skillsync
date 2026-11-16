@@ -34,3 +34,11 @@ Task `skillsync: link` ma od instalatora (I1, K6 zmienione) postać niezależną
 jego `command` to wpis użytkownika, wrapper albo `self_argv()`, zależnie od maszyny, a `args` to `["link", "${workspaceFolder}"]`.
 Test równoważności zamienia więc `command` na `<ENTRY>` przed liczeniem SHA-256, a zapisany skrót tego pliku dotyczy nowej postaci
 (różnica wobec bazy sprzed warstw ogranicza się do `command` i do usuniętego argumentu `<GEN>/skillsync`; wszystkie pozostałe artefakty bez zmian).
+
+## Wyjątek: `.claude/.gitignore` (hak strażnika poleceń, 1.8.0)
+
+Hak strażnika poleceń (`library/hooks/guard-commands.py`, `guardhook`) jest domyślnie włączony dla projektów z `feature` albo `dispatch`, a `link`
+dopisuje do `.claude/.gitignore` jedną linię `hooks/guard-commands.py` (obok `settings.local.json`; baza sprzed warstw tego hooka nie zna).
+Syntetyczna biblioteka fixtury nie ma skryptu, więc sam skrypt i wpis w `settings.local.json` nie powstają i jest to jedyna różnica w artefaktach.
+Test równoważności wymaga tej linii dokładnie raz i usuwa ją przed liczeniem SHA-256; reszta pliku jest nadal porównywana ze skrótem bazy. Skróty
+w `*.json` NIE były regenerowane (regeneracja na nowym generatorze zniweczyłaby sens testu).

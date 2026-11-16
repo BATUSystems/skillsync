@@ -81,6 +81,28 @@ class MergeModules(unittest.TestCase):
         self.assertTrue(any(reason.startswith('literal:') for reason in found['tests.test_skillsync_dispatch']))
         self.assertNotIn('tests.test_skillsync_unrelated', found)
 
+    def test_generator_or_library_change_selects_the_tests_that_compare_the_link_artefacts(self):
+        """180-O: the baseline tests run `skillsync link` through a subprocess and name no product file, so only this rule selects them."""
+        self.repo.write({'tests/test_skillsync_layers_equivalence.py': "def test():\n    pass\n", 'tests/test_skillsync_worktree_links.py': "def test():\n    pass\n",
+                         'library/hooks/guard-commands.py': 'A = 1\n'})
+        base = self.repo.commit('with the artefact tests')
+        self.repo.write({'library/hooks/guard-commands.py': 'A = 2\n'})
+        self.repo.commit()
+        code, result, _ = self.repo.select(base)
+        found = modules(result)
+        self.assertEqual(code, 0)
+        for name in ('tests.test_skillsync_layers_equivalence', 'tests.test_skillsync_worktree_links'):
+            self.assertTrue(any(reason.startswith('artefact:') for reason in found.get(name, [])), found)
+        self.assertNotIn('tests.test_skillsync_unrelated', found)
+
+    def test_a_change_outside_the_artefact_sources_leaves_the_artefact_tests_out(self):
+        self.repo.write({'tests/test_skillsync_layers_equivalence.py': "def test():\n    pass\n"})
+        base = self.repo.commit('with the artefact test')
+        self.repo.write({'skillsync_workflow/status.py': 'VALUE = 2\n'})
+        self.repo.commit()
+        _, result, _ = self.repo.select(base)
+        self.assertNotIn('tests.test_skillsync_layers_equivalence', modules(result))
+
     def test_changed_status_reaches_test_through_another_module(self):
         self.repo.write({'skillsync_workflow/status.py': 'VALUE = 2\n'})
         self.repo.commit()
