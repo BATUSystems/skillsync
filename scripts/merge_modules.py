@@ -48,7 +48,7 @@ class GitError(RuntimeError):
 
 def git(repo, *args):
     try:
-        done = subprocess.run(['git', '-C', str(repo), *args], capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=120)
+        done = subprocess.run(['git', '-C', str(repo), '-c', 'core.quotePath=false', '-c', 'diff.noprefix=false', '-c', 'color.ui=false', *args], capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=120)
     except (OSError, subprocess.SubprocessError) as error:
         raise GitError(str(error))
     if done.returncode != 0:
@@ -70,7 +70,7 @@ def diff_literals(repo, base, head, paths):
     """Static parts of string literals on added or removed lines of the given Python files."""
     found = set()
     for path in paths:
-        text = git(repo, 'diff', '-U0', '--no-renames', f'{base}...{head}', '--', path)
+        text = git(repo, 'diff', '-U0', '--no-renames', '--no-color', '--no-ext-diff', '--src-prefix=a/', '--dst-prefix=b/', f'{base}...{head}', '--', path)
         for line in text.split('\n'):
             if not line or line[0] not in '+-' or line.startswith(('+++', '---')) or line[1:].lstrip().startswith('#'):
                 continue
@@ -158,7 +158,7 @@ def select(repo, base, head):
     changed_py = {path for path, status in changed.items() if path.endswith('.py') and status != 'D'}
     changed_modules = {by_path[path] for path in changed_py if path in by_path}
     deleted_py = {path for path, status in changed.items() if path.endswith('.py') and status == 'D'}
-    deleted_modules = {dotted(path) for path in deleted_py}
+    deleted_modules = {dotted(path) for path in deleted_py} | {dotted(path).rsplit('.', 1)[-1] for path in deleted_py if path.startswith('tests/')}  # bare `import helper` too
     # deleted product files count too: tests that named or imported them break at the merge
     changed_product = sorted(path for path in changed_py | deleted_py if path.startswith(('skillsync_workflow/', 'scripts/')))
     changed_fixtures = sorted(path for path in changed if path.startswith('tests/') and not path.endswith('.py'))
@@ -199,6 +199,17 @@ def select(repo, base, head):
         return None
 
     all_fixtures = sorted((repo / 'tests').rglob('*.json')) if (repo / 'tests').is_dir() else []
+    def reachable(start):
+        """`(module, trail)` for the module itself and every non-test module it imports, directly or not."""
+        seen, queue = {start}, [(start, [start])]
+        while queue:
+            current, trail = queue.pop(0)
+            yield current, trail
+            for target in sorted(imports.get(current, ())):
+                if target not in seen and not Path(modules[target]).name.startswith('test_skillsync'):
+                    seen.add(target)
+                    queue.append((target, trail + [target]))
+
     fixture_by_name = {}
     for file in all_fixtures:
         fixture_by_name.setdefault(file.name, []).append(file)
@@ -213,9 +224,10 @@ def select(repo, base, head):
             trail = chain_to_changed(name)
             if trail:
                 add(name, 'import: ' + ' -> '.join(trail))
-        gone = sorted(raw_imports.get(name, set()) & deleted_modules)
-        if gone:
-            add(name, 'import: imports deleted ' + ', '.join(gone))
+        for reached, trail in reachable(name):
+            gone = sorted(raw_imports.get(reached, set()) & deleted_modules)
+            if gone:
+                add(name, 'import: ' + ' -> '.join(trail) + ' imports deleted ' + ', '.join(gone))
         values = constants[name]
         for product in changed_product:
             stem = Path(product).name

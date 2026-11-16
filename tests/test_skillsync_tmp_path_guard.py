@@ -45,7 +45,7 @@ BASELINE = {
 }
 REASON = 'start: not reviewed one by one; names written by the test itself or loop indices (a data-derived name needs tmp_paths)'
 
-TMP=re.compile(r'tmp|temp',re.I)
+TMP = re.compile(r'(^|_)(tmp|temp)(dir|path|file|root|base)?[0-9]*($|_)', re.I)
 SRC=('tempfile','mkdtemp','TemporaryDirectory','NamedTemporary')
 def names_of(t):
     if isinstance(t,ast.Name): return [t.id]
@@ -117,6 +117,8 @@ class Scanner(unittest.TestCase):
     def test_ignores_constants_and_unrelated_paths(self):
         self.assertEqual(self.hits('x = self.tmp / "a" / "b.txt"\ny = self.tmp / PLAN\nz = self.tmp / f"{RUN}/x.md"\nw = self.tmp / (A + "x")\n'), [])
         self.assertEqual(self.hits('x = self.library_dir / name\n'), [])
+        self.assertEqual(self.hits('x = attempts / total\ny = template / part\nz = temperature / n\n'), [])
+        self.assertEqual(self.hits('x = tmp_dir / n\ny = TMP / n\nz = temp / n\n'), ['tmp_dir / n', 'TMP / n', 'temp / n'])
 
 
 class Repository(unittest.TestCase):
@@ -128,6 +130,7 @@ class Repository(unittest.TestCase):
             if len(hits) > allowed:
                 over.append(f'{name}: {len(hits)} hits, baseline {allowed}: ' + '; '.join(f'{line}: {text[:60]}' for line, text in hits))
         total = sum(len(h) for h in found.values())
+        self.assertGreater(total, 0, 'the scan found nothing: the scanner is broken')
         print(f'tmp-path guard (report): {total} hits in {len(found)} files; baseline {sum(BASELINE.values())}', file=sys.stderr)
         for line in over:
             print('  NEW ' + line, file=sys.stderr)

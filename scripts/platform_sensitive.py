@@ -34,24 +34,28 @@ HERE = Path(__file__).resolve().parent
 ALL = ('windows', 'macos', 'linux')
 PATTERNS = [
     ('platform-branch', ALL, re.compile(r'\bos\.name\b|\bsys\.platform\b|\bplatform\.(system|uname|platform)\s*\(')),
-    ('signal', ALL, re.compile(r'\bsignal\.(SIG[A-Z0-9_]+|CTRL_\w+)|\bCTRL_\w*_EVENT\b|\bSetConsoleCtrlHandler\b|\bos\.(killpg|getpgrp|setsid)\b|\bstart_new_session\b|\bsetsid\b|\bSIGBREAK\b')),
+    ('signal', ALL, re.compile(r'\bsignal\.(SIG[A-Z0-9_]+|CTRL_\w+)|\bCTRL_\w*_EVENT\b|\bSetConsoleCtrlHandler\b|\bos\.(kill|killpg|getpgrp|setsid)\b|\bstart_new_session\b|\bsetsid\b|\bSIGBREAK\b')),
     ('windows-api', ('windows',), re.compile(r'\bctypes\b|\bwindll\b|\bWinDLL\b|\bWINFUNCTYPE\b|\bmsvcrt\b|\bwinreg\b|\bCREATE_NEW_(PROCESS_GROUP|CONSOLE)\b')),
-    ('posix-api', ('macos', 'linux'), re.compile(r'\bfcntl\b|\bflock\b|\bos\.(getuid|fork|geteuid|setuid|mkfifo)\b')),
+    ('posix-api', ('macos', 'linux'), re.compile(r'\bfcntl\b|\bflock\b|\bos\.(getuid|fork|geteuid|setuid|mkfifo|chmod|lchmod)\b')),
     ('symlink', ALL, re.compile(r'symlink|readlink|\bjunction\b|\bmklink\b|core\.symlinks|is_symlink', re.IGNORECASE)),
     ('rmtree', ('windows',), re.compile(r'\brmtree\b|\bos\.(remove|unlink|rmdir)\b|\.unlink\(')),
     ('line-ends', ('windows',), re.compile(r'\\r\\n|\\r\b|\\r[\'"\])|]|\bCRLF\b|\bcrlf\b|\bnewline\s*=|\bautocrlf\b|\bsplitlines\s*\(|\bfile_lines\b')),
-    ('backslash-path', ('windows',), re.compile(r'PureWindowsPath|\bntpath\b|\bos\.(sep|altsep)\b|\bos\.path\.(sep|altsep)\b|[\'"][A-Za-z]:\\\\|[\'"]\\\\\\\\[\'"]|replace\(\s*[\'"]\\\\\\\\[\'"]')),
+    ('backslash-path', ('windows',), re.compile(r'''PureWindowsPath|\bntpath\b|\bos\.(sep|altsep)\b|\bos\.path\.(sep|altsep)\b|['"][A-Za-z]:\\|['"]\\{1,2}['"]''')),
     ('socket-option', ALL, re.compile(r'\bSO_[A-Z_]+\b|\bAF_UNIX\b|\bIPPROTO_\w+\b|\bTCP_NODELAY\b')),
 ]
 FILE_RULES = [('windows-api', ('windows',), re.compile(r'\.ps1$')), ('posix-api', ('macos', 'linux'), re.compile(r'\.sh$'))]
-HUNK = re.compile(r'^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@')
+HUNK = re.compile(r'^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@')
 
 
 def load(name, path):
     spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module
-    spec.loader.exec_module(module)
+    try:
+        spec.loader.exec_module(module)
+    except BaseException:
+        sys.modules.pop(name, None)
+        raise
     return module
 
 
@@ -59,40 +63,40 @@ merge_modules = load('merge_modules', HERE / 'merge_modules.py')
 
 
 def diff_lines(repo, base, head):
-    """`{path: {'+': [(line, text)], '-': [(line, text)]}}` of changed text files (added lines with their new line numbers)."""
+    """`{path: {'+': [(new line, text)], '-': [(old line, text)]}}` of changed text files, deleted files included."""
     out = {}
     path = None
     new_line = old_line = 0
-    text = merge_modules.git(repo, 'diff', '-U0', '--no-renames', f'{base}...{head}', '--')
+    text = merge_modules.git(repo, 'diff', '-U0', '--no-renames', '--no-color', '--no-ext-diff', '--src-prefix=a/', '--dst-prefix=b/', f'{base}...{head}', '--')
     for raw in text.split('\n'):
         if raw.startswith('diff --git '):
             path = None
-        elif raw.startswith('+++ '):
-            path = raw[6:] if raw.startswith('+++ b/') else None
-            if path is not None:
-                out.setdefault(path, {'+': [], '-': []})
-        elif raw.startswith('--- '):
-            if raw.startswith('--- a/'):
-                path = raw[6:]
-                out.setdefault(path, {'+': [], '-': []})
+        elif raw.startswith('--- a/'):
+            path = raw[6:].split('\t')[0]
+            out.setdefault(path, {'+': [], '-': []})
+        elif raw.startswith('+++ b/'):
+            path = raw[6:].split('\t')[0]
+            out.setdefault(path, {'+': [], '-': []})
+        elif raw.startswith(('--- ', '+++ ')):
+            continue  # /dev/null: the path comes from the other side
         elif raw.startswith('@@'):
             match = HUNK.match(raw)
             if match:
-                new_line = int(match.group(1))
-            old_line = 0
-        elif path and raw.startswith('+') and not raw.startswith('+++'):
+                old_line, new_line = int(match.group(1)), int(match.group(2))
+        elif path and raw.startswith('+'):
             out[path]['+'].append((new_line, raw[1:]))
             new_line += 1
-        elif path and raw.startswith('-') and not raw.startswith('---'):
-            out[path]['-'].append((0, raw[1:]))
+        elif path and raw.startswith('-'):
+            out[path]['-'].append((old_line, raw[1:]))
+            old_line += 1
     return out
 
 
-def prose_lines(repo, path):
-    """Line numbers of the working-tree file covered by bare string statements (docstrings, prose blocks): not code."""
+def prose_lines(source):
+    """Line numbers covered by bare string statements (docstrings, prose blocks): not code."""
     try:
-        tree = ast.parse((Path(repo) / path).read_text(encoding='utf-8-sig', errors='replace'))
-    except (OSError, SyntaxError, ValueError):
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError):
         return set()
     lines = set()
     for node in ast.walk(tree):
@@ -101,12 +105,43 @@ def prose_lines(repo, path):
     return lines
 
 
+def read_new(repo, path):
+    try:
+        return (Path(repo) / path).read_text(encoding='utf-8-sig', errors='replace')
+    except OSError:
+        return ''
+
+
+def read_old(repo, revision, path):
+    try:
+        return merge_modules.git(repo, 'show', f'{revision}:{path}')
+    except merge_modules.GitError:
+        return ''
+
+
+_GUARD = {}
+
+
+def guard_module(repo):
+    """The tmp-path guard of the analysed tree (None when it has none or cannot be imported); loaded once per repo."""
+    key = str(Path(repo).resolve())
+    if key not in _GUARD:
+        file = Path(repo) / 'tests' / 'test_skillsync_tmp_path_guard.py'
+        try:
+            _GUARD[key] = load('tmp_path_guard', file) if file.is_file() else None
+        except Exception:
+            _GUARD[key] = None
+    return _GUARD[key]
+
+
 def tmp_path_hits(repo, path, added):
     """Added `<tmp path> / <variable>` expressions of a test file, by the AST scan of the tmp-path guard."""
+    guard = guard_module(repo)
+    if guard is None:
+        return []
     try:
-        guard = load('tmp_path_guard', Path(repo) / 'tests' / 'test_skillsync_tmp_path_guard.py') if 'tmp_path_guard' not in sys.modules else sys.modules['tmp_path_guard']
         tree = ast.parse((Path(repo) / path).read_text(encoding='utf-8-sig', errors='replace'))
-    except (OSError, SyntaxError, ValueError, ImportError, AttributeError):
+    except (OSError, SyntaxError, ValueError):
         return []
     lines = {number for number, _ in added}
     return [(number, text) for number, text in guard.scan(tree) if number in lines]
@@ -114,16 +149,18 @@ def tmp_path_hits(repo, path, added):
 
 def matches(repo, base, head):
     found = []
+    merge_base = merge_modules.git(repo, 'merge-base', base, head).strip()
     for path, sides in diff_lines(repo, base, head).items():
         for category, systems, pattern in FILE_RULES:
             if pattern.search(path):
                 found.append({'file': path, 'line': 0, 'side': '+', 'category': category, 'systems': list(systems), 'text': 'file type'})
         if not path.endswith('.py'):
             continue
-        prose = prose_lines(repo, path)
+        prose = {'+': prose_lines(read_new(repo, path)) if sides['+'] else set(),
+                 '-': prose_lines(read_old(repo, merge_base, path)) if sides['-'] else set()}
         for side in ('+', '-'):
             for number, text in sides[side]:
-                if text.strip().startswith('#') or (side == '+' and number in prose):
+                if text.strip().startswith('#') or number in prose[side]:
                     continue
                 for category, systems, pattern in PATTERNS:
                     if pattern.search(text):

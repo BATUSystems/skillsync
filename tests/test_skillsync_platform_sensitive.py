@@ -98,6 +98,63 @@ class Cases(Synthetic):
         removed = [h for h in self.result()['matches'] if h['side'] == '-']
         self.assertTrue(removed)
 
+    def test_deleted_file_is_scanned_on_the_removed_side(self):
+        self.write({'skillsync_workflow/handler.py': 'import signal\nsignal.signal(signal.SIGBREAK, h)\n'})
+        self.base = self.commit('add handler')
+        run_git(self.dir, 'rm', '-q', 'skillsync_workflow/handler.py')
+        self.commit('rm')
+        result = self.result()
+        self.assertEqual({(h['file'], h['side'], h['category']) for h in result['matches']}, {('skillsync_workflow/handler.py', '-', 'signal')})
+
+    def test_noprefix_and_color_config_do_not_hide_matches(self):
+        run_git(self.dir, 'config', 'diff.noprefix', 'true')
+        run_git(self.dir, 'config', 'color.diff', 'always')
+        run_git(self.dir, 'config', 'color.ui', 'always')
+        self.write({'skillsync_workflow/stopsignal.py': 'import signal\n\n\ndef stop():\n    signal.signal(signal.SIGBREAK, handler)\n'})
+        self.commit()
+        self.assertIn('signal', self.categories(self.result()))
+
+    def test_backslash_forms_and_os_calls(self):
+        self.write({'skillsync_workflow/lines.py': "import os\nA = p.replace('\\\\', '/')\nB = r'C:\\Users'\nos.kill(1, 0)\nos.chmod(p, 0o600)\n"})
+        self.commit()
+        found = {(h['category']) for h in self.result()['matches']}
+        self.assertTrue({'backslash-path', 'signal', 'posix-api'} <= found, found)
+        lines = {h['line'] for h in self.result()['matches'] if h['category'] == 'backslash-path'}
+        self.assertEqual(lines, {2, 3})
+
+    def test_edited_docstring_on_removed_side_is_not_code(self):
+        self.write({'skillsync_workflow/lines.py': 'import re\n"""Notes on os.name and SIGBREAK."""\nPATTERN = 1\n'})
+        self.base = self.commit('doc')
+        self.write({'skillsync_workflow/lines.py': 'import re\n"""Other notes."""\nPATTERN = 1\n'})
+        self.commit()
+        self.assertEqual(self.result()['matches'], [])
+
+    def test_multiple_hunks_number_lines_correctly(self):
+        body = ''.join(f'x{i} = 1\n' for i in range(30))
+        self.write({'skillsync_workflow/lines.py': body})
+        self.base = self.commit('many')
+        lines = body.splitlines()
+        lines[4] = 'import os; os.getuid()'
+        lines[25] = 'import fcntl'
+        self.write({'skillsync_workflow/lines.py': '\n'.join(lines) + '\n'})
+        self.commit()
+        self.assertEqual(sorted(h['line'] for h in self.result()['matches']), [5, 26])
+
+    def test_checkout_must_be_head(self):
+        run_git(self.dir, 'checkout', '-q', '-b', 'feature')
+        self.write({'skillsync_workflow/lines.py': 'import fcntl\n'})
+        self.commit()
+        run_git(self.dir, 'checkout', '-q', self.base)
+        done = subprocess.run([sys.executable, str(SCRIPT), '--repo', str(self.dir), '--base', self.base, '--head', 'feature'], capture_output=True, text=True)
+        self.assertEqual(done.returncode, 2)
+
+    def test_missing_guard_in_analysed_tree_is_not_fatal(self):
+        run_git(self.dir, 'rm', '-q', 'tests/test_skillsync_tmp_path_guard.py')
+        self.base = self.commit('no guard')
+        self.write({'tests/test_skillsync_a.py': 'def t(self, n):\n    (self.tmp / n).mkdir()\n', 'tests/test_skillsync_b.py': 'def t(self, n):\n    (self.tmp / n).mkdir()\n'})
+        self.commit()
+        self.assertEqual(self.analyse().returncode, 0)
+
     def test_docstrings_are_not_code(self):
         self.write({'skillsync_workflow/lines.py': 'import re\n"""Notes on os.name, SIGBREAK and symlink behaviour."""\nPATTERN = 1\n'})
         self.commit()

@@ -161,6 +161,22 @@ class MergeModules(unittest.TestCase):
         self.assertNotIn('tests.test_skillsync_status_fixtures', found)
         self.assertNotIn('tests.test_skillsync_dispatch', found)
 
+    def test_deleted_module_reaches_untouched_test_through_another_module(self):
+        run_git(self.repo.dir, 'rm', '-q', 'skillsync_workflow/status.py')
+        self.repo.commit('rm status')
+        _, result, _ = self.repo.select(self.base)
+        found = modules(result)
+        self.assertTrue(any('imports deleted skillsync_workflow.status' in r for r in found['tests.test_skillsync_ide_contract']), found)
+        self.assertNotIn('tests.test_skillsync_unrelated', found)
+
+    def test_deleted_bare_helper_selects_untouched_importer(self):
+        self.repo.write({'tests/helpers.py': 'X = 1\n', 'tests/test_skillsync_uses_helper.py': 'import helpers\n'})
+        base = self.repo.commit('add')
+        run_git(self.repo.dir, 'rm', '-q', 'tests/helpers.py')
+        self.repo.commit('rm')
+        _, result, _ = self.repo.select(base)
+        self.assertTrue(any('imports deleted' in r for r in modules(result)['tests.test_skillsync_uses_helper']))
+
     def test_checkout_must_be_head(self):
         run_git(self.repo.dir, 'checkout', '-q', '-b', 'feature')
         self.repo.write({'skillsync_workflow/status.py': 'VALUE = 3\n'})

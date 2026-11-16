@@ -25,7 +25,7 @@ class TmpPaths(unittest.TestCase):
             tmp_paths.child(self.tmp, '\\n')
 
     def test_refused_names(self):
-        for name in ('', '.', '..', 'a/b', 'a\\b', '\\n', '/abs', 'C:x', 'C:\\x', 'a\nb', 'a\x00b', 'x.', 'x ', 'CON', 'con.txt', 'Nul', 'COM1',
+        for name in ('', '.', '..', 'a/b', 'a\\b', '\\n', '/abs', 'C:x', 'C:\\x', 'a\nb', 'a\x00b', 'x.', 'x ', 'con .txt', 'CON', 'con.txt', 'Nul', 'COM1',
                      'lpt9.log', 'a<b', 'a|b', 'a?b', 'a*b', '../x', 'a\tb', None, 5, b'x'):
             with self.subTest(name=name):
                 with self.assertRaises(UnsafeName):
