@@ -1309,6 +1309,8 @@ def render_gallery(entries):
             f'  <h2><a href="{slug}/index.html">{html_escape(entry["title"])}</a></h2>',
             *(['  <p class="writing" data-writing="true">W trakcie zapisu: agent jeszcze pisze ekrany</p>']
               if entry.get('writing') else []),
+            *([f'  <p class="questions"><a href="/_experts/{slug}">Pytania</a></p>']
+              if entry.get('questions') else []),
             '  <dl>',
             f'    <dt>Slug</dt><dd><code>{slug}</code></dd>',
             f'    <dt>Wymagania</dt><dd><code>{html_escape(entry["requirements"])}</code></dd>',
@@ -1335,12 +1337,41 @@ def render_gallery(entries):
         '<body>',
         '<main>',
         '<h1>Prototypy</h1>',
+        *(['<p class="questions-link"><a href="/_experts">Pytania</a></p>'] if any(entry.get('questions') for entry in entries) else []),
         f'<p class="lead">Liczba prototypów: {len(entries)}. Otwórz prototyp, aby przeglądać ekrany i komentarze.</p>',
         body,
         '</main>',
         '</body>',
         '</html>',
         ''])
+
+
+_QUESTION_PRESENCE = {}   # (path, mtime_ns, size) -> bool: the live gallery asks on every request
+
+
+def has_questions(directory):
+    """Does the run `directory` have a question (an `ask` operation in its `questions.json`)? False for a missing, unreadable, malformed,
+    oversized (above the size the server itself writes) or symlinked file. Only a yes or no: the gallery tells nothing else about the
+    questions (no count, no text). Cached by (path, mtime, size), so a request of the live gallery parses a file only after it changed."""
+    path = Path(directory) / server.QUESTIONS_FILE
+    try:
+        if path.is_symlink() or not path.is_file():
+            return False
+        stat = path.stat()
+        if stat.st_size > server.QUESTIONS_MAX_FILE_BYTES:
+            return False
+        key = (str(path), stat.st_mtime_ns, stat.st_size)
+        if key in _QUESTION_PRESENCE:
+            return _QUESTION_PRESENCE[key]
+        operations = json.loads(path.read_text(encoding='utf-8')).get('operations')
+    except (OSError, ValueError, AttributeError):
+        return False
+    found = isinstance(operations, list) and any(isinstance(item, dict) and item.get('type') == 'ask'
+                                                 and isinstance(item.get('questionId'), str) for item in operations)
+    if len(_QUESTION_PRESENCE) > 512:
+        _QUESTION_PRESENCE.clear()
+    _QUESTION_PRESENCE[key] = found
+    return found
 
 
 def gallery_entries(prototypes_root, repo, now_ms=None):
@@ -1354,6 +1385,7 @@ def gallery_entries(prototypes_root, repo, now_ms=None):
             warnings.append(f'{entry["path"]}: {entry["error"]} (skipped in index)')
             continue
         warnings.extend(entry_warnings)
+        entry['questions'] = has_questions(directory)
         if now_ms is not None:
             entry['writing'] = server.public_writing(directory, now_ms)
         entries.append(entry)
@@ -2795,7 +2827,18 @@ def _writing_ttl(value):
     return seconds if server.WRITING_TTL_MIN <= seconds <= server.WRITING_TTL_MAX else None
 
 
-def writing_prototype(root, manifest, slug, action, ttl=None, by=None):
+def _writing_screens(value):
+    """The `--screens` number of `writing start` (1-200), None when absent, False when invalid."""
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not re.fullmatch(r'[0-9]{1,4}', text):
+        return False
+    number = int(text)
+    return number if server.WRITING_SCREENS_MIN <= number <= server.WRITING_SCREENS_MAX else False
+
+
+def writing_prototype(root, manifest, slug, action, ttl=None, by=None, screens=None):
     """`writing <slug> start|done|status`: the marker "the agent is still writing screens" (`.writing.json`).
 
     `start` writes it under the prototype lock (`expiresAt = now + ttl`; a repeated `start` on a valid marker keeps
@@ -2808,6 +2851,12 @@ def writing_prototype(root, manifest, slug, action, ttl=None, by=None):
     if seconds is None:
         return _blocked('invalid_args', f'--ttl must be a whole number of seconds from {server.WRITING_TTL_MIN} '
                                         f'to {server.WRITING_TTL_MAX}')
+    planned = _writing_screens(screens)
+    if planned is False:
+        return _blocked('invalid_args', f'--screens must be a whole number from {server.WRITING_SCREENS_MIN} '
+                                        f'to {server.WRITING_SCREENS_MAX}')
+    if planned is not None and action != 'start':
+        return _blocked('invalid_args', '--screens applies to `start` only')
     who = by
     if who is not None and (not isinstance(who, str) or not server.WRITING_BY_RE.fullmatch(who)):
         return _blocked('invalid_args', '--by must be 1-64 characters of letters, digits and . _ @ + -')
@@ -2819,7 +2868,7 @@ def writing_prototype(root, manifest, slug, action, ttl=None, by=None):
     try:
         if action == 'start':
             with store.lock():
-                writing = server.write_writing(str(directory), now_ms, seconds, who)
+                writing = server.write_writing(str(directory), now_ms, seconds, who, planned)
             try:
                 gitignore = directory / '.gitignore'
                 text = _ensure_lines(gitignore, (server.WRITING_MARKER,), server.WRITING_MARKER + '\n')
@@ -2838,6 +2887,8 @@ def writing_prototype(root, manifest, slug, action, ttl=None, by=None):
     if writing is not None and action == 'status':
         report['writing'] = {'since': writing['since'], 'expiresAt': writing['expiresAt'],
                              'renewedAt': writing['renewedAt'], 'by': writing['by']}
+        if 'screensPlanned' in writing:
+            report['writing']['screensPlanned'] = writing['screensPlanned']
     if warnings:
         report['warnings'] = warnings
     return report
@@ -3837,6 +3888,16 @@ def _parse_question_ref(value):
     return ref
 
 
+def _parse_question_screen(value):
+    """`--screen <slug>#s<N>` -> a ref with the absolute path of the screen on the prototype server (`/<slug>/index.html#sN`): the page of the
+    experts renders it as a link to that screen. Strict: the slug grammar of the server, `#s` and at least one digit, nothing else
+    (`fullmatch`, so no trailing newline); anything else is refused."""
+    match = re.fullmatch(r'([^#]*)#s([0-9]+)', value)
+    if not match or not server.SLUG_RE.fullmatch(match.group(1)) or len(f'/{match.group(1)}/index.html#s{match.group(2)}') > server.MAX_QUESTION_REF_HREF:
+        raise PrototypeError(f'--screen {value!r}: use <prototype>#s<number> (lowercase letters, digits and single hyphens, e.g. demo#s4)')
+    return {'title': f'Ekran s{match.group(2)}', 'href': f'/{match.group(1)}/index.html#s{match.group(2)}'}
+
+
 def _parse_question_options(values):
     options = []
     for index, value in enumerate(values or [], 1):
@@ -3869,7 +3930,9 @@ def add_question(root, manifest, args):
     _public, public_error = public_url_of(settings)
     if public_error:
         return _question_fail('invalid_public_url', public_error, status='BLOCKED')
-    refs = [_parse_question_ref(value) for value in args.ref or []]
+    refs = [_parse_question_ref(value) for value in args.ref or []] + [_parse_question_screen(value) for value in getattr(args, 'screen', None) or []]
+    if len(refs) > server.MAX_QUESTION_REFS:
+        return _question_fail('too_many_refs', f'--ref and --screen together: at most {server.MAX_QUESTION_REFS}')
     options = _parse_question_options(args.option)
     origin = _parse_origin(args.origin)
     slug = args.slug
@@ -4646,7 +4709,8 @@ def _cmd_reply(args, root, manifest, layerset):
 
 
 def _cmd_writing(args, root, manifest, layerset):
-    return writing_prototype(root, manifest, args.slug, args.writing_action, ttl=args.ttl, by=args.by)
+    return writing_prototype(root, manifest, args.slug, args.writing_action, ttl=args.ttl, by=args.by,
+                             screens=getattr(args, 'screens', None))
 
 
 def _cmd_wait(args, root, manifest, layerset):
@@ -4903,6 +4967,8 @@ def register(subparsers):
     writing.add_argument('writing_action', choices=('start', 'done', 'status'), metavar='start|done|status')
     writing.add_argument('--ttl', help='Seconds the marker lasts, 60-3600 (default 900; start again to renew)')
     writing.add_argument('--by', help='Who writes (letters, digits and . _ @ + -, at most 64; default agent)')
+    writing.add_argument('--screens', help='start: how many screens you plan to write, 1-200 (the status page shows N of M; '
+                                           'a renewal without it keeps the number)')
     writing.set_defaults(func=_run(_cmd_writing))
     wait = actions.add_parser('wait', help='Wait for a new comment by a person or for the acceptance of all screens '
                                            '(exit 0 with event comment|accepted, 3 on timeout)')
@@ -4932,6 +4998,8 @@ def register(subparsers):
                            slug_help=' (default: the one prototype whose requirements is the --origin spec)')
     qadd.add_argument('--text', required=True, help='The question (at most 2000 characters)')
     qadd.add_argument('--ref', action='append', metavar='TITLE|HREF[|EXCERPT]', help='Context link with an optional excerpt (repeatable, at most 5)')
+    qadd.add_argument('--screen', action='append', metavar='PROTOTYPE#sN', help='Link to a prototype screen (repeatable; counts with --ref, at most 5 together): '
+                      'a question about a screen must carry it, e.g. demo#s4')
     qadd.add_argument('--option', action='append', metavar='LABEL[:recommended]', help='Answer option (repeatable, at most 8; one recommended, several with --multi)')
     qadd.add_argument('--multi', action='store_true', help='Multi-choice: the expert ticks one or more options (at least one; "none" is a free-text answer); needs at least 2 --option')
     qadd.add_argument('--assume', help='Assumed value: the question does not stop the agent (exactly one of --assume, --blocking)')

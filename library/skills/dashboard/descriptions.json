@@ -102,5 +102,45 @@
  "checkpoints": {
   "title": "Ostatnie checkpointy",
   "text": "Linie raportu postępu z .skillsync/runs/<run>/checkpoints.md w formacie `- HH:MM zrobione: …; w toku: …; ryzyko: …`.\nSesja główna dopisuje je po każdym kroku albo co 30 minut; nie zastępują rekordu skillsync checkpoint.\nŹródło: ten plik."
+ },
+ "parse_warnings": {
+  "title": "Pominięte fragmenty raportu",
+  "text": "Parser checkpoints.md pomija elementy list „w toku:” i „zrobione:”, które nie zaczynają się od id kroku (np. F1.2), albo mają id dalej w elemencie. Takie fragmenty nie liczą się do postępu.\nPoprawka: zacznij każdy element od id kroku i dopiero potem dodaj opis."
+ },
+ "legend_act": {
+  "title": "Akt",
+  "text": "Jeden z trzech wielkich kroków przebiegu: Akt I Spec (co budujemy), Akt II Plan (jak i w jakiej kolejności), Akt III Realizacja (kod, testy, review)."
+ },
+ "legend_stage": {
+  "title": "Etap",
+  "text": "Kafelek w akcie: Szkic, Review, Prototyp, Plan, Pre-implement i tak dalej. Pulsujący wskaźnik oznacza, że etap trwa teraz."
+ },
+ "legend_phase": {
+  "title": "Faza",
+  "text": "Grupa kroków w planie (sekcja Progress), np. „Faza 2: API”. Faza jest zrobiona, gdy zrobione są wszystkie jej kroki."
+ },
+ "legend_step": {
+  "title": "Krok",
+  "text": "Jedna pozycja listy Progress w planie z identyfikatorem, np. F1.2. Krok jest zrobiony po zaznaczeniu go w planie z numerem commita."
+ },
+ "legend_consent": {
+  "title": "Zgoda GO / CP / READY",
+  "text": "Decyzje człowieka: GO plan (spec zatwierdzony, wolno planować), GO implement (plan zatwierdzony, wolno pisać kod), CP (commit i push gałęzi roboczej), READY (draft PR gotowy do przeglądu). Zgodę da tylko człowiek."
+ },
+ "legend_result": {
+  "title": "Wynik",
+  "text": "Sekcja „Wynik” planu: co faktycznie zrobiono po zakończeniu pracy, z kontrolami i odstępstwami. Strona pokazuje ją pod aktami."
+ },
+ "legend_debt": {
+  "title": "Dług",
+  "text": "Świadomie odłożona sprawa (uwaga z review, brakujący test, uproszczenie), zapisana w planie albo retrospektywie z terminem spłaty."
+ },
+ "legend_eta": {
+  "title": "ETA",
+  "text": "Szacowany koniec bieżącej operacji, podany przez agenta w raporcie postępu (`eta: <operacja> do HH:MM`). Po terminie strona pokazuje przekroczenie."
+ },
+ "legend_verify": {
+  "title": "Do weryfikacji",
+  "text": "Kroki zgłoszone w raporcie postępu jako zrobione, ale jeszcze niezaznaczone w planie z commitem. Jaśniejszy odcień paska = zgłoszone lub w toku."
  }
 }

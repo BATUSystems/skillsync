@@ -31,8 +31,8 @@ a zakres prac zmienia tylko użytkownik. Zwykła prośba o zmianę ekranu protot
    Strona główna `serve` liczy galerię na żywo (nowe prototypy, akceptacje, komentarze widać od razu). Statyczny
    `<root>/index.html` dla `file://` i statycznego serwera odświeża `skillsync prototype index <projekt>`: uruchom go
    po `init`, usunięciu prototypu albo zmianie tytułu, gdy ktoś ogląda galerię bez `serve`.
-3. Przed pierwszą edycją ekranów wykonaj `skillsync prototype writing <projekt> <slug> start` (sekcja „Zapis ekranów”
-   niżej); potem zastąp ekran przykładowy własnymi ekranami w `index.html` (wzorce: [references/screen-patterns.md](references/screen-patterns.md),
+3. Przed pierwszą edycją ekranów wykonaj `skillsync prototype writing <projekt> <slug> start --screens <N>` (N = ile ekranów zamierzasz napisać; sekcja „Zapis ekranów”
+   niżej; starszy rdzeń nie zna `--screens`: powtórz bez niego, strona pokaże pasek bez mianownika); potem zastąp ekran przykładowy własnymi ekranami w `index.html` (wzorce: [references/screen-patterns.md](references/screen-patterns.md),
    styl: [references/style.md](references/style.md)). Własne style wpisuj w `project.css` (ostatni arkusz, po `screens.css`).
 4. Gdy zmienił się motyw projektu, `skillsync prototype sync <projekt> [<slug>]` odświeża `tokens.css` i `theme.css`.
 5. `skillsync prototype ids <projekt> <slug> --check` kontroluje uchwyty; `--fix` dopisuje brakujące bez zmiany wyglądu.
@@ -44,7 +44,7 @@ a zakres prac zmienia tylko użytkownik. Zwykła prośba o zmianę ekranu protot
 Akceptacja liczy hash z bieżących plików, więc osoba akceptująca, która zdąży przed końcem pracy agenta, musiałaby akceptować
 ponownie. Marker zapisu mówi serwerowi, `gate`, `wait` i interfejsowi, że agent jeszcze pisze ekrany tego prototypu.
 
-1. `skillsync prototype writing <projekt> <slug> start` PRZED edycją ekranów w `index.html` i `project.css`.
+1. `skillsync prototype writing <projekt> <slug> start --screens <N>` PRZED edycją ekranów w `index.html` i `project.css`.
    W rundzie po przeglądzie najpierw `iterate` (zamrożenie rundy), dopiero potem `writing start`.
 2. Marker wygasa (TTL 60–3600 s, domyślnie 900 s; `--ttl <s>`). Przy każdej większej partii zmian wykonaj `start` ponownie
    (odnawia czas) albo od razu `start --ttl 1800`; odnowienie zachowuje początek pisania. Wygasły marker nie blokuje nikogo. Strona statusu pokazuje wtedy
@@ -65,7 +65,7 @@ dla obu. Zawieszony marker (agent padł) może zdjąć osoba z rolą `acceptor` 
 
 Rysowanie ekranów i każda iteracja to długa praca: przed `writing start` dopisz do raportu postępu `eta: <operacja> do HH:MM`
 (np. `eta: rysowanie 12 ekranów prototypu do 15:10`, godzina z `date`), powtarzaj ją w każdym raporcie podczas pracy (strona czyta tylko najnowszą linię), a po przekroczeniu podaj nowy termin bez
-przerywania pracy. Następny raport po `writing done` jest bez `eta:`. Szczegóły: skill `feature`, referencja `measurement`.
+przerywania pracy. Następny raport po `writing done` jest bez `eta:`. W raporcie podczas pracy nad prototypem dopisuj też `trwa: prototyp`, a po `writing done` kolejna linia jest bez `trwa:` (wskaźnik „trwa” na kafelku Prototyp gaśnie). Szczegóły: skill `feature`, referencja `measurement`.
 
 ## Pliki prototypu
 
@@ -169,7 +169,7 @@ Komentarz konta z rolą `expert` (bez roli programisty ani akceptującego) to **
 i zmienia makietę dopiero po `decide` osoby z rolą programisty albo akceptującego. Rola z `authorRole` (string, najwyższa rola konta) to
 nie wszystko: pełną listę ról podają `authorRoles` (komentarze) i `whoRoles` (decyzje); konto z `expert` **i** programistą/akceptującym nie jest
 doradcze. Akceptuje nadal wyłącznie człowiek z rolą akceptującego albo programisty. Pytania domenowe do eksperta to osobny kanał
-(`prototype question …`, skill `feature`, spec), nie wątki makiety.
+(`prototype question …`, skill `feature`, spec), nie wątki makiety. Pytanie dotyczące ekranu **musi** mieć link do ekranu (`prototype question add --screen <prototyp>#s<N>`), a pytania do eksperta pisz bez żargonu technicznego (zwykłe zdania o tym, co widać na ekranie; reguły i przykład dobrego i złego pytania: [spec](../feature/references/spec.md)).
 
 ### Decyzje i iteracje
 

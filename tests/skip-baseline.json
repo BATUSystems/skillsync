@@ -84,10 +84,10 @@
  "notes": {
   "linux/symlink": "Measured locally (full run 2.4 + step 3.1t): Node 22, SKILLSYNC_TEST_LIBRARY and SKILLSYNC_PROTOTYPE_ENGINE_V2_SOURCE set, no Chrome.",
   "linux/copy": "As linux/symlink with SKILLSYNC_NO_SYMLINK=1. Since step 5.1 the prototype tests that plant hostile links use the OS-level guard (`needs_os_symlinks`), so they run in copy mode and no longer appear here.",
-  "ubuntu-latest/*": "Measured from the CI logs of 8 jobs (Python 3.11-3.14, symlink and copy): 14 skips each, identical (12 Chrome E2E tests of category e2e-chrome run in the `e2e` job, the Windows-only test, the zsh hook test: the runner has no zsh); plus 3 Windows-only junction tests of test_skillsync_resolve_loop (not in those logs, same behaviour as the Linux entries).",
+  "ubuntu-latest/*": "Measured from the CI logs of 8 jobs (Python 3.11-3.14, symlink and copy): 15 skips each, identical (13 Chrome E2E tests of category e2e-chrome run in the `e2e` job, the Windows-only test, the zsh hook test: the runner has no zsh); plus 3 Windows-only junction tests of test_skillsync_resolve_loop (not in those logs, same behaviour as the Linux entries).",
   "windows-latest/*": "windows-latest/copy measured from the CI logs of Python 3.11, 3.12 and 3.13 (identical sets); windows-latest/symlink stays null: the matrix excludes it (no OS symlinks without Developer Mode).",
   "macos-latest/*": "Measured from the CI runs of main (v1.3.0, 12.11): 35 skips, the same in all four jobs (3.11/3.12, symlink/copy): the Chrome E2E scenarios (job e2e), the Azure tests without the machine descriptor, the env lifecycle tests (process ownership backend on Linux only), BSD mktemp, file system limits and shellcheck (not installed on the macOS runner).",
-  "e2e-chrome": "The 12 Chrome scenario scripts (one test per tests/e2e/prototype/*.mjs, incl. test_widok and test_w) are allowed: CI runs no Chrome; the prototype E2E runs separately with Chrome and leased ports."
+  "e2e-chrome": "The 13 Chrome scenario scripts (one test per tests/e2e/prototype/*.mjs, incl. test_widok, test_w and test_p) are allowed: CI runs no Chrome; the prototype E2E runs separately with Chrome and leased ports."
  },
  "baselines": {
   "linux/symlink": [
@@ -133,6 +133,10 @@
    },
    {
     "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_nr",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_p",
     "category": "e2e-chrome"
    },
    {
@@ -234,6 +238,10 @@
     "category": "e2e-chrome"
    },
    {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_p",
+    "category": "e2e-chrome"
+   },
+   {
     "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_ryzyka",
     "category": "e2e-chrome"
    },
@@ -332,6 +340,10 @@
     "category": "e2e-chrome"
    },
    {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_p",
+    "category": "e2e-chrome"
+   },
+   {
     "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_ryzyka",
     "category": "e2e-chrome"
    },
@@ -427,6 +439,10 @@
    },
    {
     "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_nr",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_p",
     "category": "e2e-chrome"
    },
    {
@@ -533,6 +549,18 @@
     "category": "posix-only"
    },
    {
+    "id": "test_skillsync_dashboard_ports.Process.test_a_signal_stops_both_sockets_and_removes_both_state_files",
+    "category": "windows-no-mechanism"
+   },
+   {
+    "id": "test_skillsync_dashboard_ports.Process.test_a_slow_resolver_does_not_delay_the_stop_with_one_port_on_every_interface",
+    "category": "windows-no-mechanism"
+   },
+   {
+    "id": "test_skillsync_dashboard_ports.Process.test_a_slow_resolver_does_not_delay_the_stop_with_two_ports",
+    "category": "windows-no-mechanism"
+   },
+   {
     "id": "test_skillsync_dashboard_server.ServeCommandTests.test_serve_answers_and_stops_on_sigterm",
     "category": "windows-no-mechanism"
    },
@@ -551,6 +579,126 @@
    {
     "id": "test_skillsync_dispatch_state.DispatchState.test_symlinked_runs_directory_is_ignored_not_followed",
     "category": "needs-symlinks"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_a_dead_leader_without_helpers_removes_the_file_quietly",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_a_member_whose_identity_changed_before_the_signal_is_not_signalled",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_a_partial_ps_table_is_not_taken_for_the_whole_one",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_a_plain_number_file_needs_the_expected_command_line_too",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_a_plain_number_file_of_our_own_server_is_stopped",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_a_plain_number_file_written_before_the_process_started_does_not_match",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_a_process_in_our_own_group_is_signalled_alone_never_through_its_group",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_a_process_of_another_user_is_never_ours_in_a_plain_number_file",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_a_process_that_ignores_sigterm_is_killed_after_the_grace_period",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_a_record_that_names_an_ancestor_of_the_runner_signals_nothing",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_a_reused_pid_is_left_alone_and_its_stale_file_removed",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_a_root_replaced_between_the_tables_is_neither_signalled_nor_taken_with_its_group",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_a_stranger_that_took_the_number_of_the_dead_leader_and_its_group_are_left_alone",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_a_zombie_with_the_number_of_the_leader_does_not_bring_its_group_into_play",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_after_the_leader_died_only_the_listed_helpers_are_signalled_and_no_group_is_swept",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_helpers_are_stopped_when_the_leader_was_killed_before_the_stop",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_it_works_without_proc_and_with_ps_only",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_orphans_are_only_the_listed_helpers_with_the_matching_identity_and_the_own_user",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_pid_files_naming_pid_zero_one_or_negative_are_junk_and_nothing_is_signalled_for_them",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_the_file_stays_and_the_survivor_is_reported_when_a_process_does_not_die",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_the_group_of_this_process_and_of_its_ancestors_is_never_a_group_to_signal",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_the_identity_of_a_live_process_matches_itself_only",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_the_identity_proved_for_a_plain_number_file_travels_into_the_stop",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_the_proc_fallback_works_when_ps_is_missing",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_the_start_time_tolerance_is_a_few_seconds_not_an_hour",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_the_start_writes_the_helper_list_into_the_record",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_the_whole_tree_dies_and_a_chrome_looking_stranger_survives",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_this_process_its_parent_and_its_grandparent_are_protected",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_what_lives_below_a_listed_helper_is_stopped_with_it_and_nothing_else",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_when_no_process_list_is_available_nothing_is_signalled_and_the_files_stay",
+    "category": "posix-only"
    },
    {
     "id": "test_skillsync_eight.EightContracts.test_environment_child_resisting_term_is_cleaned",
@@ -893,6 +1041,10 @@
     "category": "e2e-chrome"
    },
    {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_p",
+    "category": "e2e-chrome"
+   },
+   {
     "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_ryzyka",
     "category": "e2e-chrome"
    },
@@ -1191,6 +1343,10 @@
     "category": "needs-library"
    },
    {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_the_proc_fallback_works_when_ps_is_missing",
+    "category": "linux-only-env"
+   },
+   {
     "id": "test_skillsync_eight.EightContracts.test_environment_child_resisting_term_is_cleaned",
     "category": "linux-only-env"
    },
@@ -1280,6 +1436,10 @@
    },
    {
     "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_nr",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_p",
     "category": "e2e-chrome"
    },
    {
@@ -1373,6 +1533,10 @@
     "category": "needs-library"
    },
    {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_the_proc_fallback_works_when_ps_is_missing",
+    "category": "linux-only-env"
+   },
+   {
     "id": "test_skillsync_eight.EightContracts.test_environment_child_resisting_term_is_cleaned",
     "category": "linux-only-env"
    },
@@ -1462,6 +1626,10 @@
    },
    {
     "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_nr",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_p",
     "category": "e2e-chrome"
    },
    {

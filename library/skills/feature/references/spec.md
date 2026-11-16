@@ -203,6 +203,8 @@ Pytanie, na które programista nie zna odpowiedzi domenowej, może trafić do ek
 przez `skillsync prototype question add`. Pytanie ma kontekst (`--ref`: tytuł, link, wyciąg), warianty z rekomendacją (`--option`)
 i `--origin <ścieżka speca>:Q<n>` (np. `--origin docs/specs/x.md:Q3`); kontekst to `--ref 'TYTUŁ|HREF[|WYCIĄG]'` (powtarzalne); gdy sensowna odpowiedź to kilka wariantów (które formaty, kolumny, role), pytanie jest jedno z `--multi` (co najmniej 2 `--option`, kilka `:recommended` dozwolone), a nie kilka pytań tak/nie; „żaden” ekspert wyraża własną odpowiedzią; odpowiedź wraca do speca w gicie jako wiersz `[EKSPERT]`.
 
+**Reguły pytania do eksperta.** (a) Pytanie dotyczące ekranu prototypu **musi** mieć link do tego ekranu: `--screen <prototyp>#s<N>` (np. `--screen demo#s4`; powtarzalne, razem z `--ref` najwyżej 5); strona `/_experts` pokazuje go jako „Zobacz ekran sN” (nowa karta, ten sam serwer). (b) Pytania do eksperta pisz **bez żargonu technicznego**: bez nazw pól, klas, komponentów, endpointów i skrótów; zwykłymi zdaniami o tym, co człowiek widzi na ekranie. Dobre: „Na tym ekranie klient widzi cenę przesyłki zaraz po wyborze produktu. Czy tak ma zostać, czy cenę pokazać dopiero po podaniu adresu?” (z `--screen demo#s4`). Złe: „Czy pole `shippingCost` ma być widoczne w komponencie CartSummary przed wywołaniem /quote?”.
+
 **Wejście (nie domyślnie).** Są dwie ścieżki:
 - opt-in programisty w akcie I: dopiero na jego życzenie pytania dla eksperta idą przez `skillsync prototype question add`;
   bez życzenia agent pyta programistę jak dotąd;

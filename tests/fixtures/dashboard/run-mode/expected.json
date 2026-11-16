@@ -3,6 +3,7 @@
     {
       "detail": "specyfikacja w przygotowaniu",
       "key": "spec",
+      "linkWarning": null,
       "name": "Spec",
       "roman": "I",
       "stages": [
@@ -10,18 +11,21 @@
           "done": false,
           "key": "stage_spec_draft",
           "label": "Szkic",
+          "state": "active",
           "tip": "brak speca"
         },
         {
           "done": false,
           "key": "stage_spec_review",
           "label": "Review",
+          "state": "planned",
           "tip": "rundy review speca w katalogu przebiegu"
         },
         {
           "done": false,
           "key": "stage_spec_approved",
           "label": "Zatwierdzony",
+          "state": "planned",
           "tip": "Status speca: —"
         }
       ],
@@ -39,24 +43,28 @@
           "done": false,
           "key": "stage_plan",
           "label": "Plan",
+          "state": "planned",
           "tip": "brak planu"
         },
         {
           "done": false,
           "key": "stage_plan_review",
           "label": "Review",
+          "state": "planned",
           "tip": "rundy review planu w katalogu przebiegu"
         },
         {
           "done": false,
           "key": "stage_pre_implement",
           "label": "Pre-implement",
+          "state": "planned",
           "tip": "bramka gotowości przed ryzykowną zmianą"
         },
         {
           "done": false,
           "key": "stage_go_implement",
           "label": "GO implement",
+          "state": "planned",
           "tip": "Status planu: —"
         }
       ],
@@ -74,12 +82,14 @@
           "done": false,
           "key": "code_review",
           "label": "Review kodu",
+          "state": "planned",
           "tip": "raporty code-review*/final-review* w katalogu przebiegu"
         },
         {
           "done": false,
           "key": "closure",
           "label": "Zamknięcie",
+          "state": "planned",
           "tip": "Status planu: —"
         }
       ],
@@ -139,6 +149,7 @@
   "eta": null,
   "expertQuestions": {
     "blocking": 0,
+    "items": [],
     "open": 0,
     "runs": []
   },
@@ -158,6 +169,7 @@
   "plans": [],
   "progress": {
     "active": [],
+    "activePercent": 0,
     "activeSource": null,
     "current": null,
     "done": 0,
@@ -179,12 +191,14 @@
     "up": false,
     "writing": null
   },
+  "prototypes": [],
   "readiness": {
     "date": null,
     "planSha": null,
     "source": null,
     "status": null
   },
+  "result": null,
   "run": {
     "checkpoints": [
       {

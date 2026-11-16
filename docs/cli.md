@@ -140,7 +140,7 @@ Każde pole ścieżki w raportach JSON ma na Windows ukośnik `/`: `root` i `pro
 | Komenda | Skutek |
 |---|---|
 | `doctor [path] [--layer ID=PATH] [--json]` | statyczna walidacja konfiguracji; `error` → FAIL (1), same ostrzeżenia → PASS (0), nieczytelny config albo config z kluczem `library:` → BLOCKED (2). Nie testuje aplikacji |
-| `route`, `readiness`, `review`, `validate`, `smart-test`, `guard` | dobór kontekstu, gotowość planu, checklista review, plan i wykonanie kontroli, strażnik konwencji; `review` zwraca też `profile` (`docs`, gdy zmiana dotyka wyłącznie dokumentacji (`docs/**` bez plików kodu), plików `.md` skilli, `CHANGELOG*` albo notatek wydania, inaczej `kod`) i `docsFiles`; ścieżki i pozycje docs nadpisują `workflow.review.docs_paths` i `workflow.review.docs_checklist` |
+| `route`, `readiness`, `review`, `validate`, `smart-test`, `guard` | dobór kontekstu, gotowość planu, checklista review, plan i wykonanie kontroli, strażnik konwencji; `review` zwraca też `profile` (`docs`, gdy zmiana dotyka wyłącznie dokumentacji (`docs/**` bez plików kodu), plików `.md` skilli, `CHANGELOG*` albo notatek wydania, `prototyp`, gdy zmiana mieści się w całości w katalogu prototypu (`prototype.root` z manifestu, domyślnie `docs/prototypes`), inaczej `kod`; `--profile kod|docs|prototyp` wymusza profil), `docsFiles` i `prototypeFiles`; pozycje listy prototypu dostaje także zmiana mieszana, która dotyka plików prototypu; ścieżki i pozycje docs nadpisują `workflow.review.docs_paths` i `workflow.review.docs_checklist`, ścieżki prototypu `workflow.review.prototype_paths`, a listę `workflow.review.prototype` (jedno źródło: `library/workflow/defaults.yaml`) rozszerzają warstwy, `workflow/projects/<slug>.yaml` i manifest: pozycje są dopisywane w kolejności rdzeń, warstwy, projekt, manifest, równe dosłownie pomijane (zostaje pierwsza), a pozycji rdzenia nie da się usunąć |
 | `map`, `suggest`, `knowledge init`, `status`, `plan`, `dispatch` | mapa repo, sugestie skilli, szkielet `docs/domain` i `docs/lessons`, odczyt stanu, zmiana statusu planu, stan dyspozycji |
 
 Pola workflow w tej grupie:
@@ -185,8 +185,8 @@ Szczegóły: [workflow](workflow.md).
 | Komenda | Skutek |
 |---|---|
 | `dashboard show <projekt> [--json] [--plan <rel>]` | stan projektu jako JSON `schema: 1` ([dashboard-contract](dashboard-contract.md)); tylko odczyt |
-| `dashboard serve <projekt> [--port 5140] [--prototype-port N] [--host 127.0.0.1] [--approve-host H] [--read-host H] [--no-approvals] [--plan <rel>] [--session-url URL]` | strona statusu z żywym odświeżaniem (SSE) i przyciskami zgód |
-| `dashboard url <projekt> [--port N] [--host NAZWA] [--json]` | adres z tokenem zgód (`http://127.0.0.1:<port>/#zgoda=<token>`) działającego `dashboard serve` projektu (z pliku stanu w katalogu danych maszyny); `BLOCKED` (exit 2): `server_not_running`, `approvals_disabled` (serwer z `--no-approvals`), `ambiguous_server`, `host_not_allowed`, `invalid_project`; zob. [dashboard-contract](dashboard-contract.md) |
+| `dashboard serve <projekt> [--port 5140] [--read-port 5140 --approve-port 5141] [--read-bind ADR] [--approve-bind ADR] [--allow-proxy-headers] [--prototype-port N] [--host H] [--approve-host H] [--read-host H] [--no-approvals] [--plan <rel>] [--session-url URL]` | strona statusu z żywym odświeżaniem (SSE) i przyciskami zgód; jedno gniazdo (`--port`, tryb bez zmian) albo dwa gniazda: odczyt i zgody (niżej) |
+| `dashboard url <projekt> [--port N] [--host NAZWA] [--read] [--json]` | adres z tokenem zgód (`http://127.0.0.1:<port>/#zgoda=<token>`) działającego `dashboard serve` projektu (z pliku stanu w katalogu danych maszyny); `--read`: adres gniazda odczytu, bez fragmentu i tokenu; `BLOCKED` (exit 2): `server_not_running`, `approvals_disabled` (serwer z `--no-approvals`), `ambiguous_server`, `host_not_allowed`, `invalid_project`; zob. [dashboard-contract](dashboard-contract.md) |
 | `dashboard metrics <projekt> <run-id> [--json] [--plan <rel>]` | czasy podkroków `Fn.k`, liczby rund i porażek przebiegu; podkrok bez danych jest oznaczony jawnie |
 | `approvals record <projekt> --word "GO plan\|GO implement\|CP\|READY" --run <run-id> --source cli\|ide [--sha SHA] [--file PLIK] [--target X] [--branch Y]` | zapis zgody użytkownika w `.skillsync/runs/<run-id>/approvals.jsonl` |
 | `approvals wait …` | czekanie na zgodę (odczyt tego samego pliku), opis w [workflow](workflow.md) |
@@ -197,6 +197,22 @@ Szczegóły: [workflow](workflow.md).
   /api/approve` = 403; obie flagi powtarzalne, nazwa bez portu); widok bez zapisu zgód dla wszystkich to `--no-approvals`.
   Zgody zapisuje serwer w tym samym
   procesie (bez podprocesu `skillsync`). Model zaufania: [domain/dashboard-server.md](domain/dashboard-server.md).
+- Tryb dwóch gniazd: `serve --read-port N --approve-port M` uruchamia dwa gniazda HTTP nad jednym stanem projektu (jeden
+  watcher, jedno Ctrl+C). Rola wynika z **portu**, nie z nagłówka `Host`. Gniazdo odczytu (`--read-port N`, przyjęty numer 5140)
+  ma strony i dane, bez trasy zgód (`POST /api/approve` = 404) i bez tokenu. Gniazdo zgód (`--approve-port M`, przyjęty
+  numer 5141; flagi nie mają wartości domyślnej, numer podaje się jawnie) wymaga tokenu, ścisłego `Origin`, odrzuca nagłówki pośrednika (`Forwarded`, `X-Forwarded-*`, `Via` i inne) i
+  zapisuje w `approvals.jsonl`, skąd przyszła zgoda (`via`). Samo `--read-port` albo samo `--approve-port` uruchamia
+  jedno gniazdo. `--port` nie łączy się z tymi flagami (BLOCKED, exit 2). Kolejność odmów, `Origin` i reguła `Host`:
+  [dashboard-contract](dashboard-contract.md), sekcja „Serwer”.
+- Nasłuch w trybie dwóch gniazd: oba domyślnie na `0.0.0.0`, z ostrzeżeniem w konsoli dla każdego gniazda poza
+  loopbackiem. `--read-bind` i `--approve-bind` zawężają każde gniazdo osobno (`127.0.0.1` = tylko ta maszyna), `--host`
+  ustawia oba. Tryb `--port` nasłuchuje na `127.0.0.1`. Ruch jest nieszyfrowany: token zgód idzie zwykłym
+  HTTP. W nieufnej sieci uruchom z `--approve-bind 127.0.0.1` albo wejdź tunelem SSH (`ssh -L 5141:127.0.0.1:5141 <host>`).
+  Tunel do strony zawsze kieruj na port odczytu, nigdy na port zgód. Ryzyko: [workflow](workflow.md), sekcja „Strona statusu”.
+- Uruchamianie dwóch gniazd: porty 5140 i 5141 muszą być wolne. Zatrzymaj wcześniejsze `dashboard serve` tego samego
+  hosta (także te z `--no-approvals`), zanim uruchomisz tryb dwóch gniazd. Jedno wywołanie z dwoma portami zastępuje
+  dwie instancje (jedna z `--no-approvals`); wywołania z `--port` działają bez zmian. `--allow-proxy-headers` działa
+  tylko z `--approve-port`; `--read-host '*'` tylko na gnieździe odczytu.
 - `approvals record` jest jedynym zapisem zgód: blokada plikowa, odmowa duplikatu (to samo słowo i `sha` w przebiegu), maskowanie
   sekretów. Słowo wpisuje użytkownik; agent tej komendy nie wywołuje.
 - Kody: `0` = `PASS`, `2` = `BLOCKED` (zły argument, odmowa zapisu, brak projektu lub przebiegu, port zajęty); `approvals wait`
@@ -221,13 +237,14 @@ plan z fazą `[UI]` bez linii `Prototyp:` i bez obejścia właściciela BLOCKED 
 
 ### Marker zapisu (`prototype writing`)
 
-`prototype writing <projekt> <slug> start|done|status [--ttl <s>] [--by <login>]`: agent oznacza, że jeszcze pisze ekrany prototypu.
+`prototype writing <projekt> <slug> start|done|status [--ttl <s>] [--by <login>] [--screens <N>]`: agent oznacza, że jeszcze pisze ekrany prototypu.
 `start` zapisuje atomowo, pod blokadą prototypu, plik `<root>/<slug>/.writing.json` (`since`, `renewedAt`, `expiresAt`, `by`) i dopisuje
 `.writing.json` do `<proto>/.gitignore` (gdy się nie da, ostrzeżenie w raporcie); powtórzone `start` na ważnym markerze zachowuje `since` (początek pisania)
 i `by` (chyba że podano `--by`), ustawia `renewedAt` i nowy `expiresAt`, więc odnawia marker (także skracając TTL); na wygasłym albo uszkodzonym zaczyna od nowa. `--ttl` to sekundy, 60–3600, domyślnie 900; `--by` to login (pierwszy znak litera lub cyfra, dalej litery, cyfry i `. _ @ + -`, najwyżej 64 znaki;
-domyślnie `agent`). `done` usuwa marker (idempotentnie, bez blokady), `status` zwraca `{status, writing: null | {since, expiresAt, renewedAt, by}}`
+domyślnie `agent`); `--screens` (tylko `start`, liczba całkowita 1–200) zapisuje w markerze `screensPlanned`, czyli ile ekranów agent zamierza napisać
+(strona statusu pokazuje „N z M” i pasek); powtórzone `start` bez `--screens` zachowuje wartość z ważnego markera. `done` usuwa marker (idempotentnie, bez blokady), `status` zwraca `{status, writing: null | {since, expiresAt, renewedAt, by[, screensPlanned]}}`
 (bez blokady). Kody: PASS 0; BLOCKED 2 z `error`: `needs_migration` (prototyp bez `comments.json`), `lock_timeout` (zajęta blokada prototypu,
-np. trwa `iterate` albo `restore`: ponów), `invalid_args` (zły `--ttl` albo `--by`); FAIL (1) nie występuje. Nieznana akcja to błąd argparse.
+np. trwa `iterate` albo `restore`: ponów), `invalid_args` (zły `--ttl`, `--by` albo `--screens`); FAIL (1) nie występuje. Nieznana akcja to błąd argparse.
 
 Wpływ ważnego markera na inne komendy (definicja w [prototypes](prototypes.md#marker-zapisu-agent-pisze-ekrany)):
 - `accept` (także `--project`) kończy się BLOCKED `writing_in_progress` przed pytaniem o hasło i ponownie pod blokadą transakcji;
@@ -236,7 +253,7 @@ Wpływ ważnego markera na inne komendy (definicja w [prototypes](prototypes.md#
 - `gate` (po slugach i `--plan`) zwraca FAIL z wpisem `missing` `{slug, path, screen: null, reason: 'writing'}` dla każdego prototypu z ważnym
   markerem, także gdy wszystkie jego ekrany mają ważną akceptację; linia „Bramka prototypu: pominięta — …” nadal daje PASS.
 - `wait` nie zwraca `accepted`, dopóki marker jest ważny (komentarze budzą jak dotąd).
-- `list` ma pole `writing`: `null` albo `{since, expiresAt, renewedAt}` (bez `by`).
+- `list` ma pole `writing`: `null` albo `{since, expiresAt, renewedAt[, screensPlanned]}` (bez `by`).
 - `iterate` przy ważnym markerze działa i dodaje ostrzeżenie do raportu.
 - `status --ttl` i `done --by` są walidowane tak samo jak `start` (zły argument = BLOCKED `invalid_args`).
 
@@ -254,6 +271,8 @@ skillsync prototype question add . --slug zwroty --text "Czy zwrot po terminie j
   --ref "Sekcja 3|docs/specs/zwroty.md#3|Zwrot do 14 dni od zakupu." \
   --option "Tak, bez limitu" --option "Tak, do 30 dni:recommended" --option "Nie" \
   --assume "do 30 dni" --origin docs/specs/zwroty.md:Q3                                  # domyślnie agent nie czeka
+skillsync prototype question add . --slug zwroty --text "Czy przycisk „Zwróć” ma być widoczny po terminie?" \
+  --screen zwroty#s4 --assume "nie" --origin docs/specs/zwroty.md:Q6                      # link „Zobacz ekran s4” na stronie eksperta (powtarzalne, z --ref najwyżej 5)
 skillsync prototype question add . --text "W jakich formatach eksport?" --multi \
   --option "CSV:recommended" --option "XLSX:recommended" --option "PDF" \
   --assume "CSV i XLSX" --origin docs/specs/eksport.md:Q4                                 # ekspert zaznacza jeden lub więcej wariantów

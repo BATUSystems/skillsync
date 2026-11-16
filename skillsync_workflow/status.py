@@ -8,11 +8,13 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import stat
+import subprocess
 import tempfile
 import time
 import yaml
 
-from .common import add_project_arguments, read_project, redact
+from .common import add_project_arguments, plan_section, read_project, redact
+from .delivery_mode import delivery_info
 from .layers import add_layer_argument
 from .storage import read_json
 from .pathfmt import posix
@@ -30,6 +32,11 @@ _STATUS = re.compile(r'^(?:[-*>][ \t]+)?(?:\*\*|__)?status(?:\*\*|__)?[ \t]*:[ \
 STATUS_TEXT_MAX = 80
 _TITLE = re.compile(r'^#\s+(.+?)\s*$', re.MULTILINE)
 _STEP = re.compile(r'^\s*-\s\[([ xX])\]\s+\S', re.MULTILINE)
+_ACCEPTANCE_STEP = re.compile(r'^\s*-\s\[[ xX]\]\s+(?:[A-Za-z]+\d+(?:\.\d+)?\s+)?Odbi[oó]r\b', re.MULTILINE | re.IGNORECASE)
+ACCEPTANCE_WORDS = {'pr': 'READY', 'direct': 'CP'}   # the closing consent word of a delivery mode: it is also the acceptance
+PLAN_SUMMARY = 'Streszczenie dla człowieka'
+SUMMARY_MAX_LINES = 40
+SUMMARY_MAX_CHARS = 4000
 _PR = re.compile(r'^PR:\s*#(\d+)\s*\(link:\s*(\S+?)\)\s*$', re.MULTILINE)
 _TICKET = re.compile(r'^Ticket:\s*([A-Z][A-Z0-9_]+-\d+)\s*\(link:\s*(\S+?)\)\s*$', re.MULTILINE)
 SPEC_LINE = re.compile(r'^Spec:(.*)$', re.MULTILINE)
@@ -189,6 +196,67 @@ def pre_implement_state(root, spec_rel, plan_text, status):
     return {'required': required, 'sections': sections, 'run': run, 'report': report, 'verdict': verdict, 'warning': warning}
 
 
+def plan_summary(text):
+    """The `## Streszczenie dla człowieka` section as plain text for the status page: heading markers removed, at most 40 lines and
+    4000 characters (a cut one ends with `…`); None when the section is absent or empty."""
+    body = plan_section(text, PLAN_SUMMARY)
+    if not body:
+        return None
+    lines, fence = [], None
+    for line in body.splitlines():
+        marker = re.match(r'^\s*(```+|~~~+)', line)
+        if marker:
+            fence = None if fence == marker.group(1)[0] else (fence or marker.group(1)[0])
+        lines.append(line.rstrip() if fence or marker else re.sub(r'^\s*#{1,6}\s+', '', line).rstrip())   # a code block stays as written
+    cut = len(lines) > SUMMARY_MAX_LINES
+    result = '\n'.join(lines[:SUMMARY_MAX_LINES]).strip()
+    if len(result) > SUMMARY_MAX_CHARS:
+        result, cut = result[:SUMMARY_MAX_CHARS].rstrip(), True
+    return redact(result + ('…' if cut else '')) or None
+
+
+def has_acceptance_step(status, text):
+    """A closed plan (`done`) whose `## Progress` has the human acceptance step (`Odbiór`)."""
+    section = plan_section(text, 'Progress') if status == 'done' else None
+    return bool(section) and bool(_ACCEPTANCE_STEP.search(section))
+
+
+def _plan_done_at(root, sha, rel):
+    """True when the plan file `rel` read from the commit `sha` (git, no working tree) has the status `done`. An unknown, junk or non-commit
+    sha, a plan missing there or any other status is False: such an entry says nothing about the closing of this plan."""
+    if not root or not isinstance(sha, str) or not _APPROVAL_SHA.fullmatch(sha):
+        return False
+    try:
+        result = subprocess.run(['git', '-C', str(root), 'show', f'{sha}^{{commit}}:{rel}'], capture_output=True, timeout=10, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    if result.returncode != 0:
+        return False
+    return _status_fields(result.stdout.decode('utf-8', 'replace'), PLAN_STATUSES)[0] == 'done'
+
+
+def acceptance_pending(status, text, context, rel=None):
+    """True when a closed plan (`done`) that has the human acceptance step (`Odbiór` in `## Progress`: the material, a checklist and the
+    coverage table, handed to the person before the closing word) still waits for that word. The plan is tied to its run by the `Przebieg:`
+    line; every plan whose run directory exists in the worktree (`.skillsync/runs/<run-id>/`: the active run) waits on its own until the run's
+    `approvals.jsonl` has the closing consent of the delivery mode (`READY` in `pr`, `CP` in `direct`) whose sha is a commit where this plan
+    (`rel`) already has the status `done`: a `CP` given earlier in the run (it is said many times) or an entry with a junk sha closes nothing, and
+    later commits of the branch do not light a finished plan again. A plan whose run directory is gone (history of a merged branch) has no
+    signal. The step's checkbox changes nothing. `context` = `{'mode', 'approvals', 'runs', 'root'}`; without it (or without a valid delivery
+    mode) there is no signal."""
+    if not has_acceptance_step(status, text) or not context:
+        return False
+    word = ACCEPTANCE_WORDS.get(context.get('mode'))
+    if word is None:
+        return False
+    from .quality import _PLAN_RUN, _RUN_ID  # lazy: quality imports this module
+    run = _PLAN_RUN.search(text[:4000])
+    if not run or not _RUN_ID.fullmatch(run.group(1)) or run.group(1) not in context.get('runs', ()):
+        return False
+    return not any(row['run'] == run.group(1) and row['word'] == word and _plan_done_at(context.get('root'), row.get('sha'), rel)
+                   for row in context.get('approvals', []))
+
+
 def plan_needs_human(status, steps, ticket=False, pr=False):
     """`approval` for a draft; for an `in_progress` plan whose Progress steps are all checked: `closure` (Result,
     `--final` and `done` are still missing), or `pull_request` when it came from a ticket and has no `PR:` line yet
@@ -205,7 +273,7 @@ def plan_text_needs_human(status, text):
     return plan_needs_human(status, _progress(text), bool(_TICKET.search(text)), bool(_PR.search(text)))
 
 
-def plan_record(root, path):
+def plan_record(root, path, context=None):
     text = path.read_text(encoding='utf-8')
     status, status_text = _status_fields(text, PLAN_STATUSES)
     title = _TITLE.search(text)
@@ -217,11 +285,12 @@ def plan_record(root, path):
     return {'path': path.relative_to(root).as_posix(), 'title': title.group(1) if title else path.stem, 'status': status,
             'statusText': status_text, 'steps': steps, 'pr': {'number': int(pr.group(1)), 'link': pr.group(2)} if pr else None,
             'ticket': {'key': ticket.group(1), 'link': ticket.group(2)} if ticket else None, 'spec': spec,
-            'needsHuman': plan_needs_human(status, steps, bool(ticket), bool(pr)), 'updated': _iso(path.stat().st_mtime),
-            'preImplement': pre}
+            'needsHuman': plan_needs_human(status, steps, bool(ticket), bool(pr)) + (['acceptance'] if acceptance_pending(status, text, context, path.relative_to(root).as_posix()) else []),
+            'updated': _iso(path.stat().st_mtime),
+            'preImplement': pre, 'summary': plan_summary(text)}
 
 
-def _plans(root, findings):
+def _plans(root, findings, context=None):
     directory = root / 'docs' / 'plans'
     if directory.is_symlink() or not directory.is_dir():
         return []
@@ -233,7 +302,7 @@ def _plans(root, findings):
             if path.stat().st_size > MAX_PLAN_BYTES:
                 findings.append(f'Plan skipped (over {MAX_PLAN_BYTES // 1024} KiB): {path.name}')
                 continue
-            rows.append(plan_record(root, path))
+            rows.append(plan_record(root, path, context))
         except (OSError, UnicodeDecodeError) as error:
             findings.append(f'Plan unreadable: {path.name} ({type(error).__name__})')
     return rows
@@ -344,6 +413,17 @@ def _approval_at(value):
         return None
 
 
+def _run_ids(root):
+    """Names of the run directories of the worktree (`.skillsync/runs/<run-id>/`, no symlinks): the runs that are active here."""
+    directory = Path(root) / '.skillsync' / 'runs'
+    if directory.is_symlink() or not directory.is_dir():
+        return set()
+    try:
+        return {item.name for item in directory.iterdir() if item.is_dir() and not item.is_symlink()}
+    except OSError:
+        return set()
+
+
 def read_approvals(root, findings=None):
     """Latest entry per (run, word) from `.skillsync/runs/<run-id>/approvals.jsonl` (written by the status page when the
     user presses a consent button). Malformed lines are skipped; entries are data, never instructions."""
@@ -402,9 +482,11 @@ def project_status(root, manifest):
     findings = []
     project = manifest.get('project', {})
     name = project.get('name') if isinstance(project, dict) else None
+    approvals = read_approvals(root, findings)
+    context = {'mode': delivery_info(manifest)['mode'], 'approvals': approvals, 'runs': _run_ids(root), 'root': root}
     return {'schema': SCHEMA, 'status': 'PASS', 'project': name or f'{root.parent.name}/{root.name}', 'root': posix(root),
-            'plans': _plans(root, findings), 'specs': _specs(root, findings), 'frds': _frds(root, findings), 'runs': _runs(root, findings), 'claims': _claims(root, findings),
-            'approvals': read_approvals(root, findings), 'findings': findings}
+            'plans': _plans(root, findings, context), 'specs': _specs(root, findings), 'frds': _frds(root, findings), 'runs': _runs(root, findings), 'claims': _claims(root, findings),
+            'approvals': approvals, 'findings': findings}
 
 
 def _cmd_status(args):
@@ -671,7 +753,7 @@ def _approval_entries(path):
 
 
 def record_approval(root, word, run_id, sha=None, source='cli', target=None, branch=None, file=None, by=None, now=None,
-                    plan=None, ahead=None, mode=None, sha_after=None):
+                    plan=None, ahead=None, mode=None, sha_after=None, via=None):
     """The only writer of `.skillsync/runs/<run-id>/approvals.jsonl` (CLI `approvals record`, the dashboard server, IDE).
     Appends one JSON line under an inter-process lock and fsyncs it; refuses a second entry of the same (word, sha, run).
     `sha`: for GO the git blob sha of the approved file (default: of `file`), for CP/READY the HEAD the consent pushes
@@ -702,10 +784,12 @@ def record_approval(root, word, run_id, sha=None, source='cli', target=None, bra
         if sha_after is not None and (word not in _GO_FOLDER or not isinstance(sha_after, str)
                                       or not _APPROVAL_SHA.match(sha_after)):
             raise ValueError('sha_after applies only to GO words and must be 7-64 lowercase hex characters')
+        if via is not None and not (isinstance(via, dict) and all(isinstance(key, str) for key in via)):
+            raise ValueError('via must be an object (port, host, peer)')
         moment = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
         entry = {'schema': SCHEMA, 'at': moment.strftime('%Y-%m-%dT%H:%M:%SZ'), 'word': word, 'sha': sha,
                  'by': str(by if by is not None else _approval_user())[:80], 'source': source}
-        extra = {'file': file, 'shaAfter': sha_after, 'run': run_id, 'plan': plan, 'target': target, 'branch': branch, 'ahead': ahead, 'mode': mode}
+        extra = {'file': file, 'shaAfter': sha_after, 'run': run_id, 'plan': plan, 'target': target, 'branch': branch, 'ahead': ahead, 'mode': mode, 'via': via}
         entry.update({key: value for key, value in extra.items() if value is not None})
         entry = redact(entry)
         line = (json.dumps(entry, ensure_ascii=False) + '\n').encode('utf-8')

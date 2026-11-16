@@ -244,6 +244,30 @@ class AddRefsOptionsTests(QuestionCase):
         self.assertEqual(refs[1]['href'], 'https://example.com/przepis')
         self.assertEqual(refs[1]['excerpt'], 'Wyciąg z przepisu|z kreską', 'trzeci człon zawiera resztę wartości')
 
+    def test_screen_writes_an_absolute_path_ref_to_the_screen_of_the_prototype_server(self):
+        self.add('Q?', QA, '--screen', 'demo#s4', '--screen', 'zamawianie-przesylek#s12', '--ref', 'Sekcja|docs/x.md')
+        refs = self.ops()[0]['refs']
+        self.assertEqual(refs[0]['href'], 'docs/x.md')   # the --ref items first, then the --screen items in the given order
+        self.assertEqual(refs[1], {'title': 'Ekran s4', 'href': '/demo/index.html#s4'})
+        self.assertEqual(refs[2], {'title': 'Ekran s12', 'href': '/zamawianie-przesylek/index.html#s12'})
+
+    def test_screen_values_outside_the_pattern_are_refused_and_nothing_is_written(self):
+        attacks = ('../x#s4', 'demo/../x#s4', '//host#s4', 'https://example.com#s4', 'javascript:x#s4', 'de mo#s4', 'demo #s4', 'demo\\x#s4',
+                   'Demo#s4', 'demo_x#s4', 'demo.x#s4', '-demo#s4', 'demo-#s4', 'demo--x#s4', '#s4', 'demo', 'demo#', 'demo#s', 'demo#sx',
+                   'demo#S4', 'demo#4', 'demo#s4\n', 'demo#s4 ', 'demo#s4#s5', 'demo#s4/x', 'a' * 600 + '#s4', 'demo#s' + '1' * 2000, '/demo#s4', 'demo/index.html#s4', 'demo#s-1', 'demo#s4?x=1')
+        for value in attacks:
+            with self.subTest(value=value):
+                self.add('Q?', QA, '--screen=' + value, code=2)   # a malformed option: BLOCKED, like a malformed --ref
+                self.assertFalse((self.qroot / QN).exists())
+        self.add('Q?', QA, '--screen', 'demo#s4')   # check: the good one passes
+
+    def test_screen_and_ref_count_together_at_most_five(self):
+        refs = [item for n in range(3) for item in ('--ref', 'R%d|docs/x%d.md' % (n, n))] + [item for n in range(3) for item in ('--screen', 'demo#s%d' % (n + 1))]
+        self.add('Q?', QA, *refs, code=1)
+        self.assertFalse((self.qroot / QN).exists())
+        self.add('Q?', QA, *refs[:10])
+        self.assertEqual(len(self.ops()[0]['refs']), 5)
+
     def test_dangerous_or_insecure_hrefs_are_refused_and_nothing_is_written(self):
         for href in ('javascript:alert(1)', 'http://example.com/x', 'data:text/html,x', '//example.com/x'):
             with self.subTest(href=href):

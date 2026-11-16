@@ -128,11 +128,12 @@ def _sweep_temporaries(directory: Path, root, port: int) -> None:
         pass
 
 
-def write_state(root, port: int, token, host: str = "127.0.0.1", warn=None, hosts=()):
+def write_state(root, port: int, token, host: str = "127.0.0.1", warn=None, hosts=(), role=None, peer=None):
     """Write the state file of the server; returns its path, or None when it could not be written (the page still works).
 
     `token=None` (`--no-approvals`): the file says `approvals: false` and holds no token, so `dashboard url` can tell a server without
-    consents from no server."""
+    consents from no server. `role` / `peer` (two-port mode: `read` or `approve`, and the port of the other socket) are added only when
+    given, so a file of the single-port mode is the file of 1.5.0 (no `role` = `both`)."""
     path = state_path(root, port)
     try:
         directory = path.parent
@@ -147,6 +148,10 @@ def write_state(root, port: int, token, host: str = "127.0.0.1", warn=None, host
         record = {"schema": SCHEMA, "pid": os.getpid(), "port": int(port), "host": host, "root": root_text(root),
                   "startedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"), "approvals": token is not None,
                   "hosts": [str(name) for name in hosts]}
+        if role is not None:
+            record["role"] = role
+        if peer is not None:
+            record["peer"] = int(peer)
         if token is not None:
             record["token"] = token
             record["tokenId"] = token_id(token)
@@ -244,7 +249,8 @@ def servers(root, port: int | None = None, healthy=None) -> list[dict]:
             continue
         if not healthy(record.get("host") or "127.0.0.1", record["port"], token_id(record["token"]) if has_token else None):
             continue
-        found.append({**{key: record.get(key) for key in ("port", "pid", "host", "token", "startedAt", "hosts")}, "approvals": has_token})
+        found.append({**{key: record.get(key) for key in ("port", "pid", "host", "token", "startedAt", "hosts", "peer")}, "approvals": has_token,
+                      "role": record.get("role") if record.get("role") in ("read", "approve") else "both"})
     return found
 
 
@@ -254,6 +260,35 @@ def address(port: int, token: str, host: str = "127.0.0.1") -> str:
     if name == "::1":
         name = "[::1]"
     return f"http://{name}:{port}/#{FRAGMENT}={token}"
+
+
+def read_address(port: int, host: str = "127.0.0.1") -> str:
+    """The address of the read socket: no fragment, no token (safe to hand to a person from outside)."""
+    name = host if host else "127.0.0.1"
+    if name == "::1":
+        name = "[::1]"
+    return f"http://{name}:{port}/"
+
+
+def _read_address(args, found: list[dict], blocked) -> int:
+    """`dashboard url --read`: the address of the read socket of a running two-port server (or of a single-port server, which reads too)."""
+    from .common import emit
+    readers = [item for item in found if item.get("role") in ("read", "both")]
+    if not readers:
+        return blocked("server_not_running", "brak działającego `dashboard serve` tego projektu z gniazdem odczytu (z zapisanym plikiem stanu)")
+    if len(readers) > 1:
+        return blocked("ambiguous_server", "kilka serwerów tego projektu: podaj --port (" + ", ".join(str(item["port"]) for item in readers) + ")")
+    chosen = readers[0]
+    name = getattr(args, "host", None) or None
+    if name is not None:
+        allowed = set(LOOPBACK) | {chosen.get("host")} | set(chosen.get("hosts") or [])
+        if name.lower() not in {str(item).lower() for item in allowed if item}:
+            return blocked("host_not_allowed", "--host: tylko loopback albo nazwa z --approve-host tego serwera")
+    url = read_address(chosen["port"], name or address_host(chosen.get("host") or "127.0.0.1", chosen.get("hosts") or ()))
+    if args.json:
+        return emit({"schema": 1, "status": "PASS", "url": url, "port": chosen["port"], "pid": chosen["pid"], "role": chosen.get("role") or "both"})
+    print(url)
+    return 0
 
 
 def url_command(args) -> int:
@@ -271,6 +306,8 @@ def url_command(args) -> int:
     except Exception as error:  # noqa: BLE001 - any broken project is BLOCKED, as for the other `dashboard` commands
         return blocked("invalid_project", " ".join(str(error).split())[:300])
     found = servers(root, getattr(args, "port", None))
+    if getattr(args, "read", False):
+        return _read_address(args, found, blocked)
     running = [item for item in found if item.get("approvals")]    # servers with consents: only they have an address with a token
     if not running and found:
         return blocked("approvals_disabled", "serwer tego projektu działa z --no-approvals (port " + ", ".join(str(item["port"]) for item in found)
@@ -289,6 +326,11 @@ def url_command(args) -> int:
             return blocked("host_not_allowed", "--host: tylko loopback albo nazwa z --approve-host tego serwera (" + ", ".join(sorted(chosen.get("hosts") or [])) + ")")
     url = address(chosen["port"], chosen["token"], name or address_host(chosen.get("host") or "127.0.0.1", chosen.get("hosts") or ()))
     if args.json:
-        return emit({"schema": 1, "status": "PASS", "url": url, "port": chosen["port"], "pid": chosen["pid"]})
+        answer = {"schema": 1, "status": "PASS", "url": url, "port": chosen["port"], "pid": chosen["pid"]}
+        if chosen.get("role") == "approve":   # two-port mode: the address of the read socket (no token) and the role of this one
+            answer["role"] = "approve"
+            if chosen.get("peer"):
+                answer["readUrl"] = read_address(chosen["peer"], name or address_host(chosen.get("host") or "127.0.0.1", chosen.get("hosts") or ()))
+        return emit(answer)
     print(url)
     return 0

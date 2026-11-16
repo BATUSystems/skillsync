@@ -106,7 +106,7 @@ Zasady configu:
 | `instructions/_base.d/*.md` | suma; patrz „_base.d” niżej |
 | `agents/<n>.md` | cały plik, późniejsza wygrywa |
 | `codex.yaml` | mapy scalane głęboko; listy wykluczeń skilli = suma |
-| `workflow/defaults.yaml` | mapy scalane, listy zastępowane; `validation.checks[]` i `guardrails.rules[]` łączone po `id` (kolizja: późniejsza); `routing.rules[]` i `guardrails.checks[]` (bez `id`) dopisywane w kolejności `use` z deduplikacją po treści |
+| `workflow/defaults.yaml` | mapy scalane, listy zastępowane; `validation.checks[]` i `guardrails.rules[]` łączone po `id` (kolizja: późniejsza); `routing.rules[]`, `guardrails.checks[]` i `review.prototype[]` (bez `id`) dopisywane w kolejności `use` z deduplikacją po treści |
 | `workflow/projects/*.yaml`, `workflow/trackers/*.yaml` | cały plik, późniejsza wygrywa |
 | `workflow/skill-catalog.yaml` + `skill-catalog.d/<id>.yaml` | suma wpisów `skills` i `orgs`; kolizja klucza: późniejsza |
 | `workflow/skill-profiles.yaml` + `.d/` | per profil (w tym `default`) suma list skilli z deduplikacją |

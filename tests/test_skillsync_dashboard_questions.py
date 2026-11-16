@@ -45,7 +45,7 @@ class ExpertQuestions(unittest.TestCase):
         return dashboard.build_expert_questions(self.root)
 
     def test_no_prototypes_means_zero(self):
-        self.assertEqual(self.summary(), {'open': 0, 'blocking': 0, 'runs': []})
+        self.assertEqual(self.summary(), {'open': 0, 'blocking': 0, 'runs': [], 'items': []})
 
     def test_sums_every_run_and_lists_only_runs_with_open_questions(self):
         self.run_dir('run-a', operations=[ask('o1', 'qn-000001'), ask('o2', 'qn-000002', blocking=False), ask('o3', 'qn-000003'),
@@ -53,9 +53,11 @@ class ExpertQuestions(unittest.TestCase):
         self.run_dir('run-b', operations=[ask('o5', 'qn-000004'), ask('o6', 'qn-000005'), reply('o7', 'qn-000005', 'withdraw')])
         self.run_dir('run-c', operations=[ask('o8', 'qn-000006'), reply('o9', 'qn-000006', 'answer')])
         self.run_dir('run-d', operations=[])
-        self.assertEqual(self.summary(), {'open': 3, 'blocking': 2, 'runs': [
-            {'slug': 'run-a', 'open': 2, 'blocking': 1, 'url': '/_experts/run-a'},
-            {'slug': 'run-b', 'open': 1, 'blocking': 1, 'url': '/_experts/run-b'}]})
+        got = self.summary()
+        self.assertEqual(len(got.pop('items')), 6)   # every question of every run, open or closed (newest first)
+        self.assertEqual(got, {'open': 3, 'blocking': 2, 'runs': [
+            {'slug': 'run-a', 'open': 2, 'blocking': 1, 'url': '/_experts/run-a', 'addressees': 'all'},
+            {'slug': 'run-b', 'open': 1, 'blocking': 1, 'url': '/_experts/run-b', 'addressees': 'all'}]})
 
     def test_counts_match_the_prototype_server_fold(self):
         operations = [ask('o1', 'qn-000001'), ask('o2', 'qn-000002', blocking=False), ask('o3', 'qn-000003'), ask('o4', 'qn-000004'),
@@ -121,8 +123,10 @@ class ExpertQuestions(unittest.TestCase):
         (self.root / '.github').mkdir()
         (self.root / '.github' / '.skillsync.yaml').write_text('skills: [dashboard]\n', encoding='utf-8')
         status = dashboard.build_status(self.root, approvals=False)
-        self.assertEqual(status['expertQuestions'], {'open': 2, 'blocking': 1, 'runs': [
-            {'slug': 'run-a', 'open': 2, 'blocking': 1, 'url': '/_experts/run-a'}]})
+        expert = dict(status['expertQuestions'])
+        self.assertEqual([item['id'] for item in expert.pop('items')], ['qn-000002', 'qn-000001'])
+        self.assertEqual(expert, {'open': 2, 'blocking': 1, 'runs': [
+            {'slug': 'run-a', 'open': 2, 'blocking': 1, 'url': '/_experts/run-a', 'addressees': 'all'}]})
         self.assertEqual(status['blockingQuestions']['count'], 1)  # the spec's own list is a separate field
 
     def test_watcher_follows_questions_files(self):

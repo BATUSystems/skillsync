@@ -9,7 +9,7 @@ wyniku: `tests/fixtures/dashboard/<przypadek>/input/` i `expected.json`.
 | Komenda | Zachowanie |
 |---|---|
 | `skillsync dashboard show <projekt> [--json] [--plan <rel>]` | drukuje kontrakt `schema: 1` (JSON; bez `--json` ten sam JSON, formatowany); tylko odczyt, bez zapisu do projektu; `--plan` wybiera plan (ścieżka względna, np. `docs/plans/<plik>.md`), bez niego plan wybierany jest automatycznie (`planAuto: true`) |
-| `skillsync dashboard serve <projekt> [--port N] [--host H] [--approve-host H] [--read-host H]` | serwer HTTP nad tym samym JSON (`/api/status`, strumień zmian `/events`, przyciski zgód); port wybiera się per projekt, by strony nie kolidowały |
+| `skillsync dashboard serve <projekt> [--port N] [--read-port N --approve-port M] [--host H] [--approve-host H] [--read-host H]` | serwer HTTP nad tym samym JSON (`/api/status`, strumień zmian `/events`, przyciski zgód); jedno gniazdo (`--port`) albo dwa: odczyt i zgody (sekcja „Serwer”); port wybiera się per projekt, by strony nie kolidowały |
 | `skillsync dashboard metrics <projekt> <run-id> [--json] [--plan <rel>]` | ogólne metryki przebiegu: czas podkroków `Fn.k` z checkpointów, liczby rund i porażek; podkrok bez danych jest oznaczony jawnie (sekcja „Metryki przebiegu”) |
 | `skillsync approvals record <projekt> --word "GO plan\|GO implement\|CP\|READY" --run <run-id> [--sha <git sha>] [--target X] [--branch Y] [--file docs/…] --source <cli\|ide> [--json]` | zapisuje zgodę użytkownika (patrz niżej; `dashboard` ustawia tylko serwer) |
 
@@ -21,7 +21,8 @@ projektu lub przebiegu). Raport komend zapisujących i `metrics --json` to JSON 
 
 - Dopisuje jedną linię JSON do `.skillsync/runs/<run-id>/approvals.jsonl` pod blokadą plikową (jedyne źródło, które czyta
   `skillsync approvals wait`). Pola wpisu: `schema`, `at` (UTC), `word`, `sha`, `by`, `source` (`cli`, `dashboard` albo
-  `ide`), opcjonalnie `file`, `run`, `plan`, `target`, `branch`, `ahead`, `mode`. Wpis z `record` ma zawsze `at`
+  `ide`), opcjonalnie `file`, `run`, `plan`, `target`, `branch`, `ahead`, `mode`, `via` (tylko zgody z gniazda zgód trybu dwóch gniazd, zapisuje
+  je serwer; obiekt `{port, host, peer}`, zob. „Ślad zgody”). Wpis z `record` ma zawsze `at`
   (`YYYY-MM-DDTHH:MM:SSZ`), `run` (= `--run`) i `by` (nazwa użytkownika systemu, `unknown`, gdy jej nie da się odczytać);
   pola opcjonalne bez wartości są pominięte (nie `null`). Wartości tekstowe przechodzą przez maskowanie sekretów.
 - `--sha` (7–64 znaków hex, małe litery): dla `GO plan`/`GO implement` git blob sha zatwierdzanego pliku (domyślnie: sha
@@ -113,6 +114,8 @@ projektu lub przebiegu). Raport komend zapisujących i `metrics --json` to JSON 
 | `assumptions` | obiekt | NOWE: założenia ze speca |
 | `blockingQuestions` | obiekt | NOWE: pytania blokujące ze speca |
 | `expertQuestions` | obiekt | NOWE: otwarte pytania do eksperta ze wszystkich przebiegów |
+| `prototypes` | tablica | wszystkie prototypy projektu (do 50, wg `slug`): `{slug, iteration, screens, accepted, stale, threads, commentsAfterAcceptance, writing}`; `threads` = liczby wątków wg statusu (open, awaiting, decided, closed…), `writing` jak w `prototype.writing`; odnośnik buduje host z `slug` (`deps.prototypeUrl`) |
+| `result` | obiekt albo null | `{text, path}`: sekcja `## Wynik` wybranego planu (do 4 KiB, tekst), gdy plan jest `in_progress`, `done` albo `implemented`; null bez planu, bez sekcji albo dla planu, który nie ruszył |
 | `eta` | obiekt albo null | NOWE (addytywnie, `schema: 1`): szacowany koniec bieżącej operacji z najnowszego checkpointu (`eta:`) |
 | `substeps` | tablica | NOWE: podkroki `Fn.k` z czasem |
 | `timing` | obiekt | NOWE (addytywnie, `schema: 1`): czas pracy i czas czekania na człowieka per krok i per faza planu |
@@ -173,13 +176,25 @@ zatwierdza zgoda), `pr` (`{number, url}` z linii `PR: #N (link: https://…)` lu
 | `files` | tablica | pliki `*.md` przebiegu (ścieżki względne, posortowane) |
 | `lastReportAt` | string | opcjonalne; czas modyfikacji `checkpoints.md` |
 | `inProgressFrom` | string | opcjonalne; czas checkpointu z ostatnim „w toku” |
+| `parseWarnings` | tablica | opcjonalne (brak klucza = brak ostrzeżeń); do 10 najnowszych: `{time, segment: "w toku"\|"zrobione", fragment (do 80 znaków), reason: "no-step-id"\|"later-id"}` |
 
-Format checkpointu: `- HH:MM <tekst>`; segmenty `w toku: F1.2, F1.3`, `zrobione: F1.1`, `czeka: <na co>`.
+Format checkpointu: `- HH:MM <tekst>`; segmenty `w toku: F1.2, F1.3`, `zrobione: F1.1`, `czeka: <na co>`, `eta: <operacja> do HH:MM`,
+`trwa: <klucz etapu>[, …]`.
+
+Składnia segmentów: `;` kończy segment tylko poza nawiasami `()`, `[]`, `{}` (opis w nawiasie może zawierać `;`); linia z
+niezbalansowanym nawiasem dzieli się po każdym `;`. Każdy element listy „w toku” i „zrobione” zaczyna się od id kroku;
+elementy rozdziela przecinek, a id w jednym elemencie łączą `/`, `+`, `&`, `‖`, `||`, „i” i „oraz”. Element bez id na początku
+(`no-step-id`) i id dalej w elemencie niż na początku (`later-id`) nie wchodzą do `progress.active`; zgłasza je `parseWarnings`.
+Segment `trwa:` nazywa etapy, które trwają teraz (klucz etapu bez `stage_` albo jego etykieta, np. `spec_review`, `prototyp`); liczy się
+tylko najnowszy checkpoint, a `czeka:` w tej samej linii wygrywa (sesja czeka, nie pracuje). Suffix `(kto: <rola>[ <login>])` w
+wartości `czeka:` wskazuje adresata (role: `acceptor`, `developer`, `expert`, `commenter`, `agent`; po polsku też „akceptujący”,
+„programista”, „ekspert”, „komentujący”, „odbiór”).
 
 ### `progress`
 
 `total`, `done`, `percent`, `pending` (zrobione wg checkpointu, jeszcze nie zaznaczone w planie), `pendingPercent`,
-`active` (id kroków w toku), `activeSource` (`checkpoint`, `first-unchecked` lub null), `current` (`{index, id, title}` lub
+`activePercent` (opcjonalne; kroki w toku liczone jako połowa kroku, różnica zaokrągleń, więc `percent` + `pendingPercent` +
+`activePercent` ≤ 100), `active` (id kroków w toku), `activeSource` (`checkpoint`, `first-unchecked` lub null), `current` (`{index, id, title}` lub
 null), `parallel` (liczba kroków w toku ponad pierwszy), `reported` (id), `phases[]`.
 
 `phases[]`: `name`, `label` (część przed `:`), `short`, `total`, `done`, `percent`, `pending`, `pendingPercent`, `state`
@@ -191,16 +206,26 @@ null), `parallel` (liczba kroków w toku ponad pierwszy), `reported` (id), `phas
 Trzy obiekty o `key` `spec` (I), `plan` (II), `real` (III). Wspólne: `key`, `roman`, `name`, `state` (`planned`, `active`,
 `done`), `status` (status speca lub planu, null), `detail` (string lub null), `stages[]`.
 
-Kafelek etapu: `label`, `done` (bool), `tip` (dymek), `key` (klucz opisu w `descriptions.json` skilla lub null).
+Kafelek etapu: `label`, `done` (bool), `tip` (dymek), `key` (klucz opisu w `descriptions.json` skilla lub null), `state`
+(opcjonalne: `done`, `active`, `planned`; `done: true` ⇔ `state: "done"`), `since` (opcjonalne, `HH:MM`; od kiedy etap trwa). Etap jest
+`active`, gdy najnowszy checkpoint ma `trwa:` z jego kluczem (bez `czeka:` w tej linii), spec jest w przygotowaniu (etap „Szkic”)
+albo znacznik pisania prototypu jest ważny (etap „Prototyp”); etap zrobiony zostaje `done`.
+Stan `active` zostaje w danych także po śmierci sesji (serwer nie czyta zegara); renderer gasi tylko pulsowanie i pisze „brak aktywności od N min”, gdy przebieg jest cichy: wg `silence` (`since`, `thresholdMin`), a bez niego wg `run.lastReportAt` i tego samego progu 35 minut.
 
 Pola szczególne: `warning` (tylko akt I; ostrzeżenie o braku pre-implement przed „GO plan” przy sekcjach
-Kontrakty/Migracja/Dane), `percent` (tylko akt III; = `progress.percent`).
+Kontrakty/Migracja/Dane), `linkWarning` (tylko akt I, opcjonalne; zdanie o przerwanym powiązaniu spec → przebieg → prototyp: brak `Przebieg:`, brak katalogu
+przebiegu albo prototypu, którego nie ma; null przy kompletnym powiązaniu), `percent` (tylko akt III; = `progress.percent`).
 
 ### `waiting[]`
 
 `what`, `source` (`checkpoint`, `plan`, `spec`, `prototype`, `writing`, `expert`), `since` (`HH:MM` lub null), `action` (podpowiedź dla
 człowieka), `link` (`{kind: "doc", path}`, `{kind: "prototype", slug}`, `{kind: "expert", slug, url}` lub null); opcjonalnie `word` (np. `GO plan`) i
 `approve` (`spec`, `plan`, `cp`, `ready`), gdy czekanie odpowiada przyciskowi zgody.
+
+`who` (opcjonalne): `{role, login, label}`, na kogo czeka sesja. `role`: `acceptor`, `developer`, `expert`, `commenter`, `agent` albo null
+(nieznana rola z sufiksu: `label` to jej tekst); `login` tylko dla jednego adresata, inaczej null; `label` po polsku („akceptujący”,
+„programista”, „ekspert”, „komentujący”, „agent”, „odbiór”). Źródła: sufiks `(kto: …)` w `czeka:` (tekst `what` jest bez sufiksu) albo
+domyślnie `source` (`expert` → ekspert, `writing` → agent, `prototype`, `plan`, `spec` i pozycje zgód → akceptujący); bez źródła pola nie ma.
 
 Pytania blokujące (`blockingQuestions`) generują czekanie tylko, gdy sesja zgłosi je w checkpoincie (`czeka: odpowiedź Q3`);
 założenia nigdy nie są akcją „Odpowiedz na pytania”.
@@ -226,7 +251,8 @@ nie czeka jawnie (żaden element `waiting` ze źródłem `checkpoint` ani `exper
 `{enabled, actions[], last}`; `last` = ostatni wpis `approvals.jsonl` lub null; `enabled` = false (z `--no-approvals`) daje
 `actions: []`.
 Opcjonalne pola tylko z serwera (`/api/status`, nie w `show`): `here` (bool, host zgód) i `viewer` (bool, host wyłącznie
-do odczytu z `--read-host`); opis w sekcji „Serwer”.
+do odczytu z `--read-host`); w trybie dwóch gniazd także `role` (`read`, `approve`), a `here`/`viewer` są wtedy z gniazda;
+opis w sekcji „Serwer”.
 
 `actions[]`: `kind` (`spec`, `plan`, `cp`, `ready`), `word` (`GO plan`, `GO implement`, `CP`, `READY`), `state`:
 
@@ -262,10 +288,14 @@ tablica).
 
 ### `prototype`
 
-`{slug: string|null, port: int, up: bool, writing: object|null}`; `up` bez serwera (`show`) = false. `writing` = `{since, expiresAt, renewedAt}`
-(UTC, milisekundy; nigdy `by`) ważnego znacznika zapisu ekranów `docs/prototypes/<slug>/.writing.json`, inaczej null (brak, wygasły, uszkodzony,
+`{slug: string|null, port: int, up: bool, writing: object|null}`; `up` bez serwera (`show`) = false. `writing` = `{since, expiresAt, renewedAt[, screensPlanned], screensDone}`
+(UTC, milisekundy; nigdy `by`; `screensPlanned` (1–200) tylko gdy agent podał `writing start --screens N`, `screensDone` = liczba ekranów `index.html` bez przykładowego, liczona jak akceptacja) ważnego znacznika zapisu ekranów `docs/prototypes/<slug>/.writing.json`, inaczej null (brak, wygasły, uszkodzony,
 dowiązanie symboliczne). Odczyt jest tym samym kodem co w serwerze prototypów, tylko do odczytu; serwer strony śledzi plik znacznika i jego ważność,
 więc strona odświeża się też przy wygaśnięciu.
+
+`commentsAfterAcceptance` (opcjonalne w `prototype` i w `prototypes[]`): `{count, screens: [{id, count}]}`; wiadomości (nowy wątek albo odpowiedź, bez wycofanych)
+późniejsze niż ostatnia WAŻNA akceptacja ekranu, w wątkach niezałatwionych (`open`, `awaiting`; nie `decided` ani `closed`). Bezstanowe: bez znacznika
+„przeczytane”, znika po załatwieniu wątku albo nowej akceptacji. W `prototype` tylko gdy `count > 0`.
 
 ### `docs[]`
 
@@ -318,8 +348,12 @@ bez dowiązań symbolicznych, `prototype.json` obok, plik do 2 MiB (serwer zapis
   blokujące = `blocking: true` w `ask`.
 - `open`, `blocking`: sumy po wszystkich przebiegach; zawsze obecne, `0` bez pytań. Pytania do eksperta nie zależą od
   wybranego planu ani speca, więc pytanie z przebiegu A nie znika po starcie przebiegu B.
-- `runs[]`: tylko przebiegi z otwartymi pytaniami, w kolejności `slug`: `{slug, open, blocking, url}`; `url` to ścieżka
-  strony przebiegu na serwerze prototypów (`/_experts/<slug>`), host dokłada konsument.
+- `runs[]`: tylko przebiegi z otwartymi pytaniami, w kolejności `slug`: `{slug, open, blocking, url, addressees}`; `url` to ścieżka
+  strony przebiegu na serwerze prototypów (`/_experts/<slug>`), host dokłada konsument. `addressees` (opcjonalne): `"all"`, gdy któreś otwarte
+  pytanie przebiegu nie ma adresatów, inaczej posortowana suma loginów adresatów otwartych pytań.
+- `items[]` (opcjonalne): do 50 najnowszych pytań wszystkich przebiegów, najnowsze pierwsze: `{id, runSlug, text (do 160 znaków), blocking,
+  addressees (lista loginów, pusta = wszyscy eksperci), state (open, answered, withdrawn), at, url}`.
+- Widok widza (`approvals.viewer`): ta sama odpowiedź co dla operatora (loginy, nazwiska, treści pytań, plany i teksty checkpointów są widoczne; strona jest wewnątrzfirmowa). Różni się tylko flaga `approvals.viewer` (bez zapisu zgód) i `approvals.here`; w trybie dwóch gniazd obie flagi (i `approvals.role`) pochodzą z gniazda, nie z nagłówka `Host`, a treść pozostaje bez filtra także na gnieździe odczytu (decyzja właściciela z 15.11.2026).
 - Renderer pokazuje toast „Pytania do eksperta: N otwartych (M blokujących)” w banerze, gdy `open > 0`: to stan, nie wynik
   akcji, więc bez timera i bez „×”; znika, gdy `open` spadnie do `0`. Odnośnik „Odpowiedz na pytania” prowadzi do
   `/_experts/<slug>` przy jednym przebiegu albo do `/_experts` przy kilku, o ile host zna adres serwera prototypów
@@ -479,12 +513,115 @@ Różnice rozstrzygnięte świadomie:
 
 ## Serwer (`dashboard serve`)
 
-`skillsync dashboard serve <projekt> [--port 5140] [--prototype-port N] [--host 127.0.0.1] [--approve-host H ...] [--read-host H ...] [--no-approvals] [--plan <rel>]
-[--session-url https://…] [--layer id=ścieżka ...]` (moduł `skillsync_workflow/dashboard_http.py`, ładowany leniwie) działa
-na pierwszym planie; Ctrl+C albo SIGTERM kończy go raportem `{"status": "PASS", "url", "stopped": true}` (kod `0`). Odmowa
-startu = `BLOCKED` (kod `2`): port spoza 5100–5199 albo zakazany (4444–4448, 9222, 9333), brak manifestu, brak
+`skillsync dashboard serve <projekt> [--port 5140] | [--read-port N] [--approve-port M] [--read-bind A] [--approve-bind A] [--allow-proxy-headers]
+[--prototype-port N] [--host H] [--approve-host H ...] [--read-host H ...] [--no-approvals] [--plan <rel>]
+[--session-url https://…] [--layer id=ścieżka ...]` (moduł `skillsync_workflow/dashboard_http.py`, ładowany leniwie; tryb
+dwóch gniazd: `skillsync_workflow/dashboard_ports.py`) działa na pierwszym planie; Ctrl+C albo SIGTERM kończy go raportem
+`{"status": "PASS", "url", "stopped": true}` (kod `0`; w trybie dwóch gniazd `{"status": "PASS", "stopped": true, "ports": {"read": N, "approve": M}}`, bez pól „read”/„approve” dla pustego gniazda).
+Odmowa startu = `BLOCKED` (kod `2`): port spoza 5100–5199 albo zakazany (4444–4448, 9222, 9333), brak manifestu, brak
 `skills/dashboard/assets/index.html` w aktywnych warstwach, `--session-url` inny niż https bez danych logowania, `--plan`
-spoza dozwolonych dokumentów, port zajęty. Port wybiera się per projekt (domyślnie 5140).
+spoza dozwolonych dokumentów, port zajęty, kombinacja flag z tabeli niżej. Port wybiera się per projekt (domyślnie 5140).
+
+### Tryb dwóch gniazd
+
+`--read-port N` i/lub `--approve-port M` uruchamia po jednym gnieździe HTTP na podany port. Numer podaje się jawnie (flagi
+nie mają wartości domyślnej); przyjęte numery to odczyt 5140 i zgody 5141, a samo pojedyncze gniazdo nie dostaje drugiego
+numeru. Oba gniazda dzielą jeden stan projektu (jeden watcher, jeden strumień SSE). Rola wynika z **gniazda**, nie z nagłówka `Host`:
+
+| Gniazdo | Rola (`approvals.role`) | Zachowanie |
+|---|---|---|
+| odczyt (`--read-port`) | `read` | `GET`/`HEAD` jak na stronie; każda metoda zapisu (`POST`, `PUT`, `DELETE`, `PATCH`, `OPTIONS`) = 404, przed innymi sprawdzeniami; `approvals`: `here` false, `viewer` true, `tokenRequired` false; `/healthz` bez `tokenId`; brak tokenu w odpowiedziach |
+| zgód (`--approve-port`) | `approve` | `GET`/`HEAD` jak na odczycie oraz `POST /api/approve` z kolejnością odmów poniżej; `here` true, `tokenRequired` true (gdy są zgody); `/healthz` z `tokenId` |
+
+Tryb `--port` (jedno gniazdo) ma rolę z nagłówka `Host` (akapit „Kontrola `Host`” w sekcji „Serwer”), nie ma
+pola `approvals.role`, a kolejność odmów to: `Host`, trasa, `X-Status-Board`, `Origin` (porównanie samej nazwy),
+`Content-Type`, token. Wywołanie `serve` bez nowych flag jest tym trybem.
+
+**Nasłuch.** W trybie dwóch gniazd oba domyślnie na `0.0.0.0`; `--host H` ustawia oba na `H`; `--read-bind A` i
+`--approve-bind A` nadpisują `--host` dla swojego gniazda (`127.0.0.1` zawęża do tej maszyny). W trybie `--port` nasłuch
+to `127.0.0.1`, chyba że podano `--host`. Przy każdym gnieździe poza loopbackiem konsola wypisuje ostrzeżenie; dla gniazda
+zgód jest ono osobne: port zgód widzi każde urządzenie w sieci, a token idzie nieszyfrowanym HTTP.
+
+**Konsola przy starcie** (jedna linia na gniazdo): `odczyt (do tunelu i linków): <adres>  [nasłuch …, bez zgód i tokenu]`
+(bez tokenu) oraz `zgody (przyciski, tylko dla Ciebie, nigdy do tunelu): <adres z tokenem>  [nasłuch …]`.
+
+**Start atomowy.** Oba gniazda wiązane są przed wątkami, plikami stanu i wpisami w konsoli. Błąd drugiego wiązania zamyka
+pierwsze i kończy `BLOCKED` (`nie można nasłuchiwać …; porty … muszą być wolne`) bez śladu stanu. Ctrl+C albo SIGTERM
+zamyka oba gniazda i usuwa oba pliki stanu.
+
+**Kombinacje flag** (wszystkie walidacje przed bindem; `BLOCKED`, kod `2`):
+
+| Kombinacja | Wynik |
+|---|---|
+| `--port` z `--read-port` albo `--approve-port` | BLOCKED (niejednoznaczne) |
+| `--read-port` i `--approve-port` z tym samym numerem | BLOCKED |
+| `--no-approvals` z `--approve-port` | BLOCKED (port zgód nie startuje bez tokenu) |
+| `--no-approvals` z `--read-port` | dozwolone: tylko odczyt |
+| `--read-bind` bez `--read-port`; `--approve-bind` bez `--approve-port` | BLOCKED |
+| `--allow-proxy-headers` bez `--approve-port` (także z `--port` albo samym `--read-port`) | BLOCKED |
+| `--approve-host '*'` | BLOCKED |
+
+`--approve-host` z samym `--read-port` jest dozwolone: jego nazwy otwierają również odczyt. `--read-host '*'` (dowolna nazwa)
+działa tylko na gnieździe odczytu; na gnieździe zgód nie daje dostępu.
+
+### Kolejność odmów na gnieździe zgód
+
+Każda odmowa kończy żądanie; odpowiedź nie mówi, które warstwy przeszły.
+
+| Krok | Warunek | Odpowiedź |
+|---|---|---|
+| 1 | `Host` spoza: loopback, literał IP tej maszyny, nazwa z `--approve-host` | 403 `HOST_REFUSED` („Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host).”) |
+| 2 | trasa inna niż `POST /api/approve` | 404 |
+| 3 | brak `X-Status-Board: 1` | 403 „Brak nagłówka X-Status-Board.” |
+| 4 | `Origin` niezgodny (tabela niżej) | 403 „Obcy Origin.” |
+| 5 | nagłówek pośrednika bez `--allow-proxy-headers` | 403 „Zapis przez pośrednika … jest odrzucony …” |
+| 6 | `Content-Type` inny niż `application/json` | 403 „Oczekiwano application/json.” |
+| 7 | token `X-Approve-Token` (porównanie stałoczasowe, ostatni krok) | 403 `code: approve_token`, jedna treść dla braku, pustego, złego i nie-ASCII tokenu |
+| 8 | długość ciała 1–4096, obiekt JSON, potem `Board.approve` | 400, potem 409/403 z `Board.approve` |
+
+Rola `both` (`--port`) ma tę samą kolejność bez kroku 5 i z `Origin` porównywanym tylko po nazwie. Token jest sprawdzany
+przed odczytem ciała, a licznik nieudanych prób tokenu liczy odmowy kroku 7 na gnieździe zgód.
+
+**Origin na gnieździe zgód** (ścisły: schemat, nazwa i port, bez rozróżniania wielkości liter):
+
+| Przypadek | Wynik |
+|---|---|
+| brak nagłówka `Origin` (klient spoza przeglądarki) | dalej (decyduje token) |
+| dokładnie `http://<wartość Host>`, np. `http://192.168.1.5:5141` albo `http://[::1]:5141` | dalej |
+| `null`, pusty, `file://`, `https://…` | 403 |
+| bez portu, gdy `Host` ma port (`http://127.0.0.1` przy `127.0.0.1:5141`) | 403 |
+| inny port, np. `http://127.0.0.1:5140` (strona z gniazda odczytu) | 403 |
+| inna nazwa, ścieżka, ukośnik na końcu, dane logowania, dwa nagłówki `Origin` | 403 |
+
+**Nagłówki pośrednika** (lista zamknięta; liczy się sama obecność, także pusta wartość i duplikat): `Forwarded`,
+`Forwarded-For`, `X-Forwarded-For`, `X-Forwarded-Host`, `X-Forwarded-Proto`, `X-Forwarded-Port`, `X-Forwarded-Server`,
+`X-Forwarded-Scheme`, `X-Forwarded-Prefix`, `X-Original-Forwarded-For`, `X-Original-Host`, `X-Real-IP`, `X-Client-IP`,
+`X-Cluster-Client-IP`, `True-Client-IP`, `CF-Connecting-IP`, `Fastly-Client-IP`, `X-Envoy-External-Address`, `Via`. To
+heurystyka: pośrednik może nie dodać żadnego z nich, więc barierą są token i ścisłe `Origin`, nie ta lista.
+`--allow-proxy-headers` wyłącza tylko krok 5; `Host`, `Origin`, typ i token zostają. Adres z `via.peer` to zawsze adres gniazda, nigdy wartość nagłówka (za odwrotnym proxy: adres proxy).
+
+**Reguła `Host` w trybie dwóch gniazd.** Oba gniazda akceptują `localhost`, `127.0.0.1`, `::1` (bez portu, bez rozróżniania
+wielkości liter), nazwy z `--approve-host` oraz literały IP interfejsów tej maszyny. Literał IP jest sprawdzany przy każdym
+żądaniu próbą `bind` gniazda UDP na tym adresie (udaje się dla adresu własnego interfejsu, ale też dla multicastu i
+broadcastu, więc te są odrzucane wprost: multicast, adresy zarezerwowane, `0.0.0.0`, `::`, `255.255.255.255` i każdy adres
+IPv4 kończący się na `.255`, bo maska nie jest znana, chyba że to adres wyliczony z nazwy maszyny lub trasy, np. `10.0.1.255` w sieci
+/23; jeśli prawdziwy adres maszyny na `.255` mimo to dostaje 403, wpisz go w `--approve-host <IP>`). Nazwa maszyny jest rozwiązywana w tle z limitem 2 s (jedno rozwiązanie naraz, wynik zapamiętany na 60 s, brak odpowiedzi w limicie na 15 s): gdy resolver nie zdąży, adres `.255` niewyliczony inną drogą (trasa) jest ODRZUCANY (fail closed), a start i zamykanie serwera nie czekają na resolver; gdzie `bind` nic nie dowodzi (Linux z `ip_nonlocal_bind`), liczą się
+tylko adresy wyliczone z nazwy maszyny i trasy. Nagłówek `Host` nie jest barierą dostępu przy nasłuchu w sieci: klient spoza
+przeglądarki ustawia go dowolnie, a na gnieździe zgód chroni wyłącznie token. Dzięki temu telefon w sieci wchodzi na `http://<IP maszyny>:5141/` bez wpisywania go w `--approve-host`.
+Gniazdo odczytu dodatkowo przyjmuje nazwy z `--read-host`. Nazwa spoza listy dostaje 403, więc DNS rebinding nie działa.
+
+**Plik stanu i `dashboard url`.** Każde gniazdo ma własny plik stanu (po numerze portu), z polami `role` (`read` albo
+`approve`) i `peer` (port drugiego gniazda); brak `role` oznacza tryb `--port`. Rekord odczytu ma `approvals: false` i nie ma
+tokenu. `dashboard url <projekt>` (bez `--port`) wybiera rekord zgód; `ambiguous_server` dotyczy tylko kilku serwerów zgód,
+więc dwa gniazda jednego procesu nie kolidują. `dashboard url <projekt> --read` wypisuje adres odczytu bez fragmentu, do
+przekazania osobie z zewnątrz; bez gniazda odczytu = `server_not_running`. `--json` zwraca `{schema, status, url, port, pid}`;
+dla gniazda zgód dodaje `role: "approve"` i `readUrl` (adres odczytu, gdy znany), a dla `--read` zwraca `role`.
+
+**Ślad zgody (`via`).** Zgoda z gniazda zgód trybu dwóch gniazd dopisuje do wpisu `approvals.jsonl` pole
+`via: {port, host, peer}`: port gniazda, nazwa z `Host` (do 80 znaków) i adres klienta z połączenia (do 64 znaków). Wpisy bez
+`via` (także z trybu `--port`) czyta się bez zmian; `sha == HEAD` i pozostałe warunki zgody są te same. Zgoda z adresu
+spoza loopbacku daje linię w konsoli (`zgoda z sieci: <adres> (port N, Host H)`); nieudane próby tokenu są zliczane i
+zgłaszane najwyżej raz na 60 s jedną linią bez treści tokenu.
 
 Endpointy:
 
@@ -492,21 +629,21 @@ Endpointy:
 |---|---|
 | `GET /`, `/index.html` | strona (`assets/index.html` skilla `dashboard`) |
 | `GET /assets/<plik>` | tylko nazwy `[\w-]+.(html\|css\|js\|svg)` z `skills/dashboard/assets/` aktywnych warstw (`LayerSet.skill_files`: późniejsza warstwa wygrywa per plik, dowiązania pomijane); inne = 404 |
-| `GET /api/status[?plan=<rel>]` | kontrakt `schema: 1` (to samo co `show`, z tym samym maskowaniem sekretów, z żywym `version`, `session.url`, `prototype.up`) plus `approvals.here` (bool: nagłówek `Host` żądania jest na liście hostów zgód, czyli loopback albo `--approve-host`; `false` dla hosta z `--read-host`) i `approvals.viewer` (bool: host wyłącznie do odczytu z `--read-host`; wtedy `here` = `false`) oraz `approvals.tokenRequired` (bool: zapis zgody wymaga nagłówka `X-Approve-Token`; `false` przy `--no-approvals`; tylko HTTP, `show` go nie ma; wartość tokenu nigdy nie jest w odpowiedzi) |
+| `GET /api/status[?plan=<rel>]` | kontrakt `schema: 1` (to samo co `show`, z tym samym maskowaniem sekretów, z żywym `version`, `session.url`, `prototype.up`) plus `approvals.here` (bool: nagłówek `Host` żądania jest na liście hostów zgód, czyli loopback albo `--approve-host`; `false` dla hosta z `--read-host`) i `approvals.viewer` (bool: host wyłącznie do odczytu z `--read-host`; wtedy `here` = `false`) oraz `approvals.tokenRequired` (bool: zapis zgody wymaga nagłówka `X-Approve-Token`; `false` przy `--no-approvals`; tylko HTTP, `show` go nie ma; wartość tokenu nigdy nie jest w odpowiedzi); w trybie dwóch gniazd także `approvals.role` (`read`/`approve`), a `here`, `viewer` i `tokenRequired` są z gniazda, nie z `Host` |
 | `GET /api/doc?path=<rel>` | `{path, title, status, mtime, size, truncated, html}`: podgląd `*.md` z `docs/specs`, `docs/plans`, `docs/design`, `docs/domain` i `.skillsync/runs/<run>/`; bez `..`, ścieżek absolutnych, ukrytych katalogów i dowiązań poza listę; limit 2 MB (`truncated`); inne = 404; to celowy podgląd surowy: treść nie przechodzi przez `redact` (inaczej niż `/api/status`) |
-| `GET /events` | SSE: `hello {version, heartbeat}` (z `retry: 3000`), `change {version}` po zmianie obserwowanych plików, `ping {version, t}` co 15 s; najwyżej 64 połączenia (dalej 503); `HEAD /events` = same nagłówki (200, `text/event-stream`), bez strumienia i bez zajmowania miejsca |
+| `GET /events` | SSE: `hello {version, heartbeat}` (z `retry: 3000`), `change {version}` po zmianie obserwowanych plików, `ping {version, t}` co 15 s; najwyżej 64 połączenia (dalej 503; w trybie dwóch gniazd osobne udziały: 48 na gnieździe odczytu i 16 na gnieździe zgód, więc urządzenie zapełniające odczyt nie odbierze odświeżania stronie zatwierdzającego); `HEAD /events` = same nagłówki (200, `text/event-stream`), bez strumienia i bez zajmowania miejsca |
 | `GET /api/descriptions` | `descriptions.json` skilla (`{klucz: {title, text}}`) |
-| `GET /healthz` | `{ok: true, version}` |
-| `POST /api/approve` | `{kind: spec\|plan\|cp\|ready, path, sha[, plan]}`; tylko akcja, którą `/api/status` właśnie oferuje w stanie `waiting`, z tym samym `sha`; odpowiedź 200: `{ok, word, file, next}`, dla GO także `trail` (ścieżka `approvals.jsonl` przebiegu albo null bez przebiegu) |
+| `GET /healthz` | `{ok: true, version}`; `tokenId` tylko na gnieździe zgód (lub w trybie `--port` z zgodami) |
+| `POST /api/approve` | tylko na gnieździe zgód (na gnieździe odczytu każda metoda zapisu = 404); `{kind: spec\|plan\|cp\|ready, path, sha[, plan]}`; tylko akcja, którą `/api/status` właśnie oferuje w stanie `waiting`, z tym samym `sha`; odpowiedź 200: `{ok, word, file, next}`, dla GO także `trail` (ścieżka `approvals.jsonl` przebiegu albo null bez przebiegu) |
 
-Kontrola `Host` na wszystkich endpointach (`GET`, `HEAD`, SSE `/events`, `POST`): nagłówek `Host` musi wskazywać loopback
+W trybie `--port` kontrola `Host` na wszystkich endpointach (`GET`, `HEAD`, SSE `/events`, `POST`; w trybie dwóch gniazd zob. „Reguła `Host` w trybie dwóch gniazd”): nagłówek `Host` musi wskazywać loopback
 (`localhost`, `127.0.0.1`, `[::1]`, z dowolnym portem; bez rozróżniania wielkości liter), nazwę z `--approve-host` albo
 nazwę z `--read-host` (obie listy: port pomijany, bez rozróżniania wielkości liter, flagi powtarzalne). Inny albo
 brakujący `Host` (DNS rebinding, tunel lub nazwa LAN spoza list) = 403
 `{"error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host)."}` bez treści strony,
 dokumentu ani statusu; przy `--verbose` odmowa trafia do logu stderr (metoda, ścieżka, host).
 
-| Klasa `Host` | Odczyt (`GET`, `HEAD`, `/events`, `/api/*`, `/healthz`, assety) | Zapis (`POST /api/approve`) | `approvals.here` / `approvals.viewer` |
+| Klasa `Host` (tryb `--port`) | Odczyt (`GET`, `HEAD`, `/events`, `/api/*`, `/healthz`, assety) | Zapis (`POST /api/approve`) | `approvals.here` / `approvals.viewer` |
 |---|---|---|---|
 | loopback | tak | tak (chyba że `--no-approvals`) | `true` / `false` |
 | `--approve-host` | tak | tak (chyba że `--no-approvals`) | `true` / `false` |

@@ -46,7 +46,7 @@ Maszyna ma listę warstw w configu ([configuration](configuration.md)). Dobór w
 | `instructions/_base.d/*.md` | suma; kolejność: warstwy w `use`, potem nazwa pliku; każdy fragment w znacznikach `SKILLSYNC:FRAGMENT` z nazwą warstwy i pliku |
 | `agents/<n>.md` | cały plik, późniejsza warstwa wygrywa |
 | `codex.yaml` | mapy scalane głęboko; listy wykluczeń skilli to suma |
-| `workflow/defaults.yaml` | mapy scalane, listy zastępowane; wyjątki: `validation.checks[]` i `guardrails.rules[]` łączone po `id`, `routing.rules[]` i `guardrails.checks[]` dopisywane z deduplikacją po treści |
+| `workflow/defaults.yaml` | mapy scalane, listy zastępowane; wyjątki: `validation.checks[]` i `guardrails.rules[]` łączone po `id`, `routing.rules[]`, `guardrails.checks[]` i `review.prototype[]` dopisywane z deduplikacją po treści |
 | `workflow/projects/*.yaml`, `workflow/trackers/*.yaml` | cały plik, późniejsza warstwa wygrywa |
 | `workflow/skill-catalog.yaml` z `.d/` | suma wpisów `skills` i `orgs`; kolizja klucza: późniejsza |
 | `workflow/skill-profiles.yaml` z `.d/` | per profil suma list skilli z deduplikacją |

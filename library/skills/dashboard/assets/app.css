@@ -170,7 +170,7 @@ a.chip.git-link { text-decoration: none; }
 }
 .desc-tip[hidden] { display: none; }
 .desc-tip strong { font-size: .85rem; }
-.desc-tip em { color: var(--muted); font-style: normal; border-top: 1px solid var(--line); padding-top: .3rem; }
+.desc-tip em { color: var(--muted); font-style: normal; border-top: 1px solid var(--line); padding-top: .3rem;  white-space: pre-line; }
 [data-desc] { cursor: help; }
 button[data-desc], [data-desc][role="button"] { cursor: pointer; }
 .act-warn { margin-top: .5rem; padding: .3rem .55rem; border-radius: 6px; font-size: .78rem; background: var(--warn-soft); color: var(--text); border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent); }
@@ -226,6 +226,48 @@ main { flex: 1; padding: 1.1rem 1.4rem; min-width: 0; }
 .stage { display: inline-flex; align-items: center; gap: .3rem; font-size: .78rem; padding: .15rem .55rem; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
 .stage.is-done { border-color: transparent; background: var(--done-soft); color: var(--done); }
 .stage .ic { width: .85em; height: .85em; }
+.stage.is-active { border-color: var(--accent); background: var(--accent-soft); color: var(--text); font-weight: 600; }
+.stage-dot { width: .5rem; height: .5rem; border-radius: 50%; background: var(--accent); flex: none; animation: pulse 1.6s ease-in-out infinite; }
+.stage.is-quiet .stage-dot { animation: none; background: transparent; box-shadow: inset 0 0 0 2px var(--accent); }   /* brak aktywności: pusta kropka, bez pulsu */
+.stage.has-screens { gap: .45rem; }
+.stage-screens { display: inline-flex; align-items: center; gap: .4rem; margin-left: .15rem; padding-left: .45rem; border-left: 1px solid var(--line, currentColor); font-size: .72rem; font-weight: 500; color: var(--muted); }
+.stage-screens .stage-bar { width: 4.5rem; flex: none; }
+.stage-screens-txt { font-variant-numeric: tabular-nums; }
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+.bar-legend { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; margin-top: .4rem; color: var(--muted); font-size: .8rem; }
+.bar-legend .sw { width: .7rem; height: .7rem; border-radius: 3px; display: inline-block; }
+.bar-legend .sw + .sw, .bar-legend .sw-light { margin-left: .4rem; }
+.bar-legend .sw-dark { background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
+.bar-legend .sw-light { background: var(--bar-light); box-shadow: inset 0 0 0 1px var(--accent); }
+.parse-warn { display: flex; align-items: flex-start; gap: .4rem; margin: 0 0 .6rem; font-size: .8rem; color: var(--warn); }
+.parse-warn[hidden] { display: none; }
+/* ---------- Wynik planu, pojęcia, zakładka „Pytania” */
+.result-box[hidden] { display: none; }
+.result-box, .glossary { margin-top: .9rem; padding: .7rem .9rem; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); }
+.result-box h2 { display: flex; align-items: center; gap: .4rem; margin: 0 0 .35rem; font-size: 1rem; }
+.result-box h2 .ic { width: 1em; height: 1em; color: var(--accent); }
+.result-path { color: var(--muted); font-size: .78rem; margin-bottom: .4rem; }
+.result-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: .86rem; line-height: 1.45; color: var(--text); }
+.result-more { margin-top: .3rem; }
+.result-more summary, .glossary summary { cursor: pointer; color: var(--muted); font-weight: 600; font-size: .84rem; }
+.glossary summary .ic { width: .95em; height: .95em; margin-right: .35rem; vertical-align: -2px; }
+.glossary-list { margin: .5rem 0 0; display: grid; gap: .5rem; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); font-size: .82rem; }
+.glossary-list dt { font-weight: 700; color: var(--text); }
+.glossary-list dd { margin: 0; color: var(--muted); line-height: 1.4; }
+.q-block { margin-bottom: 1.2rem; }
+.q-title { font-size: 1rem; margin: .9rem 0 .5rem; }
+.q-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .45rem; }
+.q-row { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .7rem; padding: .55rem .8rem; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); font-size: .86rem; }
+.q-facts, .q-head { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .6rem; min-width: 0; }
+.q-fact, .q-run, .q-age, .q-to { color: var(--muted); font-size: .8rem; }
+.q-text { flex: 1 1 100%; overflow-wrap: anywhere; }
+.q-text.is-missing { color: var(--muted); font-style: italic; }
+.q-item.is-withdrawn .q-text { text-decoration: line-through; color: var(--muted); }
+.q-go { margin-left: auto; padding: .2rem .55rem; border-radius: 6px; font-weight: 600; font-size: .8rem; color: var(--accent); background: var(--accent-soft); text-decoration: none; white-space: nowrap; }
+.q-go:hover { outline: 1px solid var(--accent); }
+.tabs [role="tab"][hidden] { display: none; }
+
+.parse-warn .ic { width: 1em; height: 1em; margin-top: .15rem; flex: none; }
 .act-doc {
   margin-top: .6rem; display: inline-flex; align-items: center; gap: .35rem; padding: .25rem .65rem; border-radius: 8px;
   border: 1px solid var(--line); background: var(--panel-2); color: var(--accent); font-weight: 600; font-size: .82rem; cursor: pointer;
@@ -282,6 +324,14 @@ main { flex: 1; padding: 1.1rem 1.4rem; min-width: 0; }
   background: repeating-linear-gradient(45deg, var(--pending-a) 0 6px, var(--pending-b) 6px 12px);
 }
 .bar .fill + .fill-pending { border-left: 2px solid var(--panel); }
+/* Jasny odcień paska (zgłoszone lub w toku) ma KSZTAŁT (akcentowe kreskowanie) i obrys w kolorze akcentu: odróżnia się od ciemnego wypełnienia i od toru
+   nie samą jasnością; kontrast akcentu z torem >= 3:1 w obu motywach (WCAG 1.4.11, pilnuje test). Ta sama definicja w legendzie. */
+.bar { --bar-light: repeating-linear-gradient(135deg, var(--accent) 0 3px, transparent 3px 7px); }
+.bar-legend { --bar-light: repeating-linear-gradient(135deg, var(--accent) 0 3px, transparent 3px 7px); }
+.bar .fill-active { height: 100%; width: 0; flex: none; transition: width 1s cubic-bezier(.2,.8,.2,1); border-radius: 0 999px 999px 0; background: var(--bar-light); box-shadow: inset 0 0 0 1px var(--accent); }
+.bar .fill + .fill-active, .bar .fill-pending + .fill-active { border-left: 2px solid var(--panel); }
+.bar.has-active .fill-pending { background: var(--bar-light); box-shadow: inset 0 0 0 1px var(--accent); border-radius: 0; }
+.bar.has-active .fill-active { border-left-width: 0; }
 .big .pend { font-size: 1.15rem; font-weight: 700; color: var(--done); white-space: nowrap; }
 
 /* ---------- fazy i kroki */
@@ -383,6 +433,7 @@ main { flex: 1; padding: 1.1rem 1.4rem; min-width: 0; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
+  .stage-dot, .dot-live { animation: none !important; }
 }
 @container dash (max-width: 1100px) {
   .acts { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }

@@ -1,7 +1,7 @@
 """Testy serwera dashboard (`skillsync dashboard serve`, skillsync_workflow/dashboard_http.py) i silnika, na którym stoi
 (skillsync_workflow/dashboard.py): python3 -m unittest tests.test_skillsync_dashboard_server
 
-Testy HTTP startują serwer na 127.0.0.1 na wolnym porcie z zakresu 5100–5199 (nigdy 5140), wybieranym dynamicznie, i zamykają
+Testy HTTP startują serwer na 127.0.0.1 na wolnym porcie z zakresu 5100–5199 (nigdy 5140–5142), wybieranym dynamicznie, i zamykają
 go po teście. Assety i descriptions.json pochodzą z warstwy `library/` repo przez `LayerSet.skill_files`, jak w komendzie.
 """
 from __future__ import annotations
@@ -35,6 +35,7 @@ from skillsync_workflow.common import as_layerset  # noqa: E402
 
 sys.path.insert(0, str(HERE))
 from layers_helpers import needs_os_symlinks  # noqa: E402
+from serve_start import start_serve  # noqa: E402
 
 FIX = HERE / "fixtures" / "dashboard_server"
 ASSETS, DESCRIPTIONS = srv.skill_assets(as_layerset(ROOT / "library"))
@@ -42,6 +43,7 @@ TEST_TOKEN = "test-token-for-the-consent-header"   # `Board(approve_token=...)`:
 
 
 TEST_PORTS_ENV = "SKILLSYNC_TEST_DASHBOARD_PORTS"
+RESERVED_PORTS = (5140, 5141, 5142)   # defaults of `dashboard serve` (read 5140, consents 5141) and the second project of the station
 
 
 def port_range() -> range:
@@ -61,10 +63,10 @@ def port_range() -> range:
 
 
 def free_port() -> int:
-    """Wolny port z zakresu 5100–5199 poza 5140 (domyślnym portem dashboardu) albo z SKILLSYNC_TEST_DASHBOARD_PORTS."""
+    """Wolny port z zakresu 5100–5199 poza 5140–5142 (domyślne porty dashboardu i drugi projekt stacji) albo z SKILLSYNC_TEST_DASHBOARD_PORTS."""
     ports = port_range()
     for port in ports:
-        if port == 5140:
+        if port in RESERVED_PORTS:
             continue
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             if os.name != "nt":
@@ -252,6 +254,25 @@ class ActTests(unittest.TestCase):
         self.assertTrue(plan_stages["Pre-implement"])
         self.assertFalse(plan_stages["Review"])
         self.assertTrue(plan_stages["GO implement"])
+
+
+class ParseWarningsTests(ProjectCase):
+    """`run.parseWarnings` (STATUS-160-A, P8): the status names what the id reading skipped."""
+
+    def test_skipped_elements_show_up_in_the_run_newest_first(self) -> None:
+        run = self.root / RUN / "checkpoints.md"
+        fixture = [(w["time"], w["reason"], w["fragment"]) for w in self.board.status()["run"]["parseWarnings"]]
+        self.assertEqual(fixture, [("10:25", "no-step-id", "szczebel 3 S1 na migawce"), ("10:25", "no-step-id", "baseline")])
+        run.write_text(run.read_text(encoding="utf-8") + "- 23:50 w toku: implementer: S4, S3b (a; b)\n", encoding="utf-8")
+        found = self.board.status()["run"]["parseWarnings"]
+        self.assertEqual([(w["time"], w["segment"], w["reason"]) for w in found][0], ("23:50", "w toku", "no-step-id"))
+        self.assertEqual(len(found), 3)
+        self.assertEqual(self.board.status()["progress"]["active"], ["S3b"])
+
+    def test_clean_checkpoints_leave_no_key(self) -> None:
+        run = self.root / RUN / "checkpoints.md"
+        run.write_text("RUN=2026-01-10T10:00:00+01:00\n- 10:00 start; w toku: S1, S2a (a; b); zrobione: S0\n", encoding="utf-8")
+        self.assertNotIn("parseWarnings", self.board.status()["run"])
 
 
 class SpecActTests(ProjectCase):
@@ -1470,6 +1491,27 @@ class HttpReadHostTests(HttpCase):
                 approvals = self.status_as(host)["approvals"]
                 self.assertEqual((approvals["here"], approvals["viewer"]), expected)
 
+    def test_viewer_gets_the_same_logins_and_question_texts_as_the_host(self) -> None:
+        """Decision 15.11 (STATUS-160-A): no filter for the viewer; the page is internal, only the consents differ."""
+        cp = self.root / RUN / "checkpoints.md"
+        cp.write_text(cp.read_text(encoding="utf-8") + "- 23:50 czeka: GO plan (kto: akceptujący jan.kowalski)\n", encoding="utf-8")
+        proto = self.root / "docs" / "prototypes" / "demo"
+        proto.mkdir(parents=True)
+        (proto / "prototype.json").write_text("{}\n", encoding="utf-8")
+        ask = {"id": "o1", "type": "ask", "questionId": "qn-000001", "at": "2026-01-11T09:00:00Z", "by": "agent", "text": "Czy tak?",
+               "blocking": True, "assumed": None, "addressees": ["ewa.nowak"], "refs": [], "options": []}
+        (proto / "questions.json").write_text(json.dumps({"questionsFormat": 1, "operations": [ask]}), encoding="utf-8")
+        host, viewer = self.status_as("127.0.0.1"), self.status_as(self.READ)
+        self.assertEqual(host["waiting"][0]["who"]["login"], "jan.kowalski")
+        self.assertEqual(host["expertQuestions"]["runs"][0]["addressees"], ["ewa.nowak"])
+        self.assertEqual(host["expertQuestions"]["items"][0]["text"], "Czy tak?")
+        text = json.dumps(viewer, ensure_ascii=False)
+        for visible in ("jan.kowalski", "ewa.nowak", "Czy tak?"):
+            self.assertIn(visible, text)
+        self.assertEqual(viewer["waiting"], host["waiting"])
+        self.assertEqual(viewer["expertQuestions"], host["expertQuestions"])
+        self.assertEqual((viewer["approvals"]["viewer"], host["approvals"]["viewer"]), (True, False))
+
     def test_read_host_sees_assumptions_questions_waiting_and_silence(self) -> None:
         local, viewer = self.status_as("127.0.0.1"), self.status_as(self.READ)
         for key in ("assumptions", "blockingQuestions", "waiting", "silence"):
@@ -1590,7 +1632,7 @@ class AssetsRenderTests(unittest.TestCase):
             self.assertIn(f'desc("{key}"', self.js)
         for cls in (".readiness.is-pass", ".readiness.is-blocked", ".readiness.is-none", ".substeps"):
             self.assertIn(cls, self.css)
-        for cls in (".questions", ".q-none", ".q-group", ".q-list"):
+        for cls in (".questions", ".q-none", ".q-group"):   # `.q-list` jest teraz w zakładce „Pytania” (STATUS-160-A)
             self.assertNotIn(cls, self.css)
 
     def test_new_templates_escape_data(self) -> None:
@@ -1937,18 +1979,10 @@ class ServeCommandTests(unittest.TestCase):
 
     @unittest.skipIf(os.name == "nt", "SIGTERM kończy proces na Windows bez obsługi")
     def test_serve_answers_and_stops_on_sigterm(self) -> None:
-        port = free_port()
-        proc = subprocess.Popen([sys.executable, str(CLI), "dashboard", "serve", str(self.root), "--port", str(port),
-                                 *self.layer], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=self.env)
-        self.addCleanup(lambda: proc.poll() is None and proc.kill())
-        base, deadline, health = f"http://127.0.0.1:{port}", time.time() + 20, None
-        while time.time() < deadline and proc.poll() is None:
-            try:
-                with urllib.request.urlopen(base + "/healthz", timeout=1) as r:
-                    health = json.load(r)
-                break
-            except OSError:
-                time.sleep(0.1)
+        proc, port = start_serve(self, CLI, self.root, self.layer, self.env, free_port)
+        base = f"http://127.0.0.1:{port}"
+        with urllib.request.urlopen(base + "/healthz", timeout=5) as r:
+            health = json.load(r)
         self.assertEqual({k: v for k, v in health.items() if k != "tokenId"}, {"ok": True, "version": 0}, proc.stderr.read() if proc.poll() is not None else "")
         with urllib.request.urlopen(base + "/", timeout=5) as r:
             self.assertIn("text/html", r.headers["Content-Type"])
@@ -1965,19 +1999,9 @@ class ServeCommandTests(unittest.TestCase):
 
     @unittest.skipIf(os.name == "nt", "SIGTERM kończy proces na Windows bez obsługi")
     def test_serve_read_host_reads_and_lists_hosts_separately(self) -> None:
-        port = free_port()
-        proc = subprocess.Popen([sys.executable, str(CLI), "dashboard", "serve", str(self.root), "--port", str(port),
-                                 "--read-host", "Viewer.Example", "--read-host", "viewer2.example",
-                                 "--approve-host", "demo.example", *self.layer],
-                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=self.env)
-        self.addCleanup(lambda: proc.poll() is None and proc.kill())
-        deadline, code = time.time() + 20, None
-        while time.time() < deadline and proc.poll() is None:
-            try:
-                code, _, body = raw_get(port, "/api/status", f"viewer.example:{port}")
-                break
-            except OSError:
-                time.sleep(0.1)
+        proc, port = start_serve(self, CLI, self.root, self.layer, self.env, free_port, "--read-host", "Viewer.Example",
+                                 "--read-host", "viewer2.example", "--approve-host", "demo.example")
+        code, _, body = raw_get(port, "/api/status", f"viewer.example:{port}")
         self.assertEqual(code, 200, proc.stderr.read() if proc.poll() is not None else "")
         approvals = json.loads(body)["approvals"]
         self.assertEqual((approvals["here"], approvals["viewer"]), (False, True))

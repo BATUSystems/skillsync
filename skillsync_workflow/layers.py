@@ -65,7 +65,7 @@ AGGREGATES = {
 }
 PER_FILE_RULES = ('skill', 'instruction', 'agent', 'per-file', 'lesson-file')
 DEFAULTS_ID_LISTS = (('validation', 'checks'), ('guardrails', 'rules'))
-DEFAULTS_APPEND_LISTS = (('routing', 'rules'), ('guardrails', 'checks'))
+DEFAULTS_APPEND_LISTS = (('routing', 'rules'), ('guardrails', 'checks'), ('review', 'prototype'))
 CODEX_UNION_LISTS = (('exclude_skills',),)
 
 
@@ -1277,7 +1277,7 @@ def _merge_generic(layerset, name, special, prefix, unwrap=None):
 
 def merged_defaults(layerset):
     """`workflow/defaults.yaml`: maps merged, lists replaced; `validation.checks[]` and
-    `guardrails.rules[]` joined by `id`; `routing.rules[]` and `guardrails.checks[]` appended
+    `guardrails.rules[]` joined by `id`; `routing.rules[]`, `guardrails.checks[]` and `review.prototype[]` appended
     in layer order with deduplication by content. Owner keys: `<section>.<list>:<id>`."""
     def special(path):
         if path in DEFAULTS_ID_LISTS:

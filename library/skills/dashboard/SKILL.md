@@ -16,7 +16,7 @@ przycisku (niżej: „Przyciski zgód”).
 ## Uruchomienie
 
 ```bash
-skillsync dashboard serve <projekt> [--port 5140] [--prototype-port N] [--host 127.0.0.1] [--approve-host NAZWA ...] [--read-host NAZWA ...] [--no-approvals] [--plan docs/plans/<plik>.md] [--session-url https://…] [--layer id=ścieżka ...]
+skillsync dashboard serve <projekt> [--port 5140 | --read-port N --approve-port M] [--read-bind ADR] [--approve-bind ADR] [--allow-proxy-headers] [--prototype-port N] [--host H] [--approve-host NAZWA ...] [--read-host NAZWA ...] [--no-approvals] [--plan docs/plans/<plik>.md] [--session-url https://…] [--layer id=ścieżka ...]
 skillsync dashboard show <projekt> [--json] [--plan docs/plans/<plik>.md]   # jednorazowy zrzut JSON (to samo co /api/status)
 ```
 
@@ -39,6 +39,18 @@ skillsync dashboard show <projekt> [--json] [--plan docs/plans/<plik>.md]   # je
   widzach `--no-approvals`. Model dwóch instancji dla nieufnych widzów: prowadzący na loopbacku ze zgodami, widzowie na osobnej instancji `skillsync dashboard serve <projekt> --port <inny port> --no-approvals --read-host <host>` (bez zapisu, ten sam projekt; wspólny jest tylko `approvals.jsonl`). Widz widzi też podgląd `/api/doc` bez maskowania sekretów (surowy). Podgląd bez zgód dla wszystkich = `--no-approvals`. Serwer
   wypisuje przy starcie ostrzeżenie i adresy LAN do otwarcia.
   Odnośnik do prototypu używa hosta, pod którym otwarto stronę, więc działa także z innego urządzenia (gdy prototypy też słuchają na LAN).
+- **Dwa gniazda** (`serve --read-port 5140 --approve-port 5141`): rola zależy od portu, nie od nagłówka `Host`.
+  **Port odczytu** (5140) wystawiaj tunelem albo linkiem osobie z zewnątrz (`skillsync dashboard url <projekt> --read`):
+  nie ma na nim żadnej trasy zgód (`POST /api/approve` = 404) ani tokenu. **Port zgód** (5141) służy tylko Tobie: adres
+  z tokenem podaje `skillsync dashboard url <projekt>`; **nigdy nie kieruj na niego tunelu** ani linku.
+  Oba gniazda domyślnie słuchają na wszystkich interfejsach (`0.0.0.0`), z ostrzeżeniem w konsoli; `--read-bind` i
+  `--approve-bind 127.0.0.1` zawężają je do tej maszyny. Telefon w zaufanej sieci wchodzi na `http://<IP maszyny>:5141/`
+  bez `--approve-host`. W obcej sieci uruchom z `--approve-bind 127.0.0.1` i wejdź tunelem
+  `ssh -L 5141:127.0.0.1:5141 <host>`. Token idzie nieszyfrowanym HTTP: w sieci, której nie kontrolujesz, grozi
+  przechwycenie zgody (zob. „Bezpieczeństwo”).
+- **Jedno gniazdo** (`--port N`, także bez nowych flag): nasłuch na `127.0.0.1` (chyba że `--host`), rola z nagłówka `Host`.
+  Dwie stare instancje (jedna z `--no-approvals`) zastępuje jedno wywołanie z dwoma portami; najpierw zatrzymaj stare
+  procesy, bo porty muszą być wolne (inaczej `BLOCKED`, bez skutków ubocznych).
 - Bez `--plan`: bieżący plan = najnowszy `docs/plans/*.md` ze `Status: in_progress`, inaczej `approved`, inaczej `draft`, inaczej ostatni `done`
   (nazwa z datą, potem mtime). Na stronie przełącznik planów (zapamiętany w przeglądarce).
 - Akt I bez planu: `feature` zakłada plan dopiero przy „GO plan”. Gdy najnowszy spec `draft`/`approved`, którego nie wskazuje
@@ -192,6 +204,12 @@ była, a nie, że pętla dała PASS.
 - Kafelek Aktu II ma „Readiness” z `readiness.md` przebiegu: PASS zielony, BLOCKED ostrzeżenie, bez pliku neutralny; data,
   skrót Plan-sha (ostrzeżenie, gdy różni się od sha pliku planu) i link do podglądu pliku.
 - Kafelek Aktu III ma rozwijaną listę podkroków `Fn.k` z czasem z checkpointów albo „brak danych”.
+- Kafelek etapu z `state: active` ma pulsujący wskaźnik (animacja wyłączona przy `prefers-reduced-motion`) i dymek „trwa od HH:MM” (`since`);
+  etap „Prototyp” przy ważnym znaczniku zapisu pokazuje „N z M ekranów” z paskiem (bez `screensPlanned`: „N ekranów”) i szacowany koniec z `eta`.
+- Baner czekania przy `waiting[].who` pisze „Czeka na: <label> (login)” (wpis `writing` zostaje „Sesja pracuje”); brak `who` = „Sesja czeka na Ciebie”.
+- Pasek postępu Aktu III przy `progress.activePercent` > 0 ma dwa odcienie (ciemny = zweryfikowane, jasny = zgłoszone i w toku) i podpis
+  „N% zweryfikowane, M% zgłoszone lub w toku”; `run.parseWarnings` daje jedną linię „N fragmentów raportu pominięto” nad checkpointami (szczegóły w dymku).
+  Brak każdego z tych pól daje wygląd jak dotąd.
 
 ## Interfejs i API
 
@@ -225,6 +243,8 @@ gdy host ma własny) i szkielet ze stałymi identyfikatorami (`title`, `meta`, `
 `tab-progress`, `tab-docs`, `protoLink`, `acts`, `phases`, `feed`, `feedTitle`, `docList`, `docView`, `foot`, `descTip`,
 `elapsed`, `ago`, `retryDoc`, `themeBtn` tylko z `deps.theme`; symbole `i-…`). Identyfikatory są globalne w dokumencie:
 dwa egzemplarze renderera w jednym dokumencie się zderzą (jeden korzeń na dokument/webview).
+
+Treść z JSON-a (addytywnie, brak klucza = zachowanie jak dotąd): pod aktami blok „Wynik” (`result`: tekst planu w `<pre>`, powyżej 12 linii reszta w `<details>`) i zwijana legenda „Pojęcia” (zawsze; teksty z `legend_*` w descriptions.json, awaryjnie z renderera); w toście pytań adresaci (`expertQuestions.runs[].addressees`: „do wszystkich ekspertów” albo „do: login, …”, widz nic); toast „N nowych komentarzy po akceptacji” z `prototype.commentsAfterAcceptance` (bez timera i „×”, odnośnik tylko z `deps.prototypeUrl`); zakładka „Pytania” (`tab-questions`, `view-questions`, `qCount`) widoczna tylko przy tablicy `prototypes` albo `expertQuestions.items`, z listą prototypów i pytań (do 50), nawigacją strzałkami/Home/End w liście zakładek i hashem `questions`.
 
 Kontrakt `deps` (wymagane tylko `now`):
 
@@ -299,6 +319,10 @@ zmiana kontraktu ze Skippsterem (zgłoszenie przed zapisem).
 
 ## Bezpieczeństwo
 
+- Tryb dwóch gniazd: zgody tylko na gnieździe zgód; `Origin` musi być dokładnie `http://<Host>` z portem (strona z portu
+  odczytu nie zapisze); nagłówki pośrednika (`Forwarded`, `X-Forwarded-*`, `Via`) odrzucają zapis, chyba że
+  `--allow-proxy-headers`; każda zgoda w `approvals.jsonl` ma `via` (port, `Host`, adres klienta z połączenia).
+  Ryzyko szczątkowe: token jest w jawnym HTTP; w nieufnej sieci `--approve-bind 127.0.0.1` albo tunel SSH.
 - Strona nie ma logowania: z `--approve-host` przy `0.0.0.0` widzi ją każdy w tej sieci, kto otworzy podany adres (plany,
   speki, checkpointy).
 - Kontrola `Host` na wszystkich endpointach (strona, assety, `/api/*`, `/events`, `/healthz`, `POST`): nagłówek `Host` musi
@@ -337,3 +361,5 @@ są zanonimizowanymi kopiami formatów.
 - Renderer Markdown jest prosty (nagłówki, akapity, listy z checkboxami, tabele, kod, cytaty, linki); brak obrazów i HTML.
 - Etapy aktów I i II są wnioskowane z nazw plików w katalogu przebiegu; inne nazewnictwo da „niezaliczone” etapy, nie błąd.
 - Procent zależy od dyscypliny zaznaczania `[x]` w planie po każdym kroku.
+
+- Kafelek etapu `active` pulsuje tylko, dopóki przebieg nie jest cichy (`silence`, a bez niego `run.lastReportAt` i próg 35 min); potem pusta kropka i „brak aktywności od N min”, stan w danych zostaje. Jasny odcień paska postępu (zgłoszone lub w toku) ma kreskowanie i obrys w kolorze akcentu (kontrast akcentu z torem ≥ 3:1 w obu motywach), a próbka w legendzie ma tę samą definicję (`--bar-light`).

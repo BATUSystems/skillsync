@@ -117,6 +117,28 @@ def deep_merge(base, override):
     return result
 
 
+def _append_review_prototype(result, *levels):
+    """`review.prototype` only grows: layers (already appended by `merged_defaults`), then the per-file project settings, then the
+    manifest. A project adds items, never removes the core ones. Order: core, layers, project, manifest; duplicates (equal text,
+    no normalisation) keep the first occurrence. A level whose value is not a list of nonempty strings (null, a scalar, a map, a
+    non-text or empty item) is an error at that level: it is never skipped, because the plain merge would then hand the result to a
+    later valid level and lose the core items without a word."""
+    items, seen = [], set()
+    for level in levels:
+        review = level.get('review') if isinstance(level, dict) else None
+        if not isinstance(review, dict) or 'prototype' not in review:
+            continue
+        value = review['prototype']
+        if not isinstance(value, list) or not all(isinstance(item, str) and item for item in value):
+            raise ValueError('review.prototype must be a list of nonempty strings')
+        for item in value:
+            if item not in seen:
+                seen.add(item)
+                items.append(item)
+    if items:
+        result.setdefault('review', {})['prototype'] = items
+
+
 def workflow_config(root, manifest, layerset):
     """Effective workflow settings: merged `workflow/defaults.yaml` of the layers, the per-file
     `workflow/projects/<slug>.yaml` (later layer wins), then the manifest `workflow:`."""
@@ -143,6 +165,7 @@ def workflow_config(root, manifest, layerset):
         if not isinstance(source, dict):
             raise ValueError('Project workflow settings must be mapping')
     result = deep_merge(deep_merge(defaults, source), override)
+    _append_review_prototype(result, defaults, source, override)
     validate_workflow(result)
     return result
 
@@ -252,7 +275,7 @@ def validate_workflow(config):
             raise ValueError(f'{section}.{key} must be a mapping')
         for name, value in mapping.items():
             strings(value, f'{section}.{key}.{name}')
-    for section, keys in [('readiness', ('required_sections', 'contract_paths')), ('review', ('core', 'project', 'ui_paths', 'ui_evidence', 'docs_paths', 'docs_checklist'))]:
+    for section, keys in [('readiness', ('required_sections', 'contract_paths')), ('review', ('core', 'project', 'ui_paths', 'ui_evidence', 'docs_paths', 'docs_checklist', 'prototype', 'prototype_paths'))]:
         for key in keys:
             if key in config.get(section, {}):
                 strings(config[section][key], f'{section}.{key}')
@@ -265,6 +288,27 @@ def validate_workflow(config):
 
 
 SECRET_MIN_LENGTH = 8
+
+
+def plan_section(text, name):
+    """Body of the `## <name>` section of a Markdown document (heading compared without case, up to the next `## ` heading;
+    fenced blocks are skipped when looking for headings), stripped of blank lines at both ends; None when the section is absent.
+    The one reader of plan sections (`## Wynik`, the plan summary): `dashboard`, `status` and the prototype tools use it."""
+    wanted = ' '.join(str(name).split()).lower()
+    lines, inside, in_fence, body = str(text).splitlines(), False, False, []
+    for line in lines:
+        if line.lstrip().startswith(('```', '~~~')):
+            in_fence = not in_fence
+        elif not in_fence and line.startswith('## '):
+            if inside:
+                break
+            inside = ' '.join(line[3:].split()).lower() == wanted
+            continue
+        if inside:
+            body.append(line)
+    if not inside:
+        return None
+    return '\n'.join(body).strip('\n') if '\n'.join(body).strip() else ''
 
 
 def detect_eol(text):

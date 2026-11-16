@@ -597,7 +597,8 @@ suite.add('N-R10', 'Menu „⋯” z klawiatury i myszy', async () => {
   }
   // „Prezentacja” z menu daje ten sam efekt co przycisk paska (porównanie zmian stanu DOM względem stanu wyjściowego)
   const effect = async (width, via) => {
-    await P.size(1440, 900); await P.go(url()); await P.size(width, 812); await sleep(500);
+    // tryb prezentacji pamięta stan w `sessionStorage` karty (odświeżenie wraca na ekran): każdy pomiar startuje z czystej pamięci, jak w p.mjs
+    await P.size(1440, 900); await P.go(url()); await P.evaluate(`sessionStorage.clear(); true`); await P.go(url()); await P.size(width, 812); await sleep(500);
     const s0 = await P.evaluate(STATE_SIG);
     if (via === 'menu') { await openByEnter(); const s = await gotoItem(LABELS.present); if (!(s.idx >= 0 && LABELS.present.test(s.texts[s.idx]))) return null; await P.key('Enter'); }
     else await P.domClick(`[...document.querySelectorAll('.doc-toolbar button')].find((b) => !b.closest('[role="menu"]') && b.getClientRects().length && /Prezentacja/i.test(b.textContent + (b.getAttribute('aria-label') || '')))`, 'przycisk Prezentacja');
@@ -607,6 +608,7 @@ suite.add('N-R10', 'Menu „⋯” z klawiatury i myszy', async () => {
   if (!viaMenu || !viaButton) { restOk = false; fail('prezentacja', 'nie udało się wykonać „Prezentacja” (menu=' + !!viaMenu + ', przycisk=' + !!viaButton + ')'); }
   else if (!viaButton.length) { restOk = false; fail('prezentacja', 'przycisk „Prezentacja” nie zmienia obserwowalnego stanu DOM (html/body/pasek/ekrany), porównanie niemożliwe'); }
   else if (JSON.stringify(viaMenu) !== JSON.stringify(viaButton)) fail('prezentacja', 'efekt z menu ' + JSON.stringify(viaMenu).slice(0, 200) + ' ≠ efekt przycisku ' + JSON.stringify(viaButton).slice(0, 200));
+  await P.evaluate(`sessionStorage.clear(); true`);   // nie zostawiaj trybu prezentacji dla kolejnych scenariuszy tej samej karty
   await P.size(1440, 900); await P.go(url());
   const errs = pageErrors(e0); if (errs.length) fail('konsola', errs.slice(0, 3).map((x) => x.kind + ': ' + x.text).join(' || '));
   const desk = evidence(bad, restOk, { log });

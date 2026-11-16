@@ -13,6 +13,18 @@ Raport „jedna linia na podkrok”: po każdym podkroku `Fn.k` dopisz jedną li
 co nastąpi pierwsze. Ta linia wypełnia istniejący format `- HH:MM zrobione: …` (podkrok i wynik albo sha w `zrobione`), a nie zastępuje go.
 Raport nie zastępuje rekordu `skillsync checkpoint` (niżej) ani odwrotnie.
 
+## Składnia segmentów raportu
+
+- Segmenty rozdziela `;`, ale `;` wewnątrz nawiasów `()`, `[]`, `{}` nie kończy segmentu (opis kroku w nawiasie może go zawierać).
+  Niezbalansowany nawias zawsze domykaj; w razie błędu linia dzieli się po każdym `;`.
+- **Każdy element** list `w toku: …` i `zrobione: …` zaczyna się od id kroku (`F1.2`), elementy rozdziela przecinek, opis idzie w nawiasie:
+  `w toku: F1.1 (kontrakty; testy), F1.2`. Id łączą w jednym elemencie `/`, `+`, `&`, `‖`, `||`, „i”, „oraz”. Rola przed id
+  (`implementer: F1.1`) i drugie id w środku opisu są pomijane; strona statusu pokaże wtedy ostrzeżenie o pominiętych fragmentach.
+- `trwa: <etap>[, <etap>]` mówi, który etap trwa teraz (np. `spec_review`, `prototyp`, `plan`); strona czyta tylko najnowszą linię, więc
+  powtarzaj segment w każdej linii, dopóki etap trwa, i pomiń go w pierwszej linii po jego końcu. `czeka:` w tej samej linii wygrywa.
+- `czeka: <co> (kto: <rola>[ <login>])` nazywa adresata (`akceptujący`, `programista`, `ekspert`, `komentujący`, `agent`, `odbiór`);
+  strona pisze „Czeka na: <rola>”. Bez sufiksu rolę wybiera źródło pozycji.
+
 ## Szacunek przed długą operacją: `eta:`
 
 Przed startem długiej operacji (spec, prototyp i jego iteracje, plan, każdy krok implementacji, długi bieg testów) oszacuj, ile
