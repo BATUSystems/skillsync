@@ -1975,7 +1975,20 @@ class ServeCommandTests(unittest.TestCase):
         result = self.cli("dashboard", "serve", str(self.root), "--port", str(free_port()), *self.layer)
         self.assertEqual((result.returncode, json.loads(result.stdout)["status"]), (2, "BLOCKED"))
 
-    def test_serve_answers_and_stops_on_sigterm(self) -> None:
+    def test_serve_answers(self) -> None:
+        proc, port = self.start_and_check_answers()
+        _out, err, _graceful = stop_serve(proc)
+        self.assertIn(f"127.0.0.1:{port}", err)
+
+    @unittest.skipIf(os.name == "nt", "SIGTERM kończy proces na Windows bez obsługi")
+    def test_serve_stops_on_sigterm(self) -> None:
+        proc, port = self.start_and_check_answers()
+        out, err, _graceful = stop_serve(proc)
+        self.assertEqual(proc.returncode, 0, err)
+        self.assertEqual({k: v for k, v in json.loads(out).items() if k != "url"}, {"status": "PASS", "stopped": True})
+        self.assertIn(f"127.0.0.1:{port}", err)
+
+    def start_and_check_answers(self):
         proc, port = start_serve(self, CLI, self.root, self.layer, self.env, free_port)
         base = f"http://127.0.0.1:{port}"
         with urllib.request.urlopen(base + "/healthz", timeout=5) as r:
@@ -1988,11 +2001,7 @@ class ServeCommandTests(unittest.TestCase):
         self.assertEqual((data["schema"], data["plan"]["path"], data["approvals"]["here"]), (1, PLAN, True))
         with urllib.request.urlopen(base + "/api/descriptions", timeout=5) as r:
             self.assertIn("stage_pre_implement", json.load(r))
-        out, err, graceful = stop_serve(proc)
-        if graceful:   # Windows: the server has no SIGTERM handler, so there is no report or exit code to check (see `stop_serve`)
-            self.assertEqual(proc.returncode, 0, err)
-            self.assertEqual({k: v for k, v in json.loads(out).items() if k != "url"}, {"status": "PASS", "stopped": True})
-        self.assertIn(f"127.0.0.1:{port}", err)
+        return proc, port
 
     def test_serve_read_host_reads_and_lists_hosts_separately(self) -> None:
         proc, port = start_serve(self, CLI, self.root, self.layer, self.env, free_port, "--read-host", "Viewer.Example",
@@ -2006,9 +2015,7 @@ class ServeCommandTests(unittest.TestCase):
         code, answer = raw_post(port, {"Host": "viewer.example", "Content-Type": "application/json", "X-Status-Board": "1", "X-Approve-Token": TEST_TOKEN,
                                        "Content-Length": "2"}, b"{}")
         self.assertEqual((code, answer), (403, {"error": srv.HOST_REFUSED}))
-        _, err, graceful = stop_serve(proc)
-        if graceful:
-            self.assertEqual(proc.returncode, 0, err)
+        _, err, _graceful = stop_serve(proc)
         self.assertIn("hosty odczytu i zgód (--approve-host): demo.example", err)
         self.assertIn("hosty tylko do odczytu (--read-host, bez zgód): viewer.example, viewer2.example", err)
         self.assertIn("--read-host ogranicza zapis z przeglądarki, nie przed klientem podrabiającym nagłówek Host; "

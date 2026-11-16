@@ -618,15 +618,22 @@ class ServeWritesAndRemovesTheState(unittest.TestCase):
         url = subprocess.run([sys.executable, str(CLI), "dashboard", "url", str(self.root), *self.layer], capture_output=True, text=True,
                              env=env, timeout=30)
         self.assertEqual((url.returncode, url.stdout.strip()), (0, f"http://127.0.0.1:{port}/#zgoda={token}"), url.stderr)
-        _out, err, graceful = stop_serve(proc)
+        _out, err, _graceful = stop_serve(proc)
         self.assertEqual(err.count(f"http://127.0.0.1:{port}/#zgoda={token}"), 1, "the address with the token is printed once")
-        if not graceful:   # Windows: no SIGTERM handler, so no exit code and the state file stays (see `stop_serve`)
-            return
-        self.assertEqual(proc.returncode, 0, err)
-        self.assertEqual(self.state_files(), [], "the state file is removed when the server stops")
-        after = subprocess.run([sys.executable, str(CLI), "dashboard", "url", str(self.root), "--json", *self.layer], capture_output=True,
-                               text=True, env=env, timeout=30)
-        self.assertEqual((after.returncode, json.loads(after.stdout)["code"]), (2, "server_not_running"))
+
+    @unittest.skipIf(os.name == "nt", "SIGTERM kończy proces na Windows bez obsługi")
+    def test_the_state_file_is_removed_when_the_server_stops(self) -> None:
+        """A graceful stop (SIGTERM) removes the state file, with or without consents; Windows has no handler to test (see `stop_serve`)."""
+        for extra in ((), ("--no-approvals",)):
+            with self.subTest(extra=extra):
+                proc, _port = self.start(*extra)
+                self.assertEqual(len(self.state_files()), 1)
+                _out, err, _graceful = stop_serve(proc)
+                self.assertEqual(proc.returncode, 0, err)
+                self.assertEqual(self.state_files(), [], "the state file is removed when the server stops")
+                after = subprocess.run([sys.executable, str(CLI), "dashboard", "url", str(self.root), "--json", *self.layer], capture_output=True,
+                                       text=True, env=self.env, timeout=30)
+                self.assertEqual((after.returncode, json.loads(after.stdout)["code"]), (2, "server_not_running"))
 
     def test_an_approve_host_gets_its_own_address_and_the_state_lists_it(self) -> None:
         proc, port = self.start("--approve-host", "demo.example")
@@ -694,10 +701,8 @@ class ServeWritesAndRemovesTheState(unittest.TestCase):
         url = subprocess.run([sys.executable, str(CLI), "dashboard", "url", str(self.root), "--json", *self.layer], capture_output=True, text=True,
                              env=self.env, timeout=30)
         self.assertEqual((url.returncode, json.loads(url.stdout)["code"]), (2, "approvals_disabled"), url.stdout)
-        _out, err, graceful = stop_serve(proc)
+        _out, err, _graceful = stop_serve(proc)
         self.assertNotIn("#zgoda=", err)
-        if graceful:   # Windows: the state file stays after the kill (see `stop_serve`)
-            self.assertEqual(self.state_files(), [], "removed when the server stops, with or without consents")
 
 
 if __name__ == "__main__":
