@@ -26,7 +26,7 @@ sys.path.insert(0, str(ROOT / "tests"))
 
 from skillsync_workflow import dashboard_http as srv  # noqa: E402
 from skillsync_workflow import dashboard_token  # noqa: E402
-from tests.serve_start import start_serve  # noqa: E402
+from tests.serve_start import bind_free, start_serve  # noqa: E402
 from tests.test_skillsync_dashboard_server import (CLI, PLAN, TEST_TOKEN, HttpCase, ProjectCase, free_port,  # noqa: E402
                                                    install_fake_cli, make_project, raw_post, spy_core)
 
@@ -559,9 +559,8 @@ class VerboseLog(ProjectCase):
     def test_the_request_log_has_no_token_even_with_verbose(self) -> None:
         import threading
         logged = []
-        port = free_port()
         board = srv.Board(self.root, prototype_port=1, approve_token=TEST_TOKEN)
-        server = srv.make_server(board, "127.0.0.1", port, verbose=True)
+        server, port = bind_free(lambda port: srv.make_server(board, "127.0.0.1", port, verbose=True), free_port)
         threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.1}, daemon=True).start()
         self.addCleanup(lambda: (server.shutdown(), server.server_close()))
         with mock.patch.object(srv, "log", lambda text, *a, **k: logged.append(str(text))), mock.patch.object(sys.stderr, "write", lambda text: logged.append(text)):

@@ -96,18 +96,21 @@ class DashboardServeWindowTests(unittest.TestCase):
         case = base.ServeCommandTests('test_help_lists_serve_and_its_flags')
         case.setUp()
         self.addCleanup(case.tearDown)
-        args = Namespace(path=str(case.root), layers=[f'core={ROOT / "library"}'], port=base.free_port(), plan=None,
-                         host='127.0.0.1', approve_host=[], read_host=[], no_approvals=False, session_url=None, poll=0.2,
-                         verbose=False, prototype_port=None)
         calls = []
 
         def interrupted(message):
             calls.append(message)
             raise KeyboardInterrupt
 
-        out = io.StringIO()
-        with mock.patch.object(dh, 'log', side_effect=interrupted), contextlib.redirect_stdout(out):
-            code = dh.serve_command(args)
+        for _attempt in range(4):   # `free_port()` only says a port WAS free: a lost bind ends with BLOCKED before the first log line
+            args = Namespace(path=str(case.root), layers=[f'core={ROOT / "library"}'], port=base.free_port(), plan=None,
+                             host='127.0.0.1', approve_host=[], read_host=[], no_approvals=False, session_url=None, poll=0.2,
+                             verbose=False, prototype_port=None)
+            out = io.StringIO()
+            with mock.patch.object(dh, 'log', side_effect=interrupted), contextlib.redirect_stdout(out):
+                code = dh.serve_command(args)
+            if calls or 'BLOCKED' not in out.getvalue():
+                break
         self.assertEqual(code, 0, out.getvalue())
         report = json.loads(out.getvalue())
         self.assertEqual((report['status'], report['stopped']), ('PASS', True), report)

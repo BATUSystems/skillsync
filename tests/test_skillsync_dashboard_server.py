@@ -35,7 +35,7 @@ from skillsync_workflow.common import as_layerset  # noqa: E402
 
 sys.path.insert(0, str(HERE))
 from layers_helpers import needs_os_symlinks  # noqa: E402
-from serve_start import start_serve  # noqa: E402
+from serve_start import bind_free, start_serve  # noqa: E402
 
 FIX = HERE / "fixtures" / "dashboard_server"
 ASSETS, DESCRIPTIONS = srv.skill_assets(as_layerset(ROOT / "library"))
@@ -967,10 +967,9 @@ class HttpCase(ProjectCase):
 
     def setUp(self) -> None:
         super().setUp()
-        self.port = free_port()
         self.board = srv.Board(self.root, poll=0.2, heartbeat=0.5, prototype_port=1, assets=ASSETS,
                                descriptions=DESCRIPTIONS, approvals=self.APPROVALS, approve_token=TEST_TOKEN)
-        self.server = srv.make_server(self.board, "127.0.0.1", self.port)
+        self.server, self.port = bind_free(lambda port: srv.make_server(self.board, "127.0.0.1", port), free_port)
         threading.Thread(target=self.server.serve_forever, kwargs={"poll_interval": 0.1}, daemon=True).start()
         threading.Thread(target=self.board.watch_loop, daemon=True).start()
         self.base = f"http://127.0.0.1:{self.port}"
@@ -1610,7 +1609,7 @@ class AssetsRenderTests(unittest.TestCase):
         shutil.copytree(self.FIXTURES / case / "input", root)
         board = srv.Board(root, poll=0.2, heartbeat=0.5, prototype_port=1, assets=ASSETS, descriptions=DESCRIPTIONS)
         board.prototype_acceptance = lambda slug: None
-        server = srv.make_server(board, "127.0.0.1", free_port())
+        server, _port = bind_free(lambda port: srv.make_server(board, "127.0.0.1", port), free_port)
         threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.1}, daemon=True).start()
         self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
@@ -1845,8 +1844,7 @@ class HttpTwoInstancesTests(ProjectCase):
         board = srv.Board(self.root, poll=0.2, heartbeat=0.5, prototype_port=1, assets=ASSETS,
                           descriptions=DESCRIPTIONS, approve_token=TEST_TOKEN, **kwargs)
         board.prototype_acceptance = lambda slug: None
-        port = free_port()
-        server = srv.make_server(board, "127.0.0.1", port)
+        server, port = bind_free(lambda port: srv.make_server(board, "127.0.0.1", port), free_port)
         threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.1}, daemon=True).start()
         threading.Thread(target=board.watch_loop, daemon=True).start()
 
