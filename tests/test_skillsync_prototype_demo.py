@@ -160,6 +160,14 @@ class StaticInventoryTests(DemoCase):
         self.assertEqual(broken.get('/').status, 404)
         self.assertEqual(broken.get('/index.html').status, 404)
 
+    def test_the_physical_gallery_file_is_not_served_under_another_case_of_its_name(self):
+        write(os.path.join(self.root, 'INDEX.HTML'), '<html>Otwarte komentarze %s</html>' % HIDDEN_TEXT)
+        for path in ('/INDEX.HTML', '/Index.html', '/index.HTML'):
+            with self.subTest(path=path):
+                response = self.guest.get(path)
+                self.assertNotIn(HIDDEN_TEXT, response.text)
+                self.assertNotIn('Otwarte komentarze', response.text)
+
     def test_no_answer_of_the_show_contains_a_login_comment_text_or_the_requirements_path(self):
         seen = []
         paths = ['/', '/index.html', '/_api/v1/session', '/_api/v1/prototypes/demo/operations', '/demo/', '/demo/prototype.json',

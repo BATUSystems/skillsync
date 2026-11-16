@@ -6975,8 +6975,8 @@ class PrototypeRequestHandler(LingeringCloseMixin, BaseHTTPRequestHandler):
             return
         if self._live_gallery(target):
             return
-        if demo and target == os.path.realpath(os.path.join(root, 'index.html')):
-            self._not_found()   # the show never falls back to the file of `prototype index` (it carries comment counts and acceptance)
+        if demo and os.path.dirname(target) == os.path.realpath(root) and os.path.basename(target).lower() == 'index.html':
+            self._not_found()   # the show never falls back to the file of `prototype index` (it carries comment counts and acceptance), whatever the case of its name
             return
         if not os.path.isfile(target):
             self._not_found()
