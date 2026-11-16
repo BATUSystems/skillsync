@@ -8,17 +8,18 @@ command is the exit code of `test-run`.
 """
 from __future__ import annotations
 
-import argparse
 import json
 import os
 import re
 import shlex
+import signal
 import socket
 import sys
+import threading
 import time
 from pathlib import Path
 
-from .common import file_lines, load_layer_project, read_project
+from .common import read_project
 from .fsutil import isabs
 from .dashboard import ids_in_progress, parse_checkpoints
 from .quality import _test_counts, evidence_reason, run_validation
@@ -44,6 +45,30 @@ def _failure_count(output):
         total = sum(int(n) for kind, n in re.findall(r'(failures|errors)=(\d+)', unittest_summary.group(1)))
     found = re.search(r'(\d+) failed', output)
     return max(total, int(found.group(1))) if found else total
+
+
+_UNITTEST_FAILED = re.compile(r'(?m)^FAILED \(([^)]*)\)')
+_PYTEST_SUMMARY = re.compile(r'(?m)^(?:=+ )?(?:\d+ (?!failed)\w+(?: \w+)?, )*(\d+) failed\b[^\n]* in [\d.:]+s')
+
+
+def _hidden_failures(output):
+    """Failed tests that a clean exit code hides: the exact summaries of unittest (`FAILED (failures=2, errors=1)`) and pytest (`3 failed, 5 passed in 2s`,
+    also inside the `=====` banner), not any `N failed` of a log line (`3 failed attempts`, `0 failed`, `failed=0`). 0 when the output names none."""
+    total = 0
+    for found in _UNITTEST_FAILED.finditer(output):
+        total = max(total, sum(int(n) for kind, n in re.findall(r'(failures|errors)=(\d+)', found.group(1))))
+    for found in _PYTEST_SUMMARY.finditer(output):
+        total = max(total, int(found.group(1)))
+    return total
+
+
+def _ms(seconds):
+    """Milliseconds of a duration, 0 for anything that is not a finite non-negative number (an `OverflowError` must not cost the `end` event)."""
+    try:
+        value = int(1000 * float(seconds or 0))
+    except (TypeError, ValueError, OverflowError):
+        return 0
+    return value if 0 <= value <= events.MAX_NUMBER else 0
 
 
 def detect_tool(command):
@@ -133,6 +158,7 @@ class TestRecorder:
         self.path = None
         self.number = None
         self.started_wall = None
+        self.tree_start = None
         self.last = None
 
     def started(self, check):
@@ -140,7 +166,11 @@ class TestRecorder:
         self.writer = events.EventWriter(self.path, mask=self.mask)   # a failure here (disk, permissions) reaches `run_validation`: the command does not start
         command = check.get('command') or ' '.join(shlex.quote(a) for a in check.get('argv') or [])
         self.started_wall = time.time()
-        self.writer.start(run=self.run_id, step=self.step, stepSource=self.step_source, attempt=self.number, command=command,
+        try:
+            self.tree_start = test_gate.work_tree_id(self.root)   # the content the tests START on (the gate compares it with the end)
+        except Exception:   # noqa: BLE001 - never lose the run over the fingerprint
+            self.tree_start = None
+        self.writer.start(treeStart=self.tree_start, run=self.run_id, step=self.step, stepSource=self.step_source, attempt=self.number, command=command,
                           tool=detect_tool(check.get('argv') or check.get('command')), pid=os.getpid(), levels='command',
                           **({'allowNoCount': events.clean_text(self.allow_no_count, 300, mask=True)} if self.allow_no_count else {}),
                           **({'allowSkips': True} if self.allow_skips else {}), **({'adapter': self.adapter.name, 'live': self.adapter.live} if self.adapter is not None else {}))
@@ -162,9 +192,28 @@ class TestRecorder:
         if self.adapter is not None:
             self._adapter_call(lambda: self.adapter.partial(stream, text, self.ctx))
 
+    def _echo(self, stream, text):
+        """The line to the terminal of the caller, AFTER the adapter and the counters have seen it: a closed pipe or a console that cannot encode a character
+        (cp1252, Polish letters) must not cost the record of the run. A closed pipe switches the echo off; an unencodable character becomes `?`."""
+        target = sys.stderr if stream == 'err' else sys.stdout
+        try:
+            print(text, file=target, flush=True)
+        except UnicodeEncodeError:
+            try:
+                print(text.encode(getattr(target, 'encoding', None) or 'ascii', 'replace').decode(getattr(target, 'encoding', None) or 'ascii', 'replace'), file=target, flush=True)
+            except (OSError, ValueError):
+                self.passthrough = False
+        except (OSError, ValueError):   # BrokenPipeError, a closed stream
+            self.passthrough = False
+
     def line(self, check, stream, text):
-        if self.passthrough:
-            print(text, file=sys.stderr if stream == 'err' else sys.stdout, flush=True)
+        try:
+            self._line(check, stream, text)
+        finally:
+            if self.passthrough:
+                self._echo(stream, text)
+
+    def _line(self, check, stream, text):
         if self.adapter is not None:
             self._adapter_call(lambda: self.adapter.feed(stream, text, self.ctx))
         found = KARMA.search(text)
@@ -218,7 +267,14 @@ class TestRecorder:
         elif code != 0:
             status, reason = 'FAIL', None
         else:
-            reason = f'the exit code is 0 but the report has {failed} failed tests' if failed else evidence_reason('test', ran, skipped, False, self.allow_skips)
+            hidden = _hidden_failures(output or '') if not failed else 0
+            if hidden:
+                failed = hidden
+                if counts is not None:
+                    counts = {**counts, 'failed': hidden, 'passed': max(counts['passed'] - hidden, 0)}
+            reason = (f'the exit code is 0 but the report has {failed} failed tests' if listed else
+                      f'the exit code is 0 but the output reports {failed} failed tests (a pipe, `|| true` or a wrapper may hide the real exit code of the test command)') if failed \
+                else evidence_reason('test', ran, skipped, False, self.allow_skips)
             if reason and self.allow_no_count and ran is None and not failed:
                 reason = None
             status = 'BLOCKED' if reason else 'PASS'
@@ -226,7 +282,7 @@ class TestRecorder:
             tree = test_gate.work_tree_id(self.root)
         except Exception:   # never lose the end of the run over the fingerprint
             tree = None
-        writer.end(status, code, reason=reason, counts=counts, ms=int(1000 * float(result.get('duration_seconds') or 0)), source=source, tree=tree)
+        writer.end(status, code, reason=reason, counts=counts, ms=_ms(result.get('duration_seconds')), source=source, tree=tree)
         self.last = {'status': status, 'attempt': self.number, 'file': self.path, 'source': source}
 
 
@@ -266,6 +322,45 @@ def import_events(root, run_id, step, source, source_sha):
     return path, number
 
 
+class _Interruptible:
+    """While the tests run, SIGTERM (POSIX) or CTRL_BREAK (Windows) takes the path of Ctrl+C: `run_validation` ends the process tree of the command (its own
+    session), writes `end` as BLOCKED and releases the step lock; without this the command, started in a session of its own, outlives `test-run`, the
+    attempt file has no `end` and a second run starts beside the orphan. Only in the main thread (a handler cannot be installed elsewhere); a second
+    signal while the first is being handled is ignored, so it cannot cut the cleanup half way. Windows: the handler of `stopsignal` (CTRL_BREAK); the
+    limit there is that a console closed by the window button or `taskkill /F` gives no chance to clean up."""
+
+    def __enter__(self):
+        self.previous = None
+        self.fired = False
+        if threading.current_thread() is not threading.main_thread():
+            return self
+        if sys.platform == 'win32':
+            from . import stopsignal
+            self.previous = ('break', stopsignal.install_sigbreak())
+            return self
+
+        def handler(signum, frame):
+            if self.fired:
+                return
+            self.fired = True
+            raise KeyboardInterrupt
+        try:
+            self.previous = ('term', signal.signal(signal.SIGTERM, handler))
+        except (ValueError, OSError):
+            self.previous = None
+        return self
+
+    def __exit__(self, *exc):
+        try:
+            if self.previous and self.previous[0] == 'term':
+                signal.signal(signal.SIGTERM, self.previous[1] if self.previous[1] is not None else signal.SIG_DFL)
+            elif self.previous and self.previous[0] == 'break' and self.previous[1] is not None:
+                signal.signal(signal.SIGBREAK, self.previous[1][0])
+        except (ValueError, OSError):
+            pass
+        return False
+
+
 def _command(args):
     if getattr(args, 'import_file', None):
         try:
@@ -300,7 +395,8 @@ def _command(args):
                                  allow_no_count=args.allow_no_count, allow_skips=args.allow_skips, adapter=adapter)
         check = {'id': 'test-run', 'argv': command, 'cwd': str(root), 'kind': 'build', 'timeout': float(args.timeout), 'required': True, '_env': {'PYTHONUNBUFFERED': '1', **(adapter.env() if adapter is not None else {})},
                  'resources': ['test-run:' + str(Path(root).resolve()) + ':' + (step or events.NO_STEP)]}
-        report = run_validation(root, [check], observer=recorder)
+        with _Interruptible():
+            report = run_validation(root, [check], observer=recorder)
     except (OSError, ValueError) as error:
         print(f'BLOCKED: {error}', file=sys.stderr)
         return 2

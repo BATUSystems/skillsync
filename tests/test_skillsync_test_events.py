@@ -212,7 +212,8 @@ class EventFiles(unittest.TestCase):
         path, _, w = self.attempt()
         w.collected(2, names=['C:\\proj\\tests\\a.py::t', 'tests/b.py::u'])
         w.close()
-        self.assertEqual(ev.read_events(path)[0][0]['names'], ['C:/proj/tests/a.py::t', 'tests/b.py::u'])
+        names = [n for event in ev.read_events(path)[0] for n in event.get('names', [])]
+        self.assertEqual(names, ['C:/proj/tests/a.py::t', 'tests/b.py::u'])
 
     def test_a_test_without_a_result_is_not_running_after_the_end_of_the_run(self):
         path, _, w = self.attempt()

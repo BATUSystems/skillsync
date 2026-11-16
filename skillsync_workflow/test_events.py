@@ -31,6 +31,11 @@ MAX_MSG = 2000
 MAX_NAME = 300
 MAX_COMMAND = 1000
 MAX_LINE = 16 * 1024
+MAX_READ_LINE = 4 * MAX_LINE   # a longer line is not an event of ours (the writer never writes one over MAX_LINE): skipped, never parsed
+MAX_NUMBER = 10 ** 12
+MAX_STRING = 20_000
+MAX_DEPTH = 6
+MAX_ITEMS = 6000
 COUNTS_INTERVAL_S = 1.0
 STATES = ('running', 'passed', 'failed', 'skipped')
 _RESERVED = {'CON', 'PRN', 'AUX', 'NUL', *(f'COM{i}' for i in range(1, 10)), *(f'LPT{i}' for i in range(1, 10))}   # device names of Windows
@@ -62,6 +67,26 @@ def clean_text(text, limit, mask=False, keep_newlines=False):
     else:
         text = ' '.join(_CONTROL.sub(' ', text).split())
     return text if len(text) <= limit else text[:limit - 1].rstrip() + '…'
+
+
+_SENSITIVE_WORD = r'(?:token|password|passwd|secret|key|pass|auth|credential)'
+_FLAG_VALUE = re.compile(r'(?i)(?<![\w-])(--?[\w.-]*' + _SENSITIVE_WORD + r'[\w.-]*)(=|\s+(?!-))("[^"]*"|\'[^\']*\'|\S+)')
+_SHORT_FLAG_VALUE = re.compile(r'(?<![\w-])(-p)(\s*)(?!-)(\S+)')
+_SHORT_FLAG_TOOLS = ('mysql', 'mysqldump', 'mysqladmin', 'mariadb', 'sshpass')   # `-p` is a password there; elsewhere it is a plugin, a profile, a port
+
+
+def mask_command(text):
+    """The command line of a run with the secrets it may carry masked (a HEURISTIC; the command line is always masked, whatever `tests.mask` says):
+    `redact` (pairs `name=value`, URL credentials, `Authorization`), plus the VALUE after a flag whose name contains token, password, passwd, secret,
+    key, pass, auth or credential (`--token VALUE`, `-api-key VALUE`; a name that only contains such a word, as `--keyword`, is masked too: the heuristic
+    prefers a masked value to a published secret), and after `-p` for the tools where it is a password (`mysql -p VALUE`, `-pVALUE`, `sshpass -p VALUE`).
+    NOT masked: a secret in a positional argument, a short flag of another kind (`-k VALUE`), a value that the shell builds or reads from the environment
+    only when it is not in the line itself, a secret in an environment variable passed by the caller (it is not part of the line)."""
+    text = _FLAG_VALUE.sub(lambda m: m.group(1) + m.group(2) + '[REDACTED]', '' if text is None else str(text))
+    words = text.split()
+    if words and Path(words[0]).name.lower() in _SHORT_FLAG_TOOLS:
+        text = _SHORT_FLAG_VALUE.sub(lambda m: m.group(1) + m.group(2) + '[REDACTED]', text)
+    return text
 
 
 def mask_text(text, mask, limit=MAX_MSG, keep_newlines=False):
@@ -149,14 +174,29 @@ class EventWriter:
         return True
 
     def start(self, **fields):
-        fields['command'] = clean_text(fields.get('command', ''), MAX_COMMAND, mask=True)   # the command line is ALWAYS masked
+        fields['command'] = clean_text(mask_command(fields.get('command', '')), MAX_COMMAND, mask=True)   # the command line is ALWAYS masked (see `mask_command`)
         return self._write({'t': 'start', 'at': _now(), 'startedAt': _now(), 'host': socket.gethostname(), **fields}, force=True)
 
     def collected(self, total, names=None):
-        event = {'t': 'collected', 'total': int(total)}
-        if names:
-            event['names'] = [clean_text(str(n).replace('\\', '/'), MAX_NAME, mask=self.mask) for n in names[:5000]]   # the same `/` as the ids of `test`
-        return self._write(event)
+        """The `collected` event: the total, and the names of the tests as `waiting` ones, in as many events as the line limit needs (the first
+        one carries the total). More than 5000 names: the rest is dropped and `truncated` is set."""
+        total = int(total)
+        names = [clean_text(str(n).replace('\\', '/'), MAX_NAME, mask=self.mask) for n in (names or [])]   # the same `/` as the ids of `test`
+        if len(names) > 5000:
+            names = names[:5000]
+            self.truncated = True
+        ok = self._write({'t': 'collected', 'total': total})
+        chunk, size = [], 0
+        for name in names:
+            cost = len(name.encode('utf-8')) * 6 + 8   # worst case of the JSON escapes
+            if chunk and size + cost > MAX_LINE - 512:
+                ok = self._write({'t': 'collected', 'names': chunk}) and ok
+                chunk, size = [], 0
+            chunk.append(name)
+            size += cost
+        if chunk:
+            ok = self._write({'t': 'collected', 'names': chunk}) and ok
+        return ok
 
     def test(self, test_id, name, state, group=None, ms=None, msg=None):
         if state not in STATES:
@@ -214,9 +254,48 @@ def _now():
     return time.strftime('%Y-%m-%dT%H:%M:%S', time.gmtime()) + 'Z'
 
 
+def _clean_value(value, depth=0):
+    """The value of an event line made safe or `ValueError`: a lone surrogate (which no encoder takes) becomes U+FFFD, a string is capped, a number
+    must be finite and within `MAX_NUMBER`, containers are shallow and small. A file of another machine or of a broken tool must never reach the page
+    (NaN, a huge number, a surrogate) or the reader (recursion) as anything but a skipped line."""
+    if depth > MAX_DEPTH:
+        raise ValueError('too deep')
+    if isinstance(value, str):
+        value = value if len(value) <= MAX_STRING else value[:MAX_STRING]
+        try:
+            value.encode('utf-8')
+        except UnicodeEncodeError:
+            value = value.encode('utf-16', 'surrogatepass').decode('utf-16', 'replace')
+        return value
+    if isinstance(value, bool) or value is None:
+        return value
+    if isinstance(value, int):
+        if abs(value) > MAX_NUMBER:
+            raise ValueError('number out of range')
+        return value
+    if isinstance(value, float):
+        if value != value or abs(value) > MAX_NUMBER:   # NaN, infinity, 1e999
+            raise ValueError('number out of range')
+        return value
+    if isinstance(value, list):
+        if len(value) > MAX_ITEMS:
+            raise ValueError('too many items')
+        return [_clean_value(item, depth + 1) for item in value]
+    if isinstance(value, dict):
+        if len(value) > MAX_ITEMS:
+            raise ValueError('too many items')
+        return {_clean_value(key, depth + 1): _clean_value(item, depth + 1) for key, item in value.items()}
+    raise ValueError('unexpected value')
+
+
+def _reject_constant(name):
+    raise ValueError(f'{name} is not JSON')
+
+
 def read_events(path, offset=0):
-    """`(events, new_offset, skipped)`: only COMPLETE lines (ending in a line feed) from `offset` on; a line that does not parse or is not an
-    object of this version is counted in `skipped`. A write in progress (no line feed yet) is left for the next call."""
+    """`(events, new_offset, skipped)`: only COMPLETE lines (ending in a line feed) from `offset` on; a line that does not parse, is too long, is too deep
+    (any error of the parser, a recursion included), has a number that is not finite or a value of a kind JSON does not have, or is not an object of this
+    version is counted in `skipped`. A write in progress (no line feed yet) is left for the next call."""
     try:
         with open(path, 'rb') as handle:
             handle.seek(offset)
@@ -230,9 +309,12 @@ def read_events(path, offset=0):
     for line in file_lines(decode_text(data[:end])):
         if not line.strip():
             continue
+        if len(line) > MAX_READ_LINE:
+            skipped += 1
+            continue
         try:
-            event = json.loads(line)
-        except ValueError:
+            event = _clean_value(json.loads(line, parse_constant=_reject_constant))
+        except (ValueError, RecursionError, MemoryError, OverflowError, TypeError):
             skipped += 1
             continue
         if isinstance(event, dict) and event.get('v') == EVENT_VERSION and isinstance(event.get('t'), str):
@@ -240,6 +322,27 @@ def read_events(path, offset=0):
         else:
             skipped += 1
     return events, offset + end, skipped
+
+
+def _count(value):
+    """A counter of an event: a non-negative integer within the limits, else 0 (a string or NaN of a broken file must not reach a sum)."""
+    return value if isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= MAX_NUMBER else 0
+
+
+def _int_or_none(value):
+    return value if isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= MAX_NUMBER else None
+
+
+_START_TEXT = ('at', 'run', 'step', 'stepSource', 'command', 'tool', 'host', 'startedAt', 'adapter', 'live', 'levels', 'allowNoCount', 'treeStart')
+_END_TEXT = ('at', 'status', 'reason', 'source', 'tree')
+
+
+def _typed(event, text_keys, int_keys, bool_keys=()):
+    """Only the known fields of an event, each of its kind (others dropped): the rest of the code can trust the types."""
+    out = {key: event[key] for key in text_keys if isinstance(event.get(key), str)}
+    out.update({key: event[key] for key in int_keys if _int_or_none(event.get(key)) is not None})
+    out.update({key: event[key] for key in bool_keys if isinstance(event.get(key), bool)})
+    return out
 
 
 class AttemptState:
@@ -257,16 +360,18 @@ class AttemptState:
         self.imported = None   # the `import` event of an attempt copied from another machine (`test-run --import`)
         self.skipped_lines = 0
         self.offset = 0
+        self.ident = None   # (device, inode, size) of the file this state was read from
 
     def feed(self, events):
         for event in events:
             kind = event.get('t')
             if kind == 'start':
-                self.start = {**event, 'at': event['at'] if isinstance(event.get('at'), str) else None}
+                self.start = {**_typed(event, _START_TEXT, ('pid', 'attempt'), ('allowSkips',)), 'at': event['at'] if isinstance(event.get('at'), str) else None}
             elif kind == 'import':
-                self.imported = event
+                self.imported = {'sourceSha': event['sourceSha'] if isinstance(event.get('sourceSha'), str) else None,
+                                 'at': event['at'] if isinstance(event.get('at'), str) else None}
             elif kind == 'collected':
-                if isinstance(event.get('total'), int):
+                if _int_or_none(event.get('total')) is not None:
                     self.collected_total = event['total']
                 for name in (event.get('names') if isinstance(event.get('names'), list) else []):
                     if isinstance(name, str):
@@ -274,14 +379,17 @@ class AttemptState:
             elif kind == 'test' and isinstance(event.get('id'), str) and event.get('state') in STATES and all(isinstance(event.get(k), (str, type(None))) for k in ('name', 'group', 'msg')):
                 known = self.tests.get(event['id'], {})
                 self.tests[event['id']] = {'id': event['id'], 'name': event.get('name') or event['id'], 'state': event['state'],
-                                           'group': event.get('group') or known.get('group'), 'ms': event.get('ms', known.get('ms')),
+                                           'group': event.get('group') or known.get('group'), 'ms': _int_or_none(event.get('ms')) if 'ms' in event else known.get('ms'),
                                            'msg': event.get('msg') or known.get('msg')}
             elif kind == 'counts':
-                self.stream_counts = {k: event.get(k, 0) for k in ('passed', 'failed', 'skipped', 'running')}
-                if isinstance(event.get('total'), int):
+                self.stream_counts = {k: _count(event.get(k)) for k in ('passed', 'failed', 'skipped', 'running')}
+                if _int_or_none(event.get('total')) is not None:
                     self.collected_total = event['total']
             elif kind == 'end':
-                self.end = event
+                counts = event.get('counts')
+                self.end = {'t': 'end', **_typed(event, _END_TEXT, ('exit', 'ms')), **({'truncated': True} if event.get('truncated') is True else {}),
+                            **({'counts': {k: v for k, v in counts.items() if k in ('total', 'passed', 'failed', 'skipped', 'running', 'waiting') and _int_or_none(v) is not None}}
+                               if isinstance(counts, dict) else {})}
                 self.truncated = bool(event.get('truncated')) or self.truncated
         self._recount()
 
@@ -310,22 +418,31 @@ class AttemptState:
 
 
 def read_attempt(path, previous=None):
-    """Read (the rest of) an attempt file into an `AttemptState` (a previous state continues from its offset)."""
+    """Read (the rest of) an attempt file into an `AttemptState` (a previous state continues from its offset). The state remembers which file it
+    read (device and inode): a file replaced by another one, or shorter than the offset, is read from the start."""
+    try:
+        info = os.stat(path)
+        ident = (info.st_dev, info.st_ino, info.st_size)
+    except OSError:
+        ident = None
+    if previous is not None and (ident is None or previous.ident is None or ident[:2] != previous.ident[:2] or ident[2] < previous.offset):
+        previous = None
     state = previous or AttemptState(int(Path(path).stem) if Path(path).stem.isdigit() else None)
+    state.ident = ident
     events, state.offset, skipped = read_events(path, state.offset)
     state.skipped_lines += skipped
     state.feed(events)
     return state
 
 
-def is_alive(pid, host=None):
-    """True when a process with this pid exists on this machine (always True on Windows: unknown) (used to tell an interrupted attempt from a running one)."""
+def process_state(pid, host=None):
+    """`True` (the process exists on this machine), `False` (it does not), `None` (unknown: another machine, Windows, no valid pid is `False`)."""
     if not isinstance(pid, int) or pid <= 0:
         return False
     if host and host != socket.gethostname():   # the pid of another machine (an imported run) says nothing here
-        return True
-    if sys.platform == 'win32':   # `os.kill(pid, 0)` would TERMINATE the process there: unknown counts as alive (the silence threshold decides)
-        return True
+        return None
+    if sys.platform == 'win32':   # `os.kill(pid, 0)` would TERMINATE the process there
+        return None
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -333,3 +450,8 @@ def is_alive(pid, host=None):
     except (PermissionError, OSError):
         return True
     return True
+
+
+def is_alive(pid, host=None):
+    """True unless the process is known not to exist (unknown counts as alive: the silence threshold decides then)."""
+    return process_state(pid, host) is not False

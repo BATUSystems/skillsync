@@ -8,6 +8,8 @@
 
 - polecenie, jego wyjście i jego kod wyjścia zostają bez zmian (124 przy przekroczeniu `--timeout`);
 - zdarzenia zapisują się w `.skillsync/runs/<run>/tests/<krok>/<n>.jsonl`; lista testów po zakończeniu pochodzi z raportu JUnit XML lub TRX (`--junit <plik|katalog>`, albo domyślne miejsca dotnet, Maven, Gradle), liczniki z wyjścia (np. Karma „Executed N of M”);
+- kod wyjścia 0 przy wyjściu, które zgłasza porażki w znanym podsumowaniu (`FAILED (failures=N)` unittest, `N failed ... in Xs` pytest), to `BLOCKED` z powodem „rura, `|| true` albo opakowanie mogą ukrywać kod testów”; zwykła fraza „3 failed attempts” albo „0 failed” nie czerwieni zielonego biegu;
+- SIGTERM (POSIX; na Windows CTRL_BREAK) przerywa bieg jak Ctrl+C: drzewo procesów polecenia kończy się, `end` ma status `BLOCKED` (kod `test-run` 2), blokada kroku jest zwolniona; zamknięcie okna konsoli albo `taskkill /F` na Windows nie daje szansy na sprzątanie (granica);
 - `PASS` tylko przy znanej dodatniej liczbie wykonanych testów (jak w `validate`): zero testów, nieznana liczba i pominięcia dają `BLOCKED`; wyjątki są jawne i zapisane: `--allow-no-count <powód>`, `--allow-skips`;
 - `validate --run` i `smart-test --run` NIE zapisują zdarzeń testów: testy kroku planu uruchamiaj przez `test-run`.
 
@@ -18,7 +20,7 @@
 
 ## Bramka kroków `[T]`
 
-Krok oznaczony w planie `[T]` (na początku lub końcu tytułu w `## Progress` albo w komórce `Krok` tabeli) nie zamyka się bez dowodu: `checkpoint --status PASS --step <id> --evidence .skillsync/runs/<run>/tests/<krok>/<n>.jsonl` przyjmuje tylko zapis przechodzącego `test-run` TEGO kroku i przebiegu, wykonanego na bieżącej treści (drzewo robocze bez `.skillsync/` i `docs/plans/`). Zwolnienie: `--no-tests <powód>` (zapis w rekordzie, ostrzeżenie `doctor` `tests-waived`, `needsHuman: tests`: decyzja człowieka przy zamknięciu). Bramka chroni przed pominięciem testów, nie przed fałszerstwem pliku dowodu. `doctor` ostrzega też o kroku z testami bez `[T]` (`tests-step-not-marked`) i o kroku `[T]` odhaczonym bez biegu (`tests-not-run`).
+Krok oznaczony w planie `[T]` (na początku lub końcu tytułu w `## Progress` albo w komórce `Krok` tabeli) nie zamyka się bez dowodu: `checkpoint --status PASS --step <id> --evidence .skillsync/runs/<run>/tests/<krok>/<n>.jsonl` przyjmuje tylko zapis przechodzącego `test-run` TEGO kroku i przebiegu, wykonanego na bieżącej treści (drzewo robocze bez `.skillsync/` i `docs/plans/`): rejestr zapisuje odcisk drzewa na **początku** (`start.treeStart`) i na **końcu** (`end.tree`) biegu i oba muszą być równe, więc plik zmieniony w trakcie biegu (także wygenerowany przez testy i niewpisany do `.gitignore`) nie jest dowodem (komunikat nazywa zmienione ścieżki); przy kilku próbach tego kroku na tej samej treści decyduje NAJNOWSZA (starszy zielony bieg nie przebija nowszego czerwonego); bieg zaimportowany z innej maszyny jest ważny tylko dla commita z `--source-sha` i przy czystym drzewie (bez zmian niezacommitowanych). Zwolnienie: `--no-tests <powód>` (zapis w rekordzie, ostrzeżenie `doctor` `tests-waived`, `needsHuman: tests`: decyzja człowieka przy zamknięciu). Bramka chroni przed pominięciem testów, nie przed fałszerstwem pliku dowodu. `doctor` ostrzega też o kroku z testami bez `[T]` (`tests-step-not-marked`) i o kroku `[T]` odhaczonym bez biegu (`tests-not-run`).
 
 ## Adaptery wyjścia narzędzi (etap 2)
 

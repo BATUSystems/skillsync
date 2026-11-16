@@ -16,6 +16,7 @@ from . import test_events as events
 
 SHOWN_ATTEMPTS = 5
 MAX_INLINE_TESTS = 100
+MAX_SKIPPED = 20   # the entries of `skipped` in the answer
 MAX_RUNNING_GROUP = 50   # a RUNNING attempt lists every test of a group up to this size (waiting ones visible without a click)
 MAX_RESPONSE_TESTS = 5000
 STALE_RUNNING_S = 35 * 60
@@ -27,13 +28,10 @@ _CACHE = {}   # path -> AttemptState (incremental reading: only the appended byt
 def _state(path):
     key = str(path)
     try:
-        size = path.stat().st_size
+        path.stat()
     except OSError:
         return None
-    cached = _CACHE.get(key)
-    if cached is not None and size < cached.offset:
-        cached = None
-    state = events.read_attempt(path, cached)
+    state = events.read_attempt(path, _CACHE.get(key))   # a replaced or shortened file is read from the start (see `read_attempt`)
     _CACHE[key] = state
     if len(_CACHE) > 500:
         _CACHE.pop(next(iter(_CACHE)))
@@ -41,17 +39,22 @@ def _state(path):
 
 
 def _effective_state(state, path):
-    """`running` becomes `interrupted` when the process of the run is gone (same machine) or the file has not changed for a long time."""
+    """`running` becomes `interrupted` when the process of the run is gone (same machine), or, when the process cannot be told (another machine,
+    Windows), when the file has not changed for a long time. A live process of this machine is running whatever the silence: a test tool without
+    an adapter prints nothing for long stretches."""
     if state.state != 'running':
         return state.state
-    pid = (state.start or {}).get('pid')
+    start = state.start or {}
+    alive = events.process_state(start.get('pid'), start.get('host')) if start.get('pid') is not None else None
+    if alive is True:
+        return 'running'
+    if alive is False:
+        return 'interrupted'
     try:
         idle = time.time() - path.stat().st_mtime
     except OSError:
         idle = 0
-    if (pid is not None and not events.is_alive(pid, (state.start or {}).get('host'))) or idle > STALE_RUNNING_S:
-        return 'interrupted'
-    return 'running'
+    return 'interrupted' if idle > STALE_RUNNING_S else 'running'
 
 
 def _group_of(test):
@@ -103,14 +106,30 @@ def _build_tests(root, run_id, progress=None):
     for phase in progress or []:
         for step in phase.get('steps', []):
             titles[step['id']] = step['title']
-    sections, steps = [], {}
-    for directory in sorted(p for p in base.iterdir() if p.is_dir() and not p.is_symlink()):
+    sections, steps, skipped = [], {}, []
+
+    def skip(where, reason):   # one bad directory or file never costs the page: it is left out and named (a short, fixed reason; never the content)
+        if len(skipped) < MAX_SKIPPED:
+            skipped.append({'path': f'tests/{where}', 'reason': reason})
+    try:
+        directories = sorted(p for p in base.iterdir() if p.is_dir() and not p.is_symlink())
+    except OSError:
+        return None, {}
+    for directory in directories:
         step = None if directory.name == events.NO_STEP else directory.name
         attempts = []
-        for path in events.list_attempts(root, run_id, step)[-SHOWN_ATTEMPTS:]:
-            state = _state(path)
-            if state is not None and state.start is not None:
-                attempts.append(_summary(path, state))
+        try:
+            paths = events.list_attempts(root, run_id, step)[-SHOWN_ATTEMPTS:]
+        except (OSError, ValueError):   # a name outside the step id pattern, a reserved one (`CON`), a link on the way
+            skip(directory.name, 'not a step directory')
+            continue
+        for path in paths:
+            try:
+                state = _state(path)
+                if state is not None and state.start is not None:
+                    attempts.append(_summary(path, state))
+            except Exception:   # noqa: BLE001 - a file that cannot be folded is skipped, whatever the reason (the page must stay up)
+                skip(f'{directory.name}/{path.name}', 'unreadable')
         if not attempts:
             continue
         attempts.reverse()   # newest first
@@ -118,17 +137,20 @@ def _build_tests(root, run_id, progress=None):
         sections.append({'step': {'id': step, 'title': titles.get(step)} if step else None, 'state': latest['state'], 'attempts': attempts})
         if step:
             steps[step] = {'state': latest['state'], 'attempt': latest['n'], 'counts': latest['counts']}
-    if not sections:
+    if not sections and not skipped:
         return None, {}
     sections.sort(key=lambda s: s['attempts'][0].get('startedAt') or '', reverse=True)
     failed = sum(1 for s in sections if s['attempts'][0]['counts'].get('failed'))
     running = sum(1 for s in sections if s['state'] == 'running')
-    return {'sections': sections, 'failedTotal': failed, 'runningTotal': running}, steps
+    return {'sections': sections, 'failedTotal': failed, 'runningTotal': running, **({'skipped': skipped} if skipped else {})}, steps
 
 
 def add_to_status(status, root, run_id, progress):
     """Adds `tests` and the `tests` of the plan steps to a status dict (nothing when the run has no event files)."""
-    tests, steps = build_tests(root, run_id, progress)
+    try:
+        tests, steps = build_tests(root, run_id, progress)
+    except Exception:   # noqa: BLE001 - the test data never takes the whole status down
+        tests, steps = {'sections': [], 'failedTotal': 0, 'runningTotal': 0, 'skipped': [{'path': 'tests', 'reason': 'unreadable'}]}, {}
     if tests is None:
         return status
     status['tests'] = tests
@@ -154,8 +176,12 @@ def _tests_response(root, run_id, step, attempt, group=None, limit=500, offset=0
         raise ValueError('bad attempt or group')
     limit = max(1, min(int(limit), MAX_RESPONSE_TESTS))
     offset = max(0, int(offset))
-    path = events.step_directory(root, run_id, step) / f'{attempt}.jsonl'
-    if not path.is_file() or path.is_symlink():
+    directory = events.step_directory(root, run_id, step)   # an invalid name: ValueError (the caller answers 400)
+    path = directory / f'{attempt}.jsonl'
+    try:
+        if directory.is_symlink() or path.is_symlink() or not path.is_file():
+            return None
+    except OSError:   # a name too long for the file system: there is no such attempt (404, not 500)
         return None
     state = _state(path)
     if state is None:

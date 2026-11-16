@@ -15,9 +15,9 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
-from .common import file_lines
 from .plan_phases import parse_test_steps
 from . import test_events as events
 
@@ -27,10 +27,11 @@ MAX_PLAN_BYTES = 512 * 1024
 TREE_EXCLUDES = ('.skillsync', 'docs/plans')   # run files and the plans (edited at every step) are not part of the content the tests ran on
 
 
-def work_tree_id(root):
+def work_tree_id(root, from_head=False):
     """Id of the tree of the working state (HEAD plus all changes and untracked files, without `.skillsync/` and `docs/plans/`), or None without git
     (or when git cannot be run). A temporary index seeded with a COPY of the real one (its stat data keeps `git add -A` from hashing the whole tree
-    again) leaves the real index and the working tree untouched."""
+    again) leaves the real index and the working tree untouched. `from_head`: the same id of the committed state (HEAD with the same exclusions), to tell
+    whether the working tree equals HEAD."""
     root = str(Path(root).resolve())
     try:
         with tempfile.TemporaryDirectory(prefix='skillsync-tree-') as tmp:
@@ -44,11 +45,19 @@ def work_tree_id(root):
             real_index = Path(real.stdout.decode().strip()) if real.returncode == 0 else None
             if real_index is not None and not real_index.is_absolute():
                 real_index = Path(root) / real_index
-            if real_index is not None and real_index.is_file():
+            if from_head:
+                if git('rev-parse', '--verify', '--quiet', 'HEAD', plain=True).returncode or git('read-tree', 'HEAD').returncode:
+                    return None
+            elif real_index is not None and real_index.is_file():
                 shutil.copyfile(real_index, Path(tmp) / 'index')
+                # The copy is new, so git would trust the stat data of every entry, also of a file written in the same clock tick as the index entry
+                # with the same size (a "racily clean" entry). Dating the copy two seconds back makes git compare the CONTENT of files modified since,
+                # while the older ones keep their cheap stat check.
+                recent = time.time() - 2.0
+                os.utime(Path(tmp) / 'index', (recent, recent))
             elif git('rev-parse', '--verify', '--quiet', 'HEAD', plain=True).returncode == 0 and git('read-tree', 'HEAD').returncode:
                 return None
-            if git('add', '-A', '--', '.').returncode:
+            if not from_head and git('add', '-A', '--', '.').returncode:
                 return None
             for excluded in TREE_EXCLUDES:   # a pathspec exclude would fail on an ignored directory
                 git('rm', '-r', '-q', '--cached', '--ignore-unmatch', '--', excluded)
@@ -70,8 +79,7 @@ def plan_for_run(root, run_id):
             text = path.read_text(encoding='utf-8', errors='replace')
         except OSError:
             continue
-        match = _RUN_LINE.search(text[:4000])
-        if match and match.group(1) == run_id:
+        if run_of_plan(text) == run_id:
             return f'docs/plans/{path.name}', text
     return None
 
@@ -132,22 +140,70 @@ def evidence_problem(root, run_id, step, evidence):
         if problem:
             last = f'{item}: {problem}'
             continue
-        if state.imported:   # a run of another machine (a copy without `.git`): valid for exactly the commit the driver named
+        if state.imported:   # a run of another machine (a copy without `.git`): valid for exactly the commit the driver named, with nothing changed since
             sha = (state.imported or {}).get('sourceSha')
             head = _head(root)
             if not sha or head is None or not (head == sha or head.startswith(sha)):
                 last = f'{item}: the imported run was made for commit {sha}, the checkpointed one is {head}'
                 continue
+            committed = work_tree_id(root, from_head=True)
+            if current is None or committed is None or current != committed:
+                last = f'{item}: the imported run is valid for the commit {sha} only, and the working tree differs from it (uncommitted changes): commit them or run the tests here'
+                continue
             return None
         recorded = (state.end or {}).get('tree')
+        began = (state.start or {}).get('treeStart')
+        if began is None:
+            last = f'{item}: the run recorded no tree at its start (it was not made by this version of `test-run`): run the tests again'
+            continue
+        if recorded is not None and began != recorded:
+            last = (f'{item}: files changed WHILE the tests ran (tree {began} at the start, {recorded} at the end{_changed_paths(root, began, recorded)}): a test run is a proof only '
+                    'for a tree that stayed the same; keep generated files out of the tree (.gitignore) or stop editing during the run, then run the tests again')
+            continue
         if current is None or recorded is None:
             last = f'{item}: the content of the working tree cannot be compared (no git repository, or git cannot be run, or the run recorded no tree): {"re-run the tests in a git repository" if current is None else "run them again"}'
             continue
         if recorded != current:
             last = f'{item}: the tests ran on different content than the one checkpointed (tree {recorded} vs {current}); run them again'
             continue
+        newer = _newer_not_passing(root, run_id, step, item, current)
+        if newer:
+            last = f'{item}: a NEWER run of this step on the same content did not pass ({newer}); the newest run decides: fix the tests and run them again'
+            continue
         return None
     return f'{hint} ({last})'
+
+
+def _changed_paths(root, first, second):
+    """` — changed: a, b, c (+N)` for the message of a tree that changed during the run (at most 5 paths), or an empty string."""
+    try:
+        done = subprocess.run(['git', '-C', str(Path(root).resolve()), 'diff-tree', '-r', '--name-only', first, second], capture_output=True, timeout=30)
+        names = [line for line in done.stdout.decode('utf-8', 'replace').splitlines() if line] if done.returncode == 0 else []
+    except (OSError, subprocess.SubprocessError):
+        return ''
+    if not names:
+        return ''
+    shown = ', '.join(names[:5]) + (f' (+{len(names) - 5})' if len(names) > 5 else '')
+    return f'; changed: {shown}'
+
+
+def _newer_not_passing(root, run_id, step, item, current):
+    """A short description of a NEWER attempt of the step (a higher number than the evidence file) that ended on the same tree without passing, else
+    None: an older green run does not outweigh a newer red one on the same content."""
+    try:
+        mine = int(Path(item).stem)
+    except ValueError:
+        return None
+    for path in events.list_attempts(root, run_id, step):
+        if int(path.stem) <= mine:
+            continue
+        state = events.read_attempt(path)
+        end = state.end or {}
+        if not end or state.imported or end.get('tree') != current:
+            continue
+        if _proof_problem(state, run_id, step) is not None:
+            return f'attempt {path.stem}: {end.get("status") or "no result"}'
+    return None
 
 
 def _run_record(root, run_id):
@@ -170,8 +226,15 @@ def waived_steps(root, run_id):
 
 
 def run_of_plan(text):
+    """The run id named by the `Przebieg:` line of a plan, only when it is a valid run id (a value such as `../x` or a path is not one: it would be
+    used to build paths), else None."""
     match = _RUN_LINE.search(text[:4000])
-    return match.group(1) if match and match.group(1) else None
+    if not match or not match.group(1):
+        return None
+    try:
+        return events._safe_name(match.group(1), 'Przebieg')
+    except ValueError:
+        return None
 
 
 def plan_findings(root, only_run=None):

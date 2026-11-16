@@ -83,7 +83,15 @@ class Sections(Base):
         old = time.time() - dt.STALE_RUNNING_S - 60
         os.utime(path, (old, old))
         dt._CACHE.clear()
-        self.assertEqual({s['step']['id']: s['state'] for s in dt.build_tests(self.root, 'R1')[0]['sections']}['F1.1'], 'interrupted')   # silent for too long
+        self.assertEqual({s['step']['id']: s['state'] for s in dt.build_tests(self.root, 'R1')[0]['sections']}['F1.1'], 'running')   # silent for long, but its process is alive: running
+        path3, _ = self.attempt('F1.3', [('a', 'running', 'g')], end=None, pid=os.getpid())
+        lines = path3.read_text(encoding='utf-8').splitlines()
+        first = json.loads(lines[0])
+        first['host'] = 'another-machine'   # the pid says nothing here: only the silence decides
+        path3.write_text('\n'.join([json.dumps(first)] + lines[1:]) + '\n', encoding='utf-8')
+        os.utime(path3, (old, old))
+        dt._CACHE.clear()
+        self.assertEqual({s['step']['id']: s['state'] for s in dt.build_tests(self.root, 'R1')[0]['sections']}['F1.3'], 'interrupted')
 
     def test_an_interrupted_attempt_and_a_finished_one_show_no_running_test(self):
         self.attempt('F1.2', [('a', 'running', 'g'), ('b', 'passed', 'g')], end=None, pid=2 ** 22 + 12345)   # the process is gone, no `end`
