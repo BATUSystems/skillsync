@@ -355,6 +355,8 @@ main { flex: 1; padding: 1.1rem 1.4rem; min-width: 0; }
 
 /* ---------- fazy i kroki */
 .work { display: grid; grid-template-columns: minmax(0, 1fr) minmax(18rem, 27rem); gap: 1rem; align-items: start; }
+/* 180-G: the grid of phases is spaced from what lies above it (the glossary and the result box have a top margin only) by the same gap as the cards inside it */
+.work { margin-top: 1rem; }
 .phases { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr)); gap: 1rem; }
 .phase { min-width: 0; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: .85rem .95rem; box-shadow: var(--shadow); }
 .phase.s-active { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
@@ -508,7 +510,7 @@ main { flex: 1; padding: 1.1rem 1.4rem; min-width: 0; }
   .now .dot-live { margin-top: .3rem; }
   .now .txt { white-space: normal; flex: 1; min-width: 0; }
   .now .par { flex-basis: 100%; padding-left: 1.35rem; }
-  .work { gap: .8rem; }
+  .work { gap: .8rem; margin-top: .8rem; }
   .phases { grid-template-columns: minmax(0, 1fr); gap: .8rem; }
   .phase, .feed-box { padding: .75rem .8rem; }
   .step { font-size: .88rem; padding: .3rem .35rem; }
@@ -557,7 +559,7 @@ main { flex: 1; padding: 1.1rem 1.4rem; min-width: 0; }
   .now { font-size: .85rem; margin-top: .35rem; }
   .bar { height: .65rem; }
   .phase, .feed-box { padding: .55rem .6rem; border-radius: 10px; }
-  .phases, .work { gap: .5rem; }
+  .phases, .work { gap: .5rem; } .work { margin-top: .5rem; }
   .phase-head .nm { font-size: .9rem; }
   .step { font-size: .8rem; padding: .22rem .25rem; gap: .4rem; }
   .step .st { width: 1.05rem; height: 1.05rem; } .step .sid { min-width: 2.1rem; font-size: .74rem; }
