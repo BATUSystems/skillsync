@@ -12,6 +12,10 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Fixed
+
+- Status page, `Host` rule: an older good answer of the name resolution of this machine now serves a slow resolver for at most 5 minutes after the last successful lookup (`HOST_LOOKUP_STALE_MAX`); before, it was renewed every 15 s for ever, so an address that no longer belonged to the machine could stay accepted as local. After the limit the answer is empty (an unlisted `.255` address is refused, as before when there is no answer; `--approve-host <IP>` still lets one in). The contract names the trust boundary of the machine name resolution.
+
 ## [1.6.0] - 2026-11-16
 
 ### Added
