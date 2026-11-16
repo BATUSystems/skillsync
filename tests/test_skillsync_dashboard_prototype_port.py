@@ -68,28 +68,32 @@ class DashboardPortTests(base.ServeCommandTests):
         (self.root / 'docs' / 'prototypes').mkdir(parents=True, exist_ok=True)
         users = ps.UsersFile(str(self.root / '.skillsync' / 'prototype' / 'users.json'), iterations=1000)
         ps.add_user(users, 'dev@example.com', roles=['developer'], password='Pyt-' + 'Haslo-' + '5531', name='Dev')
-        port = free_port()
         path = self.root / srv.MANIFEST
-        path.write_text(path.read_text(encoding='utf-8') + 'prototype:\n  port: %d\n' % port, encoding='utf-8')
-        proc = subprocess.Popen([sys.executable, str(CLI), 'prototype', 'serve', str(self.root), *self.layer],
-                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=self.env)
-        self.addCleanup(lambda: proc.poll() is None and proc.kill())
-        watchdog = threading.Timer(30, proc.kill)
-        watchdog.start()
-        lines = []
-        try:
-            for line in proc.stderr:  # the announcement comes after the bind, so it proves the server listens (no polling race)
-                lines.append(line)
-                if line.startswith('Serwer prototypów:'):
-                    break
-            else:
-                self.fail('the server did not announce its address: ' + ''.join(lines))
-            self.assertIn(':%d/' % port, lines[-1])
-            socket.create_connection(('127.0.0.1', port), timeout=5).close()
-        finally:
-            watchdog.cancel()
-            proc.kill()
-            proc.communicate(timeout=15)
+        manifest = path.read_text(encoding='utf-8')
+        for _attempt in range(4):   # `free_port()` only says a port WAS free: a lost bind ends the server before it announces itself
+            port = free_port()
+            path.write_text(manifest + 'prototype:\n  port: %d\n' % port, encoding='utf-8')
+            proc = subprocess.Popen([sys.executable, str(CLI), 'prototype', 'serve', str(self.root), *self.layer],
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=self.env)
+            self.addCleanup(lambda proc=proc: proc.poll() is None and proc.kill())
+            watchdog = threading.Timer(30, proc.kill)
+            watchdog.start()
+            lines = []
+            try:
+                for line in proc.stderr:  # the announcement comes after the bind, so it proves the server listens (no polling race)
+                    lines.append(line)
+                    if line.startswith('Serwer prototypów:'):
+                        break
+                else:
+                    continue   # no announcement: the port was lost (or the server died), try another one
+                self.assertIn(':%d/' % port, lines[-1])
+                socket.create_connection(('127.0.0.1', port), timeout=5).close()
+                return
+            finally:
+                watchdog.cancel()
+                proc.kill()
+                proc.communicate(timeout=15)
+        self.fail('the server did not announce its address: ' + ''.join(lines))
 
     def test_help_lists_the_flag(self):
         result = self.cli('dashboard', 'serve', '--help')
