@@ -57,6 +57,23 @@ python3 -m unittest discover -s tests -p 'test_skillsync*.py' -v 2>&1 | tee run.
 python3 scripts/check_skips.py run.log --system ubuntu-latest --mode copy
 ```
 
+### Zestaw modułów przy scalaniu
+
+`python3 scripts/merge_modules.py --base <baza> --head <sha> [--json | --names]` wylicza z diffu `<baza>..<sha>` moduły testowe do uruchomienia
+przy scalaniu, z uzasadnieniem na moduł. Reguły: zmieniony test; test importujący zmieniony moduł produktu, skryptu lub pomocnika
+`tests/` (statycznie, bezpośrednio albo przez inne moduły); test nazywający zmieniony plik w napisie (uruchamia kod podprocesem);
+literał komunikatu z dodanego lub usuniętego wiersza zmienionego pliku produktu w teście albo w fiksturze, którą czyta; zmieniona
+fikstura i testy czytające `expected*` przy zmianie produktu; stały zestaw strażników (`GUARDS` w skrypcie). Przykład uruchomienia:
+`python3 -m unittest $(python3 scripts/merge_modules.py --base <baza> --head <sha> --names)`. Zestaw to dolna granica, nie zastępuje pełnego
+biegu przed wydaniem; nie widzi importów dynamicznych ani poleceń znanych tylko z nazwy (np. `skillsync status` w napisie). Szeroko
+importowany moduł (`cli.py`, `common.py`) daje szeroki zestaw, co jest zamierzone.
+
+### Pomiary w dokumentacji
+
+Tabela, która mówi „zmierzone”, ma kolumnę „Pomiar” z odesłaniem do zapisu w `docs/measurements/<id>.md` (pola: Data, System, Wersja,
+Polecenie, Wynik; system w formie „Windows 11, Python 3.12.16”, bez nazw maszyn i osób). Wiersz bez zapisu jest oznaczony
+„niezmierzone” albo „oczekiwane”. Pilnuje tego `tests/test_skillsync_measurements.py`. Nowy pomiar: dodaj zapis i odsyłacz w tabeli.
+
 ### Serwery w testach
 
 Testy serwerów łączą się po adresie liczbowym (`127.0.0.1`), bez rozwiązywania nazw: bez `localhost` w `create_connection`, `urlopen` i `HTTPConnection`, a gniazdo klienta w testach niskiego poziomu otwieranie przez `connect(('127.0.0.1', port))`. Serwer testowy nie woła `socket.getfqdn` (podklasa `ThreadingHTTPServer` z `server_bind` bez odwrotnego DNS, jak serwery produkcyjne). Na runnerze macOS rozwiązywanie nazw potrafi sporadycznie stanąć na ok. 35 s, a pomiary czasu w testach mierzymy po stronie serwera, nie po stronie klienta.
