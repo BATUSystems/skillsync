@@ -4,6 +4,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-11-16
+
+### Added
+
+- Skill `dashboard` (`dashboard-render.js`, `app.js`, `app.css`): the "N unpushed" badge opens a panel with the unpushed commits (`delivery.commits`, `delivery.commitsMore`); a floating "back to top" button in the document view (drawn only when the host gives the adapter hook `scroll.toTop`); on a narrow screen the commit sheet ends above that button. A renderer copy without the new field or hook shows the page as before.
+
 ### Changed
 
 - Skill `dashboard`: `SKILL.md` names the Windows way to stop the server (Ctrl+C or CTRL_BREAK to the process group; the table is in `docs/dashboard-contract.md`).
