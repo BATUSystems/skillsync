@@ -15,6 +15,7 @@ is appended to <project>/.skillsync/hook-exceptions.jsonl (time, command, reason
 
 Usage (set by `skillsync link`): guard-commands.py [--mode deny|off] [--allow <name-or-path> ...]; stdin = the hook JSON.
 Known limit: `cd` is applied to the commands that follow it even inside `( ... )` groups and after `|`/`&`/`||` (a refusal-safe error only in one direction: such a `cd` may make a later relative path look temporary).
+`find ... -delete` whose every -name is a regenerable artifact (*.pyc, *.pyo, __pycache__, .pytest_cache, .mypy_cache, .ruff_cache, .DS_Store, Thumbs.db) and has no -o/!/-not/groups passes.
 Always refused when seen (no target check; use the exception): rmtree in `python -c`, xargs rm -r, PowerShell and rd forms.
 The wrapper list is open (timeout, nice, env, sudo, xargs, flock, systemd-run, stdbuf ...): an unknown wrapper hides the command.
 An exception prefix on `bash -c '...'`/`eval` covers the whole inner text.
@@ -34,6 +35,7 @@ DEFAULT_NAMES = ('node_modules', '.venv', '__pycache__', 'dist', 'build')
 MAX_DEPTH = 4
 KEYWORDS = {'{', '}', '!', 'if', 'then', 'else', 'elif', 'do', 'while', 'until', 'fi', 'done'}
 SHELLS = {'bash', 'sh', 'zsh', 'dash', 'ksh'}
+RECOVERABLE = {'*.pyc', '*.pyo', '__pycache__', '.pytest_cache', '.mypy_cache', '.ruff_cache', '.DS_Store', 'Thumbs.db'}
 SUBST = '\x01'  # placeholder of a command substitution inside a word
 ASSIGN = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*=')
 GLOB = re.compile(r'[*?\[]')
@@ -645,9 +647,19 @@ class Guard:
                 if a in ('-exec', '-execdir') and os.path.basename(args[k + 1:k + 2][0] if args[k + 1:k + 2] else '') == 'rm':
                     shorts, longs, _ = _flags(args[k + 2:])
                     deleting = deleting or bool(shorts & {'r', 'R'}) or '--recursive' in longs
+        if deleting and not ('-exec' in args or '-execdir' in args) and self.only_artifacts(args):
+            return []  # the everyday cleanup of regenerable files (`find . -name '*.pyc' -delete`)
         if deleting:
             return [('find-delete', words, roots or ['.'], False)]
         return []
+
+    @staticmethod
+    def only_artifacts(args):
+        """True when every name test of a `find ... -delete` is a regenerable artifact and nothing can widen the match."""
+        if any(a in ('-o', '-or', '!', '-not', '(', ')') for a in args):
+            return False
+        names = [args[k + 1] for k, a in enumerate(args[:-1]) if a in ('-name', '-iname')]
+        return bool(names) and all(name in RECOVERABLE for name in names)
 
     def walk(self, text, depth=0, inherited=None):
         """`[(kind, words, targets, from_stdin, exception reason or None)]`: the exception of a command covers only that command."""
@@ -677,7 +689,8 @@ HINTS = {
 def message(findings, agent):
     kind, words, targets, from_stdin = findings[0][:4]
     shown = (shlex.join(words) if all(isinstance(w, str) for w in words) else ' '.join(map(str, words))).replace(SUBST, '`')
-    quoted = ' '.join(shlex.quote(t) for t in targets) if targets else '<sciezki>'
+    # a glob stays unquoted (quotes would switch the expansion off); the other targets are quoted for the shell
+    quoted = ' '.join(t if (GLOB.search(t) and re.fullmatch(r'[\w@%+=:,./*?\[\]-]+', t)) else shlex.quote(t) for t in targets) if targets else '<sciezki>'
     hint = HINTS.get(kind, 'trash -- <sciezki>').format(targets=quoted)
     lines = [
         'Zablokowano trwale usuniecie (skillsync guard-commands): ' + shown[:300],

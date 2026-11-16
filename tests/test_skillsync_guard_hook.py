@@ -80,7 +80,14 @@ TABLE = [
     ('rm -rf -- src', True),
     ('ls && rm -rf src', True),
     ('ls | xargs rm -rf', True),
-    ('find . -name "*.pyc" -delete', True),
+    ('find . -name "*.pyc" -delete', False),
+    ('find . -type d -name __pycache__ -delete', False),
+    ('find . -name "*.pyc" -name "*.pyo" -delete', False),
+    ('find . -name "*.txt" -delete', True),
+    ('find . -delete', True),
+    ('find . -name "*.pyc" -o -name "*.txt" -delete', True),
+    ('find . -name "*.pyc" -not -path "./keep/*" -delete', True),
+    ('find . -name "*.pyc" -exec rm -rf {} +', True),
     ('find /tmp/q -delete', False),
     ('find . -type d -name x -exec rm -rf {} +', True),
     ('python3 -c \'import shutil; shutil.rmtree("x")\'', True),
@@ -258,6 +265,15 @@ class Protocol(unittest.TestCase):
         done = self.run_hook(self.bash('rm -rf src', root, agent_id='a1', agent_type='implementer'), cwd=root)
         self.assertEqual(done.returncode, 2)
         self.assertIn('podumyslem', done.stderr)
+
+    def test_glob_hint_stays_unquoted(self):
+        root = self.project()
+        done = self.run_hook(self.bash('rm -rf -- *', root), cwd=root)
+        self.assertEqual(done.returncode, 2)
+        self.assertIn('trash -- *', done.stderr)
+        self.assertNotIn("trash -- '*'", done.stderr)
+        done = self.run_hook(self.bash('rm -rf "my dir" out-*', root), cwd=root)
+        self.assertIn("trash -- 'my dir' out-*", done.stderr)
 
     def test_worktree_and_clean_messages(self):
         root = self.project()
