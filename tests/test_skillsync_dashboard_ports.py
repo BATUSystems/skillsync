@@ -5,6 +5,7 @@ Handler tests run two servers over one `Board` in-process (ports of the test sli
 `test_skillsync_dashboard_single_port_golden`."""
 from __future__ import annotations
 
+import collections
 import http.client
 import inspect
 import json
@@ -810,22 +811,75 @@ class Process(unittest.TestCase):
                     time.sleep(0.1)
         self.assertFalse(pending, f"not listening: {pending}")
 
+    CONSOLE_LINES = 5000   # the most lines of one stream that `console_until` keeps (the oldest are dropped): the output of a process must not grow the test without bound
+
     def console_until(self, proc, *needles, timeout=30):
         """Reads the console (stderr) of `proc` until every needle was printed (the start logs after the sockets are up, and a slow name
-        lookup delays the later lines); returns `(lines, finish)`: `finish()` stops the process and returns the whole console text."""
-        lines: list[str] = []
-        reader = threading.Thread(target=lambda: lines.extend(iter(proc.stderr.readline, "")), daemon=True)
-        reader.start()
-        deadline = time.time() + timeout
-        while time.time() < deadline and not all(any(needle in line for line in list(lines)) for needle in needles):
-            time.sleep(0.05)
+        lookup delays the later lines); returns `(lines, finish)`: `finish()` stops the process and returns the whole console text.
+        stdout is read too (a full pipe would block the process) and kept in `self.stdout_lines`. When a needle is still missing after
+        `timeout` seconds the test FAILS here, naming the missing lines and showing the console, not later in an unrelated assertion.
+        The process and the pipes are closed also when the test raises before `finish()`."""
+        lines: collections.deque = collections.deque(maxlen=self.CONSOLE_LINES)
+        self.stdout_lines = collections.deque(maxlen=self.CONSOLE_LINES)
+        readers = [threading.Thread(target=lambda stream=stream, sink=sink: [sink.append(line) for line in iter(stream.readline, "")], daemon=True)
+                   for stream, sink in ((proc.stderr, lines), (proc.stdout, self.stdout_lines)) if stream]
+        for reader in readers:
+            reader.start()
 
         def finish() -> str:
-            proc.terminate()
-            proc.wait(timeout=30)
-            reader.join(10)
+            if proc.poll() is None:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=30)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait(timeout=10)
+            for reader in readers:
+                reader.join(10)
             return "".join(lines)
+        self.addCleanup(finish)   # runs before `kill` (registered in setUp): a failing test still leaves no process and no reader behind
+
+        def missing() -> list[str]:
+            printed = list(lines)
+            return [needle for needle in needles if not any(needle in line for line in printed)]
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline and missing():
+            time.sleep(0.05)
+        absent = missing()
+        if absent:
+            console = finish()
+            self.fail(f"console line(s) not printed within {timeout} s: {absent!r}\nstderr:\n{console}\nstdout:\n{''.join(self.stdout_lines)}")
         return lines, finish
+
+    def script(self, code: str):
+        proc = subprocess.Popen([sys.executable, "-u", "-c", code], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        self.procs.append(proc)
+        return proc
+
+    def test_console_until_fails_naming_the_missing_line_and_stops_the_process(self) -> None:
+        proc = self.script("import sys, time; print('hello', file=sys.stderr); time.sleep(60)")
+        with self.assertRaises(AssertionError) as caught:
+            self.console_until(proc, "hello", "never printed", timeout=1)
+        message = str(caught.exception)
+        self.assertIn("'never printed'", message)
+        self.assertNotIn("'hello'", message)   # only what is missing is named
+        self.assertIn("hello", message)   # the console that was read is shown
+        self.assertIsNotNone(proc.poll())   # the process was stopped, not left running
+
+    def test_console_until_reads_stdout_so_that_a_full_pipe_does_not_block_the_process(self) -> None:
+        proc = self.script("import sys; sys.stdout.write('x' * 400000 + '\\n'); sys.stdout.flush(); print('ready', file=sys.stderr); sys.stdout.write('y' * 400000 + '\\n')")
+        lines, finish = self.console_until(proc, "ready", timeout=20)
+        self.assertEqual(proc.wait(timeout=20), 0)   # it ends by itself: the second write did not block on a full pipe
+        finish()
+        self.assertEqual(sum(len(line.strip()) for line in self.stdout_lines), 800000)
+        self.assertEqual(list(lines), ["ready\n"])
+
+    def test_console_until_keeps_a_bounded_number_of_lines(self) -> None:
+        proc = self.script(f"import sys\nfor n in range({self.CONSOLE_LINES + 500}): print(n, file=sys.stderr)\nprint('END', file=sys.stderr)")
+        lines, finish = self.console_until(proc, "END", timeout=20)
+        text = finish()
+        self.assertLessEqual(len(lines), self.CONSOLE_LINES)
+        self.assertTrue(text.endswith("END\n"))   # the newest lines are kept
 
     def blocked(self, *flags) -> dict:
         done = subprocess.run([sys.executable, str(CLI), "dashboard", "serve", str(self.root), *flags, *self.layer], capture_output=True, text=True,
