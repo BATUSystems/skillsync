@@ -12,6 +12,10 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Changed
+
+- `docs/dashboard-contract.md`, "how to stop the server on Windows": the table now has a "Pomiar" column that separates what was measured (Ctrl+C, CTRL_BREAK, `Stop-Process`, `taskkill /F`, `Popen.terminate()`, `taskkill` without `/F`) from what is only expected from the system documentation and was not measured (closing the console window, Task Manager "End task").
+
 ## [1.7.0] - 2026-11-16
 
 ### Added
