@@ -12,12 +12,12 @@ Rules (a module is selected when at least one holds; every hit is listed as its 
                other modules (reverse closure over the import graph);
   path         a string in the test names a changed file (`skillsync_workflow/status.py`, or `status.py` next to
                `skillsync_workflow`, or `scripts/x.py`) - for tests that run the code through a subprocess;
-  literal      a string literal on an added or removed line of a changed product file (messages, keys; f-string
-               placeholders are cut out, at least 12 characters) occurs in a string of the test (either contains the
+  literal      a string literal on an added or removed line of a changed product file (messages: at least 12 characters and
+               a space, so identifiers, paths and module prefixes do not count; f-string placeholders are cut out) occurs in a string of the test (either contains the
                other) or in a fixture the test reads;
   fixture      a changed non-Python file under `tests/` (fixtures) is named by a string in the test (basename, stem prefix
                such as `expected`, or its directory);
-  expected     any product file changed and the test reads `expected*` fixtures (their content mirrors the product output);
+  expected     any file of `skillsync_workflow/` changed and the test reads `expected*` fixtures (their content mirrors the product output);
   unparsable   the test file does not parse - selected for safety;
   guard        the fixed guard set (GUARDS below), always.
 The analysis reads the working tree, so the checkout must be `--head` (otherwise exit 2); the diff is `base...head` (from the merge base).
@@ -48,7 +48,7 @@ class GitError(RuntimeError):
 
 def git(repo, *args):
     try:
-        done = subprocess.run(['git', '-C', str(repo), *args], capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=120)
+        done = subprocess.run(['git', '-C', str(repo), '-c', 'core.quotePath=false', '-c', 'diff.noprefix=false', '-c', 'color.ui=false', *args], capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=120)
     except (OSError, subprocess.SubprocessError) as error:
         raise GitError(str(error))
     if done.returncode != 0:
@@ -70,14 +70,15 @@ def diff_literals(repo, base, head, paths):
     """Static parts of string literals on added or removed lines of the given Python files."""
     found = set()
     for path in paths:
-        text = git(repo, 'diff', '-U0', '--no-renames', f'{base}...{head}', '--', path)
+        text = git(repo, 'diff', '-U0', '--no-renames', '--no-color', '--no-ext-diff', '--src-prefix=a/', '--dst-prefix=b/', f'{base}...{head}', '--', path)
         for line in text.split('\n'):
             if not line or line[0] not in '+-' or line.startswith(('+++', '---')) or line[1:].lstrip().startswith('#'):
                 continue
             for match in STRING.finditer(line[1:]):
                 for part in PLACEHOLDER.split(match.group('s')):
                     part = part.strip()
-                    if len(part) >= MIN_LITERAL:
+                    # a message has words; an identifier, a path or a module prefix ('skillsync_workflow') matches half of the suite
+                    if len(part) >= MIN_LITERAL and re.search(r'\s', part):
                         found.add(part)
     return found
 
@@ -157,7 +158,7 @@ def select(repo, base, head):
     changed_py = {path for path, status in changed.items() if path.endswith('.py') and status != 'D'}
     changed_modules = {by_path[path] for path in changed_py if path in by_path}
     deleted_py = {path for path, status in changed.items() if path.endswith('.py') and status == 'D'}
-    deleted_modules = {dotted(path) for path in deleted_py}
+    deleted_modules = {dotted(path) for path in deleted_py} | {dotted(path).rsplit('.', 1)[-1] for path in deleted_py if path.startswith('tests/')}  # bare `import helper` too
     # deleted product files count too: tests that named or imported them break at the merge
     changed_product = sorted(path for path in changed_py | deleted_py if path.startswith(('skillsync_workflow/', 'scripts/')))
     changed_fixtures = sorted(path for path in changed if path.startswith('tests/') and not path.endswith('.py'))
@@ -198,6 +199,17 @@ def select(repo, base, head):
         return None
 
     all_fixtures = sorted((repo / 'tests').rglob('*.json')) if (repo / 'tests').is_dir() else []
+    def reachable(start):
+        """`(module, trail)` for the module itself and every non-test module it imports, directly or not."""
+        seen, queue = {start}, [(start, [start])]
+        while queue:
+            current, trail = queue.pop(0)
+            yield current, trail
+            for target in sorted(imports.get(current, ())):
+                if target not in seen and not Path(modules[target]).name.startswith('test_skillsync'):
+                    seen.add(target)
+                    queue.append((target, trail + [target]))
+
     fixture_by_name = {}
     for file in all_fixtures:
         fixture_by_name.setdefault(file.name, []).append(file)
@@ -212,9 +224,10 @@ def select(repo, base, head):
             trail = chain_to_changed(name)
             if trail:
                 add(name, 'import: ' + ' -> '.join(trail))
-        gone = sorted(raw_imports.get(name, set()) & deleted_modules)
-        if gone:
-            add(name, 'import: imports deleted ' + ', '.join(gone))
+        for reached, trail in reachable(name):
+            gone = sorted(raw_imports.get(reached, set()) & deleted_modules)
+            if gone:
+                add(name, 'import: ' + ' -> '.join(trail) + ' imports deleted ' + ', '.join(gone))
         values = constants[name]
         for product in changed_product:
             stem = Path(product).name
@@ -222,7 +235,7 @@ def select(repo, base, head):
             if any(product in value for value in values) or (stem in values and parent in values):
                 add(name, f'path: names {product}')
         for literal in sorted(literals):
-            if any(len(value) >= MIN_LITERAL and (literal in value or value in literal) for value in values):
+            if any(len(value) >= MIN_LITERAL and re.search(r'\s', value) and (literal in value or value in literal) for value in values):
                 add(name, f'literal: "{literal[:60]}"')
                 break
             # fixtures the test reads by name
@@ -239,7 +252,7 @@ def select(repo, base, head):
             case = file.parent.name if file.parent.name not in ('tests', 'fixtures') and len(file.parent.name) >= 4 else None
             if any(key in value for key in keys for value in values) or (case and any(case in value for value in values)):
                 add(name, f'fixture: {fixture}')
-        if changed_product and any('expected' in value for value in values):
+        if any(path.startswith('skillsync_workflow/') for path in changed_product) and any('expected' in value for value in values):
             add(name, 'expected: reads expected* fixtures and the product changed')
 
     for guard in GUARDS:

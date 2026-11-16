@@ -62,9 +62,9 @@ python3 scripts/check_skips.py run.log --system ubuntu-latest --mode copy
 `python3 scripts/merge_modules.py --base <baza> --head <sha> [--json | --names]` wylicza z diffu `<baza>..<sha>` moduły testowe do uruchomienia
 przy scalaniu, z uzasadnieniem na moduł. Reguły: zmieniony test; test importujący zmieniony moduł produktu, skryptu lub pomocnika
 `tests/` (statycznie, bezpośrednio albo przez inne moduły); test nazywający zmieniony plik w napisie (uruchamia kod podprocesem);
-literał komunikatu z dodanego lub usuniętego wiersza zmienionego pliku produktu w teście albo w fiksturze `*.json` nazwanej w teście; zmieniona
-fikstura i testy czytające `expected*` przy zmianie produktu; stały zestaw strażników (`GUARDS` w skrypcie). Przykład uruchomienia:
-`python3 -m unittest $(python3 scripts/merge_modules.py --base <baza> --head <sha> --names)`. Analiza czyta drzewo robocze, więc checkout musi być `--head` (inaczej kod 2); diff liczony od merge-base. Usunięty lub przemianowany moduł produktu wybiera testy, które go importują albo nazywają. Zestaw to dolna granica, nie zastępuje pełnego
+literał komunikatu (min. 12 znaków i spacja, więc identyfikatory, ścieżki i przedrostki modułów się nie liczą; skutek uboczny: jednowyrazowe kody wyniku, np. `plan_not_found`, i komunikaty pocięte przez placeholdery na kawałki poniżej 12 znaków nie są wykrywane) z dodanego lub usuniętego wiersza zmienionego pliku produktu w teście albo w fiksturze `*.json` nazwanej w teście; zmieniona
+fikstura i testy czytające `expected*` przy zmianie w `skillsync_workflow/`; stały zestaw strażników (`GUARDS` w skrypcie). Przykład uruchomienia:
+`python3 -m unittest $(python3 scripts/merge_modules.py --base <baza> --head <sha> --names)`. Analiza czyta drzewo robocze, więc checkout musi być `--head` (inaczej kod 2); diff liczony od merge-base. Usunięty lub przemianowany moduł produktu wybiera testy, które go importują albo nazywają. Zmiany samych dokumentów (`docs/`, `CHANGELOG.md`) wybierają tylko strażników, bo nie mają odwzorowania na moduły; ich treści pilnują strażnicy dokumentacji z `GUARDS`. Zestaw to dolna granica, nie zastępuje pełnego
 biegu przed wydaniem; nie widzi importów dynamicznych ani poleceń znanych tylko z nazwy (np. `skillsync status` w napisie). Szeroko
 importowany moduł (`cli.py`, `common.py`) daje szeroki zestaw, co jest zamierzone.
 
@@ -73,6 +73,26 @@ importowany moduł (`cli.py`, `common.py`) daje szeroki zestaw, co jest zamierzo
 Tabela, która mówi „zmierzone”, ma kolumnę „Pomiar” z odesłaniem do zapisu w `docs/measurements/<id>.md` (pola: Data, System, Wersja,
 Polecenie, Wynik; system w formie „Windows 11, Python 3.12.16”, bez nazw maszyn i osób). Wiersz bez zapisu jest oznaczony
 „niezmierzone” albo „oczekiwane”. Pilnuje tego `tests/test_skillsync_measurements.py`. Nowy pomiar: dodaj zapis i odsyłacz w tabeli.
+
+### Macierz przed pushem: ostrzeżenie o kodzie zależnym od systemu
+
+`python3 scripts/platform_sensitive.py --base <baza> --head <sha> [--json]` czyta diff `<baza>...<sha>` i **ostrzega** (nigdy nie blokuje,
+kod wyjścia 0; 2 tylko przy błędzie wejścia), gdy zmiana dotyka kodu zależnego od systemu: `os.name`/`sys.platform`, sygnały
+(`signal.SIG*`, `CTRL_*_EVENT`, `os.killpg`, `start_new_session`), `ctypes`/`windll`, symlinki i `core.symlinks`, `rmtree`/usuwanie plików,
+końce linii (`\r\n`, `newline=`, `splitlines`, `file_lines`), ścieżki z backslashem, opcje gniazd `SO_*` oraz `<katalog tmp> / <zmienna>` w
+testach. Dla każdej kategorii podaje systemy, z których potrzebny jest dowód (windows/macos/linux), a na końcu moduły testowe do transzy
+(ten sam zestaw co `merge_modules.py`). Dopasowanie jest tekstowe (docstringi pomijane po obu stronach diffu; usunięty plik jest skanowany po stronie usuniętej): to wskazówka, gdzie spojrzeć, nie wynik. Przed pushem
+uruchom skrypt na swojej gałęzi i zdecyduj, które systemy sprawdzasz lokalnie, a które zostają dla CI; brak dowodu z systemu wpisz do „Wynik”
+planu jako NOT_RUN.
+
+### Nazwy z danych pod katalogiem tymczasowym
+
+`tests/tmp_paths.py` (`child`, `make_dir`, `write_file`) składa ścieżkę pod katalogiem tymczasowym z nazwy pochodzącej z danych i odmawia
+nazwy z separatorem, dyskiem, `..`, znakiem sterującym, końcową kropką lub spacją oraz nazwy zastrzeżonej Windows (`CON`, `NUL`, `COM1`…);
+wynik sprawdza `relative_to`. Powód: na Windows nazwa `\n` (backslash, `n`) jest ścieżką od korzenia dysku, więc `tmp / nazwa` zapisuje poza
+katalogiem tymczasowym. `tests/test_skillsync_tmp_path_guard.py` (tryb raportu, `STRICT = False`) zgłasza w testach wyrażenia
+`<ścieżka tmp> / <zmienna lub wywołanie>`; stan początkowy (`BASELINE`, liczba trafień na plik) nie był przeglądany po kolei (próbka kilku miejsc: nazwy z tabel literałów testu). Strażnik rozpoznaje ścieżkę tmp po nazwie (`tmp`, `temp`, `tmp_dir`…) i pochodzeniu z `tempfile` w obrębie pliku, więc nie widzi parametrów ani odziedziczonych atrybutów (np. `self.root` z fikstury w innym pliku), `joinpath`, `os.path.join` ani `Path(a, b)`. Nowy
+test, który składa ścieżkę z danych, używa pomocnika; gdy trafienie ma zostać, dopisz uzasadnienie przy liczbie.
 
 ### Serwery w testach
 
