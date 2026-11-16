@@ -13,6 +13,10 @@ under a regenerable directory of the project (node_modules, .venv, __pycache__, 
 command carries a one-time exception that the user approved: `SKILLSYNC_GUARD_EXCEPT='<reason>' <command>`; every exception
 is appended to <project>/.skillsync/hook-exceptions.jsonl (time, command, reason, agent).
 
+Windows: the command is read as the Bash tool's shell (Git Bash) reads it: an UNQUOTED backslash path (`rm -rf C:\\work\\x`) loses its backslashes there (it
+really removes `C:workx` relative to the cwd), so the hook sees the same relative path and refuses; quote it (`'C:\\work\\x'`) or use `C:/work/x` or
+`/c/work/x` (also `/cygdrive/c/...`; mapped to the drive). Doubt means refusal: `\\\\?\\C:\\...`, UNC paths and anything else unresolvable stay refused.
+
 Usage (set by `skillsync link`): guard-commands.py [--mode deny|off] [--allow <name-or-path> ...]; stdin = the hook JSON.
 Known limit: `cd` is applied to the commands that follow it even inside `( ... )` groups and after `|`/`&`/`||` (a refusal-safe error only in one direction: such a `cd` may make a later relative path look temporary).
 `find ... -delete` whose every -name is a regenerable artifact (*.pyc, *.pyo, __pycache__, .pytest_cache, .mypy_cache, .ruff_cache, .DS_Store, Thumbs.db) and has no -o/!/-not/groups passes.
@@ -40,6 +44,18 @@ SUBST = '\x01'  # placeholder of a command substitution inside a word
 ASSIGN = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*=')
 GLOB = re.compile(r'[*?\[]')
 
+
+
+MSYS_DRIVE = re.compile(r'^/(?:cygdrive/)?([A-Za-z])(?:/|$)')
+
+
+def msys_to_native(path, windows=None):
+    """Git Bash / MSYS form of a Windows drive (`/c/work/x`, `/cygdrive/c/x`) as the drive path the shell means (`C:/work/x`).
+    Only on Windows (`windows=None`: `os.name == 'nt'`); every other text, also on other systems, comes back unchanged."""
+    if not (os.name == 'nt' if windows is None else windows):
+        return path
+    match = MSYS_DRIVE.match(path)
+    return path if not match else match.group(1).upper() + ':/' + path[match.end():]
 
 class Cmd:
     def __init__(self, words, assigns, subs):
@@ -457,6 +473,7 @@ class Guard:
         path = self.expand(word)
         if path is None:
             return None
+        path = msys_to_native(path)
         match = GLOB.search(path)
         if match:
             if '..' in path[match.start():].split('/'):
@@ -478,7 +495,7 @@ class Guard:
         match = GLOB.search(expanded) if expanded else None
         if path is None or not match or '..' in expanded[match.start():].split('/'):
             return False
-        prefix = expanded[:match.start()]
+        prefix = msys_to_native(expanded[:match.start()])
         if not prefix or prefix.endswith('/'):
             return False
         full = os.path.realpath(prefix if os.path.isabs(prefix) else os.path.join(self.cwd, prefix))

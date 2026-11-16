@@ -7,6 +7,7 @@ idempotence, removal, projects without the agent flow untouched). Every project 
 import importlib.util
 import json
 import os
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -286,7 +287,7 @@ class Protocol(unittest.TestCase):
 
     def test_allowed_command_is_silent_exit_0(self):
         root = self.project()
-        done = self.run_hook(self.bash(f'rm -rf {self.tmp_root}/x && ls', root), cwd=root)
+        done = self.run_hook(self.bash(f'rm -rf {shlex.quote(str(self.tmp_root))}/x && ls', root), cwd=root)   # quoted: Bash eats the backslashes of a native path
         self.assertEqual((done.returncode, done.stdout, done.stderr), (0, '', ''))
 
     def test_exception_is_allowed_and_leaves_a_trail(self):
@@ -363,8 +364,43 @@ class Protocol(unittest.TestCase):
         root = self.project()
         scratch = root.parent / 'scratch'
         scratch.mkdir()
-        self.assertEqual(self.run_hook(self.bash(f'rm -rf {scratch}/x', root), cwd=root).returncode, 2)
-        self.assertEqual(self.run_hook(self.bash(f'rm -rf {scratch}/x', root, scratchpad_dir=str(scratch)), cwd=root).returncode, 0)
+        quoted = shlex.quote(str(scratch))   # quoted: Bash eats the backslashes of a native Windows path
+        self.assertEqual(self.run_hook(self.bash(f'rm -rf {quoted}/x', root), cwd=root).returncode, 2)
+        self.assertEqual(self.run_hook(self.bash(f'rm -rf {quoted}/x', root, scratchpad_dir=str(scratch)), cwd=root).returncode, 0)
+
+    def test_forms_of_a_path_to_a_temp_directory(self):
+        """180-R: the hook reads the command as the Bash tool's shell does. Quoted native, forward-slash and (Windows) Git Bash forms of a path below a
+        temporary root pass; an unquoted native path (its backslashes are eaten by the shell, the rest is a relative path), the `\\\\?\\` prefix and anything
+        unresolvable stay refused (doubt = refusal). The same forms of a project path are refused in every spelling."""
+        root = self.project()
+        (root / 'src').mkdir()
+        target, project_target = str(self.tmp_root / 'x'), str(root / 'src')
+        forms = {'quoted': (shlex.quote(target), 0), 'double-quoted': ('"' + target + '"', 0),
+                 'forward slashes': (target.replace('\\', '/'), 0)}
+        if os.name == 'nt':
+            drive, rest = target[0], target[2:].replace('\\', '/')
+            forms.update({'git bash /c/...': (f'/{drive.lower()}{rest}', 0), 'git bash /C/...': (f'/{drive.upper()}{rest}', 0),
+                          'cygdrive': (f'/cygdrive/{drive.lower()}{rest}', 0), 'unquoted native': (target, 2), 'verbatim prefix': (shlex.quote('\\\\?\\' + target), 2),
+                          'lower-case drive': (shlex.quote(target[0].lower() + target[1:]), 0)})
+        for name, (spelling, expected) in forms.items():
+            with self.subTest(form=name):
+                done = self.run_hook(self.bash(f'rm -rf {spelling}', root), cwd=root)
+                self.assertEqual(done.returncode, expected, done.stderr)
+        for name, spelling in (('quoted', shlex.quote(project_target)), ('forward slashes', project_target.replace('\\', '/'))) + (
+                (('git bash', '/' + project_target[0].lower() + project_target[2:].replace('\\', '/')),) if os.name == 'nt' else ()):
+            with self.subTest(project=name):
+                self.assertEqual(self.run_hook(self.bash(f'rm -rf {spelling}', root), cwd=root).returncode, 2)
+
+    def test_git_bash_drive_paths_map_to_the_drive_only_on_windows(self):
+        spec = importlib.util.spec_from_file_location('guard_commands_under_test', HOOK)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        table = {'/c/work/x': 'C:/work/x', '/C/work/x': 'C:/work/x', '/cygdrive/d/a/b': 'D:/a/b', '/c': 'C:/', '/c/': 'C:/',
+                 '/cc/x': '/cc/x', '/cygdrive': '/cygdrive', 'C:/x': 'C:/x', '//server/share': '//server/share', 'rel/c/x': 'rel/c/x', '': ''}
+        for text, expected in table.items():
+            with self.subTest(text=text):
+                self.assertEqual(module.msys_to_native(text, windows=True), expected)
+                self.assertEqual(module.msys_to_native(text, windows=False), text)
 
     def test_runs_fast(self):
         import time
