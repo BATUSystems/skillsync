@@ -23,7 +23,7 @@ from . import __version__
 from .common import add_project_arguments, plan_section, read_project, redact
 from .layers import add_layer_argument
 from .delivery_mode import delivery_info
-from .status import (APPROVAL_WORDS, APPROVALS_FILE, MAX_APPROVALS_BYTES, _APPROVAL_SHA, _approval_at, _status_fields,
+from .status import (APPROVAL_WORDS, APPROVALS_FILE, MAX_APPROVALS_BYTES, _APPROVAL_SHA, _approval_at, _message, _status_fields,
                      git_blob_sha)
 from .pathfmt import posix
 
@@ -2187,7 +2187,7 @@ def _cmd_show(args):
         root, manifest = read_project(args.path)
         report, code = build_status(root, args.plan, manifest=manifest), 0
     except (OSError, ValueError, TypeError, KeyError, yaml.YAMLError) as error:
-        report, code = {'schema': SCHEMA, 'status': 'BLOCKED', 'reason': ' '.join(str(error).split())[:500]}, 2
+        report, code = {'schema': SCHEMA, 'status': 'BLOCKED', 'reason': _message(error, 500)}, 2
     print(json.dumps(redact(report), ensure_ascii=False, indent=2))
     return code
 
@@ -2197,7 +2197,7 @@ def _cmd_metrics(args):
         root, _ = read_project(args.path)
         report, code = build_metrics(root, args.run_id, args.plan), 0
     except (OSError, ValueError, TypeError, KeyError, yaml.YAMLError) as error:
-        report, code = {'schema': SCHEMA, 'status': 'BLOCKED', 'reason': ' '.join(str(error).split())[:500]}, 2
+        report, code = {'schema': SCHEMA, 'status': 'BLOCKED', 'reason': _message(error, 500)}, 2
     print(json.dumps(redact(report), ensure_ascii=False, indent=2))
     return code
 

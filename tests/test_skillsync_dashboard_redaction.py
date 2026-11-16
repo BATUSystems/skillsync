@@ -274,6 +274,14 @@ class StatusModuleMasksBeforeCutting(base.ProjectCase):
             written = (run / "approvals.jsonl").read_text(encoding="utf-8").splitlines()[-1]   # the line the writer appended (the first one is the planted entry)
             self.assertNotIn(SIMPLE_SECRET[:4], written)
 
+    def test_dashboard_blocked_reasons_are_masked_before_the_cut(self) -> None:
+        error = ValueError("x " * 245 + f"{SIMPLE_SECRET}")
+        with mock.patch.dict("os.environ", {"STATUSBOARD_TEST_PAT_TOKEN": SIMPLE_SECRET}), mock.patch.object(engine, "read_project", side_effect=error):
+            for command in (engine._cmd_show, engine._cmd_metrics):
+                with self.subTest(command=command.__name__), mock.patch("sys.stdout", new_callable=__import__("io").StringIO) as out:
+                    self.assertEqual(command(SimpleNamespace(path=str(self.root), plan=None, run_id=None)), 2)
+                    self.assertNotIn(SIMPLE_SECRET[:4], out.getvalue())
+
     def test_error_messages_are_masked_before_the_cut(self) -> None:
         message = status._message(OSError("x " * 245 + f" {ENV_SECRET} password: {PATTERN_SECRET}"), 500)
         self.assert_masked(message, "message")
