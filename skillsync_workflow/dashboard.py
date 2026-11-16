@@ -113,6 +113,9 @@ ANY_STATUS = _AnyStatus()
 
 # --------------------------------------------------------------------------- parsing
 
+MASK_MARGIN = 4096   # bytes read beyond a limit so that a secret on the limit is masked whole (see `read_masked`)
+
+
 def decode_text(data):
     """Text of the bytes of a file: UTF-16 with a byte order mark (the default output of `>` and `Out-File` in Windows PowerShell 5) is
     decoded as such, anything else as UTF-8; NUL characters are dropped (the renderer drops them too, so a secret that a NUL splits
@@ -129,8 +132,13 @@ def read_text(path, limit=MAX_DOC_BYTES):
 def read_masked(path, limit=MAX_DOC_BYTES):
     """`read_text` with every secret masked (`common.redact`) in the WHOLE text, right after reading and before any parser cuts, splits or
     trims it: a key before a cut keeps masking its value, and a secret from the environment is replaced while it is still in one piece.
-    The text of plans, specs, checkpoints and notes goes through this reader; the final `redact` of the status stays as the second layer."""
-    return redact(read_text(path, limit))
+    The text of plans, specs, checkpoints and notes goes through this reader; the final `redact` of the status stays as the second layer.
+    The byte limit is applied AFTER the masking: `MASK_MARGIN` more bytes are read, so a secret that lies on the limit is whole when it is masked
+    (a longer one is cut by the margin and is no longer a secret of this machine), and only then the text is cut to `limit` bytes."""
+    with open(path, 'rb') as handle:
+        data = handle.read(limit + MASK_MARGIN)
+    text = redact(decode_text(data))
+    return text.encode('utf-8')[:limit].decode('utf-8', 'ignore') if len(data) > limit else text
 
 
 def clean_value(value):

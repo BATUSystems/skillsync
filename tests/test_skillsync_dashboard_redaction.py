@@ -120,6 +120,30 @@ class DocRouteMasksSecrets(SecretFiles, base.HttpCase):
         self.assertNotIn("[REDACTED]", doc["html"])
 
 
+class ReaderLimitsMaskBeforeCutting(base.ProjectCase):
+    """F-2: a secret that lies on a byte limit of the reader is masked whole, the cut comes after the masking."""
+
+    LIMITS = (("MAX_DOC_BYTES", engine.MAX_DOC_BYTES), ("spec", 400_000), ("HEADER_BYTES", engine.HEADER_BYTES), ("readiness", 64_000))
+
+    def test_a_secret_on_each_limit_leaves_no_prefix(self) -> None:
+        with mock.patch.dict("os.environ", {"STATUSBOARD_TEST_PAT_TOKEN": SIMPLE_SECRET}):
+            for name, limit in self.LIMITS:
+                for before in (1, 5, 9, 11):   # how many bytes of the secret lie before the limit (the mask is 10 characters long)
+                    with self.subTest(limit=name, before=before):
+                        path = self.tmp / f"limit-{name}-{before}.md"
+                        path.write_text("x" * (limit - before) + SIMPLE_SECRET + " koniec\n" + "y" * 50, encoding="utf-8")
+                        text = engine.read_masked(path, limit)
+                        self.assertLessEqual(len(text.encode("utf-8")), limit)
+                        self.assertFalse(any(text.endswith(SIMPLE_SECRET[:k]) for k in range(2, len(SIMPLE_SECRET) + 1)), text[-15:])   # no prefix of the secret at the cut
+                        self.assertNotIn(SIMPLE_SECRET[:4], text)
+                        self.assertTrue(text.rstrip().endswith("[REDACTED]"[:before]), text[-12:])   # the cut falls inside the mask (or after it), where the secret began
+
+    def test_a_file_shorter_than_the_limit_is_read_whole(self) -> None:
+        path = self.tmp / "short.md"
+        path.write_text("# T\n\npassword: " + PATTERN_SECRET + "\n", encoding="utf-8")
+        self.assertEqual(engine.read_masked(path, 1000), "# T\n\npassword: [REDACTED]\n")
+
+
 class StatusSecretsGuard(SecretFiles, base.HttpCase):
     """The guard of 161-F: secrets planted on the boundaries where the parsers cut, split or trim text (a segment `;`, an element `,`, a
     note ` — `, the 4 KiB of `result`, the 160 characters of an expert question) never reach `/api/status`, `/api/doc` or `dashboard show`.
