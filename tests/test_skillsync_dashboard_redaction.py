@@ -2,12 +2,14 @@
 (161-F, F1). Later steps of the package add the guard over `/api/status`, `dashboard show` and `skillsync status`."""
 from __future__ import annotations
 
+import codecs
 import json
 import os
 import subprocess
 import sys
 import threading
 import unittest
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from unittest import mock
@@ -23,6 +25,7 @@ from skillsync_workflow import dashboard_http as srv  # noqa: E402
 ENV_SECRET = "zq9x,wv8y;ut7s*rp6`mn5k"
 PATTERN_SECRET = "hunter2hunter2"
 ENV_NAME = "STATUSBOARD_TEST_TOKEN"
+SIMPLE_SECRET = "".join(("Zq9w", "Xk3L", "mNp7"))   # no separators: it can be part of a file name; put together at run time so that no literal looks like a key
 DOC_ROOTS = ("docs/specs", "docs/plans", "docs/design", "docs/domain", base.RUN)
 
 
@@ -80,6 +83,37 @@ class DocRouteMasksSecrets(SecretFiles, base.HttpCase):
             with self.subTest(rel=rel), urllib.request.urlopen(f"http://127.0.0.1:{port}/api/doc?path={rel}", timeout=5) as response:
                 self.assert_masked(response.read().decode("utf-8"), rel)
 
+    def test_the_file_name_is_masked_in_path_and_in_the_fallback_title(self) -> None:
+        with mock.patch.dict("os.environ", {"STATUSBOARD_TEST_PAT_TOKEN": SIMPLE_SECRET}):
+            rel = f"docs/plans/x-{SIMPLE_SECRET}.md"
+            (self.root / rel).write_text("bez nagłówka, sam tekst\n", encoding="utf-8")   # no `#` heading: the title falls back to the file name
+            doc = self.board.doc(rel)
+            self.assertIsNotNone(doc)
+            self.assertNotIn(SIMPLE_SECRET, json.dumps(doc, ensure_ascii=False))
+            with self.get("/api/doc?path=" + urllib.parse.quote(rel)) as response:
+                self.assertNotIn(SIMPLE_SECRET, response.read().decode("utf-8"))
+
+    def test_utf16_documents_and_nul_characters_do_not_hide_a_secret(self) -> None:
+        text = f"# Raport\n\nwartość {SIMPLE_SECRET} koniec\npassword: {PATTERN_SECRET}\n"
+        samples = {
+            "utf16-le-bom": codecs.BOM_UTF16_LE + text.encode("utf-16-le"),
+            "utf16-be-bom": codecs.BOM_UTF16_BE + text.encode("utf-16-be"),
+            "nul-inside": text.replace(SIMPLE_SECRET, SIMPLE_SECRET[:5] + "\x00" + SIMPLE_SECRET[5:]).encode("utf-8"),
+            "nul-between-every-character": "\x00".join(text).encode("utf-8"),
+        }
+        with mock.patch.dict("os.environ", {"STATUSBOARD_TEST_PAT_TOKEN": SIMPLE_SECRET}):
+            for name, data in samples.items():
+                with self.subTest(name):
+                    rel = f"docs/plans/zzz-{name}.md"
+                    (self.root / rel).write_bytes(data)
+                    doc = self.board.doc(rel)
+                    payload = json.dumps(doc, ensure_ascii=False)
+                    self.assertNotIn(SIMPLE_SECRET, payload)
+                    self.assertNotIn(PATTERN_SECRET, payload)
+                    self.assertIn("[REDACTED]", payload)
+                    if name.startswith("utf16"):
+                        self.assertEqual(doc["title"], "Raport")   # decoded as UTF-16, not as a string of NUL-separated bytes
+
     def test_ordinary_text_and_structure_are_unchanged(self) -> None:
         doc = self.board.doc(base.SPEC)
         self.assertEqual(doc["title"], engine.parse_header((base.FIX / "spec.md").read_text(encoding="utf-8"))[0] or Path(base.SPEC).stem)
@@ -131,6 +165,17 @@ class StatusSecretsGuard(SecretFiles, base.HttpCase):
                               capture_output=True, text=True, env=env, timeout=60)
         self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
         self.assert_masked(done.stdout, "dashboard show")
+
+    def test_the_final_pass_of_api_status_is_a_second_layer_that_is_tested(self) -> None:
+        """`approvals.jsonl` is not read through the masking reader: only the final `redact(data)` of the route keeps its fields clean."""
+        entry = {"word": "GO plan", "at": "2026-01-10T10:30:00+01:00", "sha": "abc1234def5678", "by": f"ktoś password: {PATTERN_SECRET}", "source": "przycisk"}
+        (self.root / base.RUN / "approvals.jsonl").write_text(json.dumps(entry) + "\n", encoding="utf-8")
+        board = base.srv.Board(self.root, prototype_port=1)
+        board.prototype_acceptance = lambda slug: None
+        self.assertIn(PATTERN_SECRET, json.dumps(board.status(), ensure_ascii=False))   # the source layer does not see this field ...
+        self.board.stop.set()
+        with self.get("/api/status") as response:
+            self.assertNotIn(PATTERN_SECRET, response.read().decode("utf-8"))   # ... the route masks it: removing that pass fails here
 
     def test_skillsync_status_is_masked(self) -> None:
         plan = self.root / base.PLAN

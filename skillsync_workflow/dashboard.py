@@ -113,9 +113,17 @@ ANY_STATUS = _AnyStatus()
 
 # --------------------------------------------------------------------------- parsing
 
+def decode_text(data):
+    """Text of the bytes of a file: UTF-16 with a byte order mark (the default output of `>` and `Out-File` in Windows PowerShell 5) is
+    decoded as such, anything else as UTF-8; NUL characters are dropped (the renderer drops them too, so a secret that a NUL splits
+    would otherwise be glued together again AFTER the masking)."""
+    text = data.decode('utf-16' if data[:2] in (b'\xff\xfe', b'\xfe\xff') else 'utf-8', errors='replace')
+    return text.replace('\x00', '')
+
+
 def read_text(path, limit=MAX_DOC_BYTES):
     with open(path, 'rb') as handle:
-        return handle.read(limit).decode('utf-8', errors='replace')
+        return decode_text(handle.read(limit))
 
 
 def read_masked(path, limit=MAX_DOC_BYTES):
