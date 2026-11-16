@@ -92,7 +92,7 @@ class TokenRequired(TokenCase):
     def test_every_refusal_before_the_token_is_the_same_with_and_without_it(self) -> None:
         data = self.offer()
         cases = {
-            "Host": ({"Host": "evil.example"}, srv.HOST_REFUSED),
+            "Host": ({"Host": "evil.example"}, srv.host_refused_message(srv.ports.ROLE_BOTH, "evil.example")),
             "X-Status-Board": ({"X-Status-Board": "0"}, "Brak nagłówka X-Status-Board."),
             "Origin": ({"Origin": "https://evil.example"}, "Obcy Origin."),
             "Content-Type": ({"Content-Type": "text/plain"}, "Oczekiwano application/json."),
