@@ -122,7 +122,7 @@ pasować do środowiska, popraw ją tutaj zamiast obchodzić.
 - **Hook `guard-commands.py` odmawia reszty** (projekty ze skillem `feature` lub `dispatch`) i podaje gotową komendę kosza. To siatka
   przeciw pomyłce, nie zakaz: gdy trwałe usunięcie jest naprawdę potrzebne, **zapytaj użytkownika w oknie wyboru** (AskUserQuestion),
   a po zgodzie powtórz komendę z prefiksem `SKILLSYNC_GUARD_EXCEPT='<powód i cytat zgody>' <komenda>`. Hook dopisze wiersz do
-  `.skillsync/hook-exceptions.jsonl` (komenda, czas, powód). Prefiks dopisujesz tylko po zgodzie; podumysł zgłasza sprawę sesji głównej.
+  `.skillsync/hook-exceptions.jsonl` (komenda, czas, powód). Prefiks dopisujesz tylko po zgodzie; podumysł zgłasza sprawę sesji głównej. Prefiks przy `bash -c '…'` obejmuje cały wewnętrzny tekst, więc nie łącz w nim usunięć, na które zgody nie było. Hook sam nie widzi zgody (to siatka przeciw pomyłce): nie dopisuj prefiksu bez niej.
 
 ## Czas w raportach
 

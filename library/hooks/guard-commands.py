@@ -8,12 +8,15 @@ Refused (exit 2, the reason and a ready replacement go to stderr, which the mode
   rm -r/-R/--recursive (also `command rm`, `\\rm`, `/bin/rm`, `sudo rm`), git clean -f, git worktree remove --force,
   find ... -delete or -exec rm -r, `rmtree` in python -c, PowerShell Remove-Item -Recurse and rd/rmdir /s,
 unless every target is under a temporary directory (/tmp, $TMPDIR, $XDG_RUNTIME_DIR, /run/user/<uid>, the session scratchpad;
-$SKILLSYNC_GUARD_TMP_ROOTS, a list separated like PATH, replaces the first five),
+$SKILLSYNC_GUARD_TMP_ROOTS, a list separated like PATH, replaces them all except the scratchpad; the temp root itself is never deletable, only what is below it),
 under a regenerable directory of the project (node_modules, .venv, __pycache__, dist, build, plus --allow entries), or the
 command carries a one-time exception that the user approved: `SKILLSYNC_GUARD_EXCEPT='<reason>' <command>`; every exception
 is appended to <project>/.skillsync/hook-exceptions.jsonl (time, command, reason, agent).
 
 Usage (set by `skillsync link`): guard-commands.py [--mode deny|off] [--allow <name-or-path> ...]; stdin = the hook JSON.
+Always refused when seen (no target check; use the exception): rmtree in `python -c`, xargs rm -r, PowerShell and rd forms.
+The wrapper list is open (timeout, nice, env, sudo, xargs, flock, systemd-run, stdbuf ...): an unknown wrapper hides the command.
+An exception prefix on `bash -c '...'`/`eval` covers the whole inner text.
 Parsing: quotes, heredoc bodies, comments, redirections, `$(...)`/backticks, one level of `bash -c '...'` and `eval`,
 wrappers (timeout, nice, env, sudo, xargs, flock, systemd-run ...). Text in arguments (`grep "rm -rf"`, `git commit -m ...`) is not a command.
 """
@@ -28,7 +31,7 @@ import tempfile
 EXCEPT_VAR = 'SKILLSYNC_GUARD_EXCEPT'
 DEFAULT_NAMES = ('node_modules', '.venv', '__pycache__', 'dist', 'build')
 MAX_DEPTH = 4
-KEYWORDS = {'{', '}', '!', 'if', 'then', 'else', 'elif', 'do', 'while', 'until', 'fi', 'done', 'time'}
+KEYWORDS = {'{', '}', '!', 'if', 'then', 'else', 'elif', 'do', 'while', 'until', 'fi', 'done'}
 SHELLS = {'bash', 'sh', 'zsh', 'dash', 'ksh'}
 SUBST = '\x01'  # placeholder of a command substitution inside a word
 ASSIGN = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*=')
@@ -93,6 +96,8 @@ def parse(text):
                 assigns.append((name, value))
             while words and words[0] in KEYWORDS:
                 words.pop(0)
+            if words and words[0] == 'function' and '{' in words:
+                words = words[words.index('{') + 1:]
             commands.append(Cmd(words, assigns, subs))
         words, subs = [], []
 
@@ -114,6 +119,10 @@ def parse(text):
                     quote = None
                 else:
                     out.append(ch)
+            elif ch == '\\' and k + 1 < n:
+                out.append(text[k + 1])
+                k += 2
+                continue
             elif ch in '\'"':
                 quote = ch
             elif ch in ' \t\n;&|()<>':
@@ -181,6 +190,11 @@ def parse(text):
                     i += 1
             i += 1
             continue
+        elif c == '$' and text[i + 1:i + 3] == '((':
+            end = _match_paren(text, i + 2)
+            add(text[i:end + 1])
+            i = end + 1
+            continue
         elif c == '$' and text[i + 1:i + 2] == '(' and text[i + 1:i + 3] != '((':
             end = _match_paren(text, i + 2)
             subs.append(text[i + 2:end])
@@ -221,6 +235,9 @@ def parse(text):
             while i < n and text[i] in ';&|':
                 i += 1
             continue
+        elif c == '(' and text[i + 1:i + 2] == '(' and cur is None and not words:
+            i = _match_paren(text, i + 1) + 1  # an arithmetic command ((...)): its `<<` is not a heredoc
+            continue
         elif c in '()':
             end_cmd()
         else:
@@ -248,18 +265,35 @@ def strip_wrappers(words, assigns):
                 words = words[1:]
         elif name in ('sudo', 'doas'):
             words = rest
-            while words and words[0].startswith('-'):
-                takes = words[0] in ('-u', '-g', '-C', '-h', '-p', '-U', '-r', '-t')
+            while words and words[0].startswith('-') and words[0] != '--':
+                token = words[0]
+                if token.startswith('--'):
+                    takes = '=' not in token and token in ('--user', '--group', '--host', '--prompt', '--chdir', '--role', '--type', '--close-from', '--other-user')
+                else:
+                    takes = len(token) >= 2 and token[-1] in 'ugCUhprt'
                 words = words[2:] if takes else words[1:]
+            if words[:1] == ['--']:
+                words = words[1:]
         elif name == 'env':
             words = rest
             while words and (words[0].startswith('-') or ASSIGN.match(words[0])):
-                if ASSIGN.match(words[0]):
-                    key, _, value = words[0].partition('=')
+                token = words[0]
+                if ASSIGN.match(token):
+                    key, _, value = token.partition('=')
                     assigns.append((key, value))
                     words = words[1:]
+                elif token in ('-S', '--split-string') and len(words) > 1:
+                    try:
+                        words = shlex.split(words[1]) + words[2:]
+                    except ValueError:
+                        words = words[2:]
+                elif token in ('-u', '--unset', '-C', '--chdir'):
+                    words = words[2:]
+                elif token == '--':
+                    words = words[1:]
+                    break
                 else:
-                    words = words[2:] if words[0] in ('-u', '-C', '-S') else words[1:]
+                    words = words[1:]
         elif name in ('nice', 'ionice'):
             words = rest
             while words and words[0].startswith('-'):
@@ -267,24 +301,31 @@ def strip_wrappers(words, assigns):
         elif name == 'timeout':
             words = rest
             while words and words[0].startswith('-'):
-                words = words[2:] if words[0] in ('-s', '-k') else words[1:]
+                words = words[2:] if words[0] in ('-s', '-k', '--signal', '--kill-after') else words[1:]
             words = words[1:]  # the duration
         elif name == 'stdbuf':
             words = rest
             while words and words[0].startswith('-'):
-                words = words[1:]
+                words = words[2:] if words[0] in ('-i', '-o', '-e', '--input', '--output', '--error') else words[1:]
         elif name == 'xargs':
             from_stdin = True
             words = rest
             while words and words[0].startswith('-'):
-                words = words[2:] if words[0] in ('-I', '-n', '-P', '-d', '-L', '-s', '-E', '-a') else words[1:]
+                takes = words[0] in ('-I', '-n', '-P', '-d', '-L', '-s', '-E', '-a', '--max-args', '--max-procs', '--max-lines', '--delimiter',
+                                     '--arg-file', '--eof', '--max-chars')
+                words = words[2:] if takes else words[1:]
         elif name == 'flock':
-            words = rest
+            words, command = rest, None
             while words and words[0].startswith('-'):
-                if words[0] == '-c' and len(words) > 2:
-                    return ['sh', '-c', words[2]], assigns, from_stdin
-                words = words[2:] if words[0] in ('-w', '-E', '--timeout', '--conflict-exit-code') else words[1:]
+                if words[0] in ('-c', '--command') and len(words) > 1:
+                    command, words = words[1], words[2:]
+                else:
+                    words = words[2:] if words[0] in ('-w', '-E', '--timeout', '--wait', '--conflict-exit-code') else words[1:]
             words = words[1:]  # the lock file
+            while words and words[0] in ('-c', '--command') and len(words) > 1:
+                command, words = words[1], words[2:]
+            if command is not None:
+                return ['sh', '-c', command], assigns, from_stdin
         elif name == 'systemd-run':
             words = rest
             while words and words[0].startswith('-'):
@@ -314,6 +355,32 @@ def _flags(args):
     return shorts, longs, operands
 
 
+def brace_expand(word, limit=64):
+    """`a{b,c}d` -> [abd, acd] (nested, bounded); a word without a top-level `{x,y}` is returned as it is."""
+    depth, start, commas = 0, -1, []
+    for index, ch in enumerate(word):
+        if ch == '{':
+            if depth == 0:
+                start, commas = index, []
+            depth += 1
+        elif ch == ',' and depth == 1:
+            commas.append(index)
+        elif ch == '}' and depth > 0:
+            depth -= 1
+            if depth == 0 and commas:
+                pieces, last = [], start + 1
+                for comma in commas + [index]:
+                    pieces.append(word[last:comma])
+                    last = comma + 1
+                out = []
+                for piece in pieces:
+                    out += brace_expand(word[:start] + piece + word[index + 1:], limit)
+                    if len(out) > limit:
+                        return out[:limit]
+                return out
+    return [word]
+
+
 class Guard:
     def __init__(self, cwd, scratchpad, allow, environ):
         self.cwd = os.path.realpath(cwd or os.getcwd())
@@ -322,16 +389,19 @@ class Guard:
         self.safe = set()  # variables assigned from mktemp
         self.root = self.project_root(self.cwd)
         if self.env.get('SKILLSYNC_GUARD_TMP_ROOTS'):  # override of the default temporary roots (tests, unusual machines)
-            roots = self.env['SKILLSYNC_GUARD_TMP_ROOTS'].split(os.pathsep) + [scratchpad]
+            roots = self.env['SKILLSYNC_GUARD_TMP_ROOTS'].split(os.pathsep)
         else:
-            roots = ['/tmp', '/var/tmp', tempfile.gettempdir(), self.env.get('TMPDIR'), self.env.get('XDG_RUNTIME_DIR'), scratchpad]
+            roots = ['/tmp', '/var/tmp', tempfile.gettempdir(), self.env.get('TMPDIR'), self.env.get('XDG_RUNTIME_DIR')]
             if hasattr(os, 'getuid'):
                 roots.append('/run/user/%d' % os.getuid())
-        self.tmp_roots = [os.path.realpath(r) for r in roots if r]
+        # (root, exact): the temp roots themselves are not deletable; the scratchpad and absolute allow entries are
+        self.tmp_roots = [(os.path.realpath(r), False) for r in roots if r]
+        if scratchpad and isinstance(scratchpad, str):
+            self.tmp_roots.append((os.path.realpath(scratchpad), True))
         self.names, self.paths = set(DEFAULT_NAMES), []
         for entry in allow:
             if os.path.isabs(entry):
-                self.tmp_roots.append(os.path.realpath(entry))
+                self.tmp_roots.append((os.path.realpath(entry), True))
             elif '/' in entry.strip('/'):
                 self.paths.append(entry.strip('/'))
             else:
@@ -354,7 +424,11 @@ class Guard:
             inner = word.split(SUBST)
             # `$(mktemp ...)` (optionally followed by a suffix) is a fresh temporary path
             if len(inner) == 3 and inner[0] == '' and inner[1].split()[:1] == ['mktemp']:
+                if '..' in inner[2].split('/'):
+                    return None
                 return os.path.join(tempfile.gettempdir(), 'mktemp-' + (inner[2] or '').lstrip('/'))
+            if len(inner) == 3 and inner[1] == 'pwd':
+                return self.cwd + inner[2]
             return None
         if word.startswith('~'):
             home = self.env.get('HOME') or os.path.expanduser('~')
@@ -369,6 +443,7 @@ class Guard:
             if name in self.safe:
                 return os.path.join(tempfile.gettempdir(), 'mktemp-var')
             return self.env.get(name) if name in self.env else '\x02'
+        word = word.replace('$$', '1')
         word = re.sub(r'\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)', var, word)
         if '\x02' in word or '$' in word:
             return None
@@ -381,6 +456,8 @@ class Guard:
             return None
         match = GLOB.search(path)
         if match:
+            if '..' in path[match.start():].split('/'):
+                return None  # a glob followed by `..` can reach anything
             path = path[:match.start()]
             path = path if path.endswith('/') or not path else os.path.dirname(path) or '.'
         path = path or '.'
@@ -391,10 +468,10 @@ class Guard:
     def allowed(self, path):
         if path is None:
             return False
-        for root in self.tmp_roots:
-            if path == root or path.startswith(root.rstrip('/') + '/'):
+        for root, exact in self.tmp_roots:
+            if self.under(path, root, exact):
                 return True
-        if path == self.root or not path.startswith(self.root.rstrip('/') + '/'):
+        if not self.under(path, self.root, False):
             return False
         relative = os.path.relpath(path, self.root).split(os.sep)
         if any(part in self.names for part in relative):
@@ -402,17 +479,35 @@ class Guard:
         joined = '/'.join(relative)
         return any(joined == p or joined.startswith(p + '/') for p in self.paths)
 
+    @staticmethod
+    def under(path, root, exact):
+        try:
+            if os.path.commonpath([path, root]) != root:
+                return False
+        except ValueError:  # another drive (Windows) or a mix of absolute and relative
+            return False
+        return exact or path != root
+
     def note_assignments(self, cmd, assigns):
         """Remember `NAME=value` of an assignment-only command (also `NAME=$(mktemp ...)`)."""
         for name, value in assigns:
             expanded = self.expand(value)
             if expanded is not None and SUBST not in value:
                 self.vars[name] = expanded
+                self.safe.discard(name)
             elif SUBST in value and value.split(SUBST)[1].split()[:1] == ['mktemp']:
                 self.safe.add(name)
+                self.vars.pop(name, None)
             else:
                 self.vars.pop(name, None)
                 self.safe.discard(name)
+
+    @staticmethod
+    def expand_targets(targets):
+        out = []
+        for target in targets:
+            out += brace_expand(target)
+        return out
 
     def classify(self, cmd, depth=0):
         """Findings of one parsed command: `[(kind, words, targets, hint)]` plus the exception reason (or None)."""
@@ -428,6 +523,23 @@ class Guard:
         for key, value in assigns:
             if key == EXCEPT_VAR and value.strip():
                 reason = value.strip()
+        if name == 'cd':
+            target = self.resolve(args[0]) if args and args[0] != '-' else None
+            if target:
+                self.cwd = target
+            return found, None
+        if name in ('export', 'local', 'declare', 'readonly', 'typeset'):
+            self.note_assignments(cmd, [tuple(a.partition('=')[::2]) for a in args if ASSIGN.match(a)])
+            return found, None
+        low_name = name.lower()
+        if low_name in ('powershell', 'pwsh', 'powershell.exe', 'pwsh.exe') and depth < MAX_DEPTH:
+            for k, arg in enumerate(args):
+                if arg.lower() in ('-c', '-command') and k + 1 < len(args):
+                    return self.walk(' '.join(args[k + 1:]), depth + 1, reason), reason
+        if low_name in ('cmd', 'cmd.exe') and depth < MAX_DEPTH:
+            for k, arg in enumerate(args):
+                if arg.lower() in ('/c', '/k') and k + 1 < len(args):
+                    return self.walk(' '.join(args[k + 1:]), depth + 1, reason), reason
         if name in SHELLS and depth < MAX_DEPTH:
             for k, arg in enumerate(args):
                 if arg.startswith('-') and not arg.startswith('--') and 'c' in arg[1:] and k + 1 < len(args):
@@ -436,17 +548,17 @@ class Guard:
             return self.walk(' '.join(args), depth + 1, reason), reason
         if name == 'rm':
             shorts, longs, operands = _flags(args)
-            if shorts & {'r', 'R'} or '--recursive' in longs:
+            if shorts & {'r', 'R'} or any(flag.startswith('--rec') for flag in longs):
                 found.append(('rm', words, operands, from_stdin))
         elif name == 'git':
             found += self.git(words, args)
         elif name == 'find':
             found += self.find(words, args)
         elif name in ('python', 'python3', 'py') or re.fullmatch(r'python3(\.\d+)?', name):
-            if '-c' in args and 'rmtree' in ' '.join(args):
+            if args[:1] == ['-c'] and len(args) > 1 and 'rmtree' in args[1]:
                 found.append(('rmtree', words, [], False))
         elif low in ('remove-item', 'ri'):
-            if any(a.lower() in ('-recurse', '-r') for a in args):
+            if any(a.lower() == '-r' or (len(a) >= 4 and '-recurse'.startswith(a.lower())) for a in args):
                 found.append(('powershell', words, [a for a in args if not a.startswith('-')], False))
         elif low in ('rd', 'rmdir'):
             if any(a.lower() == '/s' for a in args):
@@ -456,7 +568,7 @@ class Guard:
         for kind, fwords, targets, stdin in found:
             if kind in ('rmtree', 'powershell', 'windows-rd') or stdin:
                 bad.append((kind, fwords, targets, stdin))
-            elif targets and any(not self.allowed(self.resolve(t)) for t in targets):
+            elif targets and any(not self.allowed(self.resolve(t)) for t in self.expand_targets(targets)):
                 bad.append((kind, fwords, targets, stdin))
         return bad, reason
 
@@ -480,7 +592,7 @@ class Guard:
         sub, tail = rest[0], rest[1:]
         shorts, longs, operands = _flags(tail)
         if sub == 'clean' and ('f' in shorts or '--force' in longs) and not ('n' in shorts or '--dry-run' in longs):
-            where = [base]
+            where = [self.resolve(o, base) or o for o in operands] or [base]
             return [('git-clean', words, where, False)]
         if sub == 'worktree' and tail[:1] == ['remove']:
             shorts, longs, operands = _flags(tail[1:])
@@ -489,6 +601,10 @@ class Guard:
         return []
 
     def find(self, words, args):
+        while args and (args[0] in ('-H', '-L', '-P') or args[0].startswith('-O')):
+            args = args[1:]
+        if args[:1] == ['-D']:
+            args = args[2:]
         roots = []
         for a in args:
             if a.startswith('-') or a in ('(', ')', '!'):
@@ -530,7 +646,7 @@ HINTS = {
 
 def message(findings, agent):
     kind, words, targets, from_stdin = findings[0][:4]
-    shown = shlex.join(words) if all(isinstance(w, str) for w in words) else ' '.join(map(str, words))
+    shown = (shlex.join(words) if all(isinstance(w, str) for w in words) else ' '.join(map(str, words))).replace(SUBST, '`')
     quoted = ' '.join(shlex.quote(t) for t in targets) if targets else '<sciezki>'
     hint = HINTS.get(kind, 'trash -- <sciezki>').format(targets=quoted)
     lines = [
@@ -548,14 +664,14 @@ def message(findings, agent):
 
 def log_exception(root, payload, command, reason, findings):
     path = os.path.join(root, '.skillsync', 'hook-exceptions.jsonl')
-    record = {'time': datetime.datetime.now().astimezone().isoformat(timespec='seconds'), 'command': command[:2000], 'reason': reason,
+    record = {'time': datetime.datetime.now().astimezone().isoformat(timespec='seconds'), 'command': command[:500], 'reason': reason[:300],
               'kind': [f[0] for f in findings], 'agent_id': payload.get('agent_id'), 'session_id': payload.get('session_id'),
               'cwd': payload.get('cwd')}
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, 'a', encoding='utf-8', newline='\n') as handle:
-            handle.write(json.dumps(record, ensure_ascii=False) + '\n')
-    except OSError as error:
+            handle.write(json.dumps(record) + '\n')
+    except Exception as error:
         print('guard-commands: nie udalo sie zapisac sladu wyjatku: %s' % error, file=sys.stderr)
 
 
@@ -575,7 +691,7 @@ def main(argv=None):
     if mode != 'deny':
         return 0
     try:
-        payload = json.load(sys.stdin)
+        payload = json.loads(sys.stdin.buffer.read().decode('utf-8', 'replace'))
         if not isinstance(payload, dict) or payload.get('tool_name') != 'Bash':
             return 0
         tool_input = payload.get('tool_input') or {}

@@ -35,9 +35,9 @@ TABLE = [
     ('python3 -m unittest tests.test_ci_verdict tests.test_alert_sh tests.test_linux_run', False),
     ('cd tools && python3 -m unittest tests.a tests.b tests.c', False),
     ('python3 -m unittest discover -s tools/tests -p "test_*.py"', False),  # a wide test run is part (a), not this hook
-    ('flock /run/user/1000/heavy-run.lock systemd-run --user --scope -p MemoryMax=4G python3 -m unittest discover -s tests', False),
-    ("ssh winhost 'python -m unittest discover'", False),
-    ("ssh winhost 'rm -rf C:/x'", False),
+    ('flock /var/lock/job.lock systemd-run --user --scope -p MemoryMax=4G python3 -m unittest discover -s tests', False),
+    ("ssh remote-host 'python -m unittest discover'", False),
+    ("ssh remote-host 'rm -rf C:/x'", False),
     ('command rm -f /tmp/mm.bak', False),
     ('rm -f $SCRATCH/x.py', False),
     ('command rm -rf ~/work/wt/FULL-copy-1', True),
@@ -101,6 +101,68 @@ TABLE = [
     ('rm -f a.txt b.txt', False),
     ('trash -- src', False),
     ('make test && echo done', False),
+    # wrappers and option shapes (review of the first version)
+    ('timeout -k 5 10 rm -rf src', True),
+    ('timeout --signal KILL 10 rm -rf src', True),
+    ('nice -n 5 rm -rf src', True),
+    ('env -i rm -rf src', True),
+    ('env --unset X rm -rf src', True),
+    ("env -S 'rm -rf src'", True),
+    ('sudo -u bob rm -rf src', True),
+    ('sudo -nu bob rm -rf src', True),
+    ('sudo --user bob rm -rf src', True),
+    ('xargs --max-args 1 rm -rf', True),
+    ('stdbuf -o L rm -rf src', True),
+    ("flock -c 'rm -rf src' /var/lock/job.lock", True),
+    ("flock /var/lock/job.lock -c 'rm -rf src'", True),
+    ('flock /var/lock/job.lock rm -rf src', True),
+    ('flock /var/lock/job.lock python3 -m unittest tests.a', False),
+    ('time -p rm -rf src', True),
+    ('command -p rm -rf src', True),
+    ('rm --rec src', True),
+    ('rm -fr src', True),
+    ('git clean --force -d', True),
+    ('git clean -ffdx', True),
+    ('git clean -fd build/', False),
+    ('git clean -fd src/', True),
+    ('git -C /tmp/w clean -fdx', False),
+    ('find -L . -delete', True),
+    ('function f { rm -rf src; }', True),
+    ('powershell -Command "Remove-Item -Recurse -Force src"', True),
+    ('pwsh -c "Remove-Item -Rec src"', True),
+    ('cmd /c "rd /s /q src"', True),
+    # not deletions of untracked data / other tools
+    ('git rm -r --cached x', False),
+    ('docker rm -f c', False),
+    ('kubectl delete pod x', False),
+    ('npm rm left-pad', False),
+    ('pip uninstall -y x', False),
+    # heredocs, arithmetic and substitutions that must not hide later commands
+    ('n=$((1<<4))\nrm -rf src', True),
+    ('(( x << 2 ))\nrm -rf src', True),
+    ('cat <<\\EOF\nrm -rf /\nEOF\nrm -rf src', True),
+    ("git commit -m \"$(cat <<'EOF'\nfix rm -rf thing\nEOF\n)\"", False),
+    ("git commit -m \"$(cat <<'EOF'\nfix\nEOF\n)\" && rm -rf src", True),
+    ('cat <<< "rm -rf /"', False),
+    # temporary paths: variables, cd, the temp root itself, escapes
+    ('export T=$(mktemp -d); rm -rf "$T"', False),
+    ('local d=$(mktemp -d); rm -rf $d', False),
+    ('d=/x; d=$(mktemp -d); rm -rf $d', False),
+    ('cd /tmp/x && rm -rf y', False),
+    ('cd /tmp/x && cd /home/user/other && rm -rf y', True),
+    ('rm -rf /tmp/w.$$', False),
+    ('rm -rf "$(pwd)/build"', False),
+    ('rm -rf /tmp', True),
+    ('rm -rf /tmp/*', True),
+    ('rm -rf $TMPDIR/*', True),
+    ('rm -rf /tmp/{a,b}', False),
+    ('rm -rf /tmp/{a,../srv/data/x}', True),
+    ('rm -rf build/{x,../../src}', True),
+    ('rm -rf /tmp/*/../../srv/data', True),
+    ('rm -rf "$(mktemp -d)"/../..', True),
+    ('rm -rf src/build/../../important', True),
+    ('rm -rf build/../src', True),
+    ('rm -rf /run/user/1000', True),
     # one-time exception approved by the user
     ("SKILLSYNC_GUARD_EXCEPT='zgoda w oknie wyboru' rm -rf src", 'EXC'),
     ("SKILLSYNC_GUARD_EXCEPT='' rm -rf src", True),
@@ -134,6 +196,20 @@ class Classifier(unittest.TestCase):
     def test_wrapped_remote_and_substituted_text_are_not_commands(self):
         self.assertEqual(verdict('echo "$(echo rm -rf x)"'), False)
         self.assertEqual(verdict('printf "%s" "rm -rf x" | cat'), False)
+
+    def test_unterminated_and_odd_input_never_raises(self):
+        for text in ('echo "unterminated', "echo 'x", 'rm -rf $(', 'rm -rf `x', 'cat <<EOF', 'cat <<', 'x=$((1', '((', '))', ')', '$(', '\\', 'rm -rf \\',
+                     '', ' ', '\n\n', 'a' * 100000, 'rm -rf ' + 'x ' * 20000, "cat <<'" + 'A' * 5000):
+            with self.subTest(text=text[:30]):
+                guard.Guard(WORK, SCRATCH, [], ENV).walk(text)
+
+    def test_random_text_never_raises(self):
+        import random
+        alphabet = list(' \n\t\'"`$()<>&|;\\{}*?#=-rmgit/.EOF')
+        rng = random.Random(7)
+        for _ in range(3000):
+            text = ''.join(rng.choice(alphabet) for _ in range(rng.randint(0, 60)))
+            guard.Guard(WORK, SCRATCH, [], ENV).walk(text)
 
     def test_findings_name_the_kind(self):
         found = guard.Guard(WORK, SCRATCH, [], ENV).walk('git worktree remove --force /x/F; rm -rf src')
@@ -206,8 +282,30 @@ class Protocol(unittest.TestCase):
 
     def test_exception_only_covers_its_own_command(self):
         root = self.project()
-        done = self.run_hook(self.bash("SKILLSYNC_GUARD_EXCEPT='x' rm -rf a; rm -rf b", root), cwd=root)
+        done = self.run_hook(self.bash("SKILLSYNC_GUARD_EXCEPT='x' rm -rf aaa; rm -rf bbb", root), cwd=root)
         self.assertEqual(done.returncode, 2)
+        self.assertIn('rm -rf bbb', done.stderr)
+        self.assertNotIn('rm -rf aaa', done.stderr)
+        self.assertFalse((root / '.skillsync' / 'hook-exceptions.jsonl').exists())  # the command was refused as a whole: no exception was used
+
+    def test_exception_trail_goes_to_the_project_root_from_a_subdirectory(self):
+        root = self.project()
+        sub = root / 'a' / 'b'
+        sub.mkdir(parents=True)
+        done = self.run_hook(self.bash("SKILLSYNC_GUARD_EXCEPT='z' rm -rf x", sub), cwd=sub)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertTrue((root / '.skillsync' / 'hook-exceptions.jsonl').is_file())
+        self.assertFalse((sub / '.skillsync').exists())
+
+    def test_hostile_input_is_fail_open(self):
+        root = self.project()
+        for command in ('rm -rf \x00x', 'echo "unterminated', 'a' * 200000):
+            with self.subTest(command=command[:20]):
+                done = self.run_hook(self.bash(command, root), cwd=root)
+                self.assertIn(done.returncode, (0, 2))
+                self.assertNotIn('Traceback', done.stderr)
+        done = self.run_hook(None, raw='{"tool_name": "Bash", "tool_input": {"command": "rm -rf x"}, "cwd": "relative/dir"}', cwd=root)
+        self.assertNotIn('Traceback', done.stderr)
 
     def test_fail_open_on_garbage_and_other_tools(self):
         root = self.project()
@@ -353,6 +451,7 @@ class GuardLink(GuardBase):
         self.assertIn('echo foreign', json.dumps(data['hooks']['Stop']))
         backup = self.root / (self.LOCAL + '.skillsync-backup')
         self.assertTrue(backup.is_file())
+        self.assertEqual(json.loads(backup.read_text(encoding='utf-8')), existing)  # the pristine file, not the state after the closure hook
 
     def test_second_link_changes_nothing(self):
         self.link()
@@ -378,6 +477,36 @@ class GuardLink(GuardBase):
         self.assertFalse((self.root / self.HOOK_PATH).exists())
         if (self.root / self.LOCAL).exists():
             self.assertEqual(self.guard_entries(self.local()), [])
+
+    def test_boolean_values_and_odd_hooks_blocks(self):
+        for value, expected in ((True, 1), (False, 0)):
+            with self.subTest(value=value):
+                self.manifest['skills'] = ['plain']
+                self.manifest['hooks'] = {'guard_delete': value}
+                self.save()
+                (self.root / self.LOCAL).unlink(missing_ok=True)
+                self.link()
+                self.assertEqual(len(self.guard_entries(self.local())) if (self.root / self.LOCAL).exists() else 0, expected)
+        for odd in ([], 'x', 5):
+            with self.subTest(hooks=odd):
+                self.manifest['hooks'] = odd
+                self.save()
+                result = subprocess.run([sys.executable, str(CLI), 'link', str(self.root)], capture_output=True, text=True, timeout=30, cwd=self.root,
+                                        env={**os.environ, 'SKILLSYNC_CONFIG': str(self.config), 'HOME': str(self.home)})
+                self.assertNotIn('guard-commands', result.stderr)
+
+    def test_shared_group_keeps_foreign_hook_when_switched_off(self):
+        self.write(self.LOCAL, json.dumps({'hooks': {'PreToolUse': [{'matcher': 'Bash', 'hooks': [{'type': 'command', 'command': 'foreign-pre'}]}]}}))
+        self.link()
+        data = self.local()
+        group = data['hooks']['PreToolUse'][0]
+        group['hooks'].append(self.guard_entries(data)[0])  # a user merged our hook into their group
+        data['hooks']['PreToolUse'] = [group]
+        (self.root / self.LOCAL).write_text(json.dumps(data), encoding='utf-8')
+        self.set_hooks(guard_delete='off')
+        self.link()
+        self.assertEqual(self.guard_entries(self.local()), [])
+        self.assertIn('foreign-pre', json.dumps(self.local()['hooks']['PreToolUse']))
 
     def test_delete_allow_goes_into_the_entry_and_changes_update_it(self):
         self.set_hooks(delete_allow=['coverage', 'out/cache'])

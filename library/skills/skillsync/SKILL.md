@@ -27,7 +27,8 @@ Treść żyje w **warstwach** (`layer.yaml` w korzeniu układu): `core` (rdzeń:
 │   └── <nazwa>.md          ← podagenci Claude Code (frontmatter name/description/tools/model)
 ├── hooks/
 │   ├── check-tests.py      ← hook Stop (bramka testów), jeden skrypt Pythona dla Linux i Windows
-│   └── check-closure.py    ← hook Stop (zamknięcie planu), tylko biblioteka standardowa
+│   ├── check-closure.py    ← hook Stop (zamknięcie planu), tylko biblioteka standardowa
+│   └── guard-commands.py   ← hook PreToolUse (Bash): odmowa trwałego usunięcia, tylko biblioteka standardowa
 └── instructions/
     ├── _base.md             ← wspólna preambuła (persona, workflow)
     └── <template>.md        ← instrukcje specyficzne dla projektu
@@ -47,6 +48,7 @@ layer.yaml                  ← id, kind, version, core_min, requires
 ├── agents/<agent>.md       ← symlink (lub kopia) - przy `feature` wszystkie role (jak Codex); `agents:` zawęża
 ├── hooks/check-tests.py    ← KOPIA - tylko gdy hooks.stop_tests: true i projekt NIE ma `feature`
 ├── hooks/check-closure.py  ← KOPIA - projekty z `feature`, chyba że hooks.stop_closure: false
+├── hooks/guard-commands.py ← KOPIA - projekty z `feature` lub `dispatch`, chyba że hooks.guard_delete: off (klucz hooks.delete_allow: dodatkowe cele wolne od blokady)
 ├── settings.json           ← COMMITOWANY, ręcznie kuratorowany; skillsync scala tylko hooks.Stop
 └── .gitignore              ← wpisy per plik zarządzany (nie całe katalogi)
 ```

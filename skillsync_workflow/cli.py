@@ -2561,7 +2561,8 @@ def merge_guard_settings(project_dir: Path, manifest: dict, config: dict, want: 
         settings_path.parent.mkdir(parents=True, exist_ok=True)
         if settings_path.exists():
             backup_path = settings_path.with_name(settings_path.name + ".skillsync-backup")
-            write_text_lf(backup_path, read_user_text(settings_path))
+            if not backup_path.exists():  # the closure hook writes the same file first: keep the earliest copy
+                write_text_lf(backup_path, read_user_text(settings_path))
         write_text_lf(settings_path, json_file_text(updated, read_user_text(settings_path) if settings_path.exists() else ""))
     except OSError as error:
         print(f"[warn] Nie udalo sie zapisac {settings_path}: {error}")
@@ -2874,8 +2875,8 @@ def _link_project(manifest: dict, project_dir: Path, config: dict, dry_run: bool
     ensure_gitignore(github_dir, dry_run=dry_run)
     build_codex(project_dir, manifest, config, dry_run=dry_run, mode=mode)
     ensure_link_on_open(project_dir, manifest, config, dry_run=dry_run)
-    if has_feature(manifest, config):
-        ensure_root_gitignore(project_dir, entry=".skillsync/", dry_run=dry_run)
+    if has_feature(manifest, config) or guard_mode(manifest, config) != "off":
+        ensure_root_gitignore(project_dir, entry=".skillsync/", dry_run=dry_run)  # also the trail of delete-guard exceptions
     update_composites(project_dir, config[COMPOSITES_KEY], dry_run)
 
 

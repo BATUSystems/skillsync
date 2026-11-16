@@ -23,6 +23,8 @@ def hook_settings(manifest):
     mode = hooks.get('guard_delete')
     if mode is False:
         mode = 'off'
+    elif mode is True:
+        mode = 'deny'
     if mode is not None and mode not in MODES:
         problems.append(f'hooks.guard_delete must be one of {", ".join(MODES)}: {mode!r}')
         mode = None
