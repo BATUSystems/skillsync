@@ -210,7 +210,7 @@ def plan_summary(text):
     if not body:
         return None
     lines, fence = [], None
-    for line in body.splitlines():
+    for line in file_lines(body):
         marker = re.match(r'^\s*(```+|~~~+)', line)
         if marker:
             fence = None if fence == marker.group(1)[0] else (fence or marker.group(1)[0])

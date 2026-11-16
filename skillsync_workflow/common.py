@@ -335,7 +335,7 @@ def plan_section(text, name):
     fenced blocks are skipped when looking for headings), stripped of blank lines at both ends; None when the section is absent.
     The one reader of plan sections (`## Wynik`, the plan summary): `dashboard`, `status` and the prototype tools use it."""
     wanted = ' '.join(str(name).split()).lower()
-    lines, inside, in_fence, body = str(text).splitlines(), False, False, []
+    lines, inside, in_fence, body = file_lines(str(text)), False, False, []
     for line in lines:
         if line.lstrip().startswith(('```', '~~~')):
             in_fence = not in_fence
