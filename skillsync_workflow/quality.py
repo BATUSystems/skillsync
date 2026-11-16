@@ -357,8 +357,8 @@ def run_validation(root, checks, *, log_dir=None, observer=None):
             try:
                 with _locks(check.get('resources') or ['project:' + str(Path(root).resolve())]):
                     if observer is not None:
+                        ran = True   # `finished` is called even when the run is interrupted or fails to start (output None), also during `started`
                         observer.started(check)
-                        ran = True   # `finished` is called even when the run is interrupted or fails to start (output None)
                     code, raw, timeout = _execute(check, (lambda stream, text: observer.line(check, stream, text)) if observer is not None else None,
                                                   (lambda stream, text: observer.partial(check, stream, text)) if observer is not None and hasattr(observer, 'partial') else None)
                 output = raw.decode('utf-8', errors='replace')

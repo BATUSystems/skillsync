@@ -23,6 +23,7 @@ from . import test_events as events
 
 _RUN_LINE = re.compile(r'^Przebieg:[ \t]*`?([^\s`]*)`?[ \t\r]*$', re.MULTILINE)
 _CHECKED = re.compile(r'^\s*[-*]\s+\[[xX]\]\s+([A-Z]{1,3}-?\d+[a-z]?(?:\.\d+[a-z]?)?)(?![\w-])', re.MULTILINE)
+_TREE = re.compile(r'[0-9a-f]{40,64}')
 MAX_PLAN_BYTES = 512 * 1024
 TREE_EXCLUDES = ('.skillsync', 'docs/plans')   # run files and the plans (edited at every step) are not part of the content the tests ran on
 
@@ -53,8 +54,11 @@ def work_tree_id(root, from_head=False):
                 # The copy is new, so git would trust the stat data of every entry, also of a file written in the same clock tick as the index entry
                 # with the same size (a "racily clean" entry). Dating the copy two seconds back makes git compare the CONTENT of files modified since,
                 # while the older ones keep their cheap stat check.
-                recent = time.time() - 2.0
-                os.utime(Path(tmp) / 'index', (recent, recent))
+                try:
+                    stamp = min(real_index.stat().st_mtime, time.time() - 2.0)   # never later than the real index was written
+                    os.utime(Path(tmp) / 'index', (stamp, stamp))
+                except OSError:
+                    pass
             elif git('rev-parse', '--verify', '--quiet', 'HEAD', plain=True).returncode == 0 and git('read-tree', 'HEAD').returncode:
                 return None
             if not from_head and git('add', '-A', '--', '.').returncode:
@@ -176,8 +180,10 @@ def evidence_problem(root, run_id, step, evidence):
 
 def _changed_paths(root, first, second):
     """` — changed: a, b, c (+N)` for the message of a tree that changed during the run (at most 5 paths), or an empty string."""
+    if not (_TREE.fullmatch(first or '') and _TREE.fullmatch(second or '')):   # ids come from an events file: only a git tree id may reach the command line
+        return ''
     try:
-        done = subprocess.run(['git', '-C', str(Path(root).resolve()), 'diff-tree', '-r', '--name-only', first, second], capture_output=True, timeout=30)
+        done = subprocess.run(['git', '-C', str(Path(root).resolve()), 'diff-tree', '-r', '--name-only', '--end-of-options', first, second], capture_output=True, timeout=30)
         names = [line for line in done.stdout.decode('utf-8', 'replace').splitlines() if line] if done.returncode == 0 else []
     except (OSError, subprocess.SubprocessError):
         return ''

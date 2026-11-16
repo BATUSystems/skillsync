@@ -58,7 +58,12 @@ def mask_setting(manifest):
 def clean_text(text, limit, mask=False, keep_newlines=False):
     """Text of an event: ANSI and invisible/bidirectional marks removed BEFORE the (optional) mask, control characters to a space (a line end
     stays when `keep_newlines`), then cut to `limit` characters (a cut text ends with an ellipsis)."""
-    text = _INVISIBLE.sub('', _ANSI.sub('', '' if text is None else str(text)))
+    text = '' if text is None else str(text)
+    try:
+        text.encode('utf-8')
+    except UnicodeEncodeError:   # a lone surrogate (an argument with `surrogateescape`): no encoder takes it
+        text = text.encode('utf-8', 'replace').decode('utf-8')
+    text = _INVISIBLE.sub('', _ANSI.sub('', text))
     if mask:
         text = redact(text)
     if keep_newlines:
@@ -84,7 +89,7 @@ def mask_command(text):
     only when it is not in the line itself, a secret in an environment variable passed by the caller (it is not part of the line)."""
     text = _FLAG_VALUE.sub(lambda m: m.group(1) + m.group(2) + '[REDACTED]', '' if text is None else str(text))
     words = text.split()
-    if words and Path(words[0]).name.lower() in _SHORT_FLAG_TOOLS:
+    if words and re.sub(r'\.(exe|cmd|bat)$', '', Path(words[0]).name.lower()) in _SHORT_FLAG_TOOLS:
         text = _SHORT_FLAG_VALUE.sub(lambda m: m.group(1) + m.group(2) + '[REDACTED]', text)
     return text
 
@@ -174,7 +179,7 @@ class EventWriter:
         return True
 
     def start(self, **fields):
-        fields['command'] = clean_text(mask_command(fields.get('command', '')), MAX_COMMAND, mask=True)   # the command line is ALWAYS masked (see `mask_command`)
+        fields['command'] = clean_text(mask_command(clean_text(fields.get('command', ''), MAX_COMMAND * 4)), MAX_COMMAND, mask=True)   # the command line is ALWAYS masked (see `mask_command`)
         return self._write({'t': 'start', 'at': _now(), 'startedAt': _now(), 'host': socket.gethostname(), **fields}, force=True)
 
     def collected(self, total, names=None):
@@ -209,7 +214,12 @@ class EventWriter:
         if group:
             event['group'] = mask_text(group, self.mask, MAX_NAME)
         if ms is not None:
-            event['ms'] = int(ms)
+            try:
+                value = int(ms)
+            except (TypeError, ValueError, OverflowError):   # NaN, infinity, 1e999 of a report: no duration, never a lost test
+                value = None
+            if value is not None and 0 <= value <= MAX_NUMBER:
+                event['ms'] = value
         if msg:
             event['msg'] = mask_text(msg, self.mask, MAX_MSG, keep_newlines=True)
         return self._write(event)
@@ -317,7 +327,7 @@ def read_events(path, offset=0):
         except (ValueError, RecursionError, MemoryError, OverflowError, TypeError):
             skipped += 1
             continue
-        if isinstance(event, dict) and event.get('v') == EVENT_VERSION and isinstance(event.get('t'), str):
+        if isinstance(event, dict) and type(event.get('v')) is int and event['v'] == EVENT_VERSION and isinstance(event.get('t'), str):
             events.append(event)
         else:
             skipped += 1
@@ -329,19 +339,26 @@ def _count(value):
     return value if isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= MAX_NUMBER else 0
 
 
+def _exit_code(value):
+    """An exit code: an integer, negative when a signal ended the process on POSIX."""
+    return isinstance(value, int) and not isinstance(value, bool) and -MAX_NUMBER <= value <= MAX_NUMBER
+
+
 def _int_or_none(value):
     return value if isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= MAX_NUMBER else None
 
 
-_START_TEXT = ('at', 'run', 'step', 'stepSource', 'command', 'tool', 'host', 'startedAt', 'adapter', 'live', 'levels', 'allowNoCount', 'treeStart')
-_END_TEXT = ('at', 'status', 'reason', 'source', 'tree')
+_START_TEXT = ('at', 'run', 'step', 'stepSource', 'command', 'tool', 'host', 'startedAt', 'adapter', 'live', 'levels', 'allowNoCount')
+_END_TEXT = ('at', 'status', 'reason', 'source')
+_TREE_ID = re.compile(r'[0-9a-f]{40,64}')   # a git tree id: the only thing that may reach a git command line from an events file
 
 
-def _typed(event, text_keys, int_keys, bool_keys=()):
+def _typed(event, text_keys, int_keys, bool_keys=(), tree_keys=()):
     """Only the known fields of an event, each of its kind (others dropped): the rest of the code can trust the types."""
     out = {key: event[key] for key in text_keys if isinstance(event.get(key), str)}
     out.update({key: event[key] for key in int_keys if _int_or_none(event.get(key)) is not None})
     out.update({key: event[key] for key in bool_keys if isinstance(event.get(key), bool)})
+    out.update({key: event[key] for key in tree_keys if isinstance(event.get(key), str) and _TREE_ID.fullmatch(event[key])})
     return out
 
 
@@ -363,10 +380,12 @@ class AttemptState:
         self.ident = None   # (device, inode, size) of the file this state was read from
 
     def feed(self, events):
+        if not events:
+            return
         for event in events:
             kind = event.get('t')
             if kind == 'start':
-                self.start = {**_typed(event, _START_TEXT, ('pid', 'attempt'), ('allowSkips',)), 'at': event['at'] if isinstance(event.get('at'), str) else None}
+                self.start = {**_typed(event, _START_TEXT, ('pid', 'attempt'), ('allowSkips',), ('treeStart',)), 'at': event['at'] if isinstance(event.get('at'), str) else None}
             elif kind == 'import':
                 self.imported = {'sourceSha': event['sourceSha'] if isinstance(event.get('sourceSha'), str) else None,
                                  'at': event['at'] if isinstance(event.get('at'), str) else None}
@@ -387,7 +406,7 @@ class AttemptState:
                     self.collected_total = event['total']
             elif kind == 'end':
                 counts = event.get('counts')
-                self.end = {'t': 'end', **_typed(event, _END_TEXT, ('exit', 'ms')), **({'truncated': True} if event.get('truncated') is True else {}),
+                self.end = {'t': 'end', **_typed(event, _END_TEXT, ('ms',), (), ('tree',)), **({'exit': event['exit']} if _exit_code(event.get('exit')) else {}), **({'truncated': True} if event.get('truncated') is True else {}),
                             **({'counts': {k: v for k, v in counts.items() if k in ('total', 'passed', 'failed', 'skipped', 'running', 'waiting') and _int_or_none(v) is not None}}
                                if isinstance(counts, dict) else {})}
                 self.truncated = bool(event.get('truncated')) or self.truncated
@@ -445,7 +464,7 @@ def process_state(pid, host=None):
         return None
     try:
         os.kill(pid, 0)
-    except ProcessLookupError:
+    except (ProcessLookupError, OverflowError):   # no such process, or a number no pid can be
         return False
     except (PermissionError, OSError):
         return True

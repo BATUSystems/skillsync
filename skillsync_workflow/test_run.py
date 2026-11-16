@@ -47,13 +47,14 @@ def _failure_count(output):
     return max(total, int(found.group(1))) if found else total
 
 
-_UNITTEST_FAILED = re.compile(r'(?m)^FAILED \(([^)]*)\)')
+_UNITTEST_FAILED = re.compile(r'(?m)^FAILED \(([^)\n]*)\)')
 _PYTEST_SUMMARY = re.compile(r'(?m)^(?:=+ )?(?:\d+ (?!failed)\w+(?: \w+)?, )*(\d+) failed\b[^\n]* in [\d.:]+s')
 
 
 def _hidden_failures(output):
     """Failed tests that a clean exit code hides: the exact summaries of unittest (`FAILED (failures=2, errors=1)`) and pytest (`3 failed, 5 passed in 2s`,
     also inside the `=====` banner), not any `N failed` of a log line (`3 failed attempts`, `0 failed`, `failed=0`). 0 when the output names none."""
+    output = events._ANSI.sub('', output)   # a coloured summary (`--color=yes`) starts with an escape, not with the text
     total = 0
     for found in _UNITTEST_FAILED.finditer(output):
         total = max(total, sum(int(n) for kind, n in re.findall(r'(failures|errors)=(\d+)', found.group(1))))
@@ -159,6 +160,7 @@ class TestRecorder:
         self.number = None
         self.started_wall = None
         self.tree_start = None
+        self.ended = False
         self.last = None
 
     def started(self, check):
@@ -228,6 +230,10 @@ class TestRecorder:
             return
         try:
             self._finish(check, result, output)
+        except KeyboardInterrupt:   # SIGTERM while the end is being worked out: the attempt still gets its `end`, and the signal is not lost on the caller
+            if not self.ended:
+                writer.end('BLOCKED', result.get('exit_code'), reason='Interrupted while the end of the run was recorded', ms=_ms(result.get('duration_seconds')))
+                self.ended = True
         finally:
             writer.close()
 
@@ -272,7 +278,7 @@ class TestRecorder:
                 failed = hidden
                 if counts is not None:
                     counts = {**counts, 'failed': hidden, 'passed': max(counts['passed'] - hidden, 0)}
-            reason = (f'the exit code is 0 but the report has {failed} failed tests' if listed else
+            reason = (f'the exit code is 0 but the report has {failed} failed tests' if listed and not hidden else
                       f'the exit code is 0 but the output reports {failed} failed tests (a pipe, `|| true` or a wrapper may hide the real exit code of the test command)') if failed \
                 else evidence_reason('test', ran, skipped, False, self.allow_skips)
             if reason and self.allow_no_count and ran is None and not failed:
@@ -283,6 +289,7 @@ class TestRecorder:
         except Exception:   # never lose the end of the run over the fingerprint
             tree = None
         writer.end(status, code, reason=reason, counts=counts, ms=_ms(result.get('duration_seconds')), source=source, tree=tree)
+        self.ended = True
         self.last = {'status': status, 'attempt': self.number, 'file': self.path, 'source': source}
 
 

@@ -16,6 +16,7 @@ from . import test_events as events
 
 SHOWN_ATTEMPTS = 5
 MAX_INLINE_TESTS = 100
+STALE_ALIVE_S = 24 * 3600   # silence after which even a live pid of this machine is not believed (a reused pid)
 MAX_SKIPPED = 20   # the entries of `skipped` in the answer
 MAX_RUNNING_GROUP = 50   # a RUNNING attempt lists every test of a group up to this size (waiting ones visible without a click)
 MAX_RESPONSE_TESTS = 5000
@@ -46,14 +47,14 @@ def _effective_state(state, path):
         return state.state
     start = state.start or {}
     alive = events.process_state(start.get('pid'), start.get('host')) if start.get('pid') is not None else None
-    if alive is True:
-        return 'running'
     if alive is False:
         return 'interrupted'
     try:
         idle = time.time() - path.stat().st_mtime
     except OSError:
         idle = 0
+    if alive is True:   # a pid can be reused after a crash or a reboot: a live process counts only for a day of silence
+        return 'interrupted' if idle > STALE_ALIVE_S else 'running'
     return 'interrupted' if idle > STALE_RUNNING_S else 'running'
 
 

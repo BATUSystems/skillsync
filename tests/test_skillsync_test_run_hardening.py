@@ -483,5 +483,141 @@ class StatusSurvivesBadFiles(unittest.TestCase):
         self.assertIsNone(dt.tests_response(self.root, 'R1', 'F2.2', 1))
 
 
+class ReviewRound2(WorkflowFixture):
+    """The second review of stage 1: ids from an events file never reach git, an interrupt cannot cost the `end`, the racy-git window, odd values."""
+
+    def setUp(self):
+        super().setUp()
+        self.write('docs/plans/2026-11-16-demo.md', PLAN)
+        self.write('.skillsync/runs/R1/checkpoints.md', '- 10:00 start\n')
+        self.write('.gitignore', '.skillsync/\n')
+        self.write('code.txt', 'v1\n')
+        self.init_git()
+
+    def git(self, *args):
+        return subprocess.run(['git', '-C', str(self.root), *args], check=True, capture_output=True, text=True).stdout.strip()
+
+    def test_a_tree_id_from_an_events_file_that_is_an_option_never_reaches_git(self):
+        victim = self.root.parent / 'victim-output.txt'
+        victim.write_text('keep me', encoding='utf-8')
+        path = self.root / '.skillsync/runs/R1/tests/F1.2/1.jsonl'
+        path.parent.mkdir(parents=True)
+        lines = [{'v': 1, 't': 'start', 'at': '2026-11-16T10:00:00Z', 'run': 'R1', 'step': 'F1.2', 'stepSource': 'flag', 'treeStart': f'--output={victim}'},
+                 {'v': 1, 't': 'end', 'at': '2026-11-16T10:00:01Z', 'status': 'PASS', 'exit': 0, 'counts': {'total': 2, 'passed': 2, 'failed': 0, 'skipped': 0},
+                  'tree': 'abc'}]
+        path.write_text('\n'.join(json.dumps(line) for line in lines) + '\n', encoding='utf-8')
+        problem = test_gate.evidence_problem(self.root, 'R1', 'F1.2', ['.skillsync/runs/R1/tests/F1.2/1.jsonl'])
+        self.assertIn('no tree at its start', problem)
+        self.assertEqual(victim.read_text(encoding='utf-8'), 'keep me')
+        self.assertEqual(test_gate._changed_paths(self.root, f'--output={victim}', 'abc'), '')
+        self.assertEqual(victim.read_text(encoding='utf-8'), 'keep me')
+        state = ev.read_attempt(path)
+        self.assertNotIn('treeStart', state.start)
+        self.assertNotIn('tree', state.end)
+
+    def test_a_change_of_the_same_size_is_seen_even_when_the_index_is_older_than_two_seconds(self):
+        self.write('code.txt', 'a1\n')
+        self.git('add', '-A')
+        self.git('commit', '-qm', 'a')
+        self.git('status', '--porcelain')   # refreshes the real index
+        self.write('code.txt', 'b1\n')   # the same size, written within the clock tick of the index entry
+        time.sleep(3)
+        self.assertNotEqual(test_gate.work_tree_id(self.root), test_gate.work_tree_id(self.root, from_head=True))
+
+    def test_an_interrupt_during_started_or_finished_still_leaves_an_end(self):
+        calls = []
+
+        class Observer:
+            def started(self, check):
+                calls.append('started')
+                raise KeyboardInterrupt
+
+            def finished(self, check, result, output):
+                calls.append('finished')
+        check = {'id': 'c', 'argv': [sys.executable, '-c', 'pass'], 'cwd': str(self.root), 'kind': 'build', 'timeout': 30}
+        quality_report = __import__('skillsync_workflow.quality', fromlist=['run_validation']).run_validation(self.root, [check], observer=Observer())
+        self.assertEqual(calls, ['started', 'finished'])
+        self.assertTrue(quality_report['interrupted'])
+
+    def test_an_interrupt_while_the_end_is_recorded_still_writes_end(self):
+        recorder = test_run.TestRecorder(self.root, 'R1', 'F1.2', 'flag')
+        recorder.started({'argv': [sys.executable, '-c', 'pass'], 'cwd': str(self.root)})
+        with mock.patch.object(recorder, '_finish', side_effect=KeyboardInterrupt):
+            recorder.finished({}, {'exit_code': 0, 'duration_seconds': 0.1}, 'output')
+        state = ev.read_attempt(recorder.path)
+        self.assertEqual(state.end['status'], 'BLOCKED')
+        self.assertIn('Interrupted', state.end['reason'])
+
+    def test_a_pid_that_cannot_be_one_is_not_alive(self):
+        self.assertFalse(ev.process_state(10 ** 12))
+        self.assertFalse(ev.is_alive(2 ** 40))
+
+    def test_a_live_pid_is_believed_for_a_day_of_silence_only(self):
+        path = self.root / '.skillsync/runs/R1/tests/F1.1/1.jsonl'
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps({'v': 1, 't': 'start', 'at': '2026-11-16T10:00:00Z', 'step': 'F1.1', 'pid': os.getpid(), 'host': socket_name()}) + '\n', encoding='utf-8')
+        state = ev.read_attempt(path)
+        self.assertEqual(dt._effective_state(state, path), 'running')
+        old = time.time() - dt.STALE_ALIVE_S - 60
+        os.utime(path, (old, old))
+        self.assertEqual(dt._effective_state(state, path), 'interrupted')
+
+    def test_a_negative_exit_code_of_a_killed_process_is_kept(self):
+        path = self.root / 'x.jsonl'
+        path.write_text(json.dumps({'v': 1, 't': 'start', 'at': 'x'}) + '\n' + json.dumps({'v': 1, 't': 'end', 'status': 'FAIL', 'exit': -9}) + '\n', encoding='utf-8')
+        self.assertEqual(ev.read_attempt(path).end['exit'], -9)
+
+    def test_a_report_with_a_huge_duration_does_not_lose_the_test(self):
+        path = self.root / 'y.jsonl'
+        path.touch()
+        w = ev.EventWriter(path)
+        w.test('a', 'a', 'failed', ms=1e300, msg='boom')
+        w.test('b', 'b', 'passed', ms=float('nan'))
+        w.close()
+        state = ev.read_attempt(path)
+        self.assertEqual((state.tests['a']['state'], state.tests['b']['state']), ('failed', 'passed'))
+        self.assertIsNone(state.tests['a'].get('ms'))
+
+    def test_the_mask_is_not_beaten_by_invisible_characters_exe_names_or_odd_arguments(self):
+        w_path = self.root / 'z.jsonl'
+        w_path.touch()
+        w = ev.EventWriter(w_path)
+        w.start(command='tool --token\u200b SUPERSECRET run mysql.exe')
+        w.start(command='mysql.exe -pSUPERSECRET db')
+        w.start(command='tool ' + '\udcff' + ' x')   # an argument with `surrogateescape`
+        w.close()
+        text = w_path.read_text(encoding='utf-8')
+        self.assertNotIn('SUPERSECRET', text)
+        self.assertEqual(len([line for line in text.splitlines() if line]), 3)
+
+    def test_the_summary_in_colour_and_a_quadratic_looking_output(self):
+        self.assertEqual(test_run._hidden_failures('\x1b[31m=========== 2 failed, 5 passed in 0.31s ===========\x1b[0m\n'), 2)
+        started = time.time()
+        test_run._hidden_failures('FAILED (' * 20000)
+        self.assertLess(time.time() - started, 2.0)
+
+    def test_the_message_names_the_output_when_a_clean_report_hides_nothing_but_the_output_does(self):
+        # a JUnit report with no failure and a failure summary in the output: the reason names the OUTPUT, not the report
+        recorder = test_run.TestRecorder(self.root, 'R1', 'F1.2', 'flag')
+        check = {'argv': [sys.executable, '-c', 'pass'], 'cwd': str(self.root)}
+        recorder.started(check)
+        report = self.root / 'r.xml'
+        report.write_text('<testsuite><testcase classname="a" name="b"/></testsuite>', encoding='utf-8')
+        recorder.junit = [str(report)]
+        recorder.finished(check, {'exit_code': 0, 'duration_seconds': 0.1}, 'FAILED (failures=1)\n')
+        self.assertIn('the output reports', ev.read_attempt(recorder.path).end['reason'])
+
+    def test_a_bool_or_a_float_is_not_the_event_version(self):
+        path = self.root / 'v.jsonl'
+        path.write_text('{"v":true,"t":"start"}\n{"v":1.0,"t":"start"}\n{"v":1,"t":"start"}\n', encoding='utf-8')
+        events, _, skipped = ev.read_events(path)
+        self.assertEqual((len(events), skipped), (1, 2))
+
+
+def socket_name():
+    import socket
+    return socket.gethostname()
+
+
 if __name__ == '__main__':
     unittest.main()
