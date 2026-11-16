@@ -424,6 +424,18 @@ class ScriptStaticTests(ExpertsPageBase):
         self.assertEqual(anonymous.status, 302)
         self.assertEqual(anonymous.header('Location'), '/_login?next=/_experts/demo')
 
+    def test_every_text_field_of_a_human_is_followed_by_the_unmasked_note(self):
+        """Decision `only a warning and documentation`: the page says that the text is visible to others and is not masked."""
+        formula = 'Treść jest widoczna dla innych i nie jest maskowana: nie wpisuj haseł, kluczy ani tokenów.'
+        self.assertEqual(self.script.count(formula), 1, 'one definition of the formula')
+        for field in ('answer-comment', 'comment-text'):
+            with self.subTest(field=field):
+                after = self.script[self.script.index("id: '%s'" % field):]
+                following = after[after.index('\n') + 1:].split('\n', 1)[0]
+                self.assertIn('UNMASKED_NOTE', following, 'the line after the %s field is not the note' % field)
+                self.assertIn("'muted unmasked-note'", following)
+        self.assertEqual(self.script.count('text: UNMASKED_NOTE'), 2)
+
     def test_helper_sets_text_only_via_textcontent(self):
         self.assertIn("node.textContent = props[key]", self.script)
         self.assertIn("document.createTextNode(' ')", self.script)
@@ -567,7 +579,8 @@ const ctx = { document: { createElement: node, createTextNode(t) { return { text
   send(kind, question, payload) { sent.push({ kind, id: question.id, payload }); }, fail(text) { failures.push(text); },
   submitAnswerNow: null, out: {} };
 vm.createContext(ctx);
-vm.runInContext(['el', 'checkbox', 'radio', 'answerForm', 'submitAnswer', 'answerSummary'].map(grab).join('\n'), ctx);
+vm.runInContext('var UNMASKED_NOTE = "Treść jest widoczna dla innych i nie jest maskowana.";\n' +
+  ['el', 'checkbox', 'radio', 'answerForm', 'submitAnswer', 'answerSummary'].map(grab).join('\n'), ctx);
 const options = [{ id: 'o1', label: 'CSV', recommended: true }, { id: 'o2', label: 'XLSX' }, { id: 'o3', label: 'PDF' }];
 const multi = { id: 'qn-aaaaaa', multi: true, options, assumed: 'CSV' };
 const single = { id: 'qn-bbbbbb', options, assumed: null };
