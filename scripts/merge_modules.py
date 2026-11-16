@@ -38,7 +38,8 @@ from pathlib import Path
 
 GUARDS = ('test_skillsync_repo_hygiene', 'test_skillsync_packaging', 'test_skillsync_check_skips',
           'test_skillsync_dashboard_contract', 'test_skillsync_line_ends', 'test_skillsync_line_ends_rest',
-          'test_skillsync_line_ends_checkers', 'test_skillsync_measurements', 'test_skillsync_ci_workflows')
+          'test_skillsync_line_ends_checkers', 'test_skillsync_measurements', 'test_skillsync_ci_workflows',
+          'test_skillsync_duplicate_defs', 'test_skillsync_no_silent_return')
 # Sources of the generated `link` artefacts and the tests that run `link` through a subprocess and compare its output (a baseline, tracked links):
 # they name no product file, so the import/path/literal rules see them only by accident.
 ARTEFACT_SOURCES = ('skillsync_workflow/cli.py', 'skillsync_workflow/layers.py', 'skillsync_workflow/guardhook.py', 'skillsync_workflow/common.py',

@@ -61,6 +61,8 @@ BASE = {
     'tests/fixtures/status/expected.json': '{"mode": "pr"}\n',
     'tests/test_skillsync_unrelated.py': "def test():\n    assert 1 + 1 == 2\n",
     'tests/test_skillsync_repo_hygiene.py': '',
+    'tests/test_skillsync_duplicate_defs.py': '',
+    'tests/test_skillsync_no_silent_return.py': '',
     'tests/test_skillsync_packaging.py': '',
 }
 
@@ -152,6 +154,8 @@ class MergeModules(unittest.TestCase):
         self.assertEqual(found['tests.test_skillsync_unrelated'], ['changed: test file changed'])
         self.assertEqual(found['tests.test_skillsync_repo_hygiene'], ['guard: fixed guard set'])
         self.assertEqual(found['tests.test_skillsync_packaging'], ['guard: fixed guard set'])
+        for guard in ('duplicate_defs', 'no_silent_return'):   # the guards of the test files themselves (180-A5)
+            self.assertEqual(found['tests.test_skillsync_' + guard], ['guard: fixed guard set'])
 
     def test_helper_change_selects_importers_and_path_rule(self):
         self.repo.write({'tests/helpers.py': 'X = 1\n', 'tests/test_skillsync_uses_helper.py': 'import helpers\n',
