@@ -6109,15 +6109,20 @@ class ServerConfig(object):
     `git_checks` (False skips the git part of `startup_checks`), `recover` (False skips the
     recovery of interrupted freezes and restores at start), `source_writes` (restore from the UI;
     the CLI turns it off with `--no-source-writes` and outside a git working copy), `runtime_dir` (directory of the
-    state file and of the login-link tokens; None = neither).
+    state file and of the login-link tokens; None = neither), `demo` (the read-only show of `serve --demo`: no users file, no
+    login, no write route of any kind; see `PrototypeRequestHandler._demo`).
     """
 
     def __init__(self, root, users, host=DEFAULT_HOST, port=DEFAULT_PORT, secure_cookies=False, trust_proxy=False,
                  login_to_view=False, source_writes=True, clock=None, pbkdf2_iterations=DEFAULT_ITERATIONS,
                  lock_timeout=LOCK_TIMEOUT, log=None, git_checks=True, max_file_bytes=MAX_FILE_BYTES, recover=True,
-                 gallery=None, runtime_dir=None):
+                 gallery=None, runtime_dir=None, demo=False):
+        self.demo = bool(demo)
         self.root = os.path.abspath(os.fspath(root))
-        self.users = os.path.abspath(os.fspath(users))
+        # the read-only show (`serve --demo`) has no users file, no session, no login link and writes nothing
+        self.users = os.path.abspath(os.fspath(users)) if users is not None else None
+        if self.demo:
+            self.users, runtime_dir, source_writes, recover, login_to_view = None, None, False, False, False
         self.host = host
         self.port = int(port)
         self.secure_cookies = bool(secure_cookies)
@@ -6219,6 +6224,8 @@ def startup_checks(config):
     root_real = os.path.realpath(config.root)
     if not os.path.isdir(root_real):
         errors.append('katalog prototypów nie istnieje: %s' % config.root)
+    if config.demo:
+        return errors, warnings   # no users file, no login: nothing of the checks below applies
     users_real = os.path.realpath(config.users)
     records = []
     if _within(users_real, root_real):
@@ -6267,8 +6274,9 @@ class PrototypeApp(object):
         self.config = config
         self.root = os.path.realpath(config.root)
         self.clock = config.clock
-        self.users = UsersFile(config.users, iterations=config.pbkdf2_iterations, clock=config.clock,
-                               lock_timeout=config.lock_timeout)
+        # `demo`: an object that is never read (the handler answers before any session or account is looked at)
+        self.users = UsersFile(config.users or os.path.join(self.root, '.demo-without-users'), iterations=config.pbkdf2_iterations,
+                               clock=config.clock, lock_timeout=config.lock_timeout)
         self.sessions = SessionStore(clock=config.clock)
         self.users.on_missing = lambda path: self.log(
             'ostrzeżenie: brak pliku użytkowników %s: żadne konto nie działa do jego przywrócenia' % path)
@@ -6276,7 +6284,7 @@ class PrototypeApp(object):
         self.write_limiter = WriteRateLimiter(clock=config.clock)
         self.port = config.port
         self.source_writes = config.source_writes
-        users_real = os.path.realpath(config.users)
+        users_real = os.path.realpath(config.users or os.path.join(self.root, '.demo-without-users'))
         questions_real = os.path.join(self.root, QUESTIONS_FILE)
         self.denied_paths = frozenset(item.lower() for item in (
             users_real, users_real + '.bak', users_real + LOCK_SUFFIX, questions_real, questions_real + LOCK_SUFFIX))
@@ -6617,6 +6625,12 @@ def _log_safe(text):
 
 
 _API_PREFIX = '/_api/v1'
+# The show (`serve --demo`): what a guest may be given below a prototype (see `PrototypeRequestHandler._demo_static`).
+_DEMO_DENIED_NAMES = frozenset(('comments.json', 'comments.js', 'comments.v1.js', 'readme.md', 'questions.json', 'users.json'))
+_DEMO_PROTOTYPE_FILES = frozenset(('index.html', 'prototype.json', 'prototype.js', 'prototype.css', 'components.css', 'screens.css',
+                                   'tokens.css', 'theme.css', 'project.css'))
+_DEMO_MEDIA = frozenset(('.svg', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.avif', '.ico', '.woff', '.woff2', '.ttf', '.otf'))
+_DEMO_TEXT = frozenset(('.css', '.js', '.html', '.json', '.txt'))
 _OPERATIONS_PATH = re.compile(r'/_api/v1/prototypes/([^/]+)/operations')
 _RESTORE_PATH = re.compile(r'/_api/v1/prototypes/([^/]+)/restore')
 _WRITING_RELEASE_PATH = re.compile(r'/_api/v1/prototypes/([^/]+)/writing/release')
@@ -6717,6 +6731,9 @@ class PrototypeRequestHandler(LingeringCloseMixin, BaseHTTPRequestHandler):
     def _method_not_allowed(self):
         self._login = None
         self.close_connection = True
+        if self.app.config.demo:
+            self._json(405, {'error': 'demo_read_only'}, {'Allow': 'GET, HEAD'})
+            return
         self._json(405, {'error': 'method_not_allowed'}, {'Allow': 'GET, HEAD, POST'})
 
     def do_GET(self):
@@ -6727,6 +6744,16 @@ class PrototypeRequestHandler(LingeringCloseMixin, BaseHTTPRequestHandler):
 
     def do_POST(self):
         self._dispatch('POST')
+
+    def send_error(self, code, message=None, explain=None):
+        """Standard errors of the HTTP library echo the request line or the method; the show answers with a fixed text."""
+        if not self.app.config.demo:
+            return BaseHTTPRequestHandler.send_error(self, code, message, explain)
+        self.close_connection = True
+        try:
+            self._send(code if isinstance(code, int) else 400, b'Error\n', 'text/plain; charset=utf-8', None, 'no-store')
+        except (OSError, ValueError):
+            pass
 
     def _client_ip(self):
         forwarded = self.headers.get('X-Forwarded-For')
@@ -6770,6 +6797,9 @@ class PrototypeRequestHandler(LingeringCloseMixin, BaseHTTPRequestHandler):
         try:
             split = urlsplit(self.path)
             path = split.path or '/'
+            if self.app.config.demo:
+                self._demo(method, path, split.query)
+                return
             session, user = self._session()
             if session is not None:
                 self._login = session.login
@@ -6811,6 +6841,63 @@ class PrototypeRequestHandler(LingeringCloseMixin, BaseHTTPRequestHandler):
                 self._json(500, {'error': 'internal_error'})
             except Exception:
                 self.close_connection = True
+
+    # ── the read-only show (`serve --demo`) ──
+
+    def _demo(self, method, path, query):
+        """The ONE gate of the show, before any session, account or route is looked at (so no later route can be reached by mistake).
+        Methods other than GET and HEAD: 405 `demo_read_only`. `/_api/v1/session`: the answer of a guest that says `demo`. Every other API
+        route and every path that starts with `/_` (login, login link, expert pages): 404. The rest is static files, by the allow list of
+        `_demo_allowed`. Nothing is written, no cookie is set, no error text repeats the request."""
+        if method not in ('GET', 'HEAD'):
+            self.close_connection = True
+            self._json(405, {'error': 'demo_read_only'}, {'Allow': 'GET, HEAD'})
+            return
+        if path == _API_PREFIX + '/session':
+            self._json(200, {'user': None, 'csrf': None,
+                             'server': {'version': SERVER_VERSION, 'loginToView': False, 'sourceWrites': False, 'demo': True,
+                                        'instance': self.app.instance, 'features': []}})
+            return
+        if path == '/_api' or path.startswith('/_api/'):
+            self._json(404, {'error': 'demo_no_api'})
+            return
+        if path.startswith('/_'):
+            self._not_found()
+            return
+        self._static(path, query)
+
+    def _demo_static(self, segments, target):
+        """`True` when the show may serve `segments` (the path below the root, as in `_static`). A positive list: the gallery, and below a
+        prototype its screens, engine, style sheets, `prototype.json` (trimmed, see `_demo_prototype_json`) and media; never the comment
+        log (`comments.json`, `comments.js`), `README.md`, `iterations/`, questions, or a file of an unknown kind."""
+        if not segments:
+            return True
+        lowered = [segment.lower() for segment in segments]
+        real = [part.lower() for part in os.path.relpath(target, self.app.root).split(os.sep)]   # where a link inside a prototype really leads
+        if len(segments) == 1:
+            return lowered[0] == 'index.html' or os.path.isdir(target)
+        if any(name in _DEMO_DENIED_NAMES for name in lowered + real) or ITERATIONS_DIR in (lowered[1], real[1] if len(real) > 1 else None):
+            return False
+        if real[-1] == PROTOTYPE_FILE and real != lowered:
+            return False   # an alias of `prototype.json` would give its untrimmed content
+        name = lowered[-1]
+        if os.path.isdir(target):
+            return True
+        if len(segments) == 2:
+            return name in _DEMO_PROTOTYPE_FILES or os.path.splitext(name)[1] in _DEMO_MEDIA
+        return os.path.splitext(name)[1] in _DEMO_MEDIA | _DEMO_TEXT
+
+    def _demo_prototype_json(self, target):
+        """The answer for `<slug>/prototype.json` in the show: `slug` and `title` only (the rest, such as the path of the requirements, is
+        not for a guest). `None` when the file is not a readable JSON mapping."""
+        try:
+            with open(target, 'rb') as handle:
+                data = json.loads(handle.read(MAX_FILE_BYTES).decode('utf-8'))
+        except (OSError, ValueError):
+            return None
+        if not isinstance(data, dict):
+            return None
+        return {key: data[key] for key in ('slug', 'title') if isinstance(data.get(key), str)}
 
     # ── static files ──
 
@@ -6862,6 +6949,17 @@ class PrototypeRequestHandler(LingeringCloseMixin, BaseHTTPRequestHandler):
         if not self._allowed_real(target):
             self._not_found()
             return
+        demo = self.app.config.demo
+        if demo and not self._demo_static(segments, target):
+            self._not_found()
+            return
+        if demo and len(segments) == 2 and segments[1].lower() == PROTOTYPE_FILE:
+            trimmed = self._demo_prototype_json(target)
+            if trimmed is None:
+                self._not_found()
+            else:
+                self._json(200, trimmed)
+            return
         if os.path.isdir(target):
             if not trailing:
                 location = quote(decoded, safe='/') + '/' + ('?' + query if query else '')
@@ -6875,6 +6973,9 @@ class PrototypeRequestHandler(LingeringCloseMixin, BaseHTTPRequestHandler):
             self._not_found()
             return
         if self._live_gallery(target):
+            return
+        if demo and target == os.path.realpath(os.path.join(root, 'index.html')):
+            self._not_found()   # the show never falls back to the file of `prototype index` (it carries comment counts and acceptance)
             return
         if not os.path.isfile(target):
             self._not_found()
@@ -7544,7 +7645,7 @@ def make_server(config, check=True):
             raise StartupError(errors, warnings)
     app = PrototypeApp(config)
     app.warnings = list(warnings)
-    if config.recover:
+    if config.recover and not config.demo:
         app.warnings.extend(app.recover_all())
     server = PrototypeHTTPServer((config.host, config.port), PrototypeRequestHandler, app)
     app.port = server.port

@@ -642,6 +642,22 @@ def public_url_of(settings, environ=None):
     return settings.get('public_url'), None
 
 
+DEMO_HOST = '0.0.0.0'
+
+
+def demo_lines(instance, host):
+    """Startup lines of `serve --demo`: that the show is public for everyone who reaches the address and that nothing can be written, the
+    addresses of this machine (when listening on every interface) and how to narrow the listening."""
+    lines = ['POKAZ tylko do odczytu: prototypy są jawne dla każdego, kto dotrze do tego adresu (bez logowania; komentarze, akceptacje i '
+             'odpowiedzi eksperta wyłączone, istniejące komentarze ukryte; ruch nieszyfrowany).']
+    if host in ('0.0.0.0', '::', ''):
+        from .dashboard_http import lan_addresses   # a function of the status page; imported here, the modules must not import each other at load
+        port = instance.server_address[1]
+        lines.append('Adresy w sieci lokalnej: ' + ', '.join(f'http://{address}:{port}/' for address in lan_addresses()))
+        lines.append('Tylko ta maszyna: uruchom z --host 127.0.0.1.')
+    return lines
+
+
 def public_address_lines(settings, environ=None):
     """Lines for the startup message of `prototype serve`: the public address, or a warning when the variable is invalid
     (the warning names the variable, never its value)."""
@@ -1323,9 +1339,11 @@ code { font: 0.8125rem ui-monospace, monospace; }
 """.strip('\n')
 
 
-def render_gallery(entries):
+def render_gallery(entries, demo=False):
     """HTML of `<root>/index.html` for valid entries (dicts as in `list`); `href` from `slug`.  An entry with a
-    truthy `writing` (set only by the live gallery) gets the "w trakcie zapisu" mark."""
+    truthy `writing` (set only by the live gallery) gets the "w trakcie zapisu" mark.  `demo` (the read-only show of `serve --demo`):
+    only the slug, the title, the creation date and the number of screens; no requirements path, comment count, acceptance, writing mark or
+    link to the expert questions."""
     def number(value):
         return '—' if value is None else html_escape(value)
 
@@ -1339,16 +1357,16 @@ def render_gallery(entries):
             '<li class="card">',
             f'  <h2><a href="{slug}/index.html">{html_escape(entry["title"])}</a></h2>',
             *(['  <p class="writing" data-writing="true">W trakcie zapisu: agent jeszcze pisze ekrany</p>']
-              if entry.get('writing') else []),
+              if entry.get('writing') and not demo else []),
             *([f'  <p class="questions"><a href="/_experts/{slug}">Pytania</a></p>']
-              if entry.get('questions') else []),
+              if entry.get('questions') and not demo else []),
             '  <dl>',
             f'    <dt>Slug</dt><dd><code>{slug}</code></dd>',
-            f'    <dt>Wymagania</dt><dd><code>{html_escape(entry["requirements"])}</code></dd>',
+            *([] if demo else [f'    <dt>Wymagania</dt><dd><code>{html_escape(entry["requirements"])}</code></dd>']),
             f'    <dt>Utworzono</dt><dd>{html_escape(entry["created"])}</dd>',
             f'    <dt>Ekrany</dt><dd>{number(entry["screens"])}</dd>',
-            f'    <dt>Otwarte komentarze</dt><dd>{number(entry["comments"])}</dd>',
-            f'    <dt>Akceptacja</dt><dd>{acceptance(entry.get("acceptance"))}</dd>',
+            *([] if demo else [f'    <dt>Otwarte komentarze</dt><dd>{number(entry["comments"])}</dd>',
+                               f'    <dt>Akceptacja</dt><dd>{acceptance(entry.get("acceptance"))}</dd>']),
             '  </dl>',
             '</li>']))
     body = ('<ul class="gallery">\n' + '\n'.join(cards) + '\n</ul>') if cards else '<p class="lead">Brak prototypów.</p>'
@@ -1368,8 +1386,10 @@ def render_gallery(entries):
         '<body>',
         '<main>',
         '<h1>Prototypy</h1>',
-        *(['<p class="questions-link"><a href="/_experts">Pytania</a></p>'] if any(entry.get('questions') for entry in entries) else []),
-        f'<p class="lead">Liczba prototypów: {len(entries)}. Otwórz prototyp, aby przeglądać ekrany i komentarze.</p>',
+        *(['<p class="questions-link"><a href="/_experts">Pytania</a></p>']
+          if not demo and any(entry.get('questions') for entry in entries) else []),
+        (f'<p class="lead">Liczba prototypów: {len(entries)}. Otwórz prototyp, aby przeglądać ekrany.</p>' if demo else
+         f'<p class="lead">Liczba prototypów: {len(entries)}. Otwórz prototyp, aby przeglądać ekrany i komentarze.</p>'),
         body,
         '</main>',
         '</body>',
@@ -1423,13 +1443,13 @@ def gallery_entries(prototypes_root, repo, now_ms=None):
     return entries, warnings
 
 
-def gallery_html(prototypes_root, repo, clock=None):
+def gallery_html(prototypes_root, repo, clock=None, demo=False):
     """Gallery HTML computed now (acceptance, open comments, screens as they are at this moment).  `serve` answers
     `/` with it, so the gallery never lags behind `accept`, comments or `init`; `index` writes the same HTML to
     `<root>/index.html` for `file://` and static servers.  Only the live gallery marks prototypes with a valid
     writing marker; `clock` (seconds, default `time.time`) is injectable for tests."""
     entries, _ = gallery_entries(Path(prototypes_root), Path(repo), server.clock_ms(clock or time.time))
-    return render_gallery(entries)
+    return render_gallery(entries, demo=demo)
 
 
 def _gallery_writable(path):
@@ -2532,12 +2552,16 @@ def serve_prototypes(root, manifest, args, err=None):
     repo = Path(root).resolve()
     settings = _settings(repo, manifest)
     port = args.port if args.port is not None else (settings['port'] or server.DEFAULT_PORT)
-    source_writes = not args.no_source_writes and _in_git_worktree(settings['root'])
-    config = server.ServerConfig(settings['root'], users_file_path(repo, args.users), host=args.host, port=port,
+    demo = bool(getattr(args, 'demo', False))
+    if demo and args.login_to_view:
+        return {'status': 'BLOCKED', 'reason': '--demo and --login-to-view contradict each other: the show has no accounts and no login'}
+    host = args.host if args.host is not None else (DEMO_HOST if demo else server.DEFAULT_HOST)
+    source_writes = not args.no_source_writes and _in_git_worktree(settings['root']) and not demo
+    config = server.ServerConfig(settings['root'], None if demo else users_file_path(repo, args.users), host=host, port=port,
                                  secure_cookies=args.secure_cookies, trust_proxy=args.trust_proxy,
                                  login_to_view=args.login_to_view, source_writes=source_writes, log=err,
-                                 gallery=lambda: gallery_html(settings['root'], repo, clock=config.clock),
-                                 runtime_dir=server.link_run_dir_of(repo))
+                                 gallery=lambda: gallery_html(settings['root'], repo, clock=config.clock, demo=demo),
+                                 runtime_dir=None if demo else server.link_run_dir_of(repo), demo=demo)
     try:
         instance = server.make_server(config)
     except server.StartupError as error:
@@ -2546,9 +2570,12 @@ def serve_prototypes(root, manifest, args, err=None):
             report['warnings'] = error.warnings
         return report
     except OSError as error:
-        return {'status': 'BLOCKED', 'reason': f'cannot listen on {args.host}:{port} ({error.strerror or error})'}
+        return {'status': 'BLOCKED', 'reason': f'cannot listen on {host}:{port} ({error.strerror or error})'}
     notes = list(settings['warnings']) + instance.app.warnings
-    if not args.no_source_writes and not source_writes:
+    if demo:
+        notes += [f'--demo: {name} nie ma tu znaczenia (pokaz nie ma kont ani ciasteczek)'
+                  for name, given in (('--users', args.users), ('--secure-cookies', args.secure_cookies), ('--trust-proxy', args.trust_proxy)) if given]
+    if not demo and not args.no_source_writes and not source_writes:
         notes.append(f'{_relative(settings["root"], repo)} nie leży w kopii roboczej gita: przywracanie z UI wyłączone '
                      '(source writes off)')
     previous = previous_break = console_close = None
@@ -2564,6 +2591,9 @@ def serve_prototypes(root, manifest, args, err=None):
         err.write(f'Serwer prototypów: {instance.url} (Ctrl+C kończy)\n')
         for line in public_address_lines(settings):
             err.write(line + '\n')
+        if demo:
+            for line in demo_lines(instance, host):
+                err.write(line + '\n')
         err.flush()
         instance.serve_forever()
     except KeyboardInterrupt:
@@ -4943,7 +4973,8 @@ def register(subparsers):
     migrate.set_defaults(func=_run(_cmd_migrate, assets=True))
     serve = actions.add_parser('serve', help='Serve prototypes with the shared comments API (foreground, Ctrl+C stops)')
     _common(serve)
-    serve.add_argument('--host', default=server.DEFAULT_HOST, help='Listen address (default 127.0.0.1)')
+    serve.add_argument('--host', default=None,
+                       help='Listen address (default 127.0.0.1; with --demo 0.0.0.0, every interface; --host 127.0.0.1 keeps the show on this machine)')
     serve.add_argument('--port', type=int, default=None,
                        help='Port (default: prototype.port of the manifest, else 4445; 0 = any free port)')
     serve.add_argument('--users', help=f'Users file, relative to the project (default {USERS_DEFAULT})')
@@ -4951,6 +4982,9 @@ def register(subparsers):
     serve.add_argument('--trust-proxy', action='store_true', help='Use X-Forwarded-For for the login rate limit')
     serve.add_argument('--no-source-writes', action='store_true', help='Never write prototype sources (restore, F2)')
     serve.add_argument('--login-to-view', action='store_true', help='Require login also to view prototypes')
+    serve.add_argument('--demo', action='store_true',
+                       help='Read-only show without accounts: no login, comments, threads, acceptance or expert answers (the server refuses '
+                            'every write), existing comments hidden; the pages are public for everyone who reaches the address')
     serve.set_defaults(func=_run(_cmd_serve))
     user = actions.add_parser('user', help='Manage the users file of serve (login = e-mail)')
     user_actions = user.add_subparsers(dest='user_command', required=True)
