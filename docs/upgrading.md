@@ -60,6 +60,17 @@ Wydanie 1.6.0 jest MINOR z jednym wpisem **Breaking** w `CHANGELOG.md`: konto za
 5. Konsument `skillsync status` ma przyjąć nieznaną wartość `acceptance` w `plans[].needsHuman`.
 6. Uruchom ponownie działający `skillsync dashboard serve` i `prototype serve`.
 
+## Przejście 1.6.0 → 1.6.1
+
+Wydanie 1.6.1 jest PATCH (sekcja **Breaking** w `CHANGELOG.md` to „None.”) z poprawkami maskowania sekretów na stronie statusu (sekcja **Security**).
+
+1. Rdzeń: `uv tool install --force git+https://github.com/BATUSystems/skillsync@v1.6.1`, potem `skillsync layers update core --ref v1.6.1`.
+2. Uruchom ponownie działający `skillsync dashboard serve` (proces sprzed aktualizacji ma w pamięci stary kod i nadal oddaje `GET /api/doc` bez maskowania) oraz `prototype serve`.
+3. Uwagi o widoczności komentarzy i odpowiedzi trafiają do istniejącego prototypu dopiero po `skillsync prototype migrate` (kopiowany jest tylko plik silnika `prototype.js`; arkusze stylów się nie zmieniają, więc akceptacja ekranów pozostaje ważna).
+4. Projekt, który śledzi w git dowiązania skilli: po `git worktree add` uruchom `skillsync link <worktree>`; `doctor` ostrzega o śledzonych plikach generowanych i podaje gotowe `git rm --cached`.
+5. Konsument JSON-a `doctor`: `reason` znalezisk „Missing installed skill” i o dowiązaniu bez celu kończy się podpowiedzią `run skillsync link <projekt>`, więc dopasowuj początek tekstu. Raport `guard` może mieć pola `skipped` i `reason`.
+6. `layers check`, `doctor` i `link` ostrzegają (`rule-unreachable`) o wpisie `layer_rules`, którego `match` powtarza wcześniejszy: scal takie wpisy w jeden.
+
 ## Przejście 1.4.1 → 1.5.0
 
 Wydanie 1.5.0 jest MINOR z wpisem **Breaking** w `CHANGELOG.md` (decyzja właściciela): zgody ze strony statusu wymagają tokenu, więc własne skrypty i klienty, które wołają `POST /api/approve`, przestają działać bez dostosowania. Strona statusu i wtyczka edytora tego samego wydania nie wymagają zmian.
