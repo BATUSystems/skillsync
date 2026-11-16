@@ -819,10 +819,14 @@ class DeliveryTests(ProjectCase):
         for i in range(2):
             git("commit", "-q", "--allow-empty", "-m", f"c{i}")
         # gałęzi nie ma na origin: liczą się commity, których nie ma na żadnym origin/*
-        self.assertEqual(engine.git_ahead(repo, "feature/x"), {"remote": "origin/feature/x", "pushed": False, "ahead": 2})
+        state = engine.git_ahead(repo, "feature/x")
+        self.assertEqual({k: state[k] for k in ("remote", "pushed", "ahead", "commitsMore")},
+                         {"remote": "origin/feature/x", "pushed": False, "ahead": 2, "commitsMore": 0})
+        self.assertEqual([c["subject"] for c in state["commits"]], ["c1", "c0"])
         git("update-ref", "refs/remotes/origin/feature/x", "HEAD~1")  # wypchnięty jeden z dwóch
-        self.assertEqual(engine.git_ahead(repo, "feature/x"), {"remote": "origin/feature/x", "pushed": True, "ahead": 1})
-        self.assertEqual(engine.git_ahead(repo, None), {"remote": None, "pushed": None, "ahead": None})
+        state = engine.git_ahead(repo, "feature/x")
+        self.assertEqual((state["pushed"], state["ahead"], [c["subject"] for c in state["commits"]]), (True, 1, ["c1"]))
+        self.assertEqual(engine.git_ahead(repo, None), {"remote": None, "pushed": None, "ahead": None, "commits": None, "commitsMore": 0})
 
     def test_status_exposes_delivery(self) -> None:
         d = self.board.status()["delivery"]

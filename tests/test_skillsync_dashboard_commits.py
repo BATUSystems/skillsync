@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from skillsync_workflow import dashboard as engine  # noqa: E402
+from skillsync_workflow import dashboard_http as srv  # noqa: E402
 
 AUTHOR = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t" + "@" + "example.invalid",
           "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t" + "@" + "example.invalid"}
@@ -125,6 +126,28 @@ class CommitListTests(unittest.TestCase):
         with mock.patch.object(engine.subprocess, "run", spy):
             self.ahead()
         self.assertEqual(sum(1 for c in calls if "log" in c), 1)
+
+    def test_the_list_is_kept_in_memory_until_head_changes(self) -> None:
+        self.commit("a")
+        board = srv.Board.__new__(srv.Board)
+        board._ahead = ((), 0.0, {})
+        board.root = self.repo
+        calls = []
+        real = engine.git_ahead
+
+        def counting(root, branch):
+            calls.append(branch)
+            return real(root, branch)
+
+        with mock.patch.object(engine, "git_ahead", counting):
+            first = board.ahead("feature/x", "h1")
+            again = board.ahead("feature/x", "h1")
+            self.assertIs(first, again)
+            self.assertEqual(len(calls), 1)
+            self.commit("b")
+            moved = board.ahead("feature/x", "h2")
+        self.assertEqual(len(calls), 2)
+        self.assertEqual([c["subject"] for c in moved["commits"]], ["b", "a"])
 
 
 if __name__ == "__main__":

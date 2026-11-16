@@ -1122,23 +1122,50 @@ def read_delivery(manifest):
             'source': info['source']}
 
 
+COMMITS_SHOWN = 20          # commits listed under the "not pushed" badge; the rest is only counted (`commitsMore`)
+COMMIT_SUBJECT_MAX = 80     # characters of a commit subject on the page
+_CONTROL_CHARS = re.compile(r'[\x00-\x1f\x7f-\x9f]')
+
+
+def _commit_list(out):
+    """`git log -z --format=%h%x1f%s` (bytes) as `[{'sha', 'subject'}]`: decoded explicitly (`decode_text`), every subject masked
+    WHOLE (`redact`) before it is flattened and cut to COMMIT_SUBJECT_MAX characters, so a key before the cut still masks its value."""
+    commits = []
+    for record in out.split(b'\x00'):
+        sha, _, subject = decode_text(record).partition('\x1f')
+        sha = sha.strip()
+        if sha:
+            commits.append({'sha': sha, 'subject': ' '.join(_CONTROL_CHARS.sub(' ', redact(subject)).split())[:COMMIT_SUBJECT_MAX]})
+    return commits
+
+
 def git_ahead(root, branch):
     """How many commits HEAD has that the remote counterpart of the working branch has not (read-only): `origin/<branch>..HEAD`,
-    or `HEAD --not --remotes=origin` when the branch is not on origin. "CP" pushes the working branch, not the base."""
-    def git(*args):
+    or `HEAD --not --remotes=origin` when the branch is not on origin. "CP" pushes the working branch, not the base.
+    `commits` lists the newest COMMITS_SHOWN of them (`sha`, masked `subject`; one `git log`), `commitsMore` counts the older ones;
+    `commits` is None when the count is unknown."""
+    def git(*args, raw=False):
         try:
-            out = subprocess.run(['git', '-C', str(root), *args], capture_output=True, text=True, timeout=10, check=False)
+            out = subprocess.run(['git', '-C', str(root), *args], capture_output=True, text=not raw, timeout=10, check=False)
         except (OSError, subprocess.SubprocessError):
             return None
-        return out.stdout.strip() if out.returncode == 0 else None
+        if out.returncode != 0:
+            return None
+        return out.stdout if raw else out.stdout.strip()
     if not branch or not REF_NAME_RE.match(branch):
-        return {'remote': None, 'pushed': None, 'ahead': None}
+        return {'remote': None, 'pushed': None, 'ahead': None, 'commits': None, 'commitsMore': 0}
     remote = f'origin/{branch}'
     if git('rev-parse', '--verify', '--quiet', f'refs/remotes/{remote}^{{commit}}'):
-        count, pushed = git('rev-list', '--count', f'{remote}..HEAD'), True
+        count, pushed, rng = git('rev-list', '--count', f'{remote}..HEAD'), True, [f'{remote}..HEAD']
     else:
-        count, pushed = git('rev-list', '--count', 'HEAD', '--not', '--remotes=origin'), False
-    return {'remote': remote, 'pushed': pushed, 'ahead': int(count) if count and count.isdigit() else None}
+        count, pushed, rng = git('rev-list', '--count', 'HEAD', '--not', '--remotes=origin'), False, ['HEAD', '--not', '--remotes=origin']
+    ahead = int(count) if count and count.isdigit() else None
+    commits = None
+    if ahead is not None:
+        raw = git('log', '-z', '--no-color', '--no-ext-diff', f'-n{COMMITS_SHOWN}', '--format=%h%x1f%s', *rng, raw=True) if ahead else b''
+        commits = _commit_list(raw) if raw is not None else None
+    more = max(ahead - len(commits), 0) if ahead is not None and commits is not None else 0
+    return {'remote': remote, 'pushed': pushed, 'ahead': ahead, 'commits': commits, 'commitsMore': more}
 
 
 def delivery_target(delivery, branch, plan_fields):
@@ -2001,6 +2028,7 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
     target = delivery_target(delivery, git_info['branch'], fields)
     delivery_state = {**delivery, 'branch': git_info['branch'], 'target': target, 'remote': ahead_state.get('remote'),
                       'pushed': ahead_state.get('pushed'), 'ahead': ahead_state.get('ahead'),
+                      'commits': ahead_state.get('commits'), 'commitsMore': ahead_state.get('commitsMore') or 0,
                       'words': delivery_words(delivery, ahead_state, plan_info, waiting, git_info['branch'], target)}
     current_docs = [spec_rel if spec_path else None, chosen['path'] if chosen else None]
     assumptions, blocking = parse_questions(spec_text) if spec_path else ([], [])
