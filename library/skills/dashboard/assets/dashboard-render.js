@@ -418,6 +418,10 @@
       }
       ui.ago = h("span", { id: "ago", "data-iso": d.lastUpdate || "" }, fmtAgo(d.lastUpdate));
       meta.push(h("span", { class: "m", "data-tip": "Ostatnia zmiana planu, speca lub checkpointów" }, icon("i-sync"), ui.ago));
+      {   // the panel stays open only while there is a list to show (a push that empties it must not leave a flag that reopens it later)
+        const dl = d.delivery || {};
+        if (!(d.git && d.git.branch && typeof dl.ahead === "number" && dl.ahead > 0 && Array.isArray(dl.commits) && dl.commits.length)) st.commitsOpen = false;
+      }
       if (d.git && d.git.branch) {
         const g = d.git;
         const host = g.remote ? (g.remote.host === "azure" ? "Azure DevOps" : "GitHub") : "";
@@ -445,7 +449,7 @@
             const open = st.commitsOpen === true;
             const more = typeof dv.commitsMore === "number" && dv.commitsMore > 0 ? Math.floor(dv.commitsMore) : 0;
             const btn = h("button", { type: "button", id: "commitsBtn", class: `${cls} ahead-btn`, "data-tip": tip, "aria-expanded": String(open), "aria-controls": "commitsPanel",
-              on: { click: (e) => { e.stopPropagation(); setCommits(!st.commitsOpen); } } }, label);
+              on: { click: (e) => { e.stopPropagation(); setCommits(!st.commitsOpen); const b = root.querySelector("#commitsBtn"); if (b && typeof b.focus === "function") b.focus({ preventScroll: true }); } } }, label);
             const panel = h("div", { id: "commitsPanel", class: "commits-panel", role: "region", "aria-labelledby": "commitsTitle", hidden: !open },
               h("div", { class: "commits-head" },
                 h("strong", { id: "commitsTitle" }, `Niewypchnięte commity (${ahead})`, g.branch ? " · " : "", g.branch ? h("span", { class: "mono" }, g.branch) : null),
@@ -466,7 +470,7 @@
       fill(ui.meta, meta);
       if (focusKept && ui.meta.querySelector) {   // render() rebuilds the header: keep the keyboard focus (and the scroll position) of the open panel
         const again = ui.meta.querySelector(focusKept === "btn" ? "#commitsBtn" : ".commits-close");
-        if (again && typeof again.focus === "function") again.focus();
+        if (again && typeof again.focus === "function") again.focus({ preventScroll: true });
       }
       if (listTop) { const pnl = ui.meta.querySelector("#commitsPanel"); if (pnl) pnl.scrollTop = listTop; }
 
@@ -707,7 +711,7 @@
     function setCommits(open) {
       if ((st.commitsOpen === true) === open) return;
       st.commitsOpen = open;
-      if (open) st.focusKey = st.focusKey || "btn";
+      st.focusKey = open ? "btn" : null;
       if (st.data) render();
     }
     function toggleMenu(open) {

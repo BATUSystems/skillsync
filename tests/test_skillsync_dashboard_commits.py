@@ -125,6 +125,16 @@ class CommitListTests(unittest.TestCase):
         subject = self.ahead()["commits"][0]["subject"]
         self.assertEqual(subject, "aczerwony odwrócony tekst")
 
+    def test_a_zero_width_mark_inside_a_key_does_not_hide_it_from_the_mask(self) -> None:
+        self.commit("pass\u200bword: hunter2hunter2 koniec")
+        subject = self.ahead()["commits"][0]["subject"]
+        self.assertNotIn("hunter2", subject)
+
+    def test_the_hash_has_a_fixed_length_whatever_the_git_configuration(self) -> None:
+        self.git("config", "core.abbrev", "12")
+        self.commit("x")
+        self.assertEqual(len(self.ahead()["commits"][0]["sha"]), 7)
+
     def test_an_empty_subject_gives_a_row_with_only_the_hash(self) -> None:
         self.git("commit", "-q", "--allow-empty", "--allow-empty-message", "-m", "")
         commit = self.ahead()["commits"][0]

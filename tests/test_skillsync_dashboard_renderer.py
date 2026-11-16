@@ -984,9 +984,14 @@ function summary(m) {
       const afterInside = state(m);
       m.root.dispatchEvent(new Ev('click'));                                   // klik poza panelem zamyka
       const afterOutside = state(m);
+      // wypchnięcie opróżnia listę: stan otwarcia nie wraca przy następnych commitach
+      m.root.querySelector('#commitsBtn').click();
+      m.board.update(mk([], 0));
+      m.board.update(mk([{ sha: 'abc1234', subject: 'nowy' }], 0));
+      const afterEmpty = state(m);
       const none = mount(mk(undefined), { now: NOW['plan-in-progress'] });
       const empty = mount(mk([], 0), { now: NOW['plan-in-progress'] });
-      stab.commits = { closed, opened, keptOnRefresh, afterEsc, afterClose, afterInside, afterOutside,
+      stab.commits = { closed, opened, keptOnRefresh, afterEsc, afterClose, afterEmpty, afterInside, afterOutside,
         noField: { btn: Boolean(none.root.querySelector('#commitsBtn')), chip: text(none.root.querySelector('#meta .ahead-chip')) },
         emptyList: { btn: Boolean(empty.root.querySelector('#commitsBtn')), chip: text(empty.root.querySelector('#meta .ahead-chip')) } };
     }
@@ -1450,6 +1455,7 @@ class RendererNodeTests(unittest.TestCase):
         self.assertEqual((c["afterEsc"]["expanded"], c["afterEsc"]["hidden"]), ("false", True))
         self.assertEqual(c["afterInside"]["expanded"], "true", "klik w panelu go nie zamyka")
         self.assertEqual(c["afterOutside"]["expanded"], "false")
+        self.assertEqual(c["afterEmpty"]["expanded"], "false", "po opróżnieniu listy panel nie wraca otwarty")
         self.assertEqual(c["noField"], {"btn": False, "chip": "22 niewypchnięte"})
         self.assertEqual(c["emptyList"], {"btn": False, "chip": "22 niewypchnięte"})
 
