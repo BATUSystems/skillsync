@@ -71,6 +71,16 @@ Wydanie 1.6.1 jest PATCH (sekcja **Breaking** w `CHANGELOG.md` to „None.”) z
 5. Konsument JSON-a `doctor`: `reason` znalezisk „Missing installed skill” i o dowiązaniu bez celu kończy się podpowiedzią `run skillsync link <projekt>`, więc dopasowuj początek tekstu. Raport `guard` może mieć pola `skipped` i `reason`.
 6. `layers check`, `doctor` i `link` ostrzegają (`rule-unreachable`) o wpisie `layer_rules`, którego `match` powtarza wcześniejszy: scal takie wpisy w jeden.
 
+## Przejście 1.6.1 → 1.7.0
+
+Wydanie 1.7.0 jest MINOR (sekcja **Breaking** w `CHANGELOG.md` to „None.”): nowe elementy strony statusu i poprawki odczytu plików projektu.
+
+1. Rdzeń: `uv tool install --force git+https://github.com/BATUSystems/skillsync@v1.7.0`, potem `skillsync layers update core --ref v1.7.0`.
+2. Uruchom ponownie działający `skillsync dashboard serve` (panel niewypchniętych commitów i przycisk powrotu na górę przychodzą z nowym kodem i zasobami strony). `skillsync prototype migrate` nie jest potrzebne: silnik prototypów się nie zmienił.
+3. Wiersz `Prototyp:` (albo `Bramka prototypu:`) w nagłówku planu, który zawiera niewidoczny znak końca linii wklejony z dokumentu lub strony WWW (np. U+2028), jest teraz odrzucany z komunikatem podającym znak i jego pozycję; wcześniej był po cichu ucinany. Usuń znak i uruchom polecenie ponownie.
+4. Windows: serwer uruchomiony przez program nadrzędny w osobnej grupie procesów zatrzymuj sygnałem CTRL_BREAK (kończy się kodem 0 i usuwa pliki stanu, jak Ctrl+C w konsoli). `Stop-Process` i `taskkill /F` nadal kończą proces natychmiast i zostawiają plik stanu; tabela jest w [dashboard-contract](dashboard-contract.md).
+5. Konsument JSON-a strony statusu: `delivery` ma nowe pola `commits` i `commitsMore` (zawsze obecne; bez gita `null` i `0`).
+
 ## Przejście 1.4.1 → 1.5.0
 
 Wydanie 1.5.0 jest MINOR z wpisem **Breaking** w `CHANGELOG.md` (decyzja właściciela): zgody ze strony statusu wymagają tokenu, więc własne skrypty i klienty, które wołają `POST /api/approve`, przestają działać bez dostosowania. Strona statusu i wtyczka edytora tego samego wydania nie wymagają zmian.

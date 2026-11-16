@@ -335,7 +335,7 @@ def plan_section(text, name):
     fenced blocks are skipped when looking for headings), stripped of blank lines at both ends; None when the section is absent.
     The one reader of plan sections (`## Wynik`, the plan summary): `dashboard`, `status` and the prototype tools use it."""
     wanted = ' '.join(str(name).split()).lower()
-    lines, inside, in_fence, body = str(text).splitlines(), False, False, []
+    lines, inside, in_fence, body = file_lines(str(text)), False, False, []
     for line in lines:
         if line.lstrip().startswith(('```', '~~~')):
             in_fence = not in_fence
@@ -351,6 +351,20 @@ def plan_section(text, name):
     return '\n'.join(body).strip('\n') if '\n'.join(body).strip() else ''
 
 
+_LINE_END = re.compile(r'\r\n|\r|\n')
+
+
+def file_lines(text):
+    """Lines of the text of a project file, like `str.splitlines()` for CRLF, LF and a lone CR (the line ends of git, editors and
+    `render_markdown`), but NEVER at the other characters that `splitlines()` treats as line ends: VT, FF, FS, GS, RS, NEL (U+0085), LS (U+2028)
+    and PS (U+2029). Those arrive in text pasted from documents and web pages, stay inside the line and must not cut a step title, a header value, a
+    checkpoint or a JSON string. No empty last element after a final line end (as `splitlines()`)."""
+    lines = _LINE_END.split(text)
+    if lines and lines[-1] == '':
+        lines.pop()
+    return lines
+
+
 def detect_eol(text):
     """Line ending of the last line of `text` ("\\r\\n" or "\\n"); LF for an empty text or one without a newline."""
     last_lf = text.rfind("\n")
@@ -364,7 +378,7 @@ def append_missing_lines(text, entries, key=None):
     empty text) and a missing final newline is completed in the same style. `key` normalizes lines before
     they are compared (default: exact match)."""
     key = key or (lambda line: line)
-    present = {key(line) for line in text.splitlines()}
+    present = {key(line) for line in file_lines(text)}
     missing = [entry for entry in dict.fromkeys(entries) if key(entry) not in present]
     if not missing:
         return None

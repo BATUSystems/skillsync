@@ -950,6 +950,51 @@ function summary(m) {
       stab.ahead = { sixteen: chip(16, true, true), one: chip(1, false, false), two: chip(2, true, true), five: chip(5, true, true), twelve: chip(12, true, true),
         twentytwo: chip(22, true, true), zero: chip(0, true, true), unknown: chip(null, null, true), notPushed: chip(0, false, false), direct: chip(3, true, true, { mode: 'direct' }) };
     }
+    {  // 170-A: panel niewypchniętych commitów (delivery.commits / commitsMore)
+      const mk = (commits, more) => {
+        const j = clone(F['plan-in-progress']);
+        j.git = { branch: 'feat/x', head: 'abcdef1234', headFull: 'abcdef1234', branchUrl: 'https://example.test/b', branchPushed: true, remote: { host: 'github', repo: 'o/r' } };
+        j.delivery = { ...j.delivery, mode: 'pr', branch: 'feat/x', remote: 'origin/feat/x', ahead: 22, pushed: true };
+        if (commits !== undefined) j.delivery.commits = commits;
+        if (more !== undefined) j.delivery.commitsMore = more;
+        return j;
+      };
+      const state = (m) => {
+        const btn = m.root.querySelector('#commitsBtn'), panel = m.root.querySelector('#commitsPanel');
+        return { tag: btn ? btn.tagName : null, expanded: btn ? btn.getAttribute('aria-expanded') : null, controls: btn ? btn.getAttribute('aria-controls') : null,
+          hidden: panel ? panel.hidden : null, items: panel ? panel.querySelectorAll('li').map((n) => text(n)) : [], more: panel && panel.querySelector('.commits-more') ? text(panel.querySelector('.commits-more')) : null,
+          imgs: panel ? panel.querySelectorAll('img').length : 0, title: panel ? text(panel.querySelector('#commitsTitle')) : null,
+          closeLabel: panel ? panel.querySelector('.commits-close').getAttribute('aria-label') : null };
+      };
+      const evil = '<img src=x onerror=alert(1)> password: [REDACTED]';
+      const m = mount(mk([{ sha: 'abc1234', subject: evil }, { sha: 'def5678', subject: 'drugi' }], 20), { now: NOW['plan-in-progress'] });
+      const key = (k) => m.board.handleKey({ key: k, target: m.root, ctrlKey: false, metaKey: false, altKey: false });
+      const closed = state(m);
+      m.root.querySelector('#commitsBtn').click();
+      const opened = state(m);
+      m.board.update(mk([{ sha: 'abc1234', subject: evil }, { sha: 'def5678', subject: 'drugi' }], 20));
+      const keptOnRefresh = state(m);
+      key('Escape');
+      const afterEsc = state(m);
+      m.root.querySelector('#commitsBtn').click();
+      m.root.querySelector('#commitsPanel .commits-close').click();
+      const afterClose = state(m);
+      m.root.querySelector('#commitsBtn').click();
+      m.root.querySelector('#commitsPanel').querySelector('li').click();   // klik w panelu nie zamyka
+      const afterInside = state(m);
+      m.root.dispatchEvent(new Ev('click'));                                   // klik poza panelem zamyka
+      const afterOutside = state(m);
+      // wypchnięcie opróżnia listę: stan otwarcia nie wraca przy następnych commitach
+      m.root.querySelector('#commitsBtn').click();
+      m.board.update(mk([], 0));
+      m.board.update(mk([{ sha: 'abc1234', subject: 'nowy' }], 0));
+      const afterEmpty = state(m);
+      const none = mount(mk(undefined), { now: NOW['plan-in-progress'] });
+      const empty = mount(mk([], 0), { now: NOW['plan-in-progress'] });
+      stab.commits = { closed, opened, keptOnRefresh, afterEsc, afterClose, afterEmpty, afterInside, afterOutside,
+        noField: { btn: Boolean(none.root.querySelector('#commitsBtn')), chip: text(none.root.querySelector('#meta .ahead-chip')) },
+        emptyList: { btn: Boolean(empty.root.querySelector('#commitsBtn')), chip: text(empty.root.querySelector('#meta .ahead-chip')) } };
+    }
     ex.stab = stab;
   }
   // WRITING-UX: pozycje „sesja pracuje” (znacznik zapisu) i „odpowiedź eksperta” w banerze czekania.
@@ -1140,6 +1185,87 @@ function summary(m) {
     }
     ex.s160b = s5;
   }
+  // 170-B: pływający przycisk „na górę” w widoku dokumentu (haczyk deps.scroll.toTop; próg z histerezą; fokus; brak haczyka = brak przycisku).
+  {
+    const name = Object.keys(F)[0];
+    const hook = () => ({ cbs: [], goes: 0, unsub: 0, subscribe(cb) { this.cbs.push(cb); return () => { this.unsub++; }; }, go() { this.goes++; },
+      emit(m) { this.cbs.forEach((c) => c(m)); } });
+    const ex170 = {};
+    const open = async (extra) => {
+      const hk = hook(); const m = mount(clone(F[name]), { now: NOW[name], preview: true, deps: { scroll: { save: () => 0, restore: () => {}, reveal: () => {}, toTop: hk } }, ...(extra || {}) });
+      m.board.setDoc('docs/plans/demo.md'); m.board.setView('docs', false); await tick(); await tick();
+      return { hk, m, btn: () => m.root.querySelector('#toTop') };
+    };
+    {
+      const { hk, m, btn } = await open();
+      const b = btn(); const shape = { type: b.getAttribute('type'), label: b.getAttribute('aria-label'), cls: b.getAttribute('class'), tip: b.getAttribute('data-tip'), icon: b.querySelectorAll('use').length };
+      const trace = []; const vis = () => trace.push(!btn().hidden);
+      vis();                                     // y = 0 (brak metryk): ukryty
+      hk.emit({ y: 0, viewport: 1000, height: 5000 }); vis();
+      hk.emit({ y: 800, viewport: 1000, height: 5000 }); vis();   // > 0,75: pokazany
+      hk.emit({ y: 600, viewport: 1000, height: 5000 }); vis();   // między 0,5 a 0,75: histereza, zostaje
+      hk.emit({ y: 400, viewport: 1000, height: 5000 }); vis();   // < 0,5: schowany
+      hk.emit({ y: 600, viewport: 1000, height: 5000 }); vis();   // w górę przez histerezę, nadal schowany
+      hk.emit({ y: 800, viewport: 1000, height: 5000 }); vis();
+      hk.emit({ y: 0, viewport: 1000, height: 5000 }); vis();
+      ex170.threshold = { shape, trace, rootChild: btn().parentNode === m.root };
+    }
+    {
+      const { hk, m, btn } = await open();
+      hk.emit({ y: 2000, viewport: 1000, height: 6000 });
+      const shownDocs = !btn().hidden;
+      m.board.setView('progress', false); const shownProgress = !btn().hidden;
+      m.board.setView('questions', false); const shownQuestions = !btn().hidden;
+      m.board.setView('docs', false); await tick(); await tick(); const backInDocs = !btn().hidden;
+      ex170.views = { shownDocs, shownProgress, shownQuestions, backInDocs };
+    }
+    {
+      const { hk, m, btn } = await open({ actions: { loadDoc: () => Promise.reject(new Error('HTTP 500')) } });
+      hk.emit({ y: 2000, viewport: 1000, height: 6000 }); await tick();
+      ex170.failedLoad = { hidden: btn().hidden };
+    }
+    {
+      const { hk, m, btn } = await open();
+      hk.emit({ y: 2000, viewport: 1000, height: 6000 });
+      const focused = []; const tab = m.root.querySelector('#tab-docs'); tab.focus = (o) => focused.push(o);
+      const before = !btn().hidden; btn().click();
+      ex170.click = { before, goes: hk.goes, focused, shownRightAfter: !btn().hidden, tabId: tab.id };
+      hk.emit({ y: 900, viewport: 1000 });   // płynne przewijanie trwa: nadal powyżej progu ukrycia, przycisk nie mruga
+      ex170.click.shownDuringScroll = !btn().hidden;
+      hk.emit({ y: 400, viewport: 1000 });   // zeszło poniżej 0,5: chowa się sam
+      ex170.click.hiddenAtTheTop = btn().hidden;
+      m.board.destroy(); ex170.click.unsub = hk.unsub; ex170.click.rootClassGone = !m.root.classList.contains('has-to-top');
+    }
+    {
+      const { hk, m, btn } = await open();
+      const edges = [];
+      const at = (y, viewport) => { hk.emit({ y, viewport: viewport === undefined ? 1000 : viewport }); edges.push(!btn().hidden); };
+      at(750);    // dokładnie 0,75: próg jest ostry (>), nadal ukryty
+      at(751);    // powyżej: pokazany
+      at(500);    // dokładnie 0,5: histereza (<), nadal pokazany
+      at(499);    // poniżej: schowany
+      at(2000, 0);  // okno bez wysokości: nigdy
+      ex170.edges = { edges, hasClass: m.root.classList.contains('has-to-top') };
+    }
+    {
+      const { hk, m, btn } = await open();
+      hk.emit({ y: 2000, viewport: 1000 });
+      const focused = []; const tab = m.root.querySelector('#tab-docs'); tab.focus = (o) => focused.push(o);
+      btn().dispatchEvent(new Ev('focus'));   // fokus klawiaturą na przycisku
+      hk.emit({ y: 0, viewport: 1000 });      // użytkownik przewinął na górę bez klikania: przycisk się chowa
+      const hiddenNow = btn().hidden; const movedOnHide = focused.length;
+      hk.emit({ y: 2000, viewport: 1000 }); btn().dispatchEvent(new Ev('focus')); btn().dispatchEvent(new Ev('blur'));   // fokus odszedł sam
+      hk.emit({ y: 0, viewport: 1000 });
+      ex170.focusOnHide = { hiddenNow, movedOnHide, afterBlur: focused.length, option: focused[0] };
+    }
+    {
+      const m = mount(clone(F[name]), { now: NOW[name], preview: true });
+      const m2 = mount(clone(F[name]), { now: NOW[name], preview: true, deps: { scroll: { save: () => 0, restore: () => {}, reveal: () => {} } } });
+      const m3 = mount(clone(F[name]), { now: NOW[name], preview: true, deps: { scroll: { save: () => 0, restore: () => {}, reveal: () => {}, toTop: { subscribe: 'nie funkcja', go() {} } } } });
+      ex170.noHook = { noClass: !m.root.classList.contains('has-to-top'), none: m.root.querySelector('#toTop') === null, oldAdapter: m2.root.querySelector('#toTop') === null, broken: m3.root.querySelector('#toTop') === null };
+    }
+    ex.s170 = ex170;
+  }
   out.extra = ex;
   // deps.now jest wymagane (renderer nie czyta zegara sam).
   try { R.create(makeDoc().createElement('div'), {}); out.nowRequired = false; } catch (e) { out.nowRequired = e instanceof TypeError; }
@@ -1231,7 +1357,7 @@ class RendererNodeTests(unittest.TestCase):
                     self.assertIn(f"{p['percent']}% · ", got["docTitle"])
                 self.assertEqual(got["docItems"], sum(len(g["items"]) for g in d.get("docs") or []))
                 self.assertEqual(got["planMenu"], 1 + len(d.get("plans") or []))
-                self.assertEqual(got["sprite"], 14)
+                self.assertEqual(got["sprite"], 15)
                 self.assertIn(f"dashboard {d['app']['version']}", got["foot"])
                 self.assertNotIn("img", got["tags"])
 
@@ -1391,6 +1517,28 @@ class RendererNodeTests(unittest.TestCase):
         self.assertIsNone(a["unknown"], "ahead nieznane (null): bez znacznika")
         self.assertIsNone(a["notPushed"], "gałąź bez własnych commitów nie ma czego wypychać")
         self.assertIn("s-planned", a["direct"]["cls"], "w trybie direct lokalne commity są normą do CP")
+
+    def test_stab_unpushed_badge_opens_a_panel_with_the_commits(self) -> None:
+        """170-A: z `delivery.commits` plakietka jest przyciskiem; panel: aria, Esc, klik poza, tekst; bez pola jak dotąd (K5, K6)."""
+        c = self.out["extra"]["stab"]["commits"]
+        self.assertEqual((c["closed"]["tag"], c["closed"]["expanded"], c["closed"]["controls"]), ("BUTTON", "false", "commitsPanel"))
+        self.assertTrue(c["closed"]["hidden"])
+        self.assertEqual((c["opened"]["expanded"], c["opened"]["hidden"]), ("true", False))
+        self.assertEqual(c["opened"]["items"][1], "def5678drugi")
+        self.assertIn("password: [REDACTED]", c["opened"]["items"][0])
+        self.assertIn("<img src=x", c["opened"]["items"][0], "temat jest tekstem, nie znacznikiem")
+        self.assertEqual(c["opened"]["imgs"], 0)
+        self.assertEqual(c["opened"]["more"], "Pokazano 2 najnowsze; starszych: 20.")
+        self.assertEqual(c["opened"]["title"], "Niewypchnięte commity (22) · feat/x")
+        self.assertEqual(c["opened"]["closeLabel"], "Zamknij listę commitów")
+        self.assertEqual(c["afterClose"]["expanded"], "false", "przycisk zamknięcia zamyka panel")
+        self.assertEqual(c["keptOnRefresh"]["expanded"], "true", "stan panelu przeżywa odświeżenie danych")
+        self.assertEqual((c["afterEsc"]["expanded"], c["afterEsc"]["hidden"]), ("false", True))
+        self.assertEqual(c["afterInside"]["expanded"], "true", "klik w panelu go nie zamyka")
+        self.assertEqual(c["afterOutside"]["expanded"], "false")
+        self.assertEqual(c["afterEmpty"]["expanded"], "false", "po opróżnieniu listy panel nie wraca otwarty")
+        self.assertEqual(c["noField"], {"btn": False, "chip": "22 niewypchnięte"})
+        self.assertEqual(c["emptyList"], {"btn": False, "chip": "22 niewypchnięte"})
 
     def test_readiness_tile(self) -> None:
         none = {"cls": "readiness is-none", "chip": "Readiness: brak danych"}
@@ -1760,6 +1908,41 @@ class RendererNodeTests(unittest.TestCase):
         self.assertEqual(none["valuetext"], "40%, plus 10% do weryfikacji")
         self.assertEqual([f[0] for f in none["fills"]], ["fill", "fill-pending"])
 
+    def test_s170_to_top_button_threshold_with_hysteresis(self) -> None:
+        t = self.out["extra"]["s170"]["threshold"]
+        self.assertEqual(t["shape"], {"type": "button", "label": "Wróć na górę strony", "cls": "to-top", "tip": "Na górę", "icon": 1})
+        self.assertEqual(t["trace"], [False, False, True, True, False, False, True, False])
+        self.assertTrue(t["rootChild"], "the button lives outside .dash-wrap (position: fixed needs no containment)")
+
+    def test_s170_to_top_button_only_in_the_document_view(self) -> None:
+        v = self.out["extra"]["s170"]["views"]
+        self.assertEqual(v, {"shownDocs": True, "shownProgress": False, "shownQuestions": False, "backInDocs": True})
+        self.assertTrue(self.out["extra"]["s170"]["failedLoad"]["hidden"])   # a document that failed to load: no button
+
+    def test_s170_click_goes_to_top_moves_the_focus_and_destroy_unsubscribes(self) -> None:
+        c = self.out["extra"]["s170"]["click"]
+        self.assertTrue(c["before"])
+        self.assertEqual((c["goes"], c["tabId"]), (1, "tab-docs"))
+        self.assertEqual(c["focused"], [{"preventScroll": True}])   # the focus moves to the tab at once, the button stays while the page scrolls
+        self.assertTrue(c["shownRightAfter"])
+        self.assertTrue(c["shownDuringScroll"], "no blink while the smooth scroll is still above the hide threshold")
+        self.assertTrue(c["hiddenAtTheTop"])
+        self.assertEqual(c["unsub"], 1)
+        self.assertTrue(c["rootClassGone"])
+
+    def test_s170_threshold_edges_and_a_window_without_height(self) -> None:
+        e = self.out["extra"]["s170"]["edges"]
+        self.assertEqual(e["edges"], [False, True, True, False, False])
+        self.assertTrue(e["hasClass"])
+
+    def test_s170_a_focused_button_hands_the_focus_to_the_tab_when_it_hides(self) -> None:
+        f = self.out["extra"]["s170"]["focusOnHide"]
+        self.assertEqual((f["hiddenNow"], f["movedOnHide"], f["afterBlur"]), (True, 1, 1))   # moved once; no move when the focus had left already
+        self.assertEqual(f["option"], {"preventScroll": True})
+
+    def test_s170_without_the_hook_there_is_no_button(self) -> None:
+        self.assertEqual(self.out["extra"]["s170"]["noHook"], {"noClass": True, "none": True, "oldAdapter": True, "broken": True})
+
     def test_s160_parse_warnings_line(self) -> None:
         w = self.out["extra"]["s160"]["warn"]
         two = w["two"]
@@ -1940,12 +2123,19 @@ class OldRendererOnNewJson(unittest.TestCase):
         warned = json.loads(json.dumps(next(iter(fixtures.values()))))
         warned["run"] = {**(warned.get("run") or {}), "parseWarnings": [{"time": "10:03", "segment": "raport", "fragment": "F1.1 (a; b, F1.2", "reason": "unbalanced-bracket"}]}
         fixtures["with-unbalanced-bracket-warning"] = warned
+        # 170-A: `delivery.commits` / `commitsMore` of an unpushed branch: the frozen renderer keeps its plain badge and ignores the list
+        listed = json.loads(json.dumps(next(iter(fixtures.values()))))
+        listed["git"] = {"branch": "feat/x", "head": "abcdef1234", "headFull": "abcdef1234", "branchUrl": None, "branchPushed": True, "remote": None}
+        listed["delivery"] = {**(listed.get("delivery") or {}), "mode": "pr", "branch": "feat/x", "remote": "origin/feat/x", "ahead": 3, "pushed": True,
+                              "commits": [{"sha": "abc1234", "subject": "pierwszy"}], "commitsMore": 2}
+        fixtures["with-unpushed-commit-list"] = listed
         head = HARNESS[:HARNESS.index("  const F = input.fixtures")]
         tail = """
   const res = {};
   for (const [name, d] of Object.entries(input.fixtures)) {
     try { const m = mount(d, { now: input.now[name] }); res[name] = { ok: true, acts: m.root.querySelectorAll('#acts .act').length,
-      stages: m.root.querySelectorAll('#acts .stage').length, newTab: !!m.root.querySelector('#tab-questions'), parseWarn: !!m.root.querySelector('#parseWarn') }; m.board.destroy(); }
+      stages: m.root.querySelectorAll('#acts .stage').length, newTab: !!m.root.querySelector('#tab-questions'), parseWarn: !!m.root.querySelector('#parseWarn'),
+      commitsBtn: !!m.root.querySelector('#commitsBtn'), ahead: (m.root.querySelector('#meta .ahead-chip') || {}).textContent || null }; m.board.destroy(); }
     catch (e) { res[name] = { error: String(e && e.stack || e) }; }
   }
   process.stdout.write(JSON.stringify({ res, violations }));
@@ -1965,7 +2155,8 @@ class OldRendererOnNewJson(unittest.TestCase):
             with self.subTest(fixture=name):
                 self.assertTrue(got.get("ok"), got)
                 self.assertGreaterEqual(got["acts"], 1)
-                self.assertFalse(got["newTab"] or got["parseWarn"], "the old renderer knows no new elements")
+                self.assertFalse(got["newTab"] or got["parseWarn"] or got["commitsBtn"], "the old renderer knows no new elements")
+        self.assertEqual(out["res"]["with-unpushed-commit-list"]["ahead"], "3 niewypchnięte", "the old badge is unchanged")
 
 
 if __name__ == "__main__":

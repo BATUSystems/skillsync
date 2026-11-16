@@ -20,7 +20,7 @@ import time
 import yaml
 
 from . import __version__
-from .common import add_project_arguments, decode_text, plan_section, read_project, redact
+from .common import add_project_arguments, decode_text, file_lines, plan_section, read_project, redact
 from .layers import add_layer_argument
 from .delivery_mode import delivery_info
 from .status import (APPROVAL_WORDS, APPROVALS_FILE, MAX_APPROVALS_BYTES, _APPROVAL_SHA, _approval_at, _message, _status_fields,
@@ -155,7 +155,7 @@ def doc_status(text):
 def parse_header(text):
     """Title (first `# `) and `Key: value` fields before the first `## `."""
     title, fields = None, {}
-    for line in text.splitlines():
+    for line in file_lines(text):
         if line.startswith('## '):
             break
         if title is None and line.startswith('# '):
@@ -170,7 +170,7 @@ def parse_header(text):
 def parse_progress(text):
     """`## Progress`: phases `### …` and steps `- [ ] ID Title` / `- [x] ID Title — sha`; code blocks are skipped."""
     phases, current, in_progress, in_fence = [], None, False, False
-    for line in text.splitlines():
+    for line in file_lines(text):
         if line.lstrip().startswith(('```', '~~~')):
             in_fence = not in_fence
             continue
@@ -208,7 +208,7 @@ def parse_progress(text):
 def parse_checkpoints(text):
     """`RUN=<iso>` and `- HH:MM text` lines (indented lines continue the previous one)."""
     run_start, items = None, []
-    for line in text.splitlines():
+    for line in file_lines(text):
         stripped = line.strip()
         if stripped.startswith('RUN='):
             run_start = stripped[4:].strip()
@@ -474,7 +474,7 @@ def parse_questions(text):
     a table row `| Q<n> | <question> | …` are blocking; other bracket tags (e.g. `[ROZSTRZYGNIĘTE …]`) are skipped."""
     assumptions, blocking, seen = [], [], set()
     inside = in_fence = False
-    for line in text.splitlines():
+    for line in file_lines(text):
         if line.lstrip().startswith(('```', '~~~')):
             in_fence = not in_fence
             continue
@@ -1045,7 +1045,7 @@ def _origin_url(common):
     except OSError:
         return None
     section = None
-    for line in text.splitlines():
+    for line in file_lines(text):
         stripped = line.strip()
         if stripped.startswith('['):
             section = stripped
@@ -1062,7 +1062,7 @@ def _has_ref(common, ref):
         return True
     packed = common / 'packed-refs'
     try:
-        return packed.is_file() and any(line.endswith(' ' + ref) for line in read_text(packed).splitlines())
+        return packed.is_file() and any(line.endswith(' ' + ref) for line in file_lines(read_text(packed)))
     except OSError:
         return False
 
@@ -1092,7 +1092,7 @@ def read_git(root):
             else:
                 packed = common / 'packed-refs'
                 if packed.is_file():
-                    for line in read_text(packed).splitlines():
+                    for line in file_lines(read_text(packed)):
                         if line.endswith(' ' + ref):
                             info['headFull'] = line.split()[0]
                             info['head'] = info['headFull'][:12]
@@ -1122,23 +1122,55 @@ def read_delivery(manifest):
             'source': info['source']}
 
 
+COMMITS_SHOWN = 20          # commits listed under the "not pushed" badge; the rest is only counted (`commitsMore`)
+COMMIT_SUBJECT_MAX = 80     # characters of a commit subject on the page
+_ANSI = re.compile(r'\x1b\[[0-9;?]*[ -/]*[@-~]')
+_CONTROL_CHARS = re.compile('[\x00-\x1f\x7f-\x9f]')
+_INVISIBLE = re.compile('[\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]')   # zero-width and bidirectional marks
+_SHORT_SHA = re.compile(r'[0-9a-f]{4,64}')
+
+
+def _commit_list(out):
+    """`git log -z --format=%h%x1f%s` (bytes) as `[{'sha', 'subject'}]`: decoded explicitly (`decode_text`), every subject masked
+    WHOLE (`redact`) before it is flattened and cut to COMMIT_SUBJECT_MAX characters (a cut subject ends with `…`), so a key before the cut still masks its value."""
+    commits = []
+    for record in out.split(b'\x00'):
+        sha, _, subject = decode_text(record).partition('\x1f')
+        sha = sha.strip()
+        if _SHORT_SHA.fullmatch(sha):   # a record without a hash (a signature line of the user's git configuration) is dropped
+            clean = _INVISIBLE.sub('', _ANSI.sub('', subject))   # before the mask: a zero-width mark inside a key must not hide the key from it
+            flat = ' '.join(_CONTROL_CHARS.sub(' ', redact(clean)).split())
+            commits.append({'sha': sha, 'subject': flat if len(flat) <= COMMIT_SUBJECT_MAX else flat[:COMMIT_SUBJECT_MAX - 1].rstrip() + '…'})
+    return commits
+
+
 def git_ahead(root, branch):
     """How many commits HEAD has that the remote counterpart of the working branch has not (read-only): `origin/<branch>..HEAD`,
-    or `HEAD --not --remotes=origin` when the branch is not on origin. "CP" pushes the working branch, not the base."""
-    def git(*args):
+    or `HEAD --not --remotes=origin` when the branch is not on origin. "CP" pushes the working branch, not the base.
+    `commits` lists the newest COMMITS_SHOWN of them (`sha`, masked `subject`; one `git log`), `commitsMore` counts the older ones;
+    `commits` is None when the count is unknown."""
+    def git(*args, raw=False):
         try:
-            out = subprocess.run(['git', '-C', str(root), *args], capture_output=True, text=True, timeout=10, check=False)
+            out = subprocess.run(['git', '-C', str(root), *args], capture_output=True, text=not raw, timeout=10, check=False)
         except (OSError, subprocess.SubprocessError):
             return None
-        return out.stdout.strip() if out.returncode == 0 else None
+        if out.returncode != 0:
+            return None
+        return out.stdout if raw else out.stdout.strip()
     if not branch or not REF_NAME_RE.match(branch):
-        return {'remote': None, 'pushed': None, 'ahead': None}
+        return {'remote': None, 'pushed': None, 'ahead': None, 'commits': None, 'commitsMore': 0}
     remote = f'origin/{branch}'
     if git('rev-parse', '--verify', '--quiet', f'refs/remotes/{remote}^{{commit}}'):
-        count, pushed = git('rev-list', '--count', f'{remote}..HEAD'), True
+        count, pushed, rng = git('rev-list', '--count', f'{remote}..HEAD'), True, [f'{remote}..HEAD']
     else:
-        count, pushed = git('rev-list', '--count', 'HEAD', '--not', '--remotes=origin'), False
-    return {'remote': remote, 'pushed': pushed, 'ahead': int(count) if count and count.isdigit() else None}
+        count, pushed, rng = git('rev-list', '--count', 'HEAD', '--not', '--remotes=origin'), False, ['HEAD', '--not', '--remotes=origin']
+    ahead = int(count) if count and count.isdigit() else None
+    commits = None
+    if ahead is not None:
+        raw = git('log', '-z', '--no-color', '--no-ext-diff', '--no-show-signature', '--encoding=UTF-8', '--abbrev=7', f'-n{COMMITS_SHOWN}', '--format=%h%x1f%s', *rng, raw=True) if ahead else b''
+        commits = _commit_list(raw) if raw is not None else None
+    more = max(ahead - len(commits), 0) if ahead is not None and commits is not None else 0
+    return {'remote': remote, 'pushed': pushed, 'ahead': ahead, 'commits': commits, 'commitsMore': more}
 
 
 def delivery_target(delivery, branch, plan_fields):
@@ -1196,7 +1228,7 @@ def run_approvals(root, run_id):
     try:
         if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_APPROVALS_BYTES:
             return []
-        lines = path.read_text(encoding='utf-8', errors='replace').splitlines()
+        lines = file_lines(path.read_text(encoding='utf-8', errors='replace'))
     except OSError:
         return []
     out = []
@@ -1710,7 +1742,7 @@ def read_readiness(root, run_id, run_exists):
     except OSError:
         return out
     out['source'] = rel
-    first = next((line.strip() for line in text.splitlines() if line.strip()), '')
+    first = next((line.strip() for line in file_lines(text) if line.strip()), '')
     match = READINESS_RE.match(first)
     out['status'] = match.group('status').upper() if match else None
     date, sha = READINESS_DATE_RE.search(text), READINESS_SHA_RE.search(text)
@@ -2001,6 +2033,7 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
     target = delivery_target(delivery, git_info['branch'], fields)
     delivery_state = {**delivery, 'branch': git_info['branch'], 'target': target, 'remote': ahead_state.get('remote'),
                       'pushed': ahead_state.get('pushed'), 'ahead': ahead_state.get('ahead'),
+                      'commits': ahead_state.get('commits'), 'commitsMore': ahead_state.get('commitsMore') or 0,
                       'words': delivery_words(delivery, ahead_state, plan_info, waiting, git_info['branch'], target)}
     current_docs = [spec_rel if spec_path else None, chosen['path'] if chosen else None]
     assumptions, blocking = parse_questions(spec_text) if spec_path else ([], [])

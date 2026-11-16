@@ -20,7 +20,7 @@ skillsync dashboard serve <projekt> [--port 5140 | --read-port N --approve-port 
 skillsync dashboard show <projekt> [--json] [--plan docs/plans/<plik>.md]   # jednorazowy zrzut JSON (to samo co /api/status)
 ```
 
-- Serwer działa na pierwszym planie (Ctrl+C albo SIGTERM kończy, wynik `{"status": "PASS", "stopped": true}`); odmowa startu
+- Serwer działa na pierwszym planie (Ctrl+C albo SIGTERM kończy; na Windows Ctrl+C albo CTRL_BREAK do grupy procesów, zob. docs/dashboard-contract.md „Jak zatrzymać serwer na Windows”, wynik `{"status": "PASS", "stopped": true}`); odmowa startu
   (port spoza zakresu, brak manifestu, brak `assets/index.html` w aktywnych warstwach, zły `--session-url` albo `--plan`)
   = `BLOCKED`, kod 2. Strona i `descriptions.json` pochodzą ze skilla `dashboard` aktywnych warstw (`--layer` jak w innych
   komendach; późniejsza warstwa wygrywa per plik).
@@ -172,7 +172,9 @@ była, a nie, że pętla dała PASS.
   (`git rev-list --count origin/<robocza>..HEAD`, a bez gałęzi na origin `HEAD --not --remotes=origin`; tylko odczyt).
   „CP” oddaje na `origin/<robocza>` (rdzeń AGENTS: nigdy na bazę); w trybie `direct` linia planu `Oddanie: <gałąź>`
   zmienia cel na wskazaną gałąź. Przycisk i wpis pokazują cel (`target`, „CP → main”); podpowiedź
-  podaje liczbę commitów i bazę. Wymaga katalogu przebiegu. „READY” tylko w trybie `pr` (`delivery.mode` z
+  podaje liczbę commitów i bazę. Plakietka „N niewypchniętych” w nagłówku jest przyciskiem: panel pokazuje te commity (`delivery.commits`:
+  krótki skrót i pierwsza linia opisu, najnowsze pierwsze, do 20, reszta jako „i N starszych” z `commitsMore`); opisy są maskowane przed cięciem
+  i wstawiane jako tekst. Wymaga katalogu przebiegu. „READY” tylko w trybie `pr` (`delivery.mode` z
   `.github/.skillsync.yaml`; brak klucza = `pr`, zła wartość = brak przycisków). Dziennika `checkpoints.md` strona nie
   zmienia (pisze go sesja); po zapisie kafelek pokazuje „CP zapisane HH:MM”, a baner „zgoda jest już w pliku”.
 - Sesja (`feature`) czekająca na zgodę nasłuchuje zmian (`skillsync status`, pole `approvals`) z budzikiem co 30 min i po
@@ -266,7 +268,7 @@ Kontrakt `deps` (wymagane tylko `now`):
 | `mountHtml` | `(el, html) => void` | nie | wstawienie HTML podglądu Markdown (escapowanego przez serwer); renderer sam HTML nie parsuje |
 | `onTitle` | `(text) => void` | nie | tytuł okna (`⏳ Czeka · 40% · … — status`) |
 | `onNavigate` | `(hash) => void` | nie | adres widoku: `progress`, `docs`, `docs:<ścieżka>` |
-| `scroll` | `{save() => any, restore(v), reveal(el, inDocs)}` | nie | przewijanie przy odświeżeniu i otwarciu dokumentu |
+| `scroll` | `{save() => any, restore(v), reveal(el, inDocs), toTop?: {subscribe(cb) => unsubscribe, go()}}` | nie | przewijanie przy odświeżeniu i otwarciu dokumentu; opcjonalny `toTop` włącza pływający przycisk „na górę” w widoku dokumentu: host woła `cb({y, viewport})` przy przewinięciu i zmianie rozmiaru okna, renderer pokazuje przycisk powyżej 0,75 wysokości okna i chowa poniżej 0,5, a `go()` przewija okno na górę; bez `toTop` (webview) przycisku nie ma |
 | `timers` | `{set(fn, ms) => id, clear(id)}` | nie | zegar uzbrojenia (5 s); domyślnie `setTimeout` |
 | `raf`, `cancelRaf` | `(fn) => id`, `(id) => void` | nie | klatka animacji pasków; domyślnie `requestAnimationFrame`/`cancelAnimationFrame`; `destroy()` anuluje oczekujące |
 | `viewport` | `() => {width, height}` | nie | rozmiar okna dla dymku; domyślnie `ownerDocument.defaultView` |

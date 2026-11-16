@@ -87,7 +87,7 @@ class PrototypeServeWindowTests(unittest.TestCase):
         with mock.patch.object(pt.signal, 'signal') as set_signal:
             report, _instance, _text = self.serve(lambda: (sentinel,))
         self.assertEqual(report['status'], 'PASS')
-        set_signal.assert_called_with(pt.signal.SIGTERM, sentinel)
+        set_signal.assert_any_call(pt.signal.SIGTERM, sentinel)   # not `assert_called_with`: on Windows the CTRL_BREAK handler is restored after it (170-D)
 
 
 class DashboardServeWindowTests(unittest.TestCase):

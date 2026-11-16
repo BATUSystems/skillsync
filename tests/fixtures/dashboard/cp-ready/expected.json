@@ -189,6 +189,13 @@
     "ahead": 1,
     "base": "main",
     "branch": "feat/demo",
+    "commits": [
+      {
+        "sha": "<head>",
+        "subject": "demo"
+      }
+    ],
+    "commitsMore": 0,
     "mode": "pr",
     "pushed": false,
     "remote": "origin/feat/demo",

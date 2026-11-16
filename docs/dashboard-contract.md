@@ -77,9 +77,9 @@ projektu lub przebiegu). Raport komend zapisujących i `metrics --json` to JSON 
 - wszystkie pliki wejściowe mają czas modyfikacji `2026-01-11T10:00:00Z`, strefa `UTC` (stąd `mtime`, `lastUpdate`,
   `run.lastReportAt` = `2026-01-11T10:00:00+00:00`);
 - `generatedAt` zastąpione `2026-01-12T12:00:00+00:00`, `app.version` zastąpione `<version>`;
-- bez repozytorium git (wejście to same pliki tekstowe): `git.*` ma wartości `null`, `delivery.ahead` = `null`;
+- bez repozytorium git (wejście to same pliki tekstowe): `git.*` ma wartości `null`, `delivery.ahead` = `null`, `delivery.commits` = `null`, `delivery.commitsMore` = `0`;
 - wyjątek: przypadek `cp-ready` wymaga repozytorium; test zakłada w kopii `input/` repozytorium git (gałąź `feat/demo`,
-  jeden commit, neutralna tożsamość, bez `origin`), a sha HEAD (pełne, 12 i 8 znaków) zastępuje `<head>`. Wariant
+  jeden commit, neutralna tożsamość, bez `origin`), a sha HEAD (pełne, 12, 8 i 7 znaków) zastępuje `<head>`. Wariant
   `expected-after.json` to wynik po zapisie zgody `CP` przez `record_approval` (źródło `dashboard`, w procesie testu): w zapisanym wpisie `at` = `2026-01-12T12:00:00Z`,
   `by` = `user`, a godzina w `reason`/`blocked` = `12:00`;
 - JSON: `sort_keys`, wcięcie 2, `ensure_ascii=false`, końcowy znak nowej linii.
@@ -280,7 +280,7 @@ spoza reguł `skillsync status` (nieznane słowo, nieczytelne `at`, sha spoza 7�
 
 `mode` (`pr`, `direct`, `invalid`), `base` (string lub null), `source` (`manifest`, `default`), `branch`, `target` (dokąd
 oddaje „CP”; w `direct` z linii planu `Oddanie:`), `remote`, `pushed` (bool lub null), `ahead` (int lub null; commity
-niewypchnięte; renderer pokazuje je przy gałęzi w nagłówku jako „N niewypchniętych” (neutralnie w trybie `direct`, do zakończenia planu)), `words[]`: `{word: "CP"|"READY", active, tip, target}` (`READY` tylko w trybie `pr`; przy `invalid` pusta
+niewypchnięte; renderer pokazuje je przy gałęzi w nagłówku jako „N niewypchniętych” (neutralnie w trybie `direct`, do zakończenia planu)), `commits` (lista `{sha, subject}` tych commitów, najnowsze pierwsze, do 20; `sha` to krótki skrót, `subject` to pierwsza linia opisu po zamaskowaniu sekretów, jedna linia do 80 znaków, obcięta kończy się „…”; `null`, gdy liczba niewypchniętych jest nieznana, `[]` gdy ich nie ma), `commitsMore` (int; ile starszych niewypchniętych commitów nie weszło do `commits`), `words[]`: `{word: "CP"|"READY", active, tip, target}` (`READY` tylko w trybie `pr`; przy `invalid` pusta
 tablica).
 
 ### `session`
@@ -549,6 +549,18 @@ zgód jest ono osobne: port zgód widzi każde urządzenie w sieci, a token idzi
 **Start atomowy.** Oba gniazda wiązane są przed wątkami, plikami stanu i wpisami w konsoli. Błąd drugiego wiązania zamyka
 pierwsze i kończy `BLOCKED` (`nie można nasłuchiwać …; porty … muszą być wolne`) bez śladu stanu. Ctrl+C albo SIGTERM
 zamyka oba gniazda i usuwa oba pliki stanu.
+
+**Jak zatrzymać serwer na Windows** (`dashboard serve` i `prototype serve`; na Linuksie i macOS bez zmian: Ctrl+C albo SIGTERM). Zmierzone na Windows 11 z Pythonem 3.12:
+
+| Sposób | Skutek | Plik stanu po zatrzymaniu |
+|---|---|---|
+| Ctrl+C w konsoli serwera | łagodnie: raport `PASS`/`stopped`, kod wyjścia 0 | usunięty |
+| `CTRL_BREAK_EVENT` do serwera uruchomionego z `CREATE_NEW_PROCESS_GROUP` (`os.kill(pid, signal.CTRL_BREAK_EVENT)` z launchera, wspólna konsola) | łagodnie jak Ctrl+C (sygnał `SIGBREAK`), kod wyjścia 0; drugi CTRL_BREAK w ciągu 10 s po pierwszym jest ignorowany (nie przerywa sprzątania), późniejszy zatrzymuje ponownie | usunięty (w trybie dwóch gniazd oba pliki) |
+| `Stop-Process`, `taskkill /F`, `Popen.terminate()`, Menedżer zadań | twardo (`TerminateProcess`), bez sprzątania | **zostaje** (z tokenem zgód) |
+| `taskkill /PID` bez `/F` | nie działa: „This process can only be terminated forcefully (with /F option).” | – |
+| zamknięcie okna konsoli | twardo (nie obsługujemy `CTRL_CLOSE_EVENT`) | zostaje |
+
+Po twardym zakończeniu port jest wolny od razu, a następny start na tym samym porcie zastępuje plik stanu; plik innego portu zostaje, aż ten port zostanie użyty ponownie. Ctrl+C dziedziczy ustawienie „ignoruj CTRL+C” po procesie rodzicu (np. skrypt uruchomiony z sesji ssh): wtedy serwer uruchomiony z takiego procesu go nie odbierze, a CTRL_BREAK tak. Dziecko uruchomione z `CREATE_NEW_PROCESS_GROUP` w ogóle nie dostaje Ctrl+C (system wyłącza go w nowej grupie), więc launcher zatrzyma je tylko CTRL_BREAKiem.
 
 **Kombinacje flag** (wszystkie walidacje przed bindem; `BLOCKED`, kod `2`):
 

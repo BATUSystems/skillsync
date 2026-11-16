@@ -5,6 +5,8 @@ covering the whole plan.  The `[UI]` marker is matched literally (case sensitive
 """
 import re
 
+from .common import file_lines
+
 UI_MARK = '[UI]'
 _INLINE_CODE = re.compile(r'`[^`]*`')
 _SEPARATOR_CELL = re.compile(r':?-+:?')
@@ -40,8 +42,7 @@ def parse_plan_phases(text):
     phases, ui_phases, stray = [], [], 0
     fence = None  # (character, length) of the open code fence
     table = None  # None outside a table, otherwise (id column, step column) or False for an unrecognised table
-    for raw in text.splitlines():
-        line = raw.rstrip('\r')
+    for line in file_lines(text):   # a lone CR and CRLF are line ends here, so no line keeps a `\r`
         stripped = line.lstrip(' ')
         indented = len(line) - len(stripped) >= 4 or stripped.startswith('\t')
         opening = None if indented else _FENCE_OPEN.match(stripped)
