@@ -349,10 +349,26 @@ def redact(value, _key=False):
     for name, secret in os.environ.items():
         if len(secret) >= SECRET_MIN_LENGTH and re.search(r'(?i)token|secret|password|passwd|api_?key|credential', name):
             text = text.replace(secret, '[REDACTED]')
+            if '\n' in secret:   # a multi-line secret (a PEM key) in a file with Windows line ends
+                text = text.replace(secret.replace('\n', '\r\n'), '[REDACTED]')
     text = re.sub(r'(https?://)[^/@\s]+:[^/@\s]+@', r'\1[REDACTED]@', text)
-    text = re.sub(r'(?i)(authorization\s*[:=]\s*(?:bearer\s+)?)[^\s\x22\x27,;]+', r'\1[REDACTED]', text)
+    text = re.sub(r'(?i)(authorization\s*[:=]\s*(?:(?:bearer|basic|digest)\s+)?)[^\s\x22\x27,;]+', r'\1[REDACTED]', text)
     text = re.sub(r'(?i)(\bbearer\s+)[^\s\x22\x27,;]+', r'\1[REDACTED]', text)
-    return re.sub(r'(?i)((?:password|passwd|token|secret|api_key)\s*[=:]\s*)[^\s\x22\x27,;]+', r'\1[REDACTED]', text)
+    return _SECRET_KEY_VALUE.sub(_mask_value, text)
+
+
+# Key names whose value is masked: `password`, `passwd`, `token`, `secret`, `api_key`/`api-key`/`apikey`, `secret_key`, `access_key`,
+# `private_key` (a longer name that ends in one of them, e.g. `client_secret`, matches too). After the key: an optional quote (JSON),
+# `=` or `:`, and a value that is quoted (the whole quoted text, spaces included) or a word up to a space, quote, `,` or `;`.
+_SECRET_KEY_VALUE = re.compile(
+    r'(?i)((?:password|passwd|token|secret|api[-_]?key|secret[-_]?key|access[-_]?key|private[-_]?key)[\x22\x27]?\s*[=:]\s*)'
+    r'(?:\x22[^\x22\r\n]*\x22|\x27[^\x27\r\n]*\x27|[^\s\x22\x27,;]+)')
+
+
+def _mask_value(match):
+    value = match.group(0)[len(match.group(1)):]
+    quote = value[0] if value[:1] in ('"', "'") else ''
+    return f'{match.group(1)}{quote}[REDACTED]{quote}'
 
 
 # Mirrors the constants in the `skillsync` entry script (a test keeps them identical).
