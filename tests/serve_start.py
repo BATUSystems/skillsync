@@ -162,3 +162,55 @@ def start_serve(case, cli, root, layer, env, free_port, *extra, prepare=None, re
         if not lost_bind(last):
             break
     case.fail(f"dashboard serve did not start (last port {port}): {last.strip()[-600:]}")
+
+
+def two_free_ports(free_port):
+    """Two DIFFERENT free ports of the test slice (`free_port` alone gives the same one twice: nothing listens on it yet)."""
+    import socket
+    first = free_port()
+    with socket.socket() as hold:
+        if os.name != "nt":
+            hold.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)   # the port may be in TIME_WAIT (free_port allows it)
+        hold.bind(("127.0.0.1", first))
+        hold.listen(1)
+        second = free_port()
+    return first, second
+
+
+def start_serve_ports(case, cli, root, layer, env, free_port, *extra, prepare=None, ready=None, deadline_s=20):
+    """The two-port counterpart of `start_serve` (the DEFAULT mode of 1.8.0 on ports of the test slice, never 5140/5141): starts
+    `dashboard serve <root> --read-port <r> --approve-port <a> *extra *layer`, waits until both sockets answer `/healthz` and both state files
+    are ours; returns `(proc, read_port, approve_port)` or fails the test. Pass `--read-bind`/`--approve-bind` in `extra` to narrow; the sockets
+    listen on the default addresses otherwise (read: every interface, consents: loopback) and a test must not keep the server longer than it needs.
+    `prepare(read_port, approve_port)` runs before every try; `ready(read_port, approve_port)` is an extra condition. A lost bind (BLOCKED)
+    is repeated on other ports."""
+    last, ports_ = "", None
+    for _attempt in range(ATTEMPTS):
+        ports_ = two_free_ports(free_port)
+        read_port, approve_port = ports_
+        if prepare:
+            prepare(read_port, approve_port)
+        before = state_snapshot(env)
+        started = datetime.now(timezone.utc)
+        proc = subprocess.Popen([sys.executable, str(cli), "dashboard", "serve", str(root), "--read-port", str(read_port),
+                                 "--approve-port", str(approve_port), *extra, *layer],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
+        case.addCleanup(lambda proc=proc: kill_tree(proc))
+        deadline = time.time() + deadline_s
+        while time.time() < deadline and proc.poll() is None:
+            try:
+                for port in ports_:
+                    urllib.request.urlopen(f"http://127.0.0.1:{port}/healthz", timeout=1).close()
+                answered = (all(own_state(env, proc, port, root, started, before=before) for port in ports_)
+                            and (ready is None or ready(read_port, approve_port)))
+            except OSError:
+                answered = False
+            if answered:
+                return proc, read_port, approve_port
+            time.sleep(0.1)
+        kill_tree(proc)
+        out, err = proc.communicate(timeout=10)
+        last = f"{out}\n{err}"
+        if not lost_bind(last):
+            break
+    case.fail(f"dashboard serve (two ports) did not start (last ports {ports_}): {last.strip()[-600:]}")

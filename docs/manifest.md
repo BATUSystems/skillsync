@@ -44,6 +44,7 @@ Po zapisaniu manifestu: `skillsync link <projekt> --dry-run`, potem `skillsync l
 | `workflow.ceremony` | `full` \| `demo` | ceremonia skilla `feature`; brak klucza = `full`; wartości tylko małymi literami, inna wartość (także pusta, `null`, nie napis) = błąd `doctor`. Czytany wyłącznie z manifestu projektu: w `workflow/defaults.yaml` i `workflow/projects/<slug>.yaml` jest ignorowany. `route` zwraca `ceremony {value, source: manifest\|default\|invalid[, error]}` |
 | `dispatch` | mapa | konfiguracja skilla `dispatch`; walidowana, bez wpływu na artefakty; szczegóły: [workflow](workflow.md) |
 | `prototype` | mapa | konfiguracja komendy `prototype`; szczegóły: [prototypes](prototypes.md) |
+| `dashboard` | mapa `local_only`, `read_bind`, `approve_bind` | nasłuch `dashboard serve` tego projektu; szczegóły niżej (sekcja „Sekcja `dashboard`”) |
 | `delivery` | `{mode: pr \| direct, base: <gałąź>}` | sposób dostarczania zmian przez agenta; brak `delivery.mode` = `pr` z ostrzeżeniem `doctor`; `mode: direct` bez `base` = ostrzeżenie; zła wartość lub typ = błąd; nieznany klucz = ostrzeżenie; nie zmienia artefaktów `link`. Inne niż `workflow.delivery` (provider i CI) |
 
 ### Specyfikacja `skills`
@@ -74,6 +75,24 @@ Wyjątek od scalania: `workflow.ceremony` (`full` | `demo`) czyta się tylko z m
 Pliki, które zapisuje `skillsync link`, są generowane i nie edytuje się ich ręcznie. Ich listę per host agenta
 (Copilot, Claude Code, Codex, Cursor, VS Code) prowadzi [architecture](architecture.md), sekcja „Artefakty per host”.
 Manifest sam jest wpisany do `.github/.gitignore` (nie jest wersjonowany, chyba że był już śledzony).
+
+## Sekcja `dashboard`
+
+Opcjonalna. Wpływa tylko na `dashboard serve` tego projektu. Ta sama sekcja może być w configu maszyny
+([configuration](configuration.md#dashboard)); pierwszeństwo: flaga CLI > manifest > config maszyny > domyślne.
+
+```yaml
+dashboard:
+  local_only: true        # opcjonalnie: true = oba gniazda na 127.0.0.1; false = brak preferencji
+  read_bind: 0.0.0.0      # opcjonalnie: adres nasłuchu gniazda odczytu
+  approve_bind: 127.0.0.1 # opcjonalnie: adres nasłuchu gniazda zgód
+```
+
+- `read_bind`, `approve_bind`: literał IP, `localhost`, `0.0.0.0` albo `::`. Jawny bind wygrywa ze skrótem `local_only`
+  w tym samym źródle.
+- Brak sekcji = domyślne: odczyt na `0.0.0.0`, zgody na `127.0.0.1` (tryb dwóch gniazd, zob. [cli](cli.md)).
+- Nieznany klucz: `doctor` ostrzega, a `dashboard serve` kończy się BLOCKED z nazwą klucza. Zła wartość: błąd z nazwą klucza,
+  bez wartości w komunikacie.
 
 ## Sekcja `prototype`
 

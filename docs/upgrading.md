@@ -71,6 +71,25 @@ Wydanie 1.6.1 jest PATCH (sekcja **Breaking** w `CHANGELOG.md` to „None.”) z
 5. Konsument JSON-a `doctor`: `reason` znalezisk „Missing installed skill” i o dowiązaniu bez celu kończy się podpowiedzią `run skillsync link <projekt>`, więc dopasowuj początek tekstu. Raport `guard` może mieć pola `skipped` i `reason`.
 6. `layers check`, `doctor` i `link` ostrzegają (`rule-unreachable`) o wpisie `layer_rules`, którego `match` powtarza wcześniejszy: scal takie wpisy w jeden.
 
+## Przejście 1.7.0 → 1.8.0
+
+Wydanie 1.8.0 zmienia domyślny nasłuch strony statusu (`dashboard serve`); flagi i schematy JSON bez zmian. Sekcja
+**Breaking** w `CHANGELOG.md` opisuje tę zmianę.
+
+1. Rdzeń: `uv tool install --force git+https://github.com/BATUSystems/skillsync@v1.8.0`, potem `skillsync layers update core --ref v1.8.0`.
+2. Bez flag portów `dashboard serve <projekt>` działa jako dwa gniazda: odczyt na 5140 w sieci (wszystkie interfejsy), zgody na 5141
+   tylko na tej maszynie. Adres zgód z tokenem podaje `skillsync dashboard url <projekt>`.
+3. Kto uruchamiał `--read-port/--approve-port` i dawał zgody z telefonu lub innego komputera, dopisuje `--approve-bind 0.0.0.0`
+   (albo `approve_bind: 0.0.0.0` w sekcji `dashboard:`).
+4. Po staremu, tylko ta maszyna: `dashboard.local_only: true` w configu maszyny albo `--read-bind 127.0.0.1` przy starcie.
+   Stary tryb jednego portu zostaje: `skillsync dashboard serve <projekt> --port 5140`.
+5. Uruchom ponownie działający `skillsync dashboard serve`. Zatrzymaj stare procesy na portach 5140 i 5141 przed startem:
+   zajęty port daje BLOCKED z numerem portu i właścicielem.
+6. Wywołania `serve --host ADR` i `serve --approve-host NAZWA` bez portów kończą się BLOCKED z podpowiedzią (dotąd znaczyły
+   jeden port z bramką `Host`). Stary tryb, także za tunelem: `skillsync dashboard serve <projekt> --port 5140 --approve-host <nazwa tunelu>`;
+   nowy tryb: jawne flagi (`--read-bind`, `--approve-bind`, `--approve-port M --approve-host NAZWA`). `--host` przy dwóch portach
+   przesuwa tylko odczyt; zgody z sieci wymagają `--approve-bind 0.0.0.0`.
+
 ## Przejście 1.6.1 → 1.7.0
 
 Wydanie 1.7.0 jest MINOR (sekcja **Breaking** w `CHANGELOG.md` to „None.”): nowe elementy strony statusu i poprawki odczytu plików projektu.

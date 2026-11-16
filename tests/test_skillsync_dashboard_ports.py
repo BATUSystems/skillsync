@@ -716,19 +716,27 @@ class Flags(unittest.TestCase):
         mode = self.resolve(read_port=5151, approve_port=5152)
         self.assertEqual((mode["read"], mode["approve"]), ({"port": 5151, "bind": "0.0.0.0"}, {"port": 5152, "bind": "127.0.0.1"}))
 
-    def test_an_explicit_host_is_the_default_of_both_sockets(self) -> None:
-        mode = self.resolve(host="0.0.0.0")
-        self.assertEqual((mode["read"]["bind"], mode["approve"]["bind"]), ("0.0.0.0", "0.0.0.0"))
+    def test_an_explicit_host_moves_only_the_read_socket(self) -> None:
+        mode = self.resolve(read_port=5151, approve_port=5152, host="192.168.1.2")
+        self.assertEqual((mode["read"]["bind"], mode["approve"]["bind"]), ("192.168.1.2", "127.0.0.1"))
         self.assertFalse(mode["read_default"])
-        mode = self.resolve(host="")   # an explicit empty host keeps meaning every interface
-        self.assertEqual((mode["read"]["bind"], mode["approve"]["bind"]), ("0.0.0.0", "0.0.0.0"))
+        mode = self.resolve(read_port=5151, approve_port=5152, host="")   # an explicit empty host keeps meaning every interface
+        self.assertEqual((mode["read"]["bind"], mode["approve"]["bind"]), ("0.0.0.0", "127.0.0.1"))
+        with self.assertRaises(ValueError):   # no read socket: nothing for --host to move
+            self.resolve(approve_port=5152, host="127.0.0.1")
+
+    def test_calls_that_meant_one_port_with_a_host_gate_are_refused_with_a_hint(self) -> None:
+        for kwargs, hint in ((dict(host="0.0.0.0"), "--port N --host"), (dict(approve_host=["tunnel.example"]), "--port N --approve-host")):
+            with self.subTest(kwargs=kwargs), self.assertRaises(ValueError) as caught:
+                self.resolve(**kwargs)
+            self.assertIn(hint, str(caught.exception))
+        self.assertIsNone(self.resolve(port=5155, host="0.0.0.0", approve_host=["tunnel.example"]))   # the explicit old mode
+        self.assertIsNotNone(self.resolve(read_port=5151, approve_port=5152, approve_host=["phone.example"]))
 
     def test_narrowing_flags(self) -> None:
         mode = self.resolve(read_port=5151, approve_port=5152, approve_bind="0.0.0.0")
         self.assertEqual((mode["read"]["bind"], mode["approve"]["bind"]), ("0.0.0.0", "0.0.0.0"))
-        mode = self.resolve(read_port=5151, approve_port=5152, host="127.0.0.1")
-        self.assertEqual((mode["read"]["bind"], mode["approve"]["bind"]), ("127.0.0.1", "127.0.0.1"))
-        mode = self.resolve(read_port=5151, approve_port=5152, host="127.0.0.1", read_bind="0.0.0.0")
+        mode = self.resolve(read_port=5151, approve_port=5152, host="10.0.0.5", read_bind="0.0.0.0")
         self.assertEqual((mode["read"]["bind"], mode["approve"]["bind"]), ("0.0.0.0", "127.0.0.1"))
 
     def test_one_socket_alone(self) -> None:

@@ -187,33 +187,60 @@ Szczegóły: [workflow](workflow.md).
 | Komenda | Skutek |
 |---|---|
 | `dashboard show <projekt> [--json] [--plan <rel>]` | stan projektu jako JSON `schema: 1` ([dashboard-contract](dashboard-contract.md)); tylko odczyt |
-| `dashboard serve <projekt> [--port 5140] [--read-port 5140 --approve-port 5141] [--read-bind ADR] [--approve-bind ADR] [--allow-proxy-headers] [--prototype-port N] [--host H] [--approve-host H] [--read-host H] [--no-approvals] [--plan <rel>] [--session-url URL]` | strona statusu z żywym odświeżaniem (SSE) i przyciskami zgód; jedno gniazdo (`--port`, tryb bez zmian) albo dwa gniazda: odczyt i zgody (niżej) |
-| `dashboard url <projekt> [--port N] [--host NAZWA] [--read] [--json]` | adres z tokenem zgód (`http://127.0.0.1:<port>/#zgoda=<token>`) działającego `dashboard serve` projektu (z pliku stanu w katalogu danych maszyny); `--read`: adres gniazda odczytu, bez fragmentu i tokenu; `BLOCKED` (exit 2): `server_not_running`, `approvals_disabled` (serwer z `--no-approvals`), `ambiguous_server`, `host_not_allowed`, `invalid_project`; zob. [dashboard-contract](dashboard-contract.md) |
+| `dashboard serve <projekt> [--port N] [--read-port N --approve-port M] [--read-bind ADR] [--approve-bind ADR] [--allow-proxy-headers] [--prototype-port N] [--host H] [--approve-host H] [--read-host H] [--no-approvals] [--plan <rel>] [--session-url URL]` | strona statusu z żywym odświeżaniem (SSE) i przyciskami zgód. Bez flag portów: dwa gniazda, odczyt na `5140` (wszystkie interfejsy) i zgody na `5141` (tylko ta maszyna); `--port N`: jedno gniazdo (tryb jednego portu); `--read-port`/`--approve-port`: jawne numery (niżej) |
+| `dashboard url <projekt> [--port N] [--host NAZWA] [--read] [--lan] [--json]` | adres z tokenem zgód (`http://127.0.0.1:<port>/#zgoda=<token>`) działającego `dashboard serve` projektu (z pliku stanu w katalogu danych maszyny); `--read`: adres gniazda odczytu, bez fragmentu i tokenu; `--lan`: adresy gniazda odczytu dla innych urządzeń, jeden na linię (`http://<IP>:<port>/`; w `--json` pole `lanUrls`); `BLOCKED` (exit 2): `server_not_running`, `approvals_disabled` (serwer z `--no-approvals`), `ambiguous_server`, `host_not_allowed`, `invalid_project`, `read_not_exposed` (gniazdo odczytu słucha tylko na loopbacku, `--lan`); zob. [dashboard-contract](dashboard-contract.md) |
 | `dashboard metrics <projekt> <run-id> [--json] [--plan <rel>]` | czasy podkroków `Fn.k`, liczby rund i porażek przebiegu; podkrok bez danych jest oznaczony jawnie |
 | `approvals record <projekt> --word "GO plan\|GO implement\|CP\|READY" --run <run-id> --source cli\|ide [--sha SHA] [--file PLIK] [--target X] [--branch Y]` | zapis zgody użytkownika w `.skillsync/runs/<run-id>/approvals.jsonl` |
 | `approvals wait …` | czekanie na zgodę (odczyt tego samego pliku), opis w [workflow](workflow.md) |
 
-- `serve` wiąże się z `127.0.0.1`; port wybiera się per projekt (domyślnie 5140, dozwolone 5100–5199), żeby strony różnych
-  projektów nie kolidowały. Nagłówek `Host` jest sprawdzany na wszystkich endpointach: odczyt spoza loopbacku (tunel, LAN)
-  wymaga `--approve-host <nazwa>` (odczyt i zgody) albo `--read-host <nazwa>` (tylko odczyt z przeglądarki: widzowie przez tunel, także podgląd `/api/doc` (maskowany, ale maskowanie jest heurystyką); nie chroni przed klientem podrabiającym `Host`, nieufni widzowie = `--no-approvals`; `POST
+- Bez flag portów `serve` uruchamia tryb dwóch gniazd: odczyt na `5140` na wszystkich interfejsach (`0.0.0.0`), zgody na
+  `5141` tylko na `127.0.0.1` (zob. niżej). Port wybiera się per projekt (dozwolone 5100–5199), żeby strony różnych
+  projektów nie kolidowały. Nagłówek `Host` jest sprawdzany na wszystkich endpointach. Gniazdo odczytu przyjmuje loopback,
+  nazwy z `--approve-host` i `--read-host`, literały IP interfejsów tej maszyny oraz własną nazwę maszyny
+  (`socket.gethostname()`, jej krótką formę i `<krótka>.local`; dopasowanie tekstowe, bez DNS; tylko odczyt).
+  Gniazdo zgód przyjmuje loopback, nazwy z `--approve-host` i literały IP interfejsów tej maszyny; nazwy maszyny nie.
+  Odczyt spoza loopbacku w trybie jednego portu (`--port`) wymaga `--approve-host <nazwa>` (odczyt i zgody) albo
+  `--read-host <nazwa>` (tylko odczyt z przeglądarki: widzowie przez tunel, także podgląd `/api/doc` (maskowany, ale maskowanie jest heurystyką); nie chroni przed klientem podrabiającym `Host`, nieufni widzowie = `--no-approvals`; `POST
   /api/approve` = 403; obie flagi powtarzalne, nazwa bez portu); widok bez zapisu zgód dla wszystkich to `--no-approvals`.
   Zgody zapisuje serwer w tym samym
   procesie (bez podprocesu `skillsync`). Model zaufania: [domain/dashboard-server.md](domain/dashboard-server.md).
-- Tryb dwóch gniazd: `serve --read-port N --approve-port M` uruchamia dwa gniazda HTTP nad jednym stanem projektu (jeden
-  watcher, jedno Ctrl+C). Rola wynika z **portu**, nie z nagłówka `Host`. Gniazdo odczytu (`--read-port N`, przyjęty numer 5140)
-  ma strony i dane, bez trasy zgód (`POST /api/approve` = 404) i bez tokenu. Gniazdo zgód (`--approve-port M`, przyjęty
-  numer 5141; flagi nie mają wartości domyślnej, numer podaje się jawnie) wymaga tokenu, ścisłego `Origin`, odrzuca nagłówki pośrednika (`Forwarded`, `X-Forwarded-*`, `Via` i inne) i
-  zapisuje w `approvals.jsonl`, skąd przyszła zgoda (`via`). Samo `--read-port` albo samo `--approve-port` uruchamia
-  jedno gniazdo. `--port` nie łączy się z tymi flagami (BLOCKED, exit 2). Kolejność odmów, `Origin` i reguła `Host`:
+- Tryb dwóch gniazd: `serve` bez flag portów albo z `--read-port N --approve-port M` uruchamia dwa gniazda HTTP nad jednym
+  stanem projektu (jeden watcher, jedno Ctrl+C). Rola wynika z **portu**, nie z nagłówka `Host`. Gniazdo odczytu ma strony
+  i dane, bez trasy zgód (`POST /api/approve` = 404) i bez tokenu. Gniazdo zgód wymaga tokenu, ścisłego `Origin`, odrzuca
+  nagłówki pośrednika (`Forwarded`, `X-Forwarded-*`, `Via` i inne) i zapisuje w `approvals.jsonl`, skąd przyszła zgoda
+  (`via`). Numery bez flag portów: odczyt 5140, zgody 5141; przy jawnych `--read-port`/`--approve-port` podajesz numery sam
+  (flagi nie mają wartości domyślnej). Samo `--read-port` albo samo `--approve-port` uruchamia jedno gniazdo. `--port` nie
+  łączy się z tymi flagami (BLOCKED, exit 2). Kolejność odmów, `Origin` i reguła `Host`:
   [dashboard-contract](dashboard-contract.md), sekcja „Serwer”.
-- Nasłuch w trybie dwóch gniazd: oba domyślnie na `0.0.0.0`, z ostrzeżeniem w konsoli dla każdego gniazda poza
-  loopbackiem. `--read-bind` i `--approve-bind` zawężają każde gniazdo osobno (`127.0.0.1` = tylko ta maszyna), `--host`
-  ustawia oba. Tryb `--port` nasłuchuje na `127.0.0.1`. Ruch jest nieszyfrowany: token zgód idzie zwykłym
-  HTTP. W nieufnej sieci uruchom z `--approve-bind 127.0.0.1` albo wejdź tunelem SSH (`ssh -L 5141:127.0.0.1:5141 <host>`).
-  Tunel do strony zawsze kieruj na port odczytu, nigdy na port zgód. Ryzyko: [workflow](workflow.md), sekcja „Strona statusu”.
-- Uruchamianie dwóch gniazd: porty 5140 i 5141 muszą być wolne. Zatrzymaj wcześniejsze `dashboard serve` tego samego
-  hosta (także te z `--no-approvals`), zanim uruchomisz tryb dwóch gniazd. Jedno wywołanie z dwoma portami zastępuje
-  dwie instancje (jedna z `--no-approvals`); wywołania z `--port` działają bez zmian. `--allow-proxy-headers` działa
+- Nasłuch w trybie dwóch gniazd: odczyt domyślnie na `0.0.0.0` (każde urządzenie w sieci lokalnej), zgody domyślnie na
+  `127.0.0.1`. Odczyt: `--read-bind ADR` (flaga), potem `--host H` (tylko odczyt; `--host ''` = wszystkie interfejsy), potem
+  `dashboard:` w manifeście projektu, potem w configu maszyny, na końcu `0.0.0.0`. Zgody: `--approve-bind ADR`, potem
+  `dashboard:`, na końcu `127.0.0.1`; `--host` nie zmienia gniazda zgód. Adres `ADR`/`H`: literał IP, `localhost`, `0.0.0.0`
+  albo `::`. Tryb `--port` nasłuchuje na `127.0.0.1`, chyba że podano `--host`. Przy odczycie poza loopbackiem konsola wypisuje
+  jedno ostrzeżenie o dostępności dla urządzeń w sieci; zgody z innego urządzenia wymagają `--approve-bind 0.0.0.0` (lub
+  ustawienia), bo token idzie nieszyfrowanym HTTP. W nieufnej sieci zawęź odczyt do tej maszyny (`--read-bind 127.0.0.1`
+  albo `dashboard.local_only: true`). Port odczytu (5140) nie ma trasy zgód: tunel na zgody to jawne
+  `--approve-port M --approve-host <nazwa tunelu>` i tunel na port M (`ssh -L M:127.0.0.1:M <host>`); tunel do strony
+  zawsze kieruj na port odczytu. Ryzyko: [workflow](workflow.md), sekcja „Strona statusu”.
+- Stary tryb za tunelem: `serve --port 5140 --approve-host <nazwa tunelu>` (jeden port z bramką `Host`, jak do 1.7.0).
+  `--host` i `--approve-host` bez portów są BLOCKED z podpowiedzią, bo zmieniłyby znaczenie.
+- Ustawienie `dashboard:` (klucze `local_only: true|false`, `read_bind`, `approve_bind`) jest w configu maszyny
+  i w manifeście projektu, zob. [configuration](configuration.md) i [manifest](manifest.md#sekcja-dashboard).
+  Nieznany klucz: `doctor` ostrzega, `serve` BLOCKED z nazwą klucza; zła wartość: BLOCKED z nazwą klucza (nigdy z wartością).
+- Komunikaty startowe (konsola): przy odczycie poza loopbackiem jedno ostrzeżenie o dostępności dla każdego urządzenia w
+  sieci lokalnej (plany, specyfikacje, wyniki, sekrety zredagowane heurystycznie, ruch nieszyfrowany) z podpowiedzią
+  `--read-bind 127.0.0.1` albo `dashboard.local_only: true`; jedno zdanie o zmianie domyślnego nasłuchu (od 1.8.0) i powrocie
+  flagą `--read-bind 127.0.0.1`, wypisywane tylko przez wydania przed 1.10; adresy IPv4 maszyny po jednym w linii (sieć
+  tylko-IPv6 ich nie dostanie) plus adres po nazwie maszyny (`http://<nazwa>.local:5140/`); nazwa maszyny w komunikacie;
+  linia o zgodach tylko lokalnych z podpowiedzią `--approve-bind 0.0.0.0`. Gdy oba gniazda słuchają na loopbacku, konsola
+  pisze, że strona jest tylko na tej maszynie. Na Windows, przy pierwszym nasłuchu na `0.0.0.0`, konsola dodaje linię o Zaporze
+  Windows; macOS z zaporą aplikacji może też zapytać o dostęp przy pierwszym nasłuchu.
+- Uruchamianie dwóch gniazd: porty 5140 i 5141 muszą być wolne. Przed bindem każdy port jest sprawdzany połączeniem na loopback
+  (na każdym systemie); gdy coś już odpowiada, start kończy się BLOCKED z numerem portu, flagami `--read-port`/`--approve-port`
+  i właścicielem (projekt z plików stanu albo „inny proces”); serwer nie przechodzi na inny port. Zatrzymaj
+  wcześniejsze `dashboard serve` tego samego hosta (także te z `--no-approvals`), zanim uruchomisz tryb dwóch gniazd.
+  Jedno wywołanie z dwoma portami zastępuje dwie instancje (jedna z `--no-approvals`); wywołania z `--port` działają bez
+  zmian. `--port` z `--read-bind`, `--approve-bind` albo `--allow-proxy-headers` = BLOCKED. `--allow-proxy-headers` działa
   tylko z `--approve-port`; `--read-host '*'` tylko na gnieździe odczytu.
 - `approvals record` jest jedynym zapisem zgód: blokada plikowa, odmowa duplikatu (to samo słowo i `sha` w przebiegu), maskowanie
   sekretów. Słowo wpisuje użytkownik; agent tej komendy nie wywołuje.

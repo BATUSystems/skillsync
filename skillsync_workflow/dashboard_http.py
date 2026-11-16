@@ -18,6 +18,7 @@ application/json`, body <= 4096 bytes; `--no-approvals` turns it off. Standard l
 """
 from __future__ import annotations
 
+import errno
 import hmac
 import html
 import json
@@ -868,6 +869,14 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
         self.wfile.flush()
 
 
+def _version_tuple(version: str) -> tuple[int, ...]:
+    parts = []
+    for piece in str(version).split(".")[:2]:
+        digits = "".join(ch for ch in piece if ch.isdigit())
+        parts.append(int(digits) if digits else 0)
+    return tuple(parts)
+
+
 def exclusive_option():
     """`SO_EXCLUSIVEADDRUSE` on Windows, None elsewhere."""
     return getattr(socket, "SO_EXCLUSIVEADDRUSE", None) if os.name == "nt" else None
@@ -1123,6 +1132,8 @@ def _serve_ports(args, mode: dict) -> int:
             spec = mode[role]
             if spec:
                 failing = spec["port"]
+                if ports.port_taken(spec["bind"], spec["port"]):
+                    raise OSError(errno.EADDRINUSE, "Address already in use")
                 servers.append((role, make_server(board, spec["bind"], spec["port"], args.verbose, role=role, peer_port=peer,
                                                   allow_proxy_headers=mode["allow_proxy"] and role == ports.ROLE_APPROVE), spec["port"], spec["bind"]))
                 failing = None
@@ -1171,7 +1182,7 @@ def _serve_ports(args, mode: dict) -> int:
                     log(f"UWAGA: port odczytu {port} słucha na {bind}: odczyt jest dostępny dla każdego urządzenia w tej sieci lokalnej (plany, spece, "
                         f"wyniki; tajne dane zredagowane heurystycznie; ruch nieszyfrowany). W nieufnej sieci uruchom z --read-bind 127.0.0.1 "
                         f"albo ustaw dashboard.local_only: true w configu maszyny.")
-                    if mode.get("read_default"):
+                    if mode.get("read_default") and _version_tuple(__version__) < ports.LISTEN_NOTE_UNTIL:
                         log("  od 1.8.0 odczyt słucha domyślnie na wszystkich interfejsach; poprzedni nasłuch tylko lokalny przywraca "
                             "--read-bind 127.0.0.1 albo dashboard.local_only: true.")
                 if bind in ("0.0.0.0", "::", ""):

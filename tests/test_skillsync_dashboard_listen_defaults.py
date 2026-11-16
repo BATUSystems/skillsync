@@ -8,6 +8,7 @@ import io
 import json
 import os
 import shutil
+import socket
 import sys
 import tempfile
 import unittest
@@ -45,9 +46,9 @@ class Resolve(unittest.TestCase):
         mode = self.resolve(settings)
         self.assertEqual((mode["read"]["bind"], mode["approve"]["bind"]), ("127.0.0.1", "10.0.0.5"))
         self.assertFalse(mode["read_default"])
-        mode = self.resolve(settings, host="192.168.1.2")
-        self.assertEqual((mode["read"]["bind"], mode["approve"]["bind"]), ("192.168.1.2", "192.168.1.2"))
-        mode = self.resolve(settings, host="192.168.1.2", read_bind="0.0.0.0", approve_bind="127.0.0.1")
+        mode = self.resolve(settings, read_port=5151, approve_port=5152, host="192.168.1.2")   # --host: the read socket only
+        self.assertEqual((mode["read"]["bind"], mode["approve"]["bind"]), ("192.168.1.2", "10.0.0.5"))
+        mode = self.resolve(settings, read_port=5151, approve_port=5152, host="192.168.1.2", read_bind="0.0.0.0", approve_bind="127.0.0.1")
         self.assertEqual((mode["read"]["bind"], mode["approve"]["bind"]), ("0.0.0.0", "127.0.0.1"))
 
     def test_the_consent_socket_is_never_beyond_loopback_without_a_flag_or_a_setting(self) -> None:
@@ -56,6 +57,33 @@ class Resolve(unittest.TestCase):
                 mode = self.resolve(**kwargs)
                 if mode["approve"]:
                     self.assertTrue(ports.is_loopback_bind(mode["approve"]["bind"]), mode)
+
+
+class PortTaken(unittest.TestCase):
+    def test_something_listening_is_taken_whatever_the_bind_and_nothing_is_free(self) -> None:
+        with socket.socket() as holder:
+            holder.bind(("127.0.0.1", 0))
+            holder.listen(1)
+            port = holder.getsockname()[1]
+            self.assertTrue(ports.port_taken("127.0.0.1", port))
+            self.assertTrue(ports.port_taken("0.0.0.0", port))   # a wildcard bind is probed through loopback
+        self.assertFalse(ports.port_taken("0.0.0.0", port))
+        self.assertFalse(ports.port_taken("127.0.0.1", 0))
+
+    def test_serve_refuses_a_port_that_answers_before_it_binds(self) -> None:
+        with mock.patch.object(ports, "port_taken", return_value=True), mock.patch.object(srv, "make_server", side_effect=AssertionError("bound")):
+            tmp = Path(tempfile.mkdtemp(prefix="dashboard-taken-"))
+            self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+            project = make_project(tmp)
+            manifest = project / srv.MANIFEST
+            manifest.parent.mkdir(parents=True, exist_ok=True)
+            manifest.write_text("skills: [dashboard]\n", encoding="utf-8")
+            out = io.StringIO()
+            with mock.patch("sys.stdout", new=out), mock.patch.dict(os.environ, {"XDG_DATA_HOME": str(tmp / "d"), "SKILLSYNC_CONFIG": str(tmp / "c.yaml")}):
+                srv.serve_command(args(path=str(project), layers=[f"core={ROOT / 'library'}"]))
+        answer = json.loads(out.getvalue())
+        self.assertEqual(answer["status"], "BLOCKED")
+        self.assertIn("--read-port", answer["reason"])
 
 
 class Setting(unittest.TestCase):

@@ -12,6 +12,24 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Added
+
+- Status page: a `dashboard:` section in the machine config and in the project manifest sets where `dashboard serve` listens: `local_only: true|false` (true: both sockets on 127.0.0.1; false: no preference), `read_bind` and `approve_bind` (a literal IP, `localhost`, `0.0.0.0` or `::`). An explicit bind wins over the `local_only` shortcut of the same source. Precedence: CLI flag (`--read-bind`/`--approve-bind`; for the read socket then `--host`, which never moves the consent socket) over the manifest over the machine config over the defaults. An unknown key: `doctor` warns and `serve` is BLOCKED with the key name; a bad value: an error with the key name, never the value. No environment variable for this setting.
+- `dashboard url --lan`: prints the addresses of the read socket for other devices, one per line (`http://<IP>:<port>/`); in `--json` the new field `lanUrls`. BLOCKED `read_not_exposed` (exit 2) when the read socket listens on loopback only.
+- State files of `dashboard serve` have a new field `bind`: the address the socket really listens on.
+- The read socket accepts its own machine name as the `Host` header (`socket.gethostname()`, its short form and `<short>.local`): a text match without DNS, case-insensitive, read-only; an empty or localhost-like name is ignored, and a full name with another suffix (for example `laptop.lan`) still gets 403 (add it with `--read-host`). The consent socket is unchanged (loopback and `--approve-host`).
+- Windows: both sockets of the two-port mode get `SO_EXCLUSIVEADDRUSE`, so a second process cannot take over the narrower address; the first bind on `0.0.0.0` triggers the Windows Firewall prompt (allowing it on a private network gives a view from a phone, refusing keeps the page local).
+
+### Changed
+
+- Startup messages of `dashboard serve`: one warning per read socket that listens beyond loopback (plans, specifications, results, secrets masked heuristically, unencrypted traffic) with the hint `--read-bind 127.0.0.1` or `dashboard.local_only: true`; a line about the default listen address change and how to return to it with `--read-bind 127.0.0.1`, printed only by releases before 1.10; the machine's IPv4 addresses (one per line; an IPv6-only network gets none) plus the address by machine name (`http://<name>.local:5140/`) and the machine name itself; a line that consent is local-only with the hint `--approve-bind 0.0.0.0` (the token travels over unencrypted HTTP); "page on this machine only" when both sockets listen on loopback; on macOS the application firewall may also ask for access at the first listen.
+- A busy port of `dashboard serve` is BLOCKED with the port number, the flags to change (`--read-port`/`--approve-port`) and its owner (the project from the state files, or "another process"). Before each bind every port is probed with a loopback connection on every system, because on macOS/BSD and Windows a narrower address can bind next to someone else's wildcard one. The server does not move to another port.
+- `--host` in the two-port mode moves only the read socket; the consent socket stays on 127.0.0.1 until `--approve-bind` or `approve_bind` is set.
+
+### Breaking
+
+- Default listen address of the status page: two-port mode (a change of behaviour, no change of flags or schemas). `skillsync dashboard serve <project>` without port flags now runs two sockets: the read socket on port 5140 on all interfaces (`0.0.0.0`) and the consent socket on port 5141 on `127.0.0.1` only. Before, one socket on 127.0.0.1 served both roles. Migration: (1) without flags the read socket is in the network and the consent address with its token is `skillsync dashboard url <project>`; (2) whoever ran `--read-port/--approve-port` and gave consents from a phone must add `--approve-bind 0.0.0.0`; (3) to keep the old behaviour (this machine only) set `dashboard.local_only: true` in the machine config or pass `--read-bind 127.0.0.1`; the single-port mode stays available as `--port 5140`. (4) `serve --host ADDR` and `serve --approve-host NAME` without port flags now end with BLOCKED and a hint (they used to mean one port with the `Host` gate); the old mode, also behind a tunnel, is `serve --port 5140 --approve-host <tunnel name>`; in the two-port mode `--host` moves only the read socket, and consents from the network need `--approve-bind 0.0.0.0`.
+
 ## [1.7.0] - 2026-11-16
 
 ### Added
