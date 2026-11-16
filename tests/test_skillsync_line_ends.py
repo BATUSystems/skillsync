@@ -175,7 +175,7 @@ class ProjectAtEveryLineEnd(unittest.TestCase):
 
     @staticmethod
     def comparable(value):
-        volatile = {'mtime', 'fileSha', 'sha', 'generatedAt', 'updated', 'size', 'since', 'path', 'root'}
+        volatile = {'mtime', 'fileSha', 'sha', 'generatedAt', 'updated', 'size', 'since', 'path', 'root', 'lastUpdate', 'lastReportAt'}   # bytes, paths and file times differ by construction
         if isinstance(value, dict):
             return {key: ProjectAtEveryLineEnd.comparable(item) for key, item in value.items() if key not in volatile}
         if isinstance(value, list):
