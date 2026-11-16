@@ -13,7 +13,7 @@ import tempfile
 import time
 import yaml
 
-from .common import add_project_arguments, decode_text, plan_section, read_project, redact
+from .common import add_project_arguments, decode_text, file_lines, plan_section, read_project, redact
 from .delivery_mode import delivery_info
 from .layers import add_layer_argument
 from .storage import read_json
@@ -482,7 +482,7 @@ def read_approvals(root, findings=None):
         try:
             if path.stat().st_size > MAX_APPROVALS_BYTES:
                 raise ValueError(f'over {MAX_APPROVALS_BYTES // 1024} KiB')
-            lines = path.read_text(encoding='utf-8', errors='replace').splitlines()
+            lines = file_lines(path.read_text(encoding='utf-8', errors='replace'))
         except (OSError, ValueError) as error:
             if findings is not None:
                 findings.append(f'Approvals unreadable: {path.parent.name} ({_message(error, 120)})')
@@ -787,7 +787,7 @@ def _lock_module():
 def _approval_entries(path):
     """Parseable dict lines of an approvals file (for the duplicate check, before the read rules of `read_approvals`)."""
     rows = []
-    for line in path.read_text(encoding='utf-8', errors='replace').splitlines():
+    for line in file_lines(path.read_text(encoding='utf-8', errors='replace')):
         try:
             item = json.loads(line)
         except ValueError:

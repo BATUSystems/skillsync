@@ -351,6 +351,20 @@ def plan_section(text, name):
     return '\n'.join(body).strip('\n') if '\n'.join(body).strip() else ''
 
 
+_LINE_END = re.compile(r'\r\n|\r|\n')
+
+
+def file_lines(text):
+    """Lines of the text of a project file, like `str.splitlines()` for CRLF, LF and a lone CR (the line ends of git, editors and
+    `render_markdown`), but NEVER at the other characters that `splitlines()` treats as line ends: VT, FF, FS, GS, RS, NEL (U+0085), LS (U+2028)
+    and PS (U+2029). Those arrive in text pasted from documents and web pages, stay inside the line and must not cut a step title, a header value, a
+    checkpoint or a JSON string. No empty last element after a final line end (as `splitlines()`)."""
+    lines = _LINE_END.split(text)
+    if lines and lines[-1] == '':
+        lines.pop()
+    return lines
+
+
 def detect_eol(text):
     """Line ending of the last line of `text` ("\\r\\n" or "\\n"); LF for an empty text or one without a newline."""
     last_lf = text.rfind("\n")
