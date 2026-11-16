@@ -460,9 +460,9 @@ def read_approvals(root, findings=None):
             if at is None or not _APPROVAL_SHA.match(sha):
                 continue
             row = {'run': path.parent.name, 'word': item['word'], 'at': at.strftime('%Y-%m-%dT%H:%M:%SZ'), 'sha': sha,
-                   'source': str(item.get('source') or '')[:40]}
+                   'source': redact(str(item.get('source') or ''))[:40]}
             if isinstance(item.get('file'), str):
-                row['file'] = item['file'][:300]
+                row['file'] = redact(item['file'])[:300]
             key = (row['run'], row['word'])
             if key not in latest or latest[key]['at'] <= row['at']:
                 latest[key] = row
@@ -795,7 +795,7 @@ def record_approval(root, word, run_id, sha=None, source='cli', target=None, bra
             raise ValueError('via must be an object (port, host, peer)')
         moment = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
         entry = {'schema': SCHEMA, 'at': moment.strftime('%Y-%m-%dT%H:%M:%SZ'), 'word': word, 'sha': sha,
-                 'by': str(by if by is not None else _approval_user())[:80], 'source': source}
+                 'by': redact(str(by if by is not None else _approval_user()))[:80], 'source': source}
         extra = {'file': file, 'shaAfter': sha_after, 'run': run_id, 'plan': plan, 'target': target, 'branch': branch, 'ahead': ahead, 'mode': mode, 'via': via}
         entry.update({key: value for key, value in extra.items() if value is not None})
         entry = redact(entry)

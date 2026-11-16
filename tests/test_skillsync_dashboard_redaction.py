@@ -12,6 +12,7 @@ import unittest
 import urllib.parse
 import urllib.request
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -256,6 +257,22 @@ class StatusModuleMasksBeforeCutting(base.ProjectCase):
                 summary = status.plan_summary(f"# Plan: x\n\nStatus: draft\n\n## Streszczenie dla człowieka\n{body}\n\n## Cel\nc\n")
                 self.assertIsNotNone(summary)
                 self.assert_masked(summary, name)
+
+    def test_approval_fields_are_masked_before_they_are_cut(self) -> None:
+        run = self.root / base.RUN
+        entry = {"word": "GO plan", "at": "2026-01-10T10:30:00+01:00", "sha": "abc1234def5678", "by": "ktoś",
+                 "source": "s" * 36 + SIMPLE_SECRET, "file": "f" * 295 + SIMPLE_SECRET}
+        (run / "approvals.jsonl").write_text(json.dumps(entry) + "\n", encoding="utf-8")
+        with mock.patch.dict("os.environ", {"STATUSBOARD_TEST_PAT_TOKEN": SIMPLE_SECRET}):
+            rows = status.read_approvals(self.root)
+            self.assertTrue(rows)
+            for row in rows:
+                for field in ("source", "file"):
+                    self.assertNotIn(SIMPLE_SECRET[:4], row[field], field)   # no prefix of the secret at the cut
+            record = status.record_approval(self.root, "CP", run.name, sha="0123456789abcdef", by="b" * 75 + SIMPLE_SECRET, source="cli")
+            self.assertEqual(record["status"], "PASS", record)
+            written = (run / "approvals.jsonl").read_text(encoding="utf-8").splitlines()[-1]   # the line the writer appended (the first one is the planted entry)
+            self.assertNotIn(SIMPLE_SECRET[:4], written)
 
     def test_error_messages_are_masked_before_the_cut(self) -> None:
         message = status._message(OSError("x " * 245 + f" {ENV_SECRET} password: {PATTERN_SECRET}"), 500)
