@@ -87,6 +87,7 @@ RUN = ".skillsync/runs/2026-01-10-demo-etap-1"
 
 
 def make_project(base: Path) -> Path:
+    base.resolve().relative_to(Path(tempfile.gettempdir()).resolve())   # the project is built under the temporary directory only (a name that is a path of its own would escape it)
     root = base / "proj"
     for rel, src in [
         (PLAN, "plan.md"),
