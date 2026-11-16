@@ -17,7 +17,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests"))
 
 from skillsync_workflow import dashboard_token  # noqa: E402
-from serve_start import bind_free, own_state  # noqa: E402
+from serve_start import bind_free, kill_tree, lost_bind, own_state, state_snapshot  # noqa: E402
 
 
 class OwnState(unittest.TestCase):
@@ -70,6 +70,60 @@ class OwnState(unittest.TestCase):
         self.write("a")
         self.assertFalse(own_state(self.env, self.proc, 5190, None, self.started, windows=True))
         self.assertFalse(own_state(self.env, self.proc, 5190, self.root, None, windows=True))
+
+    def test_windows_a_leftover_of_the_same_root_and_port_that_did_not_change_is_not_ours(self):
+        """SV1: the killed predecessor leaves a fresh-looking file; only a file written after `Popen` counts."""
+        self.write("a")
+        before = state_snapshot(self.env)
+        self.assertTrue(before)
+        self.assertFalse(own_state(self.env, self.proc, 5190, self.root, self.started, windows=True, before=before))
+        self.assertTrue(own_state(self.env, self.proc, 5190, self.root, self.started, windows=True, before={}))
+        path = next(iter(before))
+        os.utime(path, ns=(before[path] + 10**9, before[path] + 10**9))   # the new server rewrites the same file
+        self.assertTrue(own_state(self.env, self.proc, 5190, self.root, self.started, windows=True, before=before))
+
+
+class KillTree(unittest.TestCase):
+    def proc(self, alive=True):
+        proc = mock.Mock(pid=4242)
+        proc.poll.return_value = None if alive else 0
+        return proc
+
+    def test_windows_kills_the_tree_of_our_own_pid_by_the_system_path(self):
+        proc = self.proc()
+        with mock.patch.dict(os.environ, {"SystemRoot": r"C:\Windows"}), mock.patch("serve_start.subprocess.run") as run:
+            kill_tree(proc, windows=True)
+        command = run.call_args.args[0]
+        self.assertEqual(command[1:], ["/T", "/F", "/PID", "4242"])
+        self.assertTrue(command[0].lower().endswith("taskkill.exe") and "system32" in command[0].lower(), command)
+        proc.kill.assert_called_once()   # still alive in the mock: the launcher is killed too
+
+    def test_windows_falls_back_to_kill_when_taskkill_is_missing(self):
+        proc = self.proc()
+        with mock.patch("serve_start.subprocess.run", side_effect=FileNotFoundError):
+            kill_tree(proc, windows=True)
+        proc.kill.assert_called_once()
+
+    def test_posix_does_not_call_taskkill(self):
+        proc = self.proc()
+        with mock.patch("serve_start.subprocess.run") as run:
+            kill_tree(proc, windows=False)
+        run.assert_not_called()
+        proc.kill.assert_called_once()
+
+    def test_a_finished_process_is_left_alone(self):
+        proc = self.proc(alive=False)
+        with mock.patch("serve_start.subprocess.run") as run:
+            kill_tree(proc, windows=True)
+        run.assert_not_called()
+        proc.kill.assert_not_called()
+
+
+class LostBind(unittest.TestCase):
+    def test_only_a_blocked_listen_is_retried(self):
+        self.assertTrue(lost_bind('{"status": "BLOCKED", "reason": "nie można nasłuchiwać na 127.0.0.1:5190 (Address already in use)"}'))
+        self.assertFalse(lost_bind('{"status": "BLOCKED", "reason": "--plan: nieznany plik"}'))   # SV4: a configuration error is not retried
+        self.assertFalse(lost_bind("Traceback"))
 
 
 class BindFree(unittest.TestCase):

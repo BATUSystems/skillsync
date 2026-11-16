@@ -655,11 +655,10 @@ class ServeWritesAndRemovesTheState(unittest.TestCase):
             def log_message(self, *args):
                 pass
 
-        foreign = ThreadingHTTPServer(("127.0.0.1", 0), Foreign)
+        foreign, taken = bind_free(lambda port: ThreadingHTTPServer(("127.0.0.1", port), Foreign), free_port)   # a port of the pool: the server accepts it
         threading.Thread(target=foreign.serve_forever, daemon=True).start()
         self.addCleanup(foreign.server_close)
         self.addCleanup(foreign.shutdown)
-        taken = foreign.server_address[1]
         first = [taken]
         real = free_port
         with mock.patch.object(sys.modules[__name__], "free_port", lambda: first.pop() if first else real()):
