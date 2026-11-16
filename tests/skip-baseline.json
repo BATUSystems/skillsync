@@ -865,7 +865,7 @@
     "category": "no-os-symlinks"
    },
    {
-    "id": "test_skillsync_normalize_files.NormalizeFilesLinks.test_dotdot_through_a_link_follows_the_real_directory",
+    "id": "test_skillsync_normalize_files.NormalizeFilesLinks.test_dotdot_after_a_link_follows_the_real_directory_on_posix",
     "category": "no-os-symlinks"
    },
    {

@@ -26,7 +26,7 @@ class Base(unittest.TestCase):
         (self.root / 'docs').mkdir()
         (self.root / 'docs' / 'a.md').write_text('a\n', encoding='utf-8')
 
-    def refused(self, *paths):
+    def assert_refused(self, *paths):
         for path in paths:
             with self.subTest(path=path), self.assertRaises(ValueError):
                 normalize_files(self.root, [path])
@@ -36,7 +36,7 @@ class NormalizeFilesPlain(Base):
     """No links: the same answers on every system."""
 
     def test_dotdot_and_absolute_paths_outside_are_escapes(self):
-        self.refused('../x.md', 'docs/../../x.md', '..', 'docs/../..', str(self.tmp / 'other.md'), str(self.tmp))
+        self.assert_refused('../x.md', 'docs/../../x.md', '..', 'docs/../..', str(self.tmp / 'other.md'), str(self.tmp))
 
     def test_dotdot_inside_the_project_and_an_absolute_path_inside_are_normalized(self):
         self.assertEqual(normalize_files(self.root, ['docs/../docs/a.md', str(self.root / 'docs' / 'a.md'), 'docs/..']),
@@ -54,7 +54,7 @@ class NormalizeFilesPlain(Base):
     def test_a_backslash_follows_the_rules_of_the_system(self):
         if os.name == 'nt':   # a separator
             self.assertEqual(normalize_files(self.root, ['docs\\a.md']), ['docs/a.md'])
-            self.refused('..\\x.md')
+            self.assert_refused('..\\x.md')
         else:                 # an ordinary character of the name: a file of the project, never an escape
             self.assertEqual(normalize_files(self.root, ['docs\\a.md', '..\\x.md']), ['docs\\a.md', '..\\x.md'])
 
@@ -85,15 +85,22 @@ class NormalizeFilesLinks(Base):
         self.assertEqual(normalize_files(self.root, ['dangling']), ['dangling'])
 
     def test_a_directory_link_to_the_outside_in_the_middle_is_an_escape(self):
-        self.refused('linkdir/skills/foo/SKILL.md', 'linkdir/x.md', 'linkdir/new/deep.md')
+        self.assert_refused('linkdir/skills/foo/SKILL.md', 'linkdir/x.md', 'linkdir/new/deep.md')
 
     def test_a_link_in_the_middle_that_points_back_into_the_project_is_followed(self):
         os.symlink(self.root / 'docs', self.root / 'alias', target_is_directory=True)
         self.assertEqual(normalize_files(self.root, ['alias/a.md']), ['docs/a.md'])
 
-    def test_dotdot_through_a_link_follows_the_real_directory(self):
-        # `.github/skills/foo/..` is the real parent of the layer skill (outside), not `.github/skills`: in the middle and as the last component
-        self.refused('.github/skills/foo/../x.md', '.github/skills/foo/..', 'linkdir/..')
+    def test_dotdot_after_a_link_follows_the_real_directory_on_posix(self):
+        # POSIX: `.github/skills/foo/..` is the real parent of the layer skill (outside), not `.github/skills`: in the middle and as the last component.
+        # Windows collapses `..` lexically before it looks at links (Win32 path normalization, the same for every program), so the path of the
+        # project `.github/skills/foo/../x.md` IS `.github/skills/x.md` there: no escape, and the check agrees with what the system opens.
+        paths = ('.github/skills/foo/../x.md', '.github/skills/foo/..', 'linkdir/..')
+        if os.name != 'nt':
+            self.assert_refused(*paths)
+        else:
+            for name in normalize_files(self.root, list(paths)):
+                self.assertFalse(os.path.isabs(name) or '..' in name.split('/'), name)
 
     def test_a_file_through_a_project_symlink_to_a_project_file_keeps_its_own_name(self):
         os.symlink(self.root / 'docs' / 'a.md', self.root / 'b.md')
