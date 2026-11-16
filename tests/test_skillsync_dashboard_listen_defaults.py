@@ -250,9 +250,10 @@ class ServeCommand(unittest.TestCase):
             calls, answer = self.run_serve()   # the second socket (consents, 5163) fails: the state file names its owner
         self.assertIn("port 5163 trzyma projekt other-project (zgody)", answer["reason"])
         self.assertNotIn(str(other), answer["reason"])
-        self.assertEqual(dashboard_token.port_owner(5163), "projekt other-project (zgody)")
         self.assertNotIn("t" * 32, answer["reason"])
-        self.assertIsNone(dashboard_token.port_owner(5199))
+        with mock.patch.object(dashboard_token, "_windows", return_value=False):
+            self.assertEqual(dashboard_token.port_owner(5163), "projekt other-project (zgody)")
+            self.assertIsNone(dashboard_token.port_owner(5199))
 
 
 class SmallRules(unittest.TestCase):
