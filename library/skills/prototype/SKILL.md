@@ -34,7 +34,7 @@ a zakres prac zmienia tylko użytkownik. Zwykła prośba o zmianę ekranu protot
 3. Przed pierwszą edycją ekranów wykonaj `skillsync prototype writing <projekt> <slug> start --screens <N>` (N = ile ekranów zamierzasz napisać; sekcja „Zapis ekranów”
    niżej; starszy rdzeń nie zna `--screens`: powtórz bez niego, strona pokaże pasek bez mianownika); potem zastąp ekran przykładowy własnymi ekranami w `index.html` (wzorce: [references/screen-patterns.md](references/screen-patterns.md),
    styl: [references/style.md](references/style.md)). Własne style wpisuj w `project.css` (ostatni arkusz, po `screens.css`).
-4. Gdy zmienił się motyw projektu, `skillsync prototype sync <projekt> [<slug>]` odświeża `tokens.css` i `theme.css`.
+4. Gdy zmienił się motyw projektu, `skillsync prototype sync <projekt> [<slug>]` odświeża `tokens.css` i `theme.css`. `sync --check` kończy się FAIL także wtedy, gdy motyw nie definiuje wymaganych tokenów (pole `missing`). Klucz `prototype.dark_theme: false` w manifeście wyłącza ciemny motyw i przycisk „Motyw” (po zmianie: `prototype migrate`).
 5. `skillsync prototype ids <projekt> <slug> --check` kontroluje uchwyty; `--fix` dopisuje brakujące bez zmiany wyglądu.
 6. Przed zgłoszeniem „gotowy do akceptacji” sprawdź, że slug jest na stronie głównej `serve` (`prototype list`
    czyta katalogi, nie galerię), a dopiero potem wykonaj `skillsync prototype writing <projekt> <slug> done`. Pokaż prototyp (`skillsync prototype serve`, niżej), zbierz uwagi i przejdź do decyzji po przeglądzie.

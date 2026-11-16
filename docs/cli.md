@@ -293,6 +293,8 @@ przebiegu (bez serwera). Odpowiadać może tylko człowiek z rolą `expert` na s
 Model, limity i strona: [prototypes](prototypes.md#pytania-do-eksperta), poufność: [security](security.md).
 
 ```bash
+skillsync prototype serve . --demo                                                       # pokaz tylko do odczytu bez kont, każdy interfejs (--host 127.0.0.1 zawęża)
+skillsync prototype sync . --check                                                       # FAIL (kod 1): nieaktualne pliki albo brak wymaganych tokenów motywu (pole `missing`)
 skillsync prototype user add . ewa.ekspert@example.com --role expert --password-prompt   # konto eksperta
 skillsync prototype user roles . ewa.ekspert@example.com --role expert --role commenter  # zastępuje zbiór ról
 skillsync prototype question url .                                                       # adres strony i liczba kont expert

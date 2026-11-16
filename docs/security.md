@@ -86,6 +86,10 @@ przywracania, usuwania ani `/project`.
 - `questions.json` (i `questions.json.lock`) nigdy nie są serwowane statycznie (404, także z sesją; dotyczy to `<root>/questions.json` i `<root>/<slug>/questions.json`, także za dowiązaniem w przebiegu; głębiej zagnieżdżony plik o tej nazwie jest zwykłym plikiem prototypu). Pytania zwracają tylko trasy `/_api/v1/questions*` i `/_api/v1/prototypes/<slug>/questions*`, zawsze z sesją
   (także bez `--login-to-view`); filtr adresatów działa w serwerze, a cudzego pytania ekspert nie
   odróżnia od nieistniejącego (404). Konto z hasłem domyślnym (`mustChange`) dostaje 403 na wszystkich trasach pytań.
+- Pokaz `prototype serve --demo` nie ma kont, sesji ani ciasteczek i niczego nie zapisuje: bramka w jednym miejscu (przed sesją i trasami) odpowiada `405 demo_read_only` na każdą metodę inną niż `GET`/`HEAD`,
+  z API zostaje tylko `GET /_api/v1/session`, a `/_*` i reszta `/_api/*` to `404`. Statyka pokazu to lista dodatnia (ekrany, silnik, arkusze, media, `prototype.json` okrojony do `slug` i `title`): nie wydaje `comments.json`, `comments.js`,
+  `README.md`, `iterations/`, `questions.json` ani dot-plików, także przez dowiązanie lub zapis ścieżki z `%2e`, ukośnikiem odwrotnym albo inną wielkością liter. Domyślnie słucha na `0.0.0.0`, a komunikat startowy mówi, że strona jest jawna.
+  Nagłówek `Host` nie jest sprawdzany: pokaz nie ma uprawnień ani danych kont, które przejęłaby strona obca (rebinding daje to samo co bezpośrednie żądanie do tego adresu: jawną treść tylko do odczytu); przy `--host 127.0.0.1` obca strona w przeglądarce użytkownika mogłaby przez rebinding odczytać prototypy, ale nie ich komentarze ani konta, bo ich nie wydajemy.
 - Poufność statycznych prototypów i `comments.json` zapewnia dopiero `--login-to-view`; przy kontach `expert` bez niego serwer ostrzega przy starcie.
   Poza zaufaną siecią serwer stoi za proxy z TLS ([prototypes](prototypes.md#serwer-w-sieci)).
 - Skan sekretów przy `question add` jest heurystyką (znane kształty tokenów, URL z hasłem, pary `nazwa=wartość`): może pominąć sekret i może się
