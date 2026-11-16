@@ -509,6 +509,10 @@
     "category": "posix-only"
    },
    {
+    "id": "test_skillsync_console_close.ClosingTheConsoleWindowOnWindows.test_a_child_with_a_hidden_console_cleans_up_when_its_window_is_closed",
+    "category": "windows-only"
+   },
+   {
     "id": "test_skillsync_dashboard_approve_token.HealthAndLeftovers.test_a_dead_process_leftover_is_removed",
     "category": "posix-only"
    },
