@@ -287,6 +287,8 @@ def guard(root, manifest, library, files=None, run=False):
     result = {'status': 'FAIL' if any(item['severity'] == 'error' for item in findings) else 'PASS' if scanned else 'NOT_RUN', 'findings': findings, 'scanned': scanned}
     if skipped:
         result['skipped'] = skipped
+        if result['status'] == 'NOT_RUN':   # only links were covered by a rule (the usual state after `link` in a project that tracks them): not an unchecked change
+            result.update(status='PASS', reason='No content was checked: every file covered by a guard rule is a link (see skipped)')
     if checks:
         local = dict(manifest)
         local['workflow'] = dict(manifest.get('workflow', {}))

@@ -44,13 +44,14 @@ class TrackedLinksFixture(LayersCase):
         commit(self.proj, 'track the skill links')
         self.committed_target = self.link.resolve()
 
-    def repoint(self):
+    def repoint(self, also_a_file=True):
         """What `link` does after a layer changed: the tracked link points to another composed target."""
         other = self.committed_target.parent / 'next'
         shutil.copytree(self.committed_target, other, symlinks=True)
         self.link.unlink()
         os.symlink(other, self.link)
-        write(self.proj / 'a.txt', 'changed\n')
+        if also_a_file:
+            write(self.proj / 'a.txt', 'changed\n')
 
     def run_cli(self, cwd, *args):
         process = self.cli(*args, cwd=cwd)
@@ -157,24 +158,6 @@ class TrackedSkillLinks(TrackedLinksFixture):
         self.assertEqual(tracked, [])
         self.assertTrue(self.link.is_symlink(), 'the files stay on disk')
 
-    def test_the_untrack_message_lists_every_path_in_lines_and_quotes_them(self):
-        from skillsync_workflow.quality import untrack_message
-        paths = [f'.claude/skills/skill {number}' for number in range(30)] + ['CLAUDE.md']
-        message = untrack_message('/a project/dir', paths)
-        lines = [line for line in message.splitlines() if line.startswith('git ')]
-        self.assertEqual(len(lines), 4)
-        self.assertNotIn('...', message)
-        listed = []
-        for line in lines:
-            words = shlex.split(line)
-            self.assertEqual(words[:6], ['git', '-C', '/a project/dir', 'rm', '--cached', '--'])
-            listed += words[6:]
-        self.assertEqual(listed, paths)
-        self.assertIn('only if `skillsync link` generates them', message)
-        self.assertNotIn('only if `skillsync link` generates them', untrack_message('/p', ['.github/skills/foo']))
-        many = untrack_message('/p', [f'.claude/skills/s{n}' for n in range(200)])
-        self.assertIn('and 40 more', many)
-
     def test_a_tracked_instructions_file_that_the_project_does_not_ignore_is_not_reported(self):
         write(self.proj / 'CLAUDE.md', '# own instructions\n')
         git(self.proj, 'add', 'CLAUDE.md')
@@ -214,6 +197,8 @@ class GuardAndSelectionWithTrackedLinks(TrackedLinksFixture):
         os.symlink(self.target, self.proj / 'linked.txt')
         os.symlink(self.target.parent, self.proj / 'outdir')
         write(self.proj / 'plain.txt', 'ok\n')
+        git(self.proj, 'add', '-f', '-A')
+        commit(self.proj, 'guard fixtures')   # from here on `git status` shows only what a test changes
 
     def tmp_file(self, text):
         path = self.work / 'outside' / 'target.txt'
@@ -225,7 +210,9 @@ class GuardAndSelectionWithTrackedLinks(TrackedLinksFixture):
 
     def test_the_guard_skips_a_changed_link_without_reading_its_target(self):
         code, report = self.guard('linked.txt')
-        self.assertEqual((code, report['status']), (0, 'NOT_RUN'), report)   # nothing was scanned: no PASS out of a skip
+        self.assertEqual((code, report['status']), (0, 'PASS'), report)   # every covered file is a link: PASS, with the reason and the skip in the report
+        self.assertEqual(report['scanned'], [])
+        self.assertIn('No content was checked', report['reason'])
         self.assertEqual(report['skipped'], [{'file': 'linked.txt', 'reason': 'symlink'}])
         self.assertNotIn(self.MARK, json.dumps(report))
         self.assertEqual(report['findings'], [])
@@ -265,11 +252,62 @@ class GuardAndSelectionWithTrackedLinks(TrackedLinksFixture):
         self.assertEqual((code, report['status']), (2, 'BLOCKED'), report)
         self.assertIn('przez dowiązanie', json.dumps(report['reasons'], ensure_ascii=False))
 
+    def test_validate_is_not_blocked_when_only_repointed_links_changed(self):
+        self.repoint(also_a_file=False)
+        self.assertEqual([line for line in git(self.proj, 'status', '--short').stdout.splitlines() if line.startswith(' M')], [' M .github/skills/foo'])
+        code, report = self.run_cli(self.proj, 'validate', str(self.proj), '--profile', 'quick', '--run')
+        self.assertNotIn('Required success evidence missing', json.dumps(report), report)
+        self.assertNotEqual(report.get('status'), 'BLOCKED', report)
+
+    def test_a_plain_file_next_to_repointed_links_is_still_checked_by_validate(self):
+        self.repoint(also_a_file=False)
+        write(self.proj / 'bad.txt', f'{self.MARK}\n')
+        code, report = self.run_cli(self.proj, 'validate', str(self.proj), '--profile', 'quick', '--run')
+        self.assertEqual(report['status'], 'FAIL', report)
+
+    def test_the_guard_refuses_a_link_in_the_middle_of_the_path_also_without_run(self):
+        process = self.cli('guard', str(self.proj), '--files', 'outdir/target.txt', cwd=self.proj)
+        self.assertEqual(process.returncode, 2, process.stdout + process.stderr)
+        self.assertIn('symlinks are forbidden', process.stdout)
+
+    def test_the_guard_works_when_the_project_root_is_a_link(self):
+        alias = self.work / 'root-alias'
+        os.symlink(self.proj, alias, target_is_directory=True)
+        code, report = self.run_cli(self.work, 'guard', str(alias), '--files', 'linked.txt', 'plain.txt', '--run')
+        self.assertEqual((code, report['status'], report['scanned']), (0, 'PASS', ['plain.txt']), report)
+        self.assertEqual(report['skipped'], [{'file': 'linked.txt', 'reason': 'symlink'}])
+
     def test_validate_with_guardrails_does_not_block_on_a_repointed_tracked_link(self):
         self.repoint()
         code, report = self.run_cli(self.proj, 'validate', str(self.proj), '--profile', 'quick', '--run')
         self.assertNotIn('Workflow artifact symlinks are forbidden', json.dumps(report), report)
         self.assertNotEqual(report.get('status'), 'BLOCKED', report)
+
+
+class UntrackMessage(unittest.TestCase):
+    """The pure function runs on every system: the quoting is the one of the other command hints (`layers._quote_arg`)."""
+
+    def test_every_path_is_listed_in_lines_and_quoted(self):
+        from skillsync_workflow.quality import untrack_message
+        paths = [f'.claude/skills/skill {number}' for number in range(30)] + ['CLAUDE.md']
+        message = untrack_message('/a project/dir', paths)
+        lines = [line for line in message.splitlines() if line.startswith('git ')]
+        self.assertEqual(len(lines), 4)
+        self.assertNotIn('...', message)
+        for path in paths:
+            self.assertIn(path, message)
+        if os.name != 'nt':   # POSIX: the line round-trips through a shell; Windows quotes with double quotes (cmd.exe has no apostrophes)
+            listed = []
+            for line in lines:
+                words = shlex.split(line)
+                self.assertEqual(words[:6], ['git', '-C', '/a project/dir', 'rm', '--cached', '--'])
+                listed += words[6:]
+            self.assertEqual(listed, paths)
+        else:
+            self.assertIn('"', lines[0])
+        self.assertIn('only if `skillsync link` generates them', message)
+        self.assertNotIn('only if `skillsync link` generates them', untrack_message('/p', ['.github/skills/foo']))
+        self.assertIn('and 40 more', untrack_message('/p', [f'.claude/skills/s{n}' for n in range(200)]))
 
 
 if __name__ == '__main__':

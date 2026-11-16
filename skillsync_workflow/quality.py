@@ -902,8 +902,8 @@ def untrack_message(root, tracked, per_line=8, max_lines=20):
     paths in lines of `per_line`, every path quoted; `CLAUDE.md` and `AGENTS.md` are named only as a condition (a project may track them on purpose)."""
     lines = []
     for start in range(0, min(len(tracked), per_line * max_lines), per_line):
-        paths = ' '.join(shlex.quote(item) for item in tracked[start:start + per_line])
-        lines.append(f'git -C {shlex.quote(str(root))} rm --cached -- {paths}')
+        paths = ' '.join(_layers._quote_arg(item) for item in tracked[start:start + per_line])
+        lines.append(f'git -C {_layers._quote_arg(str(root))} rm --cached -- {paths}')
     more = len(tracked) - per_line * max_lines
     text = (f'{len(tracked)} file(s) listed in .gitignore are tracked in git: `skillsync link` shows generated files as changed and a new worktree starts '
             f'with stale links. Untrack them (the files stay on disk):\n' + '\n'.join(lines))
@@ -987,9 +987,9 @@ def doctor(root, manifest, library):
             linked = Path(root) / prefix / name
             if not linked.exists():
                 if linked.is_symlink():   # a link of another tree (a tracked link in a fresh worktree) or of a cleaned cache
-                    finding('error', linked, f'Installed skill symlink points to a target that does not exist; run `skillsync link {shlex.quote(str(root))}`')
+                    finding('error', linked, f'Installed skill symlink points to a target that does not exist; run `skillsync link {_layers._quote_arg(str(root))}`')
                 else:
-                    finding('error', linked, f'Missing installed skill; run `skillsync link {shlex.quote(str(root))}`')
+                    finding('error', linked, f'Missing installed skill; run `skillsync link {_layers._quote_arg(str(root))}`')
             elif linked.is_symlink():
                 state = skill_link_state(layerset, name, linked)
                 if state == 'stale':
