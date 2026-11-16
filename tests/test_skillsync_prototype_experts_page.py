@@ -306,7 +306,7 @@ class IsolationTests(ExpertsPageBase):
 
         seen = []
         handler.headers = {}
-        handler.server = types.SimpleNamespace(app=types.SimpleNamespace(config=types.SimpleNamespace(trust_proxy=False)))
+        handler.server = types.SimpleNamespace(app=types.SimpleNamespace(config=types.SimpleNamespace(trust_proxy=False, demo=False)))
         handler._session = lambda: (None, None)
         handler._login_page = lambda method, query: seen.append(handler._strict_page)   # moment po zerowaniu flagi
         handler._dispatch('GET')
