@@ -24,11 +24,13 @@ from . import Adapter, register
 MAX_LINE = 2000
 MAX_SEEN = 50000
 ANSI = re.compile(r'\x1b\[[0-9;?]*[A-Za-z]')
-RESULT = re.compile(r'^test (?P<name>.+?) \.\.\. (?P<res>ok|FAILED|ignored(?:, (?P<why>.*))?)$')
+RESULT = re.compile(r'^test (?P<name>.+?) \.\.\. (?P<res>ok|FAILED|ignored(?:, (?P<why>.*?))?)(?: <[\d.]+s>)?$')   # `<0.001s>`: --report-time (nightly)
 START = re.compile(r'^test (?P<name>.+?) \.\.\. $')           # `test name ... ` exactly: the unfinished line of a test that is running (one thread)
 LONE = re.compile(r'^(?P<res>ok|FAILED|ignored(?:, (?P<why>.*))?)$')   # the result on a later line, after text the test printed (`--nocapture`)
+START_TEXT = re.compile(r'^test (?P<name>.+?) \.\.\. (?P<rest>\S.*)$')               # `test name ... text`: the test started and printed before its result (`--nocapture`)
+BENCH = re.compile(r'^test (?P<name>.+?) \.\.\. bench: ')
 TERSE_FAILED = re.compile(r'^(?P<name>\S.*?) --- FAILED$')
-RUNNING_TESTS = re.compile(r'^\s+Running (?:unittests )?(?P<src>.+?) \((?P<exe>[^)]*)\)$')
+RUNNING_TESTS = re.compile(r'^\s+Running (?:unittests )?(?P<src>.+?) \((?P<exe>.*)\)$')
 DOC_TESTS = re.compile(r'^\s+Doc-tests (?P<crate>\S+)$')
 BLOCK = re.compile(r'^---- (?P<name>.+) stdout ----$')
 PANIC_NEW = re.compile(r"panicked at [^\n]*:\d+(?::\d+)?:$")
@@ -49,10 +51,16 @@ def _cargo_test(argv):
     words = [str(a) for a in argv]
     for index, word in enumerate(words):
         if re.sub(r'\.exe$', '', word.replace('\\', '/').rsplit('/', 1)[-1].lower()) == 'cargo':
+            skip = False
             for item in words[index + 1:]:
-                if item.startswith('+') or (item.startswith('-') and item != '--'):
+                if skip:
+                    skip = False
+                elif item in ('-Z', '-C', '--color', '--config'):
+                    skip = True   # a global flag with a separate value
+                elif item.startswith('+') or (item.startswith('-') and item != '--'):
                     continue
-                return item in ('test', 't')
+                else:
+                    return item in ('test', 't')
             return False
     return False
 
@@ -60,7 +68,7 @@ def _cargo_test(argv):
 def _serial(argv):
     words = [str(a) for a in argv]
     for index, word in enumerate(words):
-        if word == '--test-threads=1' or (word == '--test-threads' and words[index + 1:index + 2] == ['1']):
+        if re.fullmatch(r'--test-threads=0*1|RUST_TEST_THREADS=0*1', word) or (word == '--test-threads' and words[index + 1:index + 2] == ['1']):
             return True
     return False
 
@@ -70,6 +78,8 @@ class _CargoTest(Adapter):
 
     def __init__(self):
         self.group = None
+        self.binary = None        # the full executable (with its hash) or `doc-tests <crate>`: the identity of a test binary
+        self.successes = False    # inside the `successes:` section of `--show-output` (captured output of tests that passed)
         self.seen = {}            # id -> state
         self.names = {}           # name -> (id, group, state) of the first binary that reported it
         self.open = None          # (id, name, group) of a test whose start was seen, no result yet
@@ -89,8 +99,8 @@ class _CargoTest(Adapter):
     # -- ids --------------------------------------------------------------------------------------------------------------------------------------
     def _ident(self, name):
         known = self.names.get(name)
-        if known is not None and known[1] != self.group and known[2] is not None:
-            return f'{self.group}::{name}' if self.group else name   # the same name from another binary, after its result
+        if known is not None and known[1] != self.binary and known[2] is not None:
+            return f'{self.group}::{name}' if self.group else (f'{self.binary}::{name}' if self.binary else name)   # the same name from another binary, after its result
         return name
 
     def _emit(self, name, state, ctx, msg=None):
@@ -101,9 +111,9 @@ class _CargoTest(Adapter):
             return ident
         self.seen[ident] = state
         if name not in self.names:
-            self.names[name] = (ident, self.group, state)
-        elif state != 'running':
-            self.names[name] = (self.names[name][0], self.names[name][1], state)
+            self.names[name] = (ident, self.binary, state)
+        elif state != 'running' and self.names[name][1] == self.binary:
+            self.names[name] = (self.names[name][0], self.binary, state)
         ctx.emit.test(ident, name, state, group=self.group, msg=msg)
         return ident
 
@@ -111,18 +121,22 @@ class _CargoTest(Adapter):
     def partial(self, stream, text, ctx):
         return None   # `completion`: an unfinished line is not a start (the serial adapter overrides this)
 
-    def _header(self, text):
+    def _header(self, text, ctx):
         found = RUNNING_TESTS.match(text)
-        if found:
-            self.group = _group(found.group('exe'))
-            self.block, self.failures_marks = None, 0
-            return True
-        found = DOC_TESTS.match(text)
-        if found:
-            self.group = f"doc-tests {found.group('crate')}"
-            self.block, self.failures_marks = None, 0
-            return True
-        return False
+        doc = DOC_TESTS.match(text) if not found else None
+        if not found and not doc:
+            return False
+        if self.block is not None:
+            self._close_block(ctx)
+        if self.open is not None:   # a new binary starts while a test of the previous one never finished: that binary died without a `test result:`
+            ident, name, group = self.open
+            if self.seen.get(ident) == 'running':
+                self._emit(name, 'failed', ctx, msg='no result: the test binary ended without a result for this test')
+            self.open = None
+        self.group = _group(found.group('exe')) if found else f"doc-tests {doc.group('crate')}"
+        self.binary = found.group('exe').strip() if found else self.group
+        self.block, self.failures_marks, self.successes = None, 0, False
+        return True
 
     def _result(self, name, res, why, ctx):
         name = SHOULD_PANIC.sub('', name)
@@ -134,8 +148,21 @@ class _CargoTest(Adapter):
             self.open = None
 
     def feed(self, stream, text, ctx):
-        text = self._clean(text).rstrip()
-        if self._header(text):
+        raw = self._clean(text)
+        text = raw.rstrip()
+        if self._header(text, ctx):
+            return
+        if text == 'successes:':   # `--show-output`: the captured output of tests that PASSED follows; it is never a result
+            if self.block is not None:
+                self._close_block(ctx)
+            self.successes = True
+            return
+        if self.successes:
+            if text == 'failures:':
+                self.successes = False
+                self.failures_marks += 1
+            elif text.startswith('test result:'):
+                self.successes, self.failures_marks, self.open = False, 0, None
             return
         if self.block is not None:
             if BLOCK.match(text) or text.startswith('failures:') or text.startswith('test result:'):
@@ -158,13 +185,23 @@ class _CargoTest(Adapter):
         if found:
             self._result(found.group('name'), found.group('res'), found.group('why'), ctx)
             return
-        found = START.match(text)
+        found = START.match(raw)
         if found:
             self._started(found.group('name'), ctx)   # a start line that ended (the test printed output first)
             return
+        bench = BENCH.match(text)
+        if bench:
+            if self.open and self.open[1] == SHOULD_PANIC.sub('', bench.group('name')):
+                self._emit(self.open[1], 'passed', ctx, msg='bench')   # a benchmark is not a test; it finished
+                self.open = None
+            return
+        found = START_TEXT.match(text)
+        if found:
+            self._started(found.group('name'), ctx)   # `test name ... text printed by the test`: it started; its result comes on a later line
+            return
         terse = TERSE_FAILED.match(text)
         if terse:
-            self._emit(terse.group('name'), 'failed', ctx)
+            self._emit(SHOULD_PANIC.sub('', terse.group('name')), 'failed', ctx)
             return
         if self.open is not None:
             lone = LONE.match(text)
@@ -172,7 +209,9 @@ class _CargoTest(Adapter):
                 self._result(self.open[1], lone.group('res'), lone.group('why'), ctx)
                 return
         if self.failures_marks >= 2 and text.startswith('    ') and text.strip():
-            self._emit(text.strip(), 'failed', ctx)   # the list of the names of the failures: names a failure of a quiet run
+            name = SHOULD_PANIC.sub('', text.strip())
+            if self.seen.get(self._ident(name)) != 'passed':   # the list names a failure of a quiet run; it never takes back a pass
+                self._emit(name, 'failed', ctx)
 
     def _started(self, name, ctx):
         return None
@@ -195,9 +234,9 @@ class _CargoTest(Adapter):
             self.msg_lines = [text[6:].strip()]
 
     def _close_block(self, ctx):
-        name, msg = self.block, ' '.join(self.msg_lines)
+        name, msg = SHOULD_PANIC.sub('', self.block), ' '.join(self.msg_lines)
         self.block, self.msg_lines, self.collecting = None, [], False
-        if name and msg:
+        if name and msg and self.seen.get(self._ident(name)) != 'passed':   # a block never takes a pass back
             self._emit(name, 'failed', ctx, msg=msg[:300])
 
     def end(self, ctx, exit_code, output, reports):

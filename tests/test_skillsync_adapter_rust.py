@@ -38,12 +38,15 @@ class Registration(unittest.TestCase):
         self.assertEqual((serial.name, serial.live), ('cargo-test-serial', 'running'))
         self.assertEqual(test_adapters.resolve('auto', ['cargo', 'test', '--', '--test-threads', '1'], 'cargo').name, 'cargo-test-serial')
         self.assertEqual(test_adapters.resolve('auto', ['cargo', 'test', '--', '--test-threads=4'], 'cargo').name, 'cargo-test')
+        self.assertEqual(test_adapters.resolve('auto', ['RUST_TEST_THREADS=1', 'cargo', 'test'], 'cargo').name, 'cargo-test-serial')   # visible when the command is written as a string
+        self.assertEqual(test_adapters.resolve('auto', ['cargo', 'test', '--', '--test-threads=01'], 'cargo').name, 'cargo-test-serial')
 
     def test_which_commands_are_cargo_test(self):
         for argv, expected in ((['cargo', 'test'], True), (['cargo', '+nightly', 'test', '--lib'], True), (['cargo', 't'], True), (['/opt/tools/bin/cargo', 'test'], True),
                                (['cargo.exe', 'test'], True), (['cargo', '--offline', 'test'], True), (['cargo', 'nextest', 'run'], False), (['cargo', 'build'], False),
                                (['cargo', 'run', '--', 'test'], False), (['cargo'], False), (['make', 'test'], False), (['cargo', 'nextest', 'run', '--', '--test-threads=1'], False),
-                               (['cargo', 'build', '--test-threads=1'], False), (['make', 'test', '--test-threads=1'], False)):
+                               (['cargo', 'build', '--test-threads=1'], False), (['make', 'test', '--test-threads=1'], False), (['cargo', '-Z', 'unstable-options', 'test'], True),
+                               (['cargo', '--color', 'always', 'test'], True), (['cargo', '--config', 'k=v', 't'], True)):
             with self.subTest(argv=argv):
                 self.assertEqual(test_adapters.resolve('auto', argv, 'cargo') is not None, expected)
 
@@ -209,6 +212,66 @@ class Synthetic(unittest.TestCase):
     def test_a_long_panic_message_is_cut_to_three_lines(self):
         rec = self.feed("test t ... FAILED\n\nfailures:\n\n---- t stdout ----\nthread 't' panicked at src/lib.rs:1:1:\nl1\nl2\nl3\nl4\nl5\n\nfailures:\n    t\n")
         self.assertEqual(rec.last()['t'], ('failed', 'l1 l2 l3'))
+
+    def test_show_output_never_turns_a_pass_into_a_failure(self):
+        text = ('     Running unittests src/lib.rs (/x/deps/demo-0123456789abcdef)\n\nrunning 2 tests\ntest tests::a - should panic ... ok\ntest tests::b ... ok\n\nsuccesses:\n\n'
+                "---- tests::a stdout ----\nthread 'tests::a' (1) panicked at src/lib.rs:62:9:\nboom\nnote: run with `RUST_BACKTRACE=1`\n\n---- tests::b stdout ----\nhello\n\n"
+                'successes:\n    tests::a\n    tests::b\n\ntest result: ok. 2 passed; 0 failed\n')
+        rec = self.feed(text, exit_code=0)
+        self.assertEqual(final_states(rec), {'tests::a': 'passed', 'tests::b': 'passed'})
+        self.assertEqual(rec.states('tests::a'), ['passed'])
+        failing = ('test tests::c ... FAILED\n\nsuccesses:\n\n---- tests::a stdout ----\n\nsuccesses:\n    tests::a\n\nfailures:\n\n---- tests::c stdout ----\n'
+                   "thread 'tests::c' (2) panicked at src/lib.rs:5:5:\nreal failure\n\nfailures:\n    tests::c\n\ntest result: FAILED. 0 passed; 1 failed\n")
+        self.assertEqual(self.feed(failing).last()['tests::c'], ('failed', 'real failure'))
+
+    def test_blocks_of_the_successes_section_name_no_failure_even_without_a_result_line(self):
+        rec = self.feed("\nsuccesses:\n\n---- tests::unseen stdout ----\nthread 'x' (1) panicked at src/lib.rs:1:1:\nboom\n\nsuccesses:\n    tests::unseen\n\ntest result: ok. 1 passed\n", exit_code=0)
+        self.assertEqual(rec.tests(), [])
+
+    def test_a_block_never_takes_back_a_pass(self):
+        rec = self.feed("test tests::a ... ok\n\nfailures:\n\n---- tests::a stdout ----\nthread 'x' (1) panicked at src/lib.rs:1:1:\nboom\n\nfailures:\n    tests::a\n", exit_code=0)
+        self.assertEqual(final_states(rec), {'tests::a': 'passed'})
+
+    def test_the_same_name_in_two_binaries_with_the_same_label(self):
+        text = ('     Running unittests src/lib.rs (/x/deps/demo-aaaaaaaaaaaaaaaa)\ntest tests::it_works ... FAILED\n\ntest result: FAILED. 0 passed; 1 failed\n'
+                '     Running unittests src/main.rs (/x/deps/demo-bbbbbbbbbbbbbbbb)\ntest tests::it_works ... ok\n\ntest result: ok. 1 passed; 0 failed\n')
+        rec = self.feed(text)
+        self.assertEqual(sorted(final_states(rec).values()), ['failed', 'passed'])   # the failure of the first binary is not overwritten by the pass of the second
+        self.assertEqual(len(final_states(rec)), 2)
+
+    def test_a_started_test_whose_binary_died_is_failed_when_the_next_binary_starts(self):
+        text = ('     Running tests/a.rs (/x/deps/a-0123456789abcdef)\ntest crashes ... ')
+        pieces = [{'t': 0, 'fd': 'out', 'data': text}, {'t': 1, 'fd': 'err', 'data': '\n     Running tests/b.rs (/x/deps/b-0123456789abcdef)\n'}, {'t': 2, 'fd': 'out', 'data': '\ntest fine ... ok\n'}]
+        rec = replay('cargo-test-serial', pieces, argv=['cargo', 'test', '--', '--test-threads=1'], tool='cargo', exit_code=0)[0]
+        self.assertEqual(rec.last()['crashes'], ('failed', 'no result: the test binary ended without a result for this test'))
+        self.assertEqual(rec.last()['fine'][0], 'passed')
+
+    def test_a_start_that_arrives_with_its_line_end_and_a_lone_result(self):
+        for size in (1, 4, 1000):
+            with self.subTest(size=size):
+                rec = replay('cargo-test-serial', chunks_from_text('test t::a ... hello from the test\nok\ntest t::b ... \nFAILED\n', size=size), argv=['cargo', 'test', '--', '--test-threads=1'],
+                             tool='cargo')[0]
+                self.assertEqual(final_states(rec), {'t::a': 'passed', 't::b': 'failed'})
+                self.assertEqual(rec.states('t::a')[0], 'running')
+
+    def test_serial_nocapture_run_reads_the_same_with_any_chunking(self):
+        meta, chunks = load('rust-threads1-nocapture.jsonl')
+        for size in (1, 3, 60):
+            with self.subTest(size=size):
+                rec = replay('cargo-test-serial', rechunk(chunks, size), argv=meta['command'], tool='cargo', exit_code=101)[0]
+                self.assertEqual(final_states(rec), LIB)
+
+    def test_benchmarks_and_report_time_suffixes(self):
+        rec = replay('cargo-test-serial', chunks_from_text('test b ... \ntest b ... bench:         123 ns/iter (+/- 4)\ntest t ... ok <0.002s>\n', size=7), argv=['cargo', 'test', '--', '--test-threads=1'], tool='cargo')[0]
+        self.assertEqual(final_states(rec), {'b': 'passed', 't': 'passed'})   # a benchmark is not left `running`
+
+    def test_a_windows_path_with_parentheses_in_the_header(self):
+        rec = self.feed('     Running tests\\x.rs (C:\\Program Files (x86)\\t\\deps\\x-0123456789abcdef.exe)\ntest w ... ok\n')
+        self.assertEqual([c[4] for c in rec.tests()], ['x'])
+
+    def test_terse_failures_lose_the_should_panic_decoration(self):
+        rec = self.feed('tests::p - should panic --- FAILED\n')
+        self.assertEqual(list(final_states(rec)), ['tests::p'])
 
     def test_a_failure_block_without_a_message_still_reports_nothing_extra(self):
         rec = self.feed('test t ... FAILED\n\nfailures:\n\n---- t stdout ----\n\nfailures:\n    t\n')
