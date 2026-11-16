@@ -20,7 +20,7 @@ def states(recorder):
 
 class Registration(unittest.TestCase):
     def test_name_liveness_and_selection(self):
-        for argv, tool in ((['playwright', 'test'], 'playwright'), (['npx', 'playwright', 'test', '--project=x'], 'npx'), (['./node_modules/.bin/playwright', 'test'], 'playwright')):
+        for argv, tool in ((['playwright', 'test'], 'playwright'), (['./node_modules/.bin/playwright', 'test'], 'playwright')):
             with self.subTest(argv=argv):
                 adapter = test_adapters.resolve('auto', argv, tool)
                 self.assertEqual((adapter.name, adapter.live), ('playwright', 'completion'))   # no start line in a pipe
@@ -66,7 +66,8 @@ class List(unittest.TestCase):
         self.assertNotIn('\x1b', msg)
 
     def test_a_flaky_test_that_passed_on_a_retry_is_passed_and_stays_passed(self):
-        recorder = replay_fixture('playwright', 'playwright-list-retries2.jsonl')[0]
+        recorder, _, _, complete = replay_fixture('playwright', 'playwright-list-retries2.jsonl')
+        self.assertTrue(complete)   # 13 tests = 3 failed + 1 flaky + 1 skipped + 8 passed of the summary (flaky is counted apart from passed)
         key = M + 'flaky on the first attempt ' + D
         self.assertEqual([c[3] for c in recorder.tests() if c[1] == key][:2], ['failed', 'passed'])
         self.assertEqual(states(recorder)[key], 'passed')   # the failure block of the first attempt must not turn it red again
@@ -82,8 +83,49 @@ class List(unittest.TestCase):
     def test_a_killed_run_has_no_summary_so_the_report_decides(self):
         recorder, _, _, complete = replay_fixture('playwright', 'playwright-list-interrupted.jsonl')
         self.assertFalse(complete)
-        self.assertTrue(recorder.tests())
-        self.assertEqual(set(states(recorder).values()) - {'passed', 'failed', 'skipped'}, set())
+        final = states(recorder)
+        self.assertEqual(final[M + 'adds ' + D], 'passed')
+        self.assertEqual(final[M + 'is skipped ' + D], 'skipped')
+        self.assertTrue(all(key.endswith((D, MOB)) for key in final))
+
+
+class Shapes(unittest.TestCase):
+    def test_no_project_time_units_and_ansi(self):
+        text = ('  ✓   1 e2e/a.spec.js:3:5 › group › fast (5ms)\n  ✓   2 e2e/a.spec.js:4:5 › slow (4.0s)\n  ✘   3 e2e/a.spec.js:5:5 › long (1m)\n  -   4 e2e/a.spec.js:6:5 › skipped\n'
+                '\x1b[32m  ✓   5 e2e/a.spec.js:7:5 › coloured (1ms)\x1b[39m\n')
+        recorder = replay('playwright', chunks_from_text(text), tool='playwright')[0]
+        self.assertEqual(states(recorder), {'e2e/a.spec.js::group › fast': 'passed', 'e2e/a.spec.js::slow': 'passed', 'e2e/a.spec.js::long': 'failed', 'e2e/a.spec.js::skipped': 'skipped',
+                                            'e2e/a.spec.js::coloured': 'passed'})
+        self.assertEqual([c[5] for c in recorder.tests()], [5, 4000, 60000, None, 1])
+
+    def test_the_summary_kinds(self):
+        body = '  ✓   1 f.js:1:1 › a (1ms)\n  ✓   2 f.js:2:1 › b (1ms)\n  ✘   3 f.js:3:1 › c (1ms)\n'
+        for tail, complete in (('  1 failed\n  2 passed (1.0s)\n', True), ('  1 failed\n  1 passed (1.0s)\n  1 did not run\n', False), ('  1 failed\n  2 passed (1.0s)\n  4 did not run\n', True),
+                               ('  1 failed\n  1 interrupted\n  2 passed (1.0s)\n', False), ('', False)):
+            with self.subTest(tail=tail):
+                self.assertEqual(replay('playwright', chunks_from_text(body + tail), tool='playwright')[3], complete)
+
+    def test_a_summary_like_line_inside_the_output_of_a_test_is_not_a_summary(self):
+        text = '  ✓   1 f.js:1:1 › a (1ms)\n  3 passed through gate\n  2 failed to connect: retrying\n  1 passed (1.0s)\n'
+        self.assertTrue(replay('playwright', chunks_from_text(text), tool='playwright')[3])
+
+    def test_the_message_stops_at_the_next_attempt_and_stderr_is_ignored(self):
+        text = ('  ✘   1 f.js:1:1 › a (1ms)\n  ✘   2 f.js:1:1 › a (retry #1) (1ms)\n\n  1) f.js:1:1 › a ───────\n\n    Test timeout of 4000ms exceeded.\n\n    Retry #1 ───────\n\n'
+                '    Test timeout of 4000ms exceeded.\n\n  1 failed\n')
+        recorder = replay('playwright', chunks_from_text(text), tool='playwright')[0]
+        self.assertEqual(recorder.last()['f.js::a'][1], 'Test timeout of 4000ms exceeded.')
+        noisy = replay('playwright', [{'t': 0, 'fd': 'err', 'data': '  ✓   1 f.js:1:1 › a (1ms)\n'}], tool='playwright')[0]
+        self.assertEqual(noisy.calls, [])
+
+    def test_a_line_that_only_looks_like_a_header_does_not_silence_the_rest(self):
+        text = '  1) f.js:1:1 › from a test log\n  ✓   1 f.js:2:1 › after (1ms)\n'
+        self.assertEqual(states(replay('playwright', chunks_from_text(text), tool='playwright')[0]), {'f.js::after': 'passed'})
+
+    def test_list_and_windows_wrappers(self):
+        cls = test_adapters.REGISTRY['playwright']
+        for argv, expected in ((['npx', 'playwright', 'test', '--list'], False), (['npx.cmd', 'playwright.cmd', 'test'], True), (['playwright.exe', 'test'], True)):
+            with self.subTest(argv=argv):
+                self.assertEqual(cls().accepts(argv), expected)
 
 
 class Others(unittest.TestCase):
@@ -103,7 +145,7 @@ class Hostile(unittest.TestCase):
     def test_garbage_and_long_lines_emit_nothing(self):
         for text in ('', '  ✓ \n', '  ✓   1 [a] › :1:1 › x\n', '  ✘   1 ' + '[' * 5000 + '\n', '  ✓   1 [p] › f.js:1:1 › ' + 'a › ' * 20000 + 'x (1ms)\n'):
             with self.subTest(text=text[:20]):
-                self.assertLessEqual(len(replay('playwright', chunks_from_text(text, size=999), tool='playwright')[0].calls), 1)
+                self.assertEqual(len(replay('playwright', chunks_from_text(text, size=999), tool='playwright')[0].calls), 0)
 
     def test_a_summary_line_inside_a_test_name_is_not_a_summary(self):
         text = '  ✓   1 [p] › f.js:1:1 › 3 failed (5ms)\n  1 passed (1.0s)\n'

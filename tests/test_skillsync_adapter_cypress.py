@@ -22,7 +22,7 @@ def states(recorder):
 
 class Registration(unittest.TestCase):
     def test_name_liveness_and_selection(self):
-        for argv, tool in ((['cypress', 'run'], 'cypress'), (['npx', 'cypress', 'run', '--browser', 'chrome'], 'npx')):
+        for argv, tool in ((['cypress', 'run'], 'cypress'), (['cypress', 'run', '--browser', 'chrome'], 'cypress')):
             with self.subTest(argv=argv):
                 adapter = test_adapters.resolve('auto', argv, tool)
                 self.assertEqual((adapter.name, adapter.live), ('cypress', 'completion'))
@@ -42,8 +42,9 @@ class Spec(unittest.TestCase):
     def test_two_files_final_states_names_from_the_indentation_and_the_messages(self):
         recorder, _, _, complete = replay_fixture('cypress', 'cypress-spec.jsonl')
         self.assertEqual(states(recorder), {**MATH, S + 'second ok': 'passed'})
-        self.assertTrue(complete)   # 11 lines = 9 passing/pending/failing of math + 1 of second... summed per file
+        self.assertTrue(complete)   # 11 result lines = 10 tests of math.cy.js + 1 of second.cy.js, the sum of the summaries of the two files
         self.assertEqual(recorder.last()[M + 'fails with a message'][1], 'AssertionError: expected 4 to equal 5')
+        self.assertEqual(recorder.last()[M + 'adds 2 + 2 = 5'][1], 'AssertionError: expected 4 to equal 5')
         self.assertNotIn('running', {c[3] for c in recorder.tests()})
 
     def test_the_failure_listing_after_the_summary_is_not_read_as_tests(self):
@@ -73,6 +74,36 @@ class Spec(unittest.TestCase):
         self.assertEqual(sorted(states(recorder)), ['a.cy.js::other > after', 'a.cy.js::outer > inner > deep', 'a.cy.js::outer > shallow', 'a.cy.js::top'])
         self.assertTrue(complete)
 
+    def test_a_failing_test_outside_any_describe_keeps_its_message(self):
+        text = ('  Running:  a.cy.js  (1 of 1)\n\n\n    1) top fails\n    ✓ top ok (2ms)\n\n\n  1 passing (1s)\n  1 failing\n\n  1) top fails:\n     AssertionError: expected 1 to equal 2\n      at x\n')
+        recorder, _, _, complete = replay('cypress', chunks_from_text(text), tool='cypress')
+        self.assertEqual(states(recorder), {'a.cy.js::top fails': 'failed', 'a.cy.js::top ok': 'passed'})
+        self.assertEqual(recorder.last()['a.cy.js::top fails'][1], 'AssertionError: expected 1 to equal 2')
+        self.assertTrue(complete)
+
+    def test_suites_with_titles_that_start_with_a_digit_a_bracket_or_a_dash_and_summary_like_titles(self):
+        text = ('  Running:  a.cy.js  (1 of 1)\n\n\n  404 page\n    ✓ shows (1ms)\n  (admin) area\n    ✓ shows (1ms)\n  3 passing scenarios\n    ✓ one (1ms)\n  -dash suite\n    ✓ two (1ms)\n\n\n'
+                '  4 passing (1s)\n')
+        recorder, _, _, complete = replay('cypress', chunks_from_text(text), tool='cypress')
+        self.assertEqual(sorted(states(recorder)), ['a.cy.js::(admin) area > shows', 'a.cy.js::-dash suite > two', 'a.cy.js::3 passing scenarios > one', 'a.cy.js::404 page > shows'])
+        self.assertTrue(complete)
+
+    def test_a_title_repeated_in_a_suite_keeps_a_failure(self):
+        text = ('  Running:  a.cy.js  (1 of 1)\n\n\n  s\n    1) loop\n    ✓ loop (1ms)\n\n\n  1 passing (1s)\n  1 failing\n')
+        recorder, _, _, complete = replay('cypress', chunks_from_text(text), tool='cypress')
+        self.assertEqual(states(recorder), {'a.cy.js::s > loop': 'failed'})
+        self.assertTrue(complete)   # two lines, two tests of the summary
+
+    def test_the_windows_mark_and_stderr_noise(self):
+        text = '  Running:  a.cy.js  (1 of 1)\n\n\n  s\n    √ ok (1ms)\n\n\n  1 passing (1s)\n'
+        self.assertEqual(states(replay('cypress', chunks_from_text(text), tool='cypress')[0]), {'a.cy.js::s > ok': 'passed'})
+        noisy = replay('cypress', [{'t': 0, 'fd': 'err', 'data': '  Running:  a.cy.js  (1 of 1)\n    ✓ x (1ms)\n'}], tool='cypress')[0]
+        self.assertEqual(noisy.calls, [])
+
+    def test_an_empty_file_makes_the_stream_incomplete(self):
+        text = ('  Running:  a.cy.js  (1 of 2)\n\n\n    ✓ ok (1ms)\n\n\n  1 passing (1s)\n  Running:  b.cy.js  (2 of 2)\n')
+        self.assertFalse(replay('cypress', chunks_from_text(text), tool='cypress')[3])
+
     def test_the_same_result_for_any_chunking(self):
         meta, chunks = load('cypress-spec.jsonl')
         want = replay_fixture('cypress', 'cypress-spec.jsonl')[0].calls
@@ -97,7 +128,7 @@ class Hostile(unittest.TestCase):
     def test_garbage_before_a_running_header_and_long_lines_emit_nothing(self):
         for text in ('', '    ✓ not in a file (1ms)\n', '  Running:  \n', '  Running:  a.cy.js  (1 of 1)\n' + '    ✓ ' + 'x' * 100000 + ' (1ms)\n'):
             with self.subTest(text=text[:20]):
-                self.assertLessEqual(len(replay('cypress', chunks_from_text(text, size=999), tool='cypress')[0].calls), 1)
+                self.assertEqual(len(replay('cypress', chunks_from_text(text, size=999), tool='cypress')[0].calls), 0)
 
     def test_deeply_nested_suites_are_bounded(self):
         text = '  Running:  a.cy.js  (1 of 1)\n' + ''.join(' ' * (2 + i) + f's{i}\n' for i in range(200)) + ' ' * 300 + '✓ t (1ms)\n'

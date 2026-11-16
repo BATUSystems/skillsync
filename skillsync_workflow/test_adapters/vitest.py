@@ -9,7 +9,8 @@ id of the JUnit report (`file::describe > name`): the adapter emits nothing for 
 
 Mapping: `✓` passed, `×` failed (the message is the next line `   → message`, emitted again with the message), `↓` skipped, `□` todo (skipped, message `todo`).
 The id is `file::describe > name`, the same as the JUnit report of Vitest (`classname=file`, `name="describe > name"`). A retried test is ONE line with `(retry xN)`
-and the elapsed time of all the attempts. `end` returns True (the report is not needed) only when the number of reported tests equals the total of the summary line.
+and the elapsed time of all the attempts. `end` returns True (the report is not needed) only when the number of result lines equals the total of the summary line. NOT_VERIFIED: Vitest projects (a `|project|`
+prefix), `--repeats` and a skip note in brackets (Vitest 3.1+) would change the file or the name and so the id; the junit report is read only with an explicit `--junit`.
 """
 import re
 
@@ -20,6 +21,8 @@ MAX_SEEN = 50000
 ANSI = re.compile(r'\x1b\[[0-9;?]*[A-Za-z]')
 # ` ✓ tests/math.test.js > math > adds 404ms`, ` × file > name 411ms (retry x2)`, ` ↓ file > name`, ` □ file > name`
 LINE = re.compile(r'^ (?P<mark>[✓×↓□]) (?P<file>[^\s>][^>]*?) > (?P<name>.+?)(?: (?P<time>\d+(?:\.\d+)?)(?P<unit>ms|s))?(?: \(retry x\d+\))?$')
+# a skipped or todo line carries no time: a trailing ` 5s` of its name belongs to the name
+BARE = re.compile(r'^ (?P<mark>[↓□]) (?P<file>[^\s>][^>]*?) > (?P<name>.+)$')
 MESSAGE = re.compile(r'^ {3}→ (?P<msg>.+)$')
 TESTS = re.compile(r'^ +Tests +(?P<body>.+?) \((?P<total>\d+)\)$')
 STATES = {'✓': 'passed', '×': 'failed', '↓': 'skipped', '□': 'skipped'}
@@ -37,11 +40,20 @@ class VitestCore:
     def __init__(self):
         self.last = None       # (id, name, group, ms) of the last failed line: the next `→ message` line belongs to it
         self.seen = {}         # id -> last state
+        self.lines = 0         # result lines read (a title repeated in a describe is one id but two lines)
         self.total = None
 
     def feed(self, text, ctx):
-        text = ANSI.sub('', text[:MAX_LINE]).rstrip()
+        if len(text) > MAX_LINE:   # the output of a test that only looks like a result line; a real line is short
+            self.last = None
+            return
+        text = ANSI.sub('', text).rstrip()
         found = LINE.match(text)
+        if found and found.group('mark') in '↓□':
+            found = BARE.match(text)
+            time = unit = None
+        else:
+            time, unit = (found.group('time'), found.group('unit')) if found else (None, None)
         if found:
             file, name = found.group('file'), found.group('name')
             state = STATES[found.group('mark')]
@@ -49,7 +61,8 @@ class VitestCore:
             self.last = None
             if len(self.seen) < MAX_SEEN or test_id in self.seen:
                 self.seen[test_id] = state
-                ms = _ms(found.group('time'), found.group('unit'))
+                self.lines += 1
+                ms = _ms(time, unit)
                 ctx.emit.test(test_id, name, state, group=file, ms=ms, msg='todo' if found.group('mark') == '□' else None)
                 if state == 'failed':
                     self.last = (test_id, name, file, ms)
@@ -68,13 +81,13 @@ class VitestCore:
 
     def complete(self):
         """True when every test of the summary was reported by a line."""
-        return self.total is not None and len(self.seen) == self.total
+        return self.total is not None and self.lines == self.total
 
 
 @register
 class VitestAdapter(Adapter):
     name = 'vitest'
-    tools = ('vitest', 'npx', 'npm', 'node')
+    tools = ('vitest',)
     live = 'completion'
 
     def __init__(self):

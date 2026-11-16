@@ -8,7 +8,8 @@ every test (`ESC[1A ESC[2K` before each line: in a pipe every change is a line o
 so `passed = N - X`, `skipped = S`, `total = M`. Several browsers print a line each (`<browser>: Executed ...`); the adapter sums the last line of each. The names of
 the tests come only from the junit report (`karma-junit-reporter`, `karma-junit.xml`) after the run: the failure lines of the stream
 (`<browser> describe it FAILED`) cannot be split into the `classname` and `name` the report uses, so they are not emitted (an id that does not match the report
-would be a duplicate). The `dots` reporter prints no counters: nothing is emitted for it. `end` returns False (the report, when there is one, gives the list).
+would be a duplicate). The `dots` reporter prints no counters while it runs, only the final `Executed N of M` line: that one is emitted. Two browsers with the same label share one entry
+(the last line wins); the total grows while the browsers print their first line. `end` returns False (the report, when there is one, gives the list).
 """
 import re
 
@@ -17,7 +18,9 @@ from . import Adapter, register
 MAX_LINE = 2000
 MAX_BROWSERS = 64
 ANSI = re.compile(r'\x1b\[[0-9;?]*[A-Za-z]')
-EXECUTED = re.compile(r'^(?P<browser>.+?): Executed (?P<n>\d+) of (?P<m>\d+)(?P<rest>.*)$')
+# the label of a browser ends with the system in brackets (`Chrome Headless 157.0.0.0 (Linux 0.0.0)`) and the tail is only what Karma prints: a `console.log` line
+# (`Chrome ... LOG: 'Job: Executed 5 of 8 steps'`) or a test name with `: Executed 1 of 2` does not match
+EXECUTED = re.compile(r'^(?P<browser>[^\'"]+?\)): Executed (?P<n>\d+) of (?P<m>\d+)(?P<rest>(?: \(\d+ FAILED\))?(?: \(skipped \d+\))?(?: (?:SUCCESS|ERROR|DISCONNECTED|FAILED))?(?: \([^()]*secs[^()]*\))*)\s*$')
 FAILED = re.compile(r'\((\d+) FAILED\)')
 SKIPPED = re.compile(r'\(skipped (\d+)\)')
 
@@ -27,7 +30,9 @@ class KarmaCore:
         self.browsers = {}   # browser -> (passed, failed, skipped, total)
 
     def feed(self, text, ctx):
-        text = ANSI.sub('', text[:MAX_LINE]).strip()
+        if len(text) > MAX_LINE:
+            return
+        text = ANSI.sub('', text).strip()
         found = EXECUTED.match(text)
         if not found:
             return
@@ -47,7 +52,7 @@ class KarmaCore:
 @register
 class KarmaAdapter(Adapter):
     name = 'karma'
-    tools = ('karma', 'npx', 'npm', 'node')
+    tools = ('karma',)
     live = 'counts'
 
     def __init__(self):

@@ -18,11 +18,17 @@ def counts(recorder):
 
 class Registration(unittest.TestCase):
     def test_name_liveness_and_selection(self):
-        for argv, tool in ((['karma', 'start', 'karma.conf.js'], 'karma'), (['npx', 'karma', 'start'], 'npx'), (['./node_modules/.bin/karma', 'start', '--single-run'], 'karma')):
+        for argv, tool in ((['karma', 'start', 'karma.conf.js'], 'karma'), (['./node_modules/.bin/karma', 'start', '--single-run'], 'karma')):
             with self.subTest(argv=argv):
                 adapter = test_adapters.resolve('auto', argv, tool)
                 self.assertEqual((adapter.name, adapter.live), ('karma', 'counts'))   # only numbers while the run goes
                 self.assertEqual(adapter.env(), {})
+
+    def test_auto_selects_through_the_tool_of_the_command(self):
+        from skillsync_workflow import test_run
+        self.assertEqual(test_run.detect_tool(['karma', 'start']), 'karma')
+        self.assertEqual(test_adapters.resolve('auto', ['karma', 'start'], test_run.detect_tool(['karma', 'start'])).name, 'karma')
+        self.assertEqual(test_adapters.resolve('karma', ['npx', 'karma', 'start'], 'npx').name, 'karma')   # `--format karma` works under any wrapper
 
     def test_other_commands_are_not_taken(self):
         cls = test_adapters.REGISTRY['karma']
@@ -66,13 +72,30 @@ class Progress(unittest.TestCase):
 
     def test_an_interrupted_run_keeps_the_counters_it_reached(self):
         series = counts(replay_fixture('karma', 'karma-interrupted-progress.jsonl')[0])
-        self.assertTrue(series and series[-1]['running'] > 0)   # the run did not finish: some specs are still not done
+        self.assertEqual(series[-1], {'passed': 3, 'failed': 1, 'skipped': 2, 'running': 5, 'total': 11})   # `Executed 4 of 11 (1 FAILED) (skipped 2)` and no more
+
+    def test_other_shapes_of_the_line(self):
+        tail = ' (0 secs / 1 secs)\n'
+        for text, want in (('Chrome 1 (Linux 0): Executed 0 of 0 SUCCESS' + tail, {'passed': 0, 'failed': 0, 'skipped': 0, 'running': 0, 'total': 0}),
+                           ('Chrome 1 (Linux 0): Executed 3 of 8 (skipped 2) SUCCESS' + tail, {'passed': 3, 'failed': 0, 'skipped': 2, 'running': 3, 'total': 8}),
+                           ('Chrome 1 (Linux 0): Executed 3 of 8 ERROR' + tail, {'passed': 3, 'failed': 0, 'skipped': 0, 'running': 5, 'total': 8}),
+                           ('Chrome 1 (Linux 0): Executed 2 of 8 DISCONNECTED' + tail, {'passed': 2, 'failed': 0, 'skipped': 0, 'running': 6, 'total': 8}),
+                           ('Chrome 1 (Linux 0): Executed 5 of 8 (3 FAILED) (skipped 1) (4.2 secs / 3.9 secs)\n', {'passed': 2, 'failed': 3, 'skipped': 1, 'running': 2, 'total': 8})):
+            with self.subTest(text=text[:40]):
+                self.assertEqual(counts(replay('karma', chunks_from_text(text), tool='karma')[0]), [want])
+
+    def test_lines_that_only_look_like_the_counter_are_not_counters(self):
+        for text in ("Chrome 1 (Linux 0) LOG: 'Job: Executed 5 of 8 steps'\n", "Chrome 1 (Linux 0) math x: Executed 1 of 2 FAILED\n", "WARN [web-server]: Executed 5 of 8\n",
+                     "Chrome 1 (Linux 0): Executed 5 of 8 steps done\n"):
+            with self.subTest(text=text[:40]):
+                self.assertEqual(replay('karma', chunks_from_text(text), tool='karma')[0].calls, [])
 
 
 class Dots(unittest.TestCase):
-    def test_the_dots_reporter_has_no_counters_so_only_the_final_line_counts(self):
+    def test_the_dots_reporter_has_no_counters_while_running_so_only_the_final_line_counts(self):
         recorder = replay_fixture('karma', 'karma-dots.jsonl')[0]
         self.assertEqual([c for c in recorder.calls if c[0] == 'test'], [])
+        self.assertEqual(counts(recorder), [{'passed': 7, 'failed': 2, 'skipped': 2, 'running': 0, 'total': 11}])   # the final `Executed 9 of 11 ...` line only
 
 
 class Report(unittest.TestCase):
@@ -88,11 +111,11 @@ class Hostile(unittest.TestCase):
     def test_garbage_and_long_lines_emit_nothing(self):
         for text in ('', 'Executed of\n', ': Executed 1 of 2\n', 'x' * 100000 + ': Executed 1 of 2 ' + 'y' * 100000 + '\n'):
             with self.subTest(text=text[:20]):
-                self.assertLessEqual(len(replay('karma', chunks_from_text(text, size=777), tool='karma')[0].calls), 1)
+                self.assertEqual(len(replay('karma', chunks_from_text(text, size=777), tool='karma')[0].calls), 0)
 
     def test_the_number_of_browsers_is_bounded(self):
         from skillsync_workflow.test_adapters import karma
-        text = ''.join(f'B{i}: Executed 1 of 2 SUCCESS (0 secs / 0 secs)\n' for i in range(karma.MAX_BROWSERS + 30))
+        text = ''.join(f'B{i} (Linux {i}): Executed 1 of 2 SUCCESS (0 secs / 0 secs)\n' for i in range(karma.MAX_BROWSERS + 30))
         series = counts(replay('karma', chunks_from_text(text, size=65536), tool='karma')[0])
         self.assertEqual(series[-1]['total'], 2 * karma.MAX_BROWSERS)
 

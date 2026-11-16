@@ -19,8 +19,15 @@ class Selection(unittest.TestCase):
         self.assertEqual((adapter.name, adapter.live), ('angular', 'counts'))
         for name in ('vitest', 'karma', 'cypress', 'playwright'):
             self.assertFalse(test_adapters.REGISTRY[name]().accepts(['ng', 'test']))
-        self.assertTrue(test_adapters.REGISTRY['angular']().accepts(['npx', 'ng', 'test']))
+        self.assertTrue(test_adapters.REGISTRY['angular']().accepts(['npx', 'ng', 'test']))   # `accepts` looks for the command, whatever wraps it
         self.assertFalse(test_adapters.REGISTRY['angular']().accepts(['ng', 'build']))
+
+    def test_npx_and_the_short_alias_and_the_wrong_subcommands(self):
+        self.assertEqual(test_adapters.resolve('angular', ['npx', 'ng', 'test'], 'npx').name, 'angular')   # `--format angular` works under any wrapper
+        cls = test_adapters.REGISTRY['angular']
+        for argv, expected in ((['ng', 't'], True), (['ng', 'generate', 'component', 'test'], False), (['ng.cmd', 'test'], True), (['npx', 'vitest', 'test'], False), (['ng'], False)):
+            with self.subTest(argv=argv):
+                self.assertEqual(cls().accepts(argv), expected)
 
     def test_format_forces_one_of_the_engines(self):
         self.assertEqual(test_adapters.resolve('vitest', ['ng', 'test'], 'angular').name, 'vitest')
