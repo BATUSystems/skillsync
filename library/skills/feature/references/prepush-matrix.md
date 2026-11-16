@@ -18,6 +18,20 @@ z powodem w raporcie.
 | każdy nowy lub zmieniony skip | `scripts/check_skips.py` z baseline po zmianie na logach `-v` **wszystkich systemów** (Linux, macOS, Windows; klucz `<system>/<tryb>`): rc=0; kategorie sprawdzaj pod kątem przechwytywania (pierwsza pasująca wygrywa) |
 | każda zmiana `tests/skip-baseline.json` (wpis, kategoria, klucz systemu, `null` → lista) | CAŁY moduł `test_skillsync_check_skips` (strażnik kształtu `RealBaselineTests` oczekuje listy albo `null` według krotki `measured`) i `test_skillsync_ci_workflows` na najstarszej i najnowszej wersji Pythona, plus `check_skips.py` na logach wszystkich systemów; sam skrypt na logach nie wystarcza (d6cabea, baseline ubuntu-latest: czerwony strażnik kształtu na origin) |
 | nowa kategoria lub fragment skipa | samospójność: każdy fragment klasyfikuje się do własnej kategorii |
+| pełna pętla Linux przed pushem (krok obowiązkowy) | pętla z `-v` do pliku logu, potem `scripts/check_skips.py` na tym logu (rc=0); komendy w bloku „Komendy kroków obowiązkowych” pod tabelą. Pętla bez `-v` nie jest dowodem: gdy w logu są skipy (a pełna pętla je ma), `check_skips.py` kończy się kodem 2, bo podsumowanie mówi o skipach, a log nie ma wierszy wyników; log bez skipów bez `-v` da 0, ale nic nie dowodzi |
+| lokalne E2E prototypu | ten sam krok co w CI (`.github/workflows/ci.yml`, job „Prototype E2E (Chrome)”): każdy skip w logu modułu `prototype_e2e` to porażka (zielone `OK` przy skipach nie dowodzi E2E); komendy w bloku pod tabelą |
+
+### Komendy kroków obowiązkowych
+
+```sh
+# pełna pętla Linux (z -v!), potem baseline skipów
+python3 -m unittest discover -s tests -p 'test_skillsync*.py' -v 2>&1 | tee unittest.log
+python3 scripts/check_skips.py unittest.log --system linux --mode symlink
+
+# lokalne E2E prototypu (jak w CI): każdy skip to porażka
+SKILLSYNC_E2E_CHROME=<chrome> python3 -m unittest discover -s tests -p 'test_skillsync_prototype_e2e.py' -v > e2e.log 2>&1
+if grep -Eq '\.\.\. skipped|^OK \(skipped' e2e.log; then echo "E2E pominięte: porażka"; fi
+```
 
 Zakres: maszyny Windows i macOS są wspólne dla projektów, więc **pełna macierz przed pushem idzie raz, na gałąź wydania** (integracyjną); gałąź robocza dostaje dowód punktowy (zmienione moduły na Windows 3.11, 3.12 i 3.13, macOS dla HTTP, plików i sygnałów), nie pełny bieg.
 
@@ -37,6 +51,10 @@ Lekcje z biegów macierzy na maszynach zdalnych (Windows, macOS):
   skrypcie): alias z kolorami i ikonami wstawia do listy kody sterujące, a bieg uruchamia puste albo błędne nazwy modułów.
 - **Start w tle na macOS bez `setsid`.** Standardowy macOS nie ma polecenia `setsid`; start w tle rób przez `nohup` z przekierowaniem i zapisem PID-u w pliku, a
   w ciągu minuty sprawdź, że proces żyje i log rośnie.
+
+Monitor CI: wyniku `gh pr checks` nie iteruj pętlą `for` po zmiennej (zsh nie dzieli zmiennej na linie, cały wynik to jeden element); używaj `gh pr checks <nr> --json name,state` (z `jq`) albo `gh pr checks <nr> | while read -r line; do …; done`.
+
+Po ciężkim biegu na zasobie współdzielonym (stacja, maszyna zdalna) sprawdź, że blokada (`flock`, plik lease) i procesy testowe zniknęły (`pgrep` po zapisanych PID-ach, `fuser`/`lsof` na pliku blokady, brak nasłuchujących portów z puli), zamiast ufać deklaracji biegu: dopiero to zwalnia zasób.
 
 Skrypty pomocnicze leżą w repo operacyjnym `skillsync-ops` (`tools/win-shard/`): `prepush.sh` (macierz Windows i `check_skips` z jednej komendy),
 `runlike.sh`/`runlike.ps1` (Windows, środowisko jak runner), `skips_union.py` i `apply_windows_baseline.py` (baseline z logów CI); w rdzeniu jest tylko

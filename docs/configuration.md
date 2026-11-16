@@ -100,7 +100,7 @@ layer_rules:
 - Na Windows i macOS porównanie ignoruje wielkość liter. Na Windows separator `\` jest zamieniany na `/`, a litery dysków
   są małe po normalizacji. Na Linuksie wielkość liter ma znaczenie.
 - Reguła za `**` nigdy nie zadziała: `layers check` zgłasza ostrzeżenie „never matches”.
-- `layers use` bez `--position` wstawia nową regułę przed regułą `**`.
+- `layers use` bez `--position` wstawia nową regułę przed regułą `**`. Gdy reguła o dokładnie tym samym `match` już istnieje, `layers use` dopisuje warstwę do jej `use` (kolejność core, org, personal; warstwa personal zastępuje personal; przy kilku takich regułach zmienia pierwszą, bo ona obowiązuje) zamiast tworzyć drugą, która nigdy by nie zadziałała; z `--position` odmawia (BLOCKED). Warstwa już obecna w `use` tej reguły zostaje tam, gdzie stoi (PASS bez zmiany): kolejność decyduje, która warstwa wygrywa. Lista `use: [a, b]` (zapis, jaki robi `layers use`) jest zmieniana w tekście z zachowaniem komentarzy; przy liście blokowej plik jest przepisywany bez komentarzy (kopia `.bak-*` zostaje). `layers check` i `doctor` ostrzegają (`rule-unreachable`), że późniejsza reguła o tym samym `match` nigdy nie zadziała (ostrzega tylko projekt, który trafia w pierwszą z tych reguł; projekt pasujący do innej reguły go nie zobaczy).
 - Worktree git dopasowuje się po ścieżce głównego repo, a gdy reguły brak, po własnej ścieżce.
 - Brak pasującej reguły = BLOCKED (2) z instrukcją `skillsync layers use`.
 - Warstwa z `use`, której nie ma na maszynie, jest pomijana z informacją; `layers check` daje wtedy NOT_RUN.

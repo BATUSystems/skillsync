@@ -48,7 +48,7 @@ Konwencje testów jednostkowych projektu (np. `TestCase` z rollbackiem i fixture
 
 ## Macierz przed pushem
 
-Przed `PUSH SLOT` paczka ma dowód z macierzy wersji i systemów: [prepush-matrix](prepush-matrix.md).
+Przed `PUSH SLOT` paczka ma dowód z macierzy wersji i systemów: [prepush-matrix](prepush-matrix.md). Pełna pętla Linux idzie z `-v` (bez niego `scripts/check_skips.py` kończy się kodem 2, gdy log ma skipy), a lokalne E2E prototypu nie toleruje żadnego skipa (jak w CI): szczegóły w tej samej referencji.
 
 ## Baseline i stare porażki
 

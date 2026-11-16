@@ -83,7 +83,13 @@ Zasady configu:
 ## Dodawanie reguł (`layers use`, `layers add`, `layers init`)
 
 - `layers use <id> --match GLOB` (powtarzalne, wymagane) tworzy regułę; bez `--position` wstawia ją **przed** regułą `**`.
-  `--position` liczone od 0 (indeks w `layer_rules`).
+  `--position` liczone od 0 (indeks w `layer_rules`). Gdy reguła o dokładnie tym samym `match` (równość listy globów) już
+  istnieje, `layers use` nie tworzy drugiej, tylko dopisuje warstwę do `use` pierwszej takiej reguły (tej, która obowiązuje):
+  bez duplikatu, w kolejności core, org, personal (warstwa personal zastępuje personal); brak zmiany `use` = PASS bez zmiany;
+  `--position` przy istniejącej regule = BLOCKED `bad-argument`. Warstwa już obecna w `use` tej reguły nie jest przestawiana
+  (kolejność decyduje o pierwszeństwie): PASS `changed: false`. Lista `use: [a, b]` jest zmieniana w tekście (komentarze zostają);
+  lista blokowa = przepisanie pliku z kopią (jak `layers add`). Drugą, nieosiągalną regułę o tym samym `match` zgłasza
+  ostrzeżenie `rule-unreachable` (`layers check`, `doctor`, `link`); nie jest błędem. Ostrzega tylko projekt, który trafia w pierwszą z tych reguł.
 - `layers use` bez reguły `**` buduje regułę na `[core]` + jedyną skonfigurowaną warstwę personal; przy kilku warstwach
   personal wypisuje ostrzeżenie z instrukcją `layers use <personal> --match '**'`.
 - `layers add` i `layers init` **nie tworzą reguły `**`**; `layers add` warstwy org albo personal wypisuje ostrzeżenie
