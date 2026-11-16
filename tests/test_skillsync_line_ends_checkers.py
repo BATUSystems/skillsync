@@ -83,6 +83,32 @@ class PrototypeLineAtRareSeparators(unittest.TestCase):
                     report = self.gate(f'Prototyp: docs/prototypes/alpha{char}x', line_end)
                     self.assertEqual((report['status'], report.get('error')), ('BLOCKED', 'invalid_prototype_line'), report)
 
+    def test_the_refusal_names_the_invisible_character_and_its_position(self):
+        for name, char in RARE.items():
+            for label, line, position in (('inside', f'Prototyp: docs/prototypes/alpha{char}x', len('Prototyp: docs/prototypes/alpha') + 1),
+                                          ('at the end', f'Prototyp: docs/prototypes/alpha{char}', len('Prototyp: docs/prototypes/alpha') + 1)):
+                with self.subTest(char=name, where=label):
+                    report = self.gate(line)
+                    self.assertEqual((report['status'], report.get('error')), ('BLOCKED', 'invalid_prototype_line'), report)
+                    self.assertIn(f'invisible character U+{ord(char):04X} at position {position}: remove it', report['reason'])
+                    self.assertIn(f'\\u{ord(char):04x}', report['reason'])      # the value is shown with an escape ...
+                    self.assertNotIn(char, report['reason'])                      # ... never with the raw character
+
+    def test_a_refused_bypass_line_names_the_character_too_and_an_ordinary_refusal_stays_as_it_was(self):
+        for name, char in RARE.items():
+            with self.subTest(char=name):
+                report = self.gate(f'Bramka prototypu: pominięta — powód{char}drugi')   # no person and no date: refused
+                self.assertEqual((report['status'], report.get('error')), ('BLOCKED', 'invalid_bypass_line'), report)
+                position = len('Bramka prototypu: pominięta — powód') + 1
+                self.assertIn(f'invisible character U+{ord(char):04X} at position {position}: remove it', report['reason'])
+                self.assertNotIn(char, report['reason'])
+        plain = self.gate('Prototyp: docs/prototypes/a b')                             # refused for another reason: no note
+        self.assertEqual(plain.get('error'), 'invalid_prototype_line', plain)
+        self.assertNotIn('invisible character', plain['reason'])
+        plain_bypass = self.gate('Bramka prototypu: pominięta — powód')
+        self.assertEqual(plain_bypass.get('error'), 'invalid_bypass_line', plain_bypass)
+        self.assertNotIn('invisible character', plain_bypass['reason'])
+
     def test_a_bypass_reason_with_a_rare_separator_is_read_whole(self):
         for name, char in RARE.items():
             with self.subTest(char=name):
