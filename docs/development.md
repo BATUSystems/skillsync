@@ -61,6 +61,8 @@ python3 scripts/check_skips.py run.log --system ubuntu-latest --mode copy
 
 Testy serwerów łączą się po adresie liczbowym (`127.0.0.1`), bez rozwiązywania nazw: bez `localhost` w `create_connection`, `urlopen` i `HTTPConnection`, a gniazdo klienta w testach niskiego poziomu otwieranie przez `connect(('127.0.0.1', port))`. Serwer testowy nie woła `socket.getfqdn` (podklasa `ThreadingHTTPServer` z `server_bind` bez odwrotnego DNS, jak serwery produkcyjne). Na runnerze macOS rozwiązywanie nazw potrafi sporadycznie stanąć na ok. 35 s, a pomiary czasu w testach mierzymy po stronie serwera, nie po stronie klienta.
 
+Port z `free_port()` był wolny tylko w chwili próby. Serwer w wątku binduje przez `tests/serve_start.py:bind_free(fabryka, free_port)` (ponowienie na kolejnym porcie przy „adres zajęty”), podproces `dashboard serve` startuje przez `start_serve` (gotowość dopiero po pliku stanu własnego serwera; ponowienie tylko po utraconym bindzie) i zatrzymuje się przez `stop_serve`. Na Windows produkcja obsługuje tylko SIGTERM, więc `stop_serve` zabija drzewo procesu (`taskkill /T` po własnym PID) i zwraca `graceful=False`: testy sprawdzają wtedy start i odpowiedzi, a asercje łagodnego stopu (kod 0, raport, usunięty plik stanu) tylko na POSIX.
+
 ### Zmienne testów
 
 | Zmienna | Skutek |
