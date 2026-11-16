@@ -10,6 +10,7 @@ omitClaudeMd: true
 Przeczytaj sekcję TESTY planu i wskazane instrukcje/skille. Komendy/cwd bierz
 z planu, potem `.github/.skillsync.yaml` (`tests.command`), potem dokumentacji projektu.
 Jedna komenda backendu nie zastępuje testów frontendu/builda wymaganych przez plan.
+Testy kroku planu uruchamiaj przez `skillsync test-run --run <id> --step <id> -- <komenda>` (id podaje zlecenie): inaczej wynik nie jest widoczny na stronie statusu ani dowodem kroku `[T]`.
 Jeśli dostępne, użyj planu `skillsync smart-test`/`validate` i jego powodów selekcji.
 Cache dobiera komendy, nie potwierdza wyników; final obejmuje wymagane warstwy.
 

@@ -56,6 +56,14 @@
     return data;
   }
 
+  async function fetchTests(q) {
+    const params = new URLSearchParams({ run: q.run || "", step: q.step || "", attempt: String(q.attempt || 0), group: q.group || "", limit: "500", offset: String(q.offset || 0) });
+    const r = await fetch("/api/tests?" + params.toString(), { cache: "no-store" });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || "HTTP " + r.status);
+    return data;
+  }
+
   // <to-top> przycisk „na górę” (170-B): haczyk dla renderera. Metryki okna przez requestAnimationFrame (jeden odczyt na klatkę, nasłuch
   // pasywny), przewijanie płynne, a przy prefers-reduced-motion natychmiastowe.
   function createToTop(win) {
@@ -85,6 +93,7 @@
     actions: {
       approve: postApprove,
       loadDoc: fetchDoc,
+      loadTests: fetchTests,
       refresh: () => refresh(),
       selectPlan: (path) => { st.plan = path || null; refresh(); },
     },
@@ -177,7 +186,8 @@
   // ------------------------------------------------------------------ start
   const hash = decodeURIComponent(location.hash.slice(1));
   if (hash.startsWith("docs:")) board.setDoc(hash.slice(5));
+  if (hash.startsWith("tests")) board.setTestsStep(hash.startsWith("tests:") ? hash.slice(6) : null);
   setLive("connecting");
-  refresh().then(() => { if (hash.startsWith("docs")) board.setView("docs", false); else if (hash === "questions") board.setView("questions", false); });
+  refresh().then(() => { if (hash.startsWith("docs")) board.setView("docs", false); else if (hash === "questions") board.setView("questions", false); else if (hash.startsWith("tests")) board.setView("tests", false); });
   connect();
 })();

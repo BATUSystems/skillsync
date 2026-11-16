@@ -295,3 +295,12 @@ Aktualizacja maszyny Windows z instalacji uv: sekcja „Windows z instalacji uv�
 ## Co dalej
 
 Zmiany między wersjami opisuje wyłącznie `CHANGELOG.md`.
+
+## Przejście 1.7.0 → 1.8.0: zakładka „Testy” (180-A)
+
+1. Rdzeń: zwykła aktualizacja (`uv tool install --force git+https://github.com/BATUSystems/skillsync@v1.8.0`, `skillsync layers update core --ref v1.8.0`). Zakładka „Testy” jest ukryta, dopóki przebieg nie ma pliku zdarzeń testów.
+2. Testy kroku planu uruchamiaj przez `skillsync test-run <projekt> --run <id> --step <id> -- <polecenie>` (`validate` i `smart-test` nie zapisują zdarzeń testów); ręcznie puszczone komendy nie są widoczne na stronie.
+3. Kroki testowe oznacz w planie `[T]` (na początku lub końcu tytułu kroku w `## Progress` albo w komórce `Krok` tabeli). `checkpoint --status PASS` takiego kroku wymaga dowodu z `test-run` albo `--no-tests <powód>`.
+4. Konsument `skillsync status` ma przyjąć nieznaną wartość `tests` w `plans[].needsHuman` (krok testowy zamknięty bez testów); konsument JSON strony statusu ma tolerować nowe opcjonalne pola `tests` i `progress.phases[].steps[].tests` (schema 1 bez zmian). Wtyczka edytora ignoruje nieznane pola i wartości, a zakładkę dostanie z własnym wydaniem.
+5. **Wyniki testów nie są maskowane** (strona statusu, także port odczytu widoczny w sieci lokalnej, i pliki `.skillsync/runs/<run>/tests/`): sprawdź, czy `.skillsync/` jest w `.gitignore` (`doctor`: `runs-not-ignored`), a kto chce maskę, ustawia `tests.mask: on` w `.github/.skillsync.yaml`.
+6. Uruchom ponownie działający `skillsync dashboard serve`.

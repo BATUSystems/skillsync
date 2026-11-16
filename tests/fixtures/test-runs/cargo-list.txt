@@ -1,0 +1,9 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.00s
+     Running unittests src/lib.rs (target/debug/deps/demo-5d464ed6742d1409)
+tests::fails: test
+tests::ignored: test
+tests::ok: test
+
+3 tests, 0 benchmarks
+   Doc-tests demo
+0 tests, 0 benchmarks

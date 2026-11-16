@@ -319,6 +319,16 @@ def plan_text_needs_human(status, text):
     return plan_needs_human(status, _progress(text), bool(_TICKET.search(text)), bool(_PR.search(text)))
 
 
+def _tests_waived(root, text, status=None):
+    """`['tests']` while the plan is open and a test step was closed with `checkpoint --no-tests <reason>`: a decision for a human at the closing
+    (180-A); a `done` or `archived` plan no longer asks."""
+    from . import test_gate
+    if status in ('done', 'archived'):
+        return []
+    run = test_gate.run_of_plan(text)
+    return ['tests'] if run and test_gate.waived_steps(root, run) else []
+
+
 def plan_record(root, path, context=None):
     text = decode_text(path.read_bytes(), strict=True)   # invalid UTF-8 stays an error for the caller (a finding, no row), as `read_text(encoding='utf-8')` was
     status, status_text = _status_fields(text, PLAN_STATUSES)
@@ -331,7 +341,7 @@ def plan_record(root, path, context=None):
     return {'path': path.relative_to(root).as_posix(), 'title': title.group(1) if title else path.stem, 'status': status,
             'statusText': status_text, 'steps': steps, 'pr': {'number': int(pr.group(1)), 'link': pr.group(2)} if pr else None,
             'ticket': {'key': ticket.group(1), 'link': ticket.group(2)} if ticket else None, 'spec': spec,
-            'needsHuman': plan_needs_human(status, steps, bool(ticket), bool(pr)) + (['acceptance'] if acceptance_pending(status, text, context, path.relative_to(root).as_posix()) else []),
+            'needsHuman': plan_needs_human(status, steps, bool(ticket), bool(pr)) + (['acceptance'] if acceptance_pending(status, text, context, path.relative_to(root).as_posix()) else []) + _tests_waived(root, text, status),
             'updated': _iso(path.stat().st_mtime),
             'preImplement': pre, 'summary': plan_summary(text)}
 

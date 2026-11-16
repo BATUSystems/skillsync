@@ -42,7 +42,9 @@ from . import __version__
 from . import dashboard as engine
 from . import dashboard_listen
 from . import dashboard_ports as ports
+from . import dashboard_tests
 from . import dashboard_token
+from . import test_events
 from . import stopsignal
 from . import status as status_core
 from .common import emit, load_layer_project, read_project, redact
@@ -434,6 +436,13 @@ class Board:
                     paths.append(run)
                     paths.extend(run.glob("*.md"))
                     paths.append(run / RUN_APPROVALS)
+                    tests = run / "tests"   # the event files of the test runs (180-A): a new line refreshes the page
+                    if tests.is_dir() and not tests.is_symlink():
+                        paths.append(tests)
+                        for step in list(tests.iterdir())[:200]:
+                            if step.is_dir() and not step.is_symlink():
+                                paths.append(step)
+                                paths.extend(sorted((f for f in step.glob("*.jsonl") if f.stem.isascii() and f.stem.isdecimal()), key=lambda f: int(f.stem))[-10:])
         protos = self.root / engine.PROTOTYPES_DIR
         if protos.is_dir():
             paths.extend(protos.glob("*/prototype.json"))
@@ -711,7 +720,16 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
                     data["approvals"]["role"] = self.role
                     token_required = token_required and self.role == ports.ROLE_APPROVE
                 data["approvals"]["tokenRequired"] = token_required
-                return self._json(200, redact(data))  # the viewer sees the same content as the operator; secrets masked as in `dashboard show`
+                return self._json(200, dashboard_tests.finalize_status(data, test_events.mask_setting(self.board.manifest())))  # as `dashboard show`: the viewer sees what the operator sees; secrets masked except the raw `tests` (decision 6)
+            if route == "/api/tests":   # read-only on BOTH sockets, like /api/status (the same rule: no write route anywhere near it)
+                one = lambda name: (query.get(name) or [None])[0]
+                try:
+                    body = dashboard_tests.tests_response(self.board.root, one("run"), one("step"), one("attempt") or "0", one("group"), one("limit") or 500, one("offset") or 0)
+                except (ValueError, TypeError):
+                    body = None
+                if body is None:
+                    return self._json(404, {"error": "Brak takiego biegu testów."})
+                return self._json(200, dashboard_tests.finalize_response(body, test_events.mask_setting(self.board.manifest())))
             if route == "/api/doc":
                 doc = self.board.doc((query.get("path") or [None])[0])
                 if doc is None:

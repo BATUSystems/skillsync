@@ -1,4 +1,5 @@
 """Planning and evidence-bearing execution of configured quality checks."""
+import codecs
 import contextlib
 import fnmatch
 import hashlib
@@ -11,6 +12,7 @@ import signal
 import stat
 import subprocess
 import tempfile
+import threading
 import time
 import tomllib
 import uuid
@@ -192,13 +194,17 @@ def _reap_after_termination(process, taskkill=None):
     return output
 
 
-def _execute(check):
+def _execute(check, on_line=None, on_partial=None):
+    """Run a check; `(exit code, stdout + b'\\n' + stderr, timed out)`. With `on_line(stream, text)` (stream `out` or `err`) the output is read
+    LINE BY LINE while the process runs (two reader threads) and the returned bytes are the same as without it."""
     taskkill = shutil.which('taskkill') if os.name == 'nt' else None
     if os.name == 'nt' and not taskkill:
         raise OSError('Windows requires taskkill for enforceable process-tree timeouts')
     process = subprocess.Popen(check.get('argv') or check['command'], cwd=check['cwd'],
         shell='command' in check, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        start_new_session=os.name != 'nt')
+        start_new_session=os.name != 'nt', env={**os.environ, **check['_env']} if check.get('_env') else None)   # internal key of `test-run` (not a manifest key)
+    if on_line is not None:
+        return _stream(process, check, on_line, taskkill, on_partial)
     try:
         stdout, stderr = process.communicate(timeout=check.get('timeout', 300))
     except subprocess.TimeoutExpired:
@@ -208,6 +214,82 @@ def _execute(check):
         _reap_after_termination(process, taskkill)
         raise
     return process.returncode, stdout + b'\n' + stderr, False
+
+
+def _wait_quietly(process):
+    try:
+        process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        process.kill()
+
+
+def _stream(process, check, on_line, taskkill, on_partial=None):
+    """Streaming half of `_execute`: one reader thread per pipe. Complete lines go to `on_line(stream, text)` under a lock; the UNFINISHED tail of
+    the line (a tool prints `test_x ... ` when a test starts and `ok` when it ends) goes to `on_partial(stream, text)` each time it grows. The bytes
+    kept for the result are the ones read, unchanged."""
+    lock = threading.Lock()
+    chunks = {'out': [], 'err': []}
+    max_line = 64 * 1024
+
+    def say(fn, *args):
+        with lock:
+            try:
+                fn(*args)
+            except Exception:   # an observer must never break the run
+                pass
+
+    def pump(pipe, name):
+        decoder = codecs.getincrementaldecoder('utf-8')(errors='replace')
+        tail = ''
+        while True:
+            data = pipe.read1(65536) if hasattr(pipe, 'read1') else pipe.read(1)
+            if not data:
+                break
+            chunks[name].append(data)
+            lines = (tail + decoder.decode(data)).split('\n')
+            tail = lines.pop()
+            for line in lines:
+                say(on_line, name, line.rstrip('\r'))
+            if len(tail) > max_line:   # a line without an end: handed over as it is, the tail starts again
+                say(on_line, name, tail)
+                tail = ''
+            elif tail and on_partial is not None:
+                say(on_partial, name, tail)
+        rest = tail + decoder.decode(b'', final=True)
+        if rest:
+            say(on_line, name, rest.rstrip('\r'))
+    threads = [threading.Thread(target=pump, args=(process.stdout, 'out'), daemon=True),
+               threading.Thread(target=pump, args=(process.stderr, 'err'), daemon=True)]
+    for thread in threads:
+        thread.start()
+
+    def finish():
+        for thread in threads:
+            thread.join(timeout=10)
+        for pipe, thread in ((process.stdout, threads[0]), (process.stderr, threads[1])):
+            if pipe and not thread.is_alive():   # a child that detached itself may keep the pipe open: never close it under a blocked reader
+                try:
+                    pipe.close()
+                except OSError:
+                    pass
+    try:
+        process.wait(timeout=check.get('timeout', 300))
+        timed_out = False
+    except subprocess.TimeoutExpired:
+        timed_out = True
+        try:
+            _terminate_tree(process, taskkill)
+        finally:
+            _wait_quietly(process)
+    except BaseException:
+        try:
+            _terminate_tree(process, taskkill)
+        finally:
+            _wait_quietly(process)
+            finish()
+        raise
+    finish()
+    return process.returncode, b''.join(chunks['out']) + b'\n' + b''.join(chunks['err']), timed_out
 
 
 def log_directory(root, log_dir=None):
@@ -228,7 +310,23 @@ def log_directory(root, log_dir=None):
     return contained(root, path)
 
 
-def run_validation(root, checks, *, log_dir=None):
+def evidence_reason(kind, tests_run, tests_skipped, has_success_pattern=False, allow_skips=False):
+    """Why a successful (exit 0) check of a tests kind is NOT evidence of tests, or None: no executed test, an unknown count, skipped tests
+    without a disposition. The single rule of `run_validation` and `test-run` (180-A): `PASS` needs a known, positive number of executed tests."""
+    if kind not in ('test', 'tests', 'integration', 'e2e'):
+        return None
+    if tests_run == 0:
+        return 'Zero executed tests'
+    if tests_run is None and not has_success_pattern:
+        return 'Test count unknown; configure success_pattern for this runner'
+    if tests_skipped and not allow_skips:
+        return 'Skipped tests require explicit disposition'
+    return None
+
+
+def run_validation(root, checks, *, log_dir=None, observer=None):
+    """Run the checks one after another. An optional `observer` (180-A) gets `started(check)`, `line(check, stream, text)` while a check runs and
+    `finished(check, result, output)` after it; without it nothing changes (the output is read after the process ends)."""
     try:
         directory = log_directory(root, log_dir)
     except (OSError, ValueError) as error:
@@ -239,6 +337,7 @@ def run_validation(root, checks, *, log_dir=None):
         result = {'id': check['id'], 'status': 'BLOCKED', 'exit_code': None,
                   'required': check.get('required', True), 'tests_run': None, 'tests_skipped': None}
         start = time.monotonic()
+        ran, output = False, None
         if interrupted:
             result.update(status='NOT_RUN', reason='Validation series interrupted; check not started', duration_seconds=0)
             results.append(result)
@@ -257,7 +356,11 @@ def run_validation(root, checks, *, log_dir=None):
         else:
             try:
                 with _locks(check.get('resources') or ['project:' + str(Path(root).resolve())]):
-                    code, raw, timeout = _execute(check)
+                    if observer is not None:
+                        observer.started(check)
+                        ran = True   # `finished` is called even when the run is interrupted or fails to start (output None)
+                    code, raw, timeout = _execute(check, (lambda stream, text: observer.line(check, stream, text)) if observer is not None else None,
+                                                  (lambda stream, text: observer.partial(check, stream, text)) if observer is not None and hasattr(observer, 'partial') else None)
                 output = raw.decode('utf-8', errors='replace')
                 log_directory(root, directory)
                 directory.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -273,12 +376,10 @@ def run_validation(root, checks, *, log_dir=None):
                     result.update(status='FAIL', reason='Nonzero exit code')
                 elif check.get('success_pattern') and not re.search(check['success_pattern'], output):
                     result['reason'] = 'Required success evidence missing'
-                elif check.get('kind', 'test') in ('test', 'tests', 'integration', 'e2e') and result['tests_run'] == 0:
-                    result['reason'] = 'Zero executed tests'
-                elif check.get('kind', 'test') in ('test', 'tests', 'integration', 'e2e') and result['tests_run'] is None and not check.get('success_pattern'):
-                    result['reason'] = 'Test count unknown; configure success_pattern for this runner'
-                elif check.get('kind', 'test') in ('test', 'tests', 'integration', 'e2e') and result['tests_skipped'] and not check.get('allow_skips', False):
-                    result['reason'] = 'Skipped tests require explicit disposition'
+                elif evidence_reason(check.get('kind', 'test'), result['tests_run'], result['tests_skipped'], bool(check.get('success_pattern')),
+                                     check.get('allow_skips', False)):
+                    result['reason'] = evidence_reason(check.get('kind', 'test'), result['tests_run'], result['tests_skipped'],
+                                                       bool(check.get('success_pattern')), check.get('allow_skips', False))
                 else:
                     result.update(status='PASS', reason='Check completed with required evidence')
             except KeyboardInterrupt:
@@ -287,6 +388,11 @@ def run_validation(root, checks, *, log_dir=None):
             except (OSError, ValueError, re.error) as error:
                 result['reason'] = _redact(str(error))
         result['duration_seconds'] = round(time.monotonic() - start, 6)
+        if observer is not None and ran:
+            try:
+                observer.finished(check, result, output)
+            except Exception:   # an observer must never change the result of the run (the exit code of a command)
+                pass
         results.append(result)
     required = [r for r in results if r['required']]
     status = 'BLOCKED' if not required else ('FAIL' if any(r['status'] == 'FAIL' for r in required) else ('BLOCKED' if any(r['status'] != 'PASS' for r in required) else 'PASS'))
@@ -814,6 +920,8 @@ def plan_closure_findings(root, agentflow=False):
         if not _has_final_record(root, run_id):
             found.append((label, f'Plan is done but run `{run_id}` has no `final` record; '
                                  'close it with `skillsync checkpoint --final` and run `skillsync retro`'))
+    from . import test_gate   # 180-A: a test step ([T]) checked without a passing `test-run`
+    found += test_gate.plan_findings(root)
     return found
 
 
@@ -1058,6 +1166,9 @@ def doctor(root, manifest, library):
     from .guardhook import doctor_findings as guard_findings
     for level, path, reason in guard_findings(root, manifest, skills):
         finding(level, path, reason)
+    from . import test_gate   # 180-A: unmasked test results in the run files, a reporter hint
+    for path, reason in test_gate.doctor_findings(root):
+        finding('warning', path, reason)
     tracked = tracked_generated_files(root)
     if tracked:
         finding('warning', '.gitignore', untrack_message(root, tracked))

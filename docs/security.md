@@ -134,3 +134,13 @@ Zobacz [SECURITY.md](../SECURITY.md).
 ## Hook ochronny przed trwałym usunięciem
 
 `hooks/guard-commands.py` (PreToolUse na `Bash`, tylko Claude Code, projekty z `feature` lub `dispatch`) odmawia `rm -r`, `git clean -f`, `git worktree remove --force` i podobnych poza katalogami tymczasowymi, scratchpadem i katalogami odtwarzalnymi. To **siatka przeciw pomyłce, nie granica bezpieczeństwa**: czyta tekst komendy, więc nie widzi poleceń ukrytych w skryptach, nieznanych wrapperach ani zmiennych, których nie umie rozwiązać; dokumentacja hostów mówi to samo o regułach `Bash`. Wyjątek (`SKILLSYNC_GUARD_EXCEPT`) agent dopisuje sam po zgodzie użytkownika w oknie wyboru; hook nie umie sprawdzić zgody, zostawia ślad w `.skillsync/hook-exceptions.jsonl` (komenda do 500 znaków, bez redakcji sekretów: nie wpisuj sekretów do komend). Błąd hooka nigdy nie blokuje pracy.
+
+## Wyniki testów na stronie statusu
+
+Wyniki testów kroków planu (nazwy testów, grupy, komunikaty porażek) są **niemaskowane**: zapisują się surowo w `.skillsync/runs/<run>/tests/<krok>/<n>.jsonl` i pokazują się bez maski w polu `tests` strony statusu oraz w `GET /api/tests`, **na obu gniazdach, także gdy port odczytu jest widoczny w sieci lokalnej** (decyzja właściciela, 2026-11-16). Komunikat porażki może nieść treść plików, które czyta test (porównania snapshotów, wydruk zmiennych), więc to w praktyce treść plików projektu.
+
+- Wyjątek od maski dotyczy tylko liści będących wynikiem testu (`id`, `name`, `group`, `msg`, nazwa grupy); wiersz polecenia, tytuł kroku, powód zakończenia i cała reszta strony przechodzą przez maskę (`dashboard_tests.finalize_status`). Pliki zdarzeń mają limity (10 000 testów, 8 MiB na bieg, komunikat do 2000 znaków).
+- `tests.mask: on` w manifeście maskuje wyniki przy zapisie i w odpowiedzi strony (stare surowe zdarzenia zostają na dysku).
+- `doctor` ostrzega (`runs-not-ignored`), gdy `.skillsync/runs` jest śledzony w git albo nieobjęty `.gitignore`. Kopia przebiegu jest dozwolona tylko na tej samej maszynie.
+- Komunikatów porażek i nazw testów nie wolno wklejać do treści wychodzących poza maszynę (opis i komentarz PR, `## Wynik` planu, raporty w repozytorium, wiadomości między sesjami): podaje się liczniki, `id` testu i ścieżkę do pliku przebiegu.
+- Bramka kroków `[T]` chroni przed POMINIĘCIEM testów, nie przed FAŁSZERSTWEM: `checkpoint --evidence` zapisuje skrót pliku i nie weryfikuje, kto go napisał.

@@ -26,6 +26,7 @@ from .delivery_mode import delivery_info
 from .status import (APPROVAL_WORDS, APPROVALS_FILE, MAX_APPROVALS_BYTES, _APPROVAL_SHA, _approval_at, _message, _status_fields,
                      git_blob_sha)
 from .pathfmt import posix
+from . import plan_phases, dashboard_tests, test_events
 
 SCHEMA = 1
 APP_NAME = 'dashboard'
@@ -200,8 +201,10 @@ def parse_progress(text):
                 title, note = rest.split(sep, 1)
                 break
         token = note.strip().split()[0].strip(',;()') if note.strip() else ''
-        current['steps'].append({'id': match.group('id'), 'title': title.strip(), 'done': match.group('mark') != ' ',
-                                 'note': note.strip(), 'sha': token if SHA_RE.match(token) else None})
+        is_test = plan_phases.has_test_mark(title)
+        current['steps'].append({'id': match.group('id'), 'title': plan_phases.strip_test_mark(title) if is_test else title.strip(),
+                                 'done': match.group('mark') != ' ', 'note': note.strip(), 'sha': token if SHA_RE.match(token) else None,
+                                 **({'test': True} if is_test else {})})
     return [phase for phase in phases if phase['steps']]
 
 
@@ -2037,7 +2040,7 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
                       'words': delivery_words(delivery, ahead_state, plan_info, waiting, git_info['branch'], target)}
     current_docs = [spec_rel if spec_path else None, chosen['path'] if chosen else None]
     assumptions, blocking = parse_questions(spec_text) if spec_path else ([], [])
-    return {
+    status = {
         'schema': SCHEMA,
         'app': {'name': APP_NAME, 'version': __version__},
         'project': {'name': root.name, 'path': posix(root)},
@@ -2075,6 +2078,7 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
         'substeps': build_substeps(progress, chronological),
         'timing': build_timing(run['start'], chronological, run_approvals(root, run_id), progress['phases']),
     }
+    return dashboard_tests.add_to_status(status, root, run_id, progress['phases'])
 
 
 # --------------------------------------------------------------------------- metrics
@@ -2208,12 +2212,14 @@ def build_metrics(root, run_id, plan=None):
 # --------------------------------------------------------------------------- CLI
 
 def _cmd_show(args):
+    manifest_for_mask = {}
     try:
         root, manifest = read_project(args.path)
+        manifest_for_mask = manifest
         report, code = build_status(root, args.plan, manifest=manifest), 0
     except (OSError, ValueError, TypeError, KeyError, yaml.YAMLError) as error:
         report, code = {'schema': SCHEMA, 'status': 'BLOCKED', 'reason': _message(error, 500)}, 2
-    print(json.dumps(redact(report), ensure_ascii=False, indent=2))
+    print(json.dumps(dashboard_tests.finalize_status(report, test_events.mask_setting(manifest_for_mask)), ensure_ascii=False, indent=2))
     return code
 
 

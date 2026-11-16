@@ -1,0 +1,52 @@
+Test run for <root>/dn/demo/bin/Debug/net10.0/demo.dll (.NETCoreApp,Version=v10.0)
+VSTest version 18.0.2-dev (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.4+50e68bbb8b (64-bit .NET 10.0.14)
+[xUnit.net 00:00:00.05]   Discovering: demo
+[xUnit.net 00:00:00.10]   Discovered:  demo
+[xUnit.net 00:00:00.12]   Starting:    demo
+[xUnit.net 00:00:00.16]     demo.UnitTest1.Boom [FAIL]
+[xUnit.net 00:00:00.16]       Assert.Equal() Failure: Values differ
+[xUnit.net 00:00:00.16]       Expected: 1
+[xUnit.net 00:00:00.16]       Actual:   2
+[xUnit.net 00:00:00.16]       Stack Trace:
+[xUnit.net 00:00:00.16]         <root>/dn/demo/UnitTest1.cs(4,0): at demo.UnitTest1.Boom()
+[xUnit.net 00:00:00.16]            at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)
+[xUnit.net 00:00:00.16]            at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+[xUnit.net 00:00:00.18]     demo.UnitTest1.Param(x: 2) [FAIL]
+[xUnit.net 00:00:00.18]       Assert.Equal() Failure: Values differ
+[xUnit.net 00:00:00.18]       Expected: 1
+[xUnit.net 00:00:00.18]       Actual:   2
+[xUnit.net 00:00:00.18]       Stack Trace:
+[xUnit.net 00:00:00.18]         <root>/dn/demo/UnitTest1.cs(5,0): at demo.UnitTest1.Param(Int32 x)
+[xUnit.net 00:00:00.18]            at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)
+[xUnit.net 00:00:00.18]            at System.Reflection.MethodBaseInvoker.InvokeDirectByRefWithFewArgs(Object obj, Span`1 copyOfArgs, BindingFlags invokeAttr)
+[xUnit.net 00:00:00.18]   Finished:    demo
+  Failed demo.UnitTest1.Boom [5 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 1
+Actual:   2
+  Stack Trace:
+     at demo.UnitTest1.Boom() in <root>/dn/demo/UnitTest1.cs:line 4
+   at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+  Failed demo.UnitTest1.Param(x: 2) [< 1 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 1
+Actual:   2
+  Stack Trace:
+     at demo.UnitTest1.Param(Int32 x) in <root>/dn/demo/UnitTest1.cs:line 5
+   at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)
+   at System.Reflection.MethodBaseInvoker.InvokeDirectByRefWithFewArgs(Object obj, Span`1 copyOfArgs, BindingFlags invokeAttr)
+  Passed demo.UnitTest1.Param(x: 1) [< 1 ms]
+  Passed demo.UnitTest1.Ok [< 1 ms]
+
+Test Run Failed.
+Total tests: 4
+     Passed: 2
+     Failed: 2
+ Total time: 0,5961 Seconds
