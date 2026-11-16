@@ -15,8 +15,9 @@ from skillsync_workflow import quality  # noqa: E402
 from skillsync_workflow.common import append_missing_lines, decode_text  # noqa: E402
 from skillsync_workflow.plan_phases import parse_plan_phases  # noqa: E402
 
-RARE = {'VT': '\x0b', 'FF': '\x0c', 'FS': '\x1c', 'GS': '\x1d', 'RS': '\x1e', 'NEL': '\x85', 'LS': ' ', 'PS': ' '}
+RARE = {'VT': '\x0b', 'FF': '\x0c', 'FS': '\x1c', 'GS': '\x1d', 'RS': '\x1e', 'NEL': '\x85', 'LS': '\u2028', 'PS': '\u2029'}
 TABLE = "| Id | Krok |\n|---|---|\n| F1 | Ekran{c}logowania [UI] |\n| F2 | Backend |\n| F3 [UI]{c}x | Panel |\n"
+assert [ord(char) for char in RARE.values()] == [0x0b, 0x0c, 0x1c, 0x1d, 0x1e, 0x85, 0x2028, 0x2029]   # the characters are the intended ones, not spaces
 EXPECTED = {'phases': ['F1', 'F2', 'F3'], 'ui_phases': ['F1', 'F3'], 'stray_ui': 0}
 
 
@@ -30,7 +31,7 @@ class PlanPhasesAtRareSeparators(unittest.TestCase):
     def test_the_table_reads_the_same_with_lf_crlf_and_a_lone_cr(self):
         for name, end in (('LF', b'\n'), ('CRLF', b'\r\n'), ('CR', b'\r')):
             with self.subTest(line_end=name):
-                text = decode_text(TABLE.format(c=' ').encode('utf-8').replace(b'\n', end))
+                text = decode_text(TABLE.format(c='\u2028').encode('utf-8').replace(b'\n', end))
                 self.assertEqual(parse_plan_phases(text), EXPECTED)
 
 
@@ -76,7 +77,7 @@ class AppendMissingLinesAtRareSeparators(unittest.TestCase):
                 self.assertIsNone(append_missing_lines(original, self.ENTRIES))
 
     def test_crlf_and_a_lone_cr_file_keeps_its_bytes_and_its_line_end_style(self):
-        original = 'copilot-instructions.md\r\nskills/ old\r\n'
+        original = 'copilot-instructions.md\r\nskills/\u2028old\r\n'
         updated = append_missing_lines(original, self.ENTRIES)
         self.assertTrue(updated.startswith(original))
         self.assertEqual(updated[len(original):], 'skills/\r\n.skillsync.yaml\r\n')
@@ -85,6 +86,17 @@ class AppendMissingLinesAtRareSeparators(unittest.TestCase):
 
     def test_the_key_function_still_applies(self):
         self.assertIsNone(append_missing_lines('  skills/  \n', ['skills/'], key=str.strip))
+        for name, char in RARE.items():
+            with self.subTest(char=name):
+                self.assertIsNone(append_missing_lines(f'{char}skills/{char}\n', ['skills/'], key=str.strip))            # `strip` takes it off the edges
+                self.assertEqual(append_missing_lines(f'skills/{char}old\n', ['skills/'], key=str.strip), f'skills/{char}old\nskills/\n')
+
+    def test_a_bom_and_undecodable_bytes_leave_the_old_bytes_and_the_check_as_before(self):
+        text = '\ufeffcopilot-instructions.md\nskills/\n'
+        self.assertEqual(append_missing_lines(text, ['skills/', '.skillsync.yaml']), text + '.skillsync.yaml\n')
+        raw = b'skills/\n\xff\xfe broken\n'.decode('utf-8', 'surrogateescape')                     # as `link` reads an ignore file
+        updated = append_missing_lines(raw, ['skills/', '.skillsync.yaml'])
+        self.assertEqual(updated.encode('utf-8', 'surrogateescape'), b'skills/\n\xff\xfe broken\n.skillsync.yaml\n')
 
 
 class OutsideFencesAtRareSeparators(unittest.TestCase):
@@ -97,8 +109,17 @@ class OutsideFencesAtRareSeparators(unittest.TestCase):
             with self.subTest(char=name):
                 self.assertEqual(quality._outside_fences(self.TEXT.format(c=char)), expected)
 
+    def test_a_rare_separator_in_the_line_of_a_fence_follows_commonmark(self):
+        for name, char in RARE.items():
+            with self.subTest(char=name):
+                # "```<char>python" opens a block, and inside it does not close it; "```<char>" (only white space after the marker) closes it
+                opened = f"a\n```{char}python\nkod\n```{char}python\nstill code\n```\nb\n"
+                self.assertIn('b', quality._outside_fences(opened))
+                self.assertNotIn('still code', quality._outside_fences(opened))
+                self.assertNotIn('kod', quality._outside_fences(opened))
+
     def test_crlf_gives_the_same_text(self):
-        text = decode_text(self.TEXT.format(c=' ').encode('utf-8').replace(b'\n', b'\r\n'))
+        text = decode_text(self.TEXT.format(c='\u2028').encode('utf-8').replace(b'\n', b'\r\n'))
         self.assertEqual(quality._outside_fences(text), 'tekst\nkod2')
 
 

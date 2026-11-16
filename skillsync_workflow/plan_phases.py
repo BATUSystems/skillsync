@@ -42,8 +42,7 @@ def parse_plan_phases(text):
     phases, ui_phases, stray = [], [], 0
     fence = None  # (character, length) of the open code fence
     table = None  # None outside a table, otherwise (id column, step column) or False for an unrecognised table
-    for raw in file_lines(text):
-        line = raw.rstrip('\r')
+    for line in file_lines(text):   # a lone CR and CRLF are line ends here, so no line keeps a `\r`
         stripped = line.lstrip(' ')
         indented = len(line) - len(stripped) >= 4 or stripped.startswith('\t')
         opening = None if indented else _FENCE_OPEN.match(stripped)

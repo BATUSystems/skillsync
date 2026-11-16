@@ -19,7 +19,7 @@ from skillsync_workflow.common import decode_text, file_lines  # noqa: E402
 from tests import test_skillsync_dashboard_server as base  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
-RARE = {'VT': '\x0b', 'FF': '\x0c', 'FS': '\x1c', 'GS': '\x1d', 'RS': '\x1e', 'NEL': '\x85', 'LS': ' ', 'PS': ' '}
+RARE = {'VT': '\x0b', 'FF': '\x0c', 'FS': '\x1c', 'GS': '\x1d', 'RS': '\x1e', 'NEL': '\x85', 'LS': '\u2028', 'PS': '\u2029'}
 ENDS = {'LF': b'\n', 'CRLF': b'\r\n', 'CR': b'\r'}
 
 
@@ -215,7 +215,7 @@ class ProjectAtEveryLineEnd(unittest.TestCase):
     def test_the_duplicate_check_of_record_approval_sees_such_an_entry(self):
         root = base.make_project(self.tmp / 'duplicate')
         run = base.RUN.split('/')[-1]
-        (root / base.RUN / 'approvals.jsonl').write_bytes(json.dumps(self.entry(by='a b'), ensure_ascii=False).encode('utf-8') + b'\n')
+        (root / base.RUN / 'approvals.jsonl').write_bytes(json.dumps(self.entry(by='a\u2028b'), ensure_ascii=False).encode('utf-8') + b'\n')
         report = status.record_approval(root, 'GO plan', run, 'a' * 40, source='cli')
         self.assertEqual(report['status'], 'BLOCKED', report)
         self.assertIn('already recorded', report['reason'])
@@ -224,14 +224,14 @@ class ProjectAtEveryLineEnd(unittest.TestCase):
         root = base.make_project(self.tmp / 'ls')
         path = root / base.PLAN
         text = path.read_text(encoding='utf-8')
-        path.write_text(text.replace('S3a API terminów', 'S3a API terminów <b>x</b>'), encoding='utf-8')
+        path.write_text(text.replace('S3a API terminów', 'S3a API\u2028terminów <b>x</b>'), encoding='utf-8')
         data = engine.build_status(root, base.PLAN, manifest={})
         found = json.dumps(data, ensure_ascii=False)
-        self.assertIn('API terminów <b>x</b>', found)                          # whole, no cut, and still plain text of the JSON
+        self.assertIn('API\u2028terminów <b>x</b>', found)                          # whole, no cut, and still plain text of the JSON
         self.assertEqual(json.loads(found)['plan']['path'], base.PLAN)                # the JSON written with ensure_ascii=False is valid
         from skillsync_workflow import dashboard_http
-        html = dashboard_http.render_markdown('# T\n\nAPI terminów <b>x</b>\n', 'docs/plans/p.md')
-        self.assertIn('API terminów', html)
+        html = dashboard_http.render_markdown('# T\n\nAPI\u2028terminów <b>x</b>\n', 'docs/plans/p.md')
+        self.assertIn('API\u2028terminów', html)
         self.assertNotIn('<b>', html)                                                 # the markup of the text is escaped, a separator is just a character
 
 
