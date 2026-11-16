@@ -207,6 +207,9 @@ def problems_contracts(ci, smoke):
                  "tests/k1_grep.py", "--durations 30", "sys.version_info >= (3, 12)"):   # durations: Python 3.12+ only (3.11 rejects the option)
         if need not in text:
             errs.append(f"test: brak {need}")
+    unit = next((str(s.get("run", "")) for s in steps_of(test) if s.get("name") == "Unit tests"), "")
+    if not any("unittest discover" in line and "$DURATIONS" in line for line in unit.splitlines()):
+        errs.append("test: the `unittest discover` line must carry $DURATIONS (the slowest tests in every log)")
     uses = [s.get("uses", "") for s in steps_of(test)]
     for a in ("actions/setup-python", "astral-sh/setup-uv", "actions/setup-node"):
         if not any(u.startswith(a) for u in uses):

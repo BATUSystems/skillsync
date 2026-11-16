@@ -147,10 +147,10 @@ class HelpOutsideAGitCheckout(SelfArgvCase):
         # Every `<command> --help` is still its own child process of the copy (this is what the test is about); they run side by side
         # (the cost of the test is the start of ~50 interpreters, 0.4 s each, not the copy of the package) and are judged one by one below.
         with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, os.cpu_count() or 2)) as pool:
-            processes = dict(zip(commands, pool.map(lambda command: self.run_self(argv, path, command, '--help'), commands)))
+            futures = {command: pool.submit(self.run_self, argv, path, command, '--help') for command in commands}
         for command in commands:
             with self.subTest(command=command):
-                process = processes[command]
+                process = futures[command].result()   # a TimeoutExpired is the failure of this command only
                 self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
                 self.assertTrue(process.stdout.startswith('usage: skillsync'), process.stdout[:80])
                 self.assertNotIn('Traceback', process.stderr)

@@ -19,7 +19,7 @@ CLI = ROOT / 'skillsync'
 
 def child(argv, cwd=None, env=None):
     return subprocess.run([sys.executable, str(CLI), *argv], capture_output=True, text=True, encoding='utf-8', errors='replace', cwd=cwd,
-                          env={**os.environ, **(env or {})}, timeout=60)
+                          env={**os.environ, 'COLUMNS': '80', **(env or {})}, timeout=60)
 
 
 class Parity(unittest.TestCase):
@@ -116,6 +116,41 @@ class Isolation(unittest.TestCase):
             cli.main = load
             run_cli(['x'], cwd=tmp)
         self.assertNotIn('cli_probe_module', sys.modules)
+
+
+    def test_a_standard_library_module_imported_by_the_call_stays_loaded(self):
+        import skillsync_workflow.cli as cli
+        original = cli.main
+        self.addCleanup(setattr, cli, 'main', original)
+        sys.modules.pop('colorsys', None)
+
+        def load():
+            import colorsys   # noqa: F401
+        cli.main = load
+        run_cli(['x'])
+        self.assertIn('colorsys', sys.modules)   # dropping it would give the next import a second copy
+
+    def test_a_keyboard_interrupt_stops_the_run_and_restores_the_process(self):
+        import skillsync_workflow.cli as cli
+        original = cli.main
+        before = self.snapshot()
+
+        def interrupt():
+            os.environ['SKILLSYNC_LEAK'] = '1'
+            raise KeyboardInterrupt
+        cli.main = interrupt
+        self.addCleanup(setattr, cli, 'main', original)
+        with self.assertRaises(KeyboardInterrupt):
+            run_cli(['x'])
+        self.assertEqual(self.snapshot(), before)
+
+    def test_output_has_unix_line_ends_and_a_fixed_width(self):
+        result = run_cli(['--help'])
+        self.assertNotIn('\r', result.stdout)
+        os.environ['COLUMNS'] = '200'
+        self.addCleanup(os.environ.pop, 'COLUMNS', None)
+        wide_terminal = run_cli(['--help'])
+        self.assertEqual(wide_terminal.stdout, result.stdout)
 
     def test_the_package_stays_loaded(self):
         run_cli(['--version'])
