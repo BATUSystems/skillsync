@@ -306,8 +306,6 @@ class NoRawLineSplitting(unittest.TestCase):
              'skillsync_workflow/plan_phases.py', 'skillsync_workflow/quality.py', 'skillsync_workflow/status.py', 'skillsync_workflow/repomap.py',
              'skillsync_workflow/cli.py')   # the files whose readers of project text are all converted
     EXCEPTIONS = {
-        ('skillsync_workflow/status.py', '_plan_status_kept_since'):
-            'the text is the output of `git log -p` (a process, decoded with `replace`), not a project file; the hunk lines are cut at the line ends of git',
         ('skillsync_workflow/dashboard_http.py', 'render_markdown'):
             'the text is normalized first (`\\r\\n` and a lone `\\r` become `\\n`) and the other separators are ordinary characters of the line',
     }

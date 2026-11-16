@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from skillsync_workflow import cli, repomap, status  # noqa: E402
 
-RARE = {'VT': '\x0b', 'FF': '\x0c', 'FS': '\x1c', 'GS': '\x1d', 'RS': '\x1e', 'NEL': '\x85', 'LS': ' ', 'PS': ' '}
+RARE = {'VT': '\x0b', 'FF': '\x0c', 'FS': '\x1c', 'GS': '\x1d', 'RS': '\x1e', 'NEL': '\x85', 'LS': '\u2028', 'PS': '\u2029'}
 assert [ord(char) for char in RARE.values()] == [0x0b, 0x0c, 0x1c, 0x1d, 0x1e, 0x85, 0x2028, 0x2029]
 
 
@@ -43,10 +43,17 @@ class RiskSectionsOfASpec(unittest.TestCase):
             with self.subTest(char=name):
                 self.assertEqual(status.pre_implement_sections(self.SPEC.format(c=char)), ['Kontrakty'])
 
+    def test_a_separator_at_the_end_of_an_empty_marker_still_means_empty(self):
+        # `TODO<char>` alone on its line: the character is white space at the edge (as when `splitlines()` cut it off), the section stays empty
+        for name, char in RARE.items():
+            with self.subTest(char=name):
+                self.assertEqual(status.pre_implement_sections('# Spec\n\n## Kontrakty\n\nTODO' + char + '\n\n## Inne\n\ntekst\n'), [])
+                self.assertEqual(status.pre_implement_sections('# Spec\n\n## Migracja\n\nnie dotyczy' + char + '\n'), [])
+
     def test_lf_and_crlf_read_the_same(self):   # a lone CR file is not read here at all: the heading pattern (`^...$` MULTILINE) knows only `\n` (outside this change)
         for name, end in (('LF', '\n'), ('CRLF', '\r\n')):
             with self.subTest(line_end=name):
-                self.assertEqual(status.pre_implement_sections(self.SPEC.format(c=' ').replace('\n', end)), ['Kontrakty'])
+                self.assertEqual(status.pre_implement_sections(self.SPEC.format(c='\u2028').replace('\n', end)), ['Kontrakty'])
                 self.assertEqual(status.pre_implement_sections(self.SPEC.format(c=end).replace('\n', end)), [])
 
 
