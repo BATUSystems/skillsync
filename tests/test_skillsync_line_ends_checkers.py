@@ -59,6 +59,38 @@ class GateAtRareSeparators(unittest.TestCase):
                     self.assertEqual((report['status'], report.get('error'), report['uiPhases']), ('BLOCKED', 'ui_phase_without_prototype', ['F1', 'F3']), report)
 
 
+class PrototypeLineAtRareSeparators(unittest.TestCase):
+    """The header of a plan is read by `prototype.prototype_gate`: a `Prototyp:` line holds ONE path. A rare separator inside the line made the old
+    reader cut it to the part before it, a shorter and possibly valid path (here: a prototype that does not exist is `prototype_not_found`; with
+    the character the line must be refused whole as `invalid_prototype_line`, never read as the shorter path)."""
+
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp(prefix='proto-line-')).resolve()
+        self.addCleanup(lambda: shutil.rmtree(self.root, ignore_errors=True))
+        (self.root / 'docs' / 'plans').mkdir(parents=True)
+
+    def gate(self, header_line, end=b'\n'):
+        text = f'# Plan\n\nStatus: draft\n{header_line}\n\n## Kroki\n\nnic\n'
+        (self.root / 'docs' / 'plans' / 'p.md').write_bytes(text.encode('utf-8').replace(b'\n', end))
+        return pt.prototype_gate(self.root, {}, plan='docs/plans/p.md')
+
+    def test_the_line_is_refused_whole_and_never_read_as_the_shorter_path(self):
+        control = self.gate('Prototyp: docs/prototypes/alpha')
+        self.assertEqual(control.get('error'), 'prototype_not_found', control)       # the shorter path is read as it stands
+        for name, char in RARE.items():
+            for line_end in (b'\n', b'\r\n'):
+                with self.subTest(char=name, line_end=line_end):
+                    report = self.gate(f'Prototyp: docs/prototypes/alpha{char}x', line_end)
+                    self.assertEqual((report['status'], report.get('error')), ('BLOCKED', 'invalid_prototype_line'), report)
+
+    def test_a_bypass_reason_with_a_rare_separator_is_read_whole(self):
+        for name, char in RARE.items():
+            with self.subTest(char=name):
+                report = self.gate(f'Bramka prototypu: pominięta — powód{char}drugi — Osoba, 2026-11-16')
+                self.assertNotEqual(report.get('error'), 'invalid_bypass_line', report)
+                self.assertEqual(report.get('bypassed', {}).get('reason'), f'powód{char}drugi', report)
+
+
 class AppendMissingLinesAtRareSeparators(unittest.TestCase):
     ENTRIES = ['copilot-instructions.md', 'skills/', '.skillsync.yaml']
 

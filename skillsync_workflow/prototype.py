@@ -34,7 +34,7 @@ import unicodedata
 import time
 import urllib.parse
 import yaml
-from .common import append_missing_lines, contained, emit, load_layer_project, read_project, read_yaml, require_layerset
+from .common import append_missing_lines, contained, emit, file_lines, load_layer_project, read_project, read_yaml, require_layerset
 from .pathfmt import posix
 from . import layers as _layers
 from . import prototype_server as server
@@ -3076,10 +3076,10 @@ MAX_GATE_PLAN = 1024 * 1024
 def _plan_header(text):
     """The plan header: the text before the first line starting with `## `."""
     lines = []
-    for line in text.splitlines():
+    for line in file_lines(text):   # a rare separator inside a line (VT, FF, NEL, LS, ...) must not cut a `Prototyp:` path to a shorter, valid one
         if line.startswith('## '):
             break
-        lines.append(line.rstrip('\r'))
+        lines.append(line)
     return lines
 
 
