@@ -16,7 +16,8 @@ from pathlib import Path
 import yaml
 
 from .fsutil import ensure_utf8_streams, isabs, rmtree_force
-from .common import CONDITIONAL_SKILL_ALIASES, append_missing_lines, conditional_skill_alias, detect_eol, discover_excludes, is_excluded
+from .common import (CONDITIONAL_SKILL_ALIASES, append_missing_lines, checked_out_link, conditional_skill_alias, detect_eol, discover_excludes,
+                     is_excluded)
 
 CONFIG_PATH = Path(os.environ.get("SKILLSYNC_CONFIG") or (Path.home() / ".config" / "skillsync" / "config.yaml"))
 STATE_FILE = Path(".github") / ".skillsync-state.json"
@@ -1459,7 +1460,7 @@ def place(src, dest: Path, method: str, state: dict, key: str, owned: bool, dry_
         if copy_tracked(state, key):
             merge_copy(src, dest, state, key, dry_run)  # per file `{owner, base}` (K4)
             return
-        if not owned:
+        if not owned and not checked_out_link(dest):   # a link that git checked out as a file (core.symlinks off) is replaced, the user's file is not
             print(f"[warn] Skipping {dest}: exists and is not managed by skillsync")
             return
         if dry_run:

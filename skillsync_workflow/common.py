@@ -217,6 +217,29 @@ def contained(root, path):
     return candidate
 
 
+def checked_out_link(path):
+    """True when `path` is a small regular FILE that git tracks as a symlink (mode 120000) AND whose bytes are exactly the blob of the index: git did
+    not recreate the link and wrote its target as text (`core.symlinks` off, a Windows checkout or worktree without the right to create links).
+    A file that differs from the blob (the user replaced the tracked link with an own file) is not one. `link` replaces such a file and `doctor`
+    names the repair. Only for a small regular file: one `git ls-files -s`, and one `git hash-object --no-filters` when git tracks it as a link;
+    False outside git and on any error (the file stays)."""
+    path = Path(path)
+    try:
+        if path.is_symlink() or not path.is_file() or path.stat().st_size > 4096:
+            return False
+        process = subprocess.run(['git', '-C', str(path.parent), 'ls-files', '-s', '--', path.name], capture_output=True, timeout=10, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    fields = process.stdout.split(b'\t', 1)[0].split()
+    if process.returncode or len(fields) != 3 or fields[0] != b'120000' or fields[2] != b'0':
+        return False
+    try:
+        same = subprocess.run(['git', '-C', str(path.parent), 'hash-object', '--no-filters', '--', path.name], capture_output=True, timeout=10, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return same.returncode == 0 and same.stdout.strip() == fields[1]
+
+
 def normalize_files(root, files):
     """Project-relative POSIX names of a list of files (changed files from git, `--files`). The containment is checked on the path ITSELF: the
     parent directory is resolved physically (a directory that is a link to the outside is an escape), the last component is not followed, so a

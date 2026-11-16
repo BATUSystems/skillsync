@@ -16,6 +16,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from layers_helpers import LayersCase, commit, git, needs_os_symlinks, write  # noqa: E402
+from skillsync_workflow.common import checked_out_link  # noqa: E402
+from skillsync_workflow.fsutil import rmtree_force  # noqa: E402   (git objects are read-only on Windows)
 
 
 @needs_os_symlinks
@@ -93,9 +95,11 @@ class TrackedSkillLinks(TrackedLinksFixture):
         return path
 
     def test_a_fresh_worktree_doctor_fails_with_the_command_to_run_and_link_repairs_it(self):
-        shutil.rmtree(self.committed_target)   # the target of the commit is gone (another machine, a cleaned cache)
+        rmtree_force(self.committed_target)   # the target of the commit is gone (another machine, a cleaned cache)
         wt = self.worktree()
-        self.assertTrue((wt / '.github/skills/foo').is_symlink() and not (wt / '.github/skills/foo').exists())
+        link = wt / '.github/skills/foo'
+        dangling, degraded = link.is_symlink() and not link.exists(), checked_out_link(link)
+        self.assertTrue(dangling or degraded, 'git recreated the link (its target is gone) or wrote the target as a file (core.symlinks off)')
         code, report = self.run_cli(wt, 'doctor', str(wt))
         self.assertEqual((code, report['status']), (1, 'FAIL'), report)
         errors = [item['reason'] for item in report['findings'] if item['level'] == 'error']
@@ -104,6 +108,20 @@ class TrackedSkillLinks(TrackedLinksFixture):
         self.assertTrue((wt / '.github/skills/foo').exists())
         code, report = self.run_cli(wt, 'doctor', str(wt))
         self.assertEqual((code, report['status']), (0, 'PASS'), report)
+
+    def test_a_worktree_made_with_core_symlinks_off_has_files_and_doctor_names_the_repair(self):
+        wt = self.work / 'wt-nolinks'
+        git(self.proj, '-c', 'core.symlinks=false', 'worktree', 'add', '-q', '-b', 'work-nolinks', str(wt))   # as a Windows checkout without links
+        link = wt / '.github/skills/foo'
+        self.assertTrue(link.is_file() and not link.is_symlink(), 'git wrote the target as a regular file')
+        self.assertTrue(checked_out_link(link))
+        code, report = self.run_cli(wt, 'doctor', str(wt))
+        errors = [item['reason'] for item in report['findings'] if item['level'] == 'error']
+        self.assertEqual((code, report['status']), (1, 'FAIL'), report)
+        self.assertTrue(errors and all('skillsync link' in reason for reason in errors), errors)
+        self.assertEqual(self.run_cli(wt, 'link', str(wt))[0], 0)
+        self.assertFalse(link.is_file() and not link.is_symlink(), 'link replaced the file')
+        self.assertEqual(self.run_cli(wt, 'doctor', str(wt))[1]['status'], 'PASS')
 
     def test_readiness_and_checkpoint_work_in_a_worktree_before_and_after_link(self):
         wt = self.worktree()
@@ -178,7 +196,7 @@ class TrackedSkillLinks(TrackedLinksFixture):
         self.assertIn('only if `skillsync link` generates them', warning)
 
     def test_doctor_outside_git_has_no_tracking_warning(self):
-        shutil.rmtree(self.proj / '.git')
+        rmtree_force(self.proj / '.git')
         code, report = self.run_cli(self.proj, 'doctor', str(self.proj))
         self.assertEqual([item for item in report['findings'] if 'tracked in git' in item['reason']], [])
 
@@ -282,6 +300,113 @@ class GuardAndSelectionWithTrackedLinks(TrackedLinksFixture):
         code, report = self.run_cli(self.proj, 'validate', str(self.proj), '--profile', 'quick', '--run')
         self.assertNotIn('Workflow artifact symlinks are forbidden', json.dumps(report), report)
         self.assertNotEqual(report.get('status'), 'BLOCKED', report)
+
+
+class DegradedLinks(LayersCase):
+    """The state of a project that tracks its skill links after a clone or a `git worktree add` on a system without `core.symlinks`: git tracks
+    the entry as a link (mode 120000) but the working tree has a regular FILE with the target as text. No link has to be creatable here: the
+    state is made with the index, so the tests run on every system."""
+    PATHS = ('.github/skills/foo', '.claude/skills/foo')
+
+    def setUp(self):
+        super().setUp()
+        core = self.layer_dir('core', 'core', {'skills/foo/SKILL.md': '---\nname: foo\ndescription: d\n---\nfoo from core\n'})
+        self.write_config([('core', 'core', core)], [(['**'], ['core'])])
+        self.proj = self.project('clients/acme/app')
+        write(self.proj / '.github' / '.skillsync.yaml', 'skills: [foo]\n')
+        git(self.proj, 'init', '-q', '-b', 'main')
+        git(self.proj, 'config', 'user.email', 'dev@example.test')
+        git(self.proj, 'config', 'user.name', 'Dev')
+        write(self.proj / 'a.txt', 'x\n')
+        git(self.proj, 'add', '-A')
+        commit(self.proj, 'base')
+        for rel in self.PATHS:   # no earlier `link`: a copy-mode state of an earlier run would make the files a conflict, not a degraded link
+            self.degrade(rel, 120000)
+        commit(self.proj, 'tracked skill links')
+
+    def degrade(self, rel, mode):
+        """Replace the installed skill by a regular file with a target text, tracked in the index with `mode` (120000: a link)."""
+        path = self.proj / rel
+        if path.is_symlink() or path.is_file():
+            path.unlink()
+        elif path.exists():
+            rmtree_force(path)
+        text = '../../../elsewhere/skills/foo'
+        write(path, text)
+        blob = git(self.proj, 'hash-object', '-w', '--stdin', input=text).stdout.strip()
+        git(self.proj, 'update-index', '--add', '--cacheinfo', f'{mode},{blob},{rel}')
+
+    def doctor(self):
+        process = self.cli('doctor', str(self.proj), '--json', cwd=self.proj)
+        report = json.loads(process.stdout)
+        return process.returncode, report, {item['path'].replace('\\', '/').split('clients/acme/app/')[-1]: item['reason']
+                                            for item in report['findings'] if item['level'] == 'error'}
+
+    def test_doctor_names_the_repair_for_a_link_that_git_checked_out_as_a_file(self):
+        code, report, errors = self.doctor()
+        self.assertEqual((code, report['status']), (1, 'FAIL'), report)
+        for rel in self.PATHS:
+            self.assertIn('A regular file stands where the skill link should be', errors[rel])
+            self.assertIn('skillsync link', errors[rel])
+
+    def test_link_replaces_the_degraded_links_and_doctor_passes(self):
+        process = self.cli('link', str(self.proj), cwd=self.proj)
+        self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+        self.assertNotIn('not managed by skillsync', process.stdout + process.stderr)
+        for rel in self.PATHS:
+            path = self.proj / rel
+            self.assertTrue(path.is_symlink() or path.is_dir(), f'{rel} is still a plain file')
+        code, report, errors = self.doctor()
+        self.assertEqual((code, report['status'], errors), (0, 'PASS', {}), report)
+
+    def test_a_tracked_link_that_the_user_replaced_by_an_own_file_is_left_alone(self):
+        path = self.proj / '.claude/skills/foo'
+        path.write_text('my own notes, not the target of the link\n', encoding='utf-8')   # the index still says: a link with another blob
+        self.assertFalse(checked_out_link(path))
+        process = self.cli('link', str(self.proj), cwd=self.proj)
+        self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+        self.assertIn('not managed by skillsync', process.stdout + process.stderr)
+        self.assertEqual(path.read_text(encoding='utf-8'), 'my own notes, not the target of the link\n')
+        code, report, errors = self.doctor()
+        self.assertIn('Invalid installed skill copy', errors['.claude/skills/foo'])
+
+    def test_dry_run_changes_nothing_and_says_what_it_would_do(self):
+        before = {rel: (self.proj / rel).read_text(encoding='utf-8') for rel in self.PATHS}
+        process = self.cli('link', str(self.proj), '--dry-run', cwd=self.proj)
+        out = process.stdout + process.stderr
+        self.assertEqual(process.returncode, 0, out)
+        for rel in self.PATHS:
+            self.assertIn(f'[dry-run] Would replace: {self.proj / rel}', out)
+            path = self.proj / rel
+            self.assertTrue(path.is_file() and not path.is_symlink() and path.read_text(encoding='utf-8') == before[rel], rel)
+
+    def git_calls(self, *args):
+        trace = self.work / 'git-trace.txt'
+        trace.write_text('', encoding='utf-8')
+        process = self.cli(*args, cwd=self.proj, env={'GIT_TRACE': str(trace)})
+        self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+        text = trace.read_text(encoding='utf-8', errors='replace')
+        return text.count('ls-files -s'), text.count('hash-object')
+
+    def test_the_check_costs_git_processes_only_for_a_file_that_is_in_the_way(self):
+        # degraded: the host that skillsync does not own (.claude) has ONE plain file in the way: one ls-files and one hash-object
+        self.assertEqual(self.git_calls('link', str(self.proj)), (1, 1))
+        # a normal project (links or copies in place): no process at all
+        self.assertEqual(self.git_calls('link', str(self.proj)), (0, 0))
+        code, report, errors = self.doctor()
+        self.assertEqual((code, errors), (0, {}))
+
+    def test_a_file_of_the_user_that_git_does_not_track_as_a_link_is_left_alone(self):
+        self.degrade('.claude/skills/foo', 100644)   # an ordinary tracked file
+        commit(self.proj, 'own file')
+        before = (self.proj / '.claude/skills/foo').read_text(encoding='utf-8')
+        process = self.cli('link', str(self.proj), cwd=self.proj)
+        self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+        self.assertIn('not managed by skillsync', process.stdout + process.stderr)
+        self.assertEqual((self.proj / '.claude/skills/foo').read_text(encoding='utf-8'), before)
+        self.assertFalse(checked_out_link(self.proj / '.claude/skills/foo'))
+        code, report, errors = self.doctor()
+        self.assertIn('Invalid installed skill copy', errors['.claude/skills/foo'])
 
 
 class UntrackMessage(unittest.TestCase):
