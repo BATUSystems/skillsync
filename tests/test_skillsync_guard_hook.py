@@ -391,6 +391,42 @@ class Protocol(unittest.TestCase):
             with self.subTest(project=name):
                 self.assertEqual(self.run_hook(self.bash(f'rm -rf {spelling}', root), cwd=root).returncode, 2)
 
+    @staticmethod
+    def short_name(path):
+        import ctypes
+        buffer = ctypes.create_unicode_buffer(600)
+        ctypes.windll.kernel32.GetShortPathNameW(str(path), buffer, 600)
+        return buffer.value or str(path)
+
+    def test_windows_extra_forms_glob_cd_and_escapes(self):
+        """Windows only (nothing to assert elsewhere, and nothing is skipped: the body is the branch): the Git Bash form with a glob tail, after `cd`,
+        in `git -C`, and the spellings that must stay refused (`..` out of the root, the drive root, another drive, case and 8.3 of the path pass)."""
+        if os.name != 'nt':
+            module = self.load_hook()
+            self.assertEqual(module.msys_to_native('/c/x'), '/c/x')   # the default branch (no `windows=` argument): nothing is mapped off Windows
+            root = self.project()
+            (root / 'node_modules').mkdir()
+            done = self.run_hook(self.bash('rm -rf /c/node_modules', root), cwd=root)   # a literal path outside the project: not a project artefact
+            self.assertEqual(done.returncode, 2, done.stderr)
+            return
+        root = self.project()
+        (root / 'src').mkdir()
+        (self.tmp_root / 'x').mkdir()
+        tmp = str(self.tmp_root)
+        msys = '/' + tmp[0].lower() + tmp[2:].replace('\\', '/')
+        cases = {f'rm -rf {msys}/foo*': 0, f'cd {msys} && rm -rf x': 0, f'rm -rf {msys}/../proj/src': 2, 'rm -rf /c/': 2, 'rm -rf /c': 2,
+                 f'rm -rf /z/{tmp[3:].replace(chr(92), "/")}/x': 2, f"rm -rf '{tmp.upper()}/x'": 0, f"rm -rf '{self.short_name(self.tmp_root)}/x'": 0,
+                 f'git -C {"/" + str(root)[0].lower() + str(root)[2:].replace(chr(92), "/")} clean -fd': 2}
+        for command, expected in cases.items():
+            with self.subTest(command=command):
+                self.assertEqual(self.run_hook(self.bash(command, root), cwd=root).returncode, expected, command)
+
+    def load_hook(self):
+        spec = importlib.util.spec_from_file_location('guard_commands_under_test_2', HOOK)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
     def test_git_bash_drive_paths_map_to_the_drive_only_on_windows(self):
         spec = importlib.util.spec_from_file_location('guard_commands_under_test', HOOK)
         module = importlib.util.module_from_spec(spec)

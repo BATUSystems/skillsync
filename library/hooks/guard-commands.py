@@ -15,7 +15,7 @@ is appended to <project>/.skillsync/hook-exceptions.jsonl (time, command, reason
 
 Windows: the command is read as the Bash tool's shell (Git Bash) reads it: an UNQUOTED backslash path (`rm -rf C:\\work\\x`) loses its backslashes there (it
 really removes `C:workx` relative to the cwd), so the hook sees the same relative path and refuses; quote it (`'C:\\work\\x'`) or use `C:/work/x` or
-`/c/work/x` (also `/cygdrive/c/...`; mapped to the drive). Doubt means refusal: `\\\\?\\C:\\...`, UNC paths and anything else unresolvable stay refused.
+`/c/work/x` (also `/cygdrive/c/...`; mapped to the drive; this assumes Git Bash, whose default mounts make `/c` the drive C:, not WSL or a custom fstab). Doubt means refusal: `\\\\?\\C:\\...`, UNC paths and anything else unresolvable stay refused.
 
 Usage (set by `skillsync link`): guard-commands.py [--mode deny|off] [--allow <name-or-path> ...]; stdin = the hook JSON.
 Known limit: `cd` is applied to the commands that follow it even inside `( ... )` groups and after `|`/`&`/`||` (a refusal-safe error only in one direction: such a `cd` may make a later relative path look temporary).
@@ -414,13 +414,13 @@ class Guard:
             if hasattr(os, 'getuid'):
                 roots.append('/run/user/%d' % os.getuid())
         # (root, exact): the temp roots themselves are not deletable; the scratchpad and absolute allow entries are
-        self.tmp_roots = [(os.path.realpath(r), False) for r in roots if r]
+        self.tmp_roots = [(os.path.realpath(msys_to_native(r)), False) for r in roots if r]
         if scratchpad and isinstance(scratchpad, str):
-            self.tmp_roots.append((os.path.realpath(scratchpad), True))
+            self.tmp_roots.append((os.path.realpath(msys_to_native(scratchpad)), True))
         self.names, self.paths = set(DEFAULT_NAMES), []
         for entry in allow:
-            if os.path.isabs(entry):
-                self.tmp_roots.append((os.path.realpath(entry), True))
+            if os.path.isabs(msys_to_native(entry)):
+                self.tmp_roots.append((os.path.realpath(msys_to_native(entry)), True))
             elif '/' in entry.strip('/'):
                 self.paths.append(entry.strip('/'))
             else:
