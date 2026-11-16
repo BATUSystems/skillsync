@@ -105,6 +105,21 @@ def kill_tree(proc, windows=None):
         proc.kill()
 
 
+def stop_serve(proc, windows=None):
+    """Stop the server of a test and collect its output: returns `(out, err, graceful)`.
+
+    POSIX: SIGTERM, the server stops itself (exit 0, JSON report on stdout, state file removed) and `graceful` is True. Windows: the production
+    code handles only SIGTERM, so `terminate()` is `TerminateProcess` (no report, exit code, or cleanup of the state file); the tree is killed
+    and `graceful` is False, which tells the test to skip the assertions about a graceful stop (a candidate for a separate production item)."""
+    windows = (os.name == "nt") if windows is None else windows
+    if windows:
+        kill_tree(proc, windows=True)
+    else:
+        proc.terminate()
+    out, err = proc.communicate(timeout=15)
+    return out, err, not windows
+
+
 def lost_bind(output):
     """Does the output of a finished server say that the BIND was lost (retry on another port)? Another BLOCKED (a configuration error) is not retried (SV4)."""
     return "BLOCKED" in output and "nasłuchiwać" in output

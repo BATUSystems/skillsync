@@ -17,7 +17,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests"))
 
 from skillsync_workflow import dashboard_token  # noqa: E402
-from serve_start import bind_free, kill_tree, lost_bind, own_state, state_snapshot  # noqa: E402
+from serve_start import bind_free, kill_tree, lost_bind, own_state, state_snapshot, stop_serve  # noqa: E402
 
 
 class OwnState(unittest.TestCase):
@@ -117,6 +117,26 @@ class KillTree(unittest.TestCase):
             kill_tree(proc, windows=True)
         run.assert_not_called()
         proc.kill.assert_not_called()
+
+
+class StopServe(unittest.TestCase):
+    def proc(self):
+        proc = mock.Mock(pid=4242)
+        proc.poll.return_value = None
+        proc.communicate.return_value = ("out", "err")
+        return proc
+
+    def test_posix_terminates_and_the_stop_is_graceful(self):
+        proc = self.proc()
+        self.assertEqual(stop_serve(proc, windows=False), ("out", "err", True))
+        proc.terminate.assert_called_once()
+
+    def test_windows_kills_the_tree_and_the_stop_is_not_graceful(self):
+        proc = self.proc()
+        with mock.patch("serve_start.kill_tree") as kill:
+            self.assertEqual(stop_serve(proc, windows=True), ("out", "err", False))
+        kill.assert_called_once_with(proc, windows=True)
+        proc.terminate.assert_not_called()
 
 
 class LostBind(unittest.TestCase):
