@@ -4,7 +4,9 @@ target), and `readiness` / `review` take the changed files from git: a link that
 and `readiness` work in the worktree before and after. The skill is composed of two layers (core + org), as in a real project."""
 import json
 import os
+import shlex
 import shutil
+import subprocess
 import sys
 import unittest
 from unittest import mock
@@ -17,7 +19,7 @@ from layers_helpers import LayersCase, commit, git, needs_os_symlinks, write  # 
 
 
 @needs_os_symlinks
-class TrackedSkillLinks(LayersCase):
+class TrackedLinksFixture(LayersCase):
     def setUp(self):
         super().setUp()
         patch = mock.patch.dict(os.environ)   # the tests assert the symlink output: pinned, so SKILLSYNC_NO_SYMLINK=1 of a copy-mode run does not change it
@@ -57,6 +59,10 @@ class TrackedSkillLinks(LayersCase):
         except ValueError:
             return process.returncode, {'text': (process.stdout + process.stderr).strip()}
 
+
+
+@needs_os_symlinks
+class TrackedSkillLinks(TrackedLinksFixture):
     def test_the_fixture_tracks_a_link_that_points_outside_the_project(self):
         self.assertIn('120000', git(self.proj, 'ls-files', '-s', '.github/skills').stdout)
         self.assertFalse(self.committed_target.is_relative_to(self.proj.resolve()))
@@ -133,17 +139,137 @@ class TrackedSkillLinks(LayersCase):
         code, report = self.run_cli(self.proj, 'doctor', str(self.proj))
         warnings = [item for item in report['findings'] if item['level'] == 'warning' and 'tracked in git' in item['reason']]
         self.assertEqual(len(warnings), 1, report)
-        self.assertIn('git rm --cached', warnings[0]['reason'])
+        self.assertIn('rm --cached --', warnings[0]['reason'])
         self.assertIn('.github/skills/foo', warnings[0]['reason'])
         self.assertNotIn('.skillsync.yaml', warnings[0]['reason'])   # the manifest may be tracked on purpose
         git(self.proj, 'rm', '-q', '--cached', '-r', '.github/skills', '.claude/skills')
         code, report = self.run_cli(self.proj, 'doctor', str(self.proj))
         self.assertEqual([item for item in report['findings'] if 'tracked in git' in item['reason']], [])
 
+    def test_the_untrack_command_of_the_warning_runs_as_it_stands(self):
+        code, report = self.run_cli(self.proj, 'doctor', str(self.proj))
+        warning = next(item['reason'] for item in report['findings'] if 'tracked in git' in item['reason'])
+        commands = [line for line in warning.splitlines() if line.startswith('git ')]
+        self.assertTrue(commands and '...' not in warning, warning)
+        for line in commands:
+            self.assertEqual(subprocess.run(line, shell=True, cwd=str(self.work), capture_output=True, text=True).returncode, 0, line)
+        tracked = [name for name in git(self.proj, 'ls-files', '-ci', '--exclude-standard').stdout.split() if name.startswith(('.github/skills/', '.claude/skills/'))]
+        self.assertEqual(tracked, [])
+        self.assertTrue(self.link.is_symlink(), 'the files stay on disk')
+
+    def test_the_untrack_message_lists_every_path_in_lines_and_quotes_them(self):
+        from skillsync_workflow.quality import untrack_message
+        paths = [f'.claude/skills/skill {number}' for number in range(30)] + ['CLAUDE.md']
+        message = untrack_message('/a project/dir', paths)
+        lines = [line for line in message.splitlines() if line.startswith('git ')]
+        self.assertEqual(len(lines), 4)
+        self.assertNotIn('...', message)
+        listed = []
+        for line in lines:
+            words = shlex.split(line)
+            self.assertEqual(words[:6], ['git', '-C', '/a project/dir', 'rm', '--cached', '--'])
+            listed += words[6:]
+        self.assertEqual(listed, paths)
+        self.assertIn('only if `skillsync link` generates them', message)
+        self.assertNotIn('only if `skillsync link` generates them', untrack_message('/p', ['.github/skills/foo']))
+        many = untrack_message('/p', [f'.claude/skills/s{n}' for n in range(200)])
+        self.assertIn('and 40 more', many)
+
+    def test_a_tracked_instructions_file_that_the_project_does_not_ignore_is_not_reported(self):
+        write(self.proj / 'CLAUDE.md', '# own instructions\n')
+        git(self.proj, 'add', 'CLAUDE.md')
+        commit(self.proj, 'own CLAUDE.md')
+        code, report = self.run_cli(self.proj, 'doctor', str(self.proj))
+        warning = next(item['reason'] for item in report['findings'] if 'tracked in git' in item['reason'])
+        self.assertNotIn('CLAUDE.md', warning)
+        self.assertEqual(git(self.proj, 'check-ignore', 'CLAUDE.md', check=False).returncode, 1)   # `ls-files -ci` lists ignored files only
+
+    def test_a_tracked_instructions_file_that_the_project_ignores_is_reported_with_a_condition(self):
+        write(self.proj / 'CLAUDE.md', '# generated\n')
+        git(self.proj, 'add', '-f', 'CLAUDE.md')
+        write(self.proj / '.gitignore', (self.proj / '.gitignore').read_text(encoding='utf-8') + 'CLAUDE.md\n')
+        commit(self.proj, 'tracked ignored CLAUDE.md')
+        code, report = self.run_cli(self.proj, 'doctor', str(self.proj))
+        warning = next(item['reason'] for item in report['findings'] if 'tracked in git' in item['reason'])
+        self.assertIn('CLAUDE.md', warning)
+        self.assertIn('only if `skillsync link` generates them', warning)
+
     def test_doctor_outside_git_has_no_tracking_warning(self):
         shutil.rmtree(self.proj / '.git')
         code, report = self.run_cli(self.proj, 'doctor', str(self.proj))
         self.assertEqual([item for item in report['findings'] if 'tracked in git' in item['reason']], [])
+
+
+@needs_os_symlinks
+class GuardAndSelectionWithTrackedLinks(TrackedLinksFixture):
+    """`guard`, `smart-test` and `validate` with a tracked link that was repointed: the link is classified by its own path, never opened."""
+    MARK = 'FORBIDDEN-MARK'
+
+    def setUp(self):
+        super().setUp()
+        manifest = self.proj / '.github' / '.skillsync.yaml'
+        manifest.write_text(manifest.read_text(encoding='utf-8') + 'workflow:\n  guardrails:\n    rules:\n'
+                            f'      - {{id: no-mark, paths: ["**"], forbidden: ["{self.MARK}"]}}\n', encoding='utf-8')
+        self.target = self.tmp_file(f'content with {self.MARK}\n')   # outside the project: the guard must never read it
+        os.symlink(self.target, self.proj / 'linked.txt')
+        os.symlink(self.target.parent, self.proj / 'outdir')
+        write(self.proj / 'plain.txt', 'ok\n')
+
+    def tmp_file(self, text):
+        path = self.work / 'outside' / 'target.txt'
+        write(path, text)
+        return path
+
+    def guard(self, *files):
+        return self.run_cli(self.proj, 'guard', str(self.proj), '--files', *files, '--run')
+
+    def test_the_guard_skips_a_changed_link_without_reading_its_target(self):
+        code, report = self.guard('linked.txt')
+        self.assertEqual((code, report['status']), (0, 'NOT_RUN'), report)   # nothing was scanned: no PASS out of a skip
+        self.assertEqual(report['skipped'], [{'file': 'linked.txt', 'reason': 'symlink'}])
+        self.assertNotIn(self.MARK, json.dumps(report))
+        self.assertEqual(report['findings'], [])
+
+    def test_a_skipped_link_does_not_hide_a_finding_in_another_file(self):
+        write(self.proj / 'bad.txt', f'{self.MARK}\n')
+        code, report = self.guard('linked.txt', 'bad.txt', 'plain.txt')
+        self.assertEqual((code, report['status']), (1, 'FAIL'), report)
+        self.assertEqual([item['file'] for item in report['findings']], ['bad.txt'])
+        self.assertEqual(report['scanned'], ['bad.txt', 'plain.txt'])
+        self.assertEqual(report['skipped'], [{'file': 'linked.txt', 'reason': 'symlink'}])
+
+    def test_a_clean_file_next_to_a_skipped_link_is_pass_with_the_skip_visible(self):
+        code, report = self.guard('linked.txt', 'plain.txt')
+        self.assertEqual((code, report['status'], report['scanned']), (0, 'PASS', ['plain.txt']), report)
+        self.assertEqual(report['skipped'], [{'file': 'linked.txt', 'reason': 'symlink'}])
+
+    def test_a_report_without_links_has_no_skipped_key(self):
+        code, report = self.guard('plain.txt')
+        self.assertNotIn('skipped', report)
+
+    def test_a_link_in_the_middle_of_the_path_is_still_refused(self):
+        code, report = self.guard('outdir/target.txt')
+        self.assertEqual((code, report['status']), (2, 'BLOCKED'), report)
+        self.assertIn('symlinks are forbidden', report['reason'])
+
+    def test_smart_test_classifies_a_repointed_tracked_link_by_its_own_path(self):
+        self.repoint()
+        code, report = self.run_cli(self.proj, 'smart-test', str(self.proj))
+        self.assertNotIn('przez dowiązanie', json.dumps(report.get('reasons', []), ensure_ascii=False), report)
+        self.assertIn('.github/skills/foo', report.get('files', []), report)
+        code, report = self.run_cli(self.proj, 'smart-test', str(self.proj), '--files', '.github/skills/foo')
+        self.assertNotIn('przez dowiązanie', json.dumps(report.get('reasons', []), ensure_ascii=False), report)
+
+    def test_smart_test_still_refuses_a_link_directory_in_the_middle(self):
+        code, report = self.run_cli(self.proj, 'smart-test', str(self.proj), '--files', 'outdir/target.txt')
+        self.assertEqual((code, report['status']), (2, 'BLOCKED'), report)
+        self.assertIn('przez dowiązanie', json.dumps(report['reasons'], ensure_ascii=False))
+
+    def test_validate_with_guardrails_does_not_block_on_a_repointed_tracked_link(self):
+        self.repoint()
+        code, report = self.run_cli(self.proj, 'validate', str(self.proj), '--profile', 'quick', '--run')
+        self.assertNotIn('Workflow artifact symlinks are forbidden', json.dumps(report), report)
+        self.assertNotEqual(report.get('status'), 'BLOCKED', report)
 
 
 if __name__ == '__main__':

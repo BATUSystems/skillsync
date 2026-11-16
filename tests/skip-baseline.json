@@ -1369,6 +1369,38 @@
     "category": "no-mode-enforcement"
    },
    {
+    "id": "test_skillsync_worktree_links.GuardAndSelectionWithTrackedLinks.test_a_clean_file_next_to_a_skipped_link_is_pass_with_the_skip_visible",
+    "category": "no-os-symlinks"
+   },
+   {
+    "id": "test_skillsync_worktree_links.GuardAndSelectionWithTrackedLinks.test_a_link_in_the_middle_of_the_path_is_still_refused",
+    "category": "no-os-symlinks"
+   },
+   {
+    "id": "test_skillsync_worktree_links.GuardAndSelectionWithTrackedLinks.test_a_report_without_links_has_no_skipped_key",
+    "category": "no-os-symlinks"
+   },
+   {
+    "id": "test_skillsync_worktree_links.GuardAndSelectionWithTrackedLinks.test_a_skipped_link_does_not_hide_a_finding_in_another_file",
+    "category": "no-os-symlinks"
+   },
+   {
+    "id": "test_skillsync_worktree_links.GuardAndSelectionWithTrackedLinks.test_smart_test_classifies_a_repointed_tracked_link_by_its_own_path",
+    "category": "no-os-symlinks"
+   },
+   {
+    "id": "test_skillsync_worktree_links.GuardAndSelectionWithTrackedLinks.test_smart_test_still_refuses_a_link_directory_in_the_middle",
+    "category": "no-os-symlinks"
+   },
+   {
+    "id": "test_skillsync_worktree_links.GuardAndSelectionWithTrackedLinks.test_the_guard_skips_a_changed_link_without_reading_its_target",
+    "category": "no-os-symlinks"
+   },
+   {
+    "id": "test_skillsync_worktree_links.GuardAndSelectionWithTrackedLinks.test_validate_with_guardrails_does_not_block_on_a_repointed_tracked_link",
+    "category": "no-os-symlinks"
+   },
+   {
     "id": "test_skillsync_worktree_links.TrackedSkillLinks.test_a_directory_link_to_the_outside_in_the_middle_is_still_an_escape",
     "category": "no-os-symlinks"
    },
@@ -1378,6 +1410,14 @@
    },
    {
     "id": "test_skillsync_worktree_links.TrackedSkillLinks.test_a_plan_in_another_tree_is_refused_with_a_message_that_names_the_cause",
+    "category": "no-os-symlinks"
+   },
+   {
+    "id": "test_skillsync_worktree_links.TrackedSkillLinks.test_a_tracked_instructions_file_that_the_project_does_not_ignore_is_not_reported",
+    "category": "no-os-symlinks"
+   },
+   {
+    "id": "test_skillsync_worktree_links.TrackedSkillLinks.test_a_tracked_instructions_file_that_the_project_ignores_is_reported_with_a_condition",
     "category": "no-os-symlinks"
    },
    {
@@ -1406,6 +1446,14 @@
    },
    {
     "id": "test_skillsync_worktree_links.TrackedSkillLinks.test_the_link_path_given_explicitly_is_a_file_of_the_project",
+    "category": "no-os-symlinks"
+   },
+   {
+    "id": "test_skillsync_worktree_links.TrackedSkillLinks.test_the_untrack_command_of_the_warning_runs_as_it_stands",
+    "category": "no-os-symlinks"
+   },
+   {
+    "id": "test_skillsync_worktree_links.TrackedSkillLinks.test_the_untrack_message_lists_every_path_in_lines_and_quotes_them",
     "category": "no-os-symlinks"
    },
    {

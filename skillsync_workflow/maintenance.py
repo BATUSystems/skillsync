@@ -32,6 +32,21 @@ def _local(root, name):
     return path
 
 
+def _changed_path(root, name):
+    """`(path, is_link)` of a changed file for the guard, which only READS content: a link as the LAST component is reported as such (never opened,
+    never followed); a link in the middle of the path is refused as in `_local`."""
+    if not isinstance(name, str) or not name or Path(name).is_absolute() or '..' in Path(name).parts or '\\' in name:
+        raise ValueError('Expected a relative workflow path')
+    path = Path(root).resolve()
+    parts = Path(name).parts
+    for part in parts[:-1]:
+        path /= part
+        if path.is_symlink():
+            raise ValueError('Workflow artifact symlinks are forbidden')
+    path = path.joinpath(*parts[-1:])
+    return path, path.is_symlink()
+
+
 def resolve_profile_skills(manifest, library, root=None):
     """Skills of the selected profiles (merged from `workflow/skill-profiles.yaml` + `.d/` of all layers).
     `library`: `LayerSet` (`skillsync:expand_skills` wraps its `Path` form with `as_layerset` first)."""
@@ -246,12 +261,15 @@ def guard(root, manifest, library, files=None, run=False):
             raise ValueError('Guard rule requires a forbidden/required pattern')
         compiled.append((rule, terms))
     names = files if files is not None else changed_files(root)
-    paths = [(name, _local(root, name)) for name in names]
+    paths = [(name, *_changed_path(root, name)) for name in names]
     if not run:
         return {'status': 'NOT_RUN', 'rules': list(ids), 'files': names, 'checks': checks}
-    findings, scanned = [], []
-    for name, path in paths:
+    findings, scanned, skipped = [], [], []
+    for name, path, is_link in paths:
         applicable = [(rule, terms) for rule, terms in compiled if matches(name, rule['paths'])]
+        if applicable and is_link:   # a changed link (a tracked skill link): not opened and not followed, but visible in the report
+            skipped.append({'file': name, 'reason': 'symlink'})
+            continue
         if not applicable or not path.exists():
             continue
         data = _bytes(path)
@@ -267,6 +285,8 @@ def guard(root, manifest, library, files=None, run=False):
                 if not pattern.search(text):
                     findings.append({'rule': rule['id'], 'file': name, 'line': 1, 'severity': rule.get('severity', 'error'), 'reason': 'Required convention pattern missing'})
     result = {'status': 'FAIL' if any(item['severity'] == 'error' for item in findings) else 'PASS' if scanned else 'NOT_RUN', 'findings': findings, 'scanned': scanned}
+    if skipped:
+        result['skipped'] = skipped
     if checks:
         local = dict(manifest)
         local['workflow'] = dict(manifest.get('workflow', {}))

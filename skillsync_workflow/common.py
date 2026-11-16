@@ -223,10 +223,12 @@ def normalize_files(root, files):
     link that lies in the project (for example a tracked `.github/skills/<skill>` pointing into a layer) is a file of the project, not an escape.
     `contained` (follows every link) stays the check for the paths a command opens."""
     root = Path(root).resolve()
-    return [_file_name(root, path) for path in files]
+    return [project_file(root, path) for path in files]
 
 
-def _file_name(root, path):
+def project_file(root, path):
+    """Project-relative POSIX name of ONE file of a list (see `normalize_files`); ValueError "Path escapes project" for an escape."""
+    root = Path(root).resolve()
     candidate = root / path
     if candidate.name in ('', '.', '..'):   # a directory or a `..` ending: the plain check
         return contained(root, path).relative_to(root).as_posix()
