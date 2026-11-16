@@ -1181,6 +1181,50 @@ class LayersUseTest(CommandsCase):
         self.assertEqual((code, report['status'], report['changed']), (0, 'PASS', False), report)
         self.assertEqual((self.config_file.read_bytes(), sorted(self.config_file.parent.glob('*.bak-*'))), (before, backups))
 
+    def test_a_layer_that_is_present_but_not_in_the_canonical_slot_is_left_where_it_is(self):
+        self.write_config(self.layers, [([self.glob], ['core', 'acme', 'beta', 'me']), (['**'], ['core'])])
+        before, backups = self.config_file.read_bytes(), sorted(self.config_file.parent.glob('*.bak-*'))
+        code, report = self.use('acme', '--match', self.glob)        # acme stands before beta: the order decides who wins
+        self.assertEqual((code, report['status'], report['changed']), (0, 'PASS', False), report)
+        self.assertEqual(report['rule']['use'], ['core', 'acme', 'beta', 'me'])
+        self.assertEqual((self.config_file.read_bytes(), sorted(self.config_file.parent.glob('*.bak-*'))), (before, backups))
+
+    def test_extending_a_rule_keeps_the_comments_of_the_config_when_the_use_list_is_a_flow_list(self):
+        self.write_config(self.layers, [([self.glob], ['core', 'acme']), (['**'], ['core', 'me'])])
+        text = self.config_file.read_text(encoding='utf-8')
+        block = '  use:\n  - core\n  - acme\n'
+        self.assertIn(block, text)
+        self.config_file.write_text('# my machine\n' + text.replace(block, '  use: [core, acme]   # org rule\n'), encoding='utf-8')   # the layout `layers use` writes
+        code, report = self.use('me', '--match', self.glob)
+        self.assertEqual((code, report['status'], report['changed'], report['rewritten']), (0, 'PASS', True, False), report)
+        new = self.config_file.read_text(encoding='utf-8')
+        self.assertIn('# my machine', new)
+        self.assertIn('use: [core, acme, me]   # org rule', new)
+        self.assertEqual(self.rules()[0], ([self.glob], ['core', 'acme', 'me']))
+        self.assertTrue(Path(report['backup']).is_file())
+
+    def test_extending_a_rule_with_a_block_list_rewrites_the_config_and_keeps_a_backup(self):
+        self.write_config(self.layers, [([self.glob], ['core', 'acme']), (['**'], ['core', 'me'])])
+        self.assertIn('  use:\n  - core\n  - acme\n', self.config_file.read_text(encoding='utf-8'))   # a block list (as `write_config` dumps it)
+        code, report = self.use('me', '--match', self.glob)
+        self.assertEqual((code, report['status'], report['rewritten']), (0, 'PASS', True), report)
+        self.assertEqual(self.rules()[0], ([self.glob], ['core', 'acme', 'me']))
+        self.assertTrue(Path(report['backup']).is_file())
+
+    def test_a_second_rule_with_the_same_match_is_reported_as_unreachable_by_layers_check(self):
+        self.write_config(self.layers, [([self.glob], ['core', 'acme']), ([self.glob], ['core', 'beta']), (['**'], ['core', 'me'])])
+        project = str(self.project('clients/acme/app'))
+        code, report = self.cli_json('layers', 'check', '--project', project)
+        found = [item for item in report['findings'] if item['code'] == 'rule-unreachable']
+        self.assertEqual(len(found), 1, report['findings'])
+        self.assertEqual(found[0]['severity'], 'warning')
+        self.assertIn('layer_rules[1]', found[0]['message'])
+        self.assertIn('layer_rules[0]', found[0]['message'])
+        self.assertNotEqual(report['status'], 'BLOCKED')              # a warning, never an error
+        self.write_config(self.layers, [([self.glob], ['core', 'acme']), (['**'], ['core', 'me'])])
+        code, report = self.cli_json('layers', 'check', '--project', project)
+        self.assertEqual([item for item in report['findings'] if item['code'] == 'rule-unreachable'], [])
+
     def test_another_match_still_creates_a_new_rule_before_the_default(self):
         self.write_config(self.layers, [([self.glob], ['core', 'acme']), (['**'], ['core', 'me'])])
         other = f'{self.work}/clients/beta/**'
