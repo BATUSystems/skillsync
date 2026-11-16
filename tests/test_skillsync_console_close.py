@@ -56,6 +56,9 @@ class WaitSeconds(unittest.TestCase):
 
 
 class Registration(unittest.TestCase):
+    def setUp(self):
+        stopsignal._console = None                                                 # an earlier test (or a real registration on Windows) may have left one
+
     def tearDown(self):
         if stopsignal._console is not None:
             stopsignal._console.active = False
@@ -383,6 +386,7 @@ print(json.dumps(out), flush=True)
             self.assertEqual(answers, {0: 0, 1: 0, stopsignal.CTRL_CLOSE_EVENT: 1})
 
         def test_the_handler_registers_and_unregisters_with_the_system(self):
+            self.addCleanup(setattr, stopsignal, '_console', None)
             handler = signal.signal(signal.SIGBREAK, stopsignal._stop_on_sigbreak)
             self.addCleanup(signal.signal, signal.SIGBREAK, handler)
             registration = stopsignal.install_console_close(threading.Event())

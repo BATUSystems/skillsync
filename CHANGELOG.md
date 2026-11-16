@@ -12,6 +12,10 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Fixed
+
+- `dashboard serve` and `prototype serve` on Windows: closing the console window (the "Close" button) now stops the server cleanly instead of ending it at once. The server registers a console control handler (`stopsignal.install_console_close`, `SetConsoleCtrlHandler` through `ctypes`, only on Windows and only in `serve`); on `CTRL_CLOSE_EVENT` the handler hands the stop to the main thread the way CTRL_BREAK does and waits for the cleanup (state files removed, sockets closed) for at most `min(4 s, system hung-application timeout - 1 s)` before it lets the system end the process. Measured on Windows 11 with a classic console (hidden window closed with `WM_CLOSE`): before, the process ended in under 10 ms with exit code 0xC000013A and the state file stayed; after, the state file is removed (cleanup took 0.47 s). Windows Terminal (a pseudoconsole) and Task Manager "End task" are not measured. Linux and macOS are unchanged.
+
 ### Changed
 
 - `docs/dashboard-contract.md`, "how to stop the server on Windows": the table now has a "Pomiar" column that separates what was measured (Ctrl+C, CTRL_BREAK, `Stop-Process`, `taskkill /F`, `Popen.terminate()`, `taskkill` without `/F`) from what is only expected from the system documentation and was not measured (closing the console window, Task Manager "End task").
