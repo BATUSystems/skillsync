@@ -217,6 +217,20 @@ def contained(root, path):
     return candidate
 
 
+def checked_out_link(path):
+    """True when `path` is a small regular FILE that git tracks as a symlink (mode 120000): git did not recreate the link and wrote its target as
+    text (`core.symlinks` off, a Windows checkout or worktree without the right to create links). Such a file is a degraded link, never the
+    user's own file: `link` replaces it and `doctor` names the repair. One `git ls-files -s` call; False outside git or on any error."""
+    path = Path(path)
+    try:
+        if path.is_symlink() or not path.is_file() or path.stat().st_size > 4096:
+            return False
+        process = subprocess.run(['git', '-C', str(path.parent), 'ls-files', '-s', '--', path.name], capture_output=True, timeout=10, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return process.returncode == 0 and process.stdout.split(b' ', 1)[0] == b'120000'
+
+
 def normalize_files(root, files):
     """Project-relative POSIX names of a list of files (changed files from git, `--files`). The containment is checked on the path ITSELF: the
     parent directory is resolved physically (a directory that is a link to the outside is an escape), the last component is not followed, so a

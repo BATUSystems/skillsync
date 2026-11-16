@@ -1437,6 +1437,10 @@
     "category": "no-os-symlinks"
    },
    {
+    "id": "test_skillsync_worktree_links.TrackedSkillLinks.test_a_worktree_made_with_core_symlinks_off_has_files_and_doctor_names_the_repair",
+    "category": "no-os-symlinks"
+   },
+   {
     "id": "test_skillsync_worktree_links.TrackedSkillLinks.test_doctor_outside_git_has_no_tracking_warning",
     "category": "no-os-symlinks"
    },

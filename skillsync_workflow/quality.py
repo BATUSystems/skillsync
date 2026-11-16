@@ -17,7 +17,7 @@ import tomllib
 import uuid
 import sys
 import yaml
-from .common import add_project_arguments, changed_files, emit, load_layer_project, matches, workflow_config, contained, normalize_files, read_yaml, strings, redact, expand_project_skills, require_layerset, WORKFLOW_SKILL, LEGACY_WORKFLOW_SKILL
+from .common import add_project_arguments, changed_files, checked_out_link, emit, load_layer_project, matches, workflow_config, contained, normalize_files, read_yaml, strings, redact, expand_project_skills, require_layerset, WORKFLOW_SKILL, LEGACY_WORKFLOW_SKILL
 from .pathfmt import posix
 from .selfcmd import self_argv
 from . import layers as _layers
@@ -996,6 +996,9 @@ def doctor(root, manifest, library):
                     finding('error', linked, 'Installed skill symlink points to a stale composite; run `skillsync link`')
                 elif state != 'ok':
                     finding('error', linked, 'Foreign installed skill symlink')
+            elif checked_out_link(linked):
+                finding('error', linked, f'A regular file stands where the skill link should be: git tracks it as a link but did not recreate it (core.symlinks '
+                                         f'is off, or links cannot be created); run `skillsync link {_layers._quote_arg(str(root))}`')
             elif not linked.is_dir() or any(item.is_symlink() for item in linked.rglob('*')):
                 finding('error', linked, 'Invalid installed skill copy')
             elif _tree_hash(linked) != _files_hash(layerset.skill_files(name)):
