@@ -619,6 +619,27 @@ class SlowResolver(unittest.TestCase):
         self.assertEqual(ports.host_addresses(), {"192.0.2.77"})
         self.assertEqual(self.calls, 1)
 
+    def test_an_old_good_answer_serves_a_slow_resolver_only_for_a_limited_time(self) -> None:
+        base = time.monotonic()
+        ports._lookup.update(value={"192.0.2.55"}, until=0.0, good_at=base)   # a good answer whose validity has run out; the resolver is slow now
+        with mock.patch.object(ports, "time") as clock:
+            clock.monotonic.return_value = base + 1
+            self.assertEqual(ports.host_addresses(), {"192.0.2.55"})   # too slow, the old answer is still young enough
+            clock.monotonic.return_value = base + 2 * ports.HOST_LOOKUP_NEGATIVE_TTL   # the negative memory ran out and was renewed, the answer is still not too old
+            self.assertEqual(ports.host_addresses(), {"192.0.2.55"})
+            clock.monotonic.return_value = base + ports.HOST_LOOKUP_STALE_MAX + 1
+            self.assertEqual(ports.host_addresses(), set())   # too old: fail closed, no longer renewed for ever
+            clock.monotonic.return_value = base + ports.HOST_LOOKUP_STALE_MAX + 2
+            self.assertEqual(ports.host_addresses(), set())   # and the empty answer is what is remembered
+        self.assertEqual(self.calls, 1)   # one lookup throughout
+
+    def test_a_failed_lookup_is_not_a_good_answer_to_fall_back_on(self) -> None:
+        ports._reset_host_lookup()
+        with mock.patch.object(socket, "getaddrinfo", side_effect=socket.gaierror("no name")):
+            ports.host_addresses()
+        self.assertIsNone(ports._lookup["good_at"])
+        self.assertEqual(ports._lookup["value"], set())
+
     def test_an_exception_of_the_resolver_is_an_empty_answer_and_nothing_stays_pending(self) -> None:
         for error in (UnicodeError("bad name"), ValueError("bad"), socket.gaierror("no name")):
             with self.subTest(error=type(error).__name__):
