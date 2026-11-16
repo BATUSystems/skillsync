@@ -19,6 +19,9 @@ Rules (a module is selected when at least one holds; every hit is listed as its 
                such as `expected`, or its directory);
   expected     any file of `skillsync_workflow/` changed and the test reads `expected*` fixtures (their content mirrors the product output);
   unparsable   the test file does not parse - selected for safety;
+  artefact     a file that feeds the artefacts `skillsync link` generates changed (ARTEFACT_SOURCES: the generator `cli.py`/`layers.py`/`guardhook.py` and the helpers
+               it uses for file bytes and the task command, the library hooks, instructions, skills, agents): the tests that run `link` through
+               a subprocess and compare its output (ARTEFACT_TESTS: a baseline, tracked links) name no product file, so no other rule sees them;
   guard        the fixed guard set (GUARDS below), always.
 The analysis reads the working tree, so the checkout must be `--head` (otherwise exit 2); the diff is `base...head` (from the merge base).
 Deleted or renamed product modules select the tests that import or name them. Limits: dynamic imports and commands named only by a string (`skillsync status`) are not seen except through the `path`,
@@ -36,6 +39,12 @@ from pathlib import Path
 GUARDS = ('test_skillsync_repo_hygiene', 'test_skillsync_packaging', 'test_skillsync_check_skips',
           'test_skillsync_dashboard_contract', 'test_skillsync_line_ends', 'test_skillsync_line_ends_rest',
           'test_skillsync_line_ends_checkers', 'test_skillsync_measurements', 'test_skillsync_ci_workflows')
+# Sources of the generated `link` artefacts and the tests that run `link` through a subprocess and compare its output (a baseline, tracked links):
+# they name no product file, so the import/path/literal rules see them only by accident.
+ARTEFACT_SOURCES = ('skillsync_workflow/cli.py', 'skillsync_workflow/layers.py', 'skillsync_workflow/guardhook.py', 'skillsync_workflow/common.py',
+                    'skillsync_workflow/selfcmd.py', 'skillsync_workflow/fsutil.py', 'skillsync_workflow/pathfmt.py', 'library/hooks/',
+                    'library/instructions/', 'library/skills/', 'library/agents/')
+ARTEFACT_TESTS = ('test_skillsync_layers_equivalence', 'test_skillsync_worktree_links')
 PRODUCT_DIRS = ('skillsync_workflow', 'scripts', 'tests')
 MIN_LITERAL = 12
 STRING = re.compile(r"""(?P<q>'|")(?P<s>(?:\\.|(?!(?P=q)).)*)(?P=q)""")
@@ -255,6 +264,11 @@ def select(repo, base, head):
         if any(path.startswith('skillsync_workflow/') for path in changed_product) and any('expected' in value for value in values):
             add(name, 'expected: reads expected* fixtures and the product changed')
 
+    artefact_hits = sorted(path for path, status in changed.items() if status != 'D' and path.startswith(ARTEFACT_SOURCES))
+    if artefact_hits:
+        for name in ARTEFACT_TESTS:
+            if 'tests.' + name in tests:
+                add('tests.' + name, f'artefact: {artefact_hits[0]} feeds the generated link artefacts (baseline comparison)')
     for guard in GUARDS:
         if 'tests.' + guard in tests:
             add('tests.' + guard, 'guard: fixed guard set')

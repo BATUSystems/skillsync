@@ -63,6 +63,7 @@ class EquivalenceCase(LayersCase):
         result['symlinks'] = {key: (value[len('<LIB>/'):] if value.startswith('<LIB>/') else value)
                               for key, value in ((k, v.replace('\\\\?\\', '', 1).replace('\\', '/')) for k, v in result['symlinks'].items())}
         self.normalize_task_command(project, tokens, result)
+        self.normalize_guard_gitignore(project, result)
         return result
 
     def normalize_task_command(self, project, tokens, result):
@@ -81,6 +82,21 @@ class EquivalenceCase(LayersCase):
         # of the checkout or `-P -m skillsync_workflow`: the same entry, so it goes before `link`
         data = re.sub(r'("args": \[\n)(?:\s*"(?!link")[^"\n]*",\n)+(\s*"link")', r'\1\2', data)
         result['files']['.vscode/tasks.json'] = hashlib.sha256(data.encode('utf-8')).hexdigest()
+
+    GUARD_IGNORE = 'hooks/guard-commands.py'
+
+    def normalize_guard_gitignore(self, project, result):
+        """The delete guard hook (1.8.0, `guardhook`) is on by default for agent-flow projects, and `link` lists its script in `.claude/.gitignore`
+        (the baseline predates the hook, so that file is the only artefact of this synthetic library that differs; the library has no
+        `hooks/guard-commands.py`, so the script itself and the settings entry are not created). The line is required exactly once and
+        removed before hashing: the rest of the file stays compared with the baseline (see README of the fixture, "Wyjątek")."""
+        path = project / '.claude' / '.gitignore'
+        if not path.is_file():
+            return
+        lines = path.read_bytes().replace(b"\r\n", b"\n").decode('utf-8').split('\n')
+        self.assertEqual(lines.count(self.GUARD_IGNORE), 1, '.claude/.gitignore lists the guard hook script exactly once')
+        data = '\n'.join(line for line in lines if line != self.GUARD_IGNORE)
+        result['files']['.claude/.gitignore'] = hashlib.sha256(data.encode('utf-8')).hexdigest()
 
     def migrate(self, *flags):
         process = self.cli('layers', 'migrate', *flags, '--apply', '--json')

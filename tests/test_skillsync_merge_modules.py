@@ -81,6 +81,42 @@ class MergeModules(unittest.TestCase):
         self.assertTrue(any(reason.startswith('literal:') for reason in found['tests.test_skillsync_dispatch']))
         self.assertNotIn('tests.test_skillsync_unrelated', found)
 
+    def test_generator_or_library_change_selects_the_tests_that_compare_the_link_artefacts(self):
+        """180-O: these tests run `skillsync link` through a subprocess and name no product file, so only this rule selects them."""
+        for changed in ('library/hooks/guard-commands.py', 'skillsync_workflow/cli.py', 'skillsync_workflow/guardhook.py', 'skillsync_workflow/selfcmd.py',
+                        'library/skills/x/SKILL.md', 'library/instructions/_base.md'):
+            with self.subTest(changed=changed):
+                repo = Repo(self)
+                repo.write(BASE)
+                repo.write({'tests/test_skillsync_layers_equivalence.py': "def test():\n    pass\n", 'tests/test_skillsync_worktree_links.py': "def test():\n    pass\n",
+                            changed: 'A = 1\n'})
+                base = repo.commit('with the artefact tests')
+                repo.write({changed: 'A = 2\n'})
+                repo.commit()
+                code, result, _ = repo.select(base)
+                found = modules(result)
+                self.assertEqual(code, 0)
+                for name in ('tests.test_skillsync_layers_equivalence', 'tests.test_skillsync_worktree_links'):
+                    self.assertTrue(any(reason.startswith('artefact:') for reason in found.get(name, [])), found)
+                self.assertNotIn('tests.test_skillsync_unrelated', found)
+
+    def test_a_deleted_artefact_source_selects_nothing_by_this_rule(self):
+        self.repo.write({'tests/test_skillsync_layers_equivalence.py': "def test():\n    pass\n", 'library/hooks/old.py': 'A = 1\n'})
+        base = self.repo.commit('with the artefact test and a hook')
+        (self.repo.dir / 'library/hooks/old.py').unlink()
+        self.repo.commit('delete the hook')
+        _, result, _ = self.repo.select(base)
+        found = modules(result)
+        self.assertFalse(any(reason.startswith('artefact:') for reason in found.get('tests.test_skillsync_layers_equivalence', [])), found)
+
+    def test_a_change_outside_the_artefact_sources_leaves_the_artefact_tests_out(self):
+        self.repo.write({'tests/test_skillsync_layers_equivalence.py': "def test():\n    pass\n"})
+        base = self.repo.commit('with the artefact test')
+        self.repo.write({'skillsync_workflow/status.py': 'VALUE = 2\n'})
+        self.repo.commit()
+        _, result, _ = self.repo.select(base)
+        self.assertNotIn('tests.test_skillsync_layers_equivalence', modules(result))
+
     def test_changed_status_reaches_test_through_another_module(self):
         self.repo.write({'skillsync_workflow/status.py': 'VALUE = 2\n'})
         self.repo.commit()
