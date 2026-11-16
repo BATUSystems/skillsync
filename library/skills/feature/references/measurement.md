@@ -16,7 +16,8 @@ Raport nie zastępuje rekordu `skillsync checkpoint` (niżej) ani odwrotnie.
 ## Składnia segmentów raportu
 
 - Segmenty rozdziela `;`, ale `;` wewnątrz nawiasów `()`, `[]`, `{}` nie kończy segmentu (opis kroku w nawiasie może go zawierać).
-  Niezbalansowany nawias zawsze domykaj; w razie błędu linia dzieli się po każdym `;`.
+  Niezbalansowany nawias zawsze domykaj; w razie błędu linia dzieli się po każdym `;`, id po takim `;` ginie z odczytu, a strona statusu
+  pokazuje ostrzeżenie o niezamkniętym nawiasie (`unbalanced-bracket`).
 - **Każdy element** list `w toku: …` i `zrobione: …` zaczyna się od id kroku (`F1.2`), elementy rozdziela przecinek, opis idzie w nawiasie:
   `w toku: F1.1 (kontrakty; testy), F1.2`. Id łączą w jednym elemencie `/`, `+`, `&`, `‖`, `||`, „i”, „oraz”. Rola przed id
   (`implementer: F1.1`) i drugie id w środku opisu są pomijane; strona statusu pokaże wtedy ostrzeżenie o pominiętych fragmentach.

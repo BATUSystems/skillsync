@@ -56,6 +56,35 @@ class ParseWarnings(unittest.TestCase):
         self.assertEqual([(w["segment"], w["reason"], w["fragment"]) for w in found],
                          [("w toku", "no-step-id", "implementer: F1.2"), ("w toku", "later-id", "F1.5 opis + F1.6")])
 
+    def test_unclosed_bracket_is_reported_instead_of_losing_ids_silently(self):
+        text = "w toku: F1.1 (a; b, F1.2; ryzyko: brak"
+        self.assertEqual(dashboard.ids_in_progress(text), ["F1.1"])   # the fallback split still loses F1.2 ...
+        self.assertEqual(dashboard.report_warnings(text),   # ... and now says so
+                         [{"segment": "raport", "fragment": "F1.1 (a; b, F1.2; ryzyko: brak", "reason": "unbalanced-bracket"}])
+
+    def test_unclosed_bracket_in_any_segment_and_kind_is_reported_once(self):
+        for text in ("zrobione: F0.1 [a; b; w toku: F1.1", "czeka: GO plan (spec; trwa: plan", "w toku: F1.1 {x; F1.2 (y; z"):
+            with self.subTest(text=text):
+                found = [w for w in dashboard.report_warnings(text) if w["reason"] == "unbalanced-bracket"]
+                self.assertEqual(len(found), 1)
+
+    def test_fragment_is_redacted_and_cut(self):
+        found = dashboard.report_warnings("w toku: F1.1 (" + "słowo " * 40)
+        self.assertEqual(len(found[0]["fragment"]), dashboard.PARSE_WARNING_FRAGMENT)
+        found = dashboard.report_warnings("w toku: F1.1 (password=hunter2hunter2; F1.2")
+        self.assertNotIn("hunter2", found[0]["fragment"])
+        self.assertIn("[REDACTED]", found[0]["fragment"])
+
+    def test_balanced_lines_give_no_unbalanced_warning(self):
+        for text in (REPORTED, "w toku: F1.1 (a; b), F1.2; ryzyko: brak", "a) b) 1) lista", "w toku: F1.1 ((a; b); c), F1.2"):
+            with self.subTest(text=text):
+                self.assertEqual([w for w in dashboard.report_warnings(text) if w["reason"] == "unbalanced-bracket"], [])
+
+    def test_unclosed_bracket_start_agrees_with_the_fallback_split(self):
+        for text in ("a (x; y", "a (x); b", "a ((x); y", "a) (b; c", "a [x; {y}", "", "bez nawiasu; dwa"):
+            with self.subTest(text=text):
+                self.assertEqual(dashboard.unclosed_bracket_start(text) is None, dashboard.split_top_level(text, ";", balanced=True) is not None)
+
     def test_clean_lists_and_nothing_values_give_no_warning(self):
         for text in ("w toku: F1.1, F1.2 (opis; dalej)", "w toku: nic; zrobione: brak", "zrobione: -", "restart sesji"):
             with self.subTest(text=text):

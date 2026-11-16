@@ -346,6 +346,19 @@ def split_top_level(segment, sep=',', balanced=False):
     return None if balanced and depth else parts
 
 
+def unclosed_bracket_start(text):
+    """Index of the outermost opening bracket that is never closed, None when the brackets balance. Counts like `split_top_level`
+    (any closing bracket closes the innermost open one, a closing bracket at depth 0 is ignored), so the answer is not None exactly
+    when `split_segments` falls back to every `;`."""
+    stack = []
+    for index, char in enumerate(text):
+        if char in '([{':
+            stack.append(index)
+        elif char in ')]}' and stack:
+            stack.pop()
+    return stack[0] if stack else None
+
+
 def _lead_ids(segment):
     ids = []
     for item in split_top_level(segment):
@@ -365,8 +378,14 @@ NO_ITEMS = {'', '-', '—', 'nic', 'brak', 'nie', 'żadne', 'żaden'}
 def report_warnings(text):
     """Pieces of the `w toku` / `zrobione` lists of one checkpoint text that the id reading skips: `[{segment, fragment, reason}]`.
     `no-step-id`: an element without a step id at its start; `later-id`: an element that starts with an id and names another one
-    further on outside brackets (only the leading ids count). The skip stays (no guessing from descriptions); the warning makes it visible."""
+    further on outside brackets (only the leading ids count). The skip stays (no guessing from descriptions); the warning makes it visible.
+    `unbalanced-bracket` (segment `raport`): the text has an opening bracket that is never closed, so `split_segments` falls back to every `;`
+    and a step id after such a `;` is lost without any other trace; the fragment starts at the element that holds the unclosed bracket."""
     found = []
+    opener = unclosed_bracket_start(text)
+    if opener is not None:
+        piece = ' '.join(text[max(text.rfind(sep, 0, opener) for sep in ';,:') + 1:].split())   # from the start of the element that holds the bracket
+        found.append({'segment': 'raport', 'fragment': redact(piece)[:PARSE_WARNING_FRAGMENT], 'reason': 'unbalanced-bracket'})
     for label, pattern in (('w toku', IN_PROGRESS_RE), ('zrobione', DONE_RE)):
         match = _first_segment_match(pattern, text)
         if not match:

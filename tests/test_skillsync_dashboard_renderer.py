@@ -1026,6 +1026,8 @@ function summary(m) {
       return { hidden: el.hidden, text: text(el), tip: el.querySelector('[data-desc]') ? el.querySelector('[data-desc]').getAttribute('data-desc-extra') : null, lines: m.root.querySelectorAll('.parse-warn').length, img: tags.includes('img') }; };
     ex.s160.warn = {
       two: warnOf([{ time: '10:01', segment: 'w toku', fragment: 'bez id <img src=x>', reason: 'no-step-id' }, { time: '10:02', segment: 'zrobione', fragment: 'x F1.1', reason: 'later-id' }]),
+      unbalanced: warnOf([{ time: '10:03', segment: 'raport', fragment: 'F1.1 (a; b, F1.2; ryzyko: brak', reason: 'unbalanced-bracket' }]),
+      unknown: warnOf([{ time: '10:04', segment: 'raport', fragment: 'x', reason: 'reason-from-the-future' }]),
       none: warnOf(undefined), empty: warnOf([]),
     };
     // zgodność: fixture sprzed zmian (bez nowych kluczy) renderuje się bez wyjątku i bez nowych elementów
@@ -1770,6 +1772,13 @@ class RendererNodeTests(unittest.TestCase):
         for key in ("none", "empty"):
             self.assertTrue(w[key]["hidden"], key)
             self.assertIn(w[key]["text"], ("", None))
+
+    def test_s160_parse_warning_reasons_have_labels_and_an_unknown_one_shows_raw(self) -> None:
+        w = self.out["extra"]["s160"]["warn"]
+        self.assertEqual(w["unbalanced"]["text"], "1 fragment raportu pominięto (niezamknięty nawias, lista dzielona po każdym „;”)")
+        self.assertIn("10:03 raport: „F1.1 (a; b, F1.2; ryzyko: brak” (niezamknięty nawias", w["unbalanced"]["tip"])
+        self.assertEqual(w["unknown"]["text"], "1 fragment raportu pominięto (reason-from-the-future)")   # a reason this renderer does not know is shown as sent
+        self.assertIn("(reason-from-the-future)", w["unknown"]["tip"])
 
     def test_s160_legacy_json_renders_without_new_elements(self) -> None:
         legacy = self.out["extra"]["s160"]["legacy"]

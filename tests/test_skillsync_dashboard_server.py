@@ -269,6 +269,12 @@ class ParseWarningsTests(ProjectCase):
         self.assertEqual(len(found), 3)
         self.assertEqual(self.board.status()["progress"]["active"], ["S3b"])
 
+    def test_an_unclosed_bracket_is_a_warning_of_the_run(self) -> None:
+        run = self.root / RUN / "checkpoints.md"
+        run.write_text("RUN=2026-01-10T10:00:00+01:00\n- 10:00 start; w toku: F1.1 (a; b, F1.2; ryzyko: brak\n", encoding="utf-8")
+        found = self.board.status()["run"]["parseWarnings"]
+        self.assertEqual([(w["time"], w["segment"], w["reason"], w["fragment"]) for w in found], [("10:00", "raport", "unbalanced-bracket", "F1.1 (a; b, F1.2; ryzyko: brak")])
+
     def test_clean_checkpoints_leave_no_key(self) -> None:
         run = self.root / RUN / "checkpoints.md"
         run.write_text("RUN=2026-01-10T10:00:00+01:00\n- 10:00 start; w toku: S1, S2a (a; b); zrobione: S0\n", encoding="utf-8")
