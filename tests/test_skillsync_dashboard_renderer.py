@@ -1184,16 +1184,40 @@ function summary(m) {
       hk.emit({ y: 2000, viewport: 1000, height: 6000 });
       const focused = []; const tab = m.root.querySelector('#tab-docs'); tab.focus = (o) => focused.push(o);
       const before = !btn().hidden; btn().click();
-      ex170.click = { before, goes: hk.goes, focused, hiddenAfter: btn().hidden, tabId: tab.id };
-      hk.emit({ y: 900, viewport: 1000, height: 6000 });   // metryki w trakcie płynnego przewijania: znów powyżej progu
-      ex170.click.reshown = !btn().hidden;
-      m.board.destroy(); ex170.click.unsub = hk.unsub;
+      ex170.click = { before, goes: hk.goes, focused, shownRightAfter: !btn().hidden, tabId: tab.id };
+      hk.emit({ y: 900, viewport: 1000 });   // płynne przewijanie trwa: nadal powyżej progu ukrycia, przycisk nie mruga
+      ex170.click.shownDuringScroll = !btn().hidden;
+      hk.emit({ y: 400, viewport: 1000 });   // zeszło poniżej 0,5: chowa się sam
+      ex170.click.hiddenAtTheTop = btn().hidden;
+      m.board.destroy(); ex170.click.unsub = hk.unsub; ex170.click.rootClassGone = !m.root.classList.contains('has-to-top');
+    }
+    {
+      const { hk, m, btn } = await open();
+      const edges = [];
+      const at = (y, viewport) => { hk.emit({ y, viewport: viewport === undefined ? 1000 : viewport }); edges.push(!btn().hidden); };
+      at(750);    // dokładnie 0,75: próg jest ostry (>), nadal ukryty
+      at(751);    // powyżej: pokazany
+      at(500);    // dokładnie 0,5: histereza (<), nadal pokazany
+      at(499);    // poniżej: schowany
+      at(2000, 0);  // okno bez wysokości: nigdy
+      ex170.edges = { edges, hasClass: m.root.classList.contains('has-to-top') };
+    }
+    {
+      const { hk, m, btn } = await open();
+      hk.emit({ y: 2000, viewport: 1000 });
+      const focused = []; const tab = m.root.querySelector('#tab-docs'); tab.focus = (o) => focused.push(o);
+      btn().dispatchEvent(new Ev('focus'));   // fokus klawiaturą na przycisku
+      hk.emit({ y: 0, viewport: 1000 });      // użytkownik przewinął na górę bez klikania: przycisk się chowa
+      const hiddenNow = btn().hidden; const movedOnHide = focused.length;
+      hk.emit({ y: 2000, viewport: 1000 }); btn().dispatchEvent(new Ev('focus')); btn().dispatchEvent(new Ev('blur'));   // fokus odszedł sam
+      hk.emit({ y: 0, viewport: 1000 });
+      ex170.focusOnHide = { hiddenNow, movedOnHide, afterBlur: focused.length, option: focused[0] };
     }
     {
       const m = mount(clone(F[name]), { now: NOW[name], preview: true });
       const m2 = mount(clone(F[name]), { now: NOW[name], preview: true, deps: { scroll: { save: () => 0, restore: () => {}, reveal: () => {} } } });
       const m3 = mount(clone(F[name]), { now: NOW[name], preview: true, deps: { scroll: { save: () => 0, restore: () => {}, reveal: () => {}, toTop: { subscribe: 'nie funkcja', go() {} } } } });
-      ex170.noHook = { none: m.root.querySelector('#toTop') === null, oldAdapter: m2.root.querySelector('#toTop') === null, broken: m3.root.querySelector('#toTop') === null };
+      ex170.noHook = { noClass: !m.root.classList.contains('has-to-top'), none: m.root.querySelector('#toTop') === null, oldAdapter: m2.root.querySelector('#toTop') === null, broken: m3.root.querySelector('#toTop') === null };
     }
     ex.s170 = ex170;
   }
@@ -1831,13 +1855,26 @@ class RendererNodeTests(unittest.TestCase):
     def test_s170_click_goes_to_top_moves_the_focus_and_destroy_unsubscribes(self) -> None:
         c = self.out["extra"]["s170"]["click"]
         self.assertTrue(c["before"])
-        self.assertEqual((c["goes"], c["hiddenAfter"], c["tabId"]), (1, True, "tab-docs"))
-        self.assertEqual(c["focused"], [{"preventScroll": True}])   # the focus moves to the tab before the button hides
-        self.assertTrue(c["reshown"])
+        self.assertEqual((c["goes"], c["tabId"]), (1, "tab-docs"))
+        self.assertEqual(c["focused"], [{"preventScroll": True}])   # the focus moves to the tab at once, the button stays while the page scrolls
+        self.assertTrue(c["shownRightAfter"])
+        self.assertTrue(c["shownDuringScroll"], "no blink while the smooth scroll is still above the hide threshold")
+        self.assertTrue(c["hiddenAtTheTop"])
         self.assertEqual(c["unsub"], 1)
+        self.assertTrue(c["rootClassGone"])
+
+    def test_s170_threshold_edges_and_a_window_without_height(self) -> None:
+        e = self.out["extra"]["s170"]["edges"]
+        self.assertEqual(e["edges"], [False, True, True, False, False])
+        self.assertTrue(e["hasClass"])
+
+    def test_s170_a_focused_button_hands_the_focus_to_the_tab_when_it_hides(self) -> None:
+        f = self.out["extra"]["s170"]["focusOnHide"]
+        self.assertEqual((f["hiddenNow"], f["movedOnHide"], f["afterBlur"]), (True, 1, 1))   # moved once; no move when the focus had left already
+        self.assertEqual(f["option"], {"preventScroll": True})
 
     def test_s170_without_the_hook_there_is_no_button(self) -> None:
-        self.assertEqual(self.out["extra"]["s170"]["noHook"], {"none": True, "oldAdapter": True, "broken": True})
+        self.assertEqual(self.out["extra"]["s170"]["noHook"], {"noClass": True, "none": True, "oldAdapter": True, "broken": True})
 
     def test_s160_parse_warnings_line(self) -> None:
         w = self.out["extra"]["s160"]["warn"]

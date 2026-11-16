@@ -25,10 +25,11 @@ const fs = require('fs');
 const src = fs.readFileSync(process.argv[2], 'utf8');
 const body = src.slice(src.indexOf('// <to-top>'), src.indexOf('// </to-top>'));
 const make = (reduce) => {
-  const win = { scrollY: 0, innerHeight: 800, document: { documentElement: { scrollHeight: 5000 } }, calls: [], frames: [], listeners: {}, removed: [] };
+  const win = { scrollY: 0, innerHeight: 800, calls: [], frames: [], cancelled: [], listeners: {}, removed: [] };
   win.addEventListener = (t, f, o) => { (win.listeners[t] = win.listeners[t] || []).push({ f, o }); };
   win.removeEventListener = (t, f) => { win.removed.push(t); win.listeners[t] = (win.listeners[t] || []).filter((x) => x.f !== f); };
   win.requestAnimationFrame = (f) => { win.frames.push(f); return win.frames.length; };
+  win.cancelAnimationFrame = (id) => { win.cancelled.push(id); };
   win.matchMedia = (q) => { win.lastQuery = q; return { matches: reduce }; };
   win.scrollTo = (o) => { win.calls.push(o); };
   return win;
@@ -45,7 +46,8 @@ const out = {};
   win.frames.shift()(); out.seenAfterFrame = seen.slice(1);
   win.innerHeight = 600; win.listeners.resize.forEach((l) => l.f()); win.frames.shift()(); out.afterResize = seen[seen.length - 1];
   out.passive = { scroll: win.listeners.scroll[0].o, resize: win.listeners.resize[0].o };
-  unsub(); out.listenersAfterUnsub = { scroll: win.listeners.scroll.length, resize: win.listeners.resize.length, removed: win.removed };
+  win.listeners.scroll.forEach((l) => l.f()); const queuedBeforeUnsub = win.frames.length;   // a frame is queued when the hook is dropped
+  unsub(); out.cancelledOnUnsub = { queued: queuedBeforeUnsub, cancelled: win.cancelled.slice() }; out.listenersAfterUnsub = { scroll: win.listeners.scroll.length, resize: win.listeners.resize.length, removed: win.removed };
   hook.go(); out.go = win.calls; out.query = win.lastQuery;
 }
 {
@@ -69,14 +71,15 @@ class PageAdapter(unittest.TestCase):
 
     def test_subscribe_reads_the_metrics_at_once_and_once_per_frame(self):
         out = self.out
-        self.assertEqual(out['initial'], [{'y': 0, 'viewport': 800, 'height': 5000}])
+        self.assertEqual(out['initial'], [{'y': 0, 'viewport': 800}])
         self.assertEqual((out['framesQueuedByABurst'], out['seenBeforeFrame']), (1, 1))   # five scroll events, one frame, no read yet
-        self.assertEqual(out['seenAfterFrame'], [{'y': 300, 'viewport': 800, 'height': 5000}])
-        self.assertEqual(out['afterResize'], {'y': 300, 'viewport': 600, 'height': 5000})
+        self.assertEqual(out['seenAfterFrame'], [{'y': 300, 'viewport': 800}])
+        self.assertEqual(out['afterResize'], {'y': 300, 'viewport': 600})
 
     def test_listeners_are_passive_and_removed_on_unsubscribe(self):
         self.assertEqual(self.out['passive'], {'scroll': {'passive': True}, 'resize': {'passive': True}})
         self.assertEqual(self.out['listenersAfterUnsub'], {'scroll': 0, 'resize': 0, 'removed': ['scroll', 'resize']})
+        self.assertEqual(self.out['cancelledOnUnsub'], {'queued': 1, 'cancelled': [1]})   # the frame queued at that moment is cancelled: no callback after the unsubscribe
 
     def test_go_scrolls_smoothly_and_instantly_under_reduced_motion(self):
         self.assertEqual(self.out['go'], [{'top': 0, 'left': 0, 'behavior': 'smooth'}])
@@ -113,9 +116,9 @@ def tokens(selector):
 
 class ButtonCss(unittest.TestCase):
     def test_fixed_44_px_circle_with_the_page_tokens(self):
-        rule = declarations('.to-top')
+        rule = declarations('button.to-top')   # `button.` beats [data-tip] and :focus-visible by specificity, not by the order in the file
         self.assertEqual(rule['position'], 'fixed')
-        self.assertEqual((rule['width'], rule['height']), ('2.75rem', '2.75rem'))   # a 44 px touch target
+        self.assertEqual((rule['width'], rule['height']), ('max(2.75rem, 44px)', 'max(2.75rem, 44px)'))   # 44 px also where the root font is 15 px
         self.assertIn('env(safe-area-inset-bottom)', rule['bottom'])
         self.assertIn('env(safe-area-inset-right)', rule['right'])
         for key, token in (('background', 'var(--panel)'), ('color', 'var(--accent)'), ('box-shadow', 'var(--shadow)')):
@@ -125,14 +128,14 @@ class ButtonCss(unittest.TestCase):
 
     def test_layer_is_above_the_sticky_bars_and_the_menu_and_below_the_tooltips(self):
         css = re.sub(r'/\*.*?\*/', '', CSS.read_text(encoding='utf-8'), flags=re.S)
-        z = int(declarations('.to-top')['z-index'])
+        z = int(declarations('button.to-top')['z-index'])
         menu = int(declarations('.menu')['z-index'])
         tip = int(re.search(r'\.desc-tip\s*\{[^}]*z-index:\s*(\d+)', css).group(1))
         self.assertGreater(z, menu)
         self.assertLess(z, tip)
 
     def test_hidden_attribute_wins_over_the_grid_display(self):
-        self.assertEqual(declarations('.to-top[hidden]')['display'], 'none')
+        self.assertEqual(declarations('button.to-top[hidden]')['display'], 'none')
 
     def test_the_icon_has_at_least_3_to_1_contrast_with_the_background_in_both_themes(self):
         for name, selector in (('light', ':root'), ('dark', ':root[data-theme="dark"]')):
@@ -140,7 +143,11 @@ class ButtonCss(unittest.TestCase):
             self.assertGreaterEqual(contrast(token['--accent'], token['--panel']), 3.0, name)
 
     def test_the_document_keeps_room_for_the_button(self):
-        self.assertEqual(declarations('#view-docs .doc-view')['padding-bottom'], '4.5rem')
+        self.assertEqual(declarations('.has-to-top #view-docs .doc-view')['padding-bottom'], '4.5rem')   # only where the button can exist
+
+    def test_the_tooltip_opens_above_the_button(self):
+        tip = declarations('button.to-top:hover::after, button.to-top:focus-visible::after')
+        self.assertEqual((tip['top'], tip['bottom']), ('auto', 'calc(100% + .45rem)'))   # there is no room below a button 16 px from the bottom edge
 
 
 class Wiring(unittest.TestCase):

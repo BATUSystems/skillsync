@@ -336,23 +336,24 @@
     // (webview Skippstera, starsze adaptery) przycisku nie ma. Renderer liczy próg z histerezą, host przewija i pilnuje ruchu.
     const toTopHook = deps.scroll && deps.scroll.toTop && typeof deps.scroll.toTop.subscribe === "function" && typeof deps.scroll.toTop.go === "function"
       ? deps.scroll.toTop : null;
-    const toTop = { shown: false, y: 0, viewport: 0, failed: false, unsub: null };
+    const toTop = { shown: false, y: 0, viewport: 0, failed: false, focused: false, unsub: null };
     const TO_TOP_SHOW = 0.75, TO_TOP_HIDE = 0.5;   // ułamki wysokości okna: pokaż powyżej, schowaj poniżej
     ui.toTop = toTopHook ? h("button", { type: "button", id: "toTop", class: "to-top", hidden: true, "aria-label": "Wróć na górę strony", "data-tip": "Na górę",
-      on: { click: () => toTopClick() } }, icon("i-up")) : null;
+      on: { click: () => toTopClick(), focus: () => { toTop.focused = true; }, blur: () => { toTop.focused = false; } } }, icon("i-up")) : null;
+    if (toTopHook) root.classList.add("has-to-top");   // CSS: zapas pod dokumentem tylko, gdy przycisk jest możliwy
     function toTopSync() {
       if (!ui.toTop) return;
       const eligible = st.view === "docs" && Boolean(st.docData) && !toTop.failed && toTop.viewport > 0;
       let shown = eligible && toTop.shown;
       if (eligible && !shown && toTop.y > toTop.viewport * TO_TOP_SHOW) shown = true;
       else if (eligible && shown && toTop.y < toTop.viewport * TO_TOP_HIDE) shown = false;
+      if (!shown && toTop.focused) { toTop.focused = false; focusDocsTab(); }   // ukrywany przycisk z fokusem oddaje go zakładce, fokus nie ginie
       toTop.shown = shown;
       ui.toTop.hidden = !shown;
     }
+    function focusDocsTab() { if (typeof ui["tab-docs"].focus === "function") ui["tab-docs"].focus({ preventScroll: true }); }
     function toTopClick() {
-      // Fokus przechodzi na zakładkę „Dokumenty” przed ukryciem przycisku, żeby nie zginął.
-      if (typeof ui["tab-docs"].focus === "function") ui["tab-docs"].focus({ preventScroll: true });
-      toTop.shown = false; toTop.y = 0; toTopSync();
+      focusDocsTab();   // przycisk chowa się sam, gdy płynne przewijanie zejdzie poniżej progu (metryki z hosta)
       toTopHook.go();
     }
     if (toTopHook) {
@@ -1196,7 +1197,7 @@
         st.timers.clear();
         for (const type of Object.keys(rootListeners)) root.removeEventListener(type, rootListeners[type]);
         root.textContent = "";
-        root.classList.remove("dashboard-root");
+        root.classList.remove("dashboard-root", "has-to-top");
       },
     };
     board.render = board.update; // nazwa ze specu Skippstera (createDashboard(...).render(json))

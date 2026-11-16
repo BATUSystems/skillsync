@@ -59,16 +59,19 @@
   // <to-top> przycisk „na górę” (170-B): haczyk dla renderera. Metryki okna przez requestAnimationFrame (jeden odczyt na klatkę, nasłuch
   // pasywny), przewijanie płynne, a przy prefers-reduced-motion natychmiastowe.
   function createToTop(win) {
-    const metrics = () => ({ y: win.scrollY, viewport: win.innerHeight, height: win.document.documentElement.scrollHeight });
+    const metrics = () => ({ y: win.scrollY, viewport: win.innerHeight });
     return {
       subscribe(cb) {
-        let queued = false;
-        const run = () => { queued = false; cb(metrics()); };
-        const on = () => { if (!queued) { queued = true; win.requestAnimationFrame(run); } };
+        let frame = 0;
+        const run = () => { frame = 0; cb(metrics()); };
+        const on = () => { if (!frame) frame = win.requestAnimationFrame(run); };
         win.addEventListener("scroll", on, { passive: true });
         win.addEventListener("resize", on, { passive: true });
         cb(metrics());
-        return () => { win.removeEventListener("scroll", on); win.removeEventListener("resize", on); };
+        return () => {
+          win.removeEventListener("scroll", on); win.removeEventListener("resize", on);
+          if (frame) { win.cancelAnimationFrame(frame); frame = 0; }
+        };
       },
       go() {
         const calm = typeof win.matchMedia === "function" && win.matchMedia("(prefers-reduced-motion: reduce)").matches;
