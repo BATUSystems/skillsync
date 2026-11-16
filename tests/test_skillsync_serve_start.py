@@ -1,7 +1,9 @@
 """`tests/serve_start.py`: which state file counts as the file of OUR server (POSIX: the pid; Windows: port + project root + start time).
 The Windows branch is forced by the `windows` parameter, so Linux and macOS exercise it too."""
+import errno
 import json
 import os
+import socket
 import sys
 import tempfile
 import unittest
@@ -15,7 +17,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests"))
 
 from skillsync_workflow import dashboard_token  # noqa: E402
-from serve_start import own_state  # noqa: E402
+from serve_start import ATTEMPTS, bind_free, kill_tree, lost_bind, own_state, start_serve, state_snapshot, stop_serve  # noqa: E402
 
 
 class OwnState(unittest.TestCase):
@@ -68,6 +70,194 @@ class OwnState(unittest.TestCase):
         self.write("a")
         self.assertFalse(own_state(self.env, self.proc, 5190, None, self.started, windows=True))
         self.assertFalse(own_state(self.env, self.proc, 5190, self.root, None, windows=True))
+
+    def test_windows_a_leftover_of_the_same_root_and_port_that_did_not_change_is_not_ours(self):
+        """SV1: the killed predecessor leaves a fresh-looking file; only a file written after `Popen` counts."""
+        self.write("a")
+        before = state_snapshot(self.env)
+        self.assertTrue(before)
+        self.assertFalse(own_state(self.env, self.proc, 5190, self.root, self.started, windows=True, before=before))
+        self.assertTrue(own_state(self.env, self.proc, 5190, self.root, self.started, windows=True, before={}))
+        path = next(iter(before))
+        os.utime(path, ns=(before[path] + 10**9, before[path] + 10**9))   # the new server rewrites the same file
+        self.assertTrue(own_state(self.env, self.proc, 5190, self.root, self.started, windows=True, before=before))
+
+
+class KillTree(unittest.TestCase):
+    def proc(self, alive=True):
+        proc = mock.Mock(pid=4242)
+        proc.poll.return_value = None if alive else 0
+        return proc
+
+    def test_windows_kills_the_tree_of_our_own_pid_by_the_system_path(self):
+        proc = self.proc()
+        with mock.patch.dict(os.environ, {"SystemRoot": r"C:\Windows"}), mock.patch("serve_start.subprocess.run") as run:
+            kill_tree(proc, windows=True)
+        command = run.call_args.args[0]
+        self.assertFalse(run.call_args.kwargs.get("shell"), "a list of arguments, no shell")
+        self.assertEqual(command[1:], ["/T", "/F", "/PID", "4242"])
+        self.assertTrue(command[0].lower().endswith("taskkill.exe") and "system32" in command[0].lower(), command)
+        proc.kill.assert_called_once()   # still alive in the mock: the launcher is killed too
+
+    def test_windows_falls_back_to_kill_when_taskkill_is_missing(self):
+        proc = self.proc()
+        with mock.patch("serve_start.subprocess.run", side_effect=FileNotFoundError):
+            kill_tree(proc, windows=True)
+        proc.kill.assert_called_once()
+
+    def test_posix_does_not_call_taskkill(self):
+        proc = self.proc()
+        with mock.patch("serve_start.subprocess.run") as run:
+            kill_tree(proc, windows=False)
+        run.assert_not_called()
+        proc.kill.assert_called_once()
+
+    def test_a_finished_process_is_left_alone(self):
+        proc = self.proc(alive=False)
+        with mock.patch("serve_start.subprocess.run") as run:
+            kill_tree(proc, windows=True)
+        run.assert_not_called()
+        proc.kill.assert_not_called()
+
+
+class StartServeAttempts(unittest.TestCase):
+    """`start_serve` against a fake CLI that always ends with the given output, to count the tries."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="serve-start-attempts-"))
+        self.addCleanup(lambda: __import__("shutil").rmtree(self.tmp, ignore_errors=True))
+        self.counter = self.tmp / "tries.txt"
+        self.env = {**os.environ, "XDG_DATA_HOME": str(self.tmp / "xdg-data"), "LOCALAPPDATA": str(self.tmp / "xdg-data"),
+                    "HOME": str(self.tmp / "home"), "USERPROFILE": str(self.tmp / "home"), "PYTHONUTF8": "1"}
+        self.root = self.tmp / "proj"
+        self.root.mkdir()
+
+    def cli(self, reason):
+        path = self.tmp / "fake_cli.py"
+        path.write_text("import json, sys\nopen(%r, 'a').write('x')\nprint(json.dumps({'status': 'BLOCKED', 'reason': %r}, ensure_ascii=False))\n"
+                        "sys.exit(2)\n" % (str(self.counter), reason), encoding="utf-8")
+        return path
+
+    def test_a_lost_bind_is_retried_until_the_attempts_run_out(self):
+        with self.assertRaises(AssertionError) as raised:
+            start_serve(self, self.cli("nie można nasłuchiwać na 127.0.0.1:5190 (Address already in use)"), self.root, [], self.env, lambda: 5190)
+        self.assertEqual(len(self.counter.read_text()), ATTEMPTS)
+        self.assertIn("did not start", str(raised.exception))
+
+    def test_a_configuration_error_is_not_retried(self):
+        with self.assertRaises(AssertionError):
+            start_serve(self, self.cli("--plan: nieznany plik"), self.root, [], self.env, lambda: 5190)
+        self.assertEqual(len(self.counter.read_text()), 1)
+
+
+class StopServe(unittest.TestCase):
+    def proc(self):
+        proc = mock.Mock(pid=4242)
+        proc.poll.return_value = None
+        proc.communicate.return_value = ("out", "err")
+        return proc
+
+    def test_posix_terminates_and_the_stop_is_graceful(self):
+        proc = self.proc()
+        self.assertEqual(stop_serve(proc, windows=False), ("out", "err", True))
+        proc.terminate.assert_called_once()
+
+    def test_windows_kills_the_tree_and_the_stop_is_not_graceful(self):
+        proc = self.proc()
+        with mock.patch("serve_start.kill_tree") as kill:
+            self.assertEqual(stop_serve(proc, windows=True), ("out", "err", False))
+        kill.assert_called_once_with(proc, windows=True)
+        proc.terminate.assert_not_called()
+
+
+class LostBind(unittest.TestCase):
+    def test_only_a_blocked_listen_is_retried(self):
+        self.assertTrue(lost_bind('{"status": "BLOCKED", "reason": "nie można nasłuchiwać na 127.0.0.1:5190 (Address already in use)"}'))
+        self.assertFalse(lost_bind('{"status": "BLOCKED", "reason": "--plan: nieznany plik"}'))   # SV4: a configuration error is not retried
+        self.assertFalse(lost_bind("Traceback"))
+
+
+class BindFree(unittest.TestCase):
+    def test_a_port_taken_before_the_bind_moves_on_to_the_next_one(self):
+        ports = iter([5190, 5191, 5192])
+        tried = []
+
+        def factory(port):
+            tried.append(port)
+            if port != 5192:
+                raise OSError(errno.EADDRINUSE, "Address already in use")
+            return f"server-{port}"
+
+        self.assertEqual(bind_free(factory, lambda: next(ports)), ("server-5192", 5192))
+        self.assertEqual(tried, [5190, 5191, 5192])
+
+    def test_the_windows_code_of_a_taken_port_is_retried_too(self):
+        ports = iter([5190, 5191])
+
+        def factory(port):
+            if port == 5190:
+                raise OSError(10048, "WSAEADDRINUSE")
+            return "ok"
+
+        self.assertEqual(bind_free(factory, lambda: next(ports)), ("ok", 5191))
+
+    def test_another_error_is_raised_at_once(self):
+        calls = []
+
+        def factory(port):
+            calls.append(port)
+            raise OSError(errno.EACCES, "Permission denied")
+
+        with self.assertRaises(OSError):
+            bind_free(factory, lambda: 5190)
+        self.assertEqual(calls, [5190])
+
+    def test_the_last_error_is_raised_after_the_attempts_run_out(self):
+        calls = []
+
+        def factory(port):
+            calls.append(port)
+            raise OSError(errno.EADDRINUSE, "Address already in use")
+
+        with self.assertRaises(OSError) as raised:
+            bind_free(factory, lambda: 5190, attempts=3)
+        self.assertEqual(raised.exception.errno, errno.EADDRINUSE)
+        self.assertEqual(len(calls), 3)
+        self.assertIn("3 tries", str(raised.exception))
+        self.assertIn("5190", str(raised.exception))
+
+    def test_no_attempt_at_all_is_a_usage_error(self):
+        with self.assertRaises(ValueError):
+            bind_free(lambda port: "never", lambda: 5190, attempts=0)
+
+    def test_a_really_occupied_port_loses_against_the_retry(self):
+        with socket.socket() as holder:
+            holder.bind(("127.0.0.1", 0))
+            holder.listen()
+            taken = holder.getsockname()[1]
+            ports = iter([taken])
+
+            def free():
+                return next(ports, None) or self.free_other(taken)
+
+            def factory(port):
+                sock = socket.socket()
+                try:
+                    sock.bind(("127.0.0.1", port))
+                except OSError:
+                    sock.close()
+                    raise
+                return sock
+
+            sock, port = bind_free(factory, free)
+            sock.close()
+            self.assertNotEqual(port, taken)
+
+    @staticmethod
+    def free_other(taken):
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            return probe.getsockname()[1]
 
 
 if __name__ == "__main__":

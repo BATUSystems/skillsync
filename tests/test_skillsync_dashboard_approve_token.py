@@ -26,7 +26,7 @@ sys.path.insert(0, str(ROOT / "tests"))
 
 from skillsync_workflow import dashboard_http as srv  # noqa: E402
 from skillsync_workflow import dashboard_token  # noqa: E402
-from tests.serve_start import start_serve  # noqa: E402
+from tests.serve_start import bind_free, start_serve, stop_serve  # noqa: E402
 from tests.test_skillsync_dashboard_server import (CLI, PLAN, TEST_TOKEN, HttpCase, ProjectCase, free_port,  # noqa: E402
                                                    install_fake_cli, make_project, raw_post, spy_core)
 
@@ -559,9 +559,8 @@ class VerboseLog(ProjectCase):
     def test_the_request_log_has_no_token_even_with_verbose(self) -> None:
         import threading
         logged = []
-        port = free_port()
         board = srv.Board(self.root, prototype_port=1, approve_token=TEST_TOKEN)
-        server = srv.make_server(board, "127.0.0.1", port, verbose=True)
+        server, port = bind_free(lambda port: srv.make_server(board, "127.0.0.1", port, verbose=True), free_port)
         threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.1}, daemon=True).start()
         self.addCleanup(lambda: (server.shutdown(), server.server_close()))
         with mock.patch.object(srv, "log", lambda text, *a, **k: logged.append(str(text))), mock.patch.object(sys.stderr, "write", lambda text: logged.append(text)):
@@ -571,7 +570,6 @@ class VerboseLog(ProjectCase):
         self.assertFalse([line for line in logged if TEST_TOKEN in line or "wrong" in line])
 
 
-@unittest.skipIf(os.name == "nt", "SIGTERM kończy proces na Windows bez obsługi")
 class ServeWritesAndRemovesTheState(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = Path(tempfile.mkdtemp(prefix="dashboard-serve-token-"))
@@ -620,10 +618,11 @@ class ServeWritesAndRemovesTheState(unittest.TestCase):
         url = subprocess.run([sys.executable, str(CLI), "dashboard", "url", str(self.root), *self.layer], capture_output=True, text=True,
                              env=env, timeout=30)
         self.assertEqual((url.returncode, url.stdout.strip()), (0, f"http://127.0.0.1:{port}/#zgoda={token}"), url.stderr)
-        proc.terminate()
-        _out, err = proc.communicate(timeout=15)
-        self.assertEqual(proc.returncode, 0, err)
+        _out, err, graceful = stop_serve(proc)
         self.assertEqual(err.count(f"http://127.0.0.1:{port}/#zgoda={token}"), 1, "the address with the token is printed once")
+        if not graceful:   # Windows: no SIGTERM handler, so no exit code and the state file stays (see `stop_serve`)
+            return
+        self.assertEqual(proc.returncode, 0, err)
         self.assertEqual(self.state_files(), [], "the state file is removed when the server stops")
         after = subprocess.run([sys.executable, str(CLI), "dashboard", "url", str(self.root), "--json", *self.layer], capture_output=True,
                                text=True, env=env, timeout=30)
@@ -637,8 +636,7 @@ class ServeWritesAndRemovesTheState(unittest.TestCase):
         url = subprocess.run([sys.executable, str(CLI), "dashboard", "url", str(self.root), "--host", "demo.example", *self.layer],
                              capture_output=True, text=True, env=self.env, timeout=30)
         self.assertEqual(url.stdout.strip(), f"http://demo.example:{port}/#zgoda={record['token']}", url.stderr)
-        proc.terminate()
-        _out, err = proc.communicate(timeout=15)
+        _out, err, _graceful = stop_serve(proc)
         self.assertIn(f"http://demo.example:{port}/#zgoda={record['token']}", err)
 
     def test_a_foreign_server_on_the_chosen_port_does_not_fool_the_start(self) -> None:
@@ -656,11 +654,10 @@ class ServeWritesAndRemovesTheState(unittest.TestCase):
             def log_message(self, *args):
                 pass
 
-        foreign = ThreadingHTTPServer(("127.0.0.1", 0), Foreign)
+        foreign, taken = bind_free(lambda port: ThreadingHTTPServer(("127.0.0.1", port), Foreign), free_port)   # a port of the pool: the server accepts it
         threading.Thread(target=foreign.serve_forever, daemon=True).start()
         self.addCleanup(foreign.server_close)
         self.addCleanup(foreign.shutdown)
-        taken = foreign.server_address[1]
         first = [taken]
         real = free_port
         with mock.patch.object(sys.modules[__name__], "free_port", lambda: first.pop() if first else real()):
@@ -668,8 +665,7 @@ class ServeWritesAndRemovesTheState(unittest.TestCase):
         self.assertNotEqual(port, taken, "the start trusted the answer of a foreign server")
         self.assertIsNone(proc.poll(), "the server of the test is the one that runs")
         self.assertEqual([json.loads(path.read_text(encoding="utf-8"))["port"] for path in self.state_files()], [port])
-        proc.terminate()
-        proc.communicate(timeout=15)
+        stop_serve(proc)
 
     def test_a_leftover_of_a_killed_server_is_removed_by_a_server_without_consents(self) -> None:
         stale = []
@@ -687,8 +683,7 @@ class ServeWritesAndRemovesTheState(unittest.TestCase):
         self.assertNotIn("token", record, "the token of the dead server is gone, not kept")
         self.assertIs(record.get("approvals"), False, "a server without consents says so")
         self.assertEqual((record["pid"] != os.getpid(), record["port"]), (True, port))
-        proc.terminate()
-        proc.communicate(timeout=15)
+        stop_serve(proc)
 
     def test_no_approvals_prints_no_token_and_writes_a_file_without_one(self) -> None:
         proc, port = self.start("--no-approvals")
@@ -699,10 +694,10 @@ class ServeWritesAndRemovesTheState(unittest.TestCase):
         url = subprocess.run([sys.executable, str(CLI), "dashboard", "url", str(self.root), "--json", *self.layer], capture_output=True, text=True,
                              env=self.env, timeout=30)
         self.assertEqual((url.returncode, json.loads(url.stdout)["code"]), (2, "approvals_disabled"), url.stdout)
-        proc.terminate()
-        _out, err = proc.communicate(timeout=15)
+        _out, err, graceful = stop_serve(proc)
         self.assertNotIn("#zgoda=", err)
-        self.assertEqual(self.state_files(), [], "removed when the server stops, with or without consents")
+        if graceful:   # Windows: the state file stays after the kill (see `stop_serve`)
+            self.assertEqual(self.state_files(), [], "removed when the server stops, with or without consents")
 
 
 if __name__ == "__main__":
