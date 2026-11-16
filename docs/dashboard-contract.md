@@ -572,7 +572,7 @@ tego nie wykryje. Serwer nie przechodzi na inny port. Na Windows gniazda dwóch 
 drugi proces nie przejmie węższego adresu.
 
 **Konsola przy starcie.** Przy odczycie poza loopbackiem jedno ostrzeżenie o dostępności strony dla każdego urządzenia w sieci
-lokalnej (plany, specyfikacje, wyniki, sekrety zredagowane heurystycznie, ruch nieszyfrowany), z podpowiedzią `--read-bind 127.0.0.1`
+lokalnej (plany, specyfikacje, wyniki, sekrety zredagowane heurystycznie, ale wyniki testów jawne, bez maski; ruch nieszyfrowany), z podpowiedzią `--read-bind 127.0.0.1`
 albo `dashboard.local_only: true`. Jedno zdanie o zmianie domyślnego nasłuchu (od 1.8.0 odczyt w sieci, zgody lokalnie, powrót
 flagą `--read-bind 127.0.0.1`) jest wypisywane tylko przez wydania przed 1.10. Adresy IPv4 maszyny (sieć tylko-IPv6 ich nie
 dostanie) są wypisane po jednym w linii, z adresem po nazwie maszyny (`http://<nazwa>.local:5140/`); nazwa maszyny (`socket.gethostname()`)

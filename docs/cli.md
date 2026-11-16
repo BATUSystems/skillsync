@@ -229,7 +229,7 @@ Szczegóły: [workflow](workflow.md).
   i w manifeście projektu, zob. [configuration](configuration.md) i [manifest](manifest.md#sekcja-dashboard).
   Nieznany klucz: `doctor` ostrzega, `serve` BLOCKED z nazwą klucza; zła wartość: BLOCKED z nazwą klucza (nigdy z wartością).
 - Komunikaty startowe (konsola): przy odczycie poza loopbackiem jedno ostrzeżenie o dostępności dla każdego urządzenia w
-  sieci lokalnej (plany, specyfikacje, wyniki, sekrety zredagowane heurystycznie, ruch nieszyfrowany) z podpowiedzią
+  sieci lokalnej (plany, specyfikacje, wyniki, sekrety zredagowane heurystycznie, ale wyniki testów jawne, bez maski; ruch nieszyfrowany) z podpowiedzią
   `--read-bind 127.0.0.1` albo `dashboard.local_only: true`; jedno zdanie o zmianie domyślnego nasłuchu (od 1.8.0) i powrocie
   flagą `--read-bind 127.0.0.1`, wypisywane tylko przez wydania przed 1.10; adresy IPv4 maszyny po jednym w linii (sieć
   tylko-IPv6 ich nie dostanie) plus adres po nazwie maszyny (`http://<nazwa>.local:5140/`); nazwa maszyny w komunikacie;

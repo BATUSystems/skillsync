@@ -1206,7 +1206,7 @@ def _serve_ports(args, mode: dict) -> int:
                         f"--approve-bind 127.0.0.1 albo użyj tunelu SSH; nigdy nie kieruj tunelu publicznego na ten port.")
                 else:
                     log(f"UWAGA: port odczytu {port} słucha na {bind}: odczyt jest dostępny dla każdego urządzenia w tej sieci lokalnej (plany, spece, "
-                        f"wyniki; tajne dane zredagowane heurystycznie; ruch nieszyfrowany). W nieufnej sieci uruchom z --read-bind 127.0.0.1 "
+                        f"wyniki; tajne dane zredagowane heurystycznie, ale wyniki testów (nazwy i komunikaty porażek) są jawne, bez maski; ruch nieszyfrowany). W nieufnej sieci uruchom z --read-bind 127.0.0.1 "
                         f"albo ustaw dashboard.local_only: true w configu maszyny.")
                     if mode.get("read_default") and _version_tuple(__version__) < ports.LISTEN_NOTE_UNTIL:
                         log("  od 1.8.0 odczyt słucha domyślnie na wszystkich interfejsach; poprzedni nasłuch tylko lokalny przywraca "
