@@ -1,0 +1,25 @@
+{"meta": {"tool": "dotnet", "version": "dotnet SDK 10.0.114, VSTest 18.0.2, xunit.runner.visualstudio 3.1.5, xunit 2.9.3, net10.0", "command": ["timeout", "-s", "INT", "2", "dotnet", "test", "--no-build", "--filter", "FullyQualifiedName~Demo.GreenTests|FullyQualifiedName~Demo.RedTests", "--logger", "console;verbosity=detailed"], "exit": 124, "merged": false, "env": {"LANG": "pl_PL.UTF-8", "DOTNET_CLI_UI_LANGUAGE": "en"}, "note": "SIGINT after 2 s: no summary", "scrubbed": "paths, host and user names are replaced", "format": "one record per chunk read from the pipe: t = seconds since the start, fd = out|err, data = the text of the chunk"}}
+{"t": 0.702, "fd": "out", "data": "Test run for <root>/dn/demo/bin/Debug/net10.0/demo.dll (.NETCoreApp,Version=v10.0)\n"}
+{"t": 0.758, "fd": "out", "data": "VSTest version 18.0.2-dev (x64)\n"}
+{"t": 0.762, "fd": "out", "data": "\n"}
+{"t": 0.862, "fd": "out", "data": "Starting test execution, please wait...\n"}
+{"t": 0.898, "fd": "out", "data": "A total of 1 test files matched the specified pattern.\n<root>/dn/demo/bin/Debug/net10.0/demo.dll\n"}
+{"t": 1.408, "fd": "out", "data": "[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.5+1b188a7b0a (64-bit .NET 10.0.14)\n"}
+{"t": 1.498, "fd": "out", "data": "[xUnit.net 00:00:00.10]   Discovering: demo\n"}
+{"t": 1.571, "fd": "out", "data": "[xUnit.net 00:00:00.18]   Discovered:  demo\n"}
+{"t": 1.6, "fd": "out", "data": "[xUnit.net 00:00:00.20]   Starting:    demo\n"}
+{"t": 1.672, "fd": "out", "data": "[xUnit.net 00:00:00.28]       System.InvalidOperationException : kaput\n"}
+{"t": 1.672, "fd": "out", "data": "[xUnit.net 00:00:00.28]       Stack Trace:\n"}
+{"t": 1.672, "fd": "err", "data": "[xUnit.net 00:00:00.28]     Demo.RedTests.Throws [FAIL]\n"}
+{"t": 1.673, "fd": "out", "data": "[xUnit.net 00:00:00.28]         <root>/dn/demo/Tests.cs(19,0): at Demo.RedTests.Throws()\n[xUnit.net 00:00:00.28]            at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)\n"}
+{"t": 1.673, "fd": "out", "data": "[xUnit.net 00:00:00.28]            at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)\n"}
+{"t": 1.676, "fd": "out", "data": "[xUnit.net 00:00:00.28]       Assert.Equal() Failure: Values differ\n"}
+{"t": 1.676, "fd": "out", "data": "[xUnit.net 00:00:00.28]       Expected: 1\n"}
+{"t": 1.676, "fd": "out", "data": "[xUnit.net 00:00:00.28]       Actual:   2\n"}
+{"t": 1.676, "fd": "out", "data": "[xUnit.net 00:00:00.28]       Stack Trace:"}
+{"t": 1.676, "fd": "out", "data": "\n"}
+{"t": 1.676, "fd": "out", "data": "[xUnit.net 00:00:00.28]         <root>/dn/demo/Tests.cs(18,0): at Demo.RedTests.Boom()\n"}
+{"t": 1.676, "fd": "out", "data": "[xUnit.net 00:00:00.28]            at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)\n"}
+{"t": 1.676, "fd": "out", "data": "[xUnit.net 00:00:00.28]            at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)\n"}
+{"t": 1.676, "fd": "err", "data": "[xUnit.net 00:00:00.28]     Demo.RedTests.Boom [FAIL]\n"}
+{"t": 2.023, "fd": "out", "data": "Attempting to cancel the build...\n"}

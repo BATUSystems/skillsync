@@ -1,0 +1,22 @@
+{"meta": {"tool": "unittest", "version": "Python 3.14.10 (unittest)", "command": ["timeout", "-s", "INT", "1.6", "python3", "-m", "unittest", "-v", "test_green", "test_red"], "exit": 124, "merged": false, "env": {"LANG": "pl_PL.UTF-8"}, "note": "SIGINT in the middle of the run", "scrubbed": "paths, host and user names are replaced", "format": "one record per chunk read from the pipe: t = seconds since the start, fd = out|err, data = the text of the chunk"}}
+{"t": 0.048, "fd": "err", "data": "test_adds (test_green.GreenTests.test_adds) ... "}
+{"t": 0.048, "fd": "err", "data": "ok\ntest_prints (test_green.GreenTests.test_prints) ... "}
+{"t": 0.048, "fd": "err", "data": "ok\n"}
+{"t": 0.048, "fd": "err", "data": "test_slow (test_green.GreenTests.test_slow) ... "}
+{"t": 1.248, "fd": "err", "data": "ok\n"}
+{"t": 1.249, "fd": "err", "data": "test_boom (test_red.RedTests.test_boom) ... "}
+{"t": 1.249, "fd": "err", "data": "FAIL\n"}
+{"t": 1.249, "fd": "err", "data": "test_error (test_red.RedTests.test_error) ... "}
+{"t": 1.249, "fd": "err", "data": "ERROR\n"}
+{"t": 1.249, "fd": "err", "data": "test_long_message (test_red.RedTests.test_long_message) ... "}
+{"t": 1.25, "fd": "err", "data": "FAIL\n"}
+{"t": 1.25, "fd": "err", "data": "test_slow_red (test_red.RedTests.test_slow_red) ... "}
+{"t": 1.603, "fd": "out", "data": "hello from stdout\n"}
+{"t": 1.603, "fd": "err", "data": "Traceback (most recent call last):\n"}
+{"t": 1.603, "fd": "err", "data": "  File \"<frozen runpy>\", line 203, in _run_module_as_main\n  File \"<frozen runpy>\", line 88, in _run_code\n  File \"/usr/lib/python3.14/unittest/__main__.py\", line 18, in <module>\n    main(module=None)\n    ~~~~^^^^^^^^^^^^^\n"}
+{"t": 1.603, "fd": "err", "data": "  File \"/usr/lib/python3.14/unittest/main.py\", line 104, in __init__\n    self.runTests()\n    ~~~~~~~~~~~~~^^\n  File \"/usr/lib/python3.14/unittest/main.py\", line 270, in runTests\n    self.result = testRunner.run(self.test)\n                  ~~~~~~~~~~~~~~^^^^^^^^^^^\n  File \"/usr/lib/python3.14/unittest/runner.py\", line 257, in run\n    test(result)\n    ~~~~^^^^^^^^\n  File \"/usr/lib/python3.14/unittest/suite.py\", line 84, in __call__\n    return self.run(*args, **kwds)\n           ~~~~~~~~^^^^^^^^^^^^^^^\n"}
+{"t": 1.603, "fd": "err", "data": "  File \"/usr/lib/python3.14/unittest/suite.py\", line 122, in run\n    test(result)\n    ~~~~^^^^^^^^\n  File \"/usr/lib/python3.14/unittest/suite.py\", line 84, in __call__\n    return self.run(*args, **kwds)\n           ~~~~~~~~^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.14/unittest/suite.py\", line 122, in run\n    test(result)\n    ~~~~^^^^^^^^\n  File \"/usr/lib/python3.14/unittest/suite.py\", line 84, in __call__\n    return self.run(*args, **kwds)\n           ~~~~~~~~^^^^^^^^^^^^^^^\n"}
+{"t": 1.603, "fd": "err", "data": "  File \"/usr/lib/python3.14/unittest/suite.py\", line 122, in run\n    test(result)\n    ~~~~^^^^^^^^\n  File \"/usr/lib/python3.14/unittest/case.py\", line 725, in __call__\n    return self.run(*args, **kwds)\n           ~~~~~~~~^^^^^^^^^^^^^^^\n"}
+{"t": 1.603, "fd": "err", "data": "  File \"/usr/lib/python3.14/unittest/case.py\", line 669, in run\n    self._callTestMethod(testMethod)\n    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^\n  File \"/usr/lib/python3.14/unittest/case.py\", line 615, in _callTestMethod\n    result = method()\n"}
+{"t": 1.603, "fd": "err", "data": "  File \"<root>/py/test_red.py\", line 13, in test_slow_red\n    time.sleep(1.0)\n    ~~~~~~~~~~^^^^^\n"}
+{"t": 1.603, "fd": "err", "data": "KeyboardInterrupt\n"}

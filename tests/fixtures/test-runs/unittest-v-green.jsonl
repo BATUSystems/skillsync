@@ -1,0 +1,10 @@
+{"meta": {"tool": "unittest", "version": "Python 3.14.10 (unittest)", "command": ["python3", "-m", "unittest", "-v", "test_green"], "exit": 0, "merged": false, "env": {"LANG": "pl_PL.UTF-8"}, "note": "-v on stderr; the start of a test is a partial line", "scrubbed": "paths, host and user names are replaced", "format": "one record per chunk read from the pipe: t = seconds since the start, fd = out|err, data = the text of the chunk"}}
+{"t": 0.048, "fd": "err", "data": "test_adds (test_green.GreenTests.test_adds) ... "}
+{"t": 0.049, "fd": "err", "data": "ok\ntest_prints (test_green.GreenTests.test_prints) ... "}
+{"t": 0.049, "fd": "err", "data": "ok\n"}
+{"t": 0.049, "fd": "err", "data": "test_slow (test_green.GreenTests.test_slow) ... "}
+{"t": 1.249, "fd": "out", "data": "hello from stdout\n"}
+{"t": 1.249, "fd": "err", "data": "ok\n"}
+{"t": 1.249, "fd": "err", "data": "\n----------------------------------------------------------------------\n"}
+{"t": 1.249, "fd": "err", "data": "Ran 3 tests in 1.200s\n\n"}
+{"t": 1.249, "fd": "err", "data": "OK\n"}

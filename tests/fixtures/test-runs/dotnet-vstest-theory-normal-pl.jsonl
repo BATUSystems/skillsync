@@ -1,0 +1,29 @@
+{"meta": {"tool": "dotnet", "version": "dotnet SDK 10.0.114, VSTest 18.0.2, xunit.runner.visualstudio 3.1.5, xunit 2.9.3, net10.0", "command": ["dotnet", "test", "--no-build", "--filter", "FullyQualifiedName~Demo.TheoryTests", "--logger", "console;verbosity=normal"], "exit": 1, "merged": false, "env": {"LANG": "pl_PL.UTF-8"}, "note": "Theory, localized", "scrubbed": "paths, host and user names are replaced", "format": "one record per chunk read from the pipe: t = seconds since the start, fd = out|err, data = the text of the chunk"}}
+{"t": 1.103, "fd": "out", "data": "Przebieg testu dla: <root>/dn/demo/bin/Debug/net10.0/demo.dll (.NETCoreApp,Version=v10.0)\n"}
+{"t": 1.203, "fd": "out", "data": "Wersja 18.0.2-dev (x64) VSTest\n"}
+{"t": 1.208, "fd": "out", "data": "\n"}
+{"t": 1.376, "fd": "out", "data": "Trwa rozpoczynanie wykonywania testu, czekaj...\n"}
+{"t": 1.421, "fd": "out", "data": "Łączna liczba plików testowych dopasowanych do określonego wzorca: 1.\n"}
+{"t": 2.261, "fd": "out", "data": "[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.5+1b188a7b0a (64-bit .NET 10.0.14)\n"}
+{"t": 2.438, "fd": "out", "data": "[xUnit.net 00:00:00.20]   Discovering: demo\n"}
+{"t": 2.567, "fd": "out", "data": "[xUnit.net 00:00:00.33]   Discovered:  demo\n"}
+{"t": 2.616, "fd": "out", "data": "[xUnit.net 00:00:00.38]   Starting:    demo\n"}
+{"t": 2.734, "fd": "out", "data": "[xUnit.net 00:00:00.50]       Assert.Equal() Failure: Values differ\n"}
+{"t": 2.734, "fd": "out", "data": "[xUnit.net 00:00:00.50]       Expected: 3\n"}
+{"t": 2.734, "fd": "out", "data": "[xUnit.net 00:00:00.50]       Actual:   4\n"}
+{"t": 2.734, "fd": "out", "data": "[xUnit.net 00:00:00.50]       Stack Trace:\n"}
+{"t": 2.734, "fd": "err", "data": "[xUnit.net 00:00:00.50]     Demo.TheoryTests.Same(a: 3, b: 4) [FAIL]\n"}
+{"t": 2.736, "fd": "out", "data": "[xUnit.net 00:00:00.50]         <root>/dn/demo/Tests.cs(35,0): at Demo.TheoryTests.Same(Int32 a, Int32 b)\n"}
+{"t": 2.736, "fd": "out", "data": "[xUnit.net 00:00:00.50]            at InvokeStub_TheoryTests.Same(Object, Span`1)\n"}
+{"t": 2.736, "fd": "out", "data": "[xUnit.net 00:00:00.50]            at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)\n"}
+{"t": 2.742, "fd": "out", "data": "[xUnit.net 00:00:00.51]   Finished:    demo\n"}
+{"t": 3.067, "fd": "out", "data": "  Powodzenie Demo.TheoryTests.Length(s: \"a b\", n: 3) [10 ms]\n"}
+{"t": 3.068, "fd": "out", "data": "  Powodzenie Demo.TheoryTests.Length(s: \"ąę ść\", n: 5) [< 1 ms]\n"}
+{"t": 3.07, "fd": "out", "data": "  Powodzenie Demo.TheoryTests.Same(a: 2, b: 2) [< 1 ms]\n  Niepowodzenie Demo.TheoryTests.Same(a: 3, b: 4) [2 ms]\n  Komunikat o błędzie:\n   Assert.Equal() Failure: Values differ\nExpected: 3\nActual:   4\n  Ślad stosu:\n     at Demo.TheoryTests.Same(Int32 a, Int32 b) in <root>/dn/demo/Tests.cs:line 35\n   at InvokeStub_TheoryTests.Same(Object, Span`1)\n   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)\n"}
+{"t": 3.072, "fd": "out", "data": "  Powodzenie Demo.TheoryTests.Same(a: 1, b: 1) [< 1 ms]\n"}
+{"t": 3.072, "fd": "out", "data": "  Powodzenie Demo.TheoryTests.Complex(xs: [1, 2]) [< 1 ms]\n"}
+{"t": 3.072, "fd": "out", "data": "  Powodzenie Demo.TheoryTests.Complex(xs: [3]) [< 1 ms]\n"}
+{"t": 3.077, "fd": "out", "data": "\n"}
+{"t": 3.09, "fd": "out", "data": "Łączna liczba testów: 7\n     Zakończone pomyślnie: 6\n     Zakończone niepowodzeniem: 1\n"}
+{"t": 3.09, "fd": "err", "data": "Przebieg testu nie powiódł się.\n"}
+{"t": 3.091, "fd": "out", "data": " Łączny czas: 1,6564 Sekundy\n"}

@@ -1,0 +1,12 @@
+{"meta": {"tool": "unittest", "version": "Python 3.14.10 (unittest)", "command": ["python3", "-m", "unittest", "-v", "test_collect_error", "test_green"], "exit": 1, "merged": false, "env": {"LANG": "pl_PL.UTF-8"}, "note": "a module that cannot be imported: _FailedTest", "scrubbed": "paths, host and user names are replaced", "format": "one record per chunk read from the pipe: t = seconds since the start, fd = out|err, data = the text of the chunk"}}
+{"t": 0.071, "fd": "err", "data": "test_collect_error (unittest.loader._FailedTest.test_collect_error) ... "}
+{"t": 0.071, "fd": "err", "data": "ERROR\n"}
+{"t": 0.071, "fd": "err", "data": "test_adds (test_green.GreenTests.test_adds) ... "}
+{"t": 0.071, "fd": "err", "data": "ok\n"}
+{"t": 0.071, "fd": "err", "data": "test_prints (test_green.GreenTests.test_prints) ... "}
+{"t": 0.071, "fd": "err", "data": "ok\n"}
+{"t": 0.071, "fd": "err", "data": "test_slow (test_green.GreenTests.test_slow) ... "}
+{"t": 1.271, "fd": "err", "data": "ok\n\n======================================================================\nERROR: test_collect_error (unittest.loader._FailedTest.test_collect_error)\n----------------------------------------------------------------------\nImportError: Failed to import test module: test_collect_error\nTraceback (most recent call last):\n  File \"/usr/lib/python3.14/unittest/loader.py\", line 141, in loadTestsFromName\n    module = __import__(module_name)\n  File \"<root>/py/test_collect_error.py\", line 1, in <module>\n    import this_module_does_not_exist  # noqa\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nModuleNotFoundError: No module named 'this_module_does_not_exist'\n\n\n----------------------------------------------------------------------\n"}
+{"t": 1.271, "fd": "err", "data": "Ran 4 tests in 1.201s\n\n"}
+{"t": 1.272, "fd": "out", "data": "hello from stdout\n"}
+{"t": 1.272, "fd": "err", "data": "FAILED (errors=1)\n"}

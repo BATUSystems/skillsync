@@ -1,0 +1,21 @@
+{"meta": {"tool": "dotnet", "version": "dotnet SDK 10.0.114, VSTest 18.0.2, xunit.runner.visualstudio 3.1.5, xunit 2.9.3, net10.0", "command": ["dotnet", "test", "--no-build", "--filter", "FullyQualifiedName~Demo.GreenTests", "--logger", "console;verbosity=detailed"], "exit": 0, "merged": false, "env": {"LANG": "C", "LC_ALL": "C"}, "note": "LANG=C: English, decimal point", "scrubbed": "paths, host and user names are replaced", "format": "one record per chunk read from the pipe: t = seconds since the start, fd = out|err, data = the text of the chunk"}}
+{"t": 0.666, "fd": "out", "data": "Test run for <root>/dn/demo/bin/Debug/net10.0/demo.dll (.NETCoreApp,Version=v10.0)\n"}
+{"t": 0.713, "fd": "out", "data": "VSTest version 18.0.2-dev (x64)\n"}
+{"t": 0.716, "fd": "out", "data": "\n"}
+{"t": 0.821, "fd": "out", "data": "Starting test execution, please wait...\n"}
+{"t": 0.854, "fd": "out", "data": "A total of 1 test files matched the specified pattern.\n"}
+{"t": 0.854, "fd": "out", "data": "<root>/dn/demo/bin/Debug/net10.0/demo.dll\n"}
+{"t": 1.355, "fd": "out", "data": "[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.5+1b188a7b0a (64-bit .NET 10.0.14)\n"}
+{"t": 1.44, "fd": "out", "data": "[xUnit.net 00:00:00.09]   Discovering: demo\n"}
+{"t": 1.503, "fd": "out", "data": "[xUnit.net 00:00:00.16]   Discovered:  demo\n"}
+{"t": 1.532, "fd": "out", "data": "[xUnit.net 00:00:00.19]   Starting:    demo\n"}
+{"t": 2.863, "fd": "out", "data": "  Passed Demo.GreenTests.Adds [6 ms]\n"}
+{"t": 2.863, "fd": "out", "data": "  Passed Demo.GreenTests.Prints [1 ms]\n"}
+{"t": 2.863, "fd": "out", "data": "  Standard Output Messages:\n"}
+{"t": 2.863, "fd": "out", "data": " hello from test\n\n\n"}
+{"t": 3.095, "fd": "out", "data": "[xUnit.net 00:00:01.75]   Finished:    demo\n"}
+{"t": 3.181, "fd": "out", "data": "  Passed Demo.GreenTests.SlowOne [1 s]\n"}
+{"t": 3.19, "fd": "out", "data": "\n"}
+{"t": 3.196, "fd": "out", "data": "Test Run Successful.\nTotal tests: 3"}
+{"t": 3.196, "fd": "out", "data": "\n     Passed: 3\n"}
+{"t": 3.196, "fd": "out", "data": " Total time: 2.3362 Seconds\n"}

@@ -1,0 +1,7 @@
+{"meta": {"tool": "unittest", "version": "Python 3.14.10 (unittest)", "command": ["python3", "-m", "unittest", "-v", "test_nonexistent_module_xyz"], "exit": 1, "merged": false, "env": {"LANG": "pl_PL.UTF-8"}, "note": "a name that is not a module", "scrubbed": "paths, host and user names are replaced", "format": "one record per chunk read from the pipe: t = seconds since the start, fd = out|err, data = the text of the chunk"}}
+{"t": 0.045, "fd": "err", "data": "test_nonexistent_module_xyz (unittest.loader._FailedTest.test_nonexistent_module_xyz) ... "}
+{"t": 0.045, "fd": "err", "data": "ERROR\n"}
+{"t": 0.045, "fd": "err", "data": "\n======================================================================\n"}
+{"t": 0.045, "fd": "err", "data": "ERROR: test_nonexistent_module_xyz (unittest.loader._FailedTest.test_nonexistent_module_xyz)\n----------------------------------------------------------------------\nImportError: Failed to import test module: test_nonexistent_module_xyz\nTraceback (most recent call last):\n  File \"/usr/lib/python3.14/unittest/loader.py\", line 141, in loadTestsFromName\n    module = __import__(module_name)\nModuleNotFoundError: No module named 'test_nonexistent_module_xyz'\n\n\n----------------------------------------------------------------------\n"}
+{"t": 0.045, "fd": "err", "data": "Ran 1 test in 0.000s\n\n"}
+{"t": 0.045, "fd": "err", "data": "FAILED (errors=1)\n"}
