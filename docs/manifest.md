@@ -84,7 +84,7 @@ Opcjonalna. Wpływa tylko na `dashboard serve` tego projektu. Ta sama sekcja mo�
 ```yaml
 dashboard:
   local_only: true        # opcjonalnie: true = oba gniazda na 127.0.0.1; false = brak preferencji
-  read_bind: 0.0.0.0      # opcjonalnie: adres nasłuchu gniazda odczytu
+  read_bind: 127.0.0.1      # opcjonalnie: adres nasłuchu gniazda odczytu
   approve_bind: 127.0.0.1 # opcjonalnie: adres nasłuchu gniazda zgód
 ```
 

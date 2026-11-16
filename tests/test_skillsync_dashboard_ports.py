@@ -1037,14 +1037,18 @@ class Process(unittest.TestCase):
         self.wait_up(read_port, approve_port)
         _lines, finish = self.console_until(proc, f"UWAGA: port odczytu {read_port}", "zgody są tylko na tej maszynie")
         err = finish()
-        self.assertIn("od 1.8.0 odczyt słucha domyślnie na wszystkich interfejsach", err)
+        if srv._version_tuple(srv.__version__) < ports.LISTEN_NOTE_UNTIL:   # the sentence ends with 1.10
+            self.assertIn("od 1.8.0 odczyt słucha domyślnie na wszystkich interfejsach", err)
+        else:
+            self.assertNotIn("od 1.8.0", err)
         self.assertIn("--read-bind 127.0.0.1", err)
         self.assertIn("dashboard.local_only: true", err)
         self.assertIn("zgody z telefonu: --approve-bind 0.0.0.0", err)
         self.assertNotIn("strona tylko na tej maszynie", err)
         names = [line for line in err.splitlines() if "albo po nazwie tej maszyny" in line]
-        self.assertEqual(len(names), 1)
-        self.assertIn(f":{read_port}/", names[0])
+        if ports.own_names():   # a machine without a usable host name prints no such line
+            self.assertEqual(len(names), 1)
+            self.assertIn(f":{read_port}/", names[0])
         address = lan_address()
         if address is not None:
             self.assertEqual(len([line for line in err.splitlines() if line.rstrip().endswith(f"z innego urządzenia: http://{address}:{read_port}/")]), 1)

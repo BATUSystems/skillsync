@@ -300,7 +300,7 @@ Zalecenia:
 - Strona tylko dla tej maszyny: `dashboard.local_only: true` w configu maszyny albo `--read-bind 127.0.0.1` (zgody zostają lokalne).
 - Zgody w obcej sieci (hotel, konferencja, hotspot, sieć gościnna): `dashboard.local_only: true` albo `--read-bind 127.0.0.1`
   i dostęp do zgód tunelem SSH na port zgód.
-- Odwrotny proxy, któremu ufasz: `--allow-proxy-headers` (tylko z `--approve-port`). Bez tego zgody przez proxy dostają 403.
+- Odwrotny proxy, któremu ufasz: `--allow-proxy-headers` (tylko z gniazdem zgód: domyślnym albo `--approve-port`). Bez tego zgody przez proxy dostają 403.
 
 ### Model zagrożeń (tryb dwóch gniazd)
 
