@@ -250,6 +250,7 @@ Dla zmiany linkowania dodatkowo: `link --dry-run` na projekcie testowym (receptu
 ## Strażnik wycieków na maszynie dewelopera
 
 Pełne sprawdzenie (`skillsync leakcheck . --require full`) potrzebuje plików tożsamości innych celów niż publiczny rdzeń.
+Strażnik w hooku i w CI patrzy na zakres zmian (`--range`, `--staged`, tekst PR-a), więc plik dodany, zanim jego termin trafił do plików tożsamości, wychodzi dopiero przy skanie całości. Przed wydaniem uruchom `skillsync leakcheck . --target core --worktree --require full` i `skillsync leakcheck . --target core --history` (pełny skan drzewa i historii, na maszynie z plikami tożsamości).
 Nie trzymamy ich w tym repo: wskaż katalog w configu maszyny (`~/.config/skillsync/config.yaml`, albo ścieżka z `SKILLSYNC_CONFIG`):
 
 ```yaml
