@@ -3,6 +3,7 @@
 The installation form is produced by copying the package into an empty directory without the wrapper beside it
 and asking a child process (cwd = another empty directory) for `self_argv()`.
 """
+import concurrent.futures
 import json
 import os
 import re
@@ -142,9 +143,14 @@ class HelpOutsideAGitCheckout(SelfArgvCase):
         return commands
 
     def assert_every_help_exits_zero(self, argv, path):
-        for command in self.top_level_commands(argv, path):
+        commands = self.top_level_commands(argv, path)
+        # Every `<command> --help` is still its own child process of the copy (this is what the test is about); they run side by side
+        # (the cost of the test is the start of ~50 interpreters, 0.4 s each, not the copy of the package) and are judged one by one below.
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, os.cpu_count() or 2)) as pool:
+            processes = dict(zip(commands, pool.map(lambda command: self.run_self(argv, path, command, '--help'), commands)))
+        for command in commands:
             with self.subTest(command=command):
-                process = self.run_self(argv, path, command, '--help')
+                process = processes[command]
                 self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
                 self.assertTrue(process.stdout.startswith('usage: skillsync'), process.stdout[:80])
                 self.assertNotIn('Traceback', process.stderr)

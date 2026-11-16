@@ -19,6 +19,7 @@ import yaml
 
 from test_skillsync_workflow import CLI, WorkflowFixture
 from layers_helpers import commit_file, git, needs_fifo, needs_os_symlinks, needs_posix, skip_open_file
+from cli_inprocess import run_cli
 
 LIB = 'skills/feature/references/x.md'
 PRJ = 'docs/workflow.md'
@@ -133,20 +134,32 @@ class ScanBase(WorkflowFixture):
         return first, outside, head
 
     # ---- uruchomienie ----
+    # Tests that MUST stay subprocesses (180-K): the call has to be killable by a timeout or to be a real process. Everything else asks the CLI in this
+    # process (`tests/cli_inprocess.py`), which saves the start of an interpreter on every call; `SKILLSYNC_TEST_CLI_SUBPROCESS=1` forces subprocesses
+    # everywhere (the comparison of the two modes: `docs/development.md`).
+    SUBPROCESS_ONLY = {'test_fifo_does_not_hang': 'open() of a FIFO blocks: only a child process can be stopped by the timeout'}
+
+    def in_a_subprocess(self, timeout):
+        return (os.environ.get('SKILLSYNC_TEST_CLI_SUBPROCESS') == '1' or self._testMethodName in self.SUBPROCESS_ONLY
+                or timeout != 30)   # a test that sets its own timeout expects a hang to be possible
+
     def run_scan(self, rel=None, run_id=None, extra=(), cwd=None, env=None, timeout=30, with_signals=True,
                  with_run_id=True):
-        command = [sys.executable, str(CLI), 'retro-scan', str(self.root)]
+        arguments = ['retro-scan', str(self.root)]
         if with_run_id:
-            command += ['--run-id', self.run_id if run_id is None else run_id]
+            arguments += ['--run-id', self.run_id if run_id is None else run_id]
         if with_signals:
-            command += ['--signals', rel if rel is not None else self.rel(run_id)]
-        command += [*map(str, extra), '--json']
-        full_env = {**os.environ, **(env or {})}
-        try:
-            result = subprocess.run(command, capture_output=True, text=True, encoding='utf-8', errors='replace',
-                                    timeout=timeout, cwd=cwd or self.root, env=full_env)
-        except subprocess.TimeoutExpired:
-            self.fail('retro-scan zawisł (limit ' + str(timeout) + ' s)')
+            arguments += ['--signals', rel if rel is not None else self.rel(run_id)]
+        arguments += [*map(str, extra), '--json']
+        if self.in_a_subprocess(timeout):
+            full_env = {**os.environ, **(env or {})}
+            try:
+                result = subprocess.run([sys.executable, str(CLI), *arguments], capture_output=True, text=True, encoding='utf-8',
+                                        errors='replace', timeout=timeout, cwd=cwd or self.root, env=full_env)
+            except subprocess.TimeoutExpired:
+                self.fail('retro-scan zawisł (limit ' + str(timeout) + ' s)')
+        else:
+            result = run_cli(arguments, cwd=cwd or self.root, env=env)
         self.assertNotIn('Traceback', result.stderr, result.stderr)
         return result
 

@@ -110,7 +110,10 @@ jobs:
       - name: Unit tests
         run: |
           set -o pipefail
-          $PY -m unittest discover -s tests -p 'test_skillsync*.py' -v 2>&1 | tee "$RUNNER_TEMP/unittest.log"
+          # The 30 slowest tests go to the end of every log (`--durations` exists from Python 3.12); the skips check ignores those lines.
+          DURATIONS=""
+          if $PY -c 'import sys; sys.exit(0 if sys.version_info >= (3, 12) else 1)'; then DURATIONS="--durations 30"; fi
+          $PY -m unittest discover -s tests -p 'test_skillsync*.py' -v $DURATIONS 2>&1 | tee "$RUNNER_TEMP/unittest.log"
       - name: Skips against the baseline
         # Exit 0 = within the baseline or key `null` (warning until the first run of the runner is measured).
         # The Chrome E2E tests skip here (SKILLSYNC_E2E_CHROME is not set): they run in the `e2e` job.
