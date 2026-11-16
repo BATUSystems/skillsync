@@ -1442,6 +1442,14 @@
   // Stan strony, klient API (Remote), panel wątków, okna (logowanie, akceptacja, przywracanie, porównanie), pasek z przełącznikiem
   // ekranów, pinezki i kolejka offline. Moduły UI łączy szyna zdarzeń (Bus); nic z tej części nie trafia do eksportów.
 
+  // `prototype.dark_theme: false` (manifest): `prototype init` and `migrate` write `data-proto-dark="off"` on <html>. Such a prototype is always
+  // light: no theme button, the stored choice and the system setting are ignored. The attribute is outside <head> and the screens, so it does not
+  // change a screen hash (accepted screens stay accepted).
+  function lightOnly(doc) {
+    const root = doc && doc.documentElement;
+    return !!root && root.getAttribute('data-proto-dark') === 'off';
+  }
+
   function readTheme(win) {
     try {
       const stored = win.localStorage.getItem(THEME_KEY);
@@ -1455,7 +1463,7 @@
   }
 
   function applyTheme(win, doc) {
-    const theme = readTheme(win);
+    const theme = lightOnly(doc) ? 'light' : readTheme(win);
     const root = doc.documentElement;
     if (!root) return theme;
     root.setAttribute('data-theme', theme);
@@ -1598,7 +1606,8 @@
       Bus.emit('mode', flags.commentMode);
     };
     const nextTheme = () => (root().getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
-    const setTheme = (theme) => {
+    const setTheme = (wanted) => {
+      const theme = lightOnly(document) ? 'light' : wanted;
       root().setAttribute('data-theme', theme);
       root().style.colorScheme = theme;
       try { window.localStorage.setItem(THEME_KEY, theme); } catch (error) { /* pamięć niedostępna: motyw tylko na tę kartę */ }
@@ -1770,7 +1779,8 @@
       refs.banners = bar.querySelector('.anno-banners') || Dom.make('div', { class: 'anno-banners' });
       // Cztery przyciski „do menu” (poniżej 600 px chowa je CSS; pozycje menu wywołują ich click, więc akcje są jedne).
       const overflow = [toggleButton('Pokaż hotspoty', 'hotspots'), toggleButton('Prezentacja', 'presentation'),
-        toggleButton('Ukryj pinezki', 'pinsHidden'), buildThemeButton()];
+        toggleButton('Ukryj pinezki', 'pinsHidden')];
+      if (!lightOnly(document)) overflow.push(buildThemeButton());
       overflow.forEach((button) => button.setAttribute('data-proto-more-item', ''));
       const more = buildMore(overflow);
       const tools = Dom.make('div', { class: 'proto-toolbar' }, [
@@ -3912,8 +3922,9 @@
 
     const applyState = (message) => {
       const root = document.documentElement;
-      root.setAttribute('data-theme', message.theme);
-      root.style.colorScheme = message.theme;
+      const theme = lightOnly(document) ? 'light' : message.theme;
+      root.setAttribute('data-theme', theme);
+      root.style.colorScheme = theme;
       root.classList.toggle('proto-hotspots', message.flags.hotspots);
       root.classList.toggle('proto-pins-hidden', message.flags.pinsHidden);
       root.classList.toggle('proto-presentation', message.flags.presentation);

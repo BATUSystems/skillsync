@@ -42,7 +42,7 @@ from . import stopsignal
 from .plan_phases import parse_plan_phases
 
 DEFAULT_ROOT = 'docs/prototypes'
-KNOWN_KEYS = ('root', 'theme', 'guidelines', 'commit_before_iteration', 'public_url', 'port')
+KNOWN_KEYS = ('root', 'theme', 'guidelines', 'commit_before_iteration', 'public_url', 'port', 'dark_theme')
 PUBLIC_URL_ENV = 'SKILLSYNC_PROTOTYPE_PUBLIC_URL'
 PORT_RANGE = (1024, 65535)
 THEME_KEYS = ('tokens_from', 'css')
@@ -654,10 +654,10 @@ def public_address_lines(settings, environ=None):
 def resolve_prototype_settings(section, root):
     """Validate the section and resolve its paths: dict with `errors`, `warnings`, `root`,
     `root_value`, `tokens_from`, `css`, `guidelines` (resolved `Path` or None) and
-    `commit_before_iteration` (bool, default False; K40)."""
+    `commit_before_iteration` (bool, default False; K40) and `dark_theme` (bool, default True; false = a light-only prototype)."""
     settings = {'errors': [], 'warnings': [], 'root': None, 'root_value': DEFAULT_ROOT,
                 'tokens_from': None, 'css': None, 'guidelines': None, 'commit_before_iteration': False,
-                'public_url': None, 'port': None}
+                'public_url': None, 'port': None, 'dark_theme': True}
     errors, warnings = settings['errors'], settings['warnings']
     if section is None:
         section = {}
@@ -673,6 +673,12 @@ def resolve_prototype_settings(section, root):
             errors.append('prototype.commit_before_iteration: must be true or false')
         else:
             settings['commit_before_iteration'] = flag
+    if 'dark_theme' in section:
+        flag = section['dark_theme']
+        if not isinstance(flag, bool):
+            errors.append('prototype.dark_theme: must be true or false (false = the prototypes have no dark theme and no theme button)')
+        else:
+            settings['dark_theme'] = flag
     if 'port' in section:
         port = section['port']
         if isinstance(port, bool) or not isinstance(port, int) or not PORT_RANGE[0] <= port <= PORT_RANGE[1]:
@@ -985,8 +991,9 @@ def _error_text(error, repo):
     return str(error).replace(str(repo) + os.sep, '')
 
 
-def build_theme_files(settings, theme_assets, repo):
-    """Return `(tokens_css, theme_css, warnings)` from assets and the manifest theme files."""
+def build_theme_files(settings, theme_assets, repo, missing_out=None):
+    """Return `(tokens_css, theme_css, warnings)` from assets and the manifest theme files; the required tokens that no stylesheet defines are
+    also appended to the list `missing_out` (when given): `sync --check` fails on them, the other commands only warn."""
     default_css = _read_asset(theme_assets['theme/default.css'])
     required = parse_required_tokens(_read_asset(theme_assets['theme/required-tokens.txt']))
     project_tokens = theme_css_source = None
@@ -1001,6 +1008,8 @@ def build_theme_files(settings, theme_assets, repo):
     missing = missing_required_tokens(required, tokens_css, theme_css)
     if missing:
         warnings.append(f'Missing required tokens: {", ".join(missing)}')
+        if missing_out is not None:
+            missing_out.extend(missing)
     return tokens_css, theme_css, warnings
 
 
@@ -1066,6 +1075,8 @@ def init_prototype(root, manifest, layerset, slug, requirements, title=None, ass
     warnings += theme_warnings
     fields = {'TITLE': title, 'SLUG': slug, 'REQUIREMENTS': requirements_value}
     rendered = {name: render_template(_read_asset(paths[f'repo/{name}']), fields) for name in TEMPLATE_FILES}
+    if not settings['dark_theme']:
+        rendered['index.html'], _ = ensure_light_only(rendered['index.html'], True)
     missing = missing_theme_links(rendered['index.html'])
     if missing:
         warnings.append(f'index.html does not link {", ".join(missing)}')
@@ -1102,6 +1113,20 @@ def init_prototype(root, manifest, layerset, slug, requirements, title=None, ass
     return report
 
 
+def _light_only_notes(directory, slug):
+    """Notes for `dark_theme: false`: the `<html>` marks written by `init`/`migrate`, and an engine copy that does not know them."""
+    notes = []
+    index = directory / 'index.html'
+    data, _ = read_regular_bytes(index, MAX_COMMENTS_READ)
+    if data is not None and b'data-proto-dark="off"' not in data:
+        notes.append(f'{slug}: prototype.dark_theme is false, but index.html has no data-proto-dark="off" on <html>: run `skillsync prototype migrate`')
+    engine, _ = read_regular_bytes(directory / 'prototype.js', MAX_COMMENTS_READ)
+    if engine is not None and LIGHT_ONLY_MARKER.encode() not in engine:
+        notes.append(f'{slug}: prototype.dark_theme is false, but the engine copy (prototype.js) does not know it, so the theme button stays: '
+                     'run `skillsync prototype migrate`')
+    return notes
+
+
 def sync_prototypes(root, manifest, layerset, slug=None, check=False, assets=None):
     repo = Path(root).resolve()
     settings = _settings(repo, manifest)
@@ -1109,7 +1134,8 @@ def sync_prototypes(root, manifest, layerset, slug=None, check=False, assets=Non
     if slug is not None and not valid_slug(slug):
         raise PrototypeError(f'Invalid slug {slug!r}: use lowercase letters, digits and single hyphens')
     paths = asset_paths(layerset, [f'theme/{name}' for name in THEME_FILES], assets)
-    tokens_css, theme_css, theme_warnings = build_theme_files(settings, paths, repo)
+    missing_tokens = []
+    tokens_css, theme_css, theme_warnings = build_theme_files(settings, paths, repo, missing_tokens)
     warnings += theme_warnings
     prototypes_root = settings['root']
     if slug is not None:
@@ -1137,6 +1163,8 @@ def sync_prototypes(root, manifest, layerset, slug=None, check=False, assets=Non
                     raise PrototypeError(f'{file_name}: {reason}')
                 current[file_name] = data
             changed = [file_name for file_name in GENERATED_FILES if current[file_name] != expected[file_name]]
+            if not settings['dark_theme']:
+                warnings += _light_only_notes(directory, name)
             if check:
                 stale += [_relative(directory / file_name, repo) for file_name in changed]
             else:
@@ -1150,7 +1178,9 @@ def sync_prototypes(root, manifest, layerset, slug=None, check=False, assets=Non
     if check:
         report['checked'] = processed
         report['stale'] = stale
-        if stale:
+        if missing_tokens:
+            report['missing'] = missing_tokens   # the theme is incomplete: the check does not prove a complete theme, so it fails (180-P)
+        if stale or missing_tokens:
             report['status'] = 'FAIL'
     else:
         report['synced'] = processed
@@ -1480,6 +1510,41 @@ def ensure_theme_lock_metas(html):
     newline = '\r\n' if '\r\n' in html[:head_end] else '\n'
     insert = ''.join(newline + tag for _, tag in missing)
     return html[:position] + insert + html[position:], [name for name, _ in missing]
+
+
+_HTML_TAG = re.compile(r'<html(?=[\s>/])((?:"[^"]*"|\'[^\']*\'|[^>"\'])*)>', re.IGNORECASE)
+LIGHT_ONLY_MARKER = 'data-proto-dark'   # also the marker a prototype engine copy has to contain to honour `dark_theme: false`
+
+
+def _attribute_pattern(name):
+    return re.compile(r'\s' + re.escape(name) + r'(?:\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s>"\']+))?(?=[\s/>]|$)', re.IGNORECASE)
+
+
+def ensure_light_only(html, light_only):
+    """`(html, status)`: `dark_theme: false` writes `data-theme="light" data-proto-dark="off"` on the `<html>` start tag (outside `<head>` and the
+    screens: no screen hash changes; the static `data-theme` also stops the dark `@media` block before any script runs, so no dark flash). `true`
+    removes exactly those two attributes, and only when `data-proto-dark="off"` is there (our own mark); a hand-written `data-theme` stays.
+    `status`: `added`, `removed`, `unchanged`, or `no_html` (no `<html>` tag: nothing changes)."""
+    match = _HTML_TAG.search(html)
+    if not match:
+        return html, 'no_html'
+    attributes = match.group(1)
+    dark_pattern, theme_pattern = _attribute_pattern(LIGHT_ONLY_MARKER), _attribute_pattern('data-theme')
+    if light_only:
+        updated = theme_pattern.sub(' data-theme="light"', attributes, count=1) if theme_pattern.search(attributes) \
+            else attributes.rstrip() + ' data-theme="light"'
+        updated = dark_pattern.sub(' data-proto-dark="off"', updated, count=1) if dark_pattern.search(updated) \
+            else updated + ' data-proto-dark="off"'
+        status = 'added'
+    else:
+        found = dark_pattern.search(attributes)
+        if not found or 'off' not in found.group(0).lower():
+            return html, 'unchanged'
+        updated = theme_pattern.sub('', dark_pattern.sub('', attributes, count=1), count=1)
+        status = 'removed'
+    if updated == attributes:
+        return html, 'unchanged'
+    return html[:match.start(1)] + updated + html[match.end(1):], status
 
 
 def machine_config_path(environ=None):
@@ -2153,6 +2218,7 @@ def migrate_prototype(root, manifest, layerset, slug, dry_run=False, assets=None
                     for operation in converted if operation['id'] not in stored_ids]
     without_script = _COMMENTS_SCRIPT.sub('', fixed)
     locked, lock_added = ensure_theme_lock_metas(without_script)
+    locked, light_status = ensure_light_only(locked, not settings['dark_theme'])
     # The sprite is read and merged while planning: an unreadable sprite stops the command before any write.
     sprite = {'status': 'skipped', 'replaced': [], 'added': [],
                                'message': 'sprite: icons are merged on the next `migrate` (a v1 prototype has '
@@ -2296,6 +2362,8 @@ def migrate_prototype(root, manifest, layerset, slug, dry_run=False, assets=None
         record(5, 'link_project_css', directory / 'index.html')
     if notices:
         record(5, 'remove_notices', directory / 'index.html', kinds=notices)
+    if light_status in ('added', 'removed'):
+        record(5, 'light_only', directory / 'index.html', status=light_status)
     if lock_added:
         record(5, 'theme_lock_meta', directory / 'index.html', added=lock_added)
     elif lock_added is None:
