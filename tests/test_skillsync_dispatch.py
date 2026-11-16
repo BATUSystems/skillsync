@@ -524,7 +524,7 @@ class DoctorAgentflowNameTests(WorkflowFixture):
         self.assertEqual(len(warning), 1)
         self.assertEqual(warning[0]["level"], "warning")
         self.assertIn("feature", warning[0]["reason"])
-        missing = [f["path"] for f in report["findings"] if f["reason"] == "Missing installed skill"]
+        missing = [f["path"] for f in report["findings"] if f["reason"].startswith("Missing installed skill")]
         self.assertTrue(missing and all(Path(p).parent.name == "skills" and Path(p).name == "feature" for p in missing), missing)
         self.assertFalse(any(f["reason"] == "Missing skill" for f in report["findings"]))
 
@@ -536,7 +536,7 @@ class DoctorAgentflowNameTests(WorkflowFixture):
         warning = [f for f in report["findings"] if "go-jira" in f["reason"] and f["level"] == "warning"]
         self.assertEqual(len(warning), 1)
         self.assertIn("acli", warning[0]["reason"])
-        missing = [f["path"] for f in report["findings"] if f["reason"] == "Missing installed skill"]
+        missing = [f["path"] for f in report["findings"] if f["reason"].startswith("Missing installed skill")]
         self.assertTrue(missing and all(Path(p).name == "acli" for p in missing), missing)
 
     def test_old_role_name_explore_warns_with_replacement_hint(self):
@@ -564,7 +564,7 @@ class DoctorAgentflowNameTests(WorkflowFixture):
         report = self.report("doctor", code=1)
         self.assertEqual(len(self.deprecation(report)), 1)
         self.assertFalse(any(f["reason"] == "Missing skill" for f in report["findings"]))
-        self.assertTrue(any(f["reason"] == "Missing installed skill" and f["path"].replace("\\", "/").endswith("skills/agentflow")
+        self.assertTrue(any(f["reason"].startswith("Missing installed skill") and f["path"].replace("\\", "/").endswith("skills/agentflow")
                             for f in report["findings"]))
 
     def test_dispatch_adapters_are_checked_like_feature_adapters(self):
