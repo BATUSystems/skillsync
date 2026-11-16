@@ -1,0 +1,184 @@
+"""`scripts/merge_modules.py`: the test set for a merge, computed from the diff, with a reason per module.
+
+The three regressions that motivated it are rebuilt as small synthetic repos (not from history): a changed doctor message
+asserted literally by a test that never imports the module, a changed `status.py` reached by a test only through other modules,
+and a new output field mirrored by `expected*.json` fixtures read by a test without any import of the product.
+"""
+import json
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+SCRIPT = ROOT / 'scripts' / 'merge_modules.py'
+
+
+def run_git(repo, *args):
+    subprocess.run(['git', '-C', str(repo), '-c', 'user.name=t', '-c', 'user.email=t@example.invalid', '-c', 'commit.gpgsign=false', *args],
+                   check=True, capture_output=True, text=True)
+
+
+class Repo:
+    def __init__(self, test):
+        self.dir = Path(tempfile.mkdtemp(prefix='skillsync-mergemods-'))
+        test.addCleanup(__import__('shutil').rmtree, self.dir, ignore_errors=True)
+        run_git(self.dir, 'init', '-q')
+
+    def write(self, files):
+        for name, text in files.items():
+            path = self.dir / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding='utf-8')
+
+    def commit(self, message='c'):
+        run_git(self.dir, 'add', '-A')
+        run_git(self.dir, 'commit', '-q', '-m', message)
+        return subprocess.run(['git', '-C', str(self.dir), 'rev-parse', 'HEAD'], capture_output=True, text=True).stdout.strip()
+
+    def select(self, base, head='HEAD', *extra):
+        done = subprocess.run([sys.executable, str(SCRIPT), '--repo', str(self.dir), '--base', base, '--head', head, '--json', *extra],
+                              capture_output=True, text=True)
+        return done.returncode, (json.loads(done.stdout) if done.stdout.strip() else None), done.stderr
+
+
+def modules(result):
+    return {item['module']: item['reasons'] for item in result['modules']}
+
+
+BASE = {
+    'skillsync_workflow/__init__.py': '',
+    'skillsync_workflow/common.py': 'X = 1\n',
+    'skillsync_workflow/doctor.py': "MESSAGE = 'Missing installed skill'\n",
+    'skillsync_workflow/status.py': 'VALUE = 1\n',
+    'skillsync_workflow/cli.py': 'from . import status\n',
+    'skillsync_workflow/delivery.py': "def out():\n    return {'mode': 'pr'}\n",
+    'tests/__init__.py': '',
+    'tests/test_skillsync_dispatch.py': "import subprocess\n\n\ndef test():\n    out = subprocess.run(['skillsync', 'doctor'])\n    assert 'Missing installed skill' in out\n",
+    'tests/test_skillsync_ide_contract.py': 'from skillsync_workflow import cli\n',
+    'tests/test_skillsync_status_fixtures.py': "import json\nEXPECTED = 'fixtures/status/expected.json'\n",
+    'tests/fixtures/status/expected.json': '{"mode": "pr"}\n',
+    'tests/test_skillsync_unrelated.py': "def test():\n    assert 1 + 1 == 2\n",
+    'tests/test_skillsync_repo_hygiene.py': '',
+    'tests/test_skillsync_packaging.py': '',
+}
+
+
+class MergeModules(unittest.TestCase):
+    def setUp(self):
+        self.repo = Repo(self)
+        self.repo.write(BASE)
+        self.base = self.repo.commit('base')
+
+    def test_changed_message_found_by_literal_without_import(self):
+        self.repo.write({'skillsync_workflow/doctor.py': "MESSAGE = 'Missing installed skill: run link'\n"})
+        self.repo.commit()
+        code, result, _ = self.repo.select(self.base)
+        found = modules(result)
+        self.assertEqual(code, 0)
+        self.assertIn('tests.test_skillsync_dispatch', found)
+        self.assertTrue(any(reason.startswith('literal:') for reason in found['tests.test_skillsync_dispatch']))
+        self.assertNotIn('tests.test_skillsync_unrelated', found)
+
+    def test_changed_status_reaches_test_through_another_module(self):
+        self.repo.write({'skillsync_workflow/status.py': 'VALUE = 2\n'})
+        self.repo.commit()
+        _, result, _ = self.repo.select(self.base)
+        found = modules(result)
+        self.assertIn('tests.test_skillsync_ide_contract', found)
+        reason = found['tests.test_skillsync_ide_contract'][0]
+        self.assertTrue(reason.startswith('import:') and 'skillsync_workflow.cli' in reason and reason.endswith('skillsync_workflow.status'), reason)
+        self.assertNotIn('tests.test_skillsync_unrelated', found)
+
+    def test_new_output_field_selects_test_reading_expected_fixtures(self):
+        self.repo.write({'skillsync_workflow/delivery.py': "def out():\n    return {'mode': 'pr', 'commits': []}\n"})
+        self.repo.commit()
+        _, result, _ = self.repo.select(self.base)
+        found = modules(result)
+        self.assertIn('tests.test_skillsync_status_fixtures', found)
+        self.assertTrue(any(reason.startswith('expected:') for reason in found['tests.test_skillsync_status_fixtures']))
+        self.assertNotIn('tests.test_skillsync_unrelated', found)
+
+    def test_changed_fixture_selects_its_reader(self):
+        self.repo.write({'tests/fixtures/status/expected.json': '{"mode": "direct"}\n'})
+        self.repo.commit()
+        _, result, _ = self.repo.select(self.base)
+        found = modules(result)
+        self.assertTrue(any(reason.startswith('fixture:') for reason in found['tests.test_skillsync_status_fixtures']))
+        self.assertNotIn('tests.test_skillsync_unrelated', found)
+
+    def test_changed_test_and_guards_always(self):
+        self.repo.write({'tests/test_skillsync_unrelated.py': "def test():\n    assert 2 + 2 == 4\n"})
+        self.repo.commit()
+        _, result, _ = self.repo.select(self.base)
+        found = modules(result)
+        self.assertEqual(found['tests.test_skillsync_unrelated'], ['changed: test file changed'])
+        self.assertEqual(found['tests.test_skillsync_repo_hygiene'], ['guard: fixed guard set'])
+        self.assertEqual(found['tests.test_skillsync_packaging'], ['guard: fixed guard set'])
+
+    def test_helper_change_selects_importers_and_path_rule(self):
+        self.repo.write({'tests/helpers.py': 'X = 1\n', 'tests/test_skillsync_uses_helper.py': 'import helpers\n',
+                         'tests/test_skillsync_runs_script.py': "P = ['skillsync_workflow', 'common.py']\n"})
+        base = self.repo.commit('add')
+        self.repo.write({'tests/helpers.py': 'X = 2\n', 'skillsync_workflow/common.py': 'X = 2\n'})
+        self.repo.commit()
+        _, result, _ = self.repo.select(base)
+        found = modules(result)
+        self.assertIn('tests.test_skillsync_uses_helper', found)
+        self.assertTrue(any(reason.startswith('path:') for reason in found['tests.test_skillsync_runs_script']))
+
+    def test_unparsable_test_is_selected_and_deleted_is_not(self):
+        self.repo.write({'tests/test_skillsync_broken.py': 'def (:\n'})
+        self.repo.commit()
+        run_git(self.repo.dir, 'rm', '-q', 'tests/test_skillsync_unrelated.py')
+        self.repo.commit('rm')
+        _, result, _ = self.repo.select(self.base)
+        found = modules(result)
+        self.assertIn('unparsable: test file does not parse', found['tests.test_skillsync_broken'])
+        self.assertNotIn('tests.test_skillsync_unrelated', found)
+
+    def test_deleted_product_module_selects_its_importer(self):
+        run_git(self.repo.dir, 'mv', 'skillsync_workflow/status.py', 'skillsync_workflow/state.py')
+        self.repo.commit('rename')
+        self.repo.write({'tests/test_skillsync_old_import.py': 'from skillsync_workflow import status\n'})
+        base = self.base
+        self.repo.commit('x')
+        _, result, _ = self.repo.select(base)
+        found = modules(result)
+        self.assertTrue(any('imports deleted skillsync_workflow.status' in r for r in found['tests.test_skillsync_old_import']), found)
+        self.assertNotIn('tests.test_skillsync_unrelated', found)
+
+    def test_checkout_must_be_head(self):
+        run_git(self.repo.dir, 'checkout', '-q', '-b', 'feature')
+        self.repo.write({'skillsync_workflow/status.py': 'VALUE = 3\n'})
+        self.repo.commit('f')
+        run_git(self.repo.dir, 'checkout', '-q', self.base)
+        code, _, error = self.repo.select(self.base, 'feature')
+        self.assertEqual(code, 2)
+        self.assertIn('check out the merged tree', error)
+
+    def test_package_init_relative_import_and_bare_fixture_helper(self):
+        self.repo.write({'skillsync_workflow/__init__.py': 'from .status import VALUE\n',
+                         'tests/fixtures/layers/make_baseline.py': 'X = 1\n',
+                         'tests/test_skillsync_baseline.py': 'import make_baseline\n',
+                         'tests/test_skillsync_sub_only.py': 'import skillsync_workflow.cli\n'})
+        base = self.repo.commit('add')
+        self.repo.write({'tests/fixtures/layers/make_baseline.py': 'X = 2\n', 'skillsync_workflow/status.py': 'VALUE = 9\n'})
+        self.repo.commit()
+        _, result, _ = self.repo.select(base)
+        found = modules(result)
+        self.assertIn('tests.test_skillsync_baseline', found)
+        self.assertIn('tests.test_skillsync_sub_only', found)  # runs the package __init__, which imports status
+
+    def test_unknown_revision_is_exit_2_and_text_output(self):
+        code, _, error = self.repo.select('nonexistent')
+        self.assertEqual(code, 2)
+        self.assertIn('merge_modules:', error)
+        done = subprocess.run([sys.executable, str(SCRIPT), '--repo', str(self.repo.dir), '--base', self.base, '--head', 'HEAD', '--names'], capture_output=True, text=True)
+        self.assertEqual(done.returncode, 0)
+        self.assertIn('tests.test_skillsync_repo_hygiene', done.stdout.split())
+
+
+if __name__ == '__main__':
+    unittest.main()

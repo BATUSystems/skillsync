@@ -12,9 +12,14 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Added
+
+- `scripts/merge_modules.py`: from the diff `<base>..<head>` it computes the test modules to run at a merge, with a reason per module (changed test, static import of a changed module directly or through other modules, a changed file named by a test, a changed message literal found in a test or fixture, changed or `expected*` fixtures, a fixed guard set); `--json` and `--names` outputs.
+- `docs/measurements/`: records of measurements (date, system, version, command, result) and the guard `tests/test_skillsync_measurements.py`: a documentation table row that says "zmierzone"/"measured" must link to an existing record, every other row of a table with a "Pomiar" column must be marked "niezmierzone" or "oczekiwane".
+
 ### Changed
 
-- `docs/dashboard-contract.md`, "how to stop the server on Windows": the table now has a "Pomiar" column that separates what was measured (Ctrl+C, CTRL_BREAK, `Stop-Process`, `taskkill /F`, `Popen.terminate()`, `taskkill` without `/F`) from what is only expected from the system documentation and was not measured (closing the console window, Task Manager "End task").
+- `docs/dashboard-contract.md`, "how to stop the server on Windows": the table now has a "Pomiar" column (linking to `docs/measurements/`) that separates what was measured (Ctrl+C, CTRL_BREAK, `Stop-Process`, `taskkill /F`, `Popen.terminate()`, `taskkill` without `/F`) from what is only expected from the system documentation and was not measured (closing the console window, Task Manager "End task").
 - CI (tests and workflow): the time limits of the `test` jobs are Windows 75, macOS 60 and Ubuntu 45 minutes (were 60, 45 and 30). The longest jobs of the last five runs took 54.5, 38.0 and 29.6 minutes, and one Ubuntu job of the run after 1.7.0 was cancelled at the limit of 30. The guard in `tests/test_skillsync_ci_workflows.py` pins the new values. No change to the product code.
 
 ### Fixed
