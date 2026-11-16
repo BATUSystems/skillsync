@@ -46,5 +46,26 @@ class RealStateDirs(unittest.TestCase):
                 self.assertNotEqual(helpers.real_state_snapshot(), before)
 
 
+class GuardRealState(unittest.TestCase):
+    def test_the_guard_fails_a_case_that_writes_to_a_watched_directory_and_passes_one_that_does_not(self) -> None:
+        tmp = Path(tempfile.mkdtemp(prefix="state-guard-case-"))
+        self.addCleanup(__import__("shutil").rmtree, tmp, ignore_errors=True)
+        watched = tmp / "skillsync"   # absent at first: the guard also sees a directory that appears
+        for writes, expect_failure in ((True, True), (False, False)):
+            with self.subTest(writes=writes), mock.patch.object(helpers, "REAL_STATE_DIRS", (watched,)):
+                class Case(unittest.TestCase):
+                    def runTest(self) -> None:
+                        helpers.guard_real_state(self)
+                        if writes:
+                            watched.mkdir(exist_ok=True)
+                            (watched / "x.json").write_text("{}", encoding="utf-8")
+                case = Case()
+                result = unittest.TestResult()
+                case.run(result)
+                self.assertEqual(bool(result.failures or result.errors), expect_failure, (result.failures, result.errors))
+                if watched.exists():
+                    __import__("shutil").rmtree(watched)
+
+
 if __name__ == "__main__":
     unittest.main()

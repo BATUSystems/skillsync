@@ -58,7 +58,9 @@ def home_env(base):
 
 def guard_real_state(case):
     """Proves at the end of `case` that nothing was written to the real state directories (`REAL_STATE_DIRS`): the control of
-    `IsolatedTestCase`, for the test classes that build their own environment."""
+    `IsolatedTestCase`, for the test classes that build their own environment. The comparison covers the whole directory, so a REAL
+    server of another session that starts or stops while the tests run (its state file under `dashboard/`) fails the guard too: run the
+    guarded tests when no other `dashboard serve` of this user changes state (on the station: under the `heavy-run` lock)."""
     before = real_state_snapshot()
     case.addCleanup(lambda: case.assertEqual(real_state_snapshot(), before, 'test touched real Skillsync state dirs'))
 
