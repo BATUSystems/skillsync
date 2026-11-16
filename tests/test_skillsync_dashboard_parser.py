@@ -1,7 +1,9 @@
 """Segments of a checkpoint (`;` outside brackets), the `‖` separator and `run.parseWarnings` (STATUS-160-A, P8)."""
+import os
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -74,6 +76,32 @@ class ParseWarnings(unittest.TestCase):
         found = dashboard.report_warnings("w toku: F1.1 (password=hunter2hunter2; F1.2")
         self.assertNotIn("hunter2", found[0]["fragment"])
         self.assertIn("[REDACTED]", found[0]["fragment"])
+
+    def test_a_secret_before_the_cut_is_masked_in_every_reason(self):
+        """The text is masked as a whole BEFORE a fragment is cut out of it: the key (`password:`) may lie before the cut."""
+        cases = (
+            "w toku: F1.1; password: hunter2hunter2 (a; F1.2",   # unbalanced-bracket
+            "w toku: F1.1; token: abcdefgh12 (x; F1.2",
+            "w toku: F1.1, password: hunter2hunter2, y",   # no-step-id: the key is its own element
+            "w toku: F1.1 opis authorization: Bearer hunter2hunter2 i F1.2",   # later-id
+            "zrobione: F0.1, password: hunter2hunter2 (a; b",
+        )
+        for text in cases:
+            with self.subTest(text=text):
+                found = dashboard.report_warnings(text)
+                self.assertTrue(found)
+                for warning in found:
+                    self.assertNotIn("hunter2", warning["fragment"])
+                    self.assertNotIn("abcdefgh12", warning["fragment"])
+        self.assertIn("[REDACTED]", dashboard.report_warnings(cases[0])[0]["fragment"])
+
+    def test_an_environment_secret_is_masked_even_when_it_holds_a_separator(self):
+        with mock.patch.dict(os.environ, {"MY_SERVICE_TOKEN": "zq9x,wv8y;ut7s (rp6"}):
+            for text in ("w toku: F1.1 (a; b, zq9x,wv8y;ut7s (rp6, F1.2", "w toku: F1.1, zq9x,wv8y;ut7s (rp6, y"):
+                with self.subTest(text=text):
+                    for warning in dashboard.report_warnings(text):
+                        for part in ("zq9x", "wv8y", "ut7s", "rp6"):
+                            self.assertNotIn(part, warning["fragment"])
 
     def test_balanced_lines_give_no_unbalanced_warning(self):
         for text in (REPORTED, "w toku: F1.1 (a; b), F1.2; ryzyko: brak", "a) b) 1) lista", "w toku: F1.1 ((a; b); c), F1.2"):

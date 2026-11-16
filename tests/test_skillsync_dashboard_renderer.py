@@ -1936,6 +1936,10 @@ class OldRendererOnNewJson(unittest.TestCase):
     def test_old_renderer_renders_every_current_fixture(self) -> None:
         self.assertTrue(OLD_RENDERER.is_file())
         fixtures = fixture_files()
+        # a status with the reason of 161-E (`unbalanced-bracket`) that the frozen renderer does not know: it must render, not throw
+        warned = json.loads(json.dumps(next(iter(fixtures.values()))))
+        warned["run"] = {**(warned.get("run") or {}), "parseWarnings": [{"time": "10:03", "segment": "raport", "fragment": "F1.1 (a; b, F1.2", "reason": "unbalanced-bracket"}]}
+        fixtures["with-unbalanced-bracket-warning"] = warned
         head = HARNESS[:HARNESS.index("  const F = input.fixtures")]
         tail = """
   const res = {};

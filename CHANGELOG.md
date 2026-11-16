@@ -14,7 +14,8 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ### Fixed
 
-- Status page, progress report parser: a checkpoint line with an unclosed bracket (e.g. `w toku: F1.1 (a; b, F1.2; ryzyko: brak`) is split at every `;` as before, which silently dropped the ids after it; `run.parseWarnings` now names it with the reason `unbalanced-bracket` (segment `raport`, fragment up to 80 characters from the element that holds the bracket, redacted before the cut, once per checkpoint), and the page shows the reason in its warning line. Additive (schema 1); a renderer that does not know the reason shows it as sent.
+- Status page, progress report parser: a checkpoint line with an unclosed bracket (e.g. `w toku: F1.1 (a; b, F1.2; ryzyko: brak`) is split at every `;` as before, which could silently drop the ids after it; `run.parseWarnings` now names it with the reason `unbalanced-bracket` (segment `raport`, fragment up to 80 characters from the element that holds the bracket, redacted before the cut, once per checkpoint), and the page shows the reason in its warning line. Additive (schema 1); a renderer that does not know the reason shows it as sent.
+- Status page, `run.parseWarnings`: the checkpoint text is now masked as a whole before a fragment is cut out of it, for every reason (`no-step-id`, `later-id`, `unbalanced-bracket`); before, a secret from the environment that contained `,` or `;` was cut apart before masking, and a key before the cut left its value unmasked.
 
 ## [1.6.0] - 2026-11-16
 

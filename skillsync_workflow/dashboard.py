@@ -382,10 +382,12 @@ def report_warnings(text):
     `unbalanced-bracket` (segment `raport`): the text has an opening bracket that is never closed, so `split_segments` falls back to every `;`
     and a step id after such a `;` is lost without any other trace; the fragment starts at the element that holds the unclosed bracket."""
     found = []
-    opener = unclosed_bracket_start(text)
-    if opener is not None:
-        piece = ' '.join(text[max(text.rfind(sep, 0, opener) for sep in ';,:') + 1:].split())   # from the start of the element that holds the bracket
-        found.append({'segment': 'raport', 'fragment': redact(piece)[:PARSE_WARNING_FRAGMENT], 'reason': 'unbalanced-bracket'})
+    unbalanced = unclosed_bracket_start(text) is not None   # decided on the text as written
+    text = redact(text)   # the WHOLE text is masked before anything is cut out of it: a key before the cut (`password: x (a; F1.2`) must still mask its value
+    if unbalanced:
+        opener = unclosed_bracket_start(text)   # the masking can remove brackets that were part of a secret: then the fragment starts at the beginning
+        start = 0 if opener is None else max(text.rfind(sep, 0, opener) for sep in ';,:') + 1   # the element that holds the bracket
+        found.append({'segment': 'raport', 'fragment': ' '.join(text[start:].split())[:PARSE_WARNING_FRAGMENT], 'reason': 'unbalanced-bracket'})
     for label, pattern in (('w toku', IN_PROGRESS_RE), ('zrobione', DONE_RE)):
         match = _first_segment_match(pattern, text)
         if not match:
@@ -401,7 +403,7 @@ def report_warnings(text):
                 reason = 'later-id'
             else:
                 continue
-            found.append({'segment': label, 'fragment': redact(piece)[:PARSE_WARNING_FRAGMENT], 'reason': reason})
+            found.append({'segment': label, 'fragment': piece[:PARSE_WARNING_FRAGMENT], 'reason': reason})
     return found
 
 
