@@ -12,6 +12,10 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Added
+
+- Status page, document view (`#docs:<path>`): a floating "back to top" button (an icon, bottom right, 44 px, both themes) that appears after scrolling about three quarters of a screen and takes the page back to the top; keyboard and screen reader friendly (a `button` with the label "Wróć na górę strony", the focus moves to the "Dokumenty" tab), instant instead of smooth scrolling under `prefers-reduced-motion`. The renderer draws it only when the host passes the optional adapter hook `scroll.toTop` (`{subscribe, go}`), so the editor webview that shares the renderer is unchanged. No change to the status JSON or the HTTP routes.
+
 ## [1.6.1] - 2026-11-16
 
 ### Changed
