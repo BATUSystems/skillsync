@@ -14,11 +14,11 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ### Security
 
-- Prototype server and engine: a warning that the text of comments, thread replies, expert answers and answer comments is visible to others and is not masked ("Treść jest widoczna dla innych i nie jest maskowana: nie wpisuj haseł, kluczy ani tokenów."): under the fields of `/_experts` (own answer, answer comment, question comment), under the comment pop-up and the thread reply field of the engine (only when a server answered the session), and in the start warning `PUBLIC_READ_WARNING` ("... i nie są maskowane"). The server still stores and serves the text unchanged (no redaction, no scan); the documentation (`docs/prototypes.md`, the `prototype` skill) says so and recommends `--login-to-view` for prototypes shown outside the team.
+- Prototype server and engine: a warning that the text of comments, thread replies, expert answers and answer comments is visible to others and is not masked ("Treść jest widoczna dla innych i nie jest maskowana: nie wpisuj haseł, kluczy ani tokenów."): under the fields of `/_experts` (own answer, answer comment, question comment), under the comment pop-up, the thread reply field, the edit of an entry and the restore reason of the engine (only when a server answered the session), and in the start warning `PUBLIC_READ_WARNING` ("... i nie są maskowane"). The server still stores and serves the text unchanged (no redaction, no scan); the documentation (`docs/prototypes.md`, the `prototype` skill) says so and recommends `--login-to-view` for prototypes shown outside the team.
 
 ### Compatibility
 
-- The notes in the comment pop-up and under the thread reply field reach an existing prototype only after `skillsync prototype migrate` (the engine file `prototype.js` is copied; the stylesheets are byte for byte unchanged, so the acceptance of screens stays valid: `acceptance` of the `migrate` result is `{"lost": 0, "screens": []}`). An older engine copy keeps working without the notes.
+- The notes in the comment pop-up, the thread reply, the entry edit and the restore reason reach an existing prototype only after `skillsync prototype migrate` (the engine file `prototype.js` is copied; the stylesheets are byte for byte unchanged, so the acceptance of screens stays valid: `acceptance` of the `migrate` result is `{"lost": 0, "screens": []}`). An older engine copy keeps working without the notes.
 
 ### Fixed
 

@@ -4163,6 +4163,8 @@
       });
       node.textContent = '';
       node.appendChild(area);
+      const note = unmaskedNote();
+      if (note) node.appendChild(note);
       node.appendChild(Dom.make('div', { class: 'row' }, [cancel, save]));
       area.focus();
       area.select();
@@ -4950,7 +4952,7 @@
 
       api = DialogsUi.open({
         title: 'Przywróć ekran ' + sid, returnFocus: origin,
-        nodes: [lead, fromLabel, select, views.node, previewBox, whyLabel, why, hint, effects, retry, alertBox],
+        nodes: [lead, fromLabel, select, views.node, previewBox, whyLabel, why, unmaskedNote(), hint, effects, retry, alertBox].filter(Boolean),
         actions: [{ key: 'cancel', label: 'Anuluj' }, { key: 'submit', label: 'Przywróć ekran', primary: true, run: submit }],
         initialFocus: () => select
       });

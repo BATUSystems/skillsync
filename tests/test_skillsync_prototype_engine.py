@@ -49,7 +49,7 @@ def find_node():
 # Kopia: tests/fixtures/prototype/engine-v2/ (SOURCE.md). Strona Pythona: skillsync_workflow/prototype_server.py.
 
 ENGINE_V2_DIR = Path(__file__).resolve().parent / 'fixtures' / 'prototype' / 'engine-v2'
-ENGINE_V2_SHA256 = 'a70450e7fcf58e37d8994123f6d3d885c8aab0b333294333961271e9c18d009b'
+ENGINE_V2_SHA256 = 'e936940d81f8f409ab2ae487f4a792a9e77c2016d9dfb4f330cd008cc126f990'
 REFRESH_V2 = 'Odśwież kopię wg tests/fixtures/prototype/engine-v2/SOURCE.md i zaktualizuj ENGINE_V2_SHA256.'
 ENGINE_V2_PATH_ENV = 'SKILLSYNC_PROTOTYPE_ENGINE_V2_PATH'
 DIFF_SEEDS = (20261104, 7, 1234567, 99, 424242, 31337)
@@ -3267,6 +3267,7 @@ class PresentationModeSourceTests(unittest.TestCase):
 # Decyzja „tylko ostrzeżenie i dokumentacja” (1.6.1): okienko komentarza i pole odpowiedzi w wątku mówią, że treść jest widoczna dla innych
 # i nie jest maskowana. Zmiana tylko w JS silnika: CSS biblioteki zostaje bajtowo taki, jaki był w 1.6.0 (zmiana CSS może unieważnić
 # akceptacje ekranów po `prototype migrate`; przy celowej zmianie CSS zaktualizuj sumy i sprawdź pole `acceptance` wyniku `migrate`).
+# Sums of the three stylesheets as they were in the base of this change (release/1.6.1 @ 900b8cc, checked with `git diff` against it).
 ENGINE_CSS_SHA256 = {
     'prototype.css': '4ebfbced06e45652455c5472dab0da7b53faa9b47189fedde4ab32ed4fb83aaa',
     'components.css': '4ee53e98f567f655c484579aa36a19815e895ea9a1f6d68b1518879b15b54b7a',
@@ -3307,11 +3308,16 @@ class EngineV2UnmaskedNoteTests(unittest.TestCase):
         self.assertEqual(json.loads(done.stdout), [None, None, None, shown, shown])   # no server (null, undefined, a non-object): no note
 
     def test_both_composers_put_the_note_under_the_field_a_person_types_in(self):
-        self.assertEqual(len(re.findall(r'\bunmaskedNote\(\)', self.source)), 2, "the comment pop-up and the thread reply")
+        self.assertEqual(len(re.findall(r'\bunmaskedNote\(\)', self.source)), 4, 'the comment pop-up, the thread reply, the edit of an entry and the restore reason')
         pop = self.source[self.source.index("'aria-label': 'Nowy komentarz'"):]
         self.assertRegex(pop[:400], r"area, unmaskedNote\(\),")
         reply = self.source[self.source.index("'aria-label': 'Odpowiedź'"):]
         self.assertRegex(reply[:3000], r'ui\.compose\.appendChild\(area\);\n\s+const note = unmaskedNote\(\);\n\s+if \(note\) ui\.compose\.appendChild\(note\);')
+
+    def test_the_edit_and_the_restore_reason_carry_the_note_too(self):
+        edit = self.source[self.source.index("'aria-label': 'Edytuj wpis'"):]
+        self.assertRegex(edit[:1800], r'node\.appendChild\(area\);\n\s+const note = unmaskedNote\(\);\n\s+if \(note\) node\.appendChild\(note\);')
+        self.assertIn('whyLabel, why, unmaskedNote(), hint, effects, retry, alertBox].filter(Boolean)', self.source)
 
     def test_the_engine_stylesheets_are_byte_for_byte_those_of_1_6_0(self):
         assets = Path(__file__).resolve().parents[1] / 'library' / 'skills' / 'prototype' / 'assets' / 'repo'
