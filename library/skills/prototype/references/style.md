@@ -23,6 +23,10 @@ w `index.html` jest częścią kontraktu.
 <link rel="stylesheet" href="project.css">
 ```
 
+Co z tego wynika dla motywu projektu: zmieniaj wygląd **tokenami** (`components.css` używa tylko `var(--…)`); reguły nadpisujące wpisuj w `project.css`, bo przy równej swoistości wygrywa plik ładowany później, więc reguła w `theme.css`
+przegrywa z `components.css` i `prototype.css`. Z `tokens_from` silnik czyta jasne `:root`, `@theme`, `@theme inline` oraz ciemne `.dark`, `[data-theme="dark"]` i `:root[data-theme="dark"]`; blok `@media (prefers-color-scheme: dark)` jest pomijany z ostrzeżeniem
+(silnik zawsze ustawia `data-theme`): przepisz go na `[data-theme="dark"] { … }`. `sync --check` kończy się FAIL, gdy brakuje tokenów z `required-tokens.txt`. Prototyp bez ciemnego motywu: `prototype.dark_theme: false` w manifeście (atrybuty `<html>` wpisuje `init`/`migrate`).
+
 `init` ostrzega, gdy szablon `index.html` z biblioteki nie linkuje `tokens.css` albo `theme.css`; `sync` i `migrate` linków
 w `index.html` prototypu nie sprawdzają. Kolory, odstępy, czcionki i promienie
 bierz zawsze z tokenów (`var(--primary)`, `var(--radius-md)`), nie wpisuj wartości na sztywno: wtedy prototyp zmienia się razem z motywem

@@ -89,6 +89,10 @@ Wydanie 1.8.0 zmienia domyślny nasłuch strony statusu (`dashboard serve`); fla
    jeden port z bramką `Host`). Stary tryb, także za tunelem: `skillsync dashboard serve <projekt> --port 5140 --approve-host <nazwa tunelu>`;
    nowy tryb: jawne flagi (`--read-bind`, `--approve-bind`, `--approve-port M --approve-host NAZWA`). `--host` przy dwóch portach
    przesuwa tylko odczyt; zgody z sieci wymagają `--approve-bind 0.0.0.0`.
+7. Prototypy: (a) `prototype sync --check` kończy się teraz `FAIL` (kod 1, pole `missing`), gdy motyw nie definiuje wszystkich tokenów z `required-tokens.txt`; wcześniej był tylko komunikat `Missing required tokens`, a wynik to `PASS`. Dopisz brakujące tokeny (lista jest
+   w komunikacie) w arkuszu z `prototype.theme.tokens_from` albo w `theme.css`. (b) Nowy klucz `prototype.dark_theme: false` wyłącza ciemny motyw i przycisk „Motyw”: po dopisaniu go uruchom `skillsync prototype migrate <projekt> <slug>` (nowa kopia silnika i atrybuty
+   na `<html>`; akceptacje ekranów zostają, `migrate` pokazuje `acceptance.lost: 0`). (c) Nowa flaga `prototype serve --demo`: pokaz tylko do odczytu bez kont (zob. [prototypes](prototypes.md#pokaz-tylko-do-odczytu-serve---demo)); stara kopia silnika pokaże narzędzia komentowania, serwer odmówi
+   każdej akcji, więc uruchom `prototype migrate`.
 
 ## Przejście 1.6.1 → 1.7.0
 

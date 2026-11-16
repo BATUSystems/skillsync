@@ -108,10 +108,13 @@ prototype:
     css: docs/design/prototype.css      # opcjonalnie
   guidelines: docs/design/prototype.md  # opcjonalnie
   commit_before_iteration: false        # opcjonalnie
+  dark_theme: true                      # opcjonalnie; false = prototypy bez ciemnego motywu
   public_url: https://proto.example.org # opcjonalnie
   port: 5130                            # opcjonalnie
 ```
 
 Ścieżki są względne do katalogu projektu. Ścieżka bezwzględna, `..` wychodzące z repo i dowiązanie na zewnątrz są błędem.
+
+`dark_theme` (bool, domyślnie `true`): `false` wyłącza ciemny motyw prototypów i ukrywa przycisk „Motyw” w pasku silnika (strona zawsze jasna, także przy ciemnym systemie i zapamiętanym wyborze). `init` i `migrate` zapisują na znaczniku `<html>` atrybuty `data-theme="light" data-proto-dark="off"` (poza `<head>` i ekranami, więc hashe ekranów i akceptacje zostają ważne); istniejące prototypy dostają to przez `skillsync prototype migrate`, a `sync --check` ostrzega, dopóki go nie wykonasz. Wartość inna niż `true`/`false` to błąd walidacji (`doctor`).
 
 `port` (liczba całkowita 1024-65535) to port serwera prototypów tego projektu: domyślny port `prototype serve` (flaga `--port` wygrywa; bez klucza 4445), port sprawdzany przez stronę statusu (`dashboard serve --prototype-port` wygrywa; bez klucza 5130) i domyślny adres `prototype question url`. Dzięki jednemu kluczowi serwer i strona statusu zgadzają się co do portu; `doctor` zgłasza błędną wartość. `public_url` to adres, pod którym eksperci otwierają serwer prototypów (np. koniec tunelu ssh albo odwrotne proxy): http(s), bez danych logowania, zapytania i fragmentu; końcowy `/` jest obcinany. Zmienna środowiskowa `SKILLSYNC_PROTOTYPE_PUBLIC_URL` ma pierwszeństwo przed manifestem. Adres trafia do `prototype question url`, pola `url` w `prototype question add` (także gdy serwer nie działa lokalnie) i dodatkowej linii „Adres publiczny” komunikatu `prototype serve`; `prototype link` zostaje lokalny. Błędna wartość w manifeście to błąd walidacji (`doctor`), a w zmiennej BLOCKED `invalid_public_url`.
