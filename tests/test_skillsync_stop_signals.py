@@ -56,6 +56,26 @@ class OutsideWindowsTests(unittest.TestCase):
         register.assert_not_called()
 
 
+class HandlerWindowTests(unittest.TestCase):
+    """The handler itself needs no Windows: the first call raises, calls within the window do not, later ones raise again."""
+
+    def test_first_raises_second_within_the_window_is_ignored_later_raises_again(self):
+        stopsignal._stopped_at = None
+        self.addCleanup(setattr, stopsignal, '_stopped_at', None)
+        with mock.patch.object(stopsignal.time, 'monotonic', return_value=100.0):
+            with self.assertRaises(KeyboardInterrupt):
+                stopsignal._stop_on_sigbreak(21, None)
+            self.assertIsNone(stopsignal._stop_on_sigbreak(21, None))
+        with mock.patch.object(stopsignal.time, 'monotonic', return_value=100.0 + stopsignal.IGNORE_SECONDS + 0.1):
+            with self.assertRaises(KeyboardInterrupt):
+                stopsignal._stop_on_sigbreak(21, None)
+
+    def test_a_handler_set_outside_python_is_restored_as_the_default(self):
+        with mock.patch.object(stopsignal.sys, 'platform', 'win32'), mock.patch.object(signal, 'SIGBREAK', 21, create=True), \
+                mock.patch.object(signal, 'signal', return_value=None):
+            self.assertEqual(stopsignal.install_sigbreak(), (signal.SIG_DFL,))
+
+
 class PrototypeServeInstallsSigbreakTests(unittest.TestCase):
     """`prototype serve` asks for the CTRL_BREAK handler before it announces the address (the same window as for SIGTERM) and puts the previous one back."""
 
@@ -115,6 +135,9 @@ if sys.platform == 'win32':
             with self.assertRaises(KeyboardInterrupt):
                 signal.raise_signal(signal.SIGBREAK)
             signal.raise_signal(signal.SIGBREAK)   # a second CTRL_BREAK during the cleanup does not interrupt it
+            with mock.patch.object(stopsignal.time, 'monotonic', return_value=stopsignal._stopped_at + stopsignal.IGNORE_SECONDS + 1):
+                with self.assertRaises(KeyboardInterrupt):   # after the window another CTRL_BREAK stops again
+                    signal.raise_signal(signal.SIGBREAK)
 
         def test_a_new_install_arms_the_handler_again(self):
             stopsignal.install_sigbreak()
@@ -126,13 +149,14 @@ if sys.platform == 'win32':
 
         def test_a_child_in_its_own_process_group_stops_cleanly_on_ctrl_break_event(self):
             import ctypes
-            if not ctypes.windll.kernel32.GetConsoleWindow():
-                self.skipTest('brak konsoli w procesie testowym: CTRL_BREAK_EVENT wymaga wspólnej konsoli')
+            if not ctypes.windll.kernel32.GetConsoleProcessList((ctypes.c_ulong * 4)(), 4):   # 0 = proces bez konsoli (ConPTY ma konsolę, także bez okna)
+                self.skipTest('tylko na Windows z konsolą: brak konsoli w procesie testowym (CTRL_BREAK_EVENT wymaga wspólnej konsoli)')
             with tempfile.TemporaryDirectory(prefix='stop-signals-') as tmp:
                 marker = Path(tmp) / 'cleaned.txt'
                 child = subprocess.Popen([sys.executable, '-c', CHILD, str(marker)], cwd=str(ROOT), stdout=subprocess.PIPE, text=True,
                                          creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)
                 self.addCleanup(lambda: child.poll() is None and child.kill())
+                self.addCleanup(child.stdout.close)
                 self.assertEqual(child.stdout.readline().strip(), 'ready')
                 os.kill(child.pid, signal.CTRL_BREAK_EVENT)
                 self.assertEqual(child.wait(timeout=20), 0)

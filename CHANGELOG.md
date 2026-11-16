@@ -14,7 +14,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ### Fixed
 
-- `dashboard serve` and `prototype serve` on Windows: CTRL_BREAK (`SIGBREAK`, sent with `os.kill(pid, signal.CTRL_BREAK_EVENT)` to a server started with `CREATE_NEW_PROCESS_GROUP`) now stops the server like Ctrl+C: exit code 0, the `finally` runs, the state files (both in the two-port mode) are removed. Before, the console default handler ended the server at once (exit code 0xC000013A) and left the state file with the consent token behind. A second CTRL_BREAK during the cleanup is ignored. Linux and macOS are unchanged (the handler is registered only on `win32`). Hard ways to stop (`Stop-Process`, `taskkill /F`, closing the console window) still leave the state file; the next start on the same port replaces it. The table "how to stop the server on Windows" is in `docs/dashboard-contract.md`.
+- `dashboard serve` and `prototype serve` on Windows: CTRL_BREAK (`SIGBREAK`, sent with `os.kill(pid, signal.CTRL_BREAK_EVENT)` to a server started with `CREATE_NEW_PROCESS_GROUP`) now stops the server like Ctrl+C: exit code 0, the `finally` runs, the state files (both in the two-port mode) are removed. Before, the console default handler ended the server at once (exit code 0xC000013A) and left the state file with the consent token behind. A second CTRL_BREAK within 10 s of the first is ignored, so it cannot interrupt the cleanup. Linux and macOS are unchanged (the handler is registered only on `win32`). Hard ways to stop (`Stop-Process`, `taskkill /F`, closing the console window) still leave the state file; the next start on the same port replaces it. The table "how to stop the server on Windows" is in `docs/dashboard-contract.md`.
 
 ## [1.6.1] - 2026-11-16
 

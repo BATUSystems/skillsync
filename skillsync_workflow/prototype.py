@@ -2501,9 +2501,11 @@ def serve_prototypes(root, manifest, args, err=None):
     finally:
         if previous is not None and previous[0] is not None:
             signal.signal(signal.SIGTERM, previous[0])
-        if previous_break is not None and previous_break[0] is not None:
-            signal.signal(signal.SIGBREAK, previous_break[0])
-        instance.server_close()
+        try:
+            instance.server_close()   # removes the login-link state file: a second CTRL_BREAK is still ignored (stopsignal) until this is done
+        finally:
+            if previous_break is not None:
+                signal.signal(signal.SIGBREAK, previous_break[0])
     return {'status': 'PASS', 'url': instance.url, 'root': _relative(settings['root'], repo), 'stopped': True}
 
 

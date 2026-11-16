@@ -555,12 +555,12 @@ zamyka oba gniazda i usuwa oba pliki stanu.
 | Sposób | Skutek | Plik stanu po zatrzymaniu |
 |---|---|---|
 | Ctrl+C w konsoli serwera | łagodnie: raport `PASS`/`stopped`, kod wyjścia 0 | usunięty |
-| `CTRL_BREAK_EVENT` do serwera uruchomionego z `CREATE_NEW_PROCESS_GROUP` (`os.kill(pid, signal.CTRL_BREAK_EVENT)` z launchera, wspólna konsola) | łagodnie jak Ctrl+C (sygnał `SIGBREAK`), kod wyjścia 0; drugi CTRL_BREAK w trakcie sprzątania jest ignorowany | usunięty (w trybie dwóch gniazd oba pliki) |
+| `CTRL_BREAK_EVENT` do serwera uruchomionego z `CREATE_NEW_PROCESS_GROUP` (`os.kill(pid, signal.CTRL_BREAK_EVENT)` z launchera, wspólna konsola) | łagodnie jak Ctrl+C (sygnał `SIGBREAK`), kod wyjścia 0; drugi CTRL_BREAK w ciągu 10 s po pierwszym jest ignorowany (nie przerywa sprzątania), późniejszy zatrzymuje ponownie | usunięty (w trybie dwóch gniazd oba pliki) |
 | `Stop-Process`, `taskkill /F`, `Popen.terminate()`, Menedżer zadań | twardo (`TerminateProcess`), bez sprzątania | **zostaje** (z tokenem zgód) |
 | `taskkill /PID` bez `/F` | nie działa: „This process can only be terminated forcefully (with /F option).” | – |
 | zamknięcie okna konsoli | twardo (nie obsługujemy `CTRL_CLOSE_EVENT`) | zostaje |
 
-Po twardym zakończeniu port jest wolny od razu, a następny start na tym samym porcie zastępuje plik stanu; plik innego portu zostaje, aż ten port zostanie użyty ponownie. Ctrl+C dziedziczy ustawienie „ignoruj CTRL+C” po procesie rodzicu (np. skrypt uruchomiony z sesji ssh): wtedy serwer uruchomiony z takiego procesu go nie odbierze, a CTRL_BREAK tak.
+Po twardym zakończeniu port jest wolny od razu, a następny start na tym samym porcie zastępuje plik stanu; plik innego portu zostaje, aż ten port zostanie użyty ponownie. Ctrl+C dziedziczy ustawienie „ignoruj CTRL+C” po procesie rodzicu (np. skrypt uruchomiony z sesji ssh): wtedy serwer uruchomiony z takiego procesu go nie odbierze, a CTRL_BREAK tak. Dziecko uruchomione z `CREATE_NEW_PROCESS_GROUP` w ogóle nie dostaje Ctrl+C (system wyłącza go w nowej grupie), więc launcher zatrzyma je tylko CTRL_BREAKiem.
 
 **Kombinacje flag** (wszystkie walidacje przed bindem; `BLOCKED`, kod `2`):
 

@@ -1325,6 +1325,10 @@
     "category": "posix-only"
    },
    {
+    "id": "test_skillsync_stop_signals.SigbreakOnWindowsTests.test_a_child_in_its_own_process_group_stops_cleanly_on_ctrl_break_event",
+    "category": "windows-only"
+   },
+   {
     "id": "test_skillsync_test_ports.FreePortRangeTests.test_a_port_in_time_wait_counts_as_free_like_for_the_server_that_will_bind_it",
     "category": "windows-no-mechanism"
    },
