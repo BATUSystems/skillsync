@@ -149,6 +149,18 @@ class MergeModules(unittest.TestCase):
         self.assertTrue(any('imports deleted skillsync_workflow.status' in r for r in found['tests.test_skillsync_old_import']), found)
         self.assertNotIn('tests.test_skillsync_unrelated', found)
 
+    def test_identifier_literals_and_scripts_do_not_select_the_suite(self):
+        # a new script holding 'skillsync_workflow' and 'test_skillsync_x' strings (as merge_modules itself does) must not pull in
+        # every test that mentions those words, nor the tests that read expected* fixtures
+        self.repo.write({'scripts/tool.py': "DIRS = ('skillsync_workflow', 'test_skillsync_something')\nMSG = 'one two three'\n",
+                         'tests/test_skillsync_mentions.py': "A = 'skillsync_workflow'\nB = 'test_skillsync_something'\nC = 'expected'\n"})
+        self.repo.commit()
+        _, result, _ = self.repo.select(self.base)
+        found = modules(result)
+        self.assertEqual(found['tests.test_skillsync_mentions'], ['changed: test file changed'])
+        self.assertNotIn('tests.test_skillsync_status_fixtures', found)
+        self.assertNotIn('tests.test_skillsync_dispatch', found)
+
     def test_checkout_must_be_head(self):
         run_git(self.repo.dir, 'checkout', '-q', '-b', 'feature')
         self.repo.write({'skillsync_workflow/status.py': 'VALUE = 3\n'})

@@ -12,12 +12,12 @@ Rules (a module is selected when at least one holds; every hit is listed as its 
                other modules (reverse closure over the import graph);
   path         a string in the test names a changed file (`skillsync_workflow/status.py`, or `status.py` next to
                `skillsync_workflow`, or `scripts/x.py`) - for tests that run the code through a subprocess;
-  literal      a string literal on an added or removed line of a changed product file (messages, keys; f-string
-               placeholders are cut out, at least 12 characters) occurs in a string of the test (either contains the
+  literal      a string literal on an added or removed line of a changed product file (messages: at least 12 characters and
+               a space, so identifiers, paths and module prefixes do not count; f-string placeholders are cut out) occurs in a string of the test (either contains the
                other) or in a fixture the test reads;
   fixture      a changed non-Python file under `tests/` (fixtures) is named by a string in the test (basename, stem prefix
                such as `expected`, or its directory);
-  expected     any product file changed and the test reads `expected*` fixtures (their content mirrors the product output);
+  expected     any file of `skillsync_workflow/` changed and the test reads `expected*` fixtures (their content mirrors the product output);
   unparsable   the test file does not parse - selected for safety;
   guard        the fixed guard set (GUARDS below), always.
 The analysis reads the working tree, so the checkout must be `--head` (otherwise exit 2); the diff is `base...head` (from the merge base).
@@ -77,7 +77,8 @@ def diff_literals(repo, base, head, paths):
             for match in STRING.finditer(line[1:]):
                 for part in PLACEHOLDER.split(match.group('s')):
                     part = part.strip()
-                    if len(part) >= MIN_LITERAL:
+                    # a message has words; an identifier, a path or a module prefix ('skillsync_workflow') matches half of the suite
+                    if len(part) >= MIN_LITERAL and re.search(r'\s', part):
                         found.add(part)
     return found
 
@@ -222,7 +223,7 @@ def select(repo, base, head):
             if any(product in value for value in values) or (stem in values and parent in values):
                 add(name, f'path: names {product}')
         for literal in sorted(literals):
-            if any(len(value) >= MIN_LITERAL and (literal in value or value in literal) for value in values):
+            if any(len(value) >= MIN_LITERAL and re.search(r'\s', value) and (literal in value or value in literal) for value in values):
                 add(name, f'literal: "{literal[:60]}"')
                 break
             # fixtures the test reads by name
@@ -239,7 +240,7 @@ def select(repo, base, head):
             case = file.parent.name if file.parent.name not in ('tests', 'fixtures') and len(file.parent.name) >= 4 else None
             if any(key in value for key in keys for value in values) or (case and any(case in value for value in values)):
                 add(name, f'fixture: {fixture}')
-        if changed_product and any('expected' in value for value in values):
+        if any(path.startswith('skillsync_workflow/') for path in changed_product) and any('expected' in value for value in values):
             add(name, 'expected: reads expected* fixtures and the product changed')
 
     for guard in GUARDS:

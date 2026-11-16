@@ -62,9 +62,9 @@ python3 scripts/check_skips.py run.log --system ubuntu-latest --mode copy
 `python3 scripts/merge_modules.py --base <baza> --head <sha> [--json | --names]` wylicza z diffu `<baza>..<sha>` moduły testowe do uruchomienia
 przy scalaniu, z uzasadnieniem na moduł. Reguły: zmieniony test; test importujący zmieniony moduł produktu, skryptu lub pomocnika
 `tests/` (statycznie, bezpośrednio albo przez inne moduły); test nazywający zmieniony plik w napisie (uruchamia kod podprocesem);
-literał komunikatu z dodanego lub usuniętego wiersza zmienionego pliku produktu w teście albo w fiksturze `*.json` nazwanej w teście; zmieniona
-fikstura i testy czytające `expected*` przy zmianie produktu; stały zestaw strażników (`GUARDS` w skrypcie). Przykład uruchomienia:
-`python3 -m unittest $(python3 scripts/merge_modules.py --base <baza> --head <sha> --names)`. Analiza czyta drzewo robocze, więc checkout musi być `--head` (inaczej kod 2); diff liczony od merge-base. Usunięty lub przemianowany moduł produktu wybiera testy, które go importują albo nazywają. Zestaw to dolna granica, nie zastępuje pełnego
+literał komunikatu (min. 12 znaków i spacja, więc identyfikatory, ścieżki i przedrostki modułów się nie liczą) z dodanego lub usuniętego wiersza zmienionego pliku produktu w teście albo w fiksturze `*.json` nazwanej w teście; zmieniona
+fikstura i testy czytające `expected*` przy zmianie w `skillsync_workflow/`; stały zestaw strażników (`GUARDS` w skrypcie). Przykład uruchomienia:
+`python3 -m unittest $(python3 scripts/merge_modules.py --base <baza> --head <sha> --names)`. Analiza czyta drzewo robocze, więc checkout musi być `--head` (inaczej kod 2); diff liczony od merge-base. Usunięty lub przemianowany moduł produktu wybiera testy, które go importują albo nazywają. Zmiany samych dokumentów (`docs/`, `CHANGELOG.md`) wybierają tylko strażników, bo nie mają odwzorowania na moduły; ich treści pilnują strażnicy dokumentacji z `GUARDS`. Zestaw to dolna granica, nie zastępuje pełnego
 biegu przed wydaniem; nie widzi importów dynamicznych ani poleceń znanych tylko z nazwy (np. `skillsync status` w napisie). Szeroko
 importowany moduł (`cli.py`, `common.py`) daje szeroki zestaw, co jest zamierzone.
 
