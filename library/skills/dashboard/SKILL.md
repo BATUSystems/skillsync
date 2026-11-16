@@ -172,7 +172,9 @@ była, a nie, że pętla dała PASS.
   (`git rev-list --count origin/<robocza>..HEAD`, a bez gałęzi na origin `HEAD --not --remotes=origin`; tylko odczyt).
   „CP” oddaje na `origin/<robocza>` (rdzeń AGENTS: nigdy na bazę); w trybie `direct` linia planu `Oddanie: <gałąź>`
   zmienia cel na wskazaną gałąź. Przycisk i wpis pokazują cel (`target`, „CP → main”); podpowiedź
-  podaje liczbę commitów i bazę. Wymaga katalogu przebiegu. „READY” tylko w trybie `pr` (`delivery.mode` z
+  podaje liczbę commitów i bazę. Plakietka „N niewypchniętych” w nagłówku jest przyciskiem: panel pokazuje te commity (`delivery.commits`:
+  krótki skrót i pierwsza linia opisu, najnowsze pierwsze, do 20, reszta jako „i N starszych” z `commitsMore`); opisy są maskowane przed cięciem
+  i wstawiane jako tekst. Wymaga katalogu przebiegu. „READY” tylko w trybie `pr` (`delivery.mode` z
   `.github/.skillsync.yaml`; brak klucza = `pr`, zła wartość = brak przycisków). Dziennika `checkpoints.md` strona nie
   zmienia (pisze go sesja); po zapisie kafelek pokazuje „CP zapisane HH:MM”, a baner „zgoda jest już w pliku”.
 - Sesja (`feature`) czekająca na zgodę nasłuchuje zmian (`skillsync status`, pole `approvals`) z budzikiem co 30 min i po

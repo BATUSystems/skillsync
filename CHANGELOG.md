@@ -12,6 +12,10 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Added
+
+- Status page: the "N unpushed" badge in the header lists the unpushed commits (short hash and first line of the message, newest first, up to 20, the rest as "and N older"). The data is the new optional `delivery.commits` / `delivery.commitsMore` field of the dashboard JSON (schema 1, additive); messages are masked for secrets before they are cut and rendered as plain text.
+
 ## [1.6.1] - 2026-11-16
 
 ### Changed
