@@ -155,7 +155,7 @@ class EventWriter:
     def collected(self, total, names=None):
         event = {'t': 'collected', 'total': int(total)}
         if names:
-            event['names'] = [clean_text(n, MAX_NAME, mask=self.mask) for n in names[:5000]]
+            event['names'] = [clean_text(str(n).replace('\\', '/'), MAX_NAME, mask=self.mask) for n in names[:5000]]   # the same `/` as the ids of `test`
         return self._write(event)
 
     def test(self, test_id, name, state, group=None, ms=None, msg=None):
@@ -288,6 +288,8 @@ class AttemptState:
     def _recount(self):
         by = {'passed': 0, 'failed': 0, 'skipped': 0, 'running': 0, 'waiting': 0}
         for test in self.tests.values():
+            if self.end and test['state'] == 'running':
+                test['state'] = 'waiting'   # the run is over and the test has no result: it is not running (the page must not show it as such)
             by[test['state']] += 1
         if self.end and isinstance(self.end.get('counts'), dict):
             by.update({k: v for k, v in self.end['counts'].items() if k in by and isinstance(v, int)})

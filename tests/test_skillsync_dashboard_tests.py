@@ -85,6 +85,19 @@ class Sections(Base):
         dt._CACHE.clear()
         self.assertEqual({s['step']['id']: s['state'] for s in dt.build_tests(self.root, 'R1')[0]['sections']}['F1.1'], 'interrupted')   # silent for too long
 
+    def test_an_interrupted_attempt_and_a_finished_one_show_no_running_test(self):
+        self.attempt('F1.2', [('a', 'running', 'g'), ('b', 'passed', 'g')], end=None, pid=2 ** 22 + 12345)   # the process is gone, no `end`
+        self.attempt('F1.3', [('a', 'running', 'g'), ('b', 'passed', 'g')], end='BLOCKED')                       # ended, `a` has no result
+        tests, steps = dt.build_tests(self.root, 'R1')
+        for section in tests['sections']:
+            attempt = section['attempts'][0]
+            self.assertEqual(attempt['counts']['running'], 0, section['step'])
+            self.assertEqual(attempt['counts']['waiting'], 1, section['step'])
+            group = attempt['groups'][0]
+            self.assertEqual(group['counts']['running'], 0)
+            self.assertNotIn('running', [t['state'] for g in attempt['groups'] for t in g['tests']])
+            self.assertNotEqual(group['state'], 'running')
+
     def test_reading_is_incremental(self):
         path, _ = self.attempt('F1.1', [('a', 'running', 'g')], end=None)
         dt.build_tests(self.root, 'R1')

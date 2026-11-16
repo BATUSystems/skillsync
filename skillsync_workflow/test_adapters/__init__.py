@@ -3,8 +3,8 @@
 One module per tool in this package (`dotnet.py`, `pytest.py`, ...); the registry discovers the modules by itself, so a new file is enough. An
 adapter reads the lines of the command (`feed`) and the report files after it (`end`) and reports what it understood ONLY through `ctx.emit`
 (`collected`, `test`, `counts`); the recorder (`test_run.TestRecorder`) owns the event file, the mask, the limits and the exit code. An adapter that
-does not understand the output emits nothing, and the run falls back to the counters of the summary and the report. Interface: ops
-`docs/specs/2026-11-16-180-a-etap2-interfejs.md`.
+does not understand the output emits nothing, and the run falls back to the counters of the summary and the report. The interface (the five
+families of runners, `live`, `partial`, who owns which file) is described in `library/skills/workflow/references/test-run.md`.
 """
 from __future__ import annotations
 

@@ -63,6 +63,8 @@ def _summary(path, state):
     running = _effective_state(state, path) == 'running'
     groups = {}
     for test in state.tests.values():
+        if not running and test['state'] == 'running':
+            test = {**test, 'state': 'waiting'}   # an interrupted attempt has no running test: no result means "waiting", not "running"
         group = groups.setdefault(_group_of(test), {'name': _group_of(test), 'counts': {'passed': 0, 'failed': 0, 'skipped': 0, 'running': 0, 'waiting': 0}, 'tests': []})
         group['counts'][test['state']] += 1
         group['tests'].append(test)
@@ -74,9 +76,10 @@ def _summary(path, state):
         group['total'] = sum(group['counts'].values())
         listed.append(group)
     listed.sort(key=lambda g: (0 if g['state'] == 'failed' else 1 if g['state'] == 'running' else 2, g['name']))
+    counts = state.counts if running or not state.counts.get('running') else {**state.counts, 'running': 0, 'waiting': state.counts.get('waiting', 0) + state.counts['running']}
     return {'n': state.number, 'state': _effective_state(state, path), 'startedAt': start.get('at'), 'endedAt': end.get('at'),
             'durationMs': end.get('ms'), 'command': start.get('command'), 'tool': start.get('tool'), 'levels': 'tests' if state.tests else 'counts' if state.stream_counts else start.get('levels') or 'command', 'live': start.get('live') if start.get('live') in ('running', 'completion', 'counts') else None,
-            'source': end.get('source'), 'exit': end.get('exit'), 'reason': end.get('reason'), 'counts': state.counts, 'truncated': state.truncated,
+            'source': end.get('source'), 'exit': end.get('exit'), 'reason': end.get('reason'), 'counts': counts, 'truncated': state.truncated,
             'groups': listed}
 
 

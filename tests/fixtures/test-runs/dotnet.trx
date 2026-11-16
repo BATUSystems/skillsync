@@ -33,19 +33,19 @@ Actual:   2</Message>
     </UnitTestResult>
   </Results>
   <TestDefinitions>
-    <UnitTest name="demo.UnitTest1.Ok" storage="/tmp/claude-1000/-home-user-repos-batusystems-skillsync/b0f57512-218e-47ec-ac99-ee89f2ed0bdd/scratchpad/f02/dn/demo/bin/debug/net10.0/demo.dll" id="e341e043-7f54-b5ee-0628-9cc456b9c8bc">
+    <UnitTest name="demo.UnitTest1.Ok" storage="/work/demo/bin/Debug/net10.0/demo.dll" id="e341e043-7f54-b5ee-0628-9cc456b9c8bc">
       <Execution id="269c8e98-2a41-460d-b962-ee1fc1a29bf1" />
       <TestMethod codeBase="/ROOT/dn/demo/bin/Debug/net10.0/demo.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="demo.UnitTest1" name="Ok" />
     </UnitTest>
-    <UnitTest name="demo.UnitTest1.Boom" storage="/tmp/claude-1000/-home-user-repos-batusystems-skillsync/b0f57512-218e-47ec-ac99-ee89f2ed0bdd/scratchpad/f02/dn/demo/bin/debug/net10.0/demo.dll" id="01bfb701-b104-5b79-ec54-8a737360037b">
+    <UnitTest name="demo.UnitTest1.Boom" storage="/work/demo/bin/Debug/net10.0/demo.dll" id="01bfb701-b104-5b79-ec54-8a737360037b">
       <Execution id="bb829154-fe26-4c36-bd4a-35ea7d63f946" />
       <TestMethod codeBase="/ROOT/dn/demo/bin/Debug/net10.0/demo.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="demo.UnitTest1" name="Boom" />
     </UnitTest>
-    <UnitTest name="demo.UnitTest1.Param(x: 2)" storage="/tmp/claude-1000/-home-user-repos-batusystems-skillsync/b0f57512-218e-47ec-ac99-ee89f2ed0bdd/scratchpad/f02/dn/demo/bin/debug/net10.0/demo.dll" id="3a51d937-96da-d918-b585-eedbe6691db8">
+    <UnitTest name="demo.UnitTest1.Param(x: 2)" storage="/work/demo/bin/Debug/net10.0/demo.dll" id="3a51d937-96da-d918-b585-eedbe6691db8">
       <Execution id="fc5fbf13-dda6-462f-8ea9-bf4702485de1" />
       <TestMethod codeBase="/ROOT/dn/demo/bin/Debug/net10.0/demo.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="demo.UnitTest1" name="Param" />
     </UnitTest>
-    <UnitTest name="demo.UnitTest1.Param(x: 1)" storage="/tmp/claude-1000/-home-user-repos-batusystems-skillsync/b0f57512-218e-47ec-ac99-ee89f2ed0bdd/scratchpad/f02/dn/demo/bin/debug/net10.0/demo.dll" id="c8b28fef-ed17-f326-cdb8-fe1affe723c9">
+    <UnitTest name="demo.UnitTest1.Param(x: 1)" storage="/work/demo/bin/Debug/net10.0/demo.dll" id="c8b28fef-ed17-f326-cdb8-fe1affe723c9">
       <Execution id="1b994657-b1d2-419b-bb77-988ca31975c6" />
       <TestMethod codeBase="/ROOT/dn/demo/bin/Debug/net10.0/demo.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="demo.UnitTest1" name="Param" />
     </UnitTest>

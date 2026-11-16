@@ -208,6 +208,27 @@ class EventFiles(unittest.TestCase):
         w.close()
         self.assertEqual(ev.read_events(path)[0][0]['id'], 'C:/proj/tests/a.py::t')
 
+    def test_collected_names_use_the_same_slash_as_the_ids(self):
+        path, _, w = self.attempt()
+        w.collected(2, names=['C:\\proj\\tests\\a.py::t', 'tests/b.py::u'])
+        w.close()
+        self.assertEqual(ev.read_events(path)[0][0]['names'], ['C:/proj/tests/a.py::t', 'tests/b.py::u'])
+
+    def test_a_test_without_a_result_is_not_running_after_the_end_of_the_run(self):
+        path, _, w = self.attempt()
+        w.start(run='run-1', step='F1.1', command='x')
+        w.test('t1', 't1', 'running')
+        w.test('t2', 't2', 'passed')
+        w.close()
+        running = ev.read_attempt(path)
+        self.assertEqual((running.tests['t1']['state'], running.counts['running']), ('running', 1))
+        w = ev.EventWriter(path)
+        w.end('BLOCKED', 1)
+        w.close()
+        done = ev.read_attempt(path)
+        self.assertEqual(done.tests['t1']['state'], 'waiting')
+        self.assertEqual((done.counts['running'], done.counts['waiting'], done.counts['passed']), (0, 1, 1))
+
     def test_the_file_is_binary_with_explicit_line_feeds(self):
         path, _, w = self.attempt()
         w.test('a', 'a', 'failed', msg='x\ry\r\nz')

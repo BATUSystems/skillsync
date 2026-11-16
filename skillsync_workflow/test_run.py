@@ -19,6 +19,7 @@ import time
 from pathlib import Path
 
 from .common import file_lines, load_layer_project, read_project
+from .fsutil import isabs
 from .dashboard import ids_in_progress, parse_checkpoints
 from .quality import _test_counts, evidence_reason, run_validation
 from .runs import _slug
@@ -97,7 +98,7 @@ def find_reports(tool, cwd, explicit, since):
     cwd = Path(cwd)
     candidates = []
     for item in explicit:
-        path = Path(item) if os.path.isabs(item) else cwd / item
+        path = Path(item) if isabs(item) else cwd / item
         if path.is_dir():
             candidates += [p for pattern in ('*.xml', '*.trx') for p in path.rglob(pattern)]
         elif path.is_file():
