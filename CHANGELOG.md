@@ -12,6 +12,14 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Security
+
+- Prototype server and engine: a warning that the text of comments, thread replies, expert answers and answer comments is visible to others and is not masked ("Treść jest widoczna dla innych i nie jest maskowana: nie wpisuj haseł, kluczy ani tokenów."): under the fields of `/_experts` (own answer, answer comment, question comment), under the comment pop-up and the thread reply field of the engine (only when a server answered the session), and in the start warning `PUBLIC_READ_WARNING` ("... i nie są maskowane"). The server still stores and serves the text unchanged (no redaction, no scan); the documentation (`docs/prototypes.md`, the `prototype` skill) says so and recommends `--login-to-view` for prototypes shown outside the team.
+
+### Compatibility
+
+- The notes in the comment pop-up and under the thread reply field reach an existing prototype only after `skillsync prototype migrate` (the engine file `prototype.js` is copied; the stylesheets are byte for byte unchanged, so the acceptance of screens stays valid: `acceptance` of the `migrate` result is `{"lost": 0, "screens": []}`). An older engine copy keeps working without the notes.
+
 ### Fixed
 
 - Status page, `Host` rule: an older good answer of the name resolution of this machine now serves a slow resolver for at most 5 minutes after the last successful lookup (`HOST_LOOKUP_STALE_MAX`); before, it was renewed every 15 s for ever, so an address that no longer belonged to the machine could stay accepted as local. After the limit the answer is empty (an unlisted `.255` address is refused, as before when there is no answer; `--approve-host <IP>` still lets one in). The contract names the trust boundary of the machine name resolution.
