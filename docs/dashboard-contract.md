@@ -398,6 +398,14 @@ Podkroki o id `Fn.k` z planu (każdy krok z kropką), w kolejności planu. Czas 
 | `missingData` | bool | `true`, gdy podkrok jest zrobiony (zaznaczony albo zgłoszony), a `seconds` = null |
 | `noData` | bool | `true` ⇔ `seconds` = null (także dla podkroku zaplanowanego), to samo znaczenie co `noData` w `metrics`; pole addytywne |
 
+### `tests`
+
+Opcjonalne pole najwyższego poziomu (brak = zakładka „Testy” niewidoczna; `schema: 1`, addytywnie): wyniki testów kroków planu z plików `.skillsync/runs/<run-id>/tests/<krok>/<n>.jsonl` (zapisuje je `skillsync test-run`). Postać: `{sections: [...], failedTotal, runningTotal, skipped?}` (`skipped`: do 20 wpisów `{path, reason}` plików i katalogów, które pominięto, bo nie dało się ich złożyć; stały powód, bez treści; brak pola = nic nie pominięto; zły plik nie psuje reszty strony); sekcja: `{step: {id, title}|null, state, attempts: [...]}` (najnowsza sekcja pierwsza, do 5 ostatnich biegów kroku, najnowszy bieg pierwszy); bieg: `n`, `state` (`running`, `passed`, `failed`, `interrupted`), `startedAt`, `endedAt`, `durationMs`, `command` (zawsze zamaskowane), `tool`, `levels` (`command`, `counts`, `tests`), `source`, `exit`, `reason`, `counts {total, passed, failed, skipped, running, waiting}`, `truncated`, `groups[]`: `{name, state, total, counts, tests[]}`; w `tests[]` tylko testy czerwone i uruchomione (do 100 na grupę): `{id, name, state, group, ms, msg}`; resztę grupy daje `GET /api/tests?run=&step=&attempt=&group=&limit=&offset=` (tylko do odczytu, na obu gniazdach jak `/api/status`; `limit` domyślnie 500, maks. 5000).
+
+Krok planu z testami ma w `progress.phases[].steps[]` opcjonalne `tests` (`{state, attempt, counts}`; pasek przy kroku i link do sekcji) i `test: true` dla kroku oznaczonego `[T]` (tytuł jest podawany bez znacznika). Stary renderer ignoruje oba pola.
+
+**Maska:** odpowiedź strony przechodzi przez jedną funkcję (`dashboard_tests.finalize_status`): wszystko jest maskowane, z wyjątkiem liści będących wynikiem testu (`id`, `name`, `group`, `msg`, nazwa grupy), które są surowe, dopóki w manifeście nie ma `tests.mask: true`. Dotyczy to obu gniazd, także gdy port odczytu jest widoczny w sieci lokalnej (zob. `docs/security.md`).
+
 ### `timing`
 
 Czas pracy i czas czekania na człowieka, liczone z dziennika `.skillsync/runs/<run-id>/checkpoints.md` (znaczniki „w toku”,
@@ -564,7 +572,7 @@ tego nie wykryje. Serwer nie przechodzi na inny port. Na Windows gniazda dwóch 
 drugi proces nie przejmie węższego adresu.
 
 **Konsola przy starcie.** Przy odczycie poza loopbackiem jedno ostrzeżenie o dostępności strony dla każdego urządzenia w sieci
-lokalnej (plany, specyfikacje, wyniki, sekrety zredagowane heurystycznie, ruch nieszyfrowany), z podpowiedzią `--read-bind 127.0.0.1`
+lokalnej (plany, specyfikacje, wyniki, sekrety zredagowane heurystycznie, ale wyniki testów jawne, bez maski; ruch nieszyfrowany), z podpowiedzią `--read-bind 127.0.0.1`
 albo `dashboard.local_only: true`. Jedno zdanie o zmianie domyślnego nasłuchu (od 1.8.0 odczyt w sieci, zgody lokalnie, powrót
 flagą `--read-bind 127.0.0.1`) jest wypisywane tylko przez wydania przed 1.10. Adresy IPv4 maszyny (sieć tylko-IPv6 ich nie
 dostanie) są wypisane po jednym w linii, z adresem po nazwie maszyny (`http://<nazwa>.local:5140/`); nazwa maszyny (`socket.gethostname()`)

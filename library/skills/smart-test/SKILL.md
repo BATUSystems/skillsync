@@ -7,7 +7,7 @@ description: Select affected checks from real git changes, explicit path rules a
 
 `skillsync smart-test <projekt> --base <rzeczywista-baza>` planuje testy i uzasadnia wybór.
 Bez --base analizuje staged/unstaged/untracked; nie zgaduje bazy z upstreamu feature branch.
-`--files <ścieżki>` służy do jawnego zakresu. `--run` wykonuje plan przez wspólny runner.
+`--files <ścieżki>` służy do jawnego zakresu. `--run` wykonuje plan przez wspólny runner; testy kroku planu wykonuj przez `skillsync test-run --run <id> --step <id> -- <komenda>` ([test-run](../workflow/references/test-run.md)).
 
 Mapowanie jest w `workflow.testing.rules`, zależności modułów w konfiguracji projektu.
 Wspólne pliki, usunięcia/nieznany zakres i brak pewnej mapy wymagają konserwatywnego fallbacku.

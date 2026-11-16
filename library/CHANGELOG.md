@@ -7,6 +7,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 ### Added
 
 - Skill `feature` (`references/multi-session.md`) and skill `dispatch` (`references/loop.md`, `references/lessons.md`): a card report to the dispatcher starts with the line `date: <literal output of date>`; times of events in the body come from logs or from `date`, never from memory; a report without the line is rejected (`REPORT REJECTED powód=brak linii date`). Skill `agent-runtime-pitfalls`: section "Czas w raportach".
+- Skills and roles (`feature`, `bugfix`, `smart-test`, `workflow`, `test-runner`, `test-writer`, `implementer`, `skillsync`, `dashboard`, `pr-run`) and the new reference `workflow/references/test-run.md`: the tests of a plan step run through `skillsync test-run --run <id> --step <id> -- <command>` ; a step marked `[T]` does not close without a passing run; test results are not masked and must not be pasted into text that leaves the machine.
 
 ## [1.7.0] - 2026-11-16
 

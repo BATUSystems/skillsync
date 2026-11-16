@@ -225,7 +225,7 @@ UI, CI, tracker: [rozszerzenia v2](references/extensions.md).
 Najpierw testy zmienionego obszaru, potem zestaw końcowy dla wszystkich dotkniętych warstw
 (`skillsync smart-test`, `validate --profile final`; `--run` po przydziale zasobów). Bez pełnego
 zestawu po każdej edycji i bez drugiego runnera. Status: `PASS`, `FAIL`, `BLOCKED` lub `NOT_RUN`;
-zero zebranych testów, brak zależności, timeout albo sam build nie są zaliczeniem.
+zero zebranych testów, brak zależności, timeout albo sam build nie są zaliczeniem. Testy kroku planu uruchamiaj przez `skillsync test-run --run <id> --step <id> -- <polecenie>`: krok oznaczony `[T]` nie zamyka się bez zapisu takiego biegu ([test-run](../workflow/references/test-run.md)).
 Porażkę kieruj do właściciela kodu/testu; nie zmieniaj asercji, nie dodawaj skip/xfail i nie
 usuwaj testów dla zielonego wyniku. Po 3 nieudanych cyklach tej samej usterki zatrzymaj krok
 (`blocked`) z dowodami i potrzebną decyzją. Format raportu runnera, baseline i stare porażki:

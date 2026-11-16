@@ -223,6 +223,10 @@ była, a nie, że pętla dała PASS.
   „N% zweryfikowane, M% zgłoszone lub w toku”; `run.parseWarnings` daje jedną linię „N fragmentów raportu pominięto” nad checkpointami (szczegóły w dymku).
   Brak każdego z tych pól daje wygląd jak dotąd.
 
+## Zakładka „Testy”
+
+Zakładka „Testy” (ukryta do pierwszego biegu) pokazuje wyniki testów kroków planu uruchomionych przez `skillsync test-run`: sekcja na krok (nagłówek = id i tytuł kroku, najnowsza pierwsza), rozwinięta tylko trwająca, zakończone zwinięte (czerwony chip w nagłówku i licznik czerwonych na zakładce); na zakładce „Postęp” przy kroku jest pasek „ile przeszło z ilu” i przycisk do sekcji (`#tests:<krok>`). Dane to pole `tests` JSON-a i trasa `GET /api/tests` (tylko odczyt, oba gniazda). **Wyniki testów nie są maskowane** (także na porcie odczytu widocznym w sieci; `tests.mask: on` je maskuje), reszta strony tak; zob. `docs/security.md`.
+
 ## Interfejs i API
 
 - `/` strona (zakładki **Postęp** i **Dokumenty**, klawisze `P`/`D`; przełącznik motywu jasny/ciemny w nagłówku, klawisz `T`, wybór w `localStorage`, domyślnie motyw systemu), `/assets/*` CSS/JS.

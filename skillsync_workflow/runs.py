@@ -414,6 +414,13 @@ def _checkpoint_locked(args):
         evidence.append({"path": item.relative_to(root).as_posix(), "sha256": _hash_file(item)})
     if args.status == "PASS" and not evidence:
         raise ValueError("PASS wymaga pliku z rzeczywistym dowodem; sama deklaracja nie wystarcza")
+    if args.status == "PASS":   # the gate of the test steps (180-A): a `[T]` step needs the events file of a passing `skillsync test-run`
+        from . import test_gate
+        step_id = _slug(args.step, "--step")
+        if step_id in test_gate.test_steps_of_run(root, args.run_id) and not getattr(args, "no_tests", None):
+            problem = test_gate.evidence_problem(root, args.run_id, step_id, [item["path"] for item in evidence])
+            if problem:
+                raise ValueError(problem)
     if len(args.next) > 2000 or len(args.cause or "") > 500:
         raise ValueError("Opis przekracza limit metadanych")
     record = {"step": _slug(args.step, "--step"), "status": args.status, "evidence": evidence,
@@ -425,6 +432,8 @@ def _checkpoint_locked(args):
               "attempt": args.attempt, "cause": _redact(args.cause) if args.cause else None,
               "provenance": "operator-recorded; evidence content is not automatically validated"}
     # Pola opcjonalne tylko, gdy podane; brak flagi = brak pola.
+    if getattr(args, "no_tests", None):   # the waiver of the gate of a test step: a decision for a human at the closing (`needsHuman: tests`, `doctor`)
+        record["no_tests"] = _redact(args.no_tests)[:500]
     for name in ("denied", "inherited", "cause_key", "owner"):
         if getattr(args, name, None) is not None:
             record[name] = getattr(args, name)
@@ -440,6 +449,8 @@ def _checkpoint_locked(args):
     warnings = _write_warnings(data["checkpoints"], record["step"], record.get("final") is True)
     if record.get("final") is True:
         warnings += _retro_warnings(path, args.run_id, data["checkpoints"])
+        from . import test_gate   # a test step closed without a run: not blocking, but said at the closing of the run
+        warnings += [reason for _plan, reason in test_gate.plan_findings(root, only_run=args.run_id)]
     _write(path, data)
     result = {"status": args.status, "checkpoint": posix(path), "record": record}
     if warnings:
@@ -872,6 +883,7 @@ def register(subparsers):
             parser.add_argument("--status", required=True, choices=STATUSES)
             parser.add_argument("--evidence", nargs="+", action="extend", help="ścieżki plików z dowodem, wewnątrz projektu (nie tekst opisowy)")
             parser.add_argument("--next", required=True)
+            parser.add_argument("--no-tests", metavar="REASON", help="close a test step ([T]) WITHOUT a run of its tests; the reason is recorded and shown as a decision for a human")
             parser.add_argument("--duration", type=float)
             parser.add_argument("--cost", type=float)
             parser.add_argument("--cost-unit", default="USD", help="Three-letter cost currency (default USD)")

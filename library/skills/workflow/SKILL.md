@@ -14,7 +14,7 @@ Wspólne źródło zasila Copilot, Claude i Codex. `feature` dołącza ten skill
 | Plan / architektura | `feature`, [planning.md](references/planning.md) |
 | Wiele równoległych sesji | `dispatch` (jeśli zainstalowany — `workflow-extended`), [multi-session](../feature/references/multi-session.md) |
 | Kontrakt / migracja | `pre-implement`, [contracts.md](references/contracts.md) |
-| Testy | `smart-test`, `skillsync validate <projekt>` |
+| Testy | `smart-test`, `skillsync validate <projekt>`, `skillsync test-run` ([test-run](references/test-run.md)) |
 | Bugfix | `bugfix` |
 | Review / UI QA | [review.md](references/review.md), `skillsync review <projekt>` |
 | Lekcje | [lessons.md](references/lessons.md), `workflow-retro` (jeśli zainstalowany — `workflow-extended`) |

@@ -16,7 +16,7 @@ Jeśli brakuje planu, zakresu lub niezbędnego kontraktu, zgłoś brak orkiestra
   orkiestrator musi sprawdzić właścicieli plików i zależności. Zachowaj wcześniejsze zmiany.
 - Domyślnie piszesz kod produkcyjny i przydzieloną dokumentację/wiedzę (`docs/`, `docs/domain`,
   `docs/lessons`) według `workflow/references/knowledge.md`. Testy możesz zmieniać tylko
-  gdy plan jawnie powierza Ci również testy małej zmiany niskiego ryzyka. Nie przejmuj
+  gdy plan jawnie powierza Ci również testy małej zmiany niskiego ryzyka. Testy kroku uruchamiaj przez `skillsync test-run --run <id> --step <id> -- <komenda>` (id podaje zlecenie). Nie przejmuj
   plików `test-writer` i nie osłabiaj asercji, aby dopasować je do błędu implementacji.
 - Przy niezgodności planu z kodem zgłoś dowody i proponowane rozwiązanie. Nie podejmuj
   samodzielnie decyzji zmieniających kontrakt API, uprawnienia lub kryteria akceptacji.

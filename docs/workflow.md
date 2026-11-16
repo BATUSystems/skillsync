@@ -312,7 +312,7 @@ Zalecenia:
 | Obca strona w przeglądarce (CSRF) | `Origin` musi być dokładnie `http://<Host>` z portem: strona z portu odczytu nie zapisze; nagłówek `X-Status-Board` | niskie |
 | DNS rebinding | nazwa spoza listy = 403; literał IP przyjmowany tylko jako adres własny interfejsu | niskie |
 | Wyciek tokenu (adres w komunikatorze, historia przeglądarki, zrzut ekranu, dziennik usługi) | token w fragmencie adresu; `dashboard url` zamiast linii startowej w dzienniku; restart zmienia token | średnie: token żyje do końca procesu serwera |
-| Odczyt treści planów przez sieć | gniazdo odczytu bez zgód i tokenu (domyślnie na wszystkich interfejsach); sekrety zredagowane heurystycznie w odpowiedzi | widz w sieci bez logowania widzi wszystko, co port odczytu: plany, specyfikacje, wyniki, checkpointy, raporty przebiegów; nie widzi i nie robi zgód; ruch bez TLS. W nieufnej sieci: `dashboard.local_only: true` albo `--read-bind 127.0.0.1` |
+| Odczyt treści planów przez sieć | gniazdo odczytu bez zgód i tokenu (domyślnie na wszystkich interfejsach); sekrety zredagowane heurystycznie (wyniki testów jawne, bez maski) w odpowiedzi | widz w sieci bez logowania widzi wszystko, co port odczytu: plany, specyfikacje, wyniki, checkpointy, raporty przebiegów; nie widzi i nie robi zgód; ruch bez TLS. W nieufnej sieci: `dashboard.local_only: true` albo `--read-bind 127.0.0.1` |
 | Zgoda z nieznanego miejsca | `via` (port, host, adres klienta z gniazda) w `approvals.jsonl`; linia w konsoli przy adresie spoza loopbacku; licznik nieudanych tokenów | brak blokady, jest ślad |
 
 **Ryzyko szczątkowe (tryb dwóch gniazd z nasłuchem w sieci).** Każdy, kto w sieci widzi ruch HTTP, może przechwycić

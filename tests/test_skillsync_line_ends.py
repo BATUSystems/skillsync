@@ -307,7 +307,8 @@ class NoRawLineSplitting(unittest.TestCase):
              'skillsync_workflow/cli.py')   # the files whose readers of project text are all converted
     EXCEPTIONS = {
         ('skillsync_workflow/dashboard_http.py', 'render_markdown'):
-            'the text is normalized first (`\\r\\n` and a lone `\\r` become `\\n`) and the other separators are ordinary characters of the line',
+            'the text is normalized first (`\\r\\n` and a lone `\\r` become `\\n`) and the other separators are ordinary characters of the line',        ('skillsync_workflow/quality.py', 'pump'):
+            'the output of a running test command, not a project file: split on LF only, a lone CR stays in the line (progress bars), the rest is kept as read',
     }
 
     def hits(self):

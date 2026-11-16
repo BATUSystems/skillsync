@@ -1,0 +1,96 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="6928a010-2214-4ed8-a2e5-2418ea5ffbe2" name="@host 2026-11-16 18:51:50" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-11-16T18:51:50.9522661+01:00" queuing="2026-11-16T18:51:50.9522662+01:00" start="2026-11-16T18:51:49.6462705+01:00" finish="2026-11-16T18:51:50.9730340+01:00" />
+  <TestSettings name="default" id="570306cd-5111-4622-a2ed-ec9ac1b726eb">
+    <Deployment runDeploymentRoot="_host_2026-11-16_18_51_50" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="fc5fbf13-dda6-462f-8ea9-bf4702485de1" testId="3a51d937-96da-d918-b585-eedbe6691db8" testName="demo.UnitTest1.Param(x: 2)" computerName="HOST" duration="00:00:00.0003696" startTime="2026-11-16T18:51:50.7103714+01:00" endTime="2026-11-16T18:51:50.7104780+01:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="fc5fbf13-dda6-462f-8ea9-bf4702485de1">
+      <Output>
+        <ErrorInfo>
+          <Message>Assert.Equal() Failure: Values differ
+Expected: 1
+Actual:   2</Message>
+          <StackTrace>   at demo.UnitTest1.Param(Int32 x) in /ROOT/dn/demo/UnitTest1.cs:line 5
+   at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)
+   at System.Reflection.MethodBaseInvoker.InvokeDirectByRefWithFewArgs(Object obj, Span`1 copyOfArgs, BindingFlags invokeAttr)</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="269c8e98-2a41-460d-b962-ee1fc1a29bf1" testId="e341e043-7f54-b5ee-0628-9cc456b9c8bc" testName="demo.UnitTest1.Ok" computerName="HOST" duration="00:00:00.0001051" startTime="2026-11-16T18:51:50.7136353+01:00" endTime="2026-11-16T18:51:50.7137040+01:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="269c8e98-2a41-460d-b962-ee1fc1a29bf1" />
+    <UnitTestResult executionId="1b994657-b1d2-419b-bb77-988ca31975c6" testId="c8b28fef-ed17-f326-cdb8-fe1affe723c9" testName="demo.UnitTest1.Param(x: 1)" computerName="HOST" duration="00:00:00.0023038" startTime="2026-11-16T18:51:50.7118289+01:00" endTime="2026-11-16T18:51:50.7122897+01:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="1b994657-b1d2-419b-bb77-988ca31975c6" />
+    <UnitTestResult executionId="bb829154-fe26-4c36-bd4a-35ea7d63f946" testId="01bfb701-b104-5b79-ec54-8a737360037b" testName="demo.UnitTest1.Boom" computerName="HOST" duration="00:00:00.0097571" startTime="2026-11-16T18:51:50.6546234+01:00" endTime="2026-11-16T18:51:50.6842898+01:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="bb829154-fe26-4c36-bd4a-35ea7d63f946">
+      <Output>
+        <ErrorInfo>
+          <Message>Assert.Equal() Failure: Values differ
+Expected: 1
+Actual:   2</Message>
+          <StackTrace>   at demo.UnitTest1.Boom() in /ROOT/dn/demo/UnitTest1.cs:line 4
+   at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="demo.UnitTest1.Ok" storage="/work/demo/bin/Debug/net10.0/demo.dll" id="e341e043-7f54-b5ee-0628-9cc456b9c8bc">
+      <Execution id="269c8e98-2a41-460d-b962-ee1fc1a29bf1" />
+      <TestMethod codeBase="/ROOT/dn/demo/bin/Debug/net10.0/demo.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="demo.UnitTest1" name="Ok" />
+    </UnitTest>
+    <UnitTest name="demo.UnitTest1.Boom" storage="/work/demo/bin/Debug/net10.0/demo.dll" id="01bfb701-b104-5b79-ec54-8a737360037b">
+      <Execution id="bb829154-fe26-4c36-bd4a-35ea7d63f946" />
+      <TestMethod codeBase="/ROOT/dn/demo/bin/Debug/net10.0/demo.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="demo.UnitTest1" name="Boom" />
+    </UnitTest>
+    <UnitTest name="demo.UnitTest1.Param(x: 2)" storage="/work/demo/bin/Debug/net10.0/demo.dll" id="3a51d937-96da-d918-b585-eedbe6691db8">
+      <Execution id="fc5fbf13-dda6-462f-8ea9-bf4702485de1" />
+      <TestMethod codeBase="/ROOT/dn/demo/bin/Debug/net10.0/demo.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="demo.UnitTest1" name="Param" />
+    </UnitTest>
+    <UnitTest name="demo.UnitTest1.Param(x: 1)" storage="/work/demo/bin/Debug/net10.0/demo.dll" id="c8b28fef-ed17-f326-cdb8-fe1affe723c9">
+      <Execution id="1b994657-b1d2-419b-bb77-988ca31975c6" />
+      <TestMethod codeBase="/ROOT/dn/demo/bin/Debug/net10.0/demo.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="demo.UnitTest1" name="Param" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="3a51d937-96da-d918-b585-eedbe6691db8" executionId="fc5fbf13-dda6-462f-8ea9-bf4702485de1" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="e341e043-7f54-b5ee-0628-9cc456b9c8bc" executionId="269c8e98-2a41-460d-b962-ee1fc1a29bf1" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="c8b28fef-ed17-f326-cdb8-fe1affe723c9" executionId="1b994657-b1d2-419b-bb77-988ca31975c6" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="01bfb701-b104-5b79-ec54-8a737360037b" executionId="bb829154-fe26-4c36-bd4a-35ea7d63f946" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="Wyniki, których nie ma na liście" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="Wszystkie załadowane wyniki" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Failed">
+    <Counters total="4" executed="4" passed="2" failed="2" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.4+50e68bbb8b (64-bit .NET 10.0.14)
+[xUnit.net 00:00:00.12]   Discovering: demo
+[xUnit.net 00:00:00.20]   Discovered:  demo
+[xUnit.net 00:00:00.25]   Starting:    demo
+[xUnit.net 00:00:00.33]       Assert.Equal() Failure: Values differ
+[xUnit.net 00:00:00.33]       Expected: 1
+[xUnit.net 00:00:00.33]       Actual:   2
+[xUnit.net 00:00:00.33]       Stack Trace:
+[xUnit.net 00:00:00.34]         /ROOT/dn/demo/UnitTest1.cs(4,0): at demo.UnitTest1.Boom()
+[xUnit.net 00:00:00.34]            at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)
+[xUnit.net 00:00:00.34]            at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+[xUnit.net 00:00:00.35]       Assert.Equal() Failure: Values differ
+[xUnit.net 00:00:00.35]       Expected: 1
+[xUnit.net 00:00:00.35]       Actual:   2
+[xUnit.net 00:00:00.35]       Stack Trace:
+[xUnit.net 00:00:00.35]         /ROOT/dn/demo/UnitTest1.cs(5,0): at demo.UnitTest1.Param(Int32 x)
+[xUnit.net 00:00:00.35]            at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)
+[xUnit.net 00:00:00.35]            at System.Reflection.MethodBaseInvoker.InvokeDirectByRefWithFewArgs(Object obj, Span`1 copyOfArgs, BindingFlags invokeAttr)
+[xUnit.net 00:00:00.36]   Finished:    demo
+</StdOut>
+    </Output>
+    <RunInfos>
+      <RunInfo computerName="HOST" outcome="Error" timestamp="2026-11-16T18:51:50.6904536+01:00">
+        <Text>[xUnit.net 00:00:00.33]     demo.UnitTest1.Boom [FAIL]</Text>
+      </RunInfo>
+      <RunInfo computerName="HOST" outcome="Error" timestamp="2026-11-16T18:51:50.7111250+01:00">
+        <Text>[xUnit.net 00:00:00.35]     demo.UnitTest1.Param(x: 2) [FAIL]</Text>
+      </RunInfo>
+    </RunInfos>
+  </ResultSummary>
+</TestRun>
