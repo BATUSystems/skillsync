@@ -77,11 +77,11 @@ class HandlerWindowTests(unittest.TestCase):
 
 
 class PrototypeServeInstallsSigbreakTests(unittest.TestCase):
-    """`prototype serve` asks for the CTRL_BREAK handler before it announces the address (the same window as for SIGTERM) and puts the previous one back."""
+    """`prototype serve` asks for the CTRL_BREAK handler before it announces the address (the same window as for SIGTERM), cleans up first
+    (`server_close()` removes the state file) and only then puts the previous CTRL_BREAK handler back. Runs on every system through a
+    stand-in for the platform, so the Linux and macOS runs cover this path too."""
 
-    def test_install_happens_before_serve_forever_and_the_previous_handler_is_restored(self):
-        events = []
-
+    def serve(self, events, fail_in_close=False):
         class Instance:
             url = 'http://127.0.0.1:1/'
             app = Namespace(warnings=[])
@@ -92,21 +92,38 @@ class PrototypeServeInstallsSigbreakTests(unittest.TestCase):
 
             def server_close(self):
                 events.append('server_close')
+                if fail_in_close:
+                    raise OSError('close failed')
 
         def install():
             events.append('install_sigbreak')
             return ('previous',)
+
+        def register(signum, handler):
+            events.append(('signal', signum, handler))
 
         with tempfile.TemporaryDirectory(prefix='stop-signals-') as tmp:
             repo = Path(tmp)
             (repo / 'docs' / 'prototypes').mkdir(parents=True)
             args = Namespace(no_source_writes=True, users=None, host='127.0.0.1', port=0, secure_cookies=False, trust_proxy=False, login_to_view=False)
             with mock.patch.object(pt.server, 'make_server', return_value=Instance()), mock.patch.object(pt.stopsignal, 'install_sigbreak', side_effect=install), \
-                    mock.patch.object(pt.signal, 'SIGBREAK', 21, create=True), mock.patch.object(pt.signal, 'signal') as register:
-                report = pt.serve_prototypes(repo, {}, args, io.StringIO())
+                    mock.patch.object(pt.signal, 'SIGBREAK', 21, create=True), mock.patch.object(pt.signal, 'signal', side_effect=register):
+                return pt.serve_prototypes(repo, {}, args, io.StringIO())
+
+    def test_install_happens_before_serve_forever_and_the_previous_handler_is_restored_after_the_cleanup(self):
+        events = []
+        report = self.serve(events)
         self.assertEqual((report['status'], report['stopped']), ('PASS', True), report)
+        restore = ('signal', 21, 'previous')
         self.assertLess(events.index('install_sigbreak'), events.index('serve_forever'), events)
-        register.assert_any_call(21, 'previous')
+        self.assertIn(restore, events)
+        self.assertLess(events.index('server_close'), events.index(restore), 'the cleanup comes first, the restore of the CTRL_BREAK handler after it')
+
+    def test_the_previous_handler_is_restored_even_when_the_cleanup_fails(self):
+        events = []
+        with self.assertRaises(OSError):
+            self.serve(events, fail_in_close=True)
+        self.assertIn(('signal', 21, 'previous'), events)
 
 
 if sys.platform == 'win32':
