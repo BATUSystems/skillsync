@@ -2940,13 +2940,9 @@ def layers_use(layer_id, match, *, position=None):
             use = _rule_use(config, layer_id, base=list(same['use']))
             rule = {'match': globs, 'use': use}
             edited = edit_config(config.path, [_extend_rule_use_op(same['index'], use)])
-            return _report('PASS', rule=rule, index=same['index'],
+            return _report('PASS', rule=rule, index=same['index'], extended=True,
                            warnings=[f'Added to the existing layer_rules entry {same["index"]} with this match (no second rule)'], **edited)
         rule = {'match': globs, 'use': _rule_use(config, layer_id, warnings=warnings)}
-        for existing in config.rules:
-            if existing['match'] == rule['match'] and existing['use'] == rule['use']:
-                return _report('PASS', changed=False, rule=rule, index=existing['index'], config=posix(config.path),
-                               warnings=warnings + ['An identical layer_rules entry exists; nothing changed'])
         default = _default_rule(config)
         if position is None:
             index = default['index'] if default else len(config.rules)
@@ -3036,8 +3032,9 @@ def _replace_bridge_op(bridge_id, entry):
 
 
 def text_set_rule_use(text, index, use):
-    """Replace the flow list `use: [a, b]` of `layer_rules[index]` in place (comments and layout kept); None when the layout
-    is uncertain (a block list, a missing key or an unexpected structure): the caller then rewrites the file."""
+    """Replace the flow list `use: [a, b]` of `layer_rules[index]` in place (the rest of the text, comments outside the list included, is
+    kept byte for byte; comments inside a multi-line list are lost); None when the layout is uncertain (a block list, an anchor or a tag,
+    a missing key or an unexpected structure): the caller then rewrites the file."""
     try:
         root = yaml.compose(text)
     except yaml.YAMLError:
@@ -3048,8 +3045,8 @@ def text_set_rule_use(text, index, use):
     if not isinstance(rules, yaml.SequenceNode) or not 0 <= index < len(rules.value) or not isinstance(rules.value[index], yaml.MappingNode):
         return None
     target = next((value for key, value in rules.value[index].value if getattr(key, 'value', None) == 'use'), None)
-    if not isinstance(target, yaml.SequenceNode) or not target.flow_style:
-        return None
+    if not isinstance(target, yaml.SequenceNode) or not target.flow_style or text[target.start_mark.index:target.start_mark.index + 1] != '[':
+        return None   # a block list, or a flow list with an anchor or a tag in front of it (they would be dropped): rewrite instead
     flow = yaml.safe_dump(list(use), default_flow_style=True, allow_unicode=True, width=10 ** 6).strip()
     return text[:target.start_mark.index] + flow + text[target.end_mark.index:]
 
