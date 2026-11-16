@@ -58,5 +58,34 @@ class GateAtRareSeparators(unittest.TestCase):
                     self.assertEqual((report['status'], report.get('error'), report['uiPhases']), ('BLOCKED', 'ui_phase_without_prototype', ['F1', 'F3']), report)
 
 
+class AppendMissingLinesAtRareSeparators(unittest.TestCase):
+    ENTRIES = ['copilot-instructions.md', 'skills/', '.skillsync.yaml']
+
+    def test_an_entry_that_only_looks_present_after_a_cut_is_appended_and_the_old_bytes_stay(self):
+        for name, char in RARE.items():
+            with self.subTest(char=name):
+                original = f'copilot-instructions.md\nskills/{char}old\n'
+                updated = append_missing_lines(original, self.ENTRIES)
+                self.assertTrue(updated.startswith(original), 'the existing text stays byte for byte')
+                self.assertEqual(updated[len(original):], 'skills/\n.skillsync.yaml\n')
+
+    def test_an_entry_that_is_a_line_of_its_own_is_not_appended_again(self):
+        for name, char in RARE.items():
+            with self.subTest(char=name):
+                original = f'copilot-instructions.md\nskills/\n.skillsync.yaml\nnote{char}text\n'
+                self.assertIsNone(append_missing_lines(original, self.ENTRIES))
+
+    def test_crlf_and_a_lone_cr_file_keeps_its_bytes_and_its_line_end_style(self):
+        original = 'copilot-instructions.md\r\nskills/ old\r\n'
+        updated = append_missing_lines(original, self.ENTRIES)
+        self.assertTrue(updated.startswith(original))
+        self.assertEqual(updated[len(original):], 'skills/\r\n.skillsync.yaml\r\n')
+        self.assertIsNone(append_missing_lines('a\rb\r', ['a', 'b']))       # a lone CR is a line end for the check, as before
+        self.assertTrue(append_missing_lines('a\rb\r', ['c']).startswith('a\rb\r'))   # the old bytes stay (the added line follows them)
+
+    def test_the_key_function_still_applies(self):
+        self.assertIsNone(append_missing_lines('  skills/  \n', ['skills/'], key=str.strip))
+
+
 if __name__ == '__main__':
     unittest.main()

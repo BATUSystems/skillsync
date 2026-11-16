@@ -378,7 +378,7 @@ def append_missing_lines(text, entries, key=None):
     empty text) and a missing final newline is completed in the same style. `key` normalizes lines before
     they are compared (default: exact match)."""
     key = key or (lambda line: line)
-    present = {key(line) for line in text.splitlines()}
+    present = {key(line) for line in file_lines(text)}
     missing = [entry for entry in dict.fromkeys(entries) if key(entry) not in present]
     if not missing:
         return None
