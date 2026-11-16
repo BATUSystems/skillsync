@@ -63,7 +63,7 @@ class PortTaken(unittest.TestCase):
     def test_something_listening_is_taken_whatever_the_bind_and_nothing_is_free(self) -> None:
         with socket.socket() as holder:
             holder.bind(("127.0.0.1", 0))
-            holder.listen(1)
+            holder.listen(16)   # the probes are never accepted: a backlog of 1 refuses the second one on Windows
             port = holder.getsockname()[1]
             self.assertTrue(ports.port_taken("127.0.0.1", port))
             self.assertTrue(ports.port_taken("0.0.0.0", port))   # a wildcard bind is probed through loopback
@@ -246,7 +246,8 @@ class ServeCommand(unittest.TestCase):
         self.assertIn("--read-port", answer["reason"])
         self.assertIn("--approve-port", answer["reason"])
         self.assertIn("port 5162 zajęty przez inny proces", answer["reason"])   # the first socket failed: nobody of ours holds it
-        calls, answer = self.run_serve()   # the second socket (consents, 5163) fails: the state file names its owner
+        with mock.patch.object(dashboard_token, "_windows", return_value=False):   # on Windows an owner must also answer /healthz (own test)
+            calls, answer = self.run_serve()   # the second socket (consents, 5163) fails: the state file names its owner
         self.assertIn("port 5163 trzyma projekt other-project (zgody)", answer["reason"])
         self.assertNotIn(str(other), answer["reason"])
         self.assertEqual(dashboard_token.port_owner(5163), "projekt other-project (zgody)")
