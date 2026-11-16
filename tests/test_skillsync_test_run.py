@@ -12,6 +12,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+import sys as _sys
+_sys.path.insert(0, str(Path(__file__).resolve().parent))
+from tmp_paths import child  # noqa: E402
 from skillsync_workflow import quality, test_events as ev, test_run  # noqa: E402
 
 CLI = ROOT / 'skillsync'
@@ -46,7 +49,7 @@ class Base(unittest.TestCase):
                               env=self.env, timeout=60)
 
     def attempt(self, step='F1.1', n=1):
-        return ev.read_attempt(self.root / f'.skillsync/runs/R1/tests/{step}/{n}.jsonl')
+        return ev.read_attempt(child(child(self.root / '.skillsync/runs/R1/tests', step), f'{n}.jsonl'))
 
 
 class Resolution(unittest.TestCase):
