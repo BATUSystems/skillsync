@@ -472,6 +472,8 @@ main { flex: 1; padding: 1.1rem 1.4rem; min-width: 0; }
 /* telefon: jedna kolumna, Realizacja na górze, zwarte kafelki Spec/Plan, nic nie wystaje poza ekran */
 @container dash (max-width: 640px) {
   .commits-panel { position: fixed; left: 8px; right: 8px; top: auto; bottom: 8px; min-width: 0; max-width: none; max-height: 60vh; }
+  /* z przyciskiem „na górę” (170-B) arkusz kończy się nad nim: dolny margines = dolny odstęp przycisku + jego wysokość + odstęp */
+  .has-to-top .commits-panel { bottom: calc(max(16px, env(safe-area-inset-bottom)) + max(2.75rem, 44px) + .75rem); }
   .top { padding: .7rem 16px; gap: .6rem; }
   .brand { align-items: flex-start; }
   .logo { width: 2.2rem; height: 2.2rem; }

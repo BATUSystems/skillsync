@@ -158,5 +158,35 @@ class Wiring(unittest.TestCase):
         self.assertIn('// </to-top>', app)
 
 
+class SheetVersusToTop(unittest.TestCase):
+    """170-AB: the bottom sheet of the commits panel (narrow container) must end above the "back to top" button, and only when that
+    button can exist (`has-to-top` on the root); without the hook the sheet keeps its place."""
+
+    def css(self):
+        return CSS.read_text(encoding='utf-8')
+
+    def test_the_sheet_keeps_its_bottom_without_the_button(self):
+        css = self.css()
+        base = re.search(r'@container dash \(max-width: 640px\) \{.*?\.commits-panel \{([^}]*)\}', css, re.S)
+        self.assertIsNotNone(base, 'the sheet rule in the 640px container block')
+        self.assertIn('bottom: 8px', base.group(1))
+
+    def test_the_sheet_margin_depends_on_has_to_top_and_clears_the_button(self):
+        css = self.css()
+        block = css[css.index('@container dash (max-width: 640px) {'):]
+        rule = re.search(r'\.has-to-top \.commits-panel \{([^}]*)\}', block)
+        self.assertIsNotNone(rule, 'a rule that depends on the has-to-top class inside the container block')
+        bottom = re.search(r'bottom:\s*calc\(([^;]*)\);', rule.group(1)).group(1)
+        # the same expressions as the button: its bottom offset and its height, plus a gap
+        button = re.search(r'button\.to-top \{([^}]*)\}', css).group(1)
+        offset = re.search(r'bottom:\s*(max\([^;]*\));', button).group(1)
+        height = re.search(r'height:\s*(max\([^;]*\));', button).group(1)
+        self.assertIn(offset, bottom)
+        self.assertIn(height, bottom)
+        gap = re.search(r'\+\s*([\d.]+)(rem|px)\s*$', bottom.strip())
+        self.assertIsNotNone(gap, 'a gap after the button height')
+        self.assertGreater(float(gap.group(1)) * (16 if gap.group(2) == 'rem' else 1), 0)
+
+
 if __name__ == '__main__':
     unittest.main()
