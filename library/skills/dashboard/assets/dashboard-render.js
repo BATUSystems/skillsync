@@ -50,6 +50,7 @@
     "i-sync": ["0 0 24 24", [["path", { "d": "M20 11a8 8 0 0 0-14.3-4.3L4 9M4 13a8 8 0 0 0 14.3 4.3L20 15", "fill": "none", "stroke": "currentColor", "stroke-width": "1.8", "stroke-linecap": "round" }], ["path", { "d": "M4 4v5h5M20 20v-5h-5", "fill": "none", "stroke": "currentColor", "stroke-width": "1.8", "stroke-linecap": "round", "stroke-linejoin": "round" }]]],
     "i-branch": ["0 0 24 24", [["circle", { "cx": "6", "cy": "5", "r": "2.2", "fill": "none", "stroke": "currentColor", "stroke-width": "1.8" }], ["circle", { "cx": "6", "cy": "19", "r": "2.2", "fill": "none", "stroke": "currentColor", "stroke-width": "1.8" }], ["circle", { "cx": "18", "cy": "8", "r": "2.2", "fill": "none", "stroke": "currentColor", "stroke-width": "1.8" }], ["path", { "d": "M6 7.2v9.6M18 10.2c0 4-6 3-11.2 6.6", "fill": "none", "stroke": "currentColor", "stroke-width": "1.8" }]]],
     "i-doc": ["0 0 24 24", [["path", { "d": "M6 2h9l5 5v15H6z", "fill": "none", "stroke": "currentColor", "stroke-width": "1.8", "stroke-linejoin": "round" }]]],
+    "i-up": ["0 0 24 24", [["path", { "d": "M12 19V6M5.5 12.5L12 6l6.5 6.5", "fill": "none", "stroke": "currentColor", "stroke-width": "2", "stroke-linecap": "round", "stroke-linejoin": "round" }]]],
     "i-flag": ["0 0 24 24", [["path", { "d": "M5 21V4M5 4h11l-2 4 2 4H5", "fill": "none", "stroke": "currentColor", "stroke-width": "1.8", "stroke-linecap": "round", "stroke-linejoin": "round" }]]],
     "i-sun": ["0 0 24 24", [["circle", { "cx": "12", "cy": "12", "r": "4.2", "fill": "none", "stroke": "currentColor", "stroke-width": "1.8" }], ["path", { "d": "M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6", "fill": "none", "stroke": "currentColor", "stroke-width": "1.8", "stroke-linecap": "round" }]]],
     "i-moon": ["0 0 24 24", [["path", { "d": "M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z", "fill": "none", "stroke": "currentColor", "stroke-width": "1.8", "stroke-linejoin": "round" }]]],
@@ -330,6 +331,37 @@
     ui.foot = h("footer", { class: "foot", id: "foot" });
     ui.descTip = h("div", { id: "descTip", class: "desc-tip", role: "tooltip", hidden: true });
 
+    // ---------------------------------------------------------------- przycisk „na górę” (widok dokumentu, 170-B)
+    // Host podaje `deps.scroll.toTop = {subscribe(cb) → unsubscribe, go()}`; `cb` dostaje {y, viewport, height} przewijanego okna. Bez haczyka
+    // (webview Skippstera, starsze adaptery) przycisku nie ma. Renderer liczy próg z histerezą, host przewija i pilnuje ruchu.
+    const toTopHook = deps.scroll && deps.scroll.toTop && typeof deps.scroll.toTop.subscribe === "function" && typeof deps.scroll.toTop.go === "function"
+      ? deps.scroll.toTop : null;
+    const toTop = { shown: false, y: 0, viewport: 0, failed: false, unsub: null };
+    const TO_TOP_SHOW = 0.75, TO_TOP_HIDE = 0.5;   // ułamki wysokości okna: pokaż powyżej, schowaj poniżej
+    ui.toTop = toTopHook ? h("button", { type: "button", id: "toTop", class: "to-top", hidden: true, "aria-label": "Wróć na górę strony", "data-tip": "Na górę",
+      on: { click: () => toTopClick() } }, icon("i-up")) : null;
+    function toTopSync() {
+      if (!ui.toTop) return;
+      const eligible = st.view === "docs" && Boolean(st.docData) && !toTop.failed && toTop.viewport > 0;
+      let shown = eligible && toTop.shown;
+      if (eligible && !shown && toTop.y > toTop.viewport * TO_TOP_SHOW) shown = true;
+      else if (eligible && shown && toTop.y < toTop.viewport * TO_TOP_HIDE) shown = false;
+      toTop.shown = shown;
+      ui.toTop.hidden = !shown;
+    }
+    function toTopClick() {
+      // Fokus przechodzi na zakładkę „Dokumenty” przed ukryciem przycisku, żeby nie zginął.
+      if (typeof ui["tab-docs"].focus === "function") ui["tab-docs"].focus({ preventScroll: true });
+      toTop.shown = false; toTop.y = 0; toTopSync();
+      toTopHook.go();
+    }
+    if (toTopHook) {
+      toTop.unsub = toTopHook.subscribe((m) => {
+        toTop.y = Math.max(0, Number(m && m.y) || 0); toTop.viewport = Math.max(0, Number(m && m.viewport) || 0);
+        toTopSync();
+      });
+    }
+
     // Wrapper z container-type: układ zależy od szerokości kolumny hosta (app.css, @container), nie okna. Dymek zostaje poza nim
     // (inline-size containment tworzy blok zawierający dla position: fixed).
     root.appendChild(h("div", { class: "dash-wrap" }, h("header", { class: "top" },
@@ -342,6 +374,7 @@
       h("main", null, ui["view-progress"], ui["view-docs"], ui["view-questions"]),
       ui.foot));
     root.appendChild(ui.descTip);
+    if (ui.toTop) root.appendChild(ui.toTop);   // poza .dash-wrap: containment tworzy blok zawierający dla position: fixed
 
     // ---------------------------------------------------------------- dymki opisów (descriptions.json)
     function showDesc(el) {
@@ -1048,7 +1081,7 @@
         const data = await actions.loadDoc(path);
         if (st.destroyed) return;
         if (live && st.docData && st.docData.path === data.path && st.docData.mtime === data.mtime) return;
-        st.docData = data;
+        st.docData = data; toTop.failed = false; toTopSync();
         const md = h("div", { class: "md" });
         fill(view,
           h("div", { class: "doc-bar" }, icon("i-doc"), mono(data.path), statusChip(data.status), h("span", null, `zmieniony ${fmtTime(data.mtime)}`),
@@ -1060,6 +1093,7 @@
         if (deps.scroll) { if (live) deps.scroll.restore(scroll); else deps.scroll.reveal(view, st.view === "docs"); }
       } catch (err) {
         if (st.destroyed) return;
+        toTop.failed = true; toTopSync();
         fill(view, h("div", { class: "empty" }, `Nie udało się wczytać dokumentu: ${(err && err.message) || String(err)}. `,
           h("button", { class: "btn", id: "retryDoc", on: { click: () => loadDoc(path) } }, "Spróbuj ponownie")));
       }
@@ -1084,6 +1118,7 @@
       });
       if (view === "docs" && st.doc) loadDoc(st.doc);
       if (push) navigate(view === "docs" && st.doc ? "docs:" + st.doc : view);
+      toTopSync();
     }
     // Strzałki w liście zakładek (WAI-ARIA): lewo/prawo, Home/End przechodzą po widocznych zakładkach i je włączają.
     function tabKey(e) {
@@ -1154,6 +1189,7 @@
       state() { return { view: st.view, doc: st.doc, armed: st.armed, approving: st.approving, notice: st.notice }; },
       destroy() {
         st.destroyed = true;
+        if (toTop.unsub) toTop.unsub();
         st.timers.forEach((t) => timers.clear(t));
         st.frames.forEach((f) => cancelRaf(f));
         st.frames.clear();

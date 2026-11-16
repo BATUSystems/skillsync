@@ -1140,6 +1140,63 @@ function summary(m) {
     }
     ex.s160b = s5;
   }
+  // 170-B: pływający przycisk „na górę” w widoku dokumentu (haczyk deps.scroll.toTop; próg z histerezą; fokus; brak haczyka = brak przycisku).
+  {
+    const name = Object.keys(F)[0];
+    const hook = () => ({ cbs: [], goes: 0, unsub: 0, subscribe(cb) { this.cbs.push(cb); return () => { this.unsub++; }; }, go() { this.goes++; },
+      emit(m) { this.cbs.forEach((c) => c(m)); } });
+    const ex170 = {};
+    const open = async (extra) => {
+      const hk = hook(); const m = mount(clone(F[name]), { now: NOW[name], preview: true, deps: { scroll: { save: () => 0, restore: () => {}, reveal: () => {}, toTop: hk } }, ...(extra || {}) });
+      m.board.setDoc('docs/plans/demo.md'); m.board.setView('docs', false); await tick(); await tick();
+      return { hk, m, btn: () => m.root.querySelector('#toTop') };
+    };
+    {
+      const { hk, m, btn } = await open();
+      const b = btn(); const shape = { type: b.getAttribute('type'), label: b.getAttribute('aria-label'), cls: b.getAttribute('class'), tip: b.getAttribute('data-tip'), icon: b.querySelectorAll('use').length };
+      const trace = []; const vis = () => trace.push(!btn().hidden);
+      vis();                                     // y = 0 (brak metryk): ukryty
+      hk.emit({ y: 0, viewport: 1000, height: 5000 }); vis();
+      hk.emit({ y: 800, viewport: 1000, height: 5000 }); vis();   // > 0,75: pokazany
+      hk.emit({ y: 600, viewport: 1000, height: 5000 }); vis();   // między 0,5 a 0,75: histereza, zostaje
+      hk.emit({ y: 400, viewport: 1000, height: 5000 }); vis();   // < 0,5: schowany
+      hk.emit({ y: 600, viewport: 1000, height: 5000 }); vis();   // w górę przez histerezę, nadal schowany
+      hk.emit({ y: 800, viewport: 1000, height: 5000 }); vis();
+      hk.emit({ y: 0, viewport: 1000, height: 5000 }); vis();
+      ex170.threshold = { shape, trace, rootChild: btn().parentNode === m.root };
+    }
+    {
+      const { hk, m, btn } = await open();
+      hk.emit({ y: 2000, viewport: 1000, height: 6000 });
+      const shownDocs = !btn().hidden;
+      m.board.setView('progress', false); const shownProgress = !btn().hidden;
+      m.board.setView('questions', false); const shownQuestions = !btn().hidden;
+      m.board.setView('docs', false); await tick(); await tick(); const backInDocs = !btn().hidden;
+      ex170.views = { shownDocs, shownProgress, shownQuestions, backInDocs };
+    }
+    {
+      const { hk, m, btn } = await open({ actions: { loadDoc: () => Promise.reject(new Error('HTTP 500')) } });
+      hk.emit({ y: 2000, viewport: 1000, height: 6000 }); await tick();
+      ex170.failedLoad = { hidden: btn().hidden };
+    }
+    {
+      const { hk, m, btn } = await open();
+      hk.emit({ y: 2000, viewport: 1000, height: 6000 });
+      const focused = []; const tab = m.root.querySelector('#tab-docs'); tab.focus = (o) => focused.push(o);
+      const before = !btn().hidden; btn().click();
+      ex170.click = { before, goes: hk.goes, focused, hiddenAfter: btn().hidden, tabId: tab.id };
+      hk.emit({ y: 900, viewport: 1000, height: 6000 });   // metryki w trakcie płynnego przewijania: znów powyżej progu
+      ex170.click.reshown = !btn().hidden;
+      m.board.destroy(); ex170.click.unsub = hk.unsub;
+    }
+    {
+      const m = mount(clone(F[name]), { now: NOW[name], preview: true });
+      const m2 = mount(clone(F[name]), { now: NOW[name], preview: true, deps: { scroll: { save: () => 0, restore: () => {}, reveal: () => {} } } });
+      const m3 = mount(clone(F[name]), { now: NOW[name], preview: true, deps: { scroll: { save: () => 0, restore: () => {}, reveal: () => {}, toTop: { subscribe: 'nie funkcja', go() {} } } } });
+      ex170.noHook = { none: m.root.querySelector('#toTop') === null, oldAdapter: m2.root.querySelector('#toTop') === null, broken: m3.root.querySelector('#toTop') === null };
+    }
+    ex.s170 = ex170;
+  }
   out.extra = ex;
   // deps.now jest wymagane (renderer nie czyta zegara sam).
   try { R.create(makeDoc().createElement('div'), {}); out.nowRequired = false; } catch (e) { out.nowRequired = e instanceof TypeError; }
@@ -1231,7 +1288,7 @@ class RendererNodeTests(unittest.TestCase):
                     self.assertIn(f"{p['percent']}% · ", got["docTitle"])
                 self.assertEqual(got["docItems"], sum(len(g["items"]) for g in d.get("docs") or []))
                 self.assertEqual(got["planMenu"], 1 + len(d.get("plans") or []))
-                self.assertEqual(got["sprite"], 14)
+                self.assertEqual(got["sprite"], 15)
                 self.assertIn(f"dashboard {d['app']['version']}", got["foot"])
                 self.assertNotIn("img", got["tags"])
 
@@ -1759,6 +1816,28 @@ class RendererNodeTests(unittest.TestCase):
         self.assertIsNone(none["legend"])
         self.assertEqual(none["valuetext"], "40%, plus 10% do weryfikacji")
         self.assertEqual([f[0] for f in none["fills"]], ["fill", "fill-pending"])
+
+    def test_s170_to_top_button_threshold_with_hysteresis(self) -> None:
+        t = self.out["extra"]["s170"]["threshold"]
+        self.assertEqual(t["shape"], {"type": "button", "label": "Wróć na górę strony", "cls": "to-top", "tip": "Na górę", "icon": 1})
+        self.assertEqual(t["trace"], [False, False, True, True, False, False, True, False])
+        self.assertTrue(t["rootChild"], "the button lives outside .dash-wrap (position: fixed needs no containment)")
+
+    def test_s170_to_top_button_only_in_the_document_view(self) -> None:
+        v = self.out["extra"]["s170"]["views"]
+        self.assertEqual(v, {"shownDocs": True, "shownProgress": False, "shownQuestions": False, "backInDocs": True})
+        self.assertTrue(self.out["extra"]["s170"]["failedLoad"]["hidden"])   # a document that failed to load: no button
+
+    def test_s170_click_goes_to_top_moves_the_focus_and_destroy_unsubscribes(self) -> None:
+        c = self.out["extra"]["s170"]["click"]
+        self.assertTrue(c["before"])
+        self.assertEqual((c["goes"], c["hiddenAfter"], c["tabId"]), (1, True, "tab-docs"))
+        self.assertEqual(c["focused"], [{"preventScroll": True}])   # the focus moves to the tab before the button hides
+        self.assertTrue(c["reshown"])
+        self.assertEqual(c["unsub"], 1)
+
+    def test_s170_without_the_hook_there_is_no_button(self) -> None:
+        self.assertEqual(self.out["extra"]["s170"]["noHook"], {"none": True, "oldAdapter": True, "broken": True})
 
     def test_s160_parse_warnings_line(self) -> None:
         w = self.out["extra"]["s160"]["warn"]
