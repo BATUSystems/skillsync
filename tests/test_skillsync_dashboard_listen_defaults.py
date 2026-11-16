@@ -24,6 +24,7 @@ from skillsync_workflow import dashboard_http as srv  # noqa: E402
 from skillsync_workflow import dashboard_listen as listen  # noqa: E402
 from skillsync_workflow import dashboard_ports as ports  # noqa: E402
 from skillsync_workflow import dashboard_token  # noqa: E402
+from tests.test_skillsync_dashboard_approve_token import home_env  # noqa: E402
 from tests.test_skillsync_dashboard_server import free_port, make_project  # noqa: E402
 
 SECRET_LOOKING = "10.99.99.99-not-a-bind-but-a-value"
@@ -79,7 +80,7 @@ class PortTaken(unittest.TestCase):
             manifest.parent.mkdir(parents=True, exist_ok=True)
             manifest.write_text("skills: [dashboard]\n", encoding="utf-8")
             out = io.StringIO()
-            with mock.patch("sys.stdout", new=out), mock.patch.dict(os.environ, {"XDG_DATA_HOME": str(tmp / "d"), "SKILLSYNC_CONFIG": str(tmp / "c.yaml")}):
+            with mock.patch("sys.stdout", new=out), mock.patch.dict(os.environ, {**home_env(tmp), "SKILLSYNC_CONFIG": str(tmp / "c.yaml")}):
                 srv.serve_command(args(path=str(project), layers=[f"core={ROOT / 'library'}"]))
         answer = json.loads(out.getvalue())
         self.assertEqual(answer["status"], "BLOCKED")
@@ -155,7 +156,7 @@ class ServeCommand(unittest.TestCase):
         self.manifest.parent.mkdir(parents=True, exist_ok=True)
         self.write_manifest("")
         self.config = self.tmp / "machine.yaml"
-        patch = mock.patch.dict(os.environ, {"SKILLSYNC_CONFIG": str(self.config), "XDG_DATA_HOME": str(self.tmp / "data"),
+        patch = mock.patch.dict(os.environ, {"SKILLSYNC_CONFIG": str(self.config), **home_env(self.tmp / "state"),
                                               "XDG_CACHE_HOME": str(self.tmp / "cache")})
         patch.start()
         self.addCleanup(patch.stop)
@@ -275,7 +276,7 @@ class SmallRules(unittest.TestCase):
     def test_only_an_answering_server_is_named_as_the_owner_on_windows(self) -> None:
         tmp = Path(tempfile.mkdtemp(prefix="dashboard-owner-"))
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
-        with mock.patch.dict(os.environ, {"XDG_DATA_HOME": str(tmp)}):
+        with mock.patch.dict(os.environ, home_env(tmp)):
             dashboard_token.write_state(tmp / "proj", 5167, "t" * 32, "127.0.0.1", role="read", peer=5168)
             with mock.patch.object(dashboard_token, "_windows", return_value=True):
                 self.assertIsNone(dashboard_token.port_owner(5167, healthy=lambda *a: False))
@@ -328,7 +329,7 @@ class Lan(unittest.TestCase):
     def test_the_state_file_of_the_read_socket_keeps_the_real_bind(self) -> None:
         tmp = Path(tempfile.mkdtemp(prefix="dashboard-lan-"))
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
-        with mock.patch.dict(os.environ, {"XDG_DATA_HOME": str(tmp)}):
+        with mock.patch.dict(os.environ, home_env(tmp)):
             path = dashboard_token.write_state(tmp / "proj", 5162, None, "127.0.0.1", role="read", peer=5163, bind="0.0.0.0")
             self.assertEqual(json.loads(path.read_text(encoding="utf-8"))["bind"], "0.0.0.0")
             path = dashboard_token.write_state(tmp / "proj", 5164, None, "127.0.0.1")
