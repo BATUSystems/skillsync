@@ -6877,7 +6877,9 @@ class PrototypeRequestHandler(LingeringCloseMixin, BaseHTTPRequestHandler):
         lowered = [segment.lower() for segment in segments]
         real = [part.lower() for part in os.path.relpath(target, self.app.root).split(os.sep)]   # where a link inside a prototype really leads
         if len(segments) == 1:
-            return lowered[0] == 'index.html' or os.path.isdir(target)
+            if os.path.isdir(target):
+                return True
+            return lowered[0] == 'index.html' and real == ['index.html']   # the gallery, not a link that leads somewhere else
         if any(name in _DEMO_DENIED_NAMES for name in lowered + real) or ITERATIONS_DIR in (lowered[1], real[1] if len(real) > 1 else None):
             return False
         if PROTOTYPE_FILE in (lowered[-1], real[-1]) and not (len(segments) == 2 and real == lowered):

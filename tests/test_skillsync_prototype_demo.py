@@ -202,6 +202,18 @@ class LinkTests(DemoCase):
         os.makedirs(os.path.dirname(path), exist_ok=True)
         os.symlink(target, path)
 
+    def test_a_gallery_file_that_is_a_link_to_the_comment_log_is_not_served_even_when_the_gallery_fails(self):
+        os.unlink(os.path.join(self.root, 'index.html'))
+        os.symlink(os.path.join(self.demo, 'comments.json'), os.path.join(self.root, 'index.html'))
+        for gallery in (None, lambda: 1 / 0):
+            self.start_server(demo=True, gallery=gallery)
+            guest = Client(self.server)
+            for path in ('/index.html', '/'):
+                with self.subTest(gallery=gallery, path=path):
+                    response = guest.get(path)
+                    self.assertNotIn(HIDDEN_TEXT, response.text)
+                    self.assertNotIn(HIDDEN_LOGIN, response.text)
+
     def test_a_directory_whose_index_html_is_a_link_to_the_comment_log_is_not_served(self):
         self.link('data/index.html', os.path.join(self.demo, 'comments.json'))
         self.assertEqual(self.guest.get('/demo/data/').status, 404)
