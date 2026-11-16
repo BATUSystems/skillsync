@@ -113,6 +113,10 @@ a.chip.git-link { text-decoration: none; }
 .commits-list .commit-sha { color: var(--muted); flex: none; }
 .commits-list .commit-subject { overflow-wrap: anywhere; }
 .commits-more { margin: .4rem 0 0; font-size: .8rem; color: var(--muted); }
+.commits-panel { max-height: 70vh; overflow-y: auto; }
+@media (max-width: 640px) {
+  .commits-panel { position: fixed; left: 8px; right: 8px; top: auto; bottom: 8px; min-width: 0; max-width: none; max-height: 60vh; }
+}
 
 .live { display: inline-flex; align-items: center; gap: .45rem; font-weight: 600; font-size: .9rem; padding: .3rem .7rem; border-radius: 999px; background: var(--panel-2); }
 .live-dot { width: .7rem; height: .7rem; border-radius: 50%; background: var(--planned); }
