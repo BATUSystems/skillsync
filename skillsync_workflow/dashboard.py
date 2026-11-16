@@ -118,6 +118,13 @@ def read_text(path, limit=MAX_DOC_BYTES):
         return handle.read(limit).decode('utf-8', errors='replace')
 
 
+def read_masked(path, limit=MAX_DOC_BYTES):
+    """`read_text` with every secret masked (`common.redact`) in the WHOLE text, right after reading and before any parser cuts, splits or
+    trims it: a key before a cut keeps masking its value, and a secret from the environment is replaced while it is still in one piece.
+    The text of plans, specs, checkpoints and notes goes through this reader; the final `redact` of the status stays as the second layer."""
+    return redact(read_text(path, limit))
+
+
 def clean_value(value):
     if value is None:
         return None
@@ -573,12 +580,12 @@ def _plan_content(path):
     if hit is not None and hit[0] == stamp:
         return hit[1]
     try:
-        text = read_text(path, HEADER_BYTES)
+        text = read_masked(path, HEADER_BYTES)
     except OSError:
         return None
     title, fields = parse_header(text)
     try:
-        steps = [step for phase in parse_progress(read_text(path)) for step in phase['steps']]
+        steps = [step for phase in parse_progress(read_masked(path)) for step in phase['steps']]
     except OSError:
         steps = []
     content = (title, doc_status(text)[0], first_token(fields.get('spec')), first_token(fields.get('przebieg')),
@@ -620,7 +627,7 @@ def list_specs(root):
         if rel is None or resolve_doc(root, rel) is None:
             continue
         try:
-            text = read_text(path, HEADER_BYTES)
+            text = read_masked(path, HEADER_BYTES)
         except OSError:
             continue
         title, _ = parse_header(text)
@@ -827,7 +834,7 @@ def _question_items(slug, asked, closed):
     `state` = `open`, `answered` or `withdrawn`."""
     items = []
     for qid, op in asked.items():
-        text = ' '.join(str(op.get('text') or '').split())
+        text = ' '.join(redact(str(op.get('text') or '')).split())   # masked whole, then trimmed and cut
         items.append({'id': qid, 'runSlug': slug, 'text': text[:QUESTION_TEXT_LIMIT], 'blocking': op.get('blocking') is True,
                       'addressees': _addressees(op), 'state': closed.get(qid, 'open'), 'at': op['at'], 'url': f'/_experts/{slug}'})
     return items
@@ -1691,7 +1698,7 @@ def read_readiness(root, run_id, run_exists):
     if path is None:
         return out
     try:
-        text = read_text(path, 64_000)
+        text = read_masked(path, 64_000)
     except OSError:
         return out
     out['source'] = rel
@@ -1845,7 +1852,7 @@ def doc_item(root, rel):
     if not path:
         return None
     try:
-        text = read_text(path, HEADER_BYTES)
+        text = read_masked(path, HEADER_BYTES)
     except OSError:
         return None
     title, _ = parse_header(text)
@@ -1904,7 +1911,7 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
     plan_info, fields, phases, plan_text = None, {}, [], ''
     if chosen:
         plan_path = root / chosen['path']
-        text = plan_text = read_text(plan_path)
+        text = plan_text = read_masked(plan_path)
         title, fields = parse_header(text)
         phases = parse_progress(text)
         pr = PLAN_PR_RE.search(text)
@@ -1920,7 +1927,7 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
             'prototype': first_token(fields.get('prototyp')), 'preparing': bool(run_act)}
     spec_text, spec_fields = '', {}
     if spec_path:
-        spec_text = read_text(spec_path, 400_000)
+        spec_text = read_masked(spec_path, 400_000)
         spec_title, spec_fields = parse_header(spec_text)
         status, status_text = doc_status(spec_text)
         spec.update({'title': spec_title, 'status': status, 'statusText': status_text,
@@ -1944,7 +1951,7 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
                               if resolve_doc(root, rel))
         checkpoints = directory / 'checkpoints.md'
         if checkpoints.is_file() and not checkpoints.is_symlink():
-            start, chronological = parse_checkpoints(read_text(checkpoints))
+            start, chronological = parse_checkpoints(read_masked(checkpoints))
             run['start'] = start
             run['checkpoints'] = list(reversed(chronological))
             last_change.append(_mtime(checkpoints))
@@ -2088,7 +2095,7 @@ def build_metrics(root, run_id, plan=None):
         raise MetricsBlocked(f'{RUNS_DIR}/{run_id}/{CHECKPOINTS_FILE} is a symlink')
     chronological, run_start = [], None
     if checkpoints_path.is_file():
-        run_start, chronological = parse_checkpoints(read_text(checkpoints_path))
+        run_start, chronological = parse_checkpoints(read_masked(checkpoints_path))
     try:
         store = _runs._store_path(root, run_id)
         data = _runs._read(store) if store.exists() or store.is_symlink() else None
@@ -2099,7 +2106,7 @@ def build_metrics(root, run_id, plan=None):
     chosen = _metrics_plan(root, run_id, plan)
     started, finished, mentioned = substep_marks(chronological)
     if chosen:
-        steps = [(step['id'], step['title']) for phase in parse_progress(read_text(root / chosen['path']))
+        steps = [(step['id'], step['title']) for phase in parse_progress(read_masked(root / chosen['path']))
                  for step in phase['steps'] if '.' in step['id']]
     else:  # no plan: the sub-steps named in the checkpoints, in the order of the first mention
         steps = [(sid, None) for sid in mentioned if '.' in sid]
@@ -2153,7 +2160,7 @@ def build_metrics(root, run_id, plan=None):
         'failures': failures,
         'interventions': None,
         'timing': build_timing(run_start, chronological, run_approvals(root, run_id),
-                               parse_progress(read_text(root / chosen['path'])) if chosen else []),
+                               parse_progress(read_masked(root / chosen['path'])) if chosen else []),
     }
 
 

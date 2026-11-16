@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import sys
 import threading
 import unittest
@@ -81,6 +83,59 @@ class DocRouteMasksSecrets(SecretFiles, base.HttpCase):
         doc = self.board.doc(base.SPEC)
         self.assertEqual(doc["title"], engine.parse_header((base.FIX / "spec.md").read_text(encoding="utf-8"))[0] or Path(base.SPEC).stem)
         self.assertNotIn("[REDACTED]", doc["html"])
+
+
+class StatusSecretsGuard(SecretFiles, base.HttpCase):
+    """The guard of 161-F: secrets planted on the boundaries where the parsers cut, split or trim text (a segment `;`, an element `,`, a
+    note ` — `, the 4 KiB of `result`, the 160 characters of an expert question) never reach `/api/status`, `/api/doc` or `dashboard show`.
+    `board.status()` is checked BEFORE the final `redact(data)`: the text is masked at the source, the final pass is only the second layer."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.plant()
+        checkpoints = self.root / base.RUN / "checkpoints.md"
+        checkpoints.write_text(checkpoints.read_text(encoding="utf-8") + "\n".join([
+            f"- 11:00 w toku: F1.1 (a; b); czeka: GO plan {ENV_SECRET}",   # an older wait: the newest line below replaces it
+            f"- 11:01 w toku: F1.2 opis {ENV_SECRET}, F1.3 (x; {ENV_SECRET}, F1.4",
+            f"- 11:02 zrobione: F0.1; eta: bieg {ENV_SECRET} do 17:30; trwa: plan",
+            f"- 11:03 w toku: F1.5; ryzyko: password: {PATTERN_SECRET} (a; token: {PATTERN_SECRET}; czeka: GO plan {ENV_SECRET}",   # the newest line: it sets `waiting`
+        ]) + "\n", encoding="utf-8")
+        plan = self.root / base.PLAN
+        text = plan.read_text(encoding="utf-8").replace("- [ ] S3a API terminów", f"- [ ] S3a API terminów — {ENV_SECRET}")
+        plan.write_text(text + f"\n## Wynik\n\n{'x' * 4089} {ENV_SECRET} koniec\n", encoding="utf-8")   # the secret straddles byte 4096 of the section
+        self.board.stop.set()   # the board of the HttpCase watches the old content: a fresh one below reads the planted files
+        self.fresh = base.srv.Board(self.root, prototype_port=1)
+        self.fresh.prototype_acceptance = lambda slug: None
+
+    def test_the_status_is_masked_at_the_source_before_the_final_pass(self) -> None:
+        data = self.fresh.status()
+        self.assert_masked(json.dumps(data, ensure_ascii=False), "board.status()")
+        waiting = [item["what"] for item in data["waiting"]]
+        self.assertTrue(any(what.startswith("GO plan") for what in waiting), waiting)   # the segment is still read, with the mask in place of the secret
+        self.assertTrue(data["result"]["text"].endswith("[REDAC"), data["result"]["text"][-20:])   # the mask, cut by the 4 KiB limit, where the secret began
+
+    def test_api_status_and_the_documents_of_the_route_are_masked(self) -> None:
+        with self.get("/api/status") as response:
+            self.assert_masked(response.read().decode("utf-8"), "/api/status")
+        for rel in (base.PLAN, base.SPEC, *self.rels):
+            with self.get("/api/doc?path=" + rel) as response:
+                self.assert_masked(response.read().decode("utf-8"), "/api/doc " + rel)
+
+    def test_dashboard_show_is_masked(self) -> None:
+        manifest = self.root / srv.MANIFEST
+        manifest.parent.mkdir(parents=True, exist_ok=True)
+        manifest.write_text("skills: [dashboard]\n", encoding="utf-8")
+        env = {**os.environ, "SKILLSYNC_CONFIG": str(self.tmp / "machine-config.yaml"), "XDG_CACHE_HOME": str(self.tmp / "xdg-cache")}
+        done = subprocess.run([sys.executable, str(base.CLI), "dashboard", "show", str(self.root), "--json", "--layer", f"core={base.ROOT / 'library'}"],
+                              capture_output=True, text=True, env=env, timeout=60)
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assert_masked(done.stdout, "dashboard show")
+
+    def test_an_expert_question_is_masked_before_it_is_cut_at_160_characters(self) -> None:
+        text = "y" * (engine.QUESTION_TEXT_LIMIT - 8) + f" {ENV_SECRET} koniec"   # the secret straddles the cut
+        asked = {"Q1": {"text": text, "at": "2026-01-10T10:00:00+01:00", "blocking": True}}
+        items = engine._question_items("demo", asked, {})
+        self.assert_masked(json.dumps(items, ensure_ascii=False), "expertQuestions.items")
 
 
 if __name__ == "__main__":
