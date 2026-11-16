@@ -67,6 +67,12 @@ class Spec(unittest.TestCase):
         self.assertEqual(states(recorder), {M + 'adds': 'passed', M + 'subtracts': 'passed', M + 'is skipped': 'skipped'})
         self.assertFalse(complete)
 
+    def test_the_suite_stack_follows_the_indentation_back_up(self):
+        text = ('  Running:  a.cy.js  (1 of 1)\n\n\n  outer\n    inner\n      ✓ deep (1ms)\n    ✓ shallow (2ms)\n  ✓ top (3ms)\n  other\n    ✓ after (4ms)\n\n\n  4 passing (1s)\n')
+        recorder, _, _, complete = replay('cypress', chunks_from_text(text), tool='cypress')
+        self.assertEqual(sorted(states(recorder)), ['a.cy.js::other > after', 'a.cy.js::outer > inner > deep', 'a.cy.js::outer > shallow', 'a.cy.js::top'])
+        self.assertTrue(complete)
+
     def test_the_same_result_for_any_chunking(self):
         meta, chunks = load('cypress-spec.jsonl')
         want = replay_fixture('cypress', 'cypress-spec.jsonl')[0].calls
