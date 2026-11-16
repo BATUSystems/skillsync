@@ -120,6 +120,43 @@ class CommitListTests(unittest.TestCase):
         subject = self.ahead()["commits"][0]["subject"]
         self.assertNotIn("pwpw", subject)
 
+    def test_ansi_bidi_and_zero_width_characters_are_removed(self) -> None:
+        self.commit("a\x1b[31mczerwony\x1b[0m \u202eodwrócony\u200b tekst")
+        subject = self.ahead()["commits"][0]["subject"]
+        self.assertEqual(subject, "aczerwony odwrócony tekst")
+
+    def test_an_empty_subject_gives_a_row_with_only_the_hash(self) -> None:
+        self.git("commit", "-q", "--allow-empty", "--allow-empty-message", "-m", "")
+        commit = self.ahead()["commits"][0]
+        self.assertEqual(commit["subject"], "")
+        self.assertRegex(commit["sha"], r"^[0-9a-f]{4,}$")
+
+    def test_the_separator_in_a_subject_stays_in_the_subject(self) -> None:
+        self.commit("przed\x1fpo")
+        commit = self.ahead()["commits"][0]
+        self.assertRegex(commit["sha"], r"^[0-9a-f]{4,}$")
+        self.assertIn("przed", commit["subject"])
+
+    def test_bytes_that_are_not_utf8_do_not_break_the_list(self) -> None:
+        message = self.repo / "msg.bin"
+        message.write_bytes(b"bajty \xff\xfe w temacie\n")
+        self.git("commit", "-q", "--allow-empty", "-F", str(message))
+        subject = self.ahead()["commits"][0]["subject"]
+        self.assertTrue(subject.startswith("bajty"))
+
+    def test_the_user_git_configuration_does_not_leak_into_the_list(self) -> None:
+        self.git("config", "log.showSignature", "true")
+        self.commit("z podpisem")
+        commits = self.ahead()["commits"]
+        self.assertEqual(commits[0]["subject"], "z podpisem")
+        self.assertRegex(commits[0]["sha"], r"^[0-9a-f]{4,}$")
+
+    def test_21_commits_leave_one_in_commits_more(self) -> None:
+        for i in range(21):
+            self.commit(f"c{i}")
+        state = self.ahead()
+        self.assertEqual((len(state["commits"]), state["commitsMore"]), (20, 1))
+
     def test_unknown_branch_has_no_list(self) -> None:
         state = engine.git_ahead(self.repo, None)
         self.assertEqual((state["ahead"], state["commits"], state["commitsMore"]), (None, None, 0))

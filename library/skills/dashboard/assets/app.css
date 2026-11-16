@@ -110,13 +110,12 @@ a.chip.git-link { text-decoration: none; }
 .commits-panel[hidden] { display: none; }
 .commits-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .25rem; }
 .commits-list li { display: flex; gap: .6rem; align-items: baseline; font-size: .85rem; }
-.commits-list .commit-sha { color: var(--muted); flex: none; }
+.commits-list .commit-sha { color: var(--muted); flex: none; user-select: all; }
 .commits-list .commit-subject { overflow-wrap: anywhere; }
 .commits-head { display: flex; align-items: center; justify-content: space-between; gap: .6rem; margin-bottom: .4rem; font-size: .85rem; }
 .commits-close { border: 0; background: transparent; color: var(--muted); font-size: 1.2rem; line-height: 1; padding: .1rem .5rem; border-radius: 8px; cursor: pointer; min-width: 2rem; min-height: 2rem; }
 .commits-close:hover { background: var(--accent-soft); color: var(--text); }
 .commits-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.commits-list .commit-sha { user-select: all; }
 .commits-more { margin: .4rem 0 0; font-size: .8rem; color: var(--muted); }
 .commits-panel { max-height: 85vh; overflow-y: auto; }
 

@@ -193,6 +193,8 @@
     "ahead": null,
     "base": "main",
     "branch": null,
+    "commits": null,
+    "commitsMore": 0,
     "mode": "direct",
     "pushed": null,
     "remote": null,

@@ -1442,7 +1442,7 @@ class RendererNodeTests(unittest.TestCase):
         self.assertIn("password: [REDACTED]", c["opened"]["items"][0])
         self.assertIn("<img src=x", c["opened"]["items"][0], "temat jest tekstem, nie znacznikiem")
         self.assertEqual(c["opened"]["imgs"], 0)
-        self.assertEqual(c["opened"]["more"], "Pokazano 2 najnowszych; starszych: 20.")
+        self.assertEqual(c["opened"]["more"], "Pokazano 2 najnowsze; starszych: 20.")
         self.assertEqual(c["opened"]["title"], "Niewypchnięte commity (22) · feat/x")
         self.assertEqual(c["opened"]["closeLabel"], "Zamknij listę commitów")
         self.assertEqual(c["afterClose"]["expanded"], "false", "przycisk zamknięcia zamyka panel")

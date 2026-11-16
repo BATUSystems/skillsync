@@ -1124,7 +1124,9 @@ def read_delivery(manifest):
 
 COMMITS_SHOWN = 20          # commits listed under the "not pushed" badge; the rest is only counted (`commitsMore`)
 COMMIT_SUBJECT_MAX = 80     # characters of a commit subject on the page
-_CONTROL_CHARS = re.compile(r'[\x00-\x1f\x7f-\x9f]')
+_ANSI = re.compile(r'\x1b\[[0-9;?]*[ -/]*[@-~]')
+_CONTROL_CHARS = re.compile('[\x00-\x1f\x7f-\x9f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]')
+_SHORT_SHA = re.compile(r'[0-9a-f]{4,64}')
 
 
 def _commit_list(out):
@@ -1134,8 +1136,8 @@ def _commit_list(out):
     for record in out.split(b'\x00'):
         sha, _, subject = decode_text(record).partition('\x1f')
         sha = sha.strip()
-        if sha:
-            flat = ' '.join(_CONTROL_CHARS.sub(' ', redact(subject)).split())
+        if _SHORT_SHA.fullmatch(sha):   # a record without a hash (a signature line of the user's git configuration) is dropped
+            flat = ' '.join(_CONTROL_CHARS.sub(' ', _ANSI.sub('', redact(subject))).split())
             commits.append({'sha': sha, 'subject': flat if len(flat) <= COMMIT_SUBJECT_MAX else flat[:COMMIT_SUBJECT_MAX - 1].rstrip() + '…'})
     return commits
 
@@ -1163,7 +1165,7 @@ def git_ahead(root, branch):
     ahead = int(count) if count and count.isdigit() else None
     commits = None
     if ahead is not None:
-        raw = git('log', '-z', '--no-color', '--no-ext-diff', f'-n{COMMITS_SHOWN}', '--format=%h%x1f%s', *rng, raw=True) if ahead else b''
+        raw = git('log', '-z', '--no-color', '--no-ext-diff', '--no-show-signature', '--encoding=UTF-8', f'-n{COMMITS_SHOWN}', '--format=%h%x1f%s', *rng, raw=True) if ahead else b''
         commits = _commit_list(raw) if raw is not None else None
     more = max(ahead - len(commits), 0) if ahead is not None and commits is not None else 0
     return {'remote': remote, 'pushed': pushed, 'ahead': ahead, 'commits': commits, 'commitsMore': more}

@@ -365,7 +365,13 @@
     const rootListeners = {
       mouseover: (e) => { const el = descOf(e); if (el && !st.descPinned) showDesc(el); },
       mouseout: (e) => { const el = descOf(e); if (el && !st.descPinned && !el.contains(e.relatedTarget)) hideDesc(); },
-      focusin: (e) => { const el = descOf(e); if (el) showDesc(el); },
+      focusin: (e) => {
+        const el = descOf(e);
+        if (el) showDesc(el);
+        // which control of the commits panel holds the focus (render() rebuilds the header and restores it)
+        const t = e.target;
+        st.focusKey = t && t.id === "commitsBtn" ? "btn" : t && typeof t.getAttribute === "function" && /\bcommits-close\b/.test(t.getAttribute("class") || "") ? "close" : null;
+      },
       focusout: (e) => { if (descOf(e) && !st.descPinned) hideDesc(); },
       pointerup: (e) => { // dotyk: stuknięcie otwiera i zamyka
         if (e.pointerType !== "touch") return;
@@ -433,6 +439,7 @@
           const cls = `chip ${calm ? "s-planned" : "s-warn"} ahead-chip`;
           // `delivery.commits` (opcjonalne): plakietka staje się przyciskiem, panel pokazuje listę; tematy tylko jako tekst (gniazdo odczytu bez logowania)
           const list = Array.isArray(dv.commits) ? dv.commits.filter((c) => c && typeof c === "object") : [];
+          if (!list.length) st.commitsOpen = false;   // no list: nothing to keep open when it comes back
           if (!list.length) meta.push(h("span", { class: "m" }, h("span", { class: cls, "data-tip": tip }, label)));
           else {
             const open = st.commitsOpen === true;
@@ -445,7 +452,7 @@
                 h("button", { type: "button", class: "commits-close", "aria-label": "Zamknij listę commitów", "data-tip": "Zamknij (Esc)", on: { click: (e) => { e.stopPropagation(); setCommits(false); const b = root.querySelector("#commitsBtn"); if (b && typeof b.focus === "function") b.focus(); } } }, "×")),
               h("ul", { class: "commits-list" }, list.map((c) => h("li", null, h("span", { class: "mono commit-sha" }, String(c.sha == null ? "" : c.sha)),
                 h("span", { class: "commit-subject" }, String(c.subject == null ? "" : c.subject))))),
-              h("p", { class: "commits-more" }, more ? `Pokazano ${list.length} najnowszych; starszych: ${more}.` : `Wszystkie ${list.length}.`));
+              h("p", { class: "commits-more" }, more ? `Pokazano ${list.length} ${plural(list.length, "najnowszy", "najnowsze", "najnowszych")}; starszych: ${more}.` : `Wszystkie: ${list.length}.`));
             meta.push(h("span", { class: "m commits-wrap" }, btn, panel));
           }
         }
@@ -454,7 +461,14 @@
         meta.push(h("span", { class: "m" }, h("a", { class: "chip s-active git-link", href: safeUrl(plan.pr.url), target: "_blank", rel: "noopener",
           "data-tip": "Pull request z linii PR: planu", on: { click: linkClick("pr", plan.pr.number, plan.pr.url) } }, `PR #${plan.pr.number}`)));
       }
+      const focusKept = st.commitsOpen ? st.focusKey : null;
+      const listTop = st.commitsOpen && ui.meta.querySelector ? (ui.meta.querySelector("#commitsPanel") || {}).scrollTop : 0;
       fill(ui.meta, meta);
+      if (focusKept && ui.meta.querySelector) {   // render() rebuilds the header: keep the keyboard focus (and the scroll position) of the open panel
+        const again = ui.meta.querySelector(focusKept === "btn" ? "#commitsBtn" : ".commits-close");
+        if (again && typeof again.focus === "function") again.focus();
+      }
+      if (listTop) { const pnl = ui.meta.querySelector("#commitsPanel"); if (pnl) pnl.scrollTop = listTop; }
 
       ui.planBtnText.textContent = plan ? baseName(plan.path).replace(/\.md$/, "")
         : specAct ? baseName(d.spec.path).replace(/\.md$/, "") + " (akt I)" : runAct ? "przebieg (akt I)" : "Plan";
@@ -693,6 +707,7 @@
     function setCommits(open) {
       if ((st.commitsOpen === true) === open) return;
       st.commitsOpen = open;
+      if (open) st.focusKey = st.focusKey || "btn";
       if (st.data) render();
     }
     function toggleMenu(open) {
@@ -1129,17 +1144,19 @@
     // Klawisze strony (host podpina do dokumentu): Esc zamyka dymek; P/D zakładki, T motyw, Esc menu planu.
     function handleKey(e) {
       if (e.key === "Escape" && !ui.descTip.hidden) hideDesc();
-      if (e.key === "Escape" && st.commitsOpen) {
-        setCommits(false);
-        const btn = root.querySelector("#commitsBtn");
-        if (btn && typeof btn.focus === "function") btn.focus();
-      }
       const t = e.target;
       if ((t && typeof t.closest === "function" && t.closest("input, textarea, select, [contenteditable]")) || e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.key === "p" || e.key === "P") setView("progress");
       else if (e.key === "d" || e.key === "D") setView("docs");
       else if (e.key === "t" || e.key === "T") toggleTheme();
-      else if (e.key === "Escape") toggleMenu(false);
+      else if (e.key === "Escape") {
+        toggleMenu(false);
+        if (st.commitsOpen) {
+          setCommits(false);
+          const btn = root.querySelector("#commitsBtn");
+          if (btn && typeof btn.focus === "function") btn.focus();
+        }
+      }
     }
     // Zegar (host woła co 1 s): czas aktu III, „x min temu”, próg ciszy.
     function tick() {
