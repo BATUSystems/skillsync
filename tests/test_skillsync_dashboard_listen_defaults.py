@@ -24,7 +24,7 @@ from skillsync_workflow import dashboard_http as srv  # noqa: E402
 from skillsync_workflow import dashboard_listen as listen  # noqa: E402
 from skillsync_workflow import dashboard_ports as ports  # noqa: E402
 from skillsync_workflow import dashboard_token  # noqa: E402
-from tests.test_skillsync_dashboard_approve_token import home_env  # noqa: E402
+from layers_helpers import guard_real_state, home_env  # noqa: E402
 from tests.test_skillsync_dashboard_server import free_port, make_project  # noqa: E402
 
 SECRET_LOOKING = "10.99.99.99-not-a-bind-but-a-value"
@@ -150,6 +150,7 @@ class ServeCommand(unittest.TestCase):
 
     def setUp(self) -> None:
         self.tmp = Path(tempfile.mkdtemp(prefix="dashboard-listen-"))
+        guard_real_state(self)
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
         self.project = make_project(self.tmp)
         self.manifest = self.project / srv.MANIFEST

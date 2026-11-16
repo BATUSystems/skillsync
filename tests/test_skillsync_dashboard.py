@@ -14,6 +14,8 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / 'tests'))
+from layers_helpers import home_env, guard_real_state  # noqa: E402
 from skillsync_workflow import dashboard, status  # noqa: E402
 
 CLI = ROOT / 'skillsync'
@@ -70,8 +72,9 @@ class DashboardFixture(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(prefix='skillsync-dashboard-')
         self.addCleanup(self.temp.cleanup)
         self.base = Path(self.temp.name)
+        guard_real_state(self)
         self.env = {**os.environ, 'TZ': 'UTC', 'SKILLSYNC_CONFIG': str(self.base / 'machine-config.yaml'),
-                    'XDG_CACHE_HOME': str(self.base / 'xdg-cache'), 'XDG_DATA_HOME': str(self.base / 'xdg-data')}
+                    **home_env(self.base)}
 
     def project(self, case):
         root = self.base / case / 'demo'

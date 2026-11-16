@@ -28,10 +28,39 @@ from unittest import mock
 import yaml
 
 REAL_HOME = Path.home()
+def _real_state_dirs():
+    """The data and cache directories of the real user on EVERY system (the same layouts as `layers.data_home`/`cache_home`, computed from
+    the real home at import, before any test patches the environment): a test run on Linux, macOS or Windows must leave all of them alone."""
+    dirs = [REAL_HOME / '.cache' / 'skillsync', REAL_HOME / '.local' / 'share' / 'skillsync',
+            REAL_HOME / 'Library' / 'Caches' / 'skillsync', REAL_HOME / 'Library' / 'Application Support' / 'skillsync',
+            REAL_HOME / 'AppData' / 'Local' / 'skillsync']
+    if os.name == 'nt' and os.environ.get('LOCALAPPDATA'):   # the real LOCALAPPDATA of this Windows user (the cache lives below it)
+        dirs.append(Path(os.environ['LOCALAPPDATA']) / 'skillsync')
+    unique = []
+    for directory in dirs:
+        if directory not in unique:
+            unique.append(directory)
+    return tuple(unique)
+
+
 # Directories that must stay untouched by tests (machine state of the real user).
-REAL_STATE_DIRS = (REAL_HOME / '.cache' / 'skillsync', REAL_HOME / '.local' / 'share' / 'skillsync',
-                   REAL_HOME / 'Library' / 'Caches' / 'skillsync',
-                   REAL_HOME / 'Library' / 'Application Support' / 'skillsync')
+REAL_STATE_DIRS = _real_state_dirs()
+
+
+def home_env(base):
+    """Environment that moves the machine state of EVERY system under `base`: `XDG_DATA_HOME` (Linux), `HOME` (macOS: `~/Library/...`),
+    `LOCALAPPDATA`/`USERPROFILE` (Windows). `XDG_DATA_HOME` alone leaves the real home to the tests on macOS and Windows (state files of the
+    server pile up there, and two runs at once see each other's)."""
+    base = Path(base)
+    return {"XDG_DATA_HOME": str(base / "xdg-data"), "XDG_CACHE_HOME": str(base / "xdg-cache"), "LOCALAPPDATA": str(base / "xdg-data"),
+            "HOME": str(base / "home"), "USERPROFILE": str(base / "home")}
+
+
+def guard_real_state(case):
+    """Proves at the end of `case` that nothing was written to the real state directories (`REAL_STATE_DIRS`): the control of
+    `IsolatedTestCase`, for the test classes that build their own environment."""
+    before = real_state_snapshot()
+    case.addCleanup(lambda: case.assertEqual(real_state_snapshot(), before, 'test touched real Skillsync state dirs'))
 
 ISOLATED_VARS = ('HOME', 'USERPROFILE', 'XDG_CACHE_HOME', 'XDG_DATA_HOME', 'XDG_CONFIG_HOME',
                  'LOCALAPPDATA', 'APPDATA', 'GIT_CONFIG_GLOBAL', 'GIT_CONFIG_NOSYSTEM', 'SKILLSYNC_CONFIG')
