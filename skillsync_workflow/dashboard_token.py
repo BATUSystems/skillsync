@@ -128,7 +128,7 @@ def _sweep_temporaries(directory: Path, root, port: int) -> None:
         pass
 
 
-def write_state(root, port: int, token, host: str = "127.0.0.1", warn=None, hosts=(), role=None, peer=None):
+def write_state(root, port: int, token, host: str = "127.0.0.1", warn=None, hosts=(), role=None, peer=None, bind=None):
     """Write the state file of the server; returns its path, or None when it could not be written (the page still works).
 
     `token=None` (`--no-approvals`): the file says `approvals: false` and holds no token, so `dashboard url` can tell a server without
@@ -152,6 +152,8 @@ def write_state(root, port: int, token, host: str = "127.0.0.1", warn=None, host
             record["role"] = role
         if peer is not None:
             record["peer"] = int(peer)
+        if bind is not None:   # the address the socket really listens on (`host` is where this machine reaches it): `dashboard url --lan`
+            record["bind"] = str(bind)
         if token is not None:
             record["token"] = token
             record["tokenId"] = token_id(token)
@@ -217,6 +219,26 @@ def _healthy(host: str, port: int, token_id_expected: str | None = None, timeout
         return False
 
 
+def port_owner(port: int) -> str | None:
+    """Who of OUR servers holds `port` (from the state files, only live processes): `projekt <name> (odczyt|zgody|jeden port)`, else None.
+    Only the directory name of the project and the role; no pid, no command, no token."""
+    try:
+        names = sorted(name for name in os.listdir(state_dir()) if name.endswith(f"-{int(port)}.json") and not name.startswith("."))
+    except OSError:
+        return None
+    for name in names:
+        try:
+            record = json.loads((state_dir() / name).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(record, dict) or record.get("port") != int(port) or not _pid_alive(record.get("pid")):
+            continue
+        project = pathfmt.posix(str(record.get("root", ""))).rstrip("/").rsplit("/", 1)[-1] or "?"
+        role = {"read": "odczyt", "approve": "zgody"}.get(record.get("role"), "jeden port")
+        return f"projekt {project} ({role})"
+    return None
+
+
 def servers(root, port: int | None = None, healthy=None) -> list[dict]:
     """The running servers of the project that have a state file: `[{port, pid, host, token, startedAt, hosts, approvals}]`, by port
     (`approvals` False: a `--no-approvals` server, no token)."""
@@ -249,7 +271,7 @@ def servers(root, port: int | None = None, healthy=None) -> list[dict]:
             continue
         if not healthy(record.get("host") or "127.0.0.1", record["port"], token_id(record["token"]) if has_token else None):
             continue
-        found.append({**{key: record.get(key) for key in ("port", "pid", "host", "token", "startedAt", "hosts", "peer")}, "approvals": has_token,
+        found.append({**{key: record.get(key) for key in ("port", "pid", "host", "token", "startedAt", "hosts", "peer", "bind")}, "approvals": has_token,
                       "role": record.get("role") if record.get("role") in ("read", "approve") else "both"})
     return found
 
@@ -291,6 +313,31 @@ def _read_address(args, found: list[dict], blocked) -> int:
     return 0
 
 
+def _lan_addresses(args, found: list[dict], blocked) -> int:
+    """`dashboard url --lan`: the addresses of the read socket for OTHER devices (one per line; `lanUrls` in JSON). BLOCKED
+    `read_not_exposed` when the read socket listens on loopback only."""
+    from .common import emit
+    readers = [item for item in found if item.get("role") in ("read", "both")]
+    if not readers:
+        return blocked("server_not_running", "brak działającego `dashboard serve` tego projektu z gniazdem odczytu (z zapisanym plikiem stanu)")
+    if len(readers) > 1:
+        return blocked("ambiguous_server", "kilka serwerów tego projektu: podaj --port (" + ", ".join(str(item["port"]) for item in readers) + ")")
+    chosen = readers[0]
+    bind = chosen.get("bind")
+    if chosen.get("role") != "read" or not bind or bind in LOOPBACK or str(bind).startswith("127."):
+        return blocked("read_not_exposed", "gniazdo odczytu tego serwera słucha tylko na tej maszynie; uruchom `dashboard serve` bez "
+                                          "--read-bind 127.0.0.1 / dashboard.local_only albo z --read-bind 0.0.0.0")
+    from .dashboard_http import lan_addresses
+    addresses = lan_addresses() if bind in ("0.0.0.0", "::", "") else [bind]
+    if not addresses:
+        return blocked("read_not_exposed", "serwer słucha w sieci, ale ta maszyna nie ma adresu poza loopbackiem")
+    urls = [read_address(chosen["port"], ip) for ip in addresses]
+    if args.json:
+        return emit({"schema": 1, "status": "PASS", "port": chosen["port"], "pid": chosen["pid"], "role": "read", "lanUrls": urls})
+    print("\n".join(urls))
+    return 0
+
+
 def url_command(args) -> int:
     """`skillsync dashboard url <project> [--port N] [--host NAME] [--json]`: the address with the token of a running server."""
     from .common import emit, load_layer_project
@@ -306,6 +353,8 @@ def url_command(args) -> int:
     except Exception as error:  # noqa: BLE001 - any broken project is BLOCKED, as for the other `dashboard` commands
         return blocked("invalid_project", " ".join(str(error).split())[:300])
     found = servers(root, getattr(args, "port", None))
+    if getattr(args, "lan", False):
+        return _lan_addresses(args, found, blocked)
     if getattr(args, "read", False):
         return _read_address(args, found, blocked)
     running = [item for item in found if item.get("approvals")]    # servers with consents: only they have an address with a token

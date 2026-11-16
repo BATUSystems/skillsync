@@ -701,17 +701,31 @@ class Flags(unittest.TestCase):
                       allow_proxy_headers=False, approve_host=[], read_host=[])
         return ports.resolve(SimpleNamespace(**{**values, **kwargs}), srv.port_problem)
 
-    def test_single_port_mode_is_not_touched(self) -> None:
-        self.assertIsNone(self.resolve())
+    def test_single_port_mode_is_only_an_explicit_port(self) -> None:
+        self.assertIsNone(self.resolve(port=5155))
         self.assertIsNone(self.resolve(port=5155, host="0.0.0.0", no_approvals=True))
 
-    def test_defaults_of_the_two_port_mode_listen_on_every_interface(self) -> None:
+    def test_without_port_flags_the_default_two_port_mode(self) -> None:
+        mode = self.resolve()
+        self.assertEqual((mode["read"], mode["approve"]), ({"port": 5140, "bind": "0.0.0.0"}, {"port": 5141, "bind": "127.0.0.1"}))
+        self.assertTrue(mode["read_default"])
+        mode = self.resolve(no_approvals=True)
+        self.assertEqual((mode["read"], mode["approve"]), ({"port": 5140, "bind": "0.0.0.0"}, None))
+
+    def test_explicit_ports_keep_consents_on_this_machine_only(self) -> None:
         mode = self.resolve(read_port=5151, approve_port=5152)
-        self.assertEqual((mode["read"], mode["approve"]), ({"port": 5151, "bind": "0.0.0.0"}, {"port": 5152, "bind": "0.0.0.0"}))
+        self.assertEqual((mode["read"], mode["approve"]), ({"port": 5151, "bind": "0.0.0.0"}, {"port": 5152, "bind": "127.0.0.1"}))
+
+    def test_an_explicit_host_is_the_default_of_both_sockets(self) -> None:
+        mode = self.resolve(host="0.0.0.0")
+        self.assertEqual((mode["read"]["bind"], mode["approve"]["bind"]), ("0.0.0.0", "0.0.0.0"))
+        self.assertFalse(mode["read_default"])
+        mode = self.resolve(host="")   # an explicit empty host keeps meaning every interface
+        self.assertEqual((mode["read"]["bind"], mode["approve"]["bind"]), ("0.0.0.0", "0.0.0.0"))
 
     def test_narrowing_flags(self) -> None:
-        mode = self.resolve(read_port=5151, approve_port=5152, approve_bind="127.0.0.1")
-        self.assertEqual((mode["read"]["bind"], mode["approve"]["bind"]), ("0.0.0.0", "127.0.0.1"))
+        mode = self.resolve(read_port=5151, approve_port=5152, approve_bind="0.0.0.0")
+        self.assertEqual((mode["read"]["bind"], mode["approve"]["bind"]), ("0.0.0.0", "0.0.0.0"))
         mode = self.resolve(read_port=5151, approve_port=5152, host="127.0.0.1")
         self.assertEqual((mode["read"]["bind"], mode["approve"]["bind"]), ("127.0.0.1", "127.0.0.1"))
         mode = self.resolve(read_port=5151, approve_port=5152, host="127.0.0.1", read_bind="0.0.0.0")
@@ -724,9 +738,10 @@ class Flags(unittest.TestCase):
     def test_refused_combinations(self) -> None:
         for kwargs in (dict(port=5155, read_port=5151), dict(port=5155, approve_port=5152), dict(read_port=5151, approve_port=5152, no_approvals=True),
                        dict(approve_port=5152, no_approvals=True), dict(read_port=5151, approve_port=5151), dict(read_port=5040),
-                       dict(read_port=5151, approve_port=5200), dict(read_bind="127.0.0.1"), dict(approve_bind="127.0.0.1"),
+                       dict(read_port=5151, approve_port=5200), dict(port=5155, read_bind="127.0.0.1"), dict(port=5155, approve_bind="127.0.0.1"),
                        dict(read_port=5151, approve_bind="127.0.0.1"), dict(approve_port=5152, read_bind="127.0.0.1"),
-                       dict(allow_proxy_headers=True), dict(read_port=5151, allow_proxy_headers=True),
+                       dict(port=5155, allow_proxy_headers=True), dict(read_port=5151, allow_proxy_headers=True),
+                       dict(no_approvals=True, approve_bind="127.0.0.1"), dict(no_approvals=True, allow_proxy_headers=True),
                        dict(approve_port=5152, approve_host=["*"]), dict(approve_port=5152, read_host=["*"])):
             with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
                 self.resolve(**kwargs)
@@ -991,20 +1006,33 @@ class Process(unittest.TestCase):
         self.assertNotIn("#zgoda=", read_lines[0])
         self.assertNotIn("UWAGA: port zgód", err)   # both narrowed to loopback: no network warning
 
-    def test_listening_beyond_loopback_warns_and_narrowing_removes_the_warning(self) -> None:
+    def test_listening_beyond_loopback_warns_for_the_read_socket_only_and_keeps_consents_local(self) -> None:
         read_port, approve_port = two_ports()
         proc = self.serve("--read-port", str(read_port), "--approve-port", str(approve_port))
         self.wait_up(read_port, approve_port)
         address = lan_address()
         if address is None:
             self.skipTest("no non-loopback address on this machine; deliberately not in skip-baseline, so on CI runners (which have one) a skip is an error")
-        for port in (read_port, approve_port):   # the default of the two-port mode: every interface
-            with socket.create_connection((address, port), timeout=2):
-                pass
-        _lines, finish = self.console_until(proc, f"UWAGA: port zgód {approve_port}", f"UWAGA: port odczytu {read_port}")
+        with socket.create_connection((address, read_port), timeout=2):   # the default of the read socket: every interface
+            pass
+        with self.assertRaises(OSError):   # the consent socket: this machine only
+            socket.create_connection((address, approve_port), timeout=2).close()
+        _lines, finish = self.console_until(proc, f"UWAGA: port odczytu {read_port}")
         err = finish()
-        self.assertIn(f"UWAGA: port zgód {approve_port} słucha na 0.0.0.0", err)
         self.assertIn(f"UWAGA: port odczytu {read_port} słucha na 0.0.0.0", err)
+        self.assertNotIn("UWAGA: port zgód", err)
+
+    def test_the_consent_socket_listens_beyond_loopback_only_by_an_explicit_flag(self) -> None:
+        read_port, approve_port = two_ports()
+        proc = self.serve("--read-port", str(read_port), "--approve-port", str(approve_port), "--approve-bind", "0.0.0.0")
+        self.wait_up(read_port, approve_port)
+        address = lan_address()
+        if address is None:
+            self.skipTest("no non-loopback address on this machine; deliberately not in skip-baseline, so on CI runners (which have one) a skip is an error")
+        with socket.create_connection((address, approve_port), timeout=2):
+            pass
+        _lines, finish = self.console_until(proc, f"UWAGA: port zgód {approve_port}")
+        self.assertIn(f"UWAGA: port zgód {approve_port} słucha na 0.0.0.0", finish())
 
     def slow_resolver_env(self) -> dict:
         directory = self.tmp / "slow-dns"

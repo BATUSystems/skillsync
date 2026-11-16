@@ -3,8 +3,9 @@
 Pure helpers without HTTP: the resolution and validation of the flags, the rule of the `Host` header for a server that listens beyond
 loopback, the strict `Origin`, the headers of an intermediary and the counter of refused tokens. `dashboard_http` builds the servers.
 
-Listening address (decision of the owner, 15.11.2026: "oba w sieci"): in the two-port mode both sockets listen on every interface unless
-`--host`, `--read-bind` or `--approve-bind` says otherwise; the single-port mode (`--port`) keeps listening on 127.0.0.1, byte for byte as before.
+Listening address (1.8.0): without a port flag the two-port mode is the default (read 5140 on every interface, consents 5141 on this
+machine only); `--host`, `--read-bind`, `--approve-bind` and the `dashboard:` setting (`dashboard_listen`) narrow or move it; an explicit
+`--port N` keeps the single-port mode (127.0.0.1), byte for byte as before.
 """
 from __future__ import annotations
 
@@ -18,6 +19,8 @@ ROLE_APPROVE = "approve"
 ROLE_BOTH = "both"
 ALL_INTERFACES = "0.0.0.0"
 LOOPBACK_BIND = "127.0.0.1"
+DEFAULT_READ_PORT = 5140       # the read socket of the default mode (also the single-port default of `--port`)
+DEFAULT_APPROVE_PORT = 5141    # the consents socket of the default mode
 LOOPBACK_NAMES = frozenset({"127.0.0.1", "localhost", "::1"})
 # Headers an intermediary (a tunnel, a reverse proxy) adds: a write that carries one is refused unless `--allow-proxy-headers`. A closed list is a
 # heuristic (an intermediary can add none of them): the barrier is the token and the strict `Origin`, not this list.
@@ -190,24 +193,37 @@ def _port_problem(flag: str, port, check) -> None:
         raise ValueError(f"{flag}: {problem}")
 
 
-def resolve(args, check_port) -> dict | None:
-    """The two-port mode of the parsed flags: None for the single-port mode (nothing of the new flags is given), else
-    `{read: {port, bind} | None, approve: {port, bind} | None, allow_proxy: bool}`. Raises ValueError (BLOCKED, exit 2) for a combination
-    that is not allowed. `check_port(port)` returns a problem text or None."""
+def resolve(args, check_port, settings=None) -> dict | None:
+    """The two-port mode of the parsed flags: None for the single-port mode (only an explicit `--port`), else
+    `{read: {port, bind} | None, approve: {port, bind} | None, allow_proxy: bool}`. Without any port flag the mode is the default one:
+    read on `DEFAULT_READ_PORT` (every interface), consents on `DEFAULT_APPROVE_PORT` (this machine only; `--no-approvals`: no consents
+    socket). Binds, per socket: `--read-bind`/`--approve-bind`, else an explicit `--host`, else `settings` (`dashboard:` of the manifest
+    over the machine config), else the default. Raises ValueError (BLOCKED, exit 2) for a combination that is not allowed.
+    `check_port(port)` returns a problem text or None."""
+    settings = settings or {}
     read_port = getattr(args, "read_port", None)
     approve_port = getattr(args, "approve_port", None)
     bind_flags = (("--read-bind", getattr(args, "read_bind", None)), ("--approve-bind", getattr(args, "approve_bind", None)))
     allow_proxy = bool(getattr(args, "allow_proxy_headers", False))
-    if read_port is None and approve_port is None:
+    no_approvals = bool(getattr(args, "no_approvals", False))
+    explicit = read_port is not None or approve_port is not None
+    if not explicit and getattr(args, "port", None) is not None:   # `--port N`: the single-port mode of 1.5.0, unchanged
         for flag, value in bind_flags:
             if value is not None:
-                raise ValueError(f"{flag} działa tylko z --read-port / --approve-port.")
+                raise ValueError(f"{flag} nie łączy się z --port (tryb jednego portu): użyj --read-port / --approve-port albo usuń --port.")
         if allow_proxy:
-            raise ValueError("--allow-proxy-headers działa tylko z --approve-port.")
+            raise ValueError("--allow-proxy-headers działa tylko w trybie dwóch portów (bez --port).")
         return None
     if getattr(args, "port", None) is not None:
         raise ValueError("--port nie łączy się z --read-port ani --approve-port (niejednoznaczne): użyj tylko jednego trybu.")
-    if getattr(args, "no_approvals", False) and approve_port is not None:
+    if not explicit:
+        read_port = DEFAULT_READ_PORT
+        approve_port = None if no_approvals else DEFAULT_APPROVE_PORT
+        if no_approvals and bind_flags[1][1] is not None:
+            raise ValueError("--approve-bind z --no-approvals: port zgód nie startuje bez zgód (usuń jedno z nich).")
+        if no_approvals and allow_proxy:
+            raise ValueError("--allow-proxy-headers z --no-approvals: port zgód nie startuje bez zgód (usuń jedno z nich).")
+    if no_approvals and approve_port is not None and explicit:
         raise ValueError("--no-approvals z --approve-port: port zgód nie startuje bez zgód (usuń jedno z nich).")
     if read_port is None and getattr(args, "read_bind", None) is not None:
         raise ValueError("--read-bind bez --read-port.")
@@ -225,12 +241,37 @@ def resolve(args, check_port) -> dict | None:
     if approve_port is not None and "*" in {str(name).strip() for name in (getattr(args, "approve_host", None) or ())}:
         raise ValueError("--approve-host '*' jest niedozwolone: nazwa zgód musi być jawna.")
     host = getattr(args, "host", None)
-    default = host if host not in (None, "") else ALL_INTERFACES
-    read_bind = getattr(args, "read_bind", None) or default
-    approve_bind = getattr(args, "approve_bind", None) or default
+    if host is None:
+        flag_default = None
+    else:   # an explicit `--host X` is the default bind of both sockets; an explicit `--host ''` keeps meaning every interface
+        flag_default = host if host != "" else ALL_INTERFACES
+    read_default = not (getattr(args, "read_bind", None) or flag_default or settings.get("read_bind"))   # nothing chose it: the 1.8.0 default
+    read_bind = getattr(args, "read_bind", None) or flag_default or settings.get("read_bind") or ALL_INTERFACES
+    approve_bind = getattr(args, "approve_bind", None) or flag_default or settings.get("approve_bind") or LOOPBACK_BIND
     return {"read": {"port": read_port, "bind": read_bind} if read_port is not None else None,
             "approve": {"port": approve_port, "bind": approve_bind} if approve_port is not None else None,
-            "allow_proxy": allow_proxy}
+            "allow_proxy": allow_proxy, "read_default": read_default}
+
+
+_OWN_NAMES: frozenset[str] | None = None
+
+
+def own_names() -> frozenset[str]:
+    """The names this machine calls itself: `socket.gethostname()` (lower case), its short form and `<short>.local`. Text only, never a DNS
+    lookup (the start and every request stay free of a resolver). The read socket accepts them as `Host` without `--read-host`: an attacker's
+    domain cannot be the machine's own host name, so this is not the DNS rebinding the rule guards against."""
+    global _OWN_NAMES
+    if _OWN_NAMES is None:
+        try:
+            full = socket.gethostname().strip().lower().rstrip(".")
+        except OSError:
+            full = ""
+        names = set()
+        if full and not any(c in full for c in ":[]/*") and not any(c.isspace() for c in full):
+            short = full.split(".", 1)[0]
+            names = {full, short, f"{short}.local"}
+        _OWN_NAMES = frozenset(names)
+    return _OWN_NAMES
 
 
 def is_loopback_bind(bind: str) -> bool:
