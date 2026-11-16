@@ -1,0 +1,325 @@
+{
+ "schema": 1,
+ "about": "Data shared by test_run.detect_tool and the standalone hook of tests outside test-run. Order of `tools` is significant (first match wins). The syntax of the wrappers is described by the fields of each wrapper: boolean/valued flags, subcommands (the wrapper applies only when the next word is one of them, and it is consumed), tool_words (the next word may itself be a tool word: `yarn playwright test`), positional (words after the flags that belong to the wrapper: the DURATION of timeout), assignments (NAME=VALUE words: env), module_flag (python -m MODULE). A flag that is not listed stops the unwrapping.",
+ "max_layers": 6,
+ "tools": [
+  {
+   "word": "dotnet",
+   "tool": "dotnet"
+  },
+  {
+   "word": "pytest",
+   "tool": "pytest"
+  },
+  {
+   "word": "py.test",
+   "tool": "pytest"
+  },
+  {
+   "word": "cargo",
+   "tool": "cargo"
+  },
+  {
+   "word": "nextest",
+   "tool": "cargo"
+  },
+  {
+   "word": "ng",
+   "tool": "angular"
+  },
+  {
+   "word": "playwright",
+   "tool": "playwright"
+  },
+  {
+   "word": "cypress",
+   "tool": "cypress"
+  },
+  {
+   "word": "jest",
+   "tool": "jest"
+  },
+  {
+   "word": "vitest",
+   "tool": "vitest"
+  },
+  {
+   "word": "mvn",
+   "tool": "maven"
+  },
+  {
+   "word": "mvnw",
+   "tool": "maven"
+  },
+  {
+   "word": "gradle",
+   "tool": "gradle"
+  },
+  {
+   "word": "gradlew",
+   "tool": "gradle"
+  },
+  {
+   "word": "go",
+   "tool": "go"
+  },
+  {
+   "word": "node",
+   "tool": "node"
+  },
+  {
+   "word": "npm",
+   "tool": "npm"
+  },
+  {
+   "word": "npx",
+   "tool": "npx"
+  }
+ ],
+ "module_words": {
+  "unittest": "unittest",
+  "pytest": "pytest",
+  "py.test": "pytest"
+ },
+ "wrappers": [
+  {
+   "word": "npx",
+   "boolean": [
+    "--yes",
+    "-y",
+    "--no",
+    "--no-install",
+    "--quiet",
+    "-q",
+    "--ignore-existing"
+   ],
+   "valued": [
+    "-p",
+    "--package"
+   ]
+  },
+  {
+   "word": "npm",
+   "subcommands": [
+    "exec",
+    "x"
+   ],
+   "boolean": [
+    "--yes",
+    "-y",
+    "--no",
+    "--quiet",
+    "-q"
+   ],
+   "valued": [
+    "-p",
+    "--package",
+    "-w",
+    "--workspace"
+   ]
+  },
+  {
+   "word": "pnpm",
+   "subcommands": [
+    "exec",
+    "dlx"
+   ],
+   "tool_words": true,
+   "boolean": [
+    "--yes",
+    "-y",
+    "--no",
+    "--quiet",
+    "-q"
+   ],
+   "valued": [
+    "-p",
+    "--package",
+    "-w",
+    "--workspace"
+   ]
+  },
+  {
+   "word": "yarn",
+   "subcommands": [
+    "exec",
+    "dlx"
+   ],
+   "tool_words": true,
+   "boolean": [
+    "--yes",
+    "-y",
+    "--no",
+    "--quiet",
+    "-q"
+   ],
+   "valued": [
+    "-p",
+    "--package",
+    "-w",
+    "--workspace"
+   ]
+  },
+  {
+   "word": "timeout",
+   "positional": 1,
+   "boolean": [
+    "--foreground",
+    "--preserve-status",
+    "-v",
+    "--verbose"
+   ],
+   "valued": [
+    "-k",
+    "--kill-after",
+    "-s",
+    "--signal"
+   ]
+  },
+  {
+   "word": "env",
+   "assignments": true,
+   "boolean": [
+    "-i",
+    "--ignore-environment",
+    "-0",
+    "--null"
+   ],
+   "valued": [
+    "-u",
+    "--unset",
+    "-C",
+    "--chdir"
+   ]
+  },
+  {
+   "word": "time",
+   "boolean": [
+    "-p"
+   ]
+  },
+  {
+   "word": "nice",
+   "valued": [
+    "-n",
+    "--adjustment"
+   ]
+  },
+  {
+   "word": "systemd-run",
+   "boolean": [
+    "--user",
+    "--system",
+    "--scope",
+    "--pipe",
+    "--wait",
+    "--collect",
+    "--quiet",
+    "-q",
+    "--same-dir",
+    "-d",
+    "-t",
+    "--pty",
+    "--no-ask-password",
+    "--no-block"
+   ],
+   "valued": [
+    "-p",
+    "--property",
+    "-E",
+    "--setenv",
+    "-u",
+    "--unit",
+    "--slice",
+    "--description",
+    "--working-directory",
+    "-M",
+    "--machine",
+    "-H",
+    "--host"
+   ]
+  },
+  {
+   "word": "uv",
+   "subcommands": [
+    "run"
+   ],
+   "boolean": [
+    "--no-sync",
+    "--frozen",
+    "--locked",
+    "--quiet",
+    "-q",
+    "--offline",
+    "--isolated"
+   ],
+   "valued": [
+    "--with",
+    "--python",
+    "-p",
+    "--project",
+    "--directory"
+   ]
+  },
+  {
+   "word": "python",
+   "module_flag": "-m",
+   "boolean": [
+    "-u",
+    "-B",
+    "-E",
+    "-s",
+    "-S",
+    "-I",
+    "-O",
+    "-OO",
+    "-b",
+    "-bb",
+    "-d",
+    "-q",
+    "-v",
+    "-x"
+   ]
+  },
+  {
+   "word": "python3",
+   "module_flag": "-m",
+   "boolean": [
+    "-u",
+    "-B",
+    "-E",
+    "-s",
+    "-S",
+    "-I",
+    "-O",
+    "-OO",
+    "-b",
+    "-bb",
+    "-d",
+    "-q",
+    "-v",
+    "-x"
+   ]
+  },
+  {
+   "word": "py",
+   "module_flag": "-m",
+   "boolean": [
+    "-u",
+    "-B",
+    "-E",
+    "-s",
+    "-S",
+    "-I",
+    "-O",
+    "-OO",
+    "-b",
+    "-bb",
+    "-d",
+    "-q",
+    "-v",
+    "-x"
+   ]
+  }
+ ]
+}

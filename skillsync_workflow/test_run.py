@@ -12,6 +12,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import signal
 import socket
 import sys
@@ -29,13 +30,11 @@ from . import test_gate
 from . import test_adapters
 from . import test_reports
 
-KARMA = re.compile(r'Executed (\d+) of (\d+)(?: \((?:skipped (\d+))?(?:,? ?(\d+) FAILED)?\))?')
+KARMA = re.compile(r'Executed (\d+) of (\d+)')
+KARMA_SKIPPED = re.compile(r'\(skipped (\d+)\)')
+KARMA_FAILED = re.compile(r'\((\d+) FAILED\)|, (\d+) FAILED')
 REPORT_SINCE_SLACK_S = 2.0
 MAX_REPORT_FILES = 200
-TOOLS = (('dotnet', 'dotnet'), ('pytest', 'pytest'), ('py.test', 'pytest'), ('cargo', 'cargo'), ('nextest', 'cargo'), ('ng', 'angular'),
-         ('playwright', 'playwright'), ('cypress', 'cypress'), ('jest', 'jest'), ('vitest', 'vitest'), ('mvn', 'maven'), ('mvnw', 'maven'),
-         ('gradle', 'gradle'), ('gradlew', 'gradle'), ('go', 'go'), ('node', 'node'), ('npm', 'npm'), ('npx', 'npx'))
-
 
 def _failure_count(output):
     """Failed tests named by the summary of the common tools (unittest `FAILED (failures=2, errors=1)`, pytest `3 failed`); 0 when the output names none."""
@@ -72,20 +71,150 @@ def _ms(seconds):
     return value if 0 <= value <= events.MAX_NUMBER else 0
 
 
+TOOLS_FILE = Path(__file__).resolve().parent / 'data' / 'test_tools.json'
+_TABLE = None
+
+
+def tool_table():
+    """The table of the tools and of the wrappers (`data/test_tools.json`, schema 1), read once. A missing or broken file is a loud error (`ValueError`):
+    there is no silent fallback, `test_skillsync_adapter_contract` and the packaging check keep the file in the package."""
+    global _TABLE
+    if _TABLE is None:
+        try:
+            table = json.loads(TOOLS_FILE.read_text(encoding='utf-8'))
+            if table.get('schema') != 1:
+                raise ValueError(f"schema {table.get('schema')!r}, expected 1")
+            tools = tuple((str(item['word']), str(item['tool'])) for item in table['tools'])
+            modules = {str(word): str(tool) for word, tool in table['module_words'].items()}
+            wrappers = {str(item['word']): item for item in table['wrappers']}
+            layers = int(table['max_layers'])
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
+            raise ValueError(f'the table of the test tools {TOOLS_FILE} is missing or broken: {error}') from error
+        _TABLE = {'tools': tools, 'modules': modules, 'wrappers': wrappers, 'layers': layers}
+    return _TABLE
+
+
+def __getattr__(name):   # `test_run.TOOLS` and `MAX_WRAPPER_LAYERS` stay readable names; the data is loaded on first use
+    if name == 'TOOLS':
+        return tool_table()['tools']
+    if name == 'MAX_WRAPPER_LAYERS':
+        return tool_table()['layers']
+    raise AttributeError(name)
+
+
+def _base(word):
+    return re.sub(r'\.(exe|cmd|bat)$', '', Path(str(word)).name.lower())
+
+
+def _skip_flags(words, boolean, valued, end_at_double_dash=True, stop=None):
+    """Index of the first word after the flags of a wrapper, or None when a flag is not known (nothing is guessed)."""
+    i = 0
+    while i < len(words):
+        word = words[i]
+        if end_at_double_dash and word == '--':
+            return i + 1
+        if word == stop:
+            return i
+        if not word.startswith('-') or word == '-':
+            return i
+        name = word.split('=', 1)[0]
+        if name in valued:
+            i += 1 if '=' in word else 2
+        elif name in boolean and '=' not in word:
+            i += 1
+        else:
+            return None
+    return i
+
+
+def _unwrap_once(argv):
+    """The command behind ONE wrapper of the table, or None when argv[0] is not a known wrapper or the wrapper is not understood. The syntax is DATA
+    (`data/test_tools.json`); this is its interpreter."""
+    table = tool_table()
+    spec = table['wrappers'].get(_base(argv[0]))
+    if spec is None:
+        return None
+    rest = [str(w) for w in argv[1:]]
+    boolean, valued = spec.get('boolean') or (), spec.get('valued') or ()
+    if spec.get('subcommands'):
+        if rest[:1] and rest[0] in spec['subcommands']:
+            rest = rest[1:]
+        elif spec.get('tool_words') and rest and _base(rest[0]) in {word for word, _ in table['tools']}:
+            return rest   # `yarn playwright test`: the first word is a tool, not a script
+        else:
+            return None
+    if spec.get('module_flag'):
+        skip = _skip_flags(rest, boolean, valued, end_at_double_dash=False, stop=spec['module_flag'])
+        if skip is None or rest[skip:skip + 1] != [spec['module_flag']] or skip + 1 >= len(rest):
+            return None
+        return rest[skip + 1:]
+    skip = _skip_flags(rest, boolean, valued)
+    if skip is None:
+        return None
+    rest = rest[skip:][int(spec.get('positional') or 0):]
+    if spec.get('assignments'):
+        while rest and re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*=.*', rest[0]):
+            rest = rest[1:]
+    return rest or None
+
+
+def unwrap_command(command):
+    """The argv of the command behind the wrappers of the table (`npx`, `npm exec`, `pnpm exec|dlx`, `yarn`, `timeout`, `env`, `time`, `nice`, `systemd-run`,
+    `uv run`, `python -m`), at most `max_layers` of them. `command` is an argv list or a shell string. A wrapper or a flag that is not in the table stops the
+    unwrapping (the words so far are returned), and more layers than the limit return the original argv: nothing is guessed."""
+    argv = list(command) if isinstance(command, (list, tuple)) else shlex.split(command, posix=os.name != 'nt') if isinstance(command, str) else []
+    argv = [str(word) for word in argv]
+    current = argv
+    for _ in range(tool_table()['layers']):
+        if not current:
+            return argv
+        inner = _unwrap_once(current)
+        if inner is None:
+            return current
+        current = inner
+    return argv if current and _unwrap_once(current) is not None else current
+
+
 def detect_tool(command):
-    """Name of the tool of a command (`argv` list or shell string), `unittest` for `python -m unittest`, else `unknown`."""
+    """Name of the tool of a command (`argv` list or shell string): a module word of the table anywhere in the command (`python -m unittest`, `pytest`), the tool of
+    the table behind the known wrappers (`npx playwright test` -> `playwright`, `timeout -k 5 100 cargo test` -> `cargo`), else the first three words as before,
+    else `unknown`. Public and stable: the one table of the tools (`data/test_tools.json`) for every consumer (the adapters, the hook of tests outside test-run)."""
+    table = tool_table()
     argv = command if isinstance(command, list) else shlex.split(command, posix=os.name != 'nt') if isinstance(command, str) else []
-    words = [Path(word).name.lower() for word in argv]
-    if 'unittest' in words:
-        return 'unittest'
-    if 'pytest' in words or 'py.test' in words:
-        return 'pytest'
-    for word in words[:3]:
-        word = re.sub(r'\.(exe|cmd|bat)$', '', word)
-        for name, tool in TOOLS:
+    words = [_base(word) for word in argv]
+    for word, tool in table['modules'].items():
+        if word in words:
+            return tool
+    core = unwrap_command(argv)
+    for word in ([_base(core[0])] if core else []) + words[:3]:
+        for name, tool in table['tools']:
             if word == name:
                 return tool
     return 'unknown'
+
+
+def resolve_executable(argv, which=None, nt=None):
+    """On Windows `npm`, `npx`, `ng`, `pnpm` and `yarn` are `.cmd` shims that CreateProcess does not start by the bare name: argv[0] becomes what
+    `shutil.which` finds (it honours PATHEXT). On other systems and when nothing is found argv is returned unchanged."""
+    argv = list(argv)
+    if not argv or not (os.name == 'nt' if nt is None else nt):
+        return argv
+    found = (which or shutil.which)(str(argv[0]))
+    return [found] + argv[1:] if found else argv
+
+
+def adapter_notice(fmt, argv, tool, adapter):
+    """The line of `test-run` about the choice of the adapter (stderr, before the command starts), only for `--format auto`: an explicit name or `none` is silent."""
+    if fmt not in (None, 'auto'):
+        return None
+    if adapter is not None:
+        return f'test-run: adapter {adapter.name} (live {adapter.live})'
+    test_adapters.discover()
+    names = sorted(test_adapters.REGISTRY)
+    same_tool = [name for name in names if tool in test_adapters.REGISTRY[name].tools]
+    if same_tool:
+        return f'test-run: adapter {", ".join(same_tool)} not used: it does not accept these arguments (see docs/test-adapters.md); counters and the report only'
+    return f'test-run: no adapter for {tool} (known: {", ".join(names) or "none"}); pass --format <name>, or --format none to silence'
 
 
 def resolve_run(root, explicit):
@@ -177,7 +306,8 @@ class TestRecorder:
                           **({'allowNoCount': events.clean_text(self.allow_no_count, 300, mask=True)} if self.allow_no_count else {}),
                           **({'allowSkips': True} if self.allow_skips else {}), **({'adapter': self.adapter.name, 'live': self.adapter.live} if self.adapter is not None else {}))
         if self.adapter is not None:
-            self.ctx = test_adapters.AdapterContext(check.get('argv') or shlex.split(check.get('command') or ''), check['cwd'], self.root, self.writer)
+            argv = check.get('argv') or shlex.split(check.get('command') or '')
+            self.ctx = test_adapters.AdapterContext(argv, check['cwd'], self.root, self.writer, tool=detect_tool(argv), argv_core=unwrap_command(argv))
             self._adapter_call(lambda: self.adapter.begin(self.ctx))
 
     def _adapter_call(self, fn):
@@ -218,10 +348,12 @@ class TestRecorder:
     def _line(self, check, stream, text):
         if self.adapter is not None:
             self._adapter_call(lambda: self.adapter.feed(stream, text, self.ctx))
-        found = KARMA.search(text)
+        found = KARMA.search(text) if self.adapter is None else None   # a selected adapter owns the counters; the built-in reader only works without one
         if found and self.writer is not None:
             done, total = int(found.group(1)), int(found.group(2))
-            skipped, failed = int(found.group(3) or 0), int(found.group(4) or 0)
+            rest = text[found.end():]
+            skip, fail = KARMA_SKIPPED.search(rest), KARMA_FAILED.search(rest)
+            skipped, failed = int(skip.group(1)) if skip else 0, int((fail.group(1) or fail.group(2)) if fail else 0)
             self.writer.counts(passed=max(done - failed - skipped, 0), failed=failed, skipped=skipped, running=0, total=total)
 
     def finished(self, check, result, output):
@@ -398,9 +530,12 @@ def _command(args):
             print('BLOCKED: several steps are in progress in the checkpoints: pass --step <id> (and --run <id>)', file=sys.stderr)
             return 2
         adapter = test_adapters.resolve(args.format, command, detect_tool(command))
+        notice = adapter_notice(args.format, command, detect_tool(command), adapter)
+        if notice:
+            print(notice, file=sys.stderr)
         recorder = TestRecorder(root, run_id, step, source, mask=events.mask_setting(manifest), junit=args.junit or [], passthrough=True,
                                  allow_no_count=args.allow_no_count, allow_skips=args.allow_skips, adapter=adapter)
-        check = {'id': 'test-run', 'argv': command, 'cwd': str(root), 'kind': 'build', 'timeout': float(args.timeout), 'required': True, '_env': {'PYTHONUNBUFFERED': '1', **(adapter.env() if adapter is not None else {})},
+        check = {'id': 'test-run', 'argv': resolve_executable(command), 'cwd': str(root), 'kind': 'build', 'timeout': float(args.timeout), 'required': True, '_env': {'PYTHONUNBUFFERED': '1', **(adapter.env() if adapter is not None else {})},
                  'resources': ['test-run:' + str(Path(root).resolve()) + ':' + (step or events.NO_STEP)]}
         with _Interruptible():
             report = run_validation(root, [check], observer=recorder)
