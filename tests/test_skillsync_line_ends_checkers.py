@@ -87,5 +87,20 @@ class AppendMissingLinesAtRareSeparators(unittest.TestCase):
         self.assertIsNone(append_missing_lines('  skills/  \n', ['skills/'], key=str.strip))
 
 
+class OutsideFencesAtRareSeparators(unittest.TestCase):
+    TEXT = "tekst\n```\nkod{c}```\nnie kod\n```\nkod2\n```\nkoniec\n"
+
+    def test_a_rare_separator_inside_a_code_block_does_not_change_the_state_of_the_fence(self):
+        expected = quality._outside_fences(self.TEXT.format(c=' '))
+        self.assertEqual(expected, 'tekst\nkod2')
+        for name, char in RARE.items():
+            with self.subTest(char=name):
+                self.assertEqual(quality._outside_fences(self.TEXT.format(c=char)), expected)
+
+    def test_crlf_gives_the_same_text(self):
+        text = decode_text(self.TEXT.format(c=' ').encode('utf-8').replace(b'\n', b'\r\n'))
+        self.assertEqual(quality._outside_fences(text), 'tekst\nkod2')
+
+
 if __name__ == '__main__':
     unittest.main()
