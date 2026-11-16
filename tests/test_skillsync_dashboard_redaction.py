@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from tests import test_skillsync_dashboard_server as base  # noqa: E402
 from skillsync_workflow import dashboard as engine  # noqa: E402
+from skillsync_workflow import status  # noqa: E402
 from skillsync_workflow import dashboard_http as srv  # noqa: E402
 
 # Environment secret that holds the separators the parsers cut at, plus `*` and a backtick that some of them strip.
@@ -131,11 +132,66 @@ class StatusSecretsGuard(SecretFiles, base.HttpCase):
         self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
         self.assert_masked(done.stdout, "dashboard show")
 
+    def test_skillsync_status_is_masked(self) -> None:
+        plan = self.root / base.PLAN
+        text = plan.read_text(encoding="utf-8").replace("Status: in_progress", f"Status: in_progress — {ENV_SECRET}", 1)
+        summary = f"## Streszczenie dla człowieka\n{'z' * 3990} {ENV_SECRET} koniec\npassword: {PATTERN_SECRET}\n\n"
+        plan.write_text(text.replace("## Cel", summary + "## Cel", 1), encoding="utf-8")
+        manifest = self.root / srv.MANIFEST
+        manifest.parent.mkdir(parents=True, exist_ok=True)
+        manifest.write_text("skills: [dashboard]\n", encoding="utf-8")
+        env = {**os.environ, "SKILLSYNC_CONFIG": str(self.tmp / "machine-config.yaml"), "XDG_CACHE_HOME": str(self.tmp / "xdg-cache")}
+        done = subprocess.run([sys.executable, str(base.CLI), "status", str(self.root), "--json", "--layer", f"core={base.ROOT / 'library'}"],
+                              capture_output=True, text=True, env=env, timeout=60)
+        self.assertIn(done.returncode, (0, 1, 2), done.stdout + done.stderr)
+        self.assert_masked(done.stdout, "skillsync status")
+        self.assertIn('"summary"', done.stdout)
+
     def test_an_expert_question_is_masked_before_it_is_cut_at_160_characters(self) -> None:
         text = "y" * (engine.QUESTION_TEXT_LIMIT - 8) + f" {ENV_SECRET} koniec"   # the secret straddles the cut
         asked = {"Q1": {"text": text, "at": "2026-01-10T10:00:00+01:00", "blocking": True}}
         items = engine._question_items("demo", asked, {})
         self.assert_masked(json.dumps(items, ensure_ascii=False), "expertQuestions.items")
+
+
+class StatusModuleMasksBeforeCutting(base.ProjectCase):
+    """F4: `status._status_fields`, `plan_summary` and the error messages mask the whole text before they strip markers, cut or collapse it."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        patch = mock.patch.dict("os.environ", {ENV_NAME: ENV_SECRET})
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def assert_masked(self, payload: str, where: str) -> None:
+        for secret in (PATTERN_SECRET, ENV_SECRET, "zq9x", "wv8y", "ut7s", "rp6", "mn5k"):
+            self.assertNotIn(secret, payload, f"{where}: {secret!r}")
+
+    def test_status_text_is_masked_before_the_markers_are_stripped_and_the_text_cut(self) -> None:
+        for name, line in (("secret holds * and a backtick", f"Status: draft — {ENV_SECRET}"),
+                           ("secret on the 80 character cut", "Status: draft — " + "w" * 58 + f" {ENV_SECRET}"),
+                           ("key before the cut", f"Status: draft — password: {PATTERN_SECRET} (a; b)")):
+            with self.subTest(name):
+                word, text = status._status_fields(f"# Plan\n\n{line}\n", {"draft"})
+                self.assertEqual(word, "draft")
+                self.assert_masked(text or "", name)
+        word, text = status._status_fields("x" * 3990 + f"\nStatus: draft — {ENV_SECRET}\n", {"draft"})   # the status line itself straddles the 4000-character window
+        self.assert_masked(text or "", "window")
+
+    def test_plan_summary_is_masked_before_the_section_is_cut_and_trimmed(self) -> None:
+        for name, body in (("char limit", "x" * (status.SUMMARY_MAX_CHARS - 6) + f" {ENV_SECRET} koniec"),
+                           ("line limit", "\n".join(f"l{n}" for n in range(status.SUMMARY_MAX_LINES - 1)) + f"\n{ENV_SECRET} i\nreszta"),
+                           ("heading marker", f"# {ENV_SECRET}"),
+                           ("key before the cut", f"opis\npassword: {PATTERN_SECRET}\n" + "y" * 5000)):
+            with self.subTest(name):
+                summary = status.plan_summary(f"# Plan: x\n\nStatus: draft\n\n## Streszczenie dla człowieka\n{body}\n\n## Cel\nc\n")
+                self.assertIsNotNone(summary)
+                self.assert_masked(summary, name)
+
+    def test_error_messages_are_masked_before_the_cut(self) -> None:
+        message = status._message(OSError("x " * 245 + f" {ENV_SECRET} password: {PATTERN_SECRET}"), 500)
+        self.assert_masked(message, "message")
+        self.assertLessEqual(len(message), 500)
 
 
 if __name__ == "__main__":
