@@ -235,13 +235,32 @@ def _plan_done_at(root, sha, rel):
     return _status_fields(result.stdout.decode('utf-8', 'replace'), PLAN_STATUSES)[0] == 'done'
 
 
+def _plan_status_kept_since(root, sha, rel):
+    """True when no commit after `sha` (`sha..HEAD`, one git call) touched a `Status:` line of the plan `rel` with a word other than `done`:
+    the plan was not reopened since the entry. Edits of the text after the word (`done (note)`) and body lines that merely mention status
+    are not a reopening. Any git error, a timeout or an oversized history is False: the closing is then not counted (fail-safe)."""
+    try:
+        result = subprocess.run(['git', '-C', str(root), 'log', '-p', '-U0', '--no-color', '--no-ext-diff', '--format=', f'{sha}..HEAD', '--', rel],
+                                capture_output=True, timeout=10, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    if result.returncode != 0 or len(result.stdout) > MAX_PLAN_BYTES * 8:
+        return False
+    for line in result.stdout.decode('utf-8', 'replace').splitlines():
+        if line[:1] in '+-' and line[:3] not in ('+++', '---'):
+            match = _STATUS.match(line[1:])
+            if match and match.group('word').lower() != 'done':
+                return False
+    return True
+
+
 def acceptance_pending(status, text, context, rel=None):
     """True when a closed plan (`done`) that has the human acceptance step (`Odbiór` in `## Progress`: the material, a checklist and the
     coverage table, handed to the person before the closing word) still waits for that word. The plan is tied to its run by the `Przebieg:`
     line; every plan whose run directory exists in the worktree (`.skillsync/runs/<run-id>/`: the active run) waits on its own until the run's
     `approvals.jsonl` has the closing consent of the delivery mode (`READY` in `pr`, `CP` in `direct`) whose sha is a commit where this plan
     (`rel`) already has the status `done`: a `CP` given earlier in the run (it is said many times) or an entry with a junk sha closes nothing, and
-    later commits of the branch do not light a finished plan again. A plan whose run directory is gone (history of a merged branch) has no
+    later commits of the branch do not light a finished plan again, but a reopening (a `Status:` line with another word in a later commit, `_plan_status_kept_since`) makes the old entry stale: the second closing waits for a new word. A plan whose run directory is gone (history of a merged branch) has no
     signal. The step's checkbox changes nothing. `context` = `{'mode', 'approvals', 'runs', 'root'}`; without it (or without a valid delivery
     mode) there is no signal."""
     if not has_acceptance_step(status, text) or not context:
@@ -254,6 +273,7 @@ def acceptance_pending(status, text, context, rel=None):
     if not run or not _RUN_ID.fullmatch(run.group(1)) or run.group(1) not in context.get('runs', ()):
         return False
     return not any(row['run'] == run.group(1) and row['word'] == word and _plan_done_at(context.get('root'), row.get('sha'), rel)
+                   and _plan_status_kept_since(context.get('root'), row.get('sha'), rel)
                    for row in context.get('approvals', []))
 
 
