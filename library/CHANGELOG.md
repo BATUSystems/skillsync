@@ -4,6 +4,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+### Changed
+
+- Skill `dashboard`: `SKILL.md` names the Windows way to stop the server (Ctrl+C or CTRL_BREAK to the process group; the table is in `docs/dashboard-contract.md`).
+
 ## [1.6.1] - 2026-11-16
 
 ### Changed

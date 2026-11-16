@@ -38,6 +38,7 @@ from .common import append_missing_lines, contained, emit, file_lines, load_laye
 from .pathfmt import posix
 from . import layers as _layers
 from . import prototype_server as server
+from . import stopsignal
 from .plan_phases import parse_plan_phases
 
 DEFAULT_ROOT = 'docs/prototypes'
@@ -2482,11 +2483,12 @@ def serve_prototypes(root, manifest, args, err=None):
     if not args.no_source_writes and not source_writes:
         notes.append(f'{_relative(settings["root"], repo)} nie leży w kopii roboczej gita: przywracanie z UI wyłączone '
                      '(source writes off)')
-    previous = None
+    previous = previous_break = None
     try:
         # The handler goes in first and the whole start is under the `try`: a SIGINT/SIGTERM between the announcement
         # and `serve_forever` (a Ctrl+C right after the address line) stops the server cleanly instead of a traceback.
         previous = _stop_on_sigterm()
+        previous_break = stopsignal.install_sigbreak()   # Windows: CTRL_BREAK (SIGBREAK) stops like Ctrl+C; None on other systems
         for warning in notes:
             err.write(f'ostrzeżenie: {warning}\n')
         err.write(f'Serwer prototypów: {instance.url} (Ctrl+C kończy)\n')
@@ -2499,7 +2501,11 @@ def serve_prototypes(root, manifest, args, err=None):
     finally:
         if previous is not None and previous[0] is not None:
             signal.signal(signal.SIGTERM, previous[0])
-        instance.server_close()
+        try:
+            instance.server_close()   # removes the login-link state file: a second CTRL_BREAK is still ignored (stopsignal) until this is done
+        finally:
+            if previous_break is not None:
+                signal.signal(signal.SIGBREAK, previous_break[0])
     return {'status': 'PASS', 'url': instance.url, 'root': _relative(settings['root'], repo), 'stopped': True}
 
 

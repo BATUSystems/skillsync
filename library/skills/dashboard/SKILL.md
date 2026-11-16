@@ -20,7 +20,7 @@ skillsync dashboard serve <projekt> [--port 5140 | --read-port N --approve-port 
 skillsync dashboard show <projekt> [--json] [--plan docs/plans/<plik>.md]   # jednorazowy zrzut JSON (to samo co /api/status)
 ```
 
-- Serwer działa na pierwszym planie (Ctrl+C albo SIGTERM kończy, wynik `{"status": "PASS", "stopped": true}`); odmowa startu
+- Serwer działa na pierwszym planie (Ctrl+C albo SIGTERM kończy; na Windows Ctrl+C albo CTRL_BREAK do grupy procesów, zob. docs/dashboard-contract.md „Jak zatrzymać serwer na Windows”, wynik `{"status": "PASS", "stopped": true}`); odmowa startu
   (port spoza zakresu, brak manifestu, brak `assets/index.html` w aktywnych warstwach, zły `--session-url` albo `--plan`)
   = `BLOCKED`, kod 2. Strona i `descriptions.json` pochodzą ze skilla `dashboard` aktywnych warstw (`--layer` jak w innych
   komendach; późniejsza warstwa wygrywa per plik).
