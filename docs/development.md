@@ -74,6 +74,26 @@ Tabela, która mówi „zmierzone”, ma kolumnę „Pomiar” z odesłaniem do 
 Polecenie, Wynik; system w formie „Windows 11, Python 3.12.16”, bez nazw maszyn i osób). Wiersz bez zapisu jest oznaczony
 „niezmierzone” albo „oczekiwane”. Pilnuje tego `tests/test_skillsync_measurements.py`. Nowy pomiar: dodaj zapis i odsyłacz w tabeli.
 
+### Macierz przed pushem: ostrzeżenie o kodzie zależnym od systemu
+
+`python3 scripts/platform_sensitive.py --base <baza> --head <sha> [--json]` czyta diff `<baza>...<sha>` i **ostrzega** (nigdy nie blokuje,
+kod wyjścia 0; 2 tylko przy błędzie wejścia), gdy zmiana dotyka kodu zależnego od systemu: `os.name`/`sys.platform`, sygnały
+(`signal.SIG*`, `CTRL_*_EVENT`, `os.killpg`, `start_new_session`), `ctypes`/`windll`, symlinki i `core.symlinks`, `rmtree`/usuwanie plików,
+końce linii (`\r\n`, `newline=`, `splitlines`, `file_lines`), ścieżki z backslashem, opcje gniazd `SO_*` oraz `<katalog tmp> / <zmienna>` w
+testach. Dla każdej kategorii podaje systemy, z których potrzebny jest dowód (windows/macos/linux), a na końcu moduły testowe do transzy
+(ten sam zestaw co `merge_modules.py`). Dopasowanie jest tekstowe (docstringi pomijane): to wskazówka, gdzie spojrzeć, nie wynik. Przed pushem
+uruchom skrypt na swojej gałęzi i zdecyduj, które systemy sprawdzasz lokalnie, a które zostają dla CI; brak dowodu z systemu wpisz do „Wynik”
+planu jako NOT_RUN.
+
+### Nazwy z danych pod katalogiem tymczasowym
+
+`tests/tmp_paths.py` (`child`, `make_dir`, `write_file`) składa ścieżkę pod katalogiem tymczasowym z nazwy pochodzącej z danych i odmawia
+nazwy z separatorem, dyskiem, `..`, znakiem sterującym, końcową kropką lub spacją oraz nazwy zastrzeżonej Windows (`CON`, `NUL`, `COM1`…);
+wynik sprawdza `relative_to`. Powód: na Windows nazwa `\n` (backslash, `n`) jest ścieżką od korzenia dysku, więc `tmp / nazwa` zapisuje poza
+katalogiem tymczasowym. `tests/test_skillsync_tmp_path_guard.py` (tryb raportu, `STRICT = False`) zgłasza w testach wyrażenia
+`<ścieżka tmp> / <zmienna lub wywołanie>`; stan początkowy (`BASELINE`, liczba trafień na plik) to nazwy literalne albo indeksy pętli. Nowy
+test, który składa ścieżkę z danych, używa pomocnika; gdy trafienie ma zostać, dopisz uzasadnienie przy liczbie.
+
 ### Serwery w testach
 
 Testy serwerów łączą się po adresie liczbowym (`127.0.0.1`), bez rozwiązywania nazw: bez `localhost` w `create_connection`, `urlopen` i `HTTPConnection`, a gniazdo klienta w testach niskiego poziomu otwieranie przez `connect(('127.0.0.1', port))`. Serwer testowy nie woła `socket.getfqdn` (podklasa `ThreadingHTTPServer` z `server_bind` bez odwrotnego DNS, jak serwery produkcyjne). Na runnerze macOS rozwiązywanie nazw potrafi sporadycznie stanąć na ok. 35 s, a pomiary czasu w testach mierzymy po stronie serwera, nie po stronie klienta.

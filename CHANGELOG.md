@@ -15,6 +15,8 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 ### Added
 
 - `scripts/merge_modules.py`: from the diff `<base>..<head>` it computes the test modules to run at a merge, with a reason per module (changed test, static import of a changed module directly or through other modules, a changed file named by a test, a changed message literal found in a test or fixture, changed or `expected*` fixtures, a fixed guard set); `--json` and `--names` outputs.
+- `scripts/platform_sensitive.py`: a warning (never a gate) for a diff `<base>...<head>` that touches system-dependent code (platform branches, signals, `ctypes`, symlinks, `rmtree`, line ends, backslash paths, `SO_*` socket options, directory names from data); it names the systems that need evidence and the test modules of the tranche (`merge_modules.py` as a library).
+- `tests/tmp_paths.py`: a test helper that builds a path under a temporary directory from a name taken from data and refuses separators, drives, `..`, control characters and reserved Windows names; `tests/test_skillsync_tmp_path_guard.py` reports `<tmp path> / <variable>` expressions in tests (report mode).
 - `docs/measurements/`: records of measurements (date, system, version, command, result) and the guard `tests/test_skillsync_measurements.py`: a documentation table row that says "zmierzone"/"measured" must link to an existing record, every other row of a table with a "Pomiar" column must be marked "niezmierzone" or "oczekiwane".
 
 ### Changed
