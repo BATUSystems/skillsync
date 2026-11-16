@@ -58,11 +58,11 @@ class SeveralThreads(unittest.TestCase):
     def test_all_binaries_and_doc_tests_in_one_run(self):
         rec, *_ = run('rust-no-fail-fast.jsonl')
         self.assertEqual(final_states(rec), EVERYTHING)
-        self.assertNotIn('running', [c[3] for c in rec.tests()])   # the line of a test appears after its end: there is no running state
+        self.assertNotIn('running', [c[3] for c in rec.emitted()])   # the line of a test appears after its end: there is no running state
 
     def test_groups_come_from_the_headers_of_the_binaries(self):
         rec, *_ = run('rust-no-fail-fast.jsonl')
-        groups = {c[1]: c[4] for c in rec.tests()}
+        groups = {c[1]: c[4] for c in rec.emitted()}
         self.assertEqual((groups['tests::ok'], groups['green_one'], groups['integration_ok'], groups['src/lib.rs - add (line 5)']), ('demo', 'green', 'integration', 'doc-tests demo'))
 
     def test_failure_messages_and_ignore_reasons(self):
@@ -100,7 +100,7 @@ class SeveralThreads(unittest.TestCase):
     def test_runs_without_test_lines_emit_nothing(self):
         for name in ('rust-compile-error.jsonl', 'rust-json-format-stable.jsonl', 'rust-no-tests-matched.jsonl', 'rust-list-all.jsonl', 'rust-green-list.jsonl'):
             with self.subTest(name=name):
-                self.assertEqual(run(name)[0].tests(), [])
+                self.assertEqual(run(name)[0].emitted(), [])
 
     def test_merged_streams_and_colours(self):
         self.assertEqual(final_states(run('rust-no-fail-fast-merged.jsonl')[0]), EVERYTHING)
@@ -114,7 +114,7 @@ class SeveralThreads(unittest.TestCase):
 
     def test_unfinished_lines_are_not_starts_here(self):
         rec, *_ = run('rust-threads1.jsonl', adapter='cargo-test')   # a serial run read as `completion`: the unfinished lines are ignored
-        self.assertNotIn('running', [c[3] for c in rec.tests()])
+        self.assertNotIn('running', [c[3] for c in rec.emitted()])
         self.assertEqual(final_states(rec), EVERYTHING)
 
 
@@ -170,7 +170,7 @@ class Synthetic(unittest.TestCase):
 
     def test_bench_lines_and_other_text_are_not_tests(self):
         rec = self.feed('test tests::b ... bench:         123 ns/iter (+/- 4)\ntest result: ok. 0 passed; 0 failed\nrunning 2 tests\ntest-like line\ntests::x: test\n')
-        self.assertEqual(rec.tests(), [])
+        self.assertEqual(rec.emitted(), [])
 
     def test_a_name_with_dots_and_spaces(self):
         rec = self.feed('test src/lib.rs - Foo::bar (line 12) ... ok\ntest a::b ... ... ok\n')
@@ -183,7 +183,7 @@ class Synthetic(unittest.TestCase):
         for _ in range(250):
             lines = ''.join(''.join(rng.choice(fragments) for _ in range(rng.randint(0, 5))) + '\n' for _ in range(rng.randint(1, 20)))
             for adapter in ('cargo-test', 'cargo-test-serial'):
-                for call in self.feed(lines, adapter=adapter, size=rng.randint(1, 20)).tests():
+                for call in self.feed(lines, adapter=adapter, size=rng.randint(1, 20)).emitted():
                     self.assertIn(call[3], ('running', 'passed', 'failed', 'skipped'))
                     self.assertTrue(call[1])
 
@@ -226,7 +226,7 @@ class Synthetic(unittest.TestCase):
 
     def test_blocks_of_the_successes_section_name_no_failure_even_without_a_result_line(self):
         rec = self.feed("\nsuccesses:\n\n---- tests::unseen stdout ----\nthread 'x' (1) panicked at src/lib.rs:1:1:\nboom\n\nsuccesses:\n    tests::unseen\n\ntest result: ok. 1 passed\n", exit_code=0)
-        self.assertEqual(rec.tests(), [])
+        self.assertEqual(rec.emitted(), [])
 
     def test_a_block_never_takes_back_a_pass(self):
         rec = self.feed("test tests::a ... ok\n\nfailures:\n\n---- tests::a stdout ----\nthread 'x' (1) panicked at src/lib.rs:1:1:\nboom\n\nfailures:\n    tests::a\n", exit_code=0)
@@ -267,7 +267,7 @@ class Synthetic(unittest.TestCase):
 
     def test_a_windows_path_with_parentheses_in_the_header(self):
         rec = self.feed('     Running tests\\x.rs (C:\\Program Files (x86)\\t\\deps\\x-0123456789abcdef.exe)\ntest w ... ok\n')
-        self.assertEqual([c[4] for c in rec.tests()], ['x'])
+        self.assertEqual([c[4] for c in rec.emitted()], ['x'])
 
     def test_terse_failures_lose_the_should_panic_decoration(self):
         rec = self.feed('tests::p - should panic --- FAILED\n')
