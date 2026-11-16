@@ -19,10 +19,11 @@ from . import Adapter, register
 MAX_LINE = 2000
 MAX_SEEN = 50000
 ANSI = re.compile(r'\x1b\[[0-9;?]*[A-Za-z]')
+# the optional `|project| ` prefix (a Vitest project, `ng test` prints `|demo| `) is not a part of the id
 # ` ✓ tests/math.test.js > math > adds 404ms`, ` × file > name 411ms (retry x2)`, ` ↓ file > name`, ` □ file > name`
-LINE = re.compile(r'^ (?P<mark>[✓×↓□]) (?P<file>[^\s>][^>]*?) > (?P<name>.+?)(?: (?P<time>\d+(?:\.\d+)?)(?P<unit>ms|s))?(?: \(retry x\d+\))?$')
+LINE = re.compile(r'^ (?P<mark>[✓×↓□]) (?:\|[^|\n]+\| )?(?P<file>[^\s>][^>]*?) > (?P<name>.+?)(?: (?P<time>\d+(?:\.\d+)?)(?P<unit>ms|s))?(?: \(retry x\d+\))?$')
 # a skipped or todo line carries no time: a trailing ` 5s` of its name belongs to the name
-BARE = re.compile(r'^ (?P<mark>[↓□]) (?P<file>[^\s>][^>]*?) > (?P<name>.+)$')
+BARE = re.compile(r'^ (?P<mark>[↓□]) (?:\|[^|\n]+\| )?(?P<file>[^\s>][^>]*?) > (?P<name>.+)$')
 MESSAGE = re.compile(r'^ {3}→ (?P<msg>.+)$')
 TESTS = re.compile(r'^ +Tests +(?P<body>.+?) \((?P<total>\d+)\)$')
 STATES = {'✓': 'passed', '×': 'failed', '↓': 'skipped', '□': 'skipped'}

@@ -3,9 +3,9 @@
 The adapter cannot tell which from the command (and may not read the project files), so it reads the LINES: it hands every line to both the Vitest logic and the Karma
 logic of this package; the lines of one tool do not match the patterns of the other in practice (`✓ file > name` versus `<browser>: Executed N of M`; a test whose own output
 imitates the other tool could make a stray counter), so only the tool that is really running emits. `--format vitest` or `--format karma` forces one of them. `live = 'counts'` is the weaker of the two guarantees (Karma prints only numbers; Vitest
-`completion`). NOT_VERIFIED: the output of `ng test` itself was not recorded (no Angular project was run; the two engines were run directly); its reporter may differ from
-`verbose`/`progress`, in which case nothing is emitted and the run falls back to the counters of the summary and the report (`tests-reporter-missing` of `doctor`
-tells how to add a reporter).
+`completion`). Verified on a real `ng test` (Angular CLI 21.2.30, fixtures `angular-*`): the Vitest runner of Angular prints its DEFAULT reporter, which names no passing test, so a green or a
+mixed run emits nothing live and the run falls back to the counters of the summary (`--reporters=verbose` gives the lines, with a `|project| ` prefix that the Vitest
+logic drops from the id); the Karma runner prints the usual `progress` lines (`Executed N of M`).
 """
 import re
 

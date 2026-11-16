@@ -1,0 +1,12 @@
+{"meta": {"tool": "angular", "version": "@angular/cli 21.2.30, @angular/build unit-test, vitest 4.1.12, Node 22.22.0", "command": ["ng", "test", "--no-watch"], "exit": 0, "merged": false, "env": {"LANG": "pl_PL.UTF-8", "NO_COLOR": "1", "stdout_stderr": "pipes (not a terminal)"}, "note": "default reporter of the Angular Vitest runner: build output, a RUN line, no test lines for a green run, summary", "scrubbed": "paths, host and user names are replaced", "format": "one record per chunk read from the pipe: t = seconds since the start, fd = out|err, data = the text of the chunk"}}
+{"t": 0.487, "fd": "out", "data": "❯ Building...\n"}
+{"t": 2.488, "fd": "out", "data": "✔ Building...\n"}
+{"t": 2.489, "fd": "out", "data": "Initial chunk files  | Names             |  Raw size\nspec-app-app.js      | spec-app-app      |  47.31 kB | \nchunk-CGZBV6BD.js    | -                 |   4.07 kB | \ninit-testbed.js      | init-testbed      |   1.21 kB | \nvitest-mock-patch.js | vitest-mock-patch | 974 bytes | \nstyles.css           | styles            |  56 bytes | \n\n                     | Initial total     |  53.63 kB\n\nApplication bundle generation complete. [2.001 seconds] - 2026-11-16T23:26:39.808Z\n\n"}
+{"t": 2.844, "fd": "out", "data": "\n"}
+{"t": 2.844, "fd": "out", "data": " RUN  v4.1.12 /TOOLS/angular/demo-vitest\n\n"}
+{"t": 4.178, "fd": "out", "data": "\n"}
+{"t": 4.179, "fd": "out", "data": " Test Files  1 passed (1)\n"}
+{"t": 4.179, "fd": "out", "data": "      Tests  2 passed (2)\n"}
+{"t": 4.179, "fd": "out", "data": "   Start at  00:26:40\n"}
+{"t": 4.179, "fd": "out", "data": "   Duration  1.33s (transform 123ms, setup 335ms, import 82ms, tests 116ms, environment 641ms)\n"}
+{"t": 4.179, "fd": "out", "data": "\n"}

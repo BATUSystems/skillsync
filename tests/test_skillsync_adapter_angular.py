@@ -1,5 +1,5 @@
-"""180-A3: `ng test` runs Vitest or Karma, chosen by the project: the `angular` adapter reads the lines and lets whichever tool prints emit (NOT_VERIFIED on a real
-`ng test`: the two engines were recorded directly)."""
+"""180-A3: `ng test` runs Vitest or Karma, chosen by the project: the `angular` adapter reads the lines and lets whichever tool prints emit. The fixtures
+`angular-*.jsonl` are real streams of `ng test` (Angular CLI 21.2.30, one project per engine, recorded through pipes)."""
 import sys
 import unittest
 from pathlib import Path
@@ -37,6 +37,14 @@ class Selection(unittest.TestCase):
         self.assertEqual(ar.audit(ADAPTER_FILE), [])
 
 
+def tests_of(recorder):
+    return [c for c in recorder.calls if c[0] == 'test']
+
+
+def counts_of(recorder):
+    return [c[1] for c in recorder.calls if c[0] == 'counts']
+
+
 class Engines(unittest.TestCase):
     def test_a_vitest_run_gives_the_tests_and_the_report_is_not_needed(self):
         recorder, _, _, complete = replay_fixture('angular', 'vitest-verbose.jsonl', argv=['ng', 'test'], tool='angular')
@@ -52,6 +60,60 @@ class Engines(unittest.TestCase):
 
     def test_an_unknown_reporter_emits_nothing(self):
         self.assertEqual(replay('angular', chunks_from_text('Application bundle generation complete.\nsome other reporter 3 of 4\n'), argv=['ng', 'test'], tool='angular')[0].calls, [])
+
+
+class RealNgTest(unittest.TestCase):
+    """Streams of a real `ng test`: Vitest (the default runner of Angular 21) and Karma."""
+
+    def run_fixture(self, name):
+        return replay_fixture('angular', name, argv=['ng', 'test', '--no-watch'], tool='angular')
+
+    def test_the_default_vitest_reporter_prints_no_test_line_so_nothing_is_emitted(self):
+        for name in ('angular-vitest-pass.jsonl', 'angular-vitest-mixed.jsonl'):
+            with self.subTest(name=name):
+                recorder, _, _, complete = self.run_fixture(name)
+                self.assertEqual(recorder.calls, [])
+                self.assertFalse(complete)   # the counters of the summary and the report decide
+
+    def test_verbose_vitest_ids_do_not_carry_the_project_prefix(self):
+        recorder, _, _, complete = self.run_fixture('angular-vitest-verbose.jsonl')
+        states = {c[1]: c[3] for c in tests_of(recorder) if c[3] != 'failed' or c[6]}
+        self.assertEqual(states, {
+            'src/app/mix.spec.ts::Mix > passes one': 'passed',
+            'src/app/mix.spec.ts::Mix > fails on purpose': 'failed',
+            'src/app/mix.spec.ts::Mix > is skipped': 'skipped',
+            'src/app/mix.spec.ts::Mix > nested group > passes nested': 'passed',
+            'src/app/app.spec.ts::App > should create the app': 'passed',
+            'src/app/app.spec.ts::App > should render title': 'passed'})
+        self.assertTrue(all(not c[1].startswith('|') for c in tests_of(recorder)))
+        failure = [c for c in tests_of(recorder) if c[3] == 'failed' and c[6]]
+        self.assertEqual(failure[0][6], 'expected 4 to be 5 // Object.is equality')
+        self.assertTrue(complete)
+
+    def test_an_interrupted_verbose_run_keeps_what_ended_and_is_not_complete(self):
+        recorder, _, _, complete = self.run_fixture('angular-vitest-interrupted.jsonl')
+        self.assertTrue(tests_of(recorder))
+        self.assertFalse(complete)
+
+    def test_karma_counters_of_a_green_and_a_mixed_run(self):
+        green = counts_of(self.run_fixture('angular-karma-pass.jsonl')[0])
+        self.assertEqual(green[-1], {'passed': 2, 'failed': 0, 'skipped': 0, 'running': 0, 'total': 2})
+        mixed = counts_of(self.run_fixture('angular-karma-mixed.jsonl')[0])
+        self.assertEqual(mixed[-1], {'passed': 4, 'failed': 1, 'skipped': 1, 'running': 0, 'total': 6})
+        self.assertEqual(max(c['failed'] for c in mixed), 1)
+
+    def test_a_karma_run_interrupted_before_the_first_test_gives_no_counters(self):
+        recorder, _, _, complete = self.run_fixture('angular-karma-interrupted.jsonl')
+        self.assertEqual(recorder.calls, [])
+        self.assertFalse(complete)
+
+    def test_the_chunking_of_the_pipe_does_not_change_the_result(self):
+        for name in ('angular-vitest-verbose.jsonl', 'angular-karma-mixed.jsonl'):
+            whole = self.run_fixture(name)[0].calls
+            for size in (1, 7, 64):
+                with self.subTest(name=name, size=size):
+                    chunks = ar.rechunk(load(name)[1], size)
+                    self.assertEqual(replay('angular', chunks, argv=['ng', 'test'], tool='angular')[0].calls, whole)
 
 
 if __name__ == '__main__':

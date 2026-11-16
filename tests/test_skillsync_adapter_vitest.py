@@ -50,6 +50,12 @@ class Verbose(unittest.TestCase):
         self.assertEqual(recorder.last()[M + 'fails with a message'][1], 'expected 4 to be 5 // Object.is equality')
         self.assertEqual(recorder.last()[M + 'is a todo'][1], 'todo')
 
+    def test_a_project_prefix_is_not_a_part_of_the_id(self):
+        text = ' ✓ |demo| src/app/a.spec.ts > A > works 3ms\n ↓ |demo| src/app/a.spec.ts > A > later\n × |demo| src/app/a.spec.ts > A > breaks 2ms\n   → boom\n'
+        recorder = replay('vitest', chunks_from_text(text))[0]
+        ids = [c[1] for c in recorder.calls if c[0] == 'test']
+        self.assertEqual(ids, ['src/app/a.spec.ts::A > works', 'src/app/a.spec.ts::A > later', 'src/app/a.spec.ts::A > breaks', 'src/app/a.spec.ts::A > breaks'])
+
     def test_no_running_state_exists_and_the_files_interleave(self):
         recorder = replay_fixture('vitest', 'vitest-verbose.jsonl')[0]
         self.assertNotIn('running', {c[3] for c in recorder.tests()})
