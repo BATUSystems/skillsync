@@ -27,7 +27,8 @@ Treść żyje w **warstwach** (`layer.yaml` w korzeniu układu): `core` (rdzeń:
 │   └── <nazwa>.md          ← podagenci Claude Code (frontmatter name/description/tools/model)
 ├── hooks/
 │   ├── check-tests.py      ← hook Stop (bramka testów), jeden skrypt Pythona dla Linux i Windows
-│   └── check-closure.py    ← hook Stop (zamknięcie planu), tylko biblioteka standardowa
+│   ├── check-closure.py    ← hook Stop (zamknięcie planu), tylko biblioteka standardowa
+│   └── guard-commands.py   ← hook PreToolUse (Bash): odmowa trwałego usunięcia, tylko biblioteka standardowa
 └── instructions/
     ├── _base.md             ← wspólna preambuła (persona, workflow)
     └── <template>.md        ← instrukcje specyficzne dla projektu
@@ -47,6 +48,7 @@ layer.yaml                  ← id, kind, version, core_min, requires
 ├── agents/<agent>.md       ← symlink (lub kopia) - przy `feature` wszystkie role (jak Codex); `agents:` zawęża
 ├── hooks/check-tests.py    ← KOPIA - tylko gdy hooks.stop_tests: true i projekt NIE ma `feature`
 ├── hooks/check-closure.py  ← KOPIA - projekty z `feature`, chyba że hooks.stop_closure: false
+├── hooks/guard-commands.py ← KOPIA - projekty z `feature` lub `dispatch`, chyba że hooks.guard_delete: off (klucz hooks.delete_allow: dodatkowe cele wolne od blokady)
 ├── settings.json           ← COMMITOWANY, ręcznie kuratorowany; skillsync scala tylko hooks.Stop
 └── .gitignore              ← wpisy per plik zarządzany (nie całe katalogi)
 ```
@@ -95,6 +97,7 @@ Wspólna flaga `--layer id=ścieżka` (powtarzalna; ścieżka = katalog warstwy 
 ### Claude Code: agenci, hook Stop, settings.json
 
 - `.claude/skills/` i `.claude/agents/` **nie są w całości własnością skillsync** (projekty trzymają tam własne pliki). Skillsync sprząta i zastępuje wyłącznie symlinki do warstw (albo nietknięte kopie z pliku stanu), nigdy zwykłych plików, które sam nie utworzył — przy kolizji nazw wypisuje `[warn] Skipping ...`.
+- Projekty z `feature` lub `dispatch` dostają też hook PreToolUse `guard-commands.py` (odmowa trwałego usunięcia): `link` scala jeden wpis do `.claude/settings.local.json` (kopia zapasowa, plik śledzony przez git pomijany, `.skillsync/` ignorowane), `hooks.guard_delete: off` go usuwa.
 - Projekty z `feature`: kopiuje `check-closure.py` i scala wpis Stop w `.claude/settings.local.json`, zachowując resztę pliku. `hooks.stop_closure: false` usuwa wpis i skrypt. Plik śledzony przez git albo niepoprawny JSON: `[warn]`, bez zapisu. Blokuje raz na sesję i plan plan `done` zmieniony względem `HEAD`, gdy przebieg z `Przebieg:` nie ma rekordu `final`.
 - `hooks.stop_tests: true` + `tests.command` w manifeście → kopiuje `check-tests.py` i dopisuje `hooks.Stop` do `.claude/settings.json` (forma exec: `command` = `python_command` z `~/.config/skillsync/config.yaml`, `args` = skrypt + komenda testów). Przed zapisem robi `settings.json.skillsync-backup`. `permissions`, inne hooki i `settings.local.json` są nietykane. Niepoprawny JSON w istniejącym pliku → błąd i pominięcie (nigdy nadpisanie).
 - Hook: exit 2 + ostatnie linie błędów na stderr przy porażce testów; exit 0 przy `stop_hook_active`, braku zmian w repo (`git status --porcelain`) albo braku komendy testów.

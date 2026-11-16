@@ -130,3 +130,7 @@ dopuszcza tylko adresy z listy celu.
 ## Zgłaszanie podatności
 
 Zobacz [SECURITY.md](../SECURITY.md).
+
+## Hook ochronny przed trwałym usunięciem
+
+`hooks/guard-commands.py` (PreToolUse na `Bash`, tylko Claude Code, projekty z `feature` lub `dispatch`) odmawia `rm -r`, `git clean -f`, `git worktree remove --force` i podobnych poza katalogami tymczasowymi, scratchpadem i katalogami odtwarzalnymi. To **siatka przeciw pomyłce, nie granica bezpieczeństwa**: czyta tekst komendy, więc nie widzi poleceń ukrytych w skryptach, nieznanych wrapperach ani zmiennych, których nie umie rozwiązać; dokumentacja hostów mówi to samo o regułach `Bash`. Wyjątek (`SKILLSYNC_GUARD_EXCEPT`) agent dopisuje sam po zgodzie użytkownika w oknie wyboru; hook nie umie sprawdzić zgody, zostawia ślad w `.skillsync/hook-exceptions.jsonl` (komenda do 500 znaków, bez redakcji sekretów: nie wpisuj sekretów do komend). Błąd hooka nigdy nie blokuje pracy.

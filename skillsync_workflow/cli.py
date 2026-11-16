@@ -15,6 +15,7 @@ from pathlib import Path
 
 import yaml
 
+from . import guardhook
 from .fsutil import ensure_utf8_streams, isabs, rmtree_force
 from .common import (CONDITIONAL_SKILL_ALIASES, append_missing_lines, checked_out_link, conditional_skill_alias, detect_eol, discover_excludes,
                      file_lines, is_excluded)
@@ -2458,6 +2459,130 @@ def sync_closure_hook(project_dir: Path, manifest: dict, config: dict, dry_run: 
         remove_closure_script(project_dir, dry_run)
 
 
+def guard_mode(manifest: dict, config: dict) -> str:
+    """`deny` | `off` of the delete guard hook (explicit manifest value, else `deny` for agent-flow projects)."""
+    if not claude_enabled(manifest):
+        return "off"
+    return guardhook.effective_mode(manifest, project_skills(manifest, config))
+
+
+def guard_gitignore_entries(manifest: dict, config: dict) -> list[str]:
+    if guard_mode(manifest, config) == "off":
+        return []
+    return ["hooks/guard-commands.py", "settings.local.json", "settings.local.json.skillsync-backup"]
+
+
+def copy_guard_script(project_dir: Path, config: dict, dry_run: bool = False) -> bool:
+    found = config_layers(config).resolve("hooks/guard-commands.py")  # hooks: core layer only
+    if found is None:
+        print("[warn] Missing hook script in library: hooks/guard-commands.py (core layer)")
+        return False
+    dest = project_dir / guardhook.GUARD_HOOK
+    if dry_run:
+        print(f"[dry-run] Would write: {dest}")
+        return True
+    try:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(found[1], dest)
+        dest.chmod(dest.stat().st_mode | 0o111)
+    except OSError as error:
+        print(f"[warn] Nie udalo sie zapisac {dest}: {error}")
+        return False
+    return True
+
+
+def remove_guard_script(project_dir: Path, dry_run: bool = False) -> None:
+    dest = project_dir / guardhook.GUARD_HOOK
+    if dest.is_file() and not dest.is_symlink():
+        if dry_run:
+            print(f"[dry-run] Would remove: {dest}")
+            return
+        try:
+            dest.unlink()
+        except OSError as error:
+            print(f"[warn] Nie udalo sie usunac {dest}: {error}")
+
+
+def merge_guard_settings(project_dir: Path, manifest: dict, config: dict, want: bool, dry_run: bool = False) -> bool:
+    """Adds (`want`) or removes our PreToolUse entry in the ignored settings.local.json; foreign hooks and permissions stay.
+    True when no entry of ours remains after the call. The earliest backup is kept (the closure hook writes the same file first); a tracked file is never written."""
+    settings_path = project_dir / guardhook.SETTINGS
+    if not want and not settings_path.exists():
+        return True
+    existing = {}
+    try:
+        if settings_path.exists():
+            existing = json.loads(settings_path.read_text(encoding="utf-8"))
+    except ValueError:
+        print(f"[warn] Nieprawidlowy JSON w {settings_path}, pomijam scalanie")
+        return False
+    except OSError as error:
+        print(f"[warn] Nie udalo sie odczytac {settings_path}: {error}")
+        return False
+    if not isinstance(existing, dict) or not isinstance(existing.get("hooks", {}), dict):
+        print(f"[warn] Invalid hook settings structure: {settings_path}")
+        return False
+    updated = dict(existing)
+    hooks_section = dict(updated.get("hooks") or {})
+    pre = hooks_section.get("PreToolUse", [])
+    if not isinstance(pre, list) or any(not isinstance(group, dict) or not isinstance(group.get("hooks", []), list) for group in pre):
+        print(f"[warn] Invalid PreToolUse settings structure: {settings_path}")
+        return False
+    _, allow, _ = guardhook.hook_settings(manifest)
+    entry = guardhook.hook_entry(config.get("python_command", "python3"), guard_mode(manifest, config), allow)
+    present = [hook for group in pre for hook in group.get("hooks", []) if guardhook.is_guard_hook(hook)]
+    if want and present == entry["hooks"]:
+        return False  # the entry is current; do not touch the file
+    kept = []
+    for group in pre:
+        if "hooks" not in group:
+            kept.append(group)
+            continue
+        remaining = [hook for hook in group["hooks"] if not guardhook.is_guard_hook(hook)]
+        if remaining or not group["hooks"]:
+            kept.append({**group, "hooks": remaining})
+    if want:
+        kept.append(entry)
+    if kept:
+        hooks_section["PreToolUse"] = kept
+    else:
+        hooks_section.pop("PreToolUse", None)
+    if hooks_section or "hooks" in existing:
+        updated["hooks"] = hooks_section
+    if updated == existing:
+        return not want
+    if settings_path.exists() and is_tracked(settings_path):
+        print(f"[warn] {settings_path} jest śledzony przez git, pomijam zapis")
+        return False
+    if dry_run:
+        print(f"[dry-run] Would update: {settings_path}")
+        return not want
+    try:
+        settings_path.parent.mkdir(parents=True, exist_ok=True)
+        if settings_path.exists():
+            backup_path = settings_path.with_name(settings_path.name + ".skillsync-backup")
+            if not backup_path.exists():  # the closure hook writes the same file first: keep the earliest copy
+                write_text_lf(backup_path, read_user_text(settings_path))
+        write_text_lf(settings_path, json_file_text(updated, read_user_text(settings_path) if settings_path.exists() else ""))
+    except OSError as error:
+        print(f"[warn] Nie udalo sie zapisac {settings_path}: {error}")
+        return False
+    print(f"Updated: {settings_path}")
+    return not want
+
+
+def sync_guard_hook(project_dir: Path, manifest: dict, config: dict, dry_run: bool = False) -> None:
+    """Script and entry stay consistent: the entry only with the script, the script goes after the entry is removed."""
+    if not claude_enabled(manifest):
+        return
+    for reason in guardhook.hook_settings(manifest)[2]:
+        print(f"[warn] {reason}")
+    if guard_mode(manifest, config) != "off":
+        merge_guard_settings(project_dir, manifest, config, copy_guard_script(project_dir, config, dry_run), dry_run)
+    elif merge_guard_settings(project_dir, manifest, config, False, dry_run):
+        remove_guard_script(project_dir, dry_run)
+
+
 def merge_claude_settings(project_dir: Path, manifest: dict, config: dict, dry_run: bool = False) -> None:
     # Only our Stop command is managed; preserve custom commands, even in a shared group.
     if not claude_enabled(manifest):
@@ -2742,14 +2867,16 @@ def _link_project(manifest: dict, project_dir: Path, config: dict, dry_run: bool
         build_claude_hooks(project_dir, manifest, config, dry_run=dry_run)
         merge_claude_settings(project_dir, manifest, config, dry_run=dry_run)
         sync_closure_hook(project_dir, manifest, config, dry_run=dry_run)
+        sync_guard_hook(project_dir, manifest, config, dry_run=dry_run)
         build_claude_mcp(project_dir, manifest, config, dry_run=dry_run)
         ensure_claude_gitignore(project_dir / ".claude", claude_gitignore_entries(manifest, config), dry_run=dry_run)
         ensure_claude_gitignore(project_dir / ".claude", closure_gitignore_entries(manifest, config), dry_run=dry_run)
+        ensure_claude_gitignore(project_dir / ".claude", guard_gitignore_entries(manifest, config), dry_run=dry_run)
     ensure_gitignore(github_dir, dry_run=dry_run)
     build_codex(project_dir, manifest, config, dry_run=dry_run, mode=mode)
     ensure_link_on_open(project_dir, manifest, config, dry_run=dry_run)
-    if has_feature(manifest, config):
-        ensure_root_gitignore(project_dir, entry=".skillsync/", dry_run=dry_run)
+    if has_feature(manifest, config) or guard_mode(manifest, config) != "off":
+        ensure_root_gitignore(project_dir, entry=".skillsync/", dry_run=dry_run)  # also the trail of delete-guard exceptions
     update_composites(project_dir, config[COMPOSITES_KEY], dry_run)
 
 
