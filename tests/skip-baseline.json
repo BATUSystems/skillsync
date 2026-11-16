@@ -513,6 +513,10 @@
     "category": "posix-only"
    },
    {
+    "id": "test_skillsync_dashboard_approve_token.ServeWritesAndRemovesTheState.test_the_state_file_is_removed_when_the_server_stops",
+    "category": "windows-no-mechanism"
+   },
+   {
     "id": "test_skillsync_dashboard_approve_token.StateFile.test_a_posix_root_is_unchanged",
     "category": "posix-only"
    },
@@ -538,6 +542,10 @@
    },
    {
     "id": "test_skillsync_dashboard_ports.Process.test_a_slow_resolver_does_not_delay_the_stop_with_two_ports",
+    "category": "windows-no-mechanism"
+   },
+   {
+    "id": "test_skillsync_dashboard_server.ServeCommandTests.test_serve_stops_on_sigterm",
     "category": "windows-no-mechanism"
    },
    {
