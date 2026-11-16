@@ -14,6 +14,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ### Fixed
 
+- A plan with Windows line ends (CRLF; a checkout with `core.autocrlf` or an editor on Windows) no longer loses its link to the run: the `Przebieg:` line is read also when it ends in `\r\n`, so the closing signal `needsHuman: acceptance` of `skillsync status`, the run report of a plan, the pre-implement report lookup and the closure check of `quality` work for such plans (before, the line did not match and the run was treated as missing, with a false warning about the `Przebieg:` line). The other header, section and step readers of plans and specs were checked with CRLF and answer as with LF.
 - Status page, progress report parser: a checkpoint line with an unclosed bracket (e.g. `w toku: F1.1 (a; b, F1.2; ryzyko: brak`) is split at every `;` as before, which could silently drop the ids after it; `run.parseWarnings` now names it with the reason `unbalanced-bracket` (segment `raport`, fragment up to 80 characters from the element that holds the bracket, redacted before the cut, once per checkpoint), and the page shows the reason in its warning line. Additive (schema 1); a renderer that does not know the reason shows it as sent.
 
 ### Security

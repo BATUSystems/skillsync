@@ -696,7 +696,7 @@ def instruction_drift(root, library, skills, ignore_paths=(), ignore_skills=()):
     return messages
 
 
-_PLAN_RUN = re.compile(r'^Przebieg:[ \t]*`?([^\s`]*)`?[ \t]*$', re.MULTILINE)
+_PLAN_RUN = re.compile(r'^Przebieg:[ \t]*`?([^\s`]*)`?[ \t\r]*$', re.MULTILINE)   # `\r`: a plan with Windows line ends (the `$` of MULTILINE stops only before `\n`)
 _PLAN_DAY = re.compile(r'^(\d{4}-\d{2}-\d{2})-')
 # Wzorzec id jak `_slug` w runs.py (import cykliczny: runs importuje quality).
 _RUN_ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,79}')
