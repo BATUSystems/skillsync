@@ -32,6 +32,7 @@ from skillsync_workflow import dashboard_http as srv  # noqa: E402
 from skillsync_workflow import dashboard_ports as ports  # noqa: E402
 from skillsync_workflow import dashboard_token  # noqa: E402
 from skillsync_workflow import status as status_core  # noqa: E402
+from layers_helpers import guard_real_state  # noqa: E402
 from tests.test_skillsync_dashboard_approve_token import home_env  # noqa: E402
 from tests.test_skillsync_dashboard_server import (ASSETS, CLI, DESCRIPTIONS, PLAN, TEST_TOKEN, ProjectCase, free_port,  # noqa: E402
                                                    install_fake_cli, make_project, spy_core)
@@ -796,6 +797,7 @@ class Process(unittest.TestCase):
 
     def setUp(self) -> None:
         self.tmp = Path(tempfile.mkdtemp(prefix="dashboard-serve-ports-"))
+        guard_real_state(self)
         self.addCleanup(lambda: __import__("shutil").rmtree(self.tmp, ignore_errors=True))
         self.root = make_project(self.tmp)
         manifest = self.root / srv.MANIFEST

@@ -17,6 +17,8 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from layers_helpers import home_env  # noqa: E402
 from tests import test_skillsync_dashboard_server as base  # noqa: E402
 from skillsync_workflow import dashboard as engine  # noqa: E402
 from skillsync_workflow import status  # noqa: E402
@@ -284,7 +286,7 @@ class StatusSecretsGuard(SecretFiles, base.HttpCase):
         manifest = self.root / srv.MANIFEST
         manifest.parent.mkdir(parents=True, exist_ok=True)
         manifest.write_text("skills: [dashboard]\n", encoding="utf-8", newline="\n")
-        env = {**os.environ, "SKILLSYNC_CONFIG": str(self.tmp / "machine-config.yaml"), "XDG_CACHE_HOME": str(self.tmp / "xdg-cache")}
+        env = {**os.environ, "SKILLSYNC_CONFIG": str(self.tmp / "machine-config.yaml"), **home_env(self.tmp)}
         done = subprocess.run([sys.executable, str(base.CLI), "dashboard", "show", str(self.root), "--json", "--layer", f"core={base.ROOT / 'library'}"],
                               capture_output=True, text=True, env=env, timeout=60)
         self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
@@ -309,7 +311,7 @@ class StatusSecretsGuard(SecretFiles, base.HttpCase):
         manifest = self.root / srv.MANIFEST
         manifest.parent.mkdir(parents=True, exist_ok=True)
         manifest.write_text("skills: [dashboard]\n", encoding="utf-8", newline="\n")
-        env = {**os.environ, "SKILLSYNC_CONFIG": str(self.tmp / "machine-config.yaml"), "XDG_CACHE_HOME": str(self.tmp / "xdg-cache")}
+        env = {**os.environ, "SKILLSYNC_CONFIG": str(self.tmp / "machine-config.yaml"), **home_env(self.tmp)}
         done = subprocess.run([sys.executable, str(base.CLI), "status", str(self.root), "--json", "--layer", f"core={base.ROOT / 'library'}"],
                               capture_output=True, text=True, env=env, timeout=60)
         self.assertIn(done.returncode, (0, 1, 2), done.stdout + done.stderr)

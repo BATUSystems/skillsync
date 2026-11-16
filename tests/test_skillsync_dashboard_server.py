@@ -34,7 +34,7 @@ from skillsync_workflow import dashboard_http as srv  # noqa: E402
 from skillsync_workflow.common import as_layerset  # noqa: E402
 
 sys.path.insert(0, str(HERE))
-from layers_helpers import needs_os_symlinks  # noqa: E402
+from layers_helpers import guard_real_state, needs_os_symlinks  # noqa: E402
 from serve_start import bind_free, start_serve, stop_serve  # noqa: E402
 
 FIX = HERE / "fixtures" / "dashboard_server"
@@ -130,6 +130,7 @@ def install_fake_cli(case: unittest.TestCase) -> None:
 
 class ProjectCase(unittest.TestCase):
     def setUp(self) -> None:
+        guard_real_state(self)
         self.tmp = Path(tempfile.mkdtemp(prefix="status-board-"))
         self.root = make_project(self.tmp)
         self.board = srv.Board(self.root, prototype_port=1)  # port 1: prototyp zawsze „wyłączony”
