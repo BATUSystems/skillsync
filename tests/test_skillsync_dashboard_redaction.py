@@ -47,7 +47,7 @@ class SecretFiles:
             rel = f"{directory}/zzz-secret.md"
             target = self.root / rel
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(secret_text(f"Dokument {directory}"), encoding="utf-8")
+            target.write_text(secret_text(f"Dokument {directory}"), encoding="utf-8", newline="\n")
             self.rels.append(rel)
 
     def assert_masked(self, payload: str, where: str) -> None:
@@ -88,7 +88,7 @@ class DocRouteMasksSecrets(SecretFiles, base.HttpCase):
     def test_the_file_name_is_masked_in_path_and_in_the_fallback_title(self) -> None:
         with mock.patch.dict("os.environ", {"STATUSBOARD_TEST_PAT_TOKEN": SIMPLE_SECRET}):
             rel = f"docs/plans/x-{SIMPLE_SECRET}.md"
-            (self.root / rel).write_text("bez nagłówka, sam tekst\n", encoding="utf-8")   # no `#` heading: the title falls back to the file name
+            (self.root / rel).write_text("bez nagłówka, sam tekst\n", encoding="utf-8", newline="\n")   # no `#` heading: the title falls back to the file name
             doc = self.board.doc(rel)
             self.assertIsNotNone(doc)
             self.assertNotIn(SIMPLE_SECRET, json.dumps(doc, ensure_ascii=False))
@@ -174,7 +174,7 @@ class ReaderDecodingAndMasking(base.ProjectCase):
         plan.write_bytes(codecs.BOM_UTF16_LE + text.replace("S4 Dokumentacja", f"S4 Dokumentacja {SIMPLE_SECRET}").encode("utf-16-le"))
         checkpoints = self.root / base.RUN / "checkpoints.md"
         glued = SIMPLE_SECRET[:4] + "\x00" + SIMPLE_SECRET[4:]
-        checkpoints.write_text(checkpoints.read_text(encoding="utf-8") + f"- 11:30 w toku: S2b; czeka: GO plan {glued}\n", encoding="utf-8")
+        checkpoints.write_text(checkpoints.read_text(encoding="utf-8") + f"- 11:30 w toku: S2b; czeka: GO plan {glued}\n", encoding="utf-8", newline="\n")
         board = base.srv.Board(self.root, prototype_port=1)
         board.prototype_acceptance = lambda slug: None
         data = board.status()
@@ -231,7 +231,7 @@ class ReaderLimitsMaskBeforeCutting(base.ProjectCase):
                 for before in (1, 5, 9, 11):   # how many bytes of the secret lie before the limit (the mask is 10 characters long)
                     with self.subTest(limit=name, before=before):
                         path = self.tmp / f"limit-{name}-{before}.md"
-                        path.write_text("x" * (limit - before) + SIMPLE_SECRET + " koniec\n" + "y" * 50, encoding="utf-8")
+                        path.write_text("x" * (limit - before) + SIMPLE_SECRET + " koniec\n" + "y" * 50, encoding="utf-8", newline="\n")
                         text = engine.read_masked(path, limit)
                         self.assertLessEqual(len(text.encode("utf-8")), limit)
                         self.assertFalse(any(text.endswith(SIMPLE_SECRET[:k]) for k in range(2, len(SIMPLE_SECRET) + 1)), text[-15:])   # no prefix of the secret at the cut
@@ -240,7 +240,7 @@ class ReaderLimitsMaskBeforeCutting(base.ProjectCase):
 
     def test_a_file_shorter_than_the_limit_is_read_whole(self) -> None:
         path = self.tmp / "short.md"
-        path.write_text("# T\n\npassword: " + PATTERN_SECRET + "\n", encoding="utf-8")
+        path.write_text("# T\n\npassword: " + PATTERN_SECRET + "\n", encoding="utf-8", newline="\n")
         self.assertEqual(engine.read_masked(path, 1000), "# T\n\npassword: [REDACTED]\n")
 
 
@@ -258,10 +258,10 @@ class StatusSecretsGuard(SecretFiles, base.HttpCase):
             f"- 11:01 w toku: F1.2 opis {ENV_SECRET}, F1.3 (x; {ENV_SECRET}, F1.4",
             f"- 11:02 zrobione: F0.1; eta: bieg {ENV_SECRET} do 17:30; trwa: plan",
             f"- 11:03 w toku: F1.5; ryzyko: password: {PATTERN_SECRET} (a; token: {PATTERN_SECRET}; czeka: GO plan {ENV_SECRET}",   # the newest line: it sets `waiting`
-        ]) + "\n", encoding="utf-8")
+        ]) + "\n", encoding="utf-8", newline="\n")
         plan = self.root / base.PLAN
         text = plan.read_text(encoding="utf-8").replace("- [ ] S3a API terminów", f"- [ ] S3a API terminów — {ENV_SECRET}")
-        plan.write_text(text + f"\n## Wynik\n\n{'x' * 4089} {ENV_SECRET} koniec\n", encoding="utf-8")   # the secret straddles byte 4096 of the section
+        plan.write_text(text + f"\n## Wynik\n\n{'x' * 4089} {ENV_SECRET} koniec\n", encoding="utf-8", newline="\n")   # the secret straddles byte 4096 of the section
         self.board.stop.set()   # the board of the HttpCase watches the old content: a fresh one below reads the planted files
         self.fresh = base.srv.Board(self.root, prototype_port=1)
         self.fresh.prototype_acceptance = lambda slug: None
@@ -283,7 +283,7 @@ class StatusSecretsGuard(SecretFiles, base.HttpCase):
     def test_dashboard_show_is_masked(self) -> None:
         manifest = self.root / srv.MANIFEST
         manifest.parent.mkdir(parents=True, exist_ok=True)
-        manifest.write_text("skills: [dashboard]\n", encoding="utf-8")
+        manifest.write_text("skills: [dashboard]\n", encoding="utf-8", newline="\n")
         env = {**os.environ, "SKILLSYNC_CONFIG": str(self.tmp / "machine-config.yaml"), "XDG_CACHE_HOME": str(self.tmp / "xdg-cache")}
         done = subprocess.run([sys.executable, str(base.CLI), "dashboard", "show", str(self.root), "--json", "--layer", f"core={base.ROOT / 'library'}"],
                               capture_output=True, text=True, env=env, timeout=60)
@@ -293,7 +293,7 @@ class StatusSecretsGuard(SecretFiles, base.HttpCase):
     def test_the_final_pass_of_api_status_is_a_second_layer_that_is_tested(self) -> None:
         """`approvals.jsonl` is not read through the masking reader: only the final `redact(data)` of the route keeps its fields clean."""
         entry = {"word": "GO plan", "at": "2026-01-10T10:30:00+01:00", "sha": "abc1234def5678", "by": f"ktoś password: {PATTERN_SECRET}", "source": "przycisk"}
-        (self.root / base.RUN / "approvals.jsonl").write_text(json.dumps(entry) + "\n", encoding="utf-8")
+        (self.root / base.RUN / "approvals.jsonl").write_text(json.dumps(entry) + "\n", encoding="utf-8", newline="\n")
         board = base.srv.Board(self.root, prototype_port=1)
         board.prototype_acceptance = lambda slug: None
         self.assertIn(PATTERN_SECRET, json.dumps(board.status(), ensure_ascii=False))   # the source layer does not see this field ...
@@ -305,10 +305,10 @@ class StatusSecretsGuard(SecretFiles, base.HttpCase):
         plan = self.root / base.PLAN
         text = plan.read_text(encoding="utf-8").replace("Status: in_progress", f"Status: in_progress — {ENV_SECRET}", 1)
         summary = f"## Streszczenie dla człowieka\n{'z' * 3990} {ENV_SECRET} koniec\npassword: {PATTERN_SECRET}\n\n"
-        plan.write_text(text.replace("## Cel", summary + "## Cel", 1), encoding="utf-8")
+        plan.write_text(text.replace("## Cel", summary + "## Cel", 1), encoding="utf-8", newline="\n")
         manifest = self.root / srv.MANIFEST
         manifest.parent.mkdir(parents=True, exist_ok=True)
-        manifest.write_text("skills: [dashboard]\n", encoding="utf-8")
+        manifest.write_text("skills: [dashboard]\n", encoding="utf-8", newline="\n")
         env = {**os.environ, "SKILLSYNC_CONFIG": str(self.tmp / "machine-config.yaml"), "XDG_CACHE_HOME": str(self.tmp / "xdg-cache")}
         done = subprocess.run([sys.executable, str(base.CLI), "status", str(self.root), "--json", "--layer", f"core={base.ROOT / 'library'}"],
                               capture_output=True, text=True, env=env, timeout=60)
@@ -361,7 +361,7 @@ class StatusModuleMasksBeforeCutting(base.ProjectCase):
         run = self.root / base.RUN
         entry = {"word": "GO plan", "at": "2026-01-10T10:30:00+01:00", "sha": "abc1234def5678", "by": "ktoś",
                  "source": "s" * 36 + SIMPLE_SECRET, "file": "f" * 295 + SIMPLE_SECRET}
-        (run / "approvals.jsonl").write_text(json.dumps(entry) + "\n", encoding="utf-8")
+        (run / "approvals.jsonl").write_text(json.dumps(entry) + "\n", encoding="utf-8", newline="\n")
         with mock.patch.dict("os.environ", {"STATUSBOARD_TEST_PAT_TOKEN": SIMPLE_SECRET}):
             rows = status.read_approvals(self.root)
             self.assertTrue(rows)
@@ -372,6 +372,23 @@ class StatusModuleMasksBeforeCutting(base.ProjectCase):
             self.assertEqual(record["status"], "PASS", record)
             written = (run / "approvals.jsonl").read_text(encoding="utf-8").splitlines()[-1]   # the line the writer appended (the first one is the planted entry)
             self.assertNotIn(SIMPLE_SECRET[:4], written)
+
+    def test_skillsync_status_decodes_utf16_and_keeps_invalid_utf8_a_finding(self) -> None:
+        """`skillsync status` reads UTF-16 with a byte order mark as text, but bytes that are not valid UTF-8 stay a finding without a row (the contract of the IDE consumer)."""
+        for folder, kind in (("plans", "Plan"), ("specs", "Spec")):
+            text = f"# {kind}: zażółć\nStatus: draft\n"
+            (self.root / "docs" / folder / "zzz-utf16-le.md").write_bytes(codecs.BOM_UTF16_LE + text.encode("utf-16-le"))
+            (self.root / "docs" / folder / "zzz-utf16-be.md").write_bytes(codecs.BOM_UTF16_BE + text.encode("utf-16-be"))
+            (self.root / "docs" / folder / "zzz-bad.md").write_bytes(b"# Z\xff\nStatus: draft\n")
+        for name, read in (("plans", status._plans), ("specs", status._specs)):
+            with self.subTest(name):
+                findings: list[str] = []
+                rows = read(self.root, findings)
+                by_name = {Path(row["path"]).name: row for row in rows}
+                for decoded in ("zzz-utf16-le.md", "zzz-utf16-be.md"):
+                    self.assertEqual((by_name[decoded]["title"], by_name[decoded]["status"]), (f"{name[:-1].capitalize()}: zażółć", "draft"), decoded)
+                self.assertNotIn("zzz-bad.md", by_name)
+                self.assertTrue(any("zzz-bad.md" in finding and "UnicodeDecodeError" in finding for finding in findings), findings)
 
     def test_dashboard_blocked_reasons_are_masked_before_the_cut(self) -> None:
         error = ValueError("x " * 245 + f"{SIMPLE_SECRET}")

@@ -123,7 +123,7 @@ def _read_text_safe(path, limit=MAX_PLAN_BYTES, root=None):
             chain = [Path(root).joinpath(*relative.parts[:i]) for i in range(1, len(relative.parts) + 1)]
         if any(item.is_symlink() for item in chain) or not path.is_file() or path.stat().st_size > limit:
             return None
-        return decode_text(path.read_bytes())
+        return decode_text(path.read_bytes(), strict=True)
     except (OSError, ValueError, UnicodeDecodeError):
         return None
 
@@ -319,7 +319,7 @@ def plan_text_needs_human(status, text):
 
 
 def plan_record(root, path, context=None):
-    text = decode_text(path.read_bytes())
+    text = decode_text(path.read_bytes(), strict=True)   # invalid UTF-8 stays an error for the caller (a finding, no row), as `read_text(encoding='utf-8')` was
     status, status_text = _status_fields(text, PLAN_STATUSES)
     title = _TITLE.search(text)
     steps = _progress(text)
@@ -405,7 +405,7 @@ def _specs(root, findings):
             if path.stat().st_size > MAX_PLAN_BYTES:
                 findings.append(f'Spec skipped (over {MAX_PLAN_BYTES // 1024} KiB): {path.name}')
                 continue
-            text = decode_text(path.read_bytes())
+            text = decode_text(path.read_bytes(), strict=True)
             status, status_text = _status_fields(text, SPEC_STATUSES)
             title = _TITLE.search(text)
             rows.append({'path': _doc_path(root, path), 'title': title.group(1) if title else path.stem, 'status': status,
