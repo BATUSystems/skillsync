@@ -14,6 +14,7 @@ command carries a one-time exception that the user approved: `SKILLSYNC_GUARD_EX
 is appended to <project>/.skillsync/hook-exceptions.jsonl (time, command, reason, agent).
 
 Usage (set by `skillsync link`): guard-commands.py [--mode deny|off] [--allow <name-or-path> ...]; stdin = the hook JSON.
+Known limit: `cd` is applied to the commands that follow it even inside `( ... )` groups and after `|`/`&`/`||` (a refusal-safe error only in one direction: such a `cd` may make a later relative path look temporary).
 Always refused when seen (no target check; use the exception): rmtree in `python -c`, xargs rm -r, PowerShell and rd forms.
 The wrapper list is open (timeout, nice, env, sudo, xargs, flock, systemd-run, stdbuf ...): an unknown wrapper hides the command.
 An exception prefix on `bash -c '...'`/`eval` covers the whole inner text.
@@ -465,6 +466,22 @@ class Guard:
             path = os.path.join(base or self.cwd, path)
         return os.path.realpath(path)
 
+    def target_ok(self, word):
+        """A target is fine when its (glob-cut) path is allowed, or when the part before a glob inside a name (`/tmp/foo-*`)
+        is a strict child of a temporary root (for project directories the cut path decides: `build*` is not `build`)."""
+        path = self.resolve(word)
+        if self.allowed(path):
+            return True
+        expanded = self.expand(word)
+        match = GLOB.search(expanded) if expanded else None
+        if path is None or not match or '..' in expanded[match.start():].split('/'):
+            return False
+        prefix = expanded[:match.start()]
+        if not prefix or prefix.endswith('/'):
+            return False
+        full = os.path.realpath(prefix if os.path.isabs(prefix) else os.path.join(self.cwd, prefix))
+        return any(self.under(full, root, exact) for root, exact in self.tmp_roots)
+
     def allowed(self, path):
         if path is None:
             return False
@@ -543,7 +560,10 @@ class Guard:
         if name in SHELLS and depth < MAX_DEPTH:
             for k, arg in enumerate(args):
                 if arg.startswith('-') and not arg.startswith('--') and 'c' in arg[1:] and k + 1 < len(args):
-                    return self.walk(args[k + 1], depth + 1, reason), reason
+                    saved, self.cwd = self.cwd, self.cwd
+                    inner = self.walk(args[k + 1], depth + 1, reason)
+                    self.cwd = saved
+                    return inner, reason
         if name == 'eval' and depth < MAX_DEPTH:
             return self.walk(' '.join(args), depth + 1, reason), reason
         if name == 'rm':
@@ -568,7 +588,7 @@ class Guard:
         for kind, fwords, targets, stdin in found:
             if kind in ('rmtree', 'powershell', 'windows-rd') or stdin:
                 bad.append((kind, fwords, targets, stdin))
-            elif targets and any(not self.allowed(self.resolve(t)) for t in self.expand_targets(targets)):
+            elif targets and any(not self.target_ok(t) for t in self.expand_targets(targets)):
                 bad.append((kind, fwords, targets, stdin))
         return bad, reason
 
@@ -590,7 +610,15 @@ class Guard:
         if not rest:
             return []
         sub, tail = rest[0], rest[1:]
-        shorts, longs, operands = _flags(tail)
+        kept, skip = [], False
+        for token in tail:  # the value of -e/--exclude is a pattern, not a target
+            if skip:
+                skip = False
+            elif token in ('-e', '--exclude'):
+                skip = True
+            else:
+                kept.append(token)
+        shorts, longs, operands = _flags(kept)
         if sub == 'clean' and ('f' in shorts or '--force' in longs) and not ('n' in shorts or '--dry-run' in longs):
             where = [self.resolve(o, base) or o for o in operands] or [base]
             return [('git-clean', words, where, False)]
@@ -627,7 +655,9 @@ class Guard:
         for cmd in parse(text):
             for sub in cmd.subs:
                 if depth < MAX_DEPTH:
+                    saved = self.cwd  # a `cd` inside a substitution does not change the directory of the rest
                     findings += self.walk(sub, depth + 1, inherited)
+                    self.cwd = saved
             found, own = self.classify(cmd, depth)
             findings += [item if len(item) == 5 else item + (own or inherited,) for item in found]
         return findings

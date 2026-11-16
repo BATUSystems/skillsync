@@ -153,6 +153,13 @@ TABLE = [
     ('rm -rf /tmp/w.$$', False),
     ('rm -rf "$(pwd)/build"', False),
     ('rm -rf /tmp', True),
+    ('rm -rf /tmp/foo-*', False),
+    ('rm -rf /tmp/a*/cache', False),
+    ('rm -rf build*', True),
+    ('git clean -fdx -e build', True),
+    ('git clean -fd -e keep', True),
+    ('python3 tool.py --note rmtree', False),
+    ('(cd /tmp/x); rm -rf y', False),  # known limit, see the hook header
     ('rm -rf /tmp/*', True),
     ('rm -rf $TMPDIR/*', True),
     ('rm -rf /tmp/{a,b}', False),
@@ -162,7 +169,7 @@ TABLE = [
     ('rm -rf "$(mktemp -d)"/../..', True),
     ('rm -rf src/build/../../important', True),
     ('rm -rf build/../src', True),
-    ('rm -rf /run/user/1000', True),
+    ('rm -rf /run/user/%d' % (os.getuid() if hasattr(os, 'getuid') else 1000), True),
     # one-time exception approved by the user
     ("SKILLSYNC_GUARD_EXCEPT='zgoda w oknie wyboru' rm -rf src", 'EXC'),
     ("SKILLSYNC_GUARD_EXCEPT='' rm -rf src", True),
@@ -205,7 +212,7 @@ class Classifier(unittest.TestCase):
 
     def test_random_text_never_raises(self):
         import random
-        alphabet = list(' \n\t\'"`$()<>&|;\\{}*?#=-rmgit/.EOF')
+        alphabet = list(' \n\t\'"`$()<>&|;\\{},*?#=-rmgit/.EOF')
         rng = random.Random(7)
         for _ in range(3000):
             text = ''.join(rng.choice(alphabet) for _ in range(rng.randint(0, 60)))
@@ -276,9 +283,13 @@ class Protocol(unittest.TestCase):
         self.assertEqual(record['reason'], 'zgoda uzytkownika')
         self.assertIn('rm -rf src', record['command'])
         self.assertEqual((record['agent_id'], record['session_id'], record['kind']), ('a9', 's1', ['rm']))
+        long = self.run_hook(self.bash("SKILLSYNC_GUARD_EXCEPT='" + 'r' * 900 + "' rm -rf src " + 'x' * 900, root), cwd=root)
+        self.assertEqual(long.returncode, 0)
+        last = json.loads((root / '.skillsync' / 'hook-exceptions.jsonl').read_text(encoding='utf-8').splitlines()[-1])
+        self.assertEqual((len(last['reason']), len(last['command'])), (300, 500))
         self.assertRegex(record['time'], r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$')
         done = self.run_hook(self.bash("SKILLSYNC_GUARD_EXCEPT='drugi' rm -rf src", root), cwd=root)
-        self.assertEqual(len((root / '.skillsync' / 'hook-exceptions.jsonl').read_text(encoding='utf-8').splitlines()), 2)
+        self.assertEqual(len((root / '.skillsync' / 'hook-exceptions.jsonl').read_text(encoding='utf-8').splitlines()), 3)
 
     def test_exception_only_covers_its_own_command(self):
         root = self.project()
@@ -411,6 +422,12 @@ class GuardLink(GuardBase):
         self.assertEqual(group['matcher'], 'Bash')
         self.assertEqual(entries[0]['timeout'], 10)
         self.assertIn('hooks/guard-commands.py', (self.root / '.claude/.gitignore').read_text(encoding='utf-8'))
+
+    def test_dispatch_only_project_ignores_the_exception_trail_directory(self):
+        self.manifest['skills'] = ['dispatch']
+        self.save()
+        self.link()
+        self.assertIn('.skillsync/', (self.root / '.gitignore').read_text(encoding='utf-8'))
 
     def test_dispatch_only_project_gets_it(self):
         self.manifest['skills'] = ['dispatch']

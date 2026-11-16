@@ -2505,7 +2505,7 @@ def remove_guard_script(project_dir: Path, dry_run: bool = False) -> None:
 
 def merge_guard_settings(project_dir: Path, manifest: dict, config: dict, want: bool, dry_run: bool = False) -> bool:
     """Adds (`want`) or removes our PreToolUse entry in the ignored settings.local.json; foreign hooks and permissions stay.
-    True when no entry of ours remains after the call. Backup before every write; a tracked file is never written."""
+    True when no entry of ours remains after the call. The earliest backup is kept (the closure hook writes the same file first); a tracked file is never written."""
     settings_path = project_dir / guardhook.SETTINGS
     if not want and not settings_path.exists():
         return True
