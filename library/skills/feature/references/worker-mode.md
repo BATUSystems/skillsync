@@ -18,6 +18,9 @@ Skill `dispatch` należy do profilu `workflow-extended` (jeśli zainstalowany). 
 - manifest: komendy `skillsync` wymagają `.github/.skillsync.yaml`. Po `git worktree add`, przed `dispatch.setup`: gdy
   `git -C <worktree> ls-files --error-unmatch -- .github/.skillsync.yaml` kończy się błędem i pliku brak, skopiuj go z głównego repo bez nadpisywania
   i sprawdź `git -C <worktree> check-ignore -q .github/.skillsync.yaml`; porażka = stop i zgłoszenie. Gdy jest śledzony, nic nie kopiuj;
+- dowiązania skilli: świeży worktree projektu ma dowiązania z commita (cel może nie istnieć), więc po `git worktree add` wykonaj
+  `skillsync link <worktree>`; bez tego `doctor` kończy się FAIL („Missing installed skill” albo „Installed skill symlink points to a target that does not exist”, z komendą `skillsync link …` w komunikacie). `checkpoint`, `readiness` i stronę statusu
+  uruchamiaj w TYM SAMYM drzewie, w którym powstaje kod (przebieg i odcisk `HEAD` powstają w drzewie wywołania; plan podany ścieżką z innego drzewa jest odrzucany);
 - checkpointy zapisuj wg [pomiaru](measurement.md). Luka dowodu, czyli brak logu albo log starszy niż kod, wykryta przez Ciebie lub dyspozytora:
   `checkpoint --step <krok dowodu> --status FAIL --cause-key evidence-gap` bez `--evidence` (starego logu nie podpinaj), potem `PASS` z nowym logiem i zamknięcie. Rekordu nie usuwaj;
 - kopia do głównego repo (ścieżkę podaje zlecenie): przed `REPORT DONE`, `REPORT BLOCKED` i usunięciem worktree skopiuj `.skillsync/runs/<run-id>.json`

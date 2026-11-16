@@ -124,6 +124,12 @@ Commit trafia na gałąź roboczą w osobnym worktree, zakładaną przy „GO pl
 „GO implement” nic nie opuszcza maszyny (push i PR dalej według trybu dostarczania). Wyjątek: wejście z klucza zgłoszenia
 (`pr-after-approval`) zostaje bez commita przy „GO plan”.
 
+Po założeniu worktree wykonaj w nim `skillsync link <worktree>`: dowiązania skilli (`sync.method: symlink`) świeżego worktree wskazują cele z commita,
+które mogą nie istnieć, a `doctor` kończy się wtedy FAIL („Missing installed skill” albo „Installed skill symlink points to a target that does not exist”, z komendą `skillsync link …` w komunikacie). `checkpoint`, `readiness` i `dashboard serve` uruchamiaj w tym samym
+drzewie, w którym powstaje kod: `.skillsync/runs/` jest per drzewo, odcisk `HEAD` w checkpoincie pochodzi z drzewa wywołania, a `--plan` spoza drzewa jest
+odrzucany („The plan lies outside the project”). `--evidence` przyjmuje ścieżki plików w projekcie, nie opis. Projekt, który śledzi wygenerowane pliki (dowiązania
+skilli, instrukcje) mimo wpisu w `.gitignore`, dostaje od `doctor` ostrzeżenie z gotowym `git rm --cached`.
+
 ### Ceremonia `demo`
 
 Klucz manifestu `workflow.ceremony: full | demo` ([manifest](manifest.md)); `route` zwraca pole `ceremony`, a `doctor` waliduje wartość.

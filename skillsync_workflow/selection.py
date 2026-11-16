@@ -4,7 +4,7 @@ import json
 import subprocess
 from pathlib import Path
 
-from .common import emit, load_layer_project, matches, workflow_config
+from .common import emit, load_layer_project, matches, project_file, workflow_config
 from .layers import add_layer_argument
 from .quality import plan_validation, run_validation
 
@@ -60,7 +60,7 @@ def _normal_files(root, files):
         if ".." in candidate.parts:
             raise ValueError("Zmieniony plik poza projektem")
         try:
-            (root / candidate).resolve().relative_to(root.resolve())
+            project_file(root, candidate)   # the same rule as every list of files: a link that lies in the project is a file of the project
         except ValueError as exc:
             raise ValueError("Zmieniony plik poza projektem przez dowiązanie") from exc
         name = candidate.as_posix().removeprefix("./")
