@@ -56,6 +56,28 @@
     return data;
   }
 
+  // <to-top> przycisk „na górę” (170-B): haczyk dla renderera. Metryki okna przez requestAnimationFrame (jeden odczyt na klatkę, nasłuch
+  // pasywny), przewijanie płynne, a przy prefers-reduced-motion natychmiastowe.
+  function createToTop(win) {
+    const metrics = () => ({ y: win.scrollY, viewport: win.innerHeight, height: win.document.documentElement.scrollHeight });
+    return {
+      subscribe(cb) {
+        let queued = false;
+        const run = () => { queued = false; cb(metrics()); };
+        const on = () => { if (!queued) { queued = true; win.requestAnimationFrame(run); } };
+        win.addEventListener("scroll", on, { passive: true });
+        win.addEventListener("resize", on, { passive: true });
+        cb(metrics());
+        return () => { win.removeEventListener("scroll", on); win.removeEventListener("resize", on); };
+      },
+      go() {
+        const calm = typeof win.matchMedia === "function" && win.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        win.scrollTo({ top: 0, left: 0, behavior: calm ? "auto" : "smooth" });
+      },
+    };
+  }
+  // </to-top>
+
   const board = window.DashboardRenderer.create(document.getElementById("app"), {
     actions: {
       approve: postApprove,
@@ -80,6 +102,7 @@
         if (matchMedia("(max-width: 1100px)").matches && inDocs) view.scrollIntoView({ block: "start" }); // lista jest nad podglądem
         else window.scrollTo(0, 0);
       },
+      toTop: createToTop(window),
     },
   });
 
