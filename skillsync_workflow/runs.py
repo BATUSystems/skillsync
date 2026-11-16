@@ -406,7 +406,11 @@ def _checkpoint_locked(args):
         raise ValueError("Przekroczono limit checkpointów")
     evidence = []
     for name in args.evidence or []:
-        item = _inside(root, name)
+        try:
+            item = _inside(root, name)
+        except ValueError as error:
+            reason = str(error) if name in str(error) else f"{error}: {name}"
+            raise ValueError(f"{reason} (--evidence oczekuje ścieżki pliku w projekcie, nie opisu)") from None
         evidence.append({"path": item.relative_to(root).as_posix(), "sha256": _hash_file(item)})
     if args.status == "PASS" and not evidence:
         raise ValueError("PASS wymaga pliku z rzeczywistym dowodem; sama deklaracja nie wystarcza")
@@ -866,7 +870,7 @@ def register(subparsers):
         if name == "checkpoint":
             parser.add_argument("--step", required=True)
             parser.add_argument("--status", required=True, choices=STATUSES)
-            parser.add_argument("--evidence", nargs="+", action="extend")
+            parser.add_argument("--evidence", nargs="+", action="extend", help="ścieżki plików z dowodem, wewnątrz projektu (nie tekst opisowy)")
             parser.add_argument("--next", required=True)
             parser.add_argument("--duration", type=float)
             parser.add_argument("--cost", type=float)

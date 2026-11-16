@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import shutil
 import signal
 import stat
@@ -881,6 +882,21 @@ def layer_findings(root, manifest, layerset):
     return found
 
 
+GENERATED_PREFIXES = ('.github/skills/', '.claude/skills/', '.agents/skills/', '.claude/agents/', '.codex/', '.github/copilot-instructions.md',
+                      'CLAUDE.md', 'AGENTS.md', '.mcp.json')   # what `link` writes; the manifest is not here (it may be tracked on purpose)
+
+
+def tracked_generated_files(root):
+    """Files that `link` generates, are listed in a `.gitignore` and are tracked in git anyway (one `git ls-files -ci` call); [] outside git."""
+    try:
+        process = subprocess.run(['git', '-C', str(root), 'ls-files', '-ci', '--exclude-standard', '-z'], capture_output=True, timeout=15, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return []
+    if process.returncode:
+        return []
+    return sorted(item for item in (os.fsdecode(raw) for raw in process.stdout.split(b'\0') if raw) if item.startswith(GENERATED_PREFIXES))
+
+
 def doctor(root, manifest, library):
     layerset = require_layerset(library, 'doctor')
     config = workflow_config(root, manifest, layerset)
@@ -953,7 +969,10 @@ def doctor(root, manifest, library):
                 continue
             linked = Path(root) / prefix / name
             if not linked.exists():
-                finding('error', linked, 'Missing installed skill')
+                if linked.is_symlink():   # a link of another tree (a tracked link in a fresh worktree) or of a cleaned cache
+                    finding('error', linked, f'Installed skill symlink points to a target that does not exist; run `skillsync link {root}`')
+                else:
+                    finding('error', linked, f'Missing installed skill; run `skillsync link {root}`')
             elif linked.is_symlink():
                 state = skill_link_state(layerset, name, linked)
                 if state == 'stale':
@@ -1011,6 +1030,11 @@ def doctor(root, manifest, library):
                     finding('error', instruction, 'Missing enabled Codex entrypoint/instructions')
     if (Path(root) / 'AGENTS.md').is_symlink():
         finding('warning', 'AGENTS.md', 'Symlinked AGENTS.md: skillsync does not write its instructions block there')
+    tracked = tracked_generated_files(root)
+    if tracked:
+        shown = ' '.join(shlex.quote(item) for item in tracked[:10]) + (' ...' if len(tracked) > 10 else '')
+        finding('warning', '.gitignore', f'{len(tracked)} generated file(s) listed in .gitignore are tracked in git: `skillsync link` shows them as changed '
+                                         f'and a new worktree starts with stale links; untrack them with `git rm --cached {shown}`')
     if generated_claude_import(root) and not agents_block_body(root):
         finding('error', 'AGENTS.md', 'CLAUDE.md imports @AGENTS.md, but AGENTS.md has no skillsync instructions block')
     for name in skills:
@@ -1168,6 +1192,14 @@ def _section_state(text, section):
     return 'empty' if not body or re.fullmatch(r'(?i)(TODO|TBD|none|n/a|[-—])\.?', body) else 'ok'
 
 
+def _plan_path(root, plan):
+    """The plan file inside the project; a plan of another tree (a worktree has its own project root) gets a message that names the cause."""
+    try:
+        return contained(root, plan)
+    except ValueError:
+        raise ValueError(f'The plan lies outside the project: {plan}; run the command from the directory of the tree that holds the plan') from None
+
+
 def readiness(root, manifest, library, files, plan=None, risk=None):
     files = normalize_files(root, files)
     workflow = workflow_config(root, manifest, library)
@@ -1189,7 +1221,7 @@ def readiness(root, manifest, library, files, plan=None, risk=None):
             for area in areas + [risk]:
                 required.extend(risk_sections.get(area, []))
     if plan:
-        path = contained(root, plan)
+        path = _plan_path(root, plan)
         text = path.read_text(encoding='utf-8')
         spec, spec_text, reasons = _read_spec(root, text)
         issues.extend(reasons)
@@ -1272,7 +1304,7 @@ def _plan_sha(root, plan):
     if not plan:
         return None
     try:
-        path = contained(root, plan)
+        path = _plan_path(root, plan)
         return git_blob_sha(path.read_bytes()) if path.is_file() else None
     except (OSError, ValueError):
         return None
