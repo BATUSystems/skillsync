@@ -18,6 +18,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ### Security
 
+- Status page, `GET /api/doc`: in 1.6.0 a document was served without masking secrets, also on the read socket, which needs no login (the same text in `/api/status` was masked). The whole document is now masked before it is parsed and rendered, for every served root (`docs/specs`, `docs/plans`, `docs/design`, `docs/domain` and the reports of a run). Documents that contain no secret render exactly as before.
 - Status page, `run.parseWarnings` (served on the read port without a login): a fragment is now cut out of the checkpoint text only after the whole text has been masked, for every reason (`no-step-id`, `later-id`, `unbalanced-bracket`). Before, the element was split before masking, so a secret from the environment that contained `,` or `;` was cut apart and shown unmasked in the fragment of a skipped element (released in 1.6.0).
 
 ## [1.6.0] - 2026-11-16

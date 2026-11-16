@@ -544,7 +544,7 @@ class Board:
         if not path:
             return None
         size = path.stat().st_size
-        text = engine.read_text(path)
+        text = redact(engine.read_text(path))   # the whole document is masked BEFORE it is parsed or rendered: this route is served on the read socket without a login
         title, _fields = engine.parse_header(text)
         return {"path": rel, "title": title or path.stem, "status": engine.doc_status(text)[0],
                 "mtime": engine._iso(engine._mtime(path)), "size": size, "truncated": size > MAX_DOC_BYTES,
