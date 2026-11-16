@@ -9,7 +9,7 @@ import shutil
 import sys
 import tempfile
 import unittest
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -166,7 +166,10 @@ class ProjectAtEveryLineEnd(unittest.TestCase):
         self.addCleanup(lambda: shutil.rmtree(self.tmp, ignore_errors=True))
 
     def project(self, end):
-        root = base.make_project(self.tmp / end.decode('ascii').encode('unicode_escape').decode())
+        name = end.hex()   # b'\n' -> '0a', b'\r\n' -> '0d0a': a plain name, no separator or special character of any system
+        self.assertTrue(name.isalnum(), name)
+        root = base.make_project(self.tmp / name)
+        root.resolve().relative_to(self.tmp.resolve())   # a project that landed outside the temporary directory fails here instead of being written
         if end != b'\n':
             for path in list(root.rglob('*')):
                 if path.is_file() and '.git' not in path.parts and path.suffix in ('.md', '.yaml', '.yml', '.jsonl', '.txt'):
@@ -268,6 +271,30 @@ def line_split_hits(source):
             visit(child, function)
     visit(ast.parse(source), '<module>')
     return found
+
+
+class ProjectDirectoryName(unittest.TestCase):
+    """The directory of a test project is built from test data (the line end): the name must be a plain one on every system. The old name was the text
+    `\\n` (a backslash and an n): on Windows `Path(tmp) / '\\\\n'` is a path from the ROOT of the drive, outside the temporary directory."""
+
+    def test_the_name_has_no_separator_drive_or_special_character_on_any_system(self):
+        from pathlib import PurePosixPath, PureWindowsPath
+        for end in (b'\n', b'\r\n', b'\r'):
+            name = end.hex()
+            with self.subTest(end=end):
+                self.assertTrue(name.isalnum() and name.isascii(), name)
+                for pure in (PurePosixPath, PureWindowsPath):
+                    path = pure(name)
+                    self.assertEqual((path.drive, path.root, path.anchor, path.parts), ('', '', '', (name,)), (pure.__name__, name))
+        old = b'\n'.decode('ascii').encode('unicode_escape').decode()                    # the name the test used to build
+        self.assertEqual(old, '\\n')
+        self.assertNotEqual((PureWindowsPath(old).root, PureWindowsPath(old).parts[0:1]), ('', (old,)))   # on Windows it was rooted: the escape
+
+    def test_make_project_refuses_a_base_outside_the_temporary_directory(self):
+        outside = Path(tempfile.gettempdir()).resolve().parent / 'skillsync-escape-probe'
+        with self.assertRaises(ValueError):
+            base.make_project(outside)
+        self.assertFalse(outside.exists())
 
 
 class NoRawLineSplitting(unittest.TestCase):
