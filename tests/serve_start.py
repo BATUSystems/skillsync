@@ -4,6 +4,7 @@ A server that lost the bind exits with BLOCKED, while the OTHER server on that p
 start is ready only when the state file of our own pid and port exists (written after the bind, also with `--no-approvals`); a lost bind is retried
 on another port. Tests only: no production code is involved."""
 from datetime import datetime, timedelta, timezone
+import errno
 import json
 import os
 import subprocess
@@ -13,6 +14,24 @@ import urllib.request
 from unittest import mock
 
 ATTEMPTS = 4
+ADDRESS_IN_USE = {errno.EADDRINUSE, 10048}   # 10048 = WSAEADDRINUSE (Windows reports its own code)
+
+
+def bind_free(factory, free_port, attempts=5):
+    """Bind a server in the test process on a port from `free_port()`, retrying when the port was taken before the bind.
+
+    `factory(port)` creates the bound server (e.g. `make_server`); an `OSError` "address in use" moves on to the next port from the pool, any other
+    error is raised at once. Returns `(server, port)`. For servers in a thread: a subprocess uses `start_serve`."""
+    last = None
+    for _attempt in range(attempts):
+        port = free_port()
+        try:
+            return factory(port), port
+        except OSError as error:
+            if error.errno not in ADDRESS_IN_USE:
+                raise
+            last = error
+    raise last
 
 
 def state_files(env):

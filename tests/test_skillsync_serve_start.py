@@ -1,7 +1,9 @@
 """`tests/serve_start.py`: which state file counts as the file of OUR server (POSIX: the pid; Windows: port + project root + start time).
 The Windows branch is forced by the `windows` parameter, so Linux and macOS exercise it too."""
+import errno
 import json
 import os
+import socket
 import sys
 import tempfile
 import unittest
@@ -15,7 +17,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests"))
 
 from skillsync_workflow import dashboard_token  # noqa: E402
-from serve_start import own_state  # noqa: E402
+from serve_start import bind_free, own_state  # noqa: E402
 
 
 class OwnState(unittest.TestCase):
@@ -68,6 +70,83 @@ class OwnState(unittest.TestCase):
         self.write("a")
         self.assertFalse(own_state(self.env, self.proc, 5190, None, self.started, windows=True))
         self.assertFalse(own_state(self.env, self.proc, 5190, self.root, None, windows=True))
+
+
+class BindFree(unittest.TestCase):
+    def test_a_port_taken_before_the_bind_moves_on_to_the_next_one(self):
+        ports = iter([5190, 5191, 5192])
+        tried = []
+
+        def factory(port):
+            tried.append(port)
+            if port != 5192:
+                raise OSError(errno.EADDRINUSE, "Address already in use")
+            return f"server-{port}"
+
+        self.assertEqual(bind_free(factory, lambda: next(ports)), ("server-5192", 5192))
+        self.assertEqual(tried, [5190, 5191, 5192])
+
+    def test_the_windows_code_of_a_taken_port_is_retried_too(self):
+        ports = iter([5190, 5191])
+
+        def factory(port):
+            if port == 5190:
+                raise OSError(10048, "WSAEADDRINUSE")
+            return "ok"
+
+        self.assertEqual(bind_free(factory, lambda: next(ports)), ("ok", 5191))
+
+    def test_another_error_is_raised_at_once(self):
+        calls = []
+
+        def factory(port):
+            calls.append(port)
+            raise OSError(errno.EACCES, "Permission denied")
+
+        with self.assertRaises(OSError):
+            bind_free(factory, lambda: 5190)
+        self.assertEqual(calls, [5190])
+
+    def test_the_last_error_is_raised_after_the_attempts_run_out(self):
+        calls = []
+
+        def factory(port):
+            calls.append(port)
+            raise OSError(errno.EADDRINUSE, "Address already in use")
+
+        with self.assertRaises(OSError) as raised:
+            bind_free(factory, lambda: 5190, attempts=3)
+        self.assertEqual(raised.exception.errno, errno.EADDRINUSE)
+        self.assertEqual(len(calls), 3)
+
+    def test_a_really_occupied_port_loses_against_the_retry(self):
+        with socket.socket() as holder:
+            holder.bind(("127.0.0.1", 0))
+            holder.listen()
+            taken = holder.getsockname()[1]
+            ports = iter([taken])
+
+            def free():
+                return next(ports, None) or self.free_other(taken)
+
+            def factory(port):
+                sock = socket.socket()
+                try:
+                    sock.bind(("127.0.0.1", port))
+                except OSError:
+                    sock.close()
+                    raise
+                return sock
+
+            sock, port = bind_free(factory, free)
+            sock.close()
+            self.assertNotEqual(port, taken)
+
+    @staticmethod
+    def free_other(taken):
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            return probe.getsockname()[1]
 
 
 if __name__ == "__main__":
