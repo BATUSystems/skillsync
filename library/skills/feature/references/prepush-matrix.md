@@ -23,6 +23,21 @@ Zakres: maszyny Windows i macOS są wspólne dla projektów, więc **pełna maci
 
 Zasady biegów: procesy testów zatrzymujesz **wyłącznie po własnym PID** (albo własnej grupie procesów lub scope `systemd-run`), nigdy po wzorcu nazwy (`pkill -f`): na wspólnej stacji zabijesz cudzy bieg. Równoległe biegi na jednej maszynie (np. Windows 3.11, 3.12 i 3.13 naraz) dostają rozłączne plasterki portów testowych serwerów (`SKILLSYNC_TEST_DASHBOARD_PORTS=<od>-<do>`), inaczej moduły z serwerem dają `WinError 10048` (zajęty port), co nie jest porażką produktu.
 
+## Biegi na maszynie zdalnej
+
+Lekcje z biegów macierzy na maszynach zdalnych (Windows, macOS):
+
+- **Logi przyrostowo.** Logi modułów kopiuj na stację w trakcie biegu (co kilka minut), nie dopiero po jego końcu: wiszący albo ubity bieg zostawia wtedy dowód,
+  a `check_skips` ma co czytać.
+- **Śmierć po PID-ach całego drzewa.** Po `kill` sprawdź, że wszystkie procesy drzewa (runner, interpreter, serwery testów) nie żyją (po PID-ach zapisanych przy
+  starcie, nie po nazwie), dopiero potem usuń katalogi robocze; inaczej żywy proces trzyma pliki i porty, a usunięcie zawodzi albo psuje następny bieg.
+- **Jedna pula portów = jeden proces.** Plasterek portów testowych należy do jednego biegu naraz; dwa procesy na tym samym plasterku dają zajęty port, który
+  wygląda jak porażka produktu.
+- **Lista modułów bez aliasów powłoki.** Listę modułów do biegu zbieraj poleceniem, którego nie podmienia alias (`command ls`, ścieżka bezwzględna albo `glob` w
+  skrypcie): alias z kolorami i ikonami wstawia do listy kody sterujące, a bieg uruchamia puste albo błędne nazwy modułów.
+- **Start w tle na macOS bez `setsid`.** Standardowy macOS nie ma polecenia `setsid`; start w tle rób przez `nohup` z przekierowaniem i zapisem PID-u w pliku, a
+  w ciągu minuty sprawdź, że proces żyje i log rośnie.
+
 Skrypty pomocnicze leżą w repo operacyjnym `skillsync-ops` (`tools/win-shard/`): `prepush.sh` (macierz Windows i `check_skips` z jednej komendy),
 `runlike.sh`/`runlike.ps1` (Windows, środowisko jak runner), `skips_union.py` i `apply_windows_baseline.py` (baseline z logów CI); w rdzeniu jest tylko
 `scripts/check_skips.py`. Raport kroku wymienia

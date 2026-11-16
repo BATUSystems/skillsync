@@ -238,3 +238,5 @@ z configu maszyny w całości: bez `--targets-json` cel jest nieznany, więc `--
 13. **`smart-test`** wymaga, by projekt był korzeniem repo git; ścieżki wspólne i niezmapowane dają fallback do wszystkich testów (zamierzone).
 14. **`SKILLSYNC_CONFIG`** wczytywane jest przy imporcie `skillsync_workflow.cli` (`CONFIG_PATH`); w testach używaj słownika `config`.
 15. **Zapis `tasks.json` przez generator** przepisuje plik jako czysty JSON (usuwa komentarze i CRLF); kopia zapasowa jest nadpisywana przy kolejnym odświeżeniu.
+16. **Biegi na maszynach zdalnych** (Windows, macOS): logi kopiowane przyrostowo, sprawdzenie śmierci drzewa procesów po PID-ach przed usunięciem katalogów, jedna pula portów na proces, lista modułów bez aliasów powłoki, start w tle na macOS bez `setsid`: reguły w `library/skills/feature/references/prepush-matrix.md` (sekcja „Biegi na maszynie zdalnej”).
+17. **PowerShell 5 (Windows)**: skrypt pomocniczy z polskimi znakami zapisany bez BOM nie daje się sparsować; zapisuj z BOM albo bez polskich znaków. Wyjście natywnej komendy na stderr przy `2>&1` jest pokazywane jako błąd mimo kodu wyjścia 0: oceniaj `$LASTEXITCODE`, nie tekst.

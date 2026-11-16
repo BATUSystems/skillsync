@@ -226,13 +226,31 @@ Reguła `**` dla projektów bez innej reguły tworzy `layers migrate` albo ręcz
 `--layer-source` przyjmuje wyłącznie ścieżki lokalne. Warstwę zdalną dodaj po migracji:
 `skillsync layers add <id> --kind <rodzaj> --source <URL>`.
 
+## Windows z instalacji uv
+
+Aktualizacja maszyny z Windows, na której rdzeń stoi jako narzędzie uv (sprawdzona na przejściu z 1.0.1 do 1.6.0). Polecenia z katalogu projektu, nie z katalogu domowego.
+
+1. `uv tool install --force git+https://github.com/BATUSystems/skillsync@v1.6.0`.
+2. `skillsync layers update core --ref v1.6.0` (zapisuje kopię configu `.bak-<czas>`).
+3. W katalogu projektu `skillsync layers check`. Dla każdej warstwy zapisywalnej: `skillsync leakguard install-hook <ścieżka warstwy>`; bez hooków `layers check` kończy się FAIL `hook-missing`.
+4. `skillsync layers update <id warstwy org>`.
+5. `skillsync link <projekt> --dry-run`, potem `skillsync link <projekt>`, na końcu `skillsync doctor <projekt>`.
+
+Co zobaczysz po drodze:
+
+- **`layers list` i `layers check` zależą od katalogu.** Pokazują warstwy według reguł dla bieżącego katalogu: poza projektem tylko `core`, w katalogu projektu także warstwę org. Sprawdzaj z katalogu projektu.
+- **Projekt dowiązany jeszcze do starej biblioteki.** `doctor` przed `link` zwraca BLOCKED „Path escapes project: .github/skills/…”. `link` przepina dowiązania na warstwy (część skilli wskazuje wtedy katalog cache `composed`), usuwa przestarzały plik roli i odświeża zadanie startowe edytora.
+- **Zadanie startowe edytora** (`.vscode/tasks.json`, `runOn: folderOpen`): stara definicja wołała `python <klon generatora>/skillsync link …` i po migracji configu na warstwy kończyła się `KeyError: 'library'`. `link` z nowej wersji przepisuje ją na plik wykonywalny z instalacji uv; edytor trzyma starą definicję do przeładowania okna.
+- **Dwie komendy `skillsync` na PATH.** Obok pliku z instalacji uv może leżeć stary skrypt-opakowanie klonu; obowiązuje pierwsza. Sprawdź `Get-Command skillsync -All` (PowerShell) albo `where skillsync`.
+- **Manifest.** `doctor` ostrzega o ignorowanym `sync: {library: …}` i o przemianowanej roli `Explore` → `explore`. `skillsync layers migrate --manifests` obejmuje tylko projekty z `discover_paths`; w projekcie spoza listy usuń klucz ręcznie.
+- **Rekord domenowy z dwukropkiem w nagłówku.** `doctor` zgłasza błąd YAML przy niecytowanej wartości zawierającej „: ”; ujmij ją w apostrofy.
+- **Warstwa prywatna** wymaga dostępu do jej repozytorium z tej maszyny; bez niego generowane instrukcje nie zawierają części pochodzących z tej warstwy.
+
 ## Ograniczenia na poszczególnych systemach
 
 Zakres wsparcia systemów opisuje tabela w [README](../README.pl.md#wymagania).
 
-Przejście maszyn Windows i macOS na warstwy jest przewidziane w późniejszym wydaniu (natywny Windows jest poza drogą instalatora: WSL2).
-
-Procedura przejścia maszyn Windows i macOS oraz ręczne testy na tych systemach powstaną w późniejszym wydaniu.
+Aktualizacja maszyny Windows z instalacji uv: sekcja „Windows z instalacji uv” wyżej (natywny Windows jest poza drogą instalatora: WSL2). Procedura przejścia maszyny macOS na warstwy oraz ręczne testy na tym systemie powstaną w późniejszym wydaniu.
 
 ## Co dalej
 
