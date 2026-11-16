@@ -36,7 +36,7 @@ skillsync dashboard show <projekt> [--json] [--plan docs/plans/<plik>.md]   # je
 - `--host` i `--approve-host` bez portów są BLOCKED z podpowiedzią: stary tryb `--port N --host A` / `--port N --approve-host H`,
   nowy: `--read-bind` i `--approve-bind`.
 - Tryb `--port N` (jedno gniazdo, stary tryb) słucha na `127.0.0.1`. Przez tunel `ssh -R N:127.0.0.1:N …` przeglądarka po drugiej stronie
-  wysyła `Host: localhost`, więc działa bez flag; gdy widzowie wchodzą pod nazwą tunelu: `serve --port N --read-host <nazwa tunelu>` (odczyt) albo `--approve-host <nazwa tunelu>` (odczyt i zgody), inaczej 403. `--host 0.0.0.0` = wszystkie interfejsy (podgląd z telefonu lub
+  wysyła `Host: localhost`, więc działa bez flag; gdy widzowie wchodzą pod nazwą tunelu: `serve --port N --read-host <nazwa tunelu>` (odczyt) albo `--approve-host <nazwa tunelu>` (odczyt i zgody), inaczej 403. `--port N --host 0.0.0.0` = wszystkie interfejsy (podgląd z telefonu lub
   innej maszyny w **zaufanej** sieci); każdy endpoint odpowiada jednak tylko pod nagłówkiem `Host` z loopbacku albo z
   `--approve-host`, więc adres z paska przeglądarki innego urządzenia (nazwa lub IP) trzeba podać w `--approve-host`
   (inaczej 403). `--approve-host` dopuszcza odczyt i zgody; `--read-host <adres>` (powtarzalny) dopuszcza tylko odczyt:

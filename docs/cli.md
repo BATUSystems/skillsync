@@ -220,7 +220,7 @@ Szczegóły: [workflow](workflow.md).
   jedno ostrzeżenie o dostępności dla urządzeń w sieci; zgody z innego urządzenia wymagają `--approve-bind 0.0.0.0` (lub
   ustawienia), bo token idzie nieszyfrowanym HTTP. W nieufnej sieci zawęź odczyt do tej maszyny (`--read-bind 127.0.0.1`
   albo `dashboard.local_only: true`). Port odczytu (5140) nie ma trasy zgód: tunel na zgody to jawne
-  `--approve-port M --approve-host <nazwa tunelu>` i tunel na port M (`ssh -L M:127.0.0.1:M <host>`); tunel do strony
+  `--approve-port M` i tunel na port M (`ssh -L M:127.0.0.1:M <host>`; `--approve-host` tylko dla nazwy z tunelu odwrotnego albo bramki); tunel do strony
   zawsze kieruj na port odczytu. Ryzyko: [workflow](workflow.md), sekcja „Strona statusu”.
 - Stary tryb za tunelem: `serve --port 5140 --approve-host <nazwa tunelu>` (jeden port z bramką `Host`, jak do 1.7.0).
   `--host` i `--approve-host` bez portów są BLOCKED z podpowiedzią, bo zmieniłyby znaczenie.
@@ -241,7 +241,7 @@ Szczegóły: [workflow](workflow.md).
   wcześniejsze `dashboard serve` tego samego hosta (także te z `--no-approvals`), zanim uruchomisz tryb dwóch gniazd.
   Jedno wywołanie z dwoma portami zastępuje dwie instancje (jedna z `--no-approvals`); wywołania z `--port` działają bez
   zmian. `--port` z `--read-bind`, `--approve-bind` albo `--allow-proxy-headers` = BLOCKED. `--allow-proxy-headers` działa
-  tylko z `--approve-port`; `--read-host '*'` tylko na gnieździe odczytu.
+  tylko w trybie z gniazdem zgód (domyślnym albo z `--approve-port`); `--read-host '*'` tylko na gnieździe odczytu.
 - `approvals record` jest jedynym zapisem zgód: blokada plikowa, odmowa duplikatu (to samo słowo i `sha` w przebiegu), maskowanie
   sekretów. Słowo wpisuje użytkownik; agent tej komendy nie wywołuje.
 - Kody: `0` = `PASS`, `2` = `BLOCKED` (zły argument, odmowa zapisu, brak projektu lub przebiegu, port zajęty); `approvals wait`

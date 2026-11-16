@@ -1030,6 +1030,35 @@ class Process(unittest.TestCase):
         self.assertIn(f"UWAGA: port odczytu {read_port} słucha na 0.0.0.0", err)
         self.assertNotIn("UWAGA: port zgód", err)
 
+    def test_console_of_the_default_listen_address(self) -> None:
+        """K5/K8/K12: one address line per LAN address, the warning, the sentence about the changed default, the consents-are-local line."""
+        read_port, approve_port = two_ports()
+        proc = self.serve("--read-port", str(read_port), "--approve-port", str(approve_port))
+        self.wait_up(read_port, approve_port)
+        _lines, finish = self.console_until(proc, f"UWAGA: port odczytu {read_port}", "zgody są tylko na tej maszynie")
+        err = finish()
+        self.assertIn("od 1.8.0 odczyt słucha domyślnie na wszystkich interfejsach", err)
+        self.assertIn("--read-bind 127.0.0.1", err)
+        self.assertIn("dashboard.local_only: true", err)
+        self.assertIn("zgody z telefonu: --approve-bind 0.0.0.0", err)
+        self.assertNotIn("strona tylko na tej maszynie", err)
+        names = [line for line in err.splitlines() if "albo po nazwie tej maszyny" in line]
+        self.assertEqual(len(names), 1)
+        self.assertIn(f":{read_port}/", names[0])
+        address = lan_address()
+        if address is not None:
+            self.assertEqual(len([line for line in err.splitlines() if line.rstrip().endswith(f"z innego urządzenia: http://{address}:{read_port}/")]), 1)
+
+    def test_console_of_a_narrowed_listen_address_has_no_warning_and_no_sentence(self) -> None:
+        read_port, approve_port = two_ports()
+        proc = self.serve("--read-port", str(read_port), "--approve-port", str(approve_port), "--read-bind", "127.0.0.1")
+        self.wait_up(read_port, approve_port)
+        _lines, finish = self.console_until(proc, "strona tylko na tej maszynie")
+        err = finish()
+        self.assertIn("strona tylko na tej maszynie", err)
+        for text in ("UWAGA: port odczytu", "od 1.8.0", "zgody z telefonu"):
+            self.assertNotIn(text, err)
+
     def test_the_consent_socket_listens_beyond_loopback_only_by_an_explicit_flag(self) -> None:
         read_port, approve_port = two_ports()
         proc = self.serve("--read-port", str(read_port), "--approve-port", str(approve_port), "--approve-bind", "0.0.0.0")
@@ -1110,7 +1139,8 @@ class Process(unittest.TestCase):
     def test_refused_flags_are_blocked_before_any_bind(self) -> None:
         port = free_port()
         for flags in (["--port", str(port), "--read-port", str(port + 1)], ["--read-port", str(port), "--approve-port", str(port)],
-                      ["--approve-port", str(port), "--no-approvals"], ["--read-bind", "127.0.0.1"], ["--allow-proxy-headers"]):
+                      ["--approve-port", str(port), "--no-approvals"], ["--host", "127.0.0.1"], ["--approve-host", "tunnel.example"],
+                      ["--port", str(port), "--read-bind", "127.0.0.1"], ["--read-bind", ""]):   # none of these binds anything, none may start a default server
             with self.subTest(flags=flags):
                 self.assertEqual(self.blocked(*flags)["status"], "BLOCKED")
 

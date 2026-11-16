@@ -2,7 +2,8 @@
 
 Keys: `local_only` (true: both sockets on 127.0.0.1), `read_bind`, `approve_bind` (a literal address, `localhost`, `0.0.0.0`
 or `::`). Precedence of the sources is flag > manifest > machine config > default (`dashboard_ports.resolve`); within one
-source an explicit `read_bind`/`approve_bind` wins over the `local_only` shortcut. `local_only: false` means "no preference"
+source an explicit `read_bind`/`approve_bind` wins over the `local_only` shortcut. The manifest (a repository one may have cloned) can only
+NARROW: a non-loopback bind there is refused (BLOCKED, `doctor` error); widening is for a flag or the machine config. `local_only: false` means "no preference"
 (it neither widens nor overrides a narrower lower source). Messages name the key, never the offending value.
 """
 import ipaddress
@@ -28,8 +29,8 @@ def _bind_problem(value):
     return None
 
 
-def validate_dashboard(section, where='dashboard'):
-    """`(errors, warnings)` for a `dashboard:` section (None = absent = fine)."""
+def _validate(section, where):
+    """`(errors, warnings)` of the shape of a `dashboard:` section."""
     errors, warnings = [], []
     if section is None:
         return errors, warnings
@@ -48,9 +49,33 @@ def validate_dashboard(section, where='dashboard'):
     return errors, warnings
 
 
-def _binds(section, where):
+def _is_loopback(value):
+    text = str(value).strip().lower()
+    if text in ('localhost', '::1'):
+        return True
+    try:
+        return ipaddress.ip_address(text).is_loopback
+    except ValueError:
+        return False
+
+
+def validate_dashboard(section, where='dashboard', narrow_only=False):
+    """`(errors, warnings)` for a `dashboard:` section (None = absent = fine). `narrow_only` (the manifest): a bind that is not loopback is an error."""
+    errors, warnings = _validate(section, where)
+    if narrow_only and isinstance(section, dict):
+        for key in ('read_bind', 'approve_bind'):
+            if key in section and not errors_for(errors, where, key) and not _is_loopback(section[key]):
+                errors.append(f'{where}.{key}: the manifest may only narrow (loopback); widen with a flag or the machine config')
+    return errors, warnings
+
+
+def errors_for(errors, where, key):
+    return [message for message in errors if message.startswith(f'{where}.{key}:')]
+
+
+def _binds(section, where, narrow_only=False):
     """`(read_bind, approve_bind)` of one source; None = this source has no preference. Raises ValueError (key names only)."""
-    errors, _warnings = validate_dashboard(section, where)
+    errors, _warnings = validate_dashboard(section, where, narrow_only)
     if errors:
         raise ValueError('; '.join(errors))
     if not section:
@@ -62,13 +87,24 @@ def _binds(section, where):
 
 
 def machine_section():
-    """The `dashboard:` section of the machine config (missing file or section: None). An unreadable file is no setting."""
+    """The `dashboard:` section of the machine config (missing file or section: None). A file that exists but cannot be read as a mapping
+    is an error (ValueError naming the file, never its content): the narrowing of the machine must not vanish silently."""
+    path = layers.config_path()
     try:
-        data = yaml.safe_load(layers.config_path().read_text(encoding='utf-8')) or {}
-    except (OSError, UnicodeError, yaml.YAMLError):
+        text = path.read_text(encoding='utf-8')
+    except FileNotFoundError:
         return None
-    section = data.get('dashboard') if isinstance(data, dict) else None
-    return section
+    except (OSError, UnicodeError):
+        raise ValueError(f'machine config {path}: cannot be read; fix it or the dashboard: setting is unknown') from None
+    try:
+        data = yaml.safe_load(text)
+    except yaml.YAMLError:
+        raise ValueError(f'machine config {path}: not valid YAML; fix it or the dashboard: setting is unknown') from None
+    if data is None:
+        return None
+    if not isinstance(data, dict):
+        raise ValueError(f'machine config {path}: must be a mapping')
+    return data.get('dashboard')
 
 
 def settings(manifest, machine=None):
@@ -76,7 +112,7 @@ def settings(manifest, machine=None):
     machine = machine_section() if machine is None else machine
     project = manifest.get('dashboard') if isinstance(manifest, dict) else None
     machine_read, machine_approve = _binds(machine, 'dashboard (machine config)')
-    project_read, project_approve = _binds(project, 'dashboard (manifest)')
+    project_read, project_approve = _binds(project, 'dashboard (manifest)', narrow_only=True)
     return {'read_bind': project_read or machine_read, 'approve_bind': project_approve or machine_approve}
 
 

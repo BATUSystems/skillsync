@@ -79,7 +79,7 @@ Manifest sam jest wpisany do `.github/.gitignore` (nie jest wersjonowany, chyba 
 ## Sekcja `dashboard`
 
 Opcjonalna. Wpływa tylko na `dashboard serve` tego projektu. Ta sama sekcja może być w configu maszyny
-([configuration](configuration.md#dashboard)); pierwszeństwo: flaga CLI > manifest > config maszyny > domyślne.
+([configuration](configuration.md#dashboard)); pierwszeństwo: flaga CLI > manifest > config maszyny > domyślne. Manifest może tylko ZAWĘŻAĆ (adres loopback albo `local_only: true`): szerszy adres w manifeście sklonowanego repozytorium kończy `serve` BLOCKED i jest błędem `doctor`; poszerza flaga albo config maszyny. Uszkodzony config maszyny też blokuje `serve` (ustawienie zawężające nie może zniknąć po cichu).
 
 ```yaml
 dashboard:

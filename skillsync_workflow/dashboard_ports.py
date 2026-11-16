@@ -249,6 +249,9 @@ def resolve(args, check_port, settings=None) -> dict | None:
         raise ValueError("--read-host '*' działa tylko na gnieździe odczytu (--read-port).")
     if approve_port is not None and "*" in {str(name).strip() for name in (getattr(args, "approve_host", None) or ())}:
         raise ValueError("--approve-host '*' jest niedozwolone: nazwa zgód musi być jawna.")
+    for flag, value in bind_flags:
+        if value is not None and not str(value).strip():
+            raise ValueError(f"{flag}: podaj adres (0.0.0.0 = wszystkie interfejsy, 127.0.0.1 = tylko ta maszyna).")
     host = getattr(args, "host", None)
     if host is not None and read_port is None:
         raise ValueError("--host dotyczy gniazda odczytu (--read-port); adres gniazda zgód ustawia --approve-bind.")
@@ -272,6 +275,8 @@ def port_taken(bind: str, port: int) -> bool:
     macOS/BSD (`SO_REUSEADDR`) and Windows let a narrower address bind next to somebody else's wildcard one, so the bind alone does not
     tell that a page is already served there (and requests from this machine would reach the other one)."""
     target = {"0.0.0.0": "127.0.0.1", "": "127.0.0.1", "::": "::1"}.get(bind, bind)
+    if target not in LOOPBACK_NAMES and not target.startswith("127.") and not is_local_ip(target):
+        return False   # an address that is not this machine's: nothing to probe (and no packet to a stranger)
     try:
         with socket.create_connection((target, int(port)), timeout=0.3):
             return True

@@ -2268,7 +2268,7 @@ def register(subparsers):
                        help='listen address of the read socket (default: --host, else the dashboard: setting, else 0.0.0.0 = every interface; '
                             '127.0.0.1 = this machine only)')
     serve.add_argument('--approve-bind', default=None, metavar='ADDR',
-                       help='listen address of the consent socket (default: --host, else the dashboard: setting, else 127.0.0.1 = this machine only; '
+                       help='listen address of the consent socket (default: the dashboard: setting, else 127.0.0.1 = this machine only; --host does not move it; '
                             '0.0.0.0 = every interface, plain HTTP: the token travels unencrypted)')
     serve.add_argument('--allow-proxy-headers', action='store_true',
                        help='consent socket: accept writes that carry proxy headers (Forwarded, X-Forwarded-*, X-Real-IP, Via, ...), '
@@ -2276,9 +2276,8 @@ def register(subparsers):
     serve.add_argument('--prototype-port', type=int, default=None,
                        help=f'port of the prototype server the page checks (default: prototype.port of the manifest, else {PROTOTYPE_PORT})')
     serve.add_argument('--host', default=None,
-                       help='listen address of both sockets (default: 127.0.0.1 in the single-port mode; in the two-port mode 0.0.0.0 for read and '
-                            '127.0.0.1 for consents; 0.0.0.0 = all interfaces; in the single-port mode other devices also need '
-                            '--approve-host or --read-host)')
+                       help='listen address: with --port N (single-port mode, default 127.0.0.1; other devices also need --approve-host or --read-host); '
+                            'with --read-port it moves the READ socket only (consents: --approve-bind). Without any port flag it is refused (see --read-bind)')
     serve.add_argument('--approve-host', action='append', default=[], metavar='NAME',
                        help='extra Host name (no port) allowed to open the page and give consents (repeatable); '
                             'default: localhost only; add --no-approvals for a read-only view')

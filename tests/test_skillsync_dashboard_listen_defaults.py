@@ -89,15 +89,41 @@ class PortTaken(unittest.TestCase):
 class Setting(unittest.TestCase):
     def test_local_only_narrows_both_and_explicit_keys_win_over_the_shortcut(self) -> None:
         self.assertEqual(listen.settings({"dashboard": {"local_only": True}}, machine={}), {"read_bind": "127.0.0.1", "approve_bind": "127.0.0.1"})
-        self.assertEqual(listen.settings({"dashboard": {"local_only": True, "read_bind": "0.0.0.0"}}, machine={}),
-                         {"read_bind": "0.0.0.0", "approve_bind": "127.0.0.1"})
+        self.assertEqual(listen.settings({"dashboard": {"local_only": True, "read_bind": "localhost"}}, machine={}),
+                         {"read_bind": "localhost", "approve_bind": "127.0.0.1"})
         self.assertEqual(listen.settings({}, machine={"local_only": True}), {"read_bind": "127.0.0.1", "approve_bind": "127.0.0.1"})
 
     def test_manifest_over_machine_and_false_is_no_preference(self) -> None:
         machine = {"local_only": True}
-        self.assertEqual(listen.settings({"dashboard": {"read_bind": "0.0.0.0"}}, machine=machine), {"read_bind": "0.0.0.0", "approve_bind": "127.0.0.1"})
+        self.assertEqual(listen.settings({"dashboard": {"read_bind": "127.0.0.1"}}, machine={"read_bind": "0.0.0.0"}),
+                         {"read_bind": "127.0.0.1", "approve_bind": None})
+        self.assertEqual(listen.settings({}, machine={"read_bind": "0.0.0.0", "approve_bind": "0.0.0.0"}),
+                         {"read_bind": "0.0.0.0", "approve_bind": "0.0.0.0"})   # the machine config may widen
         self.assertEqual(listen.settings({"dashboard": {"local_only": False}}, machine=machine), {"read_bind": "127.0.0.1", "approve_bind": "127.0.0.1"})
         self.assertEqual(listen.settings({}, machine={}), {"read_bind": None, "approve_bind": None})
+
+    def test_a_manifest_can_only_narrow_never_widen_the_machine_config(self) -> None:
+        for section in ({"read_bind": "0.0.0.0"}, {"approve_bind": "0.0.0.0"}, {"approve_bind": "192.168.1.5"}, {"read_bind": "::"}):
+            with self.subTest(section=section):
+                self.assertTrue(listen.validate_dashboard(section, "dashboard", narrow_only=True)[0])
+                with self.assertRaises(ValueError) as caught:
+                    listen.settings({"dashboard": section}, machine={"local_only": True})
+                self.assertIn("only narrow", str(caught.exception))
+        self.assertEqual(listen.validate_dashboard({"read_bind": "::1", "approve_bind": "127.0.0.5"}, "dashboard", narrow_only=True)[0], [])
+
+    def test_an_unreadable_machine_config_is_an_error_not_no_setting(self) -> None:
+        tmp = Path(tempfile.mkdtemp(prefix="dashboard-config-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        config = tmp / "config.yaml"
+        with mock.patch.dict(os.environ, {"SKILLSYNC_CONFIG": str(config)}):
+            self.assertIsNone(listen.machine_section())   # no file: no setting
+            for text in ("dashboard: [unclosed", "- just\n- a list\n"):
+                config.write_text(text, encoding="utf-8")
+                with self.subTest(text=text), self.assertRaises(ValueError) as caught:
+                    listen.machine_section()
+                self.assertNotIn("unclosed", str(caught.exception))
+            config.write_text("", encoding="utf-8")
+            self.assertIsNone(listen.machine_section())
 
     def test_bad_values_name_the_key_and_never_the_value(self) -> None:
         for section in ({"local_only": SECRET_LOOKING}, {"read_bind": SECRET_LOOKING}, {"approve_bind": ""}, {"read_bind": 5}, "text"):
@@ -133,6 +159,9 @@ class ServeCommand(unittest.TestCase):
                                               "XDG_CACHE_HOME": str(self.tmp / "cache")})
         patch.start()
         self.addCleanup(patch.stop)
+        taken = mock.patch.object(ports, "port_taken", return_value=False)   # the probe would touch the real pool ports
+        taken.start()
+        self.addCleanup(taken.stop)
         for name, value in (("DEFAULT_READ_PORT", 5162), ("DEFAULT_APPROVE_PORT", 5163)):   # the pool of the station, never 5140/5141
             patcher = mock.patch.object(ports, name, value)
             patcher.start()
@@ -174,12 +203,23 @@ class ServeCommand(unittest.TestCase):
         self.assertEqual(calls, [("read", "127.0.0.1", 5162), ("approve", "127.0.0.1", 5163)])
 
     def test_flag_over_manifest_over_machine_config(self) -> None:
-        self.config.write_text("dashboard:\n  local_only: true\n", encoding="utf-8")
-        self.write_manifest("dashboard:\n  read_bind: 0.0.0.0\n")
+        self.config.write_text("dashboard:\n  read_bind: 0.0.0.0\n  approve_bind: 0.0.0.0\n", encoding="utf-8")
+        self.write_manifest("dashboard:\n  read_bind: 127.0.0.1\n")
         calls, _ = self.run_serve()
-        self.assertEqual(calls, [("read", "0.0.0.0", 5162), ("approve", "127.0.0.1", 5163)])
-        calls, _ = self.run_serve(read_bind="127.0.0.1", approve_bind="0.0.0.0")
         self.assertEqual(calls, [("read", "127.0.0.1", 5162), ("approve", "0.0.0.0", 5163)])
+        calls, _ = self.run_serve(read_bind="0.0.0.0", approve_bind="127.0.0.1")
+        self.assertEqual(calls, [("read", "0.0.0.0", 5162), ("approve", "127.0.0.1", 5163)])
+
+    def test_a_manifest_that_widens_the_machine_config_blocks_serve(self) -> None:
+        self.config.write_text("dashboard:\n  local_only: true\n", encoding="utf-8")
+        self.write_manifest("dashboard:\n  approve_bind: 0.0.0.0\n")
+        calls, answer = self.run_serve()
+        self.assertEqual((calls, answer["status"]), ([], "BLOCKED"))
+        self.assertIn("approve_bind", answer["reason"])
+        self.config.write_text("dashboard: [broken", encoding="utf-8")
+        self.write_manifest("")
+        calls, answer = self.run_serve()
+        self.assertEqual((calls, answer["status"]), ([], "BLOCKED"))
 
     def test_unknown_key_and_bad_value_block_without_the_value(self) -> None:
         self.write_manifest("dashboard:\n  bind_all: true\n")
@@ -205,12 +245,47 @@ class ServeCommand(unittest.TestCase):
         self.assertEqual(answer["status"], "BLOCKED")
         self.assertIn("--read-port", answer["reason"])
         self.assertIn("--approve-port", answer["reason"])
-        # the first socket failed here (read, 5162): no owner known for it
-        self.assertIn("5162", answer["reason"])
-        self.assertIn("inny proces", answer["reason"])
+        self.assertIn("port 5162 zajęty przez inny proces", answer["reason"])   # the first socket failed: nobody of ours holds it
+        calls, answer = self.run_serve()   # the second socket (consents, 5163) fails: the state file names its owner
+        self.assertIn("port 5163 trzyma projekt other-project (zgody)", answer["reason"])
+        self.assertNotIn(str(other), answer["reason"])
         self.assertEqual(dashboard_token.port_owner(5163), "projekt other-project (zgody)")
         self.assertNotIn("t" * 32, answer["reason"])
         self.assertIsNone(dashboard_token.port_owner(5199))
+
+
+class SmallRules(unittest.TestCase):
+    def test_the_sentence_about_the_changed_default_ends_with_1_10(self) -> None:
+        self.assertEqual(srv._version_tuple("1.8.0"), (1, 8))
+        self.assertLess(srv._version_tuple("1.9.3"), ports.LISTEN_NOTE_UNTIL)
+        self.assertFalse(srv._version_tuple("1.10.0") < ports.LISTEN_NOTE_UNTIL)
+        self.assertFalse(srv._version_tuple("2.0.0") < ports.LISTEN_NOTE_UNTIL)
+
+    def test_an_empty_bind_flag_is_refused_not_silently_the_default(self) -> None:
+        for flag in ("read_bind", "approve_bind"):
+            with self.subTest(flag=flag), self.assertRaises(ValueError):
+                ports.resolve(args(**{flag: ""}), lambda port: None)
+
+    def test_a_bind_that_is_not_this_machine_is_not_probed(self) -> None:
+        with mock.patch.object(socket, "create_connection", side_effect=AssertionError("probed a stranger")):
+            self.assertFalse(ports.port_taken("203.0.113.9", 5162))
+
+    def test_only_an_answering_server_is_named_as_the_owner_on_windows(self) -> None:
+        tmp = Path(tempfile.mkdtemp(prefix="dashboard-owner-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        with mock.patch.dict(os.environ, {"XDG_DATA_HOME": str(tmp)}):
+            dashboard_token.write_state(tmp / "proj", 5167, "t" * 32, "127.0.0.1", role="read", peer=5168)
+            with mock.patch.object(dashboard_token, "_windows", return_value=True):
+                self.assertIsNone(dashboard_token.port_owner(5167, healthy=lambda *a: False))
+                self.assertEqual(dashboard_token.port_owner(5167, healthy=lambda *a: True), "projekt proj (odczyt)")
+
+    def test_lan_without_an_address_of_this_machine_is_blocked(self) -> None:
+        blocked = []
+        out = io.StringIO()
+        with mock.patch.object(srv, "lan_addresses", return_value=["<adres-tej-maszyny>"]), mock.patch("sys.stdout", new=out):
+            code = dashboard_token._lan_addresses(SimpleNamespace(json=False), [{"port": 5162, "pid": 1, "role": "read", "bind": "0.0.0.0"}],
+                                                  lambda code_, reason: blocked.append(code_) or 2)
+        self.assertEqual((code, blocked, out.getvalue()), (2, ["read_not_exposed"], ""))
 
 
 class Lan(unittest.TestCase):

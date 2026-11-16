@@ -219,7 +219,11 @@ def _healthy(host: str, port: int, token_id_expected: str | None = None, timeout
         return False
 
 
-def port_owner(port: int) -> str | None:
+def _windows() -> bool:
+    return os.name == "nt"
+
+
+def port_owner(port: int, healthy=None) -> str | None:
     """Who of OUR servers holds `port` (from the state files, only live processes): `projekt <name> (odczyt|zgody|jeden port)`, else None.
     Only the directory name of the project and the role; no pid, no command, no token."""
     try:
@@ -233,6 +237,8 @@ def port_owner(port: int) -> str | None:
             continue
         if not isinstance(record, dict) or record.get("port") != int(port) or not _pid_alive(record.get("pid")):
             continue
+        if _windows() and not (healthy or _healthy)(record.get("host") or "127.0.0.1", int(port), None):
+            continue   # Windows: a pid check says nothing about a killed server; only an answering page is named
         project = pathfmt.posix(str(record.get("root", ""))).rstrip("/").rsplit("/", 1)[-1] or "?"
         role = {"read": "odczyt", "approve": "zgody"}.get(record.get("role"), "jeden port")
         return f"projekt {project} ({role})"
@@ -325,10 +331,11 @@ def _lan_addresses(args, found: list[dict], blocked) -> int:
     chosen = readers[0]
     bind = chosen.get("bind")
     if chosen.get("role") != "read" or not bind or bind in LOOPBACK or str(bind).startswith("127."):
-        return blocked("read_not_exposed", "gniazdo odczytu tego serwera słucha tylko na tej maszynie; uruchom `dashboard serve` bez "
-                                          "--read-bind 127.0.0.1 / dashboard.local_only albo z --read-bind 0.0.0.0")
+        return blocked("read_not_exposed", "gniazdo odczytu tego serwera słucha tylko na tej maszynie (rekord bez pola bind pochodzi z serwera "
+                                          "sprzed 1.8.0: uruchom go ponownie); uruchom `dashboard serve` bez --read-bind 127.0.0.1 / "
+                                          "dashboard.local_only albo z --read-bind 0.0.0.0")
     from .dashboard_http import lan_addresses
-    addresses = lan_addresses() if bind in ("0.0.0.0", "::", "") else [bind]
+    addresses = [ip for ip in (lan_addresses() if bind in ("0.0.0.0", "::", "") else [bind]) if ip and not ip.startswith("<")]
     if not addresses:
         return blocked("read_not_exposed", "serwer słucha w sieci, ale ta maszyna nie ma adresu poza loopbackiem")
     urls = [read_address(chosen["port"], ip) for ip in addresses]
