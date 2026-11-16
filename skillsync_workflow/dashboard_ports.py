@@ -92,7 +92,10 @@ def host_addresses() -> set[str]:
             good_at = _lookup["good_at"]
             fresh = good_at is not None and time.monotonic() - good_at <= HOST_LOOKUP_STALE_MAX
             kept = set(_lookup["value"] or ()) if fresh else set()
-            _lookup["value"], _lookup["until"] = kept, time.monotonic() + HOST_LOOKUP_NEGATIVE_TTL
+            until = time.monotonic() + HOST_LOOKUP_NEGATIVE_TTL
+            if kept:
+                until = min(until, good_at + HOST_LOOKUP_STALE_MAX)   # a renewal never carries the old answer beyond the limit
+            _lookup["value"], _lookup["until"] = kept, until
             return set(kept)
         return set(_lookup["value"] or ())
 

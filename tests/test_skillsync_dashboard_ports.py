@@ -628,8 +628,10 @@ class SlowResolver(unittest.TestCase):
             self.assertEqual(ports.host_addresses(), {"192.0.2.55"})   # too slow, the old answer is still young enough
             clock.monotonic.return_value = base + 2 * ports.HOST_LOOKUP_NEGATIVE_TTL   # the negative memory ran out and was renewed, the answer is still not too old
             self.assertEqual(ports.host_addresses(), {"192.0.2.55"})
+            clock.monotonic.return_value = base + ports.HOST_LOOKUP_STALE_MAX - 1
+            self.assertEqual(ports.host_addresses(), {"192.0.2.55"})   # renewed just before the limit ...
             clock.monotonic.return_value = base + ports.HOST_LOOKUP_STALE_MAX + 1
-            self.assertEqual(ports.host_addresses(), set())   # too old: fail closed, no longer renewed for ever
+            self.assertEqual(ports.host_addresses(), set())   # ... but the renewal did not carry it beyond the limit: too old: fail closed, no longer renewed for ever
             clock.monotonic.return_value = base + ports.HOST_LOOKUP_STALE_MAX + 2
             self.assertEqual(ports.host_addresses(), set())   # and the empty answer is what is remembered
         self.assertEqual(self.calls, 1)   # one lookup throughout
@@ -859,11 +861,11 @@ class Process(unittest.TestCase):
     def test_console_until_fails_naming_the_missing_line_and_stops_the_process(self) -> None:
         proc = self.script("import sys, time; print('hello', file=sys.stderr); time.sleep(60)")
         with self.assertRaises(AssertionError) as caught:
-            self.console_until(proc, "hello", "never printed", timeout=1)
+            self.console_until(proc, "hello", "never printed", timeout=5)
         message = str(caught.exception)
         self.assertIn("'never printed'", message)
         self.assertNotIn("'hello'", message)   # only what is missing is named
-        self.assertIn("hello", message)   # the console that was read is shown
+        self.assertIn("stderr:\nhello\n", message)   # the console that was read is shown
         self.assertIsNotNone(proc.poll())   # the process was stopped, not left running
 
     def test_console_until_reads_stdout_so_that_a_full_pipe_does_not_block_the_process(self) -> None:
