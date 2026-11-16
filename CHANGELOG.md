@@ -16,6 +16,10 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 - `docs/dashboard-contract.md`, "how to stop the server on Windows": the table now has a "Pomiar" column that separates what was measured (Ctrl+C, CTRL_BREAK, `Stop-Process`, `taskkill /F`, `Popen.terminate()`, `taskkill` without `/F`) from what is only expected from the system documentation and was not measured (closing the console window, Task Manager "End task").
 
+### Fixed
+
+- Lines of project text are now split with `common.file_lines` (CRLF, LF and a lone CR; never at VT, FF, FS, GS, RS, NEL, LS or PS, which arrive in text pasted from documents and web pages) in four more readers: the first line of a pre-implement report (`skillsync status`), the sections of risk of a spec (`pre_implement_sections`), the first line of a README in the repo map (`skillsync map`) and the first line of a skill in `skillsync list`. Before, such a character inside the line cut it: a risk section starting with `TODO<char>text` looked empty, a verdict line `Werdykt: READY<char>other text` was recorded as READY, a README purpose or a skill description ended at the character. The hunk lines of `git log -p` that `skillsync status` reads to see whether a plan was reopened are cut the same way. The guard of the line-end readers (`tests/test_skillsync_line_ends.py`) now covers `status.py`, `repomap.py` and `cli.py` without exceptions. Not changed on purpose: the scanners of `leakguard` and the line numbers of `prototype` (they must agree with git and editors), and the import of logins (a change of meaning).
+
 ## [1.7.0] - 2026-11-16
 
 ### Added

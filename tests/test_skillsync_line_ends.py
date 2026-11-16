@@ -303,7 +303,8 @@ class NoRawLineSplitting(unittest.TestCase):
     Not caught (no such code in these files, listed so that nobody takes the guard for more than it is): a split by a separator held in a variable,
     `re.split` with a pattern, `io.StringIO(text)` and iteration over a file handle."""
     FILES = ('skillsync_workflow/dashboard.py', 'skillsync_workflow/dashboard_http.py', 'skillsync_workflow/common.py',
-             'skillsync_workflow/plan_phases.py', 'skillsync_workflow/quality.py')   # the files whose readers of project text are all converted
+             'skillsync_workflow/plan_phases.py', 'skillsync_workflow/quality.py', 'skillsync_workflow/status.py', 'skillsync_workflow/repomap.py',
+             'skillsync_workflow/cli.py')   # the files whose readers of project text are all converted
     EXCEPTIONS = {
         ('skillsync_workflow/dashboard_http.py', 'render_markdown'):
             'the text is normalized first (`\\r\\n` and a lone `\\r` become `\\n`) and the other separators are ordinary characters of the line',
