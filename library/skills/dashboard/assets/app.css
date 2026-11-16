@@ -99,6 +99,25 @@ a.chip.git-link { text-decoration: none; }
 .chip.s-active { background: var(--accent-soft); color: var(--accent); }
 .chip.s-planned { background: var(--planned-soft); color: var(--planned); }
 .chip.s-warn { background: var(--warn-soft); color: var(--warn); }
+.chip.ahead-btn { border: 0; font: inherit; cursor: pointer; }
+.chip.ahead-btn:hover { filter: brightness(.96); }
+.chip.ahead-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.commits-wrap { position: relative; }
+.commits-panel {
+  position: absolute; left: 0; top: calc(100% + .4rem); z-index: 30; min-width: 22rem; max-width: min(40rem, 92vw);
+  padding: .5rem .6rem; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); color: var(--text, inherit);
+}
+.commits-panel[hidden] { display: none; }
+.commits-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .25rem; }
+.commits-list li { display: flex; gap: .6rem; align-items: baseline; font-size: .85rem; }
+.commits-list .commit-sha { color: var(--muted); flex: none; user-select: all; }
+.commits-list .commit-subject { overflow-wrap: anywhere; }
+.commits-head { display: flex; align-items: center; justify-content: space-between; gap: .6rem; margin-bottom: .4rem; font-size: .85rem; }
+.commits-close { border: 0; background: transparent; color: var(--muted); font-size: 1.2rem; line-height: 1; padding: .1rem .5rem; border-radius: 8px; cursor: pointer; min-width: 2rem; min-height: 2rem; }
+.commits-close:hover { background: var(--accent-soft); color: var(--text); }
+.commits-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.commits-more { margin: .4rem 0 0; font-size: .8rem; color: var(--muted); }
+.commits-panel { max-height: 85vh; overflow-y: auto; }
 
 .live { display: inline-flex; align-items: center; gap: .45rem; font-weight: 600; font-size: .9rem; padding: .3rem .7rem; border-radius: 999px; background: var(--panel-2); }
 .live-dot { width: .7rem; height: .7rem; border-radius: 50%; background: var(--planned); }
@@ -452,6 +471,7 @@ main { flex: 1; padding: 1.1rem 1.4rem; min-width: 0; }
 }
 /* telefon: jedna kolumna, Realizacja na górze, zwarte kafelki Spec/Plan, nic nie wystaje poza ekran */
 @container dash (max-width: 640px) {
+  .commits-panel { position: fixed; left: 8px; right: 8px; top: auto; bottom: 8px; min-width: 0; max-width: none; max-height: 60vh; }
   .top { padding: .7rem 16px; gap: .6rem; }
   .brand { align-items: flex-start; }
   .logo { width: 2.2rem; height: 2.2rem; }

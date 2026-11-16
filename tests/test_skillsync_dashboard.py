@@ -44,14 +44,14 @@ def git_commit_all(root, env):
 
 def normalized(data, head=None):
     """The fixture normalization of docs/dashboard-contract.md ("Normalizacja w fixtures"); with `head` every form of the
-    HEAD sha (full, 12 and 8 characters) becomes `<head>`."""
+    HEAD sha (full, 12, 8 and 7 characters) becomes `<head>`."""
     data = json.loads(json.dumps(data))
     data['project']['path'] = '<root>'
     data['generatedAt'] = '2026-01-12T12:00:00+00:00'
     data['app']['version'] = '<version>'
     text = json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + '\n'
     if head:
-        for form in (head, head[:12], head[:8]):
+        for form in (head, head[:12], head[:8], head[:7]):
             text = text.replace(form, '<head>')
     return text
 

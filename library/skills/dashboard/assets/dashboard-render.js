@@ -365,7 +365,13 @@
     const rootListeners = {
       mouseover: (e) => { const el = descOf(e); if (el && !st.descPinned) showDesc(el); },
       mouseout: (e) => { const el = descOf(e); if (el && !st.descPinned && !el.contains(e.relatedTarget)) hideDesc(); },
-      focusin: (e) => { const el = descOf(e); if (el) showDesc(el); },
+      focusin: (e) => {
+        const el = descOf(e);
+        if (el) showDesc(el);
+        // which control of the commits panel holds the focus (render() rebuilds the header and restores it)
+        const t = e.target;
+        st.focusKey = t && t.id === "commitsBtn" ? "btn" : t && typeof t.getAttribute === "function" && /\bcommits-close\b/.test(t.getAttribute("class") || "") ? "close" : null;
+      },
       focusout: (e) => { if (descOf(e) && !st.descPinned) hideDesc(); },
       pointerup: (e) => { // dotyk: stuknięcie otwiera i zamyka
         if (e.pointerType !== "touch") return;
@@ -373,7 +379,11 @@
         if (el && st.descFor === el && st.descPinned) return hideDesc();
         if (el) { showDesc(el); st.descPinned = true; } else if (st.descPinned) hideDesc();
       },
-      click: () => toggleMenu(false),
+      click: (e) => {
+        toggleMenu(false);
+        const inside = e && e.target && typeof e.target.closest === "function" && e.target.closest("#commitsPanel");
+        if (st.commitsOpen && !inside) setCommits(false);
+      },
     };
     for (const type of Object.keys(rootListeners)) root.addEventListener(type, rootListeners[type]);
 
@@ -408,6 +418,10 @@
       }
       ui.ago = h("span", { id: "ago", "data-iso": d.lastUpdate || "" }, fmtAgo(d.lastUpdate));
       meta.push(h("span", { class: "m", "data-tip": "Ostatnia zmiana planu, speca lub checkpointów" }, icon("i-sync"), ui.ago));
+      {   // the panel stays open only while there is a list to show (a push that empties it must not leave a flag that reopens it later)
+        const dl = d.delivery || {};
+        if (!(d.git && d.git.branch && typeof dl.ahead === "number" && dl.ahead > 0 && Array.isArray(dl.commits) && dl.commits.length)) st.commitsOpen = false;
+      }
       if (d.git && d.git.branch) {
         const g = d.git;
         const host = g.remote ? (g.remote.host === "azure" ? "Azure DevOps" : "GitHub") : "";
@@ -425,15 +439,40 @@
           // w trybie `direct` lokalne commity są normą do „CP”: ostrzeżenie dopiero, gdy plan jest zakończony
           const calm = dv.mode === "direct" && !(plan && plan.status === "done");
           const tip = `${ahead} ${plural(ahead, "commit", "commity", "commitów")} lokalnie przed ${remoteName}${dv.pushed === false ? " (nie ma jej jeszcze na origin)" : ""}; „CP” je wypchnie`;
-          meta.push(h("span", { class: "m" }, h("span", { class: `chip ${calm ? "s-planned" : "s-warn"} ahead-chip`, "data-tip": tip },
-            `${ahead} ${plural(ahead, "niewypchnięty", "niewypchnięte", "niewypchniętych")}`)));
+          const label = `${ahead} ${plural(ahead, "niewypchnięty", "niewypchnięte", "niewypchniętych")}`;
+          const cls = `chip ${calm ? "s-planned" : "s-warn"} ahead-chip`;
+          // `delivery.commits` (opcjonalne): plakietka staje się przyciskiem, panel pokazuje listę; tematy tylko jako tekst (gniazdo odczytu bez logowania)
+          const list = Array.isArray(dv.commits) ? dv.commits.filter((c) => c && typeof c === "object") : [];
+          if (!list.length) st.commitsOpen = false;   // no list: nothing to keep open when it comes back
+          if (!list.length) meta.push(h("span", { class: "m" }, h("span", { class: cls, "data-tip": tip }, label)));
+          else {
+            const open = st.commitsOpen === true;
+            const more = typeof dv.commitsMore === "number" && dv.commitsMore > 0 ? Math.floor(dv.commitsMore) : 0;
+            const btn = h("button", { type: "button", id: "commitsBtn", class: `${cls} ahead-btn`, "data-tip": tip, "aria-expanded": String(open), "aria-controls": "commitsPanel",
+              on: { click: (e) => { e.stopPropagation(); setCommits(!st.commitsOpen); const b = root.querySelector("#commitsBtn"); if (b && typeof b.focus === "function") b.focus({ preventScroll: true }); } } }, label);
+            const panel = h("div", { id: "commitsPanel", class: "commits-panel", role: "region", "aria-labelledby": "commitsTitle", hidden: !open },
+              h("div", { class: "commits-head" },
+                h("strong", { id: "commitsTitle" }, `Niewypchnięte commity (${ahead})`, g.branch ? " · " : "", g.branch ? h("span", { class: "mono" }, g.branch) : null),
+                h("button", { type: "button", class: "commits-close", "aria-label": "Zamknij listę commitów", "data-tip": "Zamknij (Esc)", on: { click: (e) => { e.stopPropagation(); setCommits(false); const b = root.querySelector("#commitsBtn"); if (b && typeof b.focus === "function") b.focus(); } } }, "×")),
+              h("ul", { class: "commits-list" }, list.map((c) => h("li", null, h("span", { class: "mono commit-sha" }, String(c.sha == null ? "" : c.sha)),
+                h("span", { class: "commit-subject" }, String(c.subject == null ? "" : c.subject))))),
+              h("p", { class: "commits-more" }, more ? `Pokazano ${list.length} ${plural(list.length, "najnowszy", "najnowsze", "najnowszych")}; starszych: ${more}.` : `Wszystkie: ${list.length}.`));
+            meta.push(h("span", { class: "m commits-wrap" }, btn, panel));
+          }
         }
       }
       if (plan && plan.pr) {
         meta.push(h("span", { class: "m" }, h("a", { class: "chip s-active git-link", href: safeUrl(plan.pr.url), target: "_blank", rel: "noopener",
           "data-tip": "Pull request z linii PR: planu", on: { click: linkClick("pr", plan.pr.number, plan.pr.url) } }, `PR #${plan.pr.number}`)));
       }
+      const focusKept = st.commitsOpen ? st.focusKey : null;
+      const listTop = st.commitsOpen && ui.meta.querySelector ? (ui.meta.querySelector("#commitsPanel") || {}).scrollTop : 0;
       fill(ui.meta, meta);
+      if (focusKept && ui.meta.querySelector) {   // render() rebuilds the header: keep the keyboard focus (and the scroll position) of the open panel
+        const again = ui.meta.querySelector(focusKept === "btn" ? "#commitsBtn" : ".commits-close");
+        if (again && typeof again.focus === "function") again.focus({ preventScroll: true });
+      }
+      if (listTop) { const pnl = ui.meta.querySelector("#commitsPanel"); if (pnl) pnl.scrollTop = listTop; }
 
       ui.planBtnText.textContent = plan ? baseName(plan.path).replace(/\.md$/, "")
         : specAct ? baseName(d.spec.path).replace(/\.md$/, "") + " (akt I)" : runAct ? "przebieg (akt I)" : "Plan";
@@ -667,6 +706,13 @@
         (d.plans || []).slice().reverse().map((p) => h("li", { role: "option", "data-plan": p.path, "aria-selected": String(!d.planAuto && p.path === cur), on: { click: pick(p.path || null) } },
           h("span", null, h("span", null, String(p.title || "").replace(/^Plan:\s*/i, "")), h("br"), h("span", { class: "sub" }, p.path)),
           statusChip(p.status))));
+    }
+    // Panel niewypchniętych commitów (170-A): stan w `st`, żeby przeżył odświeżenie danych; Esc i klik poza panelem zamykają.
+    function setCommits(open) {
+      if ((st.commitsOpen === true) === open) return;
+      st.commitsOpen = open;
+      st.focusKey = open ? "btn" : null;
+      if (st.data) render();
     }
     function toggleMenu(open) {
       const show = open ?? ui.planMenu.hidden;
@@ -1107,7 +1153,14 @@
       if (e.key === "p" || e.key === "P") setView("progress");
       else if (e.key === "d" || e.key === "D") setView("docs");
       else if (e.key === "t" || e.key === "T") toggleTheme();
-      else if (e.key === "Escape") toggleMenu(false);
+      else if (e.key === "Escape") {
+        toggleMenu(false);
+        if (st.commitsOpen) {
+          setCommits(false);
+          const btn = root.querySelector("#commitsBtn");
+          if (btn && typeof btn.focus === "function") btn.focus();
+        }
+      }
     }
     // Zegar (host woła co 1 s): czas aktu III, „x min temu”, próg ciszy.
     function tick() {
