@@ -367,17 +367,20 @@ def redact(value, _key=False):
 
 # Key names whose value is masked: `password`, `passwd`, `token`, `secret`, `api_key`/`api-key`/`apikey`, `secret_key`, `access_key`,
 # `private_key` (a longer name that ends in one of them, e.g. `client_secret`, matches too). After the key: an optional quote (JSON),
-# `=` or `:`, and a value that is quoted (the whole quoted text, spaces included; an unterminated quote takes the rest of the line) or a
-# word up to a space, `,` or `;` (quotes inside it belong to the value).
+# `=` or `:`, and a value that is quoted (the whole quoted text, spaces included, up to the first closing quote that no backslash escapes, so
+# `\\"` inside a JSON string stays in the value and `\\\\"` closes it; an unterminated quote takes the rest of the line, before `\\n` or `\\r\\n`) or
+# a word up to a space, `,` or `;` (quotes inside it belong to the value). Every part of the quoted alternatives starts with a different
+# character, so the match is linear (no catastrophic backtracking).
 _SECRET_KEY_VALUE = re.compile(
     r'(?im)((?:password|passwd|token|secret|api[-_]?key|secret[-_]?key|access[-_]?key|private[-_]?key)[\x22\x27]?\s*[=:]\s*)'
-    r'(?:\x22[^\x22\r\n]*(?:\x22|$)|\x27[^\x27\r\n]*(?:\x27|$)|[^\s\x22\x27,;][^\s,;]*)')
+    r'(?:\x22(?:\\.|[^\x22\\\r\n])*(?:\x22|(?=\r?$))|\x27(?:\\.|[^\x27\\\r\n])*(?:\x27|(?=\r?$))|[^\s\x22\x27,;][^\s,;]*)')
 
 
 def _mask_value(match):
     value = match.group(0)[len(match.group(1)):]
     quote = value[0] if value[:1] in ('"', "'") else ''
-    closed = quote and len(value) > 1 and value.endswith(quote)   # an unterminated quote masks the rest of the line and adds no closing one
+    escapes = len(value) - len(value[:-1].rstrip('\\')) - 1 if quote and len(value) > 1 else 0   # backslashes right before the last character
+    closed = bool(quote) and len(value) > 1 and value.endswith(quote) and escapes % 2 == 0   # an unterminated quote masks the rest of the line and adds no closing one
     return f'{match.group(1)}{quote}[REDACTED]{quote if closed else ""}'
 
 

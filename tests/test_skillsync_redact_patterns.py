@@ -36,6 +36,40 @@ class KeyValuePairs(unittest.TestCase):
         self.assertEqual(redact(f'token="{VALUE} and more\nnext line'), 'token="[REDACTED]\nnext line')   # no closing quote: the rest of the line, none added
         self.assertEqual(redact(f'secret=\'{VALUE}\' x'), "secret='[REDACTED]' x")
 
+    def test_an_unterminated_quote_masks_the_rest_of_the_line_with_lf_and_crlf_line_ends(self) -> None:
+        for quote in ('"', "'"):
+            for end, name in (("\n", "LF"), ("\r\n", "CRLF"), ("", "end of text")):
+                with self.subTest(quote=quote, ends=name):
+                    following = "next line" if end else ""
+                    masked = redact(f"password: {quote}{VALUE} tail{end}{following}")
+                    self.assertNotIn(VALUE, masked)
+                    self.assertNotIn("tail", masked)
+                    self.assertEqual(masked, f"password: {quote}[REDACTED]{end}{following}")   # no closing quote added, the line end stays as it was
+                masked = redact(f"x\r\nsecret={quote}{VALUE}")
+                self.assertEqual(masked, f"x\r\nsecret={quote}[REDACTED]")
+
+    def test_a_backslash_escapes_a_quote_in_a_quoted_value(self) -> None:
+        self.assertEqual(redact('{"password": "ab\\"' + VALUE + '", "n": 1}'), '{"password": "[REDACTED]", "n": 1}')   # \" stays in the value
+        self.assertEqual(redact("{'token': 'ab\\'" + VALUE + "'}"), "{'token': '[REDACTED]'}")
+        closed = redact('{"password": "ab\\\\"} ' + VALUE)   # \\" : the backslash is escaped, the quote closes the value
+        self.assertEqual(closed, '{"password": "[REDACTED]"} ' + VALUE)
+        self.assertEqual(redact('password: "' + VALUE + '\\"'), 'password: "[REDACTED]')   # the last quote is escaped: still unterminated, no closing quote added
+
+    def test_a_plain_sentence_is_not_changed_more_than_before(self) -> None:
+        text = "the token is used: later, we rotate it; fine"
+        self.assertEqual(redact(text), text)
+        self.assertEqual(redact("a secret: later, we rotate it; fine"), "a secret: [REDACTED], we rotate it; fine")   # a bare value stops at `,` as before
+
+    def test_masking_stays_linear_on_hostile_input(self) -> None:
+        import time
+        size = 1_000_000
+        for name, text in (("unterminated quote", 'password: "' + "a" * size), ("backslashes", 'password: "' + "\\" * size),
+                           ("escaped quotes", '{"password": "' + 'ab\\"' * (size // 4) + '"}'), ("many unterminated lines", ('token: "' + "a" * 60 + "\r\n") * (size // 68))):
+            with self.subTest(name):
+                started = time.perf_counter()
+                redact(text)
+                self.assertLess(time.perf_counter() - started, 5.0)   # about 0.1-0.3 s here: far from a quadratic blow-up
+
     def test_unchanged_as_before(self) -> None:
         for text in ("tokens are fine", "my token is here", "basic setup of the secret santa", "password", "token:", "# Plan\n\nStatus: draft\n",
                      "api keys are rotated", "private key rotation: yearly"):
