@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from skillsync_workflow import prototype_server as ps  # noqa: E402
 from tests.test_skillsync_prototype_server import (  # noqa: E402
-    A, C, Client, ServerCase, create_payload, raw_create, write, write_journal)
+    A, C, Client, ServerCase, create_payload, raw_create, symlinks_supported, write, write_journal)
 
 HIDDEN_TEXT = 'UKRYTA-TRESC-KOMENTARZA-7731'
 HIDDEN_LOGIN = 'tajny.recenzent@example.invalid'
@@ -48,8 +48,9 @@ class DemoCase(ServerCase):
                            ('iterations/1/prototype.json', '{"title": "stary", "by": "%s"}' % HIDDEN_LOGIN),
                            ('notes-on-screens.md', HIDDEN_TEXT), ('.hidden', HIDDEN_TEXT)):
             write(os.path.join(self.demo, name), text)
-        os.symlink(os.path.join(self.demo, 'comments.json'), os.path.join(self.demo, 'alias.txt'))
-        os.symlink(os.path.join(self.demo, 'prototype.json'), os.path.join(self.demo, 'alias.json'))
+        if symlinks_supported():
+            os.symlink(os.path.join(self.demo, 'comments.json'), os.path.join(self.demo, 'alias.txt'))
+            os.symlink(os.path.join(self.demo, 'prototype.json'), os.path.join(self.demo, 'alias.json'))
         operations = [raw_create(1, by=HIDDEN_LOGIN)]
         operations[0]['payload'] = create_payload('m-1', HIDDEN_TEXT)
         operations.append({'id': 'op-' + '2'.zfill(26), 'type': 'accept', 'at': '2026-11-05T09:00:02.000Z', 'by': C,
@@ -194,6 +195,7 @@ class StaticInventoryTests(DemoCase):
         self.assertIn(HIDDEN_REQUIREMENTS, prototype.render_gallery(entries))   # the normal gallery keeps it
 
 
+@unittest.skipUnless(symlinks_supported(), 'brak dowiązań symbolicznych w tym systemie')
 class LinkTests(DemoCase):
     """Links inside a prototype must not give a guest a file the positive list refuses (review S1, N2, N3)."""
 
