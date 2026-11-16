@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -97,6 +98,119 @@ class AcceptanceSignal(unittest.TestCase):
         self.assertEqual(self.needs('direct'), [])
         self.commit('later')
         self.assertEqual(self.needs('direct'), [])
+
+    def test_a_plan_reopened_and_closed_again_after_the_word_waits_for_a_new_word(self):
+        self.write_plan(plan())
+        self.approve('CP', self.git('rev-parse', 'HEAD'))
+        self.assertEqual(self.needs('direct'), [])
+        self.write_plan(plan('in_progress', steps=['- [x] F1.1 Kod', '- [ ] F4.3 Odbiór', '- [ ] F4.4 Zamknięcie']))   # notes from the acceptance
+        self.write_plan(plan())                                                                                    # closed the second time
+        self.assertEqual(self.needs('direct'), ['acceptance'])
+        self.approve('CP', self.git('rev-parse', 'HEAD'))                                                           # a new word closes it again
+        self.assertEqual(self.needs('direct'), [])
+
+    def test_a_reopening_in_the_history_between_two_commits_is_noticed(self):
+        self.write_plan(plan())
+        self.approve('READY', self.git('rev-parse', 'HEAD'))
+        self.write_plan(plan('in_progress'))
+        self.write_plan(plan('done'))
+        self.commit('later')
+        self.assertEqual(self.needs('pr'), ['acceptance'])
+
+    def test_the_word_status_in_the_body_and_an_edited_header_text_do_not_reopen_the_plan(self):
+        self.write_plan(plan(extra='The status of the work is described below; status quo stays.\n'))
+        self.approve('READY', self.git('rev-parse', 'HEAD'))
+        self.write_plan(plan('done (edited note)', extra='The status of the work changed its wording; the header word stays done.\n'))
+        self.write_plan(plan(extra='A third wording of the status paragraph.\n'))
+        self.assertEqual(self.needs('pr'), [])
+
+    def test_a_failing_history_check_closes_nothing(self):
+        self.write_plan(plan())
+        self.approve('READY', self.git('rev-parse', 'HEAD'))
+        real = subprocess.run
+
+        def fail_log(command, *args, **kwargs):
+            if 'log' in command:
+                raise OSError('git is gone')
+            return real(command, *args, **kwargs)
+        with mock.patch.object(status.subprocess, 'run', fail_log):
+            self.assertEqual(self.needs('pr'), ['acceptance'])
+
+    def test_at_most_two_git_calls_per_plan(self):
+        self.write_plan(plan())
+        self.approve('READY', self.git('rev-parse', 'HEAD'))
+        real, calls = subprocess.run, []
+
+        def counting(command, *args, **kwargs):
+            calls.append(command)
+            return real(command, *args, **kwargs)
+        with mock.patch.object(status.subprocess, 'run', counting):
+            self.assertEqual(self.needs('pr'), [])
+        self.assertEqual(len([c for c in calls if c[0] == 'git']), 2)
+
+    def test_a_status_line_in_the_body_never_reopens_the_plan(self):
+        self.write_plan(plan())
+        self.approve('READY', self.git('rev-parse', 'HEAD'))
+        self.write_plan(plan(extra='\n' * 40 + 'Status: PASS\n- Status: BLOCKED\n> Status: draft\n'))
+        self.assertEqual(self.needs('pr'), [])
+        self.write_plan(plan(extra='\n' * 40))                                     # removing such lines is no reopening either
+        self.assertEqual(self.needs('pr'), [])
+
+    def test_other_header_forms_of_a_reopening_are_noticed(self):
+        for reopened in ('**Status:** in_progress', '- Status: draft', '> Status: in_progress'):
+            with self.subTest(reopened=reopened):
+                self.write_plan(plan())
+                self.approve('READY', self.git('rev-parse', 'HEAD'))
+                self.write_plan(plan().replace('Status: done', reopened, 1))
+                self.write_plan(plan())
+                self.assertEqual(self.needs('pr'), ['acceptance'])
+                self.write_plan(plan('draft'))     # leave the file reopened for the next form; the entry stays stale
+                self.write_plan(plan())
+                self.git('commit', '-q', '--allow-empty', '-m', 'x')
+
+    def test_a_failing_git_log_with_a_nonzero_exit_closes_nothing(self):
+        self.write_plan(plan())
+        self.approve('READY', self.git('rev-parse', 'HEAD'))
+        real = subprocess.run
+
+        def broken(command, *args, **kwargs):
+            if 'log' in command:
+                return subprocess.CompletedProcess(command, 128, b'', b'fatal')
+            return real(command, *args, **kwargs)
+        with mock.patch.object(status.subprocess, 'run', broken):
+            self.assertEqual(self.needs('pr'), ['acceptance'])
+
+    def test_an_entry_on_a_commit_outside_the_history_of_head_closes_nothing(self):
+        self.write_plan(plan('in_progress'))
+        self.write_plan(plan())
+        sha = self.git('rev-parse', 'HEAD')
+        self.git('reset', '-q', '--hard', 'HEAD~1')
+        self.commit('other')                                                       # another history (a rebuilt commit would get the same sha)
+        self.write_plan(plan())                                                    # the same plan rebuilt on top of it
+        self.approve('READY', sha)
+        self.assertEqual(self.needs('pr'), ['acceptance'])
+
+    def test_several_lines_of_the_same_word_in_the_run_still_cost_two_git_calls(self):
+        self.write_plan(plan())
+        sha = self.git('rev-parse', 'HEAD')
+        for _ in range(5):
+            self.approve('CP', sha)
+        real, calls = subprocess.run, []
+
+        def counting(command, *args, **kwargs):
+            calls.append(command)
+            return real(command, *args, **kwargs)
+        with mock.patch.object(status.subprocess, 'run', counting):
+            self.assertEqual(self.needs('direct'), [])
+        self.assertEqual(len([c for c in calls if c[0] == 'git']), 2)
+
+    def test_the_history_check_refuses_a_junk_sha_without_calling_git(self):
+        self.write_plan(plan())
+        with mock.patch.object(status.subprocess, 'run', side_effect=AssertionError('git must not run')):
+            for sha in ('--help', '-p', '', 'not-a-sha', 'abc;rm', None, 123, 'HEAD', 'f' * 7 + '\n--output=x'):
+                with self.subTest(sha=sha):
+                    self.assertFalse(status._plan_status_kept_since(self.root, sha, 'docs/plans/2026-11-15-demo.md'))
+        self.assertFalse(status._plan_status_kept_since(None, 'abcdef1', 'docs/plans/x.md'))
 
     def test_a_sha_outside_the_repo_or_junk_closes_nothing(self):
         self.write_plan(plan())

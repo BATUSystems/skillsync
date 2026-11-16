@@ -15,6 +15,13 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 ### Fixed
 
 - Status page, `Host` rule: an older good answer of the name resolution of this machine now serves a slow resolver for at most 5 minutes after the last successful lookup (`HOST_LOOKUP_STALE_MAX`); before, it was renewed every 15 s for ever, so an address that no longer belonged to the machine could stay accepted as local. After the limit the answer is empty (an unlisted `.255` address is refused, as before when there is no answer; `--approve-host <IP>` still lets one in). The contract names the trust boundary of the machine name resolution.
+- `skillsync status`: the `acceptance` signal no longer stays silent when a plan was reopened after the closing word and closed again. An entry in `approvals.jsonl` closes a plan only if no later commit changed its `Status:` line (first 30 lines of the plan) to a word other than `done` (one extra `git log` per plan with a matching entry; any git error means the entry closes nothing). Edits of the text after `done` and `Status:` lines and mentions of status in the body do not count as a reopening.
+
+### Changed
+
+- Docs: status signals: a plan renamed after the closing word lights `acceptance` again until a new word, and the CLI signal and the status page label "odbiór" are two independent rules (`docs/workflow.md`, `docs/domain/statuses-and-exit-codes.md`).
+- Docs: pre-push matrix and `docs/development.md`: rules for matrix runs on remote machines (incremental logs, process-tree death check by PID, one port pool per process, module lists without shell aliases, background start on macOS without `setsid`) and a PowerShell 5 pitfall.
+- Docs: `docs/upgrading.md`: new section "Windows z instalacji uv" (update order, per-directory `layers list`, stale editor startup task, two `skillsync` commands on PATH).
 
 ## [1.6.0] - 2026-11-16
 
