@@ -359,6 +359,43 @@ class DegradedLinks(LayersCase):
         code, report, errors = self.doctor()
         self.assertEqual((code, report['status'], errors), (0, 'PASS', {}), report)
 
+    def test_a_tracked_link_that_the_user_replaced_by_an_own_file_is_left_alone(self):
+        path = self.proj / '.claude/skills/foo'
+        path.write_text('my own notes, not the target of the link\n', encoding='utf-8')   # the index still says: a link with another blob
+        self.assertFalse(checked_out_link(path))
+        process = self.cli('link', str(self.proj), cwd=self.proj)
+        self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+        self.assertIn('not managed by skillsync', process.stdout + process.stderr)
+        self.assertEqual(path.read_text(encoding='utf-8'), 'my own notes, not the target of the link\n')
+        code, report, errors = self.doctor()
+        self.assertIn('Invalid installed skill copy', errors['.claude/skills/foo'])
+
+    def test_dry_run_changes_nothing_and_says_what_it_would_do(self):
+        before = {rel: (self.proj / rel).read_text(encoding='utf-8') for rel in self.PATHS}
+        process = self.cli('link', str(self.proj), '--dry-run', cwd=self.proj)
+        out = process.stdout + process.stderr
+        self.assertEqual(process.returncode, 0, out)
+        for rel in self.PATHS:
+            self.assertIn(f'[dry-run] Would replace: {self.proj / rel}', out)
+            path = self.proj / rel
+            self.assertTrue(path.is_file() and not path.is_symlink() and path.read_text(encoding='utf-8') == before[rel], rel)
+
+    def git_calls(self, *args):
+        trace = self.work / 'git-trace.txt'
+        trace.write_text('', encoding='utf-8')
+        process = self.cli(*args, cwd=self.proj, env={'GIT_TRACE': str(trace)})
+        self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+        text = trace.read_text(encoding='utf-8', errors='replace')
+        return text.count('ls-files -s'), text.count('hash-object')
+
+    def test_the_check_costs_git_processes_only_for_a_file_that_is_in_the_way(self):
+        # degraded: the host that skillsync does not own (.claude) has ONE plain file in the way: one ls-files and one hash-object
+        self.assertEqual(self.git_calls('link', str(self.proj)), (1, 1))
+        # a normal project (links or copies in place): no process at all
+        self.assertEqual(self.git_calls('link', str(self.proj)), (0, 0))
+        code, report, errors = self.doctor()
+        self.assertEqual((code, errors), (0, {}))
+
     def test_a_file_of_the_user_that_git_does_not_track_as_a_link_is_left_alone(self):
         self.degrade('.claude/skills/foo', 100644)   # an ordinary tracked file
         commit(self.proj, 'own file')
