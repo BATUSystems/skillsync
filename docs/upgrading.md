@@ -228,10 +228,10 @@ Reguła `**` dla projektów bez innej reguły tworzy `layers migrate` albo ręcz
 
 ## Windows z instalacji uv
 
-Aktualizacja maszyny z Windows, na której rdzeń stoi jako narzędzie uv (sprawdzona na przejściu z 1.0.1 do 1.6.0). Polecenia z katalogu projektu, nie z katalogu domowego.
+Aktualizacja maszyny z Windows, na której rdzeń stoi jako narzędzie uv (maszyna z instalacją sprzed kilku wydań). Polecenia z katalogu projektu, nie z katalogu domowego.
 
-1. `uv tool install --force git+https://github.com/BATUSystems/skillsync@v1.6.0`.
-2. `skillsync layers update core --ref v1.6.0` (zapisuje kopię configu `.bak-<czas>`).
+1. `uv tool install --force git+https://github.com/BATUSystems/skillsync@vX.Y.Z` (docelowy tag).
+2. `skillsync layers update core --ref vX.Y.Z` (zapisuje kopię configu `.bak-<czas>`).
 3. W katalogu projektu `skillsync layers check`. Dla każdej warstwy zapisywalnej: `skillsync leakguard install-hook <ścieżka warstwy>`; bez hooków `layers check` kończy się FAIL `hook-missing`.
 4. `skillsync layers update <id warstwy org>`.
 5. `skillsync link <projekt> --dry-run`, potem `skillsync link <projekt>`, na końcu `skillsync doctor <projekt>`.
@@ -250,7 +250,7 @@ Co zobaczysz po drodze:
 
 Zakres wsparcia systemów opisuje tabela w [README](../README.pl.md#wymagania).
 
-Aktualizacja maszyny Windows z instalacji uv: sekcja „Windows z instalacji uv” wyżej (natywny Windows jest poza drogą instalatora: WSL2). Procedura przejścia maszyny macOS na warstwy oraz ręczne testy na tym systemie powstaną w późniejszym wydaniu.
+Aktualizacja maszyny Windows z instalacji uv: sekcja „Windows z instalacji uv” wyżej (natywny Windows jest poza drogą instalatora (`install.sh`): WSL2). Procedura przejścia maszyny macOS na warstwy oraz ręczne testy na tym systemie powstaną w późniejszym wydaniu.
 
 ## Co dalej
 

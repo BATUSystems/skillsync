@@ -204,6 +204,14 @@ class AcceptanceSignal(unittest.TestCase):
             self.assertEqual(self.needs('direct'), [])
         self.assertEqual(len([c for c in calls if c[0] == 'git']), 2)
 
+    def test_the_history_check_refuses_a_junk_sha_without_calling_git(self):
+        self.write_plan(plan())
+        with mock.patch.object(status.subprocess, 'run', side_effect=AssertionError('git must not run')):
+            for sha in ('--help', '-p', '', 'not-a-sha', 'abc;rm', None, 123, 'HEAD', 'f' * 7 + '\n--output=x'):
+                with self.subTest(sha=sha):
+                    self.assertFalse(status._plan_status_kept_since(self.root, sha, 'docs/plans/2026-11-15-demo.md'))
+        self.assertFalse(status._plan_status_kept_since(None, 'abcdef1', 'docs/plans/x.md'))
+
     def test_a_sha_outside_the_repo_or_junk_closes_nothing(self):
         self.write_plan(plan())
         for sha in ('f' * 40, 'abcdef1', 'not-a-sha', '', '--help'):

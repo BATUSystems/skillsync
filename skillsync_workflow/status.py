@@ -243,7 +243,9 @@ def _plan_status_kept_since(root, sha, rel):
     """True when no commit after `sha` (`sha..HEAD`, one git call, merge commits show no diff) touched a `Status:` line in the first
     `PLAN_HEADER_LINES` lines of the plan `rel` with a word other than `done`: the plan was not reopened since the entry. Edits of the text
     after the word (`done (note)`), body lines and mentions of status are not a reopening. Any git error, a timeout or an oversized history is
-    False: the closing is then not counted (fail-safe)."""
+    False: the closing is then not counted (fail-safe). A `sha` that is not a plain hex object name is False without any git call."""
+    if not root or not isinstance(sha, str) or not _APPROVAL_SHA.fullmatch(sha):
+        return False
     try:
         result = subprocess.run(['git', '-C', str(root), 'log', '-p', '-U0', '--no-color', '--no-ext-diff', '--format=', f'{sha}..HEAD', '--', rel],
                                 capture_output=True, timeout=10, check=False)
