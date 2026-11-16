@@ -12,6 +12,10 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Changed
+
+- CI (tests and workflow): the time limits of the `test` jobs are Windows 75, macOS 60 and Ubuntu 45 minutes (were 60, 45 and 30). The longest jobs of the last five runs took 54.5, 38.0 and 29.6 minutes, and one Ubuntu job of the run after 1.7.0 was cancelled at the limit of 30. The guard in `tests/test_skillsync_ci_workflows.py` pins the new values. No change to the product code.
+
 ## [1.7.0] - 2026-11-16
 
 ### Added

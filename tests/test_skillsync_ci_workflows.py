@@ -109,8 +109,8 @@ def problems_job_names(ci, smoke):
     return errs
 
 
-# Native Windows gets 60 minutes (the suite needs about 40), the other systems 30; the job names stay.
-TEST_TIMEOUT = "${{ matrix.os == 'windows-latest' && 60 || matrix.os == 'macos-latest' && 45 || 30 }}"
+# Time limits of the `test` jobs: Windows 75, macOS 60, Ubuntu 45 minutes (about 1.4-1.6 times the longest job of five runs); the job names stay.
+TEST_TIMEOUT = "${{ matrix.os == 'windows-latest' && 75 || matrix.os == 'macos-latest' && 60 || 45 }}"
 
 
 def problems_matrix(ci):
@@ -349,13 +349,16 @@ class MutationTests(unittest.TestCase):
 
     def test_timeout_and_concurrency(self):
         ci, _ = self.mut()
-        ci["jobs"]["test"]["timeout-minutes"] = 60
+        ci["jobs"]["test"]["timeout-minutes"] = 75
         self.assertTrue(problems_matrix(ci))
         ci, _ = self.mut()
-        ci["jobs"]["test"]["timeout-minutes"] = 30
+        ci["jobs"]["test"]["timeout-minutes"] = 45
         self.assertTrue(problems_matrix(ci))
         ci, _ = self.mut()
-        ci["jobs"]["test"]["timeout-minutes"] = "${{ matrix.os == 'windows-latest' && 60 || 30 }}"  # macOS back at 30
+        ci["jobs"]["test"]["timeout-minutes"] = "${{ matrix.os == 'windows-latest' && 75 || 45 }}"  # macOS back at 45
+        self.assertTrue(problems_matrix(ci))
+        ci, _ = self.mut()
+        ci["jobs"]["test"]["timeout-minutes"] = "${{ matrix.os == 'windows-latest' && 60 || matrix.os == 'macos-latest' && 45 || 30 }}"  # the limits of 1.7.0
         self.assertTrue(problems_matrix(ci))
         ci, _ = self.mut()
         ci["concurrency"]["cancel-in-progress"] = False
