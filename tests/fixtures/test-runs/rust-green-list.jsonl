@@ -1,0 +1,4 @@
+{"meta": {"tool": "cargo", "version": "cargo 1.97.1, rustc 1.97.1, libtest default format", "command": ["cargo", "test", "--offline", "--test", "green", "--", "--list"], "exit": 0, "merged": false, "env": {"LANG": "pl_PL.UTF-8"}, "note": "-- --list", "scrubbed": "paths, host and user names are replaced", "format": "one record per chunk read from the pipe: t = seconds since the start, fd = out|err, data = the text of the chunk"}}
+{"t": 0.071, "fd": "err", "data": "    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.00s\n"}
+{"t": 0.071, "fd": "err", "data": "     Running tests/green.rs (<root>/rs-target/debug/deps/green-05497fcba309b506)\n"}
+{"t": 0.072, "fd": "out", "data": "green_one: test\ngreen_two: test\n\n2 tests, 0 benchmarks\n"}

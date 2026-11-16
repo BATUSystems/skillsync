@@ -1,0 +1,18 @@
+{"meta": {"tool": "cargo", "version": "cargo 1.97.1, rustc 1.97.1, libtest default format", "command": ["cargo", "test", "--offline", "--lib", "--", "--test-threads=1", "--nocapture"], "exit": 101, "merged": false, "env": {"LANG": "pl_PL.UTF-8"}, "note": "--test-threads=1 --nocapture: panics on stderr and test output between start and result", "scrubbed": "paths, host and user names are replaced", "format": "one record per chunk read from the pipe: t = seconds since the start, fd = out|err, data = the text of the chunk"}}
+{"t": 0.085, "fd": "err", "data": "    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.01s\n"}
+{"t": 0.085, "fd": "err", "data": "     Running unittests src/lib.rs (<root>/rs-target/debug/deps/demo-5d464ed6742d1409)\n"}
+{"t": 0.086, "fd": "out", "data": "\nrunning 11 tests\ntest tests::expected_panic_did_not_happen - should panic ... "}
+{"t": 0.087, "fd": "out", "data": "FAILED\ntest tests::expects_a_panic - should panic ... "}
+{"t": 0.087, "fd": "out", "data": "ok\ntest tests::fails ... "}
+{"t": 0.087, "fd": "out", "data": "FAILED\ntest tests::ignored ... ignored, not ready\ntest tests::ignored_without_reason ... ignored\ntest tests::nested::deep ... "}
+{"t": 0.087, "fd": "out", "data": "ok\ntest tests::nested::żółć_unicode ... "}
+{"t": 0.087, "fd": "out", "data": "ok\ntest tests::ok ... "}
+{"t": 0.087, "fd": "out", "data": "ok\ntest tests::prints ... "}
+{"t": 0.087, "fd": "out", "data": "hello from the test\n"}
+{"t": 0.087, "fd": "out", "data": "ok\ntest tests::slow_fail ... "}
+{"t": 0.087, "fd": "err", "data": "\nthread 'tests::expects_a_panic' (4020676) panicked at src/lib.rs:62:9:\nboom\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"}
+{"t": 0.087, "fd": "err", "data": "\nthread 'tests::fails' (4020677) panicked at src/lib.rs:31:9:\nassertion `left == right` failed\n  left: 2\n right: 3\n"}
+{"t": 0.987, "fd": "out", "data": "FAILED\ntest tests::slow_ok ... "}
+{"t": 0.987, "fd": "err", "data": "\nthread 'tests::slow_fail' (4020682) panicked at src/lib.rs:56:9:\nslow failure\nsecond line\n"}
+{"t": 2.187, "fd": "out", "data": "ok\n\nfailures:\n\n---- tests::expected_panic_did_not_happen stdout ----\nnote: test did not panic as expected at src/lib.rs:67:8\n\nfailures:\n    tests::expected_panic_did_not_happen\n    tests::fails\n    tests::slow_fail\n\ntest result: FAILED. 6 passed; 3 failed; 2 ignored; 0 measured; 0 filtered out; finished in 2.10s\n\n"}
+{"t": 2.188, "fd": "err", "data": "error: test failed, to rerun pass `--lib`\n"}

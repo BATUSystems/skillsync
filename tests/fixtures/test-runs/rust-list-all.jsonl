@@ -1,0 +1,11 @@
+{"meta": {"tool": "cargo", "version": "cargo 1.97.1, rustc 1.97.1, libtest default format", "command": ["cargo", "test", "--offline", "--", "--list"], "exit": 0, "merged": false, "env": {"LANG": "pl_PL.UTF-8"}, "note": "cargo test -- --list over all binaries", "scrubbed": "paths, host and user names are replaced", "format": "one record per chunk read from the pipe: t = seconds since the start, fd = out|err, data = the text of the chunk"}}
+{"t": 0.063, "fd": "err", "data": "    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.01s\n"}
+{"t": 0.064, "fd": "out", "data": "tests::expected_panic_did_not_happen: test\ntests::expects_a_panic: test\ntests::fails: test\ntests::ignored: test\ntests::ignored_without_reason: test\ntests::nested::deep: test\ntests::nested::żółć_unicode: test\ntests::ok: test\ntests::prints: test\ntests::slow_fail: test\ntests::slow_ok: test\n\n11 tests, 0 benchmarks\n"}
+{"t": 0.064, "fd": "err", "data": "     Running unittests src/lib.rs (<root>/rs-target/debug/deps/demo-5d464ed6742d1409)\n"}
+{"t": 0.065, "fd": "out", "data": "green_one: test\ngreen_two: test\n\n2 tests, 0 benchmarks\n"}
+{"t": 0.065, "fd": "err", "data": "     Running tests/green.rs (<root>/rs-target/debug/deps/green-05497fcba309b506)\n"}
+{"t": 0.065, "fd": "err", "data": "     Running tests/integration.rs (<root>/rs-target/debug/deps/integration-8120ba79c0a37c87)\n"}
+{"t": 0.066, "fd": "out", "data": "integration_fails: test\nintegration_ok: test\n\n2 tests, 0 benchmarks\n"}
+{"t": 0.066, "fd": "err", "data": "   Doc-tests demo\n"}
+{"t": 0.08, "fd": "out", "data": "src/lib.rs - add (line 5): test\nsrc/lib.rs - broken_doc (line 14): test\n"}
+{"t": 0.08, "fd": "out", "data": "\n2 tests, 0 benchmarks\n"}
