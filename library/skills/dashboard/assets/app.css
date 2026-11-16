@@ -547,3 +547,14 @@ main { flex: 1; padding: 1.1rem 1.4rem; min-width: 0; }
 
 .plan-auto[hidden] { display: none; }
 .plan-auto { margin-left: .4rem; font-size: .7rem; padding: .05rem .4rem; white-space: nowrap; }
+
+/* ---------- przycisk „na górę” w widoku dokumentu (170-B) */
+.to-top {
+  position: fixed; right: max(16px, env(safe-area-inset-right)); bottom: max(16px, env(safe-area-inset-bottom)); z-index: 40;
+  display: grid; place-items: center; width: 2.75rem; height: 2.75rem; padding: 0; cursor: pointer;
+  border: 1px solid var(--line); border-radius: 50%; background: var(--panel); color: var(--accent); box-shadow: var(--shadow);
+}
+.to-top[hidden] { display: none; }
+.to-top:hover { border-color: var(--accent); }
+.to-top .ic { width: 1.35rem; height: 1.35rem; }
+#view-docs .doc-view { padding-bottom: 4.5rem; }   /* zapas: przycisk nie zasłania ostatnich linii dokumentu */

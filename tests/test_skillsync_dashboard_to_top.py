@@ -85,6 +85,64 @@ class PageAdapter(unittest.TestCase):
         self.assertEqual(self.out['goWithoutMatchMedia'], [{'top': 0, 'left': 0, 'behavior': 'smooth'}])
 
 
+def declarations(selector):
+    text = re.sub(r'/\*.*?\*/', '', CSS.read_text(encoding='utf-8'), flags=re.S)
+    for match in re.finditer(r'([^{}]+)\{([^{}]*)\}', text):
+        if match.group(1).strip() == selector:
+            return {key.strip(): value.strip() for key, value in re.findall(r'([\w-]+)\s*:\s*([^;]+)', match.group(2))}
+    raise AssertionError(f'no rule for {selector}')
+
+
+def luminance(hex_color):
+    channels = [int(hex_color[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+    lin = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
+    return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]
+
+
+def contrast(a, b):
+    hi, lo = sorted((luminance(a), luminance(b)), reverse=True)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def tokens(selector):
+    css = CSS.read_text(encoding='utf-8')
+    start = css.index(selector + ' {')
+    block = css[css.index('{', start) + 1:css.index('}', start)]
+    return dict(re.findall(r'(--[\w-]+):\s*(#[0-9a-fA-F]{6})', block))
+
+
+class ButtonCss(unittest.TestCase):
+    def test_fixed_44_px_circle_with_the_page_tokens(self):
+        rule = declarations('.to-top')
+        self.assertEqual(rule['position'], 'fixed')
+        self.assertEqual((rule['width'], rule['height']), ('2.75rem', '2.75rem'))   # a 44 px touch target
+        self.assertIn('env(safe-area-inset-bottom)', rule['bottom'])
+        self.assertIn('env(safe-area-inset-right)', rule['right'])
+        for key, token in (('background', 'var(--panel)'), ('color', 'var(--accent)'), ('box-shadow', 'var(--shadow)')):
+            self.assertEqual(rule[key], token, key)
+        self.assertIn('var(--line)', rule['border'])
+        self.assertNotRegex(' '.join(rule.values()), r'#[0-9a-fA-F]{3,6}\b')   # no fixed colours: both themes come from the tokens
+
+    def test_layer_is_above_the_sticky_bars_and_the_menu_and_below_the_tooltips(self):
+        css = re.sub(r'/\*.*?\*/', '', CSS.read_text(encoding='utf-8'), flags=re.S)
+        z = int(declarations('.to-top')['z-index'])
+        menu = int(declarations('.menu')['z-index'])
+        tip = int(re.search(r'\.desc-tip\s*\{[^}]*z-index:\s*(\d+)', css).group(1))
+        self.assertGreater(z, menu)
+        self.assertLess(z, tip)
+
+    def test_hidden_attribute_wins_over_the_grid_display(self):
+        self.assertEqual(declarations('.to-top[hidden]')['display'], 'none')
+
+    def test_the_icon_has_at_least_3_to_1_contrast_with_the_background_in_both_themes(self):
+        for name, selector in (('light', ':root'), ('dark', ':root[data-theme="dark"]')):
+            token = tokens(selector)
+            self.assertGreaterEqual(contrast(token['--accent'], token['--panel']), 3.0, name)
+
+    def test_the_document_keeps_room_for_the_button(self):
+        self.assertEqual(declarations('#view-docs .doc-view')['padding-bottom'], '4.5rem')
+
+
 class Wiring(unittest.TestCase):
     def test_the_page_passes_the_hook_in_its_scroll_adapter(self):
         app = APP.read_text(encoding='utf-8')
