@@ -550,15 +550,16 @@ zgód jest ono osobne: port zgód widzi każde urządzenie w sieci, a token idzi
 pierwsze i kończy `BLOCKED` (`nie można nasłuchiwać …; porty … muszą być wolne`) bez śladu stanu. Ctrl+C albo SIGTERM
 zamyka oba gniazda i usuwa oba pliki stanu.
 
-**Jak zatrzymać serwer na Windows** (`dashboard serve` i `prototype serve`; na Linuksie i macOS bez zmian: Ctrl+C albo SIGTERM). Zmierzone na Windows 11 z Pythonem 3.12:
+**Jak zatrzymać serwer na Windows** (`dashboard serve` i `prototype serve`; na Linuksie i macOS bez zmian: Ctrl+C albo SIGTERM). Kolumna „Pomiar” odróżnia to, co zmierzono (Windows 11, Python 3.12.16, 16.11.2026), od tego, co jest tylko oczekiwane z dokumentacji systemu i nie było mierzone:
 
-| Sposób | Skutek | Plik stanu po zatrzymaniu |
-|---|---|---|
-| Ctrl+C w konsoli serwera | łagodnie: raport `PASS`/`stopped`, kod wyjścia 0 | usunięty |
-| `CTRL_BREAK_EVENT` do serwera uruchomionego z `CREATE_NEW_PROCESS_GROUP` (`os.kill(pid, signal.CTRL_BREAK_EVENT)` z launchera, wspólna konsola) | łagodnie jak Ctrl+C (sygnał `SIGBREAK`), kod wyjścia 0; drugi CTRL_BREAK w ciągu 10 s po pierwszym jest ignorowany (nie przerywa sprzątania), późniejszy zatrzymuje ponownie | usunięty (w trybie dwóch gniazd oba pliki) |
-| `Stop-Process`, `taskkill /F`, `Popen.terminate()`, Menedżer zadań | twardo (`TerminateProcess`), bez sprzątania | **zostaje** (z tokenem zgód) |
-| `taskkill /PID` bez `/F` | nie działa: „This process can only be terminated forcefully (with /F option).” | – |
-| zamknięcie okna konsoli | twardo (nie obsługujemy `CTRL_CLOSE_EVENT`) | zostaje |
+| Sposób | Skutek | Plik stanu po zatrzymaniu | Pomiar |
+|---|---|---|---|
+| Ctrl+C w konsoli serwera | łagodnie: raport `PASS`/`stopped`, kod wyjścia 0 | usunięty | zmierzone |
+| `CTRL_BREAK_EVENT` do serwera uruchomionego z `CREATE_NEW_PROCESS_GROUP` (`os.kill(pid, signal.CTRL_BREAK_EVENT)` z launchera, wspólna konsola) | łagodnie jak Ctrl+C (sygnał `SIGBREAK`), kod wyjścia 0; drugi CTRL_BREAK w ciągu 10 s po pierwszym jest ignorowany (nie przerywa sprzątania), późniejszy zatrzymuje ponownie | usunięty (w trybie dwóch gniazd oba pliki) | zmierzone |
+| `Stop-Process`, `taskkill /F`, `Popen.terminate()` | twardo (`TerminateProcess`), bez sprzątania | **zostaje** (z tokenem zgód) | zmierzone |
+| `taskkill /PID` bez `/F` | nie działa: „This process can only be terminated forcefully (with /F option).” | – | zmierzone |
+| zamknięcie okna konsoli | oczekiwane: twardo (nie obsługujemy `CTRL_CLOSE_EVENT`; system kończy proces domyślnym handlerem) | oczekiwane: zostaje | **niezmierzone** |
+| Menedżer zadań („Zakończ zadanie”) | oczekiwane: dla aplikacji konsolowej system wysyła `CTRL_CLOSE_EVENT` (jak przy zamknięciu okna), czyli twardo; dla procesu bez okna możliwe zakończenie przez `TerminateProcess` | oczekiwane: zostaje | **niezmierzone** |
 
 Po twardym zakończeniu port jest wolny od razu, a następny start na tym samym porcie zastępuje plik stanu; plik innego portu zostaje, aż ten port zostanie użyty ponownie. Ctrl+C dziedziczy ustawienie „ignoruj CTRL+C” po procesie rodzicu (np. skrypt uruchomiony z sesji ssh): wtedy serwer uruchomiony z takiego procesu go nie odbierze, a CTRL_BREAK tak. Dziecko uruchomione z `CREATE_NEW_PROCESS_GROUP` w ogóle nie dostaje Ctrl+C (system wyłącza go w nowej grupie), więc launcher zatrzyma je tylko CTRL_BREAKiem.
 
