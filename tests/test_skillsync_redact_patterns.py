@@ -97,5 +97,27 @@ class MultiLineEnvironmentSecret(unittest.TestCase):
                     self.assertTrue(masked.startswith("przed") and masked.rstrip().endswith("po"))
 
 
+class EnvironmentReadOnce(unittest.TestCase):
+    """180-A, F5.2: a tree of thousands of strings (the `tests` of the status) reads the environment once per call, not once per string."""
+
+    def test_a_tree_reads_the_environment_once_and_masks_the_same(self) -> None:
+        from skillsync_workflow import common
+        secret = "-".join(["zq9x", "wv8y", "ut7s"])
+        tree = {"a": [f"x {secret} y"] * 50, "b": {"c": f"token={VALUE}"}, "n": 3}
+        with mock.patch.dict(os.environ, {"DEPLOY_TOKEN": secret}), mock.patch.object(common, "_environment_secrets", wraps=common._environment_secrets) as spy:
+            masked = redact(tree)
+        self.assertEqual(spy.call_count, 1)
+        self.assertEqual(masked["a"][49], "x [REDACTED] y")
+        self.assertEqual(masked["b"]["c"], "token=[REDACTED]")
+        self.assertEqual(masked["n"], 3)
+
+    def test_a_change_of_the_environment_is_seen_by_the_next_call(self) -> None:
+        secret = "-".join(["qw1e", "rt2y", "ui3o"])
+        self.assertIn(secret, redact(secret))
+        with mock.patch.dict(os.environ, {"DEPLOY_SECRET": secret}):
+            self.assertEqual(redact(secret), "[REDACTED]")
+        self.assertIn(secret, redact(secret))
+
+
 if __name__ == "__main__":
     unittest.main()
