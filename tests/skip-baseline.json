@@ -581,6 +581,10 @@
     "category": "needs-symlinks"
    },
    {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_a_candidate_the_c_library_cannot_give_is_left_out_and_the_plain_one_decides",
+    "category": "posix-only"
+   },
+   {
     "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_a_dead_leader_without_helpers_removes_the_file_quietly",
     "category": "posix-only"
    },
@@ -653,6 +657,10 @@
     "category": "posix-only"
    },
    {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_an_etime_that_disagrees_with_lstart_by_hours_never_makes_an_unreadable_row_or_a_second_start",
+    "category": "posix-only"
+   },
+   {
     "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_an_unreadable_pid_file_is_removed_with_a_message",
     "category": "posix-only"
    },
@@ -678,6 +686,10 @@
    },
    {
     "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_rows_of_a_macos_style_ps_are_parsed",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_the_elapsed_time_of_a_process_older_than_99_days_and_in_every_form_is_read",
     "category": "posix-only"
    },
    {

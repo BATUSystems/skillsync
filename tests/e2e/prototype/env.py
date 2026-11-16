@@ -342,6 +342,13 @@ def _parse_elapsed(text):
     return ((days * 24 + hours) * 60 + minutes) * 60 + seconds
 
 
+def _mktime(parsed, isdst):
+    try:
+        return int(time.mktime(parsed + (isdst,)))
+    except (OverflowError, ValueError, OSError):
+        return None
+
+
 def _parse_start(text, elapsed=None, now=None):
     """The start of a process as epoch seconds, from the `lstart` text (local time without an offset). Around a DST change the same local
     time names two instants (or none): `mktime` is tried with every `isdst` and the candidate nearest to `now - elapsed` (what `etime` says)
@@ -350,12 +357,13 @@ def _parse_start(text, elapsed=None, now=None):
         parsed = tuple(time.strptime(' '.join(text.split()), '%a %b %d %H:%M:%S %Y'))[:8]
     except ValueError:
         return None
-    try:
-        candidates = {int(time.mktime(parsed + (flag,))) for flag in (-1, 0, 1)}
-    except (OverflowError, ValueError):
+    plain = _mktime(parsed, -1)
+    if plain is None:
         return None
     if elapsed is None or now is None:
-        return int(time.mktime(parsed + (-1,)))
+        return plain
+    # A candidate the C library cannot give (some libc refuse a forced `isdst` in a zone without DST) is left out; the plain one remains.
+    candidates = {plain} | {item for item in (_mktime(parsed, 0), _mktime(parsed, 1)) if item is not None}
     return min(candidates, key=lambda candidate: abs(candidate - (now - elapsed)))
 
 

@@ -93,7 +93,7 @@ class E2eEnvWindowsGuard(unittest.TestCase):
             with self.subTest(argv[0]), mock.patch.object(ENV.sys, 'platform', 'win32'), contextlib.redirect_stderr(io.StringIO()) as err, \
                     mock.patch.object(ENV.subprocess, 'Popen', side_effect=AssertionError('nothing may be started')), \
                     mock.patch.object(ENV.subprocess, 'run', side_effect=AssertionError('nothing may be run')):
-                self.assertEqual(ENV.main(argv), ENV.UNSUPPORTED_EXIT)
+                self.assertEqual(ENV.main(argv), 2)
             self.assertIn('not supported on Windows', err.getvalue())
             self.assertIn('BLOCKED', err.getvalue())
             self.assertNotIn('Traceback', err.getvalue())
@@ -618,6 +618,8 @@ class E2eEnvCleanup(unittest.TestCase):
         ENV.stop_all(self.env)
 
     def with_zone(self, zone):
+        if not hasattr(time, 'tzset'):
+            self.skipTest('no time.tzset in this Python (a zone cannot be set)')
         previous = os.environ.get('TZ')
         def restore():
             if previous is None:
@@ -628,6 +630,8 @@ class E2eEnvCleanup(unittest.TestCase):
         self.addCleanup(restore)
         os.environ['TZ'] = zone
         time.tzset()
+        if zone != 'UTC' and time.tzname[0] == 'UTC':
+            self.skipTest('no tz database for %s' % zone)
 
     def test_the_start_is_not_moved_by_an_hour_in_the_repeated_local_hour_of_a_dst_change(self):
         self.with_zone('Europe/Warsaw')
@@ -650,7 +654,7 @@ class E2eEnvCleanup(unittest.TestCase):
         self.with_zone('Europe/Warsaw')
         now = int(time.mktime(time.strptime('Mon Nov 16 09:12:07 2026', '%a %b %d %H:%M:%S %Y')))
         text = '\n'.join([
-            '    1     0     1     0 Ss    12-03:04:05 Mon Nov  2 08:15:01 2026',       # launchd, a one-digit day with two spaces
+            '    1     0     1     0 Ss    14-00:57:06 Mon Nov  2 08:15:01 2026',       # launchd, a one-digit day with two spaces
             '  412     1   412   501 Ss+      01:21:57 Mon Nov 16 07:50:10 2026',      # a foreground session leader
             '  900   412   900   501 S+          00:07 Mon Nov 16 09:12:00 2026',
             '  901   412   900   501 Z          00:07 Mon Nov 16 09:12:00 2026',
@@ -692,6 +696,39 @@ class E2eEnvCleanup(unittest.TestCase):
             self.assertEqual(ENV.stop_all(self.env), {})
         self.assertTrue(alive(stranger.pid) and alive(child.pid), 'a process of a stranger was killed')
         self.assertFalse((self.work / 'chrome.pid').exists())
+
+
+    def test_a_candidate_the_c_library_cannot_give_is_left_out_and_the_plain_one_decides(self):
+        self.with_zone('UTC')
+        instant = calendar.timegm((2026, 7, 1, 10, 0, 0))
+        real = time.mktime
+        def refusing(parts):
+            if parts[8] in (0, 1):
+                raise OverflowError('mktime argument out of range')
+            return real(parts)
+        text = time.strftime('%a %b %d %H:%M:%S %Y', time.gmtime(instant))
+        with mock.patch.object(ENV.time, 'mktime', refusing):
+            self.assertEqual(ENV._parse_start(text, 100, instant + 100), instant)
+            table, unreadable = ENV.parse_ps_table('  5 1 5 501 S 01:40 %s\n' % text, instant + 6000)
+        self.assertEqual((unreadable, table[5]['start']), (0, instant))
+
+    def test_the_elapsed_time_of_a_process_older_than_99_days_and_in_every_form_is_read(self):
+        self.assertEqual(ENV._parse_elapsed('00:07'), 7)
+        self.assertEqual(ENV._parse_elapsed('01:00:00'), 3600)
+        self.assertEqual(ENV._parse_elapsed('12-03:04:05'), 12 * 86400 + 3 * 3600 + 4 * 60 + 5)
+        self.assertEqual(ENV._parse_elapsed('123-00:00:01'), 123 * 86400 + 1)
+        for bad in ('-', '', '1:2:3:4', 'abc', '12-34'):
+            self.assertIsNone(ENV._parse_elapsed(bad), bad)
+
+    def test_an_etime_that_disagrees_with_lstart_by_hours_never_makes_an_unreadable_row_or_a_second_start(self):
+        self.with_zone('Europe/Warsaw')
+        text = 'Mon Nov 16 07:50:10 2026'
+        plain = int(time.mktime(time.strptime(text, '%a %b %d %H:%M:%S %Y')))
+        for skew in (0, 7200, 86400):
+            with self.subTest(skew=skew):
+                start = ENV._parse_start(text, 600, plain + 600 + skew)
+                self.assertIn(start, (plain, plain - 3600, plain + 3600))
+                self.assertEqual(start, ENV._parse_start(text, 600, plain + 600 + skew))   # the same input, the same answer
 
 
 if __name__ == '__main__':
