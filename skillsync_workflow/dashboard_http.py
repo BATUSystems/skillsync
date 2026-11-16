@@ -18,6 +18,7 @@ application/json`, body <= 4096 bytes; `--no-approvals` turns it off. Standard l
 """
 from __future__ import annotations
 
+import errno
 import hmac
 import html
 import json
@@ -39,6 +40,7 @@ import yaml
 
 from . import __version__
 from . import dashboard as engine
+from . import dashboard_listen
 from . import dashboard_ports as ports
 from . import dashboard_token
 from . import stopsignal
@@ -677,13 +679,13 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
     def _host_allowed(self, host: str) -> bool:
         """May this `Host` open the page on this socket? Single-port: loopback, `--approve-host`, `--read-host` (as in 1.5.0). Two-port
         sockets add the IP literals of this machine (a phone opens `http://<IP>:<port>/` without being listed; a literal cannot come
-        from DNS rebinding) and differ by role: the read socket accepts `--read-host` (also `'*'`), the consent socket never does."""
+        from DNS rebinding) and, on the read socket only, the machine's own host name (`ports.own_names`, text match, no DNS) and differ by role: the read socket accepts `--read-host` (also `'*'`), the consent socket never does."""
         board = self.board
         if self.role == ports.ROLE_BOTH:
             return host in board.approve_hosts or host in board.read_hosts
         if host in board.approve_hosts or ports.is_local_ip(host):
             return True
-        return self.role == ports.ROLE_READ and (host in board.read_hosts or "*" in board.read_hosts)
+        return self.role == ports.ROLE_READ and (host in board.read_hosts or "*" in board.read_hosts or host in ports.own_names())
 
     def do_HEAD(self) -> None:  # noqa: N802
         self.do_GET()
@@ -867,18 +869,37 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
         self.wfile.flush()
 
 
+def _version_tuple(version: str) -> tuple[int, ...]:
+    parts = []
+    for piece in str(version).split(".")[:2]:
+        digits = "".join(ch for ch in piece if ch.isdigit())
+        parts.append(int(digits) if digits else 0)
+    return tuple(parts)
+
+
+def exclusive_option():
+    """`SO_EXCLUSIVEADDRUSE` on Windows, None elsewhere."""
+    return getattr(socket, "SO_EXCLUSIVEADDRUSE", None) if os.name == "nt" else None
+
+
 class Server(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = os.name != "nt"
     # Listen backlog: the default of 5 resets bursts of parallel clients (the same value as the prototype server).
     request_queue_size = 128
 
-    def __init__(self, address, handler):
+    def __init__(self, address, handler, exclusive: bool = False):
         if ":" in address[0]:
             self.address_family = socket.AF_INET6
+        self.exclusive = exclusive
         ThreadingHTTPServer.__init__(self, address, handler)
 
     def server_bind(self):
+        # Windows lets a second process bind 127.0.0.1:<port> although 0.0.0.0:<port> is taken (the narrower address wins) and then receive
+        # the connections of this machine: the two-port sockets ask for the address exclusively. Other systems: nothing (SO_REUSEADDR as before).
+        option = exclusive_option() if self.exclusive else None
+        if option is not None:
+            self.socket.setsockopt(socket.SOL_SOCKET, option, 1)
         # Skip `socket.getfqdn` of HTTPServer.server_bind (slow DNS on some hosts).
         socketserver.TCPServer.server_bind(self)
         host, port = self.server_address[:2]
@@ -935,7 +956,7 @@ def make_server(board: Board, host: str, port: int, verbose: bool = False, role:
     validate_port(port)
     handler = type("BoundHandler", (ReadHandler if role == ports.ROLE_READ else Handler,), {"board": board, "verbose": verbose, "role": role, "own_port": port,
                                                 "allow_proxy_headers": allow_proxy_headers, "peer_port": peer_port})
-    return Server((host, port), handler)
+    return Server((host, port), handler, exclusive=role != ports.ROLE_BOTH)
 
 
 # --------------------------------------------------------------------------- CLI
@@ -973,7 +994,16 @@ def serve_command(args) -> int:
     """`skillsync dashboard serve`: foreground server (Ctrl+C or SIGTERM stops); BLOCKED (exit 2) when it may not start.
     `--read-port` / `--approve-port`: the two-port mode (`_serve_ports`); otherwise the single-port mode of 1.5.0, unchanged."""
     try:
-        mode = ports.resolve(args, port_problem)
+        settings = None
+        if getattr(args, "port", None) is None:   # the `dashboard:` setting only matters for the two-port mode
+            _root, manifest = read_project(args.path)
+            unknown = dashboard_listen.blocking_unknown_keys(manifest)
+            if unknown:
+                raise ValueError(unknown)
+            settings = dashboard_listen.settings(manifest)
+        mode = ports.resolve(args, port_problem, settings)
+    except (LayerError, TypeError, yaml.YAMLError) as error:
+        return emit({"status": "BLOCKED", "reason": " ".join(str(error).split())[:500]})
     except ValueError as error:
         return emit({"status": "BLOCKED", "reason": " ".join(str(error).split())[:500]})
     if mode is not None:
@@ -1081,6 +1111,7 @@ def _serve_ports(args, mode: dict) -> int:
     """The two-port mode: one `Board`, one watcher, a server per socket (`read`: no write route at all; `approve`: token, strict Origin,
     no proxy headers). Both sockets are bound BEFORE any thread, state file or console line, so a failure of the second leaves nothing."""
     servers: list[tuple[str, Server, int, str]] = []
+    failing = None
     try:
         root, manifest, layerset = load_layer_project(args.path, args.layers)
         if args.session_url and not session_url_ok(args.session_url):
@@ -1107,13 +1138,20 @@ def _serve_ports(args, mode: dict) -> int:
         for role, peer in ((ports.ROLE_READ, approve_port), (ports.ROLE_APPROVE, read_port)):
             spec = mode[role]
             if spec:
+                failing = spec["port"]
+                if ports.port_taken(spec["bind"], spec["port"]):
+                    raise OSError(errno.EADDRINUSE, "Address already in use")
                 servers.append((role, make_server(board, spec["bind"], spec["port"], args.verbose, role=role, peer_port=peer,
                                                   allow_proxy_headers=mode["allow_proxy"] and role == ports.ROLE_APPROVE), spec["port"], spec["bind"]))
+                failing = None
     except OSError as error:
         for _role, server, _port, _bind in servers:
             server.server_close()
         wanted = "/".join(str(mode[role]["port"]) for role in (ports.ROLE_READ, ports.ROLE_APPROVE) if mode[role])
-        return emit({"status": "BLOCKED", "reason": f"nie można nasłuchiwać ({error.strerror or error}); porty {wanted} muszą być wolne"})
+        owner = dashboard_token.port_owner(failing) if failing else None
+        who = f"; port {failing} trzyma {owner}" if owner else (f"; port {failing} zajęty przez inny proces" if failing else "")
+        return emit({"status": "BLOCKED", "reason": f"nie można nasłuchiwać ({error.strerror or error}); porty {wanted} muszą być wolne{who}. "
+                                                    f"Wskaż inne: --read-port N --approve-port M (albo --port N: tryb jednego portu)."})
     except (LayerError, ValueError, TypeError, yaml.YAMLError) as error:
         for _role, server, _port, _bind in servers:
             server.server_close()
@@ -1137,7 +1175,7 @@ def _serve_ports(args, mode: dict) -> int:
             peer_port = peer["port"] if peer else None
             if role == ports.ROLE_READ:
                 log(f"odczyt (do tunelu i linków): {dashboard_token.read_address(port, local)}  [nasłuch {bind}:{port}, bez zgód i tokenu]")
-                dashboard_token.write_state(board.root, port, None, local, warn=warn, hosts=approve_hosts, role=role, peer=peer_port)
+                dashboard_token.write_state(board.root, port, None, local, warn=warn, hosts=approve_hosts, role=role, peer=peer_port, bind=bind)
             else:
                 shown = dashboard_token.address_host(bind, board.approve_hosts)
                 log(f"zgody (przyciski, tylko dla Ciebie, nigdy do tunelu): {dashboard_token.address(port, board.approve_token, shown)}  [nasłuch {bind}:{port}]")
@@ -1149,10 +1187,26 @@ def _serve_ports(args, mode: dict) -> int:
                         f"nieszyfrowanym HTTP (podsłuch w tej sieci wystarczy do przechwycenia go). W nieufnej sieci uruchom z "
                         f"--approve-bind 127.0.0.1 albo użyj tunelu SSH; nigdy nie kieruj tunelu publicznego na ten port.")
                 else:
-                    log(f"UWAGA: port odczytu {port} słucha na {bind}: każde urządzenie w sieci zobaczy plany i statusy (tajne dane zredagowane).")
+                    log(f"UWAGA: port odczytu {port} słucha na {bind}: odczyt jest dostępny dla każdego urządzenia w tej sieci lokalnej (plany, spece, "
+                        f"wyniki; tajne dane zredagowane heurystycznie; ruch nieszyfrowany). W nieufnej sieci uruchom z --read-bind 127.0.0.1 "
+                        f"albo ustaw dashboard.local_only: true w configu maszyny.")
+                    if mode.get("read_default") and _version_tuple(__version__) < ports.LISTEN_NOTE_UNTIL:
+                        log("  od 1.8.0 odczyt słucha domyślnie na wszystkich interfejsach; poprzedni nasłuch tylko lokalny przywraca "
+                            "--read-bind 127.0.0.1 albo dashboard.local_only: true.")
                 if bind in ("0.0.0.0", "::", ""):
                     for ip in lan_addresses():
                         log(f"  z innego urządzenia: http://{ip}:{port}/")
+                    if role == ports.ROLE_READ:
+                        names = sorted(name for name in ports.own_names() if name.endswith(".local")) or sorted(ports.own_names())[:1]
+                        for name in names:
+                            log(f"  albo po nazwie tej maszyny: http://{name}:{port}/")
+                    if role == ports.ROLE_READ and os.name == "nt":
+                        log("  Zapora Windows może zapytać o dostęp: „Zezwól” w sieci prywatnej daje podgląd z telefonu, odmowa zostawia stronę lokalnie.")
+        approve_spec, read_spec = mode["approve"], mode["read"]
+        if approve_spec and ports.is_loopback_bind(approve_spec["bind"]) and read_spec and not ports.is_loopback_bind(read_spec["bind"]):
+            log("zgody są tylko na tej maszynie; zgody z telefonu: --approve-bind 0.0.0.0 (token idzie nieszyfrowanym HTTP; tylko zaufana sieć)")
+        if all(ports.is_loopback_bind(bind) for _role, _server, _port, bind in servers):
+            log("strona tylko na tej maszynie (nasłuch na loopbacku)")
         while not board.stop.is_set():
             board.stop.wait(0.5)
     except KeyboardInterrupt:

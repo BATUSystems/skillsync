@@ -22,6 +22,7 @@ from .selfcmd import self_argv
 from . import layers as _layers
 from .ceremony import ceremony_info, validate_ceremony
 from .delivery_mode import delivery_info, validate_delivery_mode
+from .dashboard_listen import validate_dashboard
 from .dispatch import validate_dispatch
 from .prototype import validate_prototype
 from .status import MAX_PLAN_BYTES, PLAN_SUMMARY, git_blob_sha, SPEC_FULL, SPEC_LINE, _STATUS, is_spec_path, plan_summary, plan_text_needs_human
@@ -946,6 +947,11 @@ def doctor(root, manifest, library):
     for message in delivery_errors:
         finding('error', '.github/.skillsync.yaml', message)
     for message in delivery_warnings:
+        finding('warning', '.github/.skillsync.yaml', message)
+    dashboard_errors, dashboard_warnings = validate_dashboard(manifest.get('dashboard'), 'dashboard', narrow_only=True)
+    for message in dashboard_errors:
+        finding('error', '.github/.skillsync.yaml', message)
+    for message in dashboard_warnings:
         finding('warning', '.github/.skillsync.yaml', message)
     ceremony_errors, _ = validate_ceremony(manifest)
     for message in ceremony_errors:

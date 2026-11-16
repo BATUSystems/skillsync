@@ -258,7 +258,7 @@ projektu albo skill organizacji, nie rdzeń.
 | Decyzja o kandydacie | `retro-decide <projekt> --cause-key K --decision approved\|rejected` | wpis w `docs/retro/decisions.yaml` z walidacją, zapis atomowy |
 | Po `done` | `plan archive\|unarchive <projekt> <plik>` | `done` ↔ `archived` (poza kolejkami, bez `needsHuman`) |
 | Wiedza | `knowledge init <projekt>` | brakujące `docs/domain/index.yaml`, `docs/lessons/index.yaml`, `docs/README.md`, bez nadpisywania |
-| Strona statusu | `dashboard show <projekt> [--json]`, `dashboard serve <projekt> [--port N]` albo `--read-port N --approve-port M`, `dashboard metrics <projekt> <run-id>` | stan planu, przebiegu i zgód jako JSON `schema: 1` ([dashboard-contract.md](dashboard-contract.md)), strona z przyciskami zgód, czasy podkroków `Fn.k` (podkrok bez danych jawnie); 0 = PASS, 2 = BLOCKED |
+| Strona statusu | `dashboard show <projekt> [--json]`, `dashboard serve <projekt>` (domyślnie dwa gniazda: odczyt 5140, zgody 5141), `--port N` albo `--read-port N --approve-port M`, `dashboard metrics <projekt> <run-id>` | stan planu, przebiegu i zgód jako JSON `schema: 1` ([dashboard-contract.md](dashboard-contract.md)), strona z przyciskami zgód, czasy podkroków `Fn.k` (podkrok bez danych jawnie); 0 = PASS, 2 = BLOCKED |
 | Makieta UI | `prototype init\|sync\|index\|list <projekt>` | prototypy w `docs/prototypes/`, galeria, lista z otwartymi wątkami komentarzy |
 | Dyspozycja | `dispatch <projekt> [--run-id ID] [--json]` | odczyt stanu `.skillsync/dispatch/<run-id>.yaml` (schemat 1) |
 | Konfiguracja | `doctor <projekt>` | statyczna kontrola źródeł, instalacji, budżetów, manifestu, indeksów wiedzy i zamknięcia planów; nie zastępuje testów |
@@ -277,23 +277,31 @@ zielony/czerwony znacznik (pełna tabela: [workflow-details.md](workflow-details
 
 Strona (`dashboard serve`) ma dwa tryby. Wybór zależy od tego, kto ma dostać adres i skąd.
 
-- **Jedno gniazdo** (`serve` bez nowych flag albo `--port N`). Nasłuch na `127.0.0.1` (chyba że `--host`),
-  rola (odczyt albo zgody) z nagłówka `Host`. Zgody z innego urządzenia wymagają `--approve-host` i adresu z tokenem.
-- **Dwa gniazda** (`serve --read-port N --approve-port M`): rola z **portu**. Gniazdo odczytu ma tylko strony i dane:
-  żadnej trasy zgód (`POST /api/approve` = 404), bez tokenu. Gniazdo zgód wymaga tokenu, ścisłego `Origin`, nie przyjmuje
-  nagłówków pośrednika i zapisuje, z którego adresu przyszła zgoda (`via`). Oba gniazda domyślnie słuchają na wszystkich
-  interfejsach (`0.0.0.0`), z ostrzeżeniem w konsoli; `--read-bind 127.0.0.1` / `--approve-bind 127.0.0.1` (albo `--host
-  127.0.0.1` dla obu) zawężają gniazdo do tej maszyny. Szczegóły flag i kody: [cli.md](cli.md), kontrakt i kolejność
-  odmów: [dashboard-contract.md](dashboard-contract.md).
+- **Domyślnie (bez flag portów) dwa gniazda**: odczyt na `5140` (wszystkie interfejsy, `0.0.0.0`) i zgody na `5141`
+  (tylko `127.0.0.1`). Rola z **portu**. Gniazdo odczytu ma tylko strony i dane: żadnej trasy zgód (`POST /api/approve` = 404),
+  bez tokenu. Gniazdo zgód wymaga tokenu, ścisłego `Origin`, nie przyjmuje nagłówków pośrednika i zapisuje, z którego adresu
+  przyszła zgoda (`via`). Gniazdo odczytu przyjmuje też własną nazwę maszyny (tylko odczyt). Jawne `--read-port N --approve-port M`
+  działają tak samo, z numerami podanymi przez użytkownika.
+- **Jedno gniazdo** (`serve --port N`): nasłuch na `127.0.0.1` (chyba że `--host`), rola (odczyt albo zgody) z nagłówka `Host`.
+  Zgody z innego urządzenia wymagają `--approve-host` i adresu z tokenem. Tryb bez zmian od 1.5.0.
+- Ustawienia nasłuchu: odczyt: `--read-bind` (flaga), potem `--host` (tylko odczyt), potem `dashboard:` w manifeście projektu,
+  potem w configu maszyny, na końcu `0.0.0.0`. Zgody: `--approve-bind`, potem `dashboard:`, na końcu `127.0.0.1`; `--host`
+  zgód nie rusza. `dashboard.local_only: true` zawęża oba gniazda do `127.0.0.1`. Szczegóły flag i kody: [cli.md](cli.md),
+  kontrakt i kolejność odmów: [dashboard-contract.md](dashboard-contract.md).
+- `--host` i `--approve-host` bez portów są BLOCKED z podpowiedzią (stary tryb `--port N --host A` / `--port N --approve-host H`,
+  nowy: `--read-bind` / `--approve-bind`).
 
 Zalecenia:
 
-- Link albo tunel dla osoby z zewnątrz: wyłącznie port odczytu (`skillsync dashboard url <projekt> --read`). Port zgód nigdy
-  nie idzie do tunelu. Tunel `ssh -L` do zgód: `ssh -L 5141:127.0.0.1:5141 <host>`.
-- Zgody z własnego telefonu w zaufanej sieci: tryb dwóch gniazd z domyślnym nasłuchem; adres z tokenem podaje
-  `skillsync dashboard url <projekt>` (telefon wchodzi na `http://<IP maszyny>:<port zgód>/` bez wpisywania go w `--approve-host`).
-- Zgody w obcej sieci (hotel, konferencja, hotspot, sieć gościnna): `--approve-bind 127.0.0.1` i dostęp tunelem SSH.
-- Odwrotny proxy, któremu ufasz: `--allow-proxy-headers` (tylko z `--approve-port`). Bez tego zgody przez proxy dostają 403.
+- Link albo tunel dla osoby z zewnątrz: wyłącznie port odczytu (`skillsync dashboard url <projekt> --read`; w sieci lokalnej
+  `--lan` podaje adresy dla innych urządzeń). Port zgód nigdy nie idzie do tunelu. Tunel do zgód tylko przy jawnym
+  `--approve-port M` i tunelu na port M: `ssh -L M:127.0.0.1:M <host>` (`--approve-host` tylko dla nazwy z tunelu odwrotnego albo bramki).
+- Zgody z telefonu lub innego komputera w zaufanej sieci: `--approve-bind 0.0.0.0` (albo `approve_bind: 0.0.0.0` w `dashboard:`);
+  adres z tokenem podaje `skillsync dashboard url <projekt>`. Telefon wchodzi na `http://<IP maszyny>:<port zgód>/` bez wpisywania go w `--approve-host`.
+- Strona tylko dla tej maszyny: `dashboard.local_only: true` w configu maszyny albo `--read-bind 127.0.0.1` (zgody zostają lokalne).
+- Zgody w obcej sieci (hotel, konferencja, hotspot, sieć gościnna): `dashboard.local_only: true` albo `--read-bind 127.0.0.1`
+  i dostęp do zgód tunelem SSH na port zgód.
+- Odwrotny proxy, któremu ufasz: `--allow-proxy-headers` (tylko z gniazdem zgód: domyślnym albo `--approve-port`). Bez tego zgody przez proxy dostają 403.
 
 ### Model zagrożeń (tryb dwóch gniazd)
 
@@ -304,21 +312,21 @@ Zalecenia:
 | Obca strona w przeglądarce (CSRF) | `Origin` musi być dokładnie `http://<Host>` z portem: strona z portu odczytu nie zapisze; nagłówek `X-Status-Board` | niskie |
 | DNS rebinding | nazwa spoza listy = 403; literał IP przyjmowany tylko jako adres własny interfejsu | niskie |
 | Wyciek tokenu (adres w komunikatorze, historia przeglądarki, zrzut ekranu, dziennik usługi) | token w fragmencie adresu; `dashboard url` zamiast linii startowej w dzienniku; restart zmienia token | średnie: token żyje do końca procesu serwera |
-| Odczyt treści planów przez sieć | gniazdo odczytu bez zgód i tokenu; sekrety zredagowane w odpowiedzi | każdy w tej sieci widzi plany i statusy |
+| Odczyt treści planów przez sieć | gniazdo odczytu bez zgód i tokenu (domyślnie na wszystkich interfejsach); sekrety zredagowane heurystycznie w odpowiedzi | widz w sieci bez logowania widzi wszystko, co port odczytu: plany, specyfikacje, wyniki, checkpointy, raporty przebiegów; nie widzi i nie robi zgód; ruch bez TLS. W nieufnej sieci: `dashboard.local_only: true` albo `--read-bind 127.0.0.1` |
 | Zgoda z nieznanego miejsca | `via` (port, host, adres klienta z gniazda) w `approvals.jsonl`; linia w konsoli przy adresie spoza loopbacku; licznik nieudanych tokenów | brak blokady, jest ślad |
 
 **Ryzyko szczątkowe (tryb dwóch gniazd z nasłuchem w sieci).** Każdy, kto w sieci widzi ruch HTTP, może przechwycić
 token zgód i zatwierdzić CP, GO albo READY na Twoim koncie, dopóki serwer działa. Zgoda dotyczy bieżącego `sha` (HEAD albo
 wersji pliku), czyli tego, na którym agent pcha kod. W zaufanej sieci domowej lub biurowej ryzyko jest małe; w sieci
-gościnnej, hotelowej, na konferencji albo przy hotspocie jest realne. Wtedy uruchom z `--approve-bind 127.0.0.1` albo
-przez tunel SSH. Przy nasłuchu w sieci nagłówek `Host` nie jest barierą (klient spoza przeglądarki ustawia go sam), a lista nagłówków pośrednika jest heurystyką: na porcie zgód chroni token. Produkt nie szyfruje ruchu i nie ma logowania; to poza zakresem 1.6.0 (TLS i parowanie urządzeń
+gościnnej, hotelowej, na konferencji albo przy hotspocie jest realne. Wtedy ustaw `dashboard.local_only: true` albo uruchom z
+`--approve-bind 127.0.0.1` i wejdź tunelem SSH. Przy nasłuchu w sieci nagłówek `Host` nie jest barierą (klient spoza przeglądarki ustawia go sam), a lista nagłówków pośrednika jest heurystyką: na porcie zgód chroni token. Produkt nie szyfruje ruchu i nie ma logowania; to poza zakresem 1.6.0 (TLS i parowanie urządzeń
 są planowane osobno).
 
 ### Migracja z dwóch instancji
 
 Dotychczasowe obejście (dwa procesy: jeden z `--no-approvals` na odczyt, drugi ze zgodami) zastępuje jedno wywołanie
-`dashboard serve <projekt> --read-port 5140 --approve-port 5141`. Najpierw zatrzymaj stare procesy: porty muszą być wolne,
-inaczej start kończy się `BLOCKED` bez skutków ubocznych. Wywołania z `--port` działają bez zmian.
+`dashboard serve <projekt>` (bez flag portów; to samo co `--read-port 5140 --approve-port 5141`). Najpierw zatrzymaj stare
+procesy: porty muszą być wolne, inaczej start kończy się `BLOCKED` bez skutków ubocznych. Wywołania z `--port` działają bez zmian.
 
 ## Profile skilli i mapa repo
 
