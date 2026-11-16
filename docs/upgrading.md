@@ -67,7 +67,7 @@ Wydanie 1.6.1 jest PATCH (sekcja **Breaking** w `CHANGELOG.md` to „None.”) z
 1. Rdzeń: `uv tool install --force git+https://github.com/BATUSystems/skillsync@v1.6.1`, potem `skillsync layers update core --ref v1.6.1`.
 2. Uruchom ponownie działający `skillsync dashboard serve` (proces sprzed aktualizacji ma w pamięci stary kod i nadal oddaje `GET /api/doc` bez maskowania) oraz `prototype serve`.
 3. Uwagi o widoczności komentarzy i odpowiedzi trafiają do istniejącego prototypu dopiero po `skillsync prototype migrate` (kopiowany jest tylko plik silnika `prototype.js`; arkusze stylów się nie zmieniają, więc akceptacja ekranów pozostaje ważna).
-4. Projekt, który śledzi w git dowiązania skilli: po `git worktree add` uruchom `skillsync link <worktree>`; `doctor` ostrzega o śledzonych plikach generowanych i podaje gotowe `git rm --cached`.
+4. Projekt, który śledzi w git dowiązania skilli: po `git worktree add` uruchom `skillsync link <worktree>`; `doctor` ostrzega o śledzonych plikach generowanych i podaje gotowe `git rm --cached`. Na Windows z `core.symlinks=false` git zapisuje śledzone dowiązanie jako zwykły plik: `doctor` nazywa ten stan, a `skillsync link <projekt>` zastępuje takie pliki.
 5. Konsument JSON-a `doctor`: `reason` znalezisk „Missing installed skill” i o dowiązaniu bez celu kończy się podpowiedzią `run skillsync link <projekt>`, więc dopasowuj początek tekstu. Raport `guard` może mieć pola `skipped` i `reason`.
 6. `layers check`, `doctor` i `link` ostrzegają (`rule-unreachable`) o wpisie `layer_rules`, którego `match` powtarza wcześniejszy: scal takie wpisy w jeden.
 
