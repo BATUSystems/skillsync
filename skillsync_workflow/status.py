@@ -13,7 +13,7 @@ import tempfile
 import time
 import yaml
 
-from .common import add_project_arguments, plan_section, read_project, redact
+from .common import add_project_arguments, decode_text, plan_section, read_project, redact
 from .delivery_mode import delivery_info
 from .layers import add_layer_argument
 from .storage import read_json
@@ -123,7 +123,7 @@ def _read_text_safe(path, limit=MAX_PLAN_BYTES, root=None):
             chain = [Path(root).joinpath(*relative.parts[:i]) for i in range(1, len(relative.parts) + 1)]
         if any(item.is_symlink() for item in chain) or not path.is_file() or path.stat().st_size > limit:
             return None
-        return path.read_text(encoding='utf-8')
+        return decode_text(path.read_bytes())
     except (OSError, ValueError, UnicodeDecodeError):
         return None
 
@@ -281,7 +281,7 @@ def plan_text_needs_human(status, text):
 
 
 def plan_record(root, path, context=None):
-    text = path.read_text(encoding='utf-8')
+    text = decode_text(path.read_bytes())
     status, status_text = _status_fields(text, PLAN_STATUSES)
     title = _TITLE.search(text)
     steps = _progress(text)
@@ -367,7 +367,7 @@ def _specs(root, findings):
             if path.stat().st_size > MAX_PLAN_BYTES:
                 findings.append(f'Spec skipped (over {MAX_PLAN_BYTES // 1024} KiB): {path.name}')
                 continue
-            text = path.read_text(encoding='utf-8')
+            text = decode_text(path.read_bytes())
             status, status_text = _status_fields(text, SPEC_STATUSES)
             title = _TITLE.search(text)
             rows.append({'path': _doc_path(root, path), 'title': title.group(1) if title else path.stem, 'status': status,
@@ -655,7 +655,7 @@ def _cmd_doc(args):
 def _doc_status_word(root, name):
     folder = 'specs' if Path(name).parts[:2] == ('docs', 'specs') else 'plans'
     path = _doc_file(root, name, folder)
-    match = _STATUS.search(path.read_text(encoding='utf-8', errors='replace')[:4000])
+    match = _STATUS.search(decode_text(path.read_bytes())[:4000])
     return (match.group('word').lower() if match else None), git_blob_sha(path.read_bytes())
 
 

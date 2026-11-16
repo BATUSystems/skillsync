@@ -20,7 +20,7 @@ import time
 import yaml
 
 from . import __version__
-from .common import add_project_arguments, plan_section, read_project, redact
+from .common import add_project_arguments, decode_text, plan_section, read_project, redact
 from .layers import add_layer_argument
 from .delivery_mode import delivery_info
 from .status import (APPROVAL_WORDS, APPROVALS_FILE, MAX_APPROVALS_BYTES, _APPROVAL_SHA, _approval_at, _message, _status_fields,
@@ -114,14 +114,6 @@ ANY_STATUS = _AnyStatus()
 # --------------------------------------------------------------------------- parsing
 
 MASK_MARGIN = 4096   # bytes read beyond a limit so that a secret on the limit is masked whole (see `read_masked`)
-
-
-def decode_text(data):
-    """Text of the bytes of a file: UTF-16 with a byte order mark (the default output of `>` and `Out-File` in Windows PowerShell 5) is
-    decoded as such, anything else as UTF-8; NUL characters are dropped (the renderer drops them too, so a secret that a NUL splits
-    would otherwise be glued together again AFTER the masking)."""
-    text = data.decode('utf-16' if data[:2] in (b'\xff\xfe', b'\xfe\xff') else 'utf-8', errors='replace')
-    return text.replace('\x00', '')
 
 
 def read_text(path, limit=MAX_DOC_BYTES):

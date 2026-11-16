@@ -31,6 +31,11 @@ class KeyValuePairs(unittest.TestCase):
         self.assertEqual(redact("authorization=Digest abcdef"), "authorization=Digest [REDACTED]")
         self.assertEqual(redact("Authorization: Bearer abcdefgh1234"), "Authorization: Bearer [REDACTED]")
 
+    def test_quotes_inside_a_value_and_an_unterminated_quote(self) -> None:
+        self.assertEqual(redact(f'password: ab"{VALUE} rest'), "password: [REDACTED] rest")   # a quote inside a bare value belongs to it
+        self.assertEqual(redact(f'token="{VALUE} and more\nnext line'), 'token="[REDACTED]\nnext line')   # no closing quote: the rest of the line, none added
+        self.assertEqual(redact(f'secret=\'{VALUE}\' x'), "secret='[REDACTED]' x")
+
     def test_unchanged_as_before(self) -> None:
         for text in ("tokens are fine", "my token is here", "basic setup of the secret santa", "password", "token:", "# Plan\n\nStatus: draft\n",
                      "api keys are rotated", "private key rotation: yearly"):

@@ -26,6 +26,7 @@ from skillsync_workflow import dashboard_http as srv  # noqa: E402
 ENV_SECRET = "zq9x,wv8y;ut7s*rp6`mn5k"
 PATTERN_SECRET = "hunter2hunter2"
 ENV_NAME = "STATUSBOARD_TEST_TOKEN"
+PEM_SECRET = "-----BEGIN KEY-----\nabcdefghijklmnop\n-----END KEY-----"   # a multi-line secret
 SIMPLE_SECRET = "".join(("Zq9w", "Xk3L", "mNp7"))   # no separators: it can be part of a file name; put together at run time so that no literal looks like a key
 DOC_ROOTS = ("docs/specs", "docs/plans", "docs/design", "docs/domain", base.RUN)
 
@@ -119,6 +120,104 @@ class DocRouteMasksSecrets(SecretFiles, base.HttpCase):
         doc = self.board.doc(base.SPEC)
         self.assertEqual(doc["title"], engine.parse_header((base.FIX / "spec.md").read_text(encoding="utf-8"))[0] or Path(base.SPEC).stem)
         self.assertNotIn("[REDACTED]", doc["html"])
+
+
+class ReaderDecodingAndMasking(base.ProjectCase):
+    """`decode_text` and `read_masked`: UTF-16 with a byte order mark, NUL characters, Windows line ends, invalid bytes (161-F, I5, D8, D9)."""
+
+    TEXT = f"# Plan\n\nStatus: draft\n\nwartość {SIMPLE_SECRET} koniec\n"
+
+    def env(self):
+        patch = mock.patch.dict("os.environ", {"STATUSBOARD_TEST_PAT_TOKEN": SIMPLE_SECRET, "STATUSBOARD_TEST_KEY_TOKEN": PEM_SECRET})
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def test_decode_text_directly(self) -> None:
+        text = "zażółć gęślą jaźń\n"
+        self.assertEqual(engine.decode_text(codecs.BOM_UTF16_LE + text.encode("utf-16-le")), text)
+        self.assertEqual(engine.decode_text(codecs.BOM_UTF16_BE + text.encode("utf-16-be")), text)
+        self.assertEqual(engine.decode_text(text.encode("utf-8")), text)   # ordinary UTF-8 is unchanged
+        self.assertEqual(engine.decode_text("a\x00b\x00c".encode("utf-8")), "abc")   # NUL dropped
+        self.assertEqual(engine.decode_text(b"ok \xff\xfe bad"), "ok \ufffd\ufffd bad")   # invalid bytes become the replacement character, no exception
+        self.assertEqual(engine.decode_text(b""), "")
+        self.assertEqual(engine.decode_text(codecs.BOM_UTF16_LE + b"a"), "\ufffd")   # a lone byte after the mark does not raise
+
+    def test_read_masked_masks_utf16_and_nul_split_secrets_in_the_reader_itself(self) -> None:
+        self.env()
+        samples = {"utf16-le": codecs.BOM_UTF16_LE + self.TEXT.encode("utf-16-le"), "utf16-be": codecs.BOM_UTF16_BE + self.TEXT.encode("utf-16-be"),
+                   "nul-inside": self.TEXT.replace(SIMPLE_SECRET, SIMPLE_SECRET[:5] + "\x00" + SIMPLE_SECRET[5:]).encode("utf-8")}
+        for name, data in samples.items():
+            with self.subTest(name):
+                path = self.tmp / f"{name}.md"
+                path.write_bytes(data)
+                text = engine.read_masked(path)   # the first layer alone: no second pass here
+                self.assertNotIn(SIMPLE_SECRET, text)
+                self.assertNotIn("\x00", text)
+                self.assertIn("[REDACTED]", text)
+                self.assertTrue(text.startswith("# Plan"), text[:20])
+
+    def test_a_multi_line_secret_in_a_crlf_file_is_masked_by_the_reader_and_the_doc_route(self) -> None:
+        self.env()
+        text = f"# Klucz\r\n\r\n{PEM_SECRET.replace(chr(10), chr(13) + chr(10))}\r\nkoniec\r\n"
+        rel = "docs/plans/zzz-crlf.md"
+        (self.root / rel).write_bytes(text.encode("utf-8"))
+        self.assertNotIn("abcdefghijklmnop", engine.read_masked(self.root / rel))
+        doc = self.board.doc(rel)
+        self.assertNotIn("abcdefghijklmnop", json.dumps(doc, ensure_ascii=False))
+        self.assertNotIn("\x00", json.dumps(doc, ensure_ascii=False))
+
+    def test_status_reads_a_utf16_plan_and_masks_nul_split_checkpoints(self) -> None:
+        self.env()
+        plan = self.root / base.PLAN
+        text = plan.read_text(encoding="utf-8")
+        before = self.board.status()["progress"]["total"]
+        plan.write_bytes(codecs.BOM_UTF16_LE + text.replace("S4 Dokumentacja", f"S4 Dokumentacja {SIMPLE_SECRET}").encode("utf-16-le"))
+        checkpoints = self.root / base.RUN / "checkpoints.md"
+        glued = SIMPLE_SECRET[:4] + "\x00" + SIMPLE_SECRET[4:]
+        checkpoints.write_text(checkpoints.read_text(encoding="utf-8") + f"- 11:30 w toku: S2b; czeka: GO plan {glued}\n", encoding="utf-8")
+        board = base.srv.Board(self.root, prototype_port=1)
+        board.prototype_acceptance = lambda slug: None
+        data = board.status()
+        payload = json.dumps(data, ensure_ascii=False)
+        self.assertEqual(data["progress"]["total"], before)   # the UTF-16 plan still parses into the same steps
+        self.assertNotIn(SIMPLE_SECRET, payload)
+        self.assertNotIn(SIMPLE_SECRET[:4], payload.replace("[REDACTED]", ""))
+        self.assertNotIn("\x00", payload)
+
+    def test_skillsync_status_reads_plan_and_spec_through_the_decoder(self) -> None:
+        self.env()
+        for folder, name in (("plans", "zzz-nul.md"), ("specs", "zzz-nul.md")):
+            path = self.root / "docs" / folder / name
+            path.write_bytes(f"# Plan: x\n\nStatus: draft \u2014 {SIMPLE_SECRET[:4]}\x00{SIMPLE_SECRET[4:]}\n".encode("utf-8"))
+        record = status.plan_record(self.root, self.root / "docs/plans/zzz-nul.md")
+        self.assertNotIn(SIMPLE_SECRET, json.dumps(record, ensure_ascii=False))
+        self.assertNotIn(SIMPLE_SECRET[:4], json.dumps(record, ensure_ascii=False).replace("[REDACTED]", ""))
+        self.assertNotIn("\x00", json.dumps(record, ensure_ascii=False))
+        specs = status.spec_records(self.root) if hasattr(status, "spec_records") else None
+        if specs is not None:
+            self.assertNotIn(SIMPLE_SECRET[:4], json.dumps(specs, ensure_ascii=False).replace("[REDACTED]", ""))
+
+
+class ApproveRefusalMessageIsMasked(base.ProjectCase):
+    """D9: the 409 text of a refused status change is masked before it is cut at 300 characters."""
+    SPEC2 = "docs/specs/demo-etap-2.md"
+    PLAN2 = "docs/plans/2026-01-20-demo-etap-2.md"
+    spec_act = base.ApprovalTests.spec_act
+    actions = base.ApprovalTests.actions
+
+    def test_the_refusal_does_not_show_a_prefix_of_a_secret_on_the_cut(self) -> None:
+        run = self.root / ".skillsync/runs/2026-01-20-demo-etap-2"
+        run.mkdir(parents=True)
+        self.spec_act()
+        offer = self.actions()["spec"]
+        error = ValueError("x " * 145 + SIMPLE_SECRET)   # the secret begins just before character 300
+        with mock.patch.dict("os.environ", {"STATUSBOARD_TEST_PAT_TOKEN": SIMPLE_SECRET}), \
+                mock.patch.object(srv.status_core, "set_doc_status", side_effect=error):
+            code, body = self.board.approve("spec", self.SPEC2, offer["sha"])
+        self.assertEqual(code, 409, body)
+        self.assertIn("Odmowa zmiany statusu", body["error"])
+        self.assertNotIn(SIMPLE_SECRET[:4], body["error"])
+        self.assertNotIn(SIMPLE_SECRET[:4], body["error"][-12:])
 
 
 class ReaderLimitsMaskBeforeCutting(base.ProjectCase):

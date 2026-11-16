@@ -578,7 +578,7 @@ class Board:
             try:
                 report = status_core.set_doc_status(self.root, rel, "approve", folder, expect_sha=sha)
             except (OSError, ValueError, TypeError, KeyError, UnicodeDecodeError) as error:
-                return 409, {"error": f"Odmowa zmiany statusu: {' '.join(str(error).split())[:300]}"}
+                return 409, {"error": f"Odmowa zmiany statusu: {status_core._message(error, 300)}"}
             run_id = offer.get("run")
             trail = None
             if run_id:
