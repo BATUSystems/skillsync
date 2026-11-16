@@ -271,7 +271,8 @@ RATE_IP_LIMIT = 30
 DEFAULT_HOST = '127.0.0.1'
 DEFAULT_PORT = 4445
 CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
-PUBLIC_READ_WARNING = 'prototypy i komentarze są widoczne bez logowania dla każdego, kto zna adres'
+PUBLIC_READ_WARNING = ('prototypy i komentarze są widoczne bez logowania dla każdego, kto zna adres, '
+                       'i nie są maskowane (sekret wpisany w komentarz albo odpowiedź zobaczy każdy)')
 LEGACY_QUESTIONS_WARNING = ('pytania do eksperta są w starym pliku <root>/questions.json: serwer pokazuje je tylko do odczytu; '
                             'uruchom skillsync prototype question migrate (pytania trafią do <root>/<slug>/questions.json)')
 EXPERT_PUBLIC_WARNING = ('istnieją konta z rolą expert, a serwer działa bez --login-to-view: pytania do eksperta wymagają '
@@ -7743,6 +7744,7 @@ EXPERTS_SCRIPT = r"""
   'use strict';
   var API = '/_api/v1';
   var BASE = '/_experts';
+  var UNMASKED_NOTE = 'Treść jest widoczna dla innych i nie jest maskowana: nie wpisuj haseł, kluczy ani tokenów.';
   var LOGIN = '/_login?next=' + encodeURIComponent(location.pathname);
   var SLUG = (function () {
     var rest = location.pathname.slice(BASE.length).replace(/^\//, '');
@@ -8023,6 +8025,7 @@ EXPERTS_SCRIPT = r"""
     form.appendChild(fieldset);
     form.appendChild(el('label', { 'class': 'block', 'for': 'answer-comment', text: 'Komentarz do odpowiedzi (opcjonalny)' }));
     form.appendChild(el('textarea', { id: 'answer-comment', maxlength: '2000' }));
+    form.appendChild(el('p', { 'class': 'muted unmasked-note', text: UNMASKED_NOTE }));
     form.appendChild(el('button', { type: 'submit', id: 'answer-send', text: 'Wyślij odpowiedź' }));
     function clearBoxes() {
       Array.prototype.forEach.call(form.querySelectorAll('input[name="multi"]'), function (box) { box.checked = false; });
@@ -8050,6 +8053,7 @@ EXPERTS_SCRIPT = r"""
     var form = el('form', { id: 'comment-form', novalidate: 'novalidate' });
     form.appendChild(el('label', { 'class': 'block', 'for': 'comment-text', text: 'Dodaj komentarz' }));
     form.appendChild(el('textarea', { id: 'comment-text', maxlength: '2000' }));
+    form.appendChild(el('p', { 'class': 'muted unmasked-note', text: UNMASKED_NOTE }));
     form.appendChild(el('button', { type: 'submit', id: 'comment-send', text: 'Wyślij komentarz' }));
     form.addEventListener('submit', function (event) { event.preventDefault(); submitComment(question, form); });
     return form;

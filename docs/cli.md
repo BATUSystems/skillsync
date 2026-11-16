@@ -86,7 +86,7 @@ Pomoc: `skillsync layers --help`. Model warstw: [layers-authoring](layers-author
 |---|---|
 | `layers init <katalog> --kind personal\|org [--id ID] [--json]` | tworzy szkielet warstwy (repo git z hookami strażnika) |
 | `layers add <id> --kind core\|org\|personal --source <URL\|ścieżka> [--subdir D] [--ref R] [--path P] [--writable \| --read-only] [--json]` | klonuje warstwę, rejestruje ją w configu i instaluje hooki |
-| `layers use <id> --match <glob> [--position N] [--json]` | dodaje wpis `layer_rules` dla projektów pasujących do globu |
+| `layers use <id> --match <glob> [--position N] [--json]` | dodaje wpis `layer_rules` dla projektów pasujących do globu; gdy reguła o dokładnie tym samym `match` już istnieje, dopisuje warstwę do jej `use` (bez drugiej reguły; warstwa już obecna w `use` = bez zmian; `--position` odmowa BLOCKED); lista `use: [a, b]` jest zmieniana w tekście (komentarze poza listą zostają; komentarze wewnątrz listy rozbitej na linie giną; plik z CRLF dostaje LF), a lista blokowa, kotwica, tag i inne nietypowe układy powodują przepisanie pliku z kopią zapasową |
 | `layers update [id] [--ref R] [--json]` | aktualizuje checkouty warstw (tag, gałąź, commit albo `pull`) |
 | `layers list [--project P] [--isolation] [--layer ID=PATH] [--json]` | efektywna lista warstw dla projektu albo bieżącego katalogu |
 | `layers check [--project P] [--isolation] [--layer ID=PATH] [--json]` | wersje, `requires`, `core_min`, hooki, kolizje, `.orphans`; z `--isolation` tylko kontrolę izolacji |
@@ -143,6 +143,8 @@ Każde pole ścieżki w raportach JSON ma na Windows ukośnik `/`: `root` i `pro
 | `route`, `readiness`, `review`, `validate`, `smart-test`, `guard` | dobór kontekstu, gotowość planu, checklista review, plan i wykonanie kontroli, strażnik konwencji; `review` zwraca też `profile` (`docs`, gdy zmiana dotyka wyłącznie dokumentacji (`docs/**` bez plików kodu), plików `.md` skilli, `CHANGELOG*` albo notatek wydania, `prototyp`, gdy zmiana mieści się w całości w katalogu prototypu (`prototype.root` z manifestu, domyślnie `docs/prototypes`), inaczej `kod`; `--profile kod|docs|prototyp` wymusza profil), `docsFiles` i `prototypeFiles`; pozycje listy prototypu dostaje także zmiana mieszana, która dotyka plików prototypu; ścieżki i pozycje docs nadpisują `workflow.review.docs_paths` i `workflow.review.docs_checklist`, ścieżki prototypu `workflow.review.prototype_paths`, a listę `workflow.review.prototype` (jedno źródło: `library/workflow/defaults.yaml`) rozszerzają warstwy, `workflow/projects/<slug>.yaml` i manifest: pozycje są dopisywane w kolejności rdzeń, warstwy, projekt, manifest, równe dosłownie pomijane (zostaje pierwsza), a pozycji rdzenia nie da się usunąć |
 | `map`, `suggest`, `knowledge init`, `status`, `plan`, `dispatch` | mapa repo, sugestie skilli, szkielet `docs/domain` i `docs/lessons`, odczyt stanu, zmiana statusu planu, stan dyspozycji |
 
+Lista plików (`--files` albo zmienione pliki z git) w `route`, `readiness`, `review`, `smart-test`, `validate` i `guard` jest sprawdzana na samej ścieżce: rodzic jest rozwiązywany fizycznie, ostatni człon nie. Przechodzi ścieżka względna albo bezwzględna leżąca w projekcie, także dowiązanie jako OSTATNI człon (tak listuje je git; dowiązanie do katalogu poza projektem też, z ukośnikiem końcowym lub bez), plik usunięty i plik w nieistniejącym katalogu. Odrzucane (BLOCKED): ścieżka bezwzględna poza projektem, `..` wychodzące z projektu i dowiązanie w środku ścieżki, które wskazuje poza projekt. Na POSIX `..` po dowiązaniu (`a/link/..`) oznacza prawdziwy rodzic celu, więc wychodzi poza projekt i jest odrzucane; na Windows `..` jest składane leksykalnie, zanim system spojrzy na dowiązania (ścieżka `a\link\..\x` to `a\x`), więc zostaje w projekcie, zgodnie z tym, co system otworzy. Ścieżki, które polecenie otwiera (plan, środowisko, role, prototypy), są sprawdzane z podążaniem za dowiązaniami. `guard` nie otwiera zmienionego dowiązania, tylko odnotowuje je w `skipped`.
+
 Pola workflow w tej grupie:
 
 - `status` (JSON, schemat bez zmian): rekord planu z poprawną linią `Spec:` ma `preImplement`: `required` (spec ma niepustą
@@ -193,7 +195,7 @@ Szczegóły: [workflow](workflow.md).
 
 - `serve` wiąże się z `127.0.0.1`; port wybiera się per projekt (domyślnie 5140, dozwolone 5100–5199), żeby strony różnych
   projektów nie kolidowały. Nagłówek `Host` jest sprawdzany na wszystkich endpointach: odczyt spoza loopbacku (tunel, LAN)
-  wymaga `--approve-host <nazwa>` (odczyt i zgody) albo `--read-host <nazwa>` (tylko odczyt z przeglądarki: widzowie przez tunel, także surowy podgląd `/api/doc` bez maskowania sekretów; nie chroni przed klientem podrabiającym `Host`, nieufni widzowie = `--no-approvals`; `POST
+  wymaga `--approve-host <nazwa>` (odczyt i zgody) albo `--read-host <nazwa>` (tylko odczyt z przeglądarki: widzowie przez tunel, także podgląd `/api/doc` (maskowany, ale maskowanie jest heurystyką); nie chroni przed klientem podrabiającym `Host`, nieufni widzowie = `--no-approvals`; `POST
   /api/approve` = 403; obie flagi powtarzalne, nazwa bez portu); widok bez zapisu zgód dla wszystkich to `--no-approvals`.
   Zgody zapisuje serwer w tym samym
   procesie (bez podprocesu `skillsync`). Model zaufania: [domain/dashboard-server.md](domain/dashboard-server.md).

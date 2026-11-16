@@ -16,7 +16,7 @@ import tomllib
 import uuid
 import sys
 import yaml
-from .common import add_project_arguments, changed_files, emit, load_layer_project, matches, workflow_config, contained, normalize_files, read_yaml, strings, redact, expand_project_skills, require_layerset, WORKFLOW_SKILL, LEGACY_WORKFLOW_SKILL
+from .common import add_project_arguments, changed_files, checked_out_link, emit, load_layer_project, matches, workflow_config, contained, normalize_files, read_yaml, strings, redact, expand_project_skills, require_layerset, WORKFLOW_SKILL, LEGACY_WORKFLOW_SKILL
 from .pathfmt import posix
 from .selfcmd import self_argv
 from . import layers as _layers
@@ -696,7 +696,7 @@ def instruction_drift(root, library, skills, ignore_paths=(), ignore_skills=()):
     return messages
 
 
-_PLAN_RUN = re.compile(r'^Przebieg:[ \t]*`?([^\s`]*)`?[ \t]*$', re.MULTILINE)
+_PLAN_RUN = re.compile(r'^Przebieg:[ \t]*`?([^\s`]*)`?[ \t\r]*$', re.MULTILINE)   # `\r`: a plan with Windows line ends (the `$` of MULTILINE stops only before `\n`)
 _PLAN_DAY = re.compile(r'^(\d{4}-\d{2}-\d{2})-')
 # Wzorzec id jak `_slug` w runs.py (import cykliczny: runs importuje quality).
 _RUN_ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,79}')
@@ -881,6 +881,38 @@ def layer_findings(root, manifest, layerset):
     return found
 
 
+GENERATED_PREFIXES = ('.github/skills/', '.claude/skills/', '.agents/skills/', '.claude/agents/', '.codex/', '.github/copilot-instructions.md',
+                      'CLAUDE.md', 'AGENTS.md', '.mcp.json')   # what `link` writes; the manifest is not here (it may be tracked on purpose)
+
+
+def tracked_generated_files(root):
+    """Files that `link` generates, are listed in a `.gitignore` and are tracked in git anyway (one `git ls-files -ci` call); [] outside git."""
+    try:
+        process = subprocess.run(['git', '-C', str(root), 'ls-files', '-ci', '--exclude-standard', '-z'], capture_output=True, timeout=15, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return []
+    if process.returncode:
+        return []
+    return sorted(item for item in (os.fsdecode(raw) for raw in process.stdout.split(b'\0') if raw) if item.startswith(GENERATED_PREFIXES))
+
+
+def untrack_message(root, tracked, per_line=8, max_lines=20):
+    """The warning about tracked generated files with a command that can be pasted as it stands: `git -C <project>` (any directory), the full list of
+    paths in lines of `per_line`, every path quoted; `CLAUDE.md` and `AGENTS.md` are named only as a condition (a project may track them on purpose)."""
+    lines = []
+    for start in range(0, min(len(tracked), per_line * max_lines), per_line):
+        paths = ' '.join(_layers._quote_arg(item) for item in tracked[start:start + per_line])
+        lines.append(f'git -C {_layers._quote_arg(str(root))} rm --cached -- {paths}')
+    more = len(tracked) - per_line * max_lines
+    text = (f'{len(tracked)} file(s) listed in .gitignore are tracked in git: `skillsync link` shows generated files as changed and a new worktree starts '
+            f'with stale links. Untrack them (the files stay on disk):\n' + '\n'.join(lines))
+    if more > 0:
+        text += f'\n(and {more} more: run `skillsync doctor` again after these)'
+    if any(item in ('CLAUDE.md', 'AGENTS.md') for item in tracked):
+        text += '\nCLAUDE.md and AGENTS.md: untrack them only if `skillsync link` generates them for this project (a project may track them on purpose).'
+    return text
+
+
 def doctor(root, manifest, library):
     layerset = require_layerset(library, 'doctor')
     config = workflow_config(root, manifest, layerset)
@@ -953,13 +985,19 @@ def doctor(root, manifest, library):
                 continue
             linked = Path(root) / prefix / name
             if not linked.exists():
-                finding('error', linked, 'Missing installed skill')
+                if linked.is_symlink():   # a link of another tree (a tracked link in a fresh worktree) or of a cleaned cache
+                    finding('error', linked, f'Installed skill symlink points to a target that does not exist; run `skillsync link {_layers._quote_arg(str(root))}`')
+                else:
+                    finding('error', linked, f'Missing installed skill; run `skillsync link {_layers._quote_arg(str(root))}`')
             elif linked.is_symlink():
                 state = skill_link_state(layerset, name, linked)
                 if state == 'stale':
                     finding('error', linked, 'Installed skill symlink points to a stale composite; run `skillsync link`')
                 elif state != 'ok':
                     finding('error', linked, 'Foreign installed skill symlink')
+            elif checked_out_link(linked):
+                finding('error', linked, f'A regular file stands where the skill link should be: git tracks it as a link but did not recreate it (core.symlinks '
+                                         f'is off, or links cannot be created); run `skillsync link {_layers._quote_arg(str(root))}`')
             elif not linked.is_dir() or any(item.is_symlink() for item in linked.rglob('*')):
                 finding('error', linked, 'Invalid installed skill copy')
             elif _tree_hash(linked) != _files_hash(layerset.skill_files(name)):
@@ -1011,6 +1049,9 @@ def doctor(root, manifest, library):
                     finding('error', instruction, 'Missing enabled Codex entrypoint/instructions')
     if (Path(root) / 'AGENTS.md').is_symlink():
         finding('warning', 'AGENTS.md', 'Symlinked AGENTS.md: skillsync does not write its instructions block there')
+    tracked = tracked_generated_files(root)
+    if tracked:
+        finding('warning', '.gitignore', untrack_message(root, tracked))
     if generated_claude_import(root) and not agents_block_body(root):
         finding('error', 'AGENTS.md', 'CLAUDE.md imports @AGENTS.md, but AGENTS.md has no skillsync instructions block')
     for name in skills:
@@ -1168,6 +1209,14 @@ def _section_state(text, section):
     return 'empty' if not body or re.fullmatch(r'(?i)(TODO|TBD|none|n/a|[-—])\.?', body) else 'ok'
 
 
+def _plan_path(root, plan):
+    """The plan file inside the project; a plan of another tree (a worktree has its own project root) gets a message that names the cause."""
+    try:
+        return contained(root, plan)
+    except ValueError:
+        raise ValueError(f'The plan lies outside the project: {plan}; run the command from the directory of the tree that holds the plan') from None
+
+
 def readiness(root, manifest, library, files, plan=None, risk=None):
     files = normalize_files(root, files)
     workflow = workflow_config(root, manifest, library)
@@ -1189,7 +1238,7 @@ def readiness(root, manifest, library, files, plan=None, risk=None):
             for area in areas + [risk]:
                 required.extend(risk_sections.get(area, []))
     if plan:
-        path = contained(root, plan)
+        path = _plan_path(root, plan)
         text = path.read_text(encoding='utf-8')
         spec, spec_text, reasons = _read_spec(root, text)
         issues.extend(reasons)
@@ -1272,7 +1321,7 @@ def _plan_sha(root, plan):
     if not plan:
         return None
     try:
-        path = contained(root, plan)
+        path = _plan_path(root, plan)
         return git_blob_sha(path.read_bytes()) if path.is_file() else None
     except (OSError, ValueError):
         return None

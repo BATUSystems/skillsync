@@ -36,7 +36,7 @@ skillsync dashboard show <projekt> [--json] [--plan docs/plans/<plik>.md]   # je
   ale `POST /api/approve` z przeglądarki widza dostaje 403, a `/api/status` ma `approvals.viewer: true` i `here: false`; zgody daje
   prowadzący pod localhost. To nie uwierzytelnienie: klient podrabiający nagłówek `Host` (np. `curl -H 'Host: localhost'`
   przez tunel) zapisze zgodę, a tunel przepisujący `Host` na localhost daje zapis każdemu widzowi; przy nieufnych
-  widzach `--no-approvals`. Model dwóch instancji dla nieufnych widzów: prowadzący na loopbacku ze zgodami, widzowie na osobnej instancji `skillsync dashboard serve <projekt> --port <inny port> --no-approvals --read-host <host>` (bez zapisu, ten sam projekt; wspólny jest tylko `approvals.jsonl`). Widz widzi też podgląd `/api/doc` bez maskowania sekretów (surowy). Podgląd bez zgód dla wszystkich = `--no-approvals`. Serwer
+  widzach `--no-approvals`. Model dwóch instancji dla nieufnych widzów: prowadzący na loopbacku ze zgodami, widzowie na osobnej instancji `skillsync dashboard serve <projekt> --port <inny port> --no-approvals --read-host <host>` (bez zapisu, ten sam projekt; wspólny jest tylko `approvals.jsonl`). Widz widzi też podgląd `/api/doc`: dokument i cała odpowiedź są maskowane (maska przed cięciem, UTF-16 po BOM dekodowane, NUL zdejmowane), ale maskowanie to heurystyka, nie gwarancja. Podgląd bez zgód dla wszystkich = `--no-approvals`. Serwer
   wypisuje przy starcie ostrzeżenie i adresy LAN do otwarcia.
   Odnośnik do prototypu używa hosta, pod którym otwarto stronę, więc działa także z innego urządzenia (gdy prototypy też słuchają na LAN).
 - **Dwa gniazda** (`serve --read-port 5140 --approve-port 5141`): rola zależy od portu, nie od nagłówka `Host`.

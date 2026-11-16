@@ -301,6 +301,8 @@ def _rule_step(run, layers, org_id):
         run.step('rule', 'blocked', report.get('reason', 'layers use failed'))
     elif report.get('changed') is False:
         run.step('rule', 'unchanged', f'the rule for {org_id} already exists')
+    elif report.get('extended'):
+        run.step('rule', 'done', f'rule extended for {org_id}: match {globs}')
     else:
         run.step('rule', 'done', f'rule added for {org_id}: match {globs}')
     run.warnings.extend(report.get('warnings', []) if report.get('changed', True) else [])

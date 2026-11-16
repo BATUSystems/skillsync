@@ -1085,6 +1085,11 @@ def resolve_layers(project=None, *, layers=None, config=None, cwd=None, system=N
             notes.append(_finding('layer-absent', 'info', f'Layer {layer.id} is not present at {layer.root}; skipped', layer.id))
     if rule:
         _order_notes(chosen, notes)
+        for other in config.rules:   # the first matching rule wins, so a later rule with the very same match never takes effect
+            if other['index'] > rule['index'] and other['match'] == rule['match']:
+                notes.append(_finding('rule-unreachable', 'warning',
+                                      f'layer_rules[{other["index"]}] has the same match as layer_rules[{rule["index"]}], which is '
+                                      'chosen first, so it never takes effect; merge its layers into the first one or delete it'))
     if project is not None and rule is not None:
         name = _manifest_name(project)
         if name:
@@ -2909,7 +2914,9 @@ def _rule_use(config, layer_id, base=None, warnings=None):
 def layers_use(layer_id, match, *, position=None):
     """`layers use <id> --match G [--position N]` (K9): a new `layer_rules` entry with the `use` of the
     default rule (`**`) and `<id>` before the personal layer, inserted before the default rule (or at
-    index N, 0-based). An identical existing rule = PASS without a change."""
+    index N, 0-based). When a rule with exactly the same `match` exists, the first of them (the one that wins)
+    gets `<id>` in its own `use` instead (no duplicate, core, org, personal order; a personal id replaces the
+    personal layer); `--position` is refused then. No change of `use` = PASS without a change."""
     try:
         config = load_machine_config()
         if not config.layers:
@@ -2921,11 +2928,21 @@ def layers_use(layer_id, match, *, position=None):
                              'bad-argument')
         globs = _string_list(list(match or []), '--match')
         warnings = []
+        same = next((item for item in config.rules if item['match'] == globs), None)
+        if same is not None:   # the first matching rule wins, so a second one with this `match` would never take effect
+            if position is not None:
+                raise LayerError(f'--position applies to a new rule; layer_rules[{same["index"]}] already has this --match '
+                                 f'and {layer_id} is added to its `use`', 'bad-argument')
+            if layer_id in same['use']:   # already there, wherever it stands: the order decides which layer wins, so it is not touched
+                return _report('PASS', changed=False, rule={'match': globs, 'use': list(same['use'])}, index=same['index'],
+                               config=posix(config.path),
+                               warnings=['The layer_rules entry with this match already uses the layer; nothing changed'])
+            use = _rule_use(config, layer_id, base=list(same['use']))
+            rule = {'match': globs, 'use': use}
+            edited = edit_config(config.path, [_extend_rule_use_op(same['index'], use)])
+            return _report('PASS', rule=rule, index=same['index'], extended=True,
+                           warnings=[f'Added to the existing layer_rules entry {same["index"]} with this match (no second rule)'], **edited)
         rule = {'match': globs, 'use': _rule_use(config, layer_id, warnings=warnings)}
-        for existing in config.rules:
-            if existing['match'] == rule['match'] and existing['use'] == rule['use']:
-                return _report('PASS', changed=False, rule=rule, index=existing['index'], config=posix(config.path),
-                               warnings=warnings + ['An identical layer_rules entry exists; nothing changed'])
         default = _default_rule(config)
         if position is None:
             index = default['index'] if default else len(config.rules)
@@ -3012,6 +3029,35 @@ def _replace_bridge_op(bridge_id, entry):
                 isolation['allowed_layers'] = [entry['id'] if item == bridge_id else item
                                                for item in isolation['allowed_layers']]
     return (lambda text: None, (), mutate)
+
+
+def text_set_rule_use(text, index, use):
+    """Replace the flow list `use: [a, b]` of `layer_rules[index]` in place (the rest of the text, comments outside the list included, is
+    kept byte for byte; comments inside a multi-line list are lost); None when the layout is uncertain (a block list, an anchor or a tag,
+    a missing key or an unexpected structure): the caller then rewrites the file."""
+    try:
+        root = yaml.compose(text)
+    except yaml.YAMLError:
+        return None
+    if not isinstance(root, yaml.MappingNode):
+        return None
+    rules = next((value for key, value in root.value if getattr(key, 'value', None) == 'layer_rules'), None)
+    if not isinstance(rules, yaml.SequenceNode) or not 0 <= index < len(rules.value) or not isinstance(rules.value[index], yaml.MappingNode):
+        return None
+    target = next((value for key, value in rules.value[index].value if getattr(key, 'value', None) == 'use'), None)
+    if not isinstance(target, yaml.SequenceNode) or not target.flow_style or text[target.start_mark.index:target.start_mark.index + 1] != '[':
+        return None   # a block list, or a flow list with an anchor or a tag in front of it (they would be dropped): rewrite instead
+    flow = yaml.safe_dump(list(use), default_flow_style=True, allow_unicode=True, width=10 ** 6).strip()
+    return text[:target.start_mark.index] + flow + text[target.end_mark.index:]
+
+
+def _extend_rule_use_op(index, use):
+    """`use` of ONE existing rule replaced in the text (comments kept when it is a flow list); else a rewrite with backup."""
+    def mutate(data):
+        rules = data.get('layer_rules') or []
+        if 0 <= index < len(rules) and isinstance(rules[index], dict):
+            rules[index]['use'] = list(use)
+    return (text_set_rule_use, (index, use), mutate)
 
 
 def _set_rule_use_op(updates):

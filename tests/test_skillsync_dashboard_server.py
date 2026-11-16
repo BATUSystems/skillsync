@@ -35,7 +35,7 @@ from skillsync_workflow.common import as_layerset  # noqa: E402
 
 sys.path.insert(0, str(HERE))
 from layers_helpers import needs_os_symlinks  # noqa: E402
-from serve_start import start_serve  # noqa: E402
+from serve_start import bind_free, start_serve, stop_serve  # noqa: E402
 
 FIX = HERE / "fixtures" / "dashboard_server"
 ASSETS, DESCRIPTIONS = srv.skill_assets(as_layerset(ROOT / "library"))
@@ -268,6 +268,12 @@ class ParseWarningsTests(ProjectCase):
         self.assertEqual([(w["time"], w["segment"], w["reason"]) for w in found][0], ("23:50", "w toku", "no-step-id"))
         self.assertEqual(len(found), 3)
         self.assertEqual(self.board.status()["progress"]["active"], ["S3b"])
+
+    def test_an_unclosed_bracket_is_a_warning_of_the_run(self) -> None:
+        run = self.root / RUN / "checkpoints.md"
+        run.write_text("RUN=2026-01-10T10:00:00+01:00\n- 10:00 start; w toku: F1.1 (a; b, F1.2; ryzyko: brak\n", encoding="utf-8")
+        found = self.board.status()["run"]["parseWarnings"]
+        self.assertEqual([(w["time"], w["segment"], w["reason"], w["fragment"]) for w in found], [("10:00", "raport", "unbalanced-bracket", "F1.1 (a; b, F1.2; ryzyko: brak")])
 
     def test_clean_checkpoints_leave_no_key(self) -> None:
         run = self.root / RUN / "checkpoints.md"
@@ -967,10 +973,9 @@ class HttpCase(ProjectCase):
 
     def setUp(self) -> None:
         super().setUp()
-        self.port = free_port()
         self.board = srv.Board(self.root, poll=0.2, heartbeat=0.5, prototype_port=1, assets=ASSETS,
                                descriptions=DESCRIPTIONS, approvals=self.APPROVALS, approve_token=TEST_TOKEN)
-        self.server = srv.make_server(self.board, "127.0.0.1", self.port)
+        self.server, self.port = bind_free(lambda port: srv.make_server(self.board, "127.0.0.1", port), free_port)
         threading.Thread(target=self.server.serve_forever, kwargs={"poll_interval": 0.1}, daemon=True).start()
         threading.Thread(target=self.board.watch_loop, daemon=True).start()
         self.base = f"http://127.0.0.1:{self.port}"
@@ -1610,7 +1615,7 @@ class AssetsRenderTests(unittest.TestCase):
         shutil.copytree(self.FIXTURES / case / "input", root)
         board = srv.Board(root, poll=0.2, heartbeat=0.5, prototype_port=1, assets=ASSETS, descriptions=DESCRIPTIONS)
         board.prototype_acceptance = lambda slug: None
-        server = srv.make_server(board, "127.0.0.1", free_port())
+        server, _port = bind_free(lambda port: srv.make_server(board, "127.0.0.1", port), free_port)
         threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.1}, daemon=True).start()
         self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
@@ -1845,8 +1850,7 @@ class HttpTwoInstancesTests(ProjectCase):
         board = srv.Board(self.root, poll=0.2, heartbeat=0.5, prototype_port=1, assets=ASSETS,
                           descriptions=DESCRIPTIONS, approve_token=TEST_TOKEN, **kwargs)
         board.prototype_acceptance = lambda slug: None
-        port = free_port()
-        server = srv.make_server(board, "127.0.0.1", port)
+        server, port = bind_free(lambda port: srv.make_server(board, "127.0.0.1", port), free_port)
         threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.1}, daemon=True).start()
         threading.Thread(target=board.watch_loop, daemon=True).start()
 
@@ -1977,8 +1981,20 @@ class ServeCommandTests(unittest.TestCase):
         result = self.cli("dashboard", "serve", str(self.root), "--port", str(free_port()), *self.layer)
         self.assertEqual((result.returncode, json.loads(result.stdout)["status"]), (2, "BLOCKED"))
 
+    def test_serve_answers(self) -> None:
+        proc, port = self.start_and_check_answers()
+        _out, err, _graceful = stop_serve(proc)
+        self.assertIn(f"127.0.0.1:{port}", err)
+
     @unittest.skipIf(os.name == "nt", "SIGTERM kończy proces na Windows bez obsługi")
-    def test_serve_answers_and_stops_on_sigterm(self) -> None:
+    def test_serve_stops_on_sigterm(self) -> None:
+        proc, port = self.start_and_check_answers()
+        out, err, _graceful = stop_serve(proc)
+        self.assertEqual(proc.returncode, 0, err)
+        self.assertEqual({k: v for k, v in json.loads(out).items() if k != "url"}, {"status": "PASS", "stopped": True})
+        self.assertIn(f"127.0.0.1:{port}", err)
+
+    def start_and_check_answers(self):
         proc, port = start_serve(self, CLI, self.root, self.layer, self.env, free_port)
         base = f"http://127.0.0.1:{port}"
         with urllib.request.urlopen(base + "/healthz", timeout=5) as r:
@@ -1991,13 +2007,8 @@ class ServeCommandTests(unittest.TestCase):
         self.assertEqual((data["schema"], data["plan"]["path"], data["approvals"]["here"]), (1, PLAN, True))
         with urllib.request.urlopen(base + "/api/descriptions", timeout=5) as r:
             self.assertIn("stage_pre_implement", json.load(r))
-        proc.terminate()
-        out, err = proc.communicate(timeout=15)
-        self.assertEqual(proc.returncode, 0, err)
-        self.assertEqual({k: v for k, v in json.loads(out).items() if k != "url"}, {"status": "PASS", "stopped": True})
-        self.assertIn(f"127.0.0.1:{port}", err)
+        return proc, port
 
-    @unittest.skipIf(os.name == "nt", "SIGTERM kończy proces na Windows bez obsługi")
     def test_serve_read_host_reads_and_lists_hosts_separately(self) -> None:
         proc, port = start_serve(self, CLI, self.root, self.layer, self.env, free_port, "--read-host", "Viewer.Example",
                                  "--read-host", "viewer2.example", "--approve-host", "demo.example")
@@ -2010,9 +2021,7 @@ class ServeCommandTests(unittest.TestCase):
         code, answer = raw_post(port, {"Host": "viewer.example", "Content-Type": "application/json", "X-Status-Board": "1", "X-Approve-Token": TEST_TOKEN,
                                        "Content-Length": "2"}, b"{}")
         self.assertEqual((code, answer), (403, {"error": srv.HOST_REFUSED}))
-        proc.terminate()
-        _, err = proc.communicate(timeout=15)
-        self.assertEqual(proc.returncode, 0, err)
+        _, err, _graceful = stop_serve(proc)
         self.assertIn("hosty odczytu i zgód (--approve-host): demo.example", err)
         self.assertIn("hosty tylko do odczytu (--read-host, bez zgód): viewer.example, viewer2.example", err)
         self.assertIn("--read-host ogranicza zapis z przeglądarki, nie przed klientem podrabiającym nagłówek Host; "

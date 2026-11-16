@@ -61,6 +61,8 @@ python3 scripts/check_skips.py run.log --system ubuntu-latest --mode copy
 
 Testy serwerów łączą się po adresie liczbowym (`127.0.0.1`), bez rozwiązywania nazw: bez `localhost` w `create_connection`, `urlopen` i `HTTPConnection`, a gniazdo klienta w testach niskiego poziomu otwieranie przez `connect(('127.0.0.1', port))`. Serwer testowy nie woła `socket.getfqdn` (podklasa `ThreadingHTTPServer` z `server_bind` bez odwrotnego DNS, jak serwery produkcyjne). Na runnerze macOS rozwiązywanie nazw potrafi sporadycznie stanąć na ok. 35 s, a pomiary czasu w testach mierzymy po stronie serwera, nie po stronie klienta.
 
+Port z `free_port()` był wolny tylko w chwili próby. Serwer w wątku binduje przez `tests/serve_start.py:bind_free(fabryka, free_port)` (ponowienie na kolejnym porcie przy „adres zajęty”), podproces `dashboard serve` startuje przez `start_serve` (gotowość dopiero po pliku stanu własnego serwera; ponowienie tylko po utraconym bindzie) i zatrzymuje się przez `stop_serve`. Na Windows produkcja obsługuje tylko SIGTERM, więc `stop_serve` zabija drzewo procesu (`taskkill /T` po własnym PID) i zwraca `graceful=False`: testy sprawdzają wtedy start i odpowiedzi, a asercje łagodnego stopu (kod 0, raport, usunięty plik stanu) tylko na POSIX. Ponowienie po utraconym bindzie (`lost_bind`) rozpoznaje polskie słowo „nasłuchiwać” w komunikacie produkcji po zdekodowaniu stdout: bieg Windows bez `PYTHONUTF8=1` (CI go ustawia) może je zdekodować błędnie i wyłączyć ponowienie (start wtedy pada od razu: bezpiecznie, ale nieoczywiście).
+
 ### Zmienne testów
 
 | Zmienna | Skutek |
@@ -92,6 +94,16 @@ export TMPDIR="$(mktemp -d -p <katalog spoza repo>)"
 
 `TMPDIR` ustawiają same testy: `tests/test_skillsync_leakguard.py`, `tests/test_skillsync_closure.py`,
 `tests/test_skillsync_prototype_server.py` i `tests/e2e/prototype/env.py`.
+
+### Środowisko E2E prototypu (`tests/e2e/prototype/env.py`)
+
+`python3 env.py prepare|chrome|stop` przygotowuje projekt testowy, uruchamia Chrome w trybie headless i sprząta po biegu.
+Sprzątanie kończy wyłącznie własne procesy: te z plików `*.pid` w katalogu roboczym i ich potomków wypisanych przed pierwszym
+sygnałem, każdy po tożsamości (pid, czas startu, właściciel), nigdy po nazwie. Plik PID znika dopiero po potwierdzonej śmierci
+procesu; nieczytelny plik jest usuwany z komunikatem na stderr. Plik z samym numerem i nazwą spoza `chrome*`, `static-*`, `serve-*`
+zostaje na miejscu z komunikatem i nic nie jest wtedy sygnalizowane. Czas startu z `ps` (`lstart`, czas lokalny) jest rozstrzygany
+przez `etime`, więc godzina zmiany czasu nie przesuwa go o godzinę. Windows nie jest obsługiwany: każde polecenie kończy się od razu
+komunikatem `BLOCKED` i kodem wyjścia 2, bez startu Chrome.
 
 ### CI
 
@@ -238,3 +250,5 @@ z configu maszyny w całości: bez `--targets-json` cel jest nieznany, więc `--
 13. **`smart-test`** wymaga, by projekt był korzeniem repo git; ścieżki wspólne i niezmapowane dają fallback do wszystkich testów (zamierzone).
 14. **`SKILLSYNC_CONFIG`** wczytywane jest przy imporcie `skillsync_workflow.cli` (`CONFIG_PATH`); w testach używaj słownika `config`.
 15. **Zapis `tasks.json` przez generator** przepisuje plik jako czysty JSON (usuwa komentarze i CRLF); kopia zapasowa jest nadpisywana przy kolejnym odświeżeniu.
+16. **Biegi na maszynach zdalnych** (Windows, macOS): logi kopiowane przyrostowo, sprawdzenie śmierci drzewa procesów po PID-ach przed usunięciem katalogów, jedna pula portów na proces, lista modułów bez aliasów powłoki, start w tle na macOS bez `setsid`: reguły w `library/skills/feature/references/prepush-matrix.md` (sekcja „Biegi na maszynie zdalnej”).
+17. **PowerShell 5 (Windows)**: skrypt pomocniczy z polskimi znakami zapisany bez BOM bywa niepoprawnie odczytany przez parser; zapisuj z BOM albo bez polskich znaków. Wyjście natywnej komendy na stderr przy `2>&1` jest pokazywane jako błąd mimo kodu wyjścia 0: oceniaj `$LASTEXITCODE`, nie tekst.

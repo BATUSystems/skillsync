@@ -35,14 +35,14 @@ class PlanCache(unittest.TestCase):
             os.utime(self.path, ns=(ns, ns))
 
     def reads(self):
-        """Number of plan reads (`read_text` of the plan) made by one `list_plans`."""
-        real, calls = dashboard.read_text, []
+        """Number of plan reads (`read_masked` of the plan) made by one `list_plans`."""
+        real, calls = dashboard.read_masked, []
 
         def counting(path, *args, **kwargs):
             calls.append(Path(path).name)
             return real(path, *args, **kwargs)
 
-        with mock.patch.object(dashboard, 'read_text', counting):
+        with mock.patch.object(dashboard, 'read_masked', counting):
             dashboard.list_plans(self.root)
         return len(calls)
 

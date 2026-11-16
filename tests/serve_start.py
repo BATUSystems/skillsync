@@ -4,15 +4,38 @@ A server that lost the bind exits with BLOCKED, while the OTHER server on that p
 start is ready only when the state file of our own pid and port exists (written after the bind, also with `--no-approvals`); a lost bind is retried
 on another port. Tests only: no production code is involved."""
 from datetime import datetime, timedelta, timezone
+import errno
 import json
 import os
 import subprocess
 import sys
 import time
 import urllib.request
+from pathlib import Path
 from unittest import mock
 
 ATTEMPTS = 4
+ADDRESS_IN_USE = {errno.EADDRINUSE, 10048}   # 10048 = WSAEADDRINUSE (Windows reports its own code)
+
+
+def bind_free(factory, free_port, attempts=5):
+    """Bind a server in the test process on a port from `free_port()`, retrying when the port was taken before the bind.
+
+    `factory(port)` creates the bound server (e.g. `make_server`); an `OSError` "address in use" moves on to the next port from the pool, any other
+    error is raised at once. Returns `(server, port)`. For servers in a thread: a subprocess uses `start_serve`."""
+    if attempts < 1:
+        raise ValueError(f"attempts must be at least 1, got {attempts}")
+    last, tried = None, []
+    for _attempt in range(attempts):
+        port = free_port()
+        tried.append(port)
+        try:
+            return factory(port), port
+        except OSError as error:
+            if error.errno not in ADDRESS_IN_USE:
+                raise
+            last = error
+    raise OSError(last.errno, f"no free port after {attempts} tries (ports {tried}): {last.strerror}") from last
 
 
 def state_files(env):
@@ -23,6 +46,17 @@ def state_files(env):
     return sorted(directory.glob("*.json")) if directory.is_dir() else []
 
 
+def state_snapshot(env):
+    """`{state file: mtime_ns}` of the servers started with `env`, taken before `Popen` (SV1): an unchanged file is a leftover, never ours."""
+    snapshot = {}
+    for path in state_files(env):
+        try:
+            snapshot[path] = path.stat().st_mtime_ns
+        except OSError:
+            continue
+    return snapshot
+
+
 def _started_at(record):
     try:
         return datetime.fromisoformat(str(record.get("startedAt")))
@@ -30,15 +64,19 @@ def _started_at(record):
         return None
 
 
-def own_state(env, proc, port, root=None, started=None, windows=None):
+def own_state(env, proc, port, root=None, started=None, windows=None, before=None):
     """Is there a state file of THIS server? Only the server that holds the port writes one with its pid. POSIX: the pid must be ours, strictly.
     Windows (`windows=True`, default `os.name == "nt"`): `proc.pid` is the launcher of the venv `python.exe`, not the interpreter that serves, so
     the identity is the port, the project root of the file (the unique temporary directory of the test) and a `startedAt` not older than
-    the start of our process (`started`, an aware `datetime` taken before `Popen`; one second of slack for the whole seconds of the file)."""
+    the start of our process (`started`, an aware `datetime` taken before `Popen`; one second of slack for the whole seconds of the file).
+    `before` (`state_snapshot` taken before `Popen`) rules out a file that is still the one it was before the start: the killed predecessor of
+    the same root and port leaves exactly such a file (SV1)."""
     from skillsync_workflow import dashboard_token
     windows = (os.name == "nt") if windows is None else windows
     for path in state_files(env):
         try:
+            if before is not None and before.get(path) == path.stat().st_mtime_ns:
+                continue
             record = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
@@ -55,6 +93,44 @@ def own_state(env, proc, port, root=None, started=None, windows=None):
     return False
 
 
+def kill_tree(proc, windows=None):
+    """Kill the process of the test and, on Windows, its whole tree: `proc.pid` is the launcher of the venv `python.exe`, `Popen.kill()` ends only
+    that launcher and the interpreter that serves would keep the port. `taskkill /T /F` by our OWN pid, by the full path under the system
+    directory (no PATH lookup); POSIX and every failure of taskkill fall back to `proc.kill()`."""
+    windows = (os.name == "nt") if windows is None else windows
+    if windows and proc.poll() is None:
+        taskkill = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "taskkill.exe"
+        try:
+            subprocess.run([str(taskkill), "/T", "/F", "/PID", str(proc.pid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15)
+        except (OSError, subprocess.SubprocessError):
+            pass
+    if proc.poll() is None:
+        proc.kill()
+
+
+def stop_serve(proc, windows=None):
+    """Stop the server of a test and collect its output: returns `(out, err, graceful)`.
+
+    POSIX: SIGTERM, the server stops itself (exit 0, JSON report on stdout, state file removed) and `graceful` is True. Windows: the production
+    code handles only SIGTERM, so `terminate()` is `TerminateProcess` (no report, exit code, or cleanup of the state file); the tree is killed
+    and `graceful` is False, which tells the test to skip the assertions about a graceful stop (a candidate for a separate production item)."""
+    windows = (os.name == "nt") if windows is None else windows
+    if windows:
+        kill_tree(proc, windows=True)
+    else:
+        proc.terminate()
+    out, err = proc.communicate(timeout=15)
+    return out, err, not windows
+
+
+def lost_bind(output):
+    """Does the output of a finished server say that the BIND was lost (retry on another port)? Another BLOCKED (a configuration error) is not retried (SV4).
+
+    It matches the Polish word of the production message ("nie można nasłuchiwać") in the decoded stdout. A Windows run without `PYTHONUTF8=1`
+    (CI sets it) can decode the word wrongly: the retry is then off and the start fails at once, which is safe but not obvious."""
+    return "BLOCKED" in output and "nasłuchiwać" in output
+
+
 def start_serve(case, cli, root, layer, env, free_port, *extra, prepare=None, ready=None, deadline_s=20):
     """Start `dashboard serve <root> --port <p> *extra *layer` and wait until it is ready; returns `(proc, port)` or fails the test.
 
@@ -65,24 +141,24 @@ def start_serve(case, cli, root, layer, env, free_port, *extra, prepare=None, re
         port = free_port()
         if prepare:
             prepare(port)
+        before = state_snapshot(env)
         started = datetime.now(timezone.utc)
         proc = subprocess.Popen([sys.executable, str(cli), "dashboard", "serve", str(root), "--port", str(port), *extra, *layer],
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
-        case.addCleanup(lambda proc=proc: proc.poll() is None and proc.kill())
+        case.addCleanup(lambda proc=proc: kill_tree(proc))
         deadline = time.time() + deadline_s
         while time.time() < deadline and proc.poll() is None:
             try:
                 urllib.request.urlopen(f"http://127.0.0.1:{port}/healthz", timeout=1).close()
-                answered = own_state(env, proc, port, root, started) and (ready is None or ready(port))
+                answered = own_state(env, proc, port, root, started, before=before) and (ready is None or ready(port))
             except OSError:
                 answered = False
             if answered:
                 return proc, port
             time.sleep(0.1)
-        if proc.poll() is None:
-            proc.kill()
+        kill_tree(proc)
         out, err = proc.communicate(timeout=10)
         last = f"{out}\n{err}"   # a lost bind is reported as BLOCKED on stdout, stderr stays empty
-        if "BLOCKED" not in last:
+        if not lost_bind(last):
             break
     case.fail(f"dashboard serve did not start (last port {port}): {last.strip()[-600:]}")

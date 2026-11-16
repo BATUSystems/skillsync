@@ -4,6 +4,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+## [1.6.1] - 2026-11-16
+
+### Changed
+
+- Skill `project-guard`: a changed file that is a link is skipped and never opened (`skipped` in the report); when every file covered by a rule is such a link, the status is `PASS` with the reason "No content was checked", so `validate` is not blocked.
+- Skill `dashboard`: `SKILL.md` describes `/api/doc` as masked (a heuristic, not a guarantee); the page names the parser warning `unbalanced-bracket`.
+- Skill `feature`: `measurement.md` (an unclosed bracket always gives a warning on the status page), `prepush-matrix.md` (commands of the mandatory steps, rules for matrix runs on remote machines), `worker-mode.md` (run `skillsync link <worktree>` after `git worktree add`, work in one tree), a clarification in `tests-baseline.md`.
+- Skill `prototype`: `SKILL.md` and the engine (`prototype.js`) warn that the text of comments and answers is visible to others and is not masked; an existing prototype gets the notes after `skillsync prototype migrate`.
+- Skill `skillsync`: the row of `dashboard serve` describes the masked `/api/doc`.
+
 ## [1.6.0] - 2026-11-16
 
 ### Added

@@ -232,3 +232,7 @@ lessons:
     title: "Punktowy zestaw testów pomija konsumentów fixtures kontraktu: zmiana expected.json bez expected-after.json (CI czerwone na approvals_record)"
     tags: [skillsync, tests, dashboard, fixtures, ci]
     paths: ['tests/fixtures/dashboard/**', 'tests/test_skillsync_approvals_record.py', 'tests/test_skillsync_dashboard*.py']
+  - path: biegi-na-maszynach-zdalnych-logi-pid-porty.md
+    title: "Biegi macierzy na maszynach zdalnych: logi przyrostowo, śmierć drzewa po PID-ach, jedna pula portów na proces, lista modułów bez aliasów, tło na macOS bez setsid"
+    tags: [testing, remote, windows, macos, ports, processes, evidence]
+    paths: ['library/skills/feature/references/prepush-matrix.md', 'tests/**']

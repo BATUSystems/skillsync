@@ -1143,6 +1143,102 @@ class LayersUseTest(CommandsCase):
         self.assertEqual((code, report['status'], report['changed']), (0, 'PASS', False), report)
         self.assertEqual((self.config_file.read_bytes(), sorted(self.config_file.parent.glob('*.bak-*'))), (before, backups))
 
+    def rules(self):
+        return [(rule['match'], rule['use']) for rule in self.config()['layer_rules']]
+
+    def test_a_layer_is_added_to_the_existing_rule_with_the_same_match(self):
+        self.write_config(self.layers, [([self.glob], ['core', 'acme']), (['**'], ['core', 'me'])])
+        code, report = self.use('me', '--match', self.glob)
+        self.assertEqual((code, report['status'], report['index']), (0, 'PASS', 0), report)
+        self.assertEqual(report['rule'], {'match': [self.glob], 'use': ['core', 'acme', 'me']})
+        self.assertEqual(self.rules(), [([self.glob], ['core', 'acme', 'me']), (['**'], ['core', 'me'])])
+        code, listing = self.cli_json('layers', 'list', '--project', str(self.project('clients/acme/app')))
+        self.assertEqual((code, [item['id'] for item in listing['layers']]), (0, ['core', 'acme', 'me']))
+
+    def test_an_org_layer_goes_before_the_personal_one_and_a_personal_id_replaces_it_in_the_existing_rule(self):
+        self.write_config(self.layers, [([self.glob], ['core', 'acme', 'me']), (['**'], ['core'])])
+        self.assertEqual(self.use('beta', '--match', self.glob)[0], 0)
+        self.assertEqual(self.rules()[0], ([self.glob], ['core', 'acme', 'beta', 'me']))
+        self.assertEqual(self.use('other-me', '--match', self.glob)[0], 0)
+        self.assertEqual(self.rules()[0], ([self.glob], ['core', 'acme', 'beta', 'other-me']))
+        self.assertEqual(len(self.rules()), 2)
+
+    def test_the_default_rule_is_extended_instead_of_a_second_double_star_rule(self):
+        self.write_config(self.layers, [(['**'], ['core', 'acme'])])
+        code, report = self.use('me', '--match', '**')
+        self.assertEqual((code, report['status']), (0, 'PASS'), report)
+        self.assertEqual(self.rules(), [(['**'], ['core', 'acme', 'me'])])
+
+    def test_with_two_rules_of_the_same_match_the_first_one_is_changed(self):
+        self.write_config(self.layers, [([self.glob], ['core']), ([self.glob], ['core', 'beta'])])
+        self.assertEqual(self.use('acme', '--match', self.glob)[0], 0)
+        self.assertEqual(self.rules(), [([self.glob], ['core', 'acme']), ([self.glob], ['core', 'beta'])])
+
+    def test_a_layer_already_in_the_existing_rule_changes_nothing(self):
+        self.write_config(self.layers, [([self.glob], ['core', 'acme', 'me']), (['**'], ['core'])])
+        before, backups = self.config_file.read_bytes(), sorted(self.config_file.parent.glob('*.bak-*'))
+        code, report = self.use('acme', '--match', self.glob)
+        self.assertEqual((code, report['status'], report['changed']), (0, 'PASS', False), report)
+        self.assertEqual((self.config_file.read_bytes(), sorted(self.config_file.parent.glob('*.bak-*'))), (before, backups))
+
+    def test_a_layer_that_is_present_but_not_in_the_canonical_slot_is_left_where_it_is(self):
+        self.write_config(self.layers, [([self.glob], ['core', 'acme', 'beta', 'me']), (['**'], ['core'])])
+        before, backups = self.config_file.read_bytes(), sorted(self.config_file.parent.glob('*.bak-*'))
+        code, report = self.use('acme', '--match', self.glob)        # acme stands before beta: the order decides who wins
+        self.assertEqual((code, report['status'], report['changed']), (0, 'PASS', False), report)
+        self.assertEqual(report['rule']['use'], ['core', 'acme', 'beta', 'me'])
+        self.assertEqual((self.config_file.read_bytes(), sorted(self.config_file.parent.glob('*.bak-*'))), (before, backups))
+
+    def test_extending_a_rule_keeps_the_comments_of_the_config_when_the_use_list_is_a_flow_list(self):
+        self.write_config(self.layers, [([self.glob], ['core', 'acme']), (['**'], ['core', 'me'])])
+        text = self.config_file.read_text(encoding='utf-8')
+        block = '  use:\n  - core\n  - acme\n'
+        self.assertIn(block, text)
+        self.config_file.write_text('# my machine\n' + text.replace(block, '  use: [core, acme]   # org rule\n'), encoding='utf-8')   # the layout `layers use` writes
+        code, report = self.use('me', '--match', self.glob)
+        self.assertEqual((code, report['status'], report['changed'], report['rewritten']), (0, 'PASS', True, False), report)
+        new = self.config_file.read_text(encoding='utf-8')
+        self.assertIn('# my machine', new)
+        self.assertIn('use: [core, acme, me]   # org rule', new)
+        self.assertEqual(self.rules()[0], ([self.glob], ['core', 'acme', 'me']))
+        self.assertTrue(Path(report['backup']).is_file())
+
+    def test_a_crlf_config_is_edited_in_the_text_and_comes_out_with_lf_while_the_backup_keeps_the_original(self):
+        self.write_config(self.layers, [([self.glob], ['core', 'acme']), (['**'], ['core', 'me'])])
+        text = self.config_file.read_text(encoding='utf-8')
+        block = '  use:\n  - core\n  - acme\n'
+        original = ('# crlf\n' + text.replace(block, '  use: [core, acme]  # org\n')).replace('\n', '\r\n').encode('utf-8')
+        self.config_file.write_bytes(original)
+        code, report = self.use('me', '--match', self.glob)
+        self.assertEqual((code, report['status'], report['rewritten']), (0, 'PASS', False), report)
+        new = self.config_file.read_bytes()
+        self.assertNotIn(b'\r', new)
+        self.assertIn(b'use: [core, acme, me]  # org', new)
+        self.assertEqual(Path(report['backup']).read_bytes(), original)
+
+    def test_extending_a_rule_with_a_block_list_rewrites_the_config_and_keeps_a_backup(self):
+        self.write_config(self.layers, [([self.glob], ['core', 'acme']), (['**'], ['core', 'me'])])
+        self.assertIn('  use:\n  - core\n  - acme\n', self.config_file.read_text(encoding='utf-8'))   # a block list (as `write_config` dumps it)
+        code, report = self.use('me', '--match', self.glob)
+        self.assertEqual((code, report['status'], report['rewritten']), (0, 'PASS', True), report)
+        self.assertEqual(self.rules()[0], ([self.glob], ['core', 'acme', 'me']))
+        self.assertTrue(Path(report['backup']).is_file())
+
+    def test_another_match_still_creates_a_new_rule_before_the_default(self):
+        self.write_config(self.layers, [([self.glob], ['core', 'acme']), (['**'], ['core', 'me'])])
+        other = f'{self.work}/clients/beta/**'
+        code, report = self.use('beta', '--match', other)
+        self.assertEqual((code, report['index']), (0, 1), report)
+        self.assertEqual(self.rules(), [([self.glob], ['core', 'acme']), ([other], ['core', 'beta', 'me']), (['**'], ['core', 'me'])])
+
+    def test_position_with_an_existing_rule_of_the_same_match_is_refused_and_changes_nothing(self):
+        self.write_config(self.layers, [([self.glob], ['core', 'acme']), (['**'], ['core', 'me'])])
+        before = self.config_file.read_bytes()
+        code, report = self.use('me', '--match', self.glob, '--position', '0')
+        self.assertEqual((code, report['status'], report['code']), (2, 'BLOCKED', 'bad-argument'), report)
+        self.assertIn('--position', report['reason'])
+        self.assertEqual(self.config_file.read_bytes(), before)
+
     def test_position_is_a_zero_based_index(self):
         self.write_config(self.layers, [([f'{self.work}/x/**'], ['core']), (['**'], ['core', 'me'])])
         code, report = self.use('acme', '--match', self.glob, '--position', '0')
@@ -1193,6 +1289,52 @@ class LayersUseTest(CommandsCase):
         self.assertIn('layers migrate', report['reason'])
 
 
+class RuleUseTextEditTest(unittest.TestCase):
+    """`text_set_rule_use`: the `use` list of ONE rule replaced in the text; None sends the caller to the rewrite path."""
+
+    USE = ['core', 'acme', 'me']
+
+    def edit(self, text, index=0):
+        return layers.text_set_rule_use(text, index, self.USE)
+
+    def test_a_flow_list_is_replaced_and_everything_else_stays_byte_for_byte(self):
+        text = "# top\nlayer_rules:\n- match: ['**']   # all\n  use: [core, acme]  # tail\n- match: [x]\n  use: [core]\n"
+        self.assertEqual(self.edit(text), text.replace('[core, acme]', '[core, acme, me]'))
+
+    def test_the_second_rule_is_edited_by_index(self):
+        text = "layer_rules:\n- match: [a]\n  use: [core]\n- match: [b]\n  use: [core, acme]\n"
+        self.assertEqual(self.edit(text, 1), text.replace('[core, acme]', '[core, acme, me]'))
+
+    def test_crlf_text_and_a_missing_final_newline(self):
+        crlf = "layer_rules:\r\n- match: ['**']\r\n  use: [core, acme]  # c\r\n"
+        self.assertEqual(self.edit(crlf), crlf.replace('[core, acme]', '[core, acme, me]'))
+        bare = "layer_rules:\n- match: ['**']\n  use: [core, acme]"
+        self.assertEqual(self.edit(bare), bare.replace('[core, acme]', '[core, acme, me]'))
+
+    def test_non_ascii_text_before_and_after_the_list(self):
+        text = "# żółć\nlayer_rules:\n- match: ['/srv/zażółć/**']\n  use: [core, acme]  # łąka 🙂\n"
+        self.assertEqual(self.edit(text), text.replace('[core, acme]', '[core, acme, me]'))
+
+    def test_quoted_identifiers_and_a_multi_line_list(self):
+        self.assertEqual(self.edit("layer_rules:\n- match: ['**']\n  use: [\"core\", 'acme']\n"),
+                         "layer_rules:\n- match: ['**']\n  use: [core, acme, me]\n")
+        self.assertEqual(self.edit("layer_rules:\n- match: ['**']\n  use: [core,\n    acme]   # tail\n"),
+                         "layer_rules:\n- match: ['**']\n  use: [core, acme, me]   # tail\n")   # a comment inside the list would go
+
+    def test_an_anchor_a_tag_a_block_list_and_a_missing_key_go_the_rewrite_path(self):
+        for label, text in {'anchor': "layer_rules:\n- match: ['**']\n  use: &u [core, acme]\n- match: [x]\n  use: *u\n",
+                            'anchor without alias': "layer_rules:\n- match: ['**']\n  use: &u [core, acme]\n",
+                            'tag': "layer_rules:\n- match: ['**']\n  use: !!seq [core, acme]\n",
+                            'block': "layer_rules:\n- match: ['**']\n  use:\n  - core\n  - acme\n",
+                            'no use': "layer_rules:\n- match: ['**']\n",
+                            'no rules': "layers: []\n", 'index out of range': "layer_rules:\n- match: ['**']\n  use: [core]\n"}.items():
+            with self.subTest(label):
+                self.assertIsNone(self.edit(text, 5 if label == 'index out of range' else 0))
+
+    def test_invalid_yaml_goes_the_rewrite_path(self):
+        self.assertIsNone(self.edit("layer_rules: [\n"))
+
+
 # ====================================================================== step 2.4t: layers check (K2, K4, K9, K12)
 
 
@@ -1225,6 +1367,23 @@ class LayersCheckTest(CommandsCase):
         process = self.cli('layers', 'check', '--project', str(self.app))
         self.assertEqual(process.returncode, 0)
         self.assertIn('layers check: PASS', process.stdout)
+
+    def test_a_second_rule_with_the_same_match_is_a_warning_in_check_doctor_and_link(self):
+        glob = f'{self.work}/Repos/**'
+        self.configure(rules=[([glob], ['core', 'acme']), ([glob], ['core', 'acme']), (['**'], ['core'])])
+        code, report = self.check()
+        found = [item for item in report['findings'] if item['code'] == 'rule-unreachable']
+        self.assertEqual((code, report['status']), (0, 'PASS'), report)          # a warning, never an error
+        self.assertEqual(len(found), 1, report['findings'])
+        self.assertEqual(found[0]['severity'], 'warning')
+        self.assertIn('layer_rules[1]', found[0]['message'])
+        self.assertIn('layer_rules[0]', found[0]['message'])
+        for command in (('doctor', str(self.app), '--json'), ('link', str(self.app))):   # the same finding reaches `doctor` and `link`
+            with self.subTest(command=command[0]):
+                process = self.cli(*command)
+                self.assertIn('layer_rules[1] has the same match as layer_rules[0]', process.stdout + process.stderr)   # their text, not the code
+        self.configure(rules=[([glob], ['core', 'acme']), (['**'], ['core'])])
+        self.assertEqual([item for item in self.check()[1]['findings'] if item['code'] == 'rule-unreachable'], [])
 
     def test_an_error_finding_is_fail_exit_1_and_marks_its_layer(self):
         bare = self.git_layer('beta', 'org')                                              # writable, no hooks

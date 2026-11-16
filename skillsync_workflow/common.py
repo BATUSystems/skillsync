@@ -217,8 +217,48 @@ def contained(root, path):
     return candidate
 
 
+def checked_out_link(path):
+    """True when `path` is a small regular FILE that git tracks as a symlink (mode 120000) AND whose bytes are exactly the blob of the index: git did
+    not recreate the link and wrote its target as text (`core.symlinks` off, a Windows checkout or worktree without the right to create links).
+    A file that differs from the blob (the user replaced the tracked link with an own file) is not one. `link` replaces such a file and `doctor`
+    names the repair. Only for a small regular file: one `git ls-files -s`, and one `git hash-object --no-filters` when git tracks it as a link;
+    False outside git and on any error (the file stays)."""
+    path = Path(path)
+    try:
+        if path.is_symlink() or not path.is_file() or path.stat().st_size > 4096:
+            return False
+        process = subprocess.run(['git', '-C', str(path.parent), 'ls-files', '-s', '--', path.name], capture_output=True, timeout=10, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    fields = process.stdout.split(b'\t', 1)[0].split()
+    if process.returncode or len(fields) != 3 or fields[0] != b'120000' or fields[2] != b'0':
+        return False
+    try:
+        same = subprocess.run(['git', '-C', str(path.parent), 'hash-object', '--no-filters', '--', path.name], capture_output=True, timeout=10, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return same.returncode == 0 and same.stdout.strip() == fields[1]
+
+
 def normalize_files(root, files):
-    return [contained(root, path).relative_to(Path(root).resolve()).as_posix() for path in files]
+    """Project-relative POSIX names of a list of files (changed files from git, `--files`). The containment is checked on the path ITSELF: the
+    parent directory is resolved physically (a directory that is a link to the outside is an escape), the last component is not followed, so a
+    link that lies in the project (for example a tracked `.github/skills/<skill>` pointing into a layer) is a file of the project, not an escape.
+    `contained` (follows every link) stays the check for the paths a command opens."""
+    root = Path(root).resolve()
+    return [project_file(root, path) for path in files]
+
+
+def project_file(root, path):
+    """Project-relative POSIX name of ONE file of a list (see `normalize_files`); ValueError "Path escapes project" for an escape."""
+    root = Path(root).resolve()
+    candidate = root / path
+    if candidate.name in ('', '.', '..'):   # a directory or a `..` ending: the plain check
+        return contained(root, path).relative_to(root).as_posix()
+    entry = candidate.parent.resolve() / candidate.name
+    if not entry.is_relative_to(root):
+        raise ValueError(f'Path escapes project: {path}')
+    return entry.relative_to(root).as_posix()
 
 
 def validate_workflow(config):
@@ -333,6 +373,15 @@ def append_missing_lines(text, entries, key=None):
     return text + prefix + eol.join(missing) + eol
 
 
+def decode_text(data, strict=False):
+    """Text of the bytes of a file: UTF-16 with a byte order mark (the default output of `>` and `Out-File` in Windows PowerShell 5) is
+    decoded as such, anything else as UTF-8; NUL characters are dropped (the renderer drops them too, so a secret that a NUL splits
+    would otherwise be glued together again AFTER the masking). Bytes that are not valid text become the replacement character, or, with
+    `strict=True`, raise `UnicodeDecodeError` (the readers of `skillsync status` report such a file as a finding, as they always did)."""
+    text = data.decode('utf-16' if data[:2] in (b'\xff\xfe', b'\xfe\xff') else 'utf-8', errors='strict' if strict else 'replace')
+    return text.replace('\x00', '')
+
+
 def redact(value, _key=False):
     """Masks secrets in strings. A secret from the environment is substituted only when it has 8+ characters, in keys and
     in text alike (D6): a short value (the Windows runner has one equal to `root`) must not rename structural keys or
@@ -349,10 +398,31 @@ def redact(value, _key=False):
     for name, secret in os.environ.items():
         if len(secret) >= SECRET_MIN_LENGTH and re.search(r'(?i)token|secret|password|passwd|api_?key|credential', name):
             text = text.replace(secret, '[REDACTED]')
+            if '\n' in secret:   # a multi-line secret (a PEM key) in a file with Windows line ends
+                text = text.replace(secret.replace('\n', '\r\n'), '[REDACTED]')
     text = re.sub(r'(https?://)[^/@\s]+:[^/@\s]+@', r'\1[REDACTED]@', text)
-    text = re.sub(r'(?i)(authorization\s*[:=]\s*(?:bearer\s+)?)[^\s\x22\x27,;]+', r'\1[REDACTED]', text)
+    text = re.sub(r'(?i)(authorization\s*[:=]\s*(?:(?:bearer|basic|digest)\s+)?)[^\s\x22\x27,;]+', r'\1[REDACTED]', text)
     text = re.sub(r'(?i)(\bbearer\s+)[^\s\x22\x27,;]+', r'\1[REDACTED]', text)
-    return re.sub(r'(?i)((?:password|passwd|token|secret|api_key)\s*[=:]\s*)[^\s\x22\x27,;]+', r'\1[REDACTED]', text)
+    return _SECRET_KEY_VALUE.sub(_mask_value, text)
+
+
+# Key names whose value is masked: `password`, `passwd`, `token`, `secret`, `api_key`/`api-key`/`apikey`, `secret_key`, `access_key`,
+# `private_key` (a longer name that ends in one of them, e.g. `client_secret`, matches too). After the key: an optional quote (JSON),
+# `=` or `:`, and a value that is quoted (the whole quoted text, spaces included, up to the first closing quote that no backslash escapes, so
+# `\\"` inside a JSON string stays in the value and `\\\\"` closes it; an unterminated quote takes the rest of the line, before `\\n` or `\\r\\n`) or
+# a word up to a space, `,` or `;` (quotes inside it belong to the value). Every part of the quoted alternatives starts with a different
+# character, so the match is linear (no catastrophic backtracking).
+_SECRET_KEY_VALUE = re.compile(
+    r'(?im)((?:password|passwd|token|secret|api[-_]?key|secret[-_]?key|access[-_]?key|private[-_]?key)[\x22\x27]?\s*[=:]\s*)'
+    r'(?:\x22(?:\\.|[^\x22\\\r\n])*(?:\x22|(?=\r?$))|\x27(?:\\.|[^\x27\\\r\n])*(?:\x27|(?=\r?$))|[^\s\x22\x27,;][^\s,;]*)')
+
+
+def _mask_value(match):
+    value = match.group(0)[len(match.group(1)):]
+    quote = value[0] if value[:1] in ('"', "'") else ''
+    escapes = len(value) - len(value[:-1].rstrip('\\')) - 1 if quote and len(value) > 1 else 0   # backslashes right before the last character
+    closed = bool(quote) and len(value) > 1 and value.endswith(quote) and escapes % 2 == 0   # an unterminated quote masks the rest of the line and adds no closing one
+    return f'{match.group(1)}{quote}[REDACTED]{quote if closed else ""}'
 
 
 # Mirrors the constants in the `skillsync` entry script (a test keeps them identical).

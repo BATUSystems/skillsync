@@ -11,7 +11,7 @@ i wiele sesji) jest w [workflow-details.md](workflow-details.md). Wersję HTML o
 w przeglądarce buduje `python3 docs/site/build.py` do `docs/site/out/` (katalog poza gitem; opis w
 [site/README.md](site/README.md)).
 
-Stan opisu: Skillsync `v1.6.0`.
+Stan opisu: Skillsync `v1.6.1`.
 
 ## Słownik
 
@@ -124,6 +124,12 @@ Commit trafia na gałąź roboczą w osobnym worktree, zakładaną przy „GO pl
 „GO implement” nic nie opuszcza maszyny (push i PR dalej według trybu dostarczania). Wyjątek: wejście z klucza zgłoszenia
 (`pr-after-approval`) zostaje bez commita przy „GO plan”.
 
+Po założeniu worktree wykonaj w nim `skillsync link <worktree>`: dowiązania skilli (`sync.method: symlink`) świeżego worktree wskazują cele z commita,
+które mogą nie istnieć (a gdy `core.symlinks` jest wyłączone, jak domyślnie w wielu instalacjach Git for Windows, git zapisuje śledzone dowiązanie jako zwykły plik z tekstem celu; `doctor` wskazuje wtedy `skillsync link`, a `link` zastępuje taki plik), a `doctor` kończy się wtedy FAIL („Missing installed skill” albo „Installed skill symlink points to a target that does not exist”, z komendą `skillsync link …` w komunikacie). `checkpoint`, `readiness` i `dashboard serve` uruchamiaj w tym samym
+drzewie, w którym powstaje kod: `.skillsync/runs/` jest per drzewo, odcisk `HEAD` w checkpoincie pochodzi z drzewa wywołania, a `--plan` spoza drzewa jest
+odrzucany („The plan lies outside the project”). `--evidence` przyjmuje ścieżki plików w projekcie, nie opis. Projekt, który śledzi wygenerowane pliki (dowiązania
+skilli, instrukcje) mimo wpisu w `.gitignore`, dostaje od `doctor` ostrzeżenie z gotowym `git rm --cached`.
+
 ### Ceremonia `demo`
 
 Klucz manifestu `workflow.ceremony: full | demo` ([manifest](manifest.md)); `route` zwraca pole `ceremony`, a `doctor` waliduje wartość.
@@ -234,7 +240,7 @@ projektu albo skill organizacji, nie rdzeń.
 |---|---|---|
 | Rozpoznanie (przed aktem I/II) | `route <projekt>` (rekordy `load: bootstrap`), `route <projekt> --topic implementation --files ...` | instrukcje, lekcje i rekordy `docs/domain` do przeczytania |
 | Rozpoznanie | `map <projekt> [--check]` | `.skillsync/map.md` (moduły, entry pointy, komendy, testy, migracje), czytana przed Glob/Grep |
-| Stan pracy | `status <projekt> [--json]` | plany (`plans[].spec`), specy (`specs[]`), pliki FRD (`frds[]`), kroki, `needsHuman` (`approval` dla `draft`, `closure` dla `in_progress` ze wszystkimi `[x]`, `pull_request` dla takiego planu z `Ticket:` bez `PR:`, `acceptance` dla planu `done` z krokiem „Odbiór”, który czeka na końcowe słowo zgody trybu dostarczania: `READY` w `pr`, `CP` w `direct`, zapisane w `approvals.jsonl` aktywnego przebiegu planu z sha commitu, w którym ten plan ma już status `done` (wcześniejsze `CP` z środka przebiegu i sha spoza repozytorium niczego nie zamykają); sygnał wymaga katalogu przebiegu `.skillsync/runs/<run-id>/` w worktree, bez niego plan to historia; po tym słowie kolejne commity tego samego przebiegu nie zapalają sygnału ponownie, bo bez powiązania plan↔commit nie da się ich odróżnić), streszczenie planu (`plans[].summary`: sekcja „Streszczenie dla człowieka”, do 40 linii i 4000 znaków, albo `null`) |
+| Stan pracy | `status <projekt> [--json]` | plany (`plans[].spec`), specy (`specs[]`), pliki FRD (`frds[]`), kroki, `needsHuman` (`approval` dla `draft`, `closure` dla `in_progress` ze wszystkimi `[x]`, `pull_request` dla takiego planu z `Ticket:` bez `PR:`, `acceptance` dla planu `done` z krokiem „Odbiór”, który czeka na końcowe słowo zgody trybu dostarczania: `READY` w `pr`, `CP` w `direct`, zapisane w `approvals.jsonl` aktywnego przebiegu planu z sha commitu, w którym ten plan ma już status `done` (wcześniejsze `CP` z środka przebiegu i sha spoza repozytorium niczego nie zamykają); sygnał wymaga katalogu przebiegu `.skillsync/runs/<run-id>/` w worktree, bez niego plan to historia; po tym słowie kolejne commity tego samego przebiegu nie zapalają sygnału ponownie, bo bez powiązania plan↔commit nie da się ich odróżnić; plan otwarty ponownie po słowie (po jego commicie zmieniła się linia `Status:` w pierwszych 30 liniach planu na inne słowo niż `done`) i zamknięty drugi raz zapala sygnał od nowa i czeka na nowe słowo, a zmiana tekstu po słowie `done`, linia `Status:` w treści planu albo wzmianka o statusie niczego nie otwiera; plan przemianowany po słowie zapala sygnał ponownie, bo stary sha nie zna nowej ścieżki, i gaśnie po nowym słowie; sygnał `acceptance` w CLI (wpis zgody z sha) i etykieta „odbiór” na stronie statusu (marker `czeka:` albo plan) to dwie niezależne reguły o tej samej nazwie i mogą się rozjechać), streszczenie planu (`plans[].summary`: sekcja „Streszczenie dla człowieka”, do 40 linii i 4000 znaków, albo `null`) |
 | Akt II | `readiness <projekt> --plan <plik> --risk <ryzyko planu> --files ...` | struktura planu i speca z linii `Spec:` (sekcje, `TODO`/`TBD`), nie merytoryka; przy fazach `[UI]` pola `uiPhases`, `nonUiPhases`, `uiPhasesWaiting`, `warnings` ([cli](cli.md)) |
 | Start fazy `[UI]` | `prototype gate <projekt> --plan <plik> --phase <Fn>` | bramka akceptacji prototypu dla jednej fazy; PASS dla fazy bez `[UI]` ([prototypes](prototypes.md#akceptacja)) |
 | Zgoda „GO plan” | `spec approve <projekt> <plik> [--expect-sha SHA]` | słowo statusu speca `draft` → `approved` i usunięty dopisek „czeka na … GO plan” (inne dopiski zostają); sesja przy następnej turze tworzy plan-szkic i `Spec-sha` |
