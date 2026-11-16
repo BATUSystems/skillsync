@@ -93,6 +93,18 @@ def own_state(env, proc, port, root=None, started=None, windows=None, before=Non
     return False
 
 
+def release(proc):
+    """The cleanup of a test that started a server: kill it, wait for it and close its pipes (an unclosed pipe is a `ResourceWarning`)."""
+    kill_tree(proc)
+    try:
+        proc.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        pass
+    for stream in (proc.stdout, proc.stderr):
+        if stream is not None and not stream.closed:
+            stream.close()
+
+
 def kill_tree(proc, windows=None):
     """Kill the process of the test and, on Windows, its whole tree: `proc.pid` is the launcher of the venv `python.exe`, `Popen.kill()` ends only
     that launcher and the interpreter that serves would keep the port. `taskkill /T /F` by our OWN pid, by the full path under the system
@@ -145,7 +157,7 @@ def start_serve(case, cli, root, layer, env, free_port, *extra, prepare=None, re
         started = datetime.now(timezone.utc)
         proc = subprocess.Popen([sys.executable, str(cli), "dashboard", "serve", str(root), "--port", str(port), *extra, *layer],
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
-        case.addCleanup(lambda proc=proc: kill_tree(proc))
+        case.addCleanup(lambda proc=proc: release(proc))
         deadline = time.time() + deadline_s
         while time.time() < deadline and proc.poll() is None:
             try:
@@ -195,7 +207,7 @@ def start_serve_ports(case, cli, root, layer, env, free_port, *extra, prepare=No
         proc = subprocess.Popen([sys.executable, str(cli), "dashboard", "serve", str(root), "--read-port", str(read_port),
                                  "--approve-port", str(approve_port), *extra, *layer],
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
-        case.addCleanup(lambda proc=proc: kill_tree(proc))
+        case.addCleanup(lambda proc=proc: release(proc))
         deadline = time.time() + deadline_s
         while time.time() < deadline and proc.poll() is None:
             try:
