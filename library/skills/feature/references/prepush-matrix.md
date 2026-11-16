@@ -29,7 +29,10 @@ python3 -m unittest discover -s tests -p 'test_skillsync*.py' -v 2>&1 | tee unit
 python3 scripts/check_skips.py unittest.log --system linux --mode symlink
 
 # lokalne E2E prototypu (jak w CI): każdy skip to porażka
-SKILLSYNC_E2E_CHROME=<chrome> python3 -m unittest discover -s tests -p 'test_skillsync_prototype_e2e.py' -v > e2e.log 2>&1
+rc=0
+SKILLSYNC_E2E_CHROME=<chrome> python3 -m unittest discover -s tests -p 'test_skillsync_prototype_e2e.py' -v > e2e.log 2>&1 || rc=$?
+cat e2e.log
+[ "$rc" -eq 0 ] || echo "E2E: bieg zakończony kodem $rc: porażka"      # jak w CI: rc == 0 ORAZ brak skipów
 if grep -Eq '\.\.\. skipped|^OK \(skipped' e2e.log; then echo "E2E pominięte: porażka"; fi
 ```
 
