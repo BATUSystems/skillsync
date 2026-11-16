@@ -114,7 +114,7 @@ def read_new(repo, path):
 
 def read_old(repo, revision, path):
     try:
-        return merge_modules.git(repo, 'show', f'{revision}:{path}')
+        return merge_modules.git(repo, 'show', f'{revision}:{path}').lstrip('\ufeff')
     except merge_modules.GitError:
         return ''
 
@@ -129,7 +129,7 @@ def guard_module(repo):
         file = Path(repo) / 'tests' / 'test_skillsync_tmp_path_guard.py'
         try:
             _GUARD[key] = load('tmp_path_guard', file) if file.is_file() else None
-        except Exception:
+        except (Exception, SystemExit):
             _GUARD[key] = None
     return _GUARD[key]
 
@@ -144,7 +144,12 @@ def tmp_path_hits(repo, path, added):
     except (OSError, SyntaxError, ValueError):
         return []
     lines = {number for number, _ in added}
-    return [(number, text) for number, text in guard.scan(tree) if number in lines]
+    if getattr(guard, 'EXEMPT', None) and Path(path).name in guard.EXEMPT:
+        return []
+    try:
+        return [(number, text) for number, text in guard.scan(tree) if number in lines]
+    except Exception:  # an older or incompatible guard in the analysed tree: no hint, never a traceback
+        return []
 
 
 def matches(repo, base, head):

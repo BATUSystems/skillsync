@@ -125,7 +125,8 @@ class Cases(Synthetic):
     def test_edited_docstring_on_removed_side_is_not_code(self):
         self.write({'skillsync_workflow/lines.py': 'import re\n"""Notes on os.name and SIGBREAK."""\nPATTERN = 1\n'})
         self.base = self.commit('doc')
-        self.write({'skillsync_workflow/lines.py': 'import re\n"""Other notes."""\nPATTERN = 1\n'})
+        # the docstring moves down: old line 2 is prose in the merge-base file, new line 2 is code
+        self.write({'skillsync_workflow/lines.py': 'import re\nA = 1\nB = 2\n"""Other notes."""\nPATTERN = 1\n'})
         self.commit()
         self.assertEqual(self.result()['matches'], [])
 
@@ -152,6 +153,18 @@ class Cases(Synthetic):
         run_git(self.dir, 'rm', '-q', 'tests/test_skillsync_tmp_path_guard.py')
         self.base = self.commit('no guard')
         self.write({'tests/test_skillsync_a.py': 'def t(self, n):\n    (self.tmp / n).mkdir()\n', 'tests/test_skillsync_b.py': 'def t(self, n):\n    (self.tmp / n).mkdir()\n'})
+        self.commit()
+        self.assertEqual(self.analyse().returncode, 0)
+
+    def test_incompatible_guard_in_analysed_tree_is_not_fatal(self):
+        (self.dir / 'tests' / 'test_skillsync_tmp_path_guard.py').write_text('raise SystemExit(3)\n', encoding='utf-8')
+        self.base = self.commit('broken guard')
+        self.write({'tests/test_skillsync_a.py': 'def t(self, n):\n    (self.tmp / n).mkdir()\n'})
+        self.commit()
+        self.assertEqual(self.analyse().returncode, 0)
+        (self.dir / 'tests' / 'test_skillsync_tmp_path_guard.py').write_text('def scan(tree):\n    raise RuntimeError("x")\n', encoding='utf-8')
+        self.base = self.commit('raising guard')
+        self.write({'tests/test_skillsync_c.py': 'def t(self, n):\n    (self.tmp / n).mkdir()\n'})
         self.commit()
         self.assertEqual(self.analyse().returncode, 0)
 
