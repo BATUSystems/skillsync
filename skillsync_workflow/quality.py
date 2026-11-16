@@ -1007,7 +1007,9 @@ def doctor(root, manifest, library):
             elif not linked.is_dir() or any(item.is_symlink() for item in linked.rglob('*')):
                 finding('error', linked, 'Invalid installed skill copy')
             elif _tree_hash(linked) != _files_hash(layerset.skill_files(name)):
-                finding('error', linked, 'Installed skill copy differs from source')
+                finding('error', linked, 'Installed skill copy differs from source (a copy edited by hand, or made before a layer changed); '
+                                         f'to replace it with the current one delete this directory and run `skillsync link {_layers._quote_arg(str(root))}` '
+                                         '(changes made by hand in it are lost)')
     from .catalog import catalog_findings
     for reason in catalog_findings(root, manifest, library, skills):
         finding('warning', '.github/.skillsync.yaml', reason)
