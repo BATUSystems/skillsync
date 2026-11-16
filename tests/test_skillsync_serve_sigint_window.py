@@ -18,6 +18,7 @@ sys.path.insert(0, str(ROOT / 'tests'))
 
 from skillsync_workflow import dashboard_http as dh  # noqa: E402
 from skillsync_workflow import prototype as pt  # noqa: E402
+from serve_start import lost_bind  # noqa: E402
 
 
 class FakeInstance:
@@ -102,14 +103,14 @@ class DashboardServeWindowTests(unittest.TestCase):
             calls.append(message)
             raise KeyboardInterrupt
 
-        for _attempt in range(4):   # `free_port()` only says a port WAS free: a lost bind ends with BLOCKED before the first log line
+        for _attempt in range(4):   # `free_port()` only says a port WAS free: a lost bind ends with BLOCKED before the first log line (only that is retried)
             args = Namespace(path=str(case.root), layers=[f'core={ROOT / "library"}'], port=base.free_port(), plan=None,
                              host='127.0.0.1', approve_host=[], read_host=[], no_approvals=False, session_url=None, poll=0.2,
                              verbose=False, prototype_port=None)
             out = io.StringIO()
             with mock.patch.object(dh, 'log', side_effect=interrupted), contextlib.redirect_stdout(out):
                 code = dh.serve_command(args)
-            if calls or 'BLOCKED' not in out.getvalue():
+            if calls or not lost_bind(out.getvalue()):
                 break
         self.assertEqual(code, 0, out.getvalue())
         report = json.loads(out.getvalue())

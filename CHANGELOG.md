@@ -14,7 +14,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ### Changed
 
-- Tests only, no change of the product: servers started in a thread (`HttpCase` and the other test servers) and `prototype serve` bind through the retrying helper `bind_free`, so a port that `free_port()` reported free but another process took before the bind no longer fails a test at random. `tests/serve_start.py` on Windows kills the whole process tree (`taskkill /T` by the own pid), ignores a state file left by a killed predecessor and retries only a lost bind. The subprocess tests of `dashboard serve` (`dashboard_server`, `dashboard_approve_token`) now run on Windows up to the stop; the assertions about a graceful stop stay POSIX-only, because the server handles only SIGTERM there.
+- Tests only, no change of the product: servers started in a thread (`HttpCase` and the other test servers) bind through the retrying helper `bind_free`, and the tests of `prototype serve` and of the SIGINT start window retry a lost bind on another port, so a port that `free_port()` reported free but another process took before the bind no longer fails a test at random. `tests/serve_start.py` on Windows kills the whole process tree (`taskkill /T` by the own pid), ignores a state file left by a killed predecessor and retries only a lost bind. The subprocess tests of `dashboard serve` (`dashboard_server`, `dashboard_approve_token`) now run on Windows up to the stop; the assertions about a graceful stop stay POSIX-only, because the server handles only SIGTERM there.
 
 ## [1.6.0] - 2026-11-16
 

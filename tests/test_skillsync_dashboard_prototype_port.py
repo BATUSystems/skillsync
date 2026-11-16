@@ -17,7 +17,7 @@ sys.path.insert(0, str(ROOT))
 
 from skillsync_workflow import prototype as pt  # noqa: E402
 from tests import test_skillsync_dashboard_server as base  # noqa: E402
-from tests.serve_start import start_serve  # noqa: E402
+from tests.serve_start import kill_tree, start_serve, stop_serve  # noqa: E402
 
 CLI, free_port, srv = base.CLI, base.free_port, base.srv
 
@@ -48,8 +48,7 @@ class DashboardPortTests(base.ServeCommandTests):
         proc, port = start_serve(self, CLI, self.root, self.layer, self.env, free_port, *args)
         with urllib.request.urlopen(f'http://127.0.0.1:{port}/api/status', timeout=5) as response:
             data = json.load(response)
-        proc.terminate()
-        proc.communicate(timeout=15)
+        stop_serve(proc)   # Windows: the whole tree, not only the launcher of the venv
         return data['prototype']['port']
 
     def test_default_is_5130(self):
@@ -75,8 +74,8 @@ class DashboardPortTests(base.ServeCommandTests):
             path.write_text(manifest + 'prototype:\n  port: %d\n' % port, encoding='utf-8')
             proc = subprocess.Popen([sys.executable, str(CLI), 'prototype', 'serve', str(self.root), *self.layer],
                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=self.env)
-            self.addCleanup(lambda proc=proc: proc.poll() is None and proc.kill())
-            watchdog = threading.Timer(30, proc.kill)
+            self.addCleanup(lambda proc=proc: kill_tree(proc))
+            watchdog = threading.Timer(30, kill_tree, args=(proc,))
             watchdog.start()
             lines = []
             try:
@@ -91,7 +90,7 @@ class DashboardPortTests(base.ServeCommandTests):
                 return
             finally:
                 watchdog.cancel()
-                proc.kill()
+                kill_tree(proc)
                 proc.communicate(timeout=15)
         self.fail('the server did not announce its address: ' + ''.join(lines))
 

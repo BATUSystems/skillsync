@@ -23,16 +23,19 @@ def bind_free(factory, free_port, attempts=5):
 
     `factory(port)` creates the bound server (e.g. `make_server`); an `OSError` "address in use" moves on to the next port from the pool, any other
     error is raised at once. Returns `(server, port)`. For servers in a thread: a subprocess uses `start_serve`."""
-    last = None
+    if attempts < 1:
+        raise ValueError(f"attempts must be at least 1, got {attempts}")
+    last, tried = None, []
     for _attempt in range(attempts):
         port = free_port()
+        tried.append(port)
         try:
             return factory(port), port
         except OSError as error:
             if error.errno not in ADDRESS_IN_USE:
                 raise
             last = error
-    raise last
+    raise OSError(last.errno, f"no free port after {attempts} tries (ports {tried}): {last.strerror}") from last
 
 
 def state_files(env):
@@ -121,7 +124,10 @@ def stop_serve(proc, windows=None):
 
 
 def lost_bind(output):
-    """Does the output of a finished server say that the BIND was lost (retry on another port)? Another BLOCKED (a configuration error) is not retried (SV4)."""
+    """Does the output of a finished server say that the BIND was lost (retry on another port)? Another BLOCKED (a configuration error) is not retried (SV4).
+
+    It matches the Polish word of the production message ("nie można nasłuchiwać") in the decoded stdout. A Windows run without `PYTHONUTF8=1`
+    (CI sets it) can decode the word wrongly: the retry is then off and the start fails at once, which is safe but not obvious."""
     return "BLOCKED" in output and "nasłuchiwać" in output
 
 

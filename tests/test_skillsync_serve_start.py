@@ -17,7 +17,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests"))
 
 from skillsync_workflow import dashboard_token  # noqa: E402
-from serve_start import bind_free, kill_tree, lost_bind, own_state, state_snapshot, stop_serve  # noqa: E402
+from serve_start import ATTEMPTS, bind_free, kill_tree, lost_bind, own_state, start_serve, state_snapshot, stop_serve  # noqa: E402
 
 
 class OwnState(unittest.TestCase):
@@ -94,6 +94,7 @@ class KillTree(unittest.TestCase):
         with mock.patch.dict(os.environ, {"SystemRoot": r"C:\Windows"}), mock.patch("serve_start.subprocess.run") as run:
             kill_tree(proc, windows=True)
         command = run.call_args.args[0]
+        self.assertFalse(run.call_args.kwargs.get("shell"), "a list of arguments, no shell")
         self.assertEqual(command[1:], ["/T", "/F", "/PID", "4242"])
         self.assertTrue(command[0].lower().endswith("taskkill.exe") and "system32" in command[0].lower(), command)
         proc.kill.assert_called_once()   # still alive in the mock: the launcher is killed too
@@ -117,6 +118,36 @@ class KillTree(unittest.TestCase):
             kill_tree(proc, windows=True)
         run.assert_not_called()
         proc.kill.assert_not_called()
+
+
+class StartServeAttempts(unittest.TestCase):
+    """`start_serve` against a fake CLI that always ends with the given output, to count the tries."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="serve-start-attempts-"))
+        self.addCleanup(lambda: __import__("shutil").rmtree(self.tmp, ignore_errors=True))
+        self.counter = self.tmp / "tries.txt"
+        self.env = {**os.environ, "XDG_DATA_HOME": str(self.tmp / "xdg-data"), "LOCALAPPDATA": str(self.tmp / "xdg-data"),
+                    "HOME": str(self.tmp / "home"), "USERPROFILE": str(self.tmp / "home"), "PYTHONUTF8": "1"}
+        self.root = self.tmp / "proj"
+        self.root.mkdir()
+
+    def cli(self, reason):
+        path = self.tmp / "fake_cli.py"
+        path.write_text("import json, sys\nopen(%r, 'a').write('x')\nprint(json.dumps({'status': 'BLOCKED', 'reason': %r}, ensure_ascii=False))\n"
+                        "sys.exit(2)\n" % (str(self.counter), reason), encoding="utf-8")
+        return path
+
+    def test_a_lost_bind_is_retried_until_the_attempts_run_out(self):
+        with self.assertRaises(AssertionError) as raised:
+            start_serve(self, self.cli("nie można nasłuchiwać na 127.0.0.1:5190 (Address already in use)"), self.root, [], self.env, lambda: 5190)
+        self.assertEqual(len(self.counter.read_text()), ATTEMPTS)
+        self.assertIn("did not start", str(raised.exception))
+
+    def test_a_configuration_error_is_not_retried(self):
+        with self.assertRaises(AssertionError):
+            start_serve(self, self.cli("--plan: nieznany plik"), self.root, [], self.env, lambda: 5190)
+        self.assertEqual(len(self.counter.read_text()), 1)
 
 
 class StopServe(unittest.TestCase):
@@ -192,6 +223,12 @@ class BindFree(unittest.TestCase):
             bind_free(factory, lambda: 5190, attempts=3)
         self.assertEqual(raised.exception.errno, errno.EADDRINUSE)
         self.assertEqual(len(calls), 3)
+        self.assertIn("3 tries", str(raised.exception))
+        self.assertIn("5190", str(raised.exception))
+
+    def test_no_attempt_at_all_is_a_usage_error(self):
+        with self.assertRaises(ValueError):
+            bind_free(lambda port: "never", lambda: 5190, attempts=0)
 
     def test_a_really_occupied_port_loses_against_the_retry(self):
         with socket.socket() as holder:
