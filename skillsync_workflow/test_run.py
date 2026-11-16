@@ -103,10 +103,25 @@ def __getattr__(name):   # `test_run.TOOLS` and `MAX_WRAPPER_LAYERS` stay readab
 
 
 def _base(word):
-    return re.sub(r'\.(exe|cmd|bat)$', '', Path(str(word)).name.lower())
+    """The lower-case name of a command word without directories (both separators, whatever the system), quotes, `.exe|.cmd|.bat` and `@version` (`jest@29`)."""
+    name = str(word).strip('\'"').replace('\\', '/').rsplit('/', 1)[-1].lower()
+    name = re.sub(r'\.(exe|cmd|bat)$', '', name.strip('\'"'))
+    return re.sub(r'(?<=.)@[^@/]*$', '', name)
 
 
-def _skip_flags(words, boolean, valued, end_at_double_dash=True, stop=None):
+def _split(command):
+    """The words of a command given as an argv list, a tuple or a shell string; a string that cannot be split (an open quote) gives no words, never an exception."""
+    if isinstance(command, (list, tuple)):
+        return [str(word) for word in command]
+    if isinstance(command, str):
+        try:
+            return shlex.split(command, posix=os.name != 'nt')
+        except ValueError:
+            return []
+    return []
+
+
+def _skip_flags(words, boolean, valued, end_at_double_dash=True, stop=None, numeric=False):
     """Index of the first word after the flags of a wrapper, or None when a flag is not known (nothing is guessed)."""
     i = 0
     while i < len(words):
@@ -118,6 +133,12 @@ def _skip_flags(words, boolean, valued, end_at_double_dash=True, stop=None):
         if not word.startswith('-') or word == '-':
             return i
         name = word.split('=', 1)[0]
+        if numeric and re.fullmatch(r'-\d+', word):
+            i += 1
+            continue
+        if len(word) > 2 and word[0] == '-' and word[1] != '-' and word[:2] in valued and '=' not in word:
+            i += 1   # a short flag with its value attached: `-n10`
+            continue
         if name in valued:
             i += 1 if '=' in word else 2
         elif name in boolean and '=' not in word:
@@ -148,7 +169,7 @@ def _unwrap_once(argv):
         if skip is None or rest[skip:skip + 1] != [spec['module_flag']] or skip + 1 >= len(rest):
             return None
         return rest[skip + 1:]
-    skip = _skip_flags(rest, boolean, valued)
+    skip = _skip_flags(rest, boolean, valued, numeric=bool(spec.get('numeric_flag')))
     if skip is None:
         return None
     rest = rest[skip:][int(spec.get('positional') or 0):]
@@ -162,8 +183,7 @@ def unwrap_command(command):
     """The argv of the command behind the wrappers of the table (`npx`, `npm exec`, `pnpm exec|dlx`, `yarn`, `timeout`, `env`, `time`, `nice`, `systemd-run`,
     `uv run`, `python -m`), at most `max_layers` of them. `command` is an argv list or a shell string. A wrapper or a flag that is not in the table stops the
     unwrapping (the words so far are returned), and more layers than the limit return the original argv: nothing is guessed."""
-    argv = list(command) if isinstance(command, (list, tuple)) else shlex.split(command, posix=os.name != 'nt') if isinstance(command, str) else []
-    argv = [str(word) for word in argv]
+    argv = _split(command)
     current = argv
     for _ in range(tool_table()['layers']):
         if not current:
@@ -180,7 +200,7 @@ def detect_tool(command):
     the table behind the known wrappers (`npx playwright test` -> `playwright`, `timeout -k 5 100 cargo test` -> `cargo`), else the first three words as before,
     else `unknown`. Public and stable: the one table of the tools (`data/test_tools.json`) for every consumer (the adapters, the hook of tests outside test-run)."""
     table = tool_table()
-    argv = command if isinstance(command, list) else shlex.split(command, posix=os.name != 'nt') if isinstance(command, str) else []
+    argv = _split(command)
     words = [_base(word) for word in argv]
     for word, tool in table['modules'].items():
         if word in words:

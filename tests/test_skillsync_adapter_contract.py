@@ -43,6 +43,14 @@ TABLE = (
     ('npx jest', 'jest'),
     ('npx cypress run', 'cypress'),
     ('timeout 600 npx playwright test', 'playwright'),
+    ('nice -10 npx playwright test', 'playwright'),
+    ('nice -n10 npx playwright test', 'playwright'),
+    ('time -v npx playwright test', 'playwright'),
+    ('time -f %e -o out.txt npx jest', 'jest'),
+    ('npx playwright@latest test', 'playwright'),
+    ('npx jest@29', 'jest'),
+    ('C:\\\\tools\\\\npx.CMD -y jest', 'jest'),
+    ('"C:\\\\tools\\\\npx.cmd" jest', 'jest'),
     ('systemd-run --user --scope -p MemoryMax=3G -- cargo test', 'cargo'),
     ('systemd-run -p MemoryMax=3G cargo test', 'cargo'),
     # opaque scripts: no guessing
@@ -121,6 +129,10 @@ class Unwrapping(unittest.TestCase):
     def test_more_layers_than_the_limit_return_the_original_argv(self):
         argv = ['env'] * 7 + ['cargo', 'test']
         self.assertEqual(test_run.unwrap_command(argv), argv)
+
+    def test_an_unclosed_quote_is_no_exception(self):
+        self.assertEqual(test_run.detect_tool('echo "abc'), 'unknown')
+        self.assertEqual(test_run.unwrap_command('echo "abc'), [])
 
     def test_nothing_behind_the_wrapper_is_no_exception(self):
         for command in ('env', 'timeout', 'timeout 5', 'npx', 'systemd-run --user', ''):

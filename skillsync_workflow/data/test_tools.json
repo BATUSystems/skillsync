@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "about": "Data shared by test_run.detect_tool and the standalone hook of tests outside test-run. Order of `tools` is significant (first match wins). The syntax of the wrappers is described by the fields of each wrapper: boolean/valued flags, subcommands (the wrapper applies only when the next word is one of them, and it is consumed), tool_words (the next word may itself be a tool word: `yarn playwright test`), positional (words after the flags that belong to the wrapper: the DURATION of timeout), assignments (NAME=VALUE words: env), module_flag (python -m MODULE). A flag that is not listed stops the unwrapping.",
+ "about": "Data shared by test_run.detect_tool and the standalone hook of tests outside test-run. Order of `tools` is significant between entries of the same word (first match wins); the word of the command that decides is the first one behind the wrappers, then the first three words. The syntax of the wrappers is described by the fields of each wrapper: boolean/valued flags, subcommands (the wrapper applies only when the next word is one of them, and it is consumed), tool_words (the next word may itself be a tool word: `yarn playwright test`), positional (words after the flags that belong to the wrapper: the DURATION of timeout), assignments (NAME=VALUE words: env), module_flag (python -m MODULE). A flag that is not listed stops the unwrapping. numeric_flag: a flag like -10 (nice).",
  "max_layers": 6,
  "tools": [
   {
@@ -195,7 +195,19 @@
   {
    "word": "time",
    "boolean": [
-    "-p"
+    "-p",
+    "-v",
+    "--verbose",
+    "-a",
+    "--append",
+    "-q",
+    "--quiet"
+   ],
+   "valued": [
+    "-f",
+    "--format",
+    "-o",
+    "--output"
    ]
   },
   {
@@ -203,7 +215,8 @@
    "valued": [
     "-n",
     "--adjustment"
-   ]
+   ],
+   "numeric_flag": true
   },
   {
    "word": "systemd-run",
