@@ -148,6 +148,62 @@ class AcceptanceSignal(unittest.TestCase):
             self.assertEqual(self.needs('pr'), [])
         self.assertEqual(len([c for c in calls if c[0] == 'git']), 2)
 
+    def test_a_status_line_in_the_body_never_reopens_the_plan(self):
+        self.write_plan(plan())
+        self.approve('READY', self.git('rev-parse', 'HEAD'))
+        self.write_plan(plan(extra='\n' * 40 + 'Status: PASS\n- Status: BLOCKED\n> Status: draft\n'))
+        self.assertEqual(self.needs('pr'), [])
+        self.write_plan(plan(extra='\n' * 40))                                     # removing such lines is no reopening either
+        self.assertEqual(self.needs('pr'), [])
+
+    def test_other_header_forms_of_a_reopening_are_noticed(self):
+        for reopened in ('**Status:** in_progress', '- Status: draft', '> Status: in_progress'):
+            with self.subTest(reopened=reopened):
+                self.write_plan(plan())
+                self.approve('READY', self.git('rev-parse', 'HEAD'))
+                self.write_plan(plan().replace('Status: done', reopened, 1))
+                self.write_plan(plan())
+                self.assertEqual(self.needs('pr'), ['acceptance'])
+                self.write_plan(plan('draft'))     # leave the file reopened for the next form; the entry stays stale
+                self.write_plan(plan())
+                self.git('commit', '-q', '--allow-empty', '-m', 'x')
+
+    def test_a_failing_git_log_with_a_nonzero_exit_closes_nothing(self):
+        self.write_plan(plan())
+        self.approve('READY', self.git('rev-parse', 'HEAD'))
+        real = subprocess.run
+
+        def broken(command, *args, **kwargs):
+            if 'log' in command:
+                return subprocess.CompletedProcess(command, 128, b'', b'fatal')
+            return real(command, *args, **kwargs)
+        with mock.patch.object(status.subprocess, 'run', broken):
+            self.assertEqual(self.needs('pr'), ['acceptance'])
+
+    def test_an_entry_on_a_commit_outside_the_history_of_head_closes_nothing(self):
+        self.write_plan(plan('in_progress'))
+        self.write_plan(plan())
+        sha = self.git('rev-parse', 'HEAD')
+        self.git('reset', '-q', '--hard', 'HEAD~1')
+        self.commit('other')                                                       # another history (a rebuilt commit would get the same sha)
+        self.write_plan(plan())                                                    # the same plan rebuilt on top of it
+        self.approve('READY', sha)
+        self.assertEqual(self.needs('pr'), ['acceptance'])
+
+    def test_several_lines_of_the_same_word_in_the_run_still_cost_two_git_calls(self):
+        self.write_plan(plan())
+        sha = self.git('rev-parse', 'HEAD')
+        for _ in range(5):
+            self.approve('CP', sha)
+        real, calls = subprocess.run, []
+
+        def counting(command, *args, **kwargs):
+            calls.append(command)
+            return real(command, *args, **kwargs)
+        with mock.patch.object(status.subprocess, 'run', counting):
+            self.assertEqual(self.needs('direct'), [])
+        self.assertEqual(len([c for c in calls if c[0] == 'git']), 2)
+
     def test_a_sha_outside_the_repo_or_junk_closes_nothing(self):
         self.write_plan(plan())
         for sha in ('f' * 40, 'abcdef1', 'not-a-sha', '', '--help'):

@@ -14,7 +14,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ### Fixed
 
-- `skillsync status`: the `acceptance` signal no longer stays silent when a plan was reopened after the closing word and closed again. An entry in `approvals.jsonl` closes a plan only if no later commit changed its `Status:` line to a word other than `done` (one extra `git log` per plan with a matching entry; any git error means the entry closes nothing). Edits of the text after `done` and mentions of status in the body do not count as a reopening.
+- `skillsync status`: the `acceptance` signal no longer stays silent when a plan was reopened after the closing word and closed again. An entry in `approvals.jsonl` closes a plan only if no later commit changed its `Status:` line (first 30 lines of the plan) to a word other than `done` (one extra `git log` per plan with a matching entry; any git error means the entry closes nothing). Edits of the text after `done` and `Status:` lines and mentions of status in the body do not count as a reopening.
 
 ### Documentation
 

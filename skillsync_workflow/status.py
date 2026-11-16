@@ -235,10 +235,15 @@ def _plan_done_at(root, sha, rel):
     return _status_fields(result.stdout.decode('utf-8', 'replace'), PLAN_STATUSES)[0] == 'done'
 
 
+PLAN_HEADER_LINES = 30   # the `Status:` line of a plan sits in its header; the same word in the body is not the plan's status
+_HUNK = re.compile(r'^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@')
+
+
 def _plan_status_kept_since(root, sha, rel):
-    """True when no commit after `sha` (`sha..HEAD`, one git call) touched a `Status:` line of the plan `rel` with a word other than `done`:
-    the plan was not reopened since the entry. Edits of the text after the word (`done (note)`) and body lines that merely mention status
-    are not a reopening. Any git error, a timeout or an oversized history is False: the closing is then not counted (fail-safe)."""
+    """True when no commit after `sha` (`sha..HEAD`, one git call, merge commits show no diff) touched a `Status:` line in the first
+    `PLAN_HEADER_LINES` lines of the plan `rel` with a word other than `done`: the plan was not reopened since the entry. Edits of the text
+    after the word (`done (note)`), body lines and mentions of status are not a reopening. Any git error, a timeout or an oversized history is
+    False: the closing is then not counted (fail-safe)."""
     try:
         result = subprocess.run(['git', '-C', str(root), 'log', '-p', '-U0', '--no-color', '--no-ext-diff', '--format=', f'{sha}..HEAD', '--', rel],
                                 capture_output=True, timeout=10, check=False)
@@ -246,11 +251,22 @@ def _plan_status_kept_since(root, sha, rel):
         return False
     if result.returncode != 0 or len(result.stdout) > MAX_PLAN_BYTES * 8:
         return False
+    old = new = 0
     for line in result.stdout.decode('utf-8', 'replace').splitlines():
-        if line[:1] in '+-' and line[:3] not in ('+++', '---'):
-            match = _STATUS.match(line[1:])
-            if match and match.group('word').lower() != 'done':
-                return False
+        hunk = _HUNK.match(line)
+        if hunk:
+            old, new = int(hunk.group(1)), int(hunk.group(2))
+            continue
+        if line[:1] not in ('+', '-') or line[:3] in ('+++', '---'):
+            continue
+        number = new if line[0] == '+' else old
+        if line[0] == '+':
+            new += 1
+        else:
+            old += 1
+        match = _STATUS.match(line[1:]) if number <= PLAN_HEADER_LINES else None
+        if match and match.group('word').lower() != 'done':
+            return False
     return True
 
 
@@ -274,7 +290,7 @@ def acceptance_pending(status, text, context, rel=None):
         return False
     return not any(row['run'] == run.group(1) and row['word'] == word and _plan_done_at(context.get('root'), row.get('sha'), rel)
                    and _plan_status_kept_since(context.get('root'), row.get('sha'), rel)
-                   for row in context.get('approvals', []))
+                   for row in context.get('approvals', []))   # `read_approvals` keeps one entry per (run, word): at most two git calls per plan
 
 
 def plan_needs_human(status, steps, ticket=False, pr=False):
