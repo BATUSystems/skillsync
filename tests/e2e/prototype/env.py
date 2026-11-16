@@ -259,6 +259,13 @@ def _pid_record(pid, members=None):
     return json.dumps(record)
 
 
+def _write_atomic(path, text):
+    """A reader (or a crash) never sees half a file: the text goes to a temporary file first, then replaces `path` in one step."""
+    temporary = path.with_name(path.name + '.tmp')
+    temporary.write_text(text)
+    os.replace(temporary, path)
+
+
 def record_members(env):
     """Writes the helpers that live now into `chrome.pid`: a helper that left the process group cannot be found by anything else once the
     leader has died (the tree is gone, the group no longer names it). Called after the start; may be called again."""
@@ -272,13 +279,12 @@ def record_members(env):
         return False
     if not is_ours(pid_file, record, table.get(record['pid'])):
         return False
-    temporary = pid_file.with_name('chrome.pid.tmp')
-    temporary.write_text(_pid_record(record['pid'], collect_members(record['pid'], table)))
-    os.replace(temporary, pid_file)
+    _write_atomic(pid_file, _pid_record(record['pid'], collect_members(record['pid'], table)))
     return True
 
 
 def start_chrome(env, binary):
+    require_supported()
     port = env['chromePort']
     workdir = Path(env['workdir'])
     profile = workdir / 'chrome-profile'
@@ -306,7 +312,7 @@ def start_chrome(env, binary):
                              stdout=log, stderr=log, stdin=subprocess.DEVNULL, start_new_session=True, env=child_env)
     log.close()   # the child has its own copy of the descriptor
     CHILDREN[child.pid] = child
-    (workdir / 'chrome.pid').write_text(_pid_record(child.pid))
+    _write_atomic(workdir / 'chrome.pid', _pid_record(child.pid))
     if not wait_port(port):
         stop_pid(child.pid)
         raise RuntimeError('Chrome did not open the debugging port %d' % port)
@@ -324,34 +330,68 @@ CHILDREN = {}   # Popen objects of the processes started here (waited for after 
 START_TOLERANCE = 2   # seconds: `ps` start times have a one second resolution
 GRACE = 6             # seconds between SIGTERM and SIGKILL
 KILL_WAIT = 5         # seconds to wait for the death after SIGKILL
-_PS_ROW = re.compile(r'^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(.+?)\s*$')
+_PS_ROW = re.compile(r'^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(\S+)\s+(.+?)\s*$')
+_ETIME = re.compile(r'^(?:(?:(\d+)-)?(\d+):)?(\d+):(\d+)$')   # [[dd-]hh:]mm:ss, the same on procps and BSD (macOS)
 
 
-def _parse_start(text):
+def _parse_elapsed(text):
+    match = _ETIME.match(text)
+    if not match:
+        return None
+    days, hours, minutes, seconds = (int(item or 0) for item in match.groups())
+    return ((days * 24 + hours) * 60 + minutes) * 60 + seconds
+
+
+def _mktime(parsed, isdst):
     try:
-        return int(time.mktime(time.strptime(' '.join(text.split()), '%a %b %d %H:%M:%S %Y')))
+        return int(time.mktime(parsed + (isdst,)))
+    except (OverflowError, ValueError, OSError):
+        return None
+
+
+def _parse_start(text, elapsed=None, now=None):
+    """The start of a process as epoch seconds, from the `lstart` text (local time without an offset). Around a DST change the same local
+    time names two instants (or none): `mktime` is tried with every `isdst` and the candidate nearest to `now - elapsed` (what `etime` says)
+    wins, so a zone change or the DST hour never moves the start by an hour. Without `elapsed` the plain `mktime` answer."""
+    try:
+        parsed = tuple(time.strptime(' '.join(text.split()), '%a %b %d %H:%M:%S %Y'))[:8]
     except ValueError:
         return None
+    plain = _mktime(parsed, -1)
+    if plain is None:
+        return None
+    if elapsed is None or now is None:
+        return plain
+    # A candidate the C library cannot give (some libc refuse a forced `isdst` in a zone without DST) is left out; the plain one remains.
+    candidates = {plain} | {item for item in (_mktime(parsed, 0), _mktime(parsed, 1)) if item is not None}
+    return min(candidates, key=lambda candidate: abs(candidate - (now - elapsed)))
+
+
+def parse_ps_table(text, now):
+    """`({pid: row}, number of unreadable lines)` from the output of `ps -A -o pid=,ppid=,pgid=,uid=,stat=,etime=,lstart=`."""
+    table, unreadable = {}, 0
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        match = _PS_ROW.match(line)
+        elapsed = _parse_elapsed(match.group(6)) if match else None
+        start = _parse_start(match.group(7), elapsed, now) if elapsed is not None else None
+        if start is not None:
+            pid = int(match.group(1))
+            table[pid] = {'pid': pid, 'ppid': int(match.group(2)), 'pgid': int(match.group(3)), 'uid': int(match.group(4)),
+                          'state': match.group(5), 'start': start}
+        else:
+            unreadable += 1
+    return table, unreadable
 
 
 def _table_from_ps():
     """The complete table or OSError: a non-zero exit status or a line that cannot be read means the table may be partial, and a partial
     table would make a living process look gone. One retry (a process that exits while `ps` runs can print a half line)."""
     for attempt in (1, 2):
-        result = subprocess.run(['ps', '-A', '-o', 'pid=,ppid=,pgid=,uid=,stat=,lstart='], capture_output=True, text=True, timeout=15,
+        result = subprocess.run(['ps', '-A', '-o', 'pid=,ppid=,pgid=,uid=,stat=,etime=,lstart='], capture_output=True, text=True, timeout=15,
                                 env=dict(os.environ, LC_ALL='C', LANG='C'), check=False)
-        table, unreadable = {}, 0
-        for line in result.stdout.splitlines():
-            if not line.strip():
-                continue
-            match = _PS_ROW.match(line)
-            start = _parse_start(match.group(6)) if match else None
-            if match and start is not None:
-                pid = int(match.group(1))
-                table[pid] = {'pid': pid, 'ppid': int(match.group(2)), 'pgid': int(match.group(3)), 'uid': int(match.group(4)),
-                              'state': match.group(5), 'start': start}
-            else:
-                unreadable += 1
+        table, unreadable = parse_ps_table(result.stdout, time.time())
         if result.returncode == 0 and not unreadable and table:
             return table
     raise OSError('ps gave an incomplete table (exit status %s, %d unreadable lines)' % (result.returncode, unreadable))
@@ -624,6 +664,7 @@ def stop_pid(pid, grace=None):
 def stop_all(env):
     """Stops every process of a PID file in the working directory. A file is removed only when its process is confirmed gone (or never
     was ours: gone, a reused PID, junk); a process that survives keeps its file, is reported on stderr and is returned."""
+    require_supported()
     workdir = Path(env['workdir'])
     survivors = {}
     for pid_file in sorted(set(workdir.glob('*.pid')) | set(workdir.glob('run-*/*.pid'))):
@@ -631,7 +672,13 @@ def stop_all(env):
             continue
         record = read_pid_file(pid_file)
         if record is None:
+            print('env: %s: not a PID file this module can read (no valid pid, or an invalid record); not signalled, file removed' % pid_file.name,
+                  file=sys.stderr)
             pid_file.unlink(missing_ok=True)
+            continue
+        if record.get('start') is None and not any(pid_file.name.startswith(prefix) for prefix, _needle in EXPECTED_CMDLINE):
+            print('env: %s: a plain-number PID file of an unknown kind (expected chrome*, static-*, serve-*); not signalled, file kept' % pid_file.name,
+                  file=sys.stderr)
             continue
         try:
             table = process_table()
@@ -672,14 +719,38 @@ def stop_all(env):
     return survivors
 
 
-if __name__ == '__main__':
-    command = sys.argv[1]
+UNSUPPORTED_EXIT = 2
+
+
+class Unsupported(RuntimeError):
+    """The step cannot run on this system (Windows): nothing was started or signalled."""
+
+
+def require_supported():
+    """Chrome and the servers are started and stopped here with POSIX process groups, `ps` and signals; Windows has none of them, so it ends at
+    once with a plain message instead of a stack trace half way through a start."""
+    if sys.platform == 'win32':
+        raise Unsupported('BLOCKED: the prototype E2E environment (Chrome start and cleanup by process identity) is not supported on Windows')
+
+
+def main(argv):
+    command = argv[0] if argv else ''
+    if command not in ('prepare', 'chrome', 'stop'):
+        return 'unknown command'
+    try:
+        require_supported()
+    except Unsupported as error:
+        print('env: %s' % error, file=sys.stderr)
+        return UNSUPPORTED_EXIT
     if command == 'prepare':
-        prepare(*sys.argv[2:7])
-        print('env: %s/env.json' % sys.argv[2])
+        prepare(*argv[1:6])
+        print('env: %s/env.json' % argv[1])
     elif command == 'chrome':
-        print('chrome pid', start_chrome(json.loads(Path(sys.argv[2]).read_text()), sys.argv[3]))
-    elif command == 'stop':
-        sys.exit(1 if stop_all(json.loads(Path(sys.argv[2]).read_text())) else 0)
+        print('chrome pid', start_chrome(json.loads(Path(argv[1]).read_text()), argv[2]))
     else:
-        sys.exit('unknown command')
+        return 1 if stop_all(json.loads(Path(argv[1]).read_text())) else 0
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv[1:]))
