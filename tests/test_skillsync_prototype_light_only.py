@@ -138,6 +138,34 @@ class InitAndMigrateTests(SpriteFixture):
         self.assertEqual([item for item in report.get('warnings', []) if 'dark_theme' in item], [])
 
 
+class WhatEntersTheScreenHashTests(SpriteFixture):
+    """The claim of `docs/prototypes.md` about the engine files (checked on the code, 180-P): the style sheets of the prototype change the
+    hash of every screen, the engine files `prototype.js` and `prototype.css` do not."""
+
+    def hashes(self, directory):
+        return ps.screen_hashes(str(directory))['screens']
+
+    def test_prototype_js_and_prototype_css_do_not_change_a_screen_hash_but_components_and_tokens_do(self):
+        directory = self.prepare()
+        base = self.hashes(directory)
+        for name, changes in (('prototype.js', False), ('prototype.css', False), ('components.css', True), ('screens.css', True),
+                              ('tokens.css', True), ('theme.css', True), ('project.css', True)):
+            with self.subTest(name=name):
+                path = directory / name
+                original = path.read_text(encoding='utf-8')
+                path.write_text(original + '\n/* changed */\n', encoding='utf-8')
+                self.assertEqual(self.hashes(directory) != base, changes)
+                path.write_text(original, encoding='utf-8')
+
+    def test_the_attributes_of_the_html_tag_do_not_change_a_screen_hash(self):
+        directory = self.prepare()
+        base = self.hashes(directory)
+        index = directory / 'index.html'
+        text = index.read_text(encoding='utf-8')
+        index.write_text(prototype.ensure_light_only(text, True)[0], encoding='utf-8')
+        self.assertEqual(self.hashes(directory), base)
+
+
 class MissingTokensTests(PrototypeFixture):
     TOKEN = '--zz-required-token'
 

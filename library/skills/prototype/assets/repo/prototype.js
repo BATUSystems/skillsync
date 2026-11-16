@@ -2394,7 +2394,7 @@
 
   const Remote = (() => {
     const state = {
-      mode: 'boot', user: null, csrf: null, server: null, ops: [], total: 0, prefix: '', people: emptyMap(), iteration: 1,
+      mode: 'boot', demo: false, user: null, csrf: null, server: null, ops: [], total: 0, prefix: '', people: emptyMap(), iteration: 1,
       version: null, screens: emptyMap(), acceptance: null, errors: 0, pending: 0, loaded: false,
       conn: 'ok',            // ok | offline | expired
       queueCount: 0, rejectedUnseen: 0, rejectedTotal: 0, retrying: false, blocked: null, pollProblem: null,
@@ -2470,6 +2470,7 @@
     // ----- stan na pasku -----
 
     const statusText = () => {
+      if (state.demo) return 'Pokaz · tylko do odczytu';
       if (state.mode === 'file') return 'Bez serwera';
       if (state.mode === 'readonly') return 'Tylko odczyt';
       if (state.mode === 'nodata') return 'Brak komentarzy dla tego prototypu';
@@ -2745,6 +2746,16 @@
         return false;
       }
       state.errors = 0;
+      // The read-only show (`prototype serve --demo`): no accounts, no comments and no write route; the server says so in the session answer.
+      if (session.status === 200 && isObject(session.json) && isObject(session.json.server) && session.json.server.demo === true) {
+        state.server = session.json.server;
+        state.demo = true;
+        state.mode = 'nodata';
+        state.user = null;
+        state.csrf = null;
+        publish();
+        return true;
+      }
       if (session.status === 200 && isObject(session.json) && has(session.json, 'user')) {
         applySession(session.json);
         try { await fetchOps(true); } catch (error) { state.errors += 1; }
@@ -3114,6 +3125,12 @@
         const text = Remote.statusText();
         if (save.textContent !== text) save.textContent = text;
         save.hidden = text === '';
+        if (Remote.state.demo === true) {
+          // The show has no comments, threads, login or acceptance: their tools are not offered (the server refuses every write anyway).
+          save.title = text;
+          [ToolbarUi.refs.clickable && ToolbarUi.refs.clickable.parentNode, ToolbarUi.refs.threads, ToolbarUi.refs.userSlot,
+            ToolbarUi.refs.acceptSlot, ToolbarUi.refs.iterSlot].forEach((node) => { if (node) node.hidden = true; });
+        }
         const role = Remote.state.rejectedUnseen > 0 || Remote.state.conn === 'expired' ? 'alert' : 'status';
         if (save.getAttribute('role') !== role) save.setAttribute('role', role);
         const signature = Remote.state.mode + ':' + (Remote.login() || '');
