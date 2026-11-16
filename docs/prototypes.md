@@ -512,6 +512,13 @@ oznacza to przez `question record`; programista dostaje informację, nie pytanie
   `file_too_large`); progi liczone są od rozmiaru przed zapisem. Drugi ekspert, który odpowiada na zamknięte pytanie, dostaje 409 `already_answered`.
 - Serwer ostrzega przy starcie, gdy istnieją konta `expert`, a serwer działa bez `--login-to-view`: bez niego prototypy i komentarze są
   jawne, więc uruchamiaj `serve` z `--login-to-view` i hasłami ustawionymi przez `--password-prompt`.
+- **Treść nie jest maskowana.** Serwer zapisuje i pokazuje komentarze do ekranów, odpowiedzi w wątkach, odpowiedzi i komentarze ekspertów,
+  `excerpt` pytań i etykiety elementów dokładnie tak, jak je wpisano: nie ma redakcji sekretów ani skanu treści po stronie serwera. Widzi je
+  każdy, kto ma dostęp do serwera, a bez `--login-to-view` także ktoś bez konta. Nie wpisuj haseł, kluczy ani tokenów; dla prototypów
+  pokazywanych poza zespołem używaj `--login-to-view`. Przy polach, w które człowiek wpisuje treść (strona `/_experts`, a w silniku okienko komentarza,
+  odpowiedź w wątku, edycja wpisu i powód przywrócenia ekranu), jest o tym uwaga; ostrzeżenie przy starcie serwera (`PUBLIC_READ_WARNING`) dotyczy trybu bez `--login-to-view`.
+  Uwaga w okienku komentarza i w wątku pojawia się w prototypie dopiero po `skillsync prototype migrate` (zmiana tylko w JS silnika, bez CSS:
+  akceptacje ekranów zostają ważne).
 
 ### Pytania do eksperta w gicie
 

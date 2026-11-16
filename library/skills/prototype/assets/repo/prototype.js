@@ -50,6 +50,8 @@
   const V1_COMMENTS_PREFIX = STORAGE.v1Comments;
   const THEME_KEY = STORAGE.theme;
   const MAX_TEXT = LIMITS.text;
+  // Decyzja „tylko ostrzeżenie i dokumentacja”: serwer nie maskuje treści, więc pole komentarza mówi, że widzą ją inni.
+  const UNMASKED_NOTE = 'Treść jest widoczna dla innych i nie jest maskowana: nie wpisuj haseł, kluczy ani tokenów.';
   const MAX_LABEL = LIMITS.label;
   const MAX_RESTORE_REASON = LIMITS.restoreReason;
 
@@ -2910,6 +2912,9 @@
 
   // ── 13i. UI: konto (chip, logowanie, hasło, menu), stan zapisu na pasku ──────────────────────────────────────
 
+  // Uwaga pod polem, w które człowiek wpisuje treść wysyłaną na serwer (komentarz, odpowiedź w wątku); bez serwera nic nie jest wysyłane.
+  const unmaskedNote = () => (isObject(Remote.state.server) ? Dom.make('p', { class: 't-hint', text: UNMASKED_NOTE }) : null);
+
   const AuthUi = (() => {
     let menu = null;
     let rememberedPassword = null;   // tylko w pamięci: hasło właśnie użyte do logowania (potrzebne przy wymuszonej zmianie)
@@ -3484,8 +3489,9 @@
       const cancel = Dom.make('button', { type: 'button', class: 'btn btn-outline btn-sm', text: 'Anuluj' });
       const hint = Dom.make('span', { class: 't-hint', text: 'Ctrl+Enter wysyła, Esc zamyka' });
       pop = Dom.make('div', { class: 'anno-composer-pop', role: 'group', 'aria-label': 'Nowy komentarz' }, [
-        Dom.make('p', { class: 'anno-composer-head', text: spec.head }), area, Dom.make('div', { class: 'row between' }, [hint, Dom.make('div', { class: 'row' }, [cancel, send])])
-      ]);
+        Dom.make('p', { class: 'anno-composer-head', text: spec.head }), area, unmaskedNote(),
+        Dom.make('div', { class: 'row between' }, [hint, Dom.make('div', { class: 'row' }, [cancel, send])])
+      ].filter(Boolean));
       owner = spec.element;
       document.body.appendChild(pop);
       place(spec.x, spec.y);
@@ -4157,6 +4163,8 @@
       });
       node.textContent = '';
       node.appendChild(area);
+      const note = unmaskedNote();
+      if (note) node.appendChild(note);
       node.appendChild(Dom.make('div', { class: 'row' }, [cancel, save]));
       area.focus();
       area.select();
@@ -4263,6 +4271,8 @@
       });
       send.addEventListener('click', submit);
       ui.compose.appendChild(area);
+      const note = unmaskedNote();
+      if (note) ui.compose.appendChild(note);
       ui.compose.appendChild(Dom.make('div', { class: 'row' }, [send]));
     };
 
@@ -4942,7 +4952,7 @@
 
       api = DialogsUi.open({
         title: 'Przywróć ekran ' + sid, returnFocus: origin,
-        nodes: [lead, fromLabel, select, views.node, previewBox, whyLabel, why, hint, effects, retry, alertBox],
+        nodes: [lead, fromLabel, select, views.node, previewBox, whyLabel, why, unmaskedNote(), hint, effects, retry, alertBox].filter(Boolean),
         actions: [{ key: 'cancel', label: 'Anuluj' }, { key: 'submit', label: 'Przywróć ekran', primary: true, run: submit }],
         initialFocus: () => select
       });

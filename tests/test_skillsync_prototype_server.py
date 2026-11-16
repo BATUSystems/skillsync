@@ -1464,6 +1464,7 @@ class StartupTests(ServerCase):
         _errors, warnings = ps.startup_checks(self.config())
         self.assertIn(ps.PUBLIC_READ_WARNING, warnings)
         self.assertIn('widoczne bez logowania', ps.PUBLIC_READ_WARNING)
+        self.assertIn('nie są maskowane', ps.PUBLIC_READ_WARNING)
         _errors, warnings = ps.startup_checks(self.config(login_to_view=True))
         self.assertNotIn(ps.PUBLIC_READ_WARNING, warnings)
         self.assertIn(ps.PUBLIC_READ_WARNING, self.server.app.warnings)

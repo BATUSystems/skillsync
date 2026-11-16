@@ -106,6 +106,9 @@ w ekranach, uchwytach ani akceptacji. Usuń go albo zostaw; własne ekrany to ko
   (`.skillsync/prototype/users.json`) musi być ignorowany przez git i nieśledzony (np. `.skillsync/` w `.gitignore`), inaczej
   `serve` kończy się BLOCKED. Odczyt jest publiczny, więc dla prototypów klienta dodaj `--login-to-view`. Za proxy z TLS użyj
   `--secure-cookies`.
+- Treść komentarzy, odpowiedzi (także ekspertów), `excerpt` pytań i etykiet **nie jest maskowana**: widzi ją każdy z dostępem do serwera
+  (bez logowania, gdy brak `--login-to-view`). Nie wpisuj w nie ani nie proponuj haseł, kluczy i tokenów; przy pytaniu do eksperta nie
+  wklejaj sekretów w `excerpt`.
 - Strona główna serwera to galeria liczona na żywo (slug, ekrany, otwarte komentarze, akceptacja); `skillsync prototype
   index <projekt>` zapisuje tę samą galerię do `<root>/index.html` dla `file://` i statycznego serwera (serwer wraca do
   tego pliku tylko, gdy galeria na żywo się nie powiedzie). `skillsync prototype list <projekt>` podaje prototypy z ekranami i liczbą otwartych wątków (JSON).

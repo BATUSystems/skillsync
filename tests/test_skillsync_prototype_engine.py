@@ -49,7 +49,7 @@ def find_node():
 # Kopia: tests/fixtures/prototype/engine-v2/ (SOURCE.md). Strona Pythona: skillsync_workflow/prototype_server.py.
 
 ENGINE_V2_DIR = Path(__file__).resolve().parent / 'fixtures' / 'prototype' / 'engine-v2'
-ENGINE_V2_SHA256 = 'c7aaa1affae570ca946ca0f6477f4f704a40532417ddc4c647284ac0bb6ef1e5'
+ENGINE_V2_SHA256 = 'e936940d81f8f409ab2ae487f4a792a9e77c2016d9dfb4f330cd008cc126f990'
 REFRESH_V2 = 'Odśwież kopię wg tests/fixtures/prototype/engine-v2/SOURCE.md i zaktualizuj ENGINE_V2_SHA256.'
 ENGINE_V2_PATH_ENV = 'SKILLSYNC_PROTOTYPE_ENGINE_V2_PATH'
 DIFF_SEEDS = (20261104, 7, 1234567, 99, 424242, 31337)
@@ -3262,6 +3262,68 @@ class PresentationModeSourceTests(unittest.TestCase):
         self.assertIn('.proto-presentation-bar { display: none; }', self.css)
         self.assertRegex(self.css, r'@media print \{\s*\.proto-presentation \.proto-presentation-bar \{ display: none; \}\s*\}')
         self.assertNotRegex(self.css, r'@media print[^}]*proto-screen-hidden')   # the hiding itself is not print-specific: the same rule prints one screen
+
+
+# Decyzja „tylko ostrzeżenie i dokumentacja” (1.6.1): okienko komentarza i pole odpowiedzi w wątku mówią, że treść jest widoczna dla innych
+# i nie jest maskowana. Zmiana tylko w JS silnika: CSS biblioteki zostaje bajtowo taki, jaki był w 1.6.0 (zmiana CSS może unieważnić
+# akceptacje ekranów po `prototype migrate`; przy celowej zmianie CSS zaktualizuj sumy i sprawdź pole `acceptance` wyniku `migrate`).
+# Sums of the three stylesheets as they were in the base of this change (release/1.6.1 @ 900b8cc, checked with `git diff` against it).
+ENGINE_CSS_SHA256 = {
+    'prototype.css': '4ebfbced06e45652455c5472dab0da7b53faa9b47189fedde4ab32ed4fb83aaa',
+    'components.css': '4ee53e98f567f655c484579aa36a19815e895ea9a1f6d68b1518879b15b54b7a',
+    'screens.css': 'ff17022f2eaf6d874d6b196ad87853b60c95f2a568b70767b1579607a9b96cb5',
+}
+UNMASKED_FORMULA = 'Treść jest widoczna dla innych i nie jest maskowana: nie wpisuj haseł, kluczy ani tokenów.'
+NOTE_HARNESS = r"""
+const vm = require('vm');
+const nodes = [];
+const ctx = { isObject: (v) => v !== null && typeof v === 'object' && !Array.isArray(v),
+  Dom: { make(tag, props) { const node = { tag, props }; nodes.push(node); return node; } }, Remote: { state: { server: null } }, out: [] };
+vm.createContext(ctx);
+vm.runInContext(process.argv[1], ctx);
+for (const server of [null, undefined, 'x', {}, { features: [] }]) {
+  ctx.Remote.state.server = server;
+  const note = vm.runInContext('unmaskedNote()', ctx);
+  ctx.out.push(note === null ? null : { tag: note.tag, class: note.props.class, text: note.props.text });
+}
+console.log(JSON.stringify(ctx.out));
+"""
+
+
+class EngineV2UnmaskedNoteTests(unittest.TestCase):
+    def setUp(self):
+        self.node, reason = find_node()
+        if not self.node:
+            self.skipTest(reason)
+        self.source = engine_v2_js().read_text(encoding='utf-8')
+
+    def test_the_note_appears_only_when_a_server_answered(self):
+        formula = re.search(r"^  const UNMASKED_NOTE = '([^']+)';$", self.source, re.M)
+        helper = re.search(r'^  const unmaskedNote = .*;$', self.source, re.M)
+        self.assertTrue(formula and helper, 'brak UNMASKED_NOTE albo unmaskedNote w silniku')
+        self.assertEqual(formula.group(1), UNMASKED_FORMULA)
+        done = subprocess.run([self.node, '-e', NOTE_HARNESS, formula.group(0) + '\n' + helper.group(0)], capture_output=True, text=True, timeout=60)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        shown = {'tag': 'p', 'class': 't-hint', 'text': UNMASKED_FORMULA}
+        self.assertEqual(json.loads(done.stdout), [None, None, None, shown, shown])   # no server (null, undefined, a non-object): no note
+
+    def test_both_composers_put_the_note_under_the_field_a_person_types_in(self):
+        self.assertEqual(len(re.findall(r'\bunmaskedNote\(\)', self.source)), 4, 'the comment pop-up, the thread reply, the edit of an entry and the restore reason')
+        pop = self.source[self.source.index("'aria-label': 'Nowy komentarz'"):]
+        self.assertRegex(pop[:400], r"area, unmaskedNote\(\),")
+        reply = self.source[self.source.index("'aria-label': 'Odpowiedź'"):]
+        self.assertRegex(reply[:3000], r'ui\.compose\.appendChild\(area\);\n\s+const note = unmaskedNote\(\);\n\s+if \(note\) ui\.compose\.appendChild\(note\);')
+
+    def test_the_edit_and_the_restore_reason_carry_the_note_too(self):
+        edit = self.source[self.source.index("'aria-label': 'Edytuj wpis'"):]
+        self.assertRegex(edit[:1800], r'node\.appendChild\(area\);\n\s+const note = unmaskedNote\(\);\n\s+if \(note\) node\.appendChild\(note\);')
+        self.assertIn('whyLabel, why, unmaskedNote(), hint, effects, retry, alertBox].filter(Boolean)', self.source)
+
+    def test_the_engine_stylesheets_are_byte_for_byte_those_of_1_6_0(self):
+        assets = Path(__file__).resolve().parents[1] / 'library' / 'skills' / 'prototype' / 'assets' / 'repo'
+        for name, expected in ENGINE_CSS_SHA256.items():
+            with self.subTest(name):
+                self.assertEqual(sha256(assets / name), expected, f'{name} zmieniony: zmiana CSS może unieważnić akceptacje ekranów po migrate')
 
 
 if __name__ == '__main__':
