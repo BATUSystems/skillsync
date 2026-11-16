@@ -62,6 +62,10 @@ class EnsureLightOnlyTests(unittest.TestCase):
         own = PAGE.replace('<html ', '<html data-theme="dark" ')
         self.assertEqual(prototype.ensure_light_only(own, False), (own, 'unchanged'))
 
+    def test_removal_needs_the_value_off_not_a_word_that_contains_it(self):
+        own = PAGE.replace('<html ', '<html data-proto-dark="coffee" ')
+        self.assertEqual(prototype.ensure_light_only(own, False), (own, 'unchanged'))
+
     def test_without_an_html_tag_nothing_changes(self):
         self.assertEqual(prototype.ensure_light_only('<p>x</p>', True), ('<p>x</p>', 'no_html'))
 
@@ -127,6 +131,12 @@ class InitAndMigrateTests(SpriteFixture):
         notes = [item for item in report.get('warnings', []) if 'dark_theme' in item]
         self.assertTrue(any('data-proto-dark="off"' in item for item in notes), notes)
         self.assertTrue(any('engine copy' in item for item in notes), notes)
+
+    def test_list_points_at_migrate_too(self):
+        self.init('demo')
+        self.set_prototype({'dark_theme': False})
+        notes = [item for item in self.proto('list').get('warnings', []) if 'dark_theme' in item]
+        self.assertEqual(len(notes), 2, notes)
 
     def test_sync_check_is_quiet_after_migrate(self):
         self.prepare()

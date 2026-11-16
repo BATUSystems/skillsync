@@ -6751,7 +6751,7 @@ class PrototypeRequestHandler(LingeringCloseMixin, BaseHTTPRequestHandler):
             return BaseHTTPRequestHandler.send_error(self, code, message, explain)
         self.close_connection = True
         try:
-            self._send(code if isinstance(code, int) else 400, b'Error\n', 'text/plain; charset=utf-8', None, 'no-store')
+            self._send(code if isinstance(code, int) else 400, b'Error\n', 'text/plain; charset=utf-8', {'Connection': 'close'}, 'no-store')
         except (OSError, ValueError):
             pass
 
@@ -6848,10 +6848,10 @@ class PrototypeRequestHandler(LingeringCloseMixin, BaseHTTPRequestHandler):
         """The ONE gate of the show, before any session, account or route is looked at (so no later route can be reached by mistake).
         Methods other than GET and HEAD: 405 `demo_read_only`. `/_api/v1/session`: the answer of a guest that says `demo`. Every other API
         route and every path that starts with `/_` (login, login link, expert pages): 404. The rest is static files, by the allow list of
-        `_demo_allowed`. Nothing is written, no cookie is set, no error text repeats the request."""
+        `_demo_static`. Nothing is written, no cookie is set, no error text repeats the request."""
         if method not in ('GET', 'HEAD'):
             self.close_connection = True
-            self._json(405, {'error': 'demo_read_only'}, {'Allow': 'GET, HEAD'})
+            self._json(405, {'error': 'demo_read_only'}, {'Allow': 'GET, HEAD', 'Connection': 'close'})
             return
         if path == _API_PREFIX + '/session':
             self._json(200, {'user': None, 'csrf': None,
@@ -6867,9 +6867,11 @@ class PrototypeRequestHandler(LingeringCloseMixin, BaseHTTPRequestHandler):
         self._static(path, query)
 
     def _demo_static(self, segments, target):
-        """`True` when the show may serve `segments` (the path below the root, as in `_static`). A positive list: the gallery, and below a
-        prototype its screens, engine, style sheets, `prototype.json` (trimmed, see `_demo_prototype_json`) and media; never the comment
-        log (`comments.json`, `comments.js`), `README.md`, `iterations/`, questions, or a file of an unknown kind."""
+        """`True` when the show may serve `segments` (the path below the root, as in `_static`; `target` = its real path). A positive list: the
+        gallery, and below a prototype its screens, engine, style sheets, `prototype.json` (trimmed, see `_demo_prototype_json`) and media; never
+        the comment log (`comments.json`, `comments.js`), `README.md`, `iterations/`, questions, or a file of an unknown kind. Both the requested
+        names and the real names (where a link inside a prototype leads) must pass, so a link cannot give a file the list refuses. A directory is
+        checked again after it became its `index.html` (`_static` calls this twice)."""
         if not segments:
             return True
         lowered = [segment.lower() for segment in segments]
@@ -6878,14 +6880,13 @@ class PrototypeRequestHandler(LingeringCloseMixin, BaseHTTPRequestHandler):
             return lowered[0] == 'index.html' or os.path.isdir(target)
         if any(name in _DEMO_DENIED_NAMES for name in lowered + real) or ITERATIONS_DIR in (lowered[1], real[1] if len(real) > 1 else None):
             return False
-        if real[-1] == PROTOTYPE_FILE and real != lowered:
-            return False   # an alias of `prototype.json` would give its untrimmed content
-        name = lowered[-1]
+        if PROTOTYPE_FILE in (lowered[-1], real[-1]) and not (len(segments) == 2 and real == lowered):
+            return False   # only `<slug>/prototype.json` itself (trimmed); a nested file or an alias would give the untrimmed content
         if os.path.isdir(target):
             return True
         if len(segments) == 2:
-            return name in _DEMO_PROTOTYPE_FILES or os.path.splitext(name)[1] in _DEMO_MEDIA
-        return os.path.splitext(name)[1] in _DEMO_MEDIA | _DEMO_TEXT
+            return all(name in _DEMO_PROTOTYPE_FILES or os.path.splitext(name)[1] in _DEMO_MEDIA for name in (lowered[-1], real[-1]))
+        return all(os.path.splitext(name)[1] in _DEMO_MEDIA | _DEMO_TEXT for name in (lowered[-1], real[-1]))
 
     def _demo_prototype_json(self, target):
         """The answer for `<slug>/prototype.json` in the show: `slug` and `title` only (the rest, such as the path of the requirements, is
@@ -6962,11 +6963,11 @@ class PrototypeRequestHandler(LingeringCloseMixin, BaseHTTPRequestHandler):
             return
         if os.path.isdir(target):
             if not trailing:
-                location = quote(decoded, safe='/') + '/' + ('?' + query if query else '')
+                location = quote(decoded, safe='/') + '/' + ('?' + query if query and not demo else '')
                 self._send(301, b'', None, {'Location': location}, 'no-cache')
                 return
             target = os.path.realpath(os.path.join(target, 'index.html'))
-            if not self._allowed_real(target):
+            if not self._allowed_real(target) or (demo and not self._demo_static(segments + ['index.html'], target)):
                 self._not_found()
                 return
         elif trailing:

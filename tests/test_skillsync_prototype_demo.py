@@ -186,6 +186,59 @@ class StaticInventoryTests(DemoCase):
         self.assertIn(HIDDEN_REQUIREMENTS, prototype.render_gallery(entries))   # the normal gallery keeps it
 
 
+class LinkTests(DemoCase):
+    """Links inside a prototype must not give a guest a file the positive list refuses (review S1, N2, N3)."""
+
+    def link(self, name, target):
+        path = os.path.join(self.demo, name)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        os.symlink(target, path)
+
+    def test_a_directory_whose_index_html_is_a_link_to_the_comment_log_is_not_served(self):
+        self.link('data/index.html', os.path.join(self.demo, 'comments.json'))
+        self.assertEqual(self.guest.get('/demo/data/').status, 404)
+        self.assertEqual(self.guest.get('/demo/data/index.html').status, 404)
+
+    def test_a_prototype_link_to_a_frozen_iteration_is_not_served(self):
+        os.symlink(os.path.join(self.demo, 'iterations', '1'), os.path.join(self.root, 'arch'))
+        self.assertEqual(self.guest.get('/arch/').status, 404)
+        self.assertEqual(self.guest.get('/arch/index.html').status, 404)
+        self.assertEqual(self.guest.get('/arch/prototype.json').status, 404)
+
+    def test_a_nested_prototype_json_is_not_served_untrimmed(self):
+        write(os.path.join(self.demo, 'sub', 'prototype.json'), json.dumps({'slug': 'x', 'requirements': HIDDEN_REQUIREMENTS}))
+        self.assertEqual(self.guest.get('/demo/sub/prototype.json').status, 404)
+
+    def test_a_link_with_a_harmless_name_to_a_file_of_another_kind_is_not_served(self):
+        write(os.path.join(self.demo, 'notes.yaml'), 'secret: ' + HIDDEN_TEXT)
+        self.link('x.png', os.path.join(self.demo, 'notes.yaml'))
+        self.link('data/y.txt', os.path.join(self.demo, 'notes.yaml'))
+        self.assertEqual(self.guest.get('/demo/x.png').status, 404)
+        self.assertEqual(self.guest.get('/demo/data/y.txt').status, 404)
+
+    def test_a_link_to_an_allowed_file_still_works(self):
+        self.link('data/copy.txt', os.path.join(self.demo, 'data', 'notes.txt'))
+        self.assertEqual(self.guest.get('/demo/data/copy.txt').status, 200)
+
+    def test_the_redirect_of_a_directory_does_not_repeat_the_query(self):
+        status, headers, body = self.raw('GET', '/demo/data?q=%s' % MARKER)
+        self.assertEqual(status, 301)
+        self.assertNotIn(MARKER, headers.get('Location'))
+
+
+class GateMutationTests(DemoCase):
+    def test_the_matrix_would_notice_a_missing_gate(self):
+        from unittest import mock
+
+        def no_gate(handler, method, path, query):
+            handler._static(path, query)   # the show without its gate: a POST would be answered like any path
+        with mock.patch.object(ps.PrototypeRequestHandler, '_demo', no_gate):
+            status, headers, body = self.raw('POST', '/_api/v1/prototypes/demo/operations', b'{}')
+        self.assertNotEqual(status, 405)
+        status, headers, body = self.raw('POST', '/_api/v1/prototypes/demo/operations', b'{}')
+        self.assertEqual(status, 405)
+
+
 class ErrorTextTests(DemoCase):
     def test_error_answers_do_not_repeat_the_request_or_show_a_stack(self):
         probes = ['/%s/x' % MARKER, '/demo/%s.png' % MARKER, '/_api/v1/%s' % MARKER, '/_%s' % MARKER, '/demo/%s/comments.json' % MARKER]
@@ -211,6 +264,7 @@ class ErrorTextTests(DemoCase):
 
     def test_an_unsupported_method_name_is_not_echoed(self):
         status, headers, body = self.raw('PROPFIND' + MARKER[:6], '/')
+        self.assertEqual(status, 405)
         self.assertNotIn(MARKER[:6].encode(), body)
 
     def test_an_internal_error_is_a_fixed_code(self):

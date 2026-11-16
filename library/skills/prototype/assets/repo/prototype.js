@@ -1610,7 +1610,9 @@
       const theme = lightOnly(document) ? 'light' : wanted;
       root().setAttribute('data-theme', theme);
       root().style.colorScheme = theme;
-      try { window.localStorage.setItem(THEME_KEY, theme); } catch (error) { /* pamięć niedostępna: motyw tylko na tę kartę */ }
+      if (!lightOnly(document)) {   // a light-only prototype stores nothing: removing the option must not pin a guest to light
+        try { window.localStorage.setItem(THEME_KEY, theme); } catch (error) { /* pamięć niedostępna: motyw tylko na tę kartę */ }
+      }
       Bus.emit('theme', theme);
     };
     // Wysokość paska (px, liczba całkowita) dla arkuszy: panel i lista ekranów zaczynają się pod nim.

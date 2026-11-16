@@ -1310,6 +1310,8 @@ def list_prototypes(root, manifest, clock=None):
             warnings.append(f'{entry["path"]}: {entry["error"]}')
         else:
             entry['writing'] = server.public_writing(str(directory), now_ms)
+            if not settings['dark_theme']:
+                warnings.extend(_light_only_notes(directory, slug))
         warnings.extend(entry_warnings)
         entries.append(entry)
     report = {'status': 'PASS', 'root': _relative(settings['root'], repo), 'prototypes': entries}
@@ -1558,7 +1560,7 @@ def ensure_light_only(html, light_only):
         status = 'added'
     else:
         found = dark_pattern.search(attributes)
-        if not found or 'off' not in found.group(0).lower():
+        if not found or not re.search(r'=\s*["\']?off["\']?(?=[\s/>]|$)', found.group(0), re.IGNORECASE):
             return html, 'unchanged'
         updated = theme_pattern.sub('', dark_pattern.sub('', attributes, count=1), count=1)
         status = 'removed'
@@ -2556,7 +2558,7 @@ def serve_prototypes(root, manifest, args, err=None):
     if demo and args.login_to_view:
         return {'status': 'BLOCKED', 'reason': '--demo and --login-to-view contradict each other: the show has no accounts and no login'}
     host = args.host if args.host is not None else (DEMO_HOST if demo else server.DEFAULT_HOST)
-    source_writes = not args.no_source_writes and _in_git_worktree(settings['root']) and not demo
+    source_writes = not demo and not args.no_source_writes and _in_git_worktree(settings['root'])
     config = server.ServerConfig(settings['root'], None if demo else users_file_path(repo, args.users), host=host, port=port,
                                  secure_cookies=args.secure_cookies, trust_proxy=args.trust_proxy,
                                  login_to_view=args.login_to_view, source_writes=source_writes, log=err,
