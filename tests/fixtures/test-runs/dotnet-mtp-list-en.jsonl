@@ -1,0 +1,14 @@
+{"meta": {"tool": "dotnet", "version": "dotnet SDK 10.0.114, Microsoft.Testing.Platform 2.5.1, xunit.v3.mtp-v2 4.0.2, net10.0", "command": ["dotnet", "test", "--no-build", "--list-tests"], "exit": 0, "merged": false, "env": {"LANG": "pl_PL.UTF-8", "DOTNET_CLI_UI_LANGUAGE": "en"}, "note": "--list-tests", "scrubbed": "paths, host and user names are replaced", "format": "one record per chunk read from the pipe: t = seconds since the start, fd = out|err, data = the text of the chunk"}}
+{"t": 1.19, "fd": "out", "data": "Discovering tests from "}
+{"t": 1.19, "fd": "out", "data": "<root>/dn/mtp/bin/Debug/net10.0/mtp.dll (net10.0|x64)"}
+{"t": 1.19, "fd": "out", "data": "\n"}
+{"t": 1.679, "fd": "out", "data": "\n"}
+{"t": 1.684, "fd": "out", "data": "Discovered 15 tests in assembly - <root>/dn/mtp/bin/Debug/net10.0/mtp.dll (net10.0|x64)\n"}
+{"t": 1.684, "fd": "out", "data": "  "}
+{"t": 1.684, "fd": "out", "data": "Demo.GreenTests.Adds\n  "}
+{"t": 1.684, "fd": "out", "data": "Demo.GreenTests.Prints\n  Demo.GreenTests.SlowOne\n  Demo.RedTests.Boom\n  Demo.RedTests.Throws\n  "}
+{"t": 1.684, "fd": "out", "data": "Demo.RedTests.SlowRed\n  Demo.SkippedTests.Later\n  Demo.SkippedTests.Ok\n  Demo.TheoryTests.Same(a: 1, b: 1)\n  "}
+{"t": 1.684, "fd": "out", "data": "Demo.TheoryTests.Same(a: 2, b: 2)\n  Demo.TheoryTests.Same(a: 3, b: 4)\n  Demo.TheoryTests.Length(s: \"ąę ść\", n: 5)\n  Demo.TheoryTests.Length(s: \"a b\", n: 3)\n  Demo.TheoryTests.Complex(xs: [1, 2])\n  Demo.TheoryTests.Complex(xs: [3])\n"}
+{"t": 1.684, "fd": "out", "data": "\n"}
+{"t": 1.685, "fd": "out", "data": "Discovered 15 tests.\n"}
+{"t": 1.685, "fd": "out", "data": "\n"}

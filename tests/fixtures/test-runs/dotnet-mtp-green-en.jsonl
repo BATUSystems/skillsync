@@ -1,0 +1,21 @@
+{"meta": {"tool": "dotnet", "version": "dotnet SDK 10.0.114, Microsoft.Testing.Platform 2.5.1, xunit.v3.mtp-v2 4.0.2, net10.0", "command": ["dotnet", "test", "--no-build", "--filter-class", "Demo.GreenTests"], "exit": 0, "merged": false, "env": {"LANG": "pl_PL.UTF-8", "DOTNET_CLI_UI_LANGUAGE": "en"}, "note": "MTP, normal output: passed tests are not printed", "scrubbed": "paths, host and user names are replaced", "format": "one record per chunk read from the pipe: t = seconds since the start, fd = out|err, data = the text of the chunk"}}
+{"t": 1.191, "fd": "out", "data": "Running tests from "}
+{"t": 1.191, "fd": "out", "data": "<root>/dn/mtp/bin/Debug/net10.0/mtp.dll (net10.0"}
+{"t": 1.191, "fd": "out", "data": "|x64)"}
+{"t": 1.192, "fd": "out", "data": "\n"}
+{"t": 3.308, "fd": "out", "data": "<root>/dn/mtp/bin/Debug/net10.0/mtp.dll (net10.0|x64) "}
+{"t": 3.308, "fd": "out", "data": "passed"}
+{"t": 3.308, "fd": "out", "data": " "}
+{"t": 3.308, "fd": "out", "data": "("}
+{"t": 3.308, "fd": "out", "data": "2s"}
+{"t": 3.308, "fd": "out", "data": " 117ms)"}
+{"t": 3.308, "fd": "out", "data": "\n"}
+{"t": 3.32, "fd": "out", "data": "\n"}
+{"t": 3.321, "fd": "out", "data": "Test run summary: "}
+{"t": 3.321, "fd": "out", "data": "Passed!\n"}
+{"t": 3.322, "fd": "out", "data": "  total: 3"}
+{"t": 3.322, "fd": "out", "data": "\n"}
+{"t": 3.322, "fd": "out", "data": "  failed: 0\n"}
+{"t": 3.322, "fd": "out", "data": "  succeeded: 3\n  skipped: 0\n"}
+{"t": 3.322, "fd": "out", "data": "  duration: "}
+{"t": 3.322, "fd": "out", "data": "2s 469ms\n"}

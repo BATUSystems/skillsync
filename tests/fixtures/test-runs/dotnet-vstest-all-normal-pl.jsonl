@@ -1,0 +1,73 @@
+{"meta": {"tool": "dotnet", "version": "dotnet SDK 10.0.114, VSTest 18.0.2, xunit.runner.visualstudio 3.1.5, xunit 2.9.3, net10.0", "command": ["dotnet", "test", "--no-build", "--logger", "console;verbosity=normal"], "exit": 1, "merged": false, "env": {"LANG": "pl_PL.UTF-8"}, "note": "all classes, localized", "scrubbed": "paths, host and user names are replaced", "format": "one record per chunk read from the pipe: t = seconds since the start, fd = out|err, data = the text of the chunk"}}
+{"t": 0.679, "fd": "out", "data": "Przebieg testu dla: <root>/dn/demo/bin/Debug/net10.0/demo.dll (.NETCoreApp,Version=v10.0)\n"}
+{"t": 0.734, "fd": "out", "data": "Wersja 18.0.2-dev (x64) VSTest\n"}
+{"t": 0.738, "fd": "out", "data": "\n"}
+{"t": 0.837, "fd": "out", "data": "Trwa rozpoczynanie wykonywania testu, czekaj...\n"}
+{"t": 0.868, "fd": "out", "data": "Łączna liczba plików testowych dopasowanych do określonego wzorca: 1.\n"}
+{"t": 1.351, "fd": "out", "data": "[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.5+1b188a7b0a (64-bit .NET 10.0.14)\n"}
+{"t": 1.435, "fd": "out", "data": "[xUnit.net 00:00:00.09]   Discovering: demo\n"}
+{"t": 1.5, "fd": "out", "data": "[xUnit.net 00:00:00.16]   Discovered:  demo\n"}
+{"t": 1.533, "fd": "out", "data": "[xUnit.net 00:00:00.19]   Starting:    demo\n"}
+{"t": 1.607, "fd": "out", "data": "[xUnit.net 00:00:00.27]     Demo.SkippedTests.Later [SKIP]\n[xUnit.net 00:00:00.27]       not ready"}
+{"t": 1.607, "fd": "out", "data": "\n"}
+{"t": 1.726, "fd": "out", "data": "  Powodzenie Demo.SkippedTests.Ok [3 ms]\n"}
+{"t": 1.726, "fd": "out", "data": "  Pominięto Demo.SkippedTests.Later [1 ms]\n"}
+{"t": 1.726, "fd": "out", "data": "  Powodzenie Demo.TheoryTests.Length(s: \"a b\", n: 3) [9 ms]\n"}
+{"t": 1.726, "fd": "out", "data": "  Powodzenie Demo.GreenTests.Adds [9 ms]\n"}
+{"t": 1.726, "fd": "out", "data": "  Powodzenie Demo.TheoryTests.Length(s: \"ąę ść\", n: 5) [< 1 ms]\n"}
+{"t": 1.726, "fd": "out", "data": "  Powodzenie Demo.TheoryTests.Same(a: 2, b: 2) [< 1 ms]\n"}
+{"t": 1.726, "fd": "out", "data": "  Powodzenie Demo.GreenTests.Prints [1 ms]\n"}
+{"t": 1.726, "fd": "out", "data": "[xUnit.net 00:00:00.34]       System.InvalidOperationException : kaput\n"}
+{"t": 1.726, "fd": "out", "data": "[xUnit.net 00:00:00.34]       Stack Trace:\n"}
+{"t": 1.726, "fd": "out", "data": "[xUnit.net 00:00:00.34]         <root>/dn/demo/Tests.cs(19,0): at Demo.RedTests.Throws()\n"}
+{"t": 1.726, "fd": "out", "data": "[xUnit.net 00:00:00.34]            at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)\n"}
+{"t": 1.726, "fd": "out", "data": "[xUnit.net 00:00:00.34]            at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)\n"}
+{"t": 1.726, "fd": "out", "data": "[xUnit.net 00:00:00.35]       Assert.Equal() Failure: Values differ\n"}
+{"t": 1.726, "fd": "out", "data": "[xUnit.net 00:00:00.35]       Expected: 3\n"}
+{"t": 1.726, "fd": "out", "data": "[xUnit.net 00:00:00.35]       Actual:   4\n"}
+{"t": 1.726, "fd": "out", "data": "[xUnit.net 00:00:00.35]       Stack Trace:\n"}
+{"t": 1.726, "fd": "out", "data": "[xUnit.net 00:00:00.35]         <root>/dn/demo/Tests.cs(35,0): at Demo.TheoryTests.Same(Int32 a, Int32 b)\n"}
+{"t": 1.726, "fd": "out", "data": "[xUnit.net 00:00:00.35]            at InvokeStub_TheoryTests.Same(Object, Span`1)\n"}
+{"t": 1.726, "fd": "out", "data": "[xUnit.net 00:00:00.35]            at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)\n"}
+{"t": 1.726, "fd": "out", "data": "[xUnit.net 00:00:00.35]       Assert.Equal() Failure: Values differ\n"}
+{"t": 1.726, "fd": "out", "data": "[xUnit.net 00:00:00.35]       Expected: 1\n"}
+{"t": 1.726, "fd": "out", "data": "[xUnit.net 00:00:00.35]       Actual:   2\n"}
+{"t": 1.726, "fd": "out", "data": "[xUnit.net 00:00:00.35]       Stack Trace:\n"}
+{"t": 1.726, "fd": "out", "data": "[xUnit.net 00:00:00.35]         <root>/dn/demo/Tests.cs(18,0): at Demo.RedTests.Boom()\n"}
+{"t": 1.726, "fd": "out", "data": "[xUnit.net 00:00:00.35]            at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)\n"}
+{"t": 1.726, "fd": "out", "data": "[xUnit.net 00:00:00.35]            at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)\n"}
+{"t": 1.726, "fd": "err", "data": "[xUnit.net 00:00:00.34]     Demo.RedTests.Throws [FAIL]\n"}
+{"t": 1.726, "fd": "err", "data": "[xUnit.net 00:00:00.35]     Demo.TheoryTests.Same(a: 3, b: 4) [FAIL]\n"}
+{"t": 1.726, "fd": "err", "data": "[xUnit.net 00:00:00.35]     Demo.RedTests.Boom [FAIL]\n"}
+{"t": 2.807, "fd": "out", "data": "[xUnit.net 00:00:01.47]       Assert.Equal() Failure: Strings differ\n"}
+{"t": 2.807, "fd": "out", "data": "[xUnit.net 00:00:01.47]                  ↓ (pos 0)\n"}
+{"t": 2.807, "fd": "out", "data": "[xUnit.net 00:00:01.47]       Expected: \"a\"\n"}
+{"t": 2.807, "fd": "out", "data": "[xUnit.net 00:00:01.47]       Actual:   \"b\"\n"}
+{"t": 2.807, "fd": "err", "data": "[xUnit.net 00:00:01.47]     Demo.RedTests.SlowRed [FAIL]\n"}
+{"t": 2.808, "fd": "out", "data": "[xUnit.net 00:00:01.47]                  ↑ (pos 0)\n[xUnit.net 00:00:01.47]       Stack Trace:\n"}
+{"t": 2.808, "fd": "out", "data": "[xUnit.net 00:00:01.47]         <root>/dn/demo/Tests.cs(20,0): at Demo.RedTests.SlowRed()\n"}
+{"t": 2.808, "fd": "out", "data": "[xUnit.net 00:00:01.47]         --- End of stack trace from previous location ---\n"}
+{"t": 3.097, "fd": "out", "data": "[xUnit.net 00:00:01.76]   Finished:    demo\n"}
+{"t": 3.19, "fd": "out", "data": "  Niepowodzenie Demo.RedTests.Throws [3 ms]\n"}
+{"t": 3.19, "fd": "out", "data": "  Komunikat o błędzie:\n"}
+{"t": 3.191, "fd": "out", "data": "   System.InvalidOperationException : kaput\n"}
+{"t": 3.191, "fd": "out", "data": "  Ślad stosu:\n"}
+{"t": 3.191, "fd": "out", "data": "     at Demo.RedTests.Throws() in <root>/dn/demo/Tests.cs:line 19\n   at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)\n   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)\n"}
+{"t": 3.191, "fd": "out", "data": "  Niepowodzenie Demo.TheoryTests.Same(a: 3, b: 4) [2 ms]\n"}
+{"t": 3.191, "fd": "out", "data": "  Komunikat o błędzie:\n   Assert.Equal() Failure: Values differ\nExpected: 3\nActual:   4"}
+{"t": 3.191, "fd": "out", "data": "\n  Ślad stosu:\n"}
+{"t": 3.191, "fd": "out", "data": "     at Demo.TheoryTests.Same(Int32 a, Int32 b) in <root>/dn/demo/Tests.cs:line 35\n   at InvokeStub_TheoryTests.Same(Object, Span`1)\n   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)\n"}
+{"t": 3.191, "fd": "out", "data": "  Niepowodzenie Demo.RedTests.Boom [< 1 ms]\n  Komunikat o błędzie:"}
+{"t": 3.191, "fd": "out", "data": "\n   Assert.Equal() Failure: Values differ\nExpected: 1\nActual:   2\n  Ślad stosu:\n     at Demo.RedTests.Boom() in <root>/dn/demo/Tests.cs:line 18\n   at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)\n   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)\n"}
+{"t": 3.191, "fd": "out", "data": "  Powodzenie Demo.TheoryTests.Same(a: 1, b: 1) [< 1 ms]\n"}
+{"t": 3.191, "fd": "out", "data": "  Powodzenie Demo.TheoryTests.Complex(xs: [1, 2]) [< 1 ms]\n"}
+{"t": 3.191, "fd": "out", "data": "  Powodzenie Demo.TheoryTests.Complex(xs: [3]) [< 1 ms]\n"}
+{"t": 3.191, "fd": "out", "data": "  Niepowodzenie Demo.RedTests.SlowRed [1 s]\n"}
+{"t": 3.191, "fd": "out", "data": "  Komunikat o błędzie:\n"}
+{"t": 3.191, "fd": "out", "data": "   Assert.Equal() Failure: Strings differ\n           ↓ (pos 0)\nExpected: \"a\"\nActual:   \"b\"\n           ↑ (pos 0)\n"}
+{"t": 3.191, "fd": "out", "data": "  Ślad stosu:\n     at Demo.RedTests.SlowRed() in <root>/dn/demo/Tests.cs:line 20\n--- End of stack trace from previous location ---\n"}
+{"t": 3.191, "fd": "out", "data": "  Powodzenie Demo.GreenTests.SlowOne [1 s]\n"}
+{"t": 3.198, "fd": "out", "data": "\n"}
+{"t": 3.202, "fd": "out", "data": "Łączna liczba testów: 15\n     Zakończone pomyślnie: 10\n     Zakończone niepowodzeniem: 4\n    Pominięte: 1\n"}
+{"t": 3.202, "fd": "out", "data": " Łączny czas: 2,3300 Sekundy\n"}
+{"t": 3.202, "fd": "err", "data": "Przebieg testu nie powiódł się.\n"}

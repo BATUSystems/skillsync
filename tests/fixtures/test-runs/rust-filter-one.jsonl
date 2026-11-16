@@ -1,0 +1,5 @@
+{"meta": {"tool": "cargo", "version": "cargo 1.97.1, rustc 1.97.1, libtest default format", "command": ["cargo", "test", "--offline", "--lib", "slow_ok"], "exit": 0, "merged": false, "env": {"LANG": "pl_PL.UTF-8"}, "note": "a name filter", "scrubbed": "paths, host and user names are replaced", "format": "one record per chunk read from the pipe: t = seconds since the start, fd = out|err, data = the text of the chunk"}}
+{"t": 0.069, "fd": "err", "data": "    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.01s\n"}
+{"t": 0.069, "fd": "err", "data": "     Running unittests src/lib.rs (<root>/rs-target/debug/deps/demo-5d464ed6742d1409)\n"}
+{"t": 0.071, "fd": "out", "data": "\nrunning 1 test\n"}
+{"t": 1.271, "fd": "out", "data": "test tests::slow_ok ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 1.20s\n\n"}

@@ -1,0 +1,26 @@
+{"meta": {"tool": "pytest", "version": "Python 3.14.10, pytest 9.2.0", "command": ["python3", "-m", "pytest", "-v", "-p", "no:cacheprovider", "test_pytest_only.py"], "exit": 1, "merged": false, "env": {"LANG": "pl_PL.UTF-8"}, "note": "parametrized ids incl. unicode escapes and a long id", "scrubbed": "paths, host and user names are replaced", "format": "one record per chunk read from the pipe: t = seconds since the start, fd = out|err, data = the text of the chunk"}}
+{"t": 1.681, "fd": "err", "data": "/usr/lib/python3.14/site-packages/pytest_asyncio/plugin.py:306: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the fixture scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to \"function\" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\". Set it to \"fixture-scope\" to keep the current behavior.\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n"}
+{"t": 1.772, "fd": "out", "data": "============================= test session starts ==============================\nplatform linux -- Python 3.14.10, pytest-9.2.0, pluggy-1.7.0 -- /usr/bin/python3\nhypothesis profile 'default'\nrootdir: <root>/py\nplugins: trio-0.8.0, examples-0.0.18, anyio-4.16.0, inline-snapshot-0.36.0, platformdirs-4.14.5, xdist-3.8.1.dev0+g1e3e4dc16.d20261103, hypothesis-6.170.12, asyncio-1.5.0\nasyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function\ncollecting ... "}
+{"t": 1.779, "fd": "out", "data": "collected 11 items\n\ntest_pytest_only.py::test_same[1-1] "}
+{"t": 1.78, "fd": "out", "data": "PASSED                               [  9%]"}
+{"t": 1.78, "fd": "out", "data": "\ntest_pytest_only.py::test_same[2-2] "}
+{"t": 1.781, "fd": "out", "data": "PASSED                               [ 18%]"}
+{"t": 1.781, "fd": "out", "data": "\ntest_pytest_only.py::test_same[3-4] "}
+{"t": 1.8, "fd": "out", "data": "FAILED                               [ 27%]"}
+{"t": 1.801, "fd": "out", "data": "\ntest_pytest_only.py::test_len[\\u0105\\u0119 \\u015b\\u0107] "}
+{"t": 1.802, "fd": "out", "data": "PASSED          [ 36%]"}
+{"t": 1.802, "fd": "out", "data": "\ntest_pytest_only.py::test_len[a b] "}
+{"t": 1.802, "fd": "out", "data": "PASSED                                [ 45%]"}
+{"t": 1.803, "fd": "out", "data": "\ntest_pytest_only.py::test_len[xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx] "}
+{"t": 1.803, "fd": "out", "data": "PASSED [ 54%]"}
+{"t": 1.804, "fd": "out", "data": "\ntest_pytest_only.py::test_xfail "}
+{"t": 1.817, "fd": "out", "data": "XFAIL (known bug)                        [ 63%]"}
+{"t": 1.818, "fd": "out", "data": "\ntest_pytest_only.py::test_xpass "}
+{"t": 1.829, "fd": "out", "data": "XPASS (fixed already)                    [ 72%]"}
+{"t": 1.83, "fd": "out", "data": "\ntest_pytest_only.py::test_skip "}
+{"t": 1.83, "fd": "out", "data": "SKIPPED (no way)                          [ 81%]"}
+{"t": 1.83, "fd": "out", "data": "\ntest_pytest_only.py::test_fixture_error "}
+{"t": 1.833, "fd": "out", "data": "ERROR                            [ 90%]"}
+{"t": 1.833, "fd": "out", "data": "\ntest_pytest_only.py::test_plain "}
+{"t": 1.833, "fd": "out", "data": "PASSED                                   [100%]"}
+{"t": 1.91, "fd": "out", "data": "\n\n==================================== ERRORS ====================================\n_____________________ ERROR at setup of test_fixture_error _____________________\n\n    @pytest.fixture\n    def broken():\n>       raise RuntimeError(\"fixture exploded\")\nE       RuntimeError: fixture exploded\n\ntest_pytest_only.py:31: RuntimeError\n=================================== FAILURES ===================================\n________________________________ test_same[3-4] ________________________________\n\na = 3, b = 4\n\n    @pytest.mark.parametrize(\"a,b\", [(1, 1), (2, 2), (3, 4)])\n    def test_same(a, b):\n>       assert a == b\nE       assert 3 == 4\n\ntest_pytest_only.py:6: AssertionError\n=========================== short test summary info ============================\nFAILED test_pytest_only.py::test_same[3-4] - assert 3 == 4\nERROR test_pytest_only.py::test_fixture_error - RuntimeError: fixture exploded\n==== 1 failed, 6 passed, 1 skipped, 1 xfailed, 1 xpassed, 1 error in 0.07s =====\n"}

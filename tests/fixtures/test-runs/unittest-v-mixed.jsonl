@@ -1,0 +1,43 @@
+{"meta": {"tool": "unittest", "version": "Python 3.14.10 (unittest)", "command": ["python3", "-m", "unittest", "-v", "test_green", "test_red", "test_skips", "test_subtests"], "exit": 1, "merged": false, "env": {"LANG": "pl_PL.UTF-8"}, "note": "ok, FAIL, ERROR, skipped, expected failure, unexpected success, subTest", "scrubbed": "paths, host and user names are replaced", "format": "one record per chunk read from the pipe: t = seconds since the start, fd = out|err, data = the text of the chunk"}}
+{"t": 0.045, "fd": "err", "data": "test_adds (test_green.GreenTests.test_adds) ... "}
+{"t": 0.045, "fd": "err", "data": "ok\ntest_prints (test_green.GreenTests.test_prints) ... "}
+{"t": 0.045, "fd": "err", "data": "ok\n"}
+{"t": 0.045, "fd": "err", "data": "test_slow (test_green.GreenTests.test_slow) ... "}
+{"t": 1.245, "fd": "err", "data": "ok\n"}
+{"t": 1.245, "fd": "err", "data": "test_boom (test_red.RedTests.test_boom) ... "}
+{"t": 1.246, "fd": "err", "data": "FAIL\n"}
+{"t": 1.246, "fd": "err", "data": "test_error (test_red.RedTests.test_error) ... "}
+{"t": 1.247, "fd": "err", "data": "ERROR\n"}
+{"t": 1.247, "fd": "err", "data": "test_long_message (test_red.RedTests.test_long_message) ... "}
+{"t": 1.247, "fd": "err", "data": "FAIL\n"}
+{"t": 1.247, "fd": "err", "data": "test_slow_red (test_red.RedTests.test_slow_red) ... "}
+{"t": 2.248, "fd": "err", "data": "FAIL\n"}
+{"t": 2.248, "fd": "err", "data": "test_ok (test_skips.SkipTests.test_ok) ... "}
+{"t": 2.248, "fd": "err", "data": "ok\n"}
+{"t": 2.248, "fd": "err", "data": "test_runtime_skip (test_skips.SkipTests.test_runtime_skip) ... "}
+{"t": 2.248, "fd": "err", "data": "skipped 'decided at runtime'\n"}
+{"t": 2.248, "fd": "err", "data": "test_skip_if (test_skips.SkipTests.test_skip_if) ... "}
+{"t": 2.248, "fd": "err", "data": "skipped 'platform says no'\n"}
+{"t": 2.248, "fd": "err", "data": "test_skipped (test_skips.SkipTests.test_skipped) ... "}
+{"t": 2.248, "fd": "err", "data": "skipped 'not ready'\n"}
+{"t": 2.248, "fd": "err", "data": "test_unexpected_success (test_skips.SkipTests.test_unexpected_success) ... "}
+{"t": 2.248, "fd": "err", "data": "unexpected success\n"}
+{"t": 2.248, "fd": "err", "data": "test_xfail (test_skips.SkipTests.test_xfail) ... "}
+{"t": 2.248, "fd": "err", "data": "expected failure\n"}
+{"t": 2.248, "fd": "err", "data": "test_sub (test_subtests.SubTests.test_sub) ... "}
+{"t": 2.248, "fd": "err", "data": "\n"}
+{"t": 2.248, "fd": "err", "data": "  test_sub (test_subtests.SubTests.test_sub) (i=1) ... FAIL\n"}
+{"t": 2.248, "fd": "err", "data": "test_sub_named (test_subtests.SubTests.test_sub_named) ... "}
+{"t": 2.249, "fd": "out", "data": "hello from stdout\n"}
+{"t": 2.249, "fd": "err", "data": "ok\n"}
+{"t": 2.249, "fd": "err", "data": "\n"}
+{"t": 2.249, "fd": "err", "data": "======================================================================\nERROR: test_error (test_red.RedTests.test_error)\n"}
+{"t": 2.249, "fd": "err", "data": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"<root>/py/test_red.py\", line 10, in test_error\n    raise ValueError(\"kaput\")\nValueError: kaput\n\n"}
+{"t": 2.249, "fd": "err", "data": "======================================================================\nFAIL: test_boom (test_red.RedTests.test_boom)\n"}
+{"t": 2.249, "fd": "err", "data": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"<root>/py/test_red.py\", line 7, in test_boom\n    self.assertEqual(1, 2)\n    ~~~~~~~~~~~~~~~~^^^^^^\nAssertionError: 1 != 2\n\n======================================================================\n"}
+{"t": 2.249, "fd": "err", "data": "FAIL: test_long_message (test_red.RedTests.test_long_message)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"<root>/py/test_red.py\", line 17, in test_long_message\n    self.fail(\"x\" * 3000)\n    ~~~~~~~~~^^^^^^^^^^^^\nAssertionError: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"}
+{"t": 2.249, "fd": "err", "data": "\n======================================================================\nFAIL: test_slow_red (test_red.RedTests.test_slow_red)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"<root>/py/test_red.py\", line 14, in test_slow_red\n    self.assertEqual(\"a\", \"b\")\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^\nAssertionError: 'a' != 'b'\n- a\n+ b\n\n\n======================================================================\n"}
+{"t": 2.249, "fd": "err", "data": "FAIL: test_sub (test_subtests.SubTests.test_sub) (i=1)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"<root>/py/test_subtests.py\", line 8, in test_sub\n    self.assertNotEqual(i, 1)\n    ~~~~~~~~~~~~~~~~~~~^^^^^^\nAssertionError: 1 == 1\n\n"}
+{"t": 2.249, "fd": "err", "data": "======================================================================\nUNEXPECTED SUCCESS: test_unexpected_success (test_skips.SkipTests.test_unexpected_success)\n----------------------------------------------------------------------\n"}
+{"t": 2.249, "fd": "err", "data": "Ran 15 tests in 2.204s\n\n"}
+{"t": 2.249, "fd": "err", "data": "FAILED (failures=4, errors=1, skipped=3, expected failures=1, unexpected successes=1)\n"}

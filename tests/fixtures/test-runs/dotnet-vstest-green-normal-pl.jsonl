@@ -1,0 +1,18 @@
+{"meta": {"tool": "dotnet", "version": "dotnet SDK 10.0.114, VSTest 18.0.2, xunit.runner.visualstudio 3.1.5, xunit 2.9.3, net10.0", "command": ["dotnet", "test", "--no-build", "--filter", "FullyQualifiedName~Demo.GreenTests", "--logger", "console;verbosity=normal"], "exit": 0, "merged": false, "env": {"LANG": "pl_PL.UTF-8"}, "note": "localized (Powodzenie); per-test lines come in batches", "scrubbed": "paths, host and user names are replaced", "format": "one record per chunk read from the pipe: t = seconds since the start, fd = out|err, data = the text of the chunk"}}
+{"t": 0.668, "fd": "out", "data": "Przebieg testu dla: <root>/dn/demo/bin/Debug/net10.0/demo.dll (.NETCoreApp,Version=v10.0)\n"}
+{"t": 0.726, "fd": "out", "data": "Wersja 18.0.2-dev (x64) VSTest\n"}
+{"t": 0.729, "fd": "out", "data": "\n"}
+{"t": 0.828, "fd": "out", "data": "Trwa rozpoczynanie wykonywania testu, czekaj...\n"}
+{"t": 0.863, "fd": "out", "data": "Łączna liczba plików testowych dopasowanych do określonego wzorca: 1.\n"}
+{"t": 1.462, "fd": "out", "data": "[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.5+1b188a7b0a (64-bit .NET 10.0.14)\n"}
+{"t": 1.574, "fd": "out", "data": "[xUnit.net 00:00:00.13]   Discovering: demo\n"}
+{"t": 1.654, "fd": "out", "data": "[xUnit.net 00:00:00.21]   Discovered:  demo\n"}
+{"t": 1.687, "fd": "out", "data": "[xUnit.net 00:00:00.24]   Starting:    demo\n"}
+{"t": 2.92, "fd": "out", "data": "  Powodzenie Demo.GreenTests.Adds [9 ms]\n"}
+{"t": 2.921, "fd": "out", "data": "  Powodzenie Demo.GreenTests.Prints [1 ms]\n"}
+{"t": 3.256, "fd": "out", "data": "[xUnit.net 00:00:01.81]   Finished:    demo\n"}
+{"t": 3.353, "fd": "out", "data": "  Powodzenie Demo.GreenTests.SlowOne [1 s]\n"}
+{"t": 3.36, "fd": "out", "data": "\n"}
+{"t": 3.366, "fd": "out", "data": "Przebieg testu zakończony powodzeniem.\nŁączna liczba testów: 3"}
+{"t": 3.366, "fd": "out", "data": "\n     Zakończone pomyślnie: 3\n"}
+{"t": 3.366, "fd": "out", "data": " Łączny czas: 2,4980 Sekundy\n"}

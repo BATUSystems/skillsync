@@ -1,0 +1,40 @@
+{"meta": {"tool": "dotnet", "version": "dotnet SDK 10.0.114, VSTest 18.0.2, xunit.runner.visualstudio 3.1.5, xunit 2.9.3, net10.0", "command": ["dotnet", "test", "--no-build", "--filter", "FullyQualifiedName~Demo.RedTests", "--logger", "console;verbosity=detailed"], "exit": 1, "merged": false, "env": {"LANG": "pl_PL.UTF-8", "DOTNET_CLI_UI_LANGUAGE": "en"}, "note": "red: [FAIL] lines of the xUnit adapter arrive on stderr in real time, VSTest results later in a batch", "scrubbed": "paths, host and user names are replaced", "format": "one record per chunk read from the pipe: t = seconds since the start, fd = out|err, data = the text of the chunk"}}
+{"t": 0.855, "fd": "out", "data": "Test run for <root>/dn/demo/bin/Debug/net10.0/demo.dll (.NETCoreApp,Version=v10.0)\n"}
+{"t": 0.913, "fd": "out", "data": "VSTest version 18.0.2-dev (x64)\n"}
+{"t": 0.916, "fd": "out", "data": "\n"}
+{"t": 1.036, "fd": "out", "data": "Starting test execution, please wait...\n"}
+{"t": 1.066, "fd": "out", "data": "A total of 1 test files matched the specified pattern.\n<root>/dn/demo/bin/Debug/net10.0/demo.dll\n"}
+{"t": 1.598, "fd": "out", "data": "[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.5+1b188a7b0a (64-bit .NET 10.0.14)\n"}
+{"t": 1.689, "fd": "out", "data": "[xUnit.net 00:00:00.10]   Discovering: demo\n"}
+{"t": 1.765, "fd": "out", "data": "[xUnit.net 00:00:00.18]   Discovered:  demo\n"}
+{"t": 1.795, "fd": "out", "data": "[xUnit.net 00:00:00.21]   Starting:    demo\n"}
+{"t": 1.859, "fd": "out", "data": "[xUnit.net 00:00:00.28]       System.InvalidOperationException : kaput\n"}
+{"t": 1.859, "fd": "err", "data": "[xUnit.net 00:00:00.27]     Demo.RedTests.Throws [FAIL]\n"}
+{"t": 1.86, "fd": "out", "data": "[xUnit.net 00:00:00.28]       Stack Trace:\n"}
+{"t": 1.861, "fd": "out", "data": "[xUnit.net 00:00:00.28]         <root>/dn/demo/Tests.cs(19,0): at Demo.RedTests.Throws()\n"}
+{"t": 1.861, "fd": "out", "data": "[xUnit.net 00:00:00.28]            at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)\n"}
+{"t": 1.861, "fd": "out", "data": "[xUnit.net 00:00:00.28]            at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)\n"}
+{"t": 1.875, "fd": "out", "data": "[xUnit.net 00:00:00.29]       Assert.Equal() Failure: Values differ\n"}
+{"t": 1.875, "fd": "out", "data": "[xUnit.net 00:00:00.29]       Expected: 1\n"}
+{"t": 1.875, "fd": "out", "data": "[xUnit.net 00:00:00.29]       Actual:   2\n"}
+{"t": 1.875, "fd": "out", "data": "[xUnit.net 00:00:00.29]       Stack Trace:\n[xUnit.net 00:00:00.29]         <root>/dn/demo/Tests.cs(18,0): at Demo.RedTests.Boom()\n"}
+{"t": 1.875, "fd": "out", "data": "[xUnit.net 00:00:00.29]            at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)\n"}
+{"t": 1.875, "fd": "out", "data": "[xUnit.net 00:00:00.29]            at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)\n"}
+{"t": 1.875, "fd": "err", "data": "[xUnit.net 00:00:00.29]     Demo.RedTests.Boom [FAIL]\n"}
+{"t": 3.112, "fd": "out", "data": "  Failed Demo.RedTests.Throws [3 ms]\n"}
+{"t": 3.112, "fd": "out", "data": "  Error Message:\n"}
+{"t": 3.112, "fd": "out", "data": "   System.InvalidOperationException : kaput\n"}
+{"t": 3.112, "fd": "out", "data": "  Stack Trace:\n"}
+{"t": 3.112, "fd": "out", "data": "     at Demo.RedTests.Throws() in <root>/dn/demo/Tests.cs:line 19\n   at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)\n   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)\n"}
+{"t": 3.112, "fd": "out", "data": "  Failed Demo.RedTests.Boom [7 ms]\n  Error Message:\n   Assert.Equal() Failure: Values differ\nExpected: 1\nActual:   2\n  Stack Trace:\n     at Demo.RedTests.Boom() in <root>/dn/demo/Tests.cs:line 18\n   at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)\n   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)\n"}
+{"t": 3.112, "fd": "out", "data": "[xUnit.net 00:00:01.49]       Assert.Equal() Failure: Strings differ\n[xUnit.net 00:00:01.49]                  ↓ (pos 0)"}
+{"t": 3.112, "fd": "err", "data": "[xUnit.net 00:00:01.49]     Demo.RedTests.SlowRed [FAIL]\n"}
+{"t": 3.113, "fd": "out", "data": "\n[xUnit.net 00:00:01.49]       Expected: \"a\"\n"}
+{"t": 3.113, "fd": "out", "data": "[xUnit.net 00:00:01.49]       Actual:   \"b\"\n[xUnit.net 00:00:01.49]                  ↑ (pos 0)\n"}
+{"t": 3.113, "fd": "out", "data": "[xUnit.net 00:00:01.49]       Stack Trace:\n[xUnit.net 00:00:01.49]         <root>/dn/demo/Tests.cs(20,0): at Demo.RedTests.SlowRed()\n"}
+{"t": 3.113, "fd": "out", "data": "[xUnit.net 00:00:01.49]         --- End of stack trace from previous location ---\n[xUnit.net 00:00:01.51]   Finished:    demo\n"}
+{"t": 3.18, "fd": "out", "data": "  Failed Demo.RedTests.SlowRed [1 s]\n  Error Message:\n   Assert.Equal() Failure: Strings differ\n           ↓ (pos 0)\nExpected: \"a\"\nActual:   \"b\"\n           ↑ (pos 0)\n  Stack Trace:\n     at Demo.RedTests.SlowRed() in <root>/dn/demo/Tests.cs:line 20\n--- End of stack trace from previous location ---\n"}
+{"t": 3.189, "fd": "out", "data": "\n"}
+{"t": 3.193, "fd": "out", "data": "Total tests: 3\n     Failed: 3\n"}
+{"t": 3.193, "fd": "err", "data": "Test Run Failed.\n"}
+{"t": 3.194, "fd": "out", "data": " Total time: 2,1235 Seconds\n"}

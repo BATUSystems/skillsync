@@ -113,8 +113,10 @@ class Emit:
 
 
 class AdapterContext:
-    def __init__(self, argv, cwd, root, writer):
+    def __init__(self, argv, cwd, root, writer, tool=None, argv_core=None):
         self.argv = list(argv)
+        self.tool = tool or 'unknown'   # the tool of the command (`test_run.detect_tool`): `playwright` for `npx playwright test`
+        self.argv_core = list(argv_core) if argv_core is not None else list(argv)   # argv behind the known wrappers (`test_run.unwrap_command`)
         self.cwd = Path(cwd)
         self.root = Path(root)
         self.emit = Emit(writer)

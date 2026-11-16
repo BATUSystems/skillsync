@@ -1,0 +1,217 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="8a155b2e-4b8c-490b-8447-018e1c5449fb" name="@HOST 2026-11-16 22:15:19" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-11-16T22:15:19.7943758+01:00" queuing="2026-11-16T22:15:19.7943758+01:00" start="2026-11-16T22:15:18.4547751+01:00" finish="2026-11-16T22:15:21.2697868+01:00" />
+  <TestSettings name="default" id="71ccf41d-79d7-431c-81d1-3890a68951ec">
+    <Deployment runDeploymentRoot="_HOST_2026-11-16_22_15_19" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="fc78ad34-9711-4672-8cc7-10f6baba4dee" testId="353f4bbd-bed1-24f1-3a81-57fea8245b3d" testName="Demo.SkippedTests.Ok" computerName="HOST" duration="00:00:00.0049117" startTime="2026-11-16T22:15:19.6315139+01:00" endTime="2026-11-16T22:15:19.6467556+01:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="fc78ad34-9711-4672-8cc7-10f6baba4dee" />
+    <UnitTestResult executionId="0b473a97-db2c-4d53-876f-3dabf300c550" testId="b2ff5094-dc7c-878c-0ee4-75159698fde9" testName="Demo.GreenTests.Prints" computerName="HOST" duration="00:00:00.0013866" startTime="2026-11-16T22:15:19.6763617+01:00" endTime="2026-11-16T22:15:19.6792828+01:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="0b473a97-db2c-4d53-876f-3dabf300c550">
+      <Output>
+        <StdOut>hello from test</StdOut>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="f56f4cde-b4a5-4b8b-bd1a-5829a0bd3d9b" testId="9f9cc3c4-d84c-c175-4893-5a213f14a2b6" testName="Demo.TheoryTests.Length(s: &quot;a b&quot;, n: 3)" computerName="HOST" duration="00:00:00.0087090" startTime="2026-11-16T22:15:19.6284141+01:00" endTime="2026-11-16T22:15:19.6752972+01:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="f56f4cde-b4a5-4b8b-bd1a-5829a0bd3d9b" />
+    <UnitTestResult executionId="01310903-f71f-41e9-803a-92f6bacbf382" testId="6aa31a5d-15f2-6f5f-fee9-1e84dddcfeb0" testName="Demo.RedTests.Throws" computerName="HOST" duration="00:00:00.0043411" startTime="2026-11-16T22:15:19.6313169+01:00" endTime="2026-11-16T22:15:19.7362010+01:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="01310903-f71f-41e9-803a-92f6bacbf382">
+      <Output>
+        <ErrorInfo>
+          <Message>System.InvalidOperationException : kaput</Message>
+          <StackTrace>   at Demo.RedTests.Throws() in /ROOT/dn/demo/Tests.cs:line 19
+   at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="2b700c8f-98c6-452c-b25f-b62375960a96" testId="d06d82d4-72d5-ef9f-2777-c05bc1cbef60" testName="Demo.TheoryTests.Same(a: 3, b: 4)" computerName="HOST" duration="00:00:00.0028214" startTime="2026-11-16T22:15:19.6771858+01:00" endTime="2026-11-16T22:15:19.7298432+01:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="2b700c8f-98c6-452c-b25f-b62375960a96">
+      <Output>
+        <ErrorInfo>
+          <Message>Assert.Equal() Failure: Values differ
+Expected: 3
+Actual:   4</Message>
+          <StackTrace>   at Demo.TheoryTests.Same(Int32 a, Int32 b) in /ROOT/dn/demo/Tests.cs:line 35
+   at InvokeStub_TheoryTests.Same(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="ed9dee6f-376d-40c3-8f3d-53405f29ddca" testId="f0c7bc4c-2b18-5418-fa75-394136b4d1a1" testName="Demo.TheoryTests.Complex(xs: [3])" computerName="HOST" duration="00:00:00.0004756" startTime="2026-11-16T22:15:19.7432306+01:00" endTime="2026-11-16T22:15:19.7436861+01:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="ed9dee6f-376d-40c3-8f3d-53405f29ddca" />
+    <UnitTestResult executionId="70d2653f-b2d5-4148-9cda-af0a0ac66b1a" testId="02f9a7c0-ba0f-5f8c-31fe-f1a826c53a71" testName="Demo.SkippedTests.Later" computerName="HOST" duration="00:00:00.0010000" startTime="2026-11-16T22:15:19.6693212+01:00" endTime="2026-11-16T22:15:19.6699462+01:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="70d2653f-b2d5-4148-9cda-af0a0ac66b1a">
+      <Output>
+        <ErrorInfo>
+          <Message>not ready</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="577889a0-ee0a-45b4-ae07-d8815763999b" testId="59df67c0-20ee-c769-2431-a639900e089d" testName="Demo.TheoryTests.Same(a: 1, b: 1)" computerName="HOST" duration="00:00:00.0000232" startTime="2026-11-16T22:15:19.7428152+01:00" endTime="2026-11-16T22:15:19.7429425+01:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="577889a0-ee0a-45b4-ae07-d8815763999b" />
+    <UnitTestResult executionId="d67c065f-6fb7-4708-8611-253b4546c02a" testId="6376e632-1d59-9a44-6773-806d0f2ac853" testName="Demo.GreenTests.SlowOne" computerName="HOST" duration="00:00:01.5009092" startTime="2026-11-16T22:15:19.7283234+01:00" endTime="2026-11-16T22:15:21.1505754+01:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="d67c065f-6fb7-4708-8611-253b4546c02a" />
+    <UnitTestResult executionId="7a7cea23-105e-4611-b36c-909954551302" testId="a5446cc0-1eb1-6993-6c50-527f4e2f63f8" testName="Demo.TheoryTests.Complex(xs: [1, 2])" computerName="HOST" duration="00:00:00.0002853" startTime="2026-11-16T22:15:19.7431001+01:00" endTime="2026-11-16T22:15:19.7431500+01:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="7a7cea23-105e-4611-b36c-909954551302" />
+    <UnitTestResult executionId="a7186d6e-6512-41d1-9428-e2c928a85059" testId="21ba82f9-efcc-448a-6132-3a1d29c9385b" testName="Demo.GreenTests.Adds" computerName="HOST" duration="00:00:00.0086757" startTime="2026-11-16T22:15:19.6314526+01:00" endTime="2026-11-16T22:15:19.6760161+01:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="a7186d6e-6512-41d1-9428-e2c928a85059" />
+    <UnitTestResult executionId="981ee9a5-7ef1-4b2a-a584-ed6ac25a9fca" testId="0309da1f-24c3-36cb-66d5-33ca3d8e815c" testName="Demo.TheoryTests.Length(s: &quot;ąę ść&quot;, n: 5)" computerName="HOST" duration="00:00:00.0005109" startTime="2026-11-16T22:15:19.6758605+01:00" endTime="2026-11-16T22:15:19.6764468+01:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="981ee9a5-7ef1-4b2a-a584-ed6ac25a9fca" />
+    <UnitTestResult executionId="3f692389-c8d8-4fbc-964d-2d3d0591fa65" testId="b2e8af05-3119-e058-1229-f85184d64464" testName="Demo.TheoryTests.Same(a: 2, b: 2)" computerName="HOST" duration="00:00:00.0002003" startTime="2026-11-16T22:15:19.6767241+01:00" endTime="2026-11-16T22:15:19.6769194+01:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="3f692389-c8d8-4fbc-964d-2d3d0591fa65" />
+    <UnitTestResult executionId="42563ded-8ba9-4670-8f56-5c28986e11cc" testId="a4f0b0a6-1812-c7c8-4b0b-50704a86d8e3" testName="Demo.RedTests.SlowRed" computerName="HOST" duration="00:00:01.2076946" startTime="2026-11-16T22:15:19.7439753+01:00" endTime="2026-11-16T22:15:20.8739833+01:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="42563ded-8ba9-4670-8f56-5c28986e11cc">
+      <Output>
+        <ErrorInfo>
+          <Message>Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "a"
+Actual:   "b"
+           ↑ (pos 0)</Message>
+          <StackTrace>   at Demo.RedTests.SlowRed() in /ROOT/dn/demo/Tests.cs:line 20
+--- End of stack trace from previous location ---</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="866eacc8-25d4-4a91-8b08-076ca5762329" testId="fbeb3d3b-8352-8c03-28d5-d1adade85187" testName="Demo.RedTests.Boom" computerName="HOST" duration="00:00:00.0003646" startTime="2026-11-16T22:15:19.7428629+01:00" endTime="2026-11-16T22:15:19.7432815+01:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="866eacc8-25d4-4a91-8b08-076ca5762329">
+      <Output>
+        <ErrorInfo>
+          <Message>Assert.Equal() Failure: Values differ
+Expected: 1
+Actual:   2</Message>
+          <StackTrace>   at Demo.RedTests.Boom() in /ROOT/dn/demo/Tests.cs:line 18
+   at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="Demo.RedTests.Boom" storage="/ROOT/dn/demo/bin/debug/net10.0/demo.dll" id="fbeb3d3b-8352-8c03-28d5-d1adade85187">
+      <Execution id="866eacc8-25d4-4a91-8b08-076ca5762329" />
+      <TestMethod codeBase="/ROOT/dn/demo/bin/Debug/net10.0/demo.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Demo.RedTests" name="Boom" />
+    </UnitTest>
+    <UnitTest name="Demo.TheoryTests.Same(a: 1, b: 1)" storage="/ROOT/dn/demo/bin/debug/net10.0/demo.dll" id="59df67c0-20ee-c769-2431-a639900e089d">
+      <Execution id="577889a0-ee0a-45b4-ae07-d8815763999b" />
+      <TestMethod codeBase="/ROOT/dn/demo/bin/Debug/net10.0/demo.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Demo.TheoryTests" name="Same" />
+    </UnitTest>
+    <UnitTest name="Demo.SkippedTests.Ok" storage="/ROOT/dn/demo/bin/debug/net10.0/demo.dll" id="353f4bbd-bed1-24f1-3a81-57fea8245b3d">
+      <Execution id="fc78ad34-9711-4672-8cc7-10f6baba4dee" />
+      <TestMethod codeBase="/ROOT/dn/demo/bin/Debug/net10.0/demo.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Demo.SkippedTests" name="Ok" />
+    </UnitTest>
+    <UnitTest name="Demo.TheoryTests.Complex(xs: [1, 2])" storage="/ROOT/dn/demo/bin/debug/net10.0/demo.dll" id="a5446cc0-1eb1-6993-6c50-527f4e2f63f8">
+      <Execution id="7a7cea23-105e-4611-b36c-909954551302" />
+      <TestMethod codeBase="/ROOT/dn/demo/bin/Debug/net10.0/demo.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Demo.TheoryTests" name="Complex" />
+    </UnitTest>
+    <UnitTest name="Demo.GreenTests.Adds" storage="/ROOT/dn/demo/bin/debug/net10.0/demo.dll" id="21ba82f9-efcc-448a-6132-3a1d29c9385b">
+      <Execution id="a7186d6e-6512-41d1-9428-e2c928a85059" />
+      <TestMethod codeBase="/ROOT/dn/demo/bin/Debug/net10.0/demo.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Demo.GreenTests" name="Adds" />
+    </UnitTest>
+    <UnitTest name="Demo.TheoryTests.Same(a: 2, b: 2)" storage="/ROOT/dn/demo/bin/debug/net10.0/demo.dll" id="b2e8af05-3119-e058-1229-f85184d64464">
+      <Execution id="3f692389-c8d8-4fbc-964d-2d3d0591fa65" />
+      <TestMethod codeBase="/ROOT/dn/demo/bin/Debug/net10.0/demo.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Demo.TheoryTests" name="Same" />
+    </UnitTest>
+    <UnitTest name="Demo.RedTests.SlowRed" storage="/ROOT/dn/demo/bin/debug/net10.0/demo.dll" id="a4f0b0a6-1812-c7c8-4b0b-50704a86d8e3">
+      <Execution id="42563ded-8ba9-4670-8f56-5c28986e11cc" />
+      <TestMethod codeBase="/ROOT/dn/demo/bin/Debug/net10.0/demo.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Demo.RedTests" name="SlowRed" />
+    </UnitTest>
+    <UnitTest name="Demo.RedTests.Throws" storage="/ROOT/dn/demo/bin/debug/net10.0/demo.dll" id="6aa31a5d-15f2-6f5f-fee9-1e84dddcfeb0">
+      <Execution id="01310903-f71f-41e9-803a-92f6bacbf382" />
+      <TestMethod codeBase="/ROOT/dn/demo/bin/Debug/net10.0/demo.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Demo.RedTests" name="Throws" />
+    </UnitTest>
+    <UnitTest name="Demo.TheoryTests.Length(s: &quot;ąę ść&quot;, n: 5)" storage="/ROOT/dn/demo/bin/debug/net10.0/demo.dll" id="0309da1f-24c3-36cb-66d5-33ca3d8e815c">
+      <Execution id="981ee9a5-7ef1-4b2a-a584-ed6ac25a9fca" />
+      <TestMethod codeBase="/ROOT/dn/demo/bin/Debug/net10.0/demo.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Demo.TheoryTests" name="Length" />
+    </UnitTest>
+    <UnitTest name="Demo.TheoryTests.Length(s: &quot;a b&quot;, n: 3)" storage="/ROOT/dn/demo/bin/debug/net10.0/demo.dll" id="9f9cc3c4-d84c-c175-4893-5a213f14a2b6">
+      <Execution id="f56f4cde-b4a5-4b8b-bd1a-5829a0bd3d9b" />
+      <TestMethod codeBase="/ROOT/dn/demo/bin/Debug/net10.0/demo.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Demo.TheoryTests" name="Length" />
+    </UnitTest>
+    <UnitTest name="Demo.GreenTests.SlowOne" storage="/ROOT/dn/demo/bin/debug/net10.0/demo.dll" id="6376e632-1d59-9a44-6773-806d0f2ac853">
+      <Execution id="d67c065f-6fb7-4708-8611-253b4546c02a" />
+      <TestMethod codeBase="/ROOT/dn/demo/bin/Debug/net10.0/demo.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Demo.GreenTests" name="SlowOne" />
+    </UnitTest>
+    <UnitTest name="Demo.TheoryTests.Same(a: 3, b: 4)" storage="/ROOT/dn/demo/bin/debug/net10.0/demo.dll" id="d06d82d4-72d5-ef9f-2777-c05bc1cbef60">
+      <Execution id="2b700c8f-98c6-452c-b25f-b62375960a96" />
+      <TestMethod codeBase="/ROOT/dn/demo/bin/Debug/net10.0/demo.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Demo.TheoryTests" name="Same" />
+    </UnitTest>
+    <UnitTest name="Demo.GreenTests.Prints" storage="/ROOT/dn/demo/bin/debug/net10.0/demo.dll" id="b2ff5094-dc7c-878c-0ee4-75159698fde9">
+      <Execution id="0b473a97-db2c-4d53-876f-3dabf300c550" />
+      <TestMethod codeBase="/ROOT/dn/demo/bin/Debug/net10.0/demo.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Demo.GreenTests" name="Prints" />
+    </UnitTest>
+    <UnitTest name="Demo.TheoryTests.Complex(xs: [3])" storage="/ROOT/dn/demo/bin/debug/net10.0/demo.dll" id="f0c7bc4c-2b18-5418-fa75-394136b4d1a1">
+      <Execution id="ed9dee6f-376d-40c3-8f3d-53405f29ddca" />
+      <TestMethod codeBase="/ROOT/dn/demo/bin/Debug/net10.0/demo.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Demo.TheoryTests" name="Complex" />
+    </UnitTest>
+    <UnitTest name="Demo.SkippedTests.Later" storage="/ROOT/dn/demo/bin/debug/net10.0/demo.dll" id="02f9a7c0-ba0f-5f8c-31fe-f1a826c53a71">
+      <Execution id="70d2653f-b2d5-4148-9cda-af0a0ac66b1a" />
+      <TestMethod codeBase="/ROOT/dn/demo/bin/Debug/net10.0/demo.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Demo.SkippedTests" name="Later" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="353f4bbd-bed1-24f1-3a81-57fea8245b3d" executionId="fc78ad34-9711-4672-8cc7-10f6baba4dee" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="b2ff5094-dc7c-878c-0ee4-75159698fde9" executionId="0b473a97-db2c-4d53-876f-3dabf300c550" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="9f9cc3c4-d84c-c175-4893-5a213f14a2b6" executionId="f56f4cde-b4a5-4b8b-bd1a-5829a0bd3d9b" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="6aa31a5d-15f2-6f5f-fee9-1e84dddcfeb0" executionId="01310903-f71f-41e9-803a-92f6bacbf382" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="d06d82d4-72d5-ef9f-2777-c05bc1cbef60" executionId="2b700c8f-98c6-452c-b25f-b62375960a96" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="f0c7bc4c-2b18-5418-fa75-394136b4d1a1" executionId="ed9dee6f-376d-40c3-8f3d-53405f29ddca" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="02f9a7c0-ba0f-5f8c-31fe-f1a826c53a71" executionId="70d2653f-b2d5-4148-9cda-af0a0ac66b1a" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="59df67c0-20ee-c769-2431-a639900e089d" executionId="577889a0-ee0a-45b4-ae07-d8815763999b" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="6376e632-1d59-9a44-6773-806d0f2ac853" executionId="d67c065f-6fb7-4708-8611-253b4546c02a" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="a5446cc0-1eb1-6993-6c50-527f4e2f63f8" executionId="7a7cea23-105e-4611-b36c-909954551302" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="21ba82f9-efcc-448a-6132-3a1d29c9385b" executionId="a7186d6e-6512-41d1-9428-e2c928a85059" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="0309da1f-24c3-36cb-66d5-33ca3d8e815c" executionId="981ee9a5-7ef1-4b2a-a584-ed6ac25a9fca" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="b2e8af05-3119-e058-1229-f85184d64464" executionId="3f692389-c8d8-4fbc-964d-2d3d0591fa65" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="a4f0b0a6-1812-c7c8-4b0b-50704a86d8e3" executionId="42563ded-8ba9-4670-8f56-5c28986e11cc" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="fbeb3d3b-8352-8c03-28d5-d1adade85187" executionId="866eacc8-25d4-4a91-8b08-076ca5762329" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="All Loaded Results" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Failed">
+    <Counters total="15" executed="14" passed="10" failed="4" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.01] xUnit.net VSTest Adapter v3.1.5+1b188a7b0a (64-bit .NET 10.0.14)
+[xUnit.net 00:00:00.18]   Discovering: demo
+[xUnit.net 00:00:00.27]   Discovered:  demo
+[xUnit.net 00:00:00.32]   Starting:    demo
+[xUnit.net 00:00:00.40]       not ready
+Test 'Demo.SkippedTests.Later' was skipped in the test run.
+[xUnit.net 00:00:00.46]       Assert.Equal() Failure: Values differ
+[xUnit.net 00:00:00.46]       Expected: 3
+[xUnit.net 00:00:00.46]       Actual:   4
+[xUnit.net 00:00:00.47]       Stack Trace:
+[xUnit.net 00:00:00.47]         /ROOT/dn/demo/Tests.cs(35,0): at Demo.TheoryTests.Same(Int32 a, Int32 b)
+[xUnit.net 00:00:00.47]            at InvokeStub_TheoryTests.Same(Object, Span`1)
+[xUnit.net 00:00:00.47]            at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+[xUnit.net 00:00:00.47]       System.InvalidOperationException : kaput
+[xUnit.net 00:00:00.47]       Stack Trace:
+[xUnit.net 00:00:00.47]         /ROOT/dn/demo/Tests.cs(19,0): at Demo.RedTests.Throws()
+[xUnit.net 00:00:00.47]            at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)
+[xUnit.net 00:00:00.47]            at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+[xUnit.net 00:00:00.47]       Assert.Equal() Failure: Values differ
+[xUnit.net 00:00:00.47]       Expected: 1
+[xUnit.net 00:00:00.47]       Actual:   2
+[xUnit.net 00:00:00.47]       Stack Trace:
+[xUnit.net 00:00:00.47]         /ROOT/dn/demo/Tests.cs(18,0): at Demo.RedTests.Boom()
+[xUnit.net 00:00:00.47]            at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)
+[xUnit.net 00:00:00.47]            at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+[xUnit.net 00:00:01.61]       Assert.Equal() Failure: Strings differ
+[xUnit.net 00:00:01.61]                  ↓ (pos 0)
+[xUnit.net 00:00:01.61]       Expected: "a"
+[xUnit.net 00:00:01.61]       Actual:   "b"
+[xUnit.net 00:00:01.61]                  ↑ (pos 0)
+[xUnit.net 00:00:01.61]       Stack Trace:
+[xUnit.net 00:00:01.61]         /ROOT/dn/demo/Tests.cs(20,0): at Demo.RedTests.SlowRed()
+[xUnit.net 00:00:01.61]         --- End of stack trace from previous location ---
+[xUnit.net 00:00:01.89]   Finished:    demo
+</StdOut>
+    </Output>
+    <RunInfos>
+      <RunInfo computerName="HOST" outcome="Warning" timestamp="2026-11-16T22:15:19.6725647+01:00">
+        <Text>[xUnit.net 00:00:00.40]     Demo.SkippedTests.Later [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="HOST" outcome="Error" timestamp="2026-11-16T22:15:19.8004891+01:00">
+        <Text>[xUnit.net 00:00:00.46]     Demo.TheoryTests.Same(a: 3, b: 4) [FAIL]</Text>
+      </RunInfo>
+      <RunInfo computerName="HOST" outcome="Error" timestamp="2026-11-16T22:15:19.8005414+01:00">
+        <Text>[xUnit.net 00:00:00.47]     Demo.RedTests.Throws [FAIL]</Text>
+      </RunInfo>
+      <RunInfo computerName="HOST" outcome="Error" timestamp="2026-11-16T22:15:19.8005831+01:00">
+        <Text>[xUnit.net 00:00:00.47]     Demo.RedTests.Boom [FAIL]</Text>
+      </RunInfo>
+      <RunInfo computerName="HOST" outcome="Error" timestamp="2026-11-16T22:15:20.8755709+01:00">
+        <Text>[xUnit.net 00:00:01.61]     Demo.RedTests.SlowRed [FAIL]</Text>
+      </RunInfo>
+    </RunInfos>
+  </ResultSummary>
+</TestRun>

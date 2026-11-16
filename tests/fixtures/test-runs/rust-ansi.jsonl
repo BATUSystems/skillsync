@@ -1,0 +1,12 @@
+{"meta": {"tool": "cargo", "version": "cargo 1.97.1, rustc 1.97.1, libtest default format", "command": ["cargo", "test", "--offline", "--lib", "--", "--test-threads=1"], "exit": 101, "merged": false, "env": {"LANG": "pl_PL.UTF-8"}, "note": "CARGO_TERM_COLOR=always", "scrubbed": "paths, host and user names are replaced", "format": "one record per chunk read from the pipe: t = seconds since the start, fd = out|err, data = the text of the chunk"}}
+{"t": 0.066, "fd": "err", "data": "\u001b[1m\u001b[92m    Finished\u001b[0m `test` profile [unoptimized + debuginfo] target(s) in 0.00s\n"}
+{"t": 0.066, "fd": "err", "data": "\u001b[1m\u001b[92m     Running\u001b[0m unittests src/lib.rs (<root>/rs-target/debug/deps/demo-5d464ed6742d1409)\n"}
+{"t": 0.068, "fd": "out", "data": "\nrunning 11 tests\ntest tests::expected_panic_did_not_happen - should panic ... "}
+{"t": 0.068, "fd": "out", "data": "FAILED\ntest tests::expects_a_panic - should panic ... ok\n"}
+{"t": 0.068, "fd": "out", "data": "test tests::fails ... "}
+{"t": 0.068, "fd": "out", "data": "FAILED\ntest tests::ignored ... ignored, not ready\ntest tests::ignored_without_reason ... ignored\ntest tests::nested::deep ... ok\ntest tests::nested::żółć_unicode ... "}
+{"t": 0.068, "fd": "out", "data": "ok\ntest tests::ok ... "}
+{"t": 0.068, "fd": "out", "data": "ok\ntest tests::prints ... ok\ntest tests::slow_fail ... "}
+{"t": 0.968, "fd": "out", "data": "FAILED\ntest tests::slow_ok ... "}
+{"t": 2.169, "fd": "out", "data": "ok\n\nfailures:\n\n---- tests::expected_panic_did_not_happen stdout ----\nnote: test did not panic as expected at src/lib.rs:67:8\n---- tests::fails stdout ----\n\nthread 'tests::fails' (4021646) panicked at src/lib.rs:31:9:\nassertion `left == right` failed\n  left: 2\n right: 3\n\n---- tests::slow_fail stdout ----\n\nthread 'tests::slow_fail' (4021651) panicked at src/lib.rs:56:9:\nslow failure\nsecond line\n\n\nfailures:\n    tests::expected_panic_did_not_happen\n    tests::fails\n    tests::slow_fail\n\ntest result: FAILED. 6 passed; 3 failed; 2 ignored; 0 measured; 0 filtered out; finished in 2.10s\n\n"}
+{"t": 2.169, "fd": "err", "data": "\u001b[1m\u001b[91merror\u001b[0m: test failed, to rerun pass `--lib`\n"}

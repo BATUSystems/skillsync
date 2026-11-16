@@ -1,0 +1,10 @@
+{"meta": {"tool": "cargo", "version": "cargo 1.97.1, rustc 1.97.1, libtest default format", "command": ["cargo", "test", "--offline", "--doc", "--no-fail-fast"], "exit": 101, "merged": false, "env": {"LANG": "pl_PL.UTF-8"}, "note": "--doc: names carry the file and the line", "scrubbed": "paths, host and user names are replaced", "format": "one record per chunk read from the pipe: t = seconds since the start, fd = out|err, data = the text of the chunk"}}
+{"t": 0.057, "fd": "err", "data": "    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.00s\n"}
+{"t": 0.057, "fd": "err", "data": "   Doc-tests demo\n"}
+{"t": 0.071, "fd": "out", "data": "\nrunning 2 tests\n"}
+{"t": 0.12, "fd": "out", "data": "test src/lib.rs - add (line 5) ... ok\n"}
+{"t": 0.121, "fd": "out", "data": "test src/lib.rs - broken_doc (line 14) ... FAILED\n\nfailures:\n"}
+{"t": 0.121, "fd": "out", "data": "\n---- src/lib.rs - broken_doc (line 14) stdout ----\nTest executable failed (exit status: 101).\n\nstderr:\n\nthread 'main' (4021160) panicked at src/lib.rs:5:1:\nassertion `left == right` failed\n  left: 2\n right: 3\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n\n\n\nfailures:\n    src/lib.rs - broken_doc (line 14)\n\ntest result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out"}
+{"t": 0.121, "fd": "out", "data": "; finished in 0.05s\n\n"}
+{"t": 0.123, "fd": "err", "data": "error: doctest failed, to rerun pass `--doc`\n"}
+{"t": 0.123, "fd": "err", "data": "error: 1 target failed:\n    `--doc`\n"}
