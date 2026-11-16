@@ -7,18 +7,23 @@ import os
 import shutil
 import sys
 import unittest
+from unittest import mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from layers_helpers import LayersCase, commit, git, write  # noqa: E402
+from layers_helpers import LayersCase, commit, git, needs_os_symlinks, write  # noqa: E402
 
 
-@unittest.skipUnless(hasattr(os, 'symlink') and os.name != 'nt', 'POSIX: tracked symlinks of sync.method symlink')
+@needs_os_symlinks
 class TrackedSkillLinks(LayersCase):
     def setUp(self):
         super().setUp()
+        patch = mock.patch.dict(os.environ)   # the tests assert the symlink output: pinned, so SKILLSYNC_NO_SYMLINK=1 of a copy-mode run does not change it
+        patch.start()
+        self.addCleanup(patch.stop)
+        os.environ.pop('SKILLSYNC_NO_SYMLINK', None)
         core = self.layer_dir('core', 'core', {'skills/foo/SKILL.md': '---\nname: foo\ndescription: d\n---\nfoo from core\n'})
         org = self.layer_dir('acme', 'org', {'skills/foo/extra.md': 'org part\n'})
         self.write_config([('core', 'core', core), ('acme', 'org', org)], [(['**'], ['core', 'acme'])])
