@@ -218,7 +218,22 @@ def contained(root, path):
 
 
 def normalize_files(root, files):
-    return [contained(root, path).relative_to(Path(root).resolve()).as_posix() for path in files]
+    """Project-relative POSIX names of a list of files (changed files from git, `--files`). The containment is checked on the path ITSELF: the
+    parent directory is resolved physically (a directory that is a link to the outside is an escape), the last component is not followed, so a
+    link that lies in the project (for example a tracked `.github/skills/<skill>` pointing into a layer) is a file of the project, not an escape.
+    `contained` (follows every link) stays the check for the paths a command opens."""
+    root = Path(root).resolve()
+    return [_file_name(root, path) for path in files]
+
+
+def _file_name(root, path):
+    candidate = root / path
+    if candidate.name in ('', '.', '..'):   # a directory or a `..` ending: the plain check
+        return contained(root, path).relative_to(root).as_posix()
+    entry = candidate.parent.resolve() / candidate.name
+    if not entry.is_relative_to(root):
+        raise ValueError(f'Path escapes project: {path}')
+    return entry.relative_to(root).as_posix()
 
 
 def validate_workflow(config):
