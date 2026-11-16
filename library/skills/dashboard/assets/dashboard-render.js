@@ -373,7 +373,11 @@
         if (el && st.descFor === el && st.descPinned) return hideDesc();
         if (el) { showDesc(el); st.descPinned = true; } else if (st.descPinned) hideDesc();
       },
-      click: () => toggleMenu(false),
+      click: (e) => {
+        toggleMenu(false);
+        const inside = e && e.target && typeof e.target.closest === "function" && e.target.closest("#commitsPanel");
+        if (st.commitsOpen && !inside) setCommits(false);
+      },
     };
     for (const type of Object.keys(rootListeners)) root.addEventListener(type, rootListeners[type]);
 
@@ -425,8 +429,22 @@
           // w trybie `direct` lokalne commity są normą do „CP”: ostrzeżenie dopiero, gdy plan jest zakończony
           const calm = dv.mode === "direct" && !(plan && plan.status === "done");
           const tip = `${ahead} ${plural(ahead, "commit", "commity", "commitów")} lokalnie przed ${remoteName}${dv.pushed === false ? " (nie ma jej jeszcze na origin)" : ""}; „CP” je wypchnie`;
-          meta.push(h("span", { class: "m" }, h("span", { class: `chip ${calm ? "s-planned" : "s-warn"} ahead-chip`, "data-tip": tip },
-            `${ahead} ${plural(ahead, "niewypchnięty", "niewypchnięte", "niewypchniętych")}`)));
+          const label = `${ahead} ${plural(ahead, "niewypchnięty", "niewypchnięte", "niewypchniętych")}`;
+          const cls = `chip ${calm ? "s-planned" : "s-warn"} ahead-chip`;
+          // `delivery.commits` (opcjonalne): plakietka staje się przyciskiem, panel pokazuje listę; tematy tylko jako tekst (gniazdo odczytu bez logowania)
+          const list = Array.isArray(dv.commits) ? dv.commits.filter((c) => c && typeof c === "object") : [];
+          if (!list.length) meta.push(h("span", { class: "m" }, h("span", { class: cls, "data-tip": tip }, label)));
+          else {
+            const open = st.commitsOpen === true;
+            const more = typeof dv.commitsMore === "number" && dv.commitsMore > 0 ? Math.floor(dv.commitsMore) : 0;
+            const btn = h("button", { type: "button", id: "commitsBtn", class: `${cls} ahead-btn`, "data-tip": tip, "aria-expanded": String(open), "aria-controls": "commitsPanel",
+              on: { click: (e) => { e.stopPropagation(); setCommits(!st.commitsOpen); } } }, label);
+            const panel = h("div", { id: "commitsPanel", class: "commits-panel", role: "region", "aria-label": `Niewypchnięte commity: ${ahead}`, hidden: !open },
+              h("ul", { class: "commits-list" }, list.map((c) => h("li", null, h("span", { class: "mono commit-sha" }, String(c.sha == null ? "" : c.sha)),
+                h("span", { class: "commit-subject" }, String(c.subject == null ? "" : c.subject))))),
+              more ? h("p", { class: "commits-more" }, `i ${more} ${plural(more, "starszy", "starsze", "starszych")}`) : null);
+            meta.push(h("span", { class: "m commits-wrap" }, btn, panel));
+          }
         }
       }
       if (plan && plan.pr) {
@@ -667,6 +685,12 @@
         (d.plans || []).slice().reverse().map((p) => h("li", { role: "option", "data-plan": p.path, "aria-selected": String(!d.planAuto && p.path === cur), on: { click: pick(p.path || null) } },
           h("span", null, h("span", null, String(p.title || "").replace(/^Plan:\s*/i, "")), h("br"), h("span", { class: "sub" }, p.path)),
           statusChip(p.status))));
+    }
+    // Panel niewypchniętych commitów (170-A): stan w `st`, żeby przeżył odświeżenie danych; Esc i klik poza panelem zamykają.
+    function setCommits(open) {
+      if ((st.commitsOpen === true) === open) return;
+      st.commitsOpen = open;
+      if (st.data) render();
     }
     function toggleMenu(open) {
       const show = open ?? ui.planMenu.hidden;
@@ -1102,6 +1126,11 @@
     // Klawisze strony (host podpina do dokumentu): Esc zamyka dymek; P/D zakładki, T motyw, Esc menu planu.
     function handleKey(e) {
       if (e.key === "Escape" && !ui.descTip.hidden) hideDesc();
+      if (e.key === "Escape" && st.commitsOpen) {
+        setCommits(false);
+        const btn = root.querySelector("#commitsBtn");
+        if (btn && typeof btn.focus === "function") btn.focus();
+      }
       const t = e.target;
       if ((t && typeof t.closest === "function" && t.closest("input, textarea, select, [contenteditable]")) || e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.key === "p" || e.key === "P") setView("progress");

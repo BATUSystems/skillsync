@@ -99,6 +99,20 @@ a.chip.git-link { text-decoration: none; }
 .chip.s-active { background: var(--accent-soft); color: var(--accent); }
 .chip.s-planned { background: var(--planned-soft); color: var(--planned); }
 .chip.s-warn { background: var(--warn-soft); color: var(--warn); }
+.chip.ahead-btn { border: 0; font: inherit; cursor: pointer; }
+.chip.ahead-btn:hover { filter: brightness(.96); }
+.chip.ahead-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.commits-wrap { position: relative; }
+.commits-panel {
+  position: absolute; left: 0; top: calc(100% + .4rem); z-index: 30; min-width: 22rem; max-width: min(40rem, 92vw);
+  padding: .5rem .6rem; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); color: var(--text, inherit);
+}
+.commits-panel[hidden] { display: none; }
+.commits-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .25rem; }
+.commits-list li { display: flex; gap: .6rem; align-items: baseline; font-size: .85rem; }
+.commits-list .commit-sha { color: var(--muted); flex: none; }
+.commits-list .commit-subject { overflow-wrap: anywhere; }
+.commits-more { margin: .4rem 0 0; font-size: .8rem; color: var(--muted); }
 
 .live { display: inline-flex; align-items: center; gap: .45rem; font-weight: 600; font-size: .9rem; padding: .3rem .7rem; border-radius: 999px; background: var(--panel-2); }
 .live-dot { width: .7rem; height: .7rem; border-radius: 50%; background: var(--planned); }

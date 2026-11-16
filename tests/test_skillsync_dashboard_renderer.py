@@ -950,6 +950,42 @@ function summary(m) {
       stab.ahead = { sixteen: chip(16, true, true), one: chip(1, false, false), two: chip(2, true, true), five: chip(5, true, true), twelve: chip(12, true, true),
         twentytwo: chip(22, true, true), zero: chip(0, true, true), unknown: chip(null, null, true), notPushed: chip(0, false, false), direct: chip(3, true, true, { mode: 'direct' }) };
     }
+    {  // 170-A: panel niewypchniętych commitów (delivery.commits / commitsMore)
+      const mk = (commits, more) => {
+        const j = clone(F['plan-in-progress']);
+        j.git = { branch: 'feat/x', head: 'abcdef1234', headFull: 'abcdef1234', branchUrl: 'https://example.test/b', branchPushed: true, remote: { host: 'github', repo: 'o/r' } };
+        j.delivery = { ...j.delivery, mode: 'pr', branch: 'feat/x', remote: 'origin/feat/x', ahead: 22, pushed: true };
+        if (commits !== undefined) j.delivery.commits = commits;
+        if (more !== undefined) j.delivery.commitsMore = more;
+        return j;
+      };
+      const state = (m) => {
+        const btn = m.root.querySelector('#commitsBtn'), panel = m.root.querySelector('#commitsPanel');
+        return { tag: btn ? btn.tagName : null, expanded: btn ? btn.getAttribute('aria-expanded') : null, controls: btn ? btn.getAttribute('aria-controls') : null,
+          hidden: panel ? panel.hidden : null, items: panel ? panel.querySelectorAll('li').map((n) => text(n)) : [], more: panel && panel.querySelector('.commits-more') ? text(panel.querySelector('.commits-more')) : null,
+          imgs: panel ? panel.querySelectorAll('img').length : 0, label: panel ? panel.getAttribute('aria-label') : null };
+      };
+      const evil = '<img src=x onerror=alert(1)> password: [REDACTED]';
+      const m = mount(mk([{ sha: 'abc1234', subject: evil }, { sha: 'def5678', subject: 'drugi' }], 20), { now: NOW['plan-in-progress'] });
+      const key = (k) => m.board.handleKey({ key: k, target: m.root, ctrlKey: false, metaKey: false, altKey: false });
+      const closed = state(m);
+      m.root.querySelector('#commitsBtn').click();
+      const opened = state(m);
+      m.board.update(mk([{ sha: 'abc1234', subject: evil }, { sha: 'def5678', subject: 'drugi' }], 20));
+      const keptOnRefresh = state(m);
+      key('Escape');
+      const afterEsc = state(m);
+      m.root.querySelector('#commitsBtn').click();
+      m.root.querySelector('#commitsPanel').querySelector('li').click();   // klik w panelu nie zamyka
+      const afterInside = state(m);
+      m.root.dispatchEvent(new Ev('click'));                                   // klik poza panelem zamyka
+      const afterOutside = state(m);
+      const none = mount(mk(undefined), { now: NOW['plan-in-progress'] });
+      const empty = mount(mk([], 0), { now: NOW['plan-in-progress'] });
+      stab.commits = { closed, opened, keptOnRefresh, afterEsc, afterInside, afterOutside,
+        noField: { btn: Boolean(none.root.querySelector('#commitsBtn')), chip: text(none.root.querySelector('#meta .ahead-chip')) },
+        emptyList: { btn: Boolean(empty.root.querySelector('#commitsBtn')), chip: text(empty.root.querySelector('#meta .ahead-chip')) } };
+    }
     ex.stab = stab;
   }
   // WRITING-UX: pozycje „sesja pracuje” (znacznik zapisu) i „odpowiedź eksperta” w banerze czekania.
@@ -1391,6 +1427,25 @@ class RendererNodeTests(unittest.TestCase):
         self.assertIsNone(a["unknown"], "ahead nieznane (null): bez znacznika")
         self.assertIsNone(a["notPushed"], "gałąź bez własnych commitów nie ma czego wypychać")
         self.assertIn("s-planned", a["direct"]["cls"], "w trybie direct lokalne commity są normą do CP")
+
+    def test_stab_unpushed_badge_opens_a_panel_with_the_commits(self) -> None:
+        """170-A: z `delivery.commits` plakietka jest przyciskiem; panel: aria, Esc, klik poza, tekst; bez pola jak dotąd (K5, K6)."""
+        c = self.out["extra"]["stab"]["commits"]
+        self.assertEqual((c["closed"]["tag"], c["closed"]["expanded"], c["closed"]["controls"]), ("BUTTON", "false", "commitsPanel"))
+        self.assertTrue(c["closed"]["hidden"])
+        self.assertEqual((c["opened"]["expanded"], c["opened"]["hidden"]), ("true", False))
+        self.assertEqual(c["opened"]["items"][1], "def5678drugi")
+        self.assertIn("password: [REDACTED]", c["opened"]["items"][0])
+        self.assertIn("<img src=x", c["opened"]["items"][0], "temat jest tekstem, nie znacznikiem")
+        self.assertEqual(c["opened"]["imgs"], 0)
+        self.assertEqual(c["opened"]["more"], "i 20 starszych")
+        self.assertIn("22", c["opened"]["label"])
+        self.assertEqual(c["keptOnRefresh"]["expanded"], "true", "stan panelu przeżywa odświeżenie danych")
+        self.assertEqual((c["afterEsc"]["expanded"], c["afterEsc"]["hidden"]), ("false", True))
+        self.assertEqual(c["afterInside"]["expanded"], "true", "klik w panelu go nie zamyka")
+        self.assertEqual(c["afterOutside"]["expanded"], "false")
+        self.assertEqual(c["noField"], {"btn": False, "chip": "22 niewypchnięte"})
+        self.assertEqual(c["emptyList"], {"btn": False, "chip": "22 niewypchnięte"})
 
     def test_readiness_tile(self) -> None:
         none = {"cls": "readiness is-none", "chip": "Readiness: brak danych"}
@@ -1940,12 +1995,19 @@ class OldRendererOnNewJson(unittest.TestCase):
         warned = json.loads(json.dumps(next(iter(fixtures.values()))))
         warned["run"] = {**(warned.get("run") or {}), "parseWarnings": [{"time": "10:03", "segment": "raport", "fragment": "F1.1 (a; b, F1.2", "reason": "unbalanced-bracket"}]}
         fixtures["with-unbalanced-bracket-warning"] = warned
+        # 170-A: `delivery.commits` / `commitsMore` of an unpushed branch: the frozen renderer keeps its plain badge and ignores the list
+        listed = json.loads(json.dumps(next(iter(fixtures.values()))))
+        listed["git"] = {"branch": "feat/x", "head": "abcdef1234", "headFull": "abcdef1234", "branchUrl": None, "branchPushed": True, "remote": None}
+        listed["delivery"] = {**(listed.get("delivery") or {}), "mode": "pr", "branch": "feat/x", "remote": "origin/feat/x", "ahead": 3, "pushed": True,
+                              "commits": [{"sha": "abc1234", "subject": "pierwszy"}], "commitsMore": 2}
+        fixtures["with-unpushed-commit-list"] = listed
         head = HARNESS[:HARNESS.index("  const F = input.fixtures")]
         tail = """
   const res = {};
   for (const [name, d] of Object.entries(input.fixtures)) {
     try { const m = mount(d, { now: input.now[name] }); res[name] = { ok: true, acts: m.root.querySelectorAll('#acts .act').length,
-      stages: m.root.querySelectorAll('#acts .stage').length, newTab: !!m.root.querySelector('#tab-questions'), parseWarn: !!m.root.querySelector('#parseWarn') }; m.board.destroy(); }
+      stages: m.root.querySelectorAll('#acts .stage').length, newTab: !!m.root.querySelector('#tab-questions'), parseWarn: !!m.root.querySelector('#parseWarn'),
+      commitsBtn: !!m.root.querySelector('#commitsBtn'), ahead: (m.root.querySelector('#meta .ahead-chip') || {}).textContent || null }; m.board.destroy(); }
     catch (e) { res[name] = { error: String(e && e.stack || e) }; }
   }
   process.stdout.write(JSON.stringify({ res, violations }));
@@ -1965,7 +2027,8 @@ class OldRendererOnNewJson(unittest.TestCase):
             with self.subTest(fixture=name):
                 self.assertTrue(got.get("ok"), got)
                 self.assertGreaterEqual(got["acts"], 1)
-                self.assertFalse(got["newTab"] or got["parseWarn"], "the old renderer knows no new elements")
+                self.assertFalse(got["newTab"] or got["parseWarn"] or got["commitsBtn"], "the old renderer knows no new elements")
+        self.assertEqual(out["res"]["with-unpushed-commit-list"]["ahead"], "3 niewypchnięte", "the old badge is unchanged")
 
 
 if __name__ == "__main__":
