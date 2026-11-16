@@ -16,7 +16,7 @@ import tomllib
 import uuid
 import sys
 import yaml
-from .common import add_project_arguments, changed_files, checked_out_link, emit, load_layer_project, matches, workflow_config, contained, normalize_files, read_yaml, strings, redact, expand_project_skills, require_layerset, WORKFLOW_SKILL, LEGACY_WORKFLOW_SKILL
+from .common import add_project_arguments, changed_files, checked_out_link, emit, file_lines, load_layer_project, matches, workflow_config, contained, normalize_files, read_yaml, strings, redact, expand_project_skills, require_layerset, WORKFLOW_SKILL, LEGACY_WORKFLOW_SKILL
 from .pathfmt import posix
 from .selfcmd import self_argv
 from . import layers as _layers
@@ -610,7 +610,7 @@ INSTRUCTION_WARNING_LIMIT = 30
 def _outside_fences(text):
     """Drop fenced code blocks (also indented, ``` or ~~~) line by line."""
     kept, fence = [], None
-    for line in text.splitlines():
+    for line in file_lines(text):
         marker = re.match(r'\s*(`{3,}|~{3,})', line)
         if fence:
             if marker and marker.group(1)[0] == fence[0] and len(marker.group(1)) >= len(fence) and not line.strip().strip(fence[0]):

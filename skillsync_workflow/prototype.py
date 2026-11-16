@@ -34,7 +34,7 @@ import unicodedata
 import time
 import urllib.parse
 import yaml
-from .common import append_missing_lines, contained, emit, load_layer_project, read_project, read_yaml, require_layerset
+from .common import append_missing_lines, contained, emit, file_lines, load_layer_project, read_project, read_yaml, require_layerset
 from .pathfmt import posix
 from . import layers as _layers
 from . import prototype_server as server
@@ -3076,11 +3076,28 @@ MAX_GATE_PLAN = 1024 * 1024
 def _plan_header(text):
     """The plan header: the text before the first line starting with `## `."""
     lines = []
-    for line in text.splitlines():
+    for line in file_lines(text):   # a rare separator inside a line (VT, FF, NEL, LS, ...) must not cut a `Prototyp:` path to a shorter, valid one
         if line.startswith('## '):
             break
-        lines.append(line.rstrip('\r'))
+        lines.append(line)
     return lines
+
+
+# The characters that `str.splitlines()` once cut a line at: they are not visible in a line pasted from a document or a web page.
+_INVISIBLE_IN_LINE = '\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029'
+
+
+def _show_gate_line(line):
+    """The line of a refused gate header for a message: the invisible separators as `\\uXXXX` escapes, at most 200 characters."""
+    return ''.join(f'\\u{ord(char):04x}' if char in _INVISIBLE_IN_LINE else char for char in line)[:200]
+
+
+def _invisible_note(line):
+    """` (invisible character U+2028 at position 31: remove it)` for the first separator in the line (position counted from 1), else ''."""
+    for position, char in enumerate(line, 1):
+        if char in _INVISIBLE_IN_LINE:
+            return f' (invisible character U+{ord(char):04X} at position {position}: remove it)'
+    return ''
 
 
 def _gate_line_kind(line):
@@ -3149,7 +3166,7 @@ def prototype_gate(root, manifest, plan=None, slugs=None, phase=None):
             if kind == 'prototype':
                 match = GATE_PROTOTYPE_LINE.fullmatch(line)
                 if not match:
-                    return _blocked('invalid_prototype_line', f'Prototyp: line must hold one path: {line[:200]}')
+                    return _blocked('invalid_prototype_line', f'Prototyp: line must hold one path: {_show_gate_line(line)}{_invisible_note(line)}')
                 if match.group(1) not in targets:
                     targets.append(match.group(1))
             elif kind == 'bypass':
@@ -3163,8 +3180,9 @@ def prototype_gate(root, manifest, plan=None, slugs=None, phase=None):
                     except ValueError:
                         pass
                 if not match or not valid_date or bypasses > 1:
+                    note = _invisible_note(line)
                     return _blocked('invalid_bypass_line', 'expected one line: Bramka prototypu: pominięta — <powód> '
-                                    '— <osoba>, <RRRR-MM-DD>')
+                                    '— <osoba>, <RRRR-MM-DD>' + (f'; got: {_show_gate_line(line)}{note}' if note else ''))
                 bypass = {'reason': match.group('reason'), 'by': match.group('by'), 'date': match.group('date')}
         resolved = []
         for value in targets:

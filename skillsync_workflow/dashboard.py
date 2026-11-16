@@ -20,7 +20,7 @@ import time
 import yaml
 
 from . import __version__
-from .common import add_project_arguments, decode_text, plan_section, read_project, redact
+from .common import add_project_arguments, decode_text, file_lines, plan_section, read_project, redact
 from .layers import add_layer_argument
 from .delivery_mode import delivery_info
 from .status import (APPROVAL_WORDS, APPROVALS_FILE, MAX_APPROVALS_BYTES, _APPROVAL_SHA, _approval_at, _message, _status_fields,
@@ -155,7 +155,7 @@ def doc_status(text):
 def parse_header(text):
     """Title (first `# `) and `Key: value` fields before the first `## `."""
     title, fields = None, {}
-    for line in text.splitlines():
+    for line in file_lines(text):
         if line.startswith('## '):
             break
         if title is None and line.startswith('# '):
@@ -170,7 +170,7 @@ def parse_header(text):
 def parse_progress(text):
     """`## Progress`: phases `### …` and steps `- [ ] ID Title` / `- [x] ID Title — sha`; code blocks are skipped."""
     phases, current, in_progress, in_fence = [], None, False, False
-    for line in text.splitlines():
+    for line in file_lines(text):
         if line.lstrip().startswith(('```', '~~~')):
             in_fence = not in_fence
             continue
@@ -208,7 +208,7 @@ def parse_progress(text):
 def parse_checkpoints(text):
     """`RUN=<iso>` and `- HH:MM text` lines (indented lines continue the previous one)."""
     run_start, items = None, []
-    for line in text.splitlines():
+    for line in file_lines(text):
         stripped = line.strip()
         if stripped.startswith('RUN='):
             run_start = stripped[4:].strip()
@@ -474,7 +474,7 @@ def parse_questions(text):
     a table row `| Q<n> | <question> | …` are blocking; other bracket tags (e.g. `[ROZSTRZYGNIĘTE …]`) are skipped."""
     assumptions, blocking, seen = [], [], set()
     inside = in_fence = False
-    for line in text.splitlines():
+    for line in file_lines(text):
         if line.lstrip().startswith(('```', '~~~')):
             in_fence = not in_fence
             continue
@@ -1045,7 +1045,7 @@ def _origin_url(common):
     except OSError:
         return None
     section = None
-    for line in text.splitlines():
+    for line in file_lines(text):
         stripped = line.strip()
         if stripped.startswith('['):
             section = stripped
@@ -1062,7 +1062,7 @@ def _has_ref(common, ref):
         return True
     packed = common / 'packed-refs'
     try:
-        return packed.is_file() and any(line.endswith(' ' + ref) for line in read_text(packed).splitlines())
+        return packed.is_file() and any(line.endswith(' ' + ref) for line in file_lines(read_text(packed)))
     except OSError:
         return False
 
@@ -1092,7 +1092,7 @@ def read_git(root):
             else:
                 packed = common / 'packed-refs'
                 if packed.is_file():
-                    for line in read_text(packed).splitlines():
+                    for line in file_lines(read_text(packed)):
                         if line.endswith(' ' + ref):
                             info['headFull'] = line.split()[0]
                             info['head'] = info['headFull'][:12]
@@ -1228,7 +1228,7 @@ def run_approvals(root, run_id):
     try:
         if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_APPROVALS_BYTES:
             return []
-        lines = path.read_text(encoding='utf-8', errors='replace').splitlines()
+        lines = file_lines(path.read_text(encoding='utf-8', errors='replace'))
     except OSError:
         return []
     out = []
@@ -1742,7 +1742,7 @@ def read_readiness(root, run_id, run_exists):
     except OSError:
         return out
     out['source'] = rel
-    first = next((line.strip() for line in text.splitlines() if line.strip()), '')
+    first = next((line.strip() for line in file_lines(text) if line.strip()), '')
     match = READINESS_RE.match(first)
     out['status'] = match.group('status').upper() if match else None
     date, sha = READINESS_DATE_RE.search(text), READINESS_SHA_RE.search(text)
