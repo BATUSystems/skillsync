@@ -268,7 +268,7 @@ Kontrakt `deps` (wymagane tylko `now`):
 | `mountHtml` | `(el, html) => void` | nie | wstawienie HTML podglądu Markdown (escapowanego przez serwer); renderer sam HTML nie parsuje |
 | `onTitle` | `(text) => void` | nie | tytuł okna (`⏳ Czeka · 40% · … — status`) |
 | `onNavigate` | `(hash) => void` | nie | adres widoku: `progress`, `docs`, `docs:<ścieżka>` |
-| `scroll` | `{save() => any, restore(v), reveal(el, inDocs)}` | nie | przewijanie przy odświeżeniu i otwarciu dokumentu |
+| `scroll` | `{save() => any, restore(v), reveal(el, inDocs), toTop?: {subscribe(cb) => unsubscribe, go()}}` | nie | przewijanie przy odświeżeniu i otwarciu dokumentu; opcjonalny `toTop` włącza pływający przycisk „na górę” w widoku dokumentu: host woła `cb({y, viewport})` przy przewinięciu i zmianie rozmiaru okna, renderer pokazuje przycisk powyżej 0,75 wysokości okna i chowa poniżej 0,5, a `go()` przewija okno na górę; bez `toTop` (webview) przycisku nie ma |
 | `timers` | `{set(fn, ms) => id, clear(id)}` | nie | zegar uzbrojenia (5 s); domyślnie `setTimeout` |
 | `raf`, `cancelRaf` | `(fn) => id`, `(id) => void` | nie | klatka animacji pasków; domyślnie `requestAnimationFrame`/`cancelAnimationFrame`; `destroy()` anuluje oczekujące |
 | `viewport` | `() => {width, height}` | nie | rozmiar okna dla dymku; domyślnie `ownerDocument.defaultView` |
