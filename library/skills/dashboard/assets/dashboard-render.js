@@ -439,10 +439,13 @@
             const more = typeof dv.commitsMore === "number" && dv.commitsMore > 0 ? Math.floor(dv.commitsMore) : 0;
             const btn = h("button", { type: "button", id: "commitsBtn", class: `${cls} ahead-btn`, "data-tip": tip, "aria-expanded": String(open), "aria-controls": "commitsPanel",
               on: { click: (e) => { e.stopPropagation(); setCommits(!st.commitsOpen); } } }, label);
-            const panel = h("div", { id: "commitsPanel", class: "commits-panel", role: "region", "aria-label": `Niewypchnięte commity: ${ahead}`, hidden: !open },
+            const panel = h("div", { id: "commitsPanel", class: "commits-panel", role: "region", "aria-labelledby": "commitsTitle", hidden: !open },
+              h("div", { class: "commits-head" },
+                h("strong", { id: "commitsTitle" }, `Niewypchnięte commity (${ahead})`, g.branch ? " · " : "", g.branch ? h("span", { class: "mono" }, g.branch) : null),
+                h("button", { type: "button", class: "commits-close", "aria-label": "Zamknij listę commitów", "data-tip": "Zamknij (Esc)", on: { click: (e) => { e.stopPropagation(); setCommits(false); const b = root.querySelector("#commitsBtn"); if (b && typeof b.focus === "function") b.focus(); } } }, "×")),
               h("ul", { class: "commits-list" }, list.map((c) => h("li", null, h("span", { class: "mono commit-sha" }, String(c.sha == null ? "" : c.sha)),
                 h("span", { class: "commit-subject" }, String(c.subject == null ? "" : c.subject))))),
-              more ? h("p", { class: "commits-more" }, `i ${more} ${plural(more, "starszy", "starsze", "starszych")}`) : null);
+              h("p", { class: "commits-more" }, more ? `Pokazano ${list.length} najnowszych; starszych: ${more}.` : `Wszystkie ${list.length}.`));
             meta.push(h("span", { class: "m commits-wrap" }, btn, panel));
           }
         }

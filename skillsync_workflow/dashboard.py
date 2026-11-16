@@ -1129,13 +1129,14 @@ _CONTROL_CHARS = re.compile(r'[\x00-\x1f\x7f-\x9f]')
 
 def _commit_list(out):
     """`git log -z --format=%h%x1f%s` (bytes) as `[{'sha', 'subject'}]`: decoded explicitly (`decode_text`), every subject masked
-    WHOLE (`redact`) before it is flattened and cut to COMMIT_SUBJECT_MAX characters, so a key before the cut still masks its value."""
+    WHOLE (`redact`) before it is flattened and cut to COMMIT_SUBJECT_MAX characters (a cut subject ends with `…`), so a key before the cut still masks its value."""
     commits = []
     for record in out.split(b'\x00'):
         sha, _, subject = decode_text(record).partition('\x1f')
         sha = sha.strip()
         if sha:
-            commits.append({'sha': sha, 'subject': ' '.join(_CONTROL_CHARS.sub(' ', redact(subject)).split())[:COMMIT_SUBJECT_MAX]})
+            flat = ' '.join(_CONTROL_CHARS.sub(' ', redact(subject)).split())
+            commits.append({'sha': sha, 'subject': flat if len(flat) <= COMMIT_SUBJECT_MAX else flat[:COMMIT_SUBJECT_MAX - 1].rstrip() + '…'})
     return commits
 
 

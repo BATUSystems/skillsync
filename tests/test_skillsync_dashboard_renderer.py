@@ -963,7 +963,8 @@ function summary(m) {
         const btn = m.root.querySelector('#commitsBtn'), panel = m.root.querySelector('#commitsPanel');
         return { tag: btn ? btn.tagName : null, expanded: btn ? btn.getAttribute('aria-expanded') : null, controls: btn ? btn.getAttribute('aria-controls') : null,
           hidden: panel ? panel.hidden : null, items: panel ? panel.querySelectorAll('li').map((n) => text(n)) : [], more: panel && panel.querySelector('.commits-more') ? text(panel.querySelector('.commits-more')) : null,
-          imgs: panel ? panel.querySelectorAll('img').length : 0, label: panel ? panel.getAttribute('aria-label') : null };
+          imgs: panel ? panel.querySelectorAll('img').length : 0, title: panel ? text(panel.querySelector('#commitsTitle')) : null,
+          closeLabel: panel ? panel.querySelector('.commits-close').getAttribute('aria-label') : null };
       };
       const evil = '<img src=x onerror=alert(1)> password: [REDACTED]';
       const m = mount(mk([{ sha: 'abc1234', subject: evil }, { sha: 'def5678', subject: 'drugi' }], 20), { now: NOW['plan-in-progress'] });
@@ -976,13 +977,16 @@ function summary(m) {
       key('Escape');
       const afterEsc = state(m);
       m.root.querySelector('#commitsBtn').click();
+      m.root.querySelector('#commitsPanel .commits-close').click();
+      const afterClose = state(m);
+      m.root.querySelector('#commitsBtn').click();
       m.root.querySelector('#commitsPanel').querySelector('li').click();   // klik w panelu nie zamyka
       const afterInside = state(m);
       m.root.dispatchEvent(new Ev('click'));                                   // klik poza panelem zamyka
       const afterOutside = state(m);
       const none = mount(mk(undefined), { now: NOW['plan-in-progress'] });
       const empty = mount(mk([], 0), { now: NOW['plan-in-progress'] });
-      stab.commits = { closed, opened, keptOnRefresh, afterEsc, afterInside, afterOutside,
+      stab.commits = { closed, opened, keptOnRefresh, afterEsc, afterClose, afterInside, afterOutside,
         noField: { btn: Boolean(none.root.querySelector('#commitsBtn')), chip: text(none.root.querySelector('#meta .ahead-chip')) },
         emptyList: { btn: Boolean(empty.root.querySelector('#commitsBtn')), chip: text(empty.root.querySelector('#meta .ahead-chip')) } };
     }
@@ -1438,8 +1442,10 @@ class RendererNodeTests(unittest.TestCase):
         self.assertIn("password: [REDACTED]", c["opened"]["items"][0])
         self.assertIn("<img src=x", c["opened"]["items"][0], "temat jest tekstem, nie znacznikiem")
         self.assertEqual(c["opened"]["imgs"], 0)
-        self.assertEqual(c["opened"]["more"], "i 20 starszych")
-        self.assertIn("22", c["opened"]["label"])
+        self.assertEqual(c["opened"]["more"], "Pokazano 2 najnowszych; starszych: 20.")
+        self.assertEqual(c["opened"]["title"], "Niewypchnięte commity (22) · feat/x")
+        self.assertEqual(c["opened"]["closeLabel"], "Zamknij listę commitów")
+        self.assertEqual(c["afterClose"]["expanded"], "false", "przycisk zamknięcia zamyka panel")
         self.assertEqual(c["keptOnRefresh"]["expanded"], "true", "stan panelu przeżywa odświeżenie danych")
         self.assertEqual((c["afterEsc"]["expanded"], c["afterEsc"]["hidden"]), ("false", True))
         self.assertEqual(c["afterInside"]["expanded"], "true", "klik w panelu go nie zamyka")

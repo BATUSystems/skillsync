@@ -80,8 +80,18 @@ class CommitListTests(unittest.TestCase):
     def test_subject_is_cut_to_80_characters_and_one_line(self) -> None:
         self.commit("x" * 200)
         subject = self.ahead()["commits"][0]["subject"]
+        self.assertEqual(len(subject), 80)
+        self.assertTrue(subject.startswith("xxxx") and subject.endswith("x…"), subject)
+
+    def test_a_subject_of_exactly_80_characters_is_not_marked_as_cut(self) -> None:
+        self.commit("y" * 80)
+        self.assertEqual(self.ahead()["commits"][0]["subject"], "y" * 80)
+
+    def test_the_cut_comes_after_the_mask(self) -> None:
+        self.commit("z" * 70 + " token=" + "q" * 30)
+        subject = self.ahead()["commits"][0]["subject"]
+        self.assertNotIn("qqqq", subject)
         self.assertLessEqual(len(subject), 80)
-        self.assertTrue(subject.startswith("xxxx"))
 
     def test_polish_letters_and_control_characters(self) -> None:
         self.commit("zażółć gęślą jaźń\x1b[31m")
