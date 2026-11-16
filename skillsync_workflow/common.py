@@ -333,11 +333,12 @@ def append_missing_lines(text, entries, key=None):
     return text + prefix + eol.join(missing) + eol
 
 
-def decode_text(data):
+def decode_text(data, strict=False):
     """Text of the bytes of a file: UTF-16 with a byte order mark (the default output of `>` and `Out-File` in Windows PowerShell 5) is
     decoded as such, anything else as UTF-8; NUL characters are dropped (the renderer drops them too, so a secret that a NUL splits
-    would otherwise be glued together again AFTER the masking)."""
-    text = data.decode('utf-16' if data[:2] in (b'\xff\xfe', b'\xfe\xff') else 'utf-8', errors='replace')
+    would otherwise be glued together again AFTER the masking). Bytes that are not valid text become the replacement character, or, with
+    `strict=True`, raise `UnicodeDecodeError` (the readers of `skillsync status` report such a file as a finding, as they always did)."""
+    text = data.decode('utf-16' if data[:2] in (b'\xff\xfe', b'\xfe\xff') else 'utf-8', errors='strict' if strict else 'replace')
     return text.replace('\x00', '')
 
 
