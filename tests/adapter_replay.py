@@ -154,5 +154,5 @@ def replay_to_files(adapter_name, chunks, argv=None, tool=None, exit_code=0, rep
         adapter.end(ctx, exit_code, '', [Path(r) for r in reports])
         writer.close()
         events = [e for e in ev.read_events(path)[0] if e.get('t') in ('collected', 'test', 'counts')]
-        tree = sorted(str(p.relative_to(root)) for p in root.rglob('*') if p.is_file())
+        tree = sorted(p.relative_to(root).as_posix() for p in root.rglob('*') if p.is_file())   # `/` on every system
         return events, tree

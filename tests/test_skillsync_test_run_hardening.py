@@ -439,7 +439,7 @@ class StatusSurvivesBadFiles(unittest.TestCase):
         original = dt._summary
 
         def boom(path, state):
-            if '/F1.2/' in str(path):
+            if Path(path).parent.name == 'F1.2':   # not a `/F1.2/` substring: the separator is `\\` on Windows
                 raise TypeError('str + int')
             return original(path, state)
         with mock.patch.object(dt, '_summary', boom):

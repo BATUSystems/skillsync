@@ -18,6 +18,76 @@ def fake_secret():
     return '-'.join(['zq9x', 'wv8y', 'ut7s', 'rp6q'])
 
 
+class WindowsProcessState(unittest.TestCase):
+    """180-W: the liveness probe of Windows (`OpenProcess` + `GetExitCodeProcess`); the logic with a fake `kernel32` everywhere, the real calls on Windows."""
+
+    class Kernel:
+        def __init__(self, handle=1, error=0, code=ev.STILL_ACTIVE, ok=True):
+            self.handle, self.error, self.code, self.ok, self.closed, self.opened = handle, error, code, ok, [], []
+
+        def get_last_error(self):
+            return self.error
+
+        def new_dword(self):
+            return mock.Mock(value=0)
+
+        @staticmethod
+        def byref(value):
+            return value
+
+        def OpenProcess(self, access, inherit, pid):
+            self.opened.append((access, inherit, pid))
+            return self.handle
+
+        def GetExitCodeProcess(self, handle, reference):
+            reference.value = self.code
+            return self.ok
+
+        def CloseHandle(self, handle):
+            self.closed.append(handle)
+
+    def state(self, **kwargs):
+        kernel = self.Kernel(**kwargs)
+        return ev.windows_process_state(4242, kernel), kernel
+
+    def test_a_running_process_is_alive_and_the_handle_is_closed(self):
+        result, kernel = self.state()
+        self.assertIs(result, True)
+        self.assertEqual((kernel.opened, kernel.closed), ([(ev.PROCESS_QUERY_LIMITED_INFORMATION, False, 4242)], [1]))
+
+    def test_an_exited_process_is_not_alive_even_when_a_handle_is_still_open(self):
+        result, kernel = self.state(code=0)
+        self.assertIs(result, False)
+        self.assertEqual(kernel.closed, [1])
+        self.assertIs(self.state(code=-1073741510 & 0xFFFFFFFF)[0], False)   # killed by Ctrl+C
+
+    def test_no_such_process_is_false_access_denied_is_alive_anything_else_is_unknown(self):
+        self.assertIs(self.state(handle=0, error=ev.ERROR_INVALID_PARAMETER)[0], False)
+        self.assertIs(self.state(handle=0, error=ev.ERROR_ACCESS_DENIED)[0], True)
+        self.assertIsNone(self.state(handle=0, error=1234)[0])
+        result, kernel = self.state(ok=False)
+        self.assertIsNone(result)
+        self.assertEqual(kernel.closed, [1])   # the handle is closed on every path
+
+    def test_a_number_that_no_pid_can_be_is_false_without_a_call(self):
+        kernel = self.Kernel()
+        for pid in (0, -5, 2 ** 32, 10 ** 12, True.__class__, None, 1.5):
+            with self.subTest(pid=pid):
+                self.assertIs(ev.windows_process_state(pid, kernel), False)
+        self.assertEqual(kernel.opened, [])
+
+    def test_the_real_calls_on_windows(self):
+        if sys.platform != 'win32':
+            return   # the logic above is the test elsewhere; this branch needs the real kernel32
+        import subprocess
+        self.assertIs(ev.windows_process_state(os.getpid()), True)
+        self.assertIs(ev.windows_process_state(10 ** 12), False)
+        child = subprocess.Popen([sys.executable, '-c', 'pass'])
+        child.wait()
+        self.assertIs(ev.windows_process_state(child.pid), False)   # exited, its handle may still be open here
+        self.assertIs(ev.process_state(os.getpid()), True)
+
+
 class EventFiles(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix='test-events-')
