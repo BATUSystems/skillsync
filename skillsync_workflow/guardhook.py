@@ -62,6 +62,13 @@ def test_settings(manifest):
     if not isinstance(wrappers, list) or any(not isinstance(item, str) or not item.strip() or '\0' in item for item in wrappers):
         problems.append('hooks.test_wrappers must be a list of nonempty strings (command prefixes)')
         wrappers = []
+    else:
+        for item in wrappers:
+            try:
+                shlex.split(item)
+            except ValueError:
+                problems.append(f'hooks.test_wrappers: not a valid command prefix (an open quote?): {item!r}')
+                wrappers = [w for w in wrappers if w != item]
     wide = hooks.get('wide_modules', DEFAULT_WIDE_MODULES)
     if isinstance(wide, bool) or not isinstance(wide, int) or wide < 2:
         problems.append('hooks.wide_modules must be an integer of at least 2')

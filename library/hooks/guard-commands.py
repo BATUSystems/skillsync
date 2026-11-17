@@ -754,6 +754,17 @@ def command_words(text, depth=0, inherited=None):
         if name == 'eval' and depth < MAX_DEPTH:
             out += command_words(' '.join(words[1:]), depth + 1, reason)
             continue
+        low = name.lower()
+        if low in ('powershell', 'pwsh', 'powershell.exe', 'pwsh.exe') and depth < MAX_DEPTH:
+            inner = [k for k, arg in enumerate(words[1:], 1) if arg.lower() in ('-c', '-command') and k + 1 < len(words)]
+            if inner:
+                out += command_words(' '.join(words[inner[0] + 1:]), depth + 1, reason)
+                continue
+        if low in ('cmd', 'cmd.exe') and depth < MAX_DEPTH:
+            inner = [k for k, arg in enumerate(words[1:], 1) if arg.lower() in ('/c', '/k') and k + 1 < len(words)]
+            if inner:
+                out += command_words(' '.join(words[inner[0] + 1:]), depth + 1, reason)
+                continue
         out.append((words, reason))
     return out
 
@@ -762,13 +773,17 @@ def load_test_part(wide_modules, wrappers):
     """`(classifier module, table)` of the test commands part, or `None` when its files are missing or unusable: this part then stays silent."""
     import importlib.util
     here = os.path.dirname(os.path.abspath(__file__))
+    saved = sys.dont_write_bytecode
+    sys.dont_write_bytecode = True   # the hook directory must not collect a __pycache__ (it is not ignored in every project)
     try:
         spec = importlib.util.spec_from_file_location('guard_tests', os.path.join(here, 'guard-tests.py'))
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         table = module.load_table(os.path.join(here, 'test-tools.json'))
-    except Exception:  # noqa: BLE001 - any failure of the classifier files silences the test part only
+    except BaseException:  # noqa: BLE001 - any failure of the classifier files (even a SystemExit) silences the test part only
         return None
+    finally:
+        sys.dont_write_bytecode = saved
     return (module, table) if table else None
 
 
@@ -779,7 +794,15 @@ def test_warning(command, payload, wide_modules, wrappers):
         if loaded is None:
             return None, []
         module, table = loaded
-        extra = [tuple(os.path.basename(w).lower() if i == 0 else w for i, w in enumerate(shlex.split(item))) for item in wrappers]
+        known = [word for word, _ in table['tools']] + list(table['modules']) + ['make', 'pnpm', 'yarn']
+        if not any(word in command for word in known):
+            return None, []   # no word of any tool anywhere in the text: nothing to classify (the cheap filter of the spec)
+        extra = []
+        for item in wrappers:
+            try:
+                extra.append(tuple(shlex.split(item)))
+            except ValueError:
+                extra.append(tuple(item.split()))   # an open quote in a prefix: its words as they stand, the rest of the part keeps working
         warned, excused = [], []
         for words, reason in command_words(command):
             verdict = module.classify(words, table, wide_modules, extra)
@@ -841,7 +864,10 @@ def main(argv=None):
             tests_mode = argv[i + 1]
             i += 2
         elif argv[i] == '--wide-modules' and i + 1 < len(argv):
-            wide_modules = int(argv[i + 1]) if argv[i + 1].isdigit() and int(argv[i + 1]) >= 2 else 25
+            try:
+                wide_modules = int(argv[i + 1]) if int(argv[i + 1]) >= 2 else 25
+            except ValueError:
+                wide_modules = 25
             i += 2
         elif argv[i] == '--wrapper' and i + 1 < len(argv):
             wrappers.append(argv[i + 1])

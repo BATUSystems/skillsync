@@ -108,6 +108,52 @@ class Protocol(HookBase):
         self.assertEqual(result.stderr, '')
 
 
+class ReviewFixes(HookBase):
+    def test_running_the_hook_leaves_no_pycache_in_the_hook_directory(self):
+        self.warn('pytest')
+        self.assertFalse((self.hooks / '__pycache__').exists(), sorted(p.name for p in self.hooks.iterdir()))
+
+    def test_a_non_ascii_command_never_breaks_the_output_on_a_narrow_console(self):
+        result = self.warn("pytest zażółć", env={'PYTHONIOENCODING': 'cp1252'})
+        text = self.context(result)
+        self.assertIsNotNone(text)
+
+    def test_a_manifest_prefix_with_a_slash_matches_and_an_open_quote_does_not_silence_the_part(self):
+        self.assertIsNone(self.context(self.warn('make test', '--wrapper', 'make test')))
+        self.assertIsNotNone(self.context(self.warn('pytest', '--wrapper', "it's an open quote")), 'the rest of the part keeps working')
+
+    def test_powershell_and_cmd_are_unwrapped_like_a_shell(self):
+        for command in ('powershell -c "dotnet test"', 'pwsh -Command dotnet test', 'cmd /c pytest'):
+            with self.subTest(command=command):
+                self.assertIsNotNone(self.context(self.warn(command)), command)
+
+    def test_a_bare_flock_is_not_the_wrapper_and_systemd_run_alone_is(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('gt', HOOKS / 'guard-tests.py')
+        gt = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(gt)
+        self.assertFalse(gt.is_wrapper(['flock', '/tmp/x.lock', 'pytest']), 'a bare flock is not the station wrapper (it is also not in the table: such a command is not recognised)')
+        self.assertIsNone(self.context(self.warn('systemd-run --user --scope pytest')))
+        self.assertIsNone(self.context(self.warn('flock /tmp/x.lock systemd-run --user --scope pytest')))
+
+    def test_a_command_without_any_tool_word_is_cheap(self):
+        import time
+        self.warn('ls')   # warm the file cache
+        start = time.perf_counter()
+        for _ in range(5):
+            self.warn('ls -la docs')
+        self.assertLess((time.perf_counter() - start) / 5, 0.25)
+
+    def test_a_system_exit_in_the_classifier_files_silences_only_the_test_part(self):
+        (self.hooks / 'guard-tests.py').write_text('raise SystemExit(3)\n', encoding='utf-8')
+        self.assertEqual(self.warn('pytest').returncode, 0)
+        result = self.run_hook('rm -rf /srv/not-a-temp-dir/x', '--mode', 'deny', '--tests', 'warn')
+        self.assertEqual(result.returncode, 2)
+
+    def test_a_bad_wide_modules_value_falls_back_to_the_default(self):
+        self.assertIsNotNone(self.context(self.warn('python3 -m unittest discover', '--wide-modules', '\u00b2')))
+
+
 class Exception_(HookBase):
     def trail(self):
         path = self.project / '.skillsync' / 'hook-exceptions.jsonl'

@@ -15,7 +15,7 @@ import re
 
 SCHEMA = 1
 DEFAULT_WIDE_MODULES = 25
-BUILTIN_WRAPPERS = (('skillsync', 'test-run'), ('skillsync', 'validate'), ('skillsync', 'smart-test'))   # words that start an opaque wrapper
+BUILTIN_WRAPPERS = (('skillsync', 'test-run'),)   # words that start an opaque wrapper (`validate`/`smart-test` count only with `--run`, see `is_wrapper`)
 _WORD = re.compile(r'[A-Za-z_][A-Za-z0-9_]*=.*')
 
 
@@ -127,7 +127,7 @@ def tool_of(words, table):
 # ---- the rules of the tools -------------------------------------------------------------------------------------------------------------------------
 
 VALUED = {
-    'pytest': {'-k', '-m', '-p', '-c', '-o', '-W', '-n', '-r', '--rootdir', '--ignore', '--ignore-glob', '--deselect', '--maxfail', '--tb', '--junitxml', '--cov',
+    'pytest': {'-k', '-m', '-p', '-c', '-o', '-W', '-n', '-r', '--rootdir', '--ignore', '--ignore-glob', '--deselect', '--maxfail', '--tb', '--junitxml',
                '--log-level', '--basetemp', '--durations', '--import-mode', '--timeout', '--color', '--confcutdir'},
     'unittest': {'-s', '-t', '-p', '-k', '--start-directory', '--top-level-directory', '--pattern'},
     'dotnet': {'--filter', '-c', '--configuration', '-f', '--framework', '-r', '--runtime', '--logger', '-l', '--results-directory', '-o', '--output', '--settings', '-s',
@@ -135,10 +135,10 @@ VALUED = {
     'jest': {'-t', '--testNamePattern', '--config', '-c', '--maxWorkers', '-w', '--testPathPattern', '--findRelatedTests', '--reporters', '--shard'},
     'vitest': {'-t', '--testNamePattern', '--config', '-c', '--reporter', '--shard', '--root', '-r', '--project', '--outputFile'},
     'angular': {'--include', '--browsers', '--karma-config', '--watch'},
-    'cargo': {'-p', '--package', '--test', '--bin', '--example', '--features', '-F', '--target', '--manifest-path', '-j', '--jobs', '--profile', '-Z', '--color', '--exclude'},
+    'cargo': {'--message-format', '-p', '--package', '--test', '--bin', '--example', '--features', '-F', '--target', '--manifest-path', '-j', '--jobs', '--profile', '-Z', '--color', '--exclude'},
     'playwright': {'-g', '--grep', '--grep-invert', '--project', '--reporter', '--config', '-c', '--workers', '-j', '--retries', '--shard', '--timeout'},
     'cypress': {'--spec', '-s', '--browser', '-b', '--config', '-c', '--env', '-e', '--reporter', '-r', '--project', '-P', '--record', '--key', '--group', '--tag'},
-    'go': {'-run', '-bench', '-count', '-timeout', '-p', '-parallel', '-tags', '-cpu', '-v', '-coverprofile', '-covermode', '-skip', '-shuffle'},
+    'go': {'-coverpkg', '-run', '-bench', '-count', '-timeout', '-p', '-parallel', '-tags', '-cpu', '-v', '-coverprofile', '-covermode', '-skip', '-shuffle'},
 }
 GO_BOOLEAN_AFTER = {'-v', '-race', '-short', '-json', '-cover', '-failfast', '-x', '-n'}
 
@@ -234,7 +234,7 @@ def _runner(tool):
             args = args[1:]
         if _has(args, {'--listTests', '--list', '--help', '-h', '--version'}):
             return 'exempt', None
-        if _has(args, {'-t', '--testNamePattern', '--findRelatedTests', '--onlyChanged', '-o'}):
+        if _has(args, {'-t', '--testNamePattern', '--testPathPattern', '--findRelatedTests', '--onlyChanged', '-o'}):
             return 'point', None
         return ('point', None) if _positionals(args, VALUED[tool]) else ('wide', None)
     return rule
@@ -322,10 +322,20 @@ def _npm(words, wide_modules, table):
     names = [base(w) for w in words]
     if not names or names[0] not in ('npm', 'pnpm', 'yarn', 'npx'):
         return None
-    args = [str(w) for w in words[1:]]
-    args = [a for a in args if not a.startswith('-')]
+    raw = [str(w) for w in words[1:]]
+    valued = {'--prefix', '--workspace', '-w', '--cwd', '--dir', '-C', '--filter', '--registry'}
+    args, i = [], 0
+    while i < len(raw):
+        if raw[i] == '--':
+            break
+        if raw[i].startswith('-'):
+            i += 1 if '=' in raw[i] or raw[i] not in valued else 2
+            continue
+        args.append(raw[i])
+        i += 1
+    tail = raw[i + 1:] if i < len(raw) else []   # what follows `--` goes to the script: a file or a pattern there narrows the run
     if args[:1] == ['test'] or args[:2] == ['run', 'test'] or args[:1] == ['t']:
-        return 'wide', 'probably'
+        return ('point', None) if tail else ('wide', 'probably')
     return None
 
 
@@ -333,7 +343,15 @@ def _make(words, wide_modules, table):
     names = [base(w) for w in words]
     if not names or names[0] != 'make':
         return None
-    targets = [w for w in words[1:] if not w.startswith('-') and '=' not in w]
+    valued, targets, i = {'-C', '--directory', '-j', '--jobs', '-f', '--file', '--makefile', '-I', '-o', '-W', '-l', '--max-load'}, [], 1
+    while i < len(words):
+        word = words[i]
+        if word.startswith('-'):
+            i += 1 if '=' in word or word not in valued else 2
+            continue
+        if '=' not in word:
+            targets.append(word)
+        i += 1
     return ('wide', 'probably') if targets and targets[0] in ('test', 'tests', 'check') else None
 
 
@@ -359,10 +377,14 @@ def is_wrapper(words, extra=()):
     """`True` for a command that already runs through a wrapper: `skillsync test-run|validate|smart-test`, `flock ... systemd-run ...`, or a prefix of
     `hooks.test_wrappers` (each a list of words)."""
     names = [base(w) for w in words]
-    for prefix in list(BUILTIN_WRAPPERS) + [tuple(p) for p in extra]:
+    for prefix in list(BUILTIN_WRAPPERS) + [tuple(base(w) for w in p) for p in extra]:   # the same normalisation as the words of the command
         if tuple(names[:len(prefix)]) == tuple(prefix):
             return True
-    return bool(names) and names[0] in ('flock', 'systemd-run') and any(n == 'systemd-run' or n == 'flock' for n in names)
+    if names[:1] == ['skillsync'] and names[1:2] in (['validate'], ['smart-test']) and any(w == '--run' or w.startswith('--run=') for w in words):
+        return True   # the shared runner records the run only with `--run`
+    if names[:1] == ['systemd-run']:
+        return True   # the station wrapper with a memory limit
+    return names[:1] == ['flock'] and 'systemd-run' in names   # `flock <lock> systemd-run ...`: the lock AND the limit; a bare flock is not the wrapper
 
 
 def program_tool(core, table):

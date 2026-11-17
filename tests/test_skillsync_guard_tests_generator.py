@@ -27,6 +27,7 @@ class Settings(unittest.TestCase):
         self.assertEqual(guardhook.test_settings({'hooks': {'guard_tests': True}})[0], 'warn')
 
     def test_invalid_values_are_problems_and_never_switch_it_on(self):
+        self.assertTrue(guardhook.test_settings({'hooks': {'test_wrappers': ["it's open"]}})[3], 'an open quote in a prefix is a problem, not a silent failure')
         for hooks in ({'guard_tests': 'maybe'}, {'guard_tests': 3}, {'test_wrappers': 'x'}, {'test_wrappers': ['']}, {'test_wrappers': [3]}, {'wide_modules': 1}, {'wide_modules': 'many'},
                       {'wide_modules': True}):
             with self.subTest(hooks=hooks):

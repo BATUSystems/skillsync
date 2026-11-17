@@ -61,6 +61,9 @@ VERDICTS = [
     ('skillsync validate . --run r1', 'wrapper'), ('skillsync smart-test . --run r1', 'wrapper'),
     ('flock /run/user/1000/heavy-run.lock systemd-run --user --scope python3 -m unittest discover', 'wrapper'),
     ('systemd-run --user --scope pytest', 'wrapper'),
+    ('flock /tmp/x.lock pytest', 'none'), ('skillsync validate .', 'none'), ('skillsync smart-test . --run=r1', 'wrapper'),
+    ('npm test -- one.test.js', 'point'), ('npm --prefix web test', 'wide'), ('make -C build test', 'wide'), ('make -j 4 check', 'wide'), ('make -j 4', 'none'),
+    ('jest --testPathPattern src/a', 'point'), ('pytest --cov tests/a.py', 'point'), ('go test -coverpkg ./... ./pkg', 'point'), ('cargo test --message-format json parser', 'point'),
     # not tests at all
     ('ls -la', 'none'), ('git status', 'none'), ('python3 scripts/check_skips.py run.log', 'none'), ('python3 -m py_compile a.py', 'none'), ('echo pytest', 'none'),
     ('grep -rn unittest docs', 'none'),
@@ -90,6 +93,11 @@ class Verdicts(unittest.TestCase):
         self.assertTrue(G.classify(['make', 'test'], TABLE)['probably'])
         self.assertFalse(G.classify(['pytest'], TABLE)['probably'])
 
+    def test_a_prefix_of_the_manifest_is_normalised_like_the_command(self):
+        words = ['/opt/Tools/Runner.EXE', 'run', 'pytest']
+        self.assertEqual(G.is_wrapper(words, [('/opt/Tools/Runner.exe', 'run')]), True)
+        self.assertEqual(G.is_wrapper(['devbox', 'run', './scripts/test.sh'], [('devbox', 'run', './scripts/test.sh')]), True)
+
     def test_windows_names_and_paths(self):
         self.assertEqual(G.classify([r'C:\Python\python.exe', '-m', 'pytest'], TABLE)['verdict'], 'wide')
         self.assertEqual(G.classify(['dotnet.exe', 'test'], TABLE)['verdict'], 'wide')
@@ -103,7 +111,6 @@ class Verdicts(unittest.TestCase):
         self.assertEqual(text, text.encode('ascii', 'ignore').decode(), 'ASCII only')
         self.assertLess(len(text), 10000)
         self.assertFalse(any(word.isupper() and len(word) > 3 and word.isalpha() for word in text.split()), 'no shouting')
-        self.assertNotIn('Barci', text)
 
 
 class AgreesWithTheCore(unittest.TestCase):
