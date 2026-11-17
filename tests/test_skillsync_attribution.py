@@ -371,6 +371,29 @@ class HookTests(unittest.TestCase):
         self.passes(f'echo "{FOOTER}" | wc -l')
         self.passes('cd sub && git commit -m clean')
 
+    def test_here_strings_variables_process_substitution_and_cat_are_refused(self):
+        (self.work / 'pr.md').write_text('body\n' + FOOTER + '\n', encoding='utf-8')
+        (self.work / 'm.txt').write_text('s\n\n' + TRAILER + '\n', encoding='utf-8')
+        for command in (f'git commit -F - <<< "{TRAILER}"',
+                        f'MSG="{TRAILER}"; git commit -m "$MSG"',
+                        f'git commit -F <(echo "{TRAILER}")',
+                        'gh pr create --title t --body "$(cat pr.md)"',
+                        'MSG=$(cat m.txt); git commit -m "$MSG"',
+                        'az repos pr create --title t --description @pr.md',
+                        f'az boards work-item create --title t --type Task --description "{FOOTER}"',
+                        f'true && git commit -m "{FOOTER}"', f'(git commit -m "{FOOTER}")', f'bash -c \'git commit -m "{FOOTER}"\'',
+                        f'env A=1 git commit -m "{FOOTER}"', f'command git commit -m "{FOOTER}"', f'git commit --amend -m "{FOOTER}"'):
+            with self.subTest(command[:60]):
+                self.refused(command)
+
+    def test_files_of_the_core_and_quoting_text_do_not_block_ordinary_work(self):
+        for command in ('git add skillsync_workflow/data/attribution-patterns.json tests/test_skillsync_attribution.py && git commit -m "feat: patterns"',
+                        'git commit -m "test: the footer patterns of the core"',
+                        f'git log --oneline | grep -i "{FOOTER}"', f'cat notes.md | grep "{TRAILER}"',
+                        f'echo "{FOOTER}" > /dev/null', f'git commit -m "docs: example" -- docs/x.md'):
+            with self.subTest(command[:60]):
+                self.passes(command)
+
     def test_the_message_names_the_pattern_and_the_class(self):
         result = self.refused(f'git commit -m "{TRAILER}"')
         self.assertIn('attr-coauthor-name (klasa B)', result.stderr)

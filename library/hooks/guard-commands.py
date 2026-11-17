@@ -867,6 +867,10 @@ GIT_VALUE_FLAGS = {'-C', '-c', '--git-dir', '--work-tree', '--namespace'}
 API_FIELD_FLAGS = {'-f', '-F', '--field', '--raw-field', '--input', '-d', '--data'}
 FILE_FLAGS = {'-F', '--file', '--body-file', '-f'}
 FILE_LIMIT = 65536
+HERESTRING = re.compile(r"<<<[ \t]*(\"(?:[^\"\\\\]|\\\\.)*\"|'[^']*'|[^\s;&|)]+)")
+ASSIGN_VALUE = re.compile(r"(?:^|[\s;&|(])[A-Za-z_][A-Za-z0-9_]*=(\"(?:[^\"\\\\]|\\\\.)*\"|'[^']*')")
+PROCESS_SUBST = re.compile(r"<\((.*?)\)", re.DOTALL)
+READERS = {'cat', 'tac', 'type', 'head', 'tail', 'less', 'more'}
 HEREDOC = re.compile(r"<<-?[ \t]*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
 
 
@@ -967,6 +971,8 @@ def attribution_findings(command, cwd, rules):
                 base = _join_dir(base, words[k + 1])
         for word in rest:
             texts.extend(word_variants(word))
+            if word.startswith('@') and len(word) > 1:   # `az ... --description @file`
+                files.append(_join_dir(base, word[1:]))
         for k, arg in enumerate(rest):
             target = rest[k + 1] if k + 1 < len(rest) else None
             if arg in FILE_FLAGS and target:
@@ -983,6 +989,17 @@ def attribution_findings(command, cwd, rules):
     if not writers:
         return found
     texts += heredoc_bodies(command)
+    # text that reaches the writer in other ways: here-strings, values of shell variables, process substitutions (`-F <(echo ...)`)
+    for pattern in (HERESTRING, ASSIGN_VALUE):
+        texts += [match.group(1).strip('"\'') for match in pattern.finditer(command)]
+    for match in PROCESS_SUBST.finditer(command):
+        texts.append(match.group(1))
+        for inner, _ in command_words(match.group(1)):
+            for word in inner:
+                texts.extend(word_variants(word))
+    for words in others:   # `--body "$(cat pr.md)"`: the files that `cat` and its kin read in the same text
+        if words and os.path.basename(words[0]) in READERS:
+            files.extend(_join_dir(here, word) for word in words[1:] if not word.startswith('-'))
     if stdin_reader:
         for words in others:
             for word in words:
