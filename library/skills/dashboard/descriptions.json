@@ -142,5 +142,13 @@
  "legend_verify": {
   "title": "Do weryfikacji",
   "text": "Kroki zgłoszone w raporcie postępu jako zrobione, ale jeszcze niezaznaczone w planie z commitem. Jaśniejszy odcień paska = zgłoszone lub w toku."
+ },
+ "forecast": {
+  "title": "Prognoza końca realizacji",
+  "text": "To PROGNOZA, nie pomiar, i to orientacyjna: z tempa bieżącego przebiegu (odstępy między zakończeniami kroków bez okien czekania; kroki zakończone razem dzielą odstęp) liczony jest zakres pracy do końca kroków (kwartyle × liczba kroków) i godzina końca od chwili odświeżenia strony.\nNie uwzględnia rozmiaru kroków ani czekania na ludzi. Powtórka na prawdziwych przebiegach: zakres trafia w rzeczywistość średnio w co drugim przypadku, a w części przebiegów wcale; to rząd wielkości, nie obietnica. Od 4 zakończonych kroków z czasem; bez danych jest powód zamiast liczby. Host może wybrać widok „tempo” (samo tempo na krok).\nStrona: pole forecast (osobne od eta, które jest deklaracją agenta)."
+ },
+ "measure_act": {
+  "title": "Czas aktu (pomiar)",
+  "text": "Czas, który minął: od startu przebiegu do zgody „GO plan” (akt I) i od niej do „GO implement” (akt II), minus okna czekania na człowieka. Liczone z checkpointów i pliku zgód; gdy zgody nie ma w pliku, czas jest nieznany, nie zgadywany.\nStrona: timing.acts."
  }
 }

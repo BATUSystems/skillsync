@@ -26,7 +26,7 @@ from .delivery_mode import delivery_info
 from .status import (APPROVAL_WORDS, APPROVALS_FILE, MAX_APPROVALS_BYTES, _APPROVAL_SHA, _approval_at, _message, _status_fields,
                      git_blob_sha)
 from .pathfmt import posix
-from . import plan_phases, dashboard_tests, test_events
+from . import plan_phases, dashboard_tests, dashboard_forecast, test_events
 
 SCHEMA = 1
 APP_NAME = 'dashboard'
@@ -1625,6 +1625,33 @@ def _overlap_seconds(windows, start, finish):
     return total
 
 
+def _act_times(run_start, windows, given, iso):
+    """`timing.acts`: measured time of act I (spec: `RUN=` to the first `GO plan`) and act II (plan: `GO plan` to the first `GO implement`),
+    the waiting windows inside subtracted exactly as for a step. Nothing is estimated: an act whose end is not in the consent file
+    (consent given in the session, or the act still goes on) has `endedAt: null`, `unknown: true`, `reason: 'no-approval'`; a window
+    that nothing closes inside the act gives `reason: 'open-window'`. Act II is listed only when `GO plan` is known (it is its start)."""
+    first = {}
+    for moment, word in given:
+        first.setdefault(word, moment)
+    out = []
+    for key, begin, end in (('spec', run_start, first.get('GO plan')), ('plan', first.get('GO plan'), first.get('GO implement'))):
+        if begin is None:
+            continue
+        entry = {'key': key, 'startedAt': iso(begin), 'endedAt': iso(end) if end else None, 'workSeconds': None, 'waitSeconds': None,
+                 'unknown': True, 'reason': 'no-approval' if end is None else None, 'endSource': 'approval' if end else None}
+        if end is not None:
+            if end < begin:
+                entry['reason'] = 'order'
+            else:
+                wait = _overlap_seconds(windows, begin, end)
+                if wait is None:
+                    entry['reason'] = 'open-window'
+                else:
+                    entry.update(workSeconds=int((end - begin).total_seconds()) - wait, waitSeconds=wait, unknown=False)
+        out.append(entry)
+    return out
+
+
 def build_timing(run_start, checkpoints, approvals, phases):
     """`timing` of the dashboard (`show`) and `dashboard metrics`: work time and waiting time per step and per plan phase.
 
@@ -1637,7 +1664,7 @@ def build_timing(run_start, checkpoints, approvals, phases):
     instants = _instants(run_start, checkpoints)
     if instants is None:
         return {'available': False, 'reason': 'run start (RUN=) missing, or the first checkpoint is earlier than it, or a checkpoint time is unreadable', 'windows': [], 'steps': [],
-                'stages': [], 'totals': {'workSeconds': None, 'waitSeconds': None, 'windows': 0, 'unknownWindows': 0,
+                'stages': [], 'acts': [], 'totals': {'workSeconds': None, 'waitSeconds': None, 'windows': 0, 'unknownWindows': 0,
                                          'unknownSteps': 0, 'complete': False}}
     given = []
     for entry in approvals or []:
@@ -1724,6 +1751,7 @@ def build_timing(run_start, checkpoints, approvals, phases):
                             'endedAt': iso(window['endAt'].astimezone(window['startAt'].tzinfo)) if known else None,
                             'seconds': window['seconds'], 'source': window['source'] if known else None, 'unknown': not known})
     return {'available': True, 'reason': None, 'windows': out_windows, 'steps': steps, 'stages': stages,
+            'acts': _act_times(parse_iso(run_start), windows, given, iso),
             'totals': {'workSeconds': (sum(stage['workSeconds'] or 0 for stage in stages)
                                        if any(stage['workSeconds'] is not None for stage in stages) else None),
                        'waitSeconds': known_wait, 'windows': len(windows), 'unknownWindows': unknown_windows,
@@ -2040,6 +2068,7 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
                       'words': delivery_words(delivery, ahead_state, plan_info, waiting, git_info['branch'], target)}
     current_docs = [spec_rel if spec_path else None, chosen['path'] if chosen else None]
     assumptions, blocking = parse_questions(spec_text) if spec_path else ([], [])
+    timing = build_timing(run['start'], chronological, run_approvals(root, run_id), progress['phases'])
     status = {
         'schema': SCHEMA,
         'app': {'name': APP_NAME, 'version': __version__},
@@ -2076,7 +2105,9 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
         'blockingQuestions': {'count': len(blocking), 'items': blocking},
         'expertQuestions': expert_questions,
         'substeps': build_substeps(progress, chronological),
-        'timing': build_timing(run['start'], chronological, run_approvals(root, run_id), progress['phases']),
+        'timing': timing,
+        'forecast': dashboard_forecast.build_forecast(timing, progress, plan_info['status'] if plan_info else None,
+                                                      bool(chronological) and wait_marker(chronological[-1]['text']) is not None),
     }
     return dashboard_tests.add_to_status(status, root, run_id, progress['phases'])
 

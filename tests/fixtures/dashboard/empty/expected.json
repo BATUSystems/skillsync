@@ -142,6 +142,10 @@
     "open": 0,
     "runs": []
   },
+  "forecast": {
+    "reason": "plan-not-running",
+    "scope": "plan"
+  },
   "generatedAt": "2026-01-12T12:00:00+00:00",
   "git": {
     "branch": null,
@@ -210,6 +214,7 @@
   },
   "substeps": [],
   "timing": {
+    "acts": [],
     "available": false,
     "reason": "run start (RUN=) missing, or the first checkpoint is earlier than it, or a checkpoint time is unreadable",
     "stages": [],

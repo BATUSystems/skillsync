@@ -15,6 +15,18 @@
   "status": "PASS",
   "substeps": [],
   "timing": {
+    "acts": [
+      {
+        "endSource": null,
+        "endedAt": null,
+        "key": "spec",
+        "reason": "no-approval",
+        "startedAt": "2026-01-11T07:00:00+00:00",
+        "unknown": true,
+        "waitSeconds": null,
+        "workSeconds": null
+      }
+    ],
     "available": true,
     "reason": null,
     "stages": [],

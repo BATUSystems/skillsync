@@ -417,9 +417,43 @@ def inline_html(text: object, limit: int = 0) -> str | None:
     return rendered if rendered != html.escape(source, quote=False) else None
 
 
+# The feed of checkpoints highlights step ids and key phrases (the same patterns as the page's `decorateCheckpoint`, ASCII word rules like JS).
+_FEED_ID = re.compile(r"(?<![\w-])([A-Z]{1,3}-?\d+[a-z]?)(?![\w-])", re.ASCII)
+_FEED_PHRASE = re.compile(r"\b(zrobione|w toku|ryzyko|PASS|FAIL|BLOCKED|restart sesji)\b", re.ASCII | re.IGNORECASE)
+_TAG = re.compile(r"(<[^>]*>)")
+
+
+def decorate_feed_html(rendered: str) -> str:
+    """`rendered` (the escaped HTML of `render_inline`) with step ids in `<span class="sidc">` and phrases in `<span class="ph">`, only in the TEXT
+    segments between tags and never inside `<code>` or `<a>` (nor in attributes: a tag is never touched). The segments are already escaped, and
+    the matches are ASCII letters, digits and spaces, so nothing is injected."""
+    out, depth = [], 0
+    for part in _TAG.split(rendered):
+        if part.startswith("<") and part.endswith(">"):
+            name = part[1:].lstrip("/").split(None, 1)[0].rstrip(">").lower() if len(part) > 2 else ""
+            if name in ("code", "a"):
+                depth = max(0, depth - 1) if part.startswith("</") else depth + 1
+            out.append(part)
+        elif depth or not part:
+            out.append(part)
+        else:
+            pieces, last = [], 0
+            for found in _FEED_ID.finditer(part):
+                pieces.append(_decorate_phrases(part[last:found.start()]))
+                pieces.append(f'<span class="sidc">{found.group(1)}</span>')
+                last = found.end()
+            pieces.append(_decorate_phrases(part[last:]))
+            out.append("".join(pieces))
+    return "".join(out)
+
+
+def _decorate_phrases(text: str) -> str:
+    return _FEED_PHRASE.sub(lambda found: f'<span class="ph">{found.group(1)}</span>', text)
+
+
 def add_inline_html(data: dict) -> dict:
     """Additive fields of `/api/status` (`schema` stays 1): `titleHtml` of the plan steps, of `substeps` and of `progress.current`,
-    `whatHtml` and `actionHtml` of `waiting[]` (the action text repeats the item), `textHtml` of `expertQuestions.items[]` (cut to the same 160 characters as the plain text). The texts were
+    `textHtml` of `run.checkpoints[]` (the feed), `whatHtml` and `actionHtml` of `waiting[]` (the action text repeats the item), `textHtml` of `expertQuestions.items[]` (cut to the same 160 characters as the plain text). The texts were
     masked when the plan and the checkpoints were read; `text`, `title`, `what` stay as they were (tooltips and `title`/`aria` use them)."""
     def put(item: object, source: str, out: str, limit: int = 0) -> None:
         if isinstance(item, dict):
@@ -433,6 +467,11 @@ def add_inline_html(data: dict) -> dict:
             for step in (phase.get("steps") or []) if isinstance(phase, dict) else []:
                 put(step, "title", "titleHtml")
         put(progress.get("current"), "title", "titleHtml")
+    run = data.get("run")
+    for item in (run.get("checkpoints") or []) if isinstance(run, dict) else []:
+        put(item, "text", "textHtml")
+        if isinstance(item, dict) and isinstance(item.get("textHtml"), str):
+            item["textHtml"] = decorate_feed_html(item["textHtml"])
     for item in data.get("substeps") or []:
         put(item, "title", "titleHtml")
     for item in data.get("waiting") or []:

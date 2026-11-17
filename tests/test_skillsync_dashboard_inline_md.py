@@ -44,6 +44,54 @@ class InlineHtmlTests(unittest.TestCase):
         self.assertNotIn("<br", html)
 
 
+class FeedHighlightTests(unittest.TestCase):
+    """A formatted checkpoint row keeps the highlighting of step ids and key phrases of a plain row (`decorateCheckpoint` of the page)."""
+
+    def feed(self, text: str) -> str:
+        d = srv.add_inline_html({"run": {"checkpoints": [{"time": "10:00", "text": text}]}})
+        return d["run"]["checkpoints"][0].get("textHtml", "")
+
+    def test_ids_and_phrases_are_highlighted_in_a_formatted_row(self) -> None:
+        html = self.feed("**zrobione** S1 i F2.1; w toku: S2a, ryzyko PASS")
+        self.assertIn('<strong><span class="ph">zrobione</span></strong>', html)
+        self.assertIn('<span class="sidc">S1</span>', html)
+        self.assertIn('<span class="sidc">S2a</span>', html)
+        self.assertIn('<span class="ph">w toku</span>', html)
+        self.assertIn('<span class="ph">ryzyko</span>', html)
+        self.assertIn('<span class="ph">PASS</span>', html)
+
+    def test_nothing_is_highlighted_inside_code_or_a_link(self) -> None:
+        html = self.feed("`S1 zrobione` oraz [S2 w toku](https://example.com/S3) **S4**")
+        self.assertIn("<code>S1 zrobione</code>", html)
+        self.assertNotIn('<span class="sidc">S2', html)
+        self.assertNotIn('<span class="ph">w toku</span></a>', html)
+        self.assertIn('<a href="https://example.com/S3" target="_blank" rel="noopener noreferrer">S2 w toku</a>', html)
+        self.assertIn('<span class="sidc">S4</span>', html)
+
+    def test_attributes_are_never_touched(self) -> None:
+        html = self.feed("[zobacz](https://example.com/S1/zrobione) **ok**")
+        self.assertIn('href="https://example.com/S1/zrobione"', html)
+        self.assertNotIn('href="https://example.com/<', html)
+
+    def test_markup_in_the_text_is_not_injected(self) -> None:
+        html = self.feed("**zrobione** <script>alert(1)</script> <img src=x onerror=alert(1)> & S1")
+        self.assertNotIn("<script", html)
+        self.assertNotIn("<img", html)
+        self.assertIn("&lt;script&gt;", html)
+        self.assertIn("&amp;", html)
+        self.assertIn('<span class="sidc">S1</span>', html)
+
+    def test_a_row_without_formatting_gets_no_html_and_stays_as_before(self) -> None:
+        self.assertEqual(self.feed("zrobione S1; w toku: S2"), "")
+
+    def test_the_same_patterns_as_the_page(self) -> None:
+        code = RENDER.read_text(encoding="utf-8")
+        self.assertIn("const ID_RE = /(?<![\\w-])([A-Z]{1,3}-?\\d+[a-z]?)(?![\\w-])/g;", code)
+        self.assertIn("const PHRASE_RE = /\\b(zrobione|w toku|ryzyko|PASS|FAIL|BLOCKED|restart sesji)\\b/gi;", code)
+        self.assertEqual(srv._FEED_ID.pattern, r"(?<![\w-])([A-Z]{1,3}-?\d+[a-z]?)(?![\w-])")
+        self.assertEqual(srv._FEED_PHRASE.pattern, r"\b(zrobione|w toku|ryzyko|PASS|FAIL|BLOCKED|restart sesji)\b")
+
+
 class CutTests(unittest.TestCase):
     def test_a_short_text_is_not_cut(self) -> None:
         self.assertEqual(srv.cut_inline("krótki", 160), "krótki")
@@ -74,6 +122,7 @@ class StatusFieldsTests(unittest.TestCase):
             "substeps": [{"id": "F1.1", "title": "`kod` w tytule"}],
             "waiting": [{"what": "decyzja o **zakresie**", "action": "Sesja czeka: decyzja o **zakresie**. Odpowiedz w sesji.", "source": "checkpoint"}, {"what": "zwykłe", "source": "checkpoint"}],
             "expertQuestions": {"items": [{"id": "Q1", "text": "Czy **tak**?"}, {"id": "Q2", "text": "zwykłe pytanie"}]},
+            "run": {"checkpoints": [{"time": "10:00", "text": "zrobione **S1**"}, {"time": "10:05", "text": "zwykły wiersz"}]},
             "result": None,
         }
 
@@ -90,6 +139,10 @@ class StatusFieldsTests(unittest.TestCase):
         self.assertNotIn("whatHtml", d["waiting"][1])
         self.assertEqual(d["expertQuestions"]["items"][0]["textHtml"], "Czy <strong>tak</strong>?")
         self.assertNotIn("textHtml", d["expertQuestions"]["items"][1])
+        feed = d["run"]["checkpoints"]
+        self.assertEqual(feed[0]["textHtml"], '<span class="ph">zrobione</span> <strong><span class="sidc">S1</span></strong>')
+        self.assertEqual(feed[0]["text"], "zrobione **S1**")
+        self.assertNotIn("textHtml", feed[1])
 
     def test_missing_or_odd_sections_are_tolerated(self) -> None:
         self.assertEqual(srv.add_inline_html({}), {})

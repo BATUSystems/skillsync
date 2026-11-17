@@ -27,7 +27,7 @@ TOP = {
     'git': dict, 'plans': list, 'planAuto': bool, 'mode': str, 'plan': (dict, type(None)), 'spec': dict, 'run': dict,
     'progress': dict, 'acts': list, 'result': (dict, type(None)), 'waiting': list, 'silence': (dict, type(None)), 'approvals': dict, 'delivery': dict,
     'session': dict, 'prototype': dict, 'docs': list, 'readiness': dict, 'assumptions': dict, 'blockingQuestions': dict,
-    'expertQuestions': dict, 'prototypes': list, 'substeps': list, 'timing': dict, 'eta': (dict, type(None)),
+    'expertQuestions': dict, 'prototypes': list, 'substeps': list, 'timing': dict, 'forecast': dict, 'eta': (dict, type(None)),
 }
 ETA = ({'operation': str, 'until': str, 'untilIso': STR_OR_NONE, 'since': str}, {})
 # Pola obiektów zagnieżdżonych: wymagane (typ) i opcjonalne (opcjonalne tylko gdy opisane w kontrakcie jako opcjonalne).
@@ -70,7 +70,11 @@ ACTION = ({'kind': str, 'word': str, 'state': str, 'reason': STR_OR_NONE, 'block
            'sha': str, 'given': (dict, type(None)), 'run': STR_OR_NONE}, {'target': STR_OR_NONE})
 DOC_GROUP = ({'key': str, 'label': str, 'items': list}, {})
 DOC_ITEM = ({'path': str, 'title': str, 'status': STR_OR_NONE, 'mtime': str}, {})
-TIMING = ({'available': bool, 'reason': STR_OR_NONE, 'windows': list, 'steps': list, 'stages': list, 'totals': dict}, {})
+TIMING = ({'available': bool, 'reason': STR_OR_NONE, 'windows': list, 'steps': list, 'stages': list, 'acts': list, 'totals': dict}, {})
+TIMING_ACT = ({'key': str, 'startedAt': str, 'endedAt': STR_OR_NONE, 'workSeconds': (int, type(None)), 'waitSeconds': (int, type(None)),
+               'unknown': bool, 'reason': STR_OR_NONE, 'endSource': STR_OR_NONE}, {})
+FORECAST = ({'scope': str}, {'reason': str, 'have': int, 'need': int, 'remaining': int, 'samples': int, 'basis': str, 'paused': bool,
+            'lowSeconds': int, 'medianSeconds': int, 'highSeconds': int})
 TIMING_WINDOW = ({'what': str, 'startedAt': str, 'endedAt': STR_OR_NONE, 'seconds': (int, type(None)), 'source': STR_OR_NONE,
                   'unknown': bool}, {})
 TIMING_STEP = ({'id': str, 'phase': str, 'startedAt': STR_OR_NONE, 'finishedAt': STR_OR_NONE, 'workSeconds': (int, type(None)),
@@ -170,6 +174,8 @@ class DashboardContract(unittest.TestCase):
                 self.each(data['timing']['windows'], TIMING_WINDOW, 'timing.windows')
                 self.each(data['timing']['steps'], TIMING_STEP, 'timing.steps')
                 self.each(data['timing']['stages'], TIMING_STAGE, 'timing.stages')
+                self.each(data['timing']['acts'], TIMING_ACT, 'timing.acts')
+                self.check_shape(data['forecast'], FORECAST, 'forecast')
                 self.check_shape(data['timing']['totals'], TIMING_TOTALS, 'timing.totals')
                 self.each(data['assumptions']['items'], ASSUMPTION, 'assumptions.items')
                 self.each(data['blockingQuestions']['items'], BLOCKING, 'blockingQuestions.items')
