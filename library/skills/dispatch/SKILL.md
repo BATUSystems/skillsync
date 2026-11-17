@@ -115,3 +115,4 @@ pliku relacji ani rozszerzenia osobowości; to dotyczy wyłącznie sesji główn
 Sekcja `dispatch` manifestu (opcjonalna; brak = pytaj o zasoby, izolację i pliki dyspozytora ręcznie):
 [konfiguracja](references/config.md). Tabela reakcji na wiadomości kart: [pętla](references/loop.md).
 Reguły wynikłe z praktyki (aliasy, PUSH SLOT, ID, `ls-remote`, guardy): [lekcje](references/lessons.md).
+Podgląd na żywo (izolowany stan, port z puli, zatrzymanie po PID, szablon zlecenia): [preview](references/preview.md).
