@@ -12,6 +12,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from layers_helpers import guard_real_state, home_env  # noqa: E402
 
 from skillsync_workflow import dashboard as engine  # noqa: E402
 from skillsync_workflow import dashboard_tests as dt  # noqa: E402
@@ -26,6 +27,7 @@ def secret():
 class Base(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix='dash-tests-')
+        guard_real_state(self)
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
         dt._CACHE.clear()
@@ -323,7 +325,7 @@ class Boundary(unittest.TestCase):
             w.test('t', 't', 'failed', group='g', msg='boom ' + s)
             w.end('FAIL', 1)
             w.close()
-            env = {**os.environ, 'DEPLOY_TOKEN': s, 'PYTHONDONTWRITEBYTECODE': '1', 'XDG_DATA_HOME': f'{tmp}/d', 'XDG_CACHE_HOME': f'{tmp}/c', 'SKILLSYNC_CONFIG': f'{tmp}/cfg.yaml'}
+            env = {**os.environ, 'DEPLOY_TOKEN': s, 'PYTHONDONTWRITEBYTECODE': '1', **home_env(tmp), 'SKILLSYNC_CONFIG': f'{tmp}/cfg.yaml'}
             out = subprocess.run([sys.executable, str(ROOT / 'skillsync'), 'dashboard', 'show', str(root), '--json'], capture_output=True, text=True, env=env, timeout=60).stdout
             data = json.loads(out)
             rest = json.dumps({k: v for k, v in data.items() if k != 'tests'}, ensure_ascii=False)

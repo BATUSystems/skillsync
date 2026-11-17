@@ -458,14 +458,54 @@ def read_attempt(path, previous=None):
     return state
 
 
+STILL_ACTIVE = 259
+ERROR_ACCESS_DENIED = 5
+ERROR_INVALID_PARAMETER = 87   # `OpenProcess` of a pid that no process has
+PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+
+
+def windows_process_state(pid, kernel32=None):
+    """Windows: `True` (the process runs), `False` (no such process, or it has exited), `None` (cannot tell). `os.kill(pid, 0)` would TERMINATE the process
+    there, so the probe opens it for a query and reads its exit code. Access denied means the process exists (a protected one); a pid that is reused by another
+    process after the death of ours looks alive: the silence threshold of the callers decides then. `kernel32` is injectable for the tests."""
+    if not isinstance(pid, int) or pid <= 0 or pid > 0xFFFFFFFF:   # a pid is a DWORD
+        return False
+    try:
+        if kernel32 is None:
+            import ctypes
+            from ctypes import wintypes
+            kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+            kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+            kernel32.OpenProcess.restype = wintypes.HANDLE
+            kernel32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+            kernel32.GetExitCodeProcess.restype = wintypes.BOOL
+            kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+            get_error, code = ctypes.get_last_error, wintypes.DWORD()
+            byref = ctypes.byref
+        else:
+            get_error, code, byref = kernel32.get_last_error, kernel32.new_dword(), kernel32.byref
+        handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if not handle:
+            error = get_error()
+            return False if error == ERROR_INVALID_PARAMETER else (True if error == ERROR_ACCESS_DENIED else None)
+        try:
+            if not kernel32.GetExitCodeProcess(handle, byref(code)):
+                return None
+            return code.value == STILL_ACTIVE
+        finally:
+            kernel32.CloseHandle(handle)
+    except (OSError, AttributeError, ValueError, TypeError):
+        return None
+
+
 def process_state(pid, host=None):
-    """`True` (the process exists on this machine), `False` (it does not), `None` (unknown: another machine, Windows, no valid pid is `False`)."""
+    """`True` (the process exists on this machine), `False` (it does not), `None` (unknown: the pid of another machine, or Windows could not tell; no valid pid is `False`)."""
     if not isinstance(pid, int) or pid <= 0:
         return False
     if host and host != socket.gethostname():   # the pid of another machine (an imported run) says nothing here
         return None
     if sys.platform == 'win32':   # `os.kill(pid, 0)` would TERMINATE the process there
-        return None
+        return windows_process_state(pid)
     try:
         os.kill(pid, 0)
     except (ProcessLookupError, OverflowError):   # no such process, or a number no pid can be

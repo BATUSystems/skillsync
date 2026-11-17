@@ -284,6 +284,32 @@ class ErrorTextTests(DemoCase):
         self.assertNotIn(MARKER.encode(), data)
         self.assertTrue(data.startswith(b'HTTP/1.'), data[:40])
 
+    def test_a_real_http_0_9_line_is_answered_in_the_0_9_way_and_nothing_is_echoed(self):
+        """Only a genuine `GET <path>` line (two words) is HTTP/0.9: the bare body; the same on every Python."""
+        with socket.create_connection(('127.0.0.1', self.server.port), timeout=10) as connection:
+            connection.sendall(('GET /%s\r\n\r\n' % MARKER).encode())
+            data = b''
+            while True:
+                chunk = connection.recv(4096)
+                if not chunk:
+                    break
+                data += chunk
+        self.assertNotIn(MARKER.encode(), data)
+        self.assertNotIn(b'Traceback', data)
+
+    def test_every_other_broken_request_line_has_a_status_line(self):
+        for raw in (b'GARBAGE\r\n\r\n', b'GARBAGE A B C\r\n\r\n', b'GET /x HTTP/9.9\r\n\r\n', b'GET /x NOTHTTP\r\n\r\n'):
+            with self.subTest(raw=raw), socket.create_connection(('127.0.0.1', self.server.port), timeout=10) as connection:
+                connection.sendall(raw)
+                data = b''
+                while True:
+                    chunk = connection.recv(4096)
+                    if not chunk:
+                        break
+                    data += chunk
+            self.assertTrue(data.startswith(b'HTTP/1.'), (raw, data[:40]))
+            self.assertTrue(data.endswith(b'Error\n'), (raw, data[-20:]))
+
     def test_an_unsupported_method_name_is_not_echoed(self):
         status, headers, body = self.raw('PROPFIND' + MARKER[:6], '/')
         self.assertEqual(status, 405)

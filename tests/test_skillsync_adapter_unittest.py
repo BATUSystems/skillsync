@@ -10,6 +10,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from layers_helpers import guard_real_state, home_env  # noqa: E402
 import adapter_replay as ar  # noqa: E402
 from adapter_replay import replay_fixture, replay, load, chunks_from_text, rechunk  # noqa: E402
 
@@ -274,6 +275,7 @@ class OnTheRealTool(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix='adapter-unittest-')
+        guard_real_state(self)
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
         self.root = Path(self.tmp) / 'p'
         (self.root / '.github').mkdir(parents=True)
@@ -282,14 +284,14 @@ class OnTheRealTool(unittest.TestCase):
         (self.root / 'test_tiny.py').write_text(
             'import time, unittest\n\n\nclass T(unittest.TestCase):\n    def test_a_ok(self):\n        pass\n\n    def test_b_slow(self):\n        time.sleep(0.5)\n\n'
             '    def test_c_red(self):\n        self.assertEqual(1, 2)\n\n    @unittest.skip("why")\n    def test_d_skip(self):\n        pass\n', encoding='utf-8')
-        self.env = {**os.environ, 'PYTHONDONTWRITEBYTECODE': '1', 'XDG_DATA_HOME': f'{self.tmp}/d', 'XDG_CACHE_HOME': f'{self.tmp}/c', 'SKILLSYNC_CONFIG': f'{self.tmp}/cfg.yaml'}
+        self.env = {**os.environ, 'PYTHONDONTWRITEBYTECODE': '1', **home_env(self.tmp), 'SKILLSYNC_CONFIG': f'{self.tmp}/cfg.yaml'}
 
     def run_it(self, *extra):
         return subprocess.run([sys.executable, str(CLI), 'test-run', str(self.root), '--run', 'R1', '--step', 'F1.1', *extra, '--', sys.executable, '-m', 'unittest', '-v', 'test_tiny'],
                               cwd=str(self.root), capture_output=True, text=True, env=self.env, timeout=120)
 
     def test_events_exit_code_and_files(self):
-        before = {str(p.relative_to(self.root)) for p in self.root.rglob('*')}
+        before = {p.relative_to(self.root).as_posix() for p in self.root.rglob('*')}
         done = self.run_it()
         self.assertEqual(done.returncode, 1, done.stderr)   # the exit code of the command: one test failed
         path = self.root / '.skillsync/runs/R1/tests/F1.1/1.jsonl'
@@ -302,7 +304,7 @@ class OnTheRealTool(unittest.TestCase):
         self.assertEqual(last, {'test_a_ok': 'passed', 'test_b_slow': 'passed', 'test_c_red': 'failed', 'test_d_skip': 'skipped'})
         start = ev.read_attempt(path).start
         self.assertEqual((start['adapter'], start['live']), ('unittest', 'running'))
-        new = {str(p.relative_to(self.root)) for p in self.root.rglob('*')} - before
+        new = {p.relative_to(self.root).as_posix() for p in self.root.rglob('*')} - before
         self.assertTrue(all(p.startswith('.skillsync/') for p in new))
 
     def test_format_none_runs_the_same_command_without_the_adapter(self):

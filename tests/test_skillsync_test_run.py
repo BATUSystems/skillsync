@@ -1,4 +1,5 @@
 """180-A: `skillsync test-run` and the observer of the shared runner (stage 1)."""
+import argparse
 import json
 import os
 import shutil
@@ -15,6 +16,7 @@ sys.path.insert(0, str(ROOT))
 import sys as _sys
 _sys.path.insert(0, str(Path(__file__).resolve().parent))
 from tmp_paths import child  # noqa: E402
+from layers_helpers import guard_real_state, home_env  # noqa: E402
 from skillsync_workflow import quality, test_events as ev, test_run  # noqa: E402
 
 CLI = ROOT / 'skillsync'
@@ -39,9 +41,10 @@ def project(tmp, checkpoint='- 10:00 start; w toku: F1.1\n'):
 class Base(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix='test-run-')
+        guard_real_state(self)
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
         self.root = project(self.tmp)
-        self.env = {**os.environ, 'PYTHONDONTWRITEBYTECODE': '1', 'XDG_DATA_HOME': f'{self.tmp}/d', 'XDG_CACHE_HOME': f'{self.tmp}/c',
+        self.env = {**os.environ, 'PYTHONDONTWRITEBYTECODE': '1', **home_env(self.tmp),
                     'SKILLSYNC_CONFIG': f'{self.tmp}/cfg.yaml'}
 
     def run_cli(self, *args, root=None):
@@ -50,6 +53,36 @@ class Base(unittest.TestCase):
 
     def attempt(self, step='F1.1', n=1):
         return ev.read_attempt(child(child(self.root / '.skillsync/runs/R1/tests', step), f'{n}.jsonl'))
+
+
+class SplitCommand(unittest.TestCase):
+    """180-W: the command after `--` is cut off BEFORE argparse, so Python 3.11 (a positional `nargs='*'` matched empty before the options) and later
+    read `test-run <project> --step X -- cmd` the same way."""
+
+    def test_table(self):
+        split = test_run.split_command
+        cases = [
+            (['test-run', 'proj', '--step', 'F1', '--', 'cmd', 'a'], (['test-run', 'proj', '--step', 'F1'], ['cmd', 'a'])),
+            (['test-run', 'proj', '--', 'cmd'], (['test-run', 'proj'], ['cmd'])),
+            (['test-run', 'proj', '--step', 'F1', '--', 'python', '-c', 'x', '--', 'y', '--help'], (['test-run', 'proj', '--step', 'F1'], ['python', '-c', 'x', '--', 'y', '--help'])),
+            (['test-run', 'proj', '--import', 'f.jsonl', '--step', 'F1', '--source-sha', 'abc'], (['test-run', 'proj', '--import', 'f.jsonl', '--step', 'F1', '--source-sha', 'abc'], None)),
+            (['test-run', 'proj', '--'], (['test-run', 'proj'], [])),
+            (['test-run', '--help'], (['test-run', '--help'], None)),
+            (['test-run', 'proj', '--timeout', '5', '--format', 'none', '--', '--version'], (['test-run', 'proj', '--timeout', '5', '--format', 'none'], ['--version'])),
+            (['status', 'proj', '--', 'x'], (['status', 'proj', '--', 'x'], None)),   # another command: untouched
+            ([], ([], None)),
+        ]
+        for argv, expected in cases:
+            with self.subTest(argv=argv):
+                self.assertEqual(split(argv), expected)
+
+    def test_the_head_parses_without_the_command_on_every_version(self):
+        parser = argparse.ArgumentParser(prog='skillsync')
+        sub = parser.add_subparsers(dest='cmd', required=True)
+        test_run.register(sub)
+        head, tail = test_run.split_command(['test-run', 'proj', '--step', 'F1', '--allow-skips', '--', 'cmd', 'a'])
+        args = parser.parse_args(head)
+        self.assertEqual((args.path, args.step, args.allow_skips, args.command, tail), ('proj', 'F1', True, [], ['cmd', 'a']))
 
 
 class Resolution(unittest.TestCase):
@@ -199,7 +232,10 @@ class RunnerObserver(unittest.TestCase):
     def test_a_large_output_on_both_pipes_does_not_deadlock(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = project(tmp)
-            script = "import sys\nfor i in range(20000):\n    print('o' * 100); print('e' * 100, file=sys.stderr)\nprint('Ran 1 test')"
+            # the child writes BYTES with an explicit `\n`: text mode would turn each `\n` into `\r\n` on Windows and the byte count below would not be the
+            # same on every system (the point of the test is that nothing is lost and nothing blocks, with exact counts)
+            script = ("import sys\nout, err = sys.stdout.buffer, sys.stderr.buffer\nfor i in range(20000):\n    out.write(b'o' * 100 + b'\\n'); err.write(b'e' * 100 + b'\\n')\n"
+                      "out.write(b'Ran 1 test\\n')")
             check = {'id': 'big', 'argv': [sys.executable, '-c', script], 'cwd': str(root), 'kind': 'build', 'timeout': 60}
             lines = []
 

@@ -1361,6 +1361,10 @@
     "category": "windows-no-mechanism"
    },
    {
+    "id": "test_skillsync_test_run_hardening.Sigterm.test_sigterm_ends_the_command_writes_end_and_frees_the_lock",
+    "category": "posix-only"
+   },
+   {
     "id": "test_skillsync_win_fix.RmtreeForceEdgeCaseTests.test_a_symlink_inside_the_tree_is_removed_and_its_target_keeps_its_mode",
     "category": "posix-only"
    },

@@ -3921,7 +3921,17 @@ def main() -> None:
         # Older Windows installations can still run legacy sync commands.
         pass
 
-    args = parser.parse_args()
+    argv = sys.argv[1:]
+    head, tail = argv, None
+    try:
+        from skillsync_workflow.test_run import split_command
+    except ModuleNotFoundError:
+        pass
+    else:
+        head, tail = split_command(argv)
+    args = parser.parse_args(head)
+    if tail is not None:
+        args.command = tail   # `test-run ... -- <command>`: the same on every Python (see `split_command`)
     try:
         result = args.func(args)
     except (ValueError, OSError, yaml.YAMLError) as exc:
