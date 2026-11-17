@@ -860,8 +860,8 @@ def log_exception(root, payload, command, reason, findings):
 
 
 ATTRIBUTION_DATA = 'attribution-patterns.json'
-WRITER_TOOLS = {'gh', 'glab', 'az', 'tea', 'hub'}
-WRITER_VERBS = {'create', 'edit', 'update', 'comment', 'review', 'add', 'new', 'set', 'post', 'reply', 'merge', 'close', 'reopen', 'submit'}
+WRITER_TOOLS = {'gh', 'glab', 'az', 'tea', 'hub', 'acli', 'jira'}
+WRITER_VERBS = {'create', 'edit', 'update', 'comment', 'review', 'add', 'new', 'set', 'post', 'reply', 'merge', 'close', 'reopen', 'submit', 'note', 'transition', 'assign'}
 GIT_WRITERS = {'commit', 'tag', 'merge', 'notes', 'revert', 'cherry-pick'}
 GIT_VALUE_FLAGS = {'-C', '-c', '--git-dir', '--work-tree', '--namespace'}
 API_FIELD_FLAGS = {'-f', '-F', '--field', '--raw-field', '--input', '-d', '--data'}
@@ -927,29 +927,68 @@ def writer_words(words):
     return None
 
 
+def word_variants(word):
+    """The text forms of one argument that a rule anchored at a line start must see: the word, its `\\n` read as a line break (`$'a\\nb'`), the part after
+    `--option=` and the text glued to `-m` (`-mTEXT`)."""
+    forms = [word]
+    if word.startswith('-') and '=' in word:
+        forms.append(word.split('=', 1)[1])
+    if word.startswith('-') and not word.startswith('--') and len(word) > 2 and not word[2:3].isspace():
+        forms.append(word[2:])
+    return forms + [form.replace('\\n', '\n') for form in forms if '\\n' in form]
+
+
+def _join_dir(base, target):
+    if os.name == 'nt':
+        target = msys_to_native(target)
+    return target if isabs(target) else os.path.join(base, target)
+
+
 def attribution_findings(command, cwd, rules):
-    """`[(pattern id, class, line)]` found in the text that the command writes: the words of its writer commands, the files named by
-    `-F`/`--file`/`--body-file` (when readable, up to 64 KiB) and, when some writer is present, the here-document bodies of the command."""
-    found, texts, writers = [], [], 0
-    files = []
+    """`[(pattern id, class, line)]` found in the text that the command writes: the words of its writer commands (also `--option=TEXT`, `-mTEXT`, `$'..\\n..'`),
+    the files named by `-F`/`--file`/`--body-file` (read from the directory that `cd` and `git -C` give, MSYS paths mapped on Windows; up to 64 KiB) and,
+    when some writer is present, the here-document bodies of the command. A writer that reads its text from the standard input (`-F -`, `--body-file -`)
+    also scans the words of the other commands of the text (`printf ... | git commit -F -`). Text built in variables is not visible."""
+    found, texts, writers, files = [], [], 0, []
+    stdin_reader, others = False, []
+    here = cwd or os.getcwd()
     for words, _ in command_words(command):
+        if words and os.path.basename(words[0]) == 'cd' and len(words) > 1:
+            here = _join_dir(here, words[1])
+            continue
         rest = writer_words(words)
         if rest is None:
+            others.append(words)
             continue
         writers += 1
-        texts.append('\n'.join(rest))
+        base = here
+        for k, arg in enumerate(words[:-1]):
+            if arg == '-C' and os.path.basename(words[0]) == 'git':
+                base = _join_dir(base, words[k + 1])
+        for word in rest:
+            texts.extend(word_variants(word))
         for k, arg in enumerate(rest):
             target = rest[k + 1] if k + 1 < len(rest) else None
-            if arg in FILE_FLAGS and target and target != '-':
-                files.append(target)
+            if arg in FILE_FLAGS and target:
+                if target == '-':
+                    stdin_reader = True
+                else:
+                    files.append(_join_dir(base, target))
             elif arg.startswith('--body-file=') or arg.startswith('--file='):
-                files.append(arg.split('=', 1)[1])
+                value = arg.split('=', 1)[1]
+                if value == '-':
+                    stdin_reader = True
+                else:
+                    files.append(_join_dir(base, value))
     if not writers:
         return found
     texts += heredoc_bodies(command)
-    for target in files:
+    if stdin_reader:
+        for words in others:
+            for word in words:
+                texts.extend(word_variants(word))
+    for path in files:
         try:
-            path = target if isabs(target) else os.path.join(cwd or os.getcwd(), target)
             with open(path, encoding='utf-8', errors='replace') as handle:
                 texts.append(handle.read(FILE_LIMIT))
         except OSError:

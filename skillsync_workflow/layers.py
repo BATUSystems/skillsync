@@ -1730,7 +1730,7 @@ ATTRIBUTION_FILE_LIMIT = 1 << 20
 
 def attribution_findings(layer):
     """`attribution-text` (error) for every text file of the layer (instructions, skills, agents, workflow) that matches a pattern of the ban on
-    AI attribution (CORE-NOATTR): a layer that tells the agent to add such a footer contradicts the core rule. The message names the file,
+    AI attribution: a layer that tells the agent to add such a footer contradicts the core rule. The message names the file,
     the line and the pattern id, never the matched text."""
     from . import attribution
     try:

@@ -124,9 +124,8 @@ znaczenia pojęcia. Termin, którego nie ma tutaj, nie jest zdefiniowany.
 - **Źródło:** spec A, K8, 2026-11-05.
 
 ### atrybucja
-- **Znaczenie:** wzmianka o autorze lub wydawcy w dozwolonej klasie (trailer `Co-Authored-By` ludzi, komentarze kodu, `CHANGELOG`,
-  `docs/**`, `README`, `LICENSE`, `NOTICE`). Atrybucje w tym sensie nie są blokowane. Stopka, podpis albo trailer narzędzia AI to osobna,
-  zakazana kategoria `attribution` (zob. leakguard).
+- **Znaczenie:** wzmianka o autorze lub wydawcy w dozwolonej klasie (trailer `Co-Authored-By`, komentarze kodu, `CHANGELOG`,
+  `docs/**`, `README`, `LICENSE`, `NOTICE`). Atrybucje nie są blokowane.
 - **Źródło:** spec A, K8 i D40, 2026-11-05.
 
 ## Instalacja

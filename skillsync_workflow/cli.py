@@ -2474,7 +2474,7 @@ def guard_tests_config(manifest: dict, config: dict) -> dict | None:
 
 
 def guard_wanted(manifest: dict, config: dict) -> bool:
-    """The hook entry and script are always wanted while Claude is enabled: the ban on AI attribution (CORE-NOATTR) is not optional
+    """The hook entry and script are always wanted while Claude is enabled: the ban on AI attribution is not optional
     and does not depend on the delete guard or the test commands part."""
     return claude_enabled(manifest)
 
@@ -2656,7 +2656,8 @@ def sync_guard_hook(project_dir: Path, manifest: dict, config: dict, dry_run: bo
         print(f"[warn] {reason}")
     if guard_wanted(manifest, config):
         copied = copy_guard_script(project_dir, config, dry_run)
-        copy_attribution_data(project_dir, dry_run)   # a missing copy leaves the ban silent; doctor reports it
+        if copied:
+            copy_attribution_data(project_dir, dry_run)   # a missing copy leaves the ban silent; doctor reports it
         if guard_tests_config(manifest, config) is not None:
             copy_test_files(project_dir, config, dry_run)   # missing files: the test part stays silent, the delete guard is unaffected
         else:
@@ -2958,8 +2959,8 @@ def _link_project(manifest: dict, project_dir: Path, config: dict, dry_run: bool
     ensure_gitignore(github_dir, dry_run=dry_run)
     build_codex(project_dir, manifest, config, dry_run=dry_run, mode=mode)
     ensure_link_on_open(project_dir, manifest, config, dry_run=dry_run)
-    if has_feature(manifest, config) or guard_wanted(manifest, config):
-        ensure_root_gitignore(project_dir, entry=".skillsync/", dry_run=dry_run)  # also the trail of delete-guard exceptions
+    if has_feature(manifest, config) or guard_mode(manifest, config) != "off" or guard_tests_config(manifest, config) is not None:
+        ensure_root_gitignore(project_dir, entry=".skillsync/", dry_run=dry_run)  # also the trail of delete-guard exceptions (the attribution ban takes none)
     update_composites(project_dir, config[COMPOSITES_KEY], dry_run)
 
 
@@ -3176,7 +3177,7 @@ def cmd_memory_sync(args: argparse.Namespace) -> None:
 
 
 def cmd_attribution(args: argparse.Namespace) -> None:
-    """`skillsync attribution [--user] [--dry-run] [--print-managed]`: the host setting that switches the attribution of Claude Code off (CORE-NOATTR).
+    """`skillsync attribution [--user] [--dry-run] [--print-managed]`: the host setting that switches the attribution of Claude Code off.
     `link` writes it into every project; `--user` writes the same value into the user file `~/.claude/settings.json` (explicit, other keys stay)."""
     settings_path = Path.home() / ".claude" / "settings.json"
     if args.print_managed:

@@ -254,7 +254,7 @@ def _read_yaml(path, what):
 
 def load_patterns(path=None, source='builtin'):
     """Load the generator resource (default) or another patterns file. The builtin set also carries the enforced
-    attribution patterns (CORE-NOATTR, `attribution-patterns.json`), for every target and path class."""
+    attribution patterns (`attribution-patterns.json`), for every target and path class."""
     patterns = parse_patterns(_read_yaml(path or PATTERNS_RESOURCE, 'Patterns file'), source)
     if path is None:
         try:
@@ -1416,7 +1416,7 @@ def leakcheck(path='.', *, mode='worktree', rev_range=None, target=None, targets
     return report
 
 
-# Existing history stays as it is (CORE-NOATTR): the attribution ban applies to new changes only, so `--history` skips the
+# Existing history stays as it is: the attribution ban applies to new changes only, so `--history` skips the
 # category and keeps the old AI trailer address out of the `email` category. Pre-push and CI use `--range`, `--staged`
 # and `--text`, which enforce it, so a new commit cannot hide behind this exemption.
 _LEGACY_TRAILER = r'(?<=<)noreply@(?:anthropic|openai)\.com(?=>\s*$)'

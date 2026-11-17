@@ -1,9 +1,9 @@
 ---
 title: "Strażnik wycieków (leakguard): identity.yaml, patterns.yaml, coverage, klasy ścieżek, hooki, pełne ścieżki w raporcie (D71)"
 tags: [skillsync, leakguard, leakcheck, security, identity, coverage, hooks, privacy]
-paths: ['skillsync_workflow/leakguard.py', 'skillsync_workflow/data/leakguard-patterns.yaml', 'skillsync_workflow/data/leakguard-suffixes-pl.txt', 'skillsync_workflow/layers.py', 'skillsync', 'tests/test_skillsync_leakguard*.py']
-source: "spec zadania (poza rdzeniem) (K6–K8, D86, Format patterns.yaml, Klasy ścieżek, Hooki); skillsync_workflow/leakguard.py (zasoby i .leakguard/patterns.yaml, authors_scope, pole path w raporcie, --require full, core.hooksPath); skillsync_workflow/layers.py (parse_machine_config, leakguard_inputs); plan zadania (poza rdzeniem), sekcja Wynik (D71, D86, krok 1.1, 2.1)"
-verified: 2026-11-12
+paths: ['skillsync_workflow/leakguard.py', 'skillsync_workflow/data/leakguard-patterns.yaml', 'skillsync_workflow/data/leakguard-suffixes-pl.txt', 'skillsync_workflow/attribution.py', 'skillsync_workflow/data/attribution-patterns.json', 'library/hooks/guard-commands.py', 'skillsync_workflow/layers.py', 'skillsync', 'tests/test_skillsync_leakguard*.py', 'tests/test_skillsync_attribution.py']
+source: "spec zadania (poza rdzeniem) (K6–K8, D86, Format patterns.yaml, Klasy ścieżek, Hooki); skillsync_workflow/leakguard.py (zasoby i .leakguard/patterns.yaml, authors_scope, pole path w raporcie, --require full, core.hooksPath); skillsync_workflow/layers.py (parse_machine_config, leakguard_inputs); plan zadania (poza rdzeniem), sekcja Wynik (D71, D86, krok 1.1, 2.1); skillsync_workflow/attribution.py i data/attribution-patterns.json (kategoria attribution: zakaz stopek i podpisów narzędzi AI, decyzje Barcisia 2026-11-17)"
+verified: 2026-11-17
 ---
 Reguła: `skillsync leakcheck` i hooki git blokują treść, nazwy plików i metadane commitów, które zawierają tożsamości
 niepubliczne (nazwy organizacji, projektów, osób, domen, nick i imię właściciela, nazwy persony) albo ślady ogólne
@@ -127,8 +127,9 @@ i `CHANGELOG*`. Tożsamość w nazwie pliku w `atrybucje` jest więc blokowana w
 Źródło: `skillsync_workflow/data/attribution-patterns.json` (jedyne źródło wzorców; hak poleceń czyta jego kopię). Wzorce są zapisane w formie z jednoliterowymi klasami, żeby plik, dokumentacja i testy nie dopasowywały się do samych siebie; testy składają próbki w czasie wykonania.
 - Klasa A: stopka i reklama narzędzia AI (np. dopisek „wygenerowano w …”, link produktu, nagłówek sesji). Klasa B: trailer współautora wskazujący model lub narzędzie AI (po nazwie albo adresie). Pole `enforce` wskazuje klasy w mocy; wycofanie klasy B to zmiana jednego wpisu.
 - Wbudowane wzorce wszystkich celów (`core`, `org`, `personal`) i klas ścieżek, powierzchnie `content` i `commit`: `pre-commit` (treść indeksu), `pre-push` i CI (`--range`: treść i komunikaty), `leakcheck --text` i `--stdin` (opisy PR i zadań). Nie ma `allow` dla adresu `noreply` narzędzi AI. Dla trailerów ludzi `trailer_allow` działa jak dotąd.
-- `leakcheck --history` NIE stosuje tej kategorii i nie raportuje starych trailerów (nawet informacyjnie): historia zostaje, kontrola dotyczy nowych zmian. W tym trybie dawny adres `noreply` narzędzi AI w trailerze nie wpada też do kategorii `email`. Nowego commita to nie ukrywa, bo push i CI sprawdzają zakres (`--range`), a nie całą historię.
-- Zmiana wcześniejszej decyzji (D40/D44: „atrybucje nie są blokowane”) dotyczy wyłącznie tej kategorii.
+- `leakcheck --history` NIE stosuje tej kategorii i nie raportuje starych trailerów (nawet informacyjnie): historia zostaje, kontrola dotyczy nowych zmian. W tym trybie adres `noreply` narzędzia AI w trailerze nie wpada też do kategorii `email`. Nowego commita to nie ukrywa, bo push i CI sprawdzają zakres (`--range`), a nie całą historię.
+- Zakaz dotyczy wyłącznie tej kategorii; pozostałe atrybucje (klasa ścieżek `atrybucje`) nie są blokowane.
+- Granica: `--range` (pre-push i CI) egzekwuje wzorce także na starych commitach, które wchodzą do zakresu: pierwszy push gałęzi bez `refs/remotes/<zdalne>/HEAD` skanuje całą jej historię, a push gałęzi po scaleniu gałęzi domyślnej obejmuje scalone commity. Takie commity z trailerem narzędzia AI blokują push; wyjścia: przepisanie historii (tylko właściciel) albo wąski zakres `--range` w CI.
 - Ten sam plik danych czytają: niewyłączalna część haka `guard-commands.py` (polecenia piszące tekst), `layers check` (kod `attribution-text`) i `doctor` (wygenerowane instrukcje projektu). Opis: [security](../security.md).
 
 ## Cele (`leakguard.targets`) i poziomy `coverage`

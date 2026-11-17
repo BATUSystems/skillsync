@@ -1,4 +1,4 @@
-"""Ban on attribution and advertising of AI tools in outgoing text (CORE-NOATTR).
+"""Ban on attribution and advertising of AI tools in outgoing text.
 
 One data file (`data/attribution-patterns.json`) holds the patterns; `enforce` names the classes in force (A: footer or advertising,
 B: AI co-author trailer). Consumers: leakguard (builtin patterns, category `attribution`), `layers check` and `doctor`

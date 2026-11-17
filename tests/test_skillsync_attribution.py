@@ -1,4 +1,4 @@
-"""CORE-NOATTR: ban on attribution and advertising of AI tools (data file, scanner, leakguard integration).
+"""ban on attribution and advertising of AI tools (data file, scanner, leakguard integration).
 
 All sample texts are composed at run time from fragments, so neither this file nor the data file matches its own patterns."""
 import json
@@ -52,6 +52,15 @@ class DataTests(unittest.TestCase):
     def test_session_link_of_the_status_page_is_not_attribution(self):
         for text in ('https://cla' + 'ude.ai/code/session_01abc', 'session_url: "https://cla' + 'ude.ai/code/session_x"', 'Claude Code session link'):
             self.assertEqual(attribution.scan_text(text), [], text)
+
+    def test_humans_and_product_prose_are_not_flagged(self):
+        for text in ('Co-Authored-By: Claude Dupont <claude' + '@' + 'firma.example>', 'Co-Authored-By: Devin Smith <d' + '@' + 'firma.example>',
+                     'Gener' + 'ated with cursor-based pagination', 'Gener' + 'ated by Gemini API client in the docs',
+                     'Made ' + 'with Cursor rules for the editor', 'Co-Authored-By: Ada Lovelace <ada' + '@' + 'example.com>'):
+            self.assertEqual(attribution.scan_text(text), [], text)
+        for text in ('Co-Authored-By: Cla' + 'ude <' + ADDR + '>', 'Co-Authored-By: Cla' + 'ude Opus 4.1 <x' + '@' + 'example.com>',
+                     'Gener' + 'ated with Cur' + 'sor', 'Gener' + 'ated by [Copi' + 'lot](https://example.invalid)'):
+            self.assertTrue(attribution.scan_text(text), text)
 
     def test_neutral_text_and_human_trailer_pass(self):
         for text in ('fix: parser\n\nplain body', HUMAN, 'the model generated a list of options', 'Made with care'):
@@ -195,6 +204,26 @@ class LayerCheckTests(DoctorCase):
         self.assertEqual(self.levels(report, 'banned AI attribution', 'AGENTS.md'), ['error'], report)
 
 
+class InstructionFilesTests(DoctorCase):
+    """The rule of `_base.md` reaches every generated instruction file, also with `_base.d` fragments of a layer."""
+
+    def test_generated_files_carry_the_rule(self):
+        from unittest import mock
+        import test_skillsync_layers_doctor as doctor_module
+        base = (Path(__file__).resolve().parent.parent / 'library' / 'instructions' / '_base.md').read_text(encoding='utf-8')
+        files = dict(doctor_module.CORE_FILES, **{'instructions/_base.md': base + '\n<!-- SKILLSYNC:BASE-END -->\n'})
+        org = dict(doctor_module.ORG_FILES, **{'instructions/_base.d/50-org.md': 'Org fragment.\n'})
+        with mock.patch.dict(doctor_module.CORE_FILES, files, clear=True):
+            self.layers(org_files=org)
+            project = self.new_project('rule', skills=['beta'])
+            self.link_ok(project)
+        found = [rel for rel in ('CLAUDE.md', 'AGENTS.md', '.github/copilot-instructions.md', '.codex/skillsync-instructions.md')
+                 if (project / rel).is_file() and 'Bez stopek i podpisów narzędzi AI' in (project / rel).read_text(encoding='utf-8')]
+        self.assertTrue(found, 'no generated instruction file carries the rule')
+        for rel in found:
+            self.assertIn('Org fragment.', (project / rel).read_text(encoding='utf-8'))
+
+
 class LinkSettingsTests(GuardBase):
     """`link` writes the host setting that switches the attribution of Claude Code off; `doctor` checks it."""
 
@@ -316,6 +345,32 @@ class HookTests(unittest.TestCase):
             with self.subTest(command[:50]):
                 self.refused(command)
 
+    def test_glued_option_and_escaped_newline_forms_are_refused(self):
+        for command in (
+                f'git commit --trailer="{TRAILER}"',
+                f'git commit --message="{TRAILER}"',
+                f'git commit "-m{TRAILER}"',
+                "git commit -m $'subject\\n\\n" + TRAILER + "'",
+                f'git commit --trailer "{TRAILER}"',
+                f'acli jira workitem create --summary s --description "{FOOTER}"',
+                f'acli jira workitem comment --key A-1 --body "{ROBOT}"',
+                f'jira issue create -b "{FOOTER}"',
+                f'glab mr note 5 --message "{FOOTER}"'):
+            with self.subTest(command[:60]):
+                self.refused(command)
+
+    def test_relative_files_follow_cd_and_dash_c_and_stdin_writers_see_the_pipeline(self):
+        sub = self.work / 'sub'
+        sub.mkdir()
+        (sub / 'pr.md').write_text('body\n' + FOOTER + '\n', encoding='utf-8')
+        (sub / 'msg.txt').write_text('subject\n\n' + TRAILER + '\n', encoding='utf-8')
+        for command in ('cd sub && gh pr create --title t --body-file pr.md', 'git -C sub commit -F msg.txt',
+                        f'printf "%s" "{TRAILER}" | git commit -F -', f'echo "{FOOTER}" | gh pr create --title t --body-file -'):
+            with self.subTest(command[:60]):
+                self.refused(command)
+        self.passes(f'echo "{FOOTER}" | wc -l')
+        self.passes('cd sub && git commit -m clean')
+
     def test_the_message_names_the_pattern_and_the_class(self):
         result = self.refused(f'git commit -m "{TRAILER}"')
         self.assertIn('attr-coauthor-name (klasa B)', result.stderr)
@@ -386,6 +441,14 @@ class LeakguardTests(LeakTestCase):
             with self.subTest(rel):
                 tree = self.tree({rel: 'note\n' + FOOTER + '\n'})
                 self.assertEqual(self.check(tree)['status'], 'FAIL')
+
+    def test_trailer_allow_does_not_open_the_ai_trailer(self):
+        repo = self.make_repo()
+        base = commit_file(repo, 'a.md', 'x\n', 'base')
+        head = commit_file(repo, 'b.md', 'y\n', 'feat\n\n' + TRAILER)
+        report = self.check(repo, mode='range', rev_range=f'{base}..{head}', trailer_allow=[ADDR])
+        self.assertEqual(report['status'], 'FAIL')
+        self.assertIn('attribution', {f['category'] for f in report['findings']})
 
     def test_history_ignores_old_trailers_but_range_does_not_hide_a_new_commit(self):
         repo = self.make_repo()

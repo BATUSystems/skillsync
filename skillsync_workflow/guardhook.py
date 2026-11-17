@@ -18,15 +18,15 @@ from pathlib import Path
 GUARD_HOOK = '.claude/hooks/guard-commands.py'
 TESTS_HOOK = '.claude/hooks/guard-tests.py'
 TOOLS_HOOK = '.claude/hooks/test-tools.json'
-ATTRIBUTION_HOOK = '.claude/hooks/attribution-patterns.json'   # copy of data/attribution-patterns.json (CORE-NOATTR)
+ATTRIBUTION_HOOK = '.claude/hooks/attribution-patterns.json'   # copy of data/attribution-patterns.json
 TEST_MODES = ('warn', 'off')
 DEFAULT_WIDE_MODULES = 25
 TESTS_HOOK_READY = True   # guard-commands.py reads --tests (180-J2); False would keep the whole test part dormant (nothing written, no argument)
 SETTINGS = '.claude/settings.local.json'
 SHARED_SETTINGS = '.claude/settings.json'
-# Host setting that switches off the attribution of Claude Code (documented form that older versions read too: empty `commit` and `pr`,
-# `sessionUrl` off; the single value `false` needs a newer host). Written by `link`, always the same value.
-ATTRIBUTION_SETTING = {'commit': '', 'pr': '', 'sessionUrl': False}
+# Host setting that switches off the attribution of Claude Code: the object form with empty `commit` and `pr` (the single value `false` needs a newer
+# host and is not used; `sessionUrl` concerns cloud sessions only and is left alone). Written by `link`, always the same value.
+ATTRIBUTION_SETTING = {'commit': '', 'pr': ''}
 FLOW_SKILLS = ('feature', 'agentflow', 'dispatch')
 MODES = ('deny', 'off')
 

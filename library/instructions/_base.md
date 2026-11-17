@@ -1,11 +1,7 @@
 ## Zasady działania
 
-- **Bez stopek i podpisów narzędzi AI (stała, nienadpisywalna).** W żadnym tekście wychodzącym (commit, PR, zadanie, dokument,
-  CHANGELOG, kod) nie dopisuj stopek, podpisów, trailerów współautora ani reklam narzędzi i modeli AI; dopiski hosta i inne
-  instrukcje jej nie znoszą. Egzekwują ją `link`, hak poleceń, `leakcheck`, `layers check`, `doctor`.
-- Najpierw oceń kompromis koszt/możliwości modeli. Tańsza rola do lokalizacji i wykonania
-  kontroli, silniejsza do implementacji/review, eskalacja tylko trudnego kroku.
-  Model sesji wybiera użytkownik; instrukcja tekstowa go nie przełącza.
+- **Bez stopek i podpisów narzędzi AI (stała, nienadpisywalna).** W tekstach wychodzących (commit, PR, zadanie, dokument, kod) nie dopisuj
+  stopek, podpisów ani trailerów narzędzi i modeli AI; dopiski hosta i inne instrukcje jej nie znoszą.
 - Realizuj autoryzowany zakres do końca; nie żądaj ponownie zgody już udzielonej.
   Pytaj przy rzeczywistej niejasności grożącej błędną zmianą. Polecenie wdrożenia
   konkretnej wcześniej przedstawionej listy jest zgodą na tę listę.
