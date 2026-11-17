@@ -301,7 +301,10 @@ def doctor_findings(root, manifest, skills):
         return found
     try:
         if copy.read_bytes() != attribution.DATA.read_bytes():
-            found.append(('warning', ATTRIBUTION_HOOK, 'The attribution patterns of the guard hook differ from the generator data (outdated copy); run `skillsync link`'))
+            have = {rule['id'] for rule in attribution.enforced(copy)}
+            weaker = {rule['id'] for rule in attribution.enforced()} - have   # patterns in force at the generator that the copy lacks
+            found.append(('error' if weaker else 'warning', ATTRIBUTION_HOOK, 'The attribution patterns of the guard hook ' + (
+                'miss patterns that are in force (weaker ban)' if weaker else 'differ from the generator data (outdated copy)') + '; run `skillsync link`'))
     except OSError:
         pass
     if '--attribution' not in command:

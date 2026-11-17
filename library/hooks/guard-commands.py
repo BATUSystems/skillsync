@@ -865,12 +865,13 @@ WRITER_VERBS = {'create', 'edit', 'update', 'comment', 'review', 'add', 'new', '
 GIT_WRITERS = {'commit', 'tag', 'merge', 'notes', 'revert', 'cherry-pick'}
 GIT_VALUE_FLAGS = {'-C', '-c', '--git-dir', '--work-tree', '--namespace'}
 API_FIELD_FLAGS = {'-f', '-F', '--field', '--raw-field', '--input', '-d', '--data'}
-FILE_FLAGS = {'-F', '--file', '--body-file', '-f'}
+FILE_FLAGS = {'-F', '--file', '--body-file', '-f', '--input'}
 FILE_LIMIT = 65536
 HERESTRING = re.compile(r"<<<[ \t]*(\"(?:[^\"\\\\]|\\\\.)*\"|'[^']*'|[^\s;&|)]+)")
 ASSIGN_VALUE = re.compile(r"(?:^|[\s;&|(])[A-Za-z_][A-Za-z0-9_]*=(\"(?:[^\"\\\\]|\\\\.)*\"|'[^']*')")
 PROCESS_SUBST = re.compile(r"<\((.*?)\)", re.DOTALL)
 READERS = {'cat', 'tac', 'type', 'head', 'tail', 'less', 'more'}
+PRINTERS = {'echo', 'printf'}
 HEREDOC = re.compile(r"<<-?[ \t]*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
 
 
@@ -967,12 +968,15 @@ def attribution_findings(command, cwd, rules):
         writers += 1
         base = here
         for k, arg in enumerate(words[:-1]):
-            if arg == '-C' and os.path.basename(words[0]) == 'git':
+            if arg == '-C' and 'git' in [os.path.basename(w) for w in words[:k + 1]]:
                 base = _join_dir(base, words[k + 1])
         for word in rest:
             texts.extend(word_variants(word))
             if word.startswith('@') and len(word) > 1:   # `az ... --description @file`
                 files.append(_join_dir(base, word[1:]))
+        for arg in rest:   # `gh api -F body=@file`
+            if '=@' in arg:
+                files.append(_join_dir(base, arg.split('=@', 1)[1]))
         for k, arg in enumerate(rest):
             target = rest[k + 1] if k + 1 < len(rest) else None
             if arg in FILE_FLAGS and target:
@@ -997,9 +1001,12 @@ def attribution_findings(command, cwd, rules):
         for inner, _ in command_words(match.group(1)):
             for word in inner:
                 texts.extend(word_variants(word))
-    for words in others:   # `--body "$(cat pr.md)"`: the files that `cat` and its kin read in the same text
+    for words in others:   # `--body "$(cat pr.md)"`: the files that `cat` and its kin read; `-m "$(echo ...)"`, `printf ... > f && git commit -F f`: what echo and printf print
         if words and os.path.basename(words[0]) in READERS:
             files.extend(_join_dir(here, word) for word in words[1:] if not word.startswith('-'))
+        elif words and os.path.basename(words[0]) in PRINTERS:
+            for word in words[1:]:
+                texts.extend(word_variants(word))
     if stdin_reader:
         for words in others:
             for word in words:

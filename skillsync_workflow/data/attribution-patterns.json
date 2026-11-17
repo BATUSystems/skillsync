@@ -58,7 +58,7 @@
       "flags": [
         "ignorecase"
       ],
-      "regex": "^[C]o-[A]uthored-[B]y:\\s*(?:[C]laude\\s+(?:[C]ode|[O]pus|[S]onnet|[H]aiku|[F]able|\\d)|[C]odex|[C]opilot|[C]ursor|[G]emini|[C]hat ?GPT|GPT|[W]indsurf|[A]ider|[O]penAI|[A]nthropic)\\b"
+      "regex": "^(?:[C]o-[A]uthored|[A]ssisted|[G]enerated)-[B]y:\\s*(?:[C]laude\\s+(?:[C]ode|[O]pus|[S]onnet|[H]aiku|[F]able|\\d)|[C]odex|[C]opilot|[C]ursor|[G]emini|[C]hat ?GPT|GPT|[W]indsurf|[A]ider|[O]penAI|[A]nthropic)\\b"
     },
     {
       "id": "attr-coauthor-address",
@@ -67,7 +67,7 @@
       "flags": [
         "ignorecase"
       ],
-      "regex": "^[C]o-[A]uthored-[B]y:.*<[^<>]*(?:@(?:[a]nthropic\\.com|[o]penai\\.com|[c]ursor\\.(?:com|sh))|[d]evin-ai-integration)[^<>]*>"
+      "regex": "^(?:[C]o-[A]uthored|[A]ssisted|[G]enerated)-[B]y:.*<[^<>]*(?:@(?:[a]nthropic\\.com|[o]penai\\.com|[c]ursor\\.(?:com|sh))|[d]evin-ai-integration|(?:[c]laude|[c]opilot|[c]ursoragent|[c]odex|[g]emini|[a]ider)[^<>@]*@(?:users\\.)?noreply\\.github\\.com)[^<>]*>"
     }
   ]
 }

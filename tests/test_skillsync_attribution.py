@@ -54,7 +54,7 @@ class DataTests(unittest.TestCase):
             self.assertEqual(attribution.scan_text(text), [], text)
 
     def test_humans_and_product_prose_are_not_flagged(self):
-        for text in ('Co-Authored-By: Claude Dupont <claude' + '@' + 'firma.example>', 'Co-Authored-By: Devin Smith <d' + '@' + 'firma.example>',
+        for text in ('Assisted-By: Ada Lovelace <ada' + '@' + 'example.com>', 'Co-Authored-By: Claude Dupont <claude' + '@' + 'firma.example>', 'Co-Authored-By: Devin Smith <d' + '@' + 'firma.example>',
                      'Gener' + 'ated with cursor-based pagination', 'Gener' + 'ated by Gemini API client in the docs',
                      'Made ' + 'with Cursor rules for the editor', 'Co-Authored-By: Ada Lovelace <ada' + '@' + 'example.com>'):
             self.assertEqual(attribution.scan_text(text), [], text)
@@ -283,7 +283,11 @@ class LinkSettingsTests(GuardBase):
         data = json.loads(attribution.DATA.read_text(encoding='utf-8'))
         data['enforce'] = ['A']
         copy.write_text(json.dumps(data), encoding='utf-8')
-        self.assertEqual([f['level'] for f in self.attribution_findings_for(guardhook.ATTRIBUTION_HOOK)], ['warning'])
+        self.assertEqual([f['level'] for f in self.attribution_findings_for(guardhook.ATTRIBUTION_HOOK)], ['error'])   # a weaker ban is a FAIL
+        data = json.loads(attribution.DATA.read_text(encoding='utf-8'))
+        data['_comment'] = 'older wording'
+        copy.write_text(json.dumps(data), encoding='utf-8')
+        self.assertEqual([f['level'] for f in self.attribution_findings_for(guardhook.ATTRIBUTION_HOOK)], ['warning'])   # same patterns: only outdated
 
     def attribution_findings_for(self, path):
         report = json.loads(self.cli('doctor').stdout)
@@ -383,6 +387,19 @@ class HookTests(unittest.TestCase):
                         f'az boards work-item create --title t --type Task --description "{FOOTER}"',
                         f'true && git commit -m "{FOOTER}"', f'(git commit -m "{FOOTER}")', f'bash -c \'git commit -m "{FOOTER}"\'',
                         f'env A=1 git commit -m "{FOOTER}"', f'command git commit -m "{FOOTER}"', f'git commit --amend -m "{FOOTER}"'):
+            with self.subTest(command[:60]):
+                self.refused(command)
+
+    def test_printed_text_wrappers_and_bot_trailers_are_refused(self):
+        (self.work / 'sub').mkdir(exist_ok=True)
+        (self.work / 'sub' / 'f.json').write_text(json.dumps({'body': FOOTER}), encoding='utf-8')
+        (self.work / 'sub' / 'b.md').write_text(FOOTER + '\n', encoding='utf-8')
+        bot = 'Co-Auth' + 'ored-By: Cla' + 'ude <cla' + 'ude[bot]@users.noreply.github.com>'
+        for command in (f"git commit -m s -m \"$(echo '{TRAILER}')\"", f"git commit -m s -m \"$(printf '{TRAILER}')\"",
+                        f"printf '{TRAILER}' > m.txt && git commit -F m.txt",
+                        f'git commit -m "{bot}"', 'git commit -m "' + 'Assis' + 'ted-By: Cla' + 'ude Code"',
+                        'env git -C sub commit -F b.md', 'timeout 5 git -C sub commit --file=b.md',
+                        'gh api repos/o/r/issues -F body=@sub/b.md', 'gh api repos/o/r/issues --input sub/f.json'):
             with self.subTest(command[:60]):
                 self.refused(command)
 
