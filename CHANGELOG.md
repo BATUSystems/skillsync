@@ -12,6 +12,10 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Fixed
+
+- **Two parallel steps of `test-run` could end with exit code 2 (BLOCKED) on Windows** when both created a shared directory at the same moment (`.skillsync/runs/<run>/tests`, `.skillsync/logs`, the lock directory): the loser of the race got `PermissionError` (WinError 5) and the `is_dir()` check of `pathlib` failed the same way. New helper `fsutil.ensure_dir` (a short retry on `PermissionError`, an existing directory counts as success, any other error is raised at once) is used where parallel steps create shared directories: test events, resource locks and run logs (`quality.py`), the checkpoint store (`runs.py`), the workflow state (`storage.py`) and the smart-test cache (`selection.py`). The test `test_two_steps_may_run_at_the_same_time` now reports the stderr of both steps when it fails.
+
 ## [1.9.0] - 2026-11-17
 
 Upgrading from 1.8.0: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.8.0 → 1.9.0".

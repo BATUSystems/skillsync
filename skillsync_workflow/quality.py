@@ -20,6 +20,7 @@ import sys
 import yaml
 from .common import add_project_arguments, changed_files, checked_out_link, emit, file_lines, load_layer_project, matches, workflow_config, contained, normalize_files, read_yaml, strings, redact, expand_project_skills, require_layerset, WORKFLOW_SKILL, LEGACY_WORKFLOW_SKILL
 from .pathfmt import posix
+from .fsutil import ensure_dir
 from .selfcmd import self_argv
 from . import layers as _layers
 from .ceremony import ceremony_info, validate_ceremony
@@ -129,7 +130,7 @@ def _test_counts(output):
 def _locks(resources):
     handles = []
     directory = Path(tempfile.gettempdir()) / 'skillsync-resource-locks'
-    directory.mkdir(mode=0o700, exist_ok=True)
+    ensure_dir(directory, mode=0o700, parents=False)
     metadata = directory.lstat()
     if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
         raise ValueError('Resource lock directory must be a real directory')
@@ -365,7 +366,7 @@ def run_validation(root, checks, *, log_dir=None, observer=None):
                                                   (lambda stream, text: observer.partial(check, stream, text)) if observer is not None and hasattr(observer, 'partial') else None)
                 output = raw.decode('utf-8', errors='replace')
                 log_directory(root, directory)
-                directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+                ensure_dir(directory, mode=0o700)
                 log = directory / (hashlib.sha256(check['id'].encode()).hexdigest()[:12] + '.log')
                 fd = os.open(log, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, 'O_NOFOLLOW', 0), 0o600)
                 with os.fdopen(fd, 'w', encoding='utf-8') as handle:
@@ -1551,7 +1552,7 @@ def write_readiness_report(root, run_id, report, plan=None):
     for part in (base, base / 'runs', directory):
         if part.is_symlink():
             raise ValueError(f'Symlink in run path: {part.relative_to(root).as_posix()}')
-    directory.mkdir(parents=True, exist_ok=True)
+    ensure_dir(directory)
     for part in (base, base / 'runs', directory):
         if part.is_symlink() or not part.is_dir():
             raise ValueError(f'Run path is not a plain directory: {part.relative_to(root).as_posix()}')

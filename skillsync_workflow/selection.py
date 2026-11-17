@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .common import emit, load_layer_project, matches, project_file, workflow_config
 from .layers import add_layer_argument
+from .fsutil import ensure_dir
 from .quality import plan_validation, run_validation
 
 
@@ -252,7 +253,7 @@ def command(args):
         # environment and command availability may change independently of Git.
         try:
             cache_file = _cache_path(root, report["cache_key"])
-            cache_file.parent.mkdir(parents=True, exist_ok=True)
+            ensure_dir(cache_file.parent)
             cache_file.write_text(
                 json.dumps(report, ensure_ascii=True, indent=2, default=str) + "\n", encoding="utf-8")
         except ValueError as exc:
