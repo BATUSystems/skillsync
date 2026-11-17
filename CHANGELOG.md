@@ -12,6 +12,14 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Added
+
+- **Knowledge directories as a list.** `workflow.knowledge.domain` and `workflow.knowledge.lessons` accept a string (as before) or a list of up to 8 strings, so a project made of several repositories can load the knowledge records of a sibling repository (`domain: [docs/domain, ../repo-a/docs/domain]`). A string is equivalent to a one-element list; errors name the element (`workflow.knowledge.domain[1] must end with docs/domain`); a repeated directory (also through `..` or a symlink) is rejected. `route` returns the records in list order (layer lessons first, `bootstrap` records from every directory); a directory without `index.yaml` is skipped. `doctor` warns per element (directory exists / does not exist), ignores the listed directories in the scattered-knowledge check and warns when the `bootstrap` records of all directories exceed 24576 bytes. `knowledge init` with a list writes only inside the project root and reports the other directories in the new `skipped` field. Description and the known dependency on the clone directory name: `docs/workflow.md`.
+
+### Fixed
+
+- `skillsync route` no longer ends `BLOCKED` ("is not in the subpath of …") when the knowledge directory lies outside the project (`domain: ../repo-a/docs/domain`) or a changed file lies outside the base of the directory. Record `paths` are matched in the coordinates of the owner directory; a file outside its base is prefixed with the project directory name (`repo-b/src/**`).
+
 ## [1.8.0] - 2026-11-17
 
 Upgrading from 1.7.0: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.7.0 → 1.8.0" (the point numbers below refer to it).

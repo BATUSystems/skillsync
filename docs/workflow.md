@@ -357,6 +357,46 @@ Kandydaci na terminy trafiają do planu, a do glosariusza tylko terminy potwierd
 i ustalona wersja są w diffie przed rundą 1 pętli końcowej `kod`. W tym repo: [domain/](domain/),
 [lessons/](lessons/).
 
+### Katalogi wiedzy: ciąg albo lista
+
+`workflow.knowledge.domain` (ścieżka kończy się `docs/domain`) i `workflow.knowledge.lessons` (`docs/lessons`) przyjmują
+ciąg (jak dotąd) albo listę ciągów, gdy produkt składa się z kilku repozytoriów i rekordy ma jedno z nich:
+
+```yaml
+# manifest repo B: własne rekordy i rekordy repo A (siostrzany katalog)
+workflow:
+  knowledge:
+    domain: [docs/domain, ../repo-a/docs/domain]
+```
+
+- Ciąg ≡ lista jednoelementowa. Element: ścieżka względna z `/`, kończąca się `docs/domain` (`docs/lessons`), w projekcie
+  albo jego katalogu nadrzędnym; bez duplikatów (także przez `..` i dowiązanie), najwyżej 8 elementów. Błąd konfiguracji
+  podaje numer elementu (`workflow.knowledge.domain[1] must end with docs/domain`).
+- Kolejność wyniku `route`: lekcje warstw, potem katalogi w kolejności listy, w katalogu kolejność `index.yaml`. Rekord
+  `load: bootstrap` zwracany jest z każdego katalogu. Rekordy z różnych katalogów się nie zlewają (tożsamością jest ścieżka pliku).
+- Katalog bez `index.yaml` `route` pomija (repozytorium właściciela może nie być sklonowane); `doctor` ostrzega per
+  element i rozróżnia „katalog istnieje” od „katalog nie istnieje (czy repozytorium właściciela jest sklonowane?)”.
+  Ostrzeżenie „rozproszona wiedza” pomija katalogi z listy. Gdy suma rekordów `load: bootstrap` ze wszystkich katalogów
+  przekracza 24576 B, `doctor` ostrzega i wymienia katalogi.
+- Lista `domain` bez `lessons`: `docs/lessons` obok każdego katalogu domeny.
+- `knowledge init` przy liście tworzy pliki tylko w katalogach leżących wewnątrz projektu; pozostałe zwraca w polu
+  `skipped` (`owned by another repository; run knowledge init there`). Forma tekstowa działa jak dotąd.
+
+**Współrzędne `paths` rekordu.** Plik zmieniony w projekcie jest dopasowywany do `paths` rekordu w współrzędnych jego
+katalogu: względem katalogu zawierającego `docs/`, gdy projekt leży w tym katalogu (także wspólny katalog nadrzędny:
+`repo-b/src/**`), a gdy plik leży poza nim (siostrzane repozytorium, katalog zagnieżdżony w projekcie), z przedrostkiem
+**nazwy katalogu projektu**: `repo-b/src/**`. Rekord w repo A pisze więc `src/**` (kod A) i `repo-b/src/**` (kod B) i działa
+z obu projektów. Lekcje: forma tekstowa (i brak klucza przy tekstowej domenie) dopasowuje `paths` względem korzenia projektu
+jak dotąd; forma listy używa współrzędnych katalogu jak domena.
+
+**Znane ograniczenie.** Przedrostek to nazwa katalogu klonu: gdy ten sam projekt ma na dwóch maszynach (albo w CI)
+różne nazwy katalogów, rekord z `repo-b/...` nie dopasuje się, a `doctor` tego nie widzi. Nazwy katalogów klonów
+produktu powinny być jednakowe. Jawną nazwę niezależną od katalogu można dodać później: elementy listy mogą stać się
+mapami bez łamania list ciągów.
+
+Treść katalogu obcego repozytorium nie jest skanowana przez strażnika wycieków przy commicie w tym projekcie (skanuje ją
+strażnik repozytorium właściciela).
+
 ## Pętla samodoskonalenia
 
 Zamknięcia pilnują hook Stop (`check-closure.py`: raz na sesję i plan blokuje plan `done` zmieniony względem `HEAD`, gdy

@@ -72,7 +72,8 @@ Ustawienia workflow składają się z trzech poziomów (to nie są warstwy w roz
 `workflow/projects/<projekt>.yaml` z warstw, potem sekcja `workflow:` manifestu. Mapy scalają się rekurencyjnie,
 **listy zastępuje się w całości**. Reguły scalania per plik i klucz, także dla `workflow/*`: [architecture](architecture.md).
 Opis kluczy `workflow:` (`validation`, `testing`, `readiness`, `review`, `environment`, `e2e`, `doctor`, `delivery`
-w sensie provider i CI, `skill_profiles`, `guardrails`, `knowledge`): [workflow](workflow.md).
+w sensie provider i CI, `skill_profiles`, `guardrails`, `knowledge`): [workflow](workflow.md). `knowledge.domain` i `knowledge.lessons`
+to ciąg albo lista ciągów (produkt z kilku repozytoriów): [workflow](workflow.md), „Katalogi wiedzy: ciąg albo lista”.
 Wyjątek od scalania: `workflow.ceremony` (`full` | `demo`) czyta się tylko z manifestu projektu, wcześniejsze poziomy go ignorują.
 
 ## Pliki generowane

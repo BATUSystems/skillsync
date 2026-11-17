@@ -48,7 +48,10 @@ Wiedza domenowa nie różni się między backendem a frontendem — projekt ma *
 
 `paths` w rekordach i indeksie są względne do katalogu zawierającego `docs/`
 (np. `demo-shop/Domain/**`, `shop-web/src/app/**`), więc jeden rekord obejmuje
-oba repo. Nie zakładaj `docs/domain` w podrepozytoriach — `doctor` zgłasza takie indeksy jako
+oba repo. Produkt z kilku repozytoriów, w którym wiedzę ma jedno z nich (repo A), wskazuje jej katalog listą:
+`workflow.knowledge.domain: [docs/domain, ../repo-a/docs/domain]`; rekord w repo A zapisuje `paths` w swoich
+współrzędnych: `src/**` (kod A) i `repo-b/src/**` (kod B, nazwa katalogu klonu). Nazwy katalogów klonów muszą być jednakowe
+na każdej maszynie i w CI, inaczej rekord z `repo-b/...` nie dopasuje plików. Nie zakładaj `docs/domain` w podrepozytoriach — `doctor` zgłasza takie indeksy jako
 rozproszoną wiedzę. Katalog nadrzędny może nie być w gicie; wtedy rekordy nie mają historii
 ani synchronizacji między maszynami.
 

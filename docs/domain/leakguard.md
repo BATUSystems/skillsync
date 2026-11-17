@@ -272,6 +272,8 @@ dołączony do repo.
   `notices`, a jego adresy nie są sprawdzane (właściciel jest rozpoznawany po `user.email`).
 - Bajt `\x1e` w komunikacie commitu kończy skanowany rekord; reszta komunikatu nie jest skanowana.
 
+Zawartość katalogu wiedzy obcego repozytorium (`workflow.knowledge.domain: [..., ../repo-a/docs/domain]`) nie jest skanowana przy commicie w tym projekcie: skanuje ją strażnik repozytorium właściciela.
+
 Gdzie w kodzie: `skillsync_workflow/leakguard.py`: zasoby wzorców i `.leakguard/patterns.yaml`, domyślne `authors_scope`,
 budowa raportu (`findings`, `redact`), obsługa `--require full`, instalacja hooków (`core.hooksPath`);
 `skillsync_workflow/layers.py`: parsowanie configu `leakguard` (`parse_machine_config`), `leakguard_inputs` (`identity_dir`).

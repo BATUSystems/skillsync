@@ -376,7 +376,10 @@ Wyniki/cache/logi są lokalne w `.skillsync/`; generator dodaje ten katalog do g
 Lesson records są trwałe w bibliotece `workflow/lessons` lub projektowym `docs/lessons`.
 Wiedza domenowa projektu: jedno wspólne `docs/domain/index.yaml` (klucz `entries`) dla backendu i frontendu;
 osobne projekty backend/frontend wskazują wspólny katalog nadrzędny przez `workflow.knowledge.domain: ../docs/domain`
-(tylko projekt lub jego katalog nadrzędny, ścieżka kończy się na `docs/domain`). `route` zwraca ją w polu `domain`,
+(tylko projekt lub jego katalog nadrzędny, ścieżka kończy się na `docs/domain`). Produkt z kilku repozytoriów: lista
+`workflow.knowledge.domain: [docs/domain, ../repo-a/docs/domain]` (kolejność listy = kolejność rekordów; `paths` rekordu
+w współrzędnych jego katalogu, plik spoza bazy z przedrostkiem nazwy katalogu projektu: `repo-b/src/**`).
+`route` zwraca ją w polu `domain`,
 `doctor` waliduje rekordy i ostrzega o braku indeksu w projekcie z `feature` (format: `workflow/references/knowledge.md`).
 Opcjonalne `load: bootstrap` w rekordzie indeksu domenowego powoduje zwracanie go przy każdym
 `route`, także bez tematów/ścieżek; brak pola zachowuje stare dopasowanie. Jedyna jawna wartość
