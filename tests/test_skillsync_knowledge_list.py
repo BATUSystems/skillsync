@@ -1,11 +1,14 @@
 """CORE-KDOMAIN-LIST: `workflow.knowledge.domain` / `lessons` as a list of directories (repos A and B)."""
+import json
+import subprocess
+import sys
 import unittest
 from pathlib import Path
 
 import yaml
 
 from skillsync_workflow.quality import knowledge_locations
-from tests.test_skillsync_workflow import WorkflowFixture, needs_os_symlinks
+from tests.test_skillsync_workflow import CLI, WorkflowFixture, needs_os_symlinks
 
 
 class KnowledgeListFixture(WorkflowFixture):
@@ -243,6 +246,61 @@ class DoctorMessages(KnowledgeListFixture):
         self.assertIn('repo-d', found[0]['reason'])
         self.setting(domain=['../repo-a/docs/domain'])
         self.assertEqual(self.findings('Bootstrap domain records total'), [])
+
+
+class KnowledgeInitList(KnowledgeListFixture):
+    def init(self, *args, code=0):
+        result = subprocess.run([sys.executable, str(CLI), 'knowledge', 'init', str(self.root), *args, '--json'],
+                                capture_output=True, text=True, timeout=20, cwd=self.root)
+        self.assertEqual(result.returncode, code, result.stdout + result.stderr)
+        self.assertNotIn('Traceback', result.stderr)
+        return json.loads(result.stdout)
+
+    def tree(self):
+        return sorted(str(p.relative_to(self.base)) for p in self.base.rglob('*'))
+
+    def test_list_writes_inside_the_project_and_skips_foreign_directories(self):
+        self.setting(domain=['docs/domain', '../repo-a/docs/domain', '../docs/domain'])
+        report = self.init()
+        self.assertEqual(sorted(Path(p).relative_to(self.root).as_posix() for p in report['created']),
+                         ['docs/README.md', 'docs/domain/index.yaml', 'docs/lessons/index.yaml'])
+        skipped = {Path(item['path']).relative_to(self.base).as_posix(): item['reason'] for item in report['skipped']}
+        self.assertEqual(sorted(skipped), ['docs/domain/index.yaml', 'docs/lessons/index.yaml',
+                                           'repo-a/docs/domain/index.yaml', 'repo-a/docs/lessons/index.yaml'])
+        self.assertTrue(all('owned by another repository' in reason for reason in skipped.values()))
+        self.assertFalse((self.base / 'repo-a').exists())
+        self.assertFalse((self.base / 'docs').exists())
+
+    def test_list_without_any_directory_in_the_project_creates_nothing(self):
+        self.setting(domain=['../repo-a/docs/domain'])
+        before = self.tree()
+        report = self.init()
+        self.assertEqual(report['created'], [])
+        self.assertEqual(len(report['skipped']), 2)
+        self.assertEqual(self.tree(), before)
+
+    def test_string_form_is_unchanged_for_a_shared_parent(self):
+        self.setting(domain='../docs/domain')
+        report = self.init()
+        self.assertEqual(report['skipped'], [])
+        self.assertTrue((self.base / 'docs/domain/index.yaml').is_file())
+        self.assertTrue((self.base / 'docs/README.md').is_file())
+
+    def test_invalid_list_creates_nothing(self):
+        for value in ([], ['docs/domain', 'notes'], ['docs/domain', '../../x/docs/domain'], ['docs/domain', 'docs/domain']):
+            with self.subTest(value=value):
+                self.setting(domain=value)
+                before = self.tree()
+                report = self.init(code=2)
+                self.assertEqual(report['status'], 'BLOCKED')
+                self.assertEqual(self.tree(), before)
+
+    def test_dry_run_creates_nothing_for_a_list(self):
+        self.setting(domain=['docs/domain'])
+        before = self.tree()
+        report = self.init('--dry-run')
+        self.assertEqual(len(report['created']), 3)
+        self.assertEqual(self.tree(), before)
 
 
 if __name__ == '__main__':

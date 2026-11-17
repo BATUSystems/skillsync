@@ -6,7 +6,7 @@ import subprocess
 import yaml
 from .common import add_project_arguments, load_layer_project, redact
 from .pathfmt import posix
-from .quality import domain_location, lessons_location
+from .quality import knowledge_is_listed, knowledge_locations
 
 README = """# Dokumentacja projektu
 
@@ -35,13 +35,25 @@ def _listing(docs):
     return '\n'.join(items) if items else '_(brak innych plików; dopisz je tutaj, gdy powstaną)_'
 
 
+OWNED_ELSEWHERE = 'owned by another repository; run knowledge init there'
+
+
 def init_knowledge(root, manifest, library, dry_run=False):
-    domain = domain_location(root, manifest, library)[0]
-    lessons = lessons_location(root, manifest, library)
-    docs = domain.parent
-    plan = [(domain / 'index.yaml', yaml.safe_dump({'version': 1, 'entries': []}, sort_keys=False)),
-            (lessons / 'index.yaml', yaml.safe_dump({'version': 1, 'lessons': []}, sort_keys=False)),
-            (docs / 'README.md', None)]
+    """Create the missing skeleton. The string form keeps writing to its one location (also a shared parent
+    directory); the list form writes only inside the project root and reports the other directories as `skipped`."""
+    project = Path(root).resolve()
+    plan, skipped, readme_docs = [], [], None
+    for kind, content in (('domain', {'version': 1, 'entries': []}), ('lessons', {'version': 1, 'lessons': []})):
+        listed = knowledge_is_listed(root, manifest, library, kind)
+        for directory, _ in knowledge_locations(root, manifest, library, kind):
+            if listed and not directory.is_relative_to(project):
+                skipped.append({'path': posix(directory / 'index.yaml'), 'reason': OWNED_ELSEWHERE})
+                continue
+            plan.append((directory / 'index.yaml', yaml.safe_dump(content, sort_keys=False)))
+            if kind == 'domain' and readme_docs is None:
+                readme_docs = directory.parent
+    if readme_docs is not None:
+        plan.append((readme_docs / 'README.md', None))
     created, existing = [], []
     for path, content in plan:
         if path.exists() or path.is_symlink():
@@ -51,11 +63,11 @@ def init_knowledge(root, manifest, library, dry_run=False):
         if dry_run:
             continue
         if content is None:
-            content = README.format(listing=_listing(docs))
+            content = README.format(listing=_listing(readme_docs))
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open('x', encoding='utf-8', newline='\n') as handle:
             handle.write(content)
-    return {'status': 'PASS', 'dry_run': dry_run, 'created': created, 'existing': existing}
+    return {'status': 'PASS', 'dry_run': dry_run, 'created': created, 'existing': existing, 'skipped': skipped}
 
 
 def _cmd(args):
