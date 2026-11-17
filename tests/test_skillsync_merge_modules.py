@@ -5,6 +5,7 @@ asserted literally by a test that never imports the module, a changed `status.py
 and a new output field mirrored by `expected*.json` fixtures read by a test without any import of the product.
 """
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -122,6 +123,50 @@ class MergeModules(unittest.TestCase):
         self.repo.commit()
         _, result, _ = self.repo.select(base)
         self.assertNotIn('tests.test_skillsync_layers_equivalence', modules(result))
+
+    def engine_run(self, base, env_value):
+        env = {key: value for key, value in os.environ.items() if key != 'SKILLSYNC_PROTOTYPE_ENGINE_V2_SOURCE'}
+        if env_value:
+            env['SKILLSYNC_PROTOTYPE_ENGINE_V2_SOURCE'] = env_value
+        done = subprocess.run([sys.executable, str(SCRIPT), '--repo', str(self.repo.dir), '--base', base, '--head', 'HEAD', '--json'], capture_output=True, text=True, env=env)
+        return done.returncode, modules(json.loads(done.stdout)), done.stderr
+
+    def test_a_change_of_the_engine_selects_the_freshness_test_and_warns_without_the_variable(self):
+        """180-AA: the library source and the copy of the engine are not named by the test, so only this rule selects it."""
+        for changed in ('library/skills/prototype/assets/repo/prototype.js', 'tests/fixtures/prototype/engine-v2/prototype.js'):
+            with self.subTest(changed=changed):
+                repo = Repo(self)
+                repo.write(BASE)
+                repo.write({'tests/test_skillsync_prototype_engine.py': "def test():\n    pass\n", changed: 'A = 1\n'})
+                base = repo.commit('with the engine test')
+                repo.write({changed: 'A = 2\n'})
+                repo.commit()
+                self.repo = repo
+                code, found, stderr = self.engine_run(base, '')
+                self.assertEqual(code, 0)
+                self.assertTrue(any(reason.startswith('engine:') for reason in found.get('tests.test_skillsync_prototype_engine', [])), found)
+                self.assertIn('WARNING', stderr)
+                self.assertIn('SKILLSYNC_PROTOTYPE_ENGINE_V2_SOURCE', stderr)
+                _, _, quiet = self.engine_run(base, '/x/prototype.js')
+                self.assertNotIn('WARNING', quiet)
+
+    def test_a_change_elsewhere_leaves_the_engine_test_and_the_warning_out(self):
+        self.repo.write({'tests/test_skillsync_prototype_engine.py': "def test():\n    pass\n"})
+        base = self.repo.commit('with the engine test')
+        self.repo.write({'skillsync_workflow/status.py': 'VALUE = 3\n'})
+        self.repo.commit()
+        code, found, stderr = self.engine_run(base, '')
+        self.assertEqual(code, 0)
+        self.assertFalse(any(reason.startswith('engine:') for reason in found.get('tests.test_skillsync_prototype_engine', [])), found)
+        self.assertNotIn('WARNING', stderr)
+
+    def test_a_deleted_engine_source_selects_nothing_by_the_engine_rule(self):
+        self.repo.write({'tests/test_skillsync_prototype_engine.py': "def test():\n    pass\n", 'library/skills/prototype/assets/repo/prototype.js': 'A = 1\n'})
+        base = self.repo.commit('with the engine')
+        (self.repo.dir / 'library/skills/prototype/assets/repo/prototype.js').unlink()
+        self.repo.commit('delete')
+        _, found, _ = self.engine_run(base, '')
+        self.assertFalse(any(reason.startswith('engine:') for reason in found.get('tests.test_skillsync_prototype_engine', [])), found)
 
     def test_changed_status_reaches_test_through_another_module(self):
         self.repo.write({'skillsync_workflow/status.py': 'VALUE = 2\n'})
