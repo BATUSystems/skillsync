@@ -199,7 +199,10 @@ class RunnerObserver(unittest.TestCase):
     def test_a_large_output_on_both_pipes_does_not_deadlock(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = project(tmp)
-            script = "import sys\nfor i in range(20000):\n    print('o' * 100); print('e' * 100, file=sys.stderr)\nprint('Ran 1 test')"
+            # the child writes BYTES with an explicit `\n`: text mode would turn each `\n` into `\r\n` on Windows and the byte count below would not be the
+            # same on every system (the point of the test is that nothing is lost and nothing blocks, with exact counts)
+            script = ("import sys\nout, err = sys.stdout.buffer, sys.stderr.buffer\nfor i in range(20000):\n    out.write(b'o' * 100 + b'\\n'); err.write(b'e' * 100 + b'\\n')\n"
+                      "out.write(b'Ran 1 test\\n')")
             check = {'id': 'big', 'argv': [sys.executable, '-c', script], 'cwd': str(root), 'kind': 'build', 'timeout': 60}
             lines = []
 
