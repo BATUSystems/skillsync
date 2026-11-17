@@ -79,6 +79,9 @@
   ],
   "symlinks-reason": [
    "symlinks"
+  ],
+  "no-tzset": [
+   "no time.tzset"
   ]
  },
  "notes": {
@@ -87,7 +90,8 @@
   "ubuntu-latest/*": "Measured from the CI logs of 8 jobs (Python 3.11-3.14, symlink and copy): 15 skips each, identical (13 Chrome E2E tests of category e2e-chrome run in the `e2e` job, the Windows-only test, the zsh hook test: the runner has no zsh); plus 3 Windows-only junction tests of test_skillsync_resolve_loop (not in those logs, same behaviour as the Linux entries).",
   "windows-latest/*": "windows-latest/copy measured from the CI logs of Python 3.11, 3.12 and 3.13 (identical sets); windows-latest/symlink stays null: the matrix excludes it (no OS symlinks without Developer Mode).",
   "macos-latest/*": "Measured from the CI runs of main (v1.3.0, 12.11): 35 skips, the same in all four jobs (3.11/3.12, symlink/copy): the Chrome E2E scenarios (job e2e), the Azure tests without the machine descriptor, the env lifecycle tests (process ownership backend on Linux only), BSD mktemp, file system limits and shellcheck (not installed on the macOS runner).",
-  "e2e-chrome": "The 13 Chrome scenario scripts (one test per tests/e2e/prototype/*.mjs, incl. test_widok, test_w and test_p) are allowed: CI runs no Chrome; the prototype E2E runs separately with Chrome and leased ports."
+  "e2e-chrome": "The 13 Chrome scenario scripts (one test per tests/e2e/prototype/*.mjs, incl. test_widok, test_w and test_p) are allowed: CI runs no Chrome; the prototype E2E runs separately with Chrome and leased ports.",
+  "macos-uv/*": "The local macOS matrix (macmatrix-driver) runs the interpreters of uv (python-build-standalone) 3.11 and 3.12, which have NO time.tzset (the system Python and the setup-python of the CI runners have it): the key of that layout is macos-uv = macos-latest plus the tests that skip on a missing time.tzset (categories no-tzset and windows-no-mechanism). The CI runners keep macos-latest."
  },
  "baselines": {
   "linux/symlink": [
@@ -1847,6 +1851,474 @@
    {
     "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_widok",
     "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_resolve_loop.ResolveLoopChecked.test_a_dangling_junction_is_not_a_loop_on_windows",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_resolve_loop.ResolveLoopChecked.test_a_real_loop_of_junctions_is_reported_on_windows",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_resolve_loop.ResolveLoopChecked.test_a_working_junction_is_not_a_loop_on_windows",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_retro.SessionContentStaysOut.test_non_utf8_file_and_directory_names_do_not_break_the_report",
+    "category": "filesystem"
+   },
+   {
+    "id": "test_skillsync_retro.SessionContentStaysOut.test_non_utf8_name_outside_scope_does_not_break_scoped_report",
+    "category": "filesystem"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_a_directory_is_inherited_by_new_files_and_repairs_existing_ones",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_a_file_becomes_owner_only_and_stays_usable",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_a_missing_path_is_false_without_raising",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_atomic_write_leaves_a_users_file_owner_only_after_five_writes",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_os_replace_hands_over_the_acl_of_the_source",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_the_dacl_is_exactly_user_system_administrators",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_the_secret_files_of_the_e2e_environment_are_owner_only_by_acl",
+    "category": "windows-only"
+   }
+  ],
+  "macos-uv/symlink": [
+   {
+    "id": "test_skillsync_azure_pr.AzurePullRequestOperations.test_comment_thread_is_verified_by_last_thread",
+    "category": "needs-library"
+   },
+   {
+    "id": "test_skillsync_azure_pr.AzurePullRequestOperations.test_create_draft_passes_readback_with_separate_argv_elements",
+    "category": "needs-library"
+   },
+   {
+    "id": "test_skillsync_azure_pr.AzurePullRequestOperations.test_credential_like_parameters_are_rejected",
+    "category": "needs-library"
+   },
+   {
+    "id": "test_skillsync_azure_pr.AzurePullRequestOperations.test_empty_pr_list_is_a_pass",
+    "category": "needs-library"
+   },
+   {
+    "id": "test_skillsync_azure_pr.AzurePullRequestOperations.test_plan_and_write_guard_never_call_az",
+    "category": "needs-library"
+   },
+   {
+    "id": "test_skillsync_azure_pr.AzurePullRequestOperations.test_readback_mismatch_blocks_after_mutation",
+    "category": "needs-library"
+   },
+   {
+    "id": "test_skillsync_azure_pr.AzurePullRequestOperations.test_ready_flips_draft_and_is_verified",
+    "category": "needs-library"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_a_candidate_the_c_library_cannot_give_is_left_out_and_the_plain_one_decides",
+    "category": "no-tzset"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_an_etime_that_disagrees_with_lstart_by_hours_never_makes_an_unreadable_row_or_a_second_start",
+    "category": "no-tzset"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_rows_of_a_macos_style_ps_are_parsed",
+    "category": "no-tzset"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_the_proc_fallback_works_when_ps_is_missing",
+    "category": "linux-only-env"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_the_start_does_not_depend_on_the_zone_the_text_was_read_in_when_etime_is_known",
+    "category": "no-tzset"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_the_start_is_not_moved_by_an_hour_in_the_repeated_local_hour_of_a_dst_change",
+    "category": "no-tzset"
+   },
+   {
+    "id": "test_skillsync_eight.EightContracts.test_environment_child_resisting_term_is_cleaned",
+    "category": "linux-only-env"
+   },
+   {
+    "id": "test_skillsync_eight.EightContracts.test_environment_cold_warm_freshness_and_cleanup",
+    "category": "linux-only-env"
+   },
+   {
+    "id": "test_skillsync_eight.EightContracts.test_environment_failed_health_cleans_own_process",
+    "category": "linux-only-env"
+   },
+   {
+    "id": "test_skillsync_eight.EightContracts.test_environment_foreign_record_never_signalled",
+    "category": "linux-only-env"
+   },
+   {
+    "id": "test_skillsync_eight.EightContracts.test_environment_prepare_can_share_parent_resource",
+    "category": "linux-only-env"
+   },
+   {
+    "id": "test_skillsync_ide_contract.IdeContract.test_status_bad_utf8_file_names_become_findings_and_keep_report",
+    "category": "filesystem"
+   },
+   {
+    "id": "test_skillsync_install_sh.TestStatic.test_shellcheck",
+    "category": "needs-shellcheck"
+   },
+   {
+    "id": "test_skillsync_layers_consumers.OrgDataPositiveControls.test_e2e_and_env_plans_use_the_org_configuration",
+    "category": "linux-only-env"
+   },
+   {
+    "id": "test_skillsync_layers_merge.TrustModelTest.test_a_real_junction_is_skipped_and_reported",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_layers_merge.TrustModelTest.test_case_collisions_inside_one_layer",
+    "category": "filesystem"
+   },
+   {
+    "id": "test_skillsync_leakguard.ConfigPrePushHookTest.test_pre_push_under_a_bash_hook_fails_closed_without_a_temporary_file",
+    "category": "bsd-mktemp"
+   },
+   {
+    "id": "test_skillsync_leakguard.ConfigPrePushHookTest.test_pre_push_under_a_sh_hook_fails_closed_without_a_temporary_file",
+    "category": "bsd-mktemp"
+   },
+   {
+    "id": "test_skillsync_leakguard.ConfigPrePushHookTest.test_pre_push_under_a_zsh_hook_fails_closed_without_a_temporary_file",
+    "category": "bsd-mktemp"
+   },
+   {
+    "id": "test_skillsync_prototype.UnicodeSafetyTests.test_requirements_file_name_that_is_not_utf8_is_blocked",
+    "category": "filesystem"
+   },
+   {
+    "id": "test_skillsync_prototype_answerline_time.LocalMomentTests.test_an_unreadable_time_keeps_the_utc_form",
+    "category": "windows-no-mechanism"
+   },
+   {
+    "id": "test_skillsync_prototype_answerline_time.LocalMomentTests.test_extreme_dates_and_naive_times_keep_the_utc_form_without_a_crash",
+    "category": "windows-no-mechanism"
+   },
+   {
+    "id": "test_skillsync_prototype_answerline_time.LocalMomentTests.test_utc_zone_has_a_zero_offset_and_a_day_can_change",
+    "category": "windows-no-mechanism"
+   },
+   {
+    "id": "test_skillsync_prototype_answerline_time.LocalMomentTests.test_winter_and_summer_offsets",
+    "category": "windows-no-mechanism"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_d23",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_dr",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_f1",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_f2",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_f3",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_final",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_layout_probe",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_lt",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_n",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_nr",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_p",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_ryzyka",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_w",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_widok",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_writing_release.PolishConflictMessageTests.test_the_hour_follows_the_host_time_zone",
+    "category": "windows-no-mechanism"
+   },
+   {
+    "id": "test_skillsync_resolve_loop.ResolveLoopChecked.test_a_dangling_junction_is_not_a_loop_on_windows",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_resolve_loop.ResolveLoopChecked.test_a_real_loop_of_junctions_is_reported_on_windows",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_resolve_loop.ResolveLoopChecked.test_a_working_junction_is_not_a_loop_on_windows",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_retro.SessionContentStaysOut.test_non_utf8_file_and_directory_names_do_not_break_the_report",
+    "category": "filesystem"
+   },
+   {
+    "id": "test_skillsync_retro.SessionContentStaysOut.test_non_utf8_name_outside_scope_does_not_break_scoped_report",
+    "category": "filesystem"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_a_directory_is_inherited_by_new_files_and_repairs_existing_ones",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_a_file_becomes_owner_only_and_stays_usable",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_a_missing_path_is_false_without_raising",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_atomic_write_leaves_a_users_file_owner_only_after_five_writes",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_os_replace_hands_over_the_acl_of_the_source",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_the_dacl_is_exactly_user_system_administrators",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_winacl.RealWindowsTests.test_the_secret_files_of_the_e2e_environment_are_owner_only_by_acl",
+    "category": "windows-only"
+   }
+  ],
+  "macos-uv/copy": [
+   {
+    "id": "test_skillsync_azure_pr.AzurePullRequestOperations.test_comment_thread_is_verified_by_last_thread",
+    "category": "needs-library"
+   },
+   {
+    "id": "test_skillsync_azure_pr.AzurePullRequestOperations.test_create_draft_passes_readback_with_separate_argv_elements",
+    "category": "needs-library"
+   },
+   {
+    "id": "test_skillsync_azure_pr.AzurePullRequestOperations.test_credential_like_parameters_are_rejected",
+    "category": "needs-library"
+   },
+   {
+    "id": "test_skillsync_azure_pr.AzurePullRequestOperations.test_empty_pr_list_is_a_pass",
+    "category": "needs-library"
+   },
+   {
+    "id": "test_skillsync_azure_pr.AzurePullRequestOperations.test_plan_and_write_guard_never_call_az",
+    "category": "needs-library"
+   },
+   {
+    "id": "test_skillsync_azure_pr.AzurePullRequestOperations.test_readback_mismatch_blocks_after_mutation",
+    "category": "needs-library"
+   },
+   {
+    "id": "test_skillsync_azure_pr.AzurePullRequestOperations.test_ready_flips_draft_and_is_verified",
+    "category": "needs-library"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_a_candidate_the_c_library_cannot_give_is_left_out_and_the_plain_one_decides",
+    "category": "no-tzset"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_an_etime_that_disagrees_with_lstart_by_hours_never_makes_an_unreadable_row_or_a_second_start",
+    "category": "no-tzset"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_rows_of_a_macos_style_ps_are_parsed",
+    "category": "no-tzset"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_the_proc_fallback_works_when_ps_is_missing",
+    "category": "linux-only-env"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_the_start_does_not_depend_on_the_zone_the_text_was_read_in_when_etime_is_known",
+    "category": "no-tzset"
+   },
+   {
+    "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_the_start_is_not_moved_by_an_hour_in_the_repeated_local_hour_of_a_dst_change",
+    "category": "no-tzset"
+   },
+   {
+    "id": "test_skillsync_eight.EightContracts.test_environment_child_resisting_term_is_cleaned",
+    "category": "linux-only-env"
+   },
+   {
+    "id": "test_skillsync_eight.EightContracts.test_environment_cold_warm_freshness_and_cleanup",
+    "category": "linux-only-env"
+   },
+   {
+    "id": "test_skillsync_eight.EightContracts.test_environment_failed_health_cleans_own_process",
+    "category": "linux-only-env"
+   },
+   {
+    "id": "test_skillsync_eight.EightContracts.test_environment_foreign_record_never_signalled",
+    "category": "linux-only-env"
+   },
+   {
+    "id": "test_skillsync_eight.EightContracts.test_environment_prepare_can_share_parent_resource",
+    "category": "linux-only-env"
+   },
+   {
+    "id": "test_skillsync_ide_contract.IdeContract.test_status_bad_utf8_file_names_become_findings_and_keep_report",
+    "category": "filesystem"
+   },
+   {
+    "id": "test_skillsync_install_sh.TestStatic.test_shellcheck",
+    "category": "needs-shellcheck"
+   },
+   {
+    "id": "test_skillsync_layers_consumers.OrgDataPositiveControls.test_e2e_and_env_plans_use_the_org_configuration",
+    "category": "linux-only-env"
+   },
+   {
+    "id": "test_skillsync_layers_merge.TrustModelTest.test_a_real_junction_is_skipped_and_reported",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_layers_merge.TrustModelTest.test_case_collisions_inside_one_layer",
+    "category": "filesystem"
+   },
+   {
+    "id": "test_skillsync_leakguard.ConfigPrePushHookTest.test_pre_push_under_a_bash_hook_fails_closed_without_a_temporary_file",
+    "category": "bsd-mktemp"
+   },
+   {
+    "id": "test_skillsync_leakguard.ConfigPrePushHookTest.test_pre_push_under_a_sh_hook_fails_closed_without_a_temporary_file",
+    "category": "bsd-mktemp"
+   },
+   {
+    "id": "test_skillsync_leakguard.ConfigPrePushHookTest.test_pre_push_under_a_zsh_hook_fails_closed_without_a_temporary_file",
+    "category": "bsd-mktemp"
+   },
+   {
+    "id": "test_skillsync_prototype.UnicodeSafetyTests.test_requirements_file_name_that_is_not_utf8_is_blocked",
+    "category": "filesystem"
+   },
+   {
+    "id": "test_skillsync_prototype_answerline_time.LocalMomentTests.test_an_unreadable_time_keeps_the_utc_form",
+    "category": "windows-no-mechanism"
+   },
+   {
+    "id": "test_skillsync_prototype_answerline_time.LocalMomentTests.test_extreme_dates_and_naive_times_keep_the_utc_form_without_a_crash",
+    "category": "windows-no-mechanism"
+   },
+   {
+    "id": "test_skillsync_prototype_answerline_time.LocalMomentTests.test_utc_zone_has_a_zero_offset_and_a_day_can_change",
+    "category": "windows-no-mechanism"
+   },
+   {
+    "id": "test_skillsync_prototype_answerline_time.LocalMomentTests.test_winter_and_summer_offsets",
+    "category": "windows-no-mechanism"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_d23",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_dr",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_f1",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_f2",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_f3",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_final",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_layout_probe",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_lt",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_n",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_nr",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_p",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_ryzyka",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_w",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_widok",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_writing_release.PolishConflictMessageTests.test_the_hour_follows_the_host_time_zone",
+    "category": "windows-no-mechanism"
    },
    {
     "id": "test_skillsync_resolve_loop.ResolveLoopChecked.test_a_dangling_junction_is_not_a_loop_on_windows",

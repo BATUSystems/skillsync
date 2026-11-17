@@ -50,7 +50,7 @@ uruchomionych testów.
   nigdy tryb linkowania: `SKILLSYNC_NO_SYMLINK=1` nie może pomijać testu, który tylko podkłada dowiązanie.
 - Test, który sprawdza wynik trybu symlink, przypina go dekoratorem `@link_mode('symlink')`; odpowiednik trybu kopii to `@link_mode('copy')`.
 - Test nie wraca po cichu tam, gdzie niczego nie sprawdza (`if os.name == 'nt': return` raportuje PASS i omija baseline): mechanizm, którego system nie ma, to `self.skipTest(powód)` albo `@unittest.skipUnless`; pilnuje tego `tests/test_skillsync_no_silent_return.py`.
-- `tests/skip-baseline.json` opisuje dozwolone pominięcia per system i tryb; `scripts/check_skips.py` sprawdza log biegu:
+- `tests/skip-baseline.json` opisuje dozwolone pominięcia per system i tryb (klucz `macos-uv/*`: lokalna macierz macOS na interpreterach uv, które nie mają `time.tzset`; CI używa `macos-latest/*`); `scripts/check_skips.py` sprawdza log biegu:
 
 ```bash
 python3 -m unittest discover -s tests -p 'test_skillsync*.py' -v 2>&1 | tee run.log

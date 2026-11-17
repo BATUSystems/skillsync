@@ -247,7 +247,7 @@ class RealBaselineTests(unittest.TestCase):
 
     def test_unmeasured_runners_are_null_and_the_measured_ones_are_lists(self):
         # macOS: measured from the CI runs of main v1.3.0 (MAC-141); Ubuntu runner: measured from the CI logs of 8 jobs (DEBT-150-D); Windows copy mode: measured on the release 1.4.1 branch (WIN-141)
-        measured = ('linux/', 'ubuntu-latest/', 'macos-latest/', 'windows-latest/copy')
+        measured = ('linux/', 'ubuntu-latest/', 'macos-latest/', 'macos-uv/', 'windows-latest/copy')
         for key, entries in self.data['baselines'].items():
             if key.startswith(measured):
                 self.assertIsInstance(entries, list, key)
@@ -259,6 +259,20 @@ class RealBaselineTests(unittest.TestCase):
         self.assertEqual(symlink, copy)
         self.assertEqual([e for e in symlink if e['category'] == 'unclassified'], [])
         self.assertGreaterEqual(len(symlink), 30)
+
+    def test_the_local_macos_layout_is_the_ci_baseline_plus_only_the_tzset_skips(self):
+        """The interpreters of uv have no `time.tzset` (the CI runners' Python has it): `macos-uv` = `macos-latest` + the tests that skip for that reason."""
+        for mode in ('symlink', 'copy'):
+            ci = {e['id']: e for e in self.data['baselines'][f'macos-latest/{mode}']}
+            local = {e['id']: e for e in self.data['baselines'][f'macos-uv/{mode}']}
+            self.assertTrue(set(ci) <= set(local), mode)
+            extra = [local[i] for i in sorted(set(local) - set(ci))]
+            self.assertTrue(extra, mode)
+            self.assertTrue({e['category'] for e in extra} <= {'no-tzset', 'windows-no-mechanism'}, mode)
+            self.assertTrue(all(any(word in e['id'] for word in ('e2e_env_cleanup', 'answerline_time', 'writing_release')) for e in extra), mode)   # only the tests that need a zone
+            for i in ci:
+                self.assertEqual(local[i], ci[i], (mode, i))
+        self.assertEqual(self.data['baselines']['macos-uv/symlink'], self.data['baselines']['macos-uv/copy'])
 
     def test_every_entry_has_a_known_category(self):
         for key, entries in self.data['baselines'].items():
