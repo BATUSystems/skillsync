@@ -233,12 +233,40 @@ def attribution_findings(root, home=None):
     return found
 
 
+INSTRUCTION_FILES = ('AGENTS.md', 'CLAUDE.md', '.github/copilot-instructions.md', '.codex/skillsync-instructions.md')
+
+
+def instruction_text_findings(root):
+    """`error` for a generated instruction file of the project that contains text of the banned AI attribution (a layer or the project
+    instructions tell the agent to add it): the file, the line and the pattern id, never the text."""
+    from . import attribution
+    found = []
+    try:
+        rules = attribution.enforced()
+    except attribution.AttributionError:
+        return found
+    for rel in INSTRUCTION_FILES:
+        path = Path(root) / rel
+        try:
+            text = path.read_text(encoding='utf-8', errors='replace') if path.is_file() else ''
+        except OSError:
+            continue
+        for number, line in enumerate(text.splitlines(), 1):
+            for rule in rules:
+                if rule['compiled'].search(line):
+                    found.append(('error', rel, f'Line {number} contains text of the banned AI attribution (pattern {rule["id"]}): a layer or the project instructions '
+                                                'tell the agent to add a footer or signature of an AI tool; remove it at the source and run `skillsync link`'))
+                    break   # one finding per line
+    return found
+
+
 def doctor_findings(root, manifest, skills):
     """`[(level, path, reason)]`: the state of the hook against what `link` would write. A missing hook or attribution data is an `error` (the ban on AI
     attribution is not optional); drift of the delete or test settings stays a warning."""
     _, allow, problems = hook_settings(manifest)
     problems = problems + test_settings(manifest)[3]
     found = [('warning', '.github/.skillsync.yaml', reason) for reason in problems]
+    found.extend(instruction_text_findings(root))
     claude = manifest.get('claude')
     if claude is False or (isinstance(claude, dict) and claude.get('enabled') is False):
         return found

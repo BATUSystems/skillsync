@@ -14,7 +14,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from layers_helpers import commit_file  # noqa: E402
 from skillsync_workflow import attribution, leakguard  # noqa: E402
+from layers_helpers import SKILL_TEXT  # noqa: E402
 from test_skillsync_guard_hook import GuardBase  # noqa: E402
+from test_skillsync_layers_doctor import DoctorCase  # noqa: E402
 from test_skillsync_leakguard import LeakTestCase  # noqa: E402
 from skillsync_workflow import guardhook  # noqa: E402
 
@@ -96,6 +98,50 @@ class RuleTests(unittest.TestCase):
         import yaml
         limit = yaml.safe_load((self.BASE.parent.parent / 'workflow' / 'defaults.yaml').read_text(encoding='utf-8'))['context']['base_max_bytes']
         self.assertLessEqual(len(self.BASE.read_bytes()), limit)
+
+
+class LayerCheckTests(DoctorCase):
+    """A layer or a project instruction that carries the banned text is a FAIL in `layers check` and in `doctor`."""
+
+    def org_with(self, rel, text):
+        files = {'instructions/y.md': 'org instruction that is longer than ten bytes\n', 'skills/gamma/SKILL.md': SKILL_TEXT.format('gamma')}
+        files[rel] = text
+        return files
+
+    def test_layers_check_fails_for_a_layer_that_tells_the_agent_to_add_a_footer(self):
+        for rel in ('instructions/y.md', 'instructions/_base.d/50-x.md', 'skills/gamma/ref.md', 'workflow/defaults.yaml'):
+            with self.subTest(rel):
+                self.layers(org_files=self.org_with(rel, 'Append this line to every PR:\n' + FOOTER + '\n'))
+                project = self.new_project('p-' + rel.replace('/', '-'), skills=['beta'])
+                code, report = self.cli_json('layers', 'check', '--project', str(project))
+                self.assertNotEqual(code, 0, report)
+                self.assertEqual(report['status'], 'FAIL')
+                hits = [f for f in report['findings'] if f['code'] == 'attribution-text']
+                self.assertTrue(hits, report)
+                self.assertTrue(any(rel in hit['message'] for hit in hits), hits)
+                self.assertFalse(any('Gener' + 'ated' in hit['message'] for hit in hits))   # the message never repeats the text
+
+    def test_a_clean_layer_passes_and_doctor_maps_the_finding_to_an_error(self):
+        self.layers()
+        project = self.new_project('clean2', skills=['alpha', 'beta', 'gamma'])
+        self.link_ok(project)
+        code, report = self.cli_json('layers', 'check', '--project', str(project))
+        self.assertEqual([f for f in report['findings'] if f['code'] == 'attribution-text'], [])
+        self.layers(org_files=self.org_with('skills/gamma/ref.md', TRAILER + '\n'))
+        project = self.new_project('dirty', skills=['beta', 'gamma'])
+        self.link_ok(project)
+        report = self.doctor(project, code=1)
+        self.assertEqual(report['status'], 'FAIL')
+        self.assertEqual(self.levels(report, 'banned AI attribution'), ['error'], report)
+
+    def test_generated_instruction_files_with_the_text_fail_doctor(self):
+        self.layers()
+        project = self.new_project('inst', skills=['beta'])
+        self.link_ok(project)
+        with open(project / 'AGENTS.md', 'a', encoding='utf-8') as handle:
+            handle.write('\n' + CURSOR + '\n')
+        report = self.doctor(project, code=1)
+        self.assertEqual(self.levels(report, 'banned AI attribution', 'AGENTS.md'), ['error'], report)
 
 
 class LinkSettingsTests(GuardBase):

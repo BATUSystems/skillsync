@@ -1057,7 +1057,7 @@ def layer_findings(root, manifest, layerset):
             found.append(('warning', MANIFEST_PATH, item['message']))
             continue
         label = f'layer:{item["layer"]}' if item.get('layer') else 'layers'
-        found.append(('error' if severity == 'blocked' else 'warning', label,
+        found.append(('error' if severity == 'blocked' or item.get('code') in ('attribution-text', 'attribution-data-invalid') else 'warning', label,
                       f'{item["message"]} (details: `skillsync layers check`)'))
     return found
 
