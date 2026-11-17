@@ -117,6 +117,7 @@ projektu lub przebiegu). Raport komend zapisujących i `metrics --json` to JSON 
 | `prototypes` | tablica | wszystkie prototypy projektu (do 50, wg `slug`): `{slug, iteration, screens, accepted, stale, threads, commentsAfterAcceptance, writing}`; `threads` = liczby wątków wg statusu (open, awaiting, decided, closed…), `writing` jak w `prototype.writing`; odnośnik buduje host z `slug` (`deps.prototypeUrl`) |
 | `result` | obiekt albo null | `{text, path}`: sekcja `## Wynik` wybranego planu (do 4 KiB, tekst Markdown), gdy plan jest `in_progress`, `done` albo `implemented`; null bez planu, bez sekcji albo dla planu, który nie ruszył. Tylko z `GET /api/status` (nie w `show`), addytywnie: `html` (widoczna część wyrenderowana tym samym bezpiecznym rendererem Markdown co `/api/doc`: nagłówki, listy, pogrubienie, kod w linii, tabele, akapity; surowy HTML źródła escapowany, linki tylko bezpieczne), `moreHtml` i `moreLines` (zwinięta reszta i liczba jej linii źródła; brak, gdy nie ma czego zwijać). Tekst jest maskowany z sekretów w całości przed podziałem i renderem. Podział widoczne/zwinięte przebiega tylko między blokami Markdown (nigdy w środku tabeli, listy, bloku kodu ani akapitu): ostatnia granica bloku nie dalej niż po 12 liniach, której część widoczna zawiera coś więcej niż nagłówki; gdy takiej nie ma, pierwsza granica za 12 liniami; bez granicy nic się nie zwija. Klient bez `html` (stary serwer, `show`) pokazuje `text` jako zwykły tekst. Renderer wtyczki edytora ma własny kod i czyta tylko `text`: przy synchronizacji z rdzeniem może przejść na `html`/`moreHtml` (ten sam kontrakt, wstawianie przez bezpieczny mount hosta), ale nie musi |
 | `eta` | obiekt albo null | NOWE (addytywnie, `schema: 1`): szacowany koniec bieżącej operacji z najnowszego checkpointu (`eta:`) |
+| `forecast` | obiekt | NOWE (addytywnie, `schema: 1`): PROGNOZA pozostałej pracy do końca kroków planu z tempa bieżącego przebiegu, osobna od `eta` (deklaracji agenta) i od `timing` (pomiaru); zob. sekcja `forecast` |
 | `substeps` | tablica | NOWE: podkroki `Fn.k` z czasem |
 | `timing` | obiekt | NOWE (addytywnie, `schema: 1`): czas pracy i czas czekania na człowieka per krok i per faza planu |
 
@@ -443,11 +444,32 @@ nie występuje w liście.
 | `windows[]` | tablica | `{what, startedAt, endedAt, seconds, source, unknown}`; czasy ISO 8601 ze strefą startu przebiegu; `unknown` ⇔ `seconds` = null ⇔ `source` = null |
 | `steps[]` | tablica | `{id, phase, startedAt, finishedAt, workSeconds, waitSeconds, unknown, reason}`; `waitSeconds` = części okien w przedziale kroku (null przy `unknown`); `phase` = etykieta fazy (część przed `:` w nagłówku `### Faza n: …`, jak `progress.phases[].label`; ta sama w `show` i w `metrics`) |
 | `stages[]` | tablica | per faza planu z danymi: `{phase, name, workSeconds, waitSeconds, unknownSteps, complete}`; `workSeconds` = suma czasów pracy znanych kroków fazy (kroki równoległe sumują się), `waitSeconds` = część okien w przedziale od pierwszego startu do ostatniego końca znanych kroków fazy (okno liczone raz); `complete` ⇔ nie ma kroków `unknown` i `waitSeconds` jest znane |
+| `acts[]` | tablica | POMIAR czasu aktów I i II: `{key: "spec"\|"plan", startedAt, endedAt, workSeconds, waitSeconds, unknown, reason, endSource}`; akt I = od `RUN=` do pierwszej zgody `GO plan` z `approvals.jsonl`, akt II = od niej do pierwszego `GO implement`; czas pracy = trwanie minus okna czekania (jak krok). Bez zgody w pliku (zgodę dano w sesji albo akt trwa) `endedAt: null`, `unknown: true`, `reason: "no-approval"`; okno nic nie zamykające w akcie: `reason: "open-window"`; koniec przed początkiem: `"order"`. Akt II jest na liście tylko, gdy znany jest `GO plan`. Bez `RUN=` lista jest pusta. Nic nie jest szacowane |
 | `totals` | obiekt | `{workSeconds, waitSeconds, windows, unknownWindows, unknownSteps, complete}`; `waitSeconds` = suma okien znanych, `workSeconds` = suma faz z czasem pracy (null, gdy żadna faza nie ma znanego czasu pracy: „brak danych”, nie zero), `complete` ⇔ brak okien i kroków `unknown` i `available` |
 
 Renderer pokazuje w akcie III rozwijaną sekcję „Czas pracy i czekania”: sumy na fazę (praca, czekanie, znacznik „niepełne” przy
 `complete: false`) oraz sumę przebiegu, a w dymku okna czekania (`what`, od–do, źródło albo „nieznane”). Brak danych to
 „brak danych”, nie zero. Wartości wstawiane są jako tekst.
+
+### `forecast`
+
+PROGNOZA, nie pomiar: ile jeszcze PRACY do końca kroków planu, jeśli nikt na nic nie będzie czekał. Czysta funkcja `timing` i `progress` (`dashboard_forecast.build_forecast`), bez czytania plików i zegara; jest w `show` i `GET /api/status` (nie w `dashboard metrics`, który nie ma `progress`). Osobne pole od `eta` (deklaracja agenta o końcu jednej operacji), które zostaje bez zmian.
+
+**Model (tempo przebiegu).** Odstępy między kolejnymi zakończeniami kroków (kroki z oboma znacznikami „w toku” i „zrobione”, w kolejności zakończenia; pierwszy odstęp od pierwszego „w toku”; odstęp dzielą po równo kroki zakończone w tym samym momencie, bo sesja często zgłasza kilka kroków jednym checkpointem), okna czekania wewnątrz odstępu odjęte; odstęp, którego nie da się policzyć (okno bez końca przed jego końcem), jest pomijany. Wynik: `zostało kroków × kwartyl` (zakres) i `× mediana` (wartość środkowa), kwartyle metodą włączającą. Przedział jest zachowawczy: suma K odstępów rozrzuca się względnie mniej niż K × kwartyl, więc zakres raczej przykrywa, niż niedoszacowuje. Tempo jest całego przebiegu, więc kroki równoległe są uwzględnione; rozmiaru kroku, zmiany tempa ani czekania na ludzi nie modelujemy. „Zostało kroków” = kroki planu bez `[x]` i bez zgłoszonych jako zrobione.
+
+**Minimum danych:** 4 zakończone kroki z czasem w bieżącym przebiegu (stała `MIN_FINISHED_STEPS`). Brak danych albo słabe dane = brak liczby z powodem, nigdy zgadywanie. Rzetelność: powtórka na czterech prawdziwych przebiegach (85 punktów) dała pokrycie zakresu 59% (kwartylowy zakres to nominalnie 50%), a środek mylił się o medianę 79%; dwa z czterech przebiegów nie były pokryte wcale (zmiana tempa). Zakres to rząd wielkości, nie obietnica; dymek strony to mówi.
+
+| Pole | Typ | Opis |
+|---|---|---|
+| `scope` | string | `"plan"` |
+| `reason` | string | tylko bez liczby: `plan-not-running` (plan nie jest `in_progress`), `no-run-start` (brak czasu bezwzględnego, jak `timing.available: false`), `no-remaining` (wszystkie kroki zrobione), `not-enough-data` (z `have` i `need`: zakończone kroki z czasem i minimum) |
+| `remaining` | int | kroków do końca |
+| `samples` | int | liczba odstępów w próbce |
+| `basis` | string | `"run"` (tempo bieżącego przebiegu; historia międzyprzebiegowa nie jest używana) |
+| `paused` | bool | najnowszy checkpoint ma `czeka:`: zakres to praca bez czekania, strona nie podaje godziny końca |
+| `lowSeconds`, `medianSeconds`, `highSeconds` | int | pierwszy kwartyl, mediana i trzeci kwartyl × `remaining`, w sekundach pracy |
+
+Godzinę końca (`koniec ok. HH:MM–HH:MM`) liczy renderer z `deps.now` w chwili odświeżenia strony. Renderer pokazuje prognozę inaczej niż pomiar: etykieta „Prognoza:”, przerywana ramka i kursywa, zawsze przedział, a bez liczby powód; pomiar („Pomiar:”, ciągła ramka) to `timing.acts` w kafelkach aktów I i II. Klient bez `forecast` albo z uszkodzonym polem nie pokazuje wiersza.
 
 ## Metryki przebiegu (`dashboard metrics`)
 

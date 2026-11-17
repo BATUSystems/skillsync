@@ -640,3 +640,10 @@ button.tab-att.is-on { border-color: var(--accent); color: var(--accent); }
   button.tsec-head { grid-template-columns: 1.1rem 1fr; } .tsec-head .sum { grid-column: 2; justify-content: flex-start; }
   .step .stbar { margin-left: 3.4rem; }
 }
+
+/* pomiar (ciągła ramka) i prognoza (przerywana, kursywa): strona odróżnia to, co minęło, od tego, co szacowane */
+.measure, .forecast { display: flex; flex-wrap: wrap; gap: .4rem; align-items: baseline; font-size: .85rem; margin: .35rem 0; padding: .25rem .5rem; border-radius: 8px; overflow-wrap: anywhere; }
+.measure { border: 1px solid var(--line); }
+.forecast { border: 1px dashed var(--muted); font-style: italic; color: var(--text); }
+.forecast.is-none, .forecast.is-paused { color: var(--muted); }
+.measure .lbl, .forecast .lbl { font-style: normal; font-weight: 650; font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }

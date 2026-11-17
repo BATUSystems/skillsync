@@ -103,6 +103,15 @@
     return hh ? `${hh}:${String(m).padStart(2, "0")}:${String(ss).padStart(2, "0")}` : `${m}:${String(ss).padStart(2, "0")}`;
   };
   const fmtTime = (iso) => iso ? new Date(iso).toLocaleString("pl-PL", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" }) : "—";
+  // Czas trwania z sekund do czytelnego tekstu („1 h 05 min”, „40 min”); `rough`: zaokrąglenie do 5 min od 10 min (przedziały prognozy nie udają dokładności).
+  const humanDur = (sec, rough) => {
+    let m = Math.round(Number(sec) / 60);
+    if (!Number.isFinite(m) || m < 0) return "—";
+    if (rough && m >= 10) m = Math.round(m / 5) * 5;
+    if (m < 60) return `${m} min`;
+    const hh = Math.floor(m / 60), mm = m % 60;
+    return mm ? `${hh} h ${String(mm).padStart(2, "0")} min` : `${hh} h`;
+  };
   const baseName = (path) => String(path || "").split("/").pop();
   // Adres z JSON-a do href: tylko http(s); inny schemat (javascript:, data:, …) = brak href (element zostaje tekstem).
   const safeUrl = (url) => (typeof url === "string" && /^https?:\/\/[^\s]/i.test(url.trim()) ? url.trim() : null);
@@ -473,7 +482,7 @@
       else if (specAct) meta.push(h("span", { class: "m", "data-tip": "Akt I: spec bez planu (plan powstaje przy „GO plan”); status speca" }, statusChip(d.spec.status)));
       if (run.startIso) {
         ui.elapsed = h("span", { class: "mono", id: "elapsed" }, fmtDur(now() - Date.parse(run.startIso)));
-        meta.push(h("span", { class: "m", "data-tip": `Czas od startu aktu III (RUN= w checkpoints.md, start ${fmtTime(run.startIso)})` }, icon("i-clock"), ui.elapsed));
+        meta.push(h("span", { class: "m", "data-tip": `Czas od startu przebiegu (RUN= w checkpoints.md, start ${fmtTime(run.startIso)})` }, icon("i-clock"), ui.elapsed));
       }
       ui.ago = h("span", { id: "ago", "data-iso": d.lastUpdate || "" }, fmtAgo(d.lastUpdate));
       meta.push(h("span", { class: "m", "data-tip": "Ostatnia zmiana planu, speca lub checkpointów" }, icon("i-sync"), ui.ago));
@@ -588,6 +597,42 @@
         isDone ? icon("i-check") : null, isActive ? h("span", { class: "stage-dot", "aria-hidden": "true" }) : null, s.label,
         isActive ? h("span", { class: "sr-only" }, quiet ? ` (brak aktywności od ${quiet} min)` : " (w trakcie" + (since ? ", od " + since : "") + ")") : null, screens);
     }
+    // POMIAR i PROGNOZA wyglądają i brzmią inaczej: pomiar („Pomiar:”, ciągła ramka) to czas, który minął, z checkpointów i zgód; prognoza („Prognoza:”,
+    // przerywana ramka, kursywa) to ekstrapolacja z tempa przebiegu: zawsze przedział, z podanym powodem, gdy brak liczby.
+    const clockOf = (ms) => new Date(ms).toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit" });
+    function actTimeLine(d, key) {
+      const t = d.timing && typeof d.timing === "object" ? d.timing : null;
+      const a = t && Array.isArray(t.acts) ? t.acts.find((x) => x && x.key === key) : null;
+      if (!a) return null;
+      const from = typeof a.startedAt === "string" && a.startedAt.length >= 16 ? a.startedAt.slice(11, 16) : "?";
+      let text;
+      if (!a.unknown) text = `praca ${humanDur(a.workSeconds)}, czekanie ${humanDur(a.waitSeconds)}`;
+      else if (a.reason === "no-approval") text = (d.acts || []).some((x) => x.key === key && x.state === "active") ? `trwa od ${from}` : "czas nieznany: zgody nie ma w pliku zgód";
+      else if (a.reason === "open-window") text = "czas nieznany: okno czekania bez końca";
+      else text = "czas nieznany: niespójne znaczniki";
+      const tip = `Zmierzone z checkpointów i pliku zgód: od ${from}${a.endedAt ? " do " + String(a.endedAt).slice(11, 16) : ""}, minus okna czekania. To pomiar, nie prognoza.`;
+      return h("div", { class: "measure", "data-measure": key, ...desc("measure_act", tip) }, h("span", { class: "lbl" }, "Pomiar:"), " " + text);
+    }
+    function forecastLine(d) {
+      const f = d.forecast && typeof d.forecast === "object" ? d.forecast : null;
+      if (!f || f.scope !== "plan") return null;
+      const tip = "Prognoza, nie pomiar: mediana i kwartyle odstępów między zakończonymi krokami bez czekania × zostało kroków. Nie uwzględnia rozmiaru kroków ani czekania na ludzi; to rząd wielkości, nie obietnica.";
+      let text;
+      if (typeof f.reason === "string") {
+        if (f.reason === "not-enough-data") text = `za mało danych (zakończone kroki z czasem: ${Number.isInteger(f.have) ? f.have : 0}, potrzeba co najmniej ${Number.isInteger(f.need) ? f.need : 4})`;
+        else if (f.reason === "no-run-start") text = "brak czasu bezwzględnego w checkpoints.md (RUN=)";
+        else return null;
+        return h("div", { class: "forecast is-none", "data-forecast": "none", ...desc("forecast", tip) }, h("span", { class: "lbl" }, "Prognoza:"), " " + text);
+      }
+      const nums = [f.lowSeconds, f.medianSeconds, f.highSeconds];
+      if (!nums.every((n) => Number.isFinite(n) && n >= 0) || !Number.isInteger(f.remaining)) return null;
+      const range = `${humanDur(f.lowSeconds, true)}–${humanDur(f.highSeconds, true)}`;
+      const basis = `zostało ${f.remaining} ${plural(f.remaining, "krok", "kroki", "kroków")}, tempo z ${f.samples} ${plural(f.samples, "odstępu", "odstępów", "odstępów")} między zakończonymi`;
+      const t0 = now();
+      const end = f.paused ? "wstrzymana: sesja czeka na człowieka, czekanie nie jest liczone" : `koniec ok. ${clockOf(t0 + f.lowSeconds * 1000)}–${clockOf(t0 + f.highSeconds * 1000)}`;
+      text = `do końca kroków ok. ${range} pracy (${basis}), bez czekania na zgody; ${end}`;
+      return h("div", { class: "forecast" + (f.paused ? " is-paused" : ""), "data-forecast": f.paused ? "paused" : "range", ...desc("forecast", tip) }, h("span", { class: "lbl" }, "Prognoza:"), " " + text);
+    }
     function renderActs(d) {
       const acts = d.acts || [];
       const anyActive = acts.some((a) => a.state === "active");
@@ -612,6 +657,7 @@
               h("span", { class: "dot-live" }), h("span", { class: "txt" }, "teraz: ", mono(cur.id), " ", inl("", cur.title ?? "", cur.titleHtml)),
               p.parallel ? h("span", { class: "par" }, `+${p.parallel} równolegle`) : null)
               : h("div", { class: "act-detail" }, a.detail || ""),
+            forecastLine(d),
             h("div", { class: "stages" }, stages),
             substepsBlock.call(kit, d),
             timingBlock.call(kit, d),
@@ -624,7 +670,7 @@
             on: { click: () => openDoc(docRef.path) } }, icon("i-doc"), docRef.label) : null;
           const approve = approveButton(d, a.key === "spec" ? "spec" : "plan", "act-approve");
           const extra = a.key === "plan" ? readinessTile.call(kit, d) : null;
-          body = [h("div", { class: "act-detail" }, a.detail || " "), h("div", { class: "stages" }, stages), extra, warn, h("div", { class: "act-actions" }, docLink, approve)];
+          body = [h("div", { class: "act-detail" }, a.detail || " "), actTimeLine(d, a.key), h("div", { class: "stages" }, stages), extra, warn, h("div", { class: "act-actions" }, docLink, approve)];
         }
         return h("div", { class: `act s-${a.state}${glow ? " s-active" : ""}`, "data-key": a.key },
           h("div", { class: "roman", "aria-hidden": "true" }, a.roman),

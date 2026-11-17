@@ -1349,6 +1349,30 @@ function summary(m) {
       questionPlain: text(mq.root.querySelectorAll('li.q-item')[1].querySelector('.q-text')),
     };
   }
+  // Pomiar i prognoza: wiersz prognozy w akcie III (przedział, powód, wstrzymana) i czas aktów I i II. Prognoza ma inną klasę i etykietę niż pomiar.
+  {
+    const nm = 'plan-in-progress';
+    const run = (patch) => { const d = clone(F[nm]); Object.assign(d, patch); return mount(d, { now: NOW[nm] }); };
+    const rangeF = { scope: 'plan', remaining: 5, samples: 4, basis: 'run', paused: false, lowSeconds: 3000, medianSeconds: 4500, highSeconds: 6750 };
+    const one = (m, sel) => { const e = m.root.querySelector(sel); return e ? { text: text(e), cls: e.getAttribute('class') } : null; };
+    ex.forecast = {
+      range: one(run({ forecast: rangeF }), '[data-forecast]'),
+      paused: one(run({ forecast: Object.assign({}, rangeF, { paused: true }) }), '[data-forecast]'),
+      few: one(run({ forecast: { scope: 'plan', reason: 'not-enough-data', have: 2, need: 4 } }), '[data-forecast]'),
+      norun: one(run({ forecast: { scope: 'plan', reason: 'no-run-start' } }), '[data-forecast]'),
+      silentReasons: ['plan-not-running', 'no-remaining'].map((r) => run({ forecast: { scope: 'plan', reason: r } }).root.querySelectorAll('[data-forecast]').length),
+      absent: run({}).root.querySelectorAll('[data-forecast]').length,
+      broken: run({ forecast: { scope: 'plan', remaining: 'x', lowSeconds: -1, medianSeconds: 1, highSeconds: 2 } }).root.querySelectorAll('[data-forecast]').length,
+      acts: (() => {
+        const d = clone(F[nm]);
+        d.timing = Object.assign({}, d.timing, { available: true, acts: [
+          { key: 'spec', startedAt: '2026-01-11T09:00:00+01:00', endedAt: '2026-01-11T10:05:00+01:00', workSeconds: 3000, waitSeconds: 900, unknown: false, reason: null, endSource: 'approval' },
+          { key: 'plan', startedAt: '2026-01-11T10:05:00+01:00', endedAt: null, workSeconds: null, waitSeconds: null, unknown: true, reason: 'no-approval', endSource: null } ] });
+        const m = mount(d, { now: NOW[nm] });
+        return { spec: one(m, '[data-measure="spec"]'), plan: one(m, '[data-measure="plan"]'), real: m.root.querySelectorAll('[data-measure="real"]').length };
+      })(),
+    };
+  }
   out.extra = ex;
   // deps.now jest wymagane (renderer nie czyta zegara sam).
   try { R.create(makeDoc().createElement('div'), {}); out.nowRequired = false; } catch (e) { out.nowRequired = e instanceof TypeError; }
@@ -2078,6 +2102,31 @@ class RendererNodeTests(unittest.TestCase):
                 self.assertEqual((got["dots"], got["active"], got["screens"], got["legend"], got["light"]), (0, 0, 0, 0, 0))
                 self.assertTrue(got["warn"])
                 self.assertFalse(got["sessionWait"])
+
+    def test_forecast_and_measure_are_shown_apart(self) -> None:
+        r = self.out["extra"]["forecast"]
+        self.assertEqual(r["range"]["cls"], "forecast")
+        self.assertIn("Prognoza", r["range"]["text"])
+        self.assertIn("ok. 50 min–1 h 55 min pracy", r["range"]["text"])
+        self.assertIn("zostało 5 kroków", r["range"]["text"])
+        self.assertIn("bez czekania na zgody", r["range"]["text"])
+        self.assertRegex(r["range"]["text"], r"koniec ok\. \d\d:\d\d–\d\d:\d\d")
+        self.assertIn("is-paused", r["paused"]["cls"])
+        self.assertIn("wstrzymana", r["paused"]["text"])
+        self.assertNotRegex(r["paused"]["text"], r"koniec ok\.")
+        self.assertIn("za mało danych", r["few"]["text"])
+        self.assertIn("zakończone kroki z czasem: 2, potrzeba co najmniej 4", r["few"]["text"])
+        self.assertIn("is-none", r["few"]["cls"])
+        self.assertIn("RUN=", r["norun"]["text"])
+        self.assertEqual(r["silentReasons"], [0, 0], "a plan that does not run or has nothing left shows no forecast line")
+        self.assertEqual((r["absent"], r["broken"]), (0, 0), "no field or a broken one: no line, no number made up")
+
+    def test_act_times_are_measures_with_their_own_label(self) -> None:
+        a = self.out["extra"]["forecast"]["acts"]
+        self.assertEqual(a["spec"]["cls"], "measure")
+        self.assertEqual(a["spec"]["text"], "Pomiar: praca 50 min, czekanie 15 min")
+        self.assertRegex(a["plan"]["text"], r"^Pomiar: (trwa od|czas nieznany)")
+        self.assertEqual(a["real"], 0, "act III has its own timing block, not a measure line")
 
     def test_inline_markdown_in_titles_waiting_and_questions(self) -> None:
         r = self.out["extra"]["inlineMd"]

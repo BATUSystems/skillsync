@@ -76,6 +76,28 @@
     }
   ],
   "timing": {
+    "acts": [
+      {
+        "endSource": "approval",
+        "endedAt": "2026-01-10T08:30:00+00:00",
+        "key": "spec",
+        "reason": "order",
+        "startedAt": "2026-01-10T09:00:00+00:00",
+        "unknown": true,
+        "waitSeconds": null,
+        "workSeconds": null
+      },
+      {
+        "endSource": "approval",
+        "endedAt": "2026-01-10T08:45:00+00:00",
+        "key": "plan",
+        "reason": null,
+        "startedAt": "2026-01-10T08:30:00+00:00",
+        "unknown": false,
+        "waitSeconds": 0,
+        "workSeconds": 900
+      }
+    ],
     "available": true,
     "reason": null,
     "stages": [
