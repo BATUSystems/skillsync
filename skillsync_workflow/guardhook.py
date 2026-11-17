@@ -210,6 +210,14 @@ def attribution_state(value):
     return isinstance(value, dict) and value.get('commit') == '' and value.get('pr') == ''
 
 
+LINK_TRACES = ('.claude/hooks', '.claude/settings.local.json')
+
+
+def never_linked(root):
+    """True when the project shows no trace of `skillsync link` for Claude Code: a missing hook is then only a hint, not a FAIL."""
+    return not any((Path(root) / rel).exists() for rel in LINK_TRACES)
+
+
 def attribution_findings(root, home=None):
     """`[(level, path, reason)]`: the host setting that switches the attribution off. The project-local file (the highest file the generator writes)
     must carry it (`error`); a shared or user file with attribution on is a `warning` (the local file wins over them, a clone without `link` does not)."""
@@ -219,7 +227,7 @@ def attribution_findings(root, home=None):
     if not readable:
         return [('error', SETTINGS, 'Unreadable settings: the host setting that switches AI attribution off cannot be checked')]
     if data is None or not attribution_state(data.get('attribution')):
-        found.append(('error', SETTINGS, 'The host setting `attribution` (empty commit and pr) is missing or switched on: Claude Code would add its footer and trailer; run `skillsync link`'))
+        found.append(('warning' if never_linked(root) else 'error', SETTINGS, 'The host setting `attribution` (empty commit and pr) is missing or switched on: Claude Code would add its footer and trailer; run `skillsync link`'))
     shared, ok = _read_settings(root / SHARED_SETTINGS)
     if ok and shared is not None:
         value = shared.get('attribution')
@@ -279,11 +287,23 @@ def doctor_findings(root, manifest, skills):
     if command is False:
         return found + [('warning', SETTINGS, 'Unreadable settings: the delete guard hook state is unknown')]
     if not script.is_file() or command is None:
-        found.append(('error', SETTINGS, 'The guard hook (PreToolUse: ban on AI attribution in commit and PR text, delete guard) is not installed; run `skillsync link`'))
+        found.append(('warning' if never_linked(root) else 'error', SETTINGS, 'The guard hook (PreToolUse: ban on AI attribution in commit and PR text, delete guard) is not installed; run `skillsync link`'))
         return found
-    if not (root / ATTRIBUTION_HOOK).is_file():
+    copy = root / ATTRIBUTION_HOOK
+    if not copy.is_file():
         found.append(('error', ATTRIBUTION_HOOK, 'The attribution patterns of the guard hook are missing: the ban stays silent; run `skillsync link`'))
         return found
+    from . import attribution
+    try:
+        attribution.load(copy)
+    except attribution.AttributionError:
+        found.append(('error', ATTRIBUTION_HOOK, 'The attribution patterns of the guard hook are unreadable or invalid: the hook ignores them and the ban stays silent; run `skillsync link`'))
+        return found
+    try:
+        if copy.read_bytes() != attribution.DATA.read_bytes():
+            found.append(('warning', ATTRIBUTION_HOOK, 'The attribution patterns of the guard hook differ from the generator data (outdated copy); run `skillsync link`'))
+    except OSError:
+        pass
     if '--attribution' not in command:
         found.append(('error', SETTINGS, 'The installed guard hook entry predates the ban on AI attribution; run `skillsync link`'))
         return found

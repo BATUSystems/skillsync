@@ -67,7 +67,7 @@ znaczy brak deklaracji. `empty` przy niepustym `terms` albo `empty` niebędące 
 schema: 1
 patterns:
   - id: d27-source              # unikalne, [a-z0-9-]+
-    category: d27               # d27 | owner-path | email | machine | publisher | custom
+    category: d27               # d27 | owner-path | email | machine | publisher | custom | attribution
     regex: '\b[o]pen[ -]?[m]ercato\b'   # składnia Pythona re, bez flag inline
     flags: [ignorecase]         # ignorecase | multiline; nic innego
     applies_to: [content, filename, commit]
@@ -79,9 +79,6 @@ allow:
   - id: publisher-license
     regex: '^Copyright \(c\) \d{4} BATUSystems$'
     paths: ['LICENSE*']
-  - id: trailer-noreply
-    regex: '^Co-Authored-By: [^<]+ <noreply@anthropic\.com>$'
-    applies_to: [commit]
 ```
 
 Reguły:
@@ -119,11 +116,20 @@ Reguły:
 | inne wzmianki o BATUSystems | dozwolone | dozwolone | zakazane (poza warstwą wydawcy) | zakazane | zakazane |
 | tożsamości klientów | zakazane | zakazane | wg macierzy celu | wg macierzy celu | zakazane |
 
-Atrybucje nie są blokowane: trailery `Co-Authored-By` oraz wzmianki o właścicielu w `CHANGELOG`, `docs/**`
-i komunikatach commitów są dozwolone; komentarze i docstringi w kodzie są klasą `instrukcje` (D238). Wyjątek wydawcy (URL-e i linia `LICENSE`) jest jawną regułą `allow` z testem.
+Atrybucje w sensie tej tabeli (wzmianki o właścicielu w `CHANGELOG`, `docs/**` i komunikatach commitów) nie są blokowane, a trailery `Co-Authored-By` ludzi
+przechodzą (`trailer_allow` dla adresów); trailer i stopka narzędzia AI to osobna kategoria `attribution` (niżej), zakazana na wszystkich celach i klasach ścieżek; komentarze i docstringi w kodzie są klasą `instrukcje` (D238). Wyjątek wydawcy (URL-e i linia `LICENSE`) jest jawną regułą `allow` z testem.
 
 Nazwy plików i nazwy tagów (`tag-name`) są zawsze sprawdzane jako klasa `instrukcje` (najostrzejsza), także w `docs/**`
 i `CHANGELOG*`. Tożsamość w nazwie pliku w `atrybucje` jest więc blokowana według kolumny `instrukcje`.
+
+## Kategoria `attribution` (zakaz stopek i podpisów narzędzi AI)
+
+Źródło: `skillsync_workflow/data/attribution-patterns.json` (jedyne źródło wzorców; hak poleceń czyta jego kopię). Wzorce są zapisane w formie z jednoliterowymi klasami, żeby plik, dokumentacja i testy nie dopasowywały się do samych siebie; testy składają próbki w czasie wykonania.
+- Klasa A: stopka i reklama narzędzia AI (np. dopisek „wygenerowano w …”, link produktu, nagłówek sesji). Klasa B: trailer współautora wskazujący model lub narzędzie AI (po nazwie albo adresie). Pole `enforce` wskazuje klasy w mocy; wycofanie klasy B to zmiana jednego wpisu.
+- Wbudowane wzorce wszystkich celów (`core`, `org`, `personal`) i klas ścieżek, powierzchnie `content` i `commit`: `pre-commit` (treść indeksu), `pre-push` i CI (`--range`: treść i komunikaty), `leakcheck --text` i `--stdin` (opisy PR i zadań). Nie ma `allow` dla adresu `noreply` narzędzi AI. Dla trailerów ludzi `trailer_allow` działa jak dotąd.
+- `leakcheck --history` NIE stosuje tej kategorii i nie raportuje starych trailerów (nawet informacyjnie): historia zostaje, kontrola dotyczy nowych zmian. W tym trybie dawny adres `noreply` narzędzi AI w trailerze nie wpada też do kategorii `email`. Nowego commita to nie ukrywa, bo push i CI sprawdzają zakres (`--range`), a nie całą historię.
+- Zmiana wcześniejszej decyzji (D40/D44: „atrybucje nie są blokowane”) dotyczy wyłącznie tej kategorii.
+- Ten sam plik danych czytają: niewyłączalna część haka `guard-commands.py` (polecenia piszące tekst), `layers check` (kod `attribution-text`) i `doctor` (wygenerowane instrukcje projektu). Opis: [security](../security.md).
 
 ## Cele (`leakguard.targets`) i poziomy `coverage`
 

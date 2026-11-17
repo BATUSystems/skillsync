@@ -710,12 +710,15 @@ class GuardDoctor(GuardBase):
 
     def test_not_installed_warns_installed_reports_info(self):
         found, report = self.guard_findings()
-        self.assertEqual([f['level'] for f in found], ['error'])   # the ban on AI attribution is not optional
+        self.assertEqual([f['level'] for f in found], ['warning'])   # never linked: a hint
         self.assertIn('not installed', found[0]['reason'])
         self.link()
         found, report = self.guard_findings()
         self.assertEqual([f['level'] for f in found], ['info'])
         self.assertIn('mode deny', found[0]['reason'])
+        (self.root / self.HOOK_PATH).unlink()   # linked before, the hook is gone: the ban on AI attribution is not optional
+        found, report = self.guard_findings()
+        self.assertEqual([f['level'] for f in found], ['error'])
 
     def test_drift_and_switched_off_but_installed(self):
         self.link()
@@ -735,7 +738,7 @@ class GuardDoctor(GuardBase):
         self.manifest['skills'] = ['plain']
         self.save()
         found, _ = self.guard_findings()
-        self.assertEqual([f['level'] for f in found], ['error'])
+        self.assertEqual([f['level'] for f in found], ['warning'])
         self.link()
         found, _ = self.guard_findings()
         self.assertEqual([f['level'] for f in found], ['info'])

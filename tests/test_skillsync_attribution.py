@@ -49,6 +49,10 @@ class DataTests(unittest.TestCase):
     def test_data_file_does_not_match_its_own_patterns(self):
         self.assertEqual(attribution.scan_text(attribution.DATA.read_text(encoding='utf-8')), [])
 
+    def test_session_link_of_the_status_page_is_not_attribution(self):
+        for text in ('https://cla' + 'ude.ai/code/session_01abc', 'session_url: "https://cla' + 'ude.ai/code/session_x"', 'Claude Code session link'):
+            self.assertEqual(attribution.scan_text(text), [], text)
+
     def test_neutral_text_and_human_trailer_pass(self):
         for text in ('fix: parser\n\nplain body', HUMAN, 'the model generated a list of options', 'Made with care'):
             with self.subTest(text):
@@ -223,7 +227,7 @@ class LinkSettingsTests(GuardBase):
 
     def test_doctor_errors_when_the_setting_is_missing_and_clears_after_link(self):
         found = self.attribution_findings()
-        self.assertTrue(any(f['level'] == 'error' for f in found), found)
+        self.assertTrue(found and all(f['level'] == 'warning' for f in found), found)   # never linked: a hint
         self.link()
         self.assertEqual([f for f in self.attribution_findings() if f['level'] == 'error'], [])
         data = self.local()
@@ -237,6 +241,24 @@ class LinkSettingsTests(GuardBase):
         found = self.attribution_findings()
         self.assertEqual({f['level'] for f in found}, {'warning'}, found)
         self.assertTrue(any(f['path'] == '.claude/settings.json' for f in found))
+
+    def test_broken_or_outdated_pattern_copy_is_visible_in_doctor(self):
+        self.link()
+        copy = self.root / guardhook.ATTRIBUTION_HOOK
+        copy.write_text('{not json', encoding='utf-8')
+        found = self.attribution_findings_for(guardhook.ATTRIBUTION_HOOK)
+        self.assertEqual([f['level'] for f in found], ['error'])   # a silent hook must never pass as healthy
+        copy.unlink()
+        self.assertEqual([f['level'] for f in self.attribution_findings_for(guardhook.ATTRIBUTION_HOOK)], ['error'])
+        self.link()
+        data = json.loads(attribution.DATA.read_text(encoding='utf-8'))
+        data['enforce'] = ['A']
+        copy.write_text(json.dumps(data), encoding='utf-8')
+        self.assertEqual([f['level'] for f in self.attribution_findings_for(guardhook.ATTRIBUTION_HOOK)], ['warning'])
+
+    def attribution_findings_for(self, path):
+        report = json.loads(self.cli('doctor').stdout)
+        return [f for f in report['findings'] if f['path'] == path]
 
     def test_state_helper(self):
         for value, expected in ((False, True), ({'commit': '', 'pr': ''}, True), ({'commit': 'x', 'pr': ''}, False), ({}, False), (None, False), (True, False)):
@@ -317,6 +339,12 @@ class HookTests(unittest.TestCase):
     def test_no_exception_prefix_and_no_manifest_mode_switch_it_off(self):
         self.refused(f'SKILLSYNC_GUARD_EXCEPT=\'reason\' git commit -m "{FOOTER}"', env={'SKILLSYNC_GUARD_EXCEPT': 'reason'})
         self.assertEqual(self.run_hook(f'git commit -m "{FOOTER}"', '--tests', 'off').returncode, 2)
+
+    def test_commits_without_text_in_the_command_pass(self):
+        for command in ('git commit', 'git commit --amend --no-edit', 'git commit -a', 'git commit --allow-empty -C HEAD',
+                        'skillsync checkpoint .', 'skillsync pr-run .', 'git -C repo commit', 'git status && git commit'):
+            with self.subTest(command):
+                self.passes(command)
 
     def test_missing_or_broken_data_is_fail_open(self):
         (self.dir / 'attribution-patterns.json').write_text('{not json', encoding='utf-8')
