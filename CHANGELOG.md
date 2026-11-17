@@ -12,6 +12,10 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Fixed
+
+- **Prototypes: the engine dialogs "Zaloguj się, żeby komentować" and "Ustaw własne hasło" had a broken layout** (in every theme, also without a client theme; the same markup since the first release): the login fields sat inside a second rounded frame (the card of `.form-group` from `components.css`), the footer `.anno-dialog-actions` had no rules, so "Anuluj" and "Zaloguj" touched each other, stuck to the left edge and to the frame, and a focused field showed two rings (2 px outline plus the 3 px glow). Now: one container, a label next to its field and an even gap between the pairs, a footer row aligned to the right with a gap (like the existing rule for `dialog menu`), and a single focus ring (border in `--ring` plus the glow; the outline stays transparent for forced colors). The change is only in `prototype.css`, so it does not change the hash of any screen and does not invalidate an acceptance (`prototype.css` and `prototype.js` are not part of the hash); no migration step, `skillsync prototype migrate` copies the new sheet.
+
 ## [1.8.0] - 2026-11-17
 
 Upgrading from 1.7.0: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.7.0 → 1.8.0" (the point numbers below refer to it).
