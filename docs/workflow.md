@@ -390,9 +390,11 @@ z obu projektów. Lekcje: forma tekstowa (i brak klucza przy tekstowej domenie) 
 jak dotąd; forma listy używa współrzędnych katalogu jak domena.
 
 **Znane ograniczenie.** Przedrostek to nazwa katalogu klonu: gdy ten sam projekt ma na dwóch maszynach (albo w CI)
-różne nazwy katalogów, rekord z `repo-b/...` nie dopasuje się, a `doctor` tego nie widzi. Nazwy katalogów klonów
+różne nazwy katalogów (także worktree gita o innej nazwie niż klon, z którego `../repo-a` wskazuje inny katalog), rekord z `repo-b/...` nie dopasuje się, a `doctor` tego nie widzi. Nazwy katalogów klonów
 produktu powinny być jednakowe. Jawną nazwę niezależną od katalogu można dodać później: elementy listy mogą stać się
 mapami bez łamania list ciągów.
+
+Lista wprowadza do kontekstu sesji rekordy (w tym `bootstrap`) spoza repozytorium projektu: element wskazuje dowolny siostrzany katalog `../<nazwa>/docs/domain`, więc manifest powinien wymieniać tylko repozytoria tego samego produktu. `knowledge init` przy liście sprawdza także ścieżkę po rozwinięciu dowiązań, ale lekcje podane jako ciąg (`lessons: ../docs/lessons`) zachowują stary zapis poza projektem.
 
 Treść katalogu obcego repozytorium nie jest skanowana przez strażnika wycieków przy commicie w tym projekcie (skanuje ją
 strażnik repozytorium właściciela).

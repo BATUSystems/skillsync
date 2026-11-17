@@ -132,8 +132,11 @@ class RouteOrder(KnowledgeListFixture):
     def test_lessons_of_a_list_follow_layers_then_directories(self):
         self.owner(kind='lessons', records=[('one.md', 'A lesson', {'tags': ['topic-x']})])
         self.setting(domain=['docs/domain', '../repo-a/docs/domain'])
+        self.write('docs/lessons/own.md', '---\ntags: [x]\n---\nt')
+        self.write('docs/lessons/index.yaml', yaml.safe_dump({'version': 1, 'lessons': [
+            {'path': 'own.md', 'title': 'B lesson', 'tags': ['topic-x']}]}))
         report = self.report('route', '--topics', 'topic-x')
-        self.assertEqual([record['title'] for record in report['lessons']], ['A lesson'])
+        self.assertEqual([record['title'] for record in report['lessons']], ['B lesson', 'A lesson'])
 
 
 class RouteCoordinates(KnowledgeListFixture):
@@ -294,6 +297,16 @@ class KnowledgeInitList(KnowledgeListFixture):
                 report = self.init(code=2)
                 self.assertEqual(report['status'], 'BLOCKED')
                 self.assertEqual(self.tree(), before)
+
+    @needs_os_symlinks
+    def test_list_does_not_write_through_a_symlinked_docs_directory(self):
+        (self.base / 'repo-a/docs').mkdir(parents=True)
+        (self.root / 'docs').symlink_to(self.base / 'repo-a/docs', target_is_directory=True)
+        self.setting(domain=['docs/domain'])
+        report = self.init()
+        self.assertEqual(report['created'], [])
+        self.assertEqual(len(report['skipped']), 2)
+        self.assertEqual(list((self.base / 'repo-a/docs').iterdir()), [])
 
     def test_dry_run_creates_nothing_for_a_list(self):
         self.setting(domain=['docs/domain'])

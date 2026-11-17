@@ -46,7 +46,7 @@ def init_knowledge(root, manifest, library, dry_run=False):
     for kind, content in (('domain', {'version': 1, 'entries': []}), ('lessons', {'version': 1, 'lessons': []})):
         listed = knowledge_is_listed(root, manifest, library, kind)
         for directory, _ in knowledge_locations(root, manifest, library, kind):
-            if listed and not directory.is_relative_to(project):
+            if listed and not (directory.is_relative_to(project) and directory.resolve().is_relative_to(project)):
                 skipped.append({'path': posix(directory / 'index.yaml'), 'reason': OWNED_ELSEWHERE})
                 continue
             plan.append((directory / 'index.yaml', yaml.safe_dump(content, sort_keys=False)))
@@ -74,7 +74,7 @@ def _cmd(args):
     try:
         root, manifest, library = load_layer_project(args.path, args.layers)
         report, code = init_knowledge(root, manifest, library, args.dry_run), 0
-    except (OSError, ValueError, TypeError, yaml.YAMLError, subprocess.SubprocessError) as error:
+    except (OSError, RuntimeError, ValueError, TypeError, yaml.YAMLError, subprocess.SubprocessError) as error:
         report, code = {'status': 'BLOCKED', 'reason': str(error)}, 2
     print(json.dumps(redact(report), ensure_ascii=False, indent=2))
     return code
