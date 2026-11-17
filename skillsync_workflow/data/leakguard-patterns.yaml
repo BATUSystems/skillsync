@@ -53,7 +53,3 @@ allow:
   - id: publisher-license
     regex: '^Copyright \(c\) \d{4} BATUSystems$'
     paths: ['LICENSE*']
-  # Only the address range: the trailer name stays subject to identity terms.
-  - id: trailer-noreply
-    regex: '(?<=<)noreply@anthropic\.com(?=>\s*$)'
-    applies_to: [commit]

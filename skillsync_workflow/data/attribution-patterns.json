@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "_comment": "Ban on attribution and advertising of AI tools in outgoing text (commits, PR descriptions, tasks, documents). Class A = footer/advertising, class B = AI co-author trailer. `enforce` lists the classes in force: dropping B here is the only change needed to allow the trailer. Regexes are written with one-letter classes ([X]) so that this file, the docs and the tests never match their own patterns; tests build sample text at run time. Read by leakguard (builtin patterns), `layers check`, `doctor` and, as a copy, by the guard hook (stdlib only, hence JSON).",
+  "enforce": ["A", "B"],
+  "patterns": [
+    {"id": "attr-claude-footer", "class": "A", "tool": "claude", "flags": ["ignorecase"],
+     "regex": "[G]enerated (?:with|by) \\[?[C]laude"},
+    {"id": "attr-ai-tool-footer", "class": "A", "tool": "other", "flags": ["ignorecase"],
+     "regex": "[G]enerated (?:with|by) \\[?(?:[C]odex|[C]opilot|[C]ursor|[G]emini|[C]hat ?GPT|[W]indsurf|[D]evin)\\b"},
+    {"id": "attr-made-with", "class": "A", "tool": "other", "flags": ["ignorecase"],
+     "regex": "[M]ade with \\[?(?:[C]ursor|[C]laude|[C]opilot|[C]odex)\\b"},
+    {"id": "attr-tool-link", "class": "A", "tool": "claude", "flags": ["ignorecase"],
+     "regex": "[c]laude\\.com/claude-code"},
+    {"id": "attr-session-trailer", "class": "A", "tool": "claude", "flags": ["ignorecase"],
+     "regex": "^[C]laude-[S]ession:\\s*\\S"},
+    {"id": "attr-coauthor-name", "class": "B", "tool": "any", "flags": ["ignorecase"],
+     "regex": "^[C]o-[A]uthored-[B]y:\\s*(?:[C]laude|[C]odex|[C]opilot|[C]ursor|[G]emini|[C]hat ?GPT|GPT|[W]indsurf|[D]evin|[A]ider|[O]penAI|[A]nthropic)\\b"},
+    {"id": "attr-coauthor-address", "class": "B", "tool": "any", "flags": ["ignorecase"],
+     "regex": "^[C]o-[A]uthored-[B]y:.*<[^<>\\s]*@(?:[a]nthropic\\.com|[o]penai\\.com|[c]ursor\\.(?:com|sh))>"}
+  ]
+}
