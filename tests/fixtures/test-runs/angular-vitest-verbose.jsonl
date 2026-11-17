@@ -1,0 +1,26 @@
+{"meta": {"tool": "angular", "version": "@angular/cli 21.2.30, @angular/build unit-test, vitest 4.1.12, Node 22.22.0", "command": ["ng", "test", "--no-watch", "--reporters=verbose"], "exit": 1, "merged": false, "env": {"LANG": "pl_PL.UTF-8", "NO_COLOR": "1", "stdout_stderr": "pipes (not a terminal)"}, "note": "verbose reporter: lines carry a |project| prefix before the file", "scrubbed": "paths, host and user names are replaced", "format": "one record per chunk read from the pipe: t = seconds since the start, fd = out|err, data = the text of the chunk"}}
+{"t": 0.376, "fd": "out", "data": "❯ Building...\n"}
+{"t": 1.593, "fd": "out", "data": "✔ Building...\n"}
+{"t": 1.594, "fd": "out", "data": "Initial chunk files  | Names             |  Raw size\nspec-app-app.js      | spec-app-app      |  47.31 kB | \nchunk-CGZBV6BD.js    | -                 |   4.07 kB | \ninit-testbed.js      | init-testbed      |   1.21 kB | \nvitest-mock-patch.js | vitest-mock-patch | 974 bytes | \nspec-app-mix.js      | spec-app-mix      | 395 bytes | \nstyles.css           | styles            |  56 bytes | \n\n                     | Initial total     |  54.02 kB\n\nApplication bundle generation complete. [1.216 seconds] - 2026-11-16T23:41:19.606Z\n\n"}
+{"t": 1.786, "fd": "out", "data": "\n"}
+{"t": 1.786, "fd": "out", "data": " RUN  v4.1.12 /TOOLS/angular/demo-vitest\n"}
+{"t": 1.786, "fd": "out", "data": "\n"}
+{"t": 3.066, "fd": "out", "data": " ✓ |demo-vitest| src/app/mix.spec.ts > Mix > passes one 3ms\n"}
+{"t": 3.066, "fd": "out", "data": " × |demo-vitest| src/app/mix.spec.ts > Mix > fails on purpose 9ms\n"}
+{"t": 3.066, "fd": "out", "data": "   → expected 4 to be 5 // Object.is equality\n"}
+{"t": 3.066, "fd": "out", "data": " ↓ |demo-vitest| src/app/mix.spec.ts > Mix > is skipped\n"}
+{"t": 3.067, "fd": "out", "data": " ✓ |demo-vitest| src/app/mix.spec.ts > Mix > nested group > passes nested 1ms\n"}
+{"t": 3.153, "fd": "out", "data": " ✓ |demo-vitest| src/app/app.spec.ts > App > should create the app 89ms\n"}
+{"t": 3.168, "fd": "out", "data": " ✓ |demo-vitest| src/app/app.spec.ts > App > should render title 28ms\n"}
+{"t": 3.173, "fd": "err", "data": "\n⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯\n\n"}
+{"t": 3.173, "fd": "err", "data": " FAIL  |demo-vitest| src/app/mix.spec.ts > Mix > fails on purpose\n"}
+{"t": 3.175, "fd": "err", "data": "AssertionError: expected 4 to be 5 // Object.is equality\n\n- Expected\n+ Received\n\n- 5\n+ 4\n\n"}
+{"t": 3.175, "fd": "err", "data": " ❯ src/app/mix.spec.ts:3:48\n"}
+{"t": 3.18, "fd": "err", "data": "      1| describe('Mix', () => {\n      2|   it('passes one', () => { expect(1 + 1).toBe(2); });\n      3|   it('fails on purpose', () => { expect(2 + 2).toBe(5); });\n       |                                                ^\n      4|   it.skip('is skipped', () => { expect(true).toBe(true); });\n      5|   describe('nested group', () => {\n\n"}
+{"t": 3.18, "fd": "err", "data": "⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯\n\n"}
+{"t": 3.181, "fd": "out", "data": "\n"}
+{"t": 3.181, "fd": "out", "data": " Test Files  1 failed | 1 passed (2)\n"}
+{"t": 3.181, "fd": "out", "data": "      Tests  1 failed | 4 passed | 1 skipped (6)\n"}
+{"t": 3.181, "fd": "out", "data": "   Start at  00:41:19\n"}
+{"t": 3.181, "fd": "out", "data": "   Duration  1.38s (transform 201ms, setup 692ms, import 152ms, tests 134ms, environment 1.29s)\n"}
+{"t": 3.182, "fd": "out", "data": "\n"}

@@ -1,0 +1,36 @@
+{"meta": {"tool": "vitest", "version": "vitest 4.1.12, Node 22.22.0", "command": ["vitest", "run", "--reporter=verbose"], "exit": 1, "merged": false, "env": {"LANG": "pl_PL.UTF-8", "NO_COLOR": "1", "stdout_stderr": "pipes (not a terminal)"}, "note": "two files run in parallel (lines of different files interleave); a failure, a skip, a todo, parameterized tests, a nested describe, a unicode name", "scrubbed": "paths, host and user names are replaced", "format": "one record per chunk read from the pipe: t = seconds since the start, fd = out|err, data = the text of the chunk"}}
+{"t": 0.456, "fd": "err", "data": "(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:\n  - ESM syntax in a file loaded as CommonJS (vitest.config.js:1:1). Use a `.mjs` extension or set `\"type\": \"module\"` in the closest package.json\nSet `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.\n"}
+{"t": 0.511, "fd": "out", "data": "\n"}
+{"t": 0.511, "fd": "out", "data": " RUN  v4.1.12 /TOOLS/tools/vitest\n"}
+{"t": 0.511, "fd": "out", "data": "\n"}
+{"t": 1.175, "fd": "out", "data": " ✓ tests/math.test.js > math > adds 404ms\n"}
+{"t": 1.262, "fd": "out", "data": " ✓ tests/second.test.js > second file ok 504ms\n"}
+{"t": 1.264, "fd": "out", "data": " ✓ tests/second.test.js > second file flaky 0ms\n"}
+{"t": 1.575, "fd": "out", "data": " ✓ tests/math.test.js > math > subtracts 400ms\n"}
+{"t": 1.676, "fd": "out", "data": " ↓ tests/math.test.js > math > is skipped\n"}
+{"t": 1.677, "fd": "out", "data": " □ tests/math.test.js > math > is a todo\n"}
+{"t": 2.289, "fd": "out", "data": " × tests/math.test.js > math > fails with a message 411ms\n"}
+{"t": 2.289, "fd": "out", "data": "   → expected 4 to be 5 // Object.is equality\n"}
+{"t": 2.289, "fd": "out", "data": " ✓ tests/math.test.js > math > nested > deep ok 301ms\n"}
+{"t": 2.588, "fd": "out", "data": " ✓ tests/math.test.js > math > adds 1 + 1 = 2 200ms\n"}
+{"t": 2.69, "fd": "out", "data": " ✓ tests/math.test.js > math > adds 2 + 3 = 5 201ms\n"}
+{"t": 2.895, "fd": "out", "data": " × tests/math.test.js > math > adds 2 + 2 = 5 202ms\n   → expected 4 to be 5 // Object.is equality\n"}
+{"t": 2.895, "fd": "out", "data": " ✓ tests/math.test.js > math > żółć – unicode name 0ms\n"}
+{"t": 2.899, "fd": "err", "data": "\n⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯\n\n"}
+{"t": 2.899, "fd": "err", "data": " FAIL  tests/math.test.js > math > fails with a message\n"}
+{"t": 2.9, "fd": "err", "data": "AssertionError: expected 4 to be 5 // Object.is equality\n\n- Expected\n+ Received\n\n- 5\n+ 4\n\n"}
+{"t": 2.9, "fd": "err", "data": " ❯ tests/math.test.js:8:74\n"}
+{"t": 2.907, "fd": "err", "data": "      6|   it.skip('is skipped', () => { expect(1).toBe(2); });\n      7|   it.todo('is a todo');\n      8|   it('fails with a message', async () => { await nap(400); expect(2 + …\n       |                                                                          ^\n      9|   describe('nested', () => {\n     10|     it('deep ok', async () => { await nap(300); expect(true).toBe(true…\n\n"}
+{"t": 2.908, "fd": "err", "data": "⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯\n\n FAIL  tests/math.test.js > math > adds 2 + 2 = 5\n"}
+{"t": 2.908, "fd": "err", "data": "AssertionError: expected 4 to be 5 // Object.is equality\n"}
+{"t": 2.908, "fd": "err", "data": "\n- Expected\n+ Received\n\n- 5\n+ 4\n\n"}
+{"t": 2.908, "fd": "err", "data": " ❯ tests/math.test.js:12:118\n"}
+{"t": 2.908, "fd": "err", "data": "     10|     it('deep ok', async () => { await nap(300); expect(true).toBe(true…\n     11|   });\n     12|   it.each([[1, 1, 2], [2, 3, 5], [2, 2, 5]])('adds %i + %i = %i', asyn…\n       |                                                                                                                      ^\n     13|   it('żółć – unicode name', () => { expect(1).toBe(1); });\n     14| });\n"}
+{"t": 2.908, "fd": "err", "data": "\n"}
+{"t": 2.908, "fd": "err", "data": "⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯\n\n"}
+{"t": 2.909, "fd": "out", "data": "\n"}
+{"t": 2.909, "fd": "out", "data": " Test Files  1 failed | 1 passed (2)\n"}
+{"t": 2.91, "fd": "out", "data": "      Tests  2 failed | 8 passed | 1 skipped | 1 todo (12)\n"}
+{"t": 2.91, "fd": "out", "data": "   Start at  22:52:41\n"}
+{"t": 2.91, "fd": "out", "data": "   Duration  2.38s (transform 52ms, setup 0ms, import 88ms, tests 2.63s, environment 0ms)\n"}
+{"t": 2.91, "fd": "out", "data": "\n"}

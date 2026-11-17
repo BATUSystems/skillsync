@@ -160,6 +160,8 @@ class EventWriter:
         self.truncated = False
         self.last_counts = 0.0
         self._counts = None
+        self.final = {}    # id -> the last state written (what the run knows of every test: the end counters of an adapter come from here)
+        self.latest = None  # the last `counts` the caller gave, written or not: (passed, failed, skipped, running, total)
         self._lock = threading.Lock()   # the reader threads of `test-run` and `--import` may write at the same time
 
     def _write(self, event, force=False):
@@ -210,9 +212,10 @@ class EventWriter:
             self.truncated = True
             return False
         self.tests += 1
+        self.final[str(test_id).replace('\\', '/')] = state
         event = {'t': 'test', 'id': mask_text(str(test_id).replace('\\', '/'), self.mask, MAX_NAME), 'name': mask_text(name, self.mask, MAX_NAME), 'state': state}
         if group:
-            event['group'] = mask_text(group, self.mask, MAX_NAME)
+            event['group'] = mask_text(str(group).replace('\\', '/'), self.mask, MAX_NAME)   # the same `/` as the id (a Windows path)
         if ms is not None:
             try:
                 value = int(ms)
@@ -225,6 +228,7 @@ class EventWriter:
         return self._write(event)
 
     def counts(self, passed=0, failed=0, skipped=0, running=0, total=None, force=False):
+        self.latest = (passed, failed, skipped, running, total)
         now = time.monotonic()
         if not force and now - self.last_counts < COUNTS_INTERVAL_S:
             self._counts = (passed, failed, skipped, running, total)

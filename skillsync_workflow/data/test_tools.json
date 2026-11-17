@@ -44,6 +44,10 @@
    "tool": "vitest"
   },
   {
+   "word": "karma",
+   "tool": "karma"
+  },
+  {
    "word": "mvn",
    "tool": "maven"
   },

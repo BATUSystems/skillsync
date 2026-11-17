@@ -1,0 +1,21 @@
+{"meta": {"tool": "cypress", "version": "cypress 16.3.0, Chrome 157 (headless)", "command": ["cypress", "run", "--browser", "chrome", "--headless", "--spec", "cypress/e2e/second.cy.js"], "exit": 0, "merged": false, "env": {"LANG": "pl_PL.UTF-8", "NO_COLOR": "1", "stdout_stderr": "pipes (not a terminal)"}, "note": "green run in Chrome", "scrubbed": "paths, host and user names are replaced", "format": "one record per chunk read from the pipe: t = seconds since the start, fd = out|err, data = the text of the chunk"}}
+{"t": 2.753, "fd": "out", "data": "\n"}
+{"t": 2.769, "fd": "out", "data": "================================================================================\n\n"}
+{"t": 2.77, "fd": "out", "data": "  (Run Starting)\n"}
+{"t": 2.77, "fd": "out", "data": "\n"}
+{"t": 2.778, "fd": "out", "data": "  ┌────────────────────────────────────────────────────────────────────────────────────────────────┐\n  │ Cypress:        16.3.0                                                                         │\n  │ Browser:        Chrome 157 (headless)                                                          │\n  │ Node Version:   v22.22.0 (/HOME)                   │\n  │ Specs:          1 found (second.cy.js)                                                         │\n  │ Searched:       cypress/e2e/second.cy.js                                                       │\n  └────────────────────────────────────────────────────────────────────────────────────────────────┘\n\n"}
+{"t": 2.778, "fd": "out", "data": "\n"}
+{"t": 2.779, "fd": "out", "data": "────────────────────────────────────────────────────────────────────────────────────────────────────\n                                                                                                    \n  Running:  second.cy.js                                                                    (1 of 1)\n"}
+{"t": 6.427, "fd": "out", "data": "\n"}
+{"t": 6.428, "fd": "out", "data": "\n"}
+{"t": 7.009, "fd": "out", "data": "  ✓ second ok (563ms)\n"}
+{"t": 7.05, "fd": "out", "data": "\n"}
+{"t": 7.05, "fd": "out", "data": "  1 passing (623ms)\n\n"}
+{"t": 7.061, "fd": "out", "data": "\n"}
+{"t": 7.061, "fd": "out", "data": "  (Results)\n"}
+{"t": 7.062, "fd": "out", "data": "\n"}
+{"t": 7.063, "fd": "out", "data": "  ┌────────────────────────────────────────────────────────────────────────────────────────────────┐\n  │ Tests:        1                                                                                │\n  │ Passing:      1                                                                                │\n  │ Failing:      0                                                                                │\n  │ Pending:      0                                                                                │\n  │ Skipped:      0                                                                                │\n  │ Screenshots:  0                                                                                │\n  │ Video:        false                                                                            │\n  │ Duration:     0 seconds                                                                        │\n  │ Spec Ran:     second.cy.js                                                                     │\n  └────────────────────────────────────────────────────────────────────────────────────────────────┘\n\n"}
+{"t": 7.076, "fd": "out", "data": "\n"}
+{"t": 7.097, "fd": "out", "data": "================================================================================\n\n  (Run Finished)\n"}
+{"t": 7.1, "fd": "out", "data": "\n\n"}
+{"t": 7.102, "fd": "out", "data": "       Spec                                              Tests  Passing  Failing  Pending  Skipped  \n  ┌────────────────────────────────────────────────────────────────────────────────────────────────┐\n  │ ✔  second.cy.js                             627ms        1        1        -        -        - │\n  └────────────────────────────────────────────────────────────────────────────────────────────────┘\n    ✔  All specs passed!                        627ms        1        1        -        -        -  \n\n"}

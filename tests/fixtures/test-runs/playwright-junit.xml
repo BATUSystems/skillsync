@@ -1,0 +1,306 @@
+<testsuites id="" name="" tests="26" failures="4" skipped="2" errors="2" time="20.017895">
+<testsuite name="math.spec.js" timestamp="2026-11-16T21:55:54.134Z" hostname="HOST" tests="10" failures="2" skipped="1" time="10.886" errors="1">
+<testcase name="math › adds" classname="math.spec.js" time="0.578">
+</testcase>
+<testcase name="math › subtracts" classname="math.spec.js" time="0.407">
+</testcase>
+<testcase name="math › is skipped" classname="math.spec.js">
+<properties>
+<property name="skip" value="">
+</property>
+</properties>
+<skipped>
+</skipped>
+</testcase>
+<testcase name="math › fails with a message" classname="math.spec.js" time="0.625">
+<system-out>
+<![CDATA[
+[[ATTACHMENT|test-results/math-math-fails-with-a-message-chromium-desktop/error-context.md]]
+
+[[ATTACHMENT|test-results/math-math-fails-with-a-message-chromium-desktop-retry1/error-context.md]]
+]]>
+</system-out>
+<failure message="expect(received).toBe(expected) // Object.is equality" type="expect.toBe">
+<![CDATA[  [chromium-desktop] › math.spec.js:7:3 › math › fails with a message ──────────────────────────────
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 5
+    Received: 4
+
+       5 |   test('subtracts', async () => { await nap(400); expect(3 - 1).toBe(2); });
+       6 |   test.skip('is skipped', async () => { expect(1).toBe(2); });
+    >  7 |   test('fails with a message', async () => { await nap(300); expect(2 + 2).toBe(5); });
+         |                                                                            ^
+       8 |   test('flaky on the first attempt', async ({}, testInfo) => { await nap(200); expect(testInfo.retry).toBeGreaterThan(0); });
+       9 |   test('żółć – unicode name', async () => { expect(1).toBe(1); });
+      10 |   for (const [a, b, c] of [[1, 1, 2], [2, 3, 5], [2, 2, 5]]) {
+        at /TOOLS/tools/pw/e2e/math.spec.js:7:76
+
+    Error Context: ../test-results/math-math-fails-with-a-message-chromium-desktop/error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 5
+    Received: 4
+
+       5 |   test('subtracts', async () => { await nap(400); expect(3 - 1).toBe(2); });
+       6 |   test.skip('is skipped', async () => { expect(1).toBe(2); });
+    >  7 |   test('fails with a message', async () => { await nap(300); expect(2 + 2).toBe(5); });
+         |                                                                            ^
+       8 |   test('flaky on the first attempt', async ({}, testInfo) => { await nap(200); expect(testInfo.retry).toBeGreaterThan(0); });
+       9 |   test('żółć – unicode name', async () => { expect(1).toBe(1); });
+      10 |   for (const [a, b, c] of [[1, 1, 2], [2, 3, 5], [2, 2, 5]]) {
+        at /TOOLS/tools/pw/e2e/math.spec.js:7:76
+
+    Error Context: ../test-results/math-math-fails-with-a-message-chromium-desktop-retry1/error-context.md
+]]>
+</failure>
+</testcase>
+<testcase name="math › flaky on the first attempt" classname="math.spec.js" time="0.43">
+<system-out>
+<![CDATA[
+[[ATTACHMENT|test-results/math-math-flaky-on-the-first-attempt-chromium-desktop/error-context.md]]
+]]>
+</system-out>
+</testcase>
+<testcase name="math › żółć – unicode name" classname="math.spec.js" time="0.006">
+</testcase>
+<testcase name="math › adds 1 + 1 = 2" classname="math.spec.js" time="0.206">
+</testcase>
+<testcase name="math › adds 2 + 3 = 5" classname="math.spec.js" time="0.205">
+</testcase>
+<testcase name="math › adds 2 + 2 = 5" classname="math.spec.js" time="0.426">
+<system-out>
+<![CDATA[
+[[ATTACHMENT|test-results/math-math-adds-2-2-5-chromium-desktop/error-context.md]]
+
+[[ATTACHMENT|test-results/math-math-adds-2-2-5-chromium-desktop-retry1/error-context.md]]
+]]>
+</system-out>
+<failure message="expect(received).toBe(expected) // Object.is equality" type="expect.toBe">
+<![CDATA[  [chromium-desktop] › math.spec.js:11:5 › math › adds 2 + 2 = 5 ───────────────────────────────────
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 5
+    Received: 4
+
+       9 |   test('żółć – unicode name', async () => { expect(1).toBe(1); });
+      10 |   for (const [a, b, c] of [[1, 1, 2], [2, 3, 5], [2, 2, 5]]) {
+    > 11 |     test(`adds ${a} + ${b} = ${c}`, async () => { await nap(200); expect(a + b).toBe(c); });
+         |                                                                                 ^
+      12 |   }
+      13 | });
+      14 | test('times out', async () => { await nap(8000); });
+        at /TOOLS/tools/pw/e2e/math.spec.js:11:81
+
+    Error Context: ../test-results/math-math-adds-2-2-5-chromium-desktop/error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 5
+    Received: 4
+
+       9 |   test('żółć – unicode name', async () => { expect(1).toBe(1); });
+      10 |   for (const [a, b, c] of [[1, 1, 2], [2, 3, 5], [2, 2, 5]]) {
+    > 11 |     test(`adds ${a} + ${b} = ${c}`, async () => { await nap(200); expect(a + b).toBe(c); });
+         |                                                                                 ^
+      12 |   }
+      13 | });
+      14 | test('times out', async () => { await nap(8000); });
+        at /TOOLS/tools/pw/e2e/math.spec.js:11:81
+
+    Error Context: ../test-results/math-math-adds-2-2-5-chromium-desktop-retry1/error-context.md
+]]>
+</failure>
+</testcase>
+<testcase name="times out" classname="math.spec.js" time="8.003">
+<system-out>
+<![CDATA[
+[[ATTACHMENT|test-results/math-times-out-chromium-desktop/error-context.md]]
+
+[[ATTACHMENT|test-results/math-times-out-chromium-desktop-retry1/error-context.md]]
+]]>
+</system-out>
+<error message="Test timeout of 4000ms exceeded." type="Error">
+<![CDATA[  [chromium-desktop] › math.spec.js:14:1 › times out ───────────────────────────────────────────────
+
+    Test timeout of 4000ms exceeded.
+
+    Error Context: ../test-results/math-times-out-chromium-desktop/error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Test timeout of 4000ms exceeded.
+
+    Error Context: ../test-results/math-times-out-chromium-desktop-retry1/error-context.md
+]]>
+</error>
+</testcase>
+</testsuite>
+<testsuite name="second.spec.js" timestamp="2026-11-16T21:55:54.134Z" hostname="HOST" tests="3" failures="0" skipped="0" time="0.518" errors="0">
+<testcase name="second ok" classname="second.spec.js" time="0.509">
+</testcase>
+<testcase name="serial pair › serial first" classname="second.spec.js" time="0.003">
+</testcase>
+<testcase name="serial pair › serial second" classname="second.spec.js" time="0.006">
+</testcase>
+</testsuite>
+<testsuite name="math.spec.js" timestamp="2026-11-16T21:55:54.134Z" hostname="HOST" tests="10" failures="2" skipped="1" time="10.858" errors="1">
+<testcase name="math › adds" classname="math.spec.js" time="0.559">
+</testcase>
+<testcase name="math › subtracts" classname="math.spec.js" time="0.406">
+</testcase>
+<testcase name="math › is skipped" classname="math.spec.js">
+<properties>
+<property name="skip" value="">
+</property>
+</properties>
+<skipped>
+</skipped>
+</testcase>
+<testcase name="math › fails with a message" classname="math.spec.js" time="0.627">
+<system-out>
+<![CDATA[
+[[ATTACHMENT|test-results/math-math-fails-with-a-message-chromium-mobile/error-context.md]]
+
+[[ATTACHMENT|test-results/math-math-fails-with-a-message-chromium-mobile-retry1/error-context.md]]
+]]>
+</system-out>
+<failure message="expect(received).toBe(expected) // Object.is equality" type="expect.toBe">
+<![CDATA[  [chromium-mobile] › math.spec.js:7:3 › math › fails with a message ───────────────────────────────
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 5
+    Received: 4
+
+       5 |   test('subtracts', async () => { await nap(400); expect(3 - 1).toBe(2); });
+       6 |   test.skip('is skipped', async () => { expect(1).toBe(2); });
+    >  7 |   test('fails with a message', async () => { await nap(300); expect(2 + 2).toBe(5); });
+         |                                                                            ^
+       8 |   test('flaky on the first attempt', async ({}, testInfo) => { await nap(200); expect(testInfo.retry).toBeGreaterThan(0); });
+       9 |   test('żółć – unicode name', async () => { expect(1).toBe(1); });
+      10 |   for (const [a, b, c] of [[1, 1, 2], [2, 3, 5], [2, 2, 5]]) {
+        at /TOOLS/tools/pw/e2e/math.spec.js:7:76
+
+    Error Context: ../test-results/math-math-fails-with-a-message-chromium-mobile/error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 5
+    Received: 4
+
+       5 |   test('subtracts', async () => { await nap(400); expect(3 - 1).toBe(2); });
+       6 |   test.skip('is skipped', async () => { expect(1).toBe(2); });
+    >  7 |   test('fails with a message', async () => { await nap(300); expect(2 + 2).toBe(5); });
+         |                                                                            ^
+       8 |   test('flaky on the first attempt', async ({}, testInfo) => { await nap(200); expect(testInfo.retry).toBeGreaterThan(0); });
+       9 |   test('żółć – unicode name', async () => { expect(1).toBe(1); });
+      10 |   for (const [a, b, c] of [[1, 1, 2], [2, 3, 5], [2, 2, 5]]) {
+        at /TOOLS/tools/pw/e2e/math.spec.js:7:76
+
+    Error Context: ../test-results/math-math-fails-with-a-message-chromium-mobile-retry1/error-context.md
+]]>
+</failure>
+</testcase>
+<testcase name="math › flaky on the first attempt" classname="math.spec.js" time="0.426">
+<system-out>
+<![CDATA[
+[[ATTACHMENT|test-results/math-math-flaky-on-the-first-attempt-chromium-mobile/error-context.md]]
+]]>
+</system-out>
+</testcase>
+<testcase name="math › żółć – unicode name" classname="math.spec.js" time="0.005">
+</testcase>
+<testcase name="math › adds 1 + 1 = 2" classname="math.spec.js" time="0.205">
+</testcase>
+<testcase name="math › adds 2 + 3 = 5" classname="math.spec.js" time="0.203">
+</testcase>
+<testcase name="math › adds 2 + 2 = 5" classname="math.spec.js" time="0.424">
+<system-out>
+<![CDATA[
+[[ATTACHMENT|test-results/math-math-adds-2-2-5-chromium-mobile/error-context.md]]
+
+[[ATTACHMENT|test-results/math-math-adds-2-2-5-chromium-mobile-retry1/error-context.md]]
+]]>
+</system-out>
+<failure message="expect(received).toBe(expected) // Object.is equality" type="expect.toBe">
+<![CDATA[  [chromium-mobile] › math.spec.js:11:5 › math › adds 2 + 2 = 5 ────────────────────────────────────
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 5
+    Received: 4
+
+       9 |   test('żółć – unicode name', async () => { expect(1).toBe(1); });
+      10 |   for (const [a, b, c] of [[1, 1, 2], [2, 3, 5], [2, 2, 5]]) {
+    > 11 |     test(`adds ${a} + ${b} = ${c}`, async () => { await nap(200); expect(a + b).toBe(c); });
+         |                                                                                 ^
+      12 |   }
+      13 | });
+      14 | test('times out', async () => { await nap(8000); });
+        at /TOOLS/tools/pw/e2e/math.spec.js:11:81
+
+    Error Context: ../test-results/math-math-adds-2-2-5-chromium-mobile/error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 5
+    Received: 4
+
+       9 |   test('żółć – unicode name', async () => { expect(1).toBe(1); });
+      10 |   for (const [a, b, c] of [[1, 1, 2], [2, 3, 5], [2, 2, 5]]) {
+    > 11 |     test(`adds ${a} + ${b} = ${c}`, async () => { await nap(200); expect(a + b).toBe(c); });
+         |                                                                                 ^
+      12 |   }
+      13 | });
+      14 | test('times out', async () => { await nap(8000); });
+        at /TOOLS/tools/pw/e2e/math.spec.js:11:81
+
+    Error Context: ../test-results/math-math-adds-2-2-5-chromium-mobile-retry1/error-context.md
+]]>
+</failure>
+</testcase>
+<testcase name="times out" classname="math.spec.js" time="8.003">
+<system-out>
+<![CDATA[
+[[ATTACHMENT|test-results/math-times-out-chromium-mobile/error-context.md]]
+
+[[ATTACHMENT|test-results/math-times-out-chromium-mobile-retry1/error-context.md]]
+]]>
+</system-out>
+<error message="Test timeout of 4000ms exceeded." type="Error">
+<![CDATA[  [chromium-mobile] › math.spec.js:14:1 › times out ────────────────────────────────────────────────
+
+    Test timeout of 4000ms exceeded.
+
+    Error Context: ../test-results/math-times-out-chromium-mobile/error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Test timeout of 4000ms exceeded.
+
+    Error Context: ../test-results/math-times-out-chromium-mobile-retry1/error-context.md
+]]>
+</error>
+</testcase>
+</testsuite>
+<testsuite name="second.spec.js" timestamp="2026-11-16T21:55:54.134Z" hostname="HOST" tests="3" failures="0" skipped="0" time="0.517" errors="0">
+<testcase name="second ok" classname="second.spec.js" time="0.509">
+</testcase>
+<testcase name="serial pair › serial first" classname="second.spec.js" time="0.005">
+</testcase>
+<testcase name="serial pair › serial second" classname="second.spec.js" time="0.003">
+</testcase>
+</testsuite>
+</testsuites>

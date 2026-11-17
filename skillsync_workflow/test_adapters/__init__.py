@@ -29,6 +29,10 @@ class Adapter:
     def accepts(self, argv):
         return True
 
+    def hint(self, argv, has_report=False):
+        """Optional (`has_report`: a JUnit report was named with `--junit`): a short sentence for the user about what the command gives the page and how to get more (shown in the adapter notice of `test-run`); None for nothing."""
+        return None
+
     def env(self):
         return {}
 

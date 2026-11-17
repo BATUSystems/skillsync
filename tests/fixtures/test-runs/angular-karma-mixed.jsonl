@@ -1,0 +1,16 @@
+{"meta": {"tool": "angular", "version": "@angular/cli 21.2.30, @angular/build unit-test (runner karma), karma 6.4.4, jasmine-core, Chrome Headless 157, Node 22.22.0", "command": ["ng", "test", "--no-watch", "--browsers=ChromeHeadless"], "exit": 1, "merged": false, "env": {"LANG": "pl_PL.UTF-8", "NO_COLOR": "1", "stdout_stderr": "pipes (not a terminal)"}, "note": "a failure and a skipped test (xit)", "scrubbed": "paths, host and user names are replaced", "format": "one record per chunk read from the pipe: t = seconds since the start, fd = out|err, data = the text of the chunk"}}
+{"t": 0.813, "fd": "out", "data": "❯ Building...\n"}
+{"t": 3.138, "fd": "out", "data": "✔ Building...\n"}
+{"t": 3.139, "fd": "out", "data": "Initial chunk files  | Names             |  Raw size\nchunk-TFJPV3Z7.js    | -                 |   1.96 MB | \ntest_main.js         | test_main         | 218.29 kB | \nspec-app-app.spec.js | spec-app-app.spec |  48.20 kB | \npolyfills.js         | polyfills         | 749 bytes | \njasmine-cleanup-0.js | jasmine-cleanup-0 | 397 bytes | \nspec-app-mix.spec.js | spec-app-mix.spec | 396 bytes | \nstyles.css           | styles            |  95 bytes | \n\n                     | Initial total     |   2.23 MB\n\nApplication bundle generation complete. [2.324 seconds] - 2026-11-16T23:26:58.489Z\n\n"}
+{"t": 3.238, "fd": "out", "data": "17 11 2026 00:26:58.589:INFO [karma-server]: Karma v6.4.4 server started at http://localhost:PORT/\n"}
+{"t": 3.238, "fd": "out", "data": "17 11 2026 00:26:58.591:INFO [launcher]: Launching browsers ChromeHeadless with concurrency unlimited\n"}
+{"t": 3.242, "fd": "out", "data": "17 11 2026 00:26:58.594:INFO [launcher]: Starting browser ChromeHeadless\n"}
+{"t": 3.726, "fd": "out", "data": "17 11 2026 00:26:59.079:INFO [Chrome Headless 157.0.0.0 (Linux 0.0.0)]: Connected on socket SOCKET with id ID\n"}
+{"t": 4.34, "fd": "out", "data": "Chrome Headless 157.0.0.0 (Linux 0.0.0): Executed 0 of 6 SUCCESS (0 secs / 0 secs)\n"}
+{"t": 4.344, "fd": "out", "data": "\u001b[1A\u001b[2KChrome Headless 157.0.0.0 (Linux 0.0.0): Executed 1 of 6 SUCCESS (0 secs / 0.002 secs)\n"}
+{"t": 4.347, "fd": "out", "data": "\u001b[1A\u001b[2KChrome Headless 157.0.0.0 (Linux 0.0.0) Mix fails on purpose FAILED\n\tExpected 4 to be 5.\n\t    at <Jasmine>\n\t    at UserContext.<anonymous> (src/app/mix.spec.ts:3:48)\n\t    at <Jasmine>\nChrome Headless 157.0.0.0 (Linux 0.0.0): Executed 2 of 6 (1 FAILED) (0 secs / 0.004 secs)\n"}
+{"t": 4.349, "fd": "out", "data": "\u001b[1A\u001b[2KChrome Headless 157.0.0.0 (Linux 0.0.0): Executed 3 of 6 (1 FAILED) (skipped 1) (0 secs / 0.005 secs)\n"}
+{"t": 4.37, "fd": "out", "data": "\u001b[1A\u001b[2KChrome Headless 157.0.0.0 (Linux 0.0.0): Executed 4 of 6 (1 FAILED) (skipped 1) (0 secs / 0.026 secs)\n"}
+{"t": 4.38, "fd": "out", "data": "\u001b[1A\u001b[2KChrome Headless 157.0.0.0 (Linux 0.0.0): Executed 5 of 6 (1 FAILED) (skipped 1) (0 secs / 0.035 secs)\n"}
+{"t": 4.383, "fd": "out", "data": "\u001b[1A\u001b[2KChrome Headless 157.0.0.0 (Linux 0.0.0): Executed 5 of 6 (1 FAILED) (skipped 1) (0.042 secs / 0.035 secs)\n"}
+{"t": 4.384, "fd": "out", "data": "TOTAL: 1 FAILED, 4 SUCCESS\n"}
