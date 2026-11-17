@@ -598,6 +598,18 @@ def _command(args):
     return int(code)
 
 
+def split_command(argv):
+    """`(head, tail)` of the argument list of `skillsync`: for `test-run`, everything after the FIRST standalone `--` is the command (`tail`, as
+    given, later `--` and option-like words included) and `head` is what the parser reads. `tail` is None when the list is not a `test-run` call or has no
+    `--` (then `head` is `argv`). Python before 3.12 matches a positional `nargs='*'` EMPTY before the options, so `test-run <project> --step X -- cmd`
+    failed there with `unrecognized arguments`; cutting the command off before argparse behaves the same on every version."""
+    argv = list(argv)
+    if not argv or argv[0] != 'test-run' or '--' not in argv:
+        return argv, None
+    cut = argv.index('--')
+    return argv[:cut], argv[cut + 1:]
+
+
 def register(subparsers):
     parser = subparsers.add_parser('test-run', help='Run a test command through skillsync and record its events for the status page (a step of a plan)')
     parser.add_argument('path', help='project directory (use . for the current one)')

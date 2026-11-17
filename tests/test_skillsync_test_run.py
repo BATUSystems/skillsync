@@ -1,4 +1,5 @@
 """180-A: `skillsync test-run` and the observer of the shared runner (stage 1)."""
+import argparse
 import json
 import os
 import shutil
@@ -50,6 +51,36 @@ class Base(unittest.TestCase):
 
     def attempt(self, step='F1.1', n=1):
         return ev.read_attempt(child(child(self.root / '.skillsync/runs/R1/tests', step), f'{n}.jsonl'))
+
+
+class SplitCommand(unittest.TestCase):
+    """180-W: the command after `--` is cut off BEFORE argparse, so Python 3.11 (a positional `nargs='*'` matched empty before the options) and later
+    read `test-run <project> --step X -- cmd` the same way."""
+
+    def test_table(self):
+        split = test_run.split_command
+        cases = [
+            (['test-run', 'proj', '--step', 'F1', '--', 'cmd', 'a'], (['test-run', 'proj', '--step', 'F1'], ['cmd', 'a'])),
+            (['test-run', 'proj', '--', 'cmd'], (['test-run', 'proj'], ['cmd'])),
+            (['test-run', 'proj', '--step', 'F1', '--', 'python', '-c', 'x', '--', 'y', '--help'], (['test-run', 'proj', '--step', 'F1'], ['python', '-c', 'x', '--', 'y', '--help'])),
+            (['test-run', 'proj', '--import', 'f.jsonl', '--step', 'F1', '--source-sha', 'abc'], (['test-run', 'proj', '--import', 'f.jsonl', '--step', 'F1', '--source-sha', 'abc'], None)),
+            (['test-run', 'proj', '--'], (['test-run', 'proj'], [])),
+            (['test-run', '--help'], (['test-run', '--help'], None)),
+            (['test-run', 'proj', '--timeout', '5', '--format', 'none', '--', '--version'], (['test-run', 'proj', '--timeout', '5', '--format', 'none'], ['--version'])),
+            (['status', 'proj', '--', 'x'], (['status', 'proj', '--', 'x'], None)),   # another command: untouched
+            ([], ([], None)),
+        ]
+        for argv, expected in cases:
+            with self.subTest(argv=argv):
+                self.assertEqual(split(argv), expected)
+
+    def test_the_head_parses_without_the_command_on_every_version(self):
+        parser = argparse.ArgumentParser(prog='skillsync')
+        sub = parser.add_subparsers(dest='cmd', required=True)
+        test_run.register(sub)
+        head, tail = test_run.split_command(['test-run', 'proj', '--step', 'F1', '--allow-skips', '--', 'cmd', 'a'])
+        args = parser.parse_args(head)
+        self.assertEqual((args.path, args.step, args.allow_skips, args.command, tail), ('proj', 'F1', True, [], ['cmd', 'a']))
 
 
 class Resolution(unittest.TestCase):
