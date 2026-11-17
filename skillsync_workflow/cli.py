@@ -3175,6 +3175,45 @@ def cmd_memory_sync(args: argparse.Namespace) -> None:
         print(message)
 
 
+def cmd_attribution(args: argparse.Namespace) -> None:
+    """`skillsync attribution [--user] [--dry-run] [--print-managed]`: the host setting that switches the attribution of Claude Code off (CORE-NOATTR).
+    `link` writes it into every project; `--user` writes the same value into the user file `~/.claude/settings.json` (explicit, other keys stay)."""
+    settings_path = Path.home() / ".claude" / "settings.json"
+    if args.print_managed:
+        print(json.dumps({"attribution": guardhook.ATTRIBUTION_SETTING}, indent=2))
+        print("# The only setting level that other files cannot override is the managed one: put this object into the managed settings file of the host\n"
+              "# (see the documentation of the host for its path on your system); `skillsync` never writes that file.", file=sys.stderr)
+        return
+    data, readable = guardhook._read_settings(settings_path)
+    if not readable:
+        print(f"[error] {settings_path} is unreadable or not a JSON object; nothing written")
+        raise SystemExit(1)
+    state = guardhook.attribution_state((data or {}).get("attribution"))
+    if not args.user:
+        print(f"user settings ({settings_path}): AI attribution {'off' if state else 'on or unset'}")
+        print("projects: `skillsync link` writes the setting into .claude/settings.local.json; `skillsync attribution --user` writes it for every project of this user")
+        raise SystemExit(0 if state else 1)
+    updated = dict(data or {})
+    updated["attribution"] = dict(guardhook.ATTRIBUTION_SETTING)
+    if data is not None and data == updated:
+        print(f"Up to date: {settings_path}")
+        return
+    if args.dry_run:
+        print(f"[dry-run] Would update: {settings_path}")
+        return
+    try:
+        settings_path.parent.mkdir(parents=True, exist_ok=True)
+        if settings_path.exists():
+            backup = settings_path.with_name(settings_path.name + ".skillsync-backup")
+            if not backup.exists():
+                write_text_lf(backup, read_user_text(settings_path))
+        write_text_lf(settings_path, json_file_text(updated, read_user_text(settings_path) if settings_path.exists() else ""))
+    except OSError as error:
+        print(f"[error] Could not write {settings_path}: {error}")
+        raise SystemExit(1)
+    print(f"Updated: {settings_path}")
+
+
 def watch_roots(machine) -> list[Path]:
     """Roots watched by `watch`: every configured layer present on the machine and the composite cache
     (new files written into a composite are adopted at the next rebuild)."""
@@ -3897,6 +3936,12 @@ def main() -> None:
     memory_parser = subparsers.add_parser("memory-sync", help="Copy configured memory files to remote hosts (config memory_sync:)")
     memory_parser.add_argument("--dry-run", action="store_true", help="Show what would be copied")
     memory_parser.set_defaults(func=cmd_memory_sync)
+
+    attribution_parser = subparsers.add_parser("attribution", help="Switch off the AI attribution of the host for the user (explicit; `link` does it per project)")
+    attribution_parser.add_argument("--user", action="store_true", help="Write the setting into ~/.claude/settings.json (other keys stay)")
+    attribution_parser.add_argument("--dry-run", action="store_true", help="Show what would be written")
+    attribution_parser.add_argument("--print-managed", action="store_true", help="Print the object for the managed settings file (never written)")
+    attribution_parser.set_defaults(func=cmd_attribution)
 
     list_parser = subparsers.add_parser("list", help="List available skills (with the providing layers)")
     add_layer_flag(list_parser)

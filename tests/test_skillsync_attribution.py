@@ -100,6 +100,53 @@ class RuleTests(unittest.TestCase):
         self.assertLessEqual(len(self.BASE.read_bytes()), limit)
 
 
+class UserCommandTests(unittest.TestCase):
+    """`skillsync attribution`: explicit, opt-in write into the user settings; nothing else is touched."""
+    CLI = Path(__file__).resolve().parent.parent / 'skillsync'
+
+    def setUp(self):
+        self.home = Path(tempfile.mkdtemp(prefix='attr-home-'))
+        self.addCleanup(shutil.rmtree, self.home, True)
+        self.file = self.home / '.claude' / 'settings.json'
+
+    def run_cli(self, *args):
+        env = {**os.environ, 'HOME': str(self.home), 'USERPROFILE': str(self.home)}
+        return subprocess.run([sys.executable, str(self.CLI), 'attribution', *args], capture_output=True, text=True, timeout=30, env=env)
+
+    def test_status_without_flags_writes_nothing(self):
+        result = self.run_cli()
+        self.assertEqual(result.returncode, 1)
+        self.assertFalse(self.file.exists())
+        self.assertIn('on or unset', result.stdout)
+
+    def test_user_writes_the_setting_keeps_other_keys_and_backs_up(self):
+        self.file.parent.mkdir(parents=True)
+        self.file.write_text(json.dumps({'model': 'x', 'permissions': {'allow': ['Bash(ls)']}, 'attribution': {'commit': 'c'}}), encoding='utf-8')
+        result = self.run_cli('--user')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        data = json.loads(self.file.read_text(encoding='utf-8'))
+        self.assertEqual(data['attribution'], guardhook.ATTRIBUTION_SETTING)
+        self.assertEqual((data['model'], data['permissions']), ('x', {'allow': ['Bash(ls)']}))
+        self.assertTrue((self.file.parent / 'settings.json.skillsync-backup').exists())
+        self.assertEqual(self.run_cli().returncode, 0)
+        again = self.run_cli('--user')
+        self.assertIn('Up to date', again.stdout)
+
+    def test_dry_run_and_unreadable_file_write_nothing(self):
+        self.assertIn('Would update', self.run_cli('--user', '--dry-run').stdout)
+        self.assertFalse(self.file.exists())
+        self.file.parent.mkdir(parents=True)
+        self.file.write_text('{broken', encoding='utf-8')
+        result = self.run_cli('--user')
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(self.file.read_text(encoding='utf-8'), '{broken')
+
+    def test_print_managed_prints_the_object_only(self):
+        result = self.run_cli('--print-managed')
+        self.assertEqual(json.loads(result.stdout), {'attribution': guardhook.ATTRIBUTION_SETTING})
+        self.assertFalse(self.file.exists())
+
+
 class LayerCheckTests(DoctorCase):
     """A layer or a project instruction that carries the banned text is a FAIL in `layers check` and in `doctor`."""
 
