@@ -972,13 +972,36 @@ dialog [role="status"] {
 }
 
 dialog form > div:last-child,
-dialog menu {
+dialog menu,
+dialog .anno-dialog-actions {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 0.5rem;
   margin: 1rem 0 0;
   padding: 0;
+}
+
+/* Pola okien silnika (logowanie, ustawienie hasła): jeden kontener bez karty z `.form-group`, etykieta przy swoim polu, równy odstęp między parami. */
+dialog .anno-dialog-body .form-group {
+  gap: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+dialog .anno-dialog-body input:not([type="checkbox"], [type="radio"]) { margin-bottom: 0.75rem; }
+
+dialog .anno-dialog-body [role="alert"] { margin: 0 0 0.75rem; }
+
+/* Fokus pola w oknie: jedna widoczna obwódka (ramka w kolorze `--ring` i poświata); kontur przezroczysty zostaje dla trybu wysokiego kontrastu. */
+dialog input:focus,
+dialog select:focus,
+dialog textarea:focus {
+  outline: solid 2px transparent;
+  border-color: var(--ring);
+  box-shadow: var(--shadow-focus);
 }
 
 /* ---------- Powiadomienia (silnika) ---------- */
