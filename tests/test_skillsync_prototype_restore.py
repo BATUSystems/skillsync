@@ -1243,6 +1243,41 @@ class EngineAssetsAndAcceptanceTests(RestoreFixture):
         self.write_page(page(s2=S2_V2))
         self.assertEqual(self.gate(code=1)['status'], 'FAIL')
 
+    def migrate_to_current_engine_css(self):
+        """`migrate` with the REAL engine stylesheet of the library over a prototype whose `prototype.css` is the one of 1.8.0 (a copy kept
+        in `tests/fixtures/prototype/engine-1.8.0`). Returns the migrate report."""
+        real = (ROOT / 'library' / 'skills' / 'prototype' / 'assets' / 'repo' / 'prototype.css').read_bytes()
+        old = (Path(__file__).resolve().parent / 'fixtures' / 'prototype' / 'engine-1.8.0' / 'prototype.css').read_bytes()
+        self.assertNotEqual(real, old, 'the fixture is the previous engine stylesheet: refresh it when the pin is moved')
+        variant = self.bare_assets()
+        (variant / 'repo' / 'prototype.css').write_bytes(real)
+        self.proto('migrate', 'demo', '--assets', str(self.assets))   # the page in the current format
+        (self.dir / 'prototype.css').write_bytes(old)                 # the prototype runs on the engine of 1.8.0
+        self.engine_old, self.engine_real = old, real
+        return variant
+
+    def test_migrate_onto_the_current_engine_stylesheet_keeps_an_acceptance_of_the_current_formula(self):
+        variant = self.migrate_to_current_engine_css()
+        before = ps.screen_hashes(str(self.dir))['screens']
+        self.store().append([{'type': 'accept', 'by': ACCEPTOR, 'payload': {'scope': 'screen', 'screens': before, 'iteration': 1, 'via': 'ui'}}])
+        self.assertEqual(self.gate()['status'], 'PASS')
+        report = self.proto('migrate', 'demo', '--assets', str(variant))
+        self.assertEqual((self.dir / 'prototype.css').read_bytes(), self.engine_real, 'migrate fetched the new engine stylesheet')
+        self.assertEqual(report['acceptance']['lost'], 0, report)
+        self.assertEqual(ps.screen_hashes(str(self.dir))['screens'], before, 'the screen hashes do not change')
+        self.assertEqual(self.gate()['status'], 'PASS')
+
+    def test_migrate_onto_the_current_engine_stylesheet_keeps_an_acceptance_of_the_old_formula(self):
+        variant = self.migrate_to_current_engine_css()
+        self.legacy_accept()   # the hash of the old formula contains the digest of the 1.8.0 stylesheet
+        self.assertEqual(self.gate()['status'], 'PASS')
+        before = ps.screen_hashes(str(self.dir))['screens']
+        report = self.proto('migrate', 'demo', '--assets', str(variant))
+        self.assertEqual((self.dir / 'prototype.css').read_bytes(), self.engine_real)
+        self.assertEqual(report['acceptance']['lost'], 0, report)
+        self.assertEqual(ps.screen_hashes(str(self.dir))['screens'], before)
+        self.assertEqual(self.gate()['status'], 'PASS')
+
     def test_without_history_an_engine_change_still_counts_as_stale_for_legacy_entries(self):
         self.legacy_accept()
         css = self.dir / 'prototype.css'
