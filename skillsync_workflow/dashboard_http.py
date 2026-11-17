@@ -337,6 +337,57 @@ def render_markdown(text: str, doc_path: str = "") -> str:
 
 # --------------------------------------------------------------------------- helpers
 
+RESULT_VISIBLE_LINES = 12
+_HEADING = re.compile(r"^\s{0,3}#{1,6}\s")
+
+
+def split_result(text: str, visible: int = RESULT_VISIBLE_LINES) -> tuple[str, str, int]:
+    """`(head, rest, rest_lines)` of the `## Wynik` text for the collapsed view: the cut falls only BETWEEN Markdown blocks, never inside a
+    table, a list (also a loose one), a fenced code block or a paragraph. A cut point is the line that starts a block: it follows a blank
+    line (or is a heading), the cut is not inside a fence, and the line is not a list item that continues a list. Rule: the last cut point
+    at or before `visible` lines whose head holds more than headings (so the head is never only a title), else the first cut point after them
+    (a long table or list stays whole); no cut point at all = no `rest`. Text of `visible` lines or fewer is not cut."""
+    lines = text.replace("\r\n", "\n").replace("\r", "\n").rstrip().split("\n")
+    if len(lines) <= visible:
+        return "\n".join(lines), "", 0
+    in_fence, fence, safe = False, "", []
+    last_filled = ""   # the last non-blank line before the current one (to tell a list continuation from a new block)
+    for i, line in enumerate(lines):
+        match = _FENCE.match(line)
+        if i > 0 and not in_fence and line.strip() and (not lines[i - 1].strip() or _HEADING.match(line)):
+            continues_list = bool(_LIST_ITEM.match(line)) and bool(_LIST_ITEM.match(last_filled) or last_filled[:1] in (" ", "\t"))
+            if not continues_list:
+                safe.append(i)
+        if match:
+            marker = match.group("fence")[0]
+            if not in_fence:
+                in_fence, fence = True, marker
+            elif marker == fence:
+                in_fence = False
+        if line.strip():
+            last_filled = line
+    meaningful = [i for i in safe if any(x.strip() and not _HEADING.match(x) for x in lines[:i])]
+    before = [i for i in meaningful if i <= visible]
+    after = [i for i in safe if i > visible]
+    cut = before[-1] if before else (after[0] if after else None)
+    if cut is None:
+        return "\n".join(lines), "", 0
+    return "\n".join(lines[:cut]).rstrip(), "\n".join(lines[cut:]), len(lines) - cut
+
+
+def result_html(result: dict) -> dict:
+    """The `result` of the status plus `html` (the visible part), `moreHtml` and `moreLines` (the collapsed rest), rendered by the same
+    safe `render_markdown` as `/api/doc` (raw HTML escaped, only safe link schemes). The text was masked as a whole when the plan was read
+    (`engine.read_masked`), before any cut; `redact` of the whole answer stays the second layer. `text` and `path` stay as they were."""
+    head, rest, rest_lines = split_result(result["text"])
+    path = result.get("path") or ""
+    answer = dict(result, html=render_markdown(head, path))
+    if rest:
+        answer["moreHtml"] = render_markdown(rest, path)
+        answer["moreLines"] = rest_lines
+    return answer
+
+
 def log(msg: str) -> None:
     print(f"[dashboard {datetime.now():%H:%M:%S}] {msg}", file=sys.stderr, flush=True)
 
@@ -557,6 +608,12 @@ class Board:
 
     # --- status (the same JSON as `dashboard show`, plus the live state)
     def status(self, plan_rel: str | None = None) -> dict:
+        data = self._status(plan_rel)
+        if isinstance(data.get("result"), dict) and isinstance(data["result"].get("text"), str):
+            data["result"] = result_html(data["result"])
+        return data
+
+    def _status(self, plan_rel: str | None = None) -> dict:
         return engine.build_status(
             self.root, plan_rel or self.default_plan, manifest=self.manifest(), approvals=self.approvals,
             session_url=self.session_url, prototype_port=self.prototype_port, version=self.version,
