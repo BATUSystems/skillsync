@@ -894,6 +894,9 @@
       return splitBy(String(text ?? ""), ID_RE, (id) => h("span", { class: "sidc" }, id))
         .flatMap((part) => (typeof part === "string" ? splitBy(part, PHRASE_RE, (w) => h("span", { class: "ph" }, w)) : [part]));
     }
+    // Wiersz z formatowaniem w linii (`textHtml` z serwera, tylko gdy tekst ma formatowanie) dostaje je przez `deps.mountHtml`; bez niego dotychczasowe
+    // wyróżnienie id kroków i fraz (`decorateCheckpoint`). W wierszu sformatowanym wyróżnienie id i fraz nie działa.
+    const feedText = (c) => (typeof c.textHtml === "string" && c.textHtml && typeof deps.mountHtml === "function" ? inl("", c.text, c.textHtml) : h("span", null, decorateCheckpoint(c.text)));
     function renderFeed(d) {
       const items = (d.run && d.run.checkpoints) || [];
       const prevTop = st.prev && st.prev.run && st.prev.run.checkpoints && st.prev.run.checkpoints[0];
@@ -901,7 +904,7 @@
       const fresh = st.prev ? Math.max(0, items.length - prevCount) : 0;
       fill(ui.feed, items.length
         ? items.map((c, i) => h("li", { class: i < fresh || (i === 0 && prevTop && prevTop.text !== c.text) ? "is-new" : "" },
-          h("span", { class: "t" }, c.time), h("span", null, decorateCheckpoint(c.text))))
+          h("span", { class: "t" }, c.time), feedText(c)))
         : h("li", null, h("span"), h("span", { class: "empty" }, "Brak checkpointów — pojawią się, gdy przebieg zapisze ", mono("checkpoints.md"), ".")));
     }
 

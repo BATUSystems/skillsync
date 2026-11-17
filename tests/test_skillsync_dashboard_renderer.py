@@ -1339,7 +1339,12 @@ function summary(m) {
       { id: 'Q2', runSlug: 'r', text: 'zwykłe pytanie', blocking: false, state: 'open', at: null, addressees: 'all', url: null },
     ];
     const mq = mount(q, { now: NOW['questions'] });
+    const fd = clone(F[nm]);
+    fd.run = Object.assign({}, fd.run, { checkpoints: [{ time: '10:00', text: 'zrobione **S1**', textHtml: 'zrobione <strong>S1</strong>' }, { time: '10:05', text: 'zrobione S2' }] });
+    const mfeed = mount(fd, { now: NOW[nm] });
     ex.inlineMd = {
+      feedMounted: mfeed.calls.mountHtml.filter((h) => h.indexOf('zrobione') === 0),
+      feedPlain: text(mfeed.root.querySelectorAll('#feed li')[1].querySelectorAll('span')[1]),
       mounted: m.calls.mountHtml,
       stepTitleNode: li ? li.querySelector('.tt').localName : null, stepTitleText: li ? text(li.querySelector('.tt')) : null,
       stepTip: li ? li.getAttribute('data-desc-extra') : null,
@@ -2133,6 +2138,8 @@ class RendererNodeTests(unittest.TestCase):
         self.assertIn("Krok <strong>ważny</strong> z <code>kodem</code>", r["mounted"])
         self.assertIn("decyzja o <strong>zakresie</strong>", r["mounted"])
         self.assertEqual(r["questionMounted"], ["Czy <strong>tak</strong>?"])
+        self.assertEqual(r["feedMounted"], ["zrobione <strong>S1</strong>"])
+        self.assertEqual(r["feedPlain"], "zrobione S2")
         self.assertEqual(r["stepTitleNode"], "span")
         self.assertEqual(r["plainStepText"], "Krok zwykły", "no `titleHtml` = plain text, as before")
         self.assertEqual(r["questionPlain"], "zwykłe pytanie")

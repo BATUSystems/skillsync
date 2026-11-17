@@ -419,7 +419,7 @@ def inline_html(text: object, limit: int = 0) -> str | None:
 
 def add_inline_html(data: dict) -> dict:
     """Additive fields of `/api/status` (`schema` stays 1): `titleHtml` of the plan steps, of `substeps` and of `progress.current`,
-    `whatHtml` and `actionHtml` of `waiting[]` (the action text repeats the item), `textHtml` of `expertQuestions.items[]` (cut to the same 160 characters as the plain text). The texts were
+    `textHtml` of `run.checkpoints[]` (the feed), `whatHtml` and `actionHtml` of `waiting[]` (the action text repeats the item), `textHtml` of `expertQuestions.items[]` (cut to the same 160 characters as the plain text). The texts were
     masked when the plan and the checkpoints were read; `text`, `title`, `what` stay as they were (tooltips and `title`/`aria` use them)."""
     def put(item: object, source: str, out: str, limit: int = 0) -> None:
         if isinstance(item, dict):
@@ -433,6 +433,9 @@ def add_inline_html(data: dict) -> dict:
             for step in (phase.get("steps") or []) if isinstance(phase, dict) else []:
                 put(step, "title", "titleHtml")
         put(progress.get("current"), "title", "titleHtml")
+    run = data.get("run")
+    for item in (run.get("checkpoints") or []) if isinstance(run, dict) else []:
+        put(item, "text", "textHtml")
     for item in data.get("substeps") or []:
         put(item, "title", "titleHtml")
     for item in data.get("waiting") or []:

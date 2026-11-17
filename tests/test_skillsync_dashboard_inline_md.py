@@ -74,6 +74,7 @@ class StatusFieldsTests(unittest.TestCase):
             "substeps": [{"id": "F1.1", "title": "`kod` w tytule"}],
             "waiting": [{"what": "decyzja o **zakresie**", "action": "Sesja czeka: decyzja o **zakresie**. Odpowiedz w sesji.", "source": "checkpoint"}, {"what": "zwykłe", "source": "checkpoint"}],
             "expertQuestions": {"items": [{"id": "Q1", "text": "Czy **tak**?"}, {"id": "Q2", "text": "zwykłe pytanie"}]},
+            "run": {"checkpoints": [{"time": "10:00", "text": "zrobione **S1**"}, {"time": "10:05", "text": "zwykły wiersz"}]},
             "result": None,
         }
 
@@ -90,6 +91,10 @@ class StatusFieldsTests(unittest.TestCase):
         self.assertNotIn("whatHtml", d["waiting"][1])
         self.assertEqual(d["expertQuestions"]["items"][0]["textHtml"], "Czy <strong>tak</strong>?")
         self.assertNotIn("textHtml", d["expertQuestions"]["items"][1])
+        feed = d["run"]["checkpoints"]
+        self.assertEqual(feed[0]["textHtml"], "zrobione <strong>S1</strong>")
+        self.assertEqual(feed[0]["text"], "zrobione **S1**")
+        self.assertNotIn("textHtml", feed[1])
 
     def test_missing_or_odd_sections_are_tolerated(self) -> None:
         self.assertEqual(srv.add_inline_html({}), {})

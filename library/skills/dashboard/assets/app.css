@@ -425,8 +425,8 @@ main { flex: 1; padding: 1.1rem 1.4rem; min-width: 0; }
 .md blockquote { margin: .6rem 0; padding: .2rem 1rem; border-left: 4px solid var(--accent); color: var(--muted); background: var(--accent-soft); border-radius: 0 8px 8px 0; }
 .md a { color: var(--accent); }
 /* formatowanie w linii (tytuły kroków, „czeka na”, pytania): ten sam wygląd kodu i linków co w .md */
-.step .tt code, .sub-list .tt code, .wait-txt code, .q-text code, .now code { font-family: var(--mono); font-size: .88em; background: var(--panel-2); padding: .05rem .3rem; border-radius: 5px; }
-.step .tt a, .sub-list .tt a, .wait-txt a, .q-text a, .now a { color: var(--accent); }
+.step .tt code, .sub-list .tt code, .wait-txt code, .q-text code, .now code, .feed code { font-family: var(--mono); font-size: .88em; background: var(--panel-2); padding: .05rem .3rem; border-radius: 5px; }
+.step .tt a, .sub-list .tt a, .wait-txt a, .q-text a, .now a, .feed a { color: var(--accent); }
 .md .md-link-off { text-decoration: underline dotted; color: var(--muted); }
 .md ul, .md ol { padding-left: 1.4rem; }
 .md li.md-task { list-style: none; margin-left: -1.3rem; display: flex; gap: .5rem; align-items: baseline; }
