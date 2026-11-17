@@ -12,6 +12,11 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Fixed
+
+- Status-page state files: the temporary file written before the atomic `os.replace` is `.tmp-<digest>-<port>-*.tmp` instead of `*.json`. `Path.glob("*.json")` matches hidden files, so a reader of the state directory could meet the empty temporary file and fail with `JSONDecodeError` (seen on macOS CI). The start of a server also sweeps leftovers of the old `*.json` form. No change for `dashboard url`, `port_owner` and `servers` (they already skipped such names).
+- Tests: the snapshot of the real state directories ignores the transient lock files of git inside `.git` (`objects/maintenance.lock`, `gc.pid`, `*.lock`); a changed ref, object or layer file is still detected (flaky `IsolationTest` on macOS CI).
+
 ## [1.9.0] - 2026-11-17
 
 Upgrading from 1.8.0: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.8.0 → 1.9.0".
