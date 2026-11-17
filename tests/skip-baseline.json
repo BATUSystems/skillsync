@@ -128,6 +128,10 @@
     "category": "e2e-chrome"
    },
    {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_lt",
+    "category": "e2e-chrome"
+   },
+   {
     "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_n",
     "category": "e2e-chrome"
    },
@@ -227,6 +231,10 @@
    },
    {
     "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_layout_probe",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_lt",
     "category": "e2e-chrome"
    },
    {
@@ -332,6 +340,10 @@
     "category": "e2e-chrome"
    },
    {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_lt",
+    "category": "e2e-chrome"
+   },
+   {
     "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_n",
     "category": "e2e-chrome"
    },
@@ -431,6 +443,10 @@
    },
    {
     "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_layout_probe",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_lt",
     "category": "e2e-chrome"
    },
    {
@@ -1097,6 +1113,10 @@
     "category": "e2e-chrome"
    },
    {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_lt",
+    "category": "e2e-chrome"
+   },
+   {
     "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_n",
     "category": "e2e-chrome"
    },
@@ -1603,6 +1623,10 @@
     "category": "e2e-chrome"
    },
    {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_lt",
+    "category": "e2e-chrome"
+   },
+   {
     "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_n",
     "category": "e2e-chrome"
    },
@@ -1790,6 +1814,10 @@
    },
    {
     "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_layout_probe",
+    "category": "e2e-chrome"
+   },
+   {
+    "id": "test_skillsync_prototype_e2e.PrototypeE2ETests.test_lt",
     "category": "e2e-chrome"
    },
    {
