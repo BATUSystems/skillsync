@@ -18,6 +18,7 @@ from pathlib import Path
 GUARD_HOOK = '.claude/hooks/guard-commands.py'
 TESTS_HOOK = '.claude/hooks/guard-tests.py'
 TOOLS_HOOK = '.claude/hooks/test-tools.json'
+ATTRIBUTION_HOOK = '.claude/hooks/attribution-patterns.json'   # copy of data/attribution-patterns.json (CORE-NOATTR)
 TEST_MODES = ('warn', 'off')
 DEFAULT_WIDE_MODULES = 25
 TESTS_HOOK_READY = True   # guard-commands.py reads --tests (180-J2); False would keep the whole test part dormant (nothing written, no argument)
@@ -107,7 +108,7 @@ def effective_mode(manifest, skills):
 
 def hook_command(python_command, mode, allow, tests=None):
     # root from git: $CLAUDE_PROJECT_DIR is the start directory of the session, often a subdirectory; a missing script is exit 0
-    args = ['--mode', mode]
+    args = ['--mode', mode, '--attribution', 'on']   # the ban on AI attribution is always on (no manifest switch)
     for item in allow:
         args += ['--allow', item]
     if tests:   # `{'wide': int, 'wrappers': [str]}`: the test part of the same hook (warns, never blocks)
@@ -188,7 +189,8 @@ def tests_config(manifest, skills):
 
 
 def doctor_findings(root, manifest, skills):
-    """`[(level, path, reason)]`: the state of the hook against what `link` would write (never an error: a warning at most)."""
+    """`[(level, path, reason)]`: the state of the hook against what `link` would write. A missing hook or attribution data is an `error` (the ban on AI
+    attribution is not optional); drift of the delete or test settings stays a warning."""
     _, allow, problems = hook_settings(manifest)
     problems = problems + test_settings(manifest)[3]
     found = [('warning', '.github/.skillsync.yaml', reason) for reason in problems]
@@ -202,20 +204,22 @@ def doctor_findings(root, manifest, skills):
     command = installed(root / SETTINGS)
     if command is False:
         return found + [('warning', SETTINGS, 'Unreadable settings: the delete guard hook state is unknown')]
-    if mode == 'off' and tests is None:
-        if command or script.is_file():
-            found.append(('warning', SETTINGS, 'Delete guard hook is installed but switched off in the manifest; run `skillsync link` to remove it'))
-        return found
     if not script.is_file() or command is None:
-        found.append(('warning', SETTINGS, 'Delete guard hook (PreToolUse) is wanted but not installed; run `skillsync link`'))
+        found.append(('error', SETTINGS, 'The guard hook (PreToolUse: ban on AI attribution in commit and PR text, delete guard) is not installed; run `skillsync link`'))
+        return found
+    if not (root / ATTRIBUTION_HOOK).is_file():
+        found.append(('error', ATTRIBUTION_HOOK, 'The attribution patterns of the guard hook are missing: the ban stays silent; run `skillsync link`'))
+        return found
+    if '--attribution' not in command:
+        found.append(('error', SETTINGS, 'The installed guard hook entry predates the ban on AI attribution; run `skillsync link`'))
         return found
     installed_mode, installed_allow = command_args(command)
     if installed_mode != mode or installed_allow != allow or command_tests(command) != tests:
-        found.append(('warning', SETTINGS, 'Delete guard hook differs from the manifest (mode, hooks.delete_allow or the hooks.guard_tests settings); run `skillsync link`'))
+        found.append(('warning', SETTINGS, 'Guard hook differs from the manifest (mode, hooks.delete_allow or the hooks.guard_tests settings); run `skillsync link`'))
         return found
     if tests is not None and not ((root / TESTS_HOOK).is_file() and (root / TOOLS_HOOK).is_file()):
         found.append(('warning', TOOLS_HOOK, 'The test commands part of the guard hook is on but its files (guard-tests.py, test-tools.json) are missing: the part stays silent; run `skillsync link`'))
         return found
-    parts = f'delete guard mode {mode}, {len(allow)} extra allowed path(s)' + (f'; test commands: warn (wide run from {tests["wide"]} modules, {len(tests["wrappers"])} extra wrapper(s))' if tests else '')
-    found.append(('info', SETTINGS, f'Delete guard hook active: {parts}'))
+    parts = f'attribution ban on, delete guard mode {mode}, {len(allow)} extra allowed path(s)' + (f'; test commands: warn (wide run from {tests["wide"]} modules, {len(tests["wrappers"])} extra wrapper(s))' if tests else '')
+    found.append(('info', SETTINGS, f'Guard hook active: {parts}'))
     return found

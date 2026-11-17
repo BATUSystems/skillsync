@@ -859,10 +859,122 @@ def log_exception(root, payload, command, reason, findings):
         print('guard-commands: nie udalo sie zapisac sladu wyjatku: %s' % error, file=sys.stderr)
 
 
+ATTRIBUTION_DATA = 'attribution-patterns.json'
+WRITER_TOOLS = {'gh', 'glab', 'az', 'tea', 'hub'}
+WRITER_VERBS = {'create', 'edit', 'update', 'comment', 'review', 'add', 'new', 'set', 'post', 'reply', 'merge', 'close', 'reopen', 'submit'}
+GIT_WRITERS = {'commit', 'tag', 'merge', 'notes', 'revert', 'cherry-pick'}
+GIT_VALUE_FLAGS = {'-C', '-c', '--git-dir', '--work-tree', '--namespace'}
+API_FIELD_FLAGS = {'-f', '-F', '--field', '--raw-field', '--input', '-d', '--data'}
+FILE_FLAGS = {'-F', '--file', '--body-file', '-f'}
+FILE_LIMIT = 65536
+HEREDOC = re.compile(r"<<-?[ \t]*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
+
+
+def load_attribution(script_dir=None):
+    """`[(id, class, compiled)]` of the enforced patterns of `attribution-patterns.json` next to this script; `[]` when the file is missing or
+    unusable (fail-open: only this part goes silent, `skillsync doctor` reports the missing file)."""
+    path = os.path.join(script_dir or os.path.dirname(os.path.abspath(__file__)), ATTRIBUTION_DATA)
+    try:
+        with open(path, encoding='utf-8') as handle:
+            data = json.load(handle)
+        flags = {'ignorecase': re.IGNORECASE, 'multiline': re.MULTILINE}
+        rules = []
+        for entry in data.get('patterns') or []:
+            if entry.get('class') in (data.get('enforce') or []):
+                bits = 0
+                for flag in entry.get('flags') or []:
+                    bits |= flags.get(flag, 0)
+                rules.append((entry['id'], entry['class'], re.compile(entry['regex'], bits)))
+        return rules
+    except Exception:  # noqa: BLE001 - fail-open
+        return []
+
+
+def heredoc_bodies(text):
+    """Bodies of the here-documents of a shell text (the parser drops them)."""
+    bodies, lines, i = [], text.split('\n'), 0
+    while i < len(lines):
+        for match in HEREDOC.finditer(lines[i]):
+            delim, body = match.group(2), []
+            j = i + 1
+            while j < len(lines) and lines[j].strip() != delim:
+                body.append(lines[j])
+                j += 1
+            bodies.append('\n'.join(body))
+        i += 1
+    return bodies
+
+
+def writer_words(words):
+    """The words of a command that WRITES text somewhere visible (commit, tag, PR/issue/work item create/edit/comment ...), else `None`.
+    Reading commands (`git log --grep`, `gh pr list --search`) are not writers: they may quote a phrase."""
+    for index, word in enumerate(words[:8]):
+        name = os.path.basename(word).lower()
+        if name.endswith('.exe'):
+            name = name[:-4]
+        rest = words[index + 1:]
+        if name == 'git':
+            k = 0
+            while k < len(rest) and rest[k].startswith('-'):
+                k += 2 if rest[k] in GIT_VALUE_FLAGS else 1
+            if k < len(rest) and rest[k] in GIT_WRITERS:
+                return rest[k:]
+            return None
+        if name in WRITER_TOOLS:
+            if name == 'gh' and rest[:1] == ['api']:
+                return rest if any(arg in API_FIELD_FLAGS or arg.split('=')[0] in API_FIELD_FLAGS for arg in rest) else None
+            return rest if any(arg in WRITER_VERBS for arg in rest[:5]) else None
+    return None
+
+
+def attribution_findings(command, cwd, rules):
+    """`[(pattern id, class, line)]` found in the text that the command writes: the words of its writer commands, the files named by
+    `-F`/`--file`/`--body-file` (when readable, up to 64 KiB) and, when some writer is present, the here-document bodies of the command."""
+    found, texts, writers = [], [], 0
+    files = []
+    for words, _ in command_words(command):
+        rest = writer_words(words)
+        if rest is None:
+            continue
+        writers += 1
+        texts.append('\n'.join(rest))
+        for k, arg in enumerate(rest):
+            target = rest[k + 1] if k + 1 < len(rest) else None
+            if arg in FILE_FLAGS and target and target != '-':
+                files.append(target)
+            elif arg.startswith('--body-file=') or arg.startswith('--file='):
+                files.append(arg.split('=', 1)[1])
+    if not writers:
+        return found
+    texts += heredoc_bodies(command)
+    for target in files:
+        try:
+            path = target if isabs(target) else os.path.join(cwd or os.getcwd(), target)
+            with open(path, encoding='utf-8', errors='replace') as handle:
+                texts.append(handle.read(FILE_LIMIT))
+        except OSError:
+            pass
+    for text in texts:
+        for number, line in enumerate(text.splitlines(), 1):
+            for rule_id, klass, compiled in rules:
+                if compiled.search(line):
+                    found.append((rule_id, klass, number))
+    return found
+
+
+def attribution_message(found):
+    ids = ', '.join(dict.fromkeys('%s (klasa %s)' % (rule_id, klass) for rule_id, klass, _ in found))
+    return ('guard-commands: odmowa. Tekst tego polecenia zawiera stopkę, podpis albo trailer narzędzia AI: %s.\n'
+            'Reguła rdzenia: w tekstach wychodzących (commit, PR, zadanie, dokument) nie dopisuje się stopek ani podpisów narzędzi AI. '
+            'Usuń te linie z treści (także z heredoc i plików -F/--body-file) i uruchom polecenie ponownie. '
+            'To zakaz bez jednorazowego wyjątku; jego sprawdzenie nie dotyczy poleceń, które tylko czytają lub cytują tekst.' % ids)
+
+
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     mode, allow = 'deny', []
     tests_mode, wide_modules, wrappers = 'off', 25, []
+    attribution_mode = 'on'
     i = 0
     while i < len(argv):
         if argv[i] == '--mode' and i + 1 < len(argv):
@@ -880,12 +992,15 @@ def main(argv=None):
             except ValueError:
                 wide_modules = 25
             i += 2
+        elif argv[i] == '--attribution' and i + 1 < len(argv):
+            attribution_mode = argv[i + 1]
+            i += 2
         elif argv[i] == '--wrapper' and i + 1 < len(argv):
             wrappers.append(argv[i + 1])
             i += 2
         else:
             i += 1
-    if mode != 'deny' and tests_mode != 'warn':
+    if mode != 'deny' and tests_mode != 'warn' and attribution_mode != 'on':
         return 0
     try:
         payload = json.loads(sys.stdin.buffer.read().decode('utf-8', 'replace'))
@@ -895,6 +1010,15 @@ def main(argv=None):
         command = tool_input.get('command') if isinstance(tool_input, dict) else None
         if not isinstance(command, str) or not command.strip():
             return 0
+        if attribution_mode == 'on':   # the ban on AI attribution does not depend on `--mode`, takes no exception and never takes the rest down
+            try:
+                rules = load_attribution()
+                hits = attribution_findings(command, payload.get('cwd'), rules) if rules else []
+            except Exception:  # noqa: BLE001 - fail-open
+                hits = []
+            if hits:
+                print(attribution_message(hits), file=sys.stderr)
+                return 2
         findings = []
         if mode == 'deny':
             guard = Guard(payload.get('cwd'), payload.get('scratchpad_dir'), allow, os.environ)

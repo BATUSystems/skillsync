@@ -2,7 +2,11 @@
 
 All sample texts are composed at run time from fragments, so neither this file nor the data file matches its own patterns."""
 import json
+import os
+import shutil
+import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -90,6 +94,95 @@ class RuleTests(unittest.TestCase):
         import yaml
         limit = yaml.safe_load((self.BASE.parent.parent / 'workflow' / 'defaults.yaml').read_text(encoding='utf-8'))['context']['base_max_bytes']
         self.assertLessEqual(len(self.BASE.read_bytes()), limit)
+
+
+class HookTests(unittest.TestCase):
+    """The attribution part of `guard-commands.py`: refuses commands that WRITE such text, never commands that only read or quote it."""
+    LIB = Path(__file__).resolve().parent.parent / 'library' / 'hooks' / 'guard-commands.py'
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp(prefix='attr-hook-'))
+        self.addCleanup(shutil.rmtree, self.dir, True)
+        self.script = self.dir / 'guard-commands.py'
+        shutil.copy2(self.LIB, self.script)
+        shutil.copy2(attribution.DATA, self.dir / 'attribution-patterns.json')
+        self.work = self.dir / 'work'
+        self.work.mkdir()
+
+    def run_hook(self, command, *args, env=None):
+        payload = json.dumps({'tool_name': 'Bash', 'tool_input': {'command': command}, 'cwd': str(self.work)})
+        return subprocess.run([sys.executable, str(self.script), '--mode', 'off', *args], input=payload, capture_output=True, text=True,
+                              timeout=30, env={**os.environ, **(env or {})})
+
+    def refused(self, command, **kwargs):
+        result = self.run_hook(command, **kwargs)
+        self.assertEqual(result.returncode, 2, (command, result.stderr))
+        self.assertIn('stopkę, podpis albo trailer', result.stderr)
+        return result
+
+    def passes(self, command, **kwargs):
+        result = self.run_hook(command, **kwargs)
+        self.assertEqual(result.returncode, 0, (command, result.stderr))
+
+    def test_writing_commands_with_a_footer_or_trailer_are_refused(self):
+        (self.work / 'msg.txt').write_text('subject\n\n' + TRAILER + '\n', encoding='utf-8')
+        for command in (
+                f'git commit -m "feat: x\n\n{FOOTER}"',
+                f"git commit -m 'feat: x' -m '{TRAILER}'",
+                f"git commit -q -m \"$(cat <<'EOF'\nfeat: x\n\n{TRAILER}\nEOF\n)\"",
+                'git commit -F msg.txt',
+                'git -C . commit --file=msg.txt',
+                f"git commit -F - <<'EOF'\nsubject\n\n{ROBOT}\nEOF",
+                f'git tag -a v1 -m "{FOOTER}"',
+                f'gh pr create --title t --body "{ROBOT}"',
+                'gh pr create --title t --body-file msg.txt',
+                f'gh pr comment 5 --body "{CURSOR}"',
+                f'gh issue edit 3 -b "{FOOTER}"',
+                f'gh api repos/o/r/issues -f body="{FOOTER}"',
+                f'az repos pr create --title t --description "{ROBOT}"',
+                f'az boards work-item update --id 5 --discussion "{TRAILER}"',
+                f'glab mr create --description "{FOOTER}"',
+                f'cd sub && git commit -m "{SESSION}"',
+                f'timeout 5 git commit -m "{FOOTER}"'):
+            with self.subTest(command[:50]):
+                self.refused(command)
+
+    def test_the_message_names_the_pattern_and_the_class(self):
+        result = self.refused(f'git commit -m "{TRAILER}"')
+        self.assertIn('attr-coauthor-name (klasa B)', result.stderr)
+        self.assertIn('Usuń te linie', result.stderr)
+
+    def test_reading_and_quoting_commands_pass(self):
+        for command in (
+                'git commit -m "fix: parser"',
+                f'git commit -m "fix: x\n\n{HUMAN}"',
+                f'grep -rn "{FOOTER}" .',
+                f'git log --grep="{TRAILER}"',
+                f'echo "{FOOTER}"',
+                f"python3 - <<'EOF'\nprint('{FOOTER}')\nEOF",
+                f'gh pr list --search "{FOOTER}"',
+                f'az repos pr list --query "[?contains(title, `{CURSOR}`)]"',
+                f"cat > note.md <<'EOF'\n{FOOTER}\nEOF",
+                'ls -la'):
+            with self.subTest(command[:50]):
+                self.passes(command)
+
+    def test_no_exception_prefix_and_no_manifest_mode_switch_it_off(self):
+        self.refused(f'SKILLSYNC_GUARD_EXCEPT=\'reason\' git commit -m "{FOOTER}"', env={'SKILLSYNC_GUARD_EXCEPT': 'reason'})
+        self.assertEqual(self.run_hook(f'git commit -m "{FOOTER}"', '--tests', 'off').returncode, 2)
+
+    def test_missing_or_broken_data_is_fail_open(self):
+        (self.dir / 'attribution-patterns.json').write_text('{not json', encoding='utf-8')
+        self.passes(f'git commit -m "{FOOTER}"')
+        (self.dir / 'attribution-patterns.json').unlink()
+        self.passes(f'git commit -m "{FOOTER}"')
+
+    def test_the_hook_reads_the_enforce_switch_of_its_copy(self):
+        data = json.loads(attribution.DATA.read_text(encoding='utf-8'))
+        data['enforce'] = ['A']
+        (self.dir / 'attribution-patterns.json').write_text(json.dumps(data), encoding='utf-8')
+        self.passes(f'git commit -m "{TRAILER}"')
+        self.refused(f'git commit -m "{FOOTER}"')
 
 
 class LeakguardTests(LeakTestCase):

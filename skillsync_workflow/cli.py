@@ -2474,16 +2474,17 @@ def guard_tests_config(manifest: dict, config: dict) -> dict | None:
 
 
 def guard_wanted(manifest: dict, config: dict) -> bool:
-    """The hook entry and script are wanted when the delete guard or the test commands part is on."""
-    return guard_mode(manifest, config) != "off" or guard_tests_config(manifest, config) is not None
+    """The hook entry and script are always wanted while Claude is enabled: the ban on AI attribution (CORE-NOATTR) is not optional
+    and does not depend on the delete guard or the test commands part."""
+    return claude_enabled(manifest)
 
 
 def guard_gitignore_entries(manifest: dict, config: dict) -> list[str]:
     if not guard_wanted(manifest, config):
         return []
-    entries = ["hooks/guard-commands.py", "settings.local.json", "settings.local.json.skillsync-backup"]
+    entries = ["hooks/guard-commands.py", "hooks/attribution-patterns.json", "settings.local.json", "settings.local.json.skillsync-backup"]
     if guard_tests_config(manifest, config) is not None:
-        entries[1:1] = ["hooks/guard-tests.py", "hooks/test-tools.json"]
+        entries[2:2] = ["hooks/guard-tests.py", "hooks/test-tools.json"]
     return entries
 
 
@@ -2506,8 +2507,28 @@ def copy_guard_script(project_dir: Path, config: dict, dry_run: bool = False) ->
     return True
 
 
+def copy_attribution_data(project_dir: Path, dry_run: bool = False) -> bool:
+    """The patterns of the ban on AI attribution (a copy of the package data, the one source) next to the hook script. False when missing:
+    the attribution part of the hook then stays silent and `doctor` reports it."""
+    source = Path(__file__).resolve().parent / "data" / "attribution-patterns.json"
+    dest = project_dir / guardhook.ATTRIBUTION_HOOK
+    if not source.is_file():
+        print("[warn] Missing attribution patterns in the package: data/attribution-patterns.json")
+        return False
+    if dry_run:
+        print(f"[dry-run] Would write: {dest}")
+        return True
+    try:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, dest)
+    except OSError as error:
+        print(f"[warn] Nie udalo sie zapisac {dest}: {error}")
+        return False
+    return True
+
+
 def remove_guard_script(project_dir: Path, dry_run: bool = False) -> None:
-    for name in (guardhook.GUARD_HOOK, guardhook.TESTS_HOOK, guardhook.TOOLS_HOOK):
+    for name in (guardhook.GUARD_HOOK, guardhook.TESTS_HOOK, guardhook.TOOLS_HOOK, guardhook.ATTRIBUTION_HOOK):
         dest = project_dir / name
         if dest.is_file() and not dest.is_symlink():
             if dry_run:
@@ -2631,6 +2652,7 @@ def sync_guard_hook(project_dir: Path, manifest: dict, config: dict, dry_run: bo
         print(f"[warn] {reason}")
     if guard_wanted(manifest, config):
         copied = copy_guard_script(project_dir, config, dry_run)
+        copy_attribution_data(project_dir, dry_run)   # a missing copy leaves the ban silent; doctor reports it
         if guard_tests_config(manifest, config) is not None:
             copy_test_files(project_dir, config, dry_run)   # missing files: the test part stays silent, the delete guard is unaffected
         else:
