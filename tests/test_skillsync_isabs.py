@@ -113,5 +113,60 @@ class Sites(unittest.TestCase):
         self.assertEqual(found, allowed, 'use `fsutil.isabs` (Windows + Python 3.13: `os.path.isabs("/x")` is False)')
 
 
+class GuardHook(Windows313):
+    """The delete guard hook is a standalone script (it cannot import `fsutil`), so it carries its own `isabs`; here its three sites
+    (project `allow` entries, `resolve`, the prefix of a glob) are driven under the simulated Python 3.13 meaning."""
+    ENV = {'HOME': '/home/user', 'SCRATCH': '/tmp/session/scratchpad', 'TMPDIR': '/tmp', 'SKILLSYNC_GUARD_TMP_ROOTS': '/tmp'}
+
+    @classmethod
+    def setUpClass(cls):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('guard_commands_isabs', ROOT / 'library' / 'hooks' / 'guard-commands.py')
+        cls.guard = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.guard)
+
+    def checker(self, allow=()):
+        return self.guard.Guard('/home/user/Repos/proj', '/tmp/session/scratchpad', list(allow), dict(self.ENV))
+
+    def refused(self, command, allow=()):
+        return bool(self.checker(allow).walk(command))
+
+    def test_a_rooted_allow_entry_without_a_drive_is_an_allowed_root_on_python_313(self):
+        self.simulate()
+        self.assertFalse(self.refused('rm -rf /data/scratch/x', allow=['/data/scratch']))
+        self.assertFalse(self.refused('rm -rf /data/scratch', allow=['/data/scratch']), 'an absolute entry is deletable itself (exact)')
+        self.assertTrue(self.refused('rm -rf /data/other/x', allow=['/data/scratch']), 'only the entry is allowed, not its neighbour')
+
+    def test_a_rooted_target_resolves_to_the_drive_not_to_the_working_directory(self):
+        self.simulate()
+        guard = self.checker()
+        self.assertEqual(guard.resolve('/data/x'), 'C:/data/x')
+        self.assertEqual(guard.resolve('/home/user/Repos/proj/a'), 'C:/home/user/Repos/proj/a', 'not joined to the cwd a second time')
+
+    def test_the_prefix_of_a_glob_in_a_name_is_rooted_too(self):
+        self.simulate()
+        self.assertFalse(self.refused('rm -rf /tmp/foo-*'), 'under a temporary root')
+        self.assertTrue(self.refused('rm -rf /data/foo-*'), 'outside every root stays refused')
+
+    def test_doubt_stays_a_refusal(self):
+        self.simulate()
+        self.assertTrue(self.refused('rm -rf /'))
+        self.assertTrue(self.refused('rm -rf src'))
+        self.assertTrue(self.refused('rm -rf /home/user/other/data'), 'outside the project and every allowed root')
+        self.assertTrue(self.refused('rm -rf /data/scratch/x'), 'without the allow entry')
+
+    def test_the_hook_names_no_os_path_isabs_of_its_own(self):
+        """Every `os.path.isabs` in library/hooks sits inside the hook's own `isabs` helper (the only place that adds the rooted reading)."""
+        found = []
+        for path in sorted((ROOT / 'library' / 'hooks').glob('*.py')):
+            tree = ast.parse(path.read_text(encoding='utf-8'))
+            inside = {id(c) for h in ast.walk(tree) if isinstance(h, ast.FunctionDef) and h.name == 'isabs' for c in ast.walk(h)}
+            for node in ast.walk(tree):
+                if (isinstance(node, ast.Attribute) and node.attr == 'isabs' and isinstance(node.value, ast.Attribute)
+                        and node.value.attr == 'path' and id(node) not in inside):
+                    found.append('%s:%d' % (path.name, node.lineno))
+        self.assertEqual(found, [], "use the hook's own `isabs` (Windows + Python 3.13: `os.path.isabs('/x')` is False)")
+
+
 if __name__ == '__main__':
     unittest.main()
