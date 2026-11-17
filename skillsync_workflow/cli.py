@@ -3921,6 +3921,12 @@ def main() -> None:
         # Older Windows installations can still run legacy sync commands.
         pass
 
+    try:
+        from skillsync_workflow.argtools import intermix_leaf_parsers
+    except ModuleNotFoundError:   # an old installation without the module: the plain parsers
+        pass
+    else:
+        intermix_leaf_parsers(parser)   # Python before 3.12: options between positionals (see argtools)
     argv = sys.argv[1:]
     head, tail = argv, None
     try:
