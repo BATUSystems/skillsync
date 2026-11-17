@@ -71,6 +71,12 @@ Wydanie 1.6.1 jest PATCH (sekcja **Breaking** w `CHANGELOG.md` to „None.”) z
 5. Konsument JSON-a `doctor`: `reason` znalezisk „Missing installed skill” i o dowiązaniu bez celu kończy się podpowiedzią `run skillsync link <projekt>`, więc dopasowuj początek tekstu. Raport `guard` może mieć pola `skipped` i `reason`.
 6. `layers check`, `doctor` i `link` ostrzegają (`rule-unreachable`) o wpisie `layer_rules`, którego `match` powtarza wcześniejszy: scal takie wpisy w jeden.
 
+## Przejście 1.8.0 → 1.9.0
+
+- **`prototype serve`: dziennik tylko przez API.** `GET /<slug>/comments.json` i `GET /<slug>/comments.js` (także w korzeniu) zwracają `404` dla każdej roli, z `--login-to-view` i bez; tak samo działał już pokaz (`serve --demo`). Skrypt zewnętrzny, który pobierał `comments.json` po HTTP z `serve`, ma czytać `GET /_api/v1/prototypes/<slug>/operations` (te same operacje, ta sama bramka sesji; odpowiedź ma dodatkowo `people` i stan akceptacji) albo plik z dysku/repozytorium.
+- Silnik prototypu nie wymaga zmian: pod `serve` czyta API, a na zwykłym hostingu statycznym (bez API skillsync) nadal czyta `comments.json` z tego hosta w trybie „tylko odczyt”. `migrate` nie ma nic do zrobienia; akceptacje i hashe ekranów bez zmian (plik jest poza hashem).
+- Poufność się nie zmienia: API nigdy nie filtrowało operacji po roli, więc nowa jest spójność, nie ukrycie czegokolwiek.
+
 ## Przejście 1.7.0 → 1.8.0
 
 Wydanie 1.8.0 ma dwie zmiany zachowania (sekcja **Breaking** w `CHANGELOG.md`): domyślny nasłuch strony statusu (punkty 2–5) i wynik `prototype sync --check` (punkt 6). Pozostałe punkty to nowe funkcje, które włączają się same albo wymagają jednego polecenia. Flagi i schematy JSON zostają w `schema: 1`.

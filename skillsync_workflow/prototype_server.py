@@ -1936,6 +1936,15 @@ _STAGING_RE = re.compile(r'[1-9][0-9]*\.tmp-[0-9a-f]+')
 
 # Never served statically and never hashed: lock and temporary files, dot files, freeze staging
 # directories and the kept v1 log of `migrate`.
+API_ONLY_FILES = ('questions.json', 'comments.json', 'comments.js')
+
+
+def _api_only_name(name):
+    """A file name that `serve` gives only through the API (case-insensitive; trailing dots and spaces ignored on Windows)."""
+    lowered = name.lower()
+    return (lowered.rstrip('. ') if os.name == 'nt' else lowered) in API_ONLY_FILES
+
+
 def _excluded_segment(name):
     """Case-insensitive (macOS and Windows file systems); on Windows trailing dots and spaces are ignored too."""
     lowered = name.lower()
@@ -6946,10 +6955,11 @@ class PrototypeRequestHandler(LingeringCloseMixin, BaseHTTPRequestHandler):
                 self._not_found()
                 return
         for segment in segments[:2]:
-            lowered = segment.lower()
-            if (lowered.rstrip('. ') if os.name == 'nt' else lowered) == QUESTIONS_FILE:
+            if _api_only_name(segment):
                 # `<root>/questions.json` (the old project file) and `<root>/<slug>/questions.json` are served only
-                # through `/_api/v1/questions`; a deeper file of that name belongs to the prototype (demo data)
+                # through `/_api/v1/questions`, and the journal `<slug>/comments.json` (also the v1 `comments.js`) only
+                # through `/_api/v1/prototypes/<slug>/operations` (same gate and same content, one place for it); a deeper
+                # file of such a name belongs to the prototype (demo data)
                 self._not_found()
                 return
         root = self.app.root
@@ -7015,7 +7025,7 @@ class PrototypeRequestHandler(LingeringCloseMixin, BaseHTTPRequestHandler):
         if relative == '.':
             return True
         parts = relative.split(os.sep)
-        if len(parts) <= 2 and parts[-1].lower() == QUESTIONS_FILE:   # also behind a symbolic link inside a run
+        if len(parts) <= 2 and _api_only_name(parts[-1]):   # also behind a symbolic link inside a run
             return False
         return not any(_excluded_segment(part) for part in parts)
 

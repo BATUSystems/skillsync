@@ -1,6 +1,7 @@
-"""180-Q: who reads the comments of a prototype today (a pin, not a wish): the static `comments.json` and `GET /_api/v1/prototypes/<slug>/operations` give the
-same set of operations to every role, and `--login-to-view` is the only gate of both. A change of this (a visibility model for the `expert` role, a 404 for the
-static file) must change this test on purpose."""
+"""180-Q (since 1.9.0, variant W1): the journal of a prototype is given only by `GET /_api/v1/prototypes/<slug>/operations`; the static
+`<slug>/comments.json` and `<slug>/comments.js` are 404 under `serve` for every role, with and without `--login-to-view` (as under `serve --demo`).
+The API still gives the same set of operations to every role and `--login-to-view` is its only gate. A change of this (a visibility model for the
+`expert` role) must change this test on purpose."""
 import json
 import sys
 import unittest
@@ -27,10 +28,9 @@ class CommentsCase(ServerCase):
         self.seed(writer, 'th-1', 'm-1', 'Treść komentarza do ukrycia przed nikim')
         self.seed(writer, 'th-2', 'm-2', 'Drugi komentarz')
 
-    def static_ids(self, client):
-        response = client.get('/demo/comments.json')
-        self.assertEqual(response.status, 200, response.text)
-        return sorted(operation['id'] for operation in json.loads(response.text)['operations'])
+    def assert_static_is_gone(self, client):
+        for path in ('/demo/comments.json', '/demo/comments.js'):
+            self.assertEqual(client.get(path).status, 404, path)
 
     def api_ids(self, client):
         response = client.get('/_api/v1/prototypes/demo/operations')
@@ -47,32 +47,31 @@ class CommentsCase(ServerCase):
 
 
 class PublicRead(CommentsCase):
-    def test_every_role_and_a_guest_read_the_same_operations_by_both_ways(self):
+    def test_every_role_and_a_guest_read_the_same_operations_by_the_api_only(self):
         clients = self.clients()
         reference = self.api_ids(clients['guest'])
         self.assertEqual(len(reference), 2)
         for name, client in clients.items():
             with self.subTest(role=name):
                 self.assertEqual(self.api_ids(client), reference)
-                self.assertEqual(self.static_ids(client), reference)
+                self.assert_static_is_gone(client)
 
-    def test_the_static_file_adds_no_text_the_api_does_not_give(self):
+    def test_the_static_file_gives_no_text_and_the_api_does(self):
         guest = Client(self.server)
-        static_text = guest.get('/demo/comments.json').text
+        self.assertNotIn('Treść komentarza do ukrycia przed nikim', guest.get('/demo/comments.json').text)
         api_text = json.dumps(guest.get('/_api/v1/prototypes/demo/operations').json, ensure_ascii=False)
-        self.assertIn('Treść komentarza do ukrycia przed nikim', static_text)
         self.assertIn('Treść komentarza do ukrycia przed nikim', api_text)
 
 
 class BehindLogin(CommentsCase):
     login_to_view = True
 
-    def test_without_a_session_neither_way_gives_anything(self):
+    def test_without_a_session_nothing_is_given(self):
         guest = Client(self.server)
-        self.assertEqual(guest.get('/demo/comments.json').status, 401)
+        self.assertIn(guest.get('/demo/comments.json').status, (401, 404))
         self.assertEqual(guest.get('/_api/v1/prototypes/demo/operations').status, 401)
 
-    def test_every_role_with_a_session_reads_the_same_operations_by_both_ways(self):
+    def test_every_role_with_a_session_reads_the_same_operations_by_the_api_only(self):
         reference = None
         for name, client in self.clients().items():
             if name == 'guest':
@@ -81,7 +80,7 @@ class BehindLogin(CommentsCase):
                 ids = self.api_ids(client)
                 reference = reference or ids
                 self.assertEqual(ids, reference)
-                self.assertEqual(self.static_ids(client), reference)
+                self.assert_static_is_gone(client)
 
 
 if __name__ == '__main__':
