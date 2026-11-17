@@ -145,6 +145,14 @@ class ActTimes(unittest.TestCase):
         self.assertEqual(dashboard.build_timing(None, cps(('09:05', 'x')), [], [])['acts'], [])
 
 
+class DefaultView(unittest.TestCase):
+    def test_the_page_shows_the_pace_by_default_not_the_range_and_the_clock_time(self):
+        code = (Path(__file__).resolve().parent.parent / 'library' / 'skills' / 'dashboard' / 'assets' / 'dashboard-render.js').read_text(encoding='utf-8')
+        self.assertIn('const FORECAST_VIEW = "tempo";', code)   # one constant; a one-line commit switches it to "range"
+        contract = (Path(__file__).resolve().parent.parent / 'docs' / 'dashboard-contract.md').read_text(encoding='utf-8')
+        self.assertIn('strona domyślnie go nie pokazuje', contract)
+
+
 class InStatus(unittest.TestCase):
     """`forecast` and `timing.acts` come with `build_status` (so with `show` and `/api/status`); `metrics` carries `timing.acts` only."""
 

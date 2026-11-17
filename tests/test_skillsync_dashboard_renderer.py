@@ -1357,13 +1357,18 @@ function summary(m) {
   // Pomiar i prognoza: wiersz prognozy w akcie III (przedział, powód, wstrzymana) i czas aktów I i II. Prognoza ma inną klasę i etykietę niż pomiar.
   {
     const nm = 'plan-in-progress';
-    const run = (patch) => { const d = clone(F[nm]); Object.assign(d, patch); return mount(d, { now: NOW[nm] }); };
+    const run = (patch, view) => { const d = clone(F[nm]); Object.assign(d, patch); return mount(d, { now: NOW[nm], deps: view ? { forecastView: view } : {} }); };
     const rangeF = { scope: 'plan', remaining: 5, samples: 4, basis: 'run', paused: false, lowSeconds: 3000, medianSeconds: 4500, highSeconds: 6750 };
     const one = (m, sel) => { const e = m.root.querySelector(sel); return e ? { text: text(e), cls: e.getAttribute('class') } : null; };
     ex.forecast = {
-      range: one(run({ forecast: rangeF }), '[data-forecast]'),
-      same: one(run({ forecast: Object.assign({}, rangeF, { lowSeconds: 3000, highSeconds: 3040 }) }), '[data-forecast]'),
-      paused: one(run({ forecast: Object.assign({}, rangeF, { paused: true }) }), '[data-forecast]'),
+      tempo: one(run({ forecast: rangeF }), '[data-forecast]'),
+      tempoPaused: one(run({ forecast: Object.assign({}, rangeF, { paused: true }) }), '[data-forecast]'),
+      tempoFast: one(run({ forecast: Object.assign({}, rangeF, { medianSeconds: 100 }) }), '[data-forecast]'),
+      tempoNoRemaining: run({ forecast: Object.assign({}, rangeF, { remaining: 0 }) }).root.querySelectorAll('[data-forecast]').length,
+      badView: one(run({ forecast: rangeF }, 'nonsense'), '[data-forecast]'),
+      range: one(run({ forecast: rangeF }, 'range'), '[data-forecast]'),
+      same: one(run({ forecast: Object.assign({}, rangeF, { lowSeconds: 3000, highSeconds: 3040 }) }, 'range'), '[data-forecast]'),
+      paused: one(run({ forecast: Object.assign({}, rangeF, { paused: true }) }, 'range'), '[data-forecast]'),
       few: one(run({ forecast: { scope: 'plan', reason: 'not-enough-data', have: 2, need: 4 } }), '[data-forecast]'),
       norun: one(run({ forecast: { scope: 'plan', reason: 'no-run-start' } }), '[data-forecast]'),
       silentReasons: ['plan-not-running', 'no-remaining'].map((r) => run({ forecast: { scope: 'plan', reason: r } }).root.querySelectorAll('[data-forecast]').length),
@@ -2111,6 +2116,16 @@ class RendererNodeTests(unittest.TestCase):
 
     def test_forecast_and_measure_are_shown_apart(self) -> None:
         r = self.out["extra"]["forecast"]
+        # default view: the pace per step and the steps left, no sum and no clock time (the backtest did not hold such precision)
+        self.assertEqual(r["tempo"]["cls"], "forecast")
+        self.assertEqual(r["tempo"]["text"], "Prognoza: tempo: ok. 15 min pracy na krok, z 4 zakończonych kroków; zostało 5 kroków")
+        self.assertNotRegex(r["tempo"]["text"], r"koniec ok|\d\d:\d\d|do końca kroków")
+        self.assertIn("is-paused", r["tempoPaused"]["cls"])
+        self.assertIn("wstrzymane", r["tempoPaused"]["text"])
+        self.assertIn("mniej niż minuta pracy na krok", r["tempoFast"]["text"])
+        self.assertEqual(r["tempoNoRemaining"], 0)
+        self.assertEqual(r["badView"]["text"], r["tempo"]["text"], "an unknown view falls back to the default")
+        # the range view (host option `forecastView: "range"`)
         self.assertEqual(r["range"]["cls"], "forecast")
         self.assertIn("Prognoza", r["range"]["text"])
         self.assertIn("ok. 50 min–1 h 55 min pracy", r["range"]["text"])

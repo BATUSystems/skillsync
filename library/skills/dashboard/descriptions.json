@@ -145,7 +145,7 @@
  },
  "forecast": {
   "title": "Prognoza końca realizacji",
-  "text": "To PROGNOZA, nie pomiar. Z tempa bieżącego przebiegu: odstępy między kolejnymi zakończeniami kroków (bez okien czekania), mediana i kwartyle, razy liczba kroków do końca. Zawsze przedział; godzina końca liczona od chwili odświeżenia strony.\nNie uwzględnia rozmiaru kroków ani czekania na ludzi; to rząd wielkości, nie obietnica. Od 4 zakończonych kroków z czasem; bez danych jest powód zamiast liczby.\nStrona: pole forecast (osobne od eta, które jest deklaracją agenta)."
+  "text": "To PROGNOZA, nie pomiar: tempo pracy na krok z bieżącego przebiegu (mediana odstępów między zakończeniami kroków, bez okien czekania; kroki zakończone razem dzielą odstęp) i liczba kroków do końca. Strona domyślnie nie podaje sumy ani godziny końca: powtórka modelu na prawdziwych przebiegach nie dotrzymała takiej dokładności (pole forecast w JSON niesie zakres, widok „range” hosta go pokazuje).\nNie uwzględnia rozmiaru kroków ani czekania na ludzi. Od 4 zakończonych kroków z czasem; bez danych jest powód zamiast liczby.\nStrona: pole forecast (osobne od eta, które jest deklaracją agenta)."
  },
  "measure_act": {
   "title": "Czas aktu (pomiar)",
