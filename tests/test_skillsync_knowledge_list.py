@@ -128,7 +128,7 @@ class RouteOrder(KnowledgeListFixture):
             {'path': 'glossary.md', 'title': 'B', 'load': 'bootstrap'}]}))
         self.setting(domain=['docs/domain', '../repo-a/docs/domain'])
         paths = [record['path'] for record in self.report('route')['domain']]
-        self.assertEqual(paths, [str(self.root / 'docs/domain/glossary.md'), str(self.base / 'repo-a/docs/domain/glossary.md')])
+        self.assertEqual(paths, [(self.root / 'docs/domain/glossary.md').as_posix(), (self.base / 'repo-a/docs/domain/glossary.md').as_posix()])
 
     def test_missing_owner_directory_is_skipped(self):
         self.write('docs/domain/own.md', '---\ntags: [x]\n---\nb')
