@@ -76,6 +76,22 @@ class DataTests(unittest.TestCase):
                 path.unlink()
 
 
+class RuleTests(unittest.TestCase):
+    BASE = Path(__file__).resolve().parent.parent / 'library' / 'instructions' / '_base.md'
+
+    def test_rule_is_in_the_core_only_base_without_literal_phrases(self):
+        from skillsync_workflow import layers
+        text = self.BASE.read_text(encoding='utf-8')
+        self.assertIn('Bez stopek i podpisów narzędzi AI', text)
+        self.assertIn('instructions/_base.md', layers.CORE_ONLY_FILES)
+        self.assertEqual(attribution.scan_text(text), [])
+
+    def test_base_fits_the_budget(self):
+        import yaml
+        limit = yaml.safe_load((self.BASE.parent.parent / 'workflow' / 'defaults.yaml').read_text(encoding='utf-8'))['context']['base_max_bytes']
+        self.assertLessEqual(len(self.BASE.read_bytes()), limit)
+
+
 class LeakguardTests(LeakTestCase):
     def test_text_mode_finds_footer_and_trailer(self):
         repo = self.make_repo()

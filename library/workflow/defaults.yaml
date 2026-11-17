@@ -1,6 +1,6 @@
 version: 1
 context:
-  base_max_bytes: 8192
+  base_max_bytes: 8704
   max_bytes: 24576
 routing:
   rules:
