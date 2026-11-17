@@ -1309,11 +1309,17 @@ class StaticAndReadTests(ServerCase):
         self.assertEqual(listing['iteration'], {'current': 1})
         self.assertFalse(listing['reset'])
 
-    def test_comments_file_is_publicly_readable_after_write(self):
+    def test_comments_file_is_not_served_the_journal_comes_only_through_the_api(self):
         author = self.client(A)
         self.seed(author, 'th-1', 'm-1')
-        served = self.check(self.anon.get('/demo/comments.json'), 200)
-        self.assertEqual(served.body, self.journal())
+        for path in ('/demo/comments.json', '/demo/comments.js', '/demo/COMMENTS.JSON', '/demo/Comments.Js'):
+            with self.subTest(path=path):
+                self.check(self.anon.get(path), 404)
+        self.assertEqual(len(self.check(self.anon.get('/_api/v1/prototypes/demo/operations'), 200).json['operations']), 1)
+
+    def test_files_named_like_the_journal_deeper_than_the_prototype_belong_to_the_prototype(self):
+        write(os.path.join(self.demo, 'data', 'comments.json'), '{"demo": true}')
+        self.assertEqual(self.check(self.anon.get('/demo/data/comments.json'), 200).text, '{"demo": true}')
 
     def test_directory_redirect_index_and_no_listing(self):
         redirect = self.anon.get('/demo')
@@ -3108,7 +3114,7 @@ class OperationsHashTests(RestoreServerCase):
         frozen = self.anon.get('/demo/iterations/1/index.html')
         self.check(frozen, 200)
         self.assertIn('data-prototype-iteration="1" data-prototype-frozen', frozen.text)
-        self.check(self.anon.get('/demo/comments.json'), 200)  # control: the live journal is served, the frozen copy has none
+        self.check(self.anon.get('/demo/comments.json'), 404)  # the live journal is not served either (API only), the frozen copy has none
         self.check(self.anon.get('/demo/iterations/1/comments.json'), 404)
         os.makedirs(os.path.join(self.demo, 'iterations', '2.tmp-ab12'))
         write(os.path.join(self.demo, 'iterations', '2.tmp-ab12', 'x.html'), 'połowa')

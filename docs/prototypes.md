@@ -221,7 +221,8 @@ Od 600 px wszystkie przyciski są w pasku, a „⋯” jest ukryty.
 
 Komentarze zapisuje wspólny serwer `skillsync prototype serve` do `comments.json` prototypu. Dziennik tylko rośnie:
 każda zmiana (nowy wątek, odpowiedź, edycja, głos, zamknięcie, akceptacja) jest nową operacją, nic nie jest
-nadpisywane.
+nadpisywane. Serwer nie wydaje pliku `comments.json` po HTTP (`404`): dziennik czytasz przez API
+(`GET /_api/v1/prototypes/<slug>/operations`) albo z dysku.
 
 Jak komentować:
 

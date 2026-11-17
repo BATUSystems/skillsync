@@ -363,7 +363,7 @@ class HostAndStartTests(DemoCase):
     def test_the_normal_server_is_unchanged_by_the_option_existing(self):
         # the first server of the case is the normal one: accounts, login, comments
         normal = Client(self._servers[0][0])
-        self.assertEqual(normal.get('/demo/comments.json').status, 200)   # the finding of spec 3.11, not changed here
+        self.assertEqual(normal.get('/demo/comments.json').status, 404)   # the journal is API-only in both modes (as in the show)
         self.assertEqual(normal.post('/_api/v1/login', {'login': 'x', 'password': 'y'}).status, 401)
 
 

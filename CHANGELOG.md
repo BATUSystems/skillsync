@@ -27,6 +27,7 @@ Proposed version 1.9.0 (the owner confirms at release). Upgrading: [docs/upgradi
 
 - `instructions/_base.md`: the paragraph on the cost and capability trade-off of models moved to `skills/workflow/references/planning.md` (section on the choice of models and roles) to make room for the new rule under the unchanged limit `context.base_max_bytes` 8192 (the base file is 8187 B).
 - Leakguard no longer allows the address of the AI vendor in commit trailers (the allow entry `trailer-noreply` was removed); `trailer_allow` stays for trailers of people.
+- **Prototypes: `skillsync prototype serve` no longer serves the journal as a static file.** `GET /<slug>/comments.json` and `GET /<slug>/comments.js` (and the same names at the root) answer `404` for every role and with or without `--login-to-view`, like `questions.json` and like `serve --demo` already did; deeper files of those names (prototype data) are still served. The journal is read through `GET /_api/v1/prototypes/<slug>/operations`, which gives the same operations to the same sessions (it did not filter by role either), so confidentiality does not change, consistency does. The engine is not affected: under `serve` it reads the API, and on plain static hosting (no skillsync API) it still reads `comments.json` from that host. A script that fetched `comments.json` over HTTP from `serve` must switch to the API endpoint (upgrade: `docs/upgrading.md`, "Przejście 1.8.0 → 1.9.0"). The pinning test `tests/test_skillsync_prototype_comments_visibility.py` now pins the 404.
 
 ### Fixed
 
@@ -38,6 +39,7 @@ Proposed version 1.9.0 (the owner confirms at release). Upgrading: [docs/upgradi
 
 - A trailer or footer of an AI tool in a new commit is refused by `pre-push` and CI (before: allowed). A layer or generated instruction file that carries such text fails `layers check` and `doctor`. Every project with Claude Code gets the guard hook and the `attribution` setting at the next `link`. Check the layers before updating (see the upgrading guide).
 
+- `skillsync prototype serve` answers `404` for `GET /<slug>/comments.json` and `GET /<slug>/comments.js` (it used to answer `200` with the journal). Affects anyone who fetched the journal over HTTP from `serve` (an external script, a dashboard, a monitoring probe); the prototype engine is not affected. Read `GET /_api/v1/prototypes/<slug>/operations` instead (same operations, same session gate) or the file from disk; details in `docs/upgrading.md`, "Przejście 1.8.0 → 1.9.0".
 
 ## [1.8.0] - 2026-11-17
 
