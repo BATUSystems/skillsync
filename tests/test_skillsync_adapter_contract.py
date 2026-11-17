@@ -96,6 +96,8 @@ class Reachability(unittest.TestCase):
     def test_every_tool_of_every_adapter_is_a_value_of_the_table(self):
         known = {tool for _, tool in test_run.TOOLS} | {'unittest', 'pytest'}
         test_adapters.discover()
+        product = [name for name, cls in test_adapters.REGISTRY.items() if cls.__module__.startswith('skillsync_workflow')]
+        self.assertTrue({'pytest', 'unittest', 'dotnet'} <= set(product), product)   # the filter below must not hide the adapters of the product
         for name, cls in sorted(test_adapters.REGISTRY.items()):
             if not cls.__module__.startswith('skillsync_workflow.test_adapters.'):
                 continue   # the adapters SHIPPED in the package; a test double registered by another module in the same process is not the subject
