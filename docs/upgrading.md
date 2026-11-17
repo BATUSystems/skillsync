@@ -41,6 +41,10 @@ Wydanie 1.4.0 jest MINOR (zgodne wstecz): sekcja **Breaking** w `CHANGELOG.md` t
 4. Raporty `prototype comments`, `prototype wait` i `question list|show|export|wait` mają dwa nowe klucze na początku (`untrusted`, `notice`); konsument pomijający nieznane klucze nie jest dotknięty.
 5. Uruchom ponownie działający `prototype serve` i serwer strony statusu.
 
+## Przejście 1.8.0 → 1.9.0
+
+- **Prototypy: arkusz silnika `prototype.css` zmieniony** (układ okien logowania i ustawienia hasła). Istniejący prototyp dostaje poprawkę dopiero po `skillsync prototype migrate <slug>` (plik silnika jest kopiowany do katalogu prototypu). Akceptacje ekranów zostają ważne: `prototype.css` nie wchodzi do skrótu ekranu, a `migrate` zapisuje skrót wymienianego pliku w `prototype.json` (zgodność ze starszym wzorem). `components.css` i `screens.css` bez zmian.
+
 ## Przejście 1.4.0 → 1.4.1
 
 Wydanie 1.4.1 jest PATCH (zgodne wstecz w kontraktach: sekcja **Breaking** w `CHANGELOG.md` to „None.”), ale zmienia mechanizm blokady pliku zgód `approvals.jsonl` (zob. [dashboard-contract](dashboard-contract.md), „Blokada”).
