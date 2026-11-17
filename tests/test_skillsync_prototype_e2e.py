@@ -88,13 +88,13 @@ CONTRACT_E2E = REPO / 'docs' / 'prototype-contract' / 'scenariusze-e2e.md'
 
 
 def spec_scenario_ids():
-    """IDs of the scenario tables (sections 1-6, 8, 11, 12, 13, 14, 15 and 16) of docs/prototype-contract/scenariusze-e2e.md."""
+    """IDs of the scenario tables (sections 1-6, 8, 11, 12, 13, 14, 15, 16 and 17) of docs/prototype-contract/scenariusze-e2e.md."""
     ids, section = set(), None
     for line in CONTRACT_E2E.read_text(encoding='utf-8').splitlines():
         if line.startswith('## '):   # every heading, numbered or not, resets the section
             heading = re.match(r'## (\d+)\.', line)
             section = int(heading.group(1)) if heading else None
-        if section in (1, 2, 3, 4, 5, 6, 8, 11, 12, 13, 14, 15, 16) and line.startswith('|'):
+        if section in (1, 2, 3, 4, 5, 6, 8, 11, 12, 13, 14, 15, 16, 17) and line.startswith('|'):
             first = line.strip().strip('|').split('|')[0].strip()
             if first and first != 'ID' and not set(first) <= set('-'):
                 ids.add(first)
