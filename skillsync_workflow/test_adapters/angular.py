@@ -31,10 +31,13 @@ class AngularAdapter(Adapter):
                 return words[i + 1:i + 2] in (['test'], ['t'])
         return False
 
-    def hint(self, argv):
-        if any(str(word).startswith('--reporters') for word in argv):
-            return None
-        return 'test list of a Vitest project: add --reporters=verbose (the default reporter names no passing test; the counters are always recorded)'
+    def hint(self, argv, has_report=False):
+        parts = []
+        if not any(str(word).startswith('--reporters') for word in argv):
+            parts.append('of a Vitest project: add --reporters=verbose')
+        if not has_report:
+            parts.append('of a Karma project: add the junit reporter (karma-junit-reporter) and pass --junit <file>')
+        return ('test list ' + '; '.join(parts) + ' (the counters are always recorded)') if parts else None
 
     def feed(self, stream, text, ctx):
         self.vitest.feed(text, ctx)

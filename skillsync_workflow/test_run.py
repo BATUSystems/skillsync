@@ -223,12 +223,12 @@ def resolve_executable(argv, which=None, nt=None):
     return [found] + argv[1:] if found else argv
 
 
-def adapter_notice(fmt, argv, tool, adapter):
+def adapter_notice(fmt, argv, tool, adapter, junit=()):
     """The line of `test-run` about the choice of the adapter (stderr, before the command starts), only for `--format auto`: an explicit name or `none` is silent."""
     if fmt not in (None, 'auto'):
         return None
     if adapter is not None:
-        hint = adapter.hint(list(argv or []))
+        hint = adapter.hint(list(argv or []), bool(junit))
         return f'test-run: adapter {adapter.name} (live {adapter.live})' + (f'; {hint}' if hint else '')
     test_adapters.discover()
     names = sorted(test_adapters.REGISTRY)
@@ -280,7 +280,8 @@ def find_reports(tool, cwd, explicit, since):
         elif path.is_file():
             candidates.append(path)
     if not explicit:
-        defaults = {'dotnet': ['**/TestResults/*.trx'], 'maven': ['**/target/surefire-reports/*.xml', '**/target/failsafe-reports/*.xml'],
+        karma = ['TESTS-*.xml', '*/TESTS-*.xml', 'junit*/*.xml', 'junit*/*/*.xml']   # karma-junit-reporter: `<outputDir>/<browser>/TESTS-*.xml`, outputDir often `junit...`
+        defaults = {'karma': karma, 'angular': karma, 'dotnet': ['**/TestResults/*.trx'], 'maven': ['**/target/surefire-reports/*.xml', '**/target/failsafe-reports/*.xml'],
                     'gradle': ['**/build/test-results/**/*.xml']}.get(tool, [])
         for pattern in defaults:
             candidates += list(cwd.glob(pattern))
@@ -572,7 +573,7 @@ def _command(args):
             print('BLOCKED: several steps are in progress in the checkpoints: pass --step <id> (and --run <id>)', file=sys.stderr)
             return 2
         adapter = test_adapters.resolve(args.format, command, detect_tool(command))
-        notice = adapter_notice(args.format, command, detect_tool(command), adapter)
+        notice = adapter_notice(args.format, command, detect_tool(command), adapter, args.junit or [])
         if notice:
             print(notice, file=sys.stderr)
         recorder = TestRecorder(root, run_id, step, source, mask=events.mask_setting(manifest), junit=args.junit or [], passthrough=True,

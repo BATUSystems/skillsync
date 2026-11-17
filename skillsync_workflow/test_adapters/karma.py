@@ -62,5 +62,10 @@ class KarmaAdapter(Adapter):
         words = [str(word).replace('\\', '/').rsplit('/', 1)[-1].lower() for word in argv]
         return 'karma' in words[:4] and 'ng' not in words[:2]
 
+    def hint(self, argv, has_report=False):
+        if has_report:
+            return None
+        return 'test list: add the junit reporter (karma-junit-reporter) and pass --junit <file> (Karma prints no test names; the counters are always recorded)'
+
     def feed(self, stream, text, ctx):
         self.core.feed(text, ctx)

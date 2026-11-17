@@ -70,9 +70,11 @@ class Notice(unittest.TestCase):
                 self.assertIn(reporter, text)
 
     def test_a_chosen_reporter_or_another_tool_gets_no_advice(self):
-        for argv in (['vitest', 'run', '--reporter=verbose'], ['ng', 'test', '--reporters=verbose'], ['playwright', 'test'], ['karma', 'start']):
+        for argv in (['vitest', 'run', '--reporter=verbose'], ['playwright', 'test'], ['cypress', 'run']):
             with self.subTest(argv=argv):
                 self.assertNotIn('test list', self.notice(argv))
+        self.assertNotIn('Vitest', self.notice(['ng', 'test', '--reporters=verbose']))   # only the Karma advice remains: the junit report
+        self.assertIn('junit reporter', self.notice(['karma', 'start']))
 
 
 class Forced(unittest.TestCase):

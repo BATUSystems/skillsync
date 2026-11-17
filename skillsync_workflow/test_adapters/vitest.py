@@ -104,7 +104,7 @@ class VitestAdapter(Adapter):
         words = [str(word).replace('\\', '/').rsplit('/', 1)[-1].lower() for word in argv]
         return 'vitest' in words[:4] and 'ng' not in words[:2]
 
-    def hint(self, argv):
+    def hint(self, argv, has_report=False):
         if any(str(word).startswith('--reporter') for word in argv):
             return None
         return 'test list: add --reporter=verbose (the default reporter of Vitest names no passing test; the counters are always recorded)'

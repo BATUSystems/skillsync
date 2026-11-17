@@ -1,6 +1,6 @@
 """180-A3: the end record of a run (`status`, `counts`, `source`) of the web tools, through the real `TestRecorder` fed with the recorded streams: a complete stream of
 an adapter gives the counters of its tests, a counters-only adapter (Karma) its last counters, anything incomplete keeps the summary of the output."""
-import json
+import shutil
 import sys
 import tempfile
 import unittest
@@ -8,6 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import adapter_replay as ar  # noqa: E402
+from tmp_paths import child, descend  # noqa: E402
 
 from skillsync_workflow import test_adapters, test_events, test_run  # noqa: E402
 
@@ -126,6 +127,54 @@ class EndRecord(unittest.TestCase):
                 end, _ = run_through_recorder(fixture)
                 self.assertEqual(end['status'], 'PASS', end)
                 self.assertGreater(end['counts']['passed'], 0)
+
+
+class KarmaReport(unittest.TestCase):
+    """Counters always, the list when a JUnit report is there: a counters-only adapter (Karma, `ng test` with Karma) leaves the names to the report."""
+
+    def run_karma(self, fixture, argv, junit=None, place=None):
+        meta, chunks = ar.load(fixture)
+        with tempfile.TemporaryDirectory(prefix='karma-report-') as tmp:
+            if place:
+                target = descend(tmp, place)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy(ar.FIXTURES / 'karma-junit.xml', target)
+            adapter = test_adapters.resolve('auto', argv, test_run.detect_tool(argv))
+            recorder = test_run.TestRecorder(tmp, 'R1', 'F1.1', 'flag', junit=[str(child(tmp, junit))] if junit else [], adapter=adapter)
+            check = {'argv': argv, 'command': ' '.join(argv), 'cwd': tmp}
+            recorder.started(check)
+            text = ''.join(c['data'] for c in chunks)
+            for line in text.split('\n'):
+                recorder.line(check, 'out', line)
+            recorder.finished(check, {'exit_code': meta['exit'], 'duration_seconds': 1.0}, text)
+            events = test_events.read_events(recorder.path)[0]
+        return [e for e in events if e['t'] == 'end'][-1], [e for e in events if e['t'] == 'test']
+
+    def test_a_named_report_gives_the_list_and_the_same_counters(self):
+        end, tests = self.run_karma('karma-junit-progress.jsonl', ['karma', 'start'], junit='karma-junit.xml', place='karma-junit.xml')
+        self.assertEqual((end['status'], end['source'], end['counts']), ('FAIL', 'junit', {'total': 11, 'passed': 7, 'failed': 2, 'skipped': 2}))
+        self.assertEqual(len(tests), 11)
+        self.assertEqual(sorted({t['state'] for t in tests}), ['failed', 'passed', 'skipped'])
+        self.assertTrue(any(t.get('msg') for t in tests if t['state'] == 'failed'))
+
+    def test_the_default_place_of_karma_junit_reporter_is_found_without_the_flag(self):
+        for argv in (['karma', 'start'], ['ng', 'test', '--no-watch']):
+            with self.subTest(argv=argv):
+                end, tests = self.run_karma('karma-junit-progress.jsonl', argv, place='junit-out/karma-junit.xml')
+                self.assertEqual((end['source'], len(tests)), ('junit', 11))
+
+    def test_without_a_report_there_is_no_list_and_the_counters_stay(self):
+        end, tests = self.run_karma('karma-progress.jsonl', ['karma', 'start'])
+        self.assertEqual((end['source'], end['counts']['total'], tests), ('adapter', 11, []))
+
+    def test_the_notice_says_how_to_get_the_list_until_a_report_is_named(self):
+        for argv in (['karma', 'start'], ['ng', 'test']):
+            tool = test_run.detect_tool(argv)
+            adapter = test_adapters.resolve('auto', argv, tool)
+            without = test_run.adapter_notice('auto', argv, tool, adapter)
+            self.assertIn('--junit', without)
+            self.assertIn('junit reporter', without)
+            self.assertNotIn('--junit', test_run.adapter_notice('auto', argv, tool, adapter, ['report.xml']))
 
 
 if __name__ == '__main__':
