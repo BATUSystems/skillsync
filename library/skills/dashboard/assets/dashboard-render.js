@@ -626,7 +626,7 @@
       }
       const nums = [f.lowSeconds, f.medianSeconds, f.highSeconds];
       if (!nums.every((n) => Number.isFinite(n) && n >= 0) || !Number.isInteger(f.remaining)) return null;
-      const range = `${humanDur(f.lowSeconds, true)}–${humanDur(f.highSeconds, true)}`;
+      const lo = humanDur(f.lowSeconds, true), hi = humanDur(f.highSeconds, true), range = lo === hi ? lo : `${lo}–${hi}`;
       const basis = `zostało ${f.remaining} ${plural(f.remaining, "krok", "kroki", "kroków")}, tempo z ${f.samples} ${plural(f.samples, "odstępu", "odstępów", "odstępów")} między zakończonymi`;
       const t0 = now();
       const end = f.paused ? "wstrzymana: sesja czeka na człowieka, czekanie nie jest liczone" : `koniec ok. ${clockOf(t0 + f.lowSeconds * 1000)}–${clockOf(t0 + f.highSeconds * 1000)}`;

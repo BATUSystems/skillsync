@@ -1362,6 +1362,7 @@ function summary(m) {
     const one = (m, sel) => { const e = m.root.querySelector(sel); return e ? { text: text(e), cls: e.getAttribute('class') } : null; };
     ex.forecast = {
       range: one(run({ forecast: rangeF }), '[data-forecast]'),
+      same: one(run({ forecast: Object.assign({}, rangeF, { lowSeconds: 3000, highSeconds: 3040 }) }), '[data-forecast]'),
       paused: one(run({ forecast: Object.assign({}, rangeF, { paused: true }) }), '[data-forecast]'),
       few: one(run({ forecast: { scope: 'plan', reason: 'not-enough-data', have: 2, need: 4 } }), '[data-forecast]'),
       norun: one(run({ forecast: { scope: 'plan', reason: 'no-run-start' } }), '[data-forecast]'),
@@ -2116,6 +2117,8 @@ class RendererNodeTests(unittest.TestCase):
         self.assertIn("zostało 5 kroków", r["range"]["text"])
         self.assertIn("bez czekania na zgody", r["range"]["text"])
         self.assertRegex(r["range"]["text"], r"koniec ok\. \d\d:\d\d–\d\d:\d\d")
+        self.assertIn("ok. 50 min pracy", r["same"]["text"])
+        self.assertNotIn("–", r["same"]["text"].split("pracy")[0])
         self.assertIn("is-paused", r["paused"]["cls"])
         self.assertIn("wstrzymana", r["paused"]["text"])
         self.assertNotRegex(r["paused"]["text"], r"koniec ok\.")
