@@ -22,6 +22,8 @@ Rules (a module is selected when at least one holds; every hit is listed as its 
   artefact     a file that feeds the artefacts `skillsync link` generates changed (ARTEFACT_SOURCES: the generator `cli.py`/`layers.py`/`guardhook.py` and the helpers
                it uses for file bytes and the task command, the library hooks, instructions, skills, agents): the tests that run `link` through
                a subprocess and compare its output (ARTEFACT_TESTS: a baseline, tracked links) name no product file, so no other rule sees them;
+  engine       the engine of the prototypes or its copy in the fixtures changed (ENGINE_SOURCES): the test that compares the copy with the library source
+               (ENGINE_TESTS); it only compares when `SKILLSYNC_PROTOTYPE_ENGINE_V2_SOURCE` is set, so selecting it without the variable prints a warning on stderr;
   guard        the fixed guard set (GUARDS below), always.
 The analysis reads the working tree, so the checkout must be `--head` (otherwise exit 2); the diff is `base...head` (from the merge base).
 Deleted or renamed product modules select the tests that import or name them. Limits: dynamic imports and commands named only by a string (`skillsync status`) are not seen except through the `path`,
@@ -31,6 +33,7 @@ Exit codes: 0 = computed, 2 = unusable input (no git, unknown revision). Standar
 import argparse
 import ast
 import json
+import os
 import re
 import subprocess
 import sys
@@ -46,6 +49,10 @@ ARTEFACT_SOURCES = ('skillsync_workflow/cli.py', 'skillsync_workflow/layers.py',
                     'skillsync_workflow/selfcmd.py', 'skillsync_workflow/fsutil.py', 'skillsync_workflow/pathfmt.py', 'library/hooks/',
                     'library/instructions/', 'library/skills/', 'library/agents/')
 ARTEFACT_TESTS = ('test_skillsync_layers_equivalence', 'test_skillsync_worktree_links')
+# The engine of the prototypes: its copy in the fixtures must equal the library source, and the freshness test compares them only when it is told where the source is.
+ENGINE_SOURCES = ('library/skills/prototype/assets/repo/prototype.js', 'tests/fixtures/prototype/engine-v2/')
+ENGINE_TESTS = ('test_skillsync_prototype_engine',)
+ENGINE_ENV = 'SKILLSYNC_PROTOTYPE_ENGINE_V2_SOURCE'
 PRODUCT_DIRS = ('skillsync_workflow', 'scripts', 'tests')
 MIN_LITERAL = 12
 STRING = re.compile(r"""(?P<q>'|")(?P<s>(?:\\.|(?!(?P=q)).)*)(?P=q)""")
@@ -270,6 +277,11 @@ def select(repo, base, head):
         for name in ARTEFACT_TESTS:
             if 'tests.' + name in tests:
                 add('tests.' + name, f'artefact: {artefact_hits[0]} feeds the generated link artefacts (baseline comparison)')
+    engine_hits = sorted(path for path, status in changed.items() if status != 'D' and path.startswith(ENGINE_SOURCES))
+    if engine_hits:
+        for name in ENGINE_TESTS:
+            if 'tests.' + name in tests:
+                add('tests.' + name, f'engine: {engine_hits[0]} changed, the copy of the engine in the fixtures must equal the library source')
     for guard in GUARDS:
         if 'tests.' + guard in tests:
             add('tests.' + guard, 'guard: fixed guard set')
@@ -297,6 +309,9 @@ def main(argv=None):
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, 'reconfigure'):
             stream.reconfigure(encoding='utf-8', newline='\n')
+    if not os.environ.get(ENGINE_ENV) and any(item['module'] == 'tests.' + name for item in result['modules'] for name in ENGINE_TESTS):
+        print(f'merge_modules: WARNING: {ENGINE_TESTS[0]} is selected; without {ENGINE_ENV}=<library>/skills/prototype/assets/repo/prototype.js '
+              'its freshness test skips and a stale copy of the engine passes (the full-run driver and CI set it)', file=sys.stderr)
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=1))
     elif args.names:
