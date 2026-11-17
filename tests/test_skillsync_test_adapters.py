@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from layers_helpers import guard_real_state, home_env  # noqa: E402
 from adapter_harness import ROOT, run_adapter, tests_of  # noqa: E402
 
 import subprocess  # noqa: E402
@@ -132,12 +133,13 @@ class InTheRecorder(unittest.TestCase):
         module.write_text(CLI_ADAPTER, encoding='utf-8')
         self.addCleanup(lambda: module.unlink())
         self.tmp = tempfile.mkdtemp(prefix='adapters-run-')
+        guard_real_state(self)
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
         self.root = Path(self.tmp) / 'p'
         (self.root / '.github').mkdir(parents=True)
         (self.root / '.github/.skillsync.yaml').write_text('schema: 1\n', encoding='utf-8')
         (self.root / '.skillsync/runs/R1').mkdir(parents=True)
-        self.env = {**os.environ, 'PYTHONDONTWRITEBYTECODE': '1', 'XDG_DATA_HOME': f'{self.tmp}/d', 'XDG_CACHE_HOME': f'{self.tmp}/c', 'SKILLSYNC_CONFIG': f'{self.tmp}/cfg.yaml'}
+        self.env = {**os.environ, 'PYTHONDONTWRITEBYTECODE': '1', **home_env(self.tmp), 'SKILLSYNC_CONFIG': f'{self.tmp}/cfg.yaml'}
 
     def run_cli(self, *args):
         return subprocess.run([sys.executable, str(CLI), 'test-run', str(self.root), '--run', 'R1', '--step', 'F1.1', *args], capture_output=True, text=True, env=self.env, timeout=60)

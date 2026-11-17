@@ -14,6 +14,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests"))
+from layers_helpers import guard_real_state, home_env  # noqa: E402
 
 from serve_start import start_serve_ports  # noqa: E402
 from skillsync_workflow import test_events as ev  # noqa: E402
@@ -30,6 +31,7 @@ def secret():
 class BothSockets(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = Path(tempfile.mkdtemp(prefix="dash-tests-sockets-"))
+        guard_real_state(self)
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
         self.root = make_project(self.tmp)
         manifest = self.root / ".github/.skillsync.yaml"
@@ -41,8 +43,7 @@ class BothSockets(unittest.TestCase):
         w.test("mod::a", "a " + secret(), "failed", group="mod", msg="boom " + secret())
         w.end("FAIL", 1, reason="failed " + secret(), counts={"total": 1, "failed": 1})
         w.close()
-        self.env = {**os.environ, "DEPLOY_TOKEN": secret(), "SKILLSYNC_CONFIG": str(self.tmp / "machine-config.yaml"), "XDG_CACHE_HOME": str(self.tmp / "xdg-cache"),
-                    "XDG_DATA_HOME": str(self.tmp / "xdg-data"), "PYTHONDONTWRITEBYTECODE": "1"}
+        self.env = {**os.environ, "DEPLOY_TOKEN": secret(), "SKILLSYNC_CONFIG": str(self.tmp / "machine-config.yaml"), **home_env(self.tmp), "PYTHONDONTWRITEBYTECODE": "1"}
         self.layer = ["--layer", f"core={ROOT / 'library'}"]
 
     def start(self):

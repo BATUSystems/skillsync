@@ -16,6 +16,7 @@ sys.path.insert(0, str(ROOT))
 import sys as _sys
 _sys.path.insert(0, str(Path(__file__).resolve().parent))
 from tmp_paths import child  # noqa: E402
+from layers_helpers import guard_real_state, home_env  # noqa: E402
 from skillsync_workflow import quality, test_events as ev, test_run  # noqa: E402
 
 CLI = ROOT / 'skillsync'
@@ -40,9 +41,10 @@ def project(tmp, checkpoint='- 10:00 start; w toku: F1.1\n'):
 class Base(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix='test-run-')
+        guard_real_state(self)
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
         self.root = project(self.tmp)
-        self.env = {**os.environ, 'PYTHONDONTWRITEBYTECODE': '1', 'XDG_DATA_HOME': f'{self.tmp}/d', 'XDG_CACHE_HOME': f'{self.tmp}/c',
+        self.env = {**os.environ, 'PYTHONDONTWRITEBYTECODE': '1', **home_env(self.tmp),
                     'SKILLSYNC_CONFIG': f'{self.tmp}/cfg.yaml'}
 
     def run_cli(self, *args, root=None):

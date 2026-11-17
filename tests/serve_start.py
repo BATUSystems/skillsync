@@ -143,11 +143,21 @@ def lost_bind(output):
     return "BLOCKED" in output and "nasłuchiwać" in output
 
 
+def require_isolated_state(case, env):
+    """A server of a test writes its state file to the data directory of the user: Linux honours `XDG_DATA_HOME`, macOS follows `HOME` (`~/Library`) and
+    Windows `LOCALAPPDATA`. An environment that leaves the real one of THIS system in place would write into the real directory (and be seen by the real
+    pages of the user), so the test fails before the start (`home_env` in tests/layers_helpers.py moves all of them)."""
+    real = {'darwin': 'HOME', 'win32': 'LOCALAPPDATA'}.get(sys.platform)
+    if real and (not env.get(real) or env.get(real) == os.environ.get(real)):
+        case.fail(f'the environment of the server does not move {real}: it would write the state file into the real data directory (use home_env)')
+
+
 def start_serve(case, cli, root, layer, env, free_port, *extra, prepare=None, ready=None, deadline_s=20):
     """Start `dashboard serve <root> --port <p> *extra *layer` and wait until it is ready; returns `(proc, port)` or fails the test.
 
     `prepare(port)` runs before every try; `ready(port)` is an extra condition. A try that fails with BLOCKED (lost bind) is repeated on another
     port, any other failure ends the start."""
+    require_isolated_state(case, env)
     last, port = "", None
     for _attempt in range(ATTEMPTS):
         port = free_port()
@@ -196,6 +206,7 @@ def start_serve_ports(case, cli, root, layer, env, free_port, *extra, prepare=No
     listen on the default addresses otherwise (read: every interface, consents: loopback) and a test must not keep the server longer than it needs.
     `prepare(read_port, approve_port)` runs before every try; `ready(read_port, approve_port)` is an extra condition. A lost bind (BLOCKED)
     is repeated on other ports."""
+    require_isolated_state(case, env)
     last, ports_ = "", None
     for _attempt in range(ATTEMPTS):
         ports_ = two_free_ports(free_port)

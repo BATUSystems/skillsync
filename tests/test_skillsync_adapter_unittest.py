@@ -10,6 +10,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from layers_helpers import guard_real_state, home_env  # noqa: E402
 import adapter_replay as ar  # noqa: E402
 from adapter_replay import replay_fixture, replay, load, chunks_from_text, rechunk  # noqa: E402
 
@@ -274,6 +275,7 @@ class OnTheRealTool(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix='adapter-unittest-')
+        guard_real_state(self)
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
         self.root = Path(self.tmp) / 'p'
         (self.root / '.github').mkdir(parents=True)
@@ -282,7 +284,7 @@ class OnTheRealTool(unittest.TestCase):
         (self.root / 'test_tiny.py').write_text(
             'import time, unittest\n\n\nclass T(unittest.TestCase):\n    def test_a_ok(self):\n        pass\n\n    def test_b_slow(self):\n        time.sleep(0.5)\n\n'
             '    def test_c_red(self):\n        self.assertEqual(1, 2)\n\n    @unittest.skip("why")\n    def test_d_skip(self):\n        pass\n', encoding='utf-8')
-        self.env = {**os.environ, 'PYTHONDONTWRITEBYTECODE': '1', 'XDG_DATA_HOME': f'{self.tmp}/d', 'XDG_CACHE_HOME': f'{self.tmp}/c', 'SKILLSYNC_CONFIG': f'{self.tmp}/cfg.yaml'}
+        self.env = {**os.environ, 'PYTHONDONTWRITEBYTECODE': '1', **home_env(self.tmp), 'SKILLSYNC_CONFIG': f'{self.tmp}/cfg.yaml'}
 
     def run_it(self, *extra):
         return subprocess.run([sys.executable, str(CLI), 'test-run', str(self.root), '--run', 'R1', '--step', 'F1.1', *extra, '--', sys.executable, '-m', 'unittest', '-v', 'test_tiny'],

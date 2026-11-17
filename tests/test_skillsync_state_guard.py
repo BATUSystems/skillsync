@@ -67,5 +67,25 @@ class GuardRealState(unittest.TestCase):
                     __import__("shutil").rmtree(watched)
 
 
+class EveryEnvironmentMovesTheStateOfEverySystem(unittest.TestCase):
+    """180-W: a test module that builds its own environment with `XDG_DATA_HOME`/`XDG_CACHE_HOME` isolates only Linux (macOS keeps the data under
+    `~/Library` of `HOME`, Windows under `LOCALAPPDATA`): such a module must also use `home_env` or name `LOCALAPPDATA` and `HOME`. The runs on Linux cannot
+    see the difference, so this static check is the net for the modules that were added after the guard."""
+
+    def test_modules_with_xdg_isolation_also_move_the_other_systems(self) -> None:
+        import re
+        problems = []
+        for path in sorted((ROOT / "tests").glob("*.py")):
+            text = path.read_text(encoding="utf-8")
+            if path.name in ("layers_helpers.py", "test_skillsync_state_guard.py") or not re.search(r"XDG_(DATA|CACHE)_HOME", text):
+                continue
+            if "home_env(" in text or "isolated_environment(" in text or "isolated_paths(" in text:
+                continue
+            if "LOCALAPPDATA" in text and re.search(r"""["']HOME["']""", text):
+                continue
+            problems.append(path.name)
+        self.assertEqual(problems, [], "these modules isolate only XDG: use `home_env` (tests/layers_helpers.py)")
+
+
 if __name__ == "__main__":
     unittest.main()
