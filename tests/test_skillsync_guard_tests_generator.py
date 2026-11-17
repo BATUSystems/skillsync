@@ -40,12 +40,12 @@ class Settings(unittest.TestCase):
         self.assertEqual(guardhook.effective_test_mode({'hooks': {'guard_tests': 'off'}}, ['feature']), 'off')
         self.assertEqual(guardhook.effective_test_mode({'hooks': {'guard_tests': 'warn'}}, ['plain']), 'warn')
 
-    def test_it_is_dormant_until_the_hook_script_reads_the_arguments(self):
-        self.assertFalse(guardhook.TESTS_HOOK_READY, 'flip it together with the change of guard-commands.py (and then update this test)')
-        self.assertIsNone(guardhook.tests_config({}, ['feature']))
-        with mock.patch.object(guardhook, 'TESTS_HOOK_READY', True):
-            self.assertEqual(guardhook.tests_config({}, ['feature']), {'wide': 25, 'wrappers': []})
-            self.assertIsNone(guardhook.tests_config({'hooks': {'guard_tests': 'off'}}, ['feature']))
+    def test_the_part_is_on_and_can_be_switched_off_by_the_constant(self):
+        self.assertTrue(guardhook.TESTS_HOOK_READY)
+        self.assertEqual(guardhook.tests_config({}, ['feature']), {'wide': 25, 'wrappers': []})
+        self.assertIsNone(guardhook.tests_config({'hooks': {'guard_tests': 'off'}}, ['feature']))
+        with mock.patch.object(guardhook, 'TESTS_HOOK_READY', False):
+            self.assertIsNone(guardhook.tests_config({}, ['feature']))
 
     def test_the_command_round_trip(self):
         tests = {'wide': 12, 'wrappers': ['my-runner run', 'other']}
@@ -60,40 +60,42 @@ class Settings(unittest.TestCase):
         self.assertNotIn('--tests', guardhook.hook_command('python3', 'deny', ['x']))
 
 
-class Dormant(GuardBase):
-    def test_link_changes_nothing_while_the_part_is_dormant(self):
-        self.link()
-        entry = self.guard_entries(self.local())[0]['command']
-        self.assertNotIn('--tests', entry)
-        self.assertFalse((self.root / guardhook.TESTS_HOOK).exists())
-        self.assertFalse((self.root / guardhook.TOOLS_HOOK).exists())
-        self.assertNotIn('test-tools', (self.root / '.claude/.gitignore').read_text(encoding='utf-8'))
-
-    def test_a_bad_value_is_reported_by_link_while_dormant(self):
-        self.set_hooks(guard_tests='maybe')
-        result = self.link()
-        self.assertIn('hooks.guard_tests', result.stdout + result.stderr)
-
-
-class Active(GuardBase):
-    """`link` runs in a child process with `TESTS_HOOK_READY` switched on by the bootstrap code (the flag is a constant of the module, not a setting)."""
-    BOOT = ('import sys; sys.path.insert(0, {root!r}); from skillsync_workflow import guardhook, cli; guardhook.TESTS_HOOK_READY = True; '
-            'sys.argv = ["skillsync", "link"] + sys.argv[1:]; cli.run()')
+class DefaultLink(GuardBase):
+    """`link` of a project with the agent flow: the test part is part of the default hook."""
 
     def setUp(self):
         super().setUp()
         (self.library / 'hooks/guard-tests.py').write_bytes(CLASSIFIER.read_bytes())
 
-    def link(self, *args, code=0, env=None):
-        import subprocess
-        result = subprocess.run([sys.executable, '-c', self.BOOT.format(root=str(ROOT)), str(self.root), *args], capture_output=True, text=True, timeout=60, cwd=self.root,
-                                env={**os.environ, 'SKILLSYNC_CONFIG': str(self.config), 'HOME': str(self.home), **(env or {})})
-        self.assertNotIn('Traceback', result.stderr, result.stderr)
-        self.assertEqual(result.returncode, code, result.stdout + result.stderr)
-        return result
+    def test_a_feature_project_gets_the_test_part(self):
+        self.link()
+        entry = self.guard_entries(self.local())[0]['command']
+        self.assertIn('--tests warn --wide-modules 25', entry)
+        self.assertTrue((self.root / guardhook.TESTS_HOOK).is_file())
+        self.assertTrue((self.root / guardhook.TOOLS_HOOK).is_file())
+
+    def test_hooks_guard_tests_off_keeps_only_the_delete_guard(self):
+        self.set_hooks(guard_tests='off')
+        self.link()
+        self.assertNotIn('--tests', self.guard_entries(self.local())[0]['command'])
+        self.assertFalse((self.root / guardhook.TESTS_HOOK).exists())
+
+    def test_a_bad_value_is_reported_by_link(self):
+        self.set_hooks(guard_tests='maybe')
+        result = self.link()
+        self.assertIn('hooks.guard_tests', result.stdout + result.stderr)
+        self.assertNotIn('--tests', self.guard_entries(self.local())[0]['command'])
+
+
+class Active(GuardBase):
+    """`link` of a project with the agent flow and the classifier in the library."""
+
+    def setUp(self):
+        super().setUp()
+        (self.library / 'hooks/guard-tests.py').write_bytes(CLASSIFIER.read_bytes())
 
     def sync(self, dry_run=False):
-        result = self.link(*(['--dry-run'] if dry_run else []))
+        result = GuardBase.link(self, *(['--dry-run'] if dry_run else []))
         manifest = yaml.safe_load((self.root / '.github/.skillsync.yaml').read_text(encoding='utf-8'))
         return result, manifest
 
@@ -172,17 +174,14 @@ class Active(GuardBase):
     def test_doctor_reports_the_state(self):
         _, manifest = self.sync()
         skills = ['feature']
-        dormant = [item[2] for item in guardhook.doctor_findings(self.root, manifest, skills) if item[0] == 'warning']
-        self.assertTrue(any('differs' in text for text in dormant), 'dormant in this process: an entry with the test part is not what the doctor expects')
-        with mock.patch.object(guardhook, 'TESTS_HOOK_READY', True):
-            info = [item for item in guardhook.doctor_findings(self.root, manifest, skills) if item[0] == 'info']
-            self.assertTrue(info and 'test commands: warn' in info[0][2], info)
-            (self.root / guardhook.TOOLS_HOOK).unlink()
-            warned = [item[2] for item in guardhook.doctor_findings(self.root, manifest, skills) if item[0] == 'warning']
-            self.assertTrue(any('missing' in text for text in warned), warned)
-            manifest['hooks'] = {'guard_tests': 'off'}
-            warned = [item[2] for item in guardhook.doctor_findings(self.root, manifest, skills) if item[0] == 'warning']
-            self.assertTrue(any('differs' in text for text in warned), warned)
+        info = [item for item in guardhook.doctor_findings(self.root, manifest, skills) if item[0] == 'info']
+        self.assertTrue(info and 'test commands: warn' in info[0][2], info)
+        (self.root / guardhook.TOOLS_HOOK).unlink()
+        warned = [item[2] for item in guardhook.doctor_findings(self.root, manifest, skills) if item[0] == 'warning']
+        self.assertTrue(any('missing' in text for text in warned), warned)
+        manifest['hooks'] = {'guard_tests': 'off'}
+        warned = [item[2] for item in guardhook.doctor_findings(self.root, manifest, skills) if item[0] == 'warning']
+        self.assertTrue(any('differs' in text for text in warned), warned)
 
 
 if __name__ == '__main__':

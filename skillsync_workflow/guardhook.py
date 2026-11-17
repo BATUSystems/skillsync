@@ -3,7 +3,7 @@
 Test commands (180-J2): the same hook also WARNS (never blocks) about a wide test run outside `skillsync test-run`: `hooks.guard_tests: warn | off`
 (default `warn` in agent-flow projects, `off` elsewhere), `hooks.test_wrappers` (command prefixes that count as a wrapper) and `hooks.wide_modules`. The classifier is
 `library/hooks/guard-tests.py` and the table of the tools is `test-tools.json`, both copied next to the hook. `TESTS_HOOK_READY` keeps the whole part dormant until
-`guard-commands.py` understands the arguments (it is flipped together with that change).
+`guard-commands.py` understands the arguments (it is on since 180-J2).
 
 Skrypt hooka to `library/hooks/guard-commands.py` (kopiowany do `.claude/hooks/`). Wpis trafia do `.claude/settings.local.json`
 obok hooka zamknięcia; generator zarządza wyłącznie własnym wpisem. Tryb: `hooks.guard_delete: deny | off`; brak klucza = `deny`
@@ -20,7 +20,7 @@ TESTS_HOOK = '.claude/hooks/guard-tests.py'
 TOOLS_HOOK = '.claude/hooks/test-tools.json'
 TEST_MODES = ('warn', 'off')
 DEFAULT_WIDE_MODULES = 25
-TESTS_HOOK_READY = False   # flipped with the change of guard-commands.py that reads --tests (after the Windows fixes of the same file)
+TESTS_HOOK_READY = True   # guard-commands.py reads --tests (180-J2); False would keep the whole test part dormant (nothing written, no argument)
 SETTINGS = '.claude/settings.local.json'
 FLOW_SKILLS = ('feature', 'agentflow', 'dispatch')
 MODES = ('deny', 'off')
@@ -194,21 +194,21 @@ def doctor_findings(root, manifest, skills):
     script = root / GUARD_HOOK
     command = installed(root / SETTINGS)
     if command is False:
-        return found + [('warning', SETTINGS, 'Unreadable settings: the guard hook state is unknown')]
+        return found + [('warning', SETTINGS, 'Unreadable settings: the delete guard hook state is unknown')]
     if mode == 'off' and tests is None:
         if command or script.is_file():
-            found.append(('warning', SETTINGS, 'Guard hook is installed but switched off in the manifest; run `skillsync link` to remove it'))
+            found.append(('warning', SETTINGS, 'Delete guard hook is installed but switched off in the manifest; run `skillsync link` to remove it'))
         return found
     if not script.is_file() or command is None:
-        found.append(('warning', SETTINGS, 'Guard hook (PreToolUse) is wanted but not installed; run `skillsync link`'))
+        found.append(('warning', SETTINGS, 'Delete guard hook (PreToolUse) is wanted but not installed; run `skillsync link`'))
         return found
     installed_mode, installed_allow = command_args(command)
     if installed_mode != mode or installed_allow != allow or command_tests(command) != tests:
-        found.append(('warning', SETTINGS, 'Guard hook differs from the manifest (mode, hooks.delete_allow or the hooks.guard_tests settings); run `skillsync link`'))
+        found.append(('warning', SETTINGS, 'Delete guard hook differs from the manifest (mode, hooks.delete_allow or the hooks.guard_tests settings); run `skillsync link`'))
         return found
     if tests is not None and not ((root / TESTS_HOOK).is_file() and (root / TOOLS_HOOK).is_file()):
         found.append(('warning', TOOLS_HOOK, 'The test commands part of the guard hook is on but its files (guard-tests.py, test-tools.json) are missing: the part stays silent; run `skillsync link`'))
         return found
     parts = f'delete guard mode {mode}, {len(allow)} extra allowed path(s)' + (f'; test commands: warn (wide run from {tests["wide"]} modules, {len(tests["wrappers"])} extra wrapper(s))' if tests else '')
-    found.append(('info', SETTINGS, f'Guard hook active: {parts}'))
+    found.append(('info', SETTINGS, f'Delete guard hook active: {parts}'))
     return found

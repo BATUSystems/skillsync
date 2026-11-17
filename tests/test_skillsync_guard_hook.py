@@ -457,6 +457,7 @@ class GuardBase(WorkflowFixture):
         super().setUp()
         (self.library / 'hooks').mkdir()
         (self.library / 'hooks/guard-commands.py').write_bytes(HOOK.read_bytes())
+        (self.library / 'hooks/guard-tests.py').write_bytes((HOOK.parent / 'guard-tests.py').read_bytes())
         for name in ('feature', 'dispatch', 'plain'):
             skill = self.library / 'skills' / name
             skill.mkdir(parents=True)
@@ -569,7 +570,7 @@ class GuardLink(GuardBase):
         self.write(self.LOCAL, json.dumps({'hooks': {'PreToolUse': [{'matcher': 'Bash', 'hooks': [{'type': 'command', 'command': 'foreign-pre'}]}]}}))
         self.link()
         self.assertTrue((self.root / self.HOOK_PATH).exists())
-        self.set_hooks(guard_delete='off')
+        self.set_hooks(guard_delete='off', guard_tests='off')
         self.link()
         self.assertFalse((self.root / self.HOOK_PATH).exists())
         data = self.local()
@@ -577,7 +578,7 @@ class GuardLink(GuardBase):
         self.assertIn('foreign-pre', json.dumps(data['hooks']['PreToolUse']))
 
     def test_off_in_a_never_linked_project_creates_nothing(self):
-        self.set_hooks(guard_delete='off')
+        self.set_hooks(guard_delete='off', guard_tests='off')
         self.link()
         self.assertFalse((self.root / self.HOOK_PATH).exists())
         if (self.root / self.LOCAL).exists():
@@ -608,7 +609,7 @@ class GuardLink(GuardBase):
         group['hooks'].append(self.guard_entries(data)[0])  # a user merged our hook into their group
         data['hooks']['PreToolUse'] = [group]
         (self.root / self.LOCAL).write_text(json.dumps(data), encoding='utf-8')
-        self.set_hooks(guard_delete='off')
+        self.set_hooks(guard_delete='off', guard_tests='off')
         self.link()
         self.assertEqual(self.guard_entries(self.local()), [])
         self.assertIn('foreign-pre', json.dumps(self.local()['hooks']['PreToolUse']))
@@ -712,7 +713,7 @@ class GuardDoctor(GuardBase):
         found, _ = self.guard_findings()
         self.assertEqual([f['level'] for f in found], ['warning'])
         self.assertIn('differs', found[0]['reason'])
-        self.set_hooks(guard_delete='off')
+        self.set_hooks(guard_delete='off', guard_tests='off')
         found, _ = self.guard_findings()
         self.assertIn('switched off', found[0]['reason'])
 
