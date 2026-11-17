@@ -47,7 +47,7 @@ from . import dashboard_token
 from . import test_events
 from . import stopsignal
 from . import status as status_core
-from .common import emit, load_layer_project, read_project, redact
+from .common import emit, file_lines, load_layer_project, read_project, redact
 from .layers import LayerError
 from .prototype_server import LingeringCloseMixin
 
@@ -337,6 +337,154 @@ def render_markdown(text: str, doc_path: str = "") -> str:
 
 # --------------------------------------------------------------------------- helpers
 
+RESULT_VISIBLE_LINES = 12
+_HEADING = re.compile(r"^\s{0,3}#{1,6}\s")
+
+
+def split_result(text: str, visible: int = RESULT_VISIBLE_LINES) -> tuple[str, str, int]:
+    """`(head, rest, rest_lines)` of the `## Wynik` text for the collapsed view: the cut falls only BETWEEN Markdown blocks, never inside a
+    table, a list (also a loose one), a fenced code block or a paragraph. A cut point is the line that starts a block: it follows a blank
+    line (or is a heading), the cut is not inside a fence, and the line is not a list item that continues a list. Rule: the last cut point
+    at or before `visible` lines whose head holds more than headings (so the head is never only a title), else the first cut point after them
+    (a long table or list stays whole); no cut point at all = no `rest`. Text of `visible` lines or fewer is not cut."""
+    lines = file_lines(text)   # CRLF, LF and a lone CR only: LS, PS, NEL and the like stay inside the line (see the guard of the line ends)
+    while lines and not lines[-1].strip():
+        lines.pop()
+    if len(lines) <= visible:
+        return "\n".join(lines), "", 0
+    in_fence, fence, safe = False, "", []
+    last_filled = ""   # the last non-blank line before the current one (to tell a list continuation from a new block)
+    for i, line in enumerate(lines):
+        match = _FENCE.match(line)
+        if i > 0 and not in_fence and line.strip() and (not lines[i - 1].strip() or _HEADING.match(line)):
+            continues_list = bool(_LIST_ITEM.match(line)) and bool(_LIST_ITEM.match(last_filled) or last_filled[:1] in (" ", "\t"))
+            if not continues_list:
+                safe.append(i)
+        if match:
+            marker = match.group("fence")[0]
+            if not in_fence:
+                in_fence, fence = True, marker
+            elif marker == fence:
+                in_fence = False
+        if line.strip():
+            last_filled = line
+    meaningful = [i for i in safe if any(x.strip() and not _HEADING.match(x) for x in lines[:i])]
+    before = [i for i in meaningful if i <= visible]
+    after = [i for i in safe if i > visible]
+    cut = before[-1] if before else (after[0] if after else None)
+    if cut is None:
+        return "\n".join(lines), "", 0
+    return "\n".join(lines[:cut]).rstrip(), "\n".join(lines[cut:]), len(lines) - cut
+
+
+def result_html(result: dict) -> dict:
+    """The `result` of the status plus `html` (the visible part), `moreHtml` and `moreLines` (the collapsed rest), rendered by the same
+    safe `render_markdown` as `/api/doc` (raw HTML escaped, only safe link schemes). The text was masked as a whole when the plan was read
+    (`engine.read_masked`), before any cut; `redact` of the whole answer stays the second layer. `text` and `path` stay as they were."""
+    head, rest, rest_lines = split_result(result["text"])
+    path = result.get("path") or ""
+    answer = dict(result, html=render_markdown(head, path))
+    if rest:
+        answer["moreHtml"] = render_markdown(rest, path)
+        answer["moreLines"] = rest_lines
+    return answer
+
+
+# Inline Markdown of single-line texts of the status page (step titles, "waiting for" items, expert questions): the same safe inline renderer
+# as the document view, no blocks. A field `<name>Html` is added only when the text really has formatting (otherwise the plain text is shown).
+_INLINE_SPANS = re.compile(r"(`+).+?\1|!?\[[^\]]*\]\([^)]*\)|\*\*.+?\*\*|__.+?__|~~.+?~~|<https?://[^>\s]+>")
+
+
+def cut_inline(text: str, limit: int) -> str:
+    """`text` cut to `limit` characters (+ an ellipsis) so that the cut never falls inside a code span, a link, a bold or strike-through
+    span: a span the limit would cut is dropped whole. The cut is made on the SOURCE, before rendering, so it can never cut a tag."""
+    if len(text) <= limit:
+        return text
+    cut = limit
+    for span in _INLINE_SPANS.finditer(text):
+        if span.start() < limit < span.end():
+            cut = span.start()
+            break
+    return text[:cut].rstrip() + "…"
+
+
+def inline_html(text: object, limit: int = 0) -> str | None:
+    """Safe inline HTML of a one-line text, or None when it has no formatting (the client then shows the plain text)."""
+    if not isinstance(text, str) or not text.strip():
+        return None
+    source = " ".join(text.split())
+    if limit:
+        source = cut_inline(source, limit)
+    rendered = render_inline(source)
+    return rendered if rendered != html.escape(source, quote=False) else None
+
+
+# The feed of checkpoints highlights step ids and key phrases (the same patterns as the page's `decorateCheckpoint`, ASCII word rules like JS).
+_FEED_ID = re.compile(r"(?<![\w-])([A-Z]{1,3}-?\d+[a-z]?)(?![\w-])", re.ASCII)
+_FEED_PHRASE = re.compile(r"\b(zrobione|w toku|ryzyko|PASS|FAIL|BLOCKED|restart sesji)\b", re.ASCII | re.IGNORECASE)
+_TAG = re.compile(r"(<[^>]*>)")
+
+
+def decorate_feed_html(rendered: str) -> str:
+    """`rendered` (the escaped HTML of `render_inline`) with step ids in `<span class="sidc">` and phrases in `<span class="ph">`, only in the TEXT
+    segments between tags and never inside `<code>` or `<a>` (nor in attributes: a tag is never touched). The segments are already escaped, and
+    the matches are ASCII letters, digits and spaces, so nothing is injected."""
+    out, depth = [], 0
+    for part in _TAG.split(rendered):
+        if part.startswith("<") and part.endswith(">"):
+            name = part[1:].lstrip("/").split(None, 1)[0].rstrip(">").lower() if len(part) > 2 else ""
+            if name in ("code", "a"):
+                depth = max(0, depth - 1) if part.startswith("</") else depth + 1
+            out.append(part)
+        elif depth or not part:
+            out.append(part)
+        else:
+            pieces, last = [], 0
+            for found in _FEED_ID.finditer(part):
+                pieces.append(_decorate_phrases(part[last:found.start()]))
+                pieces.append(f'<span class="sidc">{found.group(1)}</span>')
+                last = found.end()
+            pieces.append(_decorate_phrases(part[last:]))
+            out.append("".join(pieces))
+    return "".join(out)
+
+
+def _decorate_phrases(text: str) -> str:
+    return _FEED_PHRASE.sub(lambda found: f'<span class="ph">{found.group(1)}</span>', text)
+
+
+def add_inline_html(data: dict) -> dict:
+    """Additive fields of `/api/status` (`schema` stays 1): `titleHtml` of the plan steps, of `substeps` and of `progress.current`,
+    `textHtml` of `run.checkpoints[]` (the feed), `whatHtml` and `actionHtml` of `waiting[]` (the action text repeats the item), `textHtml` of `expertQuestions.items[]` (cut to the same 160 characters as the plain text). The texts were
+    masked when the plan and the checkpoints were read; `text`, `title`, `what` stay as they were (tooltips and `title`/`aria` use them)."""
+    def put(item: object, source: str, out: str, limit: int = 0) -> None:
+        if isinstance(item, dict):
+            rendered = inline_html(item.get(source), limit)
+            if rendered:
+                item[out] = rendered
+
+    progress = data.get("progress")
+    if isinstance(progress, dict):
+        for phase in progress.get("phases") or []:
+            for step in (phase.get("steps") or []) if isinstance(phase, dict) else []:
+                put(step, "title", "titleHtml")
+        put(progress.get("current"), "title", "titleHtml")
+    run = data.get("run")
+    for item in (run.get("checkpoints") or []) if isinstance(run, dict) else []:
+        put(item, "text", "textHtml")
+        if isinstance(item, dict) and isinstance(item.get("textHtml"), str):
+            item["textHtml"] = decorate_feed_html(item["textHtml"])
+    for item in data.get("substeps") or []:
+        put(item, "title", "titleHtml")
+    for item in data.get("waiting") or []:
+        put(item, "what", "whatHtml")
+        put(item, "action", "actionHtml")
+    questions = data.get("expertQuestions")
+    for item in (questions.get("items") or []) if isinstance(questions, dict) else []:
+        put(item, "text", "textHtml", 160)
+    return data
+
+
 def log(msg: str) -> None:
     print(f"[dashboard {datetime.now():%H:%M:%S}] {msg}", file=sys.stderr, flush=True)
 
@@ -557,6 +705,12 @@ class Board:
 
     # --- status (the same JSON as `dashboard show`, plus the live state)
     def status(self, plan_rel: str | None = None) -> dict:
+        data = self._status(plan_rel)
+        if isinstance(data.get("result"), dict) and isinstance(data["result"].get("text"), str):
+            data["result"] = result_html(data["result"])
+        return add_inline_html(data)
+
+    def _status(self, plan_rel: str | None = None) -> dict:
         return engine.build_status(
             self.root, plan_rel or self.default_plan, manifest=self.manifest(), approvals=self.approvals,
             session_url=self.session_url, prototype_port=self.prototype_port, version=self.version,

@@ -11,7 +11,7 @@ i wiele sesji) jest w [workflow-details.md](workflow-details.md). Wersję HTML o
 w przeglądarce buduje `python3 docs/site/build.py` do `docs/site/out/` (katalog poza gitem; opis w
 [site/README.md](site/README.md)).
 
-Stan opisu: Skillsync `v1.8.0`.
+Stan opisu: Skillsync `v1.9.0`.
 
 ## Słownik
 
@@ -46,7 +46,8 @@ Stan opisu: Skillsync `v1.8.0`.
 | Protokół wielu sesji | `../library/skills/feature/references/multi-session.md` | **jedyne** źródło protokołu (aliasy, gramatyka wiadomości, dzierżawy, PUSH SLOT, ID, raporty, wygaszanie) |
 | Klucze przyczyn | `workflow/cause-keys.yaml` | krótka lista `--cause-key` z aliasami dla checkpointów i `retro` |
 | Ostrzeżenie o gołych testach | `hooks/guard-commands.py --tests warn`, `guard-tests.py`, `test-tools.json` | druga część tego samego hooka PreToolUse (`hooks.guard_tests`, `hooks.test_wrappers`, `hooks.wide_modules`): **ostrzega, nigdy nie blokuje**, gdy agent uruchamia szeroki bieg testów poza `skillsync test-run`; tabela narzędzi (`skillsync_workflow/data/test_tools.json`) jest jedna dla `detect_tool` i hooka; błąd tej części nie wyłącza odmowy usuwania; granice w [test-run](../library/skills/workflow/references/test-run.md) |
-| Hook ochronny usuwania | `hooks/guard-commands.py` | hook PreToolUse na `Bash` (projekty z `feature` lub `dispatch`; `hooks.guard_delete: off` wyłącza, `hooks.delete_allow` dopisuje cele wolne od blokady): odmawia trwałego usunięcia (`rm -r`, `git clean -f`, `git worktree remove --force`, `find -delete`, `rmtree` w `python -c`) z gotową komendą kosza; jednorazowy wyjątek po zgodzie użytkownika: prefiks `SKILLSYNC_GUARD_EXCEPT='<powód>'` (ślad w `.skillsync/hook-exceptions.jsonl`; prefiks przy `bash -c '…'`/`eval` obejmuje cały wewnętrzny tekst). Siatka przeciw pomyłce, nie granica bezpieczeństwa: czyta tekst komendy |
+| Zakaz stopek i podpisów narzędzi AI | `hooks/guard-commands.py --attribution on`, `hooks/attribution-patterns.json`, klucz `attribution` w `settings.local.json` | pierwsza, **niewyłączalna** część tego samego hooka PreToolUse w każdym projekcie z Claude Code: odmawia poleceń, które PISZĄ tekst (`git commit`/`tag`/`merge`, `gh`/`glab`/`az` z `create`/`edit`/`update`/`comment`, `gh api` z polami), gdy argumenty, heredoc albo plik `-F`/`--body-file` zawierają stopkę lub trailer narzędzia AI; nie blokuje poleceń, które tylko czytają lub cytują tekst; bez jednorazowego wyjątku; brak lub uszkodzenie danych = hak milczy, a `doctor` daje FAIL; wzorce w jednym pliku danych (`skillsync_workflow/data/attribution-patterns.json`, `enforce` wskazuje klasy w mocy) |
+| Hook ochronny usuwania | `hooks/guard-commands.py` | część hooka PreToolUse na `Bash` (projekty z `feature` lub `dispatch`; `hooks.guard_delete: off` wyłącza tę część, `hooks.delete_allow` dopisuje cele wolne od blokady): odmawia trwałego usunięcia (`rm -r`, `git clean -f`, `git worktree remove --force`, `find -delete`, `rmtree` w `python -c`) z gotową komendą kosza; jednorazowy wyjątek po zgodzie użytkownika: prefiks `SKILLSYNC_GUARD_EXCEPT='<powód>'` (ślad w `.skillsync/hook-exceptions.jsonl`; prefiks przy `bash -c '…'`/`eval` obejmuje cały wewnętrzny tekst). Siatka przeciw pomyłce, nie granica bezpieczeństwa: czyta tekst komendy |
 | Hook zamknięcia | `hooks/check-closure.py` | hook Stop: plan `done` bez rekordu `--final` przebiegu zatrzymuje turę (raz na sesję i plan) |
 | Konfiguracja | `workflow/defaults.yaml` → `workflow/projects/<slug>.yaml` → `workflow:` w manifeście | routing, kontrole, budżety, reguły testów, profile: [manifest.md](manifest.md) |
 
@@ -356,6 +357,48 @@ z `load: bootstrap` wraca przed doborem plików, więc glosariusz może wyjaśni
 Kandydaci na terminy trafiają do planu, a do glosariusza tylko terminy potwierdzone ze źródłem. Dokumentacja, changelog
 i ustalona wersja są w diffie przed rundą 1 pętli końcowej `kod`. W tym repo: [domain/](domain/),
 [lessons/](lessons/).
+
+### Katalogi wiedzy: ciąg albo lista
+
+`workflow.knowledge.domain` (ścieżka kończy się `docs/domain`) i `workflow.knowledge.lessons` (`docs/lessons`) przyjmują
+ciąg (jak dotąd) albo listę ciągów, gdy produkt składa się z kilku repozytoriów i rekordy ma jedno z nich:
+
+```yaml
+# manifest repo B: własne rekordy i rekordy repo A (siostrzany katalog)
+workflow:
+  knowledge:
+    domain: [docs/domain, ../repo-a/docs/domain]
+```
+
+- Ciąg ≡ lista jednoelementowa. Element: ścieżka względna z `/`, kończąca się `docs/domain` (`docs/lessons`), w projekcie
+  albo jego katalogu nadrzędnym; bez duplikatów (także przez `..` i dowiązanie), najwyżej 8 elementów. Błąd konfiguracji
+  podaje numer elementu (`workflow.knowledge.domain[1] must end with docs/domain`).
+- Kolejność wyniku `route`: lekcje warstw, potem katalogi w kolejności listy, w katalogu kolejność `index.yaml`. Rekord
+  `load: bootstrap` zwracany jest z każdego katalogu. Rekordy z różnych katalogów się nie zlewają (tożsamością jest ścieżka pliku).
+- Katalog bez `index.yaml` `route` pomija (repozytorium właściciela może nie być sklonowane); `doctor` ostrzega per
+  element i rozróżnia „katalog istnieje” od „katalog nie istnieje (czy repozytorium właściciela jest sklonowane?)”.
+  Ostrzeżenie „rozproszona wiedza” pomija katalogi z listy. Gdy suma rekordów `load: bootstrap` ze wszystkich katalogów
+  przekracza 24576 B, `doctor` ostrzega i wymienia katalogi.
+- Lista `domain` bez `lessons`: `docs/lessons` obok każdego katalogu domeny.
+- `knowledge init` przy liście tworzy pliki tylko w katalogach leżących wewnątrz projektu; pozostałe zwraca w polu
+  `skipped` (`owned by another repository; run knowledge init there`). Forma tekstowa działa jak dotąd.
+
+**Współrzędne `paths` rekordu.** Plik zmieniony w projekcie jest dopasowywany do `paths` rekordu w współrzędnych jego
+katalogu: względem katalogu zawierającego `docs/`, gdy projekt leży w tym katalogu (także wspólny katalog nadrzędny:
+`repo-b/src/**`), a gdy plik leży poza nim (siostrzane repozytorium, katalog zagnieżdżony w projekcie), z przedrostkiem
+**nazwy katalogu projektu**: `repo-b/src/**`. Rekord w repo A pisze więc `src/**` (kod A) i `repo-b/src/**` (kod B) i działa
+z obu projektów. Lekcje: forma tekstowa (i brak klucza przy tekstowej domenie) dopasowuje `paths` względem korzenia projektu
+jak dotąd; forma listy używa współrzędnych katalogu jak domena.
+
+**Znane ograniczenie.** Przedrostek to nazwa katalogu klonu: gdy ten sam projekt ma na dwóch maszynach (albo w CI)
+różne nazwy katalogów (także worktree gita o innej nazwie niż klon, z którego `../repo-a` wskazuje inny katalog), rekord z `repo-b/...` nie dopasuje się, a `doctor` tego nie widzi. Nazwy katalogów klonów
+produktu powinny być jednakowe. Jawną nazwę niezależną od katalogu można dodać później: elementy listy mogą stać się
+mapami bez łamania list ciągów.
+
+Lista wprowadza do kontekstu sesji rekordy (w tym `bootstrap`) spoza repozytorium projektu: element wskazuje dowolny siostrzany katalog `../<nazwa>/docs/domain`, więc manifest powinien wymieniać tylko repozytoria tego samego produktu. `knowledge init` przy liście sprawdza także ścieżkę po rozwinięciu dowiązań, ale lekcje podane jako ciąg (`lessons: ../docs/lessons`) zachowują stary zapis poza projektem.
+
+Treść katalogu obcego repozytorium nie jest skanowana przez strażnika wycieków przy commicie w tym projekcie (skanuje ją
+strażnik repozytorium właściciela).
 
 ## Pętla samodoskonalenia
 

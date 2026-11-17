@@ -369,7 +369,7 @@ Wpisy tylko dopisujesz. Bieżący stan i diff propozycji to jej ostatni wpis. `d
    „TAK <run-id>/P<n>” to pytanie bez wpisu. „NIE” zapisuje `rejected`, „POPRAW” `revising`, a nowy diff `open`.
 2. „TAK” dla propozycji `applied` nie robi nic poza odpowiedzią z jej `ref`: bez nowego wpisu i bez commita.
 3. Idempotencja (zmiana już w pliku): `ref` to najnowszy commit celu, którego pierwsza linia komunikatu jest oczekiwanym
-   komunikatem tej propozycji (`retro: <tytuł> (P<n>)` albo komunikat projektu, który też kończy się `(P<n>)`; stopki dozwolone); brak takiego commita albo zmiana
+   komunikatem tej propozycji (`retro: <tytuł> (P<n>)` albo komunikat projektu, który też kończy się `(P<n>)`; stopki dozwolone, z wyjątkiem stopek i trailerów narzędzi AI); brak takiego commita albo zmiana
    niezatwierdzona = pytanie.
 4. Sygnał z `attached_to` zostaje tylko w `retro-signals.json` bieżącego przebiegu; pliki tamtego przebiegu się nie
    zmieniają. „Wynik” wymienia tamtą propozycję z jej bieżącym diffem, gdy jego plik istnieje (inaczej tytuł, cel

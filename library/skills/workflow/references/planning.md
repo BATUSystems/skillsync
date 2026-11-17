@@ -20,3 +20,6 @@ Krok ma stabilne id, kolumnę Exec (`inline|dispatch|group` + klasa modelu) i wp
 checkpoint wiąże je z fingerprintem aktualnych staged/unstaged/untracked zmian.
 Przed wznowieniem sprawdź plan, źródła instrukcji, baseline, stare porażki i otwarte review.
 Nie powtarzaj udanych kontroli na niezmienionym stanie, nie zachowuj PASS po zmianie kodu.
+
+Dobór modeli i ról: oceń kompromis koszt/możliwości. Tańsza rola do lokalizacji i wykonania kontroli, silniejsza do implementacji i review,
+eskalacja tylko trudnego kroku. Model sesji wybiera użytkownik; instrukcja tekstowa go nie przełącza.

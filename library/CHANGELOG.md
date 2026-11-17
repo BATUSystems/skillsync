@@ -4,6 +4,23 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-11-17
+
+### Added
+
+- `instructions/_base.md`: a fixed rule against footers, signatures and co-author trailers of AI tools in outgoing text; it cannot be overridden by layers or host notes.
+- `hooks/guard-commands.py`: a part that cannot be switched off refuses commands that write such text (commits, tags, pull requests, issues, work items) and is installed in every project with a host.
+- Skill `dashboard`: inline formatting of step titles, "waiting for" items, expert questions and the checkpoint feed; the "Wynik" section as Markdown; time of acts I and II and an approximate end of the plan steps; the list of theme tokens of the renderer.
+- Skill `skillsync` and `workflow/references/knowledge.md`: `workflow.knowledge.domain` and `workflow.knowledge.lessons` accept a list of directories.
+
+### Changed
+
+- The paragraph on the cost and capability trade-off of models moved from `instructions/_base.md` to `skills/workflow/references/planning.md` (section on models and roles).
+- `feature/references/retro-quality.md`: no AI tool footers in retro records.
+
+### Fixed
+
+- `prototype/assets/repo/prototype.css`: the sign-in and own-password dialogs of the engine have one container, a spaced footer and a single focus ring; run `skillsync prototype migrate`, the acceptance of screens stays valid.
 ## [1.8.0] - 2026-11-17
 
 ### Added

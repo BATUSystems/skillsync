@@ -41,6 +41,10 @@ Wydanie 1.4.0 jest MINOR (zgodne wstecz): sekcja **Breaking** w `CHANGELOG.md` t
 4. Raporty `prototype comments`, `prototype wait` i `question list|show|export|wait` mają dwa nowe klucze na początku (`untrusted`, `notice`); konsument pomijający nieznane klucze nie jest dotknięty.
 5. Uruchom ponownie działający `prototype serve` i serwer strony statusu.
 
+## Przejście 1.8.0 → 1.9.0
+
+- **Prototypy: arkusz silnika `prototype.css` zmieniony** (układ okien logowania i ustawienia hasła). Istniejący prototyp dostaje poprawkę dopiero po `skillsync prototype migrate <slug>` (plik silnika jest kopiowany do katalogu prototypu). Akceptacje ekranów zostają ważne: `prototype.css` nie wchodzi do skrótu ekranu, a `migrate` zapisuje skrót wymienianego pliku w `prototype.json` (zgodność ze starszym wzorem). `components.css` i `screens.css` bez zmian.
+
 ## Przejście 1.4.0 → 1.4.1
 
 Wydanie 1.4.1 jest PATCH (zgodne wstecz w kontraktach: sekcja **Breaking** w `CHANGELOG.md` to „None.”), ale zmienia mechanizm blokady pliku zgód `approvals.jsonl` (zob. [dashboard-contract](dashboard-contract.md), „Blokada”).
@@ -70,6 +74,12 @@ Wydanie 1.6.1 jest PATCH (sekcja **Breaking** w `CHANGELOG.md` to „None.”) z
 4. Projekt, który śledzi w git dowiązania skilli: po `git worktree add` uruchom `skillsync link <worktree>`; `doctor` ostrzega o śledzonych plikach generowanych i podaje gotowe `git rm --cached`. Na Windows z `core.symlinks=false` git zapisuje śledzone dowiązanie jako zwykły plik: `doctor` nazywa ten stan, a `skillsync link <projekt>` zastępuje takie pliki.
 5. Konsument JSON-a `doctor`: `reason` znalezisk „Missing installed skill” i o dowiązaniu bez celu kończy się podpowiedzią `run skillsync link <projekt>`, więc dopasowuj początek tekstu. Raport `guard` może mieć pola `skipped` i `reason`.
 6. `layers check`, `doctor` i `link` ostrzegają (`rule-unreachable`) o wpisie `layer_rules`, którego `match` powtarza wcześniejszy: scal takie wpisy w jeden.
+
+## Przejście 1.8.0 → 1.9.0
+
+- **`prototype serve`: dziennik tylko przez API.** `GET /<slug>/comments.json` i `GET /<slug>/comments.js` (także w korzeniu) zwracają `404` dla każdej roli, z `--login-to-view` i bez; tak samo działał już pokaz (`serve --demo`). Skrypt zewnętrzny, który pobierał `comments.json` po HTTP z `serve`, ma czytać `GET /_api/v1/prototypes/<slug>/operations` (te same operacje, ta sama bramka sesji; odpowiedź ma dodatkowo `people` i stan akceptacji) albo plik z dysku/repozytorium.
+- Silnik prototypu nie wymaga zmian: pod `serve` czyta API, a na zwykłym hostingu statycznym (bez API skillsync) nadal czyta `comments.json` z tego hosta w trybie „tylko odczyt”. `migrate` nie ma nic do zrobienia; akceptacje i hashe ekranów bez zmian (plik jest poza hashem).
+- Poufność się nie zmienia: API nigdy nie filtrowało operacji po roli, więc nowa jest spójność, nie ukrycie czegokolwiek.
 
 ## Przejście 1.7.0 → 1.8.0
 
@@ -110,10 +120,10 @@ Wydanie 1.8.0 ma dwie zmiany zachowania (sekcja **Breaking** w `CHANGELOG.md`): 
      Narzędzia webowe nie drukują linii startu pojedynczego testu, więc test jest „oczekujący” do wyniku. Linia `adapter <nazwa>` na stderr mówi, który adapter wybrano albo jak go wskazać (`--format <nazwa>`, `--format none`).
    - **Wyniki testów nie są maskowane** (strona statusu, także port odczytu widoczny w sieci lokalnej, i pliki `.skillsync/runs/<run>/tests/`): sprawdź, czy `.skillsync/` jest w `.gitignore` (`doctor`: `runs-not-ignored`), a kto chce maskę, ustawia `tests.mask: on` w `.github/.skillsync.yaml`. Maskowanie wiersza polecenia biegu jest heurystyką.
    - Konsument JSON `skillsync status` i strony statusu: przyjmij nieznaną wartość `tests` w `plans[].needsHuman` (krok testowy zamknięty bez testów) oraz nowe opcjonalne pola `tests`, `progress.phases[].steps[].tests`, `lanUrls` i `bind` w plikach stanu. Wtyczka edytora ignoruje nieznane pola, a zakładkę „Testy” dostanie z własnym wydaniem.
-9. **Haki Claude Code (projekty ze skillem `feature`, `agentflow` albo `dispatch`).** Po następnym `skillsync link` projekt dostaje w ignorowanym `.claude/settings.local.json` wpis `PreToolUse` na `Bash` i skrypty w `.claude/hooks/`:
+9. **Haki Claude Code.** Po następnym `skillsync link` projekt dostaje w ignorowanym `.claude/settings.local.json` wpis `PreToolUse` na `Bash` i skrypty w `.claude/hooks/` (część usuwania i ostrzeżenie o testach: projekty ze skillem `feature`, `agentflow` albo `dispatch`; zakaz stopek narzędzi AI: każdy projekt z Claude Code, zob. „Przejście 1.8.0 → 1.9.0”):
    - `guard-commands.py` odmawia trwałego usuwania (`rm -r`, `git clean -f`, `git worktree remove --force`, `find -delete`, ...) poza katalogami tymczasowymi i odtwarzalnymi; odmowa podaje zamiennik (`trash -- <ścieżki>`). Jednorazowy wyjątek zatwierdza użytkownik (`SKILLSYNC_GUARD_EXCEPT='<powód>'`, ślad w `.skillsync/hook-exceptions.jsonl`). Klucze: `hooks.guard_delete: deny|off`, `hooks.delete_allow`.
    - Ten sam wpis niesie ostrzeżenie o szerokim biegu testów poza `skillsync test-run`: `guard-tests.py` i `test-tools.json` obok. Ostrzega, nigdy nie blokuje, i odzywa się po wykonaniu polecenia. Klucze: `hooks.guard_tests: warn|off`, `hooks.test_wrappers` (prefiksy liczone jak opakowanie), `hooks.wide_modules` (od ilu modułów `unittest` bieg jest szeroki, domyślnie 25).
-   - Wpis i skrypty znikają przy `link`, dopiero gdy wyłączone są OBA: `hooks: {guard_delete: off, guard_tests: off}`. Samo `guard_delete: off` zostawia hak, dopóki ostrzeżenie o testach jest włączone. Śledzony `settings.local.json` nigdy nie jest zapisywany. Hak nie widzi narzędzia PowerShell. `skillsync link --dry-run` pokazuje zmianę, `doctor` stan.
+   - `hooks: {guard_delete: off, guard_tests: off}` wyłącza obie te części, a wpis i skrypty zostają, bo niosą zakaz stopek narzędzi AI. Śledzony `settings.local.json` nigdy nie jest zapisywany. Hak nie widzi narzędzia PowerShell. `skillsync link --dry-run` pokazuje zmianę, `doctor` stan.
 
 ## Przejście 1.6.1 → 1.7.0
 
@@ -290,6 +300,17 @@ Reguła `**` dla projektów bez innej reguły tworzy `layers migrate` albo ręcz
 
 `--layer-source` przyjmuje wyłącznie ścieżki lokalne. Warstwę zdalną dodaj po migracji:
 `skillsync layers add <id> --kind <rodzaj> --source <URL>`.
+
+## Przejście 1.8.0 → 1.9.0
+
+Wydanie 1.9.0 wprowadza globalny zakaz stopek, podpisów i trailerów narzędzi AI w tekstach wychodzących (sekcja **Breaking** w `CHANGELOG.md`).
+
+1. **Rdzeń.** `uv tool install --force git+https://github.com/BATUSystems/skillsync@v1.9.0`, potem `skillsync layers update core --ref v1.9.0`, potem `skillsync link` w projektach (instrukcje, hak i ustawienie hosta).
+2. **Przed aktualizacją sprawdź warstwy.** Warstwa (własna, organizacji, personal), której instrukcje, skille, role lub `workflow/` zawierają tekst takiej atrybucji, dostanie `FAIL` w `skillsync layers check`, a projekt `FAIL` w `doctor`. Przegląd: `git grep -n -i -E "generated (with|by)|made with|co-authored-by: *(claude|codex|copilot|cursor|gemini)|claude-session"` w warstwach i w plikach `AGENTS.md`/`CLAUDE.md`/`.github/copilot-instructions.md`; usuń takie linie u źródła.
+3. **Trailer narzędzia AI w commitach przestaje być dozwolony** (dotąd leakguard go przepuszczał). `pre-push` i CI odrzucają nowe commity z takim trailerem lub stopką; commity już istniejące zostają bez zmian i `leakcheck --history` ich nie zgłasza. Opisy PR sprawdzisz `skillsync leakcheck --stdin`. Uwaga: `pre-push` i CI skanują zakres także na starych commitach, które do niego wchodzą (pierwszy push gałęzi bez `refs/remotes/<zdalne>/HEAD`, push po scaleniu gałęzi domyślnej); commit z takim trailerem w zakresie blokuje push, więc przed pierwszym pushem po aktualizacji sprawdź `skillsync leakcheck . --range <baza>..HEAD`.
+4. **Hak poleceń w każdym projekcie z Claude Code.** `link` instaluje `guard-commands.py` i `attribution-patterns.json` także tam, gdzie wcześniej hooka nie było (projekty bez `feature` i `dispatch`: tylko zakaz, część usuwania wyłączona). Zakaz odmawia poleceń zapisujących tekst (`git commit`, `gh pr create`, `az repos pr create` itd.) z taką stopką lub trailerem, nie ma przełącznika w manifeście ani wyjątku. `doctor`: brak haka lub danych to FAIL.
+5. **Ustawienie hosta.** `link` zapisuje w `.claude/settings.local.json` klucz `attribution` z pustymi `commit` i `pr` (pozostałe klucze zostają; wartość niepusta jest zastępowana z ostrzeżeniem). Dla wszystkich projektów użytkownika: `skillsync attribution --user` (jawnie). Twarda gwarancja na maszynie: wpis z `skillsync attribution --print-managed` w pliku ustawień zarządzanych hosta; skillsync go nie zapisuje.
+6. **Instrukcja bazowa.** Akapit o kompromisie koszt/możliwości modeli przeniesiono z `_base.md` do `skills/workflow/references/planning.md` (nowa reguła zajęła jego miejsce; limit `base_max_bytes` zostaje 8192). Treść zasady o doborze modeli się nie zmienia; po `skillsync link` generowane `AGENTS.md`, `CLAUDE.md` i `copilot-instructions.md` nie mają już tego akapitu.
 
 ## Windows z instalacji uv
 

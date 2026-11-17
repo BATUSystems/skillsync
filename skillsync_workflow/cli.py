@@ -2474,16 +2474,17 @@ def guard_tests_config(manifest: dict, config: dict) -> dict | None:
 
 
 def guard_wanted(manifest: dict, config: dict) -> bool:
-    """The hook entry and script are wanted when the delete guard or the test commands part is on."""
-    return guard_mode(manifest, config) != "off" or guard_tests_config(manifest, config) is not None
+    """The hook entry and script are always wanted while Claude is enabled: the ban on AI attribution is not optional
+    and does not depend on the delete guard or the test commands part."""
+    return claude_enabled(manifest)
 
 
 def guard_gitignore_entries(manifest: dict, config: dict) -> list[str]:
     if not guard_wanted(manifest, config):
         return []
-    entries = ["hooks/guard-commands.py", "settings.local.json", "settings.local.json.skillsync-backup"]
+    entries = ["hooks/guard-commands.py", "hooks/attribution-patterns.json", "settings.local.json", "settings.local.json.skillsync-backup"]
     if guard_tests_config(manifest, config) is not None:
-        entries[1:1] = ["hooks/guard-tests.py", "hooks/test-tools.json"]
+        entries[2:2] = ["hooks/guard-tests.py", "hooks/test-tools.json"]
     return entries
 
 
@@ -2506,8 +2507,28 @@ def copy_guard_script(project_dir: Path, config: dict, dry_run: bool = False) ->
     return True
 
 
+def copy_attribution_data(project_dir: Path, dry_run: bool = False) -> bool:
+    """The patterns of the ban on AI attribution (a copy of the package data, the one source) next to the hook script. False when missing:
+    the attribution part of the hook then stays silent and `doctor` reports it."""
+    source = Path(__file__).resolve().parent / "data" / "attribution-patterns.json"
+    dest = project_dir / guardhook.ATTRIBUTION_HOOK
+    if not source.is_file():
+        print("[warn] Missing attribution patterns in the package: data/attribution-patterns.json")
+        return False
+    if dry_run:
+        print(f"[dry-run] Would write: {dest}")
+        return True
+    try:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, dest)
+    except OSError as error:
+        print(f"[warn] Nie udalo sie zapisac {dest}: {error}")
+        return False
+    return True
+
+
 def remove_guard_script(project_dir: Path, dry_run: bool = False) -> None:
-    for name in (guardhook.GUARD_HOOK, guardhook.TESTS_HOOK, guardhook.TOOLS_HOOK):
+    for name in (guardhook.GUARD_HOOK, guardhook.TESTS_HOOK, guardhook.TOOLS_HOOK, guardhook.ATTRIBUTION_HOOK):
         dest = project_dir / name
         if dest.is_file() and not dest.is_symlink():
             if dry_run:
@@ -2583,8 +2604,12 @@ def merge_guard_settings(project_dir: Path, manifest: dict, config: dict, want: 
     _, allow, _ = guardhook.hook_settings(manifest)
     entry = guardhook.hook_entry(config.get("python_command", "python3"), guard_mode(manifest, config), allow, guard_tests_config(manifest, config))
     present = [hook for group in pre for hook in group.get("hooks", []) if guardhook.is_guard_hook(hook)]
-    if want and present == entry["hooks"]:
-        return False  # the entry is current; do not touch the file
+    if want and present == entry["hooks"] and existing.get("attribution") == guardhook.ATTRIBUTION_SETTING:
+        return False  # the entry and the attribution setting are current; do not touch the file
+    if want:   # the host setting that switches AI attribution off: always our value, the other keys of the file stay
+        if "attribution" in existing and existing["attribution"] != guardhook.ATTRIBUTION_SETTING and not guardhook.attribution_state(existing["attribution"]):
+            print(f"[warn] {settings_path}: `attribution` switched on, set to the empty form (the ban on AI attribution cannot be turned off)")
+        updated["attribution"] = dict(guardhook.ATTRIBUTION_SETTING)
     kept = []
     for group in pre:
         if "hooks" not in group:
@@ -2631,6 +2656,8 @@ def sync_guard_hook(project_dir: Path, manifest: dict, config: dict, dry_run: bo
         print(f"[warn] {reason}")
     if guard_wanted(manifest, config):
         copied = copy_guard_script(project_dir, config, dry_run)
+        if copied:
+            copy_attribution_data(project_dir, dry_run)   # a missing copy leaves the ban silent; doctor reports it
         if guard_tests_config(manifest, config) is not None:
             copy_test_files(project_dir, config, dry_run)   # missing files: the test part stays silent, the delete guard is unaffected
         else:
@@ -2932,8 +2959,8 @@ def _link_project(manifest: dict, project_dir: Path, config: dict, dry_run: bool
     ensure_gitignore(github_dir, dry_run=dry_run)
     build_codex(project_dir, manifest, config, dry_run=dry_run, mode=mode)
     ensure_link_on_open(project_dir, manifest, config, dry_run=dry_run)
-    if has_feature(manifest, config) or guard_wanted(manifest, config):
-        ensure_root_gitignore(project_dir, entry=".skillsync/", dry_run=dry_run)  # also the trail of delete-guard exceptions
+    if has_feature(manifest, config) or guard_mode(manifest, config) != "off" or guard_tests_config(manifest, config) is not None:
+        ensure_root_gitignore(project_dir, entry=".skillsync/", dry_run=dry_run)  # also the trail of delete-guard exceptions (the attribution ban takes none)
     update_composites(project_dir, config[COMPOSITES_KEY], dry_run)
 
 
@@ -3147,6 +3174,45 @@ def cmd_memory_sync(args: argparse.Namespace) -> None:
         return
     for message in sync_memory(config, {}, dry_run=args.dry_run, force=True):
         print(message)
+
+
+def cmd_attribution(args: argparse.Namespace) -> None:
+    """`skillsync attribution [--user] [--dry-run] [--print-managed]`: the host setting that switches the attribution of Claude Code off.
+    `link` writes it into every project; `--user` writes the same value into the user file `~/.claude/settings.json` (explicit, other keys stay)."""
+    settings_path = Path.home() / ".claude" / "settings.json"
+    if args.print_managed:
+        print(json.dumps({"attribution": guardhook.ATTRIBUTION_SETTING}, indent=2))
+        print("# The only setting level that other files cannot override is the managed one: put this object into the managed settings file of the host\n"
+              "# (see the documentation of the host for its path on your system); `skillsync` never writes that file.", file=sys.stderr)
+        return
+    data, readable = guardhook._read_settings(settings_path)
+    if not readable:
+        print(f"[error] {settings_path} is unreadable or not a JSON object; nothing written")
+        raise SystemExit(1)
+    state = guardhook.attribution_state((data or {}).get("attribution"))
+    if not args.user:
+        print(f"user settings ({settings_path}): AI attribution {'off' if state else 'on or unset'}")
+        print("projects: `skillsync link` writes the setting into .claude/settings.local.json; `skillsync attribution --user` writes it for every project of this user")
+        raise SystemExit(0 if state else 1)
+    updated = dict(data or {})
+    updated["attribution"] = dict(guardhook.ATTRIBUTION_SETTING)
+    if data is not None and data == updated:
+        print(f"Up to date: {settings_path}")
+        return
+    if args.dry_run:
+        print(f"[dry-run] Would update: {settings_path}")
+        return
+    try:
+        settings_path.parent.mkdir(parents=True, exist_ok=True)
+        if settings_path.exists():
+            backup = settings_path.with_name(settings_path.name + ".skillsync-backup")
+            if not backup.exists():
+                write_text_lf(backup, read_user_text(settings_path))
+        write_text_lf(settings_path, json_file_text(updated, read_user_text(settings_path) if settings_path.exists() else ""))
+    except OSError as error:
+        print(f"[error] Could not write {settings_path}: {error}")
+        raise SystemExit(1)
+    print(f"Updated: {settings_path}")
 
 
 def watch_roots(machine) -> list[Path]:
@@ -3871,6 +3937,12 @@ def main() -> None:
     memory_parser = subparsers.add_parser("memory-sync", help="Copy configured memory files to remote hosts (config memory_sync:)")
     memory_parser.add_argument("--dry-run", action="store_true", help="Show what would be copied")
     memory_parser.set_defaults(func=cmd_memory_sync)
+
+    attribution_parser = subparsers.add_parser("attribution", help="Switch off the AI attribution of the host for the user (explicit; `link` does it per project)")
+    attribution_parser.add_argument("--user", action="store_true", help="Write the setting into ~/.claude/settings.json (other keys stay)")
+    attribution_parser.add_argument("--dry-run", action="store_true", help="Show what would be written")
+    attribution_parser.add_argument("--print-managed", action="store_true", help="Print the object for the managed settings file (never written)")
+    attribution_parser.set_defaults(func=cmd_attribution)
 
     list_parser = subparsers.add_parser("list", help="List available skills (with the providing layers)")
     add_layer_flag(list_parser)

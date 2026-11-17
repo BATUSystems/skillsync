@@ -825,14 +825,13 @@ class StaticDeniedTests(QCase):
         self.seed(author, 'th-1', 'm-1')
         self.assertIn('DEMO-INDEX', self.check(self.anon.get('/demo/index.html'), 200).text)
         self.check(self.anon.get('/demo/prototype.json'), 200)
-        served = self.check(self.anon.get('/demo/comments.json'), 200)
-        self.assertEqual(served.body, self.journal())
+        self.check(self.anon.get('/demo/comments.json'), 404)   # the journal is API-only (like questions.json)
         self.check(self.anon.get('/demo/questions.json'), 404)   # brak takiego pliku w prototypie (kontrola 404 zwykłe)
         self.start_server(login_to_view=True)
         client = S.Client(self.server)
         self.check(client.login(EX, PW), 200)
         self.check(client.get('/demo/index.html'), 200)
-        self.check(client.get('/demo/comments.json'), 200)
+        self.check(client.get('/demo/comments.json'), 404)
 
 
 # ═════════════════════════════════════════════════════════════════════════════

@@ -18,10 +18,15 @@ from pathlib import Path
 GUARD_HOOK = '.claude/hooks/guard-commands.py'
 TESTS_HOOK = '.claude/hooks/guard-tests.py'
 TOOLS_HOOK = '.claude/hooks/test-tools.json'
+ATTRIBUTION_HOOK = '.claude/hooks/attribution-patterns.json'   # copy of data/attribution-patterns.json
 TEST_MODES = ('warn', 'off')
 DEFAULT_WIDE_MODULES = 25
 TESTS_HOOK_READY = True   # guard-commands.py reads --tests (180-J2); False would keep the whole test part dormant (nothing written, no argument)
 SETTINGS = '.claude/settings.local.json'
+SHARED_SETTINGS = '.claude/settings.json'
+# Host setting that switches off the attribution of Claude Code: the object form with empty `commit` and `pr` (the single value `false` needs a newer
+# host and is not used; `sessionUrl` concerns cloud sessions only and is left alone). Written by `link`, always the same value.
+ATTRIBUTION_SETTING = {'commit': '', 'pr': ''}
 FLOW_SKILLS = ('feature', 'agentflow', 'dispatch')
 MODES = ('deny', 'off')
 
@@ -107,7 +112,7 @@ def effective_mode(manifest, skills):
 
 def hook_command(python_command, mode, allow, tests=None):
     # root from git: $CLAUDE_PROJECT_DIR is the start directory of the session, often a subdirectory; a missing script is exit 0
-    args = ['--mode', mode]
+    args = ['--mode', mode, '--attribution', 'on']   # the ban on AI attribution is always on (no manifest switch)
     for item in allow:
         args += ['--allow', item]
     if tests:   # `{'wide': int, 'wrappers': [str]}`: the test part of the same hook (warns, never blocks)
@@ -187,35 +192,131 @@ def tests_config(manifest, skills):
     return {'wide': wide, 'wrappers': wrappers}
 
 
+def _read_settings(path):
+    """`(data or None when absent, readable)` of a settings file."""
+    try:
+        data = json.loads(Path(path).read_text(encoding='utf-8'))
+    except FileNotFoundError:
+        return None, True
+    except (OSError, ValueError):
+        return None, False
+    return (data if isinstance(data, dict) else None), isinstance(data, dict)
+
+
+def attribution_state(value):
+    """`True` when the value of a settings `attribution` key hides all attribution (commit and pr empty, or `false`), else `False`."""
+    if value is False:
+        return True
+    return isinstance(value, dict) and value.get('commit') == '' and value.get('pr') == ''
+
+
+LINK_TRACES = ('.claude/hooks', '.claude/settings.local.json')
+
+
+def never_linked(root):
+    """True when the project shows no trace of `skillsync link` for Claude Code: a missing hook is then only a hint, not a FAIL."""
+    return not any((Path(root) / rel).exists() for rel in LINK_TRACES)
+
+
+def attribution_findings(root, home=None):
+    """`[(level, path, reason)]`: the host setting that switches the attribution off. The project-local file (the highest file the generator writes)
+    must carry it (`error`); a shared or user file with attribution on is a `warning` (the local file wins over them, a clone without `link` does not)."""
+    root = Path(root)
+    found = []
+    data, readable = _read_settings(root / SETTINGS)
+    if not readable:
+        return [('error', SETTINGS, 'Unreadable settings: the host setting that switches AI attribution off cannot be checked')]
+    if data is None or not attribution_state(data.get('attribution')):
+        found.append(('warning' if never_linked(root) else 'error', SETTINGS, 'The host setting `attribution` (empty commit and pr) is missing or switched on: Claude Code would add its footer and trailer; run `skillsync link`'))
+    shared, ok = _read_settings(root / SHARED_SETTINGS)
+    if ok and shared is not None:
+        value = shared.get('attribution')
+        if (value is not None and not attribution_state(value)) or shared.get('includeCoAuthoredBy') is True:
+            found.append(('warning', SHARED_SETTINGS, 'Shared project settings switch AI attribution on; the local settings written by `link` win over them'))
+    user, ok = _read_settings(Path(home or Path.home()) / '.claude' / 'settings.json')
+    if ok and user is not None:
+        value = user.get('attribution')
+        if (value is not None and not attribution_state(value)) or user.get('includeCoAuthoredBy') is True:
+            found.append(('warning', '~/.claude/settings.json', 'User settings switch AI attribution on; project settings win, but other projects are not covered: run `skillsync attribution --user`'))
+    return found
+
+
+INSTRUCTION_FILES = ('AGENTS.md', 'CLAUDE.md', '.github/copilot-instructions.md', '.codex/skillsync-instructions.md')
+
+
+def instruction_text_findings(root):
+    """`error` for a generated instruction file of the project that contains text of the banned AI attribution (a layer or the project
+    instructions tell the agent to add it): the file, the line and the pattern id, never the text."""
+    from . import attribution
+    found = []
+    try:
+        rules = attribution.enforced()
+    except attribution.AttributionError:
+        return found
+    for rel in INSTRUCTION_FILES:
+        path = Path(root) / rel
+        try:
+            text = path.read_text(encoding='utf-8', errors='replace') if path.is_file() else ''
+        except OSError:
+            continue
+        for number, line in enumerate(text.splitlines(), 1):
+            for rule in rules:
+                if rule['compiled'].search(line):
+                    found.append(('error', rel, f'Line {number} contains text of the banned AI attribution (pattern {rule["id"]}): a layer or the project instructions '
+                                                'tell the agent to add a footer or signature of an AI tool; remove it at the source and run `skillsync link`'))
+                    break   # one finding per line
+    return found
+
+
 def doctor_findings(root, manifest, skills):
-    """`[(level, path, reason)]`: the state of the hook against what `link` would write (never an error: a warning at most)."""
+    """`[(level, path, reason)]`: the state of the hook against what `link` would write. A missing hook or attribution data is an `error` (the ban on AI
+    attribution is not optional); drift of the delete or test settings stays a warning."""
     _, allow, problems = hook_settings(manifest)
     problems = problems + test_settings(manifest)[3]
     found = [('warning', '.github/.skillsync.yaml', reason) for reason in problems]
+    found.extend(instruction_text_findings(root))
     claude = manifest.get('claude')
     if claude is False or (isinstance(claude, dict) and claude.get('enabled') is False):
         return found
     mode = effective_mode(manifest, skills)
     tests = tests_config(manifest, skills)
     root = Path(root)
+    found.extend(attribution_findings(root))
     script = root / GUARD_HOOK
     command = installed(root / SETTINGS)
     if command is False:
         return found + [('warning', SETTINGS, 'Unreadable settings: the delete guard hook state is unknown')]
-    if mode == 'off' and tests is None:
-        if command or script.is_file():
-            found.append(('warning', SETTINGS, 'Delete guard hook is installed but switched off in the manifest; run `skillsync link` to remove it'))
-        return found
     if not script.is_file() or command is None:
-        found.append(('warning', SETTINGS, 'Delete guard hook (PreToolUse) is wanted but not installed; run `skillsync link`'))
+        found.append(('warning' if never_linked(root) else 'error', SETTINGS, 'The guard hook (PreToolUse: ban on AI attribution in commit and PR text, delete guard) is not installed; run `skillsync link`'))
+        return found
+    copy = root / ATTRIBUTION_HOOK
+    if not copy.is_file():
+        found.append(('error', ATTRIBUTION_HOOK, 'The attribution patterns of the guard hook are missing: the ban stays silent; run `skillsync link`'))
+        return found
+    from . import attribution
+    try:
+        attribution.load(copy)
+    except attribution.AttributionError:
+        found.append(('error', ATTRIBUTION_HOOK, 'The attribution patterns of the guard hook are unreadable or invalid: the hook ignores them and the ban stays silent; run `skillsync link`'))
+        return found
+    try:
+        if copy.read_bytes() != attribution.DATA.read_bytes():
+            have = {rule['id'] for rule in attribution.enforced(copy)}
+            weaker = {rule['id'] for rule in attribution.enforced()} - have   # patterns in force at the generator that the copy lacks
+            found.append(('error' if weaker else 'warning', ATTRIBUTION_HOOK, 'The attribution patterns of the guard hook ' + (
+                'miss patterns that are in force (weaker ban)' if weaker else 'differ from the generator data (outdated copy)') + '; run `skillsync link`'))
+    except OSError:
+        pass
+    if '--attribution' not in command:
+        found.append(('error', SETTINGS, 'The installed guard hook entry predates the ban on AI attribution; run `skillsync link`'))
         return found
     installed_mode, installed_allow = command_args(command)
     if installed_mode != mode or installed_allow != allow or command_tests(command) != tests:
-        found.append(('warning', SETTINGS, 'Delete guard hook differs from the manifest (mode, hooks.delete_allow or the hooks.guard_tests settings); run `skillsync link`'))
+        found.append(('warning', SETTINGS, 'Guard hook differs from the manifest (mode, hooks.delete_allow or the hooks.guard_tests settings); run `skillsync link`'))
         return found
     if tests is not None and not ((root / TESTS_HOOK).is_file() and (root / TOOLS_HOOK).is_file()):
         found.append(('warning', TOOLS_HOOK, 'The test commands part of the guard hook is on but its files (guard-tests.py, test-tools.json) are missing: the part stays silent; run `skillsync link`'))
         return found
-    parts = f'delete guard mode {mode}, {len(allow)} extra allowed path(s)' + (f'; test commands: warn (wide run from {tests["wide"]} modules, {len(tests["wrappers"])} extra wrapper(s))' if tests else '')
-    found.append(('info', SETTINGS, f'Delete guard hook active: {parts}'))
+    parts = f'attribution ban on, delete guard mode {mode}, {len(allow)} extra allowed path(s)' + (f'; test commands: warn (wide run from {tests["wide"]} modules, {len(tests["wrappers"])} extra wrapper(s))' if tests else '')
+    found.append(('info', SETTINGS, f'Guard hook active: {parts}'))
     return found

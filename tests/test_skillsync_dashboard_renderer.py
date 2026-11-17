@@ -1149,7 +1149,7 @@ function summary(m) {
     const mountQ = (d, deps) => mount(d, { now: nowQ, deps: Object.assign({}, deps || {}) });
     // (a) Wynik + legenda
     const longText = Array.from({ length: 15 }, (_, i) => (i % 2 ? `- punkt ${i} <b>x</b>` : `linia ${i}`)).join('\n');
-    const resOf = (result, descs) => { const d = bare(); if (result !== undefined) d.result = result; const m = mountQ(d); if (descs) m.board.setDescriptions(descs);
+    const resOf = (result, descs, deps) => { const d = bare(); if (result !== undefined) d.result = result; const m = mountQ(d, deps); if (descs) m.board.setDescriptions(descs);
       const box = m.root.querySelector('#resultBox'); const g = m.root.querySelector('.glossary');
       const tags = []; walk(m.root, (n) => { if (n instanceof E) tags.push(n.localName); });
       return { hidden: box.hidden, head: m.root.querySelector('[data-result-head]') ? m.root.querySelector('[data-result-head]').textContent : null,
@@ -1160,6 +1160,14 @@ function summary(m) {
           summary: text(g.querySelector('summary')), open: g.hasAttribute('open'), first: text(m.root.querySelector('.glossary [data-glossary]')) } : null, b: tags.includes('b') }; };
     s5.result = { long: resOf({ text: longText, path: 'docs/plans/x.md' }), short: resOf({ text: '- a\n- b', path: 'docs/plans/x.md' }), none: resOf(null), absent: resOf(undefined),
       described: resOf(null, { legend_act: { title: 'Akt (z JSON)', text: 'Tekst z opisów.' } }) };
+    // Wynik sformatowany: serwer daje `html` i `moreHtml`, hosta `mountHtml` wstawia je; bez `html` zostaje <pre> z `text` (przypadek `long` wyżej).
+    const richResult = { text: 'surowy **tekst**', path: 'docs/plans/x.md', html: '<h3>A</h3><p>b</p>', moreHtml: '<p>reszta</p>', moreLines: 7 };
+    const richMount = mountQ(Object.assign(bare(), { result: richResult }));
+    const richBox = richMount.root.querySelector('#resultBox');
+    const noRestMount = mountQ(Object.assign(bare(), { result: { text: 'x', path: 'p', html: '<p>x</p>' } }));
+    s5.resultRich = { mounted: richMount.calls.mountHtml, headTag: richBox.querySelector('[data-result-head]').localName, headClass: richBox.querySelector('[data-result-head]').getAttribute('class'),
+      restClass: richBox.querySelector('[data-result-rest]').getAttribute('class'), summary: text(richBox.querySelector('summary')), details: richBox.querySelectorAll('details').length,
+      noRestDetails: noRestMount.root.querySelectorAll('#resultBox details').length, noRestMounted: noRestMount.calls.mountHtml, clickable: true };
     // (b) adresat w toaście
     const toastOf = (runs, viewer) => { const d = bare(); d.expertQuestions.open = 2; d.expertQuestions.blocking = 1; d.expertQuestions.runs = runs; if (viewer) d.approvals = Object.assign({}, d.approvals, { viewer: true });
       const m = mountQ(d, origin); const t = m.root.querySelector('[data-questions-toast]'); return { text: text(t), addr: t.querySelector('[data-addressees]') ? text(t.querySelector('[data-addressees]')) : null }; };
@@ -1310,6 +1318,74 @@ function summary(m) {
       ex170.noHook = { noClass: !m.root.classList.contains('has-to-top'), none: m.root.querySelector('#toTop') === null, oldAdapter: m2.root.querySelector('#toTop') === null, broken: m3.root.querySelector('#toTop') === null };
     }
     ex.s170 = ex170;
+  }
+  // Formatowanie w linii: tytuły kroków, „czeka na”, pytania do eksperta. HTML wstawia tylko host (mountHtml); dymki i atrybuty zostają czystym tekstem.
+  {
+    const nm = 'plan-in-progress';
+    const d = clone(F[nm]);
+    const step = d.progress.phases[0].steps[0];
+    step.title = 'Krok **ważny** z `kodem`'; step.titleHtml = 'Krok <strong>ważny</strong> z <code>kodem</code>';
+    const plainStep = d.progress.phases[0].steps[1];
+    plainStep.title = 'Krok zwykły'; delete plainStep.titleHtml;
+    d.waiting = [{ what: 'decyzja o **zakresie**', whatHtml: 'decyzja o <strong>zakresie</strong>', source: 'checkpoint', since: null, action: 'Odpowiedz w sesji.', link: null }];
+    const m = mount(d, { now: NOW[nm] });
+    const li = m.root.querySelectorAll('li.step').filter((x) => text(x.querySelector('.sid')) === step.id)[0];
+    const liPlain = m.root.querySelectorAll('li.step').filter((x) => text(x.querySelector('.sid')) === plainStep.id)[0];
+    const wait = m.root.querySelector('#waitBanner .wait-txt strong');
+    const noMount = mount(d, { now: NOW[nm], deps: {} });
+    const q = clone(F['questions']);
+    q.expertQuestions.items = [
+      { id: 'Q1', runSlug: 'r', text: 'Czy **tak**?', textHtml: 'Czy <strong>tak</strong>?', blocking: true, state: 'open', at: null, addressees: 'all', url: null },
+      { id: 'Q2', runSlug: 'r', text: 'zwykłe pytanie', blocking: false, state: 'open', at: null, addressees: 'all', url: null },
+    ];
+    const mq = mount(q, { now: NOW['questions'] });
+    const fd = clone(F[nm]);
+    fd.run = Object.assign({}, fd.run, { checkpoints: [{ time: '10:00', text: 'zrobione **S1**', textHtml: 'zrobione <strong>S1</strong>' }, { time: '10:05', text: 'zrobione S2' }] });
+    const mfeed = mount(fd, { now: NOW[nm] });
+    ex.inlineMd = {
+      feedMounted: mfeed.calls.mountHtml.filter((h) => h.indexOf('zrobione') === 0),
+      feedClick: ((mfeed.root.querySelector('#feed').listeners || {}).click || []).length,
+      feedPlain: text(mfeed.root.querySelectorAll('#feed li')[1].querySelectorAll('span')[1]),
+      mounted: m.calls.mountHtml,
+      stepTitleNode: li ? li.querySelector('.tt').localName : null, stepTitleText: li ? text(li.querySelector('.tt')) : null,
+      stepTip: li ? li.getAttribute('data-desc-extra') : null,
+      plainStepText: liPlain ? text(liPlain.querySelector('.tt')) : null,
+      waitText: text(wait), waitStrong: wait ? wait.childNodes.map((c) => (c instanceof E ? c.localName : 't')) : null,
+      questionMounted: mq.calls.mountHtml.filter((h) => h.indexOf('Czy') === 0),
+      questionPlain: text(mq.root.querySelectorAll('li.q-item')[1].querySelector('.q-text')),
+    };
+  }
+  // Pomiar i prognoza: wiersz prognozy w akcie III (przedział, powód, wstrzymana) i czas aktów I i II. Prognoza ma inną klasę i etykietę niż pomiar.
+  {
+    const nm = 'plan-in-progress';
+    const run = (patch, view) => { const d = clone(F[nm]); Object.assign(d, patch); return mount(d, { now: NOW[nm], deps: view ? { forecastView: view } : {} }); };
+    const rangeF = { scope: 'plan', remaining: 5, samples: 4, basis: 'run', paused: false, lowSeconds: 3000, medianSeconds: 4500, highSeconds: 6750 };
+    const one = (m, sel) => { const e = m.root.querySelector(sel); return e ? { text: text(e), cls: e.getAttribute('class') } : null; };
+    ex.forecast = {
+      tempo: one(run({ forecast: rangeF }, 'tempo'), '[data-forecast]'),
+      tempoPaused: one(run({ forecast: Object.assign({}, rangeF, { paused: true }) }, 'tempo'), '[data-forecast]'),
+      tempoFast: one(run({ forecast: Object.assign({}, rangeF, { medianSeconds: 100 }) }, 'tempo'), '[data-forecast]'),
+      tempoNoRemaining: run({ forecast: Object.assign({}, rangeF, { remaining: 0 }) }, 'tempo').root.querySelectorAll('[data-forecast]').length,
+      badView: one(run({ forecast: rangeF }, 'nonsense'), '[data-forecast]'),
+      range: one(run({ forecast: rangeF }), '[data-forecast]'),
+      rangeExplicit: one(run({ forecast: rangeF }, 'range'), '[data-forecast]'),
+      same: one(run({ forecast: Object.assign({}, rangeF, { lowSeconds: 3000, highSeconds: 3040 }) }, 'range'), '[data-forecast]'),
+      paused: one(run({ forecast: Object.assign({}, rangeF, { paused: true }) }, 'range'), '[data-forecast]'),
+      few: one(run({ forecast: { scope: 'plan', reason: 'not-enough-data', have: 2, need: 4 } }), '[data-forecast]'),
+      moments: one(run({ forecast: { scope: 'plan', reason: 'few-moments', have: 1, need: 3 } }), '[data-forecast]'),
+      norun: one(run({ forecast: { scope: 'plan', reason: 'no-run-start' } }), '[data-forecast]'),
+      silentReasons: ['plan-not-running', 'no-remaining'].map((r) => run({ forecast: { scope: 'plan', reason: r } }).root.querySelectorAll('[data-forecast]').length),
+      absent: run({ forecast: undefined }).root.querySelectorAll('[data-forecast]').length,
+      broken: run({ forecast: { scope: 'plan', remaining: 'x', lowSeconds: -1, medianSeconds: 1, highSeconds: 2 } }).root.querySelectorAll('[data-forecast]').length,
+      acts: (() => {
+        const d = clone(F[nm]);
+        d.timing = Object.assign({}, d.timing, { available: true, acts: [
+          { key: 'spec', startedAt: '2026-01-11T09:00:00+01:00', endedAt: '2026-01-11T10:05:00+01:00', workSeconds: 3000, waitSeconds: 900, unknown: false, reason: null, endSource: 'approval' },
+          { key: 'plan', startedAt: '2026-01-11T10:05:00+01:00', endedAt: null, workSeconds: null, waitSeconds: null, unknown: true, reason: 'no-approval', endSource: null } ] });
+        const m = mount(d, { now: NOW[nm] });
+        return { spec: one(m, '[data-measure="spec"]'), plan: one(m, '[data-measure="plan"]'), real: m.root.querySelectorAll('[data-measure="real"]').length };
+      })(),
+    };
   }
   out.extra = ex;
   // deps.now jest wymagane (renderer nie czyta zegara sam).
@@ -2040,6 +2116,74 @@ class RendererNodeTests(unittest.TestCase):
                 self.assertEqual((got["dots"], got["active"], got["screens"], got["legend"], got["light"]), (0, 0, 0, 0, 0))
                 self.assertTrue(got["warn"])
                 self.assertFalse(got["sessionWait"])
+
+    def test_forecast_and_measure_are_shown_apart(self) -> None:
+        r = self.out["extra"]["forecast"]
+        # the `tempo` view (host option): the pace per step and the steps left, no sum and no clock time
+        self.assertEqual(r["tempo"]["cls"], "forecast")
+        self.assertEqual(r["tempo"]["text"], "Prognoza: orientacyjnie, tempo: ok. 15 min pracy na krok, z 4 zakończonych kroków; zostało 5 kroków")
+        self.assertNotRegex(r["tempo"]["text"], r"koniec ok|\d\d:\d\d|do końca kroków")
+        self.assertIn("is-paused", r["tempoPaused"]["cls"])
+        self.assertIn("wstrzymane", r["tempoPaused"]["text"])
+        self.assertIn("mniej niż minuta pracy na krok", r["tempoFast"]["text"])
+        self.assertEqual(r["tempoNoRemaining"], 0)
+        self.assertEqual(r["badView"]["text"], r["range"]["text"], "an unknown view falls back to the default (range)")
+        self.assertEqual(r["rangeExplicit"]["text"], r["range"]["text"])
+        # the default view: the range with an approximate clock time, marked as approximate in the row itself
+        self.assertIn("orientacyjnie:", r["range"]["text"])
+        self.assertIn("Rząd wielkości, nie obietnica.", r["range"]["text"])
+        self.assertEqual(r["range"]["cls"], "forecast")
+        self.assertIn("Prognoza", r["range"]["text"])
+        self.assertIn("ok. 50 min–1 h 55 min pracy", r["range"]["text"])
+        self.assertIn("zostało 5 kroków", r["range"]["text"])
+        self.assertIn("bez czekania na zgody", r["range"]["text"])
+        self.assertRegex(r["range"]["text"], r"koniec ok\. \d\d:\d\d–\d\d:\d\d")
+        self.assertIn("ok. 50 min pracy", r["same"]["text"])
+        self.assertNotIn("–", r["same"]["text"].split("pracy")[0])
+        self.assertIn("is-paused", r["paused"]["cls"])
+        self.assertIn("wstrzymana", r["paused"]["text"])
+        self.assertNotRegex(r["paused"]["text"], r"koniec ok\.")
+        self.assertIn("za mało danych", r["few"]["text"])
+        self.assertIn("zakończone kroki z czasem: 2, potrzeba co najmniej 4", r["few"]["text"])
+        self.assertIn("is-none", r["few"]["cls"])
+        self.assertIn("RUN=", r["norun"]["text"])
+        self.assertIn("w zbyt mało różnych momentach (1, potrzeba co najmniej 3)", r["moments"]["text"])
+        self.assertEqual(r["silentReasons"], [0, 0], "a plan that does not run or has nothing left shows no forecast line")
+        self.assertEqual((r["absent"], r["broken"]), (0, 0), "no field or a broken one: no line, no number made up")
+
+    def test_act_times_are_measures_with_their_own_label(self) -> None:
+        a = self.out["extra"]["forecast"]["acts"]
+        self.assertEqual(a["spec"]["cls"], "measure")
+        self.assertEqual(a["spec"]["text"], "Pomiar: praca 50 min, czekanie 15 min")
+        self.assertRegex(a["plan"]["text"], r"^Pomiar: (trwa od|czas nieznany)")
+        self.assertEqual(a["real"], 0, "act III has its own timing block, not a measure line")
+
+    def test_inline_markdown_in_titles_waiting_and_questions(self) -> None:
+        r = self.out["extra"]["inlineMd"]
+        self.assertIn("Krok <strong>ważny</strong> z <code>kodem</code>", r["mounted"])
+        self.assertIn("decyzja o <strong>zakresie</strong>", r["mounted"])
+        self.assertEqual(r["questionMounted"], ["Czy <strong>tak</strong>?"])
+        self.assertEqual(r["feedMounted"], ["zrobione <strong>S1</strong>"])
+        self.assertEqual(r["feedPlain"], "zrobione S2")
+        self.assertEqual(r["feedClick"], 1, "links of the feed (md-doc, md-anchor) work like in the other blocks")
+        self.assertEqual(r["stepTitleNode"], "span")
+        self.assertEqual(r["plainStepText"], "Krok zwykły", "no `titleHtml` = plain text, as before")
+        self.assertEqual(r["questionPlain"], "zwykłe pytanie")
+        self.assertEqual(r["waitStrong"], ["t", "span"], "the prefix is text, the item is one mounted span")
+        self.assertNotIn("**", r["stepTip"] or "", "the tooltip is plain text without markers")
+        self.assertNotIn("`", r["stepTip"] or "")
+        self.assertIn("Krok ważny z kodem", r["stepTip"] or "")
+
+    def test_result_is_formatted_when_the_server_sends_html(self) -> None:
+        r = self.out["extra"]["s160b"]["resultRich"]
+        self.assertEqual(r["mounted"], ["<h3>A</h3><p>b</p>", "<p>reszta</p>"])
+        self.assertEqual(r["headTag"], "div")
+        self.assertIn("md", r["headClass"].split())
+        self.assertIn("md", r["restClass"].split())
+        self.assertEqual(r["summary"], "Pokaż resztę (7 linii)")
+        self.assertEqual(r["details"], 1)
+        self.assertEqual(r["noRestDetails"], 0)
+        self.assertEqual(r["noRestMounted"], ["<p>x</p>"])
 
     def test_s160b_result_block_and_glossary(self) -> None:
         r = self.out["extra"]["s160b"]["result"]

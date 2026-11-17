@@ -3269,13 +3269,15 @@ class PresentationModeSourceTests(unittest.TestCase):
 
 
 # Decyzja „tylko ostrzeżenie i dokumentacja” (1.6.1): okienko komentarza i pole odpowiedzi w wątku mówią, że treść jest widoczna dla innych
-# i nie jest maskowana. Zmiana tylko w JS silnika: CSS biblioteki zostaje bajtowo taki, jaki był w 1.6.0 (zmiana CSS może unieważnić
-# akceptacje ekranów po `prototype migrate`; przy celowej zmianie CSS zaktualizuj sumy i sprawdź pole `acceptance` wyniku `migrate`).
-# Sums of the three stylesheets as they were in the base of this change (release/1.6.1 @ 900b8cc, checked with `git diff` against it).
+# i nie jest maskowana. Zmiana tylko w JS silnika. Arkusze silnika są przypięte sumami: `prototype.css` do bieżącego wydania (1.9.0: układ okien
+# logowania), `components.css` i `screens.css` do 1.6.0 (bez zmian). Wchodzą do wzoru skrótu ekranu NIETYKALNE `components.css` i `screens.css`
+# (to arkusze ekranów); `prototype.css` (otoczka silnika) ze skrótu wypada i akceptacje po jego zmianie zostają ważne przez `aliases`
+# (dowód: `EngineAssetsAndAcceptanceTests` w test_skillsync_prototype_restore). Przy celowej zmianie arkusza zaktualizuj sumę i sprawdź
+# pole `acceptance` wyniku `migrate`.
 ENGINE_CSS_SHA256 = {
-    'prototype.css': '4ebfbced06e45652455c5472dab0da7b53faa9b47189fedde4ab32ed4fb83aaa',
-    'components.css': '4ee53e98f567f655c484579aa36a19815e895ea9a1f6d68b1518879b15b54b7a',
-    'screens.css': 'ff17022f2eaf6d874d6b196ad87853b60c95f2a568b70767b1579607a9b96cb5',
+    'prototype.css': 'f7fd124c5ab6224cc6ef86c15bd378f6127b2c6f8960e3e3976479ab9ab5f8c7',   # 1.9.0
+    'components.css': '4ee53e98f567f655c484579aa36a19815e895ea9a1f6d68b1518879b15b54b7a',  # 1.6.0
+    'screens.css': 'ff17022f2eaf6d874d6b196ad87853b60c95f2a568b70767b1579607a9b96cb5',     # 1.6.0
 }
 UNMASKED_FORMULA = 'Treść jest widoczna dla innych i nie jest maskowana: nie wpisuj haseł, kluczy ani tokenów.'
 NOTE_HARNESS = r"""
@@ -3323,11 +3325,11 @@ class EngineV2UnmaskedNoteTests(unittest.TestCase):
         self.assertRegex(edit[:1800], r'node\.appendChild\(area\);\n\s+const note = unmaskedNote\(\);\n\s+if \(note\) node\.appendChild\(note\);')
         self.assertIn('whyLabel, why, unmaskedNote(), hint, effects, retry, alertBox].filter(Boolean)', self.source)
 
-    def test_the_engine_stylesheets_are_byte_for_byte_those_of_1_6_0(self):
+    def test_the_engine_stylesheets_are_pinned_and_only_the_engine_shell_may_change_with_the_release(self):
         assets = Path(__file__).resolve().parents[1] / 'library' / 'skills' / 'prototype' / 'assets' / 'repo'
         for name, expected in ENGINE_CSS_SHA256.items():
             with self.subTest(name):
-                self.assertEqual(sha256(assets / name), expected, f'{name} zmieniony: zmiana CSS może unieważnić akceptacje ekranów po migrate')
+                self.assertEqual(sha256(assets / name), expected, f'{name} zmieniony: zaktualizuj przypiętą sumę (prototype.css: otoczka silnika, akceptacje zostają ważne) albo cofnij zmianę (components.css, screens.css wchodzą do skrótu ekranu: zmiana unieważni akceptacje po migrate)')
 
 
 if __name__ == '__main__':

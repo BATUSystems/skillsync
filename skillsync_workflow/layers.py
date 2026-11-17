@@ -1723,6 +1723,48 @@ def _hook_findings(layer):
                      f'hooks ({", ".join(state["missing"])}); {hint}', layer.id)]
 
 
+ATTRIBUTION_DIRS = ('instructions', 'skills', 'agents', 'workflow')
+ATTRIBUTION_SUFFIXES = ('.md', '.yaml', '.yml', '.txt', '.toml', '.json')
+ATTRIBUTION_FILE_LIMIT = 1 << 20
+
+
+def attribution_findings(layer):
+    """`attribution-text` (error) for every text file of the layer (instructions, skills, agents, workflow) that matches a pattern of the ban on
+    AI attribution: a layer that tells the agent to add such a footer contradicts the core rule. The message names the file,
+    the line and the pattern id, never the matched text."""
+    from . import attribution
+    try:
+        rules = attribution.enforced()
+    except attribution.AttributionError as error:
+        return [_finding('attribution-data-invalid', 'blocked', str(error), layer.id)]
+    found = []
+    for sub in ATTRIBUTION_DIRS:
+        base = layer.root / sub
+        if not base.is_dir() or is_link(base):
+            continue
+        for directory, names, files in os.walk(base):
+            names[:] = sorted(name for name in names if not is_link(Path(directory) / name))
+            for name in sorted(files):
+                path = Path(directory) / name
+                if path.suffix.lower() not in ATTRIBUTION_SUFFIXES or is_link(path):
+                    continue
+                try:
+                    if path.stat().st_size > ATTRIBUTION_FILE_LIMIT:
+                        continue
+                    text = path.read_text(encoding='utf-8', errors='replace')
+                except OSError:
+                    continue
+                for number, line in enumerate(text.splitlines(), 1):
+                    for rule in rules:
+                        if rule['compiled'].search(line):
+                            found.append(_finding('attribution-text', 'error',
+                                                  f'Layer {layer.id}: {path.relative_to(layer.root).as_posix()}:{number} contains text of the banned '
+                                                  f'AI attribution (pattern {rule["id"]}); remove it, the core rule forbids footers and signatures of AI tools',
+                                                  layer.id))
+                            break   # one finding per line
+    return found
+
+
 def check_layers(layerset, *, version=None, hooks=True, trust=True, orphans=True, cache_dir=None):
     """Findings `[{code, layer, message, severity}]` for a LayerSet (severity: blocked,
     error, warning, info). Status mapping: `findings_status`. `layers check` (2.4), `link`
@@ -1766,6 +1808,8 @@ def check_layers(layerset, *, version=None, hooks=True, trust=True, orphans=True
                 findings.append(_finding(f'{label.lower()}-missing', 'warning', f'Layer {layer.id} has no {label}', layer.id))
         if hooks and layer.writable:
             findings.extend(_hook_findings(layer))
+        if layer.meta is not None:
+            findings.extend(attribution_findings(layer))
         for rel in layer_links(layer):
             findings.append(_finding('symlink-in-layer', 'error', f'Layer {layer.id}: {rel} is a symlink/junction; '
                                      'links are not allowed in layers and are never read', layer.id))

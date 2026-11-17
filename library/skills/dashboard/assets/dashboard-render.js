@@ -103,6 +103,19 @@
     return hh ? `${hh}:${String(m).padStart(2, "0")}:${String(ss).padStart(2, "0")}` : `${m}:${String(ss).padStart(2, "0")}`;
   };
   const fmtTime = (iso) => iso ? new Date(iso).toLocaleString("pl-PL", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" }) : "—";
+  // Czas trwania z sekund do czytelnego tekstu („1 h 05 min”, „40 min”); `rough`: zaokrąglenie do 5 min od 10 min (przedziały prognozy nie udają dokładności).
+  const humanDur = (sec, rough) => {
+    let m = Math.round(Number(sec) / 60);
+    if (!Number.isFinite(m) || m < 0) return "—";
+    if (rough && m >= 10) m = Math.round(m / 5) * 5;
+    if (m < 60) return `${m} min`;
+    const hh = Math.floor(m / 60), mm = m % 60;
+    return mm ? `${hh} h ${String(mm).padStart(2, "0")} min` : `${hh} h`;
+  };
+  // Widok prognozy: "range" (domyślnie, decyzja właściciela produktu: zakres pracy do końca kroków i orientacyjna godzina końca, z dopiskiem „orientacyjnie”
+  // i „rząd wielkości, nie obietnica”) albo "tempo" (samo tempo pracy na krok i liczba pozostałych kroków, bez sumy i godziny). Powtórka na prawdziwych
+  // przebiegach pokazała ograniczoną dokładność zakresu (docs/dashboard-contract.md, sekcja `forecast`). Przełączenie = ta stała albo `deps.forecastView`.
+  const FORECAST_VIEW = "range";
   const baseName = (path) => String(path || "").split("/").pop();
   // Adres z JSON-a do href: tylko http(s); inny schemat (javascript:, data:, …) = brak href (element zostaje tekstem).
   const safeUrl = (url) => (typeof url === "string" && /^https?:\/\/[^\s]/i.test(url.trim()) ? url.trim() : null);
@@ -125,6 +138,13 @@
   // Funkcje modułu wołane z kontekstem egzemplarza (`this` = {h, icon, desc, openDoc, st}); wartości z danych zawsze
   // przez esc(): tu esc daje tekst węzła (String), bo DOM powstaje z textContent, nie z szablonu HTML.
   const esc = (v) => String(v ?? "");
+  // Tekst bez znaczników Markdown w linii (do dymków i atrybutów); bez `html` (brak formatowania) tekst bez zmian.
+  const plainInline = (text, html) => {
+    const t = String(text ?? "");
+    if (typeof html !== "string" || !html) return t;
+    return t.replace(/(`+)(.+?)\1/g, "$2").replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/<(https?:\/\/[^>\s]+)>/g, "$1")
+      .replace(/\*\*(\S(?:.*?\S)?)\*\*/g, "$1").replace(/__(\S(?:.*?\S)?)__/g, "$1").replace(/~~(\S(?:.*?\S)?)~~/g, "$1");
+  };
   const READY_STATE = { PASS: ["is-pass", "PASS"], BLOCKED: ["is-blocked", "BLOCKED"] };
   // Readiness (akt II): brief gotowości z .skillsync/runs/<run>/readiness.md; źródło pliku = readiness.source z JSON.
   // „Brief dla innej wersji planu”: skrócony readiness.planSha nie jest prefiksem pełnego plan.fileSha.
@@ -146,14 +166,14 @@
   }
   // Podkroki Fn.k z czasem (akt III): rozwijana lista; stan rozwinięcia przeżywa odświeżenie (st.substepsOpen).
   function substepsBlock(d) {
-    const { h, desc, st } = this;
+    const { h, desc, st, inl } = this;
     const items = d.substeps || [];
     if (!items.length) return null;
     const time = (s) => (s.seconds != null ? fmtDur(s.seconds * 1000) : s.missingData ? "brak danych" : esc(STEP_LABEL[s.state] || s.state));
     const box = h("details", { class: "substeps", open: Boolean(st.substepsOpen) },
       h("summary", desc("substeps_time"), "Podkroki i czas (" + items.length + ")"),
       h("ul", { class: "sub-list" }, items.map((s) => h("li", { class: s.missingData ? "is-nodata" : "" },
-        h("span", { class: "mono q-id" }, esc(s.id)), h("span", { class: "tt" }, esc(s.title)), h("span", { class: "mono sub-t" }, time(s))))));
+        h("span", { class: "mono q-id" }, esc(s.id)), inl("tt", esc(s.title), s.titleHtml), h("span", { class: "mono sub-t" }, time(s))))));
     box.addEventListener("toggle", () => { st.substepsOpen = box.hasAttribute("open"); });
     return box;
   }
@@ -266,7 +286,18 @@
       return { "data-desc": key, "data-desc-extra": extra || null, tabindex: "0", "aria-describedby": "descTip" };
     }
     // Kontekst sekcji modułu (readinessTile, substepsBlock, timingBlock); openDoc to deklaracja funkcji niżej (hoisting).
-    const kit = { h, icon, desc, openDoc: (path) => openDoc(path), st };
+    // Formatowanie w linii (pogrubienie, kursywa, kod, bezpieczny link): serwer dodaje `<pole>Html` obok tekstu (`titleHtml`, `whatHtml`, `textHtml`),
+    // gdy tekst ma formatowanie; HTML wstawia wyłącznie host przez `deps.mountHtml`. Bez pola albo bez `mountHtml` zostaje zwykły tekst.
+    // Dymki, `title` i `aria-*` zawsze czysty tekst: `plain` zdejmuje znaczniki (tylko gdy serwer oznaczył tekst jako sformatowany).
+    const inl = (cls, text, html) => {
+      if (typeof html === "string" && html && typeof deps.mountHtml === "function") {
+        const node = h("span", { class: cls });
+        deps.mountHtml(node, html);
+        return node;
+      }
+      return h("span", { class: cls }, text);
+    };
+    const kit = { h, icon, desc, openDoc: (path) => openDoc(path), st, inl, plain: plainInline };
     // Odnośnik zewnętrzny: host może przejąć otwarcie (webview), strona zostawia zwykłe <a target=_blank>.
     const linkClick = (kind, id, url) => (e) => {
       if (typeof actions.openLink === "function" && actions.openLink(kind, id, url) === true) e.preventDefault();
@@ -294,7 +325,7 @@
       "data-tip": "Wybierz plan (domyślnie: bieżący w realizacji)", on: { click: (e) => { e.stopPropagation(); toggleMenu(); } } },
       svg("svg", { class: "ic" }, svg("use", { href: "#i-plan" })), ui.planBtnText, ui.planAuto, svg("svg", { class: "ic chev" }, svg("use", { href: "#i-chev" })));
     ui.planMenu = h("ul", { id: "planMenu", class: "menu", role: "listbox", hidden: true });
-    ui.waitBanner = h("div", { id: "waitBanner", class: "wait", role: "status", "aria-live": "polite", hidden: true });
+    ui.waitBanner = h("div", { id: "waitBanner", class: "wait", role: "status", "aria-live": "polite", hidden: true, on: { click: mdClick } });
     ui.docCount = h("span", { class: "count", id: "docCount" });
     ui["tab-progress"] = h("button", { role: "tab", id: "tab-progress", "aria-controls": "view-progress", "aria-selected": "true",
       "data-tip": "Akty, postęp i checkpointy (klawisz P)", on: { click: () => setView("progress") } },
@@ -312,14 +343,14 @@
       "data-tip": "Prototypy i pytania do eksperta", on: { click: () => setView("questions") } },
       svg("svg", { class: "ic" }, svg("use", { href: "#i-bell" })), "Pytania ", ui.qCount);
     ui.protoLink = h("span", { id: "protoLink", class: "tab-extra", hidden: true });
-    ui.result = h("section", { class: "result-box", id: "resultBox", "aria-labelledby": "resultTitle", hidden: true });
+    ui.result = h("section", { class: "result-box", id: "resultBox", "aria-labelledby": "resultTitle", hidden: true, on: { click: mdClick } });
     ui.glossary = h("div", { class: "glossary-box", id: "glossaryBox" });
     ui.qProtos = h("div", { class: "q-block", id: "qProtos" });
-    ui.qItems = h("div", { class: "q-block", id: "qItems" });
-    ui.acts = h("div", { class: "acts", id: "acts" },
+    ui.qItems = h("div", { class: "q-block", id: "qItems", on: { click: mdClick } });
+    ui.acts = h("div", { class: "acts", id: "acts", on: { click: mdClick } },
       h("div", { class: "act skeleton" }), h("div", { class: "act skeleton" }), h("div", { class: "act skeleton wide" }));
-    ui.phases = h("div", { class: "phases", id: "phases" });
-    ui.feed = h("ol", { class: "feed", id: "feed" });
+    ui.phases = h("div", { class: "phases", id: "phases", on: { click: mdClick } });
+    ui.feed = h("ol", { class: "feed", id: "feed", on: { click: mdClick } });
     ui.parseWarn = h("div", { class: "parse-warn", id: "parseWarn", hidden: true });
     ui.docList = h("nav", { class: "doc-list", id: "docList", "aria-label": "Dokumenty zadania" });
     ui.docView = h("article", { class: "doc-view", id: "docView", "aria-live": "polite", on: { click: mdClick } },
@@ -455,7 +486,7 @@
       else if (specAct) meta.push(h("span", { class: "m", "data-tip": "Akt I: spec bez planu (plan powstaje przy „GO plan”); status speca" }, statusChip(d.spec.status)));
       if (run.startIso) {
         ui.elapsed = h("span", { class: "mono", id: "elapsed" }, fmtDur(now() - Date.parse(run.startIso)));
-        meta.push(h("span", { class: "m", "data-tip": `Czas od startu aktu III (RUN= w checkpoints.md, start ${fmtTime(run.startIso)})` }, icon("i-clock"), ui.elapsed));
+        meta.push(h("span", { class: "m", "data-tip": `Czas od startu przebiegu (RUN= w checkpoints.md, start ${fmtTime(run.startIso)})` }, icon("i-clock"), ui.elapsed));
       }
       ui.ago = h("span", { id: "ago", "data-iso": d.lastUpdate || "" }, fmtAgo(d.lastUpdate));
       meta.push(h("span", { class: "m", "data-tip": "Ostatnia zmiana planu, speca lub checkpointów" }, icon("i-sync"), ui.ago));
@@ -570,6 +601,54 @@
         isDone ? icon("i-check") : null, isActive ? h("span", { class: "stage-dot", "aria-hidden": "true" }) : null, s.label,
         isActive ? h("span", { class: "sr-only" }, quiet ? ` (brak aktywności od ${quiet} min)` : " (w trakcie" + (since ? ", od " + since : "") + ")") : null, screens);
     }
+    // POMIAR i PROGNOZA wyglądają i brzmią inaczej: pomiar („Pomiar:”, ciągła ramka) to czas, który minął, z checkpointów i zgód; prognoza („Prognoza:”,
+    // przerywana ramka, kursywa) to ekstrapolacja z tempa przebiegu (domyślnie przedział i orientacyjna godzina końca, widok `tempo` samo tempo), z podanym powodem, gdy brak liczby.
+    const clockOf = (ms) => new Date(ms).toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit" });
+    function actTimeLine(d, key) {
+      const t = d.timing && typeof d.timing === "object" ? d.timing : null;
+      const a = t && Array.isArray(t.acts) ? t.acts.find((x) => x && x.key === key) : null;
+      if (!a) return null;
+      const from = typeof a.startedAt === "string" && a.startedAt.length >= 16 ? a.startedAt.slice(11, 16) : "?";
+      let text;
+      if (!a.unknown) text = `praca ${humanDur(a.workSeconds)}, czekanie ${humanDur(a.waitSeconds)}`;
+      else if (a.reason === "no-approval") text = (d.acts || []).some((x) => x.key === key && x.state === "active") ? `trwa od ${from}` : "czas nieznany: zgody nie ma w pliku zgód";
+      else if (a.reason === "open-window") text = "czas nieznany: okno czekania bez końca";
+      else text = "czas nieznany: niespójne znaczniki";
+      const tip = `Zmierzone z checkpointów i pliku zgód: od ${from}${a.endedAt ? " do " + String(a.endedAt).slice(11, 16) : ""}, minus okna czekania. To pomiar, nie prognoza.`;
+      return h("div", { class: "measure", "data-measure": key, ...desc("measure_act", tip) }, h("span", { class: "lbl" }, "Pomiar:"), " " + text);
+    }
+    function forecastLine(d) {
+      const f = d.forecast && typeof d.forecast === "object" ? d.forecast : null;
+      if (!f || f.scope !== "plan") return null;
+      const view = deps.forecastView === "range" || deps.forecastView === "tempo" ? deps.forecastView : FORECAST_VIEW;
+      const tip = view === "range"
+        ? "Prognoza, nie pomiar: pierwszy i trzeci kwartyl pracy na krok (z odstępów między zakończonymi krokami, bez czekania) × zostało kroków; godzina końca = chwila odświeżenia strony + ten zakres. Nie uwzględnia rozmiaru kroków ani czekania na ludzi. Orientacyjnie: powtórka na prawdziwych przebiegach pokazała, że to rząd wielkości, nie obietnica."
+        : "Prognoza, nie pomiar: mediana pracy na krok z odstępów między zakończonymi krokami, bez czekania. Ten widok nie podaje sumy ani godziny końca. Nie uwzględnia rozmiaru kroków ani czekania na ludzi; orientacyjnie, nie obietnica.";
+      let text;
+      if (typeof f.reason === "string") {
+        if (f.reason === "not-enough-data") text = `za mało danych (zakończone kroki z czasem: ${Number.isInteger(f.have) ? f.have : 0}, potrzeba co najmniej ${Number.isInteger(f.need) ? f.need : 4})`;
+        else if (f.reason === "few-moments") text = `zakończone kroki w zbyt mało różnych momentach (${Number.isInteger(f.have) ? f.have : 0}, potrzeba co najmniej ${Number.isInteger(f.need) ? f.need : 3}): kroki zgłoszone jednym checkpointem to jedna obserwacja`;
+        else if (f.reason === "no-run-start") text = "brak czasu bezwzględnego w checkpoints.md (RUN=)";
+        else return null;
+        return h("div", { class: "forecast is-none", "data-forecast": "none", ...desc("forecast", tip) }, h("span", { class: "lbl" }, "Prognoza:"), " " + text);
+      }
+      const nums = [f.lowSeconds, f.medianSeconds, f.highSeconds];
+      if (!nums.every((n) => Number.isFinite(n) && n >= 0) || !Number.isInteger(f.remaining)) return null;
+      if (view === "tempo") {
+        if (f.remaining < 1) return null;
+        const per = f.medianSeconds / f.remaining;
+        const unit = per < 60 ? "mniej niż minuta" : `ok. ${humanDur(per, true)}`;
+        const tail = f.paused ? "; wstrzymane: sesja czeka na człowieka" : "";
+        return h("div", { class: "forecast" + (f.paused ? " is-paused" : ""), "data-forecast": "tempo", ...desc("forecast", tip) }, h("span", { class: "lbl" }, "Prognoza:"),
+          ` orientacyjnie, tempo: ${unit} pracy na krok, z ${f.samples} ${plural(f.samples, "zakończonego kroku", "zakończonych kroków", "zakończonych kroków")}; zostało ${f.remaining} ${plural(f.remaining, "krok", "kroki", "kroków")}${tail}`);
+      }
+      const lo = humanDur(f.lowSeconds, true), hi = humanDur(f.highSeconds, true), range = lo === hi ? lo : `${lo}–${hi}`;
+      const basis = `zostało ${f.remaining} ${plural(f.remaining, "krok", "kroki", "kroków")}, tempo z ${f.samples} ${plural(f.samples, "odstępu", "odstępów", "odstępów")} między zakończonymi`;
+      const t0 = now();
+      const end = f.paused ? "wstrzymana: sesja czeka na człowieka, czekanie nie jest liczone" : `koniec ok. ${clockOf(t0 + f.lowSeconds * 1000)}–${clockOf(t0 + f.highSeconds * 1000)}`;
+      text = `orientacyjnie: do końca kroków ok. ${range} pracy (${basis}), bez czekania na zgody; ${end}. Rząd wielkości, nie obietnica.`;
+      return h("div", { class: "forecast" + (f.paused ? " is-paused" : ""), "data-forecast": f.paused ? "paused" : "range", ...desc("forecast", tip) }, h("span", { class: "lbl" }, "Prognoza:"), " " + text);
+    }
     function renderActs(d) {
       const acts = d.acts || [];
       const anyActive = acts.some((a) => a.state === "active");
@@ -591,9 +670,10 @@
             bar(p.percent, p.pendingPercent, barCls, "Postęp realizacji", fills, p.activePercent),
             legend(p),
             cur ? h("div", { class: "now", "data-tip": `Teraz wykonywane: ${(p.active || []).join(", ")}, ${cur.index}. pozycja z ${p.total} w planie (${p.activeSource === "checkpoint" ? "z ostatniego checkpointu „w toku”" : "pierwszy niezaznaczony krok"})` },
-              h("span", { class: "dot-live" }), h("span", { class: "txt" }, "teraz: ", mono(cur.id), " " + (cur.title ?? "")),
+              h("span", { class: "dot-live" }), h("span", { class: "txt" }, "teraz: ", mono(cur.id), " ", inl("", cur.title ?? "", cur.titleHtml)),
               p.parallel ? h("span", { class: "par" }, `+${p.parallel} równolegle`) : null)
               : h("div", { class: "act-detail" }, a.detail || ""),
+            forecastLine(d),
             h("div", { class: "stages" }, stages),
             substepsBlock.call(kit, d),
             timingBlock.call(kit, d),
@@ -606,7 +686,7 @@
             on: { click: () => openDoc(docRef.path) } }, icon("i-doc"), docRef.label) : null;
           const approve = approveButton(d, a.key === "spec" ? "spec" : "plan", "act-approve");
           const extra = a.key === "plan" ? readinessTile.call(kit, d) : null;
-          body = [h("div", { class: "act-detail" }, a.detail || " "), h("div", { class: "stages" }, stages), extra, warn, h("div", { class: "act-actions" }, docLink, approve)];
+          body = [h("div", { class: "act-detail" }, a.detail || " "), actTimeLine(d, a.key), h("div", { class: "stages" }, stages), extra, warn, h("div", { class: "act-actions" }, docLink, approve)];
         }
         return h("div", { class: `act s-${a.state}${glow ? " s-active" : ""}`, "data-key": a.key },
           h("div", { class: "roman", "aria-hidden": "true" }, a.roman),
@@ -658,10 +738,10 @@
           bar(ph.percent, ph.pendingPercent, "thin " + (ph.state === "done" ? "is-done" : ""), ph.short, fills),
           h("ul", { class: "steps" }, (ph.steps || []).map((s) => {
             const changed = st.prev && prevStates[s.id] && prevStates[s.id] !== s.state;
-            const tip = `${s.id} ${s.title} — ${STEP_LABEL[s.state]}${s.sha ? " · commit " + s.sha : ""}${s.note && !s.sha ? " · " + s.note : ""}`;
+            const tip = `${s.id} ${plainInline(s.title, s.titleHtml)} — ${STEP_LABEL[s.state]}${s.sha ? " · commit " + s.sha : ""}${s.note && !s.sha ? " · " + plainInline(s.note, s.titleHtml) : ""}`;
             const mark = s.state === "done" || s.state === "reported" ? icon("i-check") : null;
             return h("li", { class: `step s-${s.state}${changed ? " flash" : ""}${s.tests ? " has-tests" : ""}`, ...desc(/^zamknięcie/i.test(s.title || "") ? "closure" : "substep", tip) },
-              h("span", { class: "st", "aria-label": STEP_LABEL[s.state] ?? "" }, mark), h("span", { class: "sid" }, s.id), h("span", { class: "tt" }, s.title),
+              h("span", { class: "st", "aria-label": STEP_LABEL[s.state] ?? "" }, mark), h("span", { class: "sid" }, s.id), inl("tt", s.title, s.titleHtml),
               stepTests(s, fills));
           })));
       }));
@@ -830,6 +910,9 @@
       return splitBy(String(text ?? ""), ID_RE, (id) => h("span", { class: "sidc" }, id))
         .flatMap((part) => (typeof part === "string" ? splitBy(part, PHRASE_RE, (w) => h("span", { class: "ph" }, w)) : [part]));
     }
+    // Wiersz z formatowaniem w linii (`textHtml` z serwera, tylko gdy tekst ma formatowanie; serwer wyróżnia w nim id kroków i frazy tak samo jak
+    // `decorateCheckpoint`) dostaje je przez `deps.mountHtml`; bez niego dotychczasowe wyróżnienie po stronie strony (`decorateCheckpoint`).
+    const feedText = (c) => (typeof c.textHtml === "string" && c.textHtml && typeof deps.mountHtml === "function" ? inl("", c.text, c.textHtml) : h("span", null, decorateCheckpoint(c.text)));
     function renderFeed(d) {
       const items = (d.run && d.run.checkpoints) || [];
       const prevTop = st.prev && st.prev.run && st.prev.run.checkpoints && st.prev.run.checkpoints[0];
@@ -837,7 +920,7 @@
       const fresh = st.prev ? Math.max(0, items.length - prevCount) : 0;
       fill(ui.feed, items.length
         ? items.map((c, i) => h("li", { class: i < fresh || (i === 0 && prevTop && prevTop.text !== c.text) ? "is-new" : "" },
-          h("span", { class: "t" }, c.time), h("span", null, decorateCheckpoint(c.text))))
+          h("span", { class: "t" }, c.time), feedText(c)))
         : h("li", null, h("span"), h("span", { class: "empty" }, "Brak checkpointów — pojawią się, gdy przebieg zapisze ", mono("checkpoints.md"), ".")));
     }
 
@@ -1083,9 +1166,9 @@
         return h("div", { class: "wait-item", ...desc(silence ? "banner_silence" : "banner_wait") },
           icon("i-bell"),
           h("div", { class: "wait-txt" },
-            h("strong", null, silence ? `Brak raportu postępu: ${String(w.what).replace(/^brak raportu /, "")}`
-              : w.source === "writing" ? `Sesja pracuje${since}: ${w.what}` : `${whoText(w) || "Sesja czeka na Ciebie"}${since}: ${w.what}`),
-            h("span", null, action),
+            silence ? h("strong", null, `Brak raportu postępu: ${String(w.what).replace(/^brak raportu /, "")}`)
+              : h("strong", null, w.source === "writing" ? `Sesja pracuje${since}: ` : `${whoText(w) || "Sesja czeka na Ciebie"}${since}: `, inl("", w.what, w.whatHtml)),
+            given ? h("span", null, action) : inl("", action, w.actionHtml),
             h("small", null, `Źródło: ${WAIT_SOURCE[w.source] || w.source}. ${silence ? "Zniknie po następnym raporcie." : w.source === "writing" ? "Zniknie, gdy agent skończy pisać albo znacznik wygaśnie." : "Baner zniknie, gdy sesja ruszy."}`)),
           h("div", { class: "wait-actions" }, link, tools));
       }));
@@ -1113,25 +1196,41 @@
 
     // ---------------------------------------------------------------- Wynik planu i pojęcia (pod aktami)
     const RESULT_VISIBLE_LINES = 12;
-    // `d.result` = {text, path} albo null: tekst planu bez markdown→HTML (textContent w <pre>), długi w <details> po pierwszych liniach.
+    // `d.result` = {text, path[, html, moreHtml, moreLines]} albo null. Serwer (`/api/status`) dodaje `html` (widoczna część) i `moreHtml` (zwinięta reszta)
+    // wyrenderowane tym samym bezpiecznym rendererem Markdown co `/api/doc` (HTML wstawia host przez `deps.mountHtml`; renderer nie parsuje HTML).
+    // Bez `html` (stary serwer, `dashboard show`, host bez `mountHtml`) zostaje tekst w <pre> (textContent), długi w <details> po pierwszych liniach.
     function renderResult(d) {
       const r = d.result && typeof d.result === "object" && typeof d.result.text === "string" && d.result.text.trim() ? d.result : null;
       const el = ui.result;
       if (!r) { el.hidden = true; fill(el); return; }
-      const lines = r.text.replace(/\s+$/, "").split(/\r?\n/);
-      const head = lines.slice(0, RESULT_VISIBLE_LINES).join("\n"), rest = lines.slice(RESULT_VISIBLE_LINES).join("\n");
-      let more = null;
-      if (lines.length > RESULT_VISIBLE_LINES) {
-        more = h("details", { class: "result-more", open: Boolean(st.resultOpen) },
-          h("summary", null, `Pokaż resztę (${lines.length - RESULT_VISIBLE_LINES} ${plural(lines.length - RESULT_VISIBLE_LINES, "linia", "linie", "linii")})`),
-          h("pre", { class: "result-text", "data-result-rest": "" }, rest));
-        more.addEventListener("toggle", () => { st.resultOpen = more.hasAttribute("open"); });
+      const rich = typeof r.html === "string" && typeof deps.mountHtml === "function";
+      let headNode, more = null;
+      if (rich) {
+        headNode = h("div", { class: "md result-md", "data-result-head": "" });
+        deps.mountHtml(headNode, r.html);
+        if (typeof r.moreHtml === "string" && r.moreHtml) {
+          const n = Number.isInteger(r.moreLines) && r.moreLines > 0 ? r.moreLines : 0;
+          const restNode = h("div", { class: "md result-md", "data-result-rest": "" });
+          deps.mountHtml(restNode, r.moreHtml);
+          more = h("details", { class: "result-more", open: Boolean(st.resultOpen) },
+            h("summary", null, n ? `Pokaż resztę (${n} ${plural(n, "linia", "linie", "linii")})` : "Pokaż resztę"), restNode);
+        }
+      } else {
+        const lines = r.text.replace(/\s+$/, "").split(/\r?\n/);
+        const head = lines.slice(0, RESULT_VISIBLE_LINES).join("\n"), rest = lines.slice(RESULT_VISIBLE_LINES).join("\n");
+        headNode = h("pre", { class: "result-text", "data-result-head": "" }, head);
+        if (lines.length > RESULT_VISIBLE_LINES) {
+          more = h("details", { class: "result-more", open: Boolean(st.resultOpen) },
+            h("summary", null, `Pokaż resztę (${lines.length - RESULT_VISIBLE_LINES} ${plural(lines.length - RESULT_VISIBLE_LINES, "linia", "linie", "linii")})`),
+            h("pre", { class: "result-text", "data-result-rest": "" }, rest));
+        }
       }
+      if (more) more.addEventListener("toggle", () => { st.resultOpen = more.hasAttribute("open"); });
       el.hidden = false;
       fill(el,
         h("h2", { id: "resultTitle", ...desc("legend_result") }, icon("i-flag"), "Wynik"),
         typeof r.path === "string" && r.path ? h("div", { class: "result-path" }, "Plan: ", mono(r.path)) : null,
-        h("pre", { class: "result-text", "data-result-head": "" }, head), more);
+        headNode, more);
     }
     // Legenda pojęć (osobna od `legend(p)`, legendy paska): zawsze obecna, zwinięta; teksty z descriptions.json, awaryjnie z renderera.
     const GLOSSARY = [
@@ -1196,6 +1295,7 @@
     }
     function questionRow(d, q) {
       const text = typeof q.text === "string" ? (q.text.length > Q_TEXT_MAX ? q.text.slice(0, Q_TEXT_MAX) + "…" : q.text) : null;
+      const textHtml = text != null && typeof q.textHtml === "string" && q.textHtml && typeof deps.mountHtml === "function" ? q.textHtml : null;
       const to = (q.addressees === "all" || (Array.isArray(q.addressees) && !q.addressees.length)) ? "do wszystkich ekspertów" : addresseesText(q.addressees);
       const url = safeUrl(expertsUrl(d, q.url));
       const slug = typeof q.runSlug === "string" ? q.runSlug : "";
@@ -1204,7 +1304,7 @@
           q.blocking === true ? h("span", { class: "chip s-warn q-blocking" }, "blokujące") : null,
           h("span", { class: "chip " + (q.state === "open" ? "s-active" : "s-planned") }, Q_STATE[q.state] || String(q.state ?? "—")),
           h("span", { class: "q-age" }, fmtAge(q.at))),
-        h("span", { class: "q-text" + (text == null ? " is-missing" : "") }, text == null ? "treść niedostępna" : text),
+        textHtml ? inl("q-text", text, textHtml) : h("span", { class: "q-text" + (text == null ? " is-missing" : "") }, text == null ? "treść niedostępna" : text),
         to ? h("span", { class: "q-to", "data-addressees": "" }, to) : null,
         url ? h("a", { class: "q-go", href: url, target: "_blank", rel: "noopener", "aria-label": `Otwórz pytania przebiegu ${slug || ""}`.trim(),
           on: { click: linkClick("experts", slug, url) } }, "Otwórz pytania") : null);

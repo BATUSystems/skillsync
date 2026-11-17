@@ -138,13 +138,18 @@ class Active(GuardBase):
         self.assertEqual(guardhook.command_tests(self.command()), {'wide': 25, 'wrappers': []})
         self.assertTrue((self.root / guardhook.GUARD_HOOK).exists())
 
-    def test_both_off_removes_everything(self):
+    def test_both_off_leaves_only_the_attribution_ban(self):
         self.sync()
         self.set_hooks(guard_delete='off', guard_tests='off')
         self.sync()
-        for name in (guardhook.GUARD_HOOK, guardhook.TESTS_HOOK, guardhook.TOOLS_HOOK):
+        for name in (guardhook.TESTS_HOOK, guardhook.TOOLS_HOOK):
             self.assertFalse((self.root / name).exists(), name)
-        self.assertEqual(self.guard_entries(self.local()), [])
+        self.assertTrue((self.root / guardhook.GUARD_HOOK).exists())
+        self.assertTrue((self.root / guardhook.ATTRIBUTION_HOOK).exists())
+        entries = self.guard_entries(self.local())
+        self.assertEqual(len(entries), 1)
+        self.assertIn('--attribution on', entries[0]['command'])
+        self.assertNotIn('--tests', entries[0]['command'])
 
     def test_a_missing_classifier_in_the_library_leaves_the_delete_guard_working(self):
         (self.library / 'hooks/guard-tests.py').unlink()
@@ -169,7 +174,8 @@ class Active(GuardBase):
         self.manifest['skills'] = ['plain']
         self.save()
         self.sync()
-        for name in (guardhook.GUARD_HOOK, guardhook.TESTS_HOOK, guardhook.TOOLS_HOOK):
+        self.assertTrue((self.root / guardhook.GUARD_HOOK).exists())   # the attribution ban only
+        for name in (guardhook.TESTS_HOOK, guardhook.TOOLS_HOOK):
             self.assertFalse((self.root / name).exists(), name)
 
     def test_doctor_reports_the_state(self):
@@ -198,7 +204,7 @@ class PlainProjectUnchanged(GuardBase):
         self.manifest['skills'] = ['plain']
         self.save()
 
-    def test_default_and_explicitly_off_give_the_same_tree_and_nothing_of_the_hook(self):
+    def test_default_and_explicitly_off_give_the_same_tree_and_nothing_of_the_test_part(self):
         self.link()
         default = self.posix_tree()
         self.set_hooks(guard_tests='off')
@@ -208,16 +214,16 @@ class PlainProjectUnchanged(GuardBase):
         for rel in default:
             self.assertNotIn('test-tools', rel)
             self.assertNotIn('guard-tests', rel)
-            self.assertNotIn('guard-commands', rel)
-        for name in (guardhook.GUARD_HOOK, guardhook.TESTS_HOOK, guardhook.TOOLS_HOOK):
+        for name in (guardhook.TESTS_HOOK, guardhook.TOOLS_HOOK):
             self.assertFalse((self.root / name).exists(), name)
+        self.assertTrue((self.root / guardhook.GUARD_HOOK).exists())   # the attribution ban is in every project
         gitignore = self.root / '.claude/.gitignore'
         if gitignore.exists():
             text = gitignore.read_text(encoding='utf-8')
-            for word in ('guard-commands', 'guard-tests', 'test-tools'):
+            for word in ('guard-tests', 'test-tools'):
                 self.assertNotIn(word, text)
-        if (self.root / '.claude/settings.local.json').exists():
-            self.assertNotIn('PreToolUse', (self.root / '.claude/settings.local.json').read_text(encoding='utf-8'))
+        settings = (self.root / '.claude/settings.local.json').read_text(encoding='utf-8')
+        self.assertNotIn('--tests', settings)
 
     def test_a_flow_project_with_the_test_part_off_has_none_of_its_artefacts(self):
         self.manifest['skills'] = ['feature']

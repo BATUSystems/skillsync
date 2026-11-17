@@ -268,6 +268,13 @@ main { flex: 1; padding: 1.1rem 1.4rem; min-width: 0; }
 .result-path { color: var(--muted); font-size: .78rem; margin-bottom: .4rem; }
 .result-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: .86rem; line-height: 1.45; color: var(--text); }
 .result-more { margin-top: .3rem; }
+.result-md { font-size: .86rem; line-height: 1.45; }
+.result-md > :first-child { margin-top: 0; } .result-md > :last-child { margin-bottom: 0; }
+.result-md h1, .result-md h2, .result-md h3, .result-md h4 { margin: .8rem 0 .3rem; font-size: .95rem; border-bottom: 0; padding-bottom: 0; }
+.result-md p, .result-md ul, .result-md ol { margin: .35rem 0; }
+.result-md .md-table { max-width: 100%; }
+.result-md table { min-width: 0; font-size: .8rem; }
+.result-md th, .result-md td { overflow-wrap: normal; word-break: normal; }   /* słowa w komórkach się nie łamią: wąska tabela przewija się w .md-table */
 .result-more summary, .glossary summary { cursor: pointer; color: var(--muted); font-weight: 600; font-size: .84rem; }
 .glossary summary .ic { width: .95em; height: .95em; margin-right: .35rem; vertical-align: -2px; }
 .glossary-list { margin: .5rem 0 0; display: grid; gap: .5rem; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); font-size: .82rem; }
@@ -417,6 +424,9 @@ main { flex: 1; padding: 1.1rem 1.4rem; min-width: 0; }
 .md pre code { background: none; padding: 0; }
 .md blockquote { margin: .6rem 0; padding: .2rem 1rem; border-left: 4px solid var(--accent); color: var(--muted); background: var(--accent-soft); border-radius: 0 8px 8px 0; }
 .md a { color: var(--accent); }
+/* formatowanie w linii (tytuły kroków, „czeka na”, pytania): ten sam wygląd kodu i linków co w .md */
+.step .tt code, .sub-list .tt code, .wait-txt code, .q-text code, .now code, .feed code { font-family: var(--mono); font-size: .88em; background: var(--panel-2); padding: .05rem .3rem; border-radius: 5px; }
+.step .tt a, .sub-list .tt a, .wait-txt a, .q-text a, .now a, .feed a { color: var(--accent); }
 .md .md-link-off { text-decoration: underline dotted; color: var(--muted); }
 .md ul, .md ol { padding-left: 1.4rem; }
 .md li.md-task { list-style: none; margin-left: -1.3rem; display: flex; gap: .5rem; align-items: baseline; }
@@ -630,3 +640,11 @@ button.tab-att.is-on { border-color: var(--accent); color: var(--accent); }
   button.tsec-head { grid-template-columns: 1.1rem 1fr; } .tsec-head .sum { grid-column: 2; justify-content: flex-start; }
   .step .stbar { margin-left: 3.4rem; }
 }
+
+/* pomiar (ciągła ramka) i prognoza (przerywana, kursywa): strona odróżnia to, co minęło, od tego, co szacowane */
+
+.measure, .forecast { display: block; font-size: .85rem; margin: .35rem 0; padding: .25rem .5rem; border-radius: 8px; overflow-wrap: anywhere; }
+.measure { border: 1px solid var(--line); }
+.forecast { border: 1px dashed var(--muted); font-style: italic; color: var(--text); }
+.forecast.is-none, .forecast.is-paused { color: var(--muted); }
+.measure .lbl, .forecast .lbl { margin-right: .4rem; font-style: normal; font-weight: 650; font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }

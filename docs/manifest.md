@@ -33,7 +33,7 @@ Po zapisaniu manifestu: `skillsync link <projekt> --dry-run`, potem `skillsync l
 | `sync.library` | — | **ignorowane** z ostrzeżeniem; dobór warstw jest tylko w configu maszyny |
 | `agents` | lista nazw ról | zawęża role dla obu hostów; pusta lista = brak ról; brak klucza przy `feature` = wszystkie role z `codex.yaml` |
 | `hooks.stop_closure` | bool | projekty z `feature`: kopiuje `check-closure.py` i dopisuje hook Stop; `false` go usuwa |
-| `hooks.guard_delete` | `deny` \| `off` (też `true` = `deny`, `false` = `off`) | hook PreToolUse na `Bash` odmawiający trwałego usunięcia (`rm -r`, `git clean -f`, `git worktree remove --force`, …) z gotową komendą kosza; brak klucza: `deny` w projektach ze skillem `feature`, `agentflow` albo `dispatch`, `off` w pozostałych; `off` usuwa wpis i skrypt przy `link`, o ile wyłączone jest też `hooks.guard_tests` (ten sam wpis niesie część testową); błędna wartość = `off` i ostrzeżenie; hak istnieje tylko dla Claude Code (przy wyłączonym `claude` brak haka); `doctor` raportuje stan (nieobecny, nieaktualny, aktywny) |
+| `hooks.guard_delete` | `deny` \| `off` (też `true` = `deny`, `false` = `off`) | hook PreToolUse na `Bash` odmawiający trwałego usunięcia (`rm -r`, `git clean -f`, `git worktree remove --force`, …) z gotową komendą kosza; brak klucza: `deny` w projektach ze skillem `feature`, `agentflow` albo `dispatch`, `off` w pozostałych; `off` wyłącza tylko część usuwania: wpis i skrypt zostają zawsze, bo niosą niewyłączalny zakaz stopek i podpisów narzędzi AI (`--attribution on`, bez klucza manifestu); błędna wartość = `off` i ostrzeżenie; hak istnieje tylko dla Claude Code (przy wyłączonym `claude` brak haka); `doctor` raportuje stan (nieobecny lub bez danych zakazu atrybucji = FAIL, nieaktualny = ostrzeżenie, aktywny = info) |
 | `hooks.guard_tests` | `warn` \| `off` (też `true` = `warn`, `false` = `off`) | ta sama część PreToolUse **ostrzega** (nie blokuje) o szerokim biegu testów poza `skillsync test-run` (`unittest discover`, `pytest` bez pliku, `dotnet test` bez `--filter`, `cargo test` bez filtra, `ng test`, `npm test` i inne z tabeli narzędzi); ostrzeżenie trafia do kontekstu modelu razem z wynikiem polecenia, czyli po jego wykonaniu; brak klucza: `warn` w projektach ze skillem `feature`/`agentflow`/`dispatch`, `off` w pozostałych; błędna wartość = `off` i ostrzeżenie w `link`/`doctor`; `link` kopiuje `guard-tests.py` i `test-tools.json` obok hooka |
 | `hooks.test_wrappers` | lista napisów | prefiksy polecenia, które liczą się jak opakowanie (ostrzeżenie ich nie obejmuje), np. `make test`; wbudowane: `skillsync test-run`, `skillsync validate`/`smart-test`, `flock … systemd-run …` |
 | `hooks.wide_modules` | liczba całkowita ≥ 2 | od ilu modułów `unittest` bieg liczy się jako szeroki (domyślnie 25) |
@@ -72,7 +72,8 @@ Ustawienia workflow składają się z trzech poziomów (to nie są warstwy w roz
 `workflow/projects/<projekt>.yaml` z warstw, potem sekcja `workflow:` manifestu. Mapy scalają się rekurencyjnie,
 **listy zastępuje się w całości**. Reguły scalania per plik i klucz, także dla `workflow/*`: [architecture](architecture.md).
 Opis kluczy `workflow:` (`validation`, `testing`, `readiness`, `review`, `environment`, `e2e`, `doctor`, `delivery`
-w sensie provider i CI, `skill_profiles`, `guardrails`, `knowledge`): [workflow](workflow.md).
+w sensie provider i CI, `skill_profiles`, `guardrails`, `knowledge`): [workflow](workflow.md). `knowledge.domain` i `knowledge.lessons`
+to ciąg albo lista ciągów (produkt z kilku repozytoriów): [workflow](workflow.md), „Katalogi wiedzy: ciąg albo lista”.
 Wyjątek od scalania: `workflow.ceremony` (`full` | `demo`) czyta się tylko z manifestu projektu, wcześniejsze poziomy go ignorują.
 
 ## Pliki generowane
