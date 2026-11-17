@@ -16,6 +16,10 @@ def counts(recorder):
     return [c[1] for c in recorder.calls if c[0] == 'counts']
 
 
+def setUpModule():
+    test_adapters.discover()   # a single test, or another order, finds the registry filled
+
+
 class Registration(unittest.TestCase):
     def test_name_liveness_and_selection(self):
         for argv, tool in ((['karma', 'start', 'karma.conf.js'], 'karma'), (['./node_modules/.bin/karma', 'start', '--single-run'], 'karma')):

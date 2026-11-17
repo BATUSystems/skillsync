@@ -13,6 +13,10 @@ from skillsync_workflow import test_adapters  # noqa: E402
 ADAPTER_FILE = Path(test_adapters.__file__).parent / 'angular.py'
 
 
+def setUpModule():
+    test_adapters.discover()   # a single test, or another order, finds the registry filled
+
+
 class Selection(unittest.TestCase):
     def test_ng_test_selects_the_angular_adapter_and_the_others_do_not_take_it(self):
         adapter = test_adapters.resolve('auto', ['ng', 'test', '--no-watch'], 'angular')

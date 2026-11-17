@@ -18,6 +18,10 @@ def states(recorder):
     return {k: v[0] for k, v in recorder.last().items()}
 
 
+def setUpModule():
+    test_adapters.discover()   # a single test, or another order, finds the registry filled
+
+
 class Registration(unittest.TestCase):
     def test_name_liveness_and_selection(self):
         for argv, tool in ((['playwright', 'test'], 'playwright'), (['./node_modules/.bin/playwright', 'test'], 'playwright')):

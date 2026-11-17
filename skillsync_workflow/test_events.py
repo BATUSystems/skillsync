@@ -215,7 +215,7 @@ class EventWriter:
         self.final[str(test_id).replace('\\', '/')] = state
         event = {'t': 'test', 'id': mask_text(str(test_id).replace('\\', '/'), self.mask, MAX_NAME), 'name': mask_text(name, self.mask, MAX_NAME), 'state': state}
         if group:
-            event['group'] = mask_text(group, self.mask, MAX_NAME)
+            event['group'] = mask_text(str(group).replace('\\', '/'), self.mask, MAX_NAME)   # the same `/` as the id (a Windows path)
         if ms is not None:
             try:
                 value = int(ms)

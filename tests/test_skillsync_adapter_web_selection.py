@@ -30,6 +30,10 @@ def auto(argv):
     return adapter.name if adapter else None
 
 
+def setUpModule():
+    test_adapters.discover()   # a single test, or another order, finds the registry filled
+
+
 class Declarations(unittest.TestCase):
     def test_every_tool_is_a_value_of_the_tools_table_and_is_not_a_wrapper(self):
         known = {tool for _, tool in test_run.TOOLS}

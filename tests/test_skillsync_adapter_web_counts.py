@@ -1,7 +1,9 @@
 """180-A3: the end record of a run (`status`, `counts`, `source`) of the web tools, through the real `TestRecorder` fed with the recorded streams: a complete stream of
 an adapter gives the counters of its tests, a counters-only adapter (Karma) its last counters, anything incomplete keeps the summary of the output."""
+import os
 import shutil
 import sys
+import time
 import tempfile
 import unittest
 from pathlib import Path
@@ -34,6 +36,10 @@ def run_through_recorder(fixture, argv=None):
         recorder.finished(check, {'exit_code': meta['exit'], 'duration_seconds': 1.0}, output)
         events = test_events.read_events(recorder.path)[0]
     return [e for e in events if e['t'] == 'end'][-1], events
+
+
+def setUpModule():
+    test_adapters.discover()   # a single test, or another order, finds the registry filled
 
 
 class EndRecord(unittest.TestCase):
@@ -109,6 +115,7 @@ class EndRecord(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         recorder = test_run.TestRecorder(self.tmp.name, 'R1', 'F1.1', 'flag', adapter=test_adapters.resolve('auto', argv, test_run.detect_tool(argv)))
         recorder.started({'argv': argv, 'command': ' '.join(argv), 'cwd': self.tmp.name})
+        self.addCleanup(recorder.writer.close)   # LIFO: the open events file is closed before its directory goes (Windows refuses to delete an open file)
         return recorder
 
     def feed_text(self, tmp, argv, text, exit_code):
@@ -132,17 +139,19 @@ class EndRecord(unittest.TestCase):
 class KarmaReport(unittest.TestCase):
     """Counters always, the list when a JUnit report is there: a counters-only adapter (Karma, `ng test` with Karma) leaves the names to the report."""
 
-    def run_karma(self, fixture, argv, junit=None, place=None):
+    def run_karma(self, fixture, argv, junit=None, place=None, age=0):
         meta, chunks = ar.load(fixture)
         with tempfile.TemporaryDirectory(prefix='karma-report-') as tmp:
-            if place:
-                target = descend(tmp, place)
-                target.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy(ar.FIXTURES / 'karma-junit.xml', target)
             adapter = test_adapters.resolve('auto', argv, test_run.detect_tool(argv))
             recorder = test_run.TestRecorder(tmp, 'R1', 'F1.1', 'flag', junit=[str(child(tmp, junit))] if junit else [], adapter=adapter)
             check = {'argv': argv, 'command': ' '.join(argv), 'cwd': tmp}
             recorder.started(check)
+            if place:   # the tool writes its report AFTER the start of the run
+                target = descend(tmp, place)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy(ar.FIXTURES / 'karma-junit.xml', target)
+                if age:
+                    os.utime(target, (time.time() - age, time.time() - age))
             text = ''.join(c['data'] for c in chunks)
             for line in text.split('\n'):
                 recorder.line(check, 'out', line)
@@ -162,6 +171,10 @@ class KarmaReport(unittest.TestCase):
             with self.subTest(argv=argv):
                 end, tests = self.run_karma('karma-junit-progress.jsonl', argv, place='junit-out/karma-junit.xml')
                 self.assertEqual((end['source'], len(tests)), ('junit', 11))
+
+    def test_the_report_of_an_earlier_run_in_the_same_place_is_not_the_result_of_this_one(self):
+        end, tests = self.run_karma('karma-progress.jsonl', ['karma', 'start'], place='junit-out/karma-junit.xml', age=3600)
+        self.assertEqual((end['source'], tests), ('adapter', []))   # older than the start of this run (less the slack of the clock): never read
 
     def test_without_a_report_there_is_no_list_and_the_counters_stay(self):
         end, tests = self.run_karma('karma-progress.jsonl', ['karma', 'start'])
