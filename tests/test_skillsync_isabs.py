@@ -137,16 +137,24 @@ class GuardHook(Windows313):
         self.assertFalse(self.refused('rm -rf /data/scratch', allow=['/data/scratch']), 'an absolute entry is deletable itself (exact)')
         self.assertTrue(self.refused('rm -rf /data/other/x', allow=['/data/scratch']), 'only the entry is allowed, not its neighbour')
 
-    def test_a_rooted_target_resolves_to_the_drive_not_to_the_working_directory(self):
+    def test_resolve_and_the_glob_prefix_decide_through_the_hooks_own_isabs(self):
+        """Both sites reach `isabs` of the hook (a spy sees the rooted word); a bare `os.path.isabs` there would not."""
         self.simulate()
         guard = self.checker()
-        self.assertEqual(guard.resolve('/data/x'), 'C:/data/x')
-        self.assertEqual(guard.resolve('/home/user/Repos/proj/a'), 'C:/home/user/Repos/proj/a', 'not joined to the cwd a second time')
-
-    def test_the_prefix_of_a_glob_in_a_name_is_rooted_too(self):
-        self.simulate()
+        spy = unittest.mock.Mock(wraps=self.guard.isabs)
+        with unittest.mock.patch.object(self.guard, 'isabs', spy):
+            self.assertEqual(guard.resolve('/data/x'), 'C:/data/x')
+            spy.assert_any_call('/data/x')
+            spy.reset_mock()
+            self.assertTrue(self.refused('rm -rf /data/foo-*'))
+            spy.assert_any_call('/data/foo-')
         self.assertFalse(self.refused('rm -rf /tmp/foo-*'), 'under a temporary root')
-        self.assertTrue(self.refused('rm -rf /data/foo-*'), 'outside every root stays refused')
+
+    def test_posix_meaning_is_unchanged_in_the_hook(self):
+        with unittest.mock.patch.object(self.guard.os, 'name', 'posix'), unittest.mock.patch.object(self.guard.os.path, 'isabs', posixpath.isabs):
+            self.assertTrue(self.guard.isabs('/a/b'))
+            self.assertFalse(self.guard.isabs('\\a'))
+            self.assertFalse(self.guard.isabs(''))
 
     def test_doubt_stays_a_refusal(self):
         self.simulate()
@@ -156,15 +164,27 @@ class GuardHook(Windows313):
         self.assertTrue(self.refused('rm -rf /data/scratch/x'), 'without the allow entry')
 
     def test_the_hook_names_no_os_path_isabs_of_its_own(self):
-        """Every `os.path.isabs` in library/hooks sits inside the hook's own `isabs` helper (the only place that adds the rooted reading)."""
-        found = []
+        """The rooted reading lives in ONE helper `isabs` of guard-commands.py; elsewhere in library/hooks no `isabs`/`is_absolute`/`splitroot`
+        attribute (any base: `os.path`, `ntpath`, `Path`), no `from os.path import isabs` and no second helper."""
+        names = {'isabs', 'is_absolute', 'splitroot'}
+        found, scanned, helpers = [], [], 0
         for path in sorted((ROOT / 'library' / 'hooks').glob('*.py')):
+            scanned.append(path.name)
             tree = ast.parse(path.read_text(encoding='utf-8'))
-            inside = {id(c) for h in ast.walk(tree) if isinstance(h, ast.FunctionDef) and h.name == 'isabs' for c in ast.walk(h)}
+            defs = [h for h in ast.walk(tree) if isinstance(h, ast.FunctionDef) and h.name == 'isabs']
+            helpers += len(defs)
+            inside = {id(c) for h in defs for c in ast.walk(h)}
             for node in ast.walk(tree):
-                if (isinstance(node, ast.Attribute) and node.attr == 'isabs' and isinstance(node.value, ast.Attribute)
-                        and node.value.attr == 'path' and id(node) not in inside):
+                if id(node) in inside:
+                    continue
+                if isinstance(node, ast.Attribute) and node.attr in names:
                     found.append('%s:%d' % (path.name, node.lineno))
+                elif isinstance(node, ast.ImportFrom) and any(a.name in names for a in node.names):
+                    found.append('%s:%d' % (path.name, node.lineno))
+                elif isinstance(node, ast.Constant) and node.value in names:  # getattr(os.path, 'isabs')
+                    found.append('%s:%d' % (path.name, node.lineno))
+        self.assertIn('guard-commands.py', scanned)
+        self.assertEqual(helpers, 1, 'one helper, in guard-commands.py')
         self.assertEqual(found, [], "use the hook's own `isabs` (Windows + Python 3.13: `os.path.isabs('/x')` is False)")
 
 

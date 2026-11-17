@@ -69,7 +69,7 @@ def msys_to_native(path, windows=None):
 def isabs(path):
     """`os.path.isabs` with the meaning of Python <= 3.12 on Windows (the same as `skillsync_workflow.fsutil.isabs`, repeated here
     because the hook is a standalone script): a path rooted with `/` or `\\` but without a drive is absolute, it is the root of the
-    current drive. Python 3.13 stopped taking it for absolute, which made the three callers below treat `/data/x` as relative.
+    current drive (Git Bash may mean its own MSYS root by it: write `C:/...` or `/c/...` in `hooks.delete_allow`). Python 3.13 stopped taking it for absolute, which made the three callers below treat `/data/x` as relative.
     POSIX: no change."""
     if os.path.isabs(path):
         return True
