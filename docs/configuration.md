@@ -158,7 +158,7 @@ leakguard:
 | `targets.<id>.authors` | adresy dozwolonych autorów i committerów celu |
 | `targets.<id>.authors_scope` | `committer` (sprawdzany committer; w commicie lokalnego autora zatwierdzonym przez kogoś innego także autor) albo `all` (autor i committer); domyślnie `committer` dla `scope: public`, `all` dla `org-private` i `private` |
 | `targets.<id>.committer_allow` | adresy przyjmowane TYLKO jako committer i tagger (np. przycisk scalania hosta, `noreply`), nigdy jako autor; domyślnie pusta lista; porównanie bez rozróżniania wielkości liter; adres autora zostaje w `authors`; działa dla zakresu/historii i tagów, nie dla `pre-commit`; przy `authors_scope: committer` zwykle bez efektu (sens ma przy `all`) |
-| `trailer_allow` | adresy dozwolone w trailerach `Co-Authored-By` (lista) |
+| `trailer_allow` | adresy dozwolone w trailerach `Co-Authored-By` ludzi (lista); nie dotyczy trailerów narzędzi AI, które zakazuje kategoria `attribution` |
 
 Klucze `trailer_allow`, `authors_scope` i `committer_allow` czyta config maszyny; flagi `--trailer-allow` i `--targets-json` są wejściami dla narzędzi
 operacyjnych i nie są pokazywane w `--help`.

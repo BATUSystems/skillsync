@@ -524,16 +524,16 @@ class GuardLink(GuardBase):
         self.link()
         self.assertEqual(len(self.guard_entries(self.local())), 1)
 
-    def test_project_without_the_agent_flow_is_untouched(self):
+    def test_project_without_the_agent_flow_gets_only_the_attribution_ban(self):
         self.manifest['skills'] = ['plain']
         self.save()
         self.link()
-        self.assertFalse((self.root / self.HOOK_PATH).exists())
-        if (self.root / self.LOCAL).exists():
-            self.assertEqual(self.guard_entries(self.local()), [])
-        gitignore = self.root / '.claude/.gitignore'
-        if gitignore.exists():
-            self.assertNotIn('guard-commands', gitignore.read_text(encoding='utf-8'))
+        self.assertTrue((self.root / self.HOOK_PATH).exists())
+        entries = self.guard_entries(self.local())
+        self.assertEqual(len(entries), 1)
+        self.assertIn('--mode off', entries[0]['command'])   # the delete guard is off without the flow
+        self.assertTrue((self.root / '.claude/hooks/attribution-patterns.json').exists())
+        self.assertIn('guard-commands', (self.root / '.claude/.gitignore').read_text(encoding='utf-8'))
 
     def test_explicit_deny_installs_in_a_plain_project(self):
         self.manifest['skills'] = ['plain']
@@ -566,23 +566,27 @@ class GuardLink(GuardBase):
         self.assertEqual(self.tree(), before)
         self.assertEqual(len(self.guard_entries(self.local())), 1)
 
-    def test_off_removes_entry_and_script_but_keeps_foreign(self):
+    def test_off_keeps_the_attribution_ban_and_foreign_hooks(self):
         self.write(self.LOCAL, json.dumps({'hooks': {'PreToolUse': [{'matcher': 'Bash', 'hooks': [{'type': 'command', 'command': 'foreign-pre'}]}]}}))
         self.link()
         self.assertTrue((self.root / self.HOOK_PATH).exists())
         self.set_hooks(guard_delete='off', guard_tests='off')
         self.link()
-        self.assertFalse((self.root / self.HOOK_PATH).exists())
+        self.assertTrue((self.root / self.HOOK_PATH).exists())
         data = self.local()
-        self.assertEqual(self.guard_entries(data), [])
+        entries = self.guard_entries(data)
+        self.assertEqual(len(entries), 1)
+        self.assertIn('--mode off', entries[0]['command'])
         self.assertIn('foreign-pre', json.dumps(data['hooks']['PreToolUse']))
 
-    def test_off_in_a_never_linked_project_creates_nothing(self):
+    def test_off_in_a_never_linked_project_installs_only_the_attribution_ban(self):
         self.set_hooks(guard_delete='off', guard_tests='off')
         self.link()
-        self.assertFalse((self.root / self.HOOK_PATH).exists())
-        if (self.root / self.LOCAL).exists():
-            self.assertEqual(self.guard_entries(self.local()), [])
+        self.assertTrue((self.root / self.HOOK_PATH).exists())
+        entries = self.guard_entries(self.local())
+        self.assertEqual(len(entries), 1)
+        self.assertIn('--mode off', entries[0]['command'])
+        self.assertIn('--attribution on', entries[0]['command'])
 
     def test_boolean_values_and_odd_hooks_blocks(self):
         for value, expected in ((True, 1), (False, 0)):
@@ -592,7 +596,9 @@ class GuardLink(GuardBase):
                 self.save()
                 (self.root / self.LOCAL).unlink(missing_ok=True)
                 self.link()
-                self.assertEqual(len(self.guard_entries(self.local())) if (self.root / self.LOCAL).exists() else 0, expected)
+                entries = self.guard_entries(self.local())
+                self.assertEqual(len(entries), 1)   # the ban on AI attribution keeps the hook installed in every project
+                self.assertIn('--mode ' + ('deny' if expected else 'off'), entries[0]['command'])
         for odd in ([], 'x', 5):
             with self.subTest(hooks=odd):
                 self.manifest['hooks'] = odd
@@ -611,7 +617,9 @@ class GuardLink(GuardBase):
         (self.root / self.LOCAL).write_text(json.dumps(data), encoding='utf-8')
         self.set_hooks(guard_delete='off', guard_tests='off')
         self.link()
-        self.assertEqual(self.guard_entries(self.local()), [])
+        entries = self.guard_entries(self.local())   # our entry is rewritten (mode off), the user's hook in the group stays
+        self.assertEqual(len(entries), 1)
+        self.assertIn('--mode off', entries[0]['command'])
         self.assertIn('foreign-pre', json.dumps(self.local()['hooks']['PreToolUse']))
 
     def test_delete_allow_goes_into_the_entry_and_changes_update_it(self):
@@ -632,7 +640,9 @@ class GuardLink(GuardBase):
         result = self.link()
         self.assertIn('[warn] hooks.guard_delete', result.stdout)
         self.assertIn('[warn] hooks.delete_allow', result.stdout)
-        self.assertFalse((self.root / self.HOOK_PATH).exists())
+        entries = self.guard_entries(self.local())   # the delete guard stays off, the attribution ban stays on
+        self.assertEqual(len(entries), 1)
+        self.assertIn('--mode off', entries[0]['command'])
 
     def test_dry_run_shows_what_it_would_add_and_writes_nothing(self):
         before = self.tree()
@@ -696,16 +706,19 @@ class GuardDoctor(GuardBase):
 
     def guard_findings(self):
         report = self.doctor()
-        return [f for f in report['findings'] if f['path'] == self.LOCAL], report
+        return [f for f in report['findings'] if f['path'] == self.LOCAL and 'host setting' not in f['reason']], report
 
     def test_not_installed_warns_installed_reports_info(self):
         found, report = self.guard_findings()
-        self.assertEqual([f['level'] for f in found], ['warning'])
+        self.assertEqual([f['level'] for f in found], ['warning'])   # never linked: a hint
         self.assertIn('not installed', found[0]['reason'])
         self.link()
         found, report = self.guard_findings()
         self.assertEqual([f['level'] for f in found], ['info'])
         self.assertIn('mode deny', found[0]['reason'])
+        (self.root / self.HOOK_PATH).unlink()   # linked before, the hook is gone: the ban on AI attribution is not optional
+        found, report = self.guard_findings()
+        self.assertEqual([f['level'] for f in found], ['error'])
 
     def test_drift_and_switched_off_but_installed(self):
         self.link()
@@ -715,13 +728,21 @@ class GuardDoctor(GuardBase):
         self.assertIn('differs', found[0]['reason'])
         self.set_hooks(guard_delete='off', guard_tests='off')
         found, _ = self.guard_findings()
-        self.assertIn('switched off', found[0]['reason'])
+        self.assertIn('differs', found[0]['reason'])
+        self.link()
+        found, _ = self.guard_findings()
+        self.assertEqual([f['level'] for f in found], ['info'])
+        self.assertIn('mode off', found[0]['reason'])
 
-    def test_project_without_the_flow_has_no_guard_finding(self):
+    def test_project_without_the_flow_needs_the_attribution_ban_only(self):
         self.manifest['skills'] = ['plain']
         self.save()
         found, _ = self.guard_findings()
-        self.assertEqual(found, [])
+        self.assertEqual([f['level'] for f in found], ['warning'])
+        self.link()
+        found, _ = self.guard_findings()
+        self.assertEqual([f['level'] for f in found], ['info'])
+        self.assertIn('attribution ban on', found[0]['reason'])
 
     def test_invalid_manifest_values_are_reported_never_an_error(self):
         self.set_hooks(guard_delete='sometimes')

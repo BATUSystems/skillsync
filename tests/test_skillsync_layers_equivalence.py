@@ -84,6 +84,7 @@ class EquivalenceCase(LayersCase):
         result['files']['.vscode/tasks.json'] = hashlib.sha256(data.encode('utf-8')).hexdigest()
 
     GUARD_IGNORE = 'hooks/guard-commands.py'
+    GUARD_ATTRIBUTION_IGNORE = 'hooks/attribution-patterns.json'   # the data of the ban on AI attribution next to the hook script (every project with Claude)
     GUARD_TESTS_IGNORE = ('hooks/guard-tests.py', 'hooks/test-tools.json')   # the test commands part of the same hook (180-J2), on by default for the same projects
 
     def normalize_guard_gitignore(self, project, result):
@@ -97,9 +98,10 @@ class EquivalenceCase(LayersCase):
             return
         lines = path.read_bytes().replace(b"\r\n", b"\n").decode('utf-8').split('\n')
         self.assertEqual(lines.count(self.GUARD_IGNORE), 1, '.claude/.gitignore lists the guard hook script exactly once')
+        self.assertEqual(lines.count(self.GUARD_ATTRIBUTION_IGNORE), 1, '.claude/.gitignore lists the attribution patterns exactly once')
         for line in self.GUARD_TESTS_IGNORE:
             self.assertEqual(lines.count(line), 1, f'.claude/.gitignore lists {line} exactly once (the fixture project has the agent flow)')
-        removed = {self.GUARD_IGNORE, *self.GUARD_TESTS_IGNORE}
+        removed = {self.GUARD_IGNORE, self.GUARD_ATTRIBUTION_IGNORE, *self.GUARD_TESTS_IGNORE}
         data = '\n'.join(line for line in lines if line not in removed)
         result['files']['.claude/.gitignore'] = hashlib.sha256(data.encode('utf-8')).hexdigest()
 

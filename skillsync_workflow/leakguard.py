@@ -25,6 +25,7 @@ from pathlib import Path, PurePosixPath
 
 import yaml
 
+from . import attribution
 from .common import exit_code, redact
 from .selfcmd import self_argv
 from .pathfmt import posix
@@ -38,7 +39,7 @@ SUFFIXES_RESOURCE = DATA_DIR / 'leakguard-suffixes-pl.txt'
 RESOURCE_REL = 'skillsync_workflow/data/leakguard-patterns.yaml'
 TARGET_PATTERNS_REL = '.leakguard/patterns.yaml'
 
-CATEGORIES = ('d27', 'owner-path', 'email', 'machine', 'publisher', 'custom')
+CATEGORIES = ('d27', 'owner-path', 'email', 'machine', 'publisher', 'custom', 'attribution')
 FLAGS = {'ignorecase': re.IGNORECASE, 'multiline': re.MULTILINE}
 SURFACES = ('content', 'filename', 'commit')
 PATH_CLASSES = ('instrukcje', 'atrybucje', 'inne')
@@ -252,8 +253,16 @@ def _read_yaml(path, what):
 
 
 def load_patterns(path=None, source='builtin'):
-    """Load the generator resource (default) or another patterns file."""
-    return parse_patterns(_read_yaml(path or PATTERNS_RESOURCE, 'Patterns file'), source)
+    """Load the generator resource (default) or another patterns file. The builtin set also carries the enforced
+    attribution patterns (`attribution-patterns.json`), for every target and path class."""
+    patterns = parse_patterns(_read_yaml(path or PATTERNS_RESOURCE, 'Patterns file'), source)
+    if path is None:
+        try:
+            entries = attribution.leakguard_entries()
+        except attribution.AttributionError as exc:
+            raise LeakguardError(str(exc)) from None
+        patterns = patterns.merged(parse_patterns({'schema': SCHEMA, 'patterns': entries}, source))
+    return patterns
 
 
 def _allow_too_broad(rule):
@@ -768,12 +777,13 @@ class _Scanner:
         self.target_kind = target_kind
         self.trailer_allow = {address.lower() for address in trailer_allow}
         self.findings = set()
+        self.skip_categories = frozenset()
 
     def line(self, text, surface, cls, rel, path, location, exempt=False, header_email=False):
         hits = []
         if not exempt:
             for rule in self.patterns.patterns:
-                if header_email and rule.category == 'email':
+                if rule.category in self.skip_categories or (header_email and rule.category == 'email'):
                     continue
                 if rule.applies(surface, cls, rel):
                     hits.extend((m.start(), m.end(), rule.category) for m in rule.compiled.finditer(text)
@@ -1368,6 +1378,8 @@ def leakcheck(path='.', *, mode='worktree', rev_range=None, target=None, targets
                                 'for every non-public target')
             return report
         scanner = prepared.scanner()
+        if mode == 'history':
+            _ignore_legacy_attribution(scanner)
         prefix = _git_prefix(root) if top is not None else ''
         ctx = _Context(root, top, prefix, scanner, prepared.authors, prepared.authors_scope or 'committer',
                        prepared.committer_allow)
@@ -1402,6 +1414,18 @@ def leakcheck(path='.', *, mode='worktree', rev_range=None, target=None, targets
         report['reason'] = str(exc)
         report['findings'] = []
     return report
+
+
+# Existing history stays as it is: the attribution ban applies to new changes only, so `--history` skips the
+# category and keeps the old AI trailer address out of the `email` category. Pre-push and CI use `--range`, `--staged`
+# and `--text`, which enforce it, so a new commit cannot hide behind this exemption.
+_LEGACY_TRAILER = r'(?<=<)noreply@(?:anthropic|openai)\.com(?=>\s*$)'
+
+
+def _ignore_legacy_attribution(scanner):
+    scanner.skip_categories = frozenset({'attribution'})
+    legacy = _rule({'id': 'history-legacy-trailer', 'regex': _LEGACY_TRAILER, 'applies_to': ['commit']}, 'history', 'builtin', 'allow')
+    scanner.patterns = PatternSet(list(scanner.patterns.patterns), list(scanner.patterns.allow) + [legacy])
 
 
 def patterns_report(target_patterns=None, patterns_file=None, matcher=None):
