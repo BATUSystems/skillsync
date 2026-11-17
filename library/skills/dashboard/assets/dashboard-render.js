@@ -910,8 +910,8 @@
       return splitBy(String(text ?? ""), ID_RE, (id) => h("span", { class: "sidc" }, id))
         .flatMap((part) => (typeof part === "string" ? splitBy(part, PHRASE_RE, (w) => h("span", { class: "ph" }, w)) : [part]));
     }
-    // Wiersz z formatowaniem w linii (`textHtml` z serwera, tylko gdy tekst ma formatowanie) dostaje je przez `deps.mountHtml`; bez niego dotychczasowe
-    // wyróżnienie id kroków i fraz (`decorateCheckpoint`). W wierszu sformatowanym wyróżnienie id i fraz nie działa.
+    // Wiersz z formatowaniem w linii (`textHtml` z serwera, tylko gdy tekst ma formatowanie; serwer wyróżnia w nim id kroków i frazy tak samo jak
+    // `decorateCheckpoint`) dostaje je przez `deps.mountHtml`; bez niego dotychczasowe wyróżnienie po stronie strony (`decorateCheckpoint`).
     const feedText = (c) => (typeof c.textHtml === "string" && c.textHtml && typeof deps.mountHtml === "function" ? inl("", c.text, c.textHtml) : h("span", null, decorateCheckpoint(c.text)));
     function renderFeed(d) {
       const items = (d.run && d.run.checkpoints) || [];
