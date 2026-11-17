@@ -125,6 +125,13 @@ class GuardHook(Windows313):
         cls.guard = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(cls.guard)
 
+    def simulate(self):
+        super().simulate()
+        # on a real Windows `os.path` is ntpath: `commonpath` answers with backslashes, so the stand-in `realpath` answers in the native form too
+        patch = unittest.mock.patch.object(fsutil.os.path, 'realpath', lambda path: os.path.normpath(realpath_windows(path)))
+        patch.start()
+        self.addCleanup(patch.stop)
+
     def checker(self, allow=()):
         return self.guard.Guard('/home/user/Repos/proj', '/tmp/session/scratchpad', list(allow), dict(self.ENV))
 
@@ -143,7 +150,7 @@ class GuardHook(Windows313):
         guard = self.checker()
         spy = unittest.mock.Mock(wraps=self.guard.isabs)
         with unittest.mock.patch.object(self.guard, 'isabs', spy):
-            self.assertEqual(guard.resolve('/data/x'), 'C:/data/x')
+            self.assertEqual(guard.resolve('/data/x'), os.path.normpath('C:/data/x'))
             spy.assert_any_call('/data/x')
             spy.reset_mock()
             self.assertTrue(self.refused('rm -rf /data/foo-*'))
