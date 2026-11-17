@@ -388,6 +388,62 @@ def result_html(result: dict) -> dict:
     return answer
 
 
+# Inline Markdown of single-line texts of the status page (step titles, "waiting for" items, expert questions): the same safe inline renderer
+# as the document view, no blocks. A field `<name>Html` is added only when the text really has formatting (otherwise the plain text is shown).
+_INLINE_SPANS = re.compile(r"(`+).+?\1|!?\[[^\]]*\]\([^)]*\)|\*\*.+?\*\*|__.+?__|~~.+?~~|<https?://[^>\s]+>")
+
+
+def cut_inline(text: str, limit: int) -> str:
+    """`text` cut to `limit` characters (+ an ellipsis) so that the cut never falls inside a code span, a link, a bold or strike-through
+    span: a span the limit would cut is dropped whole. The cut is made on the SOURCE, before rendering, so it can never cut a tag."""
+    if len(text) <= limit:
+        return text
+    cut = limit
+    for span in _INLINE_SPANS.finditer(text):
+        if span.start() < limit < span.end():
+            cut = span.start()
+            break
+    return text[:cut].rstrip() + "…"
+
+
+def inline_html(text: object, limit: int = 0) -> str | None:
+    """Safe inline HTML of a one-line text, or None when it has no formatting (the client then shows the plain text)."""
+    if not isinstance(text, str) or not text.strip():
+        return None
+    source = " ".join(text.split())
+    if limit:
+        source = cut_inline(source, limit)
+    rendered = render_inline(source)
+    return rendered if rendered != html.escape(source, quote=False) else None
+
+
+def add_inline_html(data: dict) -> dict:
+    """Additive fields of `/api/status` (`schema` stays 1): `titleHtml` of the plan steps, of `substeps` and of `progress.current`,
+    `whatHtml` and `actionHtml` of `waiting[]` (the action text repeats the item), `textHtml` of `expertQuestions.items[]` (cut to the same 160 characters as the plain text). The texts were
+    masked when the plan and the checkpoints were read; `text`, `title`, `what` stay as they were (tooltips and `title`/`aria` use them)."""
+    def put(item: object, source: str, out: str, limit: int = 0) -> None:
+        if isinstance(item, dict):
+            rendered = inline_html(item.get(source), limit)
+            if rendered:
+                item[out] = rendered
+
+    progress = data.get("progress")
+    if isinstance(progress, dict):
+        for phase in progress.get("phases") or []:
+            for step in (phase.get("steps") or []) if isinstance(phase, dict) else []:
+                put(step, "title", "titleHtml")
+        put(progress.get("current"), "title", "titleHtml")
+    for item in data.get("substeps") or []:
+        put(item, "title", "titleHtml")
+    for item in data.get("waiting") or []:
+        put(item, "what", "whatHtml")
+        put(item, "action", "actionHtml")
+    questions = data.get("expertQuestions")
+    for item in (questions.get("items") or []) if isinstance(questions, dict) else []:
+        put(item, "text", "textHtml", 160)
+    return data
+
+
 def log(msg: str) -> None:
     print(f"[dashboard {datetime.now():%H:%M:%S}] {msg}", file=sys.stderr, flush=True)
 
@@ -611,7 +667,7 @@ class Board:
         data = self._status(plan_rel)
         if isinstance(data.get("result"), dict) and isinstance(data["result"].get("text"), str):
             data["result"] = result_html(data["result"])
-        return data
+        return add_inline_html(data)
 
     def _status(self, plan_rel: str | None = None) -> dict:
         return engine.build_status(

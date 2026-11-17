@@ -1319,6 +1319,36 @@ function summary(m) {
     }
     ex.s170 = ex170;
   }
+  // Formatowanie w linii: tytuły kroków, „czeka na”, pytania do eksperta. HTML wstawia tylko host (mountHtml); dymki i atrybuty zostają czystym tekstem.
+  {
+    const nm = 'plan-in-progress';
+    const d = clone(F[nm]);
+    const step = d.progress.phases[0].steps[0];
+    step.title = 'Krok **ważny** z `kodem`'; step.titleHtml = 'Krok <strong>ważny</strong> z <code>kodem</code>';
+    const plainStep = d.progress.phases[0].steps[1];
+    plainStep.title = 'Krok zwykły'; delete plainStep.titleHtml;
+    d.waiting = [{ what: 'decyzja o **zakresie**', whatHtml: 'decyzja o <strong>zakresie</strong>', source: 'checkpoint', since: null, action: 'Odpowiedz w sesji.', link: null }];
+    const m = mount(d, { now: NOW[nm] });
+    const li = m.root.querySelectorAll('li.step').filter((x) => text(x.querySelector('.sid')) === step.id)[0];
+    const liPlain = m.root.querySelectorAll('li.step').filter((x) => text(x.querySelector('.sid')) === plainStep.id)[0];
+    const wait = m.root.querySelector('#waitBanner .wait-txt strong');
+    const noMount = mount(d, { now: NOW[nm], deps: {} });
+    const q = clone(F['questions']);
+    q.expertQuestions.items = [
+      { id: 'Q1', runSlug: 'r', text: 'Czy **tak**?', textHtml: 'Czy <strong>tak</strong>?', blocking: true, state: 'open', at: null, addressees: 'all', url: null },
+      { id: 'Q2', runSlug: 'r', text: 'zwykłe pytanie', blocking: false, state: 'open', at: null, addressees: 'all', url: null },
+    ];
+    const mq = mount(q, { now: NOW['questions'] });
+    ex.inlineMd = {
+      mounted: m.calls.mountHtml,
+      stepTitleNode: li ? li.querySelector('.tt').localName : null, stepTitleText: li ? text(li.querySelector('.tt')) : null,
+      stepTip: li ? li.getAttribute('data-desc-extra') : null,
+      plainStepText: liPlain ? text(liPlain.querySelector('.tt')) : null,
+      waitText: text(wait), waitStrong: wait ? wait.childNodes.map((c) => (c instanceof E ? c.localName : 't')) : null,
+      questionMounted: mq.calls.mountHtml.filter((h) => h.indexOf('Czy') === 0),
+      questionPlain: text(mq.root.querySelectorAll('li.q-item')[1].querySelector('.q-text')),
+    };
+  }
   out.extra = ex;
   // deps.now jest wymagane (renderer nie czyta zegara sam).
   try { R.create(makeDoc().createElement('div'), {}); out.nowRequired = false; } catch (e) { out.nowRequired = e instanceof TypeError; }
@@ -2048,6 +2078,19 @@ class RendererNodeTests(unittest.TestCase):
                 self.assertEqual((got["dots"], got["active"], got["screens"], got["legend"], got["light"]), (0, 0, 0, 0, 0))
                 self.assertTrue(got["warn"])
                 self.assertFalse(got["sessionWait"])
+
+    def test_inline_markdown_in_titles_waiting_and_questions(self) -> None:
+        r = self.out["extra"]["inlineMd"]
+        self.assertIn("Krok <strong>ważny</strong> z <code>kodem</code>", r["mounted"])
+        self.assertIn("decyzja o <strong>zakresie</strong>", r["mounted"])
+        self.assertEqual(r["questionMounted"], ["Czy <strong>tak</strong>?"])
+        self.assertEqual(r["stepTitleNode"], "span")
+        self.assertEqual(r["plainStepText"], "Krok zwykły", "no `titleHtml` = plain text, as before")
+        self.assertEqual(r["questionPlain"], "zwykłe pytanie")
+        self.assertEqual(r["waitStrong"], ["t", "span"], "the prefix is text, the item is one mounted span")
+        self.assertNotIn("**", r["stepTip"] or "", "the tooltip is plain text without markers")
+        self.assertNotIn("`", r["stepTip"] or "")
+        self.assertIn("Krok ważny z kodem", r["stepTip"] or "")
 
     def test_result_is_formatted_when_the_server_sends_html(self) -> None:
         r = self.out["extra"]["s160b"]["resultRich"]
