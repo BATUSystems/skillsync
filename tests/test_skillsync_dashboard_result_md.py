@@ -75,6 +75,35 @@ class SplitTests(unittest.TestCase):
         self.assertGreater(count, 0)
 
 
+class LineEndTests(unittest.TestCase):
+    """The text of `## Wynik` is project text: it is cut only at CRLF, LF and a lone CR (`common.file_lines`), never at LS, PS, NEL, VT, FF, FS, GS, RS."""
+
+    RARE = ("\u2028", "\u2029", "\x85", "\x0b", "\x0c", "\x1c", "\x1d", "\x1e")
+
+    def test_a_rare_line_end_does_not_cut_a_line_or_change_the_count(self) -> None:
+        for char in self.RARE:
+            with self.subTest(char=repr(char)):
+                text = "### A\n\n" + items(20).replace("Krok 3:", f"Krok{char}3:") + "\n\n### B\n\nkoniec"
+                head, rest, count = srv.split_result(text)
+                self.assertIn(f"Krok{char}3:", head, "the line with the character stays whole")
+                self.assertTrue(rest.startswith("### B"))
+                self.assertEqual(count, len(rest.split("\n")))
+                self.assertEqual(count, len(srv.split_result(text.replace(char, " "))[1].split("\n")), "the same cut as without the character")
+
+    def test_crlf_and_a_lone_cr_still_cut_lines(self) -> None:
+        base = "### A\n\n" + items(20) + "\n\n### B\n\nkoniec"
+        for end in ("\r\n", "\r"):
+            with self.subTest(end=repr(end)):
+                head, rest, count = srv.split_result(base.replace("\n", end))
+                self.assertTrue(rest.startswith("### B"))
+                self.assertEqual(count, 3)
+
+    def test_result_html_with_ls_in_the_text_does_not_split_the_item(self) -> None:
+        answer = srv.result_html({"text": "- **Krok\u2028jeden:** opis\n- drugi", "path": "docs/plans/x.md"})
+        self.assertIn("Krok\u2028jeden", answer["html"])
+        self.assertEqual(answer["html"].count("<li>"), 2)
+
+
 class RenderTests(unittest.TestCase):
     def test_result_html_formats_headings_lists_bold_code_and_tables(self) -> None:
         answer = srv.result_html({"text": "### Zmiany i dowody\n\n" + items(3) + "\n\n" + table(2), "path": "docs/plans/x.md"})
