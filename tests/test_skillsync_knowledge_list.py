@@ -14,6 +14,12 @@ from tests.test_skillsync_workflow import CLI, WorkflowFixture, needs_os_symlink
 class KnowledgeListFixture(WorkflowFixture):
     """Project `project` (repo B) next to a sibling `repo-a` that owns domain records."""
 
+    def setUp(self):
+        super().setUp()
+        # The code resolves the project directory; compare against the same form (Windows 8.3 temp names).
+        self.base = self.base.resolve()
+        self.root = self.base / 'project'
+
     def owner(self, name='repo-a', records=None, kind='domain'):
         directory = self.base / name / 'docs' / kind
         directory.mkdir(parents=True, exist_ok=True)
@@ -57,6 +63,8 @@ class LocationParsing(KnowledgeListFixture):
             (['docs/domain', ''], 'domain[1] must be a relative path'),
             (['docs/domain', 'docs\\domain'], 'domain[1] must be a relative path'),
             (['docs/domain', '/abs/docs/domain'], 'domain[1] must be a relative path'),
+            (['docs/domain', 'C:/abs/docs/domain'], 'domain[1] must be a relative path'),
+            (['docs/domain', 'C:abs/docs/domain'], 'domain[1] must be a relative path'),
             (['docs/domain', 'notes'], 'domain[1] must end with docs/domain'),
             (['docs/domain', '../../x/docs/domain'], 'Domain knowledge path escapes the project parent: ../../x/docs/domain (workflow.knowledge.domain[1])'),
             (['docs/domain', './docs/domain'], 'domain[1] repeats element 0'),

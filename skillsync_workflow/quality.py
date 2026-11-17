@@ -5,7 +5,7 @@ import fnmatch
 import hashlib
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import re
 import shutil
 import signal
@@ -536,13 +536,18 @@ def _knowledge_elements(setting, key, default):
     return list(setting)
 
 
+def _absolute_anywhere(element):
+    """One rule on every system: a leading `/` or `\\`, or a drive letter, makes a path absolute."""
+    return element[0] in '/\\' or bool(PureWindowsPath(element).drive) or Path(element).is_absolute()
+
+
 def _knowledge_directory(root, element, key, name, position):
     """Validate one setting element and return its logical directory.
 
     `position` is None for the plain string form (messages stay as before) and the element number for a list.
     """
     label = f'workflow.knowledge.{key}' if position is None else f'workflow.knowledge.{key}[{position}]'
-    if not isinstance(element, str) or not element or Path(element).is_absolute() or '\\' in element:
+    if not isinstance(element, str) or not element or _absolute_anywhere(element) or '\\' in element:
         raise ValueError(f'{label} must be a relative path')
     if Path(element).parts[-2:] != ('docs', name):
         raise ValueError(f'{label} must end with docs/{name}')
