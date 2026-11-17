@@ -303,5 +303,27 @@ class KnowledgeInitList(KnowledgeListFixture):
         self.assertEqual(self.tree(), before)
 
 
+class WindowsCoordinates(unittest.TestCase):
+    """Pure-path table (runs on every OS): separators in the result are `/`, the prefix is the directory name."""
+
+    def test_table(self):
+        from pathlib import PureWindowsPath as W
+        from skillsync_workflow.quality import knowledge_coordinates
+        project = W('C:/work/repo-b')
+        cases = [
+            (W('C:/work/repo-a'), ['src/x.py', 'lib/a/b.py'], ['repo-b/src/x.py', 'repo-b/lib/a/b.py']),
+            (W('C:/work'), ['src/x.py'], ['repo-b/src/x.py']),
+            (W('C:/WORK'), ['src/x.py'], ['repo-b/src/x.py']),
+            (W('C:/work/repo-b'), ['src/x.py'], ['src/x.py']),
+            (W('C:/work/repo-b/apps/x'), ['apps/x/src/a.py', 'lib/b.py'], ['src/a.py', 'repo-b/lib/b.py']),
+            (None, ['src/x.py'], ['src/x.py']),
+        ]
+        for base, files, expected in cases:
+            with self.subTest(base=base):
+                result = knowledge_coordinates(project, base, files)
+                self.assertEqual(result, expected)
+                self.assertFalse(any('\\' in item for item in result))
+
+
 if __name__ == '__main__':
     unittest.main()

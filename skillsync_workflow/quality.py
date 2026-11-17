@@ -691,6 +691,16 @@ def uninstalled_skill(name, skills):
     return None
 
 
+def knowledge_coordinates(project, base, files):
+    """Project files (relative, `/`-separated) in the coordinates of a record owner: relative to its `base`,
+    a file outside the base (sibling repository, base nested in the project) is prefixed with the project
+    directory name; `base` None = project coordinates. Works on any `PurePath` flavour."""
+    if base is None:
+        return list(files)
+    return [(project / f).relative_to(base).as_posix() if (project / f).is_relative_to(base)
+            else f'{project.name}/{f}' for f in files]
+
+
 def route(root, manifest, library, files, topics):
     files = normalize_files(root, files)
     config = workflow_config(root, manifest, library)
@@ -709,20 +719,11 @@ def route(root, manifest, library, files, topics):
                 kept.append(name)
         routed.append({**rule, 'instructions': kept} if 'instructions' in rule else rule)
     selected = routed
-    def coordinates(base):
-        """Project files in the coordinates of a record owner: relative to its base, a file outside the base
-        (sibling repository, base nested in the project) is prefixed with the project directory name."""
-        project = Path(root).resolve()
-        if base is None:
-            return files
-        return [(project / f).relative_to(base).as_posix() if (project / f).is_relative_to(base)
-                else f'{project.name}/{f}' for f in files]
-
     cache = {}
 
     def relevant(record, base):
         if base not in cache:
-            cache[base] = coordinates(base)
+            cache[base] = knowledge_coordinates(Path(root).resolve(), base, files)
         return bool(set(topics) & set(record.get('tags', [])) or any(matches(f, record.get('paths', [])) for f in cache[base]))
     lessons = [record for record, base in knowledge_records(root, library, 'lesson', manifest) if relevant(record, base)]
     domain = [record for record, base in knowledge_records(root, library, 'domain', manifest)
