@@ -21,6 +21,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from layers_helpers import link_mode, needs_os_symlinks, transitional_config  # noqa: E402
 
 from cli_module import SKILLSYNC_PATH, skillsync  # noqa: E402,F401  (re-exported for other test modules)
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child  # noqa: E402
 
 
 def _symlinks_supported() -> bool:
@@ -234,7 +238,7 @@ class ClaudeGitignoreEntriesTests(TempProjectMixin, unittest.TestCase):
 
 class BuildClaudeAgentsTests(TempProjectMixin, unittest.TestCase):
     def write_agent(self, name="implementer"):
-        (self.library_dir / "agents" / f"{name}.md").write_text(f"---\nname: {name}\n---\n")
+        child(self.library_dir / "agents", f"{name}.md").write_text(f"---\nname: {name}\n---\n")
 
     def agents_dir(self):
         return self.project_dir / ".claude" / "agents"
@@ -331,7 +335,7 @@ class BuildClaudeAgentsTests(TempProjectMixin, unittest.TestCase):
 
 class BuildClaudeSkillsTests(TempProjectMixin, unittest.TestCase):
     def write_skill(self, name="feature"):
-        d = self.library_dir / "skills" / name
+        d = child(self.library_dir / "skills", name)
         d.mkdir(parents=True, exist_ok=True)
         (d / "SKILL.md").write_text(f"---\nname: {name}\n---\n")
 

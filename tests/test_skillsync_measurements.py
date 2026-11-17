@@ -10,6 +10,10 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child  # noqa: E402
 MEASURED = re.compile(r'(?<![\w])(zmierzon\w*|measured)(?![\w])', re.IGNORECASE)
 UNMEASURED = re.compile(r'(?<![\w])(niezmierzon\w*|oczekiwane|unmeasured|expected)(?![\w])', re.IGNORECASE)
 HEADER = re.compile(r'^(pomiar|measurement)$', re.IGNORECASE)
@@ -101,7 +105,7 @@ class RuleBehaviour(unittest.TestCase):
             base = Path(tmp)
             (base / 'docs' / 'measurements').mkdir(parents=True)
             for name in files:
-                (base / 'docs' / 'measurements' / name).write_text('x', encoding='utf-8')
+                child(base / 'docs' / 'measurements', name).write_text('x', encoding='utf-8')
             page = base / 'docs' / 'page.md'
             return problems(page, text, base)
 

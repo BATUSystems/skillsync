@@ -16,6 +16,10 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child  # noqa: E402
 WORKFLOWS = ROOT / ".github" / "workflows"
 HELP_SCRIPTS = ("check_skips.py", "check_wheel.py", "check_release.py")
 SCRIPT_RE = re.compile(r"((?:scripts|tests)/[\w.-]+\.(?:py|sh|ps1))\b(.*)")
@@ -255,7 +259,7 @@ def problems_bash_syntax(workflows, bash):
             for jname, job in wf["jobs"].items():
                 for i, step in enumerate(bash_steps(job)):
                     body = EXPR_RE.sub("X", step["run"])
-                    f = Path(tmp) / f"{wname}-{jname}-{i}.sh"
+                    f = child(Path(tmp), f"{wname}-{jname}-{i}.sh")
                     f.write_text(body, encoding="utf-8")
                     res = subprocess.run([bash, "-n", str(f)], capture_output=True, text=True)
                     if res.returncode != 0:

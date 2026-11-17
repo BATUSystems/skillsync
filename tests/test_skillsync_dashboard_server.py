@@ -36,6 +36,10 @@ from skillsync_workflow.common import as_layerset  # noqa: E402
 sys.path.insert(0, str(HERE))
 from layers_helpers import guard_real_state, needs_os_symlinks  # noqa: E402
 from serve_start import bind_free, start_serve, stop_serve  # noqa: E402
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child, descend  # noqa: E402
 
 FIX = HERE / "fixtures" / "dashboard_server"
 ASSETS, DESCRIPTIONS = srv.skill_assets(as_layerset(ROOT / "library"))
@@ -1178,7 +1182,7 @@ class HttpSecurityTests(HttpCase):
         links = []
         for name, target in (("docs/specs/link-out.md", outside), ("docs/specs/link-env.md", self.root / ".env")):
             try:
-                (self.root / name).symlink_to(target)
+                descend(self.root, name).symlink_to(target)
                 links.append(name)
             except OSError:
                 pass
@@ -1251,7 +1255,7 @@ class HttpApprovalTests(HttpCase):
         return offer["sha"]
 
     def entries(self, run: str) -> list[dict]:
-        path = self.root / srv.RUNS_DIR / run / "approvals.jsonl"
+        path = child(self.root / srv.RUNS_DIR, run) / "approvals.jsonl"
         return [json.loads(x) for x in path.read_text(encoding="utf-8").splitlines()] if path.exists() else []
 
     def test_correct_headers_reach_the_consent(self) -> None:
