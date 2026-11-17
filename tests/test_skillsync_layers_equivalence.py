@@ -84,18 +84,23 @@ class EquivalenceCase(LayersCase):
         result['files']['.vscode/tasks.json'] = hashlib.sha256(data.encode('utf-8')).hexdigest()
 
     GUARD_IGNORE = 'hooks/guard-commands.py'
+    GUARD_TESTS_IGNORE = ('hooks/guard-tests.py', 'hooks/test-tools.json')   # the test commands part of the same hook (180-J2), on by default for the same projects
 
     def normalize_guard_gitignore(self, project, result):
         """The delete guard hook (1.8.0, `guardhook`) is on by default for agent-flow projects, and `link` lists its script in `.claude/.gitignore`
         (the baseline predates the hook, so that file is the only artefact of this synthetic library that differs; the library has no
-        `hooks/guard-commands.py`, so the script itself and the settings entry are not created). The line is required exactly once and
+        `hooks/guard-commands.py`, so the script itself and the settings entry are not created); the test commands part of the hook (`hooks.guard_tests`,
+        on by default for the same projects) adds two more lines, `hooks/guard-tests.py` and `hooks/test-tools.json`. Each line is required exactly once and
         removed before hashing: the rest of the file stays compared with the baseline (see README of the fixture, "Wyjątek")."""
         path = project / '.claude' / '.gitignore'
         if not path.is_file():
             return
         lines = path.read_bytes().replace(b"\r\n", b"\n").decode('utf-8').split('\n')
         self.assertEqual(lines.count(self.GUARD_IGNORE), 1, '.claude/.gitignore lists the guard hook script exactly once')
-        data = '\n'.join(line for line in lines if line != self.GUARD_IGNORE)
+        for line in self.GUARD_TESTS_IGNORE:
+            self.assertEqual(lines.count(line), 1, f'.claude/.gitignore lists {line} exactly once (the fixture project has the agent flow)')
+        removed = {self.GUARD_IGNORE, *self.GUARD_TESTS_IGNORE}
+        data = '\n'.join(line for line in lines if line not in removed)
         result['files']['.claude/.gitignore'] = hashlib.sha256(data.encode('utf-8')).hexdigest()
 
     def migrate(self, *flags):

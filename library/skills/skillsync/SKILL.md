@@ -48,6 +48,7 @@ layer.yaml                  ← id, kind, version, core_min, requires
 ├── agents/<agent>.md       ← symlink (lub kopia) - przy `feature` wszystkie role (jak Codex); `agents:` zawęża
 ├── hooks/check-tests.py    ← KOPIA - tylko gdy hooks.stop_tests: true i projekt NIE ma `feature`
 ├── hooks/check-closure.py  ← KOPIA - projekty z `feature`, chyba że hooks.stop_closure: false
+├── hooks/guard-tests.py, test-tools.json ← KOPIE obok hooka, gdy hooks.guard_tests: warn (domyślnie w projektach z `feature`/`dispatch`)
 ├── hooks/guard-commands.py ← KOPIA - projekty z `feature` lub `dispatch`, chyba że hooks.guard_delete: off (klucz hooks.delete_allow: dodatkowe cele wolne od blokady)
 ├── settings.json           ← COMMITOWANY, ręcznie kuratorowany; skillsync scala tylko hooks.Stop
 └── .gitignore              ← wpisy per plik zarządzany (nie całe katalogi)

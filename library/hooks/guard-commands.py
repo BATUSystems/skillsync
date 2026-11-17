@@ -17,7 +17,15 @@ Windows: the command is read as the Bash tool's shell (Git Bash) reads it: an UN
 really removes `C:workx` relative to the cwd), so the hook sees the same relative path and refuses; quote it (`'C:\\work\\x'`) or use `C:/work/x` or
 `/c/work/x` (also `/cygdrive/c/...`; mapped to the drive; this assumes Git Bash, whose default mounts make `/c` the drive C:, not WSL or a custom fstab). Doubt means refusal: `\\\\?\\C:\\...`, UNC paths and anything else unresolvable stay refused.
 
-Usage (set by `skillsync link`): guard-commands.py [--mode deny|off] [--allow <name-or-path> ...]; stdin = the hook JSON.
+Test commands (180-J2, a second part of the same hook; it only WARNS, never blocks): with `--tests warn` a wide run of the tests of a project outside
+`skillsync test-run` (or another wrapper) adds a warning to the context of the model. The classifier is `guard-tests.py` and the table of the tools is
+`test-tools.json`, both next to this script (copies written by `skillsync link`); a missing or broken file, an error of the classifier, or anything unexpected
+silences ONLY this part: it can never switch the refusal of deletion off (that part runs first and does not depend on it). The text reaches the model together
+with the result of the command, i.e. AFTER it ran (documented behaviour of `additionalContext`; whether it arrives is NOT_VERIFIED until measured on a live session).
+On Windows the command is read as Git Bash reads it, like for the deletion part. One-time exception: the same `SKILLSYNC_GUARD_EXCEPT='<reason>'` prefix.
+
+Usage (set by `skillsync link`): guard-commands.py [--mode deny|off] [--allow <name-or-path> ...] [--tests warn|off] [--wide-modules N] [--wrapper <prefix> ...];
+stdin = the hook JSON.
 Known limit: `cd` is applied to the commands that follow it even inside `( ... )` groups and after `|`/`&`/`||` (a refusal-safe error only in one direction: such a `cd` may make a later relative path look temporary).
 `find ... -delete` whose every -name is a regenerable artifact (*.pyc, *.pyo, __pycache__, .pytest_cache, .mypy_cache, .ruff_cache, .DS_Store, Thumbs.db) and has no -o/!/-not/groups passes.
 Always refused when seen (no target check; use the exception): rmtree in `python -c`, xargs rm -r, PowerShell and rd forms.
@@ -722,6 +730,111 @@ def message(findings, agent):
     return '\n'.join(lines)
 
 
+def command_words(text, depth=0, inherited=None):
+    """`[(words, exception reason or None)]` of every command of the text, also of `$(...)` and one level of `bash -c '...'`/`eval` (the same parser as the deletion
+    part). The words are the RAW words of a command (the wrappers are for the classifier to read: `flock ... systemd-run ...` must stay a wrapper)."""
+    out = []
+    for cmd in parse(text):
+        for sub in cmd.subs:
+            if depth < MAX_DEPTH:
+                out += command_words(sub, depth + 1, inherited)
+        words = list(cmd.words)
+        reason = inherited
+        for key, value in cmd.assigns:
+            if key == EXCEPT_VAR and value.strip():
+                reason = value.strip()
+        if not words:
+            continue
+        name = os.path.basename(words[0])
+        if name in SHELLS and depth < MAX_DEPTH:
+            inner = [k for k, arg in enumerate(words[1:], 1) if arg.startswith('-') and not arg.startswith('--') and 'c' in arg[1:] and k + 1 < len(words)]
+            if inner:
+                out += command_words(words[inner[0] + 1], depth + 1, reason)
+                continue
+        if name == 'eval' and depth < MAX_DEPTH:
+            out += command_words(' '.join(words[1:]), depth + 1, reason)
+            continue
+        low = name.lower()
+        if low in ('powershell', 'pwsh', 'powershell.exe', 'pwsh.exe') and depth < MAX_DEPTH:
+            inner = [k for k, arg in enumerate(words[1:], 1) if arg.lower() in ('-c', '-command') and k + 1 < len(words)]
+            if inner:
+                out += command_words(' '.join(words[inner[0] + 1:]), depth + 1, reason)
+                continue
+        if low in ('cmd', 'cmd.exe') and depth < MAX_DEPTH:
+            inner = [k for k, arg in enumerate(words[1:], 1) if arg.lower() in ('/c', '/k') and k + 1 < len(words)]
+            if inner:
+                out += command_words(' '.join(words[inner[0] + 1:]), depth + 1, reason)
+                continue
+        out.append((words, reason))
+    return out
+
+
+def load_test_part(wide_modules, wrappers):
+    """`(classifier module, table)` of the test commands part, or `None` when its files are missing or unusable: this part then stays silent."""
+    import importlib.util
+    here = os.path.dirname(os.path.abspath(__file__))
+    saved = sys.dont_write_bytecode
+    sys.dont_write_bytecode = True   # the hook directory must not collect a __pycache__ (it is not ignored in every project)
+    try:
+        spec = importlib.util.spec_from_file_location('guard_tests', os.path.join(here, 'guard-tests.py'))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        table = module.load_table(os.path.join(here, 'test-tools.json'))
+    except BaseException:  # noqa: BLE001 - any failure of the classifier files (even a SystemExit) silences the test part only
+        return None
+    finally:
+        sys.dont_write_bytecode = saved
+    return (module, table) if table else None
+
+
+def test_warning(command, payload, wide_modules, wrappers):
+    """`(text or None, [(reason)] exceptions used)`: the warning for the wide test runs of a command, or None. Never raises."""
+    try:
+        loaded = load_test_part(wide_modules, wrappers)
+        if loaded is None:
+            return None, []
+        module, table = loaded
+        known = [word for word, _ in table['tools']] + list(table['modules']) + ['make', 'pnpm', 'yarn']
+        if not any(word in command for word in known):
+            return None, []   # no word of any tool anywhere in the text: nothing to classify (the cheap filter of the spec)
+        extra = []
+        for item in wrappers:
+            try:
+                extra.append(tuple(shlex.split(item)))
+            except ValueError:
+                extra.append(tuple(item.split()))   # an open quote in a prefix: its words as they stand, the rest of the part keeps working
+        warned, excused = [], []
+        for words, reason in command_words(command):
+            verdict = module.classify(words, table, wide_modules, extra)
+            if verdict['verdict'] != 'wide':
+                continue
+            if reason:
+                excused.append(reason)
+                continue
+            warned.append((' '.join(str(w) for w in words)[:300], verdict))
+        if not warned:
+            return None, excused
+        root = Guard.project_root(os.path.realpath(payload.get('cwd') or os.getcwd()))
+        text = module.warning_text(warned[0][0], warned[0][1], root.replace('\\', '/'))
+        if len(warned) > 1:
+            text += ' The command holds %d wide test runs; the first is shown.' % len(warned)
+        if payload.get('agent_id'):
+            text += ' This message concerns a sub-agent: the main session reports an exception.'
+        return text, excused
+    except Exception:  # noqa: BLE001 - the test part never takes the hook down
+        return None, []
+
+
+def emit_warning(text, strategy='context'):
+    """THE ONE PLACE where the strategy of delivering the warning is chosen. `context`: `hookSpecificOutput.additionalContext` on stdout, exit 0, no
+    `permissionDecision` and no `updatedInput` (documented: added to the context of the model next to the result of the tool; whether the model sees it without a
+    permission decision is NOT_VERIFIED). Another strategy (after the live measurement) is one more branch here, the classifier does not change."""
+    if strategy == 'context':
+        print(json.dumps({'hookSpecificOutput': {'hookEventName': 'PreToolUse', 'additionalContext': text[:9000]}}))
+        return True
+    return False
+
+
 def log_exception(root, payload, command, reason, findings):
     path = os.path.join(root, '.skillsync', 'hook-exceptions.jsonl')
     record = {'time': datetime.datetime.now().astimezone().isoformat(timespec='seconds'), 'command': command[:500], 'reason': reason[:300],
@@ -738,6 +851,7 @@ def log_exception(root, payload, command, reason, findings):
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     mode, allow = 'deny', []
+    tests_mode, wide_modules, wrappers = 'off', 25, []
     i = 0
     while i < len(argv):
         if argv[i] == '--mode' and i + 1 < len(argv):
@@ -746,9 +860,21 @@ def main(argv=None):
         elif argv[i] == '--allow' and i + 1 < len(argv):
             allow.append(argv[i + 1])
             i += 2
+        elif argv[i] == '--tests' and i + 1 < len(argv):
+            tests_mode = argv[i + 1]
+            i += 2
+        elif argv[i] == '--wide-modules' and i + 1 < len(argv):
+            try:
+                wide_modules = int(argv[i + 1]) if int(argv[i + 1]) >= 2 else 25
+            except ValueError:
+                wide_modules = 25
+            i += 2
+        elif argv[i] == '--wrapper' and i + 1 < len(argv):
+            wrappers.append(argv[i + 1])
+            i += 2
         else:
             i += 1
-    if mode != 'deny':
+    if mode != 'deny' and tests_mode != 'warn':
         return 0
     try:
         payload = json.loads(sys.stdin.buffer.read().decode('utf-8', 'replace'))
@@ -758,19 +884,29 @@ def main(argv=None):
         command = tool_input.get('command') if isinstance(tool_input, dict) else None
         if not isinstance(command, str) or not command.strip():
             return 0
-        guard = Guard(payload.get('cwd'), payload.get('scratchpad_dir'), allow, os.environ)
-        findings = guard.walk(command)
+        findings = []
+        if mode == 'deny':
+            guard = Guard(payload.get('cwd'), payload.get('scratchpad_dir'), allow, os.environ)
+            findings = guard.walk(command)
     except Exception as error:  # fail-open: the hook's own failure never blocks the work
         print('guard-commands: blad hooka, komenda przepuszczona (%s: %s)' % (type(error).__name__, error), file=sys.stderr)
         return 0
-    if not findings:
-        return 0
-    refused = [item for item in findings if not item[4]]
-    if not refused:
+    if findings:
+        refused = [item for item in findings if not item[4]]
+        if refused:
+            print(message(refused, payload.get('agent_id')), file=sys.stderr)
+            return 2   # the refusal of deletion comes first and does not depend on the test part
         log_exception(guard.root, payload, command, '; '.join(dict.fromkeys(item[4] for item in findings)), findings)
-        return 0
-    print(message(refused, payload.get('agent_id')), file=sys.stderr)
-    return 2
+    if tests_mode == 'warn':
+        text, excused = test_warning(command, payload, wide_modules, wrappers)
+        try:
+            if excused:
+                log_exception(Guard.project_root(os.path.realpath(payload.get('cwd') or os.getcwd())), payload, command, '; '.join(dict.fromkeys(excused)), [('tests',)])
+            if text:
+                emit_warning(text)
+        except Exception:  # noqa: BLE001 - the test part never takes the hook down
+            pass
+    return 0
 
 
 if __name__ == '__main__':
