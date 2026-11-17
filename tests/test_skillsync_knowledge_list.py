@@ -1,0 +1,201 @@
+"""CORE-KDOMAIN-LIST: `workflow.knowledge.domain` / `lessons` as a list of directories (repos A and B)."""
+import unittest
+from pathlib import Path
+
+import yaml
+
+from skillsync_workflow.quality import knowledge_locations
+from tests.test_skillsync_workflow import WorkflowFixture, needs_os_symlinks
+
+
+class KnowledgeListFixture(WorkflowFixture):
+    """Project `project` (repo B) next to a sibling `repo-a` that owns domain records."""
+
+    def owner(self, name='repo-a', records=None, kind='domain'):
+        directory = self.base / name / 'docs' / kind
+        directory.mkdir(parents=True, exist_ok=True)
+        key = 'entries' if kind == 'domain' else 'lessons'
+        listed = []
+        for file, title, extra in records or []:
+            (directory / file).write_text('---\ntags: [x]\n---\ntext', encoding='utf-8')
+            listed.append({'path': file, 'title': title, **extra})
+        (directory / 'index.yaml').write_text(yaml.safe_dump({'version': 1, key: listed}), encoding='utf-8')
+        return directory
+
+    def setting(self, **knowledge):
+        self.manifest['workflow']['knowledge'] = knowledge
+        self.save()
+
+    def titles(self, *args):
+        return [record['title'] for record in self.report('route', *args)['domain']]
+
+
+class LocationParsing(KnowledgeListFixture):
+    def locations(self, kind='domain'):
+        return knowledge_locations(self.root, self.manifest, self.layerset(), kind)
+
+    def test_string_equals_one_element_list(self):
+        for value in ('docs/domain', '../docs/domain', '../repo-a/docs/domain'):
+            with self.subTest(value=value):
+                self.manifest['workflow']['knowledge'] = {'domain': value}
+                as_string = self.locations()
+                self.manifest['workflow']['knowledge'] = {'domain': [value]}
+                self.assertEqual(self.locations(), as_string)
+
+    def test_list_keeps_order_and_bases(self):
+        self.manifest['workflow']['knowledge'] = {'domain': ['docs/domain', '../repo-a/docs/domain']}
+        self.assertEqual(self.locations(), [(self.root / 'docs/domain', self.root),
+                                            (self.base / 'repo-a/docs/domain', self.base / 'repo-a')])
+
+    def test_invalid_lists_name_the_element(self):
+        cases = [
+            ([], 'must not be an empty list'),
+            (['docs/domain', 7], 'domain[1] must be a relative path'),
+            (['docs/domain', ''], 'domain[1] must be a relative path'),
+            (['docs/domain', 'docs\\domain'], 'domain[1] must be a relative path'),
+            (['docs/domain', '/abs/docs/domain'], 'domain[1] must be a relative path'),
+            (['docs/domain', 'notes'], 'domain[1] must end with docs/domain'),
+            (['docs/domain', '../../x/docs/domain'], 'Domain knowledge path escapes the project parent: ../../x/docs/domain (workflow.knowledge.domain[1])'),
+            (['docs/domain', './docs/domain'], 'domain[1] repeats element 0'),
+            (['docs/domain', '../project/docs/domain'], 'domain[1] repeats element 0'),
+            ([f'../r{n}/docs/domain' for n in range(9)], 'at most 8'),
+        ]
+        for value, message in cases:
+            with self.subTest(value=value):
+                self.manifest['workflow']['knowledge'] = {'domain': value}
+                with self.assertRaisesRegex(ValueError, __import__('re').escape(message)):
+                    self.locations()
+
+    def test_string_messages_are_unchanged(self):
+        for value, message in (('notes', 'workflow.knowledge.domain must end with docs/domain'),
+                               ('../../x/docs/domain', 'Domain knowledge path escapes the project parent: ../../x/docs/domain'),
+                               ('a\\docs/domain', 'workflow.knowledge.domain must be a relative path')):
+            with self.subTest(value=value):
+                self.manifest['workflow']['knowledge'] = {'domain': value}
+                with self.assertRaises(ValueError) as caught:
+                    self.locations()
+                self.assertEqual(str(caught.exception), message)
+
+    @needs_os_symlinks
+    def test_symlinked_repeat_is_a_duplicate(self):
+        (self.base / 'alias').symlink_to(self.base / 'repo-a', target_is_directory=True)
+        self.owner()
+        self.manifest['workflow']['knowledge'] = {'domain': ['../repo-a/docs/domain', '../alias/docs/domain']}
+        with self.assertRaisesRegex(ValueError, 'repeats element 0'):
+            self.locations()
+
+    def test_lessons_default_next_to_every_domain_directory(self):
+        self.manifest['workflow']['knowledge'] = {'domain': ['docs/domain', '../repo-a/docs/domain']}
+        self.assertEqual([item[0] for item in self.locations('lessons')],
+                         [self.root / 'docs/lessons', self.base / 'repo-a/docs/lessons'])
+        self.manifest['workflow']['knowledge'] = {'domain': ['docs/domain'], 'lessons': ['../repo-a/docs/lessons']}
+        self.assertEqual([item[0] for item in self.locations('lessons')], [self.base / 'repo-a/docs/lessons'])
+
+    def test_lessons_list_errors_name_the_element(self):
+        self.manifest['workflow']['knowledge'] = {'lessons': ['docs/lessons', 'docs/domain']}
+        with self.assertRaisesRegex(ValueError, r'lessons\[1\] must end with docs/lessons'):
+            self.locations('lessons')
+
+
+class RouteOrder(KnowledgeListFixture):
+    def test_records_follow_list_then_index_order_with_two_bootstraps(self):
+        self.write('docs/domain/glossary.md', '---\ntags: [x]\n---\nb')
+        self.write('docs/domain/own.md', '---\ntags: [x]\n---\nb')
+        self.write('docs/domain/index.yaml', yaml.safe_dump({'version': 1, 'entries': [
+            {'path': 'own.md', 'title': 'B own'}, {'path': 'glossary.md', 'title': 'B glossary', 'load': 'bootstrap'}]}))
+        self.owner(records=[('glossary.md', 'A glossary', {'load': 'bootstrap'}), ('rule.md', 'A rule', {})])
+        self.setting(domain=['docs/domain', '../repo-a/docs/domain'])
+        self.assertEqual(self.titles(), ['B glossary', 'A glossary'])
+        self.assertEqual(self.titles('--topics', 'domain'), ['B own', 'B glossary', 'A glossary', 'A rule'])
+        self.setting(domain=['../repo-a/docs/domain', 'docs/domain'])
+        self.assertEqual(self.titles('--topics', 'domain'), ['A glossary', 'A rule', 'B own', 'B glossary'])
+
+    def test_same_file_names_in_two_directories_do_not_collide(self):
+        self.owner(records=[('glossary.md', 'A', {'load': 'bootstrap'})])
+        self.write('docs/domain/glossary.md', '---\ntags: [x]\n---\nb')
+        self.write('docs/domain/index.yaml', yaml.safe_dump({'version': 1, 'entries': [
+            {'path': 'glossary.md', 'title': 'B', 'load': 'bootstrap'}]}))
+        self.setting(domain=['docs/domain', '../repo-a/docs/domain'])
+        paths = [record['path'] for record in self.report('route')['domain']]
+        self.assertEqual(paths, [str(self.root / 'docs/domain/glossary.md'), str(self.base / 'repo-a/docs/domain/glossary.md')])
+
+    def test_missing_owner_directory_is_skipped(self):
+        self.write('docs/domain/own.md', '---\ntags: [x]\n---\nb')
+        self.write('docs/domain/index.yaml', yaml.safe_dump({'version': 1, 'entries': [
+            {'path': 'own.md', 'title': 'B own', 'load': 'bootstrap'}]}))
+        self.setting(domain=['docs/domain', '../repo-a/docs/domain'])
+        self.assertEqual(self.titles(), ['B own'])
+
+    def test_lessons_of_a_list_follow_layers_then_directories(self):
+        self.owner(kind='lessons', records=[('one.md', 'A lesson', {'tags': ['topic-x']})])
+        self.setting(domain=['docs/domain', '../repo-a/docs/domain'])
+        report = self.report('route', '--topics', 'topic-x')
+        self.assertEqual([record['title'] for record in report['lessons']], ['A lesson'])
+
+
+class RouteCoordinates(KnowledgeListFixture):
+    """Record `paths` are written in the coordinates of the owner (D2)."""
+
+    def route_titles(self, *files):
+        for name in files:
+            self.write(name, 'x')
+        return self.titles('--files', *files)
+
+    def test_sibling_repository_record_matches_prefixed_paths(self):
+        self.owner(records=[('b-code.md', 'matches B', {'paths': ['project/src/**']}),
+                            ('a-code.md', 'matches A', {'paths': ['src/**']})])
+        self.setting(domain=['docs/domain', '../repo-a/docs/domain'])
+        self.assertEqual(self.route_titles('src/x.py'), ['matches B'])
+
+    def test_file_outside_the_pattern_is_not_matched_and_never_blocked(self):
+        self.owner(records=[('b-code.md', 'matches B', {'paths': ['project/src/**']})])
+        self.setting(domain='../repo-a/docs/domain')
+        self.assertEqual(self.route_titles('lib/y.py'), [])
+        report = self.report('route', '--files', 'lib/y.py')
+        self.assertEqual(report['status'], 'NOT_RUN')
+
+    def test_string_form_pointing_at_a_sibling_repository_no_longer_blocks(self):
+        self.owner(records=[('b-code.md', 'matches B', {'paths': ['project/src/**']})])
+        self.setting(domain='../repo-a/docs/domain')
+        self.assertEqual(self.route_titles('src/x.py'), ['matches B'])
+
+    def test_shared_parent_keeps_the_project_name_prefix(self):
+        shared = self.base / 'docs/domain'
+        shared.mkdir(parents=True)
+        (shared / 'r.md').write_text('---\ntags: [x]\n---\nt')
+        (shared / 'index.yaml').write_text(yaml.safe_dump({'version': 1, 'entries': [
+            {'path': 'r.md', 'title': 'shared', 'paths': ['project/src/**']}]}))
+        for value in ('../docs/domain', ['../docs/domain']):
+            with self.subTest(value=value):
+                self.setting(domain=value)
+                self.assertEqual(self.route_titles('src/x.py'), ['shared'])
+
+    def test_base_nested_in_the_project_prefixes_files_outside_it(self):
+        nested = self.root / 'apps/x/docs/domain'
+        nested.mkdir(parents=True)
+        (nested / 'r.md').write_text('---\ntags: [x]\n---\nt')
+        (nested / 'index.yaml').write_text(yaml.safe_dump({'version': 1, 'entries': [
+            {'path': 'r.md', 'title': 'inside', 'paths': ['src/**']},
+            {'path': 'r.md', 'title': 'outside', 'paths': ['project/lib/**']}]}))
+        self.setting(domain='apps/x/docs/domain')
+        self.assertEqual(self.route_titles('apps/x/src/a.py'), ['inside'])
+        self.assertEqual(self.titles('--files', 'lib/b.py'), ['outside'])
+
+    def test_prefix_is_case_sensitive(self):
+        self.owner(records=[('b-code.md', 'matches B', {'paths': ['Project/src/**']})])
+        self.setting(domain='../repo-a/docs/domain')
+        self.assertEqual(self.route_titles('src/x.py'), [])
+
+    def test_lessons_text_form_keeps_project_coordinates_and_list_form_uses_owner_coordinates(self):
+        owner = self.owner(kind='lessons', records=[('one.md', 'A lesson', {'paths': ['src/**']}),
+                                                    ('two.md', 'B-coordinates', {'paths': ['project/src/**']})])
+        self.write('src/x.py', 'x')
+        self.setting(lessons='../repo-a/docs/lessons')
+        self.assertEqual([r['title'] for r in self.report('route', '--files', 'src/x.py')['lessons']], ['A lesson'])
+        self.setting(lessons=['../repo-a/docs/lessons'])
+        self.assertEqual([r['title'] for r in self.report('route', '--files', 'src/x.py')['lessons']], ['B-coordinates'])
+        self.assertTrue(owner.is_dir())
+
+
+if __name__ == '__main__':
+    unittest.main()

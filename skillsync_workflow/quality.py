@@ -505,10 +505,7 @@ def source_path(root, library, name):
     return found if found is not None else contained(root, source)
 
 
-KNOWLEDGE_SOURCES = {
-    'lesson': ('lessons', [('layers', 'workflow/lessons'), ('lessons', '.')]),
-    'domain': ('entries', [('domain', '.')]),
-}
+KNOWLEDGE_SOURCES = {'lesson': ('lessons',), 'domain': ('entries',)}
 
 
 def _logical_path(project, setting):
@@ -516,40 +513,100 @@ def _logical_path(project, setting):
     return Path(os.path.normpath(project / setting))
 
 
-def domain_location(root, manifest, library):
-    """One shared domain knowledge directory per project (backend and frontend share it).
+MAX_KNOWLEDGE_DIRECTORIES = 8
+KNOWLEDGE_LABELS = {'domain': ('domain', 'Domain knowledge'), 'lessons': ('lessons', 'Lessons')}
 
-    `workflow.knowledge.domain` may point to `docs/domain` in the project or in its parent
-    directory (e.g. `../docs/domain` for separate backend/frontend projects). Record `paths`
-    are relative to the directory that contains `docs/`.
+
+def _knowledge_setting(root, manifest, library, key):
+    """Raw `workflow.knowledge.<key>` value (None when absent)."""
+    return workflow_config(root, manifest or {}, library).get('knowledge', {}).get(key)
+
+
+def _knowledge_elements(setting, key, default):
+    """Elements of a knowledge setting: a string is a one-element list; absent = `default` (or None)."""
+    if setting is None:
+        return None if default is None else [default]
+    if not isinstance(setting, list):
+        return [setting]
+    if not setting:
+        raise ValueError(f'workflow.knowledge.{key} must not be an empty list')
+    if len(setting) > MAX_KNOWLEDGE_DIRECTORIES:
+        raise ValueError(f'workflow.knowledge.{key} must list at most {MAX_KNOWLEDGE_DIRECTORIES} directories')
+    return list(setting)
+
+
+def _knowledge_directory(root, element, key, name, position):
+    """Validate one setting element and return its logical directory.
+
+    `position` is None for the plain string form (messages stay as before) and the element number for a list.
     """
-    setting = workflow_config(root, manifest or {}, library).get('knowledge', {}).get('domain', 'docs/domain')
-    if not isinstance(setting, str) or not setting or Path(setting).is_absolute() or '\\' in setting:
-        raise ValueError('workflow.knowledge.domain must be a relative path')
-    if Path(setting).parts[-2:] != ('docs', 'domain'):
-        raise ValueError('workflow.knowledge.domain must end with docs/domain')
+    label = f'workflow.knowledge.{key}' if position is None else f'workflow.knowledge.{key}[{position}]'
+    if not isinstance(element, str) or not element or Path(element).is_absolute() or '\\' in element:
+        raise ValueError(f'{label} must be a relative path')
+    if Path(element).parts[-2:] != ('docs', name):
+        raise ValueError(f'{label} must end with docs/{name}')
     project = Path(root).resolve()
-    directory = _logical_path(project, setting)
+    directory = _logical_path(project, element)
     if not directory.is_relative_to(project.parent):
-        raise ValueError(f'Domain knowledge path escapes the project parent: {setting}')
-    return directory, directory.parent.parent
+        suffix = '' if position is None else f' ({label})'
+        raise ValueError(f'{KNOWLEDGE_LABELS[key][1]} path escapes the project parent: {element}{suffix}')
+    return directory
+
+
+def _unique_directories(directories, key):
+    """A directory may appear once, also through `..` or a symlink (compared logically and after `resolve`)."""
+    seen = {}
+    for position, directory in enumerate(directories):
+        identities = {directory, directory.resolve()}
+        for identity in identities:
+            if identity in seen:
+                raise ValueError(f'workflow.knowledge.{key}[{position}] repeats element {seen[identity]}: {directory}')
+        seen.update({identity: position for identity in identities})
+
+
+def knowledge_locations(root, manifest, library, kind):
+    """Knowledge directories of a project as ordered `(directory, base)` pairs; `base` is the directory
+    that contains `docs/`. `kind` is `domain` or `lessons`.
+
+    `workflow.knowledge.domain` and `.lessons` are a string (`docs/domain`, or `../docs/domain` for separate
+    backend/frontend projects) or a list of such paths (a product split across repositories; the order of
+    the list is the order of the records). A list `domain` without `lessons` puts `docs/lessons` next to each
+    domain directory.
+    """
+    key = name = kind
+    setting = _knowledge_setting(root, manifest, library, key)
+    default = f'docs/{name}' if kind == 'domain' else None
+    elements = _knowledge_elements(setting, key, default)
+    listed = isinstance(setting, list)
+    if elements is None:  # lessons next to every domain directory
+        found = []
+        for directory, _ in knowledge_locations(root, manifest, library, 'domain'):
+            sibling = directory.parent / 'lessons'
+            if sibling not in found:
+                found.append(sibling)
+    else:
+        found = [_knowledge_directory(root, element, key, name, position if listed else None)
+                 for position, element in enumerate(elements)]
+        _unique_directories(found, key)
+    return [(directory, directory.parent.parent) for directory in found]
+
+
+def knowledge_is_listed(root, manifest, library, kind):
+    """True when the setting of `kind` uses the list form (a missing `lessons` follows `domain`)."""
+    setting = _knowledge_setting(root, manifest, library, kind)
+    if setting is None and kind == 'lessons':
+        setting = _knowledge_setting(root, manifest, library, 'domain')
+    return isinstance(setting, list)
+
+
+def domain_location(root, manifest, library):
+    """First knowledge domain directory and its base (thin wrapper over `knowledge_locations`)."""
+    return knowledge_locations(root, manifest, library, 'domain')[0]
 
 
 def lessons_location(root, manifest, library):
-    """Project lessons directory: `workflow.knowledge.lessons`, default next to the domain directory."""
-    domain_dir, _ = domain_location(root, manifest, library)
-    setting = workflow_config(root, manifest or {}, library).get('knowledge', {}).get('lessons')
-    if setting is None:
-        return domain_dir.parent / 'lessons'
-    if not isinstance(setting, str) or not setting or Path(setting).is_absolute() or '\\' in setting:
-        raise ValueError('workflow.knowledge.lessons must be a relative path')
-    if Path(setting).parts[-2:] != ('docs', 'lessons'):
-        raise ValueError('workflow.knowledge.lessons must end with docs/lessons')
-    project = Path(root).resolve()
-    directory = _logical_path(project, setting)
-    if not directory.is_relative_to(project.parent):
-        raise ValueError(f'Lessons path escapes the project parent: {setting}')
-    return directory
+    """First project lessons directory (thin wrapper over `knowledge_locations`)."""
+    return knowledge_locations(root, manifest, library, 'lessons')[0][0]
 
 
 def _validated_record(record, kind, index):
@@ -585,19 +642,17 @@ def _layer_lessons(layerset, kind, key):
     return selected
 
 
-def knowledge_indexes(root, library, kind, manifest=None):
-    key, sources = KNOWLEDGE_SOURCES[kind]
-    owners = {'root': root}
-    if kind == 'domain':
-        owners['domain'] = domain_location(root, manifest, library)[0]
-    else:
-        owners['lessons'] = lessons_location(root, manifest, library)
+def knowledge_records(root, library, kind, manifest=None):
+    """`(record, base)` pairs in routing order: layer lessons, then the directories in the order of the setting
+    (inside a directory the order of its `index.yaml`). `base` is the coordinate base of the record's `paths`
+    (None = the project root); a directory without `index.yaml` is skipped (its repository may not be checked out)."""
+    key = KNOWLEDGE_SOURCES[kind][0]
+    place = 'domain' if kind == 'domain' else 'lessons'
     selected = []
-    for owner, relative in sources:
-        if owner == 'layers':
-            selected.extend(_layer_lessons(library, kind, key))
-            continue
-        directory = contained(owners[owner], relative)
+    if kind == 'lesson':
+        selected.extend((record, None) for record in _layer_lessons(library, kind, key))
+    listed = knowledge_is_listed(root, manifest, library, place)
+    for directory, base in knowledge_locations(root, manifest, library, place):
         index = contained(directory, 'index.yaml')
         if not index.exists():
             continue
@@ -609,8 +664,12 @@ def knowledge_indexes(root, library, kind, manifest=None):
             path = contained(directory, record['path'])
             if not path.is_file():
                 raise ValueError(f'Missing indexed {kind}: {path}')
-            selected.append({**record, 'path': posix(path), 'index': posix(index)})
+            selected.append(({**record, 'path': posix(path), 'index': posix(index)}, base if kind == 'domain' or listed else None))
     return selected
+
+
+def knowledge_indexes(root, library, kind, manifest=None):
+    return [record for record, _ in knowledge_records(root, library, kind, manifest)]
 
 
 def lesson_indexes(root, library, manifest=None):
@@ -649,15 +708,24 @@ def route(root, manifest, library, files, topics):
                 kept.append(name)
         routed.append({**rule, 'instructions': kept} if 'instructions' in rule else rule)
     selected = routed
-    def relevant(record):
-        return set(topics) & set(record.get('tags', [])) or any(matches(f, record.get('paths', [])) for f in files)
-    lessons = [record for record in lesson_indexes(root, library, manifest) if relevant(record)]
-    _, base = domain_location(root, manifest, library)
-    shared_files = [(Path(root).resolve() / f).relative_to(base).as_posix() for f in files]
-    domain = [record for record in domain_indexes(root, library, manifest) if record.get('load') == 'bootstrap'
-              or 'domain' in topics
-              or set(topics) & set(record.get('tags', []))
-              or any(matches(f, record.get('paths', [])) for f in shared_files)]
+    def coordinates(base):
+        """Project files in the coordinates of a record owner: relative to its base, a file outside the base
+        (sibling repository, base nested in the project) is prefixed with the project directory name."""
+        project = Path(root).resolve()
+        if base is None:
+            return files
+        return [(project / f).relative_to(base).as_posix() if (project / f).is_relative_to(base)
+                else f'{project.name}/{f}' for f in files]
+
+    cache = {}
+
+    def relevant(record, base):
+        if base not in cache:
+            cache[base] = coordinates(base)
+        return bool(set(topics) & set(record.get('tags', [])) or any(matches(f, record.get('paths', [])) for f in cache[base]))
+    lessons = [record for record, base in knowledge_records(root, library, 'lesson', manifest) if relevant(record, base)]
+    domain = [record for record, base in knowledge_records(root, library, 'domain', manifest)
+              if record.get('load') == 'bootstrap' or 'domain' in topics or relevant(record, base)]
     return {'status': 'NOT_RUN', 'files': files, 'topics': topics, 'routes': selected, 'skipped': skipped,
             'lessons': lessons, 'domain': domain, 'delivery': delivery_info(manifest),
             'ceremony': ceremony_info(manifest),
