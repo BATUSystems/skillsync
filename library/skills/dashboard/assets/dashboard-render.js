@@ -125,6 +125,13 @@
   // Funkcje modułu wołane z kontekstem egzemplarza (`this` = {h, icon, desc, openDoc, st}); wartości z danych zawsze
   // przez esc(): tu esc daje tekst węzła (String), bo DOM powstaje z textContent, nie z szablonu HTML.
   const esc = (v) => String(v ?? "");
+  // Tekst bez znaczników Markdown w linii (do dymków i atrybutów); bez `html` (brak formatowania) tekst bez zmian.
+  const plainInline = (text, html) => {
+    const t = String(text ?? "");
+    if (typeof html !== "string" || !html) return t;
+    return t.replace(/(`+)(.+?)\1/g, "$2").replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/<(https?:\/\/[^>\s]+)>/g, "$1")
+      .replace(/\*\*(\S(?:.*?\S)?)\*\*/g, "$1").replace(/__(\S(?:.*?\S)?)__/g, "$1").replace(/~~(\S(?:.*?\S)?)~~/g, "$1");
+  };
   const READY_STATE = { PASS: ["is-pass", "PASS"], BLOCKED: ["is-blocked", "BLOCKED"] };
   // Readiness (akt II): brief gotowości z .skillsync/runs/<run>/readiness.md; źródło pliku = readiness.source z JSON.
   // „Brief dla innej wersji planu”: skrócony readiness.planSha nie jest prefiksem pełnego plan.fileSha.
@@ -146,14 +153,14 @@
   }
   // Podkroki Fn.k z czasem (akt III): rozwijana lista; stan rozwinięcia przeżywa odświeżenie (st.substepsOpen).
   function substepsBlock(d) {
-    const { h, desc, st } = this;
+    const { h, desc, st, inl } = this;
     const items = d.substeps || [];
     if (!items.length) return null;
     const time = (s) => (s.seconds != null ? fmtDur(s.seconds * 1000) : s.missingData ? "brak danych" : esc(STEP_LABEL[s.state] || s.state));
     const box = h("details", { class: "substeps", open: Boolean(st.substepsOpen) },
       h("summary", desc("substeps_time"), "Podkroki i czas (" + items.length + ")"),
       h("ul", { class: "sub-list" }, items.map((s) => h("li", { class: s.missingData ? "is-nodata" : "" },
-        h("span", { class: "mono q-id" }, esc(s.id)), h("span", { class: "tt" }, esc(s.title)), h("span", { class: "mono sub-t" }, time(s))))));
+        h("span", { class: "mono q-id" }, esc(s.id)), inl("tt", esc(s.title), s.titleHtml), h("span", { class: "mono sub-t" }, time(s))))));
     box.addEventListener("toggle", () => { st.substepsOpen = box.hasAttribute("open"); });
     return box;
   }
@@ -266,7 +273,18 @@
       return { "data-desc": key, "data-desc-extra": extra || null, tabindex: "0", "aria-describedby": "descTip" };
     }
     // Kontekst sekcji modułu (readinessTile, substepsBlock, timingBlock); openDoc to deklaracja funkcji niżej (hoisting).
-    const kit = { h, icon, desc, openDoc: (path) => openDoc(path), st };
+    // Formatowanie w linii (pogrubienie, kursywa, kod, bezpieczny link): serwer dodaje `<pole>Html` obok tekstu (`titleHtml`, `whatHtml`, `textHtml`),
+    // gdy tekst ma formatowanie; HTML wstawia wyłącznie host przez `deps.mountHtml`. Bez pola albo bez `mountHtml` zostaje zwykły tekst.
+    // Dymki, `title` i `aria-*` zawsze czysty tekst: `plain` zdejmuje znaczniki (tylko gdy serwer oznaczył tekst jako sformatowany).
+    const inl = (cls, text, html) => {
+      if (typeof html === "string" && html && typeof deps.mountHtml === "function") {
+        const node = h("span", { class: cls });
+        deps.mountHtml(node, html);
+        return node;
+      }
+      return h("span", { class: cls }, text);
+    };
+    const kit = { h, icon, desc, openDoc: (path) => openDoc(path), st, inl, plain: plainInline };
     // Odnośnik zewnętrzny: host może przejąć otwarcie (webview), strona zostawia zwykłe <a target=_blank>.
     const linkClick = (kind, id, url) => (e) => {
       if (typeof actions.openLink === "function" && actions.openLink(kind, id, url) === true) e.preventDefault();
@@ -294,7 +312,7 @@
       "data-tip": "Wybierz plan (domyślnie: bieżący w realizacji)", on: { click: (e) => { e.stopPropagation(); toggleMenu(); } } },
       svg("svg", { class: "ic" }, svg("use", { href: "#i-plan" })), ui.planBtnText, ui.planAuto, svg("svg", { class: "ic chev" }, svg("use", { href: "#i-chev" })));
     ui.planMenu = h("ul", { id: "planMenu", class: "menu", role: "listbox", hidden: true });
-    ui.waitBanner = h("div", { id: "waitBanner", class: "wait", role: "status", "aria-live": "polite", hidden: true });
+    ui.waitBanner = h("div", { id: "waitBanner", class: "wait", role: "status", "aria-live": "polite", hidden: true, on: { click: mdClick } });
     ui.docCount = h("span", { class: "count", id: "docCount" });
     ui["tab-progress"] = h("button", { role: "tab", id: "tab-progress", "aria-controls": "view-progress", "aria-selected": "true",
       "data-tip": "Akty, postęp i checkpointy (klawisz P)", on: { click: () => setView("progress") } },
@@ -315,10 +333,10 @@
     ui.result = h("section", { class: "result-box", id: "resultBox", "aria-labelledby": "resultTitle", hidden: true, on: { click: mdClick } });
     ui.glossary = h("div", { class: "glossary-box", id: "glossaryBox" });
     ui.qProtos = h("div", { class: "q-block", id: "qProtos" });
-    ui.qItems = h("div", { class: "q-block", id: "qItems" });
-    ui.acts = h("div", { class: "acts", id: "acts" },
+    ui.qItems = h("div", { class: "q-block", id: "qItems", on: { click: mdClick } });
+    ui.acts = h("div", { class: "acts", id: "acts", on: { click: mdClick } },
       h("div", { class: "act skeleton" }), h("div", { class: "act skeleton" }), h("div", { class: "act skeleton wide" }));
-    ui.phases = h("div", { class: "phases", id: "phases" });
+    ui.phases = h("div", { class: "phases", id: "phases", on: { click: mdClick } });
     ui.feed = h("ol", { class: "feed", id: "feed" });
     ui.parseWarn = h("div", { class: "parse-warn", id: "parseWarn", hidden: true });
     ui.docList = h("nav", { class: "doc-list", id: "docList", "aria-label": "Dokumenty zadania" });
@@ -591,7 +609,7 @@
             bar(p.percent, p.pendingPercent, barCls, "Postęp realizacji", fills, p.activePercent),
             legend(p),
             cur ? h("div", { class: "now", "data-tip": `Teraz wykonywane: ${(p.active || []).join(", ")}, ${cur.index}. pozycja z ${p.total} w planie (${p.activeSource === "checkpoint" ? "z ostatniego checkpointu „w toku”" : "pierwszy niezaznaczony krok"})` },
-              h("span", { class: "dot-live" }), h("span", { class: "txt" }, "teraz: ", mono(cur.id), " " + (cur.title ?? "")),
+              h("span", { class: "dot-live" }), h("span", { class: "txt" }, "teraz: ", mono(cur.id), " ", inl("", cur.title ?? "", cur.titleHtml)),
               p.parallel ? h("span", { class: "par" }, `+${p.parallel} równolegle`) : null)
               : h("div", { class: "act-detail" }, a.detail || ""),
             h("div", { class: "stages" }, stages),
@@ -658,10 +676,10 @@
           bar(ph.percent, ph.pendingPercent, "thin " + (ph.state === "done" ? "is-done" : ""), ph.short, fills),
           h("ul", { class: "steps" }, (ph.steps || []).map((s) => {
             const changed = st.prev && prevStates[s.id] && prevStates[s.id] !== s.state;
-            const tip = `${s.id} ${s.title} — ${STEP_LABEL[s.state]}${s.sha ? " · commit " + s.sha : ""}${s.note && !s.sha ? " · " + s.note : ""}`;
+            const tip = `${s.id} ${plainInline(s.title, s.titleHtml)} — ${STEP_LABEL[s.state]}${s.sha ? " · commit " + s.sha : ""}${s.note && !s.sha ? " · " + plainInline(s.note, s.titleHtml) : ""}`;
             const mark = s.state === "done" || s.state === "reported" ? icon("i-check") : null;
             return h("li", { class: `step s-${s.state}${changed ? " flash" : ""}${s.tests ? " has-tests" : ""}`, ...desc(/^zamknięcie/i.test(s.title || "") ? "closure" : "substep", tip) },
-              h("span", { class: "st", "aria-label": STEP_LABEL[s.state] ?? "" }, mark), h("span", { class: "sid" }, s.id), h("span", { class: "tt" }, s.title),
+              h("span", { class: "st", "aria-label": STEP_LABEL[s.state] ?? "" }, mark), h("span", { class: "sid" }, s.id), inl("tt", s.title, s.titleHtml),
               stepTests(s, fills));
           })));
       }));
@@ -1083,9 +1101,9 @@
         return h("div", { class: "wait-item", ...desc(silence ? "banner_silence" : "banner_wait") },
           icon("i-bell"),
           h("div", { class: "wait-txt" },
-            h("strong", null, silence ? `Brak raportu postępu: ${String(w.what).replace(/^brak raportu /, "")}`
-              : w.source === "writing" ? `Sesja pracuje${since}: ${w.what}` : `${whoText(w) || "Sesja czeka na Ciebie"}${since}: ${w.what}`),
-            h("span", null, action),
+            silence ? h("strong", null, `Brak raportu postępu: ${String(w.what).replace(/^brak raportu /, "")}`)
+              : h("strong", null, w.source === "writing" ? `Sesja pracuje${since}: ` : `${whoText(w) || "Sesja czeka na Ciebie"}${since}: `, inl("", w.what, w.whatHtml)),
+            given ? h("span", null, action) : inl("", action, w.actionHtml),
             h("small", null, `Źródło: ${WAIT_SOURCE[w.source] || w.source}. ${silence ? "Zniknie po następnym raporcie." : w.source === "writing" ? "Zniknie, gdy agent skończy pisać albo znacznik wygaśnie." : "Baner zniknie, gdy sesja ruszy."}`)),
           h("div", { class: "wait-actions" }, link, tools));
       }));
@@ -1212,6 +1230,7 @@
     }
     function questionRow(d, q) {
       const text = typeof q.text === "string" ? (q.text.length > Q_TEXT_MAX ? q.text.slice(0, Q_TEXT_MAX) + "…" : q.text) : null;
+      const textHtml = text != null && typeof q.textHtml === "string" && q.textHtml && typeof deps.mountHtml === "function" ? q.textHtml : null;
       const to = (q.addressees === "all" || (Array.isArray(q.addressees) && !q.addressees.length)) ? "do wszystkich ekspertów" : addresseesText(q.addressees);
       const url = safeUrl(expertsUrl(d, q.url));
       const slug = typeof q.runSlug === "string" ? q.runSlug : "";
@@ -1220,7 +1239,7 @@
           q.blocking === true ? h("span", { class: "chip s-warn q-blocking" }, "blokujące") : null,
           h("span", { class: "chip " + (q.state === "open" ? "s-active" : "s-planned") }, Q_STATE[q.state] || String(q.state ?? "—")),
           h("span", { class: "q-age" }, fmtAge(q.at))),
-        h("span", { class: "q-text" + (text == null ? " is-missing" : "") }, text == null ? "treść niedostępna" : text),
+        textHtml ? inl("q-text", text, textHtml) : h("span", { class: "q-text" + (text == null ? " is-missing" : "") }, text == null ? "treść niedostępna" : text),
         to ? h("span", { class: "q-to", "data-addressees": "" }, to) : null,
         url ? h("a", { class: "q-go", href: url, target: "_blank", rel: "noopener", "aria-label": `Otwórz pytania przebiegu ${slug || ""}`.trim(),
           on: { click: linkClick("experts", slug, url) } }, "Otwórz pytania") : null);
