@@ -1,8 +1,7 @@
 """180-A3: which adapter `skillsync test-run` picks for a command of a web tool, with and without `--format`.
 
 Every adapter declares its OWN tool (never a wrapper: `playwright`, `cypress`, `vitest`, `karma`, `angular`, all values of `test_run.TOOLS`) and its `accepts` looks for the
-command anywhere in the argv, so `--format <name>` works under any wrapper now. `auto` through a wrapper (`npx playwright test`) needs `detect_tool` to peel the wrapper
-(180-A5): those rows are expected failures until it does (`expectedFailure` turns into a failure the day it works: then remove the marker). A script of a package
+command anywhere in the argv, so `--format <name>` works under any wrapper now. `auto` through a wrapper (`npx playwright test`, `yarn playwright test`, `timeout 60 ...`) works since `detect_tool` peels the wrappers (180-A5). A script of a package
 manager (`npm test`, `npm run ...`, `yarn test`, `make`) is opaque and never recognised: `--format` is the way."""
 import sys
 import unittest
@@ -20,7 +19,7 @@ DIRECT = (
 )
 WRAPPED = (
     (['npx', 'vitest', 'run'], 'vitest'), (['npx', 'playwright', 'test'], 'playwright'), (['npx', 'cypress', 'run'], 'cypress'), (['npx', 'karma', 'start'], 'karma'),
-    (['npx', 'ng', 'test'], 'angular'), (['pnpm', 'exec', 'vitest', 'run'], 'vitest'), (['timeout', '60', 'playwright', 'test'], 'playwright'),
+    (['npx', 'ng', 'test'], 'angular'), (['pnpm', 'exec', 'vitest', 'run'], 'vitest'), (['timeout', '60', 'playwright', 'test'], 'playwright'), (['yarn', 'playwright', 'test'], 'playwright'),
 )
 OPAQUE = (['npm', 'test'], ['npm', 'run', 'test:unit'], ['yarn', 'test'], ['make', 'test'], ['pnpm', 'test'])
 NAMES = ('vitest', 'karma', 'playwright', 'cypress', 'angular')
@@ -52,11 +51,28 @@ class Auto(unittest.TestCase):
             with self.subTest(argv=argv):
                 self.assertIsNone(auto(argv))
 
-    @unittest.expectedFailure   # until 180-A5 peels the wrappers in `detect_tool` (today `npx playwright test` is the tool `npx`)
     def test_wrapped_commands_after_the_wrappers_are_peeled(self):
         for argv, want in WRAPPED:
             with self.subTest(argv=argv):
                 self.assertEqual(auto(argv), want)
+
+
+class Notice(unittest.TestCase):
+    def notice(self, argv):
+        tool = test_run.detect_tool(argv)
+        return test_run.adapter_notice('auto', argv, tool, test_adapters.resolve('auto', argv, tool))
+
+    def test_vitest_without_a_reporter_says_how_to_get_the_list(self):
+        for argv, reporter in ((['vitest', 'run'], '--reporter=verbose'), (['npx', 'ng', 'test', '--no-watch'], '--reporters=verbose')):
+            with self.subTest(argv=argv):
+                text = self.notice(argv)
+                self.assertIn('test list', text)
+                self.assertIn(reporter, text)
+
+    def test_a_chosen_reporter_or_another_tool_gets_no_advice(self):
+        for argv in (['vitest', 'run', '--reporter=verbose'], ['ng', 'test', '--reporters=verbose'], ['playwright', 'test'], ['karma', 'start']):
+            with self.subTest(argv=argv):
+                self.assertNotIn('test list', self.notice(argv))
 
 
 class Forced(unittest.TestCase):

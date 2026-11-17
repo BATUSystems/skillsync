@@ -228,7 +228,8 @@ def adapter_notice(fmt, argv, tool, adapter):
     if fmt not in (None, 'auto'):
         return None
     if adapter is not None:
-        return f'test-run: adapter {adapter.name} (live {adapter.live})'
+        hint = adapter.hint(list(argv or []))
+        return f'test-run: adapter {adapter.name} (live {adapter.live})' + (f'; {hint}' if hint else '')
     test_adapters.discover()
     names = sorted(test_adapters.REGISTRY)
     same_tool = [name for name in names if tool in test_adapters.REGISTRY[name].tools]
@@ -389,6 +390,23 @@ class TestRecorder:
         finally:
             writer.close()
 
+    def _adapter_counts(self, complete):
+        """The end counters from what the adapter saw, or None. A COMPLETE stream (`end` returned True: every test of the run was seen, none is truncated) gives
+        the final state of every test; a counters-only adapter (Karma) gives its last counters when nothing runs any more and they add up to the total. Anything else
+        (interrupted, truncated, nothing emitted) stays with the report and the summary of the output."""
+        writer = self.writer
+        if writer.truncated:
+            return None
+        if complete and writer.final:
+            states = list(writer.final.values())
+            if 'running' not in states:
+                return {'total': len(states), 'passed': states.count('passed'), 'failed': states.count('failed'), 'skipped': states.count('skipped')}
+            return None
+        latest = writer.latest
+        if latest and latest[4] and not latest[3] and latest[0] + latest[1] + latest[2] == latest[4]:
+            return {'total': latest[4], 'passed': latest[0], 'failed': latest[1], 'skipped': latest[2]}
+        return None
+
     def _finish(self, check, result, output):
         writer = self.writer
         code = result.get('exit_code')
@@ -413,6 +431,10 @@ class TestRecorder:
             skipped = sum(1 for i in listed if i['state'] == 'skipped')
             ran = len(listed) - skipped
             counts = {'total': len(listed), 'passed': sum(1 for i in listed if i['state'] == 'passed'), 'failed': failed, 'skipped': skipped}
+        elif self.adapter is not None and (known := self._adapter_counts(bool(skip_reports))) is not None:
+            counts, source = known, 'adapter'
+            failed, skipped = counts['failed'], counts['skipped']
+            ran = counts['total'] - skipped
         elif output is not None:
             ran, skipped = _test_counts(output)
             if ran is not None:

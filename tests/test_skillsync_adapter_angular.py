@@ -68,12 +68,13 @@ class RealNgTest(unittest.TestCase):
     def run_fixture(self, name):
         return replay_fixture('angular', name, argv=['ng', 'test', '--no-watch'], tool='angular')
 
-    def test_the_default_vitest_reporter_prints_no_test_line_so_nothing_is_emitted(self):
-        for name in ('angular-vitest-pass.jsonl', 'angular-vitest-mixed.jsonl'):
+    def test_the_default_vitest_reporter_prints_no_test_line_so_only_the_summary_counters_are_emitted(self):
+        for name, counts in (('angular-vitest-pass.jsonl', {'passed': 2, 'failed': 0, 'skipped': 0, 'running': 0, 'total': 2}),
+                             ('angular-vitest-mixed.jsonl', {'passed': 4, 'failed': 1, 'skipped': 1, 'running': 0, 'total': 6})):
             with self.subTest(name=name):
                 recorder, _, _, complete = self.run_fixture(name)
-                self.assertEqual(recorder.calls, [])
-                self.assertFalse(complete)   # the counters of the summary and the report decide
+                self.assertEqual(recorder.calls, [('counts', counts)])   # no `test` event: the list needs `--reporters=verbose`
+                self.assertFalse(complete)
 
     def test_verbose_vitest_ids_do_not_carry_the_project_prefix(self):
         recorder, _, _, complete = self.run_fixture('angular-vitest-verbose.jsonl')

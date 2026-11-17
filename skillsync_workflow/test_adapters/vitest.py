@@ -25,6 +25,7 @@ LINE = re.compile(r'^ (?P<mark>[✓×↓□]) (?:\|[^|\n]+\| )?(?P<file>[^\s>][^
 # a skipped or todo line carries no time: a trailing ` 5s` of its name belongs to the name
 BARE = re.compile(r'^ (?P<mark>[↓□]) (?:\|[^|\n]+\| )?(?P<file>[^\s>][^>]*?) > (?P<name>.+)$')
 MESSAGE = re.compile(r'^ {3}→ (?P<msg>.+)$')
+SUMMARY_PART = re.compile(r'(\d+) (passed|failed|skipped|todo|\w+)')
 TESTS = re.compile(r'^ +Tests +(?P<body>.+?) \((?P<total>\d+)\)$')
 STATES = {'✓': 'passed', '×': 'failed', '↓': 'skipped', '□': 'skipped'}
 
@@ -79,6 +80,11 @@ class VitestCore:
         summary = TESTS.match(text)
         if summary:
             self.total = int(summary.group('total'))
+            parts = {}
+            for number, word in SUMMARY_PART.findall(summary.group('body')):
+                parts[word] = parts.get(word, 0) + int(number)
+            if parts and set(parts) <= {'passed', 'failed', 'skipped', 'todo'} and sum(parts.values()) == self.total:   # the default reporter names no test: its counters are the result
+                ctx.emit.counts(passed=parts.get('passed', 0), failed=parts.get('failed', 0), skipped=parts.get('skipped', 0) + parts.get('todo', 0), running=0, total=self.total)
 
     def complete(self):
         """True when every test of the summary was reported by a line."""
@@ -97,6 +103,11 @@ class VitestAdapter(Adapter):
     def accepts(self, argv):
         words = [str(word).replace('\\', '/').rsplit('/', 1)[-1].lower() for word in argv]
         return 'vitest' in words[:4] and 'ng' not in words[:2]
+
+    def hint(self, argv):
+        if any(str(word).startswith(('--reporter', '-r=')) for word in argv):
+            return None
+        return 'test list: add --reporter=verbose (the default reporter of Vitest names no passing test; the counters are always recorded)'
 
     def feed(self, stream, text, ctx):
         self.core.feed(text, ctx)

@@ -48,6 +48,7 @@ class PlaywrightAdapter(Adapter):
     def __init__(self):
         self.seen = {}        # id -> last state
         self.total = None
+        self.parts = {}       # the summary: kind -> number (`passed` for the line `N passed (time)`)
         self.block = None     # [id, name, file, message lines, closed] of the failure block being read
 
     def accepts(self, argv):
@@ -85,6 +86,8 @@ class PlaywrightAdapter(Adapter):
             self._flush(ctx)
             if summary.group('kind') != 'did not run':
                 self.total = (self.total or 0) + int(summary.group('n'))
+            kind = summary.group('kind') or 'passed'
+            self.parts[kind] = self.parts.get(kind, 0) + int(summary.group('n'))
             return
         if self.block is not None and not self.block[4] and len(self.block[3]) < MAX_MESSAGE_LINES:
             line = text.strip()
@@ -95,4 +98,10 @@ class PlaywrightAdapter(Adapter):
 
     def end(self, ctx, exit_code, output, reports):
         self._flush(ctx)
-        return self.total is not None and self.total == len(self.seen)
+        complete = self.total is not None and self.total == len(self.seen)
+        if self.parts and not complete and self.total:   # the `line` reporter names no test: the counters of the summary are the result (a flaky test passed)
+            parts = self.parts
+            ctx.emit.counts(passed=parts.get('passed', 0) + parts.get('flaky', 0), failed=parts.get('failed', 0) + parts.get('interrupted', 0),
+                            skipped=parts.get('skipped', 0) + parts.get('did not run', 0), running=0,
+                            total=sum(parts.get(k, 0) for k in ('passed', 'flaky', 'failed', 'interrupted', 'skipped', 'did not run')))
+        return complete

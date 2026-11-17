@@ -46,7 +46,7 @@ class Verbose(unittest.TestCase):
         recorder, _, _, complete = replay_fixture('vitest', 'vitest-verbose.jsonl')
         self.assertEqual(states(recorder), EXPECTED)
         self.assertTrue(complete)   # 12 lines = the 12 of the summary: the report is not needed
-        self.assertEqual({c[4] for c in recorder.tests()}, {'tests/math.test.js', 'tests/second.test.js'})
+        self.assertEqual({c[4] for c in recorder.emitted()}, {'tests/math.test.js', 'tests/second.test.js'})
         self.assertEqual(recorder.last()[M + 'fails with a message'][1], 'expected 4 to be 5 // Object.is equality')
         self.assertEqual(recorder.last()[M + 'is a todo'][1], 'todo')
 
@@ -58,8 +58,8 @@ class Verbose(unittest.TestCase):
 
     def test_no_running_state_exists_and_the_files_interleave(self):
         recorder = replay_fixture('vitest', 'vitest-verbose.jsonl')[0]
-        self.assertNotIn('running', {c[3] for c in recorder.tests()})
-        order = [c[1].split('::')[0] for c in recorder.tests()]
+        self.assertNotIn('running', {c[3] for c in recorder.emitted()})
+        order = [c[1].split('::')[0] for c in recorder.emitted()]
         self.assertNotEqual(order, sorted(order))   # a line of the second file arrives between the lines of the first one
 
     def test_ids_equal_the_ids_of_the_junit_report(self):
@@ -84,7 +84,7 @@ class Verbose(unittest.TestCase):
 
     def test_a_retried_test_is_one_line_with_the_total_time(self):
         recorder = replay_fixture('vitest', 'vitest-verbose-retry2.jsonl')[0]
-        failed = [c for c in recorder.tests() if c[1] == M + 'fails with a message' and c[3] == 'failed']
+        failed = [c for c in recorder.emitted() if c[1] == M + 'fails with a message' and c[3] == 'failed']
         self.assertTrue(failed and failed[0][5] > 1000)   # 3 attempts of 400 ms in one line (retry x2)
         self.assertEqual(recorder.last()[M + 'fails with a message'][1], 'expected 4 to be 5 // Object.is equality')
         self.assertTrue(replay_fixture('vitest', 'vitest-verbose-retry2.jsonl')[3])   # 10 lines = the 10 of the summary
@@ -97,9 +97,10 @@ class Verbose(unittest.TestCase):
 
 
 class Default(unittest.TestCase):
-    def test_the_default_reporter_has_no_describe_path_so_nothing_is_emitted(self):
+    def test_the_default_reporter_has_no_describe_path_so_only_the_counters_of_the_summary_are_emitted(self):
         recorder, _, _, complete = replay_fixture('vitest', 'vitest-default.jsonl')
-        self.assertEqual(recorder.calls, [])   # an id without the describe path would not match the report: no events, the counters of the summary remain
+        # an id without the describe path would not match the report: no `test` events; the summary `2 failed | 8 passed | 1 skipped | 1 todo (12)` is the result
+        self.assertEqual(recorder.calls, [('counts', {'passed': 8, 'failed': 2, 'skipped': 2, 'running': 0, 'total': 12})])
         self.assertFalse(complete)
 
     def test_ansi_colours_change_nothing(self):
@@ -123,7 +124,7 @@ class Hostile(unittest.TestCase):
         recorder, _, _, complete = replay('vitest', chunks_from_text(text), tool='vitest')
         self.assertEqual(states(recorder), {'f.test.js::waits 5s': 'skipped', 'f.test.js::todo 12ms': 'skipped', 'f.test.js::fast': 'passed', 'f.test.js::exact': 'passed',
                                             'dir with space/f.test.js::spaced': 'passed', 'f.test.js::broken': 'failed', 'f.test.js::a > b > c': 'passed'})
-        self.assertEqual([c[5] for c in recorder.tests() if c[1] == 'f.test.js::fast'], [1200])
+        self.assertEqual([c[5] for c in recorder.emitted() if c[1] == 'f.test.js::fast'], [1200])
         self.assertEqual(recorder.last()['f.test.js::broken'][1], 'boom')
         self.assertTrue(complete)
 
@@ -144,7 +145,7 @@ class Hostile(unittest.TestCase):
         from skillsync_workflow.test_adapters import vitest
         lines = ''.join(f' ✓ f.test.js > t{i} 1ms\n' for i in range(vitest.MAX_SEEN + 50))
         recorder = replay('vitest', chunks_from_text(lines, size=65536), tool='vitest')[0]
-        self.assertLessEqual(len(recorder.tests()), vitest.MAX_SEEN)
+        self.assertLessEqual(len(recorder.emitted()), vitest.MAX_SEEN)
 
 
 if __name__ == '__main__':

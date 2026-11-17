@@ -54,8 +54,8 @@ class List(unittest.TestCase):
 
     def test_no_running_state_and_the_lines_of_the_projects_interleave(self):
         recorder = replay_fixture('playwright', 'playwright-list.jsonl')[0]
-        self.assertNotIn('running', {c[3] for c in recorder.tests()})
-        projects = [c[1].rsplit(' ', 1)[-1] for c in recorder.tests() if c[5] is not None]
+        self.assertNotIn('running', {c[3] for c in recorder.emitted()})
+        projects = [c[1].rsplit(' ', 1)[-1] for c in recorder.emitted() if c[5] is not None]
         self.assertTrue(D in projects and MOB in projects)
 
     def test_the_message_of_a_failure_comes_from_the_detailed_block(self):
@@ -69,7 +69,7 @@ class List(unittest.TestCase):
         recorder, _, _, complete = replay_fixture('playwright', 'playwright-list-retries2.jsonl')
         self.assertTrue(complete)   # 13 tests = 3 failed + 1 flaky + 1 skipped + 8 passed of the summary (flaky is counted apart from passed)
         key = M + 'flaky on the first attempt ' + D
-        self.assertEqual([c[3] for c in recorder.tests() if c[1] == key][:2], ['failed', 'passed'])
+        self.assertEqual([c[3] for c in recorder.emitted() if c[1] == key][:2], ['failed', 'passed'])
         self.assertEqual(states(recorder)[key], 'passed')   # the failure block of the first attempt must not turn it red again
         self.assertEqual(states(recorder)[M + 'fails with a message ' + D], 'failed')
 
@@ -96,7 +96,7 @@ class Shapes(unittest.TestCase):
         recorder = replay('playwright', chunks_from_text(text), tool='playwright')[0]
         self.assertEqual(states(recorder), {'e2e/a.spec.js::group › fast': 'passed', 'e2e/a.spec.js::slow': 'passed', 'e2e/a.spec.js::long': 'failed', 'e2e/a.spec.js::skipped': 'skipped',
                                             'e2e/a.spec.js::coloured': 'passed'})
-        self.assertEqual([c[5] for c in recorder.tests()], [5, 4000, 60000, None, 1])
+        self.assertEqual([c[5] for c in recorder.emitted()], [5, 4000, 60000, None, 1])
 
     def test_the_summary_kinds(self):
         body = '  ✓   1 f.js:1:1 › a (1ms)\n  ✓   2 f.js:2:1 › b (1ms)\n  ✘   3 f.js:3:1 › c (1ms)\n'

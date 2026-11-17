@@ -45,7 +45,7 @@ class Spec(unittest.TestCase):
         self.assertTrue(complete)   # 11 result lines = 10 tests of math.cy.js + 1 of second.cy.js, the sum of the summaries of the two files
         self.assertEqual(recorder.last()[M + 'fails with a message'][1], 'AssertionError: expected 4 to equal 5')
         self.assertEqual(recorder.last()[M + 'adds 2 + 2 = 5'][1], 'AssertionError: expected 4 to equal 5')
-        self.assertNotIn('running', {c[3] for c in recorder.tests()})
+        self.assertNotIn('running', {c[3] for c in recorder.emitted()})
 
     def test_the_failure_listing_after_the_summary_is_not_read_as_tests(self):
         recorder = replay_fixture('cypress', 'cypress-spec.jsonl')[0]
@@ -133,8 +133,8 @@ class Hostile(unittest.TestCase):
     def test_deeply_nested_suites_are_bounded(self):
         text = '  Running:  a.cy.js  (1 of 1)\n' + ''.join(' ' * (2 + i) + f's{i}\n' for i in range(200)) + ' ' * 300 + '✓ t (1ms)\n'
         recorder = replay('cypress', chunks_from_text(text), tool='cypress')[0]
-        self.assertEqual(len(recorder.tests()), 1)
-        self.assertLessEqual(recorder.tests()[0][2].count(' > '), 32)
+        self.assertEqual(len(recorder.emitted()), 1)
+        self.assertLessEqual(recorder.emitted()[0][2].count(' > '), 32)
 
 
 if __name__ == '__main__':
