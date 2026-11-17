@@ -12,7 +12,9 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
-Proposed version 1.9.0 (the owner confirms at release). Upgrading: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.8.0 → 1.9.0".
+## [1.9.0] - 2026-11-17
+
+Upgrading from 1.8.0: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.8.0 → 1.9.0".
 
 ### Added
 
