@@ -40,5 +40,5 @@ Test równoważności zamienia więc `command` na `<ENTRY>` przed liczeniem SHA-
 Hak strażnika poleceń (`library/hooks/guard-commands.py`, `guardhook`) jest domyślnie włączony dla projektów z `feature` albo `dispatch`, a `link`
 dopisuje do `.claude/.gitignore` jedną linię `hooks/guard-commands.py` (obok `settings.local.json`; baza sprzed warstw tego hooka nie zna).
 Syntetyczna biblioteka fixtury nie ma skryptu, więc sam skrypt i wpis w `settings.local.json` nie powstają i jest to jedyna różnica w artefaktach.
-Test równoważności wymaga tej linii dokładnie raz i usuwa ją przed liczeniem SHA-256; reszta pliku jest nadal porównywana ze skrótem bazy. Skróty
+Część testowa tego samego haka (`hooks.guard_tests`, 180-J2; domyślnie włączona dla tych samych projektów) dopisuje jeszcze dwie linie, `hooks/guard-tests.py` i `hooks/test-tools.json`. Test równoważności wymaga każdej z tych linii dokładnie raz i usuwa je przed liczeniem SHA-256; reszta pliku jest nadal porównywana ze skrótem bazy. Skróty
 w `*.json` NIE były regenerowane (regeneracja na nowym generatorze zniweczyłaby sens testu).

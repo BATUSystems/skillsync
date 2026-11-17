@@ -185,5 +185,48 @@ class Active(GuardBase):
         self.assertTrue(any('differs' in text for text in warned), warned)
 
 
+class PlainProjectUnchanged(GuardBase):
+    """The promise: a project without the agent flow does not change by a byte. Checked on the generated artefacts of a real `link`, not on a function."""
+
+    def setUp(self):
+        super().setUp()
+        (self.library / 'hooks/guard-tests.py').write_bytes(CLASSIFIER.read_bytes())
+        self.manifest['skills'] = ['plain']
+        self.save()
+
+    def test_default_and_explicitly_off_give_the_same_tree_and_nothing_of_the_hook(self):
+        self.link()
+        default = self.tree()
+        self.set_hooks(guard_tests='off')
+        self.link()
+        self.assertEqual(self.tree(), {**default, '.github/.skillsync.yaml': self.tree()['.github/.skillsync.yaml']})
+        for rel in default:
+            self.assertNotIn('test-tools', rel)
+            self.assertNotIn('guard-tests', rel)
+            self.assertNotIn('guard-commands', rel)
+        for name in (guardhook.GUARD_HOOK, guardhook.TESTS_HOOK, guardhook.TOOLS_HOOK):
+            self.assertFalse((self.root / name).exists(), name)
+        gitignore = self.root / '.claude/.gitignore'
+        if gitignore.exists():
+            text = gitignore.read_text(encoding='utf-8')
+            for word in ('guard-commands', 'guard-tests', 'test-tools'):
+                self.assertNotIn(word, text)
+        if (self.root / '.claude/settings.local.json').exists():
+            self.assertNotIn('PreToolUse', (self.root / '.claude/settings.local.json').read_text(encoding='utf-8'))
+
+    def test_a_flow_project_with_the_test_part_off_has_none_of_its_artefacts(self):
+        self.manifest['skills'] = ['feature']
+        self.save()
+        self.set_hooks(guard_tests='off')
+        self.link()
+        for name in (guardhook.TESTS_HOOK, guardhook.TOOLS_HOOK):
+            self.assertFalse((self.root / name).exists(), name)
+        text = (self.root / '.claude/.gitignore').read_text(encoding='utf-8')
+        self.assertIn('hooks/guard-commands.py', text)
+        self.assertNotIn('guard-tests', text)
+        self.assertNotIn('test-tools', text)
+        self.assertNotIn('--tests', self.guard_entries(self.local())[0]['command'])
+
+
 if __name__ == '__main__':
     unittest.main()
