@@ -77,7 +77,7 @@ Polecenie, Wynik; system w formie „Windows 11, Python 3.12.16”, bez nazw mas
 ### Macierz przed pushem: ostrzeżenie o kodzie zależnym od systemu
 
 `python3 scripts/platform_sensitive.py --base <baza> --head <sha> [--json]` czyta diff `<baza>...<sha>` i **ostrzega** (nigdy nie blokuje,
-kod wyjścia 0; 2 tylko przy błędzie wejścia), gdy zmiana dotyka kodu zależnego od systemu: `os.name`/`sys.platform`, sygnały
+kod wyjścia 0; 2 tylko przy błędzie wejścia), gdy zmiana dotyka kodu zależnego od systemu (także samego hooka hosta: `library/hooks/`, `guardhook.py` wymagają dowodu z Windows i macOS modułu tego hooka przed scaleniem, kategoria `host-hook`): `os.name`/`sys.platform`, sygnały
 (`signal.SIG*`, `CTRL_*_EVENT`, `os.killpg`, `start_new_session`), `ctypes`/`windll`, symlinki i `core.symlinks`, `rmtree`/usuwanie plików,
 końce linii (`\r\n`, `newline=`, `splitlines`, `file_lines`), ścieżki z backslashem, opcje gniazd `SO_*` oraz `<katalog tmp> / <zmienna>` w
 testach. Dla każdej kategorii podaje systemy, z których potrzebny jest dowód (windows/macos/linux), a na końcu moduły testowe do transzy

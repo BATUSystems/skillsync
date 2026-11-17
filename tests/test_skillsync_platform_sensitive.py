@@ -201,5 +201,23 @@ class Cases(Synthetic):
         self.assertEqual(done.returncode, 2)
 
 
+    def test_a_change_of_a_host_hook_needs_windows_and_macos_evidence(self):
+        for path in ('library/hooks/guard-commands.py', 'skillsync_workflow/guardhook.py'):
+            with self.subTest(path=path):
+                self.write({path: 'VALUE = 1\n'})
+                self.commit()
+                result = self.result()
+                hits = [hit for hit in result['matches'] if hit['category'] == 'host-hook' and hit['file'] == path]
+                self.assertEqual([hit['systems'] for hit in hits], [['windows', 'macos']])
+                self.assertIn('host-hook', result['evidenceNeeded']['windows'])
+                self.assertIn('host-hook', result['evidenceNeeded']['macos'])
+                self.assertNotIn('host-hook', result['evidenceNeeded'].get('linux', []))
+
+    def test_other_library_files_are_not_a_host_hook(self):
+        self.write({'library/skills/x/SKILL.md': 'text\n'})
+        self.commit()
+        self.assertNotIn('host-hook', self.categories(self.result()))
+
+
 if __name__ == '__main__':
     unittest.main()

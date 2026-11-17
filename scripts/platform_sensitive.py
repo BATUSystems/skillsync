@@ -43,7 +43,10 @@ PATTERNS = [
     ('backslash-path', ('windows',), re.compile(r'''PureWindowsPath|\bntpath\b|\bos\.(sep|altsep)\b|\bos\.path\.(sep|altsep)\b|['"][A-Za-z]:\\|['"]\\{1,2}['"]''')),
     ('socket-option', ALL, re.compile(r'\bSO_[A-Z_]+\b|\bAF_UNIX\b|\bIPPROTO_\w+\b|\bTCP_NODELAY\b')),
 ]
-FILE_RULES = [('windows-api', ('windows',), re.compile(r'\.ps1$')), ('posix-api', ('macos', 'linux'), re.compile(r'\.sh$'))]
+# host hooks (a script the editor/agent host runs through the user's shell) read paths and commands the way that shell does: a change needs the Windows and
+# macOS run of the module of the hook BEFORE the merge (180-R: the delete guard hook was first run on Windows only in the final tranche)
+FILE_RULES = [('windows-api', ('windows',), re.compile(r'\.ps1$')), ('posix-api', ('macos', 'linux'), re.compile(r'\.sh$')),
+              ('host-hook', ('windows', 'macos'), re.compile(r'(^|/)library/hooks/|(^|/)skillsync_workflow/guardhook\.py$'))]
 HUNK = re.compile(r'^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@')
 
 
