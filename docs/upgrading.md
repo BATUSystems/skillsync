@@ -73,26 +73,47 @@ Wydanie 1.6.1 jest PATCH (sekcja **Breaking** w `CHANGELOG.md` to „None.”) z
 
 ## Przejście 1.7.0 → 1.8.0
 
-Wydanie 1.8.0 zmienia domyślny nasłuch strony statusu (`dashboard serve`); flagi i schematy JSON bez zmian. Sekcja
-**Breaking** w `CHANGELOG.md` opisuje tę zmianę.
+Wydanie 1.8.0 ma dwie zmiany zachowania (sekcja **Breaking** w `CHANGELOG.md`): domyślny nasłuch strony statusu (punkty 2–5) i wynik `prototype sync --check` (punkt 6). Pozostałe punkty to nowe funkcje, które włączają się same albo wymagają jednego polecenia. Flagi i schematy JSON zostają w `schema: 1`.
 
-1. Rdzeń: `uv tool install --force git+https://github.com/BATUSystems/skillsync@v1.8.0`, potem `skillsync layers update core --ref v1.8.0`.
-2. Bez flag portów `dashboard serve <projekt>` działa jako dwa gniazda: odczyt na 5140 w sieci (wszystkie interfejsy), zgody na 5141
-   tylko na tej maszynie. Adres zgód z tokenem podaje `skillsync dashboard url <projekt>`.
-3. Kto uruchamiał `--read-port/--approve-port` i dawał zgody z telefonu lub innego komputera, dopisuje `--approve-bind 0.0.0.0`
-   (albo `approve_bind: 0.0.0.0` w sekcji `dashboard:`).
-4. Po staremu, tylko ta maszyna: `dashboard.local_only: true` w configu maszyny albo `--read-bind 127.0.0.1` przy starcie.
-   Stary tryb jednego portu zostaje: `skillsync dashboard serve <projekt> --port 5140`.
-5. Uruchom ponownie działający `skillsync dashboard serve`. Zatrzymaj stare procesy na portach 5140 i 5141 przed startem:
-   zajęty port daje BLOCKED z numerem portu i właścicielem.
-6. Wywołania `serve --host ADR` i `serve --approve-host NAZWA` bez portów kończą się BLOCKED z podpowiedzią (dotąd znaczyły
-   jeden port z bramką `Host`). Stary tryb, także za tunelem: `skillsync dashboard serve <projekt> --port 5140 --approve-host <nazwa tunelu>`;
-   nowy tryb: jawne flagi (`--read-bind`, `--approve-bind`, `--approve-port M --approve-host NAZWA`). `--host` przy dwóch portach
-   przesuwa tylko odczyt; zgody z sieci wymagają `--approve-bind 0.0.0.0`.
-7. Prototypy: (a) `prototype sync --check` kończy się teraz `FAIL` (kod 1, pole `missing`), gdy motyw nie definiuje wszystkich tokenów z `required-tokens.txt`; wcześniej był tylko komunikat `Missing required tokens`, a wynik to `PASS`. Dopisz brakujące tokeny (lista jest
-   w komunikacie) w arkuszu z `prototype.theme.tokens_from` albo w `theme.css`. (b) Nowy klucz `prototype.dark_theme: false` wyłącza ciemny motyw i przycisk „Motyw”: po dopisaniu go uruchom `skillsync prototype migrate <projekt> <slug>` (nowa kopia silnika i atrybuty
-   na `<html>`; akceptacje ekranów zostają, `migrate` pokazuje `acceptance.lost: 0`). (c) Nowa flaga `prototype serve --demo`: pokaz tylko do odczytu bez kont (zob. [prototypes](prototypes.md#pokaz-tylko-do-odczytu-serve---demo)); stara kopia silnika pokaże narzędzia komentowania, serwer odmówi
-   każdej akcji, więc uruchom `prototype migrate`.
+1. **Rdzeń.** `uv tool install --force git+https://github.com/BATUSystems/skillsync@v1.8.0`, potem `skillsync layers update core --ref v1.8.0`. Python 3.11 jest wspierany: polecenia z opcją między argumentami pozycyjnymi (`prototype sync <ścieżka> --json <slug>`, `prototype gate`, `prototype question wait` i inne) działają tak samo jak na 3.12 i nowszych; nic nie trzeba zmieniać.
+2. **Strona statusu: dwa gniazda i sieć lokalna (Breaking).** `skillsync dashboard serve <projekt>` bez flag portów działa teraz jako dwa gniazda: odczyt na 5140 na wszystkich interfejsach (`0.0.0.0`), zgody na 5141 tylko na tej maszynie (`127.0.0.1`). Wcześniej jedno gniazdo na pętli zwrotnej obsługiwało obie role. Co zobaczysz:
+   - Adres zgód z tokenem podaje `skillsync dashboard url <projekt>`; adresy odczytu dla innych urządzeń: `skillsync dashboard url <projekt> --lan` (jeden na linię, w `--json` pole `lanUrls`). Strona odczytu odpowiada też pod nazwą maszyny (`<nazwa>`, `<nazwa>.local`); inna nazwa daje 403 z podpowiedzią flagi `--read-host`.
+   - Start wypisuje ostrzeżenia: strona odczytu jest widoczna w sieci (plany, specyfikacje, wyniki; sekrety maskowane heurystycznie; ruch nieszyfrowany), jak wrócić do starego zachowania i że zgody są tylko lokalne.
+   - Przy pierwszym nasłuchu na `0.0.0.0` zapora systemu może zapytać o dostęp: Windows Firewall (zezwól w sieci prywatnej, żeby zobaczyć stronę z telefonu; odmowa zostawia stronę lokalną), a na macOS zapora aplikacji.
+   - Ustawienia trzymasz w sekcji `dashboard:` configu maszyny albo manifestu projektu (`local_only`, `read_bind`, `approve_bind`; zob. [manifest](manifest.md)); manifest projektu może tylko zawężać, szerszy adres to błąd `doctor` i BLOCKED przy `serve`.
+3. **Jawne porty i zgody z sieci.** Skrypt lub usługa z jawnymi `--read-port/--approve-port`, z samym `--read-port` albo z `--no-approvals` ma od teraz gniazdo odczytu na `0.0.0.0` (wcześniej na pętli zwrotnej): plany, specyfikacje i wyniki są widoczne w sieci. Żeby zostało lokalnie, dodaj `--read-bind 127.0.0.1` albo ustaw `dashboard.local_only: true` (zob. punkt 4). Kto dawał zgody z telefonu lub innego komputera, dopisuje `--approve-bind 0.0.0.0` (albo `approve_bind: 0.0.0.0` w sekcji `dashboard:`); token zgód idzie wtedy nieszyfrowanym HTTP.
+4. **Po staremu, tylko ta maszyna:** `dashboard.local_only: true` w configu maszyny ([configuration](configuration.md#pozostałe-klucze)) albo `--read-bind 127.0.0.1` przy starcie. Stary tryb jednego portu zostaje: `skillsync dashboard serve <projekt> --port 5140`. Uruchom ponownie działający `dashboard serve` i zatrzymaj stare procesy na portach 5140 i 5141: zajęty port daje BLOCKED z numerem portu i właścicielem (serwer nie przechodzi na inny port).
+5. **`serve --host ADR` i `serve --approve-host NAZWA` bez flag portów** kończą się BLOCKED z podpowiedzią (dotąd znaczyły jeden port z bramką `Host`). Stary tryb, także za tunelem: `skillsync dashboard serve <projekt> --port 5140 --approve-host <nazwa tunelu>`. W trybie dwóch portów `--host` przesuwa tylko odczyt; zgody z sieci wymagają `--approve-bind 0.0.0.0`.
+6. **`prototype sync --check` (Breaking).** Kończy się `FAIL` (kod 1, pole `missing`), gdy motyw nie definiuje wszystkich tokenów z `required-tokens.txt`; wcześniej tylko ostrzegał, a wynik to `PASS`. Dopisz brakujące tokeny (lista jest w komunikacie) w arkuszu z `prototype.theme.tokens_from` albo w `theme.css`. Nie ma przełącznika, który wyłącza kontrolę. `sync` bez `--check`, `init` i `migrate` nadal tylko ostrzegają.
+7. **Prototypy: motyw, pokaz, migracja.**
+   - `prototype.dark_theme: false` w manifeście wyłącza ciemny motyw i przycisk „Motyw”. Po dopisaniu klucza uruchom `skillsync prototype migrate <projekt> <slug>` (nowa kopia silnika i atrybuty `data-theme="light" data-proto-dark="off"` na `<html>`); akceptacje ekranów zostają, `migrate` pokazuje `acceptance.lost: 0`. Bez `migrate` stara kopia silnika zignoruje klucz.
+   - `skillsync prototype serve <projekt> --demo` to pokaz tylko do odczytu bez kont (zob. [prototypes](prototypes.md#pokaz-tylko-do-odczytu-serve---demo)): domyślnie na `0.0.0.0`, strony są publiczne (`--host 127.0.0.1` zawęża), nie łączy się z `--login-to-view` (BLOCKED). Stara kopia silnika pokaże narzędzia komentowania (serwer i tak odmówi każdego zapisu), więc uruchom `prototype migrate`.
+   - Uruchom ponownie działający `prototype serve`.
+8. **Testy: `test-run`, kroki `[T]`, zakładka „Testy”.**
+   - Testy kroku planu uruchamiaj przez `skillsync test-run <projekt> --run <id> --step <id> -- <polecenie>` (opcje: `--junit`, `--format`, `--allow-no-count`, `--allow-skips`, `--import PLIK --source-sha SHA`; zob. [cli](cli.md)). `validate` i `smart-test` nie zapisują zdarzeń testów; ręcznie puszczone komendy nie są widoczne na stronie. Zakładka „Testy” jest ukryta, dopóki przebieg nie ma pliku zdarzeń.
+   - Kroki testowe oznacz w planie `[T]` (na początku lub końcu tytułu kroku w `## Progress` albo w komórce `Krok` tabeli). `checkpoint --status PASS` takiego kroku wymaga dowodu z `test-run` albo `--no-tests <powód>` (`doctor` ostrzega `tests-waived`).
+   - Wynik `test-run` to `PASS` tylko przy znanej, dodatniej liczbie wykonanych testów; zero testów, nieznana liczba i pominięcia dają `BLOCKED`.
+   - Lista testów na stronie zależy od narzędzia (szczegóły i granice: [test-adapters](test-adapters.md)):
+
+     | Narzędzie | Lista testów i stan na żywo | Jak uzyskać listę |
+     |---|---|---|
+     | `unittest` | tak, stan „uruchomiony” | `python -m unittest -v` |
+     | `pytest` | tak, stan „uruchomiony” | `pytest -v` (przy `-n`/xdist stan „uruchomiony” jest niewiarygodny); raport: `--junit-xml` |
+     | `dotnet test` | tak, wynik po końcu testu | TRX: `--logger trx` (VSTest) albo `--report-xunit-trx` (Microsoft.Testing.Platform; `--output Detailed` drukuje też zaliczone) |
+     | `cargo test` | tak (`--test-threads=1`: też stan „uruchomiony”) | domyślny format libtest |
+     | Vitest | tak, po końcu testu | `--reporter=verbose`; bez niego same liczniki |
+     | Karma | same liczniki | raport `karma-junit-reporter` i `--junit <plik>` dają nazwy |
+     | `ng test` | liczniki; lista jak Vitest albo Karma | `--reporters=verbose` (Vitest) albo raport JUnit (Karma) |
+     | Playwright | tak, po końcu testu | reporter `list` |
+     | Cypress | tak, po końcu testu | reporter `spec` |
+
+     Narzędzia webowe nie drukują linii startu pojedynczego testu, więc test jest „oczekujący” do wyniku. Linia `adapter <nazwa>` na stderr mówi, który adapter wybrano albo jak go wskazać (`--format <nazwa>`, `--format none`).
+   - **Wyniki testów nie są maskowane** (strona statusu, także port odczytu widoczny w sieci lokalnej, i pliki `.skillsync/runs/<run>/tests/`): sprawdź, czy `.skillsync/` jest w `.gitignore` (`doctor`: `runs-not-ignored`), a kto chce maskę, ustawia `tests.mask: on` w `.github/.skillsync.yaml`. Maskowanie wiersza polecenia biegu jest heurystyką.
+   - Konsument JSON `skillsync status` i strony statusu: przyjmij nieznaną wartość `tests` w `plans[].needsHuman` (krok testowy zamknięty bez testów) oraz nowe opcjonalne pola `tests`, `progress.phases[].steps[].tests`, `lanUrls` i `bind` w plikach stanu. Wtyczka edytora ignoruje nieznane pola, a zakładkę „Testy” dostanie z własnym wydaniem.
+9. **Haki Claude Code (projekty ze skillem `feature`, `agentflow` albo `dispatch`).** Po następnym `skillsync link` projekt dostaje w ignorowanym `.claude/settings.local.json` wpis `PreToolUse` na `Bash` i skrypty w `.claude/hooks/`:
+   - `guard-commands.py` odmawia trwałego usuwania (`rm -r`, `git clean -f`, `git worktree remove --force`, `find -delete`, ...) poza katalogami tymczasowymi i odtwarzalnymi; odmowa podaje zamiennik (`trash -- <ścieżki>`). Jednorazowy wyjątek zatwierdza użytkownik (`SKILLSYNC_GUARD_EXCEPT='<powód>'`, ślad w `.skillsync/hook-exceptions.jsonl`). Klucze: `hooks.guard_delete: deny|off`, `hooks.delete_allow`.
+   - Ten sam wpis niesie ostrzeżenie o szerokim biegu testów poza `skillsync test-run`: `guard-tests.py` i `test-tools.json` obok. Ostrzega, nigdy nie blokuje, i odzywa się po wykonaniu polecenia. Klucze: `hooks.guard_tests: warn|off`, `hooks.test_wrappers` (prefiksy liczone jak opakowanie), `hooks.wide_modules` (od ilu modułów `unittest` bieg jest szeroki, domyślnie 25).
+   - Wpis i skrypty znikają przy `link`, dopiero gdy wyłączone są OBA: `hooks: {guard_delete: off, guard_tests: off}`. Samo `guard_delete: off` zostawia hak, dopóki ostrzeżenie o testach jest włączone. Śledzony `settings.local.json` nigdy nie jest zapisywany. Hak nie widzi narzędzia PowerShell. `skillsync link --dry-run` pokazuje zmianę, `doctor` stan.
 
 ## Przejście 1.6.1 → 1.7.0
 
@@ -299,12 +320,3 @@ Aktualizacja maszyny Windows z instalacji uv: sekcja „Windows z instalacji uv�
 ## Co dalej
 
 Zmiany między wersjami opisuje wyłącznie `CHANGELOG.md`.
-
-## Przejście 1.7.0 → 1.8.0: zakładka „Testy” (180-A)
-
-1. Rdzeń: zwykła aktualizacja (`uv tool install --force git+https://github.com/BATUSystems/skillsync@v1.8.0`, `skillsync layers update core --ref v1.8.0`). Zakładka „Testy” jest ukryta, dopóki przebieg nie ma pliku zdarzeń testów.
-2. Testy kroku planu uruchamiaj przez `skillsync test-run <projekt> --run <id> --step <id> -- <polecenie>` (`validate` i `smart-test` nie zapisują zdarzeń testów); ręcznie puszczone komendy nie są widoczne na stronie.
-3. Kroki testowe oznacz w planie `[T]` (na początku lub końcu tytułu kroku w `## Progress` albo w komórce `Krok` tabeli). `checkpoint --status PASS` takiego kroku wymaga dowodu z `test-run` albo `--no-tests <powód>`.
-4. Konsument `skillsync status` ma przyjąć nieznaną wartość `tests` w `plans[].needsHuman` (krok testowy zamknięty bez testów); konsument JSON strony statusu ma tolerować nowe opcjonalne pola `tests` i `progress.phases[].steps[].tests` (schema 1 bez zmian). Wtyczka edytora ignoruje nieznane pola i wartości, a zakładkę dostanie z własnym wydaniem.
-5. **Wyniki testów nie są maskowane** (strona statusu, także port odczytu widoczny w sieci lokalnej, i pliki `.skillsync/runs/<run>/tests/`): sprawdź, czy `.skillsync/` jest w `.gitignore` (`doctor`: `runs-not-ignored`), a kto chce maskę, ustawia `tests.mask: on` w `.github/.skillsync.yaml`.
-6. Uruchom ponownie działający `skillsync dashboard serve`.

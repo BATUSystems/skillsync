@@ -639,8 +639,8 @@ wymagają `--approve-bind 0.0.0.0` albo ustawienia `approve_bind` w `dashboard:`
 ### Model zagrożeń (dwa gniazda)
 
 - **Widz w sieci bez logowania** widzi wszystko, co pokazuje gniazdo odczytu: plany, specyfikacje, wyniki, checkpointy i raporty
-  przebiegów. Maskowanie sekretów (`redact`) jest heurystyczne, nie gwarancją. Gdy przebieg ma wyniki testów (pole `tests`
-  z paczki 180-A, po jej scaleniu), wyniki będą na porcie odczytu bez maski, także w sieci (decyzja właściciela).
+  przebiegów. Maskowanie sekretów (`redact`) jest heurystyczne, nie gwarancją. Gdy przebieg ma wyniki testów (pole `tests`),
+  wyniki są na porcie odczytu bez maski, także w sieci (decyzja właściciela).
 - Widz **nie widzi i nie robi zgód**: gniazdo odczytu nie ma trasy zgód ani tokenu.
 - **Ruch jest nieszyfrowany** (HTTP bez TLS). Token zgód przechodzi w jawnym tekście, gdy gniazdo zgód słucha poza loopbackiem.
 - **Nieufne sieci** (hotel, konferencja, hotspot, sieć gościnna): `dashboard.local_only: true` albo `--read-bind 127.0.0.1`
