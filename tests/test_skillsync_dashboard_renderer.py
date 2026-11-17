@@ -1344,6 +1344,7 @@ function summary(m) {
     const mfeed = mount(fd, { now: NOW[nm] });
     ex.inlineMd = {
       feedMounted: mfeed.calls.mountHtml.filter((h) => h.indexOf('zrobione') === 0),
+      feedClick: ((mfeed.root.querySelector('#feed').listeners || {}).click || []).length,
       feedPlain: text(mfeed.root.querySelectorAll('#feed li')[1].querySelectorAll('span')[1]),
       mounted: m.calls.mountHtml,
       stepTitleNode: li ? li.querySelector('.tt').localName : null, stepTitleText: li ? text(li.querySelector('.tt')) : null,
@@ -1361,18 +1362,20 @@ function summary(m) {
     const rangeF = { scope: 'plan', remaining: 5, samples: 4, basis: 'run', paused: false, lowSeconds: 3000, medianSeconds: 4500, highSeconds: 6750 };
     const one = (m, sel) => { const e = m.root.querySelector(sel); return e ? { text: text(e), cls: e.getAttribute('class') } : null; };
     ex.forecast = {
-      tempo: one(run({ forecast: rangeF }), '[data-forecast]'),
-      tempoPaused: one(run({ forecast: Object.assign({}, rangeF, { paused: true }) }), '[data-forecast]'),
-      tempoFast: one(run({ forecast: Object.assign({}, rangeF, { medianSeconds: 100 }) }), '[data-forecast]'),
-      tempoNoRemaining: run({ forecast: Object.assign({}, rangeF, { remaining: 0 }) }).root.querySelectorAll('[data-forecast]').length,
+      tempo: one(run({ forecast: rangeF }, 'tempo'), '[data-forecast]'),
+      tempoPaused: one(run({ forecast: Object.assign({}, rangeF, { paused: true }) }, 'tempo'), '[data-forecast]'),
+      tempoFast: one(run({ forecast: Object.assign({}, rangeF, { medianSeconds: 100 }) }, 'tempo'), '[data-forecast]'),
+      tempoNoRemaining: run({ forecast: Object.assign({}, rangeF, { remaining: 0 }) }, 'tempo').root.querySelectorAll('[data-forecast]').length,
       badView: one(run({ forecast: rangeF }, 'nonsense'), '[data-forecast]'),
-      range: one(run({ forecast: rangeF }, 'range'), '[data-forecast]'),
+      range: one(run({ forecast: rangeF }), '[data-forecast]'),
+      rangeExplicit: one(run({ forecast: rangeF }, 'range'), '[data-forecast]'),
       same: one(run({ forecast: Object.assign({}, rangeF, { lowSeconds: 3000, highSeconds: 3040 }) }, 'range'), '[data-forecast]'),
       paused: one(run({ forecast: Object.assign({}, rangeF, { paused: true }) }, 'range'), '[data-forecast]'),
       few: one(run({ forecast: { scope: 'plan', reason: 'not-enough-data', have: 2, need: 4 } }), '[data-forecast]'),
+      moments: one(run({ forecast: { scope: 'plan', reason: 'few-moments', have: 1, need: 3 } }), '[data-forecast]'),
       norun: one(run({ forecast: { scope: 'plan', reason: 'no-run-start' } }), '[data-forecast]'),
       silentReasons: ['plan-not-running', 'no-remaining'].map((r) => run({ forecast: { scope: 'plan', reason: r } }).root.querySelectorAll('[data-forecast]').length),
-      absent: run({}).root.querySelectorAll('[data-forecast]').length,
+      absent: run({ forecast: undefined }).root.querySelectorAll('[data-forecast]').length,
       broken: run({ forecast: { scope: 'plan', remaining: 'x', lowSeconds: -1, medianSeconds: 1, highSeconds: 2 } }).root.querySelectorAll('[data-forecast]').length,
       acts: (() => {
         const d = clone(F[nm]);
@@ -2116,16 +2119,19 @@ class RendererNodeTests(unittest.TestCase):
 
     def test_forecast_and_measure_are_shown_apart(self) -> None:
         r = self.out["extra"]["forecast"]
-        # default view: the pace per step and the steps left, no sum and no clock time (the backtest did not hold such precision)
+        # the `tempo` view (host option): the pace per step and the steps left, no sum and no clock time
         self.assertEqual(r["tempo"]["cls"], "forecast")
-        self.assertEqual(r["tempo"]["text"], "Prognoza: tempo: ok. 15 min pracy na krok, z 4 zakończonych kroków; zostało 5 kroków")
+        self.assertEqual(r["tempo"]["text"], "Prognoza: orientacyjnie, tempo: ok. 15 min pracy na krok, z 4 zakończonych kroków; zostało 5 kroków")
         self.assertNotRegex(r["tempo"]["text"], r"koniec ok|\d\d:\d\d|do końca kroków")
         self.assertIn("is-paused", r["tempoPaused"]["cls"])
         self.assertIn("wstrzymane", r["tempoPaused"]["text"])
         self.assertIn("mniej niż minuta pracy na krok", r["tempoFast"]["text"])
         self.assertEqual(r["tempoNoRemaining"], 0)
-        self.assertEqual(r["badView"]["text"], r["tempo"]["text"], "an unknown view falls back to the default")
-        # the range view (host option `forecastView: "range"`)
+        self.assertEqual(r["badView"]["text"], r["range"]["text"], "an unknown view falls back to the default (range)")
+        self.assertEqual(r["rangeExplicit"]["text"], r["range"]["text"])
+        # the default view: the range with an approximate clock time, marked as approximate in the row itself
+        self.assertIn("orientacyjnie:", r["range"]["text"])
+        self.assertIn("Rząd wielkości, nie obietnica.", r["range"]["text"])
         self.assertEqual(r["range"]["cls"], "forecast")
         self.assertIn("Prognoza", r["range"]["text"])
         self.assertIn("ok. 50 min–1 h 55 min pracy", r["range"]["text"])
@@ -2141,6 +2147,7 @@ class RendererNodeTests(unittest.TestCase):
         self.assertIn("zakończone kroki z czasem: 2, potrzeba co najmniej 4", r["few"]["text"])
         self.assertIn("is-none", r["few"]["cls"])
         self.assertIn("RUN=", r["norun"]["text"])
+        self.assertIn("w zbyt mało różnych momentach (1, potrzeba co najmniej 3)", r["moments"]["text"])
         self.assertEqual(r["silentReasons"], [0, 0], "a plan that does not run or has nothing left shows no forecast line")
         self.assertEqual((r["absent"], r["broken"]), (0, 0), "no field or a broken one: no line, no number made up")
 
@@ -2158,6 +2165,7 @@ class RendererNodeTests(unittest.TestCase):
         self.assertEqual(r["questionMounted"], ["Czy <strong>tak</strong>?"])
         self.assertEqual(r["feedMounted"], ["zrobione <strong>S1</strong>"])
         self.assertEqual(r["feedPlain"], "zrobione S2")
+        self.assertEqual(r["feedClick"], 1, "links of the feed (md-doc, md-anchor) work like in the other blocks")
         self.assertEqual(r["stepTitleNode"], "span")
         self.assertEqual(r["plainStepText"], "Krok zwykły", "no `titleHtml` = plain text, as before")
         self.assertEqual(r["questionPlain"], "zwykłe pytanie")

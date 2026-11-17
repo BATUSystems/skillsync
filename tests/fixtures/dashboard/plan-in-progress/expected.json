@@ -260,6 +260,12 @@
     "open": 0,
     "runs": []
   },
+  "forecast": {
+    "have": 1,
+    "need": 4,
+    "reason": "not-enough-data",
+    "scope": "plan"
+  },
   "generatedAt": "2026-01-12T12:00:00+00:00",
   "git": {
     "branch": null,
@@ -511,6 +517,28 @@
     }
   ],
   "timing": {
+    "acts": [
+      {
+        "endSource": "approval",
+        "endedAt": "2026-01-10T08:30:00+00:00",
+        "key": "spec",
+        "reason": "order",
+        "startedAt": "2026-01-10T09:00:00+00:00",
+        "unknown": true,
+        "waitSeconds": null,
+        "workSeconds": null
+      },
+      {
+        "endSource": "approval",
+        "endedAt": "2026-01-10T08:45:00+00:00",
+        "key": "plan",
+        "reason": null,
+        "startedAt": "2026-01-10T08:30:00+00:00",
+        "unknown": false,
+        "waitSeconds": 0,
+        "workSeconds": 900
+      }
+    ],
     "available": true,
     "reason": null,
     "stages": [

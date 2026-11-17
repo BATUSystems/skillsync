@@ -86,6 +86,11 @@ class ModelTests(unittest.TestCase):
         out = fc.build_forecast(steps_timing(*FOUR), {'total': 9, 'done': 3, 'pending': 2}, 'in_progress', False)
         self.assertEqual(out['remaining'], 4)
 
+    def test_four_steps_reported_in_one_checkpoint_are_one_observation(self):
+        marks = (('S1', '09:00', '10:00'), ('S2', '09:00', '10:00'), ('S3', '09:00', '10:00'), ('S4', '09:00', '10:00'))
+        out = fc.build_forecast(steps_timing(*marks), plan(4, 9), 'in_progress', False)
+        self.assertEqual(out, {'scope': 'plan', 'reason': 'few-moments', 'have': 1, 'need': 3})
+
     def test_the_minimum_is_one_constant(self):
         self.assertEqual(fc.MIN_FINISHED_STEPS, 4)
 
@@ -146,11 +151,11 @@ class ActTimes(unittest.TestCase):
 
 
 class DefaultView(unittest.TestCase):
-    def test_the_page_shows_the_pace_by_default_not_the_range_and_the_clock_time(self):
+    def test_the_page_shows_the_range_by_default_and_the_pace_is_an_option(self):
         code = (Path(__file__).resolve().parent.parent / 'library' / 'skills' / 'dashboard' / 'assets' / 'dashboard-render.js').read_text(encoding='utf-8')
-        self.assertIn('const FORECAST_VIEW = "tempo";', code)   # one constant; a one-line commit switches it to "range"
+        self.assertIn('const FORECAST_VIEW = "range";', code)   # one constant (the owner's choice); "tempo" stays as the host option
         contract = (Path(__file__).resolve().parent.parent / 'docs' / 'dashboard-contract.md').read_text(encoding='utf-8')
-        self.assertIn('strona domyślnie go nie pokazuje', contract)
+        self.assertIn('domyślnie strona pokazuje zakres', contract)
 
 
 class InStatus(unittest.TestCase):
@@ -167,7 +172,7 @@ class InStatus(unittest.TestCase):
         self.assertIn('acts', status['timing'])
         self.assertEqual(status['forecast']['scope'], 'plan')
         self.assertTrue('reason' in status['forecast'] or 'medianSeconds' in status['forecast'])
-        self.assertEqual(status['eta'], status['eta'], 'eta is the agent declaration and is a separate field')
+        self.assertIn('eta', status, 'eta (the agent declaration) stays a separate field')
 
 
 if __name__ == '__main__':

@@ -212,6 +212,12 @@
     "open": 0,
     "runs": []
   },
+  "forecast": {
+    "have": 3,
+    "need": 4,
+    "reason": "not-enough-data",
+    "scope": "plan"
+  },
   "generatedAt": "2026-01-12T12:00:00+00:00",
   "git": {
     "branch": null,
@@ -445,6 +451,18 @@
     }
   ],
   "timing": {
+    "acts": [
+      {
+        "endSource": null,
+        "endedAt": null,
+        "key": "spec",
+        "reason": "no-approval",
+        "startedAt": "2026-01-11T09:00:00+00:00",
+        "unknown": true,
+        "waitSeconds": null,
+        "workSeconds": null
+      }
+    ],
     "available": true,
     "reason": null,
     "stages": [

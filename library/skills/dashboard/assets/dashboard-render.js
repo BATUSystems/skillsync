@@ -112,10 +112,10 @@
     const hh = Math.floor(m / 60), mm = m % 60;
     return mm ? `${hh} h ${String(mm).padStart(2, "0")} min` : `${hh} h`;
   };
-  // Widok prognozy: "tempo" (domyślnie: tempo pracy na krok i liczba pozostałych kroków, bez sumy i godziny końca) albo "range" (zakres pracy do końca
-  // kroków i godzina końca). Domyślne "tempo": powtórka na prawdziwych przebiegach pokazała, że zakres nie dotrzymuje dokładności godziny
-  // (docs/dashboard-contract.md, sekcja `forecast`). Przełączenie = ta stała albo `deps.forecastView` hosta; JSON (`forecast`) niesie zakres w obu.
-  const FORECAST_VIEW = "tempo";
+  // Widok prognozy: "range" (domyślnie, decyzja właściciela produktu: zakres pracy do końca kroków i orientacyjna godzina końca, z dopiskiem „orientacyjnie”
+  // i „rząd wielkości, nie obietnica”) albo "tempo" (samo tempo pracy na krok i liczba pozostałych kroków, bez sumy i godziny). Powtórka na prawdziwych
+  // przebiegach pokazała ograniczoną dokładność zakresu (docs/dashboard-contract.md, sekcja `forecast`). Przełączenie = ta stała albo `deps.forecastView`.
+  const FORECAST_VIEW = "range";
   const baseName = (path) => String(path || "").split("/").pop();
   // Adres z JSON-a do href: tylko http(s); inny schemat (javascript:, data:, …) = brak href (element zostaje tekstem).
   const safeUrl = (url) => (typeof url === "string" && /^https?:\/\/[^\s]/i.test(url.trim()) ? url.trim() : null);
@@ -350,7 +350,7 @@
     ui.acts = h("div", { class: "acts", id: "acts", on: { click: mdClick } },
       h("div", { class: "act skeleton" }), h("div", { class: "act skeleton" }), h("div", { class: "act skeleton wide" }));
     ui.phases = h("div", { class: "phases", id: "phases", on: { click: mdClick } });
-    ui.feed = h("ol", { class: "feed", id: "feed" });
+    ui.feed = h("ol", { class: "feed", id: "feed", on: { click: mdClick } });
     ui.parseWarn = h("div", { class: "parse-warn", id: "parseWarn", hidden: true });
     ui.docList = h("nav", { class: "doc-list", id: "docList", "aria-label": "Dokumenty zadania" });
     ui.docView = h("article", { class: "doc-view", id: "docView", "aria-live": "polite", on: { click: mdClick } },
@@ -602,7 +602,7 @@
         isActive ? h("span", { class: "sr-only" }, quiet ? ` (brak aktywności od ${quiet} min)` : " (w trakcie" + (since ? ", od " + since : "") + ")") : null, screens);
     }
     // POMIAR i PROGNOZA wyglądają i brzmią inaczej: pomiar („Pomiar:”, ciągła ramka) to czas, który minął, z checkpointów i zgód; prognoza („Prognoza:”,
-    // przerywana ramka, kursywa) to ekstrapolacja z tempa przebiegu: zawsze przedział, z podanym powodem, gdy brak liczby.
+    // przerywana ramka, kursywa) to ekstrapolacja z tempa przebiegu (domyślnie przedział i orientacyjna godzina końca, widok `tempo` samo tempo), z podanym powodem, gdy brak liczby.
     const clockOf = (ms) => new Date(ms).toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit" });
     function actTimeLine(d, key) {
       const t = d.timing && typeof d.timing === "object" ? d.timing : null;
@@ -622,11 +622,12 @@
       if (!f || f.scope !== "plan") return null;
       const view = deps.forecastView === "range" || deps.forecastView === "tempo" ? deps.forecastView : FORECAST_VIEW;
       const tip = view === "range"
-        ? "Prognoza, nie pomiar: mediana i kwartyle pracy na krok (z odstępów między zakończonymi krokami, bez czekania) × zostało kroków. Nie uwzględnia rozmiaru kroków ani czekania na ludzi; to rząd wielkości, nie obietnica."
-        : "Prognoza, nie pomiar: mediana pracy na krok z odstępów między zakończonymi krokami, bez czekania. Strona nie podaje sumy ani godziny końca, bo powtórka modelu na prawdziwych przebiegach nie dotrzymała takiej dokładności. Nie uwzględnia rozmiaru kroków ani czekania na ludzi.";
+        ? "Prognoza, nie pomiar: pierwszy i trzeci kwartyl pracy na krok (z odstępów między zakończonymi krokami, bez czekania) × zostało kroków; godzina końca = chwila odświeżenia strony + ten zakres. Nie uwzględnia rozmiaru kroków ani czekania na ludzi. Orientacyjnie: powtórka na prawdziwych przebiegach pokazała, że to rząd wielkości, nie obietnica."
+        : "Prognoza, nie pomiar: mediana pracy na krok z odstępów między zakończonymi krokami, bez czekania. Ten widok nie podaje sumy ani godziny końca. Nie uwzględnia rozmiaru kroków ani czekania na ludzi; orientacyjnie, nie obietnica.";
       let text;
       if (typeof f.reason === "string") {
         if (f.reason === "not-enough-data") text = `za mało danych (zakończone kroki z czasem: ${Number.isInteger(f.have) ? f.have : 0}, potrzeba co najmniej ${Number.isInteger(f.need) ? f.need : 4})`;
+        else if (f.reason === "few-moments") text = `zakończone kroki w zbyt mało różnych momentach (${Number.isInteger(f.have) ? f.have : 0}, potrzeba co najmniej ${Number.isInteger(f.need) ? f.need : 3}): kroki zgłoszone jednym checkpointem to jedna obserwacja`;
         else if (f.reason === "no-run-start") text = "brak czasu bezwzględnego w checkpoints.md (RUN=)";
         else return null;
         return h("div", { class: "forecast is-none", "data-forecast": "none", ...desc("forecast", tip) }, h("span", { class: "lbl" }, "Prognoza:"), " " + text);
@@ -636,16 +637,16 @@
       if (view === "tempo") {
         if (f.remaining < 1) return null;
         const per = f.medianSeconds / f.remaining;
-        const unit = per < 60 ? "mniej niż minuta" : `ok. ${humanDur(per)}`;
+        const unit = per < 60 ? "mniej niż minuta" : `ok. ${humanDur(per, true)}`;
         const tail = f.paused ? "; wstrzymane: sesja czeka na człowieka" : "";
         return h("div", { class: "forecast" + (f.paused ? " is-paused" : ""), "data-forecast": "tempo", ...desc("forecast", tip) }, h("span", { class: "lbl" }, "Prognoza:"),
-          ` tempo: ${unit} pracy na krok, z ${f.samples} ${plural(f.samples, "zakończonego kroku", "zakończonych kroków", "zakończonych kroków")}; zostało ${f.remaining} ${plural(f.remaining, "krok", "kroki", "kroków")}${tail}`);
+          ` orientacyjnie, tempo: ${unit} pracy na krok, z ${f.samples} ${plural(f.samples, "zakończonego kroku", "zakończonych kroków", "zakończonych kroków")}; zostało ${f.remaining} ${plural(f.remaining, "krok", "kroki", "kroków")}${tail}`);
       }
       const lo = humanDur(f.lowSeconds, true), hi = humanDur(f.highSeconds, true), range = lo === hi ? lo : `${lo}–${hi}`;
       const basis = `zostało ${f.remaining} ${plural(f.remaining, "krok", "kroki", "kroków")}, tempo z ${f.samples} ${plural(f.samples, "odstępu", "odstępów", "odstępów")} między zakończonymi`;
       const t0 = now();
       const end = f.paused ? "wstrzymana: sesja czeka na człowieka, czekanie nie jest liczone" : `koniec ok. ${clockOf(t0 + f.lowSeconds * 1000)}–${clockOf(t0 + f.highSeconds * 1000)}`;
-      text = `do końca kroków ok. ${range} pracy (${basis}), bez czekania na zgody; ${end}`;
+      text = `orientacyjnie: do końca kroków ok. ${range} pracy (${basis}), bez czekania na zgody; ${end}. Rząd wielkości, nie obietnica.`;
       return h("div", { class: "forecast" + (f.paused ? " is-paused" : ""), "data-forecast": f.paused ? "paused" : "range", ...desc("forecast", tip) }, h("span", { class: "lbl" }, "Prognoza:"), " " + text);
     }
     function renderActs(d) {
