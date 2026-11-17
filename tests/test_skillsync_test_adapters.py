@@ -18,7 +18,6 @@ from skillsync_workflow.test_adapters import Adapter, register  # noqa: E402
 CLI = ROOT / 'skillsync'
 
 
-@register
 class SampleAdapter(Adapter):
     """A toy adapter of the lines `RESULT <id> <state>` (the test of the interface, not a tool)."""
     name = 'sample-inproc'
@@ -45,6 +44,15 @@ class SampleAdapter(Adapter):
 
     def end(self, ctx, exit_code, output, reports):
         return 'ALLDONE' in output
+
+
+def setUpModule():
+    """The toy adapter lives in the global registry only while this module runs (one process may run many modules: a leak made other tests see it)."""
+    register(SampleAdapter)
+
+
+def tearDownModule():
+    test_adapters.REGISTRY.pop(SampleAdapter.name, None)
 
 
 class Registry(unittest.TestCase):
