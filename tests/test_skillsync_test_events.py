@@ -76,16 +76,17 @@ class WindowsProcessState(unittest.TestCase):
                 self.assertIs(ev.windows_process_state(pid, kernel), False)
         self.assertEqual(kernel.opened, [])
 
-    def test_the_real_calls_on_windows(self):
-        if sys.platform != 'win32':
-            return   # the logic above is the test elsewhere; this branch needs the real kernel32
+    def test_the_real_probe_of_this_system(self):
         import subprocess
-        self.assertIs(ev.windows_process_state(os.getpid()), True)
-        self.assertIs(ev.windows_process_state(10 ** 12), False)
+        self.assertIs(ev.process_state(os.getpid()), True)
+        self.assertIs(ev.process_state(10 ** 12), False)
         child = subprocess.Popen([sys.executable, '-c', 'pass'])
         child.wait()
-        self.assertIs(ev.windows_process_state(child.pid), False)   # exited, its handle may still be open here
-        self.assertIs(ev.process_state(os.getpid()), True)
+        self.assertIs(ev.process_state(child.pid), False)   # exited (on Windows its handle may still be open here)
+        if sys.platform == 'win32':   # the calls of this module itself, not only the generic entry point
+            self.assertIs(ev.windows_process_state(os.getpid()), True)
+            self.assertIs(ev.windows_process_state(10 ** 12), False)
+            self.assertIs(ev.windows_process_state(child.pid), False)
 
 
 class EventFiles(unittest.TestCase):

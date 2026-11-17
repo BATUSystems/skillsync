@@ -291,7 +291,7 @@ class OnTheRealTool(unittest.TestCase):
                               cwd=str(self.root), capture_output=True, text=True, env=self.env, timeout=120)
 
     def test_events_exit_code_and_files(self):
-        before = {str(p.relative_to(self.root)) for p in self.root.rglob('*')}
+        before = {p.relative_to(self.root).as_posix() for p in self.root.rglob('*')}
         done = self.run_it()
         self.assertEqual(done.returncode, 1, done.stderr)   # the exit code of the command: one test failed
         path = self.root / '.skillsync/runs/R1/tests/F1.1/1.jsonl'
@@ -304,7 +304,7 @@ class OnTheRealTool(unittest.TestCase):
         self.assertEqual(last, {'test_a_ok': 'passed', 'test_b_slow': 'passed', 'test_c_red': 'failed', 'test_d_skip': 'skipped'})
         start = ev.read_attempt(path).start
         self.assertEqual((start['adapter'], start['live']), ('unittest', 'running'))
-        new = {str(p.relative_to(self.root)) for p in self.root.rglob('*')} - before
+        new = {p.relative_to(self.root).as_posix() for p in self.root.rglob('*')} - before
         self.assertTrue(all(p.startswith('.skillsync/') for p in new))
 
     def test_format_none_runs_the_same_command_without_the_adapter(self):
