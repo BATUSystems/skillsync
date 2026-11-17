@@ -12,6 +12,10 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Fixed
+
+- **Status page: the "Wynik" section shows formatted Markdown instead of raw text.** The block under the acts printed the `## Wynik` section of the plan as plain text (`###`, `**…**`, backticks and table rows were visible as typed). `GET /api/status` now adds, to `result`, the additive fields `html` (visible part), `moreHtml` and `moreLines` (collapsed rest), rendered by the same safe renderer as the document view (`/api/doc`): headings, lists, bold, inline code, tables, paragraphs; raw HTML of the source is escaped and only safe link schemes are links. The section is masked as a whole before it is cut or rendered, and the page inserts the HTML only through the host's `mountHtml`, never with its own `innerHTML`. "Pokaż resztę (N linii)" cuts only between Markdown blocks (never inside a table, list, code block or paragraph); the rule is in `docs/dashboard-contract.md`. `result.text` and `result.path` stay as they were, `dashboard show` and `skillsync status` are unchanged (no `html` there), a client without `html` still gets the plain text. Other places of the page that show plan or spec text as plain text (step titles and notes, expert question text) are unchanged.
+
 ## [1.8.0] - 2026-11-17
 
 Upgrading from 1.7.0: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.7.0 → 1.8.0" (the point numbers below refer to it).

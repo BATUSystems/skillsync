@@ -312,7 +312,7 @@
       "data-tip": "Prototypy i pytania do eksperta", on: { click: () => setView("questions") } },
       svg("svg", { class: "ic" }, svg("use", { href: "#i-bell" })), "Pytania ", ui.qCount);
     ui.protoLink = h("span", { id: "protoLink", class: "tab-extra", hidden: true });
-    ui.result = h("section", { class: "result-box", id: "resultBox", "aria-labelledby": "resultTitle", hidden: true });
+    ui.result = h("section", { class: "result-box", id: "resultBox", "aria-labelledby": "resultTitle", hidden: true, on: { click: mdClick } });
     ui.glossary = h("div", { class: "glossary-box", id: "glossaryBox" });
     ui.qProtos = h("div", { class: "q-block", id: "qProtos" });
     ui.qItems = h("div", { class: "q-block", id: "qItems" });
@@ -1113,25 +1113,41 @@
 
     // ---------------------------------------------------------------- Wynik planu i pojęcia (pod aktami)
     const RESULT_VISIBLE_LINES = 12;
-    // `d.result` = {text, path} albo null: tekst planu bez markdown→HTML (textContent w <pre>), długi w <details> po pierwszych liniach.
+    // `d.result` = {text, path[, html, moreHtml, moreLines]} albo null. Serwer (`/api/status`) dodaje `html` (widoczna część) i `moreHtml` (zwinięta reszta)
+    // wyrenderowane tym samym bezpiecznym rendererem Markdown co `/api/doc` (HTML wstawia host przez `deps.mountHtml`; renderer nie parsuje HTML).
+    // Bez `html` (stary serwer, `dashboard show`, host bez `mountHtml`) zostaje tekst w <pre> (textContent), długi w <details> po pierwszych liniach.
     function renderResult(d) {
       const r = d.result && typeof d.result === "object" && typeof d.result.text === "string" && d.result.text.trim() ? d.result : null;
       const el = ui.result;
       if (!r) { el.hidden = true; fill(el); return; }
-      const lines = r.text.replace(/\s+$/, "").split(/\r?\n/);
-      const head = lines.slice(0, RESULT_VISIBLE_LINES).join("\n"), rest = lines.slice(RESULT_VISIBLE_LINES).join("\n");
-      let more = null;
-      if (lines.length > RESULT_VISIBLE_LINES) {
-        more = h("details", { class: "result-more", open: Boolean(st.resultOpen) },
-          h("summary", null, `Pokaż resztę (${lines.length - RESULT_VISIBLE_LINES} ${plural(lines.length - RESULT_VISIBLE_LINES, "linia", "linie", "linii")})`),
-          h("pre", { class: "result-text", "data-result-rest": "" }, rest));
-        more.addEventListener("toggle", () => { st.resultOpen = more.hasAttribute("open"); });
+      const rich = typeof r.html === "string" && typeof deps.mountHtml === "function";
+      let headNode, more = null;
+      if (rich) {
+        headNode = h("div", { class: "md result-md", "data-result-head": "" });
+        deps.mountHtml(headNode, r.html);
+        if (typeof r.moreHtml === "string" && r.moreHtml) {
+          const n = Number.isInteger(r.moreLines) && r.moreLines > 0 ? r.moreLines : 0;
+          const restNode = h("div", { class: "md result-md", "data-result-rest": "" });
+          deps.mountHtml(restNode, r.moreHtml);
+          more = h("details", { class: "result-more", open: Boolean(st.resultOpen) },
+            h("summary", null, n ? `Pokaż resztę (${n} ${plural(n, "linia", "linie", "linii")})` : "Pokaż resztę"), restNode);
+        }
+      } else {
+        const lines = r.text.replace(/\s+$/, "").split(/\r?\n/);
+        const head = lines.slice(0, RESULT_VISIBLE_LINES).join("\n"), rest = lines.slice(RESULT_VISIBLE_LINES).join("\n");
+        headNode = h("pre", { class: "result-text", "data-result-head": "" }, head);
+        if (lines.length > RESULT_VISIBLE_LINES) {
+          more = h("details", { class: "result-more", open: Boolean(st.resultOpen) },
+            h("summary", null, `Pokaż resztę (${lines.length - RESULT_VISIBLE_LINES} ${plural(lines.length - RESULT_VISIBLE_LINES, "linia", "linie", "linii")})`),
+            h("pre", { class: "result-text", "data-result-rest": "" }, rest));
+        }
       }
+      if (more) more.addEventListener("toggle", () => { st.resultOpen = more.hasAttribute("open"); });
       el.hidden = false;
       fill(el,
         h("h2", { id: "resultTitle", ...desc("legend_result") }, icon("i-flag"), "Wynik"),
         typeof r.path === "string" && r.path ? h("div", { class: "result-path" }, "Plan: ", mono(r.path)) : null,
-        h("pre", { class: "result-text", "data-result-head": "" }, head), more);
+        headNode, more);
     }
     // Legenda pojęć (osobna od `legend(p)`, legendy paska): zawsze obecna, zwinięta; teksty z descriptions.json, awaryjnie z renderera.
     const GLOSSARY = [

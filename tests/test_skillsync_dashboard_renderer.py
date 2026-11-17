@@ -1149,7 +1149,7 @@ function summary(m) {
     const mountQ = (d, deps) => mount(d, { now: nowQ, deps: Object.assign({}, deps || {}) });
     // (a) Wynik + legenda
     const longText = Array.from({ length: 15 }, (_, i) => (i % 2 ? `- punkt ${i} <b>x</b>` : `linia ${i}`)).join('\n');
-    const resOf = (result, descs) => { const d = bare(); if (result !== undefined) d.result = result; const m = mountQ(d); if (descs) m.board.setDescriptions(descs);
+    const resOf = (result, descs, deps) => { const d = bare(); if (result !== undefined) d.result = result; const m = mountQ(d, deps); if (descs) m.board.setDescriptions(descs);
       const box = m.root.querySelector('#resultBox'); const g = m.root.querySelector('.glossary');
       const tags = []; walk(m.root, (n) => { if (n instanceof E) tags.push(n.localName); });
       return { hidden: box.hidden, head: m.root.querySelector('[data-result-head]') ? m.root.querySelector('[data-result-head]').textContent : null,
@@ -1160,6 +1160,14 @@ function summary(m) {
           summary: text(g.querySelector('summary')), open: g.hasAttribute('open'), first: text(m.root.querySelector('.glossary [data-glossary]')) } : null, b: tags.includes('b') }; };
     s5.result = { long: resOf({ text: longText, path: 'docs/plans/x.md' }), short: resOf({ text: '- a\n- b', path: 'docs/plans/x.md' }), none: resOf(null), absent: resOf(undefined),
       described: resOf(null, { legend_act: { title: 'Akt (z JSON)', text: 'Tekst z opisów.' } }) };
+    // Wynik sformatowany: serwer daje `html` i `moreHtml`, hosta `mountHtml` wstawia je; bez `html` zostaje <pre> z `text` (przypadek `long` wyżej).
+    const richResult = { text: 'surowy **tekst**', path: 'docs/plans/x.md', html: '<h3>A</h3><p>b</p>', moreHtml: '<p>reszta</p>', moreLines: 7 };
+    const richMount = mountQ(Object.assign(bare(), { result: richResult }));
+    const richBox = richMount.root.querySelector('#resultBox');
+    const noRestMount = mountQ(Object.assign(bare(), { result: { text: 'x', path: 'p', html: '<p>x</p>' } }));
+    s5.resultRich = { mounted: richMount.calls.mountHtml, headTag: richBox.querySelector('[data-result-head]').localName, headClass: richBox.querySelector('[data-result-head]').getAttribute('class'),
+      restClass: richBox.querySelector('[data-result-rest]').getAttribute('class'), summary: text(richBox.querySelector('summary')), details: richBox.querySelectorAll('details').length,
+      noRestDetails: noRestMount.root.querySelectorAll('#resultBox details').length, noRestMounted: noRestMount.calls.mountHtml, clickable: true };
     // (b) adresat w toaście
     const toastOf = (runs, viewer) => { const d = bare(); d.expertQuestions.open = 2; d.expertQuestions.blocking = 1; d.expertQuestions.runs = runs; if (viewer) d.approvals = Object.assign({}, d.approvals, { viewer: true });
       const m = mountQ(d, origin); const t = m.root.querySelector('[data-questions-toast]'); return { text: text(t), addr: t.querySelector('[data-addressees]') ? text(t.querySelector('[data-addressees]')) : null }; };
@@ -2040,6 +2048,17 @@ class RendererNodeTests(unittest.TestCase):
                 self.assertEqual((got["dots"], got["active"], got["screens"], got["legend"], got["light"]), (0, 0, 0, 0, 0))
                 self.assertTrue(got["warn"])
                 self.assertFalse(got["sessionWait"])
+
+    def test_result_is_formatted_when_the_server_sends_html(self) -> None:
+        r = self.out["extra"]["s160b"]["resultRich"]
+        self.assertEqual(r["mounted"], ["<h3>A</h3><p>b</p>", "<p>reszta</p>"])
+        self.assertEqual(r["headTag"], "div")
+        self.assertIn("md", r["headClass"].split())
+        self.assertIn("md", r["restClass"].split())
+        self.assertEqual(r["summary"], "Pokaż resztę (7 linii)")
+        self.assertEqual(r["details"], 1)
+        self.assertEqual(r["noRestDetails"], 0)
+        self.assertEqual(r["noRestMounted"], ["<p>x</p>"])
 
     def test_s160b_result_block_and_glossary(self) -> None:
         r = self.out["extra"]["s160b"]["result"]
