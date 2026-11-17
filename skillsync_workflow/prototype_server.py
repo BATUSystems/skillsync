@@ -6750,6 +6750,11 @@ class PrototypeRequestHandler(LingeringCloseMixin, BaseHTTPRequestHandler):
         if not self.app.config.demo:
             return BaseHTTPRequestHandler.send_error(self, code, message, explain)
         self.close_connection = True
+        words = (getattr(self, 'requestline', '') or '').split()
+        if self.request_version == 'HTTP/0.9' and not (len(words) == 2 and words[0] == 'GET'):
+            # a broken request line is not HTTP/0.9: Python before 3.13 leaves the default version `HTTP/0.9` there and then writes no status line at all;
+            # only a real `GET <path>` line (two words) is answered as 0.9, the bare body
+            self.request_version = 'HTTP/1.0'
         try:
             self._send(code if isinstance(code, int) else 400, b'Error\n', 'text/plain; charset=utf-8', {'Connection': 'close'}, 'no-store')
         except (OSError, ValueError):
