@@ -47,7 +47,7 @@ from . import dashboard_token
 from . import test_events
 from . import stopsignal
 from . import status as status_core
-from .common import emit, load_layer_project, read_project, redact
+from .common import emit, file_lines, load_layer_project, read_project, redact
 from .layers import LayerError
 from .prototype_server import LingeringCloseMixin
 
@@ -347,7 +347,9 @@ def split_result(text: str, visible: int = RESULT_VISIBLE_LINES) -> tuple[str, s
     line (or is a heading), the cut is not inside a fence, and the line is not a list item that continues a list. Rule: the last cut point
     at or before `visible` lines whose head holds more than headings (so the head is never only a title), else the first cut point after them
     (a long table or list stays whole); no cut point at all = no `rest`. Text of `visible` lines or fewer is not cut."""
-    lines = text.replace("\r\n", "\n").replace("\r", "\n").rstrip().split("\n")
+    lines = file_lines(text)   # CRLF, LF and a lone CR only: LS, PS, NEL and the like stay inside the line (see the guard of the line ends)
+    while lines and not lines[-1].strip():
+        lines.pop()
     if len(lines) <= visible:
         return "\n".join(lines), "", 0
     in_fence, fence, safe = False, "", []
