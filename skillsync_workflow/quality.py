@@ -1211,13 +1211,13 @@ def doctor(root, manifest, library):
             if listed or len(lesson_dirs) > 1:
                 state = ('the directory exists' if directory.is_dir()
                          else 'the directory does not exist (is the repository that owns it checked out?)')
-                finding('warning', str(directory / 'index.yaml'), f'Missing {text} index: {directory}; {state}; {hint}')
+                finding('warning', str(directory / 'index.yaml'), f'Missing {text} index: {posix(directory)}; {state}; {hint}')
             else:
                 finding('warning', str(directory / 'index.yaml'), f'Missing {text} index; {hint}')
         known = {directory.resolve() for directory in domain_dirs}
         for stray in sorted(Path(root).glob('*/docs/domain/index.yaml')) + sorted(Path(root).glob('*/*/docs/domain/index.yaml')):
             if 'node_modules' not in stray.parts and stray.parent.resolve() not in known:
-                finding('warning', str(stray), 'Scattered domain knowledge; keep one shared location: ' + ', '.join(str(d) for d in domain_dirs))
+                finding('warning', str(stray), 'Scattered domain knowledge; keep one shared location: ' + ', '.join(posix(d) for d in domain_dirs))
         if enabled('claude', True):
             for role in roles:
                 role_path = Path(root) / '.claude/agents' / f'{role}.md'
@@ -1278,7 +1278,7 @@ def doctor(root, manifest, library):
     bootstrap = [Path(record['path']) for record in domain_indexes(root, library, manifest) if record.get('load') == 'bootstrap']
     total = sum(path.stat().st_size for path in bootstrap if path.is_file())
     if total > BOOTSTRAP_WARNING_BYTES:
-        owners = sorted({str(path.parent) for path in bootstrap})
+        owners = sorted({posix(path.parent) for path in bootstrap})
         finding('warning', 'workflow.knowledge.domain', f'Bootstrap domain records total {total} bytes (over {BOOTSTRAP_WARNING_BYTES}): '
                 + ', '.join(owners) + '; shorten the glossaries or drop a directory from the list')
     for kind, records in [('Lesson', lesson_indexes(root, library, manifest)), ('Domain record', domain_indexes(root, library, manifest))]:
