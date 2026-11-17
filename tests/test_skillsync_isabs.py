@@ -113,5 +113,87 @@ class Sites(unittest.TestCase):
         self.assertEqual(found, allowed, 'use `fsutil.isabs` (Windows + Python 3.13: `os.path.isabs("/x")` is False)')
 
 
+class GuardHook(Windows313):
+    """The delete guard hook is a standalone script (it cannot import `fsutil`), so it carries its own `isabs`; here its three sites
+    (project `allow` entries, `resolve`, the prefix of a glob) are driven under the simulated Python 3.13 meaning."""
+    ENV = {'HOME': '/home/user', 'SCRATCH': '/tmp/session/scratchpad', 'TMPDIR': '/tmp', 'SKILLSYNC_GUARD_TMP_ROOTS': '/tmp'}
+
+    @classmethod
+    def setUpClass(cls):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('guard_commands_isabs', ROOT / 'library' / 'hooks' / 'guard-commands.py')
+        cls.guard = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.guard)
+
+    def simulate(self):
+        super().simulate()
+        # on a real Windows `os.path` is ntpath: `commonpath` answers with backslashes, so the stand-in `realpath` answers in the native form too
+        patch = unittest.mock.patch.object(fsutil.os.path, 'realpath', lambda path: os.path.normpath(realpath_windows(path)))
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def checker(self, allow=()):
+        return self.guard.Guard('/home/user/Repos/proj', '/tmp/session/scratchpad', list(allow), dict(self.ENV))
+
+    def refused(self, command, allow=()):
+        return bool(self.checker(allow).walk(command))
+
+    def test_a_rooted_allow_entry_without_a_drive_is_an_allowed_root_on_python_313(self):
+        self.simulate()
+        self.assertFalse(self.refused('rm -rf /data/scratch/x', allow=['/data/scratch']))
+        self.assertFalse(self.refused('rm -rf /data/scratch', allow=['/data/scratch']), 'an absolute entry is deletable itself (exact)')
+        self.assertTrue(self.refused('rm -rf /data/other/x', allow=['/data/scratch']), 'only the entry is allowed, not its neighbour')
+
+    def test_resolve_and_the_glob_prefix_decide_through_the_hooks_own_isabs(self):
+        """Both sites reach `isabs` of the hook (a spy sees the rooted word); a bare `os.path.isabs` there would not."""
+        self.simulate()
+        guard = self.checker()
+        spy = unittest.mock.Mock(wraps=self.guard.isabs)
+        with unittest.mock.patch.object(self.guard, 'isabs', spy):
+            self.assertEqual(guard.resolve('/data/x'), os.path.normpath('C:/data/x'))
+            spy.assert_any_call('/data/x')
+            spy.reset_mock()
+            self.assertTrue(self.refused('rm -rf /data/foo-*'))
+            spy.assert_any_call('/data/foo-')
+        self.assertFalse(self.refused('rm -rf /tmp/foo-*'), 'under a temporary root')
+
+    def test_posix_meaning_is_unchanged_in_the_hook(self):
+        with unittest.mock.patch.object(self.guard.os, 'name', 'posix'), unittest.mock.patch.object(self.guard.os.path, 'isabs', posixpath.isabs):
+            self.assertTrue(self.guard.isabs('/a/b'))
+            self.assertFalse(self.guard.isabs('\\a'))
+            self.assertFalse(self.guard.isabs(''))
+
+    def test_doubt_stays_a_refusal(self):
+        self.simulate()
+        self.assertTrue(self.refused('rm -rf /'))
+        self.assertTrue(self.refused('rm -rf src'))
+        self.assertTrue(self.refused('rm -rf /home/user/other/data'), 'outside the project and every allowed root')
+        self.assertTrue(self.refused('rm -rf /data/scratch/x'), 'without the allow entry')
+
+    def test_the_hook_names_no_os_path_isabs_of_its_own(self):
+        """The rooted reading lives in ONE helper `isabs` of guard-commands.py; elsewhere in library/hooks no `isabs`/`is_absolute`/`splitroot`
+        attribute (any base: `os.path`, `ntpath`, `Path`), no `from os.path import isabs` and no second helper."""
+        names = {'isabs', 'is_absolute', 'splitroot'}
+        found, scanned, helpers = [], [], 0
+        for path in sorted((ROOT / 'library' / 'hooks').glob('*.py')):
+            scanned.append(path.name)
+            tree = ast.parse(path.read_text(encoding='utf-8'))
+            defs = [h for h in ast.walk(tree) if isinstance(h, ast.FunctionDef) and h.name == 'isabs']
+            helpers += len(defs)
+            inside = {id(c) for h in defs for c in ast.walk(h)}
+            for node in ast.walk(tree):
+                if id(node) in inside:
+                    continue
+                if isinstance(node, ast.Attribute) and node.attr in names:
+                    found.append('%s:%d' % (path.name, node.lineno))
+                elif isinstance(node, ast.ImportFrom) and any(a.name in names for a in node.names):
+                    found.append('%s:%d' % (path.name, node.lineno))
+                elif isinstance(node, ast.Constant) and node.value in names:  # getattr(os.path, 'isabs')
+                    found.append('%s:%d' % (path.name, node.lineno))
+        self.assertIn('guard-commands.py', scanned)
+        self.assertEqual(helpers, 1, 'one helper, in guard-commands.py')
+        self.assertEqual(found, [], "use the hook's own `isabs` (Windows + Python 3.13: `os.path.isabs('/x')` is False)")
+
+
 if __name__ == '__main__':
     unittest.main()

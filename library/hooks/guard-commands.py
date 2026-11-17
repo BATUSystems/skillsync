@@ -65,6 +65,17 @@ def msys_to_native(path, windows=None):
     match = MSYS_DRIVE.match(path)
     return path if not match else match.group(1).upper() + ':/' + path[match.end():]
 
+
+def isabs(path):
+    """`os.path.isabs` with the meaning of Python <= 3.12 on Windows (the same as `skillsync_workflow.fsutil.isabs`, repeated here
+    because the hook is a standalone script): a path rooted with `/` or `\\` but without a drive is absolute, it is the root of the
+    current drive (Git Bash may mean its own MSYS root by it: write `C:/...` or `/c/...` in `hooks.delete_allow`). Python 3.13 stopped taking it for absolute, which made the three callers below treat `/data/x` as relative.
+    POSIX: no change."""
+    if os.path.isabs(path):
+        return True
+    return os.name == 'nt' and path[:1] in ('/', '\\')
+
+
 class Cmd:
     def __init__(self, words, assigns, subs):
         self.words = words
@@ -427,7 +438,7 @@ class Guard:
             self.tmp_roots.append((os.path.realpath(msys_to_native(scratchpad)), True))
         self.names, self.paths = set(DEFAULT_NAMES), []
         for entry in allow:
-            if os.path.isabs(msys_to_native(entry)):
+            if isabs(msys_to_native(entry)):
                 self.tmp_roots.append((os.path.realpath(msys_to_native(entry)), True))
             elif '/' in entry.strip('/'):
                 self.paths.append(entry.strip('/'))
@@ -489,7 +500,7 @@ class Guard:
             path = path[:match.start()]
             path = path if path.endswith('/') or not path else os.path.dirname(path) or '.'
         path = path or '.'
-        if not os.path.isabs(path):
+        if not isabs(path):
             path = os.path.join(base or self.cwd, path)
         return os.path.realpath(path)
 
@@ -506,7 +517,7 @@ class Guard:
         prefix = msys_to_native(expanded[:match.start()])
         if not prefix or prefix.endswith('/'):
             return False
-        full = os.path.realpath(prefix if os.path.isabs(prefix) else os.path.join(self.cwd, prefix))
+        full = os.path.realpath(prefix if isabs(prefix) else os.path.join(self.cwd, prefix))
         return any(self.under(full, root, exact) for root, exact in self.tmp_roots)
 
     def allowed(self, path):
