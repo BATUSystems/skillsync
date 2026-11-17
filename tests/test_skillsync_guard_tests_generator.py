@@ -186,6 +186,10 @@ class Active(GuardBase):
 
 
 class PlainProjectUnchanged(GuardBase):
+    def posix_tree(self):
+        """`self.tree()` with the keys in the POSIX form (the helper builds them with the separator of the system)."""
+        return {key.replace(os.sep, '/'): value for key, value in self.tree().items()}
+
     """The promise: a project without the agent flow does not change by a byte. Checked on the generated artefacts of a real `link`, not on a function."""
 
     def setUp(self):
@@ -196,10 +200,11 @@ class PlainProjectUnchanged(GuardBase):
 
     def test_default_and_explicitly_off_give_the_same_tree_and_nothing_of_the_hook(self):
         self.link()
-        default = self.tree()
+        default = self.posix_tree()
         self.set_hooks(guard_tests='off')
         self.link()
-        self.assertEqual(self.tree(), {**default, '.github/.skillsync.yaml': self.tree()['.github/.skillsync.yaml']})
+        after = self.posix_tree()
+        self.assertEqual(after, {**default, '.github/.skillsync.yaml': after['.github/.skillsync.yaml']})
         for rel in default:
             self.assertNotIn('test-tools', rel)
             self.assertNotIn('guard-tests', rel)

@@ -55,7 +55,7 @@ class Protocol(HookBase):
         text = self.context(self.warn('python3 -m unittest discover -s tests'))
         self.assertIn('skillsync test-run', text)
         self.assertIn('not evidence', text)
-        self.assertIn(str(self.project).replace('\\', '/'), text)
+        self.assertIn(os.path.realpath(self.project).replace('\\', '/'), text)   # the hook reports the REAL path (on Windows the long form of an 8.3 temp name)
         self.assertLess(len(text), 10000)
 
     def test_narrow_exempt_wrapped_and_unrelated_commands_stay_silent(self):
