@@ -14,7 +14,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from layers_helpers import commit_file  # noqa: E402
 from skillsync_workflow import attribution, leakguard  # noqa: E402
+from test_skillsync_guard_hook import GuardBase  # noqa: E402
 from test_skillsync_leakguard import LeakTestCase  # noqa: E402
+from skillsync_workflow import guardhook  # noqa: E402
 
 ADDR = 'noreply' + '@' + 'anthro' + 'pic.com'
 FOOTER = 'Gener' + 'ated with [Cla' + 'ude Code](https://cla' + 'ude.com/cla' + 'ude-code)'
@@ -94,6 +96,58 @@ class RuleTests(unittest.TestCase):
         import yaml
         limit = yaml.safe_load((self.BASE.parent.parent / 'workflow' / 'defaults.yaml').read_text(encoding='utf-8'))['context']['base_max_bytes']
         self.assertLessEqual(len(self.BASE.read_bytes()), limit)
+
+
+class LinkSettingsTests(GuardBase):
+    """`link` writes the host setting that switches the attribution of Claude Code off; `doctor` checks it."""
+
+    def attribution_findings(self):
+        report = self.cli('doctor')
+        return [f for f in json.loads(report.stdout)['findings'] if 'host setting' in f['reason'] or 'AI attribution' in f['reason']]
+
+    def test_link_writes_the_empty_form_and_is_idempotent(self):
+        self.link()
+        self.assertEqual(self.local()['attribution'], guardhook.ATTRIBUTION_SETTING)
+        before = (self.root / self.LOCAL).read_text(encoding='utf-8')
+        result = self.link()
+        self.assertNotIn('Updated', result.stdout)
+        self.assertEqual((self.root / self.LOCAL).read_text(encoding='utf-8'), before)
+
+    def test_foreign_keys_stay_and_a_switched_on_value_is_replaced_with_a_warning(self):
+        self.write(self.LOCAL, json.dumps({'permissions': {'allow': ['Bash(ls)']}, 'attribution': {'commit': 'x', 'pr': 'y'}, 'env': {'A': '1'}}))
+        result = self.link()
+        data = self.local()
+        self.assertEqual(data['attribution'], guardhook.ATTRIBUTION_SETTING)
+        self.assertEqual(data['permissions'], {'allow': ['Bash(ls)']})
+        self.assertEqual(data['env'], {'A': '1'})
+        self.assertIn('cannot be turned off', result.stdout)
+
+    def test_every_project_gets_it_also_without_the_agent_flow(self):
+        self.manifest['skills'] = ['plain']
+        self.save()
+        self.link()
+        self.assertEqual(self.local()['attribution'], guardhook.ATTRIBUTION_SETTING)
+
+    def test_doctor_errors_when_the_setting_is_missing_and_clears_after_link(self):
+        found = self.attribution_findings()
+        self.assertTrue(any(f['level'] == 'error' for f in found), found)
+        self.link()
+        self.assertEqual([f for f in self.attribution_findings() if f['level'] == 'error'], [])
+        data = self.local()
+        data['attribution'] = {'commit': 'Co', 'pr': ''}
+        (self.root / self.LOCAL).write_text(json.dumps(data), encoding='utf-8')
+        self.assertTrue(any(f['level'] == 'error' for f in self.attribution_findings()))
+
+    def test_shared_and_user_settings_with_attribution_on_are_warnings(self):
+        self.link()
+        self.write('.claude/settings.json', json.dumps({'includeCoAuthoredBy': True}))
+        found = self.attribution_findings()
+        self.assertEqual({f['level'] for f in found}, {'warning'}, found)
+        self.assertTrue(any(f['path'] == '.claude/settings.json' for f in found))
+
+    def test_state_helper(self):
+        for value, expected in ((False, True), ({'commit': '', 'pr': ''}, True), ({'commit': 'x', 'pr': ''}, False), ({}, False), (None, False), (True, False)):
+            self.assertEqual(guardhook.attribution_state(value), expected, value)
 
 
 class HookTests(unittest.TestCase):

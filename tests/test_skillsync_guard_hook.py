@@ -706,7 +706,7 @@ class GuardDoctor(GuardBase):
 
     def guard_findings(self):
         report = self.doctor()
-        return [f for f in report['findings'] if f['path'] == self.LOCAL], report
+        return [f for f in report['findings'] if f['path'] == self.LOCAL and 'host setting' not in f['reason']], report
 
     def test_not_installed_warns_installed_reports_info(self):
         found, report = self.guard_findings()

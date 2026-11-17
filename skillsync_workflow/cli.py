@@ -2604,8 +2604,12 @@ def merge_guard_settings(project_dir: Path, manifest: dict, config: dict, want: 
     _, allow, _ = guardhook.hook_settings(manifest)
     entry = guardhook.hook_entry(config.get("python_command", "python3"), guard_mode(manifest, config), allow, guard_tests_config(manifest, config))
     present = [hook for group in pre for hook in group.get("hooks", []) if guardhook.is_guard_hook(hook)]
-    if want and present == entry["hooks"]:
-        return False  # the entry is current; do not touch the file
+    if want and present == entry["hooks"] and existing.get("attribution") == guardhook.ATTRIBUTION_SETTING:
+        return False  # the entry and the attribution setting are current; do not touch the file
+    if want:   # the host setting that switches AI attribution off: always our value, the other keys of the file stay
+        if "attribution" in existing and existing["attribution"] != guardhook.ATTRIBUTION_SETTING and not guardhook.attribution_state(existing["attribution"]):
+            print(f"[warn] {settings_path}: `attribution` switched on, set to the empty form (the ban on AI attribution cannot be turned off)")
+        updated["attribution"] = dict(guardhook.ATTRIBUTION_SETTING)
     kept = []
     for group in pre:
         if "hooks" not in group:

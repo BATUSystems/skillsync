@@ -23,6 +23,10 @@ TEST_MODES = ('warn', 'off')
 DEFAULT_WIDE_MODULES = 25
 TESTS_HOOK_READY = True   # guard-commands.py reads --tests (180-J2); False would keep the whole test part dormant (nothing written, no argument)
 SETTINGS = '.claude/settings.local.json'
+SHARED_SETTINGS = '.claude/settings.json'
+# Host setting that switches off the attribution of Claude Code (documented form that older versions read too: empty `commit` and `pr`,
+# `sessionUrl` off; the single value `false` needs a newer host). Written by `link`, always the same value.
+ATTRIBUTION_SETTING = {'commit': '', 'pr': '', 'sessionUrl': False}
 FLOW_SKILLS = ('feature', 'agentflow', 'dispatch')
 MODES = ('deny', 'off')
 
@@ -188,6 +192,47 @@ def tests_config(manifest, skills):
     return {'wide': wide, 'wrappers': wrappers}
 
 
+def _read_settings(path):
+    """`(data or None when absent, readable)` of a settings file."""
+    try:
+        data = json.loads(Path(path).read_text(encoding='utf-8'))
+    except FileNotFoundError:
+        return None, True
+    except (OSError, ValueError):
+        return None, False
+    return (data if isinstance(data, dict) else None), isinstance(data, dict)
+
+
+def attribution_state(value):
+    """`True` when the value of a settings `attribution` key hides all attribution (commit and pr empty, or `false`), else `False`."""
+    if value is False:
+        return True
+    return isinstance(value, dict) and value.get('commit') == '' and value.get('pr') == ''
+
+
+def attribution_findings(root, home=None):
+    """`[(level, path, reason)]`: the host setting that switches the attribution off. The project-local file (the highest file the generator writes)
+    must carry it (`error`); a shared or user file with attribution on is a `warning` (the local file wins over them, a clone without `link` does not)."""
+    root = Path(root)
+    found = []
+    data, readable = _read_settings(root / SETTINGS)
+    if not readable:
+        return [('error', SETTINGS, 'Unreadable settings: the host setting that switches AI attribution off cannot be checked')]
+    if data is None or not attribution_state(data.get('attribution')):
+        found.append(('error', SETTINGS, 'The host setting `attribution` (empty commit and pr) is missing or switched on: Claude Code would add its footer and trailer; run `skillsync link`'))
+    shared, ok = _read_settings(root / SHARED_SETTINGS)
+    if ok and shared is not None:
+        value = shared.get('attribution')
+        if (value is not None and not attribution_state(value)) or shared.get('includeCoAuthoredBy') is True:
+            found.append(('warning', SHARED_SETTINGS, 'Shared project settings switch AI attribution on; the local settings written by `link` win over them'))
+    user, ok = _read_settings(Path(home or Path.home()) / '.claude' / 'settings.json')
+    if ok and user is not None:
+        value = user.get('attribution')
+        if (value is not None and not attribution_state(value)) or user.get('includeCoAuthoredBy') is True:
+            found.append(('warning', '~/.claude/settings.json', 'User settings switch AI attribution on; project settings win, but other projects are not covered: run `skillsync attribution --user`'))
+    return found
+
+
 def doctor_findings(root, manifest, skills):
     """`[(level, path, reason)]`: the state of the hook against what `link` would write. A missing hook or attribution data is an `error` (the ban on AI
     attribution is not optional); drift of the delete or test settings stays a warning."""
@@ -200,6 +245,7 @@ def doctor_findings(root, manifest, skills):
     mode = effective_mode(manifest, skills)
     tests = tests_config(manifest, skills)
     root = Path(root)
+    found.extend(attribution_findings(root))
     script = root / GUARD_HOOK
     command = installed(root / SETTINGS)
     if command is False:
