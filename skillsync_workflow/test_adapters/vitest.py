@@ -88,7 +88,7 @@ class VitestCore:
 
     def complete(self):
         """True when every test of the summary was reported by a line."""
-        return self.total is not None and self.lines == self.total
+        return self.total is not None and self.lines == self.total == len(self.seen)   # a repeated id (`it.each` with one title) is two lines but one test: the counters of the summary decide then
 
 
 @register
@@ -105,7 +105,7 @@ class VitestAdapter(Adapter):
         return 'vitest' in words[:4] and 'ng' not in words[:2]
 
     def hint(self, argv):
-        if any(str(word).startswith(('--reporter', '-r=')) for word in argv):
+        if any(str(word).startswith('--reporter') for word in argv):
             return None
         return 'test list: add --reporter=verbose (the default reporter of Vitest names no passing test; the counters are always recorded)'
 

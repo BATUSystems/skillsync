@@ -51,7 +51,7 @@ class EndRecord(unittest.TestCase):
             with self.subTest(fixture=fixture):
                 self.check(fixture, status, counts, 'adapter')
 
-    def test_karma_gives_its_last_counters_with_and_without_the_report(self):
+    def test_karma_gives_its_last_counters_with_and_without_junit_in_the_command(self):
         for fixture in ('karma-progress.jsonl', 'karma-dots.jsonl', 'karma-junit-progress.jsonl'):
             with self.subTest(fixture=fixture):
                 self.check(fixture, 'FAIL', {'total': 11, 'passed': 7, 'failed': 2, 'skipped': 2}, 'adapter')   # the case of the legacy reader: it read `skipped 11`
@@ -75,6 +75,50 @@ class EndRecord(unittest.TestCase):
                 end, _ = run_through_recorder(fixture)
                 self.assertNotEqual(end.get('source'), 'adapter', end)
                 self.assertNotEqual(end['status'], 'PASS')
+
+    def test_a_vitest_title_repeated_keeps_its_failure_in_the_counters(self):
+        text = ' × f.test.js > d > same 1ms\n   → boom\n ✓ f.test.js > d > same 1ms\n\n Tests  1 failed | 1 passed (2)\n'
+        with tempfile.TemporaryDirectory(prefix='web-counts-') as tmp:
+            end, _ = self.feed_text(tmp, ['vitest', 'run', '--reporter=verbose'], text, 1)
+        self.assertEqual((end['status'], end['counts']), ('FAIL', {'total': 2, 'passed': 1, 'failed': 1, 'skipped': 0}))
+
+    def test_a_truncated_or_running_state_never_gives_counters(self):
+        for mutate in ('truncated', 'running'):
+            with self.subTest(mutate=mutate):
+                recorder = self.recorder_with(['vitest', 'run', '--reporter=verbose'])
+                writer = recorder.writer
+                writer.test('a::t1', 't1', 'passed')
+                if mutate == 'truncated':
+                    writer.truncated = True
+                else:
+                    writer.test('a::t2', 't2', 'running')
+                self.assertIsNone(recorder._adapter_counts(True))
+
+    def test_counters_that_do_not_add_up_or_still_run_are_not_final(self):
+        recorder = self.recorder_with(['karma', 'start'])
+        recorder.writer.counts(passed=2, failed=0, skipped=0, running=1, total=3, force=True)
+        self.assertIsNone(recorder._adapter_counts(False))
+        recorder.writer.counts(passed=2, failed=0, skipped=0, running=0, total=3, force=True)
+        self.assertIsNone(recorder._adapter_counts(False))
+        recorder.writer.counts(passed=3, failed=0, skipped=0, running=0, total=3, force=True)
+        self.assertEqual(recorder._adapter_counts(False), {'total': 3, 'passed': 3, 'failed': 0, 'skipped': 0})
+
+    def recorder_with(self, argv):
+        self.tmp = tempfile.TemporaryDirectory(prefix='web-counts-')
+        self.addCleanup(self.tmp.cleanup)
+        recorder = test_run.TestRecorder(self.tmp.name, 'R1', 'F1.1', 'flag', adapter=test_adapters.resolve('auto', argv, test_run.detect_tool(argv)))
+        recorder.started({'argv': argv, 'command': ' '.join(argv), 'cwd': self.tmp.name})
+        return recorder
+
+    def feed_text(self, tmp, argv, text, exit_code):
+        recorder = test_run.TestRecorder(tmp, 'R1', 'F1.1', 'flag', adapter=test_adapters.resolve('auto', argv, test_run.detect_tool(argv)))
+        check = {'argv': argv, 'command': ' '.join(argv), 'cwd': tmp}
+        recorder.started(check)
+        for line in text.split('\n'):
+            recorder.line(check, 'out', line)
+        recorder.finished(check, {'exit_code': exit_code, 'duration_seconds': 1.0}, text)
+        events = test_events.read_events(recorder.path)[0]
+        return [e for e in events if e['t'] == 'end'][-1], events
 
     def test_every_green_run_is_a_pass_with_a_positive_count(self):
         for fixture in ('cypress-spec-chrome.jsonl', 'vitest-default-color.jsonl', 'angular-karma-pass.jsonl', 'angular-vitest-pass.jsonl'):

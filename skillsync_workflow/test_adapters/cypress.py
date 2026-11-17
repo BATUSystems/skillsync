@@ -23,7 +23,7 @@ MAX_DEPTH = 32
 MAX_FILES = 1000
 ANSI = re.compile(r'\x1b\[[0-9;?]*[A-Za-z]')
 RUNNING = re.compile(r'^\s+Running:\s+(?P<file>\S.*?)\s+\((?P<i>\d+) of (?P<n>\d+)\)\s*$')
-SUMMARY = re.compile(r'^\s+(?P<n>\d+) (?:passing(?: \(\d+(?:\.\d+)?m?s\))?|pending|failing)$')
+SUMMARY = re.compile(r'^\s+(?P<n>\d+) (?:passing(?: \(\d+(?:\.\d+)?(?:ms|s|m|h)(?: \d+(?:\.\d+)?(?:ms|s|m))*\))?|pending|failing)$')
 TEST = re.compile(r'^(?P<indent> +)(?P<mark>[✓√]|-|\d+\))\s+(?P<title>.+?)(?: \((?P<ms>\d+)ms\))?$')   # `√` is what Mocha prints on Windows
 SUITE = re.compile(r'^(?P<indent> +)(?P<title>\S[^\n]*)$')
 ATTEMPT = re.compile(r'^\s+\(Attempt \d+ of \d+\)')
@@ -121,4 +121,4 @@ class CypressAdapter(Adapter):
         self.failure = None
 
     def end(self, ctx, exit_code, output, reports):
-        return bool(self.totals) and all(self.totals.values()) and sum(self.totals.values()) == self.lines
+        return bool(self.totals) and all(self.totals.values()) and sum(self.totals.values()) == self.lines == len(self.seen)

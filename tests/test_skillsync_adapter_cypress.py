@@ -92,13 +92,19 @@ class Spec(unittest.TestCase):
         text = ('  Running:  a.cy.js  (1 of 1)\n\n\n  s\n    1) loop\n    ✓ loop (1ms)\n\n\n  1 passing (1s)\n  1 failing\n')
         recorder, _, _, complete = replay('cypress', chunks_from_text(text), tool='cypress')
         self.assertEqual(states(recorder), {'a.cy.js::s > loop': 'failed'})
-        self.assertTrue(complete)   # two lines, two tests of the summary
+        self.assertFalse(complete)   # two lines of one id: the final states would count one test, so the stream is not complete
 
     def test_the_windows_mark_and_stderr_noise(self):
         text = '  Running:  a.cy.js  (1 of 1)\n\n\n  s\n    √ ok (1ms)\n\n\n  1 passing (1s)\n'
         self.assertEqual(states(replay('cypress', chunks_from_text(text), tool='cypress')[0]), {'a.cy.js::s > ok': 'passed'})
         noisy = replay('cypress', [{'t': 0, 'fd': 'err', 'data': '  Running:  a.cy.js  (1 of 1)\n    ✓ x (1ms)\n'}], tool='cypress')[0]
         self.assertEqual(noisy.calls, [])
+
+    def test_a_summary_time_in_minutes_or_hours_is_a_summary(self):
+        for stamp in ('(1m)', '(1m 5s)', '(2h 3m)', '(3.5s)', '(12ms)'):
+            with self.subTest(stamp=stamp):
+                text = '  Running:  a.cy.js  (1 of 1)\n\n\n  s\n    \u2713 ok (1ms)\n\n\n  1 passing %s\n' % stamp
+                self.assertTrue(replay('cypress', chunks_from_text(text), tool='cypress')[3])
 
     def test_an_empty_file_makes_the_stream_incomplete(self):
         text = ('  Running:  a.cy.js  (1 of 2)\n\n\n    ✓ ok (1ms)\n\n\n  1 passing (1s)\n  Running:  b.cy.js  (2 of 2)\n')

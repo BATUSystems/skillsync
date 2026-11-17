@@ -133,9 +133,11 @@ class Hostile(unittest.TestCase):
         recorder = replay('vitest', chunks_from_text(text), tool='vitest')[0]
         self.assertIsNone(recorder.last()['a.test.js::bad'][1])
 
-    def test_a_title_repeated_in_a_describe_is_two_lines_and_complete(self):
-        text = ' ✓ f.test.js > d > same 1ms\n ✓ f.test.js > d > same 1ms\n Tests  2 passed (2)\n'
-        self.assertTrue(replay('vitest', chunks_from_text(text), tool='vitest')[3])
+    def test_a_title_repeated_in_a_describe_is_two_lines_but_one_id_so_the_summary_decides(self):
+        text = ' × f.test.js > d > same 1ms\n ✓ f.test.js > d > same 1ms\n Tests  1 failed | 1 passed (2)\n'
+        recorder, _, _, complete = replay('vitest', chunks_from_text(text), tool='vitest')
+        self.assertFalse(complete)   # two lines, one id: the final states would count one test
+        self.assertEqual(recorder.calls[-1], ('counts', {'passed': 1, 'failed': 1, 'skipped': 0, 'running': 0, 'total': 2}))
 
     def test_a_message_line_without_a_failed_test_before_it_is_ignored(self):
         recorder = replay('vitest', chunks_from_text('   → expected 4 to be 5\n ✓ a.test.js > ok 1ms\n   → not a message of a failure\n'), tool='vitest')[0]
