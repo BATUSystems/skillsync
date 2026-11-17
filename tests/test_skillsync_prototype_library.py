@@ -22,6 +22,10 @@ from glob import glob
 from pathlib import Path
 
 from tests.test_skillsync_prototype_server import setUpModule, tearDownModule  # noqa: E402,F401  (strażnik katalogu tymczasowego)
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child, descend  # noqa: E402
 
 LIB = os.environ.get('SKILLSYNC_TEST_LIBRARY')
 needs_library = unittest.skipUnless(LIB, 'ustaw SKILLSYNC_TEST_LIBRARY na bibliotekę z szablonami prototypu')
@@ -105,12 +109,12 @@ class CheckTokensTests(unittest.TestCase):
 
     def fixtures_root(self, overlay=None):
         """Kopia fikstur biblioteki w katalogu tymczasowym; `overlay` (katalog z check-tokens/) nadpisuje pliki."""
-        dst = self.tmp / ('fixtures-' + (overlay.name if overlay else 'lib'))
+        dst = child(self.tmp, 'fixtures-' + (overlay.name if overlay else 'lib'))
         shutil.copytree(skill_dir() / 'scripts' / 'fixtures', dst)
         if overlay:
             for src in overlay.rglob('*'):
                 if src.is_file():
-                    shutil.copyfile(src, dst / src.relative_to(overlay))
+                    shutil.copyfile(src, descend(dst, src.relative_to(overlay).as_posix()))
         return dst
 
     def test_copied_fixtures_pass_control(self):

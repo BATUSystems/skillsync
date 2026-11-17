@@ -46,5 +46,31 @@ class TmpPaths(unittest.TestCase):
             tmp_paths.write_file(directory, '..', 'x')
 
 
+class Descend(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix='skillsync-descend-'))
+        self.addCleanup(__import__('shutil').rmtree, self.tmp, ignore_errors=True)
+
+    def test_a_relative_path_with_slashes_stays_under_the_base(self):
+        self.assertEqual(tmp_paths.descend(self.tmp, 'docs/plans/x.md'), self.tmp / 'docs' / 'plans' / 'x.md')
+        self.assertEqual(tmp_paths.descend(self.tmp, 'a.txt'), self.tmp / 'a.txt')
+
+    def test_refused(self):
+        for relative in ('', '/abs', 'a/../b', '../x', 'a\\b', 'a//b', 'a/./b', 'C:/x', 'a/CON', 'a/b.', None, 5, 'a/\n'):
+            with self.subTest(relative=relative):
+                with self.assertRaises(UnsafeName):
+                    tmp_paths.descend(self.tmp, relative)
+
+    def test_a_link_that_leaves_the_base_is_refused(self):
+        outside = Path(tempfile.mkdtemp(prefix='skillsync-outside-'))
+        self.addCleanup(__import__('shutil').rmtree, outside, ignore_errors=True)
+        try:
+            (self.tmp / 'link').symlink_to(outside)
+        except OSError:
+            self.skipTest('no symbolic links here')
+        with self.assertRaises(UnsafeName):
+            tmp_paths.descend(self.tmp, 'link/x')
+
+
 if __name__ == '__main__':
     unittest.main()

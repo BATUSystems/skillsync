@@ -20,6 +20,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from layers_helpers import LINK_MODES, LayersCase, generator_version, git, link_mode, make_layer, write, yaml_text  # noqa: E402
 from skillsync_workflow import layers  # noqa: E402
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import descend  # noqa: E402
 
 
 def _probe(kind):
@@ -693,7 +697,7 @@ class TrustModelTest(MergeCase):
         MergeCase.sets += 1
         base = self.work / f'external{MergeCase.sets}'
         for rel, text in files.items():
-            write(base / rel, text)
+            write(descend(base, rel), text)
         return base
 
     def linked_org(self, core=None, **kwargs):

@@ -36,6 +36,10 @@ from layers_helpers import guard_real_state  # noqa: E402
 from tests.test_skillsync_dashboard_approve_token import home_env  # noqa: E402
 from tests.test_skillsync_dashboard_server import (ASSETS, CLI, DESCRIPTIONS, PLAN, TEST_TOKEN, ProjectCase, free_port,  # noqa: E402
                                                    install_fake_cli, make_project, spy_core)
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import descend  # noqa: E402
 
 OK = {"Content-Type": "application/json", "X-Status-Board": "1", "X-Approve-Token": TEST_TOKEN}
 LAN = None   # an address of this machine other than loopback, or None
@@ -123,7 +127,7 @@ class TwoSockets(ProjectCase):
     def offer(self) -> dict:
         spec2, plan2 = "docs/specs/demo-etap-2.md", "docs/plans/2026-01-20-demo-etap-2.md"
         (self.root / srv.RUNS_DIR / "2026-01-20-demo-etap-2").mkdir(parents=True, exist_ok=True)
-        spec = self.root / spec2
+        spec = descend(self.root, spec2)
         spec.write_text(f"# Spec: Demo 2\n\nStatus: draft (czeka na GO plan)\nPlan: {plan2}\n", encoding="utf-8")
         later = (self.root / PLAN).stat().st_mtime + 100
         os.utime(spec, (later, later))

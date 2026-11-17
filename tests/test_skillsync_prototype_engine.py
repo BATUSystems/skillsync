@@ -23,6 +23,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from skillsync_workflow import prototype as engine  # noqa: E402
 from skillsync_workflow import prototype_server as server  # noqa: E402
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child  # noqa: E402
 
 
 def sha256(path):
@@ -624,7 +628,7 @@ class EngineV2ViewModeTests(unittest.TestCase):
         self.addCleanup(shutil.rmtree, directory, ignore_errors=True)
         modules = {}
         for name, text in (('server_control', source), ('server_mutant', source.replace(PY_VIEW_RULE, PY_VIEW_RULE_MUTANT))):
-            path = Path(directory) / (name + '.py')
+            path = child(Path(directory), name + '.py')
             path.write_text(text, encoding='utf-8')
             spec = importlib.util.spec_from_file_location(name, path)
             module = importlib.util.module_from_spec(spec)
@@ -2564,7 +2568,7 @@ class EngineV2WritingTests(unittest.TestCase):
         cls.engine_js = install_engine_v2(cls.tmp)
         if cls.node:
             def copy_to(name, transform=None):
-                directory = Path(cls.tmp) / name
+                directory = child(Path(cls.tmp), name)
                 directory.mkdir()
                 return install_engine_copy(directory, engine_v2_js() if name == 'hooked' else ENGINE_V2_PREV_JS, transform)
             cls.hooked = copy_to('hooked', expose_writing_internals)

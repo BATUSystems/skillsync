@@ -15,6 +15,10 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child  # noqa: E402
 CHECK_WHEEL = ROOT / 'scripts' / 'check_wheel.py'
 CHECK_RELEASE = ROOT / 'scripts' / 'check_release.py'
 PYPROJECT = ROOT / 'pyproject.toml'
@@ -47,7 +51,7 @@ class TempDirCase(unittest.TestCase):
 
 class CheckWheelTests(TempDirCase):
     def wheel(self, names, name='skillsync-0.9.0-py3-none-any.whl'):
-        path = self.tmp / name
+        path = child(self.tmp, name)
         with zipfile.ZipFile(path, 'w') as archive:
             for entry in names:
                 archive.writestr(entry, '' if entry.endswith('/') else 'x = 1\n')

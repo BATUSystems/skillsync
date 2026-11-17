@@ -21,6 +21,10 @@ from skillsync_workflow import dashboard_tests as dt, test_events as ev, test_ga
 from test_skillsync_test_gate import PLAN  # noqa: E402
 from test_skillsync_test_run import Base, PASSING  # noqa: E402
 from test_skillsync_workflow import WorkflowFixture  # noqa: E402
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child, descend  # noqa: E402
 
 CLI = ROOT / 'skillsync'
 
@@ -322,7 +326,7 @@ class TreeAtStartAndEnd(WorkflowFixture):
     def test_the_start_event_records_the_tree_and_a_stable_tree_is_a_proof(self):
         self.write('code.txt', 'v2\n')
         self.run_tests()
-        state = ev.read_attempt(self.root / self.events())
+        state = ev.read_attempt(descend(self.root, self.events()))
         self.assertEqual(state.start['treeStart'], state.end['tree'])
         self.assertIsNone(self.problem())
 
@@ -336,7 +340,7 @@ class TreeAtStartAndEnd(WorkflowFixture):
 
     def test_a_run_without_a_start_tree_is_not_a_proof(self):
         self.run_tests()
-        path = self.root / self.events()
+        path = descend(self.root, self.events())
         lines = path.read_text(encoding='utf-8').splitlines()
         first = json.loads(lines[0])
         del first['treeStart']
@@ -348,7 +352,7 @@ class TreeAtStartAndEnd(WorkflowFixture):
         self.run_tests()
         self.assertIsNone(self.problem(1))
         self.run_tests("print('Ran 2 tests in 1s'); print('FAILED (failures=1)'); raise SystemExit(1)")
-        self.assertEqual(ev.read_attempt(self.root / self.events(n=2)).end['status'], 'FAIL')
+        self.assertEqual(ev.read_attempt(descend(self.root, self.events(n=2))).end['status'], 'FAIL')
         problem = self.problem(1)
         self.assertIn('NEWER run', problem)
         self.assertIn('attempt 2', problem)
@@ -365,7 +369,7 @@ class TreeAtStartAndEnd(WorkflowFixture):
 
     def test_an_imported_run_needs_a_clean_tree(self):
         self.run_tests()
-        path = self.root / self.events()
+        path = descend(self.root, self.events())
         head = self.git('rev-parse', 'HEAD')
         with open(path, 'a', encoding='utf-8') as handle:
             handle.write(json.dumps({'v': 1, 't': 'import', 'sourceSha': head, 'at': '2026-11-16T10:00:00Z'}) + '\n')

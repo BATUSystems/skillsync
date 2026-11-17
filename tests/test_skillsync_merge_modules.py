@@ -12,6 +12,10 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import descend  # noqa: E402
 SCRIPT = ROOT / 'scripts' / 'merge_modules.py'
 
 
@@ -28,7 +32,7 @@ class Repo:
 
     def write(self, files):
         for name, text in files.items():
-            path = self.dir / name
+            path = descend(self.dir, name)
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(text, encoding='utf-8')
 

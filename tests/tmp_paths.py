@@ -44,6 +44,21 @@ def child(base, name):
     return path
 
 
+def descend(base, relative):
+    """`base / relative` for a relative path written with `/` that comes from data (`docs/plans/x.md`): every component is checked like `child` does, an absolute
+    path, a backslash, a drive or a `..` component is refused, and the result must stay under the base."""
+    if not isinstance(relative, str) or not relative or relative.startswith('/') or '\\' in relative:
+        raise UnsafeName(f'relative path must be a nonempty string with / and no leading / or backslash: {relative!r}')
+    path = Path(base)
+    for part in relative.split('/'):
+        path = path / check_name(part)
+    try:
+        path.resolve().relative_to(Path(base).resolve())
+    except ValueError:
+        raise UnsafeName(f'{relative!r} resolves outside {base}')
+    return path
+
+
 def make_dir(base, name):
     path = child(base, name)
     path.mkdir(parents=True, exist_ok=True)

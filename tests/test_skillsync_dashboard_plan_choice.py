@@ -9,6 +9,10 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from skillsync_workflow import dashboard, quality, status  # noqa: E402
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child, descend  # noqa: E402
 
 ORPHAN = 'docs/plans/2026-11-07-base.md'
 CURRENT = 'docs/plans/2026-11-11-current.md'
@@ -27,13 +31,13 @@ class PlanChoice(unittest.TestCase):
         (self.root / 'docs/plans').mkdir(parents=True)
 
     def plan(self, rel, text, mtime=None):
-        path = self.root / rel
+        path = descend(self.root, rel)
         path.write_text(text, encoding='utf-8')
         if mtime:
             os.utime(path, (mtime, mtime))
 
     def run_dir(self, name, checkpoints=True, approvals=False, mtime=None):
-        directory = self.root / '.skillsync/runs' / name
+        directory = child(self.root / '.skillsync/runs', name)
         directory.mkdir(parents=True)
         files = []
         if checkpoints:

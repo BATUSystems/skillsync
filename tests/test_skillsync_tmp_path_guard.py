@@ -1,14 +1,14 @@
-"""Guard (report mode): `<temporary directory> / <variable or call>` outside `tests/tmp_paths.py`.
+"""Guard (STRICT): `<temporary directory> / <variable or call>` outside `tests/tmp_paths.py`.
 
 A name that comes from data and is joined to a temporary directory can leave it (on Windows `\\n` is a path from the drive root;
 see `tests/test_skillsync_tmp_paths.py`). The AST scan reports every `<tmp path> / <expression>` whose right side is not a
 constant, an UPPER_CASE constant or an f-string/concatenation of such constants. A "tmp path" is a name or attribute with `tmp` or
 `temp` in it, or one assigned (transitively) from `tempfile`/`mkdtemp`/`TemporaryDirectory` or from another tmp path.
 
-Mode: REPORT. Hits above the counts in BASELINE (per file) or in a file missing from it are printed to stderr; the test fails only
-when STRICT is switched on. BASELINE is the state at the start (hits not reviewed one by one: most are fixture writers whose names
-are literals of the test; the ones in the dashboard server test wait for the dashboard work to land). To fix a hit, use
-`tmp_paths.child/make_dir/write_file` and lower the count; to keep it, add the reason next to the count.
+Mode: STRICT (180-U). Every hit fails the test unless it is in ALLOWED below, with the reason. To fix a hit use `tmp_paths.child` (one name),
+`tmp_paths.descend` (a relative path with `/`) or `make_dir/write_file`; to keep one on purpose add `(file, expression text): reason`. An entry
+that no longer matches anything fails too (stale). Command to run the scanner alone on a tree (for a branch before its merge):
+`python3 -m unittest discover -s tests -p test_skillsync_tmp_path_guard.py` (it prints every hit with file:line).
 """
 import ast
 import re
@@ -17,24 +17,14 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-STRICT = False
+STRICT = True
 EXEMPT = ('tmp_paths.py', 'test_skillsync_tmp_path_guard.py')
-BASELINE = {
-    'test_skillsync.py': 2,
-    'test_skillsync_ci_workflows.py': 1,
-    'test_skillsync_dashboard_plan_choice.py': 2,
-    'test_skillsync_dashboard_ports.py': 1,
-    'test_skillsync_dashboard_redaction.py': 2,
-    'test_skillsync_dashboard_server.py': 2,
-    'test_skillsync_layers_merge.py': 1,
-    'test_skillsync_measurements.py': 1,
-    'test_skillsync_merge_modules.py': 1,
-    'test_skillsync_packaging.py': 1,
-    'test_skillsync_platform_sensitive.py': 1,
-    'test_skillsync_prototype_engine.py': 2,
-    'test_skillsync_prototype_library.py': 2,
+# (file under tests/, text of the expression as `ast.unparse` gives it): the reason it is safe
+ALLOWED = {
+    ('test_skillsync_test_run_hardening.py', 'self.base / name'):
+        'the names are written in the test itself on purpose and are hostile (a device name, a name over the length limit, a name outside the step pattern): '
+        '`tmp_paths.child` would refuse exactly the cases that test checks',
 }
-REASON = 'reviewed by reading (see the baseline review): names from the test itself, parameters of fixture writers, or the dashboard server test awaiting 180-A/B'
 
 TMP = re.compile(r'(^|_)(tmp|temp)(dir|path|file|root|base)?[0-9]*($|_)', re.I)
 SRC=('tempfile','mkdtemp','TemporaryDirectory','NamedTemporary')
@@ -247,20 +237,26 @@ class Scanner(unittest.TestCase):
 
 
 class Repository(unittest.TestCase):
-    def test_report(self):
+    def test_strict(self):
         found = repository_hits()
-        over = []
+        self.assertGreater(sum(len(h) for h in found.values()) + len(ALLOWED), 0, 'the scan found nothing: the scanner is broken')
+        over, matched = [], set()
         for name, hits in found.items():
-            allowed = BASELINE.get(name, 0)
-            if len(hits) > allowed:
-                over.append(f'{name}: {len(hits)} hits, baseline {allowed}: ' + '; '.join(f'{line}: {text[:60]}' for line, text in hits))
-        total = sum(len(h) for h in found.values())
-        self.assertGreater(total, 0, 'the scan found nothing: the scanner is broken')
-        print(f'tmp-path guard (report): {total} hits in {len(found)} files; baseline {sum(BASELINE.values())}', file=sys.stderr)
+            for line, text in hits:
+                if (name, text) in ALLOWED:
+                    matched.add((name, text))
+                else:
+                    over.append(f'{name}:{line}: {text[:80]}')
         for line in over:
-            print('  NEW ' + line, file=sys.stderr)
-        if STRICT:
-            self.assertEqual(over, [])
+            print('  tmp-path guard: ' + line, file=sys.stderr)
+        self.assertEqual(over, [], 'a name from data joined to a temporary directory: use tmp_paths.child/descend (or add a reasoned entry to ALLOWED)')
+        self.assertEqual(sorted(set(ALLOWED) - matched), [], 'stale ALLOWED entries (no longer matched): remove them')
+
+    def test_mutation_a_new_literal_free_join_turns_the_guard_red(self):
+        """A new `self.tmp / name` in a test file is found by the scan of that file (the guard is what protects the future files)."""
+        hits = scan(ast.parse('class T:\n    def f(self, key):\n        (self.tmp / key).write_text("x")\n'))
+        self.assertEqual([text for _, text in hits], ['self.tmp / key'])
+        self.assertNotIn(('test_new.py', 'self.tmp / key'), ALLOWED)
 
 
 if __name__ == '__main__':
