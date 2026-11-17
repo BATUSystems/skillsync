@@ -514,6 +514,7 @@ def _logical_path(project, setting):
 
 
 MAX_KNOWLEDGE_DIRECTORIES = 8
+BOOTSTRAP_WARNING_BYTES = 24576  # the default `context.max_bytes`
 KNOWLEDGE_LABELS = {'domain': ('domain', 'Domain knowledge'), 'lessons': ('lessons', 'Lessons')}
 
 
@@ -1199,15 +1200,23 @@ def doctor(root, manifest, library):
         for role in roles:
             if Path(role).is_absolute() or '..' in Path(role).parts or '\\' in role:
                 raise ValueError(f'Path escapes project: agents/{role}.md')
-        domain_dir, _ = domain_location(root, manifest, library)
-        if not (domain_dir / 'index.yaml').is_file():
-            finding('warning', str(domain_dir / 'index.yaml'), 'Missing domain knowledge index; create it when the first verified domain record is written')
-        lessons_dir = lessons_location(root, manifest, library)
-        if not (lessons_dir / 'index.yaml').is_file():
-            finding('warning', str(lessons_dir / 'index.yaml'), 'Missing lessons index; run `skillsync knowledge init` before the first lesson is written')
+        domain_dirs = [directory for directory, _ in knowledge_locations(root, manifest, library, 'domain')]
+        lesson_dirs = [directory for directory, _ in knowledge_locations(root, manifest, library, 'lessons')]
+        listed = knowledge_is_listed(root, manifest, library, 'domain')
+        for directory, text, hint in [(d, 'domain knowledge', 'create it when the first verified domain record is written') for d in domain_dirs] + \
+                [(d, 'lessons', 'run `skillsync knowledge init` before the first lesson is written') for d in lesson_dirs]:
+            if (directory / 'index.yaml').is_file():
+                continue
+            if listed or len(lesson_dirs) > 1:
+                state = ('the directory exists' if directory.is_dir()
+                         else 'the directory does not exist (is the repository that owns it checked out?)')
+                finding('warning', str(directory / 'index.yaml'), f'Missing {text} index: {directory}; {state}; {hint}')
+            else:
+                finding('warning', str(directory / 'index.yaml'), f'Missing {text} index; {hint}')
+        known = {directory.resolve() for directory in domain_dirs}
         for stray in sorted(Path(root).glob('*/docs/domain/index.yaml')) + sorted(Path(root).glob('*/*/docs/domain/index.yaml')):
-            if 'node_modules' not in stray.parts and stray.parent.resolve() != domain_dir.resolve():
-                finding('warning', str(stray), f'Scattered domain knowledge; keep one shared location: {domain_dir}')
+            if 'node_modules' not in stray.parts and stray.parent.resolve() not in known:
+                finding('warning', str(stray), 'Scattered domain knowledge; keep one shared location: ' + ', '.join(str(d) for d in domain_dirs))
         if enabled('claude', True):
             for role in roles:
                 role_path = Path(root) / '.claude/agents' / f'{role}.md'
@@ -1265,6 +1274,12 @@ def doctor(root, manifest, library):
                 adapter = f'skills/{name}/references/{engine}.md'
                 if engine_enabled and not layerset.resolve(adapter):
                     finding('error', adapter, f'Missing enabled {name} adapter')
+    bootstrap = [Path(record['path']) for record in domain_indexes(root, library, manifest) if record.get('load') == 'bootstrap']
+    total = sum(path.stat().st_size for path in bootstrap if path.is_file())
+    if total > BOOTSTRAP_WARNING_BYTES:
+        owners = sorted({str(path.parent) for path in bootstrap})
+        finding('warning', 'workflow.knowledge.domain', f'Bootstrap domain records total {total} bytes (over {BOOTSTRAP_WARNING_BYTES}): '
+                + ', '.join(owners) + '; shorten the glossaries or drop a directory from the list')
     for kind, records in [('Lesson', lesson_indexes(root, library, manifest)), ('Domain record', domain_indexes(root, library, manifest))]:
         for record in records:
             path = Path(record['path'])

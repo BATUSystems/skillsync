@@ -197,5 +197,53 @@ class RouteCoordinates(KnowledgeListFixture):
         self.assertTrue(owner.is_dir())
 
 
+class DoctorMessages(KnowledgeListFixture):
+    def findings(self, text):
+        self.manifest['skills'] = ['feature']
+        self.save()
+        result = self.cli('doctor')  # exit code ignored: the unlinked fixture has unrelated errors
+        self.assertNotIn('Traceback', result.stderr)
+        return [f for f in __import__('json').loads(result.stdout)['findings'] if text in f['reason']]
+
+    def test_missing_index_is_reported_per_element_with_directory_state(self):
+        (self.base / 'repo-a/docs/domain').mkdir(parents=True)
+        self.setting(domain=['docs/domain', '../repo-a/docs/domain', '../repo-c/docs/domain'])
+        reasons = [f['reason'] for f in self.findings('Missing domain knowledge index')]
+        self.assertEqual(len(reasons), 3, reasons)
+        self.assertIn('the directory does not exist (is the repository that owns it checked out?)', reasons[0])
+        self.assertIn('the directory exists;', reasons[1])
+        self.assertTrue(all(f['level'] == 'warning' for f in self.findings('Missing domain knowledge index')))
+        self.assertEqual(len(self.findings('Missing lessons index')), 3)
+
+    def test_string_form_keeps_the_single_message(self):
+        reasons = [f['reason'] for f in self.findings('Missing domain knowledge index')]
+        self.assertEqual(reasons, ['Missing domain knowledge index; create it when the first verified domain record is written'])
+
+    def test_listed_directories_are_not_scattered_knowledge(self):
+        self.owner()
+        (self.root / 'backend/docs/domain').mkdir(parents=True)
+        (self.root / 'backend/docs/domain/index.yaml').write_text(yaml.safe_dump({'version': 1, 'entries': []}))
+        self.setting(domain=['docs/domain', 'backend/docs/domain', '../repo-a/docs/domain'])
+        self.assertEqual(self.findings('Scattered domain knowledge'), [])
+        self.setting(domain=['docs/domain', '../repo-a/docs/domain'])
+        self.assertEqual(len(self.findings('Scattered domain knowledge')), 1)
+
+    def test_bootstrap_sum_over_limit_warns_with_directories(self):
+        big = 'x' * 14000
+        for name in ('repo-a', 'repo-d'):
+            directory = self.base / name / 'docs/domain'
+            directory.mkdir(parents=True)
+            (directory / 'g.md').write_text('---\ntags: [x]\n---\n' + big)
+            (directory / 'index.yaml').write_text(yaml.safe_dump({'version': 1, 'entries': [
+                {'path': 'g.md', 'title': 'G', 'load': 'bootstrap'}]}))
+        self.setting(domain=['../repo-a/docs/domain', '../repo-d/docs/domain'])
+        found = self.findings('Bootstrap domain records total')
+        self.assertEqual(len(found), 1)
+        self.assertIn('repo-a', found[0]['reason'])
+        self.assertIn('repo-d', found[0]['reason'])
+        self.setting(domain=['../repo-a/docs/domain'])
+        self.assertEqual(self.findings('Bootstrap domain records total'), [])
+
+
 if __name__ == '__main__':
     unittest.main()
