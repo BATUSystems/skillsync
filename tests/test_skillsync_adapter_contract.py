@@ -82,10 +82,23 @@ class DetectToolTable(unittest.TestCase):
 
 
 class Reachability(unittest.TestCase):
+    def test_no_test_double_stays_registered_between_modules(self):
+        test_adapters.discover()
+        foreign = sorted(name for name, cls in test_adapters.REGISTRY.items() if not cls.__module__.startswith('skillsync_workflow.test_adapters.'))
+        self.assertEqual(foreign, [], 'a module registered an adapter at import or did not take it back: other modules of the same process see it')
+
+    def test_a_test_double_registered_by_another_module_is_ignored(self):
+        double = type('Double', (test_adapters.Adapter,), {'name': 'zz-double', 'tools': ('no-such-tool',)})
+        test_adapters.REGISTRY['zz-double'] = double
+        self.addCleanup(test_adapters.REGISTRY.pop, 'zz-double', None)
+        self.test_every_tool_of_every_adapter_is_a_value_of_the_table()
+
     def test_every_tool_of_every_adapter_is_a_value_of_the_table(self):
         known = {tool for _, tool in test_run.TOOLS} | {'unittest', 'pytest'}
         test_adapters.discover()
         for name, cls in sorted(test_adapters.REGISTRY.items()):
+            if not cls.__module__.startswith('skillsync_workflow.test_adapters.'):
+                continue   # the adapters SHIPPED in the package; a test double registered by another module in the same process is not the subject
             with self.subTest(adapter=name):
                 self.assertTrue(cls.tools, f'{name} declares no tools: it is unreachable in auto')
                 for tool in cls.tools:
@@ -253,6 +266,12 @@ class WindowsShimsInTheCommand(Base):
 
 
 class TheTableIsData(unittest.TestCase):
+    @classmethod
+    def tearDownClass(cls):
+        # the tests of this class swap the file and the cache of the table: nothing of it may stay for the modules that run later in the same process
+        assert test_run.TOOLS_FILE == ROOT / 'skillsync_workflow' / 'data' / 'test_tools.json', test_run.TOOLS_FILE
+        assert test_run.detect_tool('bun test') == 'unknown', 'the table of a test leaked'
+
     def setUp(self):
         self.addCleanup(setattr, test_run, '_TABLE', test_run._TABLE)
         self.addCleanup(setattr, test_run, 'TOOLS_FILE', test_run.TOOLS_FILE)
