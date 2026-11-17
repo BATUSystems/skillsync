@@ -1,0 +1,10 @@
+{"meta": {"tool": "vitest", "version": "vitest 4.1.12, Node 22.22.0 (FORCE_COLOR=1)", "command": ["vitest", "run", "tests/second.test.js"], "exit": 0, "merged": false, "env": {"LANG": "pl_PL.UTF-8", "stdout_stderr": "pipes (not a terminal)"}, "note": "ANSI colours in the stream", "scrubbed": "paths, host and user names are replaced", "format": "one record per chunk read from the pipe: t = seconds since the start, fd = out|err, data = the text of the chunk"}}
+{"t": 0.245, "fd": "err", "data": "\u001b[33m(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:\n  - ESM syntax in a file loaded as CommonJS (vitest.config.js:1:1). Use a `.mjs` extension or set `\"type\": \"module\"` in the closest package.json\nSet `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.\u001b[39m\n"}
+{"t": 0.278, "fd": "out", "data": "\n"}
+{"t": 0.278, "fd": "out", "data": " RUN  v4.1.12 /TOOLS/tools/vitest\n\n"}
+{"t": 0.941, "fd": "out", "data": "\n"}
+{"t": 0.941, "fd": "out", "data": " Test Files  1 passed (1)\n"}
+{"t": 0.941, "fd": "out", "data": "      Tests  2 passed (2)\n"}
+{"t": 0.941, "fd": "out", "data": "   Start at  22:53:22\n"}
+{"t": 0.942, "fd": "out", "data": "   Duration  658ms (transform 17ms, setup 0ms, import 27ms, tests 505ms, environment 0ms)\n"}
+{"t": 0.942, "fd": "out", "data": "\n"}

@@ -995,6 +995,51 @@ function summary(m) {
         noField: { btn: Boolean(none.root.querySelector('#commitsBtn')), chip: text(none.root.querySelector('#meta .ahead-chip')) },
         emptyList: { btn: Boolean(empty.root.querySelector('#commitsBtn')), chip: text(empty.root.querySelector('#meta .ahead-chip')) } };
     }
+    {  // 180-A: zakładka „Testy”, sekcje, pasek przy kroku i link
+      const counts = (o) => ({ total: 0, passed: 0, failed: 0, skipped: 0, running: 0, waiting: 0, ...o });
+      const attempt = (n, state, c, extra) => ({ n, state, startedAt: '2026-01-11T09:30:00Z', endedAt: state === 'running' ? null : '2026-01-11T09:31:00Z', durationMs: 60000,
+        command: 'python3 -m unittest -v', tool: 'unittest', levels: 'tests', source: 'junit', exit: null, reason: null, counts: c, truncated: false, groups: [], ...(extra || {}) });
+      const evil = '<img src=x onerror=alert(1)>';
+      const tests = {
+        sections: [
+          { step: { id: 'F1.3', title: 'Test struktury' }, state: 'running', attempts: [attempt(1, 'running', counts({ total: 4, passed: 1, running: 1, waiting: 2 }), {
+            groups: [{ name: 'mod.A', state: 'running', total: 4, counts: counts({ passed: 1, running: 1, waiting: 2 }), tests: [{ id: 'mod.A::t2', name: 't2', state: 'running' }] }] })] },
+          { step: { id: 'F1.2', title: 'Fixtures' }, state: 'failed', attempts: [attempt(2, 'failed', counts({ total: 3, passed: 2, failed: 1 }), {
+            live: 'completion', groups: [{ name: 'mod.B', state: 'failed', total: 3, counts: counts({ passed: 2, failed: 1 }), tests: [{ id: 'mod.B::bad', name: 'bad ' + evil, state: 'failed', ms: 7, msg: 'AssertionError: 1 != 2\n' + evil }] }] }),
+            attempt(1, 'failed', counts({ total: 3, passed: 1, failed: 2 }))] },
+          { step: { id: 'F1.1', title: 'Opis' }, state: 'passed', attempts: [attempt(1, 'passed', counts({ total: 5, passed: 5 }))] },
+        ],
+        failedTotal: 1, runningTotal: 1 };
+      const mk = (withTests) => {
+        const j = clone(F['plan-in-progress']);
+        if (withTests) {
+          j.tests = tests;
+          for (const ph of j.progress.phases) for (const stp of ph.steps) { const sec = tests.sections.find((x) => x.step.id === stp.id); if (sec) stp.tests = { state: sec.state, attempt: sec.attempts[0].n, counts: sec.attempts[0].counts }; }
+        }
+        return j;
+      };
+      const state = (m) => ({ tabHidden: m.root.querySelector('#tab-tests').hidden, count: text(m.root.querySelector('#tCount')), countCls: m.root.querySelector('#tCount').getAttribute('class'),
+        view: m.board.state().view, viewHidden: m.root.querySelector('#view-tests').hidden,
+        sections: m.root.querySelectorAll('#testsView .tsec').map((n) => ({ id: n.getAttribute('id'), head: text(n.querySelector('.tsec-head')), expanded: n.querySelector('.tsec-head').getAttribute('aria-expanded'), controls: n.querySelector('.tsec-head').getAttribute('aria-controls'), body: Boolean(n.querySelector('.tsec-body')) })) });
+      const m = mount(mk(true), { now: NOW['plan-in-progress'] });
+      const initial = state(m);
+      m.root.querySelector('#tsec-btn-F1_2').click();
+      const opened = state(m);
+      const msg = m.root.querySelector('#testsView .t.is-failed .msg');
+      const rows = { imgs: m.root.querySelectorAll('#testsView img').length, name: text(m.root.querySelector('#testsView .t.is-failed .nm')), msg: msg ? text(msg) : null, historyButtons: m.root.querySelectorAll('#testsView .tab-att').length, level: text(m.root.querySelector('#tsec-F1_2 .tlevel')) };
+      m.root.querySelectorAll('#testsView .tab-att')[1].click();
+      const prev = text(m.root.querySelector('#tsec-F1_2 .sub'));
+      m.root.querySelector('#tsec-btn-F1_2').click();
+      const closed = state(m);
+      const bars = m.root.querySelectorAll('#phases .stbar').map((n) => ({ text: text(n), label: n.querySelector('.tbar').getAttribute('aria-label') }));
+      const link = m.root.querySelector('#phases button[data-test-step="F1.1"]');
+      link.click();
+      const afterLink = state(m);
+      const nav = m.calls.nav.slice();
+      m.root.querySelector('#tab-progress').click();
+      const none = mount(mk(false), { now: NOW['plan-in-progress'] });
+      stab.testsTab = { initial, opened, rows, prev, closed, bars, afterLink, nav, noTests: { tabHidden: none.root.querySelector('#tab-tests').hidden, stbar: none.root.querySelectorAll('#phases .stbar').length, tab: state(none).view } };
+    }
     ex.stab = stab;
   }
   // WRITING-UX: pozycje „sesja pracuje” (znacznik zapisu) i „odpowiedź eksperta” w banerze czekania.
@@ -1357,7 +1402,7 @@ class RendererNodeTests(unittest.TestCase):
                     self.assertIn(f"{p['percent']}% · ", got["docTitle"])
                 self.assertEqual(got["docItems"], sum(len(g["items"]) for g in d.get("docs") or []))
                 self.assertEqual(got["planMenu"], 1 + len(d.get("plans") or []))
-                self.assertEqual(got["sprite"], 15)
+                self.assertEqual(got["sprite"], 16)
                 self.assertIn(f"dashboard {d['app']['version']}", got["foot"])
                 self.assertNotIn("img", got["tags"])
 
@@ -1539,6 +1584,29 @@ class RendererNodeTests(unittest.TestCase):
         self.assertEqual(c["afterEmpty"]["expanded"], "false", "po opróżnieniu listy panel nie wraca otwarty")
         self.assertEqual(c["noField"], {"btn": False, "chip": "22 niewypchnięte"})
         self.assertEqual(c["emptyList"], {"btn": False, "chip": "22 niewypchnięte"})
+
+    def test_stab_tests_tab_sections_bars_and_links(self) -> None:
+        """180-A: sekcje kroków (najnowsza u góry, rozwinięta tylko trwająca), pasek i link przy kroku, tekst jako tekst, zakładka ukryta bez danych."""
+        t = self.out["extra"]["stab"]["testsTab"]
+        self.assertFalse(t["initial"]["tabHidden"])
+        self.assertEqual((t["initial"]["count"], t["initial"]["countCls"]), ("1", "count is-bad"))
+        self.assertEqual([s["id"] for s in t["initial"]["sections"]], ["tsec-F1_3", "tsec-F1_2", "tsec-F1_1"])
+        self.assertEqual([(s["expanded"], s["body"]) for s in t["initial"]["sections"]], [("true", True), ("false", False), ("false", False)])   # tylko trwająca
+        self.assertIn("1 czerwony", t["initial"]["sections"][1]["head"])
+        self.assertEqual(t["opened"]["sections"][1]["expanded"], "true")
+        self.assertEqual([bool(x["controls"]) for x in t["initial"]["sections"]], [True, False, False])   # aria-controls only for an open section (its body exists)
+        self.assertEqual(t["rows"]["imgs"], 0)
+        self.assertIn("<img src=x", t["rows"]["name"])
+        self.assertIn("AssertionError: 1 != 2", t["rows"]["msg"])
+        self.assertEqual(t["rows"]["historyButtons"], 2)
+        self.assertIn("bez stanu „uruchomiony”", t["rows"]["level"])   # an adapter of `live: completion`: no artificial running state
+        self.assertIn("bieg 1", t["prev"])
+        self.assertEqual(t["closed"]["sections"][1]["expanded"], "false")
+        self.assertTrue(any("1/3" in b["text"] or "2/3" in b["text"] for b in t["bars"]), t["bars"])
+        self.assertTrue(all("testów" in b["label"] or "testu" in b["label"] for b in t["bars"]))
+        self.assertEqual((t["afterLink"]["view"], t["afterLink"]["sections"][2]["expanded"]), ("tests", "true"))
+        self.assertIn("tests:F1.1", t["nav"])
+        self.assertEqual(t["noTests"], {"tabHidden": True, "stbar": 0, "tab": "progress"})
 
     def test_readiness_tile(self) -> None:
         none = {"cls": "readiness is-none", "chip": "Readiness: brak danych"}
@@ -2129,13 +2197,21 @@ class OldRendererOnNewJson(unittest.TestCase):
         listed["delivery"] = {**(listed.get("delivery") or {}), "mode": "pr", "branch": "feat/x", "remote": "origin/feat/x", "ahead": 3, "pushed": True,
                               "commits": [{"sha": "abc1234", "subject": "pierwszy"}], "commitsMore": 2}
         fixtures["with-unpushed-commit-list"] = listed
+        # 180-A: the `tests` field and `progress...steps[].tests`: the frozen renderer ignores both and draws no tab
+        tested = json.loads(json.dumps(next(iter(fixtures.values()))))
+        tested["tests"] = {"sections": [{"step": {"id": "F1.1", "title": "x"}, "state": "failed", "attempts": [{"n": 1, "state": "failed", "counts": {"total": 2, "failed": 1}, "groups": []}]}],
+                           "failedTotal": 1, "runningTotal": 0}
+        for phase in (tested.get("progress") or {}).get("phases", [])[:1]:
+            for step in phase.get("steps", [])[:1]:
+                step["tests"] = {"state": "failed", "attempt": 1, "counts": {"total": 2, "failed": 1}}
+        fixtures["with-tests-field"] = tested
         head = HARNESS[:HARNESS.index("  const F = input.fixtures")]
         tail = """
   const res = {};
   for (const [name, d] of Object.entries(input.fixtures)) {
     try { const m = mount(d, { now: input.now[name] }); res[name] = { ok: true, acts: m.root.querySelectorAll('#acts .act').length,
       stages: m.root.querySelectorAll('#acts .stage').length, newTab: !!m.root.querySelector('#tab-questions'), parseWarn: !!m.root.querySelector('#parseWarn'),
-      commitsBtn: !!m.root.querySelector('#commitsBtn'), ahead: (m.root.querySelector('#meta .ahead-chip') || {}).textContent || null }; m.board.destroy(); }
+      commitsBtn: !!m.root.querySelector('#commitsBtn'), testsTab: !!m.root.querySelector('#tab-tests'), stbar: m.root.querySelectorAll('.stbar').length, ahead: (m.root.querySelector('#meta .ahead-chip') || {}).textContent || null }; m.board.destroy(); }
     catch (e) { res[name] = { error: String(e && e.stack || e) }; }
   }
   process.stdout.write(JSON.stringify({ res, violations }));
@@ -2155,7 +2231,7 @@ class OldRendererOnNewJson(unittest.TestCase):
             with self.subTest(fixture=name):
                 self.assertTrue(got.get("ok"), got)
                 self.assertGreaterEqual(got["acts"], 1)
-                self.assertFalse(got["newTab"] or got["parseWarn"] or got["commitsBtn"], "the old renderer knows no new elements")
+                self.assertFalse(got["newTab"] or got["parseWarn"] or got["commitsBtn"] or got["testsTab"] or got["stbar"], "the old renderer knows no new elements")
         self.assertEqual(out["res"]["with-unpushed-commit-list"]["ahead"], "3 niewypchnięte", "the old badge is unchanged")
 
 

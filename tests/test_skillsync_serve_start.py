@@ -17,7 +17,8 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests"))
 
 from skillsync_workflow import dashboard_token  # noqa: E402
-from serve_start import ATTEMPTS, bind_free, kill_tree, lost_bind, own_state, start_serve, state_snapshot, stop_serve  # noqa: E402
+import serve_start
+from serve_start import ATTEMPTS, bind_free, kill_tree, lost_bind, own_state, require_isolated_state, start_serve, state_snapshot, stop_serve  # noqa: E402
 
 
 class OwnState(unittest.TestCase):
@@ -81,6 +82,28 @@ class OwnState(unittest.TestCase):
         path = next(iter(before))
         os.utime(path, ns=(before[path] + 10**9, before[path] + 10**9))   # the new server rewrites the same file
         self.assertTrue(own_state(self.env, self.proc, 5190, self.root, self.started, windows=True, before=before))
+
+
+class RequireIsolatedState(unittest.TestCase):
+    """180-W: on macOS the server must get its own `HOME`, on Windows its own `LOCALAPPDATA` (Linux: `XDG_DATA_HOME` is enough)."""
+
+    def refused(self, platform, env):
+        case = unittest.TestCase()
+        with mock.patch.object(serve_start, 'sys', SimpleNamespace(platform=platform)):
+            try:
+                require_isolated_state(case, env)
+            except AssertionError:
+                return True
+        return False
+
+    def test_the_real_variable_of_the_system_is_refused_and_a_moved_one_passes(self):
+        for platform, name in (('darwin', 'HOME'), ('win32', 'LOCALAPPDATA')):
+            real = os.environ.get(name) or '/real'
+            with self.subTest(platform=platform), mock.patch.dict(os.environ, {name: real}):
+                self.assertTrue(self.refused(platform, {name: real}))     # the real one
+                self.assertTrue(self.refused(platform, {}))               # none given: inherits the real one
+                self.assertFalse(self.refused(platform, {name: '/moved/elsewhere'}))
+        self.assertFalse(self.refused('linux', {}))                       # Linux: XDG_DATA_HOME decides, nothing to demand here
 
 
 class KillTree(unittest.TestCase):

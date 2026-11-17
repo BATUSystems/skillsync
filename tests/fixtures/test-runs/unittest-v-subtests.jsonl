@@ -1,0 +1,10 @@
+{"meta": {"tool": "unittest", "version": "Python 3.14.10 (unittest)", "command": ["python3", "-m", "unittest", "-v", "test_subtests"], "exit": 1, "merged": false, "env": {"LANG": "pl_PL.UTF-8"}, "note": "subTest: parent line without a result, then the failing sub-test line", "scrubbed": "paths, host and user names are replaced", "format": "one record per chunk read from the pipe: t = seconds since the start, fd = out|err, data = the text of the chunk"}}
+{"t": 0.049, "fd": "err", "data": "test_sub (test_subtests.SubTests.test_sub) ... "}
+{"t": 0.049, "fd": "err", "data": "\n  test_sub (test_subtests.SubTests.test_sub) (i=1) ... FAIL\n"}
+{"t": 0.049, "fd": "err", "data": "test_sub_named (test_subtests.SubTests.test_sub_named) ... "}
+{"t": 0.049, "fd": "err", "data": "ok\n"}
+{"t": 0.049, "fd": "err", "data": "\n======================================================================\n"}
+{"t": 0.049, "fd": "err", "data": "FAIL: test_sub (test_subtests.SubTests.test_sub) (i=1)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"<root>/py/test_subtests.py\", line 8, in test_sub\n    self.assertNotEqual(i, 1)\n    ~~~~~~~~~~~~~~~~~~~^^^^^^\nAssertionError: 1 == 1\n\n"}
+{"t": 0.049, "fd": "err", "data": "----------------------------------------------------------------------\nRan 2 tests in 0.001s\n"}
+{"t": 0.049, "fd": "err", "data": "\n"}
+{"t": 0.049, "fd": "err", "data": "FAILED (failures=1)\n"}

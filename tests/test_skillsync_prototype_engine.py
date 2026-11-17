@@ -23,6 +23,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from skillsync_workflow import prototype as engine  # noqa: E402
 from skillsync_workflow import prototype_server as server  # noqa: E402
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child  # noqa: E402
 
 
 def sha256(path):
@@ -49,7 +53,7 @@ def find_node():
 # Kopia: tests/fixtures/prototype/engine-v2/ (SOURCE.md). Strona Pythona: skillsync_workflow/prototype_server.py.
 
 ENGINE_V2_DIR = Path(__file__).resolve().parent / 'fixtures' / 'prototype' / 'engine-v2'
-ENGINE_V2_SHA256 = 'e936940d81f8f409ab2ae487f4a792a9e77c2016d9dfb4f330cd008cc126f990'
+ENGINE_V2_SHA256 = '81e88d7190b91729dee518ab32c7d3348970a098e70903c10997691838a3305d'
 REFRESH_V2 = 'Odśwież kopię wg tests/fixtures/prototype/engine-v2/SOURCE.md i zaktualizuj ENGINE_V2_SHA256.'
 ENGINE_V2_PATH_ENV = 'SKILLSYNC_PROTOTYPE_ENGINE_V2_PATH'
 DIFF_SEEDS = (20261104, 7, 1234567, 99, 424242, 31337)
@@ -624,7 +628,7 @@ class EngineV2ViewModeTests(unittest.TestCase):
         self.addCleanup(shutil.rmtree, directory, ignore_errors=True)
         modules = {}
         for name, text in (('server_control', source), ('server_mutant', source.replace(PY_VIEW_RULE, PY_VIEW_RULE_MUTANT))):
-            path = Path(directory) / (name + '.py')
+            path = child(Path(directory), name + '.py')
             path.write_text(text, encoding='utf-8')
             spec = importlib.util.spec_from_file_location(name, path)
             module = importlib.util.module_from_spec(spec)
@@ -2564,7 +2568,7 @@ class EngineV2WritingTests(unittest.TestCase):
         cls.engine_js = install_engine_v2(cls.tmp)
         if cls.node:
             def copy_to(name, transform=None):
-                directory = Path(cls.tmp) / name
+                directory = child(Path(cls.tmp), name)
                 directory.mkdir()
                 return install_engine_copy(directory, engine_v2_js() if name == 'hooked' else ENGINE_V2_PREV_JS, transform)
             cls.hooked = copy_to('hooked', expose_writing_internals)

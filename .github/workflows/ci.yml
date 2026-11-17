@@ -29,9 +29,11 @@ jobs:
     # v1.0.0 gate: Ubuntu and macOS block. Native Windows stays in the matrix for visibility but does not block (support: a later release).
     # Python 3.14 is informational (continue-on-error), 3.13 blocks like 3.11 and 3.12.
     continue-on-error: ${{ matrix.os == 'windows-latest' || matrix.python == '3.14' }}
-    # Native Windows needs about 40 minutes for the whole suite, so it gets 60; macOS runs 20-28 minutes (the 4 jobs of the
-    # v1.3.0 main run: 1187-1662 s of tests) against the old limit of 30, so it gets 45 (the job names stay: the ruleset binds required checks by name).
-    timeout-minutes: ${{ matrix.os == 'windows-latest' && 60 || matrix.os == 'macos-latest' && 45 || 30 }}
+    # Time limits per system, from the 84 `test` jobs of five runs (main after 1.6.0, 1.6.1 and 1.7.0, the PRs of 1.6.1 and 1.7.0): the longest job
+    # took Windows 54.5 min, macOS 38.0 min and Ubuntu 29.6 min (the whole suite is about 5630 tests and grows with every release; the same commit
+    # varies by up to 1.5x between runners). The limit is about 1.4-1.6 times the longest job so that a slower runner or a few new modules do not
+    # cancel a healthy run, yet a hung job is still stopped: Windows 75, macOS 60, Ubuntu 45 (the job names stay: the ruleset binds required checks by name).
+    timeout-minutes: ${{ matrix.os == 'windows-latest' && 75 || matrix.os == 'macos-latest' && 60 || 45 }}
     strategy:
       fail-fast: false
       matrix:
@@ -108,7 +110,10 @@ jobs:
       - name: Unit tests
         run: |
           set -o pipefail
-          $PY -m unittest discover -s tests -p 'test_skillsync*.py' -v 2>&1 | tee "$RUNNER_TEMP/unittest.log"
+          # The 30 slowest tests go to the end of every log (`--durations` exists from Python 3.12); the skips check ignores those lines.
+          DURATIONS=""
+          if $PY -c 'import sys; sys.exit(0 if sys.version_info >= (3, 12) else 1)'; then DURATIONS="--durations 30"; fi
+          $PY -m unittest discover -s tests -p 'test_skillsync*.py' -v $DURATIONS 2>&1 | tee "$RUNNER_TEMP/unittest.log"
       - name: Skips against the baseline
         # Exit 0 = within the baseline or key `null` (warning until the first run of the runner is measured).
         # The Chrome E2E tests skip here (SKILLSYNC_E2E_CHROME is not set): they run in the `e2e` job.

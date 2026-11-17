@@ -109,7 +109,7 @@ Pomoc: `skillsync <komenda> --help`.
 |---|---|
 | `init [katalog] [--id ID] [--json]` | tworzy warstwę personal (odpowiednik `layers init --kind personal`) |
 | `import <projekt> [--dry-run] [--layer ID=PATH] [--to-layer ID]` | kopiuje skille i instrukcje projektu do warstwy (domyślnie personal), tworzy manifest, jeśli go brak |
-| `link [path] [--dry-run] [--layer ID=PATH]` | warstwy → projekt: skille, instrukcje, role i pliki hostów (pełna lista: [architecture](architecture.md)) |
+| `link [path] [--dry-run] [--layer ID=PATH]` | warstwy → projekt: skille, instrukcje, role i pliki hostów (pełna lista: [architecture](architecture.md)); w projekcie z Claude Code zapisuje też hak PreToolUse na `Bash` (`.claude/hooks/guard-commands.py` odmawia trwałego usunięcia, `guard-tests.py` z `test-tools.json` ostrzega o szerokim biegu testów poza `skillsync test-run`) i jego wpis w `.claude/settings.local.json`, według kluczy `hooks.guard_delete`, `hooks.guard_tests`, `hooks.test_wrappers` i `hooks.wide_modules` ([manifest](manifest.md)); wpis i skrypty znikają tylko wtedy, gdy WYŁĄCZONE są oba `hooks.guard_delete` i `hooks.guard_tests`; granice ostrzeżenia: [test-run](../library/skills/workflow/references/test-run.md) |
 | `instructions [path] [--dry-run] [--layer ID=PATH]` | przebudowuje instrukcje projektu (`.github/copilot-instructions.md`, `CLAUDE.md`, `AGENTS.md`, artefakty Codexa) |
 | `push [path] [--dry-run] [--to-layer ID] [--layer ID=PATH]` | projekt → warstwy właściciela plików (szczegóły: [layers-authoring](layers-authoring.md)) |
 | `pull [path]` | aktualizuje wszystkie warstwy (`layers update`), potem `link` |
@@ -139,7 +139,7 @@ Każde pole ścieżki w raportach JSON ma na Windows ukośnik `/`: `root` i `pro
 
 | Komenda | Skutek |
 |---|---|
-| `doctor [path] [--layer ID=PATH] [--json]` | statyczna walidacja konfiguracji; `error` → FAIL (1), same ostrzeżenia → PASS (0), nieczytelny config albo config z kluczem `library:` → BLOCKED (2). Nie testuje aplikacji |
+| `doctor [path] [--layer ID=PATH] [--json]` | statyczna walidacja konfiguracji; `error` → FAIL (1), same ostrzeżenia → PASS (0), nieczytelny config albo config z kluczem `library:` → BLOCKED (2). Nie testuje aplikacji; raportuje też stan haka usuwania i haka ostrzegającego o testach (nieobecny, nieaktualny wobec manifestu, brak `guard-tests.py` lub `test-tools.json`, aktywny z trybem) jako ostrzeżenie albo `info` (zob. `link`) |
 | `route`, `readiness`, `review`, `validate`, `smart-test`, `guard` | dobór kontekstu, gotowość planu, checklista review, plan i wykonanie kontroli, strażnik konwencji; `review` zwraca też `profile` (`docs`, gdy zmiana dotyka wyłącznie dokumentacji (`docs/**` bez plików kodu), plików `.md` skilli, `CHANGELOG*` albo notatek wydania, `prototyp`, gdy zmiana mieści się w całości w katalogu prototypu (`prototype.root` z manifestu, domyślnie `docs/prototypes`), inaczej `kod`; `--profile kod|docs|prototyp` wymusza profil), `docsFiles` i `prototypeFiles`; pozycje listy prototypu dostaje także zmiana mieszana, która dotyka plików prototypu; ścieżki i pozycje docs nadpisują `workflow.review.docs_paths` i `workflow.review.docs_checklist`, ścieżki prototypu `workflow.review.prototype_paths`, a listę `workflow.review.prototype` (jedno źródło: `library/workflow/defaults.yaml`) rozszerzają warstwy, `workflow/projects/<slug>.yaml` i manifest: pozycje są dopisywane w kolejności rdzeń, warstwy, projekt, manifest, równe dosłownie pomijane (zostaje pierwsza), a pozycji rdzenia nie da się usunąć |
 | `map`, `suggest`, `knowledge init`, `status`, `plan`, `dispatch` | mapa repo, sugestie skilli, szkielet `docs/domain` i `docs/lessons`, odczyt stanu, zmiana statusu planu, stan dyspozycji |
 
@@ -177,7 +177,7 @@ spójność instrukcji z plikami oraz budżety bajtów.
 
 | Komenda | Skutek |
 |---|---|
-| `checkpoint`, `resume` | zapis i sprawdzenie kroku przebiegu; `--manifest PLIK` bierze manifest spoza repozytorium (np. publiczny rdzeń bez `.github/.skillsync.yaml`), a korzeń projektu i zapis `.skillsync/runs/` zostają w `<path>`; bez flagi zachowanie bez zmian; zły plik to błąd z nazwą flagi |
+| `checkpoint`, `resume` | zapis i sprawdzenie kroku przebiegu (krok `[T]` z `--status PASS` wymaga dowodu z `test-run` albo `--no-tests POWÓD`); `--manifest PLIK` bierze manifest spoza repozytorium (np. publiczny rdzeń bez `.github/.skillsync.yaml`), a korzeń projektu i zapis `.skillsync/runs/` zostają w `<path>`; bez flagi zachowanie bez zmian; zły plik to błąd z nazwą flagi |
 | `metrics`, `retro`, `retro-decide`, `benchmark` | pomiary, raport retrospektywy, rejestracja decyzji, benchmark narzędzi |
 
 Szczegóły: [workflow](workflow.md).
@@ -187,34 +187,62 @@ Szczegóły: [workflow](workflow.md).
 | Komenda | Skutek |
 |---|---|
 | `dashboard show <projekt> [--json] [--plan <rel>]` | stan projektu jako JSON `schema: 1` ([dashboard-contract](dashboard-contract.md)); tylko odczyt |
-| `dashboard serve <projekt> [--port 5140] [--read-port 5140 --approve-port 5141] [--read-bind ADR] [--approve-bind ADR] [--allow-proxy-headers] [--prototype-port N] [--host H] [--approve-host H] [--read-host H] [--no-approvals] [--plan <rel>] [--session-url URL]` | strona statusu z żywym odświeżaniem (SSE) i przyciskami zgód; jedno gniazdo (`--port`, tryb bez zmian) albo dwa gniazda: odczyt i zgody (niżej) |
-| `dashboard url <projekt> [--port N] [--host NAZWA] [--read] [--json]` | adres z tokenem zgód (`http://127.0.0.1:<port>/#zgoda=<token>`) działającego `dashboard serve` projektu (z pliku stanu w katalogu danych maszyny); `--read`: adres gniazda odczytu, bez fragmentu i tokenu; `BLOCKED` (exit 2): `server_not_running`, `approvals_disabled` (serwer z `--no-approvals`), `ambiguous_server`, `host_not_allowed`, `invalid_project`; zob. [dashboard-contract](dashboard-contract.md) |
+| `test-run <projekt> [--run ID] [--step ID] [--junit PLIK\|KATALOG ...] [--allow-no-count POWÓD] [--allow-skips] [--format auto\|none\|NAZWA] [--timeout S] -- <polecenie...>`; `test-run <projekt> --import PLIK --step ID --source-sha SHA [--run ID]` | uruchamia komendę testów projektu przez wspólny runner i zapisuje jej zdarzenia dla strony statusu (`.skillsync/runs/<run>/tests/<krok>/<n>.jsonl`); wyjście i kod wyjścia komendy bez zmian (124 przy limicie czasu, 127 brak komendy); `PASS` tylko przy znanej dodatniej liczbie wykonanych testów (zasada `validate`), lista testów z raportu JUnit XML lub TRX; krok bez `--step` = jedyny „w toku” z checkpointów (kilka = BLOCKED, 2); `--run` bez flagi = jedyny przebieg projektu; `--format` wybiera adapter stanu pojedynczych testów: `auto` (domyślnie, po narzędziu rozpoznanym w poleceniu także za `npx`, `timeout`, `env`, `python -m` i podobnymi) pisze na stderr przed startem polecenia jedną linię: `test-run: adapter <nazwa> (live <running|completion|counts>)` (po średniku bywa podpowiedź, jak uzyskać listę pojedynczych testów, np. `--reporter=verbose` dla Vitest) albo `test-run: no adapter for <narzędzie> (known: ...); pass --format <nazwa>, or --format none to silence`; `none` wyłącza adapter, nazwa wymusza go (`angular`, `cargo-test`, `cargo-test-serial`, `cypress`, `dotnet`, `karma`, `playwright`, `pytest`, `unittest`, `vitest`; nieznana nazwa to błąd z listą, np. `--format ?`; opis w [test-adapters](test-adapters.md)); `--timeout S` to limit czasu w sekundach (domyślnie 3600); bez adaptera bieg jest zapisany z liczników podsumowania i raportu; `--import PLIK --source-sha SHA` przenosi plik zdarzeń zapisany na innej maszynie (walidacja, bajty bez zmian, kopia bez `.git` podaje commit) |
+| `dashboard serve <projekt> [--port N] [--read-port N --approve-port M] [--read-bind ADR] [--approve-bind ADR] [--allow-proxy-headers] [--prototype-port N] [--host H] [--approve-host H] [--read-host H] [--no-approvals] [--plan <rel>] [--session-url URL] [--poll S] [--verbose]` | strona statusu z żywym odświeżaniem (SSE) i przyciskami zgód. Bez flag portów: dwa gniazda, odczyt na `5140` (wszystkie interfejsy) i zgody na `5141` (tylko ta maszyna); `--port N`: jedno gniazdo (tryb jednego portu); `--read-port`/`--approve-port`: jawne numery (niżej); `--poll S`: odstęp sprawdzania zmian plików (domyślnie 1, najmniej 0,2); `--verbose`: log każdego żądania na stderr |
+| `dashboard url <projekt> [--port N] [--host NAZWA] [--read] [--lan] [--json]` | adres z tokenem zgód (`http://127.0.0.1:<port>/#zgoda=<token>`) działającego `dashboard serve` projektu (z pliku stanu w katalogu danych maszyny); `--read`: adres gniazda odczytu, bez fragmentu i tokenu; `--lan`: adresy gniazda odczytu dla innych urządzeń, jeden na linię (`http://<IP>:<port>/`; w `--json` pole `lanUrls`); `BLOCKED` (exit 2): `server_not_running`, `approvals_disabled` (serwer z `--no-approvals`), `ambiguous_server`, `host_not_allowed`, `invalid_project`, `read_not_exposed` (gniazdo odczytu słucha tylko na loopbacku, `--lan`); zob. [dashboard-contract](dashboard-contract.md) |
 | `dashboard metrics <projekt> <run-id> [--json] [--plan <rel>]` | czasy podkroków `Fn.k`, liczby rund i porażek przebiegu; podkrok bez danych jest oznaczony jawnie |
 | `approvals record <projekt> --word "GO plan\|GO implement\|CP\|READY" --run <run-id> --source cli\|ide [--sha SHA] [--file PLIK] [--target X] [--branch Y]` | zapis zgody użytkownika w `.skillsync/runs/<run-id>/approvals.jsonl` |
 | `approvals wait …` | czekanie na zgodę (odczyt tego samego pliku), opis w [workflow](workflow.md) |
 
-- `serve` wiąże się z `127.0.0.1`; port wybiera się per projekt (domyślnie 5140, dozwolone 5100–5199), żeby strony różnych
-  projektów nie kolidowały. Nagłówek `Host` jest sprawdzany na wszystkich endpointach: odczyt spoza loopbacku (tunel, LAN)
-  wymaga `--approve-host <nazwa>` (odczyt i zgody) albo `--read-host <nazwa>` (tylko odczyt z przeglądarki: widzowie przez tunel, także podgląd `/api/doc` (maskowany, ale maskowanie jest heurystyką); nie chroni przed klientem podrabiającym `Host`, nieufni widzowie = `--no-approvals`; `POST
+- Bez flag portów `serve` uruchamia tryb dwóch gniazd: odczyt na `5140` na wszystkich interfejsach (`0.0.0.0`), zgody na
+  `5141` tylko na `127.0.0.1` (zob. niżej). Port wybiera się per projekt (dozwolone 5100–5199), żeby strony różnych
+  projektów nie kolidowały. Nagłówek `Host` jest sprawdzany na wszystkich endpointach. Gniazdo odczytu przyjmuje loopback,
+  nazwy z `--approve-host` i `--read-host`, literały IP interfejsów tej maszyny oraz własną nazwę maszyny
+  (`socket.gethostname()`, jej krótką formę i `<krótka>.local`; dopasowanie tekstowe, bez DNS; tylko odczyt).
+  Gniazdo zgód przyjmuje loopback, nazwy z `--approve-host` i literały IP interfejsów tej maszyny; nazwy maszyny nie.
+  Odczyt spoza loopbacku w trybie jednego portu (`--port`) wymaga `--approve-host <nazwa>` (odczyt i zgody) albo
+  `--read-host <nazwa>` (tylko odczyt z przeglądarki: widzowie przez tunel, także podgląd `/api/doc` (maskowany, ale maskowanie jest heurystyką); nie chroni przed klientem podrabiającym `Host`, nieufni widzowie = `--no-approvals`; `POST
   /api/approve` = 403; obie flagi powtarzalne, nazwa bez portu); widok bez zapisu zgód dla wszystkich to `--no-approvals`.
   Zgody zapisuje serwer w tym samym
   procesie (bez podprocesu `skillsync`). Model zaufania: [domain/dashboard-server.md](domain/dashboard-server.md).
-- Tryb dwóch gniazd: `serve --read-port N --approve-port M` uruchamia dwa gniazda HTTP nad jednym stanem projektu (jeden
-  watcher, jedno Ctrl+C). Rola wynika z **portu**, nie z nagłówka `Host`. Gniazdo odczytu (`--read-port N`, przyjęty numer 5140)
-  ma strony i dane, bez trasy zgód (`POST /api/approve` = 404) i bez tokenu. Gniazdo zgód (`--approve-port M`, przyjęty
-  numer 5141; flagi nie mają wartości domyślnej, numer podaje się jawnie) wymaga tokenu, ścisłego `Origin`, odrzuca nagłówki pośrednika (`Forwarded`, `X-Forwarded-*`, `Via` i inne) i
-  zapisuje w `approvals.jsonl`, skąd przyszła zgoda (`via`). Samo `--read-port` albo samo `--approve-port` uruchamia
-  jedno gniazdo. `--port` nie łączy się z tymi flagami (BLOCKED, exit 2). Kolejność odmów, `Origin` i reguła `Host`:
+- Tryb dwóch gniazd: `serve` bez flag portów albo z `--read-port N --approve-port M` uruchamia dwa gniazda HTTP nad jednym
+  stanem projektu (jeden watcher, jedno Ctrl+C). Rola wynika z **portu**, nie z nagłówka `Host`. Gniazdo odczytu ma strony
+  i dane, bez trasy zgód (`POST /api/approve` = 404) i bez tokenu. Gniazdo zgód wymaga tokenu, ścisłego `Origin`, odrzuca
+  nagłówki pośrednika (`Forwarded`, `X-Forwarded-*`, `Via` i inne) i zapisuje w `approvals.jsonl`, skąd przyszła zgoda
+  (`via`). Numery bez flag portów: odczyt 5140, zgody 5141; przy jawnych `--read-port`/`--approve-port` podajesz numery sam
+  (flagi nie mają wartości domyślnej). Samo `--read-port` albo samo `--approve-port` uruchamia jedno gniazdo. `--port` nie
+  łączy się z tymi flagami (BLOCKED, exit 2). Kolejność odmów, `Origin` i reguła `Host`:
   [dashboard-contract](dashboard-contract.md), sekcja „Serwer”.
-- Nasłuch w trybie dwóch gniazd: oba domyślnie na `0.0.0.0`, z ostrzeżeniem w konsoli dla każdego gniazda poza
-  loopbackiem. `--read-bind` i `--approve-bind` zawężają każde gniazdo osobno (`127.0.0.1` = tylko ta maszyna), `--host`
-  ustawia oba. Tryb `--port` nasłuchuje na `127.0.0.1`. Ruch jest nieszyfrowany: token zgód idzie zwykłym
-  HTTP. W nieufnej sieci uruchom z `--approve-bind 127.0.0.1` albo wejdź tunelem SSH (`ssh -L 5141:127.0.0.1:5141 <host>`).
-  Tunel do strony zawsze kieruj na port odczytu, nigdy na port zgód. Ryzyko: [workflow](workflow.md), sekcja „Strona statusu”.
-- Uruchamianie dwóch gniazd: porty 5140 i 5141 muszą być wolne. Zatrzymaj wcześniejsze `dashboard serve` tego samego
-  hosta (także te z `--no-approvals`), zanim uruchomisz tryb dwóch gniazd. Jedno wywołanie z dwoma portami zastępuje
-  dwie instancje (jedna z `--no-approvals`); wywołania z `--port` działają bez zmian. `--allow-proxy-headers` działa
-  tylko z `--approve-port`; `--read-host '*'` tylko na gnieździe odczytu.
+- Nasłuch w trybie dwóch gniazd: odczyt domyślnie na `0.0.0.0` (każde urządzenie w sieci lokalnej), zgody domyślnie na
+  `127.0.0.1`. Odczyt: `--read-bind ADR` (flaga), potem `--host H` (tylko z `--read-port`, tylko odczyt; `--host ''` = wszystkie interfejsy), potem
+  `dashboard:` w manifeście projektu, potem w configu maszyny, na końcu `0.0.0.0`. Zgody: `--approve-bind ADR`, potem
+  `dashboard:`, na końcu `127.0.0.1`; `--host` nie zmienia gniazda zgód. Adres `ADR`/`H`: literał IP, `localhost`, `0.0.0.0`
+  albo `::`. Tryb `--port` nasłuchuje na `127.0.0.1`, chyba że podano `--host`. Przy odczycie poza loopbackiem konsola wypisuje
+  jedno ostrzeżenie o dostępności dla urządzeń w sieci; zgody z innego urządzenia wymagają `--approve-bind 0.0.0.0` (lub
+  ustawienia), bo token idzie nieszyfrowanym HTTP. W nieufnej sieci zawęź odczyt do tej maszyny (`--read-bind 127.0.0.1`
+  albo `dashboard.local_only: true`). Port odczytu (5140) nie ma trasy zgód: tunel na zgody to jawne
+  `--approve-port M` i tunel na port M (`ssh -L M:127.0.0.1:M <host>`; `--approve-host` tylko dla nazwy z tunelu odwrotnego albo bramki); tunel do strony
+  zawsze kieruj na port odczytu. Ryzyko: [workflow](workflow.md), sekcja „Strona statusu”.
+- Stary tryb za tunelem: `serve --port 5140 --approve-host <nazwa tunelu>` (jeden port z bramką `Host`, jak do 1.7.0).
+  `--host` i `--approve-host` bez portów są BLOCKED z podpowiedzią, bo zmieniłyby znaczenie.
+- Ustawienie `dashboard:` (klucze `local_only: true|false`, `read_bind`, `approve_bind`) jest w configu maszyny
+  i w manifeście projektu, zob. [configuration](configuration.md) i [manifest](manifest.md#sekcja-dashboard).
+  Nieznany klucz: `doctor` ostrzega, `serve` BLOCKED z nazwą klucza; zła wartość: BLOCKED z nazwą klucza (nigdy z wartością).
+- Komunikaty startowe (konsola): przy odczycie poza loopbackiem jedno ostrzeżenie o dostępności dla każdego urządzenia w
+  sieci lokalnej (plany, specyfikacje, wyniki, sekrety zredagowane heurystycznie, ale wyniki testów jawne, bez maski; ruch nieszyfrowany) z podpowiedzią
+  `--read-bind 127.0.0.1` albo `dashboard.local_only: true`; jedno zdanie o zmianie domyślnego nasłuchu (od 1.8.0) i powrocie
+  flagą `--read-bind 127.0.0.1`, wypisywane tylko przez wydania przed 1.10; adresy IPv4 maszyny po jednym w linii (sieć
+  tylko-IPv6 ich nie dostanie) plus adres po nazwie maszyny (`http://<nazwa>.local:5140/`); nazwa maszyny w komunikacie;
+  linia o zgodach tylko lokalnych z podpowiedzią `--approve-bind 0.0.0.0`. Gdy oba gniazda słuchają na loopbacku, konsola
+  pisze, że strona jest tylko na tej maszynie. Na Windows, przy pierwszym nasłuchu na `0.0.0.0`, konsola dodaje linię o Zaporze
+  Windows; macOS z zaporą aplikacji może też zapytać o dostęp przy pierwszym nasłuchu.
+- Uruchamianie dwóch gniazd: porty 5140 i 5141 muszą być wolne. Przed bindem każdy port jest sprawdzany połączeniem na loopback
+  (na każdym systemie); gdy coś już odpowiada, start kończy się BLOCKED z numerem portu, flagami `--read-port`/`--approve-port`
+  i właścicielem (projekt z plików stanu albo „inny proces”); serwer nie przechodzi na inny port. Zatrzymaj
+  wcześniejsze `dashboard serve` tego samego hosta (także te z `--no-approvals`), zanim uruchomisz tryb dwóch gniazd.
+  Jedno wywołanie z dwoma portami zastępuje dwie instancje (jedna z `--no-approvals`); wywołania z `--port` działają bez
+  zmian. `--port` z `--read-bind`, `--approve-bind` albo `--allow-proxy-headers` = BLOCKED. `--allow-proxy-headers` działa
+  tylko w trybie z gniazdem zgód (domyślnym albo z `--approve-port`); `--read-host '*'` tylko na gnieździe odczytu.
 - `approvals record` jest jedynym zapisem zgód: blokada plikowa, odmowa duplikatu (to samo słowo i `sha` w przebiegu), maskowanie
   sekretów. Słowo wpisuje użytkownik; agent tej komendy nie wywołuje.
 - Kody: `0` = `PASS`, `2` = `BLOCKED` (zły argument, odmowa zapisu, brak projektu lub przebiegu, port zajęty); `approvals wait`
@@ -229,6 +257,8 @@ Szczegóły: [workflow](workflow.md).
 `skillsync prototype init|sync|index|list|ids|migrate|serve|user|login-link|iterate|restore|writing|accept|gate|comments|triage|decide|resolve|merge-comments|question <projekt> …`
 
 Komenda działa na klikalnych prototypach HTML w repo projektu. Opis akcji, kodów i formatu: [prototypes](prototypes.md).
+
+`prototype serve <projekt> [--layer ID=PATH] [--assets DIR] [--json] [--host ADR] [--port N] [--users PLIK] [--secure-cookies] [--trust-proxy] [--no-source-writes] [--login-to-view] [--demo]`: serwer prototypów ze wspólnym API komentarzy (na pierwszym planie, Ctrl+C zatrzymuje). `--host`: adres nasłuchu (domyślnie `127.0.0.1`); `--port`: port (domyślnie `prototype.port` z manifestu, bez klucza 4445; `0` = dowolny wolny); `--users`: plik użytkowników względem projektu; `--secure-cookies`: ciasteczko sesji z `Secure` (za TLS); `--trust-proxy`: limit logowania liczony z `X-Forwarded-For`; `--no-source-writes`: serwer nigdy nie zapisuje źródeł prototypów (przywracanie ekranów); `--login-to-view`: logowanie także do oglądania. `--demo`: pokaz tylko do odczytu bez kont (bez logowania, komentarzy, wątków, akceptacji i odpowiedzi eksperta; serwer odmawia każdego zapisu, istniejące komentarze są ukryte, strony są jawne dla każdego, kto dotrze do adresu); domyślny nasłuch pokazu to `0.0.0.0` (każdy interfejs), a `--host 127.0.0.1` zawęża go do tej maszyny. `--demo` z `--login-to-view` kończy się `BLOCKED` (exit 2: pokaz nie ma kont ani logowania); `--users`, `--secure-cookies` i `--trust-proxy` przy `--demo` są ignorowane z notą. Model zagrożeń pokazu: [security](security.md#serwer-prototypów-pytania-do-eksperta).
 `list --json`: pole `acceptance` = `{screens, accepted, stale, perScreen}` (`null` przy v1 i bez `comments.json`); `perScreen` to `[{id, state}]` dla każdego ekranu w kolejności dokumentu, `state` = `accepted` | `stale` | `pending` (accepted + stale + pending = `screens`).
 
 `prototype gate <projekt> --plan <plan> [--phase <Fn>]`: bramka akceptacji prototypu. `--phase` jest dozwolone tylko z `--plan` (ze slugami: BLOCKED z JSON-em, kod wyjścia 2)
@@ -266,6 +296,8 @@ przebiegu (bez serwera). Odpowiadać może tylko człowiek z rolą `expert` na s
 Model, limity i strona: [prototypes](prototypes.md#pytania-do-eksperta), poufność: [security](security.md).
 
 ```bash
+skillsync prototype serve . --demo                                                       # pokaz tylko do odczytu bez kont, każdy interfejs (--host 127.0.0.1 zawęża)
+skillsync prototype sync . --check                                                       # FAIL (kod 1): nieaktualne pliki albo brak wymaganych tokenów motywu (pole `missing`)
 skillsync prototype user add . ewa.ekspert@example.com --role expert --password-prompt   # konto eksperta
 skillsync prototype user roles . ewa.ekspert@example.com --role expert --role commenter  # zastępuje zbiór ról
 skillsync prototype question url .                                                       # adres strony i liczba kont expert

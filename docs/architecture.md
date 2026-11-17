@@ -101,7 +101,7 @@ Kolumna „właściciel” określa, co generator może nadpisać lub usunąć.
 | Copilot | `.github/copilot-instructions.md` | `_base` i szablon | wygenerowany, nie edytować |
 | Claude Code | `CLAUDE.md` | nagłówek generatora, te same `_base` i szablon | ręczny plik bez nagłówka jest pomijany z ostrzeżeniem |
 | Claude Code | `.claude/agents/<rola>.md`, `.claude/skills/<skill>` | role i skille | tylko zarządzane pliki; własne pliki zostają |
-| Claude Code | `.claude/hooks/*.py`, `.claude/settings*.json` | kopie hooków; scalany wpis Stop | scalany tylko wpis Stop, reszta pliku zostaje; kopia zapasowa przed zapisem |
+| Claude Code | `.claude/hooks/*.py`, `.claude/settings*.json` | kopie hooków; scalane wpisy Stop (zamknięcie planu) i PreToolUse (blokada trwałego usunięcia, `hooks.guard_delete`; ostrzeżenie o gołych testach, `hooks.guard_tests`) | scalane tylko własne wpisy, reszta pliku zostaje; kopia zapasowa przed zapisem; plik śledzony przez git nie jest zapisywany |
 | Claude Code | `.mcp.json` | `.vscode/mcp.json` albo domyślny serwer | wyłączany `mcp: false` |
 | Codex | `.agents/skills/<skill>`, `.codex/agents/<nazwa>.toml` | skille i role | generowane |
 | Codex | `.codex/config.toml`, `AGENTS.md` | tylko zarządzane bloki | reszta pliku zostaje; kopia zapasowa |

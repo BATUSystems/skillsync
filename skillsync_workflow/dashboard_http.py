@@ -18,6 +18,7 @@ application/json`, body <= 4096 bytes; `--no-approvals` turns it off. Standard l
 """
 from __future__ import annotations
 
+import errno
 import hmac
 import html
 import json
@@ -39,8 +40,11 @@ import yaml
 
 from . import __version__
 from . import dashboard as engine
+from . import dashboard_listen
 from . import dashboard_ports as ports
+from . import dashboard_tests
 from . import dashboard_token
+from . import test_events
 from . import stopsignal
 from . import status as status_core
 from .common import emit, load_layer_project, read_project, redact
@@ -79,7 +83,20 @@ PROTO_CACHE_S = 30
 AHEAD_CACHE_S = 10
 CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
        "connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
-HOST_REFUSED = "Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host)."
+HOST_REFUSED = "Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host)."   # a write from a host that may only read (the reason of `_approve_allowed`)
+
+
+def host_refused_message(role: str, host_header: str | None) -> str:
+    """The 403 text of a `Host` outside the list of THIS socket: names the flag that opens it for the socket and the `Host` of the request.
+    The name is cleaned before it goes into the answer (letters, digits, dot, colon, dash, underscore; everything else `?`; at most 64 characters),
+    so it cannot carry a control character, markup or a log injection; the answer is JSON with no page content."""
+    shown = re.sub(r"[^A-Za-z0-9._:-]", "?", request_host(host_header))
+    shown = (shown[:61] + "...") if len(shown) > 64 else (shown or "(brak)")
+    if role == ports.ROLE_READ:
+        return f"Gniazdo odczytu odpowiada tylko pod localhost, adresem IP tej maszyny, jej własną nazwą albo hostem z --read-host (nagłówek Host: {shown})."
+    if role == ports.ROLE_APPROVE:
+        return f"Gniazdo zgód odpowiada tylko pod localhost, adresem IP tej maszyny albo hostem z --approve-host (nagłówek Host: {shown})."
+    return f"Strona odpowiada tylko pod localhost albo hostem z --approve-host (odczyt i zgody) lub --read-host (tylko odczyt) (nagłówek Host: {shown})."
 TOKEN_HEADER = "X-Approve-Token"
 PROXY_REFUSED = "Zapis przez pośrednika (Forwarded, X-Forwarded-*, X-Real-IP) jest odrzucony; uruchom serwer z --allow-proxy-headers, jeśli to zaufany odwrotny proxy."
 TOKEN_REFUSED = "Brak albo zły token zgody: otwórz adres z konsoli serwera albo z `skillsync dashboard url`."
@@ -432,6 +449,13 @@ class Board:
                     paths.append(run)
                     paths.extend(run.glob("*.md"))
                     paths.append(run / RUN_APPROVALS)
+                    tests = run / "tests"   # the event files of the test runs (180-A): a new line refreshes the page
+                    if tests.is_dir() and not tests.is_symlink():
+                        paths.append(tests)
+                        for step in list(tests.iterdir())[:200]:
+                            if step.is_dir() and not step.is_symlink():
+                                paths.append(step)
+                                paths.extend(sorted((f for f in step.glob("*.jsonl") if f.stem.isascii() and f.stem.isdecimal()), key=lambda f: int(f.stem))[-10:])
         protos = self.root / engine.PROTOTYPES_DIR
         if protos.is_dir():
             paths.extend(protos.glob("*/prototype.json"))
@@ -669,7 +693,7 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
         if self.verbose:
             log(f"odmowa {self.command} {urlparse(self.path).path[:120]!r}: Host spoza listy ({host[:80]!r})")
         try:
-            self._json(403, {"error": HOST_REFUSED})
+            self._json(403, {"error": host_refused_message(self.role, self.headers.get("Host"))})
         except OSError:
             pass
         return True
@@ -677,13 +701,13 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
     def _host_allowed(self, host: str) -> bool:
         """May this `Host` open the page on this socket? Single-port: loopback, `--approve-host`, `--read-host` (as in 1.5.0). Two-port
         sockets add the IP literals of this machine (a phone opens `http://<IP>:<port>/` without being listed; a literal cannot come
-        from DNS rebinding) and differ by role: the read socket accepts `--read-host` (also `'*'`), the consent socket never does."""
+        from DNS rebinding) and, on the read socket only, the machine's own host name (`ports.own_names`, text match, no DNS) and differ by role: the read socket accepts `--read-host` (also `'*'`), the consent socket never does."""
         board = self.board
         if self.role == ports.ROLE_BOTH:
             return host in board.approve_hosts or host in board.read_hosts
         if host in board.approve_hosts or ports.is_local_ip(host):
             return True
-        return self.role == ports.ROLE_READ and (host in board.read_hosts or "*" in board.read_hosts)
+        return self.role == ports.ROLE_READ and (host in board.read_hosts or "*" in board.read_hosts or host in ports.own_names())
 
     def do_HEAD(self) -> None:  # noqa: N802
         self.do_GET()
@@ -709,7 +733,16 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
                     data["approvals"]["role"] = self.role
                     token_required = token_required and self.role == ports.ROLE_APPROVE
                 data["approvals"]["tokenRequired"] = token_required
-                return self._json(200, redact(data))  # the viewer sees the same content as the operator; secrets masked as in `dashboard show`
+                return self._json(200, dashboard_tests.finalize_status(data, test_events.mask_setting(self.board.manifest())))  # as `dashboard show`: the viewer sees what the operator sees; secrets masked except the raw `tests` (decision 6)
+            if route == "/api/tests":   # read-only on BOTH sockets, like /api/status (the same rule: no write route anywhere near it)
+                one = lambda name: (query.get(name) or [None])[0]
+                try:
+                    body = dashboard_tests.tests_response(self.board.root, one("run"), one("step"), one("attempt") or "0", one("group"), one("limit") or 500, one("offset") or 0)
+                except (ValueError, TypeError):
+                    body = None
+                if body is None:
+                    return self._json(404, {"error": "Brak takiego biegu testów."})
+                return self._json(200, dashboard_tests.finalize_response(body, test_events.mask_setting(self.board.manifest())))
             if route == "/api/doc":
                 doc = self.board.doc((query.get("path") or [None])[0])
                 if doc is None:
@@ -752,7 +785,7 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
         allowed = self.board.approve_hosts
         host = request_host(self.headers.get("Host"))
         strict = self.role == ports.ROLE_APPROVE   # the consent socket of the two-port mode: exact Origin, no intermediary headers
-        if host not in allowed and not (strict and self._host_allowed(host)):  # foreign Host: do_POST already refused it; --read-host: refused here, same message
+        if host not in allowed and not (strict and self._host_allowed(host)):  # foreign Host: do_POST already refused it; --read-host: refused here with the fixed HOST_REFUSED text (no name of the request)
             return HOST_REFUSED
         if self.headers.get("X-Status-Board") != "1":
             return "Brak nagłówka X-Status-Board."
@@ -867,18 +900,37 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
         self.wfile.flush()
 
 
+def _version_tuple(version: str) -> tuple[int, ...]:
+    parts = []
+    for piece in str(version).split(".")[:2]:
+        digits = "".join(ch for ch in piece if ch.isdigit())
+        parts.append(int(digits) if digits else 0)
+    return tuple(parts)
+
+
+def exclusive_option():
+    """`SO_EXCLUSIVEADDRUSE` on Windows, None elsewhere."""
+    return getattr(socket, "SO_EXCLUSIVEADDRUSE", None) if os.name == "nt" else None
+
+
 class Server(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = os.name != "nt"
     # Listen backlog: the default of 5 resets bursts of parallel clients (the same value as the prototype server).
     request_queue_size = 128
 
-    def __init__(self, address, handler):
+    def __init__(self, address, handler, exclusive: bool = False):
         if ":" in address[0]:
             self.address_family = socket.AF_INET6
+        self.exclusive = exclusive
         ThreadingHTTPServer.__init__(self, address, handler)
 
     def server_bind(self):
+        # Windows lets a second process bind 127.0.0.1:<port> although 0.0.0.0:<port> is taken (the narrower address wins) and then receive
+        # the connections of this machine: the two-port sockets ask for the address exclusively. Other systems: nothing (SO_REUSEADDR as before).
+        option = exclusive_option() if self.exclusive else None
+        if option is not None:
+            self.socket.setsockopt(socket.SOL_SOCKET, option, 1)
         # Skip `socket.getfqdn` of HTTPServer.server_bind (slow DNS on some hosts).
         socketserver.TCPServer.server_bind(self)
         host, port = self.server_address[:2]
@@ -935,7 +987,7 @@ def make_server(board: Board, host: str, port: int, verbose: bool = False, role:
     validate_port(port)
     handler = type("BoundHandler", (ReadHandler if role == ports.ROLE_READ else Handler,), {"board": board, "verbose": verbose, "role": role, "own_port": port,
                                                 "allow_proxy_headers": allow_proxy_headers, "peer_port": peer_port})
-    return Server((host, port), handler)
+    return Server((host, port), handler, exclusive=role != ports.ROLE_BOTH)
 
 
 # --------------------------------------------------------------------------- CLI
@@ -944,12 +996,14 @@ def _stop_on_sigterm(_signum, _frame):
     raise KeyboardInterrupt
 
 
-def _install_stop_handlers():
+def _install_stop_handlers(cleanup_done=None):
     """The stop signals of the foreground server, main thread only: `SIGTERM` as before, and on Windows also CTRL_BREAK (`SIGBREAK`, see
-    `stopsignal`); Linux and macOS register nothing else."""
+    `stopsignal`) and, when `cleanup_done` (a `threading.Event`) is given, the closing of the console window; Linux and macOS register nothing else.
+    Returns the registration of the console handler (or None); the server ends with `stopsignal.cleanup_finished(registration, cleanup_done)`."""
     if threading.current_thread() is threading.main_thread():
         signal.signal(signal.SIGTERM, _stop_on_sigterm)
     stopsignal.install_sigbreak()
+    return stopsignal.install_console_close(cleanup_done) if cleanup_done is not None else None
 
 
 def _prototype_port(args, manifest, root=".") -> int:
@@ -971,7 +1025,16 @@ def serve_command(args) -> int:
     """`skillsync dashboard serve`: foreground server (Ctrl+C or SIGTERM stops); BLOCKED (exit 2) when it may not start.
     `--read-port` / `--approve-port`: the two-port mode (`_serve_ports`); otherwise the single-port mode of 1.5.0, unchanged."""
     try:
-        mode = ports.resolve(args, port_problem)
+        settings = None
+        if getattr(args, "port", None) is None:   # the `dashboard:` setting only matters for the two-port mode
+            _root, manifest = read_project(args.path)
+            unknown = dashboard_listen.blocking_unknown_keys(manifest)
+            if unknown:
+                raise ValueError(unknown)
+            settings = dashboard_listen.settings(manifest)
+        mode = ports.resolve(args, port_problem, settings)
+    except (LayerError, TypeError, yaml.YAMLError) as error:
+        return emit({"status": "BLOCKED", "reason": " ".join(str(error).split())[:500]})
     except ValueError as error:
         return emit({"status": "BLOCKED", "reason": " ".join(str(error).split())[:500]})
     if mode is not None:
@@ -1011,9 +1074,10 @@ def serve_command(args) -> int:
         return emit({"status": "BLOCKED", "reason": " ".join(str(error).split())[:500]})
     host, port = server.server_address[:2]
     url = f"http://{'[%s]' % host if ':' in host else host}:{port}/"
+    cleanup_done, console_close = threading.Event(), None
     try:
         # Everything from the SIGTERM handler to `serve_forever` is under the `try` (SIGINT in the start window stops cleanly).
-        _install_stop_handlers()
+        console_close = _install_stop_handlers(cleanup_done)
         threading.Thread(target=board.watch_loop, name="watcher", daemon=True).start()
         log(f"projekt {board.root} → {url}  (Ctrl+C kończy)")
         if board.approvals:
@@ -1062,11 +1126,15 @@ def serve_command(args) -> int:
     except KeyboardInterrupt:
         pass
     finally:
-        board.stop.set()
-        with board.cond:
-            board.cond.notify_all()
-        server.server_close()
-        dashboard_token.remove_state(board.root, port, os.getpid())
+        stopsignal.cleanup_begun(console_close)   # a closed console window only waits from here on
+        try:
+            board.stop.set()
+            with board.cond:
+                board.cond.notify_all()
+            server.server_close()
+            dashboard_token.remove_state(board.root, port, os.getpid())
+        finally:
+            stopsignal.cleanup_finished(console_close, cleanup_done)   # last, even when a step above failed: a closed console window waits for this
     return emit({"status": "PASS", "url": url, "stopped": True})
 
 
@@ -1074,6 +1142,7 @@ def _serve_ports(args, mode: dict) -> int:
     """The two-port mode: one `Board`, one watcher, a server per socket (`read`: no write route at all; `approve`: token, strict Origin,
     no proxy headers). Both sockets are bound BEFORE any thread, state file or console line, so a failure of the second leaves nothing."""
     servers: list[tuple[str, Server, int, str]] = []
+    failing = None
     try:
         root, manifest, layerset = load_layer_project(args.path, args.layers)
         if args.session_url and not session_url_ok(args.session_url):
@@ -1100,21 +1169,29 @@ def _serve_ports(args, mode: dict) -> int:
         for role, peer in ((ports.ROLE_READ, approve_port), (ports.ROLE_APPROVE, read_port)):
             spec = mode[role]
             if spec:
+                failing = spec["port"]
+                if ports.port_taken(spec["bind"], spec["port"]):
+                    raise OSError(errno.EADDRINUSE, "Address already in use")
                 servers.append((role, make_server(board, spec["bind"], spec["port"], args.verbose, role=role, peer_port=peer,
                                                   allow_proxy_headers=mode["allow_proxy"] and role == ports.ROLE_APPROVE), spec["port"], spec["bind"]))
+                failing = None
     except OSError as error:
         for _role, server, _port, _bind in servers:
             server.server_close()
         wanted = "/".join(str(mode[role]["port"]) for role in (ports.ROLE_READ, ports.ROLE_APPROVE) if mode[role])
-        return emit({"status": "BLOCKED", "reason": f"nie można nasłuchiwać ({error.strerror or error}); porty {wanted} muszą być wolne"})
+        owner = dashboard_token.port_owner(failing) if failing else None
+        who = f"; port {failing} trzyma {owner}" if owner else (f"; port {failing} zajęty przez inny proces" if failing else "")
+        return emit({"status": "BLOCKED", "reason": f"nie można nasłuchiwać ({error.strerror or error}); porty {wanted} muszą być wolne{who}. "
+                                                    f"Wskaż inne: --read-port N --approve-port M (albo --port N: tryb jednego portu)."})
     except (LayerError, ValueError, TypeError, yaml.YAMLError) as error:
         for _role, server, _port, _bind in servers:
             server.server_close()
         return emit({"status": "BLOCKED", "reason": " ".join(str(error).split())[:500]})
     running: list[Server] = []   # servers whose `serve_forever` thread started (only those can be `shutdown()`)
     states: list[int] = []
+    cleanup_done, console_close = threading.Event(), None
     try:
-        _install_stop_handlers()
+        console_close = _install_stop_handlers(cleanup_done)
         threading.Thread(target=board.watch_loop, name="watcher", daemon=True).start()
         for role, server, port, bind in servers:
             thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.5}, name=f"serve-{role}", daemon=True)
@@ -1129,7 +1206,7 @@ def _serve_ports(args, mode: dict) -> int:
             peer_port = peer["port"] if peer else None
             if role == ports.ROLE_READ:
                 log(f"odczyt (do tunelu i linków): {dashboard_token.read_address(port, local)}  [nasłuch {bind}:{port}, bez zgód i tokenu]")
-                dashboard_token.write_state(board.root, port, None, local, warn=warn, hosts=approve_hosts, role=role, peer=peer_port)
+                dashboard_token.write_state(board.root, port, None, local, warn=warn, hosts=approve_hosts, role=role, peer=peer_port, bind=bind)
             else:
                 shown = dashboard_token.address_host(bind, board.approve_hosts)
                 log(f"zgody (przyciski, tylko dla Ciebie, nigdy do tunelu): {dashboard_token.address(port, board.approve_token, shown)}  [nasłuch {bind}:{port}]")
@@ -1141,22 +1218,42 @@ def _serve_ports(args, mode: dict) -> int:
                         f"nieszyfrowanym HTTP (podsłuch w tej sieci wystarczy do przechwycenia go). W nieufnej sieci uruchom z "
                         f"--approve-bind 127.0.0.1 albo użyj tunelu SSH; nigdy nie kieruj tunelu publicznego na ten port.")
                 else:
-                    log(f"UWAGA: port odczytu {port} słucha na {bind}: każde urządzenie w sieci zobaczy plany i statusy (tajne dane zredagowane).")
+                    log(f"UWAGA: port odczytu {port} słucha na {bind}: odczyt jest dostępny dla każdego urządzenia w tej sieci lokalnej (plany, spece, "
+                        f"wyniki; tajne dane zredagowane heurystycznie, ale wyniki testów (nazwy i komunikaty porażek) są jawne, bez maski; ruch nieszyfrowany). W nieufnej sieci uruchom z --read-bind 127.0.0.1 "
+                        f"albo ustaw dashboard.local_only: true w configu maszyny.")
+                    if mode.get("read_default") and _version_tuple(__version__) < ports.LISTEN_NOTE_UNTIL:
+                        log("  od 1.8.0 odczyt słucha domyślnie na wszystkich interfejsach; poprzedni nasłuch tylko lokalny przywraca "
+                            "--read-bind 127.0.0.1 albo dashboard.local_only: true.")
                 if bind in ("0.0.0.0", "::", ""):
                     for ip in lan_addresses():
                         log(f"  z innego urządzenia: http://{ip}:{port}/")
+                    if role == ports.ROLE_READ:
+                        names = sorted(name for name in ports.own_names() if name.endswith(".local")) or sorted(ports.own_names())[:1]
+                        for name in names:
+                            log(f"  albo po nazwie tej maszyny: http://{name}:{port}/")
+                    if role == ports.ROLE_READ and os.name == "nt":
+                        log("  Zapora Windows może zapytać o dostęp: „Zezwól” w sieci prywatnej daje podgląd z telefonu, odmowa zostawia stronę lokalnie.")
+        approve_spec, read_spec = mode["approve"], mode["read"]
+        if approve_spec and ports.is_loopback_bind(approve_spec["bind"]) and read_spec and not ports.is_loopback_bind(read_spec["bind"]):
+            log("zgody są tylko na tej maszynie; zgody z telefonu: --approve-bind 0.0.0.0 (token idzie nieszyfrowanym HTTP; tylko zaufana sieć)")
+        if all(ports.is_loopback_bind(bind) for _role, _server, _port, bind in servers):
+            log("strona tylko na tej maszynie (nasłuch na loopbacku)")
         while not board.stop.is_set():
             board.stop.wait(0.5)
     except KeyboardInterrupt:
         pass
     finally:
-        board.stop.set()
-        with board.cond:
-            board.cond.notify_all()
-        for server in running:
-            server.shutdown()
-        for _role, server, _port, _bind in servers:
-            server.server_close()
-        for port in states:
-            dashboard_token.remove_state(board.root, port, os.getpid())
+        stopsignal.cleanup_begun(console_close)   # a closed console window only waits from here on
+        try:
+            board.stop.set()
+            with board.cond:
+                board.cond.notify_all()
+            for server in running:
+                server.shutdown()
+            for _role, server, _port, _bind in servers:
+                server.server_close()
+            for port in states:
+                dashboard_token.remove_state(board.root, port, os.getpid())
+        finally:
+            stopsignal.cleanup_finished(console_close, cleanup_done)   # last, even when a step above failed: a closed console window waits for this
     return emit({"status": "PASS", "stopped": True, "ports": {role: port for role, _server, port, _bind in servers}})

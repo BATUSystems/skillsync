@@ -1,0 +1,12 @@
+{"meta": {"tool": "playwright", "version": "@playwright/test 1.59.1, Node 22.22.0, chromium-headless-shell 147", "command": ["playwright", "test"], "exit": -15, "merged": false, "env": {"LANG": "pl_PL.UTF-8", "NO_COLOR": "1", "stdout_stderr": "pipes (not a terminal)"}, "note": "SIGTERM after 4 s", "scrubbed": "paths, host and user names are replaced", "format": "one record per chunk read from the pipe: t = seconds since the start, fd = out|err, data = the text of the chunk"}}
+{"t": 0.943, "fd": "out", "data": "\nRunning 26 tests using 2 workers\n"}
+{"t": 0.943, "fd": "out", "data": "\n"}
+{"t": 2.39, "fd": "out", "data": "  ✓   1 [chromium-desktop] › e2e/second.spec.js:2:1 › second ok (511ms)\n"}
+{"t": 2.41, "fd": "out", "data": "  ✓   3 [chromium-desktop] › e2e/second.spec.js:4:3 › serial pair › serial first (3ms)\n"}
+{"t": 2.426, "fd": "out", "data": "  ✓   4 [chromium-desktop] › e2e/second.spec.js:5:3 › serial pair › serial second (2ms)\n"}
+{"t": 2.536, "fd": "out", "data": "  ✓   2 [chromium-desktop] › e2e/math.spec.js:4:3 › math › adds (549ms)"}
+{"t": 2.536, "fd": "out", "data": "\n"}
+{"t": 2.966, "fd": "out", "data": "  ✓   5 [chromium-desktop] › e2e/math.spec.js:5:3 › math › subtracts (407ms)\n"}
+{"t": 2.967, "fd": "out", "data": "  -   6 [chromium-desktop] › e2e/math.spec.js:6:8 › math › is skipped\n"}
+{"t": 3.337, "fd": "out", "data": "  ✘   7 [chromium-desktop] › e2e/math.spec.js:7:3 › math › fails with a message (311ms)\n"}
+{"t": 3.96, "fd": "out", "data": "  ✓   8 [chromium-mobile] › e2e/math.spec.js:4:3 › math › adds (560ms)\n"}

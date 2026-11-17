@@ -1,0 +1,61 @@
+{"meta": {"tool": "dotnet", "version": "dotnet SDK 10.0.114, VSTest 18.0.2, xunit.runner.visualstudio 3.1.5, xunit 2.9.3, net10.0", "command": ["dotnet", "test", "--no-build", "--logger", "console;verbosity=detailed", "--logger", "trx;LogFileName=all.trx", "--results-directory", "<root>/tools/../out/trx"], "exit": 1, "merged": false, "env": {"LANG": "pl_PL.UTF-8", "DOTNET_CLI_UI_LANGUAGE": "en"}, "note": "all classes + TRX logger", "scrubbed": "paths, host and user names are replaced", "format": "one record per chunk read from the pipe: t = seconds since the start, fd = out|err, data = the text of the chunk"}}
+{"t": 1.255, "fd": "out", "data": "Test run for <root>/dn/demo/bin/Debug/net10.0/demo.dll (.NETCoreApp,Version=v10.0)\n"}
+{"t": 1.344, "fd": "out", "data": "VSTest version 18.0.2-dev (x64)\n"}
+{"t": 1.349, "fd": "out", "data": "\n"}
+{"t": 1.501, "fd": "out", "data": "Starting test execution, please wait...\n"}
+{"t": 1.562, "fd": "out", "data": "A total of 1 test files matched the specified pattern.\n<root>/dn/demo/bin/Debug/net10.0/demo.dll\n"}
+{"t": 2.382, "fd": "out", "data": "[xUnit.net 00:00:00.01] xUnit.net VSTest Adapter v3.1.5+1b188a7b0a (64-bit .NET 10.0.14)\n"}
+{"t": 2.539, "fd": "out", "data": "[xUnit.net 00:00:00.18]   Discovering: demo\n"}
+{"t": 2.632, "fd": "out", "data": "[xUnit.net 00:00:00.27]   Discovered:  demo\n"}
+{"t": 2.677, "fd": "out", "data": "[xUnit.net 00:00:00.32]   Starting:    demo\n"}
+{"t": 2.764, "fd": "out", "data": "[xUnit.net 00:00:00.40]     Demo.SkippedTests.Later [SKIP]\n"}
+{"t": 2.764, "fd": "out", "data": "[xUnit.net 00:00:00.40]       not ready\n"}
+{"t": 2.871, "fd": "out", "data": "  Passed Demo.SkippedTests.Ok [4 ms]\n"}
+{"t": 2.892, "fd": "out", "data": "  Skipped Demo.SkippedTests.Later [1 ms]\n  Error Message:\n   not ready\n"}
+{"t": 2.892, "fd": "out", "data": "\n"}
+{"t": 2.892, "fd": "out", "data": "  Passed Demo.TheoryTests.Length(s: \"a b\", n: 3) [8 ms]\n"}
+{"t": 2.892, "fd": "out", "data": "  Passed Demo.GreenTests.Adds [8 ms]\n"}
+{"t": 2.892, "fd": "out", "data": "  Passed Demo.TheoryTests.Length(s: \"ąę ść\", n: 5) [< 1 ms]\n"}
+{"t": 2.892, "fd": "out", "data": "  Passed Demo.TheoryTests.Same(a: 2, b: 2) [< 1 ms]\n"}
+{"t": 2.892, "fd": "out", "data": "  Passed Demo.GreenTests.Prints [1 ms]\n"}
+{"t": 2.892, "fd": "out", "data": "  Standard Output Messages:\n hello from test\n\n"}
+{"t": 2.892, "fd": "out", "data": "\n"}
+{"t": 2.892, "fd": "out", "data": "[xUnit.net 00:00:00.46]       Assert.Equal() Failure: Values differ\n"}
+{"t": 2.892, "fd": "out", "data": "[xUnit.net 00:00:00.46]       Expected: 3\n"}
+{"t": 2.892, "fd": "out", "data": "[xUnit.net 00:00:00.46]       Actual:   4\n[xUnit.net 00:00:00.47]       Stack Trace:\n[xUnit.net 00:00:00.47]         <root>/dn/demo/Tests.cs(35,0): at Demo.TheoryTests.Same(Int32 a, Int32 b)\n"}
+{"t": 2.892, "fd": "out", "data": "[xUnit.net 00:00:00.47]            at InvokeStub_TheoryTests.Same(Object, Span`1)\n"}
+{"t": 2.892, "fd": "out", "data": "[xUnit.net 00:00:00.47]            at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)\n"}
+{"t": 2.892, "fd": "out", "data": "[xUnit.net 00:00:00.47]       System.InvalidOperationException : kaput\n"}
+{"t": 2.892, "fd": "out", "data": "[xUnit.net 00:00:00.47]       Stack Trace:\n[xUnit.net 00:00:00.47]         <root>/dn/demo/Tests.cs(19,0): at Demo.RedTests.Throws()\n[xUnit.net 00:00:00.47]            at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)\n"}
+{"t": 2.892, "fd": "out", "data": "[xUnit.net 00:00:00.47]            at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)\n"}
+{"t": 2.892, "fd": "out", "data": "[xUnit.net 00:00:00.47]       Assert.Equal() Failure: Values differ\n[xUnit.net 00:00:00.47]       Expected: 1\n"}
+{"t": 2.892, "fd": "out", "data": "[xUnit.net 00:00:00.47]       Actual:   2\n[xUnit.net 00:00:00.47]       Stack Trace:\n[xUnit.net 00:00:00.47]         <root>/dn/demo/Tests.cs(18,0): at Demo.RedTests.Boom()\n"}
+{"t": 2.892, "fd": "out", "data": "[xUnit.net 00:00:00.47]            at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)\n[xUnit.net 00:00:00.47]            at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)\n"}
+{"t": 2.892, "fd": "err", "data": "[xUnit.net 00:00:00.46]     Demo.TheoryTests.Same(a: 3, b: 4) [FAIL]\n"}
+{"t": 2.892, "fd": "err", "data": "[xUnit.net 00:00:00.47]     Demo.RedTests.Throws [FAIL]\n"}
+{"t": 2.892, "fd": "err", "data": "[xUnit.net 00:00:00.47]     Demo.RedTests.Boom [FAIL]\n"}
+{"t": 3.967, "fd": "out", "data": "[xUnit.net 00:00:01.61]       Assert.Equal() Failure: Strings differ\n[xUnit.net 00:00:01.61]                  ↓ (pos 0)"}
+{"t": 3.967, "fd": "out", "data": "\n[xUnit.net 00:00:01.61]       Expected: \"a\"\n[xUnit.net 00:00:01.61]       Actual:   \"b\"\n[xUnit.net 00:00:01.61]                  ↑ (pos 0)\n"}
+{"t": 3.967, "fd": "out", "data": "[xUnit.net 00:00:01.61]       Stack Trace:\n"}
+{"t": 3.967, "fd": "out", "data": "[xUnit.net 00:00:01.61]         <root>/dn/demo/Tests.cs(20,0): at Demo.RedTests.SlowRed()\n"}
+{"t": 3.967, "fd": "out", "data": "[xUnit.net 00:00:01.61]         --- End of stack trace from previous location ---\n"}
+{"t": 3.967, "fd": "err", "data": "[xUnit.net 00:00:01.61]     Demo.RedTests.SlowRed [FAIL]\n"}
+{"t": 4.249, "fd": "out", "data": "[xUnit.net 00:00:01.89]   Finished:    demo\n"}
+{"t": 4.346, "fd": "out", "data": "  Failed Demo.TheoryTests.Same(a: 3, b: 4) [2 ms]\n  Error Message:\n   Assert.Equal() Failure: Values differ\nExpected: 3\nActual:   4\n"}
+{"t": 4.347, "fd": "out", "data": "  Stack Trace:\n     at Demo.TheoryTests.Same(Int32 a, Int32 b) in <root>/dn/demo/Tests.cs:line 35\n   at InvokeStub_TheoryTests.Same(Object, Span`1)\n   at System.Reflecti"}
+{"t": 4.347, "fd": "out", "data": "on.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)\n"}
+{"t": 4.347, "fd": "out", "data": "  Failed Demo.RedTests.Throws [4 ms]\n  Error Message:\n"}
+{"t": 4.347, "fd": "out", "data": "   System.InvalidOperationException : kaput\n  Stack Trace:\n"}
+{"t": 4.347, "fd": "out", "data": "     at Demo.RedTests.Throws() in <root>/dn/demo/Tests.cs:line 19\n   at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)\n   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)\n"}
+{"t": 4.347, "fd": "out", "data": "  Passed Demo.TheoryTests.Same(a: 1, b: 1) [< 1 ms]\n"}
+{"t": 4.349, "fd": "out", "data": "  Passed Demo.TheoryTests.Complex(xs: [1, 2]) [< 1 ms]\n"}
+{"t": 4.349, "fd": "out", "data": "  Failed Demo.RedTests.Boom [< 1 ms]\n  Error Message:\n"}
+{"t": 4.349, "fd": "out", "data": "   Assert.Equal() Failure: Values differ\nExpected: 1\nActual:   2\n  Stack Trace:\n     at Demo.RedTests.Boom() in <root>/dn/demo/Tests.cs:line 18\n   at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)\n   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)\n"}
+{"t": 4.349, "fd": "out", "data": "  Passed Demo.TheoryTests.Complex(xs: [3]) [< 1 ms]\n"}
+{"t": 4.349, "fd": "out", "data": "  Failed Demo.RedTests.SlowRed [1 s]\n  Error Message:\n   Assert.Equal() Failure: Strings differ\n           ↓ (pos 0)\nExpected: \"a\"\nActual:   \"b\"\n           ↑ (pos 0)\n  Stack Trace:\n     at Demo.RedTests.SlowRed() in <root>/dn/demo/Tests.cs:line 20\n--- End of stack trace from previous location ---\n"}
+{"t": 4.349, "fd": "out", "data": "  Passed Demo.GreenTests.SlowOne [1 s]\n"}
+{"t": 4.357, "fd": "out", "data": "\n"}
+{"t": 4.361, "fd": "out", "data": "Total tests: 15\n     Passed: 10\n     Failed: 4\n    Skipped: 1\n"}
+{"t": 4.361, "fd": "out", "data": " Total time: 2,7956 Seconds\n"}
+{"t": 4.361, "fd": "err", "data": "Test Run Failed.\n"}
+{"t": 4.376, "fd": "out", "data": "Results File: <root>/out/trx/all.trx\n"}

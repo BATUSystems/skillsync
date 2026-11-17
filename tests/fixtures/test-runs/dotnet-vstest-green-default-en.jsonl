@@ -1,0 +1,9 @@
+{"meta": {"tool": "dotnet", "version": "dotnet SDK 10.0.114, VSTest 18.0.2, xunit.runner.visualstudio 3.1.5, xunit 2.9.3, net10.0", "command": ["dotnet", "test", "--no-build", "--filter", "FullyQualifiedName~Demo.GreenTests"], "exit": 0, "merged": false, "env": {"LANG": "pl_PL.UTF-8", "DOTNET_CLI_UI_LANGUAGE": "en"}, "note": "default verbosity: no per-test lines", "scrubbed": "paths, host and user names are replaced", "format": "one record per chunk read from the pipe: t = seconds since the start, fd = out|err, data = the text of the chunk"}}
+{"t": 0.659, "fd": "out", "data": "Test run for <root>/dn/demo/bin/Debug/net10.0/demo.dll (.NETCoreApp,Version=v10.0)\n"}
+{"t": 0.716, "fd": "out", "data": "VSTest version 18.0.2-dev (x64)\n"}
+{"t": 0.72, "fd": "out", "data": "\n"}
+{"t": 0.821, "fd": "out", "data": "Starting test execution, please wait...\n"}
+{"t": 0.851, "fd": "out", "data": "A total of 1 test files matched the specified pattern.\n"}
+{"t": 3.25, "fd": "out", "data": "\n"}
+{"t": 3.256, "fd": "out", "data": "Passed!  - Failed:     0, Passed:     3, Skipped:     0, Total:     3, Duration: 1 s"}
+{"t": 3.256, "fd": "out", "data": " - demo.dll (net10.0)\n"}

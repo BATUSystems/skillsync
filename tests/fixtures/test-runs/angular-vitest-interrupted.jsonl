@@ -1,0 +1,12 @@
+{"meta": {"tool": "angular", "version": "@angular/cli 21.2.30, @angular/build unit-test, vitest 4.1.12, Node 22.22.0", "command": ["ng", "test", "--no-watch", "--reporters=verbose"], "exit": 143, "merged": false, "env": {"LANG": "pl_PL.UTF-8", "NO_COLOR": "1", "stdout_stderr": "pipes (not a terminal)"}, "note": "SIGTERM after 3.3 s, in the middle of the run", "scrubbed": "paths, host and user names are replaced", "format": "one record per chunk read from the pipe: t = seconds since the start, fd = out|err, data = the text of the chunk"}}
+{"t": 0.442, "fd": "out", "data": "❯ Building...\n"}
+{"t": 1.805, "fd": "out", "data": "✔ Building...\n"}
+{"t": 1.806, "fd": "out", "data": "Initial chunk files  | Names             |  Raw size\nspec-app-app.js      | spec-app-app      |  47.31 kB | \nchunk-CGZBV6BD.js    | -                 |   4.07 kB | \ninit-testbed.js      | init-testbed      |   1.21 kB | \nvitest-mock-patch.js | vitest-mock-patch | 974 bytes | \nspec-app-mix.js      | spec-app-mix      | 395 bytes | \nstyles.css           | styles            |  56 bytes | \n\n                     | Initial total     |  54.02 kB\n\nApplication bundle generation complete. [1.363 seconds] - 2026-11-16T23:41:55.756Z\n\n"}
+{"t": 2.021, "fd": "out", "data": "\n"}
+{"t": 2.021, "fd": "out", "data": " RUN  v4.1.12 /TOOLS/angular/demo-vitest\n"}
+{"t": 2.021, "fd": "out", "data": "\n"}
+{"t": 3.235, "fd": "out", "data": " ✓ |demo-vitest| src/app/mix.spec.ts > Mix > passes one 4ms\n"}
+{"t": 3.235, "fd": "out", "data": " × |demo-vitest| src/app/mix.spec.ts > Mix > fails on purpose 10ms\n   → expected 4 to be 5 // Object.is equality\n"}
+{"t": 3.235, "fd": "out", "data": " ↓ |demo-vitest| src/app/mix.spec.ts > Mix > is skipped\n"}
+{"t": 3.235, "fd": "out", "data": " ✓ |demo-vitest| src/app/mix.spec.ts > Mix > nested group > passes nested 1ms\n"}
+{"t": 3.324, "fd": "out", "data": " ✓ |demo-vitest| src/app/app.spec.ts > App > should create the app 82ms\n"}

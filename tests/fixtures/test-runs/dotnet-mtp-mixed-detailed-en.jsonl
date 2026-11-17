@@ -1,0 +1,84 @@
+{"meta": {"tool": "dotnet", "version": "dotnet SDK 10.0.114, Microsoft.Testing.Platform 2.5.1, xunit.v3.mtp-v2 4.0.2, net10.0", "command": ["dotnet", "test", "--no-build", "--output", "Detailed"], "exit": 2, "merged": false, "env": {"LANG": "pl_PL.UTF-8", "DOTNET_CLI_UI_LANGUAGE": "en"}, "note": "MTP --output Detailed: passed tests are printed too", "scrubbed": "paths, host and user names are replaced", "format": "one record per chunk read from the pipe: t = seconds since the start, fd = out|err, data = the text of the chunk"}}
+{"t": 1.196, "fd": "out", "data": "Running tests from "}
+{"t": 1.196, "fd": "out", "data": "<root>/dn/mtp/bin/Debug/net10.0/mtp.dll (net10.0"}
+{"t": 1.196, "fd": "out", "data": "|x64)"}
+{"t": 1.196, "fd": "out", "data": "\n"}
+{"t": 1.877, "fd": "out", "data": "skipped "}
+{"t": 1.877, "fd": "out", "data": "Demo.SkippedTests.Later "}
+{"t": 1.877, "fd": "out", "data": "("}
+{"t": 1.877, "fd": "out", "data": "0ms)"}
+{"t": 1.877, "fd": "out", "data": "\n  not ready\n  "}
+{"t": 1.877, "fd": "out", "data": "from <root>/dn/mtp/bin/Debug/net10.0/mtp.dll"}
+{"t": 1.877, "fd": "out", "data": " (net10.0|x64)"}
+{"t": 1.877, "fd": "out", "data": "\n"}
+{"t": 1.894, "fd": "out", "data": "passed Demo.SkippedTests.Ok (13ms)\n  "}
+{"t": 1.894, "fd": "out", "data": "from <root>/dn/mtp/bin/Debug/net10.0/mtp.dll (net10.0|x64)\n"}
+{"t": 1.926, "fd": "out", "data": "failed Demo.TheoryTests.Same(a: 3, b: 4) (31ms)\n  from <root>/dn/mtp/bin/Debug/net10.0/mtp.dll ("}
+{"t": 1.926, "fd": "out", "data": "net10.0|x64)\n"}
+{"t": 1.926, "fd": "out", "data": "  Assert.Equal() Failure: Values differ\n  Expected: 3\n  "}
+{"t": 1.926, "fd": "out", "data": "Actual:   4\n"}
+{"t": 1.926, "fd": "out", "data": "    "}
+{"t": 1.927, "fd": "out", "data": "at Demo.TheoryTests.Same(Int32 a, Int32 b) in "}
+{"t": 1.927, "fd": "out", "data": "<root>/dn/mtp/Tests.cs"}
+{"t": 1.928, "fd": "out", "data": ":35\n"}
+{"t": 1.928, "fd": "out", "data": "    "}
+{"t": 1.928, "fd": "out", "data": "at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)"}
+{"t": 1.928, "fd": "out", "data": "\n    at "}
+{"t": 1.928, "fd": "out", "data": "System.Reflection.MethodBaseInvoker.InvokeDirectByRefWithFewArgs(Object obj, Span`1 copyOfArgs, BindingFlags invokeAttr)\n"}
+{"t": 1.929, "fd": "out", "data": "failed Demo.RedTests.Throws (23ms"}
+{"t": 1.929, "fd": "out", "data": ")\n  from <root>/dn/mtp/bin/Debug/net10.0/mtp.dll (net10.0|x64)\n"}
+{"t": 1.929, "fd": "out", "data": "  "}
+{"t": 1.929, "fd": "out", "data": "Xunit.MicrosoftTestingPlatform.XunitException: System.InvalidOperationException : kaput\n"}
+{"t": 1.929, "fd": "out", "data": "    "}
+{"t": 1.929, "fd": "out", "data": "at Demo.RedTests.Throws() "}
+{"t": 1.929, "fd": "out", "data": "in "}
+{"t": 1.929, "fd": "out", "data": "<root>/dn/mtp/Tests.cs"}
+{"t": 1.929, "fd": "out", "data": ":19\n    "}
+{"t": 1.93, "fd": "out", "data": "at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)\n"}
+{"t": 1.93, "fd": "out", "data": "    at"}
+{"t": 1.93, "fd": "out", "data": " System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)\n"}
+{"t": 1.93, "fd": "out", "data": "passed Demo.TheoryTests.Same(a: 2, b: 2) (0ms)\n"}
+{"t": 1.93, "fd": "out", "data": "  from <root>/dn/mtp/bin/Debug/net10.0/mtp.dll (net10.0|x64)\n"}
+{"t": 1.93, "fd": "out", "data": "passed Demo.TheoryTests.Same(a: 1, b: 1) ("}
+{"t": 1.93, "fd": "out", "data": "0ms)\n  from "}
+{"t": 1.93, "fd": "out", "data": "<root>/dn/mtp/bin/Debug/net10.0/mtp.dll (net10.0|x64)\n"}
+{"t": 1.93, "fd": "out", "data": "passed Demo.TheoryTests.Complex(xs: [1, 2]) ("}
+{"t": 1.93, "fd": "out", "data": "0ms)\n  from <root>/dn/mtp/bin/Debug/net10.0/mtp.dll (net10.0|x64)\n"}
+{"t": 1.93, "fd": "out", "data": "failed Demo.RedTests.Boom ("}
+{"t": 1.931, "fd": "out", "data": "0ms)\n  from <root>/dn/mtp/bin/Debug/net10.0/mtp.dll (net10.0|x64)\n"}
+{"t": 1.931, "fd": "out", "data": "  Assert.Equal() Failure: Values differ\n  Expected: 1"}
+{"t": 1.931, "fd": "out", "data": "\n  Actual:   2\n"}
+{"t": 1.931, "fd": "out", "data": "    "}
+{"t": 1.931, "fd": "out", "data": "at Demo.RedTests.Boom() "}
+{"t": 1.931, "fd": "out", "data": "in <root>/dn/mtp/Tests.cs"}
+{"t": 1.931, "fd": "out", "data": ":18\n    "}
+{"t": 1.931, "fd": "out", "data": "at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)\n    "}
+{"t": 1.931, "fd": "out", "data": "at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)\n"}
+{"t": 1.931, "fd": "out", "data": "passed Demo.TheoryTests.Complex(xs: [3]) (0ms)\n  from <root>/dn/mtp/bin/Debug/net10.0/mtp.dll (net10.0"}
+{"t": 1.931, "fd": "out", "data": "|x64)\n"}
+{"t": 1.931, "fd": "out", "data": "passed Demo.TheoryTests.Length(s: \"ąę ść\", n: 5) (0ms)\n  from "}
+{"t": 1.931, "fd": "out", "data": "<root>/dn/mtp/bin/Debug/net10.0/mtp.dll (net10.0|x64)\n"}
+{"t": 1.931, "fd": "out", "data": "passed Demo.TheoryTests.Length(s: \"a b\", n: 3) (0ms)\n  from <root>/dn/mtp/bin/Debug/net10.0/mtp.dll (net10.0|x64)\n"}
+{"t": 3.129, "fd": "out", "data": "failed Demo.RedTests.SlowRed (1s"}
+{"t": 3.129, "fd": "out", "data": " 209ms)\n  from"}
+{"t": 3.13, "fd": "out", "data": " <root>/dn/mtp/bin/Debug/net10.0/mtp.dll (net10.0|x64)\n  Assert.Equal() Failure: Strings differ\n  "}
+{"t": 3.13, "fd": "out", "data": "           ↓ (pos 0)\n  Expected: \"a\"\n  Actual:   \"b\"\n  "}
+{"t": 3.13, "fd": "out", "data": "           ↑ (pos 0)\n    "}
+{"t": 3.13, "fd": "out", "data": "at Demo.RedTests.SlowRed() in "}
+{"t": 3.13, "fd": "out", "data": "<root>/dn/mtp/Tests.cs:20\n    "}
+{"t": 3.13, "fd": "out", "data": "--- End of stack trace from previous location ---\n"}
+{"t": 3.384, "fd": "out", "data": "passed Demo.GreenTests.SlowOne (1s 524ms)\n  from <root>/dn/mtp/bin/Debug/net10.0/mtp.dll (net10.0|x64)\n"}
+{"t": 3.389, "fd": "out", "data": "passed Demo.GreenTests.Prints (2ms)\n  from <root>/dn/mtp/bin/Debug/net10.0/mtp.dll (net10.0|x64)"}
+{"t": 3.389, "fd": "out", "data": "\n  Standard output\n"}
+{"t": 3.389, "fd": "out", "data": "    hello from test\n    \n  Error output\n"}
+{"t": 3.39, "fd": "out", "data": "passed Demo.GreenTests.Adds (0ms)\n  from <root>/dn/mtp/bin/Debug/net10.0/mtp.dll (net10.0|x64)\n"}
+{"t": 3.475, "fd": "out", "data": "<root>/dn/mtp/bin/Debug/net10.0/mtp.dll (net10.0|x64) "}
+{"t": 3.475, "fd": "out", "data": "failed with 4 error(s) (2s 281ms)"}
+{"t": 3.475, "fd": "out", "data": "\n"}
+{"t": 3.475, "fd": "out", "data": "Exit code: 2\n"}
+{"t": 3.486, "fd": "out", "data": "\n"}
+{"t": 3.487, "fd": "out", "data": "Test run summary: "}
+{"t": 3.487, "fd": "out", "data": "Failed!\n"}
+{"t": 3.488, "fd": "out", "data": "  total: 15\n  failed: 4\n  succeeded: 10\n  skipped: 1\n  duration: "}
+{"t": 3.488, "fd": "out", "data": "2s 621ms\n"}
+{"t": 3.488, "fd": "out", "data": "Test run completed with non-success exit code: 2 (see: https://aka.ms/testingplatform/exitcodes)\n"}

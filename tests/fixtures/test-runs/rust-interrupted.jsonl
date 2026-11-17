@@ -1,0 +1,13 @@
+{"meta": {"tool": "cargo", "version": "cargo 1.97.1, rustc 1.97.1, libtest default format", "command": ["timeout", "-s", "INT", "1.6", "cargo", "test", "--offline", "--lib", "--", "--test-threads=1"], "exit": 124, "merged": false, "env": {"LANG": "pl_PL.UTF-8"}, "note": "SIGINT in the middle of a slow test", "scrubbed": "paths, host and user names are replaced", "format": "one record per chunk read from the pipe: t = seconds since the start, fd = out|err, data = the text of the chunk"}}
+{"t": 0.073, "fd": "err", "data": "    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.01s\n"}
+{"t": 0.073, "fd": "err", "data": "     Running unittests src/lib.rs (<root>/rs-target/debug/deps/demo-5d464ed6742d1409)\n"}
+{"t": 0.074, "fd": "out", "data": "\nrunning 11 tests\ntest tests::expected_panic_did_not_happen - should panic ... "}
+{"t": 0.075, "fd": "out", "data": "FAILED\ntest tests::expects_a_panic - should panic ... "}
+{"t": 0.075, "fd": "out", "data": "ok\ntest tests::fails ... "}
+{"t": 0.075, "fd": "out", "data": "FAILED\ntest tests::ignored ... ignored, not ready\ntest tests::ignored_without_reason ... ignored\n"}
+{"t": 0.075, "fd": "out", "data": "test tests::nested::deep ... "}
+{"t": 0.075, "fd": "out", "data": "ok\ntest tests::nested::żółć_unicode ... "}
+{"t": 0.075, "fd": "out", "data": "ok\ntest tests::ok ... "}
+{"t": 0.075, "fd": "out", "data": "ok\ntest tests::prints ... "}
+{"t": 0.075, "fd": "out", "data": "ok\ntest tests::slow_fail ... "}
+{"t": 0.975, "fd": "out", "data": "FAILED\ntest tests::slow_ok ... "}

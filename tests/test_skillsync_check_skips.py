@@ -68,6 +68,20 @@ class VerdictTests(CheckSkipsBase):
         self.assertIn(f'+ {A}', result.stdout)
         self.assertNotIn(f'+ {B}', result.stdout)
 
+    def test_the_durations_section_of_the_log_changes_no_verdict(self):
+        """CI prints the 30 slowest tests (`--durations 30`, Python 3.12+) before the summary: those lines look like `1.234s  test_x (mod.Class.test_x)`
+        and must neither count as results nor hide a skip (the same verdict and the same count with and without the section)."""
+        durations = ['Slowest test durations', '-' * 70, f'1.234s     {B.rsplit(".", 1)[1]} ({B})', f'0.500s     {A.rsplit(".", 1)[1]} ({A})', '']
+        for lines, baseline, code in (((verbose_line(A, 'ok'), verbose_line(B, f"skipped '{SYMLINKS}'")), [{'id': B, 'category': 'needs-symlinks'}], 0),
+                                      ((verbose_line(A, f"skipped '{SYMLINKS}'"), verbose_line(B, 'ok')), [{'id': B, 'category': 'needs-symlinks'}], 1)):
+            plain = run_log(*lines)
+            with_section = plain.replace('\n' + '-' * 70 + '\nRan', '\n' + '\n'.join(durations) + '-' * 70 + '\nRan', 1)
+            self.assertIn('Slowest test durations', with_section)
+            first = self.check(plain, self.baseline(baseline))
+            second = self.check(with_section, self.baseline(baseline))
+            self.assertEqual((first.returncode, second.returncode), (code, code), second.stdout + second.stderr)
+            self.assertEqual(first.stdout, second.stdout)
+
     def test_an_empty_baseline_means_no_skip_is_allowed(self):
         log = run_log(verbose_line(A, f"skipped '{SYMLINKS}'"))
         self.assertEqual(self.check(log, self.baseline([])).returncode, 1)
@@ -233,7 +247,7 @@ class RealBaselineTests(unittest.TestCase):
 
     def test_unmeasured_runners_are_null_and_the_measured_ones_are_lists(self):
         # macOS: measured from the CI runs of main v1.3.0 (MAC-141); Ubuntu runner: measured from the CI logs of 8 jobs (DEBT-150-D); Windows copy mode: measured on the release 1.4.1 branch (WIN-141)
-        measured = ('linux/', 'ubuntu-latest/', 'macos-latest/', 'windows-latest/copy')
+        measured = ('linux/', 'ubuntu-latest/', 'macos-latest/', 'macos-uv/', 'windows-latest/copy')
         for key, entries in self.data['baselines'].items():
             if key.startswith(measured):
                 self.assertIsInstance(entries, list, key)
@@ -245,6 +259,20 @@ class RealBaselineTests(unittest.TestCase):
         self.assertEqual(symlink, copy)
         self.assertEqual([e for e in symlink if e['category'] == 'unclassified'], [])
         self.assertGreaterEqual(len(symlink), 30)
+
+    def test_the_local_macos_layout_is_the_ci_baseline_plus_only_the_tzset_skips(self):
+        """The interpreters of uv have no `time.tzset` (the CI runners' Python has it): `macos-uv` = `macos-latest` + the tests that skip for that reason."""
+        for mode in ('symlink', 'copy'):
+            ci = {e['id']: e for e in self.data['baselines'][f'macos-latest/{mode}']}
+            local = {e['id']: e for e in self.data['baselines'][f'macos-uv/{mode}']}
+            self.assertTrue(set(ci) <= set(local), mode)
+            extra = [local[i] for i in sorted(set(local) - set(ci))]
+            self.assertTrue(extra, mode)
+            self.assertTrue({e['category'] for e in extra} <= {'no-tzset', 'windows-no-mechanism'}, mode)
+            self.assertTrue(all(any(word in e['id'] for word in ('e2e_env_cleanup', 'answerline_time', 'writing_release')) for e in extra), mode)   # only the tests that need a zone
+            for i in ci:
+                self.assertEqual(local[i], ci[i], (mode, i))
+        self.assertEqual(self.data['baselines']['macos-uv/symlink'], self.data['baselines']['macos-uv/copy'])
 
     def test_every_entry_has_a_known_category(self):
         for key, entries in self.data['baselines'].items():

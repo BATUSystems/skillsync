@@ -24,6 +24,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests"))
 
+from layers_helpers import home_env  # noqa: E402,F401  (re-exported: the other dashboard test modules import it from here)
 from skillsync_workflow import dashboard_http as srv  # noqa: E402
 from skillsync_workflow import dashboard_token  # noqa: E402
 from tests.serve_start import bind_free, start_serve, stop_serve  # noqa: E402
@@ -31,15 +32,6 @@ from tests.test_skillsync_dashboard_server import (CLI, PLAN, TEST_TOKEN, HttpCa
                                                    install_fake_cli, make_project, raw_post, spy_core)
 
 HEADERS = {"Content-Type": "application/json", "X-Status-Board": "1"}
-
-
-def home_env(base) -> dict:
-    """The directories of the machine state under `base`: on macOS the data directory is `~/Library/Application Support` and on Windows
-    `LOCALAPPDATA` (`Path.home()` follows `HOME`/`USERPROFILE`), so `XDG_DATA_HOME` alone leaves the real home to the tests (state files of
-    the server pile up there, and two runs at once see each other's)."""
-    base = Path(base)
-    return {"XDG_DATA_HOME": str(base / "xdg-data"), "LOCALAPPDATA": str(base / "xdg-data"), "HOME": str(base / "home"),
-            "USERPROFILE": str(base / "home")}
 
 
 class TokenCase(HttpCase):
@@ -92,7 +84,7 @@ class TokenRequired(TokenCase):
     def test_every_refusal_before_the_token_is_the_same_with_and_without_it(self) -> None:
         data = self.offer()
         cases = {
-            "Host": ({"Host": "evil.example"}, srv.HOST_REFUSED),
+            "Host": ({"Host": "evil.example"}, srv.host_refused_message(srv.ports.ROLE_BOTH, "evil.example")),
             "X-Status-Board": ({"X-Status-Board": "0"}, "Brak nagłówka X-Status-Board."),
             "Origin": ({"Origin": "https://evil.example"}, "Obcy Origin."),
             "Content-Type": ({"Content-Type": "text/plain"}, "Oczekiwano application/json."),

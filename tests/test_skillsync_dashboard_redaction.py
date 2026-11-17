@@ -17,6 +17,8 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from layers_helpers import home_env  # noqa: E402
 from tests import test_skillsync_dashboard_server as base  # noqa: E402
 from skillsync_workflow import dashboard as engine  # noqa: E402
 from skillsync_workflow import status  # noqa: E402
@@ -29,6 +31,10 @@ ENV_NAME = "STATUSBOARD_TEST_TOKEN"
 PEM_SECRET = "-----BEGIN KEY-----\nabcdefghijklmnop\n-----END KEY-----"   # a multi-line secret
 SIMPLE_SECRET = "".join(("Zq9w", "Xk3L", "mNp7"))   # no separators: it can be part of a file name; put together at run time so that no literal looks like a key
 DOC_ROOTS = ("docs/specs", "docs/plans", "docs/design", "docs/domain", base.RUN)
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child  # noqa: E402
 
 
 def secret_text(title: str) -> str:
@@ -148,7 +154,7 @@ class ReaderDecodingAndMasking(base.ProjectCase):
                    "nul-inside": self.TEXT.replace(SIMPLE_SECRET, SIMPLE_SECRET[:5] + "\x00" + SIMPLE_SECRET[5:]).encode("utf-8")}
         for name, data in samples.items():
             with self.subTest(name):
-                path = self.tmp / f"{name}.md"
+                path = child(self.tmp, f"{name}.md")
                 path.write_bytes(data)
                 text = engine.read_masked(path)   # the first layer alone: no second pass here
                 self.assertNotIn(SIMPLE_SECRET, text)
@@ -230,7 +236,7 @@ class ReaderLimitsMaskBeforeCutting(base.ProjectCase):
             for name, limit in self.LIMITS:
                 for before in (1, 5, 9, 11):   # how many bytes of the secret lie before the limit (the mask is 10 characters long)
                     with self.subTest(limit=name, before=before):
-                        path = self.tmp / f"limit-{name}-{before}.md"
+                        path = child(self.tmp, f"limit-{name}-{before}.md")
                         path.write_text("x" * (limit - before) + SIMPLE_SECRET + " koniec\n" + "y" * 50, encoding="utf-8", newline="\n")
                         text = engine.read_masked(path, limit)
                         self.assertLessEqual(len(text.encode("utf-8")), limit)
@@ -284,7 +290,7 @@ class StatusSecretsGuard(SecretFiles, base.HttpCase):
         manifest = self.root / srv.MANIFEST
         manifest.parent.mkdir(parents=True, exist_ok=True)
         manifest.write_text("skills: [dashboard]\n", encoding="utf-8", newline="\n")
-        env = {**os.environ, "SKILLSYNC_CONFIG": str(self.tmp / "machine-config.yaml"), "XDG_CACHE_HOME": str(self.tmp / "xdg-cache")}
+        env = {**os.environ, "SKILLSYNC_CONFIG": str(self.tmp / "machine-config.yaml"), **home_env(self.tmp)}
         done = subprocess.run([sys.executable, str(base.CLI), "dashboard", "show", str(self.root), "--json", "--layer", f"core={base.ROOT / 'library'}"],
                               capture_output=True, text=True, env=env, timeout=60)
         self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
@@ -309,7 +315,7 @@ class StatusSecretsGuard(SecretFiles, base.HttpCase):
         manifest = self.root / srv.MANIFEST
         manifest.parent.mkdir(parents=True, exist_ok=True)
         manifest.write_text("skills: [dashboard]\n", encoding="utf-8", newline="\n")
-        env = {**os.environ, "SKILLSYNC_CONFIG": str(self.tmp / "machine-config.yaml"), "XDG_CACHE_HOME": str(self.tmp / "xdg-cache")}
+        env = {**os.environ, "SKILLSYNC_CONFIG": str(self.tmp / "machine-config.yaml"), **home_env(self.tmp)}
         done = subprocess.run([sys.executable, str(base.CLI), "status", str(self.root), "--json", "--layer", f"core={base.ROOT / 'library'}"],
                               capture_output=True, text=True, env=env, timeout=60)
         self.assertIn(done.returncode, (0, 1, 2), done.stdout + done.stderr)

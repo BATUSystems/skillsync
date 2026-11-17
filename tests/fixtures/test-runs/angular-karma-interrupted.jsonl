@@ -1,0 +1,11 @@
+{"meta": {"tool": "angular", "version": "@angular/cli 21.2.30, @angular/build unit-test (runner karma), karma 6.4.4, jasmine-core, Chrome Headless 157, Node 22.22.0", "command": ["ng", "test", "--no-watch", "--browsers=ChromeHeadless"], "exit": 143, "merged": false, "env": {"LANG": "pl_PL.UTF-8", "NO_COLOR": "1", "stdout_stderr": "pipes (not a terminal)"}, "note": "SIGTERM after 3 s, before the first test: the browser disconnects", "scrubbed": "paths, host and user names are replaced", "format": "one record per chunk read from the pipe: t = seconds since the start, fd = out|err, data = the text of the chunk"}}
+{"t": 0.477, "fd": "out", "data": "❯ Building...\n"}
+{"t": 2.099, "fd": "out", "data": "✔ Building...\n"}
+{"t": 2.101, "fd": "out", "data": "Initial chunk files  | Names             |  Raw size\nchunk-TFJPV3Z7.js    | -                 |   1.96 MB | \ntest_main.js         | test_main         | 218.29 kB | \nspec-app-app.spec.js | spec-app-app.spec |  48.20 kB | \npolyfills.js         | polyfills         | 749 bytes | \njasmine-cleanup-0.js | jasmine-cleanup-0 | 397 bytes | \nspec-app-mix.spec.js | spec-app-mix.spec | 396 bytes | \nstyles.css           | styles            |  95 bytes | \n\n                     | Initial total     |   2.23 MB\n\nApplication bundle generation complete. [1.622 seconds] - 2026-11-16T23:42:08.045Z\n\n"}
+{"t": 2.183, "fd": "out", "data": "17 11 2026 00:42:08.128:INFO [karma-server]: Karma v6.4.4 server started at http://localhost:PORT/\n"}
+{"t": 2.183, "fd": "out", "data": "17 11 2026 00:42:08.129:INFO [launcher]: Launching browsers ChromeHeadless with concurrency unlimited\n"}
+{"t": 2.187, "fd": "out", "data": "17 11 2026 00:42:08.134:INFO [launcher]: Starting browser ChromeHeadless\n"}
+{"t": 2.606, "fd": "out", "data": "17 11 2026 00:42:08.552:INFO [Chrome Headless 157.0.0.0 (Linux 0.0.0)]: Connected on socket SOCKET with id ID\n"}
+{"t": 5.22, "fd": "out", "data": "Chrome Headless 157.0.0.0 (Linux 0.0.0) ERROR\n  Disconnected reconnect failed before timeout of 2000ms (transport close)\n\n"}
+{"t": 5.22, "fd": "out", "data": "Chrome Headless 157.0.0.0 (Linux 0.0.0) ERROR\n  Disconnected reconnect failed before timeout of 2000ms (transport close)\n"}
+{"t": 5.22, "fd": "out", "data": "\n"}

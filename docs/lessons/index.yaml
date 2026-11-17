@@ -236,3 +236,35 @@ lessons:
     title: "Biegi macierzy na maszynach zdalnych: logi przyrostowo, śmierć drzewa po PID-ach, jedna pula portów na proces, lista modułów bez aliasów, tło na macOS bez setsid"
     tags: [testing, remote, windows, macos, ports, processes, evidence]
     paths: ['library/skills/feature/references/prepush-matrix.md', 'tests/**']
+  - path: argparse-przed-3-12-opcja-miedzy-pozycyjnymi.md
+    title: "argparse Pythona przed 3.12 dopasowuje opcjonalny pozycyjny pusto przed opcjami: lokalny nowszy interpreter ukrywa wadę"
+    tags: [skillsync, python, argparse, cli, tests, compat]
+    paths: ['skillsync_workflow/argtools.py', 'skillsync_workflow/cli.py', 'tests/test_skillsync_argparse_positionals.py']
+  - path: izolacja-stanu-testow-home-localappdata-xdg.md
+    title: "Izolacja stanu w testach: XDG_* izoluje tylko Linux, a test serwera bez pełnej izolacji pisze do prawdziwego katalogu użytkownika"
+    tags: [skillsync, tests, isolation, macos, windows, xdg, home]
+    paths: ['tests/layers_helpers.py', 'skillsync_workflow/layers.py', 'tests/test_skillsync_tmp_path_guard.py']
+  - path: stan-globalny-miedzy-modulami-testow-rejestr-przy-imporcie.md
+    title: "Stan globalny między modułami testów w jednym procesie: atrapa rejestrowana przy imporcie jest zielona punktowo, a czerwona w pełnym biegu"
+    tags: [skillsync, tests, unittest, registry, isolation, test-adapters]
+    paths: ['tests/test_skillsync_test_adapters.py', 'skillsync_workflow/test_adapters/__init__.py', 'tests/test_skillsync_adapter_contract.py']
+  - path: windows-asercje-sciezek-crlf-uchwyty.md
+    title: "Windows w asercjach testów: separator w kluczach i str(Path), krótka nazwa 8.3, CRLF z print potomka i otwarty uchwyt blokujący sprzątanie"
+    tags: [skillsync, tests, windows, paths, crlf, tempdir]
+    paths: ['tests/adapter_replay.py', 'tests/tmp_paths.py', 'tests/test_skillsync_adapter_web_counts.py', 'skillsync_workflow/test_events.py']
+  - path: git-bash-windows-backslash-i-sciezki-dyskow.md
+    title: "Git Bash na Windows: niecytowany backslash znika, a /c/... to dysk: narzędzie czytające polecenie powłoki musi czytać je jak powłoka"
+    tags: [skillsync, windows, git-bash, shell, hooks, parsing]
+    paths: ['library/hooks/guard-commands.py', 'skillsync_workflow/guardhook.py', 'tests/test_skillsync_guard_hook.py']
+  - path: kopia-pliku-produktu-w-fixturach-test-swiezosci-pomijany.md
+    title: "Kopia pliku produktu w fixturach i test świeżości pomijany bez zmiennej środowiska: punktowy bieg niczego nie dowodzi"
+    tags: [skillsync, tests, fixtures, merge-modules, freshness, skip]
+    paths: ['scripts/merge_modules.py', 'tests/fixtures/prototype/engine-v2/SOURCE.md', 'tests/test_skillsync_prototype_engine.py']
+  - path: generowany-gitignore-test-rownowaznosci-z-baza-historyczna.md
+    title: "Generowany plik (.gitignore artefaktów) a test równoważności z bazą historyczną: nowa funkcja dopisująca wiersz wymaga udokumentowanego wyjątku, nie regeneracji skrótów"
+    tags: [skillsync, tests, gitignore, link, baseline, equivalence]
+    paths: ['skillsync_workflow/layers.py', 'tests/test_skillsync_layers_equivalence.py', 'tests/test_skillsync_worktree_links.py']
+  - path: liczniki-z-regex-kontra-zdarzenia-adaptera-jedno-zrodlo-wyniku.md
+    title: "Liczniki biegu z wyrażeń regularnych kontra zdarzenia adaptera: jedno źródło prawdy dla wyniku, bo zielony bieg bywał BLOCKED"
+    tags: [skillsync, test-run, adapters, counts, junit, evidence]
+    paths: ['skillsync_workflow/test_run.py', 'skillsync_workflow/test_events.py', 'tests/test_skillsync_adapter_web_counts.py']

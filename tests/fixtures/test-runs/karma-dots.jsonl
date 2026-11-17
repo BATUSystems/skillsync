@@ -1,0 +1,15 @@
+{"meta": {"tool": "karma", "version": "karma 6.4.4, karma-jasmine 5.1.0, jasmine-core 5.6.0, Chrome Headless 157", "command": ["karma", "start", "karma.conf.js"], "exit": 1, "merged": false, "env": {"LANG": "pl_PL.UTF-8", "NO_COLOR": "1", "stdout_stderr": "pipes (not a terminal)"}, "note": "dots reporter", "scrubbed": "paths, host and user names are replaced", "format": "one record per chunk read from the pipe: t = seconds since the start, fd = out|err, data = the text of the chunk"}}
+{"t": 0.236, "fd": "out", "data": "\u001b[32m16 11 2026 22:53:41.850:INFO [karma-server]: \u001b[39mKarma v6.4.4 server started at http://localhost:PORT/\n"}
+{"t": 0.236, "fd": "out", "data": "\u001b[32m16 11 2026 22:53:41.852:INFO [launcher]: \u001b[39mLaunching browsers HeadlessIsolated with concurrency unlimited\n"}
+{"t": 0.241, "fd": "out", "data": "\u001b[32m16 11 2026 22:53:41.857:INFO [launcher]: \u001b[39mStarting browser ChromeHeadless\n"}
+{"t": 0.604, "fd": "out", "data": "\u001b[32m16 11 2026 22:53:42.219:INFO [Chrome Headless 157.0.0.0 (Linux 0.0.0)]: \u001b[39mConnected on socket SOCKET with id ID\n"}
+{"t": 1.046, "fd": "out", "data": "."}
+{"t": 1.448, "fd": "out", "data": "."}
+{"t": 1.852, "fd": "out", "data": "\nChrome Headless 157.0.0.0 (Linux 0.0.0) math fails with a message FAILED\n\tExpected 4 to be 5.\n\t    at <Jasmine>\n\t    at UserContext.<anonymous> (spec/math.spec.js:7:74)\n"}
+{"t": 2.153, "fd": "out", "data": "."}
+{"t": 2.355, "fd": "out", "data": "."}
+{"t": 2.556, "fd": "out", "data": "."}
+{"t": 2.758, "fd": "out", "data": "\nChrome Headless 157.0.0.0 (Linux 0.0.0) math adds 2 + 2 = 5 FAILED\n\tExpected 4 to be 5.\n\t    at <Jasmine>\n\t    at UserContext.<anonymous> (spec/math.spec.js:12:79)\n"}
+{"t": 2.758, "fd": "out", "data": "."}
+{"t": 3.06, "fd": "out", "data": "."}
+{"t": 3.061, "fd": "out", "data": "\nChrome Headless 157.0.0.0 (Linux 0.0.0): Executed 9 of 11 (2 FAILED) (skipped 2) (2.418 secs / 2.408 secs)\n"}

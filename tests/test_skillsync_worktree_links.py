@@ -366,6 +366,7 @@ class DegradedLinks(LayersCase):
         process = self.cli('link', str(self.proj), cwd=self.proj)
         self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
         self.assertIn('not managed by skillsync', process.stdout + process.stderr)
+        self.assertIn('delete it (keep your own changes elsewhere) and run `skillsync link` again', process.stdout + process.stderr)
         self.assertEqual(path.read_text(encoding='utf-8'), 'my own notes, not the target of the link\n')
         code, report, errors = self.doctor()
         self.assertIn('Invalid installed skill copy', errors['.claude/skills/foo'])

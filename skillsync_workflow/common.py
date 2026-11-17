@@ -396,27 +396,46 @@ def decode_text(data, strict=False):
     return text.replace('\x00', '')
 
 
+_SECRET_NAME = re.compile(r'(?i)token|secret|password|passwd|api_?key|credential')
+_URL_CREDENTIALS = re.compile(r'(https?://)[^/@\s]+:[^/@\s]+@')
+_AUTHORIZATION = re.compile(r'(?i)(authorization\s*[:=]\s*(?:(?:bearer|basic|digest)\s+)?)[^\s\x22\x27,;]+')
+_BEARER = re.compile(r'(?i)(\bbearer\s+)[^\s\x22\x27,;]+')
+
+
+def _environment_secrets():
+    """The secrets of the environment (8+ characters, a name that says so), with the variants for Windows line ends; read at each `redact` call."""
+    found = []
+    for name, secret in os.environ.items():
+        if len(secret) >= SECRET_MIN_LENGTH and _SECRET_NAME.search(name):
+            found.append(secret)
+            if '\n' in secret:   # a multi-line secret (a PEM key) in a file with Windows line ends
+                found.append(secret.replace('\n', '\r\n'))
+    return found
+
+
 def redact(value, _key=False):
     """Masks secrets in strings. A secret from the environment is substituted only when it has 8+ characters, in keys and
     in text alike (D6): a short value (the Windows runner has one equal to `root`) must not rename structural keys or
-    ordinary words. Pattern-based masking (URL credentials, `Authorization`, `password=`...) has no length floor."""
+    ordinary words. Pattern-based masking (URL credentials, `Authorization`, `password=`...) has no length floor.
+    The environment is read once per call, not once per string (a tree of thousands of strings, the `tests` of the status)."""
+    return _redact(value, _environment_secrets())
+
+
+def _redact(value, secrets):
     if isinstance(value, dict):
-        return {redact(key, True): redact(item) for key, item in value.items()}
+        return {_redact(key, secrets): _redact(item, secrets) for key, item in value.items()}
     if isinstance(value, list):
-        return [redact(item) for item in value]
+        return [_redact(item, secrets) for item in value]
     if isinstance(value, tuple):
-        return tuple(redact(item) for item in value)
+        return tuple(_redact(item, secrets) for item in value)
     if not isinstance(value, str):
         return value
     text = value
-    for name, secret in os.environ.items():
-        if len(secret) >= SECRET_MIN_LENGTH and re.search(r'(?i)token|secret|password|passwd|api_?key|credential', name):
-            text = text.replace(secret, '[REDACTED]')
-            if '\n' in secret:   # a multi-line secret (a PEM key) in a file with Windows line ends
-                text = text.replace(secret.replace('\n', '\r\n'), '[REDACTED]')
-    text = re.sub(r'(https?://)[^/@\s]+:[^/@\s]+@', r'\1[REDACTED]@', text)
-    text = re.sub(r'(?i)(authorization\s*[:=]\s*(?:(?:bearer|basic|digest)\s+)?)[^\s\x22\x27,;]+', r'\1[REDACTED]', text)
-    text = re.sub(r'(?i)(\bbearer\s+)[^\s\x22\x27,;]+', r'\1[REDACTED]', text)
+    for secret in secrets:
+        text = text.replace(secret, '[REDACTED]')
+    text = _URL_CREDENTIALS.sub(r'\1[REDACTED]@', text)
+    text = _AUTHORIZATION.sub(r'\1[REDACTED]', text)
+    text = _BEARER.sub(r'\1[REDACTED]', text)
     return _SECRET_KEY_VALUE.sub(_mask_value, text)
 
 

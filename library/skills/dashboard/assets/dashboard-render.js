@@ -56,6 +56,7 @@
     "i-moon": ["0 0 24 24", [["path", { "d": "M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z", "fill": "none", "stroke": "currentColor", "stroke-width": "1.8", "stroke-linejoin": "round" }]]],
     "i-proto": ["0 0 24 24", [["rect", { "x": "3", "y": "4", "width": "18", "height": "14", "rx": "2", "fill": "none", "stroke": "currentColor", "stroke-width": "1.8" }], ["path", { "d": "M3 8h18M8 21h8", "fill": "none", "stroke": "currentColor", "stroke-width": "1.8", "stroke-linecap": "round" }], ["circle", { "cx": "6", "cy": "6", "r": ".9", "fill": "currentColor" }]]],
     "i-bell": ["0 0 24 24", [["path", { "d": "M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z", "fill": "none", "stroke": "currentColor", "stroke-width": "1.8", "stroke-linejoin": "round" }], ["path", { "d": "M10 20.5a2.2 2.2 0 0 0 4 0", "fill": "none", "stroke": "currentColor", "stroke-width": "1.8", "stroke-linecap": "round" }]]],
+    "i-flask": ["0 0 24 24", [["path", { "d": "M9 3h6M10 3v6l-5.5 9a2 2 0 0 0 1.7 3h11.6a2 2 0 0 0 1.7-3L14 9V3", "fill": "none", "stroke": "currentColor", "stroke-width": "1.8", "stroke-linecap": "round", "stroke-linejoin": "round" }], ["path", { "d": "M7.5 14h9", "fill": "none", "stroke": "currentColor", "stroke-width": "1.8", "stroke-linecap": "round" }]]],
     "i-chev": ["0 0 24 24", [["path", { "d": "M7 10l5 5 5-5", "fill": "none", "stroke": "currentColor", "stroke-width": "2", "stroke-linecap": "round", "stroke-linejoin": "round" }]]],
   };
 
@@ -213,7 +214,7 @@
     const st = {
       data: null, prev: null, view: "progress", doc: null, docData: null, desc: null,
       armed: null, armedTimer: null, approving: false, notice: null, noticeTimer: null, visible: true, openPhases: {},
-      silenceShown: false, silenceMin: 0, descFor: null, descPinned: false, docButtons: [], timers: new Set(), frames: new Set(), destroyed: false,
+      testsOpen: {}, testsAttempt: {}, testsLoading: {}, testsError: {}, testsLoaded: {}, testsStep: null, silenceShown: false, silenceMin: 0, descFor: null, descPinned: false, docButtons: [], timers: new Set(), frames: new Set(), destroyed: false,
     };
     const later = (fn, ms) => { const t = timers.set(() => { st.timers.delete(t); if (!st.destroyed) fn(); }, ms); st.timers.add(t); return t; };
     const cancel = (t) => { if (t) { timers.clear(t); st.timers.delete(t); } };
@@ -301,6 +302,11 @@
     ui["tab-docs"] = h("button", { role: "tab", id: "tab-docs", "aria-controls": "view-docs", "aria-selected": "false",
       "data-tip": "Spec, plan i pliki przebiegu (klawisz D)", on: { click: () => setView("docs") } },
       svg("svg", { class: "ic" }, svg("use", { href: "#i-doc" })), "Dokumenty ", ui.docCount);
+    ui.tCount = h("span", { class: "count", id: "tCount" });
+    ui["tab-tests"] = h("button", { role: "tab", id: "tab-tests", "aria-controls": "view-tests", "aria-selected": "false", hidden: true,
+      "data-tip": "Wyniki testów kroków planu", on: { click: () => setView("tests") } },
+      svg("svg", { class: "ic" }, svg("use", { href: "#i-flask" })), "Testy ", ui.tCount);
+    ui.tests = h("div", { class: "tests-view", id: "testsView" });
     ui.qCount = h("span", { class: "count", id: "qCount" });
     ui["tab-questions"] = h("button", { role: "tab", id: "tab-questions", "aria-controls": "view-questions", "aria-selected": "false", hidden: true,
       "data-tip": "Prototypy i pytania do eksperta", on: { click: () => setView("questions") } },
@@ -324,6 +330,7 @@
         h("aside", { class: "feed-box", "aria-labelledby": "feedTitle" },
           h("h2", { id: "feedTitle", "data-desc": "checkpoints", tabindex: "0" }, svg("svg", { class: "ic" }, svg("use", { href: "#i-flag" })), "Ostatnie checkpointy"),
           ui.parseWarn, ui.feed)));
+    ui["view-tests"] = h("section", { id: "view-tests", role: "tabpanel", "aria-labelledby": "tab-tests", hidden: true }, ui.tests);
     ui["view-docs"] = h("section", { id: "view-docs", role: "tabpanel", "aria-labelledby": "tab-docs", hidden: true },
       h("div", { class: "docs" }, ui.docList, ui.docView));
     ui["view-questions"] = h("section", { id: "view-questions", role: "tabpanel", "aria-labelledby": "tab-questions", hidden: true },
@@ -371,8 +378,8 @@
         h("div", { class: "brand-text" }, ui.title, ui.meta)),
       h("div", { class: "top-right" }, ui.themeBtn || null, ui.live, h("div", { class: "plan-pick" }, ui.planBtn, ui.planMenu))),
       ui.waitBanner,
-      h("nav", { class: "tabs", role: "tablist", "aria-label": "Widok", on: { keydown: tabKey } }, ui["tab-progress"], ui["tab-docs"], ui["tab-questions"], ui.protoLink),
-      h("main", null, ui["view-progress"], ui["view-docs"], ui["view-questions"]),
+      h("nav", { class: "tabs", role: "tablist", "aria-label": "Widok", on: { keydown: tabKey } }, ui["tab-progress"], ui["tab-tests"], ui["tab-docs"], ui["tab-questions"], ui.protoLink),
+      h("main", null, ui["view-progress"], ui["view-tests"], ui["view-docs"], ui["view-questions"]),
       ui.foot));
     root.appendChild(ui.descTip);
     if (ui.toTop) root.appendChild(ui.toTop);   // poza .dash-wrap: containment tworzy blok zawierający dla position: fixed
@@ -525,6 +532,7 @@
       renderResult(d);
       renderGlossary();
       renderQuestionsTab(d);
+      renderTestsTab(d);
       const app = d.app || {}, project = d.project || {};
       fill(ui.foot,
         h("span", null, `dashboard ${app.version ?? ""}`),
@@ -652,11 +660,135 @@
             const changed = st.prev && prevStates[s.id] && prevStates[s.id] !== s.state;
             const tip = `${s.id} ${s.title} — ${STEP_LABEL[s.state]}${s.sha ? " · commit " + s.sha : ""}${s.note && !s.sha ? " · " + s.note : ""}`;
             const mark = s.state === "done" || s.state === "reported" ? icon("i-check") : null;
-            return h("li", { class: `step s-${s.state}${changed ? " flash" : ""}`, ...desc(/^zamknięcie/i.test(s.title || "") ? "closure" : "substep", tip) },
-              h("span", { class: "st", "aria-label": STEP_LABEL[s.state] ?? "" }, mark), h("span", { class: "sid" }, s.id), h("span", { class: "tt" }, s.title));
+            return h("li", { class: `step s-${s.state}${changed ? " flash" : ""}${s.tests ? " has-tests" : ""}`, ...desc(/^zamknięcie/i.test(s.title || "") ? "closure" : "substep", tip) },
+              h("span", { class: "st", "aria-label": STEP_LABEL[s.state] ?? "" }, mark), h("span", { class: "sid" }, s.id), h("span", { class: "tt" }, s.title),
+              stepTests(s, fills));
           })));
       }));
       animateBars(fills);
+    }
+
+    // ---------------------------------------------------------------- testy (180-A): pasek przy kroku i zakładka „Testy”
+    const TEST_STATE = { passed: "zielony", failed: "czerwony", running: "uruchomiony", skipped: "pominięty", waiting: "oczekuje" };
+    const TEST_MARK = { passed: "✓", failed: "✕", skipped: "–", running: "", waiting: "" };
+    const num = (v) => (Number.isFinite(v) && v > 0 ? Math.floor(v) : 0);
+    // Pasek „ile przeszło z ilu” przy kroku planu i przycisk do jego sekcji; kroki bez testów nie mają niczego.
+    function stepTests(step, fills) {
+      const t = step && step.tests;
+      if (!t || typeof t !== "object" || !t.counts) return null;
+      const c = t.counts, total = num(c.total) || num(c.passed) + num(c.failed) + num(c.skipped) + num(c.running) + num(c.waiting);
+      if (!total) return null;
+      const pct = (n) => Math.min(100, Math.round((100 * num(n)) / total));
+      const label = `${num(c.passed)} z ${total} ${plural(total, "testu", "testów", "testów")} przeszło${num(c.failed) ? `, ${num(c.failed)} ${plural(num(c.failed), "czerwony", "czerwone", "czerwonych")}` : ""}${num(c.running) ? `, ${num(c.running)} trwa` : ""}`;
+      const parts = [["g", c.passed], ["r", c.failed], ["a", c.running]].map(([cls, n]) => {
+        const el = h("i", { class: cls, "data-w": String(pct(n)) });
+        fills.push(el);
+        return el;
+      });
+      return h("span", { class: "stbar" },
+        h("span", { class: "tbar", role: "img", "aria-label": label }, parts),
+        h("span", { class: "n" }, `${num(c.passed)}/${total}`),
+        h("button", { type: "button", class: "tolink", "data-test-step": step.id, "aria-label": `Pokaż testy kroku ${step.id}`, "data-tip": "Pokaż testy kroku",
+          on: { click: (e) => { e.stopPropagation(); showTests(step.id); } } }, svg("svg", { class: "ic" }, svg("use", { href: "#i-flask" }))));
+    }
+    // Przejście do sekcji kroku: zakładka Testy, sekcja rozwinięta, fokus na jej nagłówku.
+    function showTests(stepId) {
+      st.testsStep = stepId;
+      st.testsOpen[stepId] = true;
+      setView("tests");
+      render();
+      const btn = root.querySelector(`#tsec-btn-${CSS_ID(stepId)}`);
+      if (btn && typeof btn.focus === "function") btn.focus({ preventScroll: false });
+    }
+    const CSS_ID = (v) => String(v == null ? "_none" : v).replace(/[^A-Za-z0-9_-]/g, "_");
+    function countChips(c) {
+      const out = [];
+      if (num(c.failed)) out.push(h("span", { class: "chip s-bad" }, `✕ ${num(c.failed)} ${plural(num(c.failed), "czerwony", "czerwone", "czerwonych")}`));
+      if (num(c.passed)) out.push(h("span", { class: "chip s-done" }, `${num(c.passed)} ${plural(num(c.passed), "zielony", "zielone", "zielonych")}`));
+      if (num(c.running)) out.push(h("span", { class: "chip s-warn" }, `${num(c.running)} ${plural(num(c.running), "uruchomiony", "uruchomione", "uruchomionych")}`));
+      if (num(c.waiting)) out.push(h("span", { class: "chip s-planned" }, `${num(c.waiting)} oczekuje`));
+      if (num(c.skipped)) out.push(h("span", { class: "chip s-planned" }, `${num(c.skipped)} ${plural(num(c.skipped), "pominięty", "pominięte", "pominiętych")}`));
+      return out;
+    }
+    function testRow(t) {
+      const state = TEST_STATE[t.state] ? t.state : "waiting";
+      return h("li", { class: `t is-${state}` },
+        h("span", { class: `tst ${state}`, role: "img", "aria-label": TEST_STATE[state] }, TEST_MARK[state]),
+        h("span", { class: "nm" }, String(t.name ?? t.id ?? "")),
+        h("span", { class: "du" }, Number.isFinite(t.ms) ? `${t.ms} ms` : ""),
+        t.msg ? h("pre", { class: "msg" }, String(t.msg)) : null);
+    }
+    function groupBlock(sec, attempt, group, key) {
+      const gk = `${key}|${attempt.n}|${group.name}`;
+      const loaded = st.testsLoaded[gk];
+      const shown = Array.isArray(loaded) ? loaded : group.tests || [];
+      const total = num(group.total);
+      const canLoad = deps.actions && typeof deps.actions.loadTests === "function";
+      const more = total > shown.length && canLoad && !st.testsLoading[gk];
+      return h("div", { class: `tgrp s-${group.state || "passed"}` },
+        h("div", { class: "tgh" }, h("span", { class: `tst ${group.state === "failed" ? "failed" : group.state === "running" ? "running" : group.state === "waiting" ? "waiting" : "passed"}`, "aria-hidden": "true" },
+          group.state === "failed" ? "✕" : group.state === "passed" ? "✓" : ""), h("span", { class: "gn mono" }, String(group.name)),
+          h("span", { class: "gc" }, `${num(group.counts && group.counts.passed)}/${total}`)),
+        shown.length ? h("ul", { class: "tlist" }, (Array.isArray(loaded) ? shown : shown.slice(0, 200)).map(testRow)) : null,
+        st.testsError[gk] ? h("div", { class: "terr", role: "alert" }, "Nie udało się pobrać listy testów tej grupy.") : null,
+        more ? h("button", { type: "button", class: "tmore", on: { click: () => {
+          st.testsLoading[gk] = true; st.testsError[gk] = false;
+          const have = Array.isArray(st.testsLoaded[gk]) ? st.testsLoaded[gk] : [];
+          Promise.resolve(deps.actions.loadTests({ run: st.data && st.data.run && st.data.run.id, step: sec.step && sec.step.id, attempt: attempt.n, group: group.name, offset: have.length }))
+            .then((body) => { if (body && Array.isArray(body.tests)) st.testsLoaded[gk] = have.concat(body.tests); else st.testsError[gk] = true; })
+            .catch(() => { st.testsError[gk] = true; })
+            .finally(() => { st.testsLoading[gk] = false; render(); });
+        } } }, Array.isArray(loaded) ? `Pokaż kolejne (${total - shown.length})` : `Pokaż wszystkie (${total})`) : null);
+    }
+    function testSection(sec, fills) {
+      const step = sec.step || null, key = step ? step.id : "_none";
+      const attempts = Array.isArray(sec.attempts) ? sec.attempts.filter((a) => a && typeof a === "object") : [];
+      if (!attempts.length) return null;
+      const idx = Math.min(st.testsAttempt[key] || 0, attempts.length - 1), att = attempts[idx];
+      const running = sec.state === "running";
+      const open = key in st.testsOpen ? st.testsOpen[key] : running;   // rozwinięta tylko trwająca; zakończone zwinięte (także z porażkami)
+      const id = CSS_ID(key), c = att.counts || {};
+      const total = num(c.total) || num(c.passed) + num(c.failed) + num(c.skipped) + num(c.running) + num(c.waiting);
+      const state = sec.state === "passed" ? "zielony" : sec.state === "failed" ? "czerwony" : sec.state === "running" ? "trwa" : sec.state === "interrupted" ? "przerwany" : "";
+      const head = h("button", { type: "button", id: `tsec-btn-${id}`, class: "tsec-head", "aria-expanded": String(open), "aria-controls": open ? `tsec-body-${id}` : null,
+        on: { click: () => { st.testsOpen[key] = !open; render(); const b = root.querySelector(`#tsec-btn-${id}`); if (b && typeof b.focus === "function") b.focus({ preventScroll: true }); } } },
+        h("span", { class: "chev", "aria-hidden": "true" }, open ? "▾" : "▸"),
+        h("span", { class: "sh" }, h("b", null, step ? h("span", { class: "mono" }, step.id) : null, step ? " " : "", step ? (step.title || "") : "Bez kroku"),
+          h("span", { class: "sub" }, `bieg ${att.n} z ${attempts.length > 1 ? attempts[0].n : att.n} · ${att.startedAt ? fmtTime(att.startedAt) : "—"}${Number.isFinite(att.durationMs) ? " · " + fmtDur(att.durationMs) : ""}`)),
+        h("span", { class: "sum", ...(running ? { "aria-live": "polite", "aria-atomic": "true" } : {}) }, state ? h("span", { class: `chip ${sec.state === "passed" ? "s-done" : sec.state === "failed" ? "s-bad" : sec.state === "running" ? "s-active" : "s-warn"}` }, state) : null, countChips(c)));
+      const body = open ? h("div", { class: "tsec-body", id: `tsec-body-${id}` },
+        att.command ? h("div", { class: "cmd mono" }, String(att.command)) : null,
+        h("div", { class: "tprogress", role: "img", "aria-label": `${num(c.passed)} z ${total || "?"} testów zielonych` }, ["g", "r", "a"].map((cls, i) => {
+          const el = h("i", { class: cls, "data-w": String(total ? Math.min(100, Math.round((100 * num([c.passed, c.failed, c.running][i])) / total)) : 0) });
+          fills.push(el);
+          return el;
+        })),
+        h("div", { class: "tlevel", "data-tip": "lista testów = nazwy i stany pojedynczych testów (z raportu JUnit/TRX albo ze strumienia); liczniki = same liczby (np. „Executed N of M”); polecenie = tylko stan polecenia, bez wyników testów; „bez stanu uruchomiony” = narzędzie wypisuje test dopiero po jego zakończeniu, więc do tego czasu test oczekuje" },
+          `poziom danych: ${att.levels === "tests" ? "lista testów" : att.levels === "counts" ? "liczniki" : "polecenie"}${att.live === "completion" ? " (wyniki po zakończeniu każdego testu, bez stanu „uruchomiony”)" : ""}${att.reason ? " · " + att.reason : ""}${att.truncated ? " · lista obcięta (limit)" : ""}`),
+        attempts.length > 1 ? h("div", { class: "tatt", role: "group", "aria-label": "Biegi kroku" }, attempts.map((a, i) => h("button", { type: "button", class: `tab-att${i === idx ? " is-on" : ""}`, "aria-pressed": String(i === idx),
+          on: { click: () => { st.testsAttempt[key] = i; render(); } } }, `bieg ${a.n}: ${a.state === "passed" ? "✓" : a.state === "failed" ? "✕" : a.state === "running" ? "…" : "!"} ${num(a.counts && a.counts.failed) ? num(a.counts.failed) + " czerwone" : ""}`.trim()))) : null,
+        (att.groups || []).map((g) => groupBlock(sec, att, g, key))) : null;
+      return h("section", { class: `tsec s-${sec.state || "passed"}`, id: `tsec-${id}` }, head, body);
+    }
+    function renderTestsTab(d) {
+      const t = d.tests && typeof d.tests === "object" && Array.isArray(d.tests.sections) ? d.tests : null;
+      ui["tab-tests"].hidden = !t;
+      if (!t) {
+        fill(ui.tests); ui.tCount.textContent = "";
+        ui["view-tests"].hidden = true;
+        if (st.view === "tests") setView("progress", false);
+        return;
+      }
+      const failed = num(t.failedTotal);
+      ui.tCount.textContent = failed ? String(failed) : "";
+      ui.tCount.setAttribute("class", failed ? "count is-bad" : "count");
+      const fills = [];
+      fill(ui.tests,
+        h("div", { class: "tlegend", role: "list" },
+          ["waiting", "running", "passed", "failed"].map((k) => h("span", { role: "listitem" }, h("span", { class: `tst ${k}`, "aria-hidden": "true" }, TEST_MARK[k]), ` ${TEST_STATE[k]}`))),
+        t.sections.filter((sec) => sec && typeof sec === "object").map((sec) => testSection(sec, fills)));
+      animateBars(fills);
+      ui["view-tests"].hidden = st.view !== "tests";
     }
 
     // Dwa odcienie paska (tylko gdy `activePercent` > 0): ciemniejszy = zweryfikowane, jaśniejszy = zgłoszone i w toku (pending + active).
@@ -1158,20 +1290,20 @@
     // ---------------------------------------------------------------- zakładki, motyw, klawisze
     function setView(view, push = true) {
       st.view = view;
-      if (view === "questions" && ui["tab-questions"].hidden) view = st.view = "progress";
-      ["progress", "docs", "questions"].forEach((v) => {
+      if ((view === "questions" && ui["tab-questions"].hidden) || (view === "tests" && ui["tab-tests"].hidden)) view = st.view = "progress";
+      ["progress", "tests", "docs", "questions"].forEach((v) => {
         ui["view-" + v].hidden = v !== view;
         ui["tab-" + v].setAttribute("aria-selected", String(v === view));
       });
       if (view === "docs" && st.doc) loadDoc(st.doc);
-      if (push) navigate(view === "docs" && st.doc ? "docs:" + st.doc : view);
+      if (push) navigate(view === "docs" && st.doc ? "docs:" + st.doc : view === "tests" && st.testsStep ? "tests:" + st.testsStep : view);
       toTopSync();
     }
     // Strzałki w liście zakładek (WAI-ARIA): lewo/prawo, Home/End przechodzą po widocznych zakładkach i je włączają.
     function tabKey(e) {
       const keys = ["ArrowRight", "ArrowLeft", "Home", "End"];
       if (!keys.includes(e.key)) return;
-      const tabs = ["progress", "docs", "questions"].filter((v) => !ui["tab-" + v].hidden);
+      const tabs = ["progress", "tests", "docs", "questions"].filter((v) => !ui["tab-" + v].hidden);
       const cur = tabs.indexOf(st.view);
       const next = e.key === "Home" ? 0 : e.key === "End" ? tabs.length - 1
         : (Math.max(cur, 0) + (e.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
@@ -1235,6 +1367,7 @@
       setLive,
       setView,
       setDoc(path) { st.doc = path || null; },
+      setTestsStep(step) { st.testsStep = step || null; if (step) st.testsOpen[step] = true; },
       tick,
       handleKey,
       closeMenu() { toggleMenu(false); },

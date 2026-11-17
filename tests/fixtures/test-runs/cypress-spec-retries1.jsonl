@@ -1,0 +1,46 @@
+{"meta": {"tool": "cypress", "version": "cypress 16.3.0, Electron 150 (headless), Node 22.22.0, retries.runMode=1", "command": ["cypress", "run", "--browser", "electron", "--spec", "cypress/e2e/math.cy.js"], "exit": 2, "merged": false, "env": {"LANG": "pl_PL.UTF-8", "NO_COLOR": "1", "stdout_stderr": "pipes (not a terminal)"}, "note": "retries: (Attempt i of n) lines", "scrubbed": "paths, host and user names are replaced", "format": "one record per chunk read from the pipe: t = seconds since the start, fd = out|err, data = the text of the chunk"}}
+{"t": 2.767, "fd": "out", "data": "\n"}
+{"t": 2.78, "fd": "out", "data": "================================================================================\n\n"}
+{"t": 2.781, "fd": "out", "data": "  (Run Starting)\n"}
+{"t": 2.781, "fd": "out", "data": "\n"}
+{"t": 2.789, "fd": "out", "data": "  ┌────────────────────────────────────────────────────────────────────────────────────────────────┐\n  │ Cypress:        16.3.0                                                                         │\n  │ Browser:        Electron 150 (headless) (deprecated)                                           │\n  │ Node Version:   v22.22.0 (/HOME)                   │\n  │ Specs:          1 found (math.cy.js)                                                           │\n  │ Searched:       cypress/e2e/math.cy.js                                                         │\n  └────────────────────────────────────────────────────────────────────────────────────────────────┘\n"}
+{"t": 2.789, "fd": "out", "data": "\n"}
+{"t": 2.793, "fd": "out", "data": "Warning: The Electron browser is deprecated as a test browser and will be removed in a future version of Cypress.\n\nSwitch to Chrome or another installed browser to avoid a breaking change when you upgrade.\n\nRead more about supported browsers: https://on.cypress.io/launching-browsers\n\n"}
+{"t": 2.793, "fd": "out", "data": "\n"}
+{"t": 2.794, "fd": "out", "data": "────────────────────────────────────────────────────────────────────────────────────────────────────\n                                                                                                    \n  Running:  math.cy.js                                                                      (1 of 1)\n"}
+{"t": 5.986, "fd": "out", "data": "\n"}
+{"t": 5.986, "fd": "out", "data": "\n"}
+{"t": 5.986, "fd": "out", "data": "  math\n"}
+{"t": 6.436, "fd": "out", "data": "    ✓ adds (451ms)\n"}
+{"t": 6.877, "fd": "out", "data": "    ✓ subtracts (418ms)\n"}
+{"t": 6.889, "fd": "out", "data": "    - is skipped\n"}
+{"t": 7.209, "fd": "out", "data": "    (Attempt 1 of 2) fails with a message\n"}
+{"t": 7.679, "fd": "out", "data": "    1) fails with a message\n"}
+{"t": 7.922, "fd": "out", "data": "    ✓ adds 1 + 1 = 2 (214ms)\n"}
+{"t": 8.149, "fd": "out", "data": "    ✓ adds 2 + 3 = 5 (212ms)\n"}
+{"t": 8.378, "fd": "out", "data": "    (Attempt 1 of 2) adds 2 + 2 = 5\n"}
+{"t": 8.634, "fd": "out", "data": "    2) adds 2 + 2 = 5\n"}
+{"t": 8.669, "fd": "out", "data": "    ✓ żółć – unicode name (9ms)\n"}
+{"t": 8.681, "fd": "out", "data": "    - is pending without a body\n"}
+{"t": 8.682, "fd": "out", "data": "    nested\n"}
+{"t": 8.696, "fd": "out", "data": "      ✓ deep ok (9ms)\n"}
+{"t": 8.696, "fd": "out", "data": "\n"}
+{"t": 8.712, "fd": "out", "data": "\n"}
+{"t": 8.713, "fd": "out", "data": "  6 passing (3s)\n"}
+{"t": 8.713, "fd": "out", "data": "  2 pending\n"}
+{"t": 8.713, "fd": "out", "data": "  2 failing\n"}
+{"t": 8.713, "fd": "out", "data": "\n"}
+{"t": 8.715, "fd": "out", "data": "  1) math\n       fails with a message:\n\n      AssertionError: expected 4 to equal 5\n      + expected - actual\n\n      -4\n      +5\n      \n      at Context.eval (webpack://cypress/./cypress/e2e/math.cy.js:5:80)\n      at getRet (http://localhost:PORT/__cypress/runner/cypress_runner.js:122309:22)\n      at tryCatcher (http://localhost:PORT/__cypress/runner/cypress_runner.js:1776:23)\n      at Promise.attempt.Promise.try (http://localhost:PORT/__cypress/runner/cypress_runner.js:4284:29)\n      at Context.thenFn (http://localhost:PORT/__cypress/runner/cypress_runner.js:122321:66)\n      at Context.then (http://localhost:PORT/__cypress/runner/cypress_runner.js:122570:21)\n\n"}
+{"t": 8.715, "fd": "out", "data": "  2) math\n       adds 2 + 2 = 5:\n\n      AssertionError: expected 4 to equal 5\n      + expected - actual\n\n      -4\n      +5\n      \n      at Context.eval (webpack://cypress/./cypress/e2e/math.cy.js:8:85)\n      at getRet (http://localhost:PORT/__cypress/runner/cypress_runner.js:122309:22)\n      at tryCatcher (http://localhost:PORT/__cypress/runner/cypress_runner.js:1776:23)\n      at Promise.attempt.Promise.try (http://localhost:PORT/__cypress/runner/cypress_runner.js:4284:29)\n      at Context.thenFn (http://localhost:PORT/__cypress/runner/cypress_runner.js:122321:66)\n      at Context.then (http://localhost:PORT/__cypress/runner/cypress_runner.js:122570:21)\n\n"}
+{"t": 8.715, "fd": "out", "data": "\n\n"}
+{"t": 8.717, "fd": "out", "data": "\n"}
+{"t": 8.717, "fd": "out", "data": "  (Results)\n"}
+{"t": 8.717, "fd": "out", "data": "\n"}
+{"t": 8.718, "fd": "out", "data": "  ┌────────────────────────────────────────────────────────────────────────────────────────────────┐\n  │ Tests:        10                                                                               │\n  │ Passing:      6                                                                                │\n  │ Failing:      2                                                                                │\n  │ Pending:      2                                                                                │\n  │ Skipped:      0                                                                                │\n  │ Screenshots:  0                                                                                │\n  │ Video:        false                                                                            │\n  │ Duration:     2 seconds                                                                        │\n  │ Spec Ran:     math.cy.js                                                                       │\n  └────────────────────────────────────────────────────────────────────────────────────────────────┘\n\n"}
+{"t": 8.731, "fd": "out", "data": "\n"}
+{"t": 8.745, "fd": "out", "data": "================================================================================\n\n"}
+{"t": 8.745, "fd": "out", "data": "  (Run Finished)\n"}
+{"t": 8.748, "fd": "out", "data": "\n"}
+{"t": 8.749, "fd": "out", "data": "\n"}
+{"t": 8.75, "fd": "out", "data": "       Spec                                              Tests  Passing  Failing  Pending  Skipped  \n  ┌────────────────────────────────────────────────────────────────────────────────────────────────┐\n  │ ✖  math.cy.js                               00:02       10        6        2        2        - │\n  └────────────────────────────────────────────────────────────────────────────────────────────────┘\n    ✖  1 of 1 failed (100%)                     00:02       10        6        2        2        -  \n"}
+{"t": 8.75, "fd": "out", "data": "\n"}

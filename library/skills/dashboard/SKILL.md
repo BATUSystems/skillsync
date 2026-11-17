@@ -16,7 +16,7 @@ przycisku (niżej: „Przyciski zgód”).
 ## Uruchomienie
 
 ```bash
-skillsync dashboard serve <projekt> [--port 5140 | --read-port N --approve-port M] [--read-bind ADR] [--approve-bind ADR] [--allow-proxy-headers] [--prototype-port N] [--host H] [--approve-host NAZWA ...] [--read-host NAZWA ...] [--no-approvals] [--plan docs/plans/<plik>.md] [--session-url https://…] [--layer id=ścieżka ...]
+skillsync dashboard serve <projekt> [--port N | --read-port N --approve-port M] [--read-bind ADR] [--approve-bind ADR] [--allow-proxy-headers] [--prototype-port N] [--host H] [--approve-host NAZWA ...] [--read-host NAZWA ...] [--no-approvals] [--plan docs/plans/<plik>.md] [--session-url https://…] [--layer id=ścieżka ...]
 skillsync dashboard show <projekt> [--json] [--plan docs/plans/<plik>.md]   # jednorazowy zrzut JSON (to samo co /api/status)
 ```
 
@@ -25,10 +25,18 @@ skillsync dashboard show <projekt> [--json] [--plan docs/plans/<plik>.md]   # je
   = `BLOCKED`, kod 2. Strona i `descriptions.json` pochodzą ze skilla `dashboard` aktywnych warstw (`--layer` jak w innych
   komendach; późniejsza warstwa wygrywa per plik).
 
-- Port domyślny **5140**, dozwolony zakres **5100–5199** (nigdy 4444–4448, 9222, 9333). Jeden proces na projekt;
-  port wybiera się per projekt (`--port`), żeby kilka projektów mogło działać równolegle.
-- Domyślnie nasłuch na `127.0.0.1`; dalej wystawia go tunel (`ssh -R 5140:127.0.0.1:5140 …`; przeglądarka po drugiej
-  stronie wysyła `Host: localhost`, więc działa bez flag). `--host 0.0.0.0` = wszystkie interfejsy (podgląd z telefonu lub
+- Bez flag portów serwer działa w trybie dwóch gniazd: odczyt na **5140** (wszystkie interfejsy, także sieć lokalna),
+  zgody na **5141** (tylko ta maszyna). Dozwolony zakres portów **5100–5199** (nigdy 4444–4448, 9222, 9333). Jeden proces
+  na projekt; port wybiera się per projekt, żeby kilka projektów mogło działać równolegle. Zajęty port = BLOCKED z numerem
+  portu i właścicielem (bez przejścia na inny port).
+- Tryb dwóch gniazd, nasłuch: odczyt na `0.0.0.0`, zgody na `127.0.0.1`. Telefon w tej samej sieci otwiera stronę pod
+  `http://<IP maszyny>:5140/` (adresy: `skillsync dashboard url <projekt> --lan`). Odczyt: `--read-bind`, potem `--host`
+  (przesuwa tylko odczyt), potem `dashboard:` (`local_only`, `read_bind`, `approve_bind`) w manifeście, potem w configu maszyny.
+  Zgody: `--approve-bind`, potem `dashboard:`, na końcu `127.0.0.1`; `--host` ich nie rusza.
+- `--host` i `--approve-host` bez portów są BLOCKED z podpowiedzią: stary tryb `--port N --host A` / `--port N --approve-host H`,
+  nowy: `--read-bind` i `--approve-bind`.
+- Tryb `--port N` (jedno gniazdo, stary tryb) słucha na `127.0.0.1`. Przez tunel `ssh -R N:127.0.0.1:N …` przeglądarka po drugiej stronie
+  wysyła `Host: localhost`, więc działa bez flag; gdy widzowie wchodzą pod nazwą tunelu: `serve --port N --read-host <nazwa tunelu>` (odczyt) albo `--approve-host <nazwa tunelu>` (odczyt i zgody), inaczej 403. `--port N --host 0.0.0.0` = wszystkie interfejsy (podgląd z telefonu lub
   innej maszyny w **zaufanej** sieci); każdy endpoint odpowiada jednak tylko pod nagłówkiem `Host` z loopbacku albo z
   `--approve-host`, więc adres z paska przeglądarki innego urządzenia (nazwa lub IP) trzeba podać w `--approve-host`
   (inaczej 403). `--approve-host` dopuszcza odczyt i zgody; `--read-host <adres>` (powtarzalny) dopuszcza tylko odczyt:
@@ -43,14 +51,16 @@ skillsync dashboard show <projekt> [--json] [--plan docs/plans/<plik>.md]   # je
   **Port odczytu** (5140) wystawiaj tunelem albo linkiem osobie z zewnątrz (`skillsync dashboard url <projekt> --read`):
   nie ma na nim żadnej trasy zgód (`POST /api/approve` = 404) ani tokenu. **Port zgód** (5141) służy tylko Tobie: adres
   z tokenem podaje `skillsync dashboard url <projekt>`; **nigdy nie kieruj na niego tunelu** ani linku.
-  Oba gniazda domyślnie słuchają na wszystkich interfejsach (`0.0.0.0`), z ostrzeżeniem w konsoli; `--read-bind` i
-  `--approve-bind 127.0.0.1` zawężają je do tej maszyny. Telefon w zaufanej sieci wchodzi na `http://<IP maszyny>:5141/`
-  bez `--approve-host`. W obcej sieci uruchom z `--approve-bind 127.0.0.1` i wejdź tunelem
-  `ssh -L 5141:127.0.0.1:5141 <host>`. Token idzie nieszyfrowanym HTTP: w sieci, której nie kontrolujesz, grozi
-  przechwycenie zgody (zob. „Bezpieczeństwo”).
-- **Jedno gniazdo** (`--port N`, także bez nowych flag): nasłuch na `127.0.0.1` (chyba że `--host`), rola z nagłówka `Host`.
-  Dwie stare instancje (jedna z `--no-approvals`) zastępuje jedno wywołanie z dwoma portami; najpierw zatrzymaj stare
-  procesy, bo porty muszą być wolne (inaczej `BLOCKED`, bez skutków ubocznych).
+  Zgody z telefonu w zaufanej sieci: `--approve-bind 0.0.0.0` (albo `approve_bind: 0.0.0.0`); wtedy zgody wchodzą na
+  `http://<IP maszyny>:5141/` bez `--approve-host`, a token idzie nieszyfrowanym HTTP. Strona tylko dla tej maszyny:
+  `dashboard.local_only: true` albo `--read-bind 127.0.0.1`. W nieufnej sieci (hotel, konferencja, hotspot) użyj
+  `dashboard.local_only: true` i wejdź na zgody tunelem `ssh -L 5141:127.0.0.1:5141 <host>`. Port odczytu daj do
+  tunelu albo linku osobie z zewnątrz (`skillsync dashboard url <projekt> --read`), nigdy port zgód.
+- Odczyt w tym trybie nie ma logowania: każdy w sieci, która widzi port 5140, widzi plany, specyfikacje, wyniki i raporty
+  przebiegów (sekrety maskowane heurystycznie). Ruch jest nieszyfrowany.
+- **Jedno gniazdo** (`--port N`): nasłuch na `127.0.0.1` (chyba że `--host`), rola z nagłówka `Host`.
+- Przed startem zatrzymaj inne `dashboard serve` na portach 5140 i 5141 (albo na podanych przez `--read-port`/`--approve-port`):
+  porty muszą być wolne, inaczej `BLOCKED` z numerem portu i właścicielem, bez skutków ubocznych.
 - Bez `--plan`: bieżący plan = najnowszy `docs/plans/*.md` ze `Status: in_progress`, inaczej `approved`, inaczej `draft`, inaczej ostatni `done`
   (nazwa z datą, potem mtime). Na stronie przełącznik planów (zapamiętany w przeglądarce).
 - Akt I bez planu: `feature` zakłada plan dopiero przy „GO plan”. Gdy najnowszy spec `draft`/`approved`, którego nie wskazuje
@@ -213,6 +223,10 @@ była, a nie, że pętla dała PASS.
   „N% zweryfikowane, M% zgłoszone lub w toku”; `run.parseWarnings` daje jedną linię „N fragmentów raportu pominięto” nad checkpointami (szczegóły w dymku).
   Brak każdego z tych pól daje wygląd jak dotąd.
 
+## Zakładka „Testy”
+
+Zakładka „Testy” (ukryta do pierwszego biegu) pokazuje wyniki testów kroków planu uruchomionych przez `skillsync test-run`: sekcja na krok (nagłówek = id i tytuł kroku, najnowsza pierwsza), rozwinięta tylko trwająca, zakończone zwinięte (czerwony chip w nagłówku i licznik czerwonych na zakładce); na zakładce „Postęp” przy kroku jest pasek „ile przeszło z ilu” i przycisk do sekcji (`#tests:<krok>`). Dane to pole `tests` JSON-a i trasa `GET /api/tests` (tylko odczyt, oba gniazda). **Wyniki testów nie są maskowane** (także na porcie odczytu widocznym w sieci; `tests.mask: on` je maskuje), reszta strony tak; zob. `docs/security.md`.
+
 ## Interfejs i API
 
 - `/` strona (zakładki **Postęp** i **Dokumenty**, klawisze `P`/`D`; przełącznik motywu jasny/ciemny w nagłówku, klawisz `T`, wybór w `localStorage`, domyślnie motyw systemu), `/assets/*` CSS/JS.
@@ -324,12 +338,15 @@ zmiana kontraktu ze Skippsterem (zgłoszenie przed zapisem).
 - Tryb dwóch gniazd: zgody tylko na gnieździe zgód; `Origin` musi być dokładnie `http://<Host>` z portem (strona z portu
   odczytu nie zapisze); nagłówki pośrednika (`Forwarded`, `X-Forwarded-*`, `Via`) odrzucają zapis, chyba że
   `--allow-proxy-headers`; każda zgoda w `approvals.jsonl` ma `via` (port, `Host`, adres klienta z połączenia).
-  Ryzyko szczątkowe: token jest w jawnym HTTP; w nieufnej sieci `--approve-bind 127.0.0.1` albo tunel SSH.
-- Strona nie ma logowania: z `--approve-host` przy `0.0.0.0` widzi ją każdy w tej sieci, kto otworzy podany adres (plany,
-  speki, checkpointy).
+  Ryzyko szczątkowe: token jest w jawnym HTTP (gdy gniazdo zgód słucha poza tą maszyną); w nieufnej sieci
+  `dashboard.local_only: true` albo tunel SSH.
+- Strona nie ma logowania: w trybie dwóch gniazd widzi ją każdy w sieci, która widzi port odczytu (plany, specyfikacje,
+  checkpointy, wyniki, raporty przebiegów); zgód nie widzi i nie robi.
 - Kontrola `Host` na wszystkich endpointach (strona, assety, `/api/*`, `/events`, `/healthz`, `POST`): nagłówek `Host` musi
   być `localhost`/`127.0.0.1`/`[::1]` (dowolny port) albo nazwą podaną jawnie w `--approve-host` lub `--read-host` (np. nazwa
   maszyny przy tunelu, IP w LAN); inny = 403 bez treści (ochrona przed DNS rebinding), odmowa w logu przy `--verbose`.
+  W trybie dwóch gniazd obie listy uzupełniają literały IP tej maszyny; gniazdo odczytu dodatkowo przyjmuje własną nazwę
+  maszyny (`socket.gethostname()`, krótką formę i `<krótka>.local`), tylko do odczytu.
   Zapis zgody tylko z loopbacku albo `--approve-host`; host z `--read-host` czyta, ale nie zapisuje z przeglądarki (klienta podrabiającego `Host` nie powstrzyma; nieufni widzowie = `--no-approvals`).
 - Zapis zgody wymaga też tokenu serwera (`X-Approve-Token`): adres z fragmentem `#zgoda=<token>` drukuje `dashboard serve` w konsoli, a działający serwer podaje `skillsync dashboard url <projekt>` (stderr uruchomionego serwera trafia do dziennika usługi i logów CI razem z tokenem: tam podawaj adres przez `dashboard url`, nie z linii startowej; przez `--approve-host` token idzie jawnym HTTP, tylko w zaufanej sieci).
   Agent daje użytkownikowi ten adres (nie wkleja go poza rozmowę); bez tokenu strona jest tylko do odczytu, przyciski zgód są nieaktywne.

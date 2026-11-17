@@ -8,7 +8,7 @@
   --pending-a: rgba(26, 127, 55, .55); --pending-b: rgba(26, 127, 55, .28);
   --warn: #9a6700; --warn-soft: rgba(154, 103, 0, .12);
   --planned: #5f6773; --planned-soft: rgba(107, 114, 128, .12);
-  --bad: #cf222e;
+  --bad: #cf222e; --bad-soft: rgba(207, 34, 46, .10);
   --radius: 14px; --shadow: 0 1px 2px rgba(0,0,0,.06), 0 6px 18px rgba(15, 23, 42, .06);
   --mono: ui-monospace, "JetBrains Mono", "Cascadia Code", "Fira Code", Menlo, Consolas, monospace;
   --sans: "Inter", "Segoe UI", system-ui, -apple-system, "Noto Sans", Roboto, sans-serif;
@@ -25,7 +25,7 @@
   --pending-a: rgba(63, 185, 80, .5); --pending-b: rgba(63, 185, 80, .22);
   --warn: #e3b341; --warn-soft: rgba(227, 179, 65, .15);
   --planned: #8b949e; --planned-soft: rgba(139, 148, 158, .12);
-  --bad: #ff7b72;
+  --bad: #ff7b72; --bad-soft: rgba(255, 123, 114, .12);
   --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35);
   color-scheme: dark;
 }
@@ -39,7 +39,7 @@
     --pending-a: rgba(63, 185, 80, .5); --pending-b: rgba(63, 185, 80, .22);
     --warn: #e3b341; --warn-soft: rgba(227, 179, 65, .15);
     --planned: #8b949e; --planned-soft: rgba(139, 148, 158, .12);
-    --bad: #ff7b72;
+    --bad: #ff7b72; --bad-soft: rgba(255, 123, 114, .12);
     --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35);
     color-scheme: dark;
   }
@@ -355,6 +355,8 @@ main { flex: 1; padding: 1.1rem 1.4rem; min-width: 0; }
 
 /* ---------- fazy i kroki */
 .work { display: grid; grid-template-columns: minmax(0, 1fr) minmax(18rem, 27rem); gap: 1rem; align-items: start; }
+/* 180-G: the grid of phases is spaced from what lies above it (the glossary and the result box have a top margin only) by the same gap as the cards inside it */
+.work { margin-top: 1rem; }
 .phases { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr)); gap: 1rem; }
 .phase { min-width: 0; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: .85rem .95rem; box-shadow: var(--shadow); }
 .phase.s-active { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
@@ -508,7 +510,7 @@ main { flex: 1; padding: 1.1rem 1.4rem; min-width: 0; }
   .now .dot-live { margin-top: .3rem; }
   .now .txt { white-space: normal; flex: 1; min-width: 0; }
   .now .par { flex-basis: 100%; padding-left: 1.35rem; }
-  .work { gap: .8rem; }
+  .work { gap: .8rem; margin-top: .8rem; }
   .phases { grid-template-columns: minmax(0, 1fr); gap: .8rem; }
   .phase, .feed-box { padding: .75rem .8rem; }
   .step { font-size: .88rem; padding: .3rem .35rem; }
@@ -557,7 +559,7 @@ main { flex: 1; padding: 1.1rem 1.4rem; min-width: 0; }
   .now { font-size: .85rem; margin-top: .35rem; }
   .bar { height: .65rem; }
   .phase, .feed-box { padding: .55rem .6rem; border-radius: 10px; }
-  .phases, .work { gap: .5rem; }
+  .phases, .work { gap: .5rem; } .work { margin-top: .5rem; }
   .phase-head .nm { font-size: .9rem; }
   .step { font-size: .8rem; padding: .22rem .25rem; gap: .4rem; }
   .step .st { width: 1.05rem; height: 1.05rem; } .step .sid { min-width: 2.1rem; font-size: .74rem; }
@@ -581,3 +583,50 @@ button.to-top:hover { border-color: var(--accent); }
 button.to-top .ic { width: 1.35rem; height: 1.35rem; }
 button.to-top:hover::after, button.to-top:focus-visible::after { top: auto; bottom: calc(100% + .45rem); left: auto; right: 0; transform: none; }   /* dymek nad przyciskiem: pod nim nie ma miejsca */
 .has-to-top #view-docs .doc-view { padding-bottom: 4.5rem; }   /* zapas: przycisk nie zasłania ostatnich linii dokumentu */
+
+/* ---------- zakładka „Testy” i pasek przy kroku (180-A) */
+.chip.s-bad { background: var(--bad-soft); color: var(--bad); }
+.count.is-bad { background: var(--bad-soft); color: var(--bad); }
+.step.has-tests { flex-wrap: wrap; }
+.step .stbar { flex: 1 1 100%; margin-left: 4.9rem; display: inline-flex; align-items: center; gap: .45rem; }   /* the title keeps its line: the bar sits under it */
+.step .tbar { width: 5.5rem; height: .45rem; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--line); overflow: hidden; display: flex; }
+.tbar i, .tprogress i { display: block; height: 100%; }
+.tbar .g, .tprogress .g { background: var(--done); } .tbar .r, .tprogress .r { background: var(--bad); } .tbar .a, .tprogress .a { background: var(--accent); opacity: .55; }
+.step .stbar .n { font-family: var(--mono); font-size: .75rem; color: var(--muted); }
+button.tolink { border: 1px solid var(--line); background: var(--panel); color: var(--accent); border-radius: 8px; width: 1.9rem; height: 1.9rem; display: inline-grid; place-items: center; padding: 0; cursor: pointer; }
+button.tolink:hover, button.tolink:focus-visible { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
+.tests-view { display: grid; gap: .8rem; }
+.tlegend { display: flex; gap: .9rem; flex-wrap: wrap; color: var(--muted); font-size: .82rem; }
+.tsec { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
+button.tsec-head { all: unset; box-sizing: border-box; width: 100%; cursor: pointer; padding: .8rem 1.1rem; display: grid; grid-template-columns: 1.1rem 1fr auto; gap: .7rem; align-items: center; }
+button.tsec-head:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.tsec-head .chev { color: var(--muted); }
+.tsec-head .sh { display: flex; flex-wrap: wrap; gap: .15rem .7rem; align-items: baseline; min-width: 0; }
+.tsec-head .sh b { font-size: 1.02rem; overflow-wrap: anywhere; } .tsec-head .sub { color: var(--muted); font-size: .82rem; }
+.tsec-head .sum { display: flex; gap: .4rem; flex-wrap: wrap; justify-content: flex-end; }
+.tsec-body { border-top: 1px solid var(--line); padding: .7rem 1.1rem 1rem; display: grid; gap: .5rem; }
+.tsec-body .cmd { color: var(--muted); font-size: .8rem; background: var(--panel-2); border-radius: 8px; padding: .35rem .6rem; overflow-x: auto; white-space: nowrap; }
+.tprogress { height: .55rem; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--line); overflow: hidden; display: flex; }
+.tlevel { color: var(--faint); font-size: .78rem; }
+.tatt { display: flex; gap: .4rem; flex-wrap: wrap; }
+button.tab-att, button.tmore { border: 1px solid var(--line); background: var(--panel); color: inherit; border-radius: 8px; padding: .2rem .6rem; font: inherit; font-size: .8rem; cursor: pointer; }
+button.tab-att.is-on { border-color: var(--accent); color: var(--accent); }
+.tgrp { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.tgh { display: flex; gap: .6rem; align-items: center; padding: .45rem .7rem; background: var(--panel-2); font-size: .82rem; }
+.tgh .gc { margin-left: auto; color: var(--muted); }
+.tgh .gn { overflow-wrap: anywhere; }
+.tlist { list-style: none; margin: 0; padding: 0; }
+.t { display: grid; grid-template-columns: 1.4rem 1fr auto; gap: .5rem; padding: .3rem .7rem; border-top: 1px solid var(--line); font-size: .88rem; align-items: start; }
+.t.is-failed { background: var(--bad-soft); }
+.t .nm { font-family: var(--mono); font-size: .85em; overflow-wrap: anywhere; } .t .du { color: var(--faint); font-family: var(--mono); font-size: .78rem; }
+.t .msg { grid-column: 2 / 4; margin: .1rem 0 .2rem; font-family: var(--mono); font-size: .78rem; color: var(--bad); white-space: pre-wrap; overflow-wrap: anywhere; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: .4rem .6rem; max-height: 16rem; overflow: auto; }
+.tst { width: 1.1rem; height: 1.1rem; border-radius: 50%; display: inline-grid; place-items: center; font-size: .7rem; font-weight: 800; flex: none; }
+.tst.passed { background: var(--done); color: var(--on-done); } .tst.failed { background: var(--bad); color: var(--on-accent); }
+.terr { color: var(--bad); font-size: .8rem; padding: .3rem .7rem; } .tst.skipped { border: 2px solid var(--planned); }
+.tst.waiting { border: 2px dashed var(--planned); } .tst.running { border: 2px solid var(--accent); border-top-color: transparent; animation: tspin 1s linear infinite; }
+@keyframes tspin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .tst.running { animation: none; border-top-color: var(--accent); } }
+@container dash (max-width: 640px) {
+  button.tsec-head { grid-template-columns: 1.1rem 1fr; } .tsec-head .sum { grid-column: 2; justify-content: flex-start; }
+  .step .stbar { margin-left: 3.4rem; }
+}

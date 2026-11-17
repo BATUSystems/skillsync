@@ -34,8 +34,12 @@ from skillsync_workflow import dashboard_http as srv  # noqa: E402
 from skillsync_workflow.common import as_layerset  # noqa: E402
 
 sys.path.insert(0, str(HERE))
-from layers_helpers import needs_os_symlinks  # noqa: E402
+from layers_helpers import guard_real_state, needs_os_symlinks  # noqa: E402
 from serve_start import bind_free, start_serve, stop_serve  # noqa: E402
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child, descend  # noqa: E402
 
 FIX = HERE / "fixtures" / "dashboard_server"
 ASSETS, DESCRIPTIONS = srv.skill_assets(as_layerset(ROOT / "library"))
@@ -130,6 +134,7 @@ def install_fake_cli(case: unittest.TestCase) -> None:
 
 class ProjectCase(unittest.TestCase):
     def setUp(self) -> None:
+        guard_real_state(self)
         self.tmp = Path(tempfile.mkdtemp(prefix="status-board-"))
         self.root = make_project(self.tmp)
         self.board = srv.Board(self.root, prototype_port=1)  # port 1: prototyp zawsze „wyłączony”
@@ -1177,7 +1182,7 @@ class HttpSecurityTests(HttpCase):
         links = []
         for name, target in (("docs/specs/link-out.md", outside), ("docs/specs/link-env.md", self.root / ".env")):
             try:
-                (self.root / name).symlink_to(target)
+                descend(self.root, name).symlink_to(target)
                 links.append(name)
             except OSError:
                 pass
@@ -1250,7 +1255,7 @@ class HttpApprovalTests(HttpCase):
         return offer["sha"]
 
     def entries(self, run: str) -> list[dict]:
-        path = self.root / srv.RUNS_DIR / run / "approvals.jsonl"
+        path = child(self.root / srv.RUNS_DIR, run) / "approvals.jsonl"
         return [json.loads(x) for x in path.read_text(encoding="utf-8").splitlines()] if path.exists() else []
 
     def test_correct_headers_reach_the_consent(self) -> None:
@@ -1343,7 +1348,7 @@ class HttpHostTests(HttpCase):
                     self.assertEqual(code, 403)
                     self.assertEqual(headers["content-type"], "application/json; charset=utf-8")
                     self.assertEqual(headers["x-frame-options"], "DENY")
-                    self.assertEqual(json.loads(body), {"error": srv.HOST_REFUSED})  # bez treści strony/statusu
+                    self.assertEqual(json.loads(body), {"error": srv.host_refused_message(srv.ports.ROLE_BOTH, host)})  # bez treści strony/statusu
         self.assertEqual(self.board.sse_clients, 0)  # odmowa SSE nie zajmuje miejsca
 
     def test_loopback_host_with_any_port_is_served(self) -> None:
@@ -1372,7 +1377,7 @@ class HttpHostTests(HttpCase):
             with self.subTest(host=host):
                 code, body = raw_post(self.port, {"Host": host, "Content-Type": "application/json", "X-Status-Board": "1", "X-Approve-Token": TEST_TOKEN,
                                                   "Content-Length": str(srv.MAX_BODY + 1)})
-                self.assertEqual((code, body), (403, {"error": srv.HOST_REFUSED}))  # 403, nie 400: Host przed długością
+                self.assertEqual((code, body), (403, {"error": srv.host_refused_message(srv.ports.ROLE_BOTH, host)}))  # 403, nie 400: Host przed długością
         self.set_doc.assert_not_called()
         self.record.assert_not_called()
 
@@ -1537,7 +1542,7 @@ class HttpReadHostTests(HttpCase):
             with self.subTest(headers=headers):
                 body = json.dumps(data).encode("utf-8")
                 code, answer = raw_post(self.port, {**headers, "Content-Length": str(len(body))}, body)
-                self.assertEqual((code, answer), (403, {"error": srv.HOST_REFUSED}))  # ten sam komunikat co obcy Host
+                self.assertEqual((code, answer), (403, {"error": srv.HOST_REFUSED}))  # stały tekst zapisu (nie komunikat obcego Host z nazwą)
         # Origin z --read-host przy hoście loopback też nie przechodzi (Origin musi być z listy zgód).
         self.assertEqual(self.post(data, {**self.ok, "Origin": f"http://{self.READ}:5140"})[0], 403)
         self.set_doc.assert_not_called()
@@ -1554,10 +1559,10 @@ class HttpReadHostTests(HttpCase):
             for path in (*self.READS, "/events"):
                 with self.subTest(host=host, path=path):
                     code, _, body = raw_get(self.port, path, host)
-                    self.assertEqual((code, json.loads(body)), (403, {"error": srv.HOST_REFUSED}))
+                    self.assertEqual((code, json.loads(body)), (403, {"error": srv.host_refused_message(srv.ports.ROLE_BOTH, host)}))
             with self.subTest(host=host, method="POST"):
                 code, body = raw_post(self.port, {**self.ok, "Host": host, "Content-Length": "2"}, b"{}")
-                self.assertEqual((code, body), (403, {"error": srv.HOST_REFUSED}))
+                self.assertEqual((code, body), (403, {"error": srv.host_refused_message(srv.ports.ROLE_BOTH, host)}))
         self.assertEqual(self.board.sse_clients, 0)
         self.set_doc.assert_not_called()
         self.record.assert_not_called()

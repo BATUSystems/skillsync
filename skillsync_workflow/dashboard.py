@@ -26,6 +26,7 @@ from .delivery_mode import delivery_info
 from .status import (APPROVAL_WORDS, APPROVALS_FILE, MAX_APPROVALS_BYTES, _APPROVAL_SHA, _approval_at, _message, _status_fields,
                      git_blob_sha)
 from .pathfmt import posix
+from . import plan_phases, dashboard_tests, test_events
 
 SCHEMA = 1
 APP_NAME = 'dashboard'
@@ -200,8 +201,10 @@ def parse_progress(text):
                 title, note = rest.split(sep, 1)
                 break
         token = note.strip().split()[0].strip(',;()') if note.strip() else ''
-        current['steps'].append({'id': match.group('id'), 'title': title.strip(), 'done': match.group('mark') != ' ',
-                                 'note': note.strip(), 'sha': token if SHA_RE.match(token) else None})
+        is_test = plan_phases.has_test_mark(title)
+        current['steps'].append({'id': match.group('id'), 'title': plan_phases.strip_test_mark(title) if is_test else title.strip(),
+                                 'done': match.group('mark') != ' ', 'note': note.strip(), 'sha': token if SHA_RE.match(token) else None,
+                                 **({'test': True} if is_test else {})})
     return [phase for phase in phases if phase['steps']]
 
 
@@ -2037,7 +2040,7 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
                       'words': delivery_words(delivery, ahead_state, plan_info, waiting, git_info['branch'], target)}
     current_docs = [spec_rel if spec_path else None, chosen['path'] if chosen else None]
     assumptions, blocking = parse_questions(spec_text) if spec_path else ([], [])
-    return {
+    status = {
         'schema': SCHEMA,
         'app': {'name': APP_NAME, 'version': __version__},
         'project': {'name': root.name, 'path': posix(root)},
@@ -2075,6 +2078,7 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
         'substeps': build_substeps(progress, chronological),
         'timing': build_timing(run['start'], chronological, run_approvals(root, run_id), progress['phases']),
     }
+    return dashboard_tests.add_to_status(status, root, run_id, progress['phases'])
 
 
 # --------------------------------------------------------------------------- metrics
@@ -2208,12 +2212,14 @@ def build_metrics(root, run_id, plan=None):
 # --------------------------------------------------------------------------- CLI
 
 def _cmd_show(args):
+    manifest_for_mask = {}
     try:
         root, manifest = read_project(args.path)
+        manifest_for_mask = manifest
         report, code = build_status(root, args.plan, manifest=manifest), 0
     except (OSError, ValueError, TypeError, KeyError, yaml.YAMLError) as error:
         report, code = {'schema': SCHEMA, 'status': 'BLOCKED', 'reason': _message(error, 500)}, 2
-    print(json.dumps(redact(report), ensure_ascii=False, indent=2))
+    print(json.dumps(dashboard_tests.finalize_status(report, test_events.mask_setting(manifest_for_mask)), ensure_ascii=False, indent=2))
     return code
 
 
@@ -2255,27 +2261,29 @@ def register(subparsers):
     add_layer_argument(serve)
     serve.add_argument('--plan', help='plan relative to the project (default: chosen automatically, switchable on the page)')
     serve.add_argument('--port', type=int, default=None,
-                       help=f'port of the single-port mode (default {DEFAULT_PORT}, range {PORT_MIN}-{PORT_MAX}; one port per project); '
-                            'the role comes from the Host header, listens on 127.0.0.1 unless --host says otherwise')
+                       help=f'the single-port mode (range {PORT_MIN}-{PORT_MAX}; one port per project): the role comes from the Host header, listens on '
+                            f'127.0.0.1 unless --host says otherwise. Without any port flag: the two-port mode on {DEFAULT_PORT} (read) and '
+                            f'{DEFAULT_PORT + 1} (consents)')
     serve.add_argument('--read-port', type=int, default=None, metavar='N',
-                       help=f'two-port mode: read-only socket (no consent route at all; safe to hand out or tunnel); usual {DEFAULT_PORT}; '
+                       help=f'two-port mode: read-only socket (no consent route at all; safe to hand out or tunnel); default {DEFAULT_PORT}; '
                             'not with --port')
     serve.add_argument('--approve-port', type=int, default=None, metavar='M',
-                       help=f'two-port mode: consent socket (token, strict Origin, no proxy headers); usual {DEFAULT_PORT + 1}; '
+                       help=f'two-port mode: consent socket (token, strict Origin, no proxy headers); default {DEFAULT_PORT + 1}; '
                             'not with --port or --no-approvals')
     serve.add_argument('--read-bind', default=None, metavar='ADDR',
-                       help='listen address of the read socket (default: --host, else 0.0.0.0 = every interface; 127.0.0.1 = this machine only)')
+                       help='listen address of the read socket (default: --host, else the dashboard: setting, else 0.0.0.0 = every interface; '
+                            '127.0.0.1 = this machine only)')
     serve.add_argument('--approve-bind', default=None, metavar='ADDR',
-                       help='listen address of the consent socket (default: --host, else 0.0.0.0 = every interface, plain HTTP: the token '
-                            'travels unencrypted; 127.0.0.1 = this machine only)')
+                       help='listen address of the consent socket (default: the dashboard: setting, else 127.0.0.1 = this machine only; --host does not move it; '
+                            '0.0.0.0 = every interface, plain HTTP: the token travels unencrypted)')
     serve.add_argument('--allow-proxy-headers', action='store_true',
                        help='consent socket: accept writes that carry proxy headers (Forwarded, X-Forwarded-*, X-Real-IP, Via, ...), '
                             'for a reverse proxy you trust')
     serve.add_argument('--prototype-port', type=int, default=None,
                        help=f'port of the prototype server the page checks (default: prototype.port of the manifest, else {PROTOTYPE_PORT})')
     serve.add_argument('--host', default=None,
-                       help='listen address (default 127.0.0.1 in the single-port mode, 0.0.0.0 in the two-port mode; 0.0.0.0 = all '
-                            'interfaces; other devices also need --approve-host or --read-host in the single-port mode)')
+                       help='listen address: with --port N (single-port mode, default 127.0.0.1; other devices also need --approve-host or --read-host); '
+                            'with --read-port it moves the READ socket only (consents: --approve-bind). Without any port flag it is refused (see --read-bind)')
     serve.add_argument('--approve-host', action='append', default=[], metavar='NAME',
                        help='extra Host name (no port) allowed to open the page and give consents (repeatable); '
                             'default: localhost only; add --no-approvals for a read-only view')
@@ -2296,5 +2304,8 @@ def register(subparsers):
     url.add_argument('--host', default=None, metavar='NAME', help='Host name of the address (a name given to `serve --approve-host`; default 127.0.0.1)')
     url.add_argument('--read', action='store_true',
                      help='print the address of the read socket instead (no fragment, no token: safe to hand to a person from outside)')
-    url.add_argument('--json', action='store_true', help='JSON {schema, status, url, port, pid[, role, readUrl]} or BLOCKED {code, reason} (exit 2)')
+    url.add_argument('--lan', action='store_true',
+                     help='print the addresses of the read socket for OTHER devices on the local network (one per line; JSON `lanUrls`); '
+                          'BLOCKED read_not_exposed when the read socket listens on this machine only')
+    url.add_argument('--json', action='store_true', help='JSON {schema, status, url, port, pid[, role, readUrl, lanUrls]} or BLOCKED {code, reason} (exit 2)')
     url.set_defaults(func=_cmd_url)

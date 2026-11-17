@@ -93,6 +93,18 @@ def own_state(env, proc, port, root=None, started=None, windows=None, before=Non
     return False
 
 
+def release(proc):
+    """The cleanup of a test that started a server: kill it, wait for it and close its pipes (an unclosed pipe is a `ResourceWarning`)."""
+    kill_tree(proc)
+    try:
+        proc.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        pass
+    for stream in (proc.stdout, proc.stderr):
+        if stream is not None and not stream.closed:
+            stream.close()
+
+
 def kill_tree(proc, windows=None):
     """Kill the process of the test and, on Windows, its whole tree: `proc.pid` is the launcher of the venv `python.exe`, `Popen.kill()` ends only
     that launcher and the interpreter that serves would keep the port. `taskkill /T /F` by our OWN pid, by the full path under the system
@@ -131,11 +143,21 @@ def lost_bind(output):
     return "BLOCKED" in output and "nasłuchiwać" in output
 
 
+def require_isolated_state(case, env):
+    """A server of a test writes its state file to the data directory of the user: Linux honours `XDG_DATA_HOME`, macOS follows `HOME` (`~/Library`) and
+    Windows `LOCALAPPDATA`. An environment that leaves the real one of THIS system in place would write into the real directory (and be seen by the real
+    pages of the user), so the test fails before the start (`home_env` in tests/layers_helpers.py moves all of them)."""
+    real = {'darwin': 'HOME', 'win32': 'LOCALAPPDATA'}.get(sys.platform)
+    if real and (not env.get(real) or env.get(real) == os.environ.get(real)):
+        case.fail(f'the environment of the server does not move {real}: it would write the state file into the real data directory (use home_env)')
+
+
 def start_serve(case, cli, root, layer, env, free_port, *extra, prepare=None, ready=None, deadline_s=20):
     """Start `dashboard serve <root> --port <p> *extra *layer` and wait until it is ready; returns `(proc, port)` or fails the test.
 
     `prepare(port)` runs before every try; `ready(port)` is an extra condition. A try that fails with BLOCKED (lost bind) is repeated on another
     port, any other failure ends the start."""
+    require_isolated_state(case, env)
     last, port = "", None
     for _attempt in range(ATTEMPTS):
         port = free_port()
@@ -145,7 +167,7 @@ def start_serve(case, cli, root, layer, env, free_port, *extra, prepare=None, re
         started = datetime.now(timezone.utc)
         proc = subprocess.Popen([sys.executable, str(cli), "dashboard", "serve", str(root), "--port", str(port), *extra, *layer],
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
-        case.addCleanup(lambda proc=proc: kill_tree(proc))
+        case.addCleanup(lambda proc=proc: release(proc))
         deadline = time.time() + deadline_s
         while time.time() < deadline and proc.poll() is None:
             try:
@@ -162,3 +184,56 @@ def start_serve(case, cli, root, layer, env, free_port, *extra, prepare=None, re
         if not lost_bind(last):
             break
     case.fail(f"dashboard serve did not start (last port {port}): {last.strip()[-600:]}")
+
+
+def two_free_ports(free_port):
+    """Two DIFFERENT free ports of the test slice (`free_port` alone gives the same one twice: nothing listens on it yet)."""
+    import socket
+    first = free_port()
+    with socket.socket() as hold:
+        if os.name != "nt":
+            hold.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)   # the port may be in TIME_WAIT (free_port allows it)
+        hold.bind(("127.0.0.1", first))
+        hold.listen(1)
+        second = free_port()
+    return first, second
+
+
+def start_serve_ports(case, cli, root, layer, env, free_port, *extra, prepare=None, ready=None, deadline_s=20):
+    """The two-port counterpart of `start_serve` (the DEFAULT mode of 1.8.0 on ports of the test slice, never 5140/5141): starts
+    `dashboard serve <root> --read-port <r> --approve-port <a> *extra *layer`, waits until both sockets answer `/healthz` and both state files
+    are ours; returns `(proc, read_port, approve_port)` or fails the test. Pass `--read-bind`/`--approve-bind` in `extra` to narrow; the sockets
+    listen on the default addresses otherwise (read: every interface, consents: loopback) and a test must not keep the server longer than it needs.
+    `prepare(read_port, approve_port)` runs before every try; `ready(read_port, approve_port)` is an extra condition. A lost bind (BLOCKED)
+    is repeated on other ports."""
+    require_isolated_state(case, env)
+    last, ports_ = "", None
+    for _attempt in range(ATTEMPTS):
+        ports_ = two_free_ports(free_port)
+        read_port, approve_port = ports_
+        if prepare:
+            prepare(read_port, approve_port)
+        before = state_snapshot(env)
+        started = datetime.now(timezone.utc)
+        proc = subprocess.Popen([sys.executable, str(cli), "dashboard", "serve", str(root), "--read-port", str(read_port),
+                                 "--approve-port", str(approve_port), *extra, *layer],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
+        case.addCleanup(lambda proc=proc: release(proc))
+        deadline = time.time() + deadline_s
+        while time.time() < deadline and proc.poll() is None:
+            try:
+                for port in ports_:
+                    urllib.request.urlopen(f"http://127.0.0.1:{port}/healthz", timeout=1).close()
+                answered = (all(own_state(env, proc, port, root, started, before=before) for port in ports_)
+                            and (ready is None or ready(read_port, approve_port)))
+            except OSError:
+                answered = False
+            if answered:
+                return proc, read_port, approve_port
+            time.sleep(0.1)
+        kill_tree(proc)
+        out, err = proc.communicate(timeout=10)
+        last = f"{out}\n{err}"
+        if not lost_bind(last):
+            break
+    case.fail(f"dashboard serve (two ports) did not start (last ports {ports_}): {last.strip()[-600:]}")

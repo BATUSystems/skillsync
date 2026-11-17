@@ -1,0 +1,21 @@
+{"meta": {"tool": "dotnet", "version": "dotnet SDK 10.0.114, VSTest 18.0.2, xunit.runner.visualstudio 3.1.5, xunit 2.9.3, net10.0", "command": ["dotnet", "test", "--no-build", "--filter", "FullyQualifiedName~Demo.SkippedTests", "--logger", "console;verbosity=normal"], "exit": 0, "merged": false, "env": {"LANG": "pl_PL.UTF-8"}, "note": "skipped, localized (Pominięto)", "scrubbed": "paths, host and user names are replaced", "format": "one record per chunk read from the pipe: t = seconds since the start, fd = out|err, data = the text of the chunk"}}
+{"t": 0.879, "fd": "out", "data": "Przebieg testu dla: <root>/dn/demo/bin/Debug/net10.0/demo.dll (.NETCoreApp,Version=v10.0)\n"}
+{"t": 0.95, "fd": "out", "data": "Wersja 18.0.2-dev (x64) VSTest\n"}
+{"t": 0.954, "fd": "out", "data": "\n"}
+{"t": 1.09, "fd": "out", "data": "Trwa rozpoczynanie wykonywania testu, czekaj...\n"}
+{"t": 1.143, "fd": "out", "data": "Łączna liczba plików testowych dopasowanych do określonego wzorca: 1.\n"}
+{"t": 1.851, "fd": "out", "data": "[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.5+1b188a7b0a (64-bit .NET 10.0.14)\n"}
+{"t": 1.999, "fd": "out", "data": "[xUnit.net 00:00:00.17]   Discovering: demo\n"}
+{"t": 2.109, "fd": "out", "data": "[xUnit.net 00:00:00.28]   Discovered:  demo\n"}
+{"t": 2.161, "fd": "out", "data": "[xUnit.net 00:00:00.33]   Starting:    demo\n"}
+{"t": 2.236, "fd": "out", "data": "[xUnit.net 00:00:00.40]     Demo.SkippedTests.Later [SKIP]\n"}
+{"t": 2.236, "fd": "out", "data": "[xUnit.net 00:00:00.40]       not ready\n"}
+{"t": 2.243, "fd": "out", "data": "[xUnit.net 00:00:00.41]   Finished:    demo\n"}
+{"t": 2.464, "fd": "out", "data": "  Powodzenie Demo.SkippedTests.Ok [4 ms]\n"}
+{"t": 2.465, "fd": "out", "data": "  Pominięto Demo.SkippedTests.Later [1 ms]\n"}
+{"t": 2.477, "fd": "out", "data": "\n"}
+{"t": 2.484, "fd": "out", "data": "Przebieg testu zakończony powodzeniem.\n"}
+{"t": 2.484, "fd": "out", "data": "Łączna liczba testów: 2\n     Zakończone pomyślnie: 1\n"}
+{"t": 2.484, "fd": "out", "data": "    Pominięte: 1"}
+{"t": 2.484, "fd": "out", "data": "\n"}
+{"t": 2.484, "fd": "out", "data": " Łączny czas: 1,3337 Sekundy\n"}

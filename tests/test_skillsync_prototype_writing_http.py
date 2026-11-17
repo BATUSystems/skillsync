@@ -345,12 +345,12 @@ class GalleryWritingTests(WritingCase):
     def test_serve_wires_the_injected_clock_of_the_server_into_the_gallery(self):
         """`serve_prototypes` buduje galerię zegarem konfiguracji serwera (nie `time.time`)."""
         seen = []
-        with mock.patch.object(pt, 'gallery_html', lambda root, repo, clock=None: seen.append(clock) or '<html></html>'), \
+        with mock.patch.object(pt, 'gallery_html', lambda root, repo, clock=None, demo=False: seen.append(clock) or '<html></html>'), \
                 mock.patch.object(pt.server, 'make_server', side_effect=RuntimeError('stop')), \
                 mock.patch.object(pt.server, 'ServerConfig') as config:
             config.return_value.clock = self.clock
             args = mock.Mock(no_source_writes=True, users=None, host='127.0.0.1', port=0, secure_cookies=False,
-                             trust_proxy=False, login_to_view=False)
+                             trust_proxy=False, login_to_view=False, demo=False)
             with mock.patch.object(pt, '_settings', return_value={'root': Path(self.root), 'warnings': []}), \
                     mock.patch.object(pt, 'users_file_path', return_value='x'), \
                     mock.patch.object(pt.server, 'link_run_dir_of', return_value=None):

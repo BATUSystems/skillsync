@@ -105,6 +105,7 @@ _PRE_HEADING = re.compile(r'^(?P<hashes>#{1,6})[ \t]+(?P<title>.*?)[ \t]*$', re.
 _PRE_SECTION_WORD = re.compile(r'\b(?:' + '|'.join(PRE_IMPLEMENT_SECTIONS) + r')\b', re.IGNORECASE)
 # Pusta treść: pierwsza niepusta linia (bez znaczników) to samo „nie dotyczy” (po nim koniec linii albo . - – — : , ;), samo
 # TODO/TBD/n/a (po nim koniec linii, kropka albo dwukropek) albo same myślniki; „Todo-lista” i „Nie dotyczy starych” to treść.
+_PRE_TAIL = '*_` \t\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029'   # what the end of a line may carry: markup and white space, also the separators that no longer cut a line
 _PRE_EMPTY_BODY = re.compile(r'(?:nie[ \t]+dotyczy(?:[ \t]*$|[ \t]*[.\-–—:,;])|(?:todo|tbd|n/a)(?:[ \t]*$|[ \t]*[.:])|[-–—]+[ \t]*$)',
                              re.IGNORECASE)
 _PRE_VERDICT = re.compile(r'^[*_`]*Werdykt:[*_` \t]*(?P<word>READY|NEEDS_CHANGES|BLOCKED)[*_`. \t]*$')
@@ -140,7 +141,7 @@ def pre_implement_sections(spec_text):
         level = len(mark.group('hashes'))
         end = next((later.start() for later in marks[index + 1:] if len(later.group('hashes')) <= level), len(spec_text))
         body = spec_text[mark.end():end]
-        lines = [re.sub(r'^[*_`>\s]+', '', line).rstrip('*_` \t') for line in body.splitlines()]
+        lines = [re.sub(r'^[*_`>\s]+', '', line).rstrip(_PRE_TAIL) for line in file_lines(body)]
         lines = [line for line in lines if line.strip()]
         # a heading-only subsection (no text under it) does not make the section non-empty
         content = [line for line in lines if not _PRE_HEADING.match(line)]
@@ -166,7 +167,7 @@ def _pre_implement_reports(root, run_id):
     rows = []
     for path in names:
         text = _read_text_safe(path, MAX_PRE_REPORT_BYTES)
-        first = next((line.strip() for line in (text or '').splitlines() if line.strip()), '')
+        first = next((line.strip() for line in file_lines(text or '') if line.strip()), '')
         match = _PRE_VERDICT.match(first)
         if match:
             rows.append((path.name, match.group('word')))
@@ -261,7 +262,7 @@ def _plan_status_kept_since(root, sha, rel):
     if result.returncode != 0 or len(result.stdout) > MAX_PLAN_BYTES * 8:
         return False
     old = new = 0
-    for line in result.stdout.decode('utf-8', 'replace').splitlines():
+    for line in file_lines(result.stdout.decode('utf-8', 'replace')):
         hunk = _HUNK.match(line)
         if hunk:
             old, new = int(hunk.group(1)), int(hunk.group(2))
@@ -318,6 +319,16 @@ def plan_text_needs_human(status, text):
     return plan_needs_human(status, _progress(text), bool(_TICKET.search(text)), bool(_PR.search(text)))
 
 
+def _tests_waived(root, text, status=None):
+    """`['tests']` while the plan is open and a test step was closed with `checkpoint --no-tests <reason>`: a decision for a human at the closing
+    (180-A); a `done` or `archived` plan no longer asks."""
+    from . import test_gate
+    if status in ('done', 'archived'):
+        return []
+    run = test_gate.run_of_plan(text)
+    return ['tests'] if run and test_gate.waived_steps(root, run) else []
+
+
 def plan_record(root, path, context=None):
     text = decode_text(path.read_bytes(), strict=True)   # invalid UTF-8 stays an error for the caller (a finding, no row), as `read_text(encoding='utf-8')` was
     status, status_text = _status_fields(text, PLAN_STATUSES)
@@ -330,7 +341,7 @@ def plan_record(root, path, context=None):
     return {'path': path.relative_to(root).as_posix(), 'title': title.group(1) if title else path.stem, 'status': status,
             'statusText': status_text, 'steps': steps, 'pr': {'number': int(pr.group(1)), 'link': pr.group(2)} if pr else None,
             'ticket': {'key': ticket.group(1), 'link': ticket.group(2)} if ticket else None, 'spec': spec,
-            'needsHuman': plan_needs_human(status, steps, bool(ticket), bool(pr)) + (['acceptance'] if acceptance_pending(status, text, context, path.relative_to(root).as_posix()) else []),
+            'needsHuman': plan_needs_human(status, steps, bool(ticket), bool(pr)) + (['acceptance'] if acceptance_pending(status, text, context, path.relative_to(root).as_posix()) else []) + _tests_waived(root, text, status),
             'updated': _iso(path.stat().st_mtime),
             'preImplement': pre, 'summary': plan_summary(text)}
 

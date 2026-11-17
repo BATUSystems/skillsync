@@ -2,7 +2,7 @@
 title: "Widok stanu dyspozycji (skillsync dispatch): biała lista, brak wolnego tekstu, koszt paczki"
 tags: [skillsync, dispatch, ide-contract, redaction, cost, state]
 paths: ['skillsync_workflow/dispatch_state.py', 'tests/test_skillsync_dispatch_state.py']
-source: skillsync_workflow/dispatch_state.py (_Reader, _dispatch_entry, _cost, _run, dispatch_report); docs/cli.md sekcja dispatch; analiza 5 rzeczywistych plików .skillsync/dispatch w repo Skillsync i skippster (2026-10-31); decyzje Dyspozytora w ramach delegacji Barcisia (R3c, Q1–Q8)
+source: skillsync_workflow/dispatch_state.py (_Reader, _dispatch_entry, _cost, _run, dispatch_report); docs/cli.md sekcja dispatch; analiza 5 rzeczywistych plików .skillsync/dispatch w repo Skillsync i skippster (2026-10-31); decyzje Dyspozytora w ramach delegacji właściciela projektu (R3c, Q1–Q8)
 verified: 2026-10-31
 ---
 Reguła: `skillsync dispatch` czyta `.skillsync/dispatch/*.yaml` wyłącznie do odczytu i oddaje tylko pola z białej listy po walidacji wzorcem (id, gałąź, hash, czas ISO, liczby w granicach). Nieznane pola, wolny tekst, nazwy i identyfikatory sesji, ścieżki (w tym `worktree`) nie wychodzą. Zły kształt pola to `null` plus wpis w `findings` z samą nazwą pola; zły plik to wpis `unreadable`; wyjątek nie wychodzi nigdy.

@@ -32,9 +32,14 @@ from skillsync_workflow import dashboard_http as srv  # noqa: E402
 from skillsync_workflow import dashboard_ports as ports  # noqa: E402
 from skillsync_workflow import dashboard_token  # noqa: E402
 from skillsync_workflow import status as status_core  # noqa: E402
+from layers_helpers import guard_real_state  # noqa: E402
 from tests.test_skillsync_dashboard_approve_token import home_env  # noqa: E402
 from tests.test_skillsync_dashboard_server import (ASSETS, CLI, DESCRIPTIONS, PLAN, TEST_TOKEN, ProjectCase, free_port,  # noqa: E402
                                                    install_fake_cli, make_project, spy_core)
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import descend  # noqa: E402
 
 OK = {"Content-Type": "application/json", "X-Status-Board": "1", "X-Approve-Token": TEST_TOKEN}
 LAN = None   # an address of this machine other than loopback, or None
@@ -122,7 +127,7 @@ class TwoSockets(ProjectCase):
     def offer(self) -> dict:
         spec2, plan2 = "docs/specs/demo-etap-2.md", "docs/plans/2026-01-20-demo-etap-2.md"
         (self.root / srv.RUNS_DIR / "2026-01-20-demo-etap-2").mkdir(parents=True, exist_ok=True)
-        spec = self.root / spec2
+        spec = descend(self.root, spec2)
         spec.write_text(f"# Spec: Demo 2\n\nStatus: draft (czeka na GO plan)\nPlan: {plan2}\n", encoding="utf-8")
         later = (self.root / PLAN).stat().st_mtime + 100
         os.utime(spec, (later, later))
@@ -402,7 +407,7 @@ class ApproveSocket(TwoSockets):
     def test_the_order_of_refusals(self) -> None:
         good = self.ok
         cases = [
-            ("host", {**good, "Host": "evil.example"}, 403, srv.HOST_REFUSED),
+            ("host", {**good, "Host": "evil.example"}, 403, srv.host_refused_message(srv.ports.ROLE_APPROVE, "evil.example")),
             ("board header", {k: v for k, v in good.items() if k != "X-Status-Board"}, 403, "Brak nagłówka X-Status-Board."),
             ("origin", {**good, "Origin": "http://evil.example"}, 403, "Obcy Origin."),
             ("proxy", {**good, "Forwarded": "for=1.2.3.4"}, 403, srv.PROXY_REFUSED),
@@ -410,7 +415,7 @@ class ApproveSocket(TwoSockets):
             ("token", {k: v for k, v in good.items() if k != "X-Approve-Token"}, 403, srv.TOKEN_REFUSED),
         ]
         # layered breakage: each earlier check hides every later one
-        layered = [({**good, "Host": "evil.example", "Origin": "http://x", "Forwarded": "x", "Content-Type": "t", "X-Approve-Token": "z"}, srv.HOST_REFUSED),
+        layered = [({**good, "Host": "evil.example", "Origin": "http://x", "Forwarded": "x", "Content-Type": "t", "X-Approve-Token": "z"}, srv.host_refused_message(srv.ports.ROLE_APPROVE, "evil.example")),
                    ({k: v for k, v in {**good, "Origin": "http://x", "Forwarded": "x", "Content-Type": "t", "X-Approve-Token": "z"}.items() if k != "X-Status-Board"}, "Brak nagłówka X-Status-Board."),
                    ({**good, "Origin": "http://x", "Forwarded": "x", "Content-Type": "t", "X-Approve-Token": "z"}, "Obcy Origin."),
                    ({**good, "Forwarded": "x", "Content-Type": "t", "X-Approve-Token": "z"}, srv.PROXY_REFUSED),
@@ -474,9 +479,9 @@ class ApproveSocket(TwoSockets):
             with self.subTest(host=host):
                 status, _answer = self.post(self.approve_port, {**self.ok, "Host": host, "Origin": f"http://{host}"}, {"kind": "spec"})
                 if accepted:
-                    self.assertNotEqual(_answer.get("error"), srv.HOST_REFUSED)
+                    self.assertNotEqual(_answer.get("error"), srv.host_refused_message(srv.ports.ROLE_APPROVE, host))
                 else:
-                    self.assertEqual(_answer.get("error"), srv.HOST_REFUSED)
+                    self.assertEqual(_answer.get("error"), srv.host_refused_message(srv.ports.ROLE_APPROVE, host))
 
 
 class ReadHostsOnTheReadSocket(TwoSockets):
@@ -495,7 +500,7 @@ class StarReadHost(TwoSockets):
         self.assertEqual(request(self.read_port, "GET", "/healthz", {"Host": "tunnel.example"})[0], 200)
         self.assertEqual(request(self.approve_port, "GET", "/healthz", {"Host": "tunnel.example"})[0], 403)
         status, answer = self.post(self.approve_port, {**self.ok, "Host": "tunnel.example", "Origin": "http://tunnel.example"})
-        self.assertEqual((status, answer["error"]), (403, srv.HOST_REFUSED))
+        self.assertEqual((status, answer["error"]), (403, srv.host_refused_message(srv.ports.ROLE_APPROVE, "tunnel.example")))
 
 
 class AllowedProxy(TwoSockets):
@@ -507,7 +512,7 @@ class AllowedProxy(TwoSockets):
         self.assertEqual(status, 200, answer)
         for name, headers, text in (("token", {**with_proxy, "X-Approve-Token": "x"}, srv.TOKEN_REFUSED),
                                     ("origin", {**with_proxy, "Origin": "http://evil.example"}, "Obcy Origin."),
-                                    ("host", {**with_proxy, "Host": "evil.example"}, srv.HOST_REFUSED)):
+                                    ("host", {**with_proxy, "Host": "evil.example"}, srv.host_refused_message(srv.ports.ROLE_APPROVE, "evil.example"))):
             with self.subTest(name=name):
                 self.assertEqual(self.post(self.approve_port, headers)[1]["error"], text)
         entries = [json.loads(line) for line in (self.root / srv.RUNS_DIR / "2026-01-20-demo-etap-2" / srv.RUN_APPROVALS).read_text().splitlines()]
@@ -701,20 +706,42 @@ class Flags(unittest.TestCase):
                       allow_proxy_headers=False, approve_host=[], read_host=[])
         return ports.resolve(SimpleNamespace(**{**values, **kwargs}), srv.port_problem)
 
-    def test_single_port_mode_is_not_touched(self) -> None:
-        self.assertIsNone(self.resolve())
+    def test_single_port_mode_is_only_an_explicit_port(self) -> None:
+        self.assertIsNone(self.resolve(port=5155))
         self.assertIsNone(self.resolve(port=5155, host="0.0.0.0", no_approvals=True))
 
-    def test_defaults_of_the_two_port_mode_listen_on_every_interface(self) -> None:
+    def test_without_port_flags_the_default_two_port_mode(self) -> None:
+        mode = self.resolve()
+        self.assertEqual((mode["read"], mode["approve"]), ({"port": 5140, "bind": "0.0.0.0"}, {"port": 5141, "bind": "127.0.0.1"}))
+        self.assertTrue(mode["read_default"])
+        mode = self.resolve(no_approvals=True)
+        self.assertEqual((mode["read"], mode["approve"]), ({"port": 5140, "bind": "0.0.0.0"}, None))
+
+    def test_explicit_ports_keep_consents_on_this_machine_only(self) -> None:
         mode = self.resolve(read_port=5151, approve_port=5152)
-        self.assertEqual((mode["read"], mode["approve"]), ({"port": 5151, "bind": "0.0.0.0"}, {"port": 5152, "bind": "0.0.0.0"}))
+        self.assertEqual((mode["read"], mode["approve"]), ({"port": 5151, "bind": "0.0.0.0"}, {"port": 5152, "bind": "127.0.0.1"}))
+
+    def test_an_explicit_host_moves_only_the_read_socket(self) -> None:
+        mode = self.resolve(read_port=5151, approve_port=5152, host="192.168.1.2")
+        self.assertEqual((mode["read"]["bind"], mode["approve"]["bind"]), ("192.168.1.2", "127.0.0.1"))
+        self.assertFalse(mode["read_default"])
+        mode = self.resolve(read_port=5151, approve_port=5152, host="")   # an explicit empty host keeps meaning every interface
+        self.assertEqual((mode["read"]["bind"], mode["approve"]["bind"]), ("0.0.0.0", "127.0.0.1"))
+        with self.assertRaises(ValueError):   # no read socket: nothing for --host to move
+            self.resolve(approve_port=5152, host="127.0.0.1")
+
+    def test_calls_that_meant_one_port_with_a_host_gate_are_refused_with_a_hint(self) -> None:
+        for kwargs, hint in ((dict(host="0.0.0.0"), "--port N --host"), (dict(approve_host=["tunnel.example"]), "--port N --approve-host")):
+            with self.subTest(kwargs=kwargs), self.assertRaises(ValueError) as caught:
+                self.resolve(**kwargs)
+            self.assertIn(hint, str(caught.exception))
+        self.assertIsNone(self.resolve(port=5155, host="0.0.0.0", approve_host=["tunnel.example"]))   # the explicit old mode
+        self.assertIsNotNone(self.resolve(read_port=5151, approve_port=5152, approve_host=["phone.example"]))
 
     def test_narrowing_flags(self) -> None:
-        mode = self.resolve(read_port=5151, approve_port=5152, approve_bind="127.0.0.1")
-        self.assertEqual((mode["read"]["bind"], mode["approve"]["bind"]), ("0.0.0.0", "127.0.0.1"))
-        mode = self.resolve(read_port=5151, approve_port=5152, host="127.0.0.1")
-        self.assertEqual((mode["read"]["bind"], mode["approve"]["bind"]), ("127.0.0.1", "127.0.0.1"))
-        mode = self.resolve(read_port=5151, approve_port=5152, host="127.0.0.1", read_bind="0.0.0.0")
+        mode = self.resolve(read_port=5151, approve_port=5152, approve_bind="0.0.0.0")
+        self.assertEqual((mode["read"]["bind"], mode["approve"]["bind"]), ("0.0.0.0", "0.0.0.0"))
+        mode = self.resolve(read_port=5151, approve_port=5152, host="10.0.0.5", read_bind="0.0.0.0")
         self.assertEqual((mode["read"]["bind"], mode["approve"]["bind"]), ("0.0.0.0", "127.0.0.1"))
 
     def test_one_socket_alone(self) -> None:
@@ -724,9 +751,10 @@ class Flags(unittest.TestCase):
     def test_refused_combinations(self) -> None:
         for kwargs in (dict(port=5155, read_port=5151), dict(port=5155, approve_port=5152), dict(read_port=5151, approve_port=5152, no_approvals=True),
                        dict(approve_port=5152, no_approvals=True), dict(read_port=5151, approve_port=5151), dict(read_port=5040),
-                       dict(read_port=5151, approve_port=5200), dict(read_bind="127.0.0.1"), dict(approve_bind="127.0.0.1"),
+                       dict(read_port=5151, approve_port=5200), dict(port=5155, read_bind="127.0.0.1"), dict(port=5155, approve_bind="127.0.0.1"),
                        dict(read_port=5151, approve_bind="127.0.0.1"), dict(approve_port=5152, read_bind="127.0.0.1"),
-                       dict(allow_proxy_headers=True), dict(read_port=5151, allow_proxy_headers=True),
+                       dict(port=5155, allow_proxy_headers=True), dict(read_port=5151, allow_proxy_headers=True),
+                       dict(no_approvals=True, approve_bind="127.0.0.1"), dict(no_approvals=True, allow_proxy_headers=True),
                        dict(approve_port=5152, approve_host=["*"]), dict(approve_port=5152, read_host=["*"])):
             with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
                 self.resolve(**kwargs)
@@ -773,6 +801,7 @@ class Process(unittest.TestCase):
 
     def setUp(self) -> None:
         self.tmp = Path(tempfile.mkdtemp(prefix="dashboard-serve-ports-"))
+        guard_real_state(self)
         self.addCleanup(lambda: __import__("shutil").rmtree(self.tmp, ignore_errors=True))
         self.root = make_project(self.tmp)
         manifest = self.root / srv.MANIFEST
@@ -991,20 +1020,66 @@ class Process(unittest.TestCase):
         self.assertNotIn("#zgoda=", read_lines[0])
         self.assertNotIn("UWAGA: port zgód", err)   # both narrowed to loopback: no network warning
 
-    def test_listening_beyond_loopback_warns_and_narrowing_removes_the_warning(self) -> None:
+    def test_listening_beyond_loopback_warns_for_the_read_socket_only_and_keeps_consents_local(self) -> None:
         read_port, approve_port = two_ports()
         proc = self.serve("--read-port", str(read_port), "--approve-port", str(approve_port))
         self.wait_up(read_port, approve_port)
         address = lan_address()
         if address is None:
             self.skipTest("no non-loopback address on this machine; deliberately not in skip-baseline, so on CI runners (which have one) a skip is an error")
-        for port in (read_port, approve_port):   # the default of the two-port mode: every interface
-            with socket.create_connection((address, port), timeout=2):
-                pass
-        _lines, finish = self.console_until(proc, f"UWAGA: port zgód {approve_port}", f"UWAGA: port odczytu {read_port}")
+        with socket.create_connection((address, read_port), timeout=2):   # the default of the read socket: every interface
+            pass
+        with self.assertRaises(OSError):   # the consent socket: this machine only
+            socket.create_connection((address, approve_port), timeout=2).close()
+        _lines, finish = self.console_until(proc, f"UWAGA: port odczytu {read_port}")
         err = finish()
-        self.assertIn(f"UWAGA: port zgód {approve_port} słucha na 0.0.0.0", err)
         self.assertIn(f"UWAGA: port odczytu {read_port} słucha na 0.0.0.0", err)
+        self.assertNotIn("UWAGA: port zgód", err)
+
+    def test_console_of_the_default_listen_address(self) -> None:
+        """K5/K8/K12: one address line per LAN address, the warning, the sentence about the changed default, the consents-are-local line."""
+        read_port, approve_port = two_ports()
+        proc = self.serve("--read-port", str(read_port), "--approve-port", str(approve_port))
+        self.wait_up(read_port, approve_port)
+        _lines, finish = self.console_until(proc, f"UWAGA: port odczytu {read_port}", "zgody są tylko na tej maszynie")
+        err = finish()
+        if srv._version_tuple(srv.__version__) < ports.LISTEN_NOTE_UNTIL:   # the sentence ends with 1.10
+            self.assertIn("od 1.8.0 odczyt słucha domyślnie na wszystkich interfejsach", err)
+        else:
+            self.assertNotIn("od 1.8.0", err)
+        self.assertIn("--read-bind 127.0.0.1", err)
+        self.assertIn("dashboard.local_only: true", err)
+        self.assertIn("zgody z telefonu: --approve-bind 0.0.0.0", err)
+        self.assertNotIn("strona tylko na tej maszynie", err)
+        names = [line for line in err.splitlines() if "albo po nazwie tej maszyny" in line]
+        if ports.own_names():   # a machine without a usable host name prints no such line
+            self.assertEqual(len(names), 1)
+            self.assertIn(f":{read_port}/", names[0])
+        address = lan_address()
+        if address is not None:
+            self.assertEqual(len([line for line in err.splitlines() if line.rstrip().endswith(f"z innego urządzenia: http://{address}:{read_port}/")]), 1)
+
+    def test_console_of_a_narrowed_listen_address_has_no_warning_and_no_sentence(self) -> None:
+        read_port, approve_port = two_ports()
+        proc = self.serve("--read-port", str(read_port), "--approve-port", str(approve_port), "--read-bind", "127.0.0.1")
+        self.wait_up(read_port, approve_port)
+        _lines, finish = self.console_until(proc, "strona tylko na tej maszynie")
+        err = finish()
+        self.assertIn("strona tylko na tej maszynie", err)
+        for text in ("UWAGA: port odczytu", "od 1.8.0", "zgody z telefonu"):
+            self.assertNotIn(text, err)
+
+    def test_the_consent_socket_listens_beyond_loopback_only_by_an_explicit_flag(self) -> None:
+        read_port, approve_port = two_ports()
+        proc = self.serve("--read-port", str(read_port), "--approve-port", str(approve_port), "--approve-bind", "0.0.0.0")
+        self.wait_up(read_port, approve_port)
+        address = lan_address()
+        if address is None:
+            self.skipTest("no non-loopback address on this machine; deliberately not in skip-baseline, so on CI runners (which have one) a skip is an error")
+        with socket.create_connection((address, approve_port), timeout=2):
+            pass
+        _lines, finish = self.console_until(proc, f"UWAGA: port zgód {approve_port}")
+        self.assertIn(f"UWAGA: port zgód {approve_port} słucha na 0.0.0.0", finish())
 
     def slow_resolver_env(self) -> dict:
         directory = self.tmp / "slow-dns"
@@ -1074,7 +1149,8 @@ class Process(unittest.TestCase):
     def test_refused_flags_are_blocked_before_any_bind(self) -> None:
         port = free_port()
         for flags in (["--port", str(port), "--read-port", str(port + 1)], ["--read-port", str(port), "--approve-port", str(port)],
-                      ["--approve-port", str(port), "--no-approvals"], ["--read-bind", "127.0.0.1"], ["--allow-proxy-headers"]):
+                      ["--approve-port", str(port), "--no-approvals"], ["--host", "127.0.0.1"], ["--approve-host", "tunnel.example"],
+                      ["--port", str(port), "--read-bind", "127.0.0.1"], ["--read-bind", ""]):   # none of these binds anything, none may start a default server
             with self.subTest(flags=flags):
                 self.assertEqual(self.blocked(*flags)["status"], "BLOCKED")
 

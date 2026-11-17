@@ -16,6 +16,10 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child  # noqa: E402
 WORKFLOWS = ROOT / ".github" / "workflows"
 HELP_SCRIPTS = ("check_skips.py", "check_wheel.py", "check_release.py")
 SCRIPT_RE = re.compile(r"((?:scripts|tests)/[\w.-]+\.(?:py|sh|ps1))\b(.*)")
@@ -109,8 +113,8 @@ def problems_job_names(ci, smoke):
     return errs
 
 
-# Native Windows gets 60 minutes (the suite needs about 40), the other systems 30; the job names stay.
-TEST_TIMEOUT = "${{ matrix.os == 'windows-latest' && 60 || matrix.os == 'macos-latest' && 45 || 30 }}"
+# Time limits of the `test` jobs: Windows 75, macOS 60, Ubuntu 45 minutes (about 1.4-1.6 times the longest job of five runs); the job names stay.
+TEST_TIMEOUT = "${{ matrix.os == 'windows-latest' && 75 || matrix.os == 'macos-latest' && 60 || 45 }}"
 
 
 def problems_matrix(ci):
@@ -204,9 +208,12 @@ def problems_contracts(ci, smoke):
     if "SKILLSYNC_E2E_CHROME" in text:
         errs.append("test: macierz nie może ustawiać SKILLSYNC_E2E_CHROME (K11)")
     for need in ("py_compile", "unittest discover", "check_skips.py", "uv pip install --system -e .",
-                 "tests/k1_grep.py"):
+                 "tests/k1_grep.py", "--durations 30", "sys.version_info >= (3, 12)"):   # durations: Python 3.12+ only (3.11 rejects the option)
         if need not in text:
             errs.append(f"test: brak {need}")
+    unit = next((str(s.get("run", "")) for s in steps_of(test) if s.get("name") == "Unit tests"), "")
+    if not any("unittest discover" in line and "$DURATIONS" in line for line in unit.splitlines()):
+        errs.append("test: the `unittest discover` line must carry $DURATIONS (the slowest tests in every log)")
     uses = [s.get("uses", "") for s in steps_of(test)]
     for a in ("actions/setup-python", "astral-sh/setup-uv", "actions/setup-node"):
         if not any(u.startswith(a) for u in uses):
@@ -252,7 +259,7 @@ def problems_bash_syntax(workflows, bash):
             for jname, job in wf["jobs"].items():
                 for i, step in enumerate(bash_steps(job)):
                     body = EXPR_RE.sub("X", step["run"])
-                    f = Path(tmp) / f"{wname}-{jname}-{i}.sh"
+                    f = child(Path(tmp), f"{wname}-{jname}-{i}.sh")
                     f.write_text(body, encoding="utf-8")
                     res = subprocess.run([bash, "-n", str(f)], capture_output=True, text=True)
                     if res.returncode != 0:
@@ -349,13 +356,16 @@ class MutationTests(unittest.TestCase):
 
     def test_timeout_and_concurrency(self):
         ci, _ = self.mut()
-        ci["jobs"]["test"]["timeout-minutes"] = 60
+        ci["jobs"]["test"]["timeout-minutes"] = 75
         self.assertTrue(problems_matrix(ci))
         ci, _ = self.mut()
-        ci["jobs"]["test"]["timeout-minutes"] = 30
+        ci["jobs"]["test"]["timeout-minutes"] = 45
         self.assertTrue(problems_matrix(ci))
         ci, _ = self.mut()
-        ci["jobs"]["test"]["timeout-minutes"] = "${{ matrix.os == 'windows-latest' && 60 || 30 }}"  # macOS back at 30
+        ci["jobs"]["test"]["timeout-minutes"] = "${{ matrix.os == 'windows-latest' && 75 || 45 }}"  # macOS back at 45
+        self.assertTrue(problems_matrix(ci))
+        ci, _ = self.mut()
+        ci["jobs"]["test"]["timeout-minutes"] = "${{ matrix.os == 'windows-latest' && 60 || matrix.os == 'macos-latest' && 45 || 30 }}"  # the limits of 1.7.0
         self.assertTrue(problems_matrix(ci))
         ci, _ = self.mut()
         ci["concurrency"]["cancel-in-progress"] = False

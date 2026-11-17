@@ -127,6 +127,23 @@ wyglądają spójnie w obu motywach.
 Bez wyboru użytkownika motyw idzie za ustawieniem systemu, także przed startem skryptu silnika (strona nie miga na
 jasno przy ciemnym systemie). Przycisk „Motyw” przełącza motyw ręcznie.
 
+**Bez ciemnego motywu.** `prototype.dark_theme: false` w manifeście ([manifest](manifest.md)) usuwa przycisk „Motyw” (z paska i z menu „⋯”) i
+zostawia stronę jasną niezależnie od systemu i zapamiętanego wyboru. `init` i `migrate` wpisują wtedy na `<html>` `data-theme="light" data-proto-dark="off"`
+(statyczne `data-theme` wyłącza blok `@media (prefers-color-scheme: dark)` już przy pierwszym malowaniu, więc strona nie miga ciemno). Atrybuty leżą poza `<head>`
+i ekranami, a `prototype.js` nie wchodzi do hasha ekranu, więc **akceptacje zostają ważne**; istniejący prototyp dostaje nową kopię silnika przez `prototype migrate`
+(`sync --check` ostrzega, dopóki tego nie zrobisz). Ciemne tokeny w `tokens.css` zostają, nie szkodzą.
+
+**Które selektory czyta `tokens_from`.** Tokeny jasne: `:root`, `@theme`, `@theme inline`. Tokeny ciemne: `.dark`, `[data-theme="dark"]` i `:root[data-theme="dark"]`.
+Blok `@media (prefers-color-scheme: dark)` jest pomijany z ostrzeżeniem („skipped; use .dark or [data-theme="dark"]”): silnik zawsze ustawia `data-theme`, więc taki blok i tak by nie zadziałał po starcie
+strony. Przepisz go na `[data-theme="dark"] { ... }` (te same tokeny).
+
+**Kolejność arkuszy i swoistość.** `tokens.css`, `theme.css`, `prototype.css`, `components.css`, `screens.css`, `project.css`: przy równej swoistości wygrywa plik ładowany później,
+więc reguła w `theme.css` przegrywa z `components.css` i `prototype.css` (np. z `.btn:hover:not(...)`). Zmieniaj wygląd **tokenami** (`components.css` używa tylko `var(--…)`),
+a reguły nadpisujące wpisuj w `project.css`, który ładuje się ostatni.
+
+**Kompletność motywu.** Brakujące tokeny wymagane (`assets/theme/required-tokens.txt`) to ostrzeżenie `Missing required tokens` przy `init`, `sync` i `migrate`, a `prototype sync --check` kończy się wtedy `FAIL`
+(kod 1, pole `missing` z listą), więc dowodzi kompletności motywu.
+
 ## Silnik w przeglądarce
 
 ### Pasek, tryby i przełącznik ekranów
@@ -151,7 +168,7 @@ wyjście przywraca wszystkie ekrany, przewija do bieżącego i zdejmuje `?mode=p
 ekranu). Przy ustawieniach wydruku w prezentacji drukuje się bieżący ekran bez paska prezentacji. Tryb działa także przy pasku linków (`data-proto-nav="strip"`).
 
 **Wdrożenie.** Tryb jest w silniku (`prototype.js`, `prototype.css`), więc istniejące prototypy dostają go przez `skillsync prototype migrate` (kopia plików silnika; drugi bieg nic nie zmienia);
-zmiana CSS może unieważnić akceptacje ekranów, lista jest w `acceptance` wyniku `migrate` ([sekcja „Aktualizacja silnika”](#aktualizacja-silnika-i-migracja-starego-prototypu)).
+zmiana arkuszy, które wchodzą do hasha (`components.css`, `screens.css`, tokeny), może unieważnić akceptacje ekranów, lista jest w `acceptance` wyniku `migrate` ([sekcja „Aktualizacja silnika”](#aktualizacja-silnika-i-migracja-starego-prototypu)).
 
 ### Widok desktop / mobile
 
@@ -443,8 +460,8 @@ Kolejność jest ważna:
 
 Skutki `migrate`:
 
-- kopiuje pliki silnika, które różnią się od biblioteki (`prototype.css` i `components.css`); zmiana CSS wchodzi do
-  hasha każdego ekranu;
+- kopiuje pliki silnika, które różnią się od biblioteki (`prototype.css` i `components.css`); zmiana `components.css`, `screens.css`, `tokens.css`,
+  `theme.css` albo `project.css` wchodzi do hasha każdego ekranu, a zmiana `prototype.css` i `prototype.js` nie (test w `test_skillsync_prototype_light_only.py`);
 - pole `acceptance` w wyniku (`{lost, screens}`) podaje liczbę i id ekranów, których akceptacja przestaje być
   aktualna. Trzeba je zaakceptować ponownie. `--dry-run` pokazuje to samo przed zapisem;
 - nie przepisuje dziennika `comments.json`; operacje bez `view` zostają jak były.
@@ -586,6 +603,26 @@ skillsync prototype serve . --host 192.168.1.10 --port 4445 --login-to-view
   i z `Host` wskazującym pętlę. Przy `--host` z adresem LAN komenda kończy się `BLOCKED link_needs_loopback`; zaloguj
   się wtedy hasłem. Link działa 60 s, raz, i daje sesję z pełnymi uprawnieniami konta; wydaje go człowiek, agent
   tej komendy nie uruchamia.
+
+### Pokaz tylko do odczytu: `serve --demo`
+
+```bash
+skillsync prototype serve . --demo            # każdy interfejs, port z manifestu albo 4445
+skillsync prototype serve . --demo --host 127.0.0.1   # tylko ta maszyna
+```
+
+Pokaz działa **bez pliku kont**: brak `users.json` nie jest błędem (plik, jeśli jest, bywa ignorowany). Nie ma logowania, komentarzy, wątków, akceptacji, odpowiedzi eksperta, pytań, przywracania ani linku
+logowania, i **odmawia tego serwer**, nie tylko interfejs: każda metoda inna niż `GET` i `HEAD` kończy się `405 demo_read_only`, z API istnieje tylko `GET /_api/v1/session` (odpowiedź gościa z `server.demo: true`),
+reszta `/_api/*` i każda ścieżka zaczynająca się od `/_` to `404`. Serwer niczego nie zapisuje, nie ustawia ciasteczek i nie powtarza w błędach ścieżki z żądania.
+
+- **Co widzi gość:** galerię w wersji pokazu (tytuł, slug, data, liczba ekranów; bez wymagań, liczników komentarzy, akceptacji i linków do pytań), ekrany, silnik, arkusze, media i `prototype.json` okrojony do `slug` i `title`.
+  Pasek silnika pokazuje „Pokaz · tylko do odczytu” i nie ma narzędzi komentowania, logowania ani akceptacji.
+- **Czego gość nie dostaje (lista dodatnia, nie wykluczeń):** `comments.json`, `comments.js`, `README.md`, `iterations/`, `questions.json`, dot-plików ani pliku nieznanego rodzaju. Istniejące komentarze są ukryte.
+- **Nasłuch:** domyślnie `0.0.0.0` (każdy interfejs, także sieć lokalna), jak odczyt strony statusu; `--host 127.0.0.1` zawęża do tej maszyny. Komunikat startowy mówi wprost, że prototypy są jawne dla każdego,
+  kto dotrze do adresu, a ruch nie jest szyfrowany, i wypisuje adresy maszyny oraz sposób zawężenia.
+- `--demo` z `--login-to-view` to `BLOCKED` (sprzeczne); `--users`, `--secure-cookies` i `--trust-proxy` nie mają znaczenia i dają ostrzeżenie.
+- Nagłówek `Host` nie jest sprawdzany (zob. [security](security.md)): pokaz nie ma uprawnień ani danych kont, które mogłaby przejąć strona obca.
+- Stara kopia silnika (przed `migrate`) pokaże narzędzia komentowania, ale serwer odmówi każdej akcji; `prototype migrate` dostarcza etykietę i ukrywanie narzędzi.
 
 ### Limit prób logowania i tunel ssh
 

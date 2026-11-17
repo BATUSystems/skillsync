@@ -17,7 +17,7 @@ Testuj uzgodnione zachowanie, nie kopiuj założeń implementacji do asercji.
   uzasadnienia kontraktem. Faza TDD może być czerwona; raportuj ją jawnie jako `FAIL`.
 - Asercja negatywna i smoke reakcji na zdarzenie mają dowód, że potrafią paść (mutacja lub podłożony
   przypadek z logiem); zasady: `feature/references/tests-baseline.md`.
-- Uruchom zmienione testy wyłącznie z przydzielonymi zasobami (baza, porty, katalogi).
+- Uruchom zmienione testy wyłącznie z przydzielonymi zasobami (baza, porty, katalogi), przez `skillsync test-run --run <id> --step <id> -- <komenda>` (id podaje zlecenie).
   Bez przydziału zgłoś `NOT_RUN` i oddaj polecenie runnerowi. Nie uruchamiaj równoległego
   pytest na wspólnej bazie nawet dla innych plików. Błąd środowiska to `BLOCKED`.
 - Nie edytuj planu, nie deleguj, nie commituj ani nie pushuj. Nie używaj `git stash`, `checkout -- `, `reset`, `restore` ani `clean` na współdzielonym drzewie roboczym (pracują w nim inni i są tam zmiany użytkownika); do porównań używaj `git diff`/`git show`.

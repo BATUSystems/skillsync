@@ -42,7 +42,7 @@ from . import stopsignal
 from .plan_phases import parse_plan_phases
 
 DEFAULT_ROOT = 'docs/prototypes'
-KNOWN_KEYS = ('root', 'theme', 'guidelines', 'commit_before_iteration', 'public_url', 'port')
+KNOWN_KEYS = ('root', 'theme', 'guidelines', 'commit_before_iteration', 'public_url', 'port', 'dark_theme')
 PUBLIC_URL_ENV = 'SKILLSYNC_PROTOTYPE_PUBLIC_URL'
 PORT_RANGE = (1024, 65535)
 THEME_KEYS = ('tokens_from', 'css')
@@ -642,6 +642,22 @@ def public_url_of(settings, environ=None):
     return settings.get('public_url'), None
 
 
+DEMO_HOST = '0.0.0.0'
+
+
+def demo_lines(instance, host):
+    """Startup lines of `serve --demo`: that the show is public for everyone who reaches the address and that nothing can be written, the
+    addresses of this machine (when listening on every interface) and how to narrow the listening."""
+    lines = ['POKAZ tylko do odczytu: prototypy są jawne dla każdego, kto dotrze do tego adresu (bez logowania; komentarze, akceptacje i '
+             'odpowiedzi eksperta wyłączone, istniejące komentarze ukryte; ruch nieszyfrowany).']
+    if host in ('0.0.0.0', '::', ''):
+        from .dashboard_http import lan_addresses   # a function of the status page; imported here, the modules must not import each other at load
+        port = instance.server_address[1]
+        lines.append('Adresy w sieci lokalnej: ' + ', '.join(f'http://{address}:{port}/' for address in lan_addresses()))
+        lines.append('Tylko ta maszyna: uruchom z --host 127.0.0.1.')
+    return lines
+
+
 def public_address_lines(settings, environ=None):
     """Lines for the startup message of `prototype serve`: the public address, or a warning when the variable is invalid
     (the warning names the variable, never its value)."""
@@ -654,10 +670,10 @@ def public_address_lines(settings, environ=None):
 def resolve_prototype_settings(section, root):
     """Validate the section and resolve its paths: dict with `errors`, `warnings`, `root`,
     `root_value`, `tokens_from`, `css`, `guidelines` (resolved `Path` or None) and
-    `commit_before_iteration` (bool, default False; K40)."""
+    `commit_before_iteration` (bool, default False; K40) and `dark_theme` (bool, default True; false = a light-only prototype)."""
     settings = {'errors': [], 'warnings': [], 'root': None, 'root_value': DEFAULT_ROOT,
                 'tokens_from': None, 'css': None, 'guidelines': None, 'commit_before_iteration': False,
-                'public_url': None, 'port': None}
+                'public_url': None, 'port': None, 'dark_theme': True}
     errors, warnings = settings['errors'], settings['warnings']
     if section is None:
         section = {}
@@ -673,6 +689,12 @@ def resolve_prototype_settings(section, root):
             errors.append('prototype.commit_before_iteration: must be true or false')
         else:
             settings['commit_before_iteration'] = flag
+    if 'dark_theme' in section:
+        flag = section['dark_theme']
+        if not isinstance(flag, bool):
+            errors.append('prototype.dark_theme: must be true or false (false = the prototypes have no dark theme and no theme button)')
+        else:
+            settings['dark_theme'] = flag
     if 'port' in section:
         port = section['port']
         if isinstance(port, bool) or not isinstance(port, int) or not PORT_RANGE[0] <= port <= PORT_RANGE[1]:
@@ -985,8 +1007,9 @@ def _error_text(error, repo):
     return str(error).replace(str(repo) + os.sep, '')
 
 
-def build_theme_files(settings, theme_assets, repo):
-    """Return `(tokens_css, theme_css, warnings)` from assets and the manifest theme files."""
+def build_theme_files(settings, theme_assets, repo, missing_out=None):
+    """Return `(tokens_css, theme_css, warnings)` from assets and the manifest theme files; the required tokens that no stylesheet defines are
+    also appended to the list `missing_out` (when given): `sync --check` fails on them, the other commands only warn."""
     default_css = _read_asset(theme_assets['theme/default.css'])
     required = parse_required_tokens(_read_asset(theme_assets['theme/required-tokens.txt']))
     project_tokens = theme_css_source = None
@@ -1001,6 +1024,8 @@ def build_theme_files(settings, theme_assets, repo):
     missing = missing_required_tokens(required, tokens_css, theme_css)
     if missing:
         warnings.append(f'Missing required tokens: {", ".join(missing)}')
+        if missing_out is not None:
+            missing_out.extend(missing)
     return tokens_css, theme_css, warnings
 
 
@@ -1066,6 +1091,8 @@ def init_prototype(root, manifest, layerset, slug, requirements, title=None, ass
     warnings += theme_warnings
     fields = {'TITLE': title, 'SLUG': slug, 'REQUIREMENTS': requirements_value}
     rendered = {name: render_template(_read_asset(paths[f'repo/{name}']), fields) for name in TEMPLATE_FILES}
+    if not settings['dark_theme']:
+        rendered['index.html'], _ = ensure_light_only(rendered['index.html'], True)
     missing = missing_theme_links(rendered['index.html'])
     if missing:
         warnings.append(f'index.html does not link {", ".join(missing)}')
@@ -1102,6 +1129,20 @@ def init_prototype(root, manifest, layerset, slug, requirements, title=None, ass
     return report
 
 
+def _light_only_notes(directory, slug):
+    """Notes for `dark_theme: false`: the `<html>` marks written by `init`/`migrate`, and an engine copy that does not know them."""
+    notes = []
+    index = directory / 'index.html'
+    data, _ = read_regular_bytes(index, MAX_COMMENTS_READ)
+    if data is not None and b'data-proto-dark="off"' not in data:
+        notes.append(f'{slug}: prototype.dark_theme is false, but index.html has no data-proto-dark="off" on <html>: run `skillsync prototype migrate`')
+    engine, _ = read_regular_bytes(directory / 'prototype.js', MAX_COMMENTS_READ)
+    if engine is not None and LIGHT_ONLY_MARKER.encode() not in engine:
+        notes.append(f'{slug}: prototype.dark_theme is false, but the engine copy (prototype.js) does not know it, so the theme button stays: '
+                     'run `skillsync prototype migrate`')
+    return notes
+
+
 def sync_prototypes(root, manifest, layerset, slug=None, check=False, assets=None):
     repo = Path(root).resolve()
     settings = _settings(repo, manifest)
@@ -1109,7 +1150,8 @@ def sync_prototypes(root, manifest, layerset, slug=None, check=False, assets=Non
     if slug is not None and not valid_slug(slug):
         raise PrototypeError(f'Invalid slug {slug!r}: use lowercase letters, digits and single hyphens')
     paths = asset_paths(layerset, [f'theme/{name}' for name in THEME_FILES], assets)
-    tokens_css, theme_css, theme_warnings = build_theme_files(settings, paths, repo)
+    missing_tokens = []
+    tokens_css, theme_css, theme_warnings = build_theme_files(settings, paths, repo, missing_tokens)
     warnings += theme_warnings
     prototypes_root = settings['root']
     if slug is not None:
@@ -1137,6 +1179,8 @@ def sync_prototypes(root, manifest, layerset, slug=None, check=False, assets=Non
                     raise PrototypeError(f'{file_name}: {reason}')
                 current[file_name] = data
             changed = [file_name for file_name in GENERATED_FILES if current[file_name] != expected[file_name]]
+            if not settings['dark_theme']:
+                warnings += _light_only_notes(directory, name)
             if check:
                 stale += [_relative(directory / file_name, repo) for file_name in changed]
             else:
@@ -1150,7 +1194,9 @@ def sync_prototypes(root, manifest, layerset, slug=None, check=False, assets=Non
     if check:
         report['checked'] = processed
         report['stale'] = stale
-        if stale:
+        if missing_tokens:
+            report['missing'] = missing_tokens   # the theme is incomplete: the check does not prove a complete theme, so it fails (180-P)
+        if stale or missing_tokens:
             report['status'] = 'FAIL'
     else:
         report['synced'] = processed
@@ -1264,6 +1310,8 @@ def list_prototypes(root, manifest, clock=None):
             warnings.append(f'{entry["path"]}: {entry["error"]}')
         else:
             entry['writing'] = server.public_writing(str(directory), now_ms)
+            if not settings['dark_theme']:
+                warnings.extend(_light_only_notes(directory, slug))
         warnings.extend(entry_warnings)
         entries.append(entry)
     report = {'status': 'PASS', 'root': _relative(settings['root'], repo), 'prototypes': entries}
@@ -1293,9 +1341,11 @@ code { font: 0.8125rem ui-monospace, monospace; }
 """.strip('\n')
 
 
-def render_gallery(entries):
+def render_gallery(entries, demo=False):
     """HTML of `<root>/index.html` for valid entries (dicts as in `list`); `href` from `slug`.  An entry with a
-    truthy `writing` (set only by the live gallery) gets the "w trakcie zapisu" mark."""
+    truthy `writing` (set only by the live gallery) gets the "w trakcie zapisu" mark.  `demo` (the read-only show of `serve --demo`):
+    only the slug, the title, the creation date and the number of screens; no requirements path, comment count, acceptance, writing mark or
+    link to the expert questions."""
     def number(value):
         return '—' if value is None else html_escape(value)
 
@@ -1309,16 +1359,16 @@ def render_gallery(entries):
             '<li class="card">',
             f'  <h2><a href="{slug}/index.html">{html_escape(entry["title"])}</a></h2>',
             *(['  <p class="writing" data-writing="true">W trakcie zapisu: agent jeszcze pisze ekrany</p>']
-              if entry.get('writing') else []),
+              if entry.get('writing') and not demo else []),
             *([f'  <p class="questions"><a href="/_experts/{slug}">Pytania</a></p>']
-              if entry.get('questions') else []),
+              if entry.get('questions') and not demo else []),
             '  <dl>',
             f'    <dt>Slug</dt><dd><code>{slug}</code></dd>',
-            f'    <dt>Wymagania</dt><dd><code>{html_escape(entry["requirements"])}</code></dd>',
+            *([] if demo else [f'    <dt>Wymagania</dt><dd><code>{html_escape(entry["requirements"])}</code></dd>']),
             f'    <dt>Utworzono</dt><dd>{html_escape(entry["created"])}</dd>',
             f'    <dt>Ekrany</dt><dd>{number(entry["screens"])}</dd>',
-            f'    <dt>Otwarte komentarze</dt><dd>{number(entry["comments"])}</dd>',
-            f'    <dt>Akceptacja</dt><dd>{acceptance(entry.get("acceptance"))}</dd>',
+            *([] if demo else [f'    <dt>Otwarte komentarze</dt><dd>{number(entry["comments"])}</dd>',
+                               f'    <dt>Akceptacja</dt><dd>{acceptance(entry.get("acceptance"))}</dd>']),
             '  </dl>',
             '</li>']))
     body = ('<ul class="gallery">\n' + '\n'.join(cards) + '\n</ul>') if cards else '<p class="lead">Brak prototypów.</p>'
@@ -1338,8 +1388,10 @@ def render_gallery(entries):
         '<body>',
         '<main>',
         '<h1>Prototypy</h1>',
-        *(['<p class="questions-link"><a href="/_experts">Pytania</a></p>'] if any(entry.get('questions') for entry in entries) else []),
-        f'<p class="lead">Liczba prototypów: {len(entries)}. Otwórz prototyp, aby przeglądać ekrany i komentarze.</p>',
+        *(['<p class="questions-link"><a href="/_experts">Pytania</a></p>']
+          if not demo and any(entry.get('questions') for entry in entries) else []),
+        (f'<p class="lead">Liczba prototypów: {len(entries)}. Otwórz prototyp, aby przeglądać ekrany.</p>' if demo else
+         f'<p class="lead">Liczba prototypów: {len(entries)}. Otwórz prototyp, aby przeglądać ekrany i komentarze.</p>'),
         body,
         '</main>',
         '</body>',
@@ -1393,13 +1445,13 @@ def gallery_entries(prototypes_root, repo, now_ms=None):
     return entries, warnings
 
 
-def gallery_html(prototypes_root, repo, clock=None):
+def gallery_html(prototypes_root, repo, clock=None, demo=False):
     """Gallery HTML computed now (acceptance, open comments, screens as they are at this moment).  `serve` answers
     `/` with it, so the gallery never lags behind `accept`, comments or `init`; `index` writes the same HTML to
     `<root>/index.html` for `file://` and static servers.  Only the live gallery marks prototypes with a valid
     writing marker; `clock` (seconds, default `time.time`) is injectable for tests."""
     entries, _ = gallery_entries(Path(prototypes_root), Path(repo), server.clock_ms(clock or time.time))
-    return render_gallery(entries)
+    return render_gallery(entries, demo=demo)
 
 
 def _gallery_writable(path):
@@ -1480,6 +1532,41 @@ def ensure_theme_lock_metas(html):
     newline = '\r\n' if '\r\n' in html[:head_end] else '\n'
     insert = ''.join(newline + tag for _, tag in missing)
     return html[:position] + insert + html[position:], [name for name, _ in missing]
+
+
+_HTML_TAG = re.compile(r'<html(?=[\s>/])((?:"[^"]*"|\'[^\']*\'|[^>"\'])*)>', re.IGNORECASE)
+LIGHT_ONLY_MARKER = 'data-proto-dark'   # also the marker a prototype engine copy has to contain to honour `dark_theme: false`
+
+
+def _attribute_pattern(name):
+    return re.compile(r'\s' + re.escape(name) + r'(?:\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s>"\']+))?(?=[\s/>]|$)', re.IGNORECASE)
+
+
+def ensure_light_only(html, light_only):
+    """`(html, status)`: `dark_theme: false` writes `data-theme="light" data-proto-dark="off"` on the `<html>` start tag (outside `<head>` and the
+    screens: no screen hash changes; the static `data-theme` also stops the dark `@media` block before any script runs, so no dark flash). `true`
+    removes exactly those two attributes, and only when `data-proto-dark="off"` is there (our own mark); a hand-written `data-theme` stays.
+    `status`: `added`, `removed`, `unchanged`, or `no_html` (no `<html>` tag: nothing changes)."""
+    match = _HTML_TAG.search(html)
+    if not match:
+        return html, 'no_html'
+    attributes = match.group(1)
+    dark_pattern, theme_pattern = _attribute_pattern(LIGHT_ONLY_MARKER), _attribute_pattern('data-theme')
+    if light_only:
+        updated = theme_pattern.sub(' data-theme="light"', attributes, count=1) if theme_pattern.search(attributes) \
+            else attributes.rstrip() + ' data-theme="light"'
+        updated = dark_pattern.sub(' data-proto-dark="off"', updated, count=1) if dark_pattern.search(updated) \
+            else updated + ' data-proto-dark="off"'
+        status = 'added'
+    else:
+        found = dark_pattern.search(attributes)
+        if not found or not re.search(r'=\s*["\']?off["\']?(?=[\s/>]|$)', found.group(0), re.IGNORECASE):
+            return html, 'unchanged'
+        updated = theme_pattern.sub('', dark_pattern.sub('', attributes, count=1), count=1)
+        status = 'removed'
+    if updated == attributes:
+        return html, 'unchanged'
+    return html[:match.start(1)] + updated + html[match.end(1):], status
 
 
 def machine_config_path(environ=None):
@@ -2153,6 +2240,7 @@ def migrate_prototype(root, manifest, layerset, slug, dry_run=False, assets=None
                     for operation in converted if operation['id'] not in stored_ids]
     without_script = _COMMENTS_SCRIPT.sub('', fixed)
     locked, lock_added = ensure_theme_lock_metas(without_script)
+    locked, light_status = ensure_light_only(locked, not settings['dark_theme'])
     # The sprite is read and merged while planning: an unreadable sprite stops the command before any write.
     sprite = {'status': 'skipped', 'replaced': [], 'added': [],
                                'message': 'sprite: icons are merged on the next `migrate` (a v1 prototype has '
@@ -2296,6 +2384,8 @@ def migrate_prototype(root, manifest, layerset, slug, dry_run=False, assets=None
         record(5, 'link_project_css', directory / 'index.html')
     if notices:
         record(5, 'remove_notices', directory / 'index.html', kinds=notices)
+    if light_status in ('added', 'removed'):
+        record(5, 'light_only', directory / 'index.html', status=light_status)
     if lock_added:
         record(5, 'theme_lock_meta', directory / 'index.html', added=lock_added)
     elif lock_added is None:
@@ -2464,12 +2554,16 @@ def serve_prototypes(root, manifest, args, err=None):
     repo = Path(root).resolve()
     settings = _settings(repo, manifest)
     port = args.port if args.port is not None else (settings['port'] or server.DEFAULT_PORT)
-    source_writes = not args.no_source_writes and _in_git_worktree(settings['root'])
-    config = server.ServerConfig(settings['root'], users_file_path(repo, args.users), host=args.host, port=port,
+    demo = bool(getattr(args, 'demo', False))
+    if demo and args.login_to_view:
+        return {'status': 'BLOCKED', 'reason': '--demo and --login-to-view contradict each other: the show has no accounts and no login'}
+    host = args.host if args.host is not None else (DEMO_HOST if demo else server.DEFAULT_HOST)
+    source_writes = not demo and not args.no_source_writes and _in_git_worktree(settings['root'])
+    config = server.ServerConfig(settings['root'], None if demo else users_file_path(repo, args.users), host=host, port=port,
                                  secure_cookies=args.secure_cookies, trust_proxy=args.trust_proxy,
                                  login_to_view=args.login_to_view, source_writes=source_writes, log=err,
-                                 gallery=lambda: gallery_html(settings['root'], repo, clock=config.clock),
-                                 runtime_dir=server.link_run_dir_of(repo))
+                                 gallery=lambda: gallery_html(settings['root'], repo, clock=config.clock, demo=demo),
+                                 runtime_dir=None if demo else server.link_run_dir_of(repo), demo=demo)
     try:
         instance = server.make_server(config)
     except server.StartupError as error:
@@ -2478,34 +2572,46 @@ def serve_prototypes(root, manifest, args, err=None):
             report['warnings'] = error.warnings
         return report
     except OSError as error:
-        return {'status': 'BLOCKED', 'reason': f'cannot listen on {args.host}:{port} ({error.strerror or error})'}
+        return {'status': 'BLOCKED', 'reason': f'cannot listen on {host}:{port} ({error.strerror or error})'}
     notes = list(settings['warnings']) + instance.app.warnings
-    if not args.no_source_writes and not source_writes:
+    if demo:
+        notes += [f'--demo: {name} nie ma tu znaczenia (pokaz nie ma kont ani ciasteczek)'
+                  for name, given in (('--users', args.users), ('--secure-cookies', args.secure_cookies), ('--trust-proxy', args.trust_proxy)) if given]
+    if not demo and not args.no_source_writes and not source_writes:
         notes.append(f'{_relative(settings["root"], repo)} nie leży w kopii roboczej gita: przywracanie z UI wyłączone '
                      '(source writes off)')
-    previous = previous_break = None
+    previous = previous_break = console_close = None
+    cleanup_done = threading.Event()
     try:
         # The handler goes in first and the whole start is under the `try`: a SIGINT/SIGTERM between the announcement
         # and `serve_forever` (a Ctrl+C right after the address line) stops the server cleanly instead of a traceback.
         previous = _stop_on_sigterm()
         previous_break = stopsignal.install_sigbreak()   # Windows: CTRL_BREAK (SIGBREAK) stops like Ctrl+C; None on other systems
+        console_close = stopsignal.install_console_close(cleanup_done)   # Windows: closing the console window waits for the cleanup below
         for warning in notes:
             err.write(f'ostrzeżenie: {warning}\n')
         err.write(f'Serwer prototypów: {instance.url} (Ctrl+C kończy)\n')
         for line in public_address_lines(settings):
             err.write(line + '\n')
+        if demo:
+            for line in demo_lines(instance, host):
+                err.write(line + '\n')
         err.flush()
         instance.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
+        stopsignal.cleanup_begun(console_close)   # a closed console window only waits from here on
         if previous is not None and previous[0] is not None:
             signal.signal(signal.SIGTERM, previous[0])
         try:
             instance.server_close()   # removes the login-link state file: a second CTRL_BREAK is still ignored (stopsignal) until this is done
         finally:
-            if previous_break is not None:
-                signal.signal(signal.SIGBREAK, previous_break[0])
+            try:
+                if previous_break is not None:
+                    signal.signal(signal.SIGBREAK, previous_break[0])
+            finally:
+                stopsignal.cleanup_finished(console_close, cleanup_done)   # last: a closed console window waits for this
     return {'status': 'PASS', 'url': instance.url, 'root': _relative(settings['root'], repo), 'stopped': True}
 
 
@@ -4869,7 +4975,8 @@ def register(subparsers):
     migrate.set_defaults(func=_run(_cmd_migrate, assets=True))
     serve = actions.add_parser('serve', help='Serve prototypes with the shared comments API (foreground, Ctrl+C stops)')
     _common(serve)
-    serve.add_argument('--host', default=server.DEFAULT_HOST, help='Listen address (default 127.0.0.1)')
+    serve.add_argument('--host', default=None,
+                       help='Listen address (default 127.0.0.1; with --demo 0.0.0.0, every interface; --host 127.0.0.1 keeps the show on this machine)')
     serve.add_argument('--port', type=int, default=None,
                        help='Port (default: prototype.port of the manifest, else 4445; 0 = any free port)')
     serve.add_argument('--users', help=f'Users file, relative to the project (default {USERS_DEFAULT})')
@@ -4877,6 +4984,9 @@ def register(subparsers):
     serve.add_argument('--trust-proxy', action='store_true', help='Use X-Forwarded-For for the login rate limit')
     serve.add_argument('--no-source-writes', action='store_true', help='Never write prototype sources (restore, F2)')
     serve.add_argument('--login-to-view', action='store_true', help='Require login also to view prototypes')
+    serve.add_argument('--demo', action='store_true',
+                       help='Read-only show without accounts: no login, comments, threads, acceptance or expert answers (the server refuses '
+                            'every write), existing comments hidden; the pages are public for everyone who reaches the address')
     serve.set_defaults(func=_run(_cmd_serve))
     user = actions.add_parser('user', help='Manage the users file of serve (login = e-mail)')
     user_actions = user.add_subparsers(dest='user_command', required=True)

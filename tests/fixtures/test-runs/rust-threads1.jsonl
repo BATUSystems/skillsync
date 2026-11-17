@@ -1,0 +1,32 @@
+{"meta": {"tool": "cargo", "version": "cargo 1.97.1, rustc 1.97.1, libtest default format", "command": ["cargo", "test", "--offline", "--no-fail-fast", "--", "--test-threads=1"], "exit": 101, "merged": false, "env": {"LANG": "pl_PL.UTF-8"}, "note": "--test-threads=1: `test name ... ` is printed when the test starts", "scrubbed": "paths, host and user names are replaced", "format": "one record per chunk read from the pipe: t = seconds since the start, fd = out|err, data = the text of the chunk"}}
+{"t": 0.08, "fd": "err", "data": "    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.01s\n"}
+{"t": 0.081, "fd": "err", "data": "     Running unittests src/lib.rs (<root>/rs-target/debug/deps/demo-5d464ed6742d1409)\n"}
+{"t": 0.082, "fd": "out", "data": "\nrunning 11 tests\ntest tests::expected_panic_did_not_happen - should panic ... "}
+{"t": 0.082, "fd": "out", "data": "FAILED\ntest tests::expects_a_panic - should panic ... "}
+{"t": 0.082, "fd": "out", "data": "ok\ntest tests::fails ... "}
+{"t": 0.082, "fd": "out", "data": "FAILED\ntest tests::ignored ... ignored, not ready\ntest tests::ignored_without_reason ... "}
+{"t": 0.082, "fd": "out", "data": "ignored\ntest tests::nested::deep ... "}
+{"t": 0.082, "fd": "out", "data": "ok\ntest tests::nested::żółć_unicode ... "}
+{"t": 0.082, "fd": "out", "data": "ok\ntest tests::ok ... "}
+{"t": 0.082, "fd": "out", "data": "ok\ntest tests::prints ... "}
+{"t": 0.083, "fd": "out", "data": "ok\ntest tests::slow_fail ... "}
+{"t": 0.983, "fd": "out", "data": "FAILED\ntest tests::slow_ok ... "}
+{"t": 2.183, "fd": "out", "data": "ok\n\nfailures:\n\n---- tests::expected_panic_did_not_happen stdout ----\nnote: test did not panic as expected at src/lib.rs:67:8\n---- tests::fails stdout ----\n\nthread 'tests::fails' (4020521) panicked at src/lib.rs:31:9:\nassertion `left == right` failed\n  left: 2\n right: 3\n\n---- tests::slow_fail stdout ----\n\nthread 'tests::slow_fail' (4020526) panicked at src/lib.rs:56:9:\nslow failure\nsecond line\n\n\nfailures:\n    tests::expected_panic_did_not_happen\n    tests::fails\n    tests::slow_fail\n\ntest result: FAILED. 6 passed; 3 failed; 2 ignored; 0 measured; 0 filtered out; finished in 2.10s\n\n"}
+{"t": 2.183, "fd": "err", "data": "error: test failed, to rerun pass `--lib`\n"}
+{"t": 2.183, "fd": "err", "data": "     Running tests/green.rs (<root>/rs-target/debug/deps/green-05497fcba309b506)\n"}
+{"t": 2.185, "fd": "out", "data": "\nrunning 2 tests\ntest green_one ... "}
+{"t": 2.185, "fd": "out", "data": "ok\ntest green_two ... "}
+{"t": 2.185, "fd": "out", "data": "ok\n\ntest result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out"}
+{"t": 2.185, "fd": "out", "data": "; finished in 0.00s\n\n"}
+{"t": 2.185, "fd": "err", "data": "     Running tests/integration.rs (<root>/rs-target/debug/deps/integration-8120ba79c0a37c87)\n"}
+{"t": 2.186, "fd": "out", "data": "\nrunning 2 tests\ntest integration_fails ... "}
+{"t": 2.186, "fd": "out", "data": "FAILED\ntest integration_ok ... "}
+{"t": 2.186, "fd": "out", "data": "ok\n\nfailures:\n\n---- integration_fails stdout ----\n\nthread 'integration_fails' (4020591) panicked at tests/integration.rs:8:5:\nassertion `left == right` failed\n  left: 7\n right: 8\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n\n"}
+{"t": 2.186, "fd": "out", "data": "\nfailures:\n    integration_fails\n\ntest result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n"}
+{"t": 2.186, "fd": "err", "data": "error: test failed, to rerun pass `--test integration`\n   Doc-tests demo\n"}
+{"t": 2.205, "fd": "out", "data": "\nrunning 2 tests\ntest src/lib.rs - add (line 5) ... "}
+{"t": 2.276, "fd": "out", "data": "ok\ntest src/lib.rs - broken_doc (line 14) ... "}
+{"t": 2.34, "fd": "out", "data": "FAILED\n\nfailures:\n\n---- src/lib.rs - broken_doc (line 14) stdout ----\nTest executable failed (exit status: 101).\n\nstderr:\n\nthread 'main' (4020647) panicked at src/lib.rs:5:1:\nassertion `left == right` failed\n  left: 2\n right: 3\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n\n\n\nfailures:\n    src/lib.rs - broken_doc (line 14)\n\ntest result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out"}
+{"t": 2.34, "fd": "out", "data": "; finished in 0.14s\n\n"}
+{"t": 2.344, "fd": "err", "data": "error: doctest failed, to rerun pass `--doc`\n"}
+{"t": 2.344, "fd": "err", "data": "error: 3 targets failed:\n    `--lib`\n    `--test integration`\n    `--doc`\n"}

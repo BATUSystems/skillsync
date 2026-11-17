@@ -15,9 +15,10 @@ from pathlib import Path
 
 import yaml
 
+from . import guardhook
 from .fsutil import ensure_utf8_streams, isabs, rmtree_force
 from .common import (CONDITIONAL_SKILL_ALIASES, append_missing_lines, checked_out_link, conditional_skill_alias, detect_eol, discover_excludes,
-                     is_excluded)
+                     file_lines, is_excluded)
 
 CONFIG_PATH = Path(os.environ.get("SKILLSYNC_CONFIG") or (Path.home() / ".config" / "skillsync" / "config.yaml"))
 STATE_FILE = Path(".github") / ".skillsync-state.json"
@@ -1461,7 +1462,7 @@ def place(src, dest: Path, method: str, state: dict, key: str, owned: bool, dry_
             merge_copy(src, dest, state, key, dry_run)  # per file `{owner, base}` (K4)
             return
         if not owned and not checked_out_link(dest):   # a link that git checked out as a file (core.symlinks off) is replaced, the user's file is not
-            print(f"[warn] Skipping {dest}: exists and is not managed by skillsync")
+            print(f"[warn] Skipping {dest}: exists and is not managed by skillsync; to let skillsync manage it, delete it (keep your own changes elsewhere) and run `skillsync link` again")
             return
         if dry_run:
             print(f"[dry-run] Would replace: {dest}")
@@ -2458,6 +2459,187 @@ def sync_closure_hook(project_dir: Path, manifest: dict, config: dict, dry_run: 
         remove_closure_script(project_dir, dry_run)
 
 
+def guard_mode(manifest: dict, config: dict) -> str:
+    """`deny` | `off` of the delete guard hook (explicit manifest value, else `deny` for agent-flow projects)."""
+    if not claude_enabled(manifest):
+        return "off"
+    return guardhook.effective_mode(manifest, project_skills(manifest, config))
+
+
+def guard_tests_config(manifest: dict, config: dict) -> dict | None:
+    """The test commands part of the guard hook (`None` when it is not active: mode off, or the hook script does not read it yet)."""
+    if not claude_enabled(manifest):
+        return None
+    return guardhook.tests_config(manifest, project_skills(manifest, config))
+
+
+def guard_wanted(manifest: dict, config: dict) -> bool:
+    """The hook entry and script are wanted when the delete guard or the test commands part is on."""
+    return guard_mode(manifest, config) != "off" or guard_tests_config(manifest, config) is not None
+
+
+def guard_gitignore_entries(manifest: dict, config: dict) -> list[str]:
+    if not guard_wanted(manifest, config):
+        return []
+    entries = ["hooks/guard-commands.py", "settings.local.json", "settings.local.json.skillsync-backup"]
+    if guard_tests_config(manifest, config) is not None:
+        entries[1:1] = ["hooks/guard-tests.py", "hooks/test-tools.json"]
+    return entries
+
+
+def copy_guard_script(project_dir: Path, config: dict, dry_run: bool = False) -> bool:
+    found = config_layers(config).resolve("hooks/guard-commands.py")  # hooks: core layer only
+    if found is None:
+        print("[warn] Missing hook script in library: hooks/guard-commands.py (core layer)")
+        return False
+    dest = project_dir / guardhook.GUARD_HOOK
+    if dry_run:
+        print(f"[dry-run] Would write: {dest}")
+        return True
+    try:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(found[1], dest)
+        dest.chmod(dest.stat().st_mode | 0o111)
+    except OSError as error:
+        print(f"[warn] Nie udalo sie zapisac {dest}: {error}")
+        return False
+    return True
+
+
+def remove_guard_script(project_dir: Path, dry_run: bool = False) -> None:
+    for name in (guardhook.GUARD_HOOK, guardhook.TESTS_HOOK, guardhook.TOOLS_HOOK):
+        dest = project_dir / name
+        if dest.is_file() and not dest.is_symlink():
+            if dry_run:
+                print(f"[dry-run] Would remove: {dest}")
+                continue
+            try:
+                dest.unlink()
+            except OSError as error:
+                print(f"[warn] Nie udalo sie usunac {dest}: {error}")
+
+
+def copy_test_files(project_dir: Path, config: dict, dry_run: bool = False) -> bool:
+    """The test commands part of the hook: the classifier (library, core layer) and the table of the tools (a copy of the package data, the one source of
+    `test_run.detect_tool`) next to the hook script. False when something is missing: the part then stays silent (the hook reads nothing it cannot find)."""
+    found = config_layers(config).resolve("hooks/guard-tests.py")
+    table = Path(__file__).resolve().parent / "data" / "test_tools.json"
+    if found is None or not table.is_file():
+        print("[warn] Missing test commands hook files (hooks/guard-tests.py in the core layer, data/test_tools.json in the package)")
+        return False
+    ok = True
+    for source, name in ((found[1], guardhook.TESTS_HOOK), (table, guardhook.TOOLS_HOOK)):
+        dest = project_dir / name
+        if dry_run:
+            print(f"[dry-run] Would write: {dest}")
+            continue
+        try:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, dest)
+        except OSError as error:
+            print(f"[warn] Nie udalo sie zapisac {dest}: {error}")
+            ok = False
+    return ok
+
+
+def remove_test_files(project_dir: Path, dry_run: bool = False) -> None:
+    for name in (guardhook.TESTS_HOOK, guardhook.TOOLS_HOOK):
+        dest = project_dir / name
+        if dest.is_file() and not dest.is_symlink():
+            if dry_run:
+                print(f"[dry-run] Would remove: {dest}")
+                continue
+            try:
+                dest.unlink()
+            except OSError as error:
+                print(f"[warn] Nie udalo sie usunac {dest}: {error}")
+
+
+def merge_guard_settings(project_dir: Path, manifest: dict, config: dict, want: bool, dry_run: bool = False) -> bool:
+    """Adds (`want`) or removes our PreToolUse entry in the ignored settings.local.json; foreign hooks and permissions stay.
+    True when no entry of ours remains after the call. The earliest backup is kept (the closure hook writes the same file first); a tracked file is never written."""
+    settings_path = project_dir / guardhook.SETTINGS
+    if not want and not settings_path.exists():
+        return True
+    existing = {}
+    try:
+        if settings_path.exists():
+            existing = json.loads(settings_path.read_text(encoding="utf-8"))
+    except ValueError:
+        print(f"[warn] Nieprawidlowy JSON w {settings_path}, pomijam scalanie")
+        return False
+    except OSError as error:
+        print(f"[warn] Nie udalo sie odczytac {settings_path}: {error}")
+        return False
+    if not isinstance(existing, dict) or not isinstance(existing.get("hooks", {}), dict):
+        print(f"[warn] Invalid hook settings structure: {settings_path}")
+        return False
+    updated = dict(existing)
+    hooks_section = dict(updated.get("hooks") or {})
+    pre = hooks_section.get("PreToolUse", [])
+    if not isinstance(pre, list) or any(not isinstance(group, dict) or not isinstance(group.get("hooks", []), list) for group in pre):
+        print(f"[warn] Invalid PreToolUse settings structure: {settings_path}")
+        return False
+    _, allow, _ = guardhook.hook_settings(manifest)
+    entry = guardhook.hook_entry(config.get("python_command", "python3"), guard_mode(manifest, config), allow, guard_tests_config(manifest, config))
+    present = [hook for group in pre for hook in group.get("hooks", []) if guardhook.is_guard_hook(hook)]
+    if want and present == entry["hooks"]:
+        return False  # the entry is current; do not touch the file
+    kept = []
+    for group in pre:
+        if "hooks" not in group:
+            kept.append(group)
+            continue
+        remaining = [hook for hook in group["hooks"] if not guardhook.is_guard_hook(hook)]
+        if remaining or not group["hooks"]:
+            kept.append({**group, "hooks": remaining})
+    if want:
+        kept.append(entry)
+    if kept:
+        hooks_section["PreToolUse"] = kept
+    else:
+        hooks_section.pop("PreToolUse", None)
+    if hooks_section or "hooks" in existing:
+        updated["hooks"] = hooks_section
+    if updated == existing:
+        return not want
+    if settings_path.exists() and is_tracked(settings_path):
+        print(f"[warn] {settings_path} jest śledzony przez git, pomijam zapis")
+        return False
+    if dry_run:
+        print(f"[dry-run] Would update: {settings_path}")
+        return not want
+    try:
+        settings_path.parent.mkdir(parents=True, exist_ok=True)
+        if settings_path.exists():
+            backup_path = settings_path.with_name(settings_path.name + ".skillsync-backup")
+            if not backup_path.exists():  # the closure hook writes the same file first: keep the earliest copy
+                write_text_lf(backup_path, read_user_text(settings_path))
+        write_text_lf(settings_path, json_file_text(updated, read_user_text(settings_path) if settings_path.exists() else ""))
+    except OSError as error:
+        print(f"[warn] Nie udalo sie zapisac {settings_path}: {error}")
+        return False
+    print(f"Updated: {settings_path}")
+    return not want
+
+
+def sync_guard_hook(project_dir: Path, manifest: dict, config: dict, dry_run: bool = False) -> None:
+    """Script and entry stay consistent: the entry only with the script, the script goes after the entry is removed."""
+    if not claude_enabled(manifest):
+        return
+    for reason in guardhook.hook_settings(manifest)[2] + guardhook.test_settings(manifest)[3]:
+        print(f"[warn] {reason}")
+    if guard_wanted(manifest, config):
+        copied = copy_guard_script(project_dir, config, dry_run)
+        if guard_tests_config(manifest, config) is not None:
+            copy_test_files(project_dir, config, dry_run)   # missing files: the test part stays silent, the delete guard is unaffected
+        else:
+            remove_test_files(project_dir, dry_run)
+        merge_guard_settings(project_dir, manifest, config, copied, dry_run)
+    elif merge_guard_settings(project_dir, manifest, config, False, dry_run):
+        remove_guard_script(project_dir, dry_run)
+
+
 def merge_claude_settings(project_dir: Path, manifest: dict, config: dict, dry_run: bool = False) -> None:
     # Only our Stop command is managed; preserve custom commands, even in a shared group.
     if not claude_enabled(manifest):
@@ -2742,14 +2924,16 @@ def _link_project(manifest: dict, project_dir: Path, config: dict, dry_run: bool
         build_claude_hooks(project_dir, manifest, config, dry_run=dry_run)
         merge_claude_settings(project_dir, manifest, config, dry_run=dry_run)
         sync_closure_hook(project_dir, manifest, config, dry_run=dry_run)
+        sync_guard_hook(project_dir, manifest, config, dry_run=dry_run)
         build_claude_mcp(project_dir, manifest, config, dry_run=dry_run)
         ensure_claude_gitignore(project_dir / ".claude", claude_gitignore_entries(manifest, config), dry_run=dry_run)
         ensure_claude_gitignore(project_dir / ".claude", closure_gitignore_entries(manifest, config), dry_run=dry_run)
+        ensure_claude_gitignore(project_dir / ".claude", guard_gitignore_entries(manifest, config), dry_run=dry_run)
     ensure_gitignore(github_dir, dry_run=dry_run)
     build_codex(project_dir, manifest, config, dry_run=dry_run, mode=mode)
     ensure_link_on_open(project_dir, manifest, config, dry_run=dry_run)
-    if has_feature(manifest, config):
-        ensure_root_gitignore(project_dir, entry=".skillsync/", dry_run=dry_run)
+    if has_feature(manifest, config) or guard_wanted(manifest, config):
+        ensure_root_gitignore(project_dir, entry=".skillsync/", dry_run=dry_run)  # also the trail of delete-guard exceptions
     update_composites(project_dir, config[COMPOSITES_KEY], dry_run)
 
 
@@ -3040,7 +3224,7 @@ def cmd_list(args: argparse.Namespace) -> None:
         found = layerset.resolve(f"skills/{skill}/SKILL.md")
         if found is not None:
             skill_md = found[1]
-            first_line = skill_md.read_text(encoding="utf-8").splitlines()[0] if skill_md.stat().st_size > 0 else ""
+            first_line = file_lines(skill_md.read_text(encoding="utf-8"))[0] if skill_md.stat().st_size > 0 else ""
             print(f"  • {skill:30s} [{owners}] {first_line[:60]}")
         else:
             print(f"  • {skill:30s} [{owners}]")
@@ -3737,7 +3921,23 @@ def main() -> None:
         # Older Windows installations can still run legacy sync commands.
         pass
 
-    args = parser.parse_args()
+    try:
+        from skillsync_workflow.argtools import intermix_leaf_parsers
+    except ModuleNotFoundError:   # an old installation without the module: the plain parsers
+        pass
+    else:
+        intermix_leaf_parsers(parser)   # Python before 3.12: options between positionals (see argtools)
+    argv = sys.argv[1:]
+    head, tail = argv, None
+    try:
+        from skillsync_workflow.test_run import split_command
+    except ModuleNotFoundError:
+        pass
+    else:
+        head, tail = split_command(argv)
+    args = parser.parse_args(head)
+    if tail is not None:
+        args.command = tail   # `test-run ... -- <command>`: the same on every Python (see `split_command`)
     try:
         result = args.func(args)
     except (ValueError, OSError, yaml.YAMLError) as exc:

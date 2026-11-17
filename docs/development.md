@@ -50,12 +50,49 @@ uruchomionych testów.
   nigdy tryb linkowania: `SKILLSYNC_NO_SYMLINK=1` nie może pomijać testu, który tylko podkłada dowiązanie.
 - Test, który sprawdza wynik trybu symlink, przypina go dekoratorem `@link_mode('symlink')`; odpowiednik trybu kopii to `@link_mode('copy')`.
 - Test nie wraca po cichu tam, gdzie niczego nie sprawdza (`if os.name == 'nt': return` raportuje PASS i omija baseline): mechanizm, którego system nie ma, to `self.skipTest(powód)` albo `@unittest.skipUnless`; pilnuje tego `tests/test_skillsync_no_silent_return.py`.
-- `tests/skip-baseline.json` opisuje dozwolone pominięcia per system i tryb; `scripts/check_skips.py` sprawdza log biegu:
+- `tests/skip-baseline.json` opisuje dozwolone pominięcia per system i tryb (klucz `macos-uv/*`: lokalna macierz macOS na interpreterach uv, które nie mają `time.tzset`; CI używa `macos-latest/*`); `scripts/check_skips.py` sprawdza log biegu:
 
 ```bash
 python3 -m unittest discover -s tests -p 'test_skillsync*.py' -v 2>&1 | tee run.log
 python3 scripts/check_skips.py run.log --system ubuntu-latest --mode copy
 ```
+
+### Zestaw modułów przy scalaniu
+
+`python3 scripts/merge_modules.py --base <baza> --head <sha> [--json | --names]` wylicza z diffu `<baza>..<sha>` moduły testowe do uruchomienia
+przy scalaniu, z uzasadnieniem na moduł. Reguły: zmieniony test; test importujący zmieniony moduł produktu, skryptu lub pomocnika
+`tests/` (statycznie, bezpośrednio albo przez inne moduły); test nazywający zmieniony plik w napisie (uruchamia kod podprocesem);
+literał komunikatu (min. 12 znaków i spacja, więc identyfikatory, ścieżki i przedrostki modułów się nie liczą; skutek uboczny: jednowyrazowe kody wyniku, np. `plan_not_found`, i komunikaty pocięte przez placeholdery na kawałki poniżej 12 znaków nie są wykrywane) z dodanego lub usuniętego wiersza zmienionego pliku produktu w teście albo w fiksturze `*.json` nazwanej w teście; zmieniona
+fikstura i testy czytające `expected*` przy zmianie w `skillsync_workflow/`; zmiana plików, z których `link` generuje artefakty (`ARTEFACT_SOURCES`: generator `cli.py`, `layers.py`, `guardhook.py`, `common.py`, `selfcmd.py`, `fsutil.py`, `pathfmt.py`, `library/hooks|instructions|skills|agents`) dobiera testy, które uruchamiają `link` podprocesem i porównują jego wynik (`ARTEFACT_TESTS`: baseline w `layers_equivalence`, śledzone linki w `worktree_links`), bo nie nazywają żadnego pliku produktu; zmiana silnika prototypów (`library/skills/prototype/assets/repo/prototype.js`) albo jego kopii w `tests/fixtures/prototype/engine-v2/` dobiera `test_skillsync_prototype_engine` (reguła `engine`), który porównuje kopię ze źródłem tylko przy ustawionym `SKILLSYNC_PROTOTYPE_ENGINE_V2_SOURCE` (bez niego test świeżości się pomija), więc przy takim wyborze skrypt ostrzega na stderr; stały zestaw strażników (`GUARDS` w skrypcie). Przykład uruchomienia:
+`python3 -m unittest $(python3 scripts/merge_modules.py --base <baza> --head <sha> --names)`. Analiza czyta drzewo robocze, więc checkout musi być `--head` (inaczej kod 2); diff liczony od merge-base. Usunięty lub przemianowany moduł produktu wybiera testy, które go importują albo nazywają. Zmiany samych dokumentów (`docs/`, `CHANGELOG.md`) wybierają tylko strażników, bo nie mają odwzorowania na moduły; ich treści pilnują strażnicy dokumentacji z `GUARDS`. Zestaw to dolna granica, nie zastępuje pełnego
+biegu przed wydaniem; nie widzi importów dynamicznych ani poleceń znanych tylko z nazwy (np. `skillsync status` w napisie). Szeroko
+importowany moduł (`cli.py`, `common.py`) daje szeroki zestaw, co jest zamierzone.
+
+### Pomiary w dokumentacji
+
+Tabela, która mówi „zmierzone”, ma kolumnę „Pomiar” z odesłaniem do zapisu w `docs/measurements/<id>.md` (pola: Data, System, Wersja,
+Polecenie, Wynik; system w formie „Windows 11, Python 3.12.16”, bez nazw maszyn i osób). Wiersz bez zapisu jest oznaczony
+„niezmierzone” albo „oczekiwane”. Pilnuje tego `tests/test_skillsync_measurements.py`. Nowy pomiar: dodaj zapis i odsyłacz w tabeli.
+
+### Macierz przed pushem: ostrzeżenie o kodzie zależnym od systemu
+
+`python3 scripts/platform_sensitive.py --base <baza> --head <sha> [--json]` czyta diff `<baza>...<sha>` i **ostrzega** (nigdy nie blokuje,
+kod wyjścia 0; 2 tylko przy błędzie wejścia), gdy zmiana dotyka kodu zależnego od systemu (także samego hooka hosta: `library/hooks/`, `guardhook.py` wymagają dowodu z Windows i macOS modułu tego hooka przed scaleniem, kategoria `host-hook`): `os.name`/`sys.platform`, sygnały
+(`signal.SIG*`, `CTRL_*_EVENT`, `os.killpg`, `start_new_session`), `ctypes`/`windll`, symlinki i `core.symlinks`, `rmtree`/usuwanie plików,
+końce linii (`\r\n`, `newline=`, `splitlines`, `file_lines`), ścieżki z backslashem, opcje gniazd `SO_*` oraz `<katalog tmp> / <zmienna>` w
+testach. Dla każdej kategorii podaje systemy, z których potrzebny jest dowód (windows/macos/linux), a na końcu moduły testowe do transzy
+(ten sam zestaw co `merge_modules.py`). Dopasowanie jest tekstowe (docstringi pomijane po obu stronach diffu; usunięty plik jest skanowany po stronie usuniętej): to wskazówka, gdzie spojrzeć, nie wynik. Przed pushem
+uruchom skrypt na swojej gałęzi i zdecyduj, które systemy sprawdzasz lokalnie, a które zostają dla CI; brak dowodu z systemu wpisz do „Wynik”
+planu jako NOT_RUN.
+
+### Nazwy z danych pod katalogiem tymczasowym
+
+`tests/tmp_paths.py` (`child`, `make_dir`, `write_file`) składa ścieżkę pod katalogiem tymczasowym z nazwy pochodzącej z danych i odmawia
+nazwy z separatorem, dyskiem, `..`, znakiem sterującym, końcową kropką lub spacją oraz nazwy zastrzeżonej Windows (`CON`, `NUL`, `COM1`…);
+wynik sprawdza `relative_to`. Powód: na Windows nazwa `\n` (backslash, `n`) jest ścieżką od korzenia dysku, więc `tmp / nazwa` zapisuje poza
+katalogiem tymczasowym. `tests/test_skillsync_tmp_path_guard.py` (tryb raportu, `STRICT = False`) zgłasza w testach wyrażenia
+`<ścieżka tmp> / <zmienna lub wywołanie>`; stan początkowy (`BASELINE`, liczba trafień na plik) nie był przeglądany po kolei (próbka kilku miejsc: nazwy z tabel literałów testu). Strażnik rozpoznaje ścieżkę tmp po nazwie (`tmp`, `temp`, `tmp_dir`…) i pochodzeniu z `tempfile` w obrębie pliku, więc nie widzi parametrów ani odziedziczonych atrybutów (np. `self.root` z fikstury w innym pliku), `joinpath`, `os.path.join` ani `Path(a, b)`. Nowy
+test, który składa ścieżkę z danych, używa pomocnika; gdy trafienie ma zostać, dopisz uzasadnienie przy liczbie.
 
 ### Serwery w testach
 
@@ -71,6 +108,7 @@ Port z `free_port()` był wolny tylko w chwili próby. Serwer w wątku binduje p
 | `SKILLSYNC_TEST_NODE` | ścieżka do Node ≥ 18 (testy silnika prototypów) |
 | `SKILLSYNC_E2E_CHROME` | binarka Chrome/Chromium dla testów E2E; bez niej przypadki z przeglądarką się pomijają |
 | `SKILLSYNC_TEST_DASHBOARD_PORTS` | zakres portów testów dashboardu, `<od>-<do>` w granicach 5100-5199 (domyślnie 5101-5199 poza 5140): osobny wycinek na bieg pozwala puścić kilka biegów testów naraz na jednym hoście (inaczej `free_port` zgłasza „brak wolnego portu”) |
+| `SKILLSYNC_TEST_CLI_SUBPROCESS` | `1` wymusza podprocesy w testach, które wołają CLI w procesie przez `tests/cli_inprocess.py` (dziś `test_skillsync_retro_scan.py`): porównanie obu trybów i pomiar; bez zmiennej te testy oszczędzają start interpretera |
 | `SKILLSYNC_E2E_PORTS` | porty E2E `<chrome>,<serwer1>,<serwer2>` (domyślnie `9333,4445,4446`) |
 | `SKILLSYNC_E2E_RESULTS_DIR`, `SKILLSYNC_E2E_ONLY` | katalog wyników JSON; lista ID scenariuszy (tylko do debugowania) |
 | `SKILLSYNC_PROTOTYPE_ENGINE_V2_PATH` | plik silnika prototypów ładowany przez testy modułu silnika (domyślnie kopia z `tests/fixtures/prototype/engine-v2/`) |
@@ -193,6 +231,7 @@ Ręczne testy na Windows i macOS są zaplanowane na późniejsze wydanie. Zakres
 - **Nowy artefakt hosta:** builder wywoływany w `link_project`, obsługa `--dry-run`, reguła własności (nie nadpisuj ręcznych plików), wpisy gitignore, sprzątanie osieroconych plików, testy i opis w [architecture](architecture.md).
 - Komendy wykonujące polecenia (`--run`) pobierają je tylko z zaufanego manifestu lub warstwy. Ścieżki stanu przechodzą przez kontrolę `storage.py:state_path`
   (bez dowiązań i wyjścia z projektu). Wynik przechodzi przez `common.py:redact`.
+- **Nowe polecenie z dwoma argumentami pozycyjnymi albo opcjonalnym pozycyjnym** (`nargs='?'`/`'*'`): argparse Pythona przed 3.12 dopasowuje opcjonalny pozycyjny pusto przed opcjami, więc `polecenie <a> --json <b>` kończyło się `unrecognized arguments`. Parsery liściowe rdzenia czytają argumenty przemieszane (`skillsync_workflow/argtools.py:IntermixedParser`, włączane w `cli.main` tylko na Pythonie < 3.12; od 3.12 nic się nie zmienia). Nie używaj w takim poleceniu `nargs=REMAINDER` ani grupy wzajemnie wykluczającej z argumentem pozycyjnym (parser zostaje wtedy standardowy, a `tests/test_skillsync_argparse_positionals.py` zgłasza polecenie). Tabela poleceń w tym teście jest generowana z definicji parserów; dowód na 3.11: `python3.11 tools/win-shard/nargsprobe.py` z korzenia drzewa (sonda w repo ops) nie może dać FAIL.
 - Po zmianie kontraktu (nazwy skilli, ścieżki artefaktów, klucze manifestu, kody wyjścia): testy oraz aktualizacja [cli](cli.md), [manifest](manifest.md),
   [architecture](architecture.md) i `skills/skillsync/SKILL.md` w warstwie `core`.
 - Istotna zmiana generatora lub CLI: wpis w `CHANGELOG.md` w sekcji `[Unreleased]`. Zmiana sekcji **Breaking** wymaga opisu zmiany niezgodnej.
@@ -212,6 +251,7 @@ Dla zmiany linkowania dodatkowo: `link --dry-run` na projekcie testowym (receptu
 ## Strażnik wycieków na maszynie dewelopera
 
 Pełne sprawdzenie (`skillsync leakcheck . --require full`) potrzebuje plików tożsamości innych celów niż publiczny rdzeń.
+Strażnik w hooku i w CI patrzy na zakres zmian (`--range`, `--staged`, tekst PR-a), więc plik dodany, zanim jego termin trafił do plików tożsamości, wychodzi dopiero przy skanie całości. Przed wydaniem uruchom `skillsync leakcheck . --target core --worktree --require full` i `skillsync leakcheck . --target core --history` (pełny skan drzewa i historii, na maszynie z plikami tożsamości).
 Nie trzymamy ich w tym repo: wskaż katalog w configu maszyny (`~/.config/skillsync/config.yaml`, albo ścieżka z `SKILLSYNC_CONFIG`):
 
 ```yaml

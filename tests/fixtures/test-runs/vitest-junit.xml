@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="12" failures="2" errors="0" time="2.624420539">
+    <testsuite name="tests/math.test.js" timestamp="2026-11-16T21:52:54.839Z" hostname="HOST" tests="10" failures="2" errors="0" skipped="2" time="2.117897334">
+        <testcase classname="tests/math.test.js" name="math &gt; adds" time="0.402552598">
+        </testcase>
+        <testcase classname="tests/math.test.js" name="math &gt; subtracts" time="0.401310424">
+        </testcase>
+        <testcase classname="tests/math.test.js" name="math &gt; is skipped" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="tests/math.test.js" name="math &gt; is a todo" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="tests/math.test.js" name="math &gt; fails with a message" time="0.407332925">
+            <failure message="expected 4 to be 5 // Object.is equality" type="AssertionError">
+AssertionError: expected 4 to be 5 // Object.is equality
+
+- Expected
++ Received
+
+- 5
++ 4
+
+ ❯ tests/math.test.js:8:74
+            </failure>
+        </testcase>
+        <testcase classname="tests/math.test.js" name="math &gt; nested &gt; deep ok" time="0.301017796">
+        </testcase>
+        <testcase classname="tests/math.test.js" name="math &gt; adds 1 + 1 = 2" time="0.199857608">
+        </testcase>
+        <testcase classname="tests/math.test.js" name="math &gt; adds 2 + 3 = 5" time="0.200296915">
+        </testcase>
+        <testcase classname="tests/math.test.js" name="math &gt; adds 2 + 2 = 5" time="0.201828734">
+            <failure message="expected 4 to be 5 // Object.is equality" type="AssertionError">
+AssertionError: expected 4 to be 5 // Object.is equality
+
+- Expected
++ Received
+
+- 5
++ 4
+
+ ❯ tests/math.test.js:12:118
+            </failure>
+        </testcase>
+        <testcase classname="tests/math.test.js" name="math &gt; żółć – unicode name" time="0.000256726">
+        </testcase>
+    </testsuite>
+    <testsuite name="tests/second.test.js" timestamp="2026-11-16T21:52:54.843Z" hostname="HOST" tests="2" failures="0" errors="0" skipped="0" time="0.506523205">
+        <testcase classname="tests/second.test.js" name="second file ok" time="0.503820556">
+        </testcase>
+        <testcase classname="tests/second.test.js" name="second file flaky" time="0.000391947">
+        </testcase>
+    </testsuite>
+</testsuites>
