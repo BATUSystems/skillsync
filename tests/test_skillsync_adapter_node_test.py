@@ -231,6 +231,14 @@ class Notice(unittest.TestCase):
                 self.assertIn('--test-reporter=spec', notice)
                 self.assertNotIn('--format node-test', notice)   # the command has `--test`: the remedy is the reporter, not the format
 
+    def test_the_flag_after_the_script_is_not_a_test_flag(self):
+        """Review F2-1 m3: the notice follows the walk over the flags (`scan`); `--test` after the script belongs to the script. Known limit: a flag with a value
+        outside the table ends the walk, so a `--test` after it is not seen (the advice is then the one for a bare script)."""
+        notice = self.notice(['node', 'x.js', '--test'])
+        self.assertIn('--format node-test', notice)
+        self.assertNotIn('--test-reporter', notice)
+        self.assertNotIn('--test-reporter', self.notice(['node', '--test', '--unknown-flag', 'v', 'x.js']) or '')
+
     def test_a_bare_script_is_told_to_use_format_tap_or_node_test(self):
         for argv in (['node', 'plik.js'], ['node', 'x.test.js'], ['node', '--require', './x.js', 'plik.js'], ['env', 'X=1', 'node', 'plik.js']):
             with self.subTest(argv=argv):
@@ -287,6 +295,42 @@ class Recognition(unittest.TestCase):
     def test_logs_before_the_tap_header_are_skipped_too(self):
         rec = run(L('some log', 'x not a result (1ms)', HEAD, 'ok 1 - a', '1..1'))[0]
         self.assertEqual(table(rec), [('a', 'passed', None)])
+
+    def test_an_empty_line_or_a_log_with_a_marker_before_the_tap_header_does_not_take_the_stream(self):
+        """Review F2-1 M1: only a group header `▶` or a marker line of the shape of a result `(Nms)` chooses `spec`; a blank line and a log never do."""
+        for before in ([''], ['   '], ['✔ załadowano'], ['✖ nie udało się'], ['', '✔ załadowano', '', '✖ nie']):
+            with self.subTest(before=before):
+                rec, adapter, ctx, complete = run(L(*before, HEAD, 'ok 1 - a', '1..1'))
+                self.assertEqual(table(rec), [('a', 'passed', None)])
+                self.assertTrue(complete)
+
+    def test_a_blank_line_before_a_stream_of_another_reporter_emits_nothing(self):
+        """A dot stream: a blank line does not choose `spec`; a line without the shape of a result `(Nms)` does not either. Decision: `✖ x (1ms)` has the shape, so it is read as `spec`."""
+        rec, adapter, ctx, complete = run(L('', '..F.', '✖ x', '✔ y', 'ℹ tests 4'), exit_code=1)
+        self.assertEqual(rec.calls, [])
+        self.assertFalse(complete)
+
+    def test_a_result_shaped_line_after_a_blank_line_chooses_spec(self):
+        rec = run(L('', '✖ x (1ms)', '✔ y (1ms)') + tail(2), exit_code=1)[0]
+        self.assertEqual(table(rec), [('x', 'failed', None), ('y', 'passed', None)])
+
+    def test_an_ordinary_failure_after_an_error_log_does_not_take_the_log_as_its_message(self):
+        """Review F2-1 m1: only a name that looks like a file (a `/` or .js .mjs .cjs .ts) is a file that did not load."""
+        rec = run(L('✔ a (1ms)', 'Error: unrelated log', '✖ f (1ms)', '✔ g (1ms)') + tail(3), exit_code=1)[0]
+        self.assertFalse(msg_of(rec, 'f'))
+        self.assertEqual(rec.states('f'), ['failed'])
+        loaded = run(L('✔ a (1ms)', 'Error: log', '✖ sub/c.test (1ms)') + tail(2), exit_code=1)[0]
+        self.assertEqual(msg_of(loaded, 'sub/c.test'), 'Error: log')
+
+    def test_the_spec_parser_keeps_a_bounded_table_of_names(self):
+        from skillsync_workflow.test_adapters import node_test
+        old = node_test.MAX_SEEN
+        node_test.MAX_SEEN = 3
+        try:
+            rec = run(L(*[f'✔ t{i} (1ms)' for i in range(10)]) + tail(10))[0]
+        finally:
+            node_test.MAX_SEEN = old
+        self.assertEqual(len([c for c in rec.emitted()]), 3)
 
     def test_tap_lines_without_the_header_are_nothing_in_auto(self):
         rec, adapter, ctx, complete = run(L('ok 1 - a', 'not ok 2 - b', '1..2'), exit_code=1)

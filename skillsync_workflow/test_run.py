@@ -235,7 +235,8 @@ def adapter_notice(fmt, argv, tool, adapter, junit=()):
     same_tool = [name for name in names if tool in test_adapters.REGISTRY[name].tools]
     if tool == 'node' and 'node-test' in same_tool:
         core = unwrap_command(list(argv or []))
-        if '--test' in core[1:]:
+        from skillsync_workflow.test_adapters.node_test import scan
+        if scan(core)[0]:
             return 'test-run: node-test reads only the reporters tap and spec: add --test-reporter=spec or tap'
         return 'test-run: adapter node-test is not chosen automatically for this command: add --format tap (a bare script) or --format node-test (a file with node:test)'
     if same_tool:

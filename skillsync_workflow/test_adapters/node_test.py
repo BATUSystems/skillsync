@@ -13,6 +13,29 @@ RES = re.compile(r'^(?P<name>.*) \((?P<ms>\d+(?:\.\d+)?)ms\)(?: # (?P<note>.*))?
 TESTS = re.compile(r'^ℹ tests (\d+)\s*$')
 SUITES = re.compile(r'^ℹ suites (\d+)\s*$')
 ERR = re.compile(r'^\w*Error\b')
+FILE = re.compile(r'/|\.(?:[cm]?js|ts)$')   # a name of a file that did not load (Node 22/24 report it as a level 0 failure)
+MAX_SEEN = 50000
+VALUE = {'--require', '-r', '--import', '--loader', '--env-file', '--test-reporter', '--test-reporter-destination', '--test-name-pattern', '--test-skip-pattern', '-C', '--conditions'}
+
+
+def scan(core):
+    """The walk over the flags of `node` (`core` = the command without wrappers): `(has_test, reporters, destination)`. Only the flags before the first
+    positional argument (the script) or `--` count: `node x.js --test` has no `--test`. A flag with a value outside `VALUE` is not known: its value ends the walk."""
+    has_test = False; reps = []; dest = False; i = 1
+    while i < len(core):
+        t = core[i]
+        if not t.startswith('-') or t == '--': break
+        if t == '--test': has_test = True
+        elif '=' in t:
+            k, v = t.split('=', 1)
+            if k == '--test-reporter': reps.append(v)
+            if k == '--test-reporter-destination': dest = True
+        elif t in VALUE:
+            i += 1
+            if t == '--test-reporter' and i < len(core): reps.append(core[i])
+            if t == '--test-reporter-destination': dest = True
+        i += 1
+    return has_test, reps, dest
 
 
 class G:
@@ -28,7 +51,7 @@ class SpecParser:
         p, self.pending = self.pending, None
         if not p: return
         msg = p['msg']
-        if msg == "'test failed'" or (msg is None and p['group'] is None):   # a file that did not load: its error is the stderr block before the line
+        if msg == "'test failed'" or (msg is None and p['group'] is None and FILE.search(p['name'])):   # a file that did not load: its error is the stderr block before the line
             err = next((c for c in reversed(p['window']) if ERR.match(c)), None)
             msg = err or ('test failed' if msg else None)
         if msg is not None:
@@ -52,7 +75,6 @@ class SpecParser:
                     if p['msg'] is None: p['msg'] = text.strip()
                     return
                 if p['seen'] <= 30 and not text.strip(): return
-                if p['seen'] <= 30 and ind > p['indent']: return
                 self.flush(ctx)
         m = TESTS.match(text)
         if m:
@@ -72,7 +94,7 @@ class SpecParser:
         window, self.window = self.window, []
         closing = None
         for i, g in enumerate(self.groups):
-            if g.indent == indent and g.name == name: closing = i
+            if g.indent == indent and g.name.rstrip() == name: closing = i
         if closing is not None and closing == len(self.groups) - 1:
             g = self.groups.pop()
             if mark != '✖' or g.failed: return
@@ -85,6 +107,7 @@ class SpecParser:
         else: state, msg = 'failed', None
         group = ' > '.join(g.name for g in parents) or None
         base = f'{group}::{name}' if group else name
+        if len(self.seen) >= MAX_SEEN and base[:MAX_NAME] not in self.seen: return
         c = self.seen[base[:MAX_NAME]] = self.seen.get(base[:MAX_NAME], 0) + 1
         tid = base if c == 1 else f'{base} ({c})'
         if c > 1: name = f'{name} ({c})'
@@ -105,27 +128,12 @@ class NodeTestAdapter(Adapter):
     name = 'node-test'
     tools = ('node',)
     live = 'completion'
-    VALUE = {'--require', '-r', '--import', '--loader', '--env-file', '--test-reporter', '--test-reporter-destination', '--test-name-pattern', '--test-skip-pattern', '-C', '--conditions'}
 
     def accepts(self, argv):
         from skillsync_workflow.test_run import unwrap_command
         core = unwrap_command(list(argv))
         if not core or re.sub(r'\.exe$', '', core[0].replace('\\', '/').rsplit('/', 1)[-1].lower()) != 'node': return False
-        seen_test = False; reps = []; dest = False; i = 1
-        while i < len(core):
-            t = core[i]
-            if not t.startswith('-'): break
-            if t == '--': break
-            if t == '--test': seen_test = True
-            elif '=' in t:
-                k, v = t.split('=', 1)
-                if k == '--test-reporter': reps.append(v)
-                if k == '--test-reporter-destination': dest = True
-            elif t in self.VALUE:
-                i += 1
-                if t == '--test-reporter' and i < len(core): reps.append(core[i])
-                if t == '--test-reporter-destination': dest = True
-            i += 1
+        seen_test, reps, dest = scan(core)
         if not seen_test: return False
         if any(r not in ('tap', 'spec') for r in reps): return False
         if dest and len(set(reps)) > 1: return False
@@ -139,9 +147,10 @@ class NodeTestAdapter(Adapter):
     def feed(self, stream, text, ctx):
         if stream != 'out': return
         if self.parser is None:
-            t = ANSI.sub('', text).strip()
+            t = ANSI.sub('', text).rstrip()   # as in both parsers: the header must start the line, a marker may be indented
+            m = MARK.match(t)
             if HEADER.match(t): self.parser = TapParser(explicit=False)
-            elif t[:1] in '▶✔✖﹣': self.parser = SpecParser()
+            elif m and (m.group('mark') == '▶' or RES.match(m.group('rest'))): self.parser = SpecParser()   # a group header or the shape of a result `(Nms)`
             else: return
         self.parser.feed_line(text, ctx)
 
