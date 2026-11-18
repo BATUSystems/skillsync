@@ -2437,7 +2437,8 @@ class IsolationTest(LeakTestCase):
             for name in ('objects/maintenance.lock', 'gc.pid', 'index.lock', 'refs/heads/main.lock'):
                 (clone / '.git' / name).write_text('x', encoding='utf-8')
             self.assertEqual(real_state_snapshot(), before, 'transient locks of git inside .git are not a write of the test')
-            (clone / '.git' / 'refs' / 'heads' / 'main').write_text('2\n', encoding='utf-8')
+            # another length: the snapshot compares size and mtime, and on Windows two writes can share one mtime tick
+            (clone / '.git' / 'refs' / 'heads' / 'main').write_text('22\n', encoding='utf-8')
             self.assertNotEqual(real_state_snapshot(), before, 'a changed ref is still detected')
         with mock.patch('layers_helpers.REAL_STATE_DIRS', (watched,)):
             before = real_state_snapshot()
