@@ -39,6 +39,7 @@ None.
 ### Fixed
 
 - **The status page counted review rounds twice.** A round is now only the frozen report `<step>-N.md`; a decision file `<step>-N-decyzje.md` and other files next to it are not counted. Historical `final-review*` reports are still counted. Known limitation: the descriptions of the review stages on the page still say "raporty spec-review*/plan-review*/code-review*"; the text is pinned in fixtures shared with the editor plugin and is corrected together with them.
+- **Plan line `Oddanie:` with text instead of a branch name** (status page, `CP` button, approval record). The value was cut at its first word and accepted when that word looked like a ref name, so a placeholder such as "do ustalenia przy pierwszym CP" handed `CP` over to a branch called `do`, the page showed `CP → origin/do` and the button recorded `target: do`. Now the whole value must be one valid branch name (the rules of `git check-ref-format --branch`, checked without starting a process); a one-word placeholder (`brak`, `TBD`, `todo`, `none`, `n/a`, `nie`, `nic`) or any other text is ignored, the target stays the working branch and the tip of the `CP` word says that the value was skipped. `skillsync approvals record` (and the button) refuse a `--target` or `--branch` that is not a valid branch name. The procedure says the same (`feature`, plan header): write only a branch name, or leave the line out.
 
 ## [1.9.1] - 2026-11-18
 

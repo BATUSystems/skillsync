@@ -93,6 +93,7 @@ Wydanie 1.10.0 jest MINOR (sekcja **Breaking** w `CHANGELOG.md` to „None.”).
 8. **Zakładka „Testy”:** bieg, którego polecenie skończyło się kodem różnym od 0 bez porażki testu, ma znacznik „kod N, żaden test nie zgłosił porażki”; licznik porażek zakładki się nie zmienia. Przycisk „na górę” działa także w tej zakładce (host musi podawać `deps.scroll.toTop`).
 9. **`dashboard serve`:** znika dopisek konsoli „od 1.8.0 odczyt słucha domyślnie na wszystkich interfejsach…”; ostrzeżenie o nasłuchu w sieci i podpowiedzi zostają.
 10. **Procedura `feature`:** raport recenzenta pętli przeglądu jest zapisywany zawsze, zaraz po rundzie (`references/reports.md`).
+11. **Linia planu `Oddanie:`** przyjmuje tylko samą nazwę gałęzi (poprawną według `git check-ref-format --branch`). Tekst zastępczy albo dopisek (np. `do ustalenia przy pierwszym CP`, `main (po CP)`) jest ignorowany: strona statusu i przycisk „CP” oddają wtedy pracę na gałąź roboczą, a dymek słowa CP o tym mówi; zapis zgody z innym celem jest odrzucany. Plan z takim tekstem popraw na samą nazwę albo usuń linię.
 
 ## Przejście 1.8.0 → 1.9.0
 

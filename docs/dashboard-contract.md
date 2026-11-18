@@ -309,7 +309,7 @@ spoza reguł `skillsync status` (nieznane słowo, nieczytelne `at`, sha spoza 7�
 ### `delivery`
 
 `mode` (`pr`, `direct`, `invalid`), `base` (string lub null), `source` (`manifest`, `default`), `branch`, `target` (dokąd
-oddaje „CP”; w `direct` z linii planu `Oddanie:`), `remote`, `pushed` (bool lub null), `ahead` (int lub null; commity
+oddaje „CP”; w `direct` z linii planu `Oddanie:`, gdy cała wartość jest jedną poprawną nazwą gałęzi; inny tekst linii jest ignorowany, a podpowiedź słowa `CP` mówi „Oddanie: wartość pominięta, to nie nazwa gałęzi”; jednowyrazowe słowa zastępcze spoza krótkiej listy (`brak`, `TBD`, `todo`, `none`, `n/a`, `nie`, `nic`) są poprawnymi nazwami gałęzi i zostaną uznane za gałąź), `remote`, `pushed` (bool lub null), `ahead` (int lub null; commity
 niewypchnięte; renderer pokazuje je przy gałęzi w nagłówku jako „N niewypchniętych” (neutralnie w trybie `direct`, do zakończenia planu)), `commits` (lista `{sha, subject}` tych commitów, najnowsze pierwsze, do 20; `sha` to krótki skrót, `subject` to pierwsza linia opisu po zamaskowaniu sekretów, jedna linia do 80 znaków, obcięta kończy się „…”; `null`, gdy liczba niewypchniętych jest nieznana, `[]` gdy ich nie ma), `commitsMore` (int; ile starszych niewypchniętych commitów nie weszło do `commits`), `words[]`: `{word: "CP"|"READY", active, tip, target}` (`READY` tylko w trybie `pr`; przy `invalid` pusta
 tablica).
 

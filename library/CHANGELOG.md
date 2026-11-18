@@ -22,6 +22,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 - `skills/dashboard`: `SKILL.md` (the chip in the renderer contract) and `descriptions.json`.
 - `skills/feature/references/reports.md`: the report of a review-loop reviewer is always saved right after it returns, together with `<step>-N-decyzje.md`, not after the fact.
 
+### Fixed
+
+- `feature` and the dashboard skill: the plan line `Oddanie:` holds only a branch name; any other text is ignored (write the name or leave the line out).
+
 ## [1.9.1] - 2026-11-18
 
 ### Changed
