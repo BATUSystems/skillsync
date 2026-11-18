@@ -81,6 +81,9 @@ h1 { font-size: 1.45rem; margin: 0; line-height: 1.2; white-space: nowrap; overf
 .git-link { color: inherit; text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 40%, transparent); text-underline-offset: 3px; }
 .git-link:hover { color: var(--accent); text-decoration-color: currentColor; }
 a.chip.git-link { text-decoration: none; }
+.workdir { max-width: 22rem; min-width: 0; }
+.workdir .workdir-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; max-width: 100%; vertical-align: bottom; }
+.meta .m:has(> .workdir) { min-width: 0; max-width: 100%; }
 .top-right { display: flex; align-items: center; gap: .8rem; flex: none; }
 .theme-btn { padding: .35rem .55rem; }
 .theme-btn .ic { width: 1.2em; height: 1.2em; }
@@ -544,6 +547,7 @@ main { flex: 1; padding: 1.1rem 1.4rem; min-width: 0; }
   #title { font-size: 1rem; }
   .meta { font-size: .72rem; gap: .2rem .35rem; margin-top: .15rem; }
   .meta .chip { font-size: .68rem; padding: .05rem .4rem; }
+  .workdir { max-width: 12rem; }
   .top-right { gap: .4rem; }
   .live { padding: .25rem .5rem; }
   .live .live-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

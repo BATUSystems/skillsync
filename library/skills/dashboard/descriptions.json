@@ -150,5 +150,9 @@
  "measure_act": {
   "title": "Czas aktu (pomiar)",
   "text": "Czas, który minął: od startu przebiegu do zgody „GO plan” (akt I) i od niej do „GO implement” (akt II), minus okna czekania na człowieka. Liczone z checkpointów i pliku zgód; gdy zgody nie ma w pliku, czas jest nieznany, nie zgadywany.\nStrona: timing.acts."
+ },
+ "workdir_chip": {
+  "title": "Katalog roboczy",
+  "text": "Pokazuje, w którym katalogu działa ten panel. „worktree: <nazwa>” to powiązany worktree gita: osobny katalog z własną gałęzią, obok głównego checkoutu tego samego repozytorium. „główny checkout” to katalog z repozytorium (z katalogiem .git), czyli nie powiązany worktree. Przy kilku sesjach na jednym repozytorium chip pozwala nie pomylić paneli.\nW dymku pełna ścieżka katalogu, a dla worktree także ścieżka głównego checkoutu. Brak chipu: katalog nie jest repozytorium albo rdzeń nie podał pola project.worktree."
  }
 }

@@ -1040,6 +1040,34 @@ function summary(m) {
       const none = mount(mk(false), { now: NOW['plan-in-progress'] });
       stab.testsTab = { initial, opened, rows, prev, closed, bars, afterLink, nav, noTests: { tabHidden: none.root.querySelector('#tab-tests').hidden, stbar: none.root.querySelectorAll('#phases .stbar').length, tab: state(none).view } };
     }
+    {  // F2 CORE-WORKDIR: chip katalogu roboczego w nagłówku (project.worktree)
+      const wd = (wt, noField, ahead, noBranch) => {
+        const j = clone(F['plan-in-progress']);
+        j.git = { branch: 'feat/x', head: 'abcdef1234', headFull: 'abcdef1234', branchUrl: 'https://example.test/b', branchPushed: true, remote: { host: 'github', repo: 'o/r' } };
+        j.delivery = { ...j.delivery, mode: 'pr', branch: 'feat/x', remote: 'origin/feat/x', ahead: ahead || 0, pushed: true };
+        if (noBranch) j.git = { branch: null, head: null };
+        j.project = { ...(j.project || {}) };
+        if (noField) delete j.project.worktree; else j.project.worktree = wt;
+        const m = mount(j, { now: NOW['plan-in-progress'] });
+        const el = m.root.querySelector('#meta .workdir');
+        const kids = m.root.querySelector('#meta').childNodes.map((c) => text(c) || '');
+        const nameEl = el ? el.querySelector('.workdir-name') : null;
+        return { found: Boolean(el), tag: el ? el.tagName : null, text: el ? text(el) : null, cls: el ? el.getAttribute('class') : null,
+          desc: el ? el.getAttribute('data-desc') : null, extra: el ? el.getAttribute('data-desc-extra') : null, inner: Boolean(nameEl), innerText: nameEl ? text(nameEl) : null,
+          parentCls: el ? el.parentNode.getAttribute('class') : null, icon: el ? Boolean(el.parentNode.querySelector('.i-folder, use')) : false,
+          buttons: m.root.querySelectorAll('#meta .workdir button').length, count: m.root.querySelectorAll('#meta .workdir').length, order: kids };
+      };
+      const long = 'x'.repeat(200);
+      stab.workdir = { main: wd({ kind: 'main', name: 'app', path: '/work/app', mainPath: null }),
+        wt: wd({ kind: 'worktree', name: 'F1', path: '/work/app-wt/F1', mainPath: '/work/app' }),
+        wtNoMain: wd({ kind: 'worktree', name: 'F1', path: '/work/app-wt/F1', mainPath: null }),
+        nul: wd(null), missing: wd(undefined, true), unknown: wd({ kind: 'sparkly', name: 'z', path: '/z', mainPath: null }),
+        ordered: wd({ kind: 'worktree', name: 'F1', path: '/work/app-wt/F1', mainPath: '/work/app' }, false, 3),
+        noBranchMain: wd({ kind: 'main', name: 'app', path: '/work/app', mainPath: null }, false, 0, true),
+        noBranchWt: wd({ kind: 'worktree', name: 'F1', path: '/work/app-wt/F1', mainPath: '/work/app' }, false, 0, true),
+        noBranchNull: wd(null, false, 0, true),
+        longName: wd({ kind: 'worktree', name: long, path: '/work/' + long, mainPath: null }) };
+    }
     ex.stab = stab;
   }
   // WRITING-UX: pozycje „sesja pracuje” (znacznik zapisu) i „odpowiedź eksperta” w banerze czekania.
@@ -1478,7 +1506,7 @@ class RendererNodeTests(unittest.TestCase):
                     self.assertIn(f"{p['percent']}% · ", got["docTitle"])
                 self.assertEqual(got["docItems"], sum(len(g["items"]) for g in d.get("docs") or []))
                 self.assertEqual(got["planMenu"], 1 + len(d.get("plans") or []))
-                self.assertEqual(got["sprite"], 16)
+                self.assertEqual(got["sprite"], 17)
                 self.assertIn(f"dashboard {d['app']['version']}", got["foot"])
                 self.assertNotIn("img", got["tags"])
 
@@ -1638,6 +1666,73 @@ class RendererNodeTests(unittest.TestCase):
         self.assertIsNone(a["unknown"], "ahead nieznane (null): bez znacznika")
         self.assertIsNone(a["notPushed"], "gałąź bez własnych commitów nie ma czego wypychać")
         self.assertIn("s-planned", a["direct"]["cls"], "w trybie direct lokalne commity są normą do CP")
+
+    def test_workdir_chip_for_main_and_worktree(self) -> None:
+        """K4/K5: chip katalogu roboczego w nagłówku; `span`, nie przycisk; opis przez desc(), ścieżki w data-desc-extra."""
+        w = self.out["extra"]["stab"]["workdir"]
+        self.assertTrue(w["main"]["found"], w["main"])
+        self.assertEqual(w["main"]["text"], "główny checkout")
+        self.assertEqual(w["main"]["extra"], "/work/app")
+        self.assertEqual(w["wt"]["text"], "worktree: F1")
+        self.assertEqual(w["wt"]["tag"], "SPAN")
+        self.assertEqual(w["wt"]["buttons"], 0)
+        self.assertEqual(w["wt"]["desc"], "workdir_chip")
+        self.assertIn("/work/app-wt/F1", w["wt"]["extra"])
+        self.assertIn("Główny checkout: /work/app", w["wt"]["extra"])
+        self.assertNotIn("Główny checkout", w["wtNoMain"]["extra"])
+        self.assertNotIn("Główny checkout", w["main"]["extra"])
+        for k in ("main", "wt"):
+            self.assertIn("chip", w[k]["cls"].split())
+            self.assertIn("s-planned", w[k]["cls"].split())
+            self.assertTrue(w[k]["inner"], "wielokropek na wewnętrznym span nazwy")
+            self.assertEqual(w[k]["parentCls"], "m")
+            self.assertTrue(w[k]["icon"])
+        self.assertEqual(w["wt"]["innerText"], "worktree: F1")
+
+    def test_workdir_chip_absent_without_usable_data(self) -> None:
+        w = self.out["extra"]["stab"]["workdir"]
+        for k in ("nul", "missing", "unknown"):
+            self.assertFalse(w[k]["found"], (k, w[k]))
+
+    def test_workdir_chip_sits_after_branch_and_before_unpushed(self) -> None:
+        o = self.out["extra"]["stab"]["workdir"]["ordered"]["order"]
+        iw = next(i for i, t in enumerate(o) if t.startswith("worktree: F1"))
+        ib = next(i for i, t in enumerate(o) if "feat/x" in t)
+        ia = next(i for i, t in enumerate(o) if "niewypchnięt" in t)
+        self.assertLess(ib, iw)
+        self.assertLess(iw, ia)
+
+    def test_workdir_chip_shows_exactly_once_with_or_without_branch(self) -> None:
+        w = self.out["extra"]["stab"]["workdir"]
+        self.assertEqual(w["noBranchMain"]["count"], 1, w["noBranchMain"])
+        self.assertEqual(w["noBranchMain"]["text"], "główny checkout")
+        self.assertEqual(w["noBranchWt"]["count"], 1, w["noBranchWt"])
+        self.assertEqual(w["noBranchWt"]["text"], "worktree: F1")
+        self.assertEqual(w["noBranchNull"]["count"], 0)
+        for k in ("main", "wt", "ordered"):
+            self.assertEqual(w[k]["count"], 1, k)
+
+    def test_workdir_chip_long_name_is_truncated_by_css_inside(self) -> None:
+        w = self.out["extra"]["stab"]["workdir"]["longName"]
+        self.assertTrue(w["found"])
+        self.assertEqual(w["innerText"], "worktree: " + "x" * 200)
+        css = (ASSETS / "app.css").read_text(encoding="utf-8")
+        self.assertRegex(css, r"\.workdir \{[^}]*max-width")
+        m = re.search(r"\.workdir \.workdir-name \{([^}]*)\}", css)
+        self.assertIsNotNone(m, "reguła .workdir-name")
+        for decl in ("overflow: hidden", "text-overflow: ellipsis", "white-space: nowrap", "display: inline-block", "max-width"):
+            self.assertIn(decl, m.group(1))
+        self.assertNotIn("[data-tip]", m.group(0))
+
+    def test_workdir_chip_description_exists_and_renderer_adds_no_deps(self) -> None:
+        descs = json.loads((ASSETS.parent / "descriptions.json").read_text(encoding="utf-8"))
+        self.assertIn("workdir_chip", descs)
+        self.assertTrue(descs["workdir_chip"].get("title"))
+        self.assertTrue(descs["workdir_chip"].get("text"))
+        src = RENDERER.read_text(encoding="utf-8")
+        self.assertIn('icon("i-folder")', src)
+        self.assertIn('desc("workdir_chip"', src)
+        self.assertIn('"i-folder":', src)
 
     def test_stab_unpushed_badge_opens_a_panel_with_the_commits(self) -> None:
         """170-A: z `delivery.commits` plakietka jest przyciskiem; panel: aria, Esc, klik poza, tekst; bez pola jak dotąd (K5, K6)."""
