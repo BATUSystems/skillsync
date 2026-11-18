@@ -12,7 +12,7 @@ Wersja docelowa: 1.10.0 (MINOR: nowe pole kontraktu, zmiana procedury `feature`)
 2. Rdzeń wymusza od „GO plan” osobny worktree i gałąź roboczą (`instructions/_base.md`, `feature/SKILL.md`, `plan-large.md`). Użytkownik, który pracuje sam w jednym katalogu,
    płaci za to kosztem (drugi katalog, kopiowanie `.github/.skillsync.yaml`, `skillsync link`, kopia przebiegu przed sprzątaniem), a nie ma wyboru.
 
-Decyzje Barcisia z 18.11: chip w nagłówku (nie tylko stopka); pytanie o katalog dopiero przy „GO plan”.
+Decyzje użytkownika z 18.11: chip w nagłówku (nie tylko stopka); pytanie o katalog dopiero przy „GO plan”.
 
 ## Zakres
 
@@ -24,7 +24,7 @@ W zakresie:
 - B2: poprawka reguły we WSZYSTKICH miejscach z „Raportu spójności” (rdzeń instrukcji biblioteki i `feature` jako dwa źródła, potem pochodne), testy treści.
 
 Poza zakresem: zmiana Skippstera (zgłaszamy skutek); odczyt linii `Katalog:` przez `skillsync status`/`dashboard` (Q7); zmiana trybu karty `dispatch` (zostaje worktree z `ASSIGN`);
-wydanie, wersja, tag (Dyspozytor, Barciś); nazwy klientów, ludzi i maszyn w rdzeniu (jest publiczny).
+wydanie, wersja, tag (Dyspozytor, właściciel); nazwy klientów, ludzi i maszyn w rdzeniu (jest publiczny).
 
 ## Kryteria akceptacji
 
@@ -49,14 +49,14 @@ wydanie, wersja, tag (Dyspozytor, Barciś); nazwy klientów, ludzi i maszyn w rd
 (potwierdzone wobec `read_git`, submodułu, `--separate-git-dir`, bare i względnych `gitdir:` w przeglądzie). Serwer statusu odpytuje stan co kilka sekund i dziś nie uruchamia gita do odczytu gałęzi; proces `git` przy każdym odczycie to koszt, zależność od `PATH` i powierzchnia zmiennych `GIT_*`.
 Alternatywa: `git rev-parse` raz na start serwera: odrzucona, bo katalog może się zmienić pod serwerem (`git worktree move`).
 
-**A. Chip obok chipu gałęzi, nie w stopce.** Decyzja Barcisia. Stopka zostaje (pełna ścieżka do zrzutów ekranu i logów).
+**A. Chip obok chipu gałęzi, nie w stopce.** Decyzja użytkownika. Stopka zostaje (pełna ścieżka do zrzutów ekranu i logów).
 
 **A. Pole w `project`, nie w `git`.** `git.*` opisuje gałąź i origin; `project` opisuje katalog, który serwer obsługuje.
 
 **A. Bez kopiowania w tej paczce.** Renderer nie ma schowka celowo: `actions.copyText` usunięto jako zmianę łamiącą (CHANGELOG 1.x, „Copy … buttons are removed entirely”), `SKILL.md` dashboardu mówi „brak `actions.copyText` i schowka”, a nowy callback to „zmiana kontraktu ze Skippsterem (zgłoszenie przed zapisem)”.
 Test `test_no_copy_buttons_anywhere` i testy statyczne (zakaz `navigator`) tego pilnują. Cofnięcie to osobna decyzja (Q4), nie dodatek do chipu.
 
-**B. Pytanie dopiero przy „GO plan”.** Decyzja Barcisia. Akt I (spec, pętla `spec`) nie tworzy commita, więc nie potrzebuje katalogu.
+**B. Pytanie dopiero przy „GO plan”.** Decyzja użytkownika. Akt I (spec, pętla `spec`) nie tworzy commita, więc nie potrzebuje katalogu.
 
 **B. Wybór jako linia planu, nie klucz manifestu.** Katalog dotyczy jednego przebiegu, nie projektu; linia `Katalog:` w nagłówku planu (definicje linii: `plan-details.md`) jest jawna i przeżywa wznowienie. Alternatywa: `workflow.workdir` w manifeście: odrzucona na tę wersję (nowy klucz, `doctor`, `route`).
 
@@ -124,6 +124,7 @@ Kontrakt: testy `tests/test_skillsync_dashboard*.py` (K1–K3 z repozytoriami tw
 
 ## Raport spójności
 
+Nowa referencja `library/skills/feature/references/workdir.md` niesie warunki K9 i ścieżki porażek (rdzeń instrukcji tylko regułę i odesłanie, budżet), nowy rekord `docs/domain/workdir.md` (nie glosariusz: limit rozmiaru), a pliki wydania to także `skillsync_workflow/__init__.py`, `install.sh`, `library/layer.yaml` (`core_min`), „Stan opisu” w `docs/workflow*.md` (`scripts/check_release.py`).
 Miejsca reguły „od GO plan osobny worktree i gałąź robocza” do zmiany (grep, 18.11): `library/instructions/_base.md` (l.61, 69, 72), `library/skills/feature/SKILL.md` (l.72–75, 283), `feature/references/plan-large.md` (l.59), `plan-details.md` (linia `Katalog:`), `spec.md` (l.66), `pr-run/SKILL.md` (krok 3 i 8), `pr-after-approval.md` (l.15), `retro-quality.md` (l.148, 201, 235, 284–303, 366), `worker-mode.md` (zdanie: karta zawsze w worktree), `library/skills/skillsync/SKILL.md`, `docs/workflow.md` (l.103, 125–126), `docs/workflow-details.md` (l.719), `library/skills/dashboard/SKILL.md` (opis chipu), `CHANGELOG.md`, `library/CHANGELOG.md`, `library/layer.yaml`, `docs/upgrading.md`; testy: `test_skillsync_feature_demo.py` (k10-*, l.86–96), `test_skillsync_delivery_mode.py` (l.273–281).
 Budżet `_base.md`: 8187 B przy limicie 8192 (`wc -c`, 18.11; zapas 5 B). Dziś „osobny worktree i gałąź robocza;” = 35 B; propozycja „katalog roboczy (pytanie; `Katalog:` w planie) i gałąź robocza;” = 66 B, czyli +31 B, plus zmiany w l.69 („z worktree”) i l.72 („kopia przebiegu poza worktree; worktree sprzątasz po CP”) do policzenia w planie. Realne miejsce: zdanie „Push na bazę: … (baza rozbieżna = STOP …) ; w `pr` nigdy bazy.” (212 B) przenosimy do `feature/SKILL.md` (§CP), zostawiając w rdzeniu odesłanie ok. 60 B (zysk ≈150 B). Bez zagęszczania cudzych zdań; wynik pomiaru w planie przed „GO implement”.
 
