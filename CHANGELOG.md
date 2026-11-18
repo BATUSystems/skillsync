@@ -12,6 +12,10 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Fixed
+
+- **Plan line `Oddanie:` with text instead of a branch name** (status page, `CP` button, approval record). The value was cut at its first word and accepted when that word looked like a ref name, so a placeholder such as "do ustalenia przy pierwszym CP" handed `CP` over to a branch called `do`, the page showed `CP → origin/do` and the button recorded `target: do`. Now the whole value must be one valid branch name (the rules of `git check-ref-format --branch`, checked without starting a process); a one-word placeholder (`brak`, `TBD`, `todo`, `none`, `n/a`, `nie`, `nic`) or any other text is ignored, the target stays the working branch and the tip of the `CP` word says that the value was skipped. `skillsync approvals record` (and the button) refuse a `--target` or `--branch` that is not a valid branch name. The procedure says the same (`feature`, plan header): write only a branch name, or leave the line out.
+
 ## [1.9.1] - 2026-11-18
 
 Upgrading from 1.9.0: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.9.0 → 1.9.1".

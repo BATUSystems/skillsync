@@ -24,7 +24,7 @@ from .common import add_project_arguments, decode_text, file_lines, plan_section
 from .layers import add_layer_argument
 from .delivery_mode import delivery_info
 from .status import (APPROVAL_WORDS, APPROVALS_FILE, MAX_APPROVALS_BYTES, _APPROVAL_SHA, _approval_at, _message, _status_fields,
-                     git_blob_sha)
+                     git_blob_sha, valid_branch_name)
 from .pathfmt import posix
 from . import plan_phases, dashboard_tests, dashboard_forecast, test_events
 
@@ -54,6 +54,7 @@ ID_LIST_RE = re.compile(rf'^\s*(?P<ids>{STEP_ID}(?:(?:\s*(?:[/+&‖]|\|\|)\s*|\s
 # "zrobione" / "w toku"). The newest checkpoint without `czeka:` clears the banner.
 WAIT_RE = re.compile(r'^\s*czeka\s*:\s*(?P<seg>.+)', re.IGNORECASE)   # matched against one segment of `split_segments`
 WAIT_NONE = {'', '-', '—', 'nic', 'brak', 'nie'}
+HANDOVER_PLACEHOLDERS = WAIT_NONE | {'tbd', 'todo', 'none', 'n/a', 'null'}   # one-word placeholders are valid ref names, but nobody hands over to them
 # "The session works until HH:MM" in a checkpoint: segment `eta: <operation> do HH:MM` (like `czeka:`, split by `;`).
 ETA_RE = re.compile(r'^\s*eta\s*:\s*(?P<seg>.+)', re.IGNORECASE)
 ETA_AT_RE = re.compile(r'^(?P<operation>.*?\S)\s+do\s+(?P<time>\d{1,2}:\d{2})\.?$', re.IGNORECASE)
@@ -1176,12 +1177,30 @@ def git_ahead(root, branch):
     return {'remote': remote, 'pushed': pushed, 'ahead': ahead, 'commits': commits, 'commitsMore': more}
 
 
+def handover_value(plan_fields):
+    """The value of the plan line `Oddanie:` (backticks and emphasis stripped), or None when the line is absent or empty."""
+    return clean_value(plan_fields.get('oddanie'))
+
+
+def _is_handover_branch(value):
+    return bool(value) and value.lower() not in HANDOVER_PLACEHOLDERS and valid_branch_name(value)
+
+
 def delivery_target(delivery, branch, plan_fields):
-    """Where "CP" delivers: the working branch; in `direct` mode the plan line `Oddanie: <branch>` (the user's answer)."""
-    handover = first_token(plan_fields.get('oddanie'))
-    if delivery.get('mode') == 'direct' and handover and REF_NAME_RE.match(handover):
+    """Where "CP" delivers: the working branch; in `direct` mode the plan line `Oddanie: <branch>` (the user's answer), but only when the WHOLE
+    value is one valid branch name. Any other text (a placeholder, a note after the name) is ignored: it is not a branch."""
+    handover = handover_value(plan_fields)
+    if delivery.get('mode') == 'direct' and _is_handover_branch(handover):
         return handover
     return branch
+
+
+def handover_ignored(delivery, plan_fields):
+    """The value of `Oddanie:` that `delivery_target` ignored (the plan has the line, `direct` mode, but the value is not a branch name), else None."""
+    handover = handover_value(plan_fields)
+    if delivery.get('mode') == 'direct' and handover and not _is_handover_branch(handover):
+        return handover
+    return None
 
 
 def _commits(count):
@@ -1189,9 +1208,10 @@ def _commits(count):
     return f"{count} {'commit' if count == 1 else plural}"
 
 
-def delivery_words(delivery, ahead, plan, waiting, branch=None, target=None):
+def delivery_words(delivery, ahead, plan, waiting, branch=None, target=None, ignored=None):
     """Delivery words of act III: `CP` always, `READY` only in `pr` mode. Active when the plan is `done`, the session waits
-    for the word or the working branch has commits origin does not have; `tip` says where and how many."""
+    for the word or the working branch has commits origin does not have; `tip` says where and how many. `ignored`: the `Oddanie:` value that was
+    not a branch name (`handover_ignored`); the `CP` tip says so, without repeating the text."""
     if delivery.get('mode') == 'invalid':
         return []
     waits = {(item.get('word') or '').rstrip('!') for item in waiting}
@@ -1213,7 +1233,8 @@ def delivery_words(delivery, ahead, plan, waiting, branch=None, target=None):
             reasons.append(f'{_commits(count)} niewypchniętych względem {remote}')
         tip = '; '.join(reasons) if reasons else ('wszystko wypchnięte' if count == 0 else 'nic do dostarczenia')
         if word == 'CP':
-            tip = f'CP → {where}; {tip}'
+            note = ' (Oddanie: wartość pominięta, to nie nazwa gałęzi)' if ignored else ''
+            tip = f'CP → {where}{note}; {tip}'
         out.append({'word': word, 'active': bool(reasons), 'tip': tip, 'target': target if word == 'CP' else None})
     return out
 
@@ -2065,7 +2086,8 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
     delivery_state = {**delivery, 'branch': git_info['branch'], 'target': target, 'remote': ahead_state.get('remote'),
                       'pushed': ahead_state.get('pushed'), 'ahead': ahead_state.get('ahead'),
                       'commits': ahead_state.get('commits'), 'commitsMore': ahead_state.get('commitsMore') or 0,
-                      'words': delivery_words(delivery, ahead_state, plan_info, waiting, git_info['branch'], target)}
+                      'words': delivery_words(delivery, ahead_state, plan_info, waiting, git_info['branch'], target,
+                                             handover_ignored(delivery, fields))}
     current_docs = [spec_rel if spec_path else None, chosen['path'] if chosen else None]
     assumptions, blocking = parse_questions(spec_text) if spec_path else ([], [])
     timing = build_timing(run['start'], chronological, run_approvals(root, run_id), progress['phases'])

@@ -751,7 +751,22 @@ def _cmd_approvals_wait(args):
 
 APPROVAL_SOURCES = ('cli', 'dashboard', 'ide')
 RUN_ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,79}')  # the run-id pattern of `quality._RUN_ID` (a test keeps them equal)
-_REF_NAME = re.compile(r'^(?!-)[\w.][\w./-]{0,120}$')
+_REF_NAME = re.compile(r'^(?!-)[\w.][\w./-]{0,120}$')   # a cheap pre-filter; `valid_branch_name` is the rule
+_REF_FORBIDDEN = re.compile(r'[\x00-\x20\x7f~^:?*\[\\]')
+
+
+def valid_branch_name(value):
+    """True when `value` is one branch name that `git check-ref-format --branch` accepts (the rules, without starting a process): at most 120
+    characters, no whitespace or control characters, none of `~ ^ : ? * [ \\`, no `..`, `@{` or `//`, no leading `-` or `/`, no trailing `/` or
+    `.`, no component that starts with `.` or ends with `.lock`, and not `@` or `HEAD` (git refuses `HEAD` as a branch name). Free text such as a placeholder with spaces
+    is therefore never a branch."""
+    if not isinstance(value, str) or not value or len(value) > 120 or value in ('@', 'HEAD'):
+        return False
+    if _REF_FORBIDDEN.search(value) or '..' in value or '@{' in value or '//' in value:
+        return False
+    if value[0] in '-/' or value[-1] in '/.':
+        return False
+    return all(part and not part.startswith('.') and not part.endswith('.lock') for part in value.split('/'))
 _GO_FOLDER = {'GO plan': 'specs', 'GO implement': 'plans'}
 APPROVAL_LOCK_TIMEOUT = 10.0
 
@@ -823,7 +838,7 @@ def record_approval(root, word, run_id, sha=None, source='cli', target=None, bra
             raise ValueError(f'Unknown source {source!r}; allowed: {", ".join(APPROVAL_SOURCES)}')
         run_dir = _approval_run_dir(root, run_id)
         for name, value in (('target', target), ('branch', branch)):
-            if value is not None and (not isinstance(value, str) or not _REF_NAME.match(value)):
+            if value is not None and (not valid_branch_name(value)):
                 raise ValueError(f'Invalid --{name}: {value!r}')
         if file is not None:
             folder = _GO_FOLDER.get(word)

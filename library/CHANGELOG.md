@@ -4,6 +4,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+### Fixed
+
+- `feature` and the dashboard skill: the plan line `Oddanie:` holds only a branch name; any other text is ignored (write the name or leave the line out).
+
 ## [1.9.1] - 2026-11-18
 
 ### Changed
