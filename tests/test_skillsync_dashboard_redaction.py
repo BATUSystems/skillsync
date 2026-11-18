@@ -35,7 +35,7 @@ DOC_ROOTS = ("docs/specs", "docs/plans", "docs/design", "docs/domain", base.RUN)
 import sys as _sys_tmp_paths  # noqa: E402
 from pathlib import Path as _Path_tmp_paths  # noqa: E402
 _sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
-from tmp_paths import child  # noqa: E402
+from tmp_paths import child, descend  # noqa: E402
 
 
 def secret_text(title: str) -> str:
@@ -135,7 +135,7 @@ class DocRouteMasksSecrets(SecretFiles, base.HttpCase):
             for name, data in samples.items():
                 with self.subTest(name):
                     rel = f"docs/plans/zzz-{name}.md"
-                    (self.root / rel).write_bytes(data)
+                    descend(self.root, rel).write_bytes(data)
                     doc = self.board.doc(rel)
                     payload = json.dumps(doc, ensure_ascii=False)
                     self.assertNotIn(SIMPLE_SECRET, payload)
