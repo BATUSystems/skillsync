@@ -1177,9 +1177,19 @@ def git_ahead(root, branch):
     return {'remote': remote, 'pushed': pushed, 'ahead': ahead, 'commits': commits, 'commitsMore': more}
 
 
+_HANDOVER_WRAP = re.compile(r'^(\*\*|__|\*|_|`)(.+)\1$')
+
+
 def handover_value(plan_fields):
-    """The value of the plan line `Oddanie:` (backticks and emphasis stripped), or None when the line is absent or empty."""
-    return clean_value(plan_fields.get('oddanie'))
+    """The value of the plan line `Oddanie:`, or None when the line is absent or empty. Markdown wrapped around the whole value (`` `main` ``,
+    `**main**`) is removed as a pair; a lone `*` or `_` is a character of the text, not markup (`x*` is not the branch `x`)."""
+    value = (plan_fields.get('oddanie') or '').strip()
+    while True:
+        wrapped = _HANDOVER_WRAP.match(value)
+        if not wrapped:
+            break
+        value = wrapped.group(2).strip()
+    return value or None
 
 
 def _is_handover_branch(value):

@@ -1,8 +1,8 @@
-"""CORE-ODDANIE (red first): the plan line `Oddanie:` carries a branch name; any other text is not a hand-over target.
+"""CORE-ODDANIE: the plan line `Oddanie:` carries one branch name; any other text is not a hand-over target.
 
-`delivery_target` takes the first word of the value and accepts it when it looks like a ref name, so a placeholder such as
-"do ustalenia przy pierwszym CP" hands over to a branch called "do". The status page then shows `CP → origin/do` and the CP button records
-`target: do` in `approvals.jsonl`.
+A placeholder such as "do ustalenia przy pierwszym CP" must not hand `CP` over to a branch called "do" (the status page would show
+`CP → origin/do` and the CP button would record `target: do` in `approvals.jsonl`). The whole value has to be one valid branch name
+(the rules of `git check-ref-format --branch`); anything else is ignored and the target stays the working branch.
 """
 import shutil
 import subprocess
@@ -20,10 +20,12 @@ WORKING = 'feature/x'
 
 NOT_A_BRANCH = (
     'do ustalenia przy pierwszym CP', 'do ustalenia', 'nie dotyczy', 'brak', 'TBD', 'a b', 'main (po CP)', 'main, potem develop',
-    'a..b', 'x/', 'main.lock', 'a@{b}', 'x~1', 'x^', 'x:y', 'x?', 'x*y', 'x[y', '.hidden', 'a//b', '@', '--evil', '-x',
+    'a..b', 'x/', 'main.lock', 'a@{b}', 'x~1', 'x^', 'x:y', 'x?', 'x*y', 'x*', 'x[y', '.hidden', 'a//b', '@', '--evil', '-x', 'a/b.lock/c',
+    'x\x01y', 'x\x7fy', 'HEAD', 'a' * 121,
 )
-A_BRANCH = ('main', 'release/1.10.0', '`main`', '**main**', 'feat/x-1', 'develop', 'hotfix_2.1')
-PLACEHOLDERS = ('brak', 'TBD', 'todo', 'none', 'n/a', 'nie', 'nic', '-')
+A_BRANCH = {'main': 'main', 'release/1.10.0': 'release/1.10.0', '`main`': 'main', '**main**': 'main', '_main_': 'main', '`**main**`': 'main',
+            'feat/x-1': 'feat/x-1', 'develop': 'develop', 'hotfix_2.1': 'hotfix_2.1', 'wip_': 'wip_', '_wip': '_wip', 'zażółć/gęślą': 'zażółć/gęślą', 'a' * 120: 'a' * 120}
+PLACEHOLDERS = ('brak', 'TBD', 'tbd', 'todo', 'TODO', 'none', 'None', 'null', 'n/a', 'nie', 'nic', '-', '—')
 
 
 class OddanieValue(unittest.TestCase):
@@ -33,9 +35,9 @@ class OddanieValue(unittest.TestCase):
                 self.assertEqual(engine.delivery_target(DIRECT, WORKING, {'oddanie': value}), WORKING)
 
     def test_a_branch_name_is_still_the_target(self):
-        for value in A_BRANCH:
+        for value, expected in A_BRANCH.items():
             with self.subTest(value=value):
-                self.assertEqual(engine.delivery_target(DIRECT, WORKING, {'oddanie': value}), value.strip('`*'))
+                self.assertEqual(engine.delivery_target(DIRECT, WORKING, {'oddanie': value}), expected)
 
     def test_one_word_placeholders_are_not_a_target(self):
         for value in PLACEHOLDERS:
@@ -79,7 +81,7 @@ class OddanieValue(unittest.TestCase):
     def test_the_rule_agrees_with_git_check_ref_format(self):
         from skillsync_workflow import status
         values = ('main', 'a/b', 'a//b', 'a..b', 'a.lock', 'a/b.lock', 'x/.y', '.x', 'x.', 'x/', '/x', '-x', 'a@{b}', 'a@b', 'x y', 'x~1', 'x^', 'x:y', 'x?',
-                  'x*y', 'x[y', 'x\\y', 'HEAD', 'a.b', 'a_b', 'a/b/c', 'a/./b', 'a/../b', 'refs/heads/x', '.lock', 'lock', 'release/1.10.0', 'feat/x-1')
+                  'x*y', 'x[y', 'x\\y', 'HEAD', 'a.b', 'a_b', 'a/b/c', 'a/./b', 'a/../b', 'refs/heads/x', '.lock', 'lock', 'release/1.10.0', 'feat/x-1', 'a/b.lock/c', 'x\x01y', 'x\x7fy', 'zażółć/gęślą', 'wip_', '_wip')
         for value in values:
             with self.subTest(value=value):
                 git = subprocess.run(['git', 'check-ref-format', '--branch', value], capture_output=True).returncode == 0

@@ -751,7 +751,6 @@ def _cmd_approvals_wait(args):
 
 APPROVAL_SOURCES = ('cli', 'dashboard', 'ide')
 RUN_ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,79}')  # the run-id pattern of `quality._RUN_ID` (a test keeps them equal)
-_REF_NAME = re.compile(r'^(?!-)[\w.][\w./-]{0,120}$')   # a cheap pre-filter; `valid_branch_name` is the rule
 _REF_FORBIDDEN = re.compile(r'[\x00-\x20\x7f~^:?*\[\\]')
 
 
