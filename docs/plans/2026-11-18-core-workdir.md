@@ -1,6 +1,6 @@
 # Plan: chip katalogu na stronie statusu i wybór katalogu roboczego przy „GO plan” (CORE-WORKDIR)
 
-Status: draft (czeka na GO implement)
+Status: in_progress
 Spec: docs/specs/2026-11-18-core-workdir.md
 Spec-sha: f2a1f2b05e752260956c772076b8aed5eee1d143
 Przebieg: 2026-11-18-core-workdir
@@ -8,6 +8,7 @@ Katalog: worktree CORE-WORKDIR
 
 ## Streszczenie dla człowieka
 
+**Zgody.** „GO plan” i „GO implement” od użytkownika przekazane przez Dyspozytora (delegacja z 16.11; cytaty w sesji, 18.11 ok. 14:50 i 15:05). Push `feat/core-workdir` tylko po PUSH SLOT od Dyspozytora, bez draft PR (integracja przez `release/1.10.0`).
 **Co zmieniamy.** (1) Strona statusu dostaje w nagłówku chip „worktree: <nazwa>” albo „główny checkout” (pole `project.worktree` w `dashboard show`, pełna ścieżka w opisie, stopka bez zmian). (2) Przy „GO plan” sesja pyta: „własny worktree” (domyślnie) czy „główny checkout” (praca na bieżącej gałęzi, także bazowej); wybór zapisuje linia planu `Katalog:`, wznowienie ją czyta. Reguła „od GO plan osobny worktree” zmienia się w rdzeniu instrukcji i w skillu `feature` oraz w pochodnych. Wersja 1.10.0.
 **Czego nie robimy.** Kopiowania ścieżki kliknięciem (decyzja: bez). Zmian Skippstera (zgłaszamy skutek). Odczytu `Katalog:` przez `status`/`dashboard`. Pytania w kartach pod Dyspozytorem (decyduje `ASSIGN`). Wydania, tagu i wersji ostatecznej.
 **Ryzyka.** Praca na gałęzi bazowej w `główny` (commity i `CP` na bazę, w `pr` odmowa); druga sesja w tym samym katalogu; budżet `instructions/_base.md` (zapas 5 B); rozjazd reguły w ok. 16 plikach.
@@ -27,7 +28,7 @@ Rdzeń jest publiczny: bez nazw i ścieżek klienta, ludzi i maszyn. Bez stopek 
 | K4, K5, K6 (chip, opis, brak schowka) | F2 | `test_skillsync_dashboard_renderer.py` (chip dla `main`/`worktree`/`null`/brak pola, kolejność: po chipie gałęzi, przed „N niewypchniętych”, obcięcie nazwy, `data-desc-extra`), `…_a11y.py`, `…_theme_tokens.py`, `test_no_copy_buttons_anywhere` bez zmian PASS; zrzuty obu motywów i wąskiej kolumny (brak poziomego przewijania) z podglądu (port 5162); nowe testy najpierw czerwone (red-first), testy behawioralne rendererera wymagają `node` ≥ 18, a `check_skips` na logu nie dopuszcza skipów |
 | K8, K9 (pytanie, `Katalog:`, warunki `główny`) | F3 | testy treści: `test_skillsync_feature_demo.py` (k10-* zaktualizowane) i nowy `test_skillsync_workdir_rule.py`: `Katalog:` (sam napis) w `_base.md`, a oba warianty (`worktree <nazwa>`, `główny`) w `workdir.md`, `plan-details.md`, `SKILL.md`; warunki K9 (bieżąca gałąź, baza w `pr` = odmowa, odłączony HEAD = STOP, brudne drzewo = pytanie z listą), Q12 (`direct` na bazie bez `Oddanie:`), żywa dzierżawa w `.skillsync/claims` = STOP, zniknięcie worktree z linii planu = STOP, brak odpowiedzi = brak GO plan (każda ścieżka ma asercję na dosłowną frazę w `workdir.md`) PASS |
 | K10 (spójność reguł, budżet) | F3 | `wc -c library/instructions/_base.md` ≤ 8192 i netto ≤ 0 względem 8187 (przed i po w „Wyniku”), `tests/test_skillsync_attribution.py::RuleTests::test_base_fits_the_budget`, `test_skillsync_library_smoke.py`, `test_skillsync_delivery_mode.py` PASS |
-| K11 (dokumentacja, wersje) | F1 (sekcja kontraktu), F2 (`dashboard/SKILL.md`), F4 | grep dosłownych nazw; CHANGELOG-i, `upgrading.md`, `layer.yaml`, `__init__.py`, `install.sh`, „Stan opisu”; `python3 scripts/check_release.py` rc=0, `test_skillsync_domain_size.py`, `test_skillsync_changelog_breaking.py` PASS; `leakcheck --target core --require full` PASS |
+| K11 (dokumentacja; wersje bez zmian, wydanie robi Dyspozytor) | F1 (sekcja kontraktu), F2 (`dashboard/SKILL.md`), F4 | grep dosłownych nazw; CHANGELOG-i (`[Unreleased]`), `upgrading.md`; `python3 scripts/check_release.py` rc=0 (wersje nietknięte), `test_skillsync_domain_size.py`, `test_skillsync_changelog_breaking.py` PASS; `leakcheck --target core --require full` PASS |
 | K12 | F5 | pętla `kod` końcowa PASS, pełny bieg po LEASE, `leakcheck` i gitleaks osobno |
 
 ## Terminologia domenowa
@@ -48,7 +49,7 @@ Instrukcje, skille i lekcje do odczytu przed pracą: `route` rdzenia (lekcje `bu
 | F1 | Serwer: wspólny pomocnik `gitdir`/`commondir` w `skillsync_workflow/dashboard.py` (z `read_git`, bez zmiany jego wyniku), `project.worktree` w `build_status`, testy rozpoznania (nowy plik), fixtures (`null`, `cp-ready` = `main`, przypadek `worktree` budowany w teście), sekcja i normalizacja w `docs/dashboard-contract.md` | implementer | dispatch:standard | medium | `skillsync_workflow/dashboard.py`, `tests/test_skillsync_dashboard_workdir.py`, `tests/test_skillsync_dashboard_contract.py`, `tests/fixtures/dashboard/**`, `docs/dashboard-contract.md` |
 | F2 | Renderer: chip (`span.m` z `i-folder` i wewnętrznym `span` nazwy), `desc()`/`data-desc-extra`, CSS (wielokropek na wewnętrznym `span`), `descriptions.json` (`workdir_chip`), opis w `library/skills/dashboard/SKILL.md`, testy renderera i dostępności, zrzuty obu motywów (podgląd port 5162, izolowany XDG, PID) | implementer | dispatch:standard | medium | `library/skills/dashboard/assets/dashboard-render.js`, `app.css`, `library/skills/dashboard/descriptions.json`, `library/skills/dashboard/SKILL.md`, `tests/test_skillsync_dashboard_renderer.py`, `tests/test_skillsync_dashboard_a11y.py` |
 | F3 | Procedura B: nowa referencja `feature/references/workdir.md` (pytanie, `Katalog:`, warunki K9, Q11–Q13, wznowienie, ścieżki porażek); `instructions/_base.md` tylko reguła i odesłanie (budżet: tabela niżej); `feature/SKILL.md`, `plan-large.md`, `plan-details.md` (`Katalog:`), `spec.md`, `pr-run/SKILL.md`, `pr-after-approval.md`, `retro-quality.md`, `worker-mode.md`, `ticket-intake.md` (sprawdzenie), `library/skills/skillsync/SKILL.md`, `docs/workflow.md`, `docs/workflow-details.md`; testy treści | implementer | group:procedura:capable | high | `library/instructions/_base.md`, `library/skills/feature/**`, `library/skills/pr-run/SKILL.md`, `library/skills/skillsync/SKILL.md`, `docs/workflow.md`, `docs/workflow-details.md`, `tests/test_skillsync_feature_demo.py`, `tests/test_skillsync_delivery_mode.py`, `tests/test_skillsync_workdir_rule.py` |
-| F4 | Dokumentacja, wiedza i wydanie: `CHANGELOG.md`, `library/CHANGELOG.md`, `docs/upgrading.md`, rekord `docs/domain/workdir.md` + `index.yaml`; numer wersji: `skillsync_workflow/__init__.py`, `install.sh` (`SKILLSYNC_DEFAULT_TAG`), `library/layer.yaml` (`version`, `core_min`), linie „Stan opisu” w `docs/workflow.md` i `docs/workflow-details.md`; wpis Changed o `LISTEN_NOTE_UNTIL` | scribe | dispatch:cheap | low | `CHANGELOG.md`, `library/CHANGELOG.md`, `library/layer.yaml`, `skillsync_workflow/__init__.py`, `install.sh`, `docs/upgrading.md`, `docs/domain/**`, `docs/workflow.md`, `docs/workflow-details.md` |
+| F4 | Dokumentacja i wiedza (BEZ bumpu wersji, odstępstwo wg zlecenia Dyspozytora z 18.11): `CHANGELOG.md` i `library/CHANGELOG.md` tylko w `[Unreleased]` (addytywnie), `docs/upgrading.md`, rekord `docs/domain/workdir.md` + `index.yaml`; wpis o `LISTEN_NOTE_UNTIL` NIE w CHANGELOG (opis w raporcie DONE, bump i wpis robi wydanie) | scribe | dispatch:cheap | low | `CHANGELOG.md`, `library/CHANGELOG.md`, `docs/upgrading.md`, `docs/domain/**` |
 | F5 | Pętla końcowa `kod` (jedna runda + verifier), pełny bieg i macierz po LEASE, `leakcheck`, gitleaks, `scripts/check_release.py`, „Wynik”, retro-quality, `--final`, zamknięcie | orkiestrator | inline | medium | plan, spec, `.skillsync/runs/` |
 
 ## TESTY
@@ -83,9 +84,8 @@ Dezaktualizowane przez zmianę: `docs/dashboard-contract.md` (nowa sekcja i norm
 
 ## Wersja i changelog
 
-Propozycja: **1.10.0** (MINOR: nowe addytywne pole kontraktu i zmiana procedury `feature`; Breaking: None). Zlecenie Dyspozytora wskazuje 1.10.0; potwierdza właściciel najpóźniej przy „GO implement”. Numer wchodzi do diffu przed rundą 1 pętli końcowej (F4).
-Pliki wydania (właściciel: scribe w F4): `skillsync_workflow/__init__.py` (`__version__`), `CHANGELOG.md` (EN, Added/Changed), `library/CHANGELOG.md`, `library/layer.yaml` (`version`, `core_min`), `install.sh` (`SKILLSYNC_DEFAULT_TAG`), linie „Stan opisu: Skillsync `v…`” w `docs/workflow.md` i `docs/workflow-details.md`, `docs/upgrading.md` (sekcja 1.9.1 → 1.10.0). Kontrola: `python3 scripts/check_release.py` (CI `release-check`).
-Skutek uboczny bumpu: `LISTEN_NOTE_UNTIL = (1, 10)` (`dashboard_ports.py`) wyłącza zdanie konsoli „od 1.8.0 …” w `dashboard serve`; testy `test_skillsync_dashboard_ports.py` i `…_listen_defaults.py` zależą od wersji; wpis Changed w CHANGELOG 1.10.0. Tag i publikacja: osobne polecenie właściciela.
+Wersja docelowa: **1.10.0**, ale wydanie (bump, tag, publikacja) robi Dyspozytor na gałęzi integracyjnej `release/1.10.0` (dwie paczki 1.10.0 równolegle). **Odstępstwo od wcześniejszego planu (zlecenie z 18.11):** w tej paczce NIE zmieniamy `skillsync_workflow/__init__.py`, `install.sh`, `library/layer.yaml` (`version`, `core_min`), linii „Stan opisu” w `docs/workflow*.md` ani `scripts/check_release.py`. `CHANGELOG.md` i `library/CHANGELOG.md`: wyłącznie sekcja `[Unreleased]`, addytywnie (EN, Added/Changed; Breaking: None w wydaniu).
+Skutek uboczny bumpu, do raportu DONE (bez edycji w tej paczce): `LISTEN_NOTE_UNTIL = (1, 10)` (`dashboard_ports.py`) wyłączy zdanie konsoli „od 1.8.0 …” w `dashboard serve` dopiero po bumpie; testy `test_skillsync_dashboard_ports.py` i `…_listen_defaults.py` zależą od wersji przez `_version_tuple`; wpis Changed i bump robi wydanie. Tag i publikacja: osobne polecenie właściciela.
 
 ## Ryzyka
 
@@ -124,12 +124,12 @@ Szacunek całości: ok. 5–6 h pracy agenta (cztery zdolności małe do średni
 - [ ] F3.4 `--fast` końca fazy i checkpoint fazy
 
 ### Faza 4: Dokumentacja i wiedza
-- [ ] F4.1 CHANGELOG-i, wersje (`__init__.py`, `install.sh`, `layer.yaml`, „Stan opisu”), `upgrading.md`, rekord `docs/domain/workdir.md` (scribe), `check_release.py` i commit
+- [ ] F4.1 CHANGELOG-i (`[Unreleased]`, bez bumpu wersji), `upgrading.md`, rekord `docs/domain/workdir.md` (scribe), `check_release.py` i commit
 
 ### Faza 5: Zamknięcie
 - [ ] F5.1 Pętla końcowa `kod` (jedna runda + verifier) i poprawki
 - [ ] F5.2 Pełny bieg i macierz (po LEASE), `leakcheck --target core`, gitleaks
-- [ ] F5.3 Wynik (orkiestrator): odstępstwa od speca (F2 bez `[UI]`; zdanie „Push na bazę” zostaje w rdzeniu skrócone, a szczegóły idą do `workdir.md`, nie do `feature/SKILL.md`), retro-quality, `--final`, `Status: done` planu i `implemented` speca, commit
+- [ ] F5.3 Wynik (orkiestrator): odstępstwa od speca i planu (F2 bez `[UI]`; wersja nie podbita w paczce, wydanie robi Dyspozytor; zdanie „Push na bazę” zostaje w rdzeniu skrócone, a szczegóły idą do `workdir.md`, nie do `feature/SKILL.md`), retro-quality, `--final`, `Status: done` planu i `implemented` speca, commit
 
 ## Wynik
 
