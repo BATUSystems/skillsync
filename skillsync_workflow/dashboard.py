@@ -1396,11 +1396,26 @@ def _stage(label, done, tip='', key=None):
     return {'label': label, 'done': done, 'tip': tip, 'key': key}
 
 
+_REVIEW_ROUND = {
+    'spec': re.compile(r'spec-review(?:-[a-z0-9.]+)*-r?\d+\.md'),
+    'plan': re.compile(r'plan-review(?:-[a-z0-9.]+)*-r?\d+\.md'),
+    'code': re.compile(r'(?:code-review(?:-[a-z0-9.]+)*-r?\d+|final-review(?:-r?\d+)?)\.md'),
+}
+
+
+def review_rounds(names, kind):
+    """Review rounds of `kind` (`spec`, `plan`, `code`): only a frozen report `<step>-N.md` (`.md`, a number at the end, optionally
+    `rN`; legacy `final-review[-N].md` counts as code) is a round. `*-decyzje.md`, `*-decisions.md`, `.log`, `.json` and other
+    files next to the report are not."""
+    pattern = _REVIEW_ROUND[kind]
+    return sum(1 for name in names if pattern.fullmatch(name))
+
+
 def compute_acts(spec, plan, progress, run_files, extra=None):
     extra = extra or {}
     names = [name.rsplit('/', 1)[-1].lower() for name in run_files]
-    spec_reviews = sum(1 for name in names if 'spec-review' in name)
-    plan_reviews = sum(1 for name in names if 'plan-review' in name)
+    spec_reviews = review_rounds(names, 'spec')
+    plan_reviews = review_rounds(names, 'plan')
     pre_impl = any('pre-implement' in name for name in names)
     proto_rounds = sum(1 for name in names if 'prototyp' in name)
 
@@ -1465,7 +1480,7 @@ def compute_acts(spec, plan, progress, run_files, extra=None):
         stage('plan', 'GO implement', plan_status in ('in_progress', 'done'), f"Status planu: {plan_status or '—'}",
                key='stage_go_implement'),
     ]
-    code_reviews = sum(1 for name in names if 'code-review' in name or name.startswith('final-review'))
+    code_reviews = review_rounds(names, 'code')
     real_stages = [
         stage('real', f'Review kodu ×{code_reviews}' if code_reviews > 1 else 'Review kodu', code_reviews > 0,
                'raporty code-review*/final-review* w katalogu przebiegu', key='code_review'),
