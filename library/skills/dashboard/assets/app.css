@@ -593,6 +593,7 @@ button.to-top:hover { border-color: var(--accent); }
 button.to-top .ic { width: 1.35rem; height: 1.35rem; }
 button.to-top:hover::after, button.to-top:focus-visible::after { top: auto; bottom: calc(100% + .45rem); left: auto; right: 0; transform: none; }   /* dymek nad przyciskiem: pod nim nie ma miejsca */
 .has-to-top #view-docs .doc-view { padding-bottom: 4.5rem; }   /* zapas: przycisk nie zasłania ostatnich linii dokumentu */
+.has-to-top #view-tests .tests-view { padding-bottom: 4.5rem; }   /* to samo w widoku Testy */
 
 /* ---------- zakładka „Testy” i pasek przy kroku (180-A) */
 .chip.s-bad { background: var(--bad-soft); color: var(--bad); }

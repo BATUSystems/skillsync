@@ -52,6 +52,14 @@ class LiveShape(unittest.TestCase):
             self.assertRegex(script, rf'\b{state}:\s*"')   # the key of LIVE_TEXT: the page really uses this state
 
 
+class CommandFailedState(unittest.TestCase):
+    def test_the_command_failed_state_is_told_in_words_not_by_colour_alone(self):
+        """CORE-TAP K8: the header of a tests section says it in text (exit code and "no test reported a failure")."""
+        script = RENDER.read_text(encoding='utf-8')
+        self.assertIn('żaden test nie zgłosił porażki', script)
+        self.assertRegex(script, r'kod \$\{')   # the exit code is interpolated into the text
+
+
 class TapTargets(unittest.TestCase):
     def test_compact_mode_targets_are_at_least_44_px(self):
         block = compact_block(CSS.read_text(encoding='utf-8'))

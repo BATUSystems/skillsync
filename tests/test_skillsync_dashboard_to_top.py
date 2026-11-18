@@ -145,6 +145,9 @@ class ButtonCss(unittest.TestCase):
     def test_the_document_keeps_room_for_the_button(self):
         self.assertEqual(declarations('.has-to-top #view-docs .doc-view')['padding-bottom'], '4.5rem')   # only where the button can exist
 
+    def test_the_tests_view_keeps_room_for_the_button(self):
+        self.assertEqual(declarations('.has-to-top #view-tests .tests-view')['padding-bottom'], '4.5rem')   # CORE-TAP K10
+
     def test_the_tooltip_opens_above_the_button(self):
         tip = declarations('button.to-top:hover::after, button.to-top:focus-visible::after')
         self.assertEqual((tip['top'], tip['bottom']), ('auto', 'calc(100% + .45rem)'))   # there is no room below a button 16 px from the bottom edge
