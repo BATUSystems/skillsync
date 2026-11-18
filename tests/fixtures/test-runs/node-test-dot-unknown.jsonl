@@ -1,0 +1,4 @@
+{"meta": {"tool": "node", "version": "synthetic (hand written)", "command": ["node", "--test", "--test-reporter=dot"], "exit": 1, "merged": false, "synthetic": true, "env": {"NO_COLOR": "1", "stdout_stderr": "pipes (not a terminal)"}, "note": "synthetic: the output of the `dot` reporter (`.` for a pass, `F` for a failure): neither TAP nor `spec`, so nothing is emitted", "scrubbed": "hand written, no recording", "format": "one record per chunk read from the pipe: t = seconds since the start, fd = out|err, data = the text of the chunk", "stream": "dot"}}
+{"t": 0.05, "fd": "out", "data": "..F.\n"}
+{"t": 0.06, "fd": "out", "data": ".\n"}
+{"t": 0.07, "fd": "out", "data": "\nFailed tests:\n\ntest at x.test.js:3:1\n"}

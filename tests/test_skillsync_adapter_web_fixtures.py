@@ -14,11 +14,11 @@ ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / 'tests' / 'fixtures' / 'test-runs'
 TOOLS = ('vitest', 'karma', 'playwright', 'cypress')
 # CORE-TAP: the prefixes of the Node fixtures. They are matched with `startswith(prefix + '-')`: `split('-')[0]` of `node-test-...` is `node` and would skip the
-# files silently. `MIN_JSONL` is a count of the recordings only (no JUnit/XML requirement); `node-test` (the `spec` stream) is filled by a later step of the plan,
-# which raises its minimum together with the fixtures.
+# files silently. `MIN_JSONL` is a count of the recordings only (no JUnit/XML requirement); `node-test` holds the `spec` streams and the TAP streams read through
+# `node --test` (22 files: 3+3+3 `spec`, 2 `todo`, 2 terminal, 8 TAP, 1 stream of another reporter).
 NODE_PREFIXES = ('tap', 'node-test')
-MIN_JSONL = {'tap': 12, 'node-test': 0}
-SYNTHETIC = {'tap-bare-green.jsonl', 'tap-bare-not-ok-exit0.jsonl', 'tap-bail-out.jsonl'}   # hand written, marked `"synthetic": true` in the meta
+MIN_JSONL = {'tap': 12, 'node-test': 22}
+SYNTHETIC = {'tap-bare-green.jsonl', 'tap-bare-not-ok-exit0.jsonl', 'tap-bail-out.jsonl', 'node-test-dot-unknown.jsonl', 'node-test-spec-node24-pty-ansi.jsonl'}   # hand written, marked `"synthetic": true` in the meta
 BUDGET = 300 * 1024
 FILES = sorted({p for tool in TOOLS for p in FIXTURES.glob(f'{tool}-*')} | {p for prefix in NODE_PREFIXES for p in FIXTURES.glob(f'{prefix}-*')})
 
@@ -106,7 +106,7 @@ class WebFixtures(unittest.TestCase):
                 meta = json.loads(path.read_text(encoding='utf-8').splitlines()[0])['meta']
                 with self.subTest(file=path.name):
                     self.assertEqual(bool(meta.get('synthetic')), path.name in SYNTHETIC)
-        self.assertTrue(SYNTHETIC <= {p.name for p in FIXTURES.glob('tap-*.jsonl')})   # none of them was forgotten
+        self.assertTrue(SYNTHETIC <= {p.name for prefix in NODE_PREFIXES for p in FIXTURES.glob(f'{prefix}-*.jsonl')})   # none of them was forgotten
 
     def test_the_total_size_fits_the_budget(self):
         self.assertLess(sum(p.stat().st_size for p in FILES), BUDGET)

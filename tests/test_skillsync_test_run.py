@@ -468,5 +468,131 @@ class TapRecorder(Base):
         self.assertNotEqual(state.end['status'], 'PASS')   # a failed test of the report with exit 0
 
 
+SPEC_GREEN = ('▶ math\n  ✔ adds (1.2ms)\n  ✔ subtracts (0.4ms)\n✔ math (3ms)\n✔ top level (0.3ms)\n'
+              'ℹ tests 3\nℹ suites 1\nℹ pass 3\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 12.5\n')
+SPEC_RED = ('▶ math\n  ✔ adds (1.2ms)\n  ✖ fails (2ms)\n✖ math (4ms)\n'
+            'ℹ tests 2\nℹ suites 1\nℹ pass 1\nℹ fail 1\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 12.5\n'
+            '\n✖ failing tests:\n\ntest at math.test.js:5:3\n✖ fails (2ms)\n  AssertionError: 1 !== 2\n')
+SPEC_TODO = ('✔ a (1ms)\n✖ b (0.4ms) # known bug\n'
+             'ℹ tests 2\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 1\nℹ duration_ms 3.1\n')
+TAP_GREEN = ('TAP version 13\n# Subtest: adds\nok 1 - adds\n  ---\n  duration_ms: 0.5\n  type: \'test\'\n  ...\n# Subtest: subtracts\nok 2 - subtracts\n  ---\n  duration_ms: 0.4\n  ...\n'
+             '1..2\n# tests 2\n# suites 0\n# pass 2\n# fail 0\n')
+
+
+class NodeTestRecorder(Base):
+    """CORE-TAP F2 (K5, K6, K13, K14, K15): where PASS, BLOCKED and FAIL are decided for a run read by the adapter `node-test`.
+
+    The commands are Python one-liners that print what `node --test` prints (`--format node-test`), so no Node is needed; the choice by `auto` (K5, K13) is run with a fake
+    `node` executable put first on the PATH of the child (a script that prints the stream), so `test-run` sees a real `node --test` command."""
+
+    def stream(self, text, code=0, *flags, n=1, fmt='node-test'):
+        script = f"import sys; sys.stdout.write({text!r}); sys.stdout.flush(); sys.exit({code})"
+        done = self.run_cli('--step', 'F1.1', '--format', fmt, *flags, '--', sys.executable, '-c', script)
+        return done, self.attempt(n=n)
+
+    def fake_node(self, text, code=0):
+        """A `node` executable in a directory put first on PATH: prints `text`, exits `code`, whatever the arguments."""
+        bin_dir = Path(self.tmp) / 'bin'
+        bin_dir.mkdir(exist_ok=True)
+        exe = bin_dir / 'node'
+        exe.write_text(f"#!{sys.executable}\nimport sys\nsys.stdout.write({text!r})\nsys.stdout.flush()\nsys.exit({code})\n", encoding='utf-8')
+        exe.chmod(0o755)
+        self.env = {**self.env, 'PATH': f"{bin_dir}{os.pathsep}{self.env.get('PATH', '')}"}
+
+    @staticmethod
+    def states(state):
+        return {t['id']: t['state'] for t in state.tests.values()}
+
+    def test_a_green_spec_run_is_a_pass_with_the_counters_of_the_adapter(self):
+        done, state = self.stream(SPEC_GREEN)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(state.end['status'], 'PASS', state.end)
+        self.assertEqual(state.end['source'], 'adapter')
+        self.assertEqual(self.states(state), {'math::adds': 'passed', 'math::subtracts': 'passed', 'top level': 'passed'})
+        self.assertEqual((state.counts['total'], state.counts['passed'], state.counts['failed'], state.counts['skipped']), (3, 3, 0, 0))   # the group is not a test
+
+    def test_a_green_tap_run_read_by_node_test_is_a_pass(self):
+        done, state = self.stream(TAP_GREEN)
+        self.assertEqual(state.end['status'], 'PASS', state.end)
+        self.assertEqual(state.end['source'], 'adapter')
+        self.assertEqual(self.states(state), {'adds': 'passed', 'subtracts': 'passed'})
+
+    def test_a_spec_run_with_a_failure_is_a_fail_and_the_repeat_block_is_not_counted(self):
+        done, state = self.stream(SPEC_RED, 1)
+        self.assertEqual(done.returncode, 1)
+        self.assertEqual(state.end['status'], 'FAIL', state.end)
+        self.assertEqual(state.end['source'], 'adapter')
+        self.assertEqual(self.states(state), {'math::adds': 'passed', 'math::fails': 'failed'})   # the group `math` failed only through its child; the block `failing tests:` is nothing
+        self.assertEqual((state.counts['total'], state.counts['passed'], state.counts['failed']), (2, 1, 1))
+
+    def test_k6_a_failed_test_with_exit_zero_is_not_a_pass(self):
+        done, state = self.stream(SPEC_RED, 0)
+        self.assertEqual(done.returncode, 0)   # the exit code stays the one of the command
+        self.assertEqual(state.end['status'], 'BLOCKED', state.end)
+        self.assertIn('failed', state.end['reason'])
+        self.assertEqual(state.counts['failed'], 1)
+
+    def test_k14_a_todo_that_failed_is_skipped_and_needs_allow_skips(self):
+        done, state = self.stream(SPEC_TODO)
+        self.assertEqual(done.returncode, 0)
+        self.assertEqual(self.states(state), {'a': 'passed', 'b': 'skipped'})   # not `failed`
+        self.assertEqual(state.end['status'], 'BLOCKED', state.end)
+        self.assertIn('Skipped tests require explicit disposition', state.end['reason'])
+        self.assertNotIn('failed', state.end['reason'])
+        done, state = self.stream(SPEC_TODO, 0, '--allow-skips', n=2)
+        self.assertEqual(state.end['status'], 'PASS', state.end)
+        self.assertEqual((state.counts['total'], state.counts['passed'], state.counts['skipped'], state.counts['failed']), (2, 1, 1, 0))
+
+    def test_k15_the_counters_of_the_adapter_only_when_n_equals_l_minus_s(self):
+        wrong = SPEC_GREEN.replace('ℹ tests 3', 'ℹ tests 4')   # the summary does not agree with the lines of the results
+        done, state = self.stream(wrong)
+        self.assertNotEqual(state.end.get('source'), 'adapter', state.end)
+        self.assertEqual(self.states(state), {'math::adds': 'passed', 'math::subtracts': 'passed', 'top level': 'passed'})   # what was seen is still on the page
+        done, state = self.stream(SPEC_GREEN, 0, n=2)
+        self.assertEqual(state.end['source'], 'adapter')
+
+    def test_k15_a_name_with_a_new_line_is_lost_and_the_adapter_is_not_the_source(self):
+        text = SPEC_GREEN.replace('✔ top level (0.3ms)', '✔ top\nlevel (0.3ms)')
+        self.assertNotEqual(text, SPEC_GREEN)
+        done, state = self.stream(text)
+        self.assertNotEqual(state.end.get('source'), 'adapter', state.end)
+        self.assertEqual(set(self.states(state)), {'math::adds', 'math::subtracts'})   # the test with the new line in its name is the one that is lost
+
+    def test_a_stream_of_another_reporter_emits_nothing_and_the_summary_decides(self):
+        done, state = self.stream('..F.\n\nFailed tests:\n', 1)
+        self.assertEqual(self.states(state), {})
+        self.assertNotEqual(state.end.get('source'), 'adapter')
+        self.assertNotEqual(state.end['status'], 'PASS')
+
+    @unittest.skipIf(os.name == 'nt', 'the fake node is a script with a shebang')
+    def test_k5_k13_auto_chooses_node_test_for_node_test_and_the_stream_decides(self):
+        for label, text, code, status in (('Node 22 TAP', TAP_GREEN, 0, 'PASS'), ('Node 24 spec', SPEC_GREEN, 0, 'PASS'), ('Node 24 spec, a failure', SPEC_RED, 1, 'FAIL')):
+            with self.subTest(label):
+                self.fake_node(text, code)
+                n = self.attempt_count() + 1
+                done = self.run_cli('--step', 'F1.1', '--', 'node', '--test')
+                self.assertIn('adapter node-test (live completion)', done.stderr)
+                state = self.attempt(n=n)
+                self.assertEqual(state.end['status'], status, state.end)
+                self.assertEqual(state.end['source'], 'adapter')
+                self.assertTrue(state.tests)
+
+    @unittest.skipIf(os.name == 'nt', 'the fake node is a script with a shebang')
+    def test_k5_a_bare_script_and_another_reporter_get_no_adapter_and_the_notice_says_what_to_add(self):
+        self.fake_node(SPEC_GREEN)
+        done = self.run_cli('--step', 'F1.1', '--', 'node', 'plik.js')
+        self.assertIn('--format tap', done.stderr)
+        self.assertIn('--format node-test', done.stderr)
+        self.assertNotIn('adapter node-test (live', done.stderr)
+        self.assertEqual(self.states(self.attempt(n=1)), {})   # nothing emitted without an adapter
+        done = self.run_cli('--step', 'F1.1', '--', 'node', '--test', '--test-reporter=dot')
+        self.assertIn('--test-reporter=spec', done.stderr)
+        self.assertEqual(self.states(self.attempt(n=2)), {})
+
+    def attempt_count(self):
+        folder = self.root / '.skillsync/runs/R1/tests'
+        return len(list(folder.rglob('*.jsonl'))) if folder.exists() else 0
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -1,0 +1,56 @@
+{"meta": {"tool": "node", "version": "Node 24.11.1", "command": ["node", "--test", "--test-reporter=tap"], "exit": 1, "merged": false, "env": {"NO_COLOR": "1", "stdout_stderr": "pipes (not a terminal)"}, "note": "TAP of `node --test` over four files (no file names for the passed tests)", "scrubbed": "paths, host and user names are replaced", "format": "one record per chunk read from the pipe: t = seconds since the start, fd = out|err, data = the text of the chunk", "stream": "tap"}}
+{"t": 0.042, "fd": "out", "data": "TAP version 13\n"}
+{"t": 0.056, "fd": "out", "data": "# ok - looks like a result but is a log line\n"}
+{"t": 0.058, "fd": "out", "data": "# Subtest: adds\n"}
+{"t": 0.059, "fd": "out", "data": "ok 1 - adds\n"}
+{"t": 0.059, "fd": "out", "data": "  ---\n  duration_ms: 1.128929\n  type: 'test'\n  ...\n"}
+{"t": 0.059, "fd": "out", "data": "# Subtest: only a\n"}
+{"t": 0.059, "fd": "out", "data": "ok 2 - only a\n  ---\n  duration_ms: 0.14365\n  type: 'test'\n  ...\n"}
+{"t": 0.157, "fd": "out", "data": "# Subtest: adds\n"}
+{"t": 0.157, "fd": "out", "data": "ok 3 - adds\n"}
+{"t": 0.157, "fd": "out", "data": "  ---\n  duration_ms: 82.103341\n  type: 'test'\n  ...\n"}
+{"t": 0.157, "fd": "out", "data": "# Subtest: b fails\n"}
+{"t": 0.158, "fd": "out", "data": "not ok 4 - b fails\n"}
+{"t": 0.158, "fd": "out", "data": "  ---\n  duration_ms: 6.457321\n  type: 'test'\n  location: '/work/proj/multi/b.test.js:4:1'\n  failureType: 'testCodeFailure'\n  error: |-\n    The expression evaluated to a falsy value:\n    \n      assert.ok(false)\n    \n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  expected: true\n  actual: false\n  operator: '=='\n  stack: |-\n    TestContext.<anonymous> (/work/proj/multi/b.test.js:4:30)\n    Test.runInAsyncScope (node:async_hooks:214:14)\n    Test.run (node:internal/test_runner/test:1106:25)\n    Test.processPendingSubtests (node:internal/test_runner/test:788:18)\n    Test.postRun (node:internal/test_runner/test:1235:19)\n    Test.run (node:internal/test_runner/test:1163:12)\n    async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3)\n  ...\n"}
+{"t": 0.164, "fd": "out", "data": "# /work/proj/multi/c.test.js:1\n"}
+{"t": 0.164, "fd": "out", "data": "# const x = ;\n#           ^\n"}
+{"t": 0.164, "fd": "out", "data": "# SyntaxError: Unexpected token ';'\n"}
+{"t": 0.164, "fd": "out", "data": "#     at wrapSafe (node:internal/modules/cjs/loader:1692:18)\n"}
+{"t": 0.164, "fd": "out", "data": "#     at Module._compile (node:internal/modules/cjs/loader:1735:20)\n"}
+{"t": 0.164, "fd": "out", "data": "#     at Object..js (node:internal/modules/cjs/loader:1893:10)\n"}
+{"t": 0.164, "fd": "out", "data": "#     at Module.load (node:internal/modules/cjs/loader:1481:32)\n"}
+{"t": 0.164, "fd": "out", "data": "#     at Module._load (node:internal/modules/cjs/loader:1300:12)\n"}
+{"t": 0.164, "fd": "out", "data": "#     at TracingChannel.traceSync (node:diagnostics_channel:328:14)\n"}
+{"t": 0.164, "fd": "out", "data": "#     at wrapModuleLoad (node:internal/modules/cjs/loader:245:24)\n"}
+{"t": 0.164, "fd": "out", "data": "#     at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)\n"}
+{"t": 0.164, "fd": "out", "data": "#     at node:internal/main/run_main_module:33:47\n"}
+{"t": 0.164, "fd": "out", "data": "# Node.js v24.11.1\n"}
+{"t": 0.164, "fd": "out", "data": "# Subtest: c.test.js\n"}
+{"t": 0.164, "fd": "out", "data": "not ok 3 - c.test.js\n"}
+{"t": 0.164, "fd": "out", "data": "  ---\n  duration_ms: 28.930592\n  type: 'test'\n  location: '/work/proj/multi/c.test.js:1:1'\n  failureType: 'testCodeFailure'\n  exitCode: 1\n  signal: ~\n  error: 'test failed'\n  code: 'ERR_TEST_FAILURE'\n  ...\n"}
+{"t": 0.164, "fd": "out", "data": "# /work/proj/multi/d.test.js:1\n"}
+{"t": 0.164, "fd": "out", "data": "# throw new Error('file level crash');\n"}
+{"t": 0.164, "fd": "out", "data": "# ^\n"}
+{"t": 0.164, "fd": "out", "data": "# Error: file level crash\n"}
+{"t": 0.164, "fd": "out", "data": "#     at Object.<anonymous> (/work/proj/multi/d.test.js:1:7)\n"}
+{"t": 0.164, "fd": "out", "data": "#     at Module._compile (node:internal/modules/cjs/loader:1761:14)\n"}
+{"t": 0.164, "fd": "out", "data": "#     at Object..js (node:internal/modules/cjs/loader:1893:10)\n"}
+{"t": 0.164, "fd": "out", "data": "#     at Module.load (node:internal/modules/cjs/loader:1481:32)\n"}
+{"t": 0.164, "fd": "out", "data": "#     at Module._load (node:internal/modules/cjs/loader:1300:12)\n"}
+{"t": 0.164, "fd": "out", "data": "#     at TracingChannel.traceSync (node:diagnostics_channel:328:14)\n"}
+{"t": 0.164, "fd": "out", "data": "#     at wrapModuleLoad (node:internal/modules/cjs/loader:245:24)\n"}
+{"t": 0.164, "fd": "out", "data": "#     at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)\n"}
+{"t": 0.164, "fd": "out", "data": "#     at node:internal/main/run_main_module:33:47\n"}
+{"t": 0.164, "fd": "out", "data": "# Node.js v24.11.1\n"}
+{"t": 0.164, "fd": "out", "data": "# Subtest: d.test.js\n"}
+{"t": 0.164, "fd": "out", "data": "not ok 4 - d.test.js\n"}
+{"t": 0.164, "fd": "out", "data": "  ---\n  duration_ms: 22.502608\n  type: 'test'\n  location: '/work/proj/multi/d.test.js:1:1'\n  failureType: 'testCodeFailure'\n  exitCode: 1\n  signal: ~\n  error: 'test failed'\n  code: 'ERR_TEST_FAILURE'\n  ...\n"}
+{"t": 0.164, "fd": "out", "data": "1..6\n"}
+{"t": 0.164, "fd": "out", "data": "# tests 6\n"}
+{"t": 0.164, "fd": "out", "data": "# suites 0\n"}
+{"t": 0.164, "fd": "out", "data": "# pass 3\n"}
+{"t": 0.164, "fd": "out", "data": "# fail 3\n"}
+{"t": 0.164, "fd": "out", "data": "# cancelled 0\n"}
+{"t": 0.164, "fd": "out", "data": "# skipped 0\n"}
+{"t": 0.164, "fd": "out", "data": "# todo 0\n"}
+{"t": 0.164, "fd": "out", "data": "# duration_ms 140.508387\n"}
