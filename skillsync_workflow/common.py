@@ -8,6 +8,7 @@ import re
 import os
 from pathlib import Path, PurePosixPath
 import subprocess
+import time
 import yaml
 
 from . import layers as _layers
@@ -209,12 +210,22 @@ def strings(value, label):
     return value
 
 
+# Windows: `resolve()` of a path under a directory that a parallel step is creating at this moment can return a transient form
+# (seen: `test-run` steps started together, `.skillsync/logs/<id>` reported as outside the project). A real escape is stable,
+# so it is reported after the retries; POSIX resolves once.
+_RESOLVE_ATTEMPTS = 6 if os.name == 'nt' else 1
+_RESOLVE_DELAY = 0.02
+
+
 def contained(root, path):
-    root = Path(root).resolve()
-    candidate = (root / path).resolve()
-    if not candidate.is_relative_to(root):
-        raise ValueError(f'Path escapes project: {path}')
-    return candidate
+    for number in range(1, _RESOLVE_ATTEMPTS + 1):
+        base = Path(root).resolve()
+        candidate = (base / path).resolve()
+        if candidate.is_relative_to(base):
+            return candidate
+        if number < _RESOLVE_ATTEMPTS:
+            time.sleep(_RESOLVE_DELAY * number)
+    raise ValueError(f'Path escapes project: {path}')
 
 
 def checked_out_link(path):

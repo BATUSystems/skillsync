@@ -11,7 +11,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from skillsync_workflow import fsutil, test_events  # noqa: E402
+from skillsync_workflow import common, fsutil, test_events  # noqa: E402
 
 
 class EnsureDir(unittest.TestCase):
@@ -103,3 +103,37 @@ class EnsureDir(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ContainedRetryTest(unittest.TestCase):
+    """`common.contained`: a transient result of `resolve()` outside the root is retried; a stable escape is still refused."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name).resolve()
+
+    def test_a_transient_outside_result_is_retried(self):
+        real = Path.resolve
+        outside = self.root.parent / 'elsewhere'
+        calls = {'n': 0}
+
+        def flaky(path, *args, **kwargs):
+            if path.name == 'x.log':
+                calls['n'] += 1
+                if calls['n'] == 1:
+                    return outside / 'x.log'
+            return real(path, *args, **kwargs)
+
+        with mock.patch.object(common, '_RESOLVE_ATTEMPTS', 3), mock.patch.object(common, '_RESOLVE_DELAY', 0), \
+                mock.patch.object(Path, 'resolve', flaky):
+            self.assertEqual(common.contained(self.root, 'logs/x.log'), self.root / 'logs' / 'x.log')
+        self.assertEqual(calls['n'], 2)
+
+    def test_a_stable_escape_is_refused_after_the_retries(self):
+        with mock.patch.object(common, '_RESOLVE_ATTEMPTS', 3), mock.patch.object(common, '_RESOLVE_DELAY', 0):
+            with self.assertRaisesRegex(ValueError, 'Path escapes project'):
+                common.contained(self.root, '../outside.txt')
+
+    def test_only_windows_retries_by_default(self):
+        self.assertEqual(common._RESOLVE_ATTEMPTS, 6 if os.name == 'nt' else 1)
