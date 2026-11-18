@@ -190,7 +190,7 @@ class ReadGitUnchanged(Workdir):
 
     def test_a_nul_byte_in_gitdir_keeps_the_empty_result_and_a_null_worktree(self):
         empty = {'branch': None, 'head': None, 'headFull': None, 'remote': None, 'branchUrl': None, 'branchPushed': None}
-        root = self.base / 'nul'
+        root = self.base / 'nul-byte-gitdir'
         write(root / '.git', 'gitdir: a\x00b\n')
         self.assertEqual(dashboard.read_git(root), empty)
         self.assertIsNone(dashboard.read_worktree(root))
