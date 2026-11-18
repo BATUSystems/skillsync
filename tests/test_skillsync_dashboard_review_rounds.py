@@ -31,6 +31,19 @@ class ReviewRoundsTests(unittest.TestCase):
         files = ["spec-review-r1.md", "spec-review-2-r1.md", "spec-review-r1-decisions.md", "final-review.md", "final-review-decyzje.md"]
         self.assertEqual(labels(files), ("Review ×2", "Review", "Review kodu"))
 
+    def test_historical_final_review_names_count_as_code_rounds(self) -> None:
+        files = ["final-review-guard-1.md", "final-review-guard-2.md", "final-review-F1-r1.md", "final-review-1.md", "final-review.md"]
+        self.assertEqual(labels(files), ("Review", "Review", "Review kodu ×5"))
+
+    def test_final_review_with_other_extension_or_decisions_is_not_a_round(self) -> None:
+        files = ["final-review-guard-1.log", "final-review-1.json", "final-review-decyzje.md", "final-review-1-decisions.md",
+                 "final-review-guard-decyzje-1.md"]
+        self.assertEqual(labels(files), ("Review", "Review", "Review kodu"))
+
+    def test_decision_segment_anywhere_excludes_the_file(self) -> None:
+        files = ["code-review-final-decisions-1.md", "code-review-decyzje-2.md", "code-review-F1-decisions-1.md", "code-review-F1-1.md"]
+        self.assertEqual(labels(files), ("Review", "Review", "Review kodu"))
+
     def test_no_files(self) -> None:
         self.assertEqual(labels([]), ("Review", "Review", "Review kodu"))
 

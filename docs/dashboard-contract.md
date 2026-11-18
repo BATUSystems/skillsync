@@ -99,9 +99,9 @@ Pole addytywne `schema: 1`: `project.worktree` to obiekt `{kind, name, path, mai
 | `path` | string | `project.path`, w postaci podanej serwerowi (bez rozwiązywania dowiązań) |
 | `mainPath` | string lub `null` | dla `worktree`: katalog nadrzędny wspólnego katalogu git, gdy ten nazywa się `.git`; ścieżka w postaci rozwiązanej, więc przy dowiązaniu (np. `/var` → `/private/var`) `path` i `mainPath` mogą mieć różne prefiksy. Dla `main` i dla wspólnego katalogu o innej nazwie `null` |
 
-Rozpoznanie czyta wyłącznie `.git` (plik albo katalog) i, dla powiązanego worktree, plik `commondir` w katalogu z `gitdir:` (ścieżka względna liczona od katalogu projektu), z limitem rozmiaru; proces `git` nie jest uruchamiany. Odczyt `gitdir`/`commondir` jest wspólny z polami `git.*`.
+Rozpoznanie czyta wyłącznie `.git` (plik albo katalog) i, dla powiązanego worktree, plik `commondir` w katalogu z `gitdir:`, z limitem rozmiaru; względny `gitdir:` jest liczony od katalogu projektu, względny `commondir` od katalogu git (tego z `gitdir:`); proces `git` nie jest uruchamiany. Odczyt `gitdir`/`commondir` jest wspólny z polami `git.*`.
 
-`project.worktree` = `null`: brak `.git`, katalog podrzędny repozytorium (`.git` leży wyżej, nie jest szukany) oraz każdy błąd odczytu, w tym uszkodzony powiązany worktree (brak katalogu wskazanego przez `gitdir:`, nieczytelny `commondir`); uszkodzony worktree nie jest `main`.
+`project.worktree` = `null`: brak `.git`, katalog podrzędny repozytorium (`.git` leży wyżej, nie jest szukany) oraz każdy błąd odczytu, w tym uszkodzony powiązany worktree (brak katalogu wskazanego przez `gitdir:`, nieczytelny `commondir`); uszkodzony worktree nie jest `main`. `commondir` liczy się tylko przy `.git` będącym plikiem `gitdir:`: `.git` będący katalogiem to zawsze `main`, także z plikiem `commondir` w środku. `commondir` wskazujący nieistniejący katalog to świadomie nadal `worktree`, a `mainPath` (gdy ten katalog nazywa się `.git`) wskazuje nieistniejącą ścieżkę: nic nie jest sprawdzane poza odczytem plików.
 
 Zgodność wsteczna: starszy serwer nie ma pola, konsument traktuje brak klucza jak `null` (pole opcjonalne dla konsumenta, w fixtures zawsze obecne).
 
@@ -238,7 +238,7 @@ Kafelek etapu: `label`, `done` (bool), `tip` (dymek), `key` (klucz opisu w `desc
 albo znacznik pisania prototypu jest ważny (etap „Prototyp”); etap zrobiony zostaje `done`.
 Etykieta rund review (`Review ×N`, `Review kodu ×N`) liczy tylko zamrożone raporty w katalogu przebiegu: pliki `.md` o nazwie
 `spec-review-N.md`, `plan-review-N.md`, `code-review-N.md`, `code-review-<krok>-N.md` (numer rundy na końcu, dopuszczalne `rN`) oraz
-starsze `final-review[-N].md` (jako review kodu). Rundą nie są pliki decyzji (`*-decyzje.md`, `*-decisions.md`), dowody
+starsze `final-review[-<słowo>...][-N].md` (np. `final-review-guard-1.md`; jako review kodu). Rundą nie jest plik, którego nazwa zawiera segment `decisions` lub `decyzje` w dowolnym miejscu (np. `code-review-final-decisions-1.md`), dowody
 checkpointu (`*.log`), `*.json` ani inne dopiski obok raportu; jedna runda to jeden raport.
 
 Stan `active` zostaje w danych także po śmierci sesji (serwer nie czyta zegara); renderer gasi tylko pulsowanie i pisze „brak aktywności od N min”, gdy przebieg jest cichy: wg `silence` (`since`, `thresholdMin`), a bez niego wg `run.lastReportAt` i tego samego progu 35 minut.

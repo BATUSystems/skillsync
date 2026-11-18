@@ -14,6 +14,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / 'tests'))
 from skillsync_workflow import dashboard  # noqa: E402
+from skillsync_workflow.pathfmt import posix  # noqa: E402
+from layers_helpers import needs_mode_enforcement, needs_os_symlinks  # noqa: E402
 from test_skillsync_dashboard import DashboardFixture, git_env, normalized  # noqa: E402
 
 SHA = 'a' * 40
@@ -57,37 +59,49 @@ class Workdir(unittest.TestCase):
 class Recognition(Workdir):
     def test_directory_is_main(self):
         root = self.repo()
-        self.assertEqual(dashboard.read_worktree(root), {'kind': 'main', 'name': 'app', 'path': str(root), 'mainPath': None})
+        self.assertEqual(dashboard.read_worktree(root), {'kind': 'main', 'name': 'app', 'path': posix(root), 'mainPath': None})
 
     def test_real_linked_worktree(self):
         main = self.repo()
         linked = self.base / 'wt' / 'F1'
         git(main, 'worktree', 'add', '-q', '-b', 'feat/x', str(linked))
         self.assertEqual(dashboard.read_worktree(linked),
-                         {'kind': 'worktree', 'name': 'F1', 'path': str(linked), 'mainPath': str(main)})
+                         {'kind': 'worktree', 'name': 'F1', 'path': posix(linked), 'mainPath': posix(main)})
         self.assertEqual(dashboard.read_worktree(main)['kind'], 'main')
 
     def test_gitdir_file_with_commondir_is_a_worktree(self):
         root, main = self.fake_worktree()
         self.assertEqual(dashboard.read_worktree(root),
-                         {'kind': 'worktree', 'name': 'F1', 'path': str(root), 'mainPath': str(main)})
+                         {'kind': 'worktree', 'name': 'F1', 'path': posix(root), 'mainPath': posix(main)})
 
     def test_relative_gitdir_is_counted_from_the_root(self):
         root, main = self.fake_worktree()
         rel = os.path.relpath(main / '.git' / 'worktrees' / 'F1', root)
         write(root / '.git', f'gitdir: {rel}\n')
-        self.assertEqual(dashboard.read_worktree(root)['mainPath'], str(main))
+        self.assertEqual(dashboard.read_worktree(root)['mainPath'], posix(main))
 
     def test_common_dir_not_named_dot_git_gives_null_main_path(self):
         root, _ = self.fake_worktree(common_text='../../../bare.git\n')
         info = dashboard.read_worktree(root)
         self.assertEqual((info['kind'], info['mainPath']), ('worktree', None))
 
+    def test_dot_git_directory_with_a_commondir_file_is_main(self):
+        root = self.repo()
+        write(root / '.git' / 'commondir', '../elsewhere\n')
+        self.assertEqual(dashboard.read_worktree(root), {'kind': 'main', 'name': 'app', 'path': posix(root), 'mainPath': None})
+        self.assertEqual(dashboard.read_git(root)['branch'], 'main')
+
+    def test_commondir_to_a_missing_directory_is_a_worktree_with_a_missing_main_path(self):
+        root, main = self.fake_worktree(common_text='../../../gone/.git\n')
+        info = dashboard.read_worktree(root)
+        self.assertEqual((info['kind'], info['mainPath']), ('worktree', posix((main / '.git' / 'worktrees' / 'F1' / '../../../gone').resolve())))
+        self.assertFalse(Path(info['mainPath']).exists())
+
     def test_submodule_is_main(self):
         root = self.base / 'outer' / 'sub'
         write(root / '.git', 'gitdir: ../.git/modules/sub\n')
         write(self.base / 'outer' / '.git' / 'modules' / 'sub' / 'HEAD', 'ref: refs/heads/main\n')
-        self.assertEqual(dashboard.read_worktree(root), {'kind': 'main', 'name': 'sub', 'path': str(root), 'mainPath': None})
+        self.assertEqual(dashboard.read_worktree(root), {'kind': 'main', 'name': 'sub', 'path': posix(root), 'mainPath': None})
 
     def test_separate_git_dir_is_main(self):
         root = self.base / 'proj'
@@ -102,14 +116,13 @@ class Recognition(Workdir):
         shutil.rmtree(main / '.git' / 'worktrees' / 'F1')
         self.assertIsNone(dashboard.read_worktree(root))
 
+    @needs_mode_enforcement
     def test_unreadable_commondir_is_null(self):
         root, main = self.fake_worktree(with_common=False)
         common = main / '.git' / 'worktrees' / 'F1' / 'commondir'
         write(common, '../..\n')
         common.chmod(0)
         self.addCleanup(common.chmod, 0o644)
-        if os.access(common, os.R_OK):
-            self.skipTest('file permissions are not enforced here (root or Windows)')
         self.assertIsNone(dashboard.read_worktree(root))
 
     def test_garbage_dot_git_file_is_null(self):
@@ -127,6 +140,7 @@ class Recognition(Workdir):
         sub.mkdir(parents=True)
         self.assertIsNone(dashboard.read_worktree(sub))
 
+    @needs_os_symlinks
     def test_symlink_keeps_path_and_resolves_main_path(self):
         root, main = self.fake_worktree()
         real_main = self.base / 'real-main'
@@ -137,8 +151,8 @@ class Recognition(Workdir):
         shortcut = self.base / 'shortcut'
         shortcut.symlink_to(root, target_is_directory=True)
         info = dashboard.read_worktree(shortcut)
-        self.assertEqual(info['path'], str(shortcut))
-        self.assertEqual(info['mainPath'], str(real_main))
+        self.assertEqual(info['path'], posix(shortcut))
+        self.assertEqual(info['mainPath'], posix(real_main))
         self.assertEqual(info['name'], 'shortcut')
 
     def test_recognition_runs_no_process(self):
@@ -174,6 +188,13 @@ class ReadGitUnchanged(Workdir):
         self.assertEqual(dashboard.read_git(plain), empty)
         self.assertEqual(dashboard.read_git(junk), empty)
 
+    def test_a_nul_byte_in_gitdir_keeps_the_empty_result_and_a_null_worktree(self):
+        empty = {'branch': None, 'head': None, 'headFull': None, 'remote': None, 'branchUrl': None, 'branchPushed': None}
+        root = self.base / 'nul'
+        write(root / '.git', 'gitdir: a\x00b\n')
+        self.assertEqual(dashboard.read_git(root), empty)
+        self.assertIsNone(dashboard.read_worktree(root))
+
     def test_both_use_the_one_shared_reader(self):
         root, _ = self.fake_worktree()
         with mock.patch.object(dashboard, 'git_locations', wraps=dashboard.git_locations) as spy:
@@ -197,7 +218,7 @@ class StatusField(DashboardFixture):
         data = json.loads(normalized(report))   # the fixture normalization: path -> <root>, mainPath -> <main>
         self.assertEqual(data['project'], {'name': 'demo', 'path': '<root>', 'worktree':
                                            {'kind': 'worktree', 'name': 'demo', 'path': '<root>', 'mainPath': '<main>'}})
-        self.assertEqual(report['project']['worktree']['mainPath'], str(main.resolve()))
+        self.assertEqual(report['project']['worktree']['mainPath'], posix(main.resolve()))
         self.assertIsNone(self.cli('dashboard', 'show', self.project('empty'), '--json')['project']['worktree'])
 
 

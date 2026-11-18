@@ -1072,18 +1072,19 @@ def _has_ref(common, ref):
 
 def git_locations(root):
     """`(git_dir, common_dir, linked)` of the project from `.git` only (git is not run): `.git` is a directory, or a file
-    `gitdir: <path>` (relative to `root`) naming the git directory; a `commondir` file there marks a linked worktree and
-    names the common directory (`linked` is true). `None` when the `.git` file has no `gitdir:` line. File errors
-    (`OSError`, `ValueError`) are the caller's: both `read_git` and `read_worktree` read `gitdir`/`commondir` only here."""
+    `gitdir: <path>` (relative to `root`) naming the git directory; only there a `commondir` file marks a linked worktree and
+    names the common directory (relative to the git directory; `linked` is true). A `.git` directory is always the main
+    checkout, even with a `commondir` file inside. `None` when the `.git` file has no `gitdir:` line. File errors
+    (`OSError`, `ValueError` for a NUL byte) are the caller's: both `read_git` and `read_worktree` catch them."""
     git = root / '.git'
+    common, linked = git, False
     if git.is_file():
         match = re.match(r'gitdir:\s*(.+)', read_text(git, 4096).strip())
         if not match:
             return None
-        git = (root / match.group(1).strip()).resolve()
-    common, linked = git, False
-    if (git / 'commondir').is_file():
-        common, linked = (git / read_text(git / 'commondir', 4096).strip()).resolve(), True
+        git = common = (root / match.group(1).strip()).resolve()
+        if (git / 'commondir').is_file():
+            common, linked = (git / read_text(git / 'commondir', 4096).strip()).resolve(), True
     return git, common, linked
 
 
@@ -1144,7 +1145,7 @@ def read_git(root):
                 info['branchPushed'] = _has_ref(common, f"refs/remotes/origin/{info['branch']}")
                 safe = '' if web['host'] == 'azure' else '/'  # Azure encodes "/" in version=GB…
                 info['branchUrl'] = web['branchUrl'].replace('{branch}', quote(info['branch'], safe=safe))
-    except OSError:
+    except (OSError, ValueError):
         pass
     return info
 
@@ -1399,16 +1400,17 @@ def _stage(label, done, tip='', key=None):
 _REVIEW_ROUND = {
     'spec': re.compile(r'spec-review(?:-[a-z0-9.]+)*-r?\d+\.md'),
     'plan': re.compile(r'plan-review(?:-[a-z0-9.]+)*-r?\d+\.md'),
-    'code': re.compile(r'(?:code-review(?:-[a-z0-9.]+)*-r?\d+|final-review(?:-r?\d+)?)\.md'),
+    'code': re.compile(r'(?:code-review(?:-[a-z0-9.]+)*-r?\d+|final-review(?:-[a-z0-9.]+)*(?:-r?\d+)?)\.md'),
 }
+_DECISIONS = re.compile(r'(?:^|-)(?:decisions|decyzje)(?:-|\.|$)')
 
 
 def review_rounds(names, kind):
     """Review rounds of `kind` (`spec`, `plan`, `code`): only a frozen report `<step>-N.md` (`.md`, a number at the end, optionally
-    `rN`; legacy `final-review[-N].md` counts as code) is a round. `*-decyzje.md`, `*-decisions.md`, `.log`, `.json` and other
-    files next to the report are not."""
+    `rN`; legacy `final-review[-<word>...][-N].md` counts as code) is a round. A name with a `decisions`/`decyzje` segment
+    anywhere, `.log`, `.json` and other files next to the report are not."""
     pattern = _REVIEW_ROUND[kind]
-    return sum(1 for name in names if pattern.fullmatch(name))
+    return sum(1 for name in names if pattern.fullmatch(name) and not _DECISIONS.search(name))
 
 
 def compute_acts(spec, plan, progress, run_files, extra=None):
