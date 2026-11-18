@@ -2,7 +2,7 @@
 title: Katalog roboczy przebiegu (worktree, główny checkout, wybór przy GO plan, rozpoznanie na stronie statusu)
 tags: [skillsync, dashboard, workflow, worktree, git, workdir, terminology]
 paths: ['skillsync_workflow/dashboard.py', 'library/skills/feature/references/workdir.md', 'library/skills/dashboard/assets/dashboard-render.js', 'library/instructions/_base.md', 'tests/test_skillsync_dashboard_workdir.py', 'tests/test_skillsync_workdir_rule.py']
-source: "odczyt skillsync_workflow/dashboard.py (`git_locations`, `read_worktree`, `read_git`, `build_status`, pole `project`); docs/dashboard-contract.md, sekcja „project.worktree”; docs/specs/2026-11-18-core-workdir.md (K1, K2, K9, decyzje Q1–Q13 z 18.11); library/skills/feature/references/workdir.md"
+source: "odczyt skillsync_workflow/dashboard.py (`git_locations`, `read_worktree`, `read_git`, `build_status`, pole `project`); docs/dashboard-contract.md, sekcja „project.worktree”; decyzje właściciela z 18.11 (kryteria K1, K2, K9 i pytania Q1–Q13; spec poza publicznym rdzeniem); library/skills/feature/references/workdir.md"
 verified: 2026-11-18
 ---
 Reguła: każdy przebieg `feature` pracuje w katalogu roboczym, który wybiera się przy „GO plan” i zapisuje w nagłówku planu linią `Katalog:`.

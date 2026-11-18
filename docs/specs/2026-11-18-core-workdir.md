@@ -1,6 +1,6 @@
 # Spec: Chip katalogu na stronie statusu i wybór katalogu roboczego przy „GO plan” (CORE-WORKDIR)
 
-Status: approved
+Status: implemented
 Data: 2026-11-18
 Plan: docs/plans/2026-11-18-core-workdir.md
 Wersja docelowa: 1.10.0 (MINOR: nowe pole kontraktu, zmiana procedury `feature`)

@@ -1,6 +1,6 @@
 # Plan: chip katalogu na stronie statusu i wybór katalogu roboczego przy „GO plan” (CORE-WORKDIR)
 
-Status: in_progress
+Status: done
 Spec: docs/specs/2026-11-18-core-workdir.md
 Spec-sha: f2a1f2b05e752260956c772076b8aed5eee1d143
 Przebieg: 2026-11-18-core-workdir
@@ -106,36 +106,79 @@ Pole puste (`- [ ]`) = do zrobienia, zaznaczone (`- [x]`) = zrobione; po wylądo
 Szacunek całości: ok. 5–6 h pracy agenta (cztery zdolności małe do średnich: serwer, renderer, procedura, dokumentacja).
 
 ### Faza 0: Baseline
-- [ ] F0.1 Baseline zestawów punktowych (liczby per moduł) i `wc -c _base.md` (test-runner)
+- [x] F0.1 Baseline zestawów punktowych (liczby per moduł) i `wc -c _base.md` (test-runner)
 
 ### Faza 1: Serwer
-- [ ] F1.1 Kod: pomocnik `gitdir`/`commondir`, `project.worktree`, testy rozpoznania i fixtures (implementer)
-- [ ] F1.2 Szczebel testów i commit kodu
-- [ ] F1.5 Poprawka liczenia rund review w `compute_acts` (`<krok>-N.md` tak, `*-decyzje.md` i pozostałe pliki nie), test regresji (spec, plan, kod), reguła w `docs/dashboard-contract.md`, commit
-- [ ] F1.3 Review `kod` fazy (jedna runda) i poprawki
-- [ ] F1.4 `--fast` końca fazy i checkpoint fazy
+- [x] F1.1 Kod: pomocnik `gitdir`/`commondir`, `project.worktree`, testy rozpoznania i fixtures (implementer)
+- [x] F1.2 Szczebel testów i commit kodu
+- [x] F1.5 Poprawka liczenia rund review w `compute_acts` (`<krok>-N.md` tak, `*-decyzje.md` i pozostałe pliki nie), test regresji (spec, plan, kod), reguła w `docs/dashboard-contract.md`, commit
+- [x] F1.3 Review `kod` fazy (jedna runda) i poprawki
+- [x] F1.4 `--fast` końca fazy i checkpoint fazy
 
 ### Faza 2: Renderer
-- [ ] F2.1 Kod: chip, opis, CSS, `descriptions.json`, `SKILL.md` dashboardu, testy (implementer)
-- [ ] F2.2 Zrzuty obu motywów z podglądu (port 5162) i szczebel testów
-- [ ] F2.3 Commit kodu
-- [ ] F2.4 Review `kod` fazy (jedna runda) i poprawki
-- [ ] F2.5 `--fast` końca fazy i checkpoint fazy
+- [x] F2.1 Kod: chip, opis, CSS, `descriptions.json`, `SKILL.md` dashboardu, testy (implementer)
+- [x] F2.2 Zrzuty obu motywów z podglądu (port 5162) i szczebel testów
+- [x] F2.3 Commit kodu
+- [x] F2.4 Review `kod` fazy (jedna runda) i poprawki
+- [x] F2.5 `--fast` końca fazy i checkpoint fazy
 
 ### Faza 3: Procedura katalogu roboczego
-- [ ] F3.1 Teksty reguły (`workdir.md`, `_base.md` z budżetem wg tabeli, `feature`, `plan-*`, `spec`, `pr-run`, `pr-after-approval`, `retro-quality`, `worker-mode`, `skillsync`, docs) i testy treści (implementer)
-- [ ] F3.2 Szczebel testów i commit
-- [ ] F3.3 Pętla pełna `kod` (reguła zgód i commitów) i poprawki
-- [ ] F3.4 `--fast` końca fazy i checkpoint fazy
+- [x] F3.1 Teksty reguły (`workdir.md`, `_base.md` z budżetem wg tabeli, `feature`, `plan-*`, `spec`, `pr-run`, `pr-after-approval`, `retro-quality`, `worker-mode`, `skillsync`, docs) i testy treści (implementer)
+- [x] F3.2 Szczebel testów i commit
+- [x] F3.3 Pętla pełna `kod` (reguła zgód i commitów) i poprawki
+- [x] F3.4 `--fast` końca fazy i checkpoint fazy
 
 ### Faza 4: Dokumentacja i wiedza
-- [ ] F4.1 CHANGELOG-i (`[Unreleased]`, bez bumpu wersji), `upgrading.md`, rekord `docs/domain/workdir.md` (scribe), `check_release.py` i commit
+- [x] F4.1 CHANGELOG-i (`[Unreleased]`, bez bumpu wersji), `upgrading.md`, rekord `docs/domain/workdir.md` (scribe), `check_release.py` i commit
 
 ### Faza 5: Zamknięcie
-- [ ] F5.1 Pętla końcowa `kod` (jedna runda + verifier) i poprawki
-- [ ] F5.2 Pełny bieg i macierz (po LEASE), `leakcheck --target core`, gitleaks
-- [ ] F5.3 Wynik (orkiestrator): odstępstwa od speca i planu (F2 bez `[UI]`; wersja nie podbita w paczce, wydanie robi Dyspozytor; zdanie „Push na bazę” zostaje w rdzeniu skrócone, a szczegóły idą do `workdir.md`, nie do `feature/SKILL.md`), retro-quality, `--final`, `Status: done` planu i `implemented` speca, commit
+- [x] F5.1 Pętla końcowa `kod` (jedna runda + verifier) i poprawki
+- [x] F5.2 Pełny bieg i macierz (po LEASE), `leakcheck --target core`, gitleaks
+- [x] F5.3 Wynik (orkiestrator): odstępstwa od speca i planu (F2 bez `[UI]`; wersja nie podbita w paczce, wydanie robi Dyspozytor; zdanie „Push na bazę” zostaje w rdzeniu skrócone, a szczegóły idą do `workdir.md`, nie do `feature/SKILL.md`), retro-quality, `--final`, `Status: done` planu i `implemented` speca, commit
 
 ## Wynik
 
-(po wykonaniu)
+### Zmiany i dowody
+
+Gałąź `feat/core-workdir` (baza `2594fed`, release 1.9.1), commity: serwer (`3903e15`, `0e8a43c`, poprawki `b5cf2fb`), renderer (`21f2745`, poprawki `e26e03d`), procedura (`8afc7ab`, poprawki `c17c260`, `55ae837`), dokumentacja (`bf32c05`), poprawki pętli końcowej (`28ee76d`). Wersja NIE podbita (wydanie robi dyspozytor na `release/1.10.0`).
+- A: `project.worktree` w `dashboard show` i `GET /api/status` (`{kind, name, path, mainPath}` albo `null`, rozpoznanie z plików `.git`/`commondir`, bez procesu git), chip w nagłówku („worktree: <nazwa>” / „główny checkout”, opis i ścieżki w dymku, bez kopiowania), nowa ikona `i-folder`.
+- B: pytanie o katalog roboczy przy „GO plan” (własny worktree domyślnie / główny checkout = bieżąca gałąź, także bazowa), linia planu `Katalog:`, nowa referencja `feature/references/workdir.md`, reguła w `instructions/_base.md` (8187 → 8186 B) i skillach.
+- Dodane po „GO implement” (za zgodą użytkownika): liczenie rund review na stronie statusu (F1.5): rundą jest tylko raport `<krok>-N.md`.
+- Dowody: logi `.skillsync/runs/2026-11-18-core-workdir/` (F0.1 baseline, F1.*, F2.*, F3.*, F4.2, F5.1, F5.2); pełny bieg Linux (stacja, tag `workdir-28ee76d`, HEAD `28ee76d`): 6712 testów, 2 FAIL (higiena rdzenia, naprawione: spec i plan wyjęte ze śledzenia, ścieżka w rekordzie domenowym usunięta), 26 skipów, wszystkie w baseline (`check_skips`); stan użytkownika bez zapisów.
+
+### Uwagi z review
+
+| Uwaga (tytuł) | Waga | Co zrobiono |
+|---|---|---|
+| Spec: kopiowanie kliknięciem vs celowe usunięcie schowka z renderera | major | decyzja użytkownika: bez kopiowania (K6) |
+| Spec: fixtures `cp-ready` i przypadek `worktree` budowany w teście | major | naniesione w specu i F1 |
+| Plan: budżet `_base.md` (8187/8192), pliki wydania, terminologia w glosariuszu bootstrap, imię właściciela w treści publicznej | major ×4 | tabela bajtów, nowa referencja `workdir.md`, rekord `docs/domain/workdir.md`, redakcja |
+| F1: przenośność testów (posix, symlinki, skipy w baseline) | major | poprawione (`b5cf2fb`) |
+| F3: zdanie o kopii przebiegu w `_base.md` zmieniło sens; brak ponownych warunków przy wznowieniu `główny` | major ×2 | poprawione (`c17c260`), runda 2 PASS |
+| Pętla końcowa: brak wpisu w baseline skipów dla testu dowiązania | major | dodany (`28ee76d`) |
+| Pozostałe uwagi (minor/nit) wszystkich rund | minor/nit | naniesione, z wyjątkami w „Ograniczeniach” |
+
+### Pokrycie kryteriów
+
+| Kryterium | Test(y) | Wynik |
+|---|---|---|
+| K1–K3 | `test_skillsync_dashboard_workdir.py` (21), `…_contract.py`, `…_dashboard.py`, `/api/status` w `…_server.py` | PASS |
+| K4–K6 | `test_skillsync_dashboard_renderer.py` (73), `…_a11y.py`, `…_theme_tokens.py`; podgląd (ciemny, jasny, 380 px; `F2.2-podglad.md`) | PASS |
+| K7 | `expected*.json` (11 plików), `…_contract.py`, przypadek `worktree` w teście | PASS |
+| K8–K9 | `test_skillsync_workdir_rule.py` (10), `…_feature_demo.py` | PASS |
+| K10 | `wc -c` 8186 B, `test_skillsync_attribution.py` (budżet), `…_delivery_mode.py`, `…_library_smoke.py` | PASS |
+| K11 | `…_domain_size.py`, `…_changelog_breaking.py`, `scripts/check_release.py` (wersje bez zmian) | PASS |
+| K12 | pełny bieg Linux 6712 testów | PASS po poprawce higieny; macierz Windows i macOS NOT_RUN (zleca dyspozytor przed PUSH SLOT) |
+
+### Stare porażki i ograniczenia
+
+- Znane ograniczenia: (1) opisy i tooltipy etapów review mówią o podciągach nazw plików (tekst przypięty w 10 fixtures współdzielonych z wtyczką edytora; zapisane w CHANGELOG); (2) chip ma `tabindex=0`, a `render()` co 5 s przebudowuje nagłówek: fokus klawiatury ginie przy aktualizacji (wzorzec zastany dla elementów `[data-desc]`); (3) test długiej nazwy chipu grepuje CSS (zachowanie obcięcia potwierdza podgląd, nie test); (4) Skippster: jego `src/data/dashboard.ts` buduje `project` z białej listy i gubi `worktree`, więc chip pojawi się dopiero po dodaniu pola do jego parsera (korekta założenia ze speca), plus wymagany symbol `i-folder` przy własnym sprite; (5) `read_git` ignoruje `commondir` w `.git` będącym katalogiem (nierealny przypadek, pinuje test).
+- Skutek bumpu do raportu DONE: `LISTEN_NOTE_UNTIL = (1, 10)` (`dashboard_ports.py`) wyłączy zdanie konsoli „od 1.8.0 …” w `dashboard serve`; testy `…_ports.py` i `…_listen_defaults.py` zależą od wersji przez `_version_tuple`; wpis Changed i bump robi wydanie (tak samo „Stan opisu”, `__init__.py`, `install.sh`, `layer.yaml`).
+- Odstępstwa od speca i planu: F2 bez znacznika `[UI]` i bez prototypu (dowód: podgląd obu motywów i wąskiej kolumny); wersja nie podbita w paczce; F1.5 spoza speca (za zgodą); zdanie „Push na bazę” w `_base.md` skrócone, a szczegóły w `workdir.md` (nie w `feature/SKILL.md`); linia `Katalog:` niesie nazwę katalogu zamiast ścieżki; pełny bieg poszedł na HEAD `28ee76d` (dzierżawa wskazywała `bf32c05`, różnica to poprawki testów i tekstów po pętli końcowej).
+- Weryfikator (świeży) nie był uruchomiony dla poprawek F1.3 i F5.1: dowodem są testy punktowe i pełny bieg.
+- Wniosek dla skryptu stacji (ops): `run.sh` drukuje „flock-exit=1” także wtedy, gdy rc≠0 pochodzi z testów.
+- Retrospektywa: sygnały 3 (korekta użytkownika, rozjazd procedury z higieną rdzenia, nadmiar ceremonii do potwierdzenia), propozycja P1 (`skills/feature/SKILL.md`: „GO plan” nie commituje speców i planów tam, gdzie repozytorium tego zabrania) `deferred` (worktree); szczegóły w `retro-review.md`.
+
+### Zdobyta wiedza
+
+`docs/domain/workdir.md` (nowy rekord: terminy, reguły wyboru katalogu, rozpoznanie bez procesu git), `docs/dashboard-contract.md` (sekcja `project.worktree`, reguła rund review, normalizacja fixtures), `library/skills/feature/references/workdir.md`, `docs/upgrading.md` (1.9.1 → 1.10.0), CHANGELOG-i (`[Unreleased]`). Lekcja kandydująca (do zapisu przy wydaniu): spec i plan w publicznym rdzeniu wychodzą ze śledzenia przed pełnym biegiem (P1).
