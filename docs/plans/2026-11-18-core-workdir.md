@@ -25,7 +25,7 @@ Rdzeń jest publiczny: bez nazw i ścieżek klienta, ludzi i maszyn. Bez stopek 
 | K1–K3 (kontrakt, rozpoznanie bez gita, `path`/`mainPath`) | F1 | testy `tests/test_skillsync_dashboard_contract.py` i nowy `test_skillsync_dashboard_workdir.py` (katalog, plik `gitdir`, `commondir`, submoduł, uszkodzony worktree, dowiązanie) PASS; K2: test z podmienionym `subprocess`/`os.system` i pustym `PATH` (rozpoznanie nie wywołuje procesu); test, że `read_git` daje ten sam wynik co przed zmianą |
 | K7 (fixtures) | F1 | `expected.json` wszystkich przypadków (`null`; `cp-ready` = `main`), przypadek `worktree` budowany w teście; test kontraktu fixtures PASS; normalizacja w `docs/dashboard-contract.md` |
 | K4, K5, K6 (chip, opis, brak schowka) | F2 | `test_skillsync_dashboard_renderer.py` (chip dla `main`/`worktree`/`null`/brak pola, kolejność: po chipie gałęzi, przed „N niewypchniętych”, obcięcie nazwy, `data-desc-extra`), `…_a11y.py`, `…_theme_tokens.py`, `test_no_copy_buttons_anywhere` bez zmian PASS; zrzuty obu motywów i wąskiej kolumny (brak poziomego przewijania) z podglądu (port 5162); nowe testy najpierw czerwone (red-first), testy behawioralne rendererera wymagają `node` ≥ 18, a `check_skips` na logu nie dopuszcza skipów |
-| K8, K9 (pytanie, `Katalog:`, warunki `główny`) | F3 | testy treści: `test_skillsync_feature_demo.py` (k10-* zaktualizowane) i nowy `test_skillsync_workdir_rule.py`: `Katalog:` z oboma wariantami w `workdir.md`, `plan-details.md`, `SKILL.md`, `_base.md`; warunki K9 (bieżąca gałąź, baza w `pr` = odmowa, odłączony HEAD = STOP, brudne drzewo = pytanie z listą), Q12 (`direct` na bazie bez `Oddanie:`), żywa dzierżawa w `.skillsync/claims` = STOP, zniknięcie worktree z linii planu = STOP, brak odpowiedzi = brak GO plan (każda ścieżka ma asercję na dosłowną frazę w `workdir.md`) PASS |
+| K8, K9 (pytanie, `Katalog:`, warunki `główny`) | F3 | testy treści: `test_skillsync_feature_demo.py` (k10-* zaktualizowane) i nowy `test_skillsync_workdir_rule.py`: `Katalog:` (sam napis) w `_base.md`, a oba warianty (`worktree <nazwa>`, `główny`) w `workdir.md`, `plan-details.md`, `SKILL.md`; warunki K9 (bieżąca gałąź, baza w `pr` = odmowa, odłączony HEAD = STOP, brudne drzewo = pytanie z listą), Q12 (`direct` na bazie bez `Oddanie:`), żywa dzierżawa w `.skillsync/claims` = STOP, zniknięcie worktree z linii planu = STOP, brak odpowiedzi = brak GO plan (każda ścieżka ma asercję na dosłowną frazę w `workdir.md`) PASS |
 | K10 (spójność reguł, budżet) | F3 | `wc -c library/instructions/_base.md` ≤ 8192 i netto ≤ 0 względem 8187 (przed i po w „Wyniku”), `tests/test_skillsync_attribution.py::RuleTests::test_base_fits_the_budget`, `test_skillsync_library_smoke.py`, `test_skillsync_delivery_mode.py` PASS |
 | K11 (dokumentacja, wersje) | F1 (sekcja kontraktu), F2 (`dashboard/SKILL.md`), F4 | grep dosłownych nazw; CHANGELOG-i, `upgrading.md`, `layer.yaml`, `__init__.py`, `install.sh`, „Stan opisu”; `python3 scripts/check_release.py` rc=0, `test_skillsync_domain_size.py`, `test_skillsync_changelog_breaking.py` PASS; `leakcheck --target core --require full` PASS |
 | K12 | F5 | pętla `kod` końcowa PASS, pełny bieg po LEASE, `leakcheck` i gitleaks osobno |
@@ -55,7 +55,7 @@ Instrukcje, skille i lekcje do odczytu przed pracą: `route` rdzenia (lekcje `bu
 
 - cwd: worktree `CORE-WORKDIR`; środowisko: `python3`, `node` ≥ 18 (testy behawioralne rendererera mają `skipUnless`; skip = NOT_RUN, `check_skips` na logu), bez sieci i usług współdzielonych. Moduły importują się nawzajem (lekcja `pelny-bieg-testow-a-git-na-prawdziwych-warstwach`), więc zestawy punktowe przez `python3 -m unittest discover -s tests -p '<wzorzec>'`, rc w zmiennej, log do pliku `<krok>-<próba>.log` w `.skillsync/runs/2026-11-18-core-workdir/`.
 - Zestaw F1: `test_skillsync_dashboard_contract*`, `test_skillsync_dashboard_workdir*`, `test_skillsync_dashboard.py`, `…_server.py`, `…_forecast.py`, `…_metrics.py`, `…_stage_state.py` (kopiują fixtures). Zestaw F2: `…_renderer.py`, `…_a11y.py`, `…_theme_tokens.py`, `…_server.py` (opisy). Zestaw F3: `test_skillsync_feature_demo.py`, `…_delivery_mode.py`, `…_workdir_rule.py`, `…_attribution.py` (budżet), `…_library_smoke.py`, `…_leakguard.py`. Zestaw F4: `…_domain_size.py`, `…_changelog_breaking.py`, `…_dashboard_ports.py`, `…_dashboard_listen_defaults.py`, `python3 scripts/check_release.py`.
-- Do dostosowania: k10-* w `test_skillsync_feature_demo.py` (l.86–96), `test_skillsync_delivery_mode.py` (l.273–281, fraza „Słowa zgody: `CP`” zostaje), fixtures `expected*.json`, wersje w testach ports/listen_defaults (po bumpie).
+- Do dostosowania: k10-* w `test_skillsync_feature_demo.py` (l.86–96), `test_skillsync_delivery_mode.py` (l.273–281, fraza „Słowa zgody: `CP`” zostaje), fixtures `expected*.json`, ports i listen_defaults zależą od wersji przez `_version_tuple`: uruchomić po bumpie, bez edycji, o ile nie padną.
 - Nowe (najpierw czerwone, red-first): `test_skillsync_dashboard_workdir.py`, `test_skillsync_workdir_rule.py`, przypadek fixtures `worktree` budowany w teście, testy chipu w rendererze.
 - Baseline (F0): stare porażki oznaczone przed zmianą (liczby per moduł), po zmianie porównanie; `py_compile` po każdej zmianie Pythona.
 - Pełny bieg i macierz (`prepush-matrix`) tylko po LEASE GRANT od Dyspozytora (`flock` `heavy-run.lock`, pamięć ≥ 10 GiB, `MemoryMax`); podgląd dashboardu: port 5162, `XDG_*` w katalogu worktree, procesy zabijane po PID.
@@ -68,8 +68,8 @@ Plik: 8187 B, limit 8192 B (`base_max_bytes`). Rdzeń niesie tylko regułę i od
 |---|---|
 | l.61: „osobny worktree i gałąź robocza;” → „katalog roboczy (pytanie, `Katalog:` w planie) i gałąź robocza;” | +31 |
 | zdanie „Push na bazę”: bez „z worktree” i bez klauzuli o `--ff-only` głównego checkoutu (przechodzi do `workdir.md`), z odesłaniem „szczegóły w `feature`” | −62 (212 → 150) |
-| l.72: „kopia przebiegu poza worktree; worktree sprzątasz po `CP`…” → odnosi się do `Katalog: worktree` | ≈ +20 (do pomiaru) |
-| razem | ≈ −11 B → ok. 8176 B |
+| l.72: „kopia przebiegu poza worktree; worktree sprzątasz po `CP` albo zamknięciu PR-a” → „kopia przebiegu i sprzątanie worktree (tylko `Katalog: worktree`) po `CP` albo zamknięciu PR-a” | +16 (policzone) |
+| razem | -15 B → ok. 8172 B (pomiar `wc -c` w F3.1 rozstrzyga) |
 
 Zasady: cudzych zdań nie zagęszczamy; konflikt ograniczeń = przerwanie i zgłoszenie (lekcja o budżecie). Safety pozostaje w rdzeniu („baza rozbieżna = STOP, rebase/merge tylko za osobną zgodą”).
 
@@ -129,7 +129,7 @@ Szacunek całości: ok. 5–6 h pracy agenta (cztery zdolności małe do średni
 ### Faza 5: Zamknięcie
 - [ ] F5.1 Pętla końcowa `kod` (jedna runda + verifier) i poprawki
 - [ ] F5.2 Pełny bieg i macierz (po LEASE), `leakcheck --target core`, gitleaks
-- [ ] F5.3 Wynik (orkiestrator): odstępstwa od speca (F2 bez `[UI]`), retro-quality, `--final`, `Status: done` planu i `implemented` speca, commit
+- [ ] F5.3 Wynik (orkiestrator): odstępstwa od speca (F2 bez `[UI]`; zdanie „Push na bazę” zostaje w rdzeniu skrócone, a szczegóły idą do `workdir.md`, nie do `feature/SKILL.md`), retro-quality, `--final`, `Status: done` planu i `implemented` speca, commit
 
 ## Wynik
 
