@@ -89,6 +89,10 @@ Wydanie 1.10.0 jest MINOR (sekcja **Breaking** w `CHANGELOG.md` to „None.”).
 4. Linia planu `Katalog:` w nagłówku: `Katalog: worktree <nazwa-katalogu>` albo `Katalog: główny`. Plan bez tej linii (także każdy plan sprzed aktualizacji) znaczy `worktree`, jak dotąd; nie trzeba go przepisywać. Cofnięcie do 1.9.1: plan z `Katalog: główny` pozostaje czytelny, bo nieznana linia jest ignorowana.
 5. Przy „GO plan” sesja zapyta: „Gdzie pracować nad tym przebiegiem?”. Domyślna odpowiedź to własny worktree. „Główny checkout” pracuje na bieżącej gałęzi głównego katalogu, także na gałęzi bazowej (wtedy commity i `CP` idą na bazę; pytanie to ostrzega). Brak odpowiedzi oznacza brak „GO plan”. Szczegóły i warunki: `skills/feature/references/workdir.md`.
 6. Liczba rund review na stronie statusu: rundą jest tylko raport `<krok>-N.md`. Pliki decyzji `<krok>-N-decyzje.md` nie są już liczone, więc liczniki „Review ×N” mogą być niższe niż przed aktualizacją; prawdziwa liczba rund się nie zmieniła. Historyczne raporty `final-review*` są liczone jak dotąd.
+7. **`test-run`: adaptery `tap` i `node-test`.** `skillsync test-run -- node --test …` wybiera teraz sam adapter `node-test` (pojedyncze testy na stronie zamiast samego poziomu polecenia); goły skrypt drukujący TAP (`node plik.test.js`, `bats --tap`, `prove`) wymaga jawnego `--format tap`. Bieg z linią `Bail out!` nie zalicza się już na podstawie planu `1..N`. Nagrania formatów Node 25 i Windows nie są sprawdzone na prawdziwym strumieniu (`docs/test-adapters.md`).
+8. **Zakładka „Testy”:** bieg, którego polecenie skończyło się kodem różnym od 0 bez porażki testu, ma znacznik „kod N, żaden test nie zgłosił porażki”; licznik porażek zakładki się nie zmienia. Przycisk „na górę” działa także w tej zakładce (host musi podawać `deps.scroll.toTop`).
+9. **`dashboard serve`:** znika dopisek konsoli „od 1.8.0 odczyt słucha domyślnie na wszystkich interfejsach…”; ostrzeżenie o nasłuchu w sieci i podpowiedzi zostają.
+10. **Procedura `feature`:** raport recenzenta pętli przeglądu jest zapisywany zawsze, zaraz po rundzie (`references/reports.md`).
 
 ## Przejście 1.8.0 → 1.9.0
 

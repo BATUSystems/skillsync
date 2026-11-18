@@ -4,6 +4,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+## [1.10.0] - 2026-11-18
+
 ### Added
 
 - `skills/feature/references/workdir.md` (new): the working directory of a run, chosen at "GO plan" (own worktree or main checkout); the `Katalog:` line, the conditions of the main checkout, the failure paths and the resume rules.
@@ -18,6 +20,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 - `skills/pr-run/SKILL.md`: step 3 honours `Katalog:` (the main checkout and its current branch, not a base branch); step 8 skips the main checkout.
 - `skills/skillsync/SKILL.md`: the working directory rule and the `Katalog:` line.
 - `skills/dashboard`: `SKILL.md` (the chip in the renderer contract) and `descriptions.json`.
+- `skills/feature/references/reports.md`: the report of a review-loop reviewer is always saved right after it returns, together with `<step>-N-decyzje.md`, not after the fact.
 
 ## [1.9.1] - 2026-11-18
 

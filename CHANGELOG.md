@@ -12,6 +12,14 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+## [1.10.0] - 2026-11-18
+
+Upgrading from 1.9.1: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.9.1 → 1.10.0".
+
+### Breaking
+
+None.
+
 ### Added
 
 - **Status page: `project.worktree` and a chip in the header.** `dashboard show` and `GET /api/status` report `project.worktree` as `{kind, name, path, mainPath}` or `null` (additive, `schema: 1`). `kind` is `main` (the main checkout) or `worktree` (a linked worktree); it is read from the `.git` file or directory and the `commondir` file, without running `git`. A damaged linked worktree gives `null`, never `main`. The page header shows a chip "worktree: <name>" or "główny checkout" next to the branch chip; the full path (and the path of the main checkout for a worktree) is in the tooltip. The footer is unchanged. Contract: [docs/dashboard-contract.md](docs/dashboard-contract.md), section "`project.worktree`".
@@ -26,6 +34,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 - The copy of the run outside the worktree and the cleanup of the worktree after `CP` or the closing of a PR apply to `Katalog: worktree` only; a run in the main checkout stays in the project directory.
 - `quality`: a `Bail out!` line in the output stops the plan `1..N` from counting as the number of tests, so an interrupted TAP run cannot pass on its plan.
 - Adapter interface: `Adapter.explicit` is set by `resolve` for a named `--format` and `Adapter.explicit_only` marks an adapter that `auto` never picks by the tool (`tap`).
+- `dashboard serve` no longer prints the console note "od 1.8.0 odczyt słucha domyślnie na wszystkich interfejsach…" under the read-port warning; the note was printed by the releases 1.8.x and 1.9.x only. The warning itself and the hints `--read-bind 127.0.0.1` / `dashboard.local_only: true` stay.
 
 ### Fixed
 
