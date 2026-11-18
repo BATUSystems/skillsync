@@ -192,7 +192,7 @@ a.chip.git-link { text-decoration: none; }
 }
 .desc-tip[hidden] { display: none; }
 .desc-tip strong { font-size: .85rem; }
-.desc-tip em { color: var(--muted); font-style: normal; border-top: 1px solid var(--line); padding-top: .3rem;  white-space: pre-line; }
+.desc-tip em { color: var(--muted); font-style: normal; border-top: 1px solid var(--line); padding-top: .3rem;  white-space: pre-line; overflow-wrap: anywhere; }
 [data-desc] { cursor: help; }
 button[data-desc], [data-desc][role="button"] { cursor: pointer; }
 .act-warn { margin-top: .5rem; padding: .3rem .55rem; border-radius: 6px; font-size: .78rem; background: var(--warn-soft); color: var(--text); border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent); }

@@ -153,6 +153,6 @@
  },
  "workdir_chip": {
   "title": "Katalog roboczy",
-  "text": "Pokazuje, w którym katalogu działa ten panel. „worktree: <nazwa>” to powiązany worktree gita: osobny katalog z własną gałęzią, obok głównego checkoutu tego samego repozytorium. „główny checkout” to katalog z repozytorium (z katalogiem .git), czyli nie powiązany worktree. Przy kilku sesjach na jednym repozytorium chip pozwala nie pomylić paneli.\nW dymku pełna ścieżka katalogu, a dla worktree także ścieżka głównego checkoutu. Brak chipu: katalog nie jest repozytorium albo rdzeń nie podał pola project.worktree."
+  "text": "Pokazuje, w którym katalogu działa ten panel. „worktree: <nazwa>” to powiązany worktree gita: osobny katalog z własną gałęzią, obok głównego checkoutu tego samego repozytorium. „główny checkout” to katalog repozytorium, który nie jest powiązanym worktree (z katalogiem .git albo, np. w submodule, z plikiem .git bez wspólnego katalogu). Przy kilku sesjach na jednym repozytorium chip pozwala nie pomylić paneli.\nW dymku pełna ścieżka katalogu, a dla worktree także ścieżka głównego checkoutu. Brak chipu: katalog nie jest korzeniem repozytorium (albo jego worktree jest uszkodzony), albo rdzeń nie podał pola project.worktree."
  }
 }

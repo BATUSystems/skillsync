@@ -499,7 +499,7 @@
       const pushWorkdir = () => {
         const wt = d.project && d.project.worktree;
         if (!wt || typeof wt !== "object" || (wt.kind !== "worktree" && wt.kind !== "main")) return;
-        const label = wt.kind === "worktree" ? `worktree: ${wt.name == null ? "" : wt.name}` : "główny checkout";
+        const label = wt.kind === "worktree" ? (typeof wt.name === "string" && wt.name ? `worktree: ${wt.name}` : "worktree") : "główny checkout";
         const paths = [];
         if (typeof wt.path === "string" && wt.path) paths.push(wt.path);
         if (wt.kind === "worktree" && typeof wt.mainPath === "string" && wt.mainPath) paths.push(`Główny checkout: ${wt.mainPath}`);
