@@ -15,7 +15,7 @@ Wznowienie z `Katalog: główny` sprawdza warunki ponownie przed pierwszym commi
 
 Przy „GO plan” (bez „GO plan”: przy „GO implement”, pierwszym słowie zgody, które zakłada katalog) sesja zadaje jedno pytanie z dwiema opcjami (host z oknem wyboru: okno; bez niego pytanie tekstowe):
 „Gdzie pracować nad tym przebiegiem?”: „własny worktree” (domyślnie, zalecane: izolacja plików, równoległe sesje, bez ryzyka dla bieżącej gałęzi) albo „główny checkout” (jeden katalog, bez drugiej kopii).
-Pytanie o katalog podaje nazwę tej gałęzi (bieżącej w głównym checkoucie); przy `delivery.base` ostrzega, że commity i `CP` pójdą na bazę.
+Pytanie o katalog podaje nazwę tej gałęzi (bieżącej w głównym checkoucie); przy `delivery.base` oraz przy `main`, `master` i `develop` ostrzega, że commity i `CP` pójdą na gałąź bazową lub główną.
 Brak odpowiedzi, odmowa albo anulowanie = brak „GO plan”: nic nie powstaje, bez commita i bez linii `Katalog:` (spec zostaje `draft`, chyba że przycisk `skillsync spec approve` ustawił już `approved`; wiersz tabeli wznowienia w [spec](spec.md) dla specu `approved` (przycisk albo `skillsync spec approve`) bez planu albo z planem-szkicem bez `Spec-sha` obsługuje ten stan).
 
 Pytanie nie pada: (1) gdy plan ma już linię `Katalog:` (wznowienie, ponowne „GO plan” po zmianie speca); (2) w trybie karty (`ASSIGN`/`dispatch:`) katalog wynika ze zlecenia, domyślnie worktree paczki, karta nie pyta

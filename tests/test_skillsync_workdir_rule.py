@@ -37,7 +37,7 @@ PHRASES = [
     # K9: warunki wejścia do `główny`
     ('k9-biezaca-galaz', WORKDIR, r'bieżąca gałąź głównego checkoutu, jakakolwiek, także `delivery\.base`, bez `git switch`'),
     ('k9-pytanie-nazwa-galezi', WORKDIR, r'Pytanie o katalog podaje nazwę tej gałęzi'),
-    ('k9-ostrzezenie-baza', WORKDIR, r'przy `delivery\.base` ostrzega, że commity i `CP` pójdą na bazę'),
+    ('k9-ostrzezenie-baza', WORKDIR, r'przy `delivery\.base` oraz przy `main`, `master` i `develop` ostrzega, że commity i `CP` pójdą na gałąź bazową lub główną'),
     ('k9-pr-baza-odmowa', WORKDIR, r'W trybie `pr` z bieżącą gałęzią równą `delivery\.base` „główny” nie jest przyjmowany'),
     ('k9-pr-tylko-worktree', WORKDIR, r'pytanie oferuje wtedy tylko własny worktree'),
     ('k9-odlaczony-head', WORKDIR, r'HEAD odłączony = STOP z propozycją worktree'),

@@ -1020,6 +1020,10 @@ class HttpTests(HttpCase):
             self.assertIn("no-cache", r.headers["Cache-Control"])
         with self.get("/api/status") as r:
             self.assertEqual(json.load(r)["plan"]["path"], PLAN)
+        with self.get("/api/status") as r:   # K1 (CORE-WORKDIR): `project.worktree` is part of the route too (the fixture project is a plain repository: main)
+            project = json.load(r)["project"]
+            self.assertEqual(project["worktree"]["kind"], "main")
+            self.assertEqual(project["worktree"]["name"], project["name"])
         with self.get("/") as r:
             page = r.read().decode("utf-8")
         self.assertIn('<script src="/assets/theme.js"></script>', page.split("</head>")[0])
