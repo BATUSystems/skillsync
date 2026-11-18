@@ -6,7 +6,7 @@ pomiaru przebiegu i pracy wielu sesji. Nie opisuje instalacji, synchronizacji an
 i komend: [workflow.md](workflow.md). Źródłem prawdy są skille warstwy core (`../library/skills/feature/SKILL.md` i jego
 `references/`); przy rozbieżności wygrywa skill, a ten dokument trzeba poprawić.
 
-Stan opisu: Skillsync `v1.9.1`.
+Stan opisu: Skillsync `v1.10.0`.
 
 ## 1. Elementy systemu
 
@@ -716,7 +716,7 @@ nigdy na zapisy w trackerze. Argumenty: `<brief>` albo ścieżka planu, `--go` (
 `plan-large` „GO plan” po akcie I nadal obowiązuje), `--resume <PR|plan>`. Gdy plan lub gałąź ma klucz zgłoszenia, a praca
 nie zaczęła się od wejścia z klucza, `feature` po „GO implement” proponuje `/pr-run` jednym zdaniem i bez zgody go nie
 uruchamia. Kroki: rozpoznanie, plan według `feature` (bez `--go` STOP na „GO implement”, przy `plan-large` najpierw akt I), claim,
-izolowany worktree, plan i spec (przy planie ze specem commit z „GO plan”) jako pierwszy push z draft PR, realizacja (commit na krok, `Progress` z sha, checkpoint
+katalog roboczy z linii planu `Katalog:` (przy `główny` bieżąca gałąź głównego checkoutu, bez worktree i bez kroku sprzątania), plan i spec (przy planie ze specem commit z „GO plan”) jako pierwszy push z draft PR, realizacja (commit na krok, `Progress` z sha, checkpoint
 co około 5 kroków z komentarzem na PR), bramka końcowa (dokumentacja, changelog, wersja, pełne kontrole, pętla `kod`, spec
 `implemented` w ostatnim commicie), komentarz końcowy i ready tylko przy wszystkich krokach `[x]` i kontrolach PASS.
 Nigdy push do bazowej, merge, deploy ani zatwierdzenie własnego PR-a.

@@ -1,0 +1,36 @@
+{"meta": {"tool": "node", "version": "Node 22.22.0", "command": ["node", "--test", "--test-reporter=tap", "edge.test.js"], "exit": 1, "merged": false, "env": {"NO_COLOR": "1", "stdout_stderr": "pipes (not a terminal)"}, "note": "TAP of the edge project", "scrubbed": "paths, host and user names are replaced", "format": "one record per chunk read from the pipe: t = seconds since the start, fd = out|err, data = the text of the chunk", "stream": "tap"}}
+{"t": 0.026, "fd": "out", "data": "TAP version 13\n"}
+{"t": 0.058, "fd": "out", "data": "# Subtest: name with \\# hash\n"}
+{"t": 0.058, "fd": "out", "data": "ok 1 - name with \\# hash\n  ---\n  duration_ms: 0.860082\n  type: 'test'\n  ...\n"}
+{"t": 0.059, "fd": "out", "data": "# Subtest: name with \\\\ backslash and - dash\n"}
+{"t": 0.059, "fd": "out", "data": "ok 2 - name with \\\\ backslash and - dash\n  ---\n  duration_ms: 0.189482\n  type: 'test'\n  ...\n# Subtest: dup\n"}
+{"t": 0.059, "fd": "out", "data": "ok 3 - dup\n"}
+{"t": 0.059, "fd": "out", "data": "  ---\n  duration_ms: 0.119869\n  type: 'test'\n  ...\n"}
+{"t": 0.059, "fd": "out", "data": "# Subtest: dup\n"}
+{"t": 0.059, "fd": "out", "data": "ok 4 - dup\n"}
+{"t": 0.059, "fd": "out", "data": "  ---\n  duration_ms: 0.107941\n  type: 'test'\n  ...\n"}
+{"t": 0.059, "fd": "out", "data": "# Subtest: with subtests\n"}
+{"t": 0.059, "fd": "out", "data": "    # Subtest: inner ok\n"}
+{"t": 0.059, "fd": "out", "data": "    ok 1 - inner ok\n"}
+{"t": 0.059, "fd": "out", "data": "      ---\n      duration_ms: 0.131623\n      type: 'test'\n      ...\n"}
+{"t": 0.06, "fd": "out", "data": "    # Subtest: inner bad\n"}
+{"t": 0.06, "fd": "out", "data": "    not ok 2 - inner bad\n"}
+{"t": 0.06, "fd": "out", "data": "      ---\n      duration_ms: 0.185261\n      type: 'test'\n      location: '/work/proj/edge.test.js:6:82'\n      failureType: 'testCodeFailure'\n      error: |-\n        boom\n        second line\n      code: 'ERR_TEST_FAILURE'\n      stack: |-\n        TestContext.<anonymous> (/work/proj/edge.test.js:6:114)\n        Test.runInAsyncScope (node:async_hooks:214:14)\n        Test.run (node:internal/test_runner/test:1047:25)\n        Test.start (node:internal/test_runner/test:944:17)\n        TestContext.test (node:internal/test_runner/test:373:20)\n        TestContext.<anonymous> (/work/proj/edge.test.js:6:82)\n        async Test.run (node:internal/test_runner/test:1054:7)\n        async Test.processPendingSubtests (node:internal/test_runner/test:744:7)\n      ...\n"}
+{"t": 0.06, "fd": "out", "data": "    1..2\n"}
+{"t": 0.061, "fd": "out", "data": "not ok 5 - with subtests\n"}
+{"t": 0.061, "fd": "out", "data": "  ---\n  duration_ms: 0.838612\n  type: 'test'\n  location: '/work/proj/edge.test.js:6:1'\n  failureType: 'subtestsFailed'\n  error: '1 subtest failed'\n  code: 'ERR_TEST_FAILURE'\n  ...\n"}
+{"t": 0.106, "fd": "out", "data": "# Subtest: cancelled by timeout\n"}
+{"t": 0.106, "fd": "out", "data": "not ok 6 - cancelled by timeout\n"}
+{"t": 0.106, "fd": "out", "data": "  ---\n  duration_ms: 50.9908\n  type: 'test'\n  location: '/work/proj/edge.test.js:7:1'\n  failureType: 'testTimeoutFailure'\n  error: 'test timed out after 50ms'\n  code: 'ERR_TEST_FAILURE'\n  ...\n"}
+{"t": 0.107, "fd": "out", "data": "# Subtest: multi\\\\nline name\n"}
+{"t": 0.107, "fd": "out", "data": "ok 7 - multi\\\\nline name\n"}
+{"t": 0.107, "fd": "out", "data": "  ---\n  duration_ms: 0.892958\n  type: 'test'\n  ...\n"}
+{"t": 0.46, "fd": "out", "data": "1..7\n"}
+{"t": 0.46, "fd": "out", "data": "# tests 9\n"}
+{"t": 0.46, "fd": "out", "data": "# suites 0\n"}
+{"t": 0.46, "fd": "out", "data": "# pass 6\n"}
+{"t": 0.46, "fd": "out", "data": "# fail 2\n"}
+{"t": 0.46, "fd": "out", "data": "# cancelled 1\n"}
+{"t": 0.46, "fd": "out", "data": "# skipped 0\n"}
+{"t": 0.46, "fd": "out", "data": "# todo 0\n"}
+{"t": 0.46, "fd": "out", "data": "# duration_ms 442.181188\n"}

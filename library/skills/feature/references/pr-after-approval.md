@@ -9,10 +9,10 @@ Inne słowa niż poniższe polecenia nie są zgodą na zapis. Komendy dostawcy (
 |---|---|
 | „GO plan” | zgoda na spec, start planu (akt II), bez kodu i commita |
 | „GO implement” (przy `direct` i briefie `bugfix` także „GO”) | realizacja planu (akt III), bez commita |
-| „rób PR” | dla tego zadania: commit, push gałęzi roboczej, utworzenie brakujących PR-ów; gdy wszystkie istnieją, nic nie dodaje |
+| „rób PR” | dla tego zadania: commit, push gałęzi roboczej, utworzenie brakujących PR-ów; gdy wszystkie istnieją, nic nie dodaje; „rób PR” używa bieżącej gałęzi i nie zakłada worktree ani nie czyta `Katalog:` ([workdir](workdir.md)) |
 | „wypchnij poprawki” | commit i push kolejnych zmian na istniejącą gałąź i jej PR |
 | „popraw uwagi z PR” | odczyt wątków i poprawki lokalne; push wymaga „wypchnij poprawki” |
-| „TAK P<n>”, „NIE P<n>”, „POPRAW P<n> <uwaga>” (retrospektywa jakościowa) | decyzja o propozycji; „TAK” = commit lokalny tylko pliku celu, bez pusha; działa tylko w głównym checkoucie (w worktree wszystkie propozycje są `deferred`, a słowa nie działają); propozycję z innego przebiegu wskaż jako „TAK <run-id>/P<n>” / „NIE <run-id>/P<n>”; w przebiegu PR propozycje `repo: project` zostają `deferred`, `repo: library` po `final` ([retro-quality](retro-quality.md)) |
+| „TAK P<n>”, „NIE P<n>”, „POPRAW P<n> <uwaga>” (retrospektywa jakościowa) | decyzja o propozycji; „TAK” = commit lokalny tylko pliku celu, bez pusha; działa tylko w głównym checkoucie (w worktree wszystkie propozycje są `deferred`, a słowa nie działają; z `Katalog: główny` w `direct` „TAK” działa); propozycję z innego przebiegu wskaż jako „TAK <run-id>/P<n>” / „NIE <run-id>/P<n>”; w przebiegu PR propozycje `repo: project` zostają `deferred`, `repo: library` po `final` ([retro-quality](retro-quality.md)) |
 | „daj teksty do wklejenia dla pól jira” | tekst, bez zapisu |
 | „zmodyfikuj pola w jira” | zapis wskazanych pól tego zgłoszenia i odczyt kontrolny |
 

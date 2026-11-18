@@ -24,7 +24,7 @@ from .common import add_project_arguments, decode_text, file_lines, plan_section
 from .layers import add_layer_argument
 from .delivery_mode import delivery_info
 from .status import (APPROVAL_WORDS, APPROVALS_FILE, MAX_APPROVALS_BYTES, _APPROVAL_SHA, _approval_at, _message, _status_fields,
-                     git_blob_sha)
+                     git_blob_sha, valid_branch_name)
 from .pathfmt import posix
 from . import plan_phases, dashboard_tests, dashboard_forecast, test_events
 
@@ -54,6 +54,7 @@ ID_LIST_RE = re.compile(rf'^\s*(?P<ids>{STEP_ID}(?:(?:\s*(?:[/+&‖]|\|\|)\s*|\s
 # "zrobione" / "w toku"). The newest checkpoint without `czeka:` clears the banner.
 WAIT_RE = re.compile(r'^\s*czeka\s*:\s*(?P<seg>.+)', re.IGNORECASE)   # matched against one segment of `split_segments`
 WAIT_NONE = {'', '-', '—', 'nic', 'brak', 'nie'}
+HANDOVER_PLACEHOLDERS = WAIT_NONE | {'tbd', 'todo', 'none', 'n/a', 'null'}   # one-word placeholders are valid ref names, but nobody hands over to them
 # "The session works until HH:MM" in a checkpoint: segment `eta: <operation> do HH:MM` (like `czeka:`, split by `;`).
 ETA_RE = re.compile(r'^\s*eta\s*:\s*(?P<seg>.+)', re.IGNORECASE)
 ETA_AT_RE = re.compile(r'^(?P<operation>.*?\S)\s+do\s+(?P<time>\d{1,2}:\d{2})\.?$', re.IGNORECASE)
@@ -1070,20 +1071,56 @@ def _has_ref(common, ref):
         return False
 
 
+def git_locations(root):
+    """`(git_dir, common_dir, linked)` of the project from `.git` only (git is not run): `.git` is a directory, or a file
+    `gitdir: <path>` (relative to `root`) naming the git directory; only there a `commondir` file marks a linked worktree and
+    names the common directory (relative to the git directory; `linked` is true). A `.git` directory is always the main
+    checkout, even with a `commondir` file inside. `None` when the `.git` file has no `gitdir:` line. File errors
+    (`OSError`, `ValueError` for a NUL byte) are the caller's: both `read_git` and `read_worktree` catch them."""
+    git = root / '.git'
+    common, linked = git, False
+    if git.is_file():
+        match = re.match(r'gitdir:\s*(.+)', read_text(git, 4096).strip())
+        if not match:
+            return None
+        git = common = (root / match.group(1).strip()).resolve()
+        if (git / 'commondir').is_file():
+            common, linked = (git / read_text(git / 'commondir', 4096).strip()).resolve(), True
+    return git, common, linked
+
+
+def read_worktree(root):
+    """`project.worktree`: `{kind: main|worktree, name, path, mainPath}`, or None (no `.git`, a subdirectory of a repository,
+    a damaged linked worktree, any read error). `mainPath` is the parent of the common git directory of a linked worktree
+    when that directory is named `.git`, else None; it is resolved, `path` is `root` as given."""
+    try:
+        if not (root / '.git').exists():
+            return None
+        locations = git_locations(root)
+        if locations is None:
+            return None
+        git, common, linked = locations
+        if not git.is_dir():
+            return None
+        info = {'kind': 'main', 'name': root.name, 'path': posix(root), 'mainPath': None}
+        if linked:
+            info['kind'] = 'worktree'
+            if common.name == '.git':
+                info['mainPath'] = posix(common.parent)
+        return info
+    except (OSError, ValueError):
+        return None
+
+
 def read_git(root):
     """Branch, HEAD and origin of the project repository read from `.git` files (git is not run)."""
     info = {'branch': None, 'head': None, 'headFull': None, 'remote': None, 'branchUrl': None, 'branchPushed': None}
-    git = root / '.git'
     try:
-        if git.is_file():
-            match = re.match(r'gitdir:\s*(.+)', read_text(git, 4096).strip())
-            if not match:
-                return info
-            git = (root / match.group(1).strip()).resolve()
+        locations = git_locations(root)
+        if locations is None:
+            return info
+        git, common, _ = locations
         head = read_text(git / 'HEAD', 4096).strip()
-        common = git
-        if (git / 'commondir').is_file():
-            common = (git / read_text(git / 'commondir', 4096).strip()).resolve()
         if head.startswith('ref:'):
             ref = head[4:].strip()
             info['branch'] = ref.removeprefix('refs/heads/')
@@ -1109,7 +1146,7 @@ def read_git(root):
                 info['branchPushed'] = _has_ref(common, f"refs/remotes/origin/{info['branch']}")
                 safe = '' if web['host'] == 'azure' else '/'  # Azure encodes "/" in version=GB…
                 info['branchUrl'] = web['branchUrl'].replace('{branch}', quote(info['branch'], safe=safe))
-    except OSError:
+    except (OSError, ValueError):
         pass
     return info
 
@@ -1176,12 +1213,40 @@ def git_ahead(root, branch):
     return {'remote': remote, 'pushed': pushed, 'ahead': ahead, 'commits': commits, 'commitsMore': more}
 
 
+_HANDOVER_WRAP = re.compile(r'^(\*\*|__|\*|_|`)(.+)\1$')
+
+
+def handover_value(plan_fields):
+    """The value of the plan line `Oddanie:`, or None when the line is absent or empty. Markdown wrapped around the whole value (`` `main` ``,
+    `**main**`) is removed as a pair; a lone `*` or `_` is a character of the text, not markup (`x*` is not the branch `x`)."""
+    value = (plan_fields.get('oddanie') or '').strip()
+    while True:
+        wrapped = _HANDOVER_WRAP.match(value)
+        if not wrapped:
+            break
+        value = wrapped.group(2).strip()
+    return value or None
+
+
+def _is_handover_branch(value):
+    return bool(value) and value.lower() not in HANDOVER_PLACEHOLDERS and valid_branch_name(value)
+
+
 def delivery_target(delivery, branch, plan_fields):
-    """Where "CP" delivers: the working branch; in `direct` mode the plan line `Oddanie: <branch>` (the user's answer)."""
-    handover = first_token(plan_fields.get('oddanie'))
-    if delivery.get('mode') == 'direct' and handover and REF_NAME_RE.match(handover):
+    """Where "CP" delivers: the working branch; in `direct` mode the plan line `Oddanie: <branch>` (the user's answer), but only when the WHOLE
+    value is one valid branch name. Any other text (a placeholder, a note after the name) is ignored: it is not a branch."""
+    handover = handover_value(plan_fields)
+    if delivery.get('mode') == 'direct' and _is_handover_branch(handover):
         return handover
     return branch
+
+
+def handover_ignored(delivery, plan_fields):
+    """The value of `Oddanie:` that `delivery_target` ignored (the plan has the line, `direct` mode, but the value is not a branch name), else None."""
+    handover = handover_value(plan_fields)
+    if delivery.get('mode') == 'direct' and handover and not _is_handover_branch(handover):
+        return handover
+    return None
 
 
 def _commits(count):
@@ -1189,9 +1254,10 @@ def _commits(count):
     return f"{count} {'commit' if count == 1 else plural}"
 
 
-def delivery_words(delivery, ahead, plan, waiting, branch=None, target=None):
+def delivery_words(delivery, ahead, plan, waiting, branch=None, target=None, ignored=None):
     """Delivery words of act III: `CP` always, `READY` only in `pr` mode. Active when the plan is `done`, the session waits
-    for the word or the working branch has commits origin does not have; `tip` says where and how many."""
+    for the word or the working branch has commits origin does not have; `tip` says where and how many. `ignored`: the `Oddanie:` value that was
+    not a branch name (`handover_ignored`); the `CP` tip says so, without repeating the text."""
     if delivery.get('mode') == 'invalid':
         return []
     waits = {(item.get('word') or '').rstrip('!') for item in waiting}
@@ -1213,7 +1279,8 @@ def delivery_words(delivery, ahead, plan, waiting, branch=None, target=None):
             reasons.append(f'{_commits(count)} niewypchniętych względem {remote}')
         tip = '; '.join(reasons) if reasons else ('wszystko wypchnięte' if count == 0 else 'nic do dostarczenia')
         if word == 'CP':
-            tip = f'CP → {where}; {tip}'
+            note = ' (Oddanie: wartość pominięta, to nie nazwa gałęzi)' if ignored else ''
+            tip = f'CP → {where}{note}; {tip}'
         out.append({'word': word, 'active': bool(reasons), 'tip': tip, 'target': target if word == 'CP' else None})
     return out
 
@@ -1361,11 +1428,27 @@ def _stage(label, done, tip='', key=None):
     return {'label': label, 'done': done, 'tip': tip, 'key': key}
 
 
+_REVIEW_ROUND = {
+    'spec': re.compile(r'spec-review(?:-[a-z0-9.]+)*-r?\d+\.md'),
+    'plan': re.compile(r'plan-review(?:-[a-z0-9.]+)*-r?\d+\.md'),
+    'code': re.compile(r'(?:code-review(?:-[a-z0-9.]+)*-r?\d+|final-review(?:-[a-z0-9.]+)*(?:-r?\d+)?)\.md'),
+}
+_DECISIONS = re.compile(r'(?:^|-)(?:decisions|decyzje)(?:-|\.|$)')
+
+
+def review_rounds(names, kind):
+    """Review rounds of `kind` (`spec`, `plan`, `code`): only a frozen report `<step>-N.md` (`.md`, a number at the end, optionally
+    `rN`; legacy `final-review[-<word>...][-N].md` counts as code) is a round. A name with a `decisions`/`decyzje` segment
+    anywhere, `.log`, `.json` and other files next to the report are not."""
+    pattern = _REVIEW_ROUND[kind]
+    return sum(1 for name in names if pattern.fullmatch(name) and not _DECISIONS.search(name))
+
+
 def compute_acts(spec, plan, progress, run_files, extra=None):
     extra = extra or {}
     names = [name.rsplit('/', 1)[-1].lower() for name in run_files]
-    spec_reviews = sum(1 for name in names if 'spec-review' in name)
-    plan_reviews = sum(1 for name in names if 'plan-review' in name)
+    spec_reviews = review_rounds(names, 'spec')
+    plan_reviews = review_rounds(names, 'plan')
     pre_impl = any('pre-implement' in name for name in names)
     proto_rounds = sum(1 for name in names if 'prototyp' in name)
 
@@ -1430,7 +1513,7 @@ def compute_acts(spec, plan, progress, run_files, extra=None):
         stage('plan', 'GO implement', plan_status in ('in_progress', 'done'), f"Status planu: {plan_status or '—'}",
                key='stage_go_implement'),
     ]
-    code_reviews = sum(1 for name in names if 'code-review' in name or name.startswith('final-review'))
+    code_reviews = review_rounds(names, 'code')
     real_stages = [
         stage('real', f'Review kodu ×{code_reviews}' if code_reviews > 1 else 'Review kodu', code_reviews > 0,
                'raporty code-review*/final-review* w katalogu przebiegu', key='code_review'),
@@ -2065,14 +2148,15 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
     delivery_state = {**delivery, 'branch': git_info['branch'], 'target': target, 'remote': ahead_state.get('remote'),
                       'pushed': ahead_state.get('pushed'), 'ahead': ahead_state.get('ahead'),
                       'commits': ahead_state.get('commits'), 'commitsMore': ahead_state.get('commitsMore') or 0,
-                      'words': delivery_words(delivery, ahead_state, plan_info, waiting, git_info['branch'], target)}
+                      'words': delivery_words(delivery, ahead_state, plan_info, waiting, git_info['branch'], target,
+                                             handover_ignored(delivery, fields))}
     current_docs = [spec_rel if spec_path else None, chosen['path'] if chosen else None]
     assumptions, blocking = parse_questions(spec_text) if spec_path else ([], [])
     timing = build_timing(run['start'], chronological, run_approvals(root, run_id), progress['phases'])
     status = {
         'schema': SCHEMA,
         'app': {'name': APP_NAME, 'version': __version__},
-        'project': {'name': root.name, 'path': posix(root)},
+        'project': {'name': root.name, 'path': posix(root), 'worktree': read_worktree(root)},
         'generatedAt': datetime.now().astimezone().isoformat(timespec='seconds'),
         'version': version,
         'lastUpdate': _iso(max((stamp for stamp in last_change if stamp), default=None)),

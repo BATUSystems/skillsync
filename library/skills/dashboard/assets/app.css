@@ -81,6 +81,9 @@ h1 { font-size: 1.45rem; margin: 0; line-height: 1.2; white-space: nowrap; overf
 .git-link { color: inherit; text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 40%, transparent); text-underline-offset: 3px; }
 .git-link:hover { color: var(--accent); text-decoration-color: currentColor; }
 a.chip.git-link { text-decoration: none; }
+.workdir { max-width: 22rem; min-width: 0; }
+.workdir .workdir-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; max-width: 100%; vertical-align: bottom; }
+.meta .m:has(> .workdir) { min-width: 0; max-width: 100%; }
 .top-right { display: flex; align-items: center; gap: .8rem; flex: none; }
 .theme-btn { padding: .35rem .55rem; }
 .theme-btn .ic { width: 1.2em; height: 1.2em; }
@@ -189,7 +192,7 @@ a.chip.git-link { text-decoration: none; }
 }
 .desc-tip[hidden] { display: none; }
 .desc-tip strong { font-size: .85rem; }
-.desc-tip em { color: var(--muted); font-style: normal; border-top: 1px solid var(--line); padding-top: .3rem;  white-space: pre-line; }
+.desc-tip em { color: var(--muted); font-style: normal; border-top: 1px solid var(--line); padding-top: .3rem;  white-space: pre-line; overflow-wrap: anywhere; }
 [data-desc] { cursor: help; }
 button[data-desc], [data-desc][role="button"] { cursor: pointer; }
 .act-warn { margin-top: .5rem; padding: .3rem .55rem; border-radius: 6px; font-size: .78rem; background: var(--warn-soft); color: var(--text); border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent); }
@@ -544,6 +547,7 @@ main { flex: 1; padding: 1.1rem 1.4rem; min-width: 0; }
   #title { font-size: 1rem; }
   .meta { font-size: .72rem; gap: .2rem .35rem; margin-top: .15rem; }
   .meta .chip { font-size: .68rem; padding: .05rem .4rem; }
+  .workdir { max-width: 12rem; }
   .top-right { gap: .4rem; }
   .live { padding: .25rem .5rem; }
   .live .live-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
@@ -582,7 +586,7 @@ main { flex: 1; padding: 1.1rem 1.4rem; min-width: 0; }
 .plan-auto[hidden] { display: none; }
 .plan-auto { margin-left: .4rem; font-size: .7rem; padding: .05rem .4rem; white-space: nowrap; }
 
-/* ---------- przycisk „na górę” w widoku dokumentu (170-B) */
+/* ---------- przycisk „na górę” w widoku dokumentu i w widoku Testy (170-B) */
 button.to-top {   /* `button.` podnosi specyficzność nad [data-tip] i :focus-visible, kolejność w pliku nie ma znaczenia */
   position: fixed; right: max(16px, env(safe-area-inset-right)); bottom: max(16px, env(safe-area-inset-bottom)); z-index: 40;
   display: grid; place-items: center; width: max(2.75rem, 44px); height: max(2.75rem, 44px); padding: 0; cursor: pointer;
@@ -593,9 +597,12 @@ button.to-top:hover { border-color: var(--accent); }
 button.to-top .ic { width: 1.35rem; height: 1.35rem; }
 button.to-top:hover::after, button.to-top:focus-visible::after { top: auto; bottom: calc(100% + .45rem); left: auto; right: 0; transform: none; }   /* dymek nad przyciskiem: pod nim nie ma miejsca */
 .has-to-top #view-docs .doc-view { padding-bottom: 4.5rem; }   /* zapas: przycisk nie zasłania ostatnich linii dokumentu */
+.has-to-top #view-tests .tests-view { padding-bottom: 4.5rem; }   /* to samo w widoku Testy */
 
 /* ---------- zakładka „Testy” i pasek przy kroku (180-A) */
 .chip.s-bad { background: var(--bad-soft); color: var(--bad); }
+.chip.cmd-failed { white-space: normal; min-width: 0; text-align: left; }   /* długi tekst zawija się w wąskiej kolumnie zamiast być przycinany */
+.tsec-body .cmd-failed-note { font-size: .8rem; color: var(--bad); margin: .1rem 0 .4rem; }
 .count.is-bad { background: var(--bad-soft); color: var(--bad); }
 .step.has-tests { flex-wrap: wrap; }
 .step .stbar { flex: 1 1 100%; margin-left: 4.9rem; display: inline-flex; align-items: center; gap: .45rem; }   /* the title keeps its line: the bar sits under it */

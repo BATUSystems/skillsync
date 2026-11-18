@@ -1,0 +1,20 @@
+{"meta": {"tool": "node", "version": "Node 24.11.1", "command": ["node", "--test", "--test-reporter=tap", "todo.test.js"], "exit": 0, "merged": false, "env": {"NO_COLOR": "1", "stdout_stderr": "pipes (not a terminal)"}, "note": "TAP: todo that fails (exit 0), todo that passes, skip", "scrubbed": "paths, host and user names are replaced", "format": "one record per chunk read from the pipe: t = seconds since the start, fd = out|err, data = the text of the chunk"}}
+{"t": 0.035, "fd": "out", "data": "TAP version 13\n"}
+{"t": 0.06, "fd": "out", "data": "# Subtest: todo fails\n"}
+{"t": 0.061, "fd": "out", "data": "not ok 1 - todo fails # TODO known bug\n"}
+{"t": 0.061, "fd": "out", "data": "  ---\n  duration_ms: 0.436548\n  type: 'test'\n  location: '/work/proj/todo.test.js:2:1'\n  failureType: 'testCodeFailure'\n  error: 'still broken'\n  code: 'ERR_TEST_FAILURE'\n  stack: |-\n    TestContext.<anonymous> (/work/proj/todo.test.js:2:57)\n    Test.runInAsyncScope (node:async_hooks:214:14)\n    Test.run (node:internal/test_runner/test:1106:25)\n    Test.start (node:internal/test_runner/test:1003:17)\n    startSubtestAfterBootstrap (node:internal/test_runner/harness:358:17)\n  ...\n"}
+{"t": 0.061, "fd": "out", "data": "# Subtest: todo passes\n"}
+{"t": 0.061, "fd": "out", "data": "ok 2 - todo passes # TODO\n"}
+{"t": 0.061, "fd": "out", "data": "  ---\n  duration_ms: 0.094126\n  type: 'test'\n  ...\n"}
+{"t": 0.061, "fd": "out", "data": "# Subtest: skip bare\n"}
+{"t": 0.061, "fd": "out", "data": "ok 3 - skip bare # SKIP\n"}
+{"t": 0.061, "fd": "out", "data": "  ---\n  duration_ms: 0.065515\n  type: 'test'\n  ...\n"}
+{"t": 0.065, "fd": "out", "data": "1..3\n"}
+{"t": 0.065, "fd": "out", "data": "# tests 3\n"}
+{"t": 0.065, "fd": "out", "data": "# suites 0\n"}
+{"t": 0.065, "fd": "out", "data": "# pass 0\n"}
+{"t": 0.066, "fd": "out", "data": "# fail 0\n"}
+{"t": 0.066, "fd": "out", "data": "# cancelled 0\n"}
+{"t": 0.066, "fd": "out", "data": "# skipped 1\n"}
+{"t": 0.066, "fd": "out", "data": "# todo 2\n"}
+{"t": 0.066, "fd": "out", "data": "# duration_ms 37.564327\n"}

@@ -79,6 +79,22 @@ Wydanie 1.9.1 jest PATCH (sekcja **Breaking** w `CHANGELOG.md` to „None.”) z
 2. Uruchom ponownie działający `skillsync dashboard serve`: plik tymczasowy stanu serwera ma teraz rozszerzenie `.tmp` zamiast `.json`, a start serwera sprząta pozostałości starej postaci. Konsument katalogu stanu, który czytał `*.json`, nie trafi już na pusty plik tymczasowy.
 3. Windows: dwa równoległe kroki `skillsync test-run` tworzące ten sam katalog (`.skillsync/runs/<przebieg>/tests`, `.skillsync/logs`, katalog blokad) nie kończą się już `BLOCKED` (kod 2) przez `PermissionError` ani przez fałszywe „Path escapes project” dla `.skillsync/logs/<id>`.
 
+## Przejście 1.9.1 → 1.10.0
+
+Wydanie 1.10.0 jest MINOR (sekcja **Breaking** w `CHANGELOG.md` to „None.”). Nie ma kroków obowiązkowych: nowe pole i nowe pytanie działają same, a stare pliki planu i stary renderer dalej działają.
+
+1. Rdzeń: `uv tool install --force git+https://github.com/BATUSystems/skillsync@v1.10.0`, potem `skillsync layers update core --ref v1.10.0`.
+2. `skillsync link` w projektach (zalecane, nieobowiązkowe): instrukcje i skille dostają nową regułę katalogu roboczego. Bez `link` projekt dalej ma regułę 1.9.1 („od GO plan osobny worktree”), czyli zachowanie dzisiejsze.
+3. Strona statusu: uruchom ponownie działający `skillsync dashboard serve`, żeby pokazać chip. Nowe pole `project.worktree` (`dashboard show`, `GET /api/status`) jest addytywne: stary renderer je ignoruje, a nowy renderer przy serwerze bez pola nie rysuje chipu. Konsument JSON-a ma przepuszczać nieznane klucze.
+4. Linia planu `Katalog:` w nagłówku: `Katalog: worktree <nazwa-katalogu>` albo `Katalog: główny`. Plan bez tej linii (także każdy plan sprzed aktualizacji) znaczy `worktree`, jak dotąd; nie trzeba go przepisywać. Cofnięcie do 1.9.1: plan z `Katalog: główny` pozostaje czytelny, bo nieznana linia jest ignorowana.
+5. Przy „GO plan” sesja zapyta: „Gdzie pracować nad tym przebiegiem?”. Domyślna odpowiedź to własny worktree. „Główny checkout” pracuje na bieżącej gałęzi głównego katalogu, także na gałęzi bazowej (wtedy commity i `CP` idą na bazę; pytanie to ostrzega). Brak odpowiedzi oznacza brak „GO plan”. Szczegóły i warunki: `skills/feature/references/workdir.md`.
+6. Liczba rund review na stronie statusu: rundą jest tylko raport `<krok>-N.md`. Pliki decyzji `<krok>-N-decyzje.md` nie są już liczone, więc liczniki „Review ×N” mogą być niższe niż przed aktualizacją; prawdziwa liczba rund się nie zmieniła. Historyczne raporty `final-review*` są liczone jak dotąd.
+7. **`test-run`: adaptery `tap` i `node-test`.** `skillsync test-run -- node --test …` wybiera teraz sam adapter `node-test` (pojedyncze testy na stronie zamiast samego poziomu polecenia); goły skrypt drukujący TAP (`node plik.test.js`, `bats --tap`, `prove`) wymaga jawnego `--format tap`. Bieg z linią `Bail out!` nie zalicza się już na podstawie planu `1..N`. Nagrania formatów Node 25 i Windows nie są sprawdzone na prawdziwym strumieniu (`docs/test-adapters.md`).
+8. **Zakładka „Testy”:** bieg, którego polecenie skończyło się kodem różnym od 0 bez porażki testu, ma znacznik „kod N, żaden test nie zgłosił porażki”; licznik porażek zakładki się nie zmienia. Przycisk „na górę” działa także w tej zakładce (host musi podawać `deps.scroll.toTop`).
+9. **`dashboard serve`:** znika dopisek konsoli „od 1.8.0 odczyt słucha domyślnie na wszystkich interfejsach…”; ostrzeżenie o nasłuchu w sieci i podpowiedzi zostają.
+10. **Procedura `feature`:** raport recenzenta pętli przeglądu jest zapisywany zawsze, zaraz po rundzie (`references/reports.md`).
+11. **Linia planu `Oddanie:`** przyjmuje tylko samą nazwę gałęzi (poprawną według `git check-ref-format --branch`). Tekst zastępczy albo dopisek (np. `do ustalenia przy pierwszym CP`, `main (po CP)`) jest ignorowany: strona statusu i przycisk „CP” oddają wtedy pracę na gałąź roboczą, a dymek słowa CP o tym mówi; zapis zgody z innym celem jest odrzucany. Plan z takim tekstem popraw na samą nazwę albo usuń linię.
+
 ## Przejście 1.8.0 → 1.9.0
 
 Wydanie 1.9.0 wprowadza globalny zakaz stopek, podpisów i trailerów narzędzi AI w tekstach wychodzących (sekcja **Breaking** w `CHANGELOG.md`).

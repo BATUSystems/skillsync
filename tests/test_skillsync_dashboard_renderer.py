@@ -1040,6 +1040,34 @@ function summary(m) {
       const none = mount(mk(false), { now: NOW['plan-in-progress'] });
       stab.testsTab = { initial, opened, rows, prev, closed, bars, afterLink, nav, noTests: { tabHidden: none.root.querySelector('#tab-tests').hidden, stbar: none.root.querySelectorAll('#phases .stbar').length, tab: state(none).view } };
     }
+    {  // F2 CORE-WORKDIR: chip katalogu roboczego w nagłówku (project.worktree)
+      const wd = (wt, noField, ahead, noBranch) => {
+        const j = clone(F['plan-in-progress']);
+        j.git = { branch: 'feat/x', head: 'abcdef1234', headFull: 'abcdef1234', branchUrl: 'https://example.test/b', branchPushed: true, remote: { host: 'github', repo: 'o/r' } };
+        j.delivery = { ...j.delivery, mode: 'pr', branch: 'feat/x', remote: 'origin/feat/x', ahead: ahead || 0, pushed: true };
+        if (noBranch) j.git = { branch: null, head: null };
+        j.project = { ...(j.project || {}) };
+        if (noField) delete j.project.worktree; else j.project.worktree = wt;
+        const m = mount(j, { now: NOW['plan-in-progress'] });
+        const el = m.root.querySelector('#meta .workdir');
+        const kids = m.root.querySelector('#meta').childNodes.map((c) => text(c) || '');
+        const nameEl = el ? el.querySelector('.workdir-name') : null;
+        return { found: Boolean(el), tag: el ? el.tagName : null, text: el ? text(el) : null, cls: el ? el.getAttribute('class') : null,
+          desc: el ? el.getAttribute('data-desc') : null, extra: el ? el.getAttribute('data-desc-extra') : null, inner: Boolean(nameEl), innerText: nameEl ? text(nameEl) : null,
+          parentCls: el ? el.parentNode.getAttribute('class') : null, icon: el ? Boolean(el.parentNode.querySelector('.i-folder, use')) : false,
+          buttons: m.root.querySelectorAll('#meta .workdir button').length, count: m.root.querySelectorAll('#meta .workdir').length, order: kids };
+      };
+      const long = 'x'.repeat(200);
+      stab.workdir = { main: wd({ kind: 'main', name: 'app', path: '/work/app', mainPath: null }),
+        wt: wd({ kind: 'worktree', name: 'F1', path: '/work/app-wt/F1', mainPath: '/work/app' }),
+        wtNoMain: wd({ kind: 'worktree', name: 'F1', path: '/work/app-wt/F1', mainPath: null }),
+        nul: wd(null), missing: wd(undefined, true), unknown: wd({ kind: 'sparkly', name: 'z', path: '/z', mainPath: null }),
+        ordered: wd({ kind: 'worktree', name: 'F1', path: '/work/app-wt/F1', mainPath: '/work/app' }, false, 3),
+        noBranchMain: wd({ kind: 'main', name: 'app', path: '/work/app', mainPath: null }, false, 0, true),
+        noBranchWt: wd({ kind: 'worktree', name: 'F1', path: '/work/app-wt/F1', mainPath: '/work/app' }, false, 0, true),
+        noBranchNull: wd(null, false, 0, true),
+        longName: wd({ kind: 'worktree', name: long, path: '/work/' + long, mainPath: null }) };
+    }
     ex.stab = stab;
   }
   // WRITING-UX: pozycje „sesja pracuje” (znacznik zapisu) i „odpowiedź eksperta” w banerze czekania.
@@ -1319,6 +1347,113 @@ function summary(m) {
     }
     ex.s170 = ex170;
   }
+  // CORE-TAP F3 (K8): stan „polecenie zawiodło” w nagłówku sekcji testów (exit ≠ 0 przy failed = 0); K10: przycisk „na górę” w widoku Testy.
+  {
+    const exT = {};
+    const cnt = (o) => ({ total: 0, passed: 0, failed: 0, skipped: 0, running: 0, waiting: 0, ...o });
+    const att = (n, state, c, extra) => ({ n, state, startedAt: '2026-01-11T09:30:00Z', endedAt: state === 'running' ? null : '2026-01-11T09:31:00Z', durationMs: 60000,
+      command: 'node --test', tool: 'tap', levels: 'tests', source: null, exit: null, reason: null, counts: c, truncated: false, groups: [], ...(extra || {}) });
+    const sec = (id, state, attempts) => ({ step: { id, title: 'Krok ' + id }, state, attempts });
+    const build = (sections, failedTotal, base) => { const j = clone(F[base || 'plan-in-progress']); j.tests = { sections, failedTotal, runningTotal: 0 }; return j; };
+    const MSG_A = 'żaden test nie zgłosił porażki';
+    const headOf = (m, id) => { const n = m.root.querySelector('#tsec-' + id + ' .tsec-head'); return n; };
+    const report = (m, id) => {
+      const head = headOf(m, id), t = text(head);
+      const marks = head.querySelectorAll('*').filter((n) => text(n).includes(MSG_A) && !n.querySelectorAll('*').some((k) => text(k).includes(MSG_A)));
+      return { head: t, expanded: head.getAttribute('aria-expanded'), markCls: marks.length ? marks[0].getAttribute('class') : null, inHead: t.includes(MSG_A) };
+    };
+    {
+      const sections = [
+        sec('CMDF', 'failed', [att(1, 'failed', cnt({ total: 2, passed: 2 }), { exit: 1 })]),                                   // tap: wyjątek poza testami
+        sec('PYT', 'failed', [att(1, 'failed', cnt({ total: 3, passed: 3 }), { exit: 2, tool: 'pytest', levels: 'counts', command: 'pytest -q' })]),   // błąd zbierania
+        sec('TMO', 'failed', [att(1, 'failed', cnt({ total: 1, passed: 1 }), { exit: 124, tool: 'unittest' })]),               // timeout z kodem
+        sec('GRN', 'passed', [att(1, 'passed', cnt({ total: 2, passed: 2 }), { exit: 0 })]),
+        sec('RED', 'failed', [att(1, 'failed', cnt({ total: 3, passed: 2, failed: 1 }), { exit: 1 })]),
+        sec('NOEX', 'interrupted', [att(1, 'interrupted', cnt({ total: 2, passed: 2 }), { exit: null })]),
+        sec('RUN', 'running', [att(1, 'running', cnt({ total: 3, passed: 1, running: 1, waiting: 1 }), { exit: null })]),
+        sec('HIST', 'failed', [att(2, 'failed', cnt({ total: 2, passed: 2 }), { exit: 3 }), att(1, 'passed', cnt({ total: 2, passed: 2 }), { exit: 0 })]),
+        sec('LVC', 'failed', [att(1, 'failed', cnt({ total: 0 }), { exit: 1, levels: 'command', tool: 'make', command: 'make test' })]),   // poziom „polecenie”: bez wyników testów
+        sec('NOC', 'failed', [att(1, 'failed', null, { exit: 5, levels: 'counts' })]),                                          // brak counts: failed = 0
+        sec('STR', 'failed', [att(1, 'failed', cnt({ total: 2, passed: 2 }), { exit: '1' })]),                                 // exit jako napis: nie liczba
+      ];
+      const m = mount(build(sections, 1), { now: NOW['plan-in-progress'] });
+      const out = {};
+      for (const id of ['CMDF', 'PYT', 'TMO', 'GRN', 'RED', 'NOEX', 'RUN', 'HIST', 'LVC', 'NOC', 'STR']) out[id] = report(m, id);
+      const FULL = 'wyniki ok dotyczą tylko testów, które zdążyły się wykonać';
+      const bodyNote = (id) => { const n = m.root.querySelector('#tsec-body-' + id + ' .cmd-failed-note'); return n ? text(n) : null; };
+      const bodyOf = (id) => m.root.querySelector('#tsec-body-' + id) !== null;
+      const bodies = {};
+      for (const id of ['CMDF', 'GRN', 'RED', 'LVC', 'STR']) bodies[id] = { before: bodyOf(id), note: bodyNote(id) };   // zwinięte: ani ciała, ani linii
+      for (const id of ['CMDF', 'GRN', 'RED', 'LVC', 'STR', 'NOC']) m.root.querySelector('#tsec-btn-' + id).click();
+      for (const id of ['CMDF', 'GRN', 'RED', 'LVC', 'STR', 'NOC']) bodies[id] = { ...(bodies[id] || {}), open: bodyOf(id), note: bodyNote(id), full: (bodyNote(id) || '').includes(FULL), beforeNote: bodies[id] ? bodies[id].note : null };
+      out.bodies = bodies;
+      m.root.querySelector('#tsec-btn-HIST').click();                       // otwarcie sekcji: lista prób
+      m.root.querySelectorAll('#testsView .tab-att')[1].click();             // starsza, zielona próba
+      out.HISTold = report(m, 'HIST');
+      m.root.querySelectorAll('#testsView .tab-att')[0].click();
+      out.HISTnew = report(m, 'HIST');
+      exT.states = out;
+      const only = mount(build([sections[0]], 0), { now: NOW['plan-in-progress'] });
+      exT.tab = { count: text(only.root.querySelector('#tCount')), cls: only.root.querySelector('#tCount').getAttribute('class') };
+    }
+    const hook = () => ({ cbs: [], goes: 0, subscribe(cb) { this.cbs.push(cb); return () => {}; }, go() { this.goes++; }, emit(m) { this.cbs.forEach((c) => c(m)); } });
+    const openTests = (base, noHook) => {
+      const hk = hook(); const scroll = { save: () => 0, restore: () => {}, reveal: () => {}, ...(noHook ? {} : { toTop: hk }) };
+      const m = mount(build([sec('S1', 'passed', [att(1, 'passed', cnt({ total: 1, passed: 1 }))])], 0, base), { now: NOW[base || 'plan-in-progress'], preview: true, deps: { scroll } });
+      m.board.setView('tests', false);
+      const focused = []; for (const v of ['progress', 'tests', 'docs', 'questions']) { const t = m.root.querySelector('#tab-' + v); t.focus = (o) => focused.push([v, o]); }
+      return { hk, m, focused, btn: () => m.root.querySelector('#toTop') };
+    };
+    {
+      const { hk, m, btn } = openTests();
+      const trace = []; const vis = () => trace.push(!btn().hidden);
+      vis();
+      hk.emit({ y: 0, viewport: 1000, height: 5000 }); vis();
+      hk.emit({ y: 800, viewport: 1000, height: 5000 }); vis();
+      hk.emit({ y: 600, viewport: 1000, height: 5000 }); vis();
+      hk.emit({ y: 400, viewport: 1000, height: 5000 }); vis();
+      hk.emit({ y: 600, viewport: 1000, height: 5000 }); vis();
+      hk.emit({ y: 800, viewport: 1000, height: 5000 }); vis();
+      hk.emit({ y: 2000, viewport: 0 }); vis();
+      exT.threshold = { trace, view: m.board.state().view, hasClass: m.root.classList.contains('has-to-top'), padHit: m.root.querySelector('#view-tests .tests-view') !== null };
+    }
+    {
+      const { hk, m, btn, focused } = openTests();
+      hk.emit({ y: 2000, viewport: 1000 });
+      btn().dispatchEvent(new Ev('focus'));
+      hk.emit({ y: 0, viewport: 1000 });
+      exT.focusOnHide = { hidden: btn().hidden, focused: focused.slice() };
+    }
+    {
+      const { hk, m, btn, focused } = openTests();
+      hk.emit({ y: 2000, viewport: 1000 });
+      btn().click();
+      exT.click = { goes: hk.goes, focused: focused.slice(), still: !btn().hidden };
+    }
+    for (const [key, view, base] of [['toProgress', 'progress'], ['toQuestions', 'questions', 'questions']]) {
+      const { hk, m, btn, focused } = openTests(base);
+      hk.emit({ y: 2000, viewport: 1000 });
+      const before = !btn().hidden; btn().dispatchEvent(new Ev('focus'));
+      m.board.setView(view, false);
+      exT[key] = { before, view: m.board.state().view, hidden: btn().hidden, focused: focused.slice() };
+    }
+    {
+      const { hk, m, btn, focused } = openTests();
+      hk.emit({ y: 2000, viewport: 1000 });
+      btn().dispatchEvent(new Ev('focus'));
+      const seen = [!btn().hidden];
+      m.board.setDoc('docs/plans/demo.md'); m.board.setView('docs', false); seen.push(!btn().hidden);
+      const atSwitch = focused.slice();
+      await tick(); await tick(); seen.push(!btn().hidden);
+      exT.toDocs = { seen, atSwitch, view: m.board.state().view, buttons: m.root.querySelectorAll('#toTop').length };
+    }
+    {
+      const a = openTests(undefined, true);
+      a.hk.emit({ y: 2000, viewport: 1000 });
+      exT.noHook = { none: a.btn() === null, noClass: !a.m.root.classList.contains('has-to-top') };
+    }
+    ex.coreTap = exT;
+  }
   // Formatowanie w linii: tytuły kroków, „czeka na”, pytania do eksperta. HTML wstawia tylko host (mountHtml); dymki i atrybuty zostają czystym tekstem.
   {
     const nm = 'plan-in-progress';
@@ -1478,7 +1613,7 @@ class RendererNodeTests(unittest.TestCase):
                     self.assertIn(f"{p['percent']}% · ", got["docTitle"])
                 self.assertEqual(got["docItems"], sum(len(g["items"]) for g in d.get("docs") or []))
                 self.assertEqual(got["planMenu"], 1 + len(d.get("plans") or []))
-                self.assertEqual(got["sprite"], 16)
+                self.assertEqual(got["sprite"], 17)
                 self.assertIn(f"dashboard {d['app']['version']}", got["foot"])
                 self.assertNotIn("img", got["tags"])
 
@@ -1638,6 +1773,73 @@ class RendererNodeTests(unittest.TestCase):
         self.assertIsNone(a["unknown"], "ahead nieznane (null): bez znacznika")
         self.assertIsNone(a["notPushed"], "gałąź bez własnych commitów nie ma czego wypychać")
         self.assertIn("s-planned", a["direct"]["cls"], "w trybie direct lokalne commity są normą do CP")
+
+    def test_workdir_chip_for_main_and_worktree(self) -> None:
+        """K4/K5: chip katalogu roboczego w nagłówku; `span`, nie przycisk; opis przez desc(), ścieżki w data-desc-extra."""
+        w = self.out["extra"]["stab"]["workdir"]
+        self.assertTrue(w["main"]["found"], w["main"])
+        self.assertEqual(w["main"]["text"], "główny checkout")
+        self.assertEqual(w["main"]["extra"], "/work/app")
+        self.assertEqual(w["wt"]["text"], "worktree: F1")
+        self.assertEqual(w["wt"]["tag"], "SPAN")
+        self.assertEqual(w["wt"]["buttons"], 0)
+        self.assertEqual(w["wt"]["desc"], "workdir_chip")
+        self.assertIn("/work/app-wt/F1", w["wt"]["extra"])
+        self.assertIn("Główny checkout: /work/app", w["wt"]["extra"])
+        self.assertNotIn("Główny checkout", w["wtNoMain"]["extra"])
+        self.assertNotIn("Główny checkout", w["main"]["extra"])
+        for k in ("main", "wt"):
+            self.assertIn("chip", w[k]["cls"].split())
+            self.assertIn("s-planned", w[k]["cls"].split())
+            self.assertTrue(w[k]["inner"], "wielokropek na wewnętrznym span nazwy")
+            self.assertEqual(w[k]["parentCls"], "m")
+            self.assertTrue(w[k]["icon"])
+        self.assertEqual(w["wt"]["innerText"], "worktree: F1")
+
+    def test_workdir_chip_absent_without_usable_data(self) -> None:
+        w = self.out["extra"]["stab"]["workdir"]
+        for k in ("nul", "missing", "unknown"):
+            self.assertFalse(w[k]["found"], (k, w[k]))
+
+    def test_workdir_chip_sits_after_branch_and_before_unpushed(self) -> None:
+        o = self.out["extra"]["stab"]["workdir"]["ordered"]["order"]
+        iw = next(i for i, t in enumerate(o) if t.startswith("worktree: F1"))
+        ib = next(i for i, t in enumerate(o) if "feat/x" in t)
+        ia = next(i for i, t in enumerate(o) if "niewypchnięt" in t)
+        self.assertLess(ib, iw)
+        self.assertLess(iw, ia)
+
+    def test_workdir_chip_shows_exactly_once_with_or_without_branch(self) -> None:
+        w = self.out["extra"]["stab"]["workdir"]
+        self.assertEqual(w["noBranchMain"]["count"], 1, w["noBranchMain"])
+        self.assertEqual(w["noBranchMain"]["text"], "główny checkout")
+        self.assertEqual(w["noBranchWt"]["count"], 1, w["noBranchWt"])
+        self.assertEqual(w["noBranchWt"]["text"], "worktree: F1")
+        self.assertEqual(w["noBranchNull"]["count"], 0)
+        for k in ("main", "wt", "ordered"):
+            self.assertEqual(w[k]["count"], 1, k)
+
+    def test_workdir_chip_long_name_is_truncated_by_css_inside(self) -> None:
+        w = self.out["extra"]["stab"]["workdir"]["longName"]
+        self.assertTrue(w["found"])
+        self.assertEqual(w["innerText"], "worktree: " + "x" * 200)
+        css = (ASSETS / "app.css").read_text(encoding="utf-8")
+        self.assertRegex(css, r"\.workdir \{[^}]*max-width")
+        m = re.search(r"\.workdir \.workdir-name \{([^}]*)\}", css)
+        self.assertIsNotNone(m, "reguła .workdir-name")
+        for decl in ("overflow: hidden", "text-overflow: ellipsis", "white-space: nowrap", "display: inline-block", "max-width"):
+            self.assertIn(decl, m.group(1))
+        self.assertNotIn("[data-tip]", m.group(0))
+
+    def test_workdir_chip_description_exists_and_renderer_adds_no_deps(self) -> None:
+        descs = json.loads((ASSETS.parent / "descriptions.json").read_text(encoding="utf-8"))
+        self.assertIn("workdir_chip", descs)
+        self.assertTrue(descs["workdir_chip"].get("title"))
+        self.assertTrue(descs["workdir_chip"].get("text"))
+        src = RENDERER.read_text(encoding="utf-8")
+        self.assertIn('icon("i-folder")', src)
+        self.assertIn('desc("workdir_chip"', src)
+        self.assertIn('"i-folder":', src)
 
     def test_stab_unpushed_badge_opens_a_panel_with_the_commits(self) -> None:
         """170-A: z `delivery.commits` plakietka jest przyciskiem; panel: aria, Esc, klik poza, tekst; bez pola jak dotąd (K5, K6)."""
@@ -2073,6 +2275,83 @@ class RendererNodeTests(unittest.TestCase):
         self.assertTrue(c["hiddenAtTheTop"])
         self.assertEqual(c["unsub"], 1)
         self.assertTrue(c["rootClassGone"])
+
+    # CORE-TAP F3, K8: "the command failed" state (exit != 0 and failed = 0) in the section HEADER of the tests tab.
+    # Contract fragments for the implementer: "kod N" and "żaden test nie zgłosił porażki" in .tsec-head (visible while the body is collapsed).
+    def test_core_tap_command_failed_state_in_the_collapsed_header_for_every_tool(self) -> None:
+        s = self.out["extra"]["coreTap"]["states"]
+        for sid, code in (("CMDF", 1), ("PYT", 2), ("TMO", 124)):   # tap, pytest (collection error), timeout with a code
+            self.assertEqual(s[sid]["expanded"], "false", sid)
+            self.assertIn("żaden test nie zgłosił porażki", s[sid]["head"], sid)
+            self.assertIn(f"kod {code}", s[sid]["head"], sid)
+            self.assertRegex(s[sid]["markCls"] or "", r"bad|fail", f"{sid}: the message carries an error class")
+
+    def test_core_tap_command_failed_state_only_where_it_belongs(self) -> None:
+        s = self.out["extra"]["coreTap"]["states"]
+        for sid in ("GRN", "RED", "NOEX", "RUN"):   # green, with a failure, no exit (interrupted), running
+            self.assertFalse(s[sid]["inHead"], f"{sid}: no new state")
+        self.assertIn("1", s["RED"]["head"])   # the existing red chips stay
+        # the exit comes from the shown attempt: the older green attempt has none, the newest has code 3
+        self.assertTrue(s["HIST"]["inHead"])
+        self.assertIn("kod 3", s["HIST"]["head"])
+        self.assertFalse(s["HISTold"]["inHead"])
+        self.assertTrue(s["HISTnew"]["inHead"])
+
+    def test_core_tap_command_failed_state_levels_counts_and_exit_type(self) -> None:
+        s = self.out["extra"]["coreTap"]["states"]
+        self.assertFalse(s["LVC"]["inHead"], "levels 'command' with exit != 0: no test results, so no chip")
+        self.assertFalse(s["STR"]["inHead"], "exit as a string is not a number: no chip")
+        self.assertTrue(s["NOC"]["inHead"], "no counts at all means failed = 0: the chip shows")
+        self.assertIn("kod 5", s["NOC"]["head"])
+
+    def test_core_tap_full_sentence_is_a_visible_line_in_the_expanded_body(self) -> None:
+        b = self.out["extra"]["coreTap"]["states"]["bodies"]
+        full = "żaden test nie zgłosił porażki (wyjątek poza raportowanymi testami); wyniki ok dotyczą tylko testów, które zdążyły się wykonać"
+        self.assertFalse(b["CMDF"]["before"], "collapsed: no body")
+        self.assertTrue(b["CMDF"]["open"])
+        self.assertEqual(b["CMDF"]["note"], "kod 1, " + full)
+        for sid in ("GRN", "RED", "LVC", "STR"):   # attempts without the state: body opens, no line
+            self.assertTrue(b[sid]["open"], sid)
+            self.assertIsNone(b[sid]["note"], sid)
+        self.assertIn("kod 5, " + full, b["NOC"]["note"])
+
+    def test_core_tap_command_failure_does_not_raise_the_failed_counter_on_the_tab(self) -> None:
+        t = self.out["extra"]["coreTap"]["tab"]
+        self.assertEqual((t["count"], t["cls"]), ("", "count"))   # failedTotal stays what the server sent
+
+    # CORE-TAP F3, K10: the "back to top" button in the Tests view.
+    def test_core_tap_to_top_in_tests_threshold_hysteresis_and_css_hit(self) -> None:
+        t = self.out["extra"]["coreTap"]["threshold"]
+        self.assertEqual(t["view"], "tests")
+        self.assertEqual(t["trace"], [False, False, True, True, False, False, True, False])
+        self.assertTrue(t["hasClass"])
+        self.assertTrue(t["padHit"], "`#view-tests .tests-view` exists in the DOM: the padding rule hits")
+
+    def test_core_tap_to_top_in_tests_focus_returns_to_the_tests_tab(self) -> None:
+        e = self.out["extra"]["coreTap"]
+        self.assertTrue(e["focusOnHide"]["hidden"])
+        self.assertEqual([f[0] for f in e["focusOnHide"]["focused"]], ["tests"])
+        self.assertEqual(e["click"]["goes"], 1)
+        self.assertEqual(e["click"]["focused"], [["tests", {"preventScroll": True}]])
+        self.assertTrue(e["click"]["still"])
+
+    def test_core_tap_to_top_leaving_tests_hides_it_and_focuses_the_tab_of_the_new_view(self) -> None:
+        e = self.out["extra"]["coreTap"]
+        for key, view in (("toProgress", "progress"), ("toQuestions", "questions")):
+            self.assertTrue(e[key]["before"], key)
+            self.assertEqual(e[key]["view"], view, key)
+            self.assertTrue(e[key]["hidden"], key)
+            self.assertEqual([f[0] for f in e[key]["focused"]], [view], key)
+
+    def test_core_tap_to_top_tests_to_docs_one_button_and_focus_on_the_docs_tab(self) -> None:
+        d = self.out["extra"]["coreTap"]["toDocs"]
+        self.assertEqual(d["view"], "docs")
+        self.assertEqual(d["buttons"], 1)
+        self.assertEqual([f[0] for f in d["atSwitch"]], ["docs"])
+        self.assertEqual(d["seen"], [True, False, True], "hidden while the document loads, shown once after it")
+
+    def test_core_tap_to_top_in_tests_needs_the_hook(self) -> None:
+        self.assertEqual(self.out["extra"]["coreTap"]["noHook"], {"none": True, "noClass": True})
 
     def test_s170_threshold_edges_and_a_window_without_height(self) -> None:
         e = self.out["extra"]["s170"]["edges"]

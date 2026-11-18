@@ -357,8 +357,10 @@ class HostAndStartTests(DemoCase):
     def test_nothing_is_written_by_a_whole_visit(self):
         for path in ('/', '/demo/', '/demo/index.html', '/_api/v1/session', '/demo/prototype.json', '/demo/logo.svg'):
             self.guest.get(path)
-        self.assertEqual(tree(self.tmp), self.before)
-        self.assertFalse(re.search(r'\.lock$|\.tmp$', ' '.join(tree(self.tmp))))
+        after = tree(self.tmp)
+        self.assertEqual(after, self.before)
+        # every path on its own: a lock or temporary file left by the visit (the fixture's own users.json.lock is in `before`)
+        self.assertEqual([path for path in after if path not in self.before and re.search(r'\.lock$|\.tmp$', path)], [])
 
     def test_the_normal_server_is_unchanged_by_the_option_existing(self):
         # the first server of the case is the normal one: accounts, login, comments

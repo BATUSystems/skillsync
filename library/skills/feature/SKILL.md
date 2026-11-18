@@ -70,10 +70,13 @@ zgodą; cytat zgody użytkownika w ASSIGN (jego słowa i moment) to tylko wskaz�
 (zgodny `sha`) albo u użytkownika; bez tego odpowiedz, że kod czeka na „GO implement”.
 
 **„GO plan” = jeden lokalny commit.** Przy „GO plan” powstaje jeden commit lokalny: spec, plan-szkic i prototyp (bez plików generowanych
-i sekretów, `git add` tylko z jawnymi ścieżkami, skan sekretów przed commitem), na gałęzi roboczej w osobnym worktree; jeśli jej
-nie ma, zakłada ją „GO plan”. Bez pusha: przed „GO implement” nic nie opuszcza maszyny, a push i PR idą dalej według trybu
+i sekretów, `git add` tylko z jawnymi ścieżkami, skan sekretów przed commitem), na gałęzi roboczej w katalogu roboczym wybranym przy „GO plan” (linia `Katalog:`); w `worktree` gałąź zakłada „GO plan”, jeśli jej nie ma. Bez pusha: przed „GO implement” nic nie opuszcza maszyny, a push i PR idą dalej według trybu
 dostarczania po „GO implement”. Wyjątek: wejście z klucza zgłoszenia zostaje bez commita przy „GO plan”
 ([pr-after-approval](references/pr-after-approval.md)).
+
+**Katalog roboczy.** Przy „GO plan” (bez niego: przy „GO implement”) sesja pyta: „własny worktree” (domyślnie, zalecane) albo „główny checkout” (praca na bieżącej gałęzi głównego checkoutu, także bazowej).
+Wybór zapisuje linia planu `Katalog: worktree <nazwa-katalogu>` albo `Katalog: główny`; wznowienie ją czyta, brak linii = worktree. Karta (`ASSIGN`) nie pyta, a wejście z klucza zgłoszenia zostaje bez zmian.
+Warunki `główny` (odłączony HEAD, brudne drzewo, żywa dzierżawa, `pr` na bazie), ścieżki porażek i skutki dla `CP`, `pr-run` i „TAK P<n>”: [workdir](references/workdir.md).
 
 **Pytania w specu.** Pytanie `- Q<n>: …` jest blokujące (STOP, jak dotąd). Pytanie `- Q<n> [ZAŁOŻENIE]: <pytanie> — przyjęte: <wartość>`
 to założenie nieblokujące: nie zatrzymuje „draft z Q” i zostaje widoczne do korekty (format i zakaz: [spec](references/spec.md#klasy-pytań-q)).
@@ -280,7 +283,7 @@ Plan ze wszystkimi `[x]` i `in_progress` to niezamknięty przebieg (`skillsync s
 sesja, która go zastanie, proponuje zamknięcie przed nowym zadaniem.
 Commity, push i deploy według trybu dostarczania i słów zgody z rdzenia AGENTS (`CP`, `CPD`, `READY`); merge i complete PR nigdy.
 „CP” wypycha gałąź roboczą na jej zdalny odpowiednik; na bazę tylko `CP <gałąź>` albo zapisana w planie linia `Oddanie: <gałąź>`
-(pytanie przy pierwszym `CP`, gdy `delivery.base` różni się od roboczej). Wyjątek: „TAK P<n>” po retrospektywie jest poleceniem commita tej jednej zmiany tekstowej, bez pusha; działa tylko w głównym checkoucie (w worktree propozycje są `deferred`, a słowa nie działają), a propozycję z innego przebiegu wskaż jako „TAK <run-id>/P<n>” / „NIE <run-id>/P<n>” ([retro-quality](references/retro-quality.md)).
+(sama nazwa gałęzi; inny tekst jest ignorowany; pytanie przy pierwszym `CP`, gdy `delivery.base` różni się od roboczej); główny checkout aktualizowany `--ff-only` tylko gdy czysty i na `base`; szczegóły w [workdir](references/workdir.md). Wyjątek: „TAK P<n>” po retrospektywie jest poleceniem commita tej jednej zmiany tekstowej, bez pusha; działa tylko w głównym checkoucie (w worktree propozycje są `deferred`, a słowa nie działają; z `Katalog: główny` w `direct` „TAK” działa, [workdir](references/workdir.md)), a propozycję z innego przebiegu wskaż jako „TAK <run-id>/P<n>” / „NIE <run-id>/P<n>” ([retro-quality](references/retro-quality.md)).
 Przy wejściu z klucza polecenia i ich zakres opisuje [pr-after-approval](references/pr-after-approval.md).
 Końcowe słowo zgody trybu dostarczania (`READY` w `pr`, `CP` w `direct`) jest też odbiorem: plan z krokiem „Odbiór” ([plan](references/plan-details.md)) ma po zamknięciu
 `needsHuman: acceptance`, dopóki słowa nie ma w `approvals.jsonl` przebiegu (plan bez katalogu przebiegu to historia); słowo wpisane przez użytkownika w sesji zapisujesz `skillsync approvals record`.

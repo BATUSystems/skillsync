@@ -338,7 +338,13 @@
   },
   "project": {
     "name": "demo",
-    "path": "<root>"
+    "path": "<root>",
+    "worktree": {
+      "kind": "main",
+      "mainPath": null,
+      "name": "demo",
+      "path": "<root>"
+    }
   },
   "prototype": {
     "port": 5130,

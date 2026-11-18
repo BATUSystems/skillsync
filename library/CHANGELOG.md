@@ -4,6 +4,28 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+## [1.10.0] - 2026-11-18
+
+### Added
+
+- `skills/feature/references/workdir.md` (new): the working directory of a run, chosen at "GO plan" (own worktree or main checkout); the `Katalog:` line, the conditions of the main checkout, the failure paths and the resume rules.
+- `skills/dashboard`: the header chip "worktree: <name>" / "główny checkout" (renderer, `descriptions.json` key `workdir_chip`, icon `i-folder`).
+- Skill `workflow`, reference `test-run.md`: a table of the test adapters (`unittest` … `node-test`) with the rule for `auto`, the level of live state and the source of the final result.
+- Skill `dashboard`: the Testy tab shows "kod N, żaden test nie zgłosił porażki" for a run whose command exited non-zero with no reported failure (every tool), and the "back to top" button works in that tab when the host gives `scroll.toTop`.
+
+### Changed
+
+- `instructions/_base.md`: the rule "from GO plan a separate worktree and a working branch" becomes "working directory (a question at GO plan, `Katalog:` in the plan) and a working branch"; the sentence on pushing to the base is shortened to a reference to `feature`; the copy of the run and the cleanup of the worktree apply to `Katalog: worktree` only.
+- `skills/feature` (`SKILL.md`; references `plan-large`, `plan-details` with the `Katalog:` header line, `spec`, `retro-quality`, `worker-mode`, `pr-after-approval`): the same rule; the push to the base also works from the main checkout; "TAK P<n>" works in `direct` with the main checkout.
+- `skills/pr-run/SKILL.md`: step 3 honours `Katalog:` (the main checkout and its current branch, not a base branch); step 8 skips the main checkout.
+- `skills/skillsync/SKILL.md`: the working directory rule and the `Katalog:` line.
+- `skills/dashboard`: `SKILL.md` (the chip in the renderer contract) and `descriptions.json`.
+- `skills/feature/references/reports.md`: the report of a review-loop reviewer is always saved right after it returns, together with `<step>-N-decyzje.md`, not after the fact.
+
+### Fixed
+
+- `feature` and the dashboard skill: the plan line `Oddanie:` holds only a branch name; any other text is ignored (write the name or leave the line out).
+
 ## [1.9.1] - 2026-11-18
 
 ### Changed

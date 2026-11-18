@@ -82,7 +82,28 @@ projektu lub przebiegu). Raport komend zapisujących i `metrics --json` to JSON 
   jeden commit, neutralna tożsamość, bez `origin`), a sha HEAD (pełne, 12, 8 i 7 znaków) zastępuje `<head>`. Wariant
   `expected-after.json` to wynik po zapisie zgody `CP` przez `record_approval` (źródło `dashboard`, w procesie testu): w zapisanym wpisie `at` = `2026-01-12T12:00:00Z`,
   `by` = `user`, a godzina w `reason`/`blocked` = `12:00`;
+- `project.worktree`: bez repozytorium `null`; `cp-ready` (repozytorium zakładane w teście) ma `{kind: "main", name: "demo", path: "<root>", mainPath: null}`
+  w `expected.json` i `expected-after.json`. Przypadek `worktree` nie ma katalogu w fixtures (`input/` nie może zawierać `.git`):
+  test `test_skillsync_dashboard_workdir.py` buduje w katalogu tymczasowym repozytorium `demo` i jego powiązany worktree
+  (`git worktree add`) i porównuje po normalizacji: `path` → `<root>`, `mainPath` (gdy nie `null`) → `<main>`, `name` = `demo`;
 - JSON: `sort_keys`, wcięcie 2, `ensure_ascii=false`, końcowy znak nowej linii.
+
+## `project.worktree`
+
+Pole addytywne `schema: 1`: `project.worktree` to obiekt `{kind, name, path, mainPath}` albo `null`; klucz jest zawsze obecny.
+
+| Pole | Typ | Opis |
+|---|---|---|
+| `kind` | `"main"` \| `"worktree"` | `main`: `.git` jest katalogiem albo plikiem `gitdir:` do katalogu bez `commondir` (submoduł, `--separate-git-dir`); `worktree`: `.git` jest plikiem `gitdir:` do katalogu z `commondir` (powiązany worktree). Nowe wartości addytywnie |
+| `name` | string | nazwa katalogu projektu (`project.name`) |
+| `path` | string | `project.path`, w postaci podanej serwerowi (bez rozwiązywania dowiązań) |
+| `mainPath` | string lub `null` | dla `worktree`: katalog nadrzędny wspólnego katalogu git, gdy ten nazywa się `.git`; ścieżka w postaci rozwiązanej, więc przy dowiązaniu (np. `/var` → `/private/var`) `path` i `mainPath` mogą mieć różne prefiksy. Dla `main` i dla wspólnego katalogu o innej nazwie `null` |
+
+Rozpoznanie czyta wyłącznie `.git` (plik albo katalog) i, dla powiązanego worktree, plik `commondir` w katalogu z `gitdir:`, z limitem rozmiaru; względny `gitdir:` jest liczony od katalogu projektu, względny `commondir` od katalogu git (tego z `gitdir:`); proces `git` nie jest uruchamiany. Odczyt `gitdir`/`commondir` jest wspólny z polami `git.*`.
+
+`project.worktree` = `null`: brak `.git`, katalog podrzędny repozytorium (`.git` leży wyżej, nie jest szukany) oraz każdy błąd odczytu, w tym uszkodzony powiązany worktree (brak katalogu wskazanego przez `gitdir:`, nieczytelny `commondir`); uszkodzony worktree nie jest `main`. `commondir` liczy się tylko przy `.git` będącym plikiem `gitdir:`: `.git` będący katalogiem to zawsze `main`, także z plikiem `commondir` w środku. `commondir` wskazujący nieistniejący katalog to świadomie nadal `worktree`, a `mainPath` (gdy ten katalog nazywa się `.git`) wskazuje nieistniejącą ścieżkę: nic nie jest sprawdzane poza odczytem plików.
+
+Zgodność wsteczna: starszy serwer nie ma pola, konsument traktuje brak klucza jak `null` (pole opcjonalne dla konsumenta, w fixtures zawsze obecne).
 
 ## Pola najwyższego poziomu
 
@@ -90,7 +111,7 @@ projektu lub przebiegu). Raport komend zapisujących i `metrics --json` to JSON 
 |---|---|---|
 | `schema` | int | wersja kontraktu, obecnie `1` |
 | `app` | obiekt | `name` (`"dashboard"`), `version` (wersja generatora, string) |
-| `project` | obiekt | `name` (nazwa katalogu projektu), `path` (ścieżka bezwzględna) |
+| `project` | obiekt | `name` (nazwa katalogu projektu), `path` (ścieżka bezwzględna), `worktree` (obiekt albo `null`, niżej: „`project.worktree`”) |
 | `generatedAt` | string | czas wygenerowania, ISO 8601 z przesunięciem strefy |
 | `version` | int | licznik zmian obserwatora (serwer: rośnie przy każdej zmianie plików); `show` zwraca `0` |
 | `lastUpdate` | string lub null | najnowsza modyfikacja pliku bieżącego planu, speca lub checkpointów; null = brak plików |
@@ -215,6 +236,11 @@ Kafelek etapu: `label`, `done` (bool), `tip` (dymek), `key` (klucz opisu w `desc
 (opcjonalne: `done`, `active`, `planned`; `done: true` ⇔ `state: "done"`), `since` (opcjonalne, `HH:MM`; od kiedy etap trwa). Etap jest
 `active`, gdy najnowszy checkpoint ma `trwa:` z jego kluczem (bez `czeka:` w tej linii), spec jest w przygotowaniu (etap „Szkic”)
 albo znacznik pisania prototypu jest ważny (etap „Prototyp”); etap zrobiony zostaje `done`.
+Etykieta rund review (`Review ×N`, `Review kodu ×N`) liczy tylko zamrożone raporty w katalogu przebiegu: pliki `.md` o nazwie
+`spec-review-N.md`, `plan-review-N.md`, `code-review-N.md`, `code-review-<krok>-N.md` (numer rundy na końcu, dopuszczalne `rN`) oraz
+starsze `final-review[-<słowo>...][-N].md` (np. `final-review-guard-1.md`; jako review kodu). Rundą nie jest plik, którego nazwa zawiera segment `decisions` lub `decyzje` w dowolnym miejscu (np. `code-review-final-decisions-1.md`), dowody
+checkpointu (`*.log`), `*.json` ani inne dopiski obok raportu; jedna runda to jeden raport.
+
 Stan `active` zostaje w danych także po śmierci sesji (serwer nie czyta zegara); renderer gasi tylko pulsowanie i pisze „brak aktywności od N min”, gdy przebieg jest cichy: wg `silence` (`since`, `thresholdMin`), a bez niego wg `run.lastReportAt` i tego samego progu 35 minut.
 
 Pola szczególne: `warning` (tylko akt I; ostrzeżenie o braku pre-implement przed „GO plan” przy sekcjach
@@ -283,7 +309,7 @@ spoza reguł `skillsync status` (nieznane słowo, nieczytelne `at`, sha spoza 7�
 ### `delivery`
 
 `mode` (`pr`, `direct`, `invalid`), `base` (string lub null), `source` (`manifest`, `default`), `branch`, `target` (dokąd
-oddaje „CP”; w `direct` z linii planu `Oddanie:`), `remote`, `pushed` (bool lub null), `ahead` (int lub null; commity
+oddaje „CP”; w `direct` z linii planu `Oddanie:`, gdy cała wartość jest jedną poprawną nazwą gałęzi; inny tekst linii jest ignorowany, a podpowiedź słowa `CP` mówi „Oddanie: wartość pominięta, to nie nazwa gałęzi”; jednowyrazowe słowa zastępcze spoza krótkiej listy (`brak`, `TBD`, `todo`, `none`, `n/a`, `nie`, `nic`) są poprawnymi nazwami gałęzi i zostaną uznane za gałąź), `remote`, `pushed` (bool lub null), `ahead` (int lub null; commity
 niewypchnięte; renderer pokazuje je przy gałęzi w nagłówku jako „N niewypchniętych” (neutralnie w trybie `direct`, do zakończenia planu)), `commits` (lista `{sha, subject}` tych commitów, najnowsze pierwsze, do 20; `sha` to krótki skrót, `subject` to pierwsza linia opisu po zamaskowaniu sekretów, jedna linia do 80 znaków, obcięta kończy się „…”; `null`, gdy liczba niewypchniętych jest nieznana, `[]` gdy ich nie ma), `commitsMore` (int; ile starszych niewypchniętych commitów nie weszło do `commits`), `words[]`: `{word: "CP"|"READY", active, tip, target}` (`READY` tylko w trybie `pr`; przy `invalid` pusta
 tablica).
 
@@ -405,6 +431,10 @@ Podkroki o id `Fn.k` z planu (każdy krok z kropką), w kolejności planu. Czas 
 ### `tests`
 
 Opcjonalne pole najwyższego poziomu (brak = zakładka „Testy” niewidoczna; `schema: 1`, addytywnie): wyniki testów kroków planu z plików `.skillsync/runs/<run-id>/tests/<krok>/<n>.jsonl` (zapisuje je `skillsync test-run`). Postać: `{sections: [...], failedTotal, runningTotal, skipped?}` (`skipped`: do 20 wpisów `{path, reason}` plików i katalogów, które pominięto, bo nie dało się ich złożyć; stały powód, bez treści; brak pola = nic nie pominięto; zły plik nie psuje reszty strony); sekcja: `{step: {id, title}|null, state, attempts: [...]}` (najnowsza sekcja pierwsza, do 5 ostatnich biegów kroku, najnowszy bieg pierwszy); bieg: `n`, `state` (`running`, `passed`, `failed`, `interrupted`), `startedAt`, `endedAt`, `durationMs`, `command` (zawsze zamaskowane), `tool`, `levels` (`command`, `counts`, `tests`), `source`, `exit`, `reason`, `counts {total, passed, failed, skipped, running, waiting}`, `truncated`, `groups[]`: `{name, state, total, counts, tests[]}`; w `tests[]` tylko testy czerwone i uruchomione (do 100 na grupę): `{id, name, state, group, ms, msg}`; resztę grupy daje `GET /api/tests?run=&step=&attempt=&group=&limit=&offset=` (tylko do odczytu, na obu gniazdach jak `/api/status`; `limit` domyślnie 500, maks. 5000).
+
+Stan „polecenie zawiodło”: w nagłówku sekcji (widocznym przy zwiniętej treści) renderer pokazuje czerwony znacznik `kod N, żaden test nie zgłosił porażki`, gdy pokazany bieg nie jest `running`, ma `levels` `tests` lub `counts`, `exit` liczbowy różny od 0 i `counts.failed = 0` (wyjątek poza raportowanymi testami; wyniki ok dotyczą tylko testów, które zdążyły się wykonać). Stan wynika z istniejących pól `exit` i `counts`: zapis biegu i `failedTotal` (licznik zakładki) się nie zmieniają. Bez znacznika: `exit` 0, brak `exit`, porażki w `counts.failed`, bieg trwający.
+
+Przycisk „na górę” (haczyk `deps.scroll.toTop`, te same progi i histereza co w dokumencie) działa też w widoku Testy; bez haczyka go nie ma. Po ukryciu lub kliknięciu fokus wraca na zakładkę bieżącego widoku (`tab-<widok>`), a widok Testy ma zapas pod treścią (`padding-bottom` 4,5 rem).
 
 Krok planu z testami ma w `progress.phases[].steps[]` opcjonalne `tests` (`{state, attempt, counts}`; pasek przy kroku i link do sekcji) i `test: true` dla kroku oznaczonego `[T]` (tytuł jest podawany bez znacznika). Stary renderer ignoruje oba pola.
 

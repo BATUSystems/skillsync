@@ -42,6 +42,7 @@
 
   // Sprite ikon (symbole <symbol id="i-…">): [viewBox, [[tag, atrybuty], …]]. Renderer tworzy go sam przy create().
   const SPRITE = {
+    "i-folder": ["0 0 24 24", [["path", { "d": "M3 6.5A1.5 1.5 0 0 1 4.5 5H10l2 2.5h7.5A1.5 1.5 0 0 1 21 9v9.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5z", "fill": "none", "stroke": "currentColor", "stroke-width": "1.8", "stroke-linejoin": "round" }]]],
     "i-spec": ["0 0 24 24", [["path", { "d": "M6 2h9l5 5v15H6z", "fill": "none", "stroke": "currentColor", "stroke-width": "1.8", "stroke-linejoin": "round" }], ["path", { "d": "M14 2v6h6M9 13h8M9 17h6", "fill": "none", "stroke": "currentColor", "stroke-width": "1.8", "stroke-linecap": "round" }]]],
     "i-plan": ["0 0 24 24", [["path", { "d": "M9 6h11M9 12h11M9 18h11", "fill": "none", "stroke": "currentColor", "stroke-width": "1.8", "stroke-linecap": "round" }], ["path", { "d": "M3.5 6l1.5 1.5L7.5 5M3.5 12l1.5 1.5 2.5-2.5", "fill": "none", "stroke": "currentColor", "stroke-width": "1.8", "stroke-linecap": "round", "stroke-linejoin": "round" }], ["circle", { "cx": "5", "cy": "18", "r": "1.6", "fill": "currentColor" }]]],
     "i-run": ["0 0 24 24", [["path", { "d": "M12 15l-3-3c1-4 4-8 11-9-1 7-5 10-9 11zM9 12H5l2-4h4M12 15v4l4-2v-4", "fill": "none", "stroke": "currentColor", "stroke-width": "1.8", "stroke-linejoin": "round" }], ["path", { "d": "M6 16c-2 1-2 4-2 4s3 0 4-2", "fill": "none", "stroke": "currentColor", "stroke-width": "1.8", "stroke-linecap": "round" }]]],
@@ -369,7 +370,7 @@
     ui.foot = h("footer", { class: "foot", id: "foot" });
     ui.descTip = h("div", { id: "descTip", class: "desc-tip", role: "tooltip", hidden: true });
 
-    // ---------------------------------------------------------------- przycisk „na górę” (widok dokumentu, 170-B)
+    // ---------------------------------------------------------------- przycisk „na górę” (widok dokumentu i widok Testy)
     // Host podaje `deps.scroll.toTop = {subscribe(cb) → unsubscribe, go()}`; `cb` dostaje {y, viewport, height} przewijanego okna. Bez haczyka
     // (webview Skippstera, starsze adaptery) przycisku nie ma. Renderer liczy próg z histerezą, host przewija i pilnuje ruchu.
     const toTopHook = deps.scroll && deps.scroll.toTop && typeof deps.scroll.toTop.subscribe === "function" && typeof deps.scroll.toTop.go === "function"
@@ -381,17 +382,17 @@
     if (toTopHook) root.classList.add("has-to-top");   // CSS: zapas pod dokumentem tylko, gdy przycisk jest możliwy
     function toTopSync() {
       if (!ui.toTop) return;
-      const eligible = st.view === "docs" && Boolean(st.docData) && !toTop.failed && toTop.viewport > 0;
+      const eligible = ((st.view === "docs" && Boolean(st.docData) && !toTop.failed) || st.view === "tests") && toTop.viewport > 0;
       let shown = eligible && toTop.shown;
       if (eligible && !shown && toTop.y > toTop.viewport * TO_TOP_SHOW) shown = true;
       else if (eligible && shown && toTop.y < toTop.viewport * TO_TOP_HIDE) shown = false;
-      if (!shown && toTop.focused) { toTop.focused = false; focusDocsTab(); }   // ukrywany przycisk z fokusem oddaje go zakładce, fokus nie ginie
+      if (!shown && toTop.focused) { toTop.focused = false; focusViewTab(); }   // ukrywany przycisk z fokusem oddaje go zakładce, fokus nie ginie
       toTop.shown = shown;
       ui.toTop.hidden = !shown;
     }
-    function focusDocsTab() { if (typeof ui["tab-docs"].focus === "function") ui["tab-docs"].focus({ preventScroll: true }); }
+    function focusViewTab() { const tab = ui["tab-" + st.view]; if (tab && typeof tab.focus === "function") tab.focus({ preventScroll: true }); }
     function toTopClick() {
-      focusDocsTab();   // przycisk chowa się sam, gdy płynne przewijanie zejdzie poniżej progu (metryki z hosta)
+      focusViewTab();   // przycisk chowa się sam, gdy płynne przewijanie zejdzie poniżej progu (metryki z hosta)
       toTopHook.go();
     }
     if (toTopHook) {
@@ -494,6 +495,17 @@
         const dl = d.delivery || {};
         if (!(d.git && d.git.branch && typeof dl.ahead === "number" && dl.ahead > 0 && Array.isArray(dl.commits) && dl.commits.length)) st.commitsOpen = false;
       }
+      // Katalog roboczy (project.worktree): chip bez akcji; brak pola, `null` i nieznany `kind` = bez chipu. Pełne ścieżki w dymku (data-desc-extra).
+      const pushWorkdir = () => {
+        const wt = d.project && d.project.worktree;
+        if (!wt || typeof wt !== "object" || (wt.kind !== "worktree" && wt.kind !== "main")) return;
+        const label = wt.kind === "worktree" ? (typeof wt.name === "string" && wt.name ? `worktree: ${wt.name}` : "worktree") : "główny checkout";
+        const paths = [];
+        if (typeof wt.path === "string" && wt.path) paths.push(wt.path);
+        if (wt.kind === "worktree" && typeof wt.mainPath === "string" && wt.mainPath) paths.push(`Główny checkout: ${wt.mainPath}`);
+        meta.push(h("span", { class: "m" }, icon("i-folder"),
+          h("span", Object.assign({ class: "chip s-planned workdir" }, desc("workdir_chip", paths.join("\n") || null)), h("span", { class: "workdir-name" }, label))));
+      };
       if (d.git && d.git.branch) {
         const g = d.git;
         const host = g.remote ? (g.remote.host === "azure" ? "Azure DevOps" : "GitHub") : "";
@@ -503,6 +515,7 @@
             on: { click: linkClick("branch", g.branch, g.branchUrl) } }, name)
           : h("span", { class: "mono", "data-tip": g.branchUrl ? "Gałąź tylko lokalnie (brak na origin), bez linku" : "Gałąź i HEAD repozytorium" }, name);
         meta.push(h("span", { class: "m" }, icon("i-branch"), branch));
+        pushWorkdir();
         // `git.branchPushed` = origin/<gałąź> istnieje; liczba commitów przed origin to `delivery.ahead` (null = nieznana, 0 = nic do wypchnięcia: bez znacznika).
         const dv = d.delivery || {};
         const ahead = typeof dv.ahead === "number" && dv.ahead > 0 ? dv.ahead : 0;
@@ -532,7 +545,7 @@
             meta.push(h("span", { class: "m commits-wrap" }, btn, panel));
           }
         }
-      }
+      } else pushWorkdir();
       if (plan && plan.pr) {
         meta.push(h("span", { class: "m" }, h("a", { class: "chip s-active git-link", href: safeUrl(plan.pr.url), target: "_blank", rel: "noopener",
           "data-tip": "Pull request z linii PR: planu", on: { click: linkClick("pr", plan.pr.number, plan.pr.url) } }, `PR #${plan.pr.number}`)));
@@ -830,13 +843,17 @@
       const id = CSS_ID(key), c = att.counts || {};
       const total = num(c.total) || num(c.passed) + num(c.failed) + num(c.skipped) + num(c.running) + num(c.waiting);
       const state = sec.state === "passed" ? "zielony" : sec.state === "failed" ? "czerwony" : sec.state === "running" ? "trwa" : sec.state === "interrupted" ? "przerwany" : "";
+      // polecenie zawiodło poza raportowanymi testami: kod ≠ 0 przy zerze porażek (poziomy tests/counts), pokazana próba zakończona
+      const cmdFailed = att.state !== "running" && (att.levels === "tests" || att.levels === "counts") && typeof att.exit === "number" && Number.isFinite(att.exit) && att.exit !== 0 && !num(c.failed);
       const head = h("button", { type: "button", id: `tsec-btn-${id}`, class: "tsec-head", "aria-expanded": String(open), "aria-controls": open ? `tsec-body-${id}` : null,
         on: { click: () => { st.testsOpen[key] = !open; render(); const b = root.querySelector(`#tsec-btn-${id}`); if (b && typeof b.focus === "function") b.focus({ preventScroll: true }); } } },
         h("span", { class: "chev", "aria-hidden": "true" }, open ? "▾" : "▸"),
         h("span", { class: "sh" }, h("b", null, step ? h("span", { class: "mono" }, step.id) : null, step ? " " : "", step ? (step.title || "") : "Bez kroku"),
           h("span", { class: "sub" }, `bieg ${att.n} z ${attempts.length > 1 ? attempts[0].n : att.n} · ${att.startedAt ? fmtTime(att.startedAt) : "—"}${Number.isFinite(att.durationMs) ? " · " + fmtDur(att.durationMs) : ""}`)),
-        h("span", { class: "sum", ...(running ? { "aria-live": "polite", "aria-atomic": "true" } : {}) }, state ? h("span", { class: `chip ${sec.state === "passed" ? "s-done" : sec.state === "failed" ? "s-bad" : sec.state === "running" ? "s-active" : "s-warn"}` }, state) : null, countChips(c)));
+        h("span", { class: "sum", ...(running ? { "aria-live": "polite", "aria-atomic": "true" } : {}) }, state ? h("span", { class: `chip ${sec.state === "passed" ? "s-done" : sec.state === "failed" ? "s-bad" : sec.state === "running" ? "s-active" : "s-warn"}` }, state) : null, countChips(c),
+          cmdFailed ? h("span", { class: "chip s-bad cmd-failed", "data-tip": `kod ${att.exit}, żaden test nie zgłosił porażki (wyjątek poza raportowanymi testami); wyniki ok dotyczą tylko testów, które zdążyły się wykonać` }, `kod ${att.exit}, żaden test nie zgłosił porażki`) : null));
       const body = open ? h("div", { class: "tsec-body", id: `tsec-body-${id}` },
+        cmdFailed ? h("div", { class: "tnote cmd-failed-note" }, `kod ${att.exit}, żaden test nie zgłosił porażki (wyjątek poza raportowanymi testami); wyniki ok dotyczą tylko testów, które zdążyły się wykonać`) : null,
         att.command ? h("div", { class: "cmd mono" }, String(att.command)) : null,
         h("div", { class: "tprogress", role: "img", "aria-label": `${num(c.passed)} z ${total || "?"} testów zielonych` }, ["g", "r", "a"].map((cls, i) => {
           const el = h("i", { class: cls, "data-w": String(total ? Math.min(100, Math.round((100 * num([c.passed, c.failed, c.running][i])) / total)) : 0) });

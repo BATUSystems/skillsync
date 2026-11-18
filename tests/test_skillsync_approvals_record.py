@@ -163,7 +163,9 @@ class RecordValidation(RecordFixture):
                  ({'run': '..'}, 'Invalid run id'), ({'run': '.'}, 'Invalid run id'), ({'run': 'a/b'}, 'Invalid run id'),
                  ({'run': '../' + RUN}, 'Invalid run id'), ({'sha_after': HEAD}, 'sha_after'),
                  ({'run': 'r2'}, 'Run directory not found'), ({'sha': 'XYZ'}, '7-64'), ({'sha': 'abc12'}, '7-64'),
-                 ({'target': '-x'}, 'Invalid --target'), ({'branch': 'a b'}, 'Invalid --branch'))
+                 ({'target': '-x'}, 'Invalid --target'), ({'branch': 'a b'}, 'Invalid --branch'),
+                 ({'target': 'do ustalenia'}, 'Invalid --target'), ({'target': 'a..b'}, 'Invalid --target'), ({'target': 'x/'}, 'Invalid --target'),
+                 ({'target': 'main.lock'}, 'Invalid --target'), ({'branch': 'a@{b}'}, 'Invalid --branch'))
         for kwargs, fragment in cases:
             with self.subTest(**kwargs):
                 self.assert_blocked(self.record(**kwargs), fragment)

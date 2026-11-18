@@ -68,6 +68,11 @@ entries:
     title: "Wspólne komentarze prototypów: serwer, dziennik v2, użytkownicy, iteracje, przywracanie, akceptacja i bramka"
     tags: [skillsync, prototype, comments, server, journal, users, security, glossary, iterations, restore, merge, acceptance, gate, writing]
     paths: ['skillsync_workflow/prototype_server.py', 'skillsync_workflow/prototype.py', 'skillsync_workflow/quality.py', 'tests/test_skillsync_prototype_server.py', 'tests/test_skillsync_prototype_restore.py', 'tests/test_skillsync_prototype_accept.py', 'tests/test_skillsync_prototype_writing*.py']
+  - path: node-test-formaty.md
+    title: "Format wyjścia `node --test` (TAP czy spec wg wersji Node i TTY) i adaptery `tap`/`node-test`"
+    tags: [skillsync, test-run, adapters, node, tap, output]
+    paths: ['skillsync_workflow/test_adapters/tap.py', 'skillsync_workflow/test_adapters/node_test.py', 'skillsync_workflow/test_run.py', 'skillsync_workflow/quality.py', 'tests/test_skillsync_adapter*.py', 'tests/test_skillsync_test_run*.py']
+    load: on-demand
   - path: dashboard-server.md
     title: "Serwer strony statusu (dashboard serve): Host, Origin, X-Status-Board, CSP, allowlista, limity, zgody tylko użytkownika"
     tags: [skillsync, dashboard, server, security, approvals, workflow]
@@ -84,3 +89,7 @@ entries:
     title: "Pytania do eksperta domenowego: questions.json per przebieg, fold, widoczność, limity, CLI question (migrate, purge), wiersz [EKSPERT], konta z wieloma rolami"
     tags: [skillsync, prototype, expert, questions, server, security, spec, glossary]
     paths: ['skillsync_workflow/prototype_server.py', 'skillsync_workflow/prototype.py', 'library/skills/feature/references/spec.md', 'tests/test_skillsync_prototype_questions*.py', 'tests/test_skillsync_prototype_question_cli.py', 'tests/test_skillsync_prototype_question_runs_cli.py', 'tests/test_skillsync_prototype_roles.py', 'tests/test_skillsync_prototype_experts_page.py', 'tests/test_skillsync_expert_skills.py']
+  - path: workdir.md
+    title: "Katalog roboczy przebiegu (worktree, główny checkout, wybór przy GO plan, rozpoznanie na stronie statusu)"
+    tags: [skillsync, dashboard, workflow, worktree, git, workdir, terminology]
+    paths: ['skillsync_workflow/dashboard.py', 'library/skills/feature/references/workdir.md', 'library/skills/dashboard/assets/dashboard-render.js', 'library/instructions/_base.md', 'tests/test_skillsync_dashboard_workdir.py', 'tests/test_skillsync_workdir_rule.py']

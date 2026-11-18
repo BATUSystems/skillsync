@@ -24,7 +24,28 @@ Krok oznaczony w planie `[T]` (na początku lub końcu tytułu w `## Progress` a
 
 ## Adaptery wyjścia narzędzi (etap 2)
 
-Moduł `skillsync_workflow/test_adapters/<narzędzie>.py` czyta linie wyjścia polecenia testów (`feed`) i pliki raportu po jego zakończeniu (`end`) i zgłasza to, co zrozumiał, tylko przez `ctx.emit` (`collected`, `test`, `counts`); plik zdarzeń, maskę, limity i kod wyjścia prowadzi rejestrator (`test_run.TestRecorder`). Adapter, który nie rozumie wyjścia, nie emituje nic, a przebieg zostaje przy licznikach z podsumowania i raportu. Pole `live` adaptera mówi, ile widać w trakcie biegu: `running` (stan pojedynczych testów na żywo), `completion` (lista po zakończeniu) albo `counts` (same liczniki); `partial` przekazuje nieskończony koniec linii (narzędzie drukuje `test_x ... ` przy starcie testu i `ok` przy końcu). Wyjątek w adapterze wyłącza go na ten przebieg; `end()` zwracające `True` pomija czytanie raportu. Nazwy i identyfikatory testów mają `/` zamiast `\`; test bez wyniku po końcu przebiegu nie jest „uruchomiony”, tylko „oczekuje”. Nowy adapter to nowy plik (rejestr odkrywa moduły sam), z fikstura wyjścia narzędzia w `tests/fixtures/test-runs/` (bez ścieżek domowych, nazw maszyn i identyfikatorów sesji) i testem przez `tests/adapter_harness.py`.
+Moduł `skillsync_workflow/test_adapters/<narzędzie>.py` czyta linie wyjścia polecenia testów (`feed`) i pliki raportu po jego zakończeniu (`end`) i zgłasza to, co zrozumiał, tylko przez `ctx.emit` (`collected`, `test`, `counts`); plik zdarzeń, maskę, limity i kod wyjścia prowadzi rejestrator (`test_run.TestRecorder`). Adapter, który nie rozumie wyjścia, nie emituje nic, a przebieg zostaje przy licznikach z podsumowania i raportu. Pole `live` adaptera mówi, ile widać w trakcie biegu: `running` (stan pojedynczych testów na żywo), `completion` (lista po zakończeniu) albo `counts` (same liczniki); `partial` przekazuje nieskończony koniec linii (narzędzie drukuje `test_x ... ` przy starcie testu i `ok` przy końcu). Wyjątek w adapterze wyłącza go na ten przebieg; `end()` zwracające `True` pomija czytanie raportu. Nazwy i identyfikatory testów mają `/` zamiast `\`; test bez wyniku po końcu przebiegu nie jest „uruchomiony”, tylko „oczekuje”.
+
+Tabela adapterów (pełne reguły i ograniczenia: `docs/test-adapters.md`):
+
+| Adapter | Wybór przy `auto` | `live` | Źródło końcowe |
+|---|---|---|---|
+| `unittest` | `python -m unittest -v` | `running` | podsumowanie wyjścia |
+| `pytest` | `pytest -v` (bez `--collect-only`) | `running` | `--junit-xml` (te same id) |
+| `cargo-test` | `cargo test` | `completion` | stan z linii |
+| `cargo-test-serial` | `cargo test` z `--test-threads=1` | `running` | stan z linii |
+| `dotnet` | `dotnet test` | `completion` | TRX |
+| `vitest` | `vitest …` (bez `ng`) | `completion` | JUnit (tylko z `--junit`) albo strumień |
+| `karma` | `karma …` (bez `ng`) | `counts` | JUnit (nazwy) i liczniki ze strumienia |
+| `playwright` | `playwright test` | `completion` | strumień |
+| `cypress` | `cypress run` | `completion` | strumień |
+| `angular` | `ng test` | `counts` | jak `vitest` albo `karma` |
+| `tap` | nigdy: tylko `--format tap` (goły skrypt, `npm test`, `bats --tap`, `prove`) | `completion` | strumień |
+| `node-test` | `node --test` z reporterem `tap` albo `spec` (lub bez reportera) | `completion` | strumień |
+
+`node --test` drukuje TAP (Node 20 i 22 w potoku) albo `spec` (Node 24; TTY: spec). `node-test` rozpoznaje format po pierwszej istotnej linii. Gdy `auto` nie wybiera adaptera, użyj `--format <nazwa>` (np. `--format tap` dla skryptu, który drukuje TAP).
+
+Nowy adapter to nowy plik (rejestr odkrywa moduły sam), z fikstura wyjścia narzędzia w `tests/fixtures/test-runs/` (bez ścieżek domowych, nazw maszyn i identyfikatorów sesji) i testem przez `tests/adapter_harness.py`.
 
 ## Hook ostrzegający o gołych komendach testowych
 

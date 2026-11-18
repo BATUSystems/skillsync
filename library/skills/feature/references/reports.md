@@ -25,6 +25,7 @@ Skrót nie może ukrywać porażek: status i blokery są zawsze w skrócie.
   (a) orkiestrator zapisuje ich pełny raport do pliku, jeśli jest potrzebny później (np. mapa zmian,
   lista uwag); (b) rola zwraca skrót plus sekcję szczegółów ograniczoną do ≤ 60 linii.
   Zlecenie wskazuje, która ścieżka obowiązuje.
+  Raport reviewera pętli przeglądu jest dowodem rekordu: zapisuj go (a) zawsze, zaraz po powrocie, razem z `<krok>-N-decyzje.md` ([zapis](review-loop.md)), nie po fakcie.
 
 Wyjątek od zakresu zapisu: `mechanic` (Edit + Write), `test-runner` (zapis przez Bash do logów) i `scribe`
 (`docs/**`) mogą zapisać raport wyłącznie do `.skillsync/runs/<run-id>/` — nic poza tym katalogiem

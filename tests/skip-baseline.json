@@ -43,7 +43,8 @@
    "`sh`",
    "no /bin/bash",
    "no /bin/sh",
-   "no /bin/zsh"
+   "no /bin/zsh",
+   "shebang"
   ],
   "filesystem": [
    "non-UTF-8",
@@ -571,6 +572,14 @@
    {
     "id": "test_skillsync_dashboard_server.ServeCommandTests.test_serve_stops_on_sigterm",
     "category": "windows-no-mechanism"
+   },
+   {
+    "id": "test_skillsync_dashboard_workdir.Recognition.test_symlink_keeps_path_and_resolves_main_path",
+    "category": "no-os-symlinks"
+   },
+   {
+    "id": "test_skillsync_dashboard_workdir.Recognition.test_unreadable_commondir_is_null",
+    "category": "no-mode-enforcement"
    },
    {
     "id": "test_skillsync_dispatch_state.DispatchState.test_fifo_in_claims_does_not_hang",
@@ -1363,6 +1372,14 @@
    {
     "id": "test_skillsync_test_ports.FreePortRangeTests.test_a_port_with_an_active_listener_is_never_free",
     "category": "windows-no-mechanism"
+   },
+   {
+    "id": "test_skillsync_test_run.NodeTestRecorder.test_k5_a_bare_script_and_another_reporter_get_no_adapter_and_the_notice_says_what_to_add",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_test_run.NodeTestRecorder.test_k5_k13_auto_chooses_node_test_for_node_test_and_the_stream_decides",
+    "category": "posix-only"
    },
    {
     "id": "test_skillsync_test_run_hardening.Sigterm.test_sigterm_ends_the_command_writes_end_and_frees_the_lock",

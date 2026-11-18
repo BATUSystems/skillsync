@@ -10,6 +10,8 @@ Adapter czyta wyjście polecenia uruchomionego przez `skillsync test-run` i zapi
 | `pytest` | pytest 9.2.0, Python 3.14.10, `pytest -v`; pytest-xdist 3.8 (`-n 2`) | `-v` w argumentach (także `-vv`, `-vx`), bez `--collect-only` | `running` | `--junit-xml` (te same id) |
 | `cargo-test` / `cargo-test-serial` | cargo / rustc 1.97.1, libtest w domyślnym formacie (`cargo test`, `cargo t`) | `cargo test`; wariant `serial` przy `--test-threads=1` w argumentach | `completion` / `running` | brak raportu pliku (stan z linii; nazwy porażek także z sekcji `failures:`) |
 | `dotnet` | dotnet SDK 10.0.114: VSTest 18.0.2 (xunit.runner.visualstudio 3.1.5, xunit 2.9.3) i Microsoft.Testing.Platform 2.5.1 (xunit.v3.mtp-v2 4.0.2) | `dotnet test` (polecenie `test` zaraz po `dotnet`), bez `--list-tests` | `completion` | TRX (te same id) |
+| `tap` | dowolne polecenie drukujące TAP: goły skrypt, `npm test`, `bats --tap`, `prove`; parser sprawdzony na strumieniach `node --test` (Node 20.18.1, 22.22.0, 24.11.1) i na syntetycznych skryptach | nigdy (`explicit_only`): tylko `--format tap` | `completion` | strumień (bez raportu pliku) |
+| `node-test` | `node --test` z reporterem `tap` albo `spec` (Node 20.18.1, 22.22.0, 24.11.1 na Linuksie) | narzędzie `node` z flagą `--test` przed skryptem i reporterem `tap`/`spec` (lub bez reportera) | `completion` | strumień (bez raportu pliku) |
 
 Co znaczy `live` (zapisywane w zdarzeniu `start` i pokazywane na stronie w „poziomie danych”):
 
@@ -57,9 +59,61 @@ Przy `--format auto` `test-run` pisze jedną linię na stderr przed startem pole
 
 Windows (UTF-16 wyjścia dotnet czyta się tylko z TRX), macOS, pytest `-vv` i `console_output_style=count` na prawdziwym biegu (format z dokumentacji, test syntetyczny), `addopts = -v` w pliku ini (argumenty nie zawierają `-v`: adapter nie jest wybierany), xUnit v3 w trybie VSTest, NUnit/MSTest, MTP w innym języku niż polski i angielski, `unittest` z `--durations` i Pythona starszego niż 3.14 (kształt linii wyników jest starszy niż 3.12, ale nie sprawdzany na tych wersjach), `setUpClass` w trybie `-v` na żywo (czytane z bloku `ERROR:` po biegu), doctesty w pytest.
 
+## Adaptery `tap` i `node-test`
+
+`tap` czyta linie `ok N - nazwa` i `not ok N - nazwa` dowolnego polecenia, które drukuje TAP (goły skrypt, `npm test`, `bats --tap`, `prove`). Wybiera go tylko `--format tap`: adapter nie ma przypisanego narzędzia, więc `auto` go nie bierze. `node-test` jest adapterem `node --test`: `auto` wybiera go, gdy po zdjęciu opakowań (`test_tools.json`) polecenie to `node` z flagą `--test` przed skryptem, a reporter jest `tap` albo `spec` (albo nie podany). Oba używają tego samego parsera TAP (`test_adapters/tap.py`, klasa `TapParser`); `node-test` dodatkowo rozpoznaje strumień `spec`. Oba mają `live = completion`: Node nie drukuje nic przy starcie testu, więc test jest „oczekuje” do swojego wyniku. Oba nie zmieniają polecenia ani środowiska (`env()` puste) i nie czytają plików raportu.
+
+### Jaki format drukuje `node --test`
+
+Format domyślny zależy od wersji Node i od tego, czy stdout jest terminalem (TTY). Zmierzone na Linuksie:
+
+| Node | stdout w potoku (nie TTY) | TTY |
+|---|---|---|
+| 20.18.1 | TAP | nie zweryfikowano |
+| 22.22.0 | TAP | spec |
+| 24.11.1 | spec | spec |
+
+Nie zweryfikowano: Node 25, Windows (zdalne nagranie na Windows nie doszło do skutku; kod adaptera dla Windows sprawdza macierz na fixturach, nie prawdziwy strumień) i Node 20 na TTY. Adapter nie zmienia polecenia: rozpoznaje format po treści strumienia. Jeśli potrzebny jest stały format, dopisz do polecenia `--test-reporter=tap` albo `--test-reporter=spec`.
+
+### Wybór przez `auto` i komunikaty
+
+- Reporter inny niż `tap` i `spec` (np. `dot`, `junit`): `auto` nie wybiera adaptera, a linia na stderr brzmi: `test-run: node-test reads only the reporters tap and spec: add --test-reporter=spec or tap`.
+- Goły skrypt albo plik `node:test` uruchomiony bez `--test`: `auto` nie wybiera adaptera, a linia brzmi: `test-run: adapter node-test is not chosen automatically for this command: add --format tap (a bare script) or --format node-test (a file with node:test)`.
+- `--format tap` i `--format node-test` są wyborem jawnym i nic nie drukują. Jawny `--format node-test` działa także dla `node plik.test.js` bez `--test` (zmierzone na Node 24, który drukuje `spec`).
+
+Gdy `node-test` dostanie strumień, którego nie rozpoznaje (pierwsza istotna linia nie jest `TAP version N` ani znacznikiem `▶ ✔ ✖ ﹣` z wynikiem `(Nms)`), pomija wszystko przed nią i nic nie emituje. Wyboru nie zmienia się w trakcie biegu.
+
+### Czytanie TAP (`tap` i `node-test` w trybie TAP)
+
+- Grupa (`# Subtest: nazwa`) jest rodzicem: nie dostaje własnego wyniku, jeśli nie ma potomka z porażką, bo jej `ok` jest sumą dzieci. Wynik grupy pojawia się PO jej dzieciach. Liście są emitowane od razu, po linii wyniku.
+- Id: `grupa > podgrupa::nazwa`. Duplikat dostaje sufiks ` (2)`, ` (3)` w id i w nazwie.
+- Nazwy są dekodowane jednym przebiegiem: `\\` na `\`, `\#` na `#`; inne sekwencje z ukośnikiem zostają.
+- Dyrektywy: `# SKIP` i `# SKIPPED` to `skipped` z powodem. `# TODO` to `skipped` z notą `todo`, także gdy test zawiódł (`not ok … # TODO`). Bieg z pominiętymi testami (w tym `todo`) i kodem 0 wymaga `--allow-skips`, jak w każdym adapterze.
+- Blok YAML (`---` … `...`): czytane są tylko najwyższe `error`, `message`, `duration_ms` i `exitCode`. Komunikat i czas porażki dopisuje ponowna emisja tej samej porażki po końcu bloku; bloki dłuższe niż 200 linii są ucinane.
+- Plik, który się nie wczytał (blok z `exitCode`), jest porażką: komunikat to komentarz błędu sprzed linii wyniku albo `test failed`.
+- Komentarze `# …` (także `console.log` w TAP `node --test`) są komentarzami, nie wynikami.
+- `Bail out!` zatrzymuje emisję. Linie dłuższe niż 2000 znaków są pomijane.
+- Koniec (`end` zwraca True, a liczniki idą z adaptera): plan `1..N` równa się liczbie wyników poziomu 0 (grupy, liście i pliki); bez planu wymagany jest kod wyjścia 0 i co najmniej jeden wynik. Po `Bail out!` albo bez żadnego wyniku `end` zwraca False.
+
+### Czytanie `spec` (`node-test`)
+
+- Znacznik `▶` otwiera grupę; `✔`, `✖` i `﹣` z wynikiem `(Nms)` to wynik. `✔`/`✖` z notą (`# nota`) to `skipped` z `todo: nota`; `﹣` to `skipped`.
+- Linie logów bez znacznika są ignorowane (w `spec` `console.log` nie ma prefiksu). Pierwsza wcięta linia pod porażką jest komunikatem; plik, który się nie wczytał, dostaje komunikat z bloku błędu na stderr.
+- Koniec: `ℹ tests N` i `ℹ suites S`; liczniki są dobre, gdy N równa się liczbie wyników minus liczbie grup, nie zostały otwarte grupy i żaden wynik nie został pominięty. Nazwa z nową linią jest gubiona, więc `end` zwraca False.
+
+### Ograniczenia
+
+- Biegi wielu plików w TAP bez nazw plików: id idą z nazw testów, więc duplikaty między plikami są niestabilne.
+- `--junit` razem z `tap` może zdublować testy (ten sam test z id strumienia i z raportu); zachowanie jest opisane, nie naprawiane.
+- Tabela widzianych testów ma limit 50 000 wpisów. Oba adaptery nie emitują stanu `running`: test jest „oczekuje” do wyniku.
+
+### Czego nie zweryfikowano
+
+Node 25; Windows (strumień na prawdziwym biegu); Node 20 na TTY; `bats --tap` i `prove` na prawdziwym strumieniu (fixtury `tap-bare-*` są syntetyczne, pisane ręcznie i oznaczone `synthetic`); `npm test` jako skrypt; `--junit` razem z `tap`.
+
 ## Fixtury i testy
 
-Fixtury `tests/fixtures/test-runs/<narzędzie>-*.jsonl` to zapisy PRAWDZIWYCH biegów małych projektów wzorcowych (xUnit w katalogu tymczasowym z pakietów z lokalnej pamięci podręcznej, bez sieci; małe testy Pythona). Pierwszy rekord (`meta`) ma narzędzie, wersje, polecenie, kod wyjścia i środowisko; kolejne to porcje odczytane z rur (`t`, `fd`, `data`) w kolejności przybycia, z czasem (start testu widać przed jego wynikiem). Ścieżki, nazwy hosta i użytkownika są zastąpione (`<root>`, `HOST`, `USER`; w XML `/ROOT`). Pliki `dotnet-*-all.trx` i `pytest-junit-mixed.xml` to raporty tych samych biegów; testy porównują id i stany adaptera z raportem. Odtwarzanie: `tests/adapter_replay.py` (porcje tak, jak je dostarcza czytnik strumienia: pełne linie do `feed`, ogon do `partial`) razem z audytem kodu adapterów (brak dostępu do plików, procesów, sieci, wątków).
+Fixtury `tests/fixtures/test-runs/<narzędzie>-*.jsonl` to zapisy PRAWDZIWYCH biegów małych projektów wzorcowych (wyjątek: fixtury `tap-bare-*` są syntetyczne, pisane ręcznie i mają w `meta` znacznik `synthetic`; nie dowodzą zachowania prawdziwego narzędzia) (xUnit w katalogu tymczasowym z pakietów z lokalnej pamięci podręcznej, bez sieci; małe testy Pythona). Pierwszy rekord (`meta`) ma narzędzie, wersje, polecenie, kod wyjścia i środowisko; kolejne to porcje odczytane z rur (`t`, `fd`, `data`) w kolejności przybycia, z czasem (start testu widać przed jego wynikiem). Ścieżki, nazwy hosta i użytkownika są zastąpione (`<root>`, `HOST`, `USER`; w XML `/ROOT`). Pliki `dotnet-*-all.trx` i `pytest-junit-mixed.xml` to raporty tych samych biegów; testy porównują id i stany adaptera z raportem. Odtwarzanie: `tests/adapter_replay.py` (porcje tak, jak je dostarcza czytnik strumienia: pełne linie do `feed`, ogon do `partial`) razem z audytem kodu adapterów (brak dostępu do plików, procesów, sieci, wątków).
 
 ## Adaptery narzędzi webowych
 
