@@ -1,6 +1,6 @@
 # Plan: chip katalogu na stronie statusu i wybór katalogu roboczego przy „GO plan” (CORE-WORKDIR)
 
-Status: draft
+Status: draft (czeka na GO implement)
 Spec: docs/specs/2026-11-18-core-workdir.md
 Spec-sha: f2a1f2b05e752260956c772076b8aed5eee1d143
 Przebieg: 2026-11-18-core-workdir
