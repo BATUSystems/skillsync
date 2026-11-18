@@ -179,6 +179,21 @@ class StateFile(unittest.TestCase):
                          (1, 5140, "tok-1", dashboard_token.root_text(self.project), os.getpid()))   # the report form of the path
         self.assertEqual([p.name for p in path.parent.iterdir()], [path.name], "no temporary file is left")
 
+    def test_the_temporary_file_is_never_a_json_name_while_the_state_is_written(self) -> None:
+        """Regression (CI macOS): `Path.glob("*.json")` matches hidden files, so a `.tmp-*.json` (empty after `mkstemp`) was read as a state file."""
+        seen: list[list[str]] = []
+        real = os.replace
+
+        def spy(source, target):
+            seen.append(sorted(p.name for p in Path(target).parent.glob("*.json")))   # the state of the directory at the moment of the replace
+            return real(source, target)
+
+        with mock.patch.object(dashboard_token.os, "replace", spy):
+            path = dashboard_token.write_state(self.project, 5140, "tok-1")
+        self.assertEqual(len(seen), 1)
+        self.assertEqual(seen[0], [], "the temporary file does not match `*.json` before the replace")
+        self.assertEqual([p.name for p in path.parent.glob("*.json")], [path.name])
+
     @unittest.skipIf(os.name == "nt", "POSIX: tryb 0600 pliku i 0700 katalogu stanu (na Windows ACL: test_skillsync_winacl)")
     def test_the_file_is_private_on_posix(self) -> None:
         path = dashboard_token.write_state(self.project, 5140, "tok-1")
@@ -364,10 +379,23 @@ class StateFile(unittest.TestCase):
         same_project_other_port.write_text("x", encoding="utf-8")
         other_project = directory / f".tmp-{dashboard_token._digest(other)}-5190-leftover3.json"
         other_project.write_text("x", encoding="utf-8")
+        current = directory / f".tmp-{digest}-5190-leftover4.tmp"
+        current.write_text('{"token": "dead"}', encoding="utf-8")
         dashboard_token.write_state(self.project, 5190, "tok-second")
         self.assertFalse(mine.exists(), "a temporary file of this project and port is swept")
+        self.assertFalse(current.exists(), "also the current `.tmp` form")
         self.assertTrue(same_project_other_port.exists())
         self.assertTrue(other_project.exists())
+
+    def test_readers_of_the_state_directory_skip_an_empty_hidden_temporary_file(self) -> None:
+        """A write in progress leaves an empty `.tmp-*` file: `servers` and `port_owner` must not read it (no `JSONDecodeError`)."""
+        dashboard_token.write_state(self.project, 5190, "tok-1")
+        directory = dashboard_token.state_dir()
+        digest = dashboard_token._digest(self.project)
+        for name in (f".tmp-{digest}-5190-abc123.json", f".tmp-{digest}-5190-abc124.tmp"):
+            (directory / name).write_text("", encoding="utf-8")
+        self.assertEqual(len(dashboard_token.servers(self.project, 5190, healthy=lambda *a, **k: True)), 1)
+        self.assertIsNotNone(dashboard_token.port_owner(5190, healthy=lambda *a, **k: True))
 
     def test_the_address_has_the_token_in_the_fragment_only(self) -> None:
         self.assertEqual(dashboard_token.address(5140, "t0k"), "http://127.0.0.1:5140/#zgoda=t0k")

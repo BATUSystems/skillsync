@@ -2425,6 +2425,25 @@ class IsolationTest(LeakTestCase):
             commit_file(clone, 'b.md', 'y\n', 'a write under guard')
             self.assertNotEqual(real_state_snapshot(), before, 'a commit is still detected')
 
+    def test_transient_git_lock_files_are_ignored_but_a_real_change_or_a_layer_lock_file_is_not(self):
+        """Regression (CI macOS): `git fetch` starts the automatic maintenance, which leaves `.git/objects/maintenance.lock` for moments."""
+        watched = self.root / 'fake-real-state'
+        clone = watched / 'layers' / 'core'
+        (clone / '.git' / 'objects').mkdir(parents=True)
+        (clone / '.git' / 'refs' / 'heads').mkdir(parents=True)
+        (clone / '.git' / 'refs' / 'heads' / 'main').write_text('1\n', encoding='utf-8')
+        with mock.patch('layers_helpers.REAL_STATE_DIRS', (watched,)):
+            before = real_state_snapshot()
+            for name in ('objects/maintenance.lock', 'gc.pid', 'index.lock', 'refs/heads/main.lock'):
+                (clone / '.git' / name).write_text('x', encoding='utf-8')
+            self.assertEqual(real_state_snapshot(), before, 'transient locks of git inside .git are not a write of the test')
+            (clone / '.git' / 'refs' / 'heads' / 'main').write_text('2\n', encoding='utf-8')
+            self.assertNotEqual(real_state_snapshot(), before, 'a changed ref is still detected')
+        with mock.patch('layers_helpers.REAL_STATE_DIRS', (watched,)):
+            before = real_state_snapshot()
+            (clone / 'skill.lock').write_text('x', encoding='utf-8')
+            self.assertNotEqual(real_state_snapshot(), before, 'a *.lock file of a layer (outside .git) is still compared')
+
     def test_a_new_fetch_head_or_index_appearing_is_ignored_too(self):
         watched = self.root / 'fake-real-state'
         clone = watched / 'layers' / 'org'

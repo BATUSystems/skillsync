@@ -127,11 +127,17 @@ def _platform_dir(function, env):
         return getattr(layers, function)()
 
 
-def _refreshed_by_read_only_git(path):
+def _refreshed_by_read_only_git(path, relative=None):
     """`FETCH_HEAD` and `.git/index` are touched by `git fetch`/`git status` of other processes (another session, the watch
     service) on the real layer clones: no write of the test under guard, so the snapshot leaves them out (DEBT-142 D67).
-    Everything else under `.git` (HEAD, refs, objects) and every file of a layer is still compared."""
-    return path.name == 'FETCH_HEAD' or (path.name == 'index' and path.parent.name == '.git')
+    The same holds for the transient lock files of git inside `.git` (`objects/maintenance.lock` of the automatic maintenance
+    that `git fetch` starts, `gc.pid`, `*.lock` of refs and index): a process state that exists for moments, never a result
+    of a write. A write under guard still changes a ref, an object, `HEAD` or a layer file, and those stay compared; a
+    `*.lock` outside `.git` (a layer file) stays compared too."""
+    if path.name == 'FETCH_HEAD' or (path.name == 'index' and path.parent.name == '.git'):
+        return True
+    parts = (relative if relative is not None else path).parts
+    return '.git' in parts[:-1] and (path.name.endswith('.lock') or path.name == 'gc.pid')
 
 
 def real_state_snapshot():
@@ -144,7 +150,7 @@ def real_state_snapshot():
             continue
         entries = []
         for path in sorted(directory.rglob('*')):
-            if _refreshed_by_read_only_git(path):
+            if _refreshed_by_read_only_git(path, path.relative_to(directory)):
                 continue
             try:
                 stat = path.lstat()
