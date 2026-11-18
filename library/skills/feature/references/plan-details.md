@@ -5,6 +5,8 @@ Czytaj przy pisaniu planu `docs/plans/RRRR-MM-DD-<slug>.md`.
 Nagłówek planu ma linię `Przebieg: <run-id>` z identyfikatorem użytym w `checkpoint`; hook i `doctor` sprawdzają po niej zamknięcie.
 Opcjonalna linia `Oddanie: <gałąź>` zapisuje odpowiedź użytkownika, dokąd „CP” oddaje pracę w trybie `direct` (rdzeń AGENTS); bez niej
 „CP” wypycha tylko gałąź roboczą.
+Linia `Katalog: worktree <nazwa-katalogu>` albo `Katalog: główny` zapisuje wybór katalogu roboczego z „GO plan” (nazwa, nie ścieżka bezwzględna; brak linii = worktree);
+pytanie, warunki i wznowienie: [workdir](workdir.md).
 Linia `Ceremonia: demo` (opcjonalna przy `full`) zapisuje wartość `workflow.ceremony` z `skillsync route`; rozbieżność z `route` przy „GO implement”
 to pytanie do użytkownika ([ceremonia demo](ceremony-demo.md)).
 

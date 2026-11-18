@@ -12,6 +12,19 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Added
+
+- **Status page: `project.worktree` and a chip in the header.** `dashboard show` and `GET /api/status` report `project.worktree` as `{kind, name, path, mainPath}` or `null` (additive, `schema: 1`). `kind` is `main` (the main checkout) or `worktree` (a linked worktree); it is read from the `.git` file or directory and the `commondir` file, without running `git`. A damaged linked worktree gives `null`, never `main`. The page header shows a chip "worktree: <name>" or "główny checkout" next to the branch chip; the full path (and the path of the main checkout for a worktree) is in the tooltip. The footer is unchanged. Contract: [docs/dashboard-contract.md](docs/dashboard-contract.md), section "`project.worktree`".
+
+### Changed
+
+- **"GO plan" asks where the run works.** Before the commit of "GO plan" the session asks for a working directory: an own worktree (default, recommended) or the main checkout, which means the current branch of the main checkout (also `delivery.base`; for the base branch the question warns that commits and `CP` go to the base). The choice is written to the plan header as `Katalog: worktree <name>` or `Katalog: główny`; a resumed plan reads it. A plan without the line keeps the worktree behaviour. The conditions and the failure paths are in the new reference `feature/references/workdir.md`. The rule in `instructions/_base.md` is shortened to a reference to that file; the sentence on pushing to the base is shortened with the same meaning.
+- The copy of the run outside the worktree and the cleanup of the worktree after `CP` or the closing of a PR apply to `Katalog: worktree` only; a run in the main checkout stays in the project directory.
+
+### Fixed
+
+- **The status page counted review rounds twice.** A round is now only the frozen report `<step>-N.md`; a decision file `<step>-N-decyzje.md` and other files next to it are not counted. Historical `final-review*` reports are still counted. Known limitation: the descriptions of the review stages on the page still say "raporty spec-review*/plan-review*/code-review*"; the text is pinned in fixtures shared with the editor plugin and is corrected together with them.
+
 ## [1.9.1] - 2026-11-18
 
 Upgrading from 1.9.0: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.9.0 → 1.9.1".

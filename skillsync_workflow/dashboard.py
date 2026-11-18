@@ -1070,20 +1070,56 @@ def _has_ref(common, ref):
         return False
 
 
+def git_locations(root):
+    """`(git_dir, common_dir, linked)` of the project from `.git` only (git is not run): `.git` is a directory, or a file
+    `gitdir: <path>` (relative to `root`) naming the git directory; only there a `commondir` file marks a linked worktree and
+    names the common directory (relative to the git directory; `linked` is true). A `.git` directory is always the main
+    checkout, even with a `commondir` file inside. `None` when the `.git` file has no `gitdir:` line. File errors
+    (`OSError`, `ValueError` for a NUL byte) are the caller's: both `read_git` and `read_worktree` catch them."""
+    git = root / '.git'
+    common, linked = git, False
+    if git.is_file():
+        match = re.match(r'gitdir:\s*(.+)', read_text(git, 4096).strip())
+        if not match:
+            return None
+        git = common = (root / match.group(1).strip()).resolve()
+        if (git / 'commondir').is_file():
+            common, linked = (git / read_text(git / 'commondir', 4096).strip()).resolve(), True
+    return git, common, linked
+
+
+def read_worktree(root):
+    """`project.worktree`: `{kind: main|worktree, name, path, mainPath}`, or None (no `.git`, a subdirectory of a repository,
+    a damaged linked worktree, any read error). `mainPath` is the parent of the common git directory of a linked worktree
+    when that directory is named `.git`, else None; it is resolved, `path` is `root` as given."""
+    try:
+        if not (root / '.git').exists():
+            return None
+        locations = git_locations(root)
+        if locations is None:
+            return None
+        git, common, linked = locations
+        if not git.is_dir():
+            return None
+        info = {'kind': 'main', 'name': root.name, 'path': posix(root), 'mainPath': None}
+        if linked:
+            info['kind'] = 'worktree'
+            if common.name == '.git':
+                info['mainPath'] = posix(common.parent)
+        return info
+    except (OSError, ValueError):
+        return None
+
+
 def read_git(root):
     """Branch, HEAD and origin of the project repository read from `.git` files (git is not run)."""
     info = {'branch': None, 'head': None, 'headFull': None, 'remote': None, 'branchUrl': None, 'branchPushed': None}
-    git = root / '.git'
     try:
-        if git.is_file():
-            match = re.match(r'gitdir:\s*(.+)', read_text(git, 4096).strip())
-            if not match:
-                return info
-            git = (root / match.group(1).strip()).resolve()
+        locations = git_locations(root)
+        if locations is None:
+            return info
+        git, common, _ = locations
         head = read_text(git / 'HEAD', 4096).strip()
-        common = git
-        if (git / 'commondir').is_file():
-            common = (git / read_text(git / 'commondir', 4096).strip()).resolve()
         if head.startswith('ref:'):
             ref = head[4:].strip()
             info['branch'] = ref.removeprefix('refs/heads/')
@@ -1109,7 +1145,7 @@ def read_git(root):
                 info['branchPushed'] = _has_ref(common, f"refs/remotes/origin/{info['branch']}")
                 safe = '' if web['host'] == 'azure' else '/'  # Azure encodes "/" in version=GB…
                 info['branchUrl'] = web['branchUrl'].replace('{branch}', quote(info['branch'], safe=safe))
-    except OSError:
+    except (OSError, ValueError):
         pass
     return info
 
@@ -1361,11 +1397,27 @@ def _stage(label, done, tip='', key=None):
     return {'label': label, 'done': done, 'tip': tip, 'key': key}
 
 
+_REVIEW_ROUND = {
+    'spec': re.compile(r'spec-review(?:-[a-z0-9.]+)*-r?\d+\.md'),
+    'plan': re.compile(r'plan-review(?:-[a-z0-9.]+)*-r?\d+\.md'),
+    'code': re.compile(r'(?:code-review(?:-[a-z0-9.]+)*-r?\d+|final-review(?:-[a-z0-9.]+)*(?:-r?\d+)?)\.md'),
+}
+_DECISIONS = re.compile(r'(?:^|-)(?:decisions|decyzje)(?:-|\.|$)')
+
+
+def review_rounds(names, kind):
+    """Review rounds of `kind` (`spec`, `plan`, `code`): only a frozen report `<step>-N.md` (`.md`, a number at the end, optionally
+    `rN`; legacy `final-review[-<word>...][-N].md` counts as code) is a round. A name with a `decisions`/`decyzje` segment
+    anywhere, `.log`, `.json` and other files next to the report are not."""
+    pattern = _REVIEW_ROUND[kind]
+    return sum(1 for name in names if pattern.fullmatch(name) and not _DECISIONS.search(name))
+
+
 def compute_acts(spec, plan, progress, run_files, extra=None):
     extra = extra or {}
     names = [name.rsplit('/', 1)[-1].lower() for name in run_files]
-    spec_reviews = sum(1 for name in names if 'spec-review' in name)
-    plan_reviews = sum(1 for name in names if 'plan-review' in name)
+    spec_reviews = review_rounds(names, 'spec')
+    plan_reviews = review_rounds(names, 'plan')
     pre_impl = any('pre-implement' in name for name in names)
     proto_rounds = sum(1 for name in names if 'prototyp' in name)
 
@@ -1430,7 +1482,7 @@ def compute_acts(spec, plan, progress, run_files, extra=None):
         stage('plan', 'GO implement', plan_status in ('in_progress', 'done'), f"Status planu: {plan_status or '—'}",
                key='stage_go_implement'),
     ]
-    code_reviews = sum(1 for name in names if 'code-review' in name or name.startswith('final-review'))
+    code_reviews = review_rounds(names, 'code')
     real_stages = [
         stage('real', f'Review kodu ×{code_reviews}' if code_reviews > 1 else 'Review kodu', code_reviews > 0,
                'raporty code-review*/final-review* w katalogu przebiegu', key='code_review'),
@@ -2072,7 +2124,7 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
     status = {
         'schema': SCHEMA,
         'app': {'name': APP_NAME, 'version': __version__},
-        'project': {'name': root.name, 'path': posix(root)},
+        'project': {'name': root.name, 'path': posix(root), 'worktree': read_worktree(root)},
         'generatedAt': datetime.now().astimezone().isoformat(timespec='seconds'),
         'version': version,
         'lastUpdate': _iso(max((stamp for stamp in last_change if stamp), default=None)),

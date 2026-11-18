@@ -4,6 +4,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+### Added
+
+- `skills/feature/references/workdir.md` (new): the working directory of a run, chosen at "GO plan" (own worktree or main checkout); the `Katalog:` line, the conditions of the main checkout, the failure paths and the resume rules.
+- `skills/dashboard`: the header chip "worktree: <name>" / "główny checkout" (renderer, `descriptions.json` key `workdir_chip`, icon `i-folder`).
+
+### Changed
+
+- `instructions/_base.md`: the rule "from GO plan a separate worktree and a working branch" becomes "working directory (a question at GO plan, `Katalog:` in the plan) and a working branch"; the sentence on pushing to the base is shortened to a reference to `feature`; the copy of the run and the cleanup of the worktree apply to `Katalog: worktree` only.
+- `skills/feature` (`SKILL.md`; references `plan-large`, `plan-details` with the `Katalog:` header line, `spec`, `retro-quality`, `worker-mode`, `pr-after-approval`): the same rule; the push to the base also works from the main checkout; "TAK P<n>" works in `direct` with the main checkout.
+- `skills/pr-run/SKILL.md`: step 3 honours `Katalog:` (the main checkout and its current branch, not a base branch); step 8 skips the main checkout.
+- `skills/skillsync/SKILL.md`: the working directory rule and the `Katalog:` line.
+- `skills/dashboard`: `SKILL.md` (the chip in the renderer contract) and `descriptions.json`.
+
 ## [1.9.1] - 2026-11-18
 
 ### Changed

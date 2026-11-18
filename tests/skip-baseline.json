@@ -573,6 +573,14 @@
     "category": "windows-no-mechanism"
    },
    {
+    "id": "test_skillsync_dashboard_workdir.Recognition.test_unreadable_commondir_is_null",
+    "category": "no-mode-enforcement"
+   },
+   {
+    "id": "test_skillsync_dashboard_workdir.Recognition.test_symlink_keeps_path_and_resolves_main_path",
+    "category": "no-os-symlinks"
+   },
+   {
     "id": "test_skillsync_dispatch_state.DispatchState.test_fifo_in_claims_does_not_hang",
     "category": "posix-only"
    },

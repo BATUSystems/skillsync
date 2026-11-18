@@ -42,6 +42,7 @@
 
   // Sprite ikon (symbole <symbol id="i-…">): [viewBox, [[tag, atrybuty], …]]. Renderer tworzy go sam przy create().
   const SPRITE = {
+    "i-folder": ["0 0 24 24", [["path", { "d": "M3 6.5A1.5 1.5 0 0 1 4.5 5H10l2 2.5h7.5A1.5 1.5 0 0 1 21 9v9.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5z", "fill": "none", "stroke": "currentColor", "stroke-width": "1.8", "stroke-linejoin": "round" }]]],
     "i-spec": ["0 0 24 24", [["path", { "d": "M6 2h9l5 5v15H6z", "fill": "none", "stroke": "currentColor", "stroke-width": "1.8", "stroke-linejoin": "round" }], ["path", { "d": "M14 2v6h6M9 13h8M9 17h6", "fill": "none", "stroke": "currentColor", "stroke-width": "1.8", "stroke-linecap": "round" }]]],
     "i-plan": ["0 0 24 24", [["path", { "d": "M9 6h11M9 12h11M9 18h11", "fill": "none", "stroke": "currentColor", "stroke-width": "1.8", "stroke-linecap": "round" }], ["path", { "d": "M3.5 6l1.5 1.5L7.5 5M3.5 12l1.5 1.5 2.5-2.5", "fill": "none", "stroke": "currentColor", "stroke-width": "1.8", "stroke-linecap": "round", "stroke-linejoin": "round" }], ["circle", { "cx": "5", "cy": "18", "r": "1.6", "fill": "currentColor" }]]],
     "i-run": ["0 0 24 24", [["path", { "d": "M12 15l-3-3c1-4 4-8 11-9-1 7-5 10-9 11zM9 12H5l2-4h4M12 15v4l4-2v-4", "fill": "none", "stroke": "currentColor", "stroke-width": "1.8", "stroke-linejoin": "round" }], ["path", { "d": "M6 16c-2 1-2 4-2 4s3 0 4-2", "fill": "none", "stroke": "currentColor", "stroke-width": "1.8", "stroke-linecap": "round" }]]],
@@ -494,6 +495,17 @@
         const dl = d.delivery || {};
         if (!(d.git && d.git.branch && typeof dl.ahead === "number" && dl.ahead > 0 && Array.isArray(dl.commits) && dl.commits.length)) st.commitsOpen = false;
       }
+      // Katalog roboczy (project.worktree): chip bez akcji; brak pola, `null` i nieznany `kind` = bez chipu. Pełne ścieżki w dymku (data-desc-extra).
+      const pushWorkdir = () => {
+        const wt = d.project && d.project.worktree;
+        if (!wt || typeof wt !== "object" || (wt.kind !== "worktree" && wt.kind !== "main")) return;
+        const label = wt.kind === "worktree" ? (typeof wt.name === "string" && wt.name ? `worktree: ${wt.name}` : "worktree") : "główny checkout";
+        const paths = [];
+        if (typeof wt.path === "string" && wt.path) paths.push(wt.path);
+        if (wt.kind === "worktree" && typeof wt.mainPath === "string" && wt.mainPath) paths.push(`Główny checkout: ${wt.mainPath}`);
+        meta.push(h("span", { class: "m" }, icon("i-folder"),
+          h("span", Object.assign({ class: "chip s-planned workdir" }, desc("workdir_chip", paths.join("\n") || null)), h("span", { class: "workdir-name" }, label))));
+      };
       if (d.git && d.git.branch) {
         const g = d.git;
         const host = g.remote ? (g.remote.host === "azure" ? "Azure DevOps" : "GitHub") : "";
@@ -503,6 +515,7 @@
             on: { click: linkClick("branch", g.branch, g.branchUrl) } }, name)
           : h("span", { class: "mono", "data-tip": g.branchUrl ? "Gałąź tylko lokalnie (brak na origin), bez linku" : "Gałąź i HEAD repozytorium" }, name);
         meta.push(h("span", { class: "m" }, icon("i-branch"), branch));
+        pushWorkdir();
         // `git.branchPushed` = origin/<gałąź> istnieje; liczba commitów przed origin to `delivery.ahead` (null = nieznana, 0 = nic do wypchnięcia: bez znacznika).
         const dv = d.delivery || {};
         const ahead = typeof dv.ahead === "number" && dv.ahead > 0 ? dv.ahead : 0;
@@ -532,7 +545,7 @@
             meta.push(h("span", { class: "m commits-wrap" }, btn, panel));
           }
         }
-      }
+      } else pushWorkdir();
       if (plan && plan.pr) {
         meta.push(h("span", { class: "m" }, h("a", { class: "chip s-active git-link", href: safeUrl(plan.pr.url), target: "_blank", rel: "noopener",
           "data-tip": "Pull request z linii PR: planu", on: { click: linkClick("pr", plan.pr.number, plan.pr.url) } }, `PR #${plan.pr.number}`)));

@@ -49,6 +49,11 @@ def normalized(data, head=None):
     HEAD sha (full, 12, 8 and 7 characters) becomes `<head>`."""
     data = json.loads(json.dumps(data))
     data['project']['path'] = '<root>'
+    worktree = data['project']['worktree']
+    if worktree:
+        worktree['path'] = '<root>'
+        if worktree['mainPath']:
+            worktree['mainPath'] = '<main>'
     data['generatedAt'] = '2026-01-12T12:00:00+00:00'
     data['app']['version'] = '<version>'
     text = json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + '\n'

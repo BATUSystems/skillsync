@@ -84,7 +84,7 @@ REQUIRED = [
     ('k9-skill-zakaz', SKILL, r'Nie oznaczaj jako \[ZAŁOŻENIE\] pytań o kontrakt, dane, migrację ani bezpieczeństwo'),
     # K10
     ('k10-skill-go-plan-commit', SKILL, r'„GO plan” = jeden lokalny commit\.\*\* Przy „GO plan” powstaje jeden commit lokalny: spec, plan-szkic i prototyp'),
-    ('k10-skill-galaz-worktree', SKILL, r'na gałęzi roboczej w osobnym worktree; jeśli jej nie ma, zakłada ją „GO plan”'),
+    ('k10-skill-katalog-roboczy', SKILL, r'na gałęzi roboczej w katalogu roboczym wybranym przy „GO plan” \(linia `Katalog:`\); w `worktree` gałąź zakłada „GO plan”, jeśli jej nie ma'),
     ('k10-skill-bez-pusha', SKILL, r'Bez pusha: przed „GO implement” nic nie opuszcza maszyny'),
     ('k10-skill-wyjatek-klucz', SKILL, r'wejście z klucza zgłoszenia zostaje bez commita przy „GO plan”'),
     ('k10-skill-skan-sekretow', SKILL, r'`git add` tylko z jawnymi ścieżkami, skan sekretów przed commitem'),
@@ -93,7 +93,7 @@ REQUIRED = [
     ('k10-plan-large-wyjatek', PLAN_LARGE, r'wejście z klucza zgłoszenia zostaje bez commita przy „GO plan”'),
     ('k10-base-go-plan', BASE, r'„GO plan” = lokalny commit speca, planu i prototypu \(bez niego: plan po „GO implement”\)'),
     ('k10-base-sprawdzony-krok', BASE, r'dalej commit po każdym sprawdzonym kroku planu'),
-    ('k10-base-osobny-worktree', BASE, r'Od „GO plan” \(bez niego: „GO implement”\) osobny worktree i gałąź robocza'),
+    ('k10-base-katalog-roboczy', BASE, r'Od „GO plan” \(bez niego: „GO implement”\) katalog roboczy \(pytanie, `Katalog:` w planie\) i gałąź robocza'),
     ('k10-base-przed-go-implement', BASE, r'Przed „GO implement” nic nie opuszcza maszyny'),
     ('k10-kontrakt-najpierw', SKILL, r'Kontrakt najpierw: faza z FE i BE zaczyna od kroku kontraktu \(DTO, endpointy, migawka kontraktu w commicie\)'),
     ('k10-bez-tury-dopasowania', SKILL, r'bez tury „dopasowania”'),

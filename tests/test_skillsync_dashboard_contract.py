@@ -33,7 +33,7 @@ ETA = ({'operation': str, 'until': str, 'untilIso': STR_OR_NONE, 'since': str}, 
 # Pola obiektów zagnieżdżonych: wymagane (typ) i opcjonalne (opcjonalne tylko gdy opisane w kontrakcie jako opcjonalne).
 NESTED = {
     'app': ({'name': str, 'version': str}, {}),
-    'project': ({'name': str, 'path': str}, {}),
+    'project': ({'name': str, 'path': str, 'worktree': (dict, type(None))}, {}),
     'git': ({'branch': STR_OR_NONE, 'head': STR_OR_NONE, 'headFull': STR_OR_NONE, 'remote': (dict, type(None)),
              'branchUrl': STR_OR_NONE, 'branchPushed': (bool, type(None))}, {}),
     'run': ({'id': STR_OR_NONE, 'exists': bool, 'start': STR_OR_NONE, 'startIso': STR_OR_NONE, 'checkpoints': list,
@@ -55,6 +55,8 @@ NESTED = {
     'blockingQuestions': ({'count': int, 'items': list}, {}),
     'expertQuestions': ({'open': int, 'blocking': int, 'runs': list}, {'items': list}),
 }
+WORKTREE = ({'kind': str, 'name': str, 'path': str, 'mainPath': STR_OR_NONE}, {})
+WORKTREE_KINDS = {'main', 'worktree'}
 PLAN = ({'path': str, 'title': str, 'status': STR_OR_NONE, 'statusText': STR_OR_NONE, 'date': STR_OR_NONE, 'mtime': str,
          'fileSha': STR_OR_NONE, 'pr': (dict, type(None))}, {})
 PLAN_ROW = ({'path': str, 'title': str, 'status': STR_OR_NONE, 'spec': STR_OR_NONE, 'run': STR_OR_NONE}, {})
@@ -142,6 +144,13 @@ class DashboardContract(unittest.TestCase):
                 data = json.loads(text)
                 for key, shape in NESTED.items():
                     self.check_shape(data[key], shape, key)
+                worktree = data['project']['worktree']
+                if worktree is not None:
+                    self.check_shape(worktree, WORKTREE, 'project.worktree')
+                    self.assertIn(worktree['kind'], WORKTREE_KINDS)
+                    self.assertEqual((worktree['name'], worktree['path']), ('demo', '<root>'))
+                    self.assertIsNone(worktree['mainPath'], 'fixtures: kind main has no mainPath')
+                self.assertEqual(worktree is not None, case == 'cp-ready', f'{case}: project.worktree null only without a repository')
                 self.each(data['plans'], PLAN_ROW, 'plans')
                 if data['plan'] is not None:
                     self.check_shape(data['plan'], PLAN, 'plan')
@@ -250,12 +259,14 @@ class DashboardContract(unittest.TestCase):
         self.assertEqual([(a['kind'], a['state']) for a in cp_ready['approvals']['actions'][2:]],
                          [('cp', 'waiting'), ('ready', 'waiting')])
         self.assertEqual(cp_ready['git']['headFull'], '<head>')
+        self.assertEqual(cp_ready['project']['worktree'], {'kind': 'main', 'mainPath': None, 'name': 'demo', 'path': '<root>'})
         after = json.loads((FIXTURES / 'cp-ready' / 'expected-after.json').read_text(encoding='utf-8'))
         cp = next(a for a in after['approvals']['actions'] if a['kind'] == 'cp')
         self.assertEqual((cp['state'], cp['given']['word'], cp['given']['sha'], after['approvals']['last']),
                          ('after', 'CP', '<head>', cp['given']))
         self.assertIsNotNone(cp['given']['at'])
         self.each(after['approvals']['actions'], ACTION, 'cp-ready after: approvals.actions')
+        self.assertEqual(after['project']['worktree'], cp_ready['project']['worktree'])
 
     def test_top_level_keys_documented(self):
         doc = CONTRACT_DOC.read_text(encoding='utf-8')
