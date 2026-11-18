@@ -6,7 +6,7 @@ Verified on Node 20.18.1, 22.22.0 and 24.11.1 (`tests/fixtures/test-runs/tap-*.j
 `live = 'completion'`: TAP prints a result after the test ENDED. A result is emitted AT ONCE (the YAML block that follows never delays it); a FAILED result is emitted once more
 when its block ends, with the message (`error:` / `message:`) and the time (`duration_ms:`). Groups come from `# Subtest: name` lines (Node): a line with a deeper indent than the
 group's own line makes it a parent, and a parent reports nothing (its `ok` is a sum; its `not ok` is a failed test of its own only when no descendant failed).
-Id = `group > subgroup::name`, a duplicate id gets ` (2)`, ` (3)` in the id and in the name. `ok # SKIP` and any `# TODO` are `skipped`. Names are decoded in ONE pass
+The depth of the stack is limited (`MAX_DEPTH`). Id = `group > subgroup::name`, a duplicate id gets ` (2)`, ` (3)` in the id and in the name. `ok # SKIP` and any `# TODO` are `skipped`. Names are decoded in ONE pass
 (`\\\\` -> `\\`, `\\#` -> `#`, any other `\\x` stays). Without the header `TAP version N` only an explicit `--format tap` reads the unindented lines.
 `end` is True (the counters come from the adapter) when the plan `1..N` equals the results of level 0, or, without a plan, when the exit code is 0; always False after
 `Bail out!` or when nothing was seen.
@@ -17,6 +17,7 @@ from . import Adapter, register
 
 MAX_LINE = 2000
 MAX_SEEN = 50000
+MAX_DEPTH = 50          # nested groups kept on the stack (and in the name of a group); deeper `# Subtest` lines are not tracked, their results are read as leaves of the last group kept
 MAX_NAME = 300          # the same cut as the id of an emit (`test_events.MAX_NAME`): a longer key of `seen` would only cost memory
 BLOCK_LIMIT = 200       # lines of a YAML block read without its `...`
 COMMENTS_KEPT = 30      # comments before a result line (the error of a file that did not load is among them)
@@ -173,7 +174,8 @@ class TapParser:
             self.groups.pop()
         for group in self.groups:
             group.child = True
-        self.groups.append(_Group(indent, name))
+        if len(self.groups) < MAX_DEPTH:
+            self.groups.append(_Group(indent, name))
         self.subtests = True
 
     def _result(self, found, ctx):
@@ -199,6 +201,8 @@ class TapParser:
             state, note = 'skipped', ('todo' if directive.group('todo') else (directive.group('reason').strip() or 'skipped'))
         else:
             state, note = ('failed' if failed else 'passed'), None
+        if own is not None:
+            self.groups.pop()   # the result line closes its group: the next result at this indent without its own `# Subtest` line is a leaf
         if own is not None and own.child:   # a parent: a sum of its children
             if not (failed and directive is None and not own.failed):
                 return

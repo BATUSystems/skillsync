@@ -468,6 +468,45 @@ class TapRecorder(Base):
         self.assertNotEqual(state.end['status'], 'PASS')   # a failed test of the report with exit 0
 
 
+class InterruptedRecorder(Base):
+    """Review F5-1 m3 (K7 "killed"): `TestRecorder` with the adapter `tap` / `node-test` and a process that has no exit code (SIGTERM, timeout)."""
+
+    def finish(self, fmt, argv, text, result):
+        from skillsync_workflow import test_adapters
+        test_adapters.discover()
+        adapter = test_adapters.resolve(fmt, argv, test_run.detect_tool(argv))
+        recorder = test_run.TestRecorder(self.root, 'R1', 'F1.1', 'flag', adapter=adapter)
+        check = {'argv': argv, 'command': ' '.join(argv), 'cwd': str(self.root)}
+        recorder.started(check)
+        for line in text.split('\n'):
+            recorder.line(check, 'out', line)
+        recorder.finished(check, result, text)
+        return self.attempt()
+
+    CASES = (('tap', ['node', 'x.js'], 'ok - a\nok - b\n'),
+             ('tap', ['node', 'x.js'], 'TAP version 13\nok 1 - a\nok 2 - b\n1..2\n'),   # even a plan that matches is no PASS without an exit code
+             ('node-test', ['node', '--test'], 'TAP version 13\nok 1 - a\nok 2 - b\n1..2\n'),
+             ('node-test', ['node', '--test'], '\u2714 a (1ms)\n\u2714 b (1ms)\n'))
+
+    def test_no_exit_code_is_blocked_and_invents_no_test(self):
+        for fmt, argv, text in self.CASES:
+            with self.subTest(fmt=fmt, text=text):
+                if hasattr(self, 'root') and (self.root / '.skillsync/runs/R1/tests').exists():
+                    shutil.rmtree(self.root / '.skillsync/runs/R1/tests')
+                state = self.finish(fmt, argv, text, {'exit_code': None, 'reason': 'Interrupted', 'duration_seconds': 1.0})
+                self.assertEqual(state.end['status'], 'BLOCKED', state.end)
+                self.assertNotEqual(state.end['status'], 'PASS')
+                self.assertEqual({t['id'] for t in state.tests.values()}, {'a', 'b'})   # only what was read
+                self.assertNotIn('failed', {t['state'] for t in state.tests.values()})
+
+    def test_a_timeout_is_blocked_too(self):
+        for fmt, argv, text in self.CASES[:1] + self.CASES[3:]:
+            with self.subTest(fmt=fmt):
+                shutil.rmtree(self.root / '.skillsync/runs/R1/tests', ignore_errors=True)
+                state = self.finish(fmt, argv, text, {'exit_code': 124, 'reason': 'Timeout after 1s', 'duration_seconds': 1.0})
+                self.assertEqual(state.end['status'], 'BLOCKED', state.end)
+
+
 SPEC_GREEN = ('▶ math\n  ✔ adds (1.2ms)\n  ✔ subtracts (0.4ms)\n✔ math (3ms)\n✔ top level (0.3ms)\n'
               'ℹ tests 3\nℹ suites 1\nℹ pass 3\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 12.5\n')
 SPEC_RED = ('▶ math\n  ✔ adds (1.2ms)\n  ✖ fails (2ms)\n✖ math (4ms)\n'

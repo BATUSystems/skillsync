@@ -303,6 +303,33 @@ class Groups(unittest.TestCase):
         # `mid` failed on its own (its child passed): a failed leaf `top::mid`; `top` has a failed descendant now (`mid`), so it adds nothing
         self.assertEqual(table(rec), [('top > mid::leaf', 'passed', 'top > mid'), ('top::mid', 'failed', 'top')])
 
+    def test_f5_1_minor_1_a_leaf_after_a_parent_without_its_own_subtest_line_is_a_leaf(self):
+        """Review F5-1 m1: a stream with `TAP version` (node-tap, prove) may print a plain result at the indent of a parent that was just reported: not a sum of anything."""
+        text = L(HEAD, '# Subtest: g', '    # Subtest: a', '    ok 1 - a', '    1..1', 'ok 1 - g', 'ok 2 - leaf', 'ok 3 - leaf two', '1..3')
+        rec, adapter, ctx, complete = run(text)
+        self.assertEqual(table(rec), [('g::a', 'passed', 'g'), ('leaf', 'passed', None), ('leaf two', 'passed', None)])
+        self.assertTrue(complete)
+
+    def test_f5_1_minor_1_a_failed_leaf_after_a_failed_parent_is_not_swallowed(self):
+        text = L(HEAD, '# Subtest: g', '    # Subtest: a', '    not ok 1 - a', '    1..1', 'not ok 1 - g', 'not ok 2 - leaf', '1..2')
+        rec = run(text, exit_code=1)[0]
+        self.assertEqual(table(rec), [('g::a', 'failed', 'g'), ('leaf', 'failed', None)])   # `g` adds nothing, `leaf` is a test of its own
+
+    def test_f5_1_minor_1_a_nested_parent_does_not_swallow_its_next_sibling_leaf(self):
+        text = L(HEAD, '# Subtest: top', '    # Subtest: mid', '        # Subtest: x', '        ok 1 - x', '        1..1', '    ok 1 - mid', '    ok 2 - plain', '    1..2', 'ok 1 - top', '1..1')
+        rec = run(text)[0]
+        self.assertEqual(table(rec), [('top > mid::x', 'passed', 'top > mid'), ('top::plain', 'passed', 'top')])
+
+    def test_f5_1_minor_2_the_depth_of_groups_is_limited(self):
+        """Review F5-1 m2: 400 nested groups with long names must not grow the stack and the group name without a bound."""
+        name = 'n' * 250
+        lines = [HEAD] + [' ' * (2 * i) + f'# Subtest: {name}' for i in range(400)] + [' ' * 800 + 'ok 1 - deep']
+        rec = run(L(*lines))[0]
+        groups = [c[4] for c in rec.emitted()]
+        self.assertEqual(len(groups), 1)
+        self.assertLess(len(groups[0] or ''), 50 * (len(name) + 3) + 1)
+        self.assertEqual(ids(rec)[0].rsplit('::', 1)[-1], 'deep')
+
     def test_a_result_with_no_subtest_line_has_no_group(self):
         rec = run(L(HEAD, '    ok 1 - indented', 'ok 2 - plain'))[0]
         self.assertEqual(table(rec), [('indented', 'passed', None), ('plain', 'passed', None)])

@@ -220,6 +220,28 @@ class Notice(unittest.TestCase):
         self.assertEqual(self.notice(['node', '--test', '--test-reporter=tap', 'x.test.js']), 'test-run: adapter node-test (live completion)')
         self.assertEqual(self.notice(['timeout', '100', 'node', '--test', '--test-reporter=spec']), 'test-run: adapter node-test (live completion)')
 
+    def test_f5_1_minor_5_a_mixture_of_reporters_or_a_destination_asks_for_one_reporter_on_stdout(self):
+        """Review F5-1 m5: the command already names reporters, so "add ..." is no advice; the remedy is ONE reporter, read from stdout."""
+        mixes = (['node', '--test', '--test-reporter=spec', '--test-reporter-destination=stdout', '--test-reporter=tap', '--test-reporter-destination=out.tap'],
+                 ['node', '--test', '--test-reporter=spec', '--test-reporter-destination=out.txt', '--test-reporter=dot'],
+                 ['timeout', '100', 'node', '--test', '--test-reporter', 'tap', '--test-reporter', 'dot'])
+        for argv in mixes:
+            with self.subTest(argv=argv):
+                notice = self.notice(argv)
+                self.assertTrue(notice.startswith('test-run: '), notice)
+                self.assertIn('node-test', notice)
+                self.assertIn('stdout', notice)
+                self.assertIn('single', notice)
+                self.assertIn('--test-reporter=spec', notice)
+                self.assertIn('tap', notice)
+                self.assertNotIn(' add ', notice)
+                self.assertNotIn('--format node-test', notice)
+
+    def test_f5_1_minor_5_one_unreadable_reporter_is_replaced_not_added(self):
+        notice = self.notice(['node', '--test', '--test-reporter=dot'])
+        self.assertNotIn(' add ', notice)
+        self.assertIn('--test-reporter=spec', notice)
+
     def test_a_reporter_other_than_tap_and_spec_names_the_two_that_are_readable(self):
         for argv in (['node', '--test', '--test-reporter=dot'], ['node', '--test', '--test-reporter', 'junit', 'x.test.js'], ['timeout', '100', 'node', '--test', '--test-reporter=lcov']):
             with self.subTest(argv=argv):
@@ -506,6 +528,38 @@ class SpecGroups(unittest.TestCase):
         recorder, adapter, ctx, sizes = live(['▶ g', '  ✔ a (1ms)', '  ✔ b (1ms)'])
         self.assertEqual(ids(recorder), ['g::a', 'g::b'])
         self.assertFalse(adapter.end(ctx, 1, '', []))
+
+
+class Depth(unittest.TestCase):
+    """Review F5-1 m2: the depth of the groups is limited in both readers (a hostile stream cannot grow the group name without a bound)."""
+
+    def test_spec_groups_deeper_than_the_limit_are_not_stacked(self):
+        name = 'n' * 250
+        lines = [' ' * (2 * i) + f'▶ {name}' for i in range(400)] + [' ' * 800 + '✔ deep (1ms)']
+        rec = run(L(*lines))[0]
+        groups = [c[4] for c in rec.emitted()]
+        self.assertEqual(len(groups), 1)
+        self.assertLess(len(groups[0] or ''), 50 * (len(name) + 3) + 1)
+
+    def test_tap_groups_deeper_than_the_limit_are_not_stacked(self):
+        name = 'n' * 250
+        lines = [HEAD] + [' ' * (2 * i) + f'# Subtest: {name}' for i in range(400)] + [' ' * 800 + 'ok 1 - deep']
+        rec = run(L(*lines))[0]
+        groups = [c[4] for c in rec.emitted()]
+        self.assertEqual(len(groups), 1)
+        self.assertLess(len(groups[0] or ''), 50 * (len(name) + 3) + 1)
+
+
+class Interrupted(unittest.TestCase):
+    """Review F5-1 m3: an interrupted process (exit code None: SIGTERM, timeout) is never a complete stream."""
+
+    def test_spec_without_the_summary_and_tap_without_a_plan_are_not_complete(self):
+        for text in (L('▶ g', '  ✔ a (1ms)'), L(HEAD, 'ok 1 - a')):
+            with self.subTest(text=text):
+                rec, adapter, ctx, complete = run(text, exit_code=None)
+                self.assertFalse(complete)
+                self.assertEqual(ids(rec).count('a') + ids(rec).count('g::a'), 1)   # what was read stays; nothing is invented
+                self.assertNotIn('failed', [c[3] for c in rec.emitted()])
 
 
 class SpecStates(unittest.TestCase):

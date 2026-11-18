@@ -14,7 +14,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ### Added
 
-- **Test adapters `tap` and `node-test`** for `skillsync test-run`. `tap` (chosen only by `--format tap`) reads any command that prints TAP: a bare script, `npm test`, `bats --tap`, `prove`. `node-test` is chosen by `auto` for `node --test` and reads the format Node prints by default (TAP on Node 20 and 22 piped, `spec` on Node 24 and on a terminal); `--format node-test` names it explicitly. Both report single tests with `live = completion` and read no report file. Rules, limits and the list of what was not verified: `docs/test-adapters.md`.
+- **Test adapters `tap` and `node-test`** for `skillsync test-run`. `tap` (chosen only by `--format tap`) reads any command that prints TAP: a bare script, `npm test`, `bats --tap`, `prove`. `node-test` is chosen by `auto` for `node --test` and reads the format Node prints by default (TAP on Node 20 and 22 piped, `spec` on Node 24 and on a terminal); `--format node-test` names it explicitly. Both report single tests with `live = completion` and read no report file. Both limit the depth of nested groups (50). Rules, limits and the list of what was not verified: `docs/test-adapters.md`. Known limitation: the `node --test` formats of Node 25 and of Windows are not verified on a real stream, and neither is Node 20 on a terminal.
 - **Status page, tab "Testy": the "polecenie zawiodło" state.** A run whose command exited with a non-zero code while no test reported a failure shows the chip "kod N, żaden test nie zgłosił porażki" in the section header and the full sentence in the body (for every tool; the tab counter `failedTotal` is unchanged). The rule is in `docs/dashboard-contract.md`.
 - **Status page, tab "Testy": "back to top" button.** It works in the Testy view too, through the same host hook `deps.scroll.toTop`; a host without the hook shows no button.
 - Fixture guard `tests/test_skillsync_adapter_web_fixtures.py` covers the `tap-*` and `node-test-*` recordings, with per-family minimum counts.
@@ -23,7 +23,6 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 - `quality`: a `Bail out!` line in the output stops the plan `1..N` from counting as the number of tests, so an interrupted TAP run cannot pass on its plan.
 - Adapter interface: `Adapter.explicit` is set by `resolve` for a named `--format` and `Adapter.explicit_only` marks an adapter that `auto` never picks by the tool (`tap`).
-- Known limitation: the `node --test` formats of Node 25 and of Windows are not verified on a real stream, and neither is Node 20 on a terminal.
 
 ## [1.9.1] - 2026-11-18
 

@@ -15,6 +15,7 @@ SUITES = re.compile(r'^ℹ suites (\d+)\s*$')
 ERR = re.compile(r'^\w*Error\b')
 FILE = re.compile(r'/|\.(?:[cm]?js|ts)$')   # a name of a file that did not load (Node 22/24 report it as a level 0 failure)
 MAX_SEEN = 50000
+MAX_DEPTH = 50   # nested `▶` groups kept on the stack and in the name (the same limit as `TapParser`)
 VALUE = {'--require', '-r', '--import', '--loader', '--env-file', '--test-reporter', '--test-reporter-destination', '--test-name-pattern', '--test-skip-pattern', '-C', '--conditions'}
 
 
@@ -85,7 +86,8 @@ class SpecParser:
         indent = len(marker.group('indent')); mark = marker.group('mark'); rest = marker.group('rest')
         if mark == '▶':
             while self.groups and self.groups[-1].indent >= indent: self.groups.pop()
-            self.groups.append(G(indent, rest)); return
+            if len(self.groups) < MAX_DEPTH: self.groups.append(G(indent, rest))
+            return
         r = RES.match(rest)
         if not r:
             self.dropped += 1; return

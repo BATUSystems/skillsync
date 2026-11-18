@@ -236,7 +236,12 @@ def adapter_notice(fmt, argv, tool, adapter, junit=()):
     if tool == 'node' and 'node-test' in same_tool:
         core = unwrap_command(list(argv or []))
         from skillsync_workflow.test_adapters.node_test import scan
-        if scan(core)[0]:
+        has_test, reporters, destination = scan(core)
+        if has_test:
+            if destination or len(set(reporters)) > 1:
+                return 'test-run: node-test reads a single stream on stdout: give a single --test-reporter=spec or tap, without --test-reporter-destination or other reporters'
+            if reporters:
+                return 'test-run: node-test reads only the reporters tap and spec: replace the reporter with --test-reporter=spec or tap'
             return 'test-run: node-test reads only the reporters tap and spec: add --test-reporter=spec or tap'
         return 'test-run: adapter node-test is not chosen automatically for this command: add --format tap (a bare script) or --format node-test (a file with node:test)'
     if same_tool:
