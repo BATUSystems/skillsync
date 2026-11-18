@@ -58,7 +58,7 @@ plan bez żywego właściciela = pytanie, czy zaczynamy; `needsHuman: closure` =
   `ceremony: demo`: zob. `feature/references/ceremony-demo.md`.
 - Tryb dostarczania: `skillsync route <projekt>` zwraca `delivery {mode, base, source}`; bez CLI czytaj `delivery.mode` z `.github/.skillsync.yaml`
   (brak = `pr`). Przy `source: invalid` nie zakładaj `pr`, zapytaj. Brak `delivery.base`: weź `origin/HEAD`, a gdy się nie da, STOP i pytanie.
-- Przed „GO implement” nic nie opuszcza maszyny. Od „GO plan” (bez niego: „GO implement”) osobny worktree i gałąź robocza;
+- Przed „GO implement” nic nie opuszcza maszyny. Od „GO plan” (bez niego: „GO implement”) katalog roboczy (pytanie, `Katalog:` w planie) i gałąź robocza;
   „GO plan” = lokalny commit speca, planu i prototypu (bez niego: plan po „GO implement”); dalej commit po każdym sprawdzonym kroku planu; podumysły nie commitują. `git add` tylko z jawnymi ścieżkami kroku, nigdy plików
   generowanych (tworzonych przez `link` lub wpisanych do `.github/.gitignore`) ani sekretów; przed commitem skan sekretów (gitleaks, gdy
   dostępny; inaczej STOP i prośba o skan).
@@ -66,10 +66,10 @@ plan bez żywego właściciela = pytanie, czy zaczynamy; `needsHuman: closure` =
 - Słowa zgody: `CP` — commit i push bieżącej gałęzi roboczej na jej zdalny odpowiednik (`git push origin <robocza>`), w obu trybach; nigdy na
   `delivery.base`, `main`, `master` ani `develop`, chyba że robocza nią jest. Oddanie na bazę (tylko `direct`) to osobne słowo `CP <gałąź>`
   (np. `CP main`) albo odpowiedź na pytanie: przy pierwszym `CP` przebiegu, gdy `delivery.base` różni się od roboczej, zapytaj, dokąd oddać, i zapisz
-  w planie linię `Oddanie: <gałąź>`; bez odpowiedzi nie pushujesz. Push na bazę: fast-forward `robocza:base` z worktree (baza rozbieżna = STOP,
-  rebase/merge tylko za osobną zgodą; główny checkout aktualizowany `--ff-only` tylko gdy czysty i na `base`); w `pr` nigdy bazy. `CPD` — `CP` i deploy według
+  w planie linię `Oddanie: <gałąź>`; bez odpowiedzi nie pushujesz. Push na bazę: fast-forward `robocza:base` (baza rozbieżna = STOP,
+  rebase/merge tylko za osobną zgodą; szczegóły w `feature`); w `pr` nigdy bazy. `CPD` — `CP` i deploy według
   instrukcji projektu; w `pr` odmowa. `READY` — tylko w `pr` i tylko od użytkownika: po sprawdzeniu, że każdy krok ma `[x]` i kontrole są PASS,
-  komentarz końcowy i przełączenie draft PR na ready; w `direct` albo bez draft PR odmowa (odpowiednikiem w `direct` jest `CP`). `CP`/`READY` daje też przycisk strony statusu: wpis w `.skillsync/runs/<run-id>/approvals.jsonl` (`skillsync status`, pole `approvals`) z `sha` równym HEAD gałęzi, którą zgoda wypchnie; inny `sha` = pytanie (założenie: granicą zaufania jest maszyna). `pr-run` wymaga zainstalowanego skilla i hosta Azure/GitHub; bez nich nie zakładaj PR-a, zapytaj. Przed stanem „czeka na READY/CP”: dokumentacja, changelog, wersja ustalona pytaniem, `retro-quality`, „Wynik”, rekord `--final`, plan `done` (spec `implemented`) i kopia przebiegu poza worktree; worktree sprzątasz po `CP` albo zamknięciu PR-a. Warianty z `!` (`CP!`, `CPD!`, `READY!`)
+  komentarz końcowy i przełączenie draft PR na ready; w `direct` albo bez draft PR odmowa (odpowiednikiem w `direct` jest `CP`). `CP`/`READY` daje też przycisk strony statusu: wpis w `.skillsync/runs/<run-id>/approvals.jsonl` (`skillsync status`, pole `approvals`) z `sha` równym HEAD gałęzi, którą zgoda wypchnie; inny `sha` = pytanie (założenie: granicą zaufania jest maszyna). `pr-run` wymaga zainstalowanego skilla i hosta Azure/GitHub; bez nich nie zakładaj PR-a, zapytaj. Przed stanem „czeka na READY/CP”: dokumentacja, changelog, wersja ustalona pytaniem, `retro-quality`, „Wynik”, rekord `--final`, plan `done` (spec `implemented`) i kopia przebiegu i sprzątanie worktree (tylko `Katalog: worktree`) po `CP` albo zamknięciu PR-a. Warianty z `!` (`CP!`, `CPD!`, `READY!`)
   nie zadają pytań doprecyzowujących, ale nie omijają warunków ani pytania o wersję.
 - Pierwszeństwo: wejście z klucza zgłoszenia (`pr-after-approval`) i wyraźna, bardziej restrykcyjna instrukcja projektu wygrywają z trybem;
   tryb nie zmienia polityk repozytorium. Tag, release i publikacja pakietu wymagają osobnego polecenia.

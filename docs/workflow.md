@@ -100,7 +100,7 @@ stany i wznowienie: `../library/skills/feature/references/spec.md`.
 
 | Akt | Wynik | Pętla przeglądu | Zgoda na koniec |
 |---|---|---|---|
-| I Spec (tylko `plan-large`) | spec bez pytań blokujących `Q` (pytania `[ZAŁOŻENIE]` mogą zostać), przy „GO plan” `approved`, plan-szkic z `Spec-sha` i jeden lokalny commit (spec, plan-szkic, prototyp) | `spec` (zawsze) | „GO plan” |
+| I Spec (tylko `plan-large`) | spec bez pytań blokujących `Q` (pytania `[ZAŁOŻENIE]` mogą zostać), przy „GO plan” `approved`, plan-szkic z `Spec-sha` i `Katalog:` oraz jeden lokalny commit (spec, plan-szkic, prototyp) | `spec` (zawsze) | „GO plan” |
 | II Plan | plan `draft (czeka na GO implement)`, `readiness`, odpowiedź o wersję | `plan` (obowiązkowa przy `plan-large`, ryzyku planu high, prośbie użytkownika; inaczej jedna runda opcjonalna) | „GO implement” |
 | III Realizacja | kod, testy, dokumentacja, changelog, wersja | `kod`: po każdym kroku z ryzykiem high i końcowa | `done`; commity kroków i push według trybu dostarczania (`delivery.mode`) |
 
@@ -123,11 +123,11 @@ Klasa `[EKSPERT]` to wiersz: pytanie domenowe, na które odpowiada ekspert, a ni
 ### „GO plan” i commit
 
 „GO plan” zatwierdza spec i jest jednocześnie krokiem, w którym powstaje jeden lokalny commit: spec, plan-szkic i prototyp.
-Commit trafia na gałąź roboczą w osobnym worktree, zakładaną przy „GO plan”, jeśli jej nie ma; bez pusha, więc przed
+Commit trafia na gałąź roboczą w katalogu wybranym przy „GO plan” (pytanie: „własny worktree”, domyślnie, albo „główny checkout”, czyli bieżąca gałąź głównego checkoutu; wybór zapisuje linia planu `Katalog: worktree <nazwa-katalogu>` albo `Katalog: główny`, wznowienie ją czyta, brak linii = worktree; karta `dispatch` nie pyta; warunki i ścieżki porażek: `feature/references/workdir.md`). W `worktree` gałąź zakłada „GO plan”, jeśli jej nie ma; bez pusha, więc przed
 „GO implement” nic nie opuszcza maszyny (push i PR dalej według trybu dostarczania). Wyjątek: wejście z klucza zgłoszenia
 (`pr-after-approval`) zostaje bez commita przy „GO plan”.
 
-Po założeniu worktree wykonaj w nim `skillsync link <worktree>`: dowiązania skilli (`sync.method: symlink`) świeżego worktree wskazują cele z commita,
+Po założeniu worktree (`Katalog: worktree`) wykonaj w nim `skillsync link <worktree>`: dowiązania skilli (`sync.method: symlink`) świeżego worktree wskazują cele z commita,
 które mogą nie istnieć (a gdy `core.symlinks` jest wyłączone, jak domyślnie w wielu instalacjach Git for Windows, git zapisuje śledzone dowiązanie jako zwykły plik z tekstem celu; `doctor` wskazuje wtedy `skillsync link`, a `link` zastępuje taki plik), a `doctor` kończy się wtedy FAIL („Missing installed skill” albo „Installed skill symlink points to a target that does not exist”, z komendą `skillsync link …` w komunikacie). `checkpoint`, `readiness` i `dashboard serve` uruchamiaj w tym samym
 drzewie, w którym powstaje kod: `.skillsync/runs/` jest per drzewo, odcisk `HEAD` w checkpoincie pochodzi z drzewa wywołania, a `--plan` spoza drzewa jest
 odrzucany („The plan lies outside the project”). `--evidence` przyjmuje ścieżki plików w projekcie, nie opis. Projekt, który śledzi wygenerowane pliki (dowiązania

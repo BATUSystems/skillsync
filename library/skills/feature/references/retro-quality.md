@@ -146,7 +146,7 @@ propozycja w przebiegu i w rejestrze jest jedną propozycją, a o jej stanie dec
 
 **Worktree.** W powiązanym worktree skan czyta także `.skillsync/runs` i rejestr głównego checkoutu (tylko odczyt),
 więc działają wszystkie kroki, nie tylko (a) i (e). Wynik ma `worktree: true`, a propozycje z worktree dostają stan
-`deferred` (sekcja „Przebieg w worktree i przebieg PR”). Główny checkout bez ważnego magazynu jest pomijany z ostrzeżeniem
+`deferred` (sekcja „Przebieg w worktree i przebieg PR”); przebieg z `Katalog: główny` w `direct` działa w głównym checkoucie, więc „TAK” działa ([workdir](workdir.md)). Główny checkout bez ważnego magazynu jest pomijany z ostrzeżeniem
 `source-skipped:`.
 
 **Między projektami.** Dla celów `repo: library` użyj `--cross-project`: sygnał z tym samym kluczem i celem w innym
@@ -198,7 +198,7 @@ Stan propozycji to ostatni wpis w `retro-decisions.json` jej przebiegu. W worktr
   równą `target`, a `git apply --check` przechodzi. Porażka: przygotuj diff sam z opisu zmian i sprawdź ponownie
   (`diff_by: orchestrator`). Druga porażka: propozycji nie pokazuj, nie wpisuj jej do `proposals[]`, a powód podaj
   w „Wyniku”.
-- Pokazanie: tytuł, cel, właściciel, sygnały, diff; wpis `open` powstaje przy pokazaniu (w worktree od razu `deferred`). „Wynik” wymienia sygnały
+- Pokazanie: tytuł, cel, właściciel, sygnały, diff; wpis `open` powstaje przy pokazaniu (w worktree od razu `deferred`; z `Katalog: główny` w `direct` „TAK” działa jak w głównym checkoucie). „Wynik” wymienia sygnały
   i propozycje z decyzjami.
 
 ## Słowa zgody
@@ -298,6 +298,8 @@ Karta `dispatch` ([wiele sesji](multi-session.md)) nie czeka z raportem na decyz
 retro=<liczba propozycji>`, `REPORT BLOCKED … retro=n/a`; pozostałe pola bez zmian. Polecenia „TAK <run-id>/P<n>”
 idą w treści raportu pod linią `REPORT DONE`, nie w `debt=`.
 
+Przebieg z `Katalog: główny` w `direct` jest przebiegiem w głównym checkoucie: „TAK <run-id>/P<n>” działa; „TAK” po rekordzie końcowym zmienia HEAD i unieważnia `sha` zgody `CP` (inny `sha` = pytanie; [workdir](workdir.md)).
+
 Przebieg w głównym checkoucie z dostawą przez PR ([pr-after-approval](pr-after-approval.md)): „TAK” dla `repo: project`
 zapisuje `approved`, a potem `deferred` bez kontroli wstępnych (właściciel `test`/`hook` → `handoff`; zmiana nie trafia na gałąź PR; kontrole przy
 „TAK <run-id>/P<n>”); `repo: library` stosujesz po `final`.
@@ -363,7 +365,7 @@ Wpisy tylko dopisujesz. Bieżący stan i diff propozycji to jej ostatni wpis. `d
 
 ## Reguły szczegółowe
 
-1. Wpisy decyzji: w głównym checkoucie pokazanie zapisuje `open`; w przebiegu w worktree od razu `deferred` (bez `open`).
+1. Wpisy decyzji: w głównym checkoucie (także przy `Katalog: główny` w `direct`) pokazanie zapisuje `open`; w przebiegu w worktree od razu `deferred` (bez `open`).
    „TAK” zapisuje `approved`, a po kontrolach kolejny wpis ze stanem końcowym (`applied`, `deferred`, `handoff`,
    `failed`, `stale`); przy pytaniu zostaje `approved`. `handoff` następuje bez kontroli wstępnych; konflikt pary przy
    „TAK <run-id>/P<n>” to pytanie bez wpisu. „NIE” zapisuje `rejected`, „POPRAW” `revising`, a nowy diff `open`.
