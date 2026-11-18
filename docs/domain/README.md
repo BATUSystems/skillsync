@@ -21,6 +21,7 @@ skill `workflow`, `library/skills/workflow/references/knowledge.md`; weryfikacj�
 | [prototype-manifest-and-cli.md](prototype-manifest-and-cli.md) | sekcja `prototype:` i komenda `skillsync prototype` (zapis w repo, komentarze, tokeny) |
 | [prototype-comments-server.md](prototype-comments-server.md) | wspólne komentarze prototypów: serwer, dziennik `comments.json` v2, fold zgodny z JS, użytkownicy, sesje, odczyt publiczny, iteracje, przywracanie, decyzje agenta, scalanie, akceptacja i bramka prototypu, słownik |
 | [expert-questions.md](expert-questions.md) | pytania do eksperta: `<slug>/questions.json` per przebieg, fold, widoczność, limity, CLI `prototype question` (w tym `migrate`, `purge`), wiersz `[EKSPERT]`, konta z wieloma rolami |
+| [workdir.md](workdir.md) | katalog roboczy przebiegu: powiązany worktree vs główny checkout, linia `Katalog:`, wybór przy „GO plan”, rozpoznanie na stronie statusu |
 
 Maszynowy indeks: [index.yaml](index.yaml) (`version: 1`, klucz `entries`; `paths` względne do korzenia repo).
 

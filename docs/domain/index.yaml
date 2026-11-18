@@ -84,3 +84,7 @@ entries:
     title: "Pytania do eksperta domenowego: questions.json per przebieg, fold, widoczność, limity, CLI question (migrate, purge), wiersz [EKSPERT], konta z wieloma rolami"
     tags: [skillsync, prototype, expert, questions, server, security, spec, glossary]
     paths: ['skillsync_workflow/prototype_server.py', 'skillsync_workflow/prototype.py', 'library/skills/feature/references/spec.md', 'tests/test_skillsync_prototype_questions*.py', 'tests/test_skillsync_prototype_question_cli.py', 'tests/test_skillsync_prototype_question_runs_cli.py', 'tests/test_skillsync_prototype_roles.py', 'tests/test_skillsync_prototype_experts_page.py', 'tests/test_skillsync_expert_skills.py']
+  - path: workdir.md
+    title: "Katalog roboczy przebiegu (worktree, główny checkout, wybór przy GO plan, rozpoznanie na stronie statusu)"
+    tags: [skillsync, dashboard, workflow, worktree, git, workdir, terminology]
+    paths: ['skillsync_workflow/dashboard.py', 'library/skills/feature/references/workdir.md', 'library/skills/dashboard/assets/dashboard-render.js', 'library/instructions/_base.md', 'tests/test_skillsync_dashboard_workdir.py', 'tests/test_skillsync_workdir_rule.py']
