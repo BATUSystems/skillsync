@@ -4,6 +4,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+### Added
+
+- Skill `workflow`, reference `test-run.md`: a table of the test adapters (`unittest` … `node-test`) with the rule for `auto`, the level of live state and the source of the final result.
+- Skill `dashboard`: the Testy tab shows "kod N, żaden test nie zgłosił porażki" for a run whose command exited non-zero with no reported failure (every tool), and the "back to top" button works in that tab when the host gives `scroll.toTop`.
+
 ## [1.9.1] - 2026-11-18
 
 ### Changed
