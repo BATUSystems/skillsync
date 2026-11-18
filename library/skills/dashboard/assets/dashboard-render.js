@@ -370,7 +370,7 @@
     ui.foot = h("footer", { class: "foot", id: "foot" });
     ui.descTip = h("div", { id: "descTip", class: "desc-tip", role: "tooltip", hidden: true });
 
-    // ---------------------------------------------------------------- przycisk „na górę” (widok dokumentu, 170-B)
+    // ---------------------------------------------------------------- przycisk „na górę” (widok dokumentu i widok Testy)
     // Host podaje `deps.scroll.toTop = {subscribe(cb) → unsubscribe, go()}`; `cb` dostaje {y, viewport, height} przewijanego okna. Bez haczyka
     // (webview Skippstera, starsze adaptery) przycisku nie ma. Renderer liczy próg z histerezą, host przewija i pilnuje ruchu.
     const toTopHook = deps.scroll && deps.scroll.toTop && typeof deps.scroll.toTop.subscribe === "function" && typeof deps.scroll.toTop.go === "function"
@@ -382,17 +382,17 @@
     if (toTopHook) root.classList.add("has-to-top");   // CSS: zapas pod dokumentem tylko, gdy przycisk jest możliwy
     function toTopSync() {
       if (!ui.toTop) return;
-      const eligible = st.view === "docs" && Boolean(st.docData) && !toTop.failed && toTop.viewport > 0;
+      const eligible = ((st.view === "docs" && Boolean(st.docData) && !toTop.failed) || st.view === "tests") && toTop.viewport > 0;
       let shown = eligible && toTop.shown;
       if (eligible && !shown && toTop.y > toTop.viewport * TO_TOP_SHOW) shown = true;
       else if (eligible && shown && toTop.y < toTop.viewport * TO_TOP_HIDE) shown = false;
-      if (!shown && toTop.focused) { toTop.focused = false; focusDocsTab(); }   // ukrywany przycisk z fokusem oddaje go zakładce, fokus nie ginie
+      if (!shown && toTop.focused) { toTop.focused = false; focusViewTab(); }   // ukrywany przycisk z fokusem oddaje go zakładce, fokus nie ginie
       toTop.shown = shown;
       ui.toTop.hidden = !shown;
     }
-    function focusDocsTab() { if (typeof ui["tab-docs"].focus === "function") ui["tab-docs"].focus({ preventScroll: true }); }
+    function focusViewTab() { const tab = ui["tab-" + st.view]; if (tab && typeof tab.focus === "function") tab.focus({ preventScroll: true }); }
     function toTopClick() {
-      focusDocsTab();   // przycisk chowa się sam, gdy płynne przewijanie zejdzie poniżej progu (metryki z hosta)
+      focusViewTab();   // przycisk chowa się sam, gdy płynne przewijanie zejdzie poniżej progu (metryki z hosta)
       toTopHook.go();
     }
     if (toTopHook) {
@@ -843,13 +843,17 @@
       const id = CSS_ID(key), c = att.counts || {};
       const total = num(c.total) || num(c.passed) + num(c.failed) + num(c.skipped) + num(c.running) + num(c.waiting);
       const state = sec.state === "passed" ? "zielony" : sec.state === "failed" ? "czerwony" : sec.state === "running" ? "trwa" : sec.state === "interrupted" ? "przerwany" : "";
+      // polecenie zawiodło poza raportowanymi testami: kod ≠ 0 przy zerze porażek (poziomy tests/counts), pokazana próba zakończona
+      const cmdFailed = att.state !== "running" && (att.levels === "tests" || att.levels === "counts") && typeof att.exit === "number" && Number.isFinite(att.exit) && att.exit !== 0 && !num(c.failed);
       const head = h("button", { type: "button", id: `tsec-btn-${id}`, class: "tsec-head", "aria-expanded": String(open), "aria-controls": open ? `tsec-body-${id}` : null,
         on: { click: () => { st.testsOpen[key] = !open; render(); const b = root.querySelector(`#tsec-btn-${id}`); if (b && typeof b.focus === "function") b.focus({ preventScroll: true }); } } },
         h("span", { class: "chev", "aria-hidden": "true" }, open ? "▾" : "▸"),
         h("span", { class: "sh" }, h("b", null, step ? h("span", { class: "mono" }, step.id) : null, step ? " " : "", step ? (step.title || "") : "Bez kroku"),
           h("span", { class: "sub" }, `bieg ${att.n} z ${attempts.length > 1 ? attempts[0].n : att.n} · ${att.startedAt ? fmtTime(att.startedAt) : "—"}${Number.isFinite(att.durationMs) ? " · " + fmtDur(att.durationMs) : ""}`)),
-        h("span", { class: "sum", ...(running ? { "aria-live": "polite", "aria-atomic": "true" } : {}) }, state ? h("span", { class: `chip ${sec.state === "passed" ? "s-done" : sec.state === "failed" ? "s-bad" : sec.state === "running" ? "s-active" : "s-warn"}` }, state) : null, countChips(c)));
+        h("span", { class: "sum", ...(running ? { "aria-live": "polite", "aria-atomic": "true" } : {}) }, state ? h("span", { class: `chip ${sec.state === "passed" ? "s-done" : sec.state === "failed" ? "s-bad" : sec.state === "running" ? "s-active" : "s-warn"}` }, state) : null, countChips(c),
+          cmdFailed ? h("span", { class: "chip s-bad cmd-failed", "data-tip": `kod ${att.exit}, żaden test nie zgłosił porażki (wyjątek poza raportowanymi testami); wyniki ok dotyczą tylko testów, które zdążyły się wykonać` }, `kod ${att.exit}, żaden test nie zgłosił porażki`) : null));
       const body = open ? h("div", { class: "tsec-body", id: `tsec-body-${id}` },
+        cmdFailed ? h("div", { class: "tnote cmd-failed-note" }, `kod ${att.exit}, żaden test nie zgłosił porażki (wyjątek poza raportowanymi testami); wyniki ok dotyczą tylko testów, które zdążyły się wykonać`) : null,
         att.command ? h("div", { class: "cmd mono" }, String(att.command)) : null,
         h("div", { class: "tprogress", role: "img", "aria-label": `${num(c.passed)} z ${total || "?"} testów zielonych` }, ["g", "r", "a"].map((cls, i) => {
           const el = h("i", { class: cls, "data-w": String(total ? Math.min(100, Math.round((100 * num([c.passed, c.failed, c.running][i])) / total)) : 0) });

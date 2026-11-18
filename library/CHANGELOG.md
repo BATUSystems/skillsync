@@ -8,6 +8,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 - `skills/feature/references/workdir.md` (new): the working directory of a run, chosen at "GO plan" (own worktree or main checkout); the `Katalog:` line, the conditions of the main checkout, the failure paths and the resume rules.
 - `skills/dashboard`: the header chip "worktree: <name>" / "główny checkout" (renderer, `descriptions.json` key `workdir_chip`, icon `i-folder`).
+- Skill `workflow`, reference `test-run.md`: a table of the test adapters (`unittest` … `node-test`) with the rule for `auto`, the level of live state and the source of the final result.
+- Skill `dashboard`: the Testy tab shows "kod N, żaden test nie zgłosił porażki" for a run whose command exited non-zero with no reported failure (every tool), and the "back to top" button works in that tab when the host gives `scroll.toTop`.
 
 ### Changed
 

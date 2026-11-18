@@ -68,6 +68,11 @@ entries:
     title: "Wspólne komentarze prototypów: serwer, dziennik v2, użytkownicy, iteracje, przywracanie, akceptacja i bramka"
     tags: [skillsync, prototype, comments, server, journal, users, security, glossary, iterations, restore, merge, acceptance, gate, writing]
     paths: ['skillsync_workflow/prototype_server.py', 'skillsync_workflow/prototype.py', 'skillsync_workflow/quality.py', 'tests/test_skillsync_prototype_server.py', 'tests/test_skillsync_prototype_restore.py', 'tests/test_skillsync_prototype_accept.py', 'tests/test_skillsync_prototype_writing*.py']
+  - path: node-test-formaty.md
+    title: "Format wyjścia `node --test` (TAP czy spec wg wersji Node i TTY) i adaptery `tap`/`node-test`"
+    tags: [skillsync, test-run, adapters, node, tap, output]
+    paths: ['skillsync_workflow/test_adapters/tap.py', 'skillsync_workflow/test_adapters/node_test.py', 'skillsync_workflow/test_run.py', 'skillsync_workflow/quality.py', 'tests/test_skillsync_adapter*.py', 'tests/test_skillsync_test_run*.py']
+    load: on-demand
   - path: dashboard-server.md
     title: "Serwer strony statusu (dashboard serve): Host, Origin, X-Status-Board, CSP, allowlista, limity, zgody tylko użytkownika"
     tags: [skillsync, dashboard, server, security, approvals, workflow]

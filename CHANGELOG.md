@@ -15,11 +15,17 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 ### Added
 
 - **Status page: `project.worktree` and a chip in the header.** `dashboard show` and `GET /api/status` report `project.worktree` as `{kind, name, path, mainPath}` or `null` (additive, `schema: 1`). `kind` is `main` (the main checkout) or `worktree` (a linked worktree); it is read from the `.git` file or directory and the `commondir` file, without running `git`. A damaged linked worktree gives `null`, never `main`. The page header shows a chip "worktree: <name>" or "główny checkout" next to the branch chip; the full path (and the path of the main checkout for a worktree) is in the tooltip. The footer is unchanged. Contract: [docs/dashboard-contract.md](docs/dashboard-contract.md), section "`project.worktree`".
+- **Test adapters `tap` and `node-test`** for `skillsync test-run`. `tap` (chosen only by `--format tap`) reads any command that prints TAP: a bare script, `npm test`, `bats --tap`, `prove`. `node-test` is chosen by `auto` for `node --test` and reads the format Node prints by default (TAP on Node 20 and 22 piped, `spec` on Node 24 and on a terminal); `--format node-test` names it explicitly. Both report single tests with `live = completion` and read no report file. Both limit the depth of nested groups (50). Rules, limits and the list of what was not verified: `docs/test-adapters.md`. Known limitation: the `node --test` formats of Node 25 and of Windows are not verified on a real stream, and neither is Node 20 on a terminal.
+- **Status page, tab "Testy": the "polecenie zawiodło" state.** A run whose command exited with a non-zero code while no test reported a failure shows the chip "kod N, żaden test nie zgłosił porażki" in the section header and the full sentence in the body (for every tool; the tab counter `failedTotal` is unchanged). The rule is in `docs/dashboard-contract.md`.
+- **Status page, tab "Testy": "back to top" button.** It works in the Testy view too, through the same host hook `deps.scroll.toTop`; a host without the hook shows no button.
+- Fixture guard `tests/test_skillsync_adapter_web_fixtures.py` covers the `tap-*` and `node-test-*` recordings, with per-family minimum counts.
 
 ### Changed
 
 - **"GO plan" asks where the run works.** Before the commit of "GO plan" the session asks for a working directory: an own worktree (default, recommended) or the main checkout, which means the current branch of the main checkout (also `delivery.base`; for the base branch the question warns that commits and `CP` go to the base). The choice is written to the plan header as `Katalog: worktree <name>` or `Katalog: główny`; a resumed plan reads it. A plan without the line keeps the worktree behaviour. The conditions and the failure paths are in the new reference `feature/references/workdir.md`. The rule in `instructions/_base.md` is shortened to a reference to that file; the sentence on pushing to the base is shortened with the same meaning.
 - The copy of the run outside the worktree and the cleanup of the worktree after `CP` or the closing of a PR apply to `Katalog: worktree` only; a run in the main checkout stays in the project directory.
+- `quality`: a `Bail out!` line in the output stops the plan `1..N` from counting as the number of tests, so an interrupted TAP run cannot pass on its plan.
+- Adapter interface: `Adapter.explicit` is set by `resolve` for a named `--format` and `Adapter.explicit_only` marks an adapter that `auto` never picks by the tool (`tap`).
 
 ### Fixed
 

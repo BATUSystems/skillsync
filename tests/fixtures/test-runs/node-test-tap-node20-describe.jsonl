@@ -1,0 +1,38 @@
+{"meta": {"tool": "node", "version": "Node 20.18.1", "command": ["node", "--test", "nt.test.js"], "exit": 1, "merged": false, "env": {"NO_COLOR": "1", "stdout_stderr": "pipes (not a terminal)"}, "note": "default reporter of Node 20 in a pipe (TAP)", "scrubbed": "paths, host and user names are replaced", "format": "one record per chunk read from the pipe: t = seconds since the start, fd = out|err, data = the text of the chunk", "stream": "tap"}}
+{"t": 0.14, "fd": "out", "data": "TAP version 13\n"}
+{"t": 0.168, "fd": "out", "data": "# Subtest: math\n"}
+{"t": 0.168, "fd": "out", "data": "    # Subtest: adds\n"}
+{"t": 0.169, "fd": "out", "data": "    ok 1 - adds\n"}
+{"t": 0.169, "fd": "out", "data": "      ---\n      duration_ms: 0.502001\n      ...\n"}
+{"t": 0.169, "fd": "out", "data": "    # Subtest: fails\n"}
+{"t": 0.17, "fd": "out", "data": "    not ok 2 - fails\n"}
+{"t": 0.17, "fd": "out", "data": "      ---\n      duration_ms: 1.332555\n      location: '/work/proj/nt.test.js:5:3'\n      failureType: 'testCodeFailure'\n      error: |-\n        Expected values to be strictly equal:\n        \n        1 !== 2\n        \n      code: 'ERR_ASSERTION'\n      name: 'AssertionError'\n      expected: 2\n      actual: 1\n      operator: 'strictEqual'\n      stack: |-\n        TestContext.<anonymous> (/work/proj/nt.test.js:5:28)\n        Test.runInAsyncScope (node:async_hooks:206:9)\n        Test.run (node:internal/test_runner/test:796:25)\n        Suite.processPendingSubtests (node:internal/test_runner/test:527:18)\n        Test.postRun (node:internal/test_runner/test:889:19)\n        Test.run (node:internal/test_runner/test:835:12)\n        async Promise.all (index 0)\n        async Suite.run (node:internal/test_runner/test:1135:7)\n        async Test.processPendingSubtests (node:internal/test_runner/test:527:7)\n      ...\n"}
+{"t": 0.171, "fd": "out", "data": "    # Subtest: skipped one\n"}
+{"t": 0.171, "fd": "out", "data": "    ok 3 - skipped one # SKIP not now\n"}
+{"t": 0.171, "fd": "out", "data": "      ---\n      duration_ms: 0.071827\n      ...\n"}
+{"t": 0.171, "fd": "out", "data": "    # Subtest: todo one\n"}
+{"t": 0.171, "fd": "out", "data": "    ok 4 - todo one # TODO later\n"}
+{"t": 0.171, "fd": "out", "data": "      ---\n      duration_ms: 0.09866\n      ...\n"}
+{"t": 0.317, "fd": "out", "data": "    # Subtest: nested\n"}
+{"t": 0.317, "fd": "out", "data": "        # Subtest: deep\n"}
+{"t": 0.317, "fd": "out", "data": "        ok 1 - deep\n"}
+{"t": 0.317, "fd": "out", "data": "          ---\n          duration_ms: 150.654901\n          ...\n"}
+{"t": 0.318, "fd": "out", "data": "        1..1\n"}
+{"t": 0.318, "fd": "out", "data": "    ok 5 - nested\n"}
+{"t": 0.318, "fd": "out", "data": "      ---\n      duration_ms: 151.024655\n      type: 'suite'\n      ...\n"}
+{"t": 0.318, "fd": "out", "data": "    1..5\n"}
+{"t": 0.318, "fd": "out", "data": "not ok 1 - math\n"}
+{"t": 0.318, "fd": "out", "data": "  ---\n  duration_ms: 154.46633\n  type: 'suite'\n  location: '/work/proj/nt.test.js:3:1'\n  failureType: 'subtestsFailed'\n  error: '1 subtest failed'\n  code: 'ERR_TEST_FAILURE'\n  ...\n"}
+{"t": 0.318, "fd": "out", "data": "# Subtest: top level\n"}
+{"t": 0.318, "fd": "out", "data": "ok 2 - top level\n"}
+{"t": 0.318, "fd": "out", "data": "  ---\n  duration_ms: 0.206995\n  ...\n"}
+{"t": 0.719, "fd": "out", "data": "# Subtest: slow\n"}
+{"t": 0.719, "fd": "out", "data": "ok 3 - slow\n"}
+{"t": 0.719, "fd": "out", "data": "  ---\n  duration_ms: 401.347169\n  ...\n"}
+{"t": 0.729, "fd": "out", "data": "1..3\n"}
+{"t": 0.729, "fd": "out", "data": "# tests 7\n# suites 2\n# pass 4\n"}
+{"t": 0.729, "fd": "out", "data": "# fail 1\n"}
+{"t": 0.729, "fd": "out", "data": "# cancelled 0\n"}
+{"t": 0.729, "fd": "out", "data": "# skipped 1\n"}
+{"t": 0.729, "fd": "out", "data": "# todo 1\n"}
+{"t": 0.73, "fd": "out", "data": "# duration_ms 600.473227\n"}

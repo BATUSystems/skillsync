@@ -1,0 +1,5 @@
+{"meta": {"tool": "node", "version": "synthetic (hand written)", "command": ["node", "--test", "--test-reporter=tap"], "exit": 1, "merged": false, "synthetic": true, "env": {}, "note": "synthetic: TAP with a few results and `Bail out!`, exit 1", "scrubbed": "hand written, no recording", "format": "one record per chunk read from the pipe: t = seconds since the start, fd = out|err, data = the text of the chunk"}}
+{"t": 0.01, "fd": "out", "data": "TAP version 13\n"}
+{"t": 0.02, "fd": "out", "data": "ok 1 - first\nok 2 - second\n"}
+{"t": 0.03, "fd": "out", "data": "not ok 3 - third\n"}
+{"t": 0.04, "fd": "out", "data": "Bail out! database is down\n"}
