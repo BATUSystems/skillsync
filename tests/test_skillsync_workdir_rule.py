@@ -75,7 +75,7 @@ PHRASES = [
     ('pr-after-bez-zmian', PR_AFTER, r'„rób PR” używa bieżącej gałęzi'),
     # M2: ponowne sprawdzenie przy wznowieniu z `główny`
     ('m2-wznowienie', WORKDIR, r'Wznowienie z `Katalog: główny` sprawdza warunki ponownie przed pierwszym commitem'),
-    ('m2-odlaczony', WORKDIR, r'HEAD odłączony = STOP'),
+    ('m2-odlaczony', WORKDIR, r'Wznowienie z `Katalog: główny` sprawdza warunki ponownie[^\n]*HEAD odłączony'),
     ('m2-dzierzawa', WORKDIR, r'żywa dzierżawa innego przebiegu = STOP z propozycją worktree'),
     ('m2-inna-galaz', WORKDIR, r'bieżąca gałąź inna niż przy poprzednich commitach przebiegu = STOP z pytaniem, które nazywa obie gałęzie'),
     ('m2-pr-baza', WORKDIR, r'gałąź równa `delivery\.base` w `pr` = STOP \(„główny” nie jest przyjmowany\)'),
@@ -171,6 +171,7 @@ class WorkdirRuleText(unittest.TestCase):
         root = Path(LIB).parent
         for rel in ('docs/workflow.md', 'docs/workflow-details.md'):
             text = (root / rel).read_text(encoding='utf-8')
+            self.assertNotRegex(text, r'/home/\w', rel)
             self.assertNotRegex(text, r'/Users/\w', rel)
             self.assertNotRegex(text, r'(?i)generated with|co-authored-by', rel)
 
