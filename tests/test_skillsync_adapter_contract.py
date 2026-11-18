@@ -134,6 +134,12 @@ class TapCounter(unittest.TestCase):
         self.assertIsNone(skipped)
 
 
+    def test_an_indented_bail_out_is_a_bail_out_too(self):
+        run, skipped = quality._test_counts('TAP version 13\n1..5\nok 1 - a\n  Bail out! indented\n')
+        self.assertIsNone(run)
+        self.assertIsNone(skipped)
+
+
 class Unwrapping(unittest.TestCase):
     def test_the_argv_behind_the_wrappers(self):
         rows = (

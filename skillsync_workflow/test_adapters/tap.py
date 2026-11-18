@@ -17,6 +17,7 @@ from . import Adapter, register
 
 MAX_LINE = 2000
 MAX_SEEN = 50000
+MAX_NAME = 300          # the same cut as the id of an emit (`test_events.MAX_NAME`): a longer key of `seen` would only cost memory
 BLOCK_LIMIT = 200       # lines of a YAML block read without its `...`
 COMMENTS_KEPT = 30      # comments before a result line (the error of a file that did not load is among them)
 ANSI = re.compile(r'\x1b\[[0-9;?]*[A-Za-z]')
@@ -38,14 +39,15 @@ def decode(text):
 
 
 def split_directive(rest):
-    """`(name, directive match or None)`: the FIRST unescaped ` # ` decides; a text after it that is not SKIP/SKIPPED/TODO belongs to the name."""
+    """`(name, directive match or None)`: the FIRST unescaped ` # ` decides (or a `# ` that opens `rest`: `ok 1 # SKIP why` has no description); a text after it that is not
+    SKIP/SKIPPED/TODO belongs to the name."""
     i = 0
     while i < len(rest):
         if rest[i] == '\\':
             i += 2
             continue
-        if rest.startswith(' # ', i):
-            found = DIRECTIVE.match(rest[i + 3:])
+        if rest.startswith(' # ', i) or (i == 0 and rest.startswith('# ')):
+            found = DIRECTIVE.match(rest[i + (3 if rest[i] == ' ' else 2):])
             return (rest[:i], found) if found else (rest, None)
         i += 1
     return rest, None
@@ -105,6 +107,7 @@ class TapParser:
         self.after_result = False   # the previous line was a result line: `---` here opens a YAML block
         self.res_indent = 0
         self.block = None
+        self.drain = None        # the indent of a result line whose block went over the limit: the deeper lines that follow are still its block
 
     @property
     def active(self):
@@ -116,6 +119,10 @@ class TapParser:
         text = ANSI.sub('', text).rstrip()
         if self.bailed:
             return
+        if self.drain is not None:
+            if not text.strip() or len(text) - len(text.lstrip(' ')) > self.drain:
+                return
+            self.drain = None
         if self.block is not None:
             if self._in_block(text, ctx):
                 return
@@ -198,9 +205,10 @@ class TapParser:
         name = decode(name_raw.strip()) or NO_NAME
         group = ' > '.join(g.name for g in parents) or None
         base = f'{group}::{name}' if group else name
-        if len(self.seen) >= MAX_SEEN and base not in self.seen:
+        key = base[:MAX_NAME]
+        if len(self.seen) >= MAX_SEEN and key not in self.seen:
             return
-        count = self.seen[base] = self.seen.get(base, 0) + 1
+        count = self.seen[key] = self.seen.get(key, 0) + 1
         test_id = base if count == 1 else f'{base} ({count})'
         if count > 1:
             name = f'{name} ({count})'
@@ -226,8 +234,9 @@ class TapParser:
             self._flush(ctx)
             return True
         block.lines += 1
-        if not self._within_limit(ctx):
-            return False
+        self._within_limit(ctx)
+        if self.block is None:   # over the limit: this line was the last one read for the block
+            return True
         found = KEY.match(text)
         if indent == block.key_indent and found:
             self._key(block, found.group('key'), found.group('value'))
@@ -237,8 +246,8 @@ class TapParser:
 
     def _within_limit(self, ctx):
         if self.block.lines > BLOCK_LIMIT:
+            self.drain = self.block.res_indent   # the block ends here for the message, but its remaining (deeper) lines are not TAP
             self._flush(ctx)
-            return False
         return True
 
     def _key(self, block, key, value):

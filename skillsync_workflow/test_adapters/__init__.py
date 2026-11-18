@@ -99,7 +99,7 @@ def resolve(fmt, argv, tool):
     for name in sorted(REGISTRY):
         cls = REGISTRY[name]
         try:
-            if tool in cls.tools and cls().accepts(list(argv)):
+            if tool in cls.tools and not cls.explicit_only and cls().accepts(list(argv)):
                 return cls()
         except Exception:
             continue

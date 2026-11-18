@@ -17,7 +17,7 @@ TOOLS = ('vitest', 'karma', 'playwright', 'cypress')
 # files silently. `MIN_JSONL` is a count of the recordings only (no JUnit/XML requirement); `node-test` (the `spec` stream) is filled by a later step of the plan,
 # which raises its minimum together with the fixtures.
 NODE_PREFIXES = ('tap', 'node-test')
-MIN_JSONL = {'tap': 11, 'node-test': 0}
+MIN_JSONL = {'tap': 12, 'node-test': 0}
 SYNTHETIC = {'tap-bare-green.jsonl', 'tap-bare-not-ok-exit0.jsonl', 'tap-bail-out.jsonl'}   # hand written, marked `"synthetic": true` in the meta
 BUDGET = 300 * 1024
 FILES = sorted({p for tool in TOOLS for p in FIXTURES.glob(f'{tool}-*')} | {p for prefix in NODE_PREFIXES for p in FIXTURES.glob(f'{prefix}-*')})

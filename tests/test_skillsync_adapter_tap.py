@@ -5,6 +5,7 @@ The expectations come from the contract (result lines, directives, names, groups
 22.22.0 and 24.11.1 (`tests/fixtures/test-runs/tap-*.jsonl`); three fixtures are hand written (`"synthetic": true`)."""
 import sys
 import unittest
+import unittest.mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -87,6 +88,21 @@ class Registration(unittest.TestCase):
             with self.subTest(argv=argv):
                 self.assertNotIsInstance(test_adapters.resolve('auto', argv, tool), test_adapters.REGISTRY['tap'])
 
+    def test_auto_skips_an_explicit_only_adapter_even_when_it_names_the_tool(self):
+        class Fake(test_adapters.Adapter):
+            name = 'zz-fake-explicit'
+            tools = ('zzfaketool',)
+            explicit_only = True
+
+            def accepts(self, argv):
+                return True
+
+        with unittest.mock.patch.dict(test_adapters.REGISTRY, {Fake.name: Fake}):
+            self.assertIsNone(test_adapters.resolve('auto', ['zzfaketool', 'run'], 'zzfaketool'))
+            self.assertIsInstance(test_adapters.resolve('zz-fake-explicit', ['zzfaketool'], 'zzfaketool'), Fake)   # by name it is still available
+            Fake.explicit_only = False
+            self.assertIsInstance(test_adapters.resolve('auto', ['zzfaketool', 'run'], 'zzfaketool'), Fake)   # the flag alone made the difference
+
     def test_the_module_only_reads_text_and_emits(self):
         self.assertEqual(ar.audit(ADAPTER_FILE), [])
 
@@ -114,6 +130,14 @@ class ResultLines(unittest.TestCase):
         text = L(HEAD, '# ok - a log written by a test', '# not ok 3 - another', 'log: ok 1 - inside a line', '', 'some words', '#ok 1 - no space', '# tests 3', '# pass 3',
                  'ok 1 - real')
         self.assertEqual(table(run(text)[0]), [('real', 'passed', None)])
+
+    def test_the_duplicate_memory_keeps_short_keys_and_duplicates_still_count(self):
+        long_name = 'n' * 1500
+        text = L(HEAD, f'ok 1 - {long_name}', f'ok 2 - {long_name}', f'ok 3 - {long_name}x')
+        recorder, adapter, ctx, sizes = live(text.splitlines())
+        self.assertTrue(adapter.parser.seen and max(len(k) for k in adapter.parser.seen) <= 300)
+        self.assertEqual([c[2] for c in recorder.emitted()], [long_name, f'{long_name} (2)', f'{long_name}x (3)'])   # the key is cut, the id and the name are not
+        self.assertEqual(sorted(adapter.parser.seen.values()), [3])   # the name that differs only after the 300th character is the same key
 
     def test_stderr_is_ignored(self):
         rec = run(L(HEAD, 'ok 1 - a', 'ok 2 - not mine'), fd='err')[0]
@@ -177,6 +201,22 @@ class Directives(unittest.TestCase):
         self.assertEqual(self.one('ok 1 - a \\# SKIP b')[1:3], ('a # SKIP b', 'passed'))
         self.assertEqual(self.one('not ok 1 - a \\# TODO b')[1:3], ('a # TODO b', 'failed'))
         self.assertEqual(self.one('ok 1 - a \\# b # SKIP why')[1:3], ('a # b', 'skipped'))
+
+    def test_a_directive_straight_after_the_number_or_the_dash(self):
+        # Perl Test::More prints `ok 1 # skip why`: no description, so the `#` opens the text left after `ok N`
+        for line, state, word in (('ok 1 # SKIP why', 'skipped', 'why'), ('not ok 2 # TODO x', 'skipped', 'todo'), ('ok # skip x', 'skipped', 'x'), ('ok 3 # TODO', 'skipped', 'todo'),
+                                  ('not ok # TODO', 'skipped', 'todo'), ('ok 4 -# SKIP why', 'skipped', 'why'), ('ok 5 - # SKIP why', 'skipped', 'why'), ('ok 6 # skipped why', 'skipped', 'why')):
+            with self.subTest(line=line):
+                test_id, name, got, msg = self.one(line)
+                self.assertEqual((test_id, name, got), ('(bez nazwy)', '(bez nazwy)', state))
+                self.assertIn(word, msg.lower())
+
+    def test_a_hash_straight_after_the_number_that_is_no_directive_stays_in_the_name(self):
+        for line, name, state in (('ok 1 # just a note', '# just a note', 'passed'), ('not ok 1 # SKIPPER', '# SKIPPER', 'failed'), ('ok 1 #SKIP why', '#SKIP why', 'passed'),
+                                  ('ok 1 - a # skipper', 'a # skipper', 'passed')):
+            with self.subTest(line=line):
+                test_id, got, st, msg = self.one(line)
+                self.assertEqual((got, st), (name, state))
 
     def test_a_directive_after_an_escaped_backslash_still_counts(self):
         self.assertEqual(self.one('ok 1 - dir\\\\ # SKIP why')[1:3], ('dir\\', 'skipped'))
@@ -338,6 +378,14 @@ class Yaml(unittest.TestCase):
         self.assertEqual(table(rec), [('a', 'failed', None), ('b', 'passed', None), ('c', 'failed', None)])
         self.assertEqual(msg_of(rec, 'a'), 'kept')
 
+    def test_the_rest_of_a_block_over_the_limit_is_still_the_block(self):
+        # lines deeper than the result line that come after the limit are not TAP: neither results nor groups, however they look
+        lines = ([HEAD, 'not ok 1 - a', '  ---', "  error: 'kept'"] + [f'  key{i}: value' for i in range(250)]
+                 + ['  ok 7 - looks like a result', '  not ok 8 - another', '    # Subtest: not a group', '', '  more: text', 'ok 2 - b', 'not ok 3 - c'])
+        rec = live(lines)[0]
+        self.assertEqual(table(rec), [('a', 'failed', None), ('b', 'passed', None), ('c', 'failed', None)])
+        self.assertEqual(msg_of(rec, 'a'), 'kept')
+
     def test_a_block_under_a_nested_result_and_two_blocks_in_a_row(self):
         text = L(HEAD, '# Subtest: g', '    # Subtest: a', '    not ok 1 - a', '      ---', '      duration_ms: 2', "      error: 'nested boom'", '      ...', '    # Subtest: b', '    not ok 2 - b', '      ---',
                  "      error: 'second boom'", '      ...', '    1..2', 'not ok 1 - g', '  ---', "  error: '2 subtests failed'", '  ...')
@@ -477,7 +525,10 @@ class PlanAndEnd(unittest.TestCase):
 
 
 class Continuity(unittest.TestCase):
-    """The same stream cut at any place gives the same emits (a pipe delivers any split; `partial` carries the unfinished tail)."""
+    """The same stream cut at any place gives the same emits (a pipe delivers any split).
+
+    What it proves: the adapter has no `partial` of its own and `feed` always gets whole lines; the replay (`adapter_replay`) joins the tails of the chunks into lines. So the test
+    proves the whole chain chunk -> line -> result (an emit never depends on where the pipe cut the stream), not the adapter alone."""
 
     def texts(self):
         out = {name: stream_text(name) for name in ('tap-node22-describe.jsonl', 'tap-node22-edge.jsonl', 'tap-node22-multi.jsonl', 'tap-node24-todo.jsonl', 'tap-bare-throws.jsonl',
@@ -531,13 +582,13 @@ class Fixtures(unittest.TestCase):
         failed = [c for c in rec.emitted() if c[1] == 'math::fails']
         self.assertAlmostEqual(failed[1][5], 1.27, delta=1)   # duration_ms: 1.269695
 
-    def test_k1_k3_k4_edge_cases_on_node_22_and_24(self):
-        for name in ('tap-node22-edge.jsonl', 'tap-node24-edge.jsonl'):
+    def test_k1_k3_k4_edge_cases_on_node_20_22_and_24(self):
+        for name in ('tap-node20-edge.jsonl', 'tap-node22-edge.jsonl', 'tap-node24-edge.jsonl'):
             with self.subTest(fixture=name):
                 rec, adapter, ctx, complete = replay_fixture('tap', name)
-                self.assertEqual(table(rec), self.EDGE)   # the parent `not ok 5 - with subtests` (subtestsFailed) is not a test
+                self.assertEqual(table(rec), self.EDGE)   # (Node 20 has no `type` in the YAML) the parent `not ok 5 - with subtests` (subtestsFailed) is not a test
                 self.assertTrue(complete)   # plan 1..7 = the seven lines of level 0
-                self.assertEqual(msg_of(rec, 'with subtests::inner bad'), 'boom')
+                self.assertEqual(msg_of(rec, 'with subtests::inner bad'), 'boom')   # `error: |-` block scalar: the first line
                 self.assertEqual(msg_of(rec, 'cancelled by timeout'), 'test timed out after 50ms')
                 self.assertNotIn('with subtests', ids(rec))
                 self.assertEqual(name_of(rec, 'dup (2)'), 'dup (2)')
