@@ -28,7 +28,8 @@ LINKING_FILES = [SKILL, PLAN_LARGE, PR_RUN]
 
 
 def read(rel):
-    return ' '.join((Path(LIB) / rel).read_text(encoding='utf-8').split())
+    base = Path(LIB).parent if rel.startswith('docs/') else Path(LIB)
+    return ' '.join((base / rel).read_text(encoding='utf-8').split())
 
 
 # (id, plik, wyrażenie regularne po normalizacji białych znaków)
@@ -72,6 +73,27 @@ PHRASES = [
     ('retro-tak-glowny', RETRO, r'z `Katalog: główny` w `direct` „TAK” działa'),
     ('worker-worktree', WORKER, r'karta zawsze pracuje w worktree ze zlecenia'),
     ('pr-after-bez-zmian', PR_AFTER, r'„rób PR” używa bieżącej gałęzi'),
+    # M2: ponowne sprawdzenie przy wznowieniu z `główny`
+    ('m2-wznowienie', WORKDIR, r'Wznowienie z `Katalog: główny` sprawdza warunki ponownie przed pierwszym commitem'),
+    ('m2-odlaczony', WORKDIR, r'HEAD odłączony = STOP'),
+    ('m2-dzierzawa', WORKDIR, r'żywa dzierżawa innego przebiegu = STOP z propozycją worktree'),
+    ('m2-inna-galaz', WORKDIR, r'bieżąca gałąź inna niż przy poprzednich commitach przebiegu = STOP z pytaniem, które nazywa obie gałęzie'),
+    ('m2-pr-baza', WORKDIR, r'gałąź równa `delivery\.base` w `pr` = STOP \(„główny” nie jest przyjmowany\)'),
+    ('m2-direct-baza', WORKDIR, r'w `direct` na bazie ostrzeżenie jak przy wyborze i pytanie o kontynuację'),
+    # m2, m3, m5
+    ('m2-plik-baseline', WORKDIR, r'Plik z baseline, który krok planu też zmienia = pytanie albo STOP \(bez commita mieszanego'),
+    ('m3-cudza-galaz', WORKDIR, r'przed użyciem bieżącej gałęzi sprawdź istniejący PR i upstream z cudzymi commitami \(są = pytanie\)'),
+    ('m3-konwencja', WORKDIR, r'konwencję nazwy gałęzi \(np\. z kluczem ticketu\); bieżąca gałąź jej nie musi spełniać, ale pytanie to pokazuje'),
+    ('m5-bez-commita', WORKDIR, r'nic nie powstaje, bez commita i bez linii `Katalog:`'),
+    ('m5-approve', WORKDIR, r'`skillsync spec approve` ustawił już `approved`'),
+    # m1: CP w SKILL.md
+    ('m1-ff-skill', SKILL, r'główny checkout aktualizowany `--ff-only` tylko gdy czysty i na `base`; szczegóły w \[workdir\]'),
+    # m4: pr-run krok 3/8, dokumentacja
+    ('m4-prrun-honoruje', PR_RUN, r'Czytaj linię planu `Katalog:`'),
+    ('m4-prrun-krok8', PR_RUN, r'krok 8 pomija wtedy kopię przebiegu i usuwanie worktree'),
+    ('m4-prrun-stop', PR_RUN, r'inaczej STOP i propozycja worktree'),
+    ('m4-docs-workflow', 'docs/workflow.md', r'`Katalog: worktree <nazwa-katalogu>` albo `Katalog: główny`'),
+    ('m4-docs-details', 'docs/workflow-details.md', r'linii planu `Katalog:` \(przy `główny` bieżąca gałąź głównego checkoutu'),
 ]
 
 
@@ -85,6 +107,8 @@ class WorkdirRuleText(unittest.TestCase):
         failures = []
         for key, rel, pattern in PHRASES:
             path = Path(LIB) / rel
+            if rel.startswith('docs/'):
+                path = Path(LIB).parent / rel
             if not path.is_file() or not re.search(pattern, read(rel)):
                 failures.append(f'{key}: {rel} !~ {pattern}')
         self.assertEqual(failures, [])
@@ -93,7 +117,8 @@ class WorkdirRuleText(unittest.TestCase):
         base = read(BASE)
         self.assertIn('`Katalog:`', base)
         self.assertIn('katalog roboczy (pytanie, `Katalog:` w planie) i gałąź robocza', base)
-        self.assertIn('sprzątanie worktree (tylko `Katalog: worktree`)', base)
+        self.assertIn('kopia przebiegu poza worktree (tylko `Katalog: worktree`); worktree sprzątasz po `CP` albo zamknięciu PR-a', base)
+        self.assertNotIn('kopia przebiegu i sprzątanie worktree', base)
         self.assertNotIn('osobny worktree i gałąź robocza', base)
         for detail in ('git switch', 'odłączony', 'checkout --'):
             self.assertNotIn(detail, base)
@@ -133,12 +158,27 @@ class WorkdirRuleText(unittest.TestCase):
         for rel in (SKILL, PLAN_LARGE, SPEC, PR_RUN, SKILLSYNC_SKILL):
             self.assertIn('Katalog:', read(rel), rel)
 
-    def test_new_files_are_public_safe(self):
-        text = (Path(LIB) / WORKDIR).read_text(encoding='utf-8') if (Path(LIB) / WORKDIR).is_file() else ''
-        self.assertTrue(text)
-        self.assertNotRegex(text, r'/home/\w')
-        self.assertNotRegex(text, r'/Users/\w')
-        self.assertNotRegex(text, r'(?i)claude code|generated with|co-authored-by')
+    def test_changed_files_are_public_safe(self):
+        for rel in (WORKDIR, BASE, SKILL, PLAN_DETAILS, PR_RUN):
+            path = Path(LIB) / rel
+            self.assertTrue(path.is_file(), rel)
+            text = path.read_text(encoding='utf-8')
+            self.assertNotRegex(text, r'/home/\w', rel)
+            self.assertNotRegex(text, r'/Users/\w', rel)
+            self.assertNotRegex(text, r'(?i)generated with|co-authored-by', rel)
+            if rel == WORKDIR:
+                self.assertNotRegex(text, r'(?i)claude code', rel)
+        root = Path(LIB).parent
+        for rel in ('docs/workflow.md', 'docs/workflow-details.md'):
+            text = (root / rel).read_text(encoding='utf-8')
+            self.assertNotRegex(text, r'/Users/\w', rel)
+            self.assertNotRegex(text, r'(?i)generated with|co-authored-by', rel)
+
+    def test_docs_mention_both_variants(self):
+        root = Path(LIB).parent
+        text = (root / 'docs/workflow.md').read_text(encoding='utf-8')
+        self.assertIn('Katalog: worktree <nazwa-katalogu>', text)
+        self.assertIn('Katalog: główny', text)
 
 
 if __name__ == '__main__':
