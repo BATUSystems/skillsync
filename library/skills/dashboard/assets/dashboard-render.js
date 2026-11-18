@@ -369,7 +369,7 @@
     ui.foot = h("footer", { class: "foot", id: "foot" });
     ui.descTip = h("div", { id: "descTip", class: "desc-tip", role: "tooltip", hidden: true });
 
-    // ---------------------------------------------------------------- przycisk „na górę” (widok dokumentu, 170-B)
+    // ---------------------------------------------------------------- przycisk „na górę” (widok dokumentu i widok Testy)
     // Host podaje `deps.scroll.toTop = {subscribe(cb) → unsubscribe, go()}`; `cb` dostaje {y, viewport, height} przewijanego okna. Bez haczyka
     // (webview Skippstera, starsze adaptery) przycisku nie ma. Renderer liczy próg z histerezą, host przewija i pilnuje ruchu.
     const toTopHook = deps.scroll && deps.scroll.toTop && typeof deps.scroll.toTop.subscribe === "function" && typeof deps.scroll.toTop.go === "function"
@@ -840,6 +840,7 @@
         h("span", { class: "sum", ...(running ? { "aria-live": "polite", "aria-atomic": "true" } : {}) }, state ? h("span", { class: `chip ${sec.state === "passed" ? "s-done" : sec.state === "failed" ? "s-bad" : sec.state === "running" ? "s-active" : "s-warn"}` }, state) : null, countChips(c),
           cmdFailed ? h("span", { class: "chip s-bad cmd-failed", "data-tip": `kod ${att.exit}, żaden test nie zgłosił porażki (wyjątek poza raportowanymi testami); wyniki ok dotyczą tylko testów, które zdążyły się wykonać` }, `kod ${att.exit}, żaden test nie zgłosił porażki`) : null));
       const body = open ? h("div", { class: "tsec-body", id: `tsec-body-${id}` },
+        cmdFailed ? h("div", { class: "tnote cmd-failed-note" }, `kod ${att.exit}, żaden test nie zgłosił porażki (wyjątek poza raportowanymi testami); wyniki ok dotyczą tylko testów, które zdążyły się wykonać`) : null,
         att.command ? h("div", { class: "cmd mono" }, String(att.command)) : null,
         h("div", { class: "tprogress", role: "img", "aria-label": `${num(c.passed)} z ${total || "?"} testów zielonych` }, ["g", "r", "a"].map((cls, i) => {
           const el = h("i", { class: cls, "data-w": String(total ? Math.min(100, Math.round((100 * num([c.passed, c.failed, c.running][i])) / total)) : 0) });

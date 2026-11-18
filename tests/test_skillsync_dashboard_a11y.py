@@ -59,6 +59,14 @@ class CommandFailedState(unittest.TestCase):
         self.assertIn('żaden test nie zgłosił porażki', script)
         self.assertRegex(script, r'kod \$\{')   # the exit code is interpolated into the text
 
+    def test_the_full_sentence_is_a_visible_body_line_and_the_chip_wraps(self):
+        script = RENDER.read_text(encoding='utf-8')
+        self.assertRegex(script, r'class: "tnote cmd-failed-note"[^\n]*wyniki ok dotyczą tylko testów')   # visible for keyboard and touch, not only a tooltip
+        css = CSS.read_text(encoding='utf-8')
+        chip = re.search(r'\.chip\.cmd-failed\s*\{([^}]*)\}', css)
+        self.assertIsNotNone(chip)
+        self.assertIn('white-space: normal', chip.group(1))   # `.chip` is nowrap: the long text would be clipped in a narrow column
+
 
 class TapTargets(unittest.TestCase):
     def test_compact_mode_targets_are_at_least_44_px(self):

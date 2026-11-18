@@ -582,7 +582,7 @@ main { flex: 1; padding: 1.1rem 1.4rem; min-width: 0; }
 .plan-auto[hidden] { display: none; }
 .plan-auto { margin-left: .4rem; font-size: .7rem; padding: .05rem .4rem; white-space: nowrap; }
 
-/* ---------- przycisk „na górę” w widoku dokumentu (170-B) */
+/* ---------- przycisk „na górę” w widoku dokumentu i w widoku Testy (170-B) */
 button.to-top {   /* `button.` podnosi specyficzność nad [data-tip] i :focus-visible, kolejność w pliku nie ma znaczenia */
   position: fixed; right: max(16px, env(safe-area-inset-right)); bottom: max(16px, env(safe-area-inset-bottom)); z-index: 40;
   display: grid; place-items: center; width: max(2.75rem, 44px); height: max(2.75rem, 44px); padding: 0; cursor: pointer;
@@ -597,6 +597,8 @@ button.to-top:hover::after, button.to-top:focus-visible::after { top: auto; bott
 
 /* ---------- zakładka „Testy” i pasek przy kroku (180-A) */
 .chip.s-bad { background: var(--bad-soft); color: var(--bad); }
+.chip.cmd-failed { white-space: normal; min-width: 0; text-align: left; }   /* długi tekst zawija się w wąskiej kolumnie zamiast być przycinany */
+.tsec-body .cmd-failed-note { font-size: .8rem; color: var(--bad); margin: .1rem 0 .4rem; }
 .count.is-bad { background: var(--bad-soft); color: var(--bad); }
 .step.has-tests { flex-wrap: wrap; }
 .step .stbar { flex: 1 1 100%; margin-left: 4.9rem; display: inline-flex; align-items: center; gap: .45rem; }   /* the title keeps its line: the bar sits under it */

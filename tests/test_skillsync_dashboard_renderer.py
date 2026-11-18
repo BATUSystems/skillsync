@@ -1344,10 +1344,21 @@ function summary(m) {
         sec('NOEX', 'interrupted', [att(1, 'interrupted', cnt({ total: 2, passed: 2 }), { exit: null })]),
         sec('RUN', 'running', [att(1, 'running', cnt({ total: 3, passed: 1, running: 1, waiting: 1 }), { exit: null })]),
         sec('HIST', 'failed', [att(2, 'failed', cnt({ total: 2, passed: 2 }), { exit: 3 }), att(1, 'passed', cnt({ total: 2, passed: 2 }), { exit: 0 })]),
+        sec('LVC', 'failed', [att(1, 'failed', cnt({ total: 0 }), { exit: 1, levels: 'command', tool: 'make', command: 'make test' })]),   // poziom „polecenie”: bez wyników testów
+        sec('NOC', 'failed', [att(1, 'failed', null, { exit: 5, levels: 'counts' })]),                                          // brak counts: failed = 0
+        sec('STR', 'failed', [att(1, 'failed', cnt({ total: 2, passed: 2 }), { exit: '1' })]),                                 // exit jako napis: nie liczba
       ];
       const m = mount(build(sections, 1), { now: NOW['plan-in-progress'] });
       const out = {};
-      for (const id of ['CMDF', 'PYT', 'TMO', 'GRN', 'RED', 'NOEX', 'RUN', 'HIST']) out[id] = report(m, id);
+      for (const id of ['CMDF', 'PYT', 'TMO', 'GRN', 'RED', 'NOEX', 'RUN', 'HIST', 'LVC', 'NOC', 'STR']) out[id] = report(m, id);
+      const FULL = 'wyniki ok dotyczą tylko testów, które zdążyły się wykonać';
+      const bodyNote = (id) => { const n = m.root.querySelector('#tsec-body-' + id + ' .cmd-failed-note'); return n ? text(n) : null; };
+      const bodyOf = (id) => m.root.querySelector('#tsec-body-' + id) !== null;
+      const bodies = {};
+      for (const id of ['CMDF', 'GRN', 'RED', 'LVC', 'STR']) bodies[id] = { before: bodyOf(id), note: bodyNote(id) };   // zwinięte: ani ciała, ani linii
+      for (const id of ['CMDF', 'GRN', 'RED', 'LVC', 'STR', 'NOC']) m.root.querySelector('#tsec-btn-' + id).click();
+      for (const id of ['CMDF', 'GRN', 'RED', 'LVC', 'STR', 'NOC']) bodies[id] = { ...(bodies[id] || {}), open: bodyOf(id), note: bodyNote(id), full: (bodyNote(id) || '').includes(FULL), beforeNote: bodies[id] ? bodies[id].note : null };
+      out.bodies = bodies;
       m.root.querySelector('#tsec-btn-HIST').click();                       // otwarcie sekcji: lista prób
       m.root.querySelectorAll('#testsView .tab-att')[1].click();             // starsza, zielona próba
       out.HISTold = report(m, 'HIST');
@@ -2190,6 +2201,24 @@ class RendererNodeTests(unittest.TestCase):
         self.assertIn("kod 3", s["HIST"]["head"])
         self.assertFalse(s["HISTold"]["inHead"])
         self.assertTrue(s["HISTnew"]["inHead"])
+
+    def test_core_tap_command_failed_state_levels_counts_and_exit_type(self) -> None:
+        s = self.out["extra"]["coreTap"]["states"]
+        self.assertFalse(s["LVC"]["inHead"], "levels 'command' with exit != 0: no test results, so no chip")
+        self.assertFalse(s["STR"]["inHead"], "exit as a string is not a number: no chip")
+        self.assertTrue(s["NOC"]["inHead"], "no counts at all means failed = 0: the chip shows")
+        self.assertIn("kod 5", s["NOC"]["head"])
+
+    def test_core_tap_full_sentence_is_a_visible_line_in_the_expanded_body(self) -> None:
+        b = self.out["extra"]["coreTap"]["states"]["bodies"]
+        full = "żaden test nie zgłosił porażki (wyjątek poza raportowanymi testami); wyniki ok dotyczą tylko testów, które zdążyły się wykonać"
+        self.assertFalse(b["CMDF"]["before"], "collapsed: no body")
+        self.assertTrue(b["CMDF"]["open"])
+        self.assertEqual(b["CMDF"]["note"], "kod 1, " + full)
+        for sid in ("GRN", "RED", "LVC", "STR"):   # attempts without the state: body opens, no line
+            self.assertTrue(b[sid]["open"], sid)
+            self.assertIsNone(b[sid]["note"], sid)
+        self.assertIn("kod 5, " + full, b["NOC"]["note"])
 
     def test_core_tap_command_failure_does_not_raise_the_failed_counter_on_the_tab(self) -> None:
         t = self.out["extra"]["coreTap"]["tab"]
