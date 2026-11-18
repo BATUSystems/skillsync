@@ -20,6 +20,7 @@ import time
 from pathlib import Path
 
 from .common import decode_text, file_lines, redact
+from .fsutil import ensure_dir
 from .runs import _slug
 
 EVENTS_DIR = 'tests'
@@ -126,7 +127,7 @@ def step_directory(root, run_id, step):
 def new_attempt(root, run_id, step):
     """Create the next attempt file (`O_EXCL`); returns `(path, number)`. Parallel callers get different numbers."""
     directory = step_directory(root, run_id, step)
-    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    ensure_dir(directory, mode=0o700)
     if directory.is_symlink():
         raise ValueError('symlink at the test events directory')
     number = 1 + max([int(p.stem) for p in directory.glob('*.jsonl') if _is_number(p.stem)] or [0])

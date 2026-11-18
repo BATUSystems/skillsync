@@ -922,7 +922,7 @@ class Process(unittest.TestCase):
         directory = dashboard_token.state_dir()
         with mock.patch.dict(os.environ, home_env(self.tmp)):
             directory = dashboard_token.state_dir()
-            return [json.loads(path.read_text()) for path in sorted(directory.glob("*.json"))] if directory.is_dir() else []
+            return [json.loads(path.read_text()) for path in sorted(directory.glob("*.json")) if not path.name.startswith(".")] if directory.is_dir() else []
 
     def test_two_sockets_state_files_and_url(self) -> None:
         read_port, approve_port = two_ports()

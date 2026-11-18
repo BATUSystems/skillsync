@@ -373,15 +373,17 @@ class Hardening(Base):
 
     def test_two_steps_may_run_at_the_same_time(self):
         import threading
-        results = []
+        results = {}
         def go(step):
-            results.append(self.run_cli('--step', step, '--', sys.executable, '-c', "import time; print('Ran 1 test in 0s'); print('OK'); time.sleep(1.5)").returncode)
+            done = self.run_cli('--step', step, '--', sys.executable, '-c', "import time; print('Ran 1 test in 0s'); print('OK'); time.sleep(1.5)")
+            results[step] = (done.returncode, done.stderr)
         threads = [threading.Thread(target=go, args=(s,)) for s in ('F1.1', 'F1.2')]
         for t in threads:
             t.start()
         for t in threads:
             t.join()
-        self.assertEqual(results, [0, 0])
+        # the stderr of both steps goes into the message: a flake on another system describes itself (the cause of the 1.9.0 Windows matrix was unreadable)
+        self.assertEqual({step: code for step, (code, _) in results.items()}, {'F1.1': 0, 'F1.2': 0}, {step: err for step, (_, err) in results.items()})
 
 
 if __name__ == '__main__':

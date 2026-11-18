@@ -12,6 +12,22 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+## [1.9.1] - 2026-11-18
+
+Upgrading from 1.9.0: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.9.0 → 1.9.1".
+
+### Breaking
+
+None.
+
+### Fixed
+
+- **Two parallel steps of `test-run` could end with exit code 2 (BLOCKED) on Windows** when both created a shared directory at the same moment (`.skillsync/runs/<run>/tests`, `.skillsync/logs`, the lock directory): the loser of the race got `PermissionError` (WinError 5) and the `is_dir()` check of `pathlib` failed the same way. New helper `fsutil.ensure_dir` (a short retry on `PermissionError`, an existing directory counts as success, any other error is raised at once) is used where parallel steps create shared directories: test events, resource locks and run logs (`quality.py`), the checkpoint store (`runs.py`), the workflow state (`storage.py`) and the smart-test cache (`selection.py`). The same race could also end with `BLOCKED: Path escapes project: .skillsync/logs/<id>`: on Windows `resolve()` of a path under a directory that the other step is creating can return a transient form, so the containment check (`common.contained`) resolves again up to 6 times with a short wait before it reports an escape (a real escape is stable and still refused; POSIX resolves once). The test `test_two_steps_may_run_at_the_same_time` now reports the stderr of both steps when it fails.
+- Status-page state files: the temporary file written before the atomic `os.replace` is `.tmp-<digest>-<port>-*.tmp` instead of `*.json`. `Path.glob("*.json")` matches hidden files, so a reader of the state directory could meet the empty temporary file and fail with `JSONDecodeError` (seen on macOS CI). The start of a server also sweeps leftovers of the old `*.json` form. No change for `dashboard url`, `port_owner` and `servers` (they already skipped such names).
+- Tests: `assert_masked` of the status-page redaction tests searched the 3-4 character fragments of the secret in the whole output, including the random name of the test's temporary directory (`rp6` in `…/status-board-yn0drp6…`, flaky on macOS CI). The whole secrets are still searched in the whole output; the fragments are searched after the test's own paths are removed, so a fragment in the text is still found.
+- Tests: the snapshot of the real state directories ignores the transient lock files of git inside `.git` (`objects/maintenance.lock`, `gc.pid`, `*.lock`); a changed ref, object or layer file is still detected (flaky `IsolationTest` on macOS CI).
+- Docs: `docs/upgrading.md` had three separate sections "Przejście 1.8.0 → 1.9.0"; they are one section now.
+
 ## [1.9.0] - 2026-11-17
 
 Upgrading from 1.8.0: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.8.0 → 1.9.0".

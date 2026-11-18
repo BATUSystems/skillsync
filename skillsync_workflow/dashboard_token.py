@@ -115,11 +115,11 @@ def _own_directory(directory: Path) -> bool:
 
 
 def _sweep_temporaries(directory: Path, root, port: int) -> None:
-    """Remove `.tmp-*` files of THIS project and port left by a killed server (they hold a token)."""
+    """Remove `.tmp-*` files of THIS project and port left by a killed server (they hold a token); `.json` is the suffix of versions up to 1.9.0."""
     prefix = f".tmp-{_digest(root)}-{int(port)}-"
     try:
         for name in os.listdir(directory):
-            if name.startswith(prefix) and name.endswith(".json"):
+            if name.startswith(prefix) and name.endswith((".tmp", ".json")):
                 try:
                     (directory / name).unlink()
                 except OSError:
@@ -157,7 +157,7 @@ def write_state(root, port: int, token, host: str = "127.0.0.1", warn=None, host
         if token is not None:
             record["token"] = token
             record["tokenId"] = token_id(token)
-        handle, temporary = tempfile.mkstemp(dir=str(directory), prefix=f".tmp-{_digest(root)}-{int(port)}-", suffix=".json")
+        handle, temporary = tempfile.mkstemp(dir=str(directory), prefix=f".tmp-{_digest(root)}-{int(port)}-", suffix=".tmp")   # never `.json`: a reader that globs `*.json` (hidden files included) would meet an empty file
         try:
             with os.fdopen(handle, "w", encoding="utf-8", newline="\n") as stream:
                 json.dump(record, stream, ensure_ascii=False)

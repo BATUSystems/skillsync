@@ -4,6 +4,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+## [1.9.1] - 2026-11-18
+
+### Changed
+
+- No change of the layer content; the version follows the generator 1.9.1.
+
 ## [1.9.0] - 2026-11-17
 
 ### Added

@@ -21,6 +21,7 @@ from . import layers as _layers
 from .quality import _redact
 from .selfcmd import self_argv
 from .pathfmt import posix
+from .fsutil import ensure_dir
 
 STATUSES = ("PASS", "FAIL", "BLOCKED", "NOT_RUN")
 MAX_RECORDS = 1000
@@ -298,7 +299,7 @@ def _write(path, data):
     payload = json.dumps(data, ensure_ascii=False, indent=2, allow_nan=False)
     if len(payload.encode()) > MAX_METADATA:
         raise ValueError("Przekroczono limit metadanych")
-    path.parent.mkdir(parents=True, exist_ok=True)
+    ensure_dir(path.parent)
     temporary = None
     try:
         with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,
@@ -383,7 +384,7 @@ def _sources(root, layers=None, manifest_file=None):
 def checkpoint(args):
     root, _ = read_project(args.path, getattr(args, "manifest", None))
     path = _store_path(Path(root).resolve(), args.run_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    ensure_dir(path.parent)
     lock = path.with_suffix(".lock")
     try:
         lock.mkdir()

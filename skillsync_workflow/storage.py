@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import tempfile
+from .fsutil import ensure_dir
 
 
 def state_path(root, relative, create=False):
@@ -19,7 +20,7 @@ def state_path(root, relative, create=False):
             raise ValueError('Workflow state symlinks are forbidden')
         if index < len(parts) - 1:
             if create:
-                current.mkdir(exist_ok=True, mode=0o700)
+                ensure_dir(current, mode=0o700, parents=False)
             if current.exists() and not current.is_dir():
                 raise ValueError('Workflow state parent must be a directory')
     if not current.resolve().is_relative_to(root):

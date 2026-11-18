@@ -5,6 +5,7 @@ import os
 import shutil
 import stat
 import sys
+import time
 from pathlib import Path
 
 
@@ -16,6 +17,34 @@ def isabs(path) -> bool:
     if os.path.isabs(text):
         return True
     return os.name == 'nt' and text[:1] in ('/', '\\')
+
+
+def _is_dir(path) -> bool:
+    try:
+        return Path(path).is_dir()
+    except OSError:   # Windows: `stat` of a directory that another process is creating at this moment may answer "access denied"
+        return False
+
+
+def ensure_dir(path, mode: int = 0o777, parents: bool = True, attempts: int = 6, delay: float = 0.02) -> Path:
+    """`Path.mkdir(parents, exist_ok=True)` that survives a RACE for a directory shared by parallel steps (`test-run`, `checkpoint`, locks).
+
+    POSIX answers the loser of the race with `FileExistsError`, which `exist_ok` swallows. Windows may answer `PermissionError` (WinError 5) while the
+    winner is still creating the directory, and the `is_dir()` that `pathlib` asks next can fail the same way. Here an error is final only when
+    the path is not a directory after a short wait: `PermissionError` is retried (`attempts` times, growing `delay`), any other error (a file in
+    the way, a read-only parent that stays so) is raised at once."""
+    path = Path(path)
+    for number in range(1, attempts + 1):
+        try:
+            path.mkdir(mode=mode, parents=parents, exist_ok=True)
+            return path
+        except OSError as error:
+            if _is_dir(path):
+                return path
+            if not isinstance(error, PermissionError) or number == attempts:
+                raise
+            time.sleep(delay * number)
+    return path
 
 
 def ensure_utf8_streams() -> None:
