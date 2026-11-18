@@ -110,7 +110,7 @@ def _test_counts(output):
     if total:
         run, skipped = int(total.group(1)), int(total.group(2)) - int(total.group(1))
     tap = re.search(r'(?m)^1\.\.(\d+)\s*$', output)
-    if tap:
+    if tap and not re.search(r'(?m)^ *Bail out!', output):   # a bailed-out run did not finish its plan: the plan is not the count of what ran
         skipped = len(re.findall(r'(?im)^ok\b.*#\s*skip', output))
         run = int(tap.group(1)) - skipped
     if re.search(r'(?i)no tests (?:ran|collected|found)|collected 0 items', output):

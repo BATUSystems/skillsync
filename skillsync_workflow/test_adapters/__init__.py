@@ -25,6 +25,10 @@ class Adapter:
     # How alive the state of a single test is: 'running' (the tool prints a line when a test STARTS: `emit.test(..., 'running')` is possible), 'completion'
     # (a line only after a test ENDS: no `running` state; a test is `waiting` until its result), 'counts' (only numbers: `emit.counts`). Recorded in `start`.
     live = 'running'
+    # `resolve(<name>)` (`--format <name>`) sets `explicit` on the instance it returns; `auto` leaves it False. An `explicit_only` adapter (`tap`) has no `tools`:
+    # `auto` never picks it by the tool, only `--format` or another adapter that delegates to it.
+    explicit = False
+    explicit_only = False
 
     def accepts(self, argv):
         return True
@@ -89,7 +93,9 @@ def resolve(fmt, argv, tool):
     if fmt != 'auto':
         if fmt not in REGISTRY:
             raise ValueError(f'unknown --format {fmt!r}; known: auto, none, {", ".join(sorted(REGISTRY)) or "(no adapters yet)"}')
-        return REGISTRY[fmt]()
+        adapter = REGISTRY[fmt]()
+        adapter.explicit = True
+        return adapter
     for name in sorted(REGISTRY):
         cls = REGISTRY[name]
         try:

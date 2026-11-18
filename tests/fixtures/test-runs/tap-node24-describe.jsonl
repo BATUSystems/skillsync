@@ -1,0 +1,38 @@
+{"meta": {"tool": "node", "version": "Node 24.11.1", "command": ["node", "--test", "--test-reporter=tap", "nt.test.js"], "exit": 1, "merged": false, "env": {"NO_COLOR": "1", "stdout_stderr": "pipes (not a terminal)"}, "note": "TAP from `node --test --test-reporter=tap`: describe with failing, skipped, todo and nested tests, a top level test and a slow one", "scrubbed": "paths, host and user names are replaced", "format": "one record per chunk read from the pipe: t = seconds since the start, fd = out|err, data = the text of the chunk"}}
+{"t": 0.027, "fd": "out", "data": "TAP version 13\n"}
+{"t": 0.054, "fd": "out", "data": "# Subtest: math\n"}
+{"t": 0.054, "fd": "out", "data": "    # Subtest: adds\n"}
+{"t": 0.055, "fd": "out", "data": "    ok 1 - adds\n"}
+{"t": 0.055, "fd": "out", "data": "      ---\n      duration_ms: 0.388113\n      type: 'test'\n      ...\n"}
+{"t": 0.055, "fd": "out", "data": "    # Subtest: fails\n"}
+{"t": 0.056, "fd": "out", "data": "    not ok 2 - fails\n"}
+{"t": 0.056, "fd": "out", "data": "      ---\n      duration_ms: 0.511839\n      type: 'test'\n      location: '/work/proj/nt.test.js:5:3'\n      failureType: 'testCodeFailure'\n      error: |-\n        Expected values to be strictly equal:\n        \n        1 !== 2\n        \n      code: 'ERR_ASSERTION'\n      name: 'AssertionError'\n      expected: 2\n      actual: 1\n      operator: 'strictEqual'\n      stack: |-\n        TestContext.<anonymous> (/work/proj/nt.test.js:5:28)\n        Test.runInAsyncScope (node:async_hooks:214:14)\n        Test.run (node:internal/test_runner/test:1106:25)\n        Suite.processPendingSubtests (node:internal/test_runner/test:788:18)\n        Test.postRun (node:internal/test_runner/test:1235:19)\n        Test.run (node:internal/test_runner/test:1163:12)\n        async Promise.all (index 0)\n        async Suite.run (node:internal/test_runner/test:1518:7)\n        async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3)\n      ...\n"}
+{"t": 0.056, "fd": "out", "data": "    # Subtest: skipped one\n"}
+{"t": 0.056, "fd": "out", "data": "    ok 3 - skipped one # SKIP not now\n"}
+{"t": 0.056, "fd": "out", "data": "      ---\n      duration_ms: 0.074923\n      type: 'test'\n      ...\n"}
+{"t": 0.056, "fd": "out", "data": "    # Subtest: todo one\n"}
+{"t": 0.057, "fd": "out", "data": "    ok 4 - todo one # TODO later\n"}
+{"t": 0.057, "fd": "out", "data": "      ---\n      duration_ms: 0.058379\n      type: 'test'\n      ...\n"}
+{"t": 0.198, "fd": "out", "data": "    # Subtest: nested\n"}
+{"t": 0.198, "fd": "out", "data": "        # Subtest: deep\n"}
+{"t": 0.198, "fd": "out", "data": "        ok 1 - deep\n"}
+{"t": 0.199, "fd": "out", "data": "          ---\n          duration_ms: 149.825357\n          type: 'test'\n          ...\n"}
+{"t": 0.199, "fd": "out", "data": "        1..1\n"}
+{"t": 0.199, "fd": "out", "data": "    ok 5 - nested\n"}
+{"t": 0.199, "fd": "out", "data": "      ---\n      duration_ms: 150.156846\n      type: 'suite'\n      ...\n"}
+{"t": 0.199, "fd": "out", "data": "    1..5\n"}
+{"t": 0.2, "fd": "out", "data": "not ok 1 - math\n"}
+{"t": 0.2, "fd": "out", "data": "  ---\n  duration_ms: 151.876535\n  type: 'suite'\n  location: '/work/proj/nt.test.js:3:1'\n  failureType: 'subtestsFailed'\n  error: '1 subtest failed'\n  code: 'ERR_TEST_FAILURE'\n  ...\n"}
+{"t": 0.2, "fd": "out", "data": "# Subtest: top level\n"}
+{"t": 0.2, "fd": "out", "data": "ok 2 - top level\n"}
+{"t": 0.2, "fd": "out", "data": "  ---\n  duration_ms: 0.13243\n  type: 'test'\n  ...\n"}
+{"t": 0.6, "fd": "out", "data": "# Subtest: slow\n"}
+{"t": 0.6, "fd": "out", "data": "ok 3 - slow\n"}
+{"t": 0.6, "fd": "out", "data": "  ---\n  duration_ms: 400.984117\n  type: 'test'\n  ...\n"}
+{"t": 0.607, "fd": "out", "data": "1..3\n"}
+{"t": 0.607, "fd": "out", "data": "# tests 7\n# suites 2\n# pass 4\n"}
+{"t": 0.607, "fd": "out", "data": "# fail 1\n"}
+{"t": 0.607, "fd": "out", "data": "# cancelled 0\n"}
+{"t": 0.607, "fd": "out", "data": "# skipped 1\n"}
+{"t": 0.607, "fd": "out", "data": "# todo 1\n"}
+{"t": 0.607, "fd": "out", "data": "# duration_ms 586.652512\n"}

@@ -386,5 +386,87 @@ class Hardening(Base):
         self.assertEqual({step: code for step, (code, _) in results.items()}, {'F1.1': 0, 'F1.2': 0}, {step: err for step, (_, err) in results.items()})
 
 
+class TapRecorder(Base):
+    """CORE-TAP K6, K7, K9, K14: where PASS, BLOCKED and FAIL are decided (`TestRecorder._finish`) for a run read by the adapter `tap` (`--format tap`).
+    The commands are Python one-liners that print what a bare Node script (or any TAP producer) prints."""
+
+    def tap(self, script, *flags, n=1):
+        done = self.run_cli('--step', 'F1.1', '--format', 'tap', *flags, '--', sys.executable, '-c', script)
+        return done, self.attempt(n=n)
+
+    @staticmethod
+    def states(state):
+        return {t['id']: t['state'] for t in state.tests.values()}
+
+    def test_k7_a_green_bare_script_is_a_pass_with_the_counters_of_the_adapter(self):
+        done, state = self.tap("print('ok - adds'); print('ok - subtracts'); print('ok - multiplies')")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(state.end['status'], 'PASS', state.end)   # no plan, exit 0, three results: complete
+        self.assertNotIn('Test count unknown', done.stderr)
+        self.assertEqual(state.end['source'], 'adapter')
+        self.assertEqual((state.counts['total'], state.counts['passed'], state.counts['failed'], state.counts['skipped']), (3, 3, 0, 0))
+        self.assertEqual(self.states(state), {'adds': 'passed', 'subtracts': 'passed', 'multiplies': 'passed'})
+
+    def test_k7_a_bare_script_that_threw_is_not_a_pass_and_the_adapter_invents_no_failure(self):
+        script = "import sys; print('ok - adds'); print('ok - subtracts'); sys.stderr.write('AssertionError [ERR_ASSERTION]: 1 !== 2\\n'); sys.exit(1)"
+        done, state = self.tap(script)
+        self.assertEqual(done.returncode, 1)
+        self.assertEqual(state.end['status'], 'FAIL')
+        self.assertEqual(self.states(state), {'adds': 'passed', 'subtracts': 'passed'})   # what ran before the exception; no `(proces)` test, no failed test
+        self.assertNotEqual(state.end.get('source'), 'adapter')   # no plan and exit 1: the adapter is not the complete source
+
+    def test_k6_not_ok_with_exit_zero_is_not_a_pass(self):
+        done, state = self.tap("print('ok - adds'); print('not ok - subtracts'); print('ok - multiplies')")
+        self.assertEqual(done.returncode, 0)   # the exit code stays the one of the command
+        self.assertEqual(state.end['status'], 'BLOCKED', state.end)
+        self.assertIn('failed', state.end['reason'])
+        self.assertEqual(self.states(state), {'adds': 'passed', 'subtracts': 'failed', 'multiplies': 'passed'})
+        self.assertEqual((state.counts['total'], state.counts['passed'], state.counts['failed']), (3, 2, 1))
+
+    def test_k7_bail_out_is_not_a_pass(self):
+        for code, status in ((1, 'FAIL'), (0, 'BLOCKED')):
+            with self.subTest(exit=code):
+                script = f"print('TAP version 13'); print('ok 1 - first'); print('Bail out! database is down'); print('ok 2 - never counted'); raise SystemExit({code})"
+                done, state = self.tap(script, n=1) if code == 1 else self.tap(script, n=2)
+                self.assertEqual(state.end['status'], status, state.end)
+                self.assertNotEqual(state.end.get('source'), 'adapter')   # after `Bail out!` the adapter is not the complete source
+                self.assertEqual(self.states(state), {'first': 'passed'})   # nothing after the bail out
+
+    def test_a_todo_that_exits_zero_needs_allow_skips(self):
+        script = "print('TAP version 13'); print('ok 1 - a'); print('ok 2 - b # TODO later'); print('1..2')"
+        done, state = self.tap(script)
+        self.assertEqual(done.returncode, 0)
+        self.assertEqual(state.end['status'], 'BLOCKED', state.end)
+        self.assertIn('Skipped tests require explicit disposition', state.end['reason'])
+        self.assertEqual(self.states(state), {'a': 'passed', 'b': 'skipped'})
+        done, state = self.tap(script, '--allow-skips', n=2)
+        self.assertEqual(state.end['status'], 'PASS', state.end)
+        self.assertEqual((state.counts['total'], state.counts['passed'], state.counts['skipped'], state.counts['failed']), (2, 1, 1, 0))
+
+    def test_k14_a_todo_that_failed_is_skipped_and_the_run_is_not_red(self):
+        script = "print('TAP version 13'); print('ok 1 - a'); print('not ok 2 - b # TODO known bug'); print('1..2')"
+        done, state = self.tap(script)
+        self.assertEqual(self.states(state), {'a': 'passed', 'b': 'skipped'})   # not `failed`
+        self.assertEqual(state.end['status'], 'BLOCKED', state.end)   # skipped tests need a disposition, but it is not a failure
+        self.assertNotIn('failed', state.end['reason'])
+        done, state = self.tap(script, '--allow-skips', n=2)
+        self.assertEqual((state.end['status'], state.counts['failed'], state.counts['skipped']), ('PASS', 0, 1))
+
+    def test_k9_junit_with_tap_what_happens_to_the_two_lists(self):
+        """`AdapterContext` does not know `--junit`. A COMPLETE adapter stream makes the report unnecessary (the report is not read); an incomplete one
+        (here `Bail out!`) lets the JUnit report add its tests (`plik::nazwa`) next to the ids of the adapter: the list is doubled. Known and documented behaviour."""
+        report = f"open('report.xml', 'w').write({JUNIT!r})"
+        complete = report + "; print('ok - alpha'); print('ok - beta')"
+        done, state = self.tap(complete, '--junit', 'report.xml')
+        self.assertEqual((state.end['status'], state.end['source']), ('PASS', 'adapter'))
+        self.assertEqual(set(self.states(state)), {'alpha', 'beta'})
+        incomplete = report + "; print('TAP version 13'); print('ok 1 - alpha'); print('Bail out! stop')"
+        done, state = self.tap(incomplete, '--junit', 'report.xml', n=2)
+        self.assertEqual(state.end['source'], 'junit')
+        self.assertEqual(set(self.states(state)), {'alpha', 'pkg.A::ok', 'pkg.A::bad', 'pkg.B::skip'})   # the id of the adapter and the three of the report side by side
+        self.assertEqual((state.counts['total'], state.counts['failed']), (3, 1))   # the counters are those of the report
+        self.assertNotEqual(state.end['status'], 'PASS')   # a failed test of the report with exit 0
+
+
 if __name__ == '__main__':
     unittest.main()

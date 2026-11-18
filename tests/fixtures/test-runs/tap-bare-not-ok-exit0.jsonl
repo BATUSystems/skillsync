@@ -1,0 +1,4 @@
+{"meta": {"tool": "node", "version": "synthetic (hand written)", "command": ["node", "mixed.test.js"], "exit": 0, "merged": false, "synthetic": true, "env": {}, "note": "synthetic: `ok` and `not ok` without a plan, exit 0 (a script that swallows its failures)", "scrubbed": "hand written, no recording", "format": "one record per chunk read from the pipe: t = seconds since the start, fd = out|err, data = the text of the chunk"}}
+{"t": 0.01, "fd": "out", "data": "ok - adds\n"}
+{"t": 0.02, "fd": "out", "data": "not ok - subtracts\n"}
+{"t": 0.03, "fd": "out", "data": "ok - multiplies\n"}

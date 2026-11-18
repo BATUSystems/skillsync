@@ -102,7 +102,8 @@ class Reachability(unittest.TestCase):
             if not cls.__module__.startswith('skillsync_workflow.test_adapters.'):
                 continue   # the adapters SHIPPED in the package; a test double registered by another module in the same process is not the subject
             with self.subTest(adapter=name):
-                self.assertTrue(cls.tools, f'{name} declares no tools: it is unreachable in auto')
+                # an `explicit_only` adapter (`tap`, chosen by `--format tap` only) has no tools on purpose: `auto` never reaches it by the tool
+                self.assertTrue(cls.tools or cls.explicit_only, f'{name} declares no tools: it is unreachable in auto')
                 for tool in cls.tools:
                     self.assertIn(tool, known, f'{name}: tool {tool!r} is not a value of TOOLS, so `auto` never selects it')
 
@@ -120,6 +121,17 @@ class KarmaCounter(unittest.TestCase):
     def test_skipped_comes_from_the_last_line(self):
         run, skipped = quality._test_counts('Executed 0 of 5 SUCCESS\nExecuted 3 of 5 (skipped 2) SUCCESS\n')
         self.assertEqual((run, skipped), (3, 2))
+
+
+class TapCounter(unittest.TestCase):
+    def test_the_plan_is_the_count_of_a_finished_run(self):
+        self.assertEqual(quality._test_counts('TAP version 13\nok 1 - a\nok 2 - b # SKIP x\n1..2\n'), (1, 1))
+
+    def test_a_bail_out_is_not_a_pass_from_the_plan(self):
+        # the plan may be printed first (`1..5`), the run then bails out after one test: the plan must not become the count of tests that ran
+        run, skipped = quality._test_counts('TAP version 13\n1..5\nok 1 - a\nBail out! database is down\n')
+        self.assertIsNone(run)
+        self.assertIsNone(skipped)
 
 
 class Unwrapping(unittest.TestCase):

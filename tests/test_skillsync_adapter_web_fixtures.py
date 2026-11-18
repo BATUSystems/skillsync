@@ -1,4 +1,4 @@
-"""180-A3: the recorded streams of Vitest, Karma, Playwright and Cypress carry no path of a home or session directory, no user or machine name, no port, and fit the budget.
+"""180-A3: the recorded streams of Vitest, Karma, Playwright and Cypress (and, CORE-TAP, of Node `--test` as TAP and `spec`) carry no path of a home or session directory, no user or machine name, no port, and fit the budget.
 
 The patterns are generic (no literal name in this file); the name of the user and of the machine the test runs on are compared at run time (they are the names a
 recording made on this machine would carry)."""
@@ -13,8 +13,19 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / 'tests' / 'fixtures' / 'test-runs'
 TOOLS = ('vitest', 'karma', 'playwright', 'cypress')
+# CORE-TAP: the prefixes of the Node fixtures. They are matched with `startswith(prefix + '-')`: `split('-')[0]` of `node-test-...` is `node` and would skip the
+# files silently. `MIN_JSONL` is a count of the recordings only (no JUnit/XML requirement); `node-test` (the `spec` stream) is filled by a later step of the plan,
+# which raises its minimum together with the fixtures.
+NODE_PREFIXES = ('tap', 'node-test')
+MIN_JSONL = {'tap': 11, 'node-test': 0}
+SYNTHETIC = {'tap-bare-green.jsonl', 'tap-bare-not-ok-exit0.jsonl', 'tap-bail-out.jsonl'}   # hand written, marked `"synthetic": true` in the meta
 BUDGET = 300 * 1024
-FILES = sorted(p for tool in TOOLS for p in FIXTURES.glob(f'{tool}-*'))
+FILES = sorted({p for tool in TOOLS for p in FIXTURES.glob(f'{tool}-*')} | {p for prefix in NODE_PREFIXES for p in FIXTURES.glob(f'{prefix}-*')})
+
+
+def is_recording(name):
+    """A chunk fixture of a guarded family: the first segment is one of `TOOLS`, or the name starts with a Node prefix followed by `-`."""
+    return name.split('-')[0] in TOOLS or any(name.startswith(prefix + '-') for prefix in NODE_PREFIXES)
 GENERIC = {'user', 'users', 'node', 'runner', 'localhost', 'root', 'desktop', 'mobile', 'admin', 'test', 'tests', 'build', 'host', 'linux', 'ubuntu', 'debian', 'github', 'docker', 'chrome',
            'cypress', 'karma', 'vitest', 'playwright'}   # a user or a host with such a name would match plain words of the recordings (`cypress_runner.js`, `Node 22`)
 FORBIDDEN = (re.compile(r'/home/[^\s"\\]+'), re.compile(r'/Users/[^\s"\\]+'), re.compile(r'[A-Za-z]:\\{1,2}Users\\{1,2}'), re.compile(r'/tmp/(?!ROOT\b)[^\s"\\]+'),
@@ -43,6 +54,18 @@ class WebFixtures(unittest.TestCase):
                 self.assertGreaterEqual(len(list(FIXTURES.glob(f'{tool}-*.jsonl'))), 3)
                 self.assertTrue(list(FIXTURES.glob(f'{tool}-*.xml')))
 
+    def test_the_node_fixtures_exist_and_are_guarded(self):
+        for prefix, minimum in MIN_JSONL.items():
+            with self.subTest(prefix=prefix):
+                found = list(FIXTURES.glob(f'{prefix}-*.jsonl'))
+                self.assertGreaterEqual(len(found), minimum)
+                self.assertTrue(all(p in FILES for p in found))   # the forbidden patterns, the names and the budget cover them
+        for name in ('tap-node22-describe.jsonl', 'node-test-spec-node22-describe.jsonl'):
+            with self.subTest(name=name):
+                self.assertTrue(is_recording(name))   # `node-test-...` is not skipped by a split on `-`
+        self.assertFalse(is_recording('node-tap.txt'))   # the older `node-*` files are not recordings of a guarded family
+        self.assertFalse(is_recording('tapas-x.jsonl'))   # the prefix needs its `-`
+
     def test_no_forbidden_pattern(self):
         for path in FILES:
             text = path.read_text(encoding='utf-8')
@@ -67,7 +90,7 @@ class WebFixtures(unittest.TestCase):
 
     def test_every_recording_has_its_meta_and_chunks(self):
         for path in FIXTURES.glob('*.jsonl'):
-            if not path.name.split('-')[0] in TOOLS:
+            if not is_recording(path.name):
                 continue
             rows = [json.loads(line) for line in path.read_text(encoding='utf-8').splitlines() if line.strip()]
             with self.subTest(file=path.name):
@@ -76,6 +99,14 @@ class WebFixtures(unittest.TestCase):
                     self.assertIn(key, meta)
                 self.assertTrue(rows[1:] and all({'t', 'fd', 'data'} <= set(r) and r['fd'] in ('out', 'err') for r in rows[1:]))
                 self.assertEqual([r['t'] for r in rows[1:]], sorted(r['t'] for r in rows[1:]))
+
+    def test_only_the_hand_written_node_fixtures_are_marked_synthetic(self):
+        for prefix in NODE_PREFIXES:
+            for path in FIXTURES.glob(f'{prefix}-*.jsonl'):
+                meta = json.loads(path.read_text(encoding='utf-8').splitlines()[0])['meta']
+                with self.subTest(file=path.name):
+                    self.assertEqual(bool(meta.get('synthetic')), path.name in SYNTHETIC)
+        self.assertTrue(SYNTHETIC <= {p.name for p in FIXTURES.glob('tap-*.jsonl')})   # none of them was forgotten
 
     def test_the_total_size_fits_the_budget(self):
         self.assertLess(sum(p.stat().st_size for p in FILES), BUDGET)
