@@ -7,6 +7,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import threading
 import unittest
 import urllib.parse
@@ -57,8 +58,29 @@ class SecretFiles:
             self.rels.append(rel)
 
     def assert_masked(self, payload: str, where: str) -> None:
-        for secret in (PATTERN_SECRET, ENV_SECRET, "zq9x", "wv8y", "ut7s", "rp6", "mn5k"):
-            self.assertNotIn(secret, payload, f"{where}: {secret!r}")
+        assert_secrets_masked(self, payload, where)
+
+
+def path_forms(*paths) -> tuple[str, ...]:
+    """Every spelling of a path that can stand in a payload: native, POSIX, and escaped for JSON (`\\` on Windows)."""
+    forms = set()
+    for path in paths:
+        for text in {str(path), Path(path).as_posix()}:
+            forms.update({text, json.dumps(text)[1:-1]})
+    return tuple(sorted(forms, key=len, reverse=True))   # the longest first: a parent must not eat a part of a child
+
+
+def assert_secrets_masked(case, payload: str, where: str) -> None:
+    """The whole secrets are searched in the WHOLE payload. The short fragments (3-4 characters: what a parser leaves when it cuts at
+    a separator) are searched in the payload WITHOUT the paths of the test's own temporary directory: their names are random (`mkdtemp`)
+    and a fragment such as `rp6` turns up in them by chance (CI macOS). A fragment in the text itself is still found."""
+    for secret in (PATTERN_SECRET, ENV_SECRET):
+        case.assertNotIn(secret, payload, f"{where}: {secret!r}")
+    text = payload
+    for form in path_forms(*(getattr(case, name) for name in ("tmp", "root") if hasattr(case, name))):
+        text = text.replace(form, "<path>")
+    for fragment in ("zq9x", "wv8y", "ut7s", "rp6", "mn5k"):
+        case.assertNotIn(fragment, text, f"{where}: {fragment!r}")
 
 
 class DocRouteMasksSecrets(SecretFiles, base.HttpCase):
@@ -339,8 +361,7 @@ class StatusModuleMasksBeforeCutting(base.ProjectCase):
         self.addCleanup(patch.stop)
 
     def assert_masked(self, payload: str, where: str) -> None:
-        for secret in (PATTERN_SECRET, ENV_SECRET, "zq9x", "wv8y", "ut7s", "rp6", "mn5k"):
-            self.assertNotIn(secret, payload, f"{where}: {secret!r}")
+        assert_secrets_masked(self, payload, where)
 
     def test_status_text_is_masked_before_the_markers_are_stripped_and_the_text_cut(self) -> None:
         for name, line in (("secret holds * and a backtick", f"Status: draft — {ENV_SECRET}"),
@@ -408,6 +429,27 @@ class StatusModuleMasksBeforeCutting(base.ProjectCase):
         message = status._message(OSError("x " * 245 + f" {ENV_SECRET} password: {PATTERN_SECRET}"), 500)
         self.assert_masked(message, "message")
         self.assertLessEqual(len(message), 500)
+
+
+class FragmentCheckIgnoresRandomPaths(unittest.TestCase):
+    """Regression (CI macOS): the random name of the temporary directory held `rp6` and failed `test_dashboard_show_is_masked`."""
+
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.gettempdir()) / "status-board-yn0drp6x"   # a name with a fragment of the secret, like `mkdtemp` can give
+        self.root = self.tmp / "projekt"
+
+    def test_a_fragment_inside_the_temporary_path_is_not_a_leak(self) -> None:
+        for path in (self.root, self.tmp):
+            for form in path_forms(path):
+                assert_secrets_masked(self, '{"root": "%s", "plan": "%s/docs/plans/a.md"}' % (form, form), "path only")
+
+    def test_a_fragment_in_the_text_or_the_whole_secret_is_still_found(self) -> None:
+        here = path_forms(self.root)[0]
+        for leak in (f'{{"root": "{here}", "text": "zmienna: rp6 koniec"}}', f'{{"root": "{here}", "text": "{ENV_SECRET}"}}',
+                     f'{{"root": "{here}", "text": "{PATTERN_SECRET}"}}', f'{{"root": "{here}", "text": "mn5k"}}',
+                     '{"path": "elsewhere/rp6"}'):
+            with self.subTest(leak=leak), self.assertRaises(AssertionError):
+                assert_secrets_masked(self, leak, "leak")
 
 
 if __name__ == "__main__":

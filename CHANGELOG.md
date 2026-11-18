@@ -15,6 +15,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 ### Fixed
 
 - Status-page state files: the temporary file written before the atomic `os.replace` is `.tmp-<digest>-<port>-*.tmp` instead of `*.json`. `Path.glob("*.json")` matches hidden files, so a reader of the state directory could meet the empty temporary file and fail with `JSONDecodeError` (seen on macOS CI). The start of a server also sweeps leftovers of the old `*.json` form. No change for `dashboard url`, `port_owner` and `servers` (they already skipped such names).
+- Tests: `assert_masked` of the status-page redaction tests searched the 3-4 character fragments of the secret in the whole output, including the random name of the test's temporary directory (`rp6` in `…/status-board-yn0drp6…`, flaky on macOS CI). The whole secrets are still searched in the whole output; the fragments are searched after the test's own paths are removed, so a fragment in the text is still found.
 - Tests: the snapshot of the real state directories ignores the transient lock files of git inside `.git` (`objects/maintenance.lock`, `gc.pid`, `*.lock`); a changed ref, object or layer file is still detected (flaky `IsolationTest` on macOS CI).
 
 ## [1.9.0] - 2026-11-17
