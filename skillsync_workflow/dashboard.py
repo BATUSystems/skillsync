@@ -1070,20 +1070,55 @@ def _has_ref(common, ref):
         return False
 
 
+def git_locations(root):
+    """`(git_dir, common_dir, linked)` of the project from `.git` only (git is not run): `.git` is a directory, or a file
+    `gitdir: <path>` (relative to `root`) naming the git directory; a `commondir` file there marks a linked worktree and
+    names the common directory (`linked` is true). `None` when the `.git` file has no `gitdir:` line. File errors
+    (`OSError`, `ValueError`) are the caller's: both `read_git` and `read_worktree` read `gitdir`/`commondir` only here."""
+    git = root / '.git'
+    if git.is_file():
+        match = re.match(r'gitdir:\s*(.+)', read_text(git, 4096).strip())
+        if not match:
+            return None
+        git = (root / match.group(1).strip()).resolve()
+    common, linked = git, False
+    if (git / 'commondir').is_file():
+        common, linked = (git / read_text(git / 'commondir', 4096).strip()).resolve(), True
+    return git, common, linked
+
+
+def read_worktree(root):
+    """`project.worktree`: `{kind: main|worktree, name, path, mainPath}`, or None (no `.git`, a subdirectory of a repository,
+    a damaged linked worktree, any read error). `mainPath` is the parent of the common git directory of a linked worktree
+    when that directory is named `.git`, else None; it is resolved, `path` is `root` as given."""
+    try:
+        if not (root / '.git').exists():
+            return None
+        locations = git_locations(root)
+        if locations is None:
+            return None
+        git, common, linked = locations
+        if not git.is_dir():
+            return None
+        info = {'kind': 'main', 'name': root.name, 'path': posix(root), 'mainPath': None}
+        if linked:
+            info['kind'] = 'worktree'
+            if common.name == '.git':
+                info['mainPath'] = posix(common.parent)
+        return info
+    except (OSError, ValueError):
+        return None
+
+
 def read_git(root):
     """Branch, HEAD and origin of the project repository read from `.git` files (git is not run)."""
     info = {'branch': None, 'head': None, 'headFull': None, 'remote': None, 'branchUrl': None, 'branchPushed': None}
-    git = root / '.git'
     try:
-        if git.is_file():
-            match = re.match(r'gitdir:\s*(.+)', read_text(git, 4096).strip())
-            if not match:
-                return info
-            git = (root / match.group(1).strip()).resolve()
+        locations = git_locations(root)
+        if locations is None:
+            return info
+        git, common, _ = locations
         head = read_text(git / 'HEAD', 4096).strip()
-        common = git
-        if (git / 'commondir').is_file():
-            common = (git / read_text(git / 'commondir', 4096).strip()).resolve()
         if head.startswith('ref:'):
             ref = head[4:].strip()
             info['branch'] = ref.removeprefix('refs/heads/')
@@ -2072,7 +2107,7 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
     status = {
         'schema': SCHEMA,
         'app': {'name': APP_NAME, 'version': __version__},
-        'project': {'name': root.name, 'path': posix(root)},
+        'project': {'name': root.name, 'path': posix(root), 'worktree': read_worktree(root)},
         'generatedAt': datetime.now().astimezone().isoformat(timespec='seconds'),
         'version': version,
         'lastUpdate': _iso(max((stamp for stamp in last_change if stamp), default=None)),

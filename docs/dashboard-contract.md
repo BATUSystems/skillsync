@@ -82,7 +82,28 @@ projektu lub przebiegu). Raport komend zapisujących i `metrics --json` to JSON 
   jeden commit, neutralna tożsamość, bez `origin`), a sha HEAD (pełne, 12, 8 i 7 znaków) zastępuje `<head>`. Wariant
   `expected-after.json` to wynik po zapisie zgody `CP` przez `record_approval` (źródło `dashboard`, w procesie testu): w zapisanym wpisie `at` = `2026-01-12T12:00:00Z`,
   `by` = `user`, a godzina w `reason`/`blocked` = `12:00`;
+- `project.worktree`: bez repozytorium `null`; `cp-ready` (repozytorium zakładane w teście) ma `{kind: "main", name: "demo", path: "<root>", mainPath: null}`
+  w `expected.json` i `expected-after.json`. Przypadek `worktree` nie ma katalogu w fixtures (`input/` nie może zawierać `.git`):
+  test `test_skillsync_dashboard_workdir.py` buduje w katalogu tymczasowym repozytorium `demo` i jego powiązany worktree
+  (`git worktree add`) i porównuje po normalizacji: `path` → `<root>`, `mainPath` (gdy nie `null`) → `<main>`, `name` = `demo`;
 - JSON: `sort_keys`, wcięcie 2, `ensure_ascii=false`, końcowy znak nowej linii.
+
+## `project.worktree`
+
+Pole addytywne `schema: 1`: `project.worktree` to obiekt `{kind, name, path, mainPath}` albo `null`; klucz jest zawsze obecny.
+
+| Pole | Typ | Opis |
+|---|---|---|
+| `kind` | `"main"` \| `"worktree"` | `main`: `.git` jest katalogiem albo plikiem `gitdir:` do katalogu bez `commondir` (submoduł, `--separate-git-dir`); `worktree`: `.git` jest plikiem `gitdir:` do katalogu z `commondir` (powiązany worktree). Nowe wartości addytywnie |
+| `name` | string | nazwa katalogu projektu (`project.name`) |
+| `path` | string | `project.path`, w postaci podanej serwerowi (bez rozwiązywania dowiązań) |
+| `mainPath` | string lub `null` | dla `worktree`: katalog nadrzędny wspólnego katalogu git, gdy ten nazywa się `.git`; ścieżka w postaci rozwiązanej, więc przy dowiązaniu (np. `/var` → `/private/var`) `path` i `mainPath` mogą mieć różne prefiksy. Dla `main` i dla wspólnego katalogu o innej nazwie `null` |
+
+Rozpoznanie czyta wyłącznie `.git` (plik albo katalog) i, dla powiązanego worktree, plik `commondir` w katalogu z `gitdir:` (ścieżka względna liczona od katalogu projektu), z limitem rozmiaru; proces `git` nie jest uruchamiany. Odczyt `gitdir`/`commondir` jest wspólny z polami `git.*`.
+
+`project.worktree` = `null`: brak `.git`, katalog podrzędny repozytorium (`.git` leży wyżej, nie jest szukany) oraz każdy błąd odczytu, w tym uszkodzony powiązany worktree (brak katalogu wskazanego przez `gitdir:`, nieczytelny `commondir`); uszkodzony worktree nie jest `main`.
+
+Zgodność wsteczna: starszy serwer nie ma pola, konsument traktuje brak klucza jak `null` (pole opcjonalne dla konsumenta, w fixtures zawsze obecne).
 
 ## Pola najwyższego poziomu
 
@@ -90,7 +111,7 @@ projektu lub przebiegu). Raport komend zapisujących i `metrics --json` to JSON 
 |---|---|---|
 | `schema` | int | wersja kontraktu, obecnie `1` |
 | `app` | obiekt | `name` (`"dashboard"`), `version` (wersja generatora, string) |
-| `project` | obiekt | `name` (nazwa katalogu projektu), `path` (ścieżka bezwzględna) |
+| `project` | obiekt | `name` (nazwa katalogu projektu), `path` (ścieżka bezwzględna), `worktree` (obiekt albo `null`, niżej: „`project.worktree`”) |
 | `generatedAt` | string | czas wygenerowania, ISO 8601 z przesunięciem strefy |
 | `version` | int | licznik zmian obserwatora (serwer: rośnie przy każdej zmianie plików); `show` zwraca `0` |
 | `lastUpdate` | string lub null | najnowsza modyfikacja pliku bieżącego planu, speca lub checkpointów; null = brak plików |

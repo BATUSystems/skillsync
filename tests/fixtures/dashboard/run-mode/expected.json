@@ -189,7 +189,8 @@
   },
   "project": {
     "name": "demo",
-    "path": "<root>"
+    "path": "<root>",
+    "worktree": null
   },
   "prototype": {
     "port": 5130,
