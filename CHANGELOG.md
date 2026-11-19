@@ -12,6 +12,27 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Breaking
+
+- **Karma evidence in `validate` reads only real counter lines.** A line `Executed N of M` is counted only when the text before it is empty or a browser label ending with `): ` and what follows `of M` is the end of the line or `(`, `SUCCESS`, `ERROR`, `DISCONNECTED` or `FAILED`. Karma output with a foreign prefix or tail that was counted before can now end `BLOCKED` with "Test count unknown"; workaround: `--allow-no-count` or an explicit `--format`. The `skipped` count of an interrupted run and the live `passed` count change to the correct values.
+
+### Added
+
+- **Wrappers `poetry run`, `pdm run`, `pipenv run`, the tool `tox` and `env -S`/`--split-string`** in the tool table (`data/test_tools.json`, optional field `split_flags`, schema stays 1). `tox` is a tool, not a wrapper. A `$` or an unclosed quote in the `-S` value stops the unwrapping.
+- **Windows warning for `.cmd`/`.bat` targets.** `test-run` prints `test-run: warning: …` to stderr before the start when the resolved target is a batch file and an argument contains `& | < > ^ %` or a double quote (cmd.exe interprets them in batch-file arguments, for example `--grep "a|b"` of Playwright). It never repeats the argument and neither blocks nor changes the exit code. Verified by a unit test on a stub; not run on a real Windows (`scripts/windows_shim_check.py` items 3 and 3b).
+
+### Changed
+
+- **`detect_tool` order:** the first word behind the wrappers (module words, then tools); the word after `-m` when a Python host (`python*`, `py`, `pypy*`, `coverage`) stands before it; a tool of the table in the first three words; last, a module word that is also a tool (`pytest`) anywhere. `python3.12 -m pytest` and `python -W error -m unittest tests` are recognized.
+- **`start` event `command`** is the command of the user; on Windows the process gets the resolved path, which never reaches the events.
+- **Hook `guard-tests`** follows the same order (`tool_of`; the classification of the program uses steps 1 and 2) and warns (`wide`, never blocks) for `env -S '…'`, `poetry run pytest`, `python3.12 -m pytest`; `python -W error -m unittest tests` is a point run. Run `skillsync link` to refresh the copy of `test-tools.json` next to the hook.
+- **Karma counters have one reader** (`test_adapters/karma_line.py`) used by the live reader of the recorder, `quality._test_counts` and `_failure_count`; it is wider than the `karma` adapter in the empty prefix, the order of the parentheses and the unjudged tail.
+
+### Fixed
+
+- `unittest` is recognized from any module position (`python -W error -m unittest`), and `go test ./unittest` or `echo unittest` no longer report a wrong tool.
+- Karma: the skipped specs were subtracted twice, `(N FAILED)` was not read by `_failure_count`, the `skipped` count of an interrupted run was wrong, and a log line such as `LOG: 'Job: Executed 5 of 8 steps'` counted as a counter.
+
 ## [1.10.0] - 2026-11-18
 
 Upgrading from 1.9.1: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.9.1 → 1.10.0".

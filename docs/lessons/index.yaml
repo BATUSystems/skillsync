@@ -266,5 +266,9 @@ lessons:
     paths: ['skillsync_workflow/layers.py', 'tests/test_skillsync_layers_equivalence.py', 'tests/test_skillsync_worktree_links.py']
   - path: liczniki-z-regex-kontra-zdarzenia-adaptera-jedno-zrodlo-wyniku.md
     title: "Liczniki biegu z wyrażeń regularnych kontra zdarzenia adaptera: jedno źródło prawdy dla wyniku, bo zielony bieg bywał BLOCKED"
-    tags: [skillsync, test-run, adapters, counts, junit, evidence]
-    paths: ['skillsync_workflow/test_run.py', 'skillsync_workflow/test_events.py', 'tests/test_skillsync_adapter_web_counts.py']
+    tags: [skillsync, test-run, adapters, counts, junit, evidence, karma]
+    paths: ['skillsync_workflow/test_run.py', 'skillsync_workflow/test_events.py', 'skillsync_workflow/quality.py', 'skillsync_workflow/test_adapters/karma_line.py', 'tests/test_skillsync_adapter_web_counts.py']
+  - path: tabela-narzedzi-dwa-interpretery-test-parytetu.md
+    title: "Tabela narzędzi testowych ma dwa interpretery (pakiet i samodzielny hak): zmiana kolejności lub pola wymaga testu parytetu i zgodności wstecznej"
+    tags: [skillsync, test-run, hooks, guard-tests, detect-tool, parity, compatibility]
+    paths: ['skillsync_workflow/test_run.py', 'skillsync_workflow/data/test_tools.json', 'library/hooks/guard-tests.py', 'tests/test_skillsync_test_run*.py', 'tests/fixtures/**']
