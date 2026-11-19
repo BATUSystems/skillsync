@@ -23,7 +23,7 @@ from pathlib import Path
 from .common import read_project
 from .fsutil import isabs
 from .dashboard import ids_in_progress, parse_checkpoints
-from .quality import _test_counts, evidence_reason, run_validation
+from .quality import _test_counts, evidence_reason, karma_unexecuted_reason, run_validation
 from .runs import _slug
 from . import test_events as events
 from . import test_gate
@@ -539,6 +539,8 @@ class TestRecorder:
                 else evidence_reason('test', ran, skipped, False, self.allow_skips)
             if reason and self.allow_no_count and ran is None and not failed:
                 reason = None
+            if not reason and not failed and output:   # the count is known, so no allowance lifts it: specs of an interrupted Karma run never ran
+                reason = karma_unexecuted_reason(output)
             status = 'BLOCKED' if reason else 'PASS'
         try:
             tree = test_gate.work_tree_id(self.root)

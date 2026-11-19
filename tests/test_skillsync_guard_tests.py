@@ -150,6 +150,31 @@ class AgreesWithTheCore(unittest.TestCase):
         self.assertFalse(set(G.RULES) - known, 'a rule for a tool that the table does not know can never fire')
 
 
+class PreviousReleaseTable(unittest.TestCase):
+    """The new interpreter of the hook reads the table of the previous release (the library may be newer than a project's installed core)."""
+    OLD = G.load_table(ROOT / 'tests' / 'fixtures' / 'test_tools_previous_release.json')
+    NEW_WRAPPERS = ('poetry', 'pdm', 'pipenv', 'tox', 'env -S')
+
+    def test_the_same_verdicts_as_with_the_current_table(self):
+        import shlex
+        self.assertIsNotNone(self.OLD)
+        for command, expected in VERDICTS:
+            if any(word in command for word in self.NEW_WRAPPERS):
+                continue
+            with self.subTest(command=command):
+                self.assertEqual(G.classify(shlex.split(command), self.OLD)['verdict'], expected)
+                self.assertEqual(G.tool_of(shlex.split(command), self.OLD), G.tool_of(shlex.split(command), TABLE))
+
+    def test_new_wrappers_do_not_raise_and_give_the_old_answer(self):
+        import shlex
+        for command in ('poetry run pytest', 'pdm run pytest', 'pipenv run pytest', 'tox -e py311', "env -S 'CI=1 npx jest'", 'poetry --unknown-flag run pytest'):
+            with self.subTest(command=command):
+                words = shlex.split(command)
+                self.assertEqual(G.classify(words, self.OLD)['verdict'], 'none')
+                G.tool_of(words, self.OLD)
+                G.unwrap(words, self.OLD)
+
+
 class NeverRaises(unittest.TestCase):
     def test_a_broken_or_missing_table_gives_none(self):
         with tempfile.TemporaryDirectory() as tmp:

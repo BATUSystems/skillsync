@@ -14,7 +14,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ### Breaking
 
-- **Karma evidence in `validate` reads only real counter lines.** A line `Executed N of M` is counted only when the text before it is empty or a browser label ending with `): ` and what follows `of M` is the end of the line or `(`, `SUCCESS`, `ERROR`, `DISCONNECTED` or `FAILED`. Karma output with a foreign prefix or tail that was counted before can now end `BLOCKED` with "Test count unknown"; workaround: `--allow-no-count` or an explicit `--format`. The `skipped` count of an interrupted run and the live `passed` count change to the correct values.
+- **Karma evidence in `validate` reads only real counter lines.** A line `Executed N of M` is counted only when the text before it is empty or a browser label ending with `): ` and what follows `of M` is the end of the line or `(`, `SUCCESS`, `ERROR`, `DISCONNECTED` or `FAILED`. Karma output with a foreign prefix or tail that was counted before can now end `BLOCKED` with "Test count unknown"; workaround: `success_pattern` in the check of `validate`; in `test-run` `--allow-no-count <reason>` or a `--junit` report (`--format karma` does not help). With exit code 0, Karma output with unexecuted specs (`Executed 3 of 11 DISCONNECTED`) is `BLOCKED` ("Karma executed N of M specs"); only `success_pattern` lifts it. The `skipped` count of an interrupted run and the live `passed` count change to the correct values.
 
 ### Added
 
@@ -25,7 +25,8 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 - **`detect_tool` order:** the first word behind the wrappers (module words, then tools); the word after `-m` when a Python host (`python*`, `py`, `pypy*`, `coverage`) stands before it; a tool of the table in the first three words; last, a module word that is also a tool (`pytest`) anywhere. `python3.12 -m pytest` and `python -W error -m unittest tests` are recognized.
 - **`start` event `command`** is the command of the user; on Windows the process gets the resolved path, which never reaches the events.
-- **Hook `guard-tests`** follows the same order (`tool_of`; the classification of the program uses steps 1 and 2) and warns (`wide`, never blocks) for `env -S '…'`, `poetry run pytest`, `python3.12 -m pytest`; `python -W error -m unittest tests` is a point run. Run `skillsync link` to refresh the copy of `test-tools.json` next to the hook.
+- **Hook `guard-tests`** follows the same order (`tool_of`; the classification of the program uses steps 1 and 2) and warns (`wide`, never blocks) for `env -S '…'`, `poetry run pytest`, `python3.12 -m pytest`; `python -W error -m unittest tests` is a point run. Run `skillsync link` to refresh the copies of `guard-tests.py` and `test-tools.json` next to the hook (the table carries the new wrappers and `env -S`; the script carries the `-m` step and the new verdicts).
+- **Unexecuted Karma specs are no evidence.** With exit code 0, output where `total - executed - skipped > 0` (for example `Executed 3 of 11 DISCONNECTED`) is `BLOCKED` in `validate` and `test-run` ("Karma executed N of M specs"); `success_pattern` lifts it in `validate`, `--allow-no-count` and `--allow-skips` do not in `test-run`.
 - **Karma counters have one reader** (`test_adapters/karma_line.py`) used by the live reader of the recorder, `quality._test_counts` and `_failure_count`; it is wider than the `karma` adapter in the empty prefix, the order of the parentheses and the unjudged tail.
 
 ### Fixed

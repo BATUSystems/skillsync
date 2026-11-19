@@ -6,11 +6,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ### Added
 
-- Hook `hooks/guard-tests.py`: warnings `wide` for `env -S '…'`, `poetry run pytest` and `python3.12 -m pytest` (never blocking), and the read of `-m` behind a Python host; the copy of `test-tools.json` next to the hook is refreshed by `skillsync link`.
+- Hook `hooks/guard-tests.py`: warnings `wide` for `env -S '…'`, `poetry run pytest` and `python3.12 -m pytest` (never blocking), and the read of `-m` behind a Python host; `skillsync link` refreshes the copies of `guard-tests.py` and `test-tools.json` next to the hook.
 
 ### Changed
 
-- Skill `workflow`, reference `test-run.md`: the limits of the hook are rewritten for the new recognition (`python3 -X dev -m pytest` and `py -3 -m pytest` are seen; `tox` is a tool without a rule of a wide run; `sudo`/`nohup` and `-m` behind a script stay as limits).
+- Skill `workflow`, reference `test-run.md`: the limits of the hook are rewritten for the new recognition (`python3 -X dev -m pytest` and `py -3 -m pytest` are seen; `tox` is a tool without a rule of a wide run; `sudo`/`nohup` stay as limits; `-m` behind a script gives `wide`; `env -S '…'` is read like the command it carries).
 
 ### Fixed
 

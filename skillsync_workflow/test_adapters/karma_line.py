@@ -7,7 +7,7 @@ Karma's `Executed` does not count the skipped specs: `passed = N - X`, `failed =
 A line is a counter only when the text before `Executed` is empty or a browser label that ends with `): `, and `of M` is followed by the end of the line or by
 a space and `(`, `SUCCESS`, `ERROR`, `DISCONNECTED` or `FAILED`; a log line (`LOG: 'Job: Executed 5 of 8 steps'`) or a test name is not. Terminal escapes are stripped
 before the line is judged (the next line of the `progress` reporter starts with `ESC[1A ESC[2K`). Several browsers print a line each: the sum of the last line of
-each label. The empty label (dots reporter, scripts) is one label.
+each label. The empty label (output of scripts and synthetic output) is one label.
 """
 import re
 
@@ -54,12 +54,13 @@ class Tally:
         return True
 
     def totals(self):
-        """`{'executed', 'passed', 'failed', 'skipped', 'total'}` summed over the browsers, or None before any counter line."""
+        """`{'executed', 'passed', 'failed', 'skipped', 'total', 'unexecuted'}` summed over the browsers, or None before any counter line."""
         if not self.browsers:
             return None
         executed, failed, skipped, total = (sum(v[i] for v in self.browsers.values()) for i in range(4))
         passed = sum(max(0, v[0] - v[1]) for v in self.browsers.values())
-        return {'executed': executed, 'passed': passed, 'failed': failed, 'skipped': skipped, 'total': total}
+        unexecuted = sum(max(0, v[3] - v[0] - v[2]) for v in self.browsers.values())   # specs that neither ran nor were skipped (an interrupted run)
+        return {'executed': executed, 'passed': passed, 'failed': failed, 'skipped': skipped, 'total': total, 'unexecuted': unexecuted}
 
 
 def read_output(output):
