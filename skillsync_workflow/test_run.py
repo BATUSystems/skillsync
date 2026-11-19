@@ -28,22 +28,22 @@ from .runs import _slug
 from . import test_events as events
 from . import test_gate
 from . import test_adapters
+from .test_adapters import karma_line
 from . import test_reports
 
-KARMA = re.compile(r'Executed (\d+) of (\d+)')
-KARMA_SKIPPED = re.compile(r'\(skipped (\d+)\)')
-KARMA_FAILED = re.compile(r'\((\d+) FAILED\)|, (\d+) FAILED')
 REPORT_SINCE_SLACK_S = 2.0
 MAX_REPORT_FILES = 200
 
 def _failure_count(output):
-    """Failed tests named by the summary of the common tools (unittest `FAILED (failures=2, errors=1)`, pytest `3 failed`); 0 when the output names none."""
+    """Failed tests named by the summary of the common tools (unittest `FAILED (failures=2, errors=1)`, pytest `3 failed`, Karma `(N FAILED)` of a valid `Executed N of M` line); 0 when the output names none. Callers read it only for a non-zero exit code."""
     total = 0
     unittest_summary = re.search(r'FAILED \(([^)]*)\)', output)
     if unittest_summary:
         total = sum(int(n) for kind, n in re.findall(r'(failures|errors)=(\d+)', unittest_summary.group(1)))
     found = re.search(r'(\d+) failed', output)
-    return max(total, int(found.group(1))) if found else total
+    total = max(total, int(found.group(1))) if found else total
+    karma = karma_line.read_output(output)
+    return max(total, karma['failed']) if karma else total
 
 
 _UNITTEST_FAILED = re.compile(r'(?m)^FAILED \(([^)\n]*)\)')
@@ -396,6 +396,7 @@ class TestRecorder:
         self.started_wall = None
         self.tree_start = None
         self.ended = False
+        self.karma = karma_line.Tally()   # the live counters of Karma-style `Executed N of M` lines when no adapter is selected
         self.last = None
 
     def started(self, check):
@@ -454,13 +455,9 @@ class TestRecorder:
     def _line(self, check, stream, text):
         if self.adapter is not None:
             self._adapter_call(lambda: self.adapter.feed(stream, text, self.ctx))
-        found = KARMA.search(text) if self.adapter is None else None   # a selected adapter owns the counters; the built-in reader only works without one
-        if found and self.writer is not None:
-            done, total = int(found.group(1)), int(found.group(2))
-            rest = text[found.end():]
-            skip, fail = KARMA_SKIPPED.search(rest), KARMA_FAILED.search(rest)
-            skipped, failed = int(skip.group(1)) if skip else 0, int((fail.group(1) or fail.group(2)) if fail else 0)
-            self.writer.counts(passed=max(done - failed - skipped, 0), failed=failed, skipped=skipped, running=0, total=total)
+        if self.adapter is None and self.writer is not None and self.karma.feed(text):   # a selected adapter owns the counters; the built-in reader only works without one
+            totals = self.karma.totals()
+            self.writer.counts(passed=totals['passed'], failed=totals['failed'], skipped=totals['skipped'], running=0, total=totals['total'])
 
     def finished(self, check, result, output):
         writer = self.writer

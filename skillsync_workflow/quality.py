@@ -118,11 +118,10 @@ def _test_counts(output):
     dotnet = re.search(r'Passed:\s*(\d+).*?Skipped:\s*(\d+).*?Total:\s*(\d+)', output)
     if dotnet:
         run, skipped = int(dotnet.group(1)), int(dotnet.group(2))
-    karma = None
-    for karma in re.finditer(r'Executed (\d+) of (\d+)', output):   # the LAST line: the progress reporter starts with `Executed 0 of N`
-        pass
+    from .test_adapters import karma_line   # lazy: the shared reader of the Karma `Executed N of M` line (executed lines do not count the skipped ones)
+    karma = karma_line.read_output(output)
     if karma:
-        run, skipped = int(karma.group(1)), int(karma.group(2)) - int(karma.group(1))
+        run, skipped = karma['executed'], karma['skipped']
     return run, skipped
 
 

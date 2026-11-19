@@ -283,15 +283,15 @@ class RecorderCounters(unittest.TestCase):
     def test_without_an_adapter_the_built_in_reader_works(self):
         recorder = self.recorder(None)
         recorder.line({}, 'out', 'Executed 3 of 5 (skipped 2) SUCCESS')
-        recorder.writer.counts.assert_called_once_with(passed=1, failed=0, skipped=2, running=0, total=5)
+        recorder.writer.counts.assert_called_once_with(passed=3, failed=0, skipped=2, running=0, total=5)   # `Executed` does not count the skipped: passed = N - X
 
     def test_both_parentheses_are_read(self):
         recorder = self.recorder(None)
-        recorder.line({}, 'out', 'Executed 5 of 5 (2 FAILED) (skipped 2)')
-        recorder.writer.counts.assert_called_once_with(passed=1, failed=2, skipped=2, running=0, total=5)
+        recorder.line({}, 'out', 'Executed 5 of 7 (2 FAILED) (skipped 2)')
+        recorder.writer.counts.assert_called_once_with(passed=3, failed=2, skipped=2, running=0, total=7)
         recorder = self.recorder(None)
-        recorder.line({}, 'out', 'Executed 5 of 5 (skipped 2) (2 FAILED)')
-        recorder.writer.counts.assert_called_once_with(passed=1, failed=2, skipped=2, running=0, total=5)
+        recorder.line({}, 'out', 'Executed 5 of 7 (skipped 2) (2 FAILED)')
+        recorder.writer.counts.assert_called_once_with(passed=3, failed=2, skipped=2, running=0, total=7)
 
 
 class WindowsShims(unittest.TestCase):

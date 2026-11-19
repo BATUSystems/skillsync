@@ -161,7 +161,7 @@ class Command(Base):
         self.assertEqual(self.attempt().tests, {})
 
     def test_karma_counters_are_live_and_end_has_the_counts(self):
-        script = "print('Chrome: Executed 3 of 10 (1 FAILED)'); print('Chrome: Executed 10 of 10 (2 FAILED)')"
+        script = "print('Chrome (Linux): Executed 3 of 10 (1 FAILED)'); print('Chrome (Linux): Executed 10 of 10 (2 FAILED)')"
         done = self.run_cli('--step', 'F1.1', '--', sys.executable, '-c', script)
         self.assertEqual(done.returncode, 0)
         events = ev.read_events(self.root / '.skillsync/runs/R1/tests/F1.1/1.jsonl')[0]
