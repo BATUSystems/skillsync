@@ -278,6 +278,24 @@ def resolve_executable(argv, which=None, nt=None):
     return [found] + argv[1:] if found else argv
 
 
+CMD_METACHARS = frozenset('&|<>^%"')
+
+
+def cmd_metachar_notice(argv, nt=None):
+    """Warning (stderr, before the start) for Windows only: cmd.exe re-parses the arguments of a `.cmd`/`.bat` target, so `& | < > ^ %` and `"` in them may
+    split or alter the command. `argv` is the RESOLVED one. The text never repeats an argument (it may hold a secret). None when there is nothing to say."""
+    if not (os.name == 'nt' if nt is None else nt):
+        return None
+    argv = [str(a) for a in argv or []]
+    if not argv or not argv[0].lower().endswith(('.cmd', '.bat')):
+        return None
+    if not any(CMD_METACHARS & set(arg) for arg in argv[1:]):
+        return None
+    return ('test-run: warning: an argument of a .cmd/.bat command contains one of & | < > ^ % or a double quote, and cmd.exe interprets these characters '
+            'in the arguments of batch files (for example --grep "a|b" of Playwright), so the command may be split or changed. Quote or escape the '
+            'argument so that cmd.exe does not split it, or move the value to a configuration file of the tool. The command runs as given.')
+
+
 def adapter_notice(fmt, argv, tool, adapter, junit=()):
     """The line of `test-run` about the choice of the adapter (stderr, before the command starts), only for `--format auto`: an explicit name or `none` is silent."""
     if fmt not in (None, 'auto'):
@@ -383,7 +401,7 @@ class TestRecorder:
     def started(self, check):
         self.path, self.number = events.new_attempt(self.root, self.run_id, self.step)
         self.writer = events.EventWriter(self.path, mask=self.mask)   # a failure here (disk, permissions) reaches `run_validation`: the command does not start
-        command = check.get('command') or ' '.join(shlex.quote(a) for a in check.get('argv') or [])
+        command = check.get('command') or ' '.join(shlex.quote(a) for a in check.get('display') or check.get('argv') or [])   # `display`: the command of the user, before `resolve_executable`
         self.started_wall = time.time()
         try:
             self.tree_start = test_gate.work_tree_id(self.root)   # the content the tests START on (the gate compares it with the end)
@@ -644,7 +662,11 @@ def _command(args):
             print(notice, file=sys.stderr)
         recorder = TestRecorder(root, run_id, step, source, mask=events.mask_setting(manifest), junit=args.junit or [], passthrough=True,
                                  allow_no_count=args.allow_no_count, allow_skips=args.allow_skips, adapter=adapter)
-        check = {'id': 'test-run', 'argv': resolve_executable(command), 'cwd': str(root), 'kind': 'build', 'timeout': float(args.timeout), 'required': True, '_env': {'PYTHONUNBUFFERED': '1', **(adapter.env() if adapter is not None else {})},
+        resolved = resolve_executable(command)
+        warning = cmd_metachar_notice(resolved)
+        if warning:
+            print(warning, file=sys.stderr)
+        check = {'id': 'test-run', 'argv': resolved, 'display': list(command), 'cwd': str(root), 'kind': 'build', 'timeout': float(args.timeout), 'required': True, '_env': {'PYTHONUNBUFFERED': '1', **(adapter.env() if adapter is not None else {})},
                  'resources': ['test-run:' + str(Path(root).resolve()) + ':' + (step or events.NO_STEP)]}
         with _Interruptible():
             report = run_validation(root, [check], observer=recorder)
