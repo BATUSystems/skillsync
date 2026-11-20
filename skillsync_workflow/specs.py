@@ -43,7 +43,9 @@ def validate_specs(manifest):
     errors, warnings = [], []
     for key in value:
         if key not in KNOWN:
-            warnings.append('workflow.specs: nieznany klucz (znane: tracked, archive)')
+            text = f'workflow.specs: nieznany klucz {str(key)!r} (znane: tracked, archive)'
+            if text not in warnings:
+                warnings.append(text)
     if 'tracked' in value and not isinstance(value['tracked'], bool):
         errors.append('workflow.specs.tracked: musi być wartością logiczną (true albo false)')
     if 'archive' in value:
@@ -62,26 +64,40 @@ def _git_env():
     return env
 
 
+def _is_repo_root(repo):
+    """Czy `repo` jest korzeniem repozytorium git (projekt zagnieżdżony nie dziedziczy reguł z nadrzędnego `.gitignore`)."""
+    try:
+        done = subprocess.run(['git', '-C', str(repo), 'rev-parse', '--show-toplevel'], capture_output=True, timeout=15, check=False,
+                              env=_git_env())
+    except (OSError, subprocess.SubprocessError):
+        return False
+    if done.returncode:
+        return False
+    try:
+        return Path(os.fsdecode(done.stdout).strip()).resolve() == Path(repo).resolve()
+    except OSError:
+        return False
+
+
 def _ignored_by_repo_rule(repo, probe):
     try:
-        done = subprocess.run(['git', '-C', str(repo), 'check-ignore', '--no-index', '-v', '--', probe], capture_output=True, timeout=15,
-                              check=False, env=_git_env())
+        done = subprocess.run(['git', '-C', str(repo), 'check-ignore', '--no-index', '-v', '--stdin', '-z'], input=os.fsencode(probe) + b'\0',
+                              capture_output=True, timeout=15, check=False, env=_git_env())
     except (OSError, subprocess.SubprocessError):
         return False
     if done.returncode != 0:
         return False
-    head = os.fsdecode(done.stdout).split('\t', 1)[0]
-    parts = head.split(':', 2)
-    if len(parts) != 3:
+    fields = [os.fsdecode(raw) for raw in done.stdout.split(b'\0')]
+    if len(fields) < 4:
         return False
-    source, _line, pattern = parts
-    if pattern.startswith('!') or os.path.isabs(source) or os.path.basename(source) != '.gitignore':
-        return False
-    return not source.startswith('.git/')
+    source, _line, pattern = fields[:3]
+    return not (pattern.startswith('!') or os.path.isabs(source) or os.path.basename(source) != '.gitignore')
 
 
 def ignore_rules(repo):
-    """Liczba katalogów (0-2) ignorowanych regułą z `.gitignore` drzewa repozytorium."""
+    """Liczba katalogów (0-2) ignorowanych regułą z `.gitignore` drzewa repozytorium (0, gdy `repo` nie jest korzeniem repozytorium)."""
+    if not _is_repo_root(repo):
+        return 0
     return sum(1 for probe in PROBES if _ignored_by_repo_rule(repo, probe))
 
 
@@ -142,7 +158,9 @@ def specs_findings(repo, manifest):
         tracked = _tracked_files(repo)
         if tracked:
             shown = ' '.join(_quote_arg(item) for item in tracked[:40])
-            more = f' (i {len(tracked) - 40} więcej)' if len(tracked) > 40 else ''
-            found.append(('warning', 'docs/specs', f'{len(tracked)} plik(ów) w docs/specs lub docs/plans jest śledzonych mimo trybu nieśledzonego; '
-                          f'odepnij je (pliki zostają na dysku): git -C {_quote_arg(str(Path(repo)))} rm --cached -- {shown}{more}'))
+            text = (f'{len(tracked)} plik(ów) w docs/specs lub docs/plans jest śledzonych mimo trybu nieśledzonego; '
+                    f'odepnij je (pliki zostają na dysku): git -C {_quote_arg(str(Path(repo)))} rm --cached -- {shown}')
+            if len(tracked) > 40:
+                text += f'\n(i {len(tracked) - 40} więcej: uruchom `skillsync doctor` ponownie po tym poleceniu)'
+            found.append(('warning', 'docs/specs', text))
     return found

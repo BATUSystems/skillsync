@@ -10,6 +10,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from tests.test_skillsync_workflow import WorkflowFixture  # noqa: E402
 from skillsync_workflow.specs import specs_info, specs_findings, validate_specs  # noqa: E402
 
 GIT = shutil.which('git')
@@ -131,6 +132,15 @@ class SpecsInfoTests(unittest.TestCase):
             self.assertEqual(self.info(), {'tracked': True, 'archive': None, 'source': 'default'})
             self.assertEqual(self.info(tracked=False)['source'], 'manifest')
 
+    def test_nested_project_does_not_inherit_parent_rules(self):
+        self.ignore('*\n')
+        nested = self.repo / 'sub' / 'proj'
+        nested.mkdir(parents=True)
+        self.assertEqual(specs_info(nested, {})['source'], 'default')
+        self.ignore(BOTH)
+        self.assertEqual(specs_info(nested, {})['source'], 'default')
+        self.assertEqual(specs_info(self.repo, {})['source'], 'gitignore')
+
     def test_not_a_repository_is_default(self):
         plain = Path(self.tmp.name) / 'plain'
         plain.mkdir()
@@ -161,8 +171,11 @@ class SpecsFindingsTests(unittest.TestCase):
         for level, text in self.levels(tracked='secret-value'):
             self.assertNotIn('secret-value', text)
 
-    def test_unknown_key_is_a_warning(self):
-        self.assertEqual([level for level, _ in self.levels(other=1)], ['warning'])
+    def test_unknown_key_is_a_warning_naming_the_key_once(self):
+        found = self.levels(other=1)
+        self.assertEqual([level for level, _ in found], ['warning'])
+        self.assertIn('other', found[0][1])
+        self.assertEqual(len(self.levels(a=1, b=2, **{'a ': 3})), 3)
 
     def test_absolute_archive_and_archive_with_tracked(self):
         self.assertEqual([level for level, _ in self.levels(archive='/srv/x')], ['warning', 'warning'])
@@ -198,12 +211,77 @@ class SpecsFindingsTests(unittest.TestCase):
         self.assertIn('rm --cached', found[0][1])
         self.assertIn('docs/specs/a.md', found[0][1])
 
+    def test_more_than_forty_tracked_files_continue_on_a_new_line(self):
+        (self.repo / '.gitignore').write_text(BOTH, encoding='utf-8')
+        (self.repo / 'docs' / 'specs').mkdir(parents=True)
+        names = [f'docs/specs/f{i:02d}.md' for i in range(45)]
+        for name in names:
+            (self.repo / name).write_text('x\n', encoding='utf-8')
+        git(self.repo, 'add', '-f', '--', *names)
+        text = self.levels()[0][1]
+        first, _, rest = text.partition('\n')
+        self.assertIn('f39.md', first)
+        self.assertNotIn('f40.md', first)
+        self.assertNotIn('więcej', first)
+        self.assertIn('5 więcej', rest)
+        self.assertTrue(first.startswith('45 plik'))
+
     def test_tracked_mode_with_tracked_files_is_silent(self):
         path = self.repo / 'docs' / 'specs' / 'a.md'
         path.parent.mkdir(parents=True)
         path.write_text('x\n', encoding='utf-8')
         git(self.repo, 'add', '--', 'docs/specs/a.md')
         self.assertEqual(self.levels(), [])
+
+
+@unittest.skipUnless(GIT, 'brak gita')
+class SpecsCliTests(WorkflowFixture):
+    """`skillsync route` i `doctor` na izolowanym projekcie z `git init` (korzeń repozytorium = projekt)."""
+
+    def setUp(self):
+        super().setUp()
+        git(self.root, 'init', '-q')
+
+    def specs(self, **value):
+        if value:
+            self.manifest['workflow']['specs'] = value
+            self.save()
+        return self.report('route', '--topics', 'x')['specs']
+
+    def findings(self, code=0, level=None):
+        report = self.report('doctor', code=code)
+        return report, [f for f in report['findings'] if level is None or f['level'] == level]
+
+    def test_route_default_gitignore_manifest_invalid(self):
+        self.assertEqual(self.specs(), {'tracked': True, 'archive': None, 'source': 'default'})
+        (self.root / '.gitignore').write_text(BOTH, encoding='utf-8')
+        self.assertEqual(self.specs(), {'tracked': False, 'archive': None, 'source': 'gitignore'})
+        self.assertEqual(self.specs(tracked=False)['source'], 'manifest')
+        invalid = self.specs(tracked='x')
+        self.assertEqual((invalid['tracked'], invalid['source']), (None, 'invalid'))
+        self.assertTrue(invalid['error'].startswith('workflow.specs.tracked'))
+
+    def test_doctor_fails_for_non_boolean_tracked(self):
+        self.manifest['workflow']['specs'] = {'tracked': 'x'}
+        self.save()
+        report, errors = self.findings(code=1, level='error')
+        self.assertEqual(report['status'], 'FAIL')
+        self.assertTrue(any(f['reason'].startswith('workflow.specs.tracked') for f in errors))
+
+    def test_doctor_fails_for_tracked_true_with_both_rules(self):
+        (self.root / '.gitignore').write_text(BOTH, encoding='utf-8')
+        self.manifest['workflow']['specs'] = {'tracked': True}
+        self.save()
+        report, errors = self.findings(code=1, level='error')
+        self.assertEqual(report['status'], 'FAIL')
+        self.assertTrue(any('koliduje' in f['reason'] for f in errors))
+
+    def test_doctor_warns_for_tracked_false_without_rule(self):
+        self.manifest['workflow']['specs'] = {'tracked': False}
+        self.save()
+        report, warnings = self.findings(level='warning')
+        self.assertEqual(report['status'], 'PASS')
+        self.assertTrue(any('/docs/specs/' in f['reason'] and '/docs/plans/' in f['reason'] for f in warnings))
 
 
 class ValidateSpecsTests(unittest.TestCase):

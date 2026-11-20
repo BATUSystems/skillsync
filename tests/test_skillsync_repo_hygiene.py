@@ -93,8 +93,9 @@ class RepoHygieneTests(unittest.TestCase):
         git = shutil.which('git')
         if not git:
             self.need(None)
+        from skillsync_workflow.specs import _git_env
         done = subprocess.run([git, 'check-ignore', '--no-index', '-v', '--', path], cwd=str(REPO),
-                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60, env=_git_env())
         return done.returncode, done.stdout.decode('utf-8', 'replace')
 
     def test_root_gitignore_ignores_specs_and_plans(self):
