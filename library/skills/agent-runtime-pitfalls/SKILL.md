@@ -93,6 +93,10 @@ pasować do środowiska, popraw ją tutaj zamiast obchodzić.
   a przynależność procesu do katalogu sprawdzaj w `/proc/<pid>/cwd`.
 - **Zegar sesji rozjechany z maszyną.** Godzina „z głowy”, z kontekstu rozmowy albo ze znacznika w wiadomości bywa przesunięta o godziny (dryf rzędu +2 h w stanie przebiegu). Każdy czas wpisywany do planu, checkpointu, stanu lub raportu bierz z `date` (np. `date +%H:%M`, `date -Iseconds`) albo z źródła, które go podało; nie szacuj i nie przepisuj z poprzedniej wiadomości.
 
+- **Glob i Grep nie widzą skilli dowiązanych do projektu.** Skille w `.claude/skills/` i `.github/skills/` to symlinki do biblioteki, a narzędzia wyszukiwania hosta ich nie przechodzą, więc wynik „brak pliku” bywa fałszywy. `Read` po pełnej ścieżce pliku działa; listę i treść szukaj przez `command ls -1`, `find -L` albo `Read`.
+- **Narzędzie edycji hosta zapisuje plik z mieszanymi końcami linii (CRLF/LF) w samym LF**, więc jedna drobna zmiana przepisuje końce w całym pliku i diff pokazuje każdy wiersz. Przy plikach z mieszanymi końcami linii sprawdź końce po edycji (`git diff --stat`, `file <plik>`) albo edytuj skryptem na bajtach, który sprawdza liczbę zamian.
+- **Literał `\0` w skrypcie edycji na bajtach wstawia bajt NUL** do pliku tekstowego zapisywanego skryptem na bajtach (sekwencja znaków `\0` w tekście zamiany jest interpretowana jako NUL). Plik przestaje być tekstem, a diff i narzędzia go odrzucają. Do tekstu zamiany używaj surowych napisów albo podwajaj odwrotny ukośnik, a po zapisie szukaj NUL (`grep -c -P '\x00' <plik>`).
+
 ## Procesy
 
 - **Szukaj procesów po katalogu roboczym, nie po wzorcu nazwy.** `pgrep -f` łapie własną
@@ -150,6 +154,7 @@ pasować do środowiska, popraw ją tutaj zamiast obchodzić.
 ## Testy
 
 - **Potok gubi kod wyjścia runnera testów.** `testy | tail -5 && git commit` (albo `… | grep wynik`) zwraca kod ostatniego polecenia w potoku, więc czerwone testy wyglądają na zielone, a commit i tak się wykonuje. Zapisz kod w zmiennej: `testy > log 2>&1; rc=$?; tail -5 log; [ $rc -eq 0 ] && git commit …`, albo `set -o pipefail` (zsh: `setopt pipefail`); wynik zawsze według `rc`, nie według ostatniej linii wyjścia.
+- **`skan; push` (skan sekretów połączony z pushem operatorem) nie jest bramką.** Średnik uruchamia push niezależnie od wyniku skanu, a `skan | tail && git push` gubi kod wyjścia jak w punkcie wyżej, więc wykryty sekret i tak wychodzi na zdalne repozytorium. Skan uruchom osobnym poleceniem, odczytaj wynik (kod wyjścia i raport) i dopiero potem wydaj osobne polecenie `git push`; nie łącz ich w jednym wywołaniu, także `gitleaks … && git push`.
 
 - **Windows: `Path.write_text` zamienia LF na CRLF**, więc skrót (sha256) liczony w teście z tekstu z LF
   nie zgadza się ze skrótem pliku. Helper fikstur, który zapisuje dowody, pisze z `newline=''` albo bajtami.
@@ -275,6 +280,8 @@ pasować do środowiska, popraw ją tutaj zamiast obchodzić.
   porównaj `git diff --cached --name-only` z listą kroku.
 
 ## Dostęp do serwerów i uprawnienia
+
+- **Nie podglądaj pliku z sekretem, także przez filtr maskujący** (`cat`, `sed`, `grep` z zamianą wartości). Filtr może przepuścić wartość, a wynik trafia do rozmowy i logów. Sprawdzaj istnienie, rozmiar i nazwy kluczy bez treści wartości (`test -s <plik>`, `stat -c %s <plik>`, `cut -d= -f1 <plik>`); porównania rób w pamięci i drukuj tylko wynik logiczny.
 
 - W trybie auto klasyfikator może odrzucić SSH do serwera jako odczyt z produkcji nawet
   przy regule `allow` w ustawieniach; jawne polecenie użytkownika w rozmowie może zmienić
