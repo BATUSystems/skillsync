@@ -257,6 +257,11 @@ class DashboardContract(unittest.TestCase):
                 if not timing['available']:
                     self.assertTrue(timing['reason'])
 
+    def test_the_contract_documents_plan_state_of_consents(self):
+        text = CONTRACT_DOC.read_text(encoding='utf-8')
+        for needle in ('`planState`', 'tracked: false', 'ostatni wpis'):
+            self.assertIn(needle, text)
+
     def test_cases_cover_the_contract(self):
         plan = json.loads(load('plan-in-progress')[1])
         self.assertEqual(plan['mode'], 'plan')

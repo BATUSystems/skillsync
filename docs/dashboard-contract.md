@@ -21,10 +21,13 @@ projektu lub przebiegu). Raport komend zapisujących i `metrics --json` to JSON 
 
 - Dopisuje jedną linię JSON do `.skillsync/runs/<run-id>/approvals.jsonl` pod blokadą plikową (jedyne źródło, które czyta
   `skillsync approvals wait`). Pola wpisu: `schema`, `at` (UTC), `word`, `sha`, `by`, `source` (`cli`, `dashboard` albo
-  `ide`), opcjonalnie `file`, `run`, `plan`, `target`, `branch`, `ahead`, `mode`, `via` (tylko zgody z gniazda zgód trybu dwóch gniazd, zapisuje
+  `ide`), opcjonalnie `file`, `run`, `plan`, `planState`, `target`, `branch`, `ahead`, `mode`, `via` (tylko zgody z gniazda zgód trybu dwóch gniazd, zapisuje
   je serwer; obiekt `{port, host, peer}`, zob. „Ślad zgody”). Wpis z `record` ma zawsze `at`
   (`YYYY-MM-DDTHH:MM:SSZ`), `run` (= `--run`) i `by` (nazwa użytkownika systemu, `unknown`, gdy jej nie da się odczytać);
-  pola opcjonalne bez wartości są pominięte (nie `null`). Wartości tekstowe przechodzą przez maskowanie sekretów.
+  pola opcjonalne bez wartości są pominięte (nie `null`). `planState` (tylko `CP`/`READY`): status planu, którego linia `Przebieg:`
+  wskazuje ten przebieg (`draft`, `approved`, `in_progress`, `done`, `archived`), w chwili zgody; wypełnia go sam zapis
+  (`approvals record`, przycisk strony) z planu przebiegu, nie z planu oglądanego na stronie; bez planu przebiegu albo ze statusem
+  spoza listy pole jest pominięte. Pole `plan` nadal jest ścieżką planu. Wartości tekstowe przechodzą przez maskowanie sekretów.
 - `--sha` (7–64 znaków hex, małe litery): dla `GO plan`/`GO implement` git blob sha zatwierdzanego pliku (domyślnie: sha
   pliku z `--file`), dla `CP`/`READY` HEAD gałęzi roboczej, którą zgoda wypchnie (domyślnie HEAD repozytorium projektu,
   odczytany z `.git` bez uruchamiania git). Bez `--sha` i bez czytelnego HEAD (projekt bez `.git`): `BLOCKED`. Słowo GO
@@ -34,8 +37,9 @@ projektu lub przebiegu). Raport komend zapisujących i `metrics --json` to JSON 
   `status.record_approval(..., source="dashboard")` we własnym procesie.
 - `--file` tylko dla słów GO: `docs/specs/*.md` dla `GO plan`, `docs/plans/*.md` dla `GO implement` (plik zwykły, nie
   dowiązanie, nie `README.md`); dla `CP`/`READY` → `BLOCKED`. `--target`/`--branch`: nazwa gałęzi.
-- Odmawia (kod `2`) drugiego zapisu tego samego słowa z tym samym `sha` w tym samym przebiegu (dla GO: ta sama wersja pliku,
-  dla CP/READY: ten sam HEAD); nieznane słowo, zły `--source`, run-id spoza wzorca `[A-Za-z0-9][A-Za-z0-9_.-]{0,79}`, brak
+- Odmawia (kod `2`) drugiego zapisu tego samego słowa z tym samym `sha` i tym samym `planState` w tym samym przebiegu (dla GO:
+  ta sama wersja pliku, dla CP/READY: ten sam HEAD przy tym samym statusie planu; `CP` zapisane w trakcie realizacji nie blokuje `CP`
+  po zamknięciu planu przy tym samym HEAD; wpis bez pola ma `planState` pusty, więc liczy się jak dotąd); nieznane słowo, zły `--source`, run-id spoza wzorca `[A-Za-z0-9][A-Za-z0-9_.-]{0,79}`, brak
   katalogu przebiegu, dowiązanie na drodze `.skillsync/runs/<run-id>` lub dowiązany `approvals.jsonl`, plik, który
   przekroczyłby 256 KiB (czytelnicy pomijają większy plik w całości), albo blokada trzymana dłużej niż 10 s też kończą się
   `BLOCKED`.
@@ -301,7 +305,10 @@ Pola: `reason` (string lub null), `blocked` (powód nieaktywności; null dla `wa
 `given` w stanie `after`: wpis zgody w postaci zapisanej w `approvals.jsonl` (wpis z `approvals record` ma zawsze `at`).
 Dla `spec`/`plan` stan `after` wynika ze statusu pliku (`approved` i dalej), więc zgoda mogła zostać dana poza
 `approvals.jsonl` (np. `spec approve`/`plan approve` w IDE albo słowo wpisane w sesji): wtedy `given` = `{"at": null}`, a
-`reason` mówi „zgoda … już dana”. Dla `cp`/`ready` stan `after` jest tylko przy wpisie, którego `sha` = `git.headFull`.
+`reason` mówi „zgoda … już dana”. Dla `cp`/`ready` stan `after` jest tylko przy ostatnim wpisie słowa, którego `sha` = `git.headFull` i którego `planState` równa się
+bieżącemu statusowi planu przebiegu (zmiana statusu planu po zgodzie ponownie otwiera przycisk, także bez nowego commitu). Wpis bez
+`planState` liczy się po samym `sha`, z wyjątkiem repozytorium z `workflow.specs.tracked: false` (plany poza gitem) i planu `done`:
+taki wpis nie daje `after`, bo stara zgoda blokowałaby nową.
 
 Wpisy zgód (`given`, `last`) pochodzą z `approvals.jsonl` bieżącego przebiegu w kolejności pliku, w postaci zapisanej; linie
 spoza reguł `skillsync status` (nieznane słowo, nieczytelne `at`, sha spoza 7–64 znaków hex, plik ponad 256 KiB) są pomijane.
@@ -605,8 +612,12 @@ Różnice rozstrzygnięte świadomie:
   (format skilla `feature`), `progress.total`/`progress.done` = `plans[].steps` z `status`; test zgodności porównuje oba
   polecenia na wszystkich fixtures i przypina różnicę na przykładzie.
 - Zgody: `status.read_approvals` zwraca najnowszy wpis na parę (przebieg, słowo) ze wszystkich przebiegów, znormalizowany
-  (bez `by`, `schema`). Dashboard pokazuje wpisy jednego przebiegu w postaci zapisanej (`given`, `last`), więc ma własny
+  (bez `by`, `schema`; `planState` jest przenoszone, gdy ma status z listy). Dashboard pokazuje wpisy jednego przebiegu w postaci zapisanej (`given`, `last`), więc ma własny
   odczyt pliku z tymi samymi regułami przyjęcia wpisu.
+- Odbiór planu (`needsHuman: acceptance`, `status.acceptance_pending`): przy `tracked: true` o zamknięciu rządzi git (commit ze zgodą,
+  w którym plan jest `done`). Przy `tracked: false` plany nie mają historii, więc odbiór jest zamknięty, gdy ostatni wpis (przebieg,
+  słowo zamykające trybu: `READY` w `pr`, `CP` w `direct`) ma `planState: done`, a plan jest teraz `done`; późniejszy wpis z innym
+  stanem otwiera odbiór ponownie, zmiana innych linii planu (np. `Oddanie:`) nie. Wpis bez `planState` w tym trybie niczego nie zamyka.
 - Status planu: `_status_fields` czyta pierwszą linię statusu z pierwszych 4000 znaków (także `**Status:**`, `- Status:`);
   słowo statusu to litery i `_` (zapis `in-progress` daje `in`, nie `in_progress`).
 

@@ -146,6 +146,7 @@
         "given": {
           "at": "2026-01-12T12:00:00Z",
           "by": "user",
+          "planState": "in_progress",
           "run": "2026-01-12-demo-release",
           "schema": 1,
           "sha": "<head>",
@@ -179,6 +180,7 @@
     "last": {
       "at": "2026-01-12T12:00:00Z",
       "by": "user",
+      "planState": "in_progress",
       "run": "2026-01-12-demo-release",
       "schema": 1,
       "sha": "<head>",

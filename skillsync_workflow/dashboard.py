@@ -24,8 +24,9 @@ from .common import add_project_arguments, decode_text, file_lines, plan_section
 from .layers import add_layer_argument
 from .delivery_mode import delivery_info
 from .status import (APPROVAL_WORDS, APPROVALS_FILE, MAX_APPROVALS_BYTES, _APPROVAL_SHA, _approval_at, _message, _status_fields,
-                     git_blob_sha, valid_branch_name)
+                     git_blob_sha, plan_state_for_run, valid_branch_name)
 from .pathfmt import posix
+from .specs import specs_info
 from . import plan_phases, dashboard_tests, dashboard_forecast, test_events
 
 SCHEMA = 1
@@ -1388,11 +1389,23 @@ def _given_tip(word, entry):
     return f'zgoda „{word}” dana {at}'.rstrip() if at else f'zgoda „{word}” już dana'
 
 
-def consent_buttons(spec, plan, waiting, words, log, head_full, run_ok):
+def _consent_current(entry, plan_state, tracked):
+    """K13: does the entry (same sha as HEAD) still stand for the plan in its current status?"""
+    if 'planState' in entry:
+        return entry['planState'] == plan_state
+    if plan_state != 'done':
+        return True
+    return (tracked() if callable(tracked) else tracked) is not False
+
+
+def consent_buttons(spec, plan, waiting, words, log, head_full, run_ok, run_plan_state=None, tracked=True):
     """Consent buttons of the act tiles, each in one of the states: before (the act has not come) = no entry; `waiting` =
     visible and active (the session waits for this consent); `running` = visible, inactive, `reason` "czeka na…";
     `after` = visible, inactive, `reason` "zgoda dana HH:MM" (already given; no second entry). The "waiting" signal is
-    written by the session: `czeka na GO plan|GO implement` in the spec/plan status or `czeka:` in a checkpoint."""
+    written by the session: `czeka na GO plan|GO implement` in the spec/plan status or `czeka:` in a checkpoint.
+    CP/READY `after` (K13): the last entry of the word, with the sha of HEAD and `planState` equal to the current status of the plan of the run
+    (`run_plan_state`, default the status of the shown plan); an entry without the field counts by sha alone, except with `tracked`
+    false (`tracked` = bool or callable) and a `done` plan: there it gives no `after`, or an old consent would block a new one."""
     out = []
     waits = {(item.get('word') or '').rstrip('!').upper() for item in waiting}
     last = {entry.get('word'): entry for entry in log}
@@ -1434,8 +1447,8 @@ def consent_buttons(spec, plan, waiting, words, log, head_full, run_ok):
     if plan_status in ('in_progress', 'done'):
         for word in words:
             kind = word['word'].lower()
-            entry = last.get(word['word'])
-            if entry and head_full and entry.get('sha') == head_full:
+            entry = last.get(word['word'])   # the last entry of the word decides (as before K13)
+            if entry and head_full and entry.get('sha') == head_full and _consent_current(entry, run_plan_state or plan_status, tracked):
                 add(kind, 'after', _given_tip(word['word'], entry) + f' (HEAD {head_full[:8]})', None, head_full, entry)
                 out[-1]['target'] = entry.get('target') or word.get('target')
                 continue
@@ -1450,13 +1463,14 @@ def consent_buttons(spec, plan, waiting, words, log, head_full, run_ok):
     return out
 
 
-def approvals_state(root, spec, plan, delivery, run_id, head_full, log, waiting, enabled=True):
+def approvals_state(root, spec, plan, delivery, run_id, head_full, log, waiting, enabled=True, tracked=True):
     """`approvals {enabled, actions[], last}`; every action carries `run` (the run directory the consent is written to, or
     null when it does not exist); `path` of `cp`/`ready` is the run id."""
     if not enabled:
         return {'enabled': False, 'actions': [], 'last': log[-1] if log else None}
     run_ok = run_dir(root, run_id) is not None
-    actions = consent_buttons(spec, plan, waiting, delivery.get('words', []), log, head_full, run_ok)
+    run_state = plan_state_for_run(root, run_id) if run_ok else None   # K13: the plan of the run, not the plan shown on the page
+    actions = consent_buttons(spec, plan, waiting, delivery.get('words', []), log, head_full, run_ok, run_state, tracked)
     for action in actions:
         if action['kind'] in ('cp', 'ready'):
             action['path'] = run_id
@@ -2241,7 +2255,8 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
                     if plan_info and plan_info.get('status') == 'in_progress' and run.get('lastReportAt')
                     and not any(item.get('source') in ('checkpoint', 'expert') for item in waiting) else None),
         'approvals': approvals_state(root, spec, plan_info, delivery_state, run_id, git_info['headFull'],
-                                     run_approvals(root, run_id), waiting, approvals),
+                                     run_approvals(root, run_id), waiting, approvals,
+                                     lambda: specs_info(root, manifest)['tracked']),
         'delivery': delivery_state,
         'session': {'url': session_url},
         'prototype': {'slug': slug, 'port': prototype_port, 'up': bool(slug) and bool(prototype_up and prototype_up()),

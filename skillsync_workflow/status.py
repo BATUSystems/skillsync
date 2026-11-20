@@ -287,7 +287,8 @@ def acceptance_pending(status, text, context, rel=None):
     `approvals.jsonl` has the closing consent of the delivery mode (`READY` in `pr`, `CP` in `direct`) whose sha is a commit where this plan
     (`rel`) already has the status `done`: a `CP` given earlier in the run (it is said many times) or an entry with a junk sha closes nothing, and
     later commits of the branch do not light a finished plan again, but a reopening (a `Status:` line with another word in a later commit, `_plan_status_kept_since`) makes the old entry stale: the second closing waits for a new word. A plan whose run directory is gone (history of a merged branch) has no
-    signal. The step's checkbox changes nothing. `context` = `{'mode', 'approvals', 'runs', 'root'}`; without it (or without a valid delivery
+    signal. In a repository that ignores `docs/plans` (`tracked: false`, no history) the closing entry is the last one of (run, word) with `planState: done`
+    (K13; a later entry with another state reopens the receipt). The step's checkbox changes nothing. `context` = `{'mode', 'approvals', 'runs', 'root'[, 'tracked']}`; without it (or without a valid delivery
     mode) there is no signal."""
     if not has_acceptance_step(status, text) or not context:
         return False
@@ -298,9 +299,23 @@ def acceptance_pending(status, text, context, rel=None):
     run = _PLAN_RUN.search(text[:4000])
     if not run or not _RUN_ID.fullmatch(run.group(1)) or run.group(1) not in context.get('runs', ()):
         return False
-    return not any(row['run'] == run.group(1) and row['word'] == word and _plan_done_at(context.get('root'), row.get('sha'), rel)
-                   and _plan_status_kept_since(context.get('root'), row.get('sha'), rel)
-                   for row in context.get('approvals', []))   # `read_approvals` keeps one entry per (run, word): at most two git calls per plan
+    for row in context.get('approvals', []):   # `read_approvals` keeps one entry per (run, word): at most two git calls per plan
+        if row['run'] != run.group(1) or row['word'] != word:
+            continue
+        if _plan_done_at(context.get('root'), row.get('sha'), rel) and _plan_status_kept_since(context.get('root'), row.get('sha'), rel):
+            return False
+        if row.get('planState') == 'done' and not _plans_tracked(context):
+            return False   # K13: plans outside git have no history; the entry itself says the plan was `done` at the consent
+    return True
+
+
+def _plans_tracked(context):
+    """`workflow.specs.tracked` of the context (a bool or a callable evaluated once; absent = tracked: git decides). Only `False` is untracked."""
+    value = context.get('tracked', True)
+    if callable(value):
+        value = value()
+        context['tracked'] = value
+    return value is not False
 
 
 def plan_needs_human(status, steps, ticket=False, pr=False):
@@ -512,6 +527,8 @@ def read_approvals(root, findings=None):
                    'source': redact(str(item.get('source') or ''))[:40]}
             if isinstance(item.get('file'), str):
                 row['file'] = redact(item['file'])[:300]
+            if item.get('planState') in PLAN_STATUSES:
+                row['planState'] = item['planState']
             key = (row['run'], row['word'])
             if key not in latest or latest[key]['at'] <= row['at']:
                 latest[key] = row
@@ -539,7 +556,9 @@ def project_status(root, manifest):
     project = manifest.get('project', {})
     name = project.get('name') if isinstance(project, dict) else None
     approvals = read_approvals(root, findings)
-    context = {'mode': delivery_info(manifest)['mode'], 'approvals': approvals, 'runs': _run_ids(root), 'root': root}
+    from .specs import specs_info  # lazy: only an entry with `planState: done` needs it (git calls)
+    context = {'mode': delivery_info(manifest)['mode'], 'approvals': approvals, 'runs': _run_ids(root), 'root': root,
+               'tracked': lambda: specs_info(root, manifest)['tracked']}
     return {'schema': SCHEMA, 'status': 'PASS', 'project': name or f'{root.parent.name}/{root.name}', 'root': posix(root),
             'plans': _plans(root, findings, context), 'specs': _specs(root, findings), 'frds': _frds(root, findings), 'runs': _runs(root, findings), 'claims': _claims(root, findings),
             'approvals': approvals, 'findings': findings}
@@ -792,6 +811,19 @@ def _approval_run_dir(root, run_id):
     return current
 
 
+def plan_state_for_run(root, run_id):
+    """Status of the plan whose `Przebieg:` line names the run (`test_gate.plan_for_run`), or None without such a plan or with an unknown status."""
+    from . import test_gate  # lazy: test_gate does not import this module, but the consent writer is rarely the first user
+    try:
+        found = test_gate.plan_for_run(root, run_id)
+    except (OSError, ValueError):
+        return None
+    if not found:
+        return None
+    state = _status_fields(found[1], PLAN_STATUSES)[0]
+    return None if state == 'unknown' else state
+
+
 def _head_sha(root):
     """HEAD of the project repository read from `.git` (no git process); ValueError without a readable HEAD."""
     from .dashboard import read_git  # lazy: dashboard imports this module
@@ -823,12 +855,13 @@ def _approval_entries(path):
 
 
 def record_approval(root, word, run_id, sha=None, source='cli', target=None, branch=None, file=None, by=None, now=None,
-                    plan=None, ahead=None, mode=None, sha_after=None, via=None):
+                    plan=None, ahead=None, mode=None, sha_after=None, via=None, plan_state=None):
     """The only writer of `.skillsync/runs/<run-id>/approvals.jsonl` (CLI `approvals record`, the dashboard server, IDE).
-    Appends one JSON line under an inter-process lock and fsyncs it; refuses a second entry of the same (word, sha, run).
+    Appends one JSON line under an inter-process lock and fsyncs it; refuses a second entry of the same (word, sha, planState, run).
     `sha`: for GO the git blob sha of the approved file (default: of `file`), for CP/READY the HEAD the consent pushes
     (default: HEAD of the project repository). `sha_after` (GO only, `shaAfter` of the entry): the blob sha of the file after
-    its Status line changed. Returns {schema, status PASS|BLOCKED, reason, entry, path}; no subprocess."""
+    its Status line changed. `plan_state` (CP/READY only, `planState` of the entry; K13): the status of the plan of the run at the moment
+    of consent, by default read from the plan whose `Przebieg:` names `run_id`; part of the duplicate key (word, sha, planState). Returns {schema, status PASS|BLOCKED, reason, entry, path}; no subprocess."""
     root = Path(root).expanduser().resolve()
     try:
         if word not in APPROVAL_WORDS:
@@ -856,10 +889,16 @@ def record_approval(root, word, run_id, sha=None, source='cli', target=None, bra
             raise ValueError('sha_after applies only to GO words and must be 7-64 lowercase hex characters')
         if via is not None and not (isinstance(via, dict) and all(isinstance(key, str) for key in via)):
             raise ValueError('via must be an object (port, host, peer)')
+        if word in _GO_FOLDER:
+            plan_state = None
+        elif plan_state is None:
+            plan_state = plan_state_for_run(root, run_id)
+        elif plan_state not in PLAN_STATUSES:
+            raise ValueError(f'plan_state must be one of: {", ".join(PLAN_STATUSES)}')
         moment = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
         entry = {'schema': SCHEMA, 'at': moment.strftime('%Y-%m-%dT%H:%M:%SZ'), 'word': word, 'sha': sha,
                  'by': redact(str(by if by is not None else _approval_user()))[:80], 'source': source}
-        extra = {'file': file, 'shaAfter': sha_after, 'run': run_id, 'plan': plan, 'target': target, 'branch': branch, 'ahead': ahead, 'mode': mode, 'via': via}
+        extra = {'file': file, 'shaAfter': sha_after, 'run': run_id, 'plan': plan, 'target': target, 'branch': branch, 'ahead': ahead, 'mode': mode, 'via': via, 'planState': plan_state}
         entry.update({key: value for key, value in extra.items() if value is not None})
         entry = redact(entry)
         line = (json.dumps(entry, ensure_ascii=False) + '\n').encode('utf-8')
@@ -874,8 +913,9 @@ def record_approval(root, word, run_id, sha=None, source='cli', target=None, bra
                     raise ValueError(f'Approvals path is not a regular file: {APPROVALS_FILE}')
                 if size + len(line) + 1 > MAX_APPROVALS_BYTES:
                     raise ValueError(f'Approvals file would exceed {MAX_APPROVALS_BYTES // 1024} KiB; start a new run')
-                if size and any(item.get('word') == word and item.get('sha') == sha for item in _approval_entries(path)):
-                    raise ValueError(f'Consent {word!r} for sha {sha[:12]} is already recorded in run {run_id}')
+                if size and any(item.get('word') == word and item.get('sha') == sha and item.get('planState') == plan_state
+                                for item in _approval_entries(path)):   # K13: the same HEAD after the plan was closed is a new consent
+                    raise ValueError(f'Consent {word!r} for sha {sha[:12]} (plan state {plan_state or "unknown"}) is already recorded in run {run_id}')
                 if size:
                     with path.open('rb') as handle:
                         handle.seek(-1, os.SEEK_END)
