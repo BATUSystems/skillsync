@@ -27,7 +27,7 @@ KINDS = ('specs', 'plans')
 SAVED = '.saved.json'
 _SHA = re.compile(r'[0-9a-f]{40}')
 _UNSAFE_NAME = re.compile(r'[^A-Za-z0-9._-]')
-_ABS_PATH = re.compile(r'(?<![\w.])/(?:[^\s\'":;,]+/)*([^\s\'":;,/]+)')
+_ABS_PATH = re.compile(r'(?<![\w.])/(?:[^\s\'":;,/]+/+)*([^\s\'":;,/]+)')
 
 
 class _Refused(Exception):

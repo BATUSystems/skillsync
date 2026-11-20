@@ -237,7 +237,14 @@ class WriteTests(Base):
         report, code = self.snap(spec=f'docs/specs/password={pattern_secret}.md')
         self.assertEqual(code, 2)
         self.assertIn('BLOCKED', json.dumps(report))
-        self.assertNotIn(pattern_secret, json.dumps(redact(report)) + spec_snapshot._render(redact(report)))
+        self.assertNotIn(pattern_secret, json.dumps(report) + spec_snapshot._render(report))
+
+    def test_scrub_is_linear_on_slash_runs(self):
+        import time
+        started = time.monotonic()
+        spec_snapshot._scrub('/' * 200 + ' x')
+        spec_snapshot._scrub('a /' + '/' * 200 + ':')
+        self.assertLess(time.monotonic() - started, 2)
 
     def test_sanitize_neutralizes_dots_and_empty_names(self):
         for name in ('..', '.', '...', ''):
