@@ -2,6 +2,7 @@
 
 Status: draft (czeka na GO plan)
 Data: 2026-01-11
+Prototyp: run-alpha
 
 ## Problem
 

@@ -20,6 +20,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 - **Wrappers `poetry run`, `pdm run`, `pipenv run`, the tool `tox` and `env -S`/`--split-string`** in the tool table (`data/test_tools.json`, optional field `split_flags`, schema stays 1). `tox` is a tool, not a wrapper. A `$` or an unclosed quote in the `-S` value stops the unwrapping.
 - **Windows warning for `.cmd`/`.bat` targets.** `test-run` prints `test-run: warning: …` to stderr before the start when the resolved target is a batch file and an argument contains `& | < > ^ %` or a double quote (cmd.exe interprets them in batch-file arguments, for example `--grep "a|b"` of Playwright). It never repeats the argument and neither blocks nor changes the exit code. Verified by a unit test on a stub; not run on a real Windows (`scripts/windows_shim_check.py` items 3 and 3b).
+- **Status page: `expertQuestions.current`.** `dashboard show` and `GET /api/status` report the prototypes and the expert questions of the current run as `null` or `{spec, prototypes, open, blocking, items}` (additive, `schema: 1`). They are bound by the spec path: prototypes by `requirements` (plus the `Prototyp:` line), questions by `origin.spec`. The existing fields (`open`, `blocking`, `runs[]`, `items[]`) are unchanged. Contract: [docs/dashboard-contract.md](docs/dashboard-contract.md), section "`expertQuestions`".
 
 ### Changed
 
@@ -29,6 +30,8 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 - **Unexecuted Karma specs are no evidence.** With exit code 0, output where `total - executed - skipped > 0` (for example `Executed 3 of 11 DISCONNECTED`) is `BLOCKED` in `validate` and `test-run` ("Karma executed N of M specs"); `success_pattern` lifts it in `validate`, `--allow-no-count` and `--allow-skips` do not in `test-run`.
 - **Karma counters have one reader** (`test_adapters/karma_line.py`) used by the live reader of the recorder, `quality._test_counts` and `_failure_count`; it is wider than the `karma` adapter in the empty prefix, the order of the parentheses and the unjudged tail.
 - **A command given to `test-run` as a string is split with POSIX quoting on every system.** On Windows the string was read without POSIX quoting, so a single quote was a literal character and `env -S 'CI=1 npx jest'` was not unwrapped; now `'…'` and `"…"` group words as elsewhere, so `--grep 'a b'` is one argument, and a backslash stays literal (`"C:\Program Files\nodejs\node.exe" --test`). Only the detection of the tool (`detect_tool`, `unwrap_command`) reads the string this way.
+- **Status page, tab "Pytania":** shows only the prototypes and questions of the current run (the tab is hidden when the run has neither). The toast and the waiting banner still count the whole project.
+- **Status page, document list:** the groups "Speki", "Plany", "Projekt" and "Domena" are collapsible and collapsed by default; the groups "Bieżące zadanie" and "Przebieg" stay open.
 
 ### Fixed
 

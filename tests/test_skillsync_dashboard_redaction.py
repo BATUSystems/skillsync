@@ -350,6 +350,23 @@ class StatusSecretsGuard(SecretFiles, base.HttpCase):
         items = engine._question_items("demo", asked, {})
         self.assert_masked(json.dumps(items, ensure_ascii=False), "expertQuestions.items")
 
+    def test_the_questions_of_the_current_run_are_masked_like_the_project_ones(self) -> None:
+        text = "y" * (engine.QUESTION_TEXT_LIMIT - 8) + f" {ENV_SECRET} koniec password: {PATTERN_SECRET}"
+        proto_dir = self.root / "docs" / "prototypes" / "run-secret"
+        proto_dir.mkdir(parents=True)
+        (proto_dir / "prototype.json").write_text(json.dumps({"requirements": base.SPEC}), encoding="utf-8", newline="\n")
+        ask = {"id": "o1", "type": "ask", "questionId": "qn-000001", "at": "2026-01-10T10:00:00Z", "by": "agent", "text": text,
+               "blocking": True, "assumed": None, "addressees": [], "refs": [], "options": [], "origin": {"spec": base.SPEC, "q": "Q1"}}
+        (proto_dir / "questions.json").write_text(json.dumps({"questionsFormat": 1, "operations": [ask]}), encoding="utf-8", newline="\n")
+        board = base.srv.Board(self.root, prototype_port=1)
+        board.prototype_acceptance = lambda slug: None
+        current = board.status()["expertQuestions"]["current"]
+        self.assertEqual([item["id"] for item in current["items"]], ["qn-000001"])
+        self.assertEqual([row["slug"] for row in current["prototypes"]], ["run-secret"])
+        self.assert_masked(json.dumps(current, ensure_ascii=False), "expertQuestions.current (source)")
+        served = srv.add_inline_html(json.loads(json.dumps(board.status())))["expertQuestions"]["current"]
+        self.assert_masked(json.dumps(served, ensure_ascii=False), "expertQuestions.current (inline html)")
+
 
 class StatusModuleMasksBeforeCutting(base.ProjectCase):
     """F4: `status._status_fields`, `plan_summary` and the error messages mask the whole text before they strip markers, cut or collapse it."""

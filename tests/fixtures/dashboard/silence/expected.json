@@ -207,6 +207,7 @@
   "eta": null,
   "expertQuestions": {
     "blocking": 0,
+    "current": null,
     "items": [],
     "open": 0,
     "runs": []

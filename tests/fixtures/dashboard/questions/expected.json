@@ -23,6 +23,13 @@
         },
         {
           "done": false,
+          "key": "stage_prototype",
+          "label": "Prototyp",
+          "state": "planned",
+          "tip": "run-alpha"
+        },
+        {
+          "done": false,
           "key": "stage_spec_approved",
           "label": "Zatwierdzony",
           "state": "planned",
@@ -110,7 +117,7 @@
         "path": "docs/specs/2026-01-11-demo-alerts.md",
         "reason": null,
         "run": "2026-01-11-demo-alerts",
-        "sha": "da24f109495951323695a64b3169043f0c678f25",
+        "sha": "8cdc9041eb2e1c465811b9ac18e6e4fa795bae4f",
         "state": "waiting",
         "word": "GO plan"
       }
@@ -206,6 +213,61 @@
   "eta": null,
   "expertQuestions": {
     "blocking": 2,
+    "current": {
+      "blocking": 2,
+      "items": [
+        {
+          "addressees": [],
+          "at": "2026-01-11T09:05:00Z",
+          "blocking": true,
+          "id": "qn-b00001",
+          "runSlug": "run-beta",
+          "state": "open",
+          "text": "Kto zatwierdza korektę?",
+          "url": "/_experts/run-beta"
+        },
+        {
+          "addressees": [],
+          "at": "2026-01-11T09:00:00Z",
+          "blocking": true,
+          "id": "qn-a00001",
+          "runSlug": "run-alpha",
+          "state": "open",
+          "text": "Czy numer faktury jest unikalny?",
+          "url": "/_experts/run-alpha"
+        }
+      ],
+      "open": 2,
+      "prototypes": [
+        {
+          "accepted": 0,
+          "commentsAfterAcceptance": {
+            "count": 0,
+            "screens": []
+          },
+          "iteration": null,
+          "screens": 0,
+          "slug": "run-alpha",
+          "stale": 0,
+          "threads": {},
+          "writing": null
+        },
+        {
+          "accepted": 0,
+          "commentsAfterAcceptance": {
+            "count": 0,
+            "screens": []
+          },
+          "iteration": null,
+          "screens": 0,
+          "slug": "run-delta",
+          "stale": 0,
+          "threads": {},
+          "writing": null
+        }
+      ],
+      "spec": "docs/specs/2026-01-11-demo-alerts.md"
+    },
     "items": [
       {
         "addressees": [],
@@ -325,7 +387,7 @@
   },
   "prototype": {
     "port": 5130,
-    "slug": null,
+    "slug": "run-alpha",
     "up": false,
     "writing": null
   },
@@ -352,6 +414,19 @@
       "iteration": null,
       "screens": 0,
       "slug": "run-beta",
+      "stale": 0,
+      "threads": {},
+      "writing": null
+    },
+    {
+      "accepted": 0,
+      "commentsAfterAcceptance": {
+        "count": 0,
+        "screens": []
+      },
+      "iteration": null,
+      "screens": 0,
+      "slug": "run-delta",
       "stale": 0,
       "threads": {},
       "writing": null
@@ -400,11 +475,12 @@
   "silence": null,
   "spec": {
     "exists": true,
-    "fileSha": "da24f109495951323695a64b3169043f0c678f25",
+    "fileSha": "8cdc9041eb2e1c465811b9ac18e6e4fa795bae4f",
     "mtime": "2026-01-11T10:00:00+00:00",
     "path": "docs/specs/2026-01-11-demo-alerts.md",
     "preparing": false,
-    "prototype": null,
+    "prototype": "run-alpha",
+    "prototypeAcceptance": null,
     "sha": null,
     "status": "draft",
     "statusText": "draft (czeka na GO plan)",

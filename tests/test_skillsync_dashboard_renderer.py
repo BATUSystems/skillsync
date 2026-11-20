@@ -424,6 +424,8 @@ class E extends N {
   getBoundingClientRect() { return { left: 10, top: 10, right: 50, bottom: 30, width: 40, height: 20 }; }
   get offsetHeight() { return 20; }
   scrollIntoView() {}
+  focus() { this.ownerDocument.focused = this; }
+  get isConnected() { return Boolean(this.ownerDocument.root && this.ownerDocument.root.contains(this)); }
 }
 function makeDoc() {
   const doc = { defaultView: null };
@@ -440,6 +442,7 @@ function mount(json, opts) {
   opts = opts || {};
   const doc = makeDoc();
   const root = doc.createElement('div');
+  doc.root = root;
   const calls = { approve: [], refresh: 0, openDoc: [], selectPlan: [], loadDoc: [], mountHtml: [], openLink: [], titles: [], nav: [], storage: [] };
   const actions = {
     approve: (a) => { calls.approve.push(a); return Promise.resolve({ ok: true, word: 'GO', text: 'zapisano' }); },
@@ -1171,7 +1174,8 @@ function summary(m) {
     const base = clone(F['questions']); const nowQ = NOW['questions'];
     const s5 = {};
     const msTimers = () => ({ q: new Map(), n: 0, set(fn, ms) { const id = ++this.n; this.q.set(id, { fn, ms }); return id; }, clear(id) { this.q.delete(id); }, list() { return [...this.q.values()].map((x) => x.ms); } });
-    const bare = () => { const d = clone(base); delete d.result; delete d.prototypes; delete d.expertQuestions.items; delete (d.prototype || {}).commentsAfterAcceptance;
+    const bare = () => { const d = clone(base); delete d.result; delete d.prototypes; delete d.expertQuestions.items; delete d.expertQuestions.current; // CORE-QFILTER K5: `bare` = JSON bez `current` (starszy serwer)
+      delete (d.prototype || {}).commentsAfterAcceptance;
       (d.expertQuestions.runs || []).forEach((r) => { delete r.addressees; }); return d; };
     const origin = { prototypeOrigin: (port) => `http://127.0.0.1:${port}`, prototypeUrl: (port, slug) => `http://127.0.0.1:${port}/${slug}/` };
     const mountQ = (d, deps) => mount(d, { now: nowQ, deps: Object.assign({}, deps || {}) });
@@ -1219,6 +1223,8 @@ function summary(m) {
     };
     // (d) zakładka „Pytania”
     const qd = (mut) => { const d = bare(); mut(d); return d; };
+    // CORE-QFILTER K3: zakładka czyta `expertQuestions.current`; dawne wejścia `prototypes`/`items` z testów wierszy jadą teraz w `current`.
+    const setCur = (d, protos, items, open) => { d.expertQuestions.current = { open: open == null ? 2 : open, blocking: 1, prototypes: protos, items }; };
     const tabOf = (d, deps) => { const m = mountQ(d, deps || origin); const tab = m.root.querySelector('#tab-questions'); return { m, hidden: tab.hidden, panelHidden: m.root.querySelector('#view-questions').hidden, role: tab.getAttribute('role'), panelRole: m.root.querySelector('#view-questions').getAttribute('role'),
       controls: tab.getAttribute('aria-controls'), selected: tab.getAttribute('aria-selected'), count: text(m.root.querySelector('#qCount')) }; };
     const strip = (o) => { const { m, ...rest } = o; return rest; };
@@ -1227,25 +1233,55 @@ function summary(m) {
     const longQ = 'x'.repeat(200);
     const full = qd((d) => {
       d.expertQuestions.open = 2; d.approvals = Object.assign({}, d.approvals, { viewer: false });
-      d.prototypes = [{ slug: 'run-alpha', iteration: 2, screens: 4, accepted: 3, stale: 1, threads: { open: 2, awaiting: 1, decided: 5 }, commentsAfterAcceptance: { count: 2, screens: [{ id: 's1', count: 2 }] }, writing: { since: 1, expiresAt: 2, renewedAt: 1, screensPlanned: 6, screensDone: 2 } },
+      const protosF = [{ slug: 'run-alpha', iteration: 2, screens: 4, accepted: 3, stale: 1, threads: { open: 2, awaiting: 1, decided: 5 }, commentsAfterAcceptance: { count: 2, screens: [{ id: 's1', count: 2 }] }, writing: { since: 1, expiresAt: 2, renewedAt: 1, screensPlanned: 6, screensDone: 2 } },
         { slug: 'run-beta', iteration: null, screens: 0, accepted: 0, stale: 0, threads: {}, commentsAfterAcceptance: { count: 0, screens: [] }, writing: null }];
-      d.expertQuestions.items = [
+      const itemsF = [
         { id: 'qn-1', runSlug: 'run-alpha', text: longQ, blocking: true, addressees: ['jan', 'ola'], state: 'open', at: '2026-01-12T11:59:55Z', url: '/_experts/run-alpha' },
         { id: 'qn-2', runSlug: 'run-beta', text: '<b>krótkie</b>', blocking: false, addressees: [], state: 'answered', at: '2026-01-10T11:00:00Z', url: '/_experts/run-beta' },
         { id: 'qn-3', runSlug: 'run-beta', blocking: false, addressees: [], state: 'withdrawn', at: 'zły', url: '/_experts/../x' }];
+      setCur(d, protosF, itemsF, 2);
     });
     const rows = (d, deps) => { const m = mountQ(d, deps || origin); const tags = []; walk(m.root, (n) => { if (n instanceof E) tags.push(n.localName); });
       return { protos: m.root.querySelectorAll('#qProtos .q-proto').map((n) => ({ text: text(n), hrefs: n.querySelectorAll('a').map((a) => a.getAttribute('href')) })),
         items: m.root.querySelectorAll('#qItems .q-item').map((n) => ({ text: text(n), cls: n.getAttribute('class'), hrefs: n.querySelectorAll('a').map((a) => a.getAttribute('href')), to: n.querySelector('[data-addressees]') ? text(n.querySelector('[data-addressees]')) : null, qtext: text(n.querySelector('.q-text')) })),
         empties: m.root.querySelectorAll('#view-questions .empty').map((n) => text(n)), b: tags.includes('b') }; };
     s5.rows = { full: rows(full), noHost: rows(full, {}),
-      viewer: rows(qd((d) => { d.approvals = Object.assign({}, d.approvals, { viewer: true }); d.prototypes = [{ slug: 'run-alpha', iteration: 1, screens: 2, accepted: 1, stale: 0, threads: { open: 1 } }];
-        d.expertQuestions.items = [{ id: 'qn-1', runSlug: 'run-alpha', blocking: true, addressees: [], state: 'open', at: '2026-01-12T11:00:00Z', url: '/_experts/run-alpha' }]; })),
-      viewerLeak: rows(qd((d) => { d.approvals = Object.assign({}, d.approvals, { viewer: true }); d.prototypes = [];
-        d.expertQuestions.items = [{ id: 'qn-9', runSlug: 'r', text: 'SEKRET', blocking: false, addressees: ['jan'], state: 'open', at: '2026-01-12T11:00:00Z', url: '/_experts/r' }]; })),
-      empty: rows(qd((d) => { d.prototypes = []; d.expertQuestions.items = []; })),
-      wrongTypes: (() => { try { return rows(qd((d) => { d.prototypes = [null, 7, 'x', { slug: 5, threads: 'a', writing: 3, commentsAfterAcceptance: 'z' }]; d.expertQuestions.items = [null, 3, { id: 1, state: 7, addressees: 5, text: 9, at: {} }]; })); } catch (e) { return { error: String(e && e.stack || e) }; } })(),
-      itemsCap: (() => { const d = qd((d2) => { d2.prototypes = []; d2.expertQuestions.items = Array.from({ length: 60 }, (_, i) => ({ id: 'q' + i, runSlug: 'r', text: 't', blocking: false, addressees: [], state: 'open', at: '2026-01-12T11:00:00Z', url: '/_experts/r' })); }); return rows(d).items.length; })() };
+      viewer: rows(qd((d) => { d.approvals = Object.assign({}, d.approvals, { viewer: true });
+        setCur(d, [{ slug: 'run-alpha', iteration: 1, screens: 2, accepted: 1, stale: 0, threads: { open: 1 } }],
+          [{ id: 'qn-1', runSlug: 'run-alpha', blocking: true, addressees: [], state: 'open', at: '2026-01-12T11:00:00Z', url: '/_experts/run-alpha' }]); })),
+      viewerLeak: rows(qd((d) => { d.approvals = Object.assign({}, d.approvals, { viewer: true });
+        setCur(d, [], [{ id: 'qn-9', runSlug: 'r', text: 'SEKRET', blocking: false, addressees: ['jan'], state: 'open', at: '2026-01-12T11:00:00Z', url: '/_experts/r' }]); })),
+      empty: rows(qd((d) => { setCur(d, [], [], 0); })),
+      wrongTypes: (() => { try { return rows(qd((d) => { setCur(d, [null, 7, 'x', { slug: 5, threads: 'a', writing: 3, commentsAfterAcceptance: 'z' }], [null, 3, { id: 1, state: 7, addressees: 5, text: 9, at: {} }]); })); } catch (e) { return { error: String(e && e.stack || e) }; } })(),
+      itemsCap: (() => { const d = qd((d2) => { setCur(d2, [], Array.from({ length: 60 }, (_, i) => ({ id: 'q' + i, runSlug: 'r', text: 't', blocking: false, addressees: [], state: 'open', at: '2026-01-12T11:00:00Z', url: '/_experts/r' }))); }); return rows(d).items.length; })() };
+    // CORE-QFILTER F2 (K3, K4, K5): zakładka tylko bieżącego przebiegu; toast projektowy bez zmian; `current: null` a brak klucza.
+    {
+      const pr = (slug) => ({ slug, iteration: 1, screens: 2, accepted: 1, stale: 0, threads: { open: 1 } });
+      const it = (id, runSlug, state) => ({ id, runSlug, text: 'tekst ' + id, blocking: false, addressees: [], state: state || 'open', at: '2026-01-12T11:00:00Z', url: '/_experts/' + runSlug });
+      const projectWide = (d) => { d.prototypes = [pr('run-alpha'), pr('run-beta')]; d.expertQuestions.items = [it('qn-a', 'run-alpha'), it('qn-b', 'run-beta'), it('qn-g', 'run-gamma')]; };
+      const view = (d) => { const m = mountQ(d); const tab = m.root.querySelector('#tab-questions');
+        return { hidden: tab.hidden, panelHidden: m.root.querySelector('#view-questions').hidden, count: text(m.root.querySelector('#qCount')),
+          protos: m.root.querySelectorAll('#qProtos .q-proto').map((n) => n.getAttribute('data-proto')), items: m.root.querySelectorAll('#qItems .q-item').map((n) => n.getAttribute('data-question')),
+          toast: (m.root.querySelector('[data-questions-toast]') || { textContent: null }).textContent }; };
+      const withCur = (cur) => { const d = bare(); projectWide(d); d.expertQuestions.open = 3; d.expertQuestions.blocking = 2; d.expertQuestions.current = cur; return d; };
+      const noKey = (mut) => { const d = bare(); projectWide(d); if (mut) mut(d); return d; };
+      s5.qfilter = {
+        current: view(withCur({ open: 1, blocking: 0, prototypes: [pr('run-alpha')], items: [it('qn-a', 'run-alpha')] })),
+        currentZero: view(withCur({ open: 0, blocking: 0, prototypes: [pr('run-alpha')], items: [it('qn-a', 'run-alpha', 'answered')] })),
+        currentNull: view(withCur(null)),
+        currentNullToNav: (() => { const m = mountQ(withCur({ open: 1, blocking: 0, prototypes: [pr('run-alpha')], items: [] })); m.root.querySelector('#tab-questions').click(); const before = m.board.state().view;
+          m.board.update(withCur(null)); return { before, after: m.board.state().view, hidden: m.root.querySelector('#tab-questions').hidden }; })(),
+        currentBadType: Object.fromEntries([['array', []], ['number', 7], ['string', 'x']].map(([k, v]) => [k, view(withCur(v))])),
+        currentOpenString: view(withCur({ open: '3', blocking: 0, prototypes: [pr('run-alpha')], items: [] })),
+        // integracja serwer -> renderer: fixtura `questions` z `current` wyliczonym przez serwer, bez żadnych poprawek
+        server: (() => { const m = mountQ(clone(F['questions'])); return { hidden: m.root.querySelector('#tab-questions').hidden, count: text(m.root.querySelector('#qCount')),
+          protos: m.root.querySelectorAll('#qProtos .q-proto').map((n) => n.getAttribute('data-proto')), items: m.root.querySelectorAll('#qItems .q-item').map((n) => n.getAttribute('data-question')) }; })(),
+        fallback: view(noKey((d) => { d.expertQuestions.runs = [{ slug: 'run-alpha', open: 2, blocking: 1, url: '/_experts/run-alpha' }, { slug: 'run-beta', open: 1, blocking: 1, url: '/_experts/run-beta' }]; })),
+        fallbackNoRun: view(noKey((d) => { d.expertQuestions.runs = [{ slug: 'run-beta', open: 1, blocking: 1, url: '/_experts/run-beta' }]; })),
+        fallbackNoSlug: view(noKey((d) => { d.prototype = Object.assign({}, d.prototype, { slug: null }); })),
+        fallbackNoPrototype: view(noKey((d) => { delete d.prototype; })),
+      };
+    }
     // przełączanie i strzałki
     { const d = clone(full); const m = mountQ(d); const tabs = () => ['progress', 'docs', 'questions'].map((v) => m.root.querySelector('#tab-' + v).getAttribute('aria-selected'));
       const panels = () => ['progress', 'docs', 'questions'].map((v) => m.root.querySelector('#view-' + v).hidden);
@@ -1258,7 +1294,7 @@ function summary(m) {
     s5.legacy = {};
     for (const [name, json] of Object.entries(F)) {
       const d = clone(json); delete d.result; delete d.prototypes; if (d.prototype) delete d.prototype.commentsAfterAcceptance;
-      if (d.expertQuestions) { delete d.expertQuestions.items; (d.expertQuestions.runs || []).forEach((r) => { delete r.addressees; }); }
+      if (d.expertQuestions) { delete d.expertQuestions.items; delete d.expertQuestions.current; (d.expertQuestions.runs || []).forEach((r) => { delete r.addressees; }); }
       try { const m = mount(d, { now: NOW[name] }); const tab = m.root.querySelector('#tab-questions');
         s5.legacy[name] = { tabHidden: tab.hidden, panelHidden: m.root.querySelector('#view-questions').hidden, resultHidden: m.root.querySelector('#resultBox').hidden, comments: m.root.querySelectorAll('[data-comments-toast]').length,
           addr: m.root.querySelectorAll('[data-addressees]').length, glossary: m.root.querySelectorAll('.glossary [data-glossary]').length, rows: m.root.querySelectorAll('.q-row').length };
@@ -1473,6 +1509,8 @@ function summary(m) {
       { id: 'Q1', runSlug: 'r', text: 'Czy **tak**?', textHtml: 'Czy <strong>tak</strong>?', blocking: true, state: 'open', at: null, addressees: 'all', url: null },
       { id: 'Q2', runSlug: 'r', text: 'zwykłe pytanie', blocking: false, state: 'open', at: null, addressees: 'all', url: null },
     ];
+    // CORE-QFILTER K3: zakładka renderuje `expertQuestions.current`, więc te same wiersze jadą teraz tam (asercje bez zmian)
+    q.expertQuestions.current = { open: 2, blocking: 1, prototypes: [], items: q.expertQuestions.items };
     const mq = mount(q, { now: NOW['questions'] });
     const fd = clone(F[nm]);
     fd.run = Object.assign({}, fd.run, { checkpoints: [{ time: '10:00', text: 'zrobione **S1**', textHtml: 'zrobione <strong>S1</strong>' }, { time: '10:05', text: 'zrobione S2' }] });
@@ -1521,6 +1559,122 @@ function summary(m) {
         return { spec: one(m, '[data-measure="spec"]'), plan: one(m, '[data-measure="plan"]'), real: m.root.querySelectorAll('[data-measure="real"]').length };
       })(),
     };
+  }
+  // CORE-QFILTER F3 (K9–K11): zwijane grupy listy dokumentów (details/summary), stan w st.docGroupsOpen, rozwinięcie przy wyborze.
+  {
+    const name = Object.keys(F)[0];
+    const mk = (key, label, n) => ({ key, label, items: Array.from({ length: n }, (_, i) => ({ path: `docs/${key}/d${i}.md`, title: `D${i} ${key}`, status: 'draft', mtime: '2026-01-12T10:00:00Z' })) });
+    const docs = () => [mk('task', 'Bieżące zadanie', 2), mk('run', 'Przebieg r1', 2), mk('specs', 'Speki', 3), mk('plans', 'Plany', 2), mk('design', 'Projekt', 1), mk('domain', 'Domena', 4)];
+    const data = () => { const d = clone(F[name]); d.docs = docs(); return d; };
+    const grp = (m, key) => m.root.querySelectorAll('#docList details').filter((x) => x.getAttribute('data-doc-group') === key)[0] || null;
+    const state = (m) => { const o = {}; m.root.querySelectorAll('#docList details').forEach((x) => { o[x.getAttribute('data-doc-group')] = x.hasAttribute('open'); }); return o; };
+    const toggle = (g, open) => { if (open) g.setAttribute('open', ''); else g.removeAttribute('open'); g.dispatchEvent(new Ev('toggle')); };
+    const exQ = {};
+    try {
+      {
+      const m = mount(data(), { now: NOW[name], preview: true });
+      const dl = m.root.querySelector('#docList');
+      exQ.initial = state(m);
+      exQ.keys = m.root.querySelectorAll('#docList details').map((x) => x.getAttribute('data-doc-group'));
+      exQ.summaries = m.root.querySelectorAll('#docList details').map((x) => text(x.querySelector('summary')));
+      exQ.firstChild = m.root.querySelectorAll('#docList details').map((x) => x.childNodes[0] && x.childNodes[0].localName);
+      exQ.h3 = dl.querySelectorAll('h3').length;
+      exQ.items = m.root.querySelectorAll('#docList .doc-item').length;
+      exQ.itemsInClosed = grp(m, 'specs').querySelectorAll('.doc-item').length;
+      exQ.docCount = text(m.root.querySelector('#docCount'));
+      const cur = () => m.root.querySelectorAll('#docList .doc-item').filter((b) => b.getAttribute('aria-current') === 'true').map((b) => b.getAttribute('data-doc'));
+      exQ.current = [cur(), (m.board.update(data()), cur())];   // jak dotąd: domyślny wybór oznaczony dopiero po kolejnym rysowaniu
+      exQ.keydown = dl.querySelectorAll('*').filter((x) => (x.listeners.keydown || []).length || (x.listeners.keyup || []).length).length + ((dl.listeners.keydown || []).length);
+      // przeżycie update(): rozwinięcie i zwinięcie
+      toggle(grp(m, 'plans'), true);
+      m.board.update(data());
+      exQ.keptOpen = state(m);
+      toggle(grp(m, 'task'), false);
+      m.board.update(data());
+      exQ.keptClosedTask = state(m).task;
+    }
+    {
+      // wybór przez loadDoc (klik), rozwija grupę; po ręcznym zwinięciu odświeżenie jej nie otwiera
+      const m = mount(data(), { now: NOW[name], preview: true });
+      m.root.querySelectorAll('#docList .doc-item').filter((b) => b.getAttribute('data-doc') === 'docs/specs/d1.md')[0].click();
+      await tick(); await tick();
+      exQ.afterClick = { specs: state(m).specs, plans: state(m).plans, current: m.root.querySelectorAll('#docList .doc-item').filter((b) => b.getAttribute('aria-current') === 'true').map((b) => b.getAttribute('data-doc')) };
+      toggle(grp(m, 'specs'), false);
+      m.board.update(data()); await tick(); await tick();
+      exQ.afterCollapse = state(m).specs;
+      m.board.setDoc('docs/domain/d2.md');
+      exQ.afterSetDoc = state(m).domain;
+      toggle(grp(m, 'domain'), false);
+      m.board.update(data());
+      exQ.afterSetDocRefresh = state(m).domain;
+      // link md-doc / setView -> loadDoc
+      m.board.setDoc('docs/design/d0.md'); m.board.setView('docs', false); await tick(); await tick();
+      exQ.afterView = state(m).design;
+    }
+    {
+      // setDoc po narysowaniu listy: grupa wybranego dokumentu (inna niż domyślna) rozwija się od razu
+      const m = mount(data(), { now: NOW[name], preview: true });
+      m.board.setDoc('docs/plans/d1.md'); await tick();
+      exQ.afterSetDocOtherGroup = state(m).plans;
+    }
+    {
+      // setDoc przed pierwszym update(): grupa rozwija się przy pierwszym rysowaniu
+      const m = mount(null, { now: NOW[name], preview: true });
+      m.board.setDoc('docs/specs/d2.md');
+      m.board.update(data());
+      exQ.setDocFirst = state(m);
+    }
+    {
+      // fokus na summary przeżywa przebudowę listy
+      const m = mount(data(), { now: NOW[name], preview: true });
+      const sm = grp(m, 'plans').querySelector('summary');
+      sm.dispatchEvent(new Ev('focus'));
+      m.doc.focused = null;
+      m.board.update(data());
+      const nw = grp(m, 'plans').querySelector('summary');
+      exQ.focus = { restored: m.doc.focused === nw, fresh: nw !== sm };
+    }
+    {
+      // openDoc (przycisk readiness w trybie podglądu) rozwija grupę dokumentu
+      const d2 = clone(F['readiness-blocked']); d2.docs = docs(); d2.docs[2].items[0].path = d2.readiness.source;
+      const m = mount(d2, { now: NOW['readiness-blocked'], preview: true });
+      const before = state(m).specs;
+      m.root.querySelector('.readiness [data-open-doc]').click(); await tick(); await tick();
+      exQ.openDoc = { before, after: state(m).specs, view: m.board.state().view };
+    }
+    {
+      // nic nie trafia do storage po toggle
+      const m = mount(data(), { now: NOW[name], preview: true });
+      toggle(grp(m, 'specs'), true); toggle(grp(m, 'specs'), false);
+      m.board.update(data());
+      exQ.storage = m.calls.storage.length;
+      // odłączony <details> (po przebudowie listy) nie zmienia stanu
+      const old = grp(m, 'plans'); toggle(grp(m, 'plans'), true);
+      m.board.update(data()); old.removeAttribute('open'); old.dispatchEvent(new Ev('toggle'));
+      exQ.detached = state(m).plans;
+    }
+    {
+      // zmiana grupy wybranego dokumentu (np. przełączenie planu): nowa grupa rozwija się raz
+      const m = mount(data(), { now: NOW[name], preview: true });
+      m.board.setDoc('docs/task/d0.md');
+      const d = data(); d.docs[0].items = d.docs[0].items.slice(1); d.docs[3].items.push({ path: 'docs/task/d0.md', title: 'D0', status: 'draft', mtime: '2026-01-12T10:00:00Z' });
+      m.board.update(d);
+      exQ.groupMoved = state(m).plans;
+      toggle(grp(m, 'plans'), false); m.board.update(d);
+      exQ.groupMovedCollapsed = state(m).plans;
+    }
+    {
+      // fokus na summary grupy, która znika z docs[]: powrót grupy nie kradnie fokusu
+      const m = mount(data(), { now: NOW[name], preview: true });
+      grp(m, 'plans').querySelector('summary').dispatchEvent(new Ev('focus'));
+      const without = data(); without.docs = without.docs.filter((g) => g.key !== 'plans');
+      m.board.update(without);
+      m.doc.focused = null;
+      m.board.update(data());
+      exQ.focusGone = m.doc.focused;
+    }
+    } catch (e) { exQ.error = String(e && e.stack || e); }
+    ex.qfilterDocs = exQ;
   }
   out.extra = ex;
   // deps.now jest wymagane (renderer nie czyta zegara sam).
@@ -2005,6 +2159,54 @@ class RendererNodeTests(unittest.TestCase):
         self.assertEqual(len(e["viewer"]), 1)  # widz widzi to samo
         self.assertEqual(e["withWait"]["eta"], 1)
         self.assertGreaterEqual(e["withWait"]["items"], 2)  # obok baneru zgody
+
+    def test_doc_groups_are_collapsible_details(self) -> None:
+        q = self.out["extra"]["qfilterDocs"]
+        self.assertNotIn("error", q, q.get("error"))
+        self.assertEqual(q["keys"], ["task", "run", "specs", "plans", "design", "domain"])
+        self.assertEqual(q["initial"], {"task": True, "run": True, "specs": False, "plans": False, "design": False, "domain": False})
+        self.assertEqual(q["summaries"], ["Bieżące zadanie (2)", "Przebieg r1 (2)", "Speki (3)", "Plany (2)", "Projekt (1)", "Domena (4)"])
+        self.assertEqual(q["firstChild"], ["summary"] * 6)
+        self.assertEqual(q["h3"], 0)
+
+    def test_doc_items_stay_in_dom_in_collapsed_groups(self) -> None:
+        q = self.out["extra"]["qfilterDocs"]
+        self.assertNotIn("error", q, q.get("error"))
+        self.assertEqual((q["items"], q["itemsInClosed"], q["docCount"]), (14, 3, "14"))
+        self.assertEqual(q["current"], [[], ["docs/task/d0.md"]])
+
+    def test_doc_groups_state_survives_update(self) -> None:
+        q = self.out["extra"]["qfilterDocs"]
+        self.assertNotIn("error", q, q.get("error"))
+        self.assertEqual(q["keptOpen"], {"task": True, "run": True, "specs": False, "plans": True, "design": False, "domain": False})
+        self.assertIs(q["keptClosedTask"], False)
+
+    def test_selecting_a_document_reveals_its_group_once(self) -> None:
+        q = self.out["extra"]["qfilterDocs"]
+        self.assertNotIn("error", q, q.get("error"))
+        self.assertEqual(q["afterClick"], {"specs": True, "plans": False, "current": ["docs/specs/d1.md"]})
+        self.assertIs(q["afterCollapse"], False)       # odświeżenie bez zmiany wyboru nie rozwija ponownie
+        self.assertIs(q["afterSetDoc"], True)          # setDoc
+        self.assertIs(q["afterSetDocRefresh"], False)
+        self.assertIs(q["afterView"], True)            # setDoc + setView('docs') -> loadDoc
+        self.assertIs(q["afterSetDocOtherGroup"], True)
+        self.assertIs(q["setDocFirst"]["specs"], True)  # setDoc przed pierwszym rysowaniem
+
+    def test_doc_group_summary_keeps_focus_and_default_keys(self) -> None:
+        q = self.out["extra"]["qfilterDocs"]
+        self.assertNotIn("error", q, q.get("error"))
+        self.assertEqual(q["keydown"], 0)  # nic w #docList nie przechwytuje Enter/Spacji
+        self.assertEqual(q["focus"], {"restored": True, "fresh": True})
+        self.assertIsNone(q["focusGone"])
+
+    def test_doc_groups_open_on_openDoc_move_and_leave_no_storage(self) -> None:
+        q = self.out["extra"]["qfilterDocs"]
+        self.assertNotIn("error", q, q.get("error"))
+        self.assertEqual(q["openDoc"], {"before": False, "after": True, "view": "docs"})
+        self.assertEqual(q["storage"], 0)
+        self.assertIs(q["detached"], True)  # toggle odłączonego details nie nadpisuje stanu
+        self.assertIs(q["groupMoved"], True)
+        self.assertIs(q["groupMovedCollapsed"], False)
 
     def test_substeps_section(self) -> None:
         got = self.out["fixtures"]["plan-in-progress"]["substeps"]
@@ -2576,6 +2778,51 @@ class RendererNodeTests(unittest.TestCase):
         self.assertEqual(r["empty"]["empties"], ["Brak prototypów", "Brak pytań"])
         self.assertNotIn("error", r["wrongTypes"], r["wrongTypes"].get("error"))
 
+    def test_qfilter_tab_shows_only_the_current_run(self) -> None:
+        """CORE-QFILTER K3, K4: rows and counter come from `expertQuestions.current`, not from the project-wide lists; the toast stays project-wide."""
+        q = self.out["extra"]["s160b"]["qfilter"]
+        cur = q["current"]
+        self.assertFalse(cur["hidden"])
+        self.assertEqual((cur["protos"], cur["items"], cur["count"]), (["run-alpha"], ["qn-a"], "1"), "the counter is current.open (1), not the project-wide 3")
+        self.assertIn("3 otwartych", cur["toast"], "the toast counts the whole project (K4)")
+        zero = q["currentZero"]
+        self.assertFalse(zero["hidden"])
+        self.assertEqual((zero["count"], zero["items"]), ("", ["qn-a"]), "open 0: empty counter, the tab stays")
+
+    def test_qfilter_current_null_hides_the_tab(self) -> None:
+        """CORE-QFILTER K3 (STATUS-160-A assertions changed on purpose: a non-empty project-wide `prototypes`/`items` no longer shows the tab when `current` is null)."""
+        q = self.out["extra"]["s160b"]["qfilter"]
+        null = q["currentNull"]
+        self.assertTrue(null["hidden"] and null["panelHidden"])
+        self.assertEqual((null["protos"], null["items"], null["count"]), ([], [], ""))
+        self.assertIn("3 otwartych", null["toast"], "the project toast survives")
+        nav = q["currentNullToNav"]
+        self.assertEqual((nav["before"], nav["after"], nav["hidden"]), ("questions", "progress", True), "the open view falls back to progress")
+
+    def test_qfilter_server_json_to_renderer_and_bad_current(self) -> None:
+        """CORE-QFILTER K3: the fixture of the real server (`current` untouched) renders as the server computed it; junk `current` hides the tab."""
+        q = self.out["extra"]["s160b"]["qfilter"]
+        srv = q["server"]
+        self.assertFalse(srv["hidden"])
+        self.assertEqual((srv["protos"], srv["items"], srv["count"]), (["run-alpha", "run-delta"], ["qn-b00001", "qn-a00001"], "2"))
+        for key, got in q["currentBadType"].items():
+            self.assertTrue(got["hidden"], key)
+            self.assertEqual((got["protos"], got["items"], got["count"]), ([], [], ""), key)
+        self.assertFalse(q["currentOpenString"]["hidden"])
+        self.assertEqual(q["currentOpenString"]["count"], "", "a non-numeric open gives an empty counter")
+
+    def test_qfilter_fallback_without_current_key(self) -> None:
+        """CORE-QFILTER K5: a missing `current` key (older server) filters locally by `prototype.slug`; `null` is not the same as missing."""
+        q = self.out["extra"]["s160b"]["qfilter"]
+        fb = q["fallback"]
+        self.assertFalse(fb["hidden"])
+        self.assertEqual((fb["protos"], fb["items"], fb["count"]), (["run-alpha"], ["qn-a"], "2"))
+        self.assertEqual(q["fallbackNoRun"]["count"], "")
+        self.assertEqual(q["fallbackNoRun"]["protos"], ["run-alpha"])
+        for key in ("fallbackNoSlug", "fallbackNoPrototype"):
+            self.assertTrue(q[key]["hidden"], key)
+            self.assertEqual((q[key]["protos"], q[key]["items"], q[key]["count"]), ([], [], ""), key)
+
     def test_s160b_legacy_json_has_no_new_elements(self) -> None:
         legacy = self.out["extra"]["s160b"]["legacy"]
         self.assertEqual(set(legacy), set(self.fixtures))
@@ -2628,6 +2875,13 @@ class OldRendererOnNewJson(unittest.TestCase):
             for step in phase.get("steps", [])[:1]:
                 step["tests"] = {"state": "failed", "attempt": 1, "counts": {"total": 2, "failed": 1}}
         fixtures["with-tests-field"] = tested
+        # CORE-QFILTER K8: `expertQuestions.current` (an object, and null) is an unknown key for the frozen renderer
+        for label, cur in (("with-expert-current", {"open": 1, "blocking": 0, "prototypes": [{"slug": "run-alpha", "screens": 1, "accepted": 0, "stale": 0, "threads": {"open": 1}}],
+                                                    "items": [{"id": "qn-a", "runSlug": "run-alpha", "text": "t", "blocking": False, "addressees": [], "state": "open", "at": "2026-01-11T09:00:00Z", "url": "/_experts/run-alpha"}]}),
+                           ("with-expert-current-null", None)):
+            withq = json.loads(json.dumps(fixtures["questions"]))
+            withq["expertQuestions"]["current"] = cur
+            fixtures[label] = withq
         head = HARNESS[:HARNESS.index("  const F = input.fixtures")]
         tail = """
   const res = {};

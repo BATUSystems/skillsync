@@ -134,7 +134,7 @@ Zgodność wsteczna: starszy serwer nie ma pola, konsument traktuje brak klucza 
 | `readiness` | obiekt | NOWE: brief gotowości przebiegu |
 | `assumptions` | obiekt | NOWE: założenia ze speca |
 | `blockingQuestions` | obiekt | NOWE: pytania blokujące ze speca |
-| `expertQuestions` | obiekt | NOWE: otwarte pytania do eksperta ze wszystkich przebiegów |
+| `expertQuestions` | obiekt | NOWE: otwarte pytania do eksperta (projekt: `open`, `blocking`, `runs[]`, `items[]`; bieżący przebieg: `current`) |
 | `prototypes` | tablica | wszystkie prototypy projektu (do 50, wg `slug`): `{slug, iteration, screens, accepted, stale, threads, commentsAfterAcceptance, writing}`; `threads` = liczby wątków wg statusu (open, awaiting, decided, closed…), `writing` jak w `prototype.writing`; odnośnik buduje host z `slug` (`deps.prototypeUrl`) |
 | `result` | obiekt albo null | `{text, path}` (w `show` i w `GET /api/status`): sekcja `## Wynik` wybranego planu (do 4 KiB, tekst Markdown), gdy plan jest `in_progress`, `done` albo `implemented`; null bez planu, bez sekcji albo dla planu, który nie ruszył. Tylko z `GET /api/status` (nie w `show`) dochodzą, addytywnie, pola `html` (widoczna część wyrenderowana tym samym bezpiecznym rendererem Markdown co `/api/doc`: nagłówki, listy, pogrubienie, kod w linii, tabele, akapity; surowy HTML źródła escapowany, linki tylko bezpieczne), `moreHtml` i `moreLines` (zwinięta reszta i liczba jej linii źródła; brak, gdy nie ma czego zwijać). Tekst jest maskowany z sekretów w całości przed podziałem i renderem. Podział widoczne/zwinięte przebiega tylko między blokami Markdown (nigdy w środku tabeli, listy, bloku kodu ani akapitu): ostatnia granica bloku nie dalej niż po 12 liniach, której część widoczna zawiera coś więcej niż nagłówki; gdy takiej nie ma, pierwsza granica za 12 liniami; bez granicy nic się nie zwija. Klient bez `html` (stary serwer, `show`) pokazuje `text` jako zwykły tekst. Wtyczka edytora używa kopii renderera z rdzenia (`npm run sync:dashboard`) i czyta `dashboard show`, który nie zawiera `html`/`moreHtml`/`moreLines`, więc pokazuje `text` jako zwykły tekst (renderer bez `deps.mountHtml`). Host może dodać `mountHtml` i własne renderowanie Markdown, ale nie musi |
 | `eta` | obiekt albo null | NOWE (addytywnie, `schema: 1`): szacowany koniec bieżącej operacji z najnowszego checkpointu (`eta:`) |
@@ -142,7 +142,7 @@ Zgodność wsteczna: starszy serwer nie ma pola, konsument traktuje brak klucza 
 | `substeps` | tablica | NOWE: podkroki `Fn.k` z czasem |
 | `timing` | obiekt | NOWE (addytywnie, `schema: 1`): czas pracy i czas czekania na człowieka per krok i per faza planu |
 
-**Formatowanie w linii** (tylko `GET /api/status`, nie `show`; addytywnie, `schema: 1`): teksty jednoliniowe mają obok pola tekstowego pole `…Html` z bezpiecznym HTML-em w linii (pogrubienie, kursywa, kod, przekreślenie, link bezpiecznego schematu; bez bloków, nagłówków, list i tabel; surowy HTML źródła escapowany; ten sam renderer co `/api/doc`). Pola: `progress.phases[].steps[].titleHtml`, `progress.current.titleHtml`, `substeps[].titleHtml` (od `title`), `run.checkpoints[].textHtml` (od `text`; serwer wyróżnia w nim id kroków i frazy kluczowe tak jak strona w wierszu bez formatowania: `<span class=\"sidc\">`, `<span class=\"ph\">`, tylko w tekście poza `<code>` i `<a>`), `waiting[].whatHtml` i `waiting[].actionHtml` (od `what` i `action`), `expertQuestions.items[].textHtml` (od `text`, przycięte do tych samych 160 znaków co zwykły tekst; przycięcie na źródle PRZED renderem, nigdy w środku znacznika, a zakres kodu, linku albo pogrubienia, który przecięłaby granica, odpada w całości). Pole `…Html` jest tylko wtedy, gdy tekst ma formatowanie; bez niego klient pokazuje zwykły tekst. Pola tekstowe (`title`, `what`, `action`, `text`) zostają bez zmian, a dymki, `title` i `aria-*` używają wyłącznie ich (z zdjętymi znacznikami po stronie renderera). Tekst jest maskowany z sekretów przy odczycie planu i checkpointów, przed renderem. Strona wstawia HTML wyłącznie przez `deps.mountHtml`. Pola `…Html` (jak `result.html`) dochodzą tylko z `GET /api/status`, nie z `dashboard show`. Wtyczka edytora używa kopii renderera z rdzenia (`npm run sync:dashboard`) i czyta `show`, więc ich nie dostaje i pokazuje pola tekstowe jako zwykły tekst (znaczniki Markdown widoczne), a renderer bez `deps.mountHtml` ignoruje `…Html` także wtedy. `forecast` i `timing.acts` są w `show`, więc dochodzą do wtyczki bez zmian.
+**Formatowanie w linii** (tylko `GET /api/status`, nie `show`; addytywnie, `schema: 1`): teksty jednoliniowe mają obok pola tekstowego pole `…Html` z bezpiecznym HTML-em w linii (pogrubienie, kursywa, kod, przekreślenie, link bezpiecznego schematu; bez bloków, nagłówków, list i tabel; surowy HTML źródła escapowany; ten sam renderer co `/api/doc`). Pola: `progress.phases[].steps[].titleHtml`, `progress.current.titleHtml`, `substeps[].titleHtml` (od `title`), `run.checkpoints[].textHtml` (od `text`; serwer wyróżnia w nim id kroków i frazy kluczowe tak jak strona w wierszu bez formatowania: `<span class=\"sidc\">`, `<span class=\"ph\">`, tylko w tekście poza `<code>` i `<a>`), `waiting[].whatHtml` i `waiting[].actionHtml` (od `what` i `action`), `expertQuestions.items[].textHtml` i `expertQuestions.current.items[].textHtml` (od `text`, przycięte do tych samych 160 znaków co zwykły tekst; przycięcie na źródle PRZED renderem, nigdy w środku znacznika, a zakres kodu, linku albo pogrubienia, który przecięłaby granica, odpada w całości). Pole `…Html` jest tylko wtedy, gdy tekst ma formatowanie; bez niego klient pokazuje zwykły tekst. Pola tekstowe (`title`, `what`, `action`, `text`) zostają bez zmian, a dymki, `title` i `aria-*` używają wyłącznie ich (z zdjętymi znacznikami po stronie renderera). Tekst jest maskowany z sekretów przy odczycie planu i checkpointów, przed renderem. Strona wstawia HTML wyłącznie przez `deps.mountHtml`. Pola `…Html` (jak `result.html`) dochodzą tylko z `GET /api/status`, nie z `dashboard show`. Wtyczka edytora używa kopii renderera z rdzenia (`npm run sync:dashboard`) i czyta `show`, więc ich nie dostaje i pokazuje pola tekstowe jako zwykły tekst (znaczniki Markdown widoczne), a renderer bez `deps.mountHtml` ignoruje `…Html` także wtedy. `forecast` i `timing.acts` są w `show`, więc dochodzą do wtyczki bez zmian.
 
 
 ### `mode`
@@ -268,7 +268,7 @@ Dwie pozycje powstają z plików, bez znacznika w checkpoincie:
   i zastępuje każdą pozycję akceptacji prototypu (też tę z `czeka:` w checkpoincie), bo nie ma czego akceptować, dopóki agent pisze.
   Renderer pisze „Sesja pracuje od HH:MM: …”, nie „Sesja czeka na Ciebie”.
 - `source: "expert"`: `expertQuestions.blocking > 0`, a najnowszy checkpoint nie ma znacznika `czeka:`. `what` = „odpowiedź eksperta (N blokujących)”,
-  `link` = `{kind: "expert", slug, url}`: przy jednym przebiegu z otwartymi pytaniami jego `slug` i `/_experts/<slug>`, w pozostałych
+  `link` = `{kind: "expert", slug, url}`: przy jednym przebiegu (tu: prototypie) z otwartymi pytaniami jego `slug` i `/_experts/<slug>`, w pozostałych
   przypadkach `slug: null` i `/_experts`. Renderer składa adres jak w toaście (`deps.prototypeOrigin(port)` plus ścieżka; bez adresu serwera
   prototypów pozycja nie ma odnośnika). Pytania bez `blocking` nie tworzą pozycji.
 
@@ -333,6 +333,11 @@ późniejsze niż ostatnia WAŻNA akceptacja ekranu, w wątkach niezałatwionych
 Grupy `{key, label, items[]}`; `key`: `task` (bieżący spec i plan), `run` (pliki przebiegu), `specs`, `plans`, `design`,
 `domain`. Element: `path`, `title`, `status` (lub null), `mtime`.
 
+Renderer rysuje wszystkie grupy jako `<details class="doc-group">`: `task` i `run` domyślnie otwarte (można je zwinąć), `specs`, `plans`,
+`design`, `domain` domyślnie zwinięte. Nagłówek grupy to `<summary>` z etykietą i liczbą dokumentów. Stan zwinięcia żyje w stanie renderera (bez `localStorage` i bez callbacka hosta): przeżywa
+odświeżenie, nie przeżywa ponownego wejścia na stronę. Wybór dokumentu (kliknięcie, adres, odnośnik) rozwija jego grupę jeden raz;
+odświeżenie bez zmiany wyboru jej nie rozwija, gdy użytkownik ją zwinął. Domyślnie wybrany pierwszy dokument rozwija swoją grupę, gdy lista nie zaczyna się od `task`. Przyciski dokumentów zostają w DOM także w zwiniętej grupie; `docs[]` w JSON bez zmian.
+
 ## Pola dodane do kontraktu
 
 ### `readiness`
@@ -371,14 +376,39 @@ Pierwsza niepusta linia decyduje o `status`; `Data:` i `Plan-sha:` są czytane t
 
 ### `expertQuestions`
 
-Źródło: pliki `docs/prototypes/<slug>/questions.json` WSZYSTKICH przebiegów projektu (format `expert-questions/1`), a nie
+Źródło: pliki `docs/prototypes/<slug>/questions.json` wszystkich prototypów projektu (format `expert-questions/1`), a nie
 wiersze widocznego speca. Czytane tak samo jak w serwerze prototypów (bez jego importu), tylko do odczytu: katalog i pliki
 bez dowiązań symbolicznych, `prototype.json` obok, plik do 2 MiB (serwer zapisuje do 1 MiB plus jedna operacja), uszkodzony albo nieznany plik jest pomijany.
 
 - Pytanie jest otwarte od pierwszego `ask` do pierwszego `answer` albo `withdraw` (wycofane i odpowiedziane się nie liczą);
   blokujące = `blocking: true` w `ask`.
-- `open`, `blocking`: sumy po wszystkich przebiegach; zawsze obecne, `0` bez pytań. Pytania do eksperta nie zależą od
-  wybranego planu ani speca, więc pytanie z przebiegu A nie znika po starcie przebiegu B.
+- Słownik: „przebieg” (przebieg pracy) to praca nad jednym specem i planem; w nazwach pól pytań do eksperta „przebieg” oznacza
+  prototyp (`runSlug`, `runs[]`, `/_experts/<slug>`). Dotyczy to też `runs[]`, `items[]`, toastu i pozycji `waiting` z `source: "expert"`
+  (zdanie „przy jednym przebiegu” = przy jednym prototypie z otwartymi pytaniami). Dwa widoki: **projektowy** (`open`, `blocking`, `runs[]`, `items[]`; toast i baner
+  czekania) i **przebiegu** (`current`).
+- `open`, `blocking`: sumy po wszystkich prototypach projektu (widok projektowy); zawsze obecne, `0` bez pytań. Nie zależą od
+  wybranego planu ani speca, więc pytanie z prototypu A nie znika po starcie przebiegu B. `runs[]` i `items[]` też są projektowe.
+- `current`: `null` albo `{spec, prototypes, open, blocking, items}`; zawsze obecne (także `null`), identyczne w `dashboard show` i
+  `GET /api/status`. Widok bieżącego przebiegu (wybranego speca). `spec` = ścieżka speca; `prototypes` = lista jak `prototypes[]` (do 50, wg `slug`);
+  `open`, `blocking` = liczby otwartych i blokujących pytań przebiegu (bez limitu); `items` = jak `items[]` (do 50 najnowszych, także odpowiedziane i wycofane).
+  Wiązanie po ścieżce speca (porównanie po znormalizowanej ścieżce względnej): prototypy przebiegu to te, których `prototype.json`
+  ma `requirements` równe ścieżce speca, plus prototyp z linii `Prototyp:` planu albo speca (gdy istnieje); pytania przebiegu to pytania ze
+  WSZYSTKICH prototypów, których `ask` ma `origin.spec` równe ścieżce speca. `ask` bez `origin` jest tylko w widoku projektowym.
+  `origin.spec` służy wyłącznie jako filtr i nie trafia do odpowiedzi. Pytania przebiegu zapisane pod cudzym prototypem są w
+  `current.items`, a ten prototyp nie wchodzi do `current.prototypes`.
+
+  | Stan | `current` |
+  |---|---|
+  | brak speca przebiegu (tryb `none`/`run`), brak katalogu `docs/prototypes`, katalog będący dowiązaniem | `null` |
+  | spec jest, ale ani prototypu, ani pytań przebiegu | `null` |
+  | spec jest i są prototypy albo pytania przebiegu | obiekt |
+  | `Prototyp:` wskazuje nieistniejący katalog albo nazwę spoza wzorca slugu | nazwa pominięta; wynik z `requirements` i `origin.spec` |
+  | plan z `Spec:` bez pliku speca | `null` |
+  | uszkodzony albo za duży `questions.json` jednego prototypu | plik pominięty, reszta liczona |
+  | ponad 50 prototypów w projekcie | `current.prototypes` liczone po `spec.path`, do 50 wierszy |
+
+  `current.items` przechodzą to samo maskowanie co `items[]`. `textHtml` (przycięcie tekstu do 160 znaków przed renderem) jest
+  tylko w `GET /api/status`; `dashboard show` go nie ma.
 - `runs[]`: tylko przebiegi z otwartymi pytaniami, w kolejności `slug`: `{slug, open, blocking, url, addressees}`; `url` to ścieżka
   strony przebiegu na serwerze prototypów (`/_experts/<slug>`), host dokłada konsument. `addressees` (opcjonalne): `"all"`, gdy któreś otwarte
   pytanie przebiegu nie ma adresatów, inaczej posortowana suma loginów adresatów otwartych pytań.
@@ -387,8 +417,13 @@ bez dowiązań symbolicznych, `prototype.json` obok, plik do 2 MiB (serwer zapis
 - Widok widza (`approvals.viewer`): ta sama odpowiedź co dla operatora (loginy, nazwiska, treści pytań, plany i teksty checkpointów są widoczne; strona jest wewnątrzfirmowa). Różni się tylko flaga `approvals.viewer` (bez zapisu zgód) i `approvals.here`; w trybie dwóch gniazd obie flagi (i `approvals.role`) pochodzą z gniazda, nie z nagłówka `Host`, a treść pozostaje bez filtra także na gnieździe odczytu (decyzja właściciela z 15.11.2026).
 - Renderer pokazuje toast „Pytania do eksperta: N otwartych (M blokujących)” w banerze, gdy `open > 0`: to stan, nie wynik
   akcji, więc bez timera i bez „×”; znika, gdy `open` spadnie do `0`. Odnośnik „Odpowiedz na pytania” prowadzi do
-  `/_experts/<slug>` przy jednym przebiegu albo do `/_experts` przy kilku, o ile host zna adres serwera prototypów
-  (`deps.prototypeOrigin(port)`); bez niego toast jest samym tekstem. Pole nie zależy od `approvals.here` ani `viewer`.
+  `/_experts/<slug>` przy jednym przebiegu (tu: prototypie) albo do `/_experts` przy kilku, o ile host zna adres serwera prototypów
+  (`deps.prototypeOrigin(port)`); bez niego toast jest samym tekstem. Pole nie zależy od `approvals.here` ani `viewer`. Toast i
+  baner czekania (`source: expert`) liczą po całym projekcie.
+- Zakładka „Pytania” (`tab-questions`, `view-questions`, `qCount`) czyta tylko `current`: prototypy i pytania bieżącego przebiegu,
+  licznik = `current.open`; przy `current: null` jest ukryta. Przy BRAKU klucza `current` (odpowiedź starszego serwera) renderer
+  filtruje lokalnie po `prototype.slug`: prototypy po `slug`, pytania po `runSlug`, licznik z `runs[]` tego sluga; to przybliżenie
+  (nie zna `origin.spec` ani `requirements`). Bez `prototype.slug` zakładka jest ukryta; ze slugiem bez dopasowań pokazuje puste listy „Brak …”.
 
 ### `eta`
 

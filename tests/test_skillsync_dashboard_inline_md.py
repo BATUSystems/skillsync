@@ -4,12 +4,15 @@
 Run: `python3 -m unittest tests.test_skillsync_dashboard_inline_md`."""
 from __future__ import annotations
 
+import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from skillsync_workflow import dashboard as engine  # noqa: E402
 from skillsync_workflow import dashboard_http as srv  # noqa: E402
 
 RENDER = Path(__file__).resolve().parent.parent / "library" / "skills" / "dashboard" / "assets" / "dashboard-render.js"
@@ -121,7 +124,9 @@ class StatusFieldsTests(unittest.TestCase):
                          "current": {"id": "F1.1", "title": "Krok **ważny**"}},
             "substeps": [{"id": "F1.1", "title": "`kod` w tytule"}],
             "waiting": [{"what": "decyzja o **zakresie**", "action": "Sesja czeka: decyzja o **zakresie**. Odpowiedz w sesji.", "source": "checkpoint"}, {"what": "zwykłe", "source": "checkpoint"}],
-            "expertQuestions": {"items": [{"id": "Q1", "text": "Czy **tak**?"}, {"id": "Q2", "text": "zwykłe pytanie"}]},
+            "expertQuestions": {"items": [{"id": "Q1", "text": "Czy **tak**?"}, {"id": "Q2", "text": "zwykłe pytanie"}],
+                                "current": {"spec": "docs/specs/x.md", "prototypes": [], "open": 1, "blocking": 0,
+                                            "items": [{"id": "Q3", "text": "Czy `kod` działa?"}, {"id": "Q4", "text": "zwykłe"}]}},
             "run": {"checkpoints": [{"time": "10:00", "text": "zrobione **S1**"}, {"time": "10:05", "text": "zwykły wiersz"}]},
             "result": None,
         }
@@ -139,6 +144,10 @@ class StatusFieldsTests(unittest.TestCase):
         self.assertNotIn("whatHtml", d["waiting"][1])
         self.assertEqual(d["expertQuestions"]["items"][0]["textHtml"], "Czy <strong>tak</strong>?")
         self.assertNotIn("textHtml", d["expertQuestions"]["items"][1])
+        current = d["expertQuestions"]["current"]["items"]
+        self.assertEqual(current[0]["textHtml"], "Czy <code>kod</code> działa?")
+        self.assertEqual(current[0]["text"], "Czy `kod` działa?")
+        self.assertNotIn("textHtml", current[1])
         feed = d["run"]["checkpoints"]
         self.assertEqual(feed[0]["textHtml"], '<span class="ph">zrobione</span> <strong><span class="sidc">S1</span></strong>')
         self.assertEqual(feed[0]["text"], "zrobione **S1**")
@@ -146,8 +155,11 @@ class StatusFieldsTests(unittest.TestCase):
 
     def test_missing_or_odd_sections_are_tolerated(self) -> None:
         self.assertEqual(srv.add_inline_html({}), {})
-        odd = {"progress": None, "substeps": None, "waiting": [None, 3], "expertQuestions": {"items": None}}
+        odd = {"progress": None, "substeps": None, "waiting": [None, 3], "expertQuestions": {"items": None, "current": {"items": None}}}
         self.assertEqual(srv.add_inline_html(odd), odd)
+        for current in (None, "x", 7, [], {}, {"items": [None, 3, "x"]}):
+            data = {"expertQuestions": {"items": [], "current": current}}
+            self.assertEqual(srv.add_inline_html(data), {"expertQuestions": {"items": [], "current": current}})
 
     def test_a_long_question_text_is_cut_in_the_source_not_in_the_html(self) -> None:
         text = "**" + "bardzo " * 40 + "długie**"
@@ -155,6 +167,36 @@ class StatusFieldsTests(unittest.TestCase):
         html = d["expertQuestions"]["items"][0].get("textHtml", "")
         self.assertNotIn("<strong>", html, "the span the limit would cut is dropped whole")
         self.assertEqual(d["expertQuestions"]["items"][0]["text"], text, "the plain text is not changed")
+
+    def test_a_long_text_of_the_current_run_is_cut_like_the_project_one(self) -> None:
+        text = "**" + "bardzo " * 40 + "długie**"
+        short = "Czy **tak**?"
+        d = srv.add_inline_html({"expertQuestions": {"items": [], "current": {"items": [{"id": "Q", "text": text}, {"id": "R", "text": short}]}}})
+        items = d["expertQuestions"]["current"]["items"]
+        self.assertNotIn("<strong>", items[0].get("textHtml", ""), "the span the limit would cut is dropped whole")
+        self.assertEqual(items[0]["text"], text)
+        self.assertEqual(items[1]["textHtml"], "Czy <strong>tak</strong>?")
+
+    def test_the_api_adds_it_and_show_does_not(self) -> None:
+        """The same function marks `/api/status`; `dashboard show` and `build_status` never carry `textHtml`."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            (root / ".github").mkdir()
+            (root / ".github" / ".skillsync.yaml").write_text("skills: [dashboard]\n", encoding="utf-8")
+            (root / "docs" / "specs").mkdir(parents=True)
+            (root / "docs" / "specs" / "2026-02-01-demo.md").write_text("# Spec: demo\n\nStatus: draft\n", encoding="utf-8")
+            directory = root / "docs" / "prototypes" / "run-a"
+            directory.mkdir(parents=True)
+            (directory / "prototype.json").write_text(json.dumps({"requirements": "docs/specs/2026-02-01-demo.md"}), encoding="utf-8")
+            ask = {"id": "o1", "type": "ask", "questionId": "qn-000001", "at": "2026-01-11T09:00:00Z", "by": "agent", "text": "Czy **tak**?",
+                   "blocking": True, "assumed": None, "addressees": [], "refs": [], "options": [],
+                   "origin": {"spec": "docs/specs/2026-02-01-demo.md", "q": "Q1"}}
+            (directory / "questions.json").write_text(json.dumps({"questionsFormat": 1, "operations": [ask]}), encoding="utf-8")
+            status = engine.build_status(root, approvals=False)
+            self.assertNotIn("textHtml", json.dumps(status["expertQuestions"]))
+            served = srv.add_inline_html(json.loads(json.dumps(status)))
+            self.assertEqual(served["expertQuestions"]["current"]["items"][0]["textHtml"], "Czy <strong>tak</strong>?")
+            self.assertEqual(served["expertQuestions"]["items"][0]["textHtml"], "Czy <strong>tak</strong>?")
 
 
 class PageTests(unittest.TestCase):

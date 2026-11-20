@@ -235,7 +235,7 @@
     const st = {
       data: null, prev: null, view: "progress", doc: null, docData: null, desc: null,
       armed: null, armedTimer: null, approving: false, notice: null, noticeTimer: null, visible: true, openPhases: {},
-      testsOpen: {}, testsAttempt: {}, testsLoading: {}, testsError: {}, testsLoaded: {}, testsStep: null, silenceShown: false, silenceMin: 0, descFor: null, descPinned: false, docButtons: [], timers: new Set(), frames: new Set(), destroyed: false,
+      testsOpen: {}, testsAttempt: {}, testsLoading: {}, testsError: {}, testsLoaded: {}, testsStep: null, silenceShown: false, silenceMin: 0, descFor: null, descPinned: false, docButtons: [], docGroupsOpen: {}, docGroupSeen: null, docFocus: null, docRebuilding: false, timers: new Set(), frames: new Set(), destroyed: false,
     };
     const later = (fn, ms) => { const t = timers.set(() => { st.timers.delete(t); if (!st.destroyed) fn(); }, ms); st.timers.add(t); return t; };
     const cancel = (t) => { if (t) { timers.clear(t); st.timers.delete(t); } };
@@ -1288,7 +1288,21 @@
       if (s < 86400) return `${Math.floor(s / 3600)} h temu`;
       return `${Math.floor(s / 86400)} d temu`;
     }
-    const questionsTabShown = (d) => Array.isArray(d.prototypes) || Boolean(d.expertQuestions && typeof d.expertQuestions === "object" && Array.isArray(d.expertQuestions.items));
+    // Zakładka „Pytania” dotyczy bieżącego przebiegu: serwer daje `expertQuestions.current` (obiekt albo null = ukryta).
+    // Brak klucza `current` (starszy serwer): przybliżenie lokalne po `prototype.slug` (prototypy, pytania, licznik z `runs[]`).
+    function questionsView(d) {
+      const eq = d.expertQuestions && typeof d.expertQuestions === "object" ? d.expertQuestions : null;
+      const objs = (v) => (Array.isArray(v) ? v : []).filter((x) => x && typeof x === "object");
+      if (eq && Object.prototype.hasOwnProperty.call(eq, "current")) {
+        const c = eq.current;
+        if (!c || typeof c !== "object" || Array.isArray(c)) return null;
+        return { protos: objs(c.prototypes), items: objs(c.items), open: c.open };
+      }
+      const slug = d.prototype && typeof d.prototype === "object" && typeof d.prototype.slug === "string" ? d.prototype.slug : "";
+      if (!slug || !(Array.isArray(d.prototypes) || (eq && Array.isArray(eq.items)))) return null;
+      const run = (eq && Array.isArray(eq.runs) ? eq.runs : []).find((r) => r && typeof r === "object" && r.slug === slug);
+      return { protos: objs(d.prototypes).filter((p) => p.slug === slug), items: objs(eq && eq.items).filter((q) => q.runSlug === slug), open: run ? run.open : null };
+    }
     function protoRow(d, p) {
       const slug = typeof p.slug === "string" ? p.slug : "";
       const screens = nonNeg(p.screens), accepted = nonNeg(p.accepted), stale = nonNeg(p.stale);
@@ -1327,18 +1341,16 @@
           on: { click: linkClick("experts", slug, url) } }, "Otwórz pytania") : null);
     }
     function renderQuestionsTab(d) {
-      const shown = questionsTabShown(d);
-      ui["tab-questions"].hidden = !shown;
-      if (!shown) {
+      const qv = questionsView(d);
+      ui["tab-questions"].hidden = !qv;
+      if (!qv) {
         fill(ui.qProtos); fill(ui.qItems); ui.qCount.textContent = "";
         ui["view-questions"].hidden = true;
         if (st.view === "questions") setView("progress", false);
         return;
       }
-      const eq = d.expertQuestions && typeof d.expertQuestions === "object" ? d.expertQuestions : {};
-      const protos = (Array.isArray(d.prototypes) ? d.prototypes : []).filter((p) => p && typeof p === "object");
-      const items = (Array.isArray(eq.items) ? eq.items : []).filter((q) => q && typeof q === "object").slice(0, 50);
-      ui.qCount.textContent = Number.isFinite(eq.open) && eq.open > 0 ? String(eq.open) : "";
+      const protos = qv.protos, items = qv.items.slice(0, 50);
+      ui.qCount.textContent = Number.isFinite(qv.open) && qv.open > 0 ? String(qv.open) : "";
       fill(ui.qProtos, h("h2", { class: "q-title" }, "Prototypy"),
         protos.length ? h("ul", { class: "q-list" }, protos.map((p) => protoRow(d, p))) : h("div", { class: "empty" }, "Brak prototypów"));
       fill(ui.qItems, h("h2", { class: "q-title" }, "Pytania do eksperta"),
@@ -1347,23 +1359,57 @@
     }
 
     // ---------------------------------------------------------------- dokumenty
+    // Grupy listy dokumentów to <details>: task i run domyślnie rozwinięte, reszta zwinięta; stan przeżywa odświeżenie (st.docGroupsOpen).
+    function docGroupOpen(key) { return Object.prototype.hasOwnProperty.call(st.docGroupsOpen, key) ? st.docGroupsOpen[key] : key === "task" || key === "run"; }
+    function docGroupOf(path) {
+      const g = ((st.data && st.data.docs) || []).find((x) => (x.items || []).some((it) => it.path === path));
+      return g ? g.key : null;
+    }
+    // Wybrany dokument rozwija swoją grupę raz po zmianie st.doc (bez przebudowy listy); ręczne zwinięcie przeżywa odświeżenie.
+    function revealDocGroup(path) {
+      const key = docGroupOf(path);
+      if (!path || key == null || key + "\n" + path === st.docGroupSeen) return;
+      st.docGroupSeen = key + "\n" + path;
+      if (docGroupOpen(key)) return;
+      st.docGroupsOpen[key] = true;
+      const box = Array.prototype.find.call(ui.docList.querySelectorAll("details"), (x) => x.getAttribute("data-doc-group") === key);
+      if (box) box.setAttribute("open", "");
+    }
     function renderDocList(d) {
       const groups = d.docs || [];
       ui.docCount.textContent = groups.reduce((n, g) => n + (g.items || []).length, 0) || "";
       st.docButtons = [];
-      fill(ui.docList, groups.map((g) => [h("h3", null, g.label), (g.items || []).map((it) => {
-        const name = g.key === "run" ? baseName(it.path) : g.key === "task" ? it.title : String(it.title || "").replace(/^(Plan|Spec):\s*/i, "");
-        const b = h("button", { class: "doc-item", "data-doc": it.path, "aria-current": String(it.path === st.doc), "data-tip": `${it.path} · zmieniony ${fmtTime(it.mtime)}`,
-          on: { click: () => (previewMode() ? loadDoc(it.path) : openDoc(it.path)) } },
-          icon("i-doc"), h("span", { class: "nm" }, name), statusChip(it.status));
-        st.docButtons.push(b);
-        return b;
-      })]));
-      if (!st.doc && groups[0] && groups[0].items && groups[0].items[0]) st.doc = groups[0].items[0].path;
+      const first = groups[0] && groups[0].items && groups[0].items[0] ? groups[0].items[0].path : null;
+      revealDocGroup(st.doc || first);
+      st.docRebuilding = true;
+      try {
+      fill(ui.docList, groups.map((g) => {
+        const items = (g.items || []).map((it) => {
+          const name = g.key === "run" ? baseName(it.path) : g.key === "task" ? it.title : String(it.title || "").replace(/^(Plan|Spec):\s*/i, "");
+          const b = h("button", { class: "doc-item", "data-doc": it.path, "aria-current": String(it.path === st.doc), "data-tip": `${it.path} · zmieniony ${fmtTime(it.mtime)}`,
+            on: { click: () => (previewMode() ? loadDoc(it.path) : openDoc(it.path)) } },
+            icon("i-doc"), h("span", { class: "nm" }, name), statusChip(it.status));
+          st.docButtons.push(b);
+          return b;
+        });
+        const box = h("details", { class: "doc-group", "data-doc-group": g.key, open: docGroupOpen(g.key) },
+          h("summary", { on: { focus: () => { st.docFocus = g.key; }, blur: () => { if (!st.docRebuilding) st.docFocus = null; } } }, `${g.label} (${items.length})`),
+          items);
+        box.addEventListener("toggle", () => { if (box.isConnected !== false) st.docGroupsOpen[g.key] = box.hasAttribute("open"); });
+        return box;
+      }));
+      } finally { st.docRebuilding = false; }
+      if (st.docFocus) {
+        const sm = Array.prototype.find.call(ui.docList.querySelectorAll("details"), (x) => x.getAttribute("data-doc-group") === st.docFocus);
+        const el = sm && sm.querySelector("summary");
+        if (!el) st.docFocus = null;
+        else if (typeof el.focus === "function") el.focus({ preventScroll: true });
+      }
+      if (!st.doc && first) st.doc = first;
     }
     // Otwarcie dokumentu: z actions.loadDoc podgląd w zakładce Dokumenty (strona), bez niego actions.openDoc (host, np. edytor).
     function openDoc(path) {
-      if (previewMode()) { st.doc = path; setView("docs"); }
+      if (previewMode()) { st.doc = path; revealDocGroup(path); setView("docs"); }
       else if (typeof actions.openDoc === "function") actions.openDoc(path);
     }
     async function loadDoc(path, live = false) {
@@ -1371,6 +1417,7 @@
       const view = ui.docView;
       const scroll = live && deps.scroll ? deps.scroll.save() : 0;
       st.doc = path;
+      revealDocGroup(path);
       if (!live) navigate("docs:" + path);
       st.docButtons.forEach((b) => b.setAttribute("aria-current", String(b.getAttribute("data-doc") === path)));
       try {
@@ -1483,7 +1530,7 @@
       },
       setLive,
       setView,
-      setDoc(path) { st.doc = path || null; },
+      setDoc(path) { st.doc = path || null; revealDocGroup(st.doc); },
       setTestsStep(step) { st.testsStep = step || null; if (step) st.testsOpen[step] = true; },
       tick,
       handleKey,
