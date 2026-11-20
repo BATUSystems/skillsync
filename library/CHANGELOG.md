@@ -4,6 +4,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-11-21
+
 ### Breaking
 
 - Hook `check-closure.py` reads ignored plans too (`git status --ignored`, entries `!!`): a `done` plan without a `final` record, or an `in_progress` plan with all steps checked, blocks a turn once per session also in projects that ignore `docs/plans`. Workaround: `skillsync plan archive`, a `--final` record of the run, or `hooks.stop_closure: false`. Details: `docs/upgrading.md` of the generator.

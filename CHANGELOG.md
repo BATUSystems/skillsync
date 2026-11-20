@@ -12,6 +12,10 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-11-21
+
+Upgrading from 1.10.0: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.10.0 → 1.11.0".
+
 ### Breaking
 
 - **Karma evidence in `validate` reads only real counter lines.** A line `Executed N of M` is counted only when the text before it is empty or a browser label ending with `): ` and what follows `of M` is the end of the line or `(`, `SUCCESS`, `ERROR`, `DISCONNECTED` or `FAILED`. Karma output with a foreign prefix or tail that was counted before can now end `BLOCKED` with "Test count unknown"; workaround: `success_pattern` in the check of `validate`; in `test-run` `--allow-no-count <reason>` or a `--junit` report (`--format karma` does not help). With exit code 0, Karma output with unexecuted specs (`Executed 3 of 11 DISCONNECTED`) is `BLOCKED` ("Karma executed N of M specs"); only `success_pattern` lifts it. The `skipped` count of an interrupted run and the live `passed` count change to the correct values.
