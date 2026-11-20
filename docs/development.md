@@ -90,9 +90,17 @@ planu jako NOT_RUN.
 `tests/tmp_paths.py` (`child`, `make_dir`, `write_file`) składa ścieżkę pod katalogiem tymczasowym z nazwy pochodzącej z danych i odmawia
 nazwy z separatorem, dyskiem, `..`, znakiem sterującym, końcową kropką lub spacją oraz nazwy zastrzeżonej Windows (`CON`, `NUL`, `COM1`…);
 wynik sprawdza `relative_to`. Powód: na Windows nazwa `\n` (backslash, `n`) jest ścieżką od korzenia dysku, więc `tmp / nazwa` zapisuje poza
-katalogiem tymczasowym. `tests/test_skillsync_tmp_path_guard.py` (tryb raportu, `STRICT = False`) zgłasza w testach wyrażenia
-`<ścieżka tmp> / <zmienna lub wywołanie>`; stan początkowy (`BASELINE`, liczba trafień na plik) nie był przeglądany po kolei (próbka kilku miejsc: nazwy z tabel literałów testu). Strażnik rozpoznaje ścieżkę tmp po nazwie (`tmp`, `temp`, `tmp_dir`…) i pochodzeniu z `tempfile` w obrębie pliku, więc nie widzi parametrów ani odziedziczonych atrybutów (np. `self.root` z fikstury w innym pliku), `joinpath`, `os.path.join` ani `Path(a, b)`. Nowy
-test, który składa ścieżkę z danych, używa pomocnika; gdy trafienie ma zostać, dopisz uzasadnienie przy liczbie.
+katalogiem tymczasowym. `tests/test_skillsync_tmp_path_guard.py` jest strażnikiem ścisłym (`STRICT = True`): każde wyrażenie
+`<ścieżka tmp> / <zmienna lub wywołanie>` w testach (poza `tmp_paths.py` i samym strażnikiem) kończy test błędem, chyba że stoi w `ALLOWED`.
+Klucz wpisu to `(plik, tekst wyrażenia z ast.unparse)`, wartość to uzasadnienie; wpis bez trafienia też jest błędem (test „stale”).
+Strażnik rozpoznaje ścieżkę tmp po nazwie (`tmp`, `temp`, `tmp_dir`…) i pochodzeniu z `tempfile` (`mkdtemp`, `TemporaryDirectory`, `with … as nazwa`)
+albo z innej ścieżki tmp. Zasięg skażenia: nazwa lokalna jest tmp w całej funkcji, która ją przypisuje (kolejność instrukcji bez znaczenia),
+oraz w funkcjach zagnieżdżonych, lambdach i składaniach; nazwa modułowa w całym module; nazwa z ciała klasy w samym ciele klasy (nie w metodach).
+Atrybuty (`self.root`) i każda skażona nazwa tworzą wspólny zbiór `attrs`, który działa w całym pliku: dla wyrażeń z atrybutem
+(fikstura w jednej klasie obsługuje mixin w innej) i dla parametrów (parametr jest tmp, gdy w pliku jest skażona nazwa o tej samej nazwie, np. pomocnik
+`write(root, rel)`). Strażnik nie widzi przepływu przez wywołania (`self.root = make_project(self.tmp)`), `global`/`nonlocal`, `joinpath`,
+`os.path.join` ani `Path(a, b)`; atrybut o tej samej nazwie w niezwiązanej klasie skazi cały plik. Nowy test, który składa ścieżkę z danych,
+używa pomocnika; gdy trafienie ma zostać, dopisz wpis do `ALLOWED` z uzasadnieniem.
 
 ### Serwery w testach
 

@@ -272,3 +272,7 @@ lessons:
     title: "Tabela narzędzi testowych ma dwa interpretery (pakiet i samodzielny hak): zmiana kolejności lub pola wymaga testu parytetu i zgodności wstecznej"
     tags: [skillsync, test-run, hooks, guard-tests, detect-tool, parity, compatibility]
     paths: ['skillsync_workflow/test_run.py', 'skillsync_workflow/data/test_tools.json', 'library/hooks/guard-tests.py', 'tests/test_skillsync_test_run*.py', 'tests/fixtures/**']
+  - path: straznik-sciezek-tmp-skazenie-w-zasiegu-funkcji.md
+    title: "Strażnik ścieżek tmp: skażenie nazw trzeba ograniczyć do funkcji, a zmianę skanera sprawdzić skryptem różnicowym stary/nowy"
+    tags: [skillsync, tests, tmp-path-guard, ast, scope]
+    paths: ['tests/test_skillsync_tmp_path_guard.py', 'docs/development.md']
