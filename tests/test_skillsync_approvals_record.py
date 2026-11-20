@@ -608,6 +608,40 @@ class PlanStateRecord(RecordFixture):
         self.assertIn('already recorded', refused['reason'])
         self.assertEqual(self.record(word='READY')['status'], 'PASS', 'another word is another key')
 
+    def test_the_duplicate_is_compared_with_the_last_entry_of_the_word_scenario_a(self):
+        self.set_plan('in_progress')
+        self.assertEqual(self.record()['status'], 'PASS')
+        self.set_plan('done')
+        self.assertEqual(self.record()['status'], 'PASS')
+        self.set_plan('in_progress')                                       # reopened without a commit: the button is waiting again
+        again = self.record()
+        self.assertEqual((again['status'], again['entry']['planState']), ('PASS', 'in_progress'), 'not a duplicate of the LAST entry (done)')
+        self.assertEqual(self.record()['status'], 'BLOCKED', 'a real duplicate of the last entry stays refused')
+
+    def test_the_duplicate_is_compared_with_the_last_entry_of_the_word_scenario_b(self):
+        self.set_plan('done')
+        self.assertEqual(self.record()['status'], 'PASS')
+        self.set_plan('in_progress')
+        self.assertEqual(self.record()['status'], 'PASS')
+        self.set_plan('done')
+        self.assertEqual(self.record()['status'], 'PASS')
+        self.assertEqual(self.record()['status'], 'BLOCKED')
+        self.assertEqual([row['planState'] for row in self.lines()], ['done', 'in_progress', 'done'])
+
+    def test_the_plan_state_is_read_under_the_file_lock_unless_given(self):
+        self.set_plan('in_progress')
+        seen = []
+        real = status.plan_state_for_run
+
+        def spy(root, run_id):
+            seen.append((self.log.parent / 'approvals.jsonl.lock').exists())
+            return real(root, run_id)
+        with mock.patch.object(status, 'plan_state_for_run', spy):
+            self.assertEqual(self.record()['status'], 'PASS')
+            self.assertEqual(seen, [True], 'read once, while the lock file is held')
+            self.assertEqual(self.record(sha=self.SHA2, plan_state='done')['entry']['planState'], 'done')
+            self.assertEqual(seen, [True], 'an explicit plan_state is not read again')
+
     def test_an_old_entry_without_the_field_does_not_block_the_same_sha_with_a_plan_state(self):
         self.log.write_text(json.dumps({'schema': 1, 'at': '2026-01-12T10:00:00Z', 'word': 'CP', 'sha': HEAD, 'by': 'u', 'source': 'cli'}) + '\n',
                             encoding='utf-8')

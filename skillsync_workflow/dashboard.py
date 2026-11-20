@@ -1470,10 +1470,15 @@ def approvals_state(root, spec, plan, delivery, run_id, head_full, log, waiting,
         return {'enabled': False, 'actions': [], 'last': log[-1] if log else None}
     run_ok = run_dir(root, run_id) is not None
     run_state = plan_state_for_run(root, run_id) if run_ok else None   # K13: the plan of the run, not the plan shown on the page
+    if callable(tracked):   # one `specs_info` (git) per status build, not one per consent word
+        probe, cache = tracked, []
+        tracked = lambda: cache[0] if cache else (cache.append(probe()) or cache[0])
     actions = consent_buttons(spec, plan, waiting, delivery.get('words', []), log, head_full, run_ok, run_state, tracked)
     for action in actions:
         if action['kind'] in ('cp', 'ready'):
             action['path'] = run_id
+            if run_state is not None:
+                action['planState'] = run_state   # the state the user saw; the click sends it back (409 when it changed)
         action['run'] = run_id if run_ok else None
     return {'enabled': True, 'actions': actions, 'last': log[-1] if log else None}
 

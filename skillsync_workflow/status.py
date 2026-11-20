@@ -304,9 +304,20 @@ def acceptance_pending(status, text, context, rel=None):
             continue
         if _plan_done_at(context.get('root'), row.get('sha'), rel) and _plan_status_kept_since(context.get('root'), row.get('sha'), rel):
             return False
-        if row.get('planState') == 'done' and not _plans_tracked(context):
+        if row.get('planState') == 'done' and not _plans_tracked(context) and _commit_exists(context.get('root'), row.get('sha')):
             return False   # K13: plans outside git have no history; the entry itself says the plan was `done` at the consent
     return True
+
+
+def _commit_exists(root, sha):
+    """True when `sha` names a commit of the repository (`git cat-file -e <sha>^{commit}`); junk sha, no repository or a git error is False."""
+    if not root or not isinstance(sha, str) or not _APPROVAL_SHA.fullmatch(sha):
+        return False
+    try:
+        result = subprocess.run(['git', '-C', str(root), 'cat-file', '-e', f'{sha}^{{commit}}'], capture_output=True, timeout=10, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return result.returncode == 0
 
 
 def _plans_tracked(context):
@@ -857,11 +868,11 @@ def _approval_entries(path):
 def record_approval(root, word, run_id, sha=None, source='cli', target=None, branch=None, file=None, by=None, now=None,
                     plan=None, ahead=None, mode=None, sha_after=None, via=None, plan_state=None):
     """The only writer of `.skillsync/runs/<run-id>/approvals.jsonl` (CLI `approvals record`, the dashboard server, IDE).
-    Appends one JSON line under an inter-process lock and fsyncs it; refuses a second entry of the same (word, sha, planState, run).
+    Appends one JSON line under an inter-process lock and fsyncs it; refuses an entry equal in (word, sha, planState) to the last entry of the same word in the run.
     `sha`: for GO the git blob sha of the approved file (default: of `file`), for CP/READY the HEAD the consent pushes
     (default: HEAD of the project repository). `sha_after` (GO only, `shaAfter` of the entry): the blob sha of the file after
     its Status line changed. `plan_state` (CP/READY only, `planState` of the entry; K13): the status of the plan of the run at the moment
-    of consent, by default read from the plan whose `Przebieg:` names `run_id`; part of the duplicate key (word, sha, planState). Returns {schema, status PASS|BLOCKED, reason, entry, path}; no subprocess."""
+    of consent, by default read from the plan whose `Przebieg:` names `run_id`; the duplicate key is (word, sha, planState) of the last entry of the word in the run. Returns {schema, status PASS|BLOCKED, reason, entry, path}; no subprocess."""
     root = Path(root).expanduser().resolve()
     try:
         if word not in APPROVAL_WORDS:
@@ -889,10 +900,11 @@ def record_approval(root, word, run_id, sha=None, source='cli', target=None, bra
             raise ValueError('sha_after applies only to GO words and must be 7-64 lowercase hex characters')
         if via is not None and not (isinstance(via, dict) and all(isinstance(key, str) for key in via)):
             raise ValueError('via must be an object (port, host, peer)')
+        read_under_lock = False
         if word in _GO_FOLDER:
             plan_state = None
         elif plan_state is None:
-            plan_state = plan_state_for_run(root, run_id)
+            read_under_lock = True   # K13: read under the file lock, right before the write
         elif plan_state not in PLAN_STATUSES:
             raise ValueError(f'plan_state must be one of: {", ".join(PLAN_STATUSES)}')
         moment = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
@@ -913,8 +925,17 @@ def record_approval(root, word, run_id, sha=None, source='cli', target=None, bra
                     raise ValueError(f'Approvals path is not a regular file: {APPROVALS_FILE}')
                 if size + len(line) + 1 > MAX_APPROVALS_BYTES:
                     raise ValueError(f'Approvals file would exceed {MAX_APPROVALS_BYTES // 1024} KiB; start a new run')
-                if size and any(item.get('word') == word and item.get('sha') == sha and item.get('planState') == plan_state
-                                for item in _approval_entries(path)):   # K13: the same HEAD after the plan was closed is a new consent
+                if read_under_lock:
+                    plan_state = plan_state_for_run(root, run_id)
+                    if plan_state is not None:
+                        entry['planState'] = plan_state
+                        line = (json.dumps(entry, ensure_ascii=False) + '\n').encode('utf-8')
+                        if size + len(line) + 1 > MAX_APPROVALS_BYTES:
+                            raise ValueError(f'Approvals file would exceed {MAX_APPROVALS_BYTES // 1024} KiB; start a new run')
+                same_word = [item for item in _approval_entries(path) if item.get('word') == word] if size else []
+                if same_word and same_word[-1].get('sha') == sha and same_word[-1].get('planState') == plan_state:
+                    # K13: duplicate = the LAST entry of the word in the run (what the dashboard button compares as `after`);
+                    # the same HEAD after the plan changed state is a new consent
                     raise ValueError(f'Consent {word!r} for sha {sha[:12]} (plan state {plan_state or "unknown"}) is already recorded in run {run_id}')
                 if size:
                     with path.open('rb') as handle:

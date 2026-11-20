@@ -32,7 +32,7 @@ Pierwszy commit przebiegu powstaje wtedy w kroku kodu. Przy „GO plan” sprawd
 ## Odbiór i zgody
 
 Wpis `CP`/`READY` w `approvals.jsonl` ma pole `planState` (status planu przebiegu w chwili zgody; `approvals record` wypełnia je sam). Odbiór (`needsHuman: acceptance`) zamyka ostatni wpis
-z `planState: done` przy planie `done`; historia gita nie jest potrzebna. Wpis bez pola przy planie `done` nie daje stanu „zgoda dana”: po zamknięciu wpisz słowo jeszcze raz. To samo dotyczy `CP`/`READY` zapisanego przy planie `in_progress`: nie zamyka odbioru po `done`, słowo trzeba powtórzyć przy planie `done`.
+z `planState: done` przy planie `done`; historia gita nie jest potrzebna. Wpis bez pola przy planie `done` nie daje stanu „zgoda dana”: po zamknięciu wpisz słowo jeszcze raz. To samo dotyczy `CP`/`READY` zapisanego przy planie `in_progress`: nie zamyka odbioru po `done`, słowo trzeba powtórzyć przy planie `done`. `approvals wait` nie rozróżnia `planState`: czekając na zgodę po zamknięciu planu podaj `--since <czas STOP>`, inaczej stary `CP` z realizacji kończy czekanie.
 
 ## `pr-run` i wejście z klucza
 

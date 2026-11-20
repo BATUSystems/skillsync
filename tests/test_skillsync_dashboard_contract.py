@@ -69,7 +69,7 @@ STEP = ({'id': str, 'title': str, 'done': bool, 'note': str, 'sha': STR_OR_NONE,
 WAITING = ({'what': str, 'source': str, 'since': STR_OR_NONE, 'action': str, 'link': (dict, type(None))},
            {'word': str, 'approve': STR_OR_NONE, 'who': dict})
 ACTION = ({'kind': str, 'word': str, 'state': str, 'reason': STR_OR_NONE, 'blocked': STR_OR_NONE, 'path': STR_OR_NONE,
-           'sha': str, 'given': (dict, type(None)), 'run': STR_OR_NONE}, {'target': STR_OR_NONE})
+           'sha': str, 'given': (dict, type(None)), 'run': STR_OR_NONE}, {'target': STR_OR_NONE, 'planState': STR_OR_NONE})
 DOC_GROUP = ({'key': str, 'label': str, 'items': list}, {})
 DOC_ITEM = ({'path': str, 'title': str, 'status': STR_OR_NONE, 'mtime': str}, {})
 TIMING = ({'available': bool, 'reason': STR_OR_NONE, 'windows': list, 'steps': list, 'stages': list, 'acts': list, 'totals': dict}, {})
@@ -261,6 +261,13 @@ class DashboardContract(unittest.TestCase):
         text = CONTRACT_DOC.read_text(encoding='utf-8')
         for needle in ('`planState`', 'tracked: false', 'ostatni wpis'):
             self.assertIn(needle, text)
+        flat = ' '.join(text.split())
+        for pattern in (r'`planState` równa się\s+bieżącemu statusowi planu przebiegu',
+                        r'zmiana statusu planu po zgodzie ponownie otwiera przycisk',
+                        r'odsyła go w `POST /api/approve` jako `planState`, a serwer odpowiada `409`',
+                        r'porównanie dotyczy OSTATNIEGO wpisu tego słowa w przebiegu',
+                        r'brak pola w żądaniu = zachowanie bez tej kontroli'):
+            self.assertRegex(flat, pattern)
 
     def test_cases_cover_the_contract(self):
         plan = json.loads(load('plan-in-progress')[1])

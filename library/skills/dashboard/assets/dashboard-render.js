@@ -4,7 +4,7 @@
    stylu, bez handlerów inline). Kontrakt: library/skills/dashboard/SKILL.md, sekcja „Renderer”.
    Wewnętrzne API renderera (nie publiczny kontrakt CLI); odstępstwa od pierwotnego szkicu w specu DASH-2 (zaakceptowane przez Dyspozytora):
    nazwy `create`/`update` (aliasy `createDashboard`/`render`); brak `deps.transport` (transport to host przez `actions`); opisy przez
-   `setDescriptions(map)`; wymagane `deps.now`; `actions.approve({kind, sha, path, word})` zwraca Promise `{ok, word, text}`;
+   `setDescriptions(map)`; wymagane `deps.now`; `actions.approve({kind, sha, path, word, planState})` zwraca Promise `{ok, word, text}`;
    `actions.openLink(kind, id, url)` zwraca bool (true = host obsłużył); nowe `actions.loadDoc/selectPlan`; nowe `deps`:
    `canApprove`, `texts`, `theme`, `prototypeUrl`, `mountHtml`, `onTitle`, `onNavigate`, `scroll`, `timers`, `raf`, `cancelRaf`, `viewport`,
    `sprite`; `approvals.viewer` (kontrakt DASH-1) obsługiwane; `href` z JSON-a tylko http(s). Pełna tabela: SKILL.md. */
@@ -1033,7 +1033,7 @@
       let res;
       try {
         if (typeof actions.approve !== "function") throw new Error("brak actions.approve");
-        res = await actions.approve({ kind, sha: a.sha, path: a.path, word: a.word });
+        res = await actions.approve({ kind, sha: a.sha, path: a.path, word: a.word, planState: a.planState });
       } catch {
         res = { ok: false, word: a.word, text: noConnection };
       }

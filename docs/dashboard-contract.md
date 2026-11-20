@@ -38,7 +38,8 @@ projektu lub przebiegu). Raport komend zapisujących i `metrics --json` to JSON 
 - `--file` tylko dla słów GO: `docs/specs/*.md` dla `GO plan`, `docs/plans/*.md` dla `GO implement` (plik zwykły, nie
   dowiązanie, nie `README.md`); dla `CP`/`READY` → `BLOCKED`. `--target`/`--branch`: nazwa gałęzi.
 - Odmawia (kod `2`) drugiego zapisu tego samego słowa z tym samym `sha` i tym samym `planState` w tym samym przebiegu (dla GO:
-  ta sama wersja pliku, dla CP/READY: ten sam HEAD przy tym samym statusie planu; `CP` zapisane w trakcie realizacji nie blokuje `CP`
+  ta sama wersja pliku, dla CP/READY: ten sam HEAD przy tym samym statusie planu; porównanie dotyczy OSTATNIEGO wpisu tego słowa w przebiegu
+  (jak `after` przycisku), więc po sekwencji `CP`(`in_progress`, S), `CP`(`done`, S), `CP`(`in_progress`, S) trzeci zapis jest dozwolony; `CP` zapisane w trakcie realizacji nie blokuje `CP`
   po zamknięciu planu przy tym samym HEAD; wpis bez pola ma `planState` pusty, więc liczy się jak dotąd); nieznane słowo, zły `--source`, run-id spoza wzorca `[A-Za-z0-9][A-Za-z0-9_.-]{0,79}`, brak
   katalogu przebiegu, dowiązanie na drodze `.skillsync/runs/<run-id>` lub dowiązany `approvals.jsonl`, plik, który
   przekroczyłby 256 KiB (czytelnicy pomijają większy plik w całości), albo blokada trzymana dłużej niż 10 s też kończą się
@@ -298,7 +299,7 @@ opis w sekcji „Serwer”.
 | `after` | zgoda już dana; drugiego zapisu nie ma; `given` to wpis zgody |
 
 Pola: `reason` (string lub null), `blocked` (powód nieaktywności; null dla `waiting`), `path` (plik speca/planu; dla
-`cp`/`ready` id przebiegu), `sha` (git blob sha pliku do zgody GO albo HEAD dla CP/READY; pusty string, gdy brak), `given`
+`cp`/`ready` id przebiegu), `planState` (tylko `cp`/`ready`, gdy plan przebiegu istnieje: jego status w chwili budowy statusu; klient odsyła go w `POST /api/approve` jako `planState`, a serwer odpowiada `409`, gdy bieżący status planu jest inny, np. plan zamknięto po narysowaniu strony przy tym samym HEAD; brak pola w żądaniu = zachowanie bez tej kontroli), `sha` (git blob sha pliku do zgody GO albo HEAD dla CP/READY; pusty string, gdy brak), `given`
 (wpis lub null), `target` (tylko `cp`/`ready`; dokąd oddać), `run` (id przebiegu, do którego trafi wpis zgody, gdy katalog
 `.skillsync/runs/<run-id>` istnieje; inaczej null; pole dodane addytywnie, `path` dla `cp`/`ready` bez zmian).
 
