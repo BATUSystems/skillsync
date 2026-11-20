@@ -1,8 +1,10 @@
 import unittest
 from pathlib import Path
 
+import yaml
+
 BASE = Path(__file__).resolve().parent.parent / 'library' / 'instructions' / '_base.md'
-LIMIT = 8192
+LIMIT = yaml.safe_load((BASE.parent.parent / 'workflow' / 'defaults.yaml').read_text(encoding='utf-8'))['context']['base_max_bytes']
 
 
 class BaseSpecStoreRuleTests(unittest.TestCase):
@@ -13,6 +15,8 @@ class BaseSpecStoreRuleTests(unittest.TestCase):
     def test_go_plan_rule_mentions_untracked_specs(self):
         for phrase in ('specs.tracked', 'spec-store.md', 'skillsync spec snapshot'):
             self.assertIn(phrase, self.text)
+        self.assertIn('przy `specs.tracked: false` (route.specs) spec i plan nie wchodzą do commita', self.flat)
+        self.assertIn('zamiast tego migawka `skillsync spec snapshot`', self.flat)
         self.assertLess(self.flat.index('„GO plan” = lokalny commit speca'), self.flat.index('specs.tracked'))
         self.assertLess(self.flat.index('specs.tracked'), self.flat.index('`pr`: „GO implement” uruchamia `pr-run`'))
 
