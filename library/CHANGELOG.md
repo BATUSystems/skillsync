@@ -4,6 +4,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+### Added
+
+- Hook `hooks/guard-tests.py`: warnings `wide` for `env -S '…'`, `poetry run pytest` and `python3.12 -m pytest` (never blocking), and the read of `-m` behind a Python host; `skillsync link` refreshes the copies of `guard-tests.py` and `test-tools.json` next to the hook.
+
+### Changed
+
+- Skill `workflow`, reference `test-run.md`: the limits of the hook are rewritten for the new recognition (`python3 -X dev -m pytest` and `py -3 -m pytest` are seen; `tox` is a tool without a rule of a wide run; `sudo`/`nohup` stay as limits; `-m` behind a script gives `wide`; `env -S '…'` is read like the command it carries).
+- A command given to `test-run` as a string is split with POSIX quoting on every system (on Windows a single quote was a literal character, so `env -S 'CI=1 npx jest'` was not unwrapped; `--grep 'a b'` is one argument, a backslash stays literal); only the detection of the tool reads the string.
+
+### Fixed
+
+- Hook `guard-tests`: `python -W error -m unittest tests` is classified as a point run.
+
 ## [1.10.0] - 2026-11-18
 
 ### Added

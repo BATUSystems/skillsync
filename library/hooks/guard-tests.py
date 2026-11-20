@@ -12,6 +12,7 @@ unexpected gives `None` / `'none'`, i.e. no warning. The warning never blocks (s
 import json
 import os
 import re
+import shlex
 
 SCHEMA = 1
 DEFAULT_WIDE_MODULES = 25
@@ -67,6 +68,35 @@ def _skip_flags(words, boolean, valued, end_at_double_dash=True, stop=None, nume
     return i
 
 
+def _split_string(rest, spec, boolean, valued):
+    """`env -S 'A=1 cmd'` (the optional `split_flags` of a wrapper), as `test_run._split_string`: the words with the value split like a shell line and the arguments
+    behind it appended; `False` when there is no such flag; `None` when the value cannot be split safely (`$` or an open quote)."""
+    flags = set(spec['split_flags'])
+    for j, word in enumerate(rest):
+        if word == '--':
+            return False
+        if word in flags:
+            value, tail = (rest[j + 1], rest[j + 2:]) if j + 1 < len(rest) else (None, None)
+        elif word.startswith('--') and word.split('=', 1)[0] in flags and '=' in word:
+            value, tail = word.split('=', 1)[1], rest[j + 1:]
+        elif not word.startswith('--') and len(word) > 2 and word[:2] in flags:
+            value, tail = word[2:], rest[j + 1:]
+        else:
+            continue
+        skip = _skip_flags(rest[:j], boolean, valued, end_at_double_dash=False)   # the options of the wrapper stand before its assignments and its command
+        if skip is None:
+            return None   # a flag in front that is not known
+        if skip != j:
+            return False   # an assignment or the command stands in front: this is a flag of the command, not of the wrapper
+        if value is None or '$' in value:
+            return None
+        try:
+            return shlex.split(value) + tail
+        except ValueError:
+            return None
+    return False
+
+
 def _unwrap_once(argv, table):
     spec = table['wrappers'].get(base(argv[0]))
     if spec is None:
@@ -85,6 +115,14 @@ def _unwrap_once(argv, table):
         if skip is None or rest[skip:skip + 1] != [spec['module_flag']] or skip + 1 >= len(rest):
             return None
         return rest[skip + 1:]
+    if spec.get('split_flags'):
+        split = _split_string(rest, spec, boolean, valued)
+        if split is None:
+            return None
+        if split is not False:
+            while split and spec.get('assignments') and _WORD.fullmatch(split[0]):
+                split = split[1:]
+            return split or None
     skip = _skip_flags(rest, boolean, valued, numeric=bool(spec.get('numeric_flag')))
     if skip is None:
         return None
@@ -109,18 +147,35 @@ def unwrap(words, table):
     return argv if current and _unwrap_once(current, table) is not None else current
 
 
+def _is_host(word):
+    """A program that runs `-m MODULE`: `python*`, `py`, `pypy*`, `coverage` (a name as `base` gives it)."""
+    return word.startswith(('python', 'pypy')) or word in ('py', 'coverage')
+
+
 def tool_of(words, table):
-    """The tool id of a command (as `test_run.detect_tool`), `'unknown'` when none."""
+    """The tool id of a command (as `test_run.detect_tool`: the first word behind the wrappers, `-m` behind a Python host, the first three words, a module word that
+    is a tool anywhere), `'unknown'` when none."""
     argv = [str(w) for w in words]
     names = [base(word) for word in argv]
-    for word, tool in table['modules'].items():
-        if word in names:
-            return tool
     core = unwrap(argv, table)
-    for word in ([base(core[0])] if core else []) + names[:3]:
+    first = base(core[0]) if core else None
+    if first is not None:
+        if first in table['modules']:
+            return table['modules'][first]
+        for name, tool in table['tools']:
+            if first == name:
+                return tool
+    for i, word in enumerate(names[:-1]):
+        if word == '-m' and names[i + 1] in table['modules'] and any(_is_host(before) for before in names[:i]):
+            return table['modules'][names[i + 1]]
+    for word in names[:3]:
         for name, tool in table['tools']:
             if word == name:
                 return tool
+    tool_names = {name for name, _ in table['tools']}
+    for word in names:
+        if word in table['modules'] and word in tool_names:
+            return table['modules'][word]
     return 'unknown'
 
 
@@ -387,18 +442,29 @@ def is_wrapper(words, extra=()):
     return names[:1] == ['flock'] and 'systemd-run' in names   # `flock <lock> systemd-run ...`: the lock AND the limit; a bare flock is not the wrapper
 
 
-def program_tool(core, table):
-    """The tool of the PROGRAM that a command runs: its first word after the wrappers (`pytest`, `dotnet`, `ng`, or the module behind `python -m`), not any word
-    of the line (`echo pytest` and `grep unittest docs` run no test). `None` when the program is not a tool of the table."""
+def program_target(core, table):
+    """`(tool, words)`: the tool of the PROGRAM that a command runs and the words the rules of the tool read. The program is its first word after the wrappers
+    (`pytest`, `dotnet`, `ng`), or, when that word itself is a Python host (`python3.12`, `coverage`), the module behind its `-m` (the words then start at the
+    module); not any word of the line (`echo pytest`, `git commit -m pytest` and `grep unittest docs` run no test). `(None, core)` when the program is not a tool."""
     if not core:
-        return None
+        return None, core
     first = base(core[0])
     if first in table['modules']:
-        return table['modules'][first]
+        return table['modules'][first], core
     for name, tool in table['tools']:
         if first == name:
-            return tool
-    return None
+            return tool, core
+    if _is_host(first):
+        names = [base(w) for w in core]
+        for i, word in enumerate(names[:-1]):
+            if word == '-m' and names[i + 1] in table['modules']:
+                return table['modules'][names[i + 1]], core[i + 1:]
+    return None, core
+
+
+def program_tool(core, table):
+    """The tool of the PROGRAM that a command runs (see `program_target`), `None` when it is not a tool of the table."""
+    return program_target(core, table)[0]
 
 
 def classify(words, table, wide_modules=DEFAULT_WIDE_MODULES, extra_wrappers=()):
@@ -412,8 +478,8 @@ def classify(words, table, wide_modules=DEFAULT_WIDE_MODULES, extra_wrappers=())
         if not table:
             return {'verdict': 'none', 'tool': None, 'probably': False}
         core = unwrap(words, table)
-        tool = program_tool(core, table)
-        found = RULES[tool](core, wide_modules, table) if tool in RULES else None
+        tool, target = program_target(core, table)
+        found = RULES[tool](target, wide_modules, table) if tool in RULES else None
         if found is None and core:
             first = base(core[0])
             if first == 'make':

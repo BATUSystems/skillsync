@@ -67,6 +67,12 @@ VERDICTS = [
     # not tests at all
     ('ls -la', 'none'), ('git status', 'none'), ('python3 scripts/check_skips.py run.log', 'none'), ('python3 -m py_compile a.py', 'none'), ('echo pytest', 'none'),
     ('grep -rn unittest docs', 'none'),
+    # `-m` behind a Python host, the new wrappers, `env -S`
+    ('python -W error -m unittest tests', 'point'), ('python -W error -m unittest', 'wide'), ('python3.12 -m pytest', 'wide'), ('python3.12 -m pytest tests/test_a.py', 'point'),
+    ('poetry run pytest', 'wide'), ('pdm run pytest tests/test_a.py', 'point'), ('pipenv run pytest', 'wide'), ('poetry run python -m unittest discover', 'wide'),
+    ("env -S 'CI=1 npx jest'", 'wide'), ("env -S 'CI=1 npx jest src/a.test.ts'", 'point'), ("env -S 'echo $HOME'", 'none'), ('python -m coverage run -m pytest', 'wide'),
+    ('env CI=1 python -S -m pytest', 'wide'), ('env A=1 npx jest -Sx', 'wide'), ('git commit -m pytest', 'none'), ('echo python -m pytest', 'none'), ('nohup python -m unittest', 'none'), ('tox -e py311', 'none'),
+    ('git commit -m unittest', 'none'), ('mypy -m pytest', 'none'),
 ]
 
 
@@ -116,7 +122,13 @@ class Verdicts(unittest.TestCase):
 class AgreesWithTheCore(unittest.TestCase):
     COMMANDS = [command for command, _ in VERDICTS] + [
         'npx --yes vitest run', 'pnpm exec jest', 'yarn playwright test', 'uv run pytest', 'python3 -m pytest -x', 'time pytest', 'timeout -k 5 100 cargo test',
-        'env FOO=1 BAR=2 dotnet test', 'systemd-run --user --scope go test ./...', 'nice -10 jest', 'npm exec -- vitest', 'a b c d e f g h i', '']
+        'env FOO=1 BAR=2 dotnet test', 'systemd-run --user --scope go test ./...', 'nice -10 jest', 'npm exec -- vitest', 'a b c d e f g h i', '',
+        'go test ./unittest', 'echo unittest', 'pytest -m unittest', 'git commit -m unittest', 'git commit -m pytest', 'python -W error -m unittest', 'python3.12 -m pytest',
+        'uv run python -m pytest', 'nohup python -m unittest', 'python -m coverage run -m pytest', 'coverage run -m unittest', 'uv run --extra test pytest',
+        'uv run --group dev pytest', 'poetry -C sub run pytest', 'docker compose run --rm app pytest', 'sudo -u ci pytest', 'nohup timeout 600 pytest',
+        'poetry run pytest -k x', 'pdm run pytest', 'pipenv run pytest', 'poetry run python -m unittest', 'poetry --unknown-flag run pytest', 'tox -e py311',
+        "env -S 'CI=1 npx jest'", "env -S'CI=1 npx jest'", "env --split-string='CI=1 npx jest'", "env -S 'CI=1 npx' jest", "env -i -S 'CI=1 npx jest'",
+        "env -S 'echo $HOME'", "env -S 'echo \"abc'", 'env -S', 'env CI=1 python -S -m pytest', 'env A=1 npx jest -Sx', 'env A=1 npx jest -S x', 'pypy3 -m pytest', 'py -3 -m pytest', 'mypy -m pytest']
 
     def test_the_interpreter_of_the_hook_is_the_interpreter_of_the_core(self):
         import shlex
@@ -136,6 +148,31 @@ class AgreesWithTheCore(unittest.TestCase):
     def test_every_tool_that_the_hook_has_a_rule_for_is_in_the_table(self):
         known = {tool for _, tool in TABLE['tools']} | set(TABLE['modules'].values())
         self.assertFalse(set(G.RULES) - known, 'a rule for a tool that the table does not know can never fire')
+
+
+class PreviousReleaseTable(unittest.TestCase):
+    """The new interpreter of the hook reads the table of the previous release (the library may be newer than a project's installed core)."""
+    OLD = G.load_table(ROOT / 'tests' / 'fixtures' / 'test_tools_previous_release.json')
+    NEW_WRAPPERS = ('poetry', 'pdm', 'pipenv', 'tox', 'env -S')
+
+    def test_the_same_verdicts_as_with_the_current_table(self):
+        import shlex
+        self.assertIsNotNone(self.OLD)
+        for command, expected in VERDICTS:
+            if any(word in command for word in self.NEW_WRAPPERS):
+                continue
+            with self.subTest(command=command):
+                self.assertEqual(G.classify(shlex.split(command), self.OLD)['verdict'], expected)
+                self.assertEqual(G.tool_of(shlex.split(command), self.OLD), G.tool_of(shlex.split(command), TABLE))
+
+    def test_new_wrappers_do_not_raise_and_give_the_old_answer(self):
+        import shlex
+        for command in ('poetry run pytest', 'pdm run pytest', 'pipenv run pytest', 'tox -e py311', "env -S 'CI=1 npx jest'", 'poetry --unknown-flag run pytest'):
+            with self.subTest(command=command):
+                words = shlex.split(command)
+                self.assertEqual(G.classify(words, self.OLD)['verdict'], 'none')
+                G.tool_of(words, self.OLD)
+                G.unwrap(words, self.OLD)
 
 
 class NeverRaises(unittest.TestCase):

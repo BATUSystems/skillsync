@@ -227,7 +227,7 @@ class Echo(unittest.TestCase):
         stdout = Narrow()
         recorder = self.recorder()
         with mock.patch.object(sys, 'stdout', stdout):
-            recorder.line({}, 'out', 'Executed 3 of 5 (skipped 1) zażółć')
+            recorder.line({}, 'out', 'Chrome zażółć (Linux): Executed 3 of 5 (skipped 1)')
         self.assertTrue(recorder.passthrough)
         self.assertTrue(any('Executed' in text for text in stdout.seen))
         recorder.writer.counts.assert_called_once()   # the counters saw the line

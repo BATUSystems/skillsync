@@ -79,6 +79,15 @@ Wydanie 1.9.1 jest PATCH (sekcja **Breaking** w `CHANGELOG.md` to „None.”) z
 2. Uruchom ponownie działający `skillsync dashboard serve`: plik tymczasowy stanu serwera ma teraz rozszerzenie `.tmp` zamiast `.json`, a start serwera sprząta pozostałości starej postaci. Konsument katalogu stanu, który czytał `*.json`, nie trafi już na pusty plik tymczasowy.
 3. Windows: dwa równoległe kroki `skillsync test-run` tworzące ten sam katalog (`.skillsync/runs/<przebieg>/tests`, `.skillsync/logs`, katalog blokad) nie kończą się już `BLOCKED` (kod 2) przez `PermissionError` ani przez fałszywe „Path escapes project” dla `.skillsync/logs/<id>`.
 
+## Przejście 1.10.0 → następne wydanie (niewydane; nagłówek z numerem ustala osoba wydająca)
+
+Zmiany rozpoznawania narzędzia w `test-run` i hooka `guard-tests` oraz odczytu liczników Karmy; jedna zmiana dowodu opisana w sekcji **Breaking** `CHANGELOG.md`.
+
+1. Rdzeń: `uv tool install --force git+https://github.com/BATUSystems/skillsync@<tag wydania>`, potem `skillsync layers update core --ref <tag wydania>`.
+2. `skillsync link` w projektach z hookiem testów (zalecane): odświeża kopię `guard-tests.py` i kopię `test-tools.json` leżące przy haku. Nowe opakowania (`poetry|pdm|pipenv run`, `env -S`) zależą od kopii tabeli, a krok `-m` z „gospodarzem” (`python3.12 -m pytest`) i nowe werdykty `wide` od kopii skryptu haka; bez `link` hak ich nie ma.
+3. **Dowód Karmy w `validate`:** linia `Executed N of M` jest liczona tylko według reguły wspólnego odczytu (pusty prefiks albo etykieta przeglądarki kończąca się `): `, po `of M` koniec linii albo `(`/`SUCCESS`/`ERROR`/`DISCONNECTED`/`FAILED`; `docs/test-adapters.md`). Wyjście Karmy z innym prefiksem lub ogonem nie jest liczone i może dać `BLOCKED` „Test count unknown”. Obejście: w `validate` `success_pattern` w checku; w `test-run` `--allow-no-count <powód>` albo raport `--junit` (`--format karma` nie pomaga: adapter jest węższy od wspólnego odczytu). Przy kodzie wyjścia 0 wyjście z niewykonanymi testami (`Executed 3 of 11 DISCONNECTED`) daje `BLOCKED` „Karma executed N of M specs”; zdejmuje to tylko `success_pattern` w `validate`. `skipped` biegu przerwanego i `passed` czytnika na żywo są teraz poprawne.
+4. Windows: ostrzeżenie `test-run: warning: …` przed startem polecenia `.cmd`/`.bat` z metaznakami cmd.exe w argumencie; nie blokuje i nie zmienia kodu wyjścia. Zdarzenie `start` ma `command` z polecenia użytkownika, nie z rozwiązanej ścieżki.
+
 ## Przejście 1.9.1 → 1.10.0
 
 Wydanie 1.10.0 jest MINOR (sekcja **Breaking** w `CHANGELOG.md` to „None.”). Nie ma kroków obowiązkowych: nowe pole i nowe pytanie działają same, a stare pliki planu i stary renderer dalej działają.
