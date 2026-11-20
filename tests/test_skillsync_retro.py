@@ -922,6 +922,16 @@ class ReportSignals(RetroBase):
         self.assertEqual(data['report_dirs'], [])
         self.assertEqual((data['coverage']['symlinks_skipped'], data['coverage']['no_data']), (1, 0))
 
+    def test_docs_subtree_of_run_directory_is_not_scanned(self):
+        """Migawka speca i planu (`spec snapshot`: `docs/`) nie jest raportem: nie liczy się ani w plikach, ani w sygnałach."""
+        self.report_file('rd', 'a.md', 'Status: FAIL\n')
+        self.report_file('rd', 'docs/specs/s.md', 'Status: FAIL\nStatus: FAIL\n')
+        self.report_file('rd', 'docs/.saved.json', '{}')
+        self.report_file('rd', 'sub/docs/x.md', 'Status: FAIL\n')  # tylko `docs/` bezpośrednio w katalogu przebiegu
+        entry = {d['id']: d for d in self.full()['report_dirs']}['rd']
+        self.assertEqual(entry['files'], {'md': 2, 'log': 0, 'diff': 0, 'other': 0})
+        self.assertEqual(entry['status_signals']['FAIL'], 2)
+
     @needs_fifo
     def test_fifo_in_report_directory_does_not_block(self):
         self.report_file('rd', 'ok.md', 'Status: PASS\n')

@@ -959,3 +959,6 @@ def register(subparsers):
             sub.add_argument('--json', action='store_true')
             sub.add_argument('--expect-sha', help='git blob sha of the file as shown to the user; a different file is refused')
             sub.set_defaults(func=_cmd_doc, doc_kind=kind)
+        if kind == 'spec':
+            from .spec_snapshot import register_snapshot  # lazy: the module imports this one
+            register_snapshot(actions)
