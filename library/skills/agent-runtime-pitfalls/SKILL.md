@@ -93,9 +93,9 @@ pasować do środowiska, popraw ją tutaj zamiast obchodzić.
   a przynależność procesu do katalogu sprawdzaj w `/proc/<pid>/cwd`.
 - **Zegar sesji rozjechany z maszyną.** Godzina „z głowy”, z kontekstu rozmowy albo ze znacznika w wiadomości bywa przesunięta o godziny (dryf rzędu +2 h w stanie przebiegu). Każdy czas wpisywany do planu, checkpointu, stanu lub raportu bierz z `date` (np. `date +%H:%M`, `date -Iseconds`) albo z źródła, które go podało; nie szacuj i nie przepisuj z poprzedniej wiadomości.
 
-- **Glob i Grep nie widzą skilli dowiązanych do projektu.** Skille w `.claude/skills/` i `.github/skills/` to symlinki do biblioteki, a narzędzia wyszukiwania hosta ich nie przechodzą, więc wynik „brak pliku” bywa fałszywy. `Read` po pełnej ścieżce pliku działa; listę i treść szukaj przez `command ls -1`, `find -L` albo `Read`.
+- **Glob i Grep nie widzą skilli dowiązanych do projektu.** Skille w `.claude/skills/` i `.github/skills/` to dowiązania (albo kopie) biblioteki, a narzędzia wyszukiwania hosta ich nie przechodzą, więc wynik „brak pliku” bywa fałszywy. `Read` po pełnej ścieżce pliku działa; listę i treść szukaj przez `command ls -1`, `find -L` albo `Read`.
 - **Narzędzie edycji hosta zapisuje plik z mieszanymi końcami linii (CRLF/LF) w samym LF**, więc jedna drobna zmiana przepisuje końce w całym pliku i diff pokazuje każdy wiersz. Przy plikach z mieszanymi końcami linii sprawdź końce po edycji (`git diff --stat`, `file <plik>`) albo edytuj skryptem na bajtach, który sprawdza liczbę zamian.
-- **Literał `\0` w skrypcie edycji na bajtach wstawia bajt NUL** do pliku tekstowego zapisywanego skryptem na bajtach (sekwencja znaków `\0` w tekście zamiany jest interpretowana jako NUL). Plik przestaje być tekstem, a diff i narzędzia go odrzucają. Do tekstu zamiany używaj surowych napisów albo podwajaj odwrotny ukośnik, a po zapisie szukaj NUL (`grep -c -P '\x00' <plik>`).
+- **Literał `\0` w skrypcie edycji na bajtach wstawia bajt NUL** do pliku tekstowego zapisywanego skryptem na bajtach (sekwencja znaków `\0` w tekście zamiany jest interpretowana jako NUL). Plik przestaje być tekstem, a diff i narzędzia go odrzucają. W `str.replace`/`bytes.replace` wystarczy surowy napis, ale szablon zamiany `re.sub` interpretuje `\0` także w surowym napisie (tam podwajaj odwrotny ukośnik), a po zapisie szukaj NUL (`grep -c -P '\x00' <plik>`).
 
 ## Procesy
 
@@ -281,7 +281,7 @@ pasować do środowiska, popraw ją tutaj zamiast obchodzić.
 
 ## Dostęp do serwerów i uprawnienia
 
-- **Nie podglądaj pliku z sekretem, także przez filtr maskujący** (`cat`, `sed`, `grep` z zamianą wartości). Filtr może przepuścić wartość, a wynik trafia do rozmowy i logów. Sprawdzaj istnienie, rozmiar i nazwy kluczy bez treści wartości (`test -s <plik>`, `stat -c %s <plik>`, `cut -d= -f1 <plik>`); porównania rób w pamięci i drukuj tylko wynik logiczny.
+- **Nie podglądaj pliku z sekretem, także przez filtr maskujący** (`cat`, `sed`, `grep` z zamianą wartości). Filtr może przepuścić wartość, a wynik trafia do rozmowy i logów. Sprawdzaj istnienie, rozmiar i nazwy kluczy bez treści wartości (`test -s <plik>`, `wc -c < <plik>`; nazwy kluczy tylko dla plików w formacie `KEY=VALUE`: `cut -d= -f1 -s <plik>`, bo `cut` bez `-s` drukuje w całości każdą linię bez znaku `=`, np. klucz PEM albo goły token); porównania rób w pamięci i drukuj tylko wynik logiczny.
 
 - W trybie auto klasyfikator może odrzucić SSH do serwera jako odczyt z produkcji nawet
   przy regule `allow` w ustawieniach; jawne polecenie użytkownika w rozmowie może zmienić

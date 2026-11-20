@@ -19,7 +19,7 @@ Ryzyko planu = najwyższe ryzyko kroku w planie (kolumna ryzyka, [plan](plan-det
 
 Kolumna „Pętla obowiązkowa” mówi, kiedy pętla jest; ile ma rund (pełna albo jednorundowa), wyznacza sekcja „Kategoria pętli i przejścia”.
 Przykład: ryzyko planu high czyni pętlę `plan` obowiązkową, ale nie pełną: jedna runda, majory nanosi autor, a zamknięcie
-sprawdza świeży `verifier`; runda 2 tylko po blockerze albo po odpowiedzi na pytania Q/C (wyjątki z „Kategorii pętli
+sprawdza świeży `verifier`; runda 2 tylko po blockerze, po drugim `REFUTED` albo po odpowiedzi na pytania Q/C (wyjątki z „Kategorii pętli
 i przejść” i „Stanów”). Pętlę `spec` czyni obowiązkową `plan-large`, nie ryzyko.
 
 `direct`, który odsłoni zmianę kontraktu, przechodzi do speca (`feature`, krok 4), więc dostaje profil `spec`.

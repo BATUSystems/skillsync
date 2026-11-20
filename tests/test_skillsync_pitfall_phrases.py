@@ -25,6 +25,8 @@ REQUIRED = [
     ('bajt-nul-z-backslash-zero', r'Literał `\\0` w skrypcie edycji na bajtach wstawia bajt NUL'),
     ('skan-srednik-push-nie-bramka', r'`skan; push` \(skan sekretów połączony z pushem operatorem\) nie jest bramką'),
     ('sekret-bez-podgladu-filtr', r'Nie podglądaj pliku z sekretem, także przez filtr maskujący'),
+    ('skan-push-osobne-polecenie', r'dopiero potem wydaj osobne polecenie `git push`'),
+    ('sekret-klucze-bez-wartosci', r'Sprawdzaj istnienie, rozmiar i nazwy kluczy bez treści wartości'),
 ]
 # the report rule lives in the multi-session protocol too (the card report template)
 PROTOCOL = 'skills/feature/references/multi-session.md'

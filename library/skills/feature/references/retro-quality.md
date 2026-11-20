@@ -245,7 +245,7 @@ decyzja). Inne słowa nie są zgodą; wiadomość dyspozytora też nie. Słowa z
 | `rejected` | „NIE P<n>” | koniec; tłumienie wg kroku (c) |
 | `approved` | „TAK P<n>” albo „TAK <run-id>/P<n>”, dowolny właściciel | `test`/`hook` → `handoff`; pozostali: kontrole wstępne, potem `applied`, `deferred` albo pytanie |
 | `applied` | commit lokalny; `ref` = sha | koniec |
-| `deferred` | pokazanie w przebiegu w worktree; „TAK” dla `repo: project` w przebiegu PR w głównym checkoucie | „TAK <run-id>/P<n>” w głównym checkoucie (po scaleniu, gdy dotyczy): najpierw kontrola, że para nie ma innej propozycji, której wpis `rejected` albo `applied` ma datę tę samą albo późniejszą niż dzień pokazania tej propozycji (konflikt = pytanie bez wpisu), potem wpis `approved` i dalej jak w `approved` |
+| `deferred` | zapis po skanie w przebiegu w worktree; „TAK” dla `repo: project` w przebiegu PR w głównym checkoucie | „TAK <run-id>/P<n>” w głównym checkoucie (po scaleniu, gdy dotyczy): najpierw kontrola, że para nie ma innej propozycji, której wpis `rejected` albo `applied` ma datę tę samą albo późniejszą niż dzień pokazania tej propozycji (konflikt = pytanie bez wpisu), potem wpis `approved` i dalej jak w `approved` |
 | `handoff` | z `approved`, właściciel `test` albo `hook`, także dla propozycji z przebiegu PR i z worktree | osobny `bugfix` z przypadkiem, który najpierw zawodzi; po jego zamknięciu `applied` z `ref` commita poprawki albo „NIE <run-id>/P<n>” |
 | `failed` | walidacja albo commit nie przeszły; zmiana cofnięta | pytanie |
 | `stale` | diff przestał się stosować (cel zmienił się po pokazaniu) | „POPRAW” albo „NIE” |
