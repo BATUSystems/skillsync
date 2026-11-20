@@ -9,6 +9,7 @@ import os
 import subprocess
 from pathlib import Path
 
+from . import fsutil
 from .layers import _quote_arg
 
 PROBES = ('docs/specs/x.md', 'docs/plans/x.md')
@@ -28,7 +29,7 @@ def _archive_error(value):
     if not isinstance(value, str) or not value.strip():
         return 'workflow.specs.archive: musi być niepustym napisem (ścieżką)'
     parts = value.replace('\\', '/').split('/')
-    if not (value.startswith('~/') or os.path.isabs(value)) or '..' in parts:
+    if not (value.startswith('~/') or fsutil.isabs(value)) or '..' in parts:
         return 'workflow.specs.archive: musi zaczynać się od ~/ albo być bezwzględną ścieżką, bez `..`'
     return None
 
@@ -91,7 +92,7 @@ def _ignored_by_repo_rule(repo, probe):
     if len(fields) < 4:
         return False
     source, _line, pattern = fields[:3]
-    return not (pattern.startswith('!') or os.path.isabs(source) or os.path.basename(source) != '.gitignore')
+    return not (pattern.startswith('!') or fsutil.isabs(source) or os.path.basename(source) != '.gitignore')
 
 
 def ignore_rules(repo):
