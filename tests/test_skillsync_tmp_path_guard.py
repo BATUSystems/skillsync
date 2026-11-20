@@ -5,6 +5,14 @@ see `tests/test_skillsync_tmp_paths.py`). The AST scan reports every `<tmp path>
 constant, an UPPER_CASE constant or an f-string/concatenation of such constants. A "tmp path" is a name or attribute with `tmp` or
 `temp` in it, or one assigned (transitively) from `tempfile`/`mkdtemp`/`TemporaryDirectory` or from another tmp path.
 
+Scope of the taint (CORE-GUARDSCOPE): a NAME assigned from a tmp path (or bound by `with tempfile... as name`) is tmp in the whole function that
+assigns it (any order of statements) and in the functions, lambdas and comprehensions nested in it, in the whole module when assigned at module
+level, and not in a sibling function. ATTRIBUTES (`self.root = ...`) are tmp in the whole file (a setUp in one class serves a mixin in another), also when a name of that
+name is tainted anywhere in the file (`root = Path(tempfile.mkdtemp())` in one function taints `self.root` everywhere, as before, but not
+a name `root` of another function); a name from a class body is also tmp in that class body, not in its methods. A parameter is tmp
+when the file has a tainted name (local anywhere, or an attribute) of the same name (a helper `write(root, rel)`); a parameter never starts as a safe name.
+Known limits: no `global`/`nonlocal`, no flow of taint through calls and returns, and an attribute of the same name in an unrelated class taints the file.
+
 Mode: STRICT (180-U). Every hit fails the test unless it is in ALLOWED below, with the reason. To fix a hit use `tmp_paths.child` (one name),
 `tmp_paths.descend` (a relative path with `/`) or `make_dir/write_file`; to keep one on purpose add `(file, expression text): reason`. An entry
 that no longer matches anything fails too (stale). Command to run the scanner alone on a tree (for a branch before its merge):
@@ -45,11 +53,46 @@ def literal(n):
 
 
 def scan(tree):
-    tmpish = set()
+    # Taint is kept in two sets chosen by the scope of the node. Every scope set is a subset of the one set per file of the earlier scanner and
+    # the three passes visit the assignments in the same order (`ast.walk`), so each step taints no more than before: no hit appears.
+    # `attrs` (per file) holds ALL tainted targets as before (attributes and names), used only for an attribute and the parameter rule;
+    # `own[scope]` holds name targets of one function (whole body, any order), of the module or of one class body.
+    # A function sees its own names and those of the enclosing functions and of the module; a class body sees its own names;
+    # a method does not see the names of its class body (as in Python); siblings do not see each other.
+    scopes = (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)
+    attrs = set()
+    own = {}
+    params = {}
+    visible = {}
+    scope_of = {}  # Assign/With node -> the scope it stands in; the passes below keep the order of `ast.walk` (as the earlier scanner)
+
+    def params_of(f):
+        a = f.args
+        return {x.arg for x in a.posonlyargs + a.args + a.kwonlyargs + [a.vararg, a.kwarg] if x is not None}
+
+    def collect(node, scope, outer):
+        """`scope` is the innermost scope of `node`; `outer` is the nearest enclosing scope that is not a class body."""
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, scopes):
+                own[child] = set()
+                visible[child] = [child] + visible[outer]
+                if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)): params[child] = params_of(child)
+                collect(child, child, outer if isinstance(child, ast.ClassDef) else child)
+            else:
+                if isinstance(child, (ast.Assign, ast.With)): scope_of[child] = scope
+                collect(child, scope, outer)
+
+    own[tree] = set()
+    visible[tree] = [tree]
+    collect(tree, tree, tree)
+    cur = tree
 
     def is_tmp(n):
-        if isinstance(n, ast.Name): return bool(TMP.search(n.id)) or n.id in tmpish
-        if isinstance(n, ast.Attribute): return bool(TMP.search(n.attr)) or n.attr in tmpish
+        if isinstance(n, ast.Name):
+            if TMP.search(n.id): return True
+            chain = visible[cur]
+            return any(n.id in own[s] for s in chain) or (any(n.id in params.get(s, ()) for s in chain) and n.id in attrs)
+        if isinstance(n, ast.Attribute): return bool(TMP.search(n.attr)) or n.attr in attrs
         if isinstance(n, ast.Call):
             f = n.func; fn = f.id if isinstance(f, ast.Name) else getattr(f, 'attr', '')
             if fn in ('Path', 'PurePath', 'resolve', 'realpath') or isinstance(f, ast.Attribute) and fn in ('resolve',):
@@ -57,14 +100,28 @@ def scan(tree):
             return False
         if isinstance(n, ast.BinOp) and isinstance(n.op, ast.Div): return is_tmp(n.left)
         return False
+
+    def taint(t, scope):
+        if isinstance(t, ast.Name):
+            own[scope].add(t.id)
+            attrs.add(t.id)  # a tainted name also taints the attribute of that name (and a parameter): as before
+        elif isinstance(t, ast.Attribute): attrs.add(t.attr)
+        elif isinstance(t, (ast.Tuple, ast.List)):
+            for e in t.elts: taint(e, scope)
+
+    # Channels unchanged against the earlier scanner and not tested (AnnAssign, AugAssign, NamedExpr, `for` target, `except ... as`):
+    # none of them taints a name, here or before.
     for _ in range(3):
         for n in ast.walk(tree):
+            if n not in scope_of: continue
+            scope = cur = scope_of[n]
             if isinstance(n, ast.Assign):
                 if any(s in ast.unparse(n.value) for s in SRC) or is_tmp(n.value):
-                    for t in n.targets: tmpish.update(names_of(t))
-            elif isinstance(n, ast.With):
+                    for t in n.targets: taint(t, scope)
+            else:
                 for it in n.items:
-                    if it.optional_vars is not None and any(s in ast.unparse(it.context_expr) for s in SRC): tmpish.update(names_of(it.optional_vars))
+                    if it.optional_vars is not None and any(s in ast.unparse(it.context_expr) for s in SRC): taint(it.optional_vars, scope)
+    cur = tree
 
     # module-level names bound to a literal table (REQUIRED = [(...), ...], VARIANTS = (...), a dict of constants)
     # (an UPPER_CASE name bound to a display - list, tuple, set, dict - is a table of the test, even if its rows hold calls such as re.compile)
@@ -115,9 +172,18 @@ def scan(tree):
         if (isinstance(iter_node, ast.Call) and isinstance(iter_node.func, ast.Name) and iter_node.func.id == 'enumerate'
                 and isinstance(target_node, ast.Tuple) and target_node.elts):
             names |= set(names_of(target_node.elts[0]))  # the index of enumerate is a number whatever is enumerated
-        return ok | {n for n in names if n not in tmpish}
+        return ok | {n for n in names if not any(n in own[s] for s in visible[cur])}
 
     def visit(node, ok):
+        nonlocal cur
+        if isinstance(node, scopes) and node is not tree:
+            outer, cur = cur, node
+            try: visit_in(node, ok)
+            finally: cur = outer
+        else:
+            visit_in(node, ok)
+
+    def visit_in(node, ok):
         if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div) and is_tmp(node.left) and not safe(node.right, ok):
             out.append((node.lineno, ast.unparse(node)))
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef, ast.Module)):
@@ -155,7 +221,7 @@ def scan(tree):
             ok = ok - {name, '@' + name}
             if isinstance(stmt.value, displays) and display_safe(stmt.value, ok):
                 return ok | {'@' + name}  # a local table written in the test
-            if name not in tmpish and safe(stmt.value, ok):
+            if not any(name in own[s] for s in visible[cur]) and safe(stmt.value, ok):
                 return ok | {name}
             return ok
         return ok
@@ -234,6 +300,89 @@ class Scanner(unittest.TestCase):
         self.assertEqual(self.hits('x = self.library_dir / name\n'), [])
         self.assertEqual(self.hits('x = attempts / total\ny = template / part\nz = temperature / n\n'), [])
         self.assertEqual(self.hits('x = tmp_dir / n\ny = TMP / n\nz = temp / n\n'), ['tmp_dir / n', 'TMP / n', 'temp / n'])
+
+
+class ScannerScope(unittest.TestCase):
+    """Taint of a name is kept per scope: a function (whole body), the module, a class body; attributes are kept per file (CORE-GUARDSCOPE).
+
+    Channels not tested on purpose, unchanged against the earlier scanner: `AnnAssign`, `AugAssign`, `NamedExpr`, the `for` target and
+    `except ... as` do not taint a name, now as before. Known limits: no `global`/`nonlocal`, no flow through calls, and an attribute of
+    the same name in an unrelated class taints the file."""
+    SETUP = 'import tempfile\nclass T:\n    def setUp(self):\n        self.root = Path(tempfile.mkdtemp())\n'
+    PLANT = ('    def plant(self):\n        for directory in ("a", "b"):\n            rel = f"{directory}/x.md"\n'
+             '            (self.root / rel).write_text("x")\n')
+
+    def hits(self, source):
+        return [text for _, text in scan(ast.parse(source))]
+
+    # --- red on the earlier scanner: a name tainted in another function no longer leaks
+    def test_a_name_tainted_in_another_function_does_not_turn_a_literal_loop_into_a_hit(self):
+        self.assertEqual(self.hits(self.SETUP + self.PLANT), [])
+        other = '    def docs(self):\n        directory = self.root / "docs"\n        return directory\n'
+        self.assertEqual(self.hits(self.SETUP + self.PLANT + other), [])
+
+    def test_an_attribute_does_not_taint_a_local_name_of_the_same_name(self):
+        source = ('class T:\n    def setUp(self):\n        self.path = Path(tempfile.mkdtemp())\n'
+                  '    def f(self, data):\n        path = data\n        return self.tmp_x / path\n    def g(self):\n        for path in ("a",):\n            (self.tmp / path).touch()\n')
+        self.assertEqual(self.hits(source), ['self.tmp_x / path'])
+
+    def test_sibling_functions_do_not_inherit_each_others_names(self):
+        source = 'def a():\n    part = Path(tempfile.mkdtemp())\ndef b(self):\n    for part in ("x",):\n        (self.tmp / part).touch()\n'
+        self.assertEqual(self.hits(source), [])
+        source = 'def a():\n    work = Path(tempfile.mkdtemp())\ndef b(x):\n    return work / x\n'
+        self.assertEqual(self.hits(source), [])
+
+    def test_a_name_from_a_class_body_does_not_leak_into_methods_but_the_attribute_does(self):
+        head = 'import tempfile\nclass T:\n    base = Path(tempfile.mkdtemp())\n'
+        self.assertEqual(self.hits(head + '    def f(self, key):\n        return base / key\n'), [])
+        self.assertEqual(self.hits(head + '    def f(self, key):\n        return self.base / key\n'), ['self.base / key'])
+
+    def test_a_parameter_is_tmp_only_when_the_name_is_tainted_in_the_file(self):
+        """Mutation: "every parameter is tmp" turns the first assertion red (it would report `other / rel`)."""
+        self.assertEqual(self.hits('def write(other, rel):\n    return other / rel\n'), [])
+        self.assertEqual(self.hits('def write(root, rel):\n    return root / rel\n'), [])
+        self.assertEqual(self.hits('root = Path(tempfile.mkdtemp())\ndef write(root, rel):\n    return root / rel\n'), ['root / rel'])
+        self.assertEqual(self.hits('def setup():\n    root = Path(tempfile.mkdtemp())\ndef write(root, rel):\n    return root / rel\n'), ['root / rel'])
+        self.assertEqual(self.hits('class T:\n    def s(self):\n        self.root = Path(tempfile.mkdtemp())\ndef write(root, rel):\n    return root / rel\n'), ['root / rel'])
+        self.assertEqual(self.hits('root = Path(tempfile.mkdtemp())\ndef write(other, rel):\n    return other / rel\n'), [])
+
+    # --- green: behaviour of the earlier scanner that stays
+    def test_one_function_is_a_hit_also_when_the_use_comes_before_the_assignment(self):
+        self.assertEqual(self.hits('def f(key):\n    x = work / key\n    work = Path(tempfile.mkdtemp())\n'), ['work / key'])
+        self.assertEqual(self.hits('def f(key):\n    work = Path(tempfile.mkdtemp())\n    x = work / key\n'), ['work / key'])
+
+    def test_an_attribute_works_between_methods_and_classes(self):
+        self.assertEqual(self.hits(self.SETUP + '    def f(self, key):\n        return self.root / key\n'), ['self.root / key'])
+        mixin = self.SETUP + 'class Mixin:\n    def f(self, key):\n        return self.root / key\n'
+        self.assertEqual(self.hits(mixin), ['self.root / key'])
+
+    def test_a_local_name_taints_the_attribute_of_the_same_name_but_not_a_name_of_another_function(self):
+        taint = 'def a():\n    root = Path(tempfile.mkdtemp())\n'
+        self.assertEqual(self.hits(taint + 'def b(self, key):\n    return self.root / key\n'), ['self.root / key'])
+        self.assertEqual(self.hits(taint + 'def b(key):\n    root = Path("x")\n    return root / key\n'), [])
+
+    def test_a_name_in_the_same_class_body_is_still_tmp(self):
+        self.assertEqual(self.hits('class T:\n    base = Path(tempfile.mkdtemp())\n    other = base / key\n'), ['base / key'])
+
+    def test_a_module_name_is_tmp_in_functions(self):
+        self.assertEqual(self.hits('work = Path(tempfile.mkdtemp())\ndef f(key):\n    return work / key\n'), ['work / key'])
+
+    def test_nested_functions_lambdas_and_comprehensions_inherit_the_names_of_the_function(self):
+        for body in ('def g(key):\n        return work / key\n', 'g = lambda key: work / key\n',
+                     'g = [work / key for key in data]\n'):
+            with self.subTest(body=body):
+                self.assertEqual(self.hits('def f():\n    work = Path(tempfile.mkdtemp())\n    ' + body), ['work / key'])
+
+    def test_with_as_taints_the_name_in_the_function(self):
+        self.assertEqual(self.hits('def f(key):\n    with tempfile.TemporaryDirectory() as d:\n        return Path(d) / key\n'), ['Path(d) / key'])
+
+    def test_with_as_does_not_taint_a_name_of_another_function(self):
+        self.assertEqual(self.hits('def f(key):\n    with tempfile.TemporaryDirectory() as d:\n        pass\ndef g(key):\n    return Path(d) / key\n'), [])
+
+    def test_the_order_of_the_passes_is_the_one_of_ast_walk(self):
+        """Three passes without a fixed point: a chain through `if` blocks must end as in the earlier scanner (no hit), never with one more."""
+        source = ('if c:\n    a1 = Path(tempfile.mkdtemp())\na2 = a1\nif c:\n    a3 = a2\na4 = a3\nif c:\n    a5 = a4\na6 = a5\nx = a6 / key\n')
+        self.assertEqual(self.hits(source), [])
 
 
 class Repository(unittest.TestCase):
