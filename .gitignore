@@ -8,3 +8,7 @@ AGENTS.md.skillsync-backup
 
 # fixtures kontraktu dashboardu zawierają katalogi .skillsync jako dane wejściowe
 !tests/fixtures/**/.skillsync/
+
+# specyfikacje i plany żyją poza rdzeniem (repozytorium operacyjne); kotwica omija fikstury w tests/fixtures
+/docs/specs/
+/docs/plans/
