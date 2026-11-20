@@ -195,6 +195,68 @@ class HiddenFailures(Base):
                 self.run_code(f"print({line!r}); print('Ran 2 tests in 0.01s'); print('OK')")
                 self.assertEqual(self.latest().end['status'], 'PASS', line)
 
+    def run_output(self, text):
+        return self.run_code(f"import sys; sys.stdout.write({text!r})")
+
+    def test_a_clean_exit_with_a_playwright_vitest_or_jest_summary_is_blocked(self):
+        cases = {
+            'playwright': '\n  1 failed\n  5 passed (3s)\n',
+            'playwright interrupted': '\n  2 interrupted\n  3 passed (3s)\n',
+            'playwright crlf': '\r\n  1 failed\r\n  5 passed (3s)\r\n',
+            'playwright colour': '\x1b[31m  1 failed\x1b[39m\n  5 passed (3s)\n',
+            'vitest': ' Test Files  1 failed | 1 passed (2)\n      Tests  1 failed | 4 passed (5)\n',
+            'vitest only failed': '      Tests  2 failed (2)\n',
+            'jest': 'Test Suites: 1 failed, 1 total\nTests:       1 failed, 4 passed, 5 total\n',
+            'jest crlf': 'Tests:       1 failed, 4 passed, 5 total\r\n',
+        }
+        for name, text in cases.items():
+            with self.subTest(name=name):
+                result = self.run_output(text + 'Ran 8 tests in 1s\n')   # the counters are known, so only a hidden failure can block
+                self.assertEqual(result.returncode, 2, result.stderr)   # exit 0 without proof (status BLOCKED) is exit code 2 (CORE-TESTDEBT K3)
+                end = self.latest().end
+                self.assertEqual(end['status'], 'BLOCKED')
+                self.assertIn('hide', end['reason'])
+
+    def test_a_log_that_only_looks_like_a_summary_of_another_tool_stays_green(self):
+        cases = {
+            'vitest files only': ' Test Files  1 failed | 1 passed (2)\n      Tests  5 passed (5)\n',
+            'zero failed': '  0 failed\n  5 passed (3s)\n',
+            'failed=0': 'failed=0\n  5 passed (3s)\n',
+            'failed attempts': 'retry: 3 failed attempts to connect, retried ok\n  5 passed (3s)\n',
+            'flaky': '  1 flaky\n  5 passed (3s)\n',
+            'did not run': '  1 did not run\n  5 passed (3s)\n',
+            'indented deeper': '    1 failed\n  5 passed (3s)\n',
+            'jest suites only': 'Test Suites: 1 failed, 1 total\nTests:       5 passed, 5 total\n',
+        }
+        for name, text in cases.items():
+            with self.subTest(name=name):
+                self.run_output(text + "Ran 2 tests in 0.01s\nOK\n")
+                self.assertEqual(self.latest().end['status'], 'PASS', name)
+
+    def test_the_summary_of_another_tool_counts_only_when_the_counters_come_from_the_output(self):
+        line = '\n  1 failed\n  5 passed (3s)\n'
+        self.assertEqual(test_run._hidden_failures(line), 1)
+        self.assertEqual(test_run._hidden_failures(line, source='regex'), 1)
+        self.assertEqual(test_run._hidden_failures(line, source='junit'), 0)
+        self.assertEqual(test_run._hidden_failures(line, source='adapter'), 0)
+        self.assertEqual(test_run._hidden_failures('FAILED (failures=2)\n', source='junit'), 2)   # the generic part stays for every source
+        self.assertEqual(test_run._hidden_failures('=== 3 failed, 5 passed in 2.00s ===\n', source='adapter'), 3)
+
+    def test_a_line_of_another_tool_beside_a_clean_report_or_adapter_is_not_a_block(self):
+        check = {'argv': [sys.executable, '-c', 'pass'], 'cwd': str(self.root)}
+        report = self.root / 'r.xml'
+        report.write_text('<testsuite><testcase classname="a" name="b"/></testsuite>', encoding='utf-8')
+        recorder = test_run.TestRecorder(self.root, 'R1', 'F1.3', 'flag')
+        recorder.started(check)
+        recorder.junit = [str(report)]
+        recorder.finished(check, {'exit_code': 0, 'duration_seconds': 0.1}, '  1 failed\n  5 passed (3s)\n')
+        end = ev.read_attempt(recorder.path).end
+        self.assertEqual((end['status'], end.get('source')), ('PASS', 'junit'))
+        result = self.run_cli('--step', 'F1.4', '--format', 'tap', '--', sys.executable, '-c',
+                              "print('  1 failed'); print('  5 passed (3s)'); print('ok - a'); print('ok - b')")
+        end = self.latest_of('F1.4').end
+        self.assertEqual((result.returncode, end['status'], end.get('source')), (0, 'PASS', 'adapter'), result.stderr)
+
     def test_a_pipe_that_hides_the_exit_code_is_blocked(self):
         result = subprocess.run([sys.executable, str(CLI), 'test-run', str(self.root), '--step', 'F1.1', '--', 'sh', '-c',
                                  f"{sys.executable} -c \"print('Ran 2 tests in 1s'); print('FAILED (failures=1)'); raise SystemExit(1)\" | cat; true"],
@@ -203,7 +265,10 @@ class HiddenFailures(Base):
         self.assertEqual(self.latest().end['status'], 'BLOCKED')
 
     def latest(self):
-        directory = self.root / '.skillsync/runs/R1/tests/F1.1'
+        return self.latest_of('F1.1')
+
+    def latest_of(self, step):
+        directory = self.root / '.skillsync/runs/R1/tests' / step
         return ev.read_attempt(sorted(directory.glob('*.jsonl'), key=lambda p: int(p.stem))[-1])
 
 

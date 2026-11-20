@@ -30,7 +30,7 @@ from .runs import _slug
 from . import test_events as events
 from . import test_gate
 from . import test_adapters
-from .test_adapters import karma_line
+from .test_adapters import karma_line, playwright as playwright_adapter, vitest as vitest_adapter
 from . import test_reports
 
 REPORT_SINCE_SLACK_S = 2.0
@@ -52,15 +52,37 @@ _UNITTEST_FAILED = re.compile(r'(?m)^FAILED \(([^)\n]*)\)')
 _PYTEST_SUMMARY = re.compile(r'(?m)^(?:=+ )?(?:\d+ (?!failed)\w+(?: \w+)?, )*(\d+) failed\b[^\n]* in [\d.:]+s')
 
 
-def _hidden_failures(output):
+_JEST_TESTS = re.compile(r'^Tests:\s+(\d+) failed,')
+_MAX_SUMMARY_LINE = 2000   # a longer line is no summary line (and a regex on a megabyte line must not stall the end of the run)
+
+
+def _hidden_failures(output, source='regex'):
     """Failed tests that a clean exit code hides: the exact summaries of unittest (`FAILED (failures=2, errors=1)`) and pytest (`3 failed, 5 passed in 2s`,
-    also inside the `=====` banner), not any `N failed` of a log line (`3 failed attempts`, `0 failed`, `failed=0`). 0 when the output names none."""
+    also inside the `=====` banner), not any `N failed` of a log line (`3 failed attempts`, `0 failed`, `failed=0`). With the counters read from the output itself
+    (`source` is `regex`: no adapter and no report) also the anchored summary lines of Playwright (`  1 failed`, `  2 interrupted`), Vitest (the `Tests` line, never
+    `Test Files`) and Jest (`Tests: 1 failed, ...`), read with the patterns of the adapters; for `junit` and `adapter` those lines are the business of the report
+    or of the adapter. 0 when the output names none."""
     output = events._ANSI.sub('', output)   # a coloured summary (`--color=yes`) starts with an escape, not with the text
     total = 0
     for found in _UNITTEST_FAILED.finditer(output):
         total = max(total, sum(int(n) for kind, n in re.findall(r'(failures|errors)=(\d+)', found.group(1))))
     for found in _PYTEST_SUMMARY.finditer(output):
         total = max(total, int(found.group(1)))
+    if source == 'regex':
+        for line in output.splitlines():   # splitlines drops a trailing `\r` of a Windows console
+            if len(line) > _MAX_SUMMARY_LINE:
+                continue
+            playwright_line = playwright_adapter.SUMMARY.match(line)
+            if playwright_line and playwright_line.group('kind') in ('failed', 'interrupted'):
+                total = max(total, int(playwright_line.group('n')))
+            vitest_line = vitest_adapter.TESTS.match(line)
+            if vitest_line:
+                for count, kind in vitest_adapter.SUMMARY_PART.findall(vitest_line.group('body')):
+                    if kind == 'failed':
+                        total = max(total, int(count))
+            jest_line = _JEST_TESTS.match(line)
+            if jest_line:
+                total = max(total, int(jest_line.group(1)))
     return total
 
 
@@ -575,7 +597,7 @@ class TestRecorder:
         elif code != 0:
             status, reason = 'FAIL', None
         else:
-            hidden = _hidden_failures(output or '') if not failed else 0
+            hidden = _hidden_failures(output or '', source) if not failed else 0
             if hidden:
                 failed = hidden
                 if counts is not None:
