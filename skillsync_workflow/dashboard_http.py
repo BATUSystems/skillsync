@@ -733,7 +733,8 @@ class Board:
                        "html": render_markdown(text, rel or "")})
 
     # --- consents (in-process, the shared core functions of status.py; no subprocess, no own jsonl writer)
-    def approve(self, kind: str, rel: str, sha: str, plan: str | None = None, via: dict | None = None) -> tuple[int, dict]:
+    def approve(self, kind: str, rel: str, sha: str, plan: str | None = None, via: dict | None = None,
+                plan_state: str | None = None) -> tuple[int, dict]:
         """Consent from a button: only the action the page offers right now (the same file and sha).
 
         GO: `status.set_doc_status(..., expect_sha=sha)` rewrites the Status line (the consent itself), then
@@ -744,7 +745,9 @@ class Board:
         if kind not in APPROVE_KINDS or not isinstance(rel, str) or not isinstance(sha, str):
             return 400, {"error": "Nieprawidłowe żądanie."}
         if kind in ("cp", "ready"):
-            return self._approve_delivery(kind, rel, sha, plan if isinstance(plan, str) else None, via)
+            if plan_state is not None and (not isinstance(plan_state, str) or plan_state not in status_core.PLAN_STATUSES):
+                return 400, {"error": "Nieprawidłowe żądanie."}
+            return self._approve_delivery(kind, rel, sha, plan if isinstance(plan, str) else None, via, plan_state)
         word = APPROVE_KINDS[kind]
         with self._approve_lock:
             current = self.status(rel if kind == "plan" else None)
@@ -773,9 +776,12 @@ class Board:
         self.check_once()
         return 200, {"ok": True, "word": word, "file": rel, "trail": trail, "next": NEXT_HINT}
 
-    def _approve_delivery(self, kind: str, run_id: str, sha: str, plan: str | None = None, via: dict | None = None) -> tuple[int, dict]:
+    def _approve_delivery(self, kind: str, run_id: str, sha: str, plan: str | None = None, via: dict | None = None,
+                          plan_state: str | None = None) -> tuple[int, dict]:
         """CP / READY: `status.record_approval` into `.skillsync/runs/<run-id>/approvals.jsonl` with the sha of the HEAD
-        shown on the page. The session checks the entry (word, sha = its HEAD) instead of a word typed in the terminal."""
+        shown on the page. The session checks the entry (word, sha = its HEAD) instead of a word typed in the terminal.
+        `plan_state` (K13): the plan state the page showed (`planState` of the offer); a different current state = 409 (the plan was closed
+        or reopened after the page was drawn, which no change of HEAD tells); absent = the state read by the writer, as before."""
         word = APPROVE_KINDS[kind]
         with self._approve_lock:
             current = self.status(plan)
@@ -786,11 +792,13 @@ class Board:
                 return 409, {"error": f"„{word}” nieaktywne: {offer['reason']}."}
             if offer["sha"] != sha:
                 return 409, {"error": "HEAD zmienił się od wyświetlenia; odśwież stronę i sprawdź zmiany."}
+            if plan_state is not None and plan_state != offer.get("planState"):
+                return 409, {"error": "Status planu zmienił się od wyświetlenia; odśwież stronę i sprawdź plan."}
             d = current["delivery"]
             record = status_core.record_approval(
                 self.root, word, run_id, sha=sha, source="dashboard", target=d.get("target") if kind == "cp" else None,
                 branch=d.get("branch"), plan=(current.get("plan") or {}).get("path"), ahead=d.get("ahead"),
-                mode=d.get("mode"), via=via)
+                mode=d.get("mode"), via=via, plan_state=plan_state)
             if record["status"] != "PASS":
                 log(f"wpis zgody „{word}” nie zapisany: {record['reason']}")
                 return 500, {"error": f"Nie udało się zapisać zgody ({record['reason']}); wpisz słowo w sesji."}
@@ -983,7 +991,8 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
             if not isinstance(body, dict):
                 return self._json(400, {"error": "Nieprawidłowe żądanie."})
             via = self._via() if self.role == ports.ROLE_APPROVE else None
-            code, data = self.board.approve(body.get("kind"), body.get("path"), body.get("sha"), body.get("plan"), via)
+            code, data = self.board.approve(body.get("kind"), body.get("path"), body.get("sha"), body.get("plan"), via,
+                                           body.get("planState"))
             if code == 200 and via and not ports.is_loopback_bind(str(via.get("peer", ""))):
                 log(f"zgoda z sieci: {via['peer']} (port {via['port']}, Host {via['host']})")
             return self._json(code, data)

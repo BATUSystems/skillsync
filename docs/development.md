@@ -248,6 +248,8 @@ Dla zmiany linkowania dodatkowo: `link --dry-run` na projekcie testowym (receptu
 
 **Rdzeń nie przechowuje specyfikacji ani planów zadań.** Repozytorium jest publiczne: pliki pod `docs/specs/` i `docs/plans/` nie są śledzone, a w plikach poza `tests/` nie wskazujemy konkretnych (datowanych) specyfikacji ani planów; piszemy opis bez ścieżki. Pilnuje tego `tests/test_skillsync_repo_hygiene.py` (w CI na każdym PR). Konwencja katalogów projektu użytkownika (`docs/specs/*.md`, `docs/plans/*.md`), z której korzysta generator, pozostaje opisana normalnie.
 
+Rdzeń ignoruje `/docs/specs/` i `/docs/plans/` w korzeniowym `.gitignore` (wpis zakotwiczony, więc fikstury `tests/fixtures/**/input/docs/{specs,plans}/` pozostają śledzone i nieignorowane). Strażnik higieny (`test_skillsync_repo_hygiene.py`) sprawdza to przez `git check-ignore --no-index -v` i wywołuje `specs_info(REPO, {})`, które musi dać `tracked: false`, `source: gitignore`. Testy `check-ignore` używają środowiska z `skillsync_workflow/specs.py` (`_git_env`: bez zmiennych `GIT_*`, `HOME` i `XDG_CONFIG_HOME` wskazują na nieistniejący katalog, `GIT_CONFIG_GLOBAL=/dev/null`, `GIT_CONFIG_NOSYSTEM=1`), żeby wynik nie zależał od konfiguracji maszyny. Zmiana wpisu w `.gitignore` wymaga aktualizacji tego testu i tej sekcji.
+
 ## Strażnik wycieków na maszynie dewelopera
 
 Pełne sprawdzenie (`skillsync leakcheck . --require full`) potrzebuje plików tożsamości innych celów niż publiczny rdzeń.

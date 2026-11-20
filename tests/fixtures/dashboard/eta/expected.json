@@ -127,6 +127,7 @@
         "given": null,
         "kind": "cp",
         "path": "2026-01-11-timing-demo",
+        "planState": "in_progress",
         "reason": "czeka na koniec realizacji (CP → origin/main; nic do dostarczenia)",
         "run": "2026-01-11-timing-demo",
         "sha": "",

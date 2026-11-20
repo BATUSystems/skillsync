@@ -146,6 +146,7 @@
         "given": {
           "at": "2026-01-12T12:00:00Z",
           "by": "user",
+          "planState": "in_progress",
           "run": "2026-01-12-demo-release",
           "schema": 1,
           "sha": "<head>",
@@ -155,6 +156,7 @@
         },
         "kind": "cp",
         "path": "2026-01-12-demo-release",
+        "planState": "in_progress",
         "reason": "zgoda „CP” dana 12:00 (HEAD <head>)",
         "run": "2026-01-12-demo-release",
         "sha": "<head>",
@@ -167,6 +169,7 @@
         "given": null,
         "kind": "ready",
         "path": "2026-01-12-demo-release",
+        "planState": "in_progress",
         "reason": "1 commit niewypchniętych względem origin (gałęzi jeszcze nie ma na origin)",
         "run": "2026-01-12-demo-release",
         "sha": "<head>",
@@ -179,6 +182,7 @@
     "last": {
       "at": "2026-01-12T12:00:00Z",
       "by": "user",
+      "planState": "in_progress",
       "run": "2026-01-12-demo-release",
       "schema": 1,
       "sha": "<head>",

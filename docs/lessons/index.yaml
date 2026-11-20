@@ -272,3 +272,15 @@ lessons:
     title: "Tabela narzędzi testowych ma dwa interpretery (pakiet i samodzielny hak): zmiana kolejności lub pola wymaga testu parytetu i zgodności wstecznej"
     tags: [skillsync, test-run, hooks, guard-tests, detect-tool, parity, compatibility]
     paths: ['skillsync_workflow/test_run.py', 'skillsync_workflow/data/test_tools.json', 'library/hooks/guard-tests.py', 'tests/test_skillsync_test_run*.py', 'tests/fixtures/**']
+  - path: regula-procedury-sprzeczna-ze-straznikiem-repo.md
+    title: "Reguła procedury sprzeczna ze strażnikiem repozytorium: przed wpisaniem kroku do procedury sprawdź strażników testów higieny"
+    tags: [skillsync, workflow, procedura, git, hygiene, specs, commit]
+    paths: ['library/skills/feature/**', 'library/skills/pr-run/**', 'library/skills/bugfix/SKILL.md', 'library/instructions/_base.md', 'tests/test_skillsync_repo_hygiene.py']
+  - path: izolacja-home-ucina-safe-directory-przy-rozpoznaniu-checkoutu.md
+    title: "Izolacja HOME w środowisku gita ucina safe.directory: rozpoznanie checkoutu po błędzie gita daje fail-open, a nie BLOCKED"
+    tags: [skillsync, git, worktree, security, spec-snapshot, tests]
+    paths: ['skillsync_workflow/spec_snapshot.py', 'skillsync_workflow/specs.py', 'tests/test_skillsync_spec_snapshot.py', 'tests/test_skillsync_specs.py']
+  - path: import-sasiedniego-modulu-testu-wymaga-discover.md
+    title: "Test importujący sąsiedni moduł testów pada przy `python3 -m unittest tests.<moduł>`: uruchamiaj punktowo przez discover albo z PYTHONPATH=tests"
+    tags: [skillsync, tests, unittest, imports, agents]
+    paths: ['tests/test_skillsync_retro.py', 'tests/test_skillsync_workflow.py']

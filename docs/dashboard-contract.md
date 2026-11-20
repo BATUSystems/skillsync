@@ -21,10 +21,13 @@ projektu lub przebiegu). Raport komend zapisujących i `metrics --json` to JSON 
 
 - Dopisuje jedną linię JSON do `.skillsync/runs/<run-id>/approvals.jsonl` pod blokadą plikową (jedyne źródło, które czyta
   `skillsync approvals wait`). Pola wpisu: `schema`, `at` (UTC), `word`, `sha`, `by`, `source` (`cli`, `dashboard` albo
-  `ide`), opcjonalnie `file`, `run`, `plan`, `target`, `branch`, `ahead`, `mode`, `via` (tylko zgody z gniazda zgód trybu dwóch gniazd, zapisuje
+  `ide`), opcjonalnie `file`, `run`, `plan`, `planState`, `target`, `branch`, `ahead`, `mode`, `via` (tylko zgody z gniazda zgód trybu dwóch gniazd, zapisuje
   je serwer; obiekt `{port, host, peer}`, zob. „Ślad zgody”). Wpis z `record` ma zawsze `at`
   (`YYYY-MM-DDTHH:MM:SSZ`), `run` (= `--run`) i `by` (nazwa użytkownika systemu, `unknown`, gdy jej nie da się odczytać);
-  pola opcjonalne bez wartości są pominięte (nie `null`). Wartości tekstowe przechodzą przez maskowanie sekretów.
+  pola opcjonalne bez wartości są pominięte (nie `null`). `planState` (tylko `CP`/`READY`): status planu, którego linia `Przebieg:`
+  wskazuje ten przebieg (`draft`, `approved`, `in_progress`, `done`, `archived`), w chwili zgody; wypełnia go sam zapis
+  (`approvals record`, przycisk strony) z planu przebiegu, nie z planu oglądanego na stronie; bez planu przebiegu albo ze statusem
+  spoza listy pole jest pominięte. Pole `plan` nadal jest ścieżką planu. Wartości tekstowe przechodzą przez maskowanie sekretów.
 - `--sha` (7–64 znaków hex, małe litery): dla `GO plan`/`GO implement` git blob sha zatwierdzanego pliku (domyślnie: sha
   pliku z `--file`), dla `CP`/`READY` HEAD gałęzi roboczej, którą zgoda wypchnie (domyślnie HEAD repozytorium projektu,
   odczytany z `.git` bez uruchamiania git). Bez `--sha` i bez czytelnego HEAD (projekt bez `.git`): `BLOCKED`. Słowo GO
@@ -34,8 +37,10 @@ projektu lub przebiegu). Raport komend zapisujących i `metrics --json` to JSON 
   `status.record_approval(..., source="dashboard")` we własnym procesie.
 - `--file` tylko dla słów GO: `docs/specs/*.md` dla `GO plan`, `docs/plans/*.md` dla `GO implement` (plik zwykły, nie
   dowiązanie, nie `README.md`); dla `CP`/`READY` → `BLOCKED`. `--target`/`--branch`: nazwa gałęzi.
-- Odmawia (kod `2`) drugiego zapisu tego samego słowa z tym samym `sha` w tym samym przebiegu (dla GO: ta sama wersja pliku,
-  dla CP/READY: ten sam HEAD); nieznane słowo, zły `--source`, run-id spoza wzorca `[A-Za-z0-9][A-Za-z0-9_.-]{0,79}`, brak
+- Odmawia (kod `2`) drugiego zapisu tego samego słowa z tym samym `sha` i tym samym `planState` w tym samym przebiegu (dla GO:
+  ta sama wersja pliku, dla CP/READY: ten sam HEAD przy tym samym statusie planu; porównanie dotyczy OSTATNIEGO wpisu tego słowa w przebiegu
+  (jak `after` przycisku), więc po sekwencji `CP`(`in_progress`, S), `CP`(`done`, S), `CP`(`in_progress`, S) trzeci zapis jest dozwolony; `CP` zapisane w trakcie realizacji nie blokuje `CP`
+  po zamknięciu planu przy tym samym HEAD; wpis bez pola ma `planState` pusty, więc liczy się jak dotąd); nieznane słowo, zły `--source`, run-id spoza wzorca `[A-Za-z0-9][A-Za-z0-9_.-]{0,79}`, brak
   katalogu przebiegu, dowiązanie na drodze `.skillsync/runs/<run-id>` lub dowiązany `approvals.jsonl`, plik, który
   przekroczyłby 256 KiB (czytelnicy pomijają większy plik w całości), albo blokada trzymana dłużej niż 10 s też kończą się
   `BLOCKED`.
@@ -294,14 +299,17 @@ opis w sekcji „Serwer”.
 | `after` | zgoda już dana; drugiego zapisu nie ma; `given` to wpis zgody |
 
 Pola: `reason` (string lub null), `blocked` (powód nieaktywności; null dla `waiting`), `path` (plik speca/planu; dla
-`cp`/`ready` id przebiegu), `sha` (git blob sha pliku do zgody GO albo HEAD dla CP/READY; pusty string, gdy brak), `given`
+`cp`/`ready` id przebiegu), `planState` (tylko `cp`/`ready`, gdy plan przebiegu istnieje: jego status w chwili budowy statusu; klient odsyła go w `POST /api/approve` jako `planState`, a serwer odpowiada `409`, gdy bieżący status planu jest inny, np. plan zamknięto po narysowaniu strony przy tym samym HEAD; brak pola w żądaniu = zachowanie bez tej kontroli), `sha` (git blob sha pliku do zgody GO albo HEAD dla CP/READY; pusty string, gdy brak), `given`
 (wpis lub null), `target` (tylko `cp`/`ready`; dokąd oddać), `run` (id przebiegu, do którego trafi wpis zgody, gdy katalog
 `.skillsync/runs/<run-id>` istnieje; inaczej null; pole dodane addytywnie, `path` dla `cp`/`ready` bez zmian).
 
 `given` w stanie `after`: wpis zgody w postaci zapisanej w `approvals.jsonl` (wpis z `approvals record` ma zawsze `at`).
 Dla `spec`/`plan` stan `after` wynika ze statusu pliku (`approved` i dalej), więc zgoda mogła zostać dana poza
 `approvals.jsonl` (np. `spec approve`/`plan approve` w IDE albo słowo wpisane w sesji): wtedy `given` = `{"at": null}`, a
-`reason` mówi „zgoda … już dana”. Dla `cp`/`ready` stan `after` jest tylko przy wpisie, którego `sha` = `git.headFull`.
+`reason` mówi „zgoda … już dana”. Dla `cp`/`ready` stan `after` jest tylko przy ostatnim wpisie słowa, którego `sha` = `git.headFull` i którego `planState` równa się
+bieżącemu statusowi planu przebiegu (zmiana statusu planu po zgodzie ponownie otwiera przycisk, także bez nowego commitu). Wpis bez
+`planState` liczy się po samym `sha`, z wyjątkiem repozytorium z `workflow.specs.tracked: false` (plany poza gitem) i planu `done`:
+taki wpis nie daje `after`, bo stara zgoda blokowałaby nową.
 
 Wpisy zgód (`given`, `last`) pochodzą z `approvals.jsonl` bieżącego przebiegu w kolejności pliku, w postaci zapisanej; linie
 spoza reguł `skillsync status` (nieznane słowo, nieczytelne `at`, sha spoza 7–64 znaków hex, plik ponad 256 KiB) są pomijane.
@@ -607,8 +615,12 @@ Różnice rozstrzygnięte świadomie:
   (format skilla `feature`), `progress.total`/`progress.done` = `plans[].steps` z `status`; test zgodności porównuje oba
   polecenia na wszystkich fixtures i przypina różnicę na przykładzie.
 - Zgody: `status.read_approvals` zwraca najnowszy wpis na parę (przebieg, słowo) ze wszystkich przebiegów, znormalizowany
-  (bez `by`, `schema`). Dashboard pokazuje wpisy jednego przebiegu w postaci zapisanej (`given`, `last`), więc ma własny
+  (bez `by`, `schema`; `planState` jest przenoszone, gdy ma status z listy). Dashboard pokazuje wpisy jednego przebiegu w postaci zapisanej (`given`, `last`), więc ma własny
   odczyt pliku z tymi samymi regułami przyjęcia wpisu.
+- Odbiór planu (`needsHuman: acceptance`, `status.acceptance_pending`): przy `tracked: true` o zamknięciu rządzi git (commit ze zgodą,
+  w którym plan jest `done`). Przy `tracked: false` plany nie mają historii, więc odbiór jest zamknięty, gdy ostatni wpis (przebieg,
+  słowo zamykające trybu: `READY` w `pr`, `CP` w `direct`) ma `planState: done`, jego sha jest commitem repozytorium (`_commit_exists`) i plan jest teraz `done`; późniejszy wpis z innym
+  stanem otwiera odbiór ponownie, zmiana innych linii planu (np. `Oddanie:`) nie. Wpis bez `planState` w tym trybie niczego nie zamyka.
 - Status planu: `_status_fields` czyta pierwszą linię statusu z pierwszych 4000 znaków (także `**Status:**`, `- Status:`);
   słowo statusu to litery i `_` (zapis `in-progress` daje `in`, nie `in_progress`).
 
@@ -818,7 +830,7 @@ Endpointy:
 | `GET /events` | SSE: `hello {version, heartbeat}` (z `retry: 3000`), `change {version}` po zmianie obserwowanych plików, `ping {version, t}` co 15 s; najwyżej 64 połączenia (dalej 503; w trybie dwóch gniazd osobne udziały: 48 na gnieździe odczytu i 16 na gnieździe zgód, więc urządzenie zapełniające odczyt nie odbierze odświeżania stronie zatwierdzającego); `HEAD /events` = same nagłówki (200, `text/event-stream`), bez strumienia i bez zajmowania miejsca |
 | `GET /api/descriptions` | `descriptions.json` skilla (`{klucz: {title, text}}`) |
 | `GET /healthz` | `{ok: true, version}`; `tokenId` tylko na gnieździe zgód (lub w trybie `--port` z zgodami) |
-| `POST /api/approve` | tylko na gnieździe zgód (na gnieździe odczytu każda metoda zapisu = 404); `{kind: spec\|plan\|cp\|ready, path, sha[, plan]}`; tylko akcja, którą `/api/status` właśnie oferuje w stanie `waiting`, z tym samym `sha`; odpowiedź 200: `{ok, word, file, next}`, dla GO także `trail` (ścieżka `approvals.jsonl` przebiegu albo null bez przebiegu) |
+| `POST /api/approve` | tylko na gnieździe zgód (na gnieździe odczytu każda metoda zapisu = 404); `{kind: spec\|plan\|cp\|ready, path, sha[, plan][, planState]}`; tylko akcja, którą `/api/status` właśnie oferuje w stanie `waiting`, z tym samym `sha`; odpowiedź 200: `{ok, word, file, next}`, dla GO także `trail` (ścieżka `approvals.jsonl` przebiegu albo null bez przebiegu) |
 
 W trybie `--port` kontrola `Host` na wszystkich endpointach (`GET`, `HEAD`, SSE `/events`, `POST`; w trybie dwóch gniazd zob. „Reguła `Host` w trybie dwóch gniazd”): nagłówek `Host` musi wskazywać loopback
 (`localhost`, `127.0.0.1`, `[::1]`, z dowolnym portem; bez rozróżniania wielkości liter), nazwę z `--approve-host` albo
@@ -879,7 +891,7 @@ Zgody in-process (bez podprocesu `skillsync`, bez własnego zapisu serwera): „
 409), a potem, gdy katalog przebiegu akcji (`actions[].run`) istnieje, `status.record_approval(..., source="dashboard",
 file=path, sha_after=<sha po zmianie>)`: wpis `{schema, at, word, sha, by, source: "dashboard", file, shaAfter, run}`.
 Bez katalogu przebiegu zgoda GO zmienia tylko linię `Status:` (`trail: null`; sesja czyta zgodę ze statusu pliku, jak
-`approvals wait --file`). „CP”/„READY” = `status.record_approval(..., source="dashboard")` z `run`, `plan`, `target` (tylko
+`approvals wait --file`). „CP”/„READY” = `status.record_approval(..., source="dashboard")` z `run`, `plan`, `planState` (z żądania; przy innym niż bieżący = 409), `target` (tylko
 CP), `branch`, `ahead`, `mode`; odmowa rdzenia po przejściu kontroli serwera (blokada pliku, limit 256 KiB, zła nazwa
 gałęzi, wyścig z drugim zapisem) = 500 z powodem. Id przebiegu: wzorzec `status.RUN_ID` (`[A-Za-z0-9][A-Za-z0-9_.-]{0,79}`):
 pierwszy znak alfanumeryczny (więc ani `.`, ani `..` jako całe id) i bez `/`; ciągu `..` wewnątrz id (`a..b`) wzorzec nie
@@ -903,7 +915,7 @@ pozostałość po zabitym procesie jest ignorowana albo usuwana: serwer musi odp
 zapisuje token w `localStorage` swojego originu, czyści pasek adresu (`history.replaceState`) i wysyła `X-Approve-Token`; bez tokenu (albo po jego odrzuceniu po restarcie serwera)
 przyciski zgód są nieaktywne z jednym powodem, a odczyt działa w pełni. Skutek przechowywania w `localStorage`: token przeżywa zamknięcie przeglądarki (do restartu serwera) i jest czytelny dla skryptów tej strony, więc ewentualny XSS na stronie statusu mógłby go użyć; CSP `script-src 'self'` i sanitizacja treści dokumentów to ograniczają (decyzja o `sessionStorage` do potwierdzenia przez właściciela). Token jest drukowany na stderr `dashboard serve` przy starcie: stderr przekierowany do pliku, dziennika usługi (systemd) albo logów CI zachowa adres z tokenem, więc w takich uruchomieniach nie polegaj na linii startowej i podawaj adres przez `skillsync dashboard url <projekt>`. Przez `--approve-host` token wędruje w nagłówku zwykłego HTTP (bez szyfrowania): używaj w zaufanej sieci albo przez tunel. `--approve-host`: zdalna przeglądarka potrzebuje `Host` na liście i adresu z tokenem (`dashboard url --host NAZWA`).
 Dalej `Content-Length` 1–4096 (inaczej 400), treść JSON-obiekt (inaczej 400), `--no-approvals` = 403, akcja
-nieoferowana, nieaktywna albo z innym `sha` = 409 (także drugi zapis CP/READY dla tego samego HEAD). Każda odpowiedź ma
+nieoferowana, nieaktywna albo z innym `sha` = 409 (także drugi zapis CP/READY dla tego samego HEAD i tego samego `planState`: `BLOCKED`); CP/READY ze zmienionym od wyświetlenia statusem planu (`planState` żądania inny niż bieżący) = 409; `planState` spoza listy statusów planu (`draft`, `approved`, `in_progress`, `done`, `archived`) albo nie-tekst = 400. Każda odpowiedź ma
 `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `Cache-Control: no-cache,
 no-store`. Połączenie bez kompletnego żądania jest zamykane po 30 s (timeout gniazda obsługi). Strona HTML ma także CSP
 `default-src 'self'; script-src 'self'; …; frame-ancestors 'none'`. W trybie `--port` z `--host 0.0.0.0` inne urządzenia dostają 403,

@@ -27,6 +27,8 @@ Ticket: <KEY>
 Status: in-progress
 ```
 
+Przy `specs.tracked: false` ([spec-store](../../feature/references/spec-store.md)) spec i plan nie leżą w gałęzi: zamiast linii `Plan:` opis podaje streszczenie speca z `Spec-sha` (pełny dokument w migawce przebiegu lub archiwum, `skillsync spec snapshot`).
+
 Stan `Status: complete` ustawiasz dopiero po spełnieniu dwóch warunków: wszystkie pozycje w `Progress` są `[x]` i kontrole zakończyły się PASS. Układ zgodny z zasadami PR-ów w [delivery-workflow-jira-azure](../../delivery-workflow-jira-azure/SKILL.md).
 
 ## Komentarz końcowy

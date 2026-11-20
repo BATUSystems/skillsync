@@ -35,13 +35,13 @@
   };
 
   // ------------------------------------------------------------------ transport
-  async function postApprove({ kind, path, sha, word }) {
+  async function postApprove({ kind, path, sha, word, planState }) {
     try {
       const token = approveToken();
       const headers = { "Content-Type": "application/json", "X-Status-Board": "1" };
       if (token) headers["X-Approve-Token"] = token;
       const r = await fetch("/api/approve", { method: "POST", cache: "no-store", headers,
-        body: JSON.stringify({ kind, path, sha, plan: st.plan || null }) });
+        body: JSON.stringify({ kind, path, sha, plan: st.plan || null, ...(planState ? { planState } : {}) }) });
       const body = await r.json().catch(() => ({}));
       if (r.status === 403 && token && body.code === "approve_token") { store.set(TOKEN_KEY, null); refresh(); }  // nieaktualny (restart serwera)
       return r.ok ? { ok: true, word: body.word, text: body.next } : { ok: false, word, text: body.error || `Błąd ${r.status}` };

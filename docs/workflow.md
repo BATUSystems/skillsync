@@ -100,7 +100,7 @@ stany i wznowienie: `../library/skills/feature/references/spec.md`.
 
 | Akt | Wynik | Pętla przeglądu | Zgoda na koniec |
 |---|---|---|---|
-| I Spec (tylko `plan-large`) | spec bez pytań blokujących `Q` (pytania `[ZAŁOŻENIE]` mogą zostać), przy „GO plan” `approved`, plan-szkic z `Spec-sha` i `Katalog:` oraz jeden lokalny commit (spec, plan-szkic, prototyp) | `spec` (zawsze) | „GO plan” |
+| I Spec (tylko `plan-large`) | spec bez pytań blokujących `Q` (pytania `[ZAŁOŻENIE]` mogą zostać), przy „GO plan” `approved`, plan-szkic z `Spec-sha` i `Katalog:` oraz jeden lokalny commit (spec, plan-szkic, prototyp; przy `specs.tracked: false` bez spec i planu, zob. niżej) | `spec` (zawsze) | „GO plan” |
 | II Plan | plan `draft (czeka na GO implement)`, `readiness`, odpowiedź o wersję | `plan` (obowiązkowa przy `plan-large`, ryzyku planu high, prośbie użytkownika; inaczej jedna runda opcjonalna) | „GO implement” |
 | III Realizacja | kod, testy, dokumentacja, changelog, wersja | `kod`: po każdym kroku z ryzykiem high i końcowa | `done`; commity kroków i push według trybu dostarczania (`delivery.mode`) |
 
@@ -126,6 +126,8 @@ Klasa `[EKSPERT]` to wiersz: pytanie domenowe, na które odpowiada ekspert, a ni
 Commit trafia na gałąź roboczą w katalogu wybranym przy „GO plan” (pytanie: „własny worktree”, domyślnie, albo „główny checkout”, czyli bieżąca gałąź głównego checkoutu; wybór zapisuje linia planu `Katalog: worktree <nazwa-katalogu>` albo `Katalog: główny`, wznowienie ją czyta, brak linii = worktree; karta `dispatch` nie pyta; warunki i ścieżki porażek: `feature/references/workdir.md`). W `worktree` gałąź zakłada „GO plan”, jeśli jej nie ma; bez pusha, więc przed
 „GO implement” nic nie opuszcza maszyny (push i PR dalej według trybu dostarczania). Wyjątek: wejście z klucza zgłoszenia
 (`pr-after-approval`) zostaje bez commita przy „GO plan”.
+
+**Nieśledzone spec i plan (`specs.tracked: false`).** Zamknięcie planu nie zmienia HEAD, a `approvals wait` nie zna `planState`, więc przy `CP`/`READY` zawsze podawaj `--since <czas STOP>`. Gdy repozytorium ignoruje `docs/specs` i `docs/plans` (albo manifest ustawia `workflow.specs.tracked: false`; wykrycie: pole `specs` w `skillsync route`), „GO plan” nie commituje speca i planu: zapisuje `Spec-sha`, robi migawkę `skillsync spec snapshot` (kopia w `.skillsync/runs/<id>/docs/`, opcjonalnie w archiwum `workflow.specs.archive`) i checkpoint `go-plan`. Pierwszy commit przebiegu powstaje w kroku kodu, a draft PR dopiero po nim. Zgody `CP`/`READY` w `approvals.jsonl` niosą `planState`, a sprzątanie worktree wymaga `spec snapshot --check` ze statusem `PASS`. Szczegóły: `../library/skills/feature/references/spec-store.md`.
 
 Po założeniu worktree (`Katalog: worktree`) wykonaj w nim `skillsync link <worktree>`: dowiązania skilli (`sync.method: symlink`) świeżego worktree wskazują cele z commita,
 które mogą nie istnieć (a gdy `core.symlinks` jest wyłączone, jak domyślnie w wielu instalacjach Git for Windows, git zapisuje śledzone dowiązanie jako zwykły plik z tekstem celu; `doctor` wskazuje wtedy `skillsync link`, a `link` zastępuje taki plik), a `doctor` kończy się wtedy FAIL („Missing installed skill” albo „Installed skill symlink points to a target that does not exist”, z komendą `skillsync link …` w komunikacie). `checkpoint`, `readiness` i `dashboard serve` uruchamiaj w tym samym
@@ -201,7 +203,7 @@ Najważniejsze bramki:
 
 - plan ma mierzalne kryteria (przy specu: mapowanie kryteriów speca na kroki i dowody), kroki z rolą, `Exec`, plikami
   i ryzykiem, TESTY, zasoby, ryzyka, dokumentację i wiedzę, changelog, propozycję wersji oraz linię `Przebieg:`;
-- „GO plan” zatwierdza spec i obejmuje lokalny commit (spec, plan-szkic, prototyp) bez pusha; „GO implement” zatwierdza plan; żadna zgoda
+- „GO plan” zatwierdza spec i obejmuje lokalny commit (spec, plan-szkic, prototyp; przy `specs.tracked: false` bez spec i planu, zamiast tego migawka) bez pusha; „GO implement” zatwierdza plan; żadna zgoda
   nie obejmuje pusha ani deployu;
 - `Spec-sha` zapisany przy „GO plan” chroni spec: różnica przed „GO implement”, review albo `implemented` to STOP i pytanie;
 - `pre-implement` czyta rzeczywistych konsumentów (przy specu w akcie I, przed pętlą `spec`); `readiness` kontroluje tylko
@@ -232,7 +234,7 @@ pracuje tylko do odczytu i przygotowuje rekomendację, ale nie komentuje, nie g�
   w `.skillsync/runs/<KLUCZ>/test-state.txt` wiąże commit z przetestowanym stanem. Plan `done` i `--final` dopiero po
   utworzeniu PR-ów.
 - **`/pr-run`**: wywołanie jest zgodą na branch, commity, push brancha, draft PR, komentarze i ready; nigdy push do
-  bazowej, merge ani deploy. Plan i spec (przy planie ze specem zacommitowane lokalnie już przy „GO plan”) idą w pierwszym pushu, spec `implemented` w ostatnim commicie przed ready.
+  bazowej, merge ani deploy. Plan i spec (przy planie ze specem zacommitowane lokalnie już przy „GO plan”) idą w pierwszym pushu, spec `implemented` w ostatnim commicie przed ready. Przy `specs.tracked: false` spec i plan nie są w żadnym commicie ani pushu: „Wynik”, `done` i `implemented` zapisujesz w plikach lokalnych i migawce, a worktree usuwasz po `spec snapshot --check --to <korzeń kopii poza worktree>` ze statusem `PASS`.
 
 Komendy dostawcy (np. `az repos pr create`, zapis pól trackera), reguły gałęzi i strażnika statusu podaje instrukcja
 projektu albo skill organizacji, nie rdzeń.
@@ -402,7 +404,7 @@ strażnik repozytorium właściciela).
 
 ## Pętla samodoskonalenia
 
-Zamknięcia pilnują hook Stop (`check-closure.py`: raz na sesję i plan blokuje plan `done` zmieniony względem `HEAD`, gdy
+Zamknięcia pilnują hook Stop (`check-closure.py`: raz na sesję i plan blokuje plan `done` zmieniony względem `HEAD` albo ignorowany przez git (wpis `!!`), gdy
 przebieg z linii `Przebieg:` nie ma rekordu `final`) i ostrzeżenia `doctor`. Hook działa tylko w Claude Code i w projektach
 będących korzeniem repo git; w Codexie, w projekcie zagnieżdżonym i bez gita pilnuje tylko `doctor`. Błąd zapisu znacznika
 sesji przepuszcza turę. Wyłączenie: `hooks.stop_closure: false` i `link`. Wskaźnik ponad projektami: `skillsync retro --all`

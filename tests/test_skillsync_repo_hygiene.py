@@ -89,5 +89,34 @@ class RepoHygieneTests(unittest.TestCase):
             self.assertEqual(tracked('docs/plans', cwd=tmp), [], 'control: a directory without tracked files is clean')
 
 
+    def check_ignore(self, path):
+        git = shutil.which('git')
+        if not git:
+            self.need(None)
+        from skillsync_workflow.specs import _git_env
+        done = subprocess.run([git, 'check-ignore', '--no-index', '-v', '--', path], cwd=str(REPO),
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60, env=_git_env())
+        return done.returncode, done.stdout.decode('utf-8', 'replace')
+
+    def test_root_gitignore_ignores_specs_and_plans(self):
+        for path in ('docs/specs/x.md', 'docs/plans/x.md'):
+            code, out = self.check_ignore(path)
+            self.assertEqual(code, 0, f'{path} musi być ignorowany: {out}')
+            self.assertTrue(out.startswith('.gitignore:'), f'{path}: reguła ma pochodzić z .gitignore w korzeniu: {out}')
+
+    def test_specs_info_detects_the_core_as_untracked(self):
+        from skillsync_workflow.specs import specs_info
+        self.need([] if shutil.which('git') else None)
+        self.assertEqual(specs_info(REPO, {}), {'tracked': False, 'archive': None, 'source': 'gitignore'})
+
+    def test_fixtures_with_specs_and_plans_are_not_ignored_and_stay_tracked(self):
+        files = self.need(tracked('tests/fixtures'))
+        fixtures = [f for f in files if re.search(r'/docs/(?:specs|plans)/', f)]
+        self.assertTrue(fixtures, 'fikstury dashboardu ze specami i planami muszą być śledzone')
+        for path in fixtures:
+            code, out = self.check_ignore(path)
+            self.assertEqual(code, 1, f'fikstura {path} nie może być ignorowana: {out}')
+
+
 if __name__ == '__main__':
     unittest.main()

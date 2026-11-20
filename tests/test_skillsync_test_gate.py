@@ -1,9 +1,11 @@
 """180-A: the gate of the test steps: `[T]` marker, `checkpoint --status PASS` evidence, the `doctor` finding."""
+import os
 import socket
 import subprocess
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -264,6 +266,72 @@ class Gate(WorkflowFixture):
             self.assertIsNone(test_gate.work_tree_id(Path(tmp) / 'nope'))
         with tempfile.TemporaryDirectory() as tmp:
             self.assertIsNone(test_gate.work_tree_id(tmp))   # no git repository
+
+
+class TreeIdSpecStore(WorkflowFixture):
+    """K6 (CORE-SPECSTORE): `work_tree_id` does not depend on the ignore rule of `docs/specs` and `docs/plans`: edits of a spec or a plan under
+    `workflow.specs.tracked: false` leave the id of the gate alone, and with the specs tracked an edited spec still changes it."""
+
+    def setUp(self):
+        super().setUp()
+        for name, value in (('HOME', str(self.base)), ('XDG_CONFIG_HOME', str(self.base / 'xdg-config')), ('GIT_CONFIG_GLOBAL', os.devnull),
+                            ('GIT_CONFIG_NOSYSTEM', '1')):
+            patcher = mock.patch.dict(os.environ, {name: value})
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.write('README.md', 'fixture\n')
+        self.write('docs/specs/2026-11-19-s.md', '# S\n\nStatus: draft\n')
+        self.write('docs/plans/2026-11-19-p.md', '# P\n\nStatus: draft\n')
+
+    def commit_all(self):
+        self.init_git()
+
+    def exclude(self, *rules):
+        info = self.root / '.git' / 'info' / 'exclude'
+        info.parent.mkdir(parents=True, exist_ok=True)
+        with info.open('a', encoding='utf-8') as handle:
+            handle.write(''.join(rule + '\n' for rule in rules))
+
+    def test_tree_excludes_do_not_grow(self):
+        self.assertEqual(test_gate.TREE_EXCLUDES, ('.skillsync', 'docs/plans'))
+
+    def test_a_rule_for_the_plans_does_not_change_the_id(self):
+        self.write('.gitignore', '.skillsync/\n')
+        self.commit_all()
+        self.write('docs/plans/2026-11-19-new.md', '# N\n')   # an untracked plan
+        before = test_gate.work_tree_id(self.root)
+        self.exclude('/docs/plans/')   # a rule outside the tree (it is not a file of the tree), so only the rule changes
+        self.assertEqual(test_gate.work_tree_id(self.root), before)
+
+    def test_untracked_specs_and_plans_under_the_rule_do_not_move_the_id(self):
+        self.write('.gitignore', '.skillsync/\n/docs/specs/\n/docs/plans/\n')
+        self.commit_all()
+        before = test_gate.work_tree_id(self.root)
+        self.assertEqual(before, test_gate.work_tree_id(self.root, from_head=True))
+        self.write('docs/specs/2026-11-19-s.md', '# S\n\nStatus: approved\n')
+        self.write('docs/plans/2026-11-19-p.md', '# P\n\nStatus: approved\n')
+        self.write('docs/specs/2026-11-20-new.md', '# New\n')
+        self.assertEqual(test_gate.work_tree_id(self.root), before)
+        self.assertEqual(test_gate.work_tree_id(self.root), test_gate.work_tree_id(self.root, from_head=True))
+        self.write('code.txt', 'x\n')   # the code still moves it
+        self.assertNotEqual(test_gate.work_tree_id(self.root), before)
+
+    def test_an_untracked_spec_with_a_rule_outside_the_tree_is_ignored_too(self):
+        self.write('.gitignore', '.skillsync/\n')
+        self.commit_all()
+        self.exclude('/docs/specs/', '/docs/plans/')
+        before = test_gate.work_tree_id(self.root)
+        self.write('docs/specs/2026-11-20-new.md', '# New\n')
+        self.assertEqual(test_gate.work_tree_id(self.root), before)
+
+    def test_tracked_specs_still_move_the_id_and_tracked_plans_do_not(self):
+        self.write('.gitignore', '.skillsync/\n')
+        self.commit_all()
+        before = test_gate.work_tree_id(self.root)
+        self.write('docs/plans/2026-11-19-p.md', '# P\n\nStatus: approved\n')
+        self.assertEqual(test_gate.work_tree_id(self.root), before)   # the plans are excluded (edited at every step)
+        self.write('docs/specs/2026-11-19-s.md', '# S\n\nStatus: approved\n')
+        self.assertNotEqual(test_gate.work_tree_id(self.root), before)   # tracked: true, unchanged behaviour
 
 
 if __name__ == '__main__':
