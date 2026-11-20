@@ -98,8 +98,16 @@ albo z innej ścieżki tmp. Zasięg skażenia: nazwa lokalna jest tmp w całej f
 oraz w funkcjach zagnieżdżonych, lambdach i składaniach; nazwa modułowa w całym module; nazwa z ciała klasy w samym ciele klasy (nie w metodach).
 Atrybuty (`self.root`) i każda skażona nazwa tworzą wspólny zbiór `attrs`, który działa w całym pliku: dla wyrażeń z atrybutem
 (fikstura w jednej klasie obsługuje mixin w innej) i dla parametrów (parametr jest tmp, gdy w pliku jest skażona nazwa o tej samej nazwie, np. pomocnik
-`write(root, rel)`). Strażnik nie widzi przepływu przez wywołania (`self.root = make_project(self.tmp)`), `global`/`nonlocal`, `joinpath`,
-`os.path.join` ani `Path(a, b)`; atrybut o tej samej nazwie w niezwiązanej klasie skazi cały plik. Nowy test, który składa ścieżkę z danych,
+`write(root, rel)`). Przy skanowaniu repozytorium strażnik buduje najpierw rejestr klas ze wszystkich `tests/**/*.py` (klasa → atrybuty `self.x`
+skażone w jej metodach i w jej ciele oraz nazwy baz). Podklasa dziedziczy atrybuty skażone klas bazowych z innych plików: po prostej nazwie
+klasy (`Name` albo ostatni człon `modul.Klasa`), przechodnio przez bazy baz; kolizja nazw klas z różnych plików daje sumę atrybutów i baz,
+a cykl dziedziczenia nie zapętla skanu. Odziedziczony atrybut działa tylko dla wyrażeń z atrybutem w zasięgu klasy podrzędnej i jej podklas.
+Cel pochodny od atrybutu odziedziczonego (`self.out = self.work / "o"`, `base = self.work / "x"`) ma zasięg: nazwa w funkcji, atrybut w klasie;
+nie wchodzi do wspólnego zbioru `attrs` pliku ani do rejestru. `scan(tree)` bez rejestru nie dziedziczy (kontrakt dla
+`scripts/platform_sensitive.py`). Strażnik nie widzi przepływu przez wywołania (`self.root = make_project(self.tmp)`), fabryk, `global`/`nonlocal`,
+`joinpath`, `os.path.join` ani `Path(a, b)`; atrybut o tej samej nazwie w niezwiązanej klasie skazi cały plik. Wyrażenie `X.name` obiektu
+`tempfile.TemporaryDirectory` (np. `self.root = Path(temp.name).resolve()` w klasie bazowej `IsolatedTestCase`) nie jest uznawane za ścieżkę tmp,
+więc takie atrybuty nie wchodzą do rejestru. Klasy rozpoznaje prosta nazwa, bez rozwiązywania importów. Nowy test, który składa ścieżkę z danych,
 używa pomocnika; gdy trafienie ma zostać, dopisz wpis do `ALLOWED` z uzasadnieniem.
 
 ### Serwery w testach

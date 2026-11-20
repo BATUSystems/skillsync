@@ -36,7 +36,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 - **Status page, document list:** the groups "Speki", "Plany", "Projekt" and "Domena" are collapsible and collapsed by default; the groups "Bieżące zadanie" and "Przebieg" stay open.
 - **Status page, tab "Testy":** a non-empty `tests.skipped` shows a note (`role="note"`) "Pominięto N plików lub katalogów wyników testów …" with up to 5 paths and reasons, "i N więcej", "co najmniej 20" at 20 entries; with empty sections it shows the note and "Brak odczytanych wyników.". The contract field `tests.skipped` is unchanged.
 
-- **Repository: tmp-path guard scoped to the function.** `tests/test_skillsync_tmp_path_guard.py` taints local names only in their own function (attributes and parameters stay file-wide), so false hits that depended on variable names disappear and the set of hits is a subset of the earlier one (no change to the product code).
+- **Repository: tmp-path guard scoped to the function.** `tests/test_skillsync_tmp_path_guard.py` taints local names only in their own function (attributes and parameters stay file-wide), so false hits that depended on variable names disappear and the set of hits is a subset of the earlier one, apart from hits through attributes tainted in base classes from other test files, which subclasses now inherit (no change to the product code).
 
 ### Fixed
 
