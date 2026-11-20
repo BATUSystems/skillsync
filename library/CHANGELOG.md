@@ -11,6 +11,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 ### Changed
 
 - Skill `workflow`, reference `test-run.md`: the limits of the hook are rewritten for the new recognition (`python3 -X dev -m pytest` and `py -3 -m pytest` are seen; `tox` is a tool without a rule of a wide run; `sudo`/`nohup` stay as limits; `-m` behind a script gives `wide`; `env -S '…'` is read like the command it carries).
+- A command given to `test-run` as a string is split with POSIX quoting on every system (on Windows a single quote was a literal character, so `env -S 'CI=1 npx jest'` was not unwrapped; `--grep 'a b'` is one argument, a backslash stays literal); only the detection of the tool reads the string.
 
 ### Fixed
 
