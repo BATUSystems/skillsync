@@ -4,7 +4,9 @@
 shared runner (`quality.run_validation`) with an observer that writes the events of the run (`test_events`): the state of the command on the fly,
 live counters where the output prints them (Karma "Executed N of M"), the list of the tests after the end from a JUnit XML or TRX report
 (`--junit`, or the default places of dotnet, Maven and Gradle). The output of the command is passed through unchanged and the exit code of the
-command is the exit code of `test-run`.
+command is the exit code of `test-run` when the command failed (FAIL), and 0 when the run is a PASS. A command that exited 0 without the proof of
+passing tests (status BLOCKED, or no recorded status at all) gives exit code 2, as `validate` does; 124 is a timeout and 127 a missing program.
+An explicit `--run <id>` needs a trace of the run in `.skillsync/runs/` (a directory or a `<id>.json` record), else it is refused (BLOCKED, 2).
 """
 from __future__ import annotations
 
@@ -337,12 +339,40 @@ def adapter_notice(fmt, argv, tool, adapter, junit=()):
     return f'test-run: no adapter for {tool} (known: {", ".join(names) or "none"}); pass --format <name>, or --format none to silence'
 
 
-def resolve_run(root, explicit):
-    """`(run id, error)`: the explicit id (validated), else the only directory of `.skillsync/runs/`."""
-    if explicit:
-        return _slug(explicit, '--run'), None
+def _run_names(root):
+    """`(directories, records)` of `.skillsync/runs/` as the listing of the directory gives them (never a symbolic link): the names are compared with
+    the listing, so a file system that ignores case does not accept `r1` for `R1`."""
     base = Path(root) / '.skillsync' / 'runs'
-    names = sorted(p.name for p in base.iterdir() if p.is_dir() and not p.is_symlink()) if base.is_dir() and not base.is_symlink() else []
+    if not base.is_dir() or base.is_symlink():
+        return [], []
+    dirs, records = [], []
+    try:
+        entries = list(base.iterdir())
+    except OSError:
+        return [], []
+    for entry in entries:
+        if entry.is_symlink():
+            continue
+        if entry.is_dir():
+            dirs.append(entry.name)
+        elif entry.is_file() and entry.name.endswith('.json') and len(entry.name) > 5:
+            records.append(entry.name[:-5])
+    return sorted(dirs), sorted(records)
+
+
+def resolve_run(root, explicit):
+    """`(run id, error)`: the explicit id (validated, and with a trace in `.skillsync/runs/`: a directory or a `<id>.json` record, compared with the
+    listing exactly), else the only directory of `.skillsync/runs/`."""
+    dirs, records = _run_names(root)
+    if explicit:
+        run_id = _slug(explicit, '--run')
+        if run_id in dirs or run_id in records:
+            return run_id, None
+        known = sorted(set(dirs) | set(records))
+        if not known:
+            return None, f'--run {run_id}: no run in .skillsync/runs/'
+        return None, f'--run {run_id}: no such run in .skillsync/runs/ (runs: {", ".join(known[:8])})'
+    names = dirs
     if len(names) == 1:
         return names[0], None
     return None, ('--run is required: ' + (f'{len(names)} runs in .skillsync/runs/ ({", ".join(names[:8])})' if names else 'no run in .skillsync/runs/'))
@@ -484,6 +514,7 @@ class TestRecorder:
             if not self.ended:
                 writer.end('BLOCKED', result.get('exit_code'), reason='Interrupted while the end of the run was recorded', ms=_ms(result.get('duration_seconds')))
                 self.ended = True
+                self.last = {'status': 'BLOCKED', 'attempt': self.number, 'file': self.path, 'source': None}
         finally:
             writer.close()
 
@@ -647,6 +678,8 @@ def _command(args):
             root, _ = read_project(args.path)
             run_id, problem = resolve_run(root, args.run)
             if problem or not args.step:
+                if problem and args.run:
+                    problem += f'; copy .skillsync/runs/{args.run}/ (or {args.run}.json) from the machine of the run, or record the run with skillsync checkpoint'
                 print(f"BLOCKED: {problem or '--step is required with --import'}", file=sys.stderr)
                 return 2
             path, number = import_events(root, run_id, _slug(args.step, '--step'), args.import_file, args.source_sha)
@@ -691,13 +724,17 @@ def _command(args):
     code = result.get('exit_code')
     last = recorder.last or {}
     where = f", events {last['file']}" if last.get('file') else ''
-    print(f"test-run: step {step or '-'} ({source}), attempt {last.get('attempt', '-')}: {last.get('status', result.get('status'))}{where}", file=sys.stderr)
+    print(f"test-run: step {step or '-'} ({source}), attempt {last.get('attempt', '-')}: {last['status'] if last.get('status') else 'BLOCKED (no recorded status)'}{where}", file=sys.stderr)
     if code is None:
         print(f"BLOCKED: {result.get('reason') or report.get('reason') or 'the command did not run'}", file=sys.stderr)
         return 127 if 'Missing prerequisites' in (result.get('reason') or '') else 2
     if (result.get('reason') or '').startswith('Timeout'):
         return 124
-    return int(code)
+    code = int(code)
+    if code == 0 and last.get('status') != 'PASS':
+        print(f"test-run: exit code 2: the command exited 0, but the run is {last.get('status') or 'without a recorded status'} (no proof of passing tests); see the line above", file=sys.stderr)
+        return 2
+    return code
 
 
 def split_command(argv):
@@ -715,7 +752,7 @@ def split_command(argv):
 def register(subparsers):
     parser = subparsers.add_parser('test-run', help='Run a test command through skillsync and record its events for the status page (a step of a plan)')
     parser.add_argument('path', help='project directory (use . for the current one)')
-    parser.add_argument('--run', help='run id (.skillsync/runs/<id>/); default: the only run of the project')
+    parser.add_argument('--run', help='run id (a directory .skillsync/runs/<id>/ or a record <id>.json must exist); default: the only run of the project')
     parser.add_argument('--step', help='plan step id (default: the only step "w toku" in the checkpoints)')
     parser.add_argument('--junit', action='append', help='JUnit XML or TRX report file or directory written by the command (default places: dotnet, Maven, Gradle)')
     parser.add_argument('--allow-no-count', metavar='REASON', help='accept a passing command whose number of executed tests is unknown (the reason is recorded and shown)')

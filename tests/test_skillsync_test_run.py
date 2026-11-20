@@ -1,5 +1,7 @@
 """180-A: `skillsync test-run` and the observer of the shared runner (stage 1)."""
 import argparse
+import contextlib
+import io
 import json
 import os
 import shutil
@@ -9,6 +11,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -139,13 +142,13 @@ class Command(Base):
         shutil.rmtree(self.root / '.skillsync/runs/R1')
         (self.root / '.skillsync/runs/R1').mkdir()
         done = self.run_cli('--', sys.executable, '-c', 'pass')
-        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(done.returncode, 2, done.stderr)   # exit 0 without proof (status BLOCKED) is exit code 2 (CORE-TESTDEBT K3)
         self.assertTrue((self.root / '.skillsync/runs/R1/tests/_none/1.jsonl').is_file())
 
     def test_junit_report_gives_the_list_of_tests(self):
         script = f"open('report.xml', 'w').write({JUNIT!r})"
         done = self.run_cli('--step', 'F1.1', '--junit', 'report.xml', '--', sys.executable, '-c', script)
-        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(done.returncode, 2, done.stderr)   # exit 0 without proof (status BLOCKED) is exit code 2 (CORE-TESTDEBT K3)
         state = self.attempt()
         self.assertEqual({t['id']: t['state'] for t in state.tests.values()}, {'pkg.A::ok': 'passed', 'pkg.A::bad': 'failed', 'pkg.B::skip': 'skipped'})
         self.assertEqual((state.counts['total'], state.counts['passed'], state.counts['failed'], state.counts['skipped']), (3, 1, 1, 1))
@@ -157,7 +160,7 @@ class Command(Base):
         report.write_text(JUNIT, encoding='utf-8')
         os.utime(report, (1_000_000, 1_000_000))
         done = self.run_cli('--step', 'F1.1', '--junit', 'old.xml', '--', sys.executable, '-c', 'pass')
-        self.assertEqual(done.returncode, 0)
+        self.assertEqual(done.returncode, 2)   # exit 0 without proof (status BLOCKED) is exit code 2 (CORE-TESTDEBT K3)
         self.assertEqual(self.attempt().tests, {})
 
     def test_karma_counters_are_live_and_end_has_the_counts(self):
@@ -314,7 +317,7 @@ class Evidence(Base):
                                ("print('Ran 3 tests in 0.0s'); print('OK (skipped=1)')", 'Skipped tests require explicit disposition')):
             with self.subTest(script=script):
                 done = self.run_cli('--step', 'F1.1', '--', sys.executable, '-c', script)
-                self.assertEqual(done.returncode, 0)   # the exit code stays the one of the command
+                self.assertEqual(done.returncode, 2)   # exit 0 without proof (status BLOCKED) is exit code 2 (CORE-TESTDEBT K3)
                 self.assertIn('BLOCKED', done.stderr)
                 end = ev.read_attempt(sorted((self.root / '.skillsync/runs/R1/tests/F1.1').glob('*.jsonl'), key=lambda p: int(p.stem))[-1]).end
                 self.assertEqual(end['status'], 'BLOCKED')
@@ -417,7 +420,7 @@ class TapRecorder(Base):
 
     def test_k6_not_ok_with_exit_zero_is_not_a_pass(self):
         done, state = self.tap("print('ok - adds'); print('not ok - subtracts'); print('ok - multiplies')")
-        self.assertEqual(done.returncode, 0)   # the exit code stays the one of the command
+        self.assertEqual(done.returncode, 2)   # exit 0 without proof (status BLOCKED) is exit code 2 (CORE-TESTDEBT K3)
         self.assertEqual(state.end['status'], 'BLOCKED', state.end)
         self.assertIn('failed', state.end['reason'])
         self.assertEqual(self.states(state), {'adds': 'passed', 'subtracts': 'failed', 'multiplies': 'passed'})
@@ -435,7 +438,7 @@ class TapRecorder(Base):
     def test_a_todo_that_exits_zero_needs_allow_skips(self):
         script = "print('TAP version 13'); print('ok 1 - a'); print('ok 2 - b # TODO later'); print('1..2')"
         done, state = self.tap(script)
-        self.assertEqual(done.returncode, 0)
+        self.assertEqual(done.returncode, 2)   # exit 0 without proof (status BLOCKED) is exit code 2 (CORE-TESTDEBT K3)
         self.assertEqual(state.end['status'], 'BLOCKED', state.end)
         self.assertIn('Skipped tests require explicit disposition', state.end['reason'])
         self.assertEqual(self.states(state), {'a': 'passed', 'b': 'skipped'})
@@ -566,14 +569,14 @@ class NodeTestRecorder(Base):
 
     def test_k6_a_failed_test_with_exit_zero_is_not_a_pass(self):
         done, state = self.stream(SPEC_RED, 0)
-        self.assertEqual(done.returncode, 0)   # the exit code stays the one of the command
+        self.assertEqual(done.returncode, 2)   # exit 0 without proof (status BLOCKED) is exit code 2 (CORE-TESTDEBT K3)
         self.assertEqual(state.end['status'], 'BLOCKED', state.end)
         self.assertIn('failed', state.end['reason'])
         self.assertEqual(state.counts['failed'], 1)
 
     def test_k14_a_todo_that_failed_is_skipped_and_needs_allow_skips(self):
         done, state = self.stream(SPEC_TODO)
-        self.assertEqual(done.returncode, 0)
+        self.assertEqual(done.returncode, 2)   # exit 0 without proof (status BLOCKED) is exit code 2 (CORE-TESTDEBT K3)
         self.assertEqual(self.states(state), {'a': 'passed', 'b': 'skipped'})   # not `failed`
         self.assertEqual(state.end['status'], 'BLOCKED', state.end)
         self.assertIn('Skipped tests require explicit disposition', state.end['reason'])
@@ -631,6 +634,237 @@ class NodeTestRecorder(Base):
     def attempt_count(self):
         folder = self.root / '.skillsync/runs/R1/tests'
         return len(list(folder.rglob('*.jsonl'))) if folder.exists() else 0
+
+
+KARMA_RED = "print('Chrome (Linux): Executed 3 of 10 (1 FAILED)'); print('Chrome (Linux): Executed 10 of 10 (2 FAILED)')"
+
+
+class RunTrace(Base):
+    """CORE-TESTDEBT K1, K2: an explicit `--run <id>` needs a trace of the run (a directory or a `<id>.json` record of `.skillsync/runs/`); nothing is
+    written and the command does not run otherwise."""
+
+    def runs(self):
+        return child(child(self.root, '.skillsync'), 'runs')
+
+    def refused(self, done, name):
+        self.assertEqual(done.returncode, 2, done.stderr)
+        self.assertIn('BLOCKED', done.stderr)
+        self.assertIn(f'--run {name}: no such run in .skillsync/runs/', done.stderr)
+        self.assertNotIn('step ', done.stderr)   # no `test-run: step ...` line: the command never started
+
+    def marker_command(self, name):
+        """A command that leaves a file when it runs, so a refusal can prove it did not."""
+        return [sys.executable, '-c', f"open({name!r}, 'w').write('ran'); " + PASSING]
+
+    def test_a_missing_run_is_refused_with_the_list_of_runs(self):
+        done = self.run_cli('--run', 'ghost', '--step', 'F1.1', '--', *self.marker_command('marker.txt'))
+        self.refused(done, 'ghost')
+        self.assertIn('(runs: R1)', done.stderr)
+        self.assertFalse(child(self.root, 'marker.txt').exists())
+        self.assertFalse(child(self.runs(), 'ghost').exists())
+
+    def test_the_list_is_sorted_and_cut_at_eight_and_an_empty_one_is_worded(self):
+        for name in ('z9', 'a1', 'm5'):
+            child(self.runs(), name).mkdir()
+        child(self.runs(), 'b2.json').write_text('{}', encoding='utf-8')
+        done = self.run_cli('--run', 'ghost', '--step', 'F1.1', '--', sys.executable, '-c', PASSING)
+        self.assertIn('(runs: R1, a1, b2, m5, z9)', done.stderr)
+        for number in range(10):
+            child(self.runs(), f'many{number}').mkdir()
+        done = self.run_cli('--run', 'ghost', '--step', 'F1.1', '--', sys.executable, '-c', PASSING)
+        listed = done.stderr.split('(runs: ')[1].split(')')[0].split(', ')
+        self.assertEqual(len(listed), 8)
+        self.assertEqual(listed, sorted(listed))
+        shutil.rmtree(self.runs())
+        done = self.run_cli('--run', 'ghost', '--step', 'F1.1', '--', sys.executable, '-c', PASSING)
+        self.assertEqual(done.returncode, 2)
+        self.assertIn('--run ghost: no run in .skillsync/runs/', done.stderr)
+        self.assertNotIn('(runs:', done.stderr)
+
+    def test_a_plain_file_named_like_the_run_is_no_trace(self):
+        child(self.runs(), 'plain').write_text('not a run', encoding='utf-8')
+        done = self.run_cli('--run', 'plain', '--step', 'F1.1', '--', *self.marker_command('marker.txt'))
+        self.refused(done, 'plain')
+        self.assertFalse(child(self.root, 'marker.txt').exists())
+
+    @unittest.skipIf(os.name == 'nt', 'symbolic links need privileges on Windows')
+    def test_a_symlink_to_a_directory_is_no_trace_and_so_is_a_linked_record(self):
+        target = child(Path(self.tmp), 'elsewhere')
+        target.mkdir()
+        child(self.runs(), 'linked').symlink_to(target, target_is_directory=True)
+        record = child(Path(self.tmp), 'record.json')
+        record.write_text('{}', encoding='utf-8')
+        child(self.runs(), 'rec.json').symlink_to(record)
+        for name in ('linked', 'rec'):
+            with self.subTest(name=name):
+                self.refused(self.run_cli('--run', name, '--step', 'F1.1', '--', *self.marker_command('marker.txt')), name)
+        self.assertEqual(list(target.iterdir()), [])
+        self.assertFalse(child(self.root, 'marker.txt').exists())
+
+    def test_the_name_is_compared_exactly_with_the_listing(self):
+        """A file system that ignores case (Windows, macOS) finds `r1` for `R1`: the listing of the directory decides."""
+        done = self.run_cli('--run', 'r1', '--step', 'F1.1', '--', *self.marker_command('marker.txt'))
+        self.refused(done, 'r1')
+        self.assertIn('(runs: R1)', done.stderr)
+        self.assertFalse(child(self.root, 'marker.txt').exists())
+        self.assertEqual(sorted(p.name for p in self.runs().iterdir()), ['R1'])
+
+    def test_a_record_without_a_directory_is_a_trace_and_the_run_works(self):
+        shutil.rmtree(child(self.runs(), 'R1'))
+        child(self.runs(), 'solo.json').write_text('{}', encoding='utf-8')
+        done = self.run_cli('--run', 'solo', '--step', 'F1.1', '--', sys.executable, '-c', PASSING)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn('step F1.1 (flag), attempt 1: PASS', done.stderr)
+        self.assertTrue(child(self.runs(), 'solo').is_dir())
+        self.assertTrue(child(child(child(child(self.runs(), 'solo'), 'tests'), 'F1.1'), '1.jsonl').is_file())
+
+    def test_the_default_choice_without_run_is_unchanged(self):
+        done = self.run_cli('--step', 'F1.1', '--', sys.executable, '-c', PASSING)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        child(self.runs(), 'extra.json').write_text('{}', encoding='utf-8')   # a record does not count as a run
+        done = self.run_cli('--step', 'F1.1', '--', sys.executable, '-c', PASSING)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        child(self.runs(), 'second').mkdir()
+        done = self.run_cli('--step', 'F1.1', '--', sys.executable, '-c', PASSING)
+        self.assertEqual(done.returncode, 2)
+        self.assertIn('--run is required: 2 runs in .skillsync/runs/ (R1, second)', done.stderr)
+
+    @unittest.skipIf(os.name == 'nt', 'symbolic links need privileges on Windows')
+    def test_runs_directory_that_is_a_symlink_is_refused(self):
+        target = child(Path(self.tmp), 'realruns')
+        target.mkdir()
+        child(target, 'R1').mkdir()
+        shutil.rmtree(self.runs())
+        self.runs().symlink_to(target, target_is_directory=True)
+        done = self.run_cli('--run', 'R1', '--step', 'F1.1', '--', *self.marker_command('marker.txt'))
+        self.assertEqual(done.returncode, 2, done.stderr)   # a linked `runs` lists nothing, so there is no run
+        self.assertIn('--run R1: no run in .skillsync/runs/', done.stderr)
+        self.assertFalse(child(self.root, 'marker.txt').exists())
+
+    def test_the_name_with_the_json_suffix_is_no_run(self):
+        child(self.runs(), 'R1.json').write_text('{}', encoding='utf-8')
+        done = self.run_cli('--run', 'R1.json', '--step', 'F1.1', '--', *self.marker_command('marker.txt'))
+        self.refused(done, 'R1.json')
+        self.assertFalse(child(self.root, 'marker.txt').exists())
+
+    def test_a_listing_that_cannot_be_read_is_a_refusal(self):
+        with mock.patch.object(Path, 'iterdir', side_effect=OSError('denied')):
+            run_id, problem = test_run.resolve_run(self.root, 'R1')
+        self.assertIsNone(run_id)
+        self.assertIn('--run R1: no run in .skillsync/runs/', problem)
+
+    def test_the_resolution_function(self):
+        self.assertEqual(test_run.resolve_run(self.root, 'R1'), ('R1', None))
+        run_id, problem = test_run.resolve_run(self.root, 'ghost')
+        self.assertIsNone(run_id)
+        self.assertEqual(problem, '--run ghost: no such run in .skillsync/runs/ (runs: R1)')
+        with self.assertRaises(ValueError):
+            test_run.resolve_run(self.root, '../x')
+
+    def test_import_to_a_missing_run_is_refused_and_nothing_is_written(self):
+        source = child(Path(self.tmp), 'foreign.jsonl')
+        source.write_text(json.dumps({'v': 1, 't': 'start', 'host': 'other-machine', 'startedAt': 'x', 'run': 'ghost', 'step': 'F1.1'}) + '\n'
+                          + json.dumps({'v': 1, 't': 'end', 'status': 'PASS', 'exit': 0}) + '\n', encoding='utf-8')
+        done = subprocess.run([sys.executable, str(CLI), 'test-run', str(self.root), '--run', 'ghost', '--step', 'F1.1', '--import', str(source),
+                               '--source-sha', 'abcdef1'], capture_output=True, text=True, env=self.env, timeout=60)
+        self.assertEqual(done.returncode, 2, done.stderr)
+        self.assertIn('--run ghost: no such run in .skillsync/runs/', done.stderr)
+        self.assertIn('copy .skillsync/runs/ghost/ (or ghost.json) from the machine of the run, or record the run with skillsync checkpoint', done.stderr)
+        plain = self.run_cli('--run', 'ghost', '--step', 'F1.1', '--', sys.executable, '-c', PASSING)
+        self.assertNotIn('copy .skillsync/runs/', plain.stderr)   # the hint is only for --import
+        self.assertFalse(child(self.runs(), 'ghost').exists())
+        self.assertEqual(sorted(p.name for p in self.runs().iterdir()), ['R1'])
+        self.assertEqual(list(child(self.runs(), 'R1').rglob('*.jsonl')), [])
+
+
+class ExitCodes(Base):
+    """CORE-TESTDEBT K3: the exit code of `test-run` agrees with `validate`. PASS is 0, FAIL keeps the code of the command, a command that exited 0
+    without the proof of passing tests (BLOCKED, or no record of the status at all) is 2, 124 and 127 stay."""
+
+    def code(self, *args, script=PASSING):
+        return self.run_cli('--step', 'F1.1', *args, '--', sys.executable, '-c', script)
+
+    def test_the_table(self):
+        cases = (('pass', PASSING, [], 0, 'PASS'),
+                 ('fail keeps the code of the command', "import sys; print('Ran 2 tests in 0.01s'); print('FAILED (failures=1)'); sys.exit(5)", [], 5, 'FAIL'),
+                 ('no count', 'pass', [], 2, 'BLOCKED'),
+                 ('zero tests', "print('Ran 0 tests in 0.0s'); print('OK')", [], 2, 'BLOCKED'),
+                 ('hidden failure', "print('Ran 3 tests in 0.1s'); print('FAILED (failures=2)')", [], 2, 'BLOCKED'),
+                 ('skips', "print('Ran 3 tests in 0.0s'); print('OK (skipped=1)')", [], 2, 'BLOCKED'),
+                 ('no count allowed', 'pass', ['--allow-no-count', 'a script that prints no count'], 0, 'PASS'),
+                 ('skips allowed', "print('Ran 3 tests in 0.0s'); print('OK (skipped=1)')", ['--allow-skips'], 0, 'PASS'))
+        for name, script, extra, expected, status in cases:
+            with self.subTest(case=name):
+                done = self.code(*extra, script=script)
+                self.assertEqual(done.returncode, expected, done.stderr)
+                self.assertIn(f': {status}', done.stderr)
+                if expected == 2:
+                    self.assertIn('test-run: exit code 2: the command exited 0, but the run is BLOCKED', done.stderr)
+                else:
+                    self.assertNotIn('test-run: exit code 2', done.stderr)
+
+    def test_an_unexecuted_karma_run_is_blocked_and_exits_2(self):
+        done = self.code(script="print('Chrome (Linux): Executed 5 of 10 SUCCESS'); print('Disconnected, because no message in 30000 ms.')")
+        self.assertEqual(done.returncode, 2, done.stderr)
+        self.assertEqual(self.attempt().end['status'], 'BLOCKED')
+
+    def test_a_karma_run_with_counted_failures_and_exit_zero_keeps_its_status(self):
+        # Known gap: Karma `(N FAILED)` with exit 0 is not read as a failure (failed tests are counted only for a nonzero exit); only unexecuted
+        # specs block (see the test above). So the run is a PASS and the code is 0.
+        done = self.code(script=KARMA_RED)
+        self.assertEqual(self.attempt().end['status'], 'PASS')
+        self.assertEqual(done.returncode, 0, done.stderr)
+
+    def test_a_timeout_is_124_and_a_missing_program_is_127(self):
+        done = self.run_cli('--step', 'F1.1', '--timeout', '1', '--', sys.executable, '-c', 'import time; time.sleep(30)')
+        self.assertEqual(done.returncode, 124, done.stderr)
+        done = self.run_cli('--step', 'F1.1', '--', 'definitely-not-a-command-xyz')
+        self.assertEqual(done.returncode, 127, done.stderr)
+
+    def namespace(self):
+        return argparse.Namespace(path=str(self.root), manifest=None, command=['--', sys.executable, '-c', PASSING], run=None, step='F1.1', format='auto',
+                                  junit=[], allow_no_count=None, allow_skips=False, timeout=60, import_file=None)
+
+    def call(self):
+        out, err = io.StringIO(), io.StringIO()
+        return out, err
+
+    def test_no_recorded_status_is_2_even_when_the_command_exited_0(self):
+        """A recorder that stored no `end` (a failure while writing it) leaves no proof: `recorder.last` is None."""
+        out, err = self.call()
+        with mock.patch.object(test_run.TestRecorder, 'finished', lambda self, check, result, output: None), \
+                contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = test_run._command(self.namespace())
+        self.assertEqual(code, 2, err.getvalue())
+        self.assertIn('test-run: exit code 2: the command exited 0, but the run is without a recorded status', err.getvalue())
+        self.assertIn('attempt -: BLOCKED (no recorded status)', err.getvalue())   # not the PASS of the runner
+
+    def test_a_failure_while_writing_the_end_is_2(self):
+        out, err = self.call()
+        with mock.patch.object(ev.EventWriter, 'end', side_effect=OSError('disk full')), contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = test_run._command(self.namespace())
+        self.assertEqual(code, 2, err.getvalue())
+        self.assertIn('test-run: exit code 2: the command exited 0, but the run is', err.getvalue())
+
+    def test_an_interrupt_while_the_end_is_worked_out_is_blocked_and_2(self):
+        out, err = self.call()
+        with mock.patch.object(test_run.TestRecorder, '_finish', side_effect=KeyboardInterrupt), contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = test_run._command(self.namespace())
+        self.assertEqual(code, 2, err.getvalue())
+        self.assertIn(': BLOCKED', err.getvalue())
+        self.assertNotIn('without a recorded status', err.getvalue())
+        self.assertEqual(self.attempt().end['status'], 'BLOCKED')
+
+    def test_import_keeps_exit_code_0_whatever_the_imported_status(self):
+        for number, (status, code) in enumerate((('PASS', 0), ('BLOCKED', 0), ('FAIL', 1)), 1):
+            with self.subTest(status=status):
+                source = child(Path(self.tmp), f'foreign{number}.jsonl')
+                source.write_text(json.dumps({'v': 1, 't': 'start', 'host': 'other-machine', 'startedAt': 'x', 'run': 'R1', 'step': 'F1.1'}) + '\n'
+                                  + json.dumps({'v': 1, 't': 'end', 'status': status, 'exit': code}) + '\n', encoding='utf-8')
+                done = subprocess.run([sys.executable, str(CLI), 'test-run', str(self.root), '--run', 'R1', '--step', 'F1.1', '--import', str(source),
+                                       '--source-sha', 'abcdef1'], capture_output=True, text=True, env=self.env, timeout=60)
+                self.assertEqual(done.returncode, 0, done.stderr)
+                self.assertIn(f'imported as attempt {number}', done.stderr)
 
 
 if __name__ == '__main__':

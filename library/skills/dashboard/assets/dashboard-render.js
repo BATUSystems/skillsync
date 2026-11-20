@@ -867,6 +867,20 @@
         (att.groups || []).map((g) => groupBlock(sec, att, g, key))) : null;
       return h("section", { class: `tsec s-${sec.state || "passed"}`, id: `tsec-${id}` }, head, body);
     }
+    const SKIP_REASON = { "not a step directory": "katalog spoza kroków", unreadable: "nieczytelny" };
+    const SKIP_LIMIT = 20;   // MAX_SKIPPED serwera: lista nie niesie sumy, więc przy pełnej liście liczba to dolne ograniczenie
+    function skippedNote(list) {
+      const items = list.filter((e) => e && typeof e === "object" && typeof e.path === "string");
+      if (!items.length) return null;
+      const n = items.length;
+      if (n === 1 && items[0].path === "tests") return h("p", { class: "tskipped", role: "note" }, "Nie udało się odczytać wyników testów.");
+      const count = list.length >= SKIP_LIMIT ? `co najmniej ${n}` : String(n);
+      const noun = plural(n, "plik lub katalog", "pliki lub katalogi", "plików lub katalogów");
+      const why = (r) => { const t = typeof r === "string" ? (Object.prototype.hasOwnProperty.call(SKIP_REASON, r) ? SKIP_REASON[r] : r) : ""; return t ? ` (${t})` : ""; };
+      const shown = items.slice(0, 5).map((e) => `${e.path}${why(e.reason)}`).join(", ");
+      const more = n > 5 ? ` i ${n - 5} więcej` : "";
+      return h("p", { class: "tskipped", role: "note" }, `Pominięto ${count} ${noun} wyników testów (nie dało się ich uwzględnić): ${shown}${more}.`);
+    }
     function renderTestsTab(d) {
       const t = d.tests && typeof d.tests === "object" && Array.isArray(d.tests.sections) ? d.tests : null;
       ui["tab-tests"].hidden = !t;
@@ -880,10 +894,18 @@
       ui.tCount.textContent = failed ? String(failed) : "";
       ui.tCount.setAttribute("class", failed ? "count is-bad" : "count");
       const fills = [];
+      const skipped = Array.isArray(t.skipped) ? skippedNote(t.skipped) : null;
+      const secs = t.sections.filter((sec) => sec && typeof sec === "object");
+      if (skipped && !secs.length) {
+        fill(ui.tests, skipped, h("p", { class: "empty" }, "Brak odczytanych wyników."));
+        ui["view-tests"].hidden = st.view !== "tests";
+        return;
+      }
       fill(ui.tests,
+        skipped,
         h("div", { class: "tlegend", role: "list" },
           ["waiting", "running", "passed", "failed"].map((k) => h("span", { role: "listitem" }, h("span", { class: `tst ${k}`, "aria-hidden": "true" }, TEST_MARK[k]), ` ${TEST_STATE[k]}`))),
-        t.sections.filter((sec) => sec && typeof sec === "object").map((sec) => testSection(sec, fills)));
+        secs.map((sec) => testSection(sec, fills)));
       animateBars(fills);
       ui["view-tests"].hidden = st.view !== "tests";
     }

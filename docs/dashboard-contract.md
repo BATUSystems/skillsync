@@ -469,6 +469,8 @@ Opcjonalne pole najwyższego poziomu (brak = zakładka „Testy” niewidoczna; 
 
 Stan „polecenie zawiodło”: w nagłówku sekcji (widocznym przy zwiniętej treści) renderer pokazuje czerwony znacznik `kod N, żaden test nie zgłosił porażki`, gdy pokazany bieg nie jest `running`, ma `levels` `tests` lub `counts`, `exit` liczbowy różny od 0 i `counts.failed = 0` (wyjątek poza raportowanymi testami; wyniki ok dotyczą tylko testów, które zdążyły się wykonać). Stan wynika z istniejących pól `exit` i `counts`: zapis biegu i `failedTotal` (licznik zakładki) się nie zmieniają. Bez znacznika: `exit` 0, brak `exit`, porażki w `counts.failed`, bieg trwający.
 
+Pominięte pliki (lista `tests.skipped`, opisana wyżej): przy niepustej liście renderer pokazuje w zakładce „Testy” notkę `role="note"`: „Pominięto N plików lub katalogów wyników testów (nie dało się ich uwzględnić): ścieżka (powód), …” (do 5 ścieżek, potem „i N więcej”; „co najmniej 20” przy 20 wpisach, bo serwer ucina listę do 20 i nie podaje sumy; powody mają polskie opisy: katalog spoza kroków, nieczytelny; wpis całego katalogu `tests` daje zdanie „Nie udało się odczytać wyników testów.”). Przy pustych sekcjach widać samą notkę i „Brak odczytanych wyników.”.
+
 Przycisk „na górę” (haczyk `deps.scroll.toTop`, te same progi i histereza co w dokumencie) działa też w widoku Testy; bez haczyka go nie ma. Po ukryciu lub kliknięciu fokus wraca na zakładkę bieżącego widoku (`tab-<widok>`), a widok Testy ma zapas pod treścią (`padding-bottom` 4,5 rem).
 
 Krok planu z testami ma w `progress.phases[].steps[]` opcjonalne `tests` (`{state, attempt, counts}`; pasek przy kroku i link do sekcji) i `test: true` dla kroku oznaczonego `[T]` (tytuł jest podawany bez znacznika). Stary renderer ignoruje oba pola.
