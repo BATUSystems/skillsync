@@ -34,7 +34,7 @@ def plan_text(spec_sha, status='draft', checked='[ ]', run='RUN-1'):
 class IgnoredSpecStore(WorkflowFixture):
     def setUp(self):
         super().setUp()
-        for name, value in (('HOME', str(self.base)), ('XDG_CONFIG_HOME', str(self.base / 'xdg-config')), ('GIT_CONFIG_GLOBAL', os.devnull),
+        for name, value in (('HOME', str(self.base)), ('USERPROFILE', str(self.base)), ('XDG_CONFIG_HOME', str(self.base / 'xdg-config')), ('GIT_CONFIG_GLOBAL', os.devnull),
                             ('GIT_CONFIG_NOSYSTEM', '1')):
             patcher = mock.patch.dict(os.environ, {name: value})
             patcher.start()

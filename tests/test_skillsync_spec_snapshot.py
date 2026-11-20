@@ -52,8 +52,8 @@ class Base(unittest.TestCase):
             run_git(path, 'init', '-q')
         (path / 'docs/specs').mkdir(parents=True)
         (path / 'docs/plans').mkdir(parents=True)
-        (path / 'docs/specs/s.md').write_text(SPEC_TEXT, encoding='utf-8')
-        (path / 'docs/plans/p.md').write_text(PLAN_TEXT, encoding='utf-8')
+        (path / 'docs/specs/s.md').write_bytes((SPEC_TEXT).encode('utf-8'))
+        (path / 'docs/plans/p.md').write_bytes((PLAN_TEXT).encode('utf-8'))
         return path
 
     def snap(self, manifest=None, **kw):
@@ -86,6 +86,17 @@ class WriteTests(Base):
                          {'specs/s.md': sha(SPEC_TEXT), 'plans/p.md': sha(PLAN_TEXT)})
         self.assertEqual({entry['status'] for target in report['targets'] for entry in target['files']}, {'written'})
 
+    def test_copy_is_byte_for_byte_with_crlf_source(self):
+        # Windows zapisuje pliki z CRLF; migawka kopiuje bajty bez przekładania końców linii, a sha liczy z bajtów źródła
+        raw = SPEC_TEXT.replace('\n', '\r\n').encode('utf-8')
+        (self.root / 'docs/specs/s.md').write_bytes(raw)
+        report, code = self.snap()
+        self.assertEqual((code, report['status']), (0, 'PASS'))
+        for base in (self.run_docs(), self.arch()):
+            self.assertEqual((base / 'specs/s.md').read_bytes(), raw)
+        self.assertEqual(self.saved()['run']['specs/s.md'], git_blob_sha(raw))
+        self.assertNotEqual(git_blob_sha(raw), sha(SPEC_TEXT))
+
     @unittest.skipIf(os.name == 'nt', 'prawa POSIX')
     def test_permissions_dirs_0700_files_0600(self):
         self.snap()
@@ -106,7 +117,7 @@ class WriteTests(Base):
 
     def test_changed_source_is_refreshed_without_replace(self):
         self.snap()
-        (self.root / 'docs/plans/p.md').write_text(PLAN_TEXT + '- [x] F1\n', encoding='utf-8')
+        (self.root / 'docs/plans/p.md').write_bytes((PLAN_TEXT + '- [x] F1\n').encode('utf-8'))
         report, code = self.snap()
         self.assertEqual(code, 0)
         self.assertIn('[x] F1', (self.arch() / 'plans/p.md').read_text())
@@ -115,8 +126,8 @@ class WriteTests(Base):
     def test_target_changed_by_someone_is_blocked_and_untouched(self):
         self.snap()
         edited = self.run_docs() / 'specs/s.md'
-        edited.write_text('ręczna zmiana\n')
-        (self.root / 'docs/specs/s.md').write_text(SPEC_TEXT + 'nowa linia\n', encoding='utf-8')
+        edited.write_bytes(('ręczna zmiana\n').encode('utf-8'))
+        (self.root / 'docs/specs/s.md').write_bytes((SPEC_TEXT + 'nowa linia\n').encode('utf-8'))
         report, code = self.snap()
         self.assertEqual((code, report['status']), (2, 'BLOCKED'))
         self.assertEqual(edited.read_text(), 'ręczna zmiana\n')
@@ -128,7 +139,7 @@ class WriteTests(Base):
     def test_replace_overwrites_changed_target(self):
         self.snap()
         edited = self.run_docs() / 'specs/s.md'
-        edited.write_text('ręczna zmiana\n')
+        edited.write_bytes(('ręczna zmiana\n').encode('utf-8'))
         report, code = self.snap(replace=True)
         self.assertEqual(code, 0)
         self.assertEqual(edited.read_text(), SPEC_TEXT)
@@ -136,7 +147,7 @@ class WriteTests(Base):
 
     def test_target_without_record_and_other_sha_is_blocked(self):
         (self.run_docs() / 'specs').mkdir(parents=True)
-        (self.run_docs() / 'specs/s.md').write_text('cudze\n')
+        (self.run_docs() / 'specs/s.md').write_bytes(('cudze\n').encode('utf-8'))
         report, code = self.snap({'project': {'name': 'proj'}})
         self.assertEqual(code, 2)
         self.assertEqual((self.run_docs() / 'specs/s.md').read_text(), 'cudze\n')
@@ -145,7 +156,7 @@ class WriteTests(Base):
 
     def test_target_without_record_with_source_sha_is_skipped_and_recorded(self):
         (self.run_docs() / 'specs').mkdir(parents=True)
-        (self.run_docs() / 'specs/s.md').write_text(SPEC_TEXT)
+        (self.run_docs() / 'specs/s.md').write_bytes((SPEC_TEXT).encode('utf-8'))
         report, code = self.snap({'project': {'name': 'proj'}})
         self.assertEqual(code, 0)
         entries = {entry['file']: entry['status'] for entry in self.targets(report)['run']['files']}
@@ -154,8 +165,8 @@ class WriteTests(Base):
 
     def test_corrupt_saved_json_blocks_differing_cells_and_replace_rebuilds(self):
         self.snap()
-        (self.run_docs() / '.saved.json').write_text('{ nie json')
-        (self.root / 'docs/specs/s.md').write_text(SPEC_TEXT + 'v2\n', encoding='utf-8')
+        (self.run_docs() / '.saved.json').write_bytes(('{ nie json').encode('utf-8'))
+        (self.root / 'docs/specs/s.md').write_bytes((SPEC_TEXT + 'v2\n').encode('utf-8'))
         report, code = self.snap()
         self.assertEqual(code, 2)
         self.assertEqual((self.run_docs() / 'specs/s.md').read_text(), SPEC_TEXT)
@@ -166,12 +177,12 @@ class WriteTests(Base):
 
     def test_corrupt_saved_json_with_identical_cells_is_noop(self):
         self.snap()
-        (self.run_docs() / '.saved.json').write_text('[]')
+        (self.run_docs() / '.saved.json').write_bytes(('[]').encode('utf-8'))
         report, code = self.snap()
         self.assertEqual(code, 0)
 
     def test_no_plan_and_no_spec_is_blocked_and_writes_nothing(self):
-        (self.root / 'docs/plans/p.md').write_text('Status: draft\nPrzebieg: inny\n')
+        (self.root / 'docs/plans/p.md').write_bytes(('Status: draft\nPrzebieg: inny\n').encode('utf-8'))
         report, code = self.snap()
         self.assertEqual((code, report['status']), (2, 'BLOCKED'))
         self.assertFalse((self.root / '.skillsync').exists())
@@ -186,14 +197,14 @@ class WriteTests(Base):
         self.assertEqual([entry['file'] for entry in report['files']], ['specs/s.md'])
 
     def test_explicit_spec_overrides_plan_line(self):
-        (self.root / 'docs/specs/other.md').write_text('Status: draft\ninny\n')
+        (self.root / 'docs/specs/other.md').write_bytes(('Status: draft\ninny\n').encode('utf-8'))
         report, code = self.snap(spec='docs/specs/other.md')
         self.assertEqual(code, 0)
         self.assertTrue((self.run_docs() / 'specs/other.md').exists())
         self.assertFalse((self.run_docs() / 'specs/s.md').exists())
 
     def test_plan_without_spec_line_saves_plan_with_note(self):
-        (self.root / 'docs/plans/p.md').write_text(f'Status: draft\nPrzebieg: {RUN}\n')
+        (self.root / 'docs/plans/p.md').write_bytes((f'Status: draft\nPrzebieg: {RUN}\n').encode('utf-8'))
         report, code = self.snap()
         self.assertEqual(code, 0)
         self.assertEqual([entry['file'] for entry in report['files']], ['plans/p.md'])
@@ -227,7 +238,7 @@ class WriteTests(Base):
         # Dowód mutacyjny: usunięcie `redact(report)` z `_cmd_snapshot` albo `redact` w `_message` czerwieni drugą część (sekret w komunikacie).
         token = 'gh' + 'p_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8'
         marker = 'ZNACZNIK-TRESCI-7431'
-        (self.root / 'docs/specs/s.md').write_text(f'Status: draft\n{marker} token {token}\n')
+        (self.root / 'docs/specs/s.md').write_bytes((f'Status: draft\n{marker} token {token}\n').encode('utf-8'))
         report, code = self.snap()
         self.assertEqual(code, 0)
         dumped = json.dumps(report) + spec_snapshot._render(report)
@@ -253,7 +264,7 @@ class WriteTests(Base):
         self.assertEqual(spec_snapshot._sanitize('..x'), '..x')
 
     def test_archive_tilde_is_expanded(self):
-        with mock.patch.dict(os.environ, {'HOME': str(self.base)}):
+        with mock.patch.dict(os.environ, {'HOME': str(self.base), 'USERPROFILE': str(self.base)}):
             (self.base / 'home-arch').mkdir()
             manifest = {'project': {'name': 'proj'}, 'workflow': {'specs': {'archive': '~/home-arch'}}}
             report, code = self.snap(manifest)
@@ -297,7 +308,7 @@ class WriteTests(Base):
     def test_shared_archive_separates_projects_by_name(self):
         self.snap()
         other = self.make_project(self.base / 'repo2')
-        (other / 'docs/specs/s.md').write_text('Status: draft\ninny projekt\n')
+        (other / 'docs/specs/s.md').write_bytes(('Status: draft\ninny projekt\n').encode('utf-8'))
         report, code = snapshot(other, {'project': {'name': 'proj2'}, 'workflow': self.manifest['workflow']}, RUN)
         self.assertEqual(code, 0)
         self.assertIn('inny projekt', (self.arch('proj2') / 'specs/s.md').read_text())
@@ -312,8 +323,8 @@ class WriteTests(Base):
         self.make_project(worktree, git=False) if not (worktree / 'docs').exists() else None
         (worktree / 'docs/specs').mkdir(parents=True, exist_ok=True)
         (worktree / 'docs/plans').mkdir(parents=True, exist_ok=True)
-        (worktree / 'docs/specs/s.md').write_text(SPEC_TEXT)
-        (worktree / 'docs/plans/p.md').write_text(PLAN_TEXT)
+        (worktree / 'docs/specs/s.md').write_bytes((SPEC_TEXT).encode('utf-8'))
+        (worktree / 'docs/plans/p.md').write_bytes((PLAN_TEXT).encode('utf-8'))
         report, code = snapshot(worktree, {'workflow': self.manifest['workflow']}, RUN)
         self.assertEqual(code, 0)
         self.assertTrue((self.archive / 'repo' / RUN / 'specs/s.md').exists())   # katalog głównego repo, nie worktree
@@ -330,8 +341,8 @@ class WriteTests(Base):
 
     def test_mixed_blocked_and_fail_exits_with_highest_weight(self):
         self.snap()
-        (self.run_docs() / 'specs/s.md').write_text('zmiana\n')
-        (self.root / 'docs/specs/s.md').write_text(SPEC_TEXT + 'v2\n')
+        (self.run_docs() / 'specs/s.md').write_bytes(('zmiana\n').encode('utf-8'))
+        (self.root / 'docs/specs/s.md').write_bytes((SPEC_TEXT + 'v2\n').encode('utf-8'))
         shutil.rmtree(self.archive)
         report, code = self.snap()
         self.assertEqual(({target['status'] for target in report['targets']}, code), ({'BLOCKED', 'FAIL'}, 2))
@@ -340,11 +351,11 @@ class WriteTests(Base):
     def test_symlinked_destination_file_is_refused(self):
         self.snap()
         outside = self.base / 'outside.md'
-        outside.write_text('cel poza\n')
+        outside.write_bytes(('cel poza\n').encode('utf-8'))
         dest = self.arch() / 'specs/s.md'
         dest.unlink()
         dest.symlink_to(outside)
-        (self.root / 'docs/specs/s.md').write_text(SPEC_TEXT + 'v2\n')
+        (self.root / 'docs/specs/s.md').write_bytes((SPEC_TEXT + 'v2\n').encode('utf-8'))
         report, code = self.snap()
         self.assertEqual(code, 2)
         self.assertEqual(outside.read_text(), 'cel poza\n')
@@ -380,14 +391,14 @@ class WriteTests(Base):
     @needs_symlinks
     def test_symlinked_source_is_refused(self):
         outside = self.base / 'secret.md'
-        outside.write_text('Status: draft\n')
+        outside.write_bytes(('Status: draft\n').encode('utf-8'))
         (self.root / 'docs/specs/link.md').symlink_to(outside)
         report, code = self.snap(spec='docs/specs/link.md')
         self.assertEqual(code, 2)
 
     def test_replace_failure_midway_leaves_target_and_no_temp(self):
         self.snap()
-        (self.root / 'docs/specs/s.md').write_text(SPEC_TEXT + 'v2\n')
+        (self.root / 'docs/specs/s.md').write_bytes((SPEC_TEXT + 'v2\n').encode('utf-8'))
         with mock.patch.object(spec_snapshot.os, 'replace', side_effect=OSError('boom')):
             report, code = self.snap()
         self.assertEqual(code, 1)
@@ -397,7 +408,7 @@ class WriteTests(Base):
         self.assertNotIn('boom', json.dumps(report))
 
     def test_source_larger_than_limit_is_blocked(self):
-        (self.root / 'docs/specs/s.md').write_text('x' * (512 * 1024 + 1))
+        (self.root / 'docs/specs/s.md').write_bytes(('x' * (512 * 1024 + 1)).encode('utf-8'))
         report, code = self.snap()
         self.assertEqual(code, 2)
 
@@ -430,7 +441,7 @@ class CheckTests(Base):
         report, code = check(self.root, manifest, RUN)   # brak migawki
         self.assertEqual(code, 2)
         self.snap(manifest)
-        (self.root / 'docs/plans/p.md').write_text(PLAN_TEXT + 'v2\n')
+        (self.root / 'docs/plans/p.md').write_bytes((PLAN_TEXT + 'v2\n').encode('utf-8'))
         report, code = check(self.root, manifest, RUN)
         self.assertEqual((code, report['targets'][0]['mismatched']), (2, ['plans/p.md']))
 
@@ -457,7 +468,7 @@ class CheckTests(Base):
         report, code = check(self.worktree, manifest, RUN, to=self.base / 'nie-ma')
         self.assertEqual(code, 2)
         snapshot(self.repo, manifest, RUN)
-        (self.repo / '.skillsync/runs' / RUN / 'docs/specs/s.md').write_text('inne\n')
+        (self.repo / '.skillsync/runs' / RUN / 'docs/specs/s.md').write_bytes(('inne\n').encode('utf-8'))
         report, code = check(self.worktree, manifest, RUN, to=self.repo)
         self.assertEqual(code, 2)
         self.assertEqual([t for t in report['targets'] if t['target'] == 'to'][0]['mismatched'], ['specs/s.md'])
@@ -472,7 +483,7 @@ class CheckTests(Base):
         snapshot(self.worktree, self.manifest, RUN)
         report, code = check(self.worktree, self.manifest, RUN)
         self.assertEqual((code, report['status']), (0, 'PASS'))
-        (self.arch() / 'plans/p.md').write_text('zmiana\n')
+        (self.arch() / 'plans/p.md').write_bytes(('zmiana\n').encode('utf-8'))
         report, code = check(self.worktree, self.manifest, RUN)
         self.assertEqual(code, 2)
 
@@ -519,7 +530,7 @@ class CheckTests(Base):
         manifest = {'project': {'name': 'proj'}}
         snapshot(self.worktree, manifest, RUN)
         snapshot(self.repo, manifest, RUN)
-        with mock.patch.dict(os.environ, {'HOME': str(self.base)}):
+        with mock.patch.dict(os.environ, {'HOME': str(self.base), 'USERPROFILE': str(self.base)}):
             report, code = check(self.worktree, manifest, RUN, to='~/repo')
         self.assertEqual((code, report['status']), (0, 'PASS'))
         self.assertNotIn(str(self.base), json.dumps(report))
@@ -559,7 +570,7 @@ class CliTests(Base):
         self.assertEqual((done.returncode, json.loads(done.stdout)['status']), (0, 'PASS'), done.stderr)
         done = self.cli(self.root, '--run-id', RUN, '--manifest', self.manifest_file, '--check', '--json')
         self.assertEqual((done.returncode, json.loads(done.stdout)['mode']), (0, 'check'))
-        (self.arch() / 'specs/s.md').write_text('zmiana\n')
+        (self.arch() / 'specs/s.md').write_bytes(('zmiana\n').encode('utf-8'))
         done = self.cli(self.root, '--run-id', RUN, '--manifest', self.manifest_file, '--check', '--json')
         self.assertEqual(done.returncode, 2)
         done = self.cli(self.root, '--run-id', RUN, '--manifest', self.manifest_file)

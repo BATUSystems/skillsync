@@ -11,6 +11,7 @@ from pathlib import Path
 
 from . import fsutil
 from .layers import _quote_arg
+from .pathfmt import posix
 
 PROBES = ('docs/specs/x.md', 'docs/plans/x.md')
 KNOWN = ('tracked', 'archive')
@@ -110,7 +111,7 @@ def specs_info(repo, manifest):
     value = _raw(manifest)
     value = value if isinstance(value, dict) else {}
     archive = value.get('archive')
-    archive = os.path.expanduser(archive) if archive is not None else None
+    archive = posix(os.path.expanduser(archive)) if archive is not None else None
     rules = ignore_rules(repo)
     if value.get('tracked') is True and rules == 2:
         return {'tracked': None, 'archive': archive, 'source': 'invalid',

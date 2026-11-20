@@ -107,8 +107,10 @@ class SpecsInfoTests(unittest.TestCase):
         self.assertEqual(self.info(tracked=True)['source'], 'manifest')
 
     def test_archive_is_expanded_and_validated(self):
-        with mock.patch.dict(os.environ, {'HOME': '/opt/fakehome'}):
-            self.assertEqual(self.info(archive='~/store')['archive'], '/opt/fakehome/store')
+        # expanduser czyta HOME (POSIX) albo USERPROFILE (Windows); wynik w raporcie ma `/` (kontrakt ścieżek od 1.5.0)
+        fake = Path(self.tmp.name) / 'fakehome'
+        with mock.patch.dict(os.environ, {'HOME': str(fake), 'USERPROFILE': str(fake)}):
+            self.assertEqual(self.info(archive='~/store')['archive'], fake.as_posix() + '/store')
         self.assertEqual(self.info(archive='/srv/store')['archive'], '/srv/store')
 
     def test_invalid_types(self):

@@ -6,7 +6,8 @@
    "symlinks unavailable (Windows without Developer Mode)",
    "brak dowiązań symbolicznych",
    "symlinks unavailable",
-   "symlinki wymagają uprawnień"
+   "symlinki wymagają uprawnień",
+   "symlinki niedostępne"
   ],
   "no-os-symlinks": [
    "OS cannot create symlinks",
@@ -1360,6 +1361,34 @@
    {
     "id": "test_skillsync_selfcmd.UserEntry.test_the_fixed_entry_wins_over_path",
     "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_spec_snapshot.CheckTests.test_symlinked_kind_directory_in_target_is_unavailable",
+    "category": "needs-symlinks"
+   },
+   {
+    "id": "test_skillsync_spec_snapshot.WriteTests.test_permissions_dirs_0700_files_0600",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_spec_snapshot.WriteTests.test_symlinked_archive_root_is_refused",
+    "category": "needs-symlinks"
+   },
+   {
+    "id": "test_skillsync_spec_snapshot.WriteTests.test_symlinked_destination_file_is_refused",
+    "category": "needs-symlinks"
+   },
+   {
+    "id": "test_skillsync_spec_snapshot.WriteTests.test_symlinked_directories_are_refused",
+    "category": "needs-symlinks"
+   },
+   {
+    "id": "test_skillsync_spec_snapshot.WriteTests.test_symlinked_docs_in_source_is_refused",
+    "category": "needs-symlinks"
+   },
+   {
+    "id": "test_skillsync_spec_snapshot.WriteTests.test_symlinked_source_is_refused",
+    "category": "needs-symlinks"
    },
    {
     "id": "test_skillsync_stop_signals.SigbreakOnWindowsTests.test_a_child_in_its_own_process_group_stops_cleanly_on_ctrl_break_event",
