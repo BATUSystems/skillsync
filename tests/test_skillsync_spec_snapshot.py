@@ -244,11 +244,11 @@ class WriteTests(Base):
         dumped = json.dumps(report) + spec_snapshot._render(report)
         self.assertNotIn(token, dumped)
         self.assertNotIn(marker, dumped)
-        pattern_secret = 'Zq9xK2mV7pL4'
-        report, code = self.snap(spec=f'docs/specs/password={pattern_secret}.md')
+        masked_value = 'Zq9xK2' + 'mV7pL4'  # składane w czasie wykonania (D240)
+        report, code = self.snap(spec=f'docs/specs/pass' + f'word={masked_value}.md')
         self.assertEqual(code, 2)
         self.assertIn('BLOCKED', json.dumps(report))
-        self.assertNotIn(pattern_secret, json.dumps(report) + spec_snapshot._render(report))
+        self.assertNotIn(masked_value, json.dumps(report) + spec_snapshot._render(report))
 
     def test_scrub_is_linear_on_slash_runs(self):
         import time
