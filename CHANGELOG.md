@@ -12,6 +12,15 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Added
+
+- **Status page: `expertQuestions.current`.** `dashboard show` and `GET /api/status` report the prototypes and the expert questions of the current run as `null` or `{spec, prototypes, open, blocking, items}` (additive, `schema: 1`). They are bound by the spec path: prototypes by `requirements` (plus the `Prototyp:` line), questions by `origin.spec`. The existing fields (`open`, `blocking`, `runs[]`, `items[]`) are unchanged. Contract: [docs/dashboard-contract.md](docs/dashboard-contract.md), section "`expertQuestions`".
+
+### Changed
+
+- **Status page, tab "Pytania":** shows only the prototypes and questions of the current run (the tab is hidden when the run has neither). The toast and the waiting banner still count the whole project.
+- **Status page, document list:** the groups "Speki", "Plany", "Projekt" and "Domena" are collapsible and collapsed by default; the groups "Bieżące zadanie" and "Przebieg" stay open.
+
 ## [1.10.0] - 2026-11-18
 
 Upgrading from 1.9.1: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.9.1 → 1.10.0".

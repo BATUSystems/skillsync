@@ -79,6 +79,10 @@ Wydanie 1.9.1 jest PATCH (sekcja **Breaking** w `CHANGELOG.md` to „None.”) z
 2. Uruchom ponownie działający `skillsync dashboard serve`: plik tymczasowy stanu serwera ma teraz rozszerzenie `.tmp` zamiast `.json`, a start serwera sprząta pozostałości starej postaci. Konsument katalogu stanu, który czytał `*.json`, nie trafi już na pusty plik tymczasowy.
 3. Windows: dwa równoległe kroki `skillsync test-run` tworzące ten sam katalog (`.skillsync/runs/<przebieg>/tests`, `.skillsync/logs`, katalog blokad) nie kończą się już `BLOCKED` (kod 2) przez `PermissionError` ani przez fałszywe „Path escapes project” dla `.skillsync/logs/<id>`.
 
+## Zmiany strony statusu po 1.10.0
+
+Zmiana jest addytywna (ta zmiana nie dodaje wpisu do sekcji **Breaking**). W zakładce „Pytania” strona pokazuje wyłącznie bieżący przebieg (ukryta, gdy przebieg nie ma prototypów ani pytań); toast i baner czekania nadal liczą po całym projekcie. Lista dokumentów ma zwinięte grupy „Speki”, „Plany”, „Projekt” i „Domena”. Klienci JSON mogą czytać `expertQuestions.current`; dotychczasowe pola zostają bez zmian. Uruchom ponownie działający `skillsync dashboard serve`.
+
 ## Przejście 1.9.1 → 1.10.0
 
 Wydanie 1.10.0 jest MINOR (sekcja **Breaking** w `CHANGELOG.md` to „None.”). Nie ma kroków obowiązkowych: nowe pole i nowe pytanie działają same, a stare pliki planu i stary renderer dalej działają.

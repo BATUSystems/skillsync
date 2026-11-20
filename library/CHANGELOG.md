@@ -4,6 +4,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+### Added
+
+- Skill `dashboard`: contract field `expertQuestions.current` (the prototypes and expert questions of the current run, bound by the spec path).
+
+### Changed
+
+- Skill `dashboard`: the tab "Pytania" shows only the current run (hidden when it has no prototypes and no questions; a server without `current` gets a local filter by `prototype.slug`); the document groups "Speki", "Plany", "Projekt" and "Domena" are collapsed by default.
+
 ## [1.10.0] - 2026-11-18
 
 ### Added
