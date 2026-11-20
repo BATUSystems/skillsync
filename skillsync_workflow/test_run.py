@@ -109,13 +109,28 @@ def _base(word):
     return re.sub(r'(?<=.)@[^@/]*$', '', name)
 
 
+def _is_windows():
+    return os.name == 'nt'
+
+
+def _shell_words(text):
+    """The words of a shell string with POSIX quoting rules on every system (`'A=1 cmd'`, `"a b"`, `-S'A=1 cmd'` are one word each), so a command is read the same on Windows
+    and elsewhere. On Windows a backslash stays literal (`C:\\Program Files\\node.exe`): only quotes group words. Raises `ValueError` on an open quote."""
+    lexer = shlex.shlex(text, posix=True)
+    lexer.whitespace_split = True
+    lexer.commenters = ''
+    if _is_windows():
+        lexer.escape = ''
+    return list(lexer)
+
+
 def _split(command):
     """The words of a command given as an argv list, a tuple or a shell string; a string that cannot be split (an open quote) gives no words, never an exception."""
     if isinstance(command, (list, tuple)):
         return [str(word) for word in command]
     if isinstance(command, str):
         try:
-            return shlex.split(command, posix=os.name != 'nt')
+            return _shell_words(command)
         except ValueError:
             return []
     return []
@@ -171,7 +186,7 @@ def _split_string(rest, spec, boolean, valued):
         if value is None or '$' in value:
             return None
         try:
-            return shlex.split(value) + tail
+            return _shell_words(value) + tail
         except ValueError:
             return None
     return False

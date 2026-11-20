@@ -168,6 +168,37 @@ class TapCounter(unittest.TestCase):
         self.assertIsNone(skipped)
 
 
+class ShellStringIsReadTheSameOnEverySystem(unittest.TestCase):
+    """A command given as a string is split with POSIX quoting on Windows too (the `os.name` switch is faked, so the rows run on every system)."""
+    ROWS = (
+        ("env -S 'CI=1 npx jest'", ['jest']),
+        ("env -S'CI=1 npx jest'", ['jest']),
+        ("env --split-string='CI=1 npx jest'", ['jest']),
+        ("env -i -S 'CI=1 npx jest'", ['jest']),
+        ("env A=1 'npx' jest", ['jest']),
+        ('poetry run pytest -q', ['pytest', '-q']),
+    )
+
+    def test_the_rows_are_the_same_with_and_without_windows(self):
+        for windows in (False, True):
+            with mock.patch.object(test_run, '_is_windows', return_value=windows):
+                for command, argv in self.ROWS:
+                    with self.subTest(windows=windows, command=command):
+                        self.assertEqual(test_run.unwrap_command(command), argv)
+                        self.assertEqual(test_run.detect_tool(command), argv[0])
+
+    def test_a_windows_path_keeps_its_backslashes(self):
+        command = r'"C:\Program Files\nodejs\node.exe" --test'
+        with mock.patch.object(test_run, '_is_windows', return_value=True):
+            self.assertEqual(test_run._split(command), [r'C:\Program Files\nodejs\node.exe', '--test'])
+            self.assertEqual(test_run.detect_tool(command), 'node')
+
+    def test_an_open_quote_still_gives_no_words(self):
+        for windows in (False, True):
+            with mock.patch.object(test_run, '_is_windows', return_value=windows):
+                self.assertEqual(test_run._split("env -S 'CI=1 npx jest"), [])
+
+
 class Unwrapping(unittest.TestCase):
     def test_the_argv_behind_the_wrappers(self):
         rows = (
