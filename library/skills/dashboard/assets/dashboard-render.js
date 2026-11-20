@@ -1288,7 +1288,21 @@
       if (s < 86400) return `${Math.floor(s / 3600)} h temu`;
       return `${Math.floor(s / 86400)} d temu`;
     }
-    const questionsTabShown = (d) => Array.isArray(d.prototypes) || Boolean(d.expertQuestions && typeof d.expertQuestions === "object" && Array.isArray(d.expertQuestions.items));
+    // Zakładka „Pytania” dotyczy bieżącego przebiegu: serwer daje `expertQuestions.current` (obiekt albo null = ukryta).
+    // Brak klucza `current` (starszy serwer): przybliżenie lokalne po `prototype.slug` (prototypy, pytania, licznik z `runs[]`).
+    function questionsView(d) {
+      const eq = d.expertQuestions && typeof d.expertQuestions === "object" ? d.expertQuestions : null;
+      const objs = (v) => (Array.isArray(v) ? v : []).filter((x) => x && typeof x === "object");
+      if (eq && Object.prototype.hasOwnProperty.call(eq, "current")) {
+        const c = eq.current;
+        if (!c || typeof c !== "object" || Array.isArray(c)) return null;
+        return { protos: objs(c.prototypes), items: objs(c.items), open: c.open };
+      }
+      const slug = d.prototype && typeof d.prototype === "object" && typeof d.prototype.slug === "string" ? d.prototype.slug : "";
+      if (!slug || !(Array.isArray(d.prototypes) || (eq && Array.isArray(eq.items)))) return null;
+      const run = (eq && Array.isArray(eq.runs) ? eq.runs : []).find((r) => r && typeof r === "object" && r.slug === slug);
+      return { protos: objs(d.prototypes).filter((p) => p.slug === slug), items: objs(eq && eq.items).filter((q) => q.runSlug === slug), open: run ? run.open : null };
+    }
     function protoRow(d, p) {
       const slug = typeof p.slug === "string" ? p.slug : "";
       const screens = nonNeg(p.screens), accepted = nonNeg(p.accepted), stale = nonNeg(p.stale);
@@ -1327,18 +1341,16 @@
           on: { click: linkClick("experts", slug, url) } }, "Otwórz pytania") : null);
     }
     function renderQuestionsTab(d) {
-      const shown = questionsTabShown(d);
-      ui["tab-questions"].hidden = !shown;
-      if (!shown) {
+      const qv = questionsView(d);
+      ui["tab-questions"].hidden = !qv;
+      if (!qv) {
         fill(ui.qProtos); fill(ui.qItems); ui.qCount.textContent = "";
         ui["view-questions"].hidden = true;
         if (st.view === "questions") setView("progress", false);
         return;
       }
-      const eq = d.expertQuestions && typeof d.expertQuestions === "object" ? d.expertQuestions : {};
-      const protos = (Array.isArray(d.prototypes) ? d.prototypes : []).filter((p) => p && typeof p === "object");
-      const items = (Array.isArray(eq.items) ? eq.items : []).filter((q) => q && typeof q === "object").slice(0, 50);
-      ui.qCount.textContent = Number.isFinite(eq.open) && eq.open > 0 ? String(eq.open) : "";
+      const protos = qv.protos, items = qv.items.slice(0, 50);
+      ui.qCount.textContent = Number.isFinite(qv.open) && qv.open > 0 ? String(qv.open) : "";
       fill(ui.qProtos, h("h2", { class: "q-title" }, "Prototypy"),
         protos.length ? h("ul", { class: "q-list" }, protos.map((p) => protoRow(d, p))) : h("div", { class: "empty" }, "Brak prototypów"));
       fill(ui.qItems, h("h2", { class: "q-title" }, "Pytania do eksperta"),
