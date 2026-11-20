@@ -2,7 +2,7 @@
 title: 'Test importujący sąsiedni moduł testów pada przy `python3 -m unittest tests.<moduł>`: uruchamiaj punktowo przez discover albo z PYTHONPATH=tests'
 tags: [skillsync, tests, unittest, imports, agents]
 paths: ['tests/test_skillsync_retro.py', 'tests/test_skillsync_workflow.py']
-source: "tests/test_skillsync_retro.py:19 (`from test_skillsync_workflow import CLI, WorkflowFixture`); raport przebiegu CORE-SPECSTORE F3.1 (19.11, odkrycie: ImportError przy `python3 -m unittest tests.test_skillsync_retro`)"
+source: "tests/test_skillsync_retro.py:19 (`from test_skillsync_workflow import CLI, WorkflowFixture`); spec poza publicznym rdzeniem (odkrycie: ImportError przy `python3 -m unittest tests.test_skillsync_retro`)"
 verified: 2026-11-19
 ---
 **Objaw:** `python3 -m unittest tests.test_skillsync_retro` kończy się `ImportError` (brak modułu `test_skillsync_workflow`), zanim wykona się którykolwiek test. Bieg wygląda jak regresja, a nią nie jest.

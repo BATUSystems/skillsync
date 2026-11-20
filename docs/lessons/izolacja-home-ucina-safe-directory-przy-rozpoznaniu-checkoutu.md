@@ -2,7 +2,7 @@
 title: 'Izolacja HOME w środowisku gita ucina safe.directory: rozpoznanie checkoutu po błędzie gita daje fail-open, a nie BLOCKED'
 tags: [skillsync, git, worktree, security, spec-snapshot, tests]
 paths: ['skillsync_workflow/spec_snapshot.py', 'skillsync_workflow/specs.py', 'tests/test_skillsync_spec_snapshot.py', 'tests/test_skillsync_specs.py']
-source: "skillsync_workflow/spec_snapshot.py:51-55 (`_git_env`, docstring), :86-92 (`_checkout_kind`); tests/test_skillsync_spec_snapshot.py:490 (`test_git_failure_in_linked_checkout_is_fail_closed`), :498 (`test_dangling_git_file_is_blocked_and_missing_git_is_not`); raport przebiegu CORE-SPECSTORE F3.3 (poprawka MAJOR-1, 2026-11-19)"
+source: "skillsync_workflow/spec_snapshot.py:51-55 (`_git_env`, docstring), :86-92 (`_checkout_kind`); tests/test_skillsync_spec_snapshot.py:490 (`test_git_failure_in_linked_checkout_is_fail_closed`), :498 (`test_dangling_git_file_is_blocked_and_missing_git_is_not`); spec poza publicznym rdzeniem, poprawka po review"
 verified: 2026-11-19
 ---
 **Objaw:** w połączonym worktree `skillsync spec snapshot --check` mógł zwrócić `PASS`, mimo że git nie potrafił ustalić, czy katalog jest worktree. Przyczyną była konfiguracja, a nie stan plików: git odmawiał pracy z powodu `dubious ownership`.

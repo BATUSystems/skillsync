@@ -2,7 +2,7 @@
 title: 'Reguła procedury sprzeczna ze strażnikiem repozytorium: przed wpisaniem kroku do procedury sprawdź strażników testów higieny'
 tags: [skillsync, workflow, procedura, git, hygiene, specs, commit]
 paths: ['library/skills/feature/**', 'library/skills/pr-run/**', 'library/skills/bugfix/SKILL.md', 'library/instructions/_base.md', 'tests/test_skillsync_repo_hygiene.py']
-source: "spec CORE-SPECSTORE (2026-11-19, sekcja Problem: dwa wystąpienia 18.11); tests/test_skillsync_repo_hygiene.py:42-45 (`test_no_tracked_specs_or_plans`), :47-61 (odwołania do datowanych plików); library/instructions/_base.md (reguła „GO plan = commit” przed zmianą)"
+source: "spec poza publicznym rdzeniem, sekcja Problem: dwa wystąpienia; tests/test_skillsync_repo_hygiene.py:42-45 (`test_no_tracked_specs_or_plans`), :47-61 (odwołania do datowanych plików); library/instructions/_base.md (reguła „GO plan = commit” przed zmianą)"
 verified: 2026-11-19
 ---
 **Objaw:** w dwóch pakietach z 18.11 krok „GO plan” zacommitował spec i plan. W pierwszym pełny bieg padł na `test_no_tracked_specs_or_plans` (publiczny rdzeń nie śledzi `docs/specs` ani `docs/plans`), naprawa była `git rm --cached` po fakcie. W drugim blob speca został w historii gałęzi roboczej i zniknął dopiero przy squashu wydania.

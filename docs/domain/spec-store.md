@@ -2,15 +2,15 @@
 title: 'Spec i plan poza gitem: tryb nieśledzony (`tracked: false`), migawka, archiwum speców i odbiór planu'
 tags: [skillsync, workflow, specs, snapshot, archive, git, approvals, closure]
 paths: ['skillsync_workflow/specs.py', 'skillsync_workflow/spec_snapshot.py', 'skillsync_workflow/status.py', 'skillsync_workflow/quality.py', 'skillsync_workflow/test_gate.py', 'skillsync_workflow/retro.py', 'library/hooks/check-closure.py', 'library/skills/feature/references/spec-store.md', 'tests/test_skillsync_specs*.py', 'tests/test_skillsync_spec_snapshot.py', 'tests/test_skillsync_repo_hygiene.py', 'tests/test_skillsync_closure.py']
-source: "spec CORE-SPECSTORE (2026-11-19; K1–K15, sekcje Ustalenia, Kontrakty, Ryzyka, Migracja); skillsync_workflow/specs.py (`specs_info`, `specs_findings`), spec_snapshot.py (`snapshot`, `check`, `_checkout_kind`), status.py (`record_approval`, `plan_state_for_run`, `acceptance_pending`); tests/test_skillsync_repo_hygiene.py:42-45"
+source: "spec poza publicznym rdzeniem, sekcje Ustalenia, Kontrakty, Ryzyka, Migracja; skillsync_workflow/specs.py (`specs_info`, `specs_findings`), spec_snapshot.py (`snapshot`, `check`, `_checkout_kind`), status.py (`record_approval`, `plan_state_for_run`, `acceptance_pending`); tests/test_skillsync_repo_hygiene.py:42-45"
 verified: 2026-11-19
 ---
-Reguła: spec i plan projektu nie muszą być w historii gita. Tryb nieśledzony (`tracked: false`) włącza się, gdy reguła w śledzonym `.gitignore` korzenia repozytorium ignoruje oba katalogi (`/docs/specs/` i `/docs/plans/`), albo gdy manifest ustawia `workflow.specs.tracked: false`. Klucz wygrywa z wykrywaniem. Tryb śledzony (`tracked: true`) jest domyślny i zachowuje dotychczasowe zachowanie.
+Reguła: spec i plan projektu nie muszą być w historii gita. Tryb nieśledzony (`tracked: false`) włącza się, gdy reguła w którymkolwiek `.gitignore` drzewa repozytorium (także zagnieżdżonym) ignoruje oba katalogi (`/docs/specs/` i `/docs/plans/`), albo gdy manifest ustawia `workflow.specs.tracked: false`. Klucz wygrywa z wykrywaniem. Tryb śledzony (`tracked: true`) jest domyślny.
 
 Źródło prawdy: `skillsync route <projekt>`, pole `specs {tracked, archive, source}`. Procedura nie zgaduje trybu po stanie gita.
 
 Wykrywanie (`specs_info`, `skillsync_workflow/specs.py`):
-- Klucz `workflow.specs` czytany jest z surowego manifestu projektu; `workflow/defaults.yaml` i `workflow/projects/<slug>.yaml` go ignorują. Wtedy `source: manifest`.
+- Klucz `workflow.specs` czytany jest z surowego manifestu projektu; `workflow/defaults.yaml` i `workflow/projects/<slug>.yaml` go ignorują. Klucz z ustawionym `tracked` daje `source: manifest`.
 - Bez klucza: `git check-ignore --no-index -v` dla `docs/specs/x.md` i `docs/plans/x.md` w środowisku izolowanym (bez `HOME`, `GIT_CONFIG_GLOBAL=/dev/null`, `GIT_CONFIG_NOSYSTEM=1`). Liczy się tylko reguła z pliku `.gitignore` o ścieżce względnej w drzewie repozytorium. Negacja `!`, `.git/info/exclude`, `core.excludesFile` i globalny plik `.gitignore` nie liczą się: tryb nie zależy od maszyny.
 - Oba katalogi ignorowane = `source: gitignore`, `tracked: false`. Jeden katalog, brak gita albo błąd gita = `source: default`, `tracked: true`.
 - Projekt, który nie jest korzeniem repozytorium (zagnieżdżony), dostaje `default`: reguły nadrzędnego `.gitignore` go nie dotyczą.
@@ -31,9 +31,9 @@ Archiwum speców (`workflow.specs.archive`): opcjonalne; tylko `~/` albo ścież
 
 Odbiór planu i `planState`:
 - Wpis `CP` albo `READY` w `approvals.jsonl` dostaje pole `planState` (status planu z `Przebieg:` w chwili zgody). Pole `plan` zostaje ścieżką planu.
-- Przy `tracked: false` odbiór (`needsHuman: acceptance`) zamyka ostatni wpis pary (przebieg, słowo) z `planState: done`, gdy bieżący plan jest `done`. Historii gita się nie używa; zmiana innych linii planu (np. `Oddanie:`) nie otwiera odbioru.
+- Przy `tracked: false` odbiór (`needsHuman: acceptance`) zamyka ostatni wpis pary (przebieg, słowo) z `planState: done`, gdy bieżący plan jest `done`. Wpis `done` zamyka odbiór tylko wtedy, gdy jego sha jest commitem repozytorium (`_commit_exists`). Historii gita się nie używa; zmiana innych linii planu (np. `Oddanie:`) nie otwiera odbioru.
 - Duplikat zgody: ta sama para (słowo, sha, `planState`) względem ostatniego wpisu tego słowa w przebiegu.
-- Stan przycisku `after` w tym trybie: wpis bez pola przy planie `done` nie daje „zgody danej”, więc stara zgoda nie blokuje nowej. Przy `tracked: true` oceną rządzi git, jak dotąd.
+- Stan przycisku `after` w tym trybie: wpis bez pola przy planie `done` nie daje „zgody danej”, więc stara zgoda nie blokuje nowej. Przy `tracked: true` odbiór rozstrzyga git; przycisk porównuje wpis z `planState` ze statusem planu niezależnie od gita.
 - Dashboard `POST /api/approve` przyjmuje `planState`; gdy bieżący status planu jest inny, odpowiada `409`, a nie-napis daje `400`. Kontrakt: [dashboard-contract](../dashboard-contract.md).
 
 Hook zamknięcia (`library/hooks/check-closure.py`) czyta także pliki ignorowane (`git status --ignored`, wpisy `!!`). Plan `done` bez rekordu `final` albo `in_progress` ze wszystkimi krokami odhaczonymi blokuje turę raz na sesję. Projekty dostają to po `skillsync link`, bo kopia hooka się odświeża.
@@ -47,5 +47,9 @@ Ryzyka rezydualne (zaakceptowane, do świadomości):
 - Nieczytelny `docs/.saved.json` bez `--replace` nie jest ruszany; cele z innym sha dają `BLOCKED`.
 - Stary klient dashboardu nie wysyła `planState`. Serwer przyjmuje wtedy zgodę bez kontroli, więc klik ze starej strony przy `tracked: false` może zamknąć odbiór, którego nie widać.
 - `redact` nie maskuje tokenów `ghp_` w nazwie podanej przez `--spec`.
+- Stary plan `done` bez katalogu przebiegu blokuje jednorazowo w nowej sesji (hook zamknięcia); wyjście: `skillsync plan archive` albo rekord `--final`.
+- `spec snapshot --check`: gdy w katalogu projektu nie ma `.git` (projekt w podkatalogu repozytorium) i git zgłosi błąd, rozpoznanie daje `none`, a wynik to PASS bez celu poza worktree (wąski wariant fail-open).
+- `_compare` sprawdza dowiązanie tylko w ostatnim komponencie bazy celu; zapis odrzuca też dowiązania pośrednie.
+- `route.specs` po błędzie gita (np. `safe.directory`) wraca cicho do `default`.
 - Plan otwarty i zamknięty ponownie bez nowej zgody zamyka odbiór bez nowego `CP`.
 - Dowody `test-run` sprzed wpisu `.gitignore` mają inny identyfikator drzewa i trzeba je powtórzyć.

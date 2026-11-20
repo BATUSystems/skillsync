@@ -153,7 +153,7 @@ Stan w `.skillsync/` zapisuje się przez kontrolowane ścieżki: bez dowiązań 
 
 Spec i plan ignorowane przez git zmieniają wynik kilku konsumentów gita. Tryb nie zmienia odczytu plików przez `dashboard` i `status` (czytają drzewo robocze bez gita). Zmiany dotyczą:
 - hook zamknięcia `library/hooks/check-closure.py`: lista planów z `git status --ignored` (wpisy `!!`); bez reguły zachowanie bez zmian;
-- odbiór planu (`status.acceptance_pending`): przy `tracked: false` zamknięcie zgody zależy od `planState` wpisu, nie od `git show` ani `git log`; przy `tracked: true` oceną rządzi git jak dotąd;
+- odbiór planu (`status.acceptance_pending`): przy `tracked: false` zamknięcie zgody zależy od `planState` wpisu, nie od `git show` ani `git log`; przy `tracked: true` odbiór rozstrzyga git; przycisk `CP`/`READY` porównuje wpis z `planState` ze statusem planu niezależnie od gita. Wpis `done` zamyka odbiór przy `tracked: false` tylko wtedy, gdy jego sha jest commitem repozytorium (`_commit_exists`);
 - bramka testów (`test_gate.py`, `work_tree_id`): reguła w `.gitignore` wyłącza spec i plan z identyfikatora drzewa; `TREE_EXCLUDES` bez zmian;
 - polecenia z `--exclude-standard` (`runs.py`, `selection.py`, `common.py`, `leakguard.py`, `quality.py`): edycja speca i planu nie unieważnia odcisku wznowienia ani nie wymusza testów przy `Stop`; to zamierzone w trybie nieśledzonym;
 - `doctor`: błędy i ostrzeżenia dla `workflow.specs` i śledzonych plików w `docs/specs` lub `docs/plans`.
