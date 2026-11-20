@@ -352,12 +352,12 @@ class StatusSecretsGuard(SecretFiles, base.HttpCase):
 
     def test_the_questions_of_the_current_run_are_masked_like_the_project_ones(self) -> None:
         text = "y" * (engine.QUESTION_TEXT_LIMIT - 8) + f" {ENV_SECRET} koniec password: {PATTERN_SECRET}"
-        directory = self.root / "docs" / "prototypes" / "run-secret"
-        directory.mkdir(parents=True)
-        (directory / "prototype.json").write_text(json.dumps({"requirements": base.SPEC}), encoding="utf-8", newline="\n")
+        proto_dir = self.root / "docs" / "prototypes" / "run-secret"
+        proto_dir.mkdir(parents=True)
+        (proto_dir / "prototype.json").write_text(json.dumps({"requirements": base.SPEC}), encoding="utf-8", newline="\n")
         ask = {"id": "o1", "type": "ask", "questionId": "qn-000001", "at": "2026-01-10T10:00:00Z", "by": "agent", "text": text,
                "blocking": True, "assumed": None, "addressees": [], "refs": [], "options": [], "origin": {"spec": base.SPEC, "q": "Q1"}}
-        (directory / "questions.json").write_text(json.dumps({"questionsFormat": 1, "operations": [ask]}), encoding="utf-8", newline="\n")
+        (proto_dir / "questions.json").write_text(json.dumps({"questionsFormat": 1, "operations": [ask]}), encoding="utf-8", newline="\n")
         board = base.srv.Board(self.root, prototype_port=1)
         board.prototype_acceptance = lambda slug: None
         current = board.status()["expertQuestions"]["current"]
