@@ -129,9 +129,9 @@ class Gate(WorkflowFixture):
 
     def test_a_command_without_tests_is_not_a_proof(self):
         """A2: `test-run S -- true` exits 0 but is no proof (unknown count)."""
-        self.assertEqual(self.run_tests(code='pass').returncode, 0)
+        self.assertEqual(self.run_tests(code='pass').returncode, 2)   # exit 0 without proof (status BLOCKED) is exit code 2 (CORE-TESTDEBT K3)
         self.assertIn('did not pass', self.checkpoint('F1.2', self.events(), ok=False))
-        self.assertEqual(self.run_tests(code="print('Ran 0 tests in 0.0s'); print('OK')").returncode, 0)
+        self.assertEqual(self.run_tests(code="print('Ran 0 tests in 0.0s'); print('OK')").returncode, 2)   # exit 0 without proof (status BLOCKED) is exit code 2 (CORE-TESTDEBT K3)
         self.assertIn('did not pass', self.checkpoint('F1.2', self.events(n=2), ok=False))
 
     def test_the_events_of_another_run_or_a_hand_made_file_for_another_step_are_not_a_proof(self):
