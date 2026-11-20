@@ -24,6 +24,7 @@ from .fsutil import ensure_dir
 from .selfcmd import self_argv
 from . import layers as _layers
 from .ceremony import ceremony_info, validate_ceremony
+from .specs import specs_findings, specs_info
 from .delivery_mode import delivery_info, validate_delivery_mode
 from .dashboard_listen import validate_dashboard
 from .dispatch import validate_dispatch
@@ -746,7 +747,7 @@ def route(root, manifest, library, files, topics):
               if record.get('load') == 'bootstrap' or 'domain' in topics or relevant(record, base)]
     return {'status': 'NOT_RUN', 'files': files, 'topics': topics, 'routes': selected, 'skipped': skipped,
             'lessons': lessons, 'domain': domain, 'delivery': delivery_info(manifest),
-            'ceremony': ceremony_info(manifest),
+            'ceremony': ceremony_info(manifest), 'specs': specs_info(root, manifest),
             'note': 'Context selection only; instructions, lessons and domain records were not executed'}
 
 
@@ -1152,6 +1153,8 @@ def doctor(root, manifest, library):
     ceremony_errors, _ = validate_ceremony(manifest)
     for message in ceremony_errors:
         finding('error', '.github/.skillsync.yaml', message)
+    for level, path, reason in specs_findings(root, manifest):
+        finding(level, path, reason)
     prototype_errors, prototype_warnings = validate_prototype(manifest.get('prototype'), root)
     for message in prototype_errors:
         finding('error', '.github/.skillsync.yaml', message)

@@ -103,6 +103,11 @@ class RepoHygieneTests(unittest.TestCase):
             self.assertEqual(code, 0, f'{path} musi być ignorowany: {out}')
             self.assertTrue(out.startswith('.gitignore:'), f'{path}: reguła ma pochodzić z .gitignore w korzeniu: {out}')
 
+    def test_specs_info_detects_the_core_as_untracked(self):
+        from skillsync_workflow.specs import specs_info
+        self.need([] if shutil.which('git') else None)
+        self.assertEqual(specs_info(REPO, {}), {'tracked': False, 'archive': None, 'source': 'gitignore'})
+
     def test_fixtures_with_specs_and_plans_are_not_ignored_and_stay_tracked(self):
         files = self.need(tracked('tests/fixtures'))
         fixtures = [f for f in files if re.search(r'/docs/(?:specs|plans)/', f)]
