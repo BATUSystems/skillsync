@@ -407,8 +407,8 @@ main { flex: 1; padding: 1.1rem 1.4rem; min-width: 0; }
 /* ---------- dokumenty */
 .docs { display: grid; grid-template-columns: minmax(16rem, 22rem) minmax(0, 1fr); gap: 1rem; align-items: start; }
 .doc-list { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: .6rem; position: sticky; top: 7.5rem; max-height: calc(100vh - 9rem); overflow: auto; }
-.doc-list h3 { font-size: .72rem; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin: .7rem .4rem .3rem; }
-.doc-list h3:first-child { margin-top: .2rem; }
+.doc-group > summary { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin: .7rem .4rem .3rem; cursor: pointer; }
+.doc-group:first-child > summary { margin-top: .2rem; }
 .doc-item { display: flex; align-items: center; gap: .5rem; width: 100%; text-align: left; border: 0; background: none; padding: .4rem .5rem; border-radius: 8px; cursor: pointer; font-size: .86rem; }
 .doc-item:hover { background: var(--panel-2); }
 .doc-item[aria-current="true"] { background: var(--accent-soft); font-weight: 650; }

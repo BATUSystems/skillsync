@@ -424,6 +424,8 @@ class E extends N {
   getBoundingClientRect() { return { left: 10, top: 10, right: 50, bottom: 30, width: 40, height: 20 }; }
   get offsetHeight() { return 20; }
   scrollIntoView() {}
+  focus() { this.ownerDocument.focused = this; }
+  get isConnected() { return Boolean(this.ownerDocument.root && this.ownerDocument.root.contains(this)); }
 }
 function makeDoc() {
   const doc = { defaultView: null };
@@ -440,6 +442,7 @@ function mount(json, opts) {
   opts = opts || {};
   const doc = makeDoc();
   const root = doc.createElement('div');
+  doc.root = root;
   const calls = { approve: [], refresh: 0, openDoc: [], selectPlan: [], loadDoc: [], mountHtml: [], openLink: [], titles: [], nav: [], storage: [] };
   const actions = {
     approve: (a) => { calls.approve.push(a); return Promise.resolve({ ok: true, word: 'GO', text: 'zapisano' }); },
@@ -1557,6 +1560,122 @@ function summary(m) {
       })(),
     };
   }
+  // CORE-QFILTER F3 (K9–K11): zwijane grupy listy dokumentów (details/summary), stan w st.docGroupsOpen, rozwinięcie przy wyborze.
+  {
+    const name = Object.keys(F)[0];
+    const mk = (key, label, n) => ({ key, label, items: Array.from({ length: n }, (_, i) => ({ path: `docs/${key}/d${i}.md`, title: `D${i} ${key}`, status: 'draft', mtime: '2026-01-12T10:00:00Z' })) });
+    const docs = () => [mk('task', 'Bieżące zadanie', 2), mk('run', 'Przebieg r1', 2), mk('specs', 'Speki', 3), mk('plans', 'Plany', 2), mk('design', 'Projekt', 1), mk('domain', 'Domena', 4)];
+    const data = () => { const d = clone(F[name]); d.docs = docs(); return d; };
+    const grp = (m, key) => m.root.querySelectorAll('#docList details').filter((x) => x.getAttribute('data-doc-group') === key)[0] || null;
+    const state = (m) => { const o = {}; m.root.querySelectorAll('#docList details').forEach((x) => { o[x.getAttribute('data-doc-group')] = x.hasAttribute('open'); }); return o; };
+    const toggle = (g, open) => { if (open) g.setAttribute('open', ''); else g.removeAttribute('open'); g.dispatchEvent(new Ev('toggle')); };
+    const exQ = {};
+    try {
+      {
+      const m = mount(data(), { now: NOW[name], preview: true });
+      const dl = m.root.querySelector('#docList');
+      exQ.initial = state(m);
+      exQ.keys = m.root.querySelectorAll('#docList details').map((x) => x.getAttribute('data-doc-group'));
+      exQ.summaries = m.root.querySelectorAll('#docList details').map((x) => text(x.querySelector('summary')));
+      exQ.firstChild = m.root.querySelectorAll('#docList details').map((x) => x.childNodes[0] && x.childNodes[0].localName);
+      exQ.h3 = dl.querySelectorAll('h3').length;
+      exQ.items = m.root.querySelectorAll('#docList .doc-item').length;
+      exQ.itemsInClosed = grp(m, 'specs').querySelectorAll('.doc-item').length;
+      exQ.docCount = text(m.root.querySelector('#docCount'));
+      const cur = () => m.root.querySelectorAll('#docList .doc-item').filter((b) => b.getAttribute('aria-current') === 'true').map((b) => b.getAttribute('data-doc'));
+      exQ.current = [cur(), (m.board.update(data()), cur())];   // jak dotąd: domyślny wybór oznaczony dopiero po kolejnym rysowaniu
+      exQ.keydown = dl.querySelectorAll('*').filter((x) => (x.listeners.keydown || []).length || (x.listeners.keyup || []).length).length + ((dl.listeners.keydown || []).length);
+      // przeżycie update(): rozwinięcie i zwinięcie
+      toggle(grp(m, 'plans'), true);
+      m.board.update(data());
+      exQ.keptOpen = state(m);
+      toggle(grp(m, 'task'), false);
+      m.board.update(data());
+      exQ.keptClosedTask = state(m).task;
+    }
+    {
+      // wybór przez loadDoc (klik), rozwija grupę; po ręcznym zwinięciu odświeżenie jej nie otwiera
+      const m = mount(data(), { now: NOW[name], preview: true });
+      m.root.querySelectorAll('#docList .doc-item').filter((b) => b.getAttribute('data-doc') === 'docs/specs/d1.md')[0].click();
+      await tick(); await tick();
+      exQ.afterClick = { specs: state(m).specs, plans: state(m).plans, current: m.root.querySelectorAll('#docList .doc-item').filter((b) => b.getAttribute('aria-current') === 'true').map((b) => b.getAttribute('data-doc')) };
+      toggle(grp(m, 'specs'), false);
+      m.board.update(data()); await tick(); await tick();
+      exQ.afterCollapse = state(m).specs;
+      m.board.setDoc('docs/domain/d2.md');
+      exQ.afterSetDoc = state(m).domain;
+      toggle(grp(m, 'domain'), false);
+      m.board.update(data());
+      exQ.afterSetDocRefresh = state(m).domain;
+      // link md-doc / setView -> loadDoc
+      m.board.setDoc('docs/design/d0.md'); m.board.setView('docs', false); await tick(); await tick();
+      exQ.afterView = state(m).design;
+    }
+    {
+      // setDoc po narysowaniu listy: grupa wybranego dokumentu (inna niż domyślna) rozwija się od razu
+      const m = mount(data(), { now: NOW[name], preview: true });
+      m.board.setDoc('docs/plans/d1.md'); await tick();
+      exQ.afterSetDocOtherGroup = state(m).plans;
+    }
+    {
+      // setDoc przed pierwszym update(): grupa rozwija się przy pierwszym rysowaniu
+      const m = mount(null, { now: NOW[name], preview: true });
+      m.board.setDoc('docs/specs/d2.md');
+      m.board.update(data());
+      exQ.setDocFirst = state(m);
+    }
+    {
+      // fokus na summary przeżywa przebudowę listy
+      const m = mount(data(), { now: NOW[name], preview: true });
+      const sm = grp(m, 'plans').querySelector('summary');
+      sm.dispatchEvent(new Ev('focus'));
+      m.doc.focused = null;
+      m.board.update(data());
+      const nw = grp(m, 'plans').querySelector('summary');
+      exQ.focus = { restored: m.doc.focused === nw, fresh: nw !== sm };
+    }
+    {
+      // openDoc (przycisk readiness w trybie podglądu) rozwija grupę dokumentu
+      const d2 = clone(F['readiness-blocked']); d2.docs = docs(); d2.docs[2].items[0].path = d2.readiness.source;
+      const m = mount(d2, { now: NOW['readiness-blocked'], preview: true });
+      const before = state(m).specs;
+      m.root.querySelector('.readiness [data-open-doc]').click(); await tick(); await tick();
+      exQ.openDoc = { before, after: state(m).specs, view: m.board.state().view };
+    }
+    {
+      // nic nie trafia do storage po toggle
+      const m = mount(data(), { now: NOW[name], preview: true });
+      toggle(grp(m, 'specs'), true); toggle(grp(m, 'specs'), false);
+      m.board.update(data());
+      exQ.storage = m.calls.storage.length;
+      // odłączony <details> (po przebudowie listy) nie zmienia stanu
+      const old = grp(m, 'plans'); toggle(grp(m, 'plans'), true);
+      m.board.update(data()); old.removeAttribute('open'); old.dispatchEvent(new Ev('toggle'));
+      exQ.detached = state(m).plans;
+    }
+    {
+      // zmiana grupy wybranego dokumentu (np. przełączenie planu): nowa grupa rozwija się raz
+      const m = mount(data(), { now: NOW[name], preview: true });
+      m.board.setDoc('docs/task/d0.md');
+      const d = data(); d.docs[0].items = d.docs[0].items.slice(1); d.docs[3].items.push({ path: 'docs/task/d0.md', title: 'D0', status: 'draft', mtime: '2026-01-12T10:00:00Z' });
+      m.board.update(d);
+      exQ.groupMoved = state(m).plans;
+      toggle(grp(m, 'plans'), false); m.board.update(d);
+      exQ.groupMovedCollapsed = state(m).plans;
+    }
+    {
+      // fokus na summary grupy, która znika z docs[]: powrót grupy nie kradnie fokusu
+      const m = mount(data(), { now: NOW[name], preview: true });
+      grp(m, 'plans').querySelector('summary').dispatchEvent(new Ev('focus'));
+      const without = data(); without.docs = without.docs.filter((g) => g.key !== 'plans');
+      m.board.update(without);
+      m.doc.focused = null;
+      m.board.update(data());
+      exQ.focusGone = m.doc.focused;
+    }
+    } catch (e) { exQ.error = String(e && e.stack || e); }
+    ex.qfilterDocs = exQ;
+  }
   out.extra = ex;
   // deps.now jest wymagane (renderer nie czyta zegara sam).
   try { R.create(makeDoc().createElement('div'), {}); out.nowRequired = false; } catch (e) { out.nowRequired = e instanceof TypeError; }
@@ -2040,6 +2159,54 @@ class RendererNodeTests(unittest.TestCase):
         self.assertEqual(len(e["viewer"]), 1)  # widz widzi to samo
         self.assertEqual(e["withWait"]["eta"], 1)
         self.assertGreaterEqual(e["withWait"]["items"], 2)  # obok baneru zgody
+
+    def test_doc_groups_are_collapsible_details(self) -> None:
+        q = self.out["extra"]["qfilterDocs"]
+        self.assertNotIn("error", q, q.get("error"))
+        self.assertEqual(q["keys"], ["task", "run", "specs", "plans", "design", "domain"])
+        self.assertEqual(q["initial"], {"task": True, "run": True, "specs": False, "plans": False, "design": False, "domain": False})
+        self.assertEqual(q["summaries"], ["Bieżące zadanie (2)", "Przebieg r1 (2)", "Speki (3)", "Plany (2)", "Projekt (1)", "Domena (4)"])
+        self.assertEqual(q["firstChild"], ["summary"] * 6)
+        self.assertEqual(q["h3"], 0)
+
+    def test_doc_items_stay_in_dom_in_collapsed_groups(self) -> None:
+        q = self.out["extra"]["qfilterDocs"]
+        self.assertNotIn("error", q, q.get("error"))
+        self.assertEqual((q["items"], q["itemsInClosed"], q["docCount"]), (14, 3, "14"))
+        self.assertEqual(q["current"], [[], ["docs/task/d0.md"]])
+
+    def test_doc_groups_state_survives_update(self) -> None:
+        q = self.out["extra"]["qfilterDocs"]
+        self.assertNotIn("error", q, q.get("error"))
+        self.assertEqual(q["keptOpen"], {"task": True, "run": True, "specs": False, "plans": True, "design": False, "domain": False})
+        self.assertIs(q["keptClosedTask"], False)
+
+    def test_selecting_a_document_reveals_its_group_once(self) -> None:
+        q = self.out["extra"]["qfilterDocs"]
+        self.assertNotIn("error", q, q.get("error"))
+        self.assertEqual(q["afterClick"], {"specs": True, "plans": False, "current": ["docs/specs/d1.md"]})
+        self.assertIs(q["afterCollapse"], False)       # odświeżenie bez zmiany wyboru nie rozwija ponownie
+        self.assertIs(q["afterSetDoc"], True)          # setDoc
+        self.assertIs(q["afterSetDocRefresh"], False)
+        self.assertIs(q["afterView"], True)            # setDoc + setView('docs') -> loadDoc
+        self.assertIs(q["afterSetDocOtherGroup"], True)
+        self.assertIs(q["setDocFirst"]["specs"], True)  # setDoc przed pierwszym rysowaniem
+
+    def test_doc_group_summary_keeps_focus_and_default_keys(self) -> None:
+        q = self.out["extra"]["qfilterDocs"]
+        self.assertNotIn("error", q, q.get("error"))
+        self.assertEqual(q["keydown"], 0)  # nic w #docList nie przechwytuje Enter/Spacji
+        self.assertEqual(q["focus"], {"restored": True, "fresh": True})
+        self.assertIsNone(q["focusGone"])
+
+    def test_doc_groups_open_on_openDoc_move_and_leave_no_storage(self) -> None:
+        q = self.out["extra"]["qfilterDocs"]
+        self.assertNotIn("error", q, q.get("error"))
+        self.assertEqual(q["openDoc"], {"before": False, "after": True, "view": "docs"})
+        self.assertEqual(q["storage"], 0)
+        self.assertIs(q["detached"], True)  # toggle odłączonego details nie nadpisuje stanu
+        self.assertIs(q["groupMoved"], True)
+        self.assertIs(q["groupMovedCollapsed"], False)
 
     def test_substeps_section(self) -> None:
         got = self.out["fixtures"]["plan-in-progress"]["substeps"]
