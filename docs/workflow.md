@@ -404,7 +404,7 @@ strażnik repozytorium właściciela).
 
 ## Pętla samodoskonalenia
 
-Zamknięcia pilnują hook Stop (`check-closure.py`: raz na sesję i plan blokuje plan `done` zmieniony względem `HEAD`, gdy
+Zamknięcia pilnują hook Stop (`check-closure.py`: raz na sesję i plan blokuje plan `done` zmieniony względem `HEAD` albo ignorowany przez git (wpis `!!`), gdy
 przebieg z linii `Przebieg:` nie ma rekordu `final`) i ostrzeżenia `doctor`. Hook działa tylko w Claude Code i w projektach
 będących korzeniem repo git; w Codexie, w projekcie zagnieżdżonym i bez gita pilnuje tylko `doctor`. Błąd zapisu znacznika
 sesji przepuszcza turę. Wyłączenie: `hooks.stop_closure: false` i `link`. Wskaźnik ponad projektami: `skillsync retro --all`

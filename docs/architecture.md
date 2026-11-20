@@ -138,6 +138,8 @@ Procesy potomne, które `skillsync` uruchamia sam (np. `quality` wywołuje `guar
 | `.skillsync/cache/smart-test/` | zapisany plan selekcji testów (nie wynik) | ignorowany |
 | `.skillsync/runs/<run-id>.json` | punkty kontrolne przebiegu | ignorowany |
 | `.skillsync/runs/<run-id>/approvals.jsonl` | zgody użytkownika (jedno źródło: `approvals record`, serwer dashboardu, IDE); jedna linia JSON na zgodę, blokada `approvals.jsonl.lock` | ignorowany |
+| `.skillsync/runs/<run-id>/docs/specs\|plans/`, `docs/.saved.json` | migawka speca i planu przebiegu (`spec snapshot`), sha ostatniego zapisu na parę (cel, plik) | ignorowany |
+| `<archiwum>/<projekt>/<run-id>/specs\|plans/` | opcjonalne archiwum speców (`workflow.specs.archive`), tylko z manifestu projektu | poza repozytorium |
 | `.skillsync/environments/`, `e2e/`, `claims/`, `upgrade/`, `providers/` | stan komend workflow | ignorowany |
 | `.skillsync/dispatch/<run-id>.yaml` | stan dyspozycji; zapisuje go skill, generator tylko go ignoruje | ignorowany |
 | `~/.cache/skillsync/composed/` | cache kompozytów; odtwarzalny | poza projektem |
@@ -146,6 +148,17 @@ Procesy potomne, które `skillsync` uruchamia sam (np. `quality` wywołuje `guar
 | `<root>/questions.json` (stary plik projektowy) | tylko do odczytu, dopóki `skillsync prototype question migrate` go nie przeniesie | śledzony w gicie, do usunięcia po migracji |
 
 Stan w `.skillsync/` zapisuje się przez kontrolowane ścieżki: bez dowiązań i wyjścia poza projekt.
+
+### Strażnicy zależne od gita przy `workflow.specs.tracked: false`
+
+Spec i plan ignorowane przez git zmieniają wynik kilku konsumentów gita. Tryb nie zmienia odczytu plików przez `dashboard` i `status` (czytają drzewo robocze bez gita). Zmiany dotyczą:
+- hook zamknięcia `library/hooks/check-closure.py`: lista planów z `git status --ignored` (wpisy `!!`); bez reguły zachowanie bez zmian;
+- odbiór planu (`status.acceptance_pending`): przy `tracked: false` zamknięcie zgody zależy od `planState` wpisu, nie od `git show` ani `git log`; przy `tracked: true` oceną rządzi git jak dotąd;
+- bramka testów (`test_gate.py`, `work_tree_id`): reguła w `.gitignore` wyłącza spec i plan z identyfikatora drzewa; `TREE_EXCLUDES` bez zmian;
+- polecenia z `--exclude-standard` (`runs.py`, `selection.py`, `common.py`, `leakguard.py`, `quality.py`): edycja speca i planu nie unieważnia odcisku wznowienia ani nie wymusza testów przy `Stop`; to zamierzone w trybie nieśledzonym;
+- `doctor`: błędy i ostrzeżenia dla `workflow.specs` i śledzonych plików w `docs/specs` lub `docs/plans`.
+
+Wykrywanie trybu i migawka: [domain/spec-store](domain/spec-store.md).
 
 ## 6. Granice
 
