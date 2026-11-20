@@ -455,7 +455,7 @@ def _decorate_phrases(text: str) -> str:
 
 def add_inline_html(data: dict) -> dict:
     """Additive fields of `/api/status` (`schema` stays 1): `titleHtml` of the plan steps, of `substeps` and of `progress.current`,
-    `textHtml` of `run.checkpoints[]` (the feed), `whatHtml` and `actionHtml` of `waiting[]` (the action text repeats the item), `textHtml` of `expertQuestions.items[]` (cut to the same 160 characters as the plain text). The texts were
+    `textHtml` of `run.checkpoints[]` (the feed), `whatHtml` and `actionHtml` of `waiting[]` (the action text repeats the item), `textHtml` of `expertQuestions.items[]` and `expertQuestions.current.items[]` (cut to the same 160 characters as the plain text). The texts were
     masked when the plan and the checkpoints were read; `text`, `title`, `what` stay as they were (tooltips and `title`/`aria` use them)."""
     def put(item: object, source: str, out: str, limit: int = 0) -> None:
         if isinstance(item, dict):
@@ -480,8 +480,10 @@ def add_inline_html(data: dict) -> dict:
         put(item, "what", "whatHtml")
         put(item, "action", "actionHtml")
     questions = data.get("expertQuestions")
-    for item in (questions.get("items") or []) if isinstance(questions, dict) else []:
-        put(item, "text", "textHtml", 160)
+    current = questions.get("current") if isinstance(questions, dict) else None
+    for source in (questions, current):
+        for item in (source.get("items") or []) if isinstance(source, dict) else []:
+            put(item, "text", "textHtml", 160)
     return data
 
 
