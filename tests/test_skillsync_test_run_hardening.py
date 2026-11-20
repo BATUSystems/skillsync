@@ -268,7 +268,7 @@ class HiddenFailures(Base):
         return self.latest_of('F1.1')
 
     def latest_of(self, step):
-        directory = self.root / '.skillsync/runs/R1/tests' / step
+        directory = child(self.root / '.skillsync/runs/R1/tests', step)
         return ev.read_attempt(sorted(directory.glob('*.jsonl'), key=lambda p: int(p.stem))[-1])
 
 
