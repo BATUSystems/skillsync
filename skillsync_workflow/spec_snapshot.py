@@ -19,7 +19,7 @@ from pathlib import Path
 from .catalog import project_name
 from .common import read_project, redact
 from .pathfmt import posix
-from .specs import _archive_error, _git_env, _raw, validate_specs
+from .specs import _archive_error, _raw, validate_specs
 from .status import MAX_PLAN_BYTES, RUN_ID, SCHEMA, _doc_file, _message, _plan_spec, git_blob_sha
 from .test_gate import plan_for_run
 
@@ -27,6 +27,7 @@ KINDS = ('specs', 'plans')
 SAVED = '.saved.json'
 _SHA = re.compile(r'[0-9a-f]{40}')
 _UNSAFE_NAME = re.compile(r'[^A-Za-z0-9._-]')
+_ABS_PATH = re.compile(r'(?<![\w.])/(?:[^\s\'":;,]+/)*([^\s\'":;,/]+)')
 
 
 class _Refused(Exception):
@@ -36,6 +37,25 @@ class _Refused(Exception):
 def _sanitize(name):
     clean = _UNSAFE_NAME.sub('-', name)
     return '-' if not clean.strip('.') else clean
+
+
+def _scrub(text):
+    """Tekst do raportu bez pełnych ścieżek: katalog domowy to `~`, pozostałe ścieżki bezwzględne skracają się do `…/<nazwa>`."""
+    text = str(text)
+    home = posix(Path.home())
+    if home not in ('', '/'):
+        text = text.replace(home, '~')
+    return _ABS_PATH.sub(lambda match: '…/' + match.group(1), text)
+
+
+def _git_env():
+    """Środowisko gita do rozpoznania typu checkoutu: bez zmiennych `GIT_*`, ale z prawdziwym HOME i konfiguracją użytkownika.
+
+    Ustalenie typu checkoutu (`rev-parse`) nie wykonuje niczego z konfiguracji, a `safe.directory` żyje tylko w konfiguracji globalnej; środowisko
+    „sterylne” (HOME=/nonexistent) udawałoby wtedy, że git zawodzi (dubious ownership), i `--check` przepuszczałby połączony worktree."""
+    env = {key: value for key, value in os.environ.items() if not key.startswith('GIT_')}
+    env['GIT_TERMINAL_PROMPT'] = '0'
+    return env
 
 
 def _git_dirs(root):
@@ -63,9 +83,14 @@ def _project_dir_name(root, manifest):
     return _sanitize(Path(root).resolve().name)
 
 
-def _is_linked_worktree(root):
+def _checkout_kind(root):
+    """`'linked'` | `'main'` | `'none'` (brak `.git`); `_Refused`, gdy `.git` istnieje, a git nie potrafi ustalić typu checkoutu (fail-closed)."""
     dirs = _git_dirs(root)
-    return bool(dirs and dirs[0] != dirs[1])
+    if dirs:
+        return 'linked' if dirs[0] != dirs[1] else 'main'
+    if os.path.lexists(Path(root) / '.git'):
+        raise _Refused('nie da się ustalić typu checkoutu (git zawodzi przy istniejącym .git)')
+    return 'none'
 
 
 def _home(path):
@@ -96,7 +121,10 @@ def _ensure_dir(path, create):
     except FileNotFoundError:
         if not create:
             return False
-        os.mkdir(path, 0o700)
+        try:
+            os.mkdir(path, 0o700)
+        except FileExistsError:   # wyścig z innym procesem: sprawdzamy, co tam powstało
+            return _ensure_dir(path, False)
         os.chmod(path, 0o700)
         return True
     if stat.S_ISLNK(info.st_mode):
@@ -126,6 +154,14 @@ def _atomic_write(directory, name, data):
             os.fsync(handle.fileno())
         os.chmod(temp, 0o600)
         os.replace(temp, Path(directory) / name)
+        try:
+            dir_fd = os.open(directory, os.O_RDONLY)
+            try:
+                os.fsync(dir_fd)
+            finally:
+                os.close(dir_fd)
+        except (OSError, AttributeError):   # fsync katalogu to wzmocnienie trwałości, nie warunek (Windows)
+            pass
     except BaseException:
         try:
             os.unlink(temp)
@@ -139,6 +175,9 @@ def _atomic_write(directory, name, data):
 def _sources(root, run_id, spec):
     """`([(kind, name, bytes)], notes)`; `ValueError`, gdy nie ma czego kopiować albo źródło jest niedozwolone."""
     notes = []
+    for part in (root / 'docs', root / 'docs' / 'specs', root / 'docs' / 'plans'):
+        if part.is_symlink():
+            raise ValueError(f'dowiązanie symboliczne w ścieżce źródeł: {part.relative_to(root)}')
     found = plan_for_run(root, run_id)
     spec_name = None
     if spec:
@@ -264,30 +303,31 @@ def _code(statuses):
     return 2 if 'BLOCKED' in statuses else 1 if 'FAIL' in statuses else 0
 
 
-def _blocked(reason, **extra):
-    return {'schema': SCHEMA, 'status': 'BLOCKED', 'reason': _message(reason, 500), 'targets': [], **extra}, 2
+def _blocked(reason, mode='snapshot', run=None, **extra):
+    return {'schema': SCHEMA, 'status': 'BLOCKED', 'mode': mode, 'run': run if isinstance(run, str) else None,
+            'reason': _message(_scrub(reason), 500), 'targets': [], **extra}, 2
 
 
 def snapshot(root, manifest, run_id, spec=None, replace=False):
     """Zapisuje migawkę. `(raport, kod wyjścia)`."""
     root = Path(root).resolve()
     if not isinstance(run_id, str) or not RUN_ID.fullmatch(run_id):
-        return _blocked('nieprawidłowy --run-id')
+        return _blocked('nieprawidłowy --run-id', 'snapshot')
     try:
         files, notes = _sources(root, run_id, spec)
     except (OSError, ValueError) as error:
-        return _blocked(error)
+        return _blocked(error.__class__.__name__ if isinstance(error, OSError) else error, 'snapshot', run_id)
     archive, problem = _archive_root(root, manifest)
     if problem:
-        return _blocked(problem)
+        return _blocked(problem, 'snapshot', run_id)
     run_dir = root / '.skillsync' / 'runs' / run_id
     try:
         _ensure_chain(root, ('.skillsync', 'runs', run_id), True)
         _ensure_chain(run_dir, ('docs',), True)
     except _Refused as error:
-        return _blocked(f'katalog przebiegu: {error}')
+        return _blocked(f'katalog przebiegu: {error}', 'snapshot', run_id)
     except OSError as error:
-        return _blocked(f'katalog przebiegu niedostępny ({error.__class__.__name__})')
+        return _blocked(f'katalog przebiegu niedostępny ({error.__class__.__name__})', 'snapshot', run_id)
     saved, saved_ok = _load_saved(run_dir)
     if replace and not saved_ok:
         saved, saved_ok = {}, True
@@ -315,6 +355,9 @@ def _compare(base, files):
             return 'unavailable', []
     except OSError:
         return 'unavailable', []
+    for kind in {kind for kind, _, _ in files}:
+        if (base / kind).is_symlink():
+            return 'unavailable', []
     bad = []
     for kind, name, data in files:
         try:
@@ -338,14 +381,14 @@ def check(root, manifest, run_id, spec=None, to=None):
     """Porównuje sha źródeł z kopiami; bez zapisu. `(raport, kod)`: 0 PASS, 2 BLOCKED."""
     root = Path(root).resolve()
     if not isinstance(run_id, str) or not RUN_ID.fullmatch(run_id):
-        return _blocked('nieprawidłowy --run-id', mode='check')
+        return _blocked('nieprawidłowy --run-id', 'check')
     try:
         files, notes = _sources(root, run_id, spec)
     except (OSError, ValueError) as error:
-        return _blocked(error, mode='check')
+        return _blocked(error.__class__.__name__ if isinstance(error, OSError) else error, 'check', run_id)
     archive, problem = _archive_root(root, manifest)
     if problem:
-        return _blocked(problem, mode='check')
+        return _blocked(problem, 'check', run_id)
     candidates = [('run', root / '.skillsync' / 'runs' / run_id / 'docs', False)]
     if archive is not None:
         candidates.append(('archive', archive / _project_dir_name(root, manifest) / run_id, True))
@@ -363,11 +406,17 @@ def check(root, manifest, run_id, spec=None, to=None):
     reasons = []
     if any(target['status'] != 'PASS' for target in targets):
         reasons.append('są rozbieżne albo niedostępne cele: ' + ', '.join(target['target'] for target in targets if target['status'] != 'PASS'))
-    elif _is_linked_worktree(root):
-        if not outside:
-            reasons.append('połączony worktree bez celu poza worktree (ustaw workflow.specs.archive albo podaj --to <korzeń kopii>)')
-    elif not any(target['outside_worktree'] for target in targets):
-        notes.append('główny checkout bez celu poza nim: sprzątania worktree to nie dotyczy')
+    else:
+        try:
+            kind = _checkout_kind(root)
+        except _Refused as error:
+            kind = None
+            reasons.append(str(error))
+        if kind == 'linked':
+            if not outside:
+                reasons.append('połączony worktree bez celu poza worktree (ustaw workflow.specs.archive albo podaj --to <korzeń kopii>)')
+        elif kind and not any(target['outside_worktree'] for target in targets):
+            notes.append('główny checkout bez celu poza nim: sprzątania worktree to nie dotyczy')
     code = 2 if reasons else 0
     report = {'schema': SCHEMA, 'status': 'BLOCKED' if code else 'PASS', 'mode': 'check', 'run': run_id,
               'reason': '; '.join(reasons) or None, 'files': [{'file': f'{kind}/{name}', 'sha': git_blob_sha(data)} for kind, name, data in files],
@@ -404,10 +453,18 @@ def _cmd_snapshot(args):
             report, code = check(root, manifest, args.run_id, args.spec, args.to)
         else:
             report, code = snapshot(root, manifest, args.run_id, args.spec, args.replace)
-    except (OSError, ValueError, TypeError, KeyError) as error:
-        report, code = _blocked(error, mode=mode)
+    except (OSError, ValueError, TypeError, KeyError, RecursionError) as error:
+        report, code = _blocked(error.__class__.__name__ if isinstance(error, (OSError, RecursionError)) else error, mode, args.run_id)
     report = redact(report)
-    print(json.dumps(report, ensure_ascii=False, indent=2) if args.json else _render(report))
+    if args.json:
+        try:
+            text = json.dumps(report, ensure_ascii=False, indent=2)
+            text.encode('utf-8')
+        except (UnicodeError, RecursionError):
+            text = json.dumps(report, ensure_ascii=True, indent=2)
+    else:
+        text = _render(report).encode('utf-8', 'backslashreplace').decode('utf-8')
+    print(text)
     return code
 
 

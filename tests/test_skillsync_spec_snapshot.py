@@ -13,6 +13,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from skillsync_workflow import spec_snapshot  # noqa: E402
+from skillsync_workflow.common import redact  # noqa: E402
 from skillsync_workflow.spec_snapshot import check, snapshot  # noqa: E402
 from skillsync_workflow.status import git_blob_sha  # noqa: E402
 
@@ -221,11 +222,70 @@ class WriteTests(Base):
         self.assertFalse((self.root / '.skillsync').exists())
 
     def test_secret_like_content_is_not_echoed(self):
+        # test ma potrafić paść: znacznik/token w treści pliku i sekret wzorcowy (`password=...`, maskowany przez `redact`) w nazwie wskazanej przez --spec.
+        # `redact` nie zna wzorca ghp_ (maskuje sekrety ze środowiska i wzorce typu password=), więc część komunikatowa używa wzorca, który zna.
+        # Dowód mutacyjny: usunięcie `redact(report)` z `_cmd_snapshot` albo `redact` w `_message` czerwieni drugą część (sekret w komunikacie).
         token = 'gh' + 'p_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8'
-        (self.root / 'docs/specs/s.md').write_text(f'Status: draft\ntoken {token}\n')
+        marker = 'ZNACZNIK-TRESCI-7431'
+        (self.root / 'docs/specs/s.md').write_text(f'Status: draft\n{marker} token {token}\n')
         report, code = self.snap()
         self.assertEqual(code, 0)
-        self.assertNotIn(token, json.dumps(report))
+        dumped = json.dumps(report) + spec_snapshot._render(report)
+        self.assertNotIn(token, dumped)
+        self.assertNotIn(marker, dumped)
+        pattern_secret = 'Zq9xK2mV7pL4'
+        report, code = self.snap(spec=f'docs/specs/password={pattern_secret}.md')
+        self.assertEqual(code, 2)
+        self.assertIn('BLOCKED', json.dumps(report))
+        self.assertNotIn(pattern_secret, json.dumps(redact(report)) + spec_snapshot._render(redact(report)))
+
+    def test_sanitize_neutralizes_dots_and_empty_names(self):
+        for name in ('..', '.', '...', ''):
+            self.assertEqual(spec_snapshot._sanitize(name), '-', name)
+        self.assertEqual(spec_snapshot._sanitize('a/../b c'), 'a-..-b-c')
+        self.assertEqual(spec_snapshot._sanitize('..x'), '..x')
+
+    def test_archive_tilde_is_expanded(self):
+        with mock.patch.dict(os.environ, {'HOME': str(self.base)}):
+            (self.base / 'home-arch').mkdir()
+            manifest = {'project': {'name': 'proj'}, 'workflow': {'specs': {'archive': '~/home-arch'}}}
+            report, code = self.snap(manifest)
+        self.assertEqual(code, 0)
+        self.assertTrue((self.base / 'home-arch/proj' / RUN / 'specs/s.md').exists())
+        self.assertNotIn(str(self.base), json.dumps(report))
+
+    def test_blocked_report_has_mode_run_and_no_absolute_paths(self):
+        report, code = snapshot(self.root, self.manifest, 'inny-przebieg')
+        self.assertEqual((code, report['mode'], report['run']), (2, 'snapshot', 'inny-przebieg'))
+        report, code = check(self.root, self.manifest, 'x y')
+        self.assertEqual((code, report['mode']), (2, 'check'))
+        report, code = snapshot(self.root, self.manifest, RUN, spec=str(self.root / 'docs/specs/nie-ma.md'))
+        self.assertEqual(code, 2)
+        self.assertNotIn(str(self.base), json.dumps(report))
+
+    def test_mkdir_race_is_tolerated(self):
+        real = os.mkdir
+
+        def racing(path, mode=0o777):
+            real(path, mode)
+            raise FileExistsError(path)
+        with mock.patch.object(spec_snapshot.os, 'mkdir', side_effect=racing):
+            report, code = self.snap()
+        self.assertEqual(code, 0)
+
+    @needs_symlinks
+    def test_symlinked_docs_in_source_is_refused(self):
+        real = self.root / 'docs-real'
+        (self.root / 'docs').rename(real)
+        (self.root / 'docs').symlink_to(real)
+        report, code = self.snap()
+        self.assertEqual(code, 2)
+        self.assertFalse((self.root / '.skillsync').exists())
+
+    def test_non_utf8_name_does_not_traceback(self):
+        report, code = snapshot(self.root, self.manifest, RUN, spec='docs/specs/\udcff.md')
+        self.assertEqual(code, 2)
+        self.assertNotIn('Traceback', json.dumps(report))
 
     def test_shared_archive_separates_projects_by_name(self):
         self.snap()
@@ -419,6 +479,61 @@ class CheckTests(Base):
     def test_missing_plan_is_blocked(self):
         report, code = check(self.worktree, self.manifest, 'inny')
         self.assertEqual(code, 2)
+
+    def test_git_failure_in_linked_checkout_is_fail_closed(self):
+        manifest = {'project': {'name': 'proj'}}
+        snapshot(self.worktree, manifest, RUN)
+        with mock.patch.object(spec_snapshot, '_git_dirs', return_value=None):
+            report, code = check(self.worktree, manifest, RUN)
+        self.assertEqual((code, report['status']), (2, 'BLOCKED'))
+        self.assertIn('typu checkoutu', report['reason'])
+
+    def test_dangling_git_file_is_blocked_and_missing_git_is_not(self):
+        manifest = {'project': {'name': 'proj'}}
+        plain = self.make_project(self.base / 'plain', git=False)
+        snapshot(plain, manifest, RUN)
+        report, code = check(plain, manifest, RUN)   # brak .git: nie ma czego sprzątać
+        self.assertEqual(code, 0)
+        (plain / '.git').write_text('gitdir: ' + str(self.base / 'nie-ma-repo') + '\n')
+        report, code = check(plain, manifest, RUN)
+        self.assertEqual((code, report['status']), (2, 'BLOCKED'))
+        self.assertIn('typu checkoutu', report['reason'])
+
+    def test_archive_inside_worktree_is_not_outside(self):
+        inner = self.worktree / 'arch'
+        inner.mkdir()
+        manifest = {'project': {'name': 'proj'}, 'workflow': {'specs': {'archive': str(inner)}}}
+        snapshot(self.worktree, manifest, RUN)
+        report, code = check(self.worktree, manifest, RUN)
+        self.assertEqual(code, 2)
+        self.assertFalse(self.targets(report)['archive']['outside_worktree'])
+
+    def test_relative_and_tilde_to(self):
+        manifest = {'project': {'name': 'proj'}}
+        snapshot(self.worktree, manifest, RUN)
+        snapshot(self.repo, manifest, RUN)
+        with mock.patch.dict(os.environ, {'HOME': str(self.base)}):
+            report, code = check(self.worktree, manifest, RUN, to='~/repo')
+        self.assertEqual((code, report['status']), (0, 'PASS'))
+        self.assertNotIn(str(self.base), json.dumps(report))
+        cwd = os.getcwd()
+        try:
+            os.chdir(self.base)
+            report, code = check(self.worktree, manifest, RUN, to='repo')
+        finally:
+            os.chdir(cwd)
+        self.assertEqual(code, 0)
+
+    @needs_symlinks
+    def test_symlinked_kind_directory_in_target_is_unavailable(self):
+        snapshot(self.worktree, self.manifest, RUN)
+        specs = self.arch() / 'specs'
+        real = self.arch() / 'specs-real'
+        specs.rename(real)
+        specs.symlink_to(real)
+        report, code = check(self.worktree, self.manifest, RUN)
+        self.assertEqual(code, 2)
+        self.assertEqual(self.targets(report)['archive']['status'], 'BLOCKED')
 
 
 @unittest.skipUnless(GIT, 'brak gita')
