@@ -17,20 +17,20 @@
 
 ## Task router — czytaj na żądanie
 
-Przed interpretacją zadania i wyborem tematu/plików wykonaj `skillsync route <projekt>`
+Przed wyborem tematu/plików wykonaj `skillsync route <projekt>`
 i przeczytaj wszystkie rekordy `domain` z `load: bootstrap`. Bez CLI odczytaj wspólne
 `docs/domain/index.yaml` i wskazane rekordy bootstrap. Zasady: `workflow/references/knowledge.md`.
 
-1. Sprawdź instrukcje najbliższego modułu, manifest `.github/.skillsync.yaml` i istniejący plan.
-   Orientację zaczynaj od `.skillsync/map.md` (`skillsync map <projekt>`, `--check` = świeżość), potem Grep/Glob.
+1. Czytaj instrukcje najbliższego modułu, manifest `.github/.skillsync.yaml` i istniejący plan.
+   Orientacja: `.skillsync/map.md` (`skillsync map <projekt>`, `--check` = świeżość), potem Grep/Glob.
 2. `skillsync route <projekt> --topic <temat> --files <ścieżki>` dobiera instrukcje, lekcje
    i wiedzę domenową.
-   Mapa źródłowa: biblioteczny `workflow/defaults.yaml`, nadpisania: `workflow` w manifeście.
+   Mapa: `workflow/defaults.yaml`, nadpisania: `workflow` w manifeście.
    Brak CLI: użyj tabeli `.github/skills/workflow/SKILL.md` i lokalnych instrukcji.
 3. Czytaj tylko pasujące rekordy lekcji i referencje. Reguły graniczne pozostają w instrukcjach;
-   dowody/doświadczenia w indeksowanych rekordach. Nigdy nie dopisuj całych historii do rdzenia.
+   dowody/doświadczenia w indeksowanych rekordach. Historii nie dopisuj do rdzenia.
 4. Przy zmianie kontraktu/API/danych albo wysokim ryzyku użyj `pre-implement`.
-   Drobny jednoznaczny bugfix prowadzi skill `bugfix`; większa implementacja skill `feature`.
+   Drobny bugfix: skill `bugfix`; większa implementacja: `feature`.
 5. Przed testami planuj `skillsync smart-test <projekt>` albo `skillsync validate <projekt>`.
    Wykonanie wymaga `--run`, przydziału zasobów i zaufanej konfiguracji. Nie uruchamiaj
    pełnego zestawu po każdej edycji. Brak mapowania rozszerza zakres, nie wyłącza testów.
@@ -41,13 +41,13 @@ i przeczytaj wszystkie rekordy `domain` z `load: bootstrap`. Bez CLI odczytaj ws
 
 Źródło procedury: skill `feature` i **jeden** adapter bieżącego hosta.
 Claude: `/feature`, Codex: `$feature`; nie uruchamiaj pipeline'u dla pytań i audytów.
-Wiele sesji z dyspozytorem: `dispatch` (jeśli zainstalowany — profil `workflow-extended`).
+Wiele sesji z dyspozytorem: `dispatch` (profil `workflow-extended`).
 Przed nowym zadaniem `feature`/`bugfix` bramka otwartych planów (`skillsync status`, `feature` krok 1): niezamknięty
 plan bez żywego właściciela = pytanie, czy zaczynamy; `needsHuman: closure` = najpierw propozycja zamknięcia.
 
 - Sesja główna utrzymuje plan i zasoby. Role: explore, implementer, test-writer,
   test-runner, reviewer, verifier, scribe, mechanic; podumysły nie delegują dalej. Deleguj spójne kroki;
-  pełny raport podumysł zapisuje w `.skillsync/runs/<run-id>/`, do sesji wraca skrót.
+  pełny raport podumysł zapisuje w `.skillsync/runs/<run-id>/`, wraca skrót.
 - Terminologia: podagentów (subagentów) nazywamy **podumysłami** (rozmowa,
   plany, raporty); nazwy techniczne (`Agent`, `subagent_type`) bez zmian.
 - Równoległość wymaga rozłącznych plików i izolacji baz, portów, build/coverage, lockfile
@@ -59,7 +59,7 @@ plan bez żywego właściciela = pytanie, czy zaczynamy; `needsHuman: closure` =
 - Tryb dostarczania: `skillsync route <projekt>` zwraca `delivery {mode, base, source}`; bez CLI czytaj `delivery.mode` z `.github/.skillsync.yaml`
   (brak = `pr`). Przy `source: invalid` nie zakładaj `pr`, zapytaj. Brak `delivery.base`: weź `origin/HEAD`, a gdy się nie da, STOP i pytanie.
 - Przed „GO implement” nic nie opuszcza maszyny. Od „GO plan” (bez niego: „GO implement”) katalog roboczy (pytanie, `Katalog:` w planie) i gałąź robocza;
-  „GO plan” = lokalny commit speca, planu i prototypu (bez niego: plan po „GO implement”); dalej commit po każdym sprawdzonym kroku planu; podumysły nie commitują. `git add` tylko z jawnymi ścieżkami kroku, nigdy plików
+  „GO plan” = lokalny commit speca, planu i prototypu (bez niego: plan po „GO implement”); przy `specs.tracked: false` (route.specs) spec i plan nie wchodzą do commita: `skillsync spec snapshot`, `feature/references/spec-store.md`; dalej commit po każdym sprawdzonym kroku planu; podumysły nie commitują. `git add` tylko z jawnymi ścieżkami kroku, nigdy plików
   generowanych (tworzonych przez `link` lub wpisanych do `.github/.gitignore`) ani sekretów; przed commitem skan sekretów (gitleaks, gdy
   dostępny; inaczej STOP i prośba o skan).
 - `pr`: „GO implement” uruchamia `pr-run` (gałąź, commity, push gałęzi, draft PR do `delivery.base`). `direct`: commity lokalne, bez pusha i PR.
