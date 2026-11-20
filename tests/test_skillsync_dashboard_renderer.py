@@ -1490,6 +1490,31 @@ function summary(m) {
     }
     ex.coreTap = exT;
   }
+  // CORE-TESTDEBT F2 (K5): the note about skipped result files in the tests tab (`tests.skipped`).
+  {
+    const exD = {};
+    const okSec = { step: { id: 'S1', title: 'Krok S1' }, state: 'passed', attempts: [{ n: 1, state: 'passed', startedAt: '2026-01-11T09:30:00Z', endedAt: '2026-01-11T09:31:00Z', durationMs: 60000,
+      command: 'node --test', tool: 'tap', levels: 'tests', source: null, exit: 0, reason: null, counts: { total: 1, passed: 1, failed: 0, skipped: 0, running: 0, waiting: 0 }, truncated: false, groups: [] }] };
+    const mkT = (sections, skipped, withField) => { const j = clone(F['plan-in-progress']); j.tests = { sections, failedTotal: 0, runningTotal: 0 }; if (withField) j.tests.skipped = skipped; return j; };
+    const view = (j) => {
+      const m = mount(j, { now: NOW['plan-in-progress'] });
+      const note = m.root.querySelector('#testsView .tskipped');
+      const r = { tabHidden: m.root.querySelector('#tab-tests').hidden, note: note ? text(note) : null, role: note ? note.getAttribute('role') : null, notes: m.root.querySelectorAll('#testsView .tskipped').length,
+        legend: m.root.querySelectorAll('#testsView .tlegend').length, secs: m.root.querySelectorAll('#testsView .tsec').length, empty: m.root.querySelectorAll('#testsView .empty').length, imgs: m.root.querySelectorAll('#testsView img').length };
+      m.board.destroy(); return r;
+    };
+    const P = (path, reason) => ({ path, reason });
+    exD.three = view(mkT([okSec], [P('a/one', 'not a step directory'), P('b/two', 'unreadable'), P('c/three', 'weird <b>reason</b>')], true));
+    exD.one = view(mkT([okSec], [P('only/one', 'unreadable')], true));
+    exD.six = view(mkT([okSec], ['p1', 'p2', 'p3', 'p4', 'p5', 'p6'].map((p) => P(p, 'unreadable')), true));
+    exD.twenty = view(mkT([okSec], Array.from({ length: 20 }, (_, i) => P('d' + i, 'unreadable')), true));
+    exD.emptySections = view(mkT([], [P('tests', 'unreadable')], true));
+    exD.mixed = view(mkT([okSec], [null, 'str', P('m/ok', 'unreadable'), P('m/nr', null), P('m/obj', { a: 1 }), 7], true));
+    exD.noField = view(mkT([okSec], null, false));
+    exD.emptyList = view(mkT([okSec], [], true));
+    exD.emptyBoth = view(mkT([], [], true));
+    ex.testDebt = exD;
+  }
   // Formatowanie w linii: tytuły kroków, „czeka na”, pytania do eksperta. HTML wstawia tylko host (mountHtml); dymki i atrybuty zostają czystym tekstem.
   {
     const nm = 'plan-in-progress';
@@ -2477,6 +2502,56 @@ class RendererNodeTests(unittest.TestCase):
         self.assertTrue(c["hiddenAtTheTop"])
         self.assertEqual(c["unsub"], 1)
         self.assertTrue(c["rootClassGone"])
+
+    # CORE-TESTDEBT F2, K5: the note about skipped result files (`tests.skipped`) in the tests tab.
+    def test_core_testdebt_skipped_note_text_count_paths_and_reasons(self) -> None:
+        t = self.out["extra"]["testDebt"]
+        n = t["three"]
+        self.assertEqual(n["role"], "note")
+        self.assertEqual(n["notes"], 1)
+        self.assertTrue(n["note"].startswith("Pominięto 3 pliki lub katalogi wyników testów (nie dało się ich uwzględnić): "), n["note"])
+        self.assertIn("a/one (katalog spoza kroków)", n["note"])
+        self.assertIn("b/two (nieczytelny)", n["note"])
+        self.assertIn("c/three (weird <b>reason</b>)", n["note"])   # unknown reason: raw text, no HTML
+        self.assertEqual(n["imgs"], 0)
+        self.assertEqual(n["secs"], 1, "the sections are still drawn")
+        self.assertIn("Pominięto 1 plik lub katalog wyników testów", t["one"]["note"])
+
+    def test_core_testdebt_skipped_note_shows_at_most_five_paths(self) -> None:
+        note = self.out["extra"]["testDebt"]["six"]["note"]
+        for p in ("p1", "p2", "p3", "p4", "p5"):
+            self.assertIn(p, note)
+        self.assertNotIn("p6", note)
+        self.assertIn("Pominięto 6 ", note)
+        self.assertTrue(note.endswith(" i 1 więcej."), note)
+
+    def test_core_testdebt_skipped_note_at_server_limit_says_at_least_twenty(self) -> None:
+        note = self.out["extra"]["testDebt"]["twenty"]["note"]
+        self.assertIn("co najmniej 20", note)
+        self.assertNotIn("d19", note)
+        self.assertTrue(note.endswith(" i 15 więcej."), note)
+
+    def test_core_testdebt_skipped_count_matches_the_listed_entries_and_empty_reason_has_no_brackets(self) -> None:
+        note = self.out["extra"]["testDebt"]["mixed"]["note"]
+        self.assertIn("Pominięto 3 pliki lub katalogi", note)   # null, string and number are not entries
+        self.assertIn("m/ok (nieczytelny)", note)
+        self.assertIn("m/nr, m/obj", note)
+        self.assertNotIn("()", note)
+        self.assertNotIn("[object", note)
+
+    def test_core_testdebt_skipped_with_empty_sections_shows_the_tab_with_the_note(self) -> None:
+        e = self.out["extra"]["testDebt"]["emptySections"]
+        self.assertFalse(e["tabHidden"])
+        self.assertEqual(e["note"], "Nie udało się odczytać wyników testów.")
+        self.assertEqual((e["secs"], e["legend"]), (0, 0))
+        self.assertEqual(e["empty"], 1, "a short message instead of the empty list")
+
+    def test_core_testdebt_no_skipped_field_or_empty_list_leaves_the_tab_unchanged(self) -> None:
+        t = self.out["extra"]["testDebt"]
+        for k in ("noField", "emptyList"):
+            self.assertIsNone(t[k]["note"], k)
+            self.assertEqual((t[k]["tabHidden"], t[k]["secs"], t[k]["legend"], t[k]["empty"]), (False, 1, 1, 0), k)
+        self.assertEqual((t["emptyBoth"]["note"], t["emptyBoth"]["secs"], t["emptyBoth"]["empty"]), (None, 0, 0))
 
     # CORE-TAP F3, K8: "the command failed" state (exit != 0 and failed = 0) in the section HEADER of the tests tab.
     # Contract fragments for the implementer: "kod N" and "żaden test nie zgłosił porażki" in .tsec-head (visible while the body is collapsed).
