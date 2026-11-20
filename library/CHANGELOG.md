@@ -16,6 +16,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 - A command given to `test-run` as a string is split with POSIX quoting on every system (on Windows a single quote was a literal character, so `env -S 'CI=1 npx jest'` was not unwrapped; `--grep 'a b'` is one argument, a backslash stays literal); only the detection of the tool reads the string.
 - Skill `dashboard`: the tab "Pytania" shows only the current run (hidden when it has no prototypes and no questions; a server without `current` gets a local filter by `prototype.slug`); the document groups "Speki", "Plany", "Projekt" and "Domena" are collapsed by default.
 
+- Skill `feature` (`retro-quality.md`, `review-loop.md`, agent `reviewer`): a late retrospective (a `final` record written before it) is closed again with `final-2`; a round after the user answered review questions (Q/C) is not `ceremony-excess`; the `plan` loop at risk high is mandatory but not full; with at least one signal the files `retro-signals.json` and `retro-decisions.json` exist before the `retro-quality` `PASS` (not as `--evidence`), and the `open` entry is written after the scan.
+- Skill `feature` (`plan-details.md`): the unfinished-markers rule of `readiness` also covers domain state names, the `Prototyp:` line takes only a path (`invalid_prototype_line`, `prototype_not_found`), and `Bez prototypu:` is a convention for people that the tools do not read.
+- Skill `workflow` (`test-run.md`): limits of `test-run` with wrappers (the wrapper passes the exit code, `--allow-no-count` verifies nothing, counts from an unrecognised command come from loose expressions, `--format` names the adapter, test the wrapper with a failing command).
+- Skill `agent-runtime-pitfalls`: five pitfalls (Glob and Grep do not see linked skills, the host edit tool rewrites mixed line endings as LF, a literal `\0` in a byte-editing script inserts a NUL, `scan; push` is not a gate, do not preview a file with a secret even through a masking filter).
+
 ### Fixed
 
 - Hook `guard-tests`: `python -W error -m unittest tests` is classified as a point run.
