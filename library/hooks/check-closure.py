@@ -36,8 +36,9 @@ def git(cwd, *args):
 
 
 def changed_plans(top):
-    """Sciezki plikow .md w docs/plans zmienionych wzgledem HEAD (takze nieSledzonych); usuniete pomijamy."""
-    out = git(top, 'status', '--porcelain', '-z', '--untracked-files=all', '--', 'docs/plans')
+    """Sciezki plikow .md w docs/plans zmienionych wzgledem HEAD (takze niesledzonych i ignorowanych: wpisy `!!`, bo projekt
+    z `workflow.specs.tracked: false` ignoruje docs/plans w .gitignore); usuniete pomijamy."""
+    out = git(top, 'status', '--porcelain', '-z', '--untracked-files=all', '--ignored', '--', 'docs/plans')
     parts = out.split('\0')
     paths, index = [], 0
     while index < len(parts):
