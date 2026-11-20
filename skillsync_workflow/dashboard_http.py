@@ -745,7 +745,7 @@ class Board:
         if kind not in APPROVE_KINDS or not isinstance(rel, str) or not isinstance(sha, str):
             return 400, {"error": "Nieprawidłowe żądanie."}
         if kind in ("cp", "ready"):
-            if plan_state is not None and plan_state not in status_core.PLAN_STATUSES:
+            if plan_state is not None and (not isinstance(plan_state, str) or plan_state not in status_core.PLAN_STATUSES):
                 return 400, {"error": "Nieprawidłowe żądanie."}
             return self._approve_delivery(kind, rel, sha, plan if isinstance(plan, str) else None, via, plan_state)
         word = APPROVE_KINDS[kind]
@@ -992,7 +992,7 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
                 return self._json(400, {"error": "Nieprawidłowe żądanie."})
             via = self._via() if self.role == ports.ROLE_APPROVE else None
             code, data = self.board.approve(body.get("kind"), body.get("path"), body.get("sha"), body.get("plan"), via,
-                                           body.get("planState") if isinstance(body.get("planState"), str) else None)
+                                           body.get("planState"))
             if code == 200 and via and not ports.is_loopback_bind(str(via.get("peer", ""))):
                 log(f"zgoda z sieci: {via['peer']} (port {via['port']}, Host {via['host']})")
             return self._json(code, data)

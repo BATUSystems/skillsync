@@ -51,6 +51,12 @@ class ButtonGuard(ProjectCase):
         self.assertEqual(code, 200, body)
         self.assertEqual([(e['word'], e['planState']) for e in self.entries()], [('CP', 'done')])
 
+    def test_a_plan_state_of_the_wrong_type_is_rejected(self):
+        for value in (5, ['done'], {'x': 1}, True):
+            code, body = self.board.approve('cp', RUN_ID, HEAD, PLAN, None, value)
+            self.assertEqual(code, 400, (value, body))
+        self.assertEqual(self.entries(), [])
+
     def test_a_request_without_the_field_behaves_as_before(self):
         with (self.root / RUN / 'checkpoints.md').open('a', encoding='utf-8') as stream:
             stream.write('- 11:20 zrobione: S9; w toku: —; czeka: CP\n')
