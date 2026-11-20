@@ -272,3 +272,7 @@ lessons:
     title: "Tabela narzędzi testowych ma dwa interpretery (pakiet i samodzielny hak): zmiana kolejności lub pola wymaga testu parytetu i zgodności wstecznej"
     tags: [skillsync, test-run, hooks, guard-tests, detect-tool, parity, compatibility]
     paths: ['skillsync_workflow/test_run.py', 'skillsync_workflow/data/test_tools.json', 'library/hooks/guard-tests.py', 'tests/test_skillsync_test_run*.py', 'tests/fixtures/**']
+  - path: zielony-kod-przy-poleceniu-bez-adaptera-ukrywa-porazki.md
+    title: "Kod wyjścia 0 przy poleceniu bez adaptera nie dowodzi testów: podsumowanie porażek Playwrighta, Vitesta i Jesta było niewidoczne"
+    tags: [skillsync, test-run, evidence, exit-codes, regex, playwright, vitest, jest]
+    paths: ['skillsync_workflow/test_run.py', 'skillsync_workflow/test_adapters/playwright.py', 'skillsync_workflow/test_adapters/vitest.py', 'tests/test_skillsync_test_run_hardening.py']
