@@ -37,7 +37,7 @@ except ImportError:   # Windows: the ledger is not locked there (the tool is a L
 
 TOTAL_BUDGET_USD = 12.0
 MAX_CALLS = 16
-DEFAULT_MAX_TURNS, MAX_TURNS_CEILING = 15, 30
+DEFAULT_MAX_TURNS, MAX_TURNS_CEILING = 25, 30   # 25: the value of the measurements of the jobs (CLAUDE-6 F3/F4)
 MAX_INPUT_BYTES = 400 * 1024   # the text that the host puts in front of the model: `_audit/diff.patch` and `_audit/diffstat.txt`
 CLAUDE_TIMEOUT_SECONDS = 900
 DEFAULT_LEDGER = Path.home() / '.local' / 'state' / 'skillsync' / 'claude-headless-ledger.json'
@@ -251,7 +251,10 @@ def git(repo, *argv, binary=False):
 
 
 def resolve_ref(repo, ref):
-    return git(repo, 'rev-parse', '--verify', '--quiet', f'{ref}^{{commit}}').strip()
+    try:
+        return git(repo, 'rev-parse', '--verify', '--quiet', f'{ref}^{{commit}}').strip()
+    except Refusal:
+        raise Refusal(f'the ref {ref!r} does not exist in {repo}') from None
 
 
 def present_paths(repo, commit):
@@ -363,9 +366,9 @@ class Ledger:
     def check(self, limit, total_budget):
         data = self.read()
         if data['calls'] + 1 > MAX_CALLS:
-            raise Refusal(f'the ledger holds {data["calls"]} calls, at most {MAX_CALLS}')
+            raise Refusal(f'the ledger {self.path} holds {data["calls"]} calls, at most {MAX_CALLS}; the budget of the account is renewed only by the owner (move the file away by hand)')
         if data['spent'] + limit > total_budget:
-            raise Refusal(f'the ledger holds {data["spent"]} USD and this call may cost {limit}, over the total {total_budget} USD')
+            raise Refusal(f'the ledger {self.path} holds {data["spent"]} USD and this call may cost {limit}, over the total {total_budget} USD; the budget of the account is renewed only by the owner (move the file away by hand)')
 
     def record(self, entry, cost):
         data = self.read()
@@ -418,8 +421,6 @@ def main(argv=None):
         command = build_command(args, schema_text)
         refs = [args.tag_from, args.tag_to] if args.task == 'release-audit' else [args.ref]
         commits = [resolve_ref(args.repo, ref) for ref in refs]
-        if not all(commits):
-            raise Refusal('a ref does not exist: ' + ', '.join(ref for ref, commit in zip(refs, commits) if not commit))
         if args.dry_run:
             env = build_env(os.environ, args.config_dir, home='<temporary home>')
             print(json.dumps({'argv': command, 'env': env, 'cwd': '<copy of the public paths of the ref>', 'stdin': prompt, 'refs': dict(zip(refs, commits))}, indent=2))
@@ -450,7 +451,7 @@ def main(argv=None):
                     result = subprocess.run(command, input=prompt, capture_output=True, text=True, timeout=args.timeout_seconds, cwd=copy, env=env)
                     code, reason, structured, cost = classify(result.returncode, result.stdout, schema)
                 except subprocess.TimeoutExpired:
-                    result = subprocess.CompletedProcess(command, 124, '', 'timeout')
+                    result = subprocess.CompletedProcess(command, None, '', 'timeout')   # `claude` returned no exit code: nothing is invented
                     code, reason, structured, cost = 1, f'no answer within {args.timeout_seconds} s', None, None
                 except BaseException:   # an interrupt or a failure after the start: the call may have cost something, so the limit is booked
                     ledger.record({'at': started, 'task': args.task, 'model': args.model, 'limit': args.max_cost_usd, 'cost': args.max_cost_usd,
@@ -458,7 +459,7 @@ def main(argv=None):
                     raise
                 booked = args.max_cost_usd if cost is None else cost   # an unknown or invalid cost is booked at the limit of the call
                 ledger.record({'at': started, 'task': args.task, 'model': args.model, 'limit': args.max_cost_usd, 'cost': booked, 'exit': code,
-                               'claude_exit': result.returncode}, booked)
+                               'claude_exit': result.returncode, **({'exit': 'timeout'} if result.returncode is None else {})}, booked)
         out.mkdir(parents=True, exist_ok=True)
         (out / 'raw.json').write_text(result.stdout, encoding='utf-8')
         (out / 'stderr.txt').write_text(result.stderr, encoding='utf-8')

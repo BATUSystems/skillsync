@@ -123,7 +123,7 @@ class Refusals(Tmp):
     def test_the_turn_limit_is_bounded(self):
         self.refused(self.args('--max-turns', '0'))
         self.refused(self.args('--max-turns', '31'))
-        self.assertEqual(self.mod.parse_args(self.args()).max_turns, 15)
+        self.assertEqual(self.mod.parse_args(self.args()).max_turns, 25)
 
 
 class ProfileAllowlist(Tmp):
@@ -182,7 +182,7 @@ class ForcedFlags(Tmp):
         for flag in ('-p', '--no-session-persistence', '--restricted', '--strict-mcp-config', '--disable-slash-commands'):
             self.assertEqual(argv.count(flag), 1, flag)
         for flag, value in (('--output-format', 'json'), ('--permission-prompts', 'none'), ('--tools', 'Read,Grep,Glob'), ('--max-budget-usd', '1.5'),
-                            ('--max-turns', '15'), ('--model', 'sonnet')):
+                            ('--max-turns', '25'), ('--model', 'sonnet')):
             self.assertEqual(argv[argv.index(flag) + 1], value, flag)
         schema = argv[argv.index('--json-schema') + 1]
         self.assertEqual(json.loads(schema), json.loads((JOBS / 'release-audit' / 'schema.json').read_text(encoding='utf-8')))   # the schema itself, not a path
@@ -192,7 +192,7 @@ class ForcedFlags(Tmp):
     def test_the_whole_argv_is_exactly_the_expected_list(self):
         schema = json.dumps(json.loads((JOBS / 'release-audit' / 'schema.json').read_text(encoding='utf-8')), separators=(',', ':'))
         expected = ['claude', '-p', '--output-format', 'json', '--no-session-persistence', '--permission-prompts', 'none', '--restricted', '--tools', 'Read,Grep,Glob',
-                    '--strict-mcp-config', '--disable-slash-commands', '--json-schema', schema, '--max-budget-usd', '1.5', '--max-turns', '15', '--model', 'sonnet']
+                    '--strict-mcp-config', '--disable-slash-commands', '--json-schema', schema, '--max-budget-usd', '1.5', '--max-turns', '25', '--model', 'sonnet']
         self.assertEqual(self.dry_run()['argv'], expected)
 
     def test_the_prompt_goes_through_stdin_with_the_tags_filled_in(self):
@@ -372,11 +372,12 @@ class TheCopy(Tmp):
         self.assertEqual(size, len(patch.encode()) + len(stat_text.encode()))
         self.assertEqual(self.mod.scan_copy(dest), [])   # `_audit/` is allowed
 
-    def test_an_unknown_ref_is_refused_and_a_hostile_name_never_reaches_git(self):
+    def test_an_unknown_ref_is_a_refusal_that_names_it(self):
         repo = self.make_repo()
-        with self.assertRaises(self.mod.Refusal):
-            self.mod.git(repo, 'rev-parse', '--verify', 'no-such-tag^{commit}')
-        self.assertEqual(self.mod.resolve_ref(repo, 'v1')[:1].isalnum(), True)
+        with self.assertRaises(self.mod.Refusal) as caught:
+            self.mod.resolve_ref(repo, 'no-such-tag')
+        self.assertIn("'no-such-tag' does not exist", str(caught.exception))
+        self.assertEqual(len(self.mod.resolve_ref(repo, 'v1')), 40)
 
 
 class ExtractTar(Tmp):
@@ -452,7 +453,20 @@ class Ledger(Tmp):
         with self.mod.Ledger(path) as ledger:
             ledger.record({'n': 1}, 0.1)
         self.assertFalse((self.base / 'ledger.json.tmp').exists())
-        self.assertEqual(json.loads(path.read_text(encoding='utf-8'))['calls'], 1)
+        before = path.read_text(encoding='utf-8')
+        real_replace = os.replace
+
+        def interrupted(source, target):   # the new content is written to the side file, the swap fails: the ledger must stay as it was
+            raise OSError('interrupted')
+        self.mod.os.replace = interrupted
+        try:
+            with self.assertRaises(OSError):
+                with self.mod.Ledger(path) as ledger:
+                    ledger.record({'n': 2}, 0.2)
+        finally:
+            self.mod.os.replace = real_replace
+        self.assertEqual(path.read_text(encoding='utf-8'), before)
+        self.assertEqual(json.loads(before)['calls'], 1)
 
     @unittest.skipIf(os.name == 'nt', 'POSIX only: file locks (fcntl)')
     def test_two_runs_are_serialized_by_the_lock(self):
@@ -525,8 +539,6 @@ class FakeClaude(Tmp):
                               capture_output=True, text=True, env={**os.environ, 'ANTHROPIC_API_KEY': 'must-not-reach-the-child', 'SECRET_TOKEN': 'x'}, timeout=120)
         return done, record
 
-    make_repo = Tmp.make_repo
-
     def test_a_valid_answer_is_stored_booked_and_the_child_sees_a_clean_copy(self):
         done, record = self.run_job({'subtype': 'success', 'is_error': False, 'structured_output': GOOD, 'total_cost_usd': 0.3})
         self.assertEqual(done.returncode, 0, done.stderr)
@@ -576,6 +588,24 @@ class FakeClaude(Tmp):
         self.assertIn('no answer within 1 s', json.loads(done.stdout)['reason'])
         ledger = json.loads((self.base / 'ledger.json').read_text(encoding='utf-8'))
         self.assertEqual((ledger['calls'], ledger['spent']), (1, 1.5))
+        self.assertIsNone(ledger['entries'][0]['claude_exit'], 'no exit code is invented for a call that returned none')
+        self.assertEqual(ledger['entries'][0]['exit'], 'timeout')
+
+    def test_an_interrupt_after_the_start_books_the_limit_and_is_not_swallowed(self):
+        from unittest import mock
+        repo = self.make_repo()
+        real_run = subprocess.run
+
+        def fake_run(cmd, *args, **kwargs):
+            if cmd[0] == 'fake-claude-bin':
+                if '--version' in cmd:
+                    return subprocess.CompletedProcess(cmd, 0, '9.9.9 (Claude Code)\n', '')
+                raise KeyboardInterrupt
+            return real_run(cmd, *args, **kwargs)
+        with mock.patch.object(self.mod.subprocess, 'run', fake_run), self.assertRaises(KeyboardInterrupt):
+            self.mod.main(self.args('--repo', str(repo), '--claude-bin', 'fake-claude-bin', '--ledger', str(self.base / 'ledger.json'), '--out', str(self.base / 'out')))
+        ledger = json.loads((self.base / 'ledger.json').read_text(encoding='utf-8'))
+        self.assertEqual((ledger['calls'], ledger['spent'], ledger['entries'][0]['exit']), (1, 1.5, 'interrupted'))
 
     def test_a_corrupt_ledger_stops_before_the_binary_without_a_traceback(self):
         write(self.base / 'ledger.json', '{broken')
@@ -646,6 +676,7 @@ class FakeClaude(Tmp):
                                '--tag-from', 'v1', '--tag-to', 'v9', '--profiles-file', str(self.profiles), '--repo', str(repo), '--claude-bin', str(launcher), '--ledger', str(self.base / 'l.json')],
                               capture_output=True, text=True, timeout=60)
         self.assertEqual(done.returncode, 2, done.stderr)
+        self.assertIn("'v9' does not exist", done.stderr)
         self.assertFalse(record.exists())
         done = subprocess.run([sys.executable, str(RUN_PY), *self.args('--repo', str(repo), '--claude-bin', str(self.base / 'nope'), '--ledger', str(self.base / 'l2.json'),
                                                                        '--out', str(self.base / 'out2'))], capture_output=True, text=True, timeout=60)
