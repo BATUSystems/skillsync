@@ -780,8 +780,9 @@ class Board:
                           plan_state: str | None = None) -> tuple[int, dict]:
         """CP / READY: `status.record_approval` into `.skillsync/runs/<run-id>/approvals.jsonl` with the sha of the HEAD
         shown on the page. The session checks the entry (word, sha = its HEAD) instead of a word typed in the terminal.
-        `plan_state` (K13): the plan state the page showed (`planState` of the offer); a different current state = 409 (the plan was closed
-        or reopened after the page was drawn, which no change of HEAD tells); absent = the state read by the writer, as before."""
+        `plan_state` (K13): the plan state the page showed (`planState` of the offer), passed to the writer as `expect_plan_state`: the writer compares it with
+        the state read under the file lock and refuses a different one (`code: plan_state_changed`) = 409 (the plan was closed or reopened after the page
+        was drawn, which no change of HEAD tells); absent = the state read by the writer, as before."""
         word = APPROVE_KINDS[kind]
         with self._approve_lock:
             current = self.status(plan)
@@ -792,13 +793,13 @@ class Board:
                 return 409, {"error": f"„{word}” nieaktywne: {offer['reason']}."}
             if offer["sha"] != sha:
                 return 409, {"error": "HEAD zmienił się od wyświetlenia; odśwież stronę i sprawdź zmiany."}
-            if plan_state is not None and plan_state != offer.get("planState"):
-                return 409, {"error": "Status planu zmienił się od wyświetlenia; odśwież stronę i sprawdź plan."}
             d = current["delivery"]
             record = status_core.record_approval(
                 self.root, word, run_id, sha=sha, source="dashboard", target=d.get("target") if kind == "cp" else None,
                 branch=d.get("branch"), plan=(current.get("plan") or {}).get("path"), ahead=d.get("ahead"),
-                mode=d.get("mode"), via=via, plan_state=plan_state)
+                mode=d.get("mode"), via=via, expect_plan_state=plan_state)
+            if record.get("code") == "plan_state_changed":
+                return 409, {"error": "Status planu zmienił się od wyświetlenia; odśwież stronę i sprawdź plan.", "code": "plan_state_changed"}
             if record["status"] != "PASS":
                 log(f"wpis zgody „{word}” nie zapisany: {record['reason']}")
                 return 500, {"error": f"Nie udało się zapisać zgody ({record['reason']}); wpisz słowo w sesji."}
