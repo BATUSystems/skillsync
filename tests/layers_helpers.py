@@ -25,6 +25,10 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child, descend  # noqa: E402
 import yaml
 
 REAL_HOME = Path.home()
@@ -194,11 +198,11 @@ class IsolatedTestCase(unittest.TestCase):
 
     def make_repo(self, name='repo', email='dev@example.test', user='Dev Example'):
         """Create an empty git repository (branch `main`) with a local identity."""
-        path = self.work / name
+        path = child(self.work, name)
         suffix = 1
         while path.exists():
             suffix += 1
-            path = self.work / f'{name}-{suffix}'
+            path = child(self.work, f'{name}-{suffix}')
         path.mkdir(parents=True)
         git(path, 'init', '-q', '-b', 'main')
         git(path, 'config', 'user.email', email)
@@ -370,7 +374,7 @@ def make_layer(root, layer_id, kind, files=None, *, version='1.0.0', core_min=No
     if changelog:
         write(root / 'CHANGELOG.md', '# Changelog\n')
     for rel, text in (files or {}).items():
-        write(root / rel, text)
+        write(descend(root, rel), text)
     return root
 
 
@@ -386,7 +390,7 @@ class LayersCase(IsolatedTestCase):
         return Path(self.env['SKILLSYNC_CONFIG'])
 
     def layer_dir(self, layer_id, kind, files=None, **kwargs):
-        return make_layer(self.work / 'layers' / layer_id, layer_id, kind, files, **kwargs)
+        return make_layer(child(self.work / 'layers', layer_id), layer_id, kind, files, **kwargs)
 
     def write_config(self, layers=(), rules=(), **extra):
         """Machine config. `layers`: [(id, kind, path[, extra entry keys])]; `rules`: [(match list, use list)]."""
@@ -407,7 +411,7 @@ class LayersCase(IsolatedTestCase):
 
     def project(self, rel, name=None):
         """Project directory with a manifest under `self.work/<rel>`."""
-        path = self.work / rel
+        path = descend(self.work, rel)
         manifest = {'project': {'name': name}} if name else {}
         write(path / '.github' / '.skillsync.yaml', yaml_text(manifest) if manifest else '')
         return path
@@ -437,7 +441,7 @@ class LayersCase(IsolatedTestCase):
         make_layer(work, layer_id, kind, files, **kwargs)
         git(work, 'add', '-A')
         commit(work, 'initial layer')
-        bare = self.work / f'{name}.git'
+        bare = child(self.work, f'{name}.git')
         git(self.work, 'clone', '-q', '--bare', str(work), str(bare))
         git(work, 'remote', 'add', 'origin', str(bare))
         git(work, 'fetch', '-q', 'origin')
@@ -565,7 +569,7 @@ class ComposeCase(LayersCase, LinkModesMixin):
 
     def new_project(self, name, skills=('feature',), **manifest_extra):
         """Project with a manifest (no Claude, no MCP: only the generic artefacts)."""
-        path = self.work / 'projects' / name
+        path = child(self.work / 'projects', name)
         manifest = {'version': 1, 'skills': list(skills), 'instructions': {'merge': ['_base'], 'template': 'proj'},
                     'claude': False, 'mcp': False}
         manifest.update(manifest_extra)

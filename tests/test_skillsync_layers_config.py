@@ -19,6 +19,10 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import descend  # noqa: E402
 from layers_helpers import (LINK_MODES, LayersCase, ROOT, commit, git, link_mode, machine_data_dir, make_layer,  # noqa: E402
                             write, yaml_text)
 from skillsync_workflow import layers, leakguard  # noqa: E402
@@ -458,7 +462,7 @@ class SelectionTest(ConfigCase):
 
 class WorktreeSelectionTest(ConfigCase):
     def make_worktree(self, main_dir, worktree_dir):
-        main = self.work / main_dir
+        main = descend(self.work, main_dir)
         main.mkdir(parents=True)
         git(main, 'init', '-q', '-b', 'main')
         git(main, 'config', 'user.email', 'dev@example.test')
@@ -466,7 +470,7 @@ class WorktreeSelectionTest(ConfigCase):
         write(main / '.github' / '.skillsync.yaml', '')
         git(main, 'add', '-A')
         commit(main, 'init')
-        worktree = self.work / worktree_dir
+        worktree = descend(self.work, worktree_dir)
         worktree.parent.mkdir(parents=True, exist_ok=True)
         git(main, 'worktree', 'add', '-q', str(worktree), '-b', 'wt')
         return main, worktree
