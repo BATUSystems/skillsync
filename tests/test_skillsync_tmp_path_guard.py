@@ -44,6 +44,9 @@ ALLOWED = {
     ('test_skillsync_test_run_hardening.py', 'self.base / name'):
         'the names are written in the test itself on purpose and are hostile (a device name, a name over the length limit, a name outside the step pattern): '
         '`tmp_paths.child` would refuse exactly the cases that test checks',
+    ('test_skillsync_test_gate.py', 'Path(tmp) / name'):
+        'the names are written in the test itself on purpose (a space, a colon, a quote): the test checks that the object directory env survives exactly these paths, '
+        '`tmp_paths.child` would refuse the colon and the quote',
 }
 
 TMP = re.compile(r'(^|_)(tmp|temp)(dir|path|file|root|base)?[0-9]*($|_)', re.I)
