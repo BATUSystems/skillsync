@@ -6,12 +6,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ### Added
 
+- Skill `feature`, reference `claude.md`: the column `maxTurns` in the table of the roles, the explanation of the limit (a turn, the partial result, how the values were calibrated) and the result of the probe of `disallowedTools` (`F0-disallowedTools: nieskuteczne`).
 - Skills `skillsync`, `dashboard` and the reference `feature/spec-store.md`: the flag `approvals record --expect-plan-state` and the `409` with `code: plan_state_changed` of the consent button.
 - **`copilot-skills-yaml`: the keys of Claude Code.** The list of the frontmatter keys of Claude Code, the difference between `user-invokable` (Copilot) and `user-invocable` (Claude Code), and the rule that a custom key is only a `doctor` warning (own data goes to `metadata`); `skillsync` mentions the lint of `doctor` in the checks of a new skill.
 - Skill `workflow`, reference `test-run.md`: section "Kontrakt zdarzeń" with the fields of the events of a test step, including the optional `end.changed` (up to five paths that changed while the tests ran, masked, shown only in the message of the gate and never passed to a command).
 
 ### Changed
 
+- Roles `agents/*.md`: `maxTurns` in all eight roles (`explore` 40, `implementer` 170, `mechanic` 40, `reviewer` 85, `scribe` 115, `test-runner` 125, `test-writer` 165, `verifier` 45).
 - **`argument-hint` in the skills with arguments.** `feature`, `bugfix`, `dispatch`, `codereview`, `pr-run` and `docx-to-markdown` have the frontmatter field `argument-hint` (autocomplete hint of Claude Code, presentation only; the notation is described in `copilot-skills-yaml`). The references to the non-existent `docs/library.md` and `docs/layers.md` in the instructions and in the `skillsync` skill point to `docs/layers-authoring.md` and the authoring rules.
 - Skill `dashboard` (`SKILL.md`, "Zakładka „Testy”"): an attempt shows at most 200 groups, and a note says how many were omitted (`groupsOmitted`); the counters still cover every test.
 - Skill `workflow` (`test-run.md`): a `[T]` step counts as done by a checked `- [x]` row or by a PASS checkpoint, so `tests-not-run` also works for plans with a step table.

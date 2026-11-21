@@ -93,6 +93,8 @@ Format `identity.yaml`: `schema: 1`, `layer: <id>`, `terms: []`. Każdy termin m
 | ustawienia workflow | `workflow/defaults.yaml`, `workflow/projects/*.yaml` | zasady scalania: [architecture](architecture.md); listę kontrolną review prototypu rozszerzasz kluczem `review.prototype` (pozycje warstw, projektu i manifestu są dopisywane do listy rdzenia bez `allow_override`, bez usuwania pozycji rdzenia, dedup po treści dosłownej: zostaje pierwsza; warstwa, która go używa, deklaruje `core_min` co najmniej 1.6.0) |
 | persona i imiona kart (tylko personal) | `instructions/_base.d/10-persona.md`, nakładka imion | |
 
+**Pola frontmattera roli** (`agents/<nazwa>.md`, Claude Code). Podstawowe: `name`, `description`, `tools`, `model`. Dodatkowe: `effort`, `omitClaudeMd` (rola nie widzi CLAUDE.md), `maxTurns` (limit tur; po nim podagent zwraca wynik częściowy, wznawialny przez `SendMessage`). Starszy Claude Code pomija nieznane pole bez komunikatu, więc `skillsync doctor` wypisuje jeden wpis `info` z wymaganą wersją (tabela `ROLE_FIELDS` w `skillsync_workflow/skill_frontmatter.py`; `doctor` nie uruchamia `claude` i nie wykrywa zainstalowanej wersji). Nowe pole roli wymaga wpisu w tej tabeli (pilnuje tego test). Limity i uzasadnienie: tabela ról w `skills/feature/references/claude.md`. Wzorzec Bash w `disallowedTools` usuwa cały Bash podagenta, więc nie służy do zawężania poleceń.
+
 Zasady treści:
 
 - persona agenta i imiona kart należą wyłącznie do warstwy personal; warstwy core i org ich nie zawierają;
