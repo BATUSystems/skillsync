@@ -76,12 +76,10 @@ entries:
     title: "Format wyjścia `node --test` (TAP czy spec wg wersji Node i TTY) i adaptery `tap`/`node-test`"
     tags: [skillsync, test-run, adapters, node, tap, output]
     paths: ['skillsync_workflow/test_adapters/tap.py', 'skillsync_workflow/test_adapters/node_test.py', 'skillsync_workflow/test_run.py', 'skillsync_workflow/quality.py', 'tests/test_skillsync_adapter*.py', 'tests/test_skillsync_test_run*.py']
-    load: on-demand
   - path: test-run-rozpoznanie-narzedzia-i-liczniki-karmy.md
     title: "`test-run`: kolejność rozpoznawania narzędzia (`detect_tool`), reguła linii `Executed` Karmy, kody wyjścia i ślad przebiegu"
     tags: [skillsync, test-run, detect-tool, karma, counts, hooks, exit-codes, kody-wyjscia]
     paths: ['skillsync_workflow/test_run.py', 'skillsync_workflow/data/test_tools.json', 'skillsync_workflow/test_adapters/karma_line.py', 'skillsync_workflow/quality.py', 'library/hooks/guard-tests.py', 'tests/test_skillsync_test_run*.py']
-    load: on-demand
   - path: dashboard-server.md
     title: "Serwer strony statusu (dashboard serve): Host, Origin, X-Status-Board, CSP, allowlista, limity, zgody tylko użytkownika"
     tags: [skillsync, dashboard, server, security, approvals, workflow]
