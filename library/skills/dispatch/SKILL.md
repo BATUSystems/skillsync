@@ -14,7 +14,7 @@ wygaszanie) jest wyłącznie w [wiele sesji](../feature/references/multi-session
 powielaj go, stosuj. Schemat pliku stanu: [state.md](references/state.md); przykładowy
 przebieg: [scenario.md](references/scenario.md).
 
-Komendy: `/dispatch <cel>` (nowa dyspozycja), `/dispatch status`, `/dispatch drain`,
+Komendy: `/dispatch <cel>` (nowa dyspozycja), `/dispatch status` (przy włączonym [pulsie](references/pulse.md) pokazuje też jego stan), `/dispatch drain`,
 `/dispatch resume <run-id>`. Jedno repozytorium na dyspozycję; wiele repo jest poza zakresem.
 Dyspozytor nie implementuje paczek i nie otwiera kart. Edytuje tylko plik stanu i pliki
 z `dispatch.owned_files` (indeks paczek, rejestry).
@@ -30,7 +30,7 @@ z `dispatch.owned_files` (indeks paczek, rejestry).
   push potwierdza hash na zdalnym repo. Zmiana kodu po końcowym przebiegu unieważnia dowód.
 - **Paczka bez checkpointu nie jest ukończona:** [odbiór paczki](references/loop.md#odbiór-paczki-report-done).
 - **Luki dowodu nie wolno usuwać po uzupełnieniu:** rekord karty i wpis w stanie zostają.
-- **Brak pollingu**: reaguj na wiadomości i polecenia użytkownika. Nie odpytuj kart w pętli.
+- **Brak pollingu**: reaguj na wiadomości i polecenia użytkownika. Nie odpytuj kart w pętli. Jedyny wyjątek: tick [pulsu](references/pulse.md) (opt-in, `dispatch.pulse.enabled`) czyta stan przez `skillsync dispatch --pulse` i sonduje `STATUS?` wyłącznie kartę po progu, nie częściej niż co próg.
 - Decyzja użytkownika podjęta w karcie ma pierwszeństwo przed planem i trybem wygaszania;
   zaktualizuj stan, nie spieraj się.
 - Decyzje architektoniczne/security, konflikty priorytetów, „zastana” porażka bez dowodu,

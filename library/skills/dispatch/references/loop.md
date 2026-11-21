@@ -15,7 +15,9 @@ Czytaj przy każdej wiadomości od karty (tabela reakcji dyspozytora).
 | gałąź główna czerwona | potwierdź dowód na czystym masterze; `MASTER RED` z jednym właścicielem poprawki |
 
 Monitorowanie bez wiadomości: raz po zdarzeniu (np. użytkownik wraca) sprawdź karty, zdalną
-gałąź i dysk. Karta bezczynna bez raportu → jedna sonda `STATUS?`.
+gałąź i dysk. Karta bezczynna bez raportu → jedna sonda `STATUS?`. Przy włączonym `dispatch.pulse` robi to cyklicznie
+tick [pulsu](pulse.md) (tylko odczyt, sonda tylko po progu, powiadomienie `PushNotification`); reakcja na `czeka-na=użytkownik`
+bez zmian: karty nie ponaglasz, użytkownika powiadamia puls.
 
 ## Odbiór paczki (`REPORT DONE`)
 

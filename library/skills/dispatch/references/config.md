@@ -19,5 +19,13 @@ dispatch:
   additive_files: ["docs/lessons/index.yaml"]
   id_registries: [SEC, ADR, package, e2e_scenario, migration_prefix]
   guards: { min_free_disk_gb: 6, max_load: 12 }
+  pulse:                                    # opcjonalny puls dyspozytora (opt-in, zob. pulse.md)
+    enabled: false                          # domyślnie wyłączony
+    interval_minutes: 20                    # 1-60 (limit ScheduleWakeup)
+    idle_card_minutes: 30                   # karta working/busy milczy co najmniej tyle -> sonda STATUS?
+    user_wait_notify_minutes: 15            # pytanie do użytkownika czeka co najmniej tyle -> PushNotification
+    lease_overdue_minutes: 240              # dzierżawa nieuwolniona co najmniej tyle -> PushNotification
 ```
+
+Puls: [pulse.md](pulse.md); progi liczy `skillsync dispatch --pulse`.
 
