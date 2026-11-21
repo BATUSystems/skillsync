@@ -90,6 +90,7 @@ class EquivalenceCase(LayersCase):
     GUARD_IGNORE = 'hooks/guard-commands.py'
     GUARD_ATTRIBUTION_IGNORE = 'hooks/attribution-patterns.json'   # the data of the ban on AI attribution next to the hook script (every project with Claude)
     GUARD_TESTS_IGNORE = ('hooks/guard-tests.py', 'hooks/test-tools.json')   # the test commands part of the same hook (180-J2), on by default for the same projects
+    NEW_HOOKS_IGNORE = ('hooks/session-context.py', 'hooks/guard-generated.py', 'hooks/check-subagent-report.py')   # CLAUDE-3: three more hooks, on by default for the same projects
 
     def normalize_guard_gitignore(self, project, result):
         """The delete guard hook (1.8.0, `guardhook`) is on by default for agent-flow projects, and `link` lists its script in `.claude/.gitignore`
@@ -105,7 +106,9 @@ class EquivalenceCase(LayersCase):
         self.assertEqual(lines.count(self.GUARD_ATTRIBUTION_IGNORE), 1, '.claude/.gitignore lists the attribution patterns exactly once')
         for line in self.GUARD_TESTS_IGNORE:
             self.assertEqual(lines.count(line), 1, f'.claude/.gitignore lists {line} exactly once (the fixture project has the agent flow)')
-        removed = {self.GUARD_IGNORE, self.GUARD_ATTRIBUTION_IGNORE, *self.GUARD_TESTS_IGNORE}
+        for line in self.NEW_HOOKS_IGNORE:
+            self.assertEqual(lines.count(line), 1, f'.claude/.gitignore lists {line} exactly once (the fixture project has the agent flow)')
+        removed = {self.GUARD_IGNORE, self.GUARD_ATTRIBUTION_IGNORE, *self.GUARD_TESTS_IGNORE, *self.NEW_HOOKS_IGNORE}
         data = '\n'.join(line for line in lines if line not in removed)
         result['files']['.claude/.gitignore'] = hashlib.sha256(data.encode('utf-8')).hexdigest()
 

@@ -53,14 +53,8 @@ HOOK_SOURCES = {
     'test-tools.json': 'skillsync_workflow/data/test_tools.json',
 }
 
-# Keys of the new hook families (spec K7). They are set to `off`/`false` only when the code of the generator knows them (before step F6 it does
-# not, and an unknown key must not be written); with them off `link` has to give the bytes of the old code (K2).
+# Keys of the new hook families (spec K7), set off in every golden case: with them off `link` has to give the bytes of the old code (K2).
 NEW_HOOK_KEYS_OFF = {'session_context': False, 'guard_generated': 'off', 'subagent_report': 'off', 'subagent_commit': 'off'}
-
-
-def generator_knows_new_hook_keys():
-    source = ''.join(path.read_text(encoding='utf-8') for path in sorted((REPO / 'skillsync_workflow').glob('*.py')))
-    return 'session_context' in source
 
 
 def json_bytes(data, eol='\n'):
@@ -123,9 +117,8 @@ CASES = {
     'backup_existing_plain': case(PLAIN, local=json_bytes(FOREIGN_SETTINGS), backup=PRE_EXISTING_BACKUP),
     # `claude: false` from the start: nothing in `.claude/`
     'claude_false_fresh': case({**FEATURE, 'claude': False}),
-    # TODAY: `claude: false` after an installation leaves our entries and files where they were (the early exit of `link_project`);
-    # step F6 (K10) changes this on purpose: this case is then replaced by the test of the new behaviour
-    'claude_false_after_install': case(FEATURE, runs=[{}, {'claude': False}]),
+    # `claude: false` AFTER an installation is not a golden case: K10 (F6) changed it on purpose (our entries and scripts are removed);
+    # the new behaviour is tested in tests/test_skillsync_hook_link.py
     # dry-run of a fresh feature project: only `[dry-run]` lines, no file written
     'feature_dry_run': case(FEATURE, dry_run=True),
     # dry-run over an existing foreign file: `[dry-run] Would update`, the bytes stay
@@ -135,11 +128,10 @@ CASES = {
 
 def manifest_for(spec, patch=None):
     manifest = {'version': 1, 'project': {'name': 'Org/Hooksync', 'type': 'local'}, **spec['manifest']}
-    if generator_knows_new_hook_keys():
-        hooks = dict(manifest.get('hooks') or {})
-        for key, value in NEW_HOOK_KEYS_OFF.items():
-            hooks.setdefault(key, value)
-        manifest['hooks'] = hooks
+    hooks = dict(manifest.get('hooks') or {})
+    for key, value in NEW_HOOK_KEYS_OFF.items():
+        hooks.setdefault(key, value)
+    manifest['hooks'] = hooks
     manifest.update(patch or {})
     return manifest
 

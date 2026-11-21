@@ -2528,9 +2528,11 @@ def merge_guard_settings(project_dir: Path, manifest: dict, config: dict, want: 
                 and not guardhook.attribution_state(existing["attribution"]) and hooksync.groups_valid(pre):
             print(f"[warn] {settings_path}: `attribution` switched on, set to the empty form (the ban on AI attribution cannot be turned off)")
     _, allow, _ = guardhook.hook_settings(manifest)
-    entry = guardhook.hook_entry(config.get("python_command", "python3"), guard_mode(manifest, config), allow, guard_tests_config(manifest, config)) if want else None
+    entry = guardhook.hook_entry(config.get("python_command", "python3"), guard_mode(manifest, config), allow, guard_tests_config(manifest, config),
+                                 hooksync.commit_mode(manifest, project_skills(manifest, config))) if want else None
     return hooksync.merge_entry(settings_path, "PreToolUse", entry, guardhook.is_guard_hook, want, dry_run, backup="earliest",
-                                extra={"attribution": dict(guardhook.ATTRIBUTION_SETTING)} if want else None)
+                                extra={"attribution": dict(guardhook.ATTRIBUTION_SETTING)} if want else None,
+                                same=hooksync.guard_same(entry) if want else None)
 
 
 def sync_guard_hook(project_dir: Path, manifest: dict, config: dict, dry_run: bool = False) -> None:
@@ -2837,14 +2839,19 @@ def _link_project(manifest: dict, project_dir: Path, config: dict, dry_run: bool
         merge_claude_settings(project_dir, manifest, config, dry_run=dry_run)
         sync_closure_hook(project_dir, manifest, config, dry_run=dry_run)
         sync_guard_hook(project_dir, manifest, config, dry_run=dry_run)
+        hooksync.sync_hooks(project_dir, manifest, config, dry_run=dry_run)
         build_claude_mcp(project_dir, manifest, config, dry_run=dry_run)
         ensure_claude_gitignore(project_dir / ".claude", claude_gitignore_entries(manifest, config), dry_run=dry_run)
         ensure_claude_gitignore(project_dir / ".claude", closure_gitignore_entries(manifest, config), dry_run=dry_run)
         ensure_claude_gitignore(project_dir / ".claude", guard_gitignore_entries(manifest, config), dry_run=dry_run)
+        ensure_claude_gitignore(project_dir / ".claude", hooksync.gitignore_entries(manifest, config), dry_run=dry_run)
+    else:
+        hooksync.remove_ours(project_dir, dry_run=dry_run)   # `claude: false` removes every entry and script of ours (K10)
     ensure_gitignore(github_dir, dry_run=dry_run)
     build_codex(project_dir, manifest, config, dry_run=dry_run, mode=mode)
     ensure_link_on_open(project_dir, manifest, config, dry_run=dry_run)
-    if has_feature(manifest, config) or guard_mode(manifest, config) != "off" or guard_tests_config(manifest, config) is not None:
+    if has_feature(manifest, config) or guard_mode(manifest, config) != "off" or guard_tests_config(manifest, config) is not None \
+            or hooksync.wanted(manifest, config):
         ensure_root_gitignore(project_dir, entry=".skillsync/", dry_run=dry_run)  # also the trail of delete-guard exceptions (the attribution ban takes none)
     update_composites(project_dir, config[COMPOSITES_KEY], dry_run)
 

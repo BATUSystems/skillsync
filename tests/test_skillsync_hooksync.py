@@ -152,11 +152,8 @@ class GoldenTrees(IsolatedTestCase):
         self.assertIsNone(actual['settings_local'])
         self.assertEqual(actual['hook_files'], [])
 
-    def test_claude_false_after_installation_today_leaves_our_entries(self):
-        # State of the code today (the early exit of `link_project`); K10 changes it in F6 and this test is then replaced by the new-behaviour test.
-        actual, _ = self.run_and_compare('claude_false_after_install')
-        self.assertIsNotNone(actual['settings_local'])
-        self.assertIn('check-closure.py', actual['hook_files'])
+    # K10 (F6): the golden case `claude_false_after_install` (the old `link` left our entries and scripts after `claude: false`) is removed ON PURPOSE:
+    # the new behaviour (everything of ours is removed) is tested in tests/test_skillsync_hook_link.py, class ClaudeFalse.
 
     def test_dry_run_writes_nothing(self):
         actual, _ = self.run_and_compare('feature_dry_run')
