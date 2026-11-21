@@ -1527,7 +1527,7 @@ function summary(m) {
       const r = { count: n.length, note: n.length ? text(n[0]) : null, role: n.length ? n[0].getAttribute('role') : null };
       m.board.destroy(); return r;
     };
-    ex.groupsNote = { cut: run({ groupsTotal: 2000, groupsOmitted: 1800 }), zero: run({ groupsTotal: 3, groupsOmitted: 0 }), absent: run({}), junk: run({ groupsTotal: 'x', groupsOmitted: 'y' }) };
+    ex.groupsNote = { cut: run({ groupsTotal: 2000, groupsOmitted: 1800 }), zero: run({ groupsTotal: 3, groupsOmitted: 0 }), absent: run({}), junk: run({ groupsTotal: 'x', groupsOmitted: 'y' }), noTotal: run({ groupsOmitted: 5 }) };
   }
   // Formatowanie w linii: tytuły kroków, „czeka na”, pytania do eksperta. HTML wstawia tylko host (mountHtml); dymki i atrybuty zostają czystym tekstem.
   {
@@ -2523,7 +2523,7 @@ class RendererNodeTests(unittest.TestCase):
         self.assertEqual(g["cut"]["count"], 1)
         self.assertEqual(g["cut"]["role"], "note")
         self.assertIn("Pokazano 200 z 2000 grup", g["cut"]["note"])
-        for key in ("zero", "absent", "junk"):
+        for key in ("zero", "absent", "junk", "noTotal"):
             self.assertEqual(g[key]["count"], 0, key)
 
     # CORE-TESTDEBT F2, K5: the note about skipped result files (`tests.skipped`) in the tests tab.

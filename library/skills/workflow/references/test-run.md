@@ -26,14 +26,15 @@ Krok oznaczony w planie `[T]` (na początku lub końcu tytułu w `## Progress` a
 
 ## Kontrakt zdarzeń
 
-Plik `.skillsync/runs/<run>/tests/<krok>/<n>.jsonl`: jedna linia to jedno zdarzenie JSON (`v: 1`), typy `start`, `collected`, `test`, `counts`, `end`. Pola, które czyta bramka i strona statusu:
+Plik `.skillsync/runs/<run>/tests/<krok>/<n>.jsonl`: jedna linia to jedno zdarzenie JSON (`v: 1`), typy `start`, `collected`, `test`, `counts`, `end` oraz `import` (dopisywane przez `test-run --import` do biegu z innej maszyny). Pola, które czyta bramka i strona statusu:
 
 - `start`: `treeStart` (odcisk drzewa roboczego przed testami), `command` (zawsze zamaskowane), `run`, `step`, `attempt`.
-- `end`: `status` (`PASS`, `FAIL`, `BLOCKED`), `exit`, `reason`, `counts`, `source`, `tree` (odcisk drzewa po biegu), `truncated`. Opcjonalne `changed`: lista do 5 ścieżek, które różnią się między drzewem na starcie a drzewem na końcu; zapisywana, gdy drzewa się różnią i ścieżki da się odczytać. Każda ścieżka do 300 znaków, zawsze maskowana przy zapisie (niezależnie od `tests.mask`). Starsze pliki nie mają pola; komunikat bramki wtedy nie podaje ścieżek.
-- Odcisk drzewa (`treeStart`, `tree`) to id drzewa gita. Nowe obiekty (blobby, drzewa) trafiają do katalogu tymczasowego, który bieg trzyma od startu do końca i usuwa; baza obiektów repozytorium jest tylko czytana (alternates). Id drzewa nie zmienia się od tego.
+- `end`: `status` (`PASS`, `FAIL`, `BLOCKED`), `exit`, `reason`, `counts`, `source`, `tree` (odcisk drzewa po biegu), `truncated`. Opcjonalne `changed`: lista do 5 ścieżek, które różnią się między drzewem na starcie a drzewem na końcu; zapisywana, gdy drzewa się różnią i ścieżki da się odczytać. Każda ścieżka do 300 znaków, zawsze maskowana przy zapisie (niezależnie od `tests.mask`) i ponownie przy odczycie. Starsze pliki nie mają pola; komunikat bramki wtedy nie podaje ścieżek.
+- `import`: `sourceSha` (commit, dla którego powstał zaimportowany bieg; bramka porównuje go z HEAD).
+- Odcisk drzewa (`treeStart`, `tree`) to id drzewa gita. Nowe obiekty (blobby, drzewa) trafiają do katalogu tymczasowego w `$TMPDIR` (przy zmienionych, nieśledzonych i niezignorowanych plikach może to być sporo miejsca), który bieg trzyma od startu do końca i usuwa; baza obiektów repozytorium jest tylko czytana (alternates). Id drzewa nie zmienia się od tego.
 - Plik zdarzeń jest danymi niezaufanymi (może przyjść z innej maszyny przez `--import`). Pole `changed` jest tylko wyświetlane: nigdy nie trafia do polecenia gita ani do innego polecenia; czytnik odrzuca każdy inny kształt tego pola.
 
-Bramka `checkpoint --status PASS` dla kroku `[T]` przy zmianie drzewa w trakcie biegu pisze: „files changed WHILE the tests ran (tree … at the start, … at the end); changed: a, b”; bez pola `changed` część „; changed: …” jest pusta.
+Bramka `checkpoint --status PASS` dla kroku `[T]` przy zmianie drzewa w trakcie biegu pisze: „files changed WHILE the tests ran (tree … at the start, … at the end; changed: a, b)”; bez pola `changed` część „; changed: …” jest pusta.
 
 ## Adaptery wyjścia narzędzi (etap 2)
 

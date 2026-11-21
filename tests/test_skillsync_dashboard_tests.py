@@ -205,6 +205,12 @@ class GroupLimit(Base):
         self.assertTrue(all(g['state'] == 'failed' for g in att['groups']))
         self.assertEqual(att['groupsOmitted'], 30)
 
+    def test_running_groups_come_before_passed_ones_and_after_failed_ones(self):
+        self.attempt('F1.1', [('a', 'passed', 'g-pass'), ('b', 'running', 'g-run'), ('c', 'failed', 'g-fail'), ('d', 'passed', 'a-pass')], end=None)
+        tests_part, _ = dt.build_tests(self.root, 'R1')
+        names = [g['name'] for g in tests_part['sections'][0]['attempts'][0]['groups']]
+        self.assertEqual(names, ['g-fail', 'g-run', 'a-pass', 'g-pass'])
+
     def test_the_cut_happens_before_the_inline_tests_are_built(self):
         with mock.patch.object(dt, '_public', wraps=dt._public) as public:
             self.groups_of([(f't{i}', 'failed', f'g{i:04d}') for i in range(dt.MAX_GROUPS + 50)], end='FAIL')

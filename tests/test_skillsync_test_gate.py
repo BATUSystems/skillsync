@@ -404,6 +404,14 @@ class TreeObjects(WorkflowFixture):
             self.assertEqual(test_gate.changed_paths(self.root, second, third, objects), ['code.txt'])
             self.assertEqual(test_gate.changed_paths(self.root, first, first, objects), [])
 
+    def test_changed_paths_are_readable_for_a_path_with_non_ascii_letters(self):
+        import tempfile
+        with tempfile.TemporaryDirectory(prefix='objs-') as objects:
+            first = test_gate.work_tree_id(self.root, objects=objects)
+            self.write('dokument-\u017c\u00f3\u0142w.txt', 'polish letters\n')
+            second = test_gate.work_tree_id(self.root, objects=objects)
+            self.assertEqual(test_gate.changed_paths(self.root, first, second, objects), ['dokument-\u017c\u00f3\u0142w.txt'])
+
     def test_changed_paths_takes_only_tree_ids_and_never_hands_an_option_to_git(self):
         import tempfile
         with tempfile.TemporaryDirectory(prefix='objs-') as objects, mock.patch.object(test_gate.subprocess, 'run') as run:

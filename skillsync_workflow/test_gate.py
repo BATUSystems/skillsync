@@ -108,7 +108,7 @@ def changed_paths(root, first, second, objects, limit=5):
         more = _object_env(root, objects)
         if more is None:
             return []
-        done = subprocess.run(['git', '-C', str(Path(root).resolve()), 'diff-tree', '-r', '--name-only', '--end-of-options', first, second], capture_output=True,
+        done = subprocess.run(['git', '-C', str(Path(root).resolve()), '-c', 'core.quotePath=false', 'diff-tree', '-r', '--name-only', '--end-of-options', first, second], capture_output=True,
                               env={**os.environ, **more}, timeout=30)
     except (OSError, subprocess.SubprocessError):
         return []

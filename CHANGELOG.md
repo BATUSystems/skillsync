@@ -19,7 +19,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 ### Added
 
 - **Status page, tab "Testy": `groupsTotal` and `groupsOmitted` per attempt, and a note for omitted groups.** Every attempt in `tests.sections[].attempts[]` reports the number of its groups and how many were cut from the answer (additive, `schema: 1`). When `groupsOmitted` is above 0, the tab shows "Pokazano N z M grup …". Contract: [docs/dashboard-contract.md](docs/dashboard-contract.md), section "`tests`".
-- **`test-run` events: optional `end.changed`.** When the tree at the end of a run differs from the tree at its start, the `end` event lists up to five paths that changed while the tests ran (each up to 300 characters, masked at write time). `checkpoint --status PASS` of a `[T]` step names them in its message ("files changed WHILE the tests ran … ; changed: a, b"). Older events files have no field and give the message without paths. The field is untrusted input: it is shown, never passed to a command. Contract: `library/skills/workflow/references/test-run.md`, section "Kontrakt zdarzeń".
+- **`test-run` events: optional `end.changed`.** When the tree at the end of a run differs from the tree at its start, the `end` event lists up to five paths that changed while the tests ran (each up to 300 characters, masked at write time). `checkpoint --status PASS` of a `[T]` step names them in its message ("files changed WHILE the tests ran (tree … at the start, … at the end; changed: a, b)"). Older events files have no field and give the message without paths. The field is untrusted input: it is shown, never passed to a command. Contract: `library/skills/workflow/references/test-run.md`, section "Kontrakt zdarzeń".
 
 ### Changed
 

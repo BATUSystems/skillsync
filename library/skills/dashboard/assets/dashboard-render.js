@@ -882,10 +882,11 @@
       const more = n > 5 ? ` i ${n - 5} więcej` : "";
       return h("p", { class: "tskipped", role: "note" }, `Pominięto ${count} ${noun} wyników testów (nie dało się ich uwzględnić): ${shown}${more}.`);
     }
-    function groupsNote(att) {   // CORE-TESTDEBT2 (a): the server lists at most MAX_GROUPS groups of an attempt and counts the rest
+    function groupsNote(att) {   // the server lists at most MAX_GROUPS groups of an attempt and counts the rest
       const omitted = num(att.groupsOmitted);
       if (!(omitted > 0)) return null;
       const total = num(att.groupsTotal);
+      if (!(total > omitted)) return null;   // a foreign JSON without the total: no note rather than a nonsense count
       return h("p", { class: "tgroups-note", role: "note" }, `Pokazano ${total - omitted} z ${total} grup (najpierw nieudane i w toku); liczniki powyżej obejmują wszystkie testy.`);
     }
     function renderTestsTab(d) {
