@@ -529,6 +529,22 @@
     "category": "windows-open-file"
    },
    {
+    "id": "test_skillsync_claude_eval_wrapper.FakeClaude.test_a_dry_run_prints_the_command_and_runs_nothing",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_claude_eval_wrapper.FakeClaude.test_an_invalid_case_stops_the_wrapper_before_the_binary",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_claude_eval_wrapper.FakeClaude.test_the_exit_code_of_the_binary_is_passed_on",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_claude_eval_wrapper.FakeClaude.test_the_wrapper_runs_the_binary_with_the_forced_flags_in_a_clean_environment",
+    "category": "posix-only"
+   },
+   {
     "id": "test_skillsync_codex.StopHookMigrationTests.test_generated_command_executes_and_preserves_shell_characters",
     "category": "posix-only"
    },
