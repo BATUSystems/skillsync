@@ -159,7 +159,7 @@ Pola workflow w tej grupie:
   `Readiness: PASS|BLOCKED`) i dodaje `reportFile` do JSON. Bez flagi zachowanie się nie zmienia. Niepoprawny id albo
   dowiązanie w ścieżce przebiegu daje `BLOCKED` (exit 2) z `reason`, bez zapisu.
 
-Komendy opisuje [workflow](workflow.md). `doctor` sprawdza m.in. skille z manifestu, sekcje `dispatch` i `prototype`,
+Komendy opisuje [workflow](workflow.md). `doctor` sprawdza m.in. skille z manifestu (także frontmatter: nieznany klucz, zły typ lub wartość to ostrzeżenie, nigdy błąd), sekcje `dispatch` i `prototype`,
 spójność instrukcji z plikami oraz budżety bajtów.
 
 - `route` zwraca pole `ceremony {value, source: manifest|default|invalid[, error]}` (klucz manifestu `workflow.ceremony`: `full` | `demo`;

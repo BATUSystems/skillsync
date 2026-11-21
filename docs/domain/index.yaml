@@ -4,6 +4,10 @@ entries:
     title: Własność artefaktów generowanych w projektach
     tags: [skillsync, artifacts, ownership, link]
     paths: ['skillsync', 'tests/test_skillsync*.py']
+  - path: skill-frontmatter.md
+    title: "Frontmatter skilli (SKILL.md): klucze hostów, lint doctor, czego nie potwierdzono"
+    tags: [skillsync, skills, frontmatter, doctor, claude-code, copilot, codex]
+    paths: ['skillsync_workflow/skill_frontmatter.py', 'skillsync_workflow/quality.py', 'tests/test_skillsync_skill_frontmatter.py', 'library/skills/copilot-skills-yaml/SKILL.md']
   - path: skill-expansion.md
     title: Rozwijanie listy skilli (alias, towarzysze, tagi, profile)
     tags: [skillsync, skills, feature, expansion]
