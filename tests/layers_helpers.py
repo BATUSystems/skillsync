@@ -179,6 +179,17 @@ def _registry_entries(path):
     return entries
 
 
+def _link_target(path, stat):
+    """The target of a symlink or a Windows junction (a reparse point), else None. The target is part of the entry because the size and the
+    modification time of a replaced link can be identical (Windows keeps no size for a link, and its clock ticks in milliseconds)."""
+    if stat_module.S_ISLNK(stat.st_mode) or getattr(stat, 'st_file_attributes', 0) & getattr(stat_module, 'FILE_ATTRIBUTE_REPARSE_POINT', 0x400):
+        try:
+            return os.readlink(path)
+        except (OSError, ValueError):
+            return None
+    return None
+
+
 def real_state_snapshot():
     """Description of the real per-user state dirs: `{str(directory): None (absent) | {path relative to it: value}}`, without the
     files that read-only git commands of other processes refresh (`_refreshed_by_read_only_git`). A value is `(kind, size, mtime_ns)`, `('dir', None, None)` for a directory of the composite cache (metadata left out) or `('entry', json)` for a registry entry of a project below the temporary directory (the registry file itself is not listed);
@@ -204,7 +215,8 @@ def real_state_snapshot():
                 stat = path.lstat()
             except OSError:
                 continue
-            is_dir = stat_module.S_ISDIR(stat.st_mode)
+            link = _link_target(path, stat)
+            is_dir = stat_module.S_ISDIR(stat.st_mode) and link is None
             if is_dir and ('.git' in relative.parts):
                 # `git status`/`git fetch` create and rename lock and temporary files inside `.git` (`index.lock`, `objects`,
                 # `refs/remotes`), which moves the mtime and size of those DIRECTORIES; a real write still shows up as a
@@ -214,7 +226,8 @@ def real_state_snapshot():
             if is_dir and inside is not None:
                 entries[relative.as_posix()] = ('dir', None, None)   # metadata of the composite cache directories: see above
                 continue
-            entries[relative.as_posix()] = ('dir' if is_dir else 'file', stat.st_size, stat.st_mtime_ns)
+            kind = 'dir' if is_dir else 'file' if link is None else f'link -> {link}'
+            entries[relative.as_posix()] = (kind, stat.st_size, stat.st_mtime_ns)
         snapshot[str(directory)] = entries
     return snapshot
 

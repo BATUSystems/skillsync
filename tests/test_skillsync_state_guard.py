@@ -227,7 +227,10 @@ class CompositeCacheNoise(unittest.TestCase):
         def change() -> None:
             (composed / "link").unlink()
             (composed / "link").symlink_to(target_two, target_is_directory=True)
-        self.assertNotEqual(self.difference(watched, change), [])
+        lines = self.difference(watched, change)
+        self.assertEqual(len(lines), 1, lines)
+        self.assertIn(f"link -> {target_one}", lines[0])   # the target is compared too: size and mtime of a replaced link can be equal
+        self.assertIn(f"link -> {target_two}", lines[0])
 
     def test_a_directory_called_composed_elsewhere_keeps_its_metadata_compared(self) -> None:
         watched, composed = self.watched()
