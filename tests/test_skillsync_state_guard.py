@@ -229,8 +229,18 @@ class CompositeCacheNoise(unittest.TestCase):
             (composed / "link").symlink_to(target_two, target_is_directory=True)
         lines = self.difference(watched, change)
         self.assertEqual(len(lines), 1, lines)
-        self.assertIn(f"link -> {target_one}", lines[0])   # the target is compared too: size and mtime of a replaced link can be equal
-        self.assertIn(f"link -> {target_two}", lines[0])
+        # the target is compared too (size and mtime of a replaced link can be equal); compared by name: Windows may report the long form of a 8.3 path
+        _, old_target, new_target = lines[0].split("link -> ")
+        self.assertIn("abc123", old_target)
+        self.assertIn("feature", new_target)
+        self.assertNotIn("abc123", new_target)
+        self.assertNotIn("?", lines[0])
+
+    def test_the_windows_extended_prefix_is_dropped_from_the_target_of_a_link(self) -> None:
+        link = mock.Mock(st_mode=0o120777, st_file_attributes=0)
+        for raw, expected in (("\\\\?\\C:\\x\\y", "C:\\x\\y"), ("\\\\?\\UNC\\srv\\share", "\\\\?\\UNC\\srv\\share"), ("rel/target", "rel/target")):
+            with self.subTest(raw=raw), mock.patch.object(helpers.os, "readlink", return_value=raw):
+                self.assertEqual(helpers._link_target(Path("link"), link), expected)
 
     def test_a_directory_called_composed_elsewhere_keeps_its_metadata_compared(self) -> None:
         watched, composed = self.watched()

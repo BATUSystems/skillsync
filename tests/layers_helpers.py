@@ -184,9 +184,10 @@ def _link_target(path, stat):
     modification time of a replaced link can be identical (Windows keeps no size for a link, and its clock ticks in milliseconds)."""
     if stat_module.S_ISLNK(stat.st_mode) or getattr(stat, 'st_file_attributes', 0) & getattr(stat_module, 'FILE_ATTRIBUTE_REPARSE_POINT', 0x400):
         try:
-            return os.readlink(path)
+            target = os.readlink(path)
         except (OSError, ValueError):
             return None
+        return target[4:] if target.startswith('\\\\?\\') and not target.startswith('\\\\?\\UNC\\') else target   # Windows: no `\\?\` in the report
     return None
 
 
