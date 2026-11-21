@@ -156,13 +156,13 @@ def real_state_snapshot():
             continue
         entries = {}
         for path in sorted(directory.rglob('*')):
-            if _refreshed_by_read_only_git(path, path.relative_to(directory)):
+            relative = path.relative_to(directory)
+            if _refreshed_by_read_only_git(path, relative):
                 continue
             try:
                 stat = path.lstat()
             except OSError:
                 continue
-            relative = path.relative_to(directory)
             is_dir = stat_module.S_ISDIR(stat.st_mode)
             if is_dir and ('.git' in relative.parts):
                 # `git status`/`git fetch` create and rename lock and temporary files inside `.git` (`index.lock`, `objects`,
@@ -187,7 +187,7 @@ def _describe_state_value(value):
 
 def real_state_difference(before, after, limit=STATE_DIFFERENCE_LIMIT):
     """Lines `<path>: <before> -> <after>` for what differs between two `real_state_snapshot()` results (at most `limit`, then
-    `... and N more`); an empty list means the snapshots are equal. A directory that appeared or disappeared is one line."""
+    `i N innych`); an empty list means the snapshots are equal. A directory that appeared or disappeared is one line."""
     lines = []
     for directory in sorted(set(before) | set(after)):
         old, new = before.get(directory), after.get(directory)
@@ -201,7 +201,7 @@ def real_state_difference(before, after, limit=STATE_DIFFERENCE_LIMIT):
                 lines.append(f'{directory}/{relative}: {_describe_state_value(old.get(relative))} -> '
                              f'{_describe_state_value(new.get(relative))}')
     if len(lines) > limit:
-        lines = lines[:limit] + [f'... and {len(lines) - limit} more']
+        lines = lines[:limit] + [f'i {len(lines) - limit} innych']
     return lines
 
 

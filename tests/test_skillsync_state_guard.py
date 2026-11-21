@@ -105,8 +105,7 @@ class StateDifference(unittest.TestCase):
         self.assertEqual(len(lines), 3, lines)
         self.assertIn("kept.json: file 2 B, mtime 1 -> file 8 B, mtime 2", text)
         self.assertIn("new.json: brak -> file 2 B", text)
-        self.assertIn("gone.json: file 2 B", text)
-        self.assertIn("-> brak", text)
+        self.assertTrue(any("gone.json: file 2 B, mtime " in line and line.endswith("-> brak") for line in lines), lines)
 
     def test_a_new_and_a_removed_directory_are_named(self) -> None:
         watched = self.watched()
@@ -131,7 +130,23 @@ class StateDifference(unittest.TestCase):
 
         lines = self.difference(watched, change)
         self.assertEqual(len(lines), 11)
-        self.assertEqual(lines[-1], "... and 3 more")
+        self.assertEqual(lines[-1], "i 3 innych")
+
+    def test_the_cut_is_exact_at_ten_and_eleven_changes(self) -> None:
+        for count, expected in ((10, 10), (11, 11)):
+            watched = self.watched()
+            with self.subTest(count=count):
+                lines = self.difference(watched, lambda: [(watched / f"f{n:02d}.json").write_text("{}", encoding="utf-8") for n in range(count)])
+                self.assertEqual(len(lines), expected)
+                self.assertEqual(lines[-1].startswith("i "), count == 11, lines)
+                if count == 11:
+                    self.assertEqual(lines[-1], "i 1 innych")
+
+    def test_a_changed_mtime_of_a_directory_inside_git_is_not_a_difference(self) -> None:
+        watched = self.watched()
+        (watched / "clone" / ".git" / "objects").mkdir(parents=True)
+        os.utime(watched / "clone" / ".git" / "objects", ns=(1, 1))
+        self.assertEqual(self.difference(watched, lambda: os.utime(watched / "clone" / ".git" / "objects", ns=(2, 2))), [])
 
     def test_the_failure_message_of_the_guard_lists_the_paths(self) -> None:
         watched = self.watched()
