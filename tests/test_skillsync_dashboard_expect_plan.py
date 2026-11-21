@@ -77,6 +77,14 @@ class ExpectPlanButton(ProjectCase):
         self.assertEqual(code, 500, body)
         self.assertNotIn('code', body)
 
+    def test_a_real_refusal_of_the_writer_at_a_matching_state_is_500_without_a_code(self):
+        self.set_plan_status('done')
+        path = self.root / RUN / 'approvals.jsonl'
+        path.write_bytes(b'\n' * status.MAX_APPROVALS_BYTES)   # the size limit of the approvals file: refused before the comparison
+        code, body = self.board.approve('cp', RUN_ID, HEAD, PLAN, None, 'done')
+        self.assertEqual(code, 500, body)
+        self.assertNotIn('code', body)
+
     def test_the_server_keeps_no_comparison_of_its_own(self):
         source = Path(dashboard_http.__file__).read_text(encoding='utf-8')
         self.assertNotIn('offer.get("planState")', source)

@@ -2,6 +2,7 @@
 `code: plan_state_changed`, nothing written) unless the status of the plan of the run read under the file lock equals the expected one."""
 import json
 import sys
+import threading
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -9,6 +10,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / 'tests'))
+from skillsync_workflow import prototype_server as server  # noqa: E402
 from skillsync_workflow import status  # noqa: E402
 from tests.test_skillsync_approvals_record import HEAD, RUN, RecordFixture  # noqa: E402
 
@@ -109,6 +111,37 @@ class ExpectPlanState(RecordFixture):
         with mock.patch.object(status, 'plan_state_for_run', flip):
             report = self.record(expect_plan_state='in_progress')
         self.assertEqual((report['status'], report['entry']['planState'], seen), ('PASS', 'in_progress', [True]))
+
+    def test_a_refusal_leaves_neither_the_approvals_file_nor_the_lock_file(self):
+        self.set_plan('done')
+        self.refused(self.record(expect_plan_state='in_progress'), 'in_progress', 'done')
+        self.assertEqual(sorted(path.name for path in self.log.parent.iterdir()), [])
+
+    def test_a_second_writer_holding_the_lock_decides_on_the_state_after_it_releases(self):
+        self.set_plan('in_progress')
+        reports = []
+        started = threading.Event()
+
+        def writer():
+            started.set()
+            reports.append(self.record(expect_plan_state='in_progress'))
+        with server.FileLock(str(self.log.parent / 'approvals.jsonl.lock'), 30, 0o600, unlink=True):
+            thread = threading.Thread(target=writer)
+            thread.start()
+            started.wait(5)
+            thread.join(0.5)
+            self.assertTrue(thread.is_alive(), 'the writer waits for the lock')
+            self.set_plan('done')   # the plan changes while the other writer holds the lock
+        thread.join(30)
+        self.refused(reports[0], 'in_progress', 'done')
+        self.assertFalse(self.log.exists())
+
+    def test_a_size_refusal_precedes_the_comparison_and_has_no_code(self):
+        self.set_plan('done')
+        self.log.write_bytes(b'\n' * status.MAX_APPROVALS_BYTES)
+        report = self.record(expect_plan_state='in_progress')
+        self.assertEqual((report['status'], report.get('code')), ('BLOCKED', None))
+        self.assertIn('exceed', report['reason'])
 
     def test_the_entry_has_the_same_format_as_without_the_flag(self):
         self.set_plan('in_progress')
