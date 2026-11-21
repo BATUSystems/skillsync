@@ -111,8 +111,8 @@ nie wchodzi do wspólnego zbioru `attrs` pliku ani do rejestru. `scan(tree)` bez
 związanym z `TemporaryDirectory(...)` (np. `temp = TemporaryDirectory(...)`); stąd `self.root = Path(temp.name).resolve()` w klasie bazowej
 `IsolatedTestCase` (`tests/layers_helpers.py`) skaża `self.root` i `self.work` w podklasach z innych plików. `NamedTemporaryFile` i `mkdtemp`
 nie dają takiego `.name`, a `Path(x).name` jest tylko nazwą składnika. Złączenia `os.path.join(x.name, …)` i f-stringi z `.name` nie są
-wykrywane (znane ograniczenia). Klasy rozpoznaje prosta nazwa, bez rozwiązywania importów. Nowy test, który składa ścieżkę z danych,
-używa pomocnika; gdy trafienie ma zostać, dopisz wpis do `ALLOWED` z uzasadnieniem.
+wykrywane, podobnie jak obiekt `TemporaryDirectory` podany jako argument innego wywołania (`x = wrap(TemporaryDirectory())`, `self.enterContext(TemporaryDirectory())`) (znane ograniczenia). Klasy rozpoznaje prosta nazwa, bez rozwiązywania importów. Nowy test, który składa ścieżkę z danych,
+używa pomocnika. Trafienie naprawia się domyślnie (`child` dla jednej nazwy, `descend` dla ścieżki z `/`, w helperze u źródła; stała, liczba lub pętla po nie-literale też jest naprawą, nie wyjątkiem). Wpis do `ALLOWED` jest wyjątkiem i wolno go dodać tylko wtedy, gdy WSZYSTKIE wystąpienia klucza (plik, tekst wyrażenia) spełniają jeden z warunków: (a) nazwy są celowo wrogie i test jest zabezpieczony przed Windows albo `child` odrzuciłby dokładnie to, co test sprawdza, (b) prawa strona jest wynikiem walidatora z `tmp_paths` lub testu, nie kodu produktu, (c) `descend` zmieniłby semantykę testu; uzasadnienie wpisu wskazuje dowód dla każdego wystąpienia. Gdy wpisów robi się więcej niż kilkanaście, reguła skanera jest za szeroka i trzeba ją przeanalizować, zamiast dopisywać.
 
 ### Serwery w testach
 

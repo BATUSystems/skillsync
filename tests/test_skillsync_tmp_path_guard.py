@@ -545,7 +545,7 @@ class ScannerInheritance(unittest.TestCase):
         self.assertEqual([t for _, t in scan(ast.parse(sub))], [])  # no registry: no inheritance (the earlier behaviour)
 
     def test_a_name_derived_from_an_inherited_attribute_is_tmp_in_the_function(self):
-        """The shape of tests/test_skillsync_layers_merge.py (v1.6.0), recovered there by the `.name` rule: IsolatedTestCase.work comes from `temp.name` of a `TemporaryDirectory` object, a tmp path."""
+        """The shape of tests/test_skillsync_layers_merge.py (v1.6.0), IsolatedTestCase.work comes from `temp.name` of a `TemporaryDirectory` object, a tmp path since the `.name` rule (the registry of the base class is built in `ScannerNameRule.test_the_base_of_another_file_taints_the_subclass_through_the_name_rule`); here BASE is a stand-in with `mkdtemp`."""
         sub = 'class T(Base):\n    def outside(self, files):\n        base = self.work / "external"\n        for rel in files:\n            write(base / rel)\n'
         self.assertEqual(self.hits(sub, self.BASE), ['base / rel'])
 
@@ -660,7 +660,7 @@ class ScannerNameRule(unittest.TestCase):
         self.assertEqual(self.hits('def f(x, key):\n    return Path(x).name / key\n'), [])
         self.assertEqual(self.hits('class T:\n    def f(self, key):\n        return self.name / key\n'), [])
         self.assertEqual(self.hits('def f(obj, key):\n    obj = make()\n    return Path(obj.name) / key\n'), [])
-        # mkdtemp gives a str: `d.name` does not exist there, so the rule does not apply (`d` itself is tmp, `.name` of it is a distinct expression)
+        # mkdtemp gives a str, not a `TemporaryDirectory` object: the rule does not apply to it; `Path(d).name` is the last component (a name), not a path
         self.assertEqual(self.hits('def f(key):\n    d = tempfile.mkdtemp()\n    y = Path(d).name / key\n'), [])
 
     def test_known_limit_a_named_temporary_file_is_a_file_not_a_directory(self):

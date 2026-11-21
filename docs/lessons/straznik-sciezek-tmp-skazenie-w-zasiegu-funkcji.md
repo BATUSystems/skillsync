@@ -36,7 +36,7 @@ innych i odbierało nazwie pętli status bezpiecznej.
   przez `tmp_paths.child`. Złączenie w `layers_merge` (`IsolatedTestCase.work` z `Path(temp.name)`) wraca w v1.6.0 i v1.7.0 (`layers_merge.py:696`),
   bo `X.name` obiektu `TemporaryDirectory` jest ścieżką tmp (zbiór plikowy `X`, nie `NamedTemporaryFile`, `mkdtemp` ani `Path(x).name`).
   Różnicówka stary/nowy skaner na drzewie 56f6887 i tagach v1.6.0, v1.7.0, v1.9.0: utracone 0.
-- Skutek: 129 trafień w 47 plikach na `release/1.12.0` (23 to `self.work`), wszystkie naprawione przez `tmp_paths.child`/`descend`
+- Skutek: 129 trafień w 47 plikach na `release/1.12.0` w stanie `56f6887` (23 to `self.work`), plus 2 w `test_skillsync_skill_frontmatter.py` po zmianie bazy, wszystkie naprawione przez `tmp_paths.child`/`descend`
   (w helperach u źródła: `make_repo`, `make_layer`, `layer_dir`, `LayersCase.project`, `WorkflowFixture.write`, `PrototypeFixture.proto_dir`,
   `retro` `write`/`past`/`put_input`). Wyjątki w `ALLOWED`: 1 wpis `test_skillsync_dispatch_state.py` `put` (jedyna wroga nazwa z `\n` pod
   `os.name != 'nt'`) i 2 wpisy z CORE-TESTDEBT2 (`test_run_hardening`, `test_gate`). Wpis do `ALLOWED` wolno dodać tylko, gdy WSZYSTKIE
@@ -54,8 +54,7 @@ innych i odbierało nazwie pętli status bezpiecznej.
    zmieniony na `nulbyte`). Po zmianie helperów sprawdzaj punktowo moduły, które używają nazw podobnych do urządzeń.
 2. `descend` odrzuca `..`. Test, który celowo zapisuje poza rootem projektu (`tests/test_skillsync_knowledge_init.py`, lekcje w `<base>/docs/lessons`,
    gdzie `self.root` to `self.base / 'project'`), zapisuje względem `self.base` zamiast przez helper.
-3. Moduły testów importują rodzeństwo po prostej nazwie (`from test_skillsync_workflow import ...`), więc bieg modułowy to
-   `python3 -m unittest discover -s tests -p <moduł>.py`, a nie `tests.<moduł>`. `ModuleNotFoundError`, rc=1 i `ran=1` w 0 s to błąd runnera, nie wynik testu.
+3. Bieg modułowy to `python3 -m unittest discover -s tests -p <moduł>.py`, a nie `tests.<moduł>` (zob. lekcja `import-sasiedniego-modulu-testu-wymaga-discover`): `ModuleNotFoundError`, rc=1 i `ran=1` w 0 s to błąd runnera, nie wynik testu.
 4. Metoda: różnicówka stary/nowy skaner na zamrożonym SHA i tagach; skan kontrolny `Attribute(name)` poza regułą (wynik 0); mutacja „każde `.name`”
    czerwieni 3 z 7 testów `ScannerNameRule`.
 5. Kontrola izolacji „test touched real Skillsync state dirs” bywa czerwona, gdy inna karta wykonuje `skillsync link` w czasie biegu. Powtórz moduł
