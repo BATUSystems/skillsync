@@ -20,6 +20,10 @@ import yaml
 from test_skillsync_workflow import CLI, WorkflowFixture
 from layers_helpers import commit_file, git, needs_fifo, needs_os_symlinks, needs_posix, skip_open_file
 from cli_inprocess import run_cli
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child, descend  # noqa: E402
 
 LIB = 'skills/feature/references/x.md'
 PRJ = 'docs/workflow.md'
@@ -67,7 +71,7 @@ class ScanBase(WorkflowFixture):
         """Plik wejściowy skanu w katalogu przebiegu; zwraca ścieżkę względną do korzenia projektu."""
         run_id = run_id or self.run_id
         data = {'schema': 1, 'run_id': run_id, 'signals': signals, **(top or {})}
-        path = self.root / self.rel(run_id, name)
+        path = descend(self.root, self.rel(run_id, name))
         path.parent.mkdir(parents=True, exist_ok=True)
         if raw is not None:
             path.write_bytes(raw if isinstance(raw, bytes) else raw.encode())
@@ -80,7 +84,7 @@ class ScanBase(WorkflowFixture):
 
         signals: (key, repo, target); proposals: (repo, target, state[, ref]) jako P1, P2, ...; `state` None = brak wpisu
         decyzji. `decisions` (lista (P<n>, state[, ref])) nadpisuje wpisy wyliczone z `proposals`."""
-        folder = self.root / '.skillsync/runs' / name
+        folder = child(self.root / '.skillsync/runs', name)
         folder.mkdir(parents=True, exist_ok=True)
         listed = [{'id': f'S{i}', 'key': s[0], 'repo': s[1], 'target': s[2]} for i, s in enumerate(signals, 1)]
         props = [{'id': f'P{i}', 'signals': [], 'repo': p[0], 'target': p[1]} for i, p in enumerate(proposals, 1)]
@@ -294,7 +298,7 @@ class InputRefused(ScanBase):
             'poza .skillsync/runs': 'docs/in.json',
             'kropki wychodzące na zewnątrz': '../escape.json',
             'kropki do innego przebiegu': '.skillsync/runs/cur/../other/retro-scan-input.json',
-            'bezwzględna': str(self.root / self.rel()),
+            'bezwzględna': str(descend(self.root, self.rel())),
             'sam katalog przebiegu': '.skillsync/runs/cur',
             'plik w magazynie poza katalogiem': '.skillsync/runs/cur.json',
             'plik nie istnieje': '.skillsync/runs/cur/nie-ma.json',
@@ -314,7 +318,7 @@ class InputRefused(ScanBase):
     @needs_os_symlinks
     def test_symlink_to_file_in_allowed_directory(self):
         real = self.put_input([sig('S1')], name='real.json')
-        os.symlink(self.root / real, self.root / self.rel())
+        os.symlink(descend(self.root, real), descend(self.root, self.rel()))
         self.blocked(rel=self.rel())
         # odwrotnie: ten sam plik bez dowiązania przechodzi
         self.assertEqual(self.parsed(self.run_scan(real), 0)['status'], 'PASS')
@@ -339,12 +343,12 @@ class InputRefused(ScanBase):
         self.blocked(rel=self.rel())
 
     def test_directory_instead_of_file(self):
-        (self.root / self.rel()).mkdir(parents=True)
+        descend(self.root, self.rel()).mkdir(parents=True)
         self.blocked(rel=self.rel())
 
     @needs_fifo
     def test_fifo_does_not_hang(self):
-        path = self.root / self.rel()
+        path = descend(self.root, self.rel())
         path.parent.mkdir(parents=True)
         os.mkfifo(path)
         self.blocked(rel=self.rel(), timeout=15)
@@ -1245,9 +1249,9 @@ class RunSources(ScanBase):
         from skillsync_workflow import retro_scan
         for name in ('r1', 'r2', 'r3'):
             self.past(name, [('onlyold' if name == 'r1' else 'x', 'library', LIB)])
-        size = lambda n: sum((self.root / '.skillsync/runs' / n / f).stat().st_size
+        size = lambda n: sum((child(self.root / '.skillsync/runs', n) / f).stat().st_size
                              for f in ('retro-signals.json', 'retro-decisions.json')
-                             if (self.root / '.skillsync/runs' / n / f).exists())
+                             if (child(self.root / '.skillsync/runs', n) / f).exists())
         limit = size('r2') + size('r3')  # kolejność odczytu: najnowsze nazwy pierwsze, r1 się nie mieści
         code, data = self.in_process([sig('S1', 'onlyold')], [mock.patch.object(retro_scan, 'MAX_SCAN_BYTES', limit)])
         self.assertEqual(code, 0)
@@ -1378,11 +1382,11 @@ class WorktreeBase(ScanBase):
     def make_worktree(self, prefix=''):
         """Projekt (manifest zatwierdzony w gałęzi) w `self.repo/<prefix>`; worktree dostaje ten sam układ."""
         self.init_repo(self.repo)
-        self.main_root = self.repo / prefix if prefix else self.repo
+        self.main_root = descend(self.repo, prefix) if prefix else self.repo
         rel = (prefix + '/' if prefix else '') + '.github/.skillsync.yaml'
         commit_file(self.repo, rel, yaml.safe_dump(self.manifest), 'manifest')
         git(self.repo, 'worktree', 'add', '-q', '-b', 'feat', str(self.wt))
-        self.root = self.wt / prefix if prefix else self.wt
+        self.root = descend(self.wt, prefix) if prefix else self.wt
         self.assertTrue((self.root / '.github/.skillsync.yaml').is_file())
 
     def main_past(self, *args, **kw):
@@ -2203,7 +2207,7 @@ class UnexpectedForeignErrors(WorktreeBase):
         self.save()
 
     def other(self, name, *runs):
-        root = self.repos / name
+        root = child(self.repos, name)
         root.mkdir(parents=True)
         with self.at(root):
             self.save()
