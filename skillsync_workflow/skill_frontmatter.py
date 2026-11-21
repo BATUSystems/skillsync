@@ -30,7 +30,10 @@ KNOWN = {**CLAUDE_CODE, **COPILOT, **UNKNOWN_HOST}
 
 
 def _shown(value):
-    text = str(value)
+    try:
+        text = str(value)
+    except Exception:   # noqa: BLE001 - e.g. a huge integer key (the limit of `str` for integers): the lint must stay total
+        return '<unprintable>'
     return text if len(text) <= MAX_SHOWN else text[:MAX_SHOWN] + '...'
 
 

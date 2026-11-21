@@ -1204,7 +1204,7 @@ def doctor(root, manifest, library):
                 finding('error', path, 'Missing name/description frontmatter')
             elif len(str(metadata['description']).encode('utf-8')) > 200:
                 finding('warning', path, 'Skill description longer than 200 bytes')
-            for _klass, remark in skill_frontmatter.check(metadata):   # CLAUDE-1: never an error (the skills of the org and personal layers are not ours)
+            for _klass, remark in skill_frontmatter.check(metadata):   # never an error (the skills of the org and personal layers are not ours)
                 finding('warning', path, remark)
         except (yaml.YAMLError, IndexError):
             finding('error', path, 'Invalid skill frontmatter')

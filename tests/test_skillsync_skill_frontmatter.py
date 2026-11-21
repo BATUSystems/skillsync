@@ -66,6 +66,9 @@ class Check(unittest.TestCase):
         self.assertEqual(skill_frontmatter.check({'name': 'x', 'description': 'd', 'user-invocable': True}), [])
         self.assertEqual(skill_frontmatter.check({'name': 'x', 'description': 'd', 'user-invokable': True, 'user-invocable': True}), [])
 
+    def test_a_huge_integer_key_does_not_break_the_lint(self):
+        self.assertEqual(klasses({'name': 'x', 'description': 'd', 10 ** 5000: 'a'}), ['unknown-key'])
+
     def test_a_key_of_an_unknown_host_is_silent(self):
         self.assertEqual(skill_frontmatter.check({'name': 'x', 'description': 'd', 'applyTo': '**/*.cs'}), [])
 

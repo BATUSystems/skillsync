@@ -59,8 +59,8 @@ Shared across projects:
 
 Other keys of Claude Code (checked 2026-11-21, <https://code.claude.com/docs/en/skills>, "Frontmatter reference"; they are not Copilot keys): `when_to_use`, `arguments`, `allowed-tools` (pre-approval of tools in the turn of the skill, not a restriction), `disallowed-tools`, `model`, `effort` (`low|medium|high|xhigh|max`), `context` (only `fork`: the skill runs in a subagent that does not see the conversation), `agent`, `background`, `hooks`, `paths` (globs relative to the working directory), `shell` (`bash|powershell`). Claude Code ignores unknown keys without an error or a warning, so a typo shows nowhere: `skillsync doctor` checks the keys, the types and the enumerated values (the module `skillsync_workflow/skill_frontmatter.py`, a warning, never an error) and the test of the core library accepts none. Not confirmed by the documentation: whether the description disappears from the skill listing with `disable-model-invocation`, whether the description of a skill with `paths` is listed before a file matches, whether the model can invoke a flagged skill with the Skill tool; see `docs/domain/skill-frontmatter.md`.
 
-### NOT Supported Attributes
-The following attributes will cause validation errors:
+### Unsupported Attributes (a `doctor` warning)
+The following attributes are not supported (Copilot reports validation errors; `skillsync doctor` reports a warning):
 - `keywords` - Not supported
 - `skill` - Do not nest attributes under this key
 - Custom fields or arbitrary keys (in the core library: `skillsync doctor` warns and the library test fails; in an organization or personal layer a custom key is only a `doctor` warning)
