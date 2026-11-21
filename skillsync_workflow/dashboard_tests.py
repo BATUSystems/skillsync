@@ -20,6 +20,7 @@ STALE_ALIVE_S = 24 * 3600   # silence after which even a live pid of this machin
 MAX_SKIPPED = 20   # the entries of `skipped` in the answer
 MAX_RUNNING_GROUP = 50   # a RUNNING attempt lists every test of a group up to this size (waiting ones visible without a click)
 MAX_RESPONSE_TESTS = 5000
+MAX_GROUPS = 200   # the groups of an attempt in the answer (failed first, then running, the rest by name); the attempt counters still cover every test
 STALE_RUNNING_S = 35 * 60
 NO_GROUP = 'pozostałe testy'
 _LOCK = threading.RLock()   # the server is multi-threaded: the shared states are read and folded under one lock
@@ -74,17 +75,20 @@ def _summary(path, state):
         group['tests'].append(test)
     listed = []
     for group in groups.values():
-        hot = group['tests'] if running and len(group['tests']) <= MAX_RUNNING_GROUP else [t for t in group['tests'] if t['state'] in ('failed', 'running')]
         group['state'] = 'failed' if group['counts']['failed'] else 'running' if group['counts']['running'] else 'waiting' if group['counts']['waiting'] and not group['counts']['passed'] else 'passed'
-        group['tests'] = [_public(t) for t in hot[:MAX_INLINE_TESTS]]
         group['total'] = sum(group['counts'].values())
         listed.append(group)
     listed.sort(key=lambda g: (0 if g['state'] == 'failed' else 1 if g['state'] == 'running' else 2, g['name']))
+    groups_total = len(listed)
+    listed = listed[:MAX_GROUPS]   # cut after the sort and BEFORE the tests of a group are turned into public objects
+    for group in listed:
+        hot = group['tests'] if running and len(group['tests']) <= MAX_RUNNING_GROUP else [t for t in group['tests'] if t['state'] in ('failed', 'running')]
+        group['tests'] = [_public(t) for t in hot[:MAX_INLINE_TESTS]]
     counts = state.counts if running or not state.counts.get('running') else {**state.counts, 'running': 0, 'waiting': state.counts.get('waiting', 0) + state.counts['running']}
     return {'n': state.number, 'state': _effective_state(state, path), 'startedAt': start.get('at'), 'endedAt': end.get('at'),
             'durationMs': end.get('ms'), 'command': start.get('command'), 'tool': start.get('tool'), 'levels': 'tests' if state.tests else 'counts' if state.stream_counts else start.get('levels') or 'command', 'live': start.get('live') if start.get('live') in ('running', 'completion', 'counts') else None,
             'source': end.get('source'), 'exit': end.get('exit'), 'reason': end.get('reason'), 'counts': counts, 'truncated': state.truncated,
-            'groups': listed}
+            'groups': listed, 'groupsTotal': groups_total, 'groupsOmitted': groups_total - len(listed)}
 
 
 def _public(test):

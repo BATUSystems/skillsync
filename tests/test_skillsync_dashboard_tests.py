@@ -170,6 +170,47 @@ class Sections(Base):
         self.assertEqual(dt.build_tests(self.root, 'R1')[0]['sections'][0]['attempts'][0]['groups'][0]['name'], 'pozostałe testy')
 
 
+class GroupLimit(Base):
+    """CORE-TESTDEBT2 (a): an attempt lists at most `MAX_GROUPS` groups; the omitted ones are counted, the attempt counters cover every test."""
+
+    def groups_of(self, tests, end='PASS'):
+        self.attempt('F1.1', tests, end=end)
+        tests_part, _ = dt.build_tests(self.root, 'R1')
+        return tests_part['sections'][0]['attempts'][0]
+
+    def test_more_groups_than_the_limit_are_cut_and_counted(self):
+        att = self.groups_of([(f't{i}', 'passed', f'g{i:04d}') for i in range(2000)])
+        self.assertEqual(len(att['groups']), dt.MAX_GROUPS)
+        self.assertEqual(att['groupsTotal'], 2000)
+        self.assertEqual(att['groupsOmitted'], 2000 - dt.MAX_GROUPS)
+        self.assertEqual(att['counts']['passed'], 2000, 'the counters of the attempt cover every test')
+
+    def test_at_most_the_limit_keeps_every_group_and_reports_zero_omitted(self):
+        att = self.groups_of([(f't{i}', 'passed', f'g{i}') for i in range(dt.MAX_GROUPS)])
+        self.assertEqual((len(att['groups']), att['groupsTotal'], att['groupsOmitted']), (dt.MAX_GROUPS, dt.MAX_GROUPS, 0))
+        small = self.groups_of([('a', 'passed', 'x')])
+        self.assertEqual((small['groupsTotal'], small['groupsOmitted']), (1, 0))
+
+    def test_failed_groups_come_before_the_rest_and_survive_the_cut(self):
+        tests = [(f'ok{i}', 'passed', f'a{i:04d}') for i in range(300)] + [(f'bad{i}', 'failed', f'z{i:04d}') for i in range(5)]
+        att = self.groups_of(tests, end='FAIL')
+        names = [g['name'] for g in att['groups']]
+        self.assertEqual(names[:5], [f'z{i:04d}' for i in range(5)])
+        self.assertEqual(len(names), dt.MAX_GROUPS)
+        self.assertEqual(att['groupsOmitted'], 305 - dt.MAX_GROUPS)
+
+    def test_more_failed_groups_than_the_limit_cut_some_failed_ones_and_count_them(self):
+        att = self.groups_of([(f'bad{i}', 'failed', f'f{i:04d}') for i in range(dt.MAX_GROUPS + 30)], end='FAIL')
+        self.assertEqual(len(att['groups']), dt.MAX_GROUPS)
+        self.assertTrue(all(g['state'] == 'failed' for g in att['groups']))
+        self.assertEqual(att['groupsOmitted'], 30)
+
+    def test_the_cut_happens_before_the_inline_tests_are_built(self):
+        with mock.patch.object(dt, '_public', wraps=dt._public) as public:
+            self.groups_of([(f't{i}', 'failed', f'g{i:04d}') for i in range(dt.MAX_GROUPS + 50)], end='FAIL')
+        self.assertLessEqual(public.call_count, dt.MAX_GROUPS, 'tests of omitted groups are not turned into public objects')
+
+
 class Watching(Base):
     def test_a_new_event_changes_the_signature_of_the_page(self):
         from skillsync_workflow import dashboard_http as srv

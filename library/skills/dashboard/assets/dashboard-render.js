@@ -864,6 +864,7 @@
           `poziom danych: ${att.levels === "tests" ? "lista testów" : att.levels === "counts" ? "liczniki" : "polecenie"}${att.live === "completion" ? " (wyniki po zakończeniu każdego testu, bez stanu „uruchomiony”)" : ""}${att.reason ? " · " + att.reason : ""}${att.truncated ? " · lista obcięta (limit)" : ""}`),
         attempts.length > 1 ? h("div", { class: "tatt", role: "group", "aria-label": "Biegi kroku" }, attempts.map((a, i) => h("button", { type: "button", class: `tab-att${i === idx ? " is-on" : ""}`, "aria-pressed": String(i === idx),
           on: { click: () => { st.testsAttempt[key] = i; render(); } } }, `bieg ${a.n}: ${a.state === "passed" ? "✓" : a.state === "failed" ? "✕" : a.state === "running" ? "…" : "!"} ${num(a.counts && a.counts.failed) ? num(a.counts.failed) + " czerwone" : ""}`.trim()))) : null,
+        groupsNote(att),
         (att.groups || []).map((g) => groupBlock(sec, att, g, key))) : null;
       return h("section", { class: `tsec s-${sec.state || "passed"}`, id: `tsec-${id}` }, head, body);
     }
@@ -880,6 +881,12 @@
       const shown = items.slice(0, 5).map((e) => `${e.path}${why(e.reason)}`).join(", ");
       const more = n > 5 ? ` i ${n - 5} więcej` : "";
       return h("p", { class: "tskipped", role: "note" }, `Pominięto ${count} ${noun} wyników testów (nie dało się ich uwzględnić): ${shown}${more}.`);
+    }
+    function groupsNote(att) {   // CORE-TESTDEBT2 (a): the server lists at most MAX_GROUPS groups of an attempt and counts the rest
+      const omitted = num(att.groupsOmitted);
+      if (!(omitted > 0)) return null;
+      const total = num(att.groupsTotal);
+      return h("p", { class: "tgroups-note", role: "note" }, `Pokazano ${total - omitted} z ${total} grup (najpierw nieudane i w toku); liczniki powyżej obejmują wszystkie testy.`);
     }
     function renderTestsTab(d) {
       const t = d.tests && typeof d.tests === "object" && Array.isArray(d.tests.sections) ? d.tests : null;
