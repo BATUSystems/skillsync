@@ -26,7 +26,9 @@ wywołaniami narzędzi. Po limicie podagent zwraca wynik oznaczony jako części
 PARTIAL output”, Claude Code ≥ 2.1.246), który wznawiasz przez `SendMessage`; to nie błąd. Wartości to p95 liczby
 tur z transkryptów podagentów (n = 1836, konto prywatne, 2026-11-21) × 1,5, zaokrąglone w górę do 5 (cap 200);
 dla `mechanic` próba była za mała (n = 1), więc zostaje wartość startowa 40. Wznowienia kumulują się w jednym
-transkrypcie, więc limit może być luźniejszy od potrzeby. Korekta limitu to zmiana w tej tabeli i we frontmatterze roli
+transkrypcie, więc limit może być luźniejszy od potrzeby; czy licznik tur liczy się od zera po wznowieniu przez
+`SendMessage`, nie sprawdzono (niezweryfikowane). Wynik częściowy roli `reviewer` albo `verifier` nie jest werdyktem:
+wznów podagenta albo powtórz krok, nie przyjmuj częściowego raportu jako PASS. Korekta limitu to zmiana w tej tabeli i we frontmatterze roli
 (pilnuje ich zgodności `tests/test_skillsync_agent_roles.py`).
 
 Granica „podumysły nie commitują” (AGENTS.md) jest tylko w treści ról. Próba z 2026-11-21 (Claude Code 2.1.318) pokazała,

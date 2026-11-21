@@ -80,6 +80,15 @@ class RoleFieldTable(unittest.TestCase):
             with self.subTest(field=key):
                 self.assertIn(key, skill_frontmatter.ROLE_FIELDS, f'role field {key} has no version entry in ROLE_FIELDS')
 
+    def test_the_real_library_roles_give_one_text_naming_the_limit_and_the_omit_field(self):
+        frontmatters = [(path.stem, skill_frontmatter.read_role_frontmatter(path)) for path in sorted((ROOT / 'library' / 'agents').glob('*.md'))]
+        texts = skill_frontmatter.agent_field_findings(frontmatters)
+        self.assertEqual(len(texts), 1)
+        roles = sorted(name for name, _ in frontmatters)
+        self.assertIn('`maxTurns` (roles: ' + ', '.join(roles) + ';', texts[0])
+        self.assertIn('`omitClaudeMd` (roles: explore, mechanic, test-runner, verifier;', texts[0])
+        self.assertNotIn('disallowedTools', texts[0], 'no role of the library carries it (the probe F0 is negative)')
+
     def test_entries_are_complete_and_versions_look_like_versions(self):
         for key, entry in skill_frontmatter.ROLE_FIELDS.items():
             with self.subTest(field=key):

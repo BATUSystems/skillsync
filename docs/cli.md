@@ -160,7 +160,7 @@ Pola workflow w tej grupie:
   dowiązanie w ścieżce przebiegu daje `BLOCKED` (exit 2) z `reason`, bez zapisu.
 
 Komendy opisuje [workflow](workflow.md). `doctor` sprawdza m.in. skille z manifestu (także frontmatter: nieznany klucz, zły typ lub wartość to ostrzeżenie, nigdy błąd), sekcje `dispatch` i `prototype`,
-spójność instrukcji z plikami oraz budżety bajtów.
+spójność instrukcji z plikami, budżety bajtów oraz pola ról wymagające nowszego Claude Code (jedna pozycja `info`, bez wpływu na kod wyjścia; bez uruchamiania `claude`).
 
 - `route` zwraca pole `ceremony {value, source: manifest|default|invalid[, error]}` (klucz manifestu `workflow.ceremony`: `full` | `demo`;
   brak klucza = `full`, `source: default`; `error` tylko przy `invalid`, wtedy `value: null`). `doctor` zgłasza błąd dla innej wartości.
