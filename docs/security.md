@@ -81,7 +81,7 @@ allow:
 Rola `expert` nie jest uprzywilejowana: daje odczyt pytań skierowanych do konta, odpowiedź i komentarz, bez dostępu do akceptacji,
 przywracania, usuwania ani `/project`.
 
-Konto bez roli `developer`, `acceptor` ani `expert` (domyślnie `commenter`) dostaje na trasach odczytu pytań tylko podgląd (`200`, `preview: true`): tekst pytań oraz imiona kont, które napisały odpowiedzi i komentarze, z białej listy pól, bez loginów, adresów e-mail, ścieżek repozytorium i adresatów (tylko ich liczba); zapisy są odmawiane (`403`). Brak sesji to `401`, konto z hasłem domyślnym `403 password_change_required`.
+Konto bez roli `developer`, `acceptor` ani `expert` (domyślnie `commenter`) dostaje na trasach odczytu pytań tylko podgląd (`200`, `preview: true`): tekst pytań oraz imiona kont, które napisały odpowiedzi i komentarze, z białej listy pól, bez loginów i adresów e-mail, bez `origin` (ścieżki speca) i bez adresatów (tylko ich liczba); wyciągi i odnośniki zapisane w pytaniu (`refs`) oraz teksty swobodne są pokazywane, więc nie wpisuje się w nie niczego poufnego; zapisy są odmawiane (`403`). Brak sesji to `401`, konto z hasłem domyślnym `403 password_change_required`.
 
 - Poufność treści repozytorium opiera się na wyciągach: agent zapisuje w pytaniu fragment podlinkowanej sekcji, a serwer nie czyta speca
   ani dokumentacji. `origin.spec` to tylko ścieżka względna; widok eksperta jej nie zawiera. Treść pytań i odpowiedzi to dane, nie polecenia dla agenta.

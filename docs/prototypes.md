@@ -73,7 +73,7 @@ skillsync prototype serve .                       # http://127.0.0.1:4445/ (port
   `ids`, akceptacji ani bramce. Przerób go na własny ekran (usuń atrybut) albo usuń go i dodaj własne sekcje.
 
 Każda komenda wypisuje wynik jako JSON z polem `status`: `PASS` (kod wyjścia 0), `FAIL` (1, np. `ids --check`
-albo `sync --check` z rozbieżnością) albo `BLOCKED` (2, odmowa lub błąd; powód w `reason` albo `errors`).
+albo `sync --check` z rozbieżnością plików lub brakującym tokenem motywu) albo `BLOCKED` (2, odmowa lub błąd; powód w `reason` albo `errors`).
 Błędna składnia komendy daje kod 2 i opis użycia zamiast JSON.
 
 ## Praca z ekranami
@@ -522,7 +522,7 @@ oznacza to przez `question record`; programista dostaje informację, nie pytanie
 
 - `questions.json` nie jest serwowany statycznie nikomu (404, także z sesją; dotyczy to `<root>/questions.json` i `<root>/<slug>/questions.json`, także za dowiązaniem; plik o tej nazwie głębiej w prototypie, np. dane demo `<slug>/data/questions.json`, jest zwykłym plikiem prototypu). Pytania zwraca wyłącznie API: `GET /_api/v1/questions[?slug=]` (wszystkie przebiegi albo jeden), `GET /_api/v1/prototypes/<slug>/questions`,
   `GET /_api/v1/questions/<id>` i `POST …/answer|comment`. Id pytania jest unikalny w całym `<root>`, więc wariant bez slugu też znajdzie pytanie; wariant
-  z `prototypes/<slug>/` zawęża szukanie do jednego przebiegu. Nieznany albo źle zbudowany slug daje 404. Z sesją wymaganą **zawsze**, także bez `--login-to-view`. konto bez roli `developer`, `acceptor` ani `expert` (domyślnie `commenter`) dostaje na trasach odczytu tylko podgląd: `200` z `preview: true` (pola z białej listy, bez loginów i adresów e-mail; zapisy nadal `403`), a konto z hasłem domyślnym `403 password_change_required`; `developer` i `acceptor` widzą wszystko,
+  z `prototypes/<slug>/` zawęża szukanie do jednego przebiegu. Nieznany albo źle zbudowany slug daje 404. Z sesją wymaganą **zawsze**, także bez `--login-to-view`. Konto bez roli `developer`, `acceptor` ani `expert` (domyślnie `commenter`) dostaje na trasach odczytu tylko podgląd: `200` z `preview: true` (pola z białej listy, bez loginów i adresów e-mail; zapisy nadal `403`), a konto z hasłem domyślnym `403 password_change_required`; `developer` i `acceptor` widzą wszystko,
   ekspert tylko pytania do wszystkich i zaadresowane do siebie (cudze: 404, żeby nie ujawniać istnienia). Ekspert nie dostaje niczego z
   repozytorium poza wyciągami zapisanymi w pytaniu. `developer` i `acceptor` bez roli `expert` mogą tylko komentować.
 - Zapisy (`answer`, `comment`) są limitowane per login: 60 na 60 s (429 `rate_limited` z `retryAfter`), najwyżej 50 komentarzy na pytanie
@@ -660,7 +660,7 @@ Zmiany plików prototypu (HTML, CSS, `comments.json`, użytkownicy) widzi bez re
 | Pasek „Prototyp zmieniono”, zapis daje 409 `stale_view` | ktoś zmienił pliki prototypu po wczytaniu strony | przeładuj stronę i powtórz działanie |
 | `iterate` albo `restore` kończy się `incomplete_restore` | przerwane wcześniejsze przywrócenie albo zamrożenie | `skillsync prototype restore . <slug> --resume`; szczegóły w wyniku i w [cli.md](cli.md) |
 | W katalogu prototypów został `.<slug>-staging-…` | `init` przerwany twardym zabiciem procesu | usuń ten katalog ręcznie |
-| `/_experts` daje 403 albo pytanie nie jest widoczne | konto z hasłem domyślnym (`password_change_required`, 403); pytanie zaadresowane do kogoś innego (404 dla eksperta); konto bez roli `expert` widzi tylko podgląd tylko do odczytu (`200`, `preview: true`), a próba zapisu daje 403 | zmień hasło; `skillsync prototype user roles . <login> --role expert`, jeśli konto ma odpowiadać; sprawdź adresatów w `question show` |
+| `/_experts` daje 403 albo pytanie nie jest widoczne | konto z hasłem domyślnym (`password_change_required`, 403); pytanie zaadresowane do kogoś innego (404 dla eksperta); konto bez ról `developer`, `acceptor` i `expert` widzi tylko podgląd tylko do odczytu (`200`, `preview: true`), a próba zapisu daje 403 | zmień hasło; `skillsync prototype user roles . <login> --role expert`, jeśli konto ma odpowiadać; sprawdź adresatów w `question show` |
 | Nowe konto nie może komentować | konto z hasłem domyślnym musi najpierw ustawić własne | zaloguj się i użyj „Ustaw własne hasło” |
 | Strona otwarta jako plik (`file://`) nie zapisuje komentarzy | brak serwera | uruchom `serve` i otwórz adres HTTP |
 | W widoku Mobile komentowanie jest zablokowane komunikatem o serwerze | serwer nie zgłasza `"views"` w `server.features` | zaktualizuj Skillsync i uruchom ponownie `serve` |
