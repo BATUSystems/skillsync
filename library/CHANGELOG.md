@@ -4,8 +4,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+### Added
+
+- Skill `workflow`, reference `test-run.md`: section "Kontrakt zdarzeń" with the fields of the events of a test step, including the optional `end.changed` (up to five paths that changed while the tests ran, masked, shown only in the message of the gate and never passed to a command).
+
 ### Changed
 
+- Skill `dashboard` (`SKILL.md`, "Zakładka „Testy”"): an attempt shows at most 200 groups, and a note says how many were omitted (`groupsOmitted`); the counters still cover every test.
+- Skill `workflow` (`test-run.md`): a `[T]` step counts as done by a checked `- [x]` row or by a PASS checkpoint, so `tests-not-run` also works for plans with a step table.
 - Skill `feature` (`prepush-matrix.md`, `resources.md`): a changed test file (helper) also reruns the guards that scan `tests/` already at the point rung; a point run is one module or test class, while several modules (hundreds of tests) or `discover` is a wide run that needs a lease grant.
 - Skill `feature` (`SKILL.md`, „Testy i poprawki”): the `skillsync test-run` call names the project as the positional argument, and a command without test counts needs an explicit `--allow-no-count <reason>`.
 - Skill `feature` (`retro-quality.md`, `review-loop.md`, agent `reviewer`): a late retrospective (a `final` record written before it) is closed again with `final-2`; a round after the user answered review questions (Q/C) is not `ceremony-excess`; the `plan` loop at risk high is mandatory but not full; with at least one signal the files `retro-signals.json` and `retro-decisions.json` exist before the `retro-quality` `PASS` (not as `--evidence`), and the `open` entry is written after the scan.

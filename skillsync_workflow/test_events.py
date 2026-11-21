@@ -241,7 +241,7 @@ class EventWriter:
             event['total'] = total
         return self._write(event)
 
-    def end(self, status, exit_code, reason=None, counts=None, ms=None, source=None, tree=None):
+    def end(self, status, exit_code, reason=None, counts=None, ms=None, source=None, tree=None, changed=None):
         if self._counts:
             self.counts(*self._counts[:4], total=self._counts[4], force=True)
         event = {'t': 'end', 'at': _now(), 'status': status, 'exit': exit_code}
@@ -255,6 +255,8 @@ class EventWriter:
             event['source'] = source
         if tree:
             event['tree'] = tree   # the content of the working tree AFTER the run (the gate compares it, see test_gate)
+        if changed:
+            event['changed'] = [clean_text(path, MAX_CHANGED_NAME, mask=True) for path in list(changed)[:MAX_CHANGED]]   # the paths that differ from the tree at the start
         if self.truncated:
             event['truncated'] = True
         return self._write(event, force=True)
@@ -355,6 +357,8 @@ def _int_or_none(value):
 
 _START_TEXT = ('at', 'run', 'step', 'stepSource', 'command', 'tool', 'host', 'startedAt', 'adapter', 'live', 'levels', 'allowNoCount')
 _END_TEXT = ('at', 'status', 'reason', 'source')
+MAX_CHANGED = 5   # `end.changed`: paths that changed while the tests ran
+MAX_CHANGED_NAME = 300
 _TREE_ID = re.compile(r'[0-9a-f]{40,64}')   # a git tree id: the only thing that may reach a git command line from an events file
 
 
@@ -365,6 +369,15 @@ def _typed(event, text_keys, int_keys, bool_keys=(), tree_keys=()):
     out.update({key: event[key] for key in bool_keys if isinstance(event.get(key), bool)})
     out.update({key: event[key] for key in tree_keys if isinstance(event.get(key), str) and _TREE_ID.fullmatch(event[key])})
     return out
+
+
+def _changed_paths(value):
+    """`end.changed` of an events file (untrusted: it may come from another machine): the text elements of a list, at most MAX_CHANGED of at most
+    MAX_CHANGED_NAME characters, cleaned of control and invisible characters and masked (the writer masks too: a file from another machine is not trusted to have); anything else is dropped. Only ever shown, never handed to a command."""
+    if not isinstance(value, list):
+        return []
+    names = [clean_text(item, MAX_CHANGED_NAME, mask=True) for item in value if isinstance(item, str) and len(item) <= MAX_CHANGED_NAME]
+    return [name for name in names if name][:MAX_CHANGED]
 
 
 class AttemptState:
@@ -411,7 +424,8 @@ class AttemptState:
                     self.collected_total = event['total']
             elif kind == 'end':
                 counts = event.get('counts')
-                self.end = {'t': 'end', **_typed(event, _END_TEXT, ('ms',), (), ('tree',)), **({'exit': event['exit']} if _exit_code(event.get('exit')) else {}), **({'truncated': True} if event.get('truncated') is True else {}),
+                changed = _changed_paths(event.get('changed'))
+                self.end = {'t': 'end', **_typed(event, _END_TEXT, ('ms',), (), ('tree',)), **({'changed': changed} if changed else {}), **({'exit': event['exit']} if _exit_code(event.get('exit')) else {}), **({'truncated': True} if event.get('truncated') is True else {}),
                             **({'counts': {k: v for k, v in counts.items() if k in ('total', 'passed', 'failed', 'skipped', 'running', 'waiting') and _int_or_none(v) is not None}}
                                if isinstance(counts, dict) else {})}
                 self.truncated = bool(event.get('truncated')) or self.truncated

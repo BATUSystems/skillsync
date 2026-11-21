@@ -1420,6 +1420,10 @@
     "category": "needs-symlinks"
    },
    {
+    "id": "test_skillsync_test_run_hardening.RemoveTree.test_a_read_only_tree_is_removed",
+    "category": "posix-only"
+   },
+   {
     "id": "test_skillsync_test_run_hardening.Sigterm.test_sigterm_ends_the_command_writes_end_and_frees_the_lock",
     "category": "posix-only"
    },
