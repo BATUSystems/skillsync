@@ -42,6 +42,7 @@ class Tmp(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.base = Path(self.tmp.name).resolve()
+        (self.base / 'profile').mkdir()
 
     def case(self, name='feature-key', prompt=GOOD_PROMPT, graders=None):
         folder = child(child(self.base, 'evals'), name)
@@ -128,7 +129,7 @@ class Command(Tmp):
         argv, _, _ = self.command()
         for flag in ('--scaffold', '--allow-tools', '--publish-report', '--allow-real-servers', '--mocks', '--dangerously-skip-permissions'):
             self.assertNotIn(flag, argv)
-        self.assertNotIn('--trust-plugin', argv[:3])
+        self.assertEqual([a for a in argv[1:] if not a.startswith('-') and a.startswith('/')][:1], [argv[3]])
 
     def test_a_case_filter_is_passed_through_and_the_binary_is_the_first_element(self):
         argv, _, _ = self.command(case='feature-*', claude_bin='/opt/fake/claude')
@@ -211,6 +212,94 @@ class Validation(Tmp):
         self.assertTrue(self.errors())
 
 
+class Hardening(Tmp):
+    def errors(self):
+        return self.mod.validate_cases(self.base / 'evals')
+
+    def test_a_marker_inside_a_line_does_not_cut_the_header(self):
+        self.case(prompt='---\ndescription: a --- b\nenv: {EVAL_X: 1}\nmodel: opus\nallowed_tools: [Bash]\n---\nx\n')
+        errors = self.errors()
+        self.assertTrue(any('env' in e for e in errors) and any('allowed_tools' in e for e in errors), errors)
+
+    def test_a_duplicate_key_is_an_error(self):
+        self.case(prompt='---\nallowed_tools: [Bash]\nallowed_tools: [Read]\n---\nx\n')
+        self.assertTrue(any('duplicate' in e for e in self.errors()), self.errors())
+
+    def test_a_non_string_key_and_unhashable_values_are_errors_not_exceptions(self):
+        self.case(prompt='---\n1: a\n---\nx\n')
+        self.assertTrue(self.errors())
+        self.case(prompt=GOOD_PROMPT.replace('[Read, Glob, Grep, Skill]', '[[Read], {a: b}]'))
+        self.assertTrue(any('allowed_tools' in e for e in self.errors()), self.errors())
+        self.case(graders={'g.md': '---\ntype: [a]\n---\n'})
+        self.assertTrue(any('type' in e for e in self.errors()), self.errors())
+
+    def test_an_extra_file_in_a_case_is_an_error(self):
+        for extra in ('scaffold.sh', '.mcp.json', 'mocks/server.json', 'graders/g.yaml'):
+            with self.subTest(extra=extra):
+                folder = self.case()
+                write(folder / extra, 'x\n')
+                self.assertTrue(any(Path(extra).parts[-2 if extra.startswith('graders') else 0] in e or Path(extra).name in e for e in self.errors()), self.errors())
+                (folder / extra).unlink()
+                if (folder / extra).parent != folder and (folder / extra).parent.name == 'mocks':
+                    (folder / 'mocks').rmdir()
+
+    def test_the_stage_holds_only_prompts_and_graders_and_is_validated_after_copying(self):
+        library = self.library()
+        folder = self.case()
+        write(folder / 'scaffold.sh', 'x\n')
+        write(self.base / 'evals' / 'README.md', 'top\n')
+        stage = self.base / 'stage'
+        self.mod.stage_plugin(library, self.base / 'evals', stage, skills=('feature',))
+        files = sorted(str(p.relative_to(stage / 'plugin' / 'evals')) for p in (stage / 'plugin' / 'evals').rglob('*') if p.is_file())
+        self.assertEqual(files, [str(Path('feature-key') / 'graders' / 'reads.md'), str(Path('feature-key') / 'prompt.md')])
+
+    def test_a_model_must_be_a_plain_identifier_and_the_cost_is_capped(self):
+        profile = str(self.base / 'profile')
+        for model in ('', '-x', '--allow-tools', 'a b', 'a=b'):
+            with self.subTest(model=model):
+                with self.assertRaises(SystemExit):
+                    self.mod.parse_args(['--model', model, '--max-cost-usd', '1', '--config-dir', profile])
+        for cost in ('5.01', '100000', 'nan', 'inf', '1e999'):
+            with self.subTest(cost=cost):
+                with self.assertRaises(SystemExit):
+                    self.mod.parse_args(['--model', 'haiku', '--max-cost-usd', cost, '--config-dir', profile])
+        self.assertEqual(self.mod.parse_args(['--model', 'haiku', '--max-cost-usd', '5', '--config-dir', profile]).max_cost_usd, 5.0)
+
+    def test_the_case_filter_cannot_look_like_a_flag(self):
+        with self.assertRaises(SystemExit):
+            self.mod.parse_args(['--model', 'haiku', '--max-cost-usd', '1', '--config-dir', str(self.base / 'p'), '--case=--allow-tools'])
+
+    def test_the_profile_must_be_an_existing_directory_without_dotdot(self):
+        for bad in (str(self.base / 'missing'), str(self.base / 'a' / '..' / 'b')):
+            with self.subTest(bad=bad):
+                with self.assertRaises(SystemExit):
+                    self.mod.parse_args(['--model', 'haiku', '--max-cost-usd', '1', '--config-dir', bad])
+
+    def test_a_skill_directory_that_is_a_symbolic_link_is_refused(self):
+        library = self.library(skills=('feature',))
+        real = self.base / 'real'
+        write(real / 'SKILL.md', 'x\n')
+        shutil_target = library / 'skills' / 'bugfix'
+        try:
+            os.symlink(real, shutil_target, target_is_directory=True)
+        except (OSError, NotImplementedError, AttributeError):
+            self.skipTest('symbolic links unavailable')
+        self.case()
+        with self.assertRaises(SystemExit):
+            self.mod.stage_plugin(library, self.base / 'evals', self.base / 'stage', skills=('feature', 'bugfix'))
+
+    def test_a_hard_linked_file_in_a_skill_is_refused(self):
+        library = self.library(skills=('feature',))
+        outside = write(child(self.base, 'outside.md'), 'secret\n')
+        try:
+            os.link(outside, library / 'skills' / 'feature' / 'hard.md')
+        except (OSError, NotImplementedError, AttributeError):
+            self.skipTest('hard links unavailable')
+        self.case()
+        with self.assertRaises(SystemExit):
+            self.mod.stage_plugin(library, self.base / 'evals', self.base / 'stage', skills=('feature',))
+
+
 class Staging(Tmp):
     def test_the_stage_has_copies_a_manifest_and_the_cases(self):
         library, evals = self.library(), self.base / 'evals'
@@ -238,7 +327,7 @@ class Staging(Tmp):
         self.mod.stage_plugin(library, self.base / 'evals', stage, skills=('feature',))
         for path in stage.rglob('*'):
             self.assertFalse(path.is_symlink(), path)
-        self.assertFalse((stage / 'plugin' / 'skills' / 'feature' / 'link.md').exists() and (stage / 'plugin' / 'skills' / 'feature' / 'link.md').is_symlink())
+        self.assertFalse((stage / 'plugin' / 'skills' / 'feature' / 'link.md').exists())
 
     def test_a_skill_missing_from_the_library_is_an_error(self):
         library = self.library(skills=('feature',))
@@ -288,6 +377,13 @@ class FakeClaude(Tmp):
         self.assertEqual(seen['env']['CLAUDE_CONFIG_DIR'], str(self.base / 'profile'))
         self.assertNotIn('ANTHROPIC_API_KEY', seen['env'])
         self.assertNotIn('SECRET_TOKEN', seen['env'])
+        argv = seen['argv']
+        for flag, value in (('--max-cost-usd', '0.5'), ('--model', 'haiku'), ('--runs', '3'), ('--concurrency', '1')):
+            self.assertEqual(argv.count(flag), 1)
+            self.assertEqual(argv[argv.index(flag) + 1], value)
+        self.assertEqual(seen['env']['PATH'], os.environ['PATH'])
+        self.assertNotEqual(Path(seen['cwd']).resolve(), ROOT)
+        self.assertFalse(str(Path(seen['cwd']).resolve()).startswith(str(self.base / 'out')))
         self.assertTrue((Path(seen['argv'][2]) / '.claude-plugin' / 'plugin.json').is_file())
 
     def test_the_exit_code_of_the_binary_is_passed_on(self):

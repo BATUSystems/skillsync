@@ -6,9 +6,12 @@ and stages a COPY of the skills, so the library itself is never touched. The rea
 import argparse
 import json
 import os
+import re
 import shutil
+import stat
 import subprocess
 import sys
+import tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -22,6 +25,10 @@ READ_ONLY_TOOLS = frozenset({'Read', 'Glob', 'Grep', 'Skill'})
 PROMPT_KEYS = frozenset({'description', 'tags', 'runs', 'max_turns', 'timeout_seconds', 'allowed_tools'})
 GRADER_TYPES = frozenset({'regex', 'tool_used', 'tool_order', 'file_exists'})
 ENV_ALLOWLIST = ('PATH', 'HOME', 'LANG')
+MAX_COST_CEILING_USD = 5.0
+MODEL_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._:\[\]-]*$')
+CASE_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._*?-]*$')
+HEADER_RE = re.compile(r'---[ \t]*\r?\n(.*?)^---[ \t]*(?:\r?\n|\Z)', re.S | re.M)
 
 
 def positive_cost(text):
@@ -29,14 +36,28 @@ def positive_cost(text):
         value = float(text)
     except ValueError:
         raise argparse.ArgumentTypeError(f'not a number: {text}')
-    if not value > 0 or value != value or value == float('inf'):
-        raise argparse.ArgumentTypeError('must be a positive finite number')
+    if not 0 < value <= MAX_COST_CEILING_USD:
+        raise argparse.ArgumentTypeError(f'must be above 0 and at most {MAX_COST_CEILING_USD} USD')
     return value
 
 
 def absolute_dir(text):
-    if not os.path.isabs(text):
-        raise argparse.ArgumentTypeError(f'must be an absolute path: {text}')
+    if not os.path.isabs(text) or '..' in Path(text).parts:
+        raise argparse.ArgumentTypeError(f'must be an absolute path without "..": {text}')
+    if not os.path.isdir(text):
+        raise argparse.ArgumentTypeError(f'is not an existing directory: {text}')
+    return text
+
+
+def model_name(text):
+    if not MODEL_RE.match(text):
+        raise argparse.ArgumentTypeError(f'not a plain model identifier: {text!r}')
+    return text
+
+
+def case_filter(text):
+    if not CASE_RE.match(text):
+        raise argparse.ArgumentTypeError(f'not a plain case name or glob: {text!r}')
     return text
 
 
@@ -52,11 +73,11 @@ def runs_count(text):
 
 def parse_args(argv):
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
-    parser.add_argument('--model', required=True)
+    parser.add_argument('--model', required=True, type=model_name)
     parser.add_argument('--max-cost-usd', required=True, type=positive_cost)
     parser.add_argument('--config-dir', required=True, type=absolute_dir, help='absolute path of the Claude profile (account) to use')
     parser.add_argument('--runs', type=runs_count, default=MAX_RUNS)
-    parser.add_argument('--case', default=None, help='case name or glob')
+    parser.add_argument('--case', default=None, type=case_filter, help='case name or glob')
     parser.add_argument('--claude-bin', default='claude')
     parser.add_argument('--evals-dir', default=str(HERE / 'evals'))
     parser.add_argument('--library', default=str(ROOT / 'library'))
@@ -81,16 +102,32 @@ def build_env(environ, config_dir):
     return env
 
 
+class UniqueKeyLoader(yaml.SafeLoader):
+    """SafeLoader that refuses duplicate and non-string keys (a later key would silently win)."""
+
+    def construct_mapping(self, node, deep=False):
+        seen = set()
+        for key_node, _ in node.value:
+            key = self.construct_object(key_node, deep=True)
+            if not isinstance(key, str):
+                raise yaml.YAMLError(f'non-string key {key!r}')
+            if key in seen:
+                raise yaml.YAMLError(f'duplicate key {key!r}')
+            seen.add(key)
+        return super().construct_mapping(node, deep)
+
+
 def frontmatter(path):
-    """(dict, error) of the YAML header of a markdown file."""
-    text = Path(path).read_text(encoding='utf-8')
-    if not text.startswith('---'):
-        return None, 'no frontmatter'
-    parts = text.split('---', 2)
-    if len(parts) < 3:
-        return None, 'unterminated frontmatter'
+    """(dict, error) of the YAML header of a markdown file; the closing marker is a whole `---` line."""
     try:
-        data = yaml.safe_load(parts[1]) or {}
+        text = Path(path).read_text(encoding='utf-8')
+    except (OSError, UnicodeDecodeError) as error:
+        return None, f'unreadable ({error.__class__.__name__})'
+    found = HEADER_RE.match(text)
+    if not found:
+        return None, 'no frontmatter'
+    try:
+        data = yaml.load(found.group(1), Loader=UniqueKeyLoader) or {}
     except yaml.YAMLError as error:
         return None, f'invalid YAML ({str(error).splitlines()[0]})'
     return (data, None) if isinstance(data, dict) else (None, 'frontmatter is not a mapping')
@@ -101,7 +138,7 @@ def check_prompt(path, model):
     if error:
         return [f'{path}: {error}']
     errors = []
-    for key in sorted(data):
+    for key in sorted(data, key=str):
         if key == 'model' and model and data[key] == model:
             continue
         if key not in PROMPT_KEYS:
@@ -111,7 +148,7 @@ def check_prompt(path, model):
             errors.append(f'{path}: {key} must be an integer 1..{limit}')
     if 'allowed_tools' in data:
         tools = data['allowed_tools']
-        bad = sorted(str(t) for t in tools if t not in READ_ONLY_TOOLS) if isinstance(tools, list) else ['(not a list)']
+        bad = sorted(str(t) for t in tools if not isinstance(t, str) or t not in READ_ONLY_TOOLS) if isinstance(tools, list) else ['(not a list)']
         if bad:
             errors.append(f'{path}: allowed_tools outside the read-only set: {", ".join(bad)}')
     return errors
@@ -121,7 +158,8 @@ def check_grader(path):
     data, error = frontmatter(path)
     if error:
         return [f'{path}: {error}']
-    if data.get('type') not in GRADER_TYPES:
+    kind = data.get('type')
+    if not isinstance(kind, str) or kind not in GRADER_TYPES:
         return [f'{path}: grader type {data.get("type")!r} is not allowed (type must be one of {", ".join(sorted(GRADER_TYPES))})']
     return []
 
@@ -133,8 +171,18 @@ def validate_cases(evals_dir, model=None):
         return [f'{evals_dir}: no case found']
     errors = []
     for case in cases:
-        if (case / 'case.yaml').exists():
-            errors.append(f'{case}: case.yaml is not allowed, the case is defined by prompt.md')
+        if case.is_symlink():
+            errors.append(f'{case}: a symbolic link is not allowed')
+            continue
+        for entry in sorted(case.iterdir()):
+            if entry.name not in ('prompt.md', 'graders'):
+                errors.append(f'{case}: unexpected file {entry.name} (only prompt.md and graders/*.md are allowed)')
+        if (case / 'graders').is_dir():
+            for entry in sorted((case / 'graders').iterdir()):
+                if not (entry.suffix == '.md' and entry.is_file() and not entry.is_symlink()):
+                    errors.append(f'{case}: unexpected file graders/{entry.name} (only regular *.md)')
+        if (case / 'prompt.md').is_symlink():
+            errors.append(f'{case}: prompt.md must not be a symbolic link')
         if not (case / 'prompt.md').is_file():
             errors.append(f'{case}: prompt.md is missing')
         else:
@@ -158,11 +206,37 @@ def skills_for(library):
     return tuple(skills)
 
 
-def _copy_tree(source, target):
-    """Copy a directory without following or recreating symbolic links."""
-    def skip_links(directory, names):
-        return [n for n in names if (Path(directory) / n).is_symlink()]
-    shutil.copytree(source, target, symlinks=True, ignore=skip_links)
+def _regular(path):
+    info = os.lstat(path)
+    if not stat.S_ISREG(info.st_mode) or info.st_nlink > 1:
+        raise SystemExit(f'error: {path} is not a plain single-link file')
+    return info
+
+
+def _copy_skill(source, target):
+    """Copy a skill directory file by file; refuse links (also as the root), special files and hard links."""
+    if os.path.islink(source) or not os.path.isdir(source):
+        raise SystemExit(f'error: {source} is not a plain directory')
+    target.mkdir(parents=True)
+    for entry in sorted(Path(source).iterdir()):
+        if entry.is_symlink():
+            continue
+        if entry.is_dir():
+            _copy_skill(entry, target / entry.name)
+        else:
+            _regular(entry)
+            shutil.copyfile(entry, target / entry.name)
+
+
+def _copy_evals(evals_dir, target):
+    """Only <case>/prompt.md and <case>/graders/*.md reach the stage."""
+    for case in sorted(p for p in Path(evals_dir).iterdir() if p.is_dir() and not p.is_symlink()):
+        for source in [case / 'prompt.md', *sorted((case / 'graders').glob('*.md'))]:
+            if source.is_file() and not source.is_symlink():
+                _regular(source)
+                destination = target / source.relative_to(evals_dir)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source, destination)
 
 
 def stage_plugin(library, evals_dir, stage, skills):
@@ -170,11 +244,11 @@ def stage_plugin(library, evals_dir, stage, skills):
     for name in skills:
         if not (Path(library) / 'skills' / name / 'SKILL.md').is_file():
             raise SystemExit(f'error: skill {name!r} is missing in {library}')
-    if plugin.exists():
-        raise SystemExit(f'error: {plugin} already exists')
+    if Path(stage).is_symlink() or plugin.exists():
+        raise SystemExit(f'error: {plugin} already exists or the stage is a link')
     for name in skills:
-        _copy_tree(Path(library) / 'skills' / name, plugin / 'skills' / name)
-    _copy_tree(evals_dir, plugin / 'evals')
+        _copy_skill(Path(library) / 'skills' / name, plugin / 'skills' / name)
+    _copy_evals(evals_dir, plugin / 'evals')
     manifest = plugin / '.claude-plugin' / 'plugin.json'
     manifest.parent.mkdir(parents=True)
     manifest.write_text(json.dumps({'name': 'skillsync-eval', 'version': '0.0.0', 'description': 'Copies of Skillsync skills for behaviour evals'}, indent=2) + '\n', encoding='utf-8')
@@ -195,8 +269,14 @@ def main(argv=None):
         print(json.dumps({'argv': command, 'env': env}, indent=2))
         return 0
     out.mkdir(parents=True, exist_ok=True)
-    stage_plugin(args.library, args.evals_dir, stage, skills_for(args.library))
-    return subprocess.run(command, env=env, cwd=out).returncode
+    plugin = stage_plugin(args.library, args.evals_dir, stage, skills_for(args.library))
+    errors = validate_cases(plugin / 'evals', args.model)
+    if errors:
+        print('\n'.join(errors), file=sys.stderr)
+        return 2
+    with tempfile.TemporaryDirectory(prefix='claude-eval-cwd-') as empty:
+        code = subprocess.run(command, env=env, cwd=empty).returncode
+    return 128 - code if code < 0 else code
 
 
 if __name__ == '__main__':
