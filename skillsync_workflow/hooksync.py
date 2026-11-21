@@ -2,6 +2,9 @@
 
  * `merge_entry`: wspolne scalanie wpisu (cala grupa {matcher, hooks} buduje wolajacy); cudze hooki, uprawnienia i inne klucze zostaja,
    blad pliku to [warn] (nigdy wyjatek), plik sledzony przez git nie jest zapisywany;
+ * `merge_setting`: ten sam kontrakt dla jednego klucza najwyzszego poziomu (pasek statusu `statusLine`); cudzej wartosci klucza nie nadpisuje;
+ * `sync_statusline`, `statusline_findings`: opcjonalny pasek statusu (`claude.statusline: true`), jego kopia skryptu, sprawdzenie cudzego paska
+   i `disableAllHooks` w trzech plikach ustawien;
  * `SPECS`, `resolve`, `build_entry`, `spec_same`: nowe hooki (kontekst sesji, straznik plikow generowanych, raport podagentow) i granica
    commitow podagentow (`subagent_commit` to argument straznika polecen); porownanie wpisu pomija argv CLI, chyba ze wskazuje nieistniejaca sciezke;
  * `sync_hooks`, `remove_ours`: instalacja i usuniecie (`claude: false`) wpisow i skryptow; pliki sledzone przez git zostaja;
@@ -11,10 +14,11 @@ import json
 import os
 import shlex
 import shutil
+import sys
 from collections import namedtuple
 from pathlib import Path
 
-from . import fsutil, guardhook
+from . import claude_manifest, fsutil, guardhook
 
 
 def load_settings(settings_path: Path):
@@ -123,6 +127,55 @@ def merge_entry(settings_path, event, entry, ours, want, dry_run, backup="overwr
     return not want
 
 
+def merge_setting(settings_path, key, value, is_ours, want, dry_run, backup="earliest") -> bool:
+    """Ustawia (`want`) albo usuwa klucz najwyzszego poziomu `key`; True, gdy po wywolaniu nie zostaje w pliku nasza wartosc (kontrakt `merge_entry`).
+
+    `is_ours(wartosc)` rozpoznaje nasza wartosc klucza. Cudza wartosc nigdy nie jest nadpisana ani usuwana: przy `want` to [warn] z nazwa pliku i False.
+    Sekcja `hooks` i inne klucze zostaja; plik sledzony przez git nie jest zapisywany; `backup`: jak w `merge_entry`."""
+    from .cli import is_tracked, json_file_text, read_user_text, write_text_lf  # cli importuje ten modul
+
+    settings_path = Path(settings_path)
+    if not want and not settings_path.exists():
+        return True
+    existing, ok = load_settings(settings_path)
+    if not ok:
+        return False
+    if key in existing:
+        current = existing[key]
+        if not is_ours(current):
+            if want:
+                print(f"[warn] {settings_path}: klucz {key} ma cudza wartosc, nie nadpisuje jej")
+                return False
+            return True
+        if want and current == value:
+            return False
+    elif not want:
+        return True
+    updated = dict(existing)
+    if want:
+        updated[key] = json.loads(json.dumps(value))
+    else:
+        del updated[key]
+    if settings_path.exists() and is_tracked(settings_path):
+        print(f"[warn] {settings_path} jest śledzony przez git, pomijam zapis")
+        return False
+    if dry_run:
+        print(f"[dry-run] Would update: {settings_path}")
+        return not want
+    try:
+        settings_path.parent.mkdir(parents=True, exist_ok=True)
+        if settings_path.exists():
+            backup_path = settings_path.with_name(settings_path.name + ".skillsync-backup")
+            if backup != "earliest" or not backup_path.exists():
+                write_text_lf(backup_path, read_user_text(settings_path))
+        write_text_lf(settings_path, json_file_text(updated, read_user_text(settings_path) if settings_path.exists() else ""))
+    except OSError as error:
+        print(f"[warn] Nie udalo sie zapisac {settings_path}: {error}")
+        return False
+    print(f"Updated: {settings_path}")
+    return not want
+
+
 # --------------------------------------------------------------------------------------------------------------------------
 # The hooks of CLAUDE-3 (spec K7, K9, K10): session context, guard of generated files, report of sub-agents, commit boundary.
 # --------------------------------------------------------------------------------------------------------------------------
@@ -138,7 +191,11 @@ SPECS = (
 COMMIT_KEY = "subagent_commit"
 COMMIT_MODES = ("warn", "deny", "off")
 COMMIT_DEFAULT = "deny"
-OWN_FILES = ("check-closure.py", "guard-commands.py", "guard-tests.py", "attribution-patterns.json", "test-tools.json") + tuple(spec.script for spec in SPECS)
+STATUSLINE_KEY = "statusLine"
+STATUSLINE_SCRIPT = "statusline.py"
+STATUSLINE_REFRESH = 15   # seconds (`refreshInterval` needs Claude Code 2.1.97; an older one ignores it)
+OWN_FILES = ("check-closure.py", "guard-commands.py", "guard-tests.py", "attribution-patterns.json", "test-tools.json") + tuple(spec.script for spec in SPECS) \
+    + (STATUSLINE_SCRIPT,)
 EVENT_DAYS = 14   # the window and the parser of `session-context.py`
 EVENT_LINES = 500
 EVENT_TAIL_BYTES = 512 * 1024
@@ -392,6 +449,7 @@ def sync_hooks(project_dir, manifest, config, dry_run=False) -> None:
         elif (project_dir / HOOKS_DIR / spec.script).is_file() or _has_entry(settings_path, spec):
             if merge_entry(settings_path, spec.event, None, ours, False, dry_run, backup="earliest"):
                 remove_script(project_dir, spec.script, dry_run)
+    sync_statusline(project_dir, manifest, config, dry_run)
 
 
 def remove_ours(project_dir, dry_run=False) -> None:
@@ -406,8 +464,128 @@ def remove_ours(project_dir, dry_run=False) -> None:
         for event, ours, drop in targets:
             if not merge_entry(settings_path, event, None, ours, False, dry_run, backup="earliest", drop=drop):
                 return
+        if not merge_setting(settings_path, STATUSLINE_KEY, None, bar_is_ours(project_dir), False, dry_run, backup="earliest"):
+            return
     for name in OWN_FILES:
         remove_script(project_dir, name, dry_run)
+
+
+# --------------------------------------------------------------------------------------------------------------------------
+# The status line (CLAUDE-7, opt-in `claude.statusline: true`): the entry `statusLine` of `settings.local.json` and the copy of the script.
+# --------------------------------------------------------------------------------------------------------------------------
+BAR_FILES = (
+    (".claude/settings.local.json", 1, "the highest of the three files"),
+    (".claude/settings.json", 2, "overridden by the local file"),
+    ("~/.claude/settings.json", 3, "the lowest, overridden by both project files"),
+)
+BAR_SUFFIX = f"/{HOOKS_DIR}/{STATUSLINE_SCRIPT}"
+
+
+def _quote(argument) -> str:
+    return f'"{argument}"' if os.name == "nt" else shlex.quote(str(argument))
+
+
+def _tokens(command) -> list:
+    try:
+        parts = shlex.split(str(command), posix=os.name != "nt")
+    except ValueError:
+        parts = str(command).split()
+    return [part[1:-1] if len(part) > 1 and part[0] == part[-1] == '"' else part for part in parts]
+
+
+def bar_command(project_dir) -> str:
+    """The interpreter of this generator and the absolute path of the copy of the script: no shell, no `git`."""
+    return f"{_quote(sys.executable)} {_quote(os.path.abspath(Path(project_dir) / HOOKS_DIR / STATUSLINE_SCRIPT))}"
+
+
+def bar_value(project_dir) -> dict:
+    return {"type": "command", "command": bar_command(project_dir), "refreshInterval": STATUSLINE_REFRESH}
+
+
+def bar_is_ours(project_dir):
+    """Our `statusLine` value: a command with the script `.claude/hooks/statusline.py`, either of this very project or (a moved or removed checkout)
+    a path that no longer exists. An existing script elsewhere (e.g. the global `~/.claude/hooks/statusline.py` of the user) is foreign."""
+    mine = os.path.normcase(os.path.abspath(Path(project_dir) / HOOKS_DIR / STATUSLINE_SCRIPT))
+
+    def ours(value) -> bool:
+        if not isinstance(value, dict) or value.get("type") != "command":
+            return False
+        for token in _tokens(value.get("command", "")):
+            if token.replace("\\", "/").endswith(BAR_SUFFIX) and (token.startswith("/") or os.path.isabs(token)):
+                return os.path.normcase(os.path.abspath(token)) == mine or not os.path.exists(token)
+        return False
+    return ours
+
+
+def _read_json(path):
+    """`(data, problem)`: `problem` is None for a missing file or a mapping, else the reason."""
+    try:
+        if not path.exists():
+            return {}, None
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (ValueError, OSError) as error:
+        return None, type(error).__name__
+    return (data, None) if isinstance(data, dict) else (None, "not a JSON object")
+
+
+def bar_blockers(project_dir, home=None) -> list:
+    """`[(label, text)]` of what stops the installation: a foreign `statusLine` or `disableAllHooks: true` in any of the three settings files, or a
+    file that cannot be read (a collision cannot be excluded). Empty = free."""
+    project_dir = Path(project_dir)
+    home = Path(home) if home is not None else Path.home()
+    paths = (project_dir / SETTINGS, project_dir / ".claude" / "settings.json", home / ".claude" / "settings.json")
+    ours = bar_is_ours(project_dir)
+    found = []
+    for (label, rank, note), path in zip(BAR_FILES, paths):
+        data, problem = _read_json(path)
+        prefix = f"{label} (priority {rank}/3, {note})"
+        if data is None:
+            found.append((label, f"statusLine: {prefix} is unreadable ({problem}); the status line is not installed, a collision cannot be excluded"))
+            continue
+        if STATUSLINE_KEY in data and not (rank == 1 and ours(data[STATUSLINE_KEY])):
+            found.append((label, f"statusLine: {prefix} holds a foreign statusLine; the status line of skillsync is not installed"))
+        if data.get("disableAllHooks") is True:
+            found.append((label, f"disableAllHooks: {prefix} switches the hooks off, and the status line with them; the status line of skillsync is not installed"))
+    return found
+
+
+def sync_statusline(project_dir, manifest, config, dry_run=False) -> None:
+    """`claude.statusline: true`: the copy of the script and the entry (never over a foreign one); otherwise our entry and then our copy are removed.
+    An off bar without an entry and without a script is not touched (and the user files are not even read)."""
+    project_dir = Path(project_dir)
+    settings_path = project_dir / SETTINGS
+    ours = bar_is_ours(project_dir)
+    if claude_manifest.statusline(manifest):
+        blockers = bar_blockers(project_dir)
+        if blockers:
+            for _label, text in blockers:
+                print(f"[warn] {text}")
+            return
+        copied = copy_script(project_dir, config, STATUSLINE_SCRIPT, dry_run)
+        merge_setting(settings_path, STATUSLINE_KEY, bar_value(project_dir), ours, copied, dry_run, backup="earliest")
+        if copied:
+            from . import cli
+            cli.ensure_claude_gitignore(project_dir / ".claude", [f"hooks/{STATUSLINE_SCRIPT}", "settings.local.json", "settings.local.json.skillsync-backup"], dry_run=dry_run)
+    elif (project_dir / HOOKS_DIR / STATUSLINE_SCRIPT).is_file() or ours((peek_settings(settings_path) or {}).get(STATUSLINE_KEY)):
+        if merge_setting(settings_path, STATUSLINE_KEY, None, ours, False, dry_run, backup="earliest"):
+            remove_script(project_dir, STATUSLINE_SCRIPT, dry_run)
+
+
+def statusline_findings(root, manifest, layerset=None, home=None):
+    """`[(level, path, reason)]` for `claude.statusline: true`: a warning for a foreign bar, `disableAllHooks` or an unreadable file (the file and its
+    priority), for our entry whose script is missing and for a copy that differs from the library. Nothing when the bar is off (K8)."""
+    if not claude_manifest.statusline(manifest):
+        return []
+    root = Path(root)
+    found = [("warning", label, text) for label, text in bar_blockers(root, home)]
+    copy = root / HOOKS_DIR / STATUSLINE_SCRIPT
+    rel = f"{HOOKS_DIR}/{STATUSLINE_SCRIPT}"
+    if bar_is_ours(root)((peek_settings(root / SETTINGS) or {}).get(STATUSLINE_KEY)):
+        if not copy.is_file():
+            found.append(("warning", rel, "The entry statusLine exists but its script is missing: the status line shows nothing; run `skillsync link`"))
+        elif _source_differs(layerset, STATUSLINE_SCRIPT, copy):
+            found.append(("warning", rel, "The copy of the status line script differs from the library (outdated or edited copy); run `skillsync link`"))
+    return found
 
 
 # --------------------------------------------------------------------------------------------------------------------------

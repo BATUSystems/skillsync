@@ -1298,8 +1298,8 @@ def doctor(root, manifest, library):
     from .guardhook import doctor_findings as guard_findings
     for level, path, reason in guard_findings(root, manifest, skills):
         finding(level, path, reason)
-    from .hooksync import doctor_findings as hook_findings
-    for level, path, reason in hook_findings(root, manifest, skills, layerset):
+    from .hooksync import doctor_findings as hook_findings, statusline_findings
+    for level, path, reason in hook_findings(root, manifest, skills, layerset) + statusline_findings(root, manifest, layerset):
         finding(level, path, reason)
     from . import test_gate   # 180-A: unmasked test results in the run files, a reporter hint
     for path, reason in test_gate.doctor_findings(root):
