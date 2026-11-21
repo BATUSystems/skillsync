@@ -358,21 +358,36 @@ class TreeObjects(WorkflowFixture):
             with self.subTest(name), tempfile.TemporaryDirectory(prefix='odd-') as tmp:
                 repo = Path(tmp) / name
                 repo.mkdir()
-                subprocess.run(['git', '-C', str(repo), 'init', '-q'], check=True)
+                run = lambda *a: subprocess.run(['git', '-C', str(repo), '-c', 'user.name=t', '-c', 'user.email=t@t', *a], check=True, capture_output=True)  # noqa: E731
+                run('init', '-q')
                 (repo / 'a.txt').write_text('odd path content 1\n', encoding='utf-8')
+                run('add', '-A')
+                run('commit', '-qm', 'one')   # with a commit `read-tree HEAD` needs the objects of the repository: only a right `GIT_ALTERNATE_OBJECT_DIRECTORIES` finds them
+                (repo / 'a.txt').write_text('odd path content 2\n', encoding='utf-8')
+                (repo / 'b.txt').write_text('odd path new file 2\n', encoding='utf-8')
+                before = self.count(repo)
                 tree = test_gate.work_tree_id(repo)
                 self.assertTrue(tree)
-                self.assertEqual(self.count(repo), 0)
+                self.assertNotEqual(tree, test_gate.work_tree_id(repo, from_head=True))
+                self.assertEqual(self.count(repo), before)
 
-    def test_an_inherited_alternate_list_is_kept(self):
-        import tempfile
-        with tempfile.TemporaryDirectory(prefix='alt-') as tmp:
-            other = Path(tmp) / 'other'
-            other.mkdir()
-            subprocess.run(['git', '-C', str(other), 'init', '-q'], check=True)
-            with mock.patch.dict(os.environ, {'GIT_ALTERNATE_OBJECT_DIRECTORIES': str(other / '.git/objects')}):
-                self.write('code.txt', 'fresh content that is in no object yet 3\n')
-                self.assertEqual(test_gate.work_tree_id(self.root), self.legacy_id(self.root))
+    def test_an_inherited_alternate_list_is_kept_after_the_repository_objects(self):
+        """The id cannot tell whether the list was kept (a blob missing from the alternates is written to the temporary directory instead), so the test reads the environment
+        every writing git command gets: the object database of the repository first, then what the caller already listed, and the writes go to a temporary directory."""
+        seen = []
+        real = subprocess.run
+        with mock.patch.dict(os.environ, {'GIT_ALTERNATE_OBJECT_DIRECTORIES': '/inherited/one'}), \
+                mock.patch.object(test_gate.subprocess, 'run', side_effect=lambda *a, **k: (seen.append((a[0], k.get('env') or {})), real(*a, **k))[1]):
+            self.write('code.txt', 'fresh content that is in no object yet 3\n')
+            tree = test_gate.work_tree_id(self.root)
+        self.assertEqual(tree, self.legacy_id(self.root))
+        writing = [env for argv, env in seen if any(a in argv for a in ('add', 'write-tree', 'read-tree', 'rm'))]
+        self.assertTrue(writing)
+        real_objects = str((self.root / '.git/objects').resolve())
+        for env in writing:
+            self.assertEqual(env['GIT_ALTERNATE_OBJECT_DIRECTORIES'].split(os.pathsep), [real_objects, '/inherited/one'])
+            self.assertNotEqual(Path(env['GIT_OBJECT_DIRECTORY']).resolve(), (self.root / '.git/objects').resolve(), 'writes never go to the repository')
+
 
     def test_changed_paths_name_what_differs_between_two_trees_at_most_five(self):
         import tempfile

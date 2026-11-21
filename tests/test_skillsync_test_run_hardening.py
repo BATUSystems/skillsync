@@ -691,9 +691,6 @@ def socket_name():
     return socket.gethostname()
 
 
-if __name__ == '__main__':
-    unittest.main()
-
 
 class ChangedPathsField(WorkflowFixture):
     """CORE-TESTDEBT2 Q6: the paths that changed while the tests ran come from `end.changed` (written at the end of the run), not from a git call of the gate."""
@@ -778,3 +775,32 @@ class ChangedPathsField(WorkflowFixture):
         gc.collect()
         self.assertFalse(leftover.exists(), 'removed when the recorder is dropped')
 
+class RemoveTree(unittest.TestCase):
+    """CORE-TESTDEBT2: the object directory of a run is removed also when git (for Windows) made its files read-only."""
+
+    def test_a_read_only_tree_is_removed(self):
+        if os.name == 'nt':
+            self.skipTest('the read-only directory case is POSIX; Windows is covered by the read-only file below')
+        with tempfile.TemporaryDirectory(prefix='rm-') as tmp:
+            top = Path(tmp) / 'objects'
+            (top / 'ab').mkdir(parents=True)
+            (top / 'ab' / 'blob').write_text('x', encoding='utf-8')
+            os.chmod(top / 'ab' / 'blob', 0o444)
+            os.chmod(top / 'ab', 0o555)
+            test_run.remove_tree(top)
+            self.assertFalse(top.exists())
+
+    def test_a_read_only_file_is_removed_and_a_missing_directory_is_no_error(self):
+        with tempfile.TemporaryDirectory(prefix='rm-') as tmp:
+            top = Path(tmp) / 'objects'
+            top.mkdir()
+            (top / 'blob').write_text('x', encoding='utf-8')
+            os.chmod(top / 'blob', 0o444)
+            test_run.remove_tree(top)
+            self.assertFalse(top.exists())
+            test_run.remove_tree(top)   # already gone
+
+
+
+if __name__ == '__main__':
+    unittest.main()

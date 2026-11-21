@@ -352,9 +352,6 @@ class EventFiles(unittest.TestCase):
         self.assertEqual(ev.mask_text('Traceback:\n  File "a.py", line 1\n    x = 1', False, keep_newlines=True), 'Traceback:\n  File "a.py", line 1\n    x = 1')
 
 
-if __name__ == '__main__':
-    unittest.main()
-
 
 class EndChanged(unittest.TestCase):
     """CORE-TESTDEBT2 Q6: the optional `changed` field of the `end` event (at most five paths that differ between the tree at the start and at the end)."""
@@ -405,3 +402,6 @@ class EndChanged(unittest.TestCase):
     def test_a_list_with_nothing_usable_leaves_no_field(self):
         self.assertNotIn('changed', self.injected([7, None, 'y' * 301]))
 
+
+if __name__ == '__main__':
+    unittest.main()

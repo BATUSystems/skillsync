@@ -17,6 +17,7 @@ import shlex
 import shutil
 import signal
 import socket
+import stat
 import sys
 import tempfile
 import threading
@@ -450,6 +451,24 @@ def find_reports(tool, cwd, explicit, since):
     return found
 
 
+def remove_tree(path):
+    """Removes a directory of git objects, also the read-only files and directories git for Windows (and a read-only mode) leaves; never raises."""
+    def fix(function, failed, *_):
+        try:
+            for item in (failed, os.path.dirname(failed)):
+                os.chmod(item, stat.S_IRWXU)
+            function(failed)
+        except OSError:
+            pass
+    try:
+        try:
+            shutil.rmtree(path, onexc=fix)   # Python 3.12+
+        except TypeError:
+            shutil.rmtree(path, onerror=fix)
+    except OSError:
+        pass
+
+
 class TestRecorder:
     """Observer of `quality.run_validation` that records one attempt of a step (`started`, `line`, `finished`)."""
     __test__ = False   # not a test case for unittest/pytest discovery
@@ -476,7 +495,7 @@ class TestRecorder:
         command = check.get('command') or ' '.join(shlex.quote(a) for a in check.get('display') or check.get('argv') or [])   # `display`: the command of the user, before `resolve_executable`
         self.started_wall = time.time()
         self.objects_dir = tempfile.mkdtemp(prefix='skillsync-objects-')
-        self._objects_cleanup = weakref.finalize(self, shutil.rmtree, self.objects_dir, True)   # also when `started` fails or `finished` is never called
+        self._objects_cleanup = weakref.finalize(self, remove_tree, self.objects_dir)   # also when `started` fails or `finished` is never called
         try:
             self.tree_start = test_gate.work_tree_id(self.root, objects=self.objects_dir)   # the content the tests START on (the gate compares it with the end)
         except Exception:   # noqa: BLE001 - never lose the run over the fingerprint

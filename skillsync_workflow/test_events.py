@@ -373,10 +373,10 @@ def _typed(event, text_keys, int_keys, bool_keys=(), tree_keys=()):
 
 def _changed_paths(value):
     """`end.changed` of an events file (untrusted: it may come from another machine): the text elements of a list, at most MAX_CHANGED of at most
-    MAX_CHANGED_NAME characters, cleaned of control and invisible characters; anything else is dropped. Only ever shown, never handed to a command."""
+    MAX_CHANGED_NAME characters, cleaned of control and invisible characters and masked (the writer masks too: a file from another machine is not trusted to have); anything else is dropped. Only ever shown, never handed to a command."""
     if not isinstance(value, list):
         return []
-    names = [clean_text(item, MAX_CHANGED_NAME) for item in value if isinstance(item, str) and len(item) <= MAX_CHANGED_NAME]
+    names = [clean_text(item, MAX_CHANGED_NAME, mask=True) for item in value if isinstance(item, str) and len(item) <= MAX_CHANGED_NAME]
     return [name for name in names if name][:MAX_CHANGED]
 
 

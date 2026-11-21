@@ -33,7 +33,7 @@ def work_tree_id(root, from_head=False, objects=None):
     (or when git cannot be run). A temporary index seeded with a COPY of the real one (its stat data keeps `git add -A` from hashing the whole tree
     again) leaves the real index and the working tree untouched. `from_head`: the same id of the committed state (HEAD with the same exclusions), to tell
     whether the working tree equals HEAD. The objects the id needs (blobs of changed files, trees) are written to a temporary object directory (`objects`, or one of
-    the call), NEVER to the object database of the repository, which is only read (as an alternate); the id depends on the content, not on where it was written.
+    the call), NEVER to the object database of the repository, which git only reads (as an alternate; it may refresh the time of an object it finds there, it adds none); the id depends on the content, not on where it was written.
     With `objects` the caller keeps the directory (and removes it), so that `changed_paths` can read the trees of the same run."""
     root = str(Path(root).resolve())
     try:
@@ -227,7 +227,6 @@ def _changed_note(end):
     """` — changed: a, b, c` from the `changed` field the run wrote at its end (the paths are only shown), or an empty string (an older events file has none)."""
     names = (end or {}).get('changed')
     return f'; changed: {", ".join(names)}' if names else ''
-
 
 
 def _newer_not_passing(root, run_id, step, item, current):
