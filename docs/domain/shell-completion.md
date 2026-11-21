@@ -2,7 +2,7 @@
 title: "Autouzupełnianie powłok (completion): statyczny generator, bloki ze znacznikami, profile PowerShella, składnie bash, zsh i PowerShell"
 tags: [skillsync, completion, shell, bash, zsh, powershell, install, startup-files]
 paths: ['skillsync_workflow/completion.py', 'skillsync_workflow/completion_install.py', 'skillsync_workflow/setup_wizard.py', 'install.sh', 'tests/test_skillsync_completion_*.py', 'tests/fixtures/completion/**']
-source: "docs/specs/2026-11-21-core-completion-autouzupelnianie-powlok.md (Problem, Zakres, Decyzje i alternatywy, Kryteria K1-K17); skillsync_workflow/completion.py (render_bash, render_zsh, render_powershell, _PS_DRIVER); skillsync_workflow/completion_install.py (install_block, remove_block, zsh_block_lines, ps_block_lines, write_file, default_profile); install.sh (install_completion); raporty CORE-COMPLETION F1, F2.1 i F3 w .skillsync/runs/CORE-COMPLETION/"
+source: "spec paczki CORE-COMPLETION (Problem, Zakres, Decyzje i alternatywy, Kryteria K1-K17) oraz poprawki po przeglądzie (FIX2); skillsync_workflow/completion.py (render_bash, render_zsh, render_powershell, _PS_DRIVER); skillsync_workflow/completion_install.py (install_block, remove_block, zsh_block_lines, ps_block_lines, write_file, default_profile); install.sh (install_completion); raporty CORE-COMPLETION F1, F2.1 i F3 w .skillsync/runs/CORE-COMPLETION/"
 verified: 2026-11-21
 ---
 Reguła: `skillsync` podpowiada podkomendy, flagi i wartości przy Tab w bash, zsh i PowerShellu. Skrypt jest generowany ze
@@ -35,20 +35,41 @@ instalacja: [installation](../installation.md#uzupełnianie-poleceń-w-powłoce)
    PowerShella i skrypt PowerShella powstają jako UTF-8 z BOM. Blok w profilu jest ASCII; ścieżka spoza ASCII w profilu
    bez BOM daje `failed`, bo Windows PowerShell 5.1 czytałby ją jako ANSI. Źródło: test K10 w
    `tests/test_skillsync_completion_install.py` i praktyka.
-6. **Profile PowerShella.** Używany jest `CurrentUserCurrentHost` każdego znalezionego hosta (`pwsh`, `powershell`).
-   Ścieżkę pyta host poleceniem `$PROFILE.CurrentUserCurrentHost` z `-NoProfile -NonInteractive` (limit 10 s); błąd
-   daje ostrzeżenie i wartość domyślną. Blok wczytuje skrypt przez kropkę, więc wymiana skryptu nie zmienia profilu.
-   Domyślne profile na Windows: `Documents\PowerShell\` (PowerShell 7) i `Documents\WindowsPowerShell\` (5.1).
+6. **Profile PowerShella.** Używany jest `CurrentUserAllHosts` (`profile.ps1`) każdego znalezionego hosta (`pwsh`,
+   `powershell`): czytają go wszystkie hosty, także konsola rozszerzenia VS Code, która ma własny host i własny profil hosta.
+   Host dostaje jedno zapytanie z `-NoProfile -NonInteractive` (limit 10 s) i odpowiada dwiema liniami ASCII:
+   `P64:<base64 z UTF-8 ścieżki>` i `POLICY:<efektywna ExecutionPolicy>`; base64 omija problem strony kodowej (polskie litery
+   w ścieżce). Linia bez prefiksu będąca ścieżką bezwzględną też jest przyjmowana (atrapy testowe). Host na PATH bez
+   użytecznej odpowiedzi (czas, śmieci, ścieżka niebezwzględna, błąd dekodowania) jest pomijany (`skipped` plus ostrzeżenie),
+   bez cichego powrotu do ścieżki domyślnej; domyślne ścieżki służą tylko, gdy na PATH nie ma żadnego hosta. Blok wczytuje
+   skrypt przez kropkę, więc wymiana skryptu nie zmienia profilu. Domyślne profile: Windows `Documents\PowerShell\profile.ps1`
+   (7) i `Documents\WindowsPowerShell\profile.ps1` (5.1), POSIX `${XDG_CONFIG_HOME:-~/.config}/powershell/profile.ps1`.
+   Skrypt rejestruje uzupełnianie dla `skillsync` i `skillsync.exe`. Źródło: `ps_plan`, `query_host`, `Targets.default_profile`.
 7. **`#compdef skillsync` w pierwszej linii pliku zsh.** `compinit` czyta do znacznika `#compdef` tylko pierwszą linię
    pliku funkcji. Nagłówek generatora jest więc w linii 2. `uninstall` rozpoznaje nasz plik po nagłówku w dwóch
    pierwszych liniach (`_is_ours`, `lines=2`). Źródło: raport F1 (test zsh).
 8. **Dictionary Ordinal w PowerShellu.** Tabela danych to `Dictionary[string,object]` z `StringComparer::Ordinal`.
    Zwykła tabela (hashtable) PowerShella nie rozróżnia wielkości liter, a flagi `-v` i `-V` są różne. Źródło: raport F1
    (sprawdzone w `pwsh`, `TabExpansion2`).
-9. **Kolejność w zsh: `fpath`, `autoload`, potem `compdef` albo `compinit`.** Blok ustawia `fpath` na katalog z
-   `_skillsync`, woła `autoload -Uz _skillsync`, a `compinit -i` wywołuje tylko, gdy `compdef` jeszcze nie istnieje
-   (`$+functions[compdef]`). Gdy `compdef` istnieje, blok tylko rejestruje `compdef _skillsync skillsync`. Drugi
-   `compinit` spowalnia start i daje ostrzeżenia. Źródło: `zsh_block_lines`; test K8 (`zsh -fc`).
+9. **Kolejność w zsh: `fpath`, `autoload`, potem `compdef` albo `compinit`; dwa warianty.** Blok ustawia `fpath` na katalog
+   z `_skillsync` i woła `autoload -Uz _skillsync`. Wariant A (reszta pliku poza blokiem ma osobne słowo `compinit` albo
+   `oh-my-zsh`, `zinit`, `antidote`, `zplug`, `prezto`): tylko `(( $+functions[compdef] )) && compdef _skillsync skillsync`, bez
+   `compinit`; późniejszy `compinit` znajdzie funkcję przez `fpath`. Wariant B: gdy `compdef` nie istnieje, blok wywołuje
+   `compinit -i`. Drugi `compinit` spowalnia start i daje ostrzeżenia. Wariant liczy się z treści pliku bez naszego bloku, a jego
+   zmiana to `updated` w miejscu. Źródło: `zsh_block_lines`, `zsh_calls_compinit_elsewhere`; testy `ZshVariantTest`, `ZshRuntimeTest`.
+10. **ExecutionPolicy.** `Restricted` i `AllSigned` blokują wczytanie niepodpisanego skryptu z profilu (na kliencie Windows domyślną
+    Windows PowerShella 5.1 jest `Restricted`). Wtedy dla tego hosta nie zapisujemy nic (ani profilu, ani skryptu): `skipped`
+    z poleceniem `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` i wpis w `warnings`; przy `--auto` jedna linia informacji,
+    bez ostrzeżenia i bez `FAIL`. Polityki nie zmieniamy za użytkownika. Nieznana polityka nie blokuje; `uninstall` jej nie sprawdza.
+11. **Bezpieczeństwo zapisu.** Plik startowy jest czytany ponownie tuż przed zapisem (bajty, rozmiar, mtime); zmiana w międzyczasie to
+    `failed` („changed during the operation, run it again”) bez zapisu. Wiszący symlink to `failed` bez tworzenia czegokolwiek.
+    Plik z `st_nlink` > 1 jest zapisywany w miejscu (rename zerwałby dowiązania); w pozostałych przypadkach właściciel i xattr trafiają
+    do pliku zastępczego (w miarę możliwości). Źródło: `write_file`, `_check_unchanged`, `_carry_attributes`.
+12. **bash: tryb nazw plików i `compopt`.** Skrypt rejestruje `complete -o filenames`, a dla gałęzi bez ścieżek wywołuje
+    `compopt +o filenames`, żeby bash nie dopisywał `/` do kandydatów zgodnych z katalogiem. Strażnik to `type compopt`, nie
+    `declare -F compopt`: ten drugi wylicza tylko funkcje, więc dla wbudowanego `compopt` bash 4+ zwraca 1 (sprawdzone w bash 5.3);
+    bash 3.2 z macOS nie ma `compopt`, więc `type` kończy się 1. Kandydaci plików są czytani pętlą `while read -r` (bez `mapfile` i bez
+    rozwijania nazw). `--flag=value` nie jest uzupełniane: `COMP_WORDBREAKS` rozbija słowo na `=`.
 
 ## Składnia każdej powłoki i źródła
 
@@ -63,19 +84,20 @@ Adresy poniżej spisano bez dostępu do sieci; przed przywołaniem w PR sprawdź
   https://zsh.sourceforge.io/Doc/Release/Completion-System.html . Praktyka: funkcja z `#compdef` w pierwszej linii jest
   ładowana przy pierwszym Tab.
 - **PowerShell:** `Register-ArgumentCompleter -Native -CommandName`,
-  `[System.Management.Automation.CompletionResult]::new`, `$commandAst`, profil `$PROFILE.CurrentUserCurrentHost`.
+  `[System.Management.Automation.CompletionResult]::new`, `$commandAst`, profil `$PROFILE.CurrentUserAllHosts`, `Get-ExecutionPolicy`.
   Dokumentacja Microsoft: https://learn.microsoft.com/powershell/module/microsoft.powershell.core/register-argumentcompleter
   oraz about_Profiles: https://learn.microsoft.com/powershell/module/microsoft.powershell.core/about/about_profiles .
-  Praktyka: Windows PowerShell 5.1 czyta skrypt bez BOM jako ANSI (stąd BOM w decyzji 5).
+  Praktyka: Windows PowerShell 5.1 czyta skrypt bez BOM jako ANSI (stąd BOM w decyzji 5). Polityki wykonywania: about_Execution_Policies, https://learn.microsoft.com/powershell/module/microsoft.powershell.core/about/about_execution_policies .
 
 ## Ograniczenia i pułapki
 
 - zsh: blok trafia do `${ZDOTDIR:-~}/.zshrc`. `ZDOTDIR` jest widoczne dla instalatora tylko, gdy jest w środowisku
   procesu. Ustawione wyłącznie w `~/.zshenv` powoduje, że blok trafia do pliku, którego zsh nie czyta. Spec, „Znane ograniczenie”.
-- bash: bez pakietu bash-completion plik się nie ładuje; wtedy działa ręczny `source` z `installation.md`.
+- bash: bez pakietu bash-completion plik się nie ładuje; wtedy działa ręczny `source` z `installation.md`. Zapis `--flag=value` nie jest uzupełniany.
+- PowerShell: start powłoki z blokiem w profilu rośnie o ok. 38 ms (pomiar pwsh 7 na Linuksie, dot-source skryptu ok. 50 KB).
 - PowerShell: `uninstall` usuwa blok z profili hostów znalezionych na PATH w chwili wywołania (gdy nie ma żadnego,
   z domyślnych profili). Profil hosta usuniętego z PATH po instalacji nie jest wtedy odwiedzany i blok zostaje do
-  ręcznego usunięcia.
+  ręcznego usunięcia. Host bez użytecznej odpowiedzi na zapytanie o profil jest pomijany (`skipped` plus ostrzeżenie), więc jego blok też zostaje.
 - POSIX: gdy zmiennej `HOME` nie ma w środowisku, katalog domowy bierze się z konta; pusta `HOME` daje `BLOCKED`.
   Na Windows brak `HOME` i `USERPROFILE` daje `BLOCKED`.
 - Flaga `--auto` działa tylko przy `install`; przy `uninstall` nie ma skutku.

@@ -138,19 +138,29 @@ Usunięcie: `skillsync completion uninstall`.
 
 - **bash:** plik w `~/.local/share/bash-completion/completions/skillsync`. Pliku `~/.bashrc` nie zmieniamy. Uzupełnianie
   działa tylko z pakietem bash-completion, który ładuje pliki z tego katalogu. Bez niego dodaj do `~/.bashrc` ręcznie:
-  `source "${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion/completions/skillsync"`.
-- **zsh:** plik `_skillsync` w `~/.local/share/zsh/site-functions/` i jeden blok w `${ZDOTDIR:-~}/.zshrc`. Blok sam dodaje
-  katalog do `fpath` i wywołuje `compinit`, gdy go jeszcze nie ma; gdy `compdef` już istnieje (np. oh-my-zsh), nie wywołuje
-  `compinit` drugi raz. `install.sh` nie widzi zmiennej `ZDOTDIR` ustawionej tylko w `~/.zshenv`, więc blok trafi do
+  `source "${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion/completions/skillsync"`. Zapis `--flag=value` nie jest uzupełniany
+  (bash rozbija słowo na `=`): używaj `--flag wartość`.
+- **zsh:** plik `_skillsync` w `~/.local/share/zsh/site-functions/` i jeden blok w `${ZDOTDIR:-~}/.zshrc`. Blok dodaje
+  katalog do `fpath` i rejestruje funkcję. Jeśli reszta `.zshrc` zawiera słowo `compinit` albo framework (`oh-my-zsh`, `zinit`, `antidote`,
+  `zplug`, `prezto`), blok nie wywołuje `compinit` (wariant A: późniejszy `compinit` znajdzie funkcję przez `fpath`, a wcześniejszy już
+  istnieje przez `compdef`); w przeciwnym razie (wariant B) wywołuje `compinit -i`, gdy `compdef` jeszcze nie istnieje. Zmiana wariantu przy
+  ponownej instalacji podmienia blok w miejscu. `install.sh` nie widzi zmiennej `ZDOTDIR` ustawionej tylko w `~/.zshenv`, więc blok trafi do
   `~/.zshrc`, którego zsh wtedy nie czyta. W takiej konfiguracji uruchom `skillsync completion install` z zsh, w którym
   `ZDOTDIR` jest już ustawione.
 - **PowerShell:** skrypt `skillsync-completion.ps1` w katalogu danych użytkownika i jeden blok w profilu
-  `CurrentUserCurrentHost`, który wczytuje skrypt przez kropkę. Instalator obsługuje oba hosty znalezione na PATH:
-  PowerShell 7 (`pwsh`) i Windows PowerShell 5.1 (`powershell`); każdy ma swój profil. Profile zachowują swoje końce linii
-  i BOM, a nowe pliki powstają jako UTF-8 z BOM, bo Windows PowerShell 5.1 czyta UTF-8 bez BOM jako ANSI.
+  `CurrentUserAllHosts` (`profile.ps1`), który wczytuje skrypt przez kropkę. Ten profil czytają wszystkie hosty, także konsola
+  rozszerzenia VS Code. Instalator obsługuje oba hosty znalezione na PATH: PowerShell 7 (`pwsh`) i Windows PowerShell 5.1
+  (`powershell`); każdy ma swój profil, a jego ścieżkę host podaje jako base64 z bajtów UTF-8 (strona kodowa nie ma znaczenia, polskie litery
+  w ścieżce są bezpieczne). Host bez użytecznej odpowiedzi jest pomijany z ostrzeżeniem. Profile zachowują swoje końce linii
+  i BOM, a nowe pliki powstają jako UTF-8 z BOM, bo Windows PowerShell 5.1 czyta UTF-8 bez BOM jako ANSI. Start PowerShella wydłuża się o ok. 38 ms.
+  **ExecutionPolicy:** przy polityce `Restricted` albo `AllSigned` (domyślna dla Windows PowerShell 5.1 na kliencie jest `Restricted`) niczego nie
+  zapisujemy, bo profil nie wczytałby niepodpisanego skryptu. Instalator podaje polecenie
+  `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`, które wykonujesz sam; potem uruchom `skillsync completion install`. Polityki nie zmieniamy
+  za Ciebie.
 
 Przed pierwszą edycją pliku startowego (`.zshrc`, profil PowerShella) powstaje kopia `<plik>.skillsync-bak`. Kopia zostaje
-po `uninstall`; usuń ją ręcznie, gdy nie jest potrzebna. Szczegóły zachowania plików: [cli](cli.md#uzupełnianie-powłoki-completion).
+po `uninstall`; usuń ją ręcznie, gdy nie jest potrzebna. Plik rc z kilkoma twardymi dowiązaniami jest zapisywany w miejscu, a wiszący
+symlink (cel nie istnieje) kończy się błędem bez tworzenia czegokolwiek. Szczegóły zachowania plików: [cli](cli.md#uzupełnianie-powłoki-completion).
 
 ### Windows natywny
 

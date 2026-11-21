@@ -58,4 +58,4 @@ $skillsyncComplete = {
         }
     }
 }
-Register-ArgumentCompleter -Native -CommandName skillsync -ScriptBlock $skillsyncComplete.GetNewClosure()
+Register-ArgumentCompleter -Native -CommandName @('skillsync', 'skillsync.exe') -ScriptBlock $skillsyncComplete.GetNewClosure()

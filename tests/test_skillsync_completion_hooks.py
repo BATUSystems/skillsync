@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from layers_helpers import SKILLSYNC, make_layer  # noqa: E402
+from tmp_paths import child  # noqa: E402
 
 AUTO = 'skillsync <completion> <install> <--auto>'
 WIN = sys.platform == 'win32'
@@ -78,7 +79,7 @@ class SetupStepTest(unittest.TestCase):
         self.home.mkdir()
         self.bin = self.root / 'bin'   # the ONLY directory on PATH: fake shells and a wrapper of the real git, never the real bash/zsh/pwsh
         self.bin.mkdir()
-        self.profile = self.root / 'ps' / 'Microsoft.PowerShell_profile.ps1'
+        self.profile = self.root / 'ps' / 'profile.ps1'
         self.fake_log = self.root / 'ps-host.log'
         self.fake('bash', 'exit 0\n', '')
         for host in ('pwsh', 'powershell'):
@@ -101,9 +102,9 @@ class SetupStepTest(unittest.TestCase):
 
     def fake(self, name, posix, windows):
         if WIN:
-            (self.bin / f'{name}.bat').write_text('@echo off\r\n' + windows, encoding='ascii')
+            child(self.bin, f'{name}.bat').write_text('@echo off\r\n' + windows, encoding='ascii')
         else:
-            path = self.bin / name
+            path = child(self.bin, name)
             path.write_text('#!/bin/sh\n' + posix, encoding='utf-8')
             path.chmod(0o755)
 

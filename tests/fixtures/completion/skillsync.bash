@@ -65,8 +65,16 @@ _skillsync_add() {
 }
 
 _skillsync_files() {
-    local IFS=$'\n'
-    COMPREPLY+=($(compgen -f -- "$cur"))
+    local f
+    while IFS= read -r f; do
+        COMPREPLY+=("$f")
+    done < <(compgen -f -- "$cur")
+}
+
+_skillsync_nofiles() {
+    # bash 3.2 (macOS) has no compopt; `type` finds the builtin of bash 4+ (`declare -F` lists functions only)
+    type compopt >/dev/null 2>&1 && compopt +o filenames 2>/dev/null
+    return 0
 }
 
 _skillsync() {
@@ -102,10 +110,11 @@ _skillsync() {
     fi
     case "$kind" in
         path) _skillsync_files; return 0 ;;
-        choices) _skillsync_choices "$node|$prev"; _skillsync_add; return 0 ;;
+        choices) _skillsync_nofiles; _skillsync_choices "$node|$prev"; _skillsync_add; return 0 ;;
         value) return 0 ;;
     esac
     if [[ "$cur" == -* ]]; then
+        _skillsync_nofiles
         _skillsync_flags "$node"
         _skillsync_add
         return 0
@@ -116,6 +125,8 @@ _skillsync() {
     _skillsync_add
     if [ "$(_skillsync_poskind "$node")" = path ]; then
         _skillsync_files
+    else
+        _skillsync_nofiles
     fi
     return 0
 }

@@ -90,7 +90,9 @@ Zmiana kodu wyjścia `test-run` przy ukrytych porażkach jest opisana w sekcji *
 5. **Autouzupełnianie powłoki (nowość):** `skillsync completion bash|zsh|powershell`. `install.sh` i `skillsync setup` instalują je same, także przy aktualizacji przez ponowne `install.sh`. Po samym `uv tool upgrade` skrypt jest stary: uruchom `skillsync completion install`.
    - Wyłączenie przed instalacją lub `setup`: `SKILLSYNC_NO_COMPLETION=1`. Usunięcie bloków i plików: `skillsync completion uninstall`. Kopie `<plik>.skillsync-bak` zostają.
    - Ograniczenie zsh: `ZDOTDIR` ustawione tylko w `~/.zshenv` jest niewidoczne dla `install.sh`; blok trafi wtedy do `~/.zshrc`. Uruchom `skillsync completion install` z zsh, w którym `ZDOTDIR` jest już ustawione.
-   - bash: uzupełnianie wymaga pakietu bash-completion.
+   - bash: uzupełnianie wymaga pakietu bash-completion; zapis `--flag=value` nie jest uzupełniany (użyj `--flag wartość`).
+   - PowerShell: blok trafia do profilu `CurrentUserAllHosts` (`profile.ps1`, czytanego też przez konsolę rozszerzenia VS Code). Przy `ExecutionPolicy` `Restricted` albo `AllSigned` niczego nie zapisujemy; wykonaj sam `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` i powtórz `skillsync completion install`. Start PowerShella wydłuża się o ok. 38 ms.
+   - zsh: gdy `.zshrc` ma już `compinit` albo framework (oh-my-zsh, zinit, antidote, zplug, prezto), blok tylko rejestruje funkcję i nie wywołuje `compinit`.
 
 ## Przejście 1.10.0 → 1.11.0
 

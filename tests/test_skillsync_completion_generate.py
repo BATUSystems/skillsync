@@ -17,6 +17,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 os.environ.setdefault('SKILLSYNC_TEST_LIBRARY', str(ROOT / 'library'))
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from tmp_paths import child  # noqa: E402
 from skillsync_workflow import __version__, cli, completion  # noqa: E402
 
 GOLDEN = Path(__file__).resolve().parent / 'fixtures' / 'completion'
@@ -197,7 +199,7 @@ class Parity(unittest.TestCase):
 class Syntax(GeneratedFixtureCase):
     def check(self, command, shell, extension):
         with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / f'script.{extension}'
+            path = child(tmp, f'script.{extension}')
             path.write_bytes(self.script(shell).encode('utf-8'))
             result = subprocess.run(command + [str(path)], capture_output=True, text=True, timeout=60)
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -249,6 +251,56 @@ class Syntax(GeneratedFixtureCase):
             result = subprocess.run(['bash', '-c', probe, 'probe', str(path)], capture_output=True, text=True, timeout=60)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.splitlines(), ['skills|', 'add|', "copy|it's|two words|", '--force|', '--help|--version|'])
+
+    def test_powershell_registers_the_exe_name_too(self):
+        self.assertIn("-CommandName @('skillsync', 'skillsync.exe')", self.script('powershell'))
+
+    def test_powershell_completes_the_exe_name_too(self):
+        pwsh = shutil.which('pwsh')
+        if not pwsh:
+            self.skipTest('no pwsh on PATH: pwsh is not installed')
+        with tempfile.TemporaryDirectory() as tmp:
+            path = child(tmp, 'script.ps1')
+            path.write_bytes(self.script('powershell').encode('utf-8'))
+            probe = '. $env:SK_SCRIPT; $l = \'skillsync.exe s\'; ((TabExpansion2 $l $l.Length).CompletionMatches.CompletionText -join \',\')'
+            result = subprocess.run([pwsh, '-NoProfile', '-NonInteractive', '-Command', probe], capture_output=True, text=True, timeout=120,
+                                    stdin=subprocess.DEVNULL, env={**os.environ, 'SK_SCRIPT': str(path)})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.splitlines(), ['skills'])
+
+    def bash_probe(self, tail, cwd=None, before=''):
+        """Output lines of a bash that sourced the script and then ran `tail` (a stub `compopt` logs its arguments when `before` defines it)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = child(tmp, 'script.bash')
+            path.write_bytes(self.script('bash').encode('utf-8'))
+            probe = (before + ' source "$1"; run() { COMP_WORDS=("$@"); COMP_CWORD=$(( $# - 1 )); _skillsync; printf "%s|" "${COMPREPLY[@]}"; echo; }; ' + tail)
+            result = subprocess.run(['bash', '-c', probe, 'probe', str(path)], capture_output=True, text=True, timeout=60, cwd=cwd)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return result.stdout.splitlines()
+
+    def test_bash_turns_filename_mode_off_for_candidates_that_are_not_paths(self):
+        if not shutil.which('bash'):
+            self.skipTest('no bash on PATH: bash is not installed')
+        stub = 'compopt() { echo "compopt $*"; };'
+        with tempfile.TemporaryDirectory() as empty:   # the last case (a path) lists the working directory
+            lines = self.bash_probe('run skillsync s; run skillsync link --mode ""; run skillsync --; run skillsync link --out-dir ""', cwd=empty, before=stub)
+        self.assertEqual(lines, ['compopt +o filenames', 'skills|', 'compopt +o filenames', "copy|it's|two words|", 'compopt +o filenames', '--help|--version|', '|'])
+
+    def test_bash_without_compopt_still_completes(self):
+        if not shutil.which('bash'):
+            self.skipTest('no bash on PATH: bash is not installed')
+        # `enable -n` removes the builtin the way bash 3.2 lacks it; the call must be guarded, so nothing is printed and nothing fails
+        self.assertEqual(self.bash_probe('run skillsync s; run skillsync link --mode ""', before='enable -n compopt;'), ['skills|', "copy|it's|two words|"])
+
+    @unittest.skipIf(sys.platform == 'win32', 'POSIX only: a file name with an asterisk')
+    def test_bash_file_candidates_are_listed_as_they_are_without_expansion(self):
+        if not shutil.which('bash'):
+            self.skipTest('no bash on PATH: bash is not installed')
+        with tempfile.TemporaryDirectory() as tmp:
+            for name in ('a*', 'ab', 'a b'):
+                Path(tmp, name).write_bytes(b'')   # literal names written by the test
+            lines = self.bash_probe('run skillsync link --out-dir a', cwd=tmp)
+        self.assertEqual(sorted(lines[0].split('|')[:-1]), ['a b', 'a*', 'ab'])
 
 
 class Command(unittest.TestCase):
