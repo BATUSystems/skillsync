@@ -211,6 +211,97 @@ class GroupLimit(Base):
         self.assertLessEqual(public.call_count, dt.MAX_GROUPS, 'tests of omitted groups are not turned into public objects')
 
 
+class CacheBudget(Base):
+    """CORE-TESTDEBT2 (b): the reader cache is an LRU limited by the bytes of the files read; the attempts touched by the current call are never evicted."""
+
+    def paths(self, count=3, tests=20):
+        out = []
+        for i in range(count):
+            path, _ = self.attempt(f'F1.{i + 1}', [(f't{j}', 'passed', 'g') for j in range(tests)])
+            out.append(path)
+        return out
+
+    def keys(self):
+        return list(dt._CACHE)
+
+    def test_the_least_recently_used_state_goes_first_not_the_oldest_inserted(self):
+        p1, p2, p3 = self.paths()
+        sizes = [p.stat().st_size for p in (p1, p2, p3)]
+        with mock.patch.object(dt, 'CACHE_BUDGET', sum(sizes) - 1):
+            dt._begin_round()
+            for p in (p1, p2, p3):
+                dt._state(p)
+            dt._evict()
+            self.assertEqual(len(dt._CACHE), 3, 'every state touched by the current round stays, also over the budget')
+            dt._begin_round()
+            dt._state(p1)   # a hit makes p1 the most recently used
+            dt._evict()
+            self.assertNotIn(str(p2), dt._CACHE, 'p2 is the least recently used: it goes, p1 (hit just now) and p3 stay')
+            self.assertIn(str(p1), dt._CACHE)
+            self.assertIn(str(p3), dt._CACHE)
+
+    def test_the_budget_counts_the_current_offsets_so_a_growing_file_is_counted(self):
+        p1, p2, _ = self.paths()
+        with mock.patch.object(dt, 'CACHE_BUDGET', p1.stat().st_size + p2.stat().st_size + 50):
+            dt._begin_round()
+            dt._state(p1)
+            dt._state(p2)
+            dt._evict()
+            self.assertEqual(len(dt._CACHE), 2)
+            w = ev.EventWriter(p1)
+            for j in range(40):
+                w.test(f'g::more{j}', f'more{j}', 'passed', group='g')
+            w.close()
+            dt._begin_round()
+            dt._state(p1)   # the same state object continues from its offset and now weighs more than the budget allows with p2
+            dt._evict()
+            self.assertNotIn(str(p2), dt._CACHE)
+            self.assertIn(str(p1), dt._CACHE)
+
+    def test_an_attempt_larger_than_the_budget_stays_while_the_call_needs_it(self):
+        paths = self.paths(count=3)
+        with mock.patch.object(dt, 'CACHE_BUDGET', 1):
+            dt.build_tests(self.root, 'R1')
+            self.assertEqual(len(dt._CACHE), 3, 'the whole working set of one answer stays')
+            calls = []
+            real = ev.read_attempt
+            with mock.patch.object(ev, 'read_attempt', side_effect=lambda path, state=None: (calls.append(state), real(path, state))[1]):
+                dt.build_tests(self.root, 'R1')
+            self.assertEqual([c for c in calls if c is None], [], 'no attempt is parsed from scratch again')
+        self.assertTrue(all(str(p) in dt._CACHE for p in paths))
+
+    def test_the_next_call_evicts_what_it_did_not_touch(self):
+        p1, p2, p3 = self.paths()
+        with mock.patch.object(dt, 'CACHE_BUDGET', 1):
+            dt._begin_round()
+            for p in (p1, p2, p3):
+                dt._state(p)
+            dt._evict()
+            dt._begin_round()
+            dt._state(p3)
+            dt._evict()
+        self.assertEqual(self.keys(), [str(p3)])
+
+    def test_the_entry_limit_stays_as_a_second_guard(self):
+        p1, p2, p3 = self.paths()
+        with mock.patch.object(dt, 'CACHE_MAX_ENTRIES', 2):
+            dt._begin_round()
+            for p in (p1, p2, p3):
+                dt._state(p)
+            dt._evict()
+            dt._begin_round()
+            dt._state(p3)
+            dt._evict()
+        self.assertLessEqual(len(dt._CACHE), 2)
+        self.assertIn(str(p3), dt._CACHE)
+
+    def test_the_cache_is_an_ordered_mapping_of_attempt_states(self):
+        self.paths(count=1)
+        dt.build_tests(self.root, 'R1')
+        (value,) = dt._CACHE.values()
+        self.assertIsInstance(value, ev.AttemptState)
+
+
 class Watching(Base):
     def test_a_new_event_changes_the_signature_of_the_page(self):
         from skillsync_workflow import dashboard_http as srv
