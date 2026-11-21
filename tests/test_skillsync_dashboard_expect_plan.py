@@ -81,6 +81,8 @@ class ExpectPlanButton(ProjectCase):
         self.set_plan_status('done')
         path = self.root / RUN / 'approvals.jsonl'
         path.write_bytes(b'\n' * status.MAX_APPROVALS_BYTES)   # the size limit of the approvals file: refused before the comparison
+        offer = next(action for action in self.board.status(PLAN)['approvals']['actions'] if action['kind'] == 'cp')
+        self.assertEqual(offer['state'], 'waiting', 'the offer passes the server checks, so the refusal comes from the writer')
         code, body = self.board.approve('cp', RUN_ID, HEAD, PLAN, None, 'done')
         self.assertEqual(code, 500, body)
         self.assertNotIn('code', body)
