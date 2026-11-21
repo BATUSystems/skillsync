@@ -283,6 +283,121 @@ class Gate(WorkflowFixture):
             self.assertIsNone(test_gate.work_tree_id(tmp))   # no git repository
 
 
+class TreeObjects(WorkflowFixture):
+    """CORE-TESTDEBT2 (e): `work_tree_id` leaves no object in the object database of the repository and gives the id the old way gave."""
+
+    def setUp(self):
+        super().setUp()
+        self.write('.gitignore', '.skillsync/\n')
+        self.write('code.txt', 'v1\n')
+        self.init_git()
+
+    def count(self, root=None):
+        out = subprocess.run(['git', '-C', str(root or self.root), 'count-objects', '-v'], check=True, capture_output=True, text=True).stdout
+        return int(out.split('count:')[1].split()[0])
+
+    def legacy_id(self, root):
+        """The id the previous implementation gave: a temporary index in the repository itself (it writes objects there), run on a COPY of the repository."""
+        import shutil
+        import tempfile
+        with tempfile.TemporaryDirectory(prefix='legacy-') as tmp:
+            copy = Path(tmp) / 'copy'
+            shutil.copytree(root, copy)
+            env = {**os.environ, 'GIT_INDEX_FILE': str(Path(tmp) / 'index')}
+            run = lambda *a: subprocess.run(['git', '-C', str(copy), *a], check=True, capture_output=True, text=True, env=env).stdout.strip()  # noqa: E731
+            run('read-tree', 'HEAD')
+            run('add', '-A', '--', '.')
+            for excluded in test_gate.TREE_EXCLUDES:
+                run('rm', '-r', '-q', '--cached', '--ignore-unmatch', '--', excluded)
+            return run('write-tree')
+
+    def test_no_object_is_written_to_the_repository_and_the_id_is_the_old_one(self):
+        self.write('code.txt', 'fresh content that is in no object yet 1\n')
+        self.write('new/file.txt', 'another fresh file 1\n')
+        before = self.count()
+        tree = test_gate.work_tree_id(self.root)
+        head = test_gate.work_tree_id(self.root, from_head=True)
+        self.assertEqual(self.count(), before, 'the working tree id wrote loose objects into the repository')
+        self.assertEqual(tree, self.legacy_id(self.root))
+        self.assertNotEqual(tree, head)
+        self.assertEqual(test_gate.work_tree_id(self.root), tree)   # again: the same id
+
+    def test_the_new_objects_go_to_the_directory_the_caller_gave(self):
+        import tempfile
+        self.write('code.txt', 'fresh content that is in no object yet 2\n')
+        before = self.count()
+        with tempfile.TemporaryDirectory(prefix='objs-') as objects:
+            tree = test_gate.work_tree_id(self.root, objects=objects)
+            self.assertTrue(tree)
+            self.assertTrue(any(Path(objects).iterdir()), 'the blobs and trees of the run live in the given directory')
+        self.assertEqual(self.count(), before)
+
+    def test_a_linked_worktree_and_a_shared_clone_work_too(self):
+        import tempfile
+        with tempfile.TemporaryDirectory(prefix='wt-') as tmp:
+            linked = Path(tmp) / 'linked'
+            subprocess.run(['git', '-C', str(self.root), 'worktree', 'add', '-q', '-b', 'side', str(linked)], check=True, capture_output=True)
+            (linked / 'code.txt').write_text('worktree content 1\n', encoding='utf-8')
+            before = self.count()
+            linked_tree = test_gate.work_tree_id(linked)
+            self.assertEqual(self.count(), before)
+            self.assertEqual(linked_tree, self.legacy_id(linked))   # after the count: the copy of a linked worktree writes into the real repository
+            shared = Path(tmp) / 'shared'
+            subprocess.run(['git', 'clone', '-q', '--shared', str(self.root), str(shared)], check=True, capture_output=True)   # objects/info/alternates
+            (shared / 'code.txt').write_text('shared clone content 1\n', encoding='utf-8')
+            self.assertTrue((shared / '.git/objects/info/alternates').is_file())
+            before = self.count(shared)
+            tree = test_gate.work_tree_id(shared)
+            self.assertEqual(tree, self.legacy_id(shared))
+            self.assertEqual(self.count(shared), before)
+
+    def test_a_path_with_a_space_and_a_colon_works(self):
+        import tempfile
+        names = ['with space'] + ([] if os.name == 'nt' else ['with:colon', 'quote"d'])
+        for name in names:
+            with self.subTest(name), tempfile.TemporaryDirectory(prefix='odd-') as tmp:
+                repo = Path(tmp) / name
+                repo.mkdir()
+                subprocess.run(['git', '-C', str(repo), 'init', '-q'], check=True)
+                (repo / 'a.txt').write_text('odd path content 1\n', encoding='utf-8')
+                tree = test_gate.work_tree_id(repo)
+                self.assertTrue(tree)
+                self.assertEqual(self.count(repo), 0)
+
+    def test_an_inherited_alternate_list_is_kept(self):
+        import tempfile
+        with tempfile.TemporaryDirectory(prefix='alt-') as tmp:
+            other = Path(tmp) / 'other'
+            other.mkdir()
+            subprocess.run(['git', '-C', str(other), 'init', '-q'], check=True)
+            with mock.patch.dict(os.environ, {'GIT_ALTERNATE_OBJECT_DIRECTORIES': str(other / '.git/objects')}):
+                self.write('code.txt', 'fresh content that is in no object yet 3\n')
+                self.assertEqual(test_gate.work_tree_id(self.root), self.legacy_id(self.root))
+
+    def test_changed_paths_name_what_differs_between_two_trees_at_most_five(self):
+        import tempfile
+        with tempfile.TemporaryDirectory(prefix='objs-') as objects:
+            first = test_gate.work_tree_id(self.root, objects=objects)
+            for i in range(8):
+                self.write(f'gen{i}.txt', f'generated {i}\n')
+            second = test_gate.work_tree_id(self.root, objects=objects)
+            names = test_gate.changed_paths(self.root, first, second, objects)
+            self.assertEqual(len(names), 5)
+            self.assertTrue(all(n.startswith('gen') for n in names), names)
+            self.write('code.txt', 'v2\n')
+            third = test_gate.work_tree_id(self.root, objects=objects)
+            self.assertEqual(test_gate.changed_paths(self.root, second, third, objects), ['code.txt'])
+            self.assertEqual(test_gate.changed_paths(self.root, first, first, objects), [])
+
+    def test_changed_paths_takes_only_tree_ids_and_never_hands_an_option_to_git(self):
+        import tempfile
+        with tempfile.TemporaryDirectory(prefix='objs-') as objects, mock.patch.object(test_gate.subprocess, 'run') as run:
+            for hostile in ('--output=/tmp/x', 'abc', '', None, 'g' * 40, '-p'):
+                self.assertEqual(test_gate.changed_paths(self.root, hostile, 'a' * 40, objects), [])
+                self.assertEqual(test_gate.changed_paths(self.root, 'a' * 40, hostile, objects), [])
+            run.assert_not_called()
+
+
 class TablePlans(WorkflowFixture):
     """CORE-TESTDEBT2 (f): a plan with a step table has no `- [x]` rows; a step counts as done when the LAST `checkpoints` record of the step is PASS."""
 

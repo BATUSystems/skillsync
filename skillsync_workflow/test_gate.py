@@ -28,11 +28,13 @@ MAX_PLAN_BYTES = 512 * 1024
 TREE_EXCLUDES = ('.skillsync', 'docs/plans')   # run files and the plans (edited at every step) are not part of the content the tests ran on
 
 
-def work_tree_id(root, from_head=False):
+def work_tree_id(root, from_head=False, objects=None):
     """Id of the tree of the working state (HEAD plus all changes and untracked files, without `.skillsync/` and `docs/plans/`), or None without git
     (or when git cannot be run). A temporary index seeded with a COPY of the real one (its stat data keeps `git add -A` from hashing the whole tree
     again) leaves the real index and the working tree untouched. `from_head`: the same id of the committed state (HEAD with the same exclusions), to tell
-    whether the working tree equals HEAD."""
+    whether the working tree equals HEAD. The objects the id needs (blobs of changed files, trees) are written to a temporary object directory (`objects`, or one of
+    the call), NEVER to the object database of the repository, which is only read (as an alternate); the id depends on the content, not on where it was written.
+    With `objects` the caller keeps the directory (and removes it), so that `changed_paths` can read the trees of the same run."""
     root = str(Path(root).resolve())
     try:
         with tempfile.TemporaryDirectory(prefix='skillsync-tree-') as tmp:
@@ -42,6 +44,10 @@ def work_tree_id(root, from_head=False):
                 return subprocess.run(['git', '-C', root, *args], capture_output=True, env=os.environ if plain else env, timeout=120)
             if git('rev-parse', '--git-dir', plain=True).returncode:
                 return None
+            more = _object_env(root, objects or Path(tmp) / 'objects')
+            if more is None:
+                return None
+            env.update(more)
             real = git('rev-parse', '--git-path', 'index', plain=True)
             real_index = Path(real.stdout.decode().strip()) if real.returncode == 0 else None
             if real_index is not None and not real_index.is_absolute():
@@ -69,6 +75,45 @@ def work_tree_id(root, from_head=False):
             return (done.stdout.decode().strip() or None) if done.returncode == 0 else None
     except (OSError, subprocess.SubprocessError):
         return None
+
+
+def _object_env(root, objects):
+    """`GIT_OBJECT_DIRECTORY` (where git WRITES: `objects`, created here) and `GIT_ALTERNATE_OBJECT_DIRECTORIES` (where it also READS: the object database of the
+    repository, then what the environment already listed), or None when the object directory of the repository cannot be found. A path that holds the list
+    separator or a quote is quoted the way git reads it; the alternates of the repository itself are followed by git from the directory listed."""
+    real = subprocess.run(['git', '-C', str(root), 'rev-parse', '--git-path', 'objects'], capture_output=True, timeout=120)
+    if real.returncode:
+        return None
+    real_dir = Path(real.stdout.decode('utf-8', 'replace').strip())
+    if not real_dir.is_absolute():
+        real_dir = Path(root) / real_dir
+    objects = Path(objects)
+    try:
+        objects.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return None
+    listed = str(real_dir.resolve())
+    if os.pathsep in listed or '"' in listed:
+        listed = '"' + listed.replace('\\', '\\\\').replace('"', '\\"') + '"'
+    inherited = os.environ.get('GIT_ALTERNATE_OBJECT_DIRECTORIES')
+    return {'GIT_OBJECT_DIRECTORY': str(objects), 'GIT_ALTERNATE_OBJECT_DIRECTORIES': os.pathsep.join([listed, inherited] if inherited else [listed])}
+
+
+def changed_paths(root, first, second, objects, limit=5):
+    """At most `limit` paths that differ between two trees made by `work_tree_id(..., objects=objects)` (`[]` when they cannot be read). The ids must be git tree ids
+    (nothing else may reach a command line); the paths are text for a message and never go to a command."""
+    if not (_TREE.fullmatch(first or '') and _TREE.fullmatch(second or '')):
+        return []
+    try:
+        more = _object_env(root, objects)
+        if more is None:
+            return []
+        done = subprocess.run(['git', '-C', str(Path(root).resolve()), 'diff-tree', '-r', '--name-only', '--end-of-options', first, second], capture_output=True,
+                              env={**os.environ, **more}, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return []
+    names = [line for line in done.stdout.decode('utf-8', 'replace').splitlines() if line] if done.returncode == 0 else []
+    return names[:limit]
 
 
 def plan_for_run(root, run_id):
@@ -161,7 +206,7 @@ def evidence_problem(root, run_id, step, evidence):
             last = f'{item}: the run recorded no tree at its start (it was not made by this version of `test-run`): run the tests again'
             continue
         if recorded is not None and began != recorded:
-            last = (f'{item}: files changed WHILE the tests ran (tree {began} at the start, {recorded} at the end{_changed_paths(root, began, recorded)}): a test run is a proof only '
+            last = (f'{item}: files changed WHILE the tests ran (tree {began} at the start, {recorded} at the end{_changed_note(state.end)}): a test run is a proof only '
                     'for a tree that stayed the same; keep generated files out of the tree (.gitignore) or stop editing during the run, then run the tests again')
             continue
         if current is None or recorded is None:
@@ -178,19 +223,11 @@ def evidence_problem(root, run_id, step, evidence):
     return f'{hint} ({last})'
 
 
-def _changed_paths(root, first, second):
-    """` — changed: a, b, c (+N)` for the message of a tree that changed during the run (at most 5 paths), or an empty string."""
-    if not (_TREE.fullmatch(first or '') and _TREE.fullmatch(second or '')):   # ids come from an events file: only a git tree id may reach the command line
-        return ''
-    try:
-        done = subprocess.run(['git', '-C', str(Path(root).resolve()), 'diff-tree', '-r', '--name-only', '--end-of-options', first, second], capture_output=True, timeout=30)
-        names = [line for line in done.stdout.decode('utf-8', 'replace').splitlines() if line] if done.returncode == 0 else []
-    except (OSError, subprocess.SubprocessError):
-        return ''
-    if not names:
-        return ''
-    shown = ', '.join(names[:5]) + (f' (+{len(names) - 5})' if len(names) > 5 else '')
-    return f'; changed: {shown}'
+def _changed_note(end):
+    """` — changed: a, b, c` from the `changed` field the run wrote at its end (the paths are only shown), or an empty string (an older events file has none)."""
+    names = (end or {}).get('changed')
+    return f'; changed: {", ".join(names)}' if names else ''
+
 
 
 def _newer_not_passing(root, run_id, step, item, current):
