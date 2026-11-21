@@ -12,6 +12,10 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Changed
+
+- **Repository: tmp-path guard scoped to the function.** `tests/test_skillsync_tmp_path_guard.py` taints local names only in their own function (attributes and parameters stay file-wide), so false hits that depended on variable names disappear and the set of hits is a subset of the earlier one, apart from hits through attributes tainted in base classes from other test files, which subclasses now inherit (no change to the product code).
+
 ## [1.11.0] - 2026-11-21
 
 Upgrading from 1.10.0: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.10.0 → 1.11.0".
