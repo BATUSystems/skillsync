@@ -20,6 +20,13 @@ REQUIRED = [
     ('hook-wyjatek-zgoda', r'zapytaj użytkownika w oknie wyboru\*\* \(AskUserQuestion\)'),
     ('czas-z-date', r'Godzin nie wpisuj z pamięci ani z szacunku'),
     ('czas-linia-date', r'Raport do dyspozytora zaczyna się linią `date: <dosłowny wynik polecenia date>`'),
+    ('glob-skille-dowiazane', r'Glob i Grep nie widzą skilli dowiązanych do projektu'),
+    ('edycja-mieszane-konce-linii', r'zapisuje plik z mieszanymi końcami linii \(CRLF/LF\) w samym LF'),
+    ('bajt-nul-z-backslash-zero', r'Literał `\\0` w skrypcie edycji na bajtach wstawia bajt NUL'),
+    ('skan-srednik-push-nie-bramka', r'`skan; push` \(skan sekretów połączony z pushem operatorem\) nie jest bramką'),
+    ('sekret-bez-podgladu-filtr', r'Nie podglądaj pliku z sekretem, także przez filtr maskujący'),
+    ('skan-push-osobne-polecenie', r'dopiero potem wydaj osobne polecenie `git push`'),
+    ('sekret-klucze-bez-wartosci', r'Sprawdzaj istnienie, rozmiar i nazwy kluczy bez treści wartości'),
 ]
 # the report rule lives in the multi-session protocol too (the card report template)
 PROTOCOL = 'skills/feature/references/multi-session.md'

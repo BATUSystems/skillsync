@@ -12,9 +12,14 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Breaking
+
+- **`test-run` blocks a clean exit code when the output reports failed tests of Playwright, Vitest or Jest (source `regex`).** When the command exits 0 and the counters come from the output itself (no adapter and no JUnit report, `source: regex`), an anchored summary of failed tests makes the run `BLOCKED` with exit code 2: `  N failed` or `  N interrupted` (Playwright), the `Tests` line with `N failed` and not `Test Files` (Vitest), `Tests: N failed,` (Jest). Before, such a run was `PASS` or `BLOCKED` for another reason. The Jest pattern has no end anchor, so a log line that starts with `Tests: 2 failed, …` also blocks. The sources `junit` and `adapter` are unchanged, and the bare `N failed` text (`3 failed attempts`, `0 failed`, `failed=0`) still does not block. No flag lifts it: `--allow-no-count` does not. Workaround: fix the command or the wrapper so that its exit code is the exit code of the tests; pass `--format playwright` or `--format vitest`, or a JUnit report with `--junit` (Jest has no adapter, so use `--junit`).
+
 ### Changed
 
 - **Repository: tmp-path guard scoped to the function.** `tests/test_skillsync_tmp_path_guard.py` taints local names only in their own function (attributes and parameters stay file-wide), so false hits that depended on variable names disappear and the set of hits is a subset of the earlier one, apart from hits through attributes tainted in base classes from other test files, which subclasses now inherit (no change to the product code).
+- **`retro-decide --proposal` names the missing or the invalid file.** When the run has no `retro-signals.json`, the message says so and gives a hint; when a file exists but is invalid, the message names that file (`retro-signals.json` or `retro-decisions.json`). The exit code (2) and the JSON shape of `BLOCKED` are unchanged.
 
 ## [1.11.0] - 2026-11-21
 

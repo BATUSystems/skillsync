@@ -288,3 +288,7 @@ lessons:
     title: "Strażnik ścieżek tmp: skażenie nazw trzeba ograniczyć do funkcji, a zmianę skanera sprawdzić skryptem różnicowym stary/nowy"
     tags: [skillsync, tests, tmp-path-guard, ast, scope]
     paths: ['tests/test_skillsync_tmp_path_guard.py', 'docs/development.md']
+  - path: zielony-kod-przy-poleceniu-bez-adaptera-ukrywa-porazki.md
+    title: "Kod wyjścia 0 przy poleceniu bez adaptera nie dowodzi testów: podsumowanie porażek Playwrighta, Vitesta i Jesta było niewidoczne"
+    tags: [skillsync, test-run, evidence, exit-codes, regex, playwright, vitest, jest]
+    paths: ['skillsync_workflow/test_run.py', 'skillsync_workflow/test_adapters/playwright.py', 'skillsync_workflow/test_adapters/vitest.py', 'tests/test_skillsync_test_run_hardening.py']

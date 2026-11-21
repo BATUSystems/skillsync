@@ -146,6 +146,9 @@ Plan ze zmianą UI ma w nagłówku (jak `Spec:`, osobny wiersz, sama ścieżka w
   `gate` pokazuje `via` i `who`, więc akceptację z CLI widać przy prośbie o „GO implement”.
   Gdy `accept` mimo to zostanie uruchomione (przez pomyłkę albo inną sesję) i zwróci `BLOCKED` `error: tty_required`, mów wprost „kliknij Akceptacja na stronie prototypu” i czekaj (`prototype wait`); zabezpieczenie zostaje.
 - Akceptacja prototypu to nie zatwierdzenie planu („GO implement”, `plan approve`); jedno nie zastępuje drugiego.
+- Linia `Prototyp:` przyjmuje tylko ścieżkę `<root>/<slug>`, bez opisu. Opis wieloznaczny daje BLOCKED `invalid_prototype_line`, opis jednowyrazowy BLOCKED `prototype_not_found`.
+- `Bez prototypu: <powód i źródło>` to konwencja opisowa dla człowieka (np. gdy zmiana UI nie ma prototypu). Narzędzia tej linii nie czytają: `readiness` i `prototype gate` jej nie rozpoznają, a zmiana UI bez linii `Prototyp:` i bez znaczników `[UI]` nie uruchamia bramki prototypu.
+- Znaczniki niedokończenia w treści speca i planu blokują `readiness` także wtedy, gdy są nazwą stanu domenowego (reguła w `spec.md`); nazywaj takie stany inaczej przed „GO plan”.
 
 ### Bramka per faza (`[UI]`)
 

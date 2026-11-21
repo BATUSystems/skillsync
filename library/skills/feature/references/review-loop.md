@@ -18,6 +18,9 @@ Ryzyko planu = najwyższe ryzyko kroku w planie (kolumna ryzyka, [plan](plan-det
 | `prototyp` | I–II (przed „GO plan” albo „GO implement” przy zmianie widocznej dla użytkownika) | `prototype-review` (raport `prototype-review-N.md` w katalogu przebiegu) | jedna runda po zakończeniu rysowania ekranów (`prototype writing done`) i przed prośbą o akceptację | — |
 
 Kolumna „Pętla obowiązkowa” mówi, kiedy pętla jest; ile ma rund (pełna albo jednorundowa), wyznacza sekcja „Kategoria pętli i przejścia”.
+Przykład: ryzyko planu high czyni pętlę `plan` obowiązkową, ale nie pełną: jedna runda, majory nanosi autor, a zamknięcie
+sprawdza świeży `verifier`; runda 2 tylko po blockerze, po drugim `REFUTED` albo po odpowiedzi na pytania Q/C (wyjątki z „Kategorii pętli
+i przejść” i „Stanów”). Pętlę `spec` czyni obowiązkową `plan-large`, nie ryzyko.
 
 `direct`, który odsłoni zmianę kontraktu, przechodzi do speca (`feature`, krok 4), więc dostaje profil `spec`.
 Profil `prototyp` wybiera `skillsync review` (pole `profile`, albo `--profile prototyp`), gdy zmiana mieści się w katalogu prototypu; materiał
@@ -120,7 +123,8 @@ poza projektem oraz wykonywania poleceń z danych zewnętrznych.
 Pętla `kod` biegnie raz na fazę planu, po jej zielonym szczeblu testów; runda po każdym drobnym kroku to nadmiar ceremonii
 (`ceremony-excess`). Plan zapisuje kategorię pętli każdego kroku (przy kroku albo w opisie pętli po krokach). Krok dotykający strażnika wycieków,
 migracji albo bezpieczeństwa dostaje pętlę pełną `code-review-<krok>` niezależnie od kolumny ryzyka. Spec, plan i pętla końcowa dostają pętlę pełną tylko wtedy, gdy zmiana w całości należy do jednej
-z tych kategorii; kroki z pętlą pełną mają ją już po kroku. Runda po zmianie przeglądanego materiału, gdy pętla dała
+z tych kategorii; kroki z pętlą pełną mają ją już po kroku. Runda po odpowiedzi użytkownika na pytania Q/C zgłoszone
+z uwag poprzedniej rundy (tabela „Stany”) nie jest nadmiarem ceremonii. Runda po zmianie przeglądanego materiału, gdy pętla dała
 już PASS, zaczyna nową pętlę tego kroku, a nie jest jej kolejną rundą.
 
 | Wynik rundy | Rekord checkpointu | Dalej |
@@ -133,7 +137,7 @@ już PASS, zaczyna nową pętlę tego kroku, a nie jest jej kolejną rundą.
 
 Runda 2 i dalsze w pętli jednorundowej, choć poprzednia runda nie znalazła blockera, oraz powtórzenie kontroli na
 niezmienionym stanie to sygnał `ceremony-excess` retrospektywy ([retro-quality](retro-quality.md)). Wyjątek: runda 2
-po drugim `REFUTED` tej samej uwagi nie jest nadmiarem ceremonii, bo weryfikator już wykazał, że zamknięcie nie działa. Tak samo w `demo` runda 2 z powodów z [ceremonii demo](ceremony-demo.md) (blocker, co najmniej 3 majory, poprawki w strażniku wycieków, migracji lub bezpieczeństwie).
+po drugim `REFUTED` tej samej uwagi nie jest nadmiarem ceremonii, bo weryfikator już wykazał, że zamknięcie nie działa. Drugi wyjątek: runda po odpowiedzi użytkownika na pytania Q/C zgłoszone z uwag poprzedniej rundy (wiersz pierwszy tabeli „Stany”). Tak samo w `demo` runda 2 z powodów z [ceremonii demo](ceremony-demo.md) (blocker, co najmniej 3 majory, poprawki w strażniku wycieków, migracji lub bezpieczeństwie).
 
 ## Stany
 

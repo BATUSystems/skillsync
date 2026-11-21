@@ -79,6 +79,14 @@ Wydanie 1.9.1 jest PATCH (sekcja **Breaking** w `CHANGELOG.md` to „None.”) z
 2. Uruchom ponownie działający `skillsync dashboard serve`: plik tymczasowy stanu serwera ma teraz rozszerzenie `.tmp` zamiast `.json`, a start serwera sprząta pozostałości starej postaci. Konsument katalogu stanu, który czytał `*.json`, nie trafi już na pusty plik tymczasowy.
 3. Windows: dwa równoległe kroki `skillsync test-run` tworzące ten sam katalog (`.skillsync/runs/<przebieg>/tests`, `.skillsync/logs`, katalog blokad) nie kończą się już `BLOCKED` (kod 2) przez `PermissionError` ani przez fałszywe „Path escapes project” dla `.skillsync/logs/<id>`.
 
+## Przejście 1.11.0 → następne wydanie (niewydane; nagłówek z numerem ustala osoba wydająca)
+
+Zmiana kodu wyjścia `test-run` przy ukrytych porażkach jest opisana w sekcji **Breaking** `CHANGELOG.md` (MINOR z wpisem **Breaking** z decyzji właściciela).
+
+1. Rdzeń: `uv tool install --force git+https://github.com/BATUSystems/skillsync@<tag wydania>`, potem `skillsync layers update core --ref <tag wydania>`.
+2. **Ukryte niepowodzenia przy kodzie 0 (Breaking):** `test-run` przy kodzie polecenia 0 i źródle liczników `regex` (polecenie bez adaptera i bez raportu JUnit) kończy bieg jako `BLOCKED` (kod 2), gdy wyjście zawiera zakotwiczone podsumowanie niezaliczonych testów: Playwright (`  N failed`, `  N interrupted`), Vitest (wiersz `Tests` z `N failed`, nie `Test Files`) albo Jest (`Tests: N failed,`). Dotąd taki bieg kończył się `PASS` albo `BLOCKED` z innej przyczyny. Jest nie ma kotwicy końca, więc linia logu zaczynająca się od `Tests: 2 failed, …` też zablokuje. Źródła `junit` i `adapter` nie zmieniają się. Nie ma flagi, która to zdejmuje (`--allow-no-count` tego nie robi). Obejście: napraw polecenie albo nakładkę tak, by jej kod wyjścia był kodem testów; podaj `--format` (`playwright`, `vitest`) albo raport `--junit` (Jest nie ma adaptera, więc zostaje `--junit`).
+3. **Komunikat `retro-decide --proposal` (zmiana addytywna, bez wpisu w **Breaking**):** brak pliku `retro-signals.json` w przebiegu jest odróżniony od pliku niepoprawnego, a komunikat nazywa plik (`retro-signals.json` albo `retro-decisions.json`) i podaje podpowiedź. Kod wyjścia 2 i kształt JSON `BLOCKED` się nie zmieniają. Skrypt, który dopasowuje tekst komunikatu, ma sprawdzać nowy tekst; skrypt sprawdzający kod wyjścia nie wymaga zmian.
+
 ## Przejście 1.10.0 → 1.11.0
 
 Zmiany rozpoznawania narzędzia w `test-run` i hooka `guard-tests`, odczytu liczników Karmy, śladu przebiegu i kodu wyjścia `test-run`, strony statusu oraz specyfikacji i planów poza gitem; cztery zmiany (dowód Karmy, `--run` bez śladu, kod wyjścia `test-run`, hook `check-closure.py`) są opisane w sekcji **Breaking** `CHANGELOG.md`. Zmiana kodów wyjścia i odmowa `--run` bez śladu przebiegu to według sekcji „Kiedy podbić wersję” niezgodne zmiany CLI (MAJOR); to wydanie jest MINOR z wpisem **Breaking** z decyzji właściciela.
