@@ -17,6 +17,10 @@ import layers_helpers as helpers  # noqa: E402
 from skillsync_workflow import layers  # noqa: E402
 
 
+# Whole seconds: the modification time of Windows has a resolution of 100 ns, so 1 ns and 5 ns are the same time there.
+SECOND = 10 ** 9
+
+
 class RealStateDirs(unittest.TestCase):
     def test_every_system_data_and_cache_directory_of_the_real_home_is_watched(self) -> None:
         home = helpers.REAL_HOME
@@ -93,18 +97,18 @@ class StateDifference(unittest.TestCase):
         watched = self.watched()
         (watched / "kept.json").write_text("{}", encoding="utf-8")
         (watched / "gone.json").write_text("{}", encoding="utf-8")
-        os.utime(watched / "kept.json", ns=(1, 1))
+        os.utime(watched / "kept.json", ns=(1 * SECOND, 1 * SECOND))
 
         def change() -> None:
             (watched / "kept.json").write_text("{\"a\": 1}", encoding="utf-8")
-            os.utime(watched / "kept.json", ns=(2, 2))
+            os.utime(watched / "kept.json", ns=(2 * SECOND, 2 * SECOND))
             (watched / "new.json").write_text("{}", encoding="utf-8")
             (watched / "gone.json").unlink()
 
         lines = self.difference(watched, change)
         text = "\n".join(lines)
         self.assertEqual(len(lines), 3, lines)
-        self.assertIn("kept.json: file 2 B, mtime 1 -> file 8 B, mtime 2", text)
+        self.assertIn(f"kept.json: file 2 B, mtime {SECOND} -> file 8 B, mtime {2 * SECOND}", text)
         self.assertIn("new.json: brak -> file 2 B", text)
         self.assertTrue(any("gone.json: file 2 B, mtime " in line and line.endswith("-> brak") for line in lines), lines)
 
@@ -146,8 +150,8 @@ class StateDifference(unittest.TestCase):
     def test_a_changed_mtime_of_a_directory_inside_git_is_not_a_difference(self) -> None:
         watched = self.watched()
         (watched / "clone" / ".git" / "objects").mkdir(parents=True)
-        os.utime(watched / "clone" / ".git" / "objects", ns=(1, 1))
-        self.assertEqual(self.difference(watched, lambda: os.utime(watched / "clone" / ".git" / "objects", ns=(2, 2))), [])
+        os.utime(watched / "clone" / ".git" / "objects", ns=(1 * SECOND, 1 * SECOND))
+        self.assertEqual(self.difference(watched, lambda: os.utime(watched / "clone" / ".git" / "objects", ns=(2 * SECOND, 2 * SECOND))), [])
 
     def test_the_failure_message_of_the_guard_lists_the_paths(self) -> None:
         watched = self.watched()
@@ -191,13 +195,13 @@ class CompositeCacheNoise(unittest.TestCase):
     def test_a_new_mtime_and_size_of_the_composed_directories_are_not_a_difference(self) -> None:
         for layout in self.LAYOUTS:
             watched, composed = self.watched(layout)
-            os.utime(composed, ns=(1, 1))
-            os.utime(composed / "feature", ns=(1, 1))
+            os.utime(composed, ns=(1 * SECOND, 1 * SECOND))
+            os.utime(composed / "feature", ns=(1 * SECOND, 1 * SECOND))
             with self.subTest(layout="/".join(layout)):
                 def change() -> None:
-                    os.utime(composed, ns=(5, 5))
-                    os.utime(composed / "feature", ns=(5, 5))
-                    os.utime(composed / "feature" / "abc123", ns=(5, 5))
+                    os.utime(composed, ns=(5 * SECOND, 5 * SECOND))
+                    os.utime(composed / "feature", ns=(5 * SECOND, 5 * SECOND))
+                    os.utime(composed / "feature" / "abc123", ns=(5 * SECOND, 5 * SECOND))
                 self.assertEqual(self.difference(watched, change), [])
 
     def test_a_new_removed_directory_and_a_file_change_in_the_composed_cache_are_still_seen(self) -> None:
@@ -223,15 +227,14 @@ class CompositeCacheNoise(unittest.TestCase):
         def change() -> None:
             (composed / "link").unlink()
             (composed / "link").symlink_to(target_two, target_is_directory=True)
-            os.utime(composed / "link", ns=(9, 9), follow_symlinks=False)
         self.assertNotEqual(self.difference(watched, change), [])
 
     def test_a_directory_called_composed_elsewhere_keeps_its_metadata_compared(self) -> None:
         watched, composed = self.watched()
         deep = watched / "layers" / "batu" / "composed"
         deep.mkdir(parents=True)
-        os.utime(deep, ns=(1, 1))
-        self.assertNotEqual(self.difference(watched, lambda: os.utime(deep, ns=(5, 5))), [])
+        os.utime(deep, ns=(1 * SECOND, 1 * SECOND))
+        self.assertNotEqual(self.difference(watched, lambda: os.utime(deep, ns=(5 * SECOND, 5 * SECOND))), [])
 
     def test_a_transient_file_in_a_directory_outside_the_composed_cache_is_seen(self) -> None:
         watched, _ = self.watched()
@@ -240,7 +243,7 @@ class CompositeCacheNoise(unittest.TestCase):
         def change() -> None:
             (watched / "dashboard" / "state.json.tmp").write_text("{}", encoding="utf-8")
             (watched / "dashboard" / "state.json.tmp").unlink()
-            os.utime(watched / "dashboard", ns=(7, 7))
+            os.utime(watched / "dashboard", ns=(7 * SECOND, 7 * SECOND))
         self.assertNotEqual(self.difference(watched, change), [])
 
     def test_the_registry_is_compared_only_for_projects_below_the_temporary_directory(self) -> None:
