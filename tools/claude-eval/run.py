@@ -50,13 +50,13 @@ def absolute_dir(text):
 
 
 def model_name(text):
-    if not MODEL_RE.match(text):
+    if not MODEL_RE.fullmatch(text):
         raise argparse.ArgumentTypeError(f'not a plain model identifier: {text!r}')
     return text
 
 
 def case_filter(text):
-    if not CASE_RE.match(text):
+    if not CASE_RE.fullmatch(text):
         raise argparse.ArgumentTypeError(f'not a plain case name or glob: {text!r}')
     return text
 
@@ -177,7 +177,9 @@ def validate_cases(evals_dir, model=None):
         for entry in sorted(case.iterdir()):
             if entry.name not in ('prompt.md', 'graders'):
                 errors.append(f'{case}: unexpected file {entry.name} (only prompt.md and graders/*.md are allowed)')
-        if (case / 'graders').is_dir():
+        if (case / 'graders').is_symlink():
+            errors.append(f'{case}: graders must not be a symbolic link')
+        elif (case / 'graders').is_dir():
             for entry in sorted((case / 'graders').iterdir()):
                 if not (entry.suffix == '.md' and entry.is_file() and not entry.is_symlink()):
                     errors.append(f'{case}: unexpected file graders/{entry.name} (only regular *.md)')
@@ -187,7 +189,7 @@ def validate_cases(evals_dir, model=None):
             errors.append(f'{case}: prompt.md is missing')
         else:
             errors += check_prompt(case / 'prompt.md', model)
-        graders = sorted((case / 'graders').glob('*.md')) if (case / 'graders').is_dir() else []
+        graders = sorted((case / 'graders').glob('*.md')) if (case / 'graders').is_dir() and not (case / 'graders').is_symlink() else []
         if not graders:
             errors.append(f'{case}: at least one grader is required')
         for grader in graders:
@@ -231,7 +233,8 @@ def _copy_skill(source, target):
 def _copy_evals(evals_dir, target):
     """Only <case>/prompt.md and <case>/graders/*.md reach the stage."""
     for case in sorted(p for p in Path(evals_dir).iterdir() if p.is_dir() and not p.is_symlink()):
-        for source in [case / 'prompt.md', *sorted((case / 'graders').glob('*.md'))]:
+        graders = case / 'graders'
+        for source in [case / 'prompt.md', *(sorted(graders.glob('*.md')) if not graders.is_symlink() else [])]:
             if source.is_file() and not source.is_symlink():
                 _regular(source)
                 destination = target / source.relative_to(evals_dir)

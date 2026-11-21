@@ -265,6 +265,25 @@ class Hardening(Tmp):
                     self.mod.parse_args(['--model', 'haiku', '--max-cost-usd', cost, '--config-dir', profile])
         self.assertEqual(self.mod.parse_args(['--model', 'haiku', '--max-cost-usd', '5', '--config-dir', profile]).max_cost_usd, 5.0)
 
+    def test_a_trailing_newline_does_not_pass_the_name_checks(self):
+        profile = str(self.base / 'profile')
+        with self.assertRaises(SystemExit):
+            self.mod.parse_args(['--model', 'opus\n', '--max-cost-usd', '1', '--config-dir', profile])
+        with self.assertRaises(SystemExit):
+            self.mod.parse_args(['--model', 'haiku', '--max-cost-usd', '1', '--config-dir', profile, '--case', 'x\n'])
+
+    def test_a_graders_directory_that_is_a_link_is_refused_and_not_staged(self):
+        folder = self.case(graders={})
+        real = child(self.base, 'foreign')
+        write(real / 'g.md', GOOD_GRADER)
+        try:
+            os.symlink(real, folder / 'graders', target_is_directory=True)
+        except (OSError, NotImplementedError, AttributeError):
+            self.skipTest('symbolic links unavailable')
+        self.assertTrue(any('graders' in e for e in self.errors()), self.errors())
+        self.mod.stage_plugin(self.library(), self.base / 'evals', self.base / 'stage', skills=('feature',))
+        self.assertFalse((self.base / 'stage' / 'plugin' / 'evals' / 'feature-key' / 'graders').exists())
+
     def test_the_case_filter_cannot_look_like_a_flag(self):
         with self.assertRaises(SystemExit):
             self.mod.parse_args(['--model', 'haiku', '--max-cost-usd', '1', '--config-dir', str(self.base / 'p'), '--case=--allow-tools'])
