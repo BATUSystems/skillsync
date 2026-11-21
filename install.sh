@@ -8,6 +8,8 @@
 #   1. checks git and curl (it does not install them);
 #   2. installs uv with the official installer when uv is missing;
 #   3. installs skillsync as a uv tool from the tag baked into this script;
+#   3b. installs shell completion with `skillsync completion install --auto` (also with SKILLSYNC_NO_SETUP=1;
+#      a failure only prints a warning; SKILLSYNC_NO_COMPLETION=1 skips it);
 #   4. runs `skillsync setup` with the options you passed (e.g. --org <id> --org-source <url>).
 #
 # Read the script before you run it; it is served from an immutable release tag.
@@ -16,6 +18,7 @@
 #   SKILLSYNC_TAG            release tag to install (default: the tag baked into this script)
 #   SKILLSYNC_INSTALL_SPEC   full requirement for `uv tool install` (default: git+https://github.com/BATUSystems/skillsync@<tag>)
 #   SKILLSYNC_NO_SETUP=1     install the tool only; do not run `skillsync setup`
+#   SKILLSYNC_NO_COMPLETION=1  do not install shell completion (read by skillsync itself, not by this script)
 #   SKILLSYNC_INSTALL_FORCE=1  replace a `skillsync` on PATH that is not a uv tool
 # Exit codes: 0 ok, 2 environment problem (unsupported system, missing git/curl, foreign skillsync), 3 install failed;
 # after a successful install the exit code of `skillsync setup` is passed through (0 PASS, 1 FAIL, 2 BLOCKED;
@@ -117,6 +120,13 @@ install_tool() {
   say "installed: $(skillsync --version 2>/dev/null)"
 }
 
+install_completion() {
+  # Read by skillsync (SKILLSYNC_NO_COMPLETION); a failure (e.g. a version without the command) never fails the installer.
+  if ! skillsync completion install --auto; then
+    printf '%s\n' "install.sh: warning: 'skillsync completion install --auto' failed; run 'skillsync completion install' later to get shell completion." >&2
+  fi
+}
+
 run_setup() {
   if [ "${SKILLSYNC_NO_SETUP:-}" = "1" ]; then
     say "SKILLSYNC_NO_SETUP=1: skipping 'skillsync setup'. Run it when you are ready."
@@ -142,6 +152,7 @@ main() {
   extend_path
   check_foreign_skillsync
   install_tool
+  install_completion
   run_setup "$@"   # with set -e a failing `skillsync setup` ends the script with its exit code
   say "done. If 'skillsync' is not found in a new shell, run 'uv tool update-shell'."
 }

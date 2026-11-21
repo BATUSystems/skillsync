@@ -1,7 +1,8 @@
 """`skillsync setup`: machine setup wizard on top of the layer commands (INST-1).
 
 Adds the core layer (tag = installed version), optionally one organisation layer (after an access check),
-makes sure a `layer_rules` entry covers the projects and runs `layers check`. Idempotent: a second run with the
+makes sure a `layer_rules` entry covers the projects, installs shell completion in-process (step `completion`, never
+blocking: a failure is `skipped` plus a warning; `SKILLSYNC_NO_COMPLETION` and `--dry-run` are honoured) and runs `layers check`. Idempotent: a second run with the
 same arguments changes nothing. It only calls `layers add|use|check`; no layer logic lives here.
 """
 import json
@@ -103,6 +104,8 @@ def run_setup(args):
         org_id = _org_step(run, layers, config)
     if not run.blocked():
         _rule_step(run, layers, org_id)
+    if not run.blocked():
+        _completion_step(run)
     status = 'BLOCKED' if run.blocked() else 'PASS'
     if status == 'PASS' and not run.dry:
         status = _check_step(run, layers)
@@ -124,6 +127,7 @@ def _next_steps():
         'the skillsync tool or a core layer pinned to a tag)',
         'Update the tool:  run install.sh from the new release tag (or `uv tool install --force git+'
         + DEFAULT_CORE_SOURCE + '@<tag>` and `skillsync layers update core --ref <tag>`)',
+        'Completion:       skillsync completion install|uninstall (tab completion for bash, zsh and PowerShell)',
         'Shell PATH:       if `skillsync` is not found, run `uv tool update-shell` and open a new shell',
         'Docs (PL/EN):     ' + DEFAULT_CORE_SOURCE + '/blob/main/docs/installation.md',
     ]
@@ -306,6 +310,46 @@ def _rule_step(run, layers, org_id):
     else:
         run.step('rule', 'done', f'rule added for {org_id}: match {globs}')
     run.warnings.extend(report.get('warnings', []) if report.get('changed', True) else [])
+
+
+def _completion_step(run):
+    """Install shell completion in-process (K13). Never blocks setup: a failure is `skipped` plus a warning."""
+    from . import completion, completion_install
+    subparsers = getattr(completion, '_SUBPARSERS', None)
+    if subparsers is None:
+        run.step('completion', 'skipped', 'no parser: the command tree is not available')
+        return
+    warnings = []
+    try:
+        if completion_install._switch_state(warnings):
+            run.warnings.extend(warnings)
+            run.step('completion', 'skipped', f'{completion_install.ENV_SWITCH} is set')
+            return
+        targets = completion_install.Targets()
+        shells = completion_install._detect()
+        if not shells:
+            run.warnings.extend(warnings)
+            run.step('completion', 'skipped', 'no supported shell (bash, zsh, pwsh, powershell) found on PATH')
+            return
+        completion_install._validate(shells, targets)
+        actions = completion_install._install(shells, targets, subparsers, run.dry, warnings)
+    except Exception as exc:   # completion must never fail the machine setup
+        run.warnings.extend(warnings)
+        run.warnings.append(f'shell completion was not installed: {exc}; run `skillsync completion install` later')
+        run.step('completion', 'skipped', 'installation failed (see warnings)')
+        return
+    run.warnings.extend(warnings)
+    failed = [item for item in actions if item['result'] == 'failed']
+    if failed:
+        for item in failed:
+            run.warnings.append(f"shell completion ({item['shell']}) failed: {item['detail']}; run `skillsync completion install` later")
+        run.step('completion', 'skipped', 'installation failed (see warnings)')
+    elif run.dry:
+        run.step('completion', 'planned', 'would install completion for ' + ', '.join(shells))
+    elif all(item['result'] == 'unchanged' for item in actions):
+        run.step('completion', 'unchanged', 'completion is already installed for ' + ', '.join(shells))
+    else:
+        run.step('completion', 'done', 'completion installed for ' + ', '.join(shells))
 
 
 def _probe_project(layers):
