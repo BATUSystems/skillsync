@@ -16,10 +16,22 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 - **`test-run` blocks a clean exit code when the output reports failed tests of Playwright, Vitest or Jest (source `regex`).** When the command exits 0 and the counters come from the output itself (no adapter and no JUnit report, `source: regex`), an anchored summary of failed tests makes the run `BLOCKED` with exit code 2: `  N failed` or `  N interrupted` (Playwright), the `Tests` line with `N failed` and not `Test Files` (Vitest), `Tests: N failed,` (Jest). Before, such a run was `PASS` or `BLOCKED` for another reason. The Jest pattern has no end anchor, so a log line that starts with `Tests: 2 failed, …` also blocks. The sources `junit` and `adapter` are unchanged, and the bare `N failed` text (`3 failed attempts`, `0 failed`, `failed=0`) still does not block. No flag lifts it: `--allow-no-count` does not. Workaround: fix the command or the wrapper so that its exit code is the exit code of the tests; pass `--format playwright` or `--format vitest`, or a JUnit report with `--junit` (Jest has no adapter, so use `--junit`).
 
+### Added
+
+- **Status page, tab "Testy": `groupsTotal` and `groupsOmitted` per attempt, and a note for omitted groups.** Every attempt in `tests.sections[].attempts[]` reports the number of its groups and how many were cut from the answer (additive, `schema: 1`). When `groupsOmitted` is above 0, the tab shows "Pokazano N z M grup …". Contract: [docs/dashboard-contract.md](docs/dashboard-contract.md), section "`tests`".
+- **`test-run` events: optional `end.changed`.** When the tree at the end of a run differs from the tree at its start, the `end` event lists up to five paths that changed while the tests ran (each up to 300 characters, masked at write time). `checkpoint --status PASS` of a `[T]` step names them in its message ("files changed WHILE the tests ran … ; changed: a, b"). Older events files have no field and give the message without paths. The field is untrusted input: it is shown, never passed to a command. Contract: `library/skills/workflow/references/test-run.md`, section "Kontrakt zdarzeń".
+
 ### Changed
 
+- **Status page, tab "Testy": at most 200 groups per attempt.** Failed groups come first, then running ones, then the rest by name; the cut is made after the sort. The attempt counters still cover every test, and the tests of a cut group stay available through `GET /api/tests`.
+- **Reader cache of test attempts is an LRU with a budget.** Entries are evicted by least recent use when the sum of the current read offsets exceeds 64 MiB or when there are more than 500 entries. Eviction runs at the end of a call and never drops an attempt that the same call read. The answer does not change.
 - **Repository: tmp-path guard scoped to the function.** `tests/test_skillsync_tmp_path_guard.py` taints local names only in their own function (attributes and parameters stay file-wide), so false hits that depended on variable names disappear and the set of hits is a subset of the earlier one, apart from hits through attributes tainted in base classes from other test files, which subclasses now inherit (no change to the product code).
 - **`retro-decide --proposal` names the missing or the invalid file.** When the run has no `retro-signals.json`, the message says so and gives a hint; when a file exists but is invalid, the message names that file (`retro-signals.json` or `retro-decisions.json`). The exit code (2) and the JSON shape of `BLOCKED` are unchanged.
+
+### Fixed
+
+- **The tree id of a test run no longer writes git objects into the repository.** `work_tree_id` writes the new blobs and trees to a temporary object directory; the object database of the repository is only read (alternates). A test run keeps one such directory from its start to its end and removes it. The tree id itself is unchanged.
+- **`tests-not-run` also covers plans with a step table.** A `[T]` step counts as done when it has a checked `- [x]` row or when the last `checkpoints` record of the step in the run record is PASS, so `doctor` reports a checked test step without a passing run in those plans too.
 
 ## [1.11.0] - 2026-11-21
 
