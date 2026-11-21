@@ -1,6 +1,7 @@
 """180-M: the guard of the real per-user state directories covers EVERY system, and `home_env` moves the state of every system under a base."""
 from __future__ import annotations
 
+import json
 import os
 import sys
 import tempfile
@@ -161,6 +162,154 @@ class StateDifference(unittest.TestCase):
         message = result.failures[0][1]
         self.assertIn("test touched real Skillsync state dirs", message)
         self.assertIn("leak.json: brak -> file 2 B", message)
+
+
+class CompositeCacheNoise(unittest.TestCase):
+    """K2: the `link` of ANOTHER session (a new mtime of the `composed` directory, a rewritten registry of its own projects) is not a
+    leak of the test; every file, a new or removed directory and a registry entry of a project below the temporary directory still are."""
+
+    LAYOUTS = (("composed",), ("cache", "composed"))   # Linux and macOS, Windows
+
+    def watched(self, layout=("composed",)) -> tuple:
+        tmp = Path(tempfile.mkdtemp(prefix="state-guard-noise-"))
+        self.addCleanup(__import__("shutil").rmtree, tmp, ignore_errors=True)
+        watched = tmp / "skillsync"
+        composed = watched.joinpath(*layout)
+        (composed / "feature" / "abc123").mkdir(parents=True)
+        (composed / "feature" / "abc123" / "SKILL.md").write_text("x", encoding="utf-8")
+        return watched, composed
+
+    def registry(self, composed: Path, entries: dict) -> None:
+        (composed / ".projects.json").write_text(json.dumps(entries), encoding="utf-8")
+
+    def difference(self, watched: Path, change) -> list:
+        with mock.patch.object(helpers, "REAL_STATE_DIRS", (watched,)):
+            before = helpers.real_state_snapshot()
+            change()
+            return helpers.real_state_difference(before, helpers.real_state_snapshot())
+
+    def test_a_new_mtime_and_size_of_the_composed_directories_are_not_a_difference(self) -> None:
+        for layout in self.LAYOUTS:
+            watched, composed = self.watched(layout)
+            os.utime(composed, ns=(1, 1))
+            os.utime(composed / "feature", ns=(1, 1))
+            with self.subTest(layout="/".join(layout)):
+                def change() -> None:
+                    os.utime(composed, ns=(5, 5))
+                    os.utime(composed / "feature", ns=(5, 5))
+                    os.utime(composed / "feature" / "abc123", ns=(5, 5))
+                self.assertEqual(self.difference(watched, change), [])
+
+    def test_a_new_removed_directory_and_a_file_change_in_the_composed_cache_are_still_seen(self) -> None:
+        for layout in self.LAYOUTS:
+            for name, change in (
+                ("new directory", lambda c: (c / "feature" / "fresh").mkdir()),
+                ("removed directory", lambda c: __import__("shutil").rmtree(c / "feature" / "abc123")),
+                ("removed empty directory", lambda c: (c / "empty").rmdir()),
+                ("new file", lambda c: (c / "feature" / "abc123" / "new.md").write_text("x", encoding="utf-8")),
+                ("changed file", lambda c: (c / "feature" / "abc123" / "SKILL.md").write_text("changed", encoding="utf-8")),
+            ):
+                watched, composed = self.watched(layout)
+                (composed / "empty").mkdir()
+                with self.subTest(layout="/".join(layout), change=name):
+                    self.assertNotEqual(self.difference(watched, lambda: change(composed)), [])
+
+    def test_a_replaced_symlink_to_a_directory_in_the_composed_cache_is_seen(self) -> None:
+        watched, composed = self.watched()
+        target_one, target_two = composed / "feature" / "abc123", composed / "feature"
+        try:
+            (composed / "link").symlink_to(target_one, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            self.skipTest("no symlinks")
+
+        def change() -> None:
+            (composed / "link").unlink()
+            (composed / "link").symlink_to(target_two, target_is_directory=True)
+            os.utime(composed / "link", ns=(9, 9), follow_symlinks=False)
+        self.assertNotEqual(self.difference(watched, change), [])
+
+    def test_a_directory_called_composed_elsewhere_keeps_its_metadata_compared(self) -> None:
+        watched, composed = self.watched()
+        deep = watched / "layers" / "batu" / "composed"
+        deep.mkdir(parents=True)
+        os.utime(deep, ns=(1, 1))
+        self.assertNotEqual(self.difference(watched, lambda: os.utime(deep, ns=(5, 5))), [])
+
+    def test_a_transient_file_in_a_directory_outside_the_composed_cache_is_seen(self) -> None:
+        watched, _ = self.watched()
+        (watched / "dashboard").mkdir()
+
+        def change() -> None:
+            (watched / "dashboard" / "state.json.tmp").write_text("{}", encoding="utf-8")
+            (watched / "dashboard" / "state.json.tmp").unlink()
+            os.utime(watched / "dashboard", ns=(7, 7))
+        self.assertNotEqual(self.difference(watched, change), [])
+
+    def test_the_registry_is_compared_only_for_projects_below_the_temporary_directory(self) -> None:
+        for layout in self.LAYOUTS:
+            watched, composed = self.watched(layout)
+            temporary = Path(tempfile.gettempdir()) / "state-guard-project-x"
+            self.registry(composed, {"/srv/work/real": {"feature": "aaa"}})
+            with self.subTest(layout="/".join(layout)):
+                outside = lambda: self.registry(composed, {"/srv/work/real": {"feature": "bbb"}, "/srv/other/y": {"feature": "c"}})
+                self.assertEqual(self.difference(watched, outside), [])
+                inside = lambda: self.registry(composed, {str(temporary): {"feature": "bbb"}})
+                lines = self.difference(watched, inside)
+                self.assertEqual(len(lines), 1, lines)
+                self.assertIn(f".projects.json[{temporary}]: brak ->", lines[0])
+                self.assertIn('"feature": "bbb"', lines[0])
+
+    def test_an_atomic_rewrite_of_the_registry_without_a_change_is_not_a_difference(self) -> None:
+        watched, composed = self.watched()
+        temporary = str(Path(tempfile.gettempdir()) / "state-guard-project-y")
+        self.registry(composed, {temporary: {"feature": "aaa"}, "/srv/work/real": {"feature": "b"}})
+
+        def change() -> None:
+            rewritten = composed / ".projects.json.tmp-123"
+            rewritten.write_text(json.dumps({temporary: {"feature": "aaa"}, "/srv/work/real": {"feature": "c"}}), encoding="utf-8")
+            os.replace(rewritten, composed / ".projects.json")
+        self.assertEqual(self.difference(watched, change), [])
+
+    def test_the_temporary_file_of_the_registry_is_ignored(self) -> None:
+        watched, composed = self.watched()
+        self.assertEqual(self.difference(watched, lambda: (composed / ".projects.json.tmp-9").write_text("{", encoding="utf-8")), [])
+
+    def test_a_damaged_or_missing_registry_counts_as_empty(self) -> None:
+        watched, composed = self.watched()
+        temporary = str(Path(tempfile.gettempdir()) / "state-guard-project-z")
+        self.registry(composed, {temporary: {"feature": "a"}})
+        damaged = lambda: (composed / ".projects.json").write_text("{not json", encoding="utf-8")
+        self.assertEqual(len(self.difference(watched, damaged)), 1)   # the entry disappeared
+        self.assertEqual(self.difference(watched, lambda: (composed / ".projects.json").write_text("[1]", encoding="utf-8")), [])
+        self.assertEqual(self.difference(watched, lambda: (composed / ".projects.json").unlink()), [])
+
+    def test_a_temporary_directory_that_is_a_symlink_is_recognised_by_the_resolved_path(self) -> None:
+        watched, composed = self.watched()
+        real = Path(tempfile.mkdtemp(prefix="state-guard-real-"))
+        self.addCleanup(__import__("shutil").rmtree, real, ignore_errors=True)
+        link = Path(tempfile.mkdtemp(prefix="state-guard-link-")) / "tmp"
+        self.addCleanup(__import__("shutil").rmtree, link.parent, ignore_errors=True)
+        try:
+            link.symlink_to(real, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            self.skipTest("no symlinks")
+        (real / "project").mkdir()
+        with mock.patch.object(helpers, "_TMP_ROOT", real.resolve()):
+            self.registry(composed, {})
+            lines = self.difference(watched, lambda: self.registry(composed, {str(link / "project"): {"feature": "a"}}))
+        self.assertEqual(len(lines), 1, lines)
+
+    def test_the_registry_is_recognised_without_the_environment_of_the_process(self) -> None:
+        """The cleanup of `IsolatedTestCase` runs under a substituted environment (`TMPDIR`, `HOME`): the registry is found by its place
+        below `REAL_STATE_DIRS`, not through `composed_root()`, and the temporary directory is the one taken at import."""
+        watched, composed = self.watched()
+        temporary = str(Path(tempfile.gettempdir()) / "state-guard-project-w")
+        self.registry(composed, {})
+        substituted = {"TMPDIR": "/nonexistent-tmp", "TEMP": "/nonexistent-tmp", "TMP": "/nonexistent-tmp", "HOME": "/nonexistent-home",
+                       "XDG_CACHE_HOME": "/nonexistent-cache", "LOCALAPPDATA": "/nonexistent-local"}
+        with mock.patch.dict(os.environ, substituted):
+            lines = self.difference(watched, lambda: self.registry(composed, {temporary: {"feature": "a"}}))
+        self.assertEqual(len(lines), 1, lines)
 
 
 class EveryEnvironmentMovesTheStateOfEverySystem(unittest.TestCase):

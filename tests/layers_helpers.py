@@ -145,6 +145,40 @@ def _refreshed_by_read_only_git(path, relative=None):
     return '.git' in parts[:-1] and (path.name.endswith('.lock') or path.name == 'gc.pid')
 
 
+# The composite cache (`composed`, on Windows `cache/composed`) is rewritten by the `skillsync link` of ANY other session while a test
+# runs: the mtime of the DIRECTORIES in it and the registry `.projects.json` change without a write of the test under guard. The
+# snapshot therefore leaves out the metadata of those directories (a new or removed directory and every file stay visible) and compares
+# the registry only for projects below the temporary directory (a test that links a REAL project there still fails the guard).
+_COMPOSED_SCOPES = (('composed',), ('cache', 'composed'))
+_COMPOSED_REGISTRY = '.projects.json'
+_TMP_ROOT = Path(tempfile.gettempdir()).resolve()   # once, at import: the cleanup of a test runs under a substituted environment
+
+
+def _composed_parts(parts):
+    """Parts after the composite cache directory when `parts` (relative to a state dir) is that directory or lies in it, else None."""
+    for scope in _COMPOSED_SCOPES:
+        if parts[:len(scope)] == scope:
+            return parts[len(scope):]
+    return None
+
+
+def _registry_entries(path):
+    """The registry entries (`{project: {skill: hash}}`) of projects below the temporary directory; a missing or damaged file is empty."""
+    try:
+        data = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return {}
+    entries = {}
+    for project, value in (data.items() if isinstance(data, dict) else ()):
+        try:
+            inside = Path(project).resolve().is_relative_to(_TMP_ROOT)
+        except (OSError, ValueError):
+            continue
+        if inside:
+            entries[project] = value
+    return entries
+
+
 def real_state_snapshot():
     """Description of the real per-user state dirs: `{str(directory): None (absent) | {path relative to it: value}}`, without the
     files that read-only git commands of other processes refresh (`_refreshed_by_read_only_git`). A value is `(kind, size, mtime_ns)`;
@@ -159,6 +193,13 @@ def real_state_snapshot():
             relative = path.relative_to(directory)
             if _refreshed_by_read_only_git(path, relative):
                 continue
+            inside = _composed_parts(relative.parts)
+            if inside is not None and inside[:1] and inside[0].startswith(_COMPOSED_REGISTRY + '.tmp-') and len(inside) == 1:
+                continue   # the temporary file of the atomic write of the registry
+            if inside == (_COMPOSED_REGISTRY,) and path.is_file():
+                for project, value in sorted(_registry_entries(path).items()):
+                    entries[f'{relative.as_posix()}[{project}]'] = ('entry', json.dumps(value, sort_keys=True))
+                continue
             try:
                 stat = path.lstat()
             except OSError:
@@ -169,6 +210,9 @@ def real_state_snapshot():
                 # `refs/remotes`), which moves the mtime and size of those DIRECTORIES; a real write still shows up as a
                 # changed or new file (a ref, an object, a layer file), so inside `.git` only files are compared
                 entries[relative.as_posix()] = ('dir', 0, 0)
+                continue
+            if is_dir and inside is not None:
+                entries[relative.as_posix()] = ('dir', None, None)   # metadata of the composite cache directories: see above
                 continue
             entries[relative.as_posix()] = ('dir' if is_dir else 'file', stat.st_size, stat.st_mtime_ns)
         snapshot[str(directory)] = entries
@@ -181,7 +225,11 @@ STATE_DIFFERENCE_LIMIT = 10
 def _describe_state_value(value):
     if value is None:
         return 'brak'
-    kind, size, mtime = value
+    kind, size, mtime = value if len(value) == 3 else (value[0], value[1], None)
+    if kind == 'entry':
+        return size
+    if size is None:
+        return kind
     return f'{kind} {size} B, mtime {mtime}'
 
 
