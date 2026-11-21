@@ -13,6 +13,7 @@ Zasady udziału zewnętrznego (zgłoszenia, `leakcheck` przed PR): [CONTRIBUTING
 | `skillsync-ctl` | sterowanie usługą watch (bash, tylko Linux) |
 | `skillsync-windows.ps1` | bootstrapper dla Windows |
 | `tests/` | testy `unittest` i zasoby testowe (`tests/fixtures/`, `tests/e2e/prototype/`) |
+| `tools/claude-eval/` | opakowanie `plugin eval` Claude Code dla skilli biblioteki i przypadki eval (`evals/`), patrz „Eval zachowania skilli” |
 | `library/` | warstwa `core`: skille, role, instrukcje i workflow rdzenia |
 | `docs/` | dokumentacja użytkownika (ta strona i pozostałe) |
 
@@ -290,6 +291,23 @@ Strażnik ma flagi jawnych wejść dla hooków i narzędzi integracyjnych, nie d
 ich nie pokazuje): `leakcheck` i `leakguard install-hook` mają `--identity`, `--targets-json` i `--trailer-allow`,
 a `leakcheck` i `leakguard patterns` mają `--target-patterns`. W `leakcheck` każda z flag `--identity`, `--targets-json`, `--trailer-allow` zastępuje wejścia
 z configu maszyny w całości: bez `--targets-json` cel jest nieznany, więc `--require full` kończy się BLOCKED.
+
+## Eval zachowania skilli
+
+`tools/claude-eval/run.py` jest jedynym wejściem do `claude plugin eval` dla skilli biblioteki; bezpośrednie wywołanie `claude plugin eval` na bibliotece nie jest wspierane. Sprawdza, czy model z wtyczką wykonuje to, co skill zapisuje (np. czyta referencję `ticket-intake` przy kluczu zgłoszenia), względem ramienia bez wtyczki. Każdy przebieg to prawdziwe wywołanie modelu na koncie użytkownika, więc ma koszt i limit.
+
+```
+python3 tools/claude-eval/run.py --model haiku --max-cost-usd 0.5 --config-dir /bezwzględna/ścieżka/profilu [--runs 1..3] [--case glob] [--out katalog] [--dry-run]
+```
+
+- Wymagane: `--model` (prosty identyfikator), `--max-cost-usd` (większy od 0, najwyżej 5.0) i `--config-dir` (istniejący katalog bezwzględny bez `..`; profil Claude, z którego idzie koszt). Brak któregokolwiek kończy się odmową przed startem.
+- Wymuszone: `--no-publish`, `--trust-plugin` wyłącznie dla skopiowanego katalogu, `--concurrency 1`, `--ablation with-without`. Nigdy: `--scaffold`, `--allow-tools`, `--allow-real-servers`, `--publish-report`, mocki.
+- Środowisko dziecka: tylko `PATH`, `HOME`, `LANG`, `LC_*` i `CLAUDE_CONFIG_DIR` z argumentu; katalog roboczy to pusty katalog tymczasowy poza repozytorium. `--dry-run` drukuje polecenie i środowisko bez uruchamiania.
+- Biblioteka nie jest dotykana: skille `feature`, `bugfix`, `pre-implement`, `workflow` (oraz `dispatch`, gdy ma `disable-model-invocation`) trafiają jako kopie do `<out>/stage/plugin` razem z `.claude-plugin/plugin.json`; z przypadków kopiowane są tylko `prompt.md` i `graders/*.md`, a po skopiowaniu przypadki są walidowane ponownie. Dowiązania i twarde linki są odrzucane.
+- Przypadek (`evals/<nazwa>/prompt.md` + `graders/*.md`) ma zamkniętą listę kluczy (`description`, `tags`, `runs` do 3, `max_turns` do 10, `timeout_seconds` do 300, `allowed_tools` tylko `Read`, `Glob`, `Grep`, `Skill`) i graderów deterministycznych (`regex`, `tool_used`, `tool_order`, `file_exists`). W `tool_used` pole `min` ma domyślnie 1, więc kontrola „nie wywołano” wymaga `min: 0` i `max: 0`.
+- Opakowanie zawsze przekazuje `--runs` (domyślnie 3), a `claude plugin eval` daje mu pierwszeństwo, więc `runs` z `prompt.md` jest ignorowane. Domyślne `--out` to `<katalog bieżący>/.skillsync/claude-eval/<czas>`; wynik: `<out>/aggregate.json`, `<out>/report.html`. Kody wyjścia 1 (wynik poniżej progu) i 2 (przerwanie limitem kosztu) pochodzą z `plugin eval` i są przekazywane bez zmian; opakowanie samo zwraca 2 przy błędzie przypadków, a odmowa argumentów kończy się kodem 2 z argparse. Flagi `--claude-bin`, `--evals-dir` i `--library` służą testom.
+- Pilotaż 21.11 (Haiku, 34 wywołania, 0,099 USD): kryteria adopcji niespełnione (z wtyczką `feature` 1/3, `bugfix` 0/3, `pre-implement` 1/3), więc eval nie jest częścią procesu, a narzędzie zostaje na później. Kontrole wyszły 0/3 przez defekt gradera (`min` domyślnie 1); po poprawce `min: 0` nie były powtórzone na modelu; szczegóły i granice wniosku w `docs/domain/claude-plugin-eval.md`.
+- Testy opakowania używają fałszywego `claude` (`--claude-bin`) i nie wywołują modelu: `tests/test_skillsync_claude_eval_wrapper.py`, `tests/test_skillsync_claude_eval_cases.py`. Prawdziwe wywołania wymagają zgody na koszt.
 
 ## Pułapki
 

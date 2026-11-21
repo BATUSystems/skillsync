@@ -1,5 +1,5 @@
 ---
 type: regex
-pattern: "Werdykt: (READY|NEEDS_CHANGES|BLOCKED)"
+pattern: "Werdykt:?\\*{0,2}:?\\s*(READY|NEEDS_CHANGES|BLOCKED)"
 ---
-Pierwsza linia raportu ma postać "Werdykt: ...".
+Odpowiedź zawiera werdykt (także z pogrubieniem).
