@@ -1,4 +1,5 @@
 """180-A: the gate of the test steps: `[T]` marker, `checkpoint --status PASS` evidence, the `doctor` finding."""
+import json
 import os
 import socket
 import subprocess
@@ -26,6 +27,20 @@ Przebieg: R1
 - [ ] F1.1 Kod
 - [ ] F1.2 [T] Testy kodu
 - [ ] F1.3 Podsumowanie [T]
+"""
+
+
+TABLE_PLAN = """# Plan: demo
+
+Status: in_progress
+Przebieg: R1
+
+## Kroki
+
+| Id | Krok | Rola |
+|---|---|---|
+| F1.1 | Kod | implementer |
+| F1.2 [T] | Testy kodu | implementer |
 """
 
 
@@ -266,6 +281,72 @@ class Gate(WorkflowFixture):
             self.assertIsNone(test_gate.work_tree_id(Path(tmp) / 'nope'))
         with tempfile.TemporaryDirectory() as tmp:
             self.assertIsNone(test_gate.work_tree_id(tmp))   # no git repository
+
+
+class TablePlans(WorkflowFixture):
+    """CORE-TESTDEBT2 (f): a plan with a step table has no `- [x]` rows; a step counts as done when the LAST `checkpoints` record of the step is PASS."""
+
+    def setUp(self):
+        super().setUp()
+        self.write('docs/plans/2026-11-16-demo.md', TABLE_PLAN)
+        self.write('.skillsync/runs/R1/checkpoints.md', '- 10:00 start\n')
+        self.write('.gitignore', '.skillsync/\n')
+        self.write('code.txt', 'v1\n')
+        self.init_git()
+
+    def run_tests(self, step='F1.2', code="print('Ran 2 tests in 0.01s'); print('OK')"):
+        return subprocess.run([sys.executable, str(CLI), 'test-run', str(self.root), '--run', 'R1', '--step', step, '--', sys.executable, '-c', code],
+                              capture_output=True, text=True, timeout=120)
+
+    def records(self, *items):
+        self.write('.skillsync/runs/R1.json', json.dumps({'checkpoints': [{'step': s, 'status': st} for s, st in items]}))
+
+    def reasons(self):
+        return [reason for _, reason in test_gate.plan_findings(self.root)]
+
+    def test_a_table_plan_with_a_pass_checkpoint_and_no_run_is_a_finding(self):
+        self.records(('F1.2', 'PASS'))
+        found = self.reasons()
+        self.assertEqual(len(found), 1, found)
+        self.assertIn('tests-not-run', found[0])
+        self.assertIn('F1.2', found[0])
+
+    def test_a_table_plan_with_a_passing_run_has_no_finding(self):
+        self.records(('F1.2', 'PASS'))
+        self.assertEqual(self.run_tests().returncode, 0)
+        self.assertEqual(self.reasons(), [])
+
+    def test_a_table_plan_without_a_pass_checkpoint_is_silent(self):
+        self.assertEqual(self.reasons(), [])
+        self.records(('F1.2', 'FAIL'), ('F1.1', 'PASS'))   # a PASS of a step without [T] is not a test step finding
+        self.assertEqual(self.reasons(), [])
+
+    def test_only_the_last_record_of_a_step_decides(self):
+        self.records(('F1.2', 'PASS'), ('F1.2', 'BLOCKED'))
+        self.assertEqual(self.reasons(), [])
+        self.records(('F1.2', 'FAIL'), ('F1.2', 'PASS'))
+        self.assertEqual(len(self.reasons()), 1)
+
+    def test_malformed_records_are_ignored(self):
+        self.write('.skillsync/runs/R1.json', json.dumps({'checkpoints': ['x', 7, None, {'step': 5, 'status': 'PASS'}, {'status': 'PASS'}, {'step': 'F1.2'}]}))
+        self.assertEqual(self.reasons(), [])
+        self.write('.skillsync/runs/R1.json', '{not json')
+        self.assertEqual(self.reasons(), [])
+
+    def test_a_waived_step_stays_a_waiver_not_a_missing_run(self):
+        self.write('.skillsync/runs/R1.json', json.dumps({'checkpoints': [{'step': 'F1.2', 'status': 'PASS', 'no_tests': 'documentation only'}]}))
+        found = self.reasons()
+        self.assertEqual(len(found), 1, found)
+        self.assertIn('tests-waived', found[0])
+
+    def test_a_checklist_plan_behaves_as_before_and_also_sees_a_pass_checkpoint(self):
+        self.write('docs/plans/2026-11-16-demo.md', PLAN)
+        self.assertEqual(self.reasons(), [])
+        self.write('docs/plans/2026-11-16-demo.md', PLAN.replace('- [ ] F1.2', '- [x] F1.2'))
+        self.assertEqual(len(self.reasons()), 1)
+        self.write('docs/plans/2026-11-16-demo.md', PLAN)
+        self.records(('F1.2', 'PASS'))
+        self.assertEqual(len(self.reasons()), 1)
 
 
 class TreeIdSpecStore(WorkflowFixture):

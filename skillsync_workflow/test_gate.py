@@ -231,6 +231,15 @@ def waived_steps(root, run_id):
     return out
 
 
+def passed_steps(root, run_id):
+    """Steps whose LAST `checkpoints` record in the run record is PASS (a plan with a step table has no `- [x]` rows: this is its "done"). Malformed records are ignored."""
+    last = {}
+    for record in (_run_record(root, run_id).get('checkpoints') or []):
+        if isinstance(record, dict) and isinstance(record.get('step'), str) and isinstance(record.get('status'), str):
+            last[record['step']] = record['status']
+    return {step for step, status in last.items() if status == 'PASS'}
+
+
 def run_of_plan(text):
     """The run id named by the `Przebieg:` line of a plan, only when it is a valid run id (a value such as `../x` or a path is not one: it would be
     used to build paths), else None."""
@@ -262,7 +271,7 @@ def plan_findings(root, only_run=None):
             continue
         label = f'docs/plans/{path.name}'
         steps = parse_test_steps(text)
-        done = set(_CHECKED.findall(text))
+        done = set(_CHECKED.findall(text)) | passed_steps(root, run)   # a checked row of the checklist OR a PASS checkpoint (the only mark of a table plan)
         waived = waived_steps(root, run)
         for step, reason in waived.items():
             found.append((label, f'step {step} was closed WITHOUT tests (tests-waived): {reason}'))
