@@ -2,7 +2,9 @@
 import math
 
 KNOWN_KEYS = ('max_parallel', 'worktree_root', 'setup', 'isolated_resources', 'leased_resources',
-              'owned_files', 'additive_files', 'id_registries', 'guards')
+              'owned_files', 'additive_files', 'id_registries', 'guards', 'pulse')
+PULSE_KEYS = ('enabled', 'interval_minutes', 'idle_card_minutes', 'user_wait_notify_minutes', 'lease_overdue_minutes')
+MAX_PULSE_INTERVAL_MINUTES = 60   # `ScheduleWakeup` waits at most 3600 s
 LEASE_KEYS = ('name', 'ports', 'databases', 'command')
 GUARD_KEYS = ('min_free_disk_gb', 'max_load')
 
@@ -104,4 +106,20 @@ def validate_dispatch(section):
                     warnings.append(f'dispatch.guards.{key}: unknown key (known: {", ".join(GUARD_KEYS)})')
                 elif not _is_number(value) or value < 0:
                     errors.append(f'dispatch.guards.{key}: must be a number >= 0')
+    if 'pulse' in section:
+        pulse = section['pulse']
+        if not isinstance(pulse, dict):
+            errors.append('dispatch.pulse: must be a mapping')
+        else:
+            for key, value in pulse.items():
+                if key not in PULSE_KEYS:
+                    warnings.append(f'dispatch.pulse.{key}: unknown key (known: {", ".join(PULSE_KEYS)})')
+                elif key == 'enabled':
+                    if not isinstance(value, bool):
+                        errors.append('dispatch.pulse.enabled: must be true or false')
+                elif key == 'interval_minutes':
+                    if not _is_int(value) or not 1 <= value <= MAX_PULSE_INTERVAL_MINUTES:
+                        errors.append(f'dispatch.pulse.interval_minutes: must be an integer 1-{MAX_PULSE_INTERVAL_MINUTES}')
+                elif not _is_int(value) or value < 1:
+                    errors.append(f'dispatch.pulse.{key}: must be an integer >= 1')
     return errors, warnings
