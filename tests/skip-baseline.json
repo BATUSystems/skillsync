@@ -46,7 +46,8 @@
    "no /bin/bash",
    "no /bin/sh",
    "no /bin/zsh",
-   "shebang"
+   "shebang",
+   "shell script on PATH"
   ],
   "filesystem": [
    "non-UTF-8",
@@ -594,6 +595,10 @@
    {
     "id": "test_skillsync_dispatch_state.DispatchState.test_symlinked_runs_directory_is_ignored_not_followed",
     "category": "needs-symlinks"
+   },
+   {
+    "id": "test_skillsync_doctor_agent_fields.DoctorRoleFields.test_doctor_never_starts_a_claude_process",
+    "category": "posix-only"
    },
    {
     "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_a_candidate_the_c_library_cannot_give_is_left_out_and_the_plain_one_decides",
