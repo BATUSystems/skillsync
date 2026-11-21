@@ -45,7 +45,7 @@ class StartedRaises(unittest.TestCase):
                 report = quality.run_validation(root, [self.check(root, marker)], observer=observer)
                 result = report['results'][0]
                 self.assertEqual(result['status'], 'BLOCKED')
-                self.assertIn(type(error).__name__, result['reason'])
+                self.assertTrue(result['reason'].startswith(f'Unexpected error: {type(error).__name__}: '), result['reason'])
                 self.assertIn('test_skillsync_run_validation_observer.py', result['reason'])   # file:line of the place that failed
                 self.assertEqual(observer.finished_calls, 1)
                 self.assertFalse(marker.exists(), 'the command must not start after the exception')
@@ -82,6 +82,31 @@ class StartedRaises(unittest.TestCase):
             secret = 'hunter2' + 'hunter2'
             result = quality.run_validation(root, [self.check(root, child(tmp, 'x.flag'))], observer=Observer(RuntimeError(f'connect failed password={secret}')))['results'][0]
             self.assertNotIn(secret, result['reason'])
+            self.assertIn('RuntimeError', result['reason'])
+
+    def test_a_long_text_is_cut_and_one_line_and_an_unprintable_exception_is_handled(self):
+        class Unprintable(Exception):
+            def __str__(self):
+                raise RuntimeError('no text')
+        with tempfile.TemporaryDirectory() as tmp:
+            root = project(tmp)
+            check = self.check(root, child(tmp, 'x.flag'))
+            long = quality.run_validation(root, [check], observer=Observer(RuntimeError('line one\n' + 'x' * 5000)))['results'][0]
+            self.assertNotIn('\n', long['reason'])
+            self.assertLess(len(long['reason']), quality.UNEXPECTED_TEXT_LIMIT + 200)
+            observer = Observer(Unprintable())
+            result = quality.run_validation(root, [check], observer=observer)['results'][0]
+            self.assertEqual(result['status'], 'BLOCKED')
+            self.assertIn('<unprintable>', result['reason'])
+            self.assertEqual(observer.finished_calls, 1)
+
+    def test_a_failure_after_the_command_ran_carries_no_exit_code(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = project(tmp)
+            with mock.patch.object(quality, '_test_counts', side_effect=RuntimeError('post-processing bug')):
+                result = quality.run_validation(root, [self.check(root, child(tmp, 'x.flag'))])['results'][0]
+            self.assertEqual(result['status'], 'BLOCKED')
+            self.assertIsNone(result['exit_code'])
             self.assertIn('RuntimeError', result['reason'])
 
 
