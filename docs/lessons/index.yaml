@@ -288,6 +288,10 @@ lessons:
     title: "Strażnik ścieżek tmp: skażenie nazw trzeba ograniczyć do funkcji, a zmianę skanera sprawdzić skryptem różnicowym stary/nowy"
     tags: [skillsync, tests, tmp-path-guard, ast, scope]
     paths: ['tests/test_skillsync_tmp_path_guard.py', 'docs/development.md']
+  - path: straznik-tmp-wrogie-nazwy-i-obiekty-git-w-testach.md
+    title: "Test z celowo wrogimi nazwami łamie strażnika ścieżek tmp dopiero w pełnym biegu; obiekty git poza bazą wymagają alternatywy"
+    tags: [skillsync, tests, tmp-path-guard, git, alternates, test-gate]
+    paths: ['tests/test_skillsync_tmp_path_guard.py', 'tests/test_skillsync_test_gate.py', 'skillsync_workflow/test_gate.py', 'docs/development.md']
   - path: zielony-kod-przy-poleceniu-bez-adaptera-ukrywa-porazki.md
     title: "Kod wyjścia 0 przy poleceniu bez adaptera nie dowodzi testów: podsumowanie porażek Playwrighta, Vitesta i Jesta było niewidoczne"
     tags: [skillsync, test-run, evidence, exit-codes, regex, playwright, vitest, jest]
