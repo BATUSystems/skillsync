@@ -6,3 +6,5 @@ Compare `docs/cli.md` (and the tables in `docs/workflow.md` that list the same c
 3. a documented command whose description contradicts the code.
 
 Rules: report only what you verified by reading both sides; quote the document line and the code location in `evidence`. Do not report wording or style, do not report undocumented internal helpers, do not guess. If everything matches, return an empty list. Give each finding a short unique id (`D1`, `D2`, ...). Severity: `error` for a statement that misleads users (wrong flag, wrong default, wrong exit code), `warning` for a missing flag or command, `info` for a minor note.
+
+Scope of what you can see: the copy holds only part of the repository (changelogs, `docs/*.md`, `docs/domain`, `docs/lessons`, `library`, `skillsync_workflow`, the main scripts). A file or directory that is not in the copy (tests, tools, `docs/plans`) is outside your scope: never report it as missing. If a claim cannot be checked from the files you can read, do not report it.
