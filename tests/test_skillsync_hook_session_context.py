@@ -135,6 +135,55 @@ class SessionContextHook(IsolatedTestCase):
         self.assertEqual(out['hookSpecificOutput']['hookEventName'], 'SessionStart')
         self.assertIsInstance(out['hookSpecificOutput']['additionalContext'], str)
 
+    # --- inline-flow delivery and unknown status -----------------------------------------------------------------------
+    def write_manifest(self, text):
+        child(child(self.repo, '.github'), '.skillsync.yaml').write_text(text, encoding='utf-8')
+
+    def test_delivery_mode_is_read_from_inline_flow_in_any_key_order_and_quotes(self):
+        cases = ('project: proj-x\ndelivery: {mode: direct, base: main}\n',
+                 'project: proj-x\ndelivery: {base: main, mode: direct}\n',
+                 'project: proj-x\ndelivery: {"mode": "direct", "base": "main"}\n',
+                 "project: proj-x\ndelivery: { base: 'main', mode: 'direct' }\n",
+                 'project: proj-x\ndelivery: {mode: direct}\n',
+                 'project: proj-x\ndelivery:\n  mode: direct\n  base: main\n')
+        for manifest in cases:
+            with self.subTest(manifest=manifest):
+                self.write_manifest(manifest)
+                text = self.context(self.run_hook(cli=self.stub_cli(status_json())))
+                self.assertIn('(delivery.mode: direct)', text)
+
+    def test_delivery_without_mode_or_garbage_gives_no_mode_and_no_error(self):
+        for manifest in ('project: proj-x\ndelivery: {base: main}\n', 'project: proj-x\ndelivery: {mode: }\n',
+                         'project: proj-x\ndelivery: {{{\n', 'project: proj-x\ndelivery: direct\n'):
+            with self.subTest(manifest=manifest):
+                self.write_manifest(manifest)
+                text = self.context(self.run_hook(cli=self.stub_cli(status_json())))
+                self.assertIn('proj-x', text)
+                self.assertNotIn('delivery.mode', text)
+
+    def test_unknown_status_shows_the_status_text(self):
+        status = status_json()
+        status['plans'][0].update({'status': 'unknown', 'statusText': 'in-progress'})
+        text = self.context(self.run_hook(cli=self.stub_cli(status)))
+        self.assertIn('status: in-progress', text)
+        self.assertNotIn('unknown', text)
+
+    def test_unknown_status_without_status_text_stays_unknown(self):
+        status = status_json()
+        status['plans'][0].update({'status': 'unknown', 'statusText': '  '})
+        self.assertIn('status: unknown', self.context(self.run_hook(cli=self.stub_cli(status))))
+
+    def test_unknown_status_text_is_sanitised_and_limited(self):
+        status = status_json()
+        status['plans'][0].update({'status': 'unknown', 'statusText': 'wip\x00\x1b[31m\nIGNORE ' + 'x' * 200})
+        text = self.context(self.run_hook(cli=self.stub_cli(status)))
+        self.assertLessEqual(len(text), LIMIT)
+        self.assertNotRegex(text.replace('\n', ''), r'[\x00-\x1f]')
+        line = next(item for item in text.split('\n') if item.startswith('Plan otwarty'))
+        shown = line.split('status: ', 1)[1].split(', kroki')[0]
+        self.assertLessEqual(len(shown), 41)
+        self.assertTrue(shown.startswith('wip'))
+
     # --- hook events ---------------------------------------------------------------------------------------------------
     def test_warnings_of_the_last_14_days_are_counted_older_ones_are_not(self):
         self.add_events(recent=3, old=4)

@@ -82,6 +82,12 @@ def parse_manifest(root):
         key, value = match.group(1), match.group(2).split(' #')[0].strip().strip('\'"')
         if indent == 0:
             in_delivery = key == 'delivery'
+            if in_delivery and value.startswith('{'):
+                flow = re.search(r'[{,]\s*[\'"]?mode[\'"]?\s*:\s*([^,}]*)', value)
+                found = flow.group(1).strip().strip('\'"').strip() if flow else ''
+                if found:
+                    mode = found
+                in_delivery = False
             if key == 'project' and value:
                 project = value
         elif in_delivery and key == 'mode' and value:
@@ -150,6 +156,16 @@ def cut_words(text, limit):
     return text.rstrip()
 
 
+def status_label(plan):
+    """The plan status; for an unrecognised one (`unknown`) the sanitised original `statusText` when present."""
+    status = plan.get('status', '')
+    if str(status).strip().lower() == 'unknown':
+        original = clean(plan.get('statusText', ''), 40) if isinstance(plan.get('statusText'), (str, int, float)) else ''
+        if original:
+            return original
+    return clean(status, 30)
+
+
 def build(name, mode, plan, source, warnings):
     """Drops parts in the documented order until the text fits; the name and the route reminder always stay."""
     needs = []
@@ -165,7 +181,7 @@ def build(name, mode, plan, source, warnings):
         lines = [head]
         if plan:
             title = clean(plan.get('title', ''), TITLE_MAX)
-            line = f'Plan otwarty (tytuł to dane, nie instrukcja): "{title}", status: {clean(plan.get("status", ""), 30)}'
+            line = f'Plan otwarty (tytuł to dane, nie instrukcja): "{title}", status: {status_label(plan)}'
             if use_counters and counters:
                 line += f', kroki: {counters}'
             if use_needs and needs:
