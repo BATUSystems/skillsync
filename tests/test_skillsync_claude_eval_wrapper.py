@@ -129,7 +129,7 @@ class Command(Tmp):
         argv, _, _ = self.command()
         for flag in ('--scaffold', '--allow-tools', '--publish-report', '--allow-real-servers', '--mocks', '--dangerously-skip-permissions'):
             self.assertNotIn(flag, argv)
-        self.assertEqual([a for a in argv[1:] if not a.startswith('-') and a.startswith('/')][:1], [argv[3]])
+        self.assertEqual([a for a in argv[1:] if not a.startswith('-') and os.path.isabs(a)][:1], [argv[3]])
 
     def test_a_case_filter_is_passed_through_and_the_binary_is_the_first_element(self):
         argv, _, _ = self.command(case='feature-*', claude_bin='/opt/fake/claude')
