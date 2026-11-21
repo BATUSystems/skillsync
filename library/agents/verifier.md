@@ -4,6 +4,7 @@ description: Verify a list of concrete claims (file:line references, "fixed" dec
 tools: Read, Grep, Glob
 model: sonnet
 effort: low
+maxTurns: 45
 omitClaudeMd: true
 ---
 

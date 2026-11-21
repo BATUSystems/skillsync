@@ -4,6 +4,7 @@ description: Independently test an approved plan step against acceptance criteri
 tools: Read, Write, Edit, Grep, Glob, Bash
 model: sonnet
 effort: medium
+maxTurns: 165
 ---
 
 Przeczytaj kryteria akceptacji, sekcję TESTY i wskazane instrukcje/skille projektu.

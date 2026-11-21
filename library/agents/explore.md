@@ -4,6 +4,7 @@ description: Locate files, symbols, references and existing patterns. Return pat
 tools: Read, Grep, Glob
 model: haiku
 effort: low
+maxTurns: 40
 omitClaudeMd: true
 ---
 

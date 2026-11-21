@@ -1,4 +1,5 @@
-"""Lint of the frontmatter of a `SKILL.md`: known keys of the hosts (Claude Code, Copilot), their types and enumerated values.
+"""Registry of frontmatter keys: lint of a `SKILL.md` (known keys of the hosts Claude Code and Copilot, their types and enumerated values) and
+the version table of the fields of the subagent roles (`ROLE_FIELDS`, `agent_field_findings`).
 
 `check(metadata)` is a pure and total function: it never raises, whatever YAML produced (not a mapping, `None`, a key that is not text such as `1:`
 or `yes:`). The caller decides the level: `doctor` reports every remark as a warning (the skills of the organization and personal layers are not ours),
@@ -71,3 +72,58 @@ def check(metadata):
         elif key == 'compatibility' and len(value) > MAX_COMPATIBILITY:
             remarks.append((BAD_VALUE, f"Frontmatter key 'compatibility' is longer than {MAX_COMPATIBILITY} characters"))
     return remarks
+
+
+# --- fields of the subagent roles (`agents/<role>.md`, Claude Code): the version in which a field appeared or changed behaviour. Claude Code ignores
+# a field it does not know without a word, so `doctor` only makes the requirement visible; it never detects the installed version. Source of every
+# version: the changelog of Claude Code (https://raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md), read 2026-11-21.
+# `notify`: whether `doctor` mentions the field; `verified`: whether the changelog states the version for custom (not plugin) agents.
+ROLE_BASIC_FIELDS = ('name', 'description', 'tools', 'model')
+ROLE_FIELDS = {
+    'maxTurns': {'introduced': None, 'behavior': '2.1.246', 'verified': False, 'notify': True,
+                 'older': 'the limit works, but a subagent stopped at it is not marked as partial before 2.1.246 (changelog 2.1.246; 2.1.78 for plugin agents)'},
+    'omitClaudeMd': {'introduced': '2.1.271', 'behavior': None, 'verified': True, 'notify': True,
+                     'older': 'older versions ignore the field without a word (changelog 2.1.271)'},
+    'disallowedTools': {'introduced': '2.0.30', 'behavior': None, 'verified': True, 'notify': True,
+                        'older': 'older versions ignore the field without a word (changelog 2.0.30)'},
+    'effort': {'introduced': None, 'behavior': '2.1.267', 'verified': False, 'notify': False,
+               'older': 'the version of custom subagents is not stated in the changelog (2.1.78 for plugin agents, 2.1.267 a fix)'},
+}
+
+
+def read_role_frontmatter(path):
+    """The parsed frontmatter of a role file, or `None` when the file is missing, unreadable, without frontmatter or with a broken one (never raises)."""
+    try:
+        import yaml  # lazy: the lint of skills above does not need it
+        from pathlib import Path
+        content = Path(path).read_text(encoding='utf-8')
+        if not content.startswith('---\n'):
+            return None
+        return yaml.safe_load(content.split('---', 2)[1])
+    except Exception:   # noqa: BLE001 - OSError, UnicodeDecodeError, YAMLError, IndexError: a custom role must never break `doctor`
+        return None
+
+
+def agent_field_findings(frontmatters):
+    """The remarks on the role fields that need a newer Claude Code, `[text]`: zero or one text for the whole project, not one per role and field.
+
+    `frontmatters`: `[(role, metadata)]`, where `metadata` is the parsed frontmatter; anything that is not a mapping is skipped (a role of the project
+    without frontmatter or with a broken one must never break `doctor`). The function is pure and total, it runs no process and does not read the files."""
+    used = {}
+    for role, metadata in frontmatters or ():
+        if not isinstance(metadata, dict):
+            continue
+        for key in metadata:
+            entry = ROLE_FIELDS.get(key) if isinstance(key, str) else None
+            if entry and entry['notify']:
+                used.setdefault(key, []).append(str(role))
+    if not used:
+        return []
+    parts = []
+    for key in ROLE_FIELDS:
+        if key not in used:
+            continue
+        entry = ROLE_FIELDS[key]
+        needs = entry['introduced'] or entry['behavior']
+        parts.append(f"`{key}` (roles: {', '.join(sorted(used[key]))}; Claude Code >= {needs}: {entry['older']})")
+    return ['Role fields that need a newer Claude Code (the installed version is not checked): ' + '; '.join(parts)]

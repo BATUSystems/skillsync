@@ -4,6 +4,7 @@ description: Independently review actual changes, acceptance criteria and verifi
 tools: Read, Grep, Glob
 model: sonnet
 effort: high
+maxTurns: 85
 ---
 
 Przeczytaj plan i wskazane instrukcje/skille projektu. Orkiestrator dostarcza

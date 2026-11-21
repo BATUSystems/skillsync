@@ -1261,13 +1261,18 @@ def doctor(root, manifest, library):
             if 'node_modules' not in stray.parts and stray.parent.resolve() not in known:
                 finding('warning', str(stray), 'Scattered domain knowledge; keep one shared location: ' + ', '.join(posix(d) for d in domain_dirs))
         if enabled('claude', True):
+            role_frontmatters = []
             for role in roles:
                 role_path = Path(root) / '.claude/agents' / f'{role}.md'
                 source = layerset.resolve(f'agents/{role}.md')
+                if source is not None:
+                    role_frontmatters.append((role, skill_frontmatter.read_role_frontmatter(source[1])))
                 if not role_path.is_file():
                     finding('error', role_path, 'Missing Claude role')
                 elif role_path.is_symlink() and (source is None or role_path.resolve() != source[1].resolve()):
                     finding('error', role_path, 'Foreign Claude role symlink')
+            for remark in skill_frontmatter.agent_field_findings(role_frontmatters):   # one `info` per project: needs no `claude` process, never changes the exit code
+                finding('info', '.claude/agents', remark)
             if not (Path(root) / 'CLAUDE.md').is_file():
                 finding('error', 'CLAUDE.md', 'Missing enabled Claude instructions')
         if enabled('codex', agentflow):

@@ -296,3 +296,7 @@ lessons:
     title: "Kod wyjścia 0 przy poleceniu bez adaptera nie dowodzi testów: podsumowanie porażek Playwrighta, Vitesta i Jesta było niewidoczne"
     tags: [skillsync, test-run, evidence, exit-codes, regex, playwright, vitest, jest]
     paths: ['skillsync_workflow/test_run.py', 'skillsync_workflow/test_adapters/playwright.py', 'skillsync_workflow/test_adapters/vitest.py', 'tests/test_skillsync_test_run_hardening.py']
+  - path: disallowedtools-wzorzec-bash-usuwa-cale-narzedzie-podagenta.md
+    title: "Wzorzec Bash w disallowedTools podagenta usuwa cały Bash, a maxTurns liczy odpowiedzi modelu, nie wywołania narzędzi"
+    tags: [skillsync, claude-code, role, podagenci, maxturns, disallowedtools]
+    paths: ['library/agents/*.md', 'library/skills/feature/references/claude.md', 'skillsync_workflow/skill_frontmatter.py', 'tests/test_skillsync_agent_roles.py']
