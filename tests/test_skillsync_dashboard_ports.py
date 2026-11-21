@@ -45,14 +45,45 @@ OK = {"Content-Type": "application/json", "X-Status-Board": "1", "X-Approve-Toke
 LAN = None   # an address of this machine other than loopback, or None
 
 
-def lan_address():
+def lan_candidates():
+    """Non-loopback IPv4 addresses of this machine, the route source of a UDP probe first, then those of the host name, without repeats."""
+    found = []
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
             probe.connect(("192.0.2.1", 9))
-            ip = probe.getsockname()[0]
-            return None if ip.startswith("127.") else ip
+            found.append(probe.getsockname()[0])
     except OSError:
-        return None
+        pass
+    try:
+        found.extend(socket.gethostbyname_ex(socket.gethostname())[2])
+    except OSError:
+        pass
+    result = []
+    for ip in found:
+        if ip and not ip.startswith("127.") and not ip.startswith("169.254.") and ip not in result:
+            result.append(ip)
+    return result
+
+
+def reachable(ip):
+    """True when a connection to `ip` reaches a listener of this machine (a point-to-point tunnel that takes over the default route does not
+    deliver a connection to its own address, the address of the interface of the LAN does)."""
+    try:
+        with socket.socket() as listener:
+            listener.bind(("0.0.0.0", 0))
+            listener.listen(1)
+            with socket.create_connection((ip, listener.getsockname()[1]), timeout=1):
+                return True
+    except OSError:
+        return False
+
+
+def lan_address():
+    """An address of this machine other than loopback that a connection reaches, or None (the callers skip the test then)."""
+    for ip in lan_candidates():
+        if reachable(ip):
+            return ip
+    return None
 
 
 def two_ports() -> tuple[int, int]:
@@ -1162,6 +1193,34 @@ class Process(unittest.TestCase):
             self.assertNotIn("peer", record)
             found = dashboard_token.servers(self.root, healthy=lambda *a: True)
         self.assertEqual([item["role"] for item in found], ["both"])
+
+
+
+class LanAddressChoice(unittest.TestCase):
+    """The address of the LAN tests is a reachable one: with a VPN taking the default route the route source of the probe is not (it does not
+    deliver a connection to itself), and the address of the host name is."""
+
+    def test_a_candidate_that_is_not_reachable_is_passed_over(self):
+        with mock.patch(__name__ + ".lan_candidates", return_value=["10.0.0.9", "192.168.1.6"]), \
+                mock.patch(__name__ + ".reachable", side_effect=lambda ip: ip == "192.168.1.6"):
+            self.assertEqual(lan_address(), "192.168.1.6")
+
+    def test_no_reachable_candidate_gives_none(self):
+        with mock.patch(__name__ + ".lan_candidates", return_value=["10.0.0.9"]), mock.patch(__name__ + ".reachable", return_value=False):
+            self.assertIsNone(lan_address())
+        with mock.patch(__name__ + ".lan_candidates", return_value=[]):
+            self.assertIsNone(lan_address())
+
+    def test_candidates_leave_out_loopback_link_local_and_repeats(self):
+        with mock.patch("socket.gethostbyname_ex", return_value=("h", [], ["127.0.0.1", "169.254.3.4", "192.168.1.6", "192.168.1.6"])):
+            found = lan_candidates()
+        self.assertNotIn("127.0.0.1", found)
+        self.assertNotIn("169.254.3.4", found)
+        self.assertEqual(found.count("192.168.1.6"), 1)
+
+    def test_loopback_is_reachable_and_a_closed_address_is_not(self):
+        self.assertTrue(reachable("127.0.0.1"))
+        self.assertFalse(reachable("192.0.2.1"))   # TEST-NET-1: nothing answers
 
 
 if __name__ == "__main__":
