@@ -1,5 +1,5 @@
 ---
-title: Frontmatter skilli (SKILL.md): klucze hostów, lint `doctor`, czego nie potwierdzono
+title: "Frontmatter skilli (SKILL.md): klucze hostów, lint doctor, czego nie potwierdzono"
 tags: [skillsync, skills, frontmatter, doctor, claude-code, copilot, codex]
 paths: ['skillsync_workflow/skill_frontmatter.py', 'skillsync_workflow/quality.py', 'tests/test_skillsync_skill_frontmatter.py', 'library/skills/copilot-skills-yaml/SKILL.md']
 source: dokumentacja skilli Claude Code (https://code.claude.com/docs/en/skills, "Frontmatter reference", 21.11); skillsync_workflow/skill_frontmatter.py; quality.py:doctor; codex app-server skills/list 0.171.0 (21.11, CLAUDE-0)
