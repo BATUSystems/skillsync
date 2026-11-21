@@ -99,6 +99,7 @@ Wspólna flaga `--layer id=ścieżka` (powtarzalna; ścieżka = katalog warstwy 
   Idempotentny: drugie uruchomienie daje `unchanged`. Statusy: PASS 0, FAIL 1 (`layers check`), BLOCKED 2.
 - Nie aktualizuje narzędzia ani core przypiętego do tagu. Aktualizacja: ponowne `install.sh` z nowego tagu albo
   `uv tool install --force …@<tag>` + `skillsync layers update core --ref <tag>`. `skillsync pull` odświeża tylko checkouty i linki.
+- Uzupełnianie w bash, zsh i PowerShell: `skillsync completion bash|zsh|powershell` (skrypt na stdout), `skillsync completion install|uninstall [--shell S] [--dry-run] [--json]`; instalator i `setup` instalują je same, `SKILLSYNC_NO_COMPLETION=1` pomija. Szczegóły: `<katalog repo skillsync>/docs/cli.md`.
 
 ### Migracja maszyny
 

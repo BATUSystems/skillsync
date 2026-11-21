@@ -174,18 +174,18 @@ class Syntax(GeneratedFixtureCase):
 
     def test_bash_accepts_the_script(self):
         if not shutil.which('bash'):
-            self.skipTest('bash is not installed')
+            self.skipTest('no /bin/bash: bash is not installed')
         self.check(['bash', '-n'], 'bash', 'bash')
 
     def test_zsh_accepts_the_script(self):
         if not shutil.which('zsh'):
-            self.skipTest('zsh is not installed')
+            self.skipTest('no /bin/zsh: zsh is not installed')
         self.check(['zsh', '-n'], 'zsh', 'zsh')
 
     def test_powershell_parses_the_script(self):
         pwsh = shutil.which('pwsh')
         if not pwsh:
-            self.skipTest('pwsh is not installed')
+            self.skipTest('no pwsh on PATH: pwsh is not installed')
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'script.ps1'
             path.write_bytes(self.script('powershell').encode('utf-8'))
@@ -197,7 +197,7 @@ class Syntax(GeneratedFixtureCase):
     def test_powershell_completes_in_a_real_host(self):
         pwsh = shutil.which('pwsh')
         if not pwsh:
-            self.skipTest('pwsh is not installed')
+            self.skipTest('no pwsh on PATH: pwsh is not installed')
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'script.ps1'
             path.write_bytes(self.script('powershell').encode('utf-8'))
@@ -210,7 +210,7 @@ class Syntax(GeneratedFixtureCase):
 
     def test_bash_completes_in_a_real_shell(self):
         if not shutil.which('bash'):
-            self.skipTest('bash is not installed')
+            self.skipTest('no /bin/bash: bash is not installed')
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'script.bash'
             path.write_bytes(self.script('bash').encode('utf-8'))

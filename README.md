@@ -121,6 +121,9 @@ skillsync --version
 `skillsync-ctl` (the `systemctl --user` wrapper for the watch service) is not part of the installed package: the package holds only
 `skillsync_workflow` with the `skillsync` entry point. The script works only on Linux, from a repository checkout.
 
+Tab completion for bash, zsh and PowerShell is installed by `install.sh` and `skillsync setup` (set
+`SKILLSYNC_NO_COMPLETION=1` to skip it); manual: `skillsync completion install`, removal: `skillsync completion uninstall`.
+
 Update, uninstall and troubleshooting: [docs/installation.md](docs/installation.md).
 
 ## Quick start

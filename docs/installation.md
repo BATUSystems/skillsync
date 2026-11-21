@@ -129,6 +129,35 @@ tryb kopii). Repo warstw nie zawierają symlinków, więc `git config core.symli
 `%USERPROFILE%\.config\skillsync\config.yaml`, warstwy `%LOCALAPPDATA%\skillsync\layers\<id>`, cache
 `%LOCALAPPDATA%\skillsync\cache`.
 
+## Uzupełnianie poleceń w powłoce
+
+`install.sh` i `skillsync setup` instalują uzupełnianie poleceń `skillsync` (Tab) dla bash, zsh i PowerShella, o ile dana
+powłoka jest na PATH. Nie potrzeba uprawnień administratora ani nowej zależności. Ręcznie: `skillsync completion install`
+(opcje w [cli](cli.md#uzupełnianie-powłoki-completion)). Wyłączenie przed instalacją: `SKILLSYNC_NO_COMPLETION=1`.
+Usunięcie: `skillsync completion uninstall`.
+
+- **bash:** plik w `~/.local/share/bash-completion/completions/skillsync`. Pliku `~/.bashrc` nie zmieniamy. Uzupełnianie
+  działa tylko z pakietem bash-completion, który ładuje pliki z tego katalogu. Bez niego dodaj do `~/.bashrc` ręcznie:
+  `source "${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion/completions/skillsync"`.
+- **zsh:** plik `_skillsync` w `~/.local/share/zsh/site-functions/` i jeden blok w `${ZDOTDIR:-~}/.zshrc`. Blok sam dodaje
+  katalog do `fpath` i wywołuje `compinit`, gdy go jeszcze nie ma; gdy `compdef` już istnieje (np. oh-my-zsh), nie wywołuje
+  `compinit` drugi raz. `install.sh` nie widzi zmiennej `ZDOTDIR` ustawionej tylko w `~/.zshenv`, więc blok trafi do
+  `~/.zshrc`, którego zsh wtedy nie czyta. W takiej konfiguracji uruchom `skillsync completion install` z zsh, w którym
+  `ZDOTDIR` jest już ustawione.
+- **PowerShell:** skrypt `skillsync-completion.ps1` w katalogu danych użytkownika i jeden blok w profilu
+  `CurrentUserCurrentHost`, który wczytuje skrypt przez kropkę. Instalator obsługuje oba hosty znalezione na PATH:
+  PowerShell 7 (`pwsh`) i Windows PowerShell 5.1 (`powershell`); każdy ma swój profil. Profile zachowują swoje końce linii
+  i BOM, a nowe pliki powstają jako UTF-8 z BOM, bo Windows PowerShell 5.1 czyta UTF-8 bez BOM jako ANSI.
+
+Przed pierwszą edycją pliku startowego (`.zshrc`, profil PowerShella) powstaje kopia `<plik>.skillsync-bak`. Kopia zostaje
+po `uninstall`; usuń ją ręcznie, gdy nie jest potrzebna. Szczegóły zachowania plików: [cli](cli.md#uzupełnianie-powłoki-completion).
+
+### Windows natywny
+
+Natywny Windows jest poza drogą `install.sh` (zalecany WSL2). Uzupełnianie instalują `skillsync setup` albo ręczne
+`skillsync completion install` po `uv tool install`. Skrypt `skillsync-windows.ps1` to skrypt synchronizacji biblioteki,
+nie instalator, i nie instaluje uzupełniania.
+
 ## Warstwy
 
 ```bash
@@ -169,9 +198,14 @@ skillsync layers update core --ref vX.Y.Z
 skillsync pull
 ```
 
+Skrypt uzupełniania jest kopią z wersji, która go zainstalowała. Po aktualizacji innej niż ponowny `install.sh` albo
+`skillsync setup` (np. samym `uv tool upgrade`) uruchom `skillsync completion install`.
+
 Przed przejściem na nową wersję MAJOR przeczytaj [upgrading.md](upgrading.md).
 
 ## Odinstalowanie
+
+Najpierw usuń uzupełnianie (bloki w plikach startowych i skrypty): `skillsync completion uninstall`.
 
 ```bash
 uv tool uninstall skillsync
@@ -180,7 +214,8 @@ uv tool uninstall skillsync
 Na Linuksie najpierw zatrzymaj usługę watch: `skillsync-ctl stop` w checkoucie repo.
 
 Po odinstalowaniu zostają: config maszyny, checkouty warstw i kopie zapasowe w katalogu danych oraz cache (ścieżki:
-[configuration](configuration.md)). Usuń je ręcznie, jeśli nie są potrzebne.
+[configuration](configuration.md)), a także kopie `<plik>.skillsync-bak` obok plików startowych powłok (`.zshrc`, profil
+PowerShella). Usuń je ręcznie, jeśli nie są potrzebne.
 
 ## Migracja z instalacji ręcznej
 

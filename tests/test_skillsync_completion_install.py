@@ -255,7 +255,7 @@ class DetectionAndTargetsTest(Base):
         self.assertIn(b'skillsync-completion.ps1', block)
         self.assertRegex(block, rb'(?m)(^|[;{ ])\. [\"\'$(]', 'the block dot-sources the script')
 
-    @unittest.skipIf(sys.platform == 'win32', 'posix only: the fake pwsh logs its arguments from a #!/bin/sh script')
+    @unittest.skipIf(sys.platform == 'win32', 'POSIX only: the fake pwsh logs its arguments from a #!/bin/sh script')
     def test_profile_query_uses_noprofile_noninteractive_command(self):
         self.sb.shells('pwsh')
         log = self.sb.root / 'pwsh.log'
@@ -265,7 +265,7 @@ class DetectionAndTargetsTest(Base):
         words = lines[0].split()
         self.assertEqual(words[:3], ['-NoProfile', '-NonInteractive', '-Command'])
 
-    @unittest.skipIf(sys.platform == 'win32', 'posix only: the fake pwsh is a #!/bin/sh script printing $FAKE_PROFILE_5')
+    @unittest.skipIf(sys.platform == 'win32', 'POSIX only: the fake pwsh is a #!/bin/sh script printing $FAKE_PROFILE_5')
     def test_both_powershell_hosts_get_their_own_profile_block(self):
         self.sb.shells('pwsh', 'powershell')
         profile5 = self.sb.home / 'Documents' / 'WindowsPowerShell' / 'Microsoft.PowerShell_profile.ps1'
@@ -276,7 +276,7 @@ class DetectionAndTargetsTest(Base):
             self.assertEqual(profile.read_bytes().count(START), 1, profile)
         self.assertEqual(res.action(self.sb.ps_script)['result'], 'created')
 
-    @unittest.skipIf(sys.platform == 'win32', 'posix only: fake shells are #!/bin/sh scripts')
+    @unittest.skipIf(sys.platform == 'win32', 'POSIX only: fake shells are #!/bin/sh scripts')
     def test_pwsh_answer_that_is_not_an_absolute_path_is_not_used(self):
         # contract K15: the answer is validated as an absolute path; the fallback location is the implementer's call (spec ambiguity), here only: nothing is
         # written relative to the working directory
@@ -336,7 +336,7 @@ class DetectionAndTargetsTest(Base):
         self.assertEqual((zdot / '.zshrc').read_bytes().count(START), 1)
         self.assertFalse(self.sb.zshrc.exists())
 
-    @unittest.skipUnless(WIN, 'windows only: the PowerShell script lives under LOCALAPPDATA')
+    @unittest.skipUnless(WIN, 'tylko na Windows: the PowerShell script lives under LOCALAPPDATA')
     def test_windows_powershell_script_is_under_localappdata(self):
         self.sb.shells('pwsh')
         self.assertOk(self.sb.install())
@@ -507,7 +507,7 @@ class BackupAndAtomicityTest(Base):
         self.assertOk(self.sb.uninstall())
         self.assertTrue(not self.sb.profile.exists() or self.sb.profile.read_bytes() == BOM)
 
-    @unittest.skipIf(sys.platform == 'win32', 'posix only: inode and mode semantics of os.replace')
+    @unittest.skipIf(sys.platform == 'win32', 'POSIX only: inode and mode semantics of os.replace')
     def test_write_is_atomic_replace_with_mode_kept_and_no_stray_files(self):
         self.prepare_zshrc(b'export A=1\n')
         self.sb.zshrc.chmod(0o640)
@@ -517,7 +517,7 @@ class BackupAndAtomicityTest(Base):
         self.assertEqual(stat.S_IMODE(self.sb.zshrc.stat().st_mode), 0o640)
         self.assertEqual(sorted(p.name for p in self.sb.home.iterdir() if p.name.startswith('.zshrc')), ['.zshrc', '.zshrc.skillsync-bak'])
 
-    @unittest.skipIf(sys.platform == 'win32', 'posix only: symlinks')
+    @unittest.skipIf(sys.platform == 'win32', 'POSIX only: symlinks')
     def test_symlinked_rc_is_written_through_the_link(self):
         self.sb.shells('zsh')
         target = self.sb.root / 'dotfiles' / 'zshrc'
@@ -534,7 +534,7 @@ class BackupAndAtomicityTest(Base):
         self.assertTrue(self.sb.zshrc.is_symlink())
         self.assertEqual(target.read_bytes(), b'export A=1\n')
 
-    @unittest.skipIf(sys.platform == 'win32', 'posix only: chmod on files and directories')
+    @unittest.skipIf(sys.platform == 'win32', 'POSIX only: chmod on files and directories')
     @unittest.skipIf(hasattr(os, 'geteuid') and os.geteuid() == 0, 'root ignores file permissions')
     def test_read_only_target_fails_without_backup_or_partial_state(self):
         self.sb.shells('zsh')
@@ -810,7 +810,7 @@ class QuotingTest(Base):
     def test_zsh_block_with_space_and_apostrophe_in_home_is_valid_shell(self):
         zsh = shutil.which('zsh', path=REAL_PATH)
         if not zsh:
-            self.skipTest('zsh not available')
+            self.skipTest('no /bin/zsh: zsh not available')
         self.odd_home()
         self.sb.shells('zsh')
         self.sb.xdg = self.sb.home / '.local' / 'share'
@@ -825,7 +825,7 @@ class QuotingTest(Base):
     def test_bash_file_with_odd_home_is_valid_shell(self):
         bash = shutil.which('bash', path=REAL_PATH)
         if not bash:
-            self.skipTest('bash not available')
+            self.skipTest('no /bin/bash: bash not available')
         self.odd_home()
         self.sb.shells('bash')
         self.sb.xdg = self.sb.home / '.local' / 'share'
@@ -844,14 +844,14 @@ class QuotingTest(Base):
         self.assertNotIn("'" + script + "'", block)
 
 
-@unittest.skipIf(sys.platform == 'win32', 'posix only: real zsh runtime with POSIX paths')
+@unittest.skipIf(sys.platform == 'win32', 'POSIX only: real zsh runtime with POSIX paths')
 class ZshRuntimeTest(Base):
     """K8: what the block does when a real zsh sources it (skipped without zsh)."""
 
     def run_zsh(self, prelude):
         zsh = shutil.which('zsh', path=REAL_PATH)
         if not zsh:
-            self.skipTest('zsh not available')
+            self.skipTest('no /bin/zsh: zsh not available')
         self.sb.zshrc.write_bytes(prelude)
         self.sb.shells('zsh')
         self.assertOk(self.sb.install())

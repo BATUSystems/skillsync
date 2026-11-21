@@ -86,6 +86,9 @@
   ],
   "no-tzset": [
    "no time.tzset"
+  ],
+  "needs-shell": [
+   "no pwsh on PATH"
   ]
  },
  "notes": {
@@ -99,6 +102,46 @@
  },
  "baselines": {
   "linux/symlink": [
+   {
+    "id": "test_skillsync_completion_generate.Syntax.test_bash_accepts_the_script",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_generate.Syntax.test_bash_completes_in_a_real_shell",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_generate.Syntax.test_powershell_completes_in_a_real_host",
+    "category": "needs-shell"
+   },
+   {
+    "id": "test_skillsync_completion_generate.Syntax.test_powershell_parses_the_script",
+    "category": "needs-shell"
+   },
+   {
+    "id": "test_skillsync_completion_generate.Syntax.test_zsh_accepts_the_script",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.DetectionAndTargetsTest.test_windows_powershell_script_is_under_localappdata",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.QuotingTest.test_bash_file_with_odd_home_is_valid_shell",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.QuotingTest.test_zsh_block_with_space_and_apostrophe_in_home_is_valid_shell",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_block_does_not_run_compinit_again_after_oh_my_zsh_style_setup",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_block_runs_compinit_once_when_nobody_did",
+    "category": "posix-only"
+   },
    {
     "id": "test_skillsync_install_sh.TestStatic.test_dash_syntax",
     "category": "needs-dash"
@@ -206,6 +249,46 @@
   ],
   "linux/copy": [
    {
+    "id": "test_skillsync_completion_generate.Syntax.test_bash_accepts_the_script",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_generate.Syntax.test_bash_completes_in_a_real_shell",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_generate.Syntax.test_powershell_completes_in_a_real_host",
+    "category": "needs-shell"
+   },
+   {
+    "id": "test_skillsync_completion_generate.Syntax.test_powershell_parses_the_script",
+    "category": "needs-shell"
+   },
+   {
+    "id": "test_skillsync_completion_generate.Syntax.test_zsh_accepts_the_script",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.DetectionAndTargetsTest.test_windows_powershell_script_is_under_localappdata",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.QuotingTest.test_bash_file_with_odd_home_is_valid_shell",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.QuotingTest.test_zsh_block_with_space_and_apostrophe_in_home_is_valid_shell",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_block_does_not_run_compinit_again_after_oh_my_zsh_style_setup",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_block_runs_compinit_once_when_nobody_did",
+    "category": "posix-only"
+   },
+   {
     "id": "test_skillsync_install_sh.TestStatic.test_dash_syntax",
     "category": "needs-dash"
    },
@@ -312,6 +395,46 @@
   ],
   "ubuntu-latest/symlink": [
    {
+    "id": "test_skillsync_completion_generate.Syntax.test_bash_accepts_the_script",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_generate.Syntax.test_bash_completes_in_a_real_shell",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_generate.Syntax.test_powershell_completes_in_a_real_host",
+    "category": "needs-shell"
+   },
+   {
+    "id": "test_skillsync_completion_generate.Syntax.test_powershell_parses_the_script",
+    "category": "needs-shell"
+   },
+   {
+    "id": "test_skillsync_completion_generate.Syntax.test_zsh_accepts_the_script",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.DetectionAndTargetsTest.test_windows_powershell_script_is_under_localappdata",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.QuotingTest.test_bash_file_with_odd_home_is_valid_shell",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.QuotingTest.test_zsh_block_with_space_and_apostrophe_in_home_is_valid_shell",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_block_does_not_run_compinit_again_after_oh_my_zsh_style_setup",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_block_runs_compinit_once_when_nobody_did",
+    "category": "posix-only"
+   },
+   {
     "id": "test_skillsync_layers_merge.TrustModelTest.test_a_real_junction_is_skipped_and_reported",
     "category": "windows-only"
    },
@@ -417,6 +540,46 @@
    }
   ],
   "ubuntu-latest/copy": [
+   {
+    "id": "test_skillsync_completion_generate.Syntax.test_bash_accepts_the_script",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_generate.Syntax.test_bash_completes_in_a_real_shell",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_generate.Syntax.test_powershell_completes_in_a_real_host",
+    "category": "needs-shell"
+   },
+   {
+    "id": "test_skillsync_completion_generate.Syntax.test_powershell_parses_the_script",
+    "category": "needs-shell"
+   },
+   {
+    "id": "test_skillsync_completion_generate.Syntax.test_zsh_accepts_the_script",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.DetectionAndTargetsTest.test_windows_powershell_script_is_under_localappdata",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.QuotingTest.test_bash_file_with_odd_home_is_valid_shell",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.QuotingTest.test_zsh_block_with_space_and_apostrophe_in_home_is_valid_shell",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_block_does_not_run_compinit_again_after_oh_my_zsh_style_setup",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_block_runs_compinit_once_when_nobody_did",
+    "category": "posix-only"
+   },
    {
     "id": "test_skillsync_layers_merge.TrustModelTest.test_a_real_junction_is_skipped_and_reported",
     "category": "windows-only"
@@ -618,6 +781,86 @@
    },
    {
     "id": "test_skillsync_codex.StopHookMigrationTests.test_generated_command_executes_and_preserves_shell_characters",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_generate.Syntax.test_bash_accepts_the_script",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_generate.Syntax.test_bash_completes_in_a_real_shell",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_generate.Syntax.test_powershell_completes_in_a_real_host",
+    "category": "needs-shell"
+   },
+   {
+    "id": "test_skillsync_completion_generate.Syntax.test_powershell_parses_the_script",
+    "category": "needs-shell"
+   },
+   {
+    "id": "test_skillsync_completion_generate.Syntax.test_zsh_accepts_the_script",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_hooks.InstallShHookTest.test_completion_runs_after_install_and_before_setup",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_hooks.InstallShHookTest.test_completion_runs_even_without_setup",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_hooks.InstallShHookTest.test_failure_does_not_mask_the_setup_exit_code",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_hooks.InstallShHookTest.test_failure_is_a_warning_and_the_exit_code_is_unchanged",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_hooks.InstallShHookTest.test_success_prints_no_warning",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.BackupAndAtomicityTest.test_read_only_target_fails_without_backup_or_partial_state",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.BackupAndAtomicityTest.test_symlinked_rc_is_written_through_the_link",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.BackupAndAtomicityTest.test_write_is_atomic_replace_with_mode_kept_and_no_stray_files",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.DetectionAndTargetsTest.test_both_powershell_hosts_get_their_own_profile_block",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.DetectionAndTargetsTest.test_profile_query_uses_noprofile_noninteractive_command",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.DetectionAndTargetsTest.test_pwsh_answer_that_is_not_an_absolute_path_is_not_used",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.QuotingTest.test_bash_file_with_odd_home_is_valid_shell",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.QuotingTest.test_zsh_block_with_space_and_apostrophe_in_home_is_valid_shell",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_block_does_not_run_compinit_again_after_oh_my_zsh_style_setup",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_block_runs_compinit_once_when_nobody_did",
     "category": "posix-only"
    },
    {
@@ -1707,6 +1950,46 @@
     "category": "needs-library"
    },
    {
+    "id": "test_skillsync_completion_generate.Syntax.test_bash_accepts_the_script",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_generate.Syntax.test_bash_completes_in_a_real_shell",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_generate.Syntax.test_powershell_completes_in_a_real_host",
+    "category": "needs-shell"
+   },
+   {
+    "id": "test_skillsync_completion_generate.Syntax.test_powershell_parses_the_script",
+    "category": "needs-shell"
+   },
+   {
+    "id": "test_skillsync_completion_generate.Syntax.test_zsh_accepts_the_script",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.DetectionAndTargetsTest.test_windows_powershell_script_is_under_localappdata",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.QuotingTest.test_bash_file_with_odd_home_is_valid_shell",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.QuotingTest.test_zsh_block_with_space_and_apostrophe_in_home_is_valid_shell",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_block_does_not_run_compinit_again_after_oh_my_zsh_style_setup",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_block_runs_compinit_once_when_nobody_did",
+    "category": "posix-only"
+   },
+   {
     "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_the_proc_fallback_works_when_ps_is_missing",
     "category": "linux-only-env"
    },
@@ -1901,6 +2184,46 @@
     "category": "needs-library"
    },
    {
+    "id": "test_skillsync_completion_generate.Syntax.test_bash_accepts_the_script",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_generate.Syntax.test_bash_completes_in_a_real_shell",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_generate.Syntax.test_powershell_completes_in_a_real_host",
+    "category": "needs-shell"
+   },
+   {
+    "id": "test_skillsync_completion_generate.Syntax.test_powershell_parses_the_script",
+    "category": "needs-shell"
+   },
+   {
+    "id": "test_skillsync_completion_generate.Syntax.test_zsh_accepts_the_script",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.DetectionAndTargetsTest.test_windows_powershell_script_is_under_localappdata",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.QuotingTest.test_bash_file_with_odd_home_is_valid_shell",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.QuotingTest.test_zsh_block_with_space_and_apostrophe_in_home_is_valid_shell",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_block_does_not_run_compinit_again_after_oh_my_zsh_style_setup",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_block_runs_compinit_once_when_nobody_did",
+    "category": "posix-only"
+   },
+   {
     "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_the_proc_fallback_works_when_ps_is_missing",
     "category": "linux-only-env"
    },
@@ -2093,6 +2416,46 @@
    {
     "id": "test_skillsync_azure_pr.AzurePullRequestOperations.test_ready_flips_draft_and_is_verified",
     "category": "needs-library"
+   },
+   {
+    "id": "test_skillsync_completion_generate.Syntax.test_bash_accepts_the_script",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_generate.Syntax.test_bash_completes_in_a_real_shell",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_generate.Syntax.test_powershell_completes_in_a_real_host",
+    "category": "needs-shell"
+   },
+   {
+    "id": "test_skillsync_completion_generate.Syntax.test_powershell_parses_the_script",
+    "category": "needs-shell"
+   },
+   {
+    "id": "test_skillsync_completion_generate.Syntax.test_zsh_accepts_the_script",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.DetectionAndTargetsTest.test_windows_powershell_script_is_under_localappdata",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.QuotingTest.test_bash_file_with_odd_home_is_valid_shell",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.QuotingTest.test_zsh_block_with_space_and_apostrophe_in_home_is_valid_shell",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_block_does_not_run_compinit_again_after_oh_my_zsh_style_setup",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_block_runs_compinit_once_when_nobody_did",
+    "category": "posix-only"
    },
    {
     "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_a_candidate_the_c_library_cannot_give_is_left_out_and_the_plain_one_decides",
@@ -2327,6 +2690,46 @@
    {
     "id": "test_skillsync_azure_pr.AzurePullRequestOperations.test_ready_flips_draft_and_is_verified",
     "category": "needs-library"
+   },
+   {
+    "id": "test_skillsync_completion_generate.Syntax.test_bash_accepts_the_script",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_generate.Syntax.test_bash_completes_in_a_real_shell",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_generate.Syntax.test_powershell_completes_in_a_real_host",
+    "category": "needs-shell"
+   },
+   {
+    "id": "test_skillsync_completion_generate.Syntax.test_powershell_parses_the_script",
+    "category": "needs-shell"
+   },
+   {
+    "id": "test_skillsync_completion_generate.Syntax.test_zsh_accepts_the_script",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.DetectionAndTargetsTest.test_windows_powershell_script_is_under_localappdata",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.QuotingTest.test_bash_file_with_odd_home_is_valid_shell",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.QuotingTest.test_zsh_block_with_space_and_apostrophe_in_home_is_valid_shell",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_block_does_not_run_compinit_again_after_oh_my_zsh_style_setup",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_block_runs_compinit_once_when_nobody_did",
+    "category": "posix-only"
    },
    {
     "id": "test_skillsync_e2e_env_cleanup.E2eEnvCleanup.test_a_candidate_the_c_library_cannot_give_is_left_out_and_the_plain_one_decides",
