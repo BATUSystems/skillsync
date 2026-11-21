@@ -181,7 +181,7 @@ def _registry_entries(path):
 
 def real_state_snapshot():
     """Description of the real per-user state dirs: `{str(directory): None (absent) | {path relative to it: value}}`, without the
-    files that read-only git commands of other processes refresh (`_refreshed_by_read_only_git`). A value is `(kind, size, mtime_ns)`;
+    files that read-only git commands of other processes refresh (`_refreshed_by_read_only_git`). A value is `(kind, size, mtime_ns)`, `('dir', None, None)` for a directory of the composite cache (metadata left out) or `('entry', json)` for a registry entry of a project below the temporary directory (the registry file itself is not listed);
     `real_state_difference` turns two snapshots into readable lines."""
     snapshot = {}
     for directory in REAL_STATE_DIRS:

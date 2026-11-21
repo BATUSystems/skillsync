@@ -214,13 +214,11 @@ class CompositeCacheNoise(unittest.TestCase):
                 with self.subTest(layout="/".join(layout), change=name):
                     self.assertNotEqual(self.difference(watched, lambda: change(composed)), [])
 
+    @helpers.needs_os_symlinks
     def test_a_replaced_symlink_to_a_directory_in_the_composed_cache_is_seen(self) -> None:
         watched, composed = self.watched()
         target_one, target_two = composed / "feature" / "abc123", composed / "feature"
-        try:
-            (composed / "link").symlink_to(target_one, target_is_directory=True)
-        except (OSError, NotImplementedError):
-            self.skipTest("no symlinks")
+        (composed / "link").symlink_to(target_one, target_is_directory=True)
 
         def change() -> None:
             (composed / "link").unlink()
@@ -283,16 +281,23 @@ class CompositeCacheNoise(unittest.TestCase):
         self.assertEqual(self.difference(watched, lambda: (composed / ".projects.json").write_text("[1]", encoding="utf-8")), [])
         self.assertEqual(self.difference(watched, lambda: (composed / ".projects.json").unlink()), [])
 
+    @helpers.needs_os_symlinks
+    def test_a_changed_value_of_a_tmp_project_and_odd_registry_values_are_handled(self) -> None:
+        watched, composed = self.watched()
+        temporary = str(Path(tempfile.gettempdir()) / "state-guard-project-v")
+        self.registry(composed, {temporary: {"feature": "a"}})
+        self.assertEqual(len(self.difference(watched, lambda: self.registry(composed, {temporary: {"feature": "b"}}))), 1)
+        self.assertEqual(len(self.difference(watched, lambda: self.registry(composed, {temporary: "text"}))), 1)
+        lines = self.difference(watched, lambda: self.registry(composed, {"bad\0key": 1, "": 2}))   # keys that cannot be resolved: no crash
+        self.assertEqual(len(lines), 1, lines)   # only the entry of the tmp project that disappeared
+
     def test_a_temporary_directory_that_is_a_symlink_is_recognised_by_the_resolved_path(self) -> None:
         watched, composed = self.watched()
         real = Path(tempfile.mkdtemp(prefix="state-guard-real-"))
         self.addCleanup(__import__("shutil").rmtree, real, ignore_errors=True)
         link = Path(tempfile.mkdtemp(prefix="state-guard-link-")) / "tmp"
         self.addCleanup(__import__("shutil").rmtree, link.parent, ignore_errors=True)
-        try:
-            link.symlink_to(real, target_is_directory=True)
-        except (OSError, NotImplementedError):
-            self.skipTest("no symlinks")
+        link.symlink_to(real, target_is_directory=True)
         (real / "project").mkdir()
         with mock.patch.object(helpers, "_TMP_ROOT", real.resolve()):
             self.registry(composed, {})
@@ -301,7 +306,7 @@ class CompositeCacheNoise(unittest.TestCase):
 
     def test_the_registry_is_recognised_without_the_environment_of_the_process(self) -> None:
         """The cleanup of `IsolatedTestCase` runs under a substituted environment (`TMPDIR`, `HOME`): the registry is found by its place
-        below `REAL_STATE_DIRS`, not through `composed_root()`, and the temporary directory is the one taken at import."""
+        below `REAL_STATE_DIRS`, not through `composed_root()`, (the temporary directory is taken once at import, see the symlink test)."""
         watched, composed = self.watched()
         temporary = str(Path(tempfile.gettempdir()) / "state-guard-project-w")
         self.registry(composed, {})
