@@ -279,12 +279,11 @@ def _stream(process, check, on_line, taskkill, on_partial=None):
             say(on_line, name, rest.rstrip('\r'))
     threads = [threading.Thread(target=pump, args=(process.stdout, 'out'), daemon=True),
                threading.Thread(target=pump, args=(process.stderr, 'err'), daemon=True)]
-    for thread in threads:
-        thread.start()
 
     def finish():
         for thread in threads:
-            thread.join(timeout=10)
+            if thread.ident is not None:   # a thread that never started cannot be joined (its pipe has no reader and is closed below)
+                thread.join(timeout=10)
         for pipe, thread in ((process.stdout, threads[0]), (process.stderr, threads[1])):
             if pipe and not thread.is_alive():   # a child that detached itself may keep the pipe open: never close it under a blocked reader
                 try:
@@ -292,6 +291,8 @@ def _stream(process, check, on_line, taskkill, on_partial=None):
                 except OSError:
                     pass
     try:
+        for thread in threads:   # inside the `try`: a thread that cannot start (`RuntimeError: can't start new thread`) must not leave the child running
+            thread.start()
         process.wait(timeout=check.get('timeout', 300))
         timed_out = False
     except subprocess.TimeoutExpired:
