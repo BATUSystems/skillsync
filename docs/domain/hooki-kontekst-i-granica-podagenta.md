@@ -27,6 +27,6 @@ Co z tego wynika dla kodu:
 
 Wyjątki i uwagi:
 - `SKILLSYNC_GUARD_EXCEPT` nie omija granicy podagenta.
-- Próba na żywo (F7) znalazła dwa defekty kontekstu startowego, naprawione przed zamknięciem: brak `delivery.mode` przy zapisie `delivery: {mode: X, base: Y}` (czytnik liniowy) i status `unknown` zamiast `statusText`. Kontrola zawartości kontekstu wymaga próby na żywo, nie samego testu JSON.
+- Kontrola zawartości kontekstu wymaga próby na żywo, nie samego testu JSON.
 
 Gdzie w kodzie: `library/hooks/session-context.py` (`build`, `parse_manifest`), `library/hooks/check-subagent-report.py` (`REPORT_LINE`, `ROLES`), `library/hooks/guard-generated.py` (`classify`), `library/hooks/guard-commands.py` (`subagent_violation`, `--subagent-commit`), `skillsync_workflow/hooksync.py` (`merge_entry`, `SPECS`, `resolve`).

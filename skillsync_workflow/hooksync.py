@@ -495,7 +495,7 @@ def doctor_findings(root, manifest, skills, layerset=None, python_command=None):
             found.append(("warning", rel, f"The hook is on (hooks.{spec.key}) but not installed in {SETTINGS}; run `skillsync link`"))
             continue
         if not copy.is_file():
-            found.append(("warning", rel, f"The entry of the hook exists but its script is missing: the hook does nothing; run `skillsync link`"))
+            found.append(("warning", rel, "The entry of the hook exists but its script is missing: the hook does nothing; run `skillsync link`"))
             continue
         if _source_differs(layerset, spec.script, copy):
             found.append(("warning", rel, "The copy of the hook script differs from the library (outdated or edited copy); run `skillsync link`"))

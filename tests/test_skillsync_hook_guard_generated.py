@@ -134,6 +134,31 @@ class GuardGeneratedHook(IsolatedTestCase):
         self.assertFlagged(self.write_payload(link), mode='deny')
 
     @needs_os_symlinks
+    def test_symlink_into_skills_of_a_library_keeps_the_layer_message_with_push(self):
+        target = descend(child(self.root, 'library'), 'skills/feature/SKILL.md')
+        target.parent.mkdir(parents=True)
+        target.write_text('from the library\n', encoding='utf-8')
+        link = descend(self.repo, 'notes/skill.md')
+        link.parent.mkdir()
+        link.symlink_to(target)
+        text = self.assertFlagged(self.write_payload(link))
+        self.assertIn('dowiązaniem do warstwy biblioteki', text)
+        self.assertIn('skillsync push', text)
+
+    @needs_os_symlinks
+    def test_symlink_outside_the_project_to_a_plain_directory_gets_the_general_message(self):
+        target = child(child(self.root, 'plain'), 'notes.md')
+        target.parent.mkdir()
+        target.write_text('x\n', encoding='utf-8')
+        link = descend(self.repo, 'notes/plain.md')
+        link.parent.mkdir()
+        link.symlink_to(target)
+        text = self.assertFlagged(self.write_payload(link))
+        self.assertIn('wychodzi poza projekt', text)
+        self.assertNotIn('dowiązaniem do warstwy biblioteki', text)
+        self.assertNotIn('skillsync push', text)
+
+    @needs_os_symlinks
     def test_symlink_that_stays_inside_the_project_is_not_a_layer_link(self):
         target = self.put('docs/real.md', 'text\n')
         link = descend(self.repo, 'docs/alias.md')

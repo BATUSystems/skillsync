@@ -181,7 +181,7 @@ Wszystkie hooki są fail-open (błąd nie blokuje sesji), poza jawnym `deny`.
 
 | Zdarzenie | Skrypt | Tryb | Bramka manifestu | Domyślnie (feature/dispatch; plain) |
 |---|---|---|---|---|
-| `Stop` | `check-closure.py` | — | `hooks.stop_closure` | włączony; wyłączony |
+| `Stop` | `check-closure.py` | — | `hooks.stop_closure` | `feature`: włączony; `dispatch` i pozostałe: wyłączony |
 | `PreToolUse` `Bash` | `guard-commands.py` | `--mode deny\|off`, `--tests warn\|off`, `--subagent-commit warn\|deny\|off` | `hooks.guard_delete`, `hooks.guard_tests`, `hooks.subagent_commit` | `deny`, `warn`, `deny`; `off`, `off`, `off` |
 | `PreToolUse` `Write\|Edit\|NotebookEdit` | `guard-generated.py` | `--mode warn\|deny\|off` | `hooks.guard_generated` | `warn`; `off` |
 | `SessionStart` (`startup\|resume\|clear\|compact`, timeout 3 s) | `session-context.py` | `--cli <argv JSON>` | `hooks.session_context` | włączony; wyłączony |
@@ -199,7 +199,7 @@ Wszystkie hooki są fail-open (błąd nie blokuje sesji), poza jawnym `deny`.
   czyta je `doctor` i `session-context` (okno 14 dni, ostatnie 500 linii).
 - `doctor` porównuje zainstalowane wpisy z tym, co zapisze `link` (część stała: skrypt, tryby, matcher, `timeout`,
   interpreter; argv CLI tylko gdy wskazuje nieistniejącą ścieżkę).
-- Przy `claude: false` `link` usuwa wszystkie nasze wpisy hooków i skrypty; cudze zostają.
+- Przy `claude: false` `link` usuwa nasze wpisy hooków (closure, strażnik poleceń i trzy nowe hooki; wpis Stop testów ze `settings.json` i jego skrypt zostają) oraz nasze skrypty; cudze zostają.
 
 ## 7. Prototypy
 

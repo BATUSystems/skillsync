@@ -6,7 +6,10 @@ session: every error ends with an empty result and exit 0. The script is taken f
 SKILLSYNC_TEST_LIBRARY, so these tests are never skipped.
 """
 import json
+import importlib.util
+import os
 import re
+import stat
 import subprocess
 import sys
 import time
@@ -64,7 +67,7 @@ class SessionContextHook(IsolatedTestCase):
         self.argv_log = argv_log
         return json.dumps([sys.executable, str(script)])
 
-    def run_hook(self, payload=None, cli=None, source='startup', raw=None, extra=(), timeout=30):
+    def run_hook(self, payload=None, cli=None, source='startup', raw=None, extra=(), timeout=30, env=None):
         if payload is None:
             payload = {'session_id': 's-1', 'transcript_path': str(child(self.root, 't.jsonl')), 'cwd': str(self.repo),
                        'hook_event_name': 'SessionStart', 'source': source}
@@ -72,7 +75,7 @@ class SessionContextHook(IsolatedTestCase):
         args = [sys.executable, str(HOOK)] + (['--cli', cli] if cli is not None else []) + list(extra)
         started = time.monotonic()
         self.assertTrue(HOOK.is_file(), f'{HOOK} does not exist yet (expected red until F4)')
-        done = subprocess.run(args, input=data.encode('utf-8'), capture_output=True, timeout=timeout, cwd=str(self.repo))
+        done = subprocess.run(args, input=data.encode('utf-8'), capture_output=True, timeout=timeout, cwd=str(self.repo), env=env)
         self.elapsed = time.monotonic() - started
         self.stderr = done.stderr.decode('utf-8', 'replace')
         return done
@@ -213,6 +216,47 @@ class SessionContextHook(IsolatedTestCase):
         text = self.context(self.run_hook(cli=cli, timeout=25))
         self.assertLess(self.elapsed, 6.5, 'the hook waited for the slow CLI instead of cutting at 2 s')
         self.assertNotIn('Plan wolny', text)
+
+    # --- one shared time budget (hook timeout 3 s) ---------------------------------------------------------------------
+    def test_slow_cli_ends_the_whole_hook_within_3_seconds_with_context_without_the_plan(self):
+        text = self.context(self.run_hook(cli=self.stub_cli(status_json(title='Plan wolny'), delay=8), timeout=25))
+        self.assertLess(self.elapsed, 3.0)
+        self.assertIn('skillsync route', text)
+        self.assertNotIn('Plan wolny', text)
+
+    @unittest.skipIf(os.name == 'nt', 'the stand-in for git is a POSIX shell script')
+    def test_slow_git_and_slow_cli_together_still_end_within_3_seconds(self):
+        bin_dir = child(self.root, 'fakebin')
+        bin_dir.mkdir()
+        fake = child(bin_dir, 'git')
+        fake.write_text('#!/bin/sh\nexec sleep 8\n', encoding='utf-8')
+        fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
+        env = dict(os.environ, PATH=str(bin_dir) + os.pathsep + os.environ.get('PATH', ''))
+        text = self.context(self.run_hook(cli=self.stub_cli(status_json(title='Plan wolny'), delay=8), timeout=25, env=env))
+        self.assertLess(self.elapsed, 3.0)
+        self.assertIn('skillsync route', text)
+        self.assertNotIn('Plan wolny', text)
+
+    # --- the full drop order (K3) ----------------------------------------------------------------------------------------
+    def test_parts_drop_in_the_documented_order_as_the_limit_shrinks(self):
+        spec = importlib.util.spec_from_file_location('session_context_under_test', str(HOOK))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        plan = {'title': 'Plan', 'status': 'in_progress', 'steps': {'done': 2, 'total': 5}, 'needsHuman': ['closure', 'review']}
+        full = module.build('proj-x', 'direct', plan, 'compact', 7)
+        markers = (('warnings', 'subagent-report'), ('needsHuman', 'needsHuman'), ('counters', 'kroki:'), ('compact', 'Po kompaktowaniu'))
+        seen = []
+        for limit in range(len(full), 0, -1):
+            text = module.build('proj-x', 'direct', plan, 'compact', 7, limit=limit)
+            if 'Przed zadaniem: skillsync route proj-x.' not in text:
+                break  # beyond the last whole-part drop only the word cut remains
+            self.assertIn('Projekt: proj-x', text)
+            self.assertLessEqual(len(text), limit)
+            present = tuple(marker in text for _, marker in markers)
+            if not seen or seen[-1] != present:
+                seen.append(present)
+        self.assertEqual(seen, [(True, True, True, True), (False, True, True, True), (False, False, True, True),
+                                (False, False, False, True), (False, False, False, False)])
 
     def test_garbage_cli_output_gives_no_plan_data(self):
         for raw in ('not json at all', '[1, 2', '', '"just a string"', '[]'):

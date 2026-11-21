@@ -18,6 +18,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 import unicodedata
 
 LIMIT = 2000
@@ -25,6 +26,8 @@ TITLE_MAX = 120
 NAME_MAX = 80
 CLI_TIMEOUT = 2.0
 GIT_TIMEOUT = 1.5
+TOTAL_BUDGET = 3.0  # the hook timeout; one monotonic deadline for git and the CLI together
+RESERVE = 0.3
 EVENT_DAYS = 14
 EVENT_LINES = 500
 EVENT_TAIL_BYTES = 512 * 1024
@@ -50,9 +53,9 @@ def clean(value, limit):
     return text
 
 
-def git_root(cwd):
+def git_root(cwd, timeout=GIT_TIMEOUT):
     try:
-        done = subprocess.run(['git', '-C', cwd, 'rev-parse', '--show-toplevel'], capture_output=True, timeout=GIT_TIMEOUT,
+        done = subprocess.run(['git', '-C', cwd, 'rev-parse', '--show-toplevel'], capture_output=True, timeout=timeout,
                               stdin=subprocess.DEVNULL, env=dict(os.environ, GIT_OPTIONAL_LOCKS='0'))
         if done.returncode == 0:
             top = done.stdout.decode('utf-8', 'replace').strip()
@@ -95,11 +98,13 @@ def parse_manifest(root):
     return project, mode
 
 
-def run_status(cli, root):
+def run_status(cli, root, timeout=CLI_TIMEOUT):
+    if timeout <= 0.1:
+        return None
     if not (isinstance(cli, list) and cli and all(isinstance(item, str) and item for item in cli)):
         return None
     try:
-        done = subprocess.run(cli + ['status', '--json'], capture_output=True, timeout=CLI_TIMEOUT, cwd=root, stdin=subprocess.DEVNULL)
+        done = subprocess.run(cli + ['status', '--json'], capture_output=True, timeout=timeout, cwd=root, stdin=subprocess.DEVNULL)
         if done.returncode != 0:
             return None
         data = json.loads(done.stdout.decode('utf-8', 'replace'))
@@ -166,7 +171,7 @@ def status_label(plan):
     return clean(status, 30)
 
 
-def build(name, mode, plan, source, warnings):
+def build(name, mode, plan, source, warnings, limit=LIMIT):
     """Drops parts in the documented order until the text fits; the name and the route reminder always stay."""
     needs = []
     if plan and isinstance(plan.get('needsHuman'), list):
@@ -175,7 +180,7 @@ def build(name, mode, plan, source, warnings):
     counters = None
     if isinstance(steps, dict) and isinstance(steps.get('done'), int) and isinstance(steps.get('total'), int):
         counters = f"{steps['done']}/{steps['total']}"
-    for keep in range(4):  # 0: everything, 1: no warnings, 2: + no needsHuman, 3: + no counters, then the compact reminder goes
+    for keep in range(5):  # 0: everything, 1: no warnings, 2: + no needsHuman, 3: + no counters, 4: + no compact reminder
         use_warnings, use_needs, use_counters, use_compact = keep < 1, keep < 2, keep < 3, keep < 4
         head = f'Projekt: {name}' + (f' (delivery.mode: {mode})' if mode else '') + '.'
         lines = [head]
@@ -193,12 +198,13 @@ def build(name, mode, plan, source, warnings):
         if use_warnings and warnings:
             lines.append(f'Ostrzeżenia subagent-report (ostatnie {EVENT_DAYS} dni): {warnings}.')
         text = '\n'.join(lines)
-        if len(text) <= LIMIT:
+        if len(text) <= limit:
             return text
-    return cut_words(text, LIMIT)
+    return cut_words(text, limit)
 
 
 def main():
+    started = time.monotonic()
     cli = None
     args = sys.argv[1:]
     for index, arg in enumerate(args):
@@ -212,13 +218,14 @@ def main():
     cwd = payload.get('cwd')
     if not isinstance(cwd, str) or not cwd or not os.path.isdir(cwd):
         return
-    root = git_root(cwd)
+    root = git_root(cwd, max(0.1, min(GIT_TIMEOUT, TOTAL_BUDGET - (time.monotonic() - started) - RESERVE)))
     source = payload.get('source') if isinstance(payload.get('source'), str) else ''
     try:
         cli_argv = json.loads(cli) if cli is not None else None
     except ValueError:
         cli_argv = None
-    status = run_status(cli_argv, root)
+    left = TOTAL_BUDGET - (time.monotonic() - started) - RESERVE
+    status = run_status(cli_argv, root, min(CLI_TIMEOUT, left))
     manifest_project, mode = parse_manifest(root)
     name = None
     if status and isinstance(status.get('project'), str) and status['project'].strip():
