@@ -15,7 +15,7 @@ from pathlib import Path
 
 import yaml
 
-from . import guardhook, hooksync
+from . import claude_manifest, guardhook, hooksync
 from .fsutil import ensure_utf8_streams, isabs, rmtree_force
 from .common import (CONDITIONAL_SKILL_ALIASES, append_missing_lines, checked_out_link, conditional_skill_alias, detect_eol, discover_excludes,
                      file_lines, is_excluded)
@@ -442,12 +442,7 @@ def build_instructions(project_dir: Path, manifest: dict, config: dict, dry_run:
 
 
 def claude_enabled(manifest: dict) -> bool:
-    claude_cfg = manifest.get("claude")
-    if claude_cfg is False:
-        return False
-    if isinstance(claude_cfg, dict) and claude_cfg.get("enabled") is False:
-        return False
-    return True
+    return claude_manifest.enabled(manifest)
 
 
 def ensure_root_gitignore(project_dir: Path, dry_run: bool = False, entry: str = "CLAUDE.md") -> None:
