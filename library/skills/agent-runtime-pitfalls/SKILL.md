@@ -128,6 +128,17 @@ pasować do środowiska, popraw ją tutaj zamiast obchodzić.
   a po zgodzie powtórz komendę z prefiksem `SKILLSYNC_GUARD_EXCEPT='<powód i cytat zgody>' <komenda>`. Hook dopisze wiersz do
   `.skillsync/hook-exceptions.jsonl` (komenda, czas, powód). Prefiks dopisujesz tylko po zgodzie; podumysł zgłasza sprawę sesji głównej. Prefiks przy `bash -c '…'` obejmuje cały wewnętrzny tekst, więc nie łącz w nim usunięć, na które zgody nie było. Hook sam nie widzi zgody (to siatka przeciw pomyłce): nie dopisuj prefiksu bez niej.
 
+## Hooki Claude Code: kontekst, podagenci, koszt (Claude Code 2.1.318)
+
+- **`additionalContext` z PreToolUse dociera do modelu po wykonaniu narzędzia**, nie przed nim: ostrzeżenie o edycji pliku generowanego widać dopiero po zapisie. `deny` (exit 2) blokuje narzędzie, a stderr widzi model.
+- **SessionStart `additionalContext` dociera dla `startup`, `compact` i `clear`** (zmierzone; `resume` niezweryfikowane). Kontrolę zawartości kontekstu zrób próbą na żywo (`claude -p` z hookiem-sondą), nie cytatem modelu z pamięci.
+- **Podagent:** PreToolUse z podagenta ma `agent_id` i `agent_type`, z sesji głównej nie ma ich wcale. Nazwa narzędzia podagenta w zdarzeniach to `Task`, a w komunikatach modelu bywa `Agent`.
+- **SubagentStop przy kompaktowaniu** przychodzi z PUSTYM `agent_type`: filtr po roli musi pomijać puste wartości.
+- **Brak `MultiEdit`** w 2.1.318: dopasowania hooków to `Write`, `Edit`, `NotebookEdit`, `Bash`, `Task`.
+- **Koszt timeoutu hooka startowego:** timeout nie przerywa sesji (fail-open), ale SessionStart czeka pełny `timeout`. Dlatego SessionStart ma 3 s, a limit CLI wewnątrz hooka 2 s.
+- **Podagent z `git commit` mimo roli:** wzorzec Bash w `disallowedTools` nie jest granicą (zob. `disallowedtools-wzorzec-bash-usuwa-cale-narzedzie-podagenta`); granicę daje hook `guard-commands.py` z `hooks.subagent_commit`, a i tak to guardrail, nie sandbox.
+- Jak wykryć: `claude -p --output-format stream-json --verbose --include-hook-events` w tymczasowym repo i HOME; zdarzenia `hook_response` i payload z pliku-sondy dowodzą dostarczenia.
+
 ## Czas w raportach
 
 - **Godzin nie wpisuj z pamięci ani z szacunku.** Zegar sesji i zegar maszyny rozjeżdżają się („około 09:50” przy 20:26).

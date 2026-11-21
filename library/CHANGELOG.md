@@ -6,6 +6,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ### Added
 
+- **Hooks `session-context`, `guard-generated`, `check-subagent-report`.** Three Claude Code hooks (SessionStart; PreToolUse on `Write|Edit|NotebookEdit`; SubagentStop) in `hooks/`, with the manifest keys `hooks.session_context`, `hooks.guard_generated`, `hooks.subagent_report` (documented in `docs/manifest.md`); `doctor` reports their state and the warnings of the last 14 days.
+- **`hooks.subagent_commit`: the commit boundary for sub-agents.** The argument `--subagent-commit warn|deny|off` of `guard-commands.py` refuses git and `gh pr` writes from a sub-agent (a call with `agent_id`); the main session is not affected. Default `deny` in `feature` and `dispatch` projects.
 - **`dispatch`: the pulse of the dispatcher.** `references/pulse.md` (the tick, the closed list of actions, the prompt of the loop that points to the file and never to the skill, the sidecar, the permissions of an unattended tick), the key `dispatch.pulse` in `config.md`, the start, the end and the renewal of the loop in `SKILL.md` and `state.md`, and the exception of the rule about polling in `SKILL.md`, `loop.md`, `claude.md` and `codex.md` (Codex has no pulse).
 - Skill `feature`, reference `claude.md`: the column `maxTurns` in the table of the roles, the explanation of the limit (a turn, the partial result, how the values were calibrated) and the result of the probe of `disallowedTools` (`F0-disallowedTools: nieskuteczne`).
 - Skills `skillsync`, `dashboard` and the reference `feature/spec-store.md`: the flag `approvals record --expect-plan-state` and the `409` with `code: plan_state_changed` of the consent button.
@@ -14,6 +16,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ### Changed
 
+- **Hooks are installed by one shared merge.** `link` writes the entries of closure, guard and the new hooks through one function; the bytes of the settings file and the backup stay as before. `link` with `claude: false` removes our hook entries and scripts.
 - **`dispatch`: `disable-model-invocation: true`.** The skill is started only by the user (`/dispatch`); the pulse prompt reads `references/pulse.md` and never calls the skill. The loop of a replied probe: the dispatcher updates `last_message` from the reaction table (`loop.md`), otherwise the probe returns every `idle_card_minutes`.
 - Roles `agents/*.md`: `maxTurns` in all eight roles (`explore` 40, `implementer` 170, `mechanic` 40, `reviewer` 85, `scribe` 115, `test-runner` 125, `test-writer` 165, `verifier` 45).
 - **`argument-hint` in the skills with arguments.** `feature`, `bugfix`, `dispatch`, `codereview`, `pr-run` and `docx-to-markdown` have the frontmatter field `argument-hint` (autocomplete hint of Claude Code, presentation only; the notation is described in `copilot-skills-yaml`). The references to the non-existent `docs/library.md` and `docs/layers.md` in the instructions and in the `skillsync` skill point to `docs/layers-authoring.md` and the authoring rules.

@@ -28,7 +28,10 @@ Treść żyje w **warstwach** (`layer.yaml` w korzeniu układu): `core` (rdzeń:
 ├── hooks/
 │   ├── check-tests.py      ← hook Stop (bramka testów), jeden skrypt Pythona dla Linux i Windows
 │   ├── check-closure.py    ← hook Stop (zamknięcie planu), tylko biblioteka standardowa
-│   └── guard-commands.py   ← hook PreToolUse (Bash): zakaz stopek i podpisów narzędzi AI w tekstach pisanych poleceniami (zawsze) i odmowa trwałego usunięcia, tylko biblioteka standardowa
+│   ├── guard-commands.py   ← hook PreToolUse (Bash): zakaz stopek i podpisów narzędzi AI w tekstach pisanych poleceniami (zawsze), odmowa trwałego usunięcia i granica commitu podagenta (`hooks.subagent_commit`), tylko biblioteka standardowa
+│   ├── session-context.py  ← hook SessionStart (startup, resume, clear, compact): kontekst projektu i planu, `hooks.session_context`
+│   ├── guard-generated.py  ← hook PreToolUse (Write, Edit, NotebookEdit): ostrzeżenie przy edycji pliku generowanego, `hooks.guard_generated`
+│   └── check-subagent-report.py ← hook SubagentStop: ostrzeżenie, gdy piszący podagent nie zwrócił raportu, `hooks.subagent_report`
 └── instructions/
     ├── _base.md             ← wspólna preambuła (persona, workflow)
     └── <template>.md        ← instrukcje specyficzne dla projektu
@@ -50,8 +53,12 @@ layer.yaml                  ← id, kind, version, core_min, requires
 ├── hooks/check-closure.py  ← KOPIA - projekty z `feature`, chyba że hooks.stop_closure: false
 ├── hooks/guard-tests.py, test-tools.json ← KOPIE obok hooka, gdy hooks.guard_tests: warn (domyślnie w projektach z `feature`/`dispatch`)
 ├── hooks/guard-commands.py ← KOPIA - każdy projekt z Claude Code (część usuwania tylko z `feature` lub `dispatch`, chyba że hooks.guard_delete: off; klucz hooks.delete_allow: dodatkowe cele wolne od blokady)
+├── hooks/session-context.py ← KOPIA - gdy hook włączony przez `hooks.session_context` (SessionStart; domyślnie w projektach z `feature` lub `dispatch`)
+├── hooks/guard-generated.py ← KOPIA - gdy hook włączony przez `hooks.guard_generated` (PreToolUse na `Write|Edit|NotebookEdit`; domyślnie `warn` w projektach z `feature` lub `dispatch`)
+├── hooks/check-subagent-report.py ← KOPIA - gdy hook włączony przez `hooks.subagent_report` (SubagentStop; domyślnie `warn` w projektach z `feature` lub `dispatch`)
 ├── hooks/attribution-patterns.json ← KOPIA danych zakazu stopek i podpisów AI (jedno źródło: skillsync_workflow/data/attribution-patterns.json)
-├── settings.json           ← COMMITOWANY, ręcznie kuratorowany; skillsync scala tylko hooks.Stop
+├── settings.json           ← COMMITOWANY, ręcznie kuratorowany; skillsync dopisuje tu tylko hook Stop testów (`hooks.stop_tests`)
+├── settings.local.json     ← ignorowany; skillsync scala wpisy: Stop (zamknięcie planu), PreToolUse (strażnik poleceń i strażnik plików generowanych), SessionStart, SubagentStop
 └── .gitignore              ← wpisy per plik zarządzany (nie całe katalogi)
 ```
 
@@ -100,7 +107,7 @@ Wspólna flaga `--layer id=ścieżka` (powtarzalna; ścieżka = katalog warstwy 
 ### Claude Code: agenci, hook Stop, settings.json
 
 - `.claude/skills/` i `.claude/agents/` **nie są w całości własnością skillsync** (projekty trzymają tam własne pliki). Skillsync sprząta i zastępuje wyłącznie symlinki do warstw (albo nietknięte kopie z pliku stanu), nigdy zwykłych plików, które sam nie utworzył — przy kolizji nazw wypisuje `[warn] Skipping ...`.
-- Każdy projekt z Claude Code dostaje hook PreToolUse `guard-commands.py`: zawsze z zakazem stopek i podpisów narzędzi AI w commitach, PR i zadaniach (`--attribution on`, bez przełącznika) i kluczem `attribution` (puste `commit` i `pr`) w `.claude/settings.local.json`; część usuwania (odmowa trwałego usunięcia) tylko w projektach z `feature` lub `dispatch`. `link` scala jeden wpis (kopia zapasowa, plik śledzony przez git pomijany, `.skillsync/` ignorowane); `hooks.guard_delete: off` wyłącza tylko część usuwania. `skillsync attribution --user` zapisuje to samo ustawienie w `~/.claude/settings.json` (jawnie); `layers check` i `doctor` dają FAIL dla tekstu zakazanej atrybucji w warstwie lub instrukcjach.
+- Każdy projekt z Claude Code dostaje hook PreToolUse `guard-commands.py`: zawsze z zakazem stopek i podpisów narzędzi AI w commitach, PR i zadaniach (`--attribution on`, bez przełącznika) i kluczem `attribution` (puste `commit` i `pr`) w `.claude/settings.local.json`; część usuwania (odmowa trwałego usunięcia) tylko w projektach z `feature` lub `dispatch`. `link` scala jeden wpis (kopia zapasowa, plik śledzony przez git pomijany, `.skillsync/` ignorowane); `hooks.guard_delete: off` wyłącza tylko część usuwania. `skillsync attribution --user` zapisuje to samo ustawienie w `~/.claude/settings.json` (jawnie); `layers check` i `doctor` dają FAIL dla tekstu zakazanej atrybucji w warstwie lub instrukcjach. Argument `--subagent-commit` strażnika poleceń (`hooks.subagent_commit`: domyślnie `deny` w projektach z `feature` lub `dispatch`, `off` w pozostałych; przy `off` nie trafia do wpisu) to granica commitu podagenta: działa tylko dla wywołań z niepustym `agent_id`.
 - Projekty z `feature`: kopiuje `check-closure.py` i scala wpis Stop w `.claude/settings.local.json`, zachowując resztę pliku. `hooks.stop_closure: false` usuwa wpis i skrypt. Plik śledzony przez git albo niepoprawny JSON: `[warn]`, bez zapisu. Blokuje raz na sesję i plan plan `done` zmieniony względem `HEAD` albo ignorowany przez git (wpis `!!`), gdy przebieg z `Przebieg:` nie ma rekordu `final`.
 - `hooks.stop_tests: true` + `tests.command` w manifeście → kopiuje `check-tests.py` i dopisuje `hooks.Stop` do `.claude/settings.json` (forma exec: `command` = `python_command` z `~/.config/skillsync/config.yaml`, `args` = skrypt + komenda testów). Przed zapisem robi `settings.json.skillsync-backup`. `permissions`, inne hooki i `settings.local.json` są nietykane. Niepoprawny JSON w istniejącym pliku → błąd i pominięcie (nigdy nadpisanie).
 - Hook: exit 2 + ostatnie linie błędów na stderr przy porażce testów; exit 0 przy `stop_hook_active`, braku zmian w repo (`git status --porcelain`) albo braku komendy testów.
@@ -125,7 +132,7 @@ Skutki:
 - `skillsync push` z projektu, w którym edytowano `CLAUDE.md`, nadpisze ten sam template co `copilot-instructions.md` — jeśli oba pliki mają rozjechaną lokalną część, wygrywa ten, który zapushowano jako ostatni.
 - Tryb `agents` (`instructions.entrypoint: agents` w manifeście albo `entrypoint: agents` w `~/.config/skillsync/config.yaml`; domyślnie `inline`): treść raz w bloku `AGENTS.md`, `CLAUDE.md` = nagłówek + `@AGENTS.md`, bez `.codex/skillsync-instructions.md`; `push` czyta wtedy blok `AGENTS.md`. Generator wraca do `inline` z ostrzeżeniem, gdy `AGENTS.md` jest śledzony/nieignorowany w git (także błąd gita), leży poza gitem z własną treścią, jest dowiązaniem albo ma zepsute znaczniki. Domyślną wartość zmieniaj dopiero po aktualizacji Skippstera (rozwija importy w sesjach).
 - Plik jest automatycznie dopisywany do `.gitignore` projektu (tak jak `copilot-instructions.md`) — nie commituj go, edytuj i pushuj do warstwy.
-- Wyłączenie dla konkretnego projektu: `claude: false` (albo `claude: {enabled: false}`) w `.github/.skillsync.yaml`.
+- Wyłączenie dla konkretnego projektu: `claude: false` (albo `claude: {enabled: false}`) w `.github/.skillsync.yaml`. `link` wtedy usuwa nasze wpisy hooków w `settings.local.json` (Stop, PreToolUse, SessionStart, SubagentStop) i nasze skrypty w `.claude/hooks/`; `settings.json` z hookiem Stop testów (`hooks.stop_tests`) i jego skrypt `check-tests.py` nie są ruszane. Pliki śledzone przez git zostają.
 
 ## Jak dodać nowy skill (MUST-FOLLOW)
 

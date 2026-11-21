@@ -33,8 +33,13 @@ wznów podagenta albo powtórz krok, nie przyjmuj częściowego raportu jako PAS
 
 Granica „podumysły nie commitują” (AGENTS.md) jest tylko w treści ról. Próba z 2026-11-21 (Claude Code 2.1.318) pokazała,
 że wzorzec Bash w `disallowedTools` podagenta (obie formy: `Bash(git commit *)` i `Bash(git commit:*)`) usuwa całe
-narzędzie Bash, a nie tylko wskazane polecenie, więc żadna rola nie ma `disallowedTools`. Twardy hook na commit podagenta
-to osobny zakres (CLAUDE-3); `guard-commands` blokuje dziś tylko trwałe usuwanie plików.
+narzędzie Bash, a nie tylko wskazane polecenie, więc żadna rola nie ma `disallowedTools`. Granicę commitu podagenta
+daje hook `guard-commands.py` (PreToolUse `Bash`) z `hooks.subagent_commit` (domyślnie `deny` w projektach z `feature` lub `dispatch`):
+blokuje `git commit|push|tag|merge|rebase|reset|stash|checkout --|restore|clean|add -A|add .|cherry-pick|revert` oraz `gh pr create|merge|edit|close|ready`,
+gdy wywołanie pochodzi od podagenta (niepusty `agent_id` w payloadzie). Sesja główna nie jest objęta, a `SKILLSYNC_GUARD_EXCEPT` tej granicy nie omija.
+To guardrail przeciw pomyłce, nie granica bezpieczeństwa: skrypty, pipe do powłoki, aliasy i zmienne go omijają (`docs/security.md`, sekcja „Hooki sesji i podagentów”).
+Podagent, który dostał odmowę, zgłasza zmiany orkiestratorowi (sesja główna wykonuje commit po swojej stronie).
+Hooki sesji (`session-context`: kontekst po startu, kompaktowaniu i `clear`; `guard-generated`: ostrzeżenie przy edycji plików generowanych; `check-subagent-report`: ostrzeżenie, gdy piszący podagent nie zwrócił raportu) opisuje `docs/architecture.md`, sekcja „Hooki Claude Code”.
 
 F0-disallowedTools: nieskuteczne
 

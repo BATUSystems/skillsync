@@ -24,8 +24,13 @@ silences ONLY this part: it can never switch the refusal of deletion off (that p
 with the result of the command, i.e. AFTER it ran (documented behaviour of `additionalContext`; whether it arrives is NOT_VERIFIED until measured on a live session).
 On Windows the command is read as Git Bash reads it, like for the deletion part. One-time exception: the same `SKILLSYNC_GUARD_EXCEPT='<reason>'` prefix.
 
-Usage (set by `skillsync link`): guard-commands.py [--mode deny|off] [--allow <name-or-path> ...] [--tests warn|off] [--wide-modules N] [--wrapper <prefix> ...];
+Usage (set by `skillsync link`): guard-commands.py [--mode deny|off] [--allow <name-or-path> ...] [--tests warn|off] [--wide-modules N] [--wrapper <prefix> ...] [--subagent-commit warn|deny|off];
 stdin = the hook JSON.
+Commit boundary of a sub-agent (K6, `--subagent-commit`, default off = the behaviour of old entries): a call whose payload has a non-empty string `agent_id` is a sub-agent (the main
+session, a falsy or non-string `agent_id` and a lone `agent_type` are not touched; a whitespace-only string is a sub-agent). `deny` refuses (exit 2, "podumysły nie commitują ... zgłoś zmiany orkiestratorowi") git commit|push|tag|merge|rebase|reset|
+stash (not `stash list|show`)|restore|clean|cherry-pick|revert|`checkout --`|`checkout .`|`add -A|--all|.` and `gh pr create|merge|edit|close|ready`; `warn` only adds `additionalContext`. It does not
+depend on `--mode`, `--tests`, `--attribution`, and `SKILLSYNC_GUARD_EXCEPT` does not lift it for a sub-agent.
+Known limits of the boundary: scripts (`sh run.sh`), a pipe into a shell, aliases and variables (`$CMD`) hide the command: it is a guardrail against a slip, not a security boundary.
 Known limit: `cd` is applied to the commands that follow it even inside `( ... )` groups and after `|`/`&`/`||` (a refusal-safe error only in one direction: such a `cd` may make a later relative path look temporary).
 `find ... -delete` whose every -name is a regenerable artifact (*.pyc, *.pyo, __pycache__, .pytest_cache, .mypy_cache, .ruff_cache, .DS_Store, Thumbs.db) and has no -o/!/-not/groups passes.
 Always refused when seen (no target check; use the exception): rmtree in `python -c`, xargs rm -r, PowerShell and rd forms.
@@ -863,7 +868,7 @@ ATTRIBUTION_DATA = 'attribution-patterns.json'
 WRITER_TOOLS = {'gh', 'glab', 'az', 'tea', 'hub', 'acli', 'jira'}
 WRITER_VERBS = {'create', 'edit', 'update', 'comment', 'review', 'add', 'new', 'set', 'post', 'reply', 'merge', 'close', 'reopen', 'submit', 'note', 'transition', 'assign'}
 GIT_WRITERS = {'commit', 'tag', 'merge', 'notes', 'revert', 'cherry-pick'}
-GIT_VALUE_FLAGS = {'-C', '-c', '--git-dir', '--work-tree', '--namespace'}
+GIT_VALUE_FLAGS = {'-C', '-c', '--git-dir', '--work-tree', '--namespace', '--config-env', '--super-prefix'}
 API_FIELD_FLAGS = {'-f', '-F', '--field', '--raw-field', '--input', '-d', '--data'}
 FILE_FLAGS = {'-F', '--file', '--body-file', '-f', '--input'}
 FILE_LIMIT = 65536
@@ -1033,11 +1038,97 @@ def attribution_message(found):
             'To zakaz bez jednorazowego wyjątku; jego sprawdzenie nie dotyczy poleceń, które tylko czytają lub cytują tekst.' % ids)
 
 
+SUBAGENT_GIT = {'commit', 'push', 'tag', 'merge', 'rebase', 'reset', 'restore', 'clean', 'cherry-pick', 'revert'}
+SUBAGENT_GH_PR = {'create', 'merge', 'edit', 'close', 'ready'}
+GH_VALUE_FLAGS = {'-R', '--repo', '--hostname'}
+
+
+def _boundary_words(words, depth=0):
+    """The forbidden-to-a-sub-agent command (`git commit`, `gh pr merge` ...) that the words of ONE command stand for, else `None`. The wrappers are stripped first."""
+    argv = list(words)
+    argv, _, _ = strip_wrappers(argv, [])
+    if not argv:
+        return None
+    name = os.path.basename(argv[0]).lower()
+    if name.endswith('.exe'):
+        name = name[:-4]
+    rest = argv[1:]
+    if name == 'eval' and depth < MAX_DEPTH:
+        for sub, _ in command_words(' '.join(rest), depth + 1):
+            found = _boundary_words(sub, depth + 1)
+            if found:
+                return found
+        return None
+    if name in SHELLS and depth < MAX_DEPTH:   # `flock f -c '...'` turns into `sh -c '...'` in strip_wrappers
+        inner = [k for k, arg in enumerate(rest) if arg.startswith('-') and not arg.startswith('--') and 'c' in arg[1:] and k + 1 < len(rest)]
+        if inner:
+            for sub, _ in command_words(rest[inner[0] + 1], depth + 1):
+                found = _boundary_words(sub, depth + 1)
+                if found:
+                    return found
+        return None
+    if name == 'git':
+        k = 0
+        while k < len(rest) and rest[k].startswith('-'):
+            k += 2 if rest[k] in GIT_VALUE_FLAGS else 1
+        if k >= len(rest):
+            return None
+        sub, args = rest[k], rest[k + 1:]
+        if sub == 'tag' and (not args or any(a in ('-l', '--list', '-v', '--verify', '--contains', '--points-at') or a.startswith(('-n', '--contains=', '--points-at='))
+                                          for a in args)):
+            return None   # listing tags is read-only
+        if sub == 'clean' and any(a == '--dry-run' or (a.startswith('-') and not a.startswith('--') and 'n' in a[1:]) for a in args):
+            return None   # a dry run deletes nothing
+        if sub in SUBAGENT_GIT:
+            return 'git ' + sub
+        if sub == 'stash':
+            return None if args[:1] and args[0] in ('list', 'show') else 'git stash'
+        if sub == 'checkout':   # `checkout <branch>` and `-b` switch; `--` (restore paths) and `.` (discard everything) destroy changes
+            return 'git checkout --' if ('--' in args or '.' in args) else None
+        if sub == 'add':
+            for arg in args:
+                if arg in ('-A', '--all', '.') or (arg.startswith('-') and not arg.startswith('--') and 'A' in arg[1:]):
+                    return 'git add ' + arg
+        return None
+    if name == 'gh':
+        k = 0
+        while k < len(rest) and rest[k].startswith('-'):
+            k += 2 if rest[k] in GH_VALUE_FLAGS else 1
+        if rest[k:k + 1] == ['pr']:
+            j = k + 1
+            while j < len(rest) and rest[j].startswith('-'):   # `gh pr -R o/r merge 5`
+                j += 2 if rest[j] in GH_VALUE_FLAGS else 1
+            if rest[j:j + 1] and rest[j] in SUBAGENT_GH_PR:
+                return 'gh pr ' + rest[j]
+    return None
+
+
+def subagent_violation(command):
+    """The first command of the text that a sub-agent must not run (`git commit`, `gh pr merge` ...), else `None`. Never raises (fail-open)."""
+    try:
+        for words, _ in command_words(command):   # the exception prefix (`reason`) is deliberately ignored: a sub-agent has no consent of the user
+            found = _boundary_words(words)
+            if found:
+                return found
+    except Exception:  # noqa: BLE001
+        return None
+    return None
+
+
+def subagent_message(found, executed=False):
+    if executed:
+        return ('Uwaga (guard-commands, granica podagenta): polecenie zostało już wykonane; podumysły nie commitują ani nie zmieniają stanu repozytorium (%s). '
+                'Zgłoś zmiany orkiestratorowi (sesji głównej), a on je zacommituje.' % found)
+    return ('Zablokowano (guard-commands, granica podagenta): podumysły nie commitują ani nie zmieniają stanu repozytorium (%s). '
+            'Zgłoś zmiany orkiestratorowi (sesji głównej), a on je zacommituje; wyjątek SKILLSYNC_GUARD_EXCEPT nie dotyczy podagenta.' % found)
+
+
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     mode, allow = 'deny', []
     tests_mode, wide_modules, wrappers = 'off', 25, []
     attribution_mode = 'on'
+    sub_mode = 'off'
     i = 0
     while i < len(argv):
         if argv[i] == '--mode' and i + 1 < len(argv):
@@ -1058,13 +1149,17 @@ def main(argv=None):
         elif argv[i] == '--attribution' and i + 1 < len(argv):
             attribution_mode = argv[i + 1]
             i += 2
+        elif argv[i] == '--subagent-commit' and i + 1 < len(argv) and not argv[i + 1].startswith('--'):
+            sub_mode = argv[i + 1] if argv[i + 1] in ('warn', 'deny') else 'off'
+            i += 2
         elif argv[i] == '--wrapper' and i + 1 < len(argv):
             wrappers.append(argv[i + 1])
             i += 2
         else:
             i += 1
-    if mode != 'deny' and tests_mode != 'warn' and attribution_mode != 'on':
+    if mode != 'deny' and tests_mode != 'warn' and attribution_mode != 'on' and sub_mode == 'off':
         return 0
+    boundary = None
     try:
         payload = json.loads(sys.stdin.buffer.read().decode('utf-8', 'replace'))
         if not isinstance(payload, dict) or payload.get('tool_name') != 'Bash':
@@ -1073,6 +1168,8 @@ def main(argv=None):
         command = tool_input.get('command') if isinstance(tool_input, dict) else None
         if not isinstance(command, str) or not command.strip():
             return 0
+        agent = payload.get('agent_id')
+        boundary = subagent_violation(command) if sub_mode != 'off' and isinstance(agent, str) and agent else None   # a non-string `agent_id` is not a sub-agent
         if attribution_mode == 'on':   # the ban on AI attribution does not depend on `--mode`, takes no exception and never takes the rest down
             try:
                 rules = load_attribution()
@@ -1081,12 +1178,17 @@ def main(argv=None):
                 hits = []
             if hits:
                 print(attribution_message(hits), file=sys.stderr)
+                if boundary and sub_mode == 'deny':
+                    print(subagent_message(boundary), file=sys.stderr)
                 return 2
         findings = []
         if mode == 'deny':
             guard = Guard(payload.get('cwd'), payload.get('scratchpad_dir'), allow, os.environ)
             findings = guard.walk(command)
     except Exception as error:  # fail-open: the hook's own failure never blocks the work
+        if boundary and sub_mode == 'deny':   # the boundary was already found: fail-open only where nothing was detected
+            print(subagent_message(boundary), file=sys.stderr)
+            return 2
         print('guard-commands: blad hooka, komenda przepuszczona (%s: %s)' % (type(error).__name__, error), file=sys.stderr)
         return 0
     if findings:
@@ -1094,16 +1196,28 @@ def main(argv=None):
         if refused:
             print(message(refused, payload.get('agent_id')), file=sys.stderr)
             return 2   # the refusal of deletion comes first and does not depend on the test part
+        if boundary and sub_mode == 'deny':   # the boundary comes before the exception log: a refused command must not leave an entry
+            print(subagent_message(boundary), file=sys.stderr)
+            return 2
         log_exception(guard.root, payload, command, '; '.join(dict.fromkeys(item[4] for item in findings)), findings)
+    if boundary and sub_mode == 'deny':
+        print(subagent_message(boundary), file=sys.stderr)
+        return 2
+    text = subagent_message(boundary, executed=True) if boundary else None   # sub_mode == 'warn'
     if tests_mode == 'warn':
-        text, excused = test_warning(command, payload, wide_modules, wrappers)
+        tests_text, excused = test_warning(command, payload, wide_modules, wrappers)
         try:
             if excused:
                 log_exception(Guard.project_root(os.path.realpath(payload.get('cwd') or os.getcwd())), payload, command, '; '.join(dict.fromkeys(excused)), [('tests',)])
-            if text:
-                emit_warning(text)
         except Exception:  # noqa: BLE001 - the test part never takes the hook down
             pass
+        if tests_text:
+            text = text + ' ' + tests_text if text else tests_text   # ONE output: two JSON documents on stdout would not parse
+    try:
+        if text:
+            emit_warning(text)
+    except Exception:  # noqa: BLE001 - the warning never takes the hook down
+        pass
     return 0
 
 

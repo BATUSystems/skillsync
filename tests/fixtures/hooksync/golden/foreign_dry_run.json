@@ -1,0 +1,30 @@
+{
+  "claude_gitignore": null,
+  "event_order": [
+    "Stop",
+    "PreToolUse",
+    "Notification"
+  ],
+  "hook_files": [],
+  "hook_sha256": {},
+  "root_gitignore_skillsync": false,
+  "settings_backup": null,
+  "settings_local": "{\n  \"permissions\": {\n    \"allow\": [\n      \"Bash(ls:*)\"\n    ],\n    \"deny\": [\n      \"Read(./.env)\"\n    ]\n  },\n  \"env\": {\n    \"ZMIENNA\": \"wartość-ą\"\n  },\n  \"hooks\": {\n    \"Stop\": [\n      {\n        \"matcher\": \"\",\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": \"echo obcy-stop-ż\"\n          }\n        ]\n      }\n    ],\n    \"PreToolUse\": [\n      {\n        \"matcher\": \"Write\",\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": \"echo obcy-pre\"\n          }\n        ]\n      }\n    ],\n    \"Notification\": [\n      {\n        \"matcher\": \"\",\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": \"echo obcy-notify\"\n          }\n        ]\n      }\n    ]\n  }\n}\n",
+  "stdout": [
+    "[dry-run] Would write: <PROJECT>/.claude/hooks/check-closure.py",
+    "[dry-run] Would update: <PROJECT>/.claude/settings.local.json",
+    "[dry-run] Would write: <PROJECT>/.claude/hooks/guard-commands.py",
+    "[dry-run] Would write: <PROJECT>/.claude/hooks/attribution-patterns.json",
+    "[dry-run] Would write: <PROJECT>/.claude/hooks/guard-tests.py",
+    "[dry-run] Would write: <PROJECT>/.claude/hooks/test-tools.json",
+    "[dry-run] Would update: <PROJECT>/.claude/settings.local.json",
+    "[dry-run] Would update: <PROJECT>/.claude/.gitignore",
+    "[dry-run] Would update: <PROJECT>/.claude/.gitignore",
+    "[dry-run] Would update: <PROJECT>/.claude/.gitignore"
+  ],
+  "top_level_keys": [
+    "permissions",
+    "env",
+    "hooks"
+  ]
+}

@@ -308,3 +308,7 @@ lessons:
     title: "claude -p: do zadań tylko do odczytu użyj --restricted, nie --setting-sources user; flagi, których pomoc nie pokazuje albo opisuje inaczej"
     tags: [skillsync, claude-code, claude-p, bezpieczenstwo, hooki, json-schema]
     paths: ['tools/claude-headless/run.py', 'tools/claude-headless/claude_headless_core.py', 'tests/test_skillsync_claude_headless.py', 'docs/development.md']
+  - path: hook-kontekst-sprawdzaj-na-zywo-i-format-manifestu.md
+    title: "Hook dokładający kontekst sesji: testy JSON nie wykryją pustego delivery.mode ani statusu „unknown”; czytnik liniowy manifestu zna tylko jedną formę"
+    tags: [skillsync, claude-code, hooks, session-context, manifest, parser]
+    paths: ['library/hooks/session-context.py', 'tests/test_skillsync_hook_session_context.py', 'docs/manifest.md']

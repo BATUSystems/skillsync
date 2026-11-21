@@ -1,0 +1,42 @@
+{
+  "claude_gitignore": "agents/explore.md\nagents/implementer.md\nagents/test-writer.md\nagents/test-runner.md\nagents/reviewer.md\nagents/verifier.md\nagents/scribe.md\nagents/mechanic.md\nskills/feature\nskills/agent-runtime-pitfalls\nskills/test-env\nskills/observed-e2e\nskills/workflow\nskills/pre-implement\nskills/smart-test\nskills/bugfix\nskills/codereview\nhooks/check-closure.py\nsettings.local.json\nsettings.local.json.skillsync-backup\nhooks/guard-commands.py\nhooks/attribution-patterns.json\nhooks/guard-tests.py\nhooks/test-tools.json\n",
+  "event_order": [
+    "Stop",
+    "PreToolUse"
+  ],
+  "hook_files": [
+    "attribution-patterns.json",
+    "check-closure.py",
+    "guard-commands.py",
+    "guard-tests.py",
+    "test-tools.json"
+  ],
+  "hook_sha256": {
+    "attribution-patterns.json": "84168f01d6d12fc51aeb7164deec1c6c7b726199252cad8ae44359065821517d",
+    "check-closure.py": "2475f993bcfb34c02ac2538b827e76f570704c46da8aab99f37c4b60a1c9c9ae",
+    "guard-commands.py": "4948507d6a8feaa1f148c278f064084924e612ac0ed532f864f62642e459e082",
+    "guard-tests.py": "2431aca563638232a2111c80353ae4f7245bba6e901bf6e6cf0c0471f57c48fa",
+    "test-tools.json": "e16483e5f874342221375e959ef9f53ffab34122dddc22b88971fc0254501ec1"
+  },
+  "root_gitignore_skillsync": true,
+  "second_hook_files": [
+    "attribution-patterns.json",
+    "check-closure.py",
+    "guard-commands.py",
+    "guard-tests.py",
+    "test-tools.json"
+  ],
+  "second_settings_backup": "{\n  \"hooks\": {\n    \"Stop\": [\n      {\n        \"matcher\": \"\",\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": \"echo obcy-w-grupie\"\n          },\n          {\n            \"type\": \"command\",\n            \"command\": \"python3 .claude/hooks/check-closure.py --stary-argument\",\n            \"timeout\": 99\n          }\n        ]\n      }\n    ],\n    \"PreToolUse\": [\n      {\n        \"matcher\": \"Bash\",\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": \"python3 .claude/hooks/guard-commands.py --mode stary\"\n          },\n          {\n            \"type\": \"command\",\n            \"command\": \"echo obcy-bash\"\n          }\n        ]\n      }\n    ]\n  }\n}\n",
+  "second_settings_local": "{\n  \"hooks\": {\n    \"Stop\": [\n      {\n        \"matcher\": \"\",\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": \"echo obcy-w-grupie\"\n          }\n        ]\n      },\n      {\n        \"matcher\": \"\",\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": \"f=\\\"$(git -C \\\"${CLAUDE_PROJECT_DIR:-.}\\\" rev-parse --show-toplevel 2>/dev/null)/.claude/hooks/check-closure.py\\\"; if [ -f \\\"$f\\\" ]; then python3 \\\"$f\\\"; fi\",\n            \"timeout\": 10\n          }\n        ]\n      }\n    ],\n    \"PreToolUse\": [\n      {\n        \"matcher\": \"Bash\",\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": \"echo obcy-bash\"\n          }\n        ]\n      },\n      {\n        \"matcher\": \"Bash\",\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": \"f=\\\"$(git -C \\\"${CLAUDE_PROJECT_DIR:-.}\\\" rev-parse --show-toplevel 2>/dev/null)/.claude/hooks/guard-commands.py\\\"; if [ -f \\\"$f\\\" ]; then python3 \\\"$f\\\" --mode deny --attribution on --tests warn --wide-modules 25; fi\",\n            \"timeout\": 10\n          }\n        ]\n      }\n    ]\n  },\n  \"attribution\": {\n    \"commit\": \"\",\n    \"pr\": \"\"\n  }\n}\n",
+  "second_stdout": [],
+  "settings_backup": "{\n  \"hooks\": {\n    \"Stop\": [\n      {\n        \"matcher\": \"\",\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": \"echo obcy-w-grupie\"\n          },\n          {\n            \"type\": \"command\",\n            \"command\": \"python3 .claude/hooks/check-closure.py --stary-argument\",\n            \"timeout\": 99\n          }\n        ]\n      }\n    ],\n    \"PreToolUse\": [\n      {\n        \"matcher\": \"Bash\",\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": \"python3 .claude/hooks/guard-commands.py --mode stary\"\n          },\n          {\n            \"type\": \"command\",\n            \"command\": \"echo obcy-bash\"\n          }\n        ]\n      }\n    ]\n  }\n}\n",
+  "settings_local": "{\n  \"hooks\": {\n    \"Stop\": [\n      {\n        \"matcher\": \"\",\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": \"echo obcy-w-grupie\"\n          }\n        ]\n      },\n      {\n        \"matcher\": \"\",\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": \"f=\\\"$(git -C \\\"${CLAUDE_PROJECT_DIR:-.}\\\" rev-parse --show-toplevel 2>/dev/null)/.claude/hooks/check-closure.py\\\"; if [ -f \\\"$f\\\" ]; then python3 \\\"$f\\\"; fi\",\n            \"timeout\": 10\n          }\n        ]\n      }\n    ],\n    \"PreToolUse\": [\n      {\n        \"matcher\": \"Bash\",\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": \"echo obcy-bash\"\n          }\n        ]\n      },\n      {\n        \"matcher\": \"Bash\",\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": \"f=\\\"$(git -C \\\"${CLAUDE_PROJECT_DIR:-.}\\\" rev-parse --show-toplevel 2>/dev/null)/.claude/hooks/guard-commands.py\\\"; if [ -f \\\"$f\\\" ]; then python3 \\\"$f\\\" --mode deny --attribution on --tests warn --wide-modules 25; fi\",\n            \"timeout\": 10\n          }\n        ]\n      }\n    ]\n  },\n  \"attribution\": {\n    \"commit\": \"\",\n    \"pr\": \"\"\n  }\n}\n",
+  "stdout": [
+    "Updated: <PROJECT>/.claude/settings.local.json",
+    "Updated: <PROJECT>/.claude/settings.local.json"
+  ],
+  "top_level_keys": [
+    "hooks",
+    "attribution"
+  ]
+}

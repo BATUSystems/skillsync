@@ -1,0 +1,33 @@
+{
+  "claude_gitignore": "skills/agent-runtime-pitfalls\nskills/test-env\nskills/observed-e2e\nhooks/guard-commands.py\nhooks/attribution-patterns.json\nsettings.local.json\nsettings.local.json.skillsync-backup\n",
+  "event_order": [
+    "PreToolUse"
+  ],
+  "hook_files": [
+    "attribution-patterns.json",
+    "guard-commands.py"
+  ],
+  "hook_sha256": {
+    "attribution-patterns.json": "84168f01d6d12fc51aeb7164deec1c6c7b726199252cad8ae44359065821517d",
+    "guard-commands.py": "4948507d6a8feaa1f148c278f064084924e612ac0ed532f864f62642e459e082"
+  },
+  "root_gitignore_skillsync": false,
+  "second_hook_files": [
+    "attribution-patterns.json",
+    "guard-commands.py"
+  ],
+  "second_settings_backup": "{\n  \"attribution\": {\n    \"commit\": \"Co-Authored-By: Narzędzie\",\n    \"pr\": \"wygenerowano\"\n  },\n  \"permissions\": {\n    \"allow\": [\n      \"Bash(git status)\"\n    ]\n  }\n}\n",
+  "second_settings_local": "{\n  \"attribution\": {\n    \"commit\": \"\",\n    \"pr\": \"\"\n  },\n  \"permissions\": {\n    \"allow\": [\n      \"Bash(git status)\"\n    ]\n  },\n  \"hooks\": {\n    \"PreToolUse\": [\n      {\n        \"matcher\": \"Bash\",\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": \"f=\\\"$(git -C \\\"${CLAUDE_PROJECT_DIR:-.}\\\" rev-parse --show-toplevel 2>/dev/null)/.claude/hooks/guard-commands.py\\\"; if [ -f \\\"$f\\\" ]; then python3 \\\"$f\\\" --mode off --attribution on; fi\",\n            \"timeout\": 10\n          }\n        ]\n      }\n    ]\n  }\n}\n",
+  "second_stdout": [],
+  "settings_backup": "{\n  \"attribution\": {\n    \"commit\": \"Co-Authored-By: Narzędzie\",\n    \"pr\": \"wygenerowano\"\n  },\n  \"permissions\": {\n    \"allow\": [\n      \"Bash(git status)\"\n    ]\n  }\n}\n",
+  "settings_local": "{\n  \"attribution\": {\n    \"commit\": \"\",\n    \"pr\": \"\"\n  },\n  \"permissions\": {\n    \"allow\": [\n      \"Bash(git status)\"\n    ]\n  },\n  \"hooks\": {\n    \"PreToolUse\": [\n      {\n        \"matcher\": \"Bash\",\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": \"f=\\\"$(git -C \\\"${CLAUDE_PROJECT_DIR:-.}\\\" rev-parse --show-toplevel 2>/dev/null)/.claude/hooks/guard-commands.py\\\"; if [ -f \\\"$f\\\" ]; then python3 \\\"$f\\\" --mode off --attribution on; fi\",\n            \"timeout\": 10\n          }\n        ]\n      }\n    ]\n  }\n}\n",
+  "stdout": [
+    "[warn] <PROJECT>/.claude/settings.local.json: `attribution` switched on, set to the empty form (the ban on AI attribution cannot be turned off)",
+    "Updated: <PROJECT>/.claude/settings.local.json"
+  ],
+  "top_level_keys": [
+    "attribution",
+    "permissions",
+    "hooks"
+  ]
+}

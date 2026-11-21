@@ -112,3 +112,7 @@ entries:
     title: "Spec i plan poza gitem: tryb nieśledzony (tracked: false), migawka, archiwum speców i odbiór planu"
     tags: [skillsync, workflow, specs, snapshot, archive, git, approvals, closure]
     paths: ['skillsync_workflow/specs.py', 'skillsync_workflow/spec_snapshot.py', 'skillsync_workflow/status.py', 'skillsync_workflow/quality.py', 'skillsync_workflow/test_gate.py', 'skillsync_workflow/retro.py', 'library/hooks/check-closure.py', 'library/skills/feature/references/spec-store.md', 'tests/test_skillsync_specs*.py', 'tests/test_skillsync_spec_snapshot.py', 'tests/test_skillsync_repo_hygiene.py', 'tests/test_skillsync_closure.py']
+  - path: hooki-kontekst-i-granica-podagenta.md
+    title: 'Hooki Claude Code: co faktycznie dociera do modelu, kiedy i z jakim payloadem; granica commitu podagenta'
+    tags: [skillsync, claude-code, hooks, session-context, subagents, guard, commit-boundary]
+    paths: ['library/hooks/**', 'skillsync_workflow/hooksync.py', 'skillsync_workflow/guardhook.py', 'tests/test_skillsync_hook*.py', 'tests/test_skillsync_hooksync.py']

@@ -110,7 +110,7 @@ def effective_mode(manifest, skills):
     return 'deny' if agent_flow(skills) else 'off'
 
 
-def hook_command(python_command, mode, allow, tests=None):
+def hook_command(python_command, mode, allow, tests=None, subagent_commit=None):
     # root from git: $CLAUDE_PROJECT_DIR is the start directory of the session, often a subdirectory; a missing script is exit 0
     args = ['--mode', mode, '--attribution', 'on']   # the ban on AI attribution is always on (no manifest switch)
     for item in allow:
@@ -119,13 +119,15 @@ def hook_command(python_command, mode, allow, tests=None):
         args += ['--tests', 'warn', '--wide-modules', str(tests['wide'])]
         for item in tests.get('wrappers', []):
             args += ['--wrapper', item]
+    if subagent_commit and subagent_commit != 'off':   # commit boundary of a sub-agent (CLAUDE-3 K6); left out when off, so old entries keep their bytes
+        args += ['--subagent-commit', subagent_commit]
     python = shlex.quote(python_command)
     return (f'f="$(git -C "${{CLAUDE_PROJECT_DIR:-.}}" rev-parse --show-toplevel 2>/dev/null)/{GUARD_HOOK}"; '
             f'if [ -f "$f" ]; then {python} "$f" {shlex.join(args)}; fi')
 
 
-def hook_entry(python_command, mode, allow, tests=None):
-    return {'matcher': 'Bash', 'hooks': [{'type': 'command', 'command': hook_command(python_command, mode, allow, tests), 'timeout': 10}]}
+def hook_entry(python_command, mode, allow, tests=None, subagent_commit=None):
+    return {'matcher': 'Bash', 'hooks': [{'type': 'command', 'command': hook_command(python_command, mode, allow, tests, subagent_commit), 'timeout': 10}]}
 
 
 def is_guard_hook(hook):
