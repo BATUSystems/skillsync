@@ -545,6 +545,78 @@
     "category": "posix-only"
    },
    {
+    "id": "test_skillsync_claude_headless.FakeClaude.test_a_call_that_takes_too_long_is_exit_1_and_booked_at_the_limit",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_claude_headless.FakeClaude.test_a_corrupt_ledger_stops_before_the_binary_without_a_traceback",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_claude_headless.FakeClaude.test_a_full_ledger_stops_before_the_binary",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_claude_headless.FakeClaude.test_a_non_empty_output_directory_is_refused_before_the_binary",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_claude_headless.FakeClaude.test_a_result_that_does_not_fit_the_schema_is_exit_1_and_the_raw_output_is_kept",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_claude_headless.FakeClaude.test_a_valid_answer_is_stored_booked_and_the_child_sees_a_clean_copy",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_claude_headless.FakeClaude.test_an_input_over_the_size_threshold_stops_before_the_binary",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_claude_headless.FakeClaude.test_an_unknown_tag_and_a_missing_binary_are_refusals",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_claude_headless.FakeClaude.test_an_unparsable_answer_is_booked_at_the_limit",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_claude_headless.FakeClaude.test_the_child_gets_the_resolved_profile_directory",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_claude_headless.FakeClaude.test_the_cost_limit_is_exit_3_and_is_booked",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_claude_headless.FakeClaude.test_the_sum_over_the_total_budget_stops_before_the_binary",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_claude_headless.FakeClaude.test_the_turn_limit_is_exit_1",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_claude_headless.FakeClaude.test_the_version_probe_also_runs_in_the_clean_environment_inside_the_copy",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_claude_headless.Ledger.test_two_runs_are_serialized_by_the_lock",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_claude_headless.ProfileAllowlist.test_a_link_is_judged_by_its_target",
+    "category": "no-os-symlinks"
+   },
+   {
+    "id": "test_skillsync_claude_headless.TheCopy.test_a_link_inside_an_allowed_directory_never_reaches_the_copy",
+    "category": "no-os-symlinks"
+   },
+   {
+    "id": "test_skillsync_claude_headless_core.EvalWrapperAfterTheRefactor.test_the_dry_run_equals_the_golden_file_written_before_the_refactor",
+    "category": "posix-only"
+   },
+   {
     "id": "test_skillsync_codex.StopHookMigrationTests.test_generated_command_executes_and_preserves_shell_characters",
     "category": "posix-only"
    },

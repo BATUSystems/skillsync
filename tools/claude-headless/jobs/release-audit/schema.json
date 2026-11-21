@@ -1,0 +1,24 @@
+{
+  "type": "object",
+  "properties": {
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string", "minLength": 1, "maxLength": 12},
+          "severity": {"type": "string", "enum": ["info", "warning", "error"]},
+          "kind": {"type": "string", "enum": ["changelog-missing", "changelog-stale", "changelog-language", "breaking-missing", "version-mismatch", "docs-stale", "docs-inconsistent", "other"]},
+          "file": {"type": "string", "minLength": 1},
+          "claim": {"type": "string", "minLength": 1},
+          "evidence": {"type": "string", "minLength": 1}
+        },
+        "required": ["id", "severity", "kind", "file", "claim", "evidence"],
+        "additionalProperties": false
+      }
+    },
+    "summary": {"type": "string"}
+  },
+  "required": ["findings", "summary"],
+  "additionalProperties": false
+}

@@ -1,0 +1,35 @@
+{
+  "argv": [
+    "claude",
+    "plugin",
+    "eval",
+    "<TMP>/out/stage/plugin",
+    "--no-publish",
+    "--trust-plugin",
+    "--max-cost-usd",
+    "1.5",
+    "--model",
+    "haiku",
+    "--runs",
+    "2",
+    "--concurrency",
+    "1",
+    "--ablation",
+    "with-without",
+    "--json",
+    "<TMP>/out/aggregate.json",
+    "--output-dir",
+    "<TMP>/out/results",
+    "--report",
+    "<TMP>/out/report.html",
+    "--case",
+    "feature-*"
+  ],
+  "env": {
+    "PATH": "/usr/bin:/bin",
+    "HOME": "/fixture-home",
+    "LANG": "C.UTF-8",
+    "LC_ALL": "C.UTF-8",
+    "CLAUDE_CONFIG_DIR": "<TMP>/profile"
+  }
+}
