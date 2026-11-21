@@ -15,6 +15,7 @@ import tempfile
 import threading
 import time
 import tomllib
+import traceback
 import uuid
 import sys
 import yaml
@@ -92,6 +93,14 @@ def plan_validation(root, manifest, library, profile='quick', files=None, check_
 
 def _redact(text):
     return redact(text)
+
+
+def _unexpected_reason(error):
+    """The reason of a check that ended with an exception nobody planned for (a bug of an observer, of the runner): the type, the redacted text and the place
+    (file name and line of the innermost frame, no absolute path), so that the bug can be found without the stack trace."""
+    frames = traceback.extract_tb(error.__traceback__)
+    place = f' at {Path(frames[-1].filename).name}:{frames[-1].lineno}' if frames else ''
+    return _redact(f'Unexpected error: {type(error).__name__}: {error}{place}')
 
 
 def _test_counts(output):
@@ -401,6 +410,8 @@ def run_validation(root, checks, *, log_dir=None, observer=None):
                 result['reason'] = 'Interrupted; process tree terminated and reaped; series stopped'
             except (OSError, ValueError, re.error) as error:
                 result['reason'] = _redact(str(error))
+            except Exception as error:   # noqa: BLE001 - an exception nobody planned for (e.g. in `observer.started`) ends THIS check as BLOCKED; `finished` below still runs and closes the record
+                result['reason'] = _unexpected_reason(error)
         result['duration_seconds'] = round(time.monotonic() - start, 6)
         if observer is not None and ran:
             try:
