@@ -59,6 +59,7 @@ innych i odbierało nazwie pętli status bezpiecznej.
    czerwieni 3 z 7 testów `ScannerNameRule`.
 5. Kontrola izolacji „test touched real Skillsync state dirs” bywa czerwona, gdy inna karta wykonuje `skillsync link` w czasie biegu. Powtórz moduł
    punktowo: przyczyna jest zewnętrzna.
+6. `child` i `descend` dotykają systemu plików (`resolve()`), więc nie wolno ich wołać wewnątrz sekcji wyścigu w testach współbieżności: na Windows `resolve` ścieżki, której rodzic właśnie powstaje w innym wątku, może rzucić i test zgłosi gubienie katalogów (`7 != 8` w `test_skillsync_ensure_dir`). Ścieżki liczy się w głównym wątku przed startem wątków.
 
 **Granice:** skaner nie śledzi przepływu przez wywołania (fabryka zwracająca ścieżkę tmp) ani `global`/`nonlocal`; atrybut o tej samej nazwie
 w niezwiązanej klasie skazi plik; klasy rozpoznaje prosta nazwa (kolizje nazw z różnych plików dają sumę atrybutów).
