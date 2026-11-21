@@ -36,6 +36,10 @@ from urllib.parse import parse_qs, urlsplit
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child  # noqa: E402
 from skillsync_workflow import prototype_server as ps  # noqa: E402
 from tests.test_skillsync_prototype import CLI, PrototypeFixture  # noqa: E402
 from tests.test_skillsync_prototype_server import setUpModule, tearDownModule  # noqa: E402,F401  (strażnik katalogu tymczasowego)
@@ -181,7 +185,7 @@ class LinkCase(PrototypeFixture):
 
     def state_path(self, server=None):
         server = server or self.server
-        return self.run_dir / ('server-%d.json' % server.port)
+        return child(self.run_dir, 'server-%d.json' % server.port)
 
     def read_state(self, server=None):
         path = self.state_path(server)
@@ -224,7 +228,7 @@ class LinkCase(PrototypeFixture):
         return token, report, result
 
     def token_file(self, token):
-        return self.run_dir / 'login' / (sha256_hex(token) + '.json')
+        return child(self.run_dir / 'login', sha256_hex(token) + '.json')
 
     # -- HTTP -----------------------------------------------------------------
     def link_get(self, token, headers=None, path=None, query=None, method='GET', client=None):
@@ -402,7 +406,7 @@ class LoginLinkIssueTests(LinkCase):
         content = self.token_file(token).read_text(encoding='utf-8')
         login_dir = self.run_dir / 'login'
         for _ in range(40):
-            clone = login_dir / (sha256_hex(fake_token()) + '.json')
+            clone = child(login_dir, sha256_hex(fake_token()) + '.json')
             clone.write_text(content, encoding='utf-8')
             os.chmod(str(clone), 0o600)
         result = self.run_link()
@@ -997,7 +1001,7 @@ class ServerStateFileTests(LinkCase):
                     port = int(found.group(1))
                     break
             self.assertIsNotNone(port, 'serwer nie ogłosił adresu: ' + ''.join(lines))
-            state_path = self.run_dir / ('server-%d.json' % port)
+            state_path = child(self.run_dir, 'server-%d.json' % port)
             deadline = time.time() + 5
             while not state_path.exists() and time.time() < deadline:
                 time.sleep(0.05)
@@ -1035,7 +1039,7 @@ class ServerStateFileTests(LinkCase):
                     port = int(found.group(1))
                     break
             self.assertIsNotNone(port)
-            state_path = self.run_dir / ('server-%d.json' % port)
+            state_path = child(self.run_dir, 'server-%d.json' % port)
             deadline = time.time() + 5
             while not state_path.exists() and time.time() < deadline:
                 time.sleep(0.05)

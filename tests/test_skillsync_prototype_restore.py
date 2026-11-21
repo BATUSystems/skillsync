@@ -21,6 +21,10 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child  # noqa: E402
 from skillsync_workflow import prototype_server as ps  # noqa: E402
 from skillsync_workflow.fsutil import rmtree_force  # noqa: E402
 from tests.test_skillsync_prototype import CLI, PrototypeFixture, tree  # noqa: E402
@@ -1312,7 +1316,7 @@ class MergeCommentsTests(RestoreFixture):
         Path(path).write_text(ps.serialize_document('demo', operations), encoding='utf-8')
 
     def other(self, operations, name='other.json', slug='demo'):
-        (self.root / name).write_text(ps.serialize_document(slug, operations), encoding='utf-8')
+        child(self.root, name).write_text(ps.serialize_document(slug, operations), encoding='utf-8')
         return name
 
     def merge(self, name):

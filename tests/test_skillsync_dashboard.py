@@ -16,6 +16,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / 'tests'))
 from layers_helpers import home_env, guard_real_state  # noqa: E402
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child  # noqa: E402
 from skillsync_workflow import dashboard, status  # noqa: E402
 
 CLI = ROOT / 'skillsync'
@@ -82,7 +86,7 @@ class DashboardFixture(unittest.TestCase):
                     **home_env(self.base)}
 
     def project(self, case):
-        root = self.base / case / 'demo'
+        root = child(self.base, case) / 'demo'
         shutil.copytree(FIXTURES / case / 'input', root)
         self.head = git_commit_all(root, self.env) if case in GIT_CASES else None
         for path in root.rglob('*'):

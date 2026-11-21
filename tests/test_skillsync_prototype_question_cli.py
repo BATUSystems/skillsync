@@ -25,6 +25,10 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child, descend  # noqa: E402
 from skillsync_workflow import prototype as pt  # noqa: E402
 from skillsync_workflow import prototype_server as ps  # noqa: E402
 from tests.test_skillsync_prototype import CLI, PrototypeFixture  # noqa: E402
@@ -177,7 +181,7 @@ class QuestionCase(PrototypeFixture):
 
     def spec_row(self, qid, line, spec=SPEC):
         """Zapisuje w specu wiersz `[EKSPERT]` pytania w linii `line` (`record` sprawdza, że tam stoi)."""
-        path = self.root / spec
+        path = descend(self.root, spec)
         path.parent.mkdir(parents=True, exist_ok=True)
         lines = path.read_text(encoding='utf-8').split('\n') if path.exists() else []
         while len(lines) < line:
@@ -1450,15 +1454,15 @@ class MergeDriverTests(QuestionCase):
         self.mdir.mkdir()
 
     def put(self, name, operations):
-        path = self.mdir / name
+        path = child(self.mdir, name)
         path.write_text(ps.serialize_questions(operations), encoding='utf-8')
         return path
 
     def branch_answer(self, base, by, text, name):
         """Odpowiedź napisana na kopii bazy (jak na osobnej gałęzi): na wspólnym pliku druga odpowiedź to 409."""
         time.sleep(0.02)   # różne `at`: kolejność (at, id) nie zależy od losowego id
-        store = ps.QuestionsStore(str(self.base / ('gałąź-' + name)))
-        (self.base / ('gałąź-' + name)).mkdir()
+        store = ps.QuestionsStore(str(child(self.base, 'gałąź-' + name)))
+        (child(self.base, 'gałąź-' + name)).mkdir()
         Path(store.path).write_text(ps.serialize_questions(base), encoding='utf-8')
         result = store.transaction(lambda s: {'type': 'answer', 'questionId': QA, 'by': by, 'cid': 'a-' + name, 'text': text})
         return result.operations[0]
