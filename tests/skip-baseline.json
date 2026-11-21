@@ -1463,6 +1463,14 @@
     "category": "no-os-symlinks"
    },
    {
+    "id": "test_skillsync_output_styles.ForeignFile.test_a_symlink_in_the_directory_never_makes_us_write_through_it",
+    "category": "no-os-symlinks"
+   },
+   {
+    "id": "test_skillsync_output_styles.HarnessSelfChecks.test_a_planted_symlink_is_refused_by_both_helpers",
+    "category": "no-os-symlinks"
+   },
+   {
     "id": "test_skillsync_path_case.LayerRulesCaseTest.test_a_rule_selects_layers_of_a_project_spelled_with_another_case",
     "category": "windows-no-mechanism"
    },
