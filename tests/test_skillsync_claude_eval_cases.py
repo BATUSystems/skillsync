@@ -28,11 +28,11 @@ class ShippedCases(unittest.TestCase):
 
     def test_the_control_forbids_the_read_that_the_qualifying_cases_require(self):
         control = (EVALS / CONTROL / 'graders' / 'no-ticket-intake.md').read_text(encoding='utf-8')
-        self.assertIn('max_count: 0', control)
+        self.assertIn('max: 0', control)
         for name in ('feature-with-key', 'bugfix-with-key'):
             text = (EVALS / name / 'graders' / 'reads-ticket-intake.md').read_text(encoding='utf-8')
             self.assertIn('ticket-intake', text)
-            self.assertNotIn('max_count', text)
+            self.assertNotIn('max:', text)
 
 
 if __name__ == '__main__':
