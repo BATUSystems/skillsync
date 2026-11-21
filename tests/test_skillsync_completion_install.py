@@ -22,10 +22,13 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 os.environ.setdefault('SKILLSYNC_TEST_LIBRARY', str(ROOT / 'library'))
+
+from skillsync_workflow import completion_install  # noqa: E402
 
 START = b'# >>> skillsync completion >>>'
 END = b'# <<< skillsync completion <<<'
@@ -617,25 +620,25 @@ class LineEndingsTest(Base):
         else:
             self.assertNotIn(b'\r', tail)
 
+    @unittest.skipIf(WIN, 'POSIX only: on Windows the script lives under LOCALAPPDATA and the block uses $env:LOCALAPPDATA (ASCII), XDG_DATA_HOME is ignored')
     def test_non_ascii_script_path_without_bom_profile_fails(self):
         self.sb.shells('pwsh')
         data_home = self.sb.root / 'dane-ąę' / 'data'
         original = b'# plain ascii profile\n'
         self.sb.profile.write_bytes(original)
-        env = {'LOCALAPPDATA': str(data_home)} if WIN else {'XDG_DATA_HOME': str(data_home)}
-        res = self.sb.install(**env)
+        res = self.sb.install(XDG_DATA_HOME=str(data_home))
         self.assertEqual(res.rc, 1, f'{res.out}\n{res.err}')
         self.assertEqual(res.action(self.sb.profile)['result'], 'failed')
         self.assertEqual(self.sb.profile.read_bytes(), original)
         self.assertFalse(Path(str(self.sb.profile) + '.skillsync-bak').exists())
 
+    @unittest.skipIf(WIN, 'POSIX only: on Windows the script lives under LOCALAPPDATA and the block uses $env:LOCALAPPDATA (ASCII), XDG_DATA_HOME is ignored')
     def test_non_ascii_script_path_with_bom_profile_is_written(self):
         self.sb.shells('pwsh')
         data_home = self.sb.root / 'dane-ąę' / 'data'
         original = BOM + b'# bom profile\r\n'
         self.sb.profile.write_bytes(original)
-        env = {'LOCALAPPDATA': str(data_home)} if WIN else {'XDG_DATA_HOME': str(data_home)}
-        res = self.sb.install(**env)
+        res = self.sb.install(XDG_DATA_HOME=str(data_home))
         self.assertOk(res)
         data = self.sb.profile.read_bytes()
         self.assertTrue(data.startswith(original))
@@ -810,7 +813,7 @@ class QuotingTest(Base):
     def test_zsh_block_with_space_and_apostrophe_in_home_is_valid_shell(self):
         zsh = shutil.which('zsh', path=REAL_PATH)
         if not zsh:
-            self.skipTest('no /bin/zsh: zsh not available')
+            self.skipTest('no zsh on PATH: zsh is not installed')
         self.odd_home()
         self.sb.shells('zsh')
         self.sb.xdg = self.sb.home / '.local' / 'share'
@@ -825,7 +828,7 @@ class QuotingTest(Base):
     def test_bash_file_with_odd_home_is_valid_shell(self):
         bash = shutil.which('bash', path=REAL_PATH)
         if not bash:
-            self.skipTest('no /bin/bash: bash not available')
+            self.skipTest('no bash on PATH: bash is not installed')
         self.odd_home()
         self.sb.shells('bash')
         self.sb.xdg = self.sb.home / '.local' / 'share'
@@ -833,15 +836,166 @@ class QuotingTest(Base):
         proc = subprocess.run([bash, '-n', str(self.sb.bash_file)], capture_output=True, text=True)
         self.assertEqual(proc.returncode, 0, proc.stderr)
 
+    @unittest.skipIf(WIN, 'POSIX only: on Windows the script lives under LOCALAPPDATA and the block uses $env:LOCALAPPDATA, never a literal path')
     def test_powershell_block_doubles_apostrophes_in_a_literal_path(self):
         self.sb.shells('pwsh')
         data_home = self.sb.root / "x'y dir" / 'data'
-        env = {'LOCALAPPDATA': str(data_home)} if WIN else {'XDG_DATA_HOME': str(data_home)}
-        self.assertOk(self.sb.install(**env))
+        self.assertOk(self.sb.install(XDG_DATA_HOME=str(data_home)))
         block = block_of(self.sb.profile.read_bytes()).decode('utf-8')
         script = str(data_home / 'skillsync' / 'completion' / 'skillsync-completion.ps1')
         self.assertIn("'" + script.replace("'", "''") + "'", block)
         self.assertNotIn("'" + script + "'", block)
+
+
+class EncodingGuardTest(Base):
+    """M1: a startup file that is UTF-16/UTF-32 text (or has NUL bytes) is never edited: appending UTF-8 would corrupt it."""
+    CASES = {
+        'utf-16le bom': b'\xff\xfe#\x00 \x00p\x00\r\x00\n\x00',
+        'utf-16be bom': b'\xfe\xff\x00#\x00 \x00p\x00',
+        'utf-32le bom': b'\xff\xfe\x00\x00#\x00\x00\x00',
+        'utf-32be bom': b'\x00\x00\xfe\xff\x00\x00\x00#',
+        'nul bytes in text': b'export A=1\n\x00\x00binary\n',
+    }
+
+    def test_install_and_uninstall_fail_without_writing_or_backup(self):
+        self.sb.shells('zsh', 'pwsh')
+        for name, original in self.CASES.items():
+            for path in (self.sb.zshrc, self.sb.profile):
+                for operation in ('install', 'uninstall'):
+                    with self.subTest(case=name, path=path.name, operation=operation):
+                        path.write_bytes(original)
+                        os.utime(path, ns=(10**9, 10**9))
+                        res = getattr(self.sb, operation)()
+                        self.assertEqual(res.rc, 1, f'{res.out}\n{res.err}')
+                        item = res.action(path)
+                        self.assertEqual(item['result'], 'failed')
+                        self.assertRegex(item['detail'], r'UTF-16|NUL')
+                        self.assertEqual(path.read_bytes(), original)
+                        self.assertEqual(path.stat().st_mtime_ns, 10**9)
+                        self.assertFalse(Path(str(path) + '.skillsync-bak').exists())
+
+
+class ReadOnlyRcTest(Base):
+    @unittest.skipIf(sys.platform == 'win32', 'POSIX only: chmod 0444 on a file in a writable directory')
+    @unittest.skipIf(hasattr(os, 'geteuid') and os.geteuid() == 0, 'root ignores file permissions')
+    def test_read_only_rc_in_a_writable_directory_fails_without_backup(self):
+        self.prepare_zshrc(b'export A=1\n')
+        self.sb.zshrc.chmod(0o444)
+        before = tree(self.sb.home)
+        res = self.sb.install()
+        self.assertEqual(res.rc, 1, f'{res.out}\n{res.err}')
+        item = res.action(self.sb.zshrc)
+        self.assertEqual(item['result'], 'failed')
+        self.assertIn('read-only', item['detail'])
+        self.assertEqual(tree(self.sb.home), before, 'no backup, no temp file, no change')
+        self.assertEqual(sorted(p.name for p in self.sb.home.iterdir() if p.name.startswith('.zshrc')), ['.zshrc'])
+
+
+class DanglingSymlinkTest(Base):
+    @unittest.skipIf(sys.platform == 'win32', 'POSIX only: symlinks')
+    def test_uninstall_keeps_the_users_link_and_removes_only_the_file_we_created(self):
+        self.sb.shells('zsh')
+        store = self.sb.root / 'dotfiles'
+        store.mkdir()
+        target = store / 'zshrc'
+        os.symlink(target, self.sb.zshrc)   # dangling: the dotfiles manager has not created the file yet
+        self.assertOk(self.sb.install())
+        self.assertEqual(target.read_bytes().count(START), 1)
+        res = self.sb.uninstall()
+        self.assertOk(res)
+        self.assertEqual(res.action(self.sb.zshrc)['result'], 'removed')
+        self.assertTrue(self.sb.zshrc.is_symlink(), 'the link of the user stays')
+        self.assertEqual(os.readlink(self.sb.zshrc), str(target))
+        self.assertFalse(target.exists())
+
+
+class ProfileQueryTest(Base):
+    @unittest.skipIf(sys.platform == 'win32', 'POSIX only: the fake pwsh is a #!/bin/sh script printing raw bytes')
+    def test_a_non_utf8_answer_is_no_answer_and_the_default_profile_is_used(self):
+        self.sb.tool('pwsh', "printf '\\377\\376/not/utf8\\n'\n")
+        res = self.sb.install('--shell', 'powershell')
+        self.assertEqual(res.rc, 0, f'{res.out}\n{res.err}')
+        default = self.sb.home / '.config' / 'powershell' / 'Microsoft.PowerShell_profile.ps1'
+        self.assertEqual(default.read_bytes().count(START), 1)
+        self.assertTrue(any('no usable answer' in warning for warning in res.report['warnings']), res.report['warnings'])
+
+
+class PowerShellQuotingTest(Base):
+    def test_every_quote_character_powershell_accepts_is_doubled(self):
+        for char in "'‘’‚‛":
+            with self.subTest(char=hex(ord(char))):
+                self.assertEqual(completion_install._ps_literal(f'a{char}b'), f"'a{char}{char}b'")
+        self.assertEqual(completion_install._ps_literal('plain'), "'plain'")
+
+    @unittest.skipIf(WIN, 'POSIX only: on Windows the block uses $env:LOCALAPPDATA, never a literal path')
+    def test_typographic_quotes_in_a_literal_path_are_doubled_in_the_block(self):
+        self.sb.shells('pwsh')
+        self.sb.profile.write_bytes(BOM + b'# bom profile\r\n')   # a non-ASCII path needs a BOM profile
+        data_home = self.sb.root / 'x’y‘z' / 'data'
+        self.assertOk(self.sb.install(XDG_DATA_HOME=str(data_home)))
+        block = block_of(self.sb.profile.read_bytes()).decode('utf-8')
+        script = str(data_home / 'skillsync' / 'completion' / 'skillsync-completion.ps1')
+        self.assertIn("'" + script.replace('’', '’’').replace('‘', '‘‘') + "'", block)
+
+
+class HomeResolutionTest(Base):
+    def targets(self, win, **env):
+        with mock.patch.object(completion_install, 'WIN', win), mock.patch.dict(os.environ, env, clear=True):
+            return completion_install.Targets()
+
+    def default_profile(self, **env):   # the paths are computed lazily, so the environment must still be patched
+        with mock.patch.object(completion_install, 'WIN', False), mock.patch.dict(os.environ, env, clear=True):
+            return completion_install.Targets().default_profile('pwsh')
+
+    def test_windows_prefers_userprofile_over_home(self):
+        a, b = str(self.sb.root / 'a'), str(self.sb.root / 'b')
+        self.assertEqual(self.targets(True, HOME=a, USERPROFILE=b).home, os.path.normpath(b))
+        self.assertEqual(self.targets(True, HOME=a).home, os.path.normpath(a))
+        self.assertEqual(self.targets(True, HOME=a, USERPROFILE='').home, os.path.normpath(a))
+
+    def test_windows_without_home_and_userprofile_is_blocked(self):
+        with self.assertRaises(completion_install.Blocked):
+            self.targets(True)
+
+    def test_posix_uses_home(self):
+        a, b = str(self.sb.root / 'a'), str(self.sb.root / 'b')
+        self.assertEqual(self.targets(False, HOME=a, USERPROFILE=b).home, os.path.normpath(a))
+
+    def test_posix_default_profile_follows_xdg_config_home(self):
+        home, config = str(self.sb.root / 'h'), str(self.sb.root / 'cfg')
+        name = 'Microsoft.PowerShell_profile.ps1'
+        self.assertEqual(self.default_profile(HOME=home, XDG_CONFIG_HOME=config),
+                         os.path.join(os.path.normpath(config), 'powershell', name))
+        self.assertEqual(self.default_profile(HOME=home), os.path.join(os.path.normpath(home), '.config', 'powershell', name))
+
+    @unittest.skipIf(WIN, 'POSIX only: the default profile location of PowerShell on Linux and macOS')
+    def test_install_without_a_host_writes_the_profile_under_xdg_config_home(self):
+        config = self.sb.root / 'cfg'
+        res = self.sb.install('--shell', 'powershell', XDG_CONFIG_HOME=str(config))
+        self.assertEqual(res.rc, 0, f'{res.out}\n{res.err}')
+        self.assertEqual((config / 'powershell' / 'Microsoft.PowerShell_profile.ps1').read_bytes().count(START), 1)
+        self.assertFalse((self.sb.home / '.config').exists())
+
+    @unittest.skipIf(WIN, 'POSIX only: XDG_CONFIG_HOME is a POSIX convention')
+    def test_a_bad_xdg_config_home_blocks_before_any_write(self):
+        before = tree(self.sb.root)
+        res = self.sb.install('--shell', 'powershell', XDG_CONFIG_HOME='relative/cfg')
+        self.assertEqual(res.rc, 2, f'{res.out}\n{res.err}')
+        self.assertEqual(tree(self.sb.root), before)
+
+
+class AutoSwitchBeforePathsTest(Base):
+    def test_a_disabled_feature_is_not_blocked_by_a_bad_home(self):
+        self.sb.shells('bash', 'zsh')
+        res = self.sb.install('--auto', HOME='relative/home', USERPROFILE='relative/home', SKILLSYNC_NO_COMPLETION='1')
+        self.assertEqual(res.rc, 0, f'{res.out}\n{res.err}')
+        self.assertEqual(res.report['status'], 'NOT_RUN')
+        self.assertEqual(set(res.results()), {'skipped'})
+
+    def test_without_the_switch_a_bad_home_still_blocks(self):
+        self.sb.shells('bash')
+        res = self.sb.install('--auto', HOME='relative/home', USERPROFILE='relative/home')
+        self.assertEqual(res.rc, 2, f'{res.out}\n{res.err}')
 
 
 @unittest.skipIf(sys.platform == 'win32', 'POSIX only: real zsh runtime with POSIX paths')
@@ -851,7 +1005,7 @@ class ZshRuntimeTest(Base):
     def run_zsh(self, prelude):
         zsh = shutil.which('zsh', path=REAL_PATH)
         if not zsh:
-            self.skipTest('no /bin/zsh: zsh not available')
+            self.skipTest('no zsh on PATH: zsh is not installed')
         self.sb.zshrc.write_bytes(prelude)
         self.sb.shells('zsh')
         self.assertOk(self.sb.install())

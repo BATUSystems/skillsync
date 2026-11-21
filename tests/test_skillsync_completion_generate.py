@@ -45,6 +45,30 @@ def fixture_parser():
     return subparsers
 
 
+def reordered_fixture_parser():
+    """The same command tree as `fixture_parser()` with commands and sub-commands registered in the opposite order. The generator sorts these
+    (command paths, `subs`); the order of flags and of `choices` is the parser's own and is kept, so the test does not claim more than that."""
+    root = argparse.ArgumentParser(prog='skillsync')
+    root.add_argument('--version', action='version', version='x')
+    subparsers = root.add_subparsers(dest='command')
+    skills = subparsers.add_parser('skills', help='skills')
+    inner = skills.add_subparsers(dest='skills_command')
+    inner.add_parser('list')
+    add = inner.add_parser('add')
+    add.add_argument('name', choices=['alpha', 'beta'])
+    add.add_argument('--force', action='store_true')
+    link = subparsers.add_parser('link', help='link')
+    link.add_argument('project', nargs='?')
+    link.add_argument('--json', action='store_true')
+    link.add_argument('--mode', choices=['copy', "it's", 'two words'])
+    link.add_argument('--out-dir')
+    link.add_argument('--target-file', metavar='FILE')
+    link.add_argument('--hidden', help=argparse.SUPPRESS)
+    link.add_argument('--direct')
+    link.add_argument('--tag', '-t')
+    return subparsers
+
+
 def real_subparsers():
     captured = {}
     original = argparse.ArgumentParser.parse_args
@@ -104,6 +128,12 @@ class Golden(GeneratedFixtureCase):
     def test_the_output_is_deterministic(self):
         for shell in completion.SHELLS:
             self.assertEqual(self.script(shell), self.script(shell))
+
+    def test_the_output_does_not_depend_on_the_order_of_commands_and_subcommands(self):
+        reordered = reordered_fixture_parser()
+        for shell in completion.SHELLS:
+            with self.subTest(shell=shell):
+                self.assertEqual(completion.render(shell, reordered), self.script(shell))
 
     def test_unsuppressed_values_are_quoted_for_each_shell(self):
         self.assertIn("'it'\\''s'", self.script('bash'))
@@ -174,12 +204,12 @@ class Syntax(GeneratedFixtureCase):
 
     def test_bash_accepts_the_script(self):
         if not shutil.which('bash'):
-            self.skipTest('no /bin/bash: bash is not installed')
+            self.skipTest('no bash on PATH: bash is not installed')
         self.check(['bash', '-n'], 'bash', 'bash')
 
     def test_zsh_accepts_the_script(self):
         if not shutil.which('zsh'):
-            self.skipTest('no /bin/zsh: zsh is not installed')
+            self.skipTest('no zsh on PATH: zsh is not installed')
         self.check(['zsh', '-n'], 'zsh', 'zsh')
 
     def test_powershell_parses_the_script(self):
@@ -210,7 +240,7 @@ class Syntax(GeneratedFixtureCase):
 
     def test_bash_completes_in_a_real_shell(self):
         if not shutil.which('bash'):
-            self.skipTest('no /bin/bash: bash is not installed')
+            self.skipTest('no bash on PATH: bash is not installed')
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'script.bash'
             path.write_bytes(self.script('bash').encode('utf-8'))
@@ -223,6 +253,13 @@ class Syntax(GeneratedFixtureCase):
 
 class Command(unittest.TestCase):
     def run_command(self, argv):
+        previous = completion._SUBPARSERS   # register() overwrites this module global; leave it as it was
+        try:
+            return self._run_command(argv)
+        finally:
+            completion._SUBPARSERS = previous
+
+    def _run_command(self, argv):
         root = argparse.ArgumentParser(prog='skillsync')
         subparsers = root.add_subparsers(dest='command')
         fixture_extra = subparsers.add_parser('probe')
@@ -249,6 +286,13 @@ class Command(unittest.TestCase):
                 self.assertNotIn(b'\r', data)
                 self.assertIn(b"'probe'", data)
                 self.assertIn(b"'completion'", data)
+
+    def test_run_command_leaves_the_global_command_tree_alone(self):
+        sentinel = object()
+        self.addCleanup(setattr, completion, '_SUBPARSERS', completion._SUBPARSERS)
+        completion._SUBPARSERS = sentinel
+        self.run_command(['completion', 'bash'])
+        self.assertIs(completion._SUBPARSERS, sentinel)
 
     def test_an_unknown_shell_is_an_argparse_error(self):
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as caught:

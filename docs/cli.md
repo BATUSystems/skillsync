@@ -56,18 +56,20 @@ gdy stdin jest terminalem i nie podano `--yes`; inaczej nieinteraktywny (bez pyt
 | `core` | `layers add core --kind core --subdir library --ref <core-ref>`; domyślny ref `v<zainstalowana wersja>` | `done`, `unchanged` (warstwa jest; inny ref = ostrzeżenie, bez zmiany), `blocked` |
 | `org` | tylko przy `--org`: najpierw `git ls-remote` z `BatchMode` i limitem 30 s, potem `layers add <id> --kind org` (tylko do odczytu) | `done`, `unchanged` (ten sam id i source; bez `ls-remote`), `blocked` (brak dostępu, inny source lub rodzaj, osierocony katalog) |
 | `rule` | bez organizacji: gdy `layer_rules` jest puste, dodaje `**: [core]`; z organizacją: `layers use <id> --match …` (domyślnie `**`) | `done`, `unchanged`, `blocked`; w `--dry-run` zamiast `done` jest `planned` (także dla `core` i `org`) |
+| `completion` | po kroku reguł i przed `check`, tylko gdy setup nie jest `blocked`: instaluje uzupełnianie powłoki w tym samym procesie (jak `completion install --auto`, zob. niżej) | `done`, `unchanged`, `planned` (`--dry-run`), `skipped` (`SKILLSYNC_NO_COMPLETION`, brak powłoki, brak drzewa parsera albo porażka instalacji z ostrzeżeniem); nigdy `blocked` |
 | `check` | `layers check` na katalogu pasującym do reguły (najpierw reguła organizacji; `**` → katalog tymczasowy, glob z `*` → tymczasowy podkatalog jego prefiksu, glob bez `*` → ten katalog). Gdy żaden istniejący katalog nie pasuje: `layers check` wszystkich warstw z neutralnego cwd i ostrzeżenie | `done` (PASS), `failed` (FAIL), `blocked` (BLOCKED) |
 
 Wynik `check` pochodzi z `layers check`: FAIL (1) to problem zgłoszony przez warstwy, BLOCKED (2) to brak warunku
 (np. brak `core`). Warunki i treść komunikatów `blocked` opisuje [installation](installation.md#rozwiązywanie-problemów).
 
-Idempotencja: drugie uruchomienie z tymi samymi argumentami daje `unchanged` we wszystkich krokach, kończy się kodem 0 i nie
-zmienia configu (bajt w bajt). Przerwane uruchomienie (np. po `core`) dokańcza kolejne.
+Idempotencja: drugie uruchomienie z tymi samymi argumentami daje `unchanged` w krokach, które coś zmieniają (kroki `skipped`, np. przy
+`SKILLSYNC_NO_COMPLETION`, zostają `skipped`), kończy się kodem 0 i nie zmienia configu (bajt w bajt). Przerwane uruchomienie (np. po `core`) dokańcza kolejne.
 
 - `--dry-run`: pokazuje plan i wynik `git ls-remote` dla organizacji; nic nie klonuje i nie zapisuje configu.
 - `--json`: schemat `{schema: 1, status, dry_run, steps: [{step, result, detail}], warnings, next}`; adresy są zredagowane (bez poświadczeń).
 - Po zakończeniu w trybie tekstowym wypisuje `Next:` (dla `PASS`): link i sprawdzenie projektu, `skillsync pull`,
-  aktualizacja narzędzia przez ponowne `install.sh` z nowego tagu, `uv tool update-shell`. `setup` nie wykonuje tych poleceń.
+  aktualizacja narzędzia przez ponowne `install.sh` z nowego tagu, `skillsync completion install|uninstall` (uzupełnianie dla bash, zsh i PowerShella),
+  `uv tool update-shell`. `setup` nie wykonuje tych poleceń (uzupełnianie instaluje własnym krokiem `completion`).
 
 Statusy i kody (zob. [statuses-and-exit-codes](domain/statuses-and-exit-codes.md)):
 
@@ -93,8 +95,8 @@ Skrypt jest samodzielny: przy Tab nie uruchamia `skillsync` i nie czyta danych p
 - `--dry-run` wypisuje każdy plik i blok, które powstałyby lub zostałyby usunięte, i niczego nie zapisuje.
 - `--json`: `{schema: 1, status, dry_run, actions: [{shell, path, result, detail}], warnings}`. `result` to `created`,
   `updated`, `unchanged`, `removed`, `skipped` (plan z `--dry-run` albo wyłączenie zmienną) albo `failed`.
-- `install --auto` jest dla wywołań z `install.sh` i kroku `setup`: respektuje `SKILLSYNC_NO_COMPLETION`, a gdy nic
-  się nie zmieniło, milczy. Przy `uninstall` flaga nie ma skutku.
+- `install --auto` jest dla wywołań z `install.sh` i kroku `setup`: respektuje `SKILLSYNC_NO_COMPLETION` (sprawdzaną przed liczeniem ścieżek, więc błędny `HOME`
+  nie blokuje wyłączonego uzupełniania), a gdy nic się nie zmieniło, milczy. Przy `uninstall` flaga nie ma skutku.
 
 | Powłoka | Skrypt | Plik startowy z blokiem |
 |---|---|---|
@@ -110,21 +112,28 @@ Zasady dla plików użytkownika:
 - Zapis jest atomowy, z zachowaniem końców linii (CRLF w profilu zostaje CRLF) i BOM. Nowy profil PowerShella i skrypt
   PowerShella powstają jako UTF-8 z BOM.
 - Dwa bloki albo niedomknięty znacznik to `failed` z komunikatem; plik nie jest wtedy zapisywany.
+- Plik zaczynający się BOM-em UTF-16 albo UTF-32 lub zawierający bajty NUL (np. profil zapisany przez `Out-File` w Windows PowerShell 5.1) to `failed`
+  (przy `install` i `uninstall`), bez zapisu i bez kopii: dopisanie UTF-8 uszkodziłoby go. Zapisz plik jako UTF-8 i powtórz polecenie.
+- Cel tylko do odczytu (np. magazyn menedżera dotfiles; na Windows atrybut tylko do odczytu) to `failed` bez kopii i bez zmian. Symlink do pliku rc
+  zostaje: zapis i kopia trafiają do celu linku. Wiszący symlink: `uninstall` usuwa utworzony przez nas cel, nigdy link użytkownika.
 - Plik własnego skryptu bez nagłówka `# skillsync completion (generated by …)` (zmieniony albo cudzy) nie jest nadpisywany
   ani usuwany: wynik `failed`, reszta `uninstall` idzie dalej.
 - `uninstall` usuwa tylko blok i nasze pliki. Po usunięciu skryptu PowerShella usuwa puste katalogi `completion` i
   nadrzędny `skillsync` w katalogu danych; katalogów `bash-completion` i `zsh/site-functions` nigdy. Plik rc, który
   instalacja utworzyła i który po usunięciu bloku jest pusty, także znika. Plik rc, który po usunięciu bloku wraca do
   stanu sprzed instalacji, jest bajt w bajt taki sam jak przed instalacją.
-- Ścieżki liczone są z `HOME` (na Windows także z `USERPROFILE`) i zmiennych `XDG_DATA_HOME`, `ZDOTDIR`, `LOCALAPPDATA`.
-  Ścieżka musi być bezwzględna, bez `..` i bez znaków sterujących. Skrypt PowerShella w bloku jest cytowany literalnie.
+- Ścieżki liczone są z `HOME` (na Windows z `USERPROFILE`, a gdy go brak, z `HOME`) i zmiennych `XDG_DATA_HOME`, `XDG_CONFIG_HOME` (tylko
+  domyślny profil PowerShella poza Windows: `${XDG_CONFIG_HOME:-~/.config}/powershell/Microsoft.PowerShell_profile.ps1`), `ZDOTDIR`, `LOCALAPPDATA`.
+  Ścieżka musi być bezwzględna, bez `..` i bez znaków sterujących. Skrypt PowerShella w bloku jest cytowany literalnie (apostrofy, także typograficzne
+  U+2018, U+2019, U+201A i U+201B, są podwajane). Ścieżkę profilu podaje host zapytaniem `-NoProfile -NonInteractive` (limit 10 s); odpowiedź niebędąca
+  poprawnym UTF-8 ani bezwzględną ścieżką to ostrzeżenie i profil domyślny.
 
 Wyłączenie: `SKILLSYNC_NO_COMPLETION=1` pomija wywołania automatyczne (`install.sh`, krok `completion` w `setup`) z wynikiem
 `skipped`. Wartości `1`, `true`, `yes`, `on` włączają wyłączenie; `0`, `false`, `no`, `off` i pusta wartość go nie włączają;
 inna wartość daje ostrzeżenie i działa jak włączona. Jawne `skillsync completion install` działa zawsze.
 
 Kody wyjścia: 0 `PASS` albo `NOT_RUN` (brak żadnej powłoki to `NOT_RUN` z ostrzeżeniem), 1 `FAIL` (część akcji `failed`),
-2 `BLOCKED` (ścieżka niepoprawna, HOME nie ustalony, na Windows także brak `USERPROFILE`). Nieznana powłoka w `--shell`
+2 `BLOCKED` (ścieżka niepoprawna albo katalog domowy nie do ustalenia: na Windows dopiero gdy brak i `USERPROFILE`, i `HOME`). Nieznana powłoka w `--shell`
 albo w `completion <powłoka>` to błąd składni argumentów (kod 2).
 
 Krok `completion` w `skillsync setup` wynika z tej samej logiki: `done`, `unchanged`, `planned` (`--dry-run`) albo `skipped`

@@ -2,11 +2,14 @@
 and the `setup` wizard has a `completion` step. Everything runs in a temporary HOME; nothing touches the real one."""
 import json
 import os
+import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -14,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from layers_helpers import SKILLSYNC, make_layer  # noqa: E402
 
 AUTO = 'skillsync <completion> <install> <--auto>'
+WIN = sys.platform == 'win32'
 
 
 def _tree(root):
@@ -72,15 +76,36 @@ class SetupStepTest(unittest.TestCase):
         self.addCleanup(lambda: __import__('shutil').rmtree(self.root, ignore_errors=True))
         self.home = self.root / 'home'
         self.home.mkdir()
-        self.bin = self.root / 'bin'
+        self.bin = self.root / 'bin'   # the ONLY directory on PATH: fake shells and a wrapper of the real git, never the real bash/zsh/pwsh
         self.bin.mkdir()
-        shell = self.bin / 'bash'
-        shell.write_text('#!/bin/sh\nexit 0\n')
-        shell.chmod(0o755)
+        self.profile = self.root / 'ps' / 'Microsoft.PowerShell_profile.ps1'
+        self.fake_log = self.root / 'ps-host.log'
+        self.fake('bash', 'exit 0\n', '')
+        for host in ('pwsh', 'powershell'):
+            self.fake(host, f'[ -n "$FAKE_LOG" ] && printf \'%s\\n\' "$*" >> "$FAKE_LOG"\nprintf \'%s\\n\' "$FAKE_PROFILE"\n',
+                      '@echo %FAKE_PROFILE%\r\n')
+        self.git_dir = None
+        git = shutil.which('git')
+        if git and not WIN:
+            self.fake('git', f'exec {shlex.quote(git)} "$@"\n', '')
+            for tool in ('sh',):   # git runs local transports through `sh`
+                real = shutil.which(tool)
+                if real:
+                    os.symlink(real, self.bin / tool)
+        elif git:
+            self.git_dir = os.path.dirname(git)   # Windows: git.exe cannot be wrapped; its directory holds no shell
         self.core = self.root / 'core-origin'
         self.make_core()
         self.gitconfig = self.root / 'gitconfig'
         self.gitconfig.write_text('[user]\n\temail = dev@example.test\n\tname = Dev\n')
+
+    def fake(self, name, posix, windows):
+        if WIN:
+            (self.bin / f'{name}.bat').write_text('@echo off\r\n' + windows, encoding='ascii')
+        else:
+            path = self.bin / name
+            path.write_text('#!/bin/sh\n' + posix, encoding='utf-8')
+            path.chmod(0o755)
 
     def make_core(self):
         self.core.mkdir()
@@ -92,14 +117,15 @@ class SetupStepTest(unittest.TestCase):
 
     def env(self, extra=None):
         data = self.root / 'xdg-data'
-        env = {k: v for k, v in os.environ.items() if k not in ('SKILLSYNC_NO_COMPLETION', 'ZDOTDIR', 'SKILLSYNC_LAYERS_SKIP')}
+        env = {k: os.environ[k] for k in ('SYSTEMROOT', 'TEMP', 'TMP') if k in os.environ}   # nothing else is inherited
         env.update({
             'HOME': str(self.home), 'USERPROFILE': str(self.home), 'ZDOTDIR': str(self.home / 'zdot'),
             'XDG_DATA_HOME': str(data), 'XDG_CACHE_HOME': str(self.root / 'xdg-cache'), 'XDG_CONFIG_HOME': str(self.root / 'xdg-config'),
             'LOCALAPPDATA': str(self.root / 'localappdata'), 'APPDATA': str(self.root / 'appdata'),
             'GIT_CONFIG_GLOBAL': str(self.gitconfig), 'GIT_CONFIG_NOSYSTEM': '1',
             'SKILLSYNC_CONFIG': str(self.root / 'skillsync-config.yaml'),
-            'PATH': f'{self.bin}{os.pathsep}{os.path.dirname(sys.executable)}{os.pathsep}' + os.environ.get('PATH', ''),
+            'PATH': str(self.bin) + (os.pathsep + self.git_dir if self.git_dir else ''),
+            'FAKE_PROFILE': str(self.profile), 'FAKE_LOG': str(self.fake_log), 'PYTHONUTF8': '1',
         })
         env.update(extra or {})
         return env
@@ -125,14 +151,29 @@ class SetupStepTest(unittest.TestCase):
     def test_normal_run_installs_the_bash_script_in_the_temporary_home(self):
         process, report = self.setup()
         self.assertEqual(report['status'], 'PASS', report)
-        self.assertIn(self.step(report)['result'], ('done', 'unchanged', 'skipped'))
+        self.assertEqual(self.step(report)['result'], 'done', report)
         names = [item['step'] for item in report['steps']]
         self.assertLess(names.index('rule'), names.index('completion'))
         self.assertLess(names.index('completion'), names.index('check'))
-        if self.step(report)['result'] == 'done':
-            self.assertTrue((self.root / 'xdg-data' / 'bash-completion' / 'completions' / 'skillsync').is_file())
+        self.assertTrue((self.root / 'xdg-data' / 'bash-completion' / 'completions' / 'skillsync').is_file())
         _, again = self.setup()
-        self.assertIn(self.step(again)['result'], ('unchanged', 'skipped'))
+        self.assertEqual(self.step(again)['result'], 'unchanged', again)
+
+    def test_only_the_fake_tools_are_on_path(self):
+        path = self.env()['PATH']
+        for name in ('bash', 'pwsh', 'powershell'):
+            found = shutil.which(name, path=path)
+            self.assertIsNotNone(found, name)
+            self.assertEqual(Path(found).parent, self.bin, name)
+        self.assertIsNone(shutil.which('zsh', path=path), 'the real zsh must not be reachable')
+
+    def test_the_powershell_profile_is_written_where_the_fake_host_says(self):
+        process, report = self.setup()
+        self.assertEqual(report['status'], 'PASS', report)
+        self.assertEqual(self.profile.read_bytes().count(b'# >>> skillsync completion >>>'), 1)
+        self.assertIn('-NoProfile', self.fake_log.read_text(encoding='utf-8'))
+        base = self.root / ('localappdata' if WIN else 'xdg-data')
+        self.assertTrue((base / 'skillsync' / 'completion' / 'skillsync-completion.ps1').is_file())
 
     def test_switch_skips_and_writes_nothing(self):
         for value in ('1', 'true', 'yes', 'on'):
@@ -171,6 +212,37 @@ class SetupStepTest(unittest.TestCase):
             setup_wizard._completion_step(run)
         self.assertEqual(run.steps[0]['result'], 'skipped')
         self.assertIn('no parser', run.steps[0]['detail'])
+
+
+class InstallForSetupTest(unittest.TestCase):
+    """`completion_install.install_for_setup(subparsers, dry)` -> (result, detail, warnings); nothing here reaches a startup file."""
+
+    def call(self, subparsers=object(), dry=False, **env):
+        from skillsync_workflow import completion_install
+        with mock.patch.dict(os.environ, env):
+            return completion_install.install_for_setup(subparsers, dry)
+
+    def test_without_a_parser_it_is_skipped(self):
+        result, detail, warnings = self.call(None)
+        self.assertEqual((result, warnings), ('skipped', []))
+        self.assertIn('no parser', detail)
+
+    def test_the_switch_skips(self):
+        result, detail, warnings = self.call(SKILLSYNC_NO_COMPLETION='1')
+        self.assertEqual((result, warnings), ('skipped', []))
+        self.assertIn('SKILLSYNC_NO_COMPLETION', detail)
+
+    def test_an_unknown_switch_value_warns_and_skips(self):
+        result, _, warnings = self.call(SKILLSYNC_NO_COMPLETION='maybe')
+        self.assertEqual(result, 'skipped')
+        self.assertTrue(any('SKILLSYNC_NO_COMPLETION' in item for item in warnings), warnings)
+
+    def test_an_internal_error_is_skipped_with_a_warning(self):
+        from skillsync_workflow import completion_install
+        with mock.patch.object(completion_install, '_detect', side_effect=RuntimeError('boom')):
+            result, detail, warnings = self.call(SKILLSYNC_NO_COMPLETION='0')
+        self.assertEqual(result, 'skipped')
+        self.assertIn('boom', ' '.join(warnings))
 
 
 if __name__ == '__main__':

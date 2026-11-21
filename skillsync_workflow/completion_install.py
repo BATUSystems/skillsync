@@ -8,6 +8,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -46,13 +47,15 @@ def _valid(value, label):
 
 
 def _home():
+    """Windows: USERPROFILE first (as PowerShell and `expanduser` do), then HOME; elsewhere HOME, or the account's home when it is unset."""
+    if WIN:
+        for name in ('USERPROFILE', 'HOME'):
+            if os.environ.get(name):
+                return _valid(os.environ[name], name)
+        raise Blocked('neither USERPROFILE nor HOME is set')
     if 'HOME' in os.environ:
         return _valid(os.environ['HOME'], 'HOME')
-    if WIN and os.environ.get('USERPROFILE'):
-        return _valid(os.environ['USERPROFILE'], 'USERPROFILE')
-    if WIN:
-        raise Blocked('HOME is not set')
-    return _valid(os.path.expanduser('~') if os.environ.get('HOME') is None else '', 'HOME')
+    return _valid(os.path.expanduser('~'), 'HOME')
 
 
 def _optional(name):
@@ -87,13 +90,17 @@ class Targets:
         return _optional('LOCALAPPDATA') or os.path.join(self.home, 'AppData', 'Local')
 
     @property
+    def config(self):
+        return _optional('XDG_CONFIG_HOME') or os.path.join(self.home, '.config')
+
+    @property
     def ps_script(self):
         return os.path.join(self.local if WIN else self.xdg, 'skillsync', 'completion', PS_SCRIPT)
 
     def default_profile(self, host):
         if WIN:
             return os.path.join(self.home, 'Documents', 'PowerShell' if host == 'pwsh' else 'WindowsPowerShell', PS_PROFILE)
-        return os.path.join(self.home, '.config', 'powershell', PS_PROFILE)
+        return os.path.join(self.config, 'powershell', PS_PROFILE)
 
 
 # -- bytes and atomic writes
@@ -161,9 +168,14 @@ def _make_backup(target, raw, mode):
 def write_file(target, data, backup=None):
     """Atomic write to `target` (already resolved); `backup` = original bytes to keep once, `None` = no backup."""
     try:
-        mode = os.stat(target).st_mode & 0o7777
+        info = os.stat(target)
     except FileNotFoundError:
         mode = _default_mode()
+    else:
+        mode = info.st_mode & 0o7777
+        readonly = bool(getattr(info, 'st_file_attributes', 0) & getattr(stat, 'FILE_ATTRIBUTE_READONLY', 0))
+        if readonly or not os.access(target, os.W_OK):
+            raise PermissionError(f'{target} is read-only (for example a store of a dotfiles manager); nothing was changed')
     tmp = _temp_file(os.path.dirname(target), data, mode)
     try:
         if backup is not None:
@@ -175,6 +187,15 @@ def write_file(target, data, backup=None):
 
 
 # -- the block in a startup file
+
+def _unsupported_encoding(raw):
+    """Message when the file is not a byte-oriented (ASCII/UTF-8/ANSI) text: UTF-16/32 or NUL bytes. Appending UTF-8 text would corrupt it."""
+    if raw.startswith((b'\xff\xfe', b'\xfe\xff', b'\x00\x00\xfe\xff')):
+        return 'the file starts with a UTF-16 or UTF-32 byte order mark; it is not edited (save it as UTF-8 and run the command again)'
+    if b'\x00' in raw:
+        return 'the file contains NUL bytes (UTF-16/32 text or binary data); it is not edited (save it as UTF-8 and run the command again)'
+    return None
+
 
 def _split_bom(raw):
     return (BOM, raw[3:]) if raw.startswith(BOM) else (b'', raw)
@@ -213,6 +234,9 @@ def _result(shell, path, result, detail=''):
 def install_block(shell, path, lines, is_ps, default_eol, dry):
     real = _real(path)
     raw = _read(real)
+    problem = _unsupported_encoding(raw) if raw is not None else None
+    if problem:
+        return _result(shell, path, 'failed', problem)
     if raw is None:
         bom, body, eol = (BOM if is_ps else b''), b'', default_eol
     else:
@@ -245,6 +269,9 @@ def remove_block(shell, path, dry):
     raw = _read(real)
     if raw is None:
         return _result(shell, path, 'unchanged', 'file does not exist')
+    problem = _unsupported_encoding(raw)
+    if problem:
+        return _result(shell, path, 'failed', problem)
     bom, body = _split_bom(raw)
     try:
         found = _find_block(body)
@@ -264,7 +291,7 @@ def remove_block(shell, path, dry):
     if original is None and new_body == b'':
         if dry:
             return _result(shell, path, 'skipped', f'planned: remove {os.path.basename(path)} (only our block was in it)')
-        os.remove(path)
+        os.remove(real)   # the file we created; a symlink the user put at `path` stays
         return _result(shell, path, 'removed', 'file removed (only our block was in it)')
     if dry:
         return _result(shell, path, 'skipped', f'planned: remove the skillsync completion block from {os.path.basename(path)}')
@@ -324,10 +351,14 @@ def _control_free(text):
 def query_profile(exe):
     """`$PROFILE.CurrentUserCurrentHost` of a host, or `None` when the answer is unusable."""
     try:
-        proc = subprocess.run([exe, '-NoProfile', '-NonInteractive', '-Command', PS_QUERY], timeout=10, capture_output=True, text=True)
+        proc = subprocess.run([exe, '-NoProfile', '-NonInteractive', '-Command', PS_QUERY], timeout=10, capture_output=True,
+                              stdin=subprocess.DEVNULL)
     except (OSError, subprocess.SubprocessError):
         return None
-    answer = (proc.stdout or '').strip()
+    try:
+        answer = (proc.stdout or b'').decode('utf-8', errors='strict').strip()
+    except UnicodeDecodeError:
+        return None
     if proc.returncode != 0 or not _control_free(answer):
         return None
     try:
@@ -356,8 +387,11 @@ def ps_profiles(targets, warnings):
     return unique
 
 
+PS_QUOTES = "'\u2018\u2019\u201a\u201b"   # PowerShell reads all of these as a single quote inside '...'
+
+
 def _ps_literal(text):
-    return "'" + text.replace("'", "''") + "'"
+    return "'" + ''.join(char + char if char in PS_QUOTES else char for char in text) + "'"
 
 
 def _under(path, base):
@@ -456,18 +490,23 @@ def _uninstall(shells, targets, dry, warnings):
 
 def _validate(shells, targets):
     """Resolve every path the chosen shells need before the first write, so a bad variable blocks the whole run."""
-    needed = {'bash': ('bash_file',), 'zsh': ('zsh_file', 'zshrc'), 'powershell': ('ps_script',)}
+    needed = {'bash': ('bash_file',), 'zsh': ('zsh_file', 'zshrc'), 'powershell': ('ps_script',) if WIN else ('ps_script', 'config')}
     for shell in shells:
         for name in needed[shell]:
             getattr(targets, name)
 
 
-def _skipped_actions(shells, targets):
+def _skipped_actions(shells):
+    """One `skipped` action per shell for the switch; paths are informational, so an invalid variable only leaves the path empty."""
+    try:
+        targets = Targets()
+    except Blocked:
+        targets = None
     paths = {'bash': lambda: targets.bash_file, 'zsh': lambda: targets.zsh_file, 'powershell': lambda: targets.ps_script}
     actions = []
     for shell in shells:
         try:
-            path = paths[shell]()
+            path = paths[shell]() if targets else ''
         except Blocked:
             path = ''
         actions.append(_result(shell, path, 'skipped', f'{ENV_SWITCH} is set'))
@@ -496,22 +535,48 @@ def _emit(report, args, quiet):
         print(f'warning: {warning}', file=sys.stderr)
 
 
+def install_for_setup(subparsers, dry):
+    """The `completion` step of `skillsync setup`: `(result, detail, warnings)` with result in `done|unchanged|planned|skipped`.
+    Never raises and never blocks: a failure is `skipped` plus a warning (K13)."""
+    if subparsers is None:
+        return 'skipped', 'no parser: the command tree is not available', []
+    warnings = []
+    try:
+        if _switch_state(warnings):
+            return 'skipped', f'{ENV_SWITCH} is set', warnings
+        targets = Targets()
+        shells = _detect()
+        if not shells:
+            return 'skipped', 'no supported shell (bash, zsh, pwsh, powershell) found on PATH', warnings
+        _validate(shells, targets)
+        actions = _install(shells, targets, subparsers, dry, warnings)
+    except Exception as exc:   # completion must never fail the machine setup
+        warnings.append(f'shell completion was not installed: {exc}; run `skillsync completion install` later')
+        return 'skipped', 'installation failed (see warnings)', warnings
+    failed = [item for item in actions if item['result'] == 'failed']
+    if failed:
+        warnings.extend(f"shell completion ({item['shell']}) failed: {item['detail']}; run `skillsync completion install` later" for item in failed)
+        return 'skipped', 'installation failed (see warnings)', warnings
+    names = ', '.join(shells)
+    if dry:
+        return 'planned', 'would install completion for ' + names, warnings
+    if all(item['result'] == 'unchanged' for item in actions):
+        return 'unchanged', 'completion is already installed for ' + names, warnings
+    return 'done', 'completion installed for ' + names, warnings
+
+
 def run(args, operation, subparsers):
     warnings = []
     dry = bool(args.dry_run)
     auto = operation == 'install' and bool(getattr(args, 'auto', False))
     explicit = list(dict.fromkeys(args.shell or []))
+    if auto and _switch_state(warnings):   # decided before any path is computed: a bad HOME must not block a disabled feature
+        report = _report('NOT_RUN', dry, _skipped_actions(explicit or _detect()), warnings)
+        _emit(report, args, False)
+        return 0
     try:
         targets = Targets()
-        if operation == 'uninstall':
-            shells = explicit or list(SHELLS)
-        else:
-            shells = explicit or _detect()
-        if auto and _switch_state(warnings):
-            actions = _skipped_actions(shells, targets)
-            report = _report('NOT_RUN', dry, actions, warnings)
-            _emit(report, args, False)
-            return 0
+        shells = explicit or (list(SHELLS) if operation == 'uninstall' else _detect())
         if not shells:
             warnings.append('no supported shell (bash, zsh, pwsh, powershell) found on PATH; nothing to do')
             report = _report('NOT_RUN', dry, [], warnings)

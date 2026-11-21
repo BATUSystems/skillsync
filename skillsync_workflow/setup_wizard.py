@@ -315,41 +315,9 @@ def _rule_step(run, layers, org_id):
 def _completion_step(run):
     """Install shell completion in-process (K13). Never blocks setup: a failure is `skipped` plus a warning."""
     from . import completion, completion_install
-    subparsers = getattr(completion, '_SUBPARSERS', None)
-    if subparsers is None:
-        run.step('completion', 'skipped', 'no parser: the command tree is not available')
-        return
-    warnings = []
-    try:
-        if completion_install._switch_state(warnings):
-            run.warnings.extend(warnings)
-            run.step('completion', 'skipped', f'{completion_install.ENV_SWITCH} is set')
-            return
-        targets = completion_install.Targets()
-        shells = completion_install._detect()
-        if not shells:
-            run.warnings.extend(warnings)
-            run.step('completion', 'skipped', 'no supported shell (bash, zsh, pwsh, powershell) found on PATH')
-            return
-        completion_install._validate(shells, targets)
-        actions = completion_install._install(shells, targets, subparsers, run.dry, warnings)
-    except Exception as exc:   # completion must never fail the machine setup
-        run.warnings.extend(warnings)
-        run.warnings.append(f'shell completion was not installed: {exc}; run `skillsync completion install` later')
-        run.step('completion', 'skipped', 'installation failed (see warnings)')
-        return
+    result, detail, warnings = completion_install.install_for_setup(getattr(completion, '_SUBPARSERS', None), run.dry)
     run.warnings.extend(warnings)
-    failed = [item for item in actions if item['result'] == 'failed']
-    if failed:
-        for item in failed:
-            run.warnings.append(f"shell completion ({item['shell']}) failed: {item['detail']}; run `skillsync completion install` later")
-        run.step('completion', 'skipped', 'installation failed (see warnings)')
-    elif run.dry:
-        run.step('completion', 'planned', 'would install completion for ' + ', '.join(shells))
-    elif all(item['result'] == 'unchanged' for item in actions):
-        run.step('completion', 'unchanged', 'completion is already installed for ' + ', '.join(shells))
-    else:
-        run.step('completion', 'done', 'completion installed for ' + ', '.join(shells))
+    run.step('completion', result, detail)
 
 
 def _probe_project(layers):
