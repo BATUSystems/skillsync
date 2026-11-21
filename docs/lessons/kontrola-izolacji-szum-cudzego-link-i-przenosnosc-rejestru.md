@@ -2,7 +2,7 @@
 title: "Kontrola izolacji stanu pada na cudzym `skillsync link`: wyklucz szum z migawki, ale rozpoznawaj rejestr po miejscu, nie po środowisku"
 tags: [testing, layers, guard, flaky, windows, macos]
 paths: ['tests/layers_helpers.py', 'tests/test_skillsync_state_guard.py']
-source: 'CORE-STATEGUARD 2026-11-21: dwie porażki bez winy testu (13:38 i 14:00), przyczyna: `link` innej sesji przepisał composed/.projects.json; pętla pełna reguł 1-2'
+source: 'CORE-STATEGUARD 2026-11-21: dwie porażki bez winy testu (ok. 13:40 i 13:50), przyczyna: `link` innej sesji przepisał composed/.projects.json; pętla pełna reguł 1-2'
 verified: 2026-11-21
 ---
 **Objaw:** „test touched real Skillsync state dirs” pada na teście, który niczego nie zapisał; powtórka jest zielona. W komunikacie czas
@@ -22,4 +22,4 @@ czas katalogu `composed` i plik rejestru. Migawka porównywała oba, więc każd
   `REAL_STATE_DIRS` pokazuje, że nowa widzi wszystko, co stara, poza opisanym szumem i jawnie przyjętymi stratami (przejściowy zapis w `composed`,
   prawdziwy projekt spoza tmp w rejestrze).
 
-**Jak wykryć:** porażka kontroli z jedną linią `composed: dir ... -> dir ...` albo `.projects.json`; `git log` zmian `tests/layers_helpers.py`.
+**Jak wykryć:** przed zmianą: porażka z jedną różnicą w `composed` albo `.projects.json`. Po zmianie takiej różnicy nie ma; zostaje porażka z nazwą pliku w `composed` albo wpisem `.projects.json[<projekt>]` (to już zapis testu). Zmiany reguł: `git log tests/layers_helpers.py`.

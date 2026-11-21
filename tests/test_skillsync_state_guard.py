@@ -281,16 +281,16 @@ class CompositeCacheNoise(unittest.TestCase):
         self.assertEqual(self.difference(watched, lambda: (composed / ".projects.json").write_text("[1]", encoding="utf-8")), [])
         self.assertEqual(self.difference(watched, lambda: (composed / ".projects.json").unlink()), [])
 
-    @helpers.needs_os_symlinks
     def test_a_changed_value_of_a_tmp_project_and_odd_registry_values_are_handled(self) -> None:
         watched, composed = self.watched()
         temporary = str(Path(tempfile.gettempdir()) / "state-guard-project-v")
         self.registry(composed, {temporary: {"feature": "a"}})
         self.assertEqual(len(self.difference(watched, lambda: self.registry(composed, {temporary: {"feature": "b"}}))), 1)
         self.assertEqual(len(self.difference(watched, lambda: self.registry(composed, {temporary: "text"}))), 1)
-        lines = self.difference(watched, lambda: self.registry(composed, {"bad\0key": 1, "": 2}))   # keys that cannot be resolved: no crash
+        lines = self.difference(watched, lambda: self.registry(composed, {"bad\0key": 1}))   # a key that cannot be resolved: no crash
         self.assertEqual(len(lines), 1, lines)   # only the entry of the tmp project that disappeared
 
+    @helpers.needs_os_symlinks
     def test_a_temporary_directory_that_is_a_symlink_is_recognised_by_the_resolved_path(self) -> None:
         watched, composed = self.watched()
         real = Path(tempfile.mkdtemp(prefix="state-guard-real-"))

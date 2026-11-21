@@ -22,10 +22,10 @@ Dyspozytor, usługa watch), nie kod pod testem.
   (`python3 -m unittest discover -s tests -p "test_skillsync_<moduł>.py"`; moduły importują się nawzajem, więc nie przez `tests.<moduł>`).
 - Dowodem końcowym pełnego zestawu jest CI PR, które ma własny, czysty HOME.
 
-**Od CORE-STATEGUARD (1.12.0):** komunikat porażki podaje do 10 zmienionych ścieżek (`<ścieżka>: <przed> -> <po>`), więc sprawcę
+**Od CORE-STATEGUARD:** komunikat porażki podaje do 10 zmienionych ścieżek (`<ścieżka>: <przed> -> <po>`), więc sprawcę
 ustalasz z samej różnicy, bez `find -newermt`. Migawka pomija metadane katalogów pod `composed` (`cache/composed` na Windows) i porównuje rejestr
-`composed/.projects.json` tylko dla projektów spod katalogu tymczasowego: `skillsync link` innej sesji nie powoduje już porażki. Zostaje
-`.git/index` i inne pliki prawdziwych klonów warstw (reguła o `LEASE` wyżej dalej obowiązuje) oraz zapis pliku w `composed`. Szczegóły i cena:
+`composed/.projects.json` tylko dla projektów spod katalogu tymczasowego: `skillsync link` innej sesji nie powoduje już porażki. Zostają
+zmiany plików prawdziwych klonów warstw (refy, obiekty, pliki warstwy; reguła o `LEASE` wyżej dalej obowiązuje) oraz zapis pliku w `composed`. Szczegóły i cena:
 `docs/development.md`, „Kontrola izolacji stanu”.
 
 **Jak wykryć:** komunikat „test touched real Skillsync state dirs” z nazwą pliku `.git/index` lub `FETCH_HEAD` w diffie.

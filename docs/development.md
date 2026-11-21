@@ -72,7 +72,7 @@ Kontrola „test touched real Skillsync state dirs” porównuje stan prawdziwyc
   Rejestr jest rozpoznawany po miejscu pod `REAL_STATE_DIRS`, nie przez `composed_root()`, bo cleanup biegnie przy podstawionym środowisku.
 - Powód: `skillsync link` dowolnej innej sesji przepisuje rejestr i zmienia czas katalogu `composed`, co nie jest wyciekiem testu.
 - Cena: kontrola nie wykryje przejściowego zapisu pliku w katalogu pod `composed` (utworzony i usunięty, zmienia tylko czas katalogu) ani testu,
-  który linkuje PRAWDZIWY projekt spoza katalogu tymczasowego (zmiana jego wpisu w rejestrze). Zapisy poza `composed` i wszystkie pliki są wykrywane tak jak dawniej.
+  który linkuje PRAWDZIWY projekt spoza katalogu tymczasowego (zmiana jego wpisu w rejestrze). Nie wykryje też usunięcia i odtworzenia pustego katalogu pod `composed`. Zapisy poza `composed` i każdy plik (z wyjątkiem pliku rejestru i `.projects.json.tmp-*`) są wykrywane.
 - Przy porażce nadal obowiązuje procedura z lekcji `pelny-bieg-testow-a-git-na-prawdziwych-warstwach.md`: ustal sprawcę z różnicy, powtórz moduł.
 
 ### Zestaw modułów przy scalaniu
