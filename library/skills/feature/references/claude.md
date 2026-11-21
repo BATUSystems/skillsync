@@ -10,16 +10,31 @@ z nagłówka; bez `<id>` wypisz wiadomość w formacie wklejki z multi-session.m
 
 Deleguj natywnym narzędziem `Agent` (starsze wersje: `Task`), jawnie podając `subagent_type`:
 
-| Rola w planie | Typ Claude | Domyślny model | Effort | CLAUDE.md |
-|---|---|---|---|---|
-| explore | explore | haiku | low | pomijany (`omitClaudeMd`) |
-| implementer | implementer | sonnet | medium | tak |
-| test-writer | test-writer | sonnet | medium | tak |
-| test-runner | test-runner | haiku | low | pomijany |
-| reviewer | reviewer | sonnet | high | tak |
-| verifier | verifier | sonnet | low | pomijany |
-| scribe | scribe | haiku | low | tak |
-| mechanic | mechanic | haiku | low | pomijany |
+| Rola w planie | Typ Claude | Domyślny model | Effort | CLAUDE.md | maxTurns |
+|---|---|---|---|---|---|
+| explore | explore | haiku | low | pomijany (`omitClaudeMd`) | 40 |
+| implementer | implementer | sonnet | medium | tak | 170 |
+| test-writer | test-writer | sonnet | medium | tak | 165 |
+| test-runner | test-runner | haiku | low | pomijany | 125 |
+| reviewer | reviewer | sonnet | high | tak | 85 |
+| verifier | verifier | sonnet | low | pomijany | 45 |
+| scribe | scribe | haiku | low | tak | 115 |
+| mechanic | mechanic | haiku | low | pomijany | 40 |
+
+`maxTurns` (limit tur roli) chroni przed zapętleniem. Tura to jedna odpowiedź modelu razem z jej równoległymi
+wywołaniami narzędzi. Po limicie podagent zwraca wynik oznaczony jako częściowy („stopped at its N-turn limit …
+PARTIAL output”, Claude Code ≥ 2.1.246), który wznawiasz przez `SendMessage`; to nie błąd. Wartości to p95 liczby
+tur z transkryptów podagentów (n = 1836, konto prywatne, 2026-11-21) × 1,5, zaokrąglone w górę do 5 (cap 200);
+dla `mechanic` próba była za mała (n = 1), więc zostaje wartość startowa 40. Wznowienia kumulują się w jednym
+transkrypcie, więc limit może być luźniejszy od potrzeby. Korekta limitu to zmiana w tej tabeli i we frontmatterze roli
+(pilnuje ich zgodności `tests/test_skillsync_agent_roles.py`).
+
+Granica „podumysły nie commitują” (AGENTS.md) jest tylko w treści ról. Próba z 2026-11-21 (Claude Code 2.1.318) pokazała,
+że wzorzec Bash w `disallowedTools` podagenta (obie formy: `Bash(git commit *)` i `Bash(git commit:*)`) usuwa całe
+narzędzie Bash, a nie tylko wskazane polecenie, więc żadna rola nie ma `disallowedTools`. Twardy hook na commit podagenta
+to osobny zakres (CLAUDE-3); `guard-commands` blokuje dziś tylko trwałe usuwanie plików.
+
+F0-disallowedTools: nieskuteczne
 
 Źródłem instrukcji ról są wspólne `agents/*.md` z biblioteki; `skillsync` instaluje je w
 `.claude/agents/`. Zestaw ról jest ten sam co w Codexie: projekt z `feature` bez `agents:`

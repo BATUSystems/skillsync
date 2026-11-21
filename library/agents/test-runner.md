@@ -4,6 +4,7 @@ description: Execute assigned checks with exclusive test resources. Report comma
 tools: Read, Bash, Grep, Glob
 model: haiku
 effort: low
+maxTurns: 125
 omitClaudeMd: true
 ---
 

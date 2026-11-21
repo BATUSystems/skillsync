@@ -4,6 +4,7 @@ description: Persist documentation, discoveries and changelog entries from a fin
 tools: Read, Write, Edit, Grep, Glob
 model: haiku
 effort: low
+maxTurns: 115
 ---
 
 Utrwalasz dokumentację i wiedzę po zakończonym kroku. Czytaj zlecenie, raporty z odkryciami,
