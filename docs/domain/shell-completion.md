@@ -39,7 +39,7 @@ instalacja: [installation](../installation.md#uzupełnianie-poleceń-w-powłoce)
    `powershell`): czytają go wszystkie hosty, także konsola rozszerzenia VS Code, która ma własny host i własny profil hosta.
    Host dostaje jedno zapytanie z `-NoProfile -NonInteractive` (limit 10 s) i odpowiada dwiema liniami ASCII:
    `P64:<base64 z UTF-8 ścieżki>` i `POLICY:<efektywna ExecutionPolicy>`; base64 omija problem strony kodowej (polskie litery
-   w ścieżce). Linia bez prefiksu będąca ścieżką bezwzględną też jest przyjmowana (atrapy testowe). Host na PATH bez
+   w ścieżce). Linia bez prefiksu `P64:` nie jest odpowiedzią (brak ścieżki). Ewentualny BOM UTF-8 na początku wyjścia jest zdejmowany przed parsowaniem. Host na PATH bez
    użytecznej odpowiedzi (czas, śmieci, ścieżka niebezwzględna, błąd dekodowania) jest pomijany (`skipped` plus ostrzeżenie),
    bez cichego powrotu do ścieżki domyślnej; domyślne ścieżki służą tylko, gdy na PATH nie ma żadnego hosta. Blok wczytuje
    skrypt przez kropkę, więc wymiana skryptu nie zmienia profilu. Domyślne profile: Windows `Documents\PowerShell\profile.ps1`
@@ -52,10 +52,14 @@ instalacja: [installation](../installation.md#uzupełnianie-poleceń-w-powłoce)
    Zwykła tabela (hashtable) PowerShella nie rozróżnia wielkości liter, a flagi `-v` i `-V` są różne. Źródło: raport F1
    (sprawdzone w `pwsh`, `TabExpansion2`).
 9. **Kolejność w zsh: `fpath`, `autoload`, potem `compdef` albo `compinit`; dwa warianty.** Blok ustawia `fpath` na katalog
-   z `_skillsync` i woła `autoload -Uz _skillsync`. Wariant A (reszta pliku poza blokiem ma osobne słowo `compinit` albo
-   `oh-my-zsh`, `zinit`, `antidote`, `zplug`, `prezto`): tylko `(( $+functions[compdef] )) && compdef _skillsync skillsync`, bez
-   `compinit`; późniejszy `compinit` znajdzie funkcję przez `fpath`. Wariant B: gdy `compdef` nie istnieje, blok wywołuje
-   `compinit -i`. Drugi `compinit` spowalnia start i daje ostrzeżenia. Wariant liczy się z treści pliku bez naszego bloku, a jego
+   z `_skillsync` i woła `autoload -Uz _skillsync`. Wariant A wybiera wyłącznie treść pliku poza blokiem, w liniach niebędących komentarzem (pomijane są linie
+   zaczynające się od `#` po białych znakach i tekst po ` #`): osobne słowo `compinit`, albo załadowanie `oh-my-zsh`
+   (`source`/`.` z `oh-my-zsh.sh`), albo prezto z modułem `completion` w `zstyle ':prezto:load' pmodule`; te dwa frameworki same wołają `compinit`.
+   Samo słowo w komentarzu ani nazwa `zinit`, `antidote`, `zplug` wariantu A nie wybierają: podwójny `compinit` kosztuje milisekundy,
+   brak uzupełniania jest gorszy. Wariant A: `if (( $+functions[compdef] )); then compdef _skillsync skillsync; …; fi` (nie `A && B`, bo ta
+   forma zwraca 1 pod `setopt ERR_EXIT`), bez `compinit`; gdy `compdef` jeszcze nie istnieje, blok rejestruje jednorazowy hook `precmd`
+   (`_skillsync_register`), który rejestruje funkcję po starcie, sam się usuwa z `precmd_functions` i gdy `compdef` nadal brakuje, wypisuje
+   ostrzeżenie na stderr. Wariant B: gdy `compdef` nie istnieje, blok wywołuje `compinit -i`. Drugi `compinit` spowalnia start i daje ostrzeżenia. Wariant liczy się z treści pliku bez naszego bloku, a jego
    zmiana to `updated` w miejscu. Źródło: `zsh_block_lines`, `zsh_calls_compinit_elsewhere`; testy `ZshVariantTest`, `ZshRuntimeTest`.
 10. **ExecutionPolicy.** `Restricted` i `AllSigned` blokują wczytanie niepodpisanego skryptu z profilu (na kliencie Windows domyślną
     Windows PowerShella 5.1 jest `Restricted`). Wtedy dla tego hosta nie zapisujemy nic (ani profilu, ani skryptu): `skipped`
@@ -63,8 +67,10 @@ instalacja: [installation](../installation.md#uzupełnianie-poleceń-w-powłoce)
     bez ostrzeżenia i bez `FAIL`. Polityki nie zmieniamy za użytkownika. Nieznana polityka nie blokuje; `uninstall` jej nie sprawdza.
 11. **Bezpieczeństwo zapisu.** Plik startowy jest czytany ponownie tuż przed zapisem (bajty, rozmiar, mtime); zmiana w międzyczasie to
     `failed` („changed during the operation, run it again”) bez zapisu. Wiszący symlink to `failed` bez tworzenia czegokolwiek.
-    Plik z `st_nlink` > 1 jest zapisywany w miejscu (rename zerwałby dowiązania); w pozostałych przypadkach właściciel i xattr trafiają
-    do pliku zastępczego (w miarę możliwości). Źródło: `write_file`, `_check_unchanged`, `_carry_attributes`.
+    Plik z `st_nlink` > 1 jest zapisywany w miejscu (rename zerwałby dowiązania), a taki zapis nie jest atomowy; w pozostałych
+    przypadkach właściciel i xattr (tylko na Linuksie) trafiają do pliku zastępczego (w miarę możliwości). Usunięcie pliku, który sami
+    utworzyliśmy (`uninstall`), przechodzi tę samą kontrolę niezmienności. Wynik `failed` wspomina o kopii `<plik>.skillsync-bak`, gdy istnieje.
+    `uninstall` próbuje też profilu domyślnego obok profili podanych przez hosty. Źródło: `write_file`, `_check_unchanged`, `_carry_attributes`.
 12. **bash: tryb nazw plików i `compopt`.** Skrypt rejestruje `complete -o filenames`, a dla gałęzi bez ścieżek wywołuje
     `compopt +o filenames`, żeby bash nie dopisywał `/` do kandydatów zgodnych z katalogiem. Strażnik to `type compopt`, nie
     `declare -F compopt`: ten drugi wylicza tylko funkcje, więc dla wbudowanego `compopt` bash 4+ zwraca 1 (sprawdzone w bash 5.3);

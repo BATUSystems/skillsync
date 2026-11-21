@@ -375,6 +375,10 @@ def remove_block(shell, path, dry):
     if original is None and new_body == b'':
         if dry:
             return _result(shell, path, 'skipped', f'planned: remove {os.path.basename(path)} (only our block was in it)')
+        try:
+            _check_unchanged(real, (raw, signature))
+        except Changed as exc:
+            return _result(shell, path, 'failed', str(exc))
         os.remove(real)   # the file we created; a symlink the user put at `path` stays
         return _result(shell, path, 'removed', 'file removed (only our block was in it)')
     if dry:
@@ -441,8 +445,11 @@ def query_host(exe):
         return None, None, f'the host could not be run ({type(exc).__name__})'
     if proc.returncode != 0:
         return None, None, f'the host exited with code {proc.returncode}'
-    encoded = legacy = policy = None
-    for raw_line in (proc.stdout or b'').splitlines():
+    encoded = policy = None
+    stdout = proc.stdout or b''
+    if stdout.startswith(b'\xef\xbb\xbf'):
+        stdout = stdout[3:]
+    for raw_line in stdout.splitlines():
         try:
             line = raw_line.decode('utf-8').strip()
         except UnicodeDecodeError:
@@ -451,15 +458,13 @@ def query_host(exe):
             encoded = encoded if encoded is not None else line[4:]
         elif line.startswith('POLICY:'):
             policy = policy if policy is not None else line[7:].strip()
-        elif legacy is None and os.path.isabs(line):
-            legacy = line
     if encoded is not None:
         try:
             answer = base64.b64decode(encoded, validate=True).decode('utf-8')
         except (binascii.Error, ValueError):   # UnicodeDecodeError is a ValueError
             return None, policy, 'the profile path in the answer cannot be decoded'
     else:
-        answer = legacy
+        answer = None
     if not answer:
         return None, policy, 'the answer has no profile path'
     try:
@@ -540,20 +545,54 @@ def ps_block_lines(script, targets):
     return [START, f'if (Test-Path -LiteralPath {expr}) {{ . {expr} }}'.encode('utf-8'), END]
 
 
-ZSH_FRAMEWORKS = re.compile(rb'oh-my-zsh|zinit|antidote|zplug|prezto', re.IGNORECASE)
 ZSH_COMPINIT = re.compile(rb'(?<!\w)compinit(?!\w)')
+ZSH_OMZ = re.compile(rb'(?:^|[;&|\s])(?:source|\.)\s+\S*oh-my-zsh(?:\.sh)?(?!\w)|(?:^|[;&|\s])\S*oh-my-zsh\.sh(?!\w)')
+ZSH_PREZTO_LOAD = re.compile(rb"zstyle\s+['\"]:prezto:load['\"]\s+pmodule")
+ZSH_COMPLETION_WORD = re.compile(rb"(?<![\w-])completion(?![\w-])")
+
+
+def _zsh_code_lines(outside):
+    """The lines of the file without comments (a line starting with `#` after blanks, and the text after ` #`)."""
+    return [line.split(b' #', 1)[0] for line in outside.splitlines() if not line.lstrip().startswith(b'#')]
 
 
 def zsh_calls_compinit_elsewhere(outside):
-    """The rest of the startup file runs `compinit` itself (or a plugin manager does): the block must not call it a second time."""
-    return bool(ZSH_COMPINIT.search(outside) or ZSH_FRAMEWORKS.search(outside))
+    """The rest of the startup file runs `compinit` (a non-comment line with the word), or loads oh-my-zsh, or prezto with its `completion` module:
+    those call it themselves, so the block must not call it a second time. Other plugin managers do not decide: a doubled `compinit`
+    costs milliseconds, a missing one breaks completion."""
+    code = _zsh_code_lines(outside)
+    if any(ZSH_COMPINIT.search(line) for line in code):
+        return True
+    if any(ZSH_OMZ.search(line) for line in code):
+        return True
+    joined = b'\n'.join(code)
+    return bool(ZSH_PREZTO_LOAD.search(joined) and ZSH_COMPLETION_WORD.search(joined))
+
+
+ZSH_LATE_HOOK = [
+    'if (( $+functions[compdef] )); then',
+    '  compdef _skillsync skillsync',
+    'else',
+    '  _skillsync_register() {',
+    '    precmd_functions=(${precmd_functions:#_skillsync_register})',
+    '    if (( $+functions[compdef] )); then',
+    '      compdef _skillsync skillsync',
+    '    else',
+    "      print -u2 'skillsync: compdef is not available, so the completion was not registered; load the zsh completion system in your .zshrc'",
+    '    fi',
+    '    unfunction _skillsync_register',
+    '  }',
+    '  precmd_functions+=(_skillsync_register)',
+    'fi',
+]
 
 
 def zsh_block_lines(function_dir, outside=b''):
-    """Variant A (the file or a framework runs `compinit`, possibly later): register only. Variant B: also run `compinit -i` when nobody did."""
+    """Variant A (the file or a framework runs `compinit`, possibly later): register only; when `compdef` does not exist yet, a one-time
+    `precmd` hook registers after startup (and says so when it still is missing). Variant B: also run `compinit -i` when nobody did."""
     quoted = sh_quote(function_dir)
     if zsh_calls_compinit_elsewhere(outside):
-        text = [START.decode(), f'fpath=({quoted} $fpath)', 'autoload -Uz _skillsync', '(( $+functions[compdef] )) && compdef _skillsync skillsync', END.decode()]
+        text = [START.decode(), f'fpath=({quoted} $fpath)', 'autoload -Uz _skillsync'] + ZSH_LATE_HOOK + [END.decode()]
     else:
         text = [START.decode(), f'fpath=({quoted} $fpath)', 'autoload -Uz _skillsync',
                 'if (( $+functions[compdef] )); then compdef _skillsync skillsync; else autoload -Uz compinit && compinit -i; fi', END.decode()]
@@ -578,13 +617,21 @@ def _detect():
     return found
 
 
+def _with_backup_note(item):
+    if item['result'] == 'failed':
+        backup = _real(item['path']) + BACKUP_SUFFIX
+        if os.path.isfile(backup):
+            item['detail'] += f'; the copy of the previous content is in {backup}'
+    return item
+
+
 def _guarded(function, shell, path, *args):
     try:
-        return function(shell, path, *args)
+        return _with_backup_note(function(shell, path, *args))
     except Changed as exc:
-        return _result(shell, path, 'failed', str(exc))
+        return _with_backup_note(_result(shell, path, 'failed', str(exc)))
     except OSError as exc:
-        return _result(shell, path, 'failed', f'{type(exc).__name__}: {exc}')
+        return _with_backup_note(_result(shell, path, 'failed', f'{type(exc).__name__}: {exc}'))
 
 
 def _install(shells, targets, subparsers, dry, warnings, auto=False):
@@ -626,8 +673,13 @@ def _uninstall(shells, targets, dry, warnings):
             actions.append(removed)
             if removed['result'] == 'removed':
                 _remove_own_directories(script)
-            for profile, reason, _ in ps_plan(targets, warnings, False, False):
+            plan = ps_plan(targets, warnings, False, False)
+            for profile, reason, _ in plan:
                 actions.append(_guarded(remove_block, 'powershell', profile, dry) if reason is None else _result('powershell', profile, 'skipped', reason))
+            tried = [os.path.normcase(profile) for profile, reason, _ in plan if reason is None]
+            for profile in _unique(targets.default_profile(name) for name in (PS_HOSTS if WIN else PS_HOSTS[:1])):   # also when a host answered with another profile
+                if os.path.normcase(profile) not in tried:
+                    actions.append(_guarded(remove_block, 'powershell', profile, dry))
     return actions
 
 

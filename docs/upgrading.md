@@ -92,7 +92,7 @@ Zmiana kodu wyjścia `test-run` przy ukrytych porażkach jest opisana w sekcji *
    - Ograniczenie zsh: `ZDOTDIR` ustawione tylko w `~/.zshenv` jest niewidoczne dla `install.sh`; blok trafi wtedy do `~/.zshrc`. Uruchom `skillsync completion install` z zsh, w którym `ZDOTDIR` jest już ustawione.
    - bash: uzupełnianie wymaga pakietu bash-completion; zapis `--flag=value` nie jest uzupełniany (użyj `--flag wartość`).
    - PowerShell: blok trafia do profilu `CurrentUserAllHosts` (`profile.ps1`, czytanego też przez konsolę rozszerzenia VS Code). Przy `ExecutionPolicy` `Restricted` albo `AllSigned` niczego nie zapisujemy; wykonaj sam `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` i powtórz `skillsync completion install`. Start PowerShella wydłuża się o ok. 38 ms.
-   - zsh: gdy `.zshrc` ma już `compinit` albo framework (oh-my-zsh, zinit, antidote, zplug, prezto), blok tylko rejestruje funkcję i nie wywołuje `compinit`.
+   - zsh: gdy `.zshrc` ma w linii niebędącej komentarzem `compinit`, ładuje oh-my-zsh albo prezto z modułem `completion`, blok tylko rejestruje funkcję i nie wywołuje `compinit` (zinit, antidote i zplug same wariantu nie wybierają).
 
 ## Przejście 1.10.0 → 1.11.0
 

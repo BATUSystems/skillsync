@@ -4,7 +4,8 @@ Every test runs `python3 skillsync completion ...` as a SUBPROCESS with a fully 
 XDG_*, ZDOTDIR-less by default, USERPROFILE, APPDATA, LOCALAPPDATA), so nothing can reach the real HOME. PATH holds ONLY the directory with fake tools:
 
 * `bash` and `zsh`: empty `#!/bin/sh` scripts (they only have to be found on PATH),
-* `pwsh` (and optionally `powershell`): a fake that prints the value of `$FAKE_PROFILE` (for `powershell`: `$FAKE_PROFILE_5`) whatever it is asked,
+* `pwsh` (and optionally `powershell`): a fake that prints `P64:` and the base64 of the UTF-8 value of `$FAKE_PROFILE` (for `powershell`: `$FAKE_PROFILE_5`;
+  the sandbox derives `FAKE_PS64`/`FAKE_PS64_5` from them) whatever it is asked,
   then `POLICY:$FAKE_POLICY` when that is set, and appends its arguments to `$FAKE_LOG` when set; the real `pwsh` is never started. The implementation is
   expected to ask `-NoProfile -NonInteractive -Command <text>`; the real host answers `P64:<base64 of the UTF-8 path of CurrentUserAllHosts>` and
   `POLICY:<effective policy>`, the fake may also print the bare absolute path (accepted as before).
@@ -118,9 +119,9 @@ class Sandbox:
     def shells(self, *names):
         for name in names:
             if name in ('pwsh', 'powershell'):
-                var = 'FAKE_PROFILE' if name == 'pwsh' else 'FAKE_PROFILE_5'
-                self.tool(name, f'echo %{var}%\r\nif defined FAKE_POLICY echo POLICY:%FAKE_POLICY%\r\n' if WIN else
-                          f'[ -n "$FAKE_LOG" ] && printf \'%s\\n\' "$*" >> "$FAKE_LOG"\nprintf \'%s\\n\' "${var}"\n'
+                var = 'FAKE_PS64' if name == 'pwsh' else 'FAKE_PS64_5'
+                self.tool(name, f'echo P64:%{var}%\r\nif defined FAKE_POLICY echo POLICY:%FAKE_POLICY%\r\n' if WIN else
+                          f'[ -n "$FAKE_LOG" ] && printf \'%s\\n\' "$*" >> "$FAKE_LOG"\nprintf \'P64:%s\\n\' "${var}"\n'
                           f'if [ -n "$FAKE_POLICY" ]; then printf \'POLICY:%s\\n\' "$FAKE_POLICY"; fi\n')
             else:
                 self.tool(name)
@@ -141,6 +142,9 @@ class Sandbox:
                 env.pop(key, None)
             else:
                 env[key] = value
+        for source, target in (('FAKE_PROFILE', 'FAKE_PS64'), ('FAKE_PROFILE_5', 'FAKE_PS64_5')):
+            if source in env:
+                env[target] = base64.b64encode(env[source].encode('utf-8')).decode()
         return env
 
     def run(self, action, *args, json_out=True, **over):
@@ -979,6 +983,37 @@ class ProfileQueryTest(Base):
         self.assertFalse((self.sb.home / '.config').exists(), 'the default location is not used')
 
     @unittest.skipIf(sys.platform == 'win32', 'POSIX only: the fake pwsh is a #!/bin/sh script')
+    def test_a_bare_absolute_path_without_the_p64_prefix_is_no_answer(self):
+        self.sb.tool('pwsh', f"printf '%s\\n' '{self.sb.profile}'\n")
+        before = tree(self.sb.root)
+        res = self.sb.install('--shell', 'powershell')
+        self.assertEqual(res.rc, 0, f'{res.out}\n{res.err}')
+        self.assertEqual(res.results(), ['skipped'])
+        self.assertEqual(tree(self.sb.root), before)
+
+    @unittest.skipIf(sys.platform == 'win32', 'POSIX only: the fake pwsh is a #!/bin/sh script')
+    def test_uninstall_also_tries_the_default_profile_when_a_host_names_another(self):
+        self.sb.shells('pwsh')
+        default = self.sb.home / '.config' / 'powershell' / 'profile.ps1'
+        default.parent.mkdir(parents=True)
+        default.write_bytes(b'export=1\n' + START + b'\nx=1\n' + END + b'\n')
+        other = self.sb.root / 'other' / 'profile.ps1'
+        res = self.sb.uninstall(FAKE_PROFILE=str(other))
+        self.assertEqual(res.rc, 0, f'{res.out}\n{res.err}')
+        self.assertNotIn(START, default.read_bytes())
+        self.assertEqual(res.action(default)['result'], 'updated')
+        self.assertFalse(other.exists())
+
+    @unittest.skipIf(sys.platform == 'win32', 'POSIX only: the fake pwsh is a #!/bin/sh script')
+    def test_a_utf8_bom_at_the_start_of_the_host_answer_is_ignored(self):
+        profile = self.sb.home / 'p' / 'profile.ps1'
+        encoded = base64.b64encode(str(profile).encode('utf-8')).decode()
+        self.sb.tool('pwsh', 'printf \'\\357\\273\\277P64:%s\\nPOLICY:RemoteSigned\\n\' "$FAKE_P64"\n')
+        res = self.sb.install('--shell', 'powershell', FAKE_P64=encoded)
+        self.assertEqual(res.rc, 0, f'{res.out}\n{res.err}')
+        self.assertEqual(res.action(profile)['result'], 'created')
+
+    @unittest.skipIf(sys.platform == 'win32', 'POSIX only: the fake pwsh is a #!/bin/sh script')
     def test_the_query_asks_for_all_hosts_profile_policy_and_base64(self):
         self.sb.shells('pwsh')
         log = self.sb.root / 'pwsh.log'
@@ -1093,17 +1128,61 @@ class ZshRuntimeTest(Base):
         zsh = shutil.which('zsh', path=REAL_PATH)
         if not zsh:
             self.skipTest('no zsh on PATH: zsh is not installed')
-        self.sb.zshrc.write_bytes(b'# a framework below runs compinit at the end\n')
+        self.sb.zshrc.write_bytes(b'compinit -i\n')
         self.sb.shells('zsh')
         self.assertOk(self.sb.install())
-        with open(self.sb.zshrc, 'ab') as handle:
-            handle.write(b'autoload -Uz compinit\ncompinit -i\n')   # below the block, as oh-my-zsh does
+        data = self.sb.zshrc.read_bytes().replace(b'compinit -i\n', b'', 1)
+        self.sb.zshrc.write_bytes(data + b'autoload -Uz compinit\ncompinit -i\n')   # below the block, as a framework does
         proc = subprocess.run([zsh, '-fx', '-c', 'source "$HOME/.zshrc"; print -r -- "COMPS=${_comps[skillsync]}"; autoload +X _skillsync; print -r -- "LOAD=$?"'],
                               capture_output=True, text=True, env={**self.sb.env(), 'PATH': REAL_PATH}, timeout=60)
         calls = re.findall(r'^\+[^\n]*?> compinit(?: |$)', proc.stderr, re.M)
         self.assertEqual(len(calls), 1, f'compinit calls: {calls}\n{proc.stderr[-2000:]}')
         self.assertIn('COMPS=_skillsync', proc.stdout)
         self.assertIn('LOAD=0', proc.stdout)
+
+    def zsh_precmd(self, tail, script):
+        zsh = shutil.which('zsh', path=REAL_PATH)
+        if not zsh:
+            self.skipTest('no zsh on PATH: zsh is not installed')
+        self.sb.zshrc.write_bytes(b'compinit\n')
+        self.sb.shells('zsh')
+        self.assertOk(self.sb.install())
+        data = self.sb.zshrc.read_bytes().replace(b'compinit\n', b'', 1)
+        self.assertNotIn(b'compinit', data)
+        self.sb.zshrc.write_bytes(data + tail)
+        return subprocess.run([zsh, '-f', '-c', 'setopt ERR_EXIT; source "$HOME/.zshrc"; ' + script], capture_output=True, text=True,
+                              env={**self.sb.env(), 'PATH': REAL_PATH}, timeout=60)
+
+    def test_variant_a_registers_in_a_one_time_precmd_hook_when_compdef_comes_late(self):
+        proc = self.zsh_precmd(b'compdef() { print -r -- "REG:$*" }\n',
+                               'print -r -- "BEFORE=${precmd_functions}"; for f in $precmd_functions; do $f; done; '
+                               'print -r -- "AFTER=${precmd_functions}"; print -r -- "FN=${+functions[_skillsync_register]}"')
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn('BEFORE=_skillsync_register', proc.stdout)
+        self.assertIn('REG:_skillsync skillsync', proc.stdout)
+        self.assertIn('AFTER=\n', proc.stdout)
+        self.assertIn('FN=0', proc.stdout)
+
+    def test_variant_a_hook_says_so_when_compdef_never_appears(self):
+        proc = self.zsh_precmd(b'', 'for f in $precmd_functions; do $f; done; print -r -- "AFTER=${precmd_functions}"')
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn('completion was not registered', proc.stderr)
+        self.assertIn('AFTER=\n', proc.stdout)
+
+    def test_variant_a_registers_at_once_when_compdef_exists(self):
+        zsh = shutil.which('zsh', path=REAL_PATH)
+        if not zsh:
+            self.skipTest('no zsh on PATH: zsh is not installed')
+        self.sb.zshrc.write_bytes(b'compinit\n')
+        self.sb.shells('zsh')
+        self.assertOk(self.sb.install())
+        data = self.sb.zshrc.read_bytes().replace(b'compinit\n', b'', 1)
+        self.sb.zshrc.write_bytes(b'compdef() { print -r -- "REG:$*" }\n' + data)
+        proc = subprocess.run([zsh, '-f', '-c', 'setopt ERR_EXIT; source "$HOME/.zshrc"; print -r -- "HOOKS=${#precmd_functions}"'], capture_output=True, text=True,
+                              env={**self.sb.env(), 'PATH': REAL_PATH}, timeout=60)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn('REG:_skillsync skillsync', proc.stdout)
+        self.assertIn('HOOKS=0', proc.stdout)
 
     def test_block_does_not_run_compinit_again_after_oh_my_zsh_style_setup(self):
         proc, calls = self.run_zsh(b'autoload -Uz compinit\ncompinit -i\n')
@@ -1116,14 +1195,17 @@ class ZshRuntimeTest(Base):
 
 class ZshVariantTest(Base):
     """P5: the block is variant A (registers only) when the rest of the file, or a framework, runs `compinit`; otherwise variant B (runs it when nobody did)."""
-    COMPDEF_ONLY = b'(( $+functions[compdef] )) && compdef _skillsync skillsync'
+    COMPDEF_ONLY = b'compdef _skillsync skillsync'
 
     def block(self):
         return block_of(self.sb.zshrc.read_bytes())
 
-    def test_a_compinit_or_a_framework_outside_the_block_gives_variant_a(self):
-        cases = {'compinit': b'compinit\n', 'autoload': b'autoload -Uz compinit\ncompinit -i\n', 'oh-my-zsh': b'source $ZSH/oh-my-zsh.sh\n',
-                 'zinit': b'zinit light x\n', 'antidote': b'antidote load\n', 'zplug': b'zplug load\n', 'prezto': b'source ~/.zprezto/init.zsh\n'}
+    def test_a_compinit_line_outside_the_block_gives_variant_a(self):
+        cases = {'compinit': b'compinit\n', 'autoload': b'autoload -Uz compinit\ncompinit -i\n', 'indented': b'  compinit -C\n',
+                 'trailing comment': b'compinit # fast\n', 'oh-my-zsh': b'source $ZSH/oh-my-zsh.sh\n',
+                 'oh-my-zsh dot': b'. \"$HOME/.oh-my-zsh/oh-my-zsh.sh\"\n',
+                 'prezto completion': b"zstyle ':prezto:load' pmodule 'environment' 'completion' 'prompt'\nsource ~/.zprezto/init.zsh\n",
+                 'prezto multiline': b"zstyle ':prezto:load' pmodule \\\n  'environment' \\\n  'completion'\n"}
         for name, original in cases.items():
             with self.subTest(name):
                 self.sb.zshrc.unlink(missing_ok=True)
@@ -1132,16 +1214,30 @@ class ZshVariantTest(Base):
                 block = self.block()
                 self.assertNotIn(b'compinit', block)
                 self.assertIn(self.COMPDEF_ONLY, block)
+                self.assertIn(b'precmd_functions+=(_skillsync_register)', block)
                 self.assertIn(b'autoload -Uz _skillsync', block)
                 self.assertIn(b'fpath=(', block)
 
     def test_without_such_a_word_the_block_is_variant_b(self):
-        for name, original in {'empty': b'', 'plain': b'export A=1\n', 'word part only': b'my_compinit_hack=1\nexport compinitx=2\n'}.items():
+        cases = {'empty': b'', 'plain': b'export A=1\n', 'word part only': b'my_compinit_hack=1\nexport compinitx=2\n',
+                 'comment': b'# we call compinit later\n', 'indented comment': b'   # compinit\n', 'trailing comment': b'export A=1 # compinit\n',
+                 'oh-my-zsh in a comment': b'# source $ZSH/oh-my-zsh.sh\n', 'zinit': b'zinit light x\n', 'antidote': b'antidote load\n',
+                 'zplug': b'zplug load\n', 'prezto without completion': b"zstyle ':prezto:load' pmodule 'environment' 'prompt'\nsource ~/.zprezto/init.zsh\n",
+                 'prezto only': b'source ~/.zprezto/init.zsh\n'}
+        for name, original in cases.items():
             with self.subTest(name):
                 self.sb.zshrc.unlink(missing_ok=True)
                 self.prepare_zshrc(original)
                 self.assertOk(self.sb.install())
                 self.assertIn(b'autoload -Uz compinit && compinit -i', self.block())
+
+    def test_the_compdef_line_does_not_fail_under_err_exit(self):
+        for original in (b'compinit\n', b''):
+            self.sb.zshrc.unlink(missing_ok=True)
+            self.prepare_zshrc(original)
+            self.assertOk(self.sb.install())
+            self.assertNotIn(b'&& compdef', self.block())
+            self.assertIn(b'if (( $+functions[compdef] ))', self.block())
 
     def test_the_word_inside_our_own_block_does_not_count(self):
         self.prepare_zshrc(b'export A=1\n')
@@ -1276,6 +1372,35 @@ class WriteSafetyTest(Base):
         self.assertIn('changed during the operation, run it again', res['detail'])
         self.assertEqual(path.read_bytes(), b'someone else wrote this\n')
         self.assertEqual(sorted(p.name for p in self.sb.root.iterdir() if p.name.startswith('rc') or p.name.startswith('.skillsync')), ['rc'])
+
+    def test_a_failed_result_names_the_backup_copy_when_there_is_one(self):
+        path = self.sb.root / 'rc'
+        path.write_bytes(b'export A=1\n')
+        real = completion_install._make_backup
+
+        def racing(target, raw, mode):
+            real(target, raw, mode)
+            Path(target).write_bytes(b'someone else wrote this\n')
+
+        with mock.patch.object(completion_install, '_make_backup', racing):
+            res = self.install_block(path)
+        self.assertEqual(res['result'], 'failed')
+        self.assertIn(str(path) + '.skillsync-bak', res['detail'])
+
+    def test_removing_a_file_we_created_checks_that_nobody_changed_it(self):
+        path = self.sb.root / 'rc'
+        self.assertEqual(self.install_block(path)['result'], 'created')
+        real = completion_install._check_unchanged
+
+        def racing(target, expect):
+            Path(target).write_bytes(b'someone else wrote this\n')
+            return real(target, expect)
+
+        with mock.patch.object(completion_install, '_check_unchanged', racing):
+            res = completion_install._guarded(completion_install.remove_block, 'zsh', str(path), False)
+        self.assertEqual(res['result'], 'failed')
+        self.assertIn('changed during the operation', res['detail'])
+        self.assertEqual(path.read_bytes(), b'someone else wrote this\n')
 
     def test_a_change_after_the_backup_fails_and_the_backup_stays(self):
         path = self.sb.root / 'rc'

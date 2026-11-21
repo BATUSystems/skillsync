@@ -201,7 +201,7 @@ class Syntax(GeneratedFixtureCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = child(tmp, f'script.{extension}')
             path.write_bytes(self.script(shell).encode('utf-8'))
-            result = subprocess.run(command + [str(path)], capture_output=True, text=True, timeout=60)
+            result = subprocess.run(command + [path.as_posix()], capture_output=True, text=True, timeout=60)
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_bash_accepts_the_script(self):
@@ -248,7 +248,7 @@ class Syntax(GeneratedFixtureCase):
             path.write_bytes(self.script('bash').encode('utf-8'))
             probe = ('source "$1"; run() { COMP_WORDS=("$@"); COMP_CWORD=$(( $# - 1 )); _skillsync; printf "%s|" "${COMPREPLY[@]}"; echo; }; '
                      'run skillsync s; run skillsync skills a; run skillsync link --mode ""; run skillsync skills add --f; run skillsync --')
-            result = subprocess.run(['bash', '-c', probe, 'probe', str(path)], capture_output=True, text=True, timeout=60)
+            result = subprocess.run(['bash', '-c', probe, 'probe', path.as_posix()], capture_output=True, text=True, timeout=60)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.splitlines(), ['skills|', 'add|', "copy|it's|two words|", '--force|', '--help|--version|'])
 
@@ -274,7 +274,7 @@ class Syntax(GeneratedFixtureCase):
             path = child(tmp, 'script.bash')
             path.write_bytes(self.script('bash').encode('utf-8'))
             probe = (before + ' source "$1"; run() { COMP_WORDS=("$@"); COMP_CWORD=$(( $# - 1 )); _skillsync; printf "%s|" "${COMPREPLY[@]}"; echo; }; ' + tail)
-            result = subprocess.run(['bash', '-c', probe, 'probe', str(path)], capture_output=True, text=True, timeout=60, cwd=cwd)
+            result = subprocess.run(['bash', '-c', probe, 'probe', path.as_posix()], capture_output=True, text=True, timeout=60, cwd=cwd)
         self.assertEqual(result.returncode, 0, result.stderr)
         return result.stdout.splitlines()
 
@@ -282,7 +282,7 @@ class Syntax(GeneratedFixtureCase):
         if not shutil.which('bash'):
             self.skipTest('no bash on PATH: bash is not installed')
         stub = 'compopt() { echo "compopt $*"; };'
-        with tempfile.TemporaryDirectory() as empty:   # the last case (a path) lists the working directory
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as empty:   # the last case (a path) lists the working directory
             lines = self.bash_probe('run skillsync s; run skillsync link --mode ""; run skillsync --; run skillsync link --out-dir ""', cwd=empty, before=stub)
         self.assertEqual(lines, ['compopt +o filenames', 'skills|', 'compopt +o filenames', "copy|it's|two words|", 'compopt +o filenames', '--help|--version|', '|'])
 

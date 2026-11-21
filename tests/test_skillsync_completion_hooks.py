@@ -1,5 +1,6 @@
 """Automatic completion hooks (CORE-COMPLETION, K12-K13): `install.sh` calls `skillsync completion install --auto`
 and the `setup` wizard has a `completion` step. Everything runs in a temporary HOME; nothing touches the real one."""
+import base64
 import json
 import os
 import shlex
@@ -83,8 +84,8 @@ class SetupStepTest(unittest.TestCase):
         self.fake_log = self.root / 'ps-host.log'
         self.fake('bash', 'exit 0\n', '')
         for host in ('pwsh', 'powershell'):
-            self.fake(host, f'[ -n "$FAKE_LOG" ] && printf \'%s\\n\' "$*" >> "$FAKE_LOG"\nprintf \'%s\\n\' "$FAKE_PROFILE"\n',
-                      '@echo %FAKE_PROFILE%\r\n')
+            self.fake(host, f'[ -n "$FAKE_LOG" ] && printf \'%s\\n\' "$*" >> "$FAKE_LOG"\nprintf \'%s\\n\' "P64:$FAKE_PS64"\n',
+                      '@if defined FAKE_LOG echo %* >>"%FAKE_LOG%"\r\n@echo P64:%FAKE_PS64%\r\n')
         self.git_dir = None
         git = shutil.which('git')
         if git and not WIN:
@@ -126,7 +127,7 @@ class SetupStepTest(unittest.TestCase):
             'GIT_CONFIG_GLOBAL': str(self.gitconfig), 'GIT_CONFIG_NOSYSTEM': '1',
             'SKILLSYNC_CONFIG': str(self.root / 'skillsync-config.yaml'),
             'PATH': str(self.bin) + (os.pathsep + self.git_dir if self.git_dir else ''),
-            'FAKE_PROFILE': str(self.profile), 'FAKE_LOG': str(self.fake_log), 'PYTHONUTF8': '1',
+            'FAKE_PS64': base64.b64encode(str(self.profile).encode('utf-8')).decode(), 'FAKE_LOG': str(self.fake_log), 'PYTHONUTF8': '1',
         })
         env.update(extra or {})
         return env

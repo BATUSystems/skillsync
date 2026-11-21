@@ -263,6 +263,18 @@
    {
     "id": "test_skillsync_winacl.RealWindowsTests.test_the_secret_files_of_the_e2e_environment_are_owner_only_by_acl",
     "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_registers_in_a_one_time_precmd_hook_when_compdef_comes_late",
+    "category": "needs-shell"
+   },
+   {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_hook_says_so_when_compdef_never_appears",
+    "category": "needs-shell"
+   },
+   {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_registers_at_once_when_compdef_exists",
+    "category": "needs-shell"
    }
   ],
   "linux/copy": [
@@ -425,6 +437,18 @@
    {
     "id": "test_skillsync_winacl.RealWindowsTests.test_the_secret_files_of_the_e2e_environment_are_owner_only_by_acl",
     "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_registers_in_a_one_time_precmd_hook_when_compdef_comes_late",
+    "category": "needs-shell"
+   },
+   {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_hook_says_so_when_compdef_never_appears",
+    "category": "needs-shell"
+   },
+   {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_registers_at_once_when_compdef_exists",
+    "category": "needs-shell"
    }
   ],
   "ubuntu-latest/symlink": [
@@ -587,6 +611,18 @@
    {
     "id": "test_skillsync_winacl.RealWindowsTests.test_the_secret_files_of_the_e2e_environment_are_owner_only_by_acl",
     "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_registers_in_a_one_time_precmd_hook_when_compdef_comes_late",
+    "category": "needs-shell"
+   },
+   {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_hook_says_so_when_compdef_never_appears",
+    "category": "needs-shell"
+   },
+   {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_registers_at_once_when_compdef_exists",
+    "category": "needs-shell"
    }
   ],
   "ubuntu-latest/copy": [
@@ -749,6 +785,18 @@
    {
     "id": "test_skillsync_winacl.RealWindowsTests.test_the_secret_files_of_the_e2e_environment_are_owner_only_by_acl",
     "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_registers_in_a_one_time_precmd_hook_when_compdef_comes_late",
+    "category": "needs-shell"
+   },
+   {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_hook_says_so_when_compdef_never_appears",
+    "category": "needs-shell"
+   },
+   {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_registers_at_once_when_compdef_exists",
+    "category": "needs-shell"
    }
   ],
   "windows-latest/symlink": null,
@@ -907,7 +955,7 @@
    },
    {
     "id": "test_skillsync_completion_install.BackupAndAtomicityTest.test_read_only_target_fails_without_backup_or_partial_state",
-    "category": "posix-only"
+    "category": "no-mode-enforcement"
    },
    {
     "id": "test_skillsync_completion_install.BackupAndAtomicityTest.test_symlinked_rc_is_written_through_the_link",
@@ -991,7 +1039,7 @@
    },
    {
     "id": "test_skillsync_completion_install.ReadOnlyRcTest.test_read_only_rc_in_a_writable_directory_fails_without_backup",
-    "category": "posix-only"
+    "category": "no-mode-enforcement"
    },
    {
     "id": "test_skillsync_completion_install.WriteSafetyTest.test_a_file_with_several_hard_links_is_written_in_place",
@@ -2068,6 +2116,30 @@
    {
     "id": "unittest.loader.ModuleSkipped.test_skillsync_install_sh",
     "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_registers_in_a_one_time_precmd_hook_when_compdef_comes_late",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_hook_says_so_when_compdef_never_appears",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_registers_at_once_when_compdef_exists",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.ProfileQueryTest.test_a_bare_absolute_path_without_the_p64_prefix_is_no_answer",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.ProfileQueryTest.test_uninstall_also_tries_the_default_profile_when_a_host_names_another",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.ProfileQueryTest.test_a_utf8_bom_at_the_start_of_the_host_answer_is_ignored",
+    "category": "posix-only"
    }
   ],
   "macos-latest/symlink": [
@@ -2318,6 +2390,18 @@
    {
     "id": "test_skillsync_winacl.RealWindowsTests.test_the_secret_files_of_the_e2e_environment_are_owner_only_by_acl",
     "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_registers_in_a_one_time_precmd_hook_when_compdef_comes_late",
+    "category": "needs-shell"
+   },
+   {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_hook_says_so_when_compdef_never_appears",
+    "category": "needs-shell"
+   },
+   {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_registers_at_once_when_compdef_exists",
+    "category": "needs-shell"
    }
   ],
   "macos-latest/copy": [
@@ -2568,6 +2652,18 @@
    {
     "id": "test_skillsync_winacl.RealWindowsTests.test_the_secret_files_of_the_e2e_environment_are_owner_only_by_acl",
     "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_registers_in_a_one_time_precmd_hook_when_compdef_comes_late",
+    "category": "needs-shell"
+   },
+   {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_hook_says_so_when_compdef_never_appears",
+    "category": "needs-shell"
+   },
+   {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_registers_at_once_when_compdef_exists",
+    "category": "needs-shell"
    }
   ],
   "macos-uv/symlink": [
@@ -2858,6 +2954,18 @@
    {
     "id": "test_skillsync_winacl.RealWindowsTests.test_the_secret_files_of_the_e2e_environment_are_owner_only_by_acl",
     "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_registers_in_a_one_time_precmd_hook_when_compdef_comes_late",
+    "category": "needs-shell"
+   },
+   {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_hook_says_so_when_compdef_never_appears",
+    "category": "needs-shell"
+   },
+   {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_registers_at_once_when_compdef_exists",
+    "category": "needs-shell"
    }
   ],
   "macos-uv/copy": [
@@ -3148,6 +3256,18 @@
    {
     "id": "test_skillsync_winacl.RealWindowsTests.test_the_secret_files_of_the_e2e_environment_are_owner_only_by_acl",
     "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_registers_in_a_one_time_precmd_hook_when_compdef_comes_late",
+    "category": "needs-shell"
+   },
+   {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_hook_says_so_when_compdef_never_appears",
+    "category": "needs-shell"
+   },
+   {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_registers_at_once_when_compdef_exists",
+    "category": "needs-shell"
    }
   ]
  }

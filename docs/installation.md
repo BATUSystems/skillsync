@@ -141,9 +141,10 @@ Usunięcie: `skillsync completion uninstall`.
   `source "${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion/completions/skillsync"`. Zapis `--flag=value` nie jest uzupełniany
   (bash rozbija słowo na `=`): używaj `--flag wartość`.
 - **zsh:** plik `_skillsync` w `~/.local/share/zsh/site-functions/` i jeden blok w `${ZDOTDIR:-~}/.zshrc`. Blok dodaje
-  katalog do `fpath` i rejestruje funkcję. Jeśli reszta `.zshrc` zawiera słowo `compinit` albo framework (`oh-my-zsh`, `zinit`, `antidote`,
-  `zplug`, `prezto`), blok nie wywołuje `compinit` (wariant A: późniejszy `compinit` znajdzie funkcję przez `fpath`, a wcześniejszy już
-  istnieje przez `compdef`); w przeciwnym razie (wariant B) wywołuje `compinit -i`, gdy `compdef` jeszcze nie istnieje. Zmiana wariantu przy
+  katalog do `fpath` i rejestruje funkcję. Jeśli reszta `.zshrc` ma w linii niebędącej komentarzem słowo `compinit`, ładuje `oh-my-zsh`
+  albo prezto z modułem `completion`, blok nie wywołuje `compinit` (wariant A: późniejszy `compinit` znajdzie funkcję przez `fpath`, a gdy
+  `compdef` jeszcze nie istnieje, jednorazowy hook `precmd` zarejestruje funkcję po starcie); nazwy `zinit`, `antidote`, `zplug` ani słowo
+  w komentarzu wariantu A nie wybierają. W przeciwnym razie (wariant B) wywołuje `compinit -i`, gdy `compdef` jeszcze nie istnieje. Zmiana wariantu przy
   ponownej instalacji podmienia blok w miejscu. `install.sh` nie widzi zmiennej `ZDOTDIR` ustawionej tylko w `~/.zshenv`, więc blok trafi do
   `~/.zshrc`, którego zsh wtedy nie czyta. W takiej konfiguracji uruchom `skillsync completion install` z zsh, w którym
   `ZDOTDIR` jest już ustawione.
@@ -152,7 +153,8 @@ Usunięcie: `skillsync completion uninstall`.
   rozszerzenia VS Code. Instalator obsługuje oba hosty znalezione na PATH: PowerShell 7 (`pwsh`) i Windows PowerShell 5.1
   (`powershell`); każdy ma swój profil, a jego ścieżkę host podaje jako base64 z bajtów UTF-8 (strona kodowa nie ma znaczenia, polskie litery
   w ścieżce są bezpieczne). Host bez użytecznej odpowiedzi jest pomijany z ostrzeżeniem. Profile zachowują swoje końce linii
-  i BOM, a nowe pliki powstają jako UTF-8 z BOM, bo Windows PowerShell 5.1 czyta UTF-8 bez BOM jako ANSI. Start PowerShella wydłuża się o ok. 38 ms.
+  i BOM, a nowe pliki powstają jako UTF-8 z BOM, bo Windows PowerShell 5.1 czyta UTF-8 bez BOM jako ANSI. Skrypt ładuje każdy host (profil `AllHosts`), więc start PowerShella wydłuża się o ok. 38 ms.
+  Plik z twardymi dowiązaniami jest zapisywany w miejscu, a taki zapis nie jest atomowy.
   **ExecutionPolicy:** przy polityce `Restricted` albo `AllSigned` (domyślna dla Windows PowerShell 5.1 na kliencie jest `Restricted`) niczego nie
   zapisujemy, bo profil nie wczytałby niepodpisanego skryptu. Instalator podaje polecenie
   `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`, które wykonujesz sam; potem uruchom `skillsync completion install`. Polityki nie zmieniamy
