@@ -690,7 +690,7 @@ class PlanFixtures(StatuslineCase):
         try:
             link.symlink_to(outside)
         except (OSError, NotImplementedError):
-            self.skipTest('symbolic links are not available on this system')
+            self.skipTest('symlinks are not available on this system')
         result = self.run_script({'workspace': {'project_dir': str(base)}}, wrapped=True, fixture=base, NO_COLOR='1')
         self.assertEqual(result.rc, 0, result.err)
         self.assertEqual(STEPS.findall(result.line), [('1', '3')])

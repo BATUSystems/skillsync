@@ -594,13 +594,36 @@ class Installation(LinkBase):
         self.assertIn({'type': 'command', 'command': 'echo obcy-stop'}, [hook for group in data['hooks']['Stop'] for hook in group['hooks']])
         self.assertIn('statusLine', data)
 
-    def test_our_stale_entry_is_refreshed_not_treated_as_foreign(self):
+    def test_an_entry_with_another_path_is_foreign_it_is_kept_and_warned_about(self):
         stale = our_value(f'python3 /old/checkout/{NEEDLE}', refresh=60)
         project = self.project(local=dumped({'statusLine': stale}))
         result = self.link(project)
+        self.assertEqual(self.entry(project), stale, 'not overwritten, not refreshed')
+        self.assertFalse(self.script(project).exists(), 'no copy of the script without our entry')
+        text = [posix(line) for line in self.warns(result) if 'statusLine' in line]
+        self.assertTrue(any('.claude/settings.local.json' in line and re.search('priorit', line, re.IGNORECASE) and 'by hand' in line for line in text), result.stdout)
+
+    def test_another_interpreter_in_our_entry_does_not_rewrite_the_file(self):
+        project = self.project(local=dumped(FOREIGN_SETTINGS))
+        bar = self.installed(project)
+        other = {**bar, 'command': '/usr/bin/inny-python ' + bar['command'].split(' ', 1)[1]}
+        data = self.settings(project)
+        data['statusLine'] = other
+        descend(project, LOCAL).write_bytes(dumped(data))
+        os.utime(descend(project, LOCAL), ns=(1_000_000_000_000_000_000, 1_000_000_000_000_000_000))
+        before = (descend(project, LOCAL).read_bytes(), descend(project, LOCAL).stat().st_mtime_ns)
+        again = self.link(project)
+        self.assertEqual((descend(project, LOCAL).read_bytes(), descend(project, LOCAL).stat().st_mtime_ns), before)
+        self.assertFalse([line for line in self.warns(again) if 'statusLine' in line], again.stdout)
+
+    def test_another_refresh_interval_is_rewritten(self):
+        project = self.project()
+        bar = self.installed(project)
+        data = self.settings(project)
+        data['statusLine'] = {**bar, 'refreshInterval': 60}
+        descend(project, LOCAL).write_bytes(dumped(data))
+        self.link(project)
         self.assertEqual(self.entry(project)['refreshInterval'], REFRESH)
-        self.assertNotIn('/old/checkout', self.entry(project)['command'])
-        self.assertFalse([line for line in self.warns(result) if 'statusLine' in line], result.stdout)
 
     def test_the_backup_of_the_settings_is_the_earliest_one(self):
         original = dumped(FOREIGN_SETTINGS)
@@ -722,6 +745,21 @@ class UnusableFiles(LinkBase):
         self.assertEqual(descend(project, LOCAL).read_bytes(), raw)
         self.assertTrue(self.warns(result), result.stdout)
 
+    def test_an_unusable_settings_file_leaves_no_orphaned_copy_of_the_script(self):
+        for raw in (dumped({'hooks': 'tekst'}), b'{ zepsute'):
+            with self.subTest(raw=raw[:8]):
+                project = self.project(local=raw)
+                self.link(project)
+                self.assertFalse(self.script(project).exists())
+                self.assertFalse(any('statusline.py' in line for line in self.gitignore_lines(project)))
+
+    def test_a_tracked_settings_file_leaves_no_orphaned_copy_of_the_script(self):
+        project = self.project(local=dumped(FOREIGN_SETTINGS))
+        git(project, 'init', '-q')
+        git(project, 'add', '-f', LOCAL)
+        self.link(project)
+        self.assertFalse(self.script(project).exists())
+
     def test_a_tracked_settings_file_is_not_written(self):
         raw = dumped(FOREIGN_SETTINGS)
         project = self.project(local=raw)
@@ -828,6 +866,59 @@ class SwitchingOff(LinkBase):
         self.assertEqual(descend(project, LOCAL).read_bytes(), b'{ zepsute')
         self.assertTrue(self.warns(result), result.stdout)
 
+    FOREIGN_SCRIPT = b'# skrypt uzytkownika\n'
+
+    def put_foreign_script(self, project):
+        target = self.script(project)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(self.FOREIGN_SCRIPT)
+
+    def test_a_foreign_script_under_the_name_stays_without_the_key_and_without_a_warning(self):
+        for claude in (None, {'statusline': False}, {}, False, {'enabled': False}):
+            with self.subTest(claude=claude):
+                project = self.project(bare=claude is None, claude=claude)
+                self.put_foreign_script(project)
+                result = self.link(project)
+                self.assertEqual(self.script(project).read_bytes(), self.FOREIGN_SCRIPT)
+                self.assertFalse([line for line in self.lines(result) if 'statusline' in line.lower()], result.stdout)
+
+    def test_a_foreign_script_stays_when_our_entry_is_already_gone(self):
+        project = self.project()
+        self.installed(project)
+        data = self.settings(project)
+        data.pop('statusLine')
+        descend(project, LOCAL).write_bytes(dumped(data))
+        self.script(project).write_bytes(self.FOREIGN_SCRIPT)
+        self.set_claude(project, {'statusline': False})
+        self.link(project)
+        self.assertEqual(self.script(project).read_bytes(), self.FOREIGN_SCRIPT)
+
+    def test_an_orphaned_copy_equal_to_the_library_is_removed(self):
+        project = self.project()
+        self.installed(project)
+        data = self.settings(project)
+        data.pop('statusLine')
+        descend(project, LOCAL).write_bytes(dumped(data))
+        self.set_claude(project, {'statusline': False})
+        self.link(project)
+        self.assertFalse(self.script(project).exists())
+
+    def test_the_copy_goes_with_our_entry_even_when_edited(self):
+        project = self.project()
+        self.installed(project)
+        self.script(project).write_bytes(self.FOREIGN_SCRIPT)
+        self.set_claude(project, {'statusline': False})
+        self.link(project)
+        self.assert_gone(project)
+
+    def test_an_entry_with_another_path_is_not_removed_without_the_key(self):
+        stale = our_value(f'python3 /old/checkout/{NEEDLE}')
+        for claude in (None, {'statusline': False}, False):
+            with self.subTest(claude=claude):
+                project = self.project(local=dumped({'statusLine': stale}), bare=claude is None, claude=claude)
+                self.link(project)
+                self.assertEqual(self.settings(project)['statusLine'], stale)
+
     def test_switching_on_again_installs_again(self):
         project = self.project()
         self.installed(project)
@@ -837,6 +928,66 @@ class SwitchingOff(LinkBase):
         self.link(project)
         self.assertEqual(self.entry(project)['refreshInterval'], REFRESH)
         self.assertTrue(self.script(project).is_file())
+
+
+class ForeignAppearsLater(LinkBase):
+    """After an installation a foreign status line or `disableAllHooks` appears: our entry and copy go, with a warning that says so."""
+
+    def place(self, project, name, data, config_dir):
+        if name == 'project':
+            self.write_settings(project, data, 'settings.json')
+        elif name == 'user':
+            self.write_user_settings(data)
+        else:
+            config_dir.mkdir()
+            (config_dir / 'settings.json').write_bytes(dumped(data))
+
+    def test_our_entry_and_copy_are_removed_with_a_warning(self):
+        tokens = {'project': '.claude/settings.json', 'user': '~/.claude/settings.json', 'config-dir': 'CLAUDE_CONFIG_DIR'}
+        for name, token in tokens.items():
+            for data in ({'statusLine': FOREIGN_BAR}, {'disableAllHooks': True}):
+                with self.subTest(file=name, data=sorted(data)):
+                    (self.home / '.claude' / 'settings.json').unlink(missing_ok=True)
+                    project = self.project()
+                    self.installed(project)
+                    config_dir = descend(project, '.konto-claude')
+                    self.place(project, name, data, config_dir)
+                    with mock.patch.dict(os.environ, {'CLAUDE_CONFIG_DIR': str(config_dir)} if name == 'config-dir' else {}):
+                        result = self.link(project)
+                    self.assertNotIn('statusLine', self.settings(project))
+                    self.assertFalse(self.script(project).exists())
+                    text = [posix(line) for line in self.warns(result) if token in posix(line)]
+                    self.assertTrue(any('removed the skillsync status line entry' in line for line in text), result.stdout)
+                    self.assertFalse(any('not installed' in line for line in text), result.stdout)
+
+    def test_only_not_installed_when_there_was_no_entry(self):
+        project = self.project()
+        self.write_user_settings({'statusLine': FOREIGN_BAR})
+        result = self.link(project)
+        text = [line for line in self.warns(result) if 'statusLine' in line]
+        self.assertTrue(any('not installed' in line for line in text), result.stdout)
+        self.assertFalse(any('removed' in line for line in text), result.stdout)
+
+
+class UserConfigDirectory(LinkBase):
+    def test_a_foreign_bar_in_the_claude_config_dir_blocks_and_names_the_file(self):
+        project = self.project()
+        config_dir = child(self.work, 'konto-claude')
+        config_dir.mkdir()
+        (config_dir / 'settings.json').write_bytes(dumped({'statusLine': FOREIGN_BAR}))
+        with mock.patch.dict(os.environ, {'CLAUDE_CONFIG_DIR': str(config_dir)}):
+            result = self.link(project)
+            found = [f for f in self.bar_findings(self.doctor(project)) if f['level'] == 'warning']
+        self.assert_no_statusline(project)
+        text = [line for line in self.warns(result) if 'statusLine' in line]
+        self.assertTrue(any('CLAUDE_CONFIG_DIR' in line and re.search('priorit', line, re.IGNORECASE) for line in text), result.stdout)
+        self.assertTrue(any('CLAUDE_CONFIG_DIR' in f['reason'] or 'CLAUDE_CONFIG_DIR' in f['path'] for f in found), found)
+
+    def test_a_relative_claude_config_dir_is_ignored(self):
+        project = self.project()
+        with mock.patch.dict(os.environ, {'CLAUDE_CONFIG_DIR': 'wzgledny'}):
+            self.link(project)
+        self.assertIn('statusLine', self.settings(project))
 
 
 # --------------------------------------------------------------------------------------------------------------
@@ -892,6 +1043,19 @@ class Doctor(LinkBase):
         found = [f for f in self.doctor(project) if f['level'] == 'warning' and 'statusline.py' in f['path']]
         self.assertTrue(found, 'doctor does not compare the copy with the library')
         self.assertRegex(found[0]['reason'], r'(?i)librar|bibliotek')
+
+    def test_an_info_names_the_version_and_the_unconfirmed_vscode_display_never_a_warning(self):
+        project = self.project()
+        self.installed(project)
+        found = [f for f in self.doctor(project) if 'refreshInterval' in f['reason']]
+        self.assertEqual([f['level'] for f in found], ['info'])
+        self.assertIn('2.1.97', found[0]['reason'])
+        self.assertRegex(found[0]['reason'], r'VS Code')
+
+    def test_no_such_info_without_the_key(self):
+        project = self.project(bare=True)
+        self.link(project)
+        self.assertEqual([f for f in self.doctor(project) if 'refreshInterval' in f['reason']], [])
 
     def test_a_missing_script_with_our_entry_is_a_warning(self):
         project = self.project()

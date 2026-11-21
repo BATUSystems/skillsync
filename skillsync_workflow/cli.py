@@ -2841,7 +2841,7 @@ def _link_project(manifest: dict, project_dir: Path, config: dict, dry_run: bool
         ensure_claude_gitignore(project_dir / ".claude", guard_gitignore_entries(manifest, config), dry_run=dry_run)
         ensure_claude_gitignore(project_dir / ".claude", hooksync.gitignore_entries(manifest, config), dry_run=dry_run)
     else:
-        hooksync.remove_ours(project_dir, dry_run=dry_run)   # `claude: false` removes every entry and script of ours (K10)
+        hooksync.remove_ours(project_dir, dry_run=dry_run, config=config)   # `claude: false` removes every entry and script of ours (K10)
     ensure_gitignore(github_dir, dry_run=dry_run)
     build_codex(project_dir, manifest, config, dry_run=dry_run, mode=mode)
     ensure_link_on_open(project_dir, manifest, config, dry_run=dry_run)

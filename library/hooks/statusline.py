@@ -54,6 +54,9 @@ def cap(value, limit):
     return value if len(value) <= limit else value[:limit - 1] + '…'
 
 
+HEAD_BYTES = 16384   # at least 4000 characters in any of the accepted encodings (UTF-8: 4 bytes a character at most)
+
+
 def read_bytes(path, limit):
     """Up to `limit` bytes of a regular file or None (any error)."""
     try:
@@ -61,6 +64,19 @@ def read_bytes(path, limit):
             return handle.read(limit)
     except (OSError, ValueError):
         return None
+
+
+def read_in_progress(path):
+    """The whole file (up to MAX_PLAN_BYTES) of a plan whose status in the head is `in_progress`; None for any other plan, a too big one or an error."""
+    try:
+        with open(path, 'rb') as handle:
+            head = handle.read(HEAD_BYTES)
+            if plan_status(decode_text(head)) != 'in_progress':
+                return None
+            data = head + handle.read(MAX_PLAN_BYTES + 1 - len(head))
+    except (OSError, ValueError):
+        return None
+    return data if len(data) <= MAX_PLAN_BYTES else None
 
 
 def decode_text(data):
@@ -204,13 +220,11 @@ def current_plan(root):
         candidates.append((info.st_mtime, name, path))
     candidates.sort(key=lambda item: -item[0])
     for _, name, path in candidates:
-        data = read_bytes(path, MAX_PLAN_BYTES + 1)
-        if data is None or len(data) > MAX_PLAN_BYTES:
+        data = read_in_progress(path)   # one open: the head decides, the rest is read only for the chosen plan
+        if data is None:
             continue
-        text = decode_text(data)
-        if plan_status(text) == 'in_progress':
-            stem = _DATE_PREFIX.sub('', name[:-3])
-            return cap(clean(stem), 28), progress(text)
+        stem = _DATE_PREFIX.sub('', name[:-3])
+        return cap(clean(stem), 28), progress(decode_text(data))
     return None
 
 

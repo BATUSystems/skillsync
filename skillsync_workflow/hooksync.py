@@ -194,8 +194,7 @@ COMMIT_DEFAULT = "deny"
 STATUSLINE_KEY = "statusLine"
 STATUSLINE_SCRIPT = "statusline.py"
 STATUSLINE_REFRESH = 15   # seconds (`refreshInterval` needs Claude Code 2.1.97; an older one ignores it)
-OWN_FILES = ("check-closure.py", "guard-commands.py", "guard-tests.py", "attribution-patterns.json", "test-tools.json") + tuple(spec.script for spec in SPECS) \
-    + (STATUSLINE_SCRIPT,)
+OWN_FILES = ("check-closure.py", "guard-commands.py", "guard-tests.py", "attribution-patterns.json", "test-tools.json") + tuple(spec.script for spec in SPECS)
 EVENT_DAYS = 14   # the window and the parser of `session-context.py`
 EVENT_LINES = 500
 EVENT_TAIL_BYTES = 512 * 1024
@@ -452,9 +451,10 @@ def sync_hooks(project_dir, manifest, config, dry_run=False) -> None:
     sync_statusline(project_dir, manifest, config, dry_run)
 
 
-def remove_ours(project_dir, dry_run=False) -> None:
-    """`claude: false` (K10): removes every entry of ours (closure, guards, the new hooks), the host setting `attribution` when it is ours, and then our scripts.
-    Foreign entries, keys and files stay; a tracked or unreadable settings file is not written and the scripts then stay (no dangling entry)."""
+def remove_ours(project_dir, dry_run=False, config=None) -> None:
+    """`claude: false` (K10): removes every entry of ours (closure, guards, the new hooks, the status line), the host setting `attribution` when it is ours, and then our scripts.
+    Foreign entries, keys and files stay (a status line script is removed only by the rule of `_remove_bar`); a tracked or unreadable settings file is not written
+    and the scripts then stay (no dangling entry)."""
     from . import cli
     project_dir = Path(project_dir)
     settings_path = project_dir / SETTINGS
@@ -464,21 +464,23 @@ def remove_ours(project_dir, dry_run=False) -> None:
         for event, ours, drop in targets:
             if not merge_entry(settings_path, event, None, ours, False, dry_run, backup="earliest", drop=drop):
                 return
-        if not merge_setting(settings_path, STATUSLINE_KEY, None, bar_is_ours(project_dir), False, dry_run, backup="earliest"):
-            return
     for name in OWN_FILES:
         remove_script(project_dir, name, dry_run)
+    _remove_bar(project_dir, config, settings_path, dry_run)
 
 
 # --------------------------------------------------------------------------------------------------------------------------
 # The status line (CLAUDE-7, opt-in `claude.statusline: true`): the entry `statusLine` of `settings.local.json` and the copy of the script.
 # --------------------------------------------------------------------------------------------------------------------------
 BAR_FILES = (
-    (".claude/settings.local.json", 1, "the highest of the three files"),
+    (".claude/settings.local.json", 1, "the highest of the settings files"),
     (".claude/settings.json", 2, "overridden by the local file"),
-    ("~/.claude/settings.json", 3, "the lowest, overridden by both project files"),
+    ("~/.claude/settings.json", 3, "the user level, overridden by both project files"),
+    ("$CLAUDE_CONFIG_DIR/settings.json", 3, "the user level of the configuration directory, overridden by both project files"),
 )
 BAR_SUFFIX = f"/{HOOKS_DIR}/{STATUSLINE_SCRIPT}"
+BAR_VERSION_NOTE = ("refreshInterval of the status line needs Claude Code >= 2.1.97 (an older one ignores it); showing the status line in the "
+                    "VS Code extension is not confirmed (optional feature)")
 
 
 def _quote(argument) -> str:
@@ -493,28 +495,46 @@ def _tokens(command) -> list:
     return [part[1:-1] if len(part) > 1 and part[0] == part[-1] == '"' else part for part in parts]
 
 
+def bar_script(project_dir) -> Path:
+    return Path(project_dir) / HOOKS_DIR / STATUSLINE_SCRIPT
+
+
 def bar_command(project_dir) -> str:
     """The interpreter of this generator and the absolute path of the copy of the script: no shell, no `git`."""
-    return f"{_quote(sys.executable)} {_quote(os.path.abspath(Path(project_dir) / HOOKS_DIR / STATUSLINE_SCRIPT))}"
+    return f"{_quote(sys.executable)} {_quote(os.path.abspath(bar_script(project_dir)))}"
 
 
 def bar_value(project_dir) -> dict:
     return {"type": "command", "command": bar_command(project_dir), "refreshInterval": STATUSLINE_REFRESH}
 
 
-def bar_is_ours(project_dir):
-    """Our `statusLine` value: a command with the script `.claude/hooks/statusline.py`, either of this very project or (a moved or removed checkout)
-    a path that no longer exists. An existing script elsewhere (e.g. the global `~/.claude/hooks/statusline.py` of the user) is foreign."""
-    mine = os.path.normcase(os.path.abspath(Path(project_dir) / HOOKS_DIR / STATUSLINE_SCRIPT))
+def _real(path) -> str:
+    return os.path.normcase(os.path.realpath(path))
 
-    def ours(value) -> bool:
-        if not isinstance(value, dict) or value.get("type") != "command":
-            return False
+
+def _script_token(value):
+    """The absolute path of a script `.claude/hooks/statusline.py` named by a command value, else None."""
+    if isinstance(value, dict) and value.get("type") == "command":
         for token in _tokens(value.get("command", "")):
             if token.replace("\\", "/").endswith(BAR_SUFFIX) and (token.startswith("/") or os.path.isabs(token)):
-                return os.path.normcase(os.path.abspath(token)) == mine or not os.path.exists(token)
-        return False
+                return token
+    return None
+
+
+def bar_is_ours(project_dir):
+    """Our `statusLine` value: the command names EXACTLY the script `<project>/.claude/hooks/statusline.py` (after `realpath`). The interpreter and other
+    arguments do not count. A script of the same name elsewhere (the global one of the user, a moved or removed checkout) is foreign."""
+    mine = _real(bar_script(project_dir))
+
+    def ours(value) -> bool:
+        token = _script_token(value)
+        return token is not None and _real(token) == mine
     return ours
+
+
+def bar_current(project_dir, value) -> bool:
+    """Our entry is up to date: the same type, script and `refreshInterval`; the interpreter (and anything else) is not compared."""
+    return bar_is_ours(project_dir)(value) and value.get("refreshInterval") == STATUSLINE_REFRESH
 
 
 def _read_json(path):
@@ -528,47 +548,105 @@ def _read_json(path):
     return (data, None) if isinstance(data, dict) else (None, "not a JSON object")
 
 
+def _user_files(home=None) -> list:
+    """The user level settings files: `~/.claude/settings.json` and, when `CLAUDE_CONFIG_DIR` is an absolute path, its `settings.json`
+    (a service without that variable does not see the second one)."""
+    files = [(BAR_FILES[2], Path(home) / ".claude" / "settings.json" if home is not None else Path.home() / ".claude" / "settings.json")]
+    config_dir = os.environ.get("CLAUDE_CONFIG_DIR", "")
+    if config_dir and os.path.isabs(config_dir):
+        other = Path(config_dir) / "settings.json"
+        if _real(other) != _real(files[0][1]):
+            files.append((BAR_FILES[3], other))
+    return files
+
+
 def bar_blockers(project_dir, home=None) -> list:
-    """`[(label, text)]` of what stops the installation: a foreign `statusLine` or `disableAllHooks: true` in any of the three settings files, or a
-    file that cannot be read (a collision cannot be excluded). Empty = free."""
+    """`[(label, text)]` of what stops the installation: a foreign `statusLine` or `disableAllHooks: true` in any of the settings files (project, user,
+    `CLAUDE_CONFIG_DIR`), or a file that cannot be read (a collision cannot be excluded). Empty = free."""
     project_dir = Path(project_dir)
-    home = Path(home) if home is not None else Path.home()
-    paths = (project_dir / SETTINGS, project_dir / ".claude" / "settings.json", home / ".claude" / "settings.json")
+    files = [(BAR_FILES[0], project_dir / SETTINGS), (BAR_FILES[1], project_dir / ".claude" / "settings.json")] + _user_files(home)
     ours = bar_is_ours(project_dir)
     found = []
-    for (label, rank, note), path in zip(BAR_FILES, paths):
+    for (label, rank, note), path in files:
         data, problem = _read_json(path)
         prefix = f"{label} (priority {rank}/3, {note})"
         if data is None:
-            found.append((label, f"statusLine: {prefix} is unreadable ({problem}); the status line is not installed, a collision cannot be excluded"))
+            found.append((label, f"statusLine: {prefix} is unreadable ({problem}); a collision cannot be excluded"))
             continue
         if STATUSLINE_KEY in data and not (rank == 1 and ours(data[STATUSLINE_KEY])):
-            found.append((label, f"statusLine: {prefix} holds a foreign statusLine; the status line of skillsync is not installed"))
+            hint = ""
+            if _script_token(data[STATUSLINE_KEY]) is not None:
+                hint = f"; it names a script {BAR_SUFFIX[1:]} of another path: remove the entry by hand if this is a moved project"
+            found.append((label, f"statusLine: another status line is set in {prefix}{hint}"))
         if data.get("disableAllHooks") is True:
-            found.append((label, f"disableAllHooks: {prefix} switches the hooks off, and the status line with them; the status line of skillsync is not installed"))
+            found.append((label, f"disableAllHooks: hooks (and the status line) are disabled in {prefix}"))
     return found
+
+
+def _library_copy(config, name):
+    from . import cli
+    found = cli.config_layers(config).resolve(f"hooks/{name}") if config is not None else None
+    return Path(found[1]) if found else None
+
+
+def _script_is_library(project_dir, config, name) -> bool:
+    dest = Path(project_dir) / HOOKS_DIR / name
+    source = _library_copy(config, name)
+    try:
+        return source is not None and dest.is_file() and not dest.is_symlink() and dest.read_bytes() == source.read_bytes()
+    except OSError:
+        return False
+
+
+def _remove_bar(project_dir, config, settings_path, dry_run) -> bool:
+    """Removes our entry (only an entry of ours) and then the copy of the script: the copy goes when we have just removed our entry or its bytes equal the
+    library; a foreign file under that name stays, silently. True when our entry was removed. Unreadable settings: nothing is removed (no dangling entry)."""
+    ours = bar_is_ours(project_dir)
+    data = peek_settings(settings_path)
+    script = bar_script(project_dir)
+    if data is None and settings_path.exists():
+        if _script_is_library(project_dir, config, STATUSLINE_SCRIPT):
+            merge_setting(settings_path, STATUSLINE_KEY, None, ours, False, dry_run, backup="earliest")   # the warning of the unusable file
+        return False
+    had = ours((data or {}).get(STATUSLINE_KEY))
+    removed = had and merge_setting(settings_path, STATUSLINE_KEY, None, ours, False, dry_run, backup="earliest")
+    if had and not removed:
+        return False
+    if removed or _script_is_library(project_dir, config, STATUSLINE_SCRIPT):
+        remove_script(project_dir, STATUSLINE_SCRIPT, dry_run)
+    return removed
 
 
 def sync_statusline(project_dir, manifest, config, dry_run=False) -> None:
     """`claude.statusline: true`: the copy of the script and the entry (never over a foreign one); otherwise our entry and then our copy are removed.
-    An off bar without an entry and without a script is not touched (and the user files are not even read)."""
+    A foreign status line or `disableAllHooks` that shows up later removes our entry (the copy by the rule of `_remove_bar`) with a warning.
+    An off bar without an entry and without a script of ours is not touched (and the user files are not even read)."""
     project_dir = Path(project_dir)
     settings_path = project_dir / SETTINGS
-    ours = bar_is_ours(project_dir)
-    if claude_manifest.statusline(manifest):
-        blockers = bar_blockers(project_dir)
-        if blockers:
-            for _label, text in blockers:
-                print(f"[warn] {text}")
-            return
-        copied = copy_script(project_dir, config, STATUSLINE_SCRIPT, dry_run)
-        merge_setting(settings_path, STATUSLINE_KEY, bar_value(project_dir), ours, copied, dry_run, backup="earliest")
-        if copied:
-            from . import cli
-            cli.ensure_claude_gitignore(project_dir / ".claude", [f"hooks/{STATUSLINE_SCRIPT}", "settings.local.json", "settings.local.json.skillsync-backup"], dry_run=dry_run)
-    elif (project_dir / HOOKS_DIR / STATUSLINE_SCRIPT).is_file() or ours((peek_settings(settings_path) or {}).get(STATUSLINE_KEY)):
-        if merge_setting(settings_path, STATUSLINE_KEY, None, ours, False, dry_run, backup="earliest"):
-            remove_script(project_dir, STATUSLINE_SCRIPT, dry_run)
+    if not claude_manifest.statusline(manifest):
+        _remove_bar(project_dir, config, settings_path, dry_run)
+        return
+    blockers = bar_blockers(project_dir)
+    if blockers:
+        removed = _remove_bar(project_dir, config, settings_path, dry_run)
+        for _label, text in blockers:
+            print(f"[warn] {text}; " + ("removed the skillsync status line entry" if removed else "the status line of skillsync is not installed"))
+        return
+    from . import cli
+    value = bar_value(project_dir)
+    existing, ok = load_settings(settings_path)   # refuses an unusable file before anything is copied (no orphaned script)
+    if not ok:
+        return
+    current = existing.get(STATUSLINE_KEY)
+    if bar_current(project_dir, current):
+        value = current   # up to date: the interpreter does not count, the file stays byte for byte
+    elif settings_path.exists() and cli.is_tracked(settings_path):
+        print(f"[warn] {settings_path} jest śledzony przez git, pomijam zapis")
+        return
+    copied = copy_script(project_dir, config, STATUSLINE_SCRIPT, dry_run)
+    merge_setting(settings_path, STATUSLINE_KEY, value, bar_is_ours(project_dir), copied, dry_run, backup="earliest")
+    if copied:
+        cli.ensure_claude_gitignore(project_dir / ".claude", [f"hooks/{STATUSLINE_SCRIPT}", "settings.local.json", "settings.local.json.skillsync-backup"], dry_run=dry_run)
 
 
 def statusline_findings(root, manifest, layerset=None, home=None):
@@ -585,6 +663,7 @@ def statusline_findings(root, manifest, layerset=None, home=None):
             found.append(("warning", rel, "The entry statusLine exists but its script is missing: the status line shows nothing; run `skillsync link`"))
         elif _source_differs(layerset, STATUSLINE_SCRIPT, copy):
             found.append(("warning", rel, "The copy of the status line script differs from the library (outdated or edited copy); run `skillsync link`"))
+    found.append(("info", rel, BAR_VERSION_NOTE))
     return found
 
 
@@ -648,8 +727,7 @@ def doctor_findings(root, manifest, skills, layerset=None, python_command=None):
     """`[(level, path, reason)]` of the new hooks: info with the mode of an installed hook, warning for an outdated copy of a script, a missing script,
     a drift of the fixed part of the entry (matcher, modes, timeout, the interpreter; the argv of the CLI only when it names a path that no longer exists), an unusable manifest value and an installed hook that is off;
     info with the number of sub-agent reports missing in the last 14 days. Never an `error`; nothing for `claude: false`."""
-    claude = manifest.get("claude")
-    if claude is False or (isinstance(claude, dict) and claude.get("enabled") is False):
+    if not claude_manifest.enabled(manifest):
         return []
     values, problems = resolve(manifest, skills)
     found = [("warning", ".github/.skillsync.yaml", problem_text(key)) for key in problems]
