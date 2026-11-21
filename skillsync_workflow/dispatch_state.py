@@ -263,8 +263,8 @@ def _decisions(reader, data):
     rows = []
     for key, default in (('decisions', 'unknown'), ('open_decisions', 'open'), ('open_for_user', 'open')):
         for item in reader.mappings(data.get(key), key):
-            state = reader.enum(item.get('state'), DECISION_STATES)
-            rows.append({'id': reader.text(item.get('id'), _ID, 'decision.id'), 'state': default if state == 'unknown' else state,
+            state = default if item.get('state') is None else reader.enum(item.get('state'), DECISION_STATES)   # a word that is not ours (`closed`) is `unknown`, never silently open
+            rows.append({'id': reader.text(item.get('id'), _ID, 'decision.id'), 'state': state,
                          'asked': reader.aware(item.get('asked'), 'decision.asked')})
     return rows[:MAX_ITEMS]
 
@@ -300,14 +300,16 @@ def _pulse(entry, now, thresholds):
     found = []
     if entry.get('status') in PULSE_RUNNING:
         idle, wait, overdue = thresholds['idle_card_minutes'], thresholds['user_wait_notify_minutes'], thresholds['lease_overdue_minutes']
-        for card in entry.get('cards', []):
-            alias, state = card.get('alias') or 'card', card.get('state')
+        for index, card in enumerate(entry.get('cards', []), 1):
+            alias, state = card.get('alias') or f'card-{index}', card.get('state')
             times = [t for t in (_epoch(card.get('lastMessage')), _epoch(card.get('lastProbe'))) if t is not None]
             if state in ('working', 'busy'):
                 if not times:
                     found.append({'kind': 'age-unknown', 'subject': alias, 'ageMinutes': None})
-                elif _minutes(now, max(times)) >= idle:
-                    found.append({'kind': 'idle-card', 'subject': alias, 'ageMinutes': _minutes(now, max(times))})
+                else:
+                    age = _minutes(now, max(times))
+                    if age >= idle:
+                        found.append({'kind': 'idle-card', 'subject': alias, 'ageMinutes': age})
             elif state == 'waiting_user':
                 message = _epoch(card.get('lastMessage'))
                 if message is None:
@@ -386,6 +388,7 @@ def _dispatch_entry(root, path, index, claims, findings, now, cache):
 
 
 def dispatch_report(root, manifest, run_id=None, now=None, pulse=False):
+    now = time.time() if now is None else now   # ONE reading of the clock: `generatedAt`, `freshness` and `pulse.now` agree
     root = Path(root).resolve()
     if run_id is not None and not _ID.fullmatch(run_id):
         raise ValueError('Invalid --run-id')
@@ -396,7 +399,7 @@ def dispatch_report(root, manifest, run_id=None, now=None, pulse=False):
     project = manifest.get('project', {})
     name = project.get('name') if isinstance(project, dict) else None
     report = {'schema': SCHEMA, 'status': 'NOT_RUN', 'project': name or f'{root.parent.name}/{root.name}', 'root': posix(root),
-              'generatedAt': _iso(time.time() if now is None else now), 'authoritative': False, 'dispatches': [], 'findings': []}
+              'generatedAt': _iso(now), 'authoritative': False, 'dispatches': [], 'findings': []}
     if not directory.is_dir():
         return report
     files = []
@@ -408,7 +411,6 @@ def dispatch_report(root, manifest, run_id=None, now=None, pulse=False):
         except OSError:
             continue
     files.sort(key=lambda pair: (-pair[0], pair[1].name))
-    now = time.time() if now is None else now
     thresholds = _thresholds(manifest)
     claims, rows, cache = _claims(root, report['findings']), [], {}
     for index, (_, path) in enumerate(files[:MAX_FILES]):

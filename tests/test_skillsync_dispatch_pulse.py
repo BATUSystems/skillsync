@@ -171,6 +171,45 @@ class Pulse(unittest.TestCase):
         thresholds = self.entry(manifest={'dispatch': {'pulse': {'idle_card_minutes': 10, 'user_wait_notify_minutes': 0}}})['pulse']['thresholds']
         self.assertEqual(thresholds, {'idleCardMinutes': 10, 'userWaitNotifyMinutes': 15, 'leaseOverdueMinutes': 240})
 
+    def test_a_value_equal_to_the_threshold_is_a_finding_and_one_minute_below_is_not(self):
+        self.put(state(cards=[self.card('c-30', last_message=ago(30)), self.card('c-29', last_message=ago(29)),
+                              self.card('w-15', 'waiting_user', last_message=ago(15)), self.card('w-14', 'waiting_user', last_message=ago(14))],
+                       leases=[{'resource': 'l-240', 'granted_at': ago(240), 'released_at': None}, {'resource': 'l-239', 'granted_at': ago(239), 'released_at': None}],
+                       decisions={'open_decisions': [{'id': 'D15', 'asked': ago(15)}, {'id': 'D14', 'asked': ago(14)}]}))
+        self.assertEqual(sorted(self.findings()), [('idle-card', 'c-30', 30), ('lease-overdue', 'l-240', 240), ('user-wait', 'D15', 15), ('user-wait', 'w-15', 15)])
+
+    def test_a_state_file_exactly_six_hours_old_is_not_yet_stale(self):
+        self.put(state(), age_hours=6)
+        self.assertEqual(self.findings(), [])
+
+    def test_a_word_that_is_not_ours_is_an_unknown_state_and_never_a_finding(self):
+        self.put(state(decisions={'open_decisions': [{'id': 'D1', 'state': 'closed', 'asked': ago(500)}, {'id': 'D2', 'state': None, 'asked': ago(500)}]}))
+        states = {d['id']: d['state'] for d in self.entry()['decisions']}
+        self.assertEqual(states, {'D1': 'unknown', 'D2': 'open'})
+        self.assertEqual(self.findings(), [('user-wait', 'D2', 500)])
+
+    def test_a_card_or_a_lease_without_a_valid_name_gets_a_numbered_subject(self):
+        self.put(state(cards=[{'alias': f'{SENT} bad name', 'state': 'working'}, {'state': 'working'}],
+                       leases=[{'granted_at': ago(300), 'released_at': None}]))
+        self.assertEqual(sorted(self.findings()), [('age-unknown', 'card-2', None), ('age-unknown', 'card-3', None), ('lease-overdue', 'lease-1', 300)])
+
+    def test_a_waiting_card_with_only_a_probe_time_is_age_unknown(self):
+        self.put(state(cards=[self.card('karta-1', 'waiting_user', last_probe=ago(600))]))
+        self.assertEqual(self.findings(), [('age-unknown', 'karta-1', None)])
+
+    def test_a_boolean_threshold_falls_back_to_the_default(self):
+        self.put(state(cards=[self.card(last_message=ago(15))]))
+        thresholds = self.entry(manifest={'dispatch': {'pulse': {'idle_card_minutes': True}}})['pulse']['thresholds']
+        self.assertEqual(thresholds['idleCardMinutes'], 30)
+
+    def test_one_reading_of_the_clock_serves_the_whole_report(self):
+        self.put(state(cards=[self.card(last_message=ago(45))]), age_hours=2)
+        report = self.report()
+        entry = report['dispatches'][0]
+        self.assertEqual(report['generatedAt'], '2026-11-21T12:00:00Z')
+        self.assertEqual(entry['pulse']['now'], report['generatedAt'])
+        self.assertEqual(entry['freshness']['ageSeconds'], 2 * 3600)
+
     def test_the_clock_is_the_injected_one(self):
         self.put(state(cards=[self.card(last_message=ago(45))]))
         pulse = self.entry()['pulse']
