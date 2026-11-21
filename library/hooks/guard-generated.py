@@ -59,9 +59,19 @@ def relative_parts(root, path):
     for candidate in candidates:
         for base in (real_root, os.path.normpath(root)):
             rel = os.path.relpath(candidate, base) if _same_drive(candidate, base) else None
-            if rel and rel != '.' and not rel.startswith('..') and not os.path.isabs(rel):
+            if rel and rel != '.' and not rel.startswith('..') and not rooted(rel):
                 return [part for part in rel.replace('\\', '/').split('/') if part]
     return None
+
+
+def rooted(path):
+    """Whether the path stands on its own (not relative to the working directory). A path starting with `/` counts as such, and on Windows
+    a backslash start and a drive start (`C:/x`, `C:\\x`) too (Python 3.13 there no longer takes `/x` for absolute). POSIX: no change."""
+    if path.startswith('/'):
+        return True
+    if os.name != 'nt':
+        return False
+    return path.startswith('\\') or (len(path) > 2 and path[1] == ':' and path[0].isalpha() and path[2] in ('/', '\\'))
 
 
 def _same_drive(first, second):
@@ -182,7 +192,7 @@ def main():
     if not isinstance(file_path, str) or not file_path:
         return 0
     file_path = file_path.replace('\\', '/') if WINDOWS else file_path
-    path = os.path.normpath(file_path if os.path.isabs(file_path) else os.path.join(cwd, file_path))
+    path = os.path.normpath(file_path if rooted(file_path) else os.path.join(cwd, file_path))
     root = git_root(cwd)
     if not root:
         return 0
