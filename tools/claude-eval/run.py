@@ -19,40 +19,15 @@ import yaml
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
+sys.path.insert(0, str(HERE.parent / 'claude-headless'))   # the shared core of the wrappers (the directory name has a hyphen: no `import` by package)
+from claude_headless_core import (ENV_ALLOWLIST, HEADER_RE, MAX_COST_CEILING_USD, MODEL_RE, UniqueKeyLoader, absolute_dir, build_env,  # noqa: E402,F401
+                                  frontmatter, model_name, positive_cost)
 DEFAULT_SKILLS = ('feature', 'bugfix', 'pre-implement', 'workflow')
 MAX_RUNS, MAX_TURNS, MAX_TIMEOUT = 3, 10, 300
 READ_ONLY_TOOLS = frozenset({'Read', 'Glob', 'Grep', 'Skill'})
 PROMPT_KEYS = frozenset({'description', 'tags', 'runs', 'max_turns', 'timeout_seconds', 'allowed_tools'})
 GRADER_TYPES = frozenset({'regex', 'tool_used', 'tool_order', 'file_exists'})
-ENV_ALLOWLIST = ('PATH', 'HOME', 'LANG')
-MAX_COST_CEILING_USD = 5.0
-MODEL_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._:\[\]-]*$')
 CASE_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._*?-]*$')
-HEADER_RE = re.compile(r'---[ \t]*\r?\n(.*?)^---[ \t]*(?:\r?\n|\Z)', re.S | re.M)
-
-
-def positive_cost(text):
-    try:
-        value = float(text)
-    except ValueError:
-        raise argparse.ArgumentTypeError(f'not a number: {text}')
-    if not 0 < value <= MAX_COST_CEILING_USD:
-        raise argparse.ArgumentTypeError(f'must be above 0 and at most {MAX_COST_CEILING_USD} USD')
-    return value
-
-
-def absolute_dir(text):
-    if not os.path.isabs(text) or '..' in Path(text).parts:
-        raise argparse.ArgumentTypeError(f'must be an absolute path without "..": {text}')
-    if not os.path.isdir(text):
-        raise argparse.ArgumentTypeError(f'is not an existing directory: {text}')
-    return text
-
-
-def model_name(text):
-    if not MODEL_RE.fullmatch(text):
-        raise argparse.ArgumentTypeError(f'not a plain model identifier: {text!r}')
-    return text
 
 
 def case_filter(text):
@@ -94,43 +69,6 @@ def build_command(args, stage, out):
     if args.case:
         argv += ['--case', args.case]
     return argv
-
-
-def build_env(environ, config_dir):
-    env = {key: value for key, value in environ.items() if key in ENV_ALLOWLIST or key.startswith('LC_')}
-    env['CLAUDE_CONFIG_DIR'] = config_dir
-    return env
-
-
-class UniqueKeyLoader(yaml.SafeLoader):
-    """SafeLoader that refuses duplicate and non-string keys (a later key would silently win)."""
-
-    def construct_mapping(self, node, deep=False):
-        seen = set()
-        for key_node, _ in node.value:
-            key = self.construct_object(key_node, deep=True)
-            if not isinstance(key, str):
-                raise yaml.YAMLError(f'non-string key {key!r}')
-            if key in seen:
-                raise yaml.YAMLError(f'duplicate key {key!r}')
-            seen.add(key)
-        return super().construct_mapping(node, deep)
-
-
-def frontmatter(path):
-    """(dict, error) of the YAML header of a markdown file; the closing marker is a whole `---` line."""
-    try:
-        text = Path(path).read_text(encoding='utf-8')
-    except (OSError, UnicodeDecodeError) as error:
-        return None, f'unreadable ({error.__class__.__name__})'
-    found = HEADER_RE.match(text)
-    if not found:
-        return None, 'no frontmatter'
-    try:
-        data = yaml.load(found.group(1), Loader=UniqueKeyLoader) or {}
-    except yaml.YAMLError as error:
-        return None, f'invalid YAML ({str(error).splitlines()[0]})'
-    return (data, None) if isinstance(data, dict) else (None, 'frontmatter is not a mapping')
 
 
 def check_prompt(path, model):
