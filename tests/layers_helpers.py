@@ -70,7 +70,7 @@ def guard_real_state(case):
     case.addCleanup(lambda: assert_real_state_unchanged(case, before))
 
 ISOLATED_VARS = ('HOME', 'USERPROFILE', 'XDG_CACHE_HOME', 'XDG_DATA_HOME', 'XDG_CONFIG_HOME',
-                 'LOCALAPPDATA', 'APPDATA', 'GIT_CONFIG_GLOBAL', 'GIT_CONFIG_NOSYSTEM', 'SKILLSYNC_CONFIG')
+                 'LOCALAPPDATA', 'APPDATA', 'ZDOTDIR', 'GIT_CONFIG_GLOBAL', 'GIT_CONFIG_NOSYSTEM', 'SKILLSYNC_CONFIG')
 # Git variables that would leak the caller's identity into temporary repositories.
 GIT_IDENTITY_VARS = ('GIT_AUTHOR_NAME', 'GIT_AUTHOR_EMAIL', 'GIT_AUTHOR_DATE', 'GIT_COMMITTER_NAME',
                      'GIT_COMMITTER_EMAIL', 'GIT_COMMITTER_DATE', 'GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE',
@@ -89,6 +89,7 @@ def isolated_paths(root):
         'XDG_CONFIG_HOME': root / 'xdg-config',
         'LOCALAPPDATA': root / 'localappdata',
         'APPDATA': root / 'appdata',
+        'ZDOTDIR': root / 'zdotdir',
         'GIT_CONFIG_GLOBAL': root / 'gitconfig-global',
         'SKILLSYNC_CONFIG': root / 'skillsync-config.yaml',
     }
@@ -98,6 +99,7 @@ def isolated_paths(root):
     values['GIT_CONFIG_GLOBAL'].write_text('', encoding='utf-8')
     result = {key: str(value) for key, value in values.items()}
     result['GIT_CONFIG_NOSYSTEM'] = '1'
+    result['SKILLSYNC_NO_COMPLETION'] = '1'   # shell completion is installed only by tests that ask for it (they set the variable themselves)
     return result
 
 
