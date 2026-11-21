@@ -6,6 +6,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ### Changed
 
+- Skill `feature` (`prepush-matrix.md`, `resources.md`): a changed test file (helper) also reruns the guards that scan `tests/` already at the point rung; a point run is one module or test class, while several modules (hundreds of tests) or `discover` is a wide run that needs a lease grant.
 - Skill `feature` (`SKILL.md`, „Testy i poprawki”): the `skillsync test-run` call names the project as the positional argument, and a command without test counts needs an explicit `--allow-no-count <reason>`.
 - Skill `feature` (`retro-quality.md`, `review-loop.md`, agent `reviewer`): a late retrospective (a `final` record written before it) is closed again with `final-2`; a round after the user answered review questions (Q/C) is not `ceremony-excess`; the `plan` loop at risk high is mandatory but not full; with at least one signal the files `retro-signals.json` and `retro-decisions.json` exist before the `retro-quality` `PASS` (not as `--evidence`), and the `open` entry is written after the scan.
 - Skill `feature` (`plan-details.md`): the unfinished-markers rule of `readiness` also covers domain state names, the `Prototyp:` line takes only a path (`invalid_prototype_line`, `prototype_not_found`), and `Bez prototypu:` is a convention for people that the tools do not read.

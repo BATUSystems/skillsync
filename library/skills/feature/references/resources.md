@@ -15,7 +15,9 @@ Równoległość wymaga **niezależnych zależności, plików i zasobów**, nie 
   w nieskończoność i nie uruchamia testów na domyślnej bazie „na próbę”.
 - W sesji z dyspozytorem pełne biegi testów i mutacje, także zlecane podumysłom, ruszają dopiero po
   `LEASE GRANT` na zajmowany zasób (zestaw, build, port, baza). Zlecenie podaje przydział albo zakaz
-  takich biegów; testy punktowe na prywatnym TMPDIR idą bez dzierżawy ([wiele sesji](multi-session.md)).
+  takich biegów; testy punktowe (jeden moduł albo klasa testowa) na prywatnym TMPDIR idą bez dzierżawy ([wiele sesji](multi-session.md)).
+  Bieg kilku modułów (setki testów), przez `discover` albo poza `test-run` to bieg szeroki: wymaga `LEASE GRANT`,
+  a zlecenie dla podumysłu wprost go zakazuje, gdy przydziału nie ma.
 - Nie zmieniaj plików objętych trwającą weryfikacją. Wstrzymaj zapisy na czas końcowych
   testów i review; zmiana testowanego stanu wymaga odświeżenia wyniku.
 - Kolejność migracji oraz kontrakt backend/frontend ustal przed równoległą implementacją.
