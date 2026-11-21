@@ -582,7 +582,7 @@
    },
    {
     "id": "test_skillsync_claude_headless.FakeClaude.test_the_child_gets_the_resolved_profile_directory",
-    "category": "no-os-symlinks"
+    "category": "posix-only"
    },
    {
     "id": "test_skillsync_claude_headless.FakeClaude.test_the_cost_limit_is_exit_3_and_is_booked",
