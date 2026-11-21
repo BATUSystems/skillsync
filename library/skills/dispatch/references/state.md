@@ -106,7 +106,8 @@ Czasy, które czyta puls (`cards[].last_message`, `cards[].last_probe`, `decisio
    dzierżawa bez żywej karty jest `released` dopiero po sprawdzeniu, nigdy automatycznie),
    `task-claim` (kto trzyma paczkę). W trybie `pr` uzgodnij też stan PR każdej paczki w `review` u hosta (otwarty, scalony,
    zamknięty); scalenie przez człowieka odblokowuje zależne karty.
-5. Pokaż użytkownikowi odtworzony `status` i rozbieżności; po jego akceptacji wznów pętlę.
+5. Pokaż użytkownikowi odtworzony `status` i rozbieżności; po jego akceptacji wznów pętlę. Przy `dispatch.pulse.enabled: true`
+   wypisz też linię `/loop` pulsu ([pulse.md](pulse.md#start-i-życie-pętli); pętla ginie z sesją).
    Nie wznawiaj przydziałów, dzierżaw ani PUSH SLOT bez tego potwierdzenia.
 6. Zapisz zdarzenie `resumed` i nowy `session_id` dyspozytora w stanie.
 

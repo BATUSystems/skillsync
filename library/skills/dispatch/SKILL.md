@@ -57,6 +57,8 @@ Kroki: wczytaj instrukcje, manifest i indeks paczek; utwórz `run-id` i `.skills
 wykryj karty i **zapytaj**, których wolno użyć; nadaj aliasy (`Dyspozytor`, `<Alias>`); wyślij `PROBE`
 (brak odpowiedzi po ponowieniu = karta niedostępna); zbadaj zasoby i zaproponuj limit równoległości
 (przy E2E 2 karty). Pełne kroki: [start i claimy](references/start-claims.md).
+Przy `dispatch.pulse.enabled: true` na końcu startu przeczytaj [pulse.md](references/pulse.md), sekcję „Start i życie pętli”
+(wypisz użytkownikowi linię `/loop`).
 
 ## Plan dyspozycji
 
@@ -106,7 +108,7 @@ pliku relacji ani rozszerzenia osobowości; to dotyczy wyłącznie sesji główn
 - `/dispatch status`: tabela — karta, paczka, akt, czeka na (użytkownika/zasób/dyspozytora/nic),
   dzierżawy, kolejka merge, otwarte decyzje.
 - `/dispatch drain`: `DRAIN` do kart, brak nowych przydziałów; powiadom użytkownika, gdy
-  wszystkie karty skończą i zapiszą stan planu.
+  wszystkie karty skończą i zapiszą stan planu. Przy włączonym pulsie zakończ pętlę ([pulse.md](references/pulse.md#start-i-życie-pętli)).
 - Zakończenie: raport zbiorczy (paczki, commity, dowody, dług, otwarte decyzje); sprzątanie
   zmergowanych worktree i baz testowych **tylko za zgodą**.
 - `/dispatch resume <run-id>`: nowa sesja po restarcie ([state.md](references/state.md#wznowienie)).

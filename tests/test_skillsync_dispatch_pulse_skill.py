@@ -118,5 +118,66 @@ class PollingException(unittest.TestCase):
                     self.assertTrue((SKILL / name).parent.joinpath(target).resolve().is_file() or (SKILL / target).is_file())
 
 
+class PulseConsistency(unittest.TestCase):
+    """What the reference says matches the code (`dispatch_state._pulse`) and the places that must start, end and renew the pulse."""
+
+    def setUp(self):
+        self.text = read(PULSE)
+
+    def test_the_kinds_of_the_table_are_the_kinds_of_the_code(self):
+        table = section(self.text, 'Ustalenia i akcje')
+        documented = set(re.findall(r'^\| `([a-z-]+)` \|', table, re.M))
+        code = set(re.findall(r"'kind': '([a-z-]+)'", read(ROOT / 'skillsync_workflow' / 'dispatch_state.py')))
+        self.assertEqual(documented, code)
+
+    def test_the_skill_starts_ends_and_renews_the_pulse_from_its_entry_points(self):
+        skill = read(SKILL / 'SKILL.md')
+        start = section(skill, 'Start (`/dispatch <cel>`)')
+        self.assertIn('references/pulse.md', start)
+        self.assertIn('dispatch.pulse.enabled', start)
+        drain = next(line for line in skill.split('\n') if line.startswith('- `/dispatch drain`'))
+        self.assertIn('pulse.md', skill[skill.index(drain):skill.index(drain) + 400])
+        state = section(read(SKILL / 'references' / 'state.md'), 'Wznowienie')
+        self.assertIn('pulse.md', state)
+        self.assertIn('/loop', state)
+
+    def test_a_tick_ends_the_loop_for_a_finished_dispatch_and_survives_an_unreadable_state(self):
+        tick = section(self.text, 'Tick')
+        self.assertIn('dispatches[].status', tick)
+        self.assertIn('stop: true', tick)
+        self.assertIn('state-unreadable', tick)
+        self.assertIn('puls się NIE kończy', tick)
+
+    def test_the_run_id_is_checked_against_the_pattern_before_any_path_is_built(self):
+        self.assertIn('[A-Za-z0-9][A-Za-z0-9._:-]{0,79}', self.text)
+        self.assertIn('bez zapisu sidecara', section(self.text, 'Tick'))
+
+    def test_the_way_the_sidecar_is_written_agrees_with_the_permissions(self):
+        tick = section(self.text, 'Tick')
+        permissions = section(self.text, 'Uprawnienia bez nadzoru')
+        self.assertIn('narzędziem zapisu', tick)
+        self.assertNotIn('rename', tick)
+        self.assertNotIn('plik tymczasowy', tick)
+        self.assertIn('bez `mv` i plików tymczasowych', permissions)
+
+    def test_the_probe_needs_a_session_id_from_the_state_file_and_never_lists_the_agents(self):
+        actions = section(self.text, 'Ustalenia i akcje')
+        self.assertIn('session_id', actions)
+        self.assertIn('bez `ListAgents`', actions)
+        self.assertIn('BEZ sondy', actions)
+
+    def test_the_notifications_carry_only_the_whitelisted_values(self):
+        actions = section(self.text, 'Ustalenia i akcje')
+        self.assertIn('wyłącznie `kind`, `subject`, `ageMinutes` i `run-id`', actions)
+
+    def test_the_markers_are_set_after_a_successful_action(self):
+        self.assertIn('PO udanej akcji', section(self.text, 'Tick'))
+
+    def test_the_prompt_forbids_choice_windows_and_the_path_is_absolute(self):
+        prompt = section(self.text, 'Prompt pętli')
+        self.assertIn('Nie otwieraj okien wyboru', prompt)
+        self.assertIn('ścieżka bezwzględna', prompt)
+
+
 if __name__ == '__main__':
     unittest.main()
