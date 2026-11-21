@@ -9,11 +9,15 @@ from skillsync_workflow.status import git_blob_sha
 from skillsync_workflow.pathfmt import posix  # noqa: E402
 from tests.test_skillsync_workflow import CLI, WorkflowFixture
 from tests.layers_helpers import needs_os_symlinks, needs_posix  # noqa: E402
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child  # noqa: E402
 
 
 class PlanArchive(WorkflowFixture):
     def plan(self, name, data):
-        path = self.root / 'docs/plans' / name
+        path = child(self.root / 'docs/plans', name)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
         return path
@@ -73,7 +77,7 @@ class PlanArchive(WorkflowFixture):
             self.assertEqual(path.read_bytes(), f'Status: {status}\n'.encode())
 
     def spec(self, name, data):
-        path = self.root / 'docs/specs' / name
+        path = child(self.root / 'docs/specs', name)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
         return path

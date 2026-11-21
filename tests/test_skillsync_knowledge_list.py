@@ -9,6 +9,10 @@ import yaml
 
 from skillsync_workflow.quality import knowledge_locations
 from tests.test_skillsync_workflow import CLI, WorkflowFixture, needs_os_symlinks
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child  # noqa: E402
 
 
 class KnowledgeListFixture(WorkflowFixture):
@@ -21,12 +25,12 @@ class KnowledgeListFixture(WorkflowFixture):
         self.root = self.base / 'project'
 
     def owner(self, name='repo-a', records=None, kind='domain'):
-        directory = self.base / name / 'docs' / kind
+        directory = child(child(self.base, name) / 'docs', kind)
         directory.mkdir(parents=True, exist_ok=True)
         key = 'entries' if kind == 'domain' else 'lessons'
         listed = []
         for file, title, extra in records or []:
-            (directory / file).write_text('---\ntags: [x]\n---\ntext', encoding='utf-8')
+            (child(directory, file)).write_text('---\ntags: [x]\n---\ntext', encoding='utf-8')
             listed.append({'path': file, 'title': title, **extra})
         (directory / 'index.yaml').write_text(yaml.safe_dump({'version': 1, key: listed}), encoding='utf-8')
         return directory

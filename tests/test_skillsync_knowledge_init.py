@@ -7,6 +7,10 @@ import unittest
 import yaml
 
 from tests.test_skillsync_workflow import CLI, WorkflowFixture
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import descend  # noqa: E402
 
 FILES = ("docs/domain/index.yaml", "docs/lessons/index.yaml", "docs/README.md")
 
@@ -27,11 +31,11 @@ class KnowledgeInit(WorkflowFixture):
         self.assertEqual(report["existing"], [])
         for name in FILES:
             self.assertTrue((self.root / name).is_file(), name)
-        self.assertEqual(yaml.safe_load((self.root / FILES[0]).read_text(encoding="utf-8")),
+        self.assertEqual(yaml.safe_load((descend(self.root, FILES[0])).read_text(encoding="utf-8")),
                          {"version": 1, "entries": []})
-        self.assertEqual(yaml.safe_load((self.root / FILES[1]).read_text(encoding="utf-8")),
+        self.assertEqual(yaml.safe_load((descend(self.root, FILES[1])).read_text(encoding="utf-8")),
                          {"version": 1, "lessons": []})
-        self.assertTrue((self.root / FILES[2]).read_text(encoding="utf-8").strip())
+        self.assertTrue((descend(self.root, FILES[2])).read_text(encoding="utf-8").strip())
 
     def test_second_run_overwrites_nothing(self):
         self.run_init()

@@ -18,6 +18,10 @@ from skillsync_workflow import prototype_server as server  # noqa: E402
 from skillsync_workflow import quality, status  # noqa: E402
 from tests.test_skillsync_dashboard import FIXTURES, DashboardFixture, git_commit_all, normalized  # noqa: E402
 from layers_helpers import needs_os_symlinks  # noqa: E402
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child, descend  # noqa: E402
 
 CLI = ROOT / 'skillsync'
 RUN = 'r1'
@@ -55,7 +59,7 @@ class RecordFixture(DashboardFixture):
         return json.loads(result.stdout)
 
     def doc(self, folder, name, text='# Doc\n\nStatus: draft\n'):
-        path = self.root / 'docs' / folder / name
+        path = child(descend(self.root, f'docs/{folder}'), name)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding='utf-8')
         return path
@@ -184,8 +188,8 @@ class RecordValidation(RecordFixture):
     def test_symlinked_runs_or_skillsync_directory_is_refused(self):
         for part in ('.skillsync/runs', '.skillsync'):
             with self.subTest(part=part):
-                project = self.base / part.replace('/', '-')
-                elsewhere = self.base / f'elsewhere-{part.replace("/", "-")}'
+                project = child(self.base, part.replace('/', '-'))
+                elsewhere = child(self.base, f'elsewhere-{part.replace("/", "-")}')
                 # the link target holds a valid run directory: `<elsewhere>/runs/r1` or `<elsewhere>/r1`
                 (elsewhere / ('runs' if part == '.skillsync' else '') / RUN).mkdir(parents=True)
                 link = project / part

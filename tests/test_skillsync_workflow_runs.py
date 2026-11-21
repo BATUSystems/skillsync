@@ -7,6 +7,10 @@ import yaml
 
 from test_skillsync_workflow import WorkflowFixture
 from layers_helpers import needs_os_symlinks, needs_posix  # noqa: E402
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import descend  # noqa: E402
 
 
 class CheckpointContracts(WorkflowFixture):
@@ -284,10 +288,10 @@ class RetroQualityWarnings(WorkflowFixture):
         return self.rec(run, 'closing', 'PASS', '--final', *extra)
 
     def stored(self, run='task'):
-        return json.loads((self.root / f'.skillsync/runs/{run}.json').read_text(encoding='utf-8'))
+        return json.loads((descend(self.root, f'.skillsync/runs/{run}.json')).read_text(encoding='utf-8'))
 
     def edit(self, run, step, **fields):
-        path = self.root / f'.skillsync/runs/{run}.json'
+        path = descend(self.root, f'.skillsync/runs/{run}.json')
         data = json.loads(path.read_text(encoding='utf-8'))
         for record in data['checkpoints']:
             if record['step'] == step:
@@ -423,7 +427,7 @@ class RetroQualityWarnings(WorkflowFixture):
         for run, prepare in (('plain', lambda r: None),
                              ('failed', lambda r: self.rec(r, 'retro-quality', 'FAIL')),
                              ('sibling', lambda r: (self.rec(r + '.2', 'retro-quality'))),
-                             ('broken', lambda r: (self.root / f'.skillsync/runs/{r}.2.json').write_text('{', encoding='utf-8'))):
+                             ('broken', lambda r: (descend(self.root, f'.skillsync/runs/{r}.2.json')).write_text('{', encoding='utf-8'))):
             with self.subTest(run=run):
                 prepare(run)
                 self.final(run)  # report() sprawdza kod 0

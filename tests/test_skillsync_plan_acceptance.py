@@ -14,6 +14,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from skillsync_workflow import status  # noqa: E402
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child  # noqa: E402
 
 GIT_ENV = {'GIT_AUTHOR_NAME': 'T', 'GIT_AUTHOR_EMAIL': 't@example.test', 'GIT_COMMITTER_NAME': 'T',
            'GIT_COMMITTER_EMAIL': 't@example.test', 'GIT_CONFIG_GLOBAL': os.devnull, 'GIT_CONFIG_SYSTEM': os.devnull}
@@ -39,20 +43,20 @@ class AcceptanceSignal(unittest.TestCase):
         return result.stdout.strip()
 
     def commit(self, name):
-        (self.root / f'{name}.txt').write_text(name, encoding='utf-8')
+        (child(self.root, f'{name}.txt')).write_text(name, encoding='utf-8')
         self.git('add', '.')
         self.git('commit', '-q', '-m', name)
         return self.git('rev-parse', 'HEAD')
 
     def write_plan(self, text, name='2026-11-15-demo.md', run='ACC-1'):
-        (self.root / 'docs/plans' / name).write_text(text, encoding='utf-8')
+        (child(self.root / 'docs/plans', name)).write_text(text, encoding='utf-8')
         if run:
-            (self.root / '.skillsync/runs' / run).mkdir(parents=True, exist_ok=True)   # the run is active in this worktree
+            (child(self.root / '.skillsync/runs', run)).mkdir(parents=True, exist_ok=True)   # the run is active in this worktree
         self.git('add', 'docs')
         self.git('commit', '-q', '--allow-empty', '-m', f'plan {name}')   # an entry counts only for a commit that holds the plan as done
 
     def approve(self, word, sha, run='ACC-1'):
-        directory = self.root / '.skillsync/runs' / run
+        directory = child(self.root / '.skillsync/runs', run)
         directory.mkdir(parents=True, exist_ok=True)
         with (directory / 'approvals.jsonl').open('a', encoding='utf-8') as stream:
             stream.write(json.dumps({'schema': 1, 'at': '2026-11-15T16:00:00Z', 'word': word, 'sha': sha, 'by': 'x', 'source': 'cli'}) + '\n')
@@ -308,8 +312,8 @@ class AcceptanceByPlanState(unittest.TestCase):
         return result.stdout.strip()
 
     def write_plan(self, text, name='2026-11-15-demo.md', run='ACC-1'):
-        (self.root / 'docs/plans' / name).write_text(text, encoding='utf-8')   # not committed: the plan is outside git
-        (self.root / '.skillsync/runs' / run).mkdir(parents=True, exist_ok=True)
+        (child(self.root / 'docs/plans', name)).write_text(text, encoding='utf-8')   # not committed: the plan is outside git
+        (child(self.root / '.skillsync/runs', run)).mkdir(parents=True, exist_ok=True)
 
     def approve_state(self, word='CP', state=None, sha=None, at='2026-11-15T16:00:00Z'):
         item = {'schema': 1, 'at': at, 'word': word, 'sha': sha or self.git('rev-parse', 'HEAD'), 'by': 'x', 'source': 'cli'}

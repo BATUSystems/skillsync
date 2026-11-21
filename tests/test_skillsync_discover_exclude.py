@@ -16,6 +16,10 @@ sys.path.insert(0, str(ROOT))
 from layers_helpers import SKILL_TEXT, LayersCase, needs_os_symlinks, tree_snapshot, write, yaml_text  # noqa: E402
 from cli_module import skillsync  # noqa: E402
 from skillsync_workflow import common, retro  # noqa: E402
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child  # noqa: E402
 
 MANIFEST = '.github/.skillsync.yaml'
 BAD_MESSAGE = 'Konfiguracja maszyny: discover_exclude musi być listą niepustych ścieżek'
@@ -108,7 +112,7 @@ class SyncCommandsTest(LayersCase):
         self.skipped = self.project_in('skipped')
 
     def project_in(self, name):
-        path = self.repos / name
+        path = child(self.repos, name)
         write(path / MANIFEST, yaml_text({'skills': ['feature'], 'mcp': False}))
         return path
 

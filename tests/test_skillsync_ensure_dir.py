@@ -12,6 +12,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from skillsync_workflow import common, fsutil, test_events  # noqa: E402
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child  # noqa: E402
 
 
 class EnsureDir(unittest.TestCase):
@@ -89,7 +93,7 @@ class EnsureDir(unittest.TestCase):
             def go(index):
                 try:
                     barrier.wait(timeout=10)
-                    fsutil.ensure_dir(shared / f'u{index}')
+                    fsutil.ensure_dir(child(shared, f'u{index}'))
                 except BaseException as error:   # noqa: BLE001 - collected for the assertion
                     errors.append(repr(error))
             threads = [threading.Thread(target=go, args=(i,)) for i in range(threads_count)]

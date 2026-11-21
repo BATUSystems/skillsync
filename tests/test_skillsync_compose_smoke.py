@@ -16,6 +16,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from layers_helpers import IsolatedTestCase, machine_cache_dir, write  # noqa: E402
 
 from cli_module import SKILLSYNC_PATH  # noqa: E402
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child  # noqa: E402
 
 SCRIPT = SKILLSYNC_PATH  # wrapper; processes run [sys.executable, SCRIPT]
 SKILL = '---\nname: {0}\ndescription: {0} skill\n---\n'
@@ -52,7 +56,7 @@ class ComposeSmokeTest(IsolatedTestCase):
         self.write_config()
 
     def make_project(self, name):
-        self.project = self.work / name
+        self.project = child(self.work, name)
         write(self.project / '.github' / '.skillsync.yaml',
               'version: 1\nskills: [feature, dispatch]\ninstructions: {merge: [_base], template: proj}\n'
               'claude: false\nmcp: false\n')

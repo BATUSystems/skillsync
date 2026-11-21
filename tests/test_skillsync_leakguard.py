@@ -30,6 +30,10 @@ AT = '@'
 USERS = 'Us' + 'ers'
 ROOT = Path(leakguard.__file__).resolve().parent.parent
 from cli_module import SKILLSYNC_PATH  # noqa: E402
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child  # noqa: E402
 
 SCRIPT = SKILLSYNC_PATH  # wrapper; processes run [sys.executable, SCRIPT]
 
@@ -81,7 +85,7 @@ class LeakTestCase(IsolatedTestCase):
 
     def fresh_dir(self, prefix='case'):
         LeakTestCase.counter += 1
-        path = self.work / f'{prefix}-{LeakTestCase.counter}'
+        path = child(self.work, f'{prefix}-{LeakTestCase.counter}')
         path.mkdir(parents=True)
         return path
 
@@ -93,7 +97,7 @@ class LeakTestCase(IsolatedTestCase):
         return path
 
     def ident(self, layer, terms, name=None):
-        path = self.root / 'idents' / (name or f'{layer}.yaml')
+        path = child(self.root / 'idents', (name or f'{layer}.yaml'))
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(yaml.safe_dump({'schema': 1, 'layer': layer, 'terms': terms}, allow_unicode=True),
                         encoding='utf-8')
@@ -571,7 +575,7 @@ class CanaryCoverageTest(LeakTestCase):
         data = {'schema': 1, 'layer': layer, 'terms': list(terms)}
         if empty is not None:
             data['empty'] = empty
-        path = self.root / 'idents' / (name or f'{layer}.yaml')
+        path = child(self.root / 'idents', (name or f'{layer}.yaml'))
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(yaml.safe_dump(data, allow_unicode=True), encoding='utf-8')
         return path
@@ -639,7 +643,7 @@ class CanaryCoverageTest(LeakTestCase):
         }
         for name, data in cases.items():
             with self.subTest(name=name):
-                file = self.root / 'idents' / f'bad-{name}.yaml'
+                file = child(self.root / 'idents', f'bad-{name}.yaml')
                 file.parent.mkdir(parents=True, exist_ok=True)
                 file.write_text(yaml.safe_dump(data, allow_unicode=True), encoding='utf-8')
                 with self.assertRaises(leakguard.LeakguardError):
@@ -2013,7 +2017,7 @@ class AnnotatedTagScanTest(LeakTestCase):
         self.head = commit_file(self.repo, 'a.md', 'clean\n', 'clean')
 
     def tag(self, name, message):
-        message_file = self.root / f'tag-message-{name}.txt'
+        message_file = child(self.root, f'tag-message-{name}.txt')
         message_file.write_text(message, encoding='utf-8')
         git(self.repo, 'tag', '-a', '--cleanup=verbatim', '-F', str(message_file), name, self.head)
         return name

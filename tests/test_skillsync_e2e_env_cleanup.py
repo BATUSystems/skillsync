@@ -16,6 +16,10 @@ import time
 import unittest
 from pathlib import Path
 from unittest import mock
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child  # noqa: E402
 
 ENV_PATH = Path(__file__).resolve().parent / 'e2e' / 'prototype' / 'env.py'
 
@@ -239,7 +243,7 @@ class E2eEnvCleanup(unittest.TestCase):
                                 start_new_session=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         self.spawned.append(proc)
         self.wait_listed(proc.pid)
-        (self.work / ('static-%d.pid' % 1)).write_text(str(proc.pid))   # written after the spawn, as a server script does
+        (child(self.work, 'static-%d.pid' % 1)).write_text(str(proc.pid))   # written after the spawn, as a server script does
         self.assertEqual(ENV.stop_all(self.env), {})
         proc.wait(timeout=5)   # our own child: stopped, so it can be collected
         self.assertFalse((self.work / 'static-1.pid').exists())

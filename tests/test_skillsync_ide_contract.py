@@ -13,6 +13,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from layers_helpers import transitional_config  # noqa: E402
 from tests.test_skillsync_workflow import CLI, WorkflowFixture  # noqa: E402
 from layers_helpers import needs_mode_enforcement, needs_os_symlinks  # noqa: E402
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child, descend  # noqa: E402
 
 COMPANIONS = ('workflow', 'pre-implement', 'smart-test', 'bugfix', 'codereview')
 
@@ -35,12 +39,12 @@ class IdeContract(WorkflowFixture):
         self.save()
 
     def skill(self, name):
-        folder = self.library / 'skills' / name
+        folder = child(self.library / 'skills', name)
         folder.mkdir(parents=True)
         (folder / 'SKILL.md').write_text(f'---\nname: {name}\ndescription: opis {name}\n---\nBody\n', encoding='utf-8')
 
     def write_library(self, name, content):
-        path = self.library / name
+        path = descend(self.library, name)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding='utf-8')
 
@@ -135,7 +139,7 @@ class IdeContract(WorkflowFixture):
         self.assertEqual(yaml.safe_load((self.root / '.github/.skillsync.yaml').read_text())['skills'], ['feature'])
 
     def plan(self, name, text):
-        path = self.root / 'docs/plans' / name
+        path = child(self.root / 'docs/plans', name)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding='utf-8')
 
@@ -322,8 +326,8 @@ class IdeContract(WorkflowFixture):
         self.write('docs/frd/ok.md', 'x')
         bad = b'\xff'.decode('utf-8', 'surrogateescape')
         try:
-            (self.root / 'docs/specs' / f'{bad}.md').write_text('# Zły\nStatus: draft\n', encoding='utf-8')
-            (self.root / 'docs/frd' / f'{bad}.docx').write_text('x', encoding='utf-8')
+            (child(self.root / 'docs/specs', f'{bad}.md')).write_text('# Zły\nStatus: draft\n', encoding='utf-8')
+            (child(self.root / 'docs/frd', f'{bad}.docx')).write_text('x', encoding='utf-8')
         except OSError:
             self.skipTest('system plików odrzuca bajty spoza UTF-8')
         report = self.status()
