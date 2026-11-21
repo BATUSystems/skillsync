@@ -264,7 +264,7 @@ projektu albo skill organizacji, nie rdzeń.
 | Wiedza | `knowledge init <projekt>` | brakujące `docs/domain/index.yaml`, `docs/lessons/index.yaml`, `docs/README.md`, bez nadpisywania |
 | Strona statusu | `dashboard show <projekt> [--json]`, `dashboard serve <projekt>` (domyślnie dwa gniazda: odczyt 5140, zgody 5141), `--port N` albo `--read-port N --approve-port M`, `dashboard metrics <projekt> <run-id>` | stan planu, przebiegu i zgód jako JSON `schema: 1` ([dashboard-contract.md](dashboard-contract.md)), strona z przyciskami zgód, czasy podkroków `Fn.k` (podkrok bez danych jawnie); 0 = PASS, 2 = BLOCKED |
 | Makieta UI | `prototype init\|sync\|index\|list <projekt>` | prototypy w `docs/prototypes/`, galeria, lista z otwartymi wątkami komentarzy |
-| Dyspozycja | `dispatch <projekt> [--run-id ID] [--json]` | odczyt stanu `.skillsync/dispatch/<run-id>.yaml` (schemat 1) |
+| Dyspozycja | `dispatch <projekt> [--run-id ID] [--pulse] [--json]` | odczyt stanu `.skillsync/dispatch/<run-id>.yaml` (schemat 1); `--pulse` dodaje ustalenia pulsu dyspozytora (karta bezczynna, pytanie czeka, dzierżawa po limicie, przestarzały stan) |
 | Konfiguracja | `doctor <projekt>` | statyczna kontrola źródeł, instalacji, budżetów, manifestu, indeksów wiedzy i zamknięcia planów; nie zastępuje testów |
 | Skille projektu | `suggest <projekt>` | propozycje dodania/usunięcia skilli według katalogu (tylko odczyt) |
 
@@ -453,7 +453,7 @@ Pominięty checkpoint nie zostawia śladu, więc zapis po każdym wyniku jest ob
 - Skill nie jest towarzyszem `feature`: dołącza go profil `workflow-extended` (albo wpis `dispatch` w `skills:`);
   adaptery hosta muszą istnieć (`doctor`: `error`, gdy brakuje `../library/skills/dispatch/references/claude.md` lub `codex.md`).
 - Opcjonalna sekcja manifestu `dispatch:` (`max_parallel`, `worktree_root`, `setup`, `isolated_resources`,
-  `leased_resources`, `owned_files`, `additive_files`, `id_registries`, `guards`) jest walidowana przez `doctor`
+  `leased_resources`, `owned_files`, `additive_files`, `id_registries`, `guards`, `pulse`) jest walidowana przez `doctor`
   (`skillsync_workflow/dispatch.py:validate_dispatch`) i czytana przez skill; brak sekcji = OK. Klucze:
   [manifest.md](manifest.md).
 - Stan dyspozycji: `.skillsync/dispatch/<run-id>.yaml` (zapisuje wyłącznie dyspozytor; `link` dopisuje `.skillsync/`
@@ -467,7 +467,7 @@ Pominięty checkpoint nie zostawia śladu, więc zapis po każdym wyniku jest ob
   lub dowodu albo log starszy niż kod dają `REPORT REJECTED`; `unexplained` karta uzupełnia nowym rekordem. Paczka
   zmieniająca wiedzę lub manifest dostaje `skillsync doctor` w swoim worktree. Pełne reguły:
   [workflow-details.md](workflow-details.md#21-wiele-sesji-z-dispatch) i `../library/skills/dispatch/references/loop.md`.
-- Granice (zgoda na plan dyspozycji ≠ „GO plan” ani „GO implement” paczek, brak pollingu, bramka modelu, aliasy kart
+- Granice (zgoda na plan dyspozycji ≠ „GO plan” ani „GO implement” paczek, brak pollingu (jedyny wyjątek: opt-in tick pulsu, `dispatch.pulse`, tylko odczyt, sonda i `PushNotification`), bramka modelu, aliasy kart
   `karta-N`) i protokół są wyłącznie w skillu i `multi-session.md`; nie powielaj ich w projektach.
 - Opcjonalne imiona kart (z rodzajem gramatycznym podawanym karcie) dostarcza warstwa personal:
   [layers-authoring.md](layers-authoring.md).

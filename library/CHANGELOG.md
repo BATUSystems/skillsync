@@ -6,6 +6,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ### Added
 
+- **`dispatch`: the pulse of the dispatcher.** `references/pulse.md` (the tick, the closed list of actions, the prompt of the loop that points to the file and never to the skill, the sidecar, the permissions of an unattended tick), the key `dispatch.pulse` in `config.md`, the start, the end and the renewal of the loop in `SKILL.md` and `state.md`, and the exception of the rule about polling in `SKILL.md`, `loop.md`, `claude.md` and `codex.md` (Codex has no pulse).
 - Skills `skillsync`, `dashboard` and the reference `feature/spec-store.md`: the flag `approvals record --expect-plan-state` and the `409` with `code: plan_state_changed` of the consent button.
 - **`copilot-skills-yaml`: the keys of Claude Code.** The list of the frontmatter keys of Claude Code, the difference between `user-invokable` (Copilot) and `user-invocable` (Claude Code), and the rule that a custom key is only a `doctor` warning (own data goes to `metadata`); `skillsync` mentions the lint of `doctor` in the checks of a new skill.
 - Skill `workflow`, reference `test-run.md`: section "Kontrakt zdarzeń" with the fields of the events of a test step, including the optional `end.changed` (up to five paths that changed while the tests ran, masked, shown only in the message of the gate and never passed to a command).

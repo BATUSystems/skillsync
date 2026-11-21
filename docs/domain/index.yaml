@@ -63,7 +63,7 @@ entries:
   - path: dispatch-state-view.md
     title: "Widok stanu dyspozycji (skillsync dispatch): biała lista, brak wolnego tekstu, koszt paczki"
     tags: [skillsync, dispatch, ide-contract, redaction, cost, state]
-    paths: ['skillsync_workflow/dispatch_state.py', 'tests/test_skillsync_dispatch_state.py']
+    paths: ['skillsync_workflow/dispatch_state.py', 'tests/test_skillsync_dispatch_state.py', 'tests/test_skillsync_dispatch_pulse.py']
   - path: prototype-manifest-and-cli.md
     title: "Prototypy w repo: komenda prototype, sekcja manifestu i reguły zapisu"
     tags: [skillsync, prototype, manifest, cli, security, atomic-write]
