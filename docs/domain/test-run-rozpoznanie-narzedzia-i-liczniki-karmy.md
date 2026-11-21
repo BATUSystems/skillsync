@@ -4,7 +4,6 @@ tags: [skillsync, test-run, detect-tool, karma, counts, hooks, exit-codes, kody-
 paths: ['skillsync_workflow/test_run.py', 'skillsync_workflow/data/test_tools.json', 'skillsync_workflow/test_adapters/karma_line.py', 'skillsync_workflow/quality.py', 'library/hooks/guard-tests.py', 'tests/test_skillsync_test_run*.py']
 source: 'odczyt skillsync_workflow/test_run.py (`detect_tool`, `unwrap_command`, `cmd_metachar_notice`, `_hidden_failures` ok. :59-86), tests/test_skillsync_test_run_hardening.py (klasa `HiddenFailures`), test_adapters/karma_line.py (`parse_line`, `Tally`), library/hooks/guard-tests.py (`tool_of`, `program_target`), skillsync_workflow/test_run.py (`resolve_run`, `_run_names`, końcówka `_command`)'
 verified: 2026-11-20
-load: on-demand
 ---
 Reguła rozpoznania: `detect_tool` zwraca narzędzie w kolejności: (1) pierwsze słowo po zdjęciu opakowań (słowa modułów, potem narzędzia z tabeli); (2) słowo po `-m`, gdy wcześniej stoi „gospodarz” (`python*`, `py`, `pypy*`, `coverage`); (3) narzędzie z tabeli w pierwszych trzech słowach; (4) słowo modułu będące też narzędziem (`pytest`, `py.test`) w dowolnym miejscu. Moduł niebędący narzędziem (`unittest`) nie pasuje w krokach 3–4. Hak `guard-tests` odtwarza kroki 1–4 w `tool_of`, ale klasyfikuje program tylko kroki 1–2 (krok 2 wymaga, by sam pierwszy wyraz był gospodarzem). `tox` jest narzędziem, nie opakowaniem. Szczegóły i przykłady: `docs/test-adapters.md`.
 
