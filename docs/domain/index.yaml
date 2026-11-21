@@ -4,6 +4,10 @@ entries:
     title: Własność artefaktów generowanych w projektach
     tags: [skillsync, artifacts, ownership, link]
     paths: ['skillsync', 'tests/test_skillsync*.py']
+  - path: dispatch-pulse.md
+    title: "Puls dyspozytora: żywy scenariusz 21.11 (pętla /loop, flaga na dispatch, powiadomienia), czego nie sprawdzono"
+    tags: [skillsync, dispatch, pulse, loop, claude-code, disable-model-invocation]
+    paths: ['library/skills/dispatch/references/pulse.md', 'skillsync_workflow/dispatch_state.py', 'tests/test_skillsync_dispatch_pulse.py']
   - path: skill-frontmatter.md
     title: "Frontmatter skilli (SKILL.md): klucze hostów, lint doctor, czego nie potwierdzono"
     tags: [skillsync, skills, frontmatter, doctor, claude-code, copilot, codex]

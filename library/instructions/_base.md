@@ -41,7 +41,7 @@ i przeczytaj wszystkie rekordy `domain` z `load: bootstrap`. Bez CLI odczytaj ws
 
 Źródło procedury: skill `feature` i **jeden** adapter bieżącego hosta.
 Claude: `/feature`, Codex: `$feature`; nie uruchamiaj pipeline'u dla pytań i audytów.
-Wiele sesji z dyspozytorem: `dispatch` (profil `workflow-extended`, jeśli jest).
+Wiele sesji z dyspozytorem: `dispatch` (profil `workflow-extended`, jeśli jest; uruchamia go użytkownik: `/dispatch`).
 Przed nowym zadaniem `feature`/`bugfix` bramka otwartych planów (`skillsync status`, `feature` krok 1): niezamknięty
 plan bez żywego właściciela = pytanie, czy zaczynamy; `needsHuman: closure` = najpierw propozycja zamknięcia.
 

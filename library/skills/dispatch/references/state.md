@@ -88,8 +88,9 @@ events:                                 # krótki dziennik (ostatnie ~50) do dia
 Pola są minimalne; dodawaj tylko to, co potrzebne do wznowienia. Pole nieznane zachowaj.
 
 Czasy, które czyta puls (`cards[].last_message`, `cards[].last_probe`, `decisions[].asked`, `leases[].granted_at`): ISO z offsetem (np. wynik
-`date -Iseconds`); czas bez strefy i tekst puls pomija (ustalenie `age-unknown`). Pytanie do użytkownika zapisuj z `asked` i `state: open`
-(po odpowiedzi `state: answered`), inaczej puls nie policzy, jak długo czeka.
+`date -Iseconds`); czas bez strefy i tekst puls pomija (dla kart i dzierżaw ustalenie `age-unknown`). Pytanie do użytkownika zapisuj z `asked` i
+`state: open` (po odpowiedzi `state: answered`): pytanie bez `asked` jest dla pulsu NIEWIDOCZNE (brak ustalenia, także `age-unknown`), więc nie policzy,
+jak długo czeka.
 
 ## Wznowienie
 

@@ -15,6 +15,7 @@ import time
 import yaml
 
 from .common import add_project_arguments, exit_code, read_project, redact
+from .dispatch import MAX_PULSE_INTERVAL_MINUTES
 from .pathfmt import posix
 
 SCHEMA = 1
@@ -31,7 +32,6 @@ CARD_STATES = ('dispatcher', 'probed', 'free', 'busy', 'working', 'waiting_user'
 QUEUE_STATES = ('waiting', 'granted', 'pushed', 'verified')
 DECISION_STATES = ('open', 'answered')
 PULSE_DEFAULTS = {'interval_minutes': 20, 'idle_card_minutes': 30, 'user_wait_notify_minutes': 15, 'lease_overdue_minutes': 240}
-PULSE_MAX_INTERVAL = 60   # `ScheduleWakeup` waits at most 3600 s (the same bound as `dispatch.pulse.interval_minutes`)
 PULSE_RUNNING = ('running', 'draining')
 _ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9._:-]{0,79}')
 _BRANCH = re.compile(r'[A-Za-z0-9][A-Za-z0-9._/-]{0,119}')
@@ -292,7 +292,7 @@ def _thresholds(manifest):
     values = {}
     for key, default in PULSE_DEFAULTS.items():
         value = section.get(key)
-        high = PULSE_MAX_INTERVAL if key == 'interval_minutes' else None
+        high = MAX_PULSE_INTERVAL_MINUTES if key == 'interval_minutes' else None
         values[key] = value if isinstance(value, int) and not isinstance(value, bool) and value >= 1 and (high is None or value <= high) else default
     return values
 

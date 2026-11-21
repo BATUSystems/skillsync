@@ -3,7 +3,7 @@ title: Sekcja dispatch manifestu
 tags: [skillsync, dispatch, manifest]
 paths: ['skillsync_workflow/dispatch.py', 'skillsync_workflow/quality.py']
 source: odczyt skillsync_workflow/dispatch.py:validate_dispatch i quality.py:doctor; tests/test_skillsync_dispatch.py 2026-10-02
-verified: 2026-10-21
+verified: 2026-11-21
 ---
 Reguła: sekcja `dispatch:` w `.github/.skillsync.yaml` jest opcjonalna i konfiguruje wyłącznie skill `dispatch` (dyspozytor równoległych sesji `feature`). Generator jej **nie używa** do artefaktów;
 jedyną jego rolą jest walidacja w `doctor`: błąd typu/zakresu → `error` (FAIL), nieznany klucz → `warning`; brak sekcji = poprawny.
