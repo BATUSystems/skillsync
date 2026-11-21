@@ -893,6 +893,10 @@
     "category": "posix-only"
    },
    {
+    "id": "test_skillsync_hook_session_context.SessionContextHook.test_slow_git_and_slow_cli_together_still_end_within_3_seconds",
+    "category": "posix-only"
+   },
+   {
     "id": "test_skillsync_ide_contract.IdeContract.test_status_frds_list_only_names_without_reading_content",
     "category": "no-mode-enforcement"
    },
