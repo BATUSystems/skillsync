@@ -865,20 +865,34 @@ def _approval_entries(path):
     return rows
 
 
+class PlanStateChanged(ValueError):
+    """The plan of the run is not in the state the caller expected (`expect_plan_state`); the report of the refused write carries `code`."""
+    code = 'plan_state_changed'
+
+
 def record_approval(root, word, run_id, sha=None, source='cli', target=None, branch=None, file=None, by=None, now=None,
-                    plan=None, ahead=None, mode=None, sha_after=None, via=None, plan_state=None):
+                    plan=None, ahead=None, mode=None, sha_after=None, via=None, plan_state=None, expect_plan_state=None):
     """The only writer of `.skillsync/runs/<run-id>/approvals.jsonl` (CLI `approvals record`, the dashboard server, IDE).
     Appends one JSON line under an inter-process lock and fsyncs it; refuses an entry equal in (word, sha, planState) to the last entry of the same word in the run.
     `sha`: for GO the git blob sha of the approved file (default: of `file`), for CP/READY the HEAD the consent pushes
     (default: HEAD of the project repository). `sha_after` (GO only, `shaAfter` of the entry): the blob sha of the file after
     its Status line changed. `plan_state` (CP/READY only, `planState` of the entry; K13): the status of the plan of the run at the moment
-    of consent, by default read from the plan whose `Przebieg:` names `run_id`; the duplicate key is (word, sha, planState) of the last entry of the word in the run. Returns {schema, status PASS|BLOCKED, reason, entry, path}; no subprocess."""
+    of consent, by default read from the plan whose `Przebieg:` names `run_id`; the duplicate key is (word, sha, planState) of the last entry of the word in the run.
+    `expect_plan_state` (CP/READY only, exclusive with `plan_state`): the status the caller saw; the status read under the file lock must equal it, otherwise the write is
+    refused (BLOCKED, `code: plan_state_changed`, nothing written), also when the plan is missing or has no known status (`current unknown`). Returns {schema, status PASS|BLOCKED, reason, entry, path}; no subprocess."""
     root = Path(root).expanduser().resolve()
     try:
         if word not in APPROVAL_WORDS:
             raise ValueError(f'Unknown consent word {word!r}; allowed: {", ".join(APPROVAL_WORDS)}')
         if source not in APPROVAL_SOURCES:
             raise ValueError(f'Unknown source {source!r}; allowed: {", ".join(APPROVAL_SOURCES)}')
+        if expect_plan_state is not None:
+            if word in _GO_FOLDER:
+                raise ValueError(f'--expect-plan-state applies only to CP and READY, not to {word!r}')
+            if plan_state is not None:
+                raise ValueError('expect_plan_state and plan_state exclude each other')
+            if expect_plan_state not in PLAN_STATUSES:
+                raise ValueError(f'--expect-plan-state must be one of: {", ".join(PLAN_STATUSES)}')
         run_dir = _approval_run_dir(root, run_id)
         for name, value in (('target', target), ('branch', branch)):
             if value is not None and (not valid_branch_name(value)):
@@ -927,6 +941,9 @@ def record_approval(root, word, run_id, sha=None, source='cli', target=None, bra
                     raise ValueError(f'Approvals file would exceed {MAX_APPROVALS_BYTES // 1024} KiB; start a new run')
                 if read_under_lock:
                     plan_state = plan_state_for_run(root, run_id)
+                    if expect_plan_state is not None and plan_state != expect_plan_state:
+                        raise PlanStateChanged(f'approvals record: plan state changed (expected {expect_plan_state}, '
+                                               f'current {plan_state or "unknown"}); consent not recorded')
                     if plan_state is not None:
                         entry['planState'] = plan_state
                         line = (json.dumps(entry, ensure_ascii=False) + '\n').encode('utf-8')
@@ -955,7 +972,10 @@ def record_approval(root, word, run_id, sha=None, source='cli', target=None, bra
         except server.LockTimeout:
             raise ValueError(f'Approvals file is locked by another writer: {APPROVALS_FILE}.lock') from None
     except (OSError, ValueError, TypeError, UnicodeDecodeError) as error:
-        return {'schema': SCHEMA, 'status': 'BLOCKED', 'reason': _message(error, 500), 'entry': None}
+        report = {'schema': SCHEMA, 'status': 'BLOCKED', 'reason': _message(error, 500), 'entry': None}
+        if isinstance(error, PlanStateChanged):
+            report['code'] = error.code
+        return report
     return {'schema': SCHEMA, 'status': 'PASS', 'reason': f'Consent {word!r} recorded', 'entry': entry,
             'path': path.relative_to(root).as_posix()}
 
@@ -969,7 +989,8 @@ def _cmd_approvals_record(args):
             hint = '; dashboard is set only by the dashboard server in its own process' if args.source == 'dashboard' else ''
             raise ValueError(f'Unknown source {args.source!r}; the command accepts: {", ".join(CLI_APPROVAL_SOURCES)}{hint}')
         root, _ = read_project(args.path)
-        report = record_approval(root, args.word, args.run, args.sha, args.source, args.target, args.branch, args.file)
+        report = record_approval(root, args.word, args.run, args.sha, args.source, args.target, args.branch, args.file,
+                                 expect_plan_state=args.expect_plan_state)
     except (OSError, ValueError, TypeError, KeyError, yaml.YAMLError) as error:
         report = {'schema': SCHEMA, 'status': 'BLOCKED', 'reason': _message(error, 500), 'entry': None}
     print(json.dumps(redact(report), ensure_ascii=False, indent=2))
@@ -1003,6 +1024,8 @@ def register(subparsers):
     record.add_argument('--target', help='CP: branch the consent delivers to')
     record.add_argument('--branch', help='working branch')
     record.add_argument('--file', help='GO only: docs/specs/*.md (GO plan) or docs/plans/*.md (GO implement)')
+    record.add_argument('--expect-plan-state', dest='expect_plan_state',
+                        help=f'CP/READY: refuse (exit 2, nothing written) unless the plan of the run has this status under the lock; one of: {", ".join(PLAN_STATUSES)}')
     record.add_argument('--source', required=True,
                         help=f'one of: {", ".join(CLI_APPROVAL_SOURCES)} (dashboard is written only by the dashboard server)')
     add_layer_argument(record)
