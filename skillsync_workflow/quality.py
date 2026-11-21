@@ -24,6 +24,7 @@ from .pathfmt import posix
 from .fsutil import ensure_dir
 from .selfcmd import self_argv
 from . import layers as _layers
+from . import skill_frontmatter
 from .ceremony import ceremony_info, validate_ceremony
 from .specs import specs_findings, specs_info
 from .delivery_mode import delivery_info, validate_delivery_mode
@@ -1203,6 +1204,8 @@ def doctor(root, manifest, library):
                 finding('error', path, 'Missing name/description frontmatter')
             elif len(str(metadata['description']).encode('utf-8')) > 200:
                 finding('warning', path, 'Skill description longer than 200 bytes')
+            for _klass, remark in skill_frontmatter.check(metadata):   # CLAUDE-1: never an error (the skills of the org and personal layers are not ours)
+                finding('warning', path, remark)
         except (yaml.YAMLError, IndexError):
             finding('error', path, 'Invalid skill frontmatter')
         for prefix, state_key in hosts:
