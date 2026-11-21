@@ -247,6 +247,24 @@ spójność instrukcji z plikami, budżety bajtów oraz pola ról wymagające no
 
 **Hooki Claude Code (`link` i `doctor`).** `link` instaluje, aktualizuje i usuwa wpisy hooków `session-context`, `guard-generated`, `check-subagent-report` oraz argument `--subagent-commit` strażnika poleceń wg kluczy `hooks.session_context`, `hooks.guard_generated`, `hooks.subagent_report`, `hooks.subagent_commit` ([manifest](manifest.md)); skrypty trafiają do `.claude/hooks/`, a `.skillsync/` jest w `.gitignore`, gdy hook jest włączony. Wartość spoza dozwolonych = wyłączony hook i ostrzeżenie. `claude: false` usuwa nasze wpisy hooków (closure, strażnik poleceń i trzy nowe hooki; wpis Stop testów ze `settings.json` i jego skrypt zostają) oraz nasze skrypty; cudze wpisy zostają. `doctor` raportuje stan każdego hooka (zainstalowany, tryb, zgodność części stałej wpisu z tym, co zapisze `link`; kopia skryptu różna od biblioteki = ostrzeżenie) oraz liczbę ostrzeżeń `subagent-report` z ostatnich 14 dni (pozycja `info`, bez wpływu na kod wyjścia). Zasady i tabela zdarzeń: [architecture](architecture.md), sekcja „Hooki Claude Code”.
 
+**Pasek statusu i styl (`claude.statusline`, `claude.output_styles`, opt-in; domyślnie `false`).**
+- `link` przy `claude.statusline: true` kopiuje `statusline.py` do `.claude/hooks/` i dopisuje `statusLine` do `.claude/settings.local.json`.
+  Gdy znajdzie cudzy `statusLine` (w `.claude/settings.local.json`, `.claude/settings.json`, `~/.claude/settings.json` albo w
+  `$CLAUDE_CONFIG_DIR/settings.json`, gdy zmienna jest ustawiona bezwzględnie) albo `disableAllHooks: true` w którymkolwiek z nich,
+  nie zapisuje i wypisuje `[warn]` z nazwą pliku i priorytetem. Gdy nasz wpis był już zainstalowany, usuwa go wraz z kopią skryptu,
+  z tym samym `[warn]`. Plik ustawień, którego nie da się odczytać, to `[warn]` bez zapisu. Plik śledzony przez git nie jest zapisywany.
+- `claude: false` albo `claude.statusline: false` usuwa nasz wpis i kopię skryptu (kopię tylko wtedy, gdy jej bajty zgadzają się z biblioteką
+  albo właśnie usunęliśmy nasz wpis; obcy plik pod tą nazwą zostaje).
+- `claude.output_styles: true`: `link` kopiuje `karta.md` do `.claude/output-styles/` jako kopię zarządzaną. Lokalnie zmieniona kopia
+  zostaje z ostrzeżeniem. `false` usuwa tylko kopię zgodną ze stanem. Generator nie ustawia `outputStyle`.
+- `doctor` przy `claude.statusline: true`: `warning` dla cudzego paska, `disableAllHooks` lub nieczytelnego pliku (komunikat wymienia plik
+  i priorytet); `warning` dla brakującego skryptu albo kopii różnej od biblioteki, gdy wpis jest nasz (brak samego wpisu nie jest zgłaszany);
+  `info` z wymaganiem `refreshInterval` (Claude Code ≥ 2.1.97; starszy go pomija) i z informacją, że wyświetlanie paska w rozszerzeniu VS Code
+  jest niepotwierdzone.
+- `doctor`, klucze `claude:`: `error` dla wartości nie-bool w `enabled`, `statusline` i `output_styles`; `warning` dla nieznanego klucza
+  i dla wartości `claude` niebędącej ani mapą, ani boolem (Claude zostaje włączony). Bez nowych kluczy `doctor` nie dodaje żadnego wpisu.
+- Ręczna próba wyświetlania (CLI i VS Code): [development](development.md), sekcja „Ręczna próba”.
+
 - `route` zwraca pole `ceremony {value, source: manifest|default|invalid[, error]}` (klucz manifestu `workflow.ceremony`: `full` | `demo`;
   brak klucza = `full`, `source: default`; `error` tylko przy `invalid`, wtedy `value: null`). `doctor` zgłasza błąd dla innej wartości.
 - `route` zwraca pole `specs {tracked, archive, source}` (klucz `workflow.specs`, tryb nieśledzony; `source`: `manifest`, `gitignore`, `default` albo `invalid`, przy `invalid` `tracked: null` i `error`). Wykrycie: `git check-ignore --no-index -v` dla `docs/specs/x.md` i `docs/plans/x.md`, tylko reguły z plików `.gitignore` drzewa repozytorium, także zagnieżdżonych (negacja, `.git/info/exclude` i globalny `.gitignore` się nie liczą). Projekt, który nie jest korzeniem repo, dostaje `default`. To pole nie jest listą `specs` z `status`. `doctor` zgłasza błąd dla pary `tracked: true` i reguły obu katalogów, ostrzeżenia dla `tracked: false` bez reguły, reguły tylko jednego katalogu i śledzonych plików w `docs/specs` lub `docs/plans` (z komendą `git rm --cached`; pliki zostają na dysku).

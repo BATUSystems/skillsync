@@ -120,3 +120,7 @@ entries:
     title: "Autouzupełnianie powłok (completion): statyczny generator, bloki ze znacznikami, profile PowerShella, składnie bash, zsh i PowerShell"
     tags: [skillsync, completion, shell, bash, zsh, powershell, install, startup-files]
     paths: ['skillsync_workflow/completion.py', 'skillsync_workflow/completion_install.py', 'skillsync_workflow/setup_wizard.py', 'install.sh', 'tests/test_skillsync_completion_*.py', 'tests/fixtures/completion/**']
+  - path: statusline-i-output-styles.md
+    title: "Pasek statusu sesji (statusLine) i style odpowiedzi (output-styles) w Claude Code: fakty z wersjami, opt-in, granice"
+    tags: [skillsync, claude-code, statusline, output-styles, settings, manifest, opt-in]
+    paths: ['library/hooks/statusline.py', 'library/output-styles/**', 'skillsync_workflow/hooksync.py', 'skillsync_workflow/claude_manifest.py', 'skillsync_workflow/cli.py', 'tests/test_skillsync_statusline*.py', 'tests/test_skillsync_output_styles.py', 'tests/test_skillsync_claude_manifest.py']

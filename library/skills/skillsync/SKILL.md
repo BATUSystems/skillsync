@@ -134,6 +134,7 @@ Skutki:
 - Tryb `agents` (`instructions.entrypoint: agents` w manifeście albo `entrypoint: agents` w `~/.config/skillsync/config.yaml`; domyślnie `inline`): treść raz w bloku `AGENTS.md`, `CLAUDE.md` = nagłówek + `@AGENTS.md`, bez `.codex/skillsync-instructions.md`; `push` czyta wtedy blok `AGENTS.md`. Generator wraca do `inline` z ostrzeżeniem, gdy `AGENTS.md` jest śledzony/nieignorowany w git (także błąd gita), leży poza gitem z własną treścią, jest dowiązaniem albo ma zepsute znaczniki. Domyślną wartość zmieniaj dopiero po aktualizacji Skippstera (rozwija importy w sesjach).
 - Plik jest automatycznie dopisywany do `.gitignore` projektu (tak jak `copilot-instructions.md`) — nie commituj go, edytuj i pushuj do warstwy.
 - Wyłączenie dla konkretnego projektu: `claude: false` (albo `claude: {enabled: false}`) w `.github/.skillsync.yaml`. `link` wtedy usuwa nasze wpisy hooków w `settings.local.json` (Stop, PreToolUse, SessionStart, SubagentStop) i nasze skrypty w `.claude/hooks/`; `settings.json` z hookiem Stop testów (`hooks.stop_tests`) i jego skrypt `check-tests.py` nie są ruszane. Pliki śledzone przez git zostają.
+- Opcjonalne, domyślnie wyłączone: `claude.statusline: true` (pasek statusu sesji, wpis `statusLine` w `settings.local.json`; cudzego paska nie nadpisuje) i `claude.output_styles: true` (styl `karta` jako kopia w `.claude/output-styles/`; `outputStyle` ustawia użytkownik). Wymagania wersji, ostrzeżenia `doctor` i ręczna próba: `docs/manifest.md`, `docs/cli.md`, `docs/development.md`.
 
 ## Jak dodać nowy skill (MUST-FOLLOW)
 

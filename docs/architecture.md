@@ -43,6 +43,7 @@ Maszyna ma listę warstw w configu ([configuration](configuration.md)). Dobór w
 | `skills/<n>/**` | per plik, późniejsza warstwa wygrywa; skill z dwoma dostawcami składany z symlinków |
 | `instructions/<n>.md` | cały plik, późniejsza warstwa wygrywa; kolizja nazwy w dwóch warstwach = ostrzeżenie `doctor` |
 | `instructions/_base.md`, `workflow/schema.json`, `workflow/benchmark.yaml`, `hooks/*` | tylko `core` |
+| `output-styles/*` | tylko `core` (style odpowiedzi Claude Code; instalacja tylko przy `claude.output_styles: true`) |
 | `instructions/_base.d/*.md` | suma; kolejność: warstwy w `use`, potem nazwa pliku; każdy fragment w znacznikach `SKILLSYNC:FRAGMENT` z nazwą warstwy i pliku |
 | `agents/<n>.md` | cały plik, późniejsza warstwa wygrywa |
 | `codex.yaml` | mapy scalane głęboko; listy wykluczeń skilli to suma |
