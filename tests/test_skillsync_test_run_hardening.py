@@ -771,6 +771,7 @@ class ChangedPathsField(WorkflowFixture):
                 broken.started(check)
         leftover = Path(broken.objects_dir)
         self.assertTrue(leftover.exists())
+        broken.writer.close()   # `run_validation` calls `finished` (it closes the writer) after a failed `started`; this test calls `started` alone, and an open event file blocks the cleanup of the project on Windows
         del broken
         gc.collect()
         self.assertFalse(leftover.exists(), 'removed when the recorder is dropped')
