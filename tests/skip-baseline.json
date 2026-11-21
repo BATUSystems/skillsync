@@ -582,7 +582,7 @@
    },
    {
     "id": "test_skillsync_claude_headless.FakeClaude.test_the_child_gets_the_resolved_profile_directory",
-    "category": "needs-symlinks"
+    "category": "no-os-symlinks"
    },
    {
     "id": "test_skillsync_claude_headless.FakeClaude.test_the_cost_limit_is_exit_3_and_is_booked",
@@ -606,11 +606,11 @@
    },
    {
     "id": "test_skillsync_claude_headless.ProfileAllowlist.test_a_link_is_judged_by_its_target",
-    "category": "needs-symlinks"
+    "category": "no-os-symlinks"
    },
    {
     "id": "test_skillsync_claude_headless.TheCopy.test_a_link_inside_an_allowed_directory_never_reaches_the_copy",
-    "category": "needs-symlinks"
+    "category": "no-os-symlinks"
    },
    {
     "id": "test_skillsync_claude_headless_core.EvalWrapperAfterTheRefactor.test_the_dry_run_equals_the_golden_file_written_before_the_refactor",
