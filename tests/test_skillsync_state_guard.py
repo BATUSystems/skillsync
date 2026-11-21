@@ -67,6 +67,87 @@ class GuardRealState(unittest.TestCase):
                     __import__("shutil").rmtree(watched)
 
 
+class StateDifference(unittest.TestCase):
+    """K1: a failure names the changed paths (before -> after) instead of dumping two snapshots."""
+
+    def watched(self) -> Path:
+        tmp = Path(tempfile.mkdtemp(prefix="state-guard-diff-"))
+        self.addCleanup(__import__("shutil").rmtree, tmp, ignore_errors=True)
+        watched = tmp / "skillsync"
+        watched.mkdir()
+        return watched
+
+    def difference(self, watched: Path, change) -> list:
+        with mock.patch.object(helpers, "REAL_STATE_DIRS", (watched,)):
+            before = helpers.real_state_snapshot()
+            change()
+            return helpers.real_state_difference(before, helpers.real_state_snapshot())
+
+    def test_equal_snapshots_have_no_difference(self) -> None:
+        watched = self.watched()
+        (watched / "a.json").write_text("{}", encoding="utf-8")
+        self.assertEqual(self.difference(watched, lambda: None), [])
+
+    def test_a_replaced_new_and_removed_file_are_named_with_before_and_after(self) -> None:
+        watched = self.watched()
+        (watched / "kept.json").write_text("{}", encoding="utf-8")
+        (watched / "gone.json").write_text("{}", encoding="utf-8")
+        os.utime(watched / "kept.json", ns=(1, 1))
+
+        def change() -> None:
+            (watched / "kept.json").write_text("{\"a\": 1}", encoding="utf-8")
+            os.utime(watched / "kept.json", ns=(2, 2))
+            (watched / "new.json").write_text("{}", encoding="utf-8")
+            (watched / "gone.json").unlink()
+
+        lines = self.difference(watched, change)
+        text = "\n".join(lines)
+        self.assertEqual(len(lines), 3, lines)
+        self.assertIn("kept.json: file 2 B, mtime 1 -> file 8 B, mtime 2", text)
+        self.assertIn("new.json: brak -> file 2 B", text)
+        self.assertIn("gone.json: file 2 B", text)
+        self.assertIn("-> brak", text)
+
+    def test_a_new_and_a_removed_directory_are_named(self) -> None:
+        watched = self.watched()
+        (watched / "old-dir").mkdir()
+        lines = self.difference(watched, lambda: ((watched / "old-dir").rmdir(), (watched / "new-dir").mkdir()))
+        text = "\n".join(lines)
+        self.assertIn("new-dir: brak -> dir", text)
+        self.assertIn("old-dir: dir", text)
+
+    def test_a_directory_that_appears_or_disappears_is_one_line(self) -> None:
+        missing = Path(tempfile.mkdtemp(prefix="state-guard-diff-")) / "skillsync"
+        self.addCleanup(__import__("shutil").rmtree, missing.parent, ignore_errors=True)
+        lines = self.difference(missing, lambda: missing.mkdir())
+        self.assertEqual(lines, [f"{missing}: brak -> katalog"])
+
+    def test_more_than_ten_changes_are_cut_with_a_count(self) -> None:
+        watched = self.watched()
+
+        def change() -> None:
+            for number in range(13):
+                (watched / f"f{number:02d}.json").write_text("{}", encoding="utf-8")
+
+        lines = self.difference(watched, change)
+        self.assertEqual(len(lines), 11)
+        self.assertEqual(lines[-1], "... and 3 more")
+
+    def test_the_failure_message_of_the_guard_lists_the_paths(self) -> None:
+        watched = self.watched()
+        with mock.patch.object(helpers, "REAL_STATE_DIRS", (watched,)):
+            class Case(unittest.TestCase):
+                def runTest(self) -> None:
+                    helpers.guard_real_state(self)
+                    (watched / "leak.json").write_text("{}", encoding="utf-8")
+            result = unittest.TestResult()
+            Case().run(result)
+        self.assertEqual(len(result.failures), 1, (result.failures, result.errors))
+        message = result.failures[0][1]
+        self.assertIn("test touched real Skillsync state dirs", message)
+        self.assertIn("leak.json: brak -> file 2 B", message)
+
+
 class EveryEnvironmentMovesTheStateOfEverySystem(unittest.TestCase):
     """180-W: a test module that builds its own environment with `XDG_DATA_HOME`/`XDG_CACHE_HOME` isolates only Linux (macOS keeps the data under
     `~/Library` of `HOME`, Windows under `LOCALAPPDATA`): such a module must also use `home_env` or name `LOCALAPPDATA` and `HOME`. The runs on Linux cannot

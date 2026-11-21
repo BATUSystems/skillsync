@@ -18,6 +18,7 @@ import contextlib
 import functools
 import json
 import os
+import stat as stat_module
 import subprocess
 import sys
 import tempfile
@@ -66,7 +67,7 @@ def guard_real_state(case):
     server of another session that starts or stops while the tests run (its state file under `dashboard/`) fails the guard too: run the
     guarded tests when no other `dashboard serve` of this user changes state (on the station: under the `heavy-run` lock)."""
     before = real_state_snapshot()
-    case.addCleanup(lambda: case.assertEqual(real_state_snapshot(), before, 'test touched real Skillsync state dirs'))
+    case.addCleanup(lambda: assert_real_state_unchanged(case, before))
 
 ISOLATED_VARS = ('HOME', 'USERPROFILE', 'XDG_CACHE_HOME', 'XDG_DATA_HOME', 'XDG_CONFIG_HOME',
                  'LOCALAPPDATA', 'APPDATA', 'GIT_CONFIG_GLOBAL', 'GIT_CONFIG_NOSYSTEM', 'SKILLSYNC_CONFIG')
@@ -145,14 +146,15 @@ def _refreshed_by_read_only_git(path, relative=None):
 
 
 def real_state_snapshot():
-    """Stable description of the real per-user state dirs (None = directory absent), without the files that read-only git
-    commands of other processes refresh (`_refreshed_by_read_only_git`)."""
+    """Description of the real per-user state dirs: `{str(directory): None (absent) | {path relative to it: value}}`, without the
+    files that read-only git commands of other processes refresh (`_refreshed_by_read_only_git`). A value is `(kind, size, mtime_ns)`;
+    `real_state_difference` turns two snapshots into readable lines."""
     snapshot = {}
     for directory in REAL_STATE_DIRS:
         if not directory.exists():
             snapshot[str(directory)] = None
             continue
-        entries = []
+        entries = {}
         for path in sorted(directory.rglob('*')):
             if _refreshed_by_read_only_git(path, path.relative_to(directory)):
                 continue
@@ -160,15 +162,54 @@ def real_state_snapshot():
                 stat = path.lstat()
             except OSError:
                 continue
-            if path.is_dir() and ('.git' in path.relative_to(directory).parts):
+            relative = path.relative_to(directory)
+            is_dir = stat_module.S_ISDIR(stat.st_mode)
+            if is_dir and ('.git' in relative.parts):
                 # `git status`/`git fetch` create and rename lock and temporary files inside `.git` (`index.lock`, `objects`,
                 # `refs/remotes`), which moves the mtime and size of those DIRECTORIES; a real write still shows up as a
                 # changed or new file (a ref, an object, a layer file), so inside `.git` only files are compared
-                entries.append((path.relative_to(directory).as_posix(), 0, 0))
+                entries[relative.as_posix()] = ('dir', 0, 0)
                 continue
-            entries.append((path.relative_to(directory).as_posix(), stat.st_size, stat.st_mtime_ns))
-        snapshot[str(directory)] = tuple(entries)
+            entries[relative.as_posix()] = ('dir' if is_dir else 'file', stat.st_size, stat.st_mtime_ns)
+        snapshot[str(directory)] = entries
     return snapshot
+
+
+STATE_DIFFERENCE_LIMIT = 10
+
+
+def _describe_state_value(value):
+    if value is None:
+        return 'brak'
+    kind, size, mtime = value
+    return f'{kind} {size} B, mtime {mtime}'
+
+
+def real_state_difference(before, after, limit=STATE_DIFFERENCE_LIMIT):
+    """Lines `<path>: <before> -> <after>` for what differs between two `real_state_snapshot()` results (at most `limit`, then
+    `... and N more`); an empty list means the snapshots are equal. A directory that appeared or disappeared is one line."""
+    lines = []
+    for directory in sorted(set(before) | set(after)):
+        old, new = before.get(directory), after.get(directory)
+        if old is None and new is None:
+            continue
+        if old is None or new is None:
+            lines.append(f'{directory}: {"brak" if old is None else "katalog"} -> {"brak" if new is None else "katalog"}')
+            continue
+        for relative in sorted(set(old) | set(new)):
+            if old.get(relative) != new.get(relative):
+                lines.append(f'{directory}/{relative}: {_describe_state_value(old.get(relative))} -> '
+                             f'{_describe_state_value(new.get(relative))}')
+    if len(lines) > limit:
+        lines = lines[:limit] + [f'... and {len(lines) - limit} more']
+    return lines
+
+
+def assert_real_state_unchanged(case, before):
+    """Fails `case` with the changed paths (before -> after) when the real state dirs differ from the snapshot `before`."""
+    lines = real_state_difference(before, real_state_snapshot())
+    if lines:
+        case.fail('test touched real Skillsync state dirs:\n' + '\n'.join(lines))
 
 
 class IsolatedTestCase(unittest.TestCase):
@@ -189,7 +230,7 @@ class IsolatedTestCase(unittest.TestCase):
 
     def _assert_real_state_untouched(self):
         # Runs as a cleanup, i.e. after the test body and tearDown.
-        self.assertEqual(real_state_snapshot(), self._real_state, 'test touched real Skillsync state dirs')
+        assert_real_state_unchanged(self, self._real_state)
 
     def subprocess_env(self, **extra):
         env = dict(os.environ)

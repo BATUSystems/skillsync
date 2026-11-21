@@ -15,7 +15,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from unittest import mock  # noqa: E402
-from layers_helpers import generator_version, make_layer, real_state_snapshot, transitional_config  # noqa: E402
+from layers_helpers import assert_real_state_unchanged, generator_version, make_layer, real_state_snapshot, transitional_config  # noqa: E402
 from layers_helpers import needs_fifo, needs_flock, needs_os_symlinks, needs_posix  # noqa: E402
 import sys as _sys_tmp_paths  # noqa: E402
 from pathlib import Path as _Path_tmp_paths  # noqa: E402
@@ -38,8 +38,7 @@ class WorkflowFixture(unittest.TestCase):
 
     def setUp(self):
         real_state = real_state_snapshot()
-        self.addCleanup(lambda: self.assertEqual(real_state_snapshot(), real_state,
-                                                 'test touched real Skillsync state dirs'))
+        self.addCleanup(lambda: assert_real_state_unchanged(self, real_state))
         self.temp = tempfile.TemporaryDirectory(prefix='skillsync-contract-')
         self.addCleanup(self.temp.cleanup)
         self.base = Path(self.temp.name)
