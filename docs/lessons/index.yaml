@@ -300,3 +300,7 @@ lessons:
     title: "Wzorzec Bash w disallowedTools podagenta usuwa cały Bash, a maxTurns liczy odpowiedzi modelu, nie wywołania narzędzi"
     tags: [skillsync, claude-code, role, podagenci, maxturns, disallowedtools]
     paths: ['library/agents/*.md', 'library/skills/feature/references/claude.md', 'skillsync_workflow/skill_frontmatter.py', 'tests/test_skillsync_agent_roles.py']
+  - path: claude-p-restricted-a-nie-setting-sources-profil-ma-hooki.md
+    title: "claude -p: do zadań tylko do odczytu użyj --restricted, nie --setting-sources user; flagi, których pomoc nie pokazuje albo opisuje inaczej"
+    tags: [skillsync, claude-code, claude-p, bezpieczenstwo, hooki, json-schema]
+    paths: ['tools/claude-headless/run.py', 'tools/claude-headless/claude_headless_core.py', 'tests/test_skillsync_claude_headless.py', 'docs/development.md']
