@@ -50,18 +50,20 @@ Shared across projects:
 - **description** - Brief description of the skill (single-line text)
 
 ### Optional Attributes
-- **user-invokable** - Allow users to invoke skill directly (`true` or `false`)
+- **user-invokable** - Copilot's spelling: allow users to invoke the skill directly (`true` or `false`). Claude Code does not know this spelling and ignores it (the skill stays invocable by the user); its own key is `user-invocable` (default `true`; `false` hides the skill from the `/` menu). Both spellings are accepted by `skillsync doctor` without a remark
 - **argument-hint** - Hint for skill arguments, shown by Claude Code when the user types `/name` (autocomplete). Presentation only: it does not validate or pass arguments (the text reaches the skill through `$ARGUMENTS`, or is appended to the end when the skill has none). One single-quoted string, at most 120 characters, no final period, in the notation `<required> [optional] a | b`, e.g. `argument-hint: '<opis zadania | KLUCZ-123 | ścieżka FRD>'`. Only skills that take arguments have it (the contract is enforced by `tests/test_skillsync_skill_argument_hint.py`)
 - **compatibility** - Compatibility information
 - **disable-model-invocation** - Disable automatic model invocation
 - **license** - License information
 - **metadata** - Additional metadata
 
+Other keys of Claude Code (checked 2026-11-21, <https://code.claude.com/docs/en/skills>, "Frontmatter reference"; they are not Copilot keys): `when_to_use`, `arguments`, `allowed-tools` (pre-approval of tools in the turn of the skill, not a restriction), `disallowed-tools`, `model`, `effort` (`low|medium|high|xhigh|max`), `context` (only `fork`: the skill runs in a subagent that does not see the conversation), `agent`, `background`, `hooks`, `paths` (globs relative to the working directory), `shell` (`bash|powershell`). Claude Code ignores unknown keys without an error or a warning, so a typo shows nowhere: `skillsync doctor` checks the keys, the types and the enumerated values (the module `skillsync_workflow/skill_frontmatter.py`, a warning, never an error) and the test of the core library accepts none. Not confirmed by the documentation: whether the description disappears from the skill listing with `disable-model-invocation`, whether the description of a skill with `paths` is listed before a file matches, whether the model can invoke a flagged skill with the Skill tool; see `docs/domain/skill-frontmatter.md`.
+
 ### NOT Supported Attributes
 The following attributes will cause validation errors:
 - `keywords` - Not supported
 - `skill` - Do not nest attributes under this key
-- Custom fields or arbitrary keys
+- Custom fields or arbitrary keys (in the core library: `skillsync doctor` warns and the library test fails; in an organization or personal layer a custom key is only a `doctor` warning)
 
 ## Correct YAML Syntax
 
@@ -332,8 +334,8 @@ Include the technologies/domains your skill covers in the description.
 name: skill-name
 description: Skill description
 user-invokable: true
-custom-metadata: value          # Custom variables supported
-shift-version: 1.0              # Your own fields can be added
+metadata:                       # the place for your own data (a mapping); other custom keys are unknown keys
+  shift-version: 1.0
 ---
 ```
 

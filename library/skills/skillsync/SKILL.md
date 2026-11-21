@@ -165,7 +165,7 @@ Nie dopisuj skilla do sekcji "Skills Reference" w instrukcjach projektu: host ł
 Instrukcje projektu mają tylko punkty wejścia (3–5 linii). Zamiast tego:
 
 1. dopisz skill do `workflow/skill-catalog.yaml` (albo `skill-catalog.d/<id>.yaml`) swojej warstwy (`scope`: org|client|project|tech|workflow|tool|personal, `org`, `tech`);
-2. `description` ≤ 200 bajtów (`doctor` ostrzega powyżej);
+2. `description` ≤ 200 bajtów (`doctor` ostrzega powyżej); `doctor` ostrzega też o nieznanym kluczu frontmattera, złym typie i złej wartości (`skill_frontmatter.py`; Claude Code cicho ignoruje nieznane klucze, a pisownia `user-invokable` Copilota jest znana i bez uwagi): opis kluczy w skillu `copilot-skills-yaml`;
 3. `skillsync skills index` odświeża indeks (`--check` sprawdza aktualność);
 4. `skillsync suggest <projekt>` pokazuje braki/nadmiary skilli projektu (tylko odczyt), `skillsync doctor` ostrzega o skillu cudzej organizacji, braku skilla organizacji i niewykrytej technologii;
 5. `skillsync map <projekt>` buduje `.skillsync/map.md` (mapa repo dla `explore`/orkiestratora).
