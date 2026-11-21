@@ -1,6 +1,7 @@
 ---
 name: feature
 description: Plan and deliver multi-step changes in Claude Code or Codex with scoped subagents, coordinated tests, and independent review. Use for implementation, not read-only audits or simple questions.
+argument-hint: '<opis zadania | KLUCZ-123 | ścieżka FRD>'
 ---
 
 # /feature — plan, implementacja i weryfikacja

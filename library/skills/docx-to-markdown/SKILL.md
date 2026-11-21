@@ -1,7 +1,7 @@
 ---
 name: docx-to-markdown
 description: 'Convert DOCX documents to clean Markdown with images. Use for converting Word documentation, WCAG reports, specifications to MD format with proper image paths.'
-argument-hint: 'Path to DOCX file (e.g., docs/DEMO-176/document.docx)'
+argument-hint: '<ścieżka do pliku DOCX>'
 ---
 
 # DOCX to Markdown Converter

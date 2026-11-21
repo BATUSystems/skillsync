@@ -1,6 +1,7 @@
 ---
 name: bugfix
 description: Small bug fix with root cause proven from evidence, a narrow patch, a regression test and independent review; larger changes go to feature.
+argument-hint: '<opis błędu | KLUCZ-123>'
 ---
 
 # Bugfix — mała, zweryfikowana poprawka błędu
