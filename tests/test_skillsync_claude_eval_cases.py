@@ -7,6 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 EVALS = ROOT / 'tools' / 'claude-eval' / 'evals'
 QUALIFYING = ('feature-with-key', 'bugfix-with-key', 'pre-implement-verdict')
 CONTROL = 'feature-without-key'
+DISPATCH = 'dispatch-not-model-invoked'
 
 
 def load():
@@ -21,7 +22,7 @@ class ShippedCases(unittest.TestCase):
         self.assertEqual(load().validate_cases(EVALS), [])
 
     def test_the_planned_cases_are_present_with_a_grader_each(self):
-        for name in QUALIFYING + (CONTROL,):
+        for name in QUALIFYING + (CONTROL, DISPATCH):
             with self.subTest(case=name):
                 self.assertTrue((EVALS / name / 'prompt.md').is_file())
                 self.assertTrue(list((EVALS / name / 'graders').glob('*.md')))
@@ -33,6 +34,11 @@ class ShippedCases(unittest.TestCase):
             text = (EVALS / name / 'graders' / 'reads-ticket-intake.md').read_text(encoding='utf-8')
             self.assertIn('ticket-intake', text)
             self.assertNotIn('max:', text)
+
+    def test_the_dispatch_case_expects_zero_model_invocations(self):
+        text = (EVALS / DISPATCH / 'graders' / 'not-invoked.md').read_text(encoding='utf-8')
+        self.assertIn('max: 0', text)
+        self.assertIn('input_match: dispatch', text)
 
 
 if __name__ == '__main__':
