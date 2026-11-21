@@ -31,15 +31,27 @@ def failing_thread(fail_on):
 
 
 class SpyPopen:
-    """Records the processes of `subprocess.Popen` started while it is installed."""
+    """Records the FIRST process of `subprocess.Popen` started while it is installed (the check's own; on Windows `taskkill` of the cleanup starts a
+    `Popen` of its own through `subprocess.run`, which is not the child under test)."""
 
     def __init__(self):
         self.processes, self.real = [], subprocess.Popen
 
     def __call__(self, *args, **kwargs):
         process = self.real(*args, **kwargs)
-        self.processes.append(process)
+        if not self.processes:
+            self.processes.append(process)
         return process
+
+
+def stop(process):
+    """Cleanup: a regression would leave the sleeping child running for two minutes."""
+    if process.poll() is None:
+        process.kill()
+    process.wait(timeout=10)
+    for pipe in (process.stdout, process.stderr):
+        if pipe:
+            pipe.close()
 
 
 class StreamStart(unittest.TestCase):
@@ -54,6 +66,7 @@ class StreamStart(unittest.TestCase):
                 with self.assertRaises(RuntimeError):
                     quality._execute(self.check(root), lambda stream, text: None)
         self.assertEqual(len(spy.processes), 1)
+        self.addCleanup(stop, spy.processes[0])
         return spy.processes[0]
 
     def test_the_child_is_stopped_when_the_second_reader_thread_cannot_start(self):
@@ -78,6 +91,7 @@ class StreamStart(unittest.TestCase):
                 result = quality.run_validation(root, [self.check(root)], observer=Observer())['results'][0]
         self.assertEqual(result['status'], 'BLOCKED')
         self.assertIn('RuntimeError', result['reason'])
+        self.addCleanup(stop, spy.processes[0])
         self.assertEqual(calls, ['started', 'finished'])
         self.assertIsNotNone(spy.processes[0].poll(), 'the child process is still running')
 
