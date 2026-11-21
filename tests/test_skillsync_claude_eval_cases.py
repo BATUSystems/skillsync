@@ -30,6 +30,7 @@ class ShippedCases(unittest.TestCase):
     def test_the_control_forbids_the_read_that_the_qualifying_cases_require(self):
         control = (EVALS / CONTROL / 'graders' / 'no-ticket-intake.md').read_text(encoding='utf-8')
         self.assertIn('max: 0', control)
+        self.assertIn('min: 0', control)  # `min` defaults to 1, so `max: 0` alone can never pass
         for name in ('feature-with-key', 'bugfix-with-key'):
             text = (EVALS / name / 'graders' / 'reads-ticket-intake.md').read_text(encoding='utf-8')
             self.assertIn('ticket-intake', text)
@@ -38,6 +39,7 @@ class ShippedCases(unittest.TestCase):
     def test_the_dispatch_case_expects_zero_model_invocations(self):
         text = (EVALS / DISPATCH / 'graders' / 'not-invoked.md').read_text(encoding='utf-8')
         self.assertIn('max: 0', text)
+        self.assertIn('min: 0', text)
         self.assertIn('input_match: dispatch', text)
 
 
