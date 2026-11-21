@@ -1485,6 +1485,14 @@
     "category": "needs-symlinks"
    },
    {
+    "id": "test_skillsync_state_guard.CompositeCacheNoise.test_a_replaced_symlink_to_a_directory_in_the_composed_cache_is_seen",
+    "category": "no-os-symlinks"
+   },
+   {
+    "id": "test_skillsync_state_guard.CompositeCacheNoise.test_a_temporary_directory_that_is_a_symlink_is_recognised_by_the_resolved_path",
+    "category": "no-os-symlinks"
+   },
+   {
     "id": "test_skillsync_stop_signals.SigbreakOnWindowsTests.test_a_child_in_its_own_process_group_stops_cleanly_on_ctrl_break_event",
     "category": "windows-only"
    },

@@ -1,9 +1,9 @@
 ---
 title: "Pełny bieg testów pada na strażniku real-state, gdy ktokolwiek dotknie gitem prawdziwych klonów warstw"
 tags: [testing, layers, lease, dispatch, flaky, git]
-paths: ['tests/layers_helpers.py', 'tests/test_skillsync_workflow.py']
+paths: ['tests/layers_helpers.py', 'tests/test_skillsync_workflow.py', 'tests/test_skillsync_state_guard.py']
 source: 'INST-1, bieg pełny 2026-11-09 10:22–11:10: po 1 FAIL w każdym trybie, za każdym razem inny test; mtime .git/index klonów warstwy core i warstwy organizacji 10:39 i 10:53'
-verified: 2026-11-09
+verified: 2026-11-21
 ---
 **Objaw:** w pełnym zestawie pada jeden losowy test z asercją „test touched real Skillsync state dirs”
 (`tests/layers_helpers.py:real_state_snapshot`, cleanup w `test_skillsync_workflow.py`). Padający test zmienia się między biegami,
@@ -21,5 +21,11 @@ Dyspozytor, usługa watch), nie kod pod testem.
   pliki, a nanosekundowe mtime z komunikatu asercji przeliczone na czas wskazują chwilę ingerencji. Potem powtórz tylko padnięty moduł
   (`python3 -m unittest discover -s tests -p "test_skillsync_<moduł>.py"`; moduły importują się nawzajem, więc nie przez `tests.<moduł>`).
 - Dowodem końcowym pełnego zestawu jest CI PR, które ma własny, czysty HOME.
+
+**Od CORE-STATEGUARD:** komunikat porażki podaje do 10 zmienionych ścieżek (`<ścieżka>: <przed> -> <po>`), więc sprawcę
+ustalasz z samej różnicy, bez `find -newermt`. Migawka pomija metadane katalogów pod `composed` (`cache/composed` na Windows) i porównuje rejestr
+`composed/.projects.json` tylko dla projektów spod katalogu tymczasowego: `skillsync link` innej sesji nie powoduje już porażki. Zostają
+zmiany plików prawdziwych klonów warstw (refy, obiekty, pliki warstwy; reguła o `LEASE` wyżej dalej obowiązuje) oraz zapis pliku w `composed`. Szczegóły i cena:
+`docs/development.md`, „Kontrola izolacji stanu”.
 
 **Jak wykryć:** komunikat „test touched real Skillsync state dirs” z nazwą pliku `.git/index` lub `FETCH_HEAD` w diffie.
