@@ -107,9 +107,11 @@ class KnowledgeEscapeAndRoute(WorkflowFixture):
     def test_route_reads_lessons_from_configured_location(self):
         self.manifest["workflow"]["knowledge"] = {"lessons": "../docs/lessons"}
         self.save()
-        self.write("../docs/lessons/index.yaml", yaml.safe_dump({"version": 1, "lessons": [
-            {"path": "one.md", "title": "Lekcja jeden", "tags": ["topic-x"]}]}))
-        self.write("../docs/lessons/one.md", "tresc\n")
+        shared_lessons = self.base / "docs/lessons"  # self.root is base/project, so this is the old root/../docs/lessons
+        shared_lessons.mkdir(parents=True, exist_ok=True)
+        (shared_lessons / "index.yaml").write_text(yaml.safe_dump({"version": 1, "lessons": [
+            {"path": "one.md", "title": "Lekcja jeden", "tags": ["topic-x"]}]}), encoding="utf-8", newline="")
+        (shared_lessons / "one.md").write_text("tresc\n", encoding="utf-8", newline="")
         result = self.run_cli("route", str(self.root), "--topic", "topic-x", "--json")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         lessons = json.loads(result.stdout)["lessons"]
