@@ -111,6 +111,7 @@ class EvalWrapperAfterTheRefactor(Tmp):
         self.assertIs(wrapper.build_env, sys.modules['claude_headless_core'].build_env)
         self.assertIs(wrapper.frontmatter, sys.modules['claude_headless_core'].frontmatter)
 
+    @unittest.skipIf(os.name == 'nt', 'POSIX only: the golden file has POSIX paths and a minimal environment without SYSTEMROOT')
     def test_the_dry_run_equals_the_golden_file_written_before_the_refactor(self):
         (self.base / 'profile').mkdir()
         result = subprocess.run([sys.executable, str(RUN_PY), '--model', 'haiku', '--max-cost-usd', '1.5', '--config-dir', str(self.base / 'profile'),

@@ -19,7 +19,8 @@ import yaml
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
-sys.path.insert(0, str(HERE.parent / 'claude-headless'))   # the shared core of the wrappers (the directory name has a hyphen: no `import` by package)
+if str(HERE.parent / 'claude-headless') not in sys.path:
+    sys.path.insert(0, str(HERE.parent / 'claude-headless'))   # the shared core of the wrappers (the directory name has a hyphen: no `import` by package)
 from claude_headless_core import (ENV_ALLOWLIST, HEADER_RE, MAX_COST_CEILING_USD, MODEL_RE, UniqueKeyLoader, absolute_dir, build_env,  # noqa: E402,F401
                                   frontmatter, model_name, positive_cost)
 DEFAULT_SKILLS = ('feature', 'bugfix', 'pre-implement', 'workflow')

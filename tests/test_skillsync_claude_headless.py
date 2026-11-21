@@ -3,12 +3,15 @@
 Nothing here calls the real `claude`: the arguments, the forced flags, the copy built from a git ref, the ledger and the classification of the result are
 tested directly, and one subprocess runs a fake `claude` (a script with a shebang, so those tests are skipped on Windows)."""
 import importlib.util
+import io
 import json
 import os
 import stat
 import subprocess
 import sys
+import tarfile
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
@@ -110,8 +113,11 @@ class Refusals(Tmp):
                 self.refused(['docs-drift', '--model', 'sonnet', '--max-cost-usd', '1', '--config-dir', str(self.base / 'profile'), '--ref', ref])
 
     def test_the_total_budget_can_only_be_lowered(self):
-        self.refused(self.args('--total-budget-usd', '12.5'))
-        self.assertEqual(self.mod.parse_args(self.args('--total-budget-usd', '3')).total_budget_usd, 3.0)
+        for bad in ('12.5', '0', '-1', 'nan', 'x'):
+            with self.subTest(bad=bad):
+                self.refused(self.args('--total-budget-usd', bad))
+        for good, expected in (('3', 3.0), ('6', 6.0), ('12', 12.0)):
+            self.assertEqual(self.mod.parse_args(self.args('--total-budget-usd', good)).total_budget_usd, expected)
         self.assertEqual(self.mod.parse_args(self.args()).total_budget_usd, 12.0)
 
     def test_the_turn_limit_is_bounded(self):
@@ -145,6 +151,12 @@ class ProfileAllowlist(Tmp):
         link_to_listed.symlink_to(self.base / 'profile')
         self.mod.check_profile(str(link_to_listed), str(self.profiles))
 
+    def test_a_relative_line_of_the_profiles_file_allows_nothing(self):
+        write(self.profiles, 'profile\n')
+        with self.assertRaises(self.mod.Refusal):
+            self.mod.check_profile(str(self.base / 'profile'), str(self.profiles))
+        self.assertEqual(self.mod.allowed_profiles(self.profiles), set())
+
     def test_an_unlisted_profile_stops_the_command_even_in_a_dry_run(self):
         other = child(self.base, 'unlisted-profile')
         other.mkdir()
@@ -176,6 +188,12 @@ class ForcedFlags(Tmp):
         self.assertEqual(json.loads(schema), json.loads((JOBS / 'release-audit' / 'schema.json').read_text(encoding='utf-8')))   # the schema itself, not a path
         for forbidden in ('--bare', '--dangerously-skip-permissions', '--allowedTools', '--allowed-tools', '--setting-sources', '--mcp-config', '--add-dir'):
             self.assertNotIn(forbidden, argv)
+
+    def test_the_whole_argv_is_exactly_the_expected_list(self):
+        schema = json.dumps(json.loads((JOBS / 'release-audit' / 'schema.json').read_text(encoding='utf-8')), separators=(',', ':'))
+        expected = ['claude', '-p', '--output-format', 'json', '--no-session-persistence', '--permission-prompts', 'none', '--restricted', '--tools', 'Read,Grep,Glob',
+                    '--strict-mcp-config', '--disable-slash-commands', '--json-schema', schema, '--max-budget-usd', '1.5', '--max-turns', '15', '--model', 'sonnet']
+        self.assertEqual(self.dry_run()['argv'], expected)
 
     def test_the_prompt_goes_through_stdin_with_the_tags_filled_in(self):
         plan = self.dry_run()
@@ -249,6 +267,10 @@ class Schema(Tmp):
             with self.subTest(name=name):
                 self.assertEqual(classify(code, text, schema)[0], expected)
         self.assertEqual(classify(1, json.dumps({'subtype': 'error_max_budget_usd', 'total_cost_usd': 0.5}), schema)[3], 0.5)
+        for text in ('{"subtype": "success", "total_cost_usd": NaN}', '{"subtype": "success", "total_cost_usd": -1}', '{"subtype": "success", "total_cost_usd": Infinity}',
+                     '{"subtype": "success", "total_cost_usd": true}', '{"subtype": "success"}', 'garbage', '[]'):
+            with self.subTest(text=text):
+                self.assertIsNone(classify(0, text, schema)[3], 'an unknown or invalid cost is None: the caller books the limit')
 
 
 class TheCopy(Tmp):
@@ -301,6 +323,39 @@ class TheCopy(Tmp):
                 (dest / relative).unlink()
         self.assertEqual(self.mod.scan_copy(dest), [])
 
+    def test_names_with_special_characters_are_taken_literally(self):
+        repo = self.make_repo()
+        write(repo / 'docs' / 'zażółć.md', 'unicode\n')
+        write(repo / 'docs' / 'a[1].md', 'bracket\n')
+        write(repo / 'docs' / 'sp ace.md', 'space\n')
+        self.git(repo, '-c', 'core.quotePath=true', 'add', '-A')
+        self.git(repo, 'commit', '-q', '-m', 'names')
+        self.git(repo, 'tag', 'v3')
+        dest = self.copy_of(repo, 'v3')
+        for name in ('zażółć.md', 'a[1].md', 'sp ace.md'):
+            self.assertTrue((dest / 'docs' / name).is_file(), name)
+        write(repo / 'docs' / 'zażółć.md', 'unicode 2\n')
+        self.git(repo, 'add', '-A')
+        self.git(repo, 'commit', '-q', '-m', 'names 2')
+        self.git(repo, 'tag', 'v4')
+        self.mod.write_audit_files(repo, dest, self.mod.resolve_ref(repo, 'v3'), self.mod.resolve_ref(repo, 'v4'))
+        self.assertIn('+unicode 2', (dest / '_audit' / 'diff.patch').read_text(encoding='utf-8'))
+
+    @needs_os_symlinks
+    def test_a_link_inside_an_allowed_directory_never_reaches_the_copy(self):
+        repo = self.make_repo()
+        (repo / 'library' / 'sneaky').symlink_to('../docs/plans/p.md')
+        (repo / 'docs' / 'sneaky.md').symlink_to('../.skillsync/runs/r.json')
+        self.git(repo, 'add', '-A')
+        self.git(repo, 'commit', '-q', '-m', 'links')
+        self.git(repo, 'tag', 'v5')
+        dest = self.copy_of(repo, 'v5')
+        self.assertFalse(os.path.lexists(dest / 'library' / 'sneaky'))
+        self.assertFalse(os.path.lexists(dest / 'docs' / 'sneaky.md'))
+        text = ' '.join(path.read_text(encoding='utf-8') for path in dest.rglob('*') if path.is_file())
+        self.assertNotIn('SECRET PLAN', text)
+        self.assertNotIn('STATE', text)
+
     def test_the_audit_files_hold_the_patch_of_docs_and_only_the_statistics_of_the_code(self):
         repo = self.make_repo()
         dest = self.copy_of(repo, 'v2')
@@ -324,6 +379,49 @@ class TheCopy(Tmp):
         self.assertEqual(self.mod.resolve_ref(repo, 'v1')[:1].isalnum(), True)
 
 
+class ExtractTar(Tmp):
+    """The first layer of the allowlist, on a synthetic archive (works on every system)."""
+
+    def archive(self):
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=buffer, mode='w') as tar:
+            def regular(name, text=b'x'):
+                info = tarfile.TarInfo(name)
+                info.size = len(text)
+                tar.addfile(info, io.BytesIO(text))
+            regular('docs/ok.md')
+            regular('library/ok.md')
+            regular('docs/plans/p.md')
+            regular('docs/specs/s.md')
+            regular('.git/config')
+            regular('.skillsync/x')
+            regular('library/.skillsync/y')
+            regular('_audit/fake.patch')
+            regular('tests/t.py')
+            regular('/abs.txt')
+            regular('../escape.txt')
+            regular('docs/../../escape2.md')
+            for name, kind in (('library/symlink', tarfile.SYMTYPE), ('library/hardlink', tarfile.LNKTYPE), ('library/device', tarfile.CHRTYPE), ('library/fifo', tarfile.FIFOTYPE)):
+                info = tarfile.TarInfo(name)
+                info.type = kind
+                info.linkname = 'docs/ok.md'
+                tar.addfile(info)
+        return buffer.getvalue()
+
+    def test_only_regular_allowlisted_members_are_written(self):
+        dest = child(self.base, 'dest')
+        dest.mkdir()
+        self.mod.extract_tar(self.archive(), dest)
+        self.assertEqual(sorted(p.relative_to(dest).as_posix() for p in dest.rglob('*') if p.is_file() or p.is_symlink()), ['docs/ok.md', 'library/ok.md'])
+        self.assertFalse((self.base / 'escape.txt').exists())
+        self.assertFalse((self.base.parent / 'escape.txt').exists())
+        self.assertFalse((self.base / 'escape2.md').exists())
+
+    def test_the_audit_directory_is_only_for_the_host(self):
+        self.assertFalse(self.mod.allowed_relative(Path('_audit/diff.patch')))
+        self.assertTrue(self.mod.allowed_relative(Path('_audit/diff.patch'), audit=True))
+
+
 class Ledger(Tmp):
     def test_the_ledger_refuses_over_the_calls_and_over_the_sum(self):
         path = self.base / 'ledger.json'
@@ -341,6 +439,55 @@ class Ledger(Tmp):
             with self.assertRaises(self.mod.Refusal):
                 ledger.check(1.0, 10.5)
 
+    def test_a_corrupt_ledger_is_a_refusal_not_a_traceback(self):
+        for text in ('{broken', '[]', '{"calls": "x", "spent": 1}', ''):
+            with self.subTest(text=text):
+                path = write(self.base / 'ledger.json', text)
+                with self.assertRaises(self.mod.Refusal):
+                    with self.mod.Ledger(path) as ledger:
+                        ledger.check(1.0, 12.0)
+
+    def test_the_write_is_atomic(self):
+        path = self.base / 'ledger.json'
+        with self.mod.Ledger(path) as ledger:
+            ledger.record({'n': 1}, 0.1)
+        self.assertFalse((self.base / 'ledger.json.tmp').exists())
+        self.assertEqual(json.loads(path.read_text(encoding='utf-8'))['calls'], 1)
+
+    @unittest.skipIf(os.name == 'nt', 'POSIX only: file locks (fcntl)')
+    def test_two_runs_are_serialized_by_the_lock(self):
+        path = self.base / 'ledger.json'
+        order = []
+        release = threading.Event()
+        entered = threading.Event()
+
+        def first():
+            with self.mod.Ledger(path) as ledger:
+                entered.set()
+                order.append('first in')
+                release.wait(5)
+                ledger.record({'n': 1}, 0.1)
+                order.append('first out')
+
+        def second():
+            entered.wait(5)
+            with self.mod.Ledger(path) as ledger:
+                order.append('second in')
+                ledger.check(1.0, 12.0)
+                ledger.record({'n': 2}, 0.1)
+
+        threads = [threading.Thread(target=first), threading.Thread(target=second)]
+        for thread in threads:
+            thread.start()
+        entered.wait(5)
+        threads[1].join(0.3)
+        self.assertTrue(threads[1].is_alive(), 'the second run must wait for the lock')
+        release.set()
+        for thread in threads:
+            thread.join(10)
+        self.assertEqual(order, ['first in', 'first out', 'second in'])
+        self.assertEqual(json.loads(path.read_text(encoding='utf-8'))['calls'], 2)
+
     def test_the_record_accumulates_and_survives_a_new_instance(self):
         path = self.base / 'ledger.json'
         for cost in (0.25, 0.5):
@@ -357,11 +504,14 @@ class FakeClaude(Tmp):
             self.skipTest('a fake executable needs a shebang')
         record = self.base / 'record.json'
         body = ('import json, os, sys\n'
-                'if sys.argv[1:] == ["--version"]:\n    print("9.9.9 (Claude Code)"); sys.exit(0)\n'
+                'if sys.argv[1:] == ["--version"]:\n'
+                f'    json.dump({{"cwd": os.getcwd(), "env": dict(os.environ)}}, open({str(self.base / "version.json")!r}, "w"))\n'
+                '    print("9.9.9 (Claude Code)"); sys.exit(0)\n'
+                f'import time\ntime.sleep({float(answer.get("sleep", 0))})\n'
                 'stdin = sys.stdin.read()\n'
                 'files = sorted(os.path.relpath(os.path.join(d, f), ".") for d, _, fs in os.walk(".") for f in fs)\n'
                 f'json.dump({{"argv": sys.argv[1:], "cwd": os.getcwd(), "env": dict(os.environ), "stdin": stdin, "files": files}}, open({str(record)!r}, "w"))\n'
-                f'print({json.dumps(json.dumps(answer))})\n'
+                f'print({json.dumps(answer["raw"] if "raw" in answer else json.dumps(answer))})\n'
                 f'sys.exit({1 if answer.get("is_error") else 0})\n')
         launcher.write_text(f'#!{sys.executable}\n' + body, encoding='utf-8')
         launcher.chmod(launcher.stat().st_mode | stat.S_IEXEC)
@@ -413,6 +563,53 @@ class FakeClaude(Tmp):
     def test_the_turn_limit_is_exit_1(self):
         done, _ = self.run_job({'subtype': 'error_max_turns', 'is_error': True})
         self.assertEqual(done.returncode, 1, done.stderr)
+
+    def test_an_unparsable_answer_is_booked_at_the_limit(self):
+        done, _ = self.run_job({'raw': 'garbage after the money was spent'})
+        self.assertEqual(done.returncode, 1, done.stderr)
+        ledger = json.loads((self.base / 'ledger.json').read_text(encoding='utf-8'))
+        self.assertEqual((ledger['calls'], ledger['spent']), (1, 1.5))
+
+    def test_a_call_that_takes_too_long_is_exit_1_and_booked_at_the_limit(self):
+        done, _ = self.run_job({'subtype': 'success', 'sleep': 5}, '--timeout-seconds', '1')
+        self.assertEqual(done.returncode, 1, done.stderr)
+        self.assertIn('no answer within 1 s', json.loads(done.stdout)['reason'])
+        ledger = json.loads((self.base / 'ledger.json').read_text(encoding='utf-8'))
+        self.assertEqual((ledger['calls'], ledger['spent']), (1, 1.5))
+
+    def test_a_corrupt_ledger_stops_before_the_binary_without_a_traceback(self):
+        write(self.base / 'ledger.json', '{broken')
+        done, record = self.run_job({'subtype': 'success', 'is_error': False, 'structured_output': GOOD})
+        self.assertEqual(done.returncode, 2, done.stderr)
+        self.assertNotIn('Traceback', done.stderr)
+        self.assertFalse(record.exists())
+
+    def test_the_version_probe_also_runs_in_the_clean_environment_inside_the_copy(self):
+        done, _ = self.run_job({'subtype': 'success', 'is_error': False, 'structured_output': GOOD, 'total_cost_usd': 0.1})
+        self.assertEqual(done.returncode, 0, done.stderr)
+        probe = json.loads((self.base / 'version.json').read_text(encoding='utf-8'))
+        self.assertNotIn('ANTHROPIC_API_KEY', probe['env'])
+        self.assertNotIn('SECRET_TOKEN', probe['env'])
+        self.assertEqual(probe['env']['CLAUDE_CONFIG_DIR'], str(self.base / 'profile'))
+        self.assertNotEqual(Path(probe['cwd']).resolve(), Path.cwd().resolve())
+
+    @needs_os_symlinks
+    def test_the_child_gets_the_resolved_profile_directory(self):
+        alias = child(self.base, 'alias')
+        alias.symlink_to(self.base / 'profile')
+        launcher, record = self.fake({'subtype': 'success', 'is_error': False, 'structured_output': {'findings': [], 'summary': 'all matches'}, 'total_cost_usd': 0.1})
+        done = subprocess.run([sys.executable, str(RUN_PY), 'docs-drift', '--model', 'sonnet', '--max-cost-usd', '1', '--config-dir', str(alias), '--ref', 'v2',
+                               '--profiles-file', str(self.profiles), '--repo', str(self.make_repo()), '--claude-bin', str(launcher), '--ledger', str(self.base / 'l.json'),
+                               '--out', str(self.base / 'out')], capture_output=True, text=True, timeout=120)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(json.loads(record.read_text(encoding='utf-8'))['env']['CLAUDE_CONFIG_DIR'], os.path.realpath(self.base / 'profile'))
+
+    def test_a_non_empty_output_directory_is_refused_before_the_binary(self):
+        write(self.base / 'out' / 'earlier.txt', 'x')
+        done, record = self.run_job({'subtype': 'success', 'is_error': False, 'structured_output': GOOD})
+        self.assertEqual(done.returncode, 2, done.stderr)
+        self.assertFalse(record.exists())
+        self.assertEqual((self.base / 'out' / 'earlier.txt').read_text(encoding='utf-8'), 'x')
 
     def test_a_full_ledger_stops_before_the_binary(self):
         write(self.base / 'ledger.json', json.dumps({'calls': 16, 'spent': 1.0, 'entries': []}))

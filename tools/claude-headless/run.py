@@ -5,11 +5,16 @@ The only supported entry point: it forces the safe flags (`--restricted`, only R
 persistent session, a hard cost limit and a turn limit, a JSON schema), builds a copy of the PUBLIC part of the core repository from a git ref (never the
 working tree), keeps a cost ledger of the account and validates the result itself. The result is advisory: nothing here gates a merge or a release.
 
+`--ledger` and `--profiles-file` can be pointed elsewhere (the tests need it): the ledger and the list of the allowed profiles protect against a mistake, not
+against a deliberate bypass. The input of the model is limited by the size of `_audit/diff.patch` plus `_audit/diffstat.txt` only; the copy is read by the
+model on demand and is bounded by the cost limit.
+
 Exit codes: 0 PASS; 1 the job failed or its result does not fit the schema; 2 refused before the start (arguments, profile, ledger, size of the input);
-3 interrupted by the cost limit. The real `claude` is started once, after every check has passed."""
+3 interrupted by the cost limit. The real `claude` is started once for the job, after every check has passed (`claude --version` runs first, in the same clean environment)."""
 import argparse
 import io
 import json
+import math
 import os
 import re
 import subprocess
@@ -21,7 +26,8 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
-sys.path.insert(0, str(HERE))
+if str(HERE) not in sys.path:
+    sys.path.insert(0, str(HERE))
 from claude_headless_core import absolute_dir, build_env, model_name, positive_cost  # noqa: E402
 
 try:
@@ -67,7 +73,8 @@ def allowed_profiles(path):
         lines = Path(path).read_text(encoding='utf-8').splitlines()
     except OSError:
         return set()
-    return {os.path.realpath(line.strip()) for line in lines if line.strip() and not line.lstrip().startswith('#')}
+    entries = [line.strip() for line in lines if line.strip() and not line.lstrip().startswith('#')]
+    return {os.path.realpath(line) for line in entries if os.path.isabs(line)}   # a relative line would depend on the current directory: it allows nothing
 
 
 def check_profile(config_dir, profiles_file):
@@ -87,10 +94,23 @@ def turns(text):
     return value
 
 
+def timeout_seconds(text):
+    try:
+        value = int(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f'not an integer: {text}')
+    if not 1 <= value <= CLAUDE_TIMEOUT_SECONDS:
+        raise argparse.ArgumentTypeError(f'must be 1..{CLAUDE_TIMEOUT_SECONDS}')
+    return value
+
+
 def lowered_budget(text):
-    value = positive_cost(text)
-    if value > TOTAL_BUDGET_USD:
-        raise argparse.ArgumentTypeError(f'the total budget can only be lowered, at most {TOTAL_BUDGET_USD} USD')
+    try:
+        value = float(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f'not a number: {text}')
+    if not 0 < value <= TOTAL_BUDGET_USD:   # `nan` fails both comparisons
+        raise argparse.ArgumentTypeError(f'the total budget can only be lowered: above 0 and at most {TOTAL_BUDGET_USD} USD')
     return value
 
 
@@ -109,6 +129,7 @@ def parse_args(argv):
     parser.add_argument('--total-budget-usd', type=lowered_budget, default=TOTAL_BUDGET_USD)
     parser.add_argument('--ledger', default=str(DEFAULT_LEDGER))
     parser.add_argument('--claude-bin', default='claude')
+    parser.add_argument('--timeout-seconds', type=timeout_seconds, default=CLAUDE_TIMEOUT_SECONDS, help='the limit of one call (it can only be lowered)')
     parser.add_argument('--out', default=None, help='output directory (default .skillsync/claude-headless/<time> in the current directory)')
     parser.add_argument('--dry-run', action='store_true', help='print the command and the environment, build nothing, start nothing')
     args = parser.parse_args(argv)
@@ -223,7 +244,7 @@ def build_command(args, schema_text):
 # --- git: the copy of the public part of a ref
 
 def git(repo, *argv, binary=False):
-    result = subprocess.run(['git', '-C', str(repo), *argv], capture_output=True, env={**os.environ, 'LC_ALL': 'C'})
+    result = subprocess.run(['git', '--literal-pathspecs', '-C', str(repo), *argv], capture_output=True, env={**os.environ, 'LC_ALL': 'C'})
     if result.returncode != 0:
         raise Refusal(f'git {argv[0]} failed: {result.stderr.decode("utf-8", "replace").strip()[:300]}')
     return result.stdout if binary else result.stdout.decode('utf-8')
@@ -235,11 +256,11 @@ def resolve_ref(repo, ref):
 
 def present_paths(repo, commit):
     """The allowlisted paths that exist in the commit (a path missing in an old tag would make `git archive` fail), with `docs/*.md` as concrete files."""
-    listed = git(repo, 'ls-tree', '--name-only', commit, '--', *ALLOWED_FILES, *ALLOWED_DIRS).splitlines()
+    listed = [name for name in git(repo, 'ls-tree', '-z', '--name-only', commit, '--', *ALLOWED_FILES, *ALLOWED_DIRS).split('\0') if name]
     docs = []
-    for line in git(repo, 'ls-tree', commit, f'{DOCS_LEVEL}/').splitlines():
-        meta, _, name = line.partition('\t')
-        if meta.split()[1] == 'blob' and name.endswith('.md'):
+    for record in git(repo, 'ls-tree', '-z', commit, f'{DOCS_LEVEL}/').split('\0'):
+        meta, _, name = record.partition('\t')
+        if name and meta.split()[1] == 'blob' and name.endswith('.md'):
             docs.append(name)
     return sorted(set(listed) | set(docs))
 
@@ -252,19 +273,20 @@ def extract_tar(data, dest):
                 continue
             if not member.isreg() or member.name.startswith('/') or '..' in parts:
                 continue   # links, devices and unsafe names are never written
-            if not allowed_relative(Path(member.name)):
+            if not allowed_relative(Path(member.name)):   # `_audit/` is not allowed here: nothing from the repository may pretend to be the host's files
                 continue   # first layer: a path outside the allowlist (also one nested in an allowed directory) is never written; `scan_copy` is the second
             target = Path(dest) / member.name
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(archive.extractfile(member).read())
 
 
-def allowed_relative(relative):
+def allowed_relative(relative, audit=False):
+    """Whether a path of the copy is on the allowlist; `_audit/` (written by the host after the extraction) only when `audit` is true."""
     if any(part in ('.git', '.skillsync') for part in relative.parts):
         return False
     text = relative.as_posix()
     if relative.parts[0] == AUDIT_DIR:
-        return True
+        return audit
     if text in ALLOWED_FILES:
         return True
     if any(text == directory or text.startswith(directory + '/') for directory in ALLOWED_DIRS):
@@ -278,7 +300,7 @@ def scan_copy(dest):
     for path in sorted(Path(dest).rglob('*')):
         if path.is_file() or path.is_symlink():
             relative = path.relative_to(dest)
-            if not allowed_relative(relative):
+            if not allowed_relative(relative, audit=True):
                 found.append(relative.as_posix())
     return found
 
@@ -327,7 +349,16 @@ class Ledger:
         self.lock.close()
 
     def read(self):
-        return json.loads(self.path.read_text(encoding='utf-8')) if self.path.exists() else {'calls': 0, 'spent': 0.0, 'entries': []}
+        if not self.path.exists():
+            return {'calls': 0, 'spent': 0.0, 'entries': []}
+        try:
+            data = json.loads(self.path.read_text(encoding='utf-8'))
+            if not isinstance(data, dict) or not isinstance(data.get('calls'), int) or not isinstance(data.get('spent'), (int, float)):
+                raise ValueError('unexpected shape')
+        except (OSError, ValueError) as error:
+            raise Refusal(f'the ledger {self.path} is unreadable ({error.__class__.__name__}); repair or move it by hand')
+        data.setdefault('entries', [])
+        return data
 
     def check(self, limit, total_budget):
         data = self.read()
@@ -341,21 +372,23 @@ class Ledger:
         data['calls'] += 1
         data['spent'] = round(data['spent'] + cost, 6)
         data['entries'].append(entry)
-        self.path.write_text(json.dumps(data, indent=1), encoding='utf-8')
+        staging = self.path.with_name(self.path.name + '.tmp')
+        staging.write_text(json.dumps(data, indent=1), encoding='utf-8')
+        os.replace(staging, self.path)   # atomic: an interrupted write never leaves a broken ledger
 
 
 # --- the result of the child
 
 def classify(returncode, stdout, schema):
-    """`(exit code, reason, structured result or None, cost)` of the output of `claude -p --output-format json`."""
+    """`(exit code, reason, structured result or None, cost or None)` of the output of `claude -p --output-format json` (`None`: the cost is unknown or invalid)."""
     try:
         parsed = json.loads(stdout)
     except ValueError:
-        return 1, 'the output is not JSON', None, 0.0
+        return 1, 'the output is not JSON', None, None
     if not isinstance(parsed, dict):
-        return 1, 'the output is not a JSON object', None, 0.0
+        return 1, 'the output is not a JSON object', None, None
     cost = parsed.get('total_cost_usd')
-    cost = float(cost) if isinstance(cost, (int, float)) and not isinstance(cost, bool) else 0.0
+    cost = float(cost) if isinstance(cost, (int, float)) and not isinstance(cost, bool) and math.isfinite(cost) and cost >= 0 else None   # unknown: the caller books the limit
     subtype = parsed.get('subtype')
     if subtype == 'error_max_budget_usd':
         return 3, 'interrupted by the cost limit', None, cost
@@ -391,8 +424,11 @@ def main(argv=None):
             env = build_env(os.environ, args.config_dir, home='<temporary home>')
             print(json.dumps({'argv': command, 'env': env, 'cwd': '<copy of the public paths of the ref>', 'stdin': prompt, 'refs': dict(zip(refs, commits))}, indent=2))
             return 0
-        out = Path(args.out) if args.out else Path.cwd() / '.skillsync' / 'claude-headless' / datetime.now().strftime('%Y%m%d-%H%M%S')
+        out = Path(args.out) if args.out else Path.cwd() / '.skillsync' / 'claude-headless' / f"{datetime.now().strftime('%Y%m%d-%H%M%S')}-{os.getpid()}"
         out = out.resolve()
+        if out.exists() and any(out.iterdir()):
+            raise Refusal(f'the output directory {out} is not empty')
+        profile = os.path.realpath(args.config_dir)   # the directory that was checked is the one the child gets (no link swapped in between)
         with tempfile.TemporaryDirectory(prefix='claude-headless-') as work:
             copy, home = Path(work) / 'copy', Path(work) / 'home'
             copy.mkdir()
@@ -405,28 +441,33 @@ def main(argv=None):
             with Ledger(args.ledger) as ledger:
                 ledger.check(args.max_cost_usd, args.total_budget_usd)
                 started = now()
+                env = build_env(os.environ, profile, home=home)
                 try:
-                    version = subprocess.run([args.claude_bin, '--version'], capture_output=True, text=True, timeout=60).stdout.strip()
+                    version = subprocess.run([args.claude_bin, '--version'], capture_output=True, text=True, timeout=60, cwd=copy, env=env).stdout.strip()
                 except (OSError, subprocess.SubprocessError) as error:
                     raise Refusal(f'cannot run {args.claude_bin!r}: {error.__class__.__name__}')
                 try:
-                    result = subprocess.run(command, input=prompt, capture_output=True, text=True, timeout=CLAUDE_TIMEOUT_SECONDS, cwd=copy,
-                                            env=build_env(os.environ, args.config_dir, home=home))
+                    result = subprocess.run(command, input=prompt, capture_output=True, text=True, timeout=args.timeout_seconds, cwd=copy, env=env)
                     code, reason, structured, cost = classify(result.returncode, result.stdout, schema)
                 except subprocess.TimeoutExpired:
                     result = subprocess.CompletedProcess(command, 124, '', 'timeout')
-                    code, reason, structured, cost = 1, f'no answer within {CLAUDE_TIMEOUT_SECONDS} s (the call is booked at its limit)', None, args.max_cost_usd
-                ledger.record({'at': started, 'task': args.task, 'model': args.model, 'limit': args.max_cost_usd, 'cost': cost, 'exit': code,
-                               'claude_exit': result.returncode}, cost)
+                    code, reason, structured, cost = 1, f'no answer within {args.timeout_seconds} s', None, None
+                except BaseException:   # an interrupt or a failure after the start: the call may have cost something, so the limit is booked
+                    ledger.record({'at': started, 'task': args.task, 'model': args.model, 'limit': args.max_cost_usd, 'cost': args.max_cost_usd,
+                                   'exit': 'interrupted'}, args.max_cost_usd)
+                    raise
+                booked = args.max_cost_usd if cost is None else cost   # an unknown or invalid cost is booked at the limit of the call
+                ledger.record({'at': started, 'task': args.task, 'model': args.model, 'limit': args.max_cost_usd, 'cost': booked, 'exit': code,
+                               'claude_exit': result.returncode}, booked)
         out.mkdir(parents=True, exist_ok=True)
         (out / 'raw.json').write_text(result.stdout, encoding='utf-8')
         (out / 'stderr.txt').write_text(result.stderr, encoding='utf-8')
         if structured is not None:
             (out / 'result.json').write_text(json.dumps(structured, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
         (out / 'metadata.json').write_text(json.dumps({'task': args.task, 'claude_version': version, 'started': started, 'ended': now(), 'model': args.model,
-                                                       'limit_usd': args.max_cost_usd, 'cost_usd': cost, 'max_turns': args.max_turns, 'refs': dict(zip(refs, commits)),
+                                                       'limit_usd': args.max_cost_usd, 'cost_usd': booked, 'max_turns': args.max_turns, 'refs': dict(zip(refs, commits)),
                                                        'exit': code, 'reason': reason}, indent=2) + '\n', encoding='utf-8')
-        print(json.dumps({'out': str(out), 'exit': code, 'reason': reason, 'cost_usd': cost, 'findings': len(structured['findings']) if structured else None}))
+        print(json.dumps({'out': str(out), 'exit': code, 'reason': reason, 'cost_usd': booked, 'findings': len(structured['findings']) if structured else None}))
         return code
     except Refusal as error:
         print(f'refused: {error}', file=sys.stderr)
