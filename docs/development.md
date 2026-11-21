@@ -58,6 +58,23 @@ python3 -m unittest discover -s tests -p 'test_skillsync*.py' -v 2>&1 | tee run.
 python3 scripts/check_skips.py run.log --system ubuntu-latest --mode copy
 ```
 
+### Kontrola izolacji stanu (`real_state_snapshot`)
+
+Kontrola „test touched real Skillsync state dirs” porównuje stan prawdziwych katalogów użytkownika (`REAL_STATE_DIRS`) przed testem i po nim
+(`IsolatedTestCase`, `guard_real_state`, cleanup w `test_skillsync_workflow.py`). Porażka podaje do 10 zmienionych ścieżek w formie
+`<ścieżka>: <przed> -> <po>` (`brak` = nie istniało; reszta jako `i N innych`), więc zaczynasz od nazwy pliku, nie od zrzutu słowników.
+
+- Porównywane są rozmiar i czas modyfikacji każdego pliku, a katalogi razem z nimi, z wyjątkami: pliki odświeżane przez `git` tylko do odczytu
+  (`FETCH_HEAD`, `.git/index`, `*.lock` w `.git`) i **metadane katalogów pod `composed`** (`cache/composed` na Windows) razem z potomkami:
+  nowy i usunięty katalog oraz każdy plik w nich nadal są widoczne, sam czas i rozmiar katalogu nie.
+- Rejestr `composed/.projects.json` jest porównywany **tylko we wpisach projektów spod katalogu tymczasowego** (`tempfile.gettempdir()`
+  z chwili importu, po `resolve`); plik tymczasowy rejestru (`.projects.json.tmp-*`) jest pomijany, zły JSON liczy się jako pusty rejestr.
+  Rejestr jest rozpoznawany po miejscu pod `REAL_STATE_DIRS`, nie przez `composed_root()`, bo cleanup biegnie przy podstawionym środowisku.
+- Powód: `skillsync link` dowolnej innej sesji przepisuje rejestr i zmienia czas katalogu `composed`, co nie jest wyciekiem testu.
+- Cena: kontrola nie wykryje przejściowego zapisu pliku w katalogu pod `composed` (utworzony i usunięty, zmienia tylko czas katalogu) ani testu,
+  który linkuje PRAWDZIWY projekt spoza katalogu tymczasowego (zmiana jego wpisu w rejestrze). Zapisy poza `composed` i wszystkie pliki są wykrywane tak jak dawniej.
+- Przy porażce nadal obowiązuje procedura z lekcji `pelny-bieg-testow-a-git-na-prawdziwych-warstwach.md`: ustal sprawcę z różnicy, powtórz moduł.
+
 ### Zestaw modułów przy scalaniu
 
 `python3 scripts/merge_modules.py --base <baza> --head <sha> [--json | --names]` wylicza z diffu `<baza>..<sha>` moduły testowe do uruchomienia
