@@ -89,8 +89,9 @@ planu jako NOT_RUN.
 ### Nazwy z danych pod katalogiem tymczasowym
 
 `tests/tmp_paths.py` (`child`, `make_dir`, `write_file`) składa ścieżkę pod katalogiem tymczasowym z nazwy pochodzącej z danych i odmawia
-nazwy z separatorem, dyskiem, `..`, znakiem sterującym, końcową kropką lub spacją oraz nazwy zastrzeżonej Windows (`CON`, `NUL`, `COM1`…);
-wynik sprawdza `relative_to`. Powód: na Windows nazwa `\n` (backslash, `n`) jest ścieżką od korzenia dysku, więc `tmp / nazwa` zapisuje poza
+nazwy z separatorem, dyskiem, `..`, znakiem sterującym, końcową kropką lub spacją oraz nazwy zastrzeżonej Windows, także z rozszerzeniem
+(`CON`, `NUL`, `COM1`, `nul.json`…); wynik sprawdza `relative_to`. Ścieżka względna z wieloma członami składa się przez `descend(base, "a/b")`
+(bez `..`, bez ścieżki bezwzględnej, z wynikiem w bazie). Powód: na Windows nazwa `\n` (backslash, `n`) jest ścieżką od korzenia dysku, więc `tmp / nazwa` zapisuje poza
 katalogiem tymczasowym. `tests/test_skillsync_tmp_path_guard.py` jest strażnikiem ścisłym (`STRICT = True`): każde wyrażenie
 `<ścieżka tmp> / <zmienna lub wywołanie>` w testach (poza `tmp_paths.py` i samym strażnikiem) kończy test błędem, chyba że stoi w `ALLOWED`.
 Klucz wpisu to `(plik, tekst wyrażenia z ast.unparse)`, wartość to uzasadnienie; wpis bez trafienia też jest błędem (test „stale”).
@@ -106,9 +107,11 @@ a cykl dziedziczenia nie zapętla skanu. Odziedziczony atrybut działa tylko dla
 Cel pochodny od atrybutu odziedziczonego (`self.out = self.work / "o"`, `base = self.work / "x"`) ma zasięg: nazwa w funkcji, atrybut w klasie;
 nie wchodzi do wspólnego zbioru `attrs` pliku ani do rejestru. `scan(tree)` bez rejestru nie dziedziczy (kontrakt dla
 `scripts/platform_sensitive.py`). Strażnik nie widzi przepływu przez wywołania (`self.root = make_project(self.tmp)`), fabryk, `global`/`nonlocal`,
-`joinpath`, `os.path.join` ani `Path(a, b)`; atrybut o tej samej nazwie w niezwiązanej klasie skazi cały plik. Wyrażenie `X.name` obiektu
-`tempfile.TemporaryDirectory` (np. `self.root = Path(temp.name).resolve()` w klasie bazowej `IsolatedTestCase`) nie jest uznawane za ścieżkę tmp,
-więc takie atrybuty nie wchodzą do rejestru. Klasy rozpoznaje prosta nazwa, bez rozwiązywania importów. Nowy test, który składa ścieżkę z danych,
+`joinpath`, `os.path.join` ani `Path(a, b)`; atrybut o tej samej nazwie w niezwiązanej klasie skazi cały plik. Wyrażenie `X.name` jest ścieżką tmp, gdy `X` jest nazwą lub atrybutem
+związanym z `TemporaryDirectory(...)` (np. `temp = TemporaryDirectory(...)`); stąd `self.root = Path(temp.name).resolve()` w klasie bazowej
+`IsolatedTestCase` (`tests/layers_helpers.py`) skaża `self.root` i `self.work` w podklasach z innych plików. `NamedTemporaryFile` i `mkdtemp`
+nie dają takiego `.name`, a `Path(x).name` jest tylko nazwą składnika. Złączenia `os.path.join(x.name, …)` i f-stringi z `.name` nie są
+wykrywane (znane ograniczenia). Klasy rozpoznaje prosta nazwa, bez rozwiązywania importów. Nowy test, który składa ścieżkę z danych,
 używa pomocnika; gdy trafienie ma zostać, dopisz wpis do `ALLOWED` z uzasadnieniem.
 
 ### Serwery w testach
