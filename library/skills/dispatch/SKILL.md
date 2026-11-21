@@ -2,6 +2,7 @@
 name: dispatch
 description: Dispatch parallel feature sessions in one repo - split a goal into packages, assign cards, grant resource leases, order pushes, verify reports. For /dispatch or $dispatch only.
 argument-hint: '<cel> | status | drain | resume <run-id>'
+disable-model-invocation: true
 ---
 
 # /dispatch — dyspozytor równoległych sesji feature

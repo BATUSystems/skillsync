@@ -74,6 +74,11 @@ Akcje dozwolone w ticku to lista zamknięta: (a) zapis sidecara, (b) sonda `STAT
 
 Ustalenie, które zniknęło, usuń z `notified`, aby kolejne wystąpienie zostało zgłoszone znowu.
 
+Odpowiedź karty na sondę `STATUS?` obsługuje zwykła tabela reakcji ([loop.md](loop.md)): to dyspozytor w turze po wiadomości aktualizuje `last_message`
+w pliku dyspozycji (wynik `date`). Tick pliku dyspozycji NIE zapisuje, więc dopóki `last_message` nie zostanie zaktualizowane, karta pozostaje `idle-card`
+i sonda wraca co `idle_card_minutes` (żywy scenariusz 21.11: sonda wracała co próg mimo odpowiedzi karty). To świadomy koszt: powtórna sonda jest
+tania i ograniczona progiem; kto chce ciszy, aktualizuje `last_message` po odpowiedzi.
+
 ## Czego tick nie robi
 
 Tick NIGDY: nie wykonuje `LEASE GRANT` ani `LEASE RELEASE`, `PUSH GRANT`, nie wydaje ani nie przekazuje GO, CP, READY (zgoda wyłącznie od

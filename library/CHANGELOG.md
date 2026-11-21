@@ -13,6 +13,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ### Changed
 
+- **`dispatch`: `disable-model-invocation: true`.** The skill is started only by the user (`/dispatch`); the pulse prompt reads `references/pulse.md` and never calls the skill. The loop of a replied probe: the dispatcher updates `last_message` from the reaction table (`loop.md`), otherwise the probe returns every `idle_card_minutes`.
 - **`argument-hint` in the skills with arguments.** `feature`, `bugfix`, `dispatch`, `codereview`, `pr-run` and `docx-to-markdown` have the frontmatter field `argument-hint` (autocomplete hint of Claude Code, presentation only; the notation is described in `copilot-skills-yaml`). The references to the non-existent `docs/library.md` and `docs/layers.md` in the instructions and in the `skillsync` skill point to `docs/layers-authoring.md` and the authoring rules.
 - Skill `dashboard` (`SKILL.md`, "Zakładka „Testy”"): an attempt shows at most 200 groups, and a note says how many were omitted (`groupsOmitted`); the counters still cover every test.
 - Skill `workflow` (`test-run.md`): a `[T]` step counts as done by a checked `- [x]` row or by a PASS checkpoint, so `tests-not-run` also works for plans with a step table.

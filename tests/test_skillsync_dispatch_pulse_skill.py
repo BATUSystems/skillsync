@@ -186,5 +186,35 @@ class PulseConsistency(unittest.TestCase):
         self.assertIn('ścieżka bezwzględna', prompt)
 
 
+class FlagOnDispatch(unittest.TestCase):
+    """K10 (decision of 21.11, proved by the live scenario): `dispatch` is invoked by the user only; no other skill of the library has the flag."""
+
+    @staticmethod
+    def frontmatter(path):
+        import yaml
+        match = re.match(r'---\n(.*?)\n---\n', read(path), re.S)
+        return yaml.safe_load(match.group(1))
+
+    def test_dispatch_is_hidden_from_the_model(self):
+        data = self.frontmatter(SKILL / 'SKILL.md')
+        self.assertIs(data.get('disable-model-invocation'), True)
+        self.assertIn('argument-hint', data)
+
+    def test_no_other_skill_of_the_library_has_the_flag(self):
+        for path in sorted((ROOT / 'library' / 'skills').glob('*/SKILL.md')):
+            if path.parent.name == 'dispatch':
+                continue
+            with self.subTest(skill=path.parent.name):
+                self.assertNotIn('disable-model-invocation', self.frontmatter(path))
+
+    def test_the_prompt_of_the_loop_does_not_need_the_skill_tool(self):
+        text = read(PULSE)
+        self.assertIn('disable-model-invocation', section(text, 'Prompt pętli'))
+
+    def test_the_probe_that_comes_back_is_described(self):
+        self.assertIn('co `idle_card_minutes`', section(read(PULSE), 'Ustalenia i akcje'))
+        self.assertIn('last_message', read(SKILL / 'references' / 'loop.md'))
+
+
 if __name__ == '__main__':
     unittest.main()
