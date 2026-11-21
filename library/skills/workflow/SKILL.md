@@ -12,7 +12,7 @@ Wspólne źródło zasila Copilot, Claude i Codex. `feature` dołącza ten skill
 | Zadanie | Odczyt / komenda |
 |---|---|
 | Plan / architektura | `feature`, [planning.md](references/planning.md) |
-| Wiele równoległych sesji | `dispatch` (jeśli zainstalowany — `workflow-extended`), [multi-session](../feature/references/multi-session.md) |
+| Wiele równoległych sesji | `dispatch` (jeśli zainstalowany — `workflow-extended`; skill uruchamia użytkownik: `/dispatch`, model go nie wywoła), [multi-session](../feature/references/multi-session.md) |
 | Kontrakt / migracja | `pre-implement`, [contracts.md](references/contracts.md) |
 | Testy | `smart-test`, `skillsync validate <projekt>`, `skillsync test-run` ([test-run](references/test-run.md)) |
 | Bugfix | `bugfix` |

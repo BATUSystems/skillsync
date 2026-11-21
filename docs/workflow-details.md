@@ -818,7 +818,9 @@ flowchart TB
   - `unexplained` → karta uzupełnia przyczynę albo dowód nowym rekordem, bez edycji pliku;
   - brak logu albo log starszy niż kod → odrzucenie z żądaniem rekordu `evidence-gap`; wpis o luce zostaje po uzupełnieniu;
   - paczka zmieniająca `docs/domain`, `docs/lessons` albo manifest → `skillsync doctor` w worktree paczki, porównany z bazą;
-- nie odpytuje kart w pętli: reaguje na wiadomości, a kartę bezczynną bez raportu sonduje raz `STATUS?`;
+- nie odpytuje kart w pętli: reaguje na wiadomości, a kartę bezczynną bez raportu sonduje raz `STATUS?`; jedyny wyjątek to opt-in puls
+  (`dispatch.pulse.enabled`): cykl `/loop` tylko do odczytu (`skillsync dispatch --pulse`), który sonduje wyłącznie kartę po progu i powiadamia
+  użytkownika `PushNotification`, bez żadnej nowej władzy nad kartami (`../library/skills/dispatch/references/pulse.md`);
 - może zlecić `verifier` sprawdzenie dowodów, ale decyzje (GRANT, przydział, eskalacja) zostawia sobie;
 - jako jedyny zmienia status w indeksie paczek i edytuje pliki z `dispatch.owned_files`.
 

@@ -2,6 +2,7 @@
 name: dispatch
 description: Dispatch parallel feature sessions in one repo - split a goal into packages, assign cards, grant resource leases, order pushes, verify reports. For /dispatch or $dispatch only.
 argument-hint: '<cel> | status | drain | resume <run-id>'
+disable-model-invocation: true
 ---
 
 # /dispatch — dyspozytor równoległych sesji feature
@@ -14,7 +15,7 @@ wygaszanie) jest wyłącznie w [wiele sesji](../feature/references/multi-session
 powielaj go, stosuj. Schemat pliku stanu: [state.md](references/state.md); przykładowy
 przebieg: [scenario.md](references/scenario.md).
 
-Komendy: `/dispatch <cel>` (nowa dyspozycja), `/dispatch status`, `/dispatch drain`,
+Komendy: `/dispatch <cel>` (nowa dyspozycja), `/dispatch status` (przy włączonym [pulsie](references/pulse.md) pokazuje też jego stan), `/dispatch drain`,
 `/dispatch resume <run-id>`. Jedno repozytorium na dyspozycję; wiele repo jest poza zakresem.
 Dyspozytor nie implementuje paczek i nie otwiera kart. Edytuje tylko plik stanu i pliki
 z `dispatch.owned_files` (indeks paczek, rejestry).
@@ -30,7 +31,7 @@ z `dispatch.owned_files` (indeks paczek, rejestry).
   push potwierdza hash na zdalnym repo. Zmiana kodu po końcowym przebiegu unieważnia dowód.
 - **Paczka bez checkpointu nie jest ukończona:** [odbiór paczki](references/loop.md#odbiór-paczki-report-done).
 - **Luki dowodu nie wolno usuwać po uzupełnieniu:** rekord karty i wpis w stanie zostają.
-- **Brak pollingu**: reaguj na wiadomości i polecenia użytkownika. Nie odpytuj kart w pętli.
+- **Brak pollingu**: reaguj na wiadomości i polecenia użytkownika. Nie odpytuj kart w pętli. Jedyny wyjątek: tick [pulsu](references/pulse.md) (opt-in, `dispatch.pulse.enabled`) czyta stan przez `skillsync dispatch --pulse` i sonduje `STATUS?` wyłącznie kartę po progu, nie częściej niż co próg.
 - Decyzja użytkownika podjęta w karcie ma pierwszeństwo przed planem i trybem wygaszania;
   zaktualizuj stan, nie spieraj się.
 - Decyzje architektoniczne/security, konflikty priorytetów, „zastana” porażka bez dowodu,
@@ -57,6 +58,8 @@ Kroki: wczytaj instrukcje, manifest i indeks paczek; utwórz `run-id` i `.skills
 wykryj karty i **zapytaj**, których wolno użyć; nadaj aliasy (`Dyspozytor`, `<Alias>`); wyślij `PROBE`
 (brak odpowiedzi po ponowieniu = karta niedostępna); zbadaj zasoby i zaproponuj limit równoległości
 (przy E2E 2 karty). Pełne kroki: [start i claimy](references/start-claims.md).
+Przy `dispatch.pulse.enabled: true` na końcu startu przeczytaj [pulse.md](references/pulse.md), sekcję „Start i życie pętli”
+(wypisz użytkownikowi linię `/loop`).
 
 ## Plan dyspozycji
 
@@ -106,7 +109,7 @@ pliku relacji ani rozszerzenia osobowości; to dotyczy wyłącznie sesji główn
 - `/dispatch status`: tabela — karta, paczka, akt, czeka na (użytkownika/zasób/dyspozytora/nic),
   dzierżawy, kolejka merge, otwarte decyzje.
 - `/dispatch drain`: `DRAIN` do kart, brak nowych przydziałów; powiadom użytkownika, gdy
-  wszystkie karty skończą i zapiszą stan planu.
+  wszystkie karty skończą i zapiszą stan planu. Przy włączonym pulsie zakończ pętlę ([pulse.md](references/pulse.md#start-i-życie-pętli)).
 - Zakończenie: raport zbiorczy (paczki, commity, dowody, dług, otwarte decyzje); sprzątanie
   zmergowanych worktree i baz testowych **tylko za zgodą**.
 - `/dispatch resume <run-id>`: nowa sesja po restarcie ([state.md](references/state.md#wznowienie)).

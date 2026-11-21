@@ -4,7 +4,7 @@ Czytaj przy każdej wiadomości od karty (tabela reakcji dyspozytora).
 
 | Wiadomość karty | Reakcja dyspozytora |
 |---|---|
-| `FREE` / `BUSY` / `STATUS` | aktualizacja stanu; przy `czeka-na=użytkownik` nie ponaglaj; wiadomość bez pierwszej linii `date:` (wynik `date`) → poproś o powtórzenie, godzin z treści nie wpisuj do stanu |
+| `FREE` / `BUSY` / `STATUS` | aktualizacja stanu (w tym `last_message` z wyniku `date`, dzięki czemu puls nie uznaje karty za bezczynną); przy `czeka-na=użytkownik` nie ponaglaj; wiadomość bez pierwszej linii `date:` (wynik `date`) → poproś o powtórzenie, godzin z treści nie wpisuj do stanu |
 | `LEASE REQUEST` | sprawdź faktyczny stan (porty, procesy, dysk, load, baza) → `LEASE GRANT` albo `LEASE QUEUED` |
 | `LEASE RELEASE` | zweryfikuj exit code i log, procesy zatrzymane, porty wolne → dopiero potem następny GRANT |
 | `PUSH SLOT` | kolejka merge (tryb `direct`; w `pr` brak `PUSH SLOT` na bazę, gotowość = status `review`); `PUSH GRANT` po jednym; zmiany kontraktów ostatnie |
@@ -15,7 +15,9 @@ Czytaj przy każdej wiadomości od karty (tabela reakcji dyspozytora).
 | gałąź główna czerwona | potwierdź dowód na czystym masterze; `MASTER RED` z jednym właścicielem poprawki |
 
 Monitorowanie bez wiadomości: raz po zdarzeniu (np. użytkownik wraca) sprawdź karty, zdalną
-gałąź i dysk. Karta bezczynna bez raportu → jedna sonda `STATUS?`.
+gałąź i dysk. Karta bezczynna bez raportu → jedna sonda `STATUS?`. Przy włączonym `dispatch.pulse` robi to cyklicznie
+tick [pulsu](pulse.md) (tylko odczyt, sonda tylko po progu, powiadomienie `PushNotification`); reakcja na `czeka-na=użytkownik`
+bez zmian: karty nie ponaglasz, użytkownika powiadamia puls.
 
 ## Odbiór paczki (`REPORT DONE`)
 

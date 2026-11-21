@@ -77,7 +77,7 @@ BRIDGE/1 <msg-id> <nadawca>→<odbiorca> <MSG|ACK|NACK|PING> [re=<msg-id>] [repl
   `NACK re=<msg-id> powód=...`.
 - Duplikat tego samego `msg-id` potwierdź ponownie ACK, ale nie wykonuj ponownie.
 - Bez ACK po 10 minutach wolno wysłać **jedno** ponowienie z tym samym `msg-id`; dalszą ciszę zgłoś użytkownikowi.
-  Nie odpytuj w pętli.
+  Nie odpytuj w pętli (puls dyspozytora, [pulse](pulse.md), działa tylko w adapterze Claude: `/loop` i `ScheduleWakeup`).
 - Po odzyskaniu transportu pierwszy kontakt to `PING` z nowym `msg-id`; `ACK re=` potwierdza kanał.
 
 ### Rejestr adresów i skrzynki

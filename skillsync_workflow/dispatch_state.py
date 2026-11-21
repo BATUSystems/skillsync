@@ -15,6 +15,7 @@ import time
 import yaml
 
 from .common import add_project_arguments, exit_code, read_project, redact
+from .dispatch import MAX_PULSE_INTERVAL_MINUTES
 from .pathfmt import posix
 
 SCHEMA = 1
@@ -29,6 +30,9 @@ ACTIVE_STATUSES = ('planning', 'running', 'draining')
 PACKAGE_STATUSES = ('todo', 'assigned', 'go', 'in_progress', 'review', 'done', 'blocked')
 CARD_STATES = ('dispatcher', 'probed', 'free', 'busy', 'working', 'waiting_user', 'unavailable', 'released')
 QUEUE_STATES = ('waiting', 'granted', 'pushed', 'verified')
+DECISION_STATES = ('open', 'answered')
+PULSE_DEFAULTS = {'interval_minutes': 20, 'idle_card_minutes': 30, 'user_wait_notify_minutes': 15, 'lease_overdue_minutes': 240}
+PULSE_RUNNING = ('running', 'draining')
 _ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9._:-]{0,79}')
 _BRANCH = re.compile(r'[A-Za-z0-9][A-Za-z0-9._/-]{0,119}')
 _HASH = re.compile(r'[0-9a-f]{7,40}')
@@ -77,6 +81,22 @@ class _Reader:
             try:
                 datetime.fromisoformat(value.replace('Z', '+00:00'))
                 return value
+            except ValueError:
+                pass
+        self.bad(field)
+        return None
+
+    def aware(self, value, field):
+        """An ISO time WITH an offset (the pulse counts ages from it); a time without a zone and any text become `null` plus a finding."""
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            if value.tzinfo is not None:
+                return value.isoformat()
+        elif isinstance(value, str) and len(value) <= 40:
+            try:
+                if datetime.fromisoformat(value.replace('Z', '+00:00')).tzinfo is not None:
+                    return value
             except ValueError:
                 pass
         self.bad(field)
@@ -239,6 +259,85 @@ def _freshness(mtime, now, status):
     return {'fileUpdated': _iso(mtime), 'ageSeconds': age, 'stale': status in ACTIVE_STATUSES and age > STALE_SECONDS}
 
 
+def _decisions(reader, data):
+    """The questions to the user of the three spellings seen in real files; an entry of an `open_*` list without a `state` is open."""
+    rows = []
+    for key, default in (('decisions', 'unknown'), ('open_decisions', 'open'), ('open_for_user', 'open')):
+        for item in reader.mappings(data.get(key), key):
+            state = default if item.get('state') is None else reader.enum(item.get('state'), DECISION_STATES)   # a word that is not ours (`closed`) is `unknown`, never silently open
+            rows.append({'id': reader.text(item.get('id'), _ID, 'decision.id'), 'state': state,
+                         'asked': reader.aware(item.get('asked'), 'decision.asked')})
+    return rows[:MAX_ITEMS]
+
+
+def _epoch(value):
+    """Seconds of an ISO time with an offset, or None (no time, no zone, not a time)."""
+    if not isinstance(value, str):
+        return None
+    try:
+        moment = datetime.fromisoformat(value.replace('Z', '+00:00'))
+    except ValueError:
+        return None
+    return moment.timestamp() if moment.tzinfo is not None else None
+
+
+def _minutes(now, then):
+    return max(0, int((now - then) // 60))
+
+
+def _thresholds(manifest):
+    section = manifest.get('dispatch') if isinstance(manifest, dict) else None
+    section = section.get('pulse') if isinstance(section, dict) else None
+    section = section if isinstance(section, dict) else {}
+    values = {}
+    for key, default in PULSE_DEFAULTS.items():
+        value = section.get(key)
+        high = MAX_PULSE_INTERVAL_MINUTES if key == 'interval_minutes' else None
+        values[key] = value if isinstance(value, int) and not isinstance(value, bool) and value >= 1 and (high is None or value <= high) else default
+    return values
+
+
+def _pulse(entry, now, thresholds):
+    """The findings of the pulse for one readable dispatch (see `docs/domain/dispatch-state-view.md`): ages in whole minutes, never free text."""
+    found = []
+    if entry.get('status') in PULSE_RUNNING:
+        idle, wait, overdue = thresholds['idle_card_minutes'], thresholds['user_wait_notify_minutes'], thresholds['lease_overdue_minutes']
+        for index, card in enumerate(entry.get('cards', []), 1):
+            alias, state = card.get('alias') or f'card-{index}', card.get('state')
+            times = [t for t in (_epoch(card.get('lastMessage')), _epoch(card.get('lastProbe'))) if t is not None]
+            if state in ('working', 'busy'):
+                if not times:
+                    found.append({'kind': 'age-unknown', 'subject': alias, 'ageMinutes': None})
+                else:
+                    age = _minutes(now, max(times))
+                    if age >= idle:
+                        found.append({'kind': 'idle-card', 'subject': alias, 'ageMinutes': age})
+            elif state == 'waiting_user':
+                message = _epoch(card.get('lastMessage'))
+                if message is None:
+                    found.append({'kind': 'age-unknown', 'subject': alias, 'ageMinutes': None})
+                elif _minutes(now, message) >= wait:
+                    found.append({'kind': 'user-wait', 'subject': alias, 'ageMinutes': _minutes(now, message)})
+        for index, decision in enumerate(entry.get('decisions', []), 1):
+            asked = _epoch(decision.get('asked'))
+            if decision.get('state') == 'open' and asked is not None and _minutes(now, asked) >= wait:
+                found.append({'kind': 'user-wait', 'subject': decision.get('id') or f'decision-{index}', 'ageMinutes': _minutes(now, asked)})
+        for index, lease in enumerate(entry.get('leases', []), 1):
+            if lease.get('released'):
+                continue
+            subject, granted = lease.get('resource') or f'lease-{index}', _epoch(lease.get('grantedAt'))
+            if granted is None:
+                found.append({'kind': 'age-unknown', 'subject': subject, 'ageMinutes': None})
+            elif _minutes(now, granted) >= overdue:
+                found.append({'kind': 'lease-overdue', 'subject': subject, 'ageMinutes': _minutes(now, granted)})
+        freshness = entry.get('freshness') or {}
+        if freshness.get('stale'):
+            found.append({'kind': 'stale-state', 'subject': entry.get('runId') or 'dispatch', 'ageMinutes': freshness.get('ageSeconds', 0) // 60})
+    return {'now': _iso(now), 'intervalMinutes': thresholds['interval_minutes'], 'findings': found,
+            'thresholds': {'idleCardMinutes': thresholds['idle_card_minutes'], 'userWaitNotifyMinutes': thresholds['user_wait_notify_minutes'],
+                           'leaseOverdueMinutes': thresholds['lease_overdue_minutes']}}
+
+
 def _dispatch_entry(root, path, index, claims, findings, now, cache):
     # The file name is user-controlled free text: it is shown (and used in findings) only when it is a plain identifier.
     safe = _ID.fullmatch(path.stem) is not None and not _TOKEN_SHAPE.search(path.stem)
@@ -263,7 +362,9 @@ def _dispatch_entry(root, path, index, claims, findings, now, cache):
         head = data.get('master_head') or (master.get('head') if isinstance(master, dict) else None)
         cards = [{'alias': reader.text(c.get('alias'), _ID, 'card.alias'), 'state': reader.enum(c.get('state'), CARD_STATES),
                   'package': reader.text(c.get('package'), _ID, 'card.package'),
-                  'branch': reader.text(c.get('branch'), _BRANCH, 'card.branch')} for c in reader.mappings(data.get('cards'), 'cards')]
+                  'branch': reader.text(c.get('branch'), _BRANCH, 'card.branch'),
+                  'lastMessage': reader.aware(c.get('last_message'), 'card.last_message'),
+                  'lastProbe': reader.aware(c.get('last_probe'), 'card.last_probe')} for c in reader.mappings(data.get('cards'), 'cards')]
         packages = [_package(reader, root, run_id, p, claims, findings, now, cache) for p in reader.mappings(data.get('packages'), 'packages')]
         leases = [{'resource': reader.text(l.get('resource'), _ID, 'lease.resource'), 'holder': reader.text(l.get('holder'), _ID, 'lease.holder'),
                    'card': reader.text(l.get('card'), _ID, 'lease.card'), 'grantedAt': reader.moment(l.get('granted_at'), 'lease.granted_at'),
@@ -279,7 +380,7 @@ def _dispatch_entry(root, path, index, claims, findings, now, cache):
                      'masterHead': reader.text(head, _HASH, 'master_head'),
                      'parallelLimit': reader.number(data.get('parallel_limit'), 1, 64, 'parallel_limit'),
                      'freshness': _freshness(mtime, now, status),
-                     'cards': cards, 'packages': packages, 'leases': leases, 'mergeQueue': _queue(reader, data.get('merge_queue')),
+                     'cards': cards, 'decisions': _decisions(reader, data), 'packages': packages, 'leases': leases, 'mergeQueue': _queue(reader, data.get('merge_queue')),
                      'pushSlot': {'package': slot_package} if slot_package else None,
                      'counts': {'packages': len(packages), 'byStatus': by_status}})
     except (OSError, ValueError, TypeError, KeyError, AttributeError, yaml.YAMLError, UnicodeDecodeError, RecursionError, MemoryError) as error:
@@ -288,7 +389,8 @@ def _dispatch_entry(root, path, index, claims, findings, now, cache):
     return base
 
 
-def dispatch_report(root, manifest, run_id=None):
+def dispatch_report(root, manifest, run_id=None, now=None, pulse=False):
+    now = time.time() if now is None else now   # ONE reading of the clock: `generatedAt`, `freshness` and `pulse.now` agree
     root = Path(root).resolve()
     if run_id is not None and not _ID.fullmatch(run_id):
         raise ValueError('Invalid --run-id')
@@ -299,7 +401,7 @@ def dispatch_report(root, manifest, run_id=None):
     project = manifest.get('project', {})
     name = project.get('name') if isinstance(project, dict) else None
     report = {'schema': SCHEMA, 'status': 'NOT_RUN', 'project': name or f'{root.parent.name}/{root.name}', 'root': posix(root),
-              'generatedAt': _iso(time.time()), 'authoritative': False, 'dispatches': [], 'findings': []}
+              'generatedAt': _iso(now), 'authoritative': False, 'dispatches': [], 'findings': []}
     if not directory.is_dir():
         return report
     files = []
@@ -311,11 +413,14 @@ def dispatch_report(root, manifest, run_id=None):
         except OSError:
             continue
     files.sort(key=lambda pair: (-pair[0], pair[1].name))
-    now, claims, rows, cache = time.time(), _claims(root, report['findings']), [], {}
+    thresholds = _thresholds(manifest)
+    claims, rows, cache = _claims(root, report['findings']), [], {}
     for index, (_, path) in enumerate(files[:MAX_FILES]):
         entry = _dispatch_entry(root, path, index, claims, report['findings'], now, cache)
         if run_id is not None and entry.get('runId') != run_id:
             continue
+        if pulse and entry.get('state') == 'ok':
+            entry['pulse'] = _pulse(entry, now, thresholds)
         rows.append(entry)
         if len(rows) >= MAX_SHOWN:
             break
@@ -328,7 +433,7 @@ def dispatch_report(root, manifest, run_id=None):
 def _cmd_dispatch(args):
     try:
         root, manifest = read_project(args.path)
-        report = dispatch_report(root, manifest, args.run_id)
+        report = dispatch_report(root, manifest, args.run_id, pulse=args.pulse)
     except (OSError, ValueError, TypeError, KeyError, yaml.YAMLError) as error:
         report = {'schema': SCHEMA, 'status': 'BLOCKED', 'reason': ' '.join(str(error).split())[:500]}
     print(json.dumps(redact(report), ensure_ascii=True, indent=2, allow_nan=False))
@@ -339,4 +444,5 @@ def register(subparsers):
     parser = subparsers.add_parser('dispatch', help='Read-only dispatch state: runs, cards, packages, leases (JSON)')
     add_project_arguments(parser)
     parser.add_argument('--run-id')
+    parser.add_argument('--pulse', action='store_true', help='Add the findings of the pulse of the dispatcher (idle cards, waiting questions, overdue leases, stale state)')
     parser.set_defaults(func=_cmd_dispatch)

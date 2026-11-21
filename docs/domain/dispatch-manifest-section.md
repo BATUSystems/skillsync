@@ -3,11 +3,11 @@ title: Sekcja dispatch manifestu
 tags: [skillsync, dispatch, manifest]
 paths: ['skillsync_workflow/dispatch.py', 'skillsync_workflow/quality.py']
 source: odczyt skillsync_workflow/dispatch.py:validate_dispatch i quality.py:doctor; tests/test_skillsync_dispatch.py 2026-10-02
-verified: 2026-10-21
+verified: 2026-11-21
 ---
 Reguła: sekcja `dispatch:` w `.github/.skillsync.yaml` jest opcjonalna i konfiguruje wyłącznie skill `dispatch` (dyspozytor równoległych sesji `feature`). Generator jej **nie używa** do artefaktów;
 jedyną jego rolą jest walidacja w `doctor`: błąd typu/zakresu → `error` (FAIL), nieznany klucz → `warning`; brak sekcji = poprawny.
-Znane klucze: `max_parallel`, `worktree_root`, `setup`, `isolated_resources`, `leased_resources`, `owned_files`, `additive_files`, `id_registries`, `guards` (`min_free_disk_gb`, `max_load`).
+Znane klucze: `max_parallel`, `worktree_root`, `setup`, `isolated_resources`, `leased_resources`, `owned_files`, `additive_files`, `id_registries`, `guards` (`min_free_disk_gb`, `max_load`), `pulse` (opt-in puls dyspozytora: `enabled` bool, `interval_minutes` całkowite 1–60 (limit `ScheduleWakeup` 3600 s), `idle_card_minutes`, `user_wait_notify_minutes`, `lease_overdue_minutes` całkowite ≥ 1; nieznany klucz `pulse` → `warning`).
 
 Dlaczego: błędna konfiguracja dyspozytora (np. port poza 1–65535, duplikat nazwy zasobu) ma wychodzić na jaw statycznie, zanim karty zaczną pracę.
 
