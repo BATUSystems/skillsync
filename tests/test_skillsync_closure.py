@@ -342,6 +342,60 @@ class ClosureHook(WorkflowFixture):
         self.assertNotIn('import yaml', source)
         self.assertNotIn('skillsync_workflow', source)
 
+    # K5 (CORE-SPECSTORE): the plans of a project with `/docs/specs/`, `/docs/plans/` in `.gitignore` (`workflow.specs.tracked: false`).
+    IGNORE_RULE = '.claude/\n.skillsync/\n/docs/specs/\n/docs/plans/\n'
+
+    def ignore_plans(self):
+        self.write('.gitignore', self.IGNORE_RULE)
+
+    def test_a_force_tracked_plan_under_the_ignore_rule_is_compared_with_head(self):
+        self.ignore_plans()
+        self.write(PLAN, plan_text(status='in_progress'))
+        self.init_git()
+        self.git('add', '-f', PLAN)
+        self.git('commit', '-qm', 'plan')
+        self.allowed()
+        self.write(PLAN, plan_text(status='done'))
+        self.write('.skillsync/runs/abc.json', run_json(final=False))
+        self.assertIn('abc', self.blocked())
+
+    def test_an_ignored_plan_with_a_final_record_allows(self):
+        self.ignore_plans()
+        self.init_git()
+        self.write(PLAN, plan_text())
+        self.write('.skillsync/runs/abc.json', run_json(final=True))
+        self.allowed()
+
+    def test_ignored_readme_and_nested_plans_are_not_read(self):
+        self.ignore_plans()
+        self.init_git()
+        self.write('docs/plans/README.md', plan_text())
+        self.write('docs/plans/sub/2026-11-05-y.md', plan_text())
+        self.allowed()
+
+    def test_an_ignored_done_plan_without_final_blocks(self):
+        """F5.2: an untracked and ignored plan is as visible as an untracked one (`git status --ignored`, entries `!!`).
+        Before F5.2 the hook was silent here (the F5.1 baseline of this test asserted `allowed`)."""
+        self.ignore_plans()
+        self.init_git()
+        self.write(PLAN, plan_text())
+        self.write('.skillsync/runs/abc.json', run_json(final=False))
+        message = self.blocked()
+        for fragment in ('2026-11-05-x.md', 'abc', '--final'):
+            self.assertIn(fragment, message)
+
+    def test_an_ignored_in_progress_plan_with_all_steps_checked_blocks(self):
+        self.ignore_plans()
+        self.init_git()
+        self.write(PLAN, plan_text(status='in_progress') + '\n## Progress\n- [x] A1 a\n- [x] A2 b\n')
+        self.assertIn('in_progress ze wszystkimi krokami', self.blocked())
+
+    def test_an_ignored_in_progress_plan_with_an_open_step_allows(self):
+        self.ignore_plans()
+        self.init_git()
+        self.write(PLAN, plan_text(status='in_progress') + '\n## Progress\n- [x] A1 a\n- [ ] A2 b\n')
+        self.allowed()
+
 
 # ---------------------------------------------------------------------------------------------------------------
 # K17: generowanie przez link

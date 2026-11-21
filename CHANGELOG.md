@@ -12,6 +12,49 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-11-21
+
+Upgrading from 1.10.0: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.10.0 → 1.11.0".
+
+### Breaking
+
+- **Karma evidence in `validate` reads only real counter lines.** A line `Executed N of M` is counted only when the text before it is empty or a browser label ending with `): ` and what follows `of M` is the end of the line or `(`, `SUCCESS`, `ERROR`, `DISCONNECTED` or `FAILED`. Karma output with a foreign prefix or tail that was counted before can now end `BLOCKED` with "Test count unknown"; workaround: `success_pattern` in the check of `validate`; in `test-run` `--allow-no-count <reason>` or a `--junit` report (`--format karma` does not help). With exit code 0, Karma output with unexecuted specs (`Executed 3 of 11 DISCONNECTED`) is `BLOCKED` ("Karma executed N of M specs"); only `success_pattern` lifts it. The `skipped` count of an interrupted run and the live `passed` count change to the correct values.
+- **`test-run --run <id>` and `--import … --run <id>` need a trace of the run** in `.skillsync/runs/`: a directory `<id>/` (not a symlink) or a plain file `<id>.json`. Without it the command is `BLOCKED` (exit 2: `--run <id>: no such run in .skillsync/runs/ (runs: …)`), nothing is written and the command does not start. Workaround: create the run with `skillsync checkpoint`; with `--import` copy the run as well.
+- **`test-run` exits 2 when the command exited 0 without a recorded `PASS`** (`BLOCKED`: no positive test count, skips without consent, "exit 0 but the output reports failures", unexecuted Karma specs; or no status recorded after a write error or an interruption), with `test-run: exit code 2: …` on stderr; a failed command (`FAIL`) returns the exit code of the command. Exit 0 stays only with a recorded `PASS` (apart from `--import`). Workarounds: `--allow-no-count <reason>` (no counts), `--allow-skips`; zero executed tests, "exit 0 but the output reports failures" and unexecuted Karma specs have no flag and need a fix of the test command. Exit code 2 of the command is not distinguishable from `BLOCKED` 2 by the code alone: read the stderr line. `--import` returns 0 on a valid import.
+- **Hook `check-closure.py` includes ignored plans** (`git status --ignored`, entries `!!`). A `done` plan without a `final` record, or an `in_progress` plan with all steps checked, blocks a turn once per session, also in projects that ignore `docs/plans`. Workaround: `skillsync plan archive`, a `--final` record of the run, or `hooks.stop_closure: false` (then `skillsync link`). Run `skillsync link` to refresh the hook copy. Details: [docs/upgrading.md](docs/upgrading.md).
+
+### Added
+
+- **Wrappers `poetry run`, `pdm run`, `pipenv run`, the tool `tox` and `env -S`/`--split-string`** in the tool table (`data/test_tools.json`, optional field `split_flags`, schema stays 1). `tox` is a tool, not a wrapper. A `$` or an unclosed quote in the `-S` value stops the unwrapping.
+- **Windows warning for `.cmd`/`.bat` targets.** `test-run` prints `test-run: warning: …` to stderr before the start when the resolved target is a batch file and an argument contains `& | < > ^ %` or a double quote (cmd.exe interprets them in batch-file arguments, for example `--grep "a|b"` of Playwright). It never repeats the argument and neither blocks nor changes the exit code. Verified by a unit test on a stub; not run on a real Windows (`scripts/windows_shim_check.py` items 3 and 3b).
+- **Status page: `expertQuestions.current`.** `dashboard show` and `GET /api/status` report the prototypes and the expert questions of the current run as `null` or `{spec, prototypes, open, blocking, items}` (additive, `schema: 1`). They are bound by the spec path: prototypes by `requirements` (plus the `Prototyp:` line), questions by `origin.spec`. The existing fields (`open`, `blocking`, `runs[]`, `items[]`) are unchanged. Contract: [docs/dashboard-contract.md](docs/dashboard-contract.md), section "`expertQuestions`".
+- **Spec and plan outside git (`workflow.specs`).** Manifest key `workflow.specs: {tracked, archive}`, read only from the project manifest. `skillsync route` returns `specs {tracked, archive, source}` (`manifest`, `gitignore`, `default` or `invalid`); the mode is detected from a `/docs/specs/` and `/docs/plans/` rule in any `.gitignore` of the repository tree (also a nested one), and `tracked: true` next to that rule is an error. `doctor` checks the key, the rule and tracked files in both directories.
+- **`skillsync spec snapshot`.** Copies the spec and plan of a run into `.skillsync/runs/<id>/docs/` and, with `workflow.specs.archive`, outside the repository. Each target has its own compare-and-swap (`docs/.saved.json`; `--replace` only on a human decision). `--check [--to <dir>]` verifies the copies without writing (0 PASS, 1 FAIL, 2 BLOCKED) before a worktree is removed.
+- **`planState` in `approvals.jsonl`.** `CP` and `READY` entries record the plan status at consent time. `POST /api/approve` accepts `planState` and answers 409 when the plan status has changed. Acceptance of a plan no longer depends on git history when `docs/plans` is ignored.
+- **Core ignores `/docs/specs/` and `/docs/plans/`.** The repository hygiene test checks the rule with `specs_info(REPO, {})`.
+
+### Changed
+
+- **Feature procedure in `tracked: false` repositories:** "GO plan" makes no commit of the spec and plan (the `go-plan` checkpoint uses the snapshot as evidence); `pr-run`, `pr-after-approval` and the PR description leave them out. Reference: `feature/references/spec-store.md`.
+- **Acceptance and duplicates:** the duplicate check of a consent compares with the last entry of the same word in the run (sha and `planState`).
+- **`CP`/`READY` button reopens after a plan status change** at the same HEAD (for entries with `planState`, also with `tracked: true`).
+- **`retro` skips the `docs/` subtree of a run directory;** snapshot copies are not reports.
+- **Instruction base** (`_base.md`): one sentence on the untracked-spec mode; some phrases are shortened to keep the 8192-byte budget.
+- **`detect_tool` order:** the first word behind the wrappers (module words, then tools); the word after `-m` when a Python host (`python*`, `py`, `pypy*`, `coverage`) stands before it; a tool of the table in the first three words; last, a module word that is also a tool (`pytest`) anywhere. `python3.12 -m pytest` and `python -W error -m unittest tests` are recognized.
+- **`start` event `command`** is the command of the user; on Windows the process gets the resolved path, which never reaches the events.
+- **Hook `guard-tests`** follows the same order (`tool_of`; the classification of the program uses steps 1 and 2) and warns (`wide`, never blocks) for `env -S '…'`, `poetry run pytest`, `python3.12 -m pytest`; `python -W error -m unittest tests` is a point run. Run `skillsync link` to refresh the copies of `guard-tests.py` and `test-tools.json` next to the hook (the table carries the new wrappers and `env -S`; the script carries the `-m` step and the new verdicts).
+- **Unexecuted Karma specs are no evidence.** With exit code 0, output where `total - executed - skipped > 0` (for example `Executed 3 of 11 DISCONNECTED`) is `BLOCKED` in `validate` and `test-run` ("Karma executed N of M specs"); `success_pattern` lifts it in `validate`, `--allow-no-count` and `--allow-skips` do not in `test-run`.
+- **Karma counters have one reader** (`test_adapters/karma_line.py`) used by the live reader of the recorder, `quality._test_counts` and `_failure_count`; it is wider than the `karma` adapter in the empty prefix, the order of the parentheses and the unjudged tail.
+- **A command given to `test-run` as a string is split with POSIX quoting on every system.** On Windows the string was read without POSIX quoting, so a single quote was a literal character and `env -S 'CI=1 npx jest'` was not unwrapped; now `'…'` and `"…"` group words as elsewhere, so `--grep 'a b'` is one argument, and a backslash stays literal (`"C:\Program Files\nodejs\node.exe" --test`). Only the detection of the tool (`detect_tool`, `unwrap_command`) reads the string this way.
+- **Status page, tab "Pytania":** shows only the prototypes and questions of the current run (the tab is hidden when the run has neither). The toast and the waiting banner still count the whole project.
+- **Status page, document list:** the groups "Speki", "Plany", "Projekt" and "Domena" are collapsible and collapsed by default; the groups "Bieżące zadanie" and "Przebieg" stay open.
+- **Status page, tab "Testy":** a non-empty `tests.skipped` shows a note (`role="note"`) "Pominięto N plików lub katalogów wyników testów …" with up to 5 paths and reasons, "i N więcej", "co najmniej 20" at 20 entries; with empty sections it shows the note and "Brak odczytanych wyników.". The contract field `tests.skipped` is unchanged.
+
+### Fixed
+
+- `unittest` is recognized from any module position (`python -W error -m unittest`), and `go test ./unittest` or `echo unittest` no longer report a wrong tool.
+- Karma: the skipped specs were subtracted twice, `(N FAILED)` was not read by `_failure_count`, the `skipped` count of an interrupted run was wrong, and a log line such as `LOG: 'Job: Executed 5 of 8 steps'` counted as a counter.
+
 ## [1.10.0] - 2026-11-18
 
 Upgrading from 1.9.1: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.9.1 → 1.10.0".

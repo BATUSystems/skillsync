@@ -4,6 +4,33 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-11-21
+
+### Breaking
+
+- Hook `check-closure.py` reads ignored plans too (`git status --ignored`, entries `!!`): a `done` plan without a `final` record, or an `in_progress` plan with all steps checked, blocks a turn once per session also in projects that ignore `docs/plans`. Workaround: `skillsync plan archive`, a `--final` record of the run, or `hooks.stop_closure: false`. Details: `docs/upgrading.md` of the generator.
+
+### Added
+
+- Hook `hooks/guard-tests.py`: warnings `wide` for `env -S '…'`, `poetry run pytest` and `python3.12 -m pytest` (never blocking), and the read of `-m` behind a Python host; `skillsync link` refreshes the copies of `guard-tests.py` and `test-tools.json` next to the hook.
+- Skill `dashboard`: contract field `expertQuestions.current` (the prototypes and expert questions of the current run, bound by the spec path).
+- Skill `feature`, reference `spec-store.md`: the mode of specs and plans outside git (`workflow.specs.tracked: false`): no commit of the spec and plan at "GO plan", snapshot with `skillsync spec snapshot`, optional archive (`workflow.specs.archive`), closing the run and removing the worktree only after a `PASS` of `spec snapshot --check --to`.
+- Skill `skillsync`: `route` field `specs {tracked, archive, source}` and commands `spec snapshot` (snapshot and `--check`).
+- Skill `dashboard`: `planState` of the `CP` and `READY` actions (the server answers 409 when the plan status has changed); the contract is in `docs/dashboard-contract.md`.
+
+### Changed
+
+- Skills `skillsync` and `workflow` (`test-run.md`): the exit code of `test-run` (`FAIL` returns the code of the command; exit 0 without a recorded `PASS` is 2) and the trace of the run that `--run <id>` needs in `.skillsync/runs/`. Skill `dashboard`: the tab "Testy" shows a note for the skipped result files (`tests.skipped`).
+- Skill `dashboard`: the `CP`/`READY` button reopens after a plan status change at the same HEAD (for entries with `planState`, also with `tracked: true`).
+- Skills `feature`, `pr-run`, `bugfix` and instruction `_base.md`: when specs and plans are ignored, the procedure omits them from commits and the PR description (the PR description summarizes the spec and gives `Spec-sha`); the `_base.md` budget of 8192 bytes is kept by shortening phrases that tests do not pin.
+- Skill `workflow`, reference `test-run.md`: the limits of the hook are rewritten for the new recognition (`python3 -X dev -m pytest` and `py -3 -m pytest` are seen; `tox` is a tool without a rule of a wide run; `sudo`/`nohup` stay as limits; `-m` behind a script gives `wide`; `env -S '…'` is read like the command it carries).
+- A command given to `test-run` as a string is split with POSIX quoting on every system (on Windows a single quote was a literal character, so `env -S 'CI=1 npx jest'` was not unwrapped; `--grep 'a b'` is one argument, a backslash stays literal); only the detection of the tool reads the string.
+- Skill `dashboard`: the tab "Pytania" shows only the current run (hidden when it has no prototypes and no questions; a server without `current` gets a local filter by `prototype.slug`); the document groups "Speki", "Plany", "Projekt" and "Domena" are collapsed by default.
+
+### Fixed
+
+- Hook `guard-tests`: `python -W error -m unittest tests` is classified as a point run.
+
 ## [1.10.0] - 2026-11-18
 
 ### Added

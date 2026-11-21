@@ -26,7 +26,7 @@
 
 set -eu
 
-SKILLSYNC_DEFAULT_TAG="v1.10.0"
+SKILLSYNC_DEFAULT_TAG="v1.11.0"
 UV_INSTALLER_URL="https://astral.sh/uv/install.sh"
 
 say() { printf '%s\n' "install.sh: $*"; }

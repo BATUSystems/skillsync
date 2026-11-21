@@ -24,6 +24,7 @@ from .fsutil import ensure_dir
 from .selfcmd import self_argv
 from . import layers as _layers
 from .ceremony import ceremony_info, validate_ceremony
+from .specs import specs_findings, specs_info
 from .delivery_mode import delivery_info, validate_delivery_mode
 from .dashboard_listen import validate_dashboard
 from .dispatch import validate_dispatch
@@ -118,11 +119,10 @@ def _test_counts(output):
     dotnet = re.search(r'Passed:\s*(\d+).*?Skipped:\s*(\d+).*?Total:\s*(\d+)', output)
     if dotnet:
         run, skipped = int(dotnet.group(1)), int(dotnet.group(2))
-    karma = None
-    for karma in re.finditer(r'Executed (\d+) of (\d+)', output):   # the LAST line: the progress reporter starts with `Executed 0 of N`
-        pass
+    from .test_adapters import karma_line   # lazy: the shared reader of the Karma `Executed N of M` line (executed lines do not count the skipped ones)
+    karma = karma_line.read_output(output)
     if karma:
-        run, skipped = int(karma.group(1)), int(karma.group(2)) - int(karma.group(1))
+        run, skipped = karma['executed'], karma['skipped']
     return run, skipped
 
 
@@ -327,6 +327,15 @@ def evidence_reason(kind, tests_run, tests_skipped, has_success_pattern=False, a
     return None
 
 
+def karma_unexecuted_reason(output):
+    """Why a clean exit of Karma output is not evidence: specs that neither ran nor were skipped (`Executed 3 of 11 DISCONNECTED`), or None."""
+    from .test_adapters import karma_line
+    totals = karma_line.read_output(output)
+    if totals and totals['unexecuted'] > 0:
+        return f"Karma executed {totals['executed']} of {totals['total']} specs"
+    return None
+
+
 def run_validation(root, checks, *, log_dir=None, observer=None):
     """Run the checks one after another. An optional `observer` (180-A) gets `started(check)`, `line(check, stream, text)` while a check runs and
     `finished(check, result, output)` after it; without it nothing changes (the output is read after the process ends)."""
@@ -379,6 +388,8 @@ def run_validation(root, checks, *, log_dir=None, observer=None):
                     result.update(status='FAIL', reason='Nonzero exit code')
                 elif check.get('success_pattern') and not re.search(check['success_pattern'], output):
                     result['reason'] = 'Required success evidence missing'
+                elif check.get('kind', 'test') in ('test', 'tests', 'integration', 'e2e') and not check.get('success_pattern') and karma_unexecuted_reason(output):
+                    result['reason'] = karma_unexecuted_reason(output)
                 elif evidence_reason(check.get('kind', 'test'), result['tests_run'], result['tests_skipped'], bool(check.get('success_pattern')),
                                      check.get('allow_skips', False)):
                     result['reason'] = evidence_reason(check.get('kind', 'test'), result['tests_run'], result['tests_skipped'],
@@ -736,7 +747,7 @@ def route(root, manifest, library, files, topics):
               if record.get('load') == 'bootstrap' or 'domain' in topics or relevant(record, base)]
     return {'status': 'NOT_RUN', 'files': files, 'topics': topics, 'routes': selected, 'skipped': skipped,
             'lessons': lessons, 'domain': domain, 'delivery': delivery_info(manifest),
-            'ceremony': ceremony_info(manifest),
+            'ceremony': ceremony_info(manifest), 'specs': specs_info(root, manifest),
             'note': 'Context selection only; instructions, lessons and domain records were not executed'}
 
 
@@ -1142,6 +1153,8 @@ def doctor(root, manifest, library):
     ceremony_errors, _ = validate_ceremony(manifest)
     for message in ceremony_errors:
         finding('error', '.github/.skillsync.yaml', message)
+    for level, path, reason in specs_findings(root, manifest):
+        finding(level, path, reason)
     prototype_errors, prototype_warnings = validate_prototype(manifest.get('prototype'), root)
     for message in prototype_errors:
         finding('error', '.github/.skillsync.yaml', message)

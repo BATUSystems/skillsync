@@ -560,5 +560,142 @@ class CpReadyFixture(DashboardFixture):
         self.assertIn('already recorded', refused['reason'], 'the same HEAD from another source is the same consent')
 
 
+PLAN_RUN = 'r1'
+
+
+class PlanStateRecord(RecordFixture):
+    """K13: `CP`/`READY` entries carry `planState` (status of the plan whose `Przebieg:` names the run, at the moment of consent)."""
+    SHA2 = 'e' * 40
+
+    def setUp(self):
+        super().setUp()
+        self.plan_path = self.root / 'docs' / 'plans' / 'p.md'
+        self.plan_path.parent.mkdir(parents=True)
+
+    def set_plan(self, state, run=PLAN_RUN):
+        self.plan_path.write_text(f'# Plan: demo\n\nStatus: {state}\nPrzebieg: {run}\n', encoding='utf-8')
+
+    def test_the_entry_carries_the_plan_state_of_the_run_and_keeps_the_plan_path(self):
+        self.set_plan('in_progress')
+        entry = self.record(plan='docs/plans/p.md')['entry']
+        self.assertEqual((entry['planState'], entry['plan']), ('in_progress', 'docs/plans/p.md'))
+        self.assertEqual(self.lines()[0]['planState'], 'in_progress')
+
+    def test_the_state_comes_from_the_run_not_from_the_plan_path_argument(self):
+        self.set_plan('done')
+        other = self.root / 'docs' / 'plans' / 'other.md'
+        other.write_text('# Plan: other\n\nStatus: draft\nPrzebieg: r2\n', encoding='utf-8')
+        self.assertEqual(self.record(plan='docs/plans/other.md')['entry']['planState'], 'done')
+
+    def test_no_plan_for_the_run_or_an_unknown_status_leaves_the_field_out(self):
+        self.assertNotIn('planState', self.record()['entry'])
+        self.set_plan('weird', run=PLAN_RUN)
+        self.assertNotIn('planState', self.record(sha=self.SHA2)['entry'])
+
+    def test_go_words_have_no_plan_state(self):
+        self.set_plan('draft')
+        self.assertNotIn('planState', self.record('GO plan')['entry'])
+
+    def test_the_duplicate_key_is_word_sha_and_plan_state(self):
+        self.set_plan('in_progress')
+        self.assertEqual(self.record()['status'], 'PASS')
+        self.assertEqual(self.record()['status'], 'BLOCKED', 'same sha, same plan state')
+        self.set_plan('done')
+        again = self.record()
+        self.assertEqual((again['status'], again['entry']['planState']), ('PASS', 'done'), 'CP after the closing at the same HEAD')
+        refused = self.record()
+        self.assertEqual(refused['status'], 'BLOCKED')
+        self.assertIn('already recorded', refused['reason'])
+        self.assertEqual(self.record(word='READY')['status'], 'PASS', 'another word is another key')
+
+    def test_the_duplicate_is_compared_with_the_last_entry_of_the_word_scenario_a(self):
+        self.set_plan('in_progress')
+        self.assertEqual(self.record()['status'], 'PASS')
+        self.set_plan('done')
+        self.assertEqual(self.record()['status'], 'PASS')
+        self.set_plan('in_progress')                                       # reopened without a commit: the button is waiting again
+        again = self.record()
+        self.assertEqual((again['status'], again['entry']['planState']), ('PASS', 'in_progress'), 'not a duplicate of the LAST entry (done)')
+        self.assertEqual(self.record()['status'], 'BLOCKED', 'a real duplicate of the last entry stays refused')
+
+    def test_the_duplicate_is_compared_with_the_last_entry_of_the_word_scenario_b(self):
+        self.set_plan('done')
+        self.assertEqual(self.record()['status'], 'PASS')
+        self.set_plan('in_progress')
+        self.assertEqual(self.record()['status'], 'PASS')
+        self.set_plan('done')
+        self.assertEqual(self.record()['status'], 'PASS')
+        self.assertEqual(self.record()['status'], 'BLOCKED')
+        self.assertEqual([row['planState'] for row in self.lines()], ['done', 'in_progress', 'done'])
+
+    def test_the_plan_state_is_read_under_the_file_lock_unless_given(self):
+        self.set_plan('in_progress')
+        seen = []
+        real = status.plan_state_for_run
+
+        def spy(root, run_id):
+            seen.append((self.log.parent / 'approvals.jsonl.lock').exists())
+            return real(root, run_id)
+        with mock.patch.object(status, 'plan_state_for_run', spy):
+            self.assertEqual(self.record()['status'], 'PASS')
+            self.assertEqual(seen, [True], 'read once, while the lock file is held')
+            self.assertEqual(self.record(sha=self.SHA2, plan_state='done')['entry']['planState'], 'done')
+            self.assertEqual(seen, [True], 'an explicit plan_state is not read again')
+
+    def test_an_old_entry_without_the_field_does_not_block_the_same_sha_with_a_plan_state(self):
+        self.log.write_text(json.dumps({'schema': 1, 'at': '2026-01-12T10:00:00Z', 'word': 'CP', 'sha': HEAD, 'by': 'u', 'source': 'cli'}) + '\n',
+                            encoding='utf-8')
+        self.assertEqual(self.record()['status'], 'BLOCKED', 'no plan: the key is (word, sha) as before')
+        self.set_plan('in_progress')
+        self.assertEqual(self.record()['status'], 'PASS')
+
+    def test_the_cli_fills_the_state_and_read_approvals_carries_it(self):
+        self.set_plan('in_progress')
+        written = self.record_cli('--sha', HEAD)['entry']
+        self.assertEqual(written['planState'], 'in_progress')
+        (row,) = status.read_approvals(self.root)
+        self.assertEqual(row['planState'], 'in_progress')
+
+    def test_read_approvals_drops_a_foreign_plan_state(self):
+        self.log.write_text(json.dumps({'schema': 1, 'at': '2026-01-12T10:00:00Z', 'word': 'CP', 'sha': HEAD, 'planState': 'x' * 500}) + '\n',
+                            encoding='utf-8')
+        (row,) = status.read_approvals(self.root)
+        self.assertNotIn('planState', row)
+
+
+class PlanStateButton(unittest.TestCase):
+    """K13: the `after` state of a CP/READY button needs an entry with the HEAD sha and `planState` equal to the current plan status."""
+    HEAD = 'c' * 40
+    WORDS = [{'word': 'CP', 'active': True, 'tip': 'wypchnij', 'target': 'main'}]
+
+    def cp(self, plan_status, log, tracked=True):
+        from skillsync_workflow import dashboard
+        plan = {'status': plan_status, 'statusText': '', 'path': 'p'}
+        found = [b for b in dashboard.consent_buttons({'exists': False}, plan, [], self.WORDS, log, self.HEAD, True,
+                                                      run_plan_state=plan_status, tracked=tracked) if b['kind'] == 'cp']
+        return found[0]
+
+    def entry(self, **extra):
+        return {'word': 'CP', 'at': '2026-01-12T10:00:00Z', 'sha': self.HEAD, **extra}
+
+    def test_a_matching_plan_state_is_after_and_a_stale_one_is_waiting_in_both_modes(self):
+        for tracked in (True, False):
+            with self.subTest(tracked=tracked):
+                self.assertEqual(self.cp('done', [self.entry(planState='done')], tracked)['state'], 'after')
+                self.assertEqual(self.cp('done', [self.entry(planState='in_progress')], tracked)['state'], 'waiting')
+                self.assertEqual(self.cp('in_progress', [self.entry(planState='in_progress')], tracked)['state'], 'after')
+
+    def test_an_entry_without_the_field_counts_as_before_except_untracked_done(self):
+        self.assertEqual(self.cp('in_progress', [self.entry()])['state'], 'after')
+        self.assertEqual(self.cp('done', [self.entry()], tracked=True)['state'], 'after')
+        self.assertEqual(self.cp('in_progress', [self.entry()], tracked=False)['state'], 'after')
+        self.assertEqual(self.cp('done', [self.entry()], tracked=False)['state'], 'waiting')
+
+    def test_the_last_entry_of_the_word_decides_as_before(self):
+        log = [self.entry(planState='in_progress'), self.entry(at='2026-01-12T11:00:00Z', planState='done')]
+        self.assertEqual(self.cp('done', log)['state'], 'after')
+        self.assertEqual(self.cp('done', log[::-1])['state'], 'waiting')
+
+
 if __name__ == '__main__':
     unittest.main()

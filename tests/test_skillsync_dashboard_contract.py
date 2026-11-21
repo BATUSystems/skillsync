@@ -53,7 +53,7 @@ NESTED = {
     'readiness': ({'status': STR_OR_NONE, 'date': STR_OR_NONE, 'planSha': STR_OR_NONE, 'source': STR_OR_NONE}, {}),
     'assumptions': ({'count': int, 'items': list}, {}),
     'blockingQuestions': ({'count': int, 'items': list}, {}),
-    'expertQuestions': ({'open': int, 'blocking': int, 'runs': list}, {'items': list}),
+    'expertQuestions': ({'open': int, 'blocking': int, 'runs': list, 'current': (dict, type(None))}, {'items': list}),
 }
 WORKTREE = ({'kind': str, 'name': str, 'path': str, 'mainPath': STR_OR_NONE}, {})
 WORKTREE_KINDS = {'main', 'worktree'}
@@ -69,7 +69,7 @@ STEP = ({'id': str, 'title': str, 'done': bool, 'note': str, 'sha': STR_OR_NONE,
 WAITING = ({'what': str, 'source': str, 'since': STR_OR_NONE, 'action': str, 'link': (dict, type(None))},
            {'word': str, 'approve': STR_OR_NONE, 'who': dict})
 ACTION = ({'kind': str, 'word': str, 'state': str, 'reason': STR_OR_NONE, 'blocked': STR_OR_NONE, 'path': STR_OR_NONE,
-           'sha': str, 'given': (dict, type(None)), 'run': STR_OR_NONE}, {'target': STR_OR_NONE})
+           'sha': str, 'given': (dict, type(None)), 'run': STR_OR_NONE}, {'target': STR_OR_NONE, 'planState': STR_OR_NONE})
 DOC_GROUP = ({'key': str, 'label': str, 'items': list}, {})
 DOC_ITEM = ({'path': str, 'title': str, 'status': STR_OR_NONE, 'mtime': str}, {})
 TIMING = ({'available': bool, 'reason': STR_OR_NONE, 'windows': list, 'steps': list, 'stages': list, 'acts': list, 'totals': dict}, {})
@@ -91,6 +91,10 @@ CHECKPOINT = ({'time': str, 'text': str}, {})
 DELIVERY_WORD = ({'word': str, 'active': bool, 'tip': str, 'target': STR_OR_NONE}, {})
 ASSUMPTION = ({'id': str, 'question': str, 'accepted': str}, {})
 BLOCKING = ({'id': str, 'question': str}, {})
+EXPERT_CURRENT = ({'spec': str, 'prototypes': list, 'open': int, 'blocking': int, 'items': list}, {})
+EXPERT_ITEM = ({'id': str, 'runSlug': str, 'text': str, 'blocking': bool, 'addressees': list, 'state': str, 'at': str, 'url': str}, {})
+CURRENT_PROTOTYPE = ({'slug': str, 'iteration': (int, type(None)), 'screens': int, 'accepted': int, 'stale': int, 'threads': dict,
+                      'commentsAfterAcceptance': dict, 'writing': (dict, type(None))}, {})
 EXPERT_RUN = ({'slug': str, 'open': int, 'blocking': int, 'url': str}, {'addressees': (str, list)})
 
 
@@ -189,6 +193,12 @@ class DashboardContract(unittest.TestCase):
                 self.each(data['assumptions']['items'], ASSUMPTION, 'assumptions.items')
                 self.each(data['blockingQuestions']['items'], BLOCKING, 'blockingQuestions.items')
                 self.each(data['expertQuestions']['runs'], EXPERT_RUN, 'expertQuestions.runs')
+                self.each(data['expertQuestions'].get('items', []), EXPERT_ITEM, 'expertQuestions.items')
+                current = data['expertQuestions']['current']
+                if current is not None:
+                    self.check_shape(current, EXPERT_CURRENT, 'expertQuestions.current')
+                    self.each(current['items'], EXPERT_ITEM, 'expertQuestions.current.items')
+                    self.each(current['prototypes'], CURRENT_PROTOTYPE, 'expertQuestions.current.prototypes')
                 if data['eta'] is not None:
                     self.check_shape(data['eta'], ETA, 'eta')
 
@@ -204,6 +214,19 @@ class DashboardContract(unittest.TestCase):
                     self.assertEqual(data[key]['count'], len(data[key]['items']), key)
                 eq = data['expertQuestions']
                 self.assertEqual((eq['open'], eq['blocking']), (sum(r['open'] for r in eq['runs']), sum(r['blocking'] for r in eq['runs'])))
+                current = eq['current']
+                if current is not None:
+                    self.assertTrue(current['prototypes'] or current['items'], 'current is null when nothing is bound to the run')
+                    self.assertEqual(current['spec'], data['spec']['path'])
+                    self.assertTrue(data['spec']['exists'])
+                    self.assertLessEqual(len(current['items']), 50)
+                    self.assertEqual(current['open'], sum(1 for item in current['items'] if item['state'] == 'open'))
+                    self.assertEqual(current['blocking'], sum(1 for item in current['items'] if item['state'] == 'open' and item['blocking']))
+                    self.assertEqual([item['at'] for item in current['items']], sorted((item['at'] for item in current['items']), reverse=True))
+                    known = {item['id']: item for item in eq.get('items', [])}
+                    for item in current['items']:
+                        self.assertEqual(known.get(item['id'], item), item, 'an item of the run is the project item')
+                    self.assertNotIn('origin', json.dumps(current))
                 for run in eq['runs']:
                     self.assertGreater(run['open'], 0, run['slug'])
                     self.assertLessEqual(run['blocking'], run['open'], run['slug'])
@@ -234,6 +257,18 @@ class DashboardContract(unittest.TestCase):
                 if not timing['available']:
                     self.assertTrue(timing['reason'])
 
+    def test_the_contract_documents_plan_state_of_consents(self):
+        text = CONTRACT_DOC.read_text(encoding='utf-8')
+        for needle in ('`planState`', 'tracked: false', 'ostatni wpis'):
+            self.assertIn(needle, text)
+        flat = ' '.join(text.split())
+        for pattern in (r'`planState` równa się\s+bieżącemu statusowi planu przebiegu',
+                        r'zmiana statusu planu po zgodzie ponownie otwiera przycisk',
+                        r'odsyła go w `POST /api/approve` jako `planState`, a serwer odpowiada `409`',
+                        r'porównanie dotyczy OSTATNIEGO wpisu tego słowa w przebiegu',
+                        r'brak pola w żądaniu = zachowanie bez tej kontroli'):
+            self.assertRegex(flat, pattern)
+
     def test_cases_cover_the_contract(self):
         plan = json.loads(load('plan-in-progress')[1])
         self.assertEqual(plan['mode'], 'plan')
@@ -254,7 +289,16 @@ class DashboardContract(unittest.TestCase):
         self.assertFalse(any('pytania' in w['action'] for w in questions['waiting']))
         self.assertEqual([(r['slug'], r['open'], r['blocking']) for r in questions['expertQuestions']['runs']],
                          [('run-alpha', 2, 1), ('run-beta', 1, 1)])  # dwa przebiegi, zamknięty run-gamma pominięty
-        self.assertEqual({k: v for k, v in json.loads(load('empty')[1])['expertQuestions'].items()}, {'open': 0, 'blocking': 0, 'runs': [], 'items': []})
+        self.assertEqual({k: v for k, v in json.loads(load('empty')[1])['expertQuestions'].items()},
+                         {'open': 0, 'blocking': 0, 'runs': [], 'items': [], 'current': None})
+        current = questions['expertQuestions']['current']   # K8: the spec names run-alpha; run-delta is bound by `requirements`
+        self.assertEqual((current['spec'], [row['slug'] for row in current['prototypes']], current['open'], current['blocking']),
+                         (questions['spec']['path'], ['run-alpha', 'run-delta'], 2, 2))
+        self.assertEqual([(item['id'], item['runSlug'], item['state']) for item in current['items']],
+                         [('qn-b00001', 'run-beta', 'open'), ('qn-a00001', 'run-alpha', 'open')])   # not the foreign qn-a00002/3
+        for case in CASES:
+            if case != 'questions':
+                self.assertIsNone(json.loads(load(case)[1])['expertQuestions']['current'], case)
         cp_ready = json.loads(load('cp-ready')[1])
         self.assertEqual([(a['kind'], a['state']) for a in cp_ready['approvals']['actions'][2:]],
                          [('cp', 'waiting'), ('ready', 'waiting')])

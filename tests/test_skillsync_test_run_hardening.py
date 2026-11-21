@@ -176,7 +176,7 @@ class HiddenFailures(Base):
 
     def test_a_clean_exit_with_a_unittest_failure_summary_is_blocked(self):
         result = self.run_code("print('Ran 3 tests in 0.1s'); print(); print('FAILED (failures=2, errors=1)')")
-        self.assertEqual(result.returncode, 0)   # the command's own code is kept
+        self.assertEqual(result.returncode, 2)   # exit 0 without proof (status BLOCKED) is exit code 2 (CORE-TESTDEBT K3)
         end = self.attempt().end
         self.assertEqual(end['status'], 'BLOCKED')
         self.assertIn('3 failed', end['reason'])
@@ -186,7 +186,7 @@ class HiddenFailures(Base):
         for line in ('=========== 2 failed, 5 passed in 0.31s ===========', '1 failed, 2 passed in 0.1s', '1 failed in 0.1s'):
             with self.subTest(line=line):
                 result = self.run_code(f"print('collected 8 items'); print('{line}'); print('Ran 8 tests in 1s')")
-                self.assertEqual(result.returncode, 0)
+                self.assertEqual(result.returncode, 2)   # exit 0 without proof (status BLOCKED) is exit code 2 (CORE-TESTDEBT K3)
                 self.assertEqual(self.latest().end['status'], 'BLOCKED')
 
     def test_green_runs_with_the_word_failed_in_a_log_stay_green(self):
@@ -199,7 +199,7 @@ class HiddenFailures(Base):
         result = subprocess.run([sys.executable, str(CLI), 'test-run', str(self.root), '--step', 'F1.1', '--', 'sh', '-c',
                                  f"{sys.executable} -c \"print('Ran 2 tests in 1s'); print('FAILED (failures=1)'); raise SystemExit(1)\" | cat; true"],
                                 capture_output=True, text=True, env=self.env, timeout=60)
-        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.returncode, 2)   # exit 0 without proof (status BLOCKED) is exit code 2 (CORE-TESTDEBT K3)
         self.assertEqual(self.latest().end['status'], 'BLOCKED')
 
     def latest(self):
@@ -227,7 +227,7 @@ class Echo(unittest.TestCase):
         stdout = Narrow()
         recorder = self.recorder()
         with mock.patch.object(sys, 'stdout', stdout):
-            recorder.line({}, 'out', 'Executed 3 of 5 (skipped 1) zażółć')
+            recorder.line({}, 'out', 'Chrome zażółć (Linux): Executed 3 of 5 (skipped 1)')
         self.assertTrue(recorder.passthrough)
         self.assertTrue(any('Executed' in text for text in stdout.seen))
         recorder.writer.counts.assert_called_once()   # the counters saw the line

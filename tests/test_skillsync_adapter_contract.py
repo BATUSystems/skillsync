@@ -3,6 +3,7 @@
 Written before the code (red until the 180-A5 implementation): the table of `detect_tool`, the Karma counter that takes the LAST `Executed N of M`.
 """
 import json
+import shlex
 import sys
 import tempfile
 import unittest
@@ -66,6 +67,33 @@ TABLE = (
     ('npx', 'npx'),
     # more layers than the limit (6)
     ('env env env env env env env cargo test', 'unknown'),
+    # module words: the first word behind the wrappers, then `-m` behind a Python host, then the tools, then a module that is a tool anywhere
+    ('go test ./unittest', 'go'),
+    ('echo unittest', 'unknown'),
+    ('pytest -m unittest', 'pytest'),
+    ('git commit -m unittest', 'unknown'),
+    ('git commit -m pytest', 'pytest'),
+    ('echo pytest', 'pytest'),
+    ('python -m unittest discover', 'unittest'),
+    ('python -W error -m unittest', 'unittest'),
+    ('python3.12 -m pytest', 'pytest'),
+    ('uv run python -m pytest', 'pytest'),
+    ('nohup python -m unittest', 'unittest'),
+    ('python -m coverage run -m pytest', 'pytest'),
+    ('coverage run -m unittest', 'unittest'),
+    ('uv run --extra test pytest', 'pytest'),
+    ('uv run --group dev pytest', 'pytest'),
+    ('poetry -C sub run pytest', 'pytest'),
+    ('docker compose run --rm app pytest', 'pytest'),
+    ('sudo -u ci pytest', 'pytest'),
+    ('nohup timeout 600 pytest', 'pytest'),
+    # poetry, pdm, pipenv wrappers and tox
+    ('poetry run pytest -k x', 'pytest'),
+    ('pdm run pytest', 'pytest'),
+    ('pipenv run pytest', 'pytest'),
+    ('poetry run python -m unittest', 'unittest'),
+    ('poetry --unknown-flag run pytest', 'pytest'),
+    ('tox -e py311', 'tox'),
 )
 
 
@@ -140,6 +168,37 @@ class TapCounter(unittest.TestCase):
         self.assertIsNone(skipped)
 
 
+class ShellStringIsReadTheSameOnEverySystem(unittest.TestCase):
+    """A command given as a string is split with POSIX quoting on Windows too (the `os.name` switch is faked, so the rows run on every system)."""
+    ROWS = (
+        ("env -S 'CI=1 npx jest'", ['jest']),
+        ("env -S'CI=1 npx jest'", ['jest']),
+        ("env --split-string='CI=1 npx jest'", ['jest']),
+        ("env -i -S 'CI=1 npx jest'", ['jest']),
+        ("env A=1 'npx' jest", ['jest']),
+        ('poetry run pytest -q', ['pytest', '-q']),
+    )
+
+    def test_the_rows_are_the_same_with_and_without_windows(self):
+        for windows in (False, True):
+            with mock.patch.object(test_run, '_is_windows', return_value=windows):
+                for command, argv in self.ROWS:
+                    with self.subTest(windows=windows, command=command):
+                        self.assertEqual(test_run.unwrap_command(command), argv)
+                        self.assertEqual(test_run.detect_tool(command), argv[0])
+
+    def test_a_windows_path_keeps_its_backslashes(self):
+        command = r'"C:\Program Files\nodejs\node.exe" --test'
+        with mock.patch.object(test_run, '_is_windows', return_value=True):
+            self.assertEqual(test_run._split(command), [r'C:\Program Files\nodejs\node.exe', '--test'])
+            self.assertEqual(test_run.detect_tool(command), 'node')
+
+    def test_an_open_quote_still_gives_no_words(self):
+        for windows in (False, True):
+            with mock.patch.object(test_run, '_is_windows', return_value=windows):
+                self.assertEqual(test_run._split("env -S 'CI=1 npx jest"), [])
+
+
 class Unwrapping(unittest.TestCase):
     def test_the_argv_behind_the_wrappers(self):
         rows = (
@@ -158,6 +217,40 @@ class Unwrapping(unittest.TestCase):
         for command, expected in rows:
             with self.subTest(command=command):
                 self.assertEqual(test_run.unwrap_command(command), expected)
+
+    def test_the_new_wrappers_and_env_split_string(self):
+        rows = (
+            ('poetry run pytest -k x', ['pytest', '-k', 'x']),
+            ('pdm run pytest', ['pytest']),
+            ('pipenv run pytest', ['pytest']),
+            ('poetry run python -m unittest', ['unittest']),
+            ('poetry --unknown-flag run pytest', ['poetry', '--unknown-flag', 'run', 'pytest']),
+            ('poetry install', ['poetry', 'install']),
+            ('tox -e py311', ['tox', '-e', 'py311']),
+            ("env -S 'CI=1 npx jest'", ['jest']),
+            ("env -S'CI=1 npx jest'", ['jest']),
+            ("env --split-string='CI=1 npx jest'", ['jest']),
+            ("env -i -S 'CI=1 npx jest'", ['jest']),
+            ("env -S 'CI=1 npx' jest --ci", ['jest', '--ci']),
+            ("env -S 'CI=1 A=2' npx jest", ['jest']),
+            ('env CI=1 python -S -m pytest', ['pytest']),
+            ('env A=1 npx jest -Sx', ['jest', '-Sx']),
+            ('env A=1 npx jest -S x', ['jest', '-S', 'x']),
+            ("env -S 'echo $HOME'", ['env', '-S', 'echo $HOME']),
+            ("env -S 'echo \"abc'", ['env', '-S', 'echo "abc']),
+            ('env -S', ['env', '-S']),
+        )
+        for command, expected in rows:
+            with self.subTest(command=command):
+                self.assertEqual(test_run.unwrap_command(shlex.split(command)), expected)
+                self.assertEqual(test_run.unwrap_command(command), expected)
+
+    def test_env_split_string_is_detected_without_an_exception(self):
+        for command, expected in (("env -S 'CI=1 npx jest'", 'jest'), ("env -S'CI=1 npx jest'", 'jest'), ("env --split-string='CI=1 npx jest'", 'jest'),
+                                  ("env -S 'CI=1 npx' jest", 'jest'), ("env -S 'echo $HOME'", 'unknown'), ("env -S 'x \"y'", 'unknown'), ('env -S', 'unknown')):
+            with self.subTest(command=command):
+                self.assertEqual(test_run.detect_tool(shlex.split(command)), expected)
+                self.assertEqual(test_run.detect_tool(command), expected)
 
     def test_more_layers_than_the_limit_return_the_original_argv(self):
         argv = ['env'] * 7 + ['cargo', 'test']
@@ -221,15 +314,15 @@ class RecorderCounters(unittest.TestCase):
     def test_without_an_adapter_the_built_in_reader_works(self):
         recorder = self.recorder(None)
         recorder.line({}, 'out', 'Executed 3 of 5 (skipped 2) SUCCESS')
-        recorder.writer.counts.assert_called_once_with(passed=1, failed=0, skipped=2, running=0, total=5)
+        recorder.writer.counts.assert_called_once_with(passed=3, failed=0, skipped=2, running=0, total=5)   # `Executed` does not count the skipped: passed = N - X
 
     def test_both_parentheses_are_read(self):
         recorder = self.recorder(None)
-        recorder.line({}, 'out', 'Executed 5 of 5 (2 FAILED) (skipped 2)')
-        recorder.writer.counts.assert_called_once_with(passed=1, failed=2, skipped=2, running=0, total=5)
+        recorder.line({}, 'out', 'Executed 5 of 7 (2 FAILED) (skipped 2)')
+        recorder.writer.counts.assert_called_once_with(passed=3, failed=2, skipped=2, running=0, total=7)
         recorder = self.recorder(None)
-        recorder.line({}, 'out', 'Executed 5 of 5 (skipped 2) (2 FAILED)')
-        recorder.writer.counts.assert_called_once_with(passed=1, failed=2, skipped=2, running=0, total=5)
+        recorder.line({}, 'out', 'Executed 5 of 7 (skipped 2) (2 FAILED)')
+        recorder.writer.counts.assert_called_once_with(passed=3, failed=2, skipped=2, running=0, total=7)
 
 
 class WindowsShims(unittest.TestCase):
@@ -352,6 +445,28 @@ class TheTableIsData(unittest.TestCase):
                 test_run.TOOLS_FILE, test_run._TABLE = path, None
                 with self.assertRaises(ValueError):
                     test_run.detect_tool('cargo test')
+
+
+class TableOfThePreviousRelease(unittest.TestCase):
+    """The table without the optional fields added later (no `poetry`, `pdm`, `pipenv`, `tox`, `split_flags`) is read by the new code and keeps the behaviour."""
+    def setUp(self):
+        self.addCleanup(setattr, test_run, '_TABLE', test_run._TABLE)
+        self.addCleanup(setattr, test_run, 'TOOLS_FILE', test_run.TOOLS_FILE)
+        data = json.loads((Path(__file__).resolve().parent / 'fixtures' / 'test_tools_previous_release.json').read_text(encoding='utf-8'))   # the table as shipped before the optional fields
+        tmp = tempfile.TemporaryDirectory(prefix='test-tools-')
+        self.addCleanup(tmp.cleanup)
+        path = Path(tmp.name) / 'test_tools.json'
+        path.write_text(json.dumps(data), encoding='utf-8')
+        test_run.TOOLS_FILE, test_run._TABLE = path, None
+
+    def test_the_old_behaviour_stays(self):
+        for command, expected in (('timeout -k 5 100 cargo test', 'cargo'), ('uv run python -m unittest -v', 'unittest'), ('python -m pytest -q', 'pytest'),
+                                  ('npx playwright test', 'playwright'), ('tox -e py311', 'unknown'), ('poetry run pytest', 'pytest'), ('go test ./unittest', 'go')):
+            with self.subTest(command=command):
+                self.assertEqual(test_run.detect_tool(command), expected)
+        self.assertEqual(test_run.unwrap_command('poetry run pytest'), ['poetry', 'run', 'pytest'])
+        self.assertEqual(test_run.unwrap_command("env -S 'CI=1 npx jest'"), ['env', '-S', 'CI=1 npx jest'])
+        self.assertEqual(test_run.unwrap_command('env A=1 npx jest'), ['jest'])
 
 
 if __name__ == '__main__':

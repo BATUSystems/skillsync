@@ -73,6 +73,11 @@ entries:
     tags: [skillsync, test-run, adapters, node, tap, output]
     paths: ['skillsync_workflow/test_adapters/tap.py', 'skillsync_workflow/test_adapters/node_test.py', 'skillsync_workflow/test_run.py', 'skillsync_workflow/quality.py', 'tests/test_skillsync_adapter*.py', 'tests/test_skillsync_test_run*.py']
     load: on-demand
+  - path: test-run-rozpoznanie-narzedzia-i-liczniki-karmy.md
+    title: "`test-run`: kolejność rozpoznawania narzędzia (`detect_tool`), reguła linii `Executed` Karmy, kody wyjścia i ślad przebiegu"
+    tags: [skillsync, test-run, detect-tool, karma, counts, hooks, exit-codes, kody-wyjscia]
+    paths: ['skillsync_workflow/test_run.py', 'skillsync_workflow/data/test_tools.json', 'skillsync_workflow/test_adapters/karma_line.py', 'skillsync_workflow/quality.py', 'library/hooks/guard-tests.py', 'tests/test_skillsync_test_run*.py']
+    load: on-demand
   - path: dashboard-server.md
     title: "Serwer strony statusu (dashboard serve): Host, Origin, X-Status-Board, CSP, allowlista, limity, zgody tylko użytkownika"
     tags: [skillsync, dashboard, server, security, approvals, workflow]
@@ -93,3 +98,7 @@ entries:
     title: "Katalog roboczy przebiegu (worktree, główny checkout, wybór przy GO plan, rozpoznanie na stronie statusu)"
     tags: [skillsync, dashboard, workflow, worktree, git, workdir, terminology]
     paths: ['skillsync_workflow/dashboard.py', 'library/skills/feature/references/workdir.md', 'library/skills/dashboard/assets/dashboard-render.js', 'library/instructions/_base.md', 'tests/test_skillsync_dashboard_workdir.py', 'tests/test_skillsync_workdir_rule.py']
+  - path: spec-store.md
+    title: "Spec i plan poza gitem: tryb nieśledzony (tracked: false), migawka, archiwum speców i odbiór planu"
+    tags: [skillsync, workflow, specs, snapshot, archive, git, approvals, closure]
+    paths: ['skillsync_workflow/specs.py', 'skillsync_workflow/spec_snapshot.py', 'skillsync_workflow/status.py', 'skillsync_workflow/quality.py', 'skillsync_workflow/test_gate.py', 'skillsync_workflow/retro.py', 'library/hooks/check-closure.py', 'library/skills/feature/references/spec-store.md', 'tests/test_skillsync_specs*.py', 'tests/test_skillsync_spec_snapshot.py', 'tests/test_skillsync_repo_hygiene.py', 'tests/test_skillsync_closure.py']

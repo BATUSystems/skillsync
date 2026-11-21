@@ -127,6 +127,7 @@
         "given": null,
         "kind": "cp",
         "path": "2026-01-11-timing-demo",
+        "planState": "in_progress",
         "reason": "brak HEAD repozytorium",
         "run": "2026-01-11-timing-demo",
         "sha": "",
@@ -203,6 +204,7 @@
   "eta": null,
   "expertQuestions": {
     "blocking": 0,
+    "current": null,
     "items": [],
     "open": 0,
     "runs": []

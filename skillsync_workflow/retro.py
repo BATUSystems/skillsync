@@ -545,6 +545,8 @@ def _report_dir(path):
         state["unreadable"] += 1
 
     for top, dirnames, filenames in os.walk(str(path), onerror=failed, followlinks=False):
+        if top == str(path):
+            dirnames[:] = [name for name in dirnames if name != "docs"]  # migawka speca i planu (`spec snapshot`), nie raporty
         dirnames.sort()
         for name in sorted(filenames):
             full = os.path.join(top, name)

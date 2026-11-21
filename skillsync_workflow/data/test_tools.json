@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "about": "Data shared by test_run.detect_tool and the standalone hook of tests outside test-run. Order of `tools` is significant between entries of the same word (first match wins); the word of the command that decides is the first one behind the wrappers, then the first three words. The syntax of the wrappers is described by the fields of each wrapper: boolean/valued flags, subcommands (the wrapper applies only when the next word is one of them, and it is consumed), tool_words (the next word may itself be a tool word: `yarn playwright test`), positional (words after the flags that belong to the wrapper: the DURATION of timeout), assignments (NAME=VALUE words: env), module_flag (python -m MODULE). A flag that is not listed stops the unwrapping. numeric_flag: a flag like -10 (nice).",
+ "about": "Data shared by test_run.detect_tool and the standalone hook of tests outside test-run. Order of `tools` is significant between entries of the same word (first match wins); the word of the command that decides is, in this order: the first one behind the wrappers (a module word, then a tool), the word after `-m` when a Python host (`python*`, `py`, `pypy*`, `coverage`) stands before it, a tool in the first three words, a module word that is also a tool anywhere. The syntax of the wrappers is described by the fields of each wrapper: boolean/valued flags, subcommands (the wrapper applies only when the next word is one of them, and it is consumed), tool_words (the next word may itself be a tool word: `yarn playwright test`), positional (words after the flags that belong to the wrapper: the DURATION of timeout), assignments (NAME=VALUE words: env), module_flag (python -m MODULE). A flag that is not listed stops the unwrapping. numeric_flag: a flag like -10 (nice). Optional fields (a table without them keeps working): split_flags (env -S: the value of the flag is split like a shell line and what follows it is appended; a value with `$` or an open quote stops the unwrapping).",
  "max_layers": 6,
  "tools": [
   {
@@ -78,6 +78,10 @@
   {
    "word": "npx",
    "tool": "npx"
+  },
+  {
+   "word": "tox",
+   "tool": "tox"
   }
  ],
  "module_words": {
@@ -194,6 +198,10 @@
     "--unset",
     "-C",
     "--chdir"
+   ],
+   "split_flags": [
+    "-S",
+    "--split-string"
    ]
   },
   {
@@ -276,6 +284,24 @@
     "-p",
     "--project",
     "--directory"
+   ]
+  },
+  {
+   "word": "poetry",
+   "subcommands": [
+    "run"
+   ]
+  },
+  {
+   "word": "pdm",
+   "subcommands": [
+    "run"
+   ]
+  },
+  {
+   "word": "pipenv",
+   "subcommands": [
+    "run"
    ]
   },
   {

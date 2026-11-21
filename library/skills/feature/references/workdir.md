@@ -7,7 +7,7 @@ Rdzeń instrukcji ma tylko regułę; warunki i ścieżki porażek są tutaj.
 
 Wybór zapisuje linia nagłówka planu (obok `Przebieg:`, `Oddanie:`; [plan](plan-details.md)): `Katalog: worktree <nazwa-katalogu>` albo `Katalog: główny`.
 `worktree` niesie sama nazwa katalogu, nie ścieżka bezwzględna; ścieżkę odnajdź przez `git worktree list` (po nazwie i gałęzi). Linia trafia do commita i PR-a, więc bez ścieżek lokalnych.
-Linia powstaje w planie-szkicu przed commitem „GO plan”. Wznowienie ją czyta: brak linii `Katalog:` w planie = worktree jak dotąd;
+Linia powstaje w planie-szkicu przed commitem „GO plan” (przy `specs.tracked: false` commit nie obejmuje speca i planu, zob. [spec-store](spec-store.md)). Wznowienie ją czyta: brak linii `Katalog:` w planie = worktree jak dotąd;
 zniknięty katalog worktree z linii planu = STOP i pytanie (odtworzyć z gałęzi?), bez cichego przełączenia na `główny`.
 Wznowienie z `Katalog: główny` sprawdza warunki ponownie przed pierwszym commitem (pytanie o katalog nie pada, a gałąź lub HEAD mogły się zmienić między sesjami): HEAD odłączony = STOP; żywa dzierżawa innego przebiegu = STOP z propozycją worktree; bieżąca gałąź inna niż przy poprzednich commitach przebiegu = STOP z pytaniem, które nazywa obie gałęzie; gałąź równa `delivery.base` w `pr` = STOP („główny” nie jest przyjmowany); w `direct` na bazie ostrzeżenie jak przy wyborze i pytanie o kontynuację.
 
@@ -43,6 +43,7 @@ Gałąź robocza to bieżąca gałąź głównego checkoutu, jakakolwiek, także
 - W trybie `pr` przy `główny` przed użyciem bieżącej gałęzi sprawdź istniejący PR i upstream z cudzymi commitami (są = pytanie). `pr-run` krok 3 ma konwencję nazwy gałęzi (np. z kluczem ticketu); bieżąca gałąź jej nie musi spełniać, ale pytanie to pokazuje.
 - `CP` bez zmian (push bieżącej gałęzi roboczej na jej zdalny odpowiednik). Push na bazę, fast-forward `robocza:base`, działa także z głównego checkoutu; główny checkout aktualizowany `--ff-only` tylko gdy czysty i na `base` (gdy gałąź bieżąca to baza, `CP` pushuje ją wprost; przy innej gałęzi ta aktualizacja jest nieaktywna).
 - Kopia przebiegu poza worktree i sprzątanie worktree dotyczą tylko `Katalog: worktree`; przy `główny` przebieg zostaje w katalogu projektu.
+- Przy `specs.tracked: false` sprzątanie worktree wymaga `skillsync spec snapshot --check --to <korzeń kopii>` z `PASS` (spec i plan nie są w gicie; samo usunięcie worktree je gubi, [spec-store](spec-store.md)); „commit GO plan” obejmuje wtedy tylko pliki śledzone.
 - W `direct` z `Katalog: główny` „TAK P<n>” działa (główny checkout); w `pr` propozycje `repo: project` zostają `deferred` jak dotąd ([retro-quality](retro-quality.md)). „TAK” po rekordzie końcowym zmienia HEAD i unieważnia `sha` zgody `CP` (istniejąca reguła: inny `sha` = pytanie).
 - Odwrócenie: `główny` nie zmienia gałęzi; commit „GO plan” jest lokalny, odwracalny `git reset` tylko za zgodą użytkownika; po oddaniu na bazę w `direct` z gałęzi roboczej sesja proponuje `git switch <baza>`, nie robi tego sama.
 - Druga sesja albo IDE w tym samym głównym katalogu (lekcja `zmiana-head-w-trakcie-biegu-uniewaznia-bieg`): commity trafiają na gałąź, którą ta sesja ma wybraną; dlatego pytanie ostrzega, a żywa dzierżawa kończy się STOP.

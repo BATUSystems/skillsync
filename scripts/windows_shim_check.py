@@ -3,8 +3,10 @@
 
 Run on Windows from the repository root: `python scripts/windows_shim_check.py`. It creates a temporary `shimtool.cmd`, puts its directory on PATH and shows
 (1) what happens with the bare name (CreateProcess does not start a `.cmd` by the name alone: FileNotFoundError), (2) that argv[0] resolved through
-`shutil.which` (PATHEXT) does start and prints its output, (3) that a real `skillsync test-run` of the bare name works end to end.
+`shutil.which` (PATHEXT) does start and prints its output, (3) that a real `skillsync test-run` of the bare name works end to end, and (3b) that the `start` event of that run shows the command of the user
+(`shimtool`), and that neither `shimtool.cmd` nor the temporary directory appears anywhere in the raw event files of the run.
 Prints PASS / FAIL / NOT_RUN per item. Exit 0 = every item PASS, 1 = a FAIL, 3 = not Windows (NOT_RUN). Standard library only; no network."""
+import json
 import os
 import subprocess
 import sys
@@ -43,6 +45,18 @@ def main():
         cli = [sys.executable, str(ROOT / 'skillsync'), 'test-run', str(project), '--run', 'R1', '--step', 'F1.1', '--', 'shimtool']
         done = subprocess.run(cli, capture_output=True, text=True, env=env, timeout=120)
         results['3 skillsync test-run of the bare name'] = 'PASS' if done.returncode == 0 and 'OK' in done.stdout else f'FAIL (rc={done.returncode}: {done.stderr.strip()[-300:]})'
+        started = []
+        for path in sorted((project / '.skillsync' / 'runs' / 'R1' / 'tests' / 'F1.1').glob('*.jsonl')):
+            for line in path.read_text(encoding='utf-8').splitlines():
+                try:
+                    record = json.loads(line)
+                except ValueError:
+                    continue
+                if record.get('t') == 'start':
+                    started.append(record.get('command'))
+        raw = ''.join(path.read_text(encoding='utf-8', errors='replace') for path in (project / '.skillsync' / 'runs' / 'R1').rglob('*.jsonl')).lower().replace('\\\\', '\\')
+        leaks = [what for what, text in (('shimtool.cmd', 'shimtool.cmd'), ('temporary directory', tmp.lower())) if text in raw]
+        results['3b start event shows the command of the user'] = 'PASS' if started == ['shimtool'] and not leaks else f'FAIL (start commands: {started}, leaked: {leaks})'
     for name, value in results.items():
         print(f'{value[:4]}: {name}' + ('' if value == 'PASS' else f' -> {value}'))
     return 0 if all(v == 'PASS' for v in results.values()) else 1

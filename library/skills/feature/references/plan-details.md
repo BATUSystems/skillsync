@@ -9,6 +9,7 @@ Linia `Katalog: worktree <nazwa-katalogu>` albo `Katalog: główny` zapisuje wyb
 pytanie, warunki i wznowienie: [workdir](workdir.md).
 Linia `Ceremonia: demo` (opcjonalna przy `full`) zapisuje wartość `workflow.ceremony` z `skillsync route`; rozbieżność z `route` przy „GO implement”
 to pytanie do użytkownika ([ceremonia demo](ceremony-demo.md)).
+Przy `specs.tracked: false` plan jest lokalny (ignorowany przez git): jego trwałość daje migawka, a odbiór zamyka wpis zgody z `planState: done` (pole zgody, nie historia gita; [spec-store](spec-store.md)).
 
 Plan dużej zmiany ma w nagłówku linię `Spec: <docs/specs/RRRR-MM-DD-slug.md>` (jak `Przebieg:`, osobny wiersz, sama ścieżka),
 a od „GO plan” `Spec-sha: <git hash-object speca>` (plan-szkic, [plan-large](plan-large.md) §5). Plan przy specu nie powtarza jego treści:

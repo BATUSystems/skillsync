@@ -286,5 +286,161 @@ class AcceptanceSignal(unittest.TestCase):
         self.assertEqual(self.needs('pr'), [])
 
 
+class AcceptanceByPlanState(unittest.TestCase):
+    """K13: in a repository that ignores docs/plans (`specs.tracked: false`) the git history says nothing, so the closing entry
+    carries `planState: done`; with `tracked: true` git decides as before."""
+    UNTRACKED = {'workflow': {'specs': {'tracked': False}}, 'delivery': {'mode': 'direct', 'base': 'main'}}
+    TRACKED = {'workflow': {'specs': {'tracked': True}}, 'delivery': {'mode': 'direct', 'base': 'main'}}
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        (self.root / 'docs/plans').mkdir(parents=True)
+        self.git('init', '-q', '-b', 'work')
+        (self.root / 'first.txt').write_text('first', encoding='utf-8')
+        self.git('add', 'first.txt')
+        self.git('commit', '-q', '-m', 'first')
+
+    def git(self, *args):
+        result = subprocess.run(['git', *args], cwd=self.root, capture_output=True, text=True, env={**os.environ, **GIT_ENV})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return result.stdout.strip()
+
+    def write_plan(self, text, name='2026-11-15-demo.md', run='ACC-1'):
+        (self.root / 'docs/plans' / name).write_text(text, encoding='utf-8')   # not committed: the plan is outside git
+        (self.root / '.skillsync/runs' / run).mkdir(parents=True, exist_ok=True)
+
+    def approve_state(self, word='CP', state=None, sha=None, at='2026-11-15T16:00:00Z'):
+        item = {'schema': 1, 'at': at, 'word': word, 'sha': sha or self.git('rev-parse', 'HEAD'), 'by': 'x', 'source': 'cli'}
+        if state:
+            item['planState'] = state
+        with (self.root / '.skillsync/runs/ACC-1/approvals.jsonl').open('a', encoding='utf-8') as stream:
+            stream.write(json.dumps(item) + '\n')
+
+    def pending(self, manifest):
+        (record,) = status.project_status(self.root, manifest)['plans']
+        return record['needsHuman']
+
+    def test_untracked_cp_in_progress_then_closing_without_a_commit_then_cp_closes_the_receipt(self):
+        self.write_plan(plan('in_progress', steps=['- [x] F1.1 Kod', '- [ ] F4.3 Odbiór']))
+        self.approve_state(state='in_progress')
+        self.write_plan(plan())                                                      # closed, nothing committed
+        self.assertEqual(self.pending(self.UNTRACKED), ['acceptance'])
+        self.approve_state(state='done', at='2026-11-15T17:00:00Z')                    # the same HEAD, a new word
+        self.assertEqual(self.pending(self.UNTRACKED), [])
+
+    def test_untracked_a_cp_given_in_progress_does_not_close_the_receipt(self):
+        self.write_plan(plan())
+        self.approve_state(state='in_progress')
+        self.assertEqual(self.pending(self.UNTRACKED), ['acceptance'])
+
+    def test_untracked_an_entry_without_the_field_closes_nothing(self):
+        self.write_plan(plan())
+        self.approve_state()
+        self.assertEqual(self.pending(self.UNTRACKED), ['acceptance'])
+
+    def test_untracked_the_last_entry_per_run_and_word_decides(self):
+        self.write_plan(plan())
+        self.approve_state(state='done')
+        self.assertEqual(self.pending(self.UNTRACKED), [])
+        self.approve_state(state='in_progress', sha='d' * 40, at='2026-11-15T18:00:00Z')   # a later CP replaces the closing one
+        self.assertEqual(self.pending(self.UNTRACKED), ['acceptance'])
+
+    def test_untracked_a_changed_oddanie_line_does_not_open_the_receipt_again(self):
+        self.write_plan(plan())
+        self.approve_state(state='done')
+        self.write_plan(plan(extra='Oddanie: main\n'))
+        self.assertEqual(self.pending(self.UNTRACKED), [])
+
+    def test_tracked_the_plan_state_alone_closes_nothing_git_decides(self):
+        self.write_plan(plan())                                                      # outside git: `git show` finds no plan
+        self.approve_state(state='done')
+        self.assertEqual(self.pending(self.TRACKED), ['acceptance'])
+        self.git('add', 'docs')
+        self.git('commit', '-q', '-m', 'plan done')
+        self.approve_state(state='done', sha=self.git('rev-parse', 'HEAD'), at='2026-11-15T17:00:00Z')
+        self.assertEqual(self.pending(self.TRACKED), [])
+
+    def test_untracked_end_to_end_cp_in_progress_closing_cp_duplicate_and_the_button(self):
+        from skillsync_workflow import dashboard
+        self.write_plan(plan('in_progress', steps=['- [x] F1.1 Kod', '- [ ] F4.3 Odbiór']))
+        head = self.git('rev-parse', 'HEAD')
+        first = status.record_approval(self.root, 'CP', 'ACC-1', sha=head, by='u')
+        self.assertEqual((first['status'], first['entry']['planState']), ('PASS', 'in_progress'))
+        self.write_plan(plan())                                                      # closed without a commit: the same HEAD
+        self.assertEqual(self.pending(self.UNTRACKED), ['acceptance'], 'negative: no new consent yet')
+        words = [{'word': 'CP', 'active': True, 'tip': 't', 'target': 'main'}]
+
+        def button():
+            log = dashboard.run_approvals(self.root, 'ACC-1')
+            return dashboard.consent_buttons({'exists': False}, {'status': 'done', 'statusText': '', 'path': 'p'}, [], words, log, head, True,
+                                             status.plan_state_for_run(self.root, 'ACC-1'), False)[-1]['state']
+        self.assertEqual(button(), 'waiting', 'the consent from before the closing does not block the new one')
+        second = status.record_approval(self.root, 'CP', 'ACC-1', sha=head, by='u')
+        self.assertEqual((second['status'], second['entry']['planState']), ('PASS', 'done'))
+        self.assertEqual(self.pending(self.UNTRACKED), [])
+        self.assertEqual(button(), 'after')
+        self.assertEqual(status.record_approval(self.root, 'CP', 'ACC-1', sha=head, by='u')['status'], 'BLOCKED')
+        self.assertEqual(button(), 'after')
+
+    def test_untracked_an_entry_without_the_field_does_not_give_after_for_a_done_plan(self):
+        from skillsync_workflow import dashboard
+        self.write_plan(plan())
+        head = self.git('rev-parse', 'HEAD')
+        self.approve_state(sha=head)
+        words = [{'word': 'CP', 'active': True, 'tip': 't', 'target': 'main'}]
+        log = dashboard.run_approvals(self.root, 'ACC-1')
+        buttons = dashboard.consent_buttons({'exists': False}, {'status': 'done', 'statusText': '', 'path': 'p'}, [], words, log, head, True,
+                                            'done', False)
+        self.assertEqual(buttons[-1]['state'], 'waiting')
+
+    PR = {'workflow': {'specs': {'tracked': False}}, 'delivery': {'mode': 'pr', 'base': 'main'}}
+
+    def test_untracked_an_entry_with_a_sha_that_is_not_a_commit_closes_nothing(self):
+        self.write_plan(plan())
+        self.approve_state(state='done', sha='a' * 40)
+        self.assertEqual(self.pending(self.UNTRACKED), ['acceptance'], 'negative: no such commit')
+        self.approve_state(state='done', at='2026-11-15T17:00:00Z')                    # the real HEAD
+        self.assertEqual(self.pending(self.UNTRACKED), [])
+
+    def test_untracked_pr_mode_closes_with_ready_not_with_cp(self):
+        self.write_plan(plan())
+        self.approve_state(word='CP', state='done')
+        self.assertEqual(self.pending(self.PR), ['acceptance'])
+        self.approve_state(word='READY', state='done', at='2026-11-15T17:00:00Z')
+        self.assertEqual(self.pending(self.PR), [])
+
+    def test_an_entry_with_a_null_plan_state_closes_nothing(self):
+        self.write_plan(plan())
+        head = self.git('rev-parse', 'HEAD')
+        line = {'schema': 1, 'at': '2026-11-15T16:00:00Z', 'word': 'CP', 'sha': head, 'by': 'x', 'source': 'cli', 'planState': None}
+        (self.root / '.skillsync/runs/ACC-1/approvals.jsonl').write_text(json.dumps(line) + '\n', encoding='utf-8')
+        self.assertEqual(self.pending(self.UNTRACKED), ['acceptance'])
+
+    def test_tracked_none_is_decided_by_git_like_true(self):
+        self.write_plan(plan())
+        self.approve_state(state='done')
+        text = (self.root / 'docs/plans/2026-11-15-demo.md').read_text(encoding='utf-8')
+        context = {'mode': 'direct', 'approvals': status.read_approvals(self.root), 'runs': ['ACC-1'], 'root': self.root, 'tracked': None}
+        self.assertTrue(status.acceptance_pending('done', text, context, 'docs/plans/2026-11-15-demo.md'), 'plan outside git, None = tracked')
+        context['tracked'] = lambda: False
+        self.assertFalse(status.acceptance_pending('done', text, context, 'docs/plans/2026-11-15-demo.md'))
+
+    def test_several_runs_only_the_entry_of_the_plans_own_run_closes_it(self):
+        self.write_plan(plan(run='ACC-1'), name='2026-11-15-a.md', run='ACC-1')
+        self.write_plan(plan(run='ACC-2'), name='2026-11-16-b.md', run='ACC-2')
+        self.approve_state(state='done')                                               # ACC-1 only
+        records = {r['path']: r['needsHuman'] for r in status.project_status(self.root, self.UNTRACKED)['plans']}
+        self.assertEqual(records, {'docs/plans/2026-11-15-a.md': [], 'docs/plans/2026-11-16-b.md': ['acceptance']})
+
+    def test_a_plan_without_a_run_line_and_two_plans_of_one_run(self):
+        (self.root / 'docs/plans/2026-11-17-norun.md').write_text(plan().replace('Przebieg: ACC-1\n', ''), encoding='utf-8')
+        self.assertIsNone(status.plan_state_for_run(self.root, 'ACC-1'), 'no plan names the run')
+        self.write_plan(plan('in_progress'), name='2026-11-15-a.md')
+        self.write_plan(plan('done'), name='2026-11-16-b.md')
+        self.assertEqual(status.plan_state_for_run(self.root, 'ACC-1'), 'in_progress', 'the first plan of the run by name decides')
+
+
 if __name__ == '__main__':
     unittest.main()

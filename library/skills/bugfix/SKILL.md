@@ -24,6 +24,8 @@ Procedura obejmuje sprawdzenie zgłoszenia, brief z przyczyną na dowodach, test
 
 **Poza wariantami:** zgłoszenie nowego zachowania zamiast błędu oznacza pytanie, czy przechodzimy do `feature`. Poprawka, która odsłania zmianę kontraktu lub danych nieopisaną w briefie, wymaga pytania o [spec](../feature/references/spec.md); zakresu nie poszerzasz samodzielnie, a zgoda oznacza przejście do `feature`.
 
+**Przy `specs.tracked: false`** ([spec-store](../feature/references/spec-store.md)) brief/plan bugfixu leży w ignorowanym `docs/plans` i nie wchodzi do commitów; trwałość daje `skillsync spec snapshot`, a nie historia gita.
+
 **Kandydat `skillsync retro`** w stanie `ready` lub `recurred`, zatwierdzony przez użytkownika, może być zgłoszeniem: jego `failing_case` staje się punktem startu dla oracle, a poprawkę prowadzi jeden właściciel. Po niej zapisz `ref` poleceniem `skillsync retro-decide --decision approved --replace --ref <commit>` ([pomiar](../feature/references/measurement.md)).
 
 ## Zasady końcowe

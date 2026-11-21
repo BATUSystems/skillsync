@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Stop hook: przypomnienie o zamknieciu przebiegu. Uruchamiane przez Claude Code przed zakonczeniem tury.
 
-Blokuje (exit 2) raz na sesje i plan, gdy plan z docs/plans zmieniony wzgledem HEAD ma status done, a przebieg z linii
+Blokuje (exit 2) raz na sesje i plan, gdy plan z docs/plans zmieniony wzgledem HEAD (takze niesledzony albo ignorowany) ma status done, a przebieg z linii
 `Przebieg:` nie ma rekordu `final`, albo ma status in_progress i wszystkie kroki `Progress` odhaczone (brak zamkniecia
 przebiegu; plan z linia `Ticket:` bez `PR:` czeka na PR-y i nie blokuje). Tylko biblioteka standardowa, bez sieci i testow; kazdy blad przepuszcza ture (exit 0)."""
 import hashlib
@@ -36,8 +36,9 @@ def git(cwd, *args):
 
 
 def changed_plans(top):
-    """Sciezki plikow .md w docs/plans zmienionych wzgledem HEAD (takze nieSledzonych); usuniete pomijamy."""
-    out = git(top, 'status', '--porcelain', '-z', '--untracked-files=all', '--', 'docs/plans')
+    """Sciezki plikow .md w docs/plans zmienionych wzgledem HEAD (takze niesledzonych i ignorowanych: wpisy `!!`, bo projekt
+    z `workflow.specs.tracked: false` ignoruje docs/plans w .gitignore); usuniete pomijamy."""
+    out = git(top, 'status', '--porcelain', '-z', '--untracked-files=all', '--ignored', '--', 'docs/plans')
     parts = out.split('\0')
     paths, index = [], 0
     while index < len(parts):

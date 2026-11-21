@@ -40,6 +40,7 @@ z kilku kroków zadaj razem, w jednej wiadomości.
    `Ticket: <KLUCZ> (link: <url>)` zgodnie z [plan-details](plan-details.md); w planie pokaż też
    status, wariant, gałąź bazową i pierwszą roboczą oraz ostrzeżenia ze strażnika statusu. Przy bramce `plan-large` plan powstaje przy „GO plan”,
    a te dane do tego czasu są w sekcji „Zakres” szkieletu speca ([spec](spec.md)).
+   Przy `specs.tracked: false` plan i spec są lokalne i nie trafiają do commita ani PR-a (migawka zamiast commita, [spec-store](spec-store.md)).
 8. **PR.** Przy wejściu z klucza nie proponuj `/pr-run` po „GO implement”. Po realizacji STOP na code review człowieka,
    a commit, push i PR tylko na polecenia ze słownika w [pr-after-approval](pr-after-approval.md).
 9. **Pytania w trakcie przebiegu.** Zgłoszenie z komentarzami jest pierwotnym źródłem informacji także po „GO”.

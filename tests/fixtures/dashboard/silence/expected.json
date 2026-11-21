@@ -121,6 +121,7 @@
         "given": null,
         "kind": "cp",
         "path": "2026-01-11-demo-report",
+        "planState": "in_progress",
         "reason": "czeka na koniec realizacji (CP → origin; nic do dostarczenia)",
         "run": "2026-01-11-demo-report",
         "sha": "",
@@ -133,6 +134,7 @@
         "given": null,
         "kind": "ready",
         "path": "2026-01-11-demo-report",
+        "planState": "in_progress",
         "reason": "czeka na koniec realizacji (nic do dostarczenia)",
         "run": "2026-01-11-demo-report",
         "sha": "",
@@ -207,6 +209,7 @@
   "eta": null,
   "expertQuestions": {
     "blocking": 0,
+    "current": null,
     "items": [],
     "open": 0,
     "runs": []

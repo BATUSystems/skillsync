@@ -4,7 +4,9 @@
 shared runner (`quality.run_validation`) with an observer that writes the events of the run (`test_events`): the state of the command on the fly,
 live counters where the output prints them (Karma "Executed N of M"), the list of the tests after the end from a JUnit XML or TRX report
 (`--junit`, or the default places of dotnet, Maven and Gradle). The output of the command is passed through unchanged and the exit code of the
-command is the exit code of `test-run`.
+command is the exit code of `test-run` when the command failed (FAIL), and 0 when the run is a PASS. A command that exited 0 without the proof of
+passing tests (status BLOCKED, or no recorded status at all) gives exit code 2, as `validate` does; 124 is a timeout and 127 a missing program.
+An explicit `--run <id>` needs a trace of the run in `.skillsync/runs/` (a directory or a `<id>.json` record), else it is refused (BLOCKED, 2).
 """
 from __future__ import annotations
 
@@ -23,27 +25,27 @@ from pathlib import Path
 from .common import read_project
 from .fsutil import isabs
 from .dashboard import ids_in_progress, parse_checkpoints
-from .quality import _test_counts, evidence_reason, run_validation
+from .quality import _test_counts, evidence_reason, karma_unexecuted_reason, run_validation
 from .runs import _slug
 from . import test_events as events
 from . import test_gate
 from . import test_adapters
+from .test_adapters import karma_line
 from . import test_reports
 
-KARMA = re.compile(r'Executed (\d+) of (\d+)')
-KARMA_SKIPPED = re.compile(r'\(skipped (\d+)\)')
-KARMA_FAILED = re.compile(r'\((\d+) FAILED\)|, (\d+) FAILED')
 REPORT_SINCE_SLACK_S = 2.0
 MAX_REPORT_FILES = 200
 
 def _failure_count(output):
-    """Failed tests named by the summary of the common tools (unittest `FAILED (failures=2, errors=1)`, pytest `3 failed`); 0 when the output names none."""
+    """Failed tests named by the summary of the common tools (unittest `FAILED (failures=2, errors=1)`, pytest `3 failed`, Karma `(N FAILED)` of a valid `Executed N of M` line); 0 when the output names none. Callers read it only for a non-zero exit code."""
     total = 0
     unittest_summary = re.search(r'FAILED \(([^)]*)\)', output)
     if unittest_summary:
         total = sum(int(n) for kind, n in re.findall(r'(failures|errors)=(\d+)', unittest_summary.group(1)))
     found = re.search(r'(\d+) failed', output)
-    return max(total, int(found.group(1))) if found else total
+    total = max(total, int(found.group(1))) if found else total
+    karma = karma_line.read_output(output)
+    return max(total, karma['failed']) if karma else total
 
 
 _UNITTEST_FAILED = re.compile(r'(?m)^FAILED \(([^)\n]*)\)')
@@ -109,13 +111,28 @@ def _base(word):
     return re.sub(r'(?<=.)@[^@/]*$', '', name)
 
 
+def _is_windows():
+    return os.name == 'nt'
+
+
+def _shell_words(text):
+    """The words of a shell string with POSIX quoting rules on every system (`'A=1 cmd'`, `"a b"`, `-S'A=1 cmd'` are one word each), so a command is read the same on Windows
+    and elsewhere. On Windows a backslash stays literal (`C:\\Program Files\\node.exe`): only quotes group words. Raises `ValueError` on an open quote."""
+    lexer = shlex.shlex(text, posix=True)
+    lexer.whitespace_split = True
+    lexer.commenters = ''
+    if _is_windows():
+        lexer.escape = ''
+    return list(lexer)
+
+
 def _split(command):
     """The words of a command given as an argv list, a tuple or a shell string; a string that cannot be split (an open quote) gives no words, never an exception."""
     if isinstance(command, (list, tuple)):
         return [str(word) for word in command]
     if isinstance(command, str):
         try:
-            return shlex.split(command, posix=os.name != 'nt')
+            return _shell_words(command)
         except ValueError:
             return []
     return []
@@ -148,6 +165,35 @@ def _skip_flags(words, boolean, valued, end_at_double_dash=True, stop=None, nume
     return i
 
 
+def _split_string(rest, spec, boolean, valued):
+    """`env -S 'A=1 cmd'` (the optional `split_flags` of a wrapper): the words of `rest` with the value of the flag split like a shell line and the arguments behind
+    it appended. `False` when `rest` has no such flag; `None` when the value cannot be split safely (`$` or an open quote): nothing is guessed."""
+    flags = set(spec['split_flags'])
+    for j, word in enumerate(rest):
+        if word == '--':
+            return False
+        if word in flags:
+            value, tail = (rest[j + 1], rest[j + 2:]) if j + 1 < len(rest) else (None, None)
+        elif word.startswith('--') and word.split('=', 1)[0] in flags and '=' in word:
+            value, tail = word.split('=', 1)[1], rest[j + 1:]
+        elif not word.startswith('--') and len(word) > 2 and word[:2] in flags:
+            value, tail = word[2:], rest[j + 1:]
+        else:
+            continue
+        skip = _skip_flags(rest[:j], boolean, valued, end_at_double_dash=False)   # the options of the wrapper stand before its assignments and its command
+        if skip is None:
+            return None   # a flag in front that is not known
+        if skip != j:
+            return False   # an assignment or the command stands in front: this is a flag of the command, not of the wrapper
+        if value is None or '$' in value:
+            return None
+        try:
+            return _shell_words(value) + tail
+        except ValueError:
+            return None
+    return False
+
+
 def _unwrap_once(argv):
     """The command behind ONE wrapper of the table, or None when argv[0] is not a known wrapper or the wrapper is not understood. The syntax is DATA
     (`data/test_tools.json`); this is its interpreter."""
@@ -169,6 +215,14 @@ def _unwrap_once(argv):
         if skip is None or rest[skip:skip + 1] != [spec['module_flag']] or skip + 1 >= len(rest):
             return None
         return rest[skip + 1:]
+    if spec.get('split_flags'):
+        split = _split_string(rest, spec, boolean, valued)
+        if split is None:
+            return None
+        if split is not False:
+            while split and spec.get('assignments') and re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*=.*', split[0]):
+                split = split[1:]
+            return split or None
     skip = _skip_flags(rest, boolean, valued, numeric=bool(spec.get('numeric_flag')))
     if skip is None:
         return None
@@ -180,8 +234,8 @@ def _unwrap_once(argv):
 
 
 def unwrap_command(command):
-    """The argv of the command behind the wrappers of the table (`npx`, `npm exec`, `pnpm exec|dlx`, `yarn`, `timeout`, `env`, `time`, `nice`, `systemd-run`,
-    `uv run`, `python -m`), at most `max_layers` of them. `command` is an argv list or a shell string. A wrapper or a flag that is not in the table stops the
+    """The argv of the command behind the wrappers of the table (`npx`, `npm exec`, `pnpm exec|dlx`, `yarn`, `timeout`, `env` (also `env -S 'A=1 cmd'`), `time`, `nice`, `systemd-run`,
+    `uv|poetry|pdm|pipenv run`, `python -m`), at most `max_layers` of them. `command` is an argv list or a shell string. A wrapper or a flag that is not in the table stops the
     unwrapping (the words so far are returned), and more layers than the limit return the original argv: nothing is guessed."""
     argv = _split(command)
     current = argv
@@ -195,21 +249,39 @@ def unwrap_command(command):
     return argv if current and _unwrap_once(current) is not None else current
 
 
+def _is_host(word):
+    """A program that runs `-m MODULE`: `python*`, `py`, `pypy*`, `coverage` (a name as `_base` gives it)."""
+    return word.startswith(('python', 'pypy')) or word in ('py', 'coverage')
+
+
 def detect_tool(command):
-    """Name of the tool of a command (`argv` list or shell string): a module word of the table anywhere in the command (`python -m unittest`, `pytest`), the tool of
-    the table behind the known wrappers (`npx playwright test` -> `playwright`, `timeout -k 5 100 cargo test` -> `cargo`), else the first three words as before,
-    else `unknown`. Public and stable: the one table of the tools (`data/test_tools.json`) for every consumer (the adapters, the hook of tests outside test-run)."""
+    """Name of the tool of a command (`argv` list or shell string), in this order: (1) the first word behind the known wrappers, as a module word, then as a tool
+    (`pytest`, `npx playwright test` -> `playwright`, `timeout -k 5 100 cargo test` -> `cargo`); (2) the word after `-m` when a Python host (`python*`, `py`, `pypy*`,
+    `coverage`) stands before it (`python -W error -m unittest`); (3) a tool of the table in the first three words; (4) a module word that is also a tool
+    (`pytest`) anywhere; else `unknown`. A module that is no tool (`unittest`) matches nowhere else. Public and stable: the one table of the tools
+    (`data/test_tools.json`) for every consumer (the adapters, the hook of tests outside test-run)."""
     table = tool_table()
     argv = _split(command)
     words = [_base(word) for word in argv]
-    for word, tool in table['modules'].items():
-        if word in words:
-            return tool
     core = unwrap_command(argv)
-    for word in ([_base(core[0])] if core else []) + words[:3]:
+    first = _base(core[0]) if core else None
+    if first is not None:
+        if first in table['modules']:
+            return table['modules'][first]
+        for name, tool in table['tools']:
+            if first == name:
+                return tool
+    for i, word in enumerate(words[:-1]):
+        if word == '-m' and words[i + 1] in table['modules'] and any(_is_host(before) for before in words[:i]):
+            return table['modules'][words[i + 1]]
+    for word in words[:3]:
         for name, tool in table['tools']:
             if word == name:
                 return tool
+    tool_names = {name for name, _ in table['tools']}
+    for word in words:
+        if word in table['modules'] and word in tool_names:
+            return table['modules'][word]
     return 'unknown'
 
 
@@ -221,6 +293,24 @@ def resolve_executable(argv, which=None, nt=None):
         return argv
     found = (which or shutil.which)(str(argv[0]))
     return [found] + argv[1:] if found else argv
+
+
+CMD_METACHARS = frozenset('&|<>^%"')
+
+
+def cmd_metachar_notice(argv, nt=None):
+    """Warning (stderr, before the start) for Windows only: cmd.exe re-parses the arguments of a `.cmd`/`.bat` target, so `& | < > ^ %` and `"` in them may
+    split or alter the command. `argv` is the RESOLVED one. The text never repeats an argument (it may hold a secret). None when there is nothing to say."""
+    if not (os.name == 'nt' if nt is None else nt):
+        return None
+    argv = [str(a) for a in argv or []]
+    if not argv or not argv[0].lower().endswith(('.cmd', '.bat')):
+        return None
+    if not any(CMD_METACHARS & set(arg) for arg in argv[1:]):
+        return None
+    return ('test-run: warning: an argument of a .cmd/.bat command contains one of & | < > ^ % or a double quote, and cmd.exe interprets these characters '
+            'in the arguments of batch files (for example --grep "a|b" of Playwright), so the command may be split or changed. Quote or escape the '
+            'argument so that cmd.exe does not split it, or move the value to a configuration file of the tool. The command runs as given.')
 
 
 def adapter_notice(fmt, argv, tool, adapter, junit=()):
@@ -249,12 +339,40 @@ def adapter_notice(fmt, argv, tool, adapter, junit=()):
     return f'test-run: no adapter for {tool} (known: {", ".join(names) or "none"}); pass --format <name>, or --format none to silence'
 
 
-def resolve_run(root, explicit):
-    """`(run id, error)`: the explicit id (validated), else the only directory of `.skillsync/runs/`."""
-    if explicit:
-        return _slug(explicit, '--run'), None
+def _run_names(root):
+    """`(directories, records)` of `.skillsync/runs/` as the listing of the directory gives them (never a symbolic link): the names are compared with
+    the listing, so a file system that ignores case does not accept `r1` for `R1`."""
     base = Path(root) / '.skillsync' / 'runs'
-    names = sorted(p.name for p in base.iterdir() if p.is_dir() and not p.is_symlink()) if base.is_dir() and not base.is_symlink() else []
+    if not base.is_dir() or base.is_symlink():
+        return [], []
+    dirs, records = [], []
+    try:
+        entries = list(base.iterdir())
+    except OSError:
+        return [], []
+    for entry in entries:
+        if entry.is_symlink():
+            continue
+        if entry.is_dir():
+            dirs.append(entry.name)
+        elif entry.is_file() and entry.name.endswith('.json') and len(entry.name) > 5:
+            records.append(entry.name[:-5])
+    return sorted(dirs), sorted(records)
+
+
+def resolve_run(root, explicit):
+    """`(run id, error)`: the explicit id (validated, and with a trace in `.skillsync/runs/`: a directory or a `<id>.json` record, compared with the
+    listing exactly), else the only directory of `.skillsync/runs/`."""
+    dirs, records = _run_names(root)
+    if explicit:
+        run_id = _slug(explicit, '--run')
+        if run_id in dirs or run_id in records:
+            return run_id, None
+        known = sorted(set(dirs) | set(records))
+        if not known:
+            return None, f'--run {run_id}: no run in .skillsync/runs/'
+        return None, f'--run {run_id}: no such run in .skillsync/runs/ (runs: {", ".join(known[:8])})'
+    names = dirs
     if len(names) == 1:
         return names[0], None
     return None, ('--run is required: ' + (f'{len(names)} runs in .skillsync/runs/ ({", ".join(names[:8])})' if names else 'no run in .skillsync/runs/'))
@@ -323,12 +441,13 @@ class TestRecorder:
         self.started_wall = None
         self.tree_start = None
         self.ended = False
+        self.karma = karma_line.Tally()   # the live counters of Karma-style `Executed N of M` lines when no adapter is selected
         self.last = None
 
     def started(self, check):
         self.path, self.number = events.new_attempt(self.root, self.run_id, self.step)
         self.writer = events.EventWriter(self.path, mask=self.mask)   # a failure here (disk, permissions) reaches `run_validation`: the command does not start
-        command = check.get('command') or ' '.join(shlex.quote(a) for a in check.get('argv') or [])
+        command = check.get('command') or ' '.join(shlex.quote(a) for a in check.get('display') or check.get('argv') or [])   # `display`: the command of the user, before `resolve_executable`
         self.started_wall = time.time()
         try:
             self.tree_start = test_gate.work_tree_id(self.root)   # the content the tests START on (the gate compares it with the end)
@@ -381,13 +500,9 @@ class TestRecorder:
     def _line(self, check, stream, text):
         if self.adapter is not None:
             self._adapter_call(lambda: self.adapter.feed(stream, text, self.ctx))
-        found = KARMA.search(text) if self.adapter is None else None   # a selected adapter owns the counters; the built-in reader only works without one
-        if found and self.writer is not None:
-            done, total = int(found.group(1)), int(found.group(2))
-            rest = text[found.end():]
-            skip, fail = KARMA_SKIPPED.search(rest), KARMA_FAILED.search(rest)
-            skipped, failed = int(skip.group(1)) if skip else 0, int((fail.group(1) or fail.group(2)) if fail else 0)
-            self.writer.counts(passed=max(done - failed - skipped, 0), failed=failed, skipped=skipped, running=0, total=total)
+        if self.adapter is None and self.writer is not None and self.karma.feed(text):   # a selected adapter owns the counters; the built-in reader only works without one
+            totals = self.karma.totals()
+            self.writer.counts(passed=totals['passed'], failed=totals['failed'], skipped=totals['skipped'], running=0, total=totals['total'])
 
     def finished(self, check, result, output):
         writer = self.writer
@@ -399,6 +514,7 @@ class TestRecorder:
             if not self.ended:
                 writer.end('BLOCKED', result.get('exit_code'), reason='Interrupted while the end of the run was recorded', ms=_ms(result.get('duration_seconds')))
                 self.ended = True
+                self.last = {'status': 'BLOCKED', 'attempt': self.number, 'file': self.path, 'source': None}
         finally:
             writer.close()
 
@@ -469,6 +585,8 @@ class TestRecorder:
                 else evidence_reason('test', ran, skipped, False, self.allow_skips)
             if reason and self.allow_no_count and ran is None and not failed:
                 reason = None
+            if not reason and not failed and output:   # the count is known, so no allowance lifts it: specs of an interrupted Karma run never ran
+                reason = karma_unexecuted_reason(output)
             status = 'BLOCKED' if reason else 'PASS'
         try:
             tree = test_gate.work_tree_id(self.root)
@@ -560,6 +678,8 @@ def _command(args):
             root, _ = read_project(args.path)
             run_id, problem = resolve_run(root, args.run)
             if problem or not args.step:
+                if problem and args.run:
+                    problem += f'; copy .skillsync/runs/{args.run}/ (or {args.run}.json) from the machine of the run, or record the run with skillsync checkpoint'
                 print(f"BLOCKED: {problem or '--step is required with --import'}", file=sys.stderr)
                 return 2
             path, number = import_events(root, run_id, _slug(args.step, '--step'), args.import_file, args.source_sha)
@@ -589,7 +709,11 @@ def _command(args):
             print(notice, file=sys.stderr)
         recorder = TestRecorder(root, run_id, step, source, mask=events.mask_setting(manifest), junit=args.junit or [], passthrough=True,
                                  allow_no_count=args.allow_no_count, allow_skips=args.allow_skips, adapter=adapter)
-        check = {'id': 'test-run', 'argv': resolve_executable(command), 'cwd': str(root), 'kind': 'build', 'timeout': float(args.timeout), 'required': True, '_env': {'PYTHONUNBUFFERED': '1', **(adapter.env() if adapter is not None else {})},
+        resolved = resolve_executable(command)
+        warning = cmd_metachar_notice(resolved)
+        if warning:
+            print(warning, file=sys.stderr)
+        check = {'id': 'test-run', 'argv': resolved, 'display': list(command), 'cwd': str(root), 'kind': 'build', 'timeout': float(args.timeout), 'required': True, '_env': {'PYTHONUNBUFFERED': '1', **(adapter.env() if adapter is not None else {})},
                  'resources': ['test-run:' + str(Path(root).resolve()) + ':' + (step or events.NO_STEP)]}
         with _Interruptible():
             report = run_validation(root, [check], observer=recorder)
@@ -600,13 +724,17 @@ def _command(args):
     code = result.get('exit_code')
     last = recorder.last or {}
     where = f", events {last['file']}" if last.get('file') else ''
-    print(f"test-run: step {step or '-'} ({source}), attempt {last.get('attempt', '-')}: {last.get('status', result.get('status'))}{where}", file=sys.stderr)
+    print(f"test-run: step {step or '-'} ({source}), attempt {last.get('attempt', '-')}: {last['status'] if last.get('status') else 'BLOCKED (no recorded status)'}{where}", file=sys.stderr)
     if code is None:
         print(f"BLOCKED: {result.get('reason') or report.get('reason') or 'the command did not run'}", file=sys.stderr)
         return 127 if 'Missing prerequisites' in (result.get('reason') or '') else 2
     if (result.get('reason') or '').startswith('Timeout'):
         return 124
-    return int(code)
+    code = int(code)
+    if code == 0 and last.get('status') != 'PASS':
+        print(f"test-run: exit code 2: the command exited 0, but the run is {last.get('status') or 'without a recorded status'} (no proof of passing tests); see the line above", file=sys.stderr)
+        return 2
+    return code
 
 
 def split_command(argv):
@@ -624,7 +752,7 @@ def split_command(argv):
 def register(subparsers):
     parser = subparsers.add_parser('test-run', help='Run a test command through skillsync and record its events for the status page (a step of a plan)')
     parser.add_argument('path', help='project directory (use . for the current one)')
-    parser.add_argument('--run', help='run id (.skillsync/runs/<id>/); default: the only run of the project')
+    parser.add_argument('--run', help='run id (a directory .skillsync/runs/<id>/ or a record <id>.json must exist); default: the only run of the project')
     parser.add_argument('--step', help='plan step id (default: the only step "w toku" in the checkpoints)')
     parser.add_argument('--junit', action='append', help='JUnit XML or TRX report file or directory written by the command (default places: dotnet, Maven, Gradle)')
     parser.add_argument('--allow-no-count', metavar='REASON', help='accept a passing command whose number of executed tests is unknown (the reason is recorded and shown)')

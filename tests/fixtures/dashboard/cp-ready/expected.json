@@ -146,6 +146,7 @@
         "given": null,
         "kind": "cp",
         "path": "2026-01-12-demo-release",
+        "planState": "in_progress",
         "reason": "CP → origin/feat/demo; sesja czeka na „CP”; 1 commit niewypchniętych względem origin (gałęzi jeszcze nie ma na origin)",
         "run": "2026-01-12-demo-release",
         "sha": "<head>",
@@ -158,6 +159,7 @@
         "given": null,
         "kind": "ready",
         "path": "2026-01-12-demo-release",
+        "planState": "in_progress",
         "reason": "1 commit niewypchniętych względem origin (gałęzi jeszcze nie ma na origin)",
         "run": "2026-01-12-demo-release",
         "sha": "<head>",
@@ -251,6 +253,7 @@
   "eta": null,
   "expertQuestions": {
     "blocking": 0,
+    "current": null,
     "items": [],
     "open": 0,
     "runs": []

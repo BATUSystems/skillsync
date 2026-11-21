@@ -24,8 +24,9 @@ from .common import add_project_arguments, decode_text, file_lines, plan_section
 from .layers import add_layer_argument
 from .delivery_mode import delivery_info
 from .status import (APPROVAL_WORDS, APPROVALS_FILE, MAX_APPROVALS_BYTES, _APPROVAL_SHA, _approval_at, _message, _status_fields,
-                     git_blob_sha, valid_branch_name)
+                     git_blob_sha, plan_state_for_run, valid_branch_name)
 from .pathfmt import posix
+from .specs import specs_info
 from . import plan_phases, dashboard_tests, dashboard_forecast, test_events
 
 SCHEMA = 1
@@ -852,12 +853,11 @@ def _question_items(slug, asked, closed):
     return items
 
 
-def build_expert_questions(root):
-    """Contract field `expertQuestions`: open questions to a domain expert across ALL runs of the project
-    (`docs/prototypes/<slug>/questions.json`), not only the run of the visible spec. `runs` lists only runs with open
-    questions; `url` is the path of that run's page on the prototype server (the consumer adds the origin)."""
+def _expert_questions_pass(root):
+    """`(expertQuestions without `current`, {slug: (asked, closed)})`: one reading of every `questions.json` of the project
+    (`docs/prototypes/<slug>/questions.json`), shared by the project view and the view of the run (`build_current_questions`)."""
     base = prototypes_root(root)
-    runs, items = [], []
+    runs, items, folded_by_slug = [], [], {}
     if base is not None:
         try:
             names = sorted(os.listdir(base))
@@ -875,6 +875,7 @@ def build_expert_questions(root):
             folded = _read_questions(questions)
             if folded is None:
                 continue
+            folded_by_slug[name] = folded
             asked, closed = folded
             items += _question_items(name, asked, closed)
             still_open = [op for qid, op in asked.items() if qid not in closed]
@@ -884,8 +885,71 @@ def build_expert_questions(root):
                              'url': f'/_experts/{name}',
                              'addressees': 'all' if everyone else sorted({login for op in still_open for login in _addressees(op)})})
     items.sort(key=lambda item: (item['at'], item['id']), reverse=True)
-    return {'open': sum(run['open'] for run in runs), 'blocking': sum(run['blocking'] for run in runs), 'runs': runs,
-            'items': items[:QUESTION_ITEMS_LIMIT]}
+    summary = {'open': sum(run['open'] for run in runs), 'blocking': sum(run['blocking'] for run in runs), 'runs': runs,
+               'items': items[:QUESTION_ITEMS_LIMIT]}
+    return summary, folded_by_slug
+
+
+def build_expert_questions(root):
+    """Contract field `expertQuestions` (without `current`): open questions to a domain expert across ALL runs of the project
+    (`docs/prototypes/<slug>/questions.json`), not only the run of the visible spec. `runs` lists only runs with open
+    questions; `url` is the path of that run's page on the prototype server (the consumer adds the origin)."""
+    return _expert_questions_pass(root)[0]
+
+
+def _spec_key(value):
+    """A spec path as a normalized relative path (`./docs/x.md` = `docs/x.md`), or None for anything that is not a non-empty string."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    return posixpath.normpath(value.strip().replace('\\', '/'))
+
+
+def build_current_questions(root, spec, slug, folded, overview, writing):
+    """`expertQuestions.current`: the prototypes and the questions of the run of the visible spec, or None.  Bound by the spec path:
+    prototypes = those whose `prototype.json` has `requirements` equal to `spec.path` (both as normalized relative paths), plus the prototype named by `slug` (the `Prototyp:`
+    line) when it exists; questions = the `ask`s of ALL prototypes whose `origin.spec` is that path (a normalized relative path; an `ask`
+    without `origin` is only in the project view).  `folded` = `{slug: (asked, closed)}` from the single reading of `questions.json`;
+    `origin.spec` is only a filter and never leaves."""
+    target = _spec_key(spec.get('path')) if spec.get('exists') else None
+    base = prototypes_root(root)
+    if target is None or base is None:
+        return None
+    try:
+        names = sorted(os.listdir(base))
+    except OSError:
+        return None
+    rows, items, still_open = [], [], []
+    for name in names:
+        if not EXPERT_QUESTION_SLUG.fullmatch(name):
+            continue
+        directory = base / name
+        meta = directory / 'prototype.json'
+        if directory.is_symlink() or not directory.is_dir() or meta.is_symlink() or not meta.is_file():
+            continue
+        if len(rows) < PROTOTYPES_LIMIT and (name == slug or _prototype_requirements(meta) == target):
+            info = overview(name)
+            if info is not None:
+                rows.append({'slug': name, **info, 'writing': writing(name) if writing else None})
+        if name in folded:
+            asked, closed = folded[name]
+            mine = {qid: op for qid, op in asked.items()
+                    if isinstance(op.get('origin'), dict) and _spec_key(op['origin'].get('spec')) == target}
+            items += _question_items(name, mine, closed)
+            still_open += [op for qid, op in mine.items() if qid not in closed]
+    if not rows and not items:
+        return None
+    items.sort(key=lambda item: (item['at'], item['id']), reverse=True)
+    return {'spec': spec['path'], 'prototypes': rows, 'open': len(still_open),
+            'blocking': sum(1 for op in still_open if op.get('blocking') is True), 'items': items[:QUESTION_ITEMS_LIMIT]}
+
+
+def _prototype_requirements(meta):
+    """`requirements` of a prototype as a normalized spec path (wider than the raw comparison of `find_prototype`: `./docs/x.md` matches `docs/x.md`), or None."""
+    try:
+        data = json.loads(read_text(meta, 64_000))
+    except (OSError, ValueError, RecursionError):
+        return None
+    return _spec_key(data.get('requirements')) if isinstance(data, dict) else None
 
 
 def prototype_acceptance(root, slug):
@@ -1325,11 +1389,23 @@ def _given_tip(word, entry):
     return f'zgoda „{word}” dana {at}'.rstrip() if at else f'zgoda „{word}” już dana'
 
 
-def consent_buttons(spec, plan, waiting, words, log, head_full, run_ok):
+def _consent_current(entry, plan_state, tracked):
+    """K13: does the entry (same sha as HEAD) still stand for the plan in its current status?"""
+    if 'planState' in entry:
+        return entry['planState'] == plan_state
+    if plan_state != 'done':
+        return True
+    return (tracked() if callable(tracked) else tracked) is not False
+
+
+def consent_buttons(spec, plan, waiting, words, log, head_full, run_ok, run_plan_state=None, tracked=True):
     """Consent buttons of the act tiles, each in one of the states: before (the act has not come) = no entry; `waiting` =
     visible and active (the session waits for this consent); `running` = visible, inactive, `reason` "czeka na…";
     `after` = visible, inactive, `reason` "zgoda dana HH:MM" (already given; no second entry). The "waiting" signal is
-    written by the session: `czeka na GO plan|GO implement` in the spec/plan status or `czeka:` in a checkpoint."""
+    written by the session: `czeka na GO plan|GO implement` in the spec/plan status or `czeka:` in a checkpoint.
+    CP/READY `after` (K13): the last entry of the word, with the sha of HEAD and `planState` equal to the current status of the plan of the run
+    (`run_plan_state`, default the status of the shown plan); an entry without the field counts by sha alone, except with `tracked`
+    false (`tracked` = bool or callable) and a `done` plan: there it gives no `after`, or an old consent would block a new one."""
     out = []
     waits = {(item.get('word') or '').rstrip('!').upper() for item in waiting}
     last = {entry.get('word'): entry for entry in log}
@@ -1371,8 +1447,8 @@ def consent_buttons(spec, plan, waiting, words, log, head_full, run_ok):
     if plan_status in ('in_progress', 'done'):
         for word in words:
             kind = word['word'].lower()
-            entry = last.get(word['word'])
-            if entry and head_full and entry.get('sha') == head_full:
+            entry = last.get(word['word'])   # the last entry of the word decides (as before K13)
+            if entry and head_full and entry.get('sha') == head_full and _consent_current(entry, run_plan_state or plan_status, tracked):
                 add(kind, 'after', _given_tip(word['word'], entry) + f' (HEAD {head_full[:8]})', None, head_full, entry)
                 out[-1]['target'] = entry.get('target') or word.get('target')
                 continue
@@ -1387,16 +1463,22 @@ def consent_buttons(spec, plan, waiting, words, log, head_full, run_ok):
     return out
 
 
-def approvals_state(root, spec, plan, delivery, run_id, head_full, log, waiting, enabled=True):
+def approvals_state(root, spec, plan, delivery, run_id, head_full, log, waiting, enabled=True, tracked=True):
     """`approvals {enabled, actions[], last}`; every action carries `run` (the run directory the consent is written to, or
     null when it does not exist); `path` of `cp`/`ready` is the run id."""
     if not enabled:
         return {'enabled': False, 'actions': [], 'last': log[-1] if log else None}
     run_ok = run_dir(root, run_id) is not None
-    actions = consent_buttons(spec, plan, waiting, delivery.get('words', []), log, head_full, run_ok)
+    run_state = plan_state_for_run(root, run_id) if run_ok else None   # K13: the plan of the run, not the plan shown on the page
+    if callable(tracked):   # one `specs_info` (git) per status build, not one per consent word
+        probe, cache = tracked, []
+        tracked = lambda: cache[0] if cache else (cache.append(probe()) or cache[0])
+    actions = consent_buttons(spec, plan, waiting, delivery.get('words', []), log, head_full, run_ok, run_state, tracked)
     for action in actions:
         if action['kind'] in ('cp', 'ready'):
             action['path'] = run_id
+            if run_state is not None:
+                action['planState'] = run_state   # the state the user saw; the click sends it back (409 when it changed)
         action['run'] = run_id if run_ok else None
     return {'enabled': True, 'actions': actions, 'last': log[-1] if log else None}
 
@@ -2135,10 +2217,11 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
                         {'risky': risky_sections(spec_text), 'trwa': trwa_stages(chronological),
                          'writingSince': _local_hhmm(writing_state['since']) if writing_state else None})
     acts[0]['linkWarning'] = link_warning(root, spec, run, bool(spec_path))
-    expert_questions = build_expert_questions(root)
+    expert_questions, folded_questions = _expert_questions_pass(root)
     overview_of = overview or (lambda name: prototype_overview(root, name))
     writing_of = writing or (lambda name: prototype_writing(root, name, now_ms))
     prototypes = build_prototypes(root, overview_of, writing_of)
+    current_questions = build_current_questions(root, spec, slug, folded_questions, overview_of, writing_of)
     current_after = (overview_of(slug) or {}).get('commentsAfterAcceptance') if slug else None
     waiting = waiting_items(run, spec if spec_path else None, plan_info, slug, writing=writing_state, expert=expert_questions)
     git_info = read_git(root)
@@ -2177,7 +2260,8 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
                     if plan_info and plan_info.get('status') == 'in_progress' and run.get('lastReportAt')
                     and not any(item.get('source') in ('checkpoint', 'expert') for item in waiting) else None),
         'approvals': approvals_state(root, spec, plan_info, delivery_state, run_id, git_info['headFull'],
-                                     run_approvals(root, run_id), waiting, approvals),
+                                     run_approvals(root, run_id), waiting, approvals,
+                                     lambda: specs_info(root, manifest)['tracked']),
         'delivery': delivery_state,
         'session': {'url': session_url},
         'prototype': {'slug': slug, 'port': prototype_port, 'up': bool(slug) and bool(prototype_up and prototype_up()),
@@ -2187,7 +2271,7 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
         'readiness': read_readiness(root, run_id, run['exists']),
         'assumptions': {'count': len(assumptions), 'items': assumptions},
         'blockingQuestions': {'count': len(blocking), 'items': blocking},
-        'expertQuestions': expert_questions,
+        'expertQuestions': {**expert_questions, 'current': current_questions},
         'substeps': build_substeps(progress, chronological),
         'timing': timing,
         'forecast': dashboard_forecast.build_forecast(timing, progress, plan_info['status'] if plan_info else None,
