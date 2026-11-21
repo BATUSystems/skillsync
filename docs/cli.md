@@ -121,7 +121,7 @@ Pomoc: `skillsync <komenda> --help`.
 | `add <projekt> <skill> [--layer ID=PATH]` | dopisuje skill do manifestu i wykonuje `link` |
 | `skills add\|list\|index\|remove` | szkielet skilla, lista z członkostwem, indeks katalogu, usunięcie jawnego wpisu z manifestu |
 
-Flagi `skills`: `add [--add-to-project] [--layer ID=PATH] [--to-layer ID]`, `list [--json] [--layer ID=PATH] [--status]`,
+Flagi `skills`: `add <nazwa> [--add-to-project <projekt>] [--layer ID=PATH] [--to-layer ID]` (`--add-to-project` bierze ścieżkę projektu, do którego manifestu trafi nowy skill), `list [--json] [--layer ID=PATH] [--status]`,
 `index [--check] [--layer ID=PATH] [--stdout]`, `remove [--json] [--layer ID=PATH] [--no-link]`.
 
 Dwie różne flagi warstw:
@@ -260,9 +260,11 @@ Szczegóły: [workflow](workflow.md).
 
 ## Prototypy
 
-`skillsync prototype init|sync|index|list|ids|migrate|serve|user|login-link|iterate|restore|writing|accept|gate|comments|triage|decide|resolve|merge-comments|question <projekt> …`
+`skillsync prototype init|sync|index|list|ids|migrate|serve|user|login-link|iterate|restore|writing|accept|gate|comments|triage|decide|resolve|merge-comments|reply|wait|question <projekt> …`
 
 Komenda działa na klikalnych prototypach HTML w repo projektu. Opis akcji, kodów i formatu: [prototypes](prototypes.md).
+
+`prototype reply <projekt> <slug> <wątek> --text TEKST`: odpowiedź agenta w wątku komentarzy (autor `agent`, znaczek AI w interfejsie; to nie jest zgoda). `prototype wait <projekt> <slug> [--since ISO] [--after ID-OPERACJI] [--timeout S] [--interval S]`: czeka na nowy komentarz osoby albo na akceptację wszystkich ekranów; kod wyjścia 0 ze zdarzeniem `comment` albo `accepted`, 3 przy przekroczeniu czasu (domyślnie 1800 s, odpytywanie co 5 s); `--since` razem z `--after` to `BLOCKED` (kod 2).
 
 `prototype serve <projekt> [--layer ID=PATH] [--assets DIR] [--json] [--host ADR] [--port N] [--users PLIK] [--secure-cookies] [--trust-proxy] [--no-source-writes] [--login-to-view] [--demo]`: serwer prototypów ze wspólnym API komentarzy (na pierwszym planie, Ctrl+C zatrzymuje). `--host`: adres nasłuchu (domyślnie `127.0.0.1`); `--port`: port (domyślnie `prototype.port` z manifestu, bez klucza 4445; `0` = dowolny wolny); `--users`: plik użytkowników względem projektu; `--secure-cookies`: ciasteczko sesji z `Secure` (za TLS); `--trust-proxy`: limit logowania liczony z `X-Forwarded-For`; `--no-source-writes`: serwer nigdy nie zapisuje źródeł prototypów (przywracanie ekranów); `--login-to-view`: logowanie także do oglądania. `--demo`: pokaz tylko do odczytu bez kont (bez logowania, komentarzy, wątków, akceptacji i odpowiedzi eksperta; serwer odmawia każdego zapisu, istniejące komentarze są ukryte, strony są jawne dla każdego, kto dotrze do adresu); domyślny nasłuch pokazu to `0.0.0.0` (każdy interfejs), a `--host 127.0.0.1` zawęża go do tej maszyny. `--demo` z `--login-to-view` kończy się `BLOCKED` (exit 2: pokaz nie ma kont ani logowania); `--users`, `--secure-cookies` i `--trust-proxy` przy `--demo` są ignorowane z notą. Model zagrożeń pokazu: [security](security.md#serwer-prototypów-pytania-do-eksperta).
 `list --json`: pole `acceptance` = `{screens, accepted, stale, perScreen}` (`null` przy v1 i bez `comments.json`); `perScreen` to `[{id, state}]` dla każdego ekranu w kolejności dokumentu, `state` = `accepted` | `stale` | `pending` (accepted + stale + pending = `screens`).
@@ -342,7 +344,7 @@ Plik użytkowników jest prywatny: na POSIX tryb 0600, na Windows ACL (tylko uż
   `prototypes`), kilka = BLOCKED `slug_ambiguous` (z `candidates`). `--ref` ma postać `TYTUŁ|ADRES[|WYCIĄG]` (do 5; adres względny albo `https`), `--option` `ETYKIETA[:recommended]`
   (do 8, najwyżej jedna rekomendowana, kilka tylko z `--multi`), `--multi` (pytanie wielokrotnego wyboru: ekspert zaznacza co najmniej jeden
   wariant, wymaga co najmniej 2 opcji; „żaden” to własna odpowiedź tekstowa; do pytań typu „które formaty/kolumny/role” zamiast
-  rozbijania na pytania tak/nie), `--to LOGIN` powtarzane (domyślnie wszyscy eksperci; login spoza pliku kont daje
+  rozbijania na pytania tak/nie), `--cid ID` (identyfikator deduplikacji; domyślnie wyprowadzony z id pytania), `--to LOGIN` powtarzane (domyślnie wszyscy eksperci; login spoza pliku kont daje
   ostrzeżenie), `--refers-to <id>` (spór z wcześniejszą odpowiedzią w tym samym przebiegu), `--origin <spec>:Q<n>` (ścieżka względna). Wyciąg ze speca lub
   dokumentacji agent wpisuje sam: serwer nie czyta repozytorium. Skan sekretów w treści jest heurystyką: trafienie blokuje
   (`secret_detected`, exit 2, bez wartości w raporcie), `--force` przepuszcza z ostrzeżeniem. Raport: `questionId`, `slug`, `specLine`

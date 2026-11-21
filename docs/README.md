@@ -27,6 +27,7 @@ Potem: [installation](installation.md) (instalacja i weryfikacja) → [configura
 | [workflow.md](workflow.md) | agent flow: akty I–III, role, karty i dyspozycja, komendy kontrolne |
 | [workflow-details.md](workflow-details.md) | pełny cykl orkiestratora i podagenta (podumysł) |
 | [prototypes.md](prototypes.md) | klikalne prototypy HTML: `init`, `sync`, `index`, `list`, galeria, komentarze |
+| [test-adapters.md](test-adapters.md) | adaptery wyjścia narzędzi testowych dla `test-run`: stan pojedynczych testów zapisywany do pliku przebiegu i pokazywany w zakładce Testy |
 | [dashboard-contract.md](dashboard-contract.md) | kontrakt JSON `schema: 1` strony statusu: `dashboard show\|serve\|metrics`, `approvals record`, endpointy serwera |
 | [layers-authoring.md](layers-authoring.md) | jak założyć i utrzymywać warstwę organizacji lub osobistą |
 | [examples/personal-layer/](examples/personal-layer/) | kompletny przykład warstwy personal |
