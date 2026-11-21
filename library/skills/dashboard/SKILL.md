@@ -175,7 +175,7 @@ była, a nie, że pętla dała PASS.
   w linii `Status:` pliku, którą sesja i `approvals wait --file` i tak czytają. Serwer nie ma własnego dziennika.
 - **„CP” i „READY” (tryb `pr`) w kafelku Aktu III** — przycisk zapisuje zgodę, nie otwiera sesji.
   Dwa kliknięcia; serwer zapisuje przez `status.record_approval` (ta sama funkcja co `skillsync approvals record`: blokada
-  plikowa, odmowa drugiego wpisu dla tego samego HEAD) do `.skillsync/runs/<run-id>/approvals.jsonl` wpis
+  plikowa, odmowa drugiego wpisu dla tego samego HEAD, odmowa przy zmienionym statusie planu = 409 z `code: plan_state_changed`) do `.skillsync/runs/<run-id>/approvals.jsonl` wpis
   `{"schema": 1, "at", "word": "CP"|"READY", "sha": <pełny HEAD pokazany na stronie>, "run", "plan", "target", "branch", "ahead", "mode", "by", "source": "dashboard"}`.
   Zgoda dotyczy tego HEAD: nowy commit = nowa zgoda; ponowny zapis dla tego samego HEAD = odmowa. Przycisk aktywny, gdy
   plan jest `done`, najnowszy checkpoint ma `czeka: CP|READY` albo gałąź robocza ma commity, których nie ma na origin

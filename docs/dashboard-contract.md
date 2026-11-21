@@ -11,7 +11,7 @@ wyniku: `tests/fixtures/dashboard/<przypadek>/input/` i `expected.json`.
 | `skillsync dashboard show <projekt> [--json] [--plan <rel>]` | drukuje kontrakt `schema: 1` (JSON; bez `--json` ten sam JSON, formatowany); tylko odczyt, bez zapisu do projektu; `--plan` wybiera plan (ścieżka względna, np. `docs/plans/<plik>.md`), bez niego plan wybierany jest automatycznie (`planAuto: true`) |
 | `skillsync dashboard serve <projekt> [--port N] [--read-port N --approve-port M] [--read-bind A] [--approve-bind A] [--host H] [--approve-host H] [--read-host H]` | serwer HTTP nad tym samym JSON (`/api/status`, strumień zmian `/events`, przyciski zgód); bez flag portów: dwa gniazda (odczyt 5140 na wszystkich interfejsach, zgody 5141 tylko na tej maszynie), `--port N`: jedno gniazdo, `--read-port`/`--approve-port`: jawne numery (sekcja „Serwer”); port wybiera się per projekt, by strony nie kolidowały |
 | `skillsync dashboard metrics <projekt> <run-id> [--json] [--plan <rel>]` | ogólne metryki przebiegu: czas podkroków `Fn.k` z checkpointów, liczby rund i porażek; podkrok bez danych jest oznaczony jawnie (sekcja „Metryki przebiegu”) |
-| `skillsync approvals record <projekt> --word "GO plan\|GO implement\|CP\|READY" --run <run-id> [--sha <git sha>] [--target X] [--branch Y] [--file docs/…] --source <cli\|ide> [--json]` | zapisuje zgodę użytkownika (patrz niżej; `dashboard` ustawia tylko serwer) |
+| `skillsync approvals record <projekt> --word "GO plan\|GO implement\|CP\|READY" --run <run-id> [--sha <git sha>] [--target X] [--branch Y] [--file docs/…] [--expect-plan-state <status>] --source <cli\|ide> [--json]` | zapisuje zgodę użytkownika (patrz niżej; `dashboard` ustawia tylko serwer) |
 
 Kody wyjścia (jak pozostałe komendy workflow): `0` = PASS, `2` = BLOCKED (błąd danych wejściowych, odmowa zapisu, brak
 projektu lub przebiegu). Raport komend zapisujących i `metrics --json` to JSON z polami `schema`, `status` (`PASS` albo
@@ -44,6 +44,7 @@ projektu lub przebiegu). Raport komend zapisujących i `metrics --json` to JSON 
   katalogu przebiegu, dowiązanie na drodze `.skillsync/runs/<run-id>` lub dowiązany `approvals.jsonl`, plik, który
   przekroczyłby 256 KiB (czytelnicy pomijają większy plik w całości), albo blokada trzymana dłużej niż 10 s też kończą się
   `BLOCKED`.
+- `--expect-plan-state <status>` (tylko `CP`/`READY`; `draft`, `approved`, `in_progress`, `done` albo `archived`): zapis odczytuje status planu przebiegu pod tą samą blokadą pliku, co zapis, porównuje go z podanym przed testem duplikatu i odmawia (kod `2`, `status: BLOCKED`, dodatkowe pole raportu `code: plan_state_changed`, nic nie zapisane), gdy status jest inny albo nieznany (brak planu z `Przebieg:`, brak linii `Status:`, status spoza listy, plan ponad limit rozmiaru). Komunikat: `approvals record: plan state changed (expected <X>, current <Y>); consent not recorded`, `<Y>` = `unknown` przy nieznanym. Zapisany wpis ma `planState` równy podanemu. Wartość spoza listy, flaga ze słowem GO i flaga razem z jawnym `plan_state` (API) to zwykłe `BLOCKED` bez `code`. Odmowa z powodu rozmiaru pliku albo zajętej blokady poprzedza porównanie i też nie ma `code`. Serwer wywołuje tę samą funkcję (`expect_plan_state`), zob. `POST /api/approve`.
 - Blokada: blokada systemowa na pliku `approvals.jsonl.lock` w katalogu przebiegu (`fcntl.flock` na POSIX,
   `msvcrt.locking` na Windows), ta sama implementacja (`prototype_server.FileLock`) co blokady pliku pytań, komentarzy
   i użytkowników serwera prototypów. Nie ma pojęcia „porzuconej” blokady ani jej przejmowania: o zajętości decyduje
@@ -299,7 +300,7 @@ opis w sekcji „Serwer”.
 | `after` | zgoda już dana; drugiego zapisu nie ma; `given` to wpis zgody |
 
 Pola: `reason` (string lub null), `blocked` (powód nieaktywności; null dla `waiting`), `path` (plik speca/planu; dla
-`cp`/`ready` id przebiegu), `planState` (tylko `cp`/`ready`, gdy plan przebiegu istnieje: jego status w chwili budowy statusu; klient odsyła go w `POST /api/approve` jako `planState`, a serwer odpowiada `409`, gdy bieżący status planu jest inny, np. plan zamknięto po narysowaniu strony przy tym samym HEAD; brak pola w żądaniu = zachowanie bez tej kontroli), `sha` (git blob sha pliku do zgody GO albo HEAD dla CP/READY; pusty string, gdy brak), `given`
+`cp`/`ready` id przebiegu), `planState` (tylko `cp`/`ready`, gdy plan przebiegu istnieje: jego status w chwili budowy statusu; klient odsyła go w `POST /api/approve` jako `planState`, a serwer odpowiada `409` (ciało `{error, code: "plan_state_changed"}`), gdy status planu odczytany przez zapis pod blokadą pliku jest inny, np. plan zamknięto po narysowaniu strony przy tym samym HEAD; brak pola w żądaniu = zachowanie bez tej kontroli), `sha` (git blob sha pliku do zgody GO albo HEAD dla CP/READY; pusty string, gdy brak), `given`
 (wpis lub null), `target` (tylko `cp`/`ready`; dokąd oddać), `run` (id przebiegu, do którego trafi wpis zgody, gdy katalog
 `.skillsync/runs/<run-id>` istnieje; inaczej null; pole dodane addytywnie, `path` dla `cp`/`ready` bez zmian).
 
@@ -892,9 +893,9 @@ Zgody in-process (bez podprocesu `skillsync`, bez własnego zapisu serwera): „
 409), a potem, gdy katalog przebiegu akcji (`actions[].run`) istnieje, `status.record_approval(..., source="dashboard",
 file=path, sha_after=<sha po zmianie>)`: wpis `{schema, at, word, sha, by, source: "dashboard", file, shaAfter, run}`.
 Bez katalogu przebiegu zgoda GO zmienia tylko linię `Status:` (`trail: null`; sesja czyta zgodę ze statusu pliku, jak
-`approvals wait --file`). „CP”/„READY” = `status.record_approval(..., source="dashboard")` z `run`, `plan`, `planState` (z żądania; przy innym niż bieżący = 409), `target` (tylko
+`approvals wait --file`). „CP”/„READY” = `status.record_approval(..., source="dashboard")` z `run`, `plan`, `planState` (z żądania, przekazany do zapisu jako `expect_plan_state`; przy innym niż odczytany pod blokadą = 409 z `code: plan_state_changed`), `target` (tylko
 CP), `branch`, `ahead`, `mode`; odmowa rdzenia po przejściu kontroli serwera (blokada pliku, limit 256 KiB, zła nazwa
-gałęzi, wyścig z drugim zapisem) = 500 z powodem. Id przebiegu: wzorzec `status.RUN_ID` (`[A-Za-z0-9][A-Za-z0-9_.-]{0,79}`):
+gałęzi, wyścig z drugim zapisem) = 500 z powodem; wyjątek: odmowa z `code: plan_state_changed` (stan planu inny niż oczekiwany, także plan nieznany) = 409, bo to rdzeń zapisu porównuje stan pod blokadą pliku, a serwer nie ma własnego porównania. Id przebiegu: wzorzec `status.RUN_ID` (`[A-Za-z0-9][A-Za-z0-9_.-]{0,79}`):
 pierwszy znak alfanumeryczny (więc ani `.`, ani `..` jako całe id) i bez `/`; ciągu `..` wewnątrz id (`a..b`) wzorzec nie
 wyklucza, a ponieważ `/` jest zabronione, taki człon nie wychodzi poza `.skillsync/runs/`. Dowiązanie na drodze
 `.skillsync`, `.skillsync/runs` albo katalogu przebiegu wyłącza odczyt przebiegu w `show` i `/api/status` (`run.exists:

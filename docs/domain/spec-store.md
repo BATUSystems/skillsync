@@ -34,7 +34,7 @@ Odbiór planu i `planState`:
 - Przy `tracked: false` odbiór (`needsHuman: acceptance`) zamyka ostatni wpis pary (przebieg, słowo) z `planState: done`, gdy bieżący plan jest `done`. Wpis `done` zamyka odbiór tylko wtedy, gdy jego sha jest commitem repozytorium (`_commit_exists`). Historii gita się nie używa; zmiana innych linii planu (np. `Oddanie:`) nie otwiera odbioru.
 - Duplikat zgody: ta sama para (słowo, sha, `planState`) względem ostatniego wpisu tego słowa w przebiegu.
 - Stan przycisku `after` w tym trybie: wpis bez pola przy planie `done` nie daje „zgody danej”, więc stara zgoda nie blokuje nowej. Przy `tracked: true` odbiór rozstrzyga git; przycisk porównuje wpis z `planState` ze statusem planu niezależnie od gita.
-- Dashboard `POST /api/approve` przyjmuje `planState`; gdy bieżący status planu jest inny, odpowiada `409`, a nie-napis daje `400`. Kontrakt: [dashboard-contract](../dashboard-contract.md).
+- Dashboard `POST /api/approve` przyjmuje `planState` i przekazuje go zapisowi jako `expect_plan_state`; gdy status planu odczytany pod blokadą pliku jest inny, odpowiada `409` z `code: plan_state_changed`, a nie-napis daje `400`. To samo robi `approvals record --expect-plan-state <status>` (kod 2, nic nie zapisane; plan nieznany = odmowa z `current unknown`), jedną funkcją `record_approval`. Kontrakt: [dashboard-contract](../dashboard-contract.md).
 
 Hook zamknięcia (`library/hooks/check-closure.py`) czyta także pliki ignorowane (`git status --ignored`, wpisy `!!`). Plan `done` bez rekordu `final` albo `in_progress` ze wszystkimi krokami odhaczonymi blokuje turę raz na sesję. Projekty dostają to po `skillsync link`, bo kopia hooka się odświeża.
 
