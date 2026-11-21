@@ -25,6 +25,10 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child  # noqa: E402
 from skillsync_workflow import prototype_server as ps  # noqa: E402
 from tests.test_skillsync_prototype import CLI, PrototypeFixture  # noqa: E402
 from tests.test_skillsync_prototype_server import setUpModule, tearDownModule  # noqa: E402,F401  (strażnik katalogu tymczasowego)
@@ -1573,7 +1577,7 @@ class MergeAcceptanceTests(CliProject):
         if name is None:
             (self.proto_dir(slug) / 'comments.json').write_text(text, encoding='utf-8')
         else:
-            (self.root / name).write_text(text, encoding='utf-8')
+            child(self.root, name).write_text(text, encoding='utf-8')
 
     def acceptance_of(self, slug):
         return ps.fold_operations(self.operations(slug))['acceptance']
@@ -1704,7 +1708,7 @@ class GateCase(CliProject):
 
     def plan(self, header_lines=(), body='## Etap 1\nTreść etapu.\n', name='plan.md'):
         text = '# Plan\n\nSpec: docs/specs/x.md\n' + ''.join(line + '\n' for line in header_lines) + '\n' + body
-        path = self.root / 'docs' / 'plans' / name
+        path = child(self.root / 'docs' / 'plans', name)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding='utf-8')
         return 'docs/plans/' + name

@@ -13,6 +13,10 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / 'tests'))
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child  # noqa: E402
 from skillsync_workflow import dashboard  # noqa: E402
 from skillsync_workflow.pathfmt import posix  # noqa: E402
 from layers_helpers import needs_mode_enforcement, needs_os_symlinks  # noqa: E402
@@ -38,7 +42,7 @@ class Workdir(unittest.TestCase):
         self.base = Path(self.temp.name).resolve()
 
     def repo(self, name='app'):
-        root = self.base / name
+        root = child(self.base, name)
         root.mkdir()
         git(root, 'init', '-q', '-b', 'main')
         git(root, 'commit', '-q', '--allow-empty', '-m', 'init')
@@ -47,11 +51,11 @@ class Workdir(unittest.TestCase):
     def fake_worktree(self, name='F1', common_text=None, with_common=True):
         """A linked working directory made of files only: `.git` file -> `<main>/.git/worktrees/<name>` with `commondir`."""
         main = self.base / 'main-repo'
-        admin = main / '.git' / 'worktrees' / name
+        admin = child(main / '.git' / 'worktrees', name)
         write(admin / 'HEAD', 'ref: refs/heads/feat/x\n')
         if with_common:
             write(admin / 'commondir', common_text if common_text is not None else '../..\n')
-        root = self.base / 'wt' / name
+        root = child(self.base / 'wt', name)
         write(root / '.git', f'gitdir: {admin}\n')
         return root, main
 

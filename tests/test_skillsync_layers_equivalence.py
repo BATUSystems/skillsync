@@ -31,6 +31,10 @@ sys.path.insert(0, str(TESTS / 'fixtures' / 'layers'))
 sys.path.insert(0, str(ROOT))
 
 import make_baseline  # noqa: E402
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child  # noqa: E402
 from layers_helpers import LINK_MODES, LayersCase, generator_version, link_mode, make_layer, tree_snapshot, yaml_text  # noqa: E402
 
 BASELINE = TESTS / 'fixtures' / 'layers' / 'baseline'
@@ -48,7 +52,7 @@ class EquivalenceCase(LayersCase):
     def prepare(self, variant, mode, label):
         """Library of the fixture (with or without `layer.yaml`), project with the fixture manifest and the old
         machine config (`library:` key, the keys used by `make_baseline.py`)."""
-        base = self.work / f'{label}-{mode}'
+        base = child(self.work, f'{label}-{mode}')
         library, project = base / 'library', base / 'project'
         make_baseline.build_library(library, with_layer=(variant == 'with-layer-yaml'))
         make_baseline.write(project / '.github' / '.skillsync.yaml', make_baseline.MANIFEST)

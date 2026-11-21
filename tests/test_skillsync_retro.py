@@ -19,6 +19,10 @@ import yaml
 from test_skillsync_workflow import CLI, WorkflowFixture
 from layers_helpers import make_layer
 from layers_helpers import needs_os_symlinks, require_fifo, require_os_symlinks  # noqa: E402
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import descend  # noqa: E402
 
 needs_fifo = unittest.skipUnless(hasattr(os, 'mkfifo'), 'mkfifo unavailable')
 
@@ -97,7 +101,7 @@ class RetroBase(WorkflowFixture):
 
     # ---- zapis danych ----
     def write(self, name, content):
-        return write_exact(self.root / name, content)
+        return write_exact(descend(self.root, name), content)
 
     def run_file(self, ident, *records, close=True, **top):
         records = list(records)
@@ -549,7 +553,7 @@ class Rubric(RetroBase):
 
     def test_evidence_missing_file(self):
         proof = self.evidence('gone.log')
-        os.unlink(self.root / proof['path'])
+        os.unlink(descend(self.root, proof['path']))
         evidence = self.rubric(rec('a', evidence=[proof]))['evidence']
         self.assertEqual((evidence['status'], evidence['missing'], evidence['verified']), ('partial', 1, 0))
 
@@ -582,7 +586,7 @@ class Rubric(RetroBase):
     @unittest.skipIf(CHMOD_INEFFECTIVE, 'chmod 000 nie blokuje odczytu (root lub nie-POSIX)')
     def test_evidence_unreadable_is_counted_not_raised(self):
         proof = self.evidence('ZXQEVIDENCE.log')
-        path = self.root / proof['path']
+        path = descend(self.root, proof['path'])
         path.chmod(0)
         self.addCleanup(path.chmod, 0o644)
         self.run_file('r', rec('a', evidence=[proof]))
@@ -1207,9 +1211,9 @@ class CandidateBase(RetroBase):
             elif state == 'refused':
                 require_os_symlinks(self)
                 self.write(rel + '.real', content)
-                link = self.root / rel
+                link = descend(self.root, rel)
                 link.parent.mkdir(parents=True, exist_ok=True)
-                link.symlink_to(self.root / (rel + '.real'))
+                link.symlink_to(descend(self.root, rel + '.real'))
                 digest = sha(content)
             else:
                 self.write(rel, content)
@@ -2127,8 +2131,9 @@ class CorruptRecords(RetroBase):
     def test_nul_in_evidence_path_is_malformed(self):
         text = self.doc(rec('a', evidence=[{'path': 'a\x00b.log', 'sha256': sha('x')}]))
         self.assertIn('\\u0000', text)
-        data = self.blocked('nul', text)
-        self.assertEqual(self.by_id(data)['nul'], {'id': 'nul', 'class': 'unreadable', 'reason': 'malformed'})
+        # not 'nul': NUL.json is a reserved device name on Windows (tmp_paths refuses it), the id is not what the test is about
+        data = self.blocked('nulbyte', text)
+        self.assertEqual(self.by_id(data)['nulbyte'], {'id': 'nulbyte', 'class': 'unreadable', 'reason': 'malformed'})
 
     def test_lone_surrogate_in_evidence_path_does_not_break_the_report(self):
         self.run_file('good', rec('a'))
@@ -4354,8 +4359,8 @@ class ProposalWorktree(ProposalBase):
         rel = (prefix + '/' if prefix else '') + '.github/.skillsync.yaml'
         commit_file(self.repo, rel, yaml.safe_dump(self.manifest), 'manifest')
         git(self.repo, 'worktree', 'add', '-q', '-b', 'feat', str(self.wt))
-        self.main_root = self.repo / prefix if prefix else self.repo
-        self.root = self.wt / prefix if prefix else self.wt
+        self.main_root = descend(self.repo, prefix) if prefix else self.repo
+        self.root = descend(self.wt, prefix) if prefix else self.wt
         self.assertTrue((self.root / '.github/.skillsync.yaml').is_file())
 
     def test_worktree_is_blocked_and_neither_tree_changes(self):

@@ -7,6 +7,10 @@ import unittest
 import yaml
 
 from tests.test_skillsync_workflow import CLI, WorkflowFixture
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import descend  # noqa: E402
 
 FILES = ("docs/domain/index.yaml", "docs/lessons/index.yaml", "docs/README.md")
 
@@ -27,11 +31,11 @@ class KnowledgeInit(WorkflowFixture):
         self.assertEqual(report["existing"], [])
         for name in FILES:
             self.assertTrue((self.root / name).is_file(), name)
-        self.assertEqual(yaml.safe_load((self.root / FILES[0]).read_text(encoding="utf-8")),
+        self.assertEqual(yaml.safe_load((descend(self.root, FILES[0])).read_text(encoding="utf-8")),
                          {"version": 1, "entries": []})
-        self.assertEqual(yaml.safe_load((self.root / FILES[1]).read_text(encoding="utf-8")),
+        self.assertEqual(yaml.safe_load((descend(self.root, FILES[1])).read_text(encoding="utf-8")),
                          {"version": 1, "lessons": []})
-        self.assertTrue((self.root / FILES[2]).read_text(encoding="utf-8").strip())
+        self.assertTrue((descend(self.root, FILES[2])).read_text(encoding="utf-8").strip())
 
     def test_second_run_overwrites_nothing(self):
         self.run_init()
@@ -107,9 +111,11 @@ class KnowledgeEscapeAndRoute(WorkflowFixture):
     def test_route_reads_lessons_from_configured_location(self):
         self.manifest["workflow"]["knowledge"] = {"lessons": "../docs/lessons"}
         self.save()
-        self.write("../docs/lessons/index.yaml", yaml.safe_dump({"version": 1, "lessons": [
-            {"path": "one.md", "title": "Lekcja jeden", "tags": ["topic-x"]}]}))
-        self.write("../docs/lessons/one.md", "tresc\n")
+        shared_lessons = self.base / "docs/lessons"  # self.root is base/project, so this is the old root/../docs/lessons
+        shared_lessons.mkdir(parents=True, exist_ok=True)
+        (shared_lessons / "index.yaml").write_text(yaml.safe_dump({"version": 1, "lessons": [
+            {"path": "one.md", "title": "Lekcja jeden", "tags": ["topic-x"]}]}), encoding="utf-8", newline="")
+        (shared_lessons / "one.md").write_text("tresc\n", encoding="utf-8", newline="")
         result = self.run_cli("route", str(self.root), "--topic", "topic-x", "--json")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         lessons = json.loads(result.stdout)["lessons"]

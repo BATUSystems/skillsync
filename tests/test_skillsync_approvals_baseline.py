@@ -15,6 +15,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from skillsync_workflow import dashboard, status  # noqa: E402
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child  # noqa: E402
 
 GIT_ENV = {'GIT_AUTHOR_NAME': 'T', 'GIT_AUTHOR_EMAIL': 't' + '@' + 'example.test', 'GIT_COMMITTER_NAME': 'T',
            'GIT_COMMITTER_EMAIL': 't' + '@' + 'example.test', 'GIT_CONFIG_GLOBAL': os.devnull, 'GIT_CONFIG_SYSTEM': os.devnull}
@@ -29,7 +33,7 @@ class Tree(unittest.TestCase):
         self.root = Path(self.temp.name)
 
     def run_dir(self, run):
-        directory = self.root / '.skillsync' / 'runs' / run
+        directory = child(self.root / '.skillsync' / 'runs', run)
         directory.mkdir(parents=True, exist_ok=True)
         return directory
 

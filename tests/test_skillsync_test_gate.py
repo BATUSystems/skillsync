@@ -14,6 +14,10 @@ sys.path.insert(0, str(ROOT))
 from skillsync_workflow import plan_phases, test_gate  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_skillsync_workflow import WorkflowFixture  # noqa: E402
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import descend  # noqa: E402
 
 CLI = ROOT / 'skillsync'
 PLAN = """# Plan: demo
@@ -154,7 +158,7 @@ class Gate(WorkflowFixture):
     def test_the_events_of_another_run_or_a_hand_made_file_for_another_step_are_not_a_proof(self):
         """A3: directory = step AND `start.step` = step AND `start.run` = run."""
         self.assertEqual(self.run_tests(step='F1.3').returncode, 0)
-        src = self.root / self.events('F1.3')
+        src = descend(self.root, self.events('F1.3'))
         forged = self.root / '.skillsync/runs/R1/tests/F1.2'
         forged.mkdir(parents=True)
         (forged / '1.jsonl').write_bytes(src.read_bytes())   # the file of F1.3 copied into the directory of F1.2
@@ -193,7 +197,7 @@ class Gate(WorkflowFixture):
     def test_an_imported_run_is_valid_for_the_commit_it_names(self):
         """A5(2): a run of another machine (a copy without `.git`) comes with `--source-sha`; the gate wants exactly that commit."""
         self.assertEqual(self.run_tests().returncode, 0)
-        events = self.root / self.events()
+        events = descend(self.root, self.events())
         copy = Path(self.temp.name) / 'remote.jsonl'
         copy.write_bytes(events.read_bytes().replace(socket.gethostname().encode(), b'remote-machine'))   # a run of ANOTHER machine
         events.unlink()
@@ -208,7 +212,7 @@ class Gate(WorkflowFixture):
 
     def test_an_import_is_validated(self):
         self.assertEqual(self.run_tests().returncode, 0)
-        good = self.root / self.events()
+        good = descend(self.root, self.events())
         head = self.git('rev-parse', 'HEAD')
         base = Path(self.temp.name)
         (base / 'cut.jsonl').write_bytes(good.read_bytes()[:-1])   # ends in an incomplete line

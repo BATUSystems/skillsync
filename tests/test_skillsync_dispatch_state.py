@@ -8,6 +8,10 @@ import unittest
 import yaml
 
 from tests.test_skillsync_workflow import WorkflowFixture
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child  # noqa: E402
 
 needs_fifo = unittest.skipUnless(hasattr(os, 'mkfifo'), 'mkfifo unavailable')
 needs_symlinks = unittest.skipUnless(hasattr(os, 'symlink') and os.name != 'nt', 'symlinks unavailable')
@@ -42,6 +46,7 @@ def state(**over):
 
 class DispatchState(WorkflowFixture):
     def put(self, name, data, raw=None):
+        # a hostile name on purpose: `\n` under os.name != 'nt' (see the call near test_filename_with_free_text_and_bad_bytes_never_leaves)
         path = self.root / '.skillsync' / 'dispatch' / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(raw if raw is not None else yaml.safe_dump(data, sort_keys=False), encoding='utf-8')
@@ -153,7 +158,7 @@ class DispatchState(WorkflowFixture):
             self.put(f'{SENT[:8]}\nnewline.yaml', None, raw='a: [broken')
         raw = self.root / '.skillsync' / 'dispatch'
         try:
-            (raw / b'\xff.yaml'.decode('utf-8', 'surrogateescape')).write_text('x: 1', encoding='utf-8')
+            (child(raw, b'\xff.yaml'.decode('utf-8', 'surrogateescape'))).write_text('x: 1', encoding='utf-8')
         except OSError:
             pass
         result = self.cli('dispatch')

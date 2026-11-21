@@ -18,6 +18,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from layers_helpers import OS_CAN_SYMLINK, IsolatedTestCase, write  # noqa: E402
 
 from cli_module import SKILLSYNC_PATH  # noqa: E402
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child  # noqa: E402
 
 LIBRARY = ROOT / 'library'
 
@@ -42,7 +46,7 @@ class RealLibrarySmokeTest(IsolatedTestCase):
                               timeout=180, env=env)
 
     def new_project(self, name):
-        project = self.work / name
+        project = child(self.work, name)
         write(project / '.github' / '.skillsync.yaml', '')
         subprocess.run(['git', 'init', '-q', str(project)], check=True, capture_output=True)
         return project

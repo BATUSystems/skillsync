@@ -9,6 +9,10 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child  # noqa: E402
 from skillsync_workflow import dashboard  # noqa: E402
 
 FIXTURES = ROOT / 'tests' / 'fixtures' / 'dashboard'
@@ -23,7 +27,7 @@ class Project(unittest.TestCase):
 
     def project(self, case):
         self.count = getattr(self, 'count', 0) + 1
-        root = self.base / f'{case}-{self.count}' / 'demo'
+        root = child(self.base, f'{case}-{self.count}') / 'demo'
         shutil.copytree(FIXTURES / case / 'input', root)
         return root
 

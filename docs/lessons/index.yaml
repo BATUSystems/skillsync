@@ -287,7 +287,7 @@ lessons:
   - path: straznik-sciezek-tmp-skazenie-w-zasiegu-funkcji.md
     title: "Strażnik ścieżek tmp: skażenie nazw trzeba ograniczyć do funkcji, a zmianę skanera sprawdzić skryptem różnicowym stary/nowy"
     tags: [skillsync, tests, tmp-path-guard, ast, scope]
-    paths: ['tests/test_skillsync_tmp_path_guard.py', 'docs/development.md']
+    paths: ['tests/test_skillsync_tmp_path_guard.py', 'tests/layers_helpers.py', 'tests/tmp_paths.py', 'docs/development.md']
   - path: straznik-tmp-wrogie-nazwy-i-obiekty-git-w-testach.md
     title: "Test z celowo wrogimi nazwami łamie strażnika ścieżek tmp dopiero w pełnym biegu; obiekty git poza bazą wymagają alternatywy"
     tags: [skillsync, tests, tmp-path-guard, git, alternates, test-gate]

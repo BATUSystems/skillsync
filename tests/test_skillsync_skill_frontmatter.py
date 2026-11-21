@@ -12,6 +12,10 @@ sys.path.insert(0, str(ROOT))
 
 from skillsync_workflow import skill_frontmatter  # noqa: E402
 from tests.test_skillsync_workflow import WorkflowFixture  # noqa: E402
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child, descend  # noqa: E402
 
 SKILLS = ROOT / 'library' / 'skills'   # relative to the repository: no environment variable (a skipped test proves nothing)
 
@@ -92,11 +96,11 @@ class Library(unittest.TestCase):
 
 class DoctorWarns(WorkflowFixture):
     def install(self, name, extra):
-        folder = self.library / 'skills' / name
+        folder = child(self.library / 'skills', name)
         folder.mkdir(parents=True, exist_ok=True)
         (folder / 'SKILL.md').write_text(f'---\nname: {name}\ndescription: opis {name}\n{extra}\n---\nBody\n', encoding='utf-8')
         for host in ('.github/skills', '.claude/skills'):
-            shutil.copytree(folder, self.root / host / name)
+            shutil.copytree(folder, child(descend(self.root, host), name))
         self.manifest['skills'] = [name]
         self.save()
 

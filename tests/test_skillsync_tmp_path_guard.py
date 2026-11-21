@@ -21,9 +21,12 @@ stays in the scope of that class and its subclasses (an attribute) or of its fun
 in the registry. `scan(tree)` alone does not inherit.
 Known limits: no `global`/`nonlocal`, no flow of taint through calls, returns and factories, an attribute of the same name in an unrelated
 class taints the file, equal class names of different files give the union of their attributes AND of their bases, a base is found by name
-only (no import resolution), an attribute derived from an inherited one in a base class is not registered, and `X.name` of a
-`tempfile.TemporaryDirectory` (`self.root = Path(temp.name).resolve()` in a base class) is not a tmp path, so attributes built from such a
-chain (`IsolatedTestCase.work`) do not enter the registry (a `.name` rule is a separate change).
+only (no import resolution), an attribute derived from an inherited one in a base class is not registered, and `os.path.join` and f-strings are not
+scanned (only `/`), and `NamedTemporaryFile.name` is a file, not a directory.
+`.name` rule: `X.name` of a `TemporaryDirectory` object is a tmp path. `X` is a name or attribute assigned from the call (`temp = tempfile.TemporaryDirectory(...)`,
+`self.tmp = TemporaryDirectory()`: the call is the value of the assignment, not an argument or a link of a chain); the set is file-wide (like the attributes), so
+`Path(self.tmp.name) / key` in another class of the file is a hit, and attributes built from `temp.name` in a base class (`self.root = Path(temp.name).resolve()`)
+enter the registry. `X.name` of anything else is not tmp.
 
 Mode: STRICT (every hit fails). Every hit fails the test unless it is in ALLOWED below, with the reason. To fix a hit use `tmp_paths.child` (one name),
 `tmp_paths.descend` (a relative path with `/`) or `make_dir/write_file`; to keep one on purpose add `(file, expression text): reason`. An entry
@@ -47,6 +50,9 @@ ALLOWED = {
     ('test_skillsync_test_gate.py', 'Path(tmp) / name'):
         'the names are written in the test itself on purpose (a space, a colon, a quote): the test checks that the object directory env survives exactly these paths, '
         '`tmp_paths.child` would refuse the colon and the quote',
+    ('test_skillsync_dispatch_state.py', "self.root / '.skillsync' / 'dispatch' / name"):
+        'the helper `put` gets its names from literals in the test; the one hostile name (with `\\n`, a call under `os.name != "nt"`) would be refused by `tmp_paths.child`, '
+        'and that character is exactly what the test checks',
 }
 
 TMP = re.compile(r'(^|_)(tmp|temp)(dir|path|file|root|base)?[0-9]*($|_)', re.I)
@@ -188,7 +194,9 @@ def _scan(tree, inherited):
             chain = visible[cur]
             names = own if inh else firm
             return any(n.id in names[s] for s in chain) or (any(n.id in params.get(s, ()) for s in chain) and n.id in attrs)
-        if isinstance(n, ast.Attribute): return bool(TMP.search(n.attr)) or n.attr in attrs or (inh and n.attr in inherited_attrs(cls_of[cur]))
+        if isinstance(n, ast.Attribute):
+            if n.attr == 'name' and any(x in tdobj for x in names_of(n.value)): return True  # X.name of a TemporaryDirectory object
+            return bool(TMP.search(n.attr)) or n.attr in attrs or (inh and n.attr in inherited_attrs(cls_of[cur]))
         if isinstance(n, ast.Call):
             f = n.func; fn = f.id if isinstance(f, ast.Name) else getattr(f, 'attr', '')
             if fn in ('Path', 'PurePath', 'resolve', 'realpath') or isinstance(f, ast.Attribute) and fn in ('resolve',):
@@ -221,6 +229,12 @@ def _scan(tree, inherited):
     for n in order:
         if isinstance(n, ast.Assign): from_src[n] = any(s in ast.unparse(n.value) for s in SRC)
         else: from_src[n] = [it.optional_vars is not None and any(s in ast.unparse(it.context_expr) for s in SRC) for it in n.items]
+    tdobj = set()  # names/attributes bound to a TemporaryDirectory OBJECT (the call is the value of the assignment): `.name` of those is a tmp path
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Assign) and isinstance(n.value, ast.Call):
+            f = n.value.func
+            if (f.id if isinstance(f, ast.Name) else getattr(f, 'attr', '')) == 'TemporaryDirectory':
+                for t in n.targets: tdobj.update(names_of(t))
     for _ in range(3):
         for n in order:
             scope = cur = scope_of[n]
@@ -531,7 +545,7 @@ class ScannerInheritance(unittest.TestCase):
         self.assertEqual([t for _, t in scan(ast.parse(sub))], [])  # no registry: no inheritance (the earlier behaviour)
 
     def test_a_name_derived_from_an_inherited_attribute_is_tmp_in_the_function(self):
-        """The shape of tests/test_skillsync_layers_merge.py (v1.6.0), NOT recovered there: IsolatedTestCase.work comes from `temp.name`, which is not a tmp path."""
+        """The shape of tests/test_skillsync_layers_merge.py (v1.6.0), IsolatedTestCase.work comes from `temp.name` of a `TemporaryDirectory` object, a tmp path since the `.name` rule (the registry of the base class is built in `ScannerNameRule.test_the_base_of_another_file_taints_the_subclass_through_the_name_rule`); here BASE is a stand-in with `mkdtemp`."""
         sub = 'class T(Base):\n    def outside(self, files):\n        base = self.work / "external"\n        for rel in files:\n            write(base / rel)\n'
         self.assertEqual(self.hits(sub, self.BASE), ['base / rel'])
 
@@ -614,6 +628,55 @@ class ScannerInheritance(unittest.TestCase):
         self.assertEqual(self.hits(sub, base), ['self.work / name'])
         method = 'class Base:\n    def f(self):\n        work = Path(tempfile.mkdtemp())\n'
         self.assertEqual(self.hits(sub, method), [])
+
+
+class ScannerNameRule(unittest.TestCase):
+    """`X.name` of a `TemporaryDirectory` object (a name or attribute assigned from `TemporaryDirectory(...)`) is a tmp path."""
+    BASE = ('import tempfile\nclass IsolatedTestCase:\n    def setUp(self):\n        temp = tempfile.TemporaryDirectory(prefix="x")\n'
+            '        self.root = Path(temp.name).resolve()\n        self.work = self.root / "work"\n')
+
+    def hits(self, source, *bases):
+        registry = {}
+        for base in bases:
+            merge_registry(registry, class_registry(ast.parse(base)))
+        return [text for _, text in scan(ast.parse(source), inherited=registry)]
+
+    def test_a_name_bound_to_a_temporary_directory_object_gives_a_tmp_path(self):
+        source = 'def f(key):\n    temp = tempfile.TemporaryDirectory()\n    root = Path(temp.name)\n    x = root / key\n'
+        self.assertEqual(self.hits(source), ['root / key'])
+        self.assertEqual(self.hits('def f(key):\n    d = TemporaryDirectory()\n    return Path(d.name) / key\n'), ['Path(d.name) / key'])
+
+    def test_an_attribute_bound_to_the_object_works_between_classes_of_the_file(self):
+        source = ('import tempfile\nclass A:\n    def setUp(self):\n        self.tmp = tempfile.TemporaryDirectory()\n'
+                  'class B:\n    def f(self, key):\n        return Path(self.tmp.name) / key\n')
+        self.assertEqual(self.hits(source), ['Path(self.tmp.name) / key'])
+
+    def test_the_base_of_another_file_taints_the_subclass_through_the_name_rule(self):
+        sub = 'class T(IsolatedTestCase):\n    def f(self, name):\n        return self.work / name\n'
+        self.assertEqual(self.hits(sub, self.BASE), ['self.work / name'])
+        self.assertEqual(self.hits(sub), [])  # no registry: no inheritance
+
+    def test_a_name_that_is_not_a_temporary_directory_object_gives_no_hit(self):
+        self.assertEqual(self.hits('def f(x, key):\n    return Path(x).name / key\n'), [])
+        self.assertEqual(self.hits('class T:\n    def f(self, key):\n        return self.name / key\n'), [])
+        self.assertEqual(self.hits('def f(obj, key):\n    obj = make()\n    return Path(obj.name) / key\n'), [])
+        # mkdtemp gives a str, not a `TemporaryDirectory` object: the rule does not apply to it; `Path(d).name` is the last component (a name), not a path
+        self.assertEqual(self.hits('def f(key):\n    d = tempfile.mkdtemp()\n    y = Path(d).name / key\n'), [])
+
+    def test_known_limit_a_named_temporary_file_is_a_file_not_a_directory(self):
+        # known limit: `.name` of NamedTemporaryFile is a file path, the rule does not apply
+        source = 'def f(key):\n    with tempfile.NamedTemporaryFile() as f:\n        return Path(f.name) / key\n'
+        self.assertEqual(self.hits(source), [])
+
+    def test_known_limit_os_path_join_and_f_strings_are_not_a_join_with_a_slash(self):
+        # known limit: only `/` of pathlib is scanned
+        head = 'def f(self, rel):\n    self.tmp = tempfile.TemporaryDirectory()\n'
+        self.assertEqual(self.hits(head + '    return os.path.join(self.tmp.name, rel)\n'), [])
+        self.assertEqual(self.hits(head + '    return f"{self.tmp.name}/{rel}"\n'), [])
+
+    def test_known_limit_the_call_in_an_argument_does_not_bind_the_object(self):
+        # known limit: the call must be the value of the assignment itself
+        self.assertEqual(self.hits('def f(key):\n    t = wrap(tempfile.TemporaryDirectory())\n    return Path(t.name) / key\n'), [])
 
 
 class Repository(unittest.TestCase):

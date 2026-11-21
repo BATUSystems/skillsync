@@ -12,6 +12,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from tests.test_skillsync_workflow import WorkflowFixture  # noqa: E402
 from skillsync_workflow.specs import specs_info, specs_findings, validate_specs  # noqa: E402
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import descend  # noqa: E402
 
 GIT = shutil.which('git')
 BOTH = '/docs/specs/\n/docs/plans/\n'
@@ -32,7 +36,7 @@ class SpecsInfoTests(unittest.TestCase):
         git(self.repo, 'init', '-q')
 
     def ignore(self, text, name='.gitignore'):
-        (self.repo / name).write_text(text, encoding='utf-8')
+        (descend(self.repo, name)).write_text(text, encoding='utf-8')
 
     def info(self, **specs):
         return specs_info(self.repo, {'workflow': {'specs': specs}} if specs else {})
@@ -218,7 +222,7 @@ class SpecsFindingsTests(unittest.TestCase):
         (self.repo / 'docs' / 'specs').mkdir(parents=True)
         names = [f'docs/specs/f{i:02d}.md' for i in range(45)]
         for name in names:
-            (self.repo / name).write_text('x\n', encoding='utf-8')
+            (descend(self.repo, name)).write_text('x\n', encoding='utf-8')
         git(self.repo, 'add', '-f', '--', *names)
         text = self.levels()[0][1]
         first, _, rest = text.partition('\n')

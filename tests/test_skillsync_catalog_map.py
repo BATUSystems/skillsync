@@ -21,12 +21,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from layers_helpers import machine_cache_dir  # noqa: E402
 from layers_helpers import transitional_config  # noqa: E402
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child, descend  # noqa: E402
 
 CORE = ["workflow", "pre-implement", "smart-test", "bugfix", "codereview"]
 
 
 def put_skill(library, name, description=None):
-    folder = Path(library) / "skills" / name
+    folder = child(Path(library) / "skills", name)
     folder.mkdir(parents=True, exist_ok=True)
     description = f"opis {name}" if description is None else description
     (folder / "SKILL.md").write_text(f"---\nname: {name}\ndescription: {description}\n---\nBody\n", encoding="utf-8")
@@ -45,7 +49,7 @@ class G2DescriptionBudget(WorkflowFixture):
     def install(self, name, description):
         put_skill(self.library, name, description)
         for host in (".github/skills", ".claude/skills"):
-            shutil.copytree(self.library / "skills" / name, self.root / host / name)
+            shutil.copytree(child(self.library / "skills", name), child(descend(self.root, host), name))
         self.manifest["skills"] = [name]
         self.save()
 
@@ -72,7 +76,7 @@ class CatalogFixture(WorkflowFixture):
         self.write_library("workflow/skill-catalog.yaml", yaml.safe_dump({"version": 1, **data}))
 
     def write_library(self, name, text):
-        path = self.library / name
+        path = descend(self.library, name)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8")
 
@@ -80,9 +84,9 @@ class CatalogFixture(WorkflowFixture):
         for skill in skills:
             put_skill(self.library, skill)
             for host in (".github/skills", ".claude/skills"):
-                target = self.root / host / skill
+                target = child(descend(self.root, host), skill)
                 if not target.exists():
-                    shutil.copytree(self.library / "skills" / skill, target)
+                    shutil.copytree(child(self.library / "skills", skill), target)
         self.manifest["project"] = {"name": name}
         self.manifest["skills"] = list(skills)
         self.save()

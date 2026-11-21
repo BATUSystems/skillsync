@@ -8,6 +8,10 @@ import time
 import unittest
 
 from tests.test_skillsync_workflow import CLI, WorkflowFixture
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child  # noqa: E402
 
 HEAD = 'f27ef059c38902e6beef347221a4c0b7aaf8837a'
 
@@ -20,7 +24,7 @@ class Approvals(WorkflowFixture):
         return json.loads(result.stdout)
 
     def log(self, run, *entries, raw=''):
-        path = self.root / '.skillsync/runs' / run / 'approvals.jsonl'
+        path = child(self.root / '.skillsync/runs', run) / 'approvals.jsonl'
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open('a', encoding='utf-8') as handle:
             handle.write(raw)
