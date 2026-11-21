@@ -14,7 +14,7 @@ import shutil
 from collections import namedtuple
 from pathlib import Path
 
-from . import guardhook
+from . import fsutil, guardhook
 
 
 def load_settings(settings_path: Path):
@@ -273,7 +273,7 @@ def stale_cli(hook) -> bool:
         argv = json.loads(parts[1][parts[1].index("--cli") + 1])
     except ValueError:
         return False
-    return isinstance(argv, list) and any(isinstance(item, str) and os.path.isabs(item) and not os.path.exists(item) for item in argv)
+    return isinstance(argv, list) and any(isinstance(item, str) and fsutil.isabs(item) and not os.path.exists(item) for item in argv)
 
 
 def fixed_command(command):

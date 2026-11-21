@@ -28,7 +28,10 @@ Treść żyje w **warstwach** (`layer.yaml` w korzeniu układu): `core` (rdzeń:
 ├── hooks/
 │   ├── check-tests.py      ← hook Stop (bramka testów), jeden skrypt Pythona dla Linux i Windows
 │   ├── check-closure.py    ← hook Stop (zamknięcie planu), tylko biblioteka standardowa
-│   └── guard-commands.py   ← hook PreToolUse (Bash): zakaz stopek i podpisów narzędzi AI w tekstach pisanych poleceniami (zawsze) i odmowa trwałego usunięcia, tylko biblioteka standardowa
+│   ├── guard-commands.py   ← hook PreToolUse (Bash): zakaz stopek i podpisów narzędzi AI w tekstach pisanych poleceniami (zawsze), odmowa trwałego usunięcia i granica commitu podagenta (`hooks.subagent_commit`), tylko biblioteka standardowa
+│   ├── session-context.py  ← hook SessionStart (startup, resume, clear, compact): kontekst projektu i planu, `hooks.session_context`
+│   ├── guard-generated.py  ← hook PreToolUse (Write, Edit, NotebookEdit): ostrzeżenie przy edycji pliku generowanego, `hooks.guard_generated`
+│   └── check-subagent-report.py ← hook SubagentStop: ostrzeżenie, gdy piszący podagent nie zwrócił raportu, `hooks.subagent_report`
 └── instructions/
     ├── _base.md             ← wspólna preambuła (persona, workflow)
     └── <template>.md        ← instrukcje specyficzne dla projektu
