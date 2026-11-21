@@ -102,7 +102,7 @@ def _object_env(root, objects):
 def changed_paths(root, first, second, objects, limit=5):
     """At most `limit` paths that differ between two trees made by `work_tree_id(..., objects=objects)` (`[]` when they cannot be read). The ids must be git tree ids
     (nothing else may reach a command line); the paths are text for a message and never go to a command."""
-    if not (_TREE.fullmatch(first or '') and _TREE.fullmatch(second or '')):
+    if not all(isinstance(tree, str) and _TREE.fullmatch(tree) for tree in (first, second)):
         return []
     try:
         more = _object_env(root, objects)

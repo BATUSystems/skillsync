@@ -399,6 +399,13 @@ class EndChanged(unittest.TestCase):
         end = self.injected(['\x1b[31mred\x1b[0m.txt', 'tab\there.txt', 'zero\u200bwidth.txt'])
         self.assertEqual(end['changed'], ['red.txt', 'tab here.txt', 'zerowidth.txt'])
 
+    def test_the_reader_masks_a_secret_in_a_path_of_a_file_it_did_not_write(self):
+        secret = fake_secret()
+        with mock.patch.dict(os.environ, {'SKILLSYNC_TEST_SECRET_TOKEN': secret}):
+            end = self.injected([f'build/{secret}/out.txt', 'plain.txt'])
+        self.assertNotIn(secret, json.dumps(end))
+        self.assertEqual(end['changed'][1], 'plain.txt')
+
     def test_a_list_with_nothing_usable_leaves_no_field(self):
         self.assertNotIn('changed', self.injected([7, None, 'y' * 301]))
 

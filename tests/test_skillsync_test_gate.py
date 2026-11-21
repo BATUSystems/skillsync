@@ -407,7 +407,7 @@ class TreeObjects(WorkflowFixture):
     def test_changed_paths_takes_only_tree_ids_and_never_hands_an_option_to_git(self):
         import tempfile
         with tempfile.TemporaryDirectory(prefix='objs-') as objects, mock.patch.object(test_gate.subprocess, 'run') as run:
-            for hostile in ('--output=/tmp/x', 'abc', '', None, 'g' * 40, '-p'):
+            for hostile in ('--output=/tmp/x', 'abc', '', None, 'g' * 40, '-p', 7, b'a' * 40, ['a' * 40]):
                 self.assertEqual(test_gate.changed_paths(self.root, hostile, 'a' * 40, objects), [])
                 self.assertEqual(test_gate.changed_paths(self.root, 'a' * 40, hostile, objects), [])
             run.assert_not_called()
