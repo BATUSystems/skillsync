@@ -4,7 +4,6 @@ The tree is read at the time the command runs, through `choices` of the register
 the script by itself. The scripts are standalone: they never start `skillsync` while the user presses Tab.
 """
 import argparse
-import json
 import re
 import sys
 
@@ -33,7 +32,7 @@ def register(subparsers):
         sub.add_argument('--dry-run', action='store_true', help='Show what would change; write nothing')
         sub.add_argument('--json', action='store_true')
         sub.add_argument('--auto', action='store_true', help='Called by an installer: honour SKILLSYNC_NO_COMPLETION, stay quiet when nothing changes')
-        sub.set_defaults(func=_cmd_stub, action_name=name)
+        sub.set_defaults(func=_cmd_install if name == 'install' else _cmd_uninstall)
 
 
 def _cmd_print(args):
@@ -44,13 +43,14 @@ def _cmd_print(args):
     return 0
 
 
-def _cmd_stub(args):
-    message = f'completion {args.action_name}: not implemented yet'
-    if args.json:
-        print(json.dumps({'schema': SCHEMA, 'status': 'NOT_RUN', 'dry_run': args.dry_run, 'actions': [], 'warnings': [message]}, indent=2))
-    else:
-        print(message, file=sys.stderr)
-    return 2
+def _cmd_install(args):
+    from . import completion_install
+    return completion_install.run(args, 'install', _SUBPARSERS)
+
+
+def _cmd_uninstall(args):
+    from . import completion_install
+    return completion_install.run(args, 'uninstall', _SUBPARSERS)
 
 
 # -- the model of the tree

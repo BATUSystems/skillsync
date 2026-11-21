@@ -255,13 +255,6 @@ class Command(unittest.TestCase):
             self.run_command(['completion', 'fish'])
         self.assertEqual(caught.exception.code, 2)
 
-    def test_install_and_uninstall_take_their_flags_and_are_stubs_for_now(self):
-        for action in ('install', 'uninstall'):
-            with self.subTest(action=action), contextlib.redirect_stderr(io.StringIO()) as err:
-                code, _ = self.run_command(['completion', action, '--shell', 'bash', '--shell', 'zsh', '--dry-run', '--auto'])
-                self.assertEqual(code, 2)
-                self.assertIn('not implemented yet', err.getvalue())
-
     def test_the_real_cli_prints_a_bash_script_and_exits_0(self):
         raw = io.BytesIO()
         out = io.TextIOWrapper(raw, encoding='utf-8', newline='')
