@@ -1,6 +1,7 @@
 ---
 name: codereview
 description: Review an Azure DevOps PR (plus Jira tasks) or local feature/bugfix changes before a PR - isolated worktree, independent reviewers, verified findings, paste-ready summary and verdict.
+argument-hint: '<link PR Azure> [ZADANIA-JIRA] | --base <ref> | <ścieżka planu>'
 ---
 
 # /codereview — code review PR lub zmian przed PR

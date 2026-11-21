@@ -1,6 +1,7 @@
 ---
 name: pr-run
 description: "Wywoływany ręcznie: od planu do PR-a (draft, potem ready) na Azure DevOps lub GitHubie, postęp zapisywany w planie. W trybie pr uruchamia go „GO implement”, w direct tylko jawne /pr-run."
+argument-hint: '<brief | ścieżka planu> [--go] | --resume <PR | plan>'
 ---
 
 # /pr-run — od planu do PR-a
