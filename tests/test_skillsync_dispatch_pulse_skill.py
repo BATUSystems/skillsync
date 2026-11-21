@@ -170,6 +170,13 @@ class PulseConsistency(unittest.TestCase):
         actions = section(self.text, 'Ustalenia i akcje')
         self.assertIn('wyłącznie `kind`, `subject`, `ageMinutes` i `run-id`', actions)
 
+    def test_the_base_interval_is_taken_from_the_view_and_armed_at_has_a_rule(self):
+        self.assertIn('pulse.intervalMinutes', section(self.text, 'Noop i interwał'))
+        start = section(self.text, 'Start i życie pętli')
+        self.assertIn('armed_at', start)
+        self.assertIn('pierwszy tick', start)
+        self.assertIn('armed_at', section(self.text, 'Tick'))
+
     def test_the_markers_are_set_after_a_successful_action(self):
         self.assertIn('PO udanej akcji', section(self.text, 'Tick'))
 

@@ -75,7 +75,7 @@ class Pulse(unittest.TestCase):
         self.assertEqual(card['lastMessage'], ago(5))
         self.assertEqual(card['lastProbe'], ago(7))
         self.assertEqual(plain['decisions'], [])
-        self.assertEqual(set(self.entry(pulse=True)['pulse']), {'now', 'thresholds', 'findings'})
+        self.assertEqual(set(self.entry(pulse=True)['pulse']), {'now', 'intervalMinutes', 'thresholds', 'findings'})
 
     def test_a_time_without_a_zone_or_a_text_is_null(self):
         self.put(state(cards=[self.card(last_message='2026-11-21T10:00:00', last_probe=f'{SENT} soon')]))
@@ -210,6 +210,15 @@ class Pulse(unittest.TestCase):
         self.assertEqual(entry['pulse']['now'], report['generatedAt'])
         self.assertEqual(entry['freshness']['ageSeconds'], 2 * 3600)
 
+    def test_the_base_interval_comes_from_the_manifest_with_the_default_and_the_bound(self):
+        self.put(state())
+        self.assertEqual(self.entry()['pulse']['intervalMinutes'], 20)
+        self.assertEqual(self.entry(manifest={'dispatch': {'pulse': {'interval_minutes': 1}}})['pulse']['intervalMinutes'], 1)
+        self.assertEqual(self.entry(manifest={'dispatch': {'pulse': {'interval_minutes': 60}}})['pulse']['intervalMinutes'], 60)
+        for bad in (0, 61, True, 'abc', None):
+            with self.subTest(bad=bad):
+                self.assertEqual(self.entry(manifest={'dispatch': {'pulse': {'interval_minutes': bad}}})['pulse']['intervalMinutes'], 20)
+
     def test_the_clock_is_the_injected_one(self):
         self.put(state(cards=[self.card(last_message=ago(45))]))
         pulse = self.entry()['pulse']
@@ -240,7 +249,7 @@ class PulseCli(WorkflowFixture):
         path.write_text(yaml.safe_dump(state(cards=[{'alias': 'karta-1', 'state': 'working'}]), sort_keys=False), encoding='utf-8')
         with_flag = self.report('dispatch', '--pulse')
         entry = with_flag['dispatches'][0]
-        self.assertEqual(set(entry['pulse']), {'now', 'thresholds', 'findings'})
+        self.assertEqual(set(entry['pulse']), {'now', 'intervalMinutes', 'thresholds', 'findings'})
         self.assertEqual([(f['kind'], f['subject']) for f in entry['pulse']['findings']], [('age-unknown', 'karta-1')])
         self.assertNotIn('pulse', self.report('dispatch')['dispatches'][0])
 
