@@ -9,7 +9,7 @@ user-invokable: true
 Skillsync to lokalne narzędzie CLI (`~/.local/bin/skillsync`) synchronizujące skille i instrukcje między warstwami (core, org, personal) a projektami. Obsługuje wiele projektów jednocześnie poprzez dowiązania symboliczne.
 
 > **Dokumentacja i kod generatora:** osobny projekt `<katalog repo skillsync>`
-> (`README.md` z mapą; `docs/layers.md`, `docs/cli.md`, `docs/manifest.md`, `docs/library.md`, `docs/architecture.md`,
+> (`README.md` z mapą; `docs/layers-authoring.md`, `docs/cli.md`, `docs/manifest.md`, `docs/architecture.md`,
 > `docs/workflow.md`, `docs/development.md`). Ten skill to skrót operacyjny; przy rozbieżności
 > rozstrzyga kod i `docs/` tamtego repo. Zmiany generatora prowadź tam, nie w repo scripts.
 
@@ -147,7 +147,7 @@ Zasady pisania skilla (opis, referencje, swoboda, zimny odczyt): [authoring.md](
 - wiedza jednego projektu → skill z prefiksem projektu (`<projekt>-*`) albo `instructions/<Projekt>.md`;
 - nazwa ogólna (`acli`, `azure-devops`, `csharp-*`, `sql-*`, `nhibernate`) = treść ogólna, bez projektów, serwerów i loginów;
   konkrety projektu przenieś do skilla projektu (`references/<źródło>.md`); ogólny skill może mieć najwyżej jednolinijkowy odsyłacz do skilla projektu, bez treści projektowej.
-Szczegóły i tabela: `<katalog repo skillsync>/docs/library.md` („Organizacja, projekt, wiedza ogólna”).
+Zasady nazewnictwa i zakresu: [authoring.md](references/authoring.md); warstwy organizacji i osobiste: `<katalog repo skillsync>/docs/layers-authoring.md`; pola frontmattera skilli: skill `copilot-skills-yaml`.
 
 ### Krok 2 — dopisz skill do manifestu projektu
 

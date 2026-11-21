@@ -2,7 +2,7 @@
 - To **kod generatora** `skillsync` (Python 3 + PyYAML), nie biblioteka. Biblioteka skilli, ról i instrukcji to osobne repo `~/.local/copilot-library` (CopilotSkills); manifest projektu: `<projekt>/.github/.skillsync.yaml`; config maszyny: `~/.config/skillsync/config.yaml` (override `SKILLSYNC_CONFIG`).
 - Układ: `skillsync` (wrapper) i `skillsync_workflow/cli.py` (komendy link/instructions/push/pull/watch/add/list), `skillsync_workflow/` (workflow v2: doctor, route, validate, smart-test, checkpoint, env, e2e, claim, ...), `skillsync-ctl` (usługa `skillsync-watch.service`), `skillsync-windows.ps1`, `tests/`, `docs/`.
 - `~/.local/bin/skillsync` i `skillsync-ctl` to symlinki do tego repo — edycja źródła działa od razu, z wyjątkiem uruchomionej usługi watch.
-- Start: `README.md` (mapa dokumentacji). Szczegóły: `docs/architecture.md`, `docs/cli.md`, `docs/manifest.md`, `docs/library.md`, `docs/workflow.md`, `docs/development.md`; wiedza: `docs/domain/`, `docs/lessons/`.
+- Start: `README.md` (mapa dokumentacji). Szczegóły: `docs/architecture.md`, `docs/cli.md`, `docs/manifest.md`, `docs/layers-authoring.md`, `docs/workflow.md`, `docs/development.md`; wiedza: `docs/domain/`, `docs/lessons/`.
 
 ## Krytyczne workflow
 - Testy (cwd repo): `python3 -m unittest discover -s tests -p 'test_skillsync*.py'`. Po zmianie Pythona: `python3 -m py_compile skillsync skillsync_workflow/*.py`; po zmianie `skillsync-ctl`: `bash -n skillsync-ctl`.

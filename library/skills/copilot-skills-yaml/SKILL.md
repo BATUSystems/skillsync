@@ -51,7 +51,7 @@ Shared across projects:
 
 ### Optional Attributes
 - **user-invokable** - Allow users to invoke skill directly (`true` or `false`)
-- **argument-hint** - Hint for skill arguments
+- **argument-hint** - Hint for skill arguments, shown by Claude Code when the user types `/name` (autocomplete). Presentation only: it does not validate or pass arguments (the text reaches the skill through `$ARGUMENTS`, or is appended to the end when the skill has none). One single-quoted string, at most 120 characters, no final period, in the notation `<required> [optional] a | b`, e.g. `argument-hint: '<opis zadania | KLUCZ-123 | ścieżka FRD>'`. Only skills that take arguments have it (the contract is enforced by `tests/test_skillsync_skill_argument_hint.py`)
 - **compatibility** - Compatibility information
 - **disable-model-invocation** - Disable automatic model invocation
 - **license** - License information
