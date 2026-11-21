@@ -2,7 +2,7 @@
 title: 'Kod wyjścia 0 przy poleceniu bez adaptera nie dowodzi testów: podsumowanie porażek Playwrighta, Vitesta i Jesta było niewidoczne'
 tags: [skillsync, test-run, evidence, exit-codes, regex, playwright, vitest, jest]
 paths: ['skillsync_workflow/test_run.py', 'skillsync_workflow/test_adapters/playwright.py', 'skillsync_workflow/test_adapters/vitest.py', 'tests/test_skillsync_test_run_hardening.py']
-source: 'odtworzenie 20.11 na atrapie (projekt tymczasowy, `./skillsync test-run`, wyjście w stylu Playwrighta `  1 failed` / `  5 passed (3s)` przy kodzie 0: PASS, counts 5, failed 0, source regex); kod `_hidden_failures` (przed poprawką: tylko unittest i pytest); testy HiddenFailures w tests/test_skillsync_test_run_hardening.py (poprawka w commicie 5116f99)'
+source: 'odtworzenie 20.11 na atrapie (projekt tymczasowy, `./skillsync test-run`, wyjście w stylu Playwrighta `  1 failed` / `  5 passed (3s)` przy kodzie 0: PASS, counts 5, failed 0, source regex); kod `_hidden_failures` (przed poprawką: tylko unittest i pytest); testy HiddenFailures w tests/test_skillsync_test_run_hardening.py'
 verified: 2026-11-20
 ---
 **Objaw:** `test-run` zaliczył bieg `PASS` (kod 0, `source: regex`, `counts` 5, `failed` 0) dla polecenia, którego wyjście drukowało `  1 failed` i `  5 passed (3s)` w stylu Playwrighta. Ta sama luka dotyczy wyjścia Vitesta (wiersz `Tests  1 failed | 4 passed`) i Jesta (`Tests: 1 failed, 4 passed, 5 total`). Pytest z `3 failed, 5 passed in 2.00s` przy kodzie 0 był już `BLOCKED`, więc luka dotyczyła tylko narzędzi bez tej reguły.
@@ -11,7 +11,7 @@ verified: 2026-11-20
 
 **Reguła:**
 - Dla poleceń bez adaptera i bez raportu `PASS` nie jest dowodem, dopóki nie sprawdzisz `end.source`: `regex` znaczy, że liczby pochodzą z tekstu, nie z narzędzia.
-- Przy kodzie 0 i źródle `regex` czytaj tylko zakotwiczone wiersze podsumowania: Playwright (`  N failed`, `  N interrupted`, N > 0), Vitest (wiersz `Tests` z `N failed`, nigdy `Test Files`), Jest (`^Tests:\s+N failed,`). Nowe narzędzie dodawaj wzorcem z adaptera, nie gołym `(\d+) failed`: `3 failed attempts`, `0 failed`, `failed=0` i `Test Files  1 failed` muszą zostać zielone.
+- Przy kodzie 0 i źródle `regex` czytaj tylko zakotwiczone wiersze podsumowania: Playwright (`  N failed`, `  N interrupted`, N > 0), Vitest (wiersz `Tests` z `N failed` i sumą w nawiasie, nigdy `Test Files`), Jest (`^Tests:\s+N failed,`). Nowe narzędzie dodawaj wzorcem z adaptera, nie gołym `(\d+) failed`: `3 failed attempts`, `0 failed`, `failed=0` i `Test Files  1 failed` muszą zostać zielone.
 - Źródła `junit` i `adapter` nie przechodzą przez tę regułę: liczbę daje raport albo adapter (zob. [liczniki z regex kontra zdarzenia adaptera](liczniki-z-regex-kontra-zdarzenia-adaptera-jedno-zrodlo-wyniku.md)).
 - Jest nie ma adaptera, więc jego obejściem jest raport `--junit`. Flagi zdejmującej luki nie ma: `--allow-no-count` nie weryfikuje kodu testów. Naprawa polecenia albo nakładki (kod wyjścia ma być kodem testów) jest jedynym pewnym wyjściem.
 - Granica: Karma `(N FAILED)` przy kodzie 0 nadal nie jest czytana przez `_hidden_failures` (zob. rekord domeny `test-run-rozpoznanie-narzedzia-i-liczniki-karmy.md`).
@@ -21,6 +21,6 @@ verified: 2026-11-20
 - Mutacja: wzorzec bez zakotwiczenia (goły `(\d+) failed`) musi zaczerwienić przypadki negatywne; bez tego test nie chroni przed fałszywym `BLOCKED`.
 - Ręcznie na atrapie: w projekcie tymczasowym z `skillsync checkpoint` polecenie drukujące `  1 failed` i kończące się kodem 0 daje `BLOCKED` i kod wyjścia 2. Rekord `end` z `source: regex` i statusem `PASS` przy wyjściu z `N failed` to sygnał, że reguła nie objęła narzędzia.
 
-**Dowód:** kod `skillsync_workflow/test_run.py` (`_hidden_failures`, ok. linii 59–86); wzorce `test_adapters/playwright.py` (`SUMMARY`) i `test_adapters/vitest.py` (`TESTS`, `SUMMARY_PART`); testy `HiddenFailures` (commit 5116f99).
+**Dowód:** kod `skillsync_workflow/test_run.py` (`_hidden_failures`, ok. linii 59–86); wzorce `test_adapters/playwright.py` (`SUMMARY`) i `test_adapters/vitest.py` (`TESTS`, `SUMMARY_PART`); testy `HiddenFailures`.
 
-**Granice aktualności:** od wydania z wpisem Breaking „ukryte niepowodzenia” w `CHANGELOG.md` (sekcja `[Unreleased]`, wersja do ustalenia). Przy zmianie wzorców Playwrighta, Vitesta lub Jesta sprawdź test z pkt „Jak wykryć”.
+**Granice aktualności:** od wydania z wpisem Breaking „ukryte niepowodzenia” w `CHANGELOG.md` (sekcja `[Unreleased]`). Przy zmianie wzorców Playwrighta, Vitesta lub Jesta sprawdź test z pkt „Jak wykryć”.
