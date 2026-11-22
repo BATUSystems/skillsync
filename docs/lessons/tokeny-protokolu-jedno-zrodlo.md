@@ -2,7 +2,7 @@
 title: "Tokeny protokołu mają jedno źródło (protocol_tokens.py); samodzielny hook trzyma kopię pilnowaną testem"
 tags: [skillsync, protocol, tokens, parser, hooks, i18n, tests]
 paths: ['skillsync_workflow/protocol_tokens.py', 'skillsync_workflow/quality.py', 'skillsync_workflow/test_gate.py', 'skillsync_workflow/status.py', 'library/hooks/check-closure.py', 'tests/test_skillsync_run_alias.py']
-source: "docs/specs/2026-11-22-angielskie-aliasy-tokenow-protokolu.md, ustalenia 1 i 13; stan @ ccc01eb: quality.py _PLAN_RUN, test_gate.py _RUN_LINE, library/hooks/check-closure.py _RUN"
+source: "spec paczki CORE-1130-I18N-ALIASES (22.11, zatwierdzony), ustalenia 1 i 13; stan @ ccc01eb: quality.py _PLAN_RUN, test_gate.py _RUN_LINE, library/hooks/check-closure.py _RUN"
 verified: 2026-11-22
 ---
 Objaw: ta sama reguła linii `Przebieg:` była w trzech miejscach (`quality._PLAN_RUN`, `test_gate._RUN_LINE`, `check-closure.py` `_RUN`). Zmiana w jednym nie trafiała do pozostałych, więc ten sam plan mógł mieć inny przebieg w zamknięciu, w bramce testów i w hooku Stop. Komentarz „skopiowany z status.py” nie pilnował zgodności.

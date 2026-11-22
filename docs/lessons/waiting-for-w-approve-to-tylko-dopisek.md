@@ -2,7 +2,7 @@
 title: "„waiting for” w approve czyści dopisek po Status:, a nie jest zgodą: nie rozszerzaj nim stanów zgody"
 tags: [skillsync, approvals, consent, status, plan, i18n]
 paths: ['skillsync_workflow/status.py', 'skillsync_workflow/protocol_tokens.py']
-source: "docs/specs/2026-11-22-angielskie-aliasy-tokenow-protokolu.md, ustalenie 20 i Q8; skillsync_workflow/status.py:653-656 (stan @ ccc01eb), status.py:657 (aktualnie: token_alternation('waiting'))"
+source: "spec paczki CORE-1130-I18N-ALIASES (22.11, zatwierdzony), ustalenie 20 i Q8; skillsync_workflow/status.py:653-656 (stan @ ccc01eb), status.py:657 (aktualnie: token_alternation('waiting'))"
 verified: 2026-11-22
 ---
 Objaw: dopisek `(waiting for <zgoda>)` albo `(czeka na <zgoda>)` po `Status:` może zostać odczytany jako zgoda albo jako nowy stan zgody, który wpływa na `CP` lub `READY`.

@@ -2,7 +2,7 @@
 title: "Alias w regexie fail-closed (bramka prototypu) wymaga przestawienia wykrywania literówek: sam alias zostawia fail-open"
 tags: [skillsync, prototype, gate, regex, aliases, fail-closed, tests]
 paths: ['skillsync_workflow/prototype.py', 'tests/test_skillsync_prototype*.py']
-source: "docs/specs/2026-11-22-angielskie-aliasy-tokenow-protokolu.md, ustalenie 12 (prototype.py:3178-3183: GATE_PROTOTYPE_LINE, GATE_BYPASS_LINE, _NEAR_PROTOTYPE, _NEAR_BYPASS; stan @ ccc01eb)"
+source: "spec paczki CORE-1130-I18N-ALIASES (22.11, zatwierdzony), ustalenie 12 (prototype.py:3178-3183: GATE_PROTOTYPE_LINE, GATE_BYPASS_LINE, _NEAR_PROTOTYPE, _NEAR_BYPASS; stan @ ccc01eb)"
 verified: 2026-11-22
 ---
 Objaw: w planie linia obejścia bramki zapisana po angielsku z błędem (np. data w złym formacie) przechodziła bramkę jako `PASS` bez komunikatu. Polskiej linii z tym samym błędem nie przepuszczano.

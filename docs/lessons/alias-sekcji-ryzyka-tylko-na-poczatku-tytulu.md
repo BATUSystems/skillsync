@@ -2,7 +2,7 @@
 title: "Angielski alias sekcji ryzyka łapie słowo tylko na początku tytułu: „Data model” nie jest sekcją Data"
 tags: [skillsync, protocol, pre-implement, regex, aliases, risk]
 paths: ['skillsync_workflow/protocol_tokens.py', 'skillsync_workflow/status.py']
-source: "docs/specs/2026-11-22-angielskie-aliasy-tokenow-protokolu.md, Q1 i Q1a; stan @ ccc01eb: status.py:105 (\\b…\\b bez wielkości liter, dowolne miejsce tytułu)"
+source: "spec paczki CORE-1130-I18N-ALIASES (22.11, zatwierdzony), Q1 i Q1a; stan @ ccc01eb: status.py:105 (\\b…\\b bez wielkości liter, dowolne miejsce tytułu)"
 verified: 2026-11-22
 ---
 Objaw: plan lub spec z nagłówkiem „Data model”, „Data flow” albo „Migration of users” jest traktowany jak sekcja ryzyka i wymusza pre-implement, mimo że żadnej sekcji ryzyka nie ma.

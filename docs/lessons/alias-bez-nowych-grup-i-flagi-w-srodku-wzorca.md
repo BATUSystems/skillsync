@@ -2,7 +2,7 @@
 title: "Alias w regexie nie dodaje grup przechwytujących, a flagi (?i) idą tylko na początku wzorca (Python 3.11)"
 tags: [skillsync, python, regex, aliases, groups, python311]
 paths: ['skillsync_workflow/retro.py', 'skillsync_workflow/quality.py', 'skillsync_workflow/protocol_tokens.py', 'tests/test_skillsync_crlf_headers.py']
-source: "docs/specs/2026-11-22-angielskie-aliasy-tokenow-protokolu.md, ustalenie 18; tests/test_skillsync_crlf_headers.py:52-66 (quality._PLAN_RUN, group(1)); retro.py:595 (retro._SIGNAL, group(6)); stan @ ccc01eb"
+source: "spec paczki CORE-1130-I18N-ALIASES (22.11, zatwierdzony), ustalenie 18; tests/test_skillsync_crlf_headers.py:52-66 (quality._PLAN_RUN, group(1)); retro.py:595 (retro._SIGNAL, group(6)); stan @ ccc01eb"
 verified: 2026-11-22
 ---
 Objaw: po dopisaniu aliasu kod czyta zły numer grupy (`retro._SIGNAL` używa `group(6)`, test CRLF `_PLAN_RUN.group(1)`), więc wynik jest cicho zły. Wzorzec składany z fragmentów z `(?i)` w środku rzuca `re.error: global flags not at the start of the expression` na Pythonie 3.11.
