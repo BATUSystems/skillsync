@@ -5,6 +5,7 @@ regular file (at most 64 KB, line by line, no backtracking patterns). A record w
 as `tools-index-invalid`; a script whose first comment block lacks labels is reported as `tool-header-incomplete`.
 """
 import os
+import unicodedata
 from pathlib import Path
 
 from . import layers, tools_index
@@ -12,8 +13,17 @@ from .tools_index import clean_text
 
 HEADER_BYTES = 64 * 1024
 LABELS = ('Purpose', 'Usage', 'Inputs', 'Outputs', 'Exit codes', 'Dependencies', 'Limits', 'Security')
+# The same labels in Polish (a header may be written in either language; accents may be dropped): matched after `_fold`.
+ALIASES = {'Purpose': ('cel',), 'Usage': ('uzycie',), 'Inputs': ('wejscia',), 'Outputs': ('wyjscia',), 'Exit codes': ('kody wyjscia',),
+           'Dependencies': ('zaleznosci',), 'Limits': ('granice', 'limity'), 'Security': ('bezpieczenstwo',)}
 HASH_EXTENSIONS = ('.py', '.sh', '.ps1')
 SLASH_EXTENSIONS = ('.js', '.mjs', '.cjs')
+
+
+def _fold(text):
+    """Lower case without accents (`ł` has no decomposition, so it is replaced by hand)."""
+    text = unicodedata.normalize('NFKD', text.lower().replace('\u0142', 'l'))
+    return ''.join(char for char in text if not unicodedata.combining(char))
 
 
 def _is_link(path):
@@ -124,8 +134,9 @@ def missing_labels(path):
             text = handle.read(HEADER_BYTES).decode('utf-8-sig', 'replace')
     except OSError:
         return None
-    block = [line.lower() for line in _comment_block(text.splitlines(), extension)]
-    return [label for label in LABELS if not any(line.startswith(label.lower() + ':') for line in block)]
+    block = [_fold(line) for line in _comment_block(text.splitlines(), extension)]
+    return [label for label in LABELS
+            if not any(line.startswith(name + ':') for line in block for name in (label.lower(),) + ALIASES[label])]
 
 
 def check_records(root, records, source, *, strict_links):

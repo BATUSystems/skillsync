@@ -13,10 +13,10 @@ ile wpisów zadeklarowała sama aktualizacja (wersje czytane z `layer.yaml` prze
 --exclude-standard`) albo przejście bez dowiązań, najwyżej 20 000 plików (przy ucięciu ostrzeżenie `superseded-scan-truncated`), jeden skan na `doctor`, tylko gdy
 jakiś wpis obowiązuje. Limity wpisów `supersedes` jednej warstwy: 100 wpisów, 20 wzorców na wpis i 200 we wszystkich wpisach warstwy, wzorzec do 200 znaków, tekst do 2000. Dopasowanie to `fnmatch` na nazwach (`*` przekracza `/`, `**/x` pasuje też do `x` w korzeniu), nigdy `Path.glob`.
 
-**B. Indeks narzędzi.** `tools/index.yaml` (warstwa; agregat `tools-index`) i `docs/tools/index.yaml` (projekt; osobna przestrzeń `id`, poza agregatem). Schemat 1:
+**B. Indeks narzędzi.** `tools/index.yaml` (warstwa; agregat `tools-index`) i `docs/tools/index.yaml` (projekt; osobna przestrzeń `id`, poza agregatem). Schemat 1 (klucz `schema: 1`; czytane jest też `version: 1`, przy obu muszą być równe):
 `id`, `path`, `purpose`, `topics`, `usage` wymagane; `files`, `selftest`, `limits`, `status` (`active|candidate|superseded|removed`), `supersedes`, `origin`
 opcjonalne. Limity: plik 256 KB, 500 rekordów, teksty 2000 znaków, ścieżka 300. `route` podsuwa rekordy (sekcja `tools`), `doctor` i `layers check` kontrolują
-schemat, ścieżki i nagłówki skryptów (etykiety `Purpose`, `Usage`, `Inputs`, `Outputs`, `Exit codes`, `Dependencies`, `Limits`, `Security`). Retro ma właściciela `tool`
+schemat, ścieżki i nagłówki skryptów (etykiety `Purpose`, `Usage`, `Inputs`, `Outputs`, `Exit codes`, `Dependencies`, `Limits`, `Security`, także po polsku: `Cel`, `Użycie`, `Wejścia`, `Wyjścia`, `Kody wyjścia`, `Zależności`, `Granice`/`Limity`, `Bezpieczeństwo`, z diakrytykami lub bez; nieznane pola rekordu, np. `planned_replacement`, są ignorowane; `limits` to lista tekstów; `usage` i `selftest` to tekst: w warstwie względem katalogu skryptu, w projekcie względem korzenia repozytorium). Retro ma właściciela `tool`
 i klucze przyczyn `tool-duplication`, `tool-candidate`.
 
 Dlaczego: podumysły pisały jednorazowe skrypty, bo nie miały jak znaleźć istniejących, a lokalne kopie narzędzi nie miały sygnału, że warstwa dostarcza zamiennik.

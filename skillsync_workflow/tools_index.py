@@ -7,13 +7,13 @@ because a broken index of tools must not block the lessons and domain knowledge 
 
 Record (the layer is not written: it follows from where the file is):
 
-    schema: 1
+    schema: 1                               # `version: 1` is read as well; if both are given they must be equal
     tools:
       - id: ui-parity-measure                 # [a-z0-9][a-z0-9-]*, unique in the file
         path: skills/ui-verify/scripts/measure.mjs   # relative to the root of the layer (project: of the repository)
         purpose: one sentence                 # required
         topics: [ui, parity]                  # required, may be empty (then `files` or --tools-all)
-        usage: "node measure.mjs --config <file> <outDir>"   # required, text; a relative path is relative to the script
+        usage: "node measure.mjs --config <file> <outDir>"   # required, text; a relative path is relative to the script's directory (project index: to the repository root)
         files: ["**/*.css"]                   # optional: when `route` offers the tool for these files
         selftest: "node measure.mjs --selftest"       # optional, text (never run by the generator)
         limits: ["does not measure animations"]       # optional
@@ -124,9 +124,11 @@ def parse_index(text, source='tools/index.yaml'):
         return [], []
     if not isinstance(data, dict):
         return [], [f'{source}: must be a mapping with `schema` and `tools`']
-    schema = data.get('schema')
+    schema = data.get('schema', data.get('version'))   # `version` is read as an alias: the other indexes of the generator (lessons, domain) use it
+    if 'schema' in data and 'version' in data and data['schema'] != data['version']:
+        return [], [f'{source}: `schema` and `version` differ; give one of them']
     if isinstance(schema, bool) or not isinstance(schema, int):
-        return [], [f'{source}: requires integer `schema`']
+        return [], [f'{source}: requires integer `schema` (or `version`)']
     if schema > SCHEMA:
         return [], [f'{source}: uses a newer `schema` ({schema}); this generator reads schema {SCHEMA}; the file is ignored']
     if schema != SCHEMA:

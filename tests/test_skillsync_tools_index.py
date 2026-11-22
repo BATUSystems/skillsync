@@ -42,6 +42,23 @@ class SchemaTest(unittest.TestCase):
         self.assertEqual(errors, [])
         self.assertEqual({key: records[0][key] for key in full}, full)
 
+    def test_version_is_read_as_an_alias_of_schema(self):
+        body = yaml.safe_dump({'tools': [record('a')]}, sort_keys=False)
+        self.assertEqual(len(tools_index.parse_index('version: 1\n' + body)[0]), 1)
+        self.assertEqual(len(tools_index.parse_index('schema: 1\nversion: 1\n' + body)[0]), 1)
+        self.assertEqual(tools_index.parse_index('schema: 1\nversion: 2\n' + body)[0], [])   # both given and different
+        self.assertEqual(tools_index.parse_index('version: 2\n' + body)[0], [])
+        self.assertEqual(tools_index.parse_index(body)[0], [])
+
+    def test_unknown_fields_such_as_planned_replacement_are_ignored(self):
+        records, errors = self.parse(record('a', planned_replacement='skill x', layer='core'))
+        self.assertEqual((len(records), errors), (1, []))
+        self.assertNotIn('planned_replacement', records[0])
+
+    def test_limits_must_be_a_list_of_texts(self):
+        self.assertEqual(self.parse(record('a', limits='one text'))[0], [])
+        self.assertEqual(len(self.parse(record('a', limits=['one text']))[0]), 1)
+
     def test_empty_topics_are_allowed_but_the_key_is_required(self):
         self.assertEqual(self.parse(record(topics=[]))[1], [])
         without = record()

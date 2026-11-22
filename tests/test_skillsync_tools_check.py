@@ -48,6 +48,13 @@ class HeaderTest(unittest.TestCase):
         self.assertEqual(self.missing('b.cjs', '/**\n' + '\n'.join(f' * {label}: x' for label in tools_check.LABELS) + '\n */\n'), [])
         self.assertEqual(self.missing('c.ps1', '<#\n' + '\n'.join(f'{label}: x' for label in tools_check.LABELS) + '\n#>\n'), [])
 
+    def test_polish_labels_with_or_without_accents_count(self):
+        polish = ['Cel', 'Użycie', 'Wejścia', 'Wyjścia', 'Kody wyjścia', 'Zależności', 'Granice', 'Bezpieczeństwo']
+        self.assertEqual(self.missing('a.cjs', '\n'.join(f'// {label}: x' for label in polish) + '\n'), [])
+        plain = ['Cel', 'Uzycie', 'Wejscia', 'Wyjscia', 'Kody wyjscia', 'Zaleznosci', 'Limity', 'Bezpieczenstwo']
+        self.assertEqual(self.missing('b.cjs', '\n'.join(f'// {label}: x' for label in plain) + '\n'), [])
+        self.assertEqual(self.missing('c.cjs', '// Cel: x\n// Needs: y\n'), list(tools_check.LABELS[1:]))
+
     def test_order_does_not_matter_and_unknown_extensions_are_not_checked(self):
         self.assertEqual(self.missing('a.py', '\n'.join(f'# {label}: x' for label in reversed(tools_check.LABELS)) + '\n'), [])
         self.assertIsNone(self.missing('a.rb', 'puts 1\n'))
