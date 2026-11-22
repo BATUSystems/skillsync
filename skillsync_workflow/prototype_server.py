@@ -6733,7 +6733,7 @@ def startup_checks(config):
     for slug in v1_prototypes(root_real) if os.path.isdir(root_real) else []:
         warnings.append(tr('proto.srv.start.v1Prototype', slug=slug))
     if os.path.lexists(os.path.join(root_real, QUESTIONS_FILE)):
-        warnings.append(tr('proto.srv.warn.legacyQuestions'))
+        warnings.append(tr('proto.srv.warn.legacyQuestions', root='<root>', slug='<slug>'))
     return errors, warnings
 
 

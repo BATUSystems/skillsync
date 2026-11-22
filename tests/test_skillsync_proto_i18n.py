@@ -16,6 +16,8 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / 'tests'))
+from tmp_paths import child  # noqa: E402
 from skillsync_workflow import prototype_server as server  # noqa: E402
 from tests import test_skillsync_prototype_experts_page as E  # noqa: E402
 from tests.test_skillsync_prototype_server import setUpModule, tearDownModule  # noqa: E402,F401  (strażnik katalogu)
@@ -270,7 +272,7 @@ class SyncScriptTest(unittest.TestCase):
         self.addCleanup(patcher.stop)
 
     def write(self, name, data):
-        path = self.temp / name
+        path = child(self.temp, name)
         path.write_text(json.dumps(data), encoding='utf-8')
         return str(path)
 
