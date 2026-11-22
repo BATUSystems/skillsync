@@ -27,7 +27,7 @@ mapowanie na werdykt: `lib/a11y-page.mjs`.
 Zasada wyniku: `counted` w raporcie pomija tylko EXEMPT i INFO, a EXCEPTED i CONFIRMED liczy jako PASS
 (`library/skills/ui-verify/scripts/lib/a11y-report.mjs`). `combine` daje FAIL, jeśli jest choć jedno FAIL;
 PASS tylko z niepustej listy samych PASS; w pozostałych przypadkach UNVERIFIED, także dla pustej listy
-(`lib/verdict.mjs:10-15`). Stąd: bieg bez zmierzonej kontroli, z samymi EXEMPT albo bez asercji to kod 3.
+(`lib/verdict.mjs`). Stąd: bieg bez zmierzonej kontroli, z samymi EXEMPT albo bez asercji to kod 3.
 Test: selftest `report` w `a11y.mjs` (linie 105-111).
 
 Wyjątki i potwierdzenia: klucz `<reguła>|<page>|<selektor>`, dopasowanie przez `key`, przez `rule` i dokładny
@@ -49,7 +49,7 @@ progu, 3 element nieobecny albo UNVERIFIED; `lib/a11y-expect.mjs`). Zgodny FAIL 
 
 Zależności i granice kodu: `a11y.mjs` używa tych samych modułów co `measure` i `capture` skilla (`deps`,
 `runtime`, `chrome`, `playwright-adapter`, `policy`, `out`, `verdict`, `cli`), ten sam cache i `package.json`
-(`library/skills/ui-verify/scripts/a11y.mjs:13-34`, `resolveCacheDir` i `loadImaging` w linii 247-249). Nie importuje
+(`library/skills/ui-verify/scripts/a11y.mjs`). Nie importuje
 `color.mjs`: jego `blend` zaokrągla kanały, a własna arytmetyka zmiennoprzecinkowa jest w `a11y-contrast.mjs`. Kolor,
 którego nie da się zamienić na sRGB, to UNVERIFIED. Tekst ze strony to dane niezaufane: `cleanText` czyści znaki
 sterujące i bidi oraz tnie do limitu (`lib/a11y-schema.mjs`).
