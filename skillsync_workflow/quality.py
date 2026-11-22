@@ -21,6 +21,7 @@ import sys
 import yaml
 from .common import add_project_arguments, changed_files, checked_out_link, emit, file_lines, load_layer_project, matches, workflow_config, contained, normalize_files, read_yaml, strings, redact, expand_project_skills, require_layerset, WORKFLOW_SKILL, LEGACY_WORKFLOW_SKILL
 from .pathfmt import posix
+from .protocol_tokens import RUN_LINE
 from .fsutil import ensure_dir
 from .selfcmd import self_argv
 from . import layers as _layers
@@ -914,7 +915,7 @@ def instruction_drift(root, library, skills, ignore_paths=(), ignore_skills=()):
     return messages
 
 
-_PLAN_RUN = re.compile(r'^Przebieg:[ \t]*`?([^\s`]*)`?[ \t\r]*$', re.MULTILINE)   # `\r`: a plan with Windows line ends (the `$` of MULTILINE stops only before `\n`)
+_PLAN_RUN = RUN_LINE   # `Przebieg:` (PL) albo `Run:` (EN, tylko w nagłówku); `.search`/`.group(1)`, tolerancja `\r` (plan z końcami linii Windows)
 _PLAN_DAY = re.compile(r'^(\d{4}-\d{2}-\d{2})-')
 # Wzorzec id jak `_slug` w runs.py (import cykliczny: runs importuje quality).
 _RUN_ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,79}')

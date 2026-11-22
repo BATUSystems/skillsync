@@ -19,9 +19,10 @@ import time
 from pathlib import Path
 
 from .plan_phases import parse_test_steps
+from .protocol_tokens import RUN_LINE
 from . import test_events as events
 
-_RUN_LINE = re.compile(r'^Przebieg:[ \t]*`?([^\s`]*)`?[ \t\r]*$', re.MULTILINE)
+_RUN_LINE = RUN_LINE
 _CHECKED = re.compile(r'^\s*[-*]\s+\[[xX]\]\s+([A-Z]{1,3}-?\d+[a-z]?(?:\.\d+[a-z]?)?)(?![\w-])', re.MULTILINE)
 _TREE = re.compile(r'[0-9a-f]{40,64}')
 MAX_PLAN_BYTES = 512 * 1024
