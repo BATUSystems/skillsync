@@ -52,15 +52,17 @@ class CoreEnglishLayerTest(LayersCase):
         self.assertEqual(module.polish_left(layer), [])
 
     def test_the_protocol_tokens_of_the_map_are_written_in_english(self):
+        """A Polish token of the map may stand only on a line that also has its English form (a list of the two, as in the skill `skillsync`)."""
+        from skillsync_workflow import protocol_tokens
         layerset = self.layerset()
         layer = next(item for item in layerset.layers if item.id == 'core-en')
-        old = ('Przebieg:', 'Werdykt:', '[EKSPERT]', '[ZAŁOŻENIE]', 'Oddanie:', 'Katalog:', 'Prototyp:', 'Bramka prototypu', 'Retro: sygnały',
-               'czeka:', 'trwa:', 'zrobione:', 'w toku:', '(kto:', 'Pytania otwarte', 'Directory: główny', 'czeka-na=', 'powód=')
+        pairs = {pl: en for pl, en in protocol_tokens.PL_TO_EN.items() if len(pl) >= 5 and (pl[0].isupper() or pl[0] in '[—(' or pl.endswith(':')) and pl not in ('Dane', 'Krok', 'Cel')}   # words like `kod` are too common to flag
         found = []
         for rel in layers.layer_files(layer):
-            if rel.endswith('.md') and rel != 'README.md':
-                text = (layer.root / rel).read_text(encoding='utf-8')
-                found += [f'{rel}: {token}' for token in old if token in text]
+            if not rel.endswith('.md') or rel == 'README.md':
+                continue
+            for number, line in enumerate((layer.root / rel).read_text(encoding='utf-8').splitlines(), 1):
+                found += [f'{rel}:{number}: {pl}' for pl, en in pairs.items() if pl in line and en not in line]
         self.assertEqual(found, [])
 
 

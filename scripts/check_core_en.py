@@ -19,7 +19,8 @@ from skillsync_workflow import layers, translations  # noqa: E402
 POLISH = re.compile('[ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]')
 QUOTED = re.compile('„[^”]*”')   # a label of the (still Polish) prototype engine, quoted verbatim with an English gloss next to it
 # Polish text that stays on purpose: values that code reads or writes and external systems (see the token maps of CORE-1130-I18N).
-ALLOWED = ('akceptacja prototypu', 'odpowiedź Q', 'Błąd w programie', 'stan przed iteracją', 'Paweł')
+ALLOWED = ('akceptacja prototypu', 'odpowiedź Q', 'Błąd w programie', 'stan przed iteracją', 'Paweł',
+           '`Odbiór`/`Acceptance`', 'Język i teksty interfejsu')   # the last two: the Polish forms listed next to the English tokens; a title of a Polish doc
 
 
 def polish_left(english):

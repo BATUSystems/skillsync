@@ -17,7 +17,7 @@ files:
   skills/codereview/references/diff-signals.md: c67d00330218ec36151457cae541d2fe0c564d131afa686f30e359aa122c16e3
   skills/codereview/references/summary-template.md: 633304616a287aa7f3d9079c92982c165621ca262f717c2c1d16e27648a5d76e
   skills/codereview/references/worktree.md: f53aeb1e4ed97f079508c8742c30f9dd08db1e0d49bf278d90001a54682608ef
-  skills/dashboard/SKILL.md: 610efd84f182f7ec59e4486f3fc24bda62a235166bc74724df9d9011a2e807c7
+  skills/dashboard/SKILL.md: cf1dfb8b1e131cc22b73fc5a67ba90cf757792bf7dd120e4a9e7408ccdf61a01
   skills/dispatch/SKILL.md: 9523b7b2531c0f8e2018af7d56e003c8654bc45fdc676beb26b29eb89de6b35f
   skills/dispatch/references/claude.md: 7b7a1ee504de634d5986cb004d415cd66eee256dc2c40dc1dc0d26cba61aa188
   skills/dispatch/references/codex.md: ace8e6ddde9021c8e398ba068e7d2b8cb64ecc1798144eacd6e71a5847931d46
@@ -61,7 +61,7 @@ files:
   skills/prototype/references/decisions.md: d9d3001d6f9c0821ef5bf110340ea9f999496a28832122492aa4327019a21659
   skills/prototype/references/screen-patterns.md: b81853e573b893c8ea51e905b3d143c7f176c8816b4ead53b725aa1a2cdcaa1a
   skills/prototype/references/style.md: 1c6a057c833fa529e1ffce09ae8760c27860e9962a4d0cbb628e985c0eee4e95
-  skills/skillsync/SKILL.md: 0063972c856e4dd8a41579d336b1f238581ce7c8c7776dc0acbd61c4515b53a0
+  skills/skillsync/SKILL.md: 13a9fbbada620f397d778b701075d402f12cee452e1b996d35e38be515c91ace
   skills/skillsync/references/authoring.md: 63b81c826c53fc85635bcecb91272ce6b2b9195e84b92e848ac445f67ddf89f2
   skills/smart-test/SKILL.md: dec67db78d5663285f7c8a9718ff8a5bc8c539fafab9e8d6d013ba1d54083b68
   skills/workflow/SKILL.md: dd8cc5429af99513ce81dcb1aa6ab70d7af4eb2e665f651aa59924087527ddb3

@@ -247,13 +247,14 @@ The "Tests" tab (hidden until the first run) shows the test results of plan step
 | `app.js` | the **page adapter**: `fetch` of `/api/status`, `/api/doc`, `/api/approve` (header `X-Status-Board: 1`), `/api/descriptions`; SSE `/events` with polling every 5 s and a 40 s watchdog; `localStorage` (`dashboard:plan`, `dashboard:theme`); the theme; the address `#hash`; a clock every 1 s; keys at the document level |
 | `theme.js` | the theme before the first paint (remembered or system) |
 | `app.css` | the appearance; the renderer root has the class `dashboard-root` (`display: contents`) |
+| `descriptions.json`, `descriptions.en.json` | the tooltip descriptions: Polish and English; the server picks the file by the `lang` of the status (no file = Polish). A host that copies the assets copies both |
 
 The layout depends on the width of the host column, not of the window: the skeleton (header, tabs, `main`, footer) is in the `.dash-wrap` wrapper
 (`container: dash / inline-size`), and the thresholds are `@container dash` 1100, 640, 500 and 420 px (compact mode: a panel next to the session).
 The `#descTip` tooltip is outside the wrapper (containment breaks `position: fixed`). A host with its own CSS takes over these rules from `app.css` and gives `.dash-wrap` a defined width (an inline-size container has no width of its own content).
 
 The renderer is a UMD: `window.DashboardRenderer` in the browser, `module.exports` in Node. Exports:
-`create(root, deps)` (alias `createDashboard`), `buildSprite(doc)`, `SPRITE` (the data of the `i-…` symbols), `version`.
+`create(root, deps)` (alias `createDashboard`), `buildSprite(doc)`, `SPRITE` (the data of the `i-…` symbols), `version`, `defaultTexts` (the built-in Polish `ui.*` catalog, `DEFAULT_TEXTS`; generated from `pl.json` by `scripts/sync_renderer_defaults.py`, do not edit by hand).
 `create` changes only its own root: it adds to `root` the class `dashboard-root`, the sprite (skipped with `deps.sprite === false`,
 when the host has its own) and a skeleton with fixed identifiers (`title`, `meta`, `live`, `planBtn`, `planMenu`, `waitBanner`,
 `tab-progress`, `tab-docs`, `protoLink`, `acts`, `phases`, `feed`, `feedTitle`, `docList`, `docView`, `foot`, `descTip`,
@@ -282,7 +283,7 @@ The `deps` contract (only `now` is required):
 | `canApprove` | `(json) => boolean` | no | whether this host may give consents; by default `approvals.here` from the JSON |
 | `storage` | `{get(k) => string \| null, set(k, v)}` | no | preferences (`v == null` = delete); without it the plan choice is not remembered |
 | `theme` | `{isDark() => boolean, toggle()}` | no | the theme switch and the `T` key; without it there is no button |
-| `texts` | `{live?, liveTip?, noConnection?}` | no | overriding the texts of the indicator (`live`, `polling`, `down`, `connecting`), their tooltips and the no-connection message |
+| `texts` | `{live?, liveTip?, noConnection?}` | no | overriding the texts of the indicator (`live`, `polling`, `down`, `connecting`), their tooltips and the no-connection message; only these keys, the other `ui.*` come from the `texts` field of the status or from the Polish catalog |
 | `prototypeUrl` | `(port, slug) => string` | no | the prototype address (page: page host + port); without it the link has no `href` |
 | `prototypeOrigin` | `(port) => string` | no | the address of the prototype server without a path (page: `protocol//host:port`); with it the questions-to-the-expert toast has a link `/_experts[/<slug>]`, without it it is plain text |
 | `mountHtml` | `(el, html) => void` | no | inserting the HTML of the Markdown preview and the `…Html` fields from `GET /api/status` (escaped by the server); the renderer itself does not parse HTML. Without `mountHtml` (e.g. an editor plugin that reads `dashboard show` without these fields) the page shows plain text |
@@ -300,7 +301,9 @@ The methods of the object from `create`:
 | Method | Meaning |
 | --- | --- |
 | `update(json)`, alias `render(json)` | draws the state; the previous state is used to highlight changes; in the Documents view it refreshes the preview |
-| `setDescriptions(map)` | the tooltip descriptions `{key: {title, text}}` (`descriptions.json`) |
+| `setDescriptions(map)` | the tooltip descriptions `{key: {title, text}}` (`descriptions.json` or `descriptions.en.json`, by language) |
+| `t(key, params, n)` | the text of a `ui.*` key in the language of the last status: the catalog from the `texts` of the status, a missing key falls back to the built-in Polish; `n` selects the plural form, `{name}` comes from `params`; an unknown key returns the key |
+| `lang()` | the language of the last status (`pl` when there is no `lang` field) |
 | `setNotice({ok, word, text} \| null)` | a message in the banner; it fades by itself (ok after 10 s, an error after 30 s), "×" closes at once |
 | `setVisible(bool)` | host: the card visible/hidden (`visibilitychange`); the message countdown stops while the card is in the background and restarts after return (visible by default) |
 | `setLive(mode)` | the indicator `live` / `polling` / `down` / `connecting` |

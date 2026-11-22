@@ -77,6 +77,41 @@ class DoctorCase(ComposeCase):
         return [item['level'] for item in self.found(report, text, path)]
 
 
+class LanguageMismatch(DoctorCase):
+    """CORE-1130-I18N: `doctor` warns when the interface language of the manifest differs from the language of the layers
+    (the skills of a project come from the layers chosen in `layer_rules`, the interface from the manifest key `language`)."""
+
+    def layers_with_translation(self, translated):
+        core = self.layer_dir('core', 'core', dict(CORE_FILES), version=self.version)
+        entries = [('core', 'core', core)]
+        if translated:
+            english = self.layer_dir('core-en', 'org', {'skills/beta/SKILL.md': SKILL_TEXT.format('beta')},
+                                     extra_meta={'translation_of': 'core', 'language': 'en'})
+            entries.append(('core-en', 'org', english, {'translation': True}))
+        self.write_config(layers=entries, rules=[(['**'], [item[0] for item in entries])])
+
+    MISMATCH = 'but the skills, roles and instructions of this project are in'
+
+    def test_matching_languages_are_quiet_and_a_mismatch_is_a_warning(self):
+        for translated, language, expected in ((True, 'en', 0), (False, None, 0), (False, 'en', 1), (True, None, 1), (True, 'pl', 1)):
+            with self.subTest(translated=translated, language=language):
+                self.layers_with_translation(translated)
+                extra = {'language': language} if language else {}
+                project = self.new_project(f'lang-{translated}-{language}', skills=['beta'], **extra)
+                self.link_ok(project)
+                report = self.doctor(project)
+                self.assertEqual(len(self.found(report, self.MISMATCH, MANIFEST)), expected, report)
+                if expected:
+                    self.assertEqual(self.levels(report, self.MISMATCH, MANIFEST), ['warning'])
+
+    def test_an_unknown_language_value_is_reported_by_doctor_too(self):
+        self.layers_with_translation(False)
+        project = self.new_project('lang-unknown', skills=['beta'], language='de')
+        self.link_ok(project)
+        report = self.doctor(project)
+        self.assertEqual(self.levels(report, "manifest key 'language' must be one of", MANIFEST), ['warning'], report)
+
+
 class ManifestKeysK3(DoctorCase):
     def test_layers_and_layer_rules_in_the_manifest_are_errors(self):
         self.layers(org=False)
