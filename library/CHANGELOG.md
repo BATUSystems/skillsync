@@ -13,6 +13,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 - Skills `skillsync`, `dashboard` and the reference `feature/spec-store.md`: the flag `approvals record --expect-plan-state` and the `409` with `code: plan_state_changed` of the consent button.
 - **`copilot-skills-yaml`: the keys of Claude Code.** The list of the frontmatter keys of Claude Code, the difference between `user-invokable` (Copilot) and `user-invocable` (Claude Code), and the rule that a custom key is only a `doctor` warning (own data goes to `metadata`); `skillsync` mentions the lint of `doctor` in the checks of a new skill.
 - Skill `workflow`, reference `test-run.md`: section "Kontrakt zdarzeń" with the fields of the events of a test step, including the optional `end.changed` (up to five paths that changed while the tests ran, masked, shown only in the message of the gate and never passed to a command).
+- **Skill `skillsync`: the completion command.** One line in "Instalacja i `skillsync setup`": `skillsync completion bash|zsh|powershell` (script on stdout) and `completion install|uninstall`; the installer and `setup` install it, `SKILLSYNC_NO_COMPLETION=1` skips it. Details in `docs/cli.md` of the generator.
 
 ### Changed
 

@@ -121,6 +121,9 @@ skillsync --version
 `skillsync-ctl` (wrapper `systemctl --user` dla usługi watch) nie jest częścią zainstalowanego pakietu: pakiet zawiera tylko
 `skillsync_workflow` z punktem wejścia `skillsync`. Skrypt działa tylko na Linuksie, z checkoutu repo.
 
+Uzupełnianie poleceń (Tab) w bash, zsh i PowerShellu instalują `install.sh` i `skillsync setup` (`SKILLSYNC_NO_COMPLETION=1`
+je pomija); ręcznie: `skillsync completion install`, usunięcie: `skillsync completion uninstall`.
+
 Aktualizacja, odinstalowanie i rozwiązywanie problemów: [docs/installation.md](docs/installation.md).
 
 ## Szybki start

@@ -326,17 +326,17 @@ class TestSetupArguments(InstallShTestBase):
         e = self.make_env()
         self.run_ok(e, args=["--yes", "--org", "acme", "--org-source", "https://example.com/org.git"], extra=self.ENV)
         self.assertEqual(e.calls_starting("skillsync"),
-                         ["skillsync <setup> <--yes> <--org> <acme> <--org-source> <https://example.com/org.git>"])
+                         ["skillsync <completion> <install> <--auto>", "skillsync <setup> <--yes> <--org> <acme> <--org-source> <https://example.com/org.git>"])
 
     def test_no_arguments(self):
         e = self.make_env()
         self.run_ok(e, extra=self.ENV)
-        self.assertEqual(e.calls_starting("skillsync"), ["skillsync <setup>"])
+        self.assertEqual(e.calls_starting("skillsync"), ["skillsync <completion> <install> <--auto>", "skillsync <setup>"])
 
     def test_argument_with_spaces_kept_intact(self):
         e = self.make_env()
         self.run_ok(e, args=["--match", "a b/**"], extra=self.ENV)
-        self.assertEqual(e.calls_starting("skillsync"), ["skillsync <setup> <--match> <a b/**>"])
+        self.assertEqual(e.calls_starting("skillsync"), ["skillsync <completion> <install> <--auto>", "skillsync <setup> <--match> <a b/**>"])
 
     def test_setup_exit_code_propagated(self):
         for rc, done in ((2, False), (1, False), (0, True)):
@@ -350,7 +350,7 @@ class TestSetupArguments(InstallShTestBase):
     def test_no_setup(self):
         e = self.make_env()
         self.run_ok(e, args=["--yes"], extra={**self.ENV, "SKILLSYNC_NO_SETUP": "1"})
-        self.assertEqual(e.calls_starting("skillsync"), [])
+        self.assertEqual(e.calls_starting("skillsync"), ["skillsync <completion> <install> <--auto>"])
         self.assertEqual(len(e.calls_starting("uv <tool> <install>")), 1)
 
 
