@@ -70,6 +70,87 @@ except ImportError:
     _winacl = None
 
 
+# ── Interface language ───────────────────────────────────────────────────────
+#
+# The texts a person reads (pages, messages of the CLI, warnings) come from a catalog of `proto.*` keys. This module is standalone and
+# cannot read the catalog files of the package, so the texts are embedded in the generated block below; the source of truth are
+# `data/i18n/pl.proto.json` and `en.proto.json`. Protocol words that programs and the skill read (`[EKSPERT]`, `[ZAŁOŻENIE]`,
+# the line `Bramka prototypu: pominięta`, the decisions Wprowadź/Wariant/Odłóż/Zostaw) are not part of it and stay Polish.
+
+# BEGIN GENERATED proto-i18n
+# Generated from skillsync_workflow/data/i18n/{pl,en}.proto.json by scripts/sync_proto_i18n.py.
+# Edit the JSON files and run the script; do not change this block by hand (a test compares it with the files).
+_PROTO_TEXTS_JSON = r'''{
+ "en": {},
+ "pl": {}
+}'''
+# END GENERATED proto-i18n
+_PROTO_TEXTS = json.loads(_PROTO_TEXTS_JSON)
+
+DEFAULT_LANGUAGE = 'pl'
+SUPPORTED_LANGUAGES = ('pl', 'en')
+_language = DEFAULT_LANGUAGE
+_PLURAL_FORMS_ALLOWED = ('one', 'few', 'many', 'other')
+_PARAM = re.compile(r'\{(\w+)\}')
+
+
+def set_language(language):
+    """Sets the interface language of this process and returns it; a value that is not supported gives the default (`pl`)."""
+    global _language
+    _language = language if language in SUPPORTED_LANGUAGES else DEFAULT_LANGUAGE
+    return _language
+
+
+def get_language():
+    return _language
+
+
+def plural_category(language, n):
+    """`one`/`few`/`many`/`other` for the integer `n` (Polish rules for `pl`, English for the rest); other values are `other`."""
+    if isinstance(n, bool) or not isinstance(n, int) or n < 0:
+        return 'other'
+    if language == 'pl':
+        if n == 1:
+            return 'one'
+        if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14:
+            return 'few'
+        return 'many'
+    return 'one' if n == 1 else 'other'
+
+
+def _catalog_value(key, language):
+    value = _PROTO_TEXTS.get(language, {}).get(key)
+    return _PROTO_TEXTS.get(DEFAULT_LANGUAGE, {}).get(key) if value is None else value
+
+
+def tr(key, n=None, language=None, **params):
+    """The text of `key` in the interface language; an object of plural forms is chosen by `n` (also available as `{n}`).
+
+    `{name}` is replaced once from `params`, a substituted value is never read again, and an unknown placeholder stays. An unknown key
+    is returned as it is, so a missing text is visible instead of raising in the middle of a request."""
+    language = language if language in SUPPORTED_LANGUAGES else _language
+    value = _catalog_value(key, language)
+    if value is None:
+        return key
+    if isinstance(value, dict):
+        for form in (plural_category(language, n), 'other', 'many'):
+            if form in value:
+                value = value[form]
+                break
+        else:
+            value = next(iter(value.values()), '')
+    if n is not None:
+        params = dict(params, n=n)
+    return _PARAM.sub(lambda match: str(params[match.group(1)]) if match.group(1) in params else match.group(0), value)
+
+
+def client_texts(prefix, language=None):
+    """The catalog entries whose key starts with `prefix`, for a page script (plural objects stay objects)."""
+    language = language if language in SUPPORTED_LANGUAGES else _language
+    keys = set(_PROTO_TEXTS.get(DEFAULT_LANGUAGE, {})) | set(_PROTO_TEXTS.get(language, {}))
+    return {key: _catalog_value(key, language) for key in sorted(keys) if key.startswith(prefix)}
+
+
 # ── Lingering close (shared with the status page) ───────────────────────────
 #
 # A handler that answers an error (401, 403, 405, 411, 413, ...) before it has read the request body and then closes
@@ -6125,8 +6206,9 @@ class ServerConfig(object):
     def __init__(self, root, users, host=DEFAULT_HOST, port=DEFAULT_PORT, secure_cookies=False, trust_proxy=False,
                  login_to_view=False, source_writes=True, clock=None, pbkdf2_iterations=DEFAULT_ITERATIONS,
                  lock_timeout=LOCK_TIMEOUT, log=None, git_checks=True, max_file_bytes=MAX_FILE_BYTES, recover=True,
-                 gallery=None, runtime_dir=None, demo=False):
+                 gallery=None, runtime_dir=None, demo=False, language=None):
         self.demo = bool(demo)
+        self.language = language if language in SUPPORTED_LANGUAGES else DEFAULT_LANGUAGE   # the interface language (`set_language` at `make_server`)
         self.root = os.path.abspath(os.fspath(root))
         # the read-only show (`serve --demo`) has no users file, no session, no login link and writes nothing
         self.users = os.path.abspath(os.fspath(users)) if users is not None else None
@@ -7656,6 +7738,7 @@ def make_server(config, check=True):
     With `check`, `startup_checks` errors raise `StartupError`; warnings are in
     `server.app.warnings`.  The cookie name uses the bound port.
     """
+    set_language(getattr(config, 'language', None))
     warnings = []
     if check:
         errors, warnings = startup_checks(config)
@@ -8611,6 +8694,8 @@ def build_parser():
     serve_parser.add_argument('--secure-cookies', action='store_true')
     serve_parser.add_argument('--trust-proxy', action='store_true')
     serve_parser.add_argument('--login-to-view', action='store_true')
+    serve_parser.add_argument('--lang', choices=SUPPORTED_LANGUAGES, default=DEFAULT_LANGUAGE,
+                              help='interface language of the pages and messages (default: %s)' % DEFAULT_LANGUAGE)
     serve_parser.add_argument('--no-source-writes', action='store_true')
     user_parser = commands.add_parser('user', help='manage the users file')
     actions = user_parser.add_subparsers(dest='user_action')
@@ -8674,7 +8759,7 @@ def main(argv=None):
                              '(source writes off)\n' % args.root)
         config = ServerConfig(args.root, args.users, host=args.host, port=args.port,
                               secure_cookies=args.secure_cookies, trust_proxy=args.trust_proxy,
-                              login_to_view=args.login_to_view, source_writes=source_writes)
+                              login_to_view=args.login_to_view, source_writes=source_writes, language=args.lang)
         return serve(config)
     return run_user_command(args)
 

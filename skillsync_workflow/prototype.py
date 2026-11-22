@@ -37,6 +37,7 @@ import yaml
 from .common import append_missing_lines, contained, emit, file_lines, load_layer_project, read_project, read_yaml, require_layerset
 from .pathfmt import posix
 from . import layers as _layers
+from . import i18n
 from . import prototype_server as server
 from . import stopsignal
 from .plan_phases import parse_plan_phases
@@ -2557,13 +2558,14 @@ def serve_prototypes(root, manifest, args, err=None):
     demo = bool(getattr(args, 'demo', False))
     if demo and args.login_to_view:
         return {'status': 'BLOCKED', 'reason': '--demo and --login-to-view contradict each other: the show has no accounts and no login'}
+    language, language_warning = i18n.resolve_language(manifest)   # the manifest key `language` (default pl)
     host = args.host if args.host is not None else (DEMO_HOST if demo else server.DEFAULT_HOST)
     source_writes = not demo and not args.no_source_writes and _in_git_worktree(settings['root'])
     config = server.ServerConfig(settings['root'], None if demo else users_file_path(repo, args.users), host=host, port=port,
                                  secure_cookies=args.secure_cookies, trust_proxy=args.trust_proxy,
                                  login_to_view=args.login_to_view, source_writes=source_writes, log=err,
                                  gallery=lambda: gallery_html(settings['root'], repo, clock=config.clock, demo=demo),
-                                 runtime_dir=None if demo else server.link_run_dir_of(repo), demo=demo)
+                                 runtime_dir=None if demo else server.link_run_dir_of(repo), demo=demo, language=language)
     try:
         instance = server.make_server(config)
     except server.StartupError as error:
@@ -2573,7 +2575,7 @@ def serve_prototypes(root, manifest, args, err=None):
         return report
     except OSError as error:
         return {'status': 'BLOCKED', 'reason': f'cannot listen on {host}:{port} ({error.strerror or error})'}
-    notes = list(settings['warnings']) + instance.app.warnings
+    notes = list(settings['warnings']) + instance.app.warnings + ([language_warning] if language_warning else [])
     if demo:
         notes += [f'--demo: {name} nie ma tu znaczenia (pokaz nie ma kont ani ciasteczek)'
                   for name, given in (('--users', args.users), ('--secure-cookies', args.secure_cookies), ('--trust-proxy', args.trust_proxy)) if given]
