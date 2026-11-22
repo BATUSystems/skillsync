@@ -74,7 +74,7 @@ BRIDGE/1 <msg-id> <sender>→<recipient> <MSG|ACK|NACK|PING> [re=<msg-id>] [repl
 - After reading, send back `ACK re=<msg-id>` before the actual processing. ACK means only "delivered
   and read", not consent nor execution.
 - The result goes in a separate `MSG re=<msg-id>`. Reject an unreadable or inadmissible message through
-  `NACK re=<msg-id> powód=...`.
+  `NACK re=<msg-id> reason=...`.
 - A duplicate of the same `msg-id` is acknowledged with ACK again, but not executed again.
 - Without an ACK after 10 minutes **one** retry with the same `msg-id` is allowed; report further silence to the user.
   Do not poll in a loop (the dispatcher pulse, [pulse](pulse.md), works only in the Claude adapter: `/loop` and `ScheduleWakeup`).

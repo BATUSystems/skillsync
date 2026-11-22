@@ -5,17 +5,17 @@ Read when writing the plan `docs/plans/YYYY-MM-DD-<slug>.md`.
 The plan header has a line `Run: <run-id>` with the identifier used in `checkpoint`; the hook and `doctor` check closure by it.
 The optional line `Handoff: <branch>` records the user's answer on where “CP” hands the work over in `direct` mode (the AGENTS core); without it
 “CP” pushes only the working branch. The value is the branch name alone (valid according to `git check-ref-format --branch`); other text (a placeholder, with a note) is ignored, so do not write placeholder text, omit the line or ask.
-The line `Directory: worktree <directory-name>` or `Directory: główny` records the choice of the working directory from “GO plan” (a name, not an absolute path; no line = worktree);
+The line `Directory: worktree <directory-name>` or `Directory: main` records the choice of the working directory from “GO plan” (a name, not an absolute path; no line = worktree);
 the question, conditions and resumption: [workdir](workdir.md).
-The line `Ceremonia: demo` (optional with `full`) records the value of `workflow.ceremony` from `skillsync route`; a mismatch with `route` at “GO implement”
+The line `Ceremony: demo` (optional with `full`) records the value of `workflow.ceremony` from `skillsync route`; a mismatch with `route` at “GO implement”
 is a question to the user ([demo ceremony](ceremony-demo.md)).
 With `specs.tracked: false` the plan is local (ignored by git): its durability is given by the snapshot, and acceptance closes the consent entry with `planState: done` (a consent field, not git history; [spec-store](spec-store.md)).
 
 The plan of a large change has in its header a line `Spec: <docs/specs/YYYY-MM-DD-slug.md>` (like `Run:`, a separate row, the path alone),
 and from “GO plan” `Spec-sha: <git hash-object of the spec>` (the plan draft, [plan-large](plan-large.md) §5). A plan with a spec does not repeat its content:
-it has the literal headings `Cel` (the goal, with a link to the spec), `Kryteria akceptacji (mapowanie)` (the acceptance criteria mapping: a table of spec criterion → steps → evidence; the criteria
-and the FRD requirements map are in the spec), `TESTY` (the tests: commands), `Dokumentacja i wiedza` (documentation and knowledge) and the steps, resources, version, Progress and Result. With an FRD the plan
-records the sha of the FRD file and the assumptions from `LUKI` ([frd-intake](frd-intake.md)). Statuses, sha and resumption of the spec: [spec](spec.md).
+it has the literal headings `Goal` (the goal, with a link to the spec), `Acceptance criteria (mapping)` (the acceptance criteria mapping: a table of spec criterion → steps → evidence; the criteria
+and the FRD requirements map are in the spec), `TESTS` (the tests: commands), `Documentation and knowledge` (documentation and knowledge) and the steps, resources, version, Progress and Result. With an FRD the plan
+records the sha of the FRD file and the assumptions from `GAPS` ([frd-intake](frd-intake.md)). Statuses, sha and resumption of the spec: [spec](spec.md).
 
 **Summary for humans.** The plan starts with the section `## Summary for humans` (the heading is literal, right after the metadata lines),
 at most one screen: up to 40 lines and up to 4000 characters (that is what the status page shows; longer text is truncated with the `…` character). Four blocks:
@@ -24,11 +24,11 @@ at most one screen: up to 40 lines and up to 4000 characters (that is what the s
 or it is empty; `in_progress`, `done` and `archived` plans without it are valid. `skillsync status` gives the section in `plans[].summary`.
 
 A plan with the status `draft` contains: the goal, the acceptance criteria (with a spec: the mapping), steps with role, files and step risk, dependencies,
-instructions/skills to read, TESTY, resources, risks, **Dokumentacja i wiedza**, **Wersja i changelog**
+instructions/skills to read, TESTS, resources, risks, **Documentation and knowledge**, **Version and changelog**
 (a version proposal; a question to the owner) and open questions. With a `Spec:` line the scope, contracts, migration and risks are in the spec, and the path is relative to the project directory. The knowledge section lists the documents
 made outdated by the change, the expected domain knowledge and the owner of the write
 ([rules](../../workflow/references/knowledge.md)); “not applicable” requires a justification. Use also
-the `domain` records returned by `route`. TESTY: commands, cwd, environment, tests to adapt,
+the `domain` records returned by `route`. TESTS: commands, cwd, environment, tests to adapt,
 new tests and a comparison with the baseline for old failures ([details](tests-baseline.md)).
 
 The section **Domain terminology** contains confirmed terms to add/update,
@@ -37,16 +37,16 @@ terms. Before interpreting the task read the records with `load: bootstrap`; onl
 go into the glossary ([rules](../../workflow/references/knowledge.md)).
 
 Version: a proposal and a question in act II, the answer at the latest at “GO implement”; the number goes into the diff before round 1 of the final
-`kod` loop ([loop](review-loop.md)).
+`code` loop ([loop](review-loop.md)).
 
-Draft statuses in act II: `draft` (the plan being written or in the `plan` loop), `draft (czeka na GO implement)` (the loop finished, `readiness`
-done), `draft (czeka na spec)` (a substantive change of the spec in act II; “GO plan” removes the suffix). After “GO implement” re-read any changes
+Draft statuses in act II: `draft` (the plan being written or in the `plan` loop), `draft (waiting for GO implement)` (the loop finished, `readiness`
+done), `draft (waiting for spec)` (a substantive change of the spec in act II; “GO plan” removes the suffix). After “GO implement” re-read any changes
 by the user, compare `Spec-sha` and set `approved`, then `in_progress`. A plan approved by `skillsync plan approve` or
 by a button (changes only the plan): resumption according to the table in [spec](spec.md), e.g. with a `draft` spec STOP and a question.
 Plans from before these rules, also large ones, remain valid without a spec: no migration, resumption as before.
 Statuses: `draft`, `approved`, `in_progress`, `done`, `archived`; record a block in parentheses after the value (`in_progress (blocked — reason)`), not as a status. `skillsync plan archive|unarchive <project> <file>` switches only `done` ↔ `archived`.
 For contracts/API/data/high risk before writing code use `pre-implement`: read
-the actual consumers and write the sections Contracts, Migration, Risks: in the spec, when it exists (act I, before the `spec` loop), otherwise in the plan; TESTY always in the plan.
+the actual consumers and write the sections Contracts, Migration, Risks: in the spec, when it exists (act I, before the `spec` loop), otherwise in the plan; TESTS always in the plan.
 `skillsync readiness <project> --plan <file> --risk high --files <paths>` checks the structure;
 the substantive correctness is judged by the orchestrator/reviewer; with a spec `readiness` runs in act II, before “GO implement”. A `direct` plan
 with plan risk high or at the owner's request goes through the [review loop](review-loop.md) in the `plan` profile; other plans may get one round.
@@ -66,7 +66,7 @@ contract, with no “alignment” pass. The test-writer works in parallel with r
 in phases that have a test-writer in the plan. Calibrate the estimate at about 75–105 min of work per capability with a full review loop; a spec
 with at least 5 capabilities is two plans ([plan-large](plan-large.md)).
 
-Step risk is `low`, `medium` or `high`. Risk `high` goes to a step touching a contract, data, permissions or migration and has right after it its own [review loop](review-loop.md) in the `kod` profile. The highest step risk is the plan risk: pass it to `readiness --risk` and it sets the scope of the diff of the final loop. Without a risk column the plan takes the risk from the `Ryzyka` (risks) section, and when it is missing, ask a question.
+Step risk is `low`, `medium` or `high`. Risk `high` goes to a step touching a contract, data, permissions or migration and has right after it its own [review loop](review-loop.md) in the `code` profile. The highest step risk is the plan risk: pass it to `readiness --risk` and it sets the scope of the diff of the final loop. Without a risk column the plan takes the risk from the `Risks` (risks) section, and when it is missing, ask a question.
 
 Set `Exec` once, at planning: `inline` (the main session), `dispatch[:tier]` (a separate subagent for each step), `group:<id>[:tier]` (one subagent for a series of steps). No value means `inline`. `tier` is the model class: `cheap` for a fully specified step, `standard`, `capable` for a hard step; the host adapter translates the class into a model, and do not declare a model whose availability is not confirmed.
 
@@ -137,14 +137,14 @@ A plan with a UI change has in its header (like `Spec:`, a separate row, the pat
 
 - Run `skillsync prototype gate <project> --plan <plan>` before asking for “GO implement” and again after receiving it.
   `readiness` with a `Prototype:` line gives BLOCKED when the gate has FAIL.
-- A gate FAIL = refusal to start act III with a list of missing acceptances (`slug`, screen, reason: missing, outdated,
-  needs_migration, brak_ekranow, niejednoznaczny_ekran, `writing` = the agent is still writing the prototype screens, an entry without a screen; after `prototype writing <project> <slug> done` or the marker expiring the gate returns to the ordinary assessment). BLOCKED (e.g. `prototype_not_found`, `invalid_prototype_line`) = a report, not a workaround.
-- Exception (D16-Q2): only the owner in a card with the words “GO implement bez akceptacji prototypu”. The agent then adds to the header
+- A gate FAIL = refusal to start act III with a list of missing acceptances (`slug`, screen, reason: `brak` (missing), `nieaktualna` (outdated),
+  needs_migration, `brak_ekranow` (no screens), `niejednoznaczny_ekran` (ambiguous screen), `writing` = the agent is still writing the prototype screens, an entry without a screen; after `prototype writing <project> <slug> done` or the marker expiring the gate returns to the ordinary assessment). BLOCKED (e.g. `prototype_not_found`, `invalid_prototype_line`) = a report, not a workaround.
+- Exception (D16-Q2): only the owner in a card with the words “GO implement bez akceptacji prototypu” (GO implement without prototype acceptance). The agent then adds to the header
   a line `Prototype gate: skipped — <reason> — <person>, <YYYY-MM-DD>`, quoting the reason. Without these words of the owner the agent
   does not add this line and does not remove the `Prototype:` line. The dispatcher and the agent do not bypass the gate.
 - A human accepts (the UI or the CLI with a password from the TTY); the agent never runs `skillsync prototype accept` or `unaccept`.
   `gate` shows `via` and `who`, so an acceptance from the CLI is visible when asking for “GO implement”.
-  When `accept` is run anyway (by mistake or by another session) and returns `BLOCKED` `error: tty_required`, say plainly “click Accept on the prototype page” and wait (`prototype wait`); the safeguard stays.
+  When `accept` is run anyway (by mistake or by another session) and returns `BLOCKED` `error: tty_required`, say plainly “kliknij Akceptacja na stronie prototypu” (click Accept on the prototype page) and wait (`prototype wait`); the safeguard stays.
 - Prototype acceptance is not plan approval (“GO implement”, `plan approve`); one does not replace the other.
 - The `Prototype:` line accepts only the path `<root>/<slug>`, without a description. An ambiguous description gives BLOCKED `invalid_prototype_line`, a one-word description BLOCKED `prototype_not_found`.
 - `No prototype: <reason and source>` is a descriptive convention for humans (e.g. when a UI change has no prototype). The tools do not read this line: `readiness` and `prototype gate` do not recognize it, and a UI change without a `Prototype:` line and without `[UI]` markers does not trigger the prototype gate.

@@ -70,7 +70,7 @@ skillsync dashboard show <project> [--json] [--plan docs/plans/<file>.md]   # on
   (in progress, read-only, in memory until `comments.json`/`index.html` change); act II = "no plan (waiting for GO plan)".
   Act I before the spec (`mode: "run"`): when there is no spec yet and the newest run directory has `checkpoints.md` newer
   than the automatically selected plan and belongs to no plan (`Run:`) or spec (`<date>-<spec slug>`), the page
-  shows "Act I: specification in preparation", the run-id, the last checkpoint and the `czeka:` banner; once the spec is saved the
+  shows "Act I: specification in preparation", the run-id, the last checkpoint and the `waiting:` banner; once the spec is saved the
   `spec` mode takes over.
   An explicit `--plan` or a plan choice on the page switches this mode off. The alternative (a plan skeleton at the start of act I in `feature`) is
   a core change, outside this skill.
@@ -84,17 +84,17 @@ skillsync dashboard show <project> [--json] [--plan docs/plans/<file>.md]   # on
 
 | File | What | On the page |
 |---|---|---|
-| `docs/plans/<plan>.md` | `# title`, `Status:`, `Spec:`, `Spec-sha:`, `Prototype:`, `Run:`; the `## Progress` section with `### Faza …` and steps `- [ ] S1 Title` / `- [x] S1 Title — sha` (ids `S2b`, `A0`, `A-1`) | header, Act II, Act III, phases |
+| `docs/plans/<plan>.md` | `# title`, `Status:`, `Spec:`, `Spec-sha:`, `Prototype:`, `Run:`; the `## Progress` section with `### Phase …` and steps `- [ ] S1 Title` / `- [x] S1 Title — sha` (ids `S2b`, `A0`, `A-1`) | header, Act II, Act III, phases |
 | spec from `Spec:` | `Status:` (draft → in progress; approved/implemented → done; none → planned) | Act I |
-| `.skillsync/runs/<run-id>/checkpoints.md` | `RUN=<iso>` (time since start), lines `- HH:MM text` | feed (newest on top), "in progress" |
+| `.skillsync/runs/<run-id>/checkpoints.md` | `RUN=<iso>` (time since start), lines `- HH:MM text` | feed (newest on top), the `in progress:` segment |
 | `.skillsync/runs/<run-id>/*.md` | names `spec-review*`, `plan-review*`, `pre-implement*`, `*prototyp*` | stages of acts I and II, document list |
 | `.git/HEAD`, `.git/config` (`[remote "origin"] url`), `refs/remotes/origin/<branch>` | branch, HEAD, repository address (Azure DevOps, GitHub), whether the branch is on the server | header: the branch as a link to the repository (only when it is on `origin`; another host = plain text) |
 | the line `PR: #n (link: https://…)` under `## Progress` of the plan (written by `pr-run`) | PR number and address | header: a "PR #n" badge with a link |
 
-- **Act III:** % = checked steps / all steps from `Progress`. "Now in progress" = the id after the phrase `w toku` (up to `;`)
+- **Act III:** % = checked steps / all steps from `Progress`. "Now in progress" = the id after the segment `in progress:` (up to `;`)
   from the newest checkpoint that contains it; only items starting with an id count (`S2b/S2d (test-writer)` yes,
-  `szczebel 3 S1 na migawce` no). No phrase: the first unchecked step. The act is finished at `Status: done`.
-- Steps listed after `zrobione` in the checkpoints and unchecked in the plan have a dashed "done per checkpoint" icon
+  `level 3 S1 on the snapshot` no). No phrase: the first unchecked step. The act is finished at `Status: done`.
+- Steps listed after `done:` in the checkpoints and unchecked in the plan have a dashed "done per checkpoint" icon
   and a separate, lighter segment of the bar with the caption "17% (+11% to verify)" (globally and per phase). **The main percentage counts
   only `[x]`** (the source of truth); the segment disappears once the step is checked after review.
 
@@ -102,7 +102,7 @@ skillsync dashboard show <project> [--json] [--plan docs/plans/<file>.md]   # on
 
 The session appends a progress report (a line `- HH:MM …` in `checkpoints.md`) **after every step OR every 30 minutes, whichever comes
 first** (the agent has no clock, it checks the time itself; skill `feature`, `references/measurement.md`). When the plan is
-`in_progress`, the newest checkpoint has no `czeka:`, and more than 35 minutes have passed since the last write of `checkpoints.md`
+`in_progress`, the newest checkpoint has no `waiting:`, and more than 35 minutes have passed since the last write of `checkpoints.md`
 (`SILENCE_MIN`), the page shows "No progress report: for N min" — a signal that the session may have hung. The minutes are counted by the
 browser (the field `silence {since, thresholdMin}` in `/api/status`), so the banner appears without a change of files and disappears after the
 next report.
@@ -110,37 +110,37 @@ next report.
 A persistent banner under the header (and `⏳ Waiting ·` in the card title) shows what the session is waiting for, what to do and a link.
 It disappears when the reason disappears.
 
-- **The marker in a checkpoint** (takes precedence): a segment `czeka: <what>` in the newest checkpoint, in the same line as
-  `zrobione: …; w toku: …; ryzyko: …` (segments are separated by `;`):
+- **The marker in a checkpoint** (takes precedence): a segment `waiting: <what>` in the newest checkpoint, in the same line as
+  `done: …; in progress: …; ryzyko: …` (`ryzyko:` = risk) (segments are separated by `;`):
 
   ```
-  - 11:20 zrobione: S9; w toku: —; ryzyko: brak; czeka: CP
+  - 11:20 done: S9; in progress: —; ryzyko: brak; waiting: CP
   ```
 
-  Values: `GO plan`, `GO implement`, `akceptacja prototypu <slug>`, `odpowiedź Q1–Qn`, `CP`, `READY`, `YES/NO <run-id>/P<n>`
-  (another value = a generic message). The newest checkpoint without `czeka:` (or with `czeka: —`) removes the banner, i.e. "the session has resumed".
+  Values: `GO plan`, `GO implement`, `akceptacja prototypu <slug>` (prototype acceptance), `odpowiedź Q1–Qn` (answer to Q1–Qn), `CP`, `READY`, `YES/NO <run-id>/P<n>`
+  (another value = a generic message). The newest checkpoint without `waiting:` (or with `waiting: —`) removes the banner, i.e. "the session has resumed".
   A loose "waiting for …" in the text is not a marker.
-- **Facts from files** (without a marker): `Status: draft (czeka na GO implement)` of the plan or `… (czeka na GO plan)` of the spec;
+- **Facts from files** (without a marker): `Status: draft (waiting for GO implement)` of the plan or `… (waiting for GO plan)` of the spec;
   a prototype with unaccepted screens before the plan enters execution (acceptance as in `skillsync prototype list`).
 - The link: the spec or plan in the **Documents** tab, the prototype on the port of the prototype server. The banner itself approves nothing:
   consent is given by the consent button in the act tile or the banner (section "Consent and word buttons") or by a word typed
   by the user in the session.
 
 A sentence for instructions/prompts (consistent with the "done / in progress / risk" format): *"When you stop at a decision of
-a human, append to the checkpoint a segment `czeka: <GO plan|GO implement|akceptacja prototypu <slug>|odpowiedź Q1–Qn|CP|READY|YES/NO <run-id>/P<n>>`;
-write the next checkpoint after resuming without `czeka:`."*
+a human, append to the checkpoint a segment `waiting: <GO plan|GO implement|akceptacja prototypu <slug>|odpowiedź Q1–Qn|CP|READY|YES/NO <run-id>/P<n>>`;
+write the next checkpoint after resuming without `waiting:`."*
 
 ### The "estimated end" toast (`eta`)
 
-Before a long operation the session appends to the checkpoint a segment `eta: <operation> do HH:MM` (the time from `date`):
+Before a long operation the session appends to the checkpoint a segment `eta: <operation> until HH:MM` (the time from `date`):
 
 ```
-- 14:05 w toku: F1.2; eta: rysowanie 12 ekranów prototypu do 15:10
+- 14:05 in progress: F1.2; eta: drawing 12 prototype screens until 15:10
 ```
 
 The banner shows a toast "<operation>, end approx. 15:10", and after the time is exceeded "<operation>: ETA exceeded by N min". As long as the operation
 lasts, every report line repeats `eta:` (only the newest is read); when exceeded the session gives a new deadline (without stopping work). The toast disappears after the next checkpoint
-without `eta:`, after a checkpoint with `czeka:` and after the plan is closed; the viewer sees it the same way. The JSON field: the `eta` section of the contract.
+without `eta:`, after a checkpoint with `waiting:` and after the plan is closed; the viewer sees it the same way. The JSON field: the `eta` section of the contract.
 
 ### Consent and word buttons
 
@@ -157,10 +157,10 @@ four states (`approvals.actions[].state`):
 |---|---|---|
 | before | the act has not come yet (e.g. "GO implement" in act I, "CP" before execution starts) | no button |
 | `running` (in progress) | the act is in progress, but the state is not yet waiting for consent | visible, inactive, hint "waiting for…" |
-| `waiting` | GO plan: spec `draft` with the signal `czeka na GO plan` (spec/draft status or `czeka:`), prototype accepted; GO implement: plan `draft` with `czeka na GO implement`, spec `approved`; CP/READY: plan `done`, `czeka: CP|READY` or unpushed commits of the working branch | active (two clicks) |
+| `waiting` | GO plan: spec `draft` with the signal `waiting for GO plan` (spec/draft status or `waiting:`), prototype accepted; GO implement: plan `draft` with `waiting for GO implement`, spec `approved`; CP/READY: plan `done`, `waiting: CP|READY` or unpushed commits of the working branch | active (two clicks) |
 | `after` | consent already given (spec/plan `approved`+, a CP/READY entry for the current HEAD) | inactive, "consent given HH:MM"; a second write = refusal |
 
-The "waiting" signal is written by the session (a file status or `czeka:` in a checkpoint): the run files say only that a review round
+The "waiting" signal is written by the session (a file status or `waiting:` in a checkpoint): the run files say only that a review round
 took place, not that the loop gave PASS.
 
 - **"GO plan"** (spec `draft`, no plan or a draft plan) and **"GO implement"** (plan `draft` without the draft suffix;
@@ -178,7 +178,7 @@ took place, not that the loop gave PASS.
   lock, refusal of a second entry for the same HEAD, refusal when the plan status changed = 409 with `code: plan_state_changed`) to `.skillsync/runs/<run-id>/approvals.jsonl` an entry
   `{"schema": 1, "at", "word": "CP"|"READY", "sha": <full HEAD shown on the page>, "run", "plan", "target", "branch", "ahead", "mode", "by", "source": "dashboard"}`.
   The consent applies to this HEAD: a new commit = a new consent; a repeated write for the same HEAD = refusal. The button is active when
-  the plan is `done`, the newest checkpoint has `czeka: CP|READY` or the working branch has commits that are not on origin
+  the plan is `done`, the newest checkpoint has `waiting: CP|READY` or the working branch has commits that are not on origin
   (`git rev-list --count origin/<working>..HEAD`, and without a branch on origin `HEAD --not --remotes=origin`; read-only).
   "CP" hands over to `origin/<working>` (core AGENTS: never to the base); in `direct` mode the plan line `Handoff: <branch>`
   changes the target to the given branch (the value must be a valid branch name alone; other text is ignored and the hint says so). The button and the entry show the target (`target`, "CP → main"); the hint
@@ -200,7 +200,7 @@ took place, not that the loop gave PASS.
 ### Phase substeps, tooltips with descriptions and act I signals
 
 - The `Progress` steps may be substeps of phases (`- [ ] F1.2 …`): they are counted separately (bar, "now", the "in progress" list),
-  `w toku: F1` points to the first unchecked substep of the phase, the phase shows its own k/n and collapses when closed
+  `in progress: F1` points to the first unchecked substep of the phase, the phase shows its own k/n and collapses when closed
   (a click or Enter expands it). Old ids without a dot (`S1`, `S2a`, `A-1`) work as before.
 - Every act, stage, gate (GO/CP/READY buttons), phase, substep, banner and checkpoint header has a tooltip with a static
   description: what is happening, who performs it, the result and how the page knows it is done. The descriptions are in the skill's `descriptions.json`
@@ -326,8 +326,8 @@ The remote viewer: the field `approvals.viewer` (`dashboard serve --read-host`; 
 The act sections are drawn by the renderer (`readinessTile`, `substepsBlock`, module functions with the instance context):
 Readiness in act II (`readiness`; the link `readiness.source` like other documents: a preview with `loadDoc`, otherwise `openDoc`), Substeps and time in act III
 (`substeps`, "no data" at `missingData`; the `details` expansion remembered in the renderer state between `update()`),
-The waiting banner also has items from files: "the agent is writing screens (until HH:MM)" (`source: writing`, a valid `.writing.json` marker, replaces the call to accept the prototype) and "expert answer (N blocking)" (`source: expert`, when `expertQuestions.blocking > 0` without `czeka:` in a checkpoint), with a link as in the questions toast; the field `prototype.writing` carries `{since, expiresAt, renewedAt}`.
-The working and waiting time in act III (`timing`: working and waiting-for-human time per phase and the sum of the run from the `czeka:` checkpoints and `approvals.jsonl`; a window without a close and a step without markers are "unknown", never zero or an estimate; the `timingBlock` section).
+The waiting banner also has items from files: "the agent is writing screens (until HH:MM)" (`source: writing`, a valid `.writing.json` marker, replaces the call to accept the prototype) and "expert answer (N blocking)" (`source: expert`, when `expertQuestions.blocking > 0` without `waiting:` in a checkpoint), with a link as in the questions toast; the field `prototype.writing` carries `{since, expiresAt, renewedAt}`.
+The working and waiting time in act III (`timing`: working and waiting-for-human time per phase and the sum of the run from the `waiting:` checkpoints and `approvals.jsonl`; a window without a close and a step without markers are "unknown", never zero or an estimate; the `timingBlock` section).
 Below 500 px of width acts I and II stand in one column.
 
 The renderer rules (webview CSP: `default-src 'none'`, scripts and styles from a nonce, no `connect-src` and no `unsafe-inline`), guarded

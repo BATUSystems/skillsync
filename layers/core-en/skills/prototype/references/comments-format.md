@@ -89,8 +89,8 @@ a unique first name → the first name alone; a first-name collision → `First 
 |---|---|
 | `skillsync-prototype-queue:v2:<slug>:<login>` | the offline queue: an array `[{cid, type, threadId, payload}]`; only 8 queueable types; a message goes here first, then to the server; a message without `view` is desktop |
 | `skillsync-prototype-rejected:v2:<slug>:<login>` | rejected by the server (4xx), for preview, copying, download and deletion |
-| `skillsync-prototype-seen:v2:<slug>:<login\|anon>` | the greatest `at` after the last read (the "New" filter); data loss = everything read |
-| `skillsync-prototype-comments:v1:<slug>` | data from engine v1 (read only); engine v2 offers "Send as <first name>…" (available after the first successful read of operations; the messages go to the v2 queue, and the v1 key is removed without an additional question, because the content is already in the queue) and "Download file" (then "Remove from browser", without a confirmation window); without one of these actions nothing is removed. `localStorage` is per origin (scheme, host, port): v1 messages are visible only under the former address, e.g. `serve --port <former port>` on `127.0.0.1`; keep the downloaded file or send it to the developer |
+| `skillsync-prototype-seen:v2:<slug>:<login\|anon>` | the greatest `at` after the last read (the „Nowe” (New) filter); data loss = everything read |
+| `skillsync-prototype-comments:v1:<slug>` | data from engine v1 (read only); engine v2 offers „Wyślij jako <imię>…” (Send as <first name>…) (available after the first successful read of operations; the messages go to the v2 queue, and the v1 key is removed without an additional question, because the content is already in the queue) and „Pobierz plik” (Download file) (then „Usuń z przeglądarki” (Remove from browser), without a confirmation window); without one of these actions nothing is removed. `localStorage` is per origin (scheme, host, port): v1 messages are visible only under the former address, e.g. `serve --port <former port>` on `127.0.0.1`; keep the downloaded file or send it to the developer |
 | `skillsync-prototype-theme` | `light` or `dark` |
 | `skillsync-prototype-shortcuts` | `on` or `off` (the keyboard shortcuts switch) |
 
@@ -106,23 +106,23 @@ fingerprint forces a full reload.
   `restore --from C`.
 - `GET /_api/v1/prototypes/<slug>/operations` also returns `version` (SHA-256 of the screen hashes), `screens {sN: hash}` and
   `iterations: [{number, path, exists}]` (frozen iterations; `exists` = `iterations/N/index.html` is a regular file). The engine remembers `version`
-  from the first response; a different value later = the "Prototype changed, reload" bar and "Restore…" disabled.
-- The same response has `acceptance` `{sN: {valid, who, at, iteration, via}}` (only screens with an entry on the current list). The "Accept…" window and the "Acceptance k/n" chip read it; the "all prototypes" scope goes through `GET /_api/v1/project` and `POST /_api/v1/project/accept` `{cid, versions}` (409 `partial` on a version change or a lock, and 507 `file_too_large`, 409 `invalid_log`/`needs_migration` and 500 `write_failed` with the `accepted`/`pending` list; on `partial`, 507 and 500 retry with the same `cid`). Before writing, the server returns 409 `stale_view` with `{stale: [slug]}` when the version of any prototype is different or missing; retrying with the same `cid` does not help, the page must be reloaded and new `versions` sent.
+  from the first response; a different value later = the „Prototyp zmieniono, przeładuj” (Prototype changed, reload) bar and „Przywróć…” (Restore…) disabled.
+- The same response has `acceptance` `{sN: {valid, who, at, iteration, via}}` (only screens with an entry on the current list). The „Akceptuj…” (Accept…) window and the „Akceptacja k/n” (Acceptance k/n) chip read it; the „wszystkie prototypy” (all prototypes) scope goes through `GET /_api/v1/project` and `POST /_api/v1/project/accept` `{cid, versions}` (409 `partial` on a version change or a lock, and 507 `file_too_large`, 409 `invalid_log`/`needs_migration` and 500 `write_failed` with the `accepted`/`pending` list; on `partial`, 507 and 500 retry with the same `cid`). Before writing, the server returns 409 `stale_view` with `{stale: [slug]}` when the version of any prototype is different or missing; retrying with the same `cid` does not help, the page must be reloaded and new `versions` sent.
 - **A frozen page** (`iterations/N/index.html`, a copy with its own `prototype.js`; iterations frozen before an engine update,
-  e.g. before `migrate`, run on the old engine without the elements below): an "Iteration N · frozen" bar, a read-only banner with "Back to current";
+  e.g. before `migrate`, run on the old engine without the elements below): an „Iteracja N · zamrożona” (Iteration N · frozen) bar, a read-only banner with „Wróć do bieżącej” (Back to current);
   no new threads, no moving anchors, no acceptances; replies and votes in existing threads work in full mode (the same
   log, API with the `slug` from `data-prototype-id`); in read-only mode it reads `../../comments.json`. `#thread=<id>` opens the thread
   and highlights the pin.
-- **"Show in iteration N"** on a thread without a handle: N = the newest frozen iteration with an existing directory whose `index.html`
+- **„Pokaż w iteracji N” (Show in iteration N)** on a thread without a handle: N = the newest frozen iteration with an existing directory whose `index.html`
   has the thread's `data-proto-id` in the thread's screen (a `screen` anchor: the screen itself); the engine fetches `iterations/K/index.html` starting from the newest
   and keeps the result in memory for the lifetime of the page; no such iteration = no button. In read-only mode the list of iterations comes
   from the `iteration` operations, and existence is checked by a `GET` request for `iterations/N/index.html` (status 200).
-- **"Compare with iteration N"** (the screen header, also read-only and without logging in): a window with frames
+- **„Porównaj z iteracją N” (Compare with iteration N)** (the screen header, also read-only and without logging in): a window with frames
   `iterations/N/index.html?embed=compare#sN` and `index.html?embed=compare#sN`. In `?embed=compare` mode the engine shows only the screen
   from the hash (no bar, panel, commenting or server polling); Esc in a frame closes the window.
-- **"Restore…"** (full mode, roles `acceptor`/`developer`, `session.server.sourceWrites`): the effects from
+- **„Przywróć…” (Restore…)** (full mode, roles `acceptor`/`developer`, `session.server.sourceWrites`): the effects from
   `GET …/restore-preview?screen=sN&from=N` (`threadsBack`, `threadsLost`, `acceptanceLost`, `unchanged`), then
-  `POST …/restore {cid, screen, from, reason, version}`; 409 `stale_view` = the "Prototype changed" bar, success = a page reload.
+  `POST …/restore {cid, screen, from, reason, version}`; 409 `stale_view` = the „Prototyp zmieniono” (Prototype changed) bar, success = a page reload.
   `unchanged: true` in the preview (the screen in iteration N has the same hash as the current one, D27) = the message "The screen in iteration N is the same
   as the current one." and an inactive save button (the reason field stays active; changing the iteration fetches the preview anew);
   200 `{unchanged: true, version}` on POST (a race) = the same message, without a write, reload or error.
@@ -131,8 +131,8 @@ fingerprint forces a full reload.
 ## Engine modes
 
 `file://` (no server: a mock-up, a message and the `serve` command), a static server without an API (`GET /_api/v1/session` = 404/non-JSON: read-only `comments.json`), full (server API: login, write, queue).
-Without a session the engine shows "Log in to comment"; `mustChange` opens a window for setting one's own password.
-The acceptance chip and "Accept…" do not appear in `file://`, on a frozen iteration page or in `?embed=compare`. On an ordinary file server the chip works read-only with the description "currency is checked by the server".
+Without a session the engine shows „Zaloguj się, żeby komentować” (Log in to comment); `mustChange` opens a window for setting one's own password.
+The acceptance chip and „Akceptuj…” (Accept…) do not appear in `file://`, on a frozen iteration page or in `?embed=compare`. On an ordinary file server the chip works read-only with the description „aktualność sprawdza serwer” (currency is checked by the server).
 
 ## Fixtures and checks
 

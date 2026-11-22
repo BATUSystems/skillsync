@@ -4,51 +4,51 @@ Read before the first checkpoint of a run, when interrupting work, resuming, or 
 
 ## Progress report: after every step or every 30 minutes
 
-A progress report is a line `- HH:MM zrobione: …; w toku: …; ryzyko: …[; czeka: …]` in `.skillsync/runs/<run-id>/checkpoints.md`
+A progress report is a line `- HH:MM done: …; in progress: …; ryzyko: …[; waiting: …]` in `.skillsync/runs/<run-id>/checkpoints.md`
 (read by a human and the status page). Append it **after every step OR every 30 minutes, whichever comes first**. An agent has no
 clock: on every subagent return and before every long operation check the time (`date +%H:%M`) and, when 30 minutes have passed since the last
-line, append a `w toku: …` line even without a finished step. The long work of a single subagent does not excuse
+line, append a `in progress: …` line even without a finished step. The long work of a single subagent does not excuse
 the report: after about 35 minutes of silence with a plan `in_progress` the status page shows "no report for N min".
 The report "one line per substep": after every substep `Fn.k` append one line (the substep, the result or sha, the time), or every 30 minutes,
-whichever comes first. This line fills the existing format `- HH:MM zrobione: …` (the substep and the result or sha in `zrobione`), and does not replace it.
+whichever comes first. This line fills the existing format `- HH:MM done: …` (the substep and the result or sha in `done`), and does not replace it.
 The report does not replace the `skillsync checkpoint` record (below) nor the reverse.
 
 ## Report segment syntax
 
-The segment keywords are literal and stay as written: `zrobione:` (done), `w toku:` (in progress), `ryzyko:` (risk), `czeka:` (waiting), `trwa:` (stage in progress), `kto:` (who).
+The segment keywords are literal and stay as written: `done:` (done), `in progress:` (in progress), `ryzyko:` (risk), `waiting:` (waiting), `running:` (stage in progress), `who:` (who).
 
 - Segments are separated by `;`, but a `;` inside brackets `()`, `[]`, `{}` does not end a segment (a step description in brackets may contain it).
   Always close an unbalanced bracket; on an error the line splits at every `;`, an id after such a `;` may be lost from the reading, and the status page
   always shows a warning about an unclosed bracket (`unbalanced-bracket`).
-- **Every element** of the `w toku: …` and `zrobione: …` lists starts with a step id (`F1.2`), elements are separated by a comma, and the description goes in brackets:
-  `w toku: F1.1 (contracts; tests), F1.2`. Ids are joined in one element by `/`, `+`, `&`, `‖`, `||`, "and", "plus". A role before an id
+- **Every element** of the `in progress: …` and `done: …` lists starts with a step id (`F1.2`), elements are separated by a comma, and the description goes in brackets:
+  `in progress: F1.1 (contracts; tests), F1.2`. Ids are joined in one element by `/`, `+`, `&`, `‖`, `||`. A role before an id
   (`implementer: F1.1`) and a second id inside a description are skipped; the status page then shows a warning about skipped fragments.
-- `trwa: <stage>[, <stage>]` says which stage is in progress now (e.g. `spec_review`, `prototyp`, `plan`); the page reads only the latest line, so
-  repeat the segment in every line while the stage lasts, and omit it in the first line after it ends. `czeka:` in the same line wins.
-- `czeka: <what> (kto: <role>[ <login>])` names the addressee (`akceptujący` (acceptor), `programista` (developer), `ekspert` (expert), `komentujący` (commenter), `agent`, `odbiór` (acceptance));
+- `running: <stage>[, <stage>]` says which stage is in progress now (e.g. `spec_review`, `prototyp`, `plan`); the page reads only the latest line, so
+  repeat the segment in every line while the stage lasts, and omit it in the first line after it ends. `waiting:` in the same line wins.
+- `waiting: <what> (who: <role>[ <login>])` names the addressee (`acceptor`, `developer`, `expert`, `commenter`, `agent`, `acceptance`);
   the page writes "Waiting for: <role>". Without the suffix the role is chosen by the source of the item.
 
 ## Estimate before a long operation: `eta:`
 
 Before starting a long operation (spec, prototype and its iterations, plan, every implementation step, a long test run) estimate how much
-you need, and append a report line with the segment `eta: <operation> do HH:MM`; compute the time from `date +%H:%M`, never from an estimate:
+you need, and append a report line with the segment `eta: <operation> until HH:MM`; compute the time from `date +%H:%M`, never from an estimate:
 
 ```
-- 14:05 w toku: F1.2; eta: drawing 12 prototype screens do 15:10
+- 14:05 in progress: F1.2; eta: drawing 12 prototype screens until 15:10
 ```
 
 The status page shows on a toast "<operation>, ends about 15:10", and after the deadline "ETA exceeded by N min", so a human
 does not have to ask "how is it going?". The page reads only the LATEST line, so while the operation lasts, EVERY report line (also the one required every 30 minutes or after a substep)
 repeats `eta:`. When the operation exceeds the ETA, do NOT stop the work: give a new deadline in the nearest report. After the operation
-ends, the next report line is without `eta:` (the toast disappears; it also disappears with `czeka:` and after the plan is closed).
+ends, the next report line is without `eta:` (the toast disappears; it also disappears with `waiting:` and after the plan is closed).
 The estimate should be honest, not optimistic: better to give a later time and finish earlier.
 
 ## Checkpoint after every result (mandatory)
 
 The record is written by the orchestrator, not in parallel, after every step result, also `FAIL`, `BLOCKED` and `NOT_RUN`:
-`skillsync checkpoint <projekt> --run-id <id> --step <krok> --status <status> --evidence <plik> --next <opis>`.
+`skillsync checkpoint <project> --run-id <id> --step <step> --status <status> --evidence <file> --next <description>`.
 
-- `<projekt>` (project): the directory you work in; in dispatch the package worktree.
+- `<project>` (project): the directory you work in; in dispatch the package worktree.
 - `--run-id`: the plan slug; in dispatch `<run>.<package>`, and on a retry in a new worktree `<run>.<package>.2`.
 - `--status`: record `CHANGES_REQUIRED` as `FAIL`; `spec-review` and `plan-review` rounds without `--cause-key`, `code-review*` rounds with a substantive key (steps and exception: `review-loop.md`). An intended test red is a `PASS` of a separate step with a red log, not a failure.
 - `--evidence`: required for `PASS`; for `FAIL` give the failure log. Every record has its own file in `.skillsync/runs/<run-id>/` (`<step>-<attempt>.log`), without overwriting. The plan or any other tracked file is not evidence: it will change and permanently yield `partial`.

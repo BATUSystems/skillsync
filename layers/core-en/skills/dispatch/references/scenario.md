@@ -48,7 +48,7 @@ W1, W2, W3, W4 (the dependency W4→W1 takes precedence over the rule "contract 
 for the packages. It registers the claims (`task-claim`, `--run-id 2026-10-02-a.karta-1` etc., `--ttl 14400`, from the repo root directory) for W1–W3.
 
 **5. Assignment.** `ASSIGN` to each card (after a current probe): header
-`dispatch: 2026-10-02-a from Dyspozytor (session <dispatcher id>)`, `/feature` with the package, `input_commit=1a2b3c4`,
+`dispatch: 2026-10-02-a from Dyspozytor (session <dispatcher-id>)`, `/feature` with the package, `input_commit=1a2b3c4`,
 worktree `../App-wt/W1`, database `app_integration_test_W1`, forbidden areas, lease/PUSH
 SLOT/ID rules, signature `karta-1/W1`, the note "GO is given by the user in this card". The cards create the worktrees
 and databases themselves. The user gives GO to the package plans locally in the cards.

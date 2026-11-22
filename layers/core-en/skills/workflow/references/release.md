@@ -4,7 +4,7 @@ Applies to `feature`, `bugfix` (and every skill that finishes a code change). Co
 [knowledge.md](knowledge.md); does not replace the delivery rules (the `delivery.mode` mode, the words `CP`, `CPD`, `READY`; see AGENTS). “CP” pushes the working branch,
 not the base; handing over to the base requires `CP <branch>` or a `Handoff:` line in the plan.
 
-1. **Identify** (in the plan/brief, the “Documentation and knowledge” + “Version” section): the project's changelog
+1. **Identify** (in the plan/brief, the “Documentation and knowledge” + “Version and changelog” sections): the project's changelog
    (`CHANGELOG*`, `docs/**/changelog*`, `RELEASE*`, entries in `docs/`), the sources of the version number
    (`package.json`, `*.csproj`/`Directory.Build.props`, `pyproject.toml`, `VERSION`, application
    manifests, UI configuration files) and the versioning scheme from the project instruction (e.g. SemVer,

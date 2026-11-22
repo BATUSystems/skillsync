@@ -17,6 +17,27 @@ sys.path.insert(0, str(ROOT))
 from skillsync_workflow import layers, translations  # noqa: E402
 
 POLISH = re.compile('[ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]')
+QUOTED = re.compile('„[^”]*”')   # a label of the (still Polish) prototype engine, quoted verbatim with an English gloss next to it
+# Polish text that stays on purpose: values that code reads or writes and external systems (see the token maps of CORE-1130-I18N).
+ALLOWED = ('akceptacja prototypu', 'odpowiedź Q', 'Błąd w programie', 'stan przed iteracją', 'Paweł')
+
+
+def polish_left(english):
+    """`[(rel, [line numbers])]` of the translated files with Polish letters outside quoted engine labels and the allowed values."""
+    found = []
+    for rel in layers.layer_files(english):
+        if not rel.endswith('.md'):
+            continue
+        lines = []
+        for number, line in enumerate((english.root / rel).read_text(encoding='utf-8').splitlines(), 1):
+            text = QUOTED.sub('', line)
+            for value in ALLOWED:
+                text = text.replace(value, '')
+            if POLISH.search(text):
+                lines.append(number)
+        if lines:
+            found.append((rel, lines))
+    return found
 
 
 def main(argv=None):
@@ -32,13 +53,8 @@ def main(argv=None):
     report = []
     for finding in translations.layer_findings(english, core):
         report.append((finding['code'], finding['message']))
-    for rel in layers.layer_files(english):
-        if rel.endswith('.md') and (english.root / rel).read_text(encoding='utf-8').strip():
-            text = (english.root / rel).read_text(encoding='utf-8')
-            found = sorted(set(POLISH.findall(text)))
-            if found:
-                lines = [str(number) for number, line in enumerate(text.splitlines(), 1) if POLISH.search(line)][:8]
-                report.append(('polish-left', f'{rel}: Polish letters on lines {", ".join(lines)}'))
+    for rel, lines in polish_left(english):
+        report.append(('polish-left', f'{rel}: Polish letters on lines {", ".join(map(str, lines[:8]))}'))
     if args.only:
         report = [item for item in report if any(prefix in item[1] for prefix in args.only)]
     for code, message in sorted(report):

@@ -49,7 +49,7 @@ The values come from the `--z-index-*` tokens, not from numbers in CSS. From the
 5. the engine's dialog windows (the browser's topmost layer, `dialog`);
 6. notifications (`--z-index-toast`).
 
-Menus opened from the bar (account, the screen list, "More") have `--z-index-top` inside the bar's context, so they lie above its
+Menus opened from the bar (account, the screen list, „Więcej” (More)) have `--z-index-top` inside the bar's context, so they lie above its
 content and above the screens.
 
 The `.frame` creates its own stacking context, so the `z-index` of screen components (`modal`, `drawer`, `toast`, scrims; the tokens `--z-index-modal`, `--z-index-overlay`,
@@ -61,7 +61,7 @@ In `project.css` do not set your own `z-index` on elements that can go under the
 
 ## Light and dark theme, the dimming lock
 
-The dark theme is chosen by the `data-theme="dark"` attribute on `<html>` (the "Theme" switch in the bar); the attribute is set by the engine after the user's choice and takes precedence. Without a saved choice the page follows `prefers-color-scheme` already in CSS, also without JS and before the engine loads (without a flash of the light theme).
+The dark theme is chosen by the `data-theme="dark"` attribute on `<html>` (the „Motyw” (Theme) switch in the bar); the attribute is set by the engine after the user's choice and takes precedence. Without a saved choice the page follows `prefers-color-scheme` already in CSS, also without JS and before the engine loads (without a flash of the light theme).
 The dark tokens are defined by two blocks with the same values (compared by `check_tokens.py`): `:root[data-theme="dark"]` (from the project also `.dark` and `[data-theme=dark]`) and `@media (prefers-color-scheme: dark) { :root:not([data-theme]) }`; the light ones are defined by the `:root` block. A token
 must have a value in the light block; a definition in the dark one alone is not enough.
 

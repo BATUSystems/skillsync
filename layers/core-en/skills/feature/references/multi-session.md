@@ -45,12 +45,12 @@ skill (executor of the dispatcher role) and the `feature` worker mode refer here
 
 ```
 ASSIGN <package> | PROBE | STATUS?            (dispatcher → card)
-FREE | BUSY <description> | STATUS <package> <act> <czeka-na>
+FREE | BUSY <description> | STATUS <package> <act> <waiting-on>
 LEASE REQUEST|GRANT|QUEUED|RELEASE <resource> <package> [exit=<n> log=<path>]
 PUSH SLOT|GRANT <package>   ·   PUSHED <package> <hash>
 ID REQUEST|GRANT <type> <package> [<id>]
 REPORT DONE|BLOCKED <package> commit=<hash|branch> checks=<list with exit codes and logs> debt=<list> retro=<number of proposals|n/a>   (n/a for BLOCKED)
-REPORT REJECTED <package> powód=<what to supply>   (dispatcher → card)
+REPORT REJECTED <package> reason=<what to supply>   (dispatcher → card)
 MASTER MOVED <hash> <what changed> <whether rebase/regeneration>
 MASTER RED <hash> <symptom and evidence> owner=<package>
 DRAIN
@@ -67,7 +67,7 @@ Paste block card → dispatcher (manual mode, when the card has no `SendMessage`
 
 Every message is signed (`<Alias>/<package>` or `Dyspozytor`). Directions: `ASSIGN`,
 `PROBE`, `STATUS?`, `LEASE GRANT|QUEUED`, `PUSH GRANT`, `ID GRANT`, `REPORT REJECTED`, `MASTER MOVED|RED`, `DRAIN` —
-from the dispatcher; the others — from the card. `<czeka-na>` ∈ użytkownik | zasób | dyspozytor | nic (user | resource | dispatcher | nothing).
+from the dispatcher; the others — from the card. `<waiting-on>` ∈ user | resource | dispatcher | none.
 
 ## Shared resources: leases
 
@@ -132,11 +132,11 @@ its own copy of the repository, because parallel branches see different "free" n
 
   ```
   date: <output of the date command>
-  STATUS <package> <act> <czeka-na>
+  STATUS <package> <act> <waiting-on>
   <body: numbers, exit codes, log paths; times only from logs or from date>
   ```
 
-  The dispatcher rejects a report without the `date:` line (`REPORT REJECTED powód=missing date line`), and for `STATUS` asks for a repeat.
+  The dispatcher rejects a report without the `date:` line (`REPORT REJECTED reason=missing date line`), and for `STATUS` asks for a repeat.
 - The dispatcher checks the logs (numbers, exit code, time relative to the last code change) before
   changing the status. A code change after the final run invalidates the evidence.
 - Accept a "known/pre-existing" failure only with evidence from a clean main branch; describe an unstable

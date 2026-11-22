@@ -14,7 +14,7 @@ and documentation; it complements the [self-improvement loop](measurement.md).
 
 ## Timing
 
-- Once per run, right before the `final` record of a run that closes as `done`: usually after PASS of the final `kod` loop,
+- Once per run, right before the `final` record of a run that closes as `done`: usually after PASS of the final `code` loop,
   and on entry from a key after the PRs are created (it covers the findings from the human code review and the fixes after it).
 - A repeated PASS of the loop after fixes and a repeated closing `final-2` do not start the retrospective; you skip signals from that stage.
   A run ending `blocked` (without `final`) has no retrospective.

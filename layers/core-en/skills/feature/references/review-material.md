@@ -13,10 +13,10 @@ wrong. It also checks whether the documentation matches the new behavior and whe
 were persisted; a lack without justification is a blocking finding. It verifies contracts between
 layers and the risks specific to the change. For UI include running the most important path
 in a browser if tools are available; record the lack of such verification explicitly.
-Select the checklist: `skillsync review <projekt> --risk <low|medium|high> --files <paths>`
+Select the checklist: `skillsync review <project> --risk <low|medium|high> --files <paths>`
 and [review/QA](../../workflow/references/review.md). The CLI does not issue a review verdict.
 
-Code review goes through the [`kod` loop](review-loop.md): findings → fixes by the appropriate agent → tests of the touched areas
+Code review goes through the [`code` loop](review-loop.md): findings → fixes by the appropriate agent → tests of the touched areas
 (broader when a shared contract changed; in the final loop the final suite) → the next round in a new `reviewer` subagent,
 which checks the closure of findings. The diff scope in rounds (full or the fixes with touched files) is set by the loop according to
 plan risk. `verifier` only for targeted claims outside the loop (e.g. "line X changed").

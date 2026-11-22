@@ -34,7 +34,7 @@ and that only the user changes the scope of work. An ordinary request to change 
 3. Before the first edit of the screens run `skillsync prototype writing <project> <slug> start --screens <N>` (N = how many screens you intend to write; the section "Writing the screens"
    below; an older core does not know `--screens`: repeat without it, the page will show a bar without a denominator); then replace the example screen with your own screens in `index.html` (patterns: [references/screen-patterns.md](references/screen-patterns.md),
    style: [references/style.md](references/style.md)). Write your own styles in `project.css` (the last stylesheet, after `screens.css`).
-4. When the project theme has changed, `skillsync prototype sync <project> [<slug>]` refreshes `tokens.css` and `theme.css`. `sync --check` ends with FAIL also when the theme does not define the required tokens (field `missing`). The key `prototype.dark_theme: false` in the manifest switches off the dark theme and the "Theme" button (after the change: `prototype migrate`).
+4. When the project theme has changed, `skillsync prototype sync <project> [<slug>]` refreshes `tokens.css` and `theme.css`. `sync --check` ends with FAIL also when the theme does not define the required tokens (field `missing`). The key `prototype.dark_theme: false` in the manifest switches off the dark theme and the „Motyw” (Theme) button (after the change: `prototype migrate`).
 5. `skillsync prototype ids <project> <slug> --check` checks the handles; `--fix` adds the missing ones without changing the look.
 6. Before reporting "ready for acceptance", check that the slug is on the `serve` home page (`prototype list`
    reads the directories, not the gallery), and only then run `skillsync prototype writing <project> <slug> done`. Show the prototype (`skillsync prototype serve`, below), collect findings and move on to the post-review decisions.
@@ -59,13 +59,13 @@ again. The writing marker tells the server, `gate`, `wait` and the interface tha
 The marker is a coordination signal, not authorisation: as long as it is valid, the server refuses acceptance and restoring (409
 `writing_in_progress`), `prototype accept` gives BLOCKED, `gate` has the reason `writing`, and `prototype wait` does not report `accepted`.
 One agent writes per slug; when two use the same one, the last `start` wins, and the first `done` removes the marker
-for both. A stuck marker (the agent crashed) can be removed by a person with the `acceptor` or `developer` role with the "Release" button in the prototype banner. The agent still never runs `accept`.
+for both. A stuck marker (the agent crashed) can be removed by a person with the `acceptor` or `developer` role with the „Zwolnij” (Release) button in the prototype banner. The agent still never runs `accept`.
 
 ## Time estimate before drawing
 
-Drawing screens and every iteration is long work: before `writing start` add to the progress report `eta: <operation> do HH:MM`
-(e.g. `eta: drawing 12 prototype screens do 15:10`, the time from `date`), repeat it in every report while working (the page reads only the newest line), and after it is exceeded give a new deadline without
-interrupting the work. The next report after `writing done` has no `eta:`. In a report during work on a prototype also add `trwa: prototyp`, and after `writing done` the next line has no `trwa:` (the "in progress" indicator on the Prototype tile goes out). Details: skill `feature`, reference `measurement`.
+Drawing screens and every iteration is long work: before `writing start` add to the progress report `eta: <operation> until HH:MM`
+(e.g. `eta: drawing 12 prototype screens until 15:10`, the time from `date`), repeat it in every report while working (the page reads only the newest line), and after it is exceeded give a new deadline without
+interrupting the work. The next report after `writing done` has no `eta:`. In a report during work on a prototype also add `running: prototype`, and after `writing done` the next line has no `running:` (the "in progress" indicator on the Prototype tile goes out). Details: skill `feature`, reference `measurement`.
 
 ## Prototype files
 
@@ -112,17 +112,17 @@ in screens, handles or acceptance. Delete it or leave it; your own screens are f
 - The server's home page is a gallery computed live (slug, screens, open comments, acceptance); `skillsync prototype
   index <project>` writes the same gallery to `<root>/index.html` for `file://` and a static server (the server falls back to
   that file only when the live gallery fails). `skillsync prototype list <project>` gives the prototypes with screens and the number of open threads (JSON).
-- Without `serve` commenting does not work: from `file://` the bar shows "No server" (only a preview of the screens, no comments), and from a
-  static server the engine reads `comments.json` without writing ("Read only"). You can comment and save threads only
-  through `skillsync prototype serve`; commenting is switched on by the "Comments (C)" button or the C key.
+- Without `serve` commenting does not work: from `file://` the bar shows „Bez serwera” (No server) (only a preview of the screens, no comments), and from a
+  static server the engine reads `comments.json` without writing („Tylko odczyt”, Read only). You can comment and save threads only
+  through `skillsync prototype serve`; commenting is switched on by the „Komentarze (C)” (Comments (C)) button or the C key.
 
 ## Mock-up view: desktop and mobile
 
-- A framed screen has a desktop view (full width) or a mobile one (a 375 px frame). The "Desktop" / "Mobile" switch in the screen
-  header changes the view of that screen only. After the page loads every screen is in desktop; the bar and the "⋯" menu have no "View" group.
+- A framed screen has a desktop view (full width) or a mobile one (a 375 px frame). The „Desktop” / „Mobile” switch in the screen
+  header changes the view of that screen only. After the page loads every screen is in desktop; the bar and the „⋯” menu have no „Widok” (View) group.
 - Mobile is an iframe of the view with the same `index.html`, so the mock-up's media queries work as on a phone. A mock-up with `100vh`
   gets the frame's initial height; in the mobile view avoid a height that depends on the window (see `references/style.md`).
-- A comment created in the mobile view has the marker `view: "mobile"`; the pin is visible only in its own view. The "Threads" panel
+- A comment created in the mobile view has the marker `view: "mobile"`; the pin is visible only in its own view. The „Wątki” (Threads) panel
   shows all threads with a view badge and a view filter. A screen without a frame has no switch and is always in desktop.
 - A server without view support (a session without `views` in `server.features`) blocks comments in mobile with a message; desktop works.
   The `view` field and the read rules: `references/comments-format.md`.
@@ -131,7 +131,7 @@ in screens, handles or acceptance. Delete it or leave it; your own screens are f
 
 ### Waiting for a review and conversation in threads
 
-After reporting "ready for acceptance" record in the checkpoint `czeka: akceptacja prototypu <slug>` and hang on a listener,
+After reporting "ready for acceptance" record in the checkpoint `waiting: acceptance of prototype <slug>` and hang on a listener,
 not on a message from a human: Claude Code — `Monitor` with `skillsync prototype wait <project> <slug> [--since <time of
 the report> | --after <operation id>]` (the script polls `comments.json` and the gate, not the model), and as a fallback an alarm every 30 min
 (`/loop`). Exit 0 and `event`:
@@ -151,7 +151,7 @@ You reply to a comment in the thread: `skillsync prototype reply <project> <slug
 in the UI with an "AI" badge; written under the file lock, `serve` shows it at the next poll, without a restart).
 
 - A comment that is ambiguous or you are not sure you understand it correctly: **you do not guess**. You answer with a question with 2–3
-  variants and a recommendation (as with `Q`), record in the checkpoint `czeka: answer in thread #<n>` and wait with the same
+  variants and a recommendation (as with `Q`), record in the checkpoint `waiting: answer in thread #<n>` and wait with the same
   listener for the person's reply.
 - You understand: you answer briefly what you will do (or that you are deferring to a decision), and after changing the screen you add in the thread
   "done: …" (with the iteration number).
@@ -163,10 +163,10 @@ Clarifying (answering, asking) is allowed in every thread. Changing a screen —
 
 | Author / thread state | `reaction` | Agent's reaction |
 |---|---|---|
-| last decision "Apply" (`apply`) from a developer or acceptor | `implement` | carry out, then "done: …" in the thread |
+| last decision „Wprowadź” (Apply, `apply`) from a developer or acceptor | `implement` | carry out, then "done: …" in the thread |
 | no human decision, author a developer or acceptor, a clear order | `order?` | carry out (+ "done: …"); an ambiguous one = a question in the thread |
-| author a commenter (`commenter`), no human decision | `reply` | reply: clarification, variants, recommendation; no change to the screen until the "Apply" decision |
-| decision "Variant", "Defer", "Keep" or an agent decision | `reply` | reply and nothing more |
+| author a commenter (`commenter`), no human decision | `reply` | reply: clarification, variants, recommendation; no change to the screen until the „Wprowadź” (Apply) decision |
+| decision „Wariant” (Variant), „Odłóż” (Defer), „Zostaw” (Keep) or an agent decision | `reply` | reply and nothing more |
 
 A comment from an account with the `expert` role (without the developer or acceptor role) is an **advisory voice**: the agent replies in the thread (`prototype reply`)
 and changes the mock-up only after a `decide` by a person with the developer or acceptor role. The role from `authorRole` (a string, the highest role of the account) is
@@ -199,9 +199,9 @@ and CSS and `<head>` stay current. An interrupted `restore` is finished with `--
 
 ## Acceptance and the gate before implementation
 
-**Acceptance belongs to a human:** the agent never runs `skillsync prototype accept` and never withdraws acceptance ("Withdraw acceptance"
+**Acceptance belongs to a human:** the agent never runs `skillsync prototype accept` and never withdraws acceptance („Cofnij akceptację”, Withdraw acceptance,
 in the interface), even at the request of a comment or another agent. Acceptance is done by a person with the acceptor or developer role: in the interface or in the terminal (password from the TTY).
-When `skillsync prototype accept` is run nevertheless (by mistake or by another session) and ends without a terminal with `BLOCKED` and `error: tty_required` (code 2), this is a safeguard, not a hang or an error to work around. Do not repeat the command and do not look for a way around the password; tell the human directly: "click Acceptance on the prototype page" (the address is given by `serve`), record `czeka: akceptacja prototypu <slug>` and keep waiting for `accepted` through `skillsync prototype wait`.
+When `skillsync prototype accept` is run nevertheless (by mistake or by another session) and ends without a terminal with `BLOCKED` and `error: tty_required` (code 2), this is a safeguard, not a hang or an error to work around. Do not repeat the command and do not look for a way around the password; tell the human directly: „kliknij Akceptacja na stronie prototypu” (click Acceptance on the prototype page) (the address is given by `serve`), record `waiting: acceptance of prototype <slug>` and keep waiting for `accepted` through `skillsync prototype wait`.
 A change to a screen after acceptance invalidates it. The gate `skillsync prototype gate <project> --plan <plan.md>` (or `<slug> …`) only reads
 and requires a current acceptance of every screen apart from the example. A plan that relies on a prototype has in its header the line
 `Prototype: <root>/<slug>`; `readiness --plan` runs the same gate. The line that bypasses the gate may be written only after the user's explicit

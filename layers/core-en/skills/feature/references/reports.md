@@ -25,7 +25,7 @@ The summary must not hide failures: status and blockers are always in the summar
   (a) the orchestrator writes their full report to a file if it is needed later (e.g. a change map,
   a list of findings); (b) the role returns a summary plus a details section limited to ≤ 60 lines.
   The assignment says which path applies.
-  A review-loop reviewer's report is the record's evidence: always write it (a), right after it returns, together with `<step>-N-decyzje.md` ([recording](review-loop.md)), not after the fact.
+  A review-loop reviewer's report is the record's evidence: always write it (a), right after it returns, together with `<step>-N-decyzje.md` (decisions; [recording](review-loop.md)), not after the fact.
 
 Exception to the write scope: `mechanic` (Edit + Write), `test-runner` (writing via Bash to logs) and `scribe`
 (`docs/**`) may write the report only to `.skillsync/runs/<run-id>/` — nothing outside that directory

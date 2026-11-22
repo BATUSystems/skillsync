@@ -40,7 +40,7 @@ go into `notes`.
 ```
 
 A screen with several frames (e.g. a view and the same place with an expanded menu): each frame is preceded by a caption `<p class="frame-caption">description</p>`,
-and the engine numbers it itself ("Frame 2 — expanded context menu"); a frame without a caption in such a screen gets a number on the top
+and the engine numbers it itself („Ramka 2 — rozwinięte menu kontekstowe”, Frame 2 — expanded context menu); a frame without a caption in such a screen gets a number on the top
 edge, and there is a gap between frames. In notes and comments refer to the frame number, because that is what is visible on the page.
 
 ```html
@@ -56,7 +56,7 @@ content and `app-narrow` (34rem) for short ones. None of them changes the width.
 ## Navigation: data-goto and data-proto-nav
 
 A transition to another screen is a `data-goto="sN"` attribute on any element (the engine adds `tabindex`, the button role and Enter and Space handling to it);
-it works in the "Clickable" mode. Accessibility: where natural, use a native element (`<button>` for an action, `<a href="#sN">`
+it works in the „Klikalny” (Clickable) mode. Accessibility: where natural, use a native element (`<button>` for an action, `<a href="#sN">`
 for a transition), because it has focus and keyboard support by definition; leave the attribute on a `div`, `tr` or card for elements that cannot be a button. An element with `data-goto` is commentable, so it gets a `data-proto-id`.
 
 ```html

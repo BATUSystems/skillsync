@@ -14,26 +14,26 @@ Fill in the table once the screens exist. The example screen `s1` (attribute `da
 
 ## How to open the prototype
 
-- File: open `index.html` in a browser. From a `file://` address the bar shows "No server": it is only a preview of the screens,
+- File: open `index.html` in a browser. From a `file://` address the bar shows „Bez serwera” (No server): it is only a preview of the screens,
   without commenting, login and acceptance.
 - A plain static server (e.g. `python3 -m http.server` in this directory): look and navigation as from the file, and the bar shows
-  "Read only": the engine reads `comments.json` and shows the threads, but writes nothing.
+  „Tylko odczyt” (Read only): the engine reads `comments.json` and shows the threads, but writes nothing.
 - Comment server: `skillsync prototype serve <project>` with user accounts; comments, votes, decisions and acceptance
   are shared by everyone with access.
 
 ## Comments
 
-Commenting (only with `skillsync prototype serve`, after logging in) is switched on by the "Comments (C)" button on the bar or the C key. A clicked element gets a thread; you can reply to a thread, vote
+Commenting (only with `skillsync prototype serve`, after logging in) is switched on by the „Komentarze (C)” (Comments (C)) button on the bar or the C key. A clicked element gets a thread; you can reply to a thread, vote
 and change its status. Writes go to `comments.json` (an operation log that only grows, so it merges well in git).
 When the server is unavailable, entries wait in the browser's offline queue and can be retried; entries rejected by the server
-stay on the "Show rejected" list.
+stay on the „Pokaż odrzucone” (Show rejected) list.
 
 ## Desktop / mobile view
 
-The "Desktop" / "Mobile" switch in the header of a framed screen changes the view of that screen only; after the page loads, every screen
+The „Desktop” / „Mobile” switch in the header of a framed screen changes the view of that screen only; after the page loads, every screen
 is in Desktop. The mobile view shows the screen frame in an iframe 375 px wide, so the
 mock-up's media queries work. A comment gets the view in which it was created, and its pin is visible only in that view; the
-"Threads" panel has a badge and a view filter. Acceptance of a screen covers both views.
+„Wątki” (Threads) panel has a badge and a view filter. Acceptance of a screen covers both views.
 
 ## Iterations and restoring
 

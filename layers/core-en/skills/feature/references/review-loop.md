@@ -13,9 +13,9 @@ Plan risk = the highest step risk in the plan (risk column, [plan](plan-details.
 |---|---|---|---|---|
 | `spec` | I | `spec-review` | always with `plan-large` | — |
 | `plan` | II | `plan-review` | `plan-large`, plan risk high, user request | one optional round, no loop |
-| `kod` | III | `code-review` (final), `code-review-<step>` (after a phase) | final always; once per phase after its green rung, with no risk condition (risk decides the loop category) | — |
-| `docs` | III | `code-review` (instead of the `kod` profile, when the change touches only documentation) | one round; a full loop only for changes in the leak guard, migrations or security (as in "Loop category") | — |
-| `prototyp` | I–II (before "GO plan" or "GO implement" for a user-visible change) | `prototype-review` (report `prototype-review-N.md` in the run directory) | one round after screen drawing is finished (`prototype writing done`) and before the request for acceptance | — |
+| `code` | III | `code-review` (final), `code-review-<step>` (after a phase) | final always; once per phase after its green rung, with no risk condition (risk decides the loop category) | — |
+| `docs` | III | `code-review` (instead of the `code` profile, when the change touches only documentation) | one round; a full loop only for changes in the leak guard, migrations or security (as in "Loop category") | — |
+| `prototype` | I–II (before "GO plan" or "GO implement" for a user-visible change) | `prototype-review` (report `prototype-review-N.md` in the run directory) | one round after screen drawing is finished (`prototype writing done`) and before the request for acceptance | — |
 
 The "Mandatory loop" column says when a loop exists; how many rounds it has (full or single-round) is set by the section "Loop category and transitions".
 Example: plan risk high makes the `plan` loop mandatory but not full: one round, the author applies the majors, and the closure
@@ -23,13 +23,13 @@ is checked by a fresh `verifier`; round 2 only after a blocker, after a second `
 and transitions" and "States"). The `spec` loop is made mandatory by `plan-large`, not by risk.
 
 A `direct` that exposes a contract change moves to a spec (`feature`, step 4), so it gets the `spec` profile.
-The `prototyp` profile is chosen by `skillsync review` (field `profile`, or `--profile prototyp`) when the change fits within the prototype directory; the
+The `prototype` profile is chosen by `skillsync review` (field `profile`, or `--profile prototype`) when the change fits within the prototype directory; the
 reviewer's material: the screens' `index.html`, `prototype.json`, comments and requirements. The checklist is core (`workflow.review.prototype`:
 screen and criteria counterparts, edge states, text without jargon, navigation and `sN` anchors, basic accessibility, no sensitive data,
 conformance with the engine contract), and layers, the project and the manifest only add items. Freeze the report as `prototype-review-N.md`.
 **Rule for listing findings:** to a human (in the plan's "Result" and in a short list at the request for "GO") show all `blocker` and `major` findings and
 every finding that changed a screen, spec or plan, with title, severity and what was done (applied, rejected with a reason, deferred), also when it was applied; `minor` only as a count.
-The `docs` profile is chosen by `skillsync review` (field `profile`) when the change touches only documentation (`docs/**` without code files, e.g. `.py`, `.js`, `.css`), the library skills' `.md` files, `CHANGELOG*` or release notes; for a mixed change the profile is `kod`, and the `docs` items from the checklist get the documentation files (`docsFiles`). Paths and items can be overridden in the manifest (`workflow.review.docs_paths`, `workflow.review.docs_checklist`).
+The `docs` profile is chosen by `skillsync review` (field `profile`) when the change touches only documentation (`docs/**` without code files, e.g. `.py`, `.js`, `.css`), the library skills' `.md` files, `CHANGELOG*` or release notes; for a mixed change the profile is `code`, and the `docs` items from the checklist get the documentation files (`docsFiles`). Paths and items can be overridden in the manifest (`workflow.review.docs_paths`, `workflow.review.docs_checklist`).
 The idea challenger and `pre-implement` are outside the round counter. Order in act I: answers to `Q`, `pre-implement`
 (when applicable), the `spec` loop, "GO plan"; in act II: plan, the `plan` loop, `readiness`, "GO implement".
 
@@ -43,7 +43,7 @@ The idea challenger and `pre-implement` are outside the round counter. Order in 
   step risk, resources and parallelism, state conflict between steps (a change in A breaks B's precondition), failure
   paths, hidden assumptions, documentation and knowledge, the version question.
 - **`docs`**: changed documents, CHANGELOG, release notes and skills, plus the documents and tools they refer to. Every promise (behavior, command, exit code, version, "works on X") has evidence: a test, CI, a screenshot or a log; without evidence it must be marked as unconfirmed. Instructions are consistent with the tools that check them (`check_*`, validators, `doctor`): run the described command on an example or point to its test. Skills and documents do not contradict each other (ceremony vs. retro signals, command and flag names, paths). Current state only: no "formerly X", old aliases or description of the state before the change. No names of people, clients or events in the public core; PR and notes text passes `skillsync leakcheck --text`.
-- **`kod`**: material from [review-material](review-material.md) (working and staged diff, new files, baseline, plan,
+- **`code`**: material from [review-material](review-material.md) (working and staged diff, new files, baseline, plan,
   spec, FRD, test logs) and the `reviewer` role checklist from `skillsync review`. Diff scope:
   - loop after a step: the diff of the step's files from the plan list;
   - final loop with plan risk high: the full diff in every round;
@@ -57,7 +57,7 @@ The idea challenger and `pre-implement` are outside the round counter. Order in 
   reviewer (an exception to the rule "resume the same agent for fixes" from the host adapter).
 - Model: determine the session model solely from the system context, without guessing. Claude: a session on a model other than the default
   reviewer (`sonnet`) → the default; a session on `sonnet` → `model: opus` in the call; session model unknown → the default
-  and a record "session model undetermined". The `kod` profile with plan risk high may get `model: opus` in other sessions too.
+  and a record "session model undetermined". The `code` profile with plan risk high may get `model: opus` in other sessions too.
   Codex: the reviewer model is set only by `codex.agent_overrides` in the manifest, so usually "the same model" and a note of this
   in the report. The stop does not depend on a model difference.
 - Assignment: the profile, paths of the material and instructions (in a project the full paths, e.g. `.claude/skills/feature/…`), and from round 2
@@ -65,8 +65,8 @@ The idea challenger and `pre-implement` are outside the round counter. Order in 
   with an instruction to open them only after the independent review (the order is declarative).
 - The test-writer of a phase works in parallel with round R1 of that phase (its integration tests are checked by round 2 or, in a single-round loop, a fresh `verifier` before the step is ticked checks the test-writer's tests against the step's criteria (whether they cover them and whether they can fail), and the evidence (the verifier's report) goes into the step's checkpoint record), but only in phases that have
   a test-writer in the plan; without one, round R1 goes alone.
-- With `ceremony: demo`, [ceremony demo](ceremony-demo.md) changes the number of loops: one `kod` loop per run instead of a loop after every phase, plus a full loop
-  for steps with the leak guard, migration or security; the final loop stays full when the whole change belongs to a full-loop category from this section. Only in `demo` does a single-round `kod` loop have at most 2 rounds ([ceremony demo](ceremony-demo.md)): the second only on a blocker, at least 3 majors, fixes touching the leak guard, migrations or security, or after a second `REFUTED`; otherwise `verifier` closes the majors. Full loops and `full` mode unchanged.
+- With `ceremony: demo`, [ceremony demo](ceremony-demo.md) changes the number of loops: one `code` loop per run instead of a loop after every phase, plus a full loop
+  for steps with the leak guard, migration or security; the final loop stays full when the whole change belongs to a full-loop category from this section. Only in `demo` does a single-round `code` loop have at most 2 rounds ([ceremony demo](ceremony-demo.md)): the second only on a blocker, at least 3 majors, fixes touching the leak guard, migrations or security, or after a second `REFUTED`; otherwise `verifier` closes the majors. Full loops and `full` mode unchanged.
 - The reviewer returns: status, new findings (severity, location, problem, proposal) and from round 2 a closure table, **one line for
   each id**, outside the report length limit. It checks closure on files, not on the author's declaration. For a rejected
   blocker/major it rules "justification accepted / not accepted". A finding's return is matched by the reviewer: a new finding gives
@@ -77,7 +77,7 @@ The idea challenger and `pre-implement` are outside the round counter. Order in 
 
 - Every blocker and major: apply or reject with a justification. Minor: apply or reject with a justification. Nit: may be skipped.
 - Finding ids are assigned by the orchestrator: `R<file number>-<n>`. Resolutions in the table `Id | Severity | Description | Resolution | Returns`.
-- `kod` profile: fixes are made by the owner of the code or test (the step's resumed agent), then tests of the affected areas
+- `code` profile: fixes are made by the owner of the code or test (the step's resumed agent), then tests of the affected areas
   (broader when a shared contract changed), and in the final loop the final suite, before the next round starts.
 
 ## Stop and safeguards
@@ -86,7 +86,7 @@ The limit of 4 rounds and STOP apply to a full loop. A single-round loop ends ac
 
 **PASS** requires jointly: reviewer status `PASS`, zero blocker and major among new and open findings (closed ones
 and rejections with an accepted justification do not count), a full closure table (no row for an id = an open finding)
-and no Q/C questions and no "split" verdict. The `kod` profile additionally:
+and no Q/C questions and no "split" verdict. The `code` profile additionally:
 - evidence that negative assertions and the smoke can fail;
 - **after a step**: the round starts after the step's files stabilize (end of the work of that step's `implementer` and `test-writer`; exception: a test-writer working in parallel with R1 does not hold up the round, because R1 concerns production code, and its tests are checked by round 2 or a fresh `verifier` (whether the tests cover the step's criteria and can fail; evidence in the step's checkpoint record)),
   the tests of the step's area are green on the reviewed state; the step in Progress is ticked after the PASS of its loop (a step without a loop: after the tests);
@@ -108,7 +108,7 @@ for each loop, also each `code-review-<step>`); an unaccepted justification of a
 same blocker/major finding after applying (the first return is an ordinary fix); two invalid rounds in a row. After STOP the user decides:
 - `spec` and `plan`: GO, another round with the counter from 1, or a plan change. GO after STOP without a PASS round leaves the loop's step
   at `BLOCKED` (run `incomplete`): describe the reason and the user's decision in the plan's "Result"; do not record an artificial `PASS`.
-- `kod`: STOP rules out `done`; the user chooses another round (counter from 1), narrowing the scope (a plan change) or plan `blocked`.
+- `code`: STOP rules out `done`; the user chooses another round (counter from 1), narrowing the scope (a plan change) or plan `blocked`.
 
 A request for "GO plan" or "GO implement" explicitly lists every blocker/major rejection with the justification and the reviewer's ruling
 and the remaining minors; the plan's "Result" does the same for the code loop.
@@ -120,7 +120,7 @@ and security. Other changes get one round, and a second only when the round find
 Security means changes to access boundaries: permissions and consent words, authentication, secrets, reading or writing
 outside the project, and executing commands from external data.
 
-The `kod` loop runs once per plan phase, after its green test rung; a round after every small step is excess ceremony
+The `code` loop runs once per plan phase, after its green test rung; a round after every small step is excess ceremony
 (`ceremony-excess`). The plan records each step's loop category (at the step or in the description of the loops after the steps). A step touching the leak guard,
 migrations or security gets a full `code-review-<step>` loop regardless of the risk column. The spec, plan and final loop get a full loop only when the change belongs entirely to one
 of these categories; steps with a full loop already have it after the step. A round after the user's answer to Q/C questions reported
@@ -148,9 +148,9 @@ after a second `REFUTED` of the same finding is not excess ceremony, because the
 | Edit of the spec or plan after a PASS round | mechanical or minor only; a substantive change = a new round |
 | Another user correction at GO | their decision, no round, recorded in the plan |
 | Spec change in act II, mechanical or minor (editing, clarification without changing a decision, contract, scope or criteria) | spec fix, recomputed `Spec-sha` in the plan and a list of changes since "GO plan" in the request for "GO implement", without a new `spec` loop |
-| Spec change in act II, substantive (decisions, contracts, scope, criteria) | act I from scratch: spec `draft`, plan `draft (czeka na spec)`, `spec` loop from 1, "GO plan" (removes the suffix, the plan returns to `draft`), new `Spec-sha` in the same plan, `plan` loop from 1; a `plan-review` PASS from before this consent is invalid |
-| Spec change in act III | plan `in_progress (blocked — czeka na spec)`, the spec returns to `draft`, the old `Spec-sha` line disappears from the plan; `spec` loop from 1, then one GO lifting the block, `approved` and a new `Spec-sha` ([spec](spec.md)); `plan` loop only if the plan changes substantively |
-| Fixes after a human's code review ([pr-after-approval](pr-after-approval.md)) | `kod` loop with the counter from 1; with plan risk lower than high, round 1 already gets the fixes and touched files (full diff for reference), with high the full diff |
+| Spec change in act II, substantive (decisions, contracts, scope, criteria) | act I from scratch: spec `draft`, plan `draft (waiting for spec)`, `spec` loop from 1, "GO plan" (removes the suffix, the plan returns to `draft`), new `Spec-sha` in the same plan, `plan` loop from 1; a `plan-review` PASS from before this consent is invalid |
+| Spec change in act III | plan `in_progress (blocked — waiting for spec)`, the spec returns to `draft`, the old `Spec-sha` line disappears from the plan; `spec` loop from 1, then one GO lifting the block, `approved` and a new `Spec-sha` ([spec](spec.md)); `plan` loop only if the plan changes substantively |
+| Fixes after a human's code review ([pr-after-approval](pr-after-approval.md)) | `code` loop with the counter from 1; with plan risk lower than high, round 1 already gets the fixes and touched files (full diff for reference), with high the full diff |
 
 ## Recording
 

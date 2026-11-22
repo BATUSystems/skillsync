@@ -16,7 +16,7 @@ writes to the real state.
 PREVIEW <what>: start with an isolated state and a port from this card's pool; nothing leaves 127.0.0.1 until the dispatcher agrees otherwise.
 Linux:   S=<worktree>/.preview-state; mkdir -p "$S"
          XDG_DATA_HOME="$S/data" XDG_CACHE_HOME="$S/cache" SKILLSYNC_CONFIG="$S/config.yaml" \
-           skillsync dashboard serve <project> --port <port from the pool> --no-approvals --layer core=<worktree>/library & echo $! > "$S/serve.pid"
+           skillsync dashboard serve <project> --port <port-from-pool> --no-approvals --layer core=<worktree>/library & echo $! > "$S/serve.pid"
 macOS:   the same, plus HOME="$S/home" (the state lives in ~/Library/Application Support, not in XDG)
 Windows: $env:LOCALAPPDATA="$S\data"; $env:USERPROFILE="$S\home"; $env:SKILLSYNC_CONFIG="$S\config.yaml"; Start-Process … (save the PID to $S\serve.pid)
 Variables as `home_env` in the tests: XDG_DATA_HOME, XDG_CACHE_HOME, LOCALAPPDATA, HOME, USERPROFILE (all systems at once do no harm).

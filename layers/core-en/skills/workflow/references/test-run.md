@@ -17,7 +17,7 @@ The source of truth for roles and skills: the tests of a plan step are run **thr
 
 ## Which step and which run
 
-- The brief for a subagent **contains `--run` and `--step`**; without `--step` the command picks the only “in progress” step from the checkpoints, and with several “in progress” steps it ends `BLOCKED` (code 2): do not guess.
+- The brief for a subagent **contains `--run` and `--step`**; without `--step` the command picks the only step marked `in progress:` in the checkpoints, and with several `in progress:` steps it ends `BLOCKED` (code 2): do not guess.
 - Runs without a step go to the “No step” section.
 
 ## Gate of `[T]` steps

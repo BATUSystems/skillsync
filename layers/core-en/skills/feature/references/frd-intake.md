@@ -3,7 +3,7 @@
 Read when the `/feature` or `/bugfix` input contains a ticket key ([ticket-intake](ticket-intake.md)) or an FRD file:
 `/feature <KEY> <path>` (the second word with a `/` or a file extension) or `/feature docs/frd/<file>`. Without a key and without such a path this procedure does not apply, and e.g. `/feature src/x.py fix` is a task description.
 The FRD (a functional requirements description) is an input from a human; the agent assesses it, but does not correct it. The assessment results
-`GOTOWY`, `LUKI`, `BLOKUJE` (ready, gaps, blocks) are not the `BLOCKED` step status. Ask the questions from this procedure together with the questions from `ticket-intake`.
+`COMPLETE`, `GAPS`, `BLOCKING` (ready, gaps, blocks) are not the `BLOCKED` step status. Ask the questions from this procedure together with the questions from `ticket-intake`.
 
 ## 1. Lookup
 
@@ -58,18 +58,18 @@ Do not fill in an absent section from imagination, only write “missing” and 
 
 | Result | Meaning | Next |
 |---|---|---|
-| `GOTOWY` | the requirements are clear and consistent | a plan with the map |
-| `LUKI` | gaps, ambiguities or minor inconsistencies that can be covered by an explicit assumption | the assumptions visible in the plan, “GO implement” decides |
-| `BLOKUJE` | no expected result or a contradiction changing the system's behavior (with the ticket, with the code, internal): two ways of implementing give a different result | STOP with questions; no plan built on guesses |
+| `COMPLETE` | the requirements are clear and consistent | a plan with the map |
+| `GAPS` | gaps, ambiguities or minor inconsistencies that can be covered by an explicit assumption | the assumptions visible in the plan, “GO implement” decides |
+| `BLOCKING` | no expected result or a contradiction changing the system's behavior (with the ticket, with the code, internal): two ways of implementing give a different result | STOP with questions; no plan built on guesses |
 
-A typo, a name written two ways or a contradictory example next to a clear rule is `LUKI`. A lack of requirement numbers, of layout or of a status field does not block and is not a gap in itself.
+A typo, a name written two ways or a contradictory example next to a clear rule is `GAPS`. A lack of requirement numbers, of layout or of a status field does not block and is not a gap in itself.
 In the first answer show the result, the questions to the author and only those checks that are `partial` or `missing`, before a plan is created. In short: the list is to help ask questions, not to repeat the document.
 
-The `dispatch` working mode ([worker-mode](worker-mode.md)): `BLOKUJE` goes back to the dispatcher as a question to the user, without guesses.
+The `dispatch` working mode ([worker-mode](worker-mode.md)): `BLOCKING` goes back to the dispatcher as a question to the user, without guesses.
 
 ## 5. Plan
 
-The assessment of the FRD belongs to act I, when the spec is created. For `GOTOWY` and `LUKI`:
+The assessment of the FRD belongs to act I, when the spec is created. For `COMPLETE` and `GAPS`:
 - **the requirements map**: with a spec in the spec (the requirement number and place in the file → criterion `K…`), and the plan maps the criteria to steps and tests;
   without a spec (a `direct` plan, a brief in `bugfix`) in the plan: number and place → criterion → step → test. Mark a requirement outside the scope in it
   explicitly, so that the consent approves it (“GO plan” with a spec, otherwise “GO implement”).
@@ -77,7 +77,7 @@ The assessment of the FRD belongs to act I, when the spec is created. For `GOTOW
 The plan (with a spec the plan draft from “GO plan”), also a brief recorded as a plan in `bugfix`, contains:
 - **working numbers** `W1…` for an FRD without numbers; in the map (spec or plan), the file unchanged;
 - **the path and sha of the file**: `git hash-object <file>` (works also outside a repository);
-- **the assumptions from `LUKI`**, each with a reference to the gap.
+- **the assumptions from `GAPS`**, each with a reference to the gap.
 
 Before the review and before “do the PR” compute the sha again. A difference is a STOP and a question; do not update the sha yourself.
 

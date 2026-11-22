@@ -9,4 +9,4 @@ Only Markdown texts of skills, roles and instructions (and `instructions/_base.m
 core. A skill that is translated at all is translated completely. `translations.lock.yaml` records the sha256 of every core file a translation was
 made from; `skillsync layers check` fails when a core file changed afterwards or when the structure (headings, frontmatter) differs.
 
-Protocol tokens that programs read stay as they are in the source, quoted in code (`Katalog:`, `Oddanie:`, `Przebieg:`, `[EKSPERT]`, `TAK`/`NIE`).
+Protocol tokens that programs read are written in English (`Run:`, `Verdict:`, `Handoff:`, `[EXPERT]`, `waiting:`, `Open questions`, ...) according to the map of CORE-1130-I18N (`skillsync_workflow/protocol_tokens.py`); the parsers of the core accept both languages. Polish stays only where it is a value of code or of an external system, and in quoted labels of the prototype engine (with an English gloss).

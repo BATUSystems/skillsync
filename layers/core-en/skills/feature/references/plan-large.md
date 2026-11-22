@@ -12,23 +12,23 @@ This document leads act I (spec, the `spec` loop, the GO plan consent). Act II (
 
 ## 1. Skeleton and a hard question gate — STOP
 
-- Writing the spec in one step is forbidden. The first write is a skeleton: a `draft` with a part about the problem, a part about the scope and a section `Pytania otwarte` (open questions). Until GO plan is given, no plan is created.
+- Writing the spec in one step is forbidden. The first write is a skeleton: a `draft` with a part about the problem, a part about the scope and a section `Open questions`. Until GO plan is given, no plan is created.
 - A critical unknown is an assumption whose error would mean rewriting a large part of the spec; typical cases: data format, reach, the place of connection to the rest of the system, choice of tool.
 - Check the split: when the order covers several capabilities, each of which works on its own, ask the user whether to break them into separate plans and specs. A spec with at least 5 capabilities is two plans (a stage split): at the plan gate ask the user about the split; calibrate the estimate at about 75–105 min of work per capability with a full review loop.
 - Each question gets a number `Q1`, `Q2`… and its own short line; choose a yes/no form or a set of options. A question with a reasonable default resolution may be a non-blocking assumption `[ASSUMPTION]` ([spec](spec.md#question-classes-q)); the STOP concerns blocking questions.
 - After showing the skeleton with blocking questions, stop and wait for the user's answers; with `[ASSUMPTION]` assumptions alone there is no STOP.
 - Until the answers arrive, only `explore` works, plus collecting data independent of the questions: who uses the module, how the code is built, which contracts already exist. A design built on guesses is forbidden.
 - Report an unknown discovered later through the gate again, only for the new questions.
-- When the answers arrive, the blocking questions disappear from the `Pytania otwarte` section, and the `[ASSUMPTION]` assumptions stay in the spec ([spec](spec.md#question-classes-q)); the resolutions land in `Decyzje i alternatywy`, and the spec is supplemented with acceptance criteria and the FRD map ([spec](spec.md)).
+- When the answers arrive, the blocking questions disappear from the `Open questions` section, and the `[ASSUMPTION]` assumptions stay in the spec ([spec](spec.md#question-classes-q)); the resolutions land in `Decisions and alternatives`, and the spec is supplemented with acceptance criteria and the FRD map ([spec](spec.md)).
 
 ## 2. Extended sections
 
 Placement: in the spec, outside phases and steps — those are in the plan.
 
-- Decisions and alternatives (`Decyzje i alternatywy`): two tables — a decision with a justification and an alternative with the reason for rejection.
-- `Badanie wzorców` (pattern research) only when the change brings a new mechanism. A summary: what was checked, what was chosen, what was rejected and for what reason. The name matches the spec template.
+- `Decisions and alternatives`: two tables — a decision with a justification and an alternative with the reason for rejection.
+- `Pattern research` only when the change brings a new mechanism. A summary: what was checked, what was chosen, what was rejected and for what reason. The name matches the spec template.
 - Phases and steps live in the plan: a phase is an increment fit for release, a step a task that can be checked by a test; the application stays working after every step. Name deferred ideas explicitly, without mixing them with the MVP.
-- A risk register in the `Ryzyka` section. Every item: a scenario, a severity (`critical`, `high`, `medium`, `low`), the affected area, a mitigation, the residual risk and a justification of why it is acceptable.
+- A risk register in the `Risks` section. Every item: a scenario, a severity (`critical`, `high`, `medium`, `low`), the affected area, a mitigation, the residual risk and a justification of why it is acceptable.
 - Five categories to walk through: data (an interruption midway, concurrent writes, a partial write); chain effects; separation of tenants and permissions; transition between versions (old and new running in parallel, retries, backfilling); maintenance (failure detection, blast radius, volume growth).
 - Every mutation has a way of reversal or an explicit declaration of irreversibility with a justification.
 
@@ -55,8 +55,8 @@ Place: in the spec, before approval. A table with the columns `check | status | 
 
 ## 5. After consent
 
-- After consent to GO plan: the spec moves to the status `approved`, and next to it a plan draft is immediately created with `Status: draft` and the lines `Spec:`, `Spec-sha:`, `Run:`, `Directory:` ([workdir](workdir.md)). With an FRD the sha of the FRD file and the assumptions from `LUKI` are added ([frd-intake](frd-intake.md)).
-- “GO plan” is also one local commit: spec, plan draft and prototype (without generated files and secrets, `git add` only with explicit paths, a secret scan before the commit), on the working branch in the working directory chosen at “GO plan”: the question “own worktree” (the default) or “main checkout”, the choice in the plan line `Directory: worktree <directory-name>` or `Directory: główny`, details in [workdir](workdir.md); in a `worktree` “GO plan” creates the branch if it does not exist. No push: before “GO implement” nothing leaves the machine; push and PR go after “GO implement” according to the delivery mode. Exception: entry from a ticket key stays without a commit at “GO plan” ([pr-after-approval](pr-after-approval.md)).
+- After consent to GO plan: the spec moves to the status `approved`, and next to it a plan draft is immediately created with `Status: draft` and the lines `Spec:`, `Spec-sha:`, `Run:`, `Directory:` ([workdir](workdir.md)). With an FRD the sha of the FRD file and the assumptions from `GAPS` are added ([frd-intake](frd-intake.md)).
+- “GO plan” is also one local commit: spec, plan draft and prototype (without generated files and secrets, `git add` only with explicit paths, a secret scan before the commit), on the working branch in the working directory chosen at “GO plan”: the question “own worktree” (the default) or “main checkout”, the choice in the plan line `Directory: worktree <directory-name>` or `Directory: main`, details in [workdir](workdir.md); in a `worktree` “GO plan” creates the branch if it does not exist. No push: before “GO implement” nothing leaves the machine; push and PR go after “GO implement” according to the delivery mode. Exception: entry from a ticket key stays without a commit at “GO plan” ([pr-after-approval](pr-after-approval.md)).
 - With `specs.tracked: false` “GO plan” does not commit the spec or the plan (ignored by git): instead the `skillsync spec snapshot` snapshot and the `go-plan` checkpoint; the commit covers only tracked files ([spec-store](spec-store.md)).
 - Exception: when the plan already exists (a `direct` run that revealed a contract change), do not create a draft; add `Spec:` and `Spec-sha:` to the existing plan.
 - The GO implement consent opens act III. Resumption, the spec sha and statuses are explained by [spec](spec.md) and [plan](plan-details.md).

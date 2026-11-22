@@ -39,7 +39,7 @@ from several steps together, in one message.
 7. **Plan.** The file `docs/plans/YYYY-MM-DD-<key>.md` in both variants. The line
    `Ticket: <KEY> (link: <url>)` as in [plan-details](plan-details.md); in the plan also show
    the status, the variant, the base branch and the first working one, and the warnings from the status guard. With the `plan-large` gate the plan is created at “GO plan”,
-   and this data is until then in the “Zakres” (scope) section of the spec skeleton ([spec](spec.md)).
+   and this data is until then in the `Scope` section of the spec skeleton ([spec](spec.md)).
    With `specs.tracked: false` the plan and the spec are local and do not go into a commit or a PR (a snapshot instead of a commit, [spec-store](spec-store.md)).
 8. **PR.** With ticket-key entry do not propose `/pr-run` after “GO implement”. After execution STOP for the human code review,
    and commit, push and PR only on the commands from the vocabulary in [pr-after-approval](pr-after-approval.md).

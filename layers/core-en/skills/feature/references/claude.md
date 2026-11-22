@@ -62,7 +62,7 @@ a user decision.
 Limit: at most 3 parallel subagents besides the orchestrator; tests on shared resources
 sequentially. For fixes of the same step resume the same agent (`SendMessage`
 to its id), and launch independent review in a fresh context; every round of the [review loop](review-loop.md)
-is a new `reviewer`. The reviewer model in the loop (every profile: `spec`, `plan`, `kod`, `docs`): a session on a model other than `sonnet` → the default, a session on `sonnet` → `model: opus`; the `kod` profile with plan risk high may always get `model: opus`. Do not pass the full
+is a new `reviewer`. The reviewer model in the loop (every profile: `spec`, `plan`, `code`, `docs`): a session on a model other than `sonnet` → the default, a session on `sonnet` → `model: opus`; the `code` profile with plan risk high may always get `model: opus`. Do not pass the full
 history; an assignment with the plan, scope and paths suffices.
 
 `explore`, `reviewer` and `verifier` have only Read/Grep/Glob — the orchestrator prepares the diff and the list

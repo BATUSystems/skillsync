@@ -34,7 +34,7 @@ report the lack of independent review as a limitation requiring a user decision.
 
 Default limit: 3 subagents besides the orchestrator. Resume an agent for fixes within the same
 step, but every round of the [review loop](review-loop.md) is a new `reviewer` (the reviewer model changes only through
-`codex.agent_overrides`, so usually "the same model", and record that in the round report, in every profile: `spec`, `plan`, `kod`, `docs`); close finished threads when they occupy the limit. Do not pass the full history when
+`codex.agent_overrides`, so usually "the same model", and record that in the round report, in every profile: `spec`, `plan`, `code`, `docs`); close finished threads when they occupy the limit. Do not pass the full history when
 a work order with the plan is enough. When a model override requires an empty/short context,
 apply that mode and pass the required instructions explicitly.
 
