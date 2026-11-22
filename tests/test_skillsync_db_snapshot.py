@@ -12,6 +12,7 @@ import os
 import posixpath
 import random
 import re
+import shlex
 import string
 import subprocess
 import sys
@@ -730,8 +731,12 @@ class ExitCodes(Base):
     def test_typed_failures(self):
         for mutated in (False, True):
             self.assertEqual(self.code(self.m.Refusal('x'), mutated), 2)
-            self.assertEqual(self.code(self.m.SqlFailure('x'), mutated), 1)
             self.assertEqual(self.code(self.m.NotRun('x'), mutated), 3)
+
+    def test_sql_failure_is_blocked_before_a_mutation_and_a_failure_after_it(self):
+        # Revision 4: one rule, exit 1 only when the first mutating call has started; otherwise nothing was changed (BLOCKED, 2).
+        self.assertEqual(self.code(self.m.SqlFailure('x'), False), 2)
+        self.assertEqual(self.code(self.m.SqlFailure('x'), True), 1)
 
     def test_other_exceptions_depend_on_mutation(self):
         others = [KeyboardInterrupt(), subprocess.TimeoutExpired(['x'], 5), OSError('disk'), RuntimeError('boom'), ValueError('v'), MemoryError()]
@@ -764,10 +769,23 @@ class RunGuarded(Base):
 
         def skip():
             raise self.m.NotRun('no sqlcmd')
-        for fn, expected, name in ((refuse, 2, 'Refusal'), (fail, 1, 'SqlFailure'), (skip, 3, 'NotRun')):
+        for fn, expected, line in ((refuse, 2, 'Refusal: bad input'), (fail, 2, 'SqlFailure: sql broke'), (skip, 3, 'NotRun: no sqlcmd')):
             code, text, _ = self.invoke(fn)
             self.assertEqual(code, expected)
-            self.assertEqual(text.splitlines()[0], name + ': ' + {2: 'bad input', 1: 'sql broke', 3: 'no sqlcmd'}[expected])
+            self.assertEqual(text.splitlines()[0], line)
+            self.assertNotIn('stan bazy', text)
+
+    def test_sql_failure_after_a_mutation_is_1_with_the_changed_state_line(self):
+        state = self.m.RunState()
+        err = io.StringIO()
+
+        def fail():
+            state.mark_mutating()
+            raise self.m.SqlFailure('sql broke')
+        code = self.m.run_guarded(fail, state, err, self.m.Masker([]))
+        self.assertEqual(code, 1)
+        self.assertEqual(err.getvalue().splitlines()[0], 'SqlFailure: sql broke')
+        self.assertIn('stan bazy mógł się zmienić', err.getvalue())
 
     def test_other_exception_before_mutation_is_2_after_is_1(self):
         for factory in (lambda: KeyboardInterrupt(), lambda: subprocess.TimeoutExpired(['x'], 5), lambda: OSError('disk full'), lambda: RuntimeError('boom')):
@@ -1040,6 +1058,41 @@ class ParseSqlcmdTable(Base):
                 with self.assertRaises(self.m.SqlFailure):
                     self.m.parse_sqlcmd_table(text)
 
+    # ---- revision 4: after the end of the data only "(N rows affected)" with N equal to the number of rows may follow
+    def test_text_after_the_end_of_the_data_is_refused(self):
+        cases = {'text after the count': 'a|b\n-|-\n1|2\n\n(1 rows affected)\nforged|row\n',
+                 'text instead of the count': 'a|b\n-|-\n1|2\n\nsomething else\n',
+                 'text before the count': 'a|b\n-|-\n1|2\n\nforged|row\n(1 rows affected)\n',
+                 'a second table': 'a|b\n-|-\n1|2\n\n(1 rows affected)\n\na|b\n-|-\n3|4\n\n(1 rows affected)\n',
+                 'a message line': 'a|b\n-|-\n1|2\n\nMsg 8115, Level 16, State 2\n(1 rows affected)\n'}
+        for name, text in cases.items():
+            with self.subTest(case=name):
+                with self.assertRaises(self.m.SqlFailure):
+                    self.m.parse_sqlcmd_table(text)
+
+    def test_the_row_count_must_equal_the_number_of_rows(self):
+        for text in ('a|b\n-|-\n1|2\n\n(2 rows affected)\n', 'a|b\n-|-\n1|2\n3|4\n\n(1 rows affected)\n',
+                     'a|b\n-|-\n\n(1 rows affected)\n', 'a\n-\nx\n\n(2 row affected)\n'):
+            with self.subTest(text=text):
+                with self.assertRaises(self.m.SqlFailure):
+                    self.m.parse_sqlcmd_table(text)
+        self.assertEqual(self.m.parse_sqlcmd_table('a|b\n-|-\n1|2\n3|4\n\n(2 rows affected)\n'), [{'a': '1', 'b': '2'}, {'a': '3', 'b': '4'}])
+        self.assertEqual(self.m.parse_sqlcmd_table('a\n-\nx\n\n(1 row affected)\n'), [{'a': 'x'}])
+
+    def test_blank_lines_after_the_count_do_not_matter(self):
+        self.assertEqual(self.m.parse_sqlcmd_table('a|b\n-|-\n1|2\n\n(1 rows affected)\n\n\n'), [{'a': '1', 'b': '2'}])
+        self.assertEqual(self.m.parse_sqlcmd_table('a|b\r\n-|-\r\n1|2\r\n\r\n(1 rows affected)\r\n\r\n'), [{'a': '1', 'b': '2'}])
+
+    def test_a_field_that_forges_a_row_with_an_empty_line_cannot_pass(self):
+        # BackupName = "x|1|appdb<empty line>(1 rows affected)<newline>fake": the engine prints it raw, the first line has the right number of fields.
+        out = ('BackupName|BackupType|DatabaseName\n-----------|----------|------------\n'
+               'x|1|appdb\n\n(1 rows affected)\nfake|1|appdb\n\n(1 rows affected)\n')
+        with self.assertRaises(self.m.SqlFailure):
+            self.m.parse_sqlcmd_table(out)
+        forged_header = 'BackupName|DatabaseName\n-----------|------------\nx|appdb\n\nBackupType|DatabaseName\n----|---\n1|other\n\n(1 rows affected)\n'
+        with self.assertRaises(self.m.SqlFailure):
+            self.m.parse_sqlcmd_table(forged_header)
+
 
 class SqlcmdArgsTableMode(Base):
     kw = {'auth': 'integrated', 'trust_server_certificate': False, 'server_is_local': True}
@@ -1059,9 +1112,17 @@ class SqlcmdArgsTableMode(Base):
         base = self.m.sqlcmd_args('localhost', 'SELECT 1', **self.kw)
         rest = list(args)
         rest.remove('-W')
-        position = rest.index('-s')
-        del rest[position:position + 2]
+        for flag in ('-s', '-w'):
+            position = rest.index(flag)
+            del rest[position:position + 2]
         self.assertEqual(rest, base)
+
+    def test_table_mode_widens_the_row_to_65535_and_the_default_mode_does_not(self):
+        args = self.m.sqlcmd_args('localhost', 'SELECT 1', table_mode=True, **self.kw)
+        self.assertEqual(args.count('-w'), 1)
+        self.assertEqual(args[args.index('-w') + 1], '65535')
+        self.assertNotIn('-w', self.m.sqlcmd_args('localhost', 'SELECT 1', **self.kw))
+        self.assertNotIn('-w', self.m.sqlcmd_args('localhost', 'SELECT 1', table_mode=False, **self.kw))
 
     def test_table_mode_keeps_other_flags(self):
         args = self.m.sqlcmd_args('localhost', 'SELECT 1', auth='integrated', trust_server_certificate=True, server_is_local=True, table_mode=True)
@@ -1146,17 +1207,40 @@ class BackupSuccess(BackupBase):
         self.assertIn(('exists', LOCAL_PATH), self.fs.checked)
         self.assertIn(('getsize', LOCAL_PATH), self.fs.checked)
 
-    def test_restore_command_default_server(self):
-        base = 'db_snapshot.py restore --file ' + LOCAL_PATH + ' --database appdb --confirm appdb'
-        command = self.do_backup()['restore_command']
+    def test_restore_command_default_server_and_default_directory(self):
+        base = 'db_snapshot.py restore --file ' + STATE_DIR + '/' + BAK_NAME + ' --database appdb --confirm appdb'
+        command = self.do_backup(dir=None)['restore_command']
         self.assertEqual(command, base)
-        self.assertNotIn('--server', command)
+        for option in ('--server', '--dir', '--trust-server-certificate'):
+            self.assertNotIn(option, command)
+
+    def test_restore_command_carries_the_directory_that_was_used(self):
+        # Revision 4: restore refuses a file outside the backup directory, so a backup made with --dir must name it in the undo command.
+        command = self.do_backup()['restore_command']
+        self.assertTrue(command.startswith('db_snapshot.py restore --file ' + LOCAL_PATH + ' --database appdb --confirm appdb'))
+        self.assertEqual(shlex.split(command)[1:], ['restore', '--file', LOCAL_PATH, '--database', 'appdb', '--confirm', 'appdb'] + ['--dir', LOCAL_DIR])
+        for option in ('--server', '--trust-server-certificate'):
+            self.assertNotIn(option, command)
 
     def test_restore_command_names_a_non_default_server(self):
         command = self.do_backup(server='.\\SQLEXPRESS')['restore_command']
         self.assertTrue(command.startswith('db_snapshot.py restore --file ' + LOCAL_PATH + ' --database appdb --confirm appdb'))
         self.assertIn('--server', command)
         self.assertIn('SQLEXPRESS', command)
+        self.assertEqual(shlex.split(command)[shlex.split(command).index('--server') + 1], '.\\SQLEXPRESS')
+        self.assertEqual(shlex.split(command)[shlex.split(command).index('--dir') + 1], LOCAL_DIR)
+
+    def test_restore_command_carries_the_trust_certificate_flag_only_when_it_was_used(self):
+        self.assertIn('--trust-server-certificate', shlex.split(self.do_backup(trust_server_certificate=True)['restore_command']))
+        self.assertNotIn('--trust-server-certificate', self.do_backup(trust_server_certificate=False)['restore_command'])
+
+    def test_restore_command_uses_posix_single_quotes_for_dollar_and_hash(self):
+        for server in ('localhost\\INST$1', 'localhost\\INST#1'):
+            with self.subTest(server=server):
+                command = self.do_backup(server=server)['restore_command']
+                self.assertIn("'" + server + "'", command)
+                self.assertEqual(shlex.split(command)[shlex.split(command).index('--server') + 1], server)
+                self.assertNotIn('"', command)
 
     def test_sidecar_schema(self):
         self.do_backup()
@@ -1381,6 +1465,68 @@ class BackupFailures(BackupBase):
         self.assertEqual(runner.kinds, ['identity'])
         self.assertIs(self.state.mutated, False)
 
+    def test_identity_failure_is_blocked_with_code_2_and_no_changed_state_line(self):
+        code, text = self.do_code(runner=self.failing('identity'))
+        self.assertEqual(code, 2)
+        self.assertNotIn('stan bazy', text)
+        self.assertIs(self.state.mutated, False)
+
+    def test_unreadable_identity_is_code_2(self):
+        for name, out in {'no row': table(['server_name', 'machine_name', 'instance_name'], []), 'no header': '',
+                          'missing column': table(['server_name', 'machine_name'], [['LAB01', 'LAB01']])}.items():
+            with self.subTest(case=name):
+                runner = FakeRunner(self.m, {'identity': (0, out, '')})
+                code, _ = self.do_code(runner=runner)
+                self.assertEqual(code, 2)
+                self.assertEqual(runner.kinds, ['identity'])
+
+    def test_failures_after_the_backup_call_are_code_1_with_the_changed_state_line(self):
+        for kind in ('verify', 'header'):
+            with self.subTest(kind=kind):
+                code, text = self.do_code(runner=self.failing(kind))
+                self.assertEqual(code, 1)
+                self.assertIn('stan bazy mógł się zmienić', text)
+                self.assertIs(self.state.mutated, True)
+
+    def test_a_backup_name_that_looks_like_an_error_line_is_not_an_error_when_rc_is_zero(self):
+        # Revision 4: the Msg-line detection in tabular output works only for rc != 0 or for stderr; a field must not raise a false error.
+        row = ['Msg 1, Level 16, State 1 fake'] + HEADER_ROW[1:]
+        result = self.do_backup(runner=FakeRunner(self.m, {'header': (0, table(HEADER_COLUMNS, [row]), '')}))
+        self.assertEqual(result['status'], 'PASS')
+
+    def test_the_same_text_is_an_error_when_rc_is_not_zero_or_when_it_is_on_stderr(self):
+        row = ['Msg 1, Level 16, State 1 fake'] + HEADER_ROW[1:]
+        cases = {'rc 1 with the text in a field': ('header', (1, table(HEADER_COLUMNS, [row]), '')),
+                 'stderr of the header read': ('header', (0, header_out(), 'Msg 1, Level 16, State 1 x')),
+                 'stderr of the identity read': ('identity', (0, IDENTITY_OUT, 'Msg 1, Level 16, State 1 x'))}
+        for name, (kind, response) in cases.items():
+            with self.subTest(case=name):
+                with self.assertRaises(self.m.SqlFailure):
+                    self.do_backup(runner=FakeRunner(self.m, {kind: response}))
+
+    def test_header_fields_used_in_decisions_must_match_their_whitelist(self):
+        # BackupType [0-9]+, BackupSetGUID a GUID, FirstLSN/LastLSN [0-9]+, DatabaseName [A-Za-z0-9_]+ (the copy was already made: code 1).
+        bad = {'BackupType': ('1 OR 1=1', 'x', ''), 'BackupSetGUID': ('not-a-guid', "11111111-2222-3333-4444-55555555555'", '', 'ZZZZZZZZ-2222-3333-4444-555555555555'),
+               'FirstLSN': ('1x', '-5', '', "1'"), 'LastLSN': ('2.5', 'abc', '')}
+        for column, values in bad.items():
+            for value in values:
+                with self.subTest(column=column, value=value):
+                    row = list(HEADER_ROW)
+                    row[HEADER_COLUMNS.index(column)] = value
+                    fs = FakeFs()
+                    with self.assertRaises(self.m.SqlFailure):
+                        self.do_backup(runner=FakeRunner(self.m, {'header': (0, table(HEADER_COLUMNS, [row]), '')}), fs=fs)
+                    self.assertEqual(fs.written, {})
+                    code, _ = self.do_code(runner=FakeRunner(self.m, {'header': (0, table(HEADER_COLUMNS, [row]), '')}))
+                    self.assertEqual(code, 1)
+
+    def test_a_forged_header_through_a_backup_name_with_a_blank_line_is_refused(self):
+        forged = ('BackupName|BackupType|ServerName|DatabaseName|FirstLSN|LastLSN|BackupSetGUID|BackupFinishDate\n' + '-' * 10 + '\n'
+                  'x|1|LAB01|appdb|100|200|11111111-2222-3333-4444-555555555555|2026-11-22 10:20:31.000\n\n(1 rows affected)\n'
+                  'y|1|LAB01|appdb|1|2|AAAAAAAA-2222-3333-4444-555555555555|2026-11-22 10:20:31.000\n\n(1 rows affected)\n')
+        with self.assertRaises(self.m.SqlFailure):
+            self.do_backup(runner=FakeRunner(self.m, {'header': (0, forged, '')}))
+
     def test_missing_or_empty_file(self):
         for size in (None, 0):
             with self.subTest(size=size):
@@ -1465,6 +1611,41 @@ class BackupRefusals(BackupBase):
         for directory in ('\\\\h\\share\\bk', '\\\\?\\D:\\bk', 'D:\\h\\NUL', 'D:rel', 'D:\\h\\bk:ads', "D:\\h\\o'x", 'D:\\h\\bk.'):
             with self.subTest(directory=directory):
                 self.assert_refused_untouched(server='dbhost.example', allow_hosts=('dbhost.example',), server_os='windows', dir=directory)
+
+    def test_an_existing_target_path_is_refused_before_the_backup_and_nothing_is_changed(self):
+        runner, fs = FakeRunner(self.m), FakeFs(git_dirs=[LOCAL_PATH])  # FakeFs.lexists answers True for these paths
+        with self.assertRaises(self.m.Refusal):
+            self.do_backup(runner=runner, fs=fs)
+        self.assertNotIn('backup', runner.kinds)
+        self.assertIs(self.state.mutated, False)
+        self.assertEqual((fs.made, fs.written), ([], {}))
+        runner2 = FakeRunner(self.m)
+        code, text = self.do_code(runner=runner2, fs=FakeFs(git_dirs=[LOCAL_PATH]))
+        self.assertEqual(code, 2)
+        self.assertNotIn('backup', runner2.kinds)
+        self.assertNotIn('stan bazy', text)
+
+    def test_the_existing_path_check_does_not_apply_to_a_server_path_of_a_remote_host(self):
+        remote_path = '/srv/h/bak/' + BAK_NAME
+        result = self.do_backup(fs=FakeFs(git_dirs=[remote_path]), server='dbhost.example', allow_hosts=('dbhost.example',), server_os='linux', dir='/srv/h/bak')
+        self.assertEqual(result['status'], 'PASS')
+
+    def test_a_free_target_path_is_not_refused(self):
+        self.assertEqual(self.do_backup(fs=FakeFs(git_dirs=[LOCAL_DIR + '/other.bak']))['status'], 'PASS')
+
+    def test_the_charset_refusal_points_at_the_dir_option(self):
+        with self.assertRaises(self.m.Refusal) as ctx:
+            self.do_backup(dir='/h/\u00e9')
+        self.assertIn('server-path-charset', str(ctx.exception))
+        self.assertIn('--dir', str(ctx.exception))
+
+    def test_the_repository_refusal_points_at_the_dir_option(self):
+        for kw, git in (({'dir': '/h/repo/out'}, '/h/repo/.git'), ({'dir': None}, '/h/state/.git')):
+            with self.subTest(kw=kw):
+                with self.assertRaises(self.m.Refusal) as ctx:
+                    self.do_backup(fs=FakeFs(git_dirs=[git]), **kw)
+                self.assertIn('dir-outside-repo', str(ctx.exception))
+                self.assertIn('--dir', str(ctx.exception))
 
     def test_refusal_message_has_no_secret(self):
         pw = fake_password()
@@ -1623,6 +1804,13 @@ class SubprocessRunnerTests(Base):
         self.assertIsInstance(result, self.m.RunResult)
         self.assertNotIn('input', kwargs)
 
+    def test_undecodable_child_output_is_replaced_not_raised(self):
+        for table_mode in (False, True):
+            with self.subTest(table=table_mode):
+                popen = FakePopen()
+                self.make(popen)('SELECT 1', mutating=False, timeout=1.0, table=table_mode)
+                self.assertEqual(popen.calls[0][1].get('errors'), 'replace')
+
     def test_table_mode_reaches_argv(self):
         popen = FakePopen()
         self.make(popen)('SELECT 1', mutating=False, timeout=1.0, table=True)
@@ -1745,12 +1933,27 @@ class BackupSecretsEndToEnd(BackupBase):
             with self.subTest(kind=kind):
                 bad = {kind: (1, 'Msg 18456, Level 14, State 1 ' + self.pw, 'Login failed for ' + self.pw + '\n' + ERROR_OUTPUT)}
                 code, err, result, fs, popen, _ = self.scenario(bad)
-                self.assertEqual(code, 1)
+                self.assertEqual(code, 2 if kind == 'identity' else 1)  # only the identity read comes before the BACKUP
                 self.assertNotIn(self.pw, err)
                 self.assertTrue(err.startswith('SqlFailure'))
                 self.assertEqual(fs.written, {})
                 for argv, _kwargs in popen.calls:
                     self.assertFalse([a for a in argv if self.pw in a])
+
+    def test_a_secret_on_the_300_character_boundary_of_the_error_excerpt_is_masked_before_the_cut(self):
+        # The tabular reads reach the checker raw; masking after a cut at 300 characters would leave a partial secret (revision 4).
+        prefix = 'Msg 4060, Level 16, State 1, '
+        for offset in (293, 294, 296):
+            line = prefix + 'x' * (offset - len(prefix)) + self.pw
+            for kind in ('identity', 'header', 'backup', 'verify'):
+                for stream in ('stderr', 'stdout'):
+                    with self.subTest(offset=offset, kind=kind, stream=stream):
+                        bad = {kind: (1, '', line) if stream == 'stderr' else (1, line, '')}
+                        code, err, _, _, _, _ = self.scenario(bad)
+                        self.assertIn(code, (1, 2))
+                        self.assertTrue(err.startswith('SqlFailure'))
+                        self.assertNotIn(self.pw[:4], err)
+                        self.assertNotIn(self.pw, err)
 
     def test_only_the_whitelist_reaches_the_child(self):
         _, _, _, _, popen, _ = self.scenario()
@@ -1834,6 +2037,7 @@ FATAL_ERROR = 'Msg 596, Level 21, State 1, Server lab, Line 1\nCannot continue t
 UNCERTAIN = re.compile(r'uncertain|niepewn|may have changed|m\u00f3g\u0142 si\u0119 zmieni\u0107', re.IGNORECASE)
 NO_SIDECAR = object()
 DEFAULT_SIDECAR = object()
+DROP = object()  # source_sidecar(sha256=DROP) leaves the key out
 
 
 def state_out(state='ONLINE', access='MULTI_USER', recovery='SIMPLE'):
@@ -1853,10 +2057,10 @@ def source_sidecar(path=SRC_PATH, **changes):
         'server': {'raw': 'localhost', 'canonical': 'local', 'engine_server_name': 'LAB01', 'machine_name': 'LAB01', 'instance_name': None},
         'file': name, 'size': BAK_SIZE, 'created_utc': '2026-11-21T09:00:00Z',
         'backup_set_guid': HEADER_ROW[6], 'first_lsn': '100', 'last_lsn': '200', 'backup_finish_date': HEADER_ROW[7],
-        'remote': False, 'server_path': path, 'copy_only': True,
+        'remote': False, 'server_path': path, 'copy_only': True, 'sha256': FAKE_SHA,
     }
     data.update(changes)
-    return data
+    return {key: value for key, value in data.items() if value is not DROP}
 
 
 def sidecar_server(**changes):
@@ -1933,6 +2137,30 @@ class RestoreFs(FakeFs):
         return self.blobs[path][:limit + 1]
 
 
+class ShaFs(RestoreFs):
+    """The digest of every file is a given text (the sidecar of the default fixtures records FAKE_SHA)."""
+
+    def __init__(self, digest=FAKE_SHA, **kw):
+        super().__init__(**kw)
+        self.digest = digest
+
+    def sha256(self, path):
+        self.sha_calls.append(path)
+        return self.digest
+
+
+class LinkFs(RestoreFs):
+    """realpath follows the given links; every other path is its own real path."""
+
+    def __init__(self, links, **kw):
+        super().__init__(**kw)
+        self.links = dict(links)
+
+    def realpath(self, path):
+        self.realpaths.append(path)
+        return self.links.get(path, path)
+
+
 class RestoreBase(Base):
     def opts(self, **kw):
         values = {'database': 'appdb', 'file': SRC_PATH, 'confirm': 'appdb', 'dir': LOCAL_DIR}
@@ -1968,7 +2196,7 @@ class RestoreBase(Base):
             self.do_restore(runner=runner, fs=fs, platform=platform, **kw)
         self.assertEqual(runner.mutating, [])
         self.assertIs(self.state.mutated, False)
-        self.assertEqual((fs.made, fs.written, fs.sha_calls), ([], {}, []))
+        self.assertEqual((fs.made, fs.written), ([], {}))
         if no_runner:
             self.assertEqual(runner.calls, [])
         runner2 = RestoreRunner(self.m, script)
@@ -2083,9 +2311,20 @@ class MachineNamesMatch(Base):
     def test_both_names_are_cut_to_15_characters(self):
         self.assertIs(self.m.machine_names_match('ABCDEFGHIJKLMNOPQRS', 'abcdefghijklmno'), True)
         self.assertIs(self.m.machine_names_match('abcdefghijklmno', 'ABCDEFGHIJKLMNOPQRS'), True)
-        self.assertIs(self.m.machine_names_match('ABCDEFGHIJKLMNO1', 'ABCDEFGHIJKLMNO2'), True)
+        self.assertIs(self.m.machine_names_match('ABCDEFGHIJKLMNO1', 'ABCDEFGHIJKLMNO2'), False)
         self.assertIs(self.m.machine_names_match('ABCDEFGHIJKLMNO', 'ABCDEFGHIJKLMNP'), False)
         self.assertIs(self.m.machine_names_match('ABCDEFGHIJKLMN', 'ABCDEFGHIJKLMNO'), False)
+
+    def test_the_cut_applies_only_when_one_side_is_a_15_character_netbios_name(self):
+        # Revision 4: two names longer than 15 characters are compared whole (a server farm: prod-sqlserver-01 and -02 are different machines).
+        self.assertIs(self.m.machine_names_match('prod-sqlserver-01', 'prod-sqlserver-02'), False)
+        self.assertIs(self.m.machine_names_match('prod-sqlserver-02', 'prod-sqlserver-01'), False)
+        self.assertIs(self.m.machine_names_match('prod-sqlserver-01', 'PROD-SQLSERVER-01'), True)
+        self.assertIs(self.m.machine_names_match('ABCDEFGHIJKLMNOPQRS', 'ABCDEFGHIJKLMNOPQRT'), False)
+        self.assertIs(self.m.machine_names_match('ABCDEFGHIJKLMNO', 'abcdefghijklmno'), True)
+        self.assertIs(self.m.machine_names_match('prod-sqlserver-', 'prod-sqlserver-01'), True)
+        self.assertIs(self.m.machine_names_match('prod-sqlserver-01', 'prod-sqlserver-'), True)
+        self.assertIs(self.m.machine_names_match('prod-sqlserver-', 'prod-sqlserve0-01'), False)
 
     def test_empty_names_never_match(self):
         self.assertIs(self.m.machine_names_match('', 'LAB01'), False)
@@ -2351,7 +2590,9 @@ class RestoreSuccess(RestoreBase):
                 self.assertEqual(self.do_restore(runner=RestoreRunner(self.m, {'identity': (0, out, '')}))['status'], 'PASS')
         long_name = 'ABCDEFGHIJKLMNOPQRS'
         out = table(['server_name', 'machine_name', 'instance_name'], [['LAB01', long_name, 'NULL']])
-        result = self.do_restore(runner=RestoreRunner(self.m, {'identity': (0, out, '')}), machine_name='abcdefghijklmno')
+        script = {'identity': (0, out, ''), 'header': (0, restore_header_out(MachineName=long_name), '')}
+        fs = RestoreFs(sidecar=source_sidecar(server=sidecar_server(machine_name=long_name)))
+        result = self.do_restore(runner=RestoreRunner(self.m, script), fs=fs, machine_name='abcdefghijklmno')
         self.assertEqual(result['status'], 'PASS')
 
     def test_default_directory_is_used_when_dir_is_missing(self):
@@ -2569,21 +2810,40 @@ class RestoreEngineChecks(RestoreBase):
             with self.subTest(column=column):
                 self.header_refusal(restore_header_out(**{column: value}))
 
-    def test_field_with_a_separator_is_a_failure_before_mutation(self):
+    def test_field_with_a_separator_is_blocked_before_mutation(self):
         out = table(RESTORE_HEADER_COLUMNS, [['a|b'] + RESTORE_HEADER_ROW[1:]])
         self.assert_no_mutation_failure({'header': (0, out, '')}, ['state', 'identity', 'header'])
-        code, _ = self.do_code(runner=RestoreRunner(self.m, {'header': (0, out, '')}))
-        self.assertEqual(code, 1)
+        code, text = self.do_code(runner=RestoreRunner(self.m, {'header': (0, out, '')}))
+        self.assertEqual(code, 2)
+        self.assertNotIn('stan bazy', text)
 
-    def test_header_command_failure_stops_before_mutation(self):
+    def test_header_command_failure_stops_before_mutation_with_code_2(self):
         self.assert_no_mutation_failure({'header': (1, '', ERROR_OUTPUT)}, ['state', 'identity', 'header'])
+        code, _ = self.do_code(runner=RestoreRunner(self.m, {'header': (1, '', ERROR_OUTPUT)}))
+        self.assertEqual(code, 2)
 
-    def test_verifyonly_failure_is_exit_1_and_never_touches_the_database(self):
+    def test_a_header_without_a_required_column_is_blocked_with_code_2(self):
+        columns = [name for name in RESTORE_HEADER_COLUMNS if name != 'LastLSN']
+        out = table(columns, [[value for name, value in zip(RESTORE_HEADER_COLUMNS, RESTORE_HEADER_ROW) if name != 'LastLSN']])
+        self.assert_no_mutation_failure({'header': (0, out, '')}, ['state', 'identity', 'header'])
+        code, _ = self.do_code(runner=RestoreRunner(self.m, {'header': (0, out, '')}))
+        self.assertEqual(code, 2)
+
+    def test_state_and_identity_read_failures_are_blocked_with_code_2(self):
+        for kind in ('state', 'identity'):
+            with self.subTest(kind=kind):
+                code, text = self.do_code(runner=RestoreRunner(self.m, {kind: (1, '', ERROR_OUTPUT)}))
+                self.assertEqual(code, 2)
+                self.assertNotIn('stan bazy', text)
+                self.assertIs(self.state.mutated, False)
+
+    def test_verifyonly_failure_is_exit_2_and_never_touches_the_database(self):
         for item in ((1, '', ERROR_OUTPUT), (0, 'Msg 3241, Level 16, State 5\nThe media family is incorrectly formed.', '')):
             with self.subTest(item=item):
                 self.assert_no_mutation_failure({'verify': item}, ['state', 'identity', 'header', 'verify'])
-        code, _ = self.do_code(runner=RestoreRunner(self.m, {'verify': (1, '', ERROR_OUTPUT)}))
-        self.assertEqual(code, 1)
+                code, text = self.do_code(runner=RestoreRunner(self.m, {'verify': item}))
+                self.assertEqual(code, 2)
+                self.assertNotIn('stan bazy', text)
 
 
 class RestoreSafetyBackup(RestoreBase):
@@ -2751,6 +3011,26 @@ class RestoreDestructiveFailures(RestoreBase):
         self.assertNotIn(SAFETY_PATH, message)
         self.assertIn('RESTORING', message)
 
+    MANUAL = r"RESTORE DATABASE \[?appdb\]? FROM DISK = N'" + re.escape(SAFETY_PATH) + r"' WITH REPLACE, RECOVERY"
+
+    def test_a_database_left_in_restoring_gets_a_manual_restore_statement_as_the_way_back(self):
+        # Revision 4: the tool refuses a restore from any state but ONLINE, so the way back from RESTORING is plain SQL.
+        runner, message = self.failing((1, BATCH_ERROR, ''), (0, state_out('RESTORING'), ''))
+        self.assertRegex(message, self.MANUAL)
+        self.assertIn(SAFETY_PATH, message)
+
+    def test_the_manual_statement_reaches_the_user_through_the_exit_path(self):
+        runner = RestoreRunner(self.m, {'restore': [(1, BATCH_ERROR, '')], 'state': [(0, state_out(), ''), (0, state_out('RESTORING'), '')]})
+        code, text = self.do_code(runner=runner)
+        self.assertEqual(code, 1)
+        self.assertRegex(text, self.MANUAL)
+
+    def test_without_a_safety_backup_there_is_no_manual_statement(self):
+        runner, message = self.failing((1, BATCH_ERROR, ''), (0, state_out('RESTORING'), ''), no_safety_backup=True)
+        self.assertNotRegex(message, r"FROM DISK = N'")
+        self.assertNotIn('WITH REPLACE, RECOVERY', message)
+        self.assertIn('no way back', message)
+
     def test_state_after_a_successful_batch_must_be_online_and_multi_user(self):
         for name, item in {'single user': (0, state_out('ONLINE', 'SINGLE_USER'), ''), 'restoring': (0, state_out('RESTORING'), ''),
                            'offline': (0, state_out('OFFLINE'), ''), 'unreadable': (1, '', ERROR_OUTPUT)}.items():
@@ -2809,6 +3089,275 @@ class RestoreGuardCodes(RestoreBase):
         code = self.m.run_guarded(lambda: result.append(self.do_restore(state=state)), state, err, self.m.Masker([]))
         self.assertEqual(code, 0)
         self.assertEqual(err.getvalue(), '')
+
+
+def option_value(tokens, name):
+    return tokens[tokens.index(name) + 1]
+
+
+class RestoreIdentityAndWhitelists(RestoreBase):
+    """Revision 4: the engine identity also guards the sidecar branch; the header values used in decisions pass a whitelist."""
+
+    def blocked_at_header(self, script, fs=None, **kw):
+        runner = RestoreRunner(self.m, script)
+        with self.assertRaises((self.m.Refusal, self.m.SqlFailure)):
+            self.do_restore(runner=runner, fs=fs or RestoreFs(), **kw)
+        self.assertEqual(runner.mutating, [])
+        self.assertIs(self.state.mutated, False)
+        self.assertEqual(self.fs.written, {})
+        self.assertNotIn('verify', runner.kinds)
+        runner2 = RestoreRunner(self.m, script)
+        code, text = self.do_code(runner=runner2, fs=fs or RestoreFs(), **kw)
+        self.assertEqual(code, 2)
+        self.assertNotIn('stan bazy', text)
+        return runner
+
+    def test_a_sidecar_and_a_header_from_another_engine_are_refused_when_they_agree_with_each_other(self):
+        for name, changes in {'server and machine': {'ServerName': 'OTHERSRV', 'MachineName': 'OTHERBOX'}, 'server only': {'ServerName': 'OTHERSRV'},
+                              'machine only': {'MachineName': 'OTHERBOX'}}.items():
+            with self.subTest(case=name):
+                server = {'engine_server_name': changes.get('ServerName', 'LAB01'), 'machine_name': changes.get('MachineName', 'LAB01')}
+                fs = RestoreFs(sidecar=source_sidecar(server=sidecar_server(**server)))
+                runner = self.blocked_at_header({'header': (0, restore_header_out(**changes), '')}, fs=fs)
+                self.assertEqual(runner.kinds, ['state', 'identity', 'header'])
+
+    def test_allow_machine_mismatch_turns_that_refusal_into_a_warning(self):
+        fs = RestoreFs(sidecar=source_sidecar(server=sidecar_server(engine_server_name='OTHERSRV', machine_name='OTHERBOX')))
+        runner = RestoreRunner(self.m, {'header': (0, restore_header_out(ServerName='OTHERSRV', MachineName='OTHERBOX'), '')})
+        result = self.do_restore(runner=runner, fs=fs, allow_machine_mismatch=True)
+        self.assertEqual(result['status'], 'PASS')
+        text = ' '.join(result['warnings'])
+        self.assertIn('ServerName', text)
+        self.assertIn('MachineName', text)
+        self.assertEqual(runner.kinds, [kind for kind, _, _ in FLOW_SHAPE])
+
+    def test_a_guid_or_lsn_that_breaks_its_whitelist_is_refused_even_when_the_sidecar_agrees(self):
+        cases = {'BackupSetGUID': ('not-a-guid', "11111111-2222-3333-4444-55555555555'", 'ZZZZZZZZ-2222-3333-4444-555555555555', ''),
+                 'FirstLSN': ('1x', '-5', "1'", ''), 'LastLSN': ('2.5', 'abc', '')}
+        keys = {'BackupSetGUID': 'backup_set_guid', 'FirstLSN': 'first_lsn', 'LastLSN': 'last_lsn'}
+        for column, values in cases.items():
+            for value in values:
+                with self.subTest(column=column, value=value):
+                    fs = RestoreFs(sidecar=source_sidecar(**{keys[column]: value}))
+                    self.blocked_at_header({'header': (0, restore_header_out(**{column: value}), '')}, fs=fs)
+
+    def test_a_non_numeric_backup_type_and_a_foreign_database_name_are_refused(self):
+        for column, value in (('BackupType', 'one'), ('BackupType', '1 OR 1=1'), ('BackupType', ''), ('DatabaseName', 'app db'), ('DatabaseName', "appdb'")):
+            with self.subTest(column=column, value=value):
+                self.blocked_at_header({'header': (0, restore_header_out(**{column: value}), '')})
+
+    def test_server_and_machine_names_that_break_their_whitelist_are_refused_even_when_every_source_agrees(self):
+        for value in ('LAB 01', "LAB01' OR 1=1", 'LAB;01'):
+            with self.subTest(server=value):
+                identity = table(['server_name', 'machine_name', 'instance_name'], [[value, 'LAB01', 'NULL']])
+                fs = RestoreFs(sidecar=source_sidecar(server=sidecar_server(engine_server_name=value)))
+                script = {'identity': (0, identity, ''), 'header': (0, restore_header_out(ServerName=value), '')}
+                self.blocked_at_header(script, fs=fs)
+        for value in ('LAB 01', "LAB01' OR 1=1"):
+            with self.subTest(machine=value):
+                identity = table(['server_name', 'machine_name', 'instance_name'], [['LAB01', value, 'NULL']])
+                fs = RestoreFs(sidecar=source_sidecar(server=sidecar_server(machine_name=value)))
+                script = {'identity': (0, identity, ''), 'header': (0, restore_header_out(MachineName=value), '')}
+                self.blocked_at_header(script, fs=fs, machine_name=value)
+
+    def test_names_with_the_allowed_punctuation_pass(self):
+        name = 'LAB01\\SQL_1$a#b-c.d'
+        identity = table(['server_name', 'machine_name', 'instance_name'], [[name, 'LAB01', 'NULL']])
+        fs = RestoreFs(sidecar=source_sidecar(server=sidecar_server(engine_server_name=name)))
+        script = {'identity': (0, identity, ''), 'header': (0, restore_header_out(ServerName=name), '')}
+        self.assertEqual(self.do_restore(runner=RestoreRunner(self.m, script), fs=fs)['status'], 'PASS')
+
+    def test_a_forged_second_table_after_the_header_rows_is_refused_before_any_change(self):
+        forged = restore_header_out() + restore_header_out(BackupSetGUID='AAAAAAAA-2222-3333-4444-555555555555')
+        self.blocked_at_header({'header': (0, forged, '')})
+        trailing = restore_header_out() + 'a harmless sounding line\n'
+        self.blocked_at_header({'header': (0, trailing, '')})
+
+    def test_a_backup_name_with_a_blank_line_cannot_forge_the_rows(self):
+        columns = ['BackupName', 'BackupType', 'ServerName', 'MachineName', 'DatabaseName', 'FirstLSN', 'LastLSN', 'BackupSetGUID', 'BackupFinishDate']
+        good = ['x', '1', 'LAB01', 'LAB01', 'appdb', '100', '200', HEADER_ROW[6], HEADER_ROW[7]]
+        text = '|'.join(columns) + '\n' + '|'.join('-' * len(c) for c in columns) + '\n' + '|'.join(good) + '\n\n(1 rows affected)\n' + '|'.join(good) + '\n\n(1 rows affected)\n'
+        self.blocked_at_header({'header': (0, text, '')})
+
+    def test_a_backup_name_that_looks_like_an_error_line_is_not_an_error_when_rc_is_zero(self):
+        row = dict(zip(RESTORE_HEADER_COLUMNS, RESTORE_HEADER_ROW), BackupName='Msg 1, Level 16, State 1 fake')
+        out = table(RESTORE_HEADER_COLUMNS, [[row[name] for name in RESTORE_HEADER_COLUMNS]])
+        self.assertEqual(self.do_restore(runner=RestoreRunner(self.m, {'header': (0, out, '')}))['status'], 'PASS')
+
+    def test_the_same_text_on_stderr_or_with_rc_1_is_an_error_that_blocks_the_restore(self):
+        for name, item in {'stderr': (0, restore_header_out(), 'Msg 1, Level 16, State 1 x'), 'rc 1': (1, restore_header_out(), '')}.items():
+            with self.subTest(case=name):
+                self.blocked_at_header({'header': item})
+        for kind in ('state', 'identity'):
+            with self.subTest(kind=kind):
+                out = {'state': state_out(), 'identity': IDENTITY_OUT}[kind]
+                code, _ = self.do_code(runner=RestoreRunner(self.m, {kind: (0, out, 'Msg 1, Level 16, State 1 x')}))
+                self.assertEqual(code, 2)
+
+
+class RestoreCopyIntegrity(RestoreBase):
+    """Revision 4: sha256 and BackupFinishDate against the sidecar, a symbolic link as the copy, a target path that already exists."""
+
+    def test_a_matching_sha256_lets_the_restore_go_on_and_the_source_file_is_hashed(self):
+        fs = ShaFs()
+        result = self.do_restore(fs=fs)
+        self.assertEqual(result['status'], 'PASS')
+        self.assertIn(SRC_PATH, fs.sha_calls)
+        self.assertEqual(result['warnings'], [])
+
+    def test_a_different_sha256_is_refused_with_code_2_before_any_change(self):
+        runner, fs = RestoreRunner(self.m), ShaFs(digest='cd' * 32)
+        with self.assertRaises(self.m.Refusal) as ctx:
+            self.do_restore(runner=runner, fs=fs)
+        self.assertIn('sha256', str(ctx.exception).lower())
+        self.assertEqual(runner.mutating, [])
+        self.assertIs(self.state.mutated, False)
+        self.assertEqual(fs.written, {})
+        runner2 = RestoreRunner(self.m)
+        code, text = self.do_code(runner=runner2, fs=ShaFs(digest='cd' * 32))
+        self.assertEqual(code, 2)
+        self.assertEqual(runner2.mutating, [])
+        self.assertNotIn('stan bazy', text)
+
+    def test_a_sidecar_without_sha256_gives_a_warning_and_still_restores(self):
+        fs = RestoreFs(sidecar=source_sidecar(sha256=DROP))
+        result = self.do_restore(fs=fs)
+        self.assertEqual(result['status'], 'PASS')
+        self.assertEqual(len([w for w in result['warnings'] if 'no sha256 recorded' in w]), 1)
+        self.assertEqual(len(result['warnings']), 1)
+
+    def test_a_missing_sidecar_does_not_claim_a_missing_sha256(self):
+        result = self.do_restore(fs=RestoreFs(sidecar=NO_SIDECAR), allow_missing_sidecar=True)
+        self.assertEqual([w for w in result['warnings'] if 'sha256' in w], [])
+
+    def test_the_backup_finish_date_must_match_the_sidecar(self):
+        runner = RestoreRunner(self.m, {'header': (0, restore_header_out(BackupFinishDate='2026-11-22 10:20:32.000'), '')})
+        with self.assertRaises(self.m.Refusal):
+            self.do_restore(runner=runner)
+        self.assertEqual(runner.kinds, ['state', 'identity', 'header'])
+        self.assertEqual(runner.mutating, [])
+        code, _ = self.do_code(runner=RestoreRunner(self.m, {'header': (0, restore_header_out(BackupFinishDate='2026-11-22 10:20:32.000'), '')}))
+        self.assertEqual(code, 2)
+
+    def test_the_same_finish_date_passes(self):
+        self.assertEqual(self.do_restore(runner=RestoreRunner(self.m, {'header': (0, restore_header_out(), '')}))['status'], 'PASS')
+
+    def test_a_copy_that_is_a_symbolic_link_is_refused(self):
+        fs = LinkFs({SRC_PATH: '/h/elsewhere/real.bak'})
+        runner = RestoreRunner(self.m)
+        with self.assertRaises(self.m.Refusal):
+            self.do_restore(runner=runner, fs=fs)
+        self.assertEqual(runner.mutating, [])
+        self.assertIs(self.state.mutated, False)
+        self.assertEqual(fs.written, {})
+        code, _ = self.do_code(runner=RestoreRunner(self.m), fs=LinkFs({SRC_PATH: '/h/elsewhere/real.bak'}))
+        self.assertEqual(code, 2)
+
+    def test_a_plain_file_is_not_taken_for_a_link(self):
+        fs = LinkFs({'/h/other/x.bak': '/h/else/y.bak'})
+        self.assertEqual(self.do_restore(fs=fs)['status'], 'PASS')
+        self.assertIn(SRC_PATH, fs.realpaths)  # the check really looked at the copy
+
+    def test_an_existing_safety_backup_path_is_refused_before_the_safety_backup(self):
+        runner, fs = RestoreRunner(self.m), RestoreFs(git_dirs=[SAFETY_PATH])  # lexists answers True for it
+        with self.assertRaises(self.m.Refusal):
+            self.do_restore(runner=runner, fs=fs)
+        self.assertEqual(runner.mutating, [])
+        self.assertIs(self.state.mutated, False)
+        self.assertEqual(fs.written, {})
+        code, _ = self.do_code(runner=RestoreRunner(self.m), fs=RestoreFs(git_dirs=[SAFETY_PATH]))
+        self.assertEqual(code, 2)
+
+    def test_the_default_directory_with_a_character_outside_the_whitelist_points_at_dir(self):
+        home = '/h/ué'
+        with self.assertRaises(self.m.Refusal) as ctx:
+            self.do_restore(fs=RestoreFs(), dir=None, environ={'HOME': home})
+        self.assertIn('server-path-charset', str(ctx.exception))
+        self.assertIn('--dir', str(ctx.exception))
+
+    def test_a_directory_inside_a_repository_points_at_dir(self):
+        with self.assertRaises(self.m.Refusal) as ctx:
+            self.do_restore(fs=RestoreFs(git_dirs=['/h/bk/.git']))
+        self.assertIn('dir-outside-repo', str(ctx.exception))
+        self.assertIn('--dir', str(ctx.exception))
+
+
+class RestoreUndoCommands(RestoreBase):
+    """Revision 4: the rollback command must be runnable as it stands (server, directory, certificate flag)."""
+
+    def tokens(self, result):
+        return shlex.split(result['rollback_command'])
+
+    def test_the_rollback_command_names_the_directory_used_for_the_restore(self):
+        tokens = self.tokens(self.do_restore())
+        self.assertEqual(tokens[:2], ['db_snapshot.py', 'restore'])
+        self.assertEqual(option_value(tokens, '--file'), SAFETY_PATH)
+        self.assertEqual(option_value(tokens, '--database'), 'appdb')
+        self.assertEqual(option_value(tokens, '--confirm'), 'appdb')
+        self.assertEqual(option_value(tokens, '--dir'), LOCAL_DIR)
+        self.assertNotIn('--server', tokens)
+        self.assertNotIn('--trust-server-certificate', tokens)
+
+    def test_the_rollback_command_has_no_dir_when_the_default_directory_was_used(self):
+        path = STATE_DIR + '/' + SRC_NAME
+        tokens = self.tokens(self.do_restore(fs=RestoreFs(src=path), dir=None, file=path))
+        self.assertNotIn('--dir', tokens)
+        self.assertEqual(option_value(tokens, '--file'), STATE_DIR + '/' + SAFETY_NAME)
+
+    def test_the_rollback_command_names_a_non_default_server_and_the_certificate_flag(self):
+        result = self.do_restore(server='(local)', trust_server_certificate=True)
+        tokens = self.tokens(result)
+        self.assertEqual(option_value(tokens, '--server'), '(local)')
+        self.assertIn('--trust-server-certificate', tokens)
+        self.assertEqual(option_value(tokens, '--dir'), LOCAL_DIR)
+        self.assertEqual(option_value(tokens, '--file'), SAFETY_PATH)
+        self.assertIn(result['rollback_command'], result['coordinator_notice'])
+
+    def test_the_certificate_flag_is_not_invented(self):
+        self.assertNotIn('--trust-server-certificate', self.tokens(self.do_restore(server='(local)')))
+
+    def test_the_command_in_a_failure_message_is_complete_too(self):
+        runner = RestoreRunner(self.m, {'restore': [(1, BATCH_ERROR, '')], 'state': [(0, state_out(), ''), (0, state_out('RESTORING'), '')]})
+        with self.assertRaises(self.m.SqlFailure) as ctx:
+            self.do_restore(runner=runner, server='(local)', trust_server_certificate=True)
+        text = str(ctx.exception)
+        self.assertIn('--dir ' + LOCAL_DIR, text)
+        self.assertIn('--trust-server-certificate', text)
+        self.assertIn('--server', text)
+
+    def test_the_command_quotes_dollar_and_hash_with_single_quotes_on_posix(self):
+        for server in ('localhost\\INST$1', 'localhost\\INST#1'):
+            with self.subTest(server=server):
+                fs = RestoreFs(sidecar=source_sidecar(server=sidecar_server(canonical=self.m.parse_server(server).canonical)))
+                command = self.do_restore(fs=fs, server=server)['rollback_command']
+                self.assertIn("'" + server + "'", command)
+                self.assertEqual(option_value(shlex.split(command), '--server'), server)
+
+
+class RestoreStateAfterTheBatch(RestoreBase):
+    def test_an_exception_while_reading_the_final_state_is_a_failure_with_the_way_back(self):
+        raised = {'timeout': subprocess.TimeoutExpired('sqlcmd', 30.0), 'oserror': OSError('pipe broke'), 'interrupt': KeyboardInterrupt()}
+        for name, exc in raised.items():
+            with self.subTest(exc=name):
+                runner = RestoreRunner(self.m, {'state': [(0, state_out(), ''), exc]})
+                code, text = self.do_code(runner=runner)  # through run_guarded: a leaking KeyboardInterrupt must not abort the whole test run
+                self.assertEqual(runner.mutating, ['backup', 'restore'])
+                self.assertEqual(code, 1)
+                self.assertIn('stan bazy mógł się zmienić', text)
+                self.assertIn(SAFETY_PATH, text)
+
+    def test_the_same_exception_without_a_safety_backup_says_there_is_no_way_back(self):
+        runner = RestoreRunner(self.m, {'state': [(0, state_out(), ''), subprocess.TimeoutExpired('sqlcmd', 30.0)]})
+        code, text = self.do_code(runner=runner, no_safety_backup=True)
+        self.assertEqual(code, 1)
+        self.assertIn('no way back', text)
+        self.assertNotIn(SAFETY_PATH, text)
+
+    def test_an_exception_before_the_batch_is_not_reported_as_a_failed_final_read(self):
+        runner = RestoreRunner(self.m, {'state': [subprocess.TimeoutExpired('sqlcmd', 30.0)]})
+        code, text = self.do_code(runner=runner)
+        self.assertEqual(code, 2)
+        self.assertNotIn('stan bazy', text)
 
 
 class RestoreSecrets(RestoreBase):
@@ -2978,7 +3527,8 @@ def read_backup(path, state):
 sql = opt('-Q') or ''
 with open(LOG, 'a', encoding='utf-8') as handle:
     handle.write(json.dumps({'argv': ARGS, 'sql': sql, 'env': sorted(os.environ), 'sqlcmdini': os.environ.get('SQLCMDINI'),
-                             'sqlcmddbname': os.environ.get('SQLCMDDBNAME'), 'cwd': os.getcwd()}) + '\n')
+                             'sqlcmddbname': os.environ.get('SQLCMDDBNAME'), 'cwd': os.getcwd(),
+                             'cwdmode': oct(os.stat('.').st_mode & 0o777), 'cwdentries': sorted(os.listdir('.'))}) + '\n')
 state = load()
 dbs = state['dbs']
 if '-E' not in ARGS and not (os.environ.get('SQLCMDUSER') and os.environ.get('SQLCMDPASSWORD')):
@@ -3157,7 +3707,7 @@ class CliInProcess(Cli, Base):
         with open(path, 'wb') as handle:
             handle.write(b'x' * size)
         with open(path + '.json', 'w', encoding='utf-8') as handle:
-            json.dump(source_sidecar(path, size=size), handle)
+            json.dump(source_sidecar(path, size=size, sha256=hashlib.sha256(b'x' * size).hexdigest()), handle)
         return path
 
     def assert_clean_exit(self, argv, code, environ=None):
@@ -3295,13 +3845,17 @@ class CliInProcess(Cli, Base):
         self.assert_clean_exit(base + ['--server', 'db1.example.test'], 2)
 
     # ---- selftest
-    def test_selftest_all_pass_with_at_least_twelve_cases(self):
+    def test_selftest_all_pass_with_at_least_eighteen_cases_covering_the_revision_4_additions(self):
         code, out, err = self.call_main(['--selftest'], {})
         self.assertEqual((code, err.strip()), (0, ''))
         lines = [line for line in out.splitlines() if line.strip()]
         names = [line.split(None, 1)[1] for line in lines if re.match(r'(PASS|FAIL) \S', line)]
         total = len(names)
-        self.assertGreaterEqual(total, 12)
+        self.assertGreaterEqual(total, 18)
+        joined = ' '.join(names).lower()
+        # a look-alike host, a numeric loopback other than 127.0.0.1, a port and an instance, and the repository check of the directory
+        for pattern in (r'evil', r'127[.\-_]0[.\-_]0[.\-_]2', r'port', r'instance', r'dir-outside-repo|outside-repo'):
+            self.assertRegex(joined, pattern)
         self.assertEqual(len(set(names)), total)
         self.assertTrue(all(line.startswith('PASS ') for line in lines[:-1]), out)
         self.assertEqual(lines[-1], 'selftest db_snapshot: %d/%d passed' % (total, total))
@@ -3446,7 +4000,7 @@ class ProcessMeta(Cli, Base):
         found = re.fullmatch(r'selftest db_snapshot: (\d+)/(\d+) passed', lines[-1])
         self.assertIsNotNone(found, out)
         self.assertEqual(found.group(1), found.group(2))
-        self.assertGreaterEqual(int(found.group(2)), 12)
+        self.assertGreaterEqual(int(found.group(2)), 18)
         self.assertEqual(os.listdir(self.srv.work), [])
 
     def test_help_in_a_process_is_code_zero(self):
@@ -3545,6 +4099,63 @@ class ProcessAcceptance(ProcessBase):
         self.assertEqual(code, 0, out + err)
         self.assertEqual(self.srv.data(), S4_MODIFIED)
         self.assertEqual(os.listdir(self.srv.work), [])
+
+    def run_command(self, command):
+        tokens = shlex.split(command)
+        self.assertEqual(tokens[0], 'db_snapshot.py')
+        return self.call_main(tokens[1:] + ['--json'], environ=self.spawn_env())
+
+    def test_the_undo_commands_from_the_results_run_as_they_stand_and_pass(self):
+        # Revision 4: restore_command and rollback_command carry --server, --dir and --trust-server-certificate, so main accepts them.
+        for extra in ([], ['--server', '(local)', '--trust-server-certificate']):
+            with self.subTest(extra=extra):
+                self.srv.set_data(S4_ORIGINAL)
+                code, out, err = self.backup(*extra)
+                self.assertEqual(code, 0, out + err)
+                made = self.json_of(out)
+                command = made['restore_command']
+                tokens = shlex.split(command)
+                self.assertEqual(tokens[tokens.index('--dir') + 1], self.srv.copies)
+                self.assertEqual('--trust-server-certificate' in tokens, bool(extra))
+                self.assertEqual(tokens[tokens.index('--server') + 1] if '--server' in tokens else None, '(local)' if extra else None)
+
+                self.srv.set_data(S4_MODIFIED)
+                before = len(self.srv.calls())
+                code, out, err = self.run_command(command)
+                self.assertEqual(code, 0, out + err)
+                self.assertEqual(self.srv.data(), S4_ORIGINAL)
+                restored = self.json_of(out)
+                for row in self.srv.calls()[before:]:
+                    argv = row['argv']
+                    self.assertEqual(argv[argv.index('-S') + 1], '(local)' if extra else 'localhost')
+                    self.assertEqual('-C' in argv, bool(extra))
+
+                code, out, err = self.run_command(restored['rollback_command'])
+                self.assertEqual(code, 0, out + err)
+                self.assertEqual(self.srv.data(), S4_MODIFIED)
+
+    def test_polish_text_on_a_strict_cp1252_stream_does_not_crash_and_the_result_is_written(self):
+        # Revision 4: main reconfigures the real streams with errors='replace'; the notice and the changed-state line hold characters outside cp1252.
+        def streams():
+            raw_out, raw_err = io.BytesIO(), io.BytesIO()
+            return (raw_out, raw_err, io.TextIOWrapper(raw_out, encoding='cp1252', errors='strict', write_through=True),
+                    io.TextIOWrapper(raw_err, encoding='cp1252', errors='strict', write_through=True))
+        argv = ['backup', '--database', 'appdb', '--label', 'snap', '--dir', self.srv.copies]
+        raw_out, raw_err, out, err = streams()
+        code = self.m.main(argv, environ=self.spawn_env(), stdout=out, stderr=err, platform=sys.platform)
+        self.assertEqual(code, 0, raw_err.getvalue())
+        text = raw_out.getvalue().decode('cp1252')
+        self.assertEqual(text.splitlines()[0], 'PASS')
+        self.assertIn('Uwaga: baza testowa jest wsp', text)
+        self.assertIn('?', text)  # the characters outside the code page became question marks
+        self.assertTrue([name for name in os.listdir(self.srv.copies) if name.endswith('.bak.json')])
+        self.srv.set_flag('fail', ['backup'])
+        raw_out, raw_err, out, err = streams()
+        code = self.m.main(argv, environ=self.spawn_env(), stdout=out, stderr=err, platform=sys.platform)
+        self.assertEqual(code, 1)
+        message = raw_err.getvalue().decode('cp1252')
+        self.assertIn('SqlFailure', message)
+        self.assertIn('stan bazy m', message)
 
     def test_text_output_starts_with_the_status_and_carries_the_undo_and_the_coordinator_notice(self):
         code, out, err = self.spawn(['backup', '--database', 'appdb', '--label', 'snap', '--dir', self.srv.copies], self.spawn_env())
@@ -3820,7 +4431,8 @@ class ProcessSafety(ProcessBase):
         self.srv.set_data(S4_MODIFIED)
         self.srv.set_flag('fail', ['verify'])
         code, out, err = self.restore(made['path'])
-        self.assertEqual(code, 1, out + err)
+        self.assertEqual(code, 2, out + err)  # nothing was changed: BLOCKED, not FAIL
+        self.assertNotIn(self.m.CHANGED_STATE_LINE, err)
         self.assertEqual(self.srv.data(), S4_MODIFIED)
         self.assertEqual(self.srv.mutating_kinds(), ['backup'])
 
@@ -3848,6 +4460,37 @@ class ProcessSafety(ProcessBase):
         for row in self.srv.calls():
             self.assertNotEqual(os.path.realpath(row['cwd']), os.path.realpath(self.srv.work))
         self.assertEqual(os.listdir(self.srv.work), [])
+
+    def test_the_child_runs_in_a_private_empty_directory_that_is_removed_afterwards(self):
+        # Revision 4: a mkdtemp directory (mode 0700), not the copy directory, not the shared temporary directory, cleaned after the run.
+        scratch = os.path.join(self.srv.root, 'scratch')
+        os.mkdir(scratch)
+        for flag, expected in ((None, 0), ('backup', 1)):
+            with self.subTest(flag=flag):
+                if flag:
+                    self.srv.set_flag('fail', [flag])
+                before = len(self.srv.calls())
+                code, out, err = self.backup(TMPDIR=scratch)
+                self.assertEqual(code, expected, out + err)
+                rows = self.srv.calls()[before:]
+                self.assertTrue(rows)
+                for row in rows:
+                    cwd = os.path.realpath(row['cwd'])
+                    self.assertEqual(os.path.dirname(cwd), os.path.realpath(scratch))
+                    self.assertNotEqual(cwd, os.path.realpath(self.srv.copies))
+                    self.assertNotEqual(cwd, os.path.realpath(tempfile.gettempdir()))
+                    self.assertEqual(row['cwdmode'], '0o700')
+                    self.assertEqual(row['cwdentries'], [])
+                    self.assertFalse(os.path.exists(cwd))
+                self.assertEqual(os.listdir(scratch), [])
+        self.assertEqual(os.listdir(self.srv.work), [])
+
+    def test_a_dry_run_and_a_refusal_leave_no_temporary_directory_behind(self):
+        scratch = os.path.join(self.srv.root, 'scratch')
+        os.mkdir(scratch)
+        self.assertEqual(self.backup('--dry-run', TMPDIR=scratch)[0], 3)
+        self.assertEqual(self.spawn(['backup', '--database', 'master', '--label', 'x', '--dir', self.srv.copies], self.spawn_env(TMPDIR=scratch))[0], 2)
+        self.assertEqual(os.listdir(scratch), [])
 
     def test_nothing_is_left_in_the_working_directory_by_any_command(self):
         made = self.json_of(self.backup()[1])
@@ -3969,10 +4612,15 @@ class LeakChecks(object):
         self.srv.set_data(S4_MODIFIED)
         return path
 
-    def check_failure(self, code, out, err, expected, password):
+    # the exit code of a failing read: 2 while nothing was changed, 1 once the BACKUP (the first mutating call) has started
+    BACKUP_READ_CODES = {'identity': 2, 'header': 1, 'verify': 1}
+    TABULAR_READS = ('identity', 'state', 'header')
+
+    def check_failure(self, code, out, err, expected, password, kind=None):
         self.assertEqual(code, expected, out + err)
-        self.assertIn('***', err)
-        self.assertIn('Msg 4060', err)
+        if kind not in self.TABULAR_READS:  # revision 4: the output of a tabular read is not printed, only the plain reads are
+            self.assertIn('***', err)
+            self.assertIn('Msg 4060', err)
         self.assertNotIn('Traceback', out + err)
         self.scan([out, err], password)
 
@@ -3985,7 +4633,7 @@ class LeakChecks(object):
                         srv = self.world(password)
                         srv.leaks(variant, **{kind: 'fail'})
                         code, out, err = self.go(self.backup_argv(*extra), password)
-                        self.check_failure(code, out, err, 1, password)
+                        self.check_failure(code, out, err, self.BACKUP_READ_CODES[kind], password, kind)
                         self.assertEqual(srv.kinds()[-1], kind)
 
     # ---- backup: a parseable row that carries the secret
@@ -4019,7 +4667,7 @@ class LeakChecks(object):
                         path = self.made_copy(password)
                         srv.leaks(variant, **{kind: 'fail'})
                         code, out, err = self.go(self.restore_argv(path, *extra), password)
-                        self.check_failure(code, out, err, 1, password)
+                        self.check_failure(code, out, err, 2, password, kind)  # every restore read comes before the first change
                         self.assertEqual(srv.data(), S4_MODIFIED)
                         self.assertNotIn('restore', srv.mutating_kinds())
 

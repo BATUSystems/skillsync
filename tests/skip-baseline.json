@@ -1183,6 +1183,14 @@
     "category": "posix-only"
    },
    {
+    "id": "setUpClass:test_skillsync_db_snapshot.LeakInProcess",
+    "category": "posix-only"
+   },
+   {
+    "id": "setUpClass:test_skillsync_db_snapshot.LeakProcess",
+    "category": "posix-only"
+   },
+   {
     "id": "test_skillsync_dispatch_state.DispatchState.test_fifo_in_claims_does_not_hang",
     "category": "posix-only"
    },

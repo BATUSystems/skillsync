@@ -17,10 +17,12 @@ Outputs:
     undo command and a notice for the test environment coordinator. Progress and errors go to stderr, with secrets masked.
     A backup writes FILE.bak and FILE.bak.json (the sidecar) in the copy directory, outside any git repository.
 Exit codes:
-    0 PASS. 1 FAIL: the operation did not succeed and the database state may have changed (for example BACKUP or
-    RESTORE failed halfway). 2 BLOCKED: refused before any change (bad input, missing --confirm, remote restore) or a
-    usage error. 3 NOT_RUN: a dry run, or sqlcmd is missing. Example: exit 1 after a failed restore means read the
-    message, the database state may have changed, and use the safety backup named there.
+    0 PASS. 1 FAIL: the operation failed after the first changing call (BACKUP, ALTER or RESTORE) had started, so the
+    database state may have changed (for example RESTORE failed halfway). 2 BLOCKED: nothing was changed: a refusal (bad
+    input, missing --confirm, remote restore, a copy that does not match) or an execution error before the first
+    changing call (a failed read of the state, identity or backup header, or a failed VERIFYONLY), and a usage error.
+    3 NOT_RUN: a dry run, or sqlcmd is missing. Example: exit 1 after a failed restore means read the message, the
+    database state may have changed, and use the safety backup named there.
 Dependencies:
     Python 3.11 or newer (standard library only), sqlcmd on PATH, and a reachable SQL Server engine.
 Limits:
@@ -44,6 +46,7 @@ import platform as platform_module
 import posixpath
 import re
 import secrets
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -63,7 +66,7 @@ class Refusal(Exception):
 
 
 class SqlFailure(Exception):
-    """The operation failed and the database state may have changed (exit code 1)."""
+    """A step failed; exit code 1 after the first changing call has started, otherwise 2 (nothing was changed)."""
 
 
 class NotRun(Exception):
@@ -83,8 +86,6 @@ def exit_code_for(exc, state):
         return EXIT['BLOCKED']
     if isinstance(exc, NotRun):
         return EXIT['NOT_RUN']
-    if isinstance(exc, SqlFailure):
-        return EXIT['FAIL']
     return EXIT['FAIL'] if state.mutated else EXIT['BLOCKED']
 
 
@@ -215,7 +216,7 @@ def validate_server_path(path, *, flavor, kind):
     if not isinstance(path, str) or not path:
         raise Refusal('rule server-path: path must be non-empty text')
     if re.fullmatch(r'[A-Za-z0-9 _.\-\\/:]+', path, re.ASCII) is None:
-        raise Refusal('rule server-path-charset: path has a character outside the whitelist')
+        raise Refusal('rule server-path-charset: path has a character outside the whitelist (ASCII letters, digits, space and _ . - \\ / :); use --dir with a directory that has such a path')
     if flavor == 'windows':
         match = re.fullmatch(r'([A-Za-z]):[\\/](.*)', path, re.ASCII | re.DOTALL)
         if match is None:
@@ -255,7 +256,7 @@ def check_dir_outside_repo(path, *, lexists, realpath):
     current = realpath(path)
     for _ in range(4096):
         if lexists(os.path.join(current, '.git')):
-            raise Refusal('rule dir-outside-repo: directory is inside a git repository')
+            raise Refusal('rule dir-outside-repo: directory is inside a git repository; use --dir with a directory outside any repository')
         parent = os.path.dirname(current)
         if parent == current or not parent:
             return
@@ -366,7 +367,7 @@ def sqlcmd_args(server, sql, *, auth, trust_server_certificate, server_is_local,
         raise Refusal('rule auth-mode: unknown auth mode')
     args = ['-S', server, '-d', 'master', '-b', '-x']
     if table_mode:
-        args.extend(['-W', '-s', '|'])
+        args.extend(['-W', '-s', '|', '-w', '65535'])
     args.extend(['-Q', sql])
     if auth == 'integrated':
         args.append('-E')
@@ -441,7 +442,7 @@ class Masker:
 HEADER_UNREADABLE = 'cannot read the backup header unambiguously'
 MAX_PLAIN_OUTPUT = 4000
 MAX_TABLE_OUTPUT = 1000000
-_ROWS_AFFECTED_RE = re.compile(r'\(\d+ rows? affected\)')
+_ROWS_AFFECTED_RE = re.compile(r'\((\d+) rows? affected\)')
 _SEPARATOR_RE = re.compile(r'[-|]+')
 _ERROR_LINE_RE = re.compile(r'Msg \d+, Level (?:1[1-9]|2\d)')
 
@@ -462,14 +463,22 @@ def parse_sqlcmd_table(stdout):
         raise SqlFailure('no header separator line: ' + HEADER_UNREADABLE)
     position += 1
     rows = []
-    for line in lines[position:]:
-        line = line.strip()
+    while position < len(lines):
+        line = lines[position].strip()
         if not line or _ROWS_AFFECTED_RE.fullmatch(line):
             break
         fields = line.split('|')
         if len(fields) != len(names):
             raise SqlFailure(HEADER_UNREADABLE)
         rows.append(dict(zip(names, fields)))
+        position += 1
+    # After the end of the data only "(N rows affected)" with N equal to the number of rows may follow (a field with an
+    # embedded empty line must not be able to forge a second table or extra rows).
+    counts = [line.strip() for line in lines[position:] if line.strip()]
+    if counts:
+        found = _ROWS_AFFECTED_RE.fullmatch(counts[0]) if len(counts) == 1 else None
+        if found is None or int(found.group(1)) != len(rows):
+            raise SqlFailure('unexpected text after the table data: ' + HEADER_UNREADABLE)
     return rows
 
 
@@ -504,7 +513,7 @@ class SubprocessRunner:
     def __call__(self, sql, *, mutating, timeout, table=False):
         args = sqlcmd_args(self.server_raw, sql, auth=self.auth, trust_server_certificate=self.trust_server_certificate,
                            server_is_local=self.server_is_local, table_mode=table)
-        done = self.popen([self.sqlcmd_path] + args, env=self.env, cwd=self.cwd, capture_output=True, text=True, timeout=timeout, shell=False)
+        done = self.popen([self.sqlcmd_path] + args, env=self.env, cwd=self.cwd, capture_output=True, text=True, errors='replace', timeout=timeout, shell=False)
         if table:
             # Table data goes to the parser raw (masking could corrupt a cell); it is never printed or stored as is:
             # every message and result passes through the masker in run_guarded, format_result and the output streams.
@@ -597,23 +606,45 @@ def _excerpt(result):
     return chosen[:300]
 
 
-def _checked(result, step, path=None):
-    """Raise SqlFailure when the step failed: non-zero rc or a Msg line of severity 11 or higher."""
-    found = _ERROR_LINE_RE.search(result.stdout or '') or _ERROR_LINE_RE.search(result.stderr or '')
+def _checked(result, step, path=None, table=False):
+    """Raise SqlFailure when the step failed: non-zero rc or a Msg line of severity 11 or higher.
+
+    The output of a table read holds data fields (for example a backup name), so there a Msg line counts only on stderr or
+    with a non-zero rc, and the output is never copied into a message; a plain step may show a masked excerpt.
+    """
+    if table:
+        found = _ERROR_LINE_RE.search(result.stderr or '')
+    else:
+        found = _ERROR_LINE_RE.search(result.stdout or '') or _ERROR_LINE_RE.search(result.stderr or '')
     if result.rc != 0 or found:
         text = step + ' failed (rc ' + str(result.rc) + ')'
         if path is not None:
             text += '; the copy was left at ' + path
-        detail = _excerpt(result)
-        if detail:
-            text += ': ' + detail
+        if table:
+            text += '; the output of a table read is not shown'
+        else:
+            detail = _excerpt(result)
+            if detail:
+                text += ': ' + detail
         raise SqlFailure(text)
     return result
 
 
 def _table_row(result, step, path=None):
-    _checked(result, step, path)
+    _checked(result, step, path, table=True)
     return parse_sqlcmd_table(result.stdout or '')
+
+
+_NAME_RE = re.compile(r'[A-Za-z0-9_.\\$#-]+')
+_GUID_RE = re.compile(r'[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}')
+_DIGITS_RE = re.compile(r'[0-9]+')
+_DBNAME_RE = re.compile(r'[A-Za-z0-9_]+')
+
+
+def _whitelisted(row, key, pattern, step):
+    """A header value used in a decision must match its whitelist; anything else is not trusted."""
+    if pattern.fullmatch(row[key]) is None:
+        raise SqlFailure(step + ' has an unexpected value in column ' + key + ': ' + HEADER_UNREADABLE)
 
 
 def _join(flavor, directory, name):
@@ -621,16 +652,24 @@ def _join(flavor, directory, name):
     return directory + ('' if directory.endswith(separator) else separator) + name
 
 
-def _shell_text(text):
+def _shell_text(text, windows=False):
+    """Quote a value for the shell of the platform: double quotes on Windows, single quotes elsewhere ($ and # stay literal)."""
     if re.fullmatch(r'[A-Za-z0-9_./:@,-]+', text):
         return text
-    return '"' + text + '"'
+    if windows:
+        return '"' + text + '"'
+    return "'" + text.replace("'", "'\\''") + "'"
 
 
-def _restore_command(path, db, server):
-    command = 'db_snapshot.py restore --file ' + _shell_text(path) + ' --database ' + db + ' --confirm ' + db
+def _restore_command(path, db, server, directory=None, trust_server_certificate=False, windows=False):
+    """The command that undoes a copy; it must run as it stands, so it names the server, directory and certificate flag in use."""
+    command = 'db_snapshot.py restore --file ' + _shell_text(path, windows) + ' --database ' + db + ' --confirm ' + db
     if server != 'localhost':
-        command += ' --server ' + _shell_text(server)
+        command += ' --server ' + _shell_text(server, windows)
+    if directory:
+        command += ' --dir ' + _shell_text(directory, windows)
+    if trust_server_certificate:
+        command += ' --trust-server-certificate'
     return command
 
 
@@ -695,6 +734,10 @@ def _check_header(rows, db, path):
     for key in ('DatabaseName', 'BackupType', 'BackupSetGUID', 'FirstLSN', 'LastLSN', 'BackupFinishDate'):
         if key not in row:
             raise SqlFailure('the backup header lacks column ' + key + '; the copy was left at ' + path)
+    for key, pattern in (('DatabaseName', _DBNAME_RE), ('BackupType', _DIGITS_RE), ('BackupSetGUID', _GUID_RE), ('FirstLSN', _DIGITS_RE),
+                         ('LastLSN', _DIGITS_RE)):
+        if pattern.fullmatch(row[key]) is None:
+            raise SqlFailure('the backup header has an unexpected value in column ' + key + '; the copy was left at ' + path)
     if row['DatabaseName'].lower() != db.lower():
         raise SqlFailure('the backup header names another database; the copy was left at ' + path)
     if row['BackupType'] != '1':
@@ -741,6 +784,9 @@ def run_backup(opts, *, runner, fs, clock, token_fn, state, environ, platform, m
         notrun = NotRun('dry run: nothing was executed')
         notrun.result = {'status': 'NOT_RUN', 'plan': plan}
         raise notrun
+    # (3b) a target that already exists is never written over (a local directory only; a server path cannot be probed from here)
+    if not remote and fs.lexists(path):
+        raise Refusal('rule target-exists: the backup target already exists: ' + path)
     # (4) engine identity (read only)
     identity = _identity(runner, opts.timeout)
     # (5) local directory
@@ -780,7 +826,9 @@ def run_backup(opts, *, runner, fs, clock, token_fn, state, environ, platform, m
     result = {
         'status': 'PASS', 'database': db, 'label': label, 'server': opts.server, 'path': path, 'size': size, 'remote': remote,
         'verified_locally': not remote, 'verify': 'skipped' if opts.no_verify else 'passed', 'created_utc': created_utc,
-        'sidecar': sidecar_path, 'restore_command': _restore_command(path, db, opts.server),
+        'sidecar': sidecar_path,
+        'restore_command': _restore_command(path, db, opts.server, directory if opts.dir else None, opts.trust_server_certificate,
+                                            local_flavor == 'windows'),
     }
     result['coordinator_notice'] = coordinator_notice(result)
     return result
@@ -850,10 +898,12 @@ def read_sidecar(raw):
 
 
 def machine_names_match(engine_name, local_name):
-    """Compare machine names ignoring case and cutting both to 15 characters (NetBIOS)."""
+    """Compare machine names ignoring case; both are cut to 15 characters only when one side is a 15 character NetBIOS name."""
     if not isinstance(engine_name, str) or not isinstance(local_name, str) or not engine_name or not local_name:
         return False
-    return engine_name[:15].lower() == local_name[:15].lower()
+    if len(engine_name) == 15 or len(local_name) == 15:
+        return engine_name[:15].lower() == local_name[:15].lower()
+    return engine_name.lower() == local_name.lower()
 
 
 @dataclasses.dataclass
@@ -883,21 +933,26 @@ def _state_row(runner, db, timeout):
     return rows[0] if rows else None
 
 
-def _actual_state_text(runner, db, timeout):
-    """Read the real state after a failed destructive step; any problem (also a second interrupt) means unknown."""
+def _actual_state(runner, db, timeout):
+    """Read the real state after a failed step; any problem (also a second interrupt) means unknown. Returns (text, state_desc)."""
     try:
         row = _state_row(runner, db, timeout)
     except (Exception, KeyboardInterrupt):
         row = None
     if row is None:
-        return 'unknown'
-    return 'state_desc=' + row['state_desc'] + ', user_access_desc=' + row['user_access_desc']
+        return 'unknown', None
+    return 'state_desc=' + row['state_desc'] + ', user_access_desc=' + row['user_access_desc'], row['state_desc']
 
 
-def _way_back(safety, db, server):
-    if safety:
-        return 'The way back: restore the safety backup ' + safety + ' (command: ' + _restore_command(safety, db, server) + ').'
-    return 'No safety backup was made, so there is no way back.'
+def _way_back(safety, db, command, state_desc='ONLINE'):
+    """The way back after a failure; the tool refuses a restore from any state but ONLINE, so then the plain statement is given."""
+    if not safety:
+        return 'No safety backup was made, so there is no way back.'
+    text = 'The way back: restore the safety backup ' + safety + ' (command: ' + command + ').'
+    if state_desc != 'ONLINE':
+        text += (' The database is not ONLINE and the tool refuses a restore from that state; restore it by hand: RESTORE DATABASE '
+                 + quote_ident(db) + ' FROM DISK = ' + quote_literal(safety) + ' WITH REPLACE, RECOVERY')
+    return text
 
 
 def _failure_reason(exc):
@@ -914,25 +969,37 @@ def _check_restore_header(rows, db, sidecar, identity, opts, warnings):
     if len(rows) > 1:
         raise Refusal('the file holds multiple backup sets; only a single full backup set is supported')
     row = rows[0]
-    for key in ('DatabaseName', 'BackupType', 'ServerName', 'MachineName', 'BackupSetGUID', 'FirstLSN', 'LastLSN'):
+    required = ['DatabaseName', 'BackupType', 'ServerName', 'MachineName', 'BackupSetGUID', 'FirstLSN', 'LastLSN']
+    if sidecar is not None:
+        required.append('BackupFinishDate')
+    for key in required:
         if key not in row:
             raise SqlFailure('the backup header lacks column ' + key + ': ' + HEADER_UNREADABLE)
+    for key, pattern in (('DatabaseName', _DBNAME_RE), ('BackupType', _DIGITS_RE), ('ServerName', _NAME_RE), ('MachineName', _NAME_RE),
+                         ('BackupSetGUID', _GUID_RE), ('FirstLSN', _DIGITS_RE), ('LastLSN', _DIGITS_RE)):
+        _whitelisted(row, key, pattern, 'the backup header')
     if row['BackupType'] != '1':
         raise Refusal('the file is not a full database backup')
     if row['DatabaseName'].lower() != db.lower():
         raise Refusal('the file holds a backup of a different database')
+    sources = {'ServerName': [('the backup header', row['ServerName'])], 'MachineName': [('the backup header', row['MachineName'])]}
     if sidecar is not None:
         server = sidecar['server']
         if (row['ServerName'].lower() != server['engine_server_name'].lower() or row['MachineName'].lower() != server['machine_name'].lower()
                 or row['BackupSetGUID'].lower() != sidecar['backup_set_guid'].lower() or row['FirstLSN'] != sidecar['first_lsn']
                 or row['LastLSN'] != sidecar['last_lsn']):
             raise Refusal('the backup header does not match the sidecar')
-        return row
+        if row['BackupFinishDate'] != sidecar['backup_finish_date']:
+            raise Refusal('the backup finish date in the header differs from the sidecar')
+        sources['ServerName'].append(('the sidecar', server['engine_server_name']))
+        sources['MachineName'].append(('the sidecar', server['machine_name']))
+    # The origin of the copy (header and sidecar alike) must be the target engine itself.
     for column, wanted in (('ServerName', identity['engine_server_name']), ('MachineName', identity['machine_name'])):
-        if row[column].lower() != wanted.lower():
-            if not opts.allow_machine_mismatch:
-                raise Refusal('the backup header ' + column + ' differs from the target engine (the backup comes from a different server)')
-            warnings.append('the backup header ' + column + ' differs from the target engine (allowed by --allow-machine-mismatch)')
+        for label, value in sources[column]:
+            if value.lower() != wanted.lower():
+                if not opts.allow_machine_mismatch:
+                    raise Refusal(label + ' ' + column + ' differs from the target engine (the backup comes from a different server)')
+                warnings.append(label + ' ' + column + ' differs from the target engine (allowed by --allow-machine-mismatch)')
     return row
 
 
@@ -957,6 +1024,8 @@ def run_restore(opts, *, runner, fs, clock, token_fn, state, environ, platform, 
         raise Refusal('rule file-location: the file must reside in the backup directory')
     if not fs.isfile(file_path):
         raise Refusal('rule file-missing: the backup file does not exist or is not a regular file')
+    if pathmod.normcase(fs.realpath(file_path)) != pathmod.normcase(pathmod.join(fs.realpath(directory), pathmod.basename(file_path))):
+        raise Refusal('rule file-symlink: the backup file is a symbolic link or lies behind one')
     sidecar_path = file_path + '.json'
     sidecar = None
     if fs.isfile(sidecar_path):
@@ -977,6 +1046,8 @@ def run_restore(opts, *, runner, fs, clock, token_fn, state, environ, platform, 
             raise Refusal('rule sidecar: the backup file size cannot be read') from None
         if sidecar['size'] is None or sidecar['size'] != actual_size:
             raise Refusal('rule sidecar: the file size differs from the sidecar')
+        if 'sha256' not in sidecar:
+            warnings.append('no sha256 recorded in the sidecar; the content of the copy was not checked against a digest')
     elif opts.allow_missing_sidecar:
         warnings.append('the sidecar is missing; the backup origin was checked only against the target engine (--allow-missing-sidecar)')
     else:
@@ -1010,6 +1081,9 @@ def run_restore(opts, *, runner, fs, clock, token_fn, state, environ, platform, 
     _check_restore_header(header_rows, db, sidecar, identity, opts, warnings)
     # (6) verify
     _checked(runner(build_verify_sql(file_path), mutating=False, timeout=opts.restore_timeout), 'RESTORE VERIFYONLY')
+    # (6b) the digest of the copy against the sidecar, before anything is changed
+    if sidecar is not None and 'sha256' in sidecar and fs.sha256(file_path) != sidecar['sha256']:
+        raise Refusal('rule sha256: the copy does not match the sha256 in the sidecar')
     # (7) safety backup
     safety = None
     if opts.no_safety_backup:
@@ -1020,31 +1094,34 @@ def run_restore(opts, *, runner, fs, clock, token_fn, state, environ, platform, 
         saved = run_backup(backup_opts, runner=runner, fs=fs, clock=clock, token_fn=token_fn, state=state, environ=environ, platform=platform, masker=masker)
         safety = saved['path']
         emit(_m('safety backup: ' + safety))
+    undo = _restore_command(safety, db, opts.server, directory if opts.dir else None, opts.trust_server_certificate, local_flavor == 'windows') if safety else None
     emit('restoring database ' + db + ' from the backup file')
     # (8) destructive step
     try:
         _checked(runner(build_restore_batch(db, file_path), mutating=True, timeout=opts.restore_timeout), 'RESTORE DATABASE')
     except (Exception, KeyboardInterrupt) as exc:
         reason = _failure_reason(exc)
-        actual = _actual_state_text(runner, db, opts.state_timeout)
+        actual, state_desc = _actual_state(runner, db, opts.state_timeout)
         raise SqlFailure(
             'RESTORE DATABASE did not finish cleanly (' + reason + '). Database state read afterwards: ' + actual + '. After a failure, a timeout or '
             'an interruption the state of the database is uncertain (it may have changed); no automatic repair was attempted. '
-            + _way_back(safety, db, opts.server)) from None
+            + _way_back(safety, db, undo, state_desc)) from None
     # (9) state after the restore
     try:
         after = _state_row(runner, db, opts.state_timeout)
-    except SqlFailure as exc:
-        raise SqlFailure('the restore finished but the final state could not be read (' + str(exc) + '). ' + _way_back(safety, db, opts.server)) from None
+    except (Exception, KeyboardInterrupt) as exc:
+        raise SqlFailure('the restore finished but the final state could not be read (' + _failure_reason(exc) + '). '
+                         + _way_back(safety, db, undo, None)) from None
     if after is None or after['state_desc'] != 'ONLINE' or after['user_access_desc'] != 'MULTI_USER':
         actual = 'unknown' if after is None else 'state_desc=' + after['state_desc'] + ', user_access_desc=' + after['user_access_desc']
-        raise SqlFailure('the restore finished but the database is not ONLINE and MULTI_USER (state: ' + actual + '). ' + _way_back(safety, db, opts.server))
+        raise SqlFailure('the restore finished but the database is not ONLINE and MULTI_USER (state: ' + actual + '). '
+                         + _way_back(safety, db, undo, None if after is None else after['state_desc']))
     # (10) result
     now = clock()
     now = now.astimezone(datetime.timezone.utc) if now.tzinfo is not None else now
     result = {'status': 'PASS', 'database': db, 'file': file_path, 'server': opts.server, 'safety_backup_path': safety,
               'previous_state': previous_state, 'warnings': _m(warnings), 'restored_utc': now.strftime('%Y-%m-%dT%H:%M:%SZ'),
-              'rollback_command': _restore_command(safety, db, opts.server) if safety else None}
+              'rollback_command': undo}
     result['coordinator_notice'] = coordinator_notice(result, 'restore')
     return result
 
@@ -1137,7 +1214,7 @@ class _MemEngine:
         if found:
             snapshot = json.loads(self.fs.files[found.group(1)].decode('utf-8'))
             columns = ['DatabaseName', 'BackupType', 'ServerName', 'MachineName', 'BackupSetGUID', 'FirstLSN', 'LastLSN', 'BackupFinishDate']
-            row = [snapshot['db'], '1', self.node, self.node, 'AAAA-BBBB', '100', '150', '2026-11-22 10:20:30.000']
+            row = [snapshot['db'], '1', self.node, self.node, 'AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE', '100', '150', '2026-11-22 10:20:30.000']
             return RunResult(0, _table_text(columns, [row]), '')
         found = re.search(r"RESTORE DATABASE \[(\w+)\] FROM DISK = N'(.*?)' WITH REPLACE", sql)
         if found:
@@ -1188,6 +1265,52 @@ def _st_hosts():
     _check(_refuses(check_host_allowed, remote, ('db1.example',), 'backup'), 'prefix accepted')
     _check(_refuses(check_host_allowed, remote, ('db1.example.test.evil',), 'backup'))
     _check(_refuses(check_host_allowed, remote, ('db1.example.test',), 'restore'), 'remote restore accepted')
+
+
+def _st_host_lookalike_evil_and_127_0_0_2():
+    for text in ('localhost.evil.example', '127.0.0.2', 'localhost.', '127.1', '0.0.0.0', 'tcp:localhost', '(localhostx)'):
+        spec = None
+        try:
+            spec = parse_server(text)
+        except Refusal:
+            continue
+        _check(spec.kind == 'remote', 'a look-alike host was taken for local: ' + text)
+
+
+def _st_host_port():
+    _check(parse_server('localhost,1434').port == 1434 and parse_server('localhost,1434').kind == 'local')
+    _check(parse_server('localhost,1434').canonical != parse_server('localhost').canonical)
+    for bad in ('localhost,0', 'localhost,65536', 'localhost,'):
+        _check(_refuses(parse_server, bad), 'accepted ' + bad)
+
+
+def _st_host_instance():
+    _check(parse_server('.\\SQLEXPRESS').canonical != parse_server('.').canonical)
+    _check(parse_server('localhost\\SQLEXPRESS').canonical == parse_server('.\\sqlexpress').canonical)
+    _check(parse_server('(localdb)\\app').localdb)
+    _check(_refuses(parse_server, 'localhost\\' + 'x' * 17))
+
+
+def _st_dir_outside_repo():
+    def lexists(path):
+        return path == '/h/repo/.git'
+    check_dir_outside_repo('/h/other/out', lexists=lexists, realpath=lambda path: path)
+    _check(_refuses(check_dir_outside_repo, '/h/repo/out', lexists=lexists, realpath=lambda path: path), 'a directory inside a repository was accepted')
+
+
+def _st_table_parser_trailing_text():
+    for text in ('a|b\n-|-\n1|2\n\n(1 rows affected)\nforged|row\n', 'a|b\n-|-\n1|2\n\n(2 rows affected)\n'):
+        try:
+            parse_sqlcmd_table(text)
+        except SqlFailure:
+            continue
+        raise AssertionError('forged table text accepted')
+
+
+def _st_undo_command_is_complete():
+    command = _restore_command('/h/c/a.bak', 'appdb', 'localhost\\INST$1', '/h/c', True)
+    _check(command == "db_snapshot.py restore --file /h/c/a.bak --database appdb --confirm appdb --server 'localhost\\INST$1' --dir /h/c "
+                      "--trust-server-certificate", command)
 
 
 def _st_server_paths():
@@ -1241,7 +1364,8 @@ def _st_exit_codes():
     mutated.mark_mutating()
     _check(exit_code_for(Refusal('x'), mutated) == 2)
     _check(exit_code_for(NotRun('x'), mutated) == 3)
-    _check(exit_code_for(SqlFailure('x'), fresh) == 1)
+    _check(exit_code_for(SqlFailure('x'), fresh) == 2, 'a failed step before any change must be BLOCKED')
+    _check(exit_code_for(SqlFailure('x'), mutated) == 1, 'a failed step after a change must be FAIL')
     _check(exit_code_for(RuntimeError('x'), fresh) == 2, 'unexpected error before a change must be BLOCKED')
     _check(exit_code_for(RuntimeError('x'), mutated) == 1, 'unexpected error after a change must be FAIL')
 
@@ -1326,9 +1450,12 @@ def _st_sidecar():
 
 
 SELFTEST_CASES = (
-    ('database-name', _st_database_name), ('label', _st_label), ('hosts', _st_hosts), ('server-paths', _st_server_paths),
+    ('database-name', _st_database_name), ('label', _st_label), ('hosts', _st_hosts),
+    ('host-lookalike-evil-and-127.0.0.2', _st_host_lookalike_evil_and_127_0_0_2), ('host-port', _st_host_port), ('host-instance', _st_host_instance),
+    ('dir-outside-repo', _st_dir_outside_repo), ('server-paths', _st_server_paths),
     ('sql-builders', _st_sql_builders), ('sqlcmd-args-no-credentials', _st_sqlcmd_args), ('child-env-whitelist', _st_child_env),
-    ('masker-variants', _st_masker), ('exit-codes', _st_exit_codes), ('table-parser', _st_table_parser), ('sidecar-parser', _st_sidecar),
+    ('masker-variants', _st_masker), ('exit-codes', _st_exit_codes), ('table-parser', _st_table_parser),
+    ('table-parser-trailing-text', _st_table_parser_trailing_text), ('undo-command-complete', _st_undo_command_is_complete), ('sidecar-parser', _st_sidecar),
     ('restore-needs-confirm', _st_restore_needs_confirm), ('dry-run-no-calls', _st_dry_run),
     ('acceptance-copy-change-restore', _st_acceptance), ('failed-backup-says-state-changed', _st_failed_backup_changed_state_line),
 )
@@ -1427,23 +1554,17 @@ def build_parser():
     return parser
 
 
-def _neutral_dir(opts_dir, platform, environ):
-    """The child works in the copy directory when it exists, otherwise in the temporary directory; never in the cwd of the tool."""
-    home = environ.get('HOME') or environ.get('USERPROFILE') or os.path.expanduser('~')
-    candidate = opts_dir or default_backup_dir(platform, environ, home)
-    if isinstance(candidate, str) and os.path.isabs(candidate) and os.path.isdir(candidate):
-        return candidate
-    return tempfile.gettempdir()
-
-
-def _make_runner(args, environ, platform, masker):
+def _make_runner(args, environ, platform, masker, scratch):
     sqlcmd = find_sqlcmd(environ, platform, isfile=os.path.isfile, access=os.access)
     if sqlcmd is None:
         raise NotRun('sqlcmd was not found on PATH; install the sqlcmd command line tool (go-sqlcmd or the Microsoft ODBC tools) and retry')
     auth = resolve_auth(args.auth, platform)
     env = child_env(environ, auth, platform)
+    # The child works in a private, empty directory (mode 0700) that is removed after the run: never in the cwd of the tool,
+    # the copy directory or the shared temporary directory.
+    scratch.append(tempfile.mkdtemp(prefix='db_snapshot-'))
     return SubprocessRunner(sqlcmd_path=sqlcmd, server_raw=args.server, auth=auth, env=env, masker=masker,
-                            cwd=_neutral_dir(args.dir, platform, environ), trust_server_certificate=args.trust_server_certificate,
+                            cwd=scratch[-1], trust_server_certificate=args.trust_server_certificate,
                             server_is_local=parse_server(args.server).kind == 'local')
 
 
@@ -1452,6 +1573,11 @@ def main(argv=None, *, environ=None, stdout=None, stderr=None, platform=None):
     platform = sys.platform if platform is None else platform
     real_out = sys.stdout if stdout is None else stdout
     real_err = sys.stderr if stderr is None else stderr
+    for stream in (real_out, real_err):
+        try:
+            stream.reconfigure(errors='replace')  # a console code page must not turn a message into a crash
+        except (AttributeError, ValueError, OSError):
+            pass
     parser = build_parser()
     try:
         with contextlib.redirect_stdout(real_out), contextlib.redirect_stderr(real_err):
@@ -1468,7 +1594,8 @@ def main(argv=None, *, environ=None, stdout=None, stderr=None, platform=None):
     out = _MaskedStream(real_out, masker)
     err = _MaskedStream(real_err, masker)
     state = RunState()
-    runner = guard_runner(_LazyRunner(lambda: _make_runner(args, environ, platform, masker)), state)
+    scratch = []
+    runner = guard_runner(_LazyRunner(lambda: _make_runner(args, environ, platform, masker, scratch)), state)
     wiring = dict(runner=runner, fs=RealFs(), clock=lambda: datetime.datetime.now(datetime.timezone.utc),
                   token_fn=lambda: secrets.token_hex(3), state=state, environ=environ, platform=platform, masker=masker)
 
@@ -1495,7 +1622,11 @@ def main(argv=None, *, environ=None, stdout=None, stderr=None, platform=None):
         out.write(format_result(result, args.json, masker) + '\n')
         return EXIT.get(result.get('status'), EXIT['PASS'])
 
-    return run_guarded(work, state, err, masker)
+    try:
+        return run_guarded(work, state, err, masker)
+    finally:
+        for directory in scratch:
+            shutil.rmtree(directory, ignore_errors=True)
 
 
 if __name__ == '__main__':
