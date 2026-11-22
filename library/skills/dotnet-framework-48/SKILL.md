@@ -8,6 +8,7 @@ applyTo: '**/*.csproj, **/*.cs'
 
 ## Build and Compilation Requirements
 - Always use `msbuild /t:rebuild` to build the solution or projects instead of `dotnet build`
+- Locating MSBuild on Windows: `vswhere -products * -latest` can pick a Visual Studio instance that has no MSBuild (for example a Build Tools or a shell-only instance) and then finds nothing. Ask for the component instead: `vswhere -latest -requires Microsoft.Component.MSBuild -find 'MSBuild\**\Bin\MSBuild.exe'`
 
 ## Project File Management
 
