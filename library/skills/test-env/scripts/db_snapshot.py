@@ -27,8 +27,9 @@ Dependencies:
     Python 3.11 or newer (standard library only), sqlcmd on PATH, and a reachable SQL Server engine.
 Limits:
     The path is resolved by the engine, so the engine must see the same directory. The tool does not create the restored
-    database (it must exist and be ONLINE), and it handles single full backup sets only. Not verified against a live
-    engine: the engine behaviour is covered by a faked sqlcmd until a test on a real server is done.
+    database (it must exist and be ONLINE), and it handles single full backup sets only. Verified against a live engine on
+    SQL Server LocalDB 2019 (Windows, sqlcmd 15.0, integrated auth) only; other engine configurations are not verified
+    (Linux, containers, full instances, go-sqlcmd, SQL authentication, remote backup).
 Security:
     No credentials in arguments, messages or files; they travel only in the environment of the child process and are
     masked in all output. Restore is allowed only on a local engine and needs --confirm with the exact database name.
@@ -951,7 +952,7 @@ def _way_back(safety, db, command, state_desc='ONLINE'):
     text = 'The way back: restore the safety backup ' + safety + ' (command: ' + command + ').'
     if state_desc != 'ONLINE':
         text += (' The database is not ONLINE and the tool refuses a restore from that state; restore it by hand: RESTORE DATABASE '
-                 + quote_ident(db) + ' FROM DISK = ' + quote_literal(safety) + ' WITH REPLACE, RECOVERY')
+                 + quote_ident(db) + ' FROM DISK = ' + quote_literal(safety) + ' WITH REPLACE, RECOVERY, FILE = 1')
     return text
 
 

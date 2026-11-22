@@ -1,13 +1,11 @@
 ---
-title: 'Migawka bazy testowej (db_snapshot): odmowy, tożsamość serwera i kopii, kody wyjścia. Niezweryfikowane na silniku'
+title: 'Migawka bazy testowej (db_snapshot): odmowy, tożsamość serwera i kopii, kody wyjścia'
 tags: [test-env, sql-server, backup, restore, sqlcmd, safety, identity, exit-codes]
 paths: ['library/skills/test-env/scripts/db_snapshot.py', 'library/skills/test-env/references/db-snapshot.md', 'library/tools/index.yaml', 'tests/test_skillsync_db_snapshot.py']
-source: 'library/skills/test-env/scripts/db_snapshot.py: docstring modułu (granice, bezpieczeństwo, kody wyjścia), build_parser, exit_code_for, run_backup, run_restore, _way_back, parse_sqlcmd_table, _restore_command'
+source: 'library/skills/test-env/scripts/db_snapshot.py: docstring modułu (granice, bezpieczeństwo, kody wyjścia), build_parser, exit_code_for, run_backup, run_restore, _way_back, parse_sqlcmd_table, _restore_command; test na żywo S7 (22.11.2026, SQL Server LocalDB 2019)'
 verified: 2026-11-22
 ---
-**Status: niezweryfikowane na silniku.** Test na żywo (S7) nie został wykonany (NOT_RUN). Reguły poniżej
-są potwierdzone kodem i testami z atrapą `sqlcmd`, nie prawdziwym SQL Serverem. Lista kontrolna S7 jest w
-`library/skills/test-env/references/db-snapshot.md`.
+**Status: zweryfikowane na SQL Server LocalDB 2019 (Windows, sqlcmd 15.0, ODBC 17, uwierzytelnianie zintegrowane); niezweryfikowane: pełne instancje, Linux/kontener (konto serwera, katalog kopii), go-sqlcmd, tryb `--auth env` z logowaniem SQL, zdalny backup, `-C`, stabilność tożsamości LocalDB po restarcie instancji.** Reguły poniżej są potwierdzone kodem, testami z atrapą `sqlcmd` i testem na żywo (22.11.2026). Wyniki punktów i wnioski: `library/skills/test-env/references/db-snapshot.md`, sekcja „Status weryfikacji na silniku”.
 
 Reguła: narzędzie robi kopię i przywraca wyłącznie lokalną bazę testową. Każda odmowa (kod 2) następuje przed
 jakąkolwiek zmianą bazy i bez wywołania polecenia zmieniającego (`BACKUP`, `ALTER`, `RESTORE`).
@@ -37,6 +35,7 @@ Sha256 z sidecara (gdy jest) liczy się przed krokiem destrukcyjnym; brak pola d
 Dane logowania: tylko `SQLCMDUSER` i `SQLCMDPASSWORD` (tryb `env`, domyślnie poza Windows) albo logowanie
 Windows (`integrated`). Nigdy w argumentach procesu, w wyjściu, w sidecarze ani w komunikatach. Wyjście
 jest maskowane. Login nie jest maskowany w komunikatach serwera. Proces `sqlcmd` dostaje tylko zmienne z białej listy.
+Narzędzie nie używa `-X`: pod `-X` sqlcmd 15.0 ignoruje `SQLCMDPASSWORD` i pyta o hasło z konsoli (test S7, 22.11.2026), więc tryb `env` działa bez tej flagi.
 
 Kody wyjścia: 0 PASS; 1 FAIL po rozpoczęciu zmiany (pierwsze wywołanie `BACKUP`, `ALTER` lub `RESTORE` już się zaczęło,
 stan bazy mógł się zmienić: błąd SQL, brak pliku po `backup`, błąd kopii bezpieczeństwa, wyjątek po zmianie); 2 BLOCKED,
@@ -48,7 +47,7 @@ Kolejność restore: stan bazy (`ONLINE`), tożsamość silnika, `HEADERONLY` i 
 po rozpoczęciu `BACKUP` = kod 1, wcześniejszy = 2), ścieżka kopii bezpieczeństwa wypisana na stderr, batch `sqlcmd -b` z `TRY/CATCH` (`SINGLE_USER`,
 `RESTORE … WITH REPLACE`, `MULTI_USER`), stan po (`ONLINE` i `MULTI_USER`). Po porażce kroku destrukcyjnego, timeoucie
 lub przerwaniu narzędzie odczytuje stan bazy i nie wykonuje ślepo `MULTI_USER`. Droga powrotu to kopia bezpieczeństwa:
-`rollback_command` w wyniku, a gdy stan nie jest `ONLINE`, ręczny `RESTORE DATABASE … WITH REPLACE, RECOVERY`.
+`rollback_command` w wyniku, a gdy stan nie jest `ONLINE`, ręczny `RESTORE DATABASE … WITH REPLACE, RECOVERY, FILE = 1` (wariant z `FILE = 1` potwierdzony na LocalDB 2019). Po przerwanym `RESTORE` baza zostaje `RESTORING` z `SINGLE_USER` i nie wraca sama; narzędzie nie odtwarza jej ślepo, decyzja i powrót są ręczne.
 
 Granice: nie odtwarza skasowanej bazy; `FULL` recovery przerywa łańcuch kopii dziennika (ostrzeżenie);
 `CHECKSUM` wymaga kopii z sumami (kopia obca = kod 2 przed zmianą); `VERIFYONLY` nie dowodzi możliwości `RESTORE`
