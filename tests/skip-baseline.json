@@ -270,6 +270,10 @@
     "category": "needs-shell"
    },
    {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_hook_runs_to_the_end_after_a_failing_compinit_under_err_return",
+    "category": "needs-shell"
+   },
+   {
     "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_hook_survives_a_failing_compinit_under_err_exit",
     "category": "needs-shell"
    },
@@ -453,6 +457,10 @@
    },
    {
     "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_registers_in_a_one_time_precmd_hook_when_compdef_comes_late",
+    "category": "needs-shell"
+   },
+   {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_hook_runs_to_the_end_after_a_failing_compinit_under_err_return",
     "category": "needs-shell"
    },
    {
@@ -642,6 +650,10 @@
     "category": "needs-shell"
    },
    {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_hook_runs_to_the_end_after_a_failing_compinit_under_err_return",
+    "category": "needs-shell"
+   },
+   {
     "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_hook_survives_a_failing_compinit_under_err_exit",
     "category": "needs-shell"
    },
@@ -825,6 +837,10 @@
    },
    {
     "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_registers_in_a_one_time_precmd_hook_when_compdef_comes_late",
+    "category": "needs-shell"
+   },
+   {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_hook_runs_to_the_end_after_a_failing_compinit_under_err_return",
     "category": "needs-shell"
    },
    {
@@ -2171,6 +2187,10 @@
     "category": "posix-only"
    },
    {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_hook_runs_to_the_end_after_a_failing_compinit_under_err_return",
+    "category": "posix-only"
+   },
+   {
     "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_hook_survives_a_failing_compinit_under_err_exit",
     "category": "posix-only"
    },
@@ -2477,6 +2497,10 @@
     "category": "needs-shell"
    },
    {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_hook_runs_to_the_end_after_a_failing_compinit_under_err_return",
+    "category": "needs-shell"
+   },
+   {
     "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_hook_survives_a_failing_compinit_under_err_exit",
     "category": "needs-shell"
    },
@@ -2748,6 +2772,10 @@
    },
    {
     "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_registers_in_a_one_time_precmd_hook_when_compdef_comes_late",
+    "category": "needs-shell"
+   },
+   {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_hook_runs_to_the_end_after_a_failing_compinit_under_err_return",
     "category": "needs-shell"
    },
    {
@@ -3065,6 +3093,10 @@
     "category": "needs-shell"
    },
    {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_hook_runs_to_the_end_after_a_failing_compinit_under_err_return",
+    "category": "needs-shell"
+   },
+   {
     "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_hook_survives_a_failing_compinit_under_err_exit",
     "category": "needs-shell"
    },
@@ -3376,6 +3408,10 @@
    },
    {
     "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_registers_in_a_one_time_precmd_hook_when_compdef_comes_late",
+    "category": "needs-shell"
+   },
+   {
+    "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_hook_runs_to_the_end_after_a_failing_compinit_under_err_return",
     "category": "needs-shell"
    },
    {
