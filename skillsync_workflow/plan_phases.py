@@ -87,6 +87,9 @@ def parse_plan_phases(text):
     return {'phases': info['phases'], 'ui_phases': info['ui_phases'], 'stray_ui': info['stray_ui']}
 
 
+_PLAN_STEP_COLUMNS = frozenset(('Risk', 'Role', 'Files', 'Ryzyko', 'Rola', 'Pliki'))
+
+
 def parse_table_phases(text):
     """The tables of the plan: `{'phases', 'ui_phases', 'test_phases', 'stray_ui'}` (`[T]` = a test step, 180-A)."""
     phases, ui_phases, test_phases, stray = [], [], [], 0
@@ -114,6 +117,9 @@ def parse_table_phases(text):
         if table is None:  # the header row of a new table
             if 'Id' in cells and 'Krok' in cells:
                 table = (cells.index('Id'), cells.index('Krok'))
+                continue
+            if 'Id' in cells and 'Step' in cells and _PLAN_STEP_COLUMNS.intersection(cells):
+                table = (cells.index('Id'), cells.index('Step'))
                 continue
             table = False
         if table is False:
