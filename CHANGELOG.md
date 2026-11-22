@@ -45,7 +45,7 @@ Upgrading from 1.12.0: [docs/upgrading.md](docs/upgrading.md), section "Przejśc
 - **Polish output does not change.** A project without `language` (or with `language: pl`) gets the same texts, the same page HTML and the same status, except for the new `lang` field.
 
 - **Repository: faster renderer compatibility test.** `tests/test_skillsync_dashboard_renderer_compat.py` took about 9 minutes (547 s) because one scenario (`approve-flow`) left a mounted board undestroyed and its real 30 s error-toast timer kept Node alive; the scenario harness now destroys it and the test fails when a Node run exceeds 8 s. The module takes about 7 s; the checks (golden snapshot, frozen renderers 1.5.0, 1.11.0 and 1.12.0, the texts-function bridge) are unchanged.
-- **Repository: the Ubuntu test jobs of CI may run 60 minutes (was 45).** The suite of this release takes 38 to 43 minutes on Ubuntu; the limit keeps about 1.4 times the longest job, as for Windows and macOS.
+- **Repository: longer limits of the CI test jobs: Ubuntu 60 minutes (was 45), macOS 75 (was 60), Windows 90 (was 75).** The suite of this release takes up to about 50 minutes on Ubuntu and up to about 75 on Windows before the faster renderer test; the limits keep about 1.4 times the longest job.
 
 ### Fixed
 
