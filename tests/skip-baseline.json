@@ -482,6 +482,14 @@
    {
     "id": "test_skillsync_statusline_install.Installation.test_on_windows_the_command_uses_double_quotes_only",
     "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_feedback.StoreTest.test_a_symlinked_store_or_draft_is_refused",
+    "category": "needs-symlinks"
+   },
+   {
+    "id": "test_skillsync_feedback_azure.FailClosedTest.test_a_symlinked_descriptor_is_refused",
+    "category": "needs-symlinks"
    }
   ],
   "ubuntu-latest/symlink": [
@@ -862,6 +870,14 @@
    {
     "id": "test_skillsync_statusline_install.Installation.test_on_windows_the_command_uses_double_quotes_only",
     "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_feedback.StoreTest.test_a_symlinked_store_or_draft_is_refused",
+    "category": "needs-symlinks"
+   },
+   {
+    "id": "test_skillsync_feedback_azure.FailClosedTest.test_a_symlinked_descriptor_is_refused",
+    "category": "needs-symlinks"
    }
   ],
   "windows-latest/symlink": null,
@@ -2265,6 +2281,26 @@
    {
     "id": "test_skillsync_statusline.Sanitizing.test_worktree_directory_name_read_from_gitdir",
     "category": "filesystem"
+   },
+   {
+    "id": "test_skillsync_feedback.StoreTest.test_a_symlinked_store_or_draft_is_refused",
+    "category": "needs-symlinks"
+   },
+   {
+    "id": "test_skillsync_feedback_azure.FailClosedTest.test_a_symlinked_descriptor_is_refused",
+    "category": "needs-symlinks"
+   },
+   {
+    "id": "test_skillsync_feedback_command.TrustCommandTest.test_trust_needs_a_terminal",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_feedback_command.TrustCommandTest.test_trust_with_a_wrong_answer_changes_nothing",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_feedback_command.TrustCommandTest.test_trust_with_the_right_answer_writes_the_machine_config",
+    "category": "posix-only"
    }
   ],
   "macos-latest/symlink": [
@@ -2821,6 +2857,14 @@
    {
     "id": "test_skillsync_statusline_install.Installation.test_on_windows_the_command_uses_double_quotes_only",
     "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_feedback.StoreTest.test_a_symlinked_store_or_draft_is_refused",
+    "category": "needs-symlinks"
+   },
+   {
+    "id": "test_skillsync_feedback_azure.FailClosedTest.test_a_symlinked_descriptor_is_refused",
+    "category": "needs-symlinks"
    }
   ],
   "macos-uv/symlink": [
@@ -3457,6 +3501,14 @@
    {
     "id": "test_skillsync_statusline_install.Installation.test_on_windows_the_command_uses_double_quotes_only",
     "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_feedback.StoreTest.test_a_symlinked_store_or_draft_is_refused",
+    "category": "needs-symlinks"
+   },
+   {
+    "id": "test_skillsync_feedback_azure.FailClosedTest.test_a_symlinked_descriptor_is_refused",
+    "category": "needs-symlinks"
    }
   ]
  }
