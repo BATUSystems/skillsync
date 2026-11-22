@@ -18,6 +18,7 @@ from .delivery_mode import delivery_info
 from .layers import add_layer_argument
 from .storage import read_json
 from .pathfmt import posix
+from . import protocol_tokens
 
 SCHEMA = 1
 PLAN_STATUSES = ('draft', 'approved', 'in_progress', 'done', 'archived')
@@ -108,7 +109,8 @@ _PRE_SECTION_WORD = re.compile(r'\b(?:' + '|'.join(PRE_IMPLEMENT_SECTIONS) + r')
 _PRE_TAIL = '*_` \t\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029'   # what the end of a line may carry: markup and white space, also the separators that no longer cut a line
 _PRE_EMPTY_BODY = re.compile(r'(?:nie[ \t]+dotyczy(?:[ \t]*$|[ \t]*[.\-–—:,;])|(?:todo|tbd|n/a)(?:[ \t]*$|[ \t]*[.:])|[-–—]+[ \t]*$)',
                              re.IGNORECASE)
-_PRE_VERDICT = re.compile(r'^[*_`]*Werdykt:[*_` \t]*(?P<word>READY|NEEDS_CHANGES|BLOCKED)[*_`. \t]*$')
+_PRE_VERDICT = re.compile(r'^[*_`]*' + protocol_tokens.token_alternation('verdict')
+                          + r'[*_` \t]*(?P<word>READY|NEEDS_CHANGES|BLOCKED)[*_`. \t]*$')
 PRE_REPORT_GLOB = 'pre-implement*.md'
 MAX_PRE_REPORT_BYTES = 256 * 1024
 
@@ -200,7 +202,7 @@ def pre_implement_state(root, spec_rel, plan_text, status):
                            + ', a plan nie ma poprawnej linii „Przebieg:” (nie wiadomo, gdzie szukać raportu)')
             else:
                 warning = (f'brak pre-implement: spec ma sekcje {", ".join(sections)}, a w .skillsync/runs/{run}/ '
-                           f'nie ma pre-implement*.md z linią „Werdykt: READY|NEEDS_CHANGES|BLOCKED”')
+                           f'nie ma pre-implement*.md z linią „Werdykt: READY|NEEDS_CHANGES|BLOCKED” (albo „Verdict: …”)')
     return {'required': required, 'sections': sections, 'run': run, 'report': report, 'verdict': verdict, 'warning': warning}
 
 

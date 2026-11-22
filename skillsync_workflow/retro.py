@@ -33,8 +33,8 @@ RUN_FIELDS = ("id", "class", "steps", "repeated_steps", "failed_records", "not_r
 CRITERIA = ("evidence", "repeats", "denied", "inherited", "plan_coverage")
 
 # Wiersz kandydat (tani prefiltr na całym tekście) i dokładny wzorzec sygnału.
-_STATUS_LINE = re.compile(r"^[^\S\n]*(?:\*\*)?(?:Status|Werdykt)(?:\*\*)?:[^\n]*", re.MULTILINE)
-_SIGNAL = re.compile(r"^\s*(\*\*)?(Status|Werdykt)(\*\*)?:(\*\*)?\s*(\*\*)?"
+_STATUS_LINE = re.compile(r"^[^\S\n]*(?:\*\*)?(?:Status|Werdykt|Verdict)(?:\*\*)?:[^\n]*", re.MULTILINE)
+_SIGNAL = re.compile(r"^\s*(\*\*)?(Status|Werdykt|Verdict)(\*\*)?:(\*\*)?\s*(\*\*)?"
                      r"(PASS|FAIL|BLOCKED|NOT_RUN|CHANGES_REQUIRED|DONE)\b")
 _TOKEN = re.compile(r"(?<![A-Za-z0-9])(?:sk-ant-|sk-proj-|ghp_|gho_|github_pat_|glpat-|xox[abprs]-)[A-Za-z0-9_-]+"
                     r"|AKIA[0-9A-Z]{16}")
