@@ -196,3 +196,24 @@ def update_lock(layer, core):
     if not path.is_file() or path.read_text(encoding='utf-8') != text:
         path.write_text(text, encoding='utf-8', newline='\n')
     return path, changed
+
+
+DEFAULT_SKILL_LANGUAGE = 'pl'   # the language of the core library
+
+
+def skill_language(layerset):
+    """Language of the skills, roles and instructions the layers of a project provide: the language of the last translation layer, else the core's `pl`."""
+    found = [layer.language for layer in layerset.layers if layer.is_translation and layer.language]
+    return found[-1] if found else DEFAULT_SKILL_LANGUAGE
+
+
+def language_findings(layerset, manifest_language):
+    """`language-mismatch` (warning) when the interface language of the manifest (`i18n.resolve_language`) differs from the language of the layers.
+
+    The manifest key steers the interface; the language of skills is chosen by `layer_rules` of the machine config (a manifest never selects layers)."""
+    skills = skill_language(layerset)
+    if manifest_language == skills:
+        return []
+    return [layers._finding('language-mismatch', 'warning',
+                            f"manifest language is '{manifest_language}' but the skills, roles and instructions of this project are in '{skills}' "
+                            "(choose the layers in `layer_rules` of the machine config, or set `language` in the manifest)", None)]

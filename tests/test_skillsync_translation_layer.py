@@ -258,6 +258,26 @@ class ConformanceTest(TranslationCase):
         self.assertIn('translation-lock-missing', self.codes(layerset, trust=False))
 
 
+class LanguageFindingsTest(TranslationCase):
+    def test_a_manifest_in_the_language_of_the_layers_is_quiet(self):
+        with_translation = self.build()
+        self.assertEqual(translations.skill_language(with_translation), 'en')
+        self.assertEqual(translations.language_findings(with_translation, 'en'), [])
+        core_only = self.build(extra={}, lock=False)
+        self.assertEqual(translations.skill_language(core_only), 'pl')
+        self.assertEqual(translations.language_findings(core_only, 'pl'), [])
+
+    def test_a_mismatch_is_a_warning_that_names_both_languages(self):
+        for layerset, manifest in ((self.build(), 'pl'), (self.build(extra={}, lock=False), 'en')):
+            found = translations.language_findings(layerset, manifest)
+            self.assertEqual([(item['code'], item['severity']) for item in found], [('language-mismatch', 'warning')])
+            self.assertIn(manifest, found[0]['message'])
+
+    def test_the_last_translation_layer_decides(self):
+        layerset = self.build(other=[('core-pt', 'org', {})])
+        self.assertEqual(translations.skill_language(layerset), 'en')
+
+
 class CommandTest(TranslationCase):
     def test_without_a_translation_layer_the_command_has_nothing_to_do(self):
         make = make_layer(child(self.work, 'solo'), 'core', 'core', CORE_FILES, version=generator_version())
