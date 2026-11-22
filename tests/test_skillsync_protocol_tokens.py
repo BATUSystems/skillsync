@@ -353,7 +353,6 @@ class NoRawLiteralsGuard(unittest.TestCase):
         ('status', 'Verdict:'),     # j.w.
         ('status', 'Verdict'),      # j.w.
         ('status', 'Werdykt'),      # j.w.
-        ('retro', 'Kroki checkpointu'),   # komunikat po polsku („Kroki”, nie token kolumny)
     )
 
     @staticmethod
@@ -381,6 +380,16 @@ class NoRawLiteralsGuard(unittest.TestCase):
                     continue
                 offenders.append(f'{name}.py:{node.lineno}: {node.value[:70]!r}')
         self.assertEqual(offenders, [], 'surowe literały tokenów protokołu poza protocol_tokens.py')
+
+
+class AcceptancePatternFollowsTable(unittest.TestCase):
+    """`ACCEPTANCE_PATTERN` ma rozpoznawać nazwy z `TOKENS['acceptance']` (oba języki), nie własne literały."""
+
+    def test_both_names_match_the_title_pattern(self) -> None:
+        for name in pt.names('acceptance'):
+            with self.subTest(name=name):
+                self.assertTrue(pt.acceptance_title(name), name)
+                self.assertTrue(pt.acceptance_title(f'S9 {name}: owner'), name)
 
 
 class ReadinessConsistency(unittest.TestCase):

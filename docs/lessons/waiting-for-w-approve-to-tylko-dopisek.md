@@ -8,4 +8,4 @@ verified: 2026-11-22
 Objaw: dopisek `(waiting for <zgoda>)` albo `(czeka na <zgoda>)` po `Status:` może zostać odczytany jako zgoda albo jako nowy stan zgody, który wpływa na `CP` lub `READY`.
 Przyczyna: `approve` usuwa ten dopisek wyrażeniem regularnym z tokenem `waiting` i nazwą zgody. Dopisek jest informacją dla człowieka. Zgody zapisuje wyłącznie użytkownik, wpisem w `approvals.jsonl`.
 Reguła: `waiting for` i `czeka na` nigdy nie są słowem zgody ani źródłem stanu zgody. Nie dodawaj tokenu do stanów `CP`, `READY`, `approvals` ani `needsHuman`. Usunięcie dopisku przy `approve` nie zmienia statusu planu ani wyniku.
-Jak wykryć: `grep -rn "waiting" skillsync_workflow` — poza definicją tokenu w `protocol_tokens.py` jedynym użyciem ma być czyszczenie dopisku w `status.py` (`approve`). Każda inna ścieżka czytająca zgodę nie korzysta z tego tokenu.
+Jak wykryć: `grep -rn "token_alternation('waiting')\|names('waiting')" skillsync_workflow` — jedynym użyciem tokenu `waiting` ma być czyszczenie dopisku w `status.py` (`approve`). Każda inna ścieżka czytająca zgodę nie korzysta z tego tokenu.
