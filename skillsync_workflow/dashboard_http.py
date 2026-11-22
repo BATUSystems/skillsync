@@ -515,6 +515,15 @@ def project_manifest(root: Path, fallback: dict | None = None) -> dict:
         return fallback if fallback is not None else {}
 
 
+def page_with_language(body: bytes, lang: str) -> bytes:
+    """The page `index.html` with `<html lang="…">` of the project language. The asset carries the static default `lang="pl"` (it is
+    served as it is for `pl`, byte for byte); a project in another supported language gets its code instead (the first and only
+    occurrence), and `app.js` keeps it in step with the `lang` of the status afterwards."""
+    if lang == i18n.DEFAULT_LANGUAGE or lang not in i18n.SUPPORTED_LANGUAGES:
+        return body
+    return body.replace(b'<html lang="pl">', f'<html lang="{lang}">'.encode("ascii"), 1)
+
+
 def skill_assets(layerset) -> tuple[dict[str, Path], Path | None]:
     """({asset name: Path}, descriptions.json Path) of the `dashboard` skill in the active layers: `LayerSet.skill_files`
     (per file the later layer wins, links skipped), the same rule the generator and `prototype` assets use. Only names of
@@ -1028,6 +1037,8 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
             return self._json(404, {"error": i18n.t(self.board.lang(), "srv.http.noAsset")})
         with open(path, "rb") as fh:
             body = fh.read(MAX_ASSET_BYTES)
+        if name == "index.html":
+            body = page_with_language(body, self.board.lang())
         self._send(200, body, ASSET_TYPES[path.suffix])
 
     def _events(self) -> None:

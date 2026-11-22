@@ -300,6 +300,16 @@ class EnglishHttp(HttpCase):
 
 
 class Keywords(unittest.TestCase):
+    def test_risky_sections_in_english_and_polish(self):
+        for heading, name in (('Contracts', 'Contracts'), ('Migration', 'Migration'), ('Data model', 'Data model'), ('Kontrakty', 'Kontrakty')):
+            self.assertEqual(dashboard.risky_sections(f'# S\n\n## {heading}\n\nThe export API changes.\n'), [name], heading)
+        self.assertEqual(dashboard.risky_sections('# S\n\n## Contracts\n\nNot applicable.\n'), [])
+        self.assertEqual(dashboard.risky_sections('# S\n\n## Migracja\n\nnie dotyczy\n'), [])
+
+    def test_pre_implement_sections_in_english(self):
+        found = status.pre_implement_sections('# S\n\n## Contracts\n\nNew endpoint.\n\n## Migration\n\nNot applicable.\n')
+        self.assertEqual(len(found), 1, found)
+
     def test_waiting_marker(self):
         self.assertEqual(dashboard.wait_marker('09:05 spec ready; waiting: GO plan'), 'GO plan')
         self.assertEqual(dashboard.wait_marker('Waiting : CP.'), 'CP')

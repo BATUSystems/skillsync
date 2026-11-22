@@ -87,7 +87,7 @@ STATUS_RANK = {'in_progress': 0, 'approved': 1, 'draft': 2, 'done': 3}  # done: 
 SPEC_DONE = {'approved', 'implemented', 'done', 'accepted'}
 SPEC_OPEN = {'draft', 'approved'}  # a spec that may not have a plan yet (act I)
 PLAN_APPROVED = {'approved', 'in_progress', 'done', 'implemented'}
-RISKY_SECTIONS = ('Kontrakty', 'Migracja', 'Dane')
+RISKY_SECTIONS = ('Kontrakty', 'Migracja', 'Dane', 'Contracts', 'Migration', 'Data model')   # Polish tokens and their English aliases
 
 READINESS_RE = re.compile(r'^Readiness:\s*(?P<status>PASS|BLOCKED)\b', re.IGNORECASE)
 READINESS_DATE_RE = re.compile(r'^Data:\s*(?P<val>\S.*?)\s*$', re.MULTILINE)
@@ -1087,12 +1087,12 @@ def prototype_writing(root, slug, now_ms=None):
 
 
 def risky_sections(text):
-    """Spec sections `## Kontrakty|Migracja|Dane` with content (not "nie dotyczy"): pre-implement is needed before GO plan."""
+    """Spec sections `## Kontrakty|Migracja|Dane` (or `Contracts|Migration|Data model`) with content (not "nie dotyczy"/"not applicable"): pre-implement is needed before GO plan."""
     found = []
     for name in RISKY_SECTIONS:
         match = re.search(rf'^##\s+{name}\b[^\n]*\n(?P<body>.*?)(?=^#{{1,6}}\s|\Z)', text, re.MULTILINE | re.DOTALL)
         body = (match.group('body') if match else '').strip()
-        if body and not re.match(r'^[-*\s]*nie dotyczy', body, re.IGNORECASE):
+        if body and not re.match(r'^[-*\s]*(?:nie dotyczy|not applicable)', body, re.IGNORECASE):
             found.append(name)
     return found
 

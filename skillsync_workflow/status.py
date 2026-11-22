@@ -101,14 +101,14 @@ def _plan_spec(text):
     return match.group(1) if match and is_spec_path(match.group(1)) else None
 
 
-PRE_IMPLEMENT_SECTIONS = ('Kontrakty', 'Migracja', 'Dane')
+PRE_IMPLEMENT_SECTIONS = ('Kontrakty', 'Migracja', 'Dane', 'Contracts', 'Migration', 'Data model')   # Polish tokens and their English aliases
 PRE_IMPLEMENT_VERDICTS = ('READY', 'NEEDS_CHANGES', 'BLOCKED')  # od najlepszego do najgorszego
 _PRE_HEADING = re.compile(r'^(?P<hashes>#{1,6})[ \t]+(?P<title>.*?)[ \t]*$', re.MULTILINE)
 _PRE_SECTION_WORD = re.compile(r'\b(?:' + '|'.join(PRE_IMPLEMENT_SECTIONS) + r')\b', re.IGNORECASE)
 # Pusta treść: pierwsza niepusta linia (bez znaczników) to samo „nie dotyczy” (po nim koniec linii albo . - – — : , ;), samo
 # TODO/TBD/n/a (po nim koniec linii, kropka albo dwukropek) albo same myślniki; „Todo-lista” i „Nie dotyczy starych” to treść.
 _PRE_TAIL = '*_` \t\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029'   # what the end of a line may carry: markup and white space, also the separators that no longer cut a line
-_PRE_EMPTY_BODY = re.compile(r'(?:nie[ \t]+dotyczy(?:[ \t]*$|[ \t]*[.\-–—:,;])|(?:todo|tbd|n/a)(?:[ \t]*$|[ \t]*[.:])|[-–—]+[ \t]*$)',
+_PRE_EMPTY_BODY = re.compile(r'(?:(?:nie[ \t]+dotyczy|not[ \t]+applicable)(?:[ \t]*$|[ \t]*[.\-–—:,;])|(?:todo|tbd|n/a)(?:[ \t]*$|[ \t]*[.:])|[-–—]+[ \t]*$)',
                              re.IGNORECASE)
 _PRE_VERDICT = re.compile(r'^[*_`]*(?:Werdykt|Verdict):[*_` \t]*(?P<word>READY|NEEDS_CHANGES|BLOCKED)[*_`. \t]*$')
 PRE_REPORT_GLOB = 'pre-implement*.md'
