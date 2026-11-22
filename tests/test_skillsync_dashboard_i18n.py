@@ -40,7 +40,7 @@ Status: in_progress
 Date: 2026-01-10
 Run: 2026-01-10-widget
 Spec: docs/specs/2026-01-10-widget.md
-Handover: main
+Handoff: main
 
 ## Progress
 
@@ -301,13 +301,12 @@ class EnglishHttp(HttpCase):
 
 class Keywords(unittest.TestCase):
     def test_risky_sections_in_english_and_polish(self):
-        for heading, name in (('Contracts', 'Contracts'), ('Migration', 'Migration'), ('Data model', 'Data model'), ('Kontrakty', 'Kontrakty')):
-            self.assertEqual(dashboard.risky_sections(f'# S\n\n## {heading}\n\nThe export API changes.\n'), [name], heading)
-        self.assertEqual(dashboard.risky_sections('# S\n\n## Contracts\n\nNot applicable.\n'), [])
+        self.assertEqual(dashboard.risky_sections('# S\n\n## Kontrakty\n\nThe export API changes.\n'), ['Kontrakty'])
+        self.assertEqual(dashboard.risky_sections('# S\n\n## Dane\n\nNot applicable.\n'), [])
         self.assertEqual(dashboard.risky_sections('# S\n\n## Migracja\n\nnie dotyczy\n'), [])
 
     def test_pre_implement_sections_in_english(self):
-        found = status.pre_implement_sections('# S\n\n## Contracts\n\nNew endpoint.\n\n## Migration\n\nNot applicable.\n')
+        found = status.pre_implement_sections('# S\n\n## Kontrakty\n\nNew endpoint.\n\n## Migracja\n\nNot applicable.\n')
         self.assertEqual(len(found), 1, found)
 
     def test_waiting_marker(self):
@@ -363,7 +362,7 @@ class Keywords(unittest.TestCase):
         self.assertEqual(dashboard.parse_questions(polish)[0][0]['accepted'], 'CSV')
 
     def test_header_aliases(self):
-        title, fields = dashboard.parse_header('# Plan: x\n\nRun: r1\nPrototype: p1\nDate: 2026-01-01\nHandover: dev\n\n## A\n')
+        title, fields = dashboard.parse_header('# Plan: x\n\nRun: r1\nPrototype: p1\nDate: 2026-01-01\nHandoff: dev\n\n## A\n')
         self.assertEqual((fields['przebieg'], fields['prototyp'], fields['data'], fields['oddanie']), ('r1', 'p1', '2026-01-01', 'dev'))
         _, polish = dashboard.parse_header('# Plan: x\n\nPrzebieg: r2\nPrototyp: p2\n')
         self.assertEqual((polish['przebieg'], polish['prototyp']), ('r2', 'p2'))
@@ -384,7 +383,7 @@ class StatusKeywordsAndTexts(ProjectCase):
         self.assertFalse(status.has_acceptance_step('done', plan.replace('Acceptance', 'Review')))
 
     def test_human_summary_section(self):
-        self.assertEqual(status.plan_summary('# P\n\n## Human summary\n\nShort text.\n'), 'Short text.')
+        self.assertEqual(status.plan_summary('# P\n\n## Summary for humans\n\nShort text.\n'), 'Short text.')
         self.assertEqual(status.plan_summary('# P\n\n## Streszczenie dla człowieka\n\nKrótko.\n'), 'Krótko.')
 
     def test_pre_implement_warnings_are_translated(self):

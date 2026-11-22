@@ -105,7 +105,7 @@ def catalog_for_prefix(lang, prefix):
 
 def t(lang, key, n=None, **params):
     """Text for `key`; plural forms are chosen with `n` (also available as `{n}`). Unknown key returns the key itself."""
-    value = catalog(lang).get(key)
+    value = _load(lang if lang in SUPPORTED_LANGUAGES else DEFAULT_LANGUAGE).get(key)
     if value is None:
         return key
     if isinstance(value, dict):

@@ -428,7 +428,8 @@ class EnglishRenderer(unittest.TestCase):
         """The coverage of the English run: a key that no scenario reaches would be a text that this test never looked at."""
         used = set(self.out["used"])
         # `ui.title.loading` is shown before the first status, i.e. before the renderer knows the language: only its Polish text is ever drawn
-        unused = sorted(set(self.en) - used - {"ui.title.loading"})
+        # `ui.page.title` is the `<title>` of the page: the server writes it into `index.html` (`page_with_language`), the renderer never draws it
+        unused = sorted(set(self.en) - used - {"ui.title.loading", "ui.page.title"})
         self.assertEqual(unused, [], "keys not reached by any scenario (add a scenario that shows them)")
         self.assertEqual(sorted(used - set(self.en)), [], "the renderer asked for a key that the catalog does not have")
 
@@ -619,7 +620,7 @@ class PageAdapterAndSource(unittest.TestCase):
         english = srv.page_with_language(page, "en")
         self.assertIn(b'<html lang="en">', english)
         self.assertEqual(english.count(b"lang="), 1)
-        self.assertEqual(english.replace(b'lang="en"', b'lang="pl"'), page)
+        self.assertEqual(english.replace(b'lang="en"', b'lang="pl"').replace(b"<title>Run status</title>", b"<title>Status przebiegu</title>"), page)   # the `<title>` is the only other difference
         for odd in ("de", "", "pl-PL", '"><script>'):
             self.assertEqual(srv.page_with_language(page, odd), page, odd)
 

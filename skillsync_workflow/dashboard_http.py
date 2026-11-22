@@ -515,13 +515,18 @@ def project_manifest(root: Path, fallback: dict | None = None) -> dict:
         return fallback if fallback is not None else {}
 
 
+PAGE_TITLE = "<title>{}</title>".format(i18n.t("pl", "ui.page.title")).encode("utf-8")
+
+
 def page_with_language(body: bytes, lang: str) -> bytes:
     """The page `index.html` with `<html lang="…">` of the project language. The asset carries the static default `lang="pl"` (it is
     served as it is for `pl`, byte for byte); a project in another supported language gets its code instead (the first and only
-    occurrence), and `app.js` keeps it in step with the `lang` of the status afterwards."""
+    occurrence) and the `<title>` its text from the catalog (`ui.page.title`; the heading "Wczytuję status…" stays until the first status), and `app.js` keeps it in step with the `lang` of the status afterwards."""
     if lang == i18n.DEFAULT_LANGUAGE or lang not in i18n.SUPPORTED_LANGUAGES:
         return body
-    return body.replace(b'<html lang="pl">', f'<html lang="{lang}">'.encode("ascii"), 1)
+    body = body.replace(b'<html lang="pl">', f'<html lang="{lang}">'.encode("ascii"), 1)
+    title = html.escape(i18n.t(lang, "ui.page.title"), quote=False).encode("utf-8")   # the `<title>` is static until the first status: only the Polish default is replaced
+    return body.replace(PAGE_TITLE, b"<title>" + title + b"</title>", 1)
 
 
 def skill_assets(layerset) -> tuple[dict[str, Path], Path | None]:
@@ -538,8 +543,24 @@ def skill_assets(layerset) -> tuple[dict[str, Path], Path | None]:
     return assets, found[1] if found else None
 
 
-def load_descriptions(path: Path | None) -> dict:
-    """Static descriptions of steps, acts and gates (tooltips): `descriptions.json` of the skill, `{key: {title, text}}`."""
+def descriptions_path(path: Path | None, lang: str) -> Path | None:
+    """The descriptions file for the project language: `descriptions.<lang>.json` next to `descriptions.json` (the same layer) for a
+    supported language other than the default; a missing, non-regular or linked file = the Polish `descriptions.json`."""
+    if path is None or lang == i18n.DEFAULT_LANGUAGE or lang not in i18n.SUPPORTED_LANGUAGES:
+        return path
+    sibling = path.with_name(f"descriptions.{lang}.json")
+    try:
+        if sibling.is_file() and not sibling.is_symlink():
+            return sibling
+    except OSError:
+        pass
+    return path
+
+
+def load_descriptions(path: Path | None, lang: str = i18n.DEFAULT_LANGUAGE) -> dict:
+    """Static descriptions of steps, acts and gates (tooltips): `descriptions.json` of the skill, `{key: {title, text}}`;
+    for a project in another supported language its `descriptions.<lang>.json` when present (fallback: the Polish file)."""
+    path = descriptions_path(path, lang)
     try:
         data = json.loads(path.read_text(encoding="utf-8")) if path else {}
     except (OSError, ValueError):
@@ -936,7 +957,7 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
                     return self._send(200, b"", "text/event-stream; charset=utf-8")
                 return self._events()
             if route == "/api/descriptions":
-                return self._json(200, load_descriptions(self.board.descriptions))
+                return self._json(200, load_descriptions(self.board.descriptions, self.board.lang()))
             if route == "/healthz":
                 answer = {"ok": True, "version": self.board.version}
                 if self.board.approve_token and self.role != ports.ROLE_READ:   # a short digest, never the token: `dashboard url` tells its server from a stranger on the port
@@ -962,13 +983,13 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
         here = host in self.board.approve_hosts
         return here, not here and host in self.board.read_hosts
 
-    def _approve_allowed(self) -> str | None:
+    def _approve_allowed(self, lang: str) -> str | None:
         """Reason to refuse a write or None: loopback Host (also against DNS rebinding and tunnels), own header (forces
         a CORS preflight the server does not answer), matching Origin when the browser sent one, JSON content type."""
         allowed = self.board.approve_hosts
         host = request_host(self.headers.get("Host"))
         strict = self.role == ports.ROLE_APPROVE   # the consent socket of the two-port mode: exact Origin, no intermediary headers
-        lang = self.board.lang()
+        self._refusal_code = None   # set to "approve_token" only by the token refusal, so the caller needs no text compare (the language is read once per request)
         if host not in allowed and not (strict and self._host_allowed(host)):  # foreign Host: do_POST already refused it; --read-host: refused here with the fixed HOST_REFUSED text (no name of the request)
             return i18n.t(lang, "srv.http.hostRefused")
         if self.headers.get("X-Status-Board") != "1":
@@ -991,6 +1012,7 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
                     line = self.board.token_failures.add(self.client_address[0])
                     if line:
                         log(line)
+                self._refusal_code = "approve_token"
                 return i18n.t(lang, "srv.http.tokenRefused")
         return None
 
@@ -1002,9 +1024,9 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
             lang = self.board.lang()
             if route != "/api/approve":
                 return self._json(404, {"error": i18n.t(lang, "srv.http.noPage")})
-            refused = self._approve_allowed()
+            refused = self._approve_allowed(lang)
             if refused:
-                return self._json(403, {"error": refused, "code": "approve_token"} if refused == i18n.t(lang, "srv.http.tokenRefused") else {"error": refused})
+                return self._json(403, {"error": refused, "code": self._refusal_code} if self._refusal_code else {"error": refused})
             length = int(self.headers.get("Content-Length") or 0)
             if not 0 < length <= MAX_BODY:
                 return self._json(400, {"error": i18n.t(lang, "srv.http.badLength")})
