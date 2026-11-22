@@ -1,0 +1,96 @@
+"""Leak scan of the feedback payload (CORE-1140-FEEDBACK, F-4): the scan covers the exact bytes (title, tags, body), takes the destination layer as the
+target, shows the coverage and never quotes the text. Client terms are synthetic and composed at run time."""
+import sys
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from layers_helpers import LayersCase, generator_version, make_layer  # noqa: E402
+from skillsync_workflow import feedback, layers  # noqa: E402
+from tmp_paths import child  # noqa: E402
+from test_skillsync_feedback import DRAFT, SECTION, draft  # noqa: E402
+
+CLIENT = 'Brenk' + 'or'   # a client name of ANOTHER layer (synthetic)
+
+
+class LeakScanTest(LayersCase):
+    def config(self, *, identity=True, with_target=True):
+        base = child(self.work, 'leak-layers')
+        core = make_layer(child(base, 'core'), 'core', 'core', version=generator_version())
+        org = make_layer(child(base, 'org'), 'org', 'org')
+        other = self.git_layer('other', 'org', identity_terms=[{'term': CLIENT, 'kind': 'org'}] if identity else None)
+        extra = {'leakguard': {'targets': {'org': {'scope': 'private', 'kind': 'org'}, 'other': {'scope': 'private', 'kind': 'org'}}}} if with_target else {}
+        self.write_config([('core', 'core', core), ('org', 'org', org), ('other', 'org', other)], [(['**'], ['core', 'org'])], **extra)
+        return layers.load_machine_config(self.config_file)
+
+    def scan(self, config, **changes):
+        rendered = feedback.render(feedback.validate_draft(draft(**changes)), SECTION)
+        return feedback.leak_scan(config, 'org', feedback.final_payload(rendered), directory=self.work)
+
+    def test_a_clean_payload_passes_with_the_coverage_of_the_leak_guard(self):
+        report = self.scan(self.config())
+        self.assertEqual((report['status'], report['findings']), ('PASS', []))
+        self.assertEqual(report['coverage'], 'full')
+
+    def test_a_client_name_in_each_surface_fails_without_quoting_it(self):
+        config = self.config()
+        cases = {'title': {'title': f'Fix for {CLIENT}'}, 'body': {'problem': f'{CLIENT} reported it'},
+                 'evidence': {'evidence': [{'source': 'run', 'note': f'seen at {CLIENT}'}]}, 'target': {'target': f'skills/{CLIENT.lower()}/SKILL.md'}}
+        for name, changes in cases.items():
+            with self.subTest(name):
+                report = self.scan(config, **changes)
+                self.assertEqual(report['status'], 'FAIL')
+                self.assertTrue(report['findings'])
+                self.assertNotIn(CLIENT.lower(), repr(report).lower())
+
+    def test_a_client_name_in_a_label_is_caught_as_part_of_the_tags(self):
+        config = self.config()
+        section = {**SECTION, 'labels': [CLIENT.lower()]}
+        rendered = feedback.render(feedback.validate_draft(DRAFT), section)
+        report = feedback.leak_scan(config, 'org', feedback.final_payload(rendered), directory=self.work)
+        self.assertEqual(report['status'], 'FAIL')
+        self.assertIn('tags', {item['label'] for item in report['findings']})
+
+    def test_a_comment_payload_is_scanned_too(self):
+        config = self.config()
+        rendered = feedback.render(feedback.validate_draft(draft(problem=f'{CLIENT} again')), SECTION, mode='comment', item=4)
+        self.assertEqual(feedback.leak_scan(config, 'org', feedback.final_payload(rendered), directory=self.work)['status'], 'FAIL')
+
+    def test_a_secret_shaped_text_fails(self):
+        token = 'ghp_' + 'A1b2C3d4' * 5
+        self.assertEqual(self.scan(self.config(), problem=f'the token is {token}')['status'], 'FAIL')
+
+    def test_other_secret_shapes_fail_and_ordinary_text_does_not(self):
+        config = self.config()
+        for text in ('Authorization: Bearer ' + 'abcdefghij' * 3, 'password = ' + 'hunter22' + 'xyz', '-----BEGIN RSA PRIVATE ' + 'KEY-----',
+                     'https://user:' + 'pw1234@host.example', 'a' * 52):
+            with self.subTest(text[:12]):
+                self.assertEqual(self.scan(config, problem=text)['status'], 'FAIL')
+        self.assertEqual(self.scan(config, problem='The token field is described in the docs; the password policy is unchanged.')['status'], 'PASS')
+
+    def test_without_identity_files_the_coverage_is_generic_and_says_so(self):
+        report = self.scan(self.config(identity=False))
+        self.assertEqual(report['status'], 'PASS')
+        self.assertEqual(report['coverage'], 'generic')
+
+    def test_without_a_declared_target_the_coverage_is_generic(self):
+        report = self.scan(self.config(with_target=False))
+        self.assertEqual(report['coverage'], 'generic')
+
+    def test_the_target_is_the_destination_layer_not_a_choice_of_the_repository(self):
+        config = self.config()
+        payload = feedback.final_payload(feedback.render(feedback.validate_draft(DRAFT), SECTION))
+        self.assertEqual(feedback.leak_scan(config, 'org', payload, directory=self.work)['status'], 'PASS')
+        # the identity of the destination layer itself is not a forbidden term for it: the text of layer `other` may name its own client
+        rendered = feedback.render(feedback.validate_draft(draft(problem=f'{CLIENT} again')), SECTION)
+        self.assertEqual(feedback.leak_scan(config, 'other', feedback.final_payload(rendered), directory=self.work)['status'], 'PASS')
+
+    def test_bad_input_is_blocked_not_passed(self):
+        config = self.config()
+        payload = feedback.final_payload(feedback.render(feedback.validate_draft(DRAFT), SECTION))
+        report = feedback.leak_scan(config, 'org', payload, directory=child(self.work, 'missing-dir'))
+        self.assertEqual(report['status'], 'BLOCKED')
+
+
+if __name__ == '__main__':
+    unittest.main()

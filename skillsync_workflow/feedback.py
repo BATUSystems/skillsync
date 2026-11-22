@@ -300,3 +300,47 @@ def store_lock(store, timeout=15.0):
     finally:
         with contextlib.suppress(OSError):
             os.unlink(path)
+
+
+# --------------------------------------------------------------------------- F-4: leak scan of the exact bytes that are sent
+
+_SECRET_PATTERNS = (
+    re.compile(r'gh[pousr]_[A-Za-z0-9]{20,}'), re.compile(r'github_pat_[A-Za-z0-9_]{20,}'), re.compile(r'\bxox[abprs]-[A-Za-z0-9-]{10,}'),
+    re.compile(r'\bAKIA[0-9A-Z]{16}\b'), re.compile(r'\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}'),
+    re.compile(r'-----BEGIN [A-Z ]*PRIVATE KEY-----'), re.compile(r'(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{20,}'),
+    re.compile(r'\b[a-z2-7]{52}\b'),   # the shape of an Azure DevOps personal access token
+    re.compile(r'(?i)\b(?:password|passwd|secret|token|api[_-]?key|pat)\b\s*[:=]\s*[^\s,;]{8,}'),
+    re.compile(r'(?i)\b(?:https?|ssh)://[^/\s:@]+:[^/\s@]{3,}@'),   # credentials in a URL
+)
+
+
+def secret_findings(texts):
+    """`[{label, category: 'secret'}]` for the texts `[(label, text)]` that contain a secret-shaped string (never the string itself).
+
+    The identity scan of the leak guard does not look for credentials, so this is the second part of the scan (conservative: a false positive stops the
+    send, a miss does not exist for the shapes listed)."""
+    return [{'label': label, 'category': 'secret'} for label, text in texts if any(pattern.search(text) for pattern in _SECRET_PATTERNS)]
+
+
+def leak_scan(config, layer_id, payload, *, directory):
+    """The leak guard scan of the payload as it is sent (`final_payload`: title, every tag, body or comment), against the identities of the OTHER layers.
+
+    The scan target is the id of the destination layer given explicitly (the owner of the tracker the text goes to), never chosen from a repository.
+    Returns `{status, coverage, findings, warnings, reason}`: `status` PASS, FAIL (a finding) or BLOCKED (bad input: also a stop); a finding carries the
+    label of the text and the category, never the text. `coverage` `generic` means no identity files were found, so client names are NOT checked
+    (the preview says so); `partial` and `full` follow the leak guard. `directory` is any existing directory (the scan needs no repository)."""
+    from . import leakguard
+    try:
+        inputs = layers.leakguard_inputs(config, target=layer_id)
+        texts = [('title', payload['title']), ('tags', '\n'.join(payload['tags'])), ('body', payload['body'])]
+        report = leakguard.leakcheck(str(directory), mode='text', texts=texts, target=layer_id, targets=inputs['targets'],
+                                     identity_files=inputs['identity_files'], target_patterns=layers.target_patterns_file(config, layer_id),
+                                     trailer_allow=inputs['trailer_allow'], select=False)
+    except (layers.LayerError, leakguard.LeakguardError) as exc:
+        return {'status': 'BLOCKED', 'coverage': 'generic', 'findings': [], 'warnings': [], 'reason': str(exc)[:200]}
+    findings = [{'label': item['path'], 'category': item['category']} for item in report['findings']] + secret_findings(texts)
+    status = report['status']
+    if status == 'PASS' and findings:
+        status = 'FAIL'
+    return {'status': status, 'coverage': report['coverage'], 'findings': findings,
+            'warnings': list(report.get('warnings', [])), 'reason': report.get('reason')}
