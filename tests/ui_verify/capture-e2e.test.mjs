@@ -206,7 +206,7 @@ const variants = (s) => [s, encodeURIComponent(s), Buffer.from(s).toString('base
 
 function loginProject(passSelector, extra = {}) {
   return project({ 'login.html': LOGIN, 'home.html': page() }, {
-    login: { url: 'login.html', steps: [{ fill: { selector: '#user', valueEnv: 'UV_FAKE_USER' } }, { fill: { selector: passSelector, valueEnv: 'UV_FAKE_PASS' } }, { click: '#go' }] },
+    login: { url: 'login.html', steps: [{ fill: { selector: '#user', valueEnv: 'UI_VERIFY_FAKE_USER' } }, { fill: { selector: passSelector, valueEnv: 'UI_VERIFY_FAKE_PASS' } }, { click: '#go' }] },
     pages: [HOME],
     ...extra,
   });
@@ -215,7 +215,7 @@ function loginProject(passSelector, extra = {}) {
 test('e2e sekret: haslo ze zmiennej (valueEnv) nie wystepuje w outDir ani w stdout/stderr przy bledzie logowania (zly selektor)', { skip: SKIP }, () => {
   const secret = secretValue();
   const { dir, file } = loginProject(`#nope-${secret}`);
-  const r = capture(['--config', file, 'out'], { cwd: dir, env: { UV_FAKE_USER: 'user-x', UV_FAKE_PASS: secret } });
+  const r = capture(['--config', file, 'out'], { cwd: dir, env: { UI_VERIFY_FAKE_USER: 'user-x', UI_VERIFY_FAKE_PASS: secret } });
   assert.ok([2, 3].includes(r.code), `kod ${r.code}: ${r.stdout}${r.stderr}`);
   const all = everything(dir, r);
   for (const v of variants(secret)) assert.ok(!all.includes(v), `wariant sekretu w wyniku: ${v === secret ? 'surowy' : v}`);
@@ -224,7 +224,7 @@ test('e2e sekret: haslo ze zmiennej (valueEnv) nie wystepuje w outDir ani w stdo
 test('e2e sekret, kontrola: ta sama atrapa niezadeklarowana jako sekret trafia do wyniku (test wycieku potrafi paść)', { skip: SKIP }, () => {
   const secret = secretValue();
   const { dir, file } = loginProject(`#nope-${secret}`);
-  const r = capture(['--config', file, 'out'], { cwd: dir, env: { UV_FAKE_USER: 'user-x', UV_FAKE_PASS: 'inne-haslo-zupelnie' } });
+  const r = capture(['--config', file, 'out'], { cwd: dir, env: { UI_VERIFY_FAKE_USER: 'user-x', UI_VERIFY_FAKE_PASS: 'inne-haslo-zupelnie' } });
   assert.ok([2, 3].includes(r.code), `kod ${r.code}: ${r.stdout}${r.stderr}`);
   assert.ok(everything(dir, r).includes(secret), 'selektor z atrapa powinien trafic do bledu, gdy nie jest maskowany');
 });
@@ -232,7 +232,7 @@ test('e2e sekret, kontrola: ta sama atrapa niezadeklarowana jako sekret trafia d
 test('e2e sekret: udane logowanie - haslo nie trafia do outDir ani stdout/stderr', { skip: SKIP }, () => {
   const secret = secretValue();
   const { dir, file } = loginProject('#pass');
-  const r = capture(['--config', file, 'out'], { cwd: dir, env: { UV_FAKE_USER: 'user-x', UV_FAKE_PASS: secret } });
+  const r = capture(['--config', file, 'out'], { cwd: dir, env: { UI_VERIFY_FAKE_USER: 'user-x', UI_VERIFY_FAKE_PASS: secret } });
   assert.equal(r.code, 0, r.stdout + r.stderr);
   const all = everything(dir, r);
   for (const v of variants(secret)) assert.ok(!all.includes(v), 'sekret w wyniku');
@@ -240,7 +240,7 @@ test('e2e sekret: udane logowanie - haslo nie trafia do outDir ani stdout/stderr
 
 test('e2e trace: bez --allow-trace brak trace.zip i storageState.json; z flaga sa, jest ostrzezenie i zalecenie .gitignore', { skip: SKIP }, () => {
   const secret = secretValue();
-  const env = { UV_FAKE_USER: 'user-x', UV_FAKE_PASS: secret };
+  const env = { UI_VERIFY_FAKE_USER: 'user-x', UI_VERIFY_FAKE_PASS: secret };
   const a = loginProject('#pass');
   const ra = capture(['--config', a.file, 'out'], { cwd: a.dir, env });
   assert.equal(ra.code, 0, ra.stdout + ra.stderr);
@@ -258,3 +258,86 @@ test('e2e trace: bez --allow-trace brak trace.zip i storageState.json; z flaga s
 });
 
 function secretValue() { return ['fake', 'secret', String(process.pid), 'abcd'].join('-'); }
+
+// =====================================================================================
+// S10: polityka nawigacji (B1), symlinki (B3), czas asercji (A10), zly stan strony (C5)
+// =====================================================================================
+
+const SYMLINK_SKIP = (() => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'uv-capture-e2e-probe-'));
+  try {
+    fs.writeFileSync(path.join(d, 't'), 'x');
+    fs.symlinkSync(path.join(d, 't'), path.join(d, 'l'), 'file');
+    return false;
+  } catch (e) {
+    return `needs-symlink: ${e.code || e.message}`;
+  } finally {
+    fs.rmSync(d, { recursive: true, force: true });
+  }
+})();
+const EVIL = 'http://127.0.0.2:9/login?next=secret-query';
+
+test('e2e B1: logowanie - strona przekierowuje (location.replace) na niedozwolony origin => kod 2, sekret nie zostaje wpisany ani wypisany', { skip: SKIP }, () => {
+  const secret = secretValue();
+  const redirecting = `<!doctype html><html><body><script>location.replace(${JSON.stringify(EVIL)});</script><input id="user"><input id="pass" type="password"></body></html>`;
+  const { dir, file } = project({ 'login.html': redirecting, 'home.html': page() }, {
+    login: { url: 'login.html', steps: [{ fill: { selector: '#user', valueEnv: 'UI_VERIFY_FAKE_USER' } }, { fill: { selector: '#pass', valueEnv: 'UI_VERIFY_FAKE_PASS' } }, { click: '#go' }] },
+    pages: [HOME],
+  });
+  const r = capture(['--config', file, 'out'], { cwd: dir, env: { UI_VERIFY_FAKE_USER: 'user-x', UI_VERIFY_FAKE_PASS: secret } });
+  assert.equal(r.code, 2, r.stdout + r.stderr);
+  assert.match(r.stderr, /navigation blocked: http:\/\/127\.0\.0\.2:9/);
+  assert.ok(!r.stderr.includes('secret-query') && !r.stdout.includes('secret-query'), 'query URL w komunikacie');
+  const all = r.stdout + r.stderr + (fs.existsSync(path.join(dir, 'out')) ? listFiles(path.join(dir, 'out')).map((f) => fs.readFileSync(f).toString('latin1')).join('\n') : '');
+  for (const v of [secret, encodeURIComponent(secret), Buffer.from(secret).toString('base64')]) assert.ok(!all.includes(v), 'sekret w wyniku');
+});
+
+test('e2e B1: zrzut strony, ktora przekierowuje na niedozwolony origin => kod 2 (nie PASS, nie UNVERIFIED)', { skip: SKIP }, () => {
+  const redirecting = `<!doctype html><html><body><script>location.replace(${JSON.stringify(EVIL)});</script><h1>Hello</h1></body></html>`;
+  const { dir, file } = project({ 'home.html': redirecting }, { pages: [HOME] });
+  const r = capture(['--config', file, 'out'], { cwd: dir });
+  assert.equal(r.code, 2, r.stdout + r.stderr);
+  assert.match(r.stderr, /navigation blocked/);
+});
+
+test('e2e C5: strona przekierowuje na inna lokalna strone => zrzut UNVERIFIED (assertion NONE, page-state-mismatch), kod 3', { skip: SKIP }, () => {
+  const { dir, file } = project({ 'moved.html': '<!doctype html><html><body><script>location.replace("home.html");</script></body></html>', 'home.html': page() }, {
+    pages: [{ id: 'moved', url: 'moved.html', assert: { selector: 'h1', text: 'Hello' } }],
+  });
+  const r = capture(['--config', file, 'out'], { cwd: dir });
+  assert.equal(r.code, 3, r.stdout + r.stderr);
+  assert.equal(readManifest(dir).shots[0].assertion, 'NONE');
+  assert.match(r.stdout + fs.readFileSync(path.join(dir, 'out', 'capture.txt'), 'utf8'), /page-state-mismatch/);
+});
+
+const LATE = `<!doctype html><html><body><script>setTimeout(() => { const h = document.createElement('h1'); h.id = 'late'; h.textContent = 'Late'; document.body.appendChild(h); }, 900);</script></body></html>`;
+
+test('e2e A10: element pojawiajacy sie po ~0,9 s - domyslny limit (5 s) => asercja PASS; assertTimeoutMs 100 => FAIL', { skip: SKIP }, () => {
+  const ok = project({ 'late.html': LATE }, { pages: [{ id: 'late', url: 'late.html', assert: { selector: '#late' } }] });
+  const r1 = capture(['--config', ok.file, 'out'], { cwd: ok.dir });
+  assert.equal(r1.code, 0, r1.stdout + r1.stderr);
+  assert.equal(readManifest(ok.dir).shots[0].assertion, 'PASS');
+  const tight = project({ 'late.html': LATE }, { pages: [{ id: 'late', url: 'late.html', assert: { selector: '#late' }, assertTimeoutMs: 100 }] });
+  const r2 = capture(['--config', tight.file, 'out'], { cwd: tight.dir });
+  assert.equal(r2.code, 1, r2.stdout + r2.stderr);
+  assert.equal(readManifest(tight.dir).shots[0].assertion, 'FAIL');
+});
+
+test('e2e B3: strona HTML bedaca symlinkiem na plik poza katalogiem konfiguracji => kod 2, brak zrzutu', { skip: SKIP || SYMLINK_SKIP }, () => {
+  const outside = newDir('elsewhere');
+  fs.writeFileSync(path.join(outside, 'secret.html'), page());
+  const { dir, file } = project({}, { pages: [{ ...HOME, url: 'link.html' }] });
+  fs.symlinkSync(path.join(outside, 'secret.html'), path.join(dir, 'link.html'), 'file');
+  const r = capture(['--config', file, 'out'], { cwd: dir });
+  assert.equal(r.code, 2, r.stdout + r.stderr);
+  assert.equal(fs.existsSync(path.join(dir, 'out', 'manifest.json')), false);
+});
+
+test('e2e B3: outDir bedacy symlinkiem na katalog poza cwd => kod 2 i nic nie zapisane poza cwd', { skip: SKIP || SYMLINK_SKIP }, () => {
+  const outside = newDir('outside-out');
+  const { dir, file } = project({ 'home.html': page() }, { pages: [HOME] });
+  fs.symlinkSync(outside, path.join(dir, 'out'), 'junction');
+  const r = capture(['--config', file, 'out'], { cwd: dir });
+  assert.equal(r.code, 2, r.stdout + r.stderr);
+  assert.deepEqual(fs.readdirSync(outside), [], 'zapis poza cwd przez symlink');
+});

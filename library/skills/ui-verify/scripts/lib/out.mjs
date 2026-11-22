@@ -1,6 +1,6 @@
 // Jedno gardlo wyjscia: maskowanie sekretow i zapis plikow/strumieni tylko pod root.
 import path from 'node:path';
-import { resolveInside } from './policy.mjs';
+import { assertRealInside, resolveInside } from './policy.mjs';
 
 const MASK = '***';
 
@@ -58,11 +58,27 @@ export function createMasker({ secrets = [], extra = [] } = {}) {
   return { mask, maskValue, secrets: valid.length };
 }
 
+// Wspolny masker dla handlera globalnego (installGuards): domyslnie wartosci zmiennych z UI_VERIFY_SECRET_ENV
+// w process.env, plus masker ustawiony przez skrypt (sekrety z konfiguracji).
+let guardMasker = null;
+
+export function setGuardMasker(masker) {
+  guardMasker = masker && typeof masker.mask === 'function' ? masker : null;
+}
+
+export function guardMask(text) {
+  const names = String(process.env.UI_VERIFY_SECRET_ENV || '').split(',').map((n) => n.trim()).filter(Boolean);
+  let out = createMasker({ secrets: collectSecretsFromEnv(process.env, names) }).mask(text);
+  if (guardMasker) out = guardMasker.mask(out);
+  return out;
+}
+
 export function createSink({ masker, fs, root, stdout, stderr }) {
   const streams = { stdout, stderr };
   return {
     async writeFile(rel, data) {
       const abs = resolveInside(root, masker.mask(rel));
+      assertRealInside(root, abs, fs);
       const body = typeof data === 'string' ? masker.mask(data) : data;
       if (fs.promises) {
         await fs.promises.mkdir(path.dirname(abs), { recursive: true });

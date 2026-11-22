@@ -1,51 +1,70 @@
 # Indeks narzędzi biblioteki. Schemat: schema 1, rekord = jedno narzędzie z własnym usage i selftest.
-# Ścieżki `path`/`files` są względem katalogu library/ rdzenia; `usage` i `selftest` podają polecenie względem pliku skryptu.
+# `path` jest względem korzenia warstwy (library/ rdzenia); `files` to wzorce ścieżek projektu dla `route --files` (w rdzeniu pusta lista);
+# `usage` i `selftest` są pisane tak, jakby katalogiem roboczym był katalog skryptu.
 schema: 1
 tools:
-  - id: ui-parity-measure
-    path: skills/ui-verify/scripts/measure.mjs
-    purpose: Pomiar parytetu elementów UI (pudełko, kolory, font) wzorzec kontra kandydat, z kontrolą kształtu przez wycięty pixel diff.
-    topics: [ui, parytet, pomiar, playwright, pixel-diff]
-    usage: node measure.mjs --config <plik.json> <outDir>
-    selftest: node measure.mjs --selftest
-    files:
-      - skills/ui-verify/scripts/lib/measure-core.mjs
-      - skills/ui-verify/scripts/lib/playwright-adapter.mjs
-    limits: Wymaga Chrome i zależności z cache (install.mjs); selftest czystej logiki działa bez nich. Kody 0 PASS, 1 FAIL, 2 błąd, 3 brak środowiska lub UNVERIFIED.
-    status: active
-    origin: Rdzeń Skillsync, skill ui-verify (inwentarz narzędzi weryfikacji UI).
-  - id: ui-pixel-diff
-    path: skills/ui-verify/scripts/pixel-diff.mjs
-    purpose: Porównanie dwóch PNG (pixelmatch) z odpornością na przesunięcie o 1 px, maskami, progiem procentowym i jawną odmową dla różnych wymiarów.
-    topics: [ui, pixel-diff, png, regresja-wizualna]
-    usage: node pixel-diff.mjs [--max-pct <n>] [--mask <x,y,w,h>] [--crop] [--diff-out <plik>] [--json] <wzorzec.png> <kandydat.png>
-    selftest: node pixel-diff.mjs --selftest
-    files:
-      - skills/ui-verify/scripts/lib/pixels.mjs
-      - skills/ui-verify/scripts/lib/runtime.mjs
-    limits: Wymaga pngjs i pixelmatch z cache (install.mjs); selftest bez nich zwraca 3 dla przypadków z PNG. Bez Chrome.
-    status: active
-    origin: Rdzeń Skillsync, skill ui-verify.
-  - id: ui-capture
-    path: skills/ui-verify/scripts/capture.mjs
-    purpose: Zrzuty macierzy stron, szerokości i trybów kolorów z maskami elementów zmiennych i asercją pozytywną (strona pokazała oczekiwany element).
-    topics: [ui, zrzuty, playwright, regresja-wizualna]
-    usage: node capture.mjs [--allow-origin <wzorzec>] [--allow-trace] --config <plik.json> <outDir>
-    selftest: node capture.mjs --selftest
-    files:
-      - skills/ui-verify/scripts/lib/capture-core.mjs
-      - skills/ui-verify/scripts/lib/playwright-adapter.mjs
-    limits: Wymaga Chrome i zależności z cache; logowanie tylko ze zmiennych środowiska; trace i storageState tylko z --allow-trace; strona bez asercji daje UNVERIFIED (kod 3).
-    status: active
-    origin: Rdzeń Skillsync, skill ui-verify.
-  - id: ui-diff
-    path: skills/ui-verify/scripts/diff.mjs
-    purpose: Porównanie dwóch katalogów zrzutów z capture; SAME tylko gdy oba zrzuty mają asercję pozytywną PASS, inaczej UNVERIFIED.
-    topics: [ui, zrzuty, regresja-wizualna, diff]
-    usage: node diff.mjs [--max-pct <n>] [--json] <przed> <po>
-    selftest: node diff.mjs --selftest
-    files:
-      - skills/ui-verify/scripts/lib/diff-core.mjs
-    limits: Wymaga pngjs i pixelmatch z cache; domyślny próg 0 (SAME = identyczne); brak manifestu daje UNVERIFIED.
-    status: active
-    origin: Rdzeń Skillsync, skill ui-verify.
+- id: ui-parity-measure
+  path: skills/ui-verify/scripts/measure.mjs
+  purpose: Pomiar parytetu elementów UI (pudełko, kolory, font) wzorzec kontra kandydat, z kontrolą kształtu przez wycięty pixel diff.
+  topics:
+  - ui
+  - parytet
+  - pomiar
+  - playwright
+  - pixel-diff
+  usage: node measure.mjs --config <plik.json> <outDir>
+  selftest: node measure.mjs --selftest
+  files: []
+  limits:
+  - Wymaga Chrome i zależności z cache (install.mjs); selftest czystej logiki działa bez nich. Kody 0 PASS, 1 FAIL, 2 błąd, 3 brak środowiska lub UNVERIFIED.
+  status: active
+  supersedes: []
+  origin: Rdzeń Skillsync, skill ui-verify (inwentarz narzędzi weryfikacji UI).
+- id: ui-pixel-diff
+  path: skills/ui-verify/scripts/pixel-diff.mjs
+  purpose: Porównanie dwóch PNG (pixelmatch) z odpornością na przesunięcie o 1 px, maskami, progiem procentowym i jawną odmową dla różnych wymiarów.
+  topics:
+  - ui
+  - pixel-diff
+  - png
+  - regresja-wizualna
+  usage: node pixel-diff.mjs [--max-pct <n>] [--mask <x,y,w,h>] [--crop] [--diff-out <plik>] [--json] <wzorzec.png> <kandydat.png>
+  selftest: node pixel-diff.mjs --selftest
+  files: []
+  limits:
+  - Wymaga pngjs i pixelmatch z cache (install.mjs); selftest bez nich zwraca 3 dla przypadków z PNG. Bez Chrome.
+  status: active
+  supersedes: []
+  origin: Rdzeń Skillsync, skill ui-verify.
+- id: ui-capture
+  path: skills/ui-verify/scripts/capture.mjs
+  purpose: Zrzuty macierzy stron, szerokości i trybów kolorów z maskami elementów zmiennych i asercją pozytywną (strona pokazała oczekiwany element).
+  topics:
+  - ui
+  - zrzuty
+  - playwright
+  - regresja-wizualna
+  usage: node capture.mjs [--allow-origin <wzorzec>] [--allow-trace] --config <plik.json> <outDir>
+  selftest: node capture.mjs --selftest
+  files: []
+  limits:
+  - Wymaga Chrome i zależności z cache; logowanie tylko ze zmiennych środowiska; trace i storageState tylko z --allow-trace; strona bez asercji daje UNVERIFIED (kod 3).
+  status: active
+  supersedes: []
+  origin: Rdzeń Skillsync, skill ui-verify.
+- id: ui-diff
+  path: skills/ui-verify/scripts/diff.mjs
+  purpose: Porównanie dwóch katalogów zrzutów z capture; SAME tylko gdy oba zrzuty mają asercję pozytywną PASS, inaczej UNVERIFIED.
+  topics:
+  - ui
+  - zrzuty
+  - regresja-wizualna
+  - diff
+  usage: node diff.mjs [--max-pct <n>] [--json] <przed> <po>
+  selftest: node diff.mjs --selftest
+  files: []
+  limits:
+  - Wymaga pngjs i pixelmatch z cache; domyślny próg 0 (SAME = identyczne); brak manifestu daje UNVERIFIED.
+  status: active
+  supersedes: []
+  origin: Rdzeń Skillsync, skill ui-verify.

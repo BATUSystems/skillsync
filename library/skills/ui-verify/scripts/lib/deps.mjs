@@ -10,11 +10,12 @@ const CJS_CONDS = 'require,default'.split(',');
 const NAMES = new Set(['playwright-core', 'pngjs', 'pixelmatch']);
 
 export class DepsError extends Error {
-  constructor(code, message, hint = '') {
+  // exit: 3 = brak srodowiska (NOT_RUN); 2 = niebezpieczna konfiguracja cache (blad, nie brak zaleznosci).
+  constructor(code, message, hint = '', exit = 3) {
     super(message);
     this.name = 'DepsError';
     this.code = code;
-    this.exit = 3;
+    this.exit = exit;
     this.hint = hint;
   }
 }
@@ -121,8 +122,9 @@ export function createLoader({
 }
 
 export function explainMissing(err) {
-  const lines = [`Zaleznosci ui-verify: ${err.code} (kod 3, NOT_RUN).`];
+  const exit = err.exit === 2 ? 2 : 3;
+  const lines = [exit === 2 ? `Zaleznosci ui-verify: ${err.code} (kod 2, blad konfiguracji).` : `Zaleznosci ui-verify: ${err.code} (kod 3, NOT_RUN).`];
   if (err.message) lines.push(err.message);
   lines.push(err.hint || INSTALL_HINT);
-  return { exit: 3, lines };
+  return { exit, lines };
 }

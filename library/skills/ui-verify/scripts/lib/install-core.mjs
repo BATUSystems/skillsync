@@ -47,7 +47,7 @@ function isInside(p, root, child) {
 // Rzuca InstallError(2), gdy cache lezy w katalogu skilla albo (POSIX) jest cudzy / zapisywalny dla g/o.
 export function checkCacheSafety({ root, skillDir, platform = process.platform, fs = nodeFs, proc = process }) {
   const p = pathFor(platform);
-  if (isInside(p, skillDir, root)) {
+  if (skillDir && isInside(p, skillDir, root)) {
     throw new InstallError(2, `cache dir ${root} lies inside the skill directory; the cache must never live in a project repository`);
   }
   if (platform === 'win32') return;

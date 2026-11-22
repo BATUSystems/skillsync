@@ -1,7 +1,7 @@
 // Czysta logika polecenia `capture`: walidacja konfiguracji, macierz stron x szerokosci x trybow, asercja pozytywna, manifest i raport.
 // Bez przegladarki i bez PNG: adapter zwraca bajty zrzutu i informacje o asercji; zapis plikow robi powloka.
 import { pathToFileURL } from 'node:url';
-import { checkOrigin, resolveInside, safeName } from './policy.mjs';
+import { checkOrigin, PolicyError, resolveInside, safeName } from './policy.mjs';
 import { combine, exitFor } from './verdict.mjs';
 
 export const DEFAULTS = Object.freeze({
@@ -20,8 +20,10 @@ export class CaptureError extends Error {
   }
 }
 
-const TOP_KEYS = new Set(['version', 'viewport', 'widths', 'modes', 'secretEnv', 'login', 'pages']);
-const PAGE_KEYS = new Set(['id', 'url', 'waitFor', 'assert', 'masks', 'fullPage']);
+const TOP_KEYS = new Set(['version', 'viewport', 'widths', 'modes', 'secretEnv', 'assertTimeoutMs', 'login', 'pages']);
+const PAGE_KEYS = new Set(['id', 'url', 'waitFor', 'assert', 'assertTimeoutMs', 'masks', 'fullPage']);
+const REASON_PAGE_STATE = 'page-state-mismatch';
+const isTimeout = (v) => Number.isInteger(v) && v >= 0 && v <= 60000;
 const MODES = new Set(['light', 'dark']);
 const ID_RE = /^[A-Za-z0-9._-]{1,120}$/;
 const SCHEME_RE = /^[A-Za-z][A-Za-z0-9+.-]+:/;
@@ -58,6 +60,13 @@ export function missingLoginEnv(config, env) {
     if (s.fill && (typeof env?.[s.fill.valueEnv] !== 'string' || env[s.fill.valueEnv] === '')) names.push(s.fill.valueEnv);
   }
   return [...new Set(names)];
+}
+
+// valueEnv: tylko nazwy z UI_VERIFY_SECRET_ENV (lista po przecinku) albo z prefiksem UI_VERIFY_; konfiguracja z obcego repo
+// nie moze wyczytac dowolnych zmiennych srodowiska.
+function isAllowedValueEnv(name, env) {
+  if (name.startsWith('UI_VERIFY_')) return true;
+  return String((env && env.UI_VERIFY_SECRET_ENV) || '').split(',').map((n) => n.trim()).filter(Boolean).includes(name);
 }
 
 function resolveUrl(url, { configDir, allowOrigins }, where, errors) {
@@ -110,8 +119,13 @@ function validateLogin(login, ctx, errors) {
   } else {
     login.steps.forEach((s, i) => {
       const w = `login.steps[${i}]`;
-      if (!isObj(s) || Object.keys(s).length !== 1) {
+      if (!isObj(s)) {
         errors.push(`${w}: expected exactly one of { fill } or { click }`);
+        return;
+      }
+      for (const k of Object.keys(s)) if (k !== 'fill' && k !== 'click') errors.push(`${w}.${k}: unknown key`);
+      if (['fill', 'click'].filter((k) => k in s).length !== 1) {
+        if (!Object.keys(s).some((k) => k !== 'fill' && k !== 'click')) errors.push(`${w}: expected exactly one of { fill } or { click }`);
         return;
       }
       if ('click' in s) {
@@ -129,6 +143,9 @@ function validateLogin(login, ctx, errors) {
         }
         if (!isText(f.selector)) errors.push(`${w}.fill.selector: required non-empty string`);
         if (!isText(f.valueEnv)) errors.push(`${w}.fill.valueEnv: required name of an environment variable`);
+        else if (!isAllowedValueEnv(f.valueEnv, ctx.env)) {
+          errors.push(`${w}.fill.valueEnv: variable "${f.valueEnv}" is not allowed (only names listed in UI_VERIFY_SECRET_ENV or starting with UI_VERIFY_)`);
+        }
         steps.push({ fill: { selector: f.selector, valueEnv: f.valueEnv } });
       } else {
         errors.push(`${w}: unknown step (allowed: fill, click)`);
@@ -168,10 +185,10 @@ function validatePage(page, index, ctx, seen, errors) {
   for (const k of Object.keys(page)) if (!PAGE_KEYS.has(k)) errors.push(`${where}.${k}: unknown key`);
   if (typeof page.id !== 'string' || !ID_RE.test(page.id) || page.id === '.' || page.id === '..') {
     errors.push(`${where}.id: expected [A-Za-z0-9._-]{1,120}`);
-  } else if (seen.has(page.id)) {
-    errors.push(`${where}.id: duplicate id "${page.id}"`);
+  } else if (seen.has(page.id.toLowerCase())) {
+    errors.push(`${where}.id: duplicate id "${page.id}" (ids are compared case-insensitively)`);
   } else {
-    seen.add(page.id);
+    seen.add(page.id.toLowerCase());
   }
   const url = resolveUrl(page.url, ctx, where, errors);
   if (page.waitFor !== undefined && !isText(page.waitFor)) errors.push(`${where}.waitFor: expected a non-empty selector`);
@@ -192,16 +209,25 @@ function validatePage(page, index, ctx, seen, errors) {
     else page.masks.forEach((m, i) => { const v = validateMask(m, `${where}.masks[${i}]`, errors); if (v) masks.push(v); });
   }
   if (page.fullPage !== undefined && typeof page.fullPage !== 'boolean') errors.push(`${where}.fullPage: expected true or false`);
-  return { id: page.id, url, waitFor: page.waitFor ?? null, assert: assertion, masks, fullPage: page.fullPage === true };
+  if (page.assertTimeoutMs !== undefined && !isTimeout(page.assertTimeoutMs)) errors.push(`${where}.assertTimeoutMs: expected an integer 0..60000 (milliseconds)`);
+  return {
+    id: page.id,
+    url,
+    waitFor: page.waitFor ?? null,
+    assert: assertion,
+    masks,
+    fullPage: page.fullPage === true,
+    assertTimeoutMs: isTimeout(page.assertTimeoutMs) ? page.assertTimeoutMs : null,
+  };
 }
 
-export function validateCaptureConfig(cfg, { configDir, allowOrigins = [] } = {}) {
+export function validateCaptureConfig(cfg, { configDir, allowOrigins = [], env = {} } = {}) {
   const errors = [];
   if (!isObj(cfg)) return { ok: false, errors: ['configuration: expected a JSON object'], config: null };
   for (const k of Object.keys(cfg)) if (!TOP_KEYS.has(k)) errors.push(`unknown key "${k}"`);
   if (cfg.version !== 1) errors.push('version: expected 1');
   const viewport = validateViewport(cfg.viewport, errors);
-  const config = { version: 1, viewport, widths: [viewport.width], modes: [...DEFAULTS.modes], secretEnv: [], login: null, pages: [] };
+  const config = { version: 1, viewport, widths: [viewport.width], modes: [...DEFAULTS.modes], secretEnv: [], assertTimeoutMs: null, login: null, pages: [] };
   if (cfg.widths !== undefined) {
     const ok = Array.isArray(cfg.widths) && cfg.widths.length > 0
       && cfg.widths.every((w) => Number.isInteger(w) && w >= DEFAULTS.minWidth && w <= DEFAULTS.maxWidth);
@@ -216,7 +242,11 @@ export function validateCaptureConfig(cfg, { configDir, allowOrigins = [] } = {}
     if (Array.isArray(cfg.secretEnv) && cfg.secretEnv.every(isText)) config.secretEnv = [...cfg.secretEnv];
     else errors.push('secretEnv: expected a list of environment variable names');
   }
-  const ctx = { configDir, allowOrigins };
+  if (cfg.assertTimeoutMs !== undefined) {
+    if (isTimeout(cfg.assertTimeoutMs)) config.assertTimeoutMs = cfg.assertTimeoutMs;
+    else errors.push('assertTimeoutMs: expected an integer 0..60000 (milliseconds)');
+  }
+  const ctx = { configDir, allowOrigins, env };
   if (cfg.login !== undefined) config.login = validateLogin(cfg.login, ctx, errors);
   if (!Array.isArray(cfg.pages) || cfg.pages.length === 0) {
     errors.push('pages: expected a non-empty list');
@@ -235,6 +265,7 @@ async function viaAdapter(fn) {
   try {
     return await fn();
   } catch (e) {
+    if (e instanceof PolicyError) throw e;
     throw new CaptureError(`adapter: ${e && e.message ? e.message : e}`, 'adapter', e);
   }
 }
@@ -252,10 +283,12 @@ export async function runCapture({ config, adapter, env = {} }) {
       for (const mode of config.modes) {
         const r = await viaAdapter(() => adapter.capture({ page, width, mode }));
         if (!r || !(r.png instanceof Uint8Array)) throw new CaptureError('adapter: capture returned no PNG bytes', 'adapter');
-        const assertion = page.assert ? (r.assertionFound === true ? 'PASS' : 'FAIL') : 'NONE';
+        const mismatch = r.stateMismatch === true;
+        const assertion = mismatch ? 'NONE' : page.assert ? (r.assertionFound === true ? 'PASS' : 'FAIL') : 'NONE';
         const name = shotName(page.id, width, mode);
         const shot = { name, pageId: page.id, width, mode, assertion, file: name };
-        if (SHOT_REASON[assertion]) shot.reason = SHOT_REASON[assertion];
+        if (mismatch) shot.reason = REASON_PAGE_STATE;
+        else if (SHOT_REASON[assertion]) shot.reason = SHOT_REASON[assertion];
         hiddenProp(shot, 'png', r.png);
         shots.push(shot);
       }

@@ -102,7 +102,7 @@ test('zla konfiguracja => kod 2 (nie 1 ani 3), brak wynikow', () => {
     'szerokosc poza zakresem': { widths: [100] },
     'literalna wartosc fill': { login: { url: 'page.html', steps: [{ fill: { selector: '#u', value: 'tajne' } }] } },
     'fill bez valueEnv': { login: { url: 'page.html', steps: [{ fill: { selector: '#u' } }] } },
-    'brak zmiennej srodowiska valueEnv': { login: { url: 'page.html', steps: [{ fill: { selector: '#u', valueEnv: 'UV_NIE_USTAWIONA' } }] } },
+    'brak zmiennej srodowiska valueEnv': { login: { url: 'page.html', steps: [{ fill: { selector: '#u', valueEnv: 'UI_VERIFY_NIE_USTAWIONA' } }] } },
   };
   for (const [label, over] of Object.entries(cases)) {
     const { dir, file } = project(over);
@@ -164,8 +164,8 @@ test('sekret z valueEnv (login) w komunikacie bledu konfiguracji jest maskowany 
   fs.writeFileSync(path.join(dir, 'page.html'), '<h1>x</h1>');
   const page = { id: 'home', url: 'page.html', [`k-${secret}`]: 1 };
   const withLogin = path.join(dir, 'with.json');
-  fs.writeFileSync(withLogin, JSON.stringify({ version: 1, login: { url: 'page.html', steps: [{ fill: { selector: '#u', valueEnv: 'UV_FAKE_SECRET' } }] }, pages: [page] }));
-  const r = run(['--config', withLogin, 'out'], { cwd: dir, env: { UV_FAKE_SECRET: secret } });
+  fs.writeFileSync(withLogin, JSON.stringify({ version: 1, login: { url: 'page.html', steps: [{ fill: { selector: '#u', valueEnv: 'UI_VERIFY_FAKE_SECRET' } }] }, pages: [page] }));
+  const r = run(['--config', withLogin, 'out'], { cwd: dir, env: { UI_VERIFY_FAKE_SECRET: secret } });
   assert.equal(r.code, 2, r.stdout + r.stderr);
   assert.ok(!(r.stdout + r.stderr).includes(secret), 'sekret valueEnv w wyjsciu bledu konfiguracji');
   const without = path.join(dir, 'without.json');
@@ -173,4 +173,29 @@ test('sekret z valueEnv (login) w komunikacie bledu konfiguracji jest maskowany 
   const control = run(['--config', without, 'out'], { cwd: dir, env: { UV_FAKE_SECRET: secret } });
   assert.equal(control.code, 2);
   assert.ok((control.stdout + control.stderr).includes(secret), 'kontrola: bez deklaracji sekretu klucz jest w bledzie');
+});
+
+// --- B5: valueEnv tylko z UI_VERIFY_SECRET_ENV albo z prefiksem UI_VERIFY_ (kod 2 przed czymkolwiek innym) ---
+
+function loginProject(valueEnv) {
+  return project({ login: { url: 'page.html', steps: [{ fill: { selector: '#u', valueEnv } }] } });
+}
+
+test('B5: valueEnv z dowolna zmienna srodowiska (spoza listy i bez prefiksu) => kod 2 z nazwa zmiennej, bez wartosci', () => {
+  const secret = secretValue();
+  const { dir, file } = loginProject('UV_ARBITRARY_VAR');
+  const r = run(['--config', file, 'out'], { cwd: dir, env: { UV_ARBITRARY_VAR: secret } });
+  assert.equal(r.code, 2, r.stdout + r.stderr);
+  assert.match(r.stderr, /UV_ARBITRARY_VAR/);
+  assert.ok(!(r.stdout + r.stderr).includes(secret), 'wartosc zmiennej w wyjsciu');
+  assert.equal(fs.existsSync(path.join(dir, 'out', 'manifest.json')), false);
+});
+
+test('B5: zmienna wymieniona w UI_VERIFY_SECRET_ENV albo z prefiksem UI_VERIFY_ przechodzi walidacje (dalej brak zaleznosci => 3, nie 2)', () => {
+  const listed = loginProject('UV_LISTED_VAR');
+  const r1 = run(['--config', listed.file, 'out'], { cwd: listed.dir, env: { UV_LISTED_VAR: 'abcd-1234', UI_VERIFY_SECRET_ENV: 'UV_LISTED_VAR' } });
+  assert.equal(r1.code, 3, r1.stdout + r1.stderr);
+  const prefixed = loginProject('UI_VERIFY_PREFIXED_VAR');
+  const r2 = run(['--config', prefixed.file, 'out'], { cwd: prefixed.dir, env: { UI_VERIFY_PREFIXED_VAR: 'abcd-1234' } });
+  assert.equal(r2.code, 3, r2.stdout + r2.stderr);
 });

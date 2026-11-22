@@ -274,6 +274,20 @@ test('--diff-out poza cwd (../ i sciezka bezwzgledna) => kod 2 i brak pliku', { 
   assert.equal(fs.existsSync(outside), false);
 });
 
+test('N8: --diff-out poza cwd => blad uzycia: jedna linia na stderr, kod 2, bez stosu', { skip: SKIP }, () => {
+  const { a, b, dir } = pair(10, 10, () => WHITE, () => WHITE);
+  const work = path.join(dir, 'work');
+  fs.mkdirSync(work);
+  for (const target of [path.join('..', 'outside.png'), path.join(dir, 'outside.png')]) {
+    const r = run(['--diff-out', target, a, b], { cwd: work });
+    assert.equal(r.code, 2, r.stdout + r.stderr);
+    const lines = r.stderr.split(/\r?\n/).filter((l) => l.trim() !== '');
+    assert.equal(lines.length, 1, `stderr powinien miec jedna linie, jest ${lines.length}: ${r.stderr}`);
+    assert.doesNotMatch(r.stderr, /^\s+at\s/m, 'stos wywolan w stderr');
+    assert.equal(r.stdout.trim(), '');
+  }
+});
+
 // --- fixtury z cases.json ---
 
 const CASES = JSON.parse(fs.readFileSync(path.join(FIXTURES, 'cases.json'), 'utf8')).cases;

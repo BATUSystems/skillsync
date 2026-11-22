@@ -2,6 +2,7 @@
 // Bez przegladarki i bez PNG: adapter zwraca bajty atrapy.
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -13,10 +14,10 @@ const core = await lib('capture-core.mjs');
 const { createMasker } = await lib('out.mjs');
 const { validateCaptureConfig, runCapture, shotName, manifest, formatCaptureReport, DEFAULTS, CaptureError } = core;
 
-const CONFIG_DIR = path.join(path.sep, 'tmp', 'uv-capture-core-cfg');
+const CONFIG_DIR = path.resolve(os.tmpdir(), 'uv-capture-core-cfg');
 const URL_HOME = 'http://localhost/home';
 
-const validate = (cfg, allowOrigins = []) => validateCaptureConfig(cfg, { configDir: CONFIG_DIR, allowOrigins });
+const validate = (cfg, allowOrigins = [], extra = {}) => validateCaptureConfig(cfg, { configDir: CONFIG_DIR, allowOrigins, ...extra });
 const pageCfg = (over = {}) => {
   const p = { id: 'home', url: URL_HOME, assert: { selector: 'h1' }, ...over };
   for (const k of Object.keys(p)) if (p[k] === undefined) delete p[k];
@@ -28,7 +29,7 @@ function mkConfig(top = {}, pages = [pageCfg()]) {
   return v.config;
 }
 const PNG_BYTES = Buffer.from([137, 80, 78, 71, 1, 2, 3, 4]);
-function mkAdapter({ found = true, failOn } = {}) {
+function mkAdapter({ found = true, failOn, stateMismatch = false } = {}) {
   const calls = [];
   return {
     calls,
@@ -36,7 +37,7 @@ function mkAdapter({ found = true, failOn } = {}) {
     async capture(arg) {
       calls.push({ page: arg.page.id ?? arg.page, width: arg.width, mode: arg.mode });
       if (failOn && failOn(arg)) throw new Error('page closed');
-      return { png: PNG_BYTES, assertionFound: typeof found === 'function' ? found(arg) : found };
+      return { png: PNG_BYTES, assertionFound: typeof found === 'function' ? found(arg) : found, ...(stateMismatch ? { stateMismatch: true } : {}) };
     },
   };
 }
@@ -94,7 +95,7 @@ test('walidacja: viewport i liczby dodatnie', () => {
 });
 
 test('walidacja: login.steps tylko fill/click; fill wymaga valueEnv, literalne value => blad (sekret w konfiguracji zabroniony)', () => {
-  const ok = validate({ version: 1, login: { url: URL_HOME, steps: [{ fill: { selector: '#u', valueEnv: 'ENV1' } }, { click: '#go' }] }, pages: [pageCfg()] });
+  const ok = validate({ version: 1, login: { url: URL_HOME, steps: [{ fill: { selector: '#u', valueEnv: 'UI_VERIFY_ENV1' } }, { click: '#go' }] }, pages: [pageCfg()] });
   assert.equal(ok.ok, true, String(ok.errors));
   const literal = validate({ version: 1, login: { url: URL_HOME, steps: [{ fill: { selector: '#u', value: 'tajne' } }] }, pages: [pageCfg()] });
   assert.equal(literal.ok, false);
@@ -201,4 +202,122 @@ test('formatCaptureReport: maskuje sekret zlozony w czasie wykonania (id strony)
   const masked = formatCaptureReport(r, createMasker({ secrets: [secret] }));
   assert.ok(!masked.includes(secret), masked);
   assert.ok(formatCaptureReport(r, createMasker()).includes(secret), 'kontrola: bez maskera id jest w raporcie');
+});
+
+// =====================================================================================
+// S10: A9 (nieznane klucze), A10 (assertTimeoutMs), A11 (id bez rozroznienia wielkosci), B5 (valueEnv), C5 (page-state-mismatch)
+// =====================================================================================
+
+// --- A9 ---
+
+const loginWith = (steps) => ({ version: 1, login: { url: URL_HOME, steps }, pages: [pageCfg()] });
+
+for (const [label, cfg, fragment, key] of [
+  ['login', { ...loginWith([{ click: '#go' }]), login: { url: URL_HOME, steps: [{ click: '#go' }], bogusLogin: 1 } }, 'login', 'bogusLogin'],
+  ['login.steps[*] (krok click z dodatkowym kluczem)', loginWith([{ click: '#go', bogusStep: 1 }]), 'login.steps[0]', 'bogusStep'],
+  ['login.steps[*] (krok fill z dodatkowym kluczem)', loginWith([{ fill: { selector: '#u', valueEnv: 'UI_VERIFY_X' }, bogusStep: 1 }]), 'login.steps[0]', 'bogusStep'],
+  ['login.steps[*].fill', loginWith([{ fill: { selector: '#u', valueEnv: 'UI_VERIFY_X', bogusFill: 1 } }]), 'login.steps[0].fill', 'bogusFill'],
+  ['page', { version: 1, pages: [pageCfg({ bogusPage: 1 })] }, 'pages[0]', 'bogusPage'],
+  ['page.assert', { version: 1, pages: [pageCfg({ assert: { selector: 'h1', bogusAssert: 1 } })] }, 'pages[0].assert', 'bogusAssert'],
+  ['page.masks[*] (selektor)', { version: 1, pages: [pageCfg({ masks: [{ selector: '.c', bogusMask: 1 }] })] }, 'pages[0].masks[0]', 'bogusMask'],
+  ['page.masks[*] (prostokat)', { version: 1, pages: [pageCfg({ masks: [{ x: 0, y: 0, width: 1, height: 1, bogusMask: 1 }] })] }, 'pages[0].masks[0]', 'bogusMask'],
+  ['viewport', { version: 1, viewport: { width: 800, height: 600, bogusVp: 1 }, pages: [pageCfg()] }, 'viewport', 'bogusVp'],
+]) {
+  test(`A9 validateCaptureConfig: nieznany klucz w ${label} => blad z nazwa klucza i sciezka`, () => {
+    const r = validate(cfg);
+    assert.equal(r.ok, false);
+    assert.ok(r.errors.some((e) => e.includes(key) && e.includes(fragment)), String(r.errors));
+  });
+}
+
+// --- A10 ---
+
+for (const [name, v] of [['ujemny', -1], ['powyzej 60000', 60001], ['ulamkowy', 1.5], ['napis', '5000'], ['NaN', Number.NaN]]) {
+  test(`A10 validateCaptureConfig: assertTimeoutMs ${name} => blad (calkowita 0..60000), na poziomie konfiguracji i strony`, () => {
+    const top = validate({ version: 1, assertTimeoutMs: v, pages: [pageCfg()] });
+    assert.equal(top.ok, false);
+    assert.ok(top.errors.some((e) => e.includes('assertTimeoutMs')), String(top.errors));
+    const pg = validate({ version: 1, pages: [pageCfg({ assertTimeoutMs: v })] });
+    assert.equal(pg.ok, false);
+    assert.ok(pg.errors.some((e) => e.includes('assertTimeoutMs') && e.includes('pages[0]')), String(pg.errors));
+  });
+}
+
+test('A10 validateCaptureConfig: assertTimeoutMs 0, 5000 i 60000 sa poprawne (konfiguracja i strona)', () => {
+  for (const v of [0, 5000, 60000]) {
+    assert.equal(validate({ version: 1, assertTimeoutMs: v, pages: [pageCfg()] }).ok, true, `top ${v}`);
+    assert.equal(validate({ version: 1, pages: [pageCfg({ assertTimeoutMs: v })] }).ok, true, `page ${v}`);
+  }
+});
+
+// --- A11 ---
+
+test('A11: id stron rozniace sie tylko wielkoscia liter (Home i home) to duplikat', () => {
+  const r = validate({ version: 1, pages: [pageCfg({ id: 'Home' }), pageCfg({ id: 'home' })] });
+  assert.equal(r.ok, false);
+  assert.ok(r.errors.some((e) => /duplicate|home/i.test(e)), String(r.errors));
+  assert.equal(validate({ version: 1, pages: [pageCfg({ id: 'Home' }), pageCfg({ id: 'about' })] }).ok, true, 'kontrola: rozne id sa ok');
+});
+
+// --- B5 ---
+
+test('B5: valueEnv spoza UI_VERIFY_SECRET_ENV i bez prefiksu UI_VERIFY_ => blad walidacji z nazwa zmiennej', () => {
+  const r = validate(loginWith([{ fill: { selector: '#u', valueEnv: 'AWS_SECRET_ACCESS_KEY' } }]), [], { env: {} });
+  assert.equal(r.ok, false);
+  assert.ok(r.errors.some((e) => e.includes('AWS_SECRET_ACCESS_KEY')), String(r.errors));
+});
+
+test('B5: valueEnv z UI_VERIFY_SECRET_ENV (lista po przecinku, ze spacjami) albo z prefiksem UI_VERIFY_ jest dozwolone', () => {
+  const env = { UI_VERIFY_SECRET_ENV: 'APP_USER, APP_PASS' };
+  const listed = validate(loginWith([{ fill: { selector: '#u', valueEnv: 'APP_USER' } }, { fill: { selector: '#p', valueEnv: 'APP_PASS' } }]), [], { env });
+  assert.equal(listed.ok, true, String(listed.errors));
+  const prefixed = validate(loginWith([{ fill: { selector: '#u', valueEnv: 'UI_VERIFY_LOGIN_USER' } }]), [], { env: {} });
+  assert.equal(prefixed.ok, true, String(prefixed.errors));
+});
+
+test('B5: nazwa wymieniona tylko w UI_VERIFY_SECRET_ENV innej zmiennej nie otwiera dostepu do pozostalych (kontrola)', () => {
+  const env = { UI_VERIFY_SECRET_ENV: 'APP_PASS' };
+  const r = validate(loginWith([{ fill: { selector: '#u', valueEnv: 'APP_USER' } }]), [], { env });
+  assert.equal(r.ok, false);
+  assert.ok(r.errors.some((e) => e.includes('APP_USER')), String(r.errors));
+});
+
+test('B5: blad walidacji nie powtarza WARTOSCI zmiennej, tylko jej nazwe', () => {
+  const secret = ['val', 'ue', String(process.pid), 'zz99'].join('-');
+  const r = validate(loginWith([{ fill: { selector: '#u', valueEnv: 'APP_OTHER_PASS' } }]), [], { env: { APP_OTHER_PASS: secret } });
+  assert.equal(r.ok, false);
+  assert.ok(!r.errors.join('\n').includes(secret));
+});
+
+// --- C5 ---
+
+test('C5: adapter zwraca stateMismatch => zrzut assertion NONE z powodem page-state-mismatch, UNVERIFIED, exit 3 (nawet gdy strona ma assert)', async () => {
+  const r = await runCapture({ config: mkConfig(), adapter: mkAdapter({ found: false, stateMismatch: true }), env: {} });
+  assert.equal(r.shots[0].assertion, 'NONE');
+  assert.equal(r.shots[0].reason, 'page-state-mismatch');
+  assert.equal(r.verdict, 'UNVERIFIED');
+  assert.equal(r.exit, 3);
+  assert.match(formatCaptureReport(r, createMasker()), /page-state-mismatch/);
+  assert.equal(manifest(r).shots[0].assertion, 'NONE');
+});
+
+test('C5: stateMismatch ma pierwszenstwo takze nad assertionFound true; FAIL innej strony nadal wygrywa', async () => {
+  const pages = [pageCfg({ id: 'moved' }), pageCfg({ id: 'bad' })];
+  const adapter = {
+    async capture({ page }) {
+      if (page.id === 'moved') return { png: PNG_BYTES, assertionFound: true, stateMismatch: true };
+      return { png: PNG_BYTES, assertionFound: false };
+    },
+  };
+  const r = await runCapture({ config: mkConfig({}, pages), adapter, env: {} });
+  const by = Object.fromEntries(r.shots.map((x) => [x.pageId, x]));
+  assert.equal(by.moved.assertion, 'NONE');
+  assert.equal(by.moved.reason, 'page-state-mismatch');
+  assert.equal(by.bad.assertion, 'FAIL');
+  assert.equal(r.verdict, 'FAIL');
+});
+
+test('C5: zwykly brak asercji zachowuje powod no-assertion (kontrola rozroznienia powodow)', async () => {
+  const r = await runCapture({ config: mkConfig({}, [pageCfg({ assert: undefined })]), adapter: mkAdapter(), env: {} });
+  assert.equal(r.shots[0].reason, 'no-assertion');
 });

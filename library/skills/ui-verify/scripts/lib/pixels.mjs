@@ -18,21 +18,28 @@ export function compositeOnBackground(img, bg = { r: 255, g: 255, b: 255 }) {
   return out;
 }
 
-function crop(img, w, h) {
-  if (img.width === w && img.height === h) return img;
+function crop(img, w, h, ox = 0, oy = 0) {
+  if (img.width === w && img.height === h && ox === 0 && oy === 0) return img;
   const out = make(w, h);
   for (let y = 0; y < h; y++) {
-    const s = y * img.width * 4;
+    const s = ((y + oy) * img.width + ox) * 4;
     out.data.set(img.data.subarray(s, s + w * 4), y * w * 4);
   }
   return out;
 }
 
-export function cropToCommon(a, b) {
+// align 'start': kotwica w lewym gornym rogu; 'center': nadmiar ucinany po polowie z kazdej strony
+// (nieparzysty nadmiar: wiecej z prawej/dolu).
+export function cropToCommon(a, b, { align = 'start' } = {}) {
   const w = Math.min(a.width, b.width);
   const h = Math.min(a.height, b.height);
   const cropped = a.width !== b.width || a.height !== b.height;
-  return { a: crop(a, w, h), b: crop(b, w, h), cropped };
+  const off = (full, to) => (align === 'center' ? Math.floor((full - to) / 2) : 0);
+  return {
+    a: crop(a, w, h, off(a.width, w), off(a.height, h)),
+    b: crop(b, w, h, off(b.width, w), off(b.height, h)),
+    cropped,
+  };
 }
 
 export function applyMasks(img, masks) {
@@ -64,11 +71,11 @@ export function flagDifferences(a, b, opts = {}) {
   return flags;
 }
 
-// Kolor piksela (x,y) z `a` wystepuje w otoczeniu 3x3 tego punktu w `b`.
-function matchesNearby(a, b, x, y, tol) {
+// Kolor piksela (x,y) z `a` wystepuje w otoczeniu (2r+1)^2 tego punktu w `b`.
+function matchesNearby(a, b, x, y, tol, r) {
   const ao = (y * a.width + x) * 4;
-  for (let dy = -1; dy <= 1; dy++) {
-    for (let dx = -1; dx <= 1; dx++) {
+  for (let dy = -r; dy <= r; dy++) {
+    for (let dx = -r; dx <= r; dx++) {
       const nx = x + dx;
       const ny = y + dy;
       if (nx < 0 || ny < 0 || nx >= b.width || ny >= b.height) continue;
@@ -85,6 +92,7 @@ export function diffImages(imgA, imgB, opts = {}) {
   const maxPct = opts.maxPct ?? 0.5;
   const tol = opts.channelTolerance || 0;
   const tolerate1px = opts.tolerate1px !== false;
+  const radius = Number.isInteger(opts.shiftRadius) && opts.shiftRadius >= 0 ? opts.shiftRadius : 1;
   const flagger = opts.flagger || ((x, y) => flagDifferences(x, y, { channelTolerance: tol }));
   let a = imgA;
   let b = imgB;
@@ -93,7 +101,7 @@ export function diffImages(imgA, imgB, opts = {}) {
     if (!opts.cropToCommon) {
       return { verdict: 'FAIL', pct: 100, diffCount: 0, total: 0, sizeMismatch: true, cropped: false };
     }
-    ({ a, b, cropped } = cropToCommon(a, b));
+    ({ a, b, cropped } = cropToCommon(a, b, { align: opts.align === 'center' ? 'center' : 'start' }));
   }
   a = compositeOnBackground(a, opts.background);
   b = compositeOnBackground(b, opts.background);
@@ -102,11 +110,11 @@ export function diffImages(imgA, imgB, opts = {}) {
     b = applyMasks(b, opts.masks);
   }
   const flags = Uint8Array.from(flagger(a, b));
-  if (tolerate1px) {
+  if (tolerate1px && radius > 0) {
     for (let y = 0; y < a.height; y++) {
       for (let x = 0; x < a.width; x++) {
         const i = y * a.width + x;
-        if (flags[i] && matchesNearby(a, b, x, y, tol) && matchesNearby(b, a, x, y, tol)) flags[i] = 0;
+        if (flags[i] && matchesNearby(a, b, x, y, tol, radius) && matchesNearby(b, a, x, y, tol, radius)) flags[i] = 0;
       }
     }
   }

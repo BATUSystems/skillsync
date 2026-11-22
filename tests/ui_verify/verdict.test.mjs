@@ -1,6 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { EXIT, combine, exitFor, installGuards } from '../../library/skills/ui-verify/scripts/lib/verdict.mjs';
+import os from 'node:os';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+import * as verdictLib from '../../library/skills/ui-verify/scripts/lib/verdict.mjs';
+import { createMasker } from '../../library/skills/ui-verify/scripts/lib/out.mjs';
+
+const { EXIT, combine, exitFor, installGuards } = verdictLib;
+// isMain: namespace, by brak eksportu dawal czerwone testy, a nie blad skladni calego pliku.
+const isMain = (...a) => verdictLib.isMain(...a);
 
 test('EXIT ma kody 0/1/2/3', () => {
   assert.deepEqual({ ...EXIT }, { PASS: 0, FAIL: 1, ERROR: 2, NOT_RUN: 3 });
@@ -78,4 +86,70 @@ test('installGuards: zwraca funkcje odpinajaca', () => {
   off();
   assert.equal(proc.handlers.has('uncaughtException'), false);
   assert.equal(proc.handlers.has('unhandledRejection'), false);
+});
+
+// --- isMain (A1): strazник uruchomienia jako skrypt glowny, odporny na symlinki ---
+
+const SCRIPT_PATH = path.resolve(os.tmpdir(), 'uv-ismain', 'real', 'tool.mjs');
+const SCRIPT_URL = pathToFileURL(SCRIPT_PATH).href;
+const LINK_PATH = path.resolve(os.tmpdir(), 'uv-ismain', 'link', 'tool.mjs');
+const OTHER_PATH = path.resolve(os.tmpdir(), 'uv-ismain', 'real', 'other.mjs');
+
+// Atrapa fs: realpathSync mapuje symlink na cel, reszta to tozsamosc.
+const fsWith = (links = {}) => ({ realpathSync: (p) => links[p] ?? p });
+const fsBroken = () => ({ realpathSync: () => { throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); } });
+
+test('isMain: ta sama sciezka => true', () => {
+  assert.equal(isMain(SCRIPT_URL, SCRIPT_PATH, fsWith()), true);
+});
+
+test('isMain: argv[1] to symlink na ten plik => true (realpath obu stron)', () => {
+  assert.equal(isMain(SCRIPT_URL, LINK_PATH, fsWith({ [LINK_PATH]: SCRIPT_PATH })), true);
+});
+
+test('isMain: symlink na inny plik albo inny skrypt => false (kontrola negatywna)', () => {
+  assert.equal(isMain(SCRIPT_URL, LINK_PATH, fsWith({ [LINK_PATH]: OTHER_PATH })), false);
+  assert.equal(isMain(SCRIPT_URL, OTHER_PATH, fsWith()), false);
+});
+
+test('isMain: brak argv[1] (import z REPL/-e) => false', () => {
+  assert.equal(isMain(SCRIPT_URL, undefined, fsWith()), false);
+  assert.equal(isMain(SCRIPT_URL, '', fsWith()), false);
+});
+
+test('isMain: blad realpath => porownanie leksykalne (rowne => true, rozne => false), bez wyjatku', () => {
+  assert.equal(isMain(SCRIPT_URL, SCRIPT_PATH, fsBroken()), true);
+  assert.equal(isMain(SCRIPT_URL, OTHER_PATH, fsBroken()), false);
+  assert.equal(isMain(SCRIPT_URL, LINK_PATH, fsBroken()), false);
+});
+
+// --- installGuards z maskowaniem komunikatu (B2) ---
+
+function fakeProcWithStderr() {
+  const proc = fakeProc();
+  proc.written = [];
+  proc.stderr = { write: (t) => { proc.written.push(String(t)); return true; } };
+  return proc;
+}
+const guardSecret = () => ['guard', 'secret', String(process.pid), 'wxyz'].join('-');
+
+test('installGuards({ mask }): komunikat bledu na stderr przechodzi przez maskowanie, exit(2)', () => {
+  const secret = guardSecret();
+  const proc = fakeProcWithStderr();
+  installGuards(proc, { mask: createMasker({ secrets: [secret] }).mask });
+  proc.handlers.get('uncaughtException')(new Error(`login failed for ${secret}`));
+  proc.handlers.get('unhandledRejection')(`rejected with ${secret}`);
+  const all = proc.written.join('');
+  assert.ok(all.length > 0, 'blad powinien byc zgloszony na stderr');
+  assert.ok(!all.includes(secret), `sekret w stderr: ${all}`);
+  assert.match(all, /\*\*\*/);
+  assert.deepEqual(proc.exits, [2, 2]);
+});
+
+test('installGuards: kontrola - bez maskowania sekretu ten sam blad trafia na stderr (test wycieku potrafi paść)', () => {
+  const secret = guardSecret();
+  const proc = fakeProcWithStderr();
+  installGuards(proc, { mask: createMasker({ secrets: [] }).mask });
+  proc.handlers.get('uncaughtException')(new Error(`login failed for ${secret}`));
+  assert.ok(proc.written.join('').includes(secret));
 });

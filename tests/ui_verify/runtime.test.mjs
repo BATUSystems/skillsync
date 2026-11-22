@@ -14,11 +14,18 @@ const LOCK = '{"lockfileVersion":3,"packages":{}}';
 function fakeFs(files) {
   const map = new Map(Object.entries(files));
   const accessed = [];
+  const reads = [];
+  const ownUid = typeof process.getuid === 'function' ? process.getuid() : 0;
   return {
     accessed,
+    reads,
     existsSync(p) { accessed.push(p); return map.has(p) || [...map.keys()].some((k) => k.startsWith(p + path.sep)); },
+    // Kontrola bezpieczenstwa cache (B4) dotyka statSync: domyslnie katalog wlasciciela bez zapisu dla g/o.
+    statSync() { return { uid: ownUid, mode: 0o40755, isDirectory: () => true }; },
+    lstatSync() { return { uid: ownUid, mode: 0o40755, isDirectory: () => true, isSymbolicLink: () => false }; },
     readFileSync(p) {
       accessed.push(p);
+      reads.push(p);
       if (!map.has(p)) { const e = new Error('ENOENT ' + p); e.code = 'ENOENT'; throw e; }
       return map.get(p);
     },
@@ -76,13 +83,14 @@ test('resolveCacheDir: zmiana zawartosci pliku zmienia hash, ta sama zawartosc d
   assert.notEqual(a, c);
 });
 
-test('resolveCacheDir: czyta tylko dwa pliki skilla', async () => {
+// Od B4 resolveCacheDir sprawdza tez katalog cache (existsSync/statSync), wiec ograniczenie dotyczy ODCZYTU TRESCI plikow.
+test('resolveCacheDir: odczytuje tresc tylko dwoch plikow skilla', async () => {
   const { resolveCacheDir } = await load();
   const fs = fakeFs(skillFiles());
   resolveCacheDir({ skillDir: SKILL, env: {}, platform: 'linux', homedir: '/fake-home/u', fs });
   const allowed = new Set([path.join(SKILL, 'package.json'), path.join(SKILL, 'package-lock.json')]);
-  assert.ok(fs.accessed.length >= 2);
-  for (const p of fs.accessed) assert.ok(allowed.has(p), `nieoczekiwany odczyt: ${p}`);
+  assert.ok(fs.reads.length >= 2);
+  for (const p of fs.reads) assert.ok(allowed.has(p), `nieoczekiwany odczyt: ${p}`);
 });
 
 test('resolveCacheDir: brak package.json albo lockfile => DepsError not-installed (exit 3)', async () => {
@@ -260,4 +268,85 @@ test('loadImaging: brak pngjs albo pixelmatch => DepsError exit 3', async () => 
   const { DepsError } = await loadDeps();
   const { run } = await loaderFixture(() => ({}));
   await assert.rejects(run(), (e) => e instanceof DepsError && e.exit === 3);
+});
+
+// --- B4: kontrola cache jak przy instalacji, zanim kod z cache zostanie zaladowany; blad konfiguracji => kod 2 ---
+
+const POSIX_ONLY = { skip: process.platform === 'win32' ? 'needs-posix: bity uid/mode nie dotycza Windows' : false };
+const isCacheRefusal = (e) => e && e.name === 'DepsError' && e.exit === 2;
+
+// fs, w ktorym cache istnieje i ma zadane wlasciwosci (statSync/lstatSync).
+function fsWithCacheStat(stat) {
+  const base = fakeFs(skillFiles());
+  const mk = () => ({ isDirectory: () => true, isSymbolicLink: () => false, ...stat });
+  return { ...base, existsSync: () => true, statSync: mk, lstatSync: mk };
+}
+const ownUid = () => (typeof process.getuid === 'function' ? process.getuid() : 0);
+
+test('B4 resolveCacheDir: wzgledna sciezka UI_VERIFY_CACHE_DIR => DepsError z kodem 2 (nie 3)', async () => {
+  const { resolveCacheDir } = await load();
+  for (const rel of ['relative/cache', './cache', '../cache']) {
+    assert.throws(() => resolveCacheDir({ skillDir: SKILL, env: { UI_VERIFY_CACHE_DIR: rel }, platform: 'linux', homedir: '/fake-home/u', fs: fakeFs(skillFiles()) }), isCacheRefusal, rel);
+  }
+});
+
+test('B4 resolveCacheDir: cache wewnatrz katalogu skilla => DepsError kod 2', async () => {
+  const { resolveCacheDir } = await load();
+  const env = { UI_VERIFY_CACHE_DIR: path.join(SKILL, 'cache') };
+  assert.throws(() => resolveCacheDir({ skillDir: SKILL, env, platform: 'linux', homedir: '/fake-home/u', fs: fakeFs(skillFiles()) }), isCacheRefusal);
+});
+
+test('B4 resolveCacheDir: cache obcego wlasciciela => DepsError kod 2', POSIX_ONLY, async () => {
+  const { resolveCacheDir } = await load();
+  const fs = fsWithCacheStat({ uid: ownUid() + 1, mode: 0o40700 });
+  assert.throws(() => resolveCacheDir({ skillDir: SKILL, env: { UI_VERIFY_CACHE_DIR: '/abs/cache' }, platform: 'linux', homedir: '/fake-home/u', fs }), isCacheRefusal);
+});
+
+test('B4 resolveCacheDir: cache z bitami zapisu dla grupy/innych => DepsError kod 2 (070/007 i 077)', POSIX_ONLY, async () => {
+  const { resolveCacheDir } = await load();
+  for (const mode of [0o40775, 0o40757, 0o40777]) {
+    const fs = fsWithCacheStat({ uid: ownUid(), mode });
+    assert.throws(() => resolveCacheDir({ skillDir: SKILL, env: { UI_VERIFY_CACHE_DIR: '/abs/cache' }, platform: 'linux', homedir: '/fake-home/u', fs }), isCacheRefusal, mode.toString(8));
+  }
+});
+
+test('B4 resolveCacheDir: bezpieczny cache (swoj, 0700 i 0755) => zwraca sciezke (kontrola, ze kontrola nie odrzuca wszystkiego)', POSIX_ONLY, async () => {
+  const { resolveCacheDir } = await load();
+  for (const mode of [0o40700, 0o40755]) {
+    const fs = fsWithCacheStat({ uid: ownUid(), mode });
+    const got = resolveCacheDir({ skillDir: SKILL, env: { UI_VERIFY_CACHE_DIR: '/abs/cache' }, platform: 'linux', homedir: '/fake-home/u', fs });
+    assert.ok(got.startsWith('/abs/cache'), got);
+  }
+});
+
+test('B4 resolveCacheDir: Windows pomija uid i bity zapisu, ale nadal odrzuca cache wewnatrz skilla', { skip: process.platform === 'win32' ? false : 'needs-windows: sciezki win32 w atrapie wymagaja node:path win32' }, async () => {
+  const { resolveCacheDir } = await load();
+  const winSkill = 'D:\\h\\skill';
+  const files = { [path.win32.join(winSkill, 'package.json')]: PKG, [path.win32.join(winSkill, 'package-lock.json')]: LOCK };
+  const wfs = {
+    ...fakeFs({}),
+    existsSync: () => true,
+    statSync: () => ({ uid: 0, mode: 0o40777, isDirectory: () => true }),
+    lstatSync: () => ({ uid: 0, mode: 0o40777, isDirectory: () => true, isSymbolicLink: () => false }),
+    readFileSync: (p) => { if (p in files) return files[p]; throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); },
+  };
+  assert.doesNotThrow(() => resolveCacheDir({ skillDir: winSkill, env: { UI_VERIFY_CACHE_DIR: 'D:\\h\\cache' }, platform: 'win32', homedir: 'D:\\h', fs: wfs }));
+  assert.throws(() => resolveCacheDir({ skillDir: winSkill, env: { UI_VERIFY_CACHE_DIR: 'D:\\h\\skill\\c' }, platform: 'win32', homedir: 'D:\\h', fs: wfs }), isCacheRefusal);
+});
+
+test('B4 loadImaging: niebezpieczny cache (obcy wlasciciel albo zapis dla g/o) => DepsError kod 2 i ZADEN kod z cache nie jest ladowany', POSIX_ONLY, async () => {
+  const { loadImaging } = await load();
+  for (const stat of [{ uid: ownUid() + 1, mode: 0o40700 }, { uid: ownUid(), mode: 0o40777 }]) {
+    const calls = { required: 0, imported: 0 };
+    const cache = path.resolve('/fake/cache/h');
+    const fs = fsWithCacheStat(stat);
+    await assert.rejects(loadImaging({
+      cacheDir: cache,
+      env: {},
+      fs,
+      requireFactory: () => () => { calls.required++; return {}; },
+      importer: async () => { calls.imported++; return {}; },
+    }), isCacheRefusal, JSON.stringify(stat));
+    assert.deepEqual(calls, { required: 0, imported: 0 });
+  }
 });

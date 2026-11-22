@@ -201,3 +201,97 @@ test('diffImages: channelTolerance wycisza drobne roznice kanalow', () => {
   assert.equal(diffImages(a, b).verdict, 'FAIL');
   assert.equal(diffImages(a, b, { channelTolerance: 3 }).verdict, 'PASS');
 });
+
+// --- A4: odpornosc 1 px jest symetryczna (detal tylko we wzorcu => roznica) ---
+
+test('diffImages: detal tylko we WZORCU (pierwszy obraz) - cienka linia, ktorej kandydat nie ma => FAIL', () => {
+  const r = diffImages(vline(100, 100, 50), solid(100, 100));
+  assert.equal(r.verdict, 'FAIL', JSON.stringify(r));
+  assert.equal(r.diffCount, 100);
+  assert.ok(r.pct > 0.5);
+});
+
+test('diffImages: detal tylko u KANDYDATA (drugi obraz) - ta sama linia, odwrocona kolejnosc => FAIL', () => {
+  const r = diffImages(solid(100, 100), vline(100, 100, 50));
+  assert.equal(r.verdict, 'FAIL', JSON.stringify(r));
+  assert.equal(r.diffCount, 100);
+});
+
+// --- C1: shiftRadius (otoczenie (2r+1)^2, domyslnie 1; tolerate1px:false = 0) ---
+
+test('diffImages shiftRadius: 2 => przesuniecie o 2 px PASS, o 4 px FAIL; domyslnie (1) przesuniecie o 2 px FAIL', () => {
+  assert.equal(diffImages(vline(100, 100, 50), vline(100, 100, 52), { shiftRadius: 2 }).verdict, 'PASS');
+  assert.equal(diffImages(vline(100, 100, 50), vline(100, 100, 54), { shiftRadius: 2 }).verdict, 'FAIL');
+  assert.equal(diffImages(vline(100, 100, 50), vline(100, 100, 52)).verdict, 'FAIL', 'domyslny promien to 1');
+  assert.equal(diffImages(vline(100, 100, 50), vline(100, 100, 52), { shiftRadius: 1 }).verdict, 'FAIL');
+});
+
+test('diffImages shiftRadius: 3 dopuszcza 3 px, a 4 px juz nie; promien dziala symetrycznie (kandydat -> wzorzec)', () => {
+  assert.equal(diffImages(vline(100, 100, 50), vline(100, 100, 53), { shiftRadius: 3 }).verdict, 'PASS');
+  assert.equal(diffImages(vline(100, 100, 53), vline(100, 100, 50), { shiftRadius: 3 }).verdict, 'PASS');
+  assert.equal(diffImages(vline(100, 100, 50), vline(100, 100, 54), { shiftRadius: 3 }).verdict, 'FAIL');
+});
+
+test('diffImages shiftRadius: 0 => bez tolerancji (1 px to roznica); tolerate1px:false wygrywa z shiftRadius', () => {
+  const zero = diffImages(vline(100, 100, 50), vline(100, 100, 51), { shiftRadius: 0 });
+  assert.equal(zero.verdict, 'FAIL');
+  assert.equal(zero.diffCount, 200);
+  const off = diffImages(vline(100, 100, 50), vline(100, 100, 52), { shiftRadius: 2, tolerate1px: false });
+  assert.equal(off.verdict, 'FAIL');
+  assert.equal(off.diffCount, 200);
+});
+
+test('diffImages shiftRadius: wiekszy promien nie ukrywa detalu tylko po jednej stronie (symetria zachowana)', () => {
+  assert.equal(diffImages(vline(100, 100, 50), solid(100, 100), { shiftRadius: 3 }).verdict, 'FAIL');
+  assert.equal(diffImages(solid(100, 100), vline(100, 100, 50), { shiftRadius: 3 }).verdict, 'FAIL');
+});
+
+// --- C2: cropToCommon / diffImages align ---
+
+const ramp = (w, h) => {
+  const img = solid(w, h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) setPx(img, x, y, [x, y, 7]);
+  return img;
+};
+
+test('cropToCommon align center: nadmiar ucinany po polowie z kazdej strony (parzysty 4 => 2+2)', () => {
+  const r = cropToCommon(ramp(6, 1), ramp(2, 1), { align: 'center' });
+  assert.equal(r.cropped, true);
+  assert.deepEqual([r.a.width, r.a.height], [2, 1]);
+  assert.deepEqual(getPx(r.a, 0, 0).slice(0, 2), [2, 0]);
+  assert.deepEqual(getPx(r.a, 1, 0).slice(0, 2), [3, 0]);
+});
+
+test('cropToCommon align center: nadmiar nieparzysty - wiecej ucinane po prawej/dole (5 => 1 z lewej, 2 z prawej)', () => {
+  const w = cropToCommon(ramp(5, 1), ramp(2, 1), { align: 'center' });
+  assert.deepEqual(getPx(w.a, 0, 0).slice(0, 2), [1, 0]);
+  assert.deepEqual(getPx(w.a, 1, 0).slice(0, 2), [2, 0]);
+  const h = cropToCommon(ramp(1, 5), ramp(1, 2), { align: 'center' });
+  assert.deepEqual(getPx(h.a, 0, 0).slice(0, 2), [0, 1]);
+  assert.deepEqual(getPx(h.a, 0, 1).slice(0, 2), [0, 2]);
+});
+
+test('cropToCommon align center dziala na obu obrazach niezaleznie (wiekszy bywa b) i nie rusza mniejszego wymiaru', () => {
+  const r = cropToCommon(ramp(2, 4), ramp(6, 2), { align: 'center' });
+  assert.deepEqual([r.a.width, r.a.height, r.b.width, r.b.height], [2, 2, 2, 2]);
+  assert.deepEqual(getPx(r.a, 0, 0).slice(0, 2), [0, 1], 'a: wysokosc 4 -> 2, offset 1');
+  assert.deepEqual(getPx(r.b, 0, 0).slice(0, 2), [2, 0], 'b: szerokosc 6 -> 2, offset 2');
+});
+
+test('cropToCommon: align start (jawnie i domyslnie) zakotwicza w lewym gornym rogu; rowne wymiary => cropped false', () => {
+  for (const opts of [{ align: 'start' }, {}, undefined]) {
+    const r = opts === undefined ? cropToCommon(ramp(6, 1), ramp(2, 1)) : cropToCommon(ramp(6, 1), ramp(2, 1), opts);
+    assert.deepEqual(getPx(r.a, 0, 0).slice(0, 2), [0, 0], JSON.stringify(opts));
+  }
+  assert.equal(cropToCommon(solid(3, 3), solid(3, 3), { align: 'center' }).cropped, false);
+});
+
+test('diffImages align center: element o innej szerokosci wyrownany do srodka => PASS; align start i domyslny => FAIL', () => {
+  const wide = vline(16, 10, 8);
+  const narrow = vline(10, 10, 5);
+  const centered = diffImages(wide, narrow, { cropToCommon: true, align: 'center', shiftRadius: 0 });
+  assert.equal(centered.verdict, 'PASS', JSON.stringify(centered));
+  assert.equal(centered.cropped, true);
+  assert.equal(diffImages(wide, narrow, { cropToCommon: true, align: 'start', shiftRadius: 0 }).verdict, 'FAIL');
+  assert.equal(diffImages(wide, narrow, { cropToCommon: true, shiftRadius: 0 }).verdict, 'FAIL', 'domyslnie start');
+});

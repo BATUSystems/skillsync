@@ -1,15 +1,20 @@
 # Granice narzędzi i znane luki
 
-## Znane luki (zatwierdzone)
+## Znane granice (zatwierdzone)
 
 - **Kształt pominięty przy różnicy wymiarów.** Gdy wymiary elementu różnią się więcej niż `sizeTolerancePx`,
-  kształt dostaje `SKIPPED` (`box-mismatch`) i nie jest oceniany. Przy zatwierdzonym odstępstwie (`deviations`)
-  na `width` albo `height`, albo gdy `tolerancePx` jest większe niż `sizeTolerancePx`, pomiar pudełka może
-  dać PASS. Wtedy łączny wynik to PASS bez dowodu pikselowego, bo `SKIPPED` nie wchodzi do łączenia.
-  Test w selftestcie `measure` (`box mismatch skips the shape check`) pokrywa tylko przypadek, w którym
-  pomiar też daje FAIL.
-- **Odporność na 1 px.** Przesunięcie o 1 px nie daje FAIL (zamierzone). Wyłączenie: `pixel-diff --no-tolerate-1px`.
-  W `measure` i `diff` odporność jest zawsze włączona.
+  kształt dostaje `SKIPPED` (`box-mismatch`) i nie jest oceniany. To nie jest już luka: para jest wtedy
+  UNVERIFIED (kod 3), także gdy pomiar pudełka dał PASS (zatwierdzone odstępstwo na `width`/`height` albo
+  `tolerancePx` większe niż `sizeTolerancePx`). Para jest PASS tylko z jawnym `acceptShape` (kształt
+  `ACCEPTED` z powodem w raporcie).
+- **Odporność na przesunięcie.** Przesunięcie do `shiftRadius` pikseli nie daje FAIL (zamierzone). Wyłączenie:
+  `pixel-diff --no-tolerate-1px`. W `measure` promień to `shiftPx` (domyślnie `ceil(deviceScaleFactor)`),
+  w `diff` zawsze 1.
+- **Duże maski rozmywają próg.** Mianownik procentu obejmuje cały obszar, także zamalowany. Duża maska
+  zmniejsza udział różnic w pozostałym obszarze, więc próg `maxPct` staje się łagodniejszy. Maskuj małe
+  obszary albo obniż `maxPct`.
+- **Polityka origin nie obejmuje subzasobów.** Kontrola dotyczy adresu strony i nawigacji (główne, ramki).
+  Obrazy, skrypty, style i `fetch` ładowane przez stronę nie są sprawdzane.
 
 ## Zakres pomiaru
 
@@ -40,9 +45,29 @@
   Bez niego każdy przebieg z przeglądarką kończy się kodem 3 (NOT_RUN), nie PASS.
 - Instalacja wymaga npm (z Node) i dostępu do rejestru npm. Proxy i `.npmrc` użytkownika działają przez npm.
   Brak sieci daje kod 3 z instrukcją.
-- `pixel-diff` i `diff` czytają dowolne ścieżki wskazane w argumentach (bez ograniczenia do katalogu). Zapis
-  jest tylko do `--diff-out` pod bieżącym katalogiem.
+- `pixel-diff` czyta dowolne ścieżki wejściowe wskazane w argumentach (bez ograniczenia do katalogu), a zapis
+  jest tylko do `--diff-out` pod bieżącym katalogiem. `diff` wymusza katalogi pod bieżącym katalogiem
+  (wyjście poza niego to błąd 2).
 - Testowane minimum: Node 22. Deklarowane `>= 20.11` nie jest testowane. Node 18 nie jest obsługiwany.
+
+## Znane granice wewnętrzne (część do 1.14.x)
+
+- Blokada instalacji (plik `.lock`) nie ma przejęcia przeterminowanej blokady po awarii procesu.
+- Katalog `<hash>.tmp-<pid>` po `SIGKILL` zostaje w cache; narzędzie go nie sprząta.
+- Instalacja używa środowiska npm użytkownika (`.npmrc`, zmienne `npm_config_*`); nie jest ono czyszczone.
+- Wymaganie Node ≥ 20.11 nie jest egzekwowane przy starcie (brak wczesnego sprawdzenia wersji).
+- `PLAYWRIGHT_MODULE_PATH` wskazuje kod ładowany bez sprawdzenia lockfile i bez kontroli bezpieczeństwa cache.
+
+## Do 1.14.x
+
+- Maski selektorem rozwiązywane per strona w adapterze `measure`.
+- Akceptacja odstępstw per tryb i wiersz z pliku danych.
+- Macierz DPR z referencjami.
+- Polityka subzasobów.
+- Maskowanie binariów (`trace.zip`, PNG).
+- Limit rozmiaru dekodera PNG.
+- Blokada instalacji: przejęcie przeterminowanej blokady.
+- Sprzątanie `<hash>.tmp-<pid>` po `SIGKILL`.
 
 ## Co nie jest sprawdzone tym dokumentem
 

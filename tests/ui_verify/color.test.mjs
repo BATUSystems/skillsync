@@ -50,3 +50,11 @@ test('sameColor: tolerancja domyslnie 0', () => {
   assert.equal(sameColor(a, b, 1), false);
   assert.equal(sameColor(a, b, 2), true);
 });
+
+// A13: dwa w pelni przezroczyste kolory sa rowne niezaleznie od RGB.
+test('sameColor: dwa kolory z alfa 0 sa rowne mimo roznych RGB; przezroczysty i nieprzezroczysty nie', () => {
+  assert.equal(sameColor({ r: 255, g: 0, b: 0, a: 0 }, { r: 0, g: 0, b: 0, a: 0 }), true);
+  assert.equal(sameColor(parseColor('rgba(10, 200, 30, 0)'), parseColor('transparent')), true);
+  assert.equal(sameColor({ r: 255, g: 0, b: 0, a: 0 }, { r: 255, g: 0, b: 0, a: 1 }), false);
+  assert.equal(sameColor({ r: 255, g: 0, b: 0, a: 1 }, { r: 0, g: 0, b: 0, a: 1 }), false, 'kontrola: nieprzezroczyste o roznym RGB nadal rozne');
+});

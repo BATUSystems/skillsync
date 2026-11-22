@@ -2,6 +2,7 @@
 // Bez przegladarki i bez PNG: obrazy to { width, height, data } RGBA.
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -14,7 +15,7 @@ const { diffImages } = await lib('pixels.mjs');
 const { createMasker } = await lib('out.mjs');
 const { validateConfig, runMeasure, formatReport, toJson, DEFAULTS, MeasureError } = core;
 
-const CONFIG_DIR = path.join(path.sep, 'tmp', 'uv-measure-core-cfg');
+const CONFIG_DIR = path.resolve(os.tmpdir(), 'uv-measure-core-cfg');
 const URL_REF = 'http://localhost/ref';
 const URL_CAND = 'http://localhost/cand';
 
@@ -58,7 +59,7 @@ function mkAdapter(data, { failOn, refUrls = [URL_REF] } = {}) {
       const d = data[s.url];
       assert.ok(d, `brak danych atrapy dla ${s.url}`);
       last[refs.has(s.url) ? 'reference' : 'candidate'] = s.url;
-      return { found: d.found, box: d.box, styles: d.styles };
+      return { found: d.found, box: d.box, styles: d.styles, ...(d.reason ? { reason: d.reason } : {}) };
     },
     async screenshot(s) {
       const k = typeof s === 'string' ? last[s] : s.url;
@@ -480,4 +481,260 @@ test('toJson: wynik jest obiektem JSON-serializowalnym z verdict i pairs', async
   assert.equal(j.verdict, 'PASS');
   assert.ok(Array.isArray(j.pairs) && j.pairs.length === 1);
   assert.doesNotThrow(() => JSON.stringify(j));
+});
+
+// =====================================================================================
+// S10: A2 (ksztalt SKIPPED nie daje PASS), A3 (literowka w styleProps), A9 (nieznane klucze),
+// C1 (shiftPx), C2 (shapeAlign), C3 (maski per strona), C4 (acceptShape), C5 (page-state-mismatch)
+// =====================================================================================
+
+const vlineImg = (w, h, x0) => solid(w, h, (x) => (x === x0 ? BLACK : WHITE));
+const DPR2 = { viewport: { width: 400, height: 200, deviceScaleFactor: 2 } };
+
+// --- A2 ---
+
+test('A2: zatwierdzone odstepstwo na width (ksztalt SKIPPED box-mismatch) => para UNVERIFIED, exit 3, nie PASS', async () => {
+  const cand = side({ box: { x: 10, y: 10, width: 60, height: 40 }, image: block(4, 60, 40) });
+  const { p, result, diffFn } = await measureOne({ cand, pair: { deviations: [{ prop: 'width', reason: 'szerszy przycisk zatwierdzony' }] } });
+  assert.equal(p.measure.verdict, 'PASS', 'pomiar przechodzi dzieki odstepstwu');
+  assert.ok(p.measure.approved.some((f) => f.prop === 'width'));
+  assert.equal(p.shape.verdict, 'SKIPPED');
+  assert.equal(p.shape.reason, 'box-mismatch');
+  assert.equal(diffFn.calls.length, 0);
+  assert.equal(p.verdict, 'UNVERIFIED');
+  assert.equal(result.verdict, 'UNVERIFIED');
+  assert.equal(result.exit, 3);
+  assert.match(formatReport(result, createMasker({})), /^UNVERIFIED p\b/m);
+});
+
+test('A2: tolerancePx > sizeTolerancePx (width +4 px przy 5/1) => pomiar PASS, ksztalt SKIPPED, para UNVERIFIED', async () => {
+  const cand = side({ box: { x: 10, y: 10, width: 44, height: 40 }, image: block(4, 44, 40) });
+  const { p, result } = await measureOne({ cand, top: { tolerancePx: 5, sizeTolerancePx: 1 } });
+  assert.equal(p.measure.verdict, 'PASS');
+  assert.equal(p.shape.verdict, 'SKIPPED');
+  assert.equal(p.verdict, 'UNVERIFIED');
+  assert.equal(result.exit, 3);
+});
+
+test('A2: FAIL pomiaru nadal wygrywa z SKIPPED (kontrola: bez odstepstwa para FAIL, exit 1)', async () => {
+  const cand = side({ box: { x: 10, y: 10, width: 60, height: 40 }, image: block(4, 60, 40) });
+  const { p, result } = await measureOne({ cand });
+  assert.equal(p.verdict, 'FAIL');
+  assert.equal(result.exit, 1);
+});
+
+// --- C4 ---
+
+test('C4: acceptShape + ksztalt SKIPPED (box-mismatch) i pomiar PASS => ksztalt ACCEPTED z powodem, para PASS, exit 0', async () => {
+  const cand = side({ box: { x: 10, y: 10, width: 60, height: 40 }, image: block(4, 60, 40) });
+  const pair = { deviations: [{ prop: 'width', reason: 'szerszy przycisk zatwierdzony' }], acceptShape: { reason: 'inna szerokosc wg projektu' } };
+  const { p, result } = await measureOne({ cand, pair });
+  assert.equal(p.shape.verdict, 'ACCEPTED');
+  assert.equal(p.verdict, 'PASS');
+  assert.equal(result.verdict, 'PASS');
+  assert.equal(result.exit, 0);
+  assert.ok(JSON.stringify(p.shape).includes('inna szerokosc wg projektu'), JSON.stringify(p.shape));
+  assert.ok(formatReport(result, createMasker({})).includes('inna szerokosc wg projektu'), 'powod w raporcie tekstowym');
+  assert.ok(JSON.stringify(toJson(result, createMasker({}))).includes('inna szerokosc wg projektu'), 'powod w measure.json');
+});
+
+test('C4: acceptShape + ksztalt FAIL (lustro) => ACCEPTED, para PASS; bez acceptShape ten sam wejscie to FAIL', async () => {
+  const input = { ref: side({ image: IMG_LEFT() }), cand: side({ image: IMG_RIGHT() }) };
+  const accepted = await measureOne({ ...input, pair: { acceptShape: { reason: 'lustrzana ikona zatwierdzona' } } });
+  assert.equal(accepted.p.shape.verdict, 'ACCEPTED');
+  assert.equal(accepted.p.verdict, 'PASS');
+  assert.equal(accepted.result.exit, 0);
+  const plain = await measureOne(input);
+  assert.equal(plain.p.shape.verdict, 'FAIL');
+  assert.equal(plain.p.verdict, 'FAIL');
+});
+
+test('C4: acceptShape nie ratuje FAIL pomiaru; ksztalt PASS zostaje PASS (nie ACCEPTED)', async () => {
+  const bad = await measureOne({ cand: side({ styles: { ...STYLES, fontSize: '30px' } }), pair: { acceptShape: { reason: 'x ksztalt' } } });
+  assert.equal(bad.p.verdict, 'FAIL');
+  const ok = await measureOne({ pair: { acceptShape: { reason: 'x ksztalt' } } });
+  assert.equal(ok.p.shape.verdict, 'PASS');
+  assert.equal(ok.p.verdict, 'PASS');
+});
+
+test('C4: acceptShape bez niepustego reason (brak, pusty, spacje, nie-napis, nie-obiekt) albo z obcym kluczem => blad walidacji', () => {
+  for (const bad of [{}, { reason: '' }, { reason: '   ' }, { reason: 5 }, 'tak', true, { reason: 'ok', extra: 1 }]) {
+    const r = V({ version: 1, pairs: [pairCfg({ acceptShape: bad })] });
+    assert.equal(r.ok, false, JSON.stringify(bad));
+    assert.ok(r.errors.some((e) => /acceptShape/.test(e)), String(r.errors));
+  }
+  assert.equal(V({ version: 1, pairs: [pairCfg({ acceptShape: { reason: 'zatwierdzone' } })] }).ok, true);
+});
+
+// --- A3 ---
+
+test('A3: styleProps z literowka (brak wartosci we wzorcu) => MeasureError code config z nazwa wlasciwosci, nie cichy PASS', async () => {
+  for (const refStyles of [{ ...STYLES }, { ...STYLES, colour: '' }]) {
+    const config = mkConfig([pairCfg()], { styleProps: ['colour'] });
+    const adapter = mkAdapter({ [URL_REF]: side({ styles: refStyles }), [URL_CAND]: side({ styles: refStyles }) });
+    await assert.rejects(runMeasure({ config, adapter, diffFn: spyDiff() }), (err) => {
+      assert.ok(err instanceof MeasureError, String(err));
+      assert.equal(err.code, 'config');
+      assert.match(err.message, /colour/);
+      return true;
+    });
+  }
+});
+
+test('A3: poprawna wlasciwosc brakujaca tylko u kandydata to nadal finding (FAIL), a nie blad konfiguracji', async () => {
+  const cand = side({ styles: { ...STYLES, fontSize: undefined } });
+  const { p } = await measureOne({ cand });
+  assert.equal(p.measure.verdict, 'FAIL');
+  assert.ok(p.measure.unapproved.some((f) => f.prop === 'fontSize'));
+});
+
+// --- A9 ---
+
+for (const [label, mutate, fragment, key] of [
+  ['pair', (pr) => ({ ...pr, bogus: 1 }), 'pairs[0]', 'bogus'],
+  ['reference', (pr) => ({ ...pr, reference: { ...pr.reference, bogusRef: 1 } }), 'pairs[0].reference', 'bogusRef'],
+  ['candidate', (pr) => ({ ...pr, candidate: { ...pr.candidate, bogusCand: 1 } }), 'pairs[0].candidate', 'bogusCand'],
+  ['deviations[*]', (pr) => ({ ...pr, deviations: [{ prop: 'width', reason: 'r', bogusDev: 1 }] }), 'pairs[0].deviations[0]', 'bogusDev'],
+  ['masks[*]', (pr) => ({ ...pr, masks: [{ x: 0, y: 0, width: 1, height: 1, bogusMask: 1 }] }), 'pairs[0].masks[0]', 'bogusMask'],
+  ['masksReference[*]', (pr) => ({ ...pr, masksReference: [{ x: 0, y: 0, width: 1, height: 1, bogusMr: 1 }] }), 'pairs[0].masksReference[0]', 'bogusMr'],
+  ['masksCandidate[*]', (pr) => ({ ...pr, masksCandidate: [{ x: 0, y: 0, width: 1, height: 1, bogusMc: 1 }] }), 'pairs[0].masksCandidate[0]', 'bogusMc'],
+]) {
+  test(`A9 validateConfig: nieznany klucz w ${label} => blad z nazwa klucza i sciezka`, () => {
+    const r = V({ version: 1, pairs: [mutate(pairCfg())] });
+    assert.equal(r.ok, false);
+    assert.ok(r.errors.some((e) => e.includes(key) && e.includes(fragment)), String(r.errors));
+  });
+}
+
+test('A9 validateConfig: literowka w kluczu opcjonalnym (np. deviation.reasn) to blad, a nie cicho pominiete odstepstwo', () => {
+  const r = V({ version: 1, pairs: [pairCfg({ deviations: [{ prop: 'width', reason: 'r', actual: 1, expected: 2, selector: '#t' }] })] });
+  assert.equal(r.ok, true, String(r.errors));
+  const bad = V({ version: 1, pairs: [pairCfg({ deviations: [{ prop: 'width', reasn: 'r', reason: 'r' }] })] });
+  assert.equal(bad.ok, false);
+});
+
+// --- C1 ---
+
+test('C1: shiftPx domyslnie ceil(deviceScaleFactor) trafia do diffFn (DPR 1 => 1, DPR 2 => 2, DPR 1.5 => 2); jawne shiftPx wygrywa (takze 0)', async () => {
+  const dpr = async (top) => (await measureOne({ top })).diffFn.calls[0].shiftPx;
+  assert.equal(await dpr({}), 1);
+  assert.equal(await dpr(DPR2), 2);
+  assert.equal(await dpr({ viewport: { width: 400, height: 200, deviceScaleFactor: 1.5 } }), 2);
+  assert.equal(await dpr({ ...DPR2, shiftPx: 3 }), 3);
+  assert.equal(await dpr({ shiftPx: 0 }), 0);
+});
+
+test('C1: DPR 2 - przesuniecie o 2 px ekranu (1 px CSS) PASS, o 4 px FAIL', async () => {
+  const ref = side({ image: vlineImg(100, 100, 50) });
+  const ok = await measureOne({ ref, cand: side({ image: vlineImg(100, 100, 52) }), top: DPR2 });
+  assert.equal(ok.p.shape.verdict, 'PASS', JSON.stringify(ok.p.shape));
+  assert.equal(ok.p.verdict, 'PASS');
+  const bad = await measureOne({ ref, cand: side({ image: vlineImg(100, 100, 54) }), top: DPR2 });
+  assert.equal(bad.p.shape.verdict, 'FAIL');
+});
+
+test('C1: DPR 1 - przesuniecie o 2 px FAIL (domyslne shiftPx 1)', async () => {
+  const { p } = await measureOne({ ref: side({ image: vlineImg(100, 100, 50) }), cand: side({ image: vlineImg(100, 100, 52) }) });
+  assert.equal(p.shape.verdict, 'FAIL');
+});
+
+for (const [name, v] of [['ujemne', -1], ['ulamkowe', 1.5], ['napis', '2'], ['NaN-owe', Number.NaN]]) {
+  test(`C1 validateConfig: shiftPx ${name} => blad (calkowita >= 0)`, () => {
+    const r = V({ ...okCfg(), shiftPx: v });
+    assert.equal(r.ok, false);
+    assert.ok(r.errors.some((e) => e.includes('shiftPx')), String(r.errors));
+  });
+}
+
+test('C1 validateConfig: shiftPx 0 i 3 sa poprawne', () => {
+  assert.equal(V({ ...okCfg(), shiftPx: 0 }).ok, true);
+  assert.equal(V({ ...okCfg(), shiftPx: 3 }).ok, true);
+});
+
+// --- C2 ---
+
+test('C2: diffFn dostaje align center domyslnie; shapeAlign start nadpisuje', async () => {
+  assert.equal((await measureOne()).diffFn.calls[0].align, 'center');
+  assert.equal((await measureOne({ top: { shapeAlign: 'start' } })).diffFn.calls[0].align, 'start');
+  assert.equal((await measureOne({ top: { shapeAlign: 'center' } })).diffFn.calls[0].align, 'center');
+});
+
+test('C2: obrazy o roznej szerokosci (pudelka w sizeTolerancePx) - ksztalt wyrownany do srodka PASS; shapeAlign start FAIL', async () => {
+  const ref = side({ image: vlineImg(16, 10, 8) });
+  const cand = side({ box: { x: 10, y: 10, width: 41, height: 40 }, image: vlineImg(10, 10, 5) });
+  const centered = await measureOne({ ref, cand });
+  assert.equal(centered.p.shape.verdict, 'PASS', JSON.stringify(centered.p.shape));
+  assert.equal(centered.p.shape.cropped, true);
+  const start = await measureOne({ ref, cand, top: { shapeAlign: 'start' } });
+  assert.equal(start.p.shape.verdict, 'FAIL');
+});
+
+for (const [name, v] of [['right', 'right'], ['wielkie litery', 'Center'], ['liczba', 1], ['null', null]]) {
+  test(`C2 validateConfig: shapeAlign ${name} => blad (center|start)`, () => {
+    const r = V({ ...okCfg(), shapeAlign: v });
+    assert.equal(r.ok, false);
+    assert.ok(r.errors.some((e) => e.includes('shapeAlign')), String(r.errors));
+  });
+}
+
+// --- C3 ---
+
+const sameRect = (a, b) => ['x', 'y', 'width', 'height'].every((k) => a[k] === b[k]);
+
+test('C3: diffFn dostaje SUME masks, masksReference i masksCandidate (kazdy prostokat raz)', async () => {
+  const shared = { x: 0, y: 0, width: 4, height: 4 };
+  const mr = { x: 10, y: 10, width: 5, height: 5 };
+  const mc = { x: 20, y: 20, width: 6, height: 6 };
+  const { diffFn } = await measureOne({ pair: { masks: [shared], masksReference: [mr], masksCandidate: [mc] } });
+  const got = diffFn.calls[0].masks;
+  assert.equal(got.length, 3, JSON.stringify(got));
+  for (const want of [shared, mr, mc]) assert.ok(got.some((g) => sameRect(g, want)), `brak maski ${JSON.stringify(want)}`);
+});
+
+test('C3: element zmienny tylko u wzorca (maska w masksReference) nie daje roznicy; bez maski FAIL', async () => {
+  const withExtra = solid(40, 40, (x, y) => (x >= 10 && x < 30 && y >= 10 && y < 30 ? BLACK : WHITE));
+  const blank = solid(40, 40, () => WHITE);
+  const region = { x: 8, y: 8, width: 24, height: 24 };
+  const masked = await measureOne({ ref: side({ image: withExtra }), cand: side({ image: blank }), pair: { masksReference: [region] } });
+  assert.equal(masked.p.shape.verdict, 'PASS', JSON.stringify(masked.p.shape));
+  assert.equal(masked.p.shape.diffCount, 0);
+  const plain = await measureOne({ ref: side({ image: withExtra }), cand: side({ image: blank }) });
+  assert.equal(plain.p.shape.verdict, 'FAIL');
+});
+
+test('C3: maska z masksCandidate tez zamalowuje obie strony (wynik symetryczny)', async () => {
+  const withExtra = solid(40, 40, (x, y) => (x >= 10 && x < 30 && y >= 10 && y < 30 ? BLACK : WHITE));
+  const blank = solid(40, 40, () => WHITE);
+  const region = { x: 8, y: 8, width: 24, height: 24 };
+  const { p } = await measureOne({ ref: side({ image: blank }), cand: side({ image: withExtra }), pair: { masksCandidate: [region] } });
+  assert.equal(p.shape.verdict, 'PASS', JSON.stringify(p.shape));
+});
+
+test('C3 validateConfig: masksReference/masksCandidate poprawne prostokaty ok; ujemne wymiary albo nie-lista => blad', () => {
+  const rect = { x: 0, y: 0, width: 5, height: 5 };
+  assert.equal(V({ version: 1, pairs: [pairCfg({ masksReference: [rect], masksCandidate: [rect] })] }).ok, true);
+  for (const key of ['masksReference', 'masksCandidate']) {
+    assert.equal(V({ version: 1, pairs: [pairCfg({ [key]: [{ x: 0, y: 0, width: -1, height: 5 }] })] }).ok, false, `${key} ujemny`);
+    assert.equal(V({ version: 1, pairs: [pairCfg({ [key]: rect })] }).ok, false, `${key} nie lista`);
+  }
+});
+
+// --- C5 ---
+
+test('C5: adapter zglasza page-state-mismatch (przekierowanie) => para UNVERIFIED z powodem page-state-mismatch, exit 3, nie PASS/FAIL', async () => {
+  const mismatch = { found: false, box: null, styles: {}, image: null, reason: 'page-state-mismatch' };
+  for (const [ref, cand] of [[side(), side(mismatch)], [side(mismatch), side()]]) {
+    const { p, result } = await measureOne({ ref, cand });
+    assert.equal(p.verdict, 'UNVERIFIED');
+    assert.equal(p.reason, 'page-state-mismatch');
+    assert.equal(result.verdict, 'UNVERIFIED');
+    assert.equal(result.exit, 3);
+    assert.match(formatReport(result, createMasker({})), /^UNVERIFIED p page-state-mismatch/m);
+    assert.equal(toJson(result, createMasker({})).pairs[0].reason, 'page-state-mismatch');
+  }
+});
+
+test('C5: zwykly brak elementu zachowuje powod element-not-found (kontrola, ze powody sa rozrozniane)', async () => {
+  const { p } = await measureOne({ cand: side({ found: false, box: null, styles: {}, image: null }) });
+  assert.equal(p.reason, 'element-not-found');
 });
