@@ -1,7 +1,7 @@
 """CLAUDE-3 / F3: the SubagentStop hook `library/hooks/check-subagent-report.py` (spec K5, A4).
 
 For the writing roles (implementer, test-writer, scribe, mechanic, test-runner) the hook checks `last_assistant_message`: a line starting with
-`Wynik:`, `Status:`, `Raport:` or `Report:` OR a path under `.skillsync/runs/` counts as a report. Otherwise it appends one JSON line to
+`Wynik:` (`Result:`), `Status:`, `Raport:` or `Report:` OR a path under `.skillsync/runs/` counts as a report. Otherwise it appends one JSON line to
 `<project root>/.skillsync/hook-events.jsonl`. It never blocks (exit 0, no `decision`). Empty `agent_type` (context compaction) and other roles
 are skipped. The script is taken from the repository.
 """
@@ -93,7 +93,7 @@ class SubagentReportHook(IsolatedTestCase):
 
     def test_a_result_status_report_line_is_a_report(self):
         for message in ('Wynik: PASS\nzmieniono 3 pliki', 'Praca skończona.\nStatus: DONE\nreszta', 'Raport: .skillsync/x\n',
-                        'Report: all green', 'Krótko.\n\nWynik:'):
+                        'Report: all green', 'Krótko.\n\nWynik:', 'Result: PASS\nchanged 3 files', 'Done.\n**Result:** PASS'):
             with self.subTest(message=message):
                 self.assertEqual(self.assertWarns(self.payload(message)), [])
 
@@ -104,7 +104,7 @@ class SubagentReportHook(IsolatedTestCase):
                 self.assertEqual(self.assertWarns(self.payload(message)), [])
 
     def test_marker_in_the_middle_of_a_line_is_not_a_report_line(self):
-        for message in ('Nie ma tu żadnego Wynik: bo to środek zdania.', 'Zobacz opis pola Status: w dokumentacji', 'Dodatkowy Report: w środku linii'):
+        for message in ('Nie ma tu żadnego Wynik: bo to środek zdania.', 'Zobacz opis pola Status: w dokumentacji', 'Dodatkowy Report: w środku linii', 'The Result: of this is mid-line'):
             with self.subTest(message=message):
                 self.assertEqual(len(self.assertWarns(self.payload(message))), 1)
                 self.events.unlink()

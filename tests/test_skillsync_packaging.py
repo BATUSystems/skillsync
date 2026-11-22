@@ -62,6 +62,22 @@ class CheckWheelTests(TempDirCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('OK', result.stdout)
 
+    def test_ui_text_catalogs_and_their_fragments_are_allowed(self):
+        catalogs = ['skillsync_workflow/data/i18n/pl.json', 'skillsync_workflow/data/i18n/en.json',
+                    'skillsync_workflow/data/i18n/pl.proto.json', 'skillsync_workflow/data/i18n/en.proto.json']
+        result = run_script(CHECK_WHEEL, self.wheel(GOOD + catalogs))
+        self.assertEqual(result.returncode, 0, result.stdout)
+
+    def test_other_files_under_the_i18n_directory_fail(self):
+        extras = ['skillsync_workflow/data/i18n/x.py', 'skillsync_workflow/data/i18n/sub/pl.json',
+                  'skillsync_workflow/data/i18n/PL.json', 'skillsync_workflow/data/i18n/pl.json.bak',
+                  'skillsync_workflow/data/i18n/pl.a.b.json', 'skillsync_workflow/data/other/pl.json']
+        for extra in extras:
+            with self.subTest(extra=extra):
+                result = run_script(CHECK_WHEEL, self.wheel(GOOD + [extra]))
+                self.assertEqual(result.returncode, 1, result.stdout)
+                self.assertIn(f'extra: {extra}', result.stdout)
+
     def test_directory_entries_are_allowed(self):
         result = run_script(CHECK_WHEEL, self.wheel(GOOD + ['skillsync_workflow/data/', 'skillsync-0.9.0.dist-info/']))
         self.assertEqual(result.returncode, 0, result.stdout)

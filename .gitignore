@@ -12,3 +12,5 @@ AGENTS.md.skillsync-backup
 # specyfikacje i plany żyją poza rdzeniem (repozytorium operacyjne); kotwica omija fikstury w tests/fixtures
 /docs/specs/
 /docs/plans/
+skillsync_workflow/data/i18n/.proto.lock
+skillsync_workflow/data/i18n/.*.proto.json.tmp

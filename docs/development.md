@@ -76,6 +76,14 @@ Kontrola „test touched real Skillsync state dirs” porównuje stan prawdziwyc
   który linkuje PRAWDZIWY projekt spoza katalogu tymczasowego (zmiana jego wpisu w rejestrze). Nie wykryje też usunięcia i odtworzenia pustego katalogu pod `composed`. Zapisy poza `composed` i każdy plik (z wyjątkiem pliku rejestru i `.projects.json.tmp-*`) są wykrywane.
 - Przy porażce nadal obowiązuje procedura z lekcji `pelny-bieg-testow-a-git-na-prawdziwych-warstwach.md`: ustal sprawcę z różnicy, powtórz moduł.
 
+### Tłumaczenie biblioteki (`layers/core-en`)
+
+Zmiana pliku Markdown w `library/skills/**`, `library/agents/**` albo `library/instructions/**`, który ma przekład w `layers/core-en/`, wymaga w tym samym
+commicie: (1) aktualizacji przekładu (te same nagłówki, ten sam frontmatter poza `description`; tokeny protokołu po angielsku wg `protocol_tokens.py`),
+(2) `python3 scripts/check_core_en.py --update` (odświeża `translations.lock.yaml`; bez flagi skrypt tylko raportuje). Inaczej pada
+`tests/test_skillsync_core_en.py` (`translation-stale`, `translation-structure`). Nowy plik `.md` w skillu, który ma przekład, musi dostać przekład (skill w warstwie
+jest kompletny). Opis i reguły: `docs/domain/layers.md`, „Warstwa tłumaczenia”.
+
 ### Zestaw modułów przy scalaniu
 
 `python3 scripts/merge_modules.py --base <baza> --head <sha> [--json | --names]` wylicza z diffu `<baza>..<sha>` moduły testowe do uruchomienia

@@ -2051,5 +2051,84 @@ class ServeCommandTests(unittest.TestCase):
                 self.assertIn(flag, answer["reason"])
 
 
+class DescriptionsByLanguageTests(HttpCase):
+    """I18N-1 (B1/B3): `/api/descriptions` follows the language of the project; the page `<title>`; one read of the language per approve request."""
+
+    def english(self) -> None:
+        manifest = self.root / ".github" / ".skillsync.yaml"
+        manifest.parent.mkdir(parents=True, exist_ok=True)
+        manifest.write_text("language: en\n", encoding="utf-8")
+        self.board.manifest()
+
+    def test_polish_project_gets_descriptions_json_unchanged(self) -> None:
+        with self.get("/api/descriptions") as r:
+            body = r.read()
+        self.assertEqual(json.loads(body), srv.load_descriptions(DESCRIPTIONS))
+        self.assertEqual(json.loads(body), json.loads(DESCRIPTIONS.read_text(encoding="utf-8")))
+
+    def test_english_project_gets_the_english_file(self) -> None:
+        self.english()
+        with self.get("/api/descriptions") as r:
+            got = json.load(r)
+        want = json.loads((DESCRIPTIONS.parent / "descriptions.en.json").read_text(encoding="utf-8"))
+        self.assertEqual(got, want)
+        self.assertEqual(got["act_real"]["title"], "Act III · Implementation")
+        self.assertNotEqual(got, json.loads(DESCRIPTIONS.read_text(encoding="utf-8")))
+
+    def test_english_project_without_the_english_file_falls_back_to_polish(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            only = Path(tmp) / "descriptions.json"
+            only.write_text(DESCRIPTIONS.read_text(encoding="utf-8"), encoding="utf-8")
+            self.assertEqual(srv.descriptions_path(only, "en"), only)
+            self.assertEqual(srv.load_descriptions(only, "en"), srv.load_descriptions(only, "pl"))
+            (Path(tmp) / "descriptions.en.json").write_text('{"x": {"title": "T", "text": "English"}}', encoding="utf-8")
+            self.assertEqual(srv.load_descriptions(only, "en"), {"x": {"title": "T", "text": "English"}})
+            self.assertEqual(srv.load_descriptions(only, "pl"), srv.load_descriptions(DESCRIPTIONS))   # the default language never reads the sibling
+            self.assertEqual(srv.descriptions_path(only, "de"), only)
+            self.assertIsNone(srv.descriptions_path(None, "en"))
+
+    def test_english_file_that_is_a_directory_or_a_link_is_not_used(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            only = Path(tmp) / "descriptions.json"
+            only.write_text("{}", encoding="utf-8")
+            sibling = Path(tmp) / "descriptions.en.json"
+            sibling.mkdir()
+            self.assertEqual(srv.descriptions_path(only, "en"), only)
+            sibling.rmdir()
+            target = Path(tmp) / "elsewhere.json"
+            target.write_text('{"x": {"title": "T", "text": "t"}}', encoding="utf-8")
+            try:
+                sibling.symlink_to(target)
+            except (OSError, NotImplementedError):
+                self.skipTest("no symbolic links here")
+            self.assertEqual(srv.descriptions_path(only, "en"), only)
+
+    def test_page_title_is_translated_only_for_another_language(self) -> None:
+        page = (ASSETS["index.html"]).read_bytes()
+        self.assertIn(b"<title>Status przebiegu</title>", page)
+        self.assertEqual(srv.page_with_language(page, "pl"), page)
+        english = srv.page_with_language(page, "en")
+        self.assertIn(b"<title>Run status</title>", english)
+        self.assertNotIn(b"Status przebiegu", english)
+        self.assertEqual(english.count(b"<title>"), 1)
+        self.english()
+        with self.get("/") as r:
+            self.assertIn("<title>Run status</title>", r.read().decode("utf-8"))
+
+    def test_language_is_read_once_per_approve_request(self) -> None:
+        """A manifest that changes between two reads of the language must not drop `code: approve_token` of a refused token."""
+        calls = []
+
+        def flipping() -> str:
+            calls.append(1)
+            return "pl" if len(calls) == 1 else "en"
+        self.board.lang = flipping
+        status, answer = self.post({"kind": "cp"}, {"Content-Type": "application/json", "X-Status-Board": "1", "X-Approve-Token": "wrong-" + TEST_TOKEN})
+        self.assertEqual(status, 403)
+        self.assertEqual(answer.get("code"), "approve_token")
+        self.assertEqual(answer["error"], srv.TOKEN_REFUSED)
+        self.assertEqual(len(calls), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

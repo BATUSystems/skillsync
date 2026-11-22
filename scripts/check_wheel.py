@@ -16,6 +16,8 @@ REQUIRED = [
     'skillsync_workflow/selfcmd.py',
 ]
 DATA_PREFIX = 'skillsync_workflow/data/'
+# UI text catalogs: `data/i18n/<lang>.json` and the fragments `data/i18n/<lang>.<namespace>.json` (e.g. `pl.proto.json`).
+I18N_CATALOG = re.compile(r'^[a-z]{2,3}(?:\.[a-z0-9]+)?\.json$')
 DIST_INFO = re.compile(r'^[^/]+\.dist-info/(?:licenses/)?[^/]+$')
 
 
@@ -28,6 +30,8 @@ def allowed(name):
     if path.parts[:1] != ('skillsync_workflow',) or '__pycache__' in path.parts:
         return False
     if name.startswith(DATA_PREFIX):
+        if len(path.parts) == 4 and path.parts[2] == 'i18n':
+            return I18N_CATALOG.match(path.name) is not None
         return len(path.parts) == 3
     return path.suffix == '.py'
 

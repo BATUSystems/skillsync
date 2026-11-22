@@ -18,7 +18,25 @@ MAX_RUN_BYTES = 5 * 1024 * 1024
 # Wzorzec statusu skopiowany z `_STATUS` (status.py generatora, zrodlo prawdy); hook niczego stamtad nie importuje.
 _STATUS = re.compile(r'^(?:[-*>][ \t]+)?(?:\*\*|__)?status(?:\*\*|__)?[ \t]*:[ \t]*(?:\*\*|__)?[ \t]*'
                      r'(?P<raw>[`*_]*(?P<word>[A-Za-z_]+)[^\n]*)', re.MULTILINE | re.IGNORECASE)
-_RUN = re.compile(r'^Przebieg:[ \t]*`?([^\s`]*)`?[ \t]*$', re.MULTILINE)
+# Linia przebiegu: samodzielna kopia logiki `protocol_tokens.RUN_LINE` (zrodlo prawdy; hook niczego nie importuje z generatora).
+# Zgodnosc pilnuje test roznicowy tests/test_skillsync_run_alias.py. Polskie `Przebieg:` w calym tekscie, angielskie `Run:` tylko
+# w naglowku (przed pierwsza linia `## `), wygrywa linia polozona wczesniej; tolerancja `\r` (plan z koncami linii Windows).
+_RUN_PL = re.compile(r'^Przebieg:[ \t]*`?([^\s`]*)`?[ \t\r]*$', re.MULTILINE)
+_RUN_EN = re.compile(r'^Run:[ \t]*`?([^\s`]*)`?[ \t\r]*$', re.MULTILINE)
+_SECTION_LINE = re.compile(r'^## ', re.MULTILINE)
+
+
+def find_run(text):
+    pl_match = _RUN_PL.search(text)
+    section = _SECTION_LINE.search(text)
+    en_match = _RUN_EN.search(text, 0, section.start() if section else len(text))
+    if pl_match is None:
+        return en_match
+    if en_match is None:
+        return pl_match
+    return en_match if en_match.start() < pl_match.start() else pl_match
+
+
 # Kroki i linie PR/Ticket jak `_STEP`, `_PR`, `_TICKET` w status.py generatora (zrodlo prawdy).
 _STEP = re.compile(r'^\s*-\s\[([ xX])\]\s+\S', re.MULTILINE)
 _PR = re.compile(r'^PR:\s*#(\d+)\s*\(link:\s*(\S+?)\)\s*$', re.MULTILINE)
@@ -139,7 +157,7 @@ def main():
             if text is None:
                 continue
             head = text[:4000]
-            status, line = _STATUS.search(head), _RUN.search(head)
+            status, line = _STATUS.search(head), find_run(head)
             word = status.group('word').lower() if status else ''
             if (word == 'in_progress' and all_steps_checked(text)
                     and not (_TICKET.search(text) and not _PR.search(text))):

@@ -79,6 +79,19 @@ Wydanie 1.9.1 jest PATCH (sekcja **Breaking** w `CHANGELOG.md` to „None.”) z
 2. Uruchom ponownie działający `skillsync dashboard serve`: plik tymczasowy stanu serwera ma teraz rozszerzenie `.tmp` zamiast `.json`, a start serwera sprząta pozostałości starej postaci. Konsument katalogu stanu, który czytał `*.json`, nie trafi już na pusty plik tymczasowy.
 3. Windows: dwa równoległe kroki `skillsync test-run` tworzące ten sam katalog (`.skillsync/runs/<przebieg>/tests`, `.skillsync/logs`, katalog blokad) nie kończą się już `BLOCKED` (kod 2) przez `PermissionError` ani przez fałszywe „Path escapes project” dla `.skillsync/logs/<id>`.
 
+## Przejście 1.12.0 → 1.13.0
+
+Wydanie dodaje język interfejsu i angielską warstwę skilli. Polski projekt bez nowych kluczy dostaje te same teksty, ten sam HTML strony i te same polskie wiersze zapisywane przez rdzeń. Dwie zmiany odczytu dokumentów mogą zmienić wynik dla istniejących planów; opisuje je sekcja **Breaking** w `CHANGELOG.md` (MINOR z wpisem **Breaking** z decyzji właściciela).
+
+1. Rdzeń: `uv tool install --force git+https://github.com/BATUSystems/skillsync@v1.13.0`, potem `skillsync layers update core --ref v1.13.0` i `skillsync link` w projektach.
+2. **Sekcje gotowości w obu językach (Breaking):** nazwa sekcji z `readiness` jest spełniona przez nagłówek z którąkolwiek nazwą pary (`Cel`/`Goal`, `TESTY`/`TESTS`, `Kontrakty`/`Contracts`, `Ryzyka`/`Risks`). Wygrywa pierwszy pasujący nagłówek od góry, także pusty, więc polski plan z pustym `## Risks …` nad `## Ryzyka` zgłasza `Empty plan section: risks`. Polski nagłówek zaczynający się od `Data` liczy się teraz jako sekcja ryzyka `Dane`/`Data`. Sprawdzenie: `skillsync status <projekt>` i `skillsync pre-implement` na otwartych planach.
+3. **Bramka prototypu (Breaking, poprawka fail-open):** linia nagłówka planu zaczynająca się od `Prototype gate` albo `Bramka prototypu`, która nie jest pełną linią obejścia, oraz literówki linii `Prototyp:`/`Prototype:` kończą się `BLOCKED` (`invalid_bypass_line`, `invalid_prototype_line`). Dotąd błędna angielska linia obejścia przechodziła po cichu jako `PASS`.
+4. **Język interfejsu (nowość, opcjonalne):** `language: en` w `.github/.skillsync.yaml` przełącza stronę statusu, serwer prototypów i komunikaty serwera na angielski; brak klucza = `pl`. JSON statusu ma zawsze pole `lang`, a przy `en` także `texts`. Konsument JSON-u, który porównuje cały obiekt, musi przyjąć nowe pole.
+5. **Angielska warstwa `core-en` (nowość, opcjonalne):** `skillsync layers add core-en --kind org --translation …` (zgoda na warstwę tłumaczenia jest w configu maszyny, nie w samej warstwie), potem reguła `layer_rules` dla projektów, które mają dostać angielskie skille. Zmiana skilli w bibliotece wymaga przekładu i `scripts/check_core_en.py --update` (zob. `docs/development.md`).
+6. **Angielskie tokeny protokołu (zmiana addytywna):** parsery planu, speca, postępu, retro i strony statusu czytają angielskie formy (`Run:`, `Handoff:`, `Verdict:`, `Result`, `[EXPERT]`, `YES`/`NO` …) obok polskich; rdzeń dalej zapisuje polskie wiersze, a przy `language: en` także angielskie wiersze ekspertów w specu.
+7. **Plik przebiegu z nieznanym właścicielem (zmiana addytywna):** rekord z `owner` spoza listy tej wersji (np. zapisany przez nowszy generator) jest czytany z ostrzeżeniem, nie odrzucany.
+8. Wtyczki kopiujące renderer strony statusu (np. Skippster): skopiuj też `descriptions.en.json`; `deps.texts` może być funkcją `(lang) => {…}`.
+
 ## Przejście 1.11.0 → 1.12.0
 
 Zmiana kodu wyjścia `test-run` przy ukrytych porażkach jest opisana w sekcji **Breaking** `CHANGELOG.md` (MINOR z wpisem **Breaking** z decyzji właściciela).

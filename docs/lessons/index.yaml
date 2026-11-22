@@ -316,3 +316,23 @@ lessons:
     title: "session_name w JSON paska bywa tytułem wygenerowanym przez AI, nie nazwą nadaną przez użytkownika: z pola nie wolno wnioskować o tożsamości sesji"
     tags: [skillsync, claude-code, statusline, session-name, identity, cards]
     paths: ['library/hooks/statusline.py', 'tests/test_skillsync_statusline.py', 'library/instructions/_base.md']
+  - path: tokeny-protokolu-jedno-zrodlo.md
+    title: "Tokeny protokołu mają jedno źródło (protocol_tokens.py); samodzielny hook trzyma kopię pilnowaną testem"
+    tags: [skillsync, protocol, tokens, parser, hooks, i18n, tests]
+    paths: ['skillsync_workflow/protocol_tokens.py', 'skillsync_workflow/quality.py', 'skillsync_workflow/test_gate.py', 'skillsync_workflow/status.py', 'library/hooks/check-closure.py', 'tests/test_skillsync_run_alias.py']
+  - path: alias-sekcji-ryzyka-tylko-na-poczatku-tytulu.md
+    title: "Angielski alias sekcji ryzyka łapie słowo tylko na początku tytułu: „Data model” nie jest sekcją Data"
+    tags: [skillsync, protocol, pre-implement, regex, aliases, risk]
+    paths: ['skillsync_workflow/protocol_tokens.py', 'skillsync_workflow/status.py']
+  - path: alias-regexu-fail-closed-zamyka-literowki.md
+    title: "Alias w regexie fail-closed (bramka prototypu) wymaga przestawienia wykrywania literówek: sam alias zostawia fail-open"
+    tags: [skillsync, prototype, gate, regex, aliases, fail-closed, tests]
+    paths: ['skillsync_workflow/prototype.py', 'tests/test_skillsync_prototype*.py']
+  - path: alias-bez-nowych-grup-i-flagi-w-srodku-wzorca.md
+    title: "Alias w regexie nie dodaje grup przechwytujących, a flagi (?i) idą tylko na początku wzorca (Python 3.11)"
+    tags: [skillsync, python, regex, aliases, groups, python311]
+    paths: ['skillsync_workflow/retro.py', 'skillsync_workflow/quality.py', 'skillsync_workflow/protocol_tokens.py', 'tests/test_skillsync_crlf_headers.py']
+  - path: waiting-for-w-approve-to-tylko-dopisek.md
+    title: "„waiting for” w approve czyści dopisek po Status:, a nie jest zgodą: nie rozszerzaj nim stanów zgody"
+    tags: [skillsync, approvals, consent, status, plan, i18n]
+    paths: ['skillsync_workflow/status.py', 'skillsync_workflow/protocol_tokens.py']

@@ -1851,7 +1851,7 @@ class GateTests(GateCase):
 
     def test_near_miss_lines_are_blocked_and_ordinary_header_lines_are_not(self):
         proto = {
-            'English spelling': 'Prototype: docs/prototypes/alpha', 'space before the colon': 'Prototyp : docs/prototypes/alpha',
+            'English spelling with a space before the colon': 'Prototype : docs/prototypes/alpha', 'space before the colon': 'Prototyp : docs/prototypes/alpha',
             'list item': '- Prototyp: docs/prototypes/alpha', 'bold': '**Prototyp:** docs/prototypes/alpha',
             'lower case': 'prototyp: docs/prototypes/alpha', 'asterisk list': '* Prototyp: docs/prototypes/alpha',
             'quote': '> Prototyp: x', 'numbered list': '1. Prototyp: x', 'numbered with a parenthesis': '2) Prototyp: x',
@@ -1914,7 +1914,7 @@ class GateTests(GateCase):
                 report = self.gate([line])
                 self.assertEqual((report['status'], report['prototypes']), ('PASS', []), report)
                 self.assertEqual(report['note'], 'plan bez linii Prototyp:')
-        for line in ('- Prototyp: docs/prototypes/alpha', 'Prototype: docs/prototypes/alpha'):  # control: still blocked
+        for line in ('- Prototyp: docs/prototypes/alpha', '- Prototype: docs/prototypes/alpha'):  # control: still blocked (the English `Prototype:` itself is an alias since I18N-ALIASES S5b)
             with self.subTest(blocked=line):
                 self.assertEqual(self.gate([line], code=2)['error'], 'invalid_prototype_line')
 

@@ -584,7 +584,7 @@ const ctx = { document: { createElement: node, createTextNode(t) { return { text
   submitAnswerNow: null, out: {} };
 vm.createContext(ctx);
 vm.runInContext(script.match(/^  var UNMASKED_NOTE = .*;$/m)[0] + '\n' +   // the very constant of the page, not a copy of its text
-  ['el', 'checkbox', 'radio', 'answerForm', 'submitAnswer', 'answerSummary'].map(grab).join('\n'), ctx);
+  ['fmt', 'el', 'checkbox', 'radio', 'answerForm', 'submitAnswer', 'answerSummary'].map(grab).join('\n'), ctx);
 const options = [{ id: 'o1', label: 'CSV', recommended: true }, { id: 'o2', label: 'XLSX' }, { id: 'o3', label: 'PDF' }];
 const multi = { id: 'qn-aaaaaa', multi: true, options, assumed: 'CSV' };
 const single = { id: 'qn-bbbbbb', options, assumed: null };

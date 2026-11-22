@@ -286,6 +286,10 @@ Ustawienia per maszyna w `~/.config/skillsync/config.yaml` (nie synchronizowane)
 
 **Projekty archiwalne:** nieużywane projekty przenosimy do katalogu archiwum poza `discover_paths` (np. `~/projekty-archiwum/<organizacja>/<projekt>`), więc `link`/`watch`/`doctor` bez ścieżki ich nie obsługują. Archiwum leżące pod `discover_paths` wpisz do `discover_exclude` w configu maszyny (lista ścieżek, domyślnie pusta): pomijają je `retro --all` i `retro-scan --cross-project`, a komendy synchronizacji tego klucza nie czytają. W audytach manifestów, masowych operacjach, pushach i porządkach skilli pomijaj je; nie dopisuj ich wzorców do `workflow/skill-catalog.yaml`. Instrukcje projektu w bibliotece (`instructions/<Projekt>.md`) mogą zostać — bez manifestu nikt ich nie ładuje. Przywrócenie: przenieś katalog z powrotem i wykonaj `skillsync link <projekt>`.
 
+### Tokeny protokołu w dwóch językach (zmiana kontraktu parserów)
+
+Parsery generatora (`quality`, `status`, `retro`, `plan_phases`, `prototype`, `common`, hook `check-closure.py`) czytają polskie i angielskie tokeny protokołu planu i speca (`Przebieg:`/`Run:`, `Werdykt:`/`Verdict:`, `Odbiór`/`Acceptance`, `Kontrakty|Migracja|Dane` / `Contracts|Migration|Data`, `Krok`/`Step`, `[EKSPERT]`/`[EXPERT]`, `Prototyp:`/`Prototype:` i inne). Jedyna lista tokenów to `skillsync_workflow/protocol_tokens.py`; hook trzyma kopię linii `Run:`, pilnowaną testem `tests/test_skillsync_run_alias.py`. Rdzeń zapisuje wiersze po polsku. Zmiana tokenu: edytuj `protocol_tokens.py`, dopisz testy par (polski i angielski dają ten sam wynik), zaktualizuj tabelę w `<katalog repo skillsync>/docs/workflow.md` i rekord `docs/domain/protocol-tokens-aliasy.md`. Nie dopisuj drugiej kopii reguły w parserze.
+
 ## Prototypy (skillsync prototype)
 
 Klikalne prototypy HTML w repo projektu (`<root>/<slug>/`, domyślnie `docs/prototypes`); nie mylić z Artifactem. Procedura: skill `prototype`.
@@ -306,6 +310,13 @@ Klikalne prototypy HTML w repo projektu (`<root>/<slug>/`, domyślnie `docs/prot
 - `list --json` (skrót kontraktu): `{status, root, prototypes[], warnings?}`; wpis `{slug, title, requirements, created, generated_by, path, screens, comments, commentsFormat, threads, iteration, acceptance}`. `screens` = liczba sekcji `.screen` w `index.html` bez atrybutu `data-prototype-example` (ekran przykładowy szablonu; starsze prototypy bez znacznika liczą go jak dotąd); `comments` = liczba otwartych wątków (open+awaiting+decided); `commentsFormat` 2 (`comments.json`), 1 (`comments.js`, ostrzeżenie o `migrate`) albo `null`; `threads` = `{open, awaiting, decided, closed, deferred, lost}` (`null` przy v1); `iteration` = bieżąca iteracja z `comments.json` (`null` przy v1), `acceptance` = `{screens, accepted, stale, perScreen}` (`null` przy v1 i bez pliku; `perScreen` = `[{id, state}]` dla każdego ekranu w kolejności dokumentu, `state` = `accepted` | `stale` | `pending`). Uszkodzony `prototype.json` daje wpis `{slug, path, error}` i ostrzeżenie. Wpis ma też `writing`: `null` albo `{since, expiresAt}` (ważny marker zapisu).
 - Manifest, sekcja `prototype:` (opcjonalna): `root`, `theme.tokens_from` (CSS z tokenami), `theme.css`, `guidelines` (md), `commit_before_iteration` (bool), `port` (port serwera prototypów: domyślny dla `prototype serve` i dla strony statusu `dashboard serve`), `public_url` (adres http(s) dla ekspertów za tunelem; wygrywa nad nim zmienna `SKILLSYNC_PROTOTYPE_PUBLIC_URL`; używają go `question url`, `question add` i `prototype serve`); ścieżki względne, w repo, walidowane przez `doctor`.
 - Szczegóły generatora: dokumentacja repo Skillsync, `docs/cli.md`, `docs/manifest.md` i rekord `docs/domain/prototype-manifest-and-cli.md`.
+
+### Język interfejsu (`language`)
+
+- Klucz manifestu `language` (`pl` albo `en`; brak klucza = `pl` bez ostrzeżenia). Steruje tylko interfejsem: stroną statusu, tekstami serwera, atrybutem `lang` strony, dymkami i `<title>`. Język skilli, ról i instrukcji nie zależy od niego (wybiera go warstwa przez `layer_rules`).
+- Inna wartość albo zły typ = `pl` i ostrzeżenie w `findings` `skillsync status` (nie błąd). Strona statusu pokazuje wtedy polski.
+- Katalog tekstów: `skillsync_workflow/data/i18n/<lang>.json` plus fragmenty `<lang>.<przestrzeń>.json` (klucze tylko własnej przestrzeni; duplikat = błąd). Przestrzenie: `srv.` (serwer), `ui.` (renderer, pole `texts` statusu), `proto.` (prototypy). Parytet pl/en pilnują testy.
+- Kontrakt statusu: `lang` (zawsze) i `texts` (tylko dla `lang` ≠ `pl`). Szczegóły: `docs/dashboard-contract.md`, sekcja „Język i teksty interfejsu”; klucz w tabeli manifestu: `docs/manifest.md`; reguły: `docs/domain/i18n-ui.md`.
 
 ### Tryb dostarczania (`delivery`)
 

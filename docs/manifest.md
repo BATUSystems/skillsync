@@ -23,6 +23,7 @@ Po zapisaniu manifestu: `skillsync link <projekt> --dry-run`, potem `skillsync l
 | Klucz | Typ / domyślnie | Skutek |
 |---|---|---|
 | `version` | `1` | jedyna obsługiwana wersja |
+| `language` | `pl` (domyślnie) \| `en` | język interfejsu projektu: strona statusu, teksty serwera, atrybut `lang` strony, dymki i `<title>`; brak klucza = `pl` bez ostrzeżenia; inna wartość albo zły typ = `pl` i ostrzeżenie w `findings` `skillsync status` (nie błąd). Nie wpływa na język skilli (ten wybiera warstwa przez `layer_rules`). Szczegóły: [domain](domain/i18n-ui.md), kontrakt: [dashboard-contract](dashboard-contract.md), sekcja „Język i teksty interfejsu” |
 | `project.name` | string | wybiera plik `workflow/projects/<name z / → ->.yaml`; nie wpływa na dobór warstw |
 | `skills` | lista | skille: nazwa, `@tag`, wildcard `*`/`?`; patrz sekcja „Specyfikacja `skills`” niżej |
 | `instructions.merge` | lista nazw | części wspólne scalane przed szablonem (zwykle `[_base]`) |
