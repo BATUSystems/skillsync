@@ -51,18 +51,34 @@ def merge(path):
             data[lang][key] = value
     if sorted(new.get('pl', {})) != sorted(new.get('en', {})):
         raise ValueError('the file has different keys in pl and en')
-    for lang in LANGUAGES:
-        text = json.dumps(data[lang], ensure_ascii=False, indent=1, sort_keys=True) + '\n'
-        (CATALOG_DIR / f'{lang}.proto.json').write_text(text, encoding='utf-8', newline='\n')
+    texts = {lang: json.dumps(data[lang], ensure_ascii=False, indent=1, sort_keys=True) + '\n' for lang in LANGUAGES}
+    temporary = {}
+    try:
+        for lang in LANGUAGES:   # both are written to temporary files first and renamed together: a reader sees the old pair or the new one
+            temporary[lang] = CATALOG_DIR / f'.{lang}.proto.json.tmp'
+            temporary[lang].write_text(texts[lang], encoding='utf-8', newline='\n')
+        for lang in LANGUAGES:
+            os.replace(str(temporary[lang]), str(CATALOG_DIR / f'{lang}.proto.json'))
+    finally:
+        for path in temporary.values():
+            if path.exists():
+                path.unlink()
 
 
 class _Lock(object):
     """Several writers (the parallel assignments of CORE-1130-I18N-PROTO) take turns: an exclusive lock file next to the fragments."""
     path = CATALOG_DIR / '.proto.lock'
 
+    STALE_SECONDS = 120   # a run that was killed leaves the file; a lock this old is not held by anyone
+
     def __enter__(self):
         deadline = time.time() + 60
         while True:
+            try:
+                if time.time() - self.path.stat().st_mtime > self.STALE_SECONDS:
+                    self.path.unlink()
+            except OSError:
+                pass
             try:
                 self.fd = os.open(str(self.path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
                 return self

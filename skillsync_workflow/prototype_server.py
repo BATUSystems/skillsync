@@ -7538,7 +7538,12 @@ class PrototypeRequestHandler(LingeringCloseMixin, BaseHTTPRequestHandler):
             if safe_next(value) != value:
                 self._empty(302, {'Location': '/_login?next=%2F'})
                 return
-        self._send(200, LOGIN_PAGE.encode('utf-8'), 'text/html; charset=utf-8', None, 'no-store')
+        self._send(200, render_login_page(self._language()).encode('utf-8'), 'text/html; charset=utf-8', None, 'no-store')
+
+    def _language(self):
+        """The interface language of this server (its config), not the process-wide one that another server in the process may have set."""
+        config = getattr(getattr(self, 'app', None), 'config', None)
+        return getattr(config, 'language', None) or get_language()
 
     def _experts_page(self, method, session, path='/_experts'):
         """`/_experts` and `/_experts/<slug>`: no data in the HTML (the page reads the API after the session); strict own CSP.
@@ -7554,8 +7559,9 @@ class PrototypeRequestHandler(LingeringCloseMixin, BaseHTTPRequestHandler):
             return
         self._strict_page = True
         try:
-            self._send(200, EXPERTS_PAGE.encode('utf-8'), 'text/html; charset=utf-8',
-                       {'Referrer-Policy': 'no-referrer', 'Content-Security-Policy': experts_csp()}, 'no-store')
+            page, policy = experts_page_and_csp(self._language())   # one language for the page and its policy (the hash of its script)
+            self._send(200, page.encode('utf-8'), 'text/html; charset=utf-8',
+                       {'Referrer-Policy': 'no-referrer', 'Content-Security-Policy': policy}, 'no-store')
         finally:
             self._strict_page = False   # an exception in `_send` must not leave the flag for the next response
 
@@ -8457,6 +8463,10 @@ _EXPERTS_SCRIPT_TEMPLATE = r"""
     } catch (error) { /* offline: the user retries after a reload */ }
   }
   var UNEXPECTED = @js{unexpected};
+  // One pass over the placeholders: a value that itself contains `{name}` is never substituted again.
+  function fmt(text, params) {
+    return text.replace(/\{(\w+)\}/g, function (all, key) { return Object.prototype.hasOwnProperty.call(params, key) ? params[key] : all; });
+  }
   function validQuestion(question) {
     return !!question && typeof question === 'object' && typeof question.id === 'string' && typeof question.text === 'string';
   }
@@ -8490,7 +8500,7 @@ _EXPERTS_SCRIPT_TEMPLATE = r"""
     if (!SLUG) all.setAttribute('aria-current', 'true');
     ul.appendChild(el('li', {}, [all]));
     state.runs.forEach(function (run) {
-      var link = el('a', { href: BASE + '/' + encodeURIComponent(run.slug), text: @js{nav.run}.split('{slug}').join(String(run.slug)).split('{open}').join(String(run.open)).split('{total}').join(String(run.total)) });
+      var link = el('a', { href: BASE + '/' + encodeURIComponent(run.slug), text: fmt(@js{nav.run}, { slug: String(run.slug), open: String(run.open), total: String(run.total) }) });
       if (SLUG === run.slug) link.setAttribute('aria-current', 'true');
       ul.appendChild(el('li', {}, [link]));
     });
@@ -8514,7 +8524,7 @@ _EXPERTS_SCRIPT_TEMPLATE = r"""
     var ul = el('ul');
     state.questions.forEach(function (question) {
       var link = el('a', { href: '#' + encodeURIComponent(question.id) }, [
-        el('strong', { text: @js{labeled}.split('{label}').join(label(question)).split('{message}').join('') }),
+        el('strong', { text: fmt(@js{labeled}, { label: label(question), message: '' }) }),
         el('span', { text: question.text.length > 90 ? question.text.slice(0, 90) + '…' : question.text }),
         el('br')
       ].concat(badges(question)));
@@ -8570,7 +8580,7 @@ _EXPERTS_SCRIPT_TEMPLATE = r"""
         .map(function (option) { return option.label; }).join(', ') || answer.optionIds.join(', ');
     } else value = answer.text || '';
     var box = el('div', { 'class': 'entry' }, [
-      el('div', { 'class': 'meta', text: @js{answer.meta}.split('{who}').join(String(answer.name || answer.by)).split('{when}').join(when(answer.at)) }),
+      el('div', { 'class': 'meta', text: fmt(@js{answer.meta}, { who: String(answer.name || answer.by), when: when(answer.at) }) }),
       el('div', { 'class': 'qtext', text: value })
     ]);
     if (answer.comment) box.appendChild(el('div', { 'class': 'qtext muted', text: @js{answer.comment}.split('{text}').join(String(answer.comment)) }));
@@ -8725,12 +8735,12 @@ _EXPERTS_SCRIPT_TEMPLATE = r"""
         renderList();
         var done = kind === 'answer' ? @js{saved.answer} : @js{saved.comment};
         if (viewing) { renderDetail(updated, false); say(done); }
-        else say(@js{saved.elsewhere}.split('{text}').join(done).split('{label}').join(label(updated)));
+        else say(fmt(@js{saved.elsewhere}, { text: done, label: label(updated) }));
         return;
       }
       var message = describe(result);
       if (result.status !== 429 && result.status !== 503) state.pending = {};
-      fail(viewing ? message : @js{labeled}.split('{label}').join(label(question)).split('{message}').join(message));
+      fail(viewing ? message : fmt(@js{labeled}, { label: label(question), message: message }));
       if (result.status === 409 || result.status === 404) { reloadAll(); }
       else if (viewing) document.getElementById('alert').focus();
     }).catch(function () {
@@ -9013,6 +9023,19 @@ def experts_csp(language=None):
     """The `Content-Security-Policy` of the experts page in `language`: the inline script is allowed by the hash of its own text."""
     return ("default-src 'none'; script-src %s; style-src %s; connect-src 'self'; base-uri 'none'; "
             "form-action 'none'; frame-ancestors 'none'") % (_csp_hash(render_experts_script(language)), _csp_hash(EXPERTS_STYLE))
+
+
+_EXPERTS_BUNDLES = {}
+
+
+def experts_page_and_csp(language=None):
+    """`(page, Content-Security-Policy)` of the experts page in one language, rendered once per language: the policy is the hash of the very
+    script inside the page, so they must come from the same rendering and never from the process language read twice."""
+    language = language if language in SUPPORTED_LANGUAGES else get_language()
+    bundle = _EXPERTS_BUNDLES.get(language)
+    if bundle is None:
+        bundle = _EXPERTS_BUNDLES[language] = (render_experts_page(language), experts_csp(language))
+    return bundle
 
 
 EXPERTS_PAGE = _LazyPage(render_experts_page)

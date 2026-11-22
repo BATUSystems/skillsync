@@ -3,10 +3,13 @@
 The catalog of `proto.*` keys lives in `data/i18n/{pl,en}.proto.json`; the standalone server embeds it in a generated block
 (`scripts/sync_proto_i18n.py`). Protocol words that programs read stay Polish and are not in the catalog.
 """
+import hashlib
 import importlib.util
 import json
 import re
+import shutil
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -14,6 +17,8 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from skillsync_workflow import prototype_server as server  # noqa: E402
+from tests import test_skillsync_prototype_experts_page as E  # noqa: E402
+from tests.test_skillsync_prototype_server import setUpModule, tearDownModule  # noqa: E402,F401  (strażnik katalogu)
 
 CATALOG_DIR = ROOT / 'skillsync_workflow' / 'data' / 'i18n'
 POLISH = re.compile('[ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]')
@@ -146,6 +151,154 @@ class PagesTest(unittest.TestCase):
         prototype = (ROOT / 'skillsync_workflow' / 'prototype.py').read_text(encoding='utf-8')
         for text in (source, prototype):
             self.assertIn("'Serwer prototypów: %s (Ctrl+C kończy)\\n'", text)
+
+
+class GoldenPolishTest(unittest.TestCase):
+    """Polish output is what it was before the catalog (sha256 taken from `prototype_server.py` @ 48fa505): login page and the three warnings.
+
+    The experts script is not pinned this way on purpose: it was changed in one respect (a single-pass `fmt` for several placeholders), the
+    visible texts are the same; its hash and the policy are checked against each other (`PagesTest`, `ExpertsHttpTest`)."""
+    OLD_LINE = "show('login-error', 'Zbyt wiele nieudanych prób. Spróbuj ponownie za ' + (data.retryAfter || 60) + ' s.');"
+    NEW_LINE = "show('login-error', 'Zbyt wiele nieudanych prób. Spróbuj ponownie za {seconds} s.'.split('{seconds}').join(String(data.retryAfter || 60)));"
+    GOLDEN = {
+        # the one line that differs is the formatting of the text from the catalog; the visible text is the old one
+        'login page': ('48995b6c3ca2c973a3a9fde318ca8e35e268069a1c9cbd74ff8746ec1751e770',
+                       lambda: server.render_login_page('pl').replace(GoldenPolishTest.NEW_LINE, GoldenPolishTest.OLD_LINE)),
+        'PUBLIC_READ_WARNING': ('c2a0f1784e053023f2b08365de85d119d2d1535b55eb7dd0e7c067b10ef78855', lambda: server.PUBLIC_READ_WARNING),
+        'LEGACY_QUESTIONS_WARNING': ('4568fddcfc5f5f7dacfce5c582e2f9dea7d291fa13a51a8719c9b45bc31333ae', lambda: server.LEGACY_QUESTIONS_WARNING),
+        'EXPERT_PUBLIC_WARNING': ('6a8e51224caf7d3a57f3e31b050bb71edcaaf7d6be6ef8085c4a2c9f237cc048', lambda: server.EXPERT_PUBLIC_WARNING),
+    }
+
+    def test_polish_texts_are_unchanged(self):
+        server.set_language('pl')
+        for name, (digest, produce) in self.GOLDEN.items():
+            with self.subTest(name):
+                self.assertEqual(hashlib.sha256(produce().encode('utf-8')).hexdigest(), digest)
+
+
+class UsedKeysTest(unittest.TestCase):
+    """Every key that the code asks for exists in both languages and every key of the catalog is used (`tr` returns the bare key when it is missing)."""
+    CALL = re.compile(r"['\"](proto\.[a-z0-9_.]+)['\"]")   # every string literal that looks like a key
+    TEMPLATE = re.compile(r"@(?:js)?\{([a-z0-9_.]+)\}")
+
+    def sources(self):
+        server_text = (ROOT / 'skillsync_workflow' / 'prototype_server.py').read_text(encoding='utf-8')
+        server_text = re.sub(r'# BEGIN GENERATED proto-i18n.*?# END GENERATED proto-i18n', '', server_text, flags=re.S)
+        generator_text = (ROOT / 'skillsync_workflow' / 'prototype.py').read_text(encoding='utf-8')
+        return server_text, generator_text
+
+    def used(self):
+        server_text, generator_text = self.sources()
+        keys = {key for key in set(self.CALL.findall(server_text)) | set(self.CALL.findall(generator_text)) if not key.endswith('.')}   # a trailing dot is a prefix
+        for template, prefix in (('_LOGIN_TEMPLATE', 'proto.page.login.'), ('_EXPERTS_SCRIPT_TEMPLATE', 'proto.page.experts.'),
+                                 ('_EXPERTS_PAGE_TEMPLATE', 'proto.page.experts.')):
+            body = getattr(server, template)
+            keys |= {prefix + name for name in self.TEMPLATE.findall(body)}
+        return keys
+
+    DYNAMIC = re.compile(r'^proto\.(gen\.gallery\.|gen\.agent\.|srv\.warn\.|srv\.start\.)')   # keys picked by a variable part, listed by prefix
+
+    def test_every_used_key_is_in_both_languages(self):
+        pl, en = fragment('pl'), fragment('en')
+        missing = sorted(key for key in self.used() if key not in pl or key not in en)
+        self.assertEqual(missing, [])
+
+    def test_every_key_of_the_catalog_is_used(self):
+        unused = sorted(key for key in fragment('pl') if key not in self.used() and not self.DYNAMIC.match(key))
+        self.assertEqual(unused, [])
+
+    def test_a_catalog_file_has_no_duplicate_keys(self):
+        def no_duplicates(pairs):
+            keys = [key for key, _ in pairs]
+            self.assertEqual(len(keys), len(set(keys)), 'duplicate key')
+            return dict(pairs)
+        for lang in ('pl', 'en'):
+            json.loads((CATALOG_DIR / f'{lang}.proto.json').read_text(encoding='utf-8'), object_pairs_hook=no_duplicates)
+
+    def test_no_page_shows_a_bare_key(self):
+        for language in ('pl', 'en'):
+            for page in (server.render_login_page(language), server.render_experts_page(language)):
+                self.assertNotIn('proto.page.', page)
+
+
+class ExpertsHttpTest(E.ExpertsPageBase):
+    """A server started with `language='en'` answers in English and its policy fits the script it serves."""
+
+    def setUp(self):
+        super().setUp()
+        self.addCleanup(server.set_language, 'pl')
+        self.start_server(language='en')
+
+    def test_login_page_is_english(self):
+        response = self.anon.get('/_login')
+        self.assertEqual(response.status, 200)
+        self.assertIn('<html lang="en"', response.text)
+        self.assertIsNone(POLISH.search(response.text))
+
+    def test_experts_page_is_english_and_the_policy_is_the_hash_of_its_script(self):
+        response = self.page()
+        self.assertEqual(response.status, 200)
+        self.assertIn('<html lang="en"', response.text)
+        self.assertIsNone(POLISH.search(response.text))
+        scripts, _ = E.split_page(response.text)
+        policy = response.header('Content-Security-Policy')
+        self.assertEqual(E.directive(policy, 'script-src'), [E.sha_token(scripts[0][1])])
+
+    def test_the_language_of_another_server_in_the_process_does_not_change_this_one(self):
+        before = self.page().text
+        server.set_language('pl')   # what another `make_server` in the same process does
+        self.assertEqual(self.page().text, before)
+
+
+class SyncScriptTest(unittest.TestCase):
+    def setUp(self):
+        self.sync = load_sync()
+        self.temp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, str(self.temp), True)
+        self.catalog = self.temp / 'i18n'
+        self.catalog.mkdir()
+        for lang in ('pl', 'en'):
+            (self.catalog / f'{lang}.proto.json').write_text('{"proto.a": "x"}\n', encoding='utf-8')
+        self.server_copy = self.temp / 'prototype_server.py'
+        self.server_copy.write_text(self.sync.block({'pl': {'proto.a': 'x'}, 'en': {'proto.a': 'x'}}), encoding='utf-8')
+        for name, value in (('CATALOG_DIR', self.catalog), ('SERVER', self.server_copy)):
+            patcher = mock.patch.object(self.sync, name, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        patcher = mock.patch.object(self.sync._Lock, 'path', self.catalog / '.proto.lock')
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def write(self, name, data):
+        path = self.temp / name
+        path.write_text(json.dumps(data), encoding='utf-8')
+        return str(path)
+
+    def test_check_fails_when_the_block_is_stale_and_the_script_repairs_it(self):
+        (self.catalog / 'pl.proto.json').write_text('{"proto.a": "y"}\n', encoding='utf-8')
+        self.assertEqual(self.sync.main(['--check']), 1)
+        self.assertEqual(self.sync.main([]), 0)
+        self.assertEqual(self.sync.main(['--check']), 0)
+
+    def test_merge_adds_keys_to_both_languages_and_refuses_a_conflict_or_unequal_keys(self):
+        self.assertEqual(self.sync.main(['--merge', self.write('k.json', {'pl': {'proto.b': 'b'}, 'en': {'proto.b': 'B'}})]), 0)
+        self.assertEqual(json.loads((self.catalog / 'en.proto.json').read_text(encoding='utf-8'))['proto.b'], 'B')
+        self.assertEqual(self.sync.main(['--check']), 0)
+        self.assertEqual(self.sync.main(['--merge', self.write('c.json', {'pl': {'proto.a': 'other'}, 'en': {'proto.a': 'x'}})]), 2)
+        self.assertEqual(self.sync.main(['--merge', self.write('u.json', {'pl': {'proto.c': 'c'}, 'en': {}})]), 2)
+        self.assertNotIn('proto.c', json.loads((self.catalog / 'pl.proto.json').read_text(encoding='utf-8')))
+
+    def test_three_single_quotes_cannot_be_embedded(self):
+        self.assertEqual(self.sync.main(['--merge', self.write('q.json', {'pl': {'proto.q': "a'''b"}, 'en': {'proto.q': 'ab'}})]), 2)
+
+    def test_a_stale_lock_is_taken_over_and_removed(self):
+        lock = self.catalog / '.proto.lock'
+        lock.write_text('', encoding='utf-8')
+        old = lock.stat().st_mtime - 1000
+        import os
+        os.utime(str(lock), (old, old))
+        self.assertEqual(self.sync.main(['--merge', self.write('k.json', {'pl': {'proto.b': 'b'}, 'en': {'proto.b': 'B'}})]), 0)
+        self.assertFalse(lock.exists())
 
 
 class LanguageOptionTest(unittest.TestCase):
