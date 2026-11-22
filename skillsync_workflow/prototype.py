@@ -646,26 +646,36 @@ def public_url_of(settings, environ=None):
 DEMO_HOST = '0.0.0.0'
 
 
-def demo_lines(instance, host):
+def _text(lang, key, n=None, **params):
+    """The only call site of the interface catalog in this module (`proto.gen.*` keys; plural by `n`, parameters `{name}`).
+    Today it goes through the server's embedded catalog (`server.tr`); switching to `i18n.t` is a change in this one place."""
+    return server.tr(key, n=n, language=lang, **params)
+
+
+def _language_of(manifest):
+    """The language of the project (manifest key `language`, default `pl`)."""
+    return i18n.resolve_language(manifest)[0]
+
+
+def demo_lines(instance, host, language='pl'):
     """Startup lines of `serve --demo`: that the show is public for everyone who reaches the address and that nothing can be written, the
     addresses of this machine (when listening on every interface) and how to narrow the listening."""
-    lines = ['POKAZ tylko do odczytu: prototypy są jawne dla każdego, kto dotrze do tego adresu (bez logowania; komentarze, akceptacje i '
-             'odpowiedzi eksperta wyłączone, istniejące komentarze ukryte; ruch nieszyfrowany).']
+    lines = [_text(language, 'proto.gen.demo.readonly')]
     if host in ('0.0.0.0', '::', ''):
         from .dashboard_http import lan_addresses   # a function of the status page; imported here, the modules must not import each other at load
         port = instance.server_address[1]
-        lines.append('Adresy w sieci lokalnej: ' + ', '.join(f'http://{address}:{port}/' for address in lan_addresses()))
-        lines.append('Tylko ta maszyna: uruchom z --host 127.0.0.1.')
+        lines.append(_text(language, 'proto.gen.demo.lan', addresses=', '.join(f'http://{address}:{port}/' for address in lan_addresses())))
+        lines.append(_text(language, 'proto.gen.demo.local_only'))
     return lines
 
 
-def public_address_lines(settings, environ=None):
+def public_address_lines(settings, environ=None, language='pl'):
     """Lines for the startup message of `prototype serve`: the public address, or a warning when the variable is invalid
     (the warning names the variable, never its value)."""
     public, error = public_url_of(settings, environ)
     if error:
-        return [f'ostrzeżenie: {error}']
-    return [f'Adres publiczny: {public}'] if public else []
+        return [_text(language, 'proto.cli.warning', text=error)]
+    return [_text(language, 'proto.gen.cli.public_address', url=public)] if public else []
 
 
 def resolve_prototype_settings(section, root):
@@ -1092,6 +1102,9 @@ def init_prototype(root, manifest, layerset, slug, requirements, title=None, ass
     warnings += theme_warnings
     fields = {'TITLE': title, 'SLUG': slug, 'REQUIREMENTS': requirements_value}
     rendered = {name: render_template(_read_asset(paths[f'repo/{name}']), fields) for name in TEMPLATE_FILES}
+    language = _language_of(manifest)
+    if language != 'pl':   # the template stays Polish (`<html lang="pl"`); the project language replaces it (`{{LANG}}` would break its placeholder guard)
+        rendered['index.html'] = rendered['index.html'].replace('<html lang="pl"', f'<html lang="{language}"', 1)
     if not settings['dark_theme']:
         rendered['index.html'], _ = ensure_light_only(rendered['index.html'], True)
     missing = missing_theme_links(rendered['index.html'])
@@ -1342,7 +1355,7 @@ code { font: 0.8125rem ui-monospace, monospace; }
 """.strip('\n')
 
 
-def render_gallery(entries, demo=False):
+def render_gallery(entries, demo=False, language='pl'):
     """HTML of `<root>/index.html` for valid entries (dicts as in `list`); `href` from `slug`.  An entry with a
     truthy `writing` (set only by the live gallery) gets the "w trakcie zapisu" mark.  `demo` (the read-only show of `serve --demo`):
     only the slug, the title, the creation date and the number of screens; no requirements path, comment count, acceptance, writing mark or
@@ -1353,34 +1366,37 @@ def render_gallery(entries, demo=False):
     def acceptance(value):
         return '—' if value is None else f'{value["accepted"]}/{value["screens"]}'
 
+    def g(name, n=None):
+        return _text(language, f'proto.gen.gallery.{name}', n=n)
+
     cards = []
     for entry in entries:
         slug = html_escape(entry['slug'])
         cards.append('\n'.join([
             '<li class="card">',
             f'  <h2><a href="{slug}/index.html">{html_escape(entry["title"])}</a></h2>',
-            *(['  <p class="writing" data-writing="true">W trakcie zapisu: agent jeszcze pisze ekrany</p>']
+            *([f'  <p class="writing" data-writing="true">{html_escape(g("writing"))}</p>']
               if entry.get('writing') and not demo else []),
-            *([f'  <p class="questions"><a href="/_experts/{slug}">Pytania</a></p>']
+            *([f'  <p class="questions"><a href="/_experts/{slug}">{html_escape(g("questions"))}</a></p>']
               if entry.get('questions') and not demo else []),
             '  <dl>',
-            f'    <dt>Slug</dt><dd><code>{slug}</code></dd>',
-            *([] if demo else [f'    <dt>Wymagania</dt><dd><code>{html_escape(entry["requirements"])}</code></dd>']),
-            f'    <dt>Utworzono</dt><dd>{html_escape(entry["created"])}</dd>',
-            f'    <dt>Ekrany</dt><dd>{number(entry["screens"])}</dd>',
-            *([] if demo else [f'    <dt>Otwarte komentarze</dt><dd>{number(entry["comments"])}</dd>',
-                               f'    <dt>Akceptacja</dt><dd>{acceptance(entry.get("acceptance"))}</dd>']),
+            f'    <dt>{html_escape(g("slug"))}</dt><dd><code>{slug}</code></dd>',
+            *([] if demo else [f'    <dt>{html_escape(g("requirements"))}</dt><dd><code>{html_escape(entry["requirements"])}</code></dd>']),
+            f'    <dt>{html_escape(g("created"))}</dt><dd>{html_escape(entry["created"])}</dd>',
+            f'    <dt>{html_escape(g("screens"))}</dt><dd>{number(entry["screens"])}</dd>',
+            *([] if demo else [f'    <dt>{html_escape(g("comments"))}</dt><dd>{number(entry["comments"])}</dd>',
+                               f'    <dt>{html_escape(g("acceptance"))}</dt><dd>{acceptance(entry.get("acceptance"))}</dd>']),
             '  </dl>',
             '</li>']))
-    body = ('<ul class="gallery">\n' + '\n'.join(cards) + '\n</ul>') if cards else '<p class="lead">Brak prototypów.</p>'
+    body = ('<ul class="gallery">\n' + '\n'.join(cards) + '\n</ul>') if cards else f'<p class="lead">{html_escape(g("empty"))}</p>'
     return '\n'.join([
         HTML_MARKER,
         '<!doctype html>',
-        '<html lang="pl">',
+        f'<html lang="{language}">',
         '<head>',
         '<meta charset="utf-8" />',
         '<meta name="viewport" content="width=device-width, initial-scale=1" />',
-        '<title>Prototypy</title>',
+        f'<title>{html_escape(g("title"))}</title>',
         '<link rel="icon" href="data:," />',
         '<style>',
         _GALLERY_STYLE,
@@ -1388,11 +1404,10 @@ def render_gallery(entries, demo=False):
         '</head>',
         '<body>',
         '<main>',
-        '<h1>Prototypy</h1>',
-        *(['<p class="questions-link"><a href="/_experts">Pytania</a></p>']
+        f'<h1>{html_escape(g("title"))}</h1>',
+        *([f'<p class="questions-link"><a href="/_experts">{html_escape(g("questions"))}</a></p>']
           if not demo and any(entry.get('questions') for entry in entries) else []),
-        (f'<p class="lead">Liczba prototypów: {len(entries)}. Otwórz prototyp, aby przeglądać ekrany.</p>' if demo else
-         f'<p class="lead">Liczba prototypów: {len(entries)}. Otwórz prototyp, aby przeglądać ekrany i komentarze.</p>'),
+        f'<p class="lead">{html_escape(g("total_demo" if demo else "total", n=len(entries)))}</p>',
         body,
         '</main>',
         '</body>',
@@ -1446,13 +1461,13 @@ def gallery_entries(prototypes_root, repo, now_ms=None):
     return entries, warnings
 
 
-def gallery_html(prototypes_root, repo, clock=None, demo=False):
+def gallery_html(prototypes_root, repo, clock=None, demo=False, language='pl'):
     """Gallery HTML computed now (acceptance, open comments, screens as they are at this moment).  `serve` answers
     `/` with it, so the gallery never lags behind `accept`, comments or `init`; `index` writes the same HTML to
     `<root>/index.html` for `file://` and static servers.  Only the live gallery marks prototypes with a valid
     writing marker; `clock` (seconds, default `time.time`) is injectable for tests."""
     entries, _ = gallery_entries(Path(prototypes_root), Path(repo), server.clock_ms(clock or time.time))
-    return render_gallery(entries, demo=demo)
+    return render_gallery(entries, demo=demo, language=language)
 
 
 def _gallery_writable(path):
@@ -1484,7 +1499,7 @@ def index_prototypes(root, manifest):
     warnings.extend(entry_warnings)
     target = prototypes_root / 'index.html'
     _gallery_writable(target)
-    atomic_write(target, render_gallery(entries))
+    atomic_write(target, render_gallery(entries, language=_language_of(manifest)))
     report['path'] = _relative(target, repo)
     report['prototypes'] = [entry['slug'] for entry in entries]
     if warnings:
@@ -2365,9 +2380,7 @@ def migrate_prototype(root, manifest, layerset, slug, dry_run=False, assets=None
             if lost_classes:
                 report['project_styles_warning'] = {
                     'classes': lost_classes,
-                    'message': ('klasy tylko w dotychczasowym screens.css (nie ma ich w żadnym pliku CSS biblioteki): przenieś ich reguły '
-                                'do project.css; nie kopiuję ich automatycznie, bo stary plik może zawierać kod '
-                                'biblioteki')}
+                    'message': _text(_language_of(manifest), 'proto.gen.cli.lost_classes')}
         if not dry_run:
             if name in server.ENGINE_ASSETS and current is not None:
                 _remember_engine_digest(directory, current)
@@ -2434,11 +2447,11 @@ def _user_error(error):
     return PrototypeError(f'{error.code}: {error.message}')
 
 
-def _cli_password(args):
+def _cli_password(args, language='pl'):
     """Explicit password from `--password-prompt` (getpass, twice) or `--password-stdin` (first line)."""
     if getattr(args, 'password_prompt', False):
-        first = getpass.getpass('Hasło: ')
-        if first != getpass.getpass('Powtórz hasło: '):
+        first = getpass.getpass(_text(language, 'proto.cli.prompt_password'))
+        if first != getpass.getpass(_text(language, 'proto.cli.prompt_repeat')):
             raise PrototypeError('password_mismatch: passwords differ')
         return first
     if getattr(args, 'password_stdin', False):
@@ -2462,7 +2475,7 @@ def _users(repo, value):
     return users, warnings
 
 
-def user_command(root, args):
+def user_command(root, args, manifest=None):
     """`user add|passwd|remove|list|import`; the default password comes only from the machine config."""
     repo = Path(root).resolve()
     users, warnings = _users(repo, args.users)
@@ -2476,7 +2489,7 @@ def user_command(root, args):
             report['user'] = record
             warnings += extra
         elif action in ('add', 'passwd'):
-            password = _cli_password(args)
+            password = _cli_password(args, _language_of(manifest))
             default = None
             if password is None:
                 default, extra = default_password()
@@ -2559,12 +2572,13 @@ def serve_prototypes(root, manifest, args, err=None):
     if demo and args.login_to_view:
         return {'status': 'BLOCKED', 'reason': '--demo and --login-to-view contradict each other: the show has no accounts and no login'}
     language, language_warning = i18n.resolve_language(manifest)   # the manifest key `language` (default pl)
+    language_kw = {} if language == 'pl' else {'language': language}   # the default language keeps the call as it was
     host = args.host if args.host is not None else (DEMO_HOST if demo else server.DEFAULT_HOST)
     source_writes = not demo and not args.no_source_writes and _in_git_worktree(settings['root'])
     config = server.ServerConfig(settings['root'], None if demo else users_file_path(repo, args.users), host=host, port=port,
                                  secure_cookies=args.secure_cookies, trust_proxy=args.trust_proxy,
                                  login_to_view=args.login_to_view, source_writes=source_writes, log=err,
-                                 gallery=lambda: gallery_html(settings['root'], repo, clock=config.clock, demo=demo),
+                                 gallery=lambda: gallery_html(settings['root'], repo, clock=config.clock, demo=demo, **language_kw),
                                  runtime_dir=None if demo else server.link_run_dir_of(repo), demo=demo, language=language)
     try:
         instance = server.make_server(config)
@@ -2577,11 +2591,10 @@ def serve_prototypes(root, manifest, args, err=None):
         return {'status': 'BLOCKED', 'reason': f'cannot listen on {host}:{port} ({error.strerror or error})'}
     notes = list(settings['warnings']) + instance.app.warnings + ([language_warning] if language_warning else [])
     if demo:
-        notes += [f'--demo: {name} nie ma tu znaczenia (pokaz nie ma kont ani ciasteczek)'
+        notes += [_text(language, 'proto.gen.cli.demo_irrelevant', name=name)
                   for name, given in (('--users', args.users), ('--secure-cookies', args.secure_cookies), ('--trust-proxy', args.trust_proxy)) if given]
     if not demo and not args.no_source_writes and not source_writes:
-        notes.append(f'{_relative(settings["root"], repo)} nie leży w kopii roboczej gita: przywracanie z UI wyłączone '
-                     '(source writes off)')
+        notes.append(_text(language, 'proto.cli.not_in_git', path=_relative(settings["root"], repo)))
     previous = previous_break = console_close = None
     cleanup_done = threading.Event()
     try:
@@ -2591,12 +2604,12 @@ def serve_prototypes(root, manifest, args, err=None):
         previous_break = stopsignal.install_sigbreak()   # Windows: CTRL_BREAK (SIGBREAK) stops like Ctrl+C; None on other systems
         console_close = stopsignal.install_console_close(cleanup_done)   # Windows: closing the console window waits for the cleanup below
         for warning in notes:
-            err.write(f'ostrzeżenie: {warning}\n')
-        err.write(f'Serwer prototypów: {instance.url} (Ctrl+C kończy)\n')
-        for line in public_address_lines(settings):
+            err.write(_text(language, 'proto.cli.warning', text=warning) + '\n')
+        err.write('Serwer prototypów: %s (Ctrl+C kończy)\n' % instance.url)   # the announcement line is read by programs (port discovery): not translated
+        for line in public_address_lines(settings, language=language):
             err.write(line + '\n')
         if demo:
-            for line in demo_lines(instance, host):
+            for line in demo_lines(instance, host, language):
                 err.write(line + '\n')
         err.flush()
         instance.serve_forever()
@@ -2685,7 +2698,7 @@ def login_link_prototype(root, manifest, args):
     if record is None:
         return _link_blocked('unknown_user', f'no account {login or args.user!r} (create it: skillsync prototype user add)')
     if record['mustChange']:
-        return _link_blocked('password_change_required', 'the account must change its password first: zmień hasło')
+        return _link_blocked('password_change_required', 'the account must change its password first: ' + _text(_language_of(manifest), 'proto.gen.cli.change_password'))
     try:
         token, expires = server.link_issue(run_dir, login, target, instance=state['instance'])
     except server.LoginLinkError as error:
@@ -3102,7 +3115,7 @@ def accept_prototype(root, manifest, slug=None, screens=None, all_screens=False,
     if refusal is not None:
         return refusal
     try:
-        password = getpass.getpass(f'Hasło {login}: ')
+        password = getpass.getpass(_text(_language_of(manifest), 'proto.cli.prompt_password_of', login=login))
     except (EOFError, KeyboardInterrupt):
         return _blocked('tty_required', 'the password was not entered')
     if not server.verify_password(password, record['password']):
@@ -3409,12 +3422,12 @@ UNTRUSTED_NOTICES = {
 UNTRUSTED_NOTICE = UNTRUSTED_NOTICES['comments']   # name of the first version (comments of a prototype)
 
 
-def mark_untrusted(report, kind, after=()):
+def mark_untrusted(report, kind, after=(), language='pl'):
     """`report` with `untrusted: true` and the constant `notice` of `kind` placed first, or right after the keys `after`
     (`status`, `event`), so a reader of a cut or streamed output meets the warning before any person text."""
     head = {key: report[key] for key in after if key in report}
     tail = {key: value for key, value in report.items() if key not in head and key not in ('untrusted', 'notice')}
-    return {**head, 'untrusted': True, 'notice': UNTRUSTED_NOTICES[kind], **tail}
+    return {**head, 'untrusted': True, 'notice': UNTRUSTED_NOTICES[kind] if language == 'pl' else _text(language, f'proto.gen.agent.{kind}'), **tail}
 
 
 def comments_prototype(root, manifest, slug, status=None):
@@ -3442,7 +3455,7 @@ def comments_prototype(root, manifest, slug, status=None):
     # `untrusted` and `notice` come first: a reader that sees the output in pieces (or cut) meets the warning before any comment text
     report = mark_untrusted({'status': 'PASS', 'slug': slug, 'iteration': fold['currentIteration'], 'statuses': statuses,
                              'counts': server.thread_counts(fold, screen_ids, proto_ids), 'threads': threads},
-                            'comments', after=('status', 'slug'))
+                            'comments', after=('status', 'slug'), language=_language_of(manifest))
     warnings = list(settings['warnings'])
     if fold['iterationDuplicates']:
         warnings.append('comments.json: duplicated iteration number(s): '
@@ -3603,7 +3616,7 @@ def wait_prototype(root, manifest, slug, since=None, after=None, timeout=1800.0,
             comments = _new_comments(store.snapshot(), since_at, after, _roles(root), _roles_all(root))
             if comments:
                 return mark_untrusted({'status': 'PASS', 'slug': slug, 'event': 'comment', 'comment': comments[0], 'comments': comments},
-                                      'comments', after=('status', 'slug', 'event'))
+                                      'comments', after=('status', 'slug', 'event'), language=_language_of(manifest))
         gate = prototype_gate(root, manifest, slugs=[slug])
         if gate.get('status') == 'BLOCKED':
             return gate
@@ -4228,7 +4241,7 @@ def list_questions(root, manifest, status=None, users=None, slug=None):
     document['counts']['toRecord'] = sum(1 for item in everything if item['state'] == 'answered' and 'recorded' not in item)
     document['runs'] = [{'slug': name, 'questions': sum(1 for item in everything if item['slug'] == name)}
                         for name in sorted({item['slug'] for item in everything if item['slug']})]
-    return mark_untrusted(document, 'question')
+    return mark_untrusted(document, 'question', language=_language_of(manifest))
 
 
 def show_question(root, manifest, question_id, users=None, slug=None):
@@ -4240,13 +4253,13 @@ def show_question(root, manifest, question_id, users=None, slug=None):
         return _question_fail('not_found', f'no question {question_id}')
     document['question'] = document['questions'][0]
     document['answerLine'] = question_answer_line(document['questions'][0])
-    return mark_untrusted(document, 'question')
+    return mark_untrusted(document, 'question', language=_language_of(manifest))
 
 
 def export_questions_cli(root, manifest, users=None, slug=None):
     repo = Path(root).resolve()
     settings = _settings(repo, manifest)
-    return mark_untrusted(_question_documents(repo, settings, slug, users), 'question')
+    return mark_untrusted(_question_documents(repo, settings, slug, users), 'question', language=_language_of(manifest))
 
 
 RECORD_HINT = ('write the row from the `answerLine` of `question show`/`wait` into the spec first, then record the line '
@@ -4408,12 +4421,12 @@ def _question_events(snapshot, wanted, since_at, after):
     return found
 
 
-def _wait_report(event, question, fold, slug=None, **extra):
+def _wait_report(event, question, fold, slug=None, language='pl', **extra):
     view = server.question_view(question, AGENT_VIEWER, fold['byId'], slug)
     report = {'status': 'PASS', 'event': event, 'questionId': question['id'], 'slug': slug, 'question': view,
               'questions': [view], 'answerLine': question_answer_line(view)}
     report.update(extra)
-    return mark_untrusted(report, 'question', after=('status', 'event'))
+    return mark_untrusted(report, 'question', after=('status', 'event'), language=language)
 
 
 WAIT_READ_RETRIES = 3
@@ -4498,20 +4511,20 @@ def wait_question(root, manifest, question_id=None, all_questions=False, since=N
                 if question is None:
                     return _question_fail('not_found', f'no question {question_id}')
                 if question['state'] == 'answered':
-                    return _wait_report('answer', question, fold, name)
+                    return _wait_report('answer', question, fold, name, language=_language_of(manifest))
                 if question['state'] == 'withdrawn':
                     return _question_fail('withdrawn', f'question {question_id} was withdrawn')
             else:
                 ready = [item for item in fold['questions'] if item['state'] == 'answered' and item['recorded'] is None]
                 if ready:
-                    return _wait_report('answer', ready[0], fold, name, pending=[item['id'] for item in ready])
+                    return _wait_report('answer', ready[0], fold, name, language=_language_of(manifest), pending=[item['id'] for item in ready])
             # `--after` names an operation of one run's file: in the other files the events after its time count
             in_file = after is not None and any(operation.get('id') == after for operation in snapshot.operations)
             events = (_question_events(snapshot, wanted, since_at, after) if after is None or in_file
                       else _question_events(snapshot, wanted, after_at, None))
             if events:
                 first = events[0]
-                return _wait_report(first['event'], first['question'], fold, name, opId=first['opId'], by=first['by'], at=first['at'])
+                return _wait_report(first['event'], first['question'], fold, name, language=_language_of(manifest), opId=first['opId'], by=first['by'], at=first['at'])
         if time.monotonic() >= deadline:
             return {'status': 'TIMEOUT', 'reason': 'no new answer or comment on the question(s)'}
         time.sleep(min(max(0.2, float(interval)), max(0.0, deadline - time.monotonic())) or 0.2)
@@ -4786,7 +4799,7 @@ def _cmd_serve(args, root, manifest, layerset):
 
 
 def _cmd_user(args, root, manifest, layerset):
-    return user_command(root, args)
+    return user_command(root, args, manifest)
 
 
 def _login_link_handler(args):

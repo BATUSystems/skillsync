@@ -108,6 +108,46 @@ class TranslationFunctionTest(unittest.TestCase):
         self.assertEqual(server.client_texts('proto.zzz.'), {})
 
 
+class PagesTest(unittest.TestCase):
+    """The login page and the experts page in both languages (the experts script is pinned by a hash in the CSP, so the policy follows the language)."""
+
+    def tearDown(self):
+        server.set_language(server.DEFAULT_LANGUAGE)
+
+    def test_english_pages_have_no_polish_text_and_the_right_lang(self):
+        for name in ('render_login_page', 'render_experts_page', 'render_experts_script'):
+            page = getattr(server, name)('en')
+            with self.subTest(name):
+                self.assertIsNone(POLISH.search(page), POLISH.findall(page))
+        self.assertIn('<html lang="en"', server.render_login_page('en'))
+        self.assertIn('<html lang="en"', server.render_experts_page('en'))
+        self.assertIn('<html lang="pl"', server.render_login_page('pl'))
+        self.assertIn('<html lang="pl"', server.render_experts_page('pl'))
+
+    def test_the_pages_follow_the_language_of_the_process_when_none_is_given(self):
+        self.assertEqual(server.LOGIN_PAGE.encode('utf-8'), server.render_login_page('pl').encode('utf-8'))
+        server.set_language('en')
+        self.assertEqual(server.LOGIN_PAGE.encode('utf-8'), server.render_login_page('en').encode('utf-8'))
+        self.assertEqual(server.EXPERTS_PAGE.encode('utf-8'), server.render_experts_page('en').encode('utf-8'))
+
+    def test_the_policy_allows_exactly_the_script_of_its_language(self):
+        for language in ('pl', 'en'):
+            policy = server.experts_csp(language)
+            script = server.render_experts_script(language)
+            self.assertIn(server._csp_hash(script), policy)
+            self.assertIn(script, server.render_experts_page(language))
+        self.assertNotEqual(server.experts_csp('pl'), server.experts_csp('en'))
+        self.assertEqual(server.experts_csp(None), server.experts_csp('pl'))
+        server.set_language('en')
+        self.assertEqual(server.experts_csp(), server.experts_csp('en'))
+
+    def test_the_status_line_of_the_server_stays_the_one_programs_read(self):
+        source = (ROOT / 'skillsync_workflow' / 'prototype_server.py').read_text(encoding='utf-8')
+        prototype = (ROOT / 'skillsync_workflow' / 'prototype.py').read_text(encoding='utf-8')
+        for text in (source, prototype):
+            self.assertIn("'Serwer prototypów: %s (Ctrl+C kończy)\\n'", text)
+
+
 class LanguageOptionTest(unittest.TestCase):
     def tearDown(self):
         server.set_language(server.DEFAULT_LANGUAGE)
