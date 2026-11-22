@@ -576,7 +576,7 @@ ZSH_LATE_HOOK = [
     'else',
     '  _skillsync_register() {',
     '    precmd_functions=(${precmd_functions:#_skillsync_register})',
-    '    (( $+functions[compdef] )) || { autoload -Uz compinit && compinit -i; }',
+    '    (( $+functions[compdef] )) || { autoload -Uz compinit && compinit -i; } || :',
     '    if (( $+functions[compdef] )); then',
     '      compdef _skillsync skillsync',
     '    else',

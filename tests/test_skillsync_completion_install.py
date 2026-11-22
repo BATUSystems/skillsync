@@ -1176,6 +1176,13 @@ class ZshRuntimeTest(Base):
         self.assertIn('completion was not registered', proc.stderr)
         self.assertIn('AFTER=\n', proc.stdout)
 
+    def test_variant_a_hook_survives_a_failing_compinit_under_err_exit(self):
+        """CORE-1130-ZSH-PRECMD: without `|| :` the failed `compinit` was the status of the `||` list, and `setopt ERR_EXIT` ended the user's shell."""
+        proc = self.zsh_precmd(b'compinit() { return 1 }\n', 'for f in $precmd_functions; do $f; done; print -r -- "ALIVE=${+functions[_skillsync_register]}"')
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn('ALIVE=0', proc.stdout)
+        self.assertIn('completion was not registered', proc.stderr)
+
     def test_variant_a_registers_at_once_when_compdef_exists(self):
         zsh = shutil.which('zsh', path=REAL_PATH)
         if not zsh:
