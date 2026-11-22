@@ -1,6 +1,6 @@
 // Konfiguracja kontroli zakresu CSS jako dane: walidacja schematu, parsowanie JSON, wbudowany zestaw
 // przypadkow silnika i ich uruchamianie. Funkcje czyste; zero efektow przy imporcie.
-import { resolveInside } from './policy.mjs';
+import { resolveSlashOnly } from './css-paths.mjs';
 import { CssParseError } from './css-parse.mjs';
 import { checkScope } from './css-scope-core.mjs';
 
@@ -31,7 +31,7 @@ function unknownKeys(obj, allowed, path, errors) {
 
 function checkInside(configDir, value, path, errors) {
   try {
-    resolveInside(configDir, value);
+    resolveSlashOnly(configDir, value);
     return true;
   } catch {
     errors.push(`${path}: must be a relative path inside the config directory`);
