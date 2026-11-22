@@ -114,7 +114,7 @@ In the "before PR" mode the same verdicts mean, in order: ready for a PR, ready 
 
 - Write to the developer: concretely, politely, about the code, not about the person; every finding has a location, an effect and a proposal.
   Praise what is good if it is true; do not invent findings for volume.
-- Summary language: the language of the PR/team; when unclear, ask. The template headings are given in English; translate them into that language.
+- Summary language: English (the language of this layer), unless the PR/team works in another language; then ask or match.
 - Mark findings outside the scope of the task as such and do not make them a condition of the merge.
 - Report knowledge from the review that is a domain rule or a technical trap to the user as a proposed record
   (`docs/domain` / `docs/lessons`); do not write it yourself in the repository of the reviewed PR.
