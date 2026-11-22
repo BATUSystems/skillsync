@@ -60,7 +60,7 @@ instalacja: [installation](../installation.md#uzupełnianie-poleceń-w-powłoce)
    brak uzupełniania jest gorszy. Wariant A: `if (( $+functions[compdef] )); then compdef _skillsync skillsync; …; fi` (nie `A && B`, bo ta
    forma zwraca 1 pod `setopt ERR_EXIT`), bez `compinit`; gdy `compdef` jeszcze nie istnieje, blok rejestruje jednorazowy hook `precmd`
    (`_skillsync_register`), który po starcie, gdy `compdef` nadal nie istnieje, najpierw uruchamia `autoload -Uz compinit && compinit -i`, potem rejestruje funkcję,
-   sam się usuwa z `precmd_functions` i gdy `compdef` mimo to brakuje, wypisuje ostrzeżenie na stderr. Wariant B: gdy `compdef` nie istnieje, blok wywołuje `compinit -i`. Drugi `compinit` spowalnia start i daje ostrzeżenia. Wariant liczy się z treści pliku bez naszego bloku, a jego
+   sam się usuwa z `precmd_functions` i gdy `compdef` mimo to brakuje, wypisuje ostrzeżenie na stderr. Wariant B: gdy `compdef` nie istnieje, blok wywołuje `compinit -i`. Drugi `compinit` spowalnia start i daje ostrzeżenia; przy wariancie A jest możliwy tylko wtedy, gdy cudzy odroczony hook (zinit turbo, `zsh-defer`) woła `compinit` po naszym `precmd`, a skutkiem jest wolniejszy start. Wariant liczy się z treści pliku bez naszego bloku, a jego
    zmiana to `updated` w miejscu. Źródło: `zsh_block_lines`, `zsh_calls_compinit_elsewhere`; testy `ZshVariantTest`, `ZshRuntimeTest`.
 10. **ExecutionPolicy.** `Restricted` i `AllSigned` blokują wczytanie niepodpisanego skryptu z profilu (na kliencie Windows domyślną
     Windows PowerShella 5.1 jest `Restricted`). Wtedy dla tego hosta nie zapisujemy nic (ani profilu, ani skryptu): `skipped`
