@@ -44,9 +44,9 @@
         body: JSON.stringify({ kind, path, sha, plan: st.plan || null, ...(planState ? { planState } : {}) }) });
       const body = await r.json().catch(() => ({}));
       if (r.status === 403 && token && body.code === "approve_token") { store.set(TOKEN_KEY, null); refresh(); }  // nieaktualny (restart serwera)
-      return r.ok ? { ok: true, word: body.word, text: body.next } : { ok: false, word, text: body.error || `Błąd ${r.status}` };
+      return r.ok ? { ok: true, word: body.word, text: body.next } : { ok: false, word, text: body.error || board.t("ui.httpError", { status: r.status }) };
     } catch {
-      return { ok: false, word, text: "Brak połączenia z serwerem statusu." };
+      return { ok: false, word, text: board.t("ui.noConnection") };   // the page text of the current language (the renderer owns the catalog)
     }
   }
   async function fetchDoc(path) {
@@ -128,6 +128,8 @@
         if (!r.ok) throw new Error("HTTP " + r.status);
         const data = await r.json();
         st.lastFetchOk = Date.now();
+        // `lang` of the status (project language; absent in an older server = pl) is the language of the page for assistive technology and hyphenation
+        document.documentElement.lang = typeof data.lang === "string" && /^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(data.lang) ? data.lang : "pl";
         if (st.plan && !data.plans.some((p) => p.path === st.plan)) { st.plan = null; store.set("plan", null); }
         board.update(data);
         if (st.live === "down") setLive(st.es && st.es.readyState === 1 ? "live" : "polling");

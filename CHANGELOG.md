@@ -12,6 +12,20 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Added
+
+- **Manifest key `language` (interface language).** `language: pl` (default; a missing key is `pl` without a warning) or `en`. It controls only the interface: the status page, the texts of the server, the `lang` attribute of the page, the tooltips and `<title>`. The language of skills stays with the layer (`layer_rules`). An unknown value or a wrong type is `pl` with a warning in the `findings` of `skillsync status`, never an error. Documented in `docs/manifest.md` and `docs/domain/i18n-ui.md`.
+- **Text catalog.** `skillsync_workflow/data/i18n/<lang>.json` (`pl`, `en`) with fragments `<lang>.<namespace>.json` (a fragment holds only keys of its own namespace; a duplicate key is an error). Prefixes: `srv.` (translated on the server), `ui.` (renderer), `proto.` (prototypes). Plural forms as objects (`one`, `few`, `many`, `other`) chosen by `Intl.PluralRules` in the renderer and `plural_category` in Python; placeholders `{name}`. Parity tests check the keys and parameters of both languages.
+- **Status JSON: `lang` and `texts`.** `lang` (always, `pl` by default) and `texts` (the `ui.*` catalog of the language, only when `lang` is not `pl`). Both fields are additive; `texts` is shown by the renderer through `textContent` only. The renderer gets `t(key, params, n)`, `lang()` and `DashboardRenderer.defaultTexts`. Older renderers (frozen copies of 1.5.0, 1.11.0 and 1.12.0 in the tests) ignore the new fields.
+- **English tooltips.** `library/skills/dashboard/descriptions.en.json` next to `descriptions.json`; `/api/descriptions` serves the file of the project language, and a missing file falls back to Polish. A host that copies the assets of the `dashboard` skill must copy `descriptions.en.json` too.
+- **English aliases of protocol tokens in the dashboard parser.** `protocol_tokens.py` keeps an English form next to each Polish token; the plan line `Run:` is read next to `Przebieg:`, and the English keys of the document headers (`Prototype`, `Handoff`, `Date`) are read as their Polish names. The checkpoint grammar also reads `waiting:`, `running:`/`ongoing:`, `done:`, `in progress:` (at the start of a segment; the Polish word wins when both are present), `(who: …)` and `eta: … until HH:MM`. The Polish form is still the one that is written.
+- **Generator of the renderer's default catalog.** `scripts/sync_renderer_defaults.py` rewrites the `DEFAULT_TEXTS` block of `dashboard-render.js` from `pl.json`; `--check` exits with 1 when the block differs.
+
+### Changed
+
+- **Status JSON contains `lang`.** `skillsync dashboard show --json` and `dashboard serve` add the field `lang` to every status (additive in `schema: 1`). The texts of the server (waiting items, stage labels, consent reasons, warnings, HTTP errors) are taken from the catalog of the project language.
+- **Polish output does not change.** A project without `language` (or with `language: pl`) gets the same texts, the same page HTML and the same status, except for the new `lang` field.
+
 ### Fixed
 
 - **The one-time `precmd` hook of the zsh completion block no longer ends the shell when `compinit` fails.** The line `(( $+functions[compdef] )) || { autoload -Uz compinit && compinit -i; }` returned the status of the failed `compinit`; with `setopt ERR_EXIT` in the user's `.zshrc` that closed the interactive shell at the first prompt, and with `ERR_RETURN` the hook returned before it registered anything or removed its function. The line now ends with `|| :`, so the hook goes on and, when `compdef` is still missing, prints its one-line warning. Run `skillsync completion install` again to refresh the block in `.zshrc`.

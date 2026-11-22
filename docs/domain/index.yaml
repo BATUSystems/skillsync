@@ -124,3 +124,7 @@ entries:
     title: "Pasek statusu sesji (statusLine) i style odpowiedzi (output-styles) w Claude Code: fakty z wersjami, opt-in, granice"
     tags: [skillsync, claude-code, statusline, output-styles, settings, manifest, opt-in]
     paths: ['library/hooks/statusline.py', 'library/output-styles/**', 'skillsync_workflow/hooksync.py', 'skillsync_workflow/claude_manifest.py', 'skillsync_workflow/cli.py', 'tests/test_skillsync_statusline*.py', 'tests/test_skillsync_output_styles.py', 'tests/test_skillsync_claude_manifest.py']
+  - path: i18n-ui.md
+    title: "Język interfejsu (klucz manifestu `language`), katalog tekstów `srv.`/`ui.`, liczba mnoga i kontrakt `lang`/`texts` statusu"
+    tags: [skillsync, i18n, dashboard, manifest, catalog, plural, renderer]
+    paths: ['skillsync_workflow/i18n.py', 'skillsync_workflow/data/i18n/**', 'skillsync_workflow/dashboard.py', 'skillsync_workflow/dashboard_http.py', 'library/skills/dashboard/assets/dashboard-render.js', 'library/skills/dashboard/descriptions*.json', 'scripts/sync_renderer_defaults.py', 'tests/test_skillsync_i18n.py', 'tests/test_skillsync_dashboard_i18n.py', 'tests/test_skillsync_dashboard_renderer_i18n.py']

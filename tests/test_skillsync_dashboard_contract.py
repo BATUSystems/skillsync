@@ -23,7 +23,7 @@ NUM = (int, float)
 STR_OR_NONE = (str, type(None))
 # klucz -> (dozwolone typy, czy wymagany). Wszystkie wymienione klucze są wymagane w oczekiwanym JSON.
 TOP = {
-    'schema': int, 'app': dict, 'project': dict, 'generatedAt': str, 'version': int, 'lastUpdate': STR_OR_NONE,
+    'schema': int, 'lang': str, 'app': dict, 'project': dict, 'generatedAt': str, 'version': int, 'lastUpdate': STR_OR_NONE,
     'git': dict, 'plans': list, 'planAuto': bool, 'mode': str, 'plan': (dict, type(None)), 'spec': dict, 'run': dict,
     'progress': dict, 'acts': list, 'result': (dict, type(None)), 'waiting': list, 'silence': (dict, type(None)), 'approvals': dict, 'delivery': dict,
     'session': dict, 'prototype': dict, 'docs': list, 'readiness': dict, 'assumptions': dict, 'blockingQuestions': dict,
