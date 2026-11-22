@@ -52,6 +52,7 @@ Liczba argumentów pozycyjnych musi się zgadzać: `check` jeden plik, `diff` dw
 ## Schemat konfiguracji
 
 Plik JSON, nie więcej niż 1 000 000 bajtów (rozmiar sprawdzany przed odczytem; BOM UTF-8 na początku jest zdejmowany).
+Plik CSS w `check` i `diff` zaczyna się tak samo: BOM UTF-8 (U+FEFF) na początku jest zdejmowany przed rozbiorem.
 Parser dodatkowo odrzuca tekst powyżej 1 000 000 znaków. Nieznany klucz (także na poziomie wyjątku i progu) to błąd
 kodu 2 z nazwą klucza.
 
@@ -152,6 +153,11 @@ rozbioru to FAIL (kod 1) z listą przypadków.
 - Komentarze `/* … */` są zastępowane spacjami (znaki nowej linii zostają). Nieskończony komentarz to błąd parsowania (kod 2).
 - Napisy w `"` i `'` są pomijane (z obsługą `\`): nawiasy klamrowe, przecinki i `!important` w napisach
   nie liczą się. Napis nieskończony albo przerwany surową nową linią (LF, CR, FF) to błąd parsowania (kod 2).
+- Niecytowany `url(...)` jest jednym tokenem (CSS Syntax): zawartość kończy się na pierwszym nieescapowanym `)`,
+  a `\` zjada następny znak. Wewnątrz `{`, `}`, `/*`, `"`, `'`, `,`, `;` i `!important` nie mają znaczenia strukturalnego
+  i nie wpływają na liczniki (`{`, `!important`) ani na podział selektorów i deklaracji.
+- `url("…")` i `url('…')` to zwykła funkcja z napisem. `myurl(` i `-url(` nie są `url`; wielkość liter nie ma znaczenia (`URL(`).
+- Brak `)` do końca pliku to błąd `unterminated-url` (kod 2, z linią i kolumną).
 - Przecinek w `:where(a, b)`, w nawiasach i w `[a="x,y"]` nie dzieli selektora; średnik w nawiasach nie dzieli deklaracji.
 - Zagnieżdżona reguła, czyli ciało reguły zawierające `{` (np. `.root a { & b { color: red } }` albo
   `.root a { @media print { … } }`), to naruszenie zakresu: `nested rule is not supported`.
@@ -166,7 +172,7 @@ rozbioru to FAIL (kod 1) z listą przypadków.
 - Instrukcje zakończone `;` na poziomie zero (`@import`, `@charset`, `@layer a, b;`) nie są sprawdzane pod kątem
   zakresu i nie ukrywają następnej reguły: `body { … }` po `@import url(a.css);` jest sprawdzana.
 - Niezrównoważone klamry: błąd z linią i kolumną (`Unbalanced brace … at line L, column C`); nadmiarowe `}`:
-  `Unexpected closing brace` (kod 2). Ten sam kod 2 dotyczy niezamkniętego komentarza, napisu i klamry.
+  `Unexpected closing brace` (kod 2). Ten sam kod 2 dotyczy niezamkniętego komentarza, napisu, `url(` i klamry.
 - Liczba reguł w wyniku (pole `rules`, linia „scope OK: N rules”) to liczba `{` poza komentarzami i napisami.
   Liczy więc także bloki grup, at-bloki i kroki `@keyframes`. Nie jest to liczba selektorów.
 
@@ -264,5 +270,11 @@ wcześniejsza kontrola (np. selftest) jest FAIL, wynik to FAIL z kodem 1, a wier
 - Korzeń jest pełną klasą: `.root-x`, `.rooté` i `.root\,evil` nie są korzeniem; `.root,evil` nie przechodzi
   walidacji nazwy klasy (`root`, `--root`, `value` aliasu).
 - Brak przepisywania CSS; kontrola nie naprawia nakładki.
+- Kombinatory rodzeństwa pod korzeniem (`.root ~ x`, `.root + x`) przechodzą kontrolę korzenia. Kontrola dotyczy
+  początku selektora, nie jego zasięgu; zachowanie jest zgodne ze starym narzędziem. Ocena takich reguł należy do przeglądu.
+- Znaki sterujące (U+0000–U+001F, U+007F) za nazwą klasy korzenia nie kończą nazwy w rozpoznawaniu korzenia:
+  `.root<znak sterujący>…` przechodzi kontrolę korzenia. Testy tego narzędzia nie sprawdzają zachowania przeglądarki.
+- Ciało reguły zawierające `{` (np. IE `expression(function(){…}())`) jest zgłaszane jako `nested rule is not supported`
+  (fail-closed). Stary algorytm też dawał FAIL dla takiego wejścia, z innym opisem.
 - Pliki CSS z `check` i `diff` nie podlegają polityce ścieżek (patrz wyżej).
 - `--out` działa tylko w `compile` i `run`; w pozostałych poleceniach jest błędem kodu 2.

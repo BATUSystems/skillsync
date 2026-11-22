@@ -15,9 +15,21 @@ z powodem pokazuje, co zostało świadomie dopuszczone i kto to uzasadnił. Brak
 
 Reguły granic (stan bieżący):
 - Korzeń to pełna klasa: `.root-x`, `.rooté` ani `.root\,evil` nie są korzeniem.
-- Zagnieżdżona reguła (ciało reguły z `{`) jest poza zakresem (`nested rule is not supported`); w diff dodana taka reguła także.
+- Zagnieżdżona reguła (ciało reguły z `{`, np. `.root a { & b { … } }` albo IE `expression(function(){…}())`) jest poza
+  zakresem (`nested rule is not supported`, fail-closed); w diff dodana taka reguła także.
+- Niecytowany `url(...)` to jeden token: `{`, `}`, `/*`, `"`, `'`, `,`, `;` i `!important` w środku nie mają znaczenia
+  strukturalnego ani nie wpływają na liczniki. `url("…")` i `url('…')` to zwykła funkcja z napisem. Brak `)` to błąd
+  `unterminated-url` (kod 2, z linią i kolumną).
+- BOM (U+FEFF) na początku pliku CSS jest zdejmowany tak samo jak w konfiguracji.
+- Kombinatory rodzeństwa pod korzeniem (`.root ~ x`, `.root + x`) przechodzą kontrolę korzenia: kontrola dotyczy
+  początku selektora, nie jego zasięgu (zgodnie ze starym narzędziem).
+- Znaki sterujące za nazwą klasy korzenia nie kończą nazwy w rozpoznawaniu korzenia: `.root<znak sterujący>…`
+  przechodzi kontrolę korzenia.
 - Dodana reguła w diff jest oceniana tą samą logiką co w check (korzeń, wyjątki).
 - Napis z klamrą lub przecinkiem nie zmienia liczby reguł ani podziału selektora; uszkodzony CSS (błąd rozbioru) jest błędem użycia (kod 2), a w selfteście FAIL.
+- Konstrukcje legacy na płaskim CSS (`filter: progid:…`, `*zoom`, `_prop`, `\9`, `;;`, `@charset`,
+  `@-webkit-keyframes`, `@media … and …`, `url(data:…;base64,…)`) dają te same werdykty i liczniki co stary algorytm
+  (korpus różnicowy `css-differential.test.mjs`).
 
 Wyjątki i przykłady:
 - `prefix`: selektor zaczynający się od wskazanego napisu (np. element renderowany poza korzeniem). Dopasowanie
@@ -41,9 +53,13 @@ Gdzie w kodzie:
 - `library/skills/ui-verify/scripts/lib/css-diff.mjs`: `diffCss` (usunięte lub zmienione, dodane poza zakresem, `allowAtRules`; ocena dodanych reguł przez `evaluatePrepared`)
 - `library/skills/ui-verify/scripts/lib/css-parse.mjs`: `scan` (komentarze, napisy, grupy, at-bloki liściowe, `@keyframes`, zagnieżdżenia), `walkRules`,
   `splitSelectors`, `splitDeclarations`, `normalizeDeclaration`, `countBraces`, `countImportant`, `collapseWhitespace`, `CssParseError`
+- `library/skills/ui-verify/scripts/lib/css-parse.mjs`: `skipUrl` (prywatna; granica niecytowanego `url(...)`: zwraca indeks za `)`,
+  `-1` gdy to nie url, `-2` gdy brak `)`, czyli `unterminated-url`); używają jej `stripComments`, `collapse`, `splitTop`,
+  `normalizeDeclaration`, `countBraces`, `countImportant`, `findClose`, `nestedPreludes` i `scan`
 - `library/skills/ui-verify/scripts/lib/css-compile.mjs`: `compileScss` (symlinki, limity, ostrzeżenia `skipped`)
-- `library/skills/ui-verify/scripts/css-scope.mjs`: `main` (flagi i kody wyjścia), `cmdCheck`, `cmdDiff`, `cmdCompile`, `cmdRun`,
+- `library/skills/ui-verify/scripts/css-scope.mjs`: `main` (flagi i kody wyjścia), `readCssFile` (BOM w CSS), `cmdCheck`, `cmdDiff`, `cmdCompile`, `cmdRun`,
   `cmdSelftest`, `outTarget` (reguły `--out`), `scssParams`, `loadConfig`
-- testy (11 plików w `tests/css_scope/`): `css-parse.test.mjs`, `css-scope-core.test.mjs`, `css-diff.test.mjs`,
-  `css-config.test.mjs`, `css-compile.test.mjs`, `css-compile-real.test.mjs`, `css-differential.test.mjs`,
-  `css-scope-cli.test.mjs`, `css-scope-cli-paths.test.mjs`, `css-scope-cli-real.test.mjs`, `css-deps.test.mjs`
+- testy (12 plików w `tests/css_scope/`): `css-parse.test.mjs`, `css-url.test.mjs` (niecytowany `url(...)`, obejścia fail-open, `unterminated-url`),
+  `css-scope-core.test.mjs`, `css-diff.test.mjs`, `css-config.test.mjs`, `css-compile.test.mjs`, `css-compile-real.test.mjs`,
+  `css-differential.test.mjs` (korpus różnicowy, także konstrukcje legacy), `css-scope-cli.test.mjs` (w tym BOM w CSS),
+  `css-scope-cli-paths.test.mjs`, `css-scope-cli-real.test.mjs`, `css-deps.test.mjs`
