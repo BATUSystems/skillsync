@@ -158,10 +158,69 @@ class EngineParityTests(unittest.TestCase):
                     engine.extract_tokens(css, name)
                 self.assertIn('--a', tokens(css)[0])
 
+    def test_engine_parity_fixtures_same_sets_and_values(self):
+        """Niezbalansowany nawias, napis z końcem linii, nazwy Unicode i `!important`: te same zbiory i wartości.
+        Wartości porównujemy po normalizacji białych znaków; `!important` zostaje w wartości dosłownie w obu parserach."""
+        names = sorted(p.name for p in (FIXTURES / 'css-tokens' / 'engine-parity').glob('*.css'))
+        self.assertEqual(names, ['important.css', 'string-newline.css', 'unbalanced-paren.css', 'unicode-name.css'])
+        for name in names:
+            css = (FIXTURES / 'css-tokens' / 'engine-parity' / name).read_text(encoding='utf-8')
+            light, dark, _ = engine.extract_tokens(css, name)
+            with self.subTest(name):
+                self.assertEqual(tokens(css), (set(light), set(dark)))
+                mine = {n: v for b in ct.parse_theme(css) if b.kind == ct.LIGHT for n, (v, _l) in b.tokens.items()}
+                self.assertEqual(mine, {k: ' '.join(v.split()) for k, v in light.items()})
+
+    def test_important_stays_in_the_value(self):
+        css = (FIXTURES / 'css-tokens' / 'engine-parity' / 'important.css').read_text(encoding='utf-8')
+        self.assertEqual(ct.css_declarations(css, with_values=True)[0][2], '1 !important')
+
     def test_default_theme_same_sets_as_engine(self):
         css = (REPO / 'library' / 'skills' / 'prototype' / 'assets' / 'theme' / 'default.css').read_text(encoding='utf-8')
         light, dark, _ = engine.extract_tokens(css, 'default.css')
         self.assertEqual(tokens(css), (set(light), set(dark)))
+
+
+class ScannerRuleTests(unittest.TestCase):
+    def test_paren_counter_resets_at_braces(self):
+        self.assertEqual(tokens(':root { --a: (1; --b: 2; }\n:root { --c: 3; }\n')[0], {'--a', '--c'})
+
+    def test_string_ends_at_newline_like_in_the_engine(self):
+        light, dark = tokens(':root { --a: "abc\n--b: 2; }\n.dark { --c: 3; }\n')
+        self.assertEqual((light, dark), ({'--a'}, {'--c'}))
+
+    def test_unicode_token_names(self):
+        self.assertEqual(tokens(':root { --café: 1; }\n')[0], {'--café'})
+        used, _ = ct.used_tokens_in_text('a { color: var(--café); }', False)
+        self.assertEqual(used, {'--café'})
+
+    def test_nesting_deeper_than_the_limit_is_a_value_error(self):
+        with self.assertRaises(ValueError):
+            tokens('.a {' * (ct.MAX_NESTING + 1))
+        tokens('.a {' * ct.MAX_NESTING)
+
+    def test_apostrophe_in_html_prose_does_not_start_a_string(self):
+        html = "<p>It's here</p> /* var(--ghost) */ <i style=\"margin: var(--m)\"></i>\n<style>.a { --loc: 1; color: var(--loc) var(--z); }</style>\n"
+        used, local = ct.used_tokens_in_text(html, True)
+        self.assertEqual(used - local, {'--m', '--z'})
+
+    def test_dark_hints(self):
+        css = ('html[data-theme=dark] { --a: 1; }\n.dark { background: #000; color: red; }\n'
+               ':root { --b: 2; }\n.card .dark-x { --c: 3; }\n.dark .card { color: red; }\n')
+        self.assertEqual([(h, k) for h, k, _l in ct.dark_hints(css)],
+                         [('unrecognized', 'html[data-theme=dark]'), ('plain', '.dark')])
+
+    def test_used_tokens_rejects_oversized_and_non_utf8_assets(self):
+        import tempfile
+        from pathlib import Path as P
+        with tempfile.TemporaryDirectory(prefix='css-tokens-') as tmp:
+            (P(tmp) / 'bad.css').write_bytes(b'a { b: \xff; }')
+            with self.assertRaises(ValueError) as ctx:
+                ct.used_tokens(tmp)
+            self.assertIn('bad.css', str(ctx.exception))
+            (P(tmp) / 'bad.css').write_bytes(b'x' * (ct.MAX_FILE_BYTES + 1))
+            with self.assertRaises(ValueError):
+                ct.used_tokens(tmp)
 
 
 class UsedTokensTests(unittest.TestCase):

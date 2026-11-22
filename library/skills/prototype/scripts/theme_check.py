@@ -23,6 +23,13 @@ projektu. Katalog skilli (`--skill-root`) jest jawny albo wyznaczany w projekcie
 `.github/skills`; pierwszy zawierający dany skill); skrypt nigdy nie liczy go z własnego położenia ani z katalogów
 użytkownika, a dowiązanie skilla do biblioteki jest stanem normalnym.
 
+Uwagi: tryb `separate` nie wymaga obecności obu rodzin bloków ciemnych (`.dark`/`[data-theme]` i `@media`): porównuje
+te, które są; zero bloków to UNVERIFIED, jeden to PASS z adnotacją. Selektor ze słowem `dark`, którego silnik nie rozpoznaje
+(`html[data-theme=dark]`, `body.dark`), daje WARN. Normalizacja tekstu kończy plik dokładnie jednym `\n`; `include` używa
+`fnmatchcase` (wielkość liter ma znaczenie także na Windows). `tokens.required: null` wyłącza pokrycie i zawsze daje WARN.
+Pliki CSS i HTML większe niż 2 MiB albo zagnieżdżone głębiej niż 200 poziomów to kod 2. Każdy nieoczekiwany wyjątek kończy
+się kodem 2 i komunikatem „błąd wewnętrzny” bez treści plików.
+
 Użycie:
   theme_check.py --config <plik.json | -> [--project <katalog>] [--skill-root <katalog>] [--only <kontrola>[,...]] [--json]
   theme_check.py --selftest
@@ -43,7 +50,7 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import css_tokens as ct  # noqa: E402
 
-PASS, FAIL, WARN, UNVERIFIED = 'PASS', 'FAIL', 'WARN', 'UNVERIFIED'
+PASS, FAIL, WARN, UNVERIFIED, INFO = 'PASS', 'FAIL', 'WARN', 'UNVERIFIED', 'INFO'  # INFO nie wpływa na kod
 CHECKS = ('tokens', 'dark', 'forbid', 'copies', 'copyDirs', 'contrast', 'prototype')
 NOT_IMPLEMENTED = ('contrast', 'prototype')
 TOP_KEYS = {'version'} | set(CHECKS)
@@ -57,6 +64,7 @@ TEXT_EXTENSIONS = frozenset({'.css', '.html', '.htm', '.js', '.mjs', '.json', '.
                              '.yaml', '.yml', '.csv'})
 SKILL_ROOT_CANDIDATES = ('.claude/skills', '.agents/skills', '.github/skills')
 SKILL_NAME_RE = re.compile(r'[a-z0-9][a-z0-9-]*')
+MAX_FILE_BYTES = ct.MAX_FILE_BYTES
 
 
 class ConfigError(Exception):
@@ -154,7 +162,7 @@ def validate_config(config):
         if config['dark'] not in DARK_MODES:
             raise ConfigError('dark: oczekiwano jednej z wartości %s' % ', '.join(DARK_MODES))
     if 'forbid' in config:
-        _str_list(config['forbid'], 'forbid')
+        _str_list(config['forbid'], 'forbid', allow_empty=False)
         if any(v not in FORBIDDEN for v in config['forbid']):
             raise ConfigError('forbid: nieznana konstrukcja (dozwolone: %s)' % ', '.join(FORBIDDEN))
     if ('dark' in config or 'forbid' in config) and 'tokens' not in config:
@@ -162,8 +170,8 @@ def validate_config(config):
     for key, allowed in (('copies', COPY_KEYS), ('copyDirs', COPY_DIR_KEYS)):
         if key not in config:
             continue
-        if not isinstance(config[key], list):
-            raise ConfigError('%s: oczekiwano listy' % key)
+        if not isinstance(config[key], list) or not config[key]:
+            raise ConfigError('%s: oczekiwano niepustej listy' % key)
         for n, item in enumerate(config[key]):
             label = '%s[%d]' % (key, n)
             _only_keys(item, allowed, label)
@@ -222,6 +230,14 @@ class Context:
         if os.path.commonpath([os.path.normcase(path), base]) != base:
             raise ConfigError('%s: ścieżka wychodzi poza projekt (także przez dowiązanie)' % label)
         return Path(path), '/'.join(parts)
+
+    def contain(self, path, label):
+        """Realpath `path` musi leżeć pod projektem (dowiązanie wychodzące to kod 2); zwraca realpath."""
+        real = os.path.realpath(path)
+        base = os.path.normcase(self.real)
+        if os.path.commonpath([os.path.normcase(real), base]) != base:
+            raise ConfigError('%s: plik wychodzi poza projekt (dowiązanie)' % label)
+        return real
 
     def skill_dir(self, name):
         if name in self._skills:
@@ -304,22 +320,30 @@ class ThemeFile:
     def __init__(self, rel, text):
         self.rel = rel
         self.text = text
-        self.blocks = ct.parse_theme(text)
+        try:
+            self.blocks = ct.parse_theme(text)
+            self.hints = ct.dark_hints(text)
+        except ValueError as error:
+            raise ConfigError('%s: %s' % (rel, error)) from None
 
 
 def load_theme_files(ctx, tokens, res, check):
-    """Wczytuje `tokens.files`; brak pliku to FAIL z nazwą pliku (kopia motywu jest wynikiem projektu, nie wejściem)."""
-    loaded = []
+    """Wczytuje `tokens.files`; brak pliku to FAIL z nazwą pliku (kopia motywu jest wynikiem projektu, nie wejściem).
+    Zwraca (pliki, komplet): `komplet` to False, gdy któregoś pliku brakowało. Zły rozmiar lub kodowanie to kod 2."""
+    loaded, complete = [], True
     for n, value in enumerate(tokens['files']):
         path, rel = ctx.project_path(value, 'tokens.files[%d]' % n)
         if not path.is_file():
             res.add(FAIL, check, 'brak pliku tokenów', rel)
+            complete = False
             continue
+        if path.stat().st_size > MAX_FILE_BYTES:
+            raise ConfigError('%s: plik większy niż 2 MiB' % rel)
         try:
             loaded.append(ThemeFile(rel, read_text(path)))
-        except (OSError, UnicodeDecodeError):
-            res.add(FAIL, check, 'nie można odczytać pliku tokenów jako UTF-8', rel)
-    return loaded
+        except UnicodeDecodeError:
+            raise ConfigError('%s: plik nie jest poprawnym UTF-8' % rel) from None
+    return loaded, complete
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -340,7 +364,7 @@ def _dark_blocks(files):
     return [(f, b) for f in files for b in f.blocks if b.kind in (ct.DARK, ct.MEDIA_DARK)]
 
 
-def check_tokens(ctx, cfg, files, res):
+def check_tokens(ctx, cfg, files, res, complete=True):
     tokens = cfg['tokens']
     path, rel = ctx.source_path(tokens['required'], 'tokens.required')
     if not path.is_file():
@@ -377,7 +401,14 @@ def check_tokens(ctx, cfg, files, res):
         assets, label = ctx.source_path(tokens['assets'], 'tokens.assets')
         if not assets.is_dir():
             raise ConfigError('tokens.assets: katalog zasobów nie istnieje')
-        used = ct.used_tokens(assets)
+        if not label.startswith('skill:'):
+            for child in sorted(assets.rglob('*')):
+                if child.is_file():
+                    ctx.contain(child, 'tokens.assets')
+        try:
+            used = ct.used_tokens(assets)
+        except ValueError as error:
+            raise ConfigError('tokens.assets: %s' % error) from None
         for tok in sorted(set(required) - used):
             problems += 1
             res.add(FAIL, 'tokens', 'wymagany token %s nie jest używany przez zasoby (%s)' % (tok, label), rel)
@@ -385,18 +416,25 @@ def check_tokens(ctx, cfg, files, res):
             problems += 1
             res.add(FAIL, 'tokens', 'zasoby (%s) używają tokenu %s, którego nie ma na liście' % (label, tok), rel)
         note = ', zbiór używanych przez zasoby równy liście'
-    if not problems:
+    if not problems and complete:
         res.add(PASS, 'tokens', '%d wymaganych tokenów w jasnym bloku%s' % (len(required), note))
 
 
-def check_dark(cfg, files, res):
+def check_dark(cfg, files, res, complete=True):
     mode = cfg['dark']
     darks = _dark_blocks(files)
+    for f in files:
+        for hint, key, line in f.hints:
+            if hint == 'unrecognized':
+                res.add(WARN, 'dark', 'selektor %s ze słowem dark nie jest rozpoznawany przez silnik (bloki ciemne: '
+                        '.dark, [data-theme="dark"], :root[data-theme="dark"])' % key, f.rel, line)
+            elif hint == 'plain' and mode == 'none':
+                res.add(WARN, 'dark', 'blok ciemny %s ma deklaracje spoza tokenów (tryb none)' % key, f.rel, line)
     if mode == 'none':
         for f, block in darks:
             first = min(line for _v, line in block.tokens.values())
             res.add(FAIL, 'dark', 'blok ciemny %s nie może istnieć (tryb none)' % block.key, f.rel, first)
-        if not darks:
+        if not darks and complete:
             res.add(PASS, 'dark', 'brak bloków ciemnych (tryb none)')
         return
     if mode == 'mirror':
@@ -419,7 +457,7 @@ def check_dark(cfg, files, res):
                     problems += 1
                     res.add(FAIL, 'dark', 'token %s ma w bloku %s inną wartość niż w jasnym: "%s" vs "%s" (tryb mirror)'
                             % (tok, block.key, block.tokens[tok][0], light[tok][0]), f.rel, block.tokens[tok][1])
-        if not problems:
+        if not problems and complete:
             res.add(PASS, 'dark', '%d bloków ciemnych identycznych z jasnym (tryb mirror)' % len(darks))
         return
     problems = 0
@@ -435,21 +473,26 @@ def check_dark(cfg, files, res):
                 problems += 1
                 res.add(FAIL, 'dark', 'token %s ma różne wartości w blokach ciemnych: %s = "%s" vs %s = "%s"'
                         % (tok, a.key, a.tokens[tok][0], b.key, b.tokens[tok][0]), fb.rel, b.tokens[tok][1])
-    if not problems:
-        res.add(PASS, 'dark', '%d bloków ciemnych, spójne (tryb separate)' % len(darks))
+    if not darks:
+        res.add(UNVERIFIED, 'dark', 'brak bloków ciemnych: czy selektor jest rozpoznawany przez silnik? (tryb separate)')
+    elif not problems and complete:
+        if len(darks) == 1:
+            res.add(PASS, 'dark', '1 blok ciemny, nie ma czego porównywać (tryb separate; token tylko ciemny sprawdza tokens)')
+        else:
+            res.add(PASS, 'dark', '%d bloków ciemnych, spójne (tryb separate)' % len(darks))
 
 
-def check_forbid(cfg, files, res):
+def check_forbid(cfg, files, res, complete=True):
     problems = 0
-    patterns = {'color-scheme': re.compile(r'(?<![\w-])color-scheme\s*:'),
-                'prefers-color-scheme': re.compile(r'prefers-color-scheme')}
+    patterns = {'color-scheme': re.compile(r'(?<![\w-])color-scheme\s*:', re.I),
+                'prefers-color-scheme': re.compile(r'prefers-color-scheme', re.I)}
     for f in files:
         text = ct.strip_css_comments(f.text, keep_lines=True)
         for name in cfg['forbid']:
             for m in patterns[name].finditer(text):
                 problems += 1
                 res.add(FAIL, 'forbid', 'zakazana konstrukcja %s' % name, f.rel, text.count('\n', 0, m.start()) + 1)
-    if not problems:
+    if not problems and complete:
         res.add(PASS, 'forbid', 'brak zakazanych konstrukcji (%s) w %d plikach' % (', '.join(cfg['forbid']), len(files)))
 
 
@@ -473,6 +516,8 @@ def check_copies(ctx, cfg, res):
         copy, copy_rel = ctx.project_path(item['copy'], 'copies[%d].copy' % n)
         if not source.is_file():
             raise ConfigError('copies[%d]: brak pliku źródłowego' % n)
+        if copy.exists() and os.path.samefile(source, copy):
+            raise ConfigError('copies[%d]: source i copy wskazują ten sam plik' % n)
         if _compare_copy(source, copy, label, copy_rel, item.get('mode', 'auto'), res, 'copies'):
             res.add(PASS, 'copies', 'kopia zgodna ze źródłem %s' % label, copy_rel)
 
@@ -488,6 +533,8 @@ def check_copy_dirs(ctx, cfg, res):
         copy_dir, copy_rel = ctx.project_path(item['copy'], 'copyDirs[%d].copy' % n)
         if not source.is_dir():
             raise ConfigError('copyDirs[%d]: katalog źródłowy nie istnieje' % n)
+        if copy_dir.exists() and os.path.samefile(source, copy_dir):
+            raise ConfigError('copyDirs[%d]: source i copy wskazują ten sam katalog' % n)
         names = sorted(p.relative_to(source).as_posix() for p in source.rglob('*') if p.is_file())
         chosen = [r for r in names if _included(r, item['include'])]
         if not chosen:
@@ -496,6 +543,11 @@ def check_copy_dirs(ctx, cfg, res):
             continue
         ok = 0
         for rel in chosen:
+            target = copy_dir / rel
+            if target.exists():
+                ctx.contain(target, 'copyDirs[%d]' % n)
+                if os.path.samefile(source / rel, target):
+                    raise ConfigError('copyDirs[%d]: source i copy wskazują ten sam plik' % n)
             if _compare_copy(source / rel, copy_dir / rel, '%s/%s' % (label, rel), '%s/%s' % (copy_rel, rel), 'auto',
                              res, 'copyDirs'):
                 ok += 1
@@ -509,28 +561,33 @@ def check_copy_dirs(ctx, cfg, res):
 
 def _run(config, project, skill_root, only, res):
     enabled = validate_config(config)
+    skipped = []
     if only is not None:
+        if not only:
+            raise ConfigError('--only: podaj co najmniej jedną kontrolę')
         unknown = [name for name in only if name not in CHECKS]
         if unknown:
             raise ConfigError('--only: nieznana kontrola (dozwolone: %s)' % ', '.join(CHECKS))
         missing = [name for name in only if name not in enabled]
         if missing:
             raise ConfigError('--only: kontroli %s nie ma w konfiguracji' % ', '.join(missing))
+        skipped = [name for name in enabled if name not in only]
         enabled = [name for name in enabled if name in only]
     ctx = Context(project, skill_root)
     ctx.prevalidate(config)
     if not enabled:
         res.add(UNVERIFIED, 'config', 'konfiguracja nie zawiera żadnej kontroli (nic nie sprawdzono)')
         return
-    files = None
+    files, complete = None, True
     for name in enabled:
         if name in ('tokens', 'dark', 'forbid'):
             if config['tokens']['required'] is None and name == 'tokens':
                 if only is not None:
                     raise ConfigError('tokens.required to null: kontrola pokrycia jest wyłączona')
+                res.add(WARN, 'tokens', 'pokrycie wyłączone (tokens.required: null): wymagane tokeny nie są sprawdzane')
                 continue
             if files is None:
-                files = load_theme_files(ctx, config['tokens'], res, name)
+                files, complete = load_theme_files(ctx, config['tokens'], res, name)
             if not files:
                 if not config['tokens']['files']:
                     res.add(UNVERIFIED, name, 'tokens.files jest puste (brak plików do sprawdzenia)')
@@ -538,28 +595,34 @@ def _run(config, project, skill_root, only, res):
                     res.add(UNVERIFIED, name, 'żaden plik tokenów nie został wczytany')
                 continue
             if name == 'tokens':
-                check_tokens(ctx, config, files, res)
+                check_tokens(ctx, config, files, res, complete)
             elif name == 'dark':
-                check_dark(config, files, res)
+                check_dark(config, files, res, complete)
             else:
-                check_forbid(config, files, res)
+                check_forbid(config, files, res, complete)
         elif name == 'copies':
             check_copies(ctx, config, res)
         elif name == 'copyDirs':
             check_copy_dirs(ctx, config, res)
-    if not res.findings:
+    if not any(f['status'] != INFO for f in res.findings):
         res.add(UNVERIFIED, 'config', 'żadna kontrola nic nie zmierzyła')
+    if skipped:
+        res.add(INFO, 'config', 'pominięto kontrole z konfiguracji (--only): %s' % ', '.join(skipped))
 
 
 def run(config, project, skill_root=None, only=None):
     """Wykonuje kontrole z konfiguracji `config` (słownik) w katalogu `project`; zwraca `Result`
-    (`findings`, `code`, `error`). Błędy konfiguracji i brak źródeł dają `error` i kod 2, bez wyjątku."""
+    (`findings`, `code`, `error`). Błędy konfiguracji i brak źródeł dają `error` i kod 2, bez wyjątku;
+    nieoczekiwany wyjątek to też kod 2 z komunikatem „błąd wewnętrzny” (bez treści plików)."""
     res = Result()
     try:
         _run(config, project, skill_root, list(only) if only is not None else None, res)
     except ConfigError as error:
         res.findings = []
         res.error = str(error)
+    except Exception as error:  # noqa: BLE001  (siatka bezpieczeństwa: kod 2 zamiast śladu stosu)
+        res.findings = []
+        res.error = 'błąd wewnętrzny (%s)' % type(error).__name__
     return res
 
 
@@ -611,13 +674,22 @@ def selftest_cases():
               only=['dark']),
         _case('dark none: jest blok', ok_theme, _tokens_cfg(dark='none'), 1, 'dark', FAIL, only=['dark']),
         _case('dark bez klucza', ok_theme, _tokens_cfg(), 2, only=['dark']),
+        _case('dark separate: brak bloków', dict(ok_theme, **{'t.css': _LIGHT}), _tokens_cfg(dark='separate'), 3, 'dark',
+              UNVERIFIED, only=['dark']),
+        _case('dark: selektor nierozpoznany przez silnik', dict(ok_theme, **{'t.css': _LIGHT + 'html[data-theme=dark] { --a: 3; }\n'}),
+              _tokens_cfg(dark='none'), 0, 'dark', WARN, only=['dark']),
+        _case('dark none: blok bez tokenów', dict(ok_theme, **{'t.css': _LIGHT + '.dark { background: #000; }\n'}),
+              _tokens_cfg(dark='none'), 0, 'dark', WARN, only=['dark']),
+        _case('tokens: required null', ok_theme, {'version': 1, 'tokens': {'files': ['t.css'], 'required': None},
+                                                   'forbid': ['color-scheme']}, 0, 'tokens', WARN),
+        _case('forbid: pusta lista', ok_theme, _tokens_cfg(forbid=[]), 2),
         _case('forbid: czysto', ok_theme, _tokens_cfg(forbid=['color-scheme', 'prefers-color-scheme']), 0, 'forbid', PASS,
               only=['forbid']),
         _case('forbid: color-scheme', dict(ok_theme, **{'t.css': ':root { color-scheme: light; --a: 1; --b: 2; }\n'}),
               _tokens_cfg(forbid=['color-scheme']), 1, 'forbid', FAIL, only=['forbid']),
         _case('forbid: prefers-color-scheme', dict(ok_theme, **{'t.css': '@media (prefers-color-scheme: dark) { :root { --a: 1; } }\n'}),
               _tokens_cfg(forbid=['prefers-color-scheme']), 1, 'forbid', FAIL, only=['forbid']),
-        _case('copies: równa po CRLF i BOM', {'src.css': 'a { b: c; }\n', 'dst.css': '﻿a { b: c; }\r\n'},
+        _case('copies: równa po CRLF i BOM', {'src.css': 'a { b: c; }\n', 'dst.css': '\ufeffa { b: c; }\r\n'},
               {'version': 1, 'copies': [{'source': 'src.css', 'copy': 'dst.css'}]}, 0, 'copies', PASS),
         _case('copies: inna', {'src.css': 'a { b: c; }\n', 'dst.css': 'a { b: d; }\n'},
               {'version': 1, 'copies': [{'source': 'src.css', 'copy': 'dst.css'}]}, 1, 'copies', FAIL),
@@ -642,7 +714,8 @@ def selftest_cases():
 
 
 def selftest():
-    """Uruchamia fikstury w pamięci; zwraca listę niezgodności (pusta = każda kontrola potrafi paść)."""
+    """Uruchamia fikstury w pamięci; zwraca krotkę (lista niezgodności, liczba przypadków); pusta lista = każda
+    kontrola potrafi paść."""
     problems = []
     cases = selftest_cases()
     for case in cases:
@@ -685,7 +758,29 @@ def _fail_usage(message, as_json):
     return 2
 
 
+def _utf8_streams():
+    """Strumienie wyjścia w UTF-8 z zastępowaniem niekodowalnych znaków (jak `fsutil.reconfigure` w generatorze)."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, 'reconfigure', None)
+        if reconfigure is not None:
+            try:
+                reconfigure(encoding='utf-8', errors='replace')
+            except (OSError, ValueError):
+                pass
+
+
 def main(argv=None):
+    _utf8_streams()
+    try:
+        return _main(argv)
+    except SystemExit:
+        raise
+    except Exception as error:  # noqa: BLE001  (siatka bezpieczeństwa, np. RecursionError z json.loads)
+        print('theme_check: BŁĄD: błąd wewnętrzny (%s)' % type(error).__name__, file=sys.stderr)
+        return 2
+
+
+def _main(argv):
     ap = build_parser()
     args = ap.parse_args(argv)
     if args.selftest:
@@ -711,9 +806,13 @@ def main(argv=None):
         config = json.loads(raw.decode('utf-8-sig'))
     except (OSError, UnicodeDecodeError):
         return _fail_usage('nie można odczytać konfiguracji', args.json)
+    except RecursionError:
+        return _fail_usage('konfiguracja jest zagnieżdżona zbyt głęboko', args.json)
     except ValueError:
         return _fail_usage('konfiguracja nie jest poprawnym JSON', args.json)
-    only = [n.strip() for n in args.only.split(',') if n.strip()] if args.only else None
+    only = None
+    if args.only is not None:
+        only = [n.strip() for n in args.only.split(',') if n.strip()]
     res = run(config, project, Path(args.skill_root) if args.skill_root else None, only)
     if res.error is not None:
         return _fail_usage(res.error, args.json)

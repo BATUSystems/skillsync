@@ -18,12 +18,13 @@ Kody wyjścia: 0 = wszystko zgodne, 1 = wykryto rozjazd (komunikaty na stderr), 
 import argparse
 import html.parser
 import json
+import os
 import re
 import sys
 from pathlib import Path
 
 # Tryb `-I` nie dodaje katalogu skryptu do `sys.path`, więc parser CSS importujemy jawnie.
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from css_tokens import (ENGINE_PREFIX, TOKEN_RE, css_declarations, is_dark, is_root_block,  # noqa: E402,F401
                         read_required, strip_css_comments, theme_tokens, used_tokens)
 
@@ -60,7 +61,11 @@ def check_theme(theme, required_path, assets, errors):
         return None
     dark_blocks = []
     # Strażnik zalicza do bloków ciemnych także `@media (prefers-color-scheme: dark)` (motyw domyślny ma oba warianty).
-    light, dark = theme_tokens(theme_text, dark_blocks, media_dark_as_dark=True)
+    try:
+        light, dark = theme_tokens(theme_text, dark_blocks, media_dark_as_dark=True)
+    except ValueError as e:
+        errors.append('%s: %s' % (theme.name, e))
+        return None
     if not light:
         errors.append('%s: brak jasnego bloku :root z tokenami' % theme.name)
     for tok in required:

@@ -19,15 +19,17 @@ Spis parytetu przypadków źródłowych (załącznik K9; uzupełniany w kolejnyc
 | token tylko w bloku ciemnym                                   | strażnik rdzenia        | TokensTests.test_token_only_in_dark_block_fails |
 | bloki ciemne z różnymi wartościami                            | strażnik rdzenia        | DarkTests.test_separate_different_values_fail  |
 | lista wymaganych w `utf-8-sig`                                | strażnik rdzenia        | TokensTests.test_required_list_and_theme_accept_bom |
-| pusty zbiór znanych tokenów (T4-3)                            | strażnik rdzenia        | (T4-3: kontrola prototype)                     |
-| `font-family: inherit`, pusty `project.css`, `var(--x, fb)`, maskowanie `url()` i napisów, długie formy promienia, numery linii stylu (T4-3) | strażnik / skrypt projektu | (T4-3: kontrola prototype) |
+| pusty zbiór znanych tokenów (T4-4)                            | strażnik rdzenia        | (T4-4: kontrola prototype)                     |
+| `font-family: inherit`, pusty `project.css`, `var(--x, fb)`, maskowanie `url()` i napisów, długie formy promienia, numery linii stylu (T4-4) | strażnik / skrypt projektu | (T4-4: kontrola prototype) |
 | numery linii w findingach tokenów i forbid                    | strażnik / skrypt proj. | TokensTests.test_finding_has_file_and_line, ForbidTests.test_color_scheme_fails_with_line |
 | selftest skryptu projektowego, część ogólna: dark mirror, forbid                | skrypt projektowy       | DarkTests (mirror), ForbidTests                |
-| selftest skryptu projektowego, część ogólna: kontrast, reguły stylu (T4-3, T4-4) | skrypt projektowy       | (T4-3, T4-4)                                   |
+| selftest skryptu projektowego, część ogólna: kontrast (T4-3), reguły stylu (T4-4) | skrypt projektowy | (T4-3, T4-4)                           |
 | D-1 token tylko ciemny uznany za zdefiniowany                 | defekt D-1              | TokensTests.test_token_only_in_dark_block_fails |
 | D-2 brak listy: kod 2, nie pominięcie                         | defekt D-2              | ConfigTests.test_missing_required_list_is_exit_2 |
 | D-4 drugi `:root`, `@theme`, `@theme inline`                  | defekt D-4              | TokensTests.test_second_root_and_theme_blocks   |
-| D-5 formaty kolorów, UNVERIFIED (T4-4)                        | defekt D-5              | (T4-4)                                         |
+| D-5 formaty kolorów, UNVERIFIED (T4-3, kontrast)              | defekt D-5              | (T4-3)                                         |
+| równość zbioru tokenów zasobów z listą                        | strażnik rdzenia        | AssetsTests                                    |
+| zasób lub plik tokenów w złym kodowaniu, rozmiar, zagnieżdżenie | przegląd T4-1/T4-2    | SafetyNetTests                                 |
 | D-6 deklaracja w atrybucie `style`                            | defekt D-6              | test_skillsync_css_tokens.UsedTokensTests      |
 """
 import io
@@ -55,7 +57,7 @@ import theme_check as tc  # noqa: E402
 
 LIGHT = ':root { --a: 1; --b: 2; }\n'
 DARK = '[data-theme="dark"] { --a: 3; --b: 4; }\n'
-LINE_RE = re.compile(r'^(PASS|FAIL|WARN|UNVERIFIED) [A-Za-z]+: .+$')
+LINE_RE = re.compile(r'^(PASS|FAIL|WARN|UNVERIFIED|INFO) [A-Za-z]+: .+$')
 
 
 class Base(unittest.TestCase):
@@ -79,7 +81,7 @@ class Base(unittest.TestCase):
         return tc.run(config, self.project, **kw)
 
     def statuses(self, res, check=None):
-        return [f['status'] for f in res.findings if check is None or f['check'] == check]
+        return [f['status'] for f in res.findings if f['status'] != tc.INFO and (check is None or f['check'] == check)]
 
     def tokens_cfg(self, theme, required='--a\n--b\n', **extra):
         self.write('t.css', theme)
@@ -127,7 +129,8 @@ class ConfigTests(Base):
         self.assertEqual(self.run_cfg({'version': 1, 'tokens': {'files': ['t.css']}}).code, 2)
         cfg = {'version': 1, 'tokens': {'files': ['t.css'], 'required': None}, 'dark': 'separate'}
         res = self.run_cfg(cfg)
-        self.assertEqual((res.code, self.statuses(res)), (0, [tc.PASS]))
+        self.assertEqual((res.code, self.statuses(res)), (0, [tc.WARN, tc.PASS]))
+        self.assertIn('pokrycie wyłączone', res.findings[0]['message'])
         self.assertEqual(self.run_cfg(cfg, only=['tokens']).code, 2)
 
     def test_dark_and_forbid_need_the_tokens_key(self):
@@ -150,6 +153,28 @@ class ConfigTests(Base):
                      {'source': 's', 'copy': 'd', 'include': '*'}):
             with self.subTest(item=item):
                 self.assertEqual(self.run_cfg({'version': 1, 'copyDirs': [item]}).code, 2)
+
+    def test_empty_forbid_copies_and_copy_dirs_lists_are_exit_2(self):
+        for key in ('forbid', 'copies', 'copyDirs'):
+            with self.subTest(key=key):
+                cfg = self.tokens_cfg(LIGHT) if key == 'forbid' else {'version': 1}
+                cfg[key] = []
+                self.assertEqual(self.run_cfg(cfg).code, 2)
+
+    def test_only_reports_skipped_checks_as_info(self):
+        cfg = self.tokens_cfg(LIGHT + DARK, dark='separate', forbid=['color-scheme'])
+        res = self.run_cfg(cfg, only=['tokens'])
+        self.assertEqual(res.code, 0)
+        info = [f for f in res.findings if f['status'] == tc.INFO]
+        self.assertEqual(len(info), 1)
+        self.assertIn('dark, forbid', info[0]['message'])
+        self.assertEqual([f for f in self.run_cfg(cfg).findings if f['status'] == tc.INFO], [])
+
+    def test_only_with_no_names_is_exit_2(self):
+        cfg = self.tokens_cfg(LIGHT)
+        for only in ([], ['']):
+            with self.subTest(only=only):
+                self.assertEqual(self.run_cfg(cfg, only=only).code, 2)
 
     def test_missing_project_dir_is_exit_2(self):
         self.assertEqual(tc.run({'version': 1}, self.tmp / 'brak').code, 2)
@@ -320,6 +345,16 @@ class TokensTests(Base):
         self.assertEqual(res.code, 1)
         self.assertEqual(res.findings[0]['file'], 'brak.css')
 
+    def test_missing_file_among_several_gives_no_pass(self):
+        self.write('a.css', LIGHT)
+        self.write('req.txt', '--a\n--b\n')
+        for extra in ({}, {'dark': 'separate', 'forbid': ['color-scheme']}):
+            cfg = {'version': 1, 'tokens': {'files': ['a.css', 'brak.css'], 'required': 'req.txt'}}
+            cfg.update(extra)
+            res = self.run_cfg(cfg)
+            self.assertEqual(res.code, 1)
+            self.assertNotIn(tc.PASS, self.statuses(res))
+
     def test_finding_has_file_and_line(self):
         res = self.run_cfg(self.tokens_cfg(':root { --a: 1;\n --b: 2; }\n\n.dark {\n  --c: 3;\n}\n'))
         finding = [f for f in res.findings if '--c' in f['message']][0]
@@ -332,6 +367,9 @@ class TokensTests(Base):
         self.write('req.txt', '--a\n--b\n')
         res = self.run_cfg({'version': 1, 'tokens': {'files': ['a.css', 'b.css'], 'required': 'req.txt'}})
         self.assertEqual(res.code, 0)
+
+class AssetsTests(Base):
+    """Równość zbioru tokenów używanych przez zasoby szablonu z listą wymaganych."""
 
     def assets_cfg(self, theme, assets, required='--a\n--b\n'):
         cfg = self.tokens_cfg(theme, required)
@@ -363,6 +401,24 @@ class TokensTests(Base):
         cfg['tokens']['assets'] = 'brak'
         self.assertEqual(self.run_cfg(cfg).code, 2)
 
+    @unittest.skipUnless(hasattr(os, 'symlink'), 'brak dowiązań symbolicznych')
+    def test_asset_symlink_leaving_the_project_is_exit_2(self):
+        outside = self.tmp / 'outside'
+        outside.mkdir()
+        (outside / 'x.css').write_text('a { color: var(--a); }\n', encoding='utf-8')
+        cfg = self.assets_cfg(LIGHT, {'ok.css': 'a { color: var(--a) var(--b); }'})
+        try:
+            os.symlink(outside / 'x.css', self.project / 'assets' / 'link.css')
+        except OSError:
+            self.skipTest('system nie pozwala tworzyć dowiązań')
+        self.assertEqual(self.run_cfg(cfg).code, 2)
+
+    def test_asset_in_a_wrong_encoding_is_exit_2_with_its_name(self):
+        cfg = self.assets_cfg(LIGHT, {'ok.css': 'a { color: var(--a) var(--b); }', 'zly.css': b'a { b: \xff\xfe; }'})
+        res = self.run_cfg(cfg)
+        self.assertEqual(res.code, 2)
+        self.assertIn('zly.css', res.error)
+
 
 class DarkTests(Base):
     def cfg(self, theme, mode):
@@ -393,10 +449,37 @@ class DarkTests(Base):
         res = self.run_cfg(self.cfg(LIGHT + '.dark { --a:   3;\n --b: 4 }\n' + DARK, 'separate'), only=['dark'])
         self.assertEqual(res.code, 0)
 
-    def test_separate_without_dark_blocks_passes_with_a_note(self):
+    def test_separate_without_any_dark_block_is_unverified(self):
         res = self.run_cfg(self.cfg(LIGHT, 'separate'), only=['dark'])
-        self.assertEqual((res.code, self.statuses(res)), (0, [tc.PASS]))
-        self.assertIn('0 bloków', res.findings[0]['message'])
+        self.assertEqual((res.code, self.statuses(res, 'dark')), (3, [tc.UNVERIFIED]))
+        self.assertIn('czy selektor jest rozpoznawany przez silnik', res.findings[0]['message'])
+
+    def test_separate_with_one_block_passes_with_a_note(self):
+        res = self.run_cfg(self.cfg(LIGHT + DARK, 'separate'), only=['dark'])
+        self.assertEqual((res.code, self.statuses(res, 'dark')), (0, [tc.PASS]))
+        self.assertIn('nie ma czego porównywać', res.findings[0]['message'])
+
+    def test_selector_with_dark_word_unknown_to_the_engine_warns_in_every_mode(self):
+        for selector in ('html[data-theme=dark]', 'body.dark', ':root.dark'):
+            for mode in ('separate', 'mirror', 'none'):
+                with self.subTest(selector=selector, mode=mode):
+                    res = self.run_cfg(self.cfg(LIGHT + DARK + selector + ' { --a: 9; }\n', mode), only=['dark'])
+                    warns = [f for f in res.findings if f['status'] == tc.WARN]
+                    self.assertEqual(len(warns), 1, res.lines())
+                    self.assertEqual(warns[0]['line'], 3)
+                    self.assertNotEqual(res.code, 2)
+
+    def test_unrecognized_dark_selector_alone_gives_warn_and_unverified(self):
+        res = self.run_cfg(self.cfg(LIGHT + 'html[data-theme=dark] { --a: 9; }\n', 'separate'), only=['dark'])
+        self.assertEqual(sorted(self.statuses(res, 'dark')), [tc.UNVERIFIED, tc.WARN])
+        self.assertEqual(res.code, 3)
+
+    def test_none_with_plain_declarations_in_a_dark_block_warns(self):
+        res = self.run_cfg(self.cfg(LIGHT + '.dark { background: #000; }\n', 'none'), only=['dark'])
+        self.assertEqual(self.statuses(res, 'dark'), [tc.WARN, tc.PASS])
+        self.assertEqual(res.code, 0)
+        res = self.run_cfg(self.cfg(LIGHT + '.dark { background: #000; }\n', 'mirror'), only=['dark'])
+        self.assertNotIn(tc.WARN, self.statuses(res))
 
     def test_mirror_identical_block_passes(self):
         res = self.run_cfg(self.cfg(LIGHT + '.dark { --a: 1; --b: 2; }\n', 'mirror'), only=['dark'])
@@ -453,6 +536,11 @@ class ForbidTests(Base):
         res = self.run_cfg(self.cfg(css, 'color-scheme'), only=['forbid'])
         self.assertEqual(res.code, 0)
 
+    def test_constructs_are_case_insensitive(self):
+        css = ':root { COLOR-SCHEME: dark; --a: 1; --b: 2; }\n@MEDIA (PREFERS-COLOR-SCHEME: dark) { :root { --a: 1; } }\n'
+        res = self.run_cfg(self.cfg(css, 'color-scheme', 'prefers-color-scheme'), only=['forbid'])
+        self.assertEqual(self.statuses(res), [tc.FAIL, tc.FAIL])
+
     def test_constructs_in_comments_are_ignored(self):
         res = self.run_cfg(self.cfg('/* color-scheme: dark; prefers-color-scheme */\n' + LIGHT, 'color-scheme',
                                     'prefers-color-scheme'), only=['forbid'])
@@ -488,6 +576,20 @@ class CopiesTests(Base):
         res = self.run_cfg(self.cfg())
         self.assertEqual((res.code, res.findings[0]['status']), (1, tc.FAIL))
         self.assertIn('brak kopii', res.findings[0]['message'])
+
+    def test_source_and_copy_being_the_same_file_is_exit_2(self):
+        self.write('src/theme.css', 'a\n')
+        self.assertEqual(self.run_cfg(self.cfg(copy='src/theme.css')).code, 2)
+
+    @unittest.skipUnless(hasattr(os, 'symlink'), 'brak dowiązań symbolicznych')
+    def test_copy_that_is_a_link_to_the_source_is_exit_2(self):
+        self.write('src/theme.css', 'a\n')
+        (self.project / 'dst').mkdir()
+        try:
+            os.symlink(self.project / 'src' / 'theme.css', self.project / 'dst' / 'theme.css')
+        except OSError:
+            self.skipTest('system nie pozwala tworzyć dowiązań')
+        self.assertEqual(self.run_cfg(self.cfg()).code, 2)
 
     def test_missing_source_is_exit_2_not_fail(self):
         self.write('dst/theme.css', 'a\n')
@@ -591,6 +693,22 @@ class CopyDirsTests(Base):
         cfg = {'version': 1, 'copyDirs': [{'source': 'src/brak', 'copy': 'dst/fonts', 'include': ['*']}]}
         self.assertEqual(self.run_cfg(cfg).code, 2)
 
+    @unittest.skipUnless(hasattr(os, 'symlink'), 'brak dowiązań symbolicznych')
+    def test_copy_child_symlink_leaving_the_project_is_exit_2(self):
+        outside = self.tmp / 'outside'
+        outside.mkdir()
+        (outside / 'a.woff2').write_bytes(self.FONT_A)
+        (self.project / 'dst' / 'fonts' / 'a.woff2').unlink()
+        try:
+            os.symlink(outside / 'a.woff2', self.project / 'dst' / 'fonts' / 'a.woff2')
+        except OSError:
+            self.skipTest('system nie pozwala tworzyć dowiązań')
+        self.assertEqual(self.run_cfg(self.cfg()).code, 2)
+
+    def test_source_and_copy_dirs_being_the_same_directory_is_exit_2(self):
+        cfg = {'version': 1, 'copyDirs': [{'source': 'src/fonts', 'copy': 'src/fonts', 'include': ['*.woff2']}]}
+        self.assertEqual(self.run_cfg(cfg).code, 2)
+
     def test_include_pattern_with_a_path(self):
         self.write('src/fonts/sub/x.woff2', self.FONT_A)
         self.write('dst/fonts/sub/x.woff2', self.FONT_A)
@@ -643,6 +761,47 @@ class SelftestTests(unittest.TestCase):
         with mock.patch.object(tc, 'check_forbid', lambda cfg, files, res: res.add(tc.PASS, 'forbid', 'zawsze PASS')):
             problems, _ = tc.selftest()
         self.assertTrue(any('forbid' in p for p in problems))
+
+
+class SafetyNetTests(Base):
+    def test_tokens_file_in_a_wrong_encoding_is_exit_2_with_its_name(self):
+        cfg = self.tokens_cfg(LIGHT)
+        self.write('t.css', b':root { --a: \xff\xfe; }')
+        res = self.run_cfg(cfg)
+        self.assertEqual(res.code, 2)
+        self.assertIn('t.css', res.error)
+
+    def test_oversized_css_file_is_exit_2(self):
+        cfg = self.tokens_cfg(LIGHT)
+        self.write('t.css', ':root { --a: 1; --b: 2; }\n/*' + ' ' * (2 * 1024 * 1024) + '*/\n')
+        res = self.run_cfg(cfg)
+        self.assertEqual(res.code, 2)
+        self.assertIn('2 MiB', res.error)
+
+    def test_deep_nesting_is_exit_2_and_depth_200_is_accepted(self):
+        deep = '.a {' * 201 + ' --x: 1; ' + '}' * 201
+        res = self.run_cfg(self.tokens_cfg(deep))
+        self.assertEqual(res.code, 2)
+        ok = '.a {' * 150 + ' --x: 1; ' + '}' * 150 + LIGHT
+        self.assertEqual(self.run_cfg(self.tokens_cfg(ok)).code, 0)
+
+    def test_unexpected_exception_is_exit_2_without_content(self):
+        cfg = self.tokens_cfg(LIGHT)
+        with mock.patch.object(tc, '_run', side_effect=PermissionError('SENTINEL_BODY')):
+            res = self.run_cfg(cfg)
+        self.assertEqual(res.code, 2)
+        self.assertIn('błąd wewnętrzny', res.error)
+        self.assertNotIn('SENTINEL_BODY', res.error)
+
+    def test_main_turns_any_exception_into_exit_2(self):
+        path = self.tmp / 'c.json'
+        path.write_text(json.dumps({'version': 1}), encoding='utf-8')
+        err = io.StringIO()
+        with mock.patch.object(tc, 'run', side_effect=RuntimeError('SENTINEL_BODY')), mock.patch.object(sys, 'stderr', err):
+            rc = tc.main(['--config', str(path), '--project', str(self.project)])
+        self.assertEqual(rc, 2)
+        self.assertIn('błąd wewnętrzny', err.getvalue())
+        self.assertNotIn('SENTINEL_BODY', err.getvalue())
 
 
 class CliProcessTests(Base):
@@ -722,6 +881,35 @@ class CliProcessTests(Base):
         self.assertNotIn(sentinel, proc.stdout + proc.stderr)
         self.assertEqual(json.loads(proc.stdout)['code'], 2)
 
+    def test_only_with_no_names_is_exit_2(self):
+        path = self.config_file(self.tokens_cfg(LIGHT))
+        for value in ('', ',', ' , '):
+            with self.subTest(value=value):
+                self.assertEqual(self.cli('--config', path, '--project', self.project, '--only', value).returncode, 2)
+
+    def test_only_prints_an_info_line_with_skipped_checks(self):
+        path = self.config_file(self.tokens_cfg(LIGHT, dark='mirror'))
+        proc = self.cli('--config', path, '--project', self.project, '--only', 'tokens')
+        self.assertIn('INFO config: pominięto kontrole z konfiguracji (--only): dark', proc.stdout)
+        self.assertEqual(proc.returncode, 0)
+
+    def test_deeply_nested_json_is_exit_2_without_a_traceback(self):
+        deep = self.tmp / 'deep.json'
+        deep.write_text('[' * 200000, encoding='utf-8')
+        proc = self.cli('--config', deep, '--project', self.project)
+        self.assertEqual(proc.returncode, 2)
+        self.assertNotIn('Traceback', proc.stderr)
+
+    def test_output_survives_a_narrow_stream_encoding(self):
+        cfg = {'version': 1, 'tokens': {'files': ['t.css'], 'required': None}, 'forbid': ['color-scheme']}
+        self.write('t.css', LIGHT)
+        path = self.config_file(cfg)
+        env = dict(os.environ, PYTHONIOENCODING='cp1252')
+        proc = subprocess.run([sys.executable, str(SCRIPTS / 'theme_check.py'), '--config', str(path), '--project',
+                               str(self.project)], capture_output=True, env=env, timeout=120)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn('wyłączone', proc.stdout.decode('utf-8'))
+
     def test_selftest_exits_0(self):
         proc = self.cli('--selftest')
         self.assertEqual(proc.returncode, 0, proc.stderr)
@@ -745,16 +933,22 @@ class CliProcessTests(Base):
 class NoProjectNamesTests(unittest.TestCase):
     """K8: biblioteka prototypów nie zawiera nazw warstwy ani projektu klienta; literały składane w czasie wykonania."""
 
-    def test_scripts_and_fixtures_have_no_layer_or_project_names(self):
-        words = [''.join(('p', 'c', 'g')), ''.join(('pc', 'gacad', 'emia')), ''.join(('P', 'CG')),
-                 ''.join(('v', 'e', '-theme')), ''.join(('check_', 'prototype_theme')), ''.join(('F', 'igma'))]
-        roots = [SCRIPTS / 'css_tokens.py', SCRIPTS / 'theme_check.py', REPO / 'tests' / 'fixtures' / 'prototype' / 'css-tokens']
-        hits = []
+    def test_prototype_skill_and_fixtures_have_no_layer_or_project_names(self):
+        words = [''.join(('p', 'c', 'g')), ''.join(('pc', 'gacad', 'emia')), ''.join(('v', 'e', '-theme')),
+                 ''.join(('check_', 'prototype_theme'))]
+        roots = [REPO / 'library' / 'skills' / 'prototype', REPO / 'tests' / 'fixtures' / 'prototype' / 'css-tokens']
+        hits, scanned = [], 0
         for root in roots:
-            for path in ([root] if root.is_file() else sorted(root.rglob('*'))):
-                if path.is_file():
-                    text = path.read_text(encoding='utf-8', errors='replace').lower()
-                    hits += [(path.name, w) for w in words if w.lower() in text]
+            for path in sorted(root.rglob('*')):
+                if not path.is_file() or '__pycache__' in path.parts:
+                    continue
+                try:
+                    text = path.read_text(encoding='utf-8').lower()
+                except UnicodeDecodeError:
+                    continue
+                scanned += 1
+                hits += [(path.name, w) for w in words if w in text]
+        self.assertGreater(scanned, 20)
         self.assertEqual(hits, [])
 
 
