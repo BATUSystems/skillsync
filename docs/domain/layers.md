@@ -3,7 +3,7 @@ title: "Warstwy generatora: core, org, personal, layer.yaml, layer_rules, LayerS
 tags: [skillsync, layers, configuration, composition, isolation, push, versioning]
 paths: ['skillsync_workflow/layers.py', 'skillsync', 'skillsync_workflow/common.py', 'skillsync_workflow/quality.py', 'skillsync-windows.ps1', 'tests/test_skillsync_layers*.py']
 source: "spec zadania (poza rdzeniem) (Terminologia, K1–K15, Kontrakty, Migracja); fakty z kodu skillsync_workflow/layers.py (match_rule, LayerSet, check_layers, migrate_config, _check_bridge, parse_layer_flag, isolation_findings), potwierdzone 2026-11-06; plan zadania (poza rdzeniem), sekcja Wynik (krok 2.1–2.4)"
-verified: 2026-11-06
+verified: 2026-11-22
 ---
 Reguła: generator składa skille, instrukcje, agenty i workflow z **warstw**. Warstwa to katalog o układzie
 biblioteki (`skills/`, `instructions/`, `agents/`, `workflow/`, `codex.yaml`) z plikiem `layer.yaml` w korzeniu
@@ -218,6 +218,32 @@ per plik w kompozycie skilla.
 - Ryzyko rezydualne: `workflow/projects/<slug>.yaml` z warstwy `org` jest konfiguracją projektów tej organizacji i może
   zastępować listy, w tym `validation.checks`; model zaufania tego nie obejmuje.
 - Warstwa jest kodem wykonywalnym (`validation.checks`, hooki): podpina się tylko źródła, którym się ufa.
+
+## Warstwa tłumaczenia (`translation_of: core`, od 1.13.0)
+
+Reguła: wersja językowa rdzenia (np. angielska, `layers/core-en/` w repozytorium rdzenia) jest **warstwą `org` z `translation_of: core`** w `layer.yaml`
+(plus `language: <kod>`), ZA ZGODĄ configu maszyny: wpis warstwy `translation: true` (`skillsync layers add <id> --kind org --source … --subdir … --translation`).
+Deklaracja w `layer.yaml` jest tylko roszczeniem: warstwa, która sama się tak ogłosi bez zgody w configu, dostaje zwykły model zaufania i błąd
+`translation-not-consented` (zgoda bez deklaracji to `translation-not-declared`). Język skilli wybiera `layer_rules` (`use: [core, core-en]`), język
+interfejsu klucz manifestu `language`; `doctor` ostrzega, gdy się różnią (`language-mismatch`).
+
+Co wolno warstwie tłumaczenia bez `allow_override`: zastąpić pliki Markdown skilli (`skills/**/*.md`), ról (`agents/*.md`) i instrukcji
+(`instructions/*.md`) o TEJ SAMEJ ścieżce oraz `instructions/_base.md` (dotąd tylko rdzeń). Wszystko inne (skrypty i assety skilli, trackery, hooki,
+`codex.yaml`, `checks`, `workflow/*`) pozostaje pod modelem zaufania. Pierwszeństwo jest dalej per plik, więc plik, którego tłumaczenie nie ma, pochodzi z rdzenia.
+
+`layers check` sprawdza zgodność z rdzeniem (`skillsync_workflow/translations.py`): skill obecny w tłumaczeniu jest kompletny (każdy `.md` rdzenia,
+`translation-incomplete`), brak pliku bez odpowiednika w rdzeniu (`translation-orphan`) i ścieżek różniących się tylko wielkością liter
+(`translation-case-mismatch`), te same poziomy nagłówków poza blokami kodu i ten sam frontmatter (klucze i wartości poza `description`,
+`argument-hint`, `when_to_use`, `title`; `translation-structure`), `_base.md` w budżecie `context.base_max_bytes` (`translation-base-too-large`).
+`translations.lock.yaml` w korzeniu warstwy zapisuje sha256 (po normalizacji końców linii) plików rdzenia, z których powstał przekład; zmiana
+pliku rdzenia po przekładzie to `translation-stale` (wyjątek: wpis `stale: {<ścieżka>: <powód>}`), a `skillsync layers translations --update`
+zapisuje blokadę po przeglądzie tłumaczeń (odrzuca blokadę będącą linkiem; wszystko albo nic dla kilku warstw). `skillsync layers translations`
+bez flagi raportuje te same wyniki.
+Ryzyko rezydualne: ciało przetłumaczonego pliku poza nagłówkami i frontmatterem nie jest porównywane z rdzeniem (przekład to kod czytany przez agentów, stąd zgoda
+w configu); nagłówki wykrywa tylko ATX (`#`) w kolumnie 0.
+Test w repozytorium rdzenia: `tests/test_skillsync_core_en.py` (komplet, brak polskiego tekstu poza dozwolonymi miejscami, tokeny protokołu po angielsku).
+Źródło: spec CORE-1130-I18N (I18N-3, I18N-4), `layers.py` (`parse_layer_yaml`, `Layer.is_translation`, `resolve`, `trust_findings`, `layers_translations`),
+`translations.py`, `scripts/check_core_en.py`.
 
 ## `isolation` i `layers check --isolation` (K10)
 

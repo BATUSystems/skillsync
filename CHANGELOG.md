@@ -12,6 +12,11 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+
+### Added
+
+- **Translation layers and the English layer `core-en`.** A layer of kind `org` with `translation_of: core` and `language` in its `layer.yaml` is a translation of the core library. It replaces the Markdown texts of skills, roles and instructions (and `instructions/_base.md`) without `allow_override`, but only with the consent of the machine config: `translation: true` in its `layers` entry, set by `skillsync layers add … --translation`; the declaration in `layer.yaml` alone is a claim and a layer without the consent is treated as any org layer (`translation-not-consented`). `layers check` reports a translation that does not follow the core (an incomplete skill, an orphan file, a path that differs only in letter case, other heading levels or frontmatter values, a stale lock, a base text over `context.base_max_bytes`); `translations.lock.yaml` records the sha256 of the core files a translation was made from and `skillsync layers translations [--update]` checks and refreshes it. Wave 1 of the English translation is in `layers/core-en/` (skills `feature`, `bugfix`, `workflow`, `dispatch`, `skillsync`, `pre-implement`, `smart-test`, `codereview`, `dashboard`, `prototype`, all roles and instructions); protocol tokens that programs read are written in English there, which needs the English aliases of the parsers. Details: `docs/domain/layers.md`.
+
 ## [1.12.0] - 2026-11-22
 
 Upgrading from 1.11.0: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.11.0 → 1.12.0".
