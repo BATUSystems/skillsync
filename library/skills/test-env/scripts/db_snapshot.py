@@ -1,6 +1,7 @@
 """Safe copy and restore of a SQL Server test database through sqlcmd (tool of the test-env skill).
 S1 holds the pure logic: validators, SQL builders, child environment, secret masking and exit codes.
 S2 adds the backup flow, the injected query runner and file system, and result formatting.
+S3 adds the sidecar parser and the restore flow.
 The full tool header and the command line are added in a later step.
 """
 import base64
@@ -67,7 +68,8 @@ def _safe_message(exc):
 
 def run_guarded(fn, state, stderr, masker):
     try:
-        return fn()
+        code = fn()
+        return EXIT['PASS'] if code is None else code
     except SystemExit:
         raise
     except BaseException as exc:
@@ -507,6 +509,13 @@ class RealFs:
                 digest.update(chunk)
         return digest.hexdigest()
 
+    def isfile(self, path):
+        return os.path.isfile(path)
+
+    def read_bytes(self, path, limit):
+        with open(path, 'rb') as handle:
+            return handle.read(limit + 1)
+
     def write_atomic(self, path, data):
         directory = os.path.dirname(path) or '.'
         os.makedirs(directory, mode=0o700, exist_ok=True)
@@ -514,7 +523,10 @@ class RealFs:
         try:
             with os.fdopen(fd, 'wb') as handle:
                 if os.name != 'nt':
-                    os.fchmod(handle.fileno(), 0o600)
+                    if hasattr(os, 'fchmod'):
+                        os.fchmod(handle.fileno(), 0o600)
+                    else:
+                        os.chmod(tmp, 0o600)
                 handle.write(data)
                 handle.flush()
                 os.fsync(handle.fileno())
@@ -595,7 +607,28 @@ def _format_size(size):
     return str(size) + ' B (' + format(size / 1048576.0, '.1f') + ' MiB)'
 
 
+def _restore_notice(result):
+    safety = result.get('safety_backup_path')
+    lines = [
+        'Przywrócono bazę ' + str(result.get('database')) + ' na serwerze ' + str(result.get('server')) + ' z pliku ' + str(result.get('file'))
+        + ' (restore).',
+        'Czas (UTC): ' + str(result.get('restored_utc')),
+    ]
+    if safety:
+        lines.append('Kopia bezpieczeństwa sprzed przywrócenia: ' + str(safety))
+        lines.append('Cofnięcie (przywrócenie kopii bezpieczeństwa): ' + str(result.get('rollback_command')))
+    else:
+        lines.append('Kopia bezpieczeństwa: brak (ryzykowne: brak drogi powrotu).')
+    for warning in result.get('warnings') or []:
+        lines.append('Ostrzeżenie: ' + str(warning))
+    lines.append('Uwaga: baza testowa jest współdzielonym stanem; poinformuj innych użytkowników środowiska o przywróceniu.')
+    lines.append('Uwaga: kopia może zawierać dane osobowe i nie jest szyfrowana.')
+    return '\n'.join(lines)
+
+
 def coordinator_notice(result, command='backup'):
+    if command == 'restore':
+        return _restore_notice(result)
     lines = [
         'Kopia bazy ' + str(result.get('database')) + ' na serwerze ' + str(result.get('server')) + ' (' + command + ', etykieta: '
         + str(result.get('label')) + ').',
@@ -715,6 +748,267 @@ def run_backup(opts, *, runner, fs, clock, token_fn, state, environ, platform):
         'sidecar': sidecar_path, 'restore_command': _restore_command(path, db, opts.server),
     }
     result['coordinator_notice'] = coordinator_notice(result)
+    return result
+
+
+# ---------------------------------------------------------------- S3: sidecar parser, machine names, restore flow
+
+SIDECAR_MAX_BYTES = 65536
+_SIDECAR_STR_KEYS = ('database', 'label', 'file', 'created_utc', 'backup_set_guid', 'first_lsn', 'last_lsn', 'backup_finish_date', 'server_path')
+_SIDECAR_BOOL_KEYS = ('remote', 'copy_only')
+_SIDECAR_SERVER_KEYS = ('raw', 'canonical', 'engine_server_name', 'machine_name', 'instance_name')
+_SIDECAR_KEYS = frozenset(('schema', 'size', 'server', 'sha256') + _SIDECAR_STR_KEYS + _SIDECAR_BOOL_KEYS)
+
+
+def _no_duplicates(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError('duplicate key')
+        result[key] = value
+    return result
+
+
+def read_sidecar(raw):
+    """Strict parser of the untrusted sidecar file; returns a dict and never follows any path from it."""
+    if not isinstance(raw, (bytes, bytearray)):
+        raise Refusal('rule sidecar: the sidecar must be read as bytes')
+    if len(raw) > SIDECAR_MAX_BYTES:
+        raise Refusal('rule sidecar: the sidecar is larger than ' + str(SIDECAR_MAX_BYTES) + ' bytes')
+    try:
+        data = json.loads(bytes(raw).decode('utf-8'), object_pairs_hook=_no_duplicates)
+    except (UnicodeDecodeError, ValueError, RecursionError):
+        raise Refusal('rule sidecar: the sidecar is not a valid JSON document') from None
+    if not isinstance(data, dict):
+        raise Refusal('rule sidecar: the sidecar must be a JSON object')
+    if type(data.get('schema')) is not int or data['schema'] != 1:
+        raise Refusal('rule sidecar: unsupported sidecar schema')
+    for key in data:
+        if key not in _SIDECAR_KEYS:
+            raise Refusal('rule sidecar: unknown sidecar key')
+    for key in _SIDECAR_KEYS - {'sha256'}:
+        if key not in data:
+            raise Refusal('rule sidecar: a required sidecar key is missing')
+    for key in _SIDECAR_STR_KEYS:
+        if not isinstance(data[key], str):
+            raise Refusal('rule sidecar: wrong type of the sidecar key ' + key)
+    for key in _SIDECAR_BOOL_KEYS:
+        if not isinstance(data[key], bool):
+            raise Refusal('rule sidecar: wrong type of the sidecar key ' + key)
+    if data['size'] is not None and (type(data['size']) is not int or data['size'] < 0):
+        raise Refusal('rule sidecar: wrong type of the sidecar key size')
+    if 'sha256' in data and (not isinstance(data['sha256'], str) or re.fullmatch(r'[0-9a-f]{64}', data['sha256'], re.ASCII) is None):
+        raise Refusal('rule sidecar: wrong type of the sidecar key sha256')
+    server = data['server']
+    if not isinstance(server, dict):
+        raise Refusal('rule sidecar: the sidecar server entry must be an object')
+    for key in server:
+        if key not in _SIDECAR_SERVER_KEYS:
+            raise Refusal('rule sidecar: unknown key in the sidecar server entry')
+    for key in _SIDECAR_SERVER_KEYS:
+        if key not in server:
+            raise Refusal('rule sidecar: a required key of the sidecar server entry is missing')
+        value = server[key]
+        if not (isinstance(value, str) or (key == 'instance_name' and value is None)):
+            raise Refusal('rule sidecar: wrong type in the sidecar server entry')
+    return data
+
+
+def machine_names_match(engine_name, local_name):
+    """Compare machine names ignoring case and cutting both to 15 characters (NetBIOS)."""
+    if not isinstance(engine_name, str) or not isinstance(local_name, str) or not engine_name or not local_name:
+        return False
+    return engine_name[:15].lower() == local_name[:15].lower()
+
+
+@dataclasses.dataclass
+class RestoreOptions:
+    database: str
+    file: str
+    confirm: object
+    server: str = 'localhost'
+    dir: object = None
+    auth: str = 'auto'
+    allow_missing_sidecar: bool = False
+    no_safety_backup: bool = False
+    allow_machine_mismatch: bool = False
+    dry_run: bool = False
+    restore_timeout: float = 3600.0
+    state_timeout: float = 30.0
+    timeout: float = 600.0
+    trust_server_certificate: bool = False
+
+
+def _state_row(runner, db, timeout):
+    rows = _table_row(runner(build_state_sql(db), mutating=False, timeout=timeout, table=True), 'reading the database state')
+    if len(rows) > 1:
+        raise SqlFailure('cannot read the database state unambiguously')
+    if rows and not all(key in rows[0] for key in ('state_desc', 'user_access_desc', 'recovery_model_desc')):
+        raise SqlFailure('cannot read the database state unambiguously')
+    return rows[0] if rows else None
+
+
+def _actual_state_text(runner, db, timeout):
+    """Read the real state after a failed destructive step; any problem (also a second interrupt) means unknown."""
+    try:
+        row = _state_row(runner, db, timeout)
+    except (Exception, KeyboardInterrupt):
+        row = None
+    if row is None:
+        return 'unknown'
+    return 'state_desc=' + row['state_desc'] + ', user_access_desc=' + row['user_access_desc']
+
+
+def _way_back(safety, db, server):
+    if safety:
+        return 'The way back: restore the safety backup ' + safety + ' (command: ' + _restore_command(safety, db, server) + ').'
+    return 'No safety backup was made, so there is no way back.'
+
+
+def _failure_reason(exc):
+    if isinstance(exc, SqlFailure):
+        return str(exc)
+    if isinstance(exc, KeyboardInterrupt):
+        return 'interrupted'
+    return type(exc).__name__
+
+
+def _check_restore_header(rows, db, sidecar, identity, opts, warnings):
+    if not rows:
+        raise Refusal('the backup file holds no backup set')
+    if len(rows) > 1:
+        raise Refusal('the file holds multiple backup sets; only a single full backup set is supported')
+    row = rows[0]
+    for key in ('DatabaseName', 'BackupType', 'ServerName', 'MachineName', 'BackupSetGUID', 'FirstLSN', 'LastLSN'):
+        if key not in row:
+            raise SqlFailure('the backup header lacks column ' + key + ': ' + HEADER_UNREADABLE)
+    if row['BackupType'] != '1':
+        raise Refusal('the file is not a full database backup')
+    if row['DatabaseName'].lower() != db.lower():
+        raise Refusal('the file holds a backup of a different database')
+    if sidecar is not None:
+        server = sidecar['server']
+        if (row['ServerName'].lower() != server['engine_server_name'].lower() or row['MachineName'].lower() != server['machine_name'].lower()
+                or row['BackupSetGUID'].lower() != sidecar['backup_set_guid'].lower() or row['FirstLSN'] != sidecar['first_lsn']
+                or row['LastLSN'] != sidecar['last_lsn']):
+            raise Refusal('the backup header does not match the sidecar')
+        return row
+    for column, wanted in (('ServerName', identity['engine_server_name']), ('MachineName', identity['machine_name'])):
+        if row[column].lower() != wanted.lower():
+            if not opts.allow_machine_mismatch:
+                raise Refusal('the backup header ' + column + ' differs from the target engine (the backup comes from a different server)')
+            warnings.append('the backup header ' + column + ' differs from the target engine (allowed by --allow-machine-mismatch)')
+    return row
+
+
+def run_restore(opts, *, runner, fs, clock, token_fn, state, environ, platform, machine_name, emit):
+    warnings = []
+    # (1) validation, before any runner call or write
+    db = validate_database(opts.database)
+    spec = parse_server(opts.server)
+    check_host_allowed(spec, (), 'restore')
+    if not isinstance(opts.confirm, str) or opts.confirm != opts.database:
+        raise Refusal('rule confirm: --confirm must repeat the database name exactly')
+    local_flavor = 'windows' if platform == 'win32' else 'posix'
+    pathmod = ntpath if local_flavor == 'windows' else posixpath
+    home = environ.get('HOME') or environ.get('USERPROFILE') or os.path.expanduser('~')
+    file_path = validate_server_path(opts.file, flavor=local_flavor, kind='file')
+    directory = validate_server_path(opts.dir or default_backup_dir(platform, environ, home), flavor=local_flavor, kind='dir')
+    check_dir_outside_repo(directory, lexists=fs.lexists, realpath=fs.realpath)
+    parent = pathmod.dirname(file_path)
+    if (parent.lower() != directory.lower()) if local_flavor == 'windows' else (parent != directory):
+        raise Refusal('rule file-location: the file must reside in the backup directory')
+    if not fs.isfile(file_path):
+        raise Refusal('rule file-missing: the backup file does not exist or is not a regular file')
+    sidecar_path = file_path + '.json'
+    sidecar = None
+    if fs.isfile(sidecar_path):
+        try:
+            blob = fs.read_bytes(sidecar_path, SIDECAR_MAX_BYTES + 1)
+        except OSError:
+            raise Refusal('rule sidecar: the sidecar cannot be read') from None
+        sidecar = read_sidecar(blob)
+        if sidecar['database'].lower() != db.lower():
+            raise Refusal('rule sidecar: the sidecar describes a different database')
+        if sidecar['file'] != pathmod.basename(file_path):
+            raise Refusal('rule sidecar: the sidecar describes a different file')
+        if sidecar['server']['canonical'] != spec.canonical:
+            raise Refusal('rule sidecar: the backup comes from a different server')
+        try:
+            actual_size = fs.getsize(file_path)
+        except OSError:
+            raise Refusal('rule sidecar: the backup file size cannot be read') from None
+        if sidecar['size'] is None or sidecar['size'] != actual_size:
+            raise Refusal('rule sidecar: the file size differs from the sidecar')
+    elif opts.allow_missing_sidecar:
+        warnings.append('the sidecar is missing; the backup origin was checked only against the target engine (--allow-missing-sidecar)')
+    else:
+        raise Refusal('rule sidecar: the sidecar file is missing (use --allow-missing-sidecar to proceed without it)')
+    # (2) dry run
+    if opts.dry_run:
+        plan = ['read the database state', 'check the engine identity', 'read the backup header (HEADERONLY)', 'verify the backup (VERIFYONLY)',
+                'skip the safety backup (risky: no way back)' if opts.no_safety_backup else 'make a safety backup (label pre-restore)',
+                'restore with REPLACE (SINGLE_USER, then MULTI_USER)', 'read the final database state']
+        notrun = NotRun('dry run: nothing was executed')
+        notrun.result = {'status': 'NOT_RUN', 'database': db, 'file': file_path, 'plan': plan, 'warnings': warnings}
+        raise notrun
+    # (3) database state
+    row = _state_row(runner, db, opts.state_timeout)
+    if row is None:
+        raise Refusal('restoring a non-existent database is not supported')
+    if row['state_desc'] != 'ONLINE':
+        raise Refusal('the database is in state ' + row['state_desc'] + '; bring it ONLINE (or finish the pending restore or recovery) and retry')
+    previous_state = {'state_desc': row['state_desc'], 'user_access_desc': row['user_access_desc'], 'recovery_model_desc': row['recovery_model_desc']}
+    if row['recovery_model_desc'] == 'FULL':
+        warnings.append('the database uses the FULL recovery model; the restore breaks the log backup chain')
+    # (4) target engine identity
+    identity = _identity(runner, opts.state_timeout)
+    if not machine_names_match(identity['machine_name'], machine_name):
+        if not opts.allow_machine_mismatch:
+            raise Refusal('the engine runs on a different machine than this one; restore is allowed only for a local engine')
+        warnings.append('the engine machine name differs from this machine (allowed by --allow-machine-mismatch)')
+    # (5) backup header
+    header_rows = _table_row(runner(build_headeronly_sql(file_path), mutating=False, timeout=min(opts.timeout, 120.0), table=True),
+                             'RESTORE HEADERONLY')
+    _check_restore_header(header_rows, db, sidecar, identity, opts, warnings)
+    # (6) verify
+    _checked(runner(build_verify_sql(file_path), mutating=False, timeout=opts.restore_timeout), 'RESTORE VERIFYONLY')
+    # (7) safety backup
+    safety = None
+    if opts.no_safety_backup:
+        warnings.append('risky: no safety backup (--no-safety-backup), there is no way back')
+    else:
+        backup_opts = BackupOptions(database=db, label='pre-restore', server=opts.server, dir=directory, auth=opts.auth, timeout=opts.timeout,
+                                    trust_server_certificate=opts.trust_server_certificate)
+        saved = run_backup(backup_opts, runner=runner, fs=fs, clock=clock, token_fn=token_fn, state=state, environ=environ, platform=platform)
+        safety = saved['path']
+        emit('safety backup: ' + safety)
+    emit('restoring database ' + db + ' from the backup file')
+    # (8) destructive step
+    try:
+        _checked(runner(build_restore_batch(db, file_path), mutating=True, timeout=opts.restore_timeout), 'RESTORE DATABASE')
+    except (Exception, KeyboardInterrupt) as exc:
+        reason = _failure_reason(exc)
+        actual = _actual_state_text(runner, db, opts.state_timeout)
+        raise SqlFailure(
+            'RESTORE DATABASE did not finish cleanly (' + reason + '). Database state read afterwards: ' + actual + '. After a failure, a timeout or '
+            'an interruption the state of the database is uncertain (it may have changed); no automatic repair was attempted. '
+            + _way_back(safety, db, opts.server)) from None
+    # (9) state after the restore
+    try:
+        after = _state_row(runner, db, opts.state_timeout)
+    except SqlFailure as exc:
+        raise SqlFailure('the restore finished but the final state could not be read (' + str(exc) + '). ' + _way_back(safety, db, opts.server)) from None
+    if after is None or after['state_desc'] != 'ONLINE' or after['user_access_desc'] != 'MULTI_USER':
+        actual = 'unknown' if after is None else 'state_desc=' + after['state_desc'] + ', user_access_desc=' + after['user_access_desc']
+        raise SqlFailure('the restore finished but the database is not ONLINE and MULTI_USER (state: ' + actual + '). ' + _way_back(safety, db, opts.server))
+    # (10) result
+    now = clock()
+    now = now.astimezone(datetime.timezone.utc) if now.tzinfo is not None else now
+    result = {'status': 'PASS', 'database': db, 'file': file_path, 'server': opts.server, 'safety_backup_path': safety,
+              'previous_state': previous_state, 'warnings': warnings, 'restored_utc': now.strftime('%Y-%m-%dT%H:%M:%SZ'),
+              'rollback_command': _restore_command(safety, db, opts.server) if safety else None}
+    result['coordinator_notice'] = coordinator_notice(result, 'restore')
     return result
 
 

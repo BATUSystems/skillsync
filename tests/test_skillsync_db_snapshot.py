@@ -1808,5 +1808,1106 @@ class FormatResult(BackupBase):
         self.assertEqual(self.m.format_result(result, True, masker), self.m.format_result(result, True, masker))
 
 
+
+# ---------------------------------------------------------------- S3: restore (sidecar parser, machine names, RealFs, run_restore)
+
+sys.path.insert(0, str(ROOT / 'tests'))
+import hashlib  # noqa: E402
+import tempfile  # noqa: E402
+from unittest import mock  # noqa: E402
+import tmp_paths  # noqa: E402
+
+SRC_NAME = 'appdb-snap-20261121-090000-d4e5f6.bak'
+SRC_PATH = LOCAL_DIR + '/' + SRC_NAME
+SAFETY_NAME = 'appdb-pre-restore-20261122-102030-a1b2c3.bak'
+SAFETY_PATH = LOCAL_DIR + '/' + SAFETY_NAME
+SECOND_TOKEN = 'f0e1d2'
+SECOND_SAFETY_PATH = LOCAL_DIR + '/appdb-pre-restore-20261122-102030-' + SECOND_TOKEN + '.bak'
+WIN_DIR = 'D:\\h\\bk'
+WIN_SRC = WIN_DIR + '\\' + SRC_NAME
+WIN_SAFETY = WIN_DIR + '\\' + SAFETY_NAME
+STATE_COLUMNS = ['state_desc', 'user_access_desc', 'recovery_model_desc']
+RESTORE_HEADER_COLUMNS = HEADER_COLUMNS + ['MachineName']
+RESTORE_HEADER_ROW = HEADER_ROW + ['LAB01']
+BATCH_ERROR = 'Msg 3013, Level 16, State 1, Server lab, Line 1\nRESTORE DATABASE is terminating abnormally.'
+FATAL_ERROR = 'Msg 596, Level 21, State 1, Server lab, Line 1\nCannot continue the execution because the session is in the kill state.'
+UNCERTAIN = re.compile(r'uncertain|niepewn|may have changed|m\u00f3g\u0142 si\u0119 zmieni\u0107', re.IGNORECASE)
+NO_SIDECAR = object()
+DEFAULT_SIDECAR = object()
+
+
+def state_out(state='ONLINE', access='MULTI_USER', recovery='SIMPLE'):
+    return table(STATE_COLUMNS, [[state, access, recovery]])
+
+
+def restore_header_out(**changes):
+    row = dict(zip(RESTORE_HEADER_COLUMNS, RESTORE_HEADER_ROW))
+    row.update(changes)
+    return table(RESTORE_HEADER_COLUMNS, [[row[name] for name in RESTORE_HEADER_COLUMNS]])
+
+
+def source_sidecar(path=SRC_PATH, **changes):
+    name = re.split(r'[\\/]', path)[-1]
+    data = {
+        'schema': 1, 'database': 'appdb', 'label': 'snap',
+        'server': {'raw': 'localhost', 'canonical': 'local', 'engine_server_name': 'LAB01', 'machine_name': 'LAB01', 'instance_name': None},
+        'file': name, 'size': BAK_SIZE, 'created_utc': '2026-11-21T09:00:00Z',
+        'backup_set_guid': HEADER_ROW[6], 'first_lsn': '100', 'last_lsn': '200', 'backup_finish_date': HEADER_ROW[7],
+        'remote': False, 'server_path': path, 'copy_only': True,
+    }
+    data.update(changes)
+    return data
+
+
+def sidecar_server(**changes):
+    server = dict(source_sidecar()['server'])
+    server.update(changes)
+    return server
+
+
+def classify_restore(sql):
+    if sql.startswith('SELECT state_desc'):
+        return 'state'
+    if sql.startswith('SELECT @@SERVERNAME'):
+        return 'identity'
+    if sql.startswith('BEGIN TRY'):
+        return 'restore'
+    return classify(sql)
+
+
+class RestoreRunner:
+    """Records every call; answers per kind from a script (a list of (rc, out, err) tuples or exceptions; the last item repeats)."""
+
+    def __init__(self, m, script=None, masker=None):
+        self.m = m
+        self.calls = []
+        self.masker = masker
+        self.seen = {}
+        self.script = {'state': [(0, state_out(), '')], 'identity': [(0, IDENTITY_OUT, '')], 'header': [(0, restore_header_out(), '')],
+                       'verify': [(0, '', '')], 'backup': [(0, '', '')], 'restore': [(0, '', '')]}
+        for kind, items in (script or {}).items():
+            self.script[kind] = items if isinstance(items, list) else [items]
+
+    def __call__(self, sql, *, mutating, timeout, table=False):
+        kind = classify_restore(sql)
+        self.calls.append({'kind': kind, 'sql': sql, 'mutating': mutating, 'timeout': timeout, 'table': table})
+        index = self.seen.get(kind, 0)
+        self.seen[kind] = index + 1
+        items = self.script[kind]
+        item = items[min(index, len(items) - 1)]
+        if isinstance(item, BaseException):
+            raise item
+        rc, out, err = item
+        if self.masker is not None:
+            out, err = self.masker.mask(out), self.masker.mask(err)
+        return self.m.RunResult(rc, out, err)
+
+    @property
+    def kinds(self):
+        return [c['kind'] for c in self.calls]
+
+    @property
+    def mutating(self):
+        return [c['kind'] for c in self.calls if c['mutating']]
+
+
+class RestoreFs(FakeFs):
+    def __init__(self, src=SRC_PATH, sidecar=DEFAULT_SIDECAR, **kw):
+        super().__init__(**kw)
+        self.files = set([src])
+        self.blobs = {}
+        self.reads = []
+        if sidecar is DEFAULT_SIDECAR:
+            sidecar = source_sidecar(src)
+        if sidecar is not NO_SIDECAR:
+            self.blobs[src + '.json'] = sidecar if isinstance(sidecar, bytes) else json.dumps(sidecar).encode('utf-8')
+
+    def isfile(self, path):
+        self.reads.append(('isfile', path))
+        return path in self.files or path in self.blobs
+
+    def read_bytes(self, path, limit):
+        self.reads.append(('read_bytes', path, limit))
+        if path not in self.blobs:
+            raise FileNotFoundError(path)
+        return self.blobs[path][:limit + 1]
+
+
+class RestoreBase(Base):
+    def opts(self, **kw):
+        values = {'database': 'appdb', 'file': SRC_PATH, 'confirm': 'appdb', 'dir': LOCAL_DIR}
+        values.update(kw)
+        return self.m.RestoreOptions(**values)
+
+    def do_restore(self, runner=None, fs=None, guard=True, state=None, platform='linux', environ=None, token=FIXED_TOKEN,
+                   machine_name='LAB01', **kw):
+        runner = runner or RestoreRunner(self.m)
+        fs = fs or RestoreFs()
+        state = state or self.m.RunState()
+        env = {'HOME': '/h/user', 'XDG_STATE_HOME': '/h/state'} if environ is None else environ
+        self.runner, self.fs, self.state = runner, fs, state
+        self.emitted = []
+
+        def emit(line):
+            self.emitted.append((line, [c['kind'] for c in runner.calls]))
+        call = self.m.guard_runner(runner, state) if guard else runner
+        return self.m.run_restore(self.opts(**kw), runner=call, fs=fs, clock=lambda: FIXED_NOW, token_fn=lambda: token, state=state,
+                                  environ=env, platform=platform, machine_name=machine_name, emit=emit)
+
+    def do_code(self, **kw):
+        state = kw.setdefault('state', self.m.RunState())
+        err = io.StringIO()
+        code = self.m.run_guarded(lambda: self.do_restore(**kw), state, err, self.m.Masker([]))
+        return code, err.getvalue()
+
+    def assert_blocked(self, script=None, fs_args=None, no_runner=True, platform='linux', **kw):
+        """Refusal (code 2) with no mutating call and no write; with no_runner also without any runner call."""
+        fs_args = fs_args or {}
+        runner, fs = RestoreRunner(self.m, script), RestoreFs(**fs_args)
+        with self.assertRaises(self.m.Refusal) as ctx:
+            self.do_restore(runner=runner, fs=fs, platform=platform, **kw)
+        self.assertEqual(runner.mutating, [])
+        self.assertIs(self.state.mutated, False)
+        self.assertEqual((fs.made, fs.written, fs.sha_calls), ([], {}, []))
+        if no_runner:
+            self.assertEqual(runner.calls, [])
+        runner2 = RestoreRunner(self.m, script)
+        code, _ = self.do_code(runner=runner2, fs=RestoreFs(**fs_args), platform=platform, **kw)
+        self.assertEqual(code, 2)
+        self.assertEqual(runner2.mutating, [])
+        return runner, str(ctx.exception)
+
+    def assert_no_mutation_failure(self, script, expected_kinds, exc=None, **kw):
+        runner = RestoreRunner(self.m, script)
+        with self.assertRaises(exc or self.m.SqlFailure):
+            self.do_restore(runner=runner, **kw)
+        self.assertEqual(runner.kinds, expected_kinds)
+        self.assertEqual(runner.mutating, [])
+        self.assertIs(self.state.mutated, False)
+        self.assertEqual(self.fs.written, {})
+        return runner
+
+
+class SidecarParser(Base):
+    def raw(self, **changes):
+        return json.dumps(source_sidecar(**changes)).encode('utf-8')
+
+    def test_valid_sidecar_round_trips_to_a_dict(self):
+        data = self.m.read_sidecar(self.raw())
+        self.assertIsInstance(data, dict)
+        self.assertEqual(data, source_sidecar())
+
+    def test_optional_sha256_and_nullable_fields_are_accepted(self):
+        self.assertEqual(self.m.read_sidecar(self.raw(sha256=FAKE_SHA))['sha256'], FAKE_SHA)
+        self.assertIsNone(self.m.read_sidecar(self.raw(size=None))['size'])
+        self.assertEqual(self.m.read_sidecar(self.raw(server=sidecar_server(instance_name='SQLEXPRESS')))['server']['instance_name'], 'SQLEXPRESS')
+        self.assertIs(self.m.read_sidecar(self.raw(remote=True))['remote'], True)
+
+    def test_size_limit_is_65536_bytes(self):
+        base = self.raw()
+        self.assertLess(len(base), 65536)
+        exact = base + b' ' * (65536 - len(base))
+        self.assertEqual(len(exact), 65536)
+        self.assertEqual(self.m.read_sidecar(exact), source_sidecar())
+        with self.assertRaises(self.m.Refusal):
+            self.m.read_sidecar(exact + b' ')
+
+    def test_oversized_document_is_refused(self):
+        with self.assertRaises(self.m.Refusal):
+            self.m.read_sidecar(self.raw(label='x' * 70000))
+
+    def test_not_a_json_object_is_refused(self):
+        for text in (b'[]', b'"x"', b'1', b'null', b'true', b'[{"schema": 1}]'):
+            with self.subTest(text=text):
+                with self.assertRaises(self.m.Refusal):
+                    self.m.read_sidecar(text)
+
+    def test_broken_documents_are_refused(self):
+        for text in (b'', b'{', b'{"schema": 1,}', b'\xff\xfe\x00', b'not json'):
+            with self.subTest(text=text):
+                with self.assertRaises(self.m.Refusal):
+                    self.m.read_sidecar(text)
+
+    def test_schema_must_be_the_integer_1(self):
+        for value in ('1', 2, 0, None, 1.5, [1]):
+            with self.subTest(value=value):
+                with self.assertRaises(self.m.Refusal):
+                    self.m.read_sidecar(self.raw(schema=value))
+        data = source_sidecar()
+        del data['schema']
+        with self.assertRaises(self.m.Refusal):
+            self.m.read_sidecar(json.dumps(data).encode('utf-8'))
+
+    def test_unknown_top_level_key_is_refused(self):
+        for key in ('sidecar_path', 'command', 'extra', 'server_path2'):
+            with self.subTest(key=key):
+                with self.assertRaises(self.m.Refusal):
+                    self.m.read_sidecar(self.raw(**{key: 'x'}))
+
+    def test_unknown_key_inside_server_is_refused(self):
+        with self.assertRaises(self.m.Refusal):
+            self.m.read_sidecar(self.raw(server=sidecar_server(extra='x')))
+
+    def test_wrong_types_are_refused(self):
+        cases = {'database': 5, 'label': 3, 'file': ['a'], 'created_utc': 5, 'backup_set_guid': 7, 'server_path': 9,
+                 'size': 'big', 'remote': 'false', 'copy_only': 'yes', 'sha256': 12, 'server': 'local'}
+        for key, value in cases.items():
+            with self.subTest(key=key):
+                with self.assertRaises(self.m.Refusal):
+                    self.m.read_sidecar(self.raw(**{key: value}))
+        for key in ('raw', 'canonical', 'engine_server_name', 'machine_name'):
+            with self.subTest(server_key=key):
+                with self.assertRaises(self.m.Refusal):
+                    self.m.read_sidecar(self.raw(server=sidecar_server(**{key: 5})))
+
+    def test_server_must_be_an_object(self):
+        for value in (None, [], 'x', 3):
+            with self.subTest(value=value):
+                with self.assertRaises(self.m.Refusal):
+                    self.m.read_sidecar(self.raw(server=value))
+
+    def test_paths_in_the_sidecar_are_returned_as_data_not_followed(self):
+        data = self.m.read_sidecar(self.raw(server_path='/h/other/evil.bak'))
+        self.assertEqual(data['server_path'], '/h/other/evil.bak')
+
+
+class MachineNamesMatch(Base):
+    def test_equal_names_ignoring_case(self):
+        self.assertIs(self.m.machine_names_match('LAB01', 'lab01'), True)
+        self.assertIs(self.m.machine_names_match('Lab01', 'LAB01'), True)
+
+    def test_different_names(self):
+        self.assertIs(self.m.machine_names_match('LAB01', 'LAB02'), False)
+        self.assertIs(self.m.machine_names_match('LAB01', 'LAB011'), False)
+
+    def test_both_names_are_cut_to_15_characters(self):
+        self.assertIs(self.m.machine_names_match('ABCDEFGHIJKLMNOPQRS', 'abcdefghijklmno'), True)
+        self.assertIs(self.m.machine_names_match('abcdefghijklmno', 'ABCDEFGHIJKLMNOPQRS'), True)
+        self.assertIs(self.m.machine_names_match('ABCDEFGHIJKLMNO1', 'ABCDEFGHIJKLMNO2'), True)
+        self.assertIs(self.m.machine_names_match('ABCDEFGHIJKLMNO', 'ABCDEFGHIJKLMNP'), False)
+        self.assertIs(self.m.machine_names_match('ABCDEFGHIJKLMN', 'ABCDEFGHIJKLMNO'), False)
+
+    def test_empty_names_never_match(self):
+        self.assertIs(self.m.machine_names_match('', 'LAB01'), False)
+        self.assertIs(self.m.machine_names_match('LAB01', ''), False)
+        self.assertIs(self.m.machine_names_match('', ''), False)
+
+
+class RealFsTests(Base):
+    def setUp(self):
+        super().setUp()
+        holder = tempfile.TemporaryDirectory()
+        self.addCleanup(holder.cleanup)
+        self.root = Path(holder.name).resolve()
+        self.fs = self.m.RealFs()
+
+    def path(self, name):
+        return str(tmp_paths.child(self.root, name))
+
+    def listing(self):
+        return sorted(os.listdir(str(self.root)))
+
+    def no_umask(self):
+        previous = os.umask(0)
+        self.addCleanup(os.umask, previous)
+
+    @unittest.skipIf(os.name == 'nt', 'POSIX file modes')
+    def test_makedirs_creates_the_leaf_with_mode_0700(self):
+        self.no_umask()
+        target = self.path('copies')
+        self.fs.makedirs(target, 0o700)
+        self.assertTrue(os.path.isdir(target))
+        self.assertEqual(os.stat(target).st_mode & 0o777, 0o700)
+
+    def test_makedirs_is_idempotent_and_makes_nested_directories(self):
+        target = str(tmp_paths.descend(self.root, 'a/b/c'))
+        self.fs.makedirs(target, 0o700)
+        self.fs.makedirs(target, 0o700)
+        self.assertTrue(os.path.isdir(target))
+
+    def test_write_atomic_writes_the_bytes_and_leaves_no_temporary_file(self):
+        target = self.path('x.bak.json')
+        self.fs.write_atomic(target, b'{"a": 1}')
+        with open(target, 'rb') as handle:
+            self.assertEqual(handle.read(), b'{"a": 1}')
+        self.assertEqual(self.listing(), ['x.bak.json'])
+
+    @unittest.skipIf(os.name == 'nt', 'POSIX file modes')
+    def test_write_atomic_file_mode_is_0600_even_with_a_permissive_umask(self):
+        self.no_umask()
+        target = self.path('new.json')
+        self.fs.write_atomic(target, b'1')
+        self.assertEqual(os.stat(target).st_mode & 0o777, 0o600)
+        old = self.path('old.json')
+        with open(old, 'wb') as handle:
+            handle.write(b'old')
+        os.chmod(old, 0o644)
+        self.fs.write_atomic(old, b'new')
+        self.assertEqual(os.stat(old).st_mode & 0o777, 0o600)
+
+    def test_write_atomic_replaces_an_existing_file(self):
+        target = self.path('r.json')
+        self.fs.write_atomic(target, b'one')
+        self.fs.write_atomic(target, b'two')
+        with open(target, 'rb') as handle:
+            self.assertEqual(handle.read(), b'two')
+        self.assertEqual(self.listing(), ['r.json'])
+
+    def test_write_atomic_swaps_in_a_complete_file_with_one_replace(self):
+        target = self.path('s.json')
+        self.fs.write_atomic(target, b'old')
+        seen = {}
+        real_replace = os.replace
+
+        def spy(src, dst):
+            with open(dst, 'rb') as handle:
+                seen['target_before'] = handle.read()
+            with open(src, 'rb') as handle:
+                seen['tmp_content'] = handle.read()
+            seen['same_dir'] = os.path.dirname(os.path.abspath(src)) == os.path.dirname(os.path.abspath(dst))
+            seen['listing'] = self.listing()
+            return real_replace(src, dst)
+        with mock.patch('os.replace', side_effect=spy):
+            self.fs.write_atomic(target, b'new content')
+        self.assertEqual(seen['target_before'], b'old')
+        self.assertEqual(seen['tmp_content'], b'new content')
+        self.assertIs(seen['same_dir'], True)
+        self.assertEqual(len(seen['listing']), 2)
+        with open(target, 'rb') as handle:
+            self.assertEqual(handle.read(), b'new content')
+
+    def test_failed_replace_keeps_the_original_and_removes_the_temporary_file(self):
+        target = self.path('k.json')
+        self.fs.write_atomic(target, b'keep')
+        with mock.patch('os.replace', side_effect=OSError('disk error')):
+            with self.assertRaises(OSError):
+                self.fs.write_atomic(target, b'lost')
+        with open(target, 'rb') as handle:
+            self.assertEqual(handle.read(), b'keep')
+        self.assertEqual(self.listing(), ['k.json'])
+
+    def test_failed_first_write_leaves_nothing_behind(self):
+        target = self.path('n.json')
+        with mock.patch('os.replace', side_effect=OSError('disk error')):
+            with self.assertRaises(OSError):
+                self.fs.write_atomic(target, b'x')
+        self.assertEqual(self.listing(), [])
+
+    def test_text_instead_of_bytes_fails_without_leftovers(self):
+        target = self.path('t.json')
+        with self.assertRaises(TypeError):
+            self.fs.write_atomic(target, 'text')
+        self.assertEqual(self.listing(), [])
+
+    def test_write_atomic_creates_a_missing_parent_directory_with_mode_0700(self):
+        self.no_umask()
+        parent = self.path('fresh')
+        self.fs.write_atomic(os.path.join(parent, 'f.json'), b'1')
+        self.assertEqual(os.listdir(parent), ['f.json'])
+        if os.name != 'nt':
+            self.assertEqual(os.stat(parent).st_mode & 0o777, 0o700)
+
+    def test_sha256_of_known_and_chunked_content(self):
+        known = self.path('abc.bin')
+        with open(known, 'wb') as handle:
+            handle.write(b'abc')
+        self.assertEqual(self.fs.sha256(known), hashlib.sha256(b'abc').hexdigest())
+        empty = self.path('empty.bin')
+        with open(empty, 'wb') as handle:
+            handle.write(b'')
+        self.assertEqual(self.fs.sha256(empty), hashlib.sha256(b'').hexdigest())
+        big = self.path('big.bin')
+        data = bytes(bytearray(range(256))) * (10 * 1024 + 7)
+        with open(big, 'wb') as handle:
+            handle.write(data)
+        self.assertGreater(len(data), 2 * 1024 * 1024)
+        self.assertEqual(self.fs.sha256(big), hashlib.sha256(data).hexdigest())
+
+    def test_read_bytes_reads_at_most_limit_plus_one_bytes(self):
+        target = self.path('r.bin')
+        with open(target, 'wb') as handle:
+            handle.write(b'0123456789' * 10)
+        self.assertEqual(self.fs.read_bytes(target, 10), b'0123456789' + b'0')
+        self.assertEqual(len(self.fs.read_bytes(target, 99)), 100)
+        self.assertEqual(len(self.fs.read_bytes(target, 100)), 100)
+        self.assertEqual(len(self.fs.read_bytes(target, 1000)), 100)
+        self.assertLessEqual(len(self.fs.read_bytes(target, 0)), 1)
+
+    def test_read_bytes_of_a_missing_file_raises_oserror(self):
+        with self.assertRaises(OSError):
+            self.fs.read_bytes(self.path('missing.bin'), 10)
+
+    def test_isfile(self):
+        target = self.path('f.bin')
+        with open(target, 'wb') as handle:
+            handle.write(b'1')
+        directory = str(tmp_paths.make_dir(self.root, 'dir'))
+        self.assertIs(self.fs.isfile(target), True)
+        self.assertIs(self.fs.isfile(directory), False)
+        self.assertIs(self.fs.isfile(self.path('missing.bin')), False)
+
+
+FLOW_SHAPE = [('state', False, True), ('identity', False, True), ('header', False, True), ('verify', False, False),
+              ('identity', False, True), ('backup', True, False), ('verify', False, False), ('header', False, True),
+              ('restore', True, False), ('state', False, True)]
+
+
+class RestoreSuccess(RestoreBase):
+    def test_exact_call_order_flags_and_sql(self):
+        result = self.do_restore()
+        self.assertEqual([(c['kind'], c['mutating'], c['table']) for c in self.runner.calls], FLOW_SHAPE)
+        self.assertEqual([c['sql'] for c in self.runner.calls], [
+            self.m.build_state_sql('appdb'), self.m.build_identity_sql(),
+            self.m.build_headeronly_sql(SRC_PATH), self.m.build_verify_sql(SRC_PATH),
+            self.m.build_identity_sql(), self.m.build_backup_sql('appdb', SAFETY_PATH),
+            self.m.build_verify_sql(SAFETY_PATH), self.m.build_headeronly_sql(SAFETY_PATH),
+            self.m.build_restore_batch('appdb', SRC_PATH), self.m.build_state_sql('appdb')])
+        self.assertEqual(result['status'], 'PASS')
+
+    def test_destructive_batch_is_the_only_restore_and_uses_file_1(self):
+        self.do_restore()
+        batch = [c for c in self.runner.calls if c['kind'] == 'restore']
+        self.assertEqual(len(batch), 1)
+        self.assertIn('FILE = 1', batch[0]['sql'])
+        self.assertIn('REPLACE', batch[0]['sql'])
+        self.assertIs(batch[0]['table'], False)
+        self.assertEqual(self.runner.mutating, ['backup', 'restore'])
+
+    def test_timeouts_are_routed_to_the_right_steps(self):
+        self.do_restore(restore_timeout=777.0, timeout=123.0, state_timeout=11.0)
+        by_kind = {}
+        for call in self.runner.calls:
+            by_kind.setdefault(call['kind'], []).append(call['timeout'])
+        self.assertEqual(by_kind['restore'], [777.0])
+        self.assertEqual(by_kind['backup'], [123.0])
+        for call in self.runner.calls:
+            self.assertGreater(call['timeout'], 0)
+
+    def test_result_fields(self):
+        result = self.do_restore()
+        self.assertEqual(result['status'], 'PASS')
+        self.assertEqual(result['database'], 'appdb')
+        self.assertEqual(result['file'], SRC_PATH)
+        self.assertEqual(result['safety_backup_path'], SAFETY_PATH)
+        self.assertIn('ONLINE', str(result['previous_state']))
+        self.assertEqual(result['warnings'], [])
+        self.assertIsInstance(result['coordinator_notice'], str)
+        self.assertTrue(result['coordinator_notice'])
+
+    def test_state_marks_the_run_as_mutated(self):
+        self.do_restore()
+        self.assertIs(self.state.mutated, True)
+
+    def test_safety_backup_is_a_real_backup_with_a_sidecar_and_the_source_is_untouched(self):
+        self.do_restore()
+        self.assertEqual(self.fs.write_log, [SAFETY_PATH + '.json'])
+        written = json.loads(self.fs.written[SAFETY_PATH + '.json'].decode('utf-8'))
+        self.assertEqual(written['label'], 'pre-restore')
+        self.assertEqual(written['database'], 'appdb')
+        self.assertIn('COPY_ONLY', self.runner.calls[5]['sql'])
+        self.assertNotIn(SRC_PATH, self.fs.written)
+        self.assertNotIn(SRC_PATH + '.json', self.fs.written)
+
+    def test_safety_backup_path_is_emitted_before_the_destructive_batch(self):
+        self.do_restore()
+        lines = [(line, kinds) for line, kinds in self.emitted if SAFETY_PATH in line and 'safety backup' in line.lower()]
+        self.assertTrue(lines, self.emitted)
+        for _, kinds in lines:
+            self.assertNotIn('restore', kinds)
+
+    def test_two_restores_on_the_same_day_do_not_overwrite_the_safety_backup(self):
+        fs = RestoreFs()
+        first = self.do_restore(fs=fs, token=FIXED_TOKEN)
+        runner = self.runner
+        second = self.do_restore(fs=fs, token=SECOND_TOKEN)
+        self.assertEqual(first['safety_backup_path'], SAFETY_PATH)
+        self.assertEqual(second['safety_backup_path'], SECOND_SAFETY_PATH)
+        self.assertNotEqual(first['safety_backup_path'], second['safety_backup_path'])
+        self.assertIn(SAFETY_PATH + '.json', fs.written)
+        self.assertIn(SECOND_SAFETY_PATH + '.json', fs.written)
+        self.assertEqual(len(fs.write_log), 2)
+        self.assertEqual(self.runner.calls[5]['sql'], self.m.build_backup_sql('appdb', SECOND_SAFETY_PATH))
+        self.assertEqual(runner.calls[5]['sql'], self.m.build_backup_sql('appdb', SAFETY_PATH))
+
+    def test_sidecar_is_read_with_a_size_limit_and_no_path_from_it_is_touched(self):
+        fs = RestoreFs(sidecar=source_sidecar(server_path='/h/other/evil.bak'))
+        self.do_restore(fs=fs)
+        for entry in fs.reads:
+            self.assertNotIn('/h/other', entry[1])
+        for kind, path in fs.checked:
+            self.assertNotIn('/h/other', path)
+        reads = [entry for entry in fs.reads if entry[0] == 'read_bytes']
+        self.assertEqual(reads, [('read_bytes', SRC_PATH + '.json', 65537)])
+        self.assertEqual(self.runner.calls[2]['sql'], self.m.build_headeronly_sql(SRC_PATH))
+
+    def test_database_name_in_the_sidecar_is_compared_ignoring_case(self):
+        result = self.do_restore(fs=RestoreFs(sidecar=source_sidecar(database='APPDB')))
+        self.assertEqual(result['status'], 'PASS')
+
+    def test_machine_name_comparison_ignores_case_and_the_netbios_limit(self):
+        for engine in ('lab01', 'LAB01'):
+            with self.subTest(engine=engine):
+                out = table(['server_name', 'machine_name', 'instance_name'], [['LAB01', engine, 'NULL']])
+                self.assertEqual(self.do_restore(runner=RestoreRunner(self.m, {'identity': (0, out, '')}))['status'], 'PASS')
+        long_name = 'ABCDEFGHIJKLMNOPQRS'
+        out = table(['server_name', 'machine_name', 'instance_name'], [['LAB01', long_name, 'NULL']])
+        result = self.do_restore(runner=RestoreRunner(self.m, {'identity': (0, out, '')}), machine_name='abcdefghijklmno')
+        self.assertEqual(result['status'], 'PASS')
+
+    def test_default_directory_is_used_when_dir_is_missing(self):
+        path = STATE_DIR + '/' + SRC_NAME
+        result = self.do_restore(fs=RestoreFs(src=path), dir=None, file=path)
+        self.assertEqual(result['safety_backup_path'], STATE_DIR + '/' + SAFETY_NAME)
+
+    def test_windows_paths_use_backslashes(self):
+        fs = RestoreFs(src=WIN_SRC)
+        result = self.do_restore(fs=fs, platform='win32', dir=WIN_DIR, file=WIN_SRC, environ={'LOCALAPPDATA': 'D:\\h\\local'})
+        self.assertEqual(result['safety_backup_path'], WIN_SAFETY)
+        self.assertEqual(self.runner.calls[2]['sql'], self.m.build_headeronly_sql(WIN_SRC))
+        self.assertEqual(self.runner.calls[8]['sql'], self.m.build_restore_batch('appdb', WIN_SRC))
+
+    def test_full_recovery_model_gives_a_warning_and_still_restores(self):
+        runner = RestoreRunner(self.m, {'state': (0, state_out(recovery='FULL'), '')})
+        result = self.do_restore(runner=runner)
+        self.assertEqual(result['status'], 'PASS')
+        self.assertEqual(len(result['warnings']), 1)
+        self.assertEqual(runner.kinds, [kind for kind, _, _ in FLOW_SHAPE])
+
+    def test_no_safety_backup_skips_the_copy_and_warns(self):
+        result = self.do_restore(no_safety_backup=True)
+        self.assertEqual(self.runner.kinds, ['state', 'identity', 'header', 'verify', 'restore', 'state'])
+        self.assertEqual(self.runner.mutating, ['restore'])
+        self.assertIsNone(result['safety_backup_path'])
+        self.assertEqual(len(result['warnings']), 1)
+        self.assertEqual(self.fs.written, {})
+        for line, _ in self.emitted:
+            self.assertNotIn(SAFETY_PATH, line)
+
+
+class RestoreValidationRefusals(RestoreBase):
+    def test_remote_hosts_are_always_refused(self):
+        for server in ('remote-host', 'dbhost.example,1433', 'localhost.evil.example', '10.1.2.3', 'tcp:localhost'):
+            with self.subTest(server=server):
+                self.assert_blocked(server=server)
+
+    def test_confirm_must_equal_the_database_exactly(self):
+        for confirm in (None, '', 'APPDB', 'appdb ', 'other', 'appd'):
+            with self.subTest(confirm=confirm):
+                self.assert_blocked(confirm=confirm)
+
+    def test_bad_database_names(self):
+        for name in ('master', 'tempdb', "a'b", 'a]b', '', 'm\u0430ster'):
+            with self.subTest(name=ascii(name)):
+                self.assert_blocked(database=name, confirm=name)
+
+    def test_file_outside_the_backup_directory(self):
+        for path in ('/h/other/' + SRC_NAME, LOCAL_DIR + '/sub/' + SRC_NAME, '/h/' + SRC_NAME):
+            with self.subTest(path=path):
+                _, message = self.assert_blocked(file=path, fs_args={'src': path})
+                self.assertIn('backup directory', message)
+
+    def test_file_outside_the_default_directory(self):
+        self.assert_blocked(dir=None, file=SRC_PATH)
+
+    def test_traversal_in_the_file_path(self):
+        self.assert_blocked(file=LOCAL_DIR + '/../other/' + SRC_NAME, fs_args={'src': LOCAL_DIR + '/../other/' + SRC_NAME})
+
+    def test_not_a_regular_file(self):
+        runner, fs = RestoreRunner(self.m), RestoreFs()
+        fs.files = set()
+        with self.assertRaises(self.m.Refusal):
+            self.do_restore(runner=runner, fs=fs)
+        self.assertEqual(runner.calls, [])
+        self.assertEqual((fs.made, fs.written), ([], {}))
+        runner2, fs2 = RestoreRunner(self.m), RestoreFs()
+        fs2.files = set()
+        code, _ = self.do_code(runner=runner2, fs=fs2)
+        self.assertEqual(code, 2)
+
+    def test_bad_server_paths(self):
+        for path in ("/h/bk/it's.bak", 'bk/' + SRC_NAME, SRC_NAME, '/h/bk/a;b.bak', '/h/bk/a\nb.bak', '/h/bk/' + SRC_NAME + '.'):
+            with self.subTest(path=ascii(path)):
+                self.assert_blocked(file=path, fs_args={'src': path})
+
+    def test_bad_windows_paths(self):
+        for path in ('\\\\h\\share\\bk\\' + SRC_NAME, '\\\\?\\D:\\h\\bk\\' + SRC_NAME, 'bk\\' + SRC_NAME, WIN_DIR + '\\NUL.bak',
+                     WIN_DIR + '\\' + SRC_NAME + ':ads', "D:\\h\\bk\\it's.bak"):
+            with self.subTest(path=path):
+                self.assert_blocked(file=path, platform='win32', dir=WIN_DIR, fs_args={'src': path}, environ={'LOCALAPPDATA': 'D:\\h\\local'})
+
+    def test_backup_directory_inside_a_repository(self):
+        runner, fs = RestoreRunner(self.m), RestoreFs(git_dirs=['/h/bk/.git'])
+        with self.assertRaises(self.m.Refusal):
+            self.do_restore(runner=runner, fs=fs)
+        self.assertEqual(runner.calls, [])
+        self.assertEqual((fs.made, fs.written), ([], {}))
+
+    def test_bad_backup_directory(self):
+        for directory in ('rel/dir', "/h/o'x", '/h/../bk'):
+            with self.subTest(directory=directory):
+                self.assert_blocked(dir=directory, file=directory + '/' + SRC_NAME, fs_args={'src': directory + '/' + SRC_NAME})
+
+    def test_refusal_message_has_no_secret(self):
+        pw = fake_password()
+        environ = {'HOME': '/h/user', 'SQLCMDUSER': 'lab_login', 'SQLCMDPASSWORD': pw}
+        _, message = self.assert_blocked(environ=environ, auth='env', confirm='other')
+        self.assertNotIn(pw, message)
+        self.assertNotIn('lab_login', message)
+
+
+class RestoreSidecarChecks(RestoreBase):
+    def test_missing_sidecar_is_refused_before_any_runner_call(self):
+        _, message = self.assert_blocked(fs_args={'sidecar': NO_SIDECAR})
+        self.assertIn('sidecar', message.lower())
+
+    def test_invalid_sidecars_are_refused_before_any_runner_call(self):
+        bad = {'not json': b'{', 'not an object': b'[]', 'oversized': json.dumps(source_sidecar(label='x' * 70000)).encode('utf-8'),
+               'unknown key': json.dumps(source_sidecar(extra='x')).encode('utf-8'),
+               'wrong schema': json.dumps(source_sidecar(schema=2)).encode('utf-8')}
+        for name, blob in bad.items():
+            with self.subTest(case=name):
+                self.assert_blocked(fs_args={'sidecar': blob})
+
+    def test_sidecar_of_another_database(self):
+        self.assert_blocked(fs_args={'sidecar': source_sidecar(database='otherdb')})
+
+    def test_sidecar_of_another_server(self):
+        for server in (sidecar_server(canonical='remote-host'), sidecar_server(canonical='local:SQLEXPRESS')):
+            with self.subTest(canonical=server['canonical']):
+                _, message = self.assert_blocked(fs_args={'sidecar': source_sidecar(server=server)})
+                self.assertIn('different server', message)
+
+    def test_sidecar_with_another_size(self):
+        self.assert_blocked(fs_args={'sidecar': source_sidecar(size=BAK_SIZE + 1)})
+        self.assert_blocked(fs_args={'sidecar': source_sidecar(size=None)})
+
+    def test_sidecar_naming_another_file(self):
+        self.assert_blocked(fs_args={'sidecar': source_sidecar(file='other-20260101-000000-abcdef.bak')})
+
+    def test_allow_missing_sidecar_proceeds_with_a_warning_and_compares_with_the_target_engine(self):
+        result = self.do_restore(fs=RestoreFs(sidecar=NO_SIDECAR), allow_missing_sidecar=True)
+        self.assertEqual(result['status'], 'PASS')
+        self.assertEqual(len(result['warnings']), 1)
+        self.assertEqual(self.runner.kinds, [kind for kind, _, _ in FLOW_SHAPE])
+
+    def test_allow_missing_sidecar_still_refuses_a_header_from_another_engine(self):
+        for column, value in (('ServerName', 'OTHERSRV'), ('MachineName', 'OTHERBOX')):
+            with self.subTest(column=column):
+                runner, _ = self.assert_blocked(script={'header': (0, restore_header_out(**{column: value}), '')}, no_runner=False,
+                                                fs_args={'sidecar': NO_SIDECAR}, allow_missing_sidecar=True)
+                self.assertEqual(runner.kinds, ['state', 'identity', 'header'])
+
+    def test_allow_machine_mismatch_turns_the_header_mismatch_into_a_warning(self):
+        for column, value in (('ServerName', 'OTHERSRV'), ('MachineName', 'OTHERBOX')):
+            with self.subTest(column=column):
+                runner = RestoreRunner(self.m, {'header': (0, restore_header_out(**{column: value}), '')})
+                result = self.do_restore(runner=runner, fs=RestoreFs(sidecar=NO_SIDECAR), allow_missing_sidecar=True, allow_machine_mismatch=True)
+                self.assertEqual(result['status'], 'PASS')
+                self.assertGreaterEqual(len(result['warnings']), 2)
+
+
+class RestoreEngineChecks(RestoreBase):
+    def test_database_that_does_not_exist_is_refused(self):
+        runner, message = self.assert_blocked(script={'state': (0, table(STATE_COLUMNS, []), '')}, no_runner=False)
+        self.assertEqual(runner.kinds, ['state'])
+        self.assertIn('non-existent', message)
+
+    def test_database_that_is_not_online_is_refused(self):
+        for state in ('OFFLINE', 'RESTORING', 'SUSPECT', 'RECOVERING', 'EMERGENCY', 'RECOVERY_PENDING'):
+            with self.subTest(state=state):
+                runner, message = self.assert_blocked(script={'state': (0, state_out(state=state), '')}, no_runner=False)
+                self.assertEqual(runner.kinds, ['state'])
+                self.assertIn(state, message)
+
+    def test_machine_name_of_the_engine_must_match_this_machine(self):
+        out = table(['server_name', 'machine_name', 'instance_name'], [['LAB01', 'OTHERBOX', 'NULL']])
+        runner, _ = self.assert_blocked(script={'identity': (0, out, '')}, no_runner=False)
+        self.assertEqual(runner.kinds, ['state', 'identity'])
+
+    def test_empty_local_machine_name_is_a_mismatch(self):
+        runner, _ = self.assert_blocked(no_runner=False, machine_name='')
+        self.assertEqual(runner.kinds, ['state', 'identity'])
+
+    def test_allow_machine_mismatch_proceeds_with_a_warning(self):
+        out = table(['server_name', 'machine_name', 'instance_name'], [['LAB01', 'OTHERBOX', 'NULL']])
+        baseline = self.do_restore()
+        result = self.do_restore(runner=RestoreRunner(self.m, {'identity': (0, out, '')}), allow_machine_mismatch=True)
+        self.assertEqual(result['status'], 'PASS')
+        self.assertGreater(len(result['warnings']), len(baseline['warnings']))
+
+    def header_refusal(self, header):
+        runner, message = self.assert_blocked(script={'header': (0, header, '')}, no_runner=False)
+        self.assertEqual(runner.kinds, ['state', 'identity', 'header'])
+        return message
+
+    def test_two_backup_sets_are_refused(self):
+        row = list(RESTORE_HEADER_ROW)
+        message = self.header_refusal(table(RESTORE_HEADER_COLUMNS, [row, row]))
+        self.assertIn('multiple backup sets', message)
+
+    def test_header_with_no_rows_stops_before_any_mutation(self):
+        runner = self.assert_no_mutation_failure({'header': (0, table(RESTORE_HEADER_COLUMNS, []), '')}, ['state', 'identity', 'header'],
+                                                 exc=(self.m.Refusal, self.m.SqlFailure))
+        self.assertEqual(runner.mutating, [])
+
+    def test_backup_type_other_than_full_is_refused(self):
+        for value in ('2', '5', '0'):
+            with self.subTest(value=value):
+                self.header_refusal(restore_header_out(BackupType=value))
+
+    def test_backup_of_another_database_is_refused(self):
+        message = self.header_refusal(restore_header_out(DatabaseName='otherdb'))
+        self.assertIn('different database', message)
+
+    def test_header_database_is_compared_ignoring_case(self):
+        out = restore_header_out(DatabaseName='APPDB')
+        self.assertEqual(self.do_restore(runner=RestoreRunner(self.m, {'header': (0, out, '')}))['status'], 'PASS')
+
+    def test_header_identity_must_match_the_sidecar(self):
+        for column, value in (('ServerName', 'OTHERSRV'), ('MachineName', 'OTHERBOX'),
+                              ('BackupSetGUID', '99999999-2222-3333-4444-555555555555'), ('FirstLSN', '101'), ('LastLSN', '201')):
+            with self.subTest(column=column):
+                self.header_refusal(restore_header_out(**{column: value}))
+
+    def test_field_with_a_separator_is_a_failure_before_mutation(self):
+        out = table(RESTORE_HEADER_COLUMNS, [['a|b'] + RESTORE_HEADER_ROW[1:]])
+        self.assert_no_mutation_failure({'header': (0, out, '')}, ['state', 'identity', 'header'])
+        code, _ = self.do_code(runner=RestoreRunner(self.m, {'header': (0, out, '')}))
+        self.assertEqual(code, 1)
+
+    def test_header_command_failure_stops_before_mutation(self):
+        self.assert_no_mutation_failure({'header': (1, '', ERROR_OUTPUT)}, ['state', 'identity', 'header'])
+
+    def test_verifyonly_failure_is_exit_1_and_never_touches_the_database(self):
+        for item in ((1, '', ERROR_OUTPUT), (0, 'Msg 3241, Level 16, State 5\nThe media family is incorrectly formed.', '')):
+            with self.subTest(item=item):
+                self.assert_no_mutation_failure({'verify': item}, ['state', 'identity', 'header', 'verify'])
+        code, _ = self.do_code(runner=RestoreRunner(self.m, {'verify': (1, '', ERROR_OUTPUT)}))
+        self.assertEqual(code, 1)
+
+
+class RestoreSafetyBackup(RestoreBase):
+    def stops_before_restore(self, script):
+        runner = RestoreRunner(self.m, script)
+        with self.assertRaises(self.m.SqlFailure):
+            self.do_restore(runner=runner)
+        self.assertNotIn('restore', runner.kinds)
+        self.assertEqual(runner.mutating, ['backup'])
+        self.assertIs(self.state.mutated, True)
+        code, _ = self.do_code(runner=RestoreRunner(self.m, script))
+        self.assertEqual(code, 1)
+        return runner
+
+    def test_safety_backup_failure_stops_the_restore(self):
+        runner = self.stops_before_restore({'backup': (1, '', ERROR_OUTPUT)})
+        self.assertEqual(runner.kinds[-1], 'backup')
+
+    def test_safety_backup_error_text_with_rc_zero_stops_the_restore(self):
+        self.stops_before_restore({'backup': (0, BATCH_ERROR, '')})
+
+    def test_safety_verify_failure_stops_the_restore(self):
+        runner = self.stops_before_restore({'verify': [(0, '', ''), (1, '', ERROR_OUTPUT)]})
+        self.assertEqual(runner.kinds[-1], 'verify')
+
+    def test_safety_header_failure_stops_the_restore(self):
+        runner = self.stops_before_restore({'header': [(0, restore_header_out(), ''), (1, '', ERROR_OUTPUT)]})
+        self.assertEqual(runner.kinds[-1], 'header')
+
+
+class RestoreDryRun(RestoreBase):
+    def attempt(self, **kw):
+        runner, fs = RestoreRunner(self.m), RestoreFs()
+        with self.assertRaises(self.m.NotRun) as ctx:
+            self.do_restore(runner=runner, fs=fs, dry_run=True, **kw)
+        return runner, fs, ctx.exception
+
+    def test_dry_run_calls_nothing_and_writes_nothing(self):
+        runner, fs, exc = self.attempt()
+        self.assertEqual(runner.calls, [])
+        self.assertEqual((fs.made, fs.written, fs.write_log, fs.sha_calls), ([], {}, [], []))
+        self.assertIs(self.state.mutated, False)
+
+    def test_dry_run_result_is_not_run_with_a_plan(self):
+        _, _, exc = self.attempt()
+        self.assertEqual(exc.result['status'], 'NOT_RUN')
+        self.assertTrue(exc.result['plan'])
+        self.assertGreaterEqual(len(exc.result['plan']), 3)
+
+    def test_dry_run_exit_code_is_3(self):
+        code, _ = self.do_code(runner=RestoreRunner(self.m), fs=RestoreFs(), dry_run=True)
+        self.assertEqual(code, 3)
+
+    def test_dry_run_still_validates_first(self):
+        self.assert_blocked(dry_run=True, confirm='other')
+        self.assert_blocked(dry_run=True, fs_args={'sidecar': NO_SIDECAR})
+        self.assert_blocked(dry_run=True, server='remote-host')
+
+    def test_dry_run_with_no_safety_backup(self):
+        runner, _, exc = self.attempt(no_safety_backup=True)
+        self.assertEqual(runner.calls, [])
+        self.assertEqual(exc.result['status'], 'NOT_RUN')
+
+
+class RestoreDestructiveFailures(RestoreBase):
+    def failing(self, restore_item, state_item, **kw):
+        runner = RestoreRunner(self.m, {'restore': [restore_item], 'state': [(0, state_out(), ''), state_item]})
+        kw.setdefault('state_timeout', 11.0)
+        with self.assertRaises(self.m.SqlFailure) as ctx:
+            self.do_restore(runner=runner, **kw)
+        return runner, str(ctx.exception)
+
+    def assert_shape(self, runner, message, safety=SAFETY_PATH):
+        kinds = runner.kinds
+        position = kinds.index('restore')
+        self.assertEqual(kinds[position + 1:], ['state'])
+        last = runner.calls[-1]
+        self.assertEqual(last['timeout'], 11.0)
+        self.assertIs(last['mutating'], False)
+        self.assertIs(last['table'], True)
+        self.assertEqual(last['sql'], self.m.build_state_sql('appdb'))
+        self.assertEqual(runner.mutating, ['backup', 'restore'])
+        for call in runner.calls:
+            if call['kind'] != 'restore':
+                self.assertNotIn('MULTI_USER', call['sql'])
+        if safety:
+            self.assertIn(safety, message)
+        self.assertIs(self.state.mutated, True)
+
+    def test_rc_1_with_msg_3013_reports_the_actual_restoring_state(self):
+        runner, message = self.failing((1, BATCH_ERROR, ''), (0, state_out('RESTORING'), ''))
+        self.assert_shape(runner, message)
+        self.assertIn('RESTORING', message)
+
+    def test_error_line_with_rc_0_is_a_failure_too(self):
+        for item in ((0, BATCH_ERROR, ''), (0, '', BATCH_ERROR), (1, '', BATCH_ERROR)):
+            with self.subTest(item=item):
+                runner, message = self.failing(item, (0, state_out('RESTORING'), ''))
+                self.assert_shape(runner, message)
+                self.assertIn('RESTORING', message)
+
+    def test_foreign_session_holding_single_user_is_reported(self):
+        runner, message = self.failing((1, BATCH_ERROR, ''), (0, state_out('ONLINE', 'SINGLE_USER'), ''))
+        self.assert_shape(runner, message)
+        self.assertIn('SINGLE_USER', message)
+
+    def test_database_back_online_after_the_failure_is_still_a_failure(self):
+        runner, message = self.failing((1, BATCH_ERROR, ''), (0, state_out(), ''))
+        self.assert_shape(runner, message)
+        self.assertIn('ONLINE', message)
+
+    def test_unreadable_state_is_reported_as_unknown(self):
+        items = {'rc 1': (1, '', ERROR_OUTPUT), 'no row': (0, table(STATE_COLUMNS, []), ''),
+                 'timeout': subprocess.TimeoutExpired('sqlcmd', 11.0), 'oserror': OSError('gone')}
+        for name, item in items.items():
+            with self.subTest(case=name):
+                runner, message = self.failing((1, BATCH_ERROR, ''), item)
+                self.assert_shape(runner, message)
+                self.assertIn('unknown', message)
+
+    def test_severity_20_or_more_only_reads_the_state(self):
+        runner, message = self.failing((1, FATAL_ERROR, ''), (0, state_out('RESTORING'), ''))
+        self.assert_shape(runner, message)
+        self.assertEqual(runner.mutating, ['backup', 'restore'])
+
+    def test_timeout_keyboard_interrupt_and_oserror_in_the_destructive_step(self):
+        pw = fake_password()
+        raised = {'timeout': subprocess.TimeoutExpired(['sqlcmd', '-P', pw], 3600.0), 'interrupt': KeyboardInterrupt(), 'oserror': OSError('pipe broke')}
+        for name, exc in raised.items():
+            with self.subTest(exc=name):
+                runner, message = self.failing(exc, (0, state_out('RESTORING'), ''))
+                self.assert_shape(runner, message)
+                self.assertIn('RESTORING', message)
+                self.assertNotIn(pw, message)
+                self.assertRegex(message, UNCERTAIN)
+
+    def test_exit_code_is_1_with_the_changed_state_line(self):
+        raised = {'timeout': subprocess.TimeoutExpired('sqlcmd', 3600.0), 'interrupt': KeyboardInterrupt(), 'oserror': OSError('x')}
+        for name, exc in raised.items():
+            with self.subTest(exc=name):
+                runner = RestoreRunner(self.m, {'restore': [exc], 'state': [(0, state_out(), ''), (0, state_out('RESTORING'), '')]})
+                code, text = self.do_code(runner=runner)
+                self.assertEqual(code, 1)
+                self.assertIn('stan bazy mógł się zmienić', text)
+                self.assertIn(SAFETY_PATH, text)
+        runner = RestoreRunner(self.m, {'restore': [(1, BATCH_ERROR, '')], 'state': [(0, state_out(), ''), (0, state_out('RESTORING'), '')]})
+        code, text = self.do_code(runner=runner)
+        self.assertEqual(code, 1)
+        self.assertIn('stan bazy mógł się zmienić', text)
+
+    def test_second_interrupt_while_reading_the_state_gives_up_without_retry(self):
+        runner, message = self.failing(KeyboardInterrupt(), KeyboardInterrupt())
+        self.assert_shape(runner, message)
+        self.assertIn('unknown', message)
+        self.assertEqual(runner.kinds.count('state'), 2)
+        code, text = self.do_code(runner=RestoreRunner(self.m, {'restore': [KeyboardInterrupt()],
+                                                                  'state': [(0, state_out(), ''), KeyboardInterrupt()]}))
+        self.assertEqual(code, 1)
+        self.assertIn(SAFETY_PATH, text)
+
+    def test_failure_without_a_safety_backup_names_no_safety_path(self):
+        runner, message = self.failing((1, BATCH_ERROR, ''), (0, state_out('RESTORING'), ''), no_safety_backup=True)
+        self.assertEqual(runner.kinds[runner.kinds.index('restore') + 1:], ['state'])
+        self.assertEqual(runner.mutating, ['restore'])
+        self.assertNotIn(SAFETY_PATH, message)
+        self.assertIn('RESTORING', message)
+
+    def test_state_after_a_successful_batch_must_be_online_and_multi_user(self):
+        for name, item in {'single user': (0, state_out('ONLINE', 'SINGLE_USER'), ''), 'restoring': (0, state_out('RESTORING'), ''),
+                           'offline': (0, state_out('OFFLINE'), ''), 'unreadable': (1, '', ERROR_OUTPUT)}.items():
+            with self.subTest(case=name):
+                runner = RestoreRunner(self.m, {'state': [(0, state_out(), ''), item]})
+                with self.assertRaises(self.m.SqlFailure) as ctx:
+                    self.do_restore(runner=runner)
+                self.assertEqual(runner.kinds[-1], 'state')
+                self.assertEqual(runner.kinds.count('restore'), 1)
+                self.assertEqual(runner.mutating, ['backup', 'restore'])
+                expected = {'single user': 'SINGLE_USER', 'restoring': 'RESTORING', 'offline': 'OFFLINE'}.get(name)
+                if expected:
+                    self.assertIn(expected, str(ctx.exception))
+
+
+class RestoreGuardCodes(RestoreBase):
+    def test_unexpected_exception_before_any_mutation_is_blocked(self):
+        for kind in ('state', 'identity', 'header', 'verify'):
+            with self.subTest(kind=kind):
+                runner = RestoreRunner(self.m, {kind: [RuntimeError('internal')]})
+                code, _ = self.do_code(runner=runner)
+                self.assertEqual(code, 2)
+                self.assertIs(self.state.mutated, False)
+                self.assertEqual(runner.mutating, [])
+
+    def test_unexpected_exception_in_the_safety_backup_is_a_failure(self):
+        cases = {'backup': {'backup': [RuntimeError('internal')]}, 'verify': {'verify': [(0, '', ''), RuntimeError('internal')]},
+                 'header': {'header': [(0, restore_header_out(), ''), RuntimeError('internal')]}}
+        for name, script in cases.items():
+            with self.subTest(step=name):
+                runner = RestoreRunner(self.m, script)
+                code, text = self.do_code(runner=runner)
+                self.assertEqual(code, 1)
+                self.assertIs(self.state.mutated, True)
+                self.assertNotIn('restore', runner.kinds)
+                self.assertIn('stan bazy mógł się zmienić', text)
+
+    def test_unexpected_exception_after_the_batch_is_a_failure(self):
+        runner = RestoreRunner(self.m, {'state': [(0, state_out(), ''), RuntimeError('internal')]})
+        code, _ = self.do_code(runner=runner, no_safety_backup=True)
+        self.assertEqual(code, 1)
+        self.assertIs(self.state.mutated, True)
+
+    def test_mutation_starts_only_at_the_first_mutating_call(self):
+        runner = RestoreRunner(self.m, {'verify': (1, '', ERROR_OUTPUT)})
+        self.do_code(runner=runner)
+        self.assertIs(self.state.mutated, False)
+        runner = RestoreRunner(self.m)
+        self.do_code(runner=runner, no_safety_backup=True)
+        self.assertIs(self.state.mutated, True)
+
+    def test_success_exit_code_is_0(self):
+        state = self.m.RunState()
+        err = io.StringIO()
+        result = []
+        code = self.m.run_guarded(lambda: result.append(self.do_restore(state=state)), state, err, self.m.Masker([]))
+        self.assertEqual(code, 0)
+        self.assertEqual(err.getvalue(), '')
+
+
+class RestoreSecrets(RestoreBase):
+    def setUp(self):
+        super().setUp()
+        self.pw = fake_password()
+        self.environ = {'HOME': '/h/user', 'XDG_STATE_HOME': '/h/state', 'SQLCMDUSER': 'lab_login', 'SQLCMDPASSWORD': self.pw}
+        self.masker = self.m.Masker([self.pw])
+
+    def test_password_is_absent_from_a_successful_run(self):
+        runner = RestoreRunner(self.m, masker=self.masker)
+        result = self.do_restore(runner=runner, environ=self.environ, auth='env')
+        text = json.dumps(result)
+        for forbidden in (self.pw, 'SQLCMDPASSWORD', 'lab_login'):
+            self.assertNotIn(forbidden, text)
+            self.assertNotIn(forbidden, result['coordinator_notice'])
+            for line, _ in self.emitted:
+                self.assertNotIn(forbidden, line)
+
+    def test_password_echoed_by_the_engine_does_not_reach_messages(self):
+        leaky = BATCH_ERROR + '\nLogin failed for user lab_login with ' + self.pw
+        for restore_item in ((1, leaky, ''), (1, '', leaky)):
+            with self.subTest(item=restore_item[1:]):
+                runner = RestoreRunner(self.m, {'restore': [restore_item], 'state': [(0, state_out(), ''), (0, state_out('RESTORING'), '')]},
+                                       masker=self.masker)
+                code, text = self.do_code(runner=runner, environ=self.environ, auth='env')
+                self.assertEqual(code, 1)
+                self.assertNotIn(self.pw, text)
+                for line, _ in self.emitted:
+                    self.assertNotIn(self.pw, line)
+        runner = RestoreRunner(self.m, {'verify': [(1, leaky, '')]}, masker=self.masker)
+        with self.assertRaises(self.m.SqlFailure) as ctx:
+            self.do_restore(runner=runner, environ=self.environ, auth='env')
+        self.assertNotIn(self.pw, str(ctx.exception))
+
+    def test_password_is_absent_from_the_dry_run_plan(self):
+        with self.assertRaises(self.m.NotRun) as ctx:
+            self.do_restore(environ=self.environ, auth='env', dry_run=True)
+        self.assertNotIn(self.pw, json.dumps(ctx.exception.result))
+        self.assertNotIn('lab_login', json.dumps(ctx.exception.result))
+
+
+class RestoreNoticeAndFormat(RestoreBase):
+    def test_restore_notice_has_the_required_elements_in_polish(self):
+        result = self.do_restore(server='localhost', runner=RestoreRunner(self.m, {'state': (0, state_out(recovery='FULL'), '')}))
+        text = self.m.coordinator_notice(result, 'restore')
+        self.assertIsInstance(text, str)
+        for needed in ('appdb', 'localhost', SRC_PATH, SAFETY_PATH, '2026-11-22'):
+            self.assertIn(needed, text)
+        self.assertRegex(text, r'[Pp]rzywr|[Cc]ofni|[Kk]opi')
+        self.assertIn('restore', text)
+        for warning in result['warnings']:
+            self.assertIn(warning, text)
+
+    def test_restore_notice_has_no_secrets(self):
+        pw = fake_password()
+        environ = {'HOME': '/h/user', 'SQLCMDUSER': 'lab_login', 'SQLCMDPASSWORD': pw}
+        result = self.do_restore(environ=environ, auth='env')
+        text = self.m.coordinator_notice(result, 'restore')
+        for forbidden in (pw, 'lab_login', 'SQLCMDPASSWORD'):
+            self.assertNotIn(forbidden, text)
+
+    def test_restore_notice_without_a_safety_backup(self):
+        result = self.do_restore(no_safety_backup=True)
+        text = self.m.coordinator_notice(result, 'restore')
+        self.assertIsInstance(text, str)
+        self.assertNotIn(SAFETY_PATH, text)
+        for warning in result['warnings']:
+            self.assertIn(warning, text)
+
+    def test_text_format_of_a_restore_result(self):
+        result = self.do_restore()
+        text = self.m.format_result(result, False, self.m.Masker([]))
+        for needed in ('PASS', SRC_PATH, SAFETY_PATH):
+            self.assertIn(needed, text)
+
+    def test_json_format_of_a_restore_result(self):
+        result = self.do_restore(runner=RestoreRunner(self.m, {'state': (0, state_out(recovery='FULL'), '')}))
+        loaded = json.loads(self.m.format_result(result, True, self.m.Masker([])))
+        for key in ('status', 'database', 'file', 'safety_backup_path', 'previous_state', 'warnings', 'coordinator_notice'):
+            self.assertEqual(loaded[key], result[key])
+        self.assertIsInstance(loaded['warnings'], list)
+        self.assertTrue(loaded['warnings'])
+
+    def test_json_format_with_a_null_safety_backup_and_masking(self):
+        pw = fake_password()
+        result = self.do_restore(no_safety_backup=True)
+        result['warnings'] = list(result['warnings']) + ['note ' + pw]
+        loaded = json.loads(self.m.format_result(result, True, self.m.Masker([pw])))
+        self.assertIsNone(loaded['safety_backup_path'])
+        self.assertNotIn(pw, json.dumps(loaded))
+
+    def test_format_of_a_dry_run_result(self):
+        with self.assertRaises(self.m.NotRun) as ctx:
+            self.do_restore(dry_run=True)
+        text = self.m.format_result(ctx.exception.result, False, self.m.Masker([]))
+        self.assertIn('NOT_RUN', text)
+        loaded = json.loads(self.m.format_result(ctx.exception.result, True, self.m.Masker([])))
+        self.assertEqual(loaded['status'], 'NOT_RUN')
+
 if __name__ == '__main__':
     unittest.main()
