@@ -1,10 +1,10 @@
 /**
  * Purpose: Measure element boxes and computed styles of reference/candidate page pairs and check the rendered shape (pixel diff of the element screenshot); prints PASS, FAIL or UNVERIFIED per pair.
  * Usage: node measure.mjs [--selftest] [--json] [--allow-origin <pattern>]... [--allow-trace] --config <file.json> <outDir>
- * Inputs: JSON configuration (version 1: viewport, tolerancePx, sizeTolerancePx, colorTolerance, maxPct, styleProps, secretEnv, pairs with reference/candidate url+selector, deviations with a mandatory reason, masks);
+ * Inputs: JSON configuration (version 1: viewport, tolerancePx, sizeTolerancePx, colorTolerance, maxPct, shiftPx, shapeAlign, styleProps, secretEnv, pairs with reference/candidate url+selector, deviations with a mandatory reason, masks/masksReference/masksCandidate, acceptShape with a reason);
  *   url is http(s) or a path relative to the configuration directory; outDir is relative to the configuration directory; env UI_VERIFY_CACHE_DIR, UI_VERIFY_CHROME, UI_VERIFY_NO_SANDBOX, UI_VERIFY_SECRET_ENV.
  * Outputs: <outDir>/measure.json, <outDir>/measure.txt and <outDir>/<id>.diff.png for pairs whose shape FAILs; stdout carries the text report (or the JSON with --json).
- * Exit codes: 0 PASS, 1 FAIL (box, style or shape difference), 2 usage/configuration/adapter/internal error, 3 missing dependencies or Chrome, or UNVERIFIED (element not found).
+ * Exit codes: 0 PASS, 1 FAIL (box, style or shape difference), 2 usage/configuration/adapter/internal error, 3 missing dependencies or Chrome, or UNVERIFIED (element not found, shape skipped, page-state-mismatch).
  * Dependencies: playwright-core 1.65.0, pngjs 7.0.0, pixelmatch 8.0.0 (from the skill cache, see lib/deps.mjs), a Chrome/Chromium browser; Node >= 20.11 (tested on 22).
  * Limits: one element per side (first match), whole images in memory; shape is checked only when box sizes agree within sizeTolerancePx; --allow-trace is accepted but measure stores no trace.
  * Security: only localhost, files under the configuration directory and --allow-origin hosts are opened; writes only under outDir inside the configuration directory; output is masked for listed secrets.
@@ -12,17 +12,16 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { parseArgs, runSelftest } from './lib/cli.mjs';
 import { chromeMissing, findChrome } from './lib/chrome.mjs';
 import { DepsError, explainMissing } from './lib/deps.mjs';
 import { formatReport, MeasureError, runMeasure, toJson, validateConfig } from './lib/measure-core.mjs';
-import { createMasker, createSink, collectSecretsFromEnv } from './lib/out.mjs';
+import { createMasker, createSink, collectSecretsFromEnv, setGuardMasker } from './lib/out.mjs';
 import { createPlaywrightAdapter, launchChromium, makeWhich } from './lib/playwright-adapter.mjs';
 import { cropToCommon, diffImages } from './lib/pixels.mjs';
 import { PolicyError, resolveInside } from './lib/policy.mjs';
 import { decodePng, encodePng, loadImaging, makePixelmatchFlagger, resolveCacheDir, skillDirOf } from './lib/runtime.mjs';
-import { EXIT, installGuards } from './lib/verdict.mjs';
+import { EXIT, installGuards, isMain } from './lib/verdict.mjs';
 
 const SPEC = {
   string: ['config'],
@@ -152,13 +151,13 @@ function readConfig(configPath) {
   }
 }
 
-async function writeOutputs({ result, masker, sink, outRel, PNG }) {
+async function writeOutputs({ result, masker, sink, outRel, PNG, config }) {
   const json = `${JSON.stringify(toJson(result, masker), null, 2)}\n`;
   await sink.writeFile(path.join(outRel, 'measure.json'), json);
   await sink.writeFile(path.join(outRel, 'measure.txt'), formatReport(result, masker));
   for (const p of result.pairs) {
     if (p.shape.verdict !== 'FAIL' || !p.diff || !p.diff.flags) continue;
-    const { a } = cropToCommon(p.diff.reference, p.diff.candidate);
+    const { a } = cropToCommon(p.diff.reference, p.diff.candidate, { align: config.shapeAlign });
     await sink.writeFile(path.join(outRel, `${p.id}.diff.png`), encodePng(PNG, diffPng(a, p.diff.flags)));
   }
 }
@@ -166,6 +165,7 @@ async function writeOutputs({ result, masker, sink, outRel, PNG }) {
 export async function main(argv, env, io) {
   const envNames = String(env.UI_VERIFY_SECRET_ENV || '').split(',').map((s) => s.trim()).filter(Boolean);
   let masker = createMasker({ secrets: collectSecretsFromEnv(env, envNames) });
+  setGuardMasker(masker);
   let sink = createSink({ masker, fs, root: io.cwd, stdout: io.stdout, stderr: io.stderr });
   let browser = null;
   try {
@@ -187,6 +187,8 @@ export async function main(argv, env, io) {
     if (raw && Array.isArray(raw.secretEnv)) {
       const names = raw.secretEnv.filter((n) => typeof n === 'string');
       masker = createMasker({ secrets: collectSecretsFromEnv(env, [...envNames, ...names]) });
+      setGuardMasker(masker);
+      sink = createSink({ masker, fs, root: io.cwd, stdout: io.stdout, stderr: io.stderr });
     }
     const allowOrigins = values['allow-origin'] || [];
     const v = validateConfig(raw, { configDir, allowOrigins });
@@ -209,14 +211,15 @@ export async function main(argv, env, io) {
     const flagger = makePixelmatchFlagger(pixelmatch, { threshold: 0.1, includeAA: false });
     const result = await runMeasure({ config, adapter, diffFn: (a, b, o) => diffImages(a, b, { ...o, flagger }) });
 
-    await writeOutputs({ result, masker, sink, outRel, PNG });
+    await writeOutputs({ result, masker, sink, outRel, PNG, config });
     if (values.json) await sink.write('stdout', `${JSON.stringify(toJson(result, masker))}\n`);
     else await sink.write('stdout', formatReport(result, masker));
     return result.exit;
   } catch (e) {
     if (e instanceof DepsError) {
-      await sink.write('stderr', `${explainMissing(e).lines.join('\n')}\n`);
-      return EXIT.NOT_RUN;
+      const ex = explainMissing(e);
+      await sink.write('stderr', `${ex.lines.join('\n')}\n`);
+      return ex.exit;
     }
     if (e instanceof UsageError || e instanceof PolicyError) {
       await sink.write('stderr', `measure: ${e.message}\n${USAGE}\n`);
@@ -237,8 +240,8 @@ export async function main(argv, env, io) {
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  installGuards(process, { onError: (err) => process.stderr.write(`measure: ${err && err.message ? err.message : err}\n`) });
+if (isMain(import.meta.url, process.argv[1])) {
+  installGuards(process);
   const code = await main(process.argv.slice(2), process.env, { cwd: process.cwd(), stdout: process.stdout, stderr: process.stderr });
   process.exitCode = code;
 }

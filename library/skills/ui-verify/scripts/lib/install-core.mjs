@@ -47,7 +47,7 @@ function isInside(p, root, child) {
 // Rzuca InstallError(2), gdy cache lezy w katalogu skilla albo (POSIX) jest cudzy / zapisywalny dla g/o.
 export function checkCacheSafety({ root, skillDir, platform = process.platform, fs = nodeFs, proc = process }) {
   const p = pathFor(platform);
-  if (isInside(p, skillDir, root)) {
+  if (skillDir && isInside(p, skillDir, root)) {
     throw new InstallError(2, `cache dir ${root} lies inside the skill directory; the cache must never live in a project repository`);
   }
   if (platform === 'win32') return;
@@ -225,6 +225,10 @@ export async function installDeps({
   let dir = null;
   const result = (exit, status, message) => ({ exit, status, message, hash, dir });
   try {
+    const override = typeof env.UI_VERIFY_CACHE_DIR === 'string' ? env.UI_VERIFY_CACHE_DIR : '';
+    if (override !== '' && !pathFor(platform).isAbsolute(override)) {
+      throw new InstallError(2, 'UI_VERIFY_CACHE_DIR must be an absolute path');
+    }
     const root = defaultCacheRoot({ platform, env, homedir });
     checkCacheSafety({ root, skillDir, platform, fs, proc });
     hash = computeHash(readSkillFiles(skillDir, fs));

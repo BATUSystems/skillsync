@@ -13,13 +13,16 @@ Wyjątki i przykłady:
 - `diff` daje SAME tylko wtedy, gdy oba zrzuty mają asercję PASS i równe wymiary. Brak `manifest.json` albo pusty zestaw to UNVERIFIED (kod 3).
 - `measure` z elementem nieobecnym po jednej stronie daje UNVERIFIED (kod 3), nie PASS.
 - Łączenie: FAIL wygrywa; PASS tylko przy niepustej liście samych PASS.
-- Kształt SKIPPED (`box-mismatch`) nie wchodzi do łączenia. Pomiar PASS przy pominiętym kształcie daje PASS bez dowodu pikselowego. To zatwierdzona luka opisana w `references/boundaries.md` skilla.
+- Kształt SKIPPED (`box-mismatch`) to brak dowodu: para jest UNVERIFIED (kod 3), także przy pomiarze PASS dzięki zatwierdzonemu odstępstwu (to już nie luka). PASS wymaga jawnego `acceptShape: { reason }` w parze (kształt ACCEPTED, liczony jak PASS, powód w raporcie).
+- Zły stan strony (przekierowanie na inny adres niż zadany) to UNVERIFIED z powodem `page-state-mismatch`, nie PASS i nie FAIL; adres jest sprawdzany po załadowaniu i ponownie tuż przed zrzutem (późniejsze przekierowanie nie jest wykrywane, asercja pozytywna jest drugą linią obrony). Niedozwolona nawigacja (polityka origin: nawigacje główne i ramki, nie subzasoby) i niedozwolona zmienna `valueEnv` (spoza `UI_VERIFY_SECRET_ENV` i bez prefiksu `UI_VERIFY_`) to błąd 2. Literówka w `styleProps` (brak wartości we wzorcu) to też błąd 2, bo dawałaby cichy PASS.
+- Niebezpieczny cache (względna ścieżka, w katalogu skilla, obcy właściciel, zapis g/o) to kod 2 przy każdym ładowaniu kodu z cache, nie 3. Wywołanie skryptu przez symlink wykonuje `main` (`isMain` porównuje realpath); skrypt główny nigdy nie kończy się cichym 0.
 - Brak zależności, przeglądarki lub sieci to kod 3 z instrukcją, nie FAIL.
 
 Gdzie w kodzie:
-- `library/skills/ui-verify/scripts/lib/verdict.mjs:3-22` (EXIT, combine, exitFor)
-- `library/skills/ui-verify/scripts/lib/measure-core.mjs:206-257` (łączenie pomiaru i kształtu, SKIPPED, element nieobecny)
+- `library/skills/ui-verify/scripts/lib/verdict.mjs` (EXIT, combine, exitFor, isMain, installGuards z maskowaniem)
+- `library/skills/ui-verify/scripts/lib/measure-core.mjs` (łączenie pomiaru i kształtu, SKIPPED, ACCEPTED, element nieobecny, page-state-mismatch)
+- `library/skills/ui-verify/scripts/lib/playwright-adapter.mjs` (polityka nawigacji, symlinki, stan strony), `lib/policy.mjs` (`assertRealInside`), `lib/runtime.mjs` (kontrola cache)
 - `library/skills/ui-verify/scripts/lib/diff-core.mjs:16-58` (SAME tylko przy PASS po obu stronach, no-manifest, no-shots)
-- `library/skills/ui-verify/scripts/lib/capture-core.mjs:242-266` (NONE → UNVERIFIED, FAIL asercji)
-- `library/skills/ui-verify/scripts/pixel-diff.mjs:192` (kod wyjścia z werdyktu)
-- testy: `tests/ui_verify/verdict.test.mjs`, `tests/test_skillsync_ui_verify.py`
+- `library/skills/ui-verify/scripts/lib/capture-core.mjs` (NONE → UNVERIFIED, FAIL asercji, `valueEnv`, `assertTimeoutMs`)
+- `library/skills/ui-verify/scripts/pixel-diff.mjs` (kod wyjścia z werdyktu)
+- testy: `tests/ui_verify/verdict.test.mjs`, `tests/ui_verify/adapter.test.mjs`, `tests/ui_verify/entrypoint.test.mjs`, `tests/test_skillsync_ui_verify.py`

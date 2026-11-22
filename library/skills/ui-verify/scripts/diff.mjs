@@ -12,16 +12,15 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { parseManifest } from './lib/capture-core.mjs';
 import { parseArgs, runSelftest } from './lib/cli.mjs';
 import { DiffError, compareShotSets, formatDiffReport, toJson } from './lib/diff-core.mjs';
 import { DepsError, explainMissing } from './lib/deps.mjs';
-import { createMasker, createSink, collectSecretsFromEnv } from './lib/out.mjs';
+import { createMasker, createSink, collectSecretsFromEnv, setGuardMasker } from './lib/out.mjs';
 import { diffImages } from './lib/pixels.mjs';
 import { PolicyError, resolveInside } from './lib/policy.mjs';
 import { decodePng, loadImaging, makePixelmatchFlagger, resolveCacheDir, skillDirOf } from './lib/runtime.mjs';
-import { EXIT, installGuards } from './lib/verdict.mjs';
+import { EXIT, installGuards, isMain } from './lib/verdict.mjs';
 
 const SPEC = {
   string: ['max-pct'],
@@ -143,6 +142,7 @@ function resolveDir(cwd, rel) {
 export async function main(argv, env, io) {
   const secrets = collectSecretsFromEnv(env, String(env.UI_VERIFY_SECRET_ENV || '').split(',').map((s) => s.trim()).filter(Boolean));
   const masker = createMasker({ secrets });
+  setGuardMasker(masker);
   const sink = createSink({ masker, fs, root: io.cwd, stdout: io.stdout, stderr: io.stderr });
   try {
     const { values, positionals, errors } = parseArgs(argv, SPEC);
@@ -182,8 +182,9 @@ export async function main(argv, env, io) {
     return result.exit;
   } catch (e) {
     if (e instanceof DepsError) {
-      await sink.write('stderr', `${explainMissing(e).lines.join('\n')}\n`);
-      return EXIT.NOT_RUN;
+      const ex = explainMissing(e);
+      await sink.write('stderr', `${ex.lines.join('\n')}\n`);
+      return ex.exit;
     }
     if (e instanceof UsageError || e instanceof PolicyError) {
       await sink.write('stderr', `diff: ${e.message}\n${USAGE}\n`);
@@ -198,8 +199,8 @@ export async function main(argv, env, io) {
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  installGuards(process, { onError: (err) => process.stderr.write(`diff: ${err && err.message ? err.message : err}\n`) });
+if (isMain(import.meta.url, process.argv[1])) {
+  installGuards(process);
   const code = await main(process.argv.slice(2), process.env, { cwd: process.cwd(), stdout: process.stdout, stderr: process.stderr });
   process.exitCode = code;
 }

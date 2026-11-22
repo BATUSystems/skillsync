@@ -66,7 +66,7 @@ konfiguracji. `--diff-out` zapisuje pod bieżącym katalogiem. Nieznana flaga, t
 | 0 | PASS: wszystko wykazane (dla `diff`: każdy zrzut SAME) |
 | 1 | FAIL: weryfikacja wykryła różnicę. Tylko to |
 | 2 | Błąd użycia, konfiguracji, adaptera, niebezpieczna ścieżka lub cache, błąd wewnętrzny, padnięcie Chrome, timeout nawigacji |
-| 3 | NOT_RUN: brak zależności, Chrome, npm, sieci lub blokady instalacji; albo UNVERIFIED (brak asercji pozytywnej, brak elementu, brak manifestu) |
+| 3 | NOT_RUN: brak zależności, Chrome, npm, sieci lub blokady instalacji; albo UNVERIFIED (brak asercji pozytywnej, brak elementu, brak manifestu, kształt pominięty, zły stan strony) |
 
 UNVERIFIED zawsze daje 3, nigdy 0. Łączenie werdyktów i formaty wierszy: `references/verdicts.md`.
 
@@ -133,32 +133,53 @@ Strona bez `assert` nigdy nie daje PASS (patrz „Asercja pozytywna”).
 
 - `pixel-diff`: próg 0,5 % (`--max-pct`). PASS, gdy procent różnych pikseli jest ≤ progu. Procent to
   różne piksele podzielone przez pole zrzutu.
-- Piksel jest różny według pixelmatch (threshold 0,1, bez antyaliasingu). Odporność na 1 px jest domyślna
-  (`--no-tolerate-1px` ją wyłącza): piksel nie jest różny, gdy w otoczeniu 3×3 w obu obrazach jest ten
-  sam kolor. Przesunięcie o kilka pikseli nadal daje FAIL. Pojedynczy piksel krawędzi poniżej progu nie
-  daje FAIL.
+- Piksel jest różny według pixelmatch (threshold 0,1, bez antyaliasingu). Odporność na przesunięcie jest
+  domyślna (`--no-tolerate-1px` ją wyłącza): piksel nie jest różny, gdy w otoczeniu (2r+1)² w obu obrazach
+  jest ten sam kolor; promień `r` to `shiftRadius` (domyślnie 1, w `measure` klucz `shiftPx`, patrz niżej).
+  Symetria: detal tylko we wzorcu albo tylko u kandydata daje różnicę. Przesunięcie powyżej `r` pikseli
+  nadal daje FAIL. Pojedynczy piksel krawędzi poniżej progu nie daje FAIL.
 - Różne wymiary: FAIL `size-mismatch` (bez normalizacji). `--crop` przycina do wspólnego minimum,
   zakotwiczonego w lewym górnym rogu, i zgłasza `cropped`.
 - `diff`: domyślnie `--max-pct 0`. SAME znaczy: po odporności na 1 px nie zostaje ani jeden różny piksel.
   SAME wymaga asercji PASS po obu stronach i równych wymiarów.
 - `measure`: `tolerancePx` 1 (x, y, width, height i liczbowe style), `colorTolerance` 0 (kolory według
-  tolerancji), `sizeTolerancePx` 1 (wymiary dla kształtu), `maxPct` 0,5.
+  tolerancji), `sizeTolerancePx` 1 (wymiary dla kształtu), `maxPct` 0,5, `shiftPx` (promień odporności
+  na przesunięcie w pikselach ekranu, domyślnie `ceil(deviceScaleFactor)`: przy DPR 2 przesunięcie o 1 px
+  CSS to 2 px ekranu), `shapeAlign` (`center` domyślnie albo `start`).
 - Kształt w `measure`: piksele elementu są porównywane, gdy wymiary mieszczą się w `sizeTolerancePx`.
   Wynik łączony to FAIL, gdy pomiar LUB kształt daje FAIL. Różnice wymiarów w tolerancji dają
-  przycięcie i `cropped: true`. Luka przy większych różnicach: `references/boundaries.md`.
+  przycięcie i `cropped: true`; przy `shapeAlign: center` kształt ocenia zrzut wyrównany do środka
+  (nadmiar ucinany po połowie z każdej strony, nieparzysty więcej z prawej i dołu).
+- Kształt pominięty (`SKIPPED`, `box-mismatch`) to brak dowodu: para jest UNVERIFIED (kod 3), także gdy
+  pomiar pudełka przeszedł dzięki zatwierdzonemu odstępstwu. Odstępstwo kształtu wpisuje człowiek jako
+  dane: `acceptShape: { "reason": "..." }` w parze zmienia kształt FAIL albo SKIPPED na `ACCEPTED`
+  (liczony jak PASS, powód w `measure.txt` i `measure.json`). Bez `reason` walidacja odrzuca wpis.
+- Maski kształtu: `masks` (wspólne), `masksReference` i `masksCandidate` (prostokąty). Wszystkie trzy listy
+  są sumowane i zamalowywane na obu zrzutach, więc wynik jest symetryczny.
 
 ## Asercja pozytywna (capture)
 
-- Strona z `assert` daje PASS, gdy element istnieje (a przy `text` zawiera tekst). W przeciwnym razie
-  FAIL (kod 1).
+- Strona z `assert` daje PASS, gdy element istnieje (a przy `text` zawiera tekst). Element jest czekany do
+  `assertTimeoutMs` (klucz strony albo konfiguracji, całkowita 0–60000, domyślnie 5000; strona wygrywa;
+  0 to sprawdzenie natychmiast, bez czekania). Po limicie FAIL (kod 1).
 - Strona bez `assert` daje NONE, czyli UNVERIFIED (kod 3). Zrzut bez asercji nie jest dowodem.
 - `diff`: SAME tylko przy PASS po obu stronach. W innym przypadku UNVERIFIED.
+- Zły stan strony: gdy końcowy adres po nawigacji różni się od zadanego (przekierowanie; query i fragment
+  pomijane), `measure` daje parę UNVERIFIED z powodem `page-state-mismatch`, a `capture` zrzut z asercją
+  `NONE` i tym samym powodem (kod 3, nie PASS i nie FAIL).
 
 ## Sekrety
 
 - Wartości logowania tylko ze zmiennych środowiska: `login.steps[].fill.valueEnv`. Pole `value` z literałem
   to błąd konfiguracji (wartość nie jest wypisywana). Brak zmiennej to błąd 2 przed uruchomieniem
   przeglądarki.
+- Model zaufania konfiguracji: konfiguracja z obcego repozytorium nie może wyczytać dowolnych zmiennych.
+  Dozwolone nazwy `valueEnv`: wymienione w `UI_VERIFY_SECRET_ENV` (lista po przecinku) albo zaczynające się
+  od `UI_VERIFY_`; każda inna to błąd walidacji (kod 2) z nazwą zmiennej (bez wartości). Wcześniejsze nazwy
+  spoza tej reguły trzeba przemianować (np. `APP_PASS` na `UI_VERIFY_APP_PASS`) albo dopisać do
+  `UI_VERIFY_SECRET_ENV`.
+- Komunikat nieobsłużonego błędu procesu (kod 2) też przechodzi przez maskowanie: sekrety z
+  `UI_VERIFY_SECRET_ENV` oraz z `secretEnv` i `valueEnv` konfiguracji.
 - Każdy zapis pliku, stdout, stderr i komunikat błędu przechodzi przez jedno maskowanie. Wartości z
   `secretEnv` (measure, capture), zmiennych logowania i `UI_VERIFY_SECRET_ENV` oraz ich warianty
   (URL-encode, JSON, base64, base64url) są zastępowane `***`. Wartości krótsze niż 4 znaki nie są maskowane.
@@ -175,7 +196,14 @@ Strona bez `assert` nigdy nie daje PASS (patrz „Asercja pozytywna”).
   `file://` pod katalogiem konfiguracji (względna ścieżka w `url`).
 - Inne hosty wymagają `--allow-origin <wzorzec>` (powtarzalna): `host`, `host:port`, `https://host`
   albo `*.domena`. Inne schematy są odrzucane.
-- Origin jest sprawdzany dwa razy: przy walidacji konfiguracji i przed każdą nawigacją.
+- Origin jest sprawdzany przy walidacji konfiguracji, przed `goto` i dla każdej nawigacji w trakcie
+  (`context.route`: nawigacje główne i ramki). Niedozwolona nawigacja jest przerywana, a operacja kończy się
+  błędem 2 `navigation blocked: <origin>` (bez query i fragmentu, bo mogą nosić sekrety). Adres strony jest
+  sprawdzany przed każdym wpisem i kliknięciem logowania oraz przed zrzutem: po przekierowaniu poza
+  politykę sekret nie zostaje wpisany. Granica: polityka NIE obejmuje subzasobów (obrazy, skrypty, fetch).
+- Symlinki: zapis pod `outDir` i strona `file://` w konfiguracji muszą leżeć w rzeczywistym katalogu
+  (realpath najbliższego istniejącego przodka pod katalogiem konfiguracji lub bieżącym), a sam cel nie może
+  być symlinkiem; w przeciwnym razie błąd 2 przed zapisem lub `goto`.
 - `outDir` i ścieżki w konfiguracji są względne do katalogu konfiguracji. Wyjście poza ten katalog to
   błąd 2. Zapis `pixel-diff --diff-out` i katalogi `diff` są pod bieżącym katalogiem.
 - Identyfikatory (`id`): `[A-Za-z0-9._-]`, 1–120 znaków, bez `.` i `..`.
@@ -200,19 +228,21 @@ Strona bez `assert` nigdy nie daje PASS (patrz „Asercja pozytywna”).
 - Loader ładuje moduły wyłącznie z cache (dla `playwright-core` także z `PLAYWRIGHT_MODULE_PATH`), nigdy
   z `node_modules` projektu.
 - POSIX: odmowa (kod 2), gdy katalog cache nie należy do użytkownika albo jest zapisywalny dla grupy lub
-  innych. Cache w katalogu skilla też jest odrzucany (kod 2).
+  innych. Cache w katalogu skilla też jest odrzucany (kod 2). Ta sama kontrola działa przy każdym
+  ładowaniu kodu z cache (nie tylko przy instalacji), a względna ścieżka `UI_VERIFY_CACHE_DIR` jest
+  odrzucana (wymagana bezwzględna); to błąd konfiguracji (kod 2), nie brak środowiska (kod 3).
 - Wymagania: Node ≥ 20.11, testowane na 22. Na Windows nie używa się gołego `npm`/`npm.cmd`.
 
 ## Zmienne środowiskowe
 
 | Zmienna | Skutek |
 |---|---|
-| `UI_VERIFY_CACHE_DIR` | katalog główny cache; pod nim leży katalog `<hash>` |
+| `UI_VERIFY_CACHE_DIR` | katalog główny cache (ścieżka bezwzględna); pod nim leży katalog `<hash>` |
 | `PLAYWRIGHT_MODULE_PATH` | ścieżka paczki `playwright-core` albo `node_modules`, który ją zawiera (pierwszeństwo dla playwright-core) |
 | `UI_VERIFY_CHROME` | ścieżka pliku Chrome/Chromium (pierwsza w kolejności) |
 | `CHROME_EXECUTABLE_PATH` | ścieżka Chrome, gdy `UI_VERIFY_CHROME` nie jest ustawione |
 | `UI_VERIFY_NO_SANDBOX` | `1` wyłącza sandbox Chrome (kontenery CI) |
-| `UI_VERIFY_SECRET_ENV` | nazwy zmiennych po przecinku, których wartości są maskowane |
+| `UI_VERIFY_SECRET_ENV` | nazwy zmiennych po przecinku, których wartości są maskowane; dopuszczone też jako `valueEnv` logowania |
 
 Katalogi cache dla każdego systemu opisuje dokumentacja konfiguracji maszyny.
 

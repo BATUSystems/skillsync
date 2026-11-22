@@ -14,10 +14,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
-import { pathToFileURL } from 'node:url';
 import { parseArgs, runSelftest } from './lib/cli.mjs';
-import { createMasker, collectSecretsFromEnv } from './lib/out.mjs';
-import { installGuards } from './lib/verdict.mjs';
+import { createMasker, collectSecretsFromEnv, setGuardMasker } from './lib/out.mjs';
+import { installGuards, isMain } from './lib/verdict.mjs';
 import { skillDirOf } from './lib/runtime.mjs';
 import { computeHash } from './lib/paths.mjs';
 import { checkCacheSafety, findNpmCli, installDeps } from './lib/install-core.mjs';
@@ -236,6 +235,7 @@ function selftestCases() {
 export async function main(argv, env, io) {
   const secrets = collectSecretsFromEnv(env, String(env.UI_VERIFY_SECRET_ENV || '').split(',').map((s) => s.trim()).filter(Boolean));
   const masker = createMasker({ secrets });
+  setGuardMasker(masker);
   const out = (text) => io.stdout.write(masker.mask(text));
   const err = (text) => io.stderr.write(masker.mask(text));
   try {
@@ -281,8 +281,8 @@ export async function main(argv, env, io) {
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  installGuards(process, { onError: (e) => process.stderr.write(`install: ${e && e.message ? e.message : e}\n`) });
+if (isMain(import.meta.url, process.argv[1])) {
+  installGuards(process);
   const code = await main(process.argv.slice(2), process.env, { stdout: process.stdout, stderr: process.stderr });
   process.exit(code);
 }

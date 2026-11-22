@@ -42,5 +42,9 @@ export function colorDistance(a, b) {
 }
 
 export function sameColor(a, b, tolerance = 0) {
+  // W pelni przezroczysty kolor jest rowny tylko drugiemu w pelni przezroczystemu (RGB nie ma znaczenia).
+  const ta = (a.a ?? 1) === 0;
+  const tb = (b.a ?? 1) === 0;
+  if (ta || tb) return ta && tb;
   return colorDistance(a, b) <= tolerance;
 }

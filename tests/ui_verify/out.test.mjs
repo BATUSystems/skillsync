@@ -1,6 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createMasker, createSink, collectSecretsFromEnv } from '../../library/skills/ui-verify/scripts/lib/out.mjs';
+import os from 'node:os';
+import path from 'node:path';
+import * as outLib from '../../library/skills/ui-verify/scripts/lib/out.mjs';
+
+const { createMasker, createSink, collectSecretsFromEnv } = outLib;
+const ROOT = path.resolve(os.tmpdir(), 'uv-out-root');
+const OUTSIDE = path.resolve(os.tmpdir(), 'uv-out-outside');
 
 // Atrapa skladana w czasie wykonania (gitleaks): zadnego literalu przypominajacego sekret.
 const SECRET = ['Zq', 'x7', '/Pa', 's&w', ' o"r', 'd!9'].join('');
@@ -71,26 +77,48 @@ test('createMasker: extra RegExp tez maskowane', () => {
   assert.equal(m.mask('x id-123 y'), 'x *** y');
 });
 
-function fakeFs() {
+// Atrapa fs na sciezkach leksykalnych: `links` mapuje symlink na cel, `existing` to katalogi istniejace od poczatku.
+// realpathSync/lstatSync zgodne z kontraktem createSink (realpath najblizszego istniejacego przodka, lstat celu).
+function fakeFs({ links = {}, existing = [ROOT, OUTSIDE] } = {}) {
   const files = new Map();
   const dirs = [];
+  const known = new Set(existing);
+  const enoent = (p) => Object.assign(new Error(`ENOENT ${p}`), { code: 'ENOENT' });
+  const follow = (p) => {
+    for (const [l, t] of Object.entries(links)) {
+      if (p === l) return t;
+      if (p.startsWith(l + path.sep)) return t + p.slice(l.length);
+    }
+    return p;
+  };
+  const exists = (p) => known.has(p) || files.has(p) || dirs.includes(p) || p in links || known.has(follow(p));
+  const realpathSync = (p) => {
+    if (!exists(p)) throw enoent(p);
+    return follow(p);
+  };
+  const lstatSync = (p) => {
+    if (!exists(p)) throw enoent(p);
+    return { isSymbolicLink: () => p in links, isFile: () => files.has(p), isDirectory: () => known.has(p) || dirs.includes(p) };
+  };
   return {
-    files, dirs,
+    files, dirs, realpathSync, lstatSync,
     writeFileSync(p, d) { files.set(p, d); },
     mkdirSync(p) { dirs.push(p); },
     promises: {
       async writeFile(p, d) { files.set(p, d); },
       async mkdir(p) { dirs.push(p); },
+      async realpath(p) { return realpathSync(p); },
+      async lstat(p) { return lstatSync(p); },
     },
   };
 }
-function mkSink(secrets = [SECRET_PLAIN]) {
-  const fs = fakeFs();
+function mkSink(secrets = [SECRET_PLAIN], fsOpts) {
+  const fs = fakeFs(fsOpts);
   const out = []; const err = [];
   const sink = createSink({
     masker: createMasker({ secrets }),
     fs,
-    root: '/work/out',
+    root: ROOT,
     stdout: { write: (t) => { out.push(String(t)); return true; } },
     stderr: { write: (t) => { err.push(String(t)); return true; } },
   });
@@ -102,7 +130,7 @@ test('createSink.writeFile: zapis pod root, tekst maskowany', async () => {
   await sink.writeFile('report.json', `{"x":"${SECRET_PLAIN}"}`);
   const entries = [...fs.files.entries()];
   assert.equal(entries.length, 1);
-  assert.ok(entries[0][0].startsWith('/work/out/'), entries[0][0]);
+  assert.ok(entries[0][0].startsWith(ROOT + path.sep), entries[0][0]);
   assert.ok(entries[0][0].endsWith('report.json'));
   assert.ok(!String(entries[0][1]).includes(SECRET_PLAIN));
 });
@@ -154,4 +182,87 @@ test('collectSecretsFromEnv: wartosci wskazanych zmiennych, puste i brakujace po
   const env = { A_PW: SECRET_PLAIN, B_PW: '', C_OTHER: 'zzzz9', D: undefined };
   assert.deepEqual(collectSecretsFromEnv(env, ['A_PW', 'B_PW', 'MISSING', 'D']), [SECRET_PLAIN]);
   assert.deepEqual(collectSecretsFromEnv(env, []), []);
+});
+
+// --- symlinki pod root (B3) ---
+
+test('createSink.writeFile: symlink katalogu pod root wskazujacy poza root => blad polityki, nic nie zapisane', async () => {
+  const link = path.join(ROOT, 'sub');
+  const { sink, fs } = mkSink([SECRET_PLAIN], { links: { [link]: OUTSIDE } });
+  await assert.rejects(sink.writeFile(path.join('sub', 'x.txt'), 'x'), (e) => e && e.name === 'PolicyError');
+  assert.equal(fs.files.size, 0);
+  assert.deepEqual(fs.dirs, []);
+});
+
+test('createSink.writeFile: sam cel jest symlinkiem (nawet do wnetrza root) => blad polityki, brak zapisu', async () => {
+  const link = path.join(ROOT, 'report.json');
+  const { sink, fs } = mkSink([SECRET_PLAIN], { links: { [link]: path.join(ROOT, 'real.json') }, existing: [ROOT, OUTSIDE, path.join(ROOT, 'real.json')] });
+  await assert.rejects(sink.writeFile('report.json', 'x'), (e) => e && e.name === 'PolicyError');
+  assert.equal(fs.files.size, 0);
+});
+
+test('createSink.writeFile: nieistniejacy podkatalog pod prawdziwym root jest dozwolony (najblizszy istniejacy przodek w root)', async () => {
+  const { sink, fs } = mkSink();
+  await sink.writeFile(path.join('new', 'deep', 'a.json'), '{}');
+  assert.equal(fs.files.size, 1);
+});
+
+// --- guard masker (B2) ---
+
+const guardSecret = () => ['guard', 'env', String(process.pid), 'qrst'].join('-');
+
+test('guardMask: domyslnie maskuje wartosci zmiennych z UI_VERIFY_SECRET_ENV w process.env', () => {
+  const secret = guardSecret();
+  const saved = { list: process.env.UI_VERIFY_SECRET_ENV, val: process.env.UV_GUARD_SECRET };
+  try {
+    process.env.UI_VERIFY_SECRET_ENV = 'UV_GUARD_SECRET';
+    process.env.UV_GUARD_SECRET = secret;
+    const out = outLib.guardMask(`fail ${secret} end`);
+    assert.ok(!out.includes(secret), out);
+    assert.match(out, /\*\*\*/);
+    assert.equal(outLib.guardMask('bez sekretu'), 'bez sekretu');
+  } finally {
+    for (const [k, v] of [['UI_VERIFY_SECRET_ENV', saved.list], ['UV_GUARD_SECRET', saved.val]]) {
+      if (v === undefined) delete process.env[k]; else process.env[k] = v;
+    }
+  }
+});
+
+test('guardMask: zmienna spoza UI_VERIFY_SECRET_ENV nie jest maskowana (kontrola)', () => {
+  const secret = guardSecret();
+  const saved = process.env.UV_GUARD_OTHER;
+  try {
+    process.env.UV_GUARD_OTHER = secret;
+    assert.ok(outLib.guardMask(`x ${secret}`).includes(secret));
+  } finally {
+    if (saved === undefined) delete process.env.UV_GUARD_OTHER; else process.env.UV_GUARD_OTHER = saved;
+  }
+});
+
+test('setGuardMasker(masker): guardMask uzywa wskazanego maskera (sekrety z konfiguracji)', () => {
+  const secret = guardSecret();
+  outLib.setGuardMasker(createMasker({ secrets: [secret] }));
+  const out = outLib.guardMask(`cfg ${secret}`);
+  assert.ok(!out.includes(secret), out);
+  assert.match(out, /\*\*\*/);
+});
+
+test('createSink.writeFile: wiszacy symlink out/capture.txt na nieistniejacy plik poza root => PolicyError, nic nie zapisane', async (t) => {
+  const fsMod = await import('node:fs');
+  const real = fsMod.default;
+  const base = real.mkdtempSync(path.join(os.tmpdir(), 'uv-out-dangling-'));
+  t.after(() => real.rmSync(base, { recursive: true, force: true }));
+  const root = path.join(base, 'root');
+  const outside = path.join(base, 'outside');
+  real.mkdirSync(path.join(root, 'out'), { recursive: true });
+  real.mkdirSync(outside);
+  try {
+    real.symlinkSync(path.join(outside, 'nie-istnieje.txt'), path.join(root, 'out', 'capture.txt'), 'file');
+  } catch (e) {
+    t.skip(`needs-symlink: ${e.code}`);
+    return;
+  }
+  const sink = createSink({ masker: createMasker({ secrets: [] }), fs: real, root, stdout: { write() {} }, stderr: { write() {} } });
+  await assert.rejects(() => sink.writeFile('out/capture.txt', 'x'), (e) => e && e.name === 'PolicyError');
+  assert.equal(real.existsSync(path.join(outside, 'nie-istnieje.txt')), false);
 });

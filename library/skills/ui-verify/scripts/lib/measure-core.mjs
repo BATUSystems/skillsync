@@ -2,7 +2,7 @@
 // Bez przegladarki i bez PNG: adapter zwraca pomiary i obrazy RGBA { width, height, data }.
 import { pathToFileURL } from 'node:url';
 import { applyDeviations, compareBox, compareNumber, compareStyles } from './compare.mjs';
-import { checkOrigin, resolveInside } from './policy.mjs';
+import { checkOrigin, PolicyError, resolveInside } from './policy.mjs';
 import { combine, exitFor } from './verdict.mjs';
 
 export const DEFAULTS = Object.freeze({
@@ -23,7 +23,16 @@ export class MeasureError extends Error {
   }
 }
 
-const TOP_KEYS = new Set(['version', 'viewport', 'tolerancePx', 'sizeTolerancePx', 'colorTolerance', 'maxPct', 'styleProps', 'secretEnv', 'pairs']);
+const TOP_KEYS = new Set(['version', 'viewport', 'tolerancePx', 'sizeTolerancePx', 'colorTolerance', 'maxPct', 'shiftPx', 'shapeAlign', 'styleProps', 'secretEnv', 'pairs']);
+const PAIR_KEYS = new Set(['id', 'reference', 'candidate', 'deviations', 'masks', 'masksReference', 'masksCandidate', 'acceptShape']);
+const SIDE_KEYS = new Set(['url', 'selector']);
+const DEVIATION_KEYS = new Set(['prop', 'reason', 'actual', 'expected', 'selector']);
+const MASK_KEYS = new Set(['x', 'y', 'width', 'height']);
+const ALIGNS = new Set(['center', 'start']);
+
+function unknownKeys(obj, allowed, where, errors) {
+  for (const k of Object.keys(obj)) if (!allowed.has(k)) errors.push(`${where}.${k}: unknown key`);
+}
 const ID_RE = /^[A-Za-z0-9._-]{1,120}$/;
 const SCHEME_RE = /^[A-Za-z][A-Za-z0-9+.-]+:/;
 
@@ -59,6 +68,7 @@ function validateSide(side, ctx, where, errors) {
     errors.push(`${where}: expected object { url, selector }`);
     return side;
   }
+  unknownKeys(side, SIDE_KEYS, where, errors);
   const url = resolveUrl(side.url, ctx, where, errors);
   if (!isText(side.selector)) errors.push(`${where}.selector: required non-empty string`);
   return { url, selector: side.selector };
@@ -94,12 +104,13 @@ function validatePair(pair, index, ctx, seen, errors) {
     errors.push(`${where}: expected object`);
     return pair;
   }
-  if (typeof pair.id !== 'string' || !ID_RE.test(pair.id)) {
-    errors.push(`${where}.id: expected [A-Za-z0-9._-]{1,120}`);
-  } else if (seen.has(pair.id)) {
-    errors.push(`${where}.id: duplicate id "${pair.id}"`);
+  unknownKeys(pair, PAIR_KEYS, where, errors);
+  if (typeof pair.id !== 'string' || !ID_RE.test(pair.id) || pair.id === '.' || pair.id === '..') {
+    errors.push(`${where}.id: expected [A-Za-z0-9._-]{1,120}, not "." or ".."`);
+  } else if (seen.has(pair.id.toLowerCase())) {
+    errors.push(`${where}.id: duplicate id "${pair.id}" (ids are compared case-insensitively)`);
   } else {
-    seen.add(pair.id);
+    seen.add(pair.id.toLowerCase());
   }
   const reference = validateSide(pair.reference, ctx, `${where}.reference`, errors);
   const candidate = validateSide(pair.candidate, ctx, `${where}.candidate`, errors);
@@ -111,27 +122,46 @@ function validatePair(pair, index, ctx, seen, errors) {
       pair.deviations.forEach((d, i) => {
         const w = `${where}.deviations[${i}]`;
         if (!isObj(d)) { errors.push(`${w}: expected object`); return; }
+        unknownKeys(d, DEVIATION_KEYS, w, errors);
         if (!isText(d.prop)) errors.push(`${w}.prop: required non-empty string`);
         if (!isText(d.reason)) errors.push(`${w}.reason: required non-empty string (every approved deviation needs a reason)`);
         deviations.push({ ...d });
       });
     }
   }
-  const masks = [];
-  if (pair.masks !== undefined) {
-    if (!Array.isArray(pair.masks)) errors.push(`${where}.masks: expected a list`);
-    else {
-      pair.masks.forEach((m, i) => {
-        const w = `${where}.masks[${i}]`;
-        if (!isObj(m) || !isNum(m.x) || !isNum(m.y) || !isNonNeg(m.width) || !isNonNeg(m.height)) {
-          errors.push(`${w}: expected { x, y, width >= 0, height >= 0 } as numbers`);
-          return;
-        }
-        masks.push({ x: m.x, y: m.y, width: m.width, height: m.height });
-      });
+  const rects = (key) => {
+    const out = [];
+    if (pair[key] === undefined) return out;
+    if (!Array.isArray(pair[key])) {
+      errors.push(`${where}.${key}: expected a list`);
+      return out;
+    }
+    pair[key].forEach((m, i) => {
+      const w = `${where}.${key}[${i}]`;
+      if (isObj(m)) unknownKeys(m, MASK_KEYS, w, errors);
+      if (!isObj(m) || !isNum(m.x) || !isNum(m.y) || !isNonNeg(m.width) || !isNonNeg(m.height)) {
+        errors.push(`${w}: expected { x, y, width >= 0, height >= 0 } as numbers`);
+        return;
+      }
+      out.push({ x: m.x, y: m.y, width: m.width, height: m.height });
+    });
+    return out;
+  };
+  const masks = rects('masks');
+  const masksReference = rects('masksReference');
+  const masksCandidate = rects('masksCandidate');
+  let acceptShape = null;
+  if (pair.acceptShape !== undefined) {
+    const w = `${where}.acceptShape`;
+    if (!isObj(pair.acceptShape)) {
+      errors.push(`${w}: expected object { reason } with a non-empty reason`);
+    } else {
+      unknownKeys(pair.acceptShape, new Set(['reason']), w, errors);
+      if (!isText(pair.acceptShape.reason)) errors.push(`${w}.reason: required non-empty string (an accepted shape deviation needs a reason)`);
+      else acceptShape = { reason: pair.acceptShape.reason };
     }
   }
-  return { id: pair.id, reference, candidate, deviations, masks };
+  return { id: pair.id, reference, candidate, deviations, masks, masksReference, masksCandidate, acceptShape };
 }
 
 export function validateConfig(cfg, { configDir, allowOrigins = [] } = {}) {
@@ -146,10 +176,21 @@ export function validateConfig(cfg, { configDir, allowOrigins = [] } = {}) {
     sizeTolerancePx: validateNumberField(cfg, 'sizeTolerancePx', errors),
     colorTolerance: validateNumberField(cfg, 'colorTolerance', errors),
     maxPct: validateNumberField(cfg, 'maxPct', errors),
+    shiftPx: 1,
+    shapeAlign: 'center',
     styleProps: [...DEFAULTS.styleProps],
     secretEnv: [],
     pairs: [],
   };
+  config.shiftPx = Math.ceil(config.viewport.deviceScaleFactor);
+  if (cfg.shiftPx !== undefined) {
+    if (Number.isInteger(cfg.shiftPx) && cfg.shiftPx >= 0) config.shiftPx = cfg.shiftPx;
+    else errors.push('shiftPx: expected an integer >= 0 (screen pixels)');
+  }
+  if (cfg.shapeAlign !== undefined) {
+    if (typeof cfg.shapeAlign === 'string' && ALIGNS.has(cfg.shapeAlign)) config.shapeAlign = cfg.shapeAlign;
+    else errors.push('shapeAlign: expected "center" or "start"');
+  }
   if (cfg.styleProps !== undefined) {
     if (Array.isArray(cfg.styleProps) && cfg.styleProps.every(isText)) config.styleProps = [...cfg.styleProps];
     else errors.push('styleProps: expected a list of non-empty strings');
@@ -199,6 +240,7 @@ async function viaAdapter(fn) {
   try {
     return await fn();
   } catch (e) {
+    if (e instanceof PolicyError) throw e;
     throw new MeasureError(`adapter: ${e && e.message ? e.message : e}`, 'adapter', e);
   }
 }
@@ -210,19 +252,28 @@ async function measurePair(pair, { config, adapter, diffFn }) {
   if (!ref || ref.found !== true) missing.push('reference');
   if (!cand || cand.found !== true) missing.push('candidate');
   if (missing.length) {
+    const reason = [ref, cand].some((m) => m && m.reason === 'page-state-mismatch') ? 'page-state-mismatch' : 'element-not-found';
     return {
       id: pair.id,
       verdict: 'UNVERIFIED',
-      reason: 'element-not-found',
+      reason,
       missing,
-      measure: { verdict: 'UNVERIFIED', reason: 'element-not-found', unapproved: [], approved: [] },
-      shape: { verdict: 'SKIPPED', reason: 'element-not-found' },
+      measure: { verdict: 'UNVERIFIED', reason, unapproved: [], approved: [] },
+      shape: { verdict: 'SKIPPED', reason },
     };
+  }
+
+  // Wlasciwosc bez wartosci we wzorcu (literowka w styleProps) dawalaby cichy PASS: to blad konfiguracji.
+  for (const p of config.styleProps) {
+    const v = ref.styles ? ref.styles[p] : undefined;
+    if (v === undefined || v === null || String(v).trim() === '') {
+      throw new MeasureError(`styleProps: property "${p}" has no value on the reference element (typo or unsupported property)`, 'config');
+    }
   }
 
   const boxCmp = compareBox(cand.box, ref.box, config.tolerancePx);
   const expectedStyles = {};
-  for (const p of config.styleProps) if (ref.styles && p in ref.styles) expectedStyles[p] = ref.styles[p];
+  for (const p of config.styleProps) expectedStyles[p] = ref.styles[p];
   const styleCmp = compareStyles(cand.styles, expectedStyles, { tolerancePx: config.tolerancePx, colorTolerance: config.colorTolerance });
   const { unapproved, approved } = approve([...boxCmp.findings, ...styleCmp.findings], normalizeDeviations(pair.deviations, pair));
   const measure = { verdict: unapproved.length === 0 ? 'PASS' : 'FAIL', unapproved, approved };
@@ -235,16 +286,26 @@ async function measurePair(pair, { config, adapter, diffFn }) {
   } else {
     const refImg = await viaAdapter(() => adapter.screenshot(pair.reference));
     const candImg = await viaAdapter(() => adapter.screenshot(pair.candidate));
-    const r = diffFn(refImg, candImg, { cropToCommon: true, maxPct: config.maxPct, masks: pair.masks });
+    const masks = [...(pair.masks || []), ...(pair.masksReference || []), ...(pair.masksCandidate || [])];
+    const r = diffFn(refImg, candImg, {
+      cropToCommon: true,
+      maxPct: config.maxPct,
+      masks,
+      shiftPx: config.shiftPx,
+      shiftRadius: config.shiftPx,
+      align: config.shapeAlign,
+    });
     shape = { verdict: r.verdict, pct: r.pct, diffCount: r.diffCount, total: r.total, cropped: r.cropped === true };
     diff = { reference: refImg, candidate: candImg, flags: r.flags };
   }
-  const out = {
-    id: pair.id,
-    verdict: combine([measure.verdict, shape.verdict].filter((v) => v !== 'SKIPPED')),
-    measure,
-    shape,
-  };
+  // Odstepstwo ksztaltu jako dane: FAIL albo SKIPPED ksztaltu staje sie ACCEPTED (liczone jak PASS) z powodem w raporcie.
+  if (pair.acceptShape && (shape.verdict === 'FAIL' || shape.verdict === 'SKIPPED')) {
+    shape = { ...shape, verdict: 'ACCEPTED', acceptedFrom: shape.verdict === 'FAIL' ? 'FAIL' : shape.reason, reason: pair.acceptShape.reason };
+  }
+  const SHAPE_VERDICT = { PASS: 'PASS', ACCEPTED: 'PASS', FAIL: 'FAIL', SKIPPED: 'UNVERIFIED' };
+  const verdict = combine([measure.verdict, SHAPE_VERDICT[shape.verdict] ?? 'UNVERIFIED']);
+  const out = { id: pair.id, verdict, measure, shape };
+  if (verdict === 'UNVERIFIED' && shape.verdict === 'SKIPPED') out.reason = 'shape-skipped';
   if (diff) hiddenProp(out, 'diff', diff);
   return out;
 }
@@ -273,6 +334,8 @@ export function formatReport(result, masker) {
     for (const f of p.measure.approved) lines.push(findingLine('approved', f));
     if (p.shape.verdict === 'SKIPPED') {
       lines.push(`  shape SKIPPED (${p.shape.reason})`);
+    } else if (p.shape.verdict === 'ACCEPTED') {
+      lines.push(`  shape ACCEPTED (reason: ${p.shape.reason}; was ${p.shape.acceptedFrom})`);
     } else {
       lines.push(`  shape ${p.shape.verdict} ${fmt(p.shape.pct)}%${p.shape.cropped ? ' cropped' : ''}`);
     }

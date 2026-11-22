@@ -4,13 +4,30 @@ import nodeFs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { cacheDirFor, computeHash, defaultCacheRoot } from './paths.mjs';
 import { createLoader, DepsError } from './deps.mjs';
+import { checkCacheSafety } from './install-core.mjs';
 
 // Katalog skilla = rodzic katalogu `scripts` (plik skryptu lezy w scripts/).
 export function skillDirOf(importMetaUrl) {
   return path.dirname(path.dirname(fileURLToPath(importMetaUrl)));
 }
 
+// Ta sama kontrola co przy instalacji (checkCacheSafety), zanim kod z cache zostanie zaladowany; blad to DepsError z kodem 2.
+export function assertCacheSafe({ root, skillDir, platform = process.platform, fs = nodeFs }) {
+  try {
+    checkCacheSafety({ root, skillDir, platform, fs });
+  } catch (e) {
+    if (e && e.name === 'InstallError') {
+      throw new DepsError('unsafe-cache', e.message, 'Wskaz katalog cache nalezacy do biezacego uzytkownika, bez zapisu dla grupy i innych, poza katalogiem skilla.', 2);
+    }
+    throw e;
+  }
+}
+
 export function resolveCacheDir({ skillDir, env = {}, platform = process.platform, homedir, fs = nodeFs }) {
+  const override = typeof env.UI_VERIFY_CACHE_DIR === 'string' ? env.UI_VERIFY_CACHE_DIR : '';
+  if (override !== '' && !(platform === 'win32' ? path.win32 : path.posix).isAbsolute(override)) {
+    throw new DepsError('unsafe-cache', 'UI_VERIFY_CACHE_DIR must be an absolute path', 'Ustaw UI_VERIFY_CACHE_DIR na sciezke bezwzgledna.', 2);
+  }
   const contents = ['package.json', 'package-lock.json'].map((name) => {
     try {
       return String(fs.readFileSync(path.join(skillDir, name)));
@@ -18,10 +35,13 @@ export function resolveCacheDir({ skillDir, env = {}, platform = process.platfor
       throw new DepsError('not-installed', `brak pliku skilla ${name}`, 'Zainstaluj skill ponownie (brak package.json lub package-lock.json).');
     }
   });
-  return cacheDirFor(defaultCacheRoot({ platform, env, homedir }), computeHash(contents), platform);
+  const root = defaultCacheRoot({ platform, env, homedir });
+  assertCacheSafe({ root, skillDir, platform, fs });
+  return cacheDirFor(root, computeHash(contents), platform);
 }
 
-export async function loadImaging({ cacheDir, env = {}, fs = nodeFs, requireFactory, importer }) {
+export async function loadImaging({ cacheDir, env = {}, fs = nodeFs, requireFactory, importer, skillDir, platform = process.platform }) {
+  assertCacheSafe({ root: (platform === 'win32' ? path.win32 : path.posix).dirname(cacheDir), skillDir, platform, fs });
   const opts = { cacheDir, env, fs };
   if (requireFactory) opts.requireFactory = requireFactory;
   if (importer) opts.importer = importer;

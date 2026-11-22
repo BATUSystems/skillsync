@@ -97,3 +97,11 @@ test('applyDeviations: finding bez selectora zatwierdza wpis bez selectora', () 
   assert.equal(r.approved.length, 1);
   assert.equal(r.unapproved.length, 0);
 });
+
+// A13: transparent i rgba(..., 0) o dowolnym RGB to ten sam kolor.
+test('compareStyles: kolory z alfa 0 (transparent, rgba(255, 0, 0, 0)) sa rowne; alfa 0 vs 1 nie', () => {
+  assert.equal(compareStyles({ backgroundColor: 'rgba(255, 0, 0, 0)' }, { backgroundColor: 'transparent' }).pass, true);
+  assert.equal(compareStyles({ backgroundColor: 'rgba(0, 0, 0, 0)' }, { backgroundColor: 'rgba(12, 34, 56, 0)' }).pass, true);
+  assert.equal(compareStyles({ backgroundColor: 'rgba(255, 0, 0, 0)' }, { backgroundColor: 'rgb(255, 0, 0)' }).pass, false);
+  assert.equal(compareStyles({ backgroundColor: 'rgb(255, 0, 0)' }, { backgroundColor: 'rgb(0, 0, 0)' }).pass, false);
+});

@@ -178,3 +178,59 @@ test('e2e sekret, kontrola: bez maskowania ta sama atrapa trafia do wyniku (test
   assert.ok([2, 3].includes(r.code), `kod ${r.code}: ${r.stdout}${r.stderr}`);
   assert.ok(everything(dir, r).includes(secret), 'id pary z sekretem powinno trafic do wyniku, gdy nie jest maskowane');
 });
+
+// =====================================================================================
+// S10: zly stan strony (C5), polityka nawigacji (B1), symlinki (B3)
+// =====================================================================================
+
+const MOVED = '<!doctype html><html><body><script>location.replace("fx/mirrored-icon/reference.html");</script></body></html>';
+const SYMLINK_SKIP = (() => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'uv-measure-e2e-probe-'));
+  try {
+    fs.writeFileSync(path.join(d, 't'), 'x');
+    fs.symlinkSync(path.join(d, 't'), path.join(d, 'l'), 'file');
+    return false;
+  } catch (e) {
+    return `needs-symlink: ${e.code || e.message}`;
+  } finally {
+    fs.rmSync(d, { recursive: true, force: true });
+  }
+})();
+
+test('e2e C5: kandydat przekierowuje na inna lokalna strone => para UNVERIFIED z powodem page-state-mismatch, kod 3', { skip: SKIP }, () => {
+  const c = CASES.cases.find((x) => x.id === 'mirrored-icon');
+  const pair = fixturePair(c);
+  pair.candidate.url = 'moved.html';
+  const { dir, file } = project([pair]);
+  fs.writeFileSync(path.join(dir, 'moved.html'), MOVED);
+  const r = run(['--config', file, 'out'], { cwd: dir });
+  assert.equal(r.code, 3, r.stdout + r.stderr);
+  const p = readResult(dir).pairs[0];
+  assert.equal(p.verdict, 'UNVERIFIED');
+  assert.equal(p.reason, 'page-state-mismatch');
+  assert.match(fs.readFileSync(path.join(dir, 'out', 'measure.txt'), 'utf8'), /page-state-mismatch/);
+});
+
+test('e2e B1: kandydat przekierowuje na niedozwolony origin => kod 2 i komunikat "navigation blocked" bez query', { skip: SKIP }, () => {
+  const c = CASES.cases.find((x) => x.id === 'mirrored-icon');
+  const pair = fixturePair(c);
+  pair.candidate.url = 'evil.html';
+  const { dir, file } = project([pair]);
+  fs.writeFileSync(path.join(dir, 'evil.html'), '<!doctype html><html><body><script>location.replace("http://127.0.0.2:9/x?next=secret-query");</script></body></html>');
+  const r = run(['--config', file, 'out'], { cwd: dir });
+  assert.equal(r.code, 2, r.stdout + r.stderr);
+  assert.match(r.stderr, /navigation blocked: http:\/\/127\.0\.0\.2:9/);
+  assert.ok(!(r.stdout + r.stderr).includes('secret-query'));
+});
+
+test('e2e B3: strona kandydata bedaca symlinkiem na plik poza katalogiem konfiguracji => kod 2', { skip: SKIP || SYMLINK_SKIP }, () => {
+  const c = CASES.cases.find((x) => x.id === 'mirrored-icon');
+  const pair = fixturePair(c);
+  pair.candidate.url = 'link.html';
+  const { dir, file } = project([pair]);
+  const outside = newDir('elsewhere');
+  fs.copyFileSync(path.join(FIXTURES, c.files.candidate), path.join(outside, 'cand.html'));
+  fs.symlinkSync(path.join(outside, 'cand.html'), path.join(dir, 'link.html'), 'file');
+  const r = run(['--config', file, 'out'], { cwd: dir });
+  assert.equal(r.code, 2, r.stdout + r.stderr);
+});

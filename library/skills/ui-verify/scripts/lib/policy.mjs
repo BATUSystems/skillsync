@@ -1,4 +1,5 @@
 // Polityka bezpieczenstwa: sciezki pod root, bezpieczne nazwy, dozwolone originy.
+import nodeFs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -26,6 +27,47 @@ export function resolveInside(root, rel, { platform = defaultPlatform() } = {}) 
   const prefix = base.endsWith(p.sep) ? base : base + p.sep;
   if (norm(full) !== norm(base) && !norm(full).startsWith(norm(prefix))) throw fail();
   return full;
+}
+
+// Symlinki: realpath najblizszego istniejacego przodka celu musi lezec w realpath(root), a sam istniejacy cel nie moze
+// byc symlinkiem (lstat). Sciezka leksykalnie poza root to blad nawet bez symlinkow.
+export function assertRealInside(root, absPath, fs = nodeFs) {
+  const fail = () => new PolicyError('outside-root', 'path outside root');
+  const base = path.resolve(root);
+  const target = path.resolve(absPath);
+  const norm = (s) => (process.platform === 'win32' ? s.toLowerCase() : s);
+  const within = (child, parent) => {
+    const prefix = parent.endsWith(path.sep) ? parent : parent + path.sep;
+    return norm(child) === norm(parent) || norm(child).startsWith(norm(prefix));
+  };
+  if (!within(target, base)) throw fail();
+  let realBase;
+  try {
+    realBase = fs.realpathSync(base);
+  } catch {
+    realBase = base;
+  }
+  let cur = target;
+  let real = null;
+  for (;;) {
+    try {
+      real = fs.realpathSync(cur);
+      break;
+    } catch (e) {
+      const parent = path.dirname(cur);
+      if (parent === cur || !e || (e.code !== 'ENOENT' && e.code !== 'ENOTDIR')) throw fail();
+      cur = parent;
+    }
+  }
+  if (!within(real, realBase)) throw fail();
+  let st = null;
+  try {
+    st = fs.lstatSync(target);
+  } catch (e) {
+    if (!e || (e.code !== 'ENOENT' && e.code !== 'ENOTDIR')) throw fail();
+  }
+  if (st && typeof st.isSymbolicLink === 'function' && st.isSymbolicLink()) throw fail();
+  return target;
 }
 
 export function safeName(name) {

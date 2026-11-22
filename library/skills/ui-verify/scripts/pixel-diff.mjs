@@ -13,12 +13,11 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { parseArgs, runSelftest } from './lib/cli.mjs';
 import { cropToCommon, diffImages } from './lib/pixels.mjs';
-import { createMasker, createSink, collectSecretsFromEnv } from './lib/out.mjs';
-import { resolveInside } from './lib/policy.mjs';
-import { EXIT, exitFor, installGuards } from './lib/verdict.mjs';
+import { createMasker, createSink, collectSecretsFromEnv, setGuardMasker } from './lib/out.mjs';
+import { PolicyError, resolveInside } from './lib/policy.mjs';
+import { EXIT, exitFor, installGuards, isMain } from './lib/verdict.mjs';
 import { DepsError, explainMissing } from './lib/deps.mjs';
 import { decodePng, encodePng, loadImaging, makePixelmatchFlagger, resolveCacheDir, skillDirOf } from './lib/runtime.mjs';
 
@@ -87,7 +86,7 @@ function selftestCases({ PNG, pixelmatch, skillDir }) {
       const r = runDiff(a, a, { flagger, maxPct: 0.5, tolerate1px: true });
       check(r.verdict === 'PASS' && r.diffCount === 0, `got ${r.verdict} ${r.diffCount}`);
     } },
-    { name: '1 px shift passes thanks to 3x3 tolerance', fn: () => {
+    { name: '1 px shift passes thanks to the 1 px shift tolerance', fn: () => {
       const r = runDiff(img(10), img(11), { flagger, maxPct: 0.5, tolerate1px: true });
       check(r.verdict === 'PASS', `got ${r.verdict} ${r.pct}`);
     } },
@@ -139,6 +138,7 @@ function pureLogicCase() {
 export async function main(argv, env, io) {
   const secrets = collectSecretsFromEnv(env, String(env.UI_VERIFY_SECRET_ENV || '').split(',').map((s) => s.trim()).filter(Boolean));
   const masker = createMasker({ secrets });
+  setGuardMasker(masker);
   const sink = createSink({ masker, fs, root: io.cwd, stdout: io.stdout, stderr: io.stderr });
   try {
     const { values, positionals, errors } = parseArgs(argv, SPEC);
@@ -200,13 +200,17 @@ export async function main(argv, env, io) {
       await sink.write('stderr', `pixel-diff: ${e.message}\n${USAGE}\n`);
       return EXIT.ERROR;
     }
+    if (e instanceof PolicyError) {
+      await sink.write('stderr', `pixel-diff: ${e.message}\n`);
+      return EXIT.ERROR;
+    }
     await sink.error(e);
     return EXIT.ERROR;
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  installGuards(process, { onError: (err) => process.stderr.write(`pixel-diff: ${err && err.message ? err.message : err}\n`) });
+if (isMain(import.meta.url, process.argv[1])) {
+  installGuards(process);
   const code = await main(process.argv.slice(2), process.env, { cwd: process.cwd(), stdout: process.stdout, stderr: process.stderr });
   process.exitCode = code;
 }

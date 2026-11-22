@@ -15,16 +15,15 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { parseArgs, runSelftest } from './lib/cli.mjs';
 import { CaptureError, formatCaptureReport, loginEnvNames, manifest, missingLoginEnv, runCapture, shotName, toJson, validateCaptureConfig } from './lib/capture-core.mjs';
 import { chromeMissing, findChrome } from './lib/chrome.mjs';
 import { DepsError, explainMissing } from './lib/deps.mjs';
-import { createMasker, createSink, collectSecretsFromEnv } from './lib/out.mjs';
+import { createMasker, createSink, collectSecretsFromEnv, setGuardMasker } from './lib/out.mjs';
 import { createCaptureAdapter, launchChromium, makeWhich } from './lib/playwright-adapter.mjs';
 import { PolicyError, resolveInside } from './lib/policy.mjs';
 import { loadImaging, resolveCacheDir, skillDirOf } from './lib/runtime.mjs';
-import { EXIT, installGuards } from './lib/verdict.mjs';
+import { EXIT, installGuards, isMain } from './lib/verdict.mjs';
 
 const SPEC = {
   string: ['config'],
@@ -113,6 +112,7 @@ function readConfig(configPath) {
 export async function main(argv, env, io) {
   const envNames = String(env.UI_VERIFY_SECRET_ENV || '').split(',').map((s) => s.trim()).filter(Boolean);
   let masker = createMasker({ secrets: collectSecretsFromEnv(env, envNames) });
+  setGuardMasker(masker);
   let sink = createSink({ masker, fs, root: io.cwd, stdout: io.stdout, stderr: io.stderr });
   let browser = null;
   let adapter = null;
@@ -134,10 +134,11 @@ export async function main(argv, env, io) {
     const raw = readConfig(configPath);
     const declared = [...(raw && Array.isArray(raw.secretEnv) ? raw.secretEnv.filter((n) => typeof n === 'string') : []), ...loginEnvNames(raw)];
     masker = createMasker({ secrets: collectSecretsFromEnv(env, [...envNames, ...declared]) });
+    setGuardMasker(masker);
     sink = createSink({ masker, fs, root: io.cwd, stdout: io.stdout, stderr: io.stderr });
 
     const allowOrigins = values['allow-origin'] || [];
-    const v = validateCaptureConfig(raw, { configDir, allowOrigins });
+    const v = validateCaptureConfig(raw, { configDir, allowOrigins, env });
     if (!v.ok) throw new UsageError(`invalid configuration:\n  ${v.errors.join('\n  ')}`);
     const config = v.config;
     const missing = missingLoginEnv(config, env);
@@ -192,8 +193,9 @@ export async function main(argv, env, io) {
     return result.exit;
   } catch (e) {
     if (e instanceof DepsError) {
-      await sink.write('stderr', `${explainMissing(e).lines.join('\n')}\n`);
-      return EXIT.NOT_RUN;
+      const ex = explainMissing(e);
+      await sink.write('stderr', `${ex.lines.join('\n')}\n`);
+      return ex.exit;
     }
     if (e instanceof UsageError || e instanceof PolicyError) {
       await sink.write('stderr', `capture: ${e.message}\n${USAGE}\n`);
@@ -219,8 +221,8 @@ export async function main(argv, env, io) {
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  installGuards(process, { onError: (err) => process.stderr.write(`capture: ${err && err.message ? err.message : err}\n`) });
+if (isMain(import.meta.url, process.argv[1])) {
+  installGuards(process);
   const code = await main(process.argv.slice(2), process.env, { cwd: process.cwd(), stdout: process.stdout, stderr: process.stderr });
   process.exitCode = code;
 }
