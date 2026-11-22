@@ -9,6 +9,10 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child, descend  # noqa: E402
 from skillsync_workflow import dashboard, dashboard_http, prototype_server  # noqa: E402
 
 
@@ -35,7 +39,7 @@ class ExpertQuestions(unittest.TestCase):
         self.root = Path(self.temp.name).resolve()   # macOS: /var/... is a link to /private/var/..., the board resolves its root
 
     def run_dir(self, slug, text=None, operations=None, prototype=True):
-        directory = self.root / 'docs' / 'prototypes' / slug
+        directory = child(self.root / 'docs' / 'prototypes', slug)
         directory.mkdir(parents=True)
         if prototype:
             (directory / 'prototype.json').write_text('{}\n', encoding='utf-8')
@@ -173,12 +177,12 @@ class CurrentQuestions(unittest.TestCase):
         (self.root / '.github' / '.skillsync.yaml').write_text('skills: [dashboard]\n', encoding='utf-8')
 
     def spec(self, header='', rel=SPEC):
-        path = self.root / rel
+        path = descend(self.root, rel)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text('# Spec: demo\n\nStatus: draft\n' + header + '\n## Problem\n\nTekst.\n', encoding='utf-8')
 
     def prototype(self, slug, requirements=None, operations=None, text=None, meta=True):
-        directory = self.root / 'docs' / 'prototypes' / slug
+        directory = child(self.root / 'docs' / 'prototypes', slug)
         directory.mkdir(parents=True, exist_ok=True)
         if meta:
             data = {'schema': 'prototype/1', 'slug': slug}

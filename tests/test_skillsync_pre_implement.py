@@ -7,6 +7,10 @@ import unittest
 
 from tests.test_skillsync_workflow import CLI, WorkflowFixture
 from tests.layers_helpers import needs_os_symlinks  # noqa: E402
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import descend  # noqa: E402
 
 RISKY = '# Spec\n\nStatus: draft\n\n## Kontrakty\n\n- `status` dostaje pole.\n\n## Migracja\n\nNie dotyczy.\n'
 CALM = '# Spec\n\nStatus: draft\n\n## Kontrakty\n\nNie dotyczy.\n\n## Migracja\n\nNie dotyczy: brak.\n\n## Dane\n\nTODO\n'
@@ -235,14 +239,14 @@ class ReadinessRunId(WorkflowFixture):
         self.write('plan.md', '# Contracts\nKeeps list.\n# Risks\nEmpty orders ok.\n# Evidence\nRegression tests.\n')
         report = self.report('readiness', '--files', 'src/api/orders.py', '--plan', 'plan.md', '--run-id', 'RUN-1')
         self.assertEqual(report['reportFile'], '.skillsync/runs/RUN-1/readiness.md')
-        text = (self.root / report['reportFile']).read_text(encoding='utf-8')
+        text = (descend(self.root, report['reportFile'])).read_text(encoding='utf-8')
         self.assertEqual(text.splitlines()[0], 'Readiness: PASS')
         self.assertIn('src/api/orders.py (istnieje)', text)
         self.assertIn('plan.md', text)
 
     def test_blocked_writes_report_with_issues(self):
         report = self.report('readiness', '--files', 'src/api/orders.py', '--run-id', 'RUN-2', code=2)
-        text = (self.root / report['reportFile']).read_text(encoding='utf-8')
+        text = (descend(self.root, report['reportFile'])).read_text(encoding='utf-8')
         self.assertEqual(text.splitlines()[0], 'Readiness: BLOCKED')
         self.assertIn('Risky change requires a plan', text)
 
@@ -263,7 +267,7 @@ class ReadinessRunId(WorkflowFixture):
         from skillsync_workflow.status import git_blob_sha
         plan = self.write('plan.md', '# Contracts\nKeeps list.\n# Risks\nEmpty orders ok.\n# Evidence\nRegression tests.\n')
         report = self.report('readiness', '--files', 'src/api/orders.py', '--plan', 'plan.md', '--run-id', 'RUN-1')
-        lines = (self.root / report['reportFile']).read_text(encoding='utf-8').splitlines()
+        lines = (descend(self.root, report['reportFile'])).read_text(encoding='utf-8').splitlines()
         self.assertEqual(lines[0], 'Readiness: PASS')
         self.assertRegex(lines[1], r'^Data: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$')
         self.assertEqual(lines[2], 'Plan-sha: ' + git_blob_sha(plan.read_bytes()))

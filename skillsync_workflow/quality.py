@@ -15,6 +15,7 @@ import tempfile
 import threading
 import time
 import tomllib
+import traceback
 import uuid
 import sys
 import yaml
@@ -23,8 +24,10 @@ from .pathfmt import posix
 from .fsutil import ensure_dir
 from .selfcmd import self_argv
 from . import layers as _layers
+from . import skill_frontmatter
 from .ceremony import ceremony_info, validate_ceremony
 from .specs import specs_findings, specs_info
+from . import claude_manifest
 from .delivery_mode import delivery_info, validate_delivery_mode
 from .dashboard_listen import validate_dashboard
 from .dispatch import validate_dispatch
@@ -92,6 +95,21 @@ def plan_validation(root, manifest, library, profile='quick', files=None, check_
 
 def _redact(text):
     return redact(text)
+
+
+UNEXPECTED_TEXT_LIMIT = 500
+
+
+def _unexpected_reason(error):
+    """The reason of a check that ended with an exception nobody planned for (a bug of an observer, of the runner): the type, the redacted text and the place
+    (file name and line of the innermost frame, no absolute path), so that the bug can be found without the stack trace."""
+    frames = traceback.extract_tb(error.__traceback__)
+    place = f' at {Path(frames[-1].filename).name}:{frames[-1].lineno}' if frames else ''
+    try:
+        text = ' '.join(str(error).split())[:UNEXPECTED_TEXT_LIMIT]   # one line, bounded: a dump of data in a `KeyError` must not swell the report
+    except Exception:   # noqa: BLE001 - an exception whose `__str__` raises must not escape the clause that handles it (`finished` would be skipped again)
+        text = '<unprintable>'
+    return _redact(f'Unexpected error: {type(error).__name__}: {text}{place}')
 
 
 def _test_counts(output):
@@ -263,12 +281,11 @@ def _stream(process, check, on_line, taskkill, on_partial=None):
             say(on_line, name, rest.rstrip('\r'))
     threads = [threading.Thread(target=pump, args=(process.stdout, 'out'), daemon=True),
                threading.Thread(target=pump, args=(process.stderr, 'err'), daemon=True)]
-    for thread in threads:
-        thread.start()
 
     def finish():
         for thread in threads:
-            thread.join(timeout=10)
+            if thread.ident is not None:   # a thread that never started cannot be joined (its pipe has no reader and is closed below)
+                thread.join(timeout=10)
         for pipe, thread in ((process.stdout, threads[0]), (process.stderr, threads[1])):
             if pipe and not thread.is_alive():   # a child that detached itself may keep the pipe open: never close it under a blocked reader
                 try:
@@ -276,6 +293,8 @@ def _stream(process, check, on_line, taskkill, on_partial=None):
                 except OSError:
                     pass
     try:
+        for thread in threads:   # inside the `try`: a thread that cannot start (`RuntimeError: can't start new thread`) must not leave the child running
+            thread.start()
         process.wait(timeout=check.get('timeout', 300))
         timed_out = False
     except subprocess.TimeoutExpired:
@@ -401,6 +420,9 @@ def run_validation(root, checks, *, log_dir=None, observer=None):
                 result['reason'] = 'Interrupted; process tree terminated and reaped; series stopped'
             except (OSError, ValueError, re.error) as error:
                 result['reason'] = _redact(str(error))
+            except Exception as error:   # noqa: BLE001 - an exception nobody planned for (e.g. in `observer.started`) ends THIS check as BLOCKED; `finished` below still runs and closes the record
+                result['reason'] = _unexpected_reason(error)
+                result['exit_code'] = None   # the command may have exited 0 before the failure: BLOCKED must not carry an exit code that reads as a pass
         result['duration_seconds'] = round(time.monotonic() - start, 6)
         if observer is not None and ran:
             try:
@@ -1155,6 +1177,8 @@ def doctor(root, manifest, library):
         finding('error', '.github/.skillsync.yaml', message)
     for level, path, reason in specs_findings(root, manifest):
         finding(level, path, reason)
+    for severity, message in claude_manifest.findings(manifest):
+        finding(severity, '.github/.skillsync.yaml', message)
     prototype_errors, prototype_warnings = validate_prototype(manifest.get('prototype'), root)
     for message in prototype_errors:
         finding('error', '.github/.skillsync.yaml', message)
@@ -1167,7 +1191,7 @@ def doctor(root, manifest, library):
         setting = manifest.get(engine, default)
         return setting is not False and (not isinstance(setting, dict) or setting.get('enabled', True))
     hosts = [('.github/skills', 'github-skill')]
-    if enabled('claude', True):
+    if claude_manifest.enabled(manifest):
         hosts.append(('.claude/skills', 'claude-skill'))
     if enabled('codex', agentflow):
         hosts.append(('.agents/skills', 'codex-skill'))
@@ -1183,6 +1207,8 @@ def doctor(root, manifest, library):
                 finding('error', path, 'Missing name/description frontmatter')
             elif len(str(metadata['description']).encode('utf-8')) > 200:
                 finding('warning', path, 'Skill description longer than 200 bytes')
+            for _klass, remark in skill_frontmatter.check(metadata):   # never an error (the skills of the org and personal layers are not ours)
+                finding('warning', path, remark)
         except (yaml.YAMLError, IndexError):
             finding('error', path, 'Invalid skill frontmatter')
         for prefix, state_key in hosts:
@@ -1237,14 +1263,19 @@ def doctor(root, manifest, library):
         for stray in sorted(Path(root).glob('*/docs/domain/index.yaml')) + sorted(Path(root).glob('*/*/docs/domain/index.yaml')):
             if 'node_modules' not in stray.parts and stray.parent.resolve() not in known:
                 finding('warning', str(stray), 'Scattered domain knowledge; keep one shared location: ' + ', '.join(posix(d) for d in domain_dirs))
-        if enabled('claude', True):
+        if claude_manifest.enabled(manifest):
+            role_frontmatters = []
             for role in roles:
                 role_path = Path(root) / '.claude/agents' / f'{role}.md'
                 source = layerset.resolve(f'agents/{role}.md')
+                if source is not None:
+                    role_frontmatters.append((role, skill_frontmatter.read_role_frontmatter(source[1])))
                 if not role_path.is_file():
                     finding('error', role_path, 'Missing Claude role')
                 elif role_path.is_symlink() and (source is None or role_path.resolve() != source[1].resolve()):
                     finding('error', role_path, 'Foreign Claude role symlink')
+            for remark in skill_frontmatter.agent_field_findings(role_frontmatters):   # one `info` per project: needs no `claude` process, never changes the exit code
+                finding('info', '.claude/agents', remark)
             if not (Path(root) / 'CLAUDE.md').is_file():
                 finding('error', 'CLAUDE.md', 'Missing enabled Claude instructions')
         if enabled('codex', agentflow):
@@ -1267,6 +1298,11 @@ def doctor(root, manifest, library):
     from .guardhook import doctor_findings as guard_findings
     for level, path, reason in guard_findings(root, manifest, skills):
         finding(level, path, reason)
+    from .hooksync import doctor_findings as hook_findings, statusline_findings
+    for level, path, reason in hook_findings(root, manifest, skills, layerset) + statusline_findings(root, manifest, layerset):
+        finding(level, path, reason)
+    if claude_manifest.output_styles(manifest):   # K6: an optional style is available (never a warning; nothing at all without the key)
+        finding('info', '.claude/output-styles/karta.md', 'output style available: karta (select it with /output-style karta; optional)')
     from . import test_gate   # 180-A: unmasked test results in the run files, a reporter hint
     for path, reason in test_gate.doctor_findings(root):
         finding('warning', path, reason)

@@ -1144,14 +1144,29 @@ def _plan_proposal(args):
     except (OSError, ValueError):
         raise ValueError("Brak przebiegu o podanym id") from None
     decisions_path = folder / retro_scan.DECISIONS_FILE
-    try:  # każdy błąd odczytu i parsowania plików retro przebiegu (JSON, rozmiar, dowiązanie, schemat) = jeden powód
-        signals = retro_scan._json(folder / retro_scan.SIGNALS_FILE, retro_scan.MAX_RUN_FILE_BYTES, True)
-        exists = decisions_path.is_symlink() or decisions_path.exists()
+    signals_path = folder / retro_scan.SIGNALS_FILE
+    if not (signals_path.is_symlink() or signals_path.exists()):  # dowiązanie to plik niepoprawny, nie brak
+        raise ValueError("Brak retro-signals.json przebiegu " + run_id + "; retrospektywa z sygnałami zapisuje go "
+                         "po skanie (retro-quality.md, „Po skanie”)")
+    limit = "zwykły plik (bez dowiązania) nie większy niż " + str(retro_scan.MAX_RUN_FILE_BYTES // 1048576) + " MiB"
+    try:  # odczyt i parsowanie każdego pliku osobno: komunikat nazywa ten plik, bez treści i bez ścieżki
+        base = retro_scan._parse_signals_file(run_id, retro_scan._json(signals_path, retro_scan.MAX_RUN_FILE_BYTES, True))
+    except (ValueError, TypeError, KeyError, RecursionError, retro_scan._Unreadable):
+        raise ValueError("Plik retro-signals.json jest niepoprawny; wymagania: run_id zgodne z nazwą przebiegu, "
+                         "schema 1, created_at, lista proposals, " + limit) from None
+    exists = decisions_path.is_symlink() or decisions_path.exists()
+    try:
         document = (retro_scan._json(decisions_path, retro_scan.MAX_RUN_FILE_BYTES, True) if exists
                     else {"schema": 1, "run_id": run_id, "decisions": []})
-        run = retro_scan._parse_run(run_id, signals, document if exists else None)
-    except (ValueError, TypeError, KeyError, RecursionError):
-        raise retro_scan._Unreadable from None
+        states = retro_scan._parse_decisions_file(run_id, document)
+    except (ValueError, TypeError, KeyError, RecursionError, retro_scan._Unreadable):
+        raise ValueError("Plik retro-decisions.json jest niepoprawny; wymagania: run_id zgodne z nazwą przebiegu, "
+                         "schema 1, lista decisions z propozycją P<n> i stanem, " + limit) from None
+    try:
+        run = retro_scan._combine_run(base, states)
+    except (ValueError, TypeError, KeyError, RecursionError, retro_scan._Unreadable):
+        raise ValueError("Pliki retro-signals.json i retro-decisions.json przebiegu nie tworzą spójnej pary; "
+                         "sprawdź oba pliki") from None
     proposal = run["proposals"].get(number)
     if proposal is None:
         raise ValueError("Brak propozycji " + number + " w przebiegu")

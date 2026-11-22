@@ -107,7 +107,7 @@ Tabela opiera się na wynikach CI (testy, install smoke). Ręczne testy na macOS
 ## Instalacja
 
 ```bash
-uv tool install git+https://github.com/BATUSystems/skillsync@v1.11.0
+uv tool install git+https://github.com/BATUSystems/skillsync@v1.12.0
 ```
 
 Sprawdź instalację:
@@ -121,6 +121,9 @@ skillsync --version
 `skillsync-ctl` (wrapper `systemctl --user` dla usługi watch) nie jest częścią zainstalowanego pakietu: pakiet zawiera tylko
 `skillsync_workflow` z punktem wejścia `skillsync`. Skrypt działa tylko na Linuksie, z checkoutu repo.
 
+Uzupełnianie poleceń (Tab) w bash, zsh i PowerShellu instalują `install.sh` i `skillsync setup` (`SKILLSYNC_NO_COMPLETION=1`
+je pomija); ręcznie: `skillsync completion install`, usunięcie: `skillsync completion uninstall`.
+
 Aktualizacja, odinstalowanie i rozwiązywanie problemów: [docs/installation.md](docs/installation.md).
 
 ## Szybki start
@@ -133,7 +136,7 @@ opcje i rozwiązywanie problemów: [docs/installation.md](docs/installation.md#s
 curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/BATUSystems/skillsync/<tag>/install.sh | sh
 ```
 
-Zamiast `<tag>` podaj tag wydania (np. `v1.11.0`). Natywny Windows nie jest obsługiwany przez instalator: użyj WSL2.
+Zamiast `<tag>` podaj tag wydania (np. `v1.12.0`). Natywny Windows nie jest obsługiwany przez instalator: użyj WSL2.
 Poniższe kroki robią to samo ręcznie.
 
 Ta ścieżka nie wymaga warstwy organizacji: wystarczy warstwa osobista i warstwa core.
@@ -152,7 +155,7 @@ sync: {method: symlink}
 
 ```bash
 # 1. Dodaj warstwę core (skille, workflow i role); należy do każdej reguły
-skillsync layers add core --kind core --source https://github.com/BATUSystems/skillsync --subdir library --ref v1.11.0
+skillsync layers add core --kind core --source https://github.com/BATUSystems/skillsync --subdir library --ref v1.12.0
 
 # 2. Utwórz szkielet własnej warstwy osobistej (repo git) i zacommituj go:
 #    `layers add` klonuje repo, więc szkielet musi być najpierw w commicie

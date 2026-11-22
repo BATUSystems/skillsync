@@ -22,6 +22,10 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child  # noqa: E402
 from layers_helpers import (LINK_MODES, LayersCase, commit, generator_version, git, link_mode,  # noqa: E402
                             machine_cache_dir, machine_data_dir, make_layer, needs_sh, write, yaml_text)
 from skillsync_workflow import layers, leakguard  # noqa: E402
@@ -357,7 +361,7 @@ class LayersInitTest(CommandsCase):
         target = self.work / 'my-notes'
         for mode in LINK_MODES:
             with self.subTest(mode), link_mode(mode):
-                directory = self.work / f'my-notes-{mode}'
+                directory = child(self.work, f'my-notes-{mode}')
                 code, report = self.cli_json('layers', 'init', str(directory), '--kind', 'personal', '--id', f'notes-{mode}')
                 self.assertEqual((code, report['schema'], report['status']), (0, 1, 'PASS'), report)
                 self.assertEqual(report['layer'], {'id': f'notes-{mode}', 'kind': 'personal', 'path': posix(directory)})
@@ -1542,7 +1546,7 @@ class IsolationTest(CommandsCase):
         }
         for label, setup in cases.items():
             with self.subTest(label):
-                old = self.work / f'old-{label.replace(" ", "-")}'
+                old = child(self.work, f'old-{label.replace(" ", "-")}')
                 write(old / 'skills' / 'x' / 'SKILL.md', 'x\n')
                 setup(old)
                 self.assert_fail('isolation-legacy-library')

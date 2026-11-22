@@ -9,7 +9,7 @@ user-invokable: true
 Skillsync to lokalne narzędzie CLI (`~/.local/bin/skillsync`) synchronizujące skille i instrukcje między warstwami (core, org, personal) a projektami. Obsługuje wiele projektów jednocześnie poprzez dowiązania symboliczne.
 
 > **Dokumentacja i kod generatora:** osobny projekt `<katalog repo skillsync>`
-> (`README.md` z mapą; `docs/layers.md`, `docs/cli.md`, `docs/manifest.md`, `docs/library.md`, `docs/architecture.md`,
+> (`README.md` z mapą; `docs/layers-authoring.md`, `docs/cli.md`, `docs/manifest.md`, `docs/architecture.md`,
 > `docs/workflow.md`, `docs/development.md`). Ten skill to skrót operacyjny; przy rozbieżności
 > rozstrzyga kod i `docs/` tamtego repo. Zmiany generatora prowadź tam, nie w repo scripts.
 
@@ -28,7 +28,10 @@ Treść żyje w **warstwach** (`layer.yaml` w korzeniu układu): `core` (rdzeń:
 ├── hooks/
 │   ├── check-tests.py      ← hook Stop (bramka testów), jeden skrypt Pythona dla Linux i Windows
 │   ├── check-closure.py    ← hook Stop (zamknięcie planu), tylko biblioteka standardowa
-│   └── guard-commands.py   ← hook PreToolUse (Bash): zakaz stopek i podpisów narzędzi AI w tekstach pisanych poleceniami (zawsze) i odmowa trwałego usunięcia, tylko biblioteka standardowa
+│   ├── guard-commands.py   ← hook PreToolUse (Bash): zakaz stopek i podpisów narzędzi AI w tekstach pisanych poleceniami (zawsze), odmowa trwałego usunięcia i granica commitu podagenta (`hooks.subagent_commit`), tylko biblioteka standardowa
+│   ├── session-context.py  ← hook SessionStart (startup, resume, clear, compact): kontekst projektu i planu, `hooks.session_context`
+│   ├── guard-generated.py  ← hook PreToolUse (Write, Edit, NotebookEdit): ostrzeżenie przy edycji pliku generowanego, `hooks.guard_generated`
+│   └── check-subagent-report.py ← hook SubagentStop: ostrzeżenie, gdy piszący podagent nie zwrócił raportu, `hooks.subagent_report`
 └── instructions/
     ├── _base.md             ← wspólna preambuła (persona, workflow)
     └── <template>.md        ← instrukcje specyficzne dla projektu
@@ -50,8 +53,12 @@ layer.yaml                  ← id, kind, version, core_min, requires
 ├── hooks/check-closure.py  ← KOPIA - projekty z `feature`, chyba że hooks.stop_closure: false
 ├── hooks/guard-tests.py, test-tools.json ← KOPIE obok hooka, gdy hooks.guard_tests: warn (domyślnie w projektach z `feature`/`dispatch`)
 ├── hooks/guard-commands.py ← KOPIA - każdy projekt z Claude Code (część usuwania tylko z `feature` lub `dispatch`, chyba że hooks.guard_delete: off; klucz hooks.delete_allow: dodatkowe cele wolne od blokady)
+├── hooks/session-context.py ← KOPIA - gdy hook włączony przez `hooks.session_context` (SessionStart; domyślnie w projektach z `feature` lub `dispatch`)
+├── hooks/guard-generated.py ← KOPIA - gdy hook włączony przez `hooks.guard_generated` (PreToolUse na `Write|Edit|NotebookEdit`; domyślnie `warn` w projektach z `feature` lub `dispatch`)
+├── hooks/check-subagent-report.py ← KOPIA - gdy hook włączony przez `hooks.subagent_report` (SubagentStop; domyślnie `warn` w projektach z `feature` lub `dispatch`)
 ├── hooks/attribution-patterns.json ← KOPIA danych zakazu stopek i podpisów AI (jedno źródło: skillsync_workflow/data/attribution-patterns.json)
-├── settings.json           ← COMMITOWANY, ręcznie kuratorowany; skillsync scala tylko hooks.Stop
+├── settings.json           ← COMMITOWANY, ręcznie kuratorowany; skillsync dopisuje tu tylko hook Stop testów (`hooks.stop_tests`)
+├── settings.local.json     ← ignorowany; skillsync scala wpisy: Stop (zamknięcie planu), PreToolUse (strażnik poleceń i strażnik plików generowanych), SessionStart, SubagentStop
 └── .gitignore              ← wpisy per plik zarządzany (nie całe katalogi)
 ```
 
@@ -92,6 +99,7 @@ Wspólna flaga `--layer id=ścieżka` (powtarzalna; ścieżka = katalog warstwy 
   Idempotentny: drugie uruchomienie daje `unchanged`. Statusy: PASS 0, FAIL 1 (`layers check`), BLOCKED 2.
 - Nie aktualizuje narzędzia ani core przypiętego do tagu. Aktualizacja: ponowne `install.sh` z nowego tagu albo
   `uv tool install --force …@<tag>` + `skillsync layers update core --ref <tag>`. `skillsync pull` odświeża tylko checkouty i linki.
+- Uzupełnianie w bash, zsh i PowerShell: `skillsync completion bash|zsh|powershell` (skrypt na stdout), `skillsync completion install|uninstall [--shell S] [--dry-run] [--json]`; instalator i `setup` instalują je same, `SKILLSYNC_NO_COMPLETION=1` pomija. Szczegóły: `<katalog repo skillsync>/docs/cli.md`.
 
 ### Migracja maszyny
 
@@ -100,7 +108,7 @@ Wspólna flaga `--layer id=ścieżka` (powtarzalna; ścieżka = katalog warstwy 
 ### Claude Code: agenci, hook Stop, settings.json
 
 - `.claude/skills/` i `.claude/agents/` **nie są w całości własnością skillsync** (projekty trzymają tam własne pliki). Skillsync sprząta i zastępuje wyłącznie symlinki do warstw (albo nietknięte kopie z pliku stanu), nigdy zwykłych plików, które sam nie utworzył — przy kolizji nazw wypisuje `[warn] Skipping ...`.
-- Każdy projekt z Claude Code dostaje hook PreToolUse `guard-commands.py`: zawsze z zakazem stopek i podpisów narzędzi AI w commitach, PR i zadaniach (`--attribution on`, bez przełącznika) i kluczem `attribution` (puste `commit` i `pr`) w `.claude/settings.local.json`; część usuwania (odmowa trwałego usunięcia) tylko w projektach z `feature` lub `dispatch`. `link` scala jeden wpis (kopia zapasowa, plik śledzony przez git pomijany, `.skillsync/` ignorowane); `hooks.guard_delete: off` wyłącza tylko część usuwania. `skillsync attribution --user` zapisuje to samo ustawienie w `~/.claude/settings.json` (jawnie); `layers check` i `doctor` dają FAIL dla tekstu zakazanej atrybucji w warstwie lub instrukcjach.
+- Każdy projekt z Claude Code dostaje hook PreToolUse `guard-commands.py`: zawsze z zakazem stopek i podpisów narzędzi AI w commitach, PR i zadaniach (`--attribution on`, bez przełącznika) i kluczem `attribution` (puste `commit` i `pr`) w `.claude/settings.local.json`; część usuwania (odmowa trwałego usunięcia) tylko w projektach z `feature` lub `dispatch`. `link` scala jeden wpis (kopia zapasowa, plik śledzony przez git pomijany, `.skillsync/` ignorowane); `hooks.guard_delete: off` wyłącza tylko część usuwania. `skillsync attribution --user` zapisuje to samo ustawienie w `~/.claude/settings.json` (jawnie); `layers check` i `doctor` dają FAIL dla tekstu zakazanej atrybucji w warstwie lub instrukcjach. Argument `--subagent-commit` strażnika poleceń (`hooks.subagent_commit`: domyślnie `deny` w projektach z `feature` lub `dispatch`, `off` w pozostałych; przy `off` nie trafia do wpisu) to granica commitu podagenta: działa tylko dla wywołań z niepustym `agent_id`.
 - Projekty z `feature`: kopiuje `check-closure.py` i scala wpis Stop w `.claude/settings.local.json`, zachowując resztę pliku. `hooks.stop_closure: false` usuwa wpis i skrypt. Plik śledzony przez git albo niepoprawny JSON: `[warn]`, bez zapisu. Blokuje raz na sesję i plan plan `done` zmieniony względem `HEAD` albo ignorowany przez git (wpis `!!`), gdy przebieg z `Przebieg:` nie ma rekordu `final`.
 - `hooks.stop_tests: true` + `tests.command` w manifeście → kopiuje `check-tests.py` i dopisuje `hooks.Stop` do `.claude/settings.json` (forma exec: `command` = `python_command` z `~/.config/skillsync/config.yaml`, `args` = skrypt + komenda testów). Przed zapisem robi `settings.json.skillsync-backup`. `permissions`, inne hooki i `settings.local.json` są nietykane. Niepoprawny JSON w istniejącym pliku → błąd i pominięcie (nigdy nadpisanie).
 - Hook: exit 2 + ostatnie linie błędów na stderr przy porażce testów; exit 0 przy `stop_hook_active`, braku zmian w repo (`git status --porcelain`) albo braku komendy testów.
@@ -125,7 +133,8 @@ Skutki:
 - `skillsync push` z projektu, w którym edytowano `CLAUDE.md`, nadpisze ten sam template co `copilot-instructions.md` — jeśli oba pliki mają rozjechaną lokalną część, wygrywa ten, który zapushowano jako ostatni.
 - Tryb `agents` (`instructions.entrypoint: agents` w manifeście albo `entrypoint: agents` w `~/.config/skillsync/config.yaml`; domyślnie `inline`): treść raz w bloku `AGENTS.md`, `CLAUDE.md` = nagłówek + `@AGENTS.md`, bez `.codex/skillsync-instructions.md`; `push` czyta wtedy blok `AGENTS.md`. Generator wraca do `inline` z ostrzeżeniem, gdy `AGENTS.md` jest śledzony/nieignorowany w git (także błąd gita), leży poza gitem z własną treścią, jest dowiązaniem albo ma zepsute znaczniki. Domyślną wartość zmieniaj dopiero po aktualizacji Skippstera (rozwija importy w sesjach).
 - Plik jest automatycznie dopisywany do `.gitignore` projektu (tak jak `copilot-instructions.md`) — nie commituj go, edytuj i pushuj do warstwy.
-- Wyłączenie dla konkretnego projektu: `claude: false` (albo `claude: {enabled: false}`) w `.github/.skillsync.yaml`.
+- Wyłączenie dla konkretnego projektu: `claude: false` (albo `claude: {enabled: false}`) w `.github/.skillsync.yaml`. `link` wtedy usuwa nasze wpisy hooków w `settings.local.json` (Stop, PreToolUse, SessionStart, SubagentStop) i nasze skrypty w `.claude/hooks/`, a także wpis `statusLine` i kopię `statusline.py` oraz kopię stylu `karta.md` (ta ostatnia tylko nietknięta i nieśledzona przez git); `settings.json` z hookiem Stop testów (`hooks.stop_tests`) i jego skrypt `check-tests.py` nie są ruszane. Pliki śledzone przez git zostają.
+- Opcjonalne, domyślnie wyłączone: `claude.statusline: true` (pasek statusu sesji, wpis `statusLine` w `settings.local.json`; cudzego paska nie nadpisuje) i `claude.output_styles: true` (styl `karta` jako kopia w `.claude/output-styles/`; `outputStyle` ustawia użytkownik). Wymagania wersji, ostrzeżenia `doctor` i ręczna próba: `docs/manifest.md`, `docs/cli.md`, `docs/development.md`.
 
 ## Jak dodać nowy skill (MUST-FOLLOW)
 
@@ -147,7 +156,7 @@ Zasady pisania skilla (opis, referencje, swoboda, zimny odczyt): [authoring.md](
 - wiedza jednego projektu → skill z prefiksem projektu (`<projekt>-*`) albo `instructions/<Projekt>.md`;
 - nazwa ogólna (`acli`, `azure-devops`, `csharp-*`, `sql-*`, `nhibernate`) = treść ogólna, bez projektów, serwerów i loginów;
   konkrety projektu przenieś do skilla projektu (`references/<źródło>.md`); ogólny skill może mieć najwyżej jednolinijkowy odsyłacz do skilla projektu, bez treści projektowej.
-Szczegóły i tabela: `<katalog repo skillsync>/docs/library.md` („Organizacja, projekt, wiedza ogólna”).
+Zasady nazewnictwa i zakresu: [authoring.md](references/authoring.md); warstwy organizacji i osobiste: `<katalog repo skillsync>/docs/layers-authoring.md`; pola frontmattera skilli: skill `copilot-skills-yaml`.
 
 ### Krok 2 — dopisz skill do manifestu projektu
 
@@ -165,7 +174,7 @@ Nie dopisuj skilla do sekcji "Skills Reference" w instrukcjach projektu: host ł
 Instrukcje projektu mają tylko punkty wejścia (3–5 linii). Zamiast tego:
 
 1. dopisz skill do `workflow/skill-catalog.yaml` (albo `skill-catalog.d/<id>.yaml`) swojej warstwy (`scope`: org|client|project|tech|workflow|tool|personal, `org`, `tech`);
-2. `description` ≤ 200 bajtów (`doctor` ostrzega powyżej);
+2. `description` ≤ 200 bajtów (`doctor` ostrzega powyżej); `doctor` ostrzega też o nieznanym kluczu frontmattera, złym typie i złej wartości (`skill_frontmatter.py`; Claude Code cicho ignoruje nieznane klucze, a pisownia `user-invokable` Copilota jest znana i bez uwagi): opis kluczy w skillu `copilot-skills-yaml`;
 3. `skillsync skills index` odświeża indeks (`--check` sprawdza aktualność);
 4. `skillsync suggest <projekt>` pokazuje braki/nadmiary skilli projektu (tylko odczyt), `skillsync doctor` ostrzega o skillu cudzej organizacji, braku skilla organizacji i niewykrytej technologii;
 5. `skillsync map <projekt>` buduje `.skillsync/map.md` (mapa repo dla `explore`/orkiestratora).
@@ -270,7 +279,7 @@ tests:
 claude: false                          # (opcjonalnie) wyłącza CLAUDE.md i wszystko w .claude/
 # vscode: {link_on_open: false}        # (opcjonalnie) bez taska `skillsync: link` (folderOpen) w .vscode/tasks.json
 # dispatch:                            # (opcjonalnie) konfiguracja skilla `dispatch`, walidowana przez doctor
-#   max_parallel: 3                    #   klucze: <katalog repo skillsync>/docs/manifest.md (sekcja `dispatch`)
+#   max_parallel: 3                    #   klucze: <katalog repo skillsync>/docs/manifest.md (sekcja `dispatch`; `pulse`: opt-in puls dyspozytora)
 ```
 
 Ustawienia per maszyna w `~/.config/skillsync/config.yaml` (nie synchronizowane): `layers`, `layer_rules`, `isolation`, `leakguard`, `discover_paths`, `variables`, `python_command` (Linux: `python3`; Windows zwykle `py`/`python`).
@@ -365,12 +374,12 @@ przez `@tag`, czy przez wildcard. Pozostałe skille (`workflow-retro`, `task-cla
 | `retro-scan <path> --run-id <id> --signals <plik> [--cross-project] --json` | tylko odczyt: próg i stan propozycji retrospektywy jakościowej dla sygnałów przebiegu (`--signals` to plik w `.skillsync/runs/<id>/`); wynik ma `signals[]`, `groups[]`, `sources`, `truncated`, `warnings`; w worktree czyta też główny checkout; `--cross-project` liczy powtórzenia sygnałów `repo: library` w innych projektach, bez ich nazw; złe wejście = `BLOCKED` |
 | `retro-decide <path> --cause-key K --decision approved\|rejected` | zapis decyzji w `docs/retro/decisions.yaml`; `approved` wymaga `--owner` i `--case`, istniejący klucz `--replace`, po poprawce `--replace --ref` |
 | `retro-decide <path> --proposal <run-id>/P<n> --decision rejected\|applied [--ref <sha>] [--replace]` | decyzja końcowa propozycji retrospektywy jakościowej: wpis w `retro-decisions.json` przebiegu i w sekcji `proposals:` rejestru `docs/retro/decisions.yaml` (opcjonalna; zawiera id, `repo`, `target`, decyzję, datę i `ref`); `applied` wymaga pełnego sha w `--ref`; wyklucza `--cause-key`, `--owner`, `--case`; w worktree `BLOCKED`; rejestr z `proposals:` wymaga generatora z tą obsługą |
-| `dispatch <path> [--run-id <id>] [--json]` | stan dyspozycji tylko do odczytu: karty, paczki, dzierżawy, kolejka merge, koszt znany albo `unknown`; bez wolnego tekstu |
+| `dispatch <path> [--run-id <id>] [--pulse] [--json]` | stan dyspozycji tylko do odczytu: karty, paczki, dzierżawy, kolejka merge, koszt znany albo `unknown`; bez wolnego tekstu |
 | `dashboard show <path> [--json] [--plan <rel>]` | tylko odczyt: stan planu, przebiegu i zgód jako JSON `schema: 1` (kontrakt: `docs/dashboard-contract.md` w repo Skillsync) |
 | `dashboard serve <path> [--port N \| --read-port N --approve-port M] [--read-bind ADR] [--approve-bind ADR] [--host H] [--approve-host H] [--read-host H] [--no-approvals]` | strona statusu z przyciskami zgód; bez flag portów dwa gniazda: odczyt na 5140 (wszystkie interfejsy), zgody na 5141 (tylko ta maszyna); ustawienia `dashboard:` (`local_only`, `read_bind`, `approve_bind`) w manifeście i configu maszyny; `--host` przesuwa tylko odczyt (zgody zostają na 127.0.0.1); `--host` i `--approve-host` bez portów = BLOCKED z podpowiedzią (stary tryb `--port N`); zajęty port = BLOCKED z numerem i właścicielem; `Host` sprawdzany na każdym endpoincie, odczyt spoza loopbacku przez literał IP tej maszyny (tryb dwóch gniazd), `--approve-host` albo `--read-host` (tylko odczyt z przeglądarki, w tym `/api/doc`, maskowany jak `/api/status`, z zastrzeżeniem, że maskowanie to heurystyka; nazwy bez portu); zgody zapisuje in-process |
 | `dashboard url <path> [--port N] [--host H] [--read] [--lan] [--json]` | adres z tokenem zgód (`http://127.0.0.1:<port>/#zgoda=<token>`) działającego `dashboard serve` (plik stanu w katalogu danych maszyny); `--read`: adres odczytu bez tokenu; `--lan`: adresy odczytu dla innych urządzeń (`lanUrls` w JSON); `BLOCKED` (exit 2): `server_not_running`, `approvals_disabled`, `ambiguous_server`, `host_not_allowed`, `invalid_project`, `read_not_exposed`; zgody ze strony wymagają tokenu (`X-Approve-Token`), bez niego strona jest tylko do odczytu |
 | `dashboard metrics <path> <run-id> [--json] [--plan <rel>]` | tylko odczyt: czasy podkroków `Fn.k`, liczby rund i porażek; podkrok bez danych oznaczony jawnie |
-| `approvals record <path> --word "GO plan\|GO implement\|CP\|READY" --run <run-id> --source cli\|ide [--sha SHA] [--file PLIK]` | zapis zgody w `.skillsync/runs/<run-id>/approvals.jsonl` (blokada plikowa, odmowa duplikatu = exit 2); tylko na słowo użytkownika, agent jej nie woła |
+| `approvals record <path> --word "GO plan\|GO implement\|CP\|READY" --run <run-id> --source cli\|ide [--sha SHA] [--file PLIK] [--expect-plan-state draft|approved|in_progress|done|archived]` | zapis zgody w `.skillsync/runs/<run-id>/approvals.jsonl` (blokada plikowa, odmowa duplikatu = exit 2; dla `CP`/`READY` flaga odmawia przy statusie planu innym niż podany, exit 2, `code: plan_state_changed`); tylko na słowo użytkownika, agent jej nie woła |
 | `benchmark <path> --suite <yaml>` | powtarzalny plan przypadków offline |
 
 Skill `dashboard` to strona statusu; wpis `status-board` w `skills:` rozwija się do `dashboard` tylko wtedy, gdy żadna warstwa nie ma skilla `status-board`.

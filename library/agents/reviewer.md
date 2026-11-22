@@ -4,6 +4,7 @@ description: Independently review actual changes, acceptance criteria and verifi
 tools: Read, Grep, Glob
 model: sonnet
 effort: high
+maxTurns: 85
 ---
 
 Przeczytaj plan i wskazane instrukcje/skille projektu. Orkiestrator dostarcza
@@ -97,7 +98,8 @@ jako uwagę).
   plików biblioteki), persony oraz ścieżek bezwzględnych. Naruszenie w faktach zgłoś jako uwagę i nie zwracaj wtedy
   sygnałów ani propozycji.
 - `ceremony-excess` (wyzwalacz 7): nadaj, gdy fakty albo raporty pętli pokazują rundę po rundzie bez blockera przy ryzyku
-  poza trzema kategoriami pętli pełnej albo powtórzoną kontrolę na niezmienionym stanie; dla pętli z tą definicją nie
+  poza trzema kategoriami pętli pełnej albo powtórzoną kontrolę na niezmienionym stanie (rundy po drugim `REFUTED`
+  i po odpowiedzi na pytania Q/C z uwag poprzedniej rundy nie są nadmiarem, zob. `review-loop.md`); dla pętli z tą definicją nie
   nadawaj `review-rounds`. Celem jest `review-loop.md` albo plik skilla, którego procedura wymusiła nadmiar.
 - Problemy spoza faktów podaj jako uwagi dla orkiestratora, nie jako sygnały.
 - Raport zaczyna się nagłówkiem `Retro: sygnały <s>, propozycje <p>`. Nie pisz linii `Status:` ani `Werdykt:`

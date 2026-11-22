@@ -93,6 +93,10 @@ pasować do środowiska, popraw ją tutaj zamiast obchodzić.
   a przynależność procesu do katalogu sprawdzaj w `/proc/<pid>/cwd`.
 - **Zegar sesji rozjechany z maszyną.** Godzina „z głowy”, z kontekstu rozmowy albo ze znacznika w wiadomości bywa przesunięta o godziny (dryf rzędu +2 h w stanie przebiegu). Każdy czas wpisywany do planu, checkpointu, stanu lub raportu bierz z `date` (np. `date +%H:%M`, `date -Iseconds`) albo z źródła, które go podało; nie szacuj i nie przepisuj z poprzedniej wiadomości.
 
+- **Glob i Grep nie widzą skilli dowiązanych do projektu.** Skille w `.claude/skills/` i `.github/skills/` to dowiązania (albo kopie) biblioteki, a narzędzia wyszukiwania hosta ich nie przechodzą, więc wynik „brak pliku” bywa fałszywy. `Read` po pełnej ścieżce pliku działa; listę i treść szukaj przez `command ls -1`, `find -L` albo `Read`.
+- **Narzędzie edycji hosta zapisuje plik z mieszanymi końcami linii (CRLF/LF) w samym LF**, więc jedna drobna zmiana przepisuje końce w całym pliku i diff pokazuje każdy wiersz. Przy plikach z mieszanymi końcami linii sprawdź końce po edycji (`git diff --stat`, `file <plik>`) albo edytuj skryptem na bajtach, który sprawdza liczbę zamian.
+- **Literał `\0` w skrypcie edycji na bajtach wstawia bajt NUL** do pliku tekstowego zapisywanego skryptem na bajtach (sekwencja znaków `\0` w tekście zamiany jest interpretowana jako NUL). Plik przestaje być tekstem, a diff i narzędzia go odrzucają. W `str.replace`/`bytes.replace` wystarczy surowy napis, ale szablon zamiany `re.sub` interpretuje `\0` także w surowym napisie (tam podwajaj odwrotny ukośnik), a po zapisie szukaj NUL (`grep -c -P '\x00' <plik>`).
+
 ## Procesy
 
 - **Szukaj procesów po katalogu roboczym, nie po wzorcu nazwy.** `pgrep -f` łapie własną
@@ -124,6 +128,17 @@ pasować do środowiska, popraw ją tutaj zamiast obchodzić.
   a po zgodzie powtórz komendę z prefiksem `SKILLSYNC_GUARD_EXCEPT='<powód i cytat zgody>' <komenda>`. Hook dopisze wiersz do
   `.skillsync/hook-exceptions.jsonl` (komenda, czas, powód). Prefiks dopisujesz tylko po zgodzie; podumysł zgłasza sprawę sesji głównej. Prefiks przy `bash -c '…'` obejmuje cały wewnętrzny tekst, więc nie łącz w nim usunięć, na które zgody nie było. Hook sam nie widzi zgody (to siatka przeciw pomyłce): nie dopisuj prefiksu bez niej.
 
+## Hooki Claude Code: kontekst, podagenci, koszt (Claude Code 2.1.318)
+
+- **`additionalContext` z PreToolUse dociera do modelu po wykonaniu narzędzia**, nie przed nim: ostrzeżenie o edycji pliku generowanego widać dopiero po zapisie. `deny` (exit 2) blokuje narzędzie, a stderr widzi model.
+- **SessionStart `additionalContext` dociera dla `startup`, `compact` i `clear`** (zmierzone; `resume` niezweryfikowane). Kontrolę zawartości kontekstu zrób próbą na żywo (`claude -p` z hookiem-sondą), nie cytatem modelu z pamięci.
+- **Podagent:** PreToolUse z podagenta ma `agent_id` i `agent_type`, z sesji głównej nie ma ich wcale. Nazwa narzędzia podagenta w zdarzeniach to `Task`, a w komunikatach modelu bywa `Agent`.
+- **SubagentStop przy kompaktowaniu** przychodzi z PUSTYM `agent_type`: filtr po roli musi pomijać puste wartości.
+- **Brak `MultiEdit`** w 2.1.318: dopasowania hooków to `Write`, `Edit`, `NotebookEdit`, `Bash`, `Task`.
+- **Koszt timeoutu hooka startowego:** timeout nie przerywa sesji (fail-open), ale SessionStart czeka pełny `timeout`. Dlatego SessionStart ma 3 s, a limit CLI wewnątrz hooka 2 s.
+- **Podagent z `git commit` mimo roli:** wzorzec Bash w `disallowedTools` nie jest granicą (zob. `disallowedtools-wzorzec-bash-usuwa-cale-narzedzie-podagenta`); granicę daje hook `guard-commands.py` z `hooks.subagent_commit`, a i tak to guardrail, nie sandbox.
+- Jak wykryć: `claude -p --output-format stream-json --verbose --include-hook-events` w tymczasowym repo i HOME; zdarzenia `hook_response` i payload z pliku-sondy dowodzą dostarczenia.
+
 ## Czas w raportach
 
 - **Godzin nie wpisuj z pamięci ani z szacunku.** Zegar sesji i zegar maszyny rozjeżdżają się („około 09:50” przy 20:26).
@@ -150,6 +165,7 @@ pasować do środowiska, popraw ją tutaj zamiast obchodzić.
 ## Testy
 
 - **Potok gubi kod wyjścia runnera testów.** `testy | tail -5 && git commit` (albo `… | grep wynik`) zwraca kod ostatniego polecenia w potoku, więc czerwone testy wyglądają na zielone, a commit i tak się wykonuje. Zapisz kod w zmiennej: `testy > log 2>&1; rc=$?; tail -5 log; [ $rc -eq 0 ] && git commit …`, albo `set -o pipefail` (zsh: `setopt pipefail`); wynik zawsze według `rc`, nie według ostatniej linii wyjścia.
+- **`skan; push` (skan sekretów połączony z pushem operatorem) nie jest bramką.** Średnik uruchamia push niezależnie od wyniku skanu, a `skan | tail && git push` gubi kod wyjścia jak w punkcie wyżej, więc wykryty sekret i tak wychodzi na zdalne repozytorium. Skan uruchom osobnym poleceniem, odczytaj wynik (kod wyjścia i raport) i dopiero potem wydaj osobne polecenie `git push`; nie łącz ich w jednym wywołaniu, także `gitleaks … && git push`.
 
 - **Windows: `Path.write_text` zamienia LF na CRLF**, więc skrót (sha256) liczony w teście z tekstu z LF
   nie zgadza się ze skrótem pliku. Helper fikstur, który zapisuje dowody, pisze z `newline=''` albo bajtami.
@@ -275,6 +291,8 @@ pasować do środowiska, popraw ją tutaj zamiast obchodzić.
   porównaj `git diff --cached --name-only` z listą kroku.
 
 ## Dostęp do serwerów i uprawnienia
+
+- **Nie podglądaj pliku z sekretem, także przez filtr maskujący** (`cat`, `sed`, `grep` z zamianą wartości). Filtr może przepuścić wartość, a wynik trafia do rozmowy i logów. Sprawdzaj istnienie, rozmiar i nazwy kluczy bez treści wartości (`test -s <plik>`, `wc -c < <plik>`; nazwy kluczy tylko dla plików w formacie `KEY=VALUE`: `cut -d= -f1 -s <plik>`, bo `cut` bez `-s` drukuje w całości każdą linię bez znaku `=`, np. klucz PEM albo goły token); porównania rób w pamięci i drukuj tylko wynik logiczny.
 
 - W trybie auto klasyfikator może odrzucić SSH do serwera jako odczyt z produkcji nawet
   przy regule `allow` w ustawieniach; jawne polecenie użytkownika w rozmowie może zmienić

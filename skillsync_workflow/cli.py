@@ -15,7 +15,7 @@ from pathlib import Path
 
 import yaml
 
-from . import guardhook
+from . import claude_manifest, guardhook, hooksync
 from .fsutil import ensure_utf8_streams, isabs, rmtree_force
 from .common import (CONDITIONAL_SKILL_ALIASES, append_missing_lines, checked_out_link, conditional_skill_alias, detect_eol, discover_excludes,
                      file_lines, is_excluded)
@@ -442,12 +442,7 @@ def build_instructions(project_dir: Path, manifest: dict, config: dict, dry_run:
 
 
 def claude_enabled(manifest: dict) -> bool:
-    claude_cfg = manifest.get("claude")
-    if claude_cfg is False:
-        return False
-    if isinstance(claude_cfg, dict) and claude_cfg.get("enabled") is False:
-        return False
-    return True
+    return claude_manifest.enabled(manifest)
 
 
 def ensure_root_gitignore(project_dir: Path, dry_run: bool = False, entry: str = "CLAUDE.md") -> None:
@@ -1362,7 +1357,10 @@ def merge_copy(src: "Source", dest: Path, state: dict, key: str, dry_run: bool =
     if conflict:
         print(f"[conflict] {dest} and the library both changed; not overwriting - resolve manually")
     elif local:
-        print(f"[info] Local edits in {dest} not pushed yet (run `skillsync push`)")
+        if key.startswith(OUTPUT_STYLE_KEY + ":"):
+            print(f"[info] Local edits kept: {dest}")   # `push` does not handle styles
+        else:
+            print(f"[info] Local edits in {dest} not pushed yet (run `skillsync push`)")
 
 
 def load_state(project_dir: Path) -> dict:
@@ -2256,6 +2254,69 @@ def build_claude_skills(project_dir: Path, manifest: dict, config: dict, dry_run
     save_state(project_dir, state, dry_run)
 
 
+OUTPUT_STYLES = ("karta.md",)
+OUTPUT_STYLE_KEY = "claude-output-style"
+
+
+def build_claude_output_styles(project_dir: Path, manifest: dict, config: dict, dry_run: bool = False) -> None:
+    """`claude.output_styles: true`: managed COPIES of the library styles in `.claude/output-styles/` (never links, never a foreign file or link, never
+    the setting `outputStyle`). Otherwise (key off, absent, `claude: false`) only OUR copy of each listed style goes, nothing else in the directory is
+    read or touched: untouched by state, or (no state entry) equal byte for byte to the library and not tracked by git (rule B1). Without the key and
+    without such a file there is nothing to read or write (K8)."""
+    from . import claude_manifest
+    target = project_dir / ".claude" / "output-styles"
+    wanted = claude_manifest.output_styles(manifest)
+    if not wanted and not any((target / name).is_file() and not (target / name).is_symlink() for name in OUTPUT_STYLES):
+        return
+    if target.is_symlink() or (target.exists() and not target.is_dir()):
+        if wanted:
+            print(f"[warn] Skipping {target}: not a directory; output styles are not installed")
+        return
+    layerset = config_layers(config)
+    state = load_state(project_dir)
+    entries = []
+    for name in OUTPUT_STYLES:
+        dest = target / name
+        key = f"{OUTPUT_STYLE_KEY}:{name}"
+        found = layerset.resolve(f"output-styles/{name}")
+        if wanted:
+            if found is None:
+                print(f"[warn] Missing output style in library: {name} (core layer)")
+                continue
+            if dest.is_symlink():
+                print(f"[warn] Skipping {dest}: a link is not managed by skillsync; to let skillsync manage it, delete it and run `skillsync link` again")
+                continue
+            place(Source(found[1], owners={"": found[0].id}), dest, "copy", state, key, False, dry_run)
+            if copy_tracked(state, key) and dest.is_file() and not dest.is_symlink():
+                entries.append(f"output-styles/{name}")
+            continue
+        if not dest.is_file() or dest.is_symlink():
+            continue
+        if copy_tracked(state, key):
+            ours = copy_untouched(dest, state, key)
+        else:   # without a state entry the copy is ours only when it equals the library byte for byte and git does not track it
+            try:
+                ours = found is not None and dest.read_bytes() == Path(found[1]).read_bytes() and not is_tracked(dest)
+            except OSError:
+                ours = False
+        if not ours:
+            continue
+        if dry_run:
+            print(f"[dry-run] Would remove obsolete: {name}")
+            continue
+        remove_item(dest)
+        drop_copy(state, key)
+        print(f"[clean] Removed obsolete: {name}")
+    save_state(project_dir, state, dry_run)
+    if wanted:
+        ensure_claude_gitignore(project_dir / ".claude", entries, dry_run=dry_run)
+    elif not dry_run:
+        try:
+            target.rmdir()   # only when empty: a user's files keep the directory
+        except OSError:
+            pass
+
+
 def build_claude_hooks(project_dir: Path, manifest: dict, config: dict, dry_run: bool = False) -> None:
     if not claude_enabled(manifest) or has_feature(manifest, config):
         return
@@ -2383,69 +2444,8 @@ def merge_closure_settings(project_dir: Path, manifest: dict, config: dict, want
 
     Wpis trafia do ignorowanego settings.local.json (settings.json bywa sledzony); cudze hooki i uprawnienia
     zostaja. Blad pliku to [warn], nigdy wyjatek, zeby `link` szedl dalej."""
-    settings_path = project_dir / ".claude" / "settings.local.json"
-    if not want and not settings_path.exists():
-        return True
-
-    existing = {}
-    try:
-        if settings_path.exists():
-            existing = json.loads(settings_path.read_text(encoding="utf-8"))
-    except ValueError:
-        print(f"[warn] Nieprawidlowy JSON w {settings_path}, pomijam scalanie")
-        return False
-    except OSError as error:
-        print(f"[warn] Nie udalo sie odczytac {settings_path}: {error}")
-        return False
-    if not isinstance(existing, dict) or not isinstance(existing.get("hooks", {}), dict):
-        print(f"[warn] Invalid hook settings structure: {settings_path}")
-        return False
-    updated = dict(existing)
-    hooks_section = dict(updated.get("hooks") or {})
-    stop = hooks_section.get("Stop", [])
-    if not isinstance(stop, list) or any(not isinstance(group, dict) or not isinstance(group.get("hooks", []), list) for group in stop):
-        print(f"[warn] Invalid Stop settings structure: {settings_path}")
-        return False
-    entry = build_closure_hook_entry(config)
-    present = [hook for group in stop for hook in group.get("hooks", []) if is_closure_hook(hook)]
-    if want and present == entry["hooks"]:
-        return False  # wpis jest aktualny; nie przestawiamy go ani nie nadpisujemy pliku
-    kept = []
-    for group in stop:
-        if "hooks" not in group:
-            kept.append(group)
-            continue
-        remaining = [hook for hook in group["hooks"] if not is_closure_hook(hook)]
-        if remaining or not group["hooks"]:
-            kept.append({**group, "hooks": remaining})
-    if want:
-        kept.append(entry)
-    if kept:
-        hooks_section["Stop"] = kept
-    else:
-        hooks_section.pop("Stop", None)
-    if hooks_section or "hooks" in existing:
-        updated["hooks"] = hooks_section
-
-    if updated == existing:
-        return not want
-    if settings_path.exists() and is_tracked(settings_path):
-        print(f"[warn] {settings_path} jest śledzony przez git, pomijam zapis")
-        return False
-    if dry_run:
-        print(f"[dry-run] Would update: {settings_path}")
-        return not want
-    try:
-        settings_path.parent.mkdir(parents=True, exist_ok=True)
-        if settings_path.exists():
-            backup_path = settings_path.with_name(settings_path.name + ".skillsync-backup")
-            write_text_lf(backup_path, read_user_text(settings_path))
-        write_text_lf(settings_path, json_file_text(updated, read_user_text(settings_path) if settings_path.exists() else ""))
-    except OSError as error:
-        print(f"[warn] Nie udalo sie zapisac {settings_path}: {error}")
-        return False
-    print(f"Updated: {settings_path}")
-    return not want
+    entry = build_closure_hook_entry(config) if want else None   # the entry is needed only for adding (the early exits come first, as before)
+    return hooksync.merge_entry(project_dir / ".claude" / "settings.local.json", "Stop", entry, is_closure_hook, want, dry_run)
 
 
 def sync_closure_hook(project_dir: Path, manifest: dict, config: dict, dry_run: bool = False) -> None:
@@ -2582,70 +2582,18 @@ def merge_guard_settings(project_dir: Path, manifest: dict, config: dict, want: 
     settings_path = project_dir / guardhook.SETTINGS
     if not want and not settings_path.exists():
         return True
-    existing = {}
-    try:
-        if settings_path.exists():
-            existing = json.loads(settings_path.read_text(encoding="utf-8"))
-    except ValueError:
-        print(f"[warn] Nieprawidlowy JSON w {settings_path}, pomijam scalanie")
-        return False
-    except OSError as error:
-        print(f"[warn] Nie udalo sie odczytac {settings_path}: {error}")
-        return False
-    if not isinstance(existing, dict) or not isinstance(existing.get("hooks", {}), dict):
-        print(f"[warn] Invalid hook settings structure: {settings_path}")
-        return False
-    updated = dict(existing)
-    hooks_section = dict(updated.get("hooks") or {})
-    pre = hooks_section.get("PreToolUse", [])
-    if not isinstance(pre, list) or any(not isinstance(group, dict) or not isinstance(group.get("hooks", []), list) for group in pre):
-        print(f"[warn] Invalid PreToolUse settings structure: {settings_path}")
-        return False
-    _, allow, _ = guardhook.hook_settings(manifest)
-    entry = guardhook.hook_entry(config.get("python_command", "python3"), guard_mode(manifest, config), allow, guard_tests_config(manifest, config))
-    present = [hook for group in pre for hook in group.get("hooks", []) if guardhook.is_guard_hook(hook)]
-    if want and present == entry["hooks"] and existing.get("attribution") == guardhook.ATTRIBUTION_SETTING:
-        return False  # the entry and the attribution setting are current; do not touch the file
-    if want:   # the host setting that switches AI attribution off: always our value, the other keys of the file stay
-        if "attribution" in existing and existing["attribution"] != guardhook.ATTRIBUTION_SETTING and not guardhook.attribution_state(existing["attribution"]):
+    if want:   # the host setting that switches AI attribution off: always our value (hooksync writes it as `extra`)
+        existing = hooksync.peek_settings(settings_path)
+        pre = ((existing or {}).get("hooks") or {}).get("PreToolUse", [])
+        if existing is not None and "attribution" in existing and existing["attribution"] != guardhook.ATTRIBUTION_SETTING \
+                and not guardhook.attribution_state(existing["attribution"]) and hooksync.groups_valid(pre):
             print(f"[warn] {settings_path}: `attribution` switched on, set to the empty form (the ban on AI attribution cannot be turned off)")
-        updated["attribution"] = dict(guardhook.ATTRIBUTION_SETTING)
-    kept = []
-    for group in pre:
-        if "hooks" not in group:
-            kept.append(group)
-            continue
-        remaining = [hook for hook in group["hooks"] if not guardhook.is_guard_hook(hook)]
-        if remaining or not group["hooks"]:
-            kept.append({**group, "hooks": remaining})
-    if want:
-        kept.append(entry)
-    if kept:
-        hooks_section["PreToolUse"] = kept
-    else:
-        hooks_section.pop("PreToolUse", None)
-    if hooks_section or "hooks" in existing:
-        updated["hooks"] = hooks_section
-    if updated == existing:
-        return not want
-    if settings_path.exists() and is_tracked(settings_path):
-        print(f"[warn] {settings_path} jest śledzony przez git, pomijam zapis")
-        return False
-    if dry_run:
-        print(f"[dry-run] Would update: {settings_path}")
-        return not want
-    try:
-        settings_path.parent.mkdir(parents=True, exist_ok=True)
-        if settings_path.exists():
-            backup_path = settings_path.with_name(settings_path.name + ".skillsync-backup")
-            if not backup_path.exists():  # the closure hook writes the same file first: keep the earliest copy
-                write_text_lf(backup_path, read_user_text(settings_path))
-        write_text_lf(settings_path, json_file_text(updated, read_user_text(settings_path) if settings_path.exists() else ""))
-    except OSError as error:
-        print(f"[warn] Nie udalo sie zapisac {settings_path}: {error}")
-        return False
-    print(f"Updated: {settings_path}")
-    return not want
+    _, allow, _ = guardhook.hook_settings(manifest)
+    entry = guardhook.hook_entry(config.get("python_command", "python3"), guard_mode(manifest, config), allow, guard_tests_config(manifest, config),
+                                 hooksync.commit_mode(manifest, project_skills(manifest, config))) if want else None
+    return hooksync.merge_entry(settings_path, "PreToolUse", entry, guardhook.is_guard_hook, want, dry_run, backup="earliest",
+                                extra={"attribution": dict(guardhook.ATTRIBUTION_SETTING)} if want else None,
+                                same=hooksync.guard_same(entry) if want else None)
 
 
 def sync_guard_hook(project_dir: Path, manifest: dict, config: dict, dry_run: bool = False) -> None:
@@ -2949,17 +2897,24 @@ def _link_project(manifest: dict, project_dir: Path, config: dict, dry_run: bool
         build_claude_agents(project_dir, manifest, config, dry_run=dry_run)
         build_claude_skills(project_dir, manifest, config, dry_run=dry_run)
         build_claude_hooks(project_dir, manifest, config, dry_run=dry_run)
+        build_claude_output_styles(project_dir, manifest, config, dry_run=dry_run)
         merge_claude_settings(project_dir, manifest, config, dry_run=dry_run)
         sync_closure_hook(project_dir, manifest, config, dry_run=dry_run)
         sync_guard_hook(project_dir, manifest, config, dry_run=dry_run)
+        hooksync.sync_hooks(project_dir, manifest, config, dry_run=dry_run)
         build_claude_mcp(project_dir, manifest, config, dry_run=dry_run)
         ensure_claude_gitignore(project_dir / ".claude", claude_gitignore_entries(manifest, config), dry_run=dry_run)
         ensure_claude_gitignore(project_dir / ".claude", closure_gitignore_entries(manifest, config), dry_run=dry_run)
         ensure_claude_gitignore(project_dir / ".claude", guard_gitignore_entries(manifest, config), dry_run=dry_run)
+        ensure_claude_gitignore(project_dir / ".claude", hooksync.gitignore_entries(manifest, config), dry_run=dry_run)
+    else:
+        build_claude_output_styles(project_dir, manifest, config, dry_run=dry_run)   # `claude: false` removes our copy of a style
+        hooksync.remove_ours(project_dir, dry_run=dry_run, config=config)   # `claude: false` removes every entry and script of ours (K10)
     ensure_gitignore(github_dir, dry_run=dry_run)
     build_codex(project_dir, manifest, config, dry_run=dry_run, mode=mode)
     ensure_link_on_open(project_dir, manifest, config, dry_run=dry_run)
-    if has_feature(manifest, config) or guard_mode(manifest, config) != "off" or guard_tests_config(manifest, config) is not None:
+    if has_feature(manifest, config) or guard_mode(manifest, config) != "off" or guard_tests_config(manifest, config) is not None \
+            or hooksync.wanted(manifest, config):
         ensure_root_gitignore(project_dir, entry=".skillsync/", dry_run=dry_run)  # also the trail of delete-guard exceptions (the attribution ban takes none)
     update_composites(project_dir, config[COMPOSITES_KEY], dry_run)
 

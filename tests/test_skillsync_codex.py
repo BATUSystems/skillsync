@@ -12,6 +12,7 @@ from unittest import mock
 
 from tests.test_skillsync import SKILLSYNC_PATH, TempProjectMixin, skillsync
 from tests.layers_helpers import needs_os_symlinks  # noqa: E402
+from tests.tmp_paths import child  # noqa: E402
 
 
 class CodexTests(TempProjectMixin, unittest.TestCase):
@@ -19,11 +20,11 @@ class CodexTests(TempProjectMixin, unittest.TestCase):
         super().setUp()
         self.manifest = {"skills": ["feature", "copilot-orchestrator"], "agents": ["explore", "reviewer"]}
         for name in self.manifest["skills"]:
-            folder = self.library_dir / "skills" / name
+            folder = child(self.library_dir / "skills", name)
             folder.mkdir()
             (folder / "SKILL.md").write_text(f"---\nname: {name}\ndescription: test\n---\nBody\n")
         for name in self.manifest["agents"]:
-            (self.library_dir / "agents" / (name + ".md")).write_text(
+            child(self.library_dir / "agents", name + ".md").write_text(
                 f'---\nname: {name}\ndescription: Read the code\nmodel: haiku\n---\nPolish: ąę. Quotes " and slash \\\n')
         (self.library_dir / "instructions" / "_base.md").write_text("Base {{ project }}\n")
         self.config["variables"] = {"project": "example"}
@@ -43,7 +44,7 @@ class CodexTests(TempProjectMixin, unittest.TestCase):
         return self.project_dir / ".codex" / "config.toml"
 
     def role(self, name="explorer"):
-        return self.project_dir / ".codex" / "agents" / (name + ".toml")
+        return child(self.project_dir / ".codex" / "agents", name + ".toml")
 
     def test_shared_roles_compile_to_native_toml_and_skill_is_discoverable(self):
         self.build()

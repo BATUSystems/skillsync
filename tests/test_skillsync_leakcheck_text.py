@@ -16,6 +16,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from cli_module import SKILLSYNC_PATH  # noqa: E402
 from skillsync_workflow import leakguard  # noqa: E402
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child  # noqa: E402
 
 CLIENT = 'Brenk' + 'or'              # client organisation term (synthetic)
 NICK = 'Skrz' + 'at'                 # owner nick (synthetic)
@@ -35,7 +39,7 @@ class TextCase(unittest.TestCase):
         self.targets.write_text(json.dumps(TARGETS), encoding='utf-8')
 
     def write(self, name, text):
-        path = self.root / name
+        path = child(self.root, name)
         path.write_text(text, encoding='utf-8')
         return path
 

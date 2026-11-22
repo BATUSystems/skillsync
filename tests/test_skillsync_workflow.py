@@ -15,8 +15,12 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from unittest import mock  # noqa: E402
-from layers_helpers import generator_version, make_layer, real_state_snapshot, transitional_config  # noqa: E402
+from layers_helpers import assert_real_state_unchanged, generator_version, make_layer, real_state_snapshot, transitional_config  # noqa: E402
 from layers_helpers import needs_fifo, needs_flock, needs_os_symlinks, needs_posix  # noqa: E402
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child, descend  # noqa: E402
 
 CLI = Path(__file__).resolve().parents[1] / 'skillsync'
 
@@ -34,8 +38,7 @@ class WorkflowFixture(unittest.TestCase):
 
     def setUp(self):
         real_state = real_state_snapshot()
-        self.addCleanup(lambda: self.assertEqual(real_state_snapshot(), real_state,
-                                                 'test touched real Skillsync state dirs'))
+        self.addCleanup(lambda: assert_real_state_unchanged(self, real_state))
         self.temp = tempfile.TemporaryDirectory(prefix='skillsync-contract-')
         self.addCleanup(self.temp.cleanup)
         self.base = Path(self.temp.name)
@@ -92,7 +95,7 @@ class WorkflowFixture(unittest.TestCase):
         return load_layer_project(self.root)[2]
 
     def write(self, name, content):
-        path = self.root / name
+        path = descend(self.root, name)
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open('w', encoding='utf-8', newline='') as handle:  # no LF -> CRLF on Windows: callers hash the text
             handle.write(content)
@@ -631,7 +634,7 @@ class ContextContracts(WorkflowFixture):
                               'agent_overrides': {'reviewer': {'name': 'custom_reviewer'}}}})
         self.save()
         for name in self.manifest['skills']:
-            source = self.library / 'skills' / name
+            source = child(self.library / 'skills', name)
             source.mkdir(parents=True)
             (source / 'SKILL.md').write_text(f'---\nname: {name}\ndescription: Fixture workflow\n---\nSkill')
         adapters = self.library / 'skills/feature/references'
@@ -1202,7 +1205,7 @@ class ReadinessPrototypeGate(WorkflowFixture):
     def prototype(self, slug='alpha', accepted=True, v1=False):
         from skillsync_workflow import prototype_server as ps
         from tests.test_skillsync_prototype_accept import page_for
-        directory = self.root / 'docs' / 'prototypes' / slug
+        directory = child(self.root / 'docs' / 'prototypes', slug)
         directory.mkdir(parents=True)
         (directory / 'prototype.json').write_text('{"title": "%s"}\n' % slug, encoding='utf-8')
         (directory / 'index.html').write_text(page_for(slug), encoding='utf-8')

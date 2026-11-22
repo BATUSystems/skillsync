@@ -8,6 +8,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from tests.test_skillsync import skillsync  # noqa: E402
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import descend  # noqa: E402
 
 
 class AddGitignoreEntriesTests(unittest.TestCase):
@@ -106,7 +110,7 @@ class EnsureFunctionsKeepLineEndingsTests(unittest.TestCase):
             (".claude", lambda d: skillsync.ensure_claude_gitignore(d, ["skills/x", "agents/y.md"])),
             (".cursor/rules", lambda d: skillsync.ensure_cursor_gitignore(d)),
         ):
-            directory = self.root / folder
+            directory = descend(self.root, folder)
             directory.mkdir(parents=True)
             before = b"keep\r\nme\r\n"
             (directory / ".gitignore").write_bytes(before)

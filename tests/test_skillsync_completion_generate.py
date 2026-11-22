@@ -1,0 +1,395 @@
+"""CORE-COMPLETION F1: the completion scripts generated from the argparse tree (K1-K5).
+
+Golden files are made from a SMALL parser built here (not from the real one, which every package changes); the real parser is only used for parity:
+every command and flag it has must appear in the script of every shell."""
+import argparse
+import contextlib
+import io
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+os.environ.setdefault('SKILLSYNC_TEST_LIBRARY', str(ROOT / 'library'))
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from tmp_paths import child  # noqa: E402
+from skillsync_workflow import __version__, cli, completion  # noqa: E402
+
+
+def usable_bash():
+    """`bash` found by PATH; on Windows the WSL launcher in System32 (which CreateProcess prefers over PATH) is not usable here, so it counts as absent."""
+    found = shutil.which('bash')
+    if found and sys.platform == 'win32':
+        system = os.path.normcase(os.path.join(os.environ.get('SystemRoot', r'C:\Windows'), 'System32'))
+        if os.path.normcase(os.path.dirname(os.path.abspath(found))) == system:
+            return None
+    return found
+
+
+def usable_powershell():
+    """`(exe, extra args)` of a PowerShell host: `pwsh` when there is one; on Windows otherwise Windows PowerShell 5.1 (`powershell`, which lives in System32 and
+    is the right host there, unlike `bash`), so that the matrix covers 5.1; its default policy is `Restricted`, hence `-ExecutionPolicy Bypass` for the dot-sourced
+    script. Elsewhere without `pwsh`: `None`."""
+    found = shutil.which('pwsh')
+    if found:
+        return found, []
+    if sys.platform == 'win32':
+        found = shutil.which('powershell')
+        if found:
+            return found, ['-ExecutionPolicy', 'Bypass']
+    return None
+
+GOLDEN = Path(__file__).resolve().parent / 'fixtures' / 'completion'
+EXTENSIONS = {'bash': 'bash', 'zsh': 'zsh', 'powershell': 'ps1'}
+
+
+def fixture_parser():
+    root = argparse.ArgumentParser(prog='skillsync')
+    root.add_argument('--version', action='version', version='x')
+    subparsers = root.add_subparsers(dest='command')
+    link = subparsers.add_parser('link', help='link')
+    link.add_argument('project', nargs='?')
+    link.add_argument('--json', action='store_true')
+    link.add_argument('--mode', choices=['copy', "it's", 'two words'])
+    link.add_argument('--out-dir')
+    link.add_argument('--target-file', metavar='FILE')
+    link.add_argument('--hidden', help=argparse.SUPPRESS)
+    link.add_argument('--direct')
+    link.add_argument('--tag', '-t')
+    skills = subparsers.add_parser('skills', help='skills')
+    inner = skills.add_subparsers(dest='skills_command')
+    add = inner.add_parser('add')
+    add.add_argument('name', choices=['alpha', 'beta'])
+    add.add_argument('--force', action='store_true')
+    inner.add_parser('list')
+    return subparsers
+
+
+def reordered_fixture_parser():
+    """The same command tree as `fixture_parser()` with commands and sub-commands registered in the opposite order. The generator sorts these
+    (command paths, `subs`); the order of flags and of `choices` is the parser's own and is kept, so the test does not claim more than that."""
+    root = argparse.ArgumentParser(prog='skillsync')
+    root.add_argument('--version', action='version', version='x')
+    subparsers = root.add_subparsers(dest='command')
+    skills = subparsers.add_parser('skills', help='skills')
+    inner = skills.add_subparsers(dest='skills_command')
+    inner.add_parser('list')
+    add = inner.add_parser('add')
+    add.add_argument('name', choices=['alpha', 'beta'])
+    add.add_argument('--force', action='store_true')
+    link = subparsers.add_parser('link', help='link')
+    link.add_argument('project', nargs='?')
+    link.add_argument('--json', action='store_true')
+    link.add_argument('--mode', choices=['copy', "it's", 'two words'])
+    link.add_argument('--out-dir')
+    link.add_argument('--target-file', metavar='FILE')
+    link.add_argument('--hidden', help=argparse.SUPPRESS)
+    link.add_argument('--direct')
+    link.add_argument('--tag', '-t')
+    return subparsers
+
+
+def real_subparsers():
+    captured = {}
+    original = argparse.ArgumentParser.parse_args
+
+    def capture(self, *args, **kwargs):
+        captured['parser'] = self
+        raise SystemExit(0)
+
+    argparse.ArgumentParser.parse_args = capture
+    saved = sys.argv
+    sys.argv = ['skillsync']
+    try:
+        with contextlib.suppress(SystemExit):
+            cli.main()
+    finally:
+        argparse.ArgumentParser.parse_args = original
+        sys.argv = saved
+    return next(a for a in captured['parser']._actions if isinstance(a, argparse._SubParsersAction))
+
+
+def walk(subparsers, path=()):
+    for name, parser in subparsers.choices.items():
+        yield path + (name,), parser
+        for action in parser._actions:
+            if isinstance(action, argparse._SubParsersAction):
+                yield from walk(action, path + (name,))
+
+
+class GeneratedFixtureCase(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.subparsers = fixture_parser()
+
+    def script(self, shell):
+        return completion.render(shell, self.subparsers)
+
+
+class Golden(GeneratedFixtureCase):
+    def test_every_shell_matches_its_golden_file(self):
+        for shell, extension in EXTENSIONS.items():
+            with self.subTest(shell=shell):
+                path = GOLDEN / f'skillsync.{extension}'
+                self.assertTrue(path.exists(), f'missing golden file {path}: generate it from fixture_parser() with completion.render and review it by hand')
+                self.assertEqual(self.script(shell).replace(f'skillsync {__version__};', 'skillsync @VERSION@;'), path.read_bytes().decode('utf-8'))
+
+    def test_the_header_and_the_line_endings(self):
+        for shell in completion.SHELLS:
+            text = self.script(shell)
+            lines = text.split('\n')
+            first = lines[1] if shell == 'zsh' else lines[0]
+            self.assertEqual(first, f'# skillsync completion (generated by skillsync {__version__}; do not edit)')
+            self.assertNotIn('\r', text)
+            self.assertTrue(text.endswith('\n'))
+        self.assertTrue(self.script('zsh').startswith('#compdef skillsync\n'))
+        self.script('powershell').encode('ascii')
+
+    def test_the_output_is_deterministic(self):
+        for shell in completion.SHELLS:
+            self.assertEqual(self.script(shell), self.script(shell))
+
+    def test_the_output_does_not_depend_on_the_order_of_commands_and_subcommands(self):
+        reordered = reordered_fixture_parser()
+        for shell in completion.SHELLS:
+            with self.subTest(shell=shell):
+                self.assertEqual(completion.render(shell, reordered), self.script(shell))
+
+    def test_unsuppressed_values_are_quoted_for_each_shell(self):
+        self.assertIn("'it'\\''s'", self.script('bash'))
+        self.assertIn("'it'\\''s'", self.script('zsh'))
+        self.assertIn("'it''s'", self.script('powershell'))
+
+    def test_the_model_marks_paths_choices_and_suppressed_options(self):
+        model = completion.build_model(self.subparsers)
+        link = model[('link',)]
+        self.assertNotIn('--hidden', link['flags'])
+        self.assertEqual(link['flags']['--json'], ('none', []))
+        self.assertEqual(link['flags']['--mode'], ('choices', ['copy', "it's", 'two words']))
+        self.assertEqual(link['flags']['--out-dir'][0], 'path')
+        self.assertEqual(link['flags']['--target-file'][0], 'path')
+        self.assertEqual(link['flags']['--direct'][0], 'value')
+        self.assertEqual(link['flags']['--tag'], link['flags']['-t'])
+        self.assertTrue(link['pos_path'])
+        self.assertEqual(model[('skills', 'add')]['pos_choices'], ['alpha', 'beta'])
+        self.assertEqual(model[('skills',)]['subs'], ['add', 'list'])
+        self.assertEqual(model[()]['subs'], ['link', 'skills'])
+        self.assertEqual(sorted(model[()]['flags']), ['--help', '--version', '-h'])
+
+    def test_path_words_split_on_separators_and_case(self):
+        words = completion.path_words
+        self.assertEqual(words('projectPath'), ['project', 'path'])
+        self.assertEqual(words('OUT_DIR'), ['out', 'dir'])
+        self.assertEqual(words('target-FILE'), ['target', 'file'])
+        self.assertEqual(words('XMLFile'), ['xml', 'file'])
+        self.assertNotIn('dir', words('direct'))
+
+
+class Parity(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.subparsers = real_subparsers()
+        cls.scripts = {shell: completion.render(shell, cls.subparsers) for shell in completion.SHELLS}
+
+    def test_every_command_and_flag_of_the_real_parser_is_in_every_script(self):
+        self.assertGreater(len(list(walk(self.subparsers))), 20)
+        for shell, script in self.scripts.items():
+            for path, parser in walk(self.subparsers):
+                with self.subTest(shell=shell, command=' '.join(path)):
+                    self.assertIn(f"'{path[-1]}'", script)
+                    for action in parser._actions:
+                        if action.help != argparse.SUPPRESS:
+                            for flag in action.option_strings:
+                                self.assertIn(f"'{flag}'", script)
+            for flag in completion.ROOT_FLAGS:
+                self.assertIn(f"'{flag}'", script)
+
+    def test_a_command_added_by_another_module_enters_the_script_without_a_generator_change(self):
+        subparsers = fixture_parser()
+        extra = subparsers.add_parser('brand-new')
+        extra.add_argument('--zzz-flag')
+        for shell in completion.SHELLS:
+            script = completion.render(shell, subparsers)
+            self.assertIn("'brand-new'", script)
+            self.assertIn("'--zzz-flag'", script)
+
+
+class Syntax(GeneratedFixtureCase):
+    def check(self, command, shell, extension):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = child(tmp, f'script.{extension}')
+            path.write_bytes(self.script(shell).encode('utf-8'))
+            result = subprocess.run(command + [path.as_posix()], capture_output=True, text=True, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_bash_accepts_the_script(self):
+        if not usable_bash():
+            self.skipTest('no bash on PATH: bash is not installed')
+        self.check([usable_bash(), '-n'], 'bash', 'bash')
+
+    def test_zsh_accepts_the_script(self):
+        if not shutil.which('zsh'):
+            self.skipTest('no zsh on PATH: zsh is not installed')
+        self.check(['zsh', '-n'], 'zsh', 'zsh')
+
+    def test_powershell_parses_the_script(self):
+        host = usable_powershell()
+        if not host:
+            self.skipTest('no pwsh on PATH: pwsh is not installed')
+        pwsh, extra = host
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'script.ps1'
+            path.write_bytes(self.script('powershell').encode('utf-8-sig'))   # with a BOM, as the installer writes it: 5.1 reads a file without one as ANSI
+            command = ('$e = $null; [void][System.Management.Automation.Language.Parser]::ParseFile($env:SK_SCRIPT, [ref]$null, [ref]$e); '
+                       'if ($e.Count) { $e | ForEach-Object { $_.Message }; exit 1 }')
+            result = subprocess.run([pwsh, '-NoProfile', '-NonInteractive', *extra, '-Command', command], capture_output=True, text=True, timeout=120, env={**os.environ, 'SK_SCRIPT': str(path)})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_powershell_completes_in_a_real_host(self):
+        host = usable_powershell()
+        if not host:
+            self.skipTest('no pwsh on PATH: pwsh is not installed')
+        pwsh, extra = host
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'script.ps1'
+            path.write_bytes(self.script('powershell').encode('utf-8-sig'))   # with a BOM, as the installer writes it: 5.1 reads a file without one as ANSI
+            probe = ('. $env:SK_SCRIPT; foreach ($l in \'skillsync s\', \'skillsync link --mode \', \'skillsync skills add b\') '
+                     '{ ($l + \' => \' + ((TabExpansion2 $l $l.Length).CompletionMatches.CompletionText -join \',\')) }')
+            result = subprocess.run([pwsh, '-NoProfile', '-NonInteractive', *extra, '-Command', probe], capture_output=True, text=True, timeout=120,
+                                    stdin=subprocess.DEVNULL, env={**os.environ, 'SK_SCRIPT': str(path)})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.splitlines(), ['skillsync s => skills', "skillsync link --mode  => copy,'it''s','two words'", 'skillsync skills add b => beta'])
+
+    def test_bash_completes_in_a_real_shell(self):
+        if not usable_bash():
+            self.skipTest('no bash on PATH: bash is not installed')
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'script.bash'
+            path.write_bytes(self.script('bash').encode('utf-8'))
+            probe = ('source "$1"; run() { COMP_WORDS=("$@"); COMP_CWORD=$(( $# - 1 )); _skillsync; printf "%s|" "${COMPREPLY[@]}"; echo; }; '
+                     'run skillsync s; run skillsync skills a; run skillsync link --mode ""; run skillsync skills add --f; run skillsync --')
+            result = subprocess.run([usable_bash(), '-c', probe, 'probe', path.as_posix()], capture_output=True, text=True, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.splitlines(), ['skills|', 'add|', "copy|it's|two words|", '--force|', '--help|--version|'])
+
+    def test_powershell_registers_the_exe_name_too(self):
+        self.assertIn("-CommandName @('skillsync', 'skillsync.exe')", self.script('powershell'))
+
+    def test_powershell_completes_the_exe_name_too(self):
+        host = usable_powershell()
+        if not host:
+            self.skipTest('no pwsh on PATH: pwsh is not installed')
+        pwsh, extra = host
+        with tempfile.TemporaryDirectory() as tmp:
+            path = child(tmp, 'script.ps1')
+            path.write_bytes(self.script('powershell').encode('utf-8-sig'))   # with a BOM, as the installer writes it: 5.1 reads a file without one as ANSI
+            probe = '. $env:SK_SCRIPT; $l = \'skillsync.exe s\'; ((TabExpansion2 $l $l.Length).CompletionMatches.CompletionText -join \',\')'
+            result = subprocess.run([pwsh, '-NoProfile', '-NonInteractive', *extra, '-Command', probe], capture_output=True, text=True, timeout=120,
+                                    stdin=subprocess.DEVNULL, env={**os.environ, 'SK_SCRIPT': str(path)})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.splitlines(), ['skills'])
+
+    def bash_probe(self, tail, cwd=None, before=''):
+        """Output lines of a bash that sourced the script and then ran `tail` (a stub `compopt` logs its arguments when `before` defines it)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = child(tmp, 'script.bash')
+            path.write_bytes(self.script('bash').encode('utf-8'))
+            probe = (before + ' source "$1"; run() { COMP_WORDS=("$@"); COMP_CWORD=$(( $# - 1 )); _skillsync; printf "%s|" "${COMPREPLY[@]}"; echo; }; ' + tail)
+            result = subprocess.run([usable_bash(), '-c', probe, 'probe', path.as_posix()], capture_output=True, text=True, timeout=60, cwd=cwd)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return result.stdout.splitlines()
+
+    def test_bash_turns_filename_mode_off_for_candidates_that_are_not_paths(self):
+        if not usable_bash():
+            self.skipTest('no bash on PATH: bash is not installed')
+        stub = 'compopt() { echo "compopt $*"; };'
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as empty:   # the last case (a path) lists the working directory
+            lines = self.bash_probe('run skillsync s; run skillsync link --mode ""; run skillsync --; run skillsync link --out-dir ""', cwd=empty, before=stub)
+        self.assertEqual(lines, ['compopt +o filenames', 'skills|', 'compopt +o filenames', "copy|it's|two words|", 'compopt +o filenames', '--help|--version|', '|'])
+
+    def test_bash_without_compopt_still_completes(self):
+        if not usable_bash():
+            self.skipTest('no bash on PATH: bash is not installed')
+        # `enable -n` removes the builtin the way bash 3.2 lacks it; the call must be guarded, so nothing is printed and nothing fails
+        self.assertEqual(self.bash_probe('run skillsync s; run skillsync link --mode ""', before='enable -n compopt;'), ['skills|', "copy|it's|two words|"])
+
+    @unittest.skipIf(sys.platform == 'win32', 'POSIX only: a file name with an asterisk')
+    def test_bash_file_candidates_are_listed_as_they_are_without_expansion(self):
+        if not usable_bash():
+            self.skipTest('no bash on PATH: bash is not installed')
+        with tempfile.TemporaryDirectory() as tmp:
+            for name in ('a*', 'ab', 'a b'):
+                Path(tmp, name).write_bytes(b'')   # literal names written by the test
+            lines = self.bash_probe('run skillsync link --out-dir a', cwd=tmp)
+        self.assertEqual(sorted(lines[0].split('|')[:-1]), ['a b', 'a*', 'ab'])
+
+
+class Command(unittest.TestCase):
+    def run_command(self, argv):
+        previous = completion._SUBPARSERS   # register() overwrites this module global; leave it as it was
+        try:
+            return self._run_command(argv)
+        finally:
+            completion._SUBPARSERS = previous
+
+    def _run_command(self, argv):
+        root = argparse.ArgumentParser(prog='skillsync')
+        subparsers = root.add_subparsers(dest='command')
+        fixture_extra = subparsers.add_parser('probe')
+        fixture_extra.add_argument('--x')
+        completion.register(subparsers)
+        raw = io.BytesIO()
+        out = io.TextIOWrapper(raw, encoding='ascii', newline='')
+        saved = sys.stdout
+        sys.stdout = out
+        try:
+            args = root.parse_args(argv)
+            code = args.func(args)
+            out.flush()
+        finally:
+            sys.stdout = saved
+        return code, raw.getvalue()
+
+    def test_each_shell_prints_its_script_as_utf8_bytes_with_lf(self):
+        for shell in completion.SHELLS:
+            with self.subTest(shell=shell):
+                code, data = self.run_command(['completion', shell])
+                self.assertEqual(code, 0)
+                self.assertIn(b'# skillsync completion (generated by skillsync ', data)
+                self.assertNotIn(b'\r', data)
+                self.assertIn(b"'probe'", data)
+                self.assertIn(b"'completion'", data)
+
+    def test_run_command_leaves_the_global_command_tree_alone(self):
+        sentinel = object()
+        self.addCleanup(setattr, completion, '_SUBPARSERS', completion._SUBPARSERS)
+        completion._SUBPARSERS = sentinel
+        self.run_command(['completion', 'bash'])
+        self.assertIs(completion._SUBPARSERS, sentinel)
+
+    def test_an_unknown_shell_is_an_argparse_error(self):
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as caught:
+            self.run_command(['completion', 'fish'])
+        self.assertEqual(caught.exception.code, 2)
+
+    def test_the_real_cli_prints_a_bash_script_and_exits_0(self):
+        raw = io.BytesIO()
+        out = io.TextIOWrapper(raw, encoding='utf-8', newline='')
+        saved_out, saved_argv = sys.stdout, sys.argv
+        sys.stdout, sys.argv = out, ['skillsync', 'completion', 'bash']
+        try:
+            cli.main()   # exit code 0 returns without SystemExit
+            out.flush()
+        finally:
+            sys.stdout, sys.argv = saved_out, saved_argv
+        self.assertIn(b'_skillsync', raw.getvalue())
+
+
+if __name__ == '__main__':
+    unittest.main()

@@ -17,9 +17,12 @@ import shlex
 import shutil
 import signal
 import socket
+import stat
 import sys
+import tempfile
 import threading
 import time
+import weakref
 from pathlib import Path
 
 from .common import read_project
@@ -30,7 +33,7 @@ from .runs import _slug
 from . import test_events as events
 from . import test_gate
 from . import test_adapters
-from .test_adapters import karma_line
+from .test_adapters import karma_line, playwright as playwright_adapter, vitest as vitest_adapter
 from . import test_reports
 
 REPORT_SINCE_SLACK_S = 2.0
@@ -52,15 +55,37 @@ _UNITTEST_FAILED = re.compile(r'(?m)^FAILED \(([^)\n]*)\)')
 _PYTEST_SUMMARY = re.compile(r'(?m)^(?:=+ )?(?:\d+ (?!failed)\w+(?: \w+)?, )*(\d+) failed\b[^\n]* in [\d.:]+s')
 
 
-def _hidden_failures(output):
+_JEST_TESTS = re.compile(r'^Tests:\s+(\d+) failed,')
+_MAX_SUMMARY_LINE = 2000   # a longer line is no summary line (and a regex on a megabyte line must not stall the end of the run)
+
+
+def _hidden_failures(output, source='regex'):
     """Failed tests that a clean exit code hides: the exact summaries of unittest (`FAILED (failures=2, errors=1)`) and pytest (`3 failed, 5 passed in 2s`,
-    also inside the `=====` banner), not any `N failed` of a log line (`3 failed attempts`, `0 failed`, `failed=0`). 0 when the output names none."""
+    also inside the `=====` banner), not any `N failed` of a log line (`3 failed attempts`, `0 failed`, `failed=0`). With the counters read from the output itself
+    (`source` is `regex`: no adapter and no report) also the anchored summary lines of Playwright (`  1 failed`, `  2 interrupted`), Vitest (the `Tests` line, never
+    `Test Files`) and Jest (`Tests: 1 failed, ...`), read with the patterns of the adapters; for `junit` and `adapter` those lines are the business of the report
+    or of the adapter. 0 when the output names none."""
     output = events._ANSI.sub('', output)   # a coloured summary (`--color=yes`) starts with an escape, not with the text
     total = 0
     for found in _UNITTEST_FAILED.finditer(output):
         total = max(total, sum(int(n) for kind, n in re.findall(r'(failures|errors)=(\d+)', found.group(1))))
     for found in _PYTEST_SUMMARY.finditer(output):
         total = max(total, int(found.group(1)))
+    if source == 'regex':
+        for line in output.splitlines():   # splitlines drops a trailing `\r` of a Windows console
+            if len(line) > _MAX_SUMMARY_LINE:
+                continue
+            playwright_line = playwright_adapter.SUMMARY.match(line)
+            if playwright_line and playwright_line.group('kind') in ('failed', 'interrupted'):
+                total = max(total, int(playwright_line.group('n')))
+            vitest_line = vitest_adapter.TESTS.match(line)
+            if vitest_line:
+                for count, kind in vitest_adapter.SUMMARY_PART.findall(vitest_line.group('body')):
+                    if kind == 'failed':
+                        total = max(total, int(count))
+            jest_line = _JEST_TESTS.match(line)
+            if jest_line:
+                total = max(total, int(jest_line.group(1)))
     return total
 
 
@@ -426,6 +451,24 @@ def find_reports(tool, cwd, explicit, since):
     return found
 
 
+def remove_tree(path):
+    """Removes a directory of git objects, also the read-only files and directories git for Windows (and a read-only mode) leaves; never raises."""
+    def fix(function, failed, *_):
+        try:
+            for item in (failed, os.path.dirname(failed)):
+                os.chmod(item, stat.S_IRWXU)
+            function(failed)
+        except OSError:
+            pass
+    try:
+        try:
+            shutil.rmtree(path, onexc=fix)   # Python 3.12+
+        except TypeError:
+            shutil.rmtree(path, onerror=fix)
+    except OSError:
+        pass
+
+
 class TestRecorder:
     """Observer of `quality.run_validation` that records one attempt of a step (`started`, `line`, `finished`)."""
     __test__ = False   # not a test case for unittest/pytest discovery
@@ -440,6 +483,8 @@ class TestRecorder:
         self.number = None
         self.started_wall = None
         self.tree_start = None
+        self.objects_dir = None   # the new git objects of the tree ids of THIS run (start and end) live here, never in the repository; removed with the run
+        self._objects_cleanup = None
         self.ended = False
         self.karma = karma_line.Tally()   # the live counters of Karma-style `Executed N of M` lines when no adapter is selected
         self.last = None
@@ -449,8 +494,10 @@ class TestRecorder:
         self.writer = events.EventWriter(self.path, mask=self.mask)   # a failure here (disk, permissions) reaches `run_validation`: the command does not start
         command = check.get('command') or ' '.join(shlex.quote(a) for a in check.get('display') or check.get('argv') or [])   # `display`: the command of the user, before `resolve_executable`
         self.started_wall = time.time()
+        self.objects_dir = tempfile.mkdtemp(prefix='skillsync-objects-')
+        self._objects_cleanup = weakref.finalize(self, remove_tree, self.objects_dir)   # also when `started` fails or `finished` is never called
         try:
-            self.tree_start = test_gate.work_tree_id(self.root)   # the content the tests START on (the gate compares it with the end)
+            self.tree_start = test_gate.work_tree_id(self.root, objects=self.objects_dir)   # the content the tests START on (the gate compares it with the end)
         except Exception:   # noqa: BLE001 - never lose the run over the fingerprint
             self.tree_start = None
         self.writer.start(treeStart=self.tree_start, run=self.run_id, step=self.step, stepSource=self.step_source, attempt=self.number, command=command,
@@ -507,6 +554,7 @@ class TestRecorder:
     def finished(self, check, result, output):
         writer = self.writer
         if writer is None:
+            self._drop_objects()
             return
         try:
             self._finish(check, result, output)
@@ -517,6 +565,11 @@ class TestRecorder:
                 self.last = {'status': 'BLOCKED', 'attempt': self.number, 'file': self.path, 'source': None}
         finally:
             writer.close()
+            self._drop_objects()
+
+    def _drop_objects(self):
+        if self._objects_cleanup is not None:
+            self._objects_cleanup()   # idempotent: runs `rmtree` once
 
     def _adapter_counts(self, complete):
         """The end counters from what the adapter saw, or None. A COMPLETE stream (`end` returned True: every test of the run was seen, none is truncated) gives
@@ -575,7 +628,7 @@ class TestRecorder:
         elif code != 0:
             status, reason = 'FAIL', None
         else:
-            hidden = _hidden_failures(output or '') if not failed else 0
+            hidden = _hidden_failures(output or '', source) if not failed else 0
             if hidden:
                 failed = hidden
                 if counts is not None:
@@ -589,10 +642,16 @@ class TestRecorder:
                 reason = karma_unexecuted_reason(output)
             status = 'BLOCKED' if reason else 'PASS'
         try:
-            tree = test_gate.work_tree_id(self.root)
+            tree = test_gate.work_tree_id(self.root, objects=self.objects_dir)
         except Exception:   # never lose the end of the run over the fingerprint
             tree = None
-        writer.end(status, code, reason=reason, counts=counts, ms=_ms(result.get('duration_seconds')), source=source, tree=tree)
+        changed = None
+        if tree and self.tree_start and tree != self.tree_start:   # the gate will refuse this run: name the files that changed while the tests ran (at most five)
+            try:
+                changed = test_gate.changed_paths(self.root, self.tree_start, tree, self.objects_dir, limit=events.MAX_CHANGED)
+            except Exception:   # noqa: BLE001 - a hint, never the end of the run
+                changed = None
+        writer.end(status, code, reason=reason, counts=counts, ms=_ms(result.get('duration_seconds')), source=source, tree=tree, changed=changed)
         self.ended = True
         self.last = {'status': status, 'attempt': self.number, 'file': self.path, 'source': source}
 

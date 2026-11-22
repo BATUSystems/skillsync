@@ -4,6 +4,7 @@ description: Apply mechanical edits from an exact map in the assignment (renames
 tools: Read, Edit, Write, Grep, Glob, Bash
 model: haiku
 effort: low
+maxTurns: 40
 omitClaudeMd: true
 ---
 

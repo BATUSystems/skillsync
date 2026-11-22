@@ -18,6 +18,10 @@ i dokumentacji; uzupełnia [pętlę samodoskonalenia](measurement.md).
   a przy wejściu z klucza po utworzeniu PR-ów (obejmuje uwagi z code review człowieka i poprawki po nim).
 - Ponowne PASS pętli po poprawkach i ponowne zamknięcie `final-2` nie uruchamiają retrospektywy; sygnały z tego etapu
   pomijasz. Przebieg zakończony `blocked` (bez `final`) nie ma retrospektywy.
+- Spóźniona retrospektywa (rekord `final` zapisany przed nią) to inna sytuacja: retrospektywy jeszcze nie było, więc
+  wykonaj ją w tym samym przebiegu z tym samym materiałem. Rekord `retro-quality` po `final` otwiera przebieg
+  ([pomiar](measurement.md)), więc zamknij go ponownie rekordem `final-2`. Odstępstwo zapisz w „Wyniku” i jako sygnał
+  `skill-deviation`; krok zamknięcia w `Progress` odhaczasz dopiero po rekordzie `retro-quality`.
 - Przebieg ponowiony (`.N`) przed `final`: retrospektywa raz, w próbie, która zamyka przebieg; pliki retro wcześniejszej
   próby tej samej tożsamości nie są „innym przebiegiem” ani powtórzeniem i nie liczą się w skanie.
 - Retrospektywa nie jest rundą [pętli przeglądu](review-loop.md): bez licznika `k/4`, bezpieczników i rekordów `FAIL`.
@@ -41,7 +45,8 @@ Analizę rozpoczyna co najmniej jeden z sygnałów:
    ryzyko według reguły [pętli przeglądu](review-loop.md):
    1. pętla przeglądu ma rundę 2 lub dalszą, choć poprzednia runda nie znalazła blockera, a ryzyko kroku albo planu
       leży poza trzema kategoriami pętli pełnej (strażnik wycieków, migracja, bezpieczeństwo); wyjątkiem jest runda 2
-      po drugim `REFUTED` tej samej uwagi ([review-loop](review-loop.md)) oraz, przy `ceremony: demo`, runda 2 z powodów z
+      po drugim `REFUTED` tej samej uwagi ([review-loop](review-loop.md)), runda po odpowiedzi użytkownika na pytania Q/C
+   zgłoszone z uwag poprzedniej rundy (tabela „Stany” w [review-loop](review-loop.md)) oraz, przy `ceremony: demo`, runda 2 z powodów z
       [ceremonii demo](ceremony-demo.md) (co najmniej 3 majory, poprawki w strażniku wycieków, migracji lub bezpieczeństwie);
    2. późniejsza pętla albo krok powtórzyły tę samą kontrolę na niezmienionym stanie (ten sam HEAD, to samo drzewo
       robocze, ten sam materiał).
@@ -93,6 +98,12 @@ ani `Werdykt:` (także wciętych lub pogrubionych): takie linie liczy skan rapor
 Checkpoint `retro-quality` `PASS` przed `final`: dowód `retro-review.md` (z podagentem) albo `retro-facts.md`
 (bez podagenta albo bez sygnałów). Dowód rekordu `final` jest jak w [pomiarze](measurement.md) (log końcowych
 kontroli przebiegu); retrospektywa go nie zmienia.
+
+Przy co najmniej jednym sygnale pliki `retro-signals.json` i `retro-decisions.json` (wpis `open` albo `deferred` dla
+każdej pozycji `proposals[]`) muszą istnieć przed `PASS` kroku `retro-quality` („Po skanie”, punkty 5 i 6); „Brak
+sygnałów” ich nie wymaga. Nie dodawaj ich jako `--evidence`: `retro-decisions.json` zmienia się po checkpoincie, a dowód
+jest hashowany, więc zmiana zostawiłaby przebieg trwale `partial` (plik nie jest dowodem checkpointu). Niezmienny
+`retro-signals.json` może być dodatkowym dowodem.
 
 ## Skan progu i stanu
 
@@ -164,6 +175,8 @@ działają tylko w bieżącym projekcie, a sygnały `repo: project` nie wychodz�
 4. Reguła 14 (cel już zawiera regułę) zostaje po stronie orkiestratora, także dla `user-correction`.
 5. Pola `repeat_of`, `attached_to`, `previously_rejected`, `recurrence_of` przenieś do `retro-signals.json` i propozycji.
    Potem zapisz `retro-signals.json` (raz, po ocenie i po `git apply --check` wszystkich diffów); potem się nie zmienia.
+6. Przy co najmniej jednym sygnale zapisz od razu `retro-decisions.json` z wpisem `open` (w worktree `deferred`) dla
+   każdej pozycji `proposals[]`, przed checkpointem `retro-quality` `PASS`; przy braku propozycji lista `decisions` jest pusta.
 
 **Wariant ręczny (bez CLI).** Kolejność dla każdego sygnału bieżącego przebiegu:
 
@@ -198,7 +211,7 @@ Stan propozycji to ostatni wpis w `retro-decisions.json` jej przebiegu. W worktr
   równą `target`, a `git apply --check` przechodzi. Porażka: przygotuj diff sam z opisu zmian i sprawdź ponownie
   (`diff_by: orchestrator`). Druga porażka: propozycji nie pokazuj, nie wpisuj jej do `proposals[]`, a powód podaj
   w „Wyniku”.
-- Pokazanie: tytuł, cel, właściciel, sygnały, diff; wpis `open` powstaje przy pokazaniu (w worktree od razu `deferred`; z `Katalog: główny` w `direct` „TAK” działa jak w głównym checkoucie). „Wynik” wymienia sygnały
+- Pokazanie: tytuł, cel, właściciel, sygnały, diff; wpis `open` istnieje już po skanie („Po skanie”, punkt 6), więc pokazanie nie dopisuje kolejnego (w worktree od początku `deferred`; z `Katalog: główny` w `direct` „TAK” działa jak w głównym checkoucie). „Wynik” wymienia sygnały
   i propozycje z decyzjami.
 
 ## Słowa zgody
@@ -227,12 +240,12 @@ decyzja). Inne słowa nie są zgodą; wiadomość dyspozytora też nie. Słowa z
 
 | Stan | Wejście | Następny krok |
 |---|---|---|
-| `open` | pokazanie po `git apply --check` | „TAK”, „NIE”, „POPRAW” |
+| `open` | zapis po skanie i `git apply --check` (pokazanie bez nowego wpisu) | „TAK”, „NIE”, „POPRAW” |
 | `revising` | „POPRAW P<n> <uwaga>” | nowy diff, kontrola, ponowne pokazanie (`open` z nowym `diff`) |
 | `rejected` | „NIE P<n>” | koniec; tłumienie wg kroku (c) |
 | `approved` | „TAK P<n>” albo „TAK <run-id>/P<n>”, dowolny właściciel | `test`/`hook` → `handoff`; pozostali: kontrole wstępne, potem `applied`, `deferred` albo pytanie |
 | `applied` | commit lokalny; `ref` = sha | koniec |
-| `deferred` | pokazanie w przebiegu w worktree; „TAK” dla `repo: project` w przebiegu PR w głównym checkoucie | „TAK <run-id>/P<n>” w głównym checkoucie (po scaleniu, gdy dotyczy): najpierw kontrola, że para nie ma innej propozycji, której wpis `rejected` albo `applied` ma datę tę samą albo późniejszą niż dzień pokazania tej propozycji (konflikt = pytanie bez wpisu), potem wpis `approved` i dalej jak w `approved` |
+| `deferred` | zapis po skanie w przebiegu w worktree; „TAK” dla `repo: project` w przebiegu PR w głównym checkoucie | „TAK <run-id>/P<n>” w głównym checkoucie (po scaleniu, gdy dotyczy): najpierw kontrola, że para nie ma innej propozycji, której wpis `rejected` albo `applied` ma datę tę samą albo późniejszą niż dzień pokazania tej propozycji (konflikt = pytanie bez wpisu), potem wpis `approved` i dalej jak w `approved` |
 | `handoff` | z `approved`, właściciel `test` albo `hook`, także dla propozycji z przebiegu PR i z worktree | osobny `bugfix` z przypadkiem, który najpierw zawodzi; po jego zamknięciu `applied` z `ref` commita poprawki albo „NIE <run-id>/P<n>” |
 | `failed` | walidacja albo commit nie przeszły; zmiana cofnięta | pytanie |
 | `stale` | diff przestał się stosować (cel zmienił się po pokazaniu) | „POPRAW” albo „NIE” |
@@ -289,7 +302,7 @@ w worktree, karta `dispatch`). Retrospektywa odbywa się, ale:
 
 - skan czyta także główny checkout (tylko odczyt), więc propozycje powstają również z powtórzeń; zapisy decyzji
   końcowych (`retro-decide --proposal`) są tam zablokowane;
-- każda propozycja przy pokazaniu dostaje wpis `deferred`; słowa zgody nie działają;
+- każda propozycja dostaje wpis `deferred` (zapisany po skanie, przed pokazaniem); słowa zgody nie działają;
 - „Wynik” albo raport podaje polecenie „TAK <run-id>/P<n>” do wydania w głównym checkoucie;
 - przed sprzątnięciem worktree skopiuj pliki `retro-*` do `.skillsync/runs/<run-id>/` głównego checkoutu (w karcie razem
   z kopią przebiegu z [trybu roboczego](worker-mode.md)); po tej kopii worktree nie zmienia już plików retro.
@@ -365,7 +378,7 @@ Wpisy tylko dopisujesz. Bieżący stan i diff propozycji to jej ostatni wpis. `d
 
 ## Reguły szczegółowe
 
-1. Wpisy decyzji: w głównym checkoucie (także przy `Katalog: główny` w `direct`) pokazanie zapisuje `open`; w przebiegu w worktree od razu `deferred` (bez `open`).
+1. Wpisy decyzji: w głównym checkoucie (także przy `Katalog: główny` w `direct`) `open` zapisujesz po skanie, przed `PASS` kroku (pokazanie go nie dubluje); w przebiegu w worktree od razu `deferred` (bez `open`).
    „TAK” zapisuje `approved`, a po kontrolach kolejny wpis ze stanem końcowym (`applied`, `deferred`, `handoff`,
    `failed`, `stale`); przy pytaniu zostaje `approved`. `handoff` następuje bez kontroli wstępnych; konflikt pary przy
    „TAK <run-id>/P<n>” to pytanie bez wpisu. „NIE” zapisuje `rejected`, „POPRAW” `revising`, a nowy diff `open`.

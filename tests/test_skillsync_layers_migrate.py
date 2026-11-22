@@ -31,6 +31,10 @@ ROOT = TESTS.parent
 sys.path.insert(0, str(TESTS))
 sys.path.insert(0, str(ROOT))
 
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child, descend  # noqa: E402
 from layers_helpers import (LINK_MODES, SKILL_TEXT, LayersCase, commit, each_mode, generator_version, git, machine_data_dir,  # noqa: E402
                             link_mode, make_layer, tree_snapshot, write, yaml_text)
 from skillsync_workflow import layers  # noqa: E402
@@ -95,7 +99,7 @@ class MigrateCase(LayersCase):
         return json.loads(process.stdout)
 
     def new_project(self, name, manifest_text=None, *, with_git=True):
-        path = self.projects / name
+        path = descend(self.projects, name)
         text = manifest_text if manifest_text is not None else yaml_text(
             {'skills': ['feature'], 'instructions': {'merge': ['_base'], 'template': 'proj'}, 'claude': True,
              'codex': False, 'mcp': False})
@@ -119,7 +123,7 @@ class MigrateCase(LayersCase):
 
     def core_layer(self, name='core-layer'):
         """A real core layer (with `layer.yaml`) holding the files of the old library."""
-        return make_layer(self.work / name, 'core', 'core', dict(OLD_LIBRARY_FILES), readme=False, changelog=False)
+        return make_layer(child(self.work, name), 'core', 'core', dict(OLD_LIBRARY_FILES), readme=False, changelog=False)
 
     def link_through_old_library(self, project, mode='symlink'):
         """Link `project` the way 0.9.x did, so that its managed links/copies come from the old library path, and

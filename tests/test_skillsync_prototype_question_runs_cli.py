@@ -17,6 +17,10 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import descend  # noqa: E402
 from skillsync_workflow import prototype as pt  # noqa: E402
 from skillsync_workflow import prototype_server as ps  # noqa: E402
 from tests import test_skillsync_prototype_question_cli as C  # noqa: E402
@@ -305,7 +309,7 @@ class RecordLineTests(RunsCliCase):
     ROW = '- Q1 [EKSPERT]: Czy faktura? (ekspert: %s) — odpowiedź: tak — ekspert: ewa, 2026-11-12T10:00Z'
 
     def spec(self, lines, spec=SPEC):
-        path = self.root / spec
+        path = descend(self.root, spec)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
 

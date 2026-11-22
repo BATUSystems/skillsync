@@ -18,6 +18,7 @@ import contextlib
 import functools
 import json
 import os
+import stat as stat_module
 import subprocess
 import sys
 import tempfile
@@ -25,6 +26,10 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child, descend  # noqa: E402
 import yaml
 
 REAL_HOME = Path.home()
@@ -62,10 +67,10 @@ def guard_real_state(case):
     server of another session that starts or stops while the tests run (its state file under `dashboard/`) fails the guard too: run the
     guarded tests when no other `dashboard serve` of this user changes state (on the station: under the `heavy-run` lock)."""
     before = real_state_snapshot()
-    case.addCleanup(lambda: case.assertEqual(real_state_snapshot(), before, 'test touched real Skillsync state dirs'))
+    case.addCleanup(lambda: assert_real_state_unchanged(case, before))
 
 ISOLATED_VARS = ('HOME', 'USERPROFILE', 'XDG_CACHE_HOME', 'XDG_DATA_HOME', 'XDG_CONFIG_HOME',
-                 'LOCALAPPDATA', 'APPDATA', 'GIT_CONFIG_GLOBAL', 'GIT_CONFIG_NOSYSTEM', 'SKILLSYNC_CONFIG')
+                 'LOCALAPPDATA', 'APPDATA', 'ZDOTDIR', 'GIT_CONFIG_GLOBAL', 'GIT_CONFIG_NOSYSTEM', 'SKILLSYNC_CONFIG')
 # Git variables that would leak the caller's identity into temporary repositories.
 GIT_IDENTITY_VARS = ('GIT_AUTHOR_NAME', 'GIT_AUTHOR_EMAIL', 'GIT_AUTHOR_DATE', 'GIT_COMMITTER_NAME',
                      'GIT_COMMITTER_EMAIL', 'GIT_COMMITTER_DATE', 'GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE',
@@ -84,6 +89,7 @@ def isolated_paths(root):
         'XDG_CONFIG_HOME': root / 'xdg-config',
         'LOCALAPPDATA': root / 'localappdata',
         'APPDATA': root / 'appdata',
+        'ZDOTDIR': root / 'zdotdir',
         'GIT_CONFIG_GLOBAL': root / 'gitconfig-global',
         'SKILLSYNC_CONFIG': root / 'skillsync-config.yaml',
     }
@@ -93,6 +99,7 @@ def isolated_paths(root):
     values['GIT_CONFIG_GLOBAL'].write_text('', encoding='utf-8')
     result = {key: str(value) for key, value in values.items()}
     result['GIT_CONFIG_NOSYSTEM'] = '1'
+    result['SKILLSYNC_NO_COMPLETION'] = '1'   # shell completion is installed only by tests that ask for it (they set the variable themselves)
     return result
 
 
@@ -140,31 +147,133 @@ def _refreshed_by_read_only_git(path, relative=None):
     return '.git' in parts[:-1] and (path.name.endswith('.lock') or path.name == 'gc.pid')
 
 
+# The composite cache (`composed`, on Windows `cache/composed`) is rewritten by the `skillsync link` of ANY other session while a test
+# runs: the mtime of the DIRECTORIES in it and the registry `.projects.json` change without a write of the test under guard. The
+# snapshot therefore leaves out the metadata of those directories (a new or removed directory and every file stay visible) and compares
+# the registry only for projects below the temporary directory (a test that links a REAL project there still fails the guard).
+_COMPOSED_SCOPES = (('composed',), ('cache', 'composed'))
+_COMPOSED_REGISTRY = '.projects.json'
+_TMP_ROOT = Path(tempfile.gettempdir()).resolve()   # once, at import: the cleanup of a test runs under a substituted environment
+
+
+def _composed_parts(parts):
+    """Parts after the composite cache directory when `parts` (relative to a state dir) is that directory or lies in it, else None."""
+    for scope in _COMPOSED_SCOPES:
+        if parts[:len(scope)] == scope:
+            return parts[len(scope):]
+    return None
+
+
+def _registry_entries(path):
+    """The registry entries (`{project: {skill: hash}}`) of projects below the temporary directory; a missing or damaged file is empty."""
+    try:
+        data = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return {}
+    entries = {}
+    for project, value in (data.items() if isinstance(data, dict) else ()):
+        try:
+            inside = Path(project).resolve().is_relative_to(_TMP_ROOT)
+        except (OSError, ValueError):
+            continue
+        if inside:
+            entries[project] = value
+    return entries
+
+
+def _link_target(path, stat):
+    """The target of a symlink or a Windows junction (a reparse point), else None. The target is part of the entry because the size and the
+    modification time of a replaced link can be identical (Windows keeps no size for a link, and its clock ticks in milliseconds)."""
+    if stat_module.S_ISLNK(stat.st_mode) or getattr(stat, 'st_file_attributes', 0) & getattr(stat_module, 'FILE_ATTRIBUTE_REPARSE_POINT', 0x400):
+        try:
+            target = os.readlink(path)
+        except (OSError, ValueError):
+            return None
+        return target[4:] if target.startswith('\\\\?\\') and not target.startswith('\\\\?\\UNC\\') else target   # Windows: no `\\?\` in the report
+    return None
+
+
 def real_state_snapshot():
-    """Stable description of the real per-user state dirs (None = directory absent), without the files that read-only git
-    commands of other processes refresh (`_refreshed_by_read_only_git`)."""
+    """Description of the real per-user state dirs: `{str(directory): None (absent) | {path relative to it: value}}`, without the
+    files that read-only git commands of other processes refresh (`_refreshed_by_read_only_git`). A value is `(kind, size, mtime_ns)`, `('dir', None, None)` for a directory of the composite cache (metadata left out) or `('entry', json)` for a registry entry of a project below the temporary directory (the registry file itself is not listed);
+    `real_state_difference` turns two snapshots into readable lines."""
     snapshot = {}
     for directory in REAL_STATE_DIRS:
         if not directory.exists():
             snapshot[str(directory)] = None
             continue
-        entries = []
+        entries = {}
         for path in sorted(directory.rglob('*')):
-            if _refreshed_by_read_only_git(path, path.relative_to(directory)):
+            relative = path.relative_to(directory)
+            if _refreshed_by_read_only_git(path, relative):
+                continue
+            inside = _composed_parts(relative.parts)
+            if inside is not None and inside[:1] and inside[0].startswith(_COMPOSED_REGISTRY + '.tmp-') and len(inside) == 1:
+                continue   # the temporary file of the atomic write of the registry
+            if inside == (_COMPOSED_REGISTRY,) and path.is_file():
+                for project, value in sorted(_registry_entries(path).items()):
+                    entries[f'{relative.as_posix()}[{project}]'] = ('entry', json.dumps(value, sort_keys=True))
                 continue
             try:
                 stat = path.lstat()
             except OSError:
                 continue
-            if path.is_dir() and ('.git' in path.relative_to(directory).parts):
+            link = _link_target(path, stat)
+            is_dir = stat_module.S_ISDIR(stat.st_mode) and link is None
+            if is_dir and ('.git' in relative.parts):
                 # `git status`/`git fetch` create and rename lock and temporary files inside `.git` (`index.lock`, `objects`,
                 # `refs/remotes`), which moves the mtime and size of those DIRECTORIES; a real write still shows up as a
                 # changed or new file (a ref, an object, a layer file), so inside `.git` only files are compared
-                entries.append((path.relative_to(directory).as_posix(), 0, 0))
+                entries[relative.as_posix()] = ('dir', 0, 0)
                 continue
-            entries.append((path.relative_to(directory).as_posix(), stat.st_size, stat.st_mtime_ns))
-        snapshot[str(directory)] = tuple(entries)
+            if is_dir and inside is not None:
+                entries[relative.as_posix()] = ('dir', None, None)   # metadata of the composite cache directories: see above
+                continue
+            kind = 'dir' if is_dir else 'file' if link is None else f'link -> {link}'
+            entries[relative.as_posix()] = (kind, stat.st_size, stat.st_mtime_ns)
+        snapshot[str(directory)] = entries
     return snapshot
+
+
+STATE_DIFFERENCE_LIMIT = 10
+
+
+def _describe_state_value(value):
+    if value is None:
+        return 'brak'
+    kind, size, mtime = value if len(value) == 3 else (value[0], value[1], None)
+    if kind == 'entry':
+        return size
+    if size is None:
+        return kind
+    return f'{kind} {size} B, mtime {mtime}'
+
+
+def real_state_difference(before, after, limit=STATE_DIFFERENCE_LIMIT):
+    """Lines `<path>: <before> -> <after>` for what differs between two `real_state_snapshot()` results (at most `limit`, then
+    `i N innych`); an empty list means the snapshots are equal. A directory that appeared or disappeared is one line."""
+    lines = []
+    for directory in sorted(set(before) | set(after)):
+        old, new = before.get(directory), after.get(directory)
+        if old is None and new is None:
+            continue
+        if old is None or new is None:
+            lines.append(f'{directory}: {"brak" if old is None else "katalog"} -> {"brak" if new is None else "katalog"}')
+            continue
+        for relative in sorted(set(old) | set(new)):
+            if old.get(relative) != new.get(relative):
+                lines.append(f'{directory}/{relative}: {_describe_state_value(old.get(relative))} -> '
+                             f'{_describe_state_value(new.get(relative))}')
+    if len(lines) > limit:
+        lines = lines[:limit] + [f'i {len(lines) - limit} innych']
+    return lines
+
+
+def assert_real_state_unchanged(case, before):
+    """Fails `case` with the changed paths (before -> after) when the real state dirs differ from the snapshot `before`."""
+    lines = real_state_difference(before, real_state_snapshot())
+    if lines:
+        case.fail('test touched real Skillsync state dirs:\n' + '\n'.join(lines))
 
 
 class IsolatedTestCase(unittest.TestCase):
@@ -185,7 +294,7 @@ class IsolatedTestCase(unittest.TestCase):
 
     def _assert_real_state_untouched(self):
         # Runs as a cleanup, i.e. after the test body and tearDown.
-        self.assertEqual(real_state_snapshot(), self._real_state, 'test touched real Skillsync state dirs')
+        assert_real_state_unchanged(self, self._real_state)
 
     def subprocess_env(self, **extra):
         env = dict(os.environ)
@@ -194,11 +303,11 @@ class IsolatedTestCase(unittest.TestCase):
 
     def make_repo(self, name='repo', email='dev@example.test', user='Dev Example'):
         """Create an empty git repository (branch `main`) with a local identity."""
-        path = self.work / name
+        path = child(self.work, name)
         suffix = 1
         while path.exists():
             suffix += 1
-            path = self.work / f'{name}-{suffix}'
+            path = child(self.work, f'{name}-{suffix}')
         path.mkdir(parents=True)
         git(path, 'init', '-q', '-b', 'main')
         git(path, 'config', 'user.email', email)
@@ -370,7 +479,7 @@ def make_layer(root, layer_id, kind, files=None, *, version='1.0.0', core_min=No
     if changelog:
         write(root / 'CHANGELOG.md', '# Changelog\n')
     for rel, text in (files or {}).items():
-        write(root / rel, text)
+        write(descend(root, rel), text)
     return root
 
 
@@ -386,7 +495,7 @@ class LayersCase(IsolatedTestCase):
         return Path(self.env['SKILLSYNC_CONFIG'])
 
     def layer_dir(self, layer_id, kind, files=None, **kwargs):
-        return make_layer(self.work / 'layers' / layer_id, layer_id, kind, files, **kwargs)
+        return make_layer(child(self.work / 'layers', layer_id), layer_id, kind, files, **kwargs)
 
     def write_config(self, layers=(), rules=(), **extra):
         """Machine config. `layers`: [(id, kind, path[, extra entry keys])]; `rules`: [(match list, use list)]."""
@@ -407,7 +516,7 @@ class LayersCase(IsolatedTestCase):
 
     def project(self, rel, name=None):
         """Project directory with a manifest under `self.work/<rel>`."""
-        path = self.work / rel
+        path = descend(self.work, rel)
         manifest = {'project': {'name': name}} if name else {}
         write(path / '.github' / '.skillsync.yaml', yaml_text(manifest) if manifest else '')
         return path
@@ -437,7 +546,7 @@ class LayersCase(IsolatedTestCase):
         make_layer(work, layer_id, kind, files, **kwargs)
         git(work, 'add', '-A')
         commit(work, 'initial layer')
-        bare = self.work / f'{name}.git'
+        bare = child(self.work, f'{name}.git')
         git(self.work, 'clone', '-q', '--bare', str(work), str(bare))
         git(work, 'remote', 'add', 'origin', str(bare))
         git(work, 'fetch', '-q', 'origin')
@@ -565,7 +674,7 @@ class ComposeCase(LayersCase, LinkModesMixin):
 
     def new_project(self, name, skills=('feature',), **manifest_extra):
         """Project with a manifest (no Claude, no MCP: only the generic artefacts)."""
-        path = self.work / 'projects' / name
+        path = child(self.work / 'projects', name)
         manifest = {'version': 1, 'skills': list(skills), 'instructions': {'merge': ['_base'], 'template': 'proj'},
                     'claude': False, 'mcp': False}
         manifest.update(manifest_extra)

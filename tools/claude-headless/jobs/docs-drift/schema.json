@@ -1,0 +1,24 @@
+{
+  "type": "object",
+  "properties": {
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string", "minLength": 1, "maxLength": 12},
+          "severity": {"type": "string", "enum": ["info", "warning", "error"]},
+          "kind": {"type": "string", "enum": ["flag-missing-in-docs", "flag-missing-in-code", "default-mismatch", "exit-code-mismatch", "command-mismatch", "other"]},
+          "file": {"type": "string", "minLength": 1},
+          "claim": {"type": "string", "minLength": 1},
+          "evidence": {"type": "string", "minLength": 1}
+        },
+        "required": ["id", "severity", "kind", "file", "claim", "evidence"],
+        "additionalProperties": false
+      }
+    },
+    "summary": {"type": "string"}
+  },
+  "required": ["findings", "summary"],
+  "additionalProperties": false
+}

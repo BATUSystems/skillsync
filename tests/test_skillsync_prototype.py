@@ -23,6 +23,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from skillsync_workflow import prototype as engine  # noqa: E402
 from layers_helpers import needs_os_symlinks, skip_on_windows  # noqa: E402
 from tests.test_skillsync_workflow import WorkflowFixture  # noqa: E402
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child, descend  # noqa: E402
 
 CLI = Path(__file__).resolve().parents[1] / 'skillsync'
 FIXTURES = Path(__file__).resolve().parent / 'fixtures' / 'prototype'
@@ -214,7 +218,7 @@ class PrototypeFixture(WorkflowFixture):
         self.save()
 
     def copy_css(self, name, dest='src/styles.css'):
-        target = self.root / dest
+        target = descend(self.root, dest)
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(CSS / name, target)
         return target
@@ -224,7 +228,7 @@ class PrototypeFixture(WorkflowFixture):
         self.set_prototype({'theme': {'tokens_from': dest}})
 
     def proto_dir(self, slug='demo'):
-        return self.protos / slug
+        return child(self.protos, slug)
 
     def read(self, slug, name):
         return (self.proto_dir(slug) / name).read_text(encoding='utf-8')
@@ -276,7 +280,7 @@ class InitTests(PrototypeFixture):
         self.assertEqual({Path(name).name for name in report['files']}, PROTOTYPE_FILES)
         for name in report['files']:
             self.assertTrue(name.startswith('docs/prototypes/demo/'), name)
-            self.assertTrue((self.root / name).is_file())
+            self.assertTrue(descend(self.root, name).is_file())
         self.assertEqual(set(os.listdir(self.proto_dir())), PROTOTYPE_FILES)
         self.assertNotIn('warnings', report)
         self.assert_no_staging()
@@ -1495,9 +1499,9 @@ class ListTests(PrototypeFixture):
             'empty-file': '',
         }
         for slug, content in cases.items():
-            (self.protos / slug).mkdir()
+            child(self.protos, slug).mkdir()
             text = content if isinstance(content, str) else json.dumps(content)
-            (self.protos / slug / 'prototype.json').write_text(text, encoding='utf-8')
+            (child(self.protos, slug) / 'prototype.json').write_text(text, encoding='utf-8')
         report = self.list()
         self.assertEqual(report['status'], 'PASS')
         by_slug = {entry['slug']: entry for entry in report['prototypes']}

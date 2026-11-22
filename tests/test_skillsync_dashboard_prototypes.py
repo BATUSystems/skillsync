@@ -13,6 +13,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child  # noqa: E402
 from skillsync_workflow import dashboard  # noqa: E402
 from skillsync_workflow import prototype_server as ps  # noqa: E402
 
@@ -62,7 +66,7 @@ class PrototypeCase(unittest.TestCase):
         os.replace(str(self.root / '.skillsync.yaml.tmp'), str(self.root / '.github' / '.skillsync.yaml'))
 
     def make(self, slug='alfa', screens=('s1', 's2')):
-        directory = self.root / 'docs' / 'prototypes' / slug
+        directory = child(self.root / 'docs' / 'prototypes', slug)
         write_text(directory / 'prototype.json', '{"title": "Demo"}\n')
         write_text(directory / 'index.html', HEAD % slug + ''.join(screen(name) for name in screens) + TAIL)
         return directory

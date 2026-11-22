@@ -170,6 +170,144 @@ class Sections(Base):
         self.assertEqual(dt.build_tests(self.root, 'R1')[0]['sections'][0]['attempts'][0]['groups'][0]['name'], 'pozostałe testy')
 
 
+class GroupLimit(Base):
+    """CORE-TESTDEBT2 (a): an attempt lists at most `MAX_GROUPS` groups; the omitted ones are counted, the attempt counters cover every test."""
+
+    def groups_of(self, tests, end='PASS'):
+        self.attempt('F1.1', tests, end=end)
+        tests_part, _ = dt.build_tests(self.root, 'R1')
+        return tests_part['sections'][0]['attempts'][0]
+
+    def test_more_groups_than_the_limit_are_cut_and_counted(self):
+        att = self.groups_of([(f't{i}', 'passed', f'g{i:04d}') for i in range(2000)])
+        self.assertEqual(len(att['groups']), dt.MAX_GROUPS)
+        self.assertEqual(att['groupsTotal'], 2000)
+        self.assertEqual(att['groupsOmitted'], 2000 - dt.MAX_GROUPS)
+        self.assertEqual(att['counts']['passed'], 2000, 'the counters of the attempt cover every test')
+
+    def test_at_most_the_limit_keeps_every_group_and_reports_zero_omitted(self):
+        att = self.groups_of([(f't{i}', 'passed', f'g{i}') for i in range(dt.MAX_GROUPS)])
+        self.assertEqual((len(att['groups']), att['groupsTotal'], att['groupsOmitted']), (dt.MAX_GROUPS, dt.MAX_GROUPS, 0))
+        small = self.groups_of([('a', 'passed', 'x')])
+        self.assertEqual((small['groupsTotal'], small['groupsOmitted']), (1, 0))
+
+    def test_failed_groups_come_before_the_rest_and_survive_the_cut(self):
+        tests = [(f'ok{i}', 'passed', f'a{i:04d}') for i in range(300)] + [(f'bad{i}', 'failed', f'z{i:04d}') for i in range(5)]
+        att = self.groups_of(tests, end='FAIL')
+        names = [g['name'] for g in att['groups']]
+        self.assertEqual(names[:5], [f'z{i:04d}' for i in range(5)])
+        self.assertEqual(len(names), dt.MAX_GROUPS)
+        self.assertEqual(att['groupsOmitted'], 305 - dt.MAX_GROUPS)
+
+    def test_more_failed_groups_than_the_limit_cut_some_failed_ones_and_count_them(self):
+        att = self.groups_of([(f'bad{i}', 'failed', f'f{i:04d}') for i in range(dt.MAX_GROUPS + 30)], end='FAIL')
+        self.assertEqual(len(att['groups']), dt.MAX_GROUPS)
+        self.assertTrue(all(g['state'] == 'failed' for g in att['groups']))
+        self.assertEqual(att['groupsOmitted'], 30)
+
+    def test_running_groups_come_before_passed_ones_and_after_failed_ones(self):
+        self.attempt('F1.1', [('a', 'passed', 'g-pass'), ('b', 'running', 'g-run'), ('c', 'failed', 'g-fail'), ('d', 'passed', 'a-pass')], end=None)
+        tests_part, _ = dt.build_tests(self.root, 'R1')
+        names = [g['name'] for g in tests_part['sections'][0]['attempts'][0]['groups']]
+        self.assertEqual(names, ['g-fail', 'g-run', 'a-pass', 'g-pass'])
+
+    def test_the_cut_happens_before_the_inline_tests_are_built(self):
+        with mock.patch.object(dt, '_public', wraps=dt._public) as public:
+            self.groups_of([(f't{i}', 'failed', f'g{i:04d}') for i in range(dt.MAX_GROUPS + 50)], end='FAIL')
+        self.assertLessEqual(public.call_count, dt.MAX_GROUPS, 'tests of omitted groups are not turned into public objects')
+
+
+class CacheBudget(Base):
+    """CORE-TESTDEBT2 (b): the reader cache is an LRU limited by the bytes of the files read; the attempts touched by the current call are never evicted."""
+
+    def paths(self, count=3, tests=20):
+        out = []
+        for i in range(count):
+            path, _ = self.attempt(f'F1.{i + 1}', [(f't{j}', 'passed', 'g') for j in range(tests)])
+            out.append(path)
+        return out
+
+    def keys(self):
+        return list(dt._CACHE)
+
+    def test_the_least_recently_used_state_goes_first_not_the_oldest_inserted(self):
+        p1, p2, p3 = self.paths()
+        sizes = [p.stat().st_size for p in (p1, p2, p3)]
+        with mock.patch.object(dt, 'CACHE_BUDGET', sum(sizes) - 1):
+            dt._begin_round()
+            for p in (p1, p2, p3):
+                dt._state(p)
+            dt._evict()
+            self.assertEqual(len(dt._CACHE), 3, 'every state touched by the current round stays, also over the budget')
+            dt._begin_round()
+            dt._state(p1)   # a hit makes p1 the most recently used
+            dt._evict()
+            self.assertNotIn(str(p2), dt._CACHE, 'p2 is the least recently used: it goes, p1 (hit just now) and p3 stay')
+            self.assertIn(str(p1), dt._CACHE)
+            self.assertIn(str(p3), dt._CACHE)
+
+    def test_the_budget_counts_the_current_offsets_so_a_growing_file_is_counted(self):
+        p1, p2, _ = self.paths()
+        with mock.patch.object(dt, 'CACHE_BUDGET', p1.stat().st_size + p2.stat().st_size + 50):
+            dt._begin_round()
+            dt._state(p1)
+            dt._state(p2)
+            dt._evict()
+            self.assertEqual(len(dt._CACHE), 2)
+            w = ev.EventWriter(p1)
+            for j in range(40):
+                w.test(f'g::more{j}', f'more{j}', 'passed', group='g')
+            w.close()
+            dt._begin_round()
+            dt._state(p1)   # the same state object continues from its offset and now weighs more than the budget allows with p2
+            dt._evict()
+            self.assertNotIn(str(p2), dt._CACHE)
+            self.assertIn(str(p1), dt._CACHE)
+
+    def test_an_attempt_larger_than_the_budget_stays_while_the_call_needs_it(self):
+        paths = self.paths(count=3)
+        with mock.patch.object(dt, 'CACHE_BUDGET', 1):
+            dt.build_tests(self.root, 'R1')
+            self.assertEqual(len(dt._CACHE), 3, 'the whole working set of one answer stays')
+            calls = []
+            real = ev.read_attempt
+            with mock.patch.object(ev, 'read_attempt', side_effect=lambda path, state=None: (calls.append(state), real(path, state))[1]):
+                dt.build_tests(self.root, 'R1')
+            self.assertEqual([c for c in calls if c is None], [], 'no attempt is parsed from scratch again')
+        self.assertTrue(all(str(p) in dt._CACHE for p in paths))
+
+    def test_the_next_call_evicts_what_it_did_not_touch(self):
+        p1, p2, p3 = self.paths()
+        with mock.patch.object(dt, 'CACHE_BUDGET', 1):
+            dt._begin_round()
+            for p in (p1, p2, p3):
+                dt._state(p)
+            dt._evict()
+            dt._begin_round()
+            dt._state(p3)
+            dt._evict()
+        self.assertEqual(self.keys(), [str(p3)])
+
+    def test_the_entry_limit_stays_as_a_second_guard(self):
+        p1, p2, p3 = self.paths()
+        with mock.patch.object(dt, 'CACHE_MAX_ENTRIES', 2):
+            dt._begin_round()
+            for p in (p1, p2, p3):
+                dt._state(p)
+            dt._evict()
+            dt._begin_round()
+            dt._state(p3)
+            dt._evict()
+        self.assertLessEqual(len(dt._CACHE), 2)
+        self.assertIn(str(p3), dt._CACHE)
+
+    def test_the_cache_is_an_ordered_mapping_of_attempt_states(self):
+        self.paths(count=1)
+        dt.build_tests(self.root, 'R1')
+        (value,) = dt._CACHE.values()
+        self.assertIsInstance(value, ev.AttemptState)
+
+
 class Watching(Base):
     def test_a_new_event_changes_the_signature_of_the_page(self):
         from skillsync_workflow import dashboard_http as srv

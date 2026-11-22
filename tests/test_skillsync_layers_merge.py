@@ -23,7 +23,7 @@ from skillsync_workflow import layers  # noqa: E402
 import sys as _sys_tmp_paths  # noqa: E402
 from pathlib import Path as _Path_tmp_paths  # noqa: E402
 _sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
-from tmp_paths import descend  # noqa: E402
+from tmp_paths import child, descend  # noqa: E402
 
 
 def _probe(kind):
@@ -67,7 +67,7 @@ class MergeCase(LayersCase):
         layer_specs = []
         for layer_id, kind, files in specs:
             options = {'version': generator_version()} if kind == 'core' else {}
-            layer_specs.append((layer_id, kind, make_layer(self.work / f'set{MergeCase.sets}' / layer_id, layer_id, kind, files, **options)))
+            layer_specs.append((layer_id, kind, make_layer(child(child(self.work, f'set{MergeCase.sets}'), layer_id), layer_id, kind, files, **options)))
         extra = {} if allow_override is None else {'allow_override': allow_override}
         self.write_config([(spec[0], spec[1], spec[2]) for spec in layer_specs], [(['**'], [spec[0] for spec in specs])], **extra)
         return layers.resolve_layers(self.project(f'proj{MergeCase.sets}'))
@@ -695,7 +695,7 @@ class TrustModelTest(MergeCase):
     def outside(self, files):
         """A directory OUTSIDE every layer (a link target that must never be read)."""
         MergeCase.sets += 1
-        base = self.work / f'external{MergeCase.sets}'
+        base = child(self.work, f'external{MergeCase.sets}')
         for rel, text in files.items():
             write(descend(base, rel), text)
         return base
@@ -808,11 +808,11 @@ class TrustModelTest(MergeCase):
         """A layer whose layout lives in `library/` of a repository (checkout) next to a core layer.
         Returns (checkout path, project path)."""
         MergeCase.sets += 1
-        repo = self.work / f'repo{MergeCase.sets}'
+        repo = child(self.work, f'repo{MergeCase.sets}')
         make_layer(repo / 'library', 'sub', 'org', {'skills/real/SKILL.md': 'x\n', 'instructions/_base.d/05-x.md': 'f\n',
                                                      'workflow/skill-catalog.yaml': yaml_text({'skills': {'real': {'scope': 'org'}}}),
                                                      **(extra or {})})
-        core = make_layer(self.work / f'core{MergeCase.sets}', 'core', 'core', version=generator_version())
+        core = make_layer(child(self.work, f'core{MergeCase.sets}'), 'core', 'core', version=generator_version())
         self.write_config([('core', 'core', core), ('sub', 'org', repo, {'subdir': 'library'})], [(['**'], ['core', 'sub'])])
         if git_repo:
             git(repo, 'init', '-q', '-b', 'main')

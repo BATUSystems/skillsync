@@ -4,6 +4,18 @@ entries:
     title: Własność artefaktów generowanych w projektach
     tags: [skillsync, artifacts, ownership, link]
     paths: ['skillsync', 'tests/test_skillsync*.py']
+  - path: dispatch-pulse.md
+    title: "Puls dyspozytora: żywy scenariusz 21.11 (pętla /loop, flaga na dispatch, powiadomienia), czego nie sprawdzono"
+    tags: [skillsync, dispatch, pulse, loop, claude-code, disable-model-invocation]
+    paths: ['library/skills/dispatch/references/pulse.md', 'skillsync_workflow/dispatch_state.py', 'tests/test_skillsync_dispatch_pulse.py']
+  - path: claude-plugin-eval.md
+    title: "Eval zachowania skilli przez claude plugin eval: kontrakt opakowania, pilotaż 21.11 na Haiku, kryteria adopcji niespełnione"
+    tags: [skillsync, skills, eval, claude-code, plugin-eval, koszt]
+    paths: ['tools/claude-eval/run.py', 'tools/claude-eval/evals/**', 'tests/test_skillsync_claude_eval_wrapper.py', 'tests/test_skillsync_claude_eval_cases.py']
+  - path: skill-frontmatter.md
+    title: "Frontmatter skilli (SKILL.md): klucze hostów, lint doctor, czego nie potwierdzono"
+    tags: [skillsync, skills, frontmatter, doctor, claude-code, copilot, codex]
+    paths: ['skillsync_workflow/skill_frontmatter.py', 'skillsync_workflow/quality.py', 'tests/test_skillsync_skill_frontmatter.py', 'library/skills/copilot-skills-yaml/SKILL.md']
   - path: skill-expansion.md
     title: Rozwijanie listy skilli (alias, towarzysze, tagi, profile)
     tags: [skillsync, skills, feature, expansion]
@@ -59,7 +71,7 @@ entries:
   - path: dispatch-state-view.md
     title: "Widok stanu dyspozycji (skillsync dispatch): biała lista, brak wolnego tekstu, koszt paczki"
     tags: [skillsync, dispatch, ide-contract, redaction, cost, state]
-    paths: ['skillsync_workflow/dispatch_state.py', 'tests/test_skillsync_dispatch_state.py']
+    paths: ['skillsync_workflow/dispatch_state.py', 'tests/test_skillsync_dispatch_state.py', 'tests/test_skillsync_dispatch_pulse.py']
   - path: prototype-manifest-and-cli.md
     title: "Prototypy w repo: komenda prototype, sekcja manifestu i reguły zapisu"
     tags: [skillsync, prototype, manifest, cli, security, atomic-write]
@@ -72,12 +84,10 @@ entries:
     title: "Format wyjścia `node --test` (TAP czy spec wg wersji Node i TTY) i adaptery `tap`/`node-test`"
     tags: [skillsync, test-run, adapters, node, tap, output]
     paths: ['skillsync_workflow/test_adapters/tap.py', 'skillsync_workflow/test_adapters/node_test.py', 'skillsync_workflow/test_run.py', 'skillsync_workflow/quality.py', 'tests/test_skillsync_adapter*.py', 'tests/test_skillsync_test_run*.py']
-    load: on-demand
   - path: test-run-rozpoznanie-narzedzia-i-liczniki-karmy.md
     title: "`test-run`: kolejność rozpoznawania narzędzia (`detect_tool`), reguła linii `Executed` Karmy, kody wyjścia i ślad przebiegu"
     tags: [skillsync, test-run, detect-tool, karma, counts, hooks, exit-codes, kody-wyjscia]
     paths: ['skillsync_workflow/test_run.py', 'skillsync_workflow/data/test_tools.json', 'skillsync_workflow/test_adapters/karma_line.py', 'skillsync_workflow/quality.py', 'library/hooks/guard-tests.py', 'tests/test_skillsync_test_run*.py']
-    load: on-demand
   - path: dashboard-server.md
     title: "Serwer strony statusu (dashboard serve): Host, Origin, X-Status-Board, CSP, allowlista, limity, zgody tylko użytkownika"
     tags: [skillsync, dashboard, server, security, approvals, workflow]
@@ -102,3 +112,15 @@ entries:
     title: "Spec i plan poza gitem: tryb nieśledzony (tracked: false), migawka, archiwum speców i odbiór planu"
     tags: [skillsync, workflow, specs, snapshot, archive, git, approvals, closure]
     paths: ['skillsync_workflow/specs.py', 'skillsync_workflow/spec_snapshot.py', 'skillsync_workflow/status.py', 'skillsync_workflow/quality.py', 'skillsync_workflow/test_gate.py', 'skillsync_workflow/retro.py', 'library/hooks/check-closure.py', 'library/skills/feature/references/spec-store.md', 'tests/test_skillsync_specs*.py', 'tests/test_skillsync_spec_snapshot.py', 'tests/test_skillsync_repo_hygiene.py', 'tests/test_skillsync_closure.py']
+  - path: hooki-kontekst-i-granica-podagenta.md
+    title: 'Hooki Claude Code: co faktycznie dociera do modelu, kiedy i z jakim payloadem; granica commitu podagenta'
+    tags: [skillsync, claude-code, hooks, session-context, subagents, guard, commit-boundary]
+    paths: ['library/hooks/**', 'skillsync_workflow/hooksync.py', 'skillsync_workflow/guardhook.py', 'tests/test_skillsync_hook*.py', 'tests/test_skillsync_hooksync.py']
+  - path: shell-completion.md
+    title: "Autouzupełnianie powłok (completion): statyczny generator, bloki ze znacznikami, profile PowerShella, składnie bash, zsh i PowerShell"
+    tags: [skillsync, completion, shell, bash, zsh, powershell, install, startup-files]
+    paths: ['skillsync_workflow/completion.py', 'skillsync_workflow/completion_install.py', 'skillsync_workflow/setup_wizard.py', 'install.sh', 'tests/test_skillsync_completion_*.py', 'tests/fixtures/completion/**']
+  - path: statusline-i-output-styles.md
+    title: "Pasek statusu sesji (statusLine) i style odpowiedzi (output-styles) w Claude Code: fakty z wersjami, opt-in, granice"
+    tags: [skillsync, claude-code, statusline, output-styles, settings, manifest, opt-in]
+    paths: ['library/hooks/statusline.py', 'library/output-styles/**', 'skillsync_workflow/hooksync.py', 'skillsync_workflow/claude_manifest.py', 'skillsync_workflow/cli.py', 'tests/test_skillsync_statusline*.py', 'tests/test_skillsync_output_styles.py', 'tests/test_skillsync_claude_manifest.py']

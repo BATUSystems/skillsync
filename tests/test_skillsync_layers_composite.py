@@ -26,6 +26,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child  # noqa: E402
 from layers_helpers import (SKILL_TEXT, ComposeCase, LINK_MODES, composed_root, each_mode, generator_version, link_mode,  # noqa: E402
                             make_layer, tree_snapshot, write)
 from layers_helpers import needs_os_symlinks, readlink_text, require_os_symlinks  # noqa: E402
@@ -501,7 +505,7 @@ class LegacyBridgeIsBlockedTests(ComposeCase):
 
     @each_mode
     def test_link_on_a_bridge_config_is_blocked_and_leaves_everything_unchanged(self, mode):
-        bridge = self.work / f'old-library-{mode}'
+        bridge = child(self.work, f'old-library-{mode}')
         for rel, text in CORE_FILES.items():
             write(bridge / rel, text)
         org = self.layer_dir(f'org-{mode}', 'org', ORG_FILES)

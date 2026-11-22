@@ -12,6 +12,8 @@ Zasady:
 - `run-id`: `RRRR-MM-DD-<slug>[-<litera>]`; jeden aktywny dyspozytor na `run-id`.
   Przejęcie `run-id` przez nową sesję = `/dispatch resume` (niżej), nie równoległy zapis.
 - `status` dyspozycji i paczki zapisuj wyłącznie wartościami ze schematu (paczka także `go`). Inne `skillsync dispatch` pokazuje jako `unknown`.
+- Księgowość [pulsu](pulse.md) (ostatni tick, ustalenia, zgłoszone znaczniki) jest w OSOBNYM pliku `.skillsync/dispatch/<run-id>.pulse.json`, nie w pliku
+  dyspozycji (zapis w nim odświeżałby czas modyfikacji pliku i zabijał ustalenie `stale-state`); widok `skillsync dispatch` go nie czyta.
 - Widok tylko do odczytu dla IDE i narzędzi: `skillsync dispatch <path> [--run-id <id>] [--json]`. Biała lista pól, bez wolnego
   tekstu, `authoritative: false`; żywa prawda to karty i zdalne repo. Kontrakt: `docs/domain/dispatch-state-view.md` w Skillsync.
 
@@ -85,6 +87,11 @@ events:                                 # krótki dziennik (ostatnie ~50) do dia
 
 Pola są minimalne; dodawaj tylko to, co potrzebne do wznowienia. Pole nieznane zachowaj.
 
+Czasy, które czyta puls (`cards[].last_message`, `cards[].last_probe`, `decisions[].asked`, `leases[].granted_at`): ISO z offsetem (np. wynik
+`date -Iseconds`); czas bez strefy i tekst puls pomija (dla kart i dzierżaw ustalenie `age-unknown`). Pytanie do użytkownika zapisuj z `asked` i
+`state: open` (po odpowiedzi `state: answered`): pytanie bez `asked` jest dla pulsu NIEWIDOCZNE (brak ustalenia, także `age-unknown`), więc nie policzy,
+jak długo czeka.
+
 ## Wznowienie
 
 `/dispatch resume <run-id>` (bramka modelu ma zastosowanie, jak zawsze):
@@ -100,7 +107,8 @@ Pola są minimalne; dodawaj tylko to, co potrzebne do wznowienia. Pole nieznane 
    dzierżawa bez żywej karty jest `released` dopiero po sprawdzeniu, nigdy automatycznie),
    `task-claim` (kto trzyma paczkę). W trybie `pr` uzgodnij też stan PR każdej paczki w `review` u hosta (otwarty, scalony,
    zamknięty); scalenie przez człowieka odblokowuje zależne karty.
-5. Pokaż użytkownikowi odtworzony `status` i rozbieżności; po jego akceptacji wznów pętlę.
+5. Pokaż użytkownikowi odtworzony `status` i rozbieżności; po jego akceptacji wznów pętlę. Przy `dispatch.pulse.enabled: true`
+   wypisz też linię `/loop` pulsu ([pulse.md](pulse.md#start-i-życie-pętli); pętla ginie z sesją).
    Nie wznawiaj przydziałów, dzierżaw ani PUSH SLOT bez tego potwierdzenia.
 6. Zapisz zdarzenie `resumed` i nowy `session_id` dyspozytora w stanie.
 

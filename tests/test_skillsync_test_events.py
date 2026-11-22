@@ -352,5 +352,63 @@ class EventFiles(unittest.TestCase):
         self.assertEqual(ev.mask_text('Traceback:\n  File "a.py", line 1\n    x = 1', False, keep_newlines=True), 'Traceback:\n  File "a.py", line 1\n    x = 1')
 
 
+
+class EndChanged(unittest.TestCase):
+    """CORE-TESTDEBT2 Q6: the optional `changed` field of the `end` event (at most five paths that differ between the tree at the start and at the end)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix='test-events-')
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+
+    def written(self, **end):
+        path, _ = ev.new_attempt(self.root, 'run-1', 'F1.1')
+        writer = ev.EventWriter(path)
+        writer.start(run='run-1', step='F1.1')
+        writer.end('PASS', 0, **end)
+        writer.close()
+        return path
+
+    def injected(self, changed):
+        path, _ = ev.new_attempt(self.root, 'run-1', 'F1.2')
+        lines = [{'v': 1, 't': 'start', 'at': '2026-11-21T10:00:00Z', 'run': 'run-1', 'step': 'F1.2'},
+                 {'v': 1, 't': 'end', 'at': '2026-11-21T10:00:01Z', 'status': 'PASS', 'exit': 0, 'changed': changed}]
+        path.write_text('\n'.join(json.dumps(line) for line in lines) + '\n', encoding='utf-8')
+        return ev.read_attempt(path).end
+
+    def test_the_writer_stores_at_most_five_masked_paths(self):
+        secret = fake_secret()
+        path = self.written(changed=[f'a{i}.txt' for i in range(8)] + [f'token-{secret}.txt'])
+        end = ev.read_attempt(path).end
+        self.assertEqual(end['changed'], [f'a{i}.txt' for i in range(5)])
+        with mock.patch.dict(os.environ, {'SKILLSYNC_TEST_SECRET_TOKEN': secret}):
+            path = self.written(changed=[f'KEY={secret}.txt'])
+        self.assertNotIn(secret, path.read_text(encoding='utf-8'))
+
+    def test_without_changes_the_field_is_absent(self):
+        for value in (None, [], ()):
+            self.assertNotIn('changed', ev.read_attempt(self.written(changed=value)).end)
+
+    def test_the_reader_keeps_only_text_elements_up_to_five_of_at_most_300_characters(self):
+        end = self.injected(['ok.txt', 7, None, {'a': 1}, ['x'], 'y' * 301, 'z' * 300, 'b.txt', 'c.txt', 'd.txt', 'e.txt', 'f.txt'])
+        self.assertEqual(end['changed'], ['ok.txt', 'z' * 300, 'b.txt', 'c.txt', 'd.txt'])
+
+    def test_the_reader_drops_a_field_that_is_not_a_list_and_cleans_control_characters(self):
+        for junk in ('a.txt', 7, {'a': 'b'}, True, None):
+            self.assertNotIn('changed', self.injected(junk), repr(junk))
+        end = self.injected(['\x1b[31mred\x1b[0m.txt', 'tab\there.txt', 'zero\u200bwidth.txt'])
+        self.assertEqual(end['changed'], ['red.txt', 'tab here.txt', 'zerowidth.txt'])
+
+    def test_the_reader_masks_a_secret_in_a_path_of_a_file_it_did_not_write(self):
+        secret = fake_secret()
+        with mock.patch.dict(os.environ, {'SKILLSYNC_TEST_SECRET_TOKEN': secret}):
+            end = self.injected([f'build/{secret}/out.txt', 'plain.txt'])
+        self.assertNotIn(secret, json.dumps(end))
+        self.assertEqual(end['changed'][1], 'plain.txt')
+
+    def test_a_list_with_nothing_usable_leaves_no_field(self):
+        self.assertNotIn('changed', self.injected([7, None, 'y' * 301]))
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -13,6 +13,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import descend  # noqa: E402
 from skillsync_workflow import dashboard, prototype_server  # noqa: E402
 
 NOW = 1_800_000_000_000
@@ -183,7 +187,7 @@ class BuildStatus(unittest.TestCase):
                 (SPEC, '# Spec: demo\n\nStatus: draft\nPrototyp: docs/prototypes/demo\n'),
                 (PLAN, '# Plan: demo\n\nStatus: draft\nPrzebieg: r1\nSpec: %s\n\n## Progress\n- [ ] S1 a\n' % SPEC),
                 ('docs/prototypes/demo/prototype.json', '{"requirements": "%s"}\n' % SPEC)):
-            path = self.root / rel
+            path = descend(self.root, rel)
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(text, encoding='utf-8')
 

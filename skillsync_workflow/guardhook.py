@@ -14,6 +14,7 @@ import json
 import re
 import shlex
 from pathlib import Path
+from . import claude_manifest
 
 GUARD_HOOK = '.claude/hooks/guard-commands.py'
 TESTS_HOOK = '.claude/hooks/guard-tests.py'
@@ -110,7 +111,7 @@ def effective_mode(manifest, skills):
     return 'deny' if agent_flow(skills) else 'off'
 
 
-def hook_command(python_command, mode, allow, tests=None):
+def hook_command(python_command, mode, allow, tests=None, subagent_commit=None):
     # root from git: $CLAUDE_PROJECT_DIR is the start directory of the session, often a subdirectory; a missing script is exit 0
     args = ['--mode', mode, '--attribution', 'on']   # the ban on AI attribution is always on (no manifest switch)
     for item in allow:
@@ -119,13 +120,15 @@ def hook_command(python_command, mode, allow, tests=None):
         args += ['--tests', 'warn', '--wide-modules', str(tests['wide'])]
         for item in tests.get('wrappers', []):
             args += ['--wrapper', item]
+    if subagent_commit and subagent_commit != 'off':   # commit boundary of a sub-agent (CLAUDE-3 K6); left out when off, so old entries keep their bytes
+        args += ['--subagent-commit', subagent_commit]
     python = shlex.quote(python_command)
     return (f'f="$(git -C "${{CLAUDE_PROJECT_DIR:-.}}" rev-parse --show-toplevel 2>/dev/null)/{GUARD_HOOK}"; '
             f'if [ -f "$f" ]; then {python} "$f" {shlex.join(args)}; fi')
 
 
-def hook_entry(python_command, mode, allow, tests=None):
-    return {'matcher': 'Bash', 'hooks': [{'type': 'command', 'command': hook_command(python_command, mode, allow, tests), 'timeout': 10}]}
+def hook_entry(python_command, mode, allow, tests=None, subagent_commit=None):
+    return {'matcher': 'Bash', 'hooks': [{'type': 'command', 'command': hook_command(python_command, mode, allow, tests, subagent_commit), 'timeout': 10}]}
 
 
 def is_guard_hook(hook):
@@ -275,8 +278,7 @@ def doctor_findings(root, manifest, skills):
     problems = problems + test_settings(manifest)[3]
     found = [('warning', '.github/.skillsync.yaml', reason) for reason in problems]
     found.extend(instruction_text_findings(root))
-    claude = manifest.get('claude')
-    if claude is False or (isinstance(claude, dict) and claude.get('enabled') is False):
+    if not claude_manifest.enabled(manifest):
         return found
     mode = effective_mode(manifest, skills)
     tests = tests_config(manifest, skills)

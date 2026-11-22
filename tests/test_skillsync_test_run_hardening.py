@@ -195,6 +195,68 @@ class HiddenFailures(Base):
                 self.run_code(f"print({line!r}); print('Ran 2 tests in 0.01s'); print('OK')")
                 self.assertEqual(self.latest().end['status'], 'PASS', line)
 
+    def run_output(self, text):
+        return self.run_code(f"import sys; sys.stdout.write({text!r})")
+
+    def test_a_clean_exit_with_a_playwright_vitest_or_jest_summary_is_blocked(self):
+        cases = {
+            'playwright': '\n  1 failed\n  5 passed (3s)\n',
+            'playwright interrupted': '\n  2 interrupted\n  3 passed (3s)\n',
+            'playwright crlf': '\r\n  1 failed\r\n  5 passed (3s)\r\n',
+            'playwright colour': '\x1b[31m  1 failed\x1b[39m\n  5 passed (3s)\n',
+            'vitest': ' Test Files  1 failed | 1 passed (2)\n      Tests  1 failed | 4 passed (5)\n',
+            'vitest only failed': '      Tests  2 failed (2)\n',
+            'jest': 'Test Suites: 1 failed, 1 total\nTests:       1 failed, 4 passed, 5 total\n',
+            'jest crlf': 'Tests:       1 failed, 4 passed, 5 total\r\n',
+        }
+        for name, text in cases.items():
+            with self.subTest(name=name):
+                result = self.run_output(text + 'Ran 8 tests in 1s\n')   # the counters are known, so only a hidden failure can block
+                self.assertEqual(result.returncode, 2, result.stderr)   # exit 0 without proof (status BLOCKED) is exit code 2 (CORE-TESTDEBT K3)
+                end = self.latest().end
+                self.assertEqual(end['status'], 'BLOCKED')
+                self.assertIn('hide', end['reason'])
+
+    def test_a_log_that_only_looks_like_a_summary_of_another_tool_stays_green(self):
+        cases = {
+            'vitest files only': ' Test Files  1 failed | 1 passed (2)\n      Tests  5 passed (5)\n',
+            'zero failed': '  0 failed\n  5 passed (3s)\n',
+            'failed=0': 'failed=0\n  5 passed (3s)\n',
+            'failed attempts': 'retry: 3 failed attempts to connect, retried ok\n  5 passed (3s)\n',
+            'flaky': '  1 flaky\n  5 passed (3s)\n',
+            'did not run': '  1 did not run\n  5 passed (3s)\n',
+            'indented deeper': '    1 failed\n  5 passed (3s)\n',
+            'jest suites only': 'Test Suites: 1 failed, 1 total\nTests:       5 passed, 5 total\n',
+        }
+        for name, text in cases.items():
+            with self.subTest(name=name):
+                self.run_output(text + "Ran 2 tests in 0.01s\nOK\n")
+                self.assertEqual(self.latest().end['status'], 'PASS', name)
+
+    def test_the_summary_of_another_tool_counts_only_when_the_counters_come_from_the_output(self):
+        line = '\n  1 failed\n  5 passed (3s)\n'
+        self.assertEqual(test_run._hidden_failures(line), 1)
+        self.assertEqual(test_run._hidden_failures(line, source='regex'), 1)
+        self.assertEqual(test_run._hidden_failures(line, source='junit'), 0)
+        self.assertEqual(test_run._hidden_failures(line, source='adapter'), 0)
+        self.assertEqual(test_run._hidden_failures('FAILED (failures=2)\n', source='junit'), 2)   # the generic part stays for every source
+        self.assertEqual(test_run._hidden_failures('=== 3 failed, 5 passed in 2.00s ===\n', source='adapter'), 3)
+
+    def test_a_line_of_another_tool_beside_a_clean_report_or_adapter_is_not_a_block(self):
+        check = {'argv': [sys.executable, '-c', 'pass'], 'cwd': str(self.root)}
+        report = self.root / 'r.xml'
+        report.write_text('<testsuite><testcase classname="a" name="b"/></testsuite>', encoding='utf-8')
+        recorder = test_run.TestRecorder(self.root, 'R1', 'F1.3', 'flag')
+        recorder.started(check)
+        recorder.junit = [str(report)]
+        recorder.finished(check, {'exit_code': 0, 'duration_seconds': 0.1}, '  1 failed\n  5 passed (3s)\n')
+        end = ev.read_attempt(recorder.path).end
+        self.assertEqual((end['status'], end.get('source')), ('PASS', 'junit'))
+        result = self.run_cli('--step', 'F1.4', '--format', 'tap', '--', sys.executable, '-c',
+                              "print('  1 failed'); print('  5 passed (3s)'); print('ok - a'); print('ok - b')")
+        end = self.latest_of('F1.4').end
+        self.assertEqual((result.returncode, end['status'], end.get('source')), (0, 'PASS', 'adapter'), result.stderr)
+
     def test_a_pipe_that_hides_the_exit_code_is_blocked(self):
         result = subprocess.run([sys.executable, str(CLI), 'test-run', str(self.root), '--step', 'F1.1', '--', 'sh', '-c',
                                  f"{sys.executable} -c \"print('Ran 2 tests in 1s'); print('FAILED (failures=1)'); raise SystemExit(1)\" | cat; true"],
@@ -203,7 +265,10 @@ class HiddenFailures(Base):
         self.assertEqual(self.latest().end['status'], 'BLOCKED')
 
     def latest(self):
-        directory = self.root / '.skillsync/runs/R1/tests/F1.1'
+        return self.latest_of('F1.1')
+
+    def latest_of(self, step):
+        directory = child(self.root / '.skillsync/runs/R1/tests', step)
         return ev.read_attempt(sorted(directory.glob('*.jsonl'), key=lambda p: int(p.stem))[-1])
 
 
@@ -513,7 +578,10 @@ class ReviewRound2(WorkflowFixture):
         problem = test_gate.evidence_problem(self.root, 'R1', 'F1.2', ['.skillsync/runs/R1/tests/F1.2/1.jsonl'])
         self.assertIn('no tree at its start', problem)
         self.assertEqual(victim.read_text(encoding='utf-8'), 'keep me')
-        self.assertEqual(test_gate._changed_paths(self.root, f'--output={victim}', 'abc'), '')
+        with mock.patch.object(test_gate.subprocess, 'run') as run:   # CORE-TESTDEBT2: the guarantee stays, the hostile ids never reach any git command
+            self.assertEqual(test_gate.changed_paths(self.root, f'--output={victim}', 'abc', self.root), [])
+            self.assertEqual(test_gate.changed_paths(self.root, 'abc', f'--output={victim}', self.root), [])
+            run.assert_not_called()
         self.assertEqual(victim.read_text(encoding='utf-8'), 'keep me')
         state = ev.read_attempt(path)
         self.assertNotIn('treeStart', state.start)
@@ -621,6 +689,118 @@ class ReviewRound2(WorkflowFixture):
 def socket_name():
     import socket
     return socket.gethostname()
+
+
+
+class ChangedPathsField(WorkflowFixture):
+    """CORE-TESTDEBT2 Q6: the paths that changed while the tests ran come from `end.changed` (written at the end of the run), not from a git call of the gate."""
+
+    def setUp(self):
+        super().setUp()
+        self.write('docs/plans/2026-11-16-demo.md', PLAN)
+        self.write('.skillsync/runs/R1/checkpoints.md', '- 10:00 start\n')
+        self.write('.gitignore', '.skillsync/\n')
+        self.write('code.txt', 'v1\n')
+        self.init_git()
+
+    def run_tests(self, code=PASSING, step='F1.2'):
+        return subprocess.run([sys.executable, str(CLI), 'test-run', str(self.root), '--run', 'R1', '--step', step, '--', sys.executable, '-c', code],
+                              capture_output=True, text=True, timeout=120)
+
+    def events(self, n=1):
+        return f'.skillsync/runs/R1/tests/F1.2/{n}.jsonl'
+
+    def count(self):
+        out = subprocess.run(['git', '-C', str(self.root), 'count-objects', '-v'], check=True, capture_output=True, text=True).stdout
+        return int(out.split('count:')[1].split()[0])
+
+    def test_a_run_that_changed_the_tree_records_the_paths_and_the_gate_names_them(self):
+        code = f"import pathlib; pathlib.Path({str(self.root / 'generated.txt')!r}).write_text('made by the tests'); {PASSING}"
+        self.run_tests(code)
+        state = ev.read_attempt(descend(self.root, self.events()))
+        self.assertEqual(state.end['changed'], ['generated.txt'])
+        problem = test_gate.evidence_problem(self.root, 'R1', 'F1.2', [self.events()])
+        self.assertIn('changed: generated.txt', problem)
+
+    def test_a_stable_run_records_no_field_and_a_run_leaves_no_object_in_the_repository(self):
+        self.write('code.txt', 'fresh content for the run 1\n')
+        before = self.count()
+        self.run_tests()
+        state = ev.read_attempt(descend(self.root, self.events()))
+        self.assertNotIn('changed', state.end)
+        self.assertEqual(self.count(), before, 'a run wrote loose objects into the repository')
+        self.assertIsNone(test_gate.evidence_problem(self.root, 'R1', 'F1.2', [self.events()]))
+
+    def test_the_gate_takes_the_paths_from_the_field_and_runs_no_git_for_them(self):
+        path = self.root / '.skillsync/runs/R1/tests/F1.2/1.jsonl'
+        path.parent.mkdir(parents=True)
+        hostile = '--output=/tmp/should-never-exist.txt'
+        lines = [{'v': 1, 't': 'start', 'at': '2026-11-21T10:00:00Z', 'run': 'R1', 'step': 'F1.2', 'stepSource': 'flag', 'treeStart': 'a' * 40},
+                 {'v': 1, 't': 'end', 'at': '2026-11-21T10:00:01Z', 'status': 'PASS', 'exit': 0, 'counts': {'total': 2, 'passed': 2, 'failed': 0, 'skipped': 0},
+                  'tree': 'b' * 40, 'changed': [hostile, 'plain.txt']}]
+        path.write_text('\n'.join(json.dumps(line) for line in lines) + '\n', encoding='utf-8')
+        calls = []
+        real = subprocess.run
+        with mock.patch.object(test_gate.subprocess, 'run', side_effect=lambda *a, **k: (calls.append(a[0]), real(*a, **k))[1]):
+            problem = test_gate.evidence_problem(self.root, 'R1', 'F1.2', [self.events()])
+        self.assertIn('WHILE the tests ran', problem)
+        self.assertIn(hostile, problem)   # text of the message only
+        self.assertFalse([c for c in calls if any(hostile in str(part) for part in c)], 'the paths of the field never reach a git command line')
+
+    def test_an_old_events_file_without_the_field_gives_the_message_without_paths(self):
+        path = self.root / '.skillsync/runs/R1/tests/F1.2/1.jsonl'
+        path.parent.mkdir(parents=True)
+        lines = [{'v': 1, 't': 'start', 'at': '2026-11-21T10:00:00Z', 'run': 'R1', 'step': 'F1.2', 'stepSource': 'flag', 'treeStart': 'a' * 40},
+                 {'v': 1, 't': 'end', 'at': '2026-11-21T10:00:01Z', 'status': 'PASS', 'exit': 0, 'counts': {'total': 2, 'passed': 2, 'failed': 0, 'skipped': 0}, 'tree': 'b' * 40}]
+        path.write_text('\n'.join(json.dumps(line) for line in lines) + '\n', encoding='utf-8')
+        problem = test_gate.evidence_problem(self.root, 'R1', 'F1.2', [self.events()])
+        self.assertIn('WHILE the tests ran', problem)
+        self.assertNotIn('changed:', problem)
+
+    def test_the_object_directory_of_a_run_is_removed_also_when_the_start_fails(self):
+        import gc
+        from skillsync_workflow import quality
+        recorder = test_run.TestRecorder(self.root, 'R1', 'F1.2', 'flag')
+        check = {'id': 'c', 'argv': [sys.executable, '-c', PASSING], 'cwd': str(self.root), 'kind': 'build', 'timeout': 30}
+        quality.run_validation(self.root, [check], observer=recorder)
+        self.assertTrue(recorder.objects_dir)
+        self.assertFalse(Path(recorder.objects_dir).exists(), 'removed after the run')
+        broken = test_run.TestRecorder(self.root, 'R1', 'F1.2', 'flag')
+        with mock.patch.object(ev.EventWriter, 'start', side_effect=OSError('disk full')):
+            with self.assertRaises(OSError):
+                broken.started(check)
+        leftover = Path(broken.objects_dir)
+        self.assertTrue(leftover.exists())
+        broken.writer.close()   # `run_validation` calls `finished` (it closes the writer) after a failed `started`; this test calls `started` alone, and an open event file blocks the cleanup of the project on Windows
+        del broken
+        gc.collect()
+        self.assertFalse(leftover.exists(), 'removed when the recorder is dropped')
+
+class RemoveTree(unittest.TestCase):
+    """CORE-TESTDEBT2: the object directory of a run is removed also when git (for Windows) made its files read-only."""
+
+    def test_a_read_only_tree_is_removed(self):
+        if os.name == 'nt':
+            self.skipTest('the read-only directory case is POSIX; Windows is covered by the read-only file below')
+        with tempfile.TemporaryDirectory(prefix='rm-') as tmp:
+            top = Path(tmp) / 'objects'
+            (top / 'ab').mkdir(parents=True)
+            (top / 'ab' / 'blob').write_text('x', encoding='utf-8')
+            os.chmod(top / 'ab' / 'blob', 0o444)
+            os.chmod(top / 'ab', 0o555)
+            test_run.remove_tree(top)
+            self.assertFalse(top.exists())
+
+    def test_a_read_only_file_is_removed_and_a_missing_directory_is_no_error(self):
+        with tempfile.TemporaryDirectory(prefix='rm-') as tmp:
+            top = Path(tmp) / 'objects'
+            top.mkdir()
+            (top / 'blob').write_text('x', encoding='utf-8')
+            os.chmod(top / 'blob', 0o444)
+            test_run.remove_tree(top)
+            self.assertFalse(top.exists())
+            test_run.remove_tree(top)   # already gone
+
 
 
 if __name__ == '__main__':

@@ -13,6 +13,8 @@ Zasady udziału zewnętrznego (zgłoszenia, `leakcheck` przed PR): [CONTRIBUTING
 | `skillsync-ctl` | sterowanie usługą watch (bash, tylko Linux) |
 | `skillsync-windows.ps1` | bootstrapper dla Windows |
 | `tests/` | testy `unittest` i zasoby testowe (`tests/fixtures/`, `tests/e2e/prototype/`) |
+| `tools/claude-headless/` | wspólny rdzeń opakowań `claude` i zadania nieinteraktywne `claude -p` (audyt wydania, dryf dokumentacji), patrz „Zadania nieinteraktywne” |
+| `tools/claude-eval/` | opakowanie `plugin eval` Claude Code dla skilli biblioteki i przypadki eval (`evals/`), patrz „Eval zachowania skilli” |
 | `library/` | warstwa `core`: skille, role, instrukcje i workflow rdzenia |
 | `docs/` | dokumentacja użytkownika (ta strona i pozostałe) |
 
@@ -57,6 +59,23 @@ python3 -m unittest discover -s tests -p 'test_skillsync*.py' -v 2>&1 | tee run.
 python3 scripts/check_skips.py run.log --system ubuntu-latest --mode copy
 ```
 
+### Kontrola izolacji stanu (`real_state_snapshot`)
+
+Kontrola „test touched real Skillsync state dirs” porównuje stan prawdziwych katalogów użytkownika (`REAL_STATE_DIRS`) przed testem i po nim
+(`IsolatedTestCase`, `guard_real_state`, cleanup w `test_skillsync_workflow.py`). Porażka podaje do 10 zmienionych ścieżek w formie
+`<ścieżka>: <przed> -> <po>` (`brak` = nie istniało; reszta jako `i N innych`), więc zaczynasz od nazwy pliku, nie od zrzutu słowników.
+
+- Porównywane są rozmiar i czas modyfikacji każdego pliku, a katalogi razem z nimi, z wyjątkami: pliki odświeżane przez `git` tylko do odczytu
+  (`FETCH_HEAD`, `.git/index`, `*.lock` w `.git`) i **metadane katalogów pod `composed`** (`cache/composed` na Windows) razem z potomkami:
+  nowy i usunięty katalog oraz każdy plik w nich nadal są widoczne, sam czas i rozmiar katalogu nie.
+- Rejestr `composed/.projects.json` jest porównywany **tylko we wpisach projektów spod katalogu tymczasowego** (`tempfile.gettempdir()`
+  z chwili importu, po `resolve`); plik tymczasowy rejestru (`.projects.json.tmp-*`) jest pomijany, zły JSON liczy się jako pusty rejestr.
+  Rejestr jest rozpoznawany po miejscu pod `REAL_STATE_DIRS`, nie przez `composed_root()`, bo cleanup biegnie przy podstawionym środowisku.
+- Powód: `skillsync link` dowolnej innej sesji przepisuje rejestr i zmienia czas katalogu `composed`, co nie jest wyciekiem testu.
+- Cena: kontrola nie wykryje przejściowego zapisu pliku w katalogu pod `composed` (utworzony i usunięty, zmienia tylko czas katalogu) ani testu,
+  który linkuje PRAWDZIWY projekt spoza katalogu tymczasowego (zmiana jego wpisu w rejestrze). Nie wykryje też usunięcia i odtworzenia pustego katalogu pod `composed`. Zapisy poza `composed` i każdy plik (z wyjątkiem pliku rejestru i `.projects.json.tmp-*`) są wykrywane.
+- Przy porażce nadal obowiązuje procedura z lekcji `pelny-bieg-testow-a-git-na-prawdziwych-warstwach.md`: ustal sprawcę z różnicy, powtórz moduł.
+
 ### Zestaw modułów przy scalaniu
 
 `python3 scripts/merge_modules.py --base <baza> --head <sha> [--json | --names]` wylicza z diffu `<baza>..<sha>` moduły testowe do uruchomienia
@@ -88,11 +107,30 @@ planu jako NOT_RUN.
 ### Nazwy z danych pod katalogiem tymczasowym
 
 `tests/tmp_paths.py` (`child`, `make_dir`, `write_file`) składa ścieżkę pod katalogiem tymczasowym z nazwy pochodzącej z danych i odmawia
-nazwy z separatorem, dyskiem, `..`, znakiem sterującym, końcową kropką lub spacją oraz nazwy zastrzeżonej Windows (`CON`, `NUL`, `COM1`…);
-wynik sprawdza `relative_to`. Powód: na Windows nazwa `\n` (backslash, `n`) jest ścieżką od korzenia dysku, więc `tmp / nazwa` zapisuje poza
-katalogiem tymczasowym. `tests/test_skillsync_tmp_path_guard.py` (tryb raportu, `STRICT = False`) zgłasza w testach wyrażenia
-`<ścieżka tmp> / <zmienna lub wywołanie>`; stan początkowy (`BASELINE`, liczba trafień na plik) nie był przeglądany po kolei (próbka kilku miejsc: nazwy z tabel literałów testu). Strażnik rozpoznaje ścieżkę tmp po nazwie (`tmp`, `temp`, `tmp_dir`…) i pochodzeniu z `tempfile` w obrębie pliku, więc nie widzi parametrów ani odziedziczonych atrybutów (np. `self.root` z fikstury w innym pliku), `joinpath`, `os.path.join` ani `Path(a, b)`. Nowy
-test, który składa ścieżkę z danych, używa pomocnika; gdy trafienie ma zostać, dopisz uzasadnienie przy liczbie.
+nazwy z separatorem, dyskiem, `..`, znakiem sterującym, końcową kropką lub spacją oraz nazwy zastrzeżonej Windows, także z rozszerzeniem
+(`CON`, `NUL`, `COM1`, `nul.json`…); wynik sprawdza `relative_to`. Ścieżka względna z wieloma członami składa się przez `descend(base, "a/b")`
+(bez `..`, bez ścieżki bezwzględnej, z wynikiem w bazie). Powód: na Windows nazwa `\n` (backslash, `n`) jest ścieżką od korzenia dysku, więc `tmp / nazwa` zapisuje poza
+katalogiem tymczasowym. `tests/test_skillsync_tmp_path_guard.py` jest strażnikiem ścisłym (`STRICT = True`): każde wyrażenie
+`<ścieżka tmp> / <zmienna lub wywołanie>` w testach (poza `tmp_paths.py` i samym strażnikiem) kończy test błędem, chyba że stoi w `ALLOWED`.
+Klucz wpisu to `(plik, tekst wyrażenia z ast.unparse)`, wartość to uzasadnienie; wpis bez trafienia też jest błędem (test „stale”).
+Strażnik rozpoznaje ścieżkę tmp po nazwie (`tmp`, `temp`, `tmp_dir`…) i pochodzeniu z `tempfile` (`mkdtemp`, `TemporaryDirectory`, `with … as nazwa`)
+albo z innej ścieżki tmp. Zasięg skażenia: nazwa lokalna jest tmp w całej funkcji, która ją przypisuje (kolejność instrukcji bez znaczenia),
+oraz w funkcjach zagnieżdżonych, lambdach i składaniach; nazwa modułowa w całym module; nazwa z ciała klasy w samym ciele klasy (nie w metodach).
+Atrybuty (`self.root`) i każda skażona nazwa tworzą wspólny zbiór `attrs`, który działa w całym pliku: dla wyrażeń z atrybutem
+(fikstura w jednej klasie obsługuje mixin w innej) i dla parametrów (parametr jest tmp, gdy w pliku jest skażona nazwa o tej samej nazwie, np. pomocnik
+`write(root, rel)`). Przy skanowaniu repozytorium strażnik buduje najpierw rejestr klas ze wszystkich `tests/**/*.py` (klasa → atrybuty `self.x`
+skażone w jej metodach i w jej ciele oraz nazwy baz). Podklasa dziedziczy atrybuty skażone klas bazowych z innych plików: po prostej nazwie
+klasy (`Name` albo ostatni człon `modul.Klasa`), przechodnio przez bazy baz; kolizja nazw klas z różnych plików daje sumę atrybutów i baz,
+a cykl dziedziczenia nie zapętla skanu. Odziedziczony atrybut działa tylko dla wyrażeń z atrybutem w zasięgu klasy podrzędnej i jej podklas.
+Cel pochodny od atrybutu odziedziczonego (`self.out = self.work / "o"`, `base = self.work / "x"`) ma zasięg: nazwa w funkcji, atrybut w klasie;
+nie wchodzi do wspólnego zbioru `attrs` pliku ani do rejestru. `scan(tree)` bez rejestru nie dziedziczy (kontrakt dla
+`scripts/platform_sensitive.py`). Strażnik nie widzi przepływu przez wywołania (`self.root = make_project(self.tmp)`), fabryk, `global`/`nonlocal`,
+`joinpath`, `os.path.join` ani `Path(a, b)`; atrybut o tej samej nazwie w niezwiązanej klasie skazi cały plik. Wyrażenie `X.name` jest ścieżką tmp, gdy `X` jest nazwą lub atrybutem
+związanym z `TemporaryDirectory(...)` (np. `temp = TemporaryDirectory(...)`); stąd `self.root = Path(temp.name).resolve()` w klasie bazowej
+`IsolatedTestCase` (`tests/layers_helpers.py`) skaża `self.root` i `self.work` w podklasach z innych plików. `NamedTemporaryFile` i `mkdtemp`
+nie dają takiego `.name`, a `Path(x).name` jest tylko nazwą składnika. Złączenia `os.path.join(x.name, …)` i f-stringi z `.name` nie są
+wykrywane, podobnie jak obiekt `TemporaryDirectory` podany jako argument innego wywołania (`x = wrap(TemporaryDirectory())`, `self.enterContext(TemporaryDirectory())`) (znane ograniczenia). Klasy rozpoznaje prosta nazwa, bez rozwiązywania importów. Nowy test, który składa ścieżkę z danych,
+używa pomocnika. Trafienie naprawia się domyślnie (`child` dla jednej nazwy, `descend` dla ścieżki z `/`, w helperze u źródła; stała, liczba lub pętla po nie-literale też jest naprawą, nie wyjątkiem). Wpis do `ALLOWED` jest wyjątkiem i wolno go dodać tylko wtedy, gdy WSZYSTKIE wystąpienia klucza (plik, tekst wyrażenia) spełniają jeden z warunków: (a) nazwy są celowo wrogie i test jest zabezpieczony przed Windows albo `child` odrzuciłby dokładnie to, co test sprawdza, (b) prawa strona jest wynikiem walidatora z `tmp_paths` lub testu, nie kodu produktu, (c) `descend` zmieniłby semantykę testu; uzasadnienie wpisu wskazuje dowód dla każdego wystąpienia. Gdy wpisów robi się więcej niż kilkanaście, reguła skanera jest za szeroka i trzeba ją przeanalizować, zamiast dopisywać.
 
 ### Serwery w testach
 
@@ -274,6 +312,81 @@ Strażnik ma flagi jawnych wejść dla hooków i narzędzi integracyjnych, nie d
 ich nie pokazuje): `leakcheck` i `leakguard install-hook` mają `--identity`, `--targets-json` i `--trailer-allow`,
 a `leakcheck` i `leakguard patterns` mają `--target-patterns`. W `leakcheck` każda z flag `--identity`, `--targets-json`, `--trailer-allow` zastępuje wejścia
 z configu maszyny w całości: bez `--targets-json` cel jest nieznany, więc `--require full` kończy się BLOCKED.
+
+## Eval zachowania skilli
+
+`tools/claude-eval/run.py` jest jedynym wejściem do `claude plugin eval` dla skilli biblioteki; bezpośrednie wywołanie `claude plugin eval` na bibliotece nie jest wspierane. Sprawdza, czy model z wtyczką wykonuje to, co skill zapisuje (np. czyta referencję `ticket-intake` przy kluczu zgłoszenia), względem ramienia bez wtyczki. Każdy przebieg to prawdziwe wywołanie modelu na koncie użytkownika, więc ma koszt i limit.
+
+```
+python3 tools/claude-eval/run.py --model haiku --max-cost-usd 0.5 --config-dir /bezwzględna/ścieżka/profilu [--runs 1..3] [--case glob] [--out katalog] [--dry-run]
+```
+
+- Wymagane: `--model` (prosty identyfikator), `--max-cost-usd` (większy od 0, najwyżej 5.0) i `--config-dir` (istniejący katalog bezwzględny bez `..`; profil Claude, z którego idzie koszt). Brak któregokolwiek kończy się odmową przed startem.
+- Wymuszone: `--no-publish`, `--trust-plugin` wyłącznie dla skopiowanego katalogu, `--concurrency 1`, `--ablation with-without`. Nigdy: `--scaffold`, `--allow-tools`, `--allow-real-servers`, `--publish-report`, mocki.
+- Środowisko dziecka: tylko `PATH`, `HOME`, `LANG`, `LC_*` i `CLAUDE_CONFIG_DIR` z argumentu; katalog roboczy to pusty katalog tymczasowy poza repozytorium. `--dry-run` drukuje polecenie i środowisko bez uruchamiania.
+- Biblioteka nie jest dotykana: skille `feature`, `bugfix`, `pre-implement`, `workflow` (oraz `dispatch`, gdy ma `disable-model-invocation`) trafiają jako kopie do `<out>/stage/plugin` razem z `.claude-plugin/plugin.json`; z przypadków kopiowane są tylko `prompt.md` i `graders/*.md`, a po skopiowaniu przypadki są walidowane ponownie. Dowiązania i twarde linki są odrzucane.
+- Przypadek (`evals/<nazwa>/prompt.md` + `graders/*.md`) ma zamkniętą listę kluczy (`description`, `tags`, `runs` do 3, `max_turns` do 10, `timeout_seconds` do 300, `allowed_tools` tylko `Read`, `Glob`, `Grep`, `Skill`) i graderów deterministycznych (`regex`, `tool_used`, `tool_order`, `file_exists`). W `tool_used` pole `min` ma domyślnie 1, więc kontrola „nie wywołano” wymaga `min: 0` i `max: 0`.
+- Opakowanie zawsze przekazuje `--runs` (domyślnie 3), a `claude plugin eval` daje mu pierwszeństwo, więc `runs` z `prompt.md` jest ignorowane. Domyślne `--out` to `<katalog bieżący>/.skillsync/claude-eval/<czas>`; wynik: `<out>/aggregate.json`, `<out>/report.html`. Kody wyjścia 1 (wynik poniżej progu) i 2 (przerwanie limitem kosztu) pochodzą z `plugin eval` i są przekazywane bez zmian; opakowanie samo zwraca 2 przy błędzie przypadków, a odmowa argumentów kończy się kodem 2 z argparse. Flagi `--claude-bin`, `--evals-dir` i `--library` służą testom.
+- Pilotaż 21.11 (Haiku, 34 wywołania, 0,099 USD): kryteria adopcji niespełnione (z wtyczką `feature` 1/3, `bugfix` 0/3, `pre-implement` 1/3), więc eval nie jest częścią procesu, a narzędzie zostaje na później. Kontrole wyszły 0/3 przez defekt gradera (`min` domyślnie 1); po poprawce `min: 0` nie były powtórzone na modelu; szczegóły i granice wniosku w `docs/domain/claude-plugin-eval.md`.
+- Testy opakowania używają fałszywego `claude` (`--claude-bin`) i nie wywołują modelu: `tests/test_skillsync_claude_eval_wrapper.py`, `tests/test_skillsync_claude_eval_cases.py`. Prawdziwe wywołania wymagają zgody na koszt.
+
+## Zadania nieinteraktywne (`claude -p`)
+
+`tools/claude-headless/run.py` jest jedynym wejściem do uruchamiania prawdziwego `claude -p` na zadaniach **poza** pipeline'em `feature` (skill `feature` zabrania `claude -p` zamiast natywnego podagenta). Zadania są doradcze i tylko do odczytu; wynik nie jest bramką merge ani wydania. Opakowanie uruchamia człowiek (albo sesja główna na jego polecenie), nie podumysł w pipeline'ie `feature`.
+
+```
+python3 tools/claude-headless/run.py release-audit --tag-from vA --tag-to vB --model sonnet --max-cost-usd 1.5 --config-dir /bezwzględna/ścieżka/profilu [--max-turns N] [--timeout-seconds S] [--repo katalog] [--out katalog] [--dry-run]
+python3 tools/claude-headless/run.py docs-drift --ref release/X.Y.Z --model sonnet --max-cost-usd 1.5 --config-dir /bezwzględna/ścieżka/profilu
+```
+
+- **Zadania.** `release-audit` (J1): spójność changelogów (`CHANGELOG.md`, `library/CHANGELOG.md`), numeru wersji i dokumentacji z diffem między dwoma tagami. `docs-drift` (J2): zgodność `docs/cli.md` z definicjami argparse na wskazanym refie. Prompt, schemat wyniku i opis wejść: `tools/claude-headless/jobs/<zadanie>/`.
+- **Wymuszone flagi** (stała w kodzie, nie do nadpisania z linii poleceń): `-p --output-format json --no-session-persistence --permission-prompts none --restricted --tools Read,Grep,Glob --strict-mcp-config --disable-slash-commands`, `--json-schema` z treścią schematu, `--max-budget-usd` (limit wywołania, wymagany, najwyżej 5 USD), `--max-turns` (domyślnie 25, czyli wartość pomiarów poniżej; najwyżej 30), `--model`. Prompt idzie przez stdin. Nigdy `--bare` (wymaga klucza API, a pracujemy na subskrypcji), `--dangerously-skip-permissions` ani narzędzia zapisujące. `--restricted` jest podstawą: `--setting-sources user` samo ładuje ustawienia profilu, w tym jego hooki, wtyczki i reguły `permissions.allow`.
+- **Dane.** Zadanie czyta kopię **publicznej części** rdzenia zbudowaną z tagu albo gałęzi (`git archive` z allowlistą: `CHANGELOG.md`, `README.md`, `docs/*.md`, `docs/domain`, `docs/lessons`, `library`, `skillsync_workflow`, `skillsync`, `skillsync-ctl`), nigdy żywego drzewa roboczego, repozytorium operacyjnego, warstw org i personal, `.skillsync/`, `docs/plans` ani `docs/specs`. Po zbudowaniu kopii skan odmawia startu, gdy cokolwiek spoza allowlisty zostało; dowiązania i hardlinki nie są kopiowane. Dla `release-audit` host dokłada `_audit/diff.patch` (pełny patch changelogów i `docs/*.md`) i `_audit/diffstat.txt` (statystyki reszty); rozmiar tych plików jest ograniczony do 400 KB.
+- **Konto i środowisko.** Profil (`--config-dir`) musi być wymieniony w pliku `~/.local/state/skillsync/claude-headless-profiles.txt` (jedna ścieżka bezwzględna na linię; domyślna odmowa, porównanie po rozwinięciu dowiązań); wpisz tam wyłącznie profil konta prywatnego. Środowisko dziecka: `PATH`, `LANG`, `LC_*`, tymczasowy `HOME` i `CLAUDE_CONFIG_DIR` z argumentu; `cwd` w tymczasowej kopii. `--ledger` i `--profiles-file` można przekierować (testy tego potrzebują): to ochrona przed pomyłką, nie przed celowym obejściem.
+- **Księga kosztów konta** (`~/.local/state/skillsync/claude-headless-ledger.json`, zapis pod blokadą pliku, atomowy): licznik wywołań i suma kosztów; stałe w kodzie 12 USD i 16 wywołań (`--total-budget-usd` może tylko obniżyć sumę). Start odmawia, gdy suma plus limit wywołania przekroczyłaby budżet. Budżet jest łączny dla konta, bez okna czasowego, i odnawia go wyłącznie właściciel (przeniesienie pliku księgi ręcznie); na dzień pomiarów jest wyczerpany (16 wywołań), więc kolejne uruchomienie wymaga tej decyzji. Koszt nieznany (wynik nie-JSON, NaN, brak pola) albo przerwanie liczy się jako limit wywołania.
+- **Wynik.** `result.json` (pole `structured_output` sprawdzone własnym walidatorem podzbioru JSON Schema), `raw.json`, `stderr.txt`, `metadata.json` (wersja Claude Code, czas, koszt) w katalogu poza gitem (`.skillsync/claude-headless/<czas>-<pid>/`). Kody: 0 PASS; 1 zadanie nie powiodło się albo wynik niezgodny ze schematem (także brak `structured_output` przy sukcesie `claude`); 2 odmowa przed startem (argumenty, profil, księga, rozmiar wejścia, niepusty katalog wyniku); 3 przerwanie limitem kosztu.
+- **Wspólny rdzeń** z opakowaniem `claude-eval`: `tools/claude-headless/claude_headless_core.py` (walidacja limitu kosztu, katalogu profilu i modelu, środowisko dziecka, czytnik frontmattera). Zmiana rdzenia nie zmienia zachowania `claude-eval` (test porównuje jego `--dry-run` z migawką).
+
+**Stan pomiaru** (2026-11-21, Claude Code 2.1.318, sonnet, `--max-turns 25`; koszt: 16 wywołań, 3,72 USD razem z 8 próbami flag):
+- J1 (`release-audit`, backtest na `v1.5.0..v1.6.0`, `v1.7.0..v1.8.0`, `v1.9.0..v1.10.0`, 2 przebiegi każda): **nie spełnił progu wejścia do procesu wydania** (0 z 5 znanych długów „brakującej praktyki” z zamrożonej listy: reguły i sekcje, których dokumentacja nie zawierała; próg to ≥ 4 z 5 i ≤ 3 fałszywe alarmy na wydanie, a w jednej parze fałszywych alarmów było 5). Poza listą znalazł 18 unikalnych rozbieżności, z czego 10 prawdziwych po adiudykacji na tagach (**precyzja 10 z 18**), np. sprzeczność dokumentacji z kodem i changelogiem; koszt ok. 0,4 USD i minuta na wydanie.
+- Ograniczenie: zadanie widzi tylko to, co wynika z diffu i z niespójności dokumentów (dokument kontra kod, dokument kontra changelog), a nie braki praktyki (czego dokumentacja w ogóle nie opisuje). Fałszywe alarmy to głównie rutynowe podniesienie `core_min`, pliki spoza kopii i twierdzenia nieweryfikowalne z samego diffstat; prompt po backteście mówi, żeby tego nie zgłaszać (precyzja 10 z 18 dotyczy promptu sprzed tej poprawki, jej efektu nie mierzono).
+- J2 (`docs-drift`, 2 przebiegi na końcu `release/1.12.0`): 3 unikalne rozbieżności `docs/cli.md` z argparse, wszystkie prawdziwe (jedna, `--cid`, to możliwa flaga wewnętrzna); próba jest za mała na wnioski ogólne.
+- Decyzja właściciela (2026-11-21): **narzędzie zostaje do doraźnego, ręcznego i doradczego użycia; nie jest bramką i nie wchodzi do kontroli przed wydaniem (`release-preflight` w repozytorium operacyjnym).** Znaleziska traktuj jak podpowiedzi do sprawdzenia w pliku, nie jak werdykt. Uruchamiaj poza godzinami pracy kart: wywołania idą na wspólny limit konta, a księga pilnuje sumy.
+
+## Ręczna próba: pasek statusu i styl `karta`
+
+Próbę wykonuje właściciel w sesji interaktywnej; agent jej nie uruchamia. Wymaga Claude Code ≥ 2.1.97. Używaj osobnego projektu testowego,
+nie projektu produkcyjnego. Wynik (wersja Claude Code, CLI czy VS Code, co widać, zrzut tekstu paska) przekaż Dyspozytorowi po wydaniu.
+Nie blokuje wydania. Do czasu próby wynik wyświetlania w UI to `NOT_RUN` z powodem „brak sesji interaktywnej”.
+
+1. W manifeście projektu testowego (`.github/.skillsync.yaml`) włącz klucze:
+   ```yaml
+   claude:
+     statusline: true
+     output_styles: true
+   ```
+2. `skillsync link <projekt-testowy> --dry-run`, potem `skillsync link <projekt-testowy>`. Oczekiwane: w `.claude/hooks/` jest `statusline.py`,
+   w `.claude/output-styles/` jest `karta.md`, w `.claude/settings.local.json` jest klucz `statusLine` z `refreshInterval` 15.
+   `skillsync doctor <projekt-testowy>` nie zgłasza `error`; ma `info` o wymaganiu 2.1.97 i o niepotwierdzonym VS Code, a przy `output_styles` także `info` o stylu `karta` (`/output-style karta`).
+3. CLI: w katalogu projektu uruchom `claude`. Zaakceptuj zaufanie do katalogu (pasek działa dopiero po nim).
+4. Nadaj nazwę sesji: `/rename pasek-proba`.
+5. Pasek ma pokazać jedną linię, np. `sesja: pasek-proba | <projekt> | <gałąź> | <tryb> | plan <slug> N/M`. Segment bez danych
+   jest pominięty. `plan` pojawia się tylko przy planie w statusie `in_progress`.
+6. Styl: wpisz `/output-style karta` (wymaga ≥ 2.1.269) i zadaj pytanie o stan pracy. Odpowiedź ma format protokołu kart
+   ([multi-session](../library/skills/feature/references/multi-session.md)): pierwsza linia `date: <wynik date>`, potem
+   `STATUS <paczka> <akt> <czeka-na>` albo `REPORT DONE|BLOCKED <paczka> commit=… checks=… debt=… retro=…`; dowody z komendą
+   i kodem wyjścia, a niewykonane kontrole jawnie jako `NOT_RUN`. Sam plik stylu niczego nie aktywuje; wybór zapisuje się
+   w `.claude/settings.local.json` jako `outputStyle`.
+7. Brak nazwy sesji (bez `/rename`): pasek nie pokazuje segmentu `sesja:`, reszta działa. To nie jest błąd. Brak paska w ogóle:
+   uruchom `claude --debug` (stderr skryptu), sprawdź `skillsync doctor` i istnienie kopii skryptu. Cudzy pasek w jednym z plików
+   ustawień zgłasza `doctor` z nazwą pliku.
+8. VS Code: otwórz projekt w VS Code z rozszerzeniem Claude Code. Zapisz, czy pasek się pojawił, oraz wersję rozszerzenia.
+   Picker stylów jest od 2.1.257. Brak paska w VS Code to wynik zgodny z dokumentacją, bo wyświetlanie tam jest niepotwierdzone.
+9. Powrót: w manifeście ustaw `claude.statusline: false` i `claude.output_styles: false`, potem `skillsync link`. `link` usuwa
+   wpis `statusLine` i kopię skryptu paska, jeśli są nasze (kopia zmieniona ręcznie znika razem z wpisem), oraz kopię stylu,
+   jeśli jest nietknięta albo zgodna z biblioteką i nieśledzona przez git. Kopia stylu zmieniona ręcznie zostaje
+   w `.claude/output-styles/` i usuwasz ją ręcznie. Klucz `outputStyle`, jeśli został zapisany przez `/output-style`,
+   usuwasz ręcznie z `.claude/settings.local.json`.
 
 ## Pułapki
 

@@ -37,7 +37,7 @@ z checkoutu `python <checkout>/skillsync`, a z zainstalowanego pakietu `python -
 | `test-run` | kod komendy przy `FAIL`; 2 przy kodzie komendy 0 bez `PASS` | wyjątek od mapowania statusów: pełny opis w wierszu `test-run` poniżej |
 
 - Synchronizacje (`link`, `instructions`, `push`, `watch` i pozostałe) kończą się kodem 0 także przy ostrzeżeniach
-  (`[warn]`, `[conflict]`, `[info]`); czytaj stdout.
+  (`[warn]`, `[conflict]`); `[info]` to komunikat, nie ostrzeżenie. Czytaj stdout.
 - `pull` działa jak `layers update` i `link`: przy brudnym drzewie warstwy albo braku fast-forward ta warstwa dostaje BLOCKED
   (np. `my: BLOCKED (dirty)`), pozostałe są aktualizowane, a `pull` kończy się kodem 2.
 - Szczegółowe reguły kodów komend workflow: [workflow](workflow.md).
@@ -56,18 +56,20 @@ gdy stdin jest terminalem i nie podano `--yes`; inaczej nieinteraktywny (bez pyt
 | `core` | `layers add core --kind core --subdir library --ref <core-ref>`; domyślny ref `v<zainstalowana wersja>` | `done`, `unchanged` (warstwa jest; inny ref = ostrzeżenie, bez zmiany), `blocked` |
 | `org` | tylko przy `--org`: najpierw `git ls-remote` z `BatchMode` i limitem 30 s, potem `layers add <id> --kind org` (tylko do odczytu) | `done`, `unchanged` (ten sam id i source; bez `ls-remote`), `blocked` (brak dostępu, inny source lub rodzaj, osierocony katalog) |
 | `rule` | bez organizacji: gdy `layer_rules` jest puste, dodaje `**: [core]`; z organizacją: `layers use <id> --match …` (domyślnie `**`) | `done`, `unchanged`, `blocked`; w `--dry-run` zamiast `done` jest `planned` (także dla `core` i `org`) |
+| `completion` | po kroku reguł i przed `check`, tylko gdy setup nie jest `blocked`: instaluje uzupełnianie powłoki w tym samym procesie (jak `completion install --auto`, zob. niżej) | `done`, `unchanged`, `planned` (`--dry-run`), `skipped` (`SKILLSYNC_NO_COMPLETION`, brak powłoki, brak drzewa parsera albo porażka instalacji z ostrzeżeniem); nigdy `blocked` |
 | `check` | `layers check` na katalogu pasującym do reguły (najpierw reguła organizacji; `**` → katalog tymczasowy, glob z `*` → tymczasowy podkatalog jego prefiksu, glob bez `*` → ten katalog). Gdy żaden istniejący katalog nie pasuje: `layers check` wszystkich warstw z neutralnego cwd i ostrzeżenie | `done` (PASS), `failed` (FAIL), `blocked` (BLOCKED) |
 
 Wynik `check` pochodzi z `layers check`: FAIL (1) to problem zgłoszony przez warstwy, BLOCKED (2) to brak warunku
 (np. brak `core`). Warunki i treść komunikatów `blocked` opisuje [installation](installation.md#rozwiązywanie-problemów).
 
-Idempotencja: drugie uruchomienie z tymi samymi argumentami daje `unchanged` we wszystkich krokach, kończy się kodem 0 i nie
-zmienia configu (bajt w bajt). Przerwane uruchomienie (np. po `core`) dokańcza kolejne.
+Idempotencja: drugie uruchomienie z tymi samymi argumentami daje `unchanged` w krokach, które coś zmieniają (kroki `skipped`, np. przy
+`SKILLSYNC_NO_COMPLETION`, zostają `skipped`), kończy się kodem 0 i nie zmienia configu (bajt w bajt). Przerwane uruchomienie (np. po `core`) dokańcza kolejne.
 
 - `--dry-run`: pokazuje plan i wynik `git ls-remote` dla organizacji; nic nie klonuje i nie zapisuje configu.
 - `--json`: schemat `{schema: 1, status, dry_run, steps: [{step, result, detail}], warnings, next}`; adresy są zredagowane (bez poświadczeń).
 - Po zakończeniu w trybie tekstowym wypisuje `Next:` (dla `PASS`): link i sprawdzenie projektu, `skillsync pull`,
-  aktualizacja narzędzia przez ponowne `install.sh` z nowego tagu, `uv tool update-shell`. `setup` nie wykonuje tych poleceń.
+  aktualizacja narzędzia przez ponowne `install.sh` z nowego tagu, `skillsync completion install|uninstall` (uzupełnianie dla bash, zsh i PowerShella),
+  `uv tool update-shell`. `setup` nie wykonuje tych poleceń (uzupełnianie instaluje własnym krokiem `completion`).
 
 Statusy i kody (zob. [statuses-and-exit-codes](domain/statuses-and-exit-codes.md)):
 
@@ -78,6 +80,88 @@ Statusy i kody (zob. [statuses-and-exit-codes](domain/statuses-and-exit-codes.md
 | `BLOCKED` | 2 | zła flaga, brak dostępu do `--org-source`, nieznana wersja core bez zdalnego tagu (`--core-ref`), błąd git |
 
 Wyjątek poza kreatorem (np. błąd odczytu configu) to `skillsync: <komunikat>` na stderr z kodem 2.
+
+## Uzupełnianie powłoki (`completion`)
+
+`skillsync completion bash|zsh|powershell` wypisuje na stdout skrypt uzupełniania (UTF-8, końce linii LF). Skrypt jest
+generowany z drzewa parsera: podkomendy, zagnieżdżone podkomendy, flagi i ich wartości z `choices`. Flagi i argumenty,
+których nazwa zawiera człon `path`, `project`, `file`, `dir` albo `directory`, dostają uzupełnianie plików powłoki.
+Skrypt jest samodzielny: przy Tab nie uruchamia `skillsync` i nie czyta danych projektów.
+Windows PowerShell 5.1 nie woła completera dla samego `-` ani `--`: wpisz co najmniej jedną literę po myślnikach (`skillsync link --d`); PowerShell 7 podpowiada flagi już po `--`.
+
+`skillsync completion install|uninstall [--shell bash|zsh|powershell]… [--dry-run] [--json]`
+
+- `--shell` (powtarzalna) zawęża wybór. Bez niej `install` obsługuje powłoki znalezione na PATH (`bash`, `zsh`, `pwsh`,
+  `powershell`), a `uninstall` wszystkie trzy.
+- `--dry-run` wypisuje każdy plik i blok, które powstałyby lub zostałyby usunięte, i niczego nie zapisuje.
+- `--json`: `{schema: 1, status, dry_run, actions: [{shell, path, result, detail}], warnings}`. `result` to `created`,
+  `updated`, `unchanged`, `removed`, `skipped` (plan z `--dry-run` albo wyłączenie zmienną) albo `failed`.
+- `install --auto` jest dla wywołań z `install.sh` i kroku `setup`: respektuje `SKILLSYNC_NO_COMPLETION` (sprawdzaną przed liczeniem ścieżek, więc błędny `HOME`
+  nie blokuje wyłączonego uzupełniania), a gdy nic się nie zmieniło, milczy. Przy `uninstall` flaga nie ma skutku.
+
+| Powłoka | Skrypt | Plik startowy z blokiem |
+|---|---|---|
+| bash | `${XDG_DATA_HOME:-~/.local/share}/bash-completion/completions/skillsync` | brak, pliku rc nie zmieniamy |
+| zsh | `${XDG_DATA_HOME:-~/.local/share}/zsh/site-functions/_skillsync` | `${ZDOTDIR:-~}/.zshrc` |
+| PowerShell | `skillsync-completion.ps1` w `%LOCALAPPDATA%\skillsync\completion\` (Windows) albo w `${XDG_DATA_HOME:-~/.local/share}/skillsync/completion/` | profil `CurrentUserAllHosts` (`profile.ps1`) każdego znalezionego hosta: `pwsh` (PowerShell 7) i `powershell` (Windows PowerShell 5.1) |
+
+Blok w pliku startowym leży między znacznikami `# >>> skillsync completion >>>` i `# <<< skillsync completion <<<`.
+Zasady dla plików użytkownika:
+
+- Przed pierwszą edycją powstaje kopia `<plik>.skillsync-bak` (bajt w bajt). Kolejne instalacje jej nie zmieniają, a
+  `uninstall` jej nie usuwa.
+- Zapis jest atomowy, z zachowaniem końców linii (CRLF w profilu zostaje CRLF) i BOM. Nowy profil PowerShella i skrypt
+  PowerShella powstają jako UTF-8 z BOM.
+- Dwa bloki albo niedomknięty znacznik to `failed` z komunikatem; plik nie jest wtedy zapisywany.
+- Plik zaczynający się BOM-em UTF-16 albo UTF-32 lub zawierający bajty NUL (np. profil zapisany przez `Out-File` w Windows PowerShell 5.1) to `failed`
+  (przy `install` i `uninstall`), bez zapisu i bez kopii: dopisanie UTF-8 uszkodziłoby go. Zapisz plik jako UTF-8 i powtórz polecenie.
+- Cel tylko do odczytu (np. magazyn menedżera dotfiles; na Windows atrybut tylko do odczytu) to `failed` bez kopii i bez zmian. Symlink do pliku rc
+  zostaje: zapis i kopia trafiają do celu linku. Wiszący symlink (cel nie istnieje) to `failed` z komunikatem: nie powstaje ani plik, ani katalog;
+  `uninstall` zostawia taki link i zgłasza `unchanged`.
+- Tuż przed zapisem plik jest czytany ponownie i porównywany z odczytem z początku (bajty, rozmiar, czas modyfikacji). Zmiana dokonana w międzyczasie
+  przez kogoś innego to `failed` z komunikatem „changed during the operation, run it again”, bez zapisu; powstała już kopia `.skillsync-bak` zostaje.
+- Zapis zastępuje plik atomowo (plik tymczasowy i `os.replace`) i przenosi na nowy plik właściciela oraz atrybuty rozszerzone (xattr; w miarę
+  możliwości, błędy są ignorowane). Plik z kilkoma twardymi dowiązaniami (`st_nlink` > 1) jest zapisywany w miejscu, żeby nie zerwać pozostałych dowiązań.
+- Plik własnego skryptu bez nagłówka `# skillsync completion (generated by …)` (zmieniony albo cudzy) nie jest nadpisywany
+  ani usuwany: wynik `failed`, reszta `uninstall` idzie dalej.
+- `uninstall` usuwa tylko blok i nasze pliki. Po usunięciu skryptu PowerShella usuwa puste katalogi `completion` i
+  nadrzędny `skillsync` w katalogu danych; katalogów `bash-completion` i `zsh/site-functions` nigdy. Plik rc, który
+  instalacja utworzyła i który po usunięciu bloku jest pusty, także znika. Plik rc, który po usunięciu bloku wraca do
+  stanu sprzed instalacji, jest bajt w bajt taki sam jak przed instalacją.
+- Ścieżki liczone są z `HOME` (na Windows z `USERPROFILE`, a gdy go brak, z `HOME`) i zmiennych `XDG_DATA_HOME`, `XDG_CONFIG_HOME` (tylko
+  domyślny profil PowerShella poza Windows: `${XDG_CONFIG_HOME:-~/.config}/powershell/profile.ps1`), `ZDOTDIR`, `LOCALAPPDATA`.
+  Ścieżka musi być bezwzględna, bez `..` i bez znaków sterujących. Skrypt PowerShella w bloku jest cytowany literalnie (apostrofy, także typograficzne
+  U+2018, U+2019, U+201A i U+201B, są podwajane). Host dostaje jedno zapytanie `-NoProfile -NonInteractive` (limit 10 s) i odpowiada dwiema liniami ASCII:
+  `P64:<base64 z bajtów UTF-8 ścieżki $PROFILE.CurrentUserAllHosts>` (kodowanie base64 sprawia, że strona kodowa hosta nie ma znaczenia, także dla
+  polskich liter w ścieżce) oraz `POLICY:<efektywna ExecutionPolicy>`. Host na PATH bez użytecznej odpowiedzi (przekroczony czas, śmieci, ścieżka
+  niebezwzględna, błąd dekodowania) jest pomijany: akcja `skipped` z powodem i ostrzeżenie, bez zapisu i bez zgadywania miejsca. Domyślne profile
+  (Windows: `Documents\PowerShell\profile.ps1` dla pwsh i `Documents\WindowsPowerShell\profile.ps1` dla 5.1; poza Windows
+  `${XDG_CONFIG_HOME:-~/.config}/powershell/profile.ps1`) służą tylko wtedy, gdy na PATH nie ma żadnego hosta.
+- **ExecutionPolicy:** gdy efektywna polityka hosta to `Restricted` albo `AllSigned`, profil nie wczytałby niepodpisanego skryptu, więc dla tego hosta
+  nie powstaje nic (ani profil, ani skrypt): akcja `skipped` z powodem i poleceniem `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`, które
+  wykonujesz sam (polityki nie zmieniamy za użytkownika), plus wpis w `warnings`. Przy `install --auto` (`install.sh`, `setup`) jest z tego jedna linia
+  informacji, bez ostrzeżenia na stderr i bez statusu `FAIL`. Polityka nieznana (host nie podał jej) nie blokuje. `uninstall` polityki nie sprawdza.
+- Profil `CurrentUserAllHosts` jest czytany przez każdy host PowerShella, także przez konsolę rozszerzenia VS Code (ona ma własny host, a więc własny
+  profil hosta, którego profil `CurrentUserCurrentHost` konsoli systemowej nie pokrywa). Skrypt rejestruje uzupełnianie dla `skillsync` i `skillsync.exe`.
+- Blok w `.zshrc` ma dwa warianty. Wariant A (rejestracja bez `compinit`): `fpath=(<katalog> $fpath)`, `autoload -Uz _skillsync`,
+  `(( $+functions[compdef] )) && compdef _skillsync skillsync`; wybierany, gdy reszta pliku poza naszym blokiem zawiera osobne słowo `compinit` albo
+  `oh-my-zsh`, `zinit`, `antidote`, `zplug`, `prezto` (późniejszy `compinit` znajdzie funkcję przez `fpath`). Wariant B: jak A, ale gdy `compdef` nie
+  istnieje, blok sam wywołuje `compinit -i`. Zmiana wariantu przy ponownej instalacji to `updated` w miejscu, nadal jeden blok.
+- bash: uzupełnianie nie obejmuje zapisu `--flag=value` (bash rozbija słowo na `=` przez `COMP_WORDBREAKS`); używaj `--flag wartość`. Dla kandydatów,
+  które nie są ścieżkami, skrypt wyłącza tryb nazw plików (`compopt +o filenames`, gdy bash ma `compopt`), więc bash nie dopisuje `/` do nazw zgodnych
+  z katalogiem w bieżącym katalogu.
+- Koszt: start PowerShella z blokiem w profilu rośnie o ok. 38 ms (pomiar pwsh 7 na Linuksie: wczytanie przez kropkę skryptu ok. 50 KB).
+
+Wyłączenie: `SKILLSYNC_NO_COMPLETION=1` pomija wywołania automatyczne (`install.sh`, krok `completion` w `setup`) z wynikiem
+`skipped`. Wartości `1`, `true`, `yes`, `on` włączają wyłączenie; `0`, `false`, `no`, `off` i pusta wartość go nie włączają;
+inna wartość daje ostrzeżenie i działa jak włączona. Jawne `skillsync completion install` działa zawsze.
+
+Kody wyjścia: 0 `PASS` albo `NOT_RUN` (brak żadnej powłoki to `NOT_RUN` z ostrzeżeniem), 1 `FAIL` (część akcji `failed`),
+2 `BLOCKED` (ścieżka niepoprawna albo katalog domowy nie do ustalenia: na Windows dopiero gdy brak i `USERPROFILE`, i `HOME`). Nieznana powłoka w `--shell`
+albo w `completion <powłoka>` to błąd składni argumentów (kod 2).
+
+Krok `completion` w `skillsync setup` wynika z tej samej logiki: `done`, `unchanged`, `planned` (`--dry-run`) albo `skipped`
+z ostrzeżeniem. Porażka instalacji uzupełniania nigdy nie blokuje `setup`.
 
 ## Warstwy (`layers`)
 
@@ -121,8 +205,12 @@ Pomoc: `skillsync <komenda> --help`.
 | `add <projekt> <skill> [--layer ID=PATH]` | dopisuje skill do manifestu i wykonuje `link` |
 | `skills add\|list\|index\|remove` | szkielet skilla, lista z członkostwem, indeks katalogu, usunięcie jawnego wpisu z manifestu |
 
-Flagi `skills`: `add [--add-to-project] [--layer ID=PATH] [--to-layer ID]`, `list [--json] [--layer ID=PATH] [--status]`,
+Flagi `skills`: `add <nazwa> [--add-to-project <projekt>] [--layer ID=PATH] [--to-layer ID]` (`--add-to-project` bierze ścieżkę projektu, do którego manifestu trafi nowy skill), `list [--json] [--layer ID=PATH] [--status]`,
 `index [--check] [--layer ID=PATH] [--stdout]`, `remove [--json] [--layer ID=PATH] [--no-link]`.
+
+Usługa `watch` (uruchamiana przez `skillsync-watch.service`) nie widzi `CLAUDE_CONFIG_DIR` z sesji interaktywnej. Interaktywny
+`link` z tą zmienną wskazującą katalog z cudzym `statusLine` może usunąć nasz wpis paska (z `[warn]`); `watch` przy najbliższej
+zmianie w warstwach zainstaluje go ponownie, aż do kolejnego `link` w tej samej powłoce. Szczegóły: [domain](domain/statusline-i-output-styles.md).
 
 Dwie różne flagi warstw:
 
@@ -143,7 +231,7 @@ Każde pole ścieżki w raportach JSON ma na Windows ukośnik `/`: `root` i `pro
 |---|---|
 | `doctor [path] [--layer ID=PATH] [--json]` | statyczna walidacja konfiguracji; `error` → FAIL (1), same ostrzeżenia → PASS (0), nieczytelny config albo config z kluczem `library:` → BLOCKED (2). Nie testuje aplikacji; raportuje też stan haka (zakaz stopek i podpisów narzędzi AI, usuwanie, ostrzeżenie o testach): brak haka, brak lub uszkodzone dane zakazu atrybucji, brak klucza `attribution` w `settings.local.json` (w projekcie nigdy niepodlinkowanym: tylko ostrzeżenie) oraz tekst zakazanej atrybucji w warstwie lub w wygenerowanych instrukcjach to `error` (FAIL); nieaktualny wobec manifestu lub generatora, ustawienia wspólne i użytkownika z włączoną atrybucją to ostrzeżenie; aktywny z trybem to `info` (zob. `link`) |
 | `route`, `readiness`, `review`, `validate`, `smart-test`, `guard` | dobór kontekstu, gotowość planu, checklista review, plan i wykonanie kontroli, strażnik konwencji; `review` zwraca też `profile` (`docs`, gdy zmiana dotyka wyłącznie dokumentacji (`docs/**` bez plików kodu), plików `.md` skilli, `CHANGELOG*` albo notatek wydania, `prototyp`, gdy zmiana mieści się w całości w katalogu prototypu (`prototype.root` z manifestu, domyślnie `docs/prototypes`), inaczej `kod`; `--profile kod|docs|prototyp` wymusza profil), `docsFiles` i `prototypeFiles`; pozycje listy prototypu dostaje także zmiana mieszana, która dotyka plików prototypu; ścieżki i pozycje docs nadpisują `workflow.review.docs_paths` i `workflow.review.docs_checklist`, ścieżki prototypu `workflow.review.prototype_paths`, a listę `workflow.review.prototype` (jedno źródło: `library/workflow/defaults.yaml`) rozszerzają warstwy, `workflow/projects/<slug>.yaml` i manifest: pozycje są dopisywane w kolejności rdzeń, warstwy, projekt, manifest, równe dosłownie pomijane (zostaje pierwsza), a pozycji rdzenia nie da się usunąć |
-| `map`, `suggest`, `knowledge init`, `status`, `plan`, `dispatch` | mapa repo, sugestie skilli, szkielet `docs/domain` i `docs/lessons`, odczyt stanu, zmiana statusu planu, stan dyspozycji |
+| `map`, `suggest`, `knowledge init`, `status`, `plan`, `dispatch` | mapa repo, sugestie skilli, szkielet `docs/domain` i `docs/lessons`, odczyt stanu, zmiana statusu planu, stan dyspozycji (`dispatch --pulse`: ustalenia pulsu) |
 
 Lista plików (`--files` albo zmienione pliki z git) w `route`, `readiness`, `review`, `smart-test`, `validate` i `guard` jest sprawdzana na samej ścieżce: rodzic jest rozwiązywany fizycznie, ostatni człon nie. Przechodzi ścieżka względna albo bezwzględna leżąca w projekcie, także dowiązanie jako OSTATNI człon (tak listuje je git; dowiązanie do katalogu poza projektem też, z ukośnikiem końcowym lub bez), plik usunięty i plik w nieistniejącym katalogu. Odrzucane (BLOCKED): ścieżka bezwzględna poza projektem, `..` wychodzące z projektu i dowiązanie w środku ścieżki, które wskazuje poza projekt. Na POSIX `..` po dowiązaniu (`a/link/..`) oznacza prawdziwy rodzic celu, więc wychodzi poza projekt i jest odrzucane; na Windows `..` jest składane leksykalnie, zanim system spojrzy na dowiązania (ścieżka `a\link\..\x` to `a\x`), więc zostaje w projekcie, zgodnie z tym, co system otworzy. Ścieżki, które polecenie otwiera (plan, środowisko, role, prototypy), są sprawdzane z podążaniem za dowiązaniami. `guard` nie otwiera zmienionego dowiązania, tylko odnotowuje je w `skipped`.
 
@@ -159,8 +247,31 @@ Pola workflow w tej grupie:
   `Readiness: PASS|BLOCKED`) i dodaje `reportFile` do JSON. Bez flagi zachowanie się nie zmienia. Niepoprawny id albo
   dowiązanie w ścieżce przebiegu daje `BLOCKED` (exit 2) z `reason`, bez zapisu.
 
-Komendy opisuje [workflow](workflow.md). `doctor` sprawdza m.in. skille z manifestu, sekcje `dispatch` i `prototype`,
-spójność instrukcji z plikami oraz budżety bajtów.
+Komendy opisuje [workflow](workflow.md). `doctor` sprawdza m.in. skille z manifestu (także frontmatter: nieznany klucz, zły typ lub wartość to ostrzeżenie, nigdy błąd), sekcje `dispatch` i `prototype`,
+spójność instrukcji z plikami, budżety bajtów oraz pola ról wymagające nowszego Claude Code (jedna pozycja `info`, bez wpływu na kod wyjścia; bez uruchamiania `claude`).
+
+**Hooki Claude Code (`link` i `doctor`).** `link` instaluje, aktualizuje i usuwa wpisy hooków `session-context`, `guard-generated`, `check-subagent-report` oraz argument `--subagent-commit` strażnika poleceń wg kluczy `hooks.session_context`, `hooks.guard_generated`, `hooks.subagent_report`, `hooks.subagent_commit` ([manifest](manifest.md)); skrypty trafiają do `.claude/hooks/`, a `.skillsync/` jest w `.gitignore`, gdy hook jest włączony. Wartość spoza dozwolonych = wyłączony hook i ostrzeżenie. `claude: false` usuwa nasze wpisy hooków (closure, strażnik poleceń i trzy nowe hooki; wpis Stop testów ze `settings.json` i jego skrypt zostają) oraz nasze skrypty; cudze wpisy zostają. `doctor` raportuje stan każdego hooka (zainstalowany, tryb, zgodność części stałej wpisu z tym, co zapisze `link`; kopia skryptu różna od biblioteki = ostrzeżenie) oraz liczbę ostrzeżeń `subagent-report` z ostatnich 14 dni (pozycja `info`, bez wpływu na kod wyjścia). Zasady i tabela zdarzeń: [architecture](architecture.md), sekcja „Hooki Claude Code”.
+
+**Pasek statusu i styl (`claude.statusline`, `claude.output_styles`, opt-in; domyślnie `false`).**
+- `link` przy `claude.statusline: true` kopiuje `statusline.py` do `.claude/hooks/` i dopisuje `statusLine` do `.claude/settings.local.json`.
+  Gdy znajdzie cudzy `statusLine` (w `.claude/settings.local.json`, `.claude/settings.json`, `~/.claude/settings.json` albo w
+  `$CLAUDE_CONFIG_DIR/settings.json`, gdy zmienna jest ustawiona bezwzględnie) albo `disableAllHooks: true` w którymkolwiek z nich,
+  nie zapisuje i wypisuje `[warn]` z nazwą pliku i priorytetem. Gdy nasz wpis był już zainstalowany, usuwa go wraz z kopią skryptu,
+  z tym samym `[warn]`. Plik ustawień, którego nie da się odczytać, to `[warn]` bez zapisu. Plik śledzony przez git nie jest zapisywany.
+- `claude: false` albo `claude.statusline: false` usuwa nasz wpis i kopię skryptu (kopię tylko naszą: z sygnaturą `skillsync-managed` albo zgodną z biblioteką;
+  edytowana kopia bez sygnatury zostaje, a `link` wypisuje `[warn]`, gdy usunął nasz wpis; cudzy wpis i cudzy plik zostają bez komunikatu).
+- `claude.output_styles: true`: `link` kopiuje `karta.md` do `.claude/output-styles/` jako kopię zarządzaną; cudzy plik albo
+  dowiązanie pod tą nazwą nie jest zastępowane (`[warn]`). Lokalnie zmieniona kopia zostaje, a `link` wypisuje zwykłe `[info]`.
+  Wyłączenie (`false` albo `claude: false`) usuwa wyłącznie ten plik, i to tylko gdy jest nietknięty albo bajtowo zgodny z biblioteką
+  i nie jest śledzony przez git; cudze pliki i dowiązania w katalogu nigdy nie są ruszane, a bez klucza `link` niczego tam nie czyta.
+  `doctor` przy `output_styles: true` podaje `info` z poleceniem `/output-style karta`. Generator nie ustawia `outputStyle`.
+- `doctor` przy `claude.statusline: true`: `warning` dla cudzego paska, `disableAllHooks` lub nieczytelnego pliku (komunikat wymienia plik
+  i priorytet); `warning` dla brakującego skryptu albo kopii różnej od biblioteki, gdy wpis jest nasz (brak samego wpisu nie jest zgłaszany);
+  `info` z wymaganiem `refreshInterval` (Claude Code ≥ 2.1.97; starszy go pomija) i z informacją, że wyświetlanie paska w rozszerzeniu VS Code
+  jest niepotwierdzone.
+- `doctor`, klucze `claude:`: `error` dla wartości nie-bool w `enabled`, `statusline` i `output_styles`; `warning` dla nieznanego klucza
+  i dla wartości `claude` niebędącej ani mapą, ani boolem (Claude zostaje włączony). Bez nowych kluczy `doctor` nie dodaje żadnego wpisu.
+- Ręczna próba wyświetlania (CLI i VS Code): [development](development.md), sekcja „Ręczna próba”.
 
 - `route` zwraca pole `ceremony {value, source: manifest|default|invalid[, error]}` (klucz manifestu `workflow.ceremony`: `full` | `demo`;
   brak klucza = `full`, `source: default`; `error` tylko przy `invalid`, wtedy `value: null`). `doctor` zgłasza błąd dla innej wartości.
@@ -181,7 +292,7 @@ spójność instrukcji z plikami oraz budżety bajtów.
 
 | Komenda | Skutek |
 |---|---|
-| `checkpoint`, `resume` | zapis i sprawdzenie kroku przebiegu (krok `[T]` z `--status PASS` wymaga dowodu z `test-run` albo `--no-tests POWÓD`); `--manifest PLIK` bierze manifest spoza repozytorium (np. publiczny rdzeń bez `.github/.skillsync.yaml`), a korzeń projektu i zapis `.skillsync/runs/` zostają w `<path>`; bez flagi zachowanie bez zmian; zły plik to błąd z nazwą flagi |
+| `checkpoint`, `resume` | zapis i sprawdzenie kroku przebiegu (krok `[T]` z `--status PASS` wymaga dowodu z `test-run` albo `--no-tests POWÓD`; gdy drzewo zmieniło się w trakcie biegu, komunikat nazywa do 5 ścieżek z `end.changed`, zob. `library/skills/workflow/references/test-run.md`); `--manifest PLIK` bierze manifest spoza repozytorium (np. publiczny rdzeń bez `.github/.skillsync.yaml`), a korzeń projektu i zapis `.skillsync/runs/` zostają w `<path>`; bez flagi zachowanie bez zmian; zły plik to błąd z nazwą flagi |
 | `spec snapshot <projekt> --run-id <id> [--spec PLIK] [--manifest PLIK] [--replace] [--json]` | kopiuje spec (z linii `Spec:` planu o `Przebieg: <id>`) i plan do `.skillsync/runs/<id>/docs/specs\|plans/` oraz, przy `workflow.specs.archive`, do `<archiwum>/<projekt>/<id>/specs\|plans/` (`<projekt>` = `project.name`, a bez niego nazwa katalogu repozytorium; znaki spoza `[A-Za-z0-9._-]` zamienione na `-`). Zapis przez plik tymczasowy i rename, z compare-and-swap osobno dla każdego celu: sha ostatniego zapisu na parę (cel, plik) jest w `.skillsync/runs/<id>/docs/.saved.json`. Cel zmieniony przez kogoś innego albo bez wpisu (z innym sha niż źródło) = `BLOCKED` dla tego celu; `--replace` nadpisuje (decyzja człowieka). Bez planu i bez `--spec` = `BLOCKED`, nic nie zapisano. Kody: 0 PASS, 1 FAIL (archiwum niedostępne; cel przebiegu zapisany), 2 BLOCKED; przy mieszanym wyniku wygrywa najwyższa waga (2 > 1 > 0). Treść plików nie trafia do komunikatów |
 | `spec snapshot <projekt> --run-id <id> --check [--to KATALOG] [--json]` | tylko odczyt: porównuje sha speca i planu przebiegu z kopiami w `.skillsync/runs/<id>/docs/`, w archiwum (gdy jest) i w `KATALOG` (korzeń kopii projektu; sprawdzane jest `<KATALOG>/.skillsync/runs/<id>/docs/specs\|plans/`). `PASS` (0) gdy wszystkie cele zgadzają się; `BLOCKED` (2) z listą rozbieżnych celów, gdy archiwum jest niedostępne, albo w połączonym worktree bez celu poza nim (ani archiwum, ani `--to`). Procedura usuwa worktree tylko po `PASS` celu poza worktree |
 | `metrics`, `retro`, `retro-decide`, `benchmark` | pomiary, raport retrospektywy, rejestracja decyzji, benchmark narzędzi |
@@ -193,11 +304,11 @@ Szczegóły: [workflow](workflow.md).
 | Komenda | Skutek |
 |---|---|
 | `dashboard show <projekt> [--json] [--plan <rel>]` | stan projektu jako JSON `schema: 1` ([dashboard-contract](dashboard-contract.md)); tylko odczyt |
-| `test-run <projekt> [--run ID] [--step ID] [--junit PLIK\|KATALOG ...] [--allow-no-count POWÓD] [--allow-skips] [--format auto\|none\|NAZWA] [--timeout S] -- <polecenie...>`; `test-run <projekt> --import PLIK --step ID --source-sha SHA [--run ID]` | uruchamia komendę testów projektu przez wspólny runner i zapisuje jej zdarzenia dla strony statusu (`.skillsync/runs/<run>/tests/<krok>/<n>.jsonl`); wyjście komendy bez zmian; kod wyjścia: PASS 0, `FAIL` (kod komendy ≠ 0) = kod komendy, 124 limit czasu, 127 brak programu, a bieg z kodem komendy 0 bez zapisanego statusu `PASS` (zapisany `BLOCKED`: brak dodatniej liczby wykonanych testów, pominięte bez zgody, „kod 0, ale wyjście raportuje niezaliczone”, niewykonane specyfikacje Karmy; albo brak zapisu statusu po błędzie zapisu lub przerwaniu) = 2 z linią stderr `test-run: exit code 2: …`; kod 2 jest też BLOCKED przed startem (zły argument, kilka kroków w toku), więc kod komendy 2 po samym kodzie nie różni się od BLOCKED: rozróżnia linia stderr (`test-run: step <id> (<źródło>), attempt <n>: <STATUS>`, `BLOCKED: …`); `--import` daje 0 przy poprawnym imporcie niezależnie od statusu zaimportowanego biegu; kod 0 zdejmują tylko `--allow-no-count <powód>` (brak liczników) i `--allow-skips` (pominięte); zero wykonanych testów, „kod 0, ale wyjście raportuje niezaliczone” i niewykonane specyfikacje Karmy nie mają zdjęcia żadną flagą; `--run ID` (także z `--import`) wymaga śladu przebiegu w `.skillsync/runs/`: katalogu `<ID>/` (nie dowiązania) albo zwykłego pliku `<ID>.json` (nazwa dokładna); bez śladu BLOCKED (2) z komunikatem `--run <ID>: no such run in .skillsync/runs/ (runs: …)` (bez żadnych przebiegów `--run <ID>: no run in .skillsync/runs/`; przy `--import` z podpowiedzią skopiowania przebiegu albo założenia przez `skillsync checkpoint`), nic się nie zapisuje i polecenie nie startuje; `PASS` tylko przy znanej dodatniej liczbie wykonanych testów (zasada `validate`), lista testów z raportu JUnit XML lub TRX; krok bez `--step` = jedyny „w toku” z checkpointów (kilka = BLOCKED, 2); `--run` bez flagi = jedyny przebieg projektu (katalog; rekord `<id>.json` i dowiązanie się nie liczą); `--format` wybiera adapter stanu pojedynczych testów: `auto` (domyślnie, po narzędziu rozpoznanym w poleceniu także za `npx`, `timeout`, `env`, `python -m` i podobnymi) pisze na stderr przed startem polecenia jedną linię: `test-run: adapter <nazwa> (live <running|completion|counts>)` (po średniku bywa podpowiedź, jak uzyskać listę pojedynczych testów, np. `--reporter=verbose` dla Vitest) albo `test-run: no adapter for <narzędzie> (known: ...); pass --format <nazwa>, or --format none to silence`; `none` wyłącza adapter, nazwa wymusza go (`angular`, `cargo-test`, `cargo-test-serial`, `cypress`, `dotnet`, `karma`, `node-test`, `playwright`, `pytest`, `tap`, `unittest`, `vitest`; nieznana nazwa to błąd z listą, np. `--format ?`; opis w [test-adapters](test-adapters.md)); `--timeout S` to limit czasu w sekundach (domyślnie 3600); bez adaptera bieg jest zapisany z liczników podsumowania i raportu; `--import PLIK --source-sha SHA` przenosi plik zdarzeń zapisany na innej maszynie (walidacja, bajty bez zmian, kopia bez `.git` podaje commit) |
+| `test-run <projekt> [--run ID] [--step ID] [--junit PLIK\|KATALOG ...] [--allow-no-count POWÓD] [--allow-skips] [--format auto\|none\|NAZWA] [--timeout S] -- <polecenie...>`; `test-run <projekt> --import PLIK --step ID --source-sha SHA [--run ID]` | uruchamia komendę testów projektu przez wspólny runner i zapisuje jej zdarzenia dla strony statusu (`.skillsync/runs/<run>/tests/<krok>/<n>.jsonl`); wyjście komendy bez zmian; kod wyjścia: PASS 0, `FAIL` (kod komendy ≠ 0) = kod komendy, 124 limit czasu, 127 brak programu, a bieg z kodem komendy 0 bez zapisanego statusu `PASS` (zapisany `BLOCKED`: brak dodatniej liczby wykonanych testów, pominięte bez zgody, „kod 0, ale wyjście raportuje niezaliczone” (przy źródle liczników `regex` także zakotwiczone podsumowania Playwrighta `  N failed`/`  N interrupted`, Vitesta wiersz `Tests` z `N failed` i Jesta `Tests: N failed,`; dla źródeł `junit` i `adapter` te wzorce nie są czytane, liczby daje raport albo adapter), niewykonane specyfikacje Karmy; albo brak zapisu statusu po błędzie zapisu lub przerwaniu) = 2 z linią stderr `test-run: exit code 2: …`; kod 2 jest też BLOCKED przed startem (zły argument, kilka kroków w toku), więc kod komendy 2 po samym kodzie nie różni się od BLOCKED: rozróżnia linia stderr (`test-run: step <id> (<źródło>), attempt <n>: <STATUS>`, `BLOCKED: …`); `--import` daje 0 przy poprawnym imporcie niezależnie od statusu zaimportowanego biegu; kod 0 zdejmują tylko `--allow-no-count <powód>` (brak liczników) i `--allow-skips` (pominięte); zero wykonanych testów, „kod 0, ale wyjście raportuje niezaliczone” i niewykonane specyfikacje Karmy nie mają zdjęcia żadną flagą; `--run ID` (także z `--import`) wymaga śladu przebiegu w `.skillsync/runs/`: katalogu `<ID>/` (nie dowiązania) albo zwykłego pliku `<ID>.json` (nazwa dokładna); bez śladu BLOCKED (2) z komunikatem `--run <ID>: no such run in .skillsync/runs/ (runs: …)` (bez żadnych przebiegów `--run <ID>: no run in .skillsync/runs/`; przy `--import` z podpowiedzią skopiowania przebiegu albo założenia przez `skillsync checkpoint`), nic się nie zapisuje i polecenie nie startuje; `PASS` tylko przy znanej dodatniej liczbie wykonanych testów (zasada `validate`), lista testów z raportu JUnit XML lub TRX; krok bez `--step` = jedyny „w toku” z checkpointów (kilka = BLOCKED, 2); `--run` bez flagi = jedyny przebieg projektu (katalog; rekord `<id>.json` i dowiązanie się nie liczą); `--format` wybiera adapter stanu pojedynczych testów: `auto` (domyślnie, po narzędziu rozpoznanym w poleceniu także za `npx`, `timeout`, `env`, `python -m` i podobnymi) pisze na stderr przed startem polecenia jedną linię: `test-run: adapter <nazwa> (live <running|completion|counts>)` (po średniku bywa podpowiedź, jak uzyskać listę pojedynczych testów, np. `--reporter=verbose` dla Vitest) albo `test-run: no adapter for <narzędzie> (known: ...); pass --format <nazwa>, or --format none to silence`; `none` wyłącza adapter, nazwa wymusza go (`angular`, `cargo-test`, `cargo-test-serial`, `cypress`, `dotnet`, `karma`, `node-test`, `playwright`, `pytest`, `tap`, `unittest`, `vitest`; nieznana nazwa to błąd z listą, np. `--format ?`; opis w [test-adapters](test-adapters.md)); `--timeout S` to limit czasu w sekundach (domyślnie 3600); bez adaptera bieg jest zapisany z liczników podsumowania i raportu; `--import PLIK --source-sha SHA` przenosi plik zdarzeń zapisany na innej maszynie (walidacja, bajty bez zmian, kopia bez `.git` podaje commit) |
 | `dashboard serve <projekt> [--port N] [--read-port N --approve-port M] [--read-bind ADR] [--approve-bind ADR] [--allow-proxy-headers] [--prototype-port N] [--host H] [--approve-host H] [--read-host H] [--no-approvals] [--plan <rel>] [--session-url URL] [--poll S] [--verbose]` | strona statusu z żywym odświeżaniem (SSE) i przyciskami zgód. Bez flag portów: dwa gniazda, odczyt na `5140` (wszystkie interfejsy) i zgody na `5141` (tylko ta maszyna); `--port N`: jedno gniazdo (tryb jednego portu); `--read-port`/`--approve-port`: jawne numery (niżej); `--poll S`: odstęp sprawdzania zmian plików (domyślnie 1, najmniej 0,2); `--verbose`: log każdego żądania na stderr |
 | `dashboard url <projekt> [--port N] [--host NAZWA] [--read] [--lan] [--json]` | adres z tokenem zgód (`http://127.0.0.1:<port>/#zgoda=<token>`) działającego `dashboard serve` projektu (z pliku stanu w katalogu danych maszyny); `--read`: adres gniazda odczytu, bez fragmentu i tokenu; `--lan`: adresy gniazda odczytu dla innych urządzeń, jeden na linię (`http://<IP>:<port>/`; w `--json` pole `lanUrls`); `BLOCKED` (exit 2): `server_not_running`, `approvals_disabled` (serwer z `--no-approvals`), `ambiguous_server`, `host_not_allowed`, `invalid_project`, `read_not_exposed` (gniazdo odczytu słucha tylko na loopbacku, `--lan`); zob. [dashboard-contract](dashboard-contract.md) |
 | `dashboard metrics <projekt> <run-id> [--json] [--plan <rel>]` | czasy podkroków `Fn.k`, liczby rund i porażek przebiegu; podkrok bez danych jest oznaczony jawnie |
-| `approvals record <projekt> --word "GO plan\|GO implement\|CP\|READY" --run <run-id> --source cli\|ide [--sha SHA] [--file PLIK] [--target X] [--branch Y]` | zapis zgody użytkownika w `.skillsync/runs/<run-id>/approvals.jsonl`; dla `CP` i `READY` dopisuje pole `planState` (status planu przebiegu w chwili zgody), a duplikat to ta sama para (sha, `planState`) jako ostatni wpis słowa w przebiegu |
+| `approvals record <projekt> --word "GO plan\|GO implement\|CP\|READY" --run <run-id> --source cli\|ide [--sha SHA] [--file PLIK] [--target X] [--branch Y] [--expect-plan-state draft|approved|in_progress|done|archived]` | zapis zgody użytkownika w `.skillsync/runs/<run-id>/approvals.jsonl`; dla `CP` i `READY` dopisuje pole `planState` (status planu przebiegu w chwili zgody), a duplikat to ta sama para (sha, `planState`) jako ostatni wpis słowa w przebiegu; `--expect-plan-state <status>` (tylko `CP`/`READY`): zapis odmawia (kod 2, `status: BLOCKED`, `code: plan_state_changed`, nic nie zapisane), gdy status planu przebiegu odczytany pod tą samą blokadą pliku jest inny niż podany albo nieznany (brak planu z `Przebieg:`, brak linii `Status:`, status spoza listy, plan ponad limit rozmiaru); komunikat: `approvals record: plan state changed (expected <X>, current <Y>); consent not recorded` (`<Y>` = `unknown` przy nieznanym); wartość spoza listy i słowo GO z flagą to zwykłe `BLOCKED` z JSON-em, bez `code` |
 | `approvals wait …` | czekanie na zgodę (odczyt tego samego pliku), opis w [workflow](workflow.md); przy `tracked: false` zamknięcie planu nie zmienia HEAD, a `wait` nie zna `planState`, więc zawsze podawaj `--since <czas STOP>` |
 
 - Bez flag portów `serve` uruchamia tryb dwóch gniazd: odczyt na `5140` na wszystkich interfejsach (`0.0.0.0`), zgody na
@@ -249,7 +360,7 @@ Szczegóły: [workflow](workflow.md).
   Jedno wywołanie z dwoma portami zastępuje dwie instancje (jedna z `--no-approvals`); wywołania z `--port` działają bez
   zmian. `--port` z `--read-bind`, `--approve-bind` albo `--allow-proxy-headers` = BLOCKED. `--allow-proxy-headers` działa
   tylko w trybie z gniazdem zgód (domyślnym albo z `--approve-port`); `--read-host '*'` tylko na gnieździe odczytu.
-- `approvals record` jest jedynym zapisem zgód: blokada plikowa, odmowa duplikatu (to samo słowo i `sha` w przebiegu), maskowanie
+- `approvals record` jest jedynym zapisem zgód: blokada plikowa, odmowa duplikatu (to samo słowo i `sha` w przebiegu), odmowa przy zmienionym statusie planu (`--expect-plan-state`, sprawdzenie przed testem duplikatu), maskowanie
   sekretów. Słowo wpisuje użytkownik; agent tej komendy nie wywołuje.
 - Kody: `0` = `PASS`, `2` = `BLOCKED` (zły argument, odmowa zapisu, brak projektu lub przebiegu, port zajęty); `approvals wait`
   kończy się `3` przy przekroczeniu czasu. Strona i dokument skilla: skill `dashboard` w bibliotece.
@@ -260,9 +371,11 @@ Szczegóły: [workflow](workflow.md).
 
 ## Prototypy
 
-`skillsync prototype init|sync|index|list|ids|migrate|serve|user|login-link|iterate|restore|writing|accept|gate|comments|triage|decide|resolve|merge-comments|question <projekt> …`
+`skillsync prototype init|sync|index|list|ids|migrate|serve|user|login-link|iterate|restore|writing|accept|gate|comments|triage|decide|resolve|merge-comments|reply|wait|question <projekt> …`
 
 Komenda działa na klikalnych prototypach HTML w repo projektu. Opis akcji, kodów i formatu: [prototypes](prototypes.md).
+
+`prototype reply <projekt> <slug> <wątek> --text TEKST`: odpowiedź agenta w wątku komentarzy (autor `agent`, znaczek AI w interfejsie; to nie jest zgoda). `prototype wait <projekt> <slug> [--since ISO] [--after ID-OPERACJI] [--timeout S] [--interval S]`: czeka na nowy komentarz osoby albo na akceptację wszystkich ekranów; kod wyjścia 0 ze zdarzeniem `comment` albo `accepted`, 3 przy przekroczeniu czasu (domyślnie 1800 s, odpytywanie co 5 s); `--since` razem z `--after` to `BLOCKED` (kod 2).
 
 `prototype serve <projekt> [--layer ID=PATH] [--assets DIR] [--json] [--host ADR] [--port N] [--users PLIK] [--secure-cookies] [--trust-proxy] [--no-source-writes] [--login-to-view] [--demo]`: serwer prototypów ze wspólnym API komentarzy (na pierwszym planie, Ctrl+C zatrzymuje). `--host`: adres nasłuchu (domyślnie `127.0.0.1`); `--port`: port (domyślnie `prototype.port` z manifestu, bez klucza 4445; `0` = dowolny wolny); `--users`: plik użytkowników względem projektu; `--secure-cookies`: ciasteczko sesji z `Secure` (za TLS); `--trust-proxy`: limit logowania liczony z `X-Forwarded-For`; `--no-source-writes`: serwer nigdy nie zapisuje źródeł prototypów (przywracanie ekranów); `--login-to-view`: logowanie także do oglądania. `--demo`: pokaz tylko do odczytu bez kont (bez logowania, komentarzy, wątków, akceptacji i odpowiedzi eksperta; serwer odmawia każdego zapisu, istniejące komentarze są ukryte, strony są jawne dla każdego, kto dotrze do adresu); domyślny nasłuch pokazu to `0.0.0.0` (każdy interfejs), a `--host 127.0.0.1` zawęża go do tej maszyny. `--demo` z `--login-to-view` kończy się `BLOCKED` (exit 2: pokaz nie ma kont ani logowania); `--users`, `--secure-cookies` i `--trust-proxy` przy `--demo` są ignorowane z notą. Model zagrożeń pokazu: [security](security.md#serwer-prototypów-pytania-do-eksperta).
 `list --json`: pole `acceptance` = `{screens, accepted, stale, perScreen}` (`null` przy v1 i bez `comments.json`); `perScreen` to `[{id, state}]` dla każdego ekranu w kolejności dokumentu, `state` = `accepted` | `stale` | `pending` (accepted + stale + pending = `screens`).
@@ -342,7 +455,7 @@ Plik użytkowników jest prywatny: na POSIX tryb 0600, na Windows ACL (tylko uż
   `prototypes`), kilka = BLOCKED `slug_ambiguous` (z `candidates`). `--ref` ma postać `TYTUŁ|ADRES[|WYCIĄG]` (do 5; adres względny albo `https`), `--option` `ETYKIETA[:recommended]`
   (do 8, najwyżej jedna rekomendowana, kilka tylko z `--multi`), `--multi` (pytanie wielokrotnego wyboru: ekspert zaznacza co najmniej jeden
   wariant, wymaga co najmniej 2 opcji; „żaden” to własna odpowiedź tekstowa; do pytań typu „które formaty/kolumny/role” zamiast
-  rozbijania na pytania tak/nie), `--to LOGIN` powtarzane (domyślnie wszyscy eksperci; login spoza pliku kont daje
+  rozbijania na pytania tak/nie), `--cid ID` (identyfikator deduplikacji; domyślnie wyprowadzony z id pytania), `--to LOGIN` powtarzane (domyślnie wszyscy eksperci; login spoza pliku kont daje
   ostrzeżenie), `--refers-to <id>` (spór z wcześniejszą odpowiedzią w tym samym przebiegu), `--origin <spec>:Q<n>` (ścieżka względna). Wyciąg ze speca lub
   dokumentacji agent wpisuje sam: serwer nie czyta repozytorium. Skan sekretów w treści jest heurystyką: trafienie blokuje
   (`secret_detected`, exit 2, bez wartości w raporcie), `--force` przepuszcza z ostrzeżeniem. Raport: `questionId`, `slug`, `specLine`

@@ -30,6 +30,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child  # noqa: E402
 from layers_helpers import (SKILL_TEXT, ComposeCase, composed_root, each_mode, generator_version, git,  # noqa: E402
                             link_mode, make_layer, tree_snapshot, write, yaml_text)
 from layers_helpers import needs_os_symlinks  # noqa: E402
@@ -226,7 +230,7 @@ class PushOwnerTests(PushCase):
 class PushRefusalTests(PushCase):
     def bridge_config(self, name):
         self.real_core = getattr(self, 'real_core', self.layer_paths['core'])
-        bridge = self.work / f'old-library-{name}'
+        bridge = child(self.work, f'old-library-{name}')
         for rel, text in CORE_FILES.items():
             write(bridge / rel, text)
         self.layer_paths['core'] = bridge

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import threading
 import time
+from collections import OrderedDict
 from pathlib import Path
 
 from .common import redact
@@ -20,10 +21,28 @@ STALE_ALIVE_S = 24 * 3600   # silence after which even a live pid of this machin
 MAX_SKIPPED = 20   # the entries of `skipped` in the answer
 MAX_RUNNING_GROUP = 50   # a RUNNING attempt lists every test of a group up to this size (waiting ones visible without a click)
 MAX_RESPONSE_TESTS = 5000
+MAX_GROUPS = 200   # the groups of an attempt in the answer (failed first, then running, the rest by name); the attempt counters still cover every test
 STALE_RUNNING_S = 35 * 60
 NO_GROUP = 'pozostałe testy'
 _LOCK = threading.RLock()   # the server is multi-threaded: the shared states are read and folded under one lock
-_CACHE = {}   # path -> AttemptState (incremental reading: only the appended bytes are parsed)
+_CACHE = OrderedDict()   # path -> AttemptState, least recently used first (incremental reading: only the appended bytes are parsed)
+CACHE_BUDGET = 64 * 1024 * 1024   # bytes of the files behind the cached states (a state weighs several times its file); the sum of the CURRENT offsets
+CACHE_MAX_ENTRIES = 500   # a second guard besides the byte budget
+_TOUCHED = set()   # keys read by the current call (`_begin_round`): never evicted, so one answer's working set is not thrown out in the middle of it
+
+
+def _begin_round():
+    _TOUCHED.clear()
+
+
+def _evict():
+    """At the END of a call: drops the least recently used states that the call did not touch while the budget or the entry limit is exceeded.
+    Evicting at the end (not while reading) keeps the whole working set of the next call in the cache even when it alone is over the budget."""
+    while len(_CACHE) > CACHE_MAX_ENTRIES or sum(s.offset for s in _CACHE.values()) > CACHE_BUDGET:
+        victim = next((k for k in _CACHE if k not in _TOUCHED), None)
+        if victim is None:
+            return   # the working set of this call alone is over the budget: it stays until the next call
+        del _CACHE[victim]
 
 
 def _state(path):
@@ -34,8 +53,8 @@ def _state(path):
         return None
     state = events.read_attempt(path, _CACHE.get(key))   # a replaced or shortened file is read from the start (see `read_attempt`)
     _CACHE[key] = state
-    if len(_CACHE) > 500:
-        _CACHE.pop(next(iter(_CACHE)))
+    _CACHE.move_to_end(key)
+    _TOUCHED.add(key)
     return state
 
 
@@ -74,17 +93,20 @@ def _summary(path, state):
         group['tests'].append(test)
     listed = []
     for group in groups.values():
-        hot = group['tests'] if running and len(group['tests']) <= MAX_RUNNING_GROUP else [t for t in group['tests'] if t['state'] in ('failed', 'running')]
         group['state'] = 'failed' if group['counts']['failed'] else 'running' if group['counts']['running'] else 'waiting' if group['counts']['waiting'] and not group['counts']['passed'] else 'passed'
-        group['tests'] = [_public(t) for t in hot[:MAX_INLINE_TESTS]]
         group['total'] = sum(group['counts'].values())
         listed.append(group)
     listed.sort(key=lambda g: (0 if g['state'] == 'failed' else 1 if g['state'] == 'running' else 2, g['name']))
+    groups_total = len(listed)
+    listed = listed[:MAX_GROUPS]   # cut after the sort and BEFORE the tests of a group are turned into public objects
+    for group in listed:
+        hot = group['tests'] if running and len(group['tests']) <= MAX_RUNNING_GROUP else [t for t in group['tests'] if t['state'] in ('failed', 'running')]
+        group['tests'] = [_public(t) for t in hot[:MAX_INLINE_TESTS]]
     counts = state.counts if running or not state.counts.get('running') else {**state.counts, 'running': 0, 'waiting': state.counts.get('waiting', 0) + state.counts['running']}
     return {'n': state.number, 'state': _effective_state(state, path), 'startedAt': start.get('at'), 'endedAt': end.get('at'),
             'durationMs': end.get('ms'), 'command': start.get('command'), 'tool': start.get('tool'), 'levels': 'tests' if state.tests else 'counts' if state.stream_counts else start.get('levels') or 'command', 'live': start.get('live') if start.get('live') in ('running', 'completion', 'counts') else None,
             'source': end.get('source'), 'exit': end.get('exit'), 'reason': end.get('reason'), 'counts': counts, 'truncated': state.truncated,
-            'groups': listed}
+            'groups': listed, 'groupsTotal': groups_total, 'groupsOmitted': groups_total - len(listed)}
 
 
 def _public(test):
@@ -93,7 +115,11 @@ def _public(test):
 
 def build_tests(root, run_id, progress=None, now=None):
     with _LOCK:
-        return _build_tests(root, run_id, progress)
+        _begin_round()
+        try:
+            return _build_tests(root, run_id, progress)
+        finally:
+            _evict()
 
 
 def _build_tests(root, run_id, progress=None):
@@ -164,7 +190,11 @@ def add_to_status(status, root, run_id, progress):
 
 def tests_response(root, run_id, step, attempt, group=None, limit=500, offset=0):
     with _LOCK:
-        return _tests_response(root, run_id, step, attempt, group, limit, offset)
+        _begin_round()
+        try:
+            return _tests_response(root, run_id, step, attempt, group, limit, offset)
+        finally:
+            _evict()
 
 
 def _tests_response(root, run_id, step, attempt, group=None, limit=500, offset=0):

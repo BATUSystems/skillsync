@@ -1,0 +1,45 @@
+{
+  "claude_gitignore": "agents/explore.md\nagents/implementer.md\nagents/test-writer.md\nagents/test-runner.md\nagents/reviewer.md\nagents/verifier.md\nagents/scribe.md\nagents/mechanic.md\nskills/feature\nskills/agent-runtime-pitfalls\nskills/test-env\nskills/observed-e2e\nskills/workflow\nskills/pre-implement\nskills/smart-test\nskills/bugfix\nskills/codereview\nhooks/check-closure.py\nsettings.local.json\nsettings.local.json.skillsync-backup\nhooks/guard-commands.py\nhooks/attribution-patterns.json\nhooks/guard-tests.py\nhooks/test-tools.json\n",
+  "event_order": [
+    "Stop",
+    "PreToolUse",
+    "Notification"
+  ],
+  "hook_files": [
+    "attribution-patterns.json",
+    "check-closure.py",
+    "guard-commands.py",
+    "guard-tests.py",
+    "test-tools.json"
+  ],
+  "hook_sha256": {
+    "attribution-patterns.json": "84168f01d6d12fc51aeb7164deec1c6c7b726199252cad8ae44359065821517d",
+    "check-closure.py": "2475f993bcfb34c02ac2538b827e76f570704c46da8aab99f37c4b60a1c9c9ae",
+    "guard-commands.py": "4948507d6a8feaa1f148c278f064084924e612ac0ed532f864f62642e459e082",
+    "guard-tests.py": "2431aca563638232a2111c80353ae4f7245bba6e901bf6e6cf0c0471f57c48fa",
+    "test-tools.json": "e16483e5f874342221375e959ef9f53ffab34122dddc22b88971fc0254501ec1"
+  },
+  "root_gitignore_skillsync": true,
+  "second_hook_files": [
+    "attribution-patterns.json",
+    "check-closure.py",
+    "guard-commands.py",
+    "guard-tests.py",
+    "test-tools.json"
+  ],
+  "second_settings_backup": "{\r\n  \"permissions\": {\r\n    \"allow\": [\r\n      \"Bash(ls:*)\"\r\n    ],\r\n    \"deny\": [\r\n      \"Read(./.env)\"\r\n    ]\r\n  },\r\n  \"env\": {\r\n    \"ZMIENNA\": \"wartość-ą\"\r\n  },\r\n  \"hooks\": {\r\n    \"Stop\": [\r\n      {\r\n        \"matcher\": \"\",\r\n        \"hooks\": [\r\n          {\r\n            \"type\": \"command\",\r\n            \"command\": \"echo obcy-stop-ż\"\r\n          }\r\n        ]\r\n      }\r\n    ],\r\n    \"PreToolUse\": [\r\n      {\r\n        \"matcher\": \"Write\",\r\n        \"hooks\": [\r\n          {\r\n            \"type\": \"command\",\r\n            \"command\": \"echo obcy-pre\"\r\n          }\r\n        ]\r\n      }\r\n    ],\r\n    \"Notification\": [\r\n      {\r\n        \"matcher\": \"\",\r\n        \"hooks\": [\r\n          {\r\n            \"type\": \"command\",\r\n            \"command\": \"echo obcy-notify\"\r\n          }\r\n        ]\r\n      }\r\n    ]\r\n  }\r\n}\r\n",
+  "second_settings_local": "{\r\n  \"permissions\": {\r\n    \"allow\": [\r\n      \"Bash(ls:*)\"\r\n    ],\r\n    \"deny\": [\r\n      \"Read(./.env)\"\r\n    ]\r\n  },\r\n  \"env\": {\r\n    \"ZMIENNA\": \"wartość-ą\"\r\n  },\r\n  \"hooks\": {\r\n    \"Stop\": [\r\n      {\r\n        \"matcher\": \"\",\r\n        \"hooks\": [\r\n          {\r\n            \"type\": \"command\",\r\n            \"command\": \"echo obcy-stop-ż\"\r\n          }\r\n        ]\r\n      },\r\n      {\r\n        \"matcher\": \"\",\r\n        \"hooks\": [\r\n          {\r\n            \"type\": \"command\",\r\n            \"command\": \"f=\\\"$(git -C \\\"${CLAUDE_PROJECT_DIR:-.}\\\" rev-parse --show-toplevel 2>/dev/null)/.claude/hooks/check-closure.py\\\"; if [ -f \\\"$f\\\" ]; then python3 \\\"$f\\\"; fi\",\r\n            \"timeout\": 10\r\n          }\r\n        ]\r\n      }\r\n    ],\r\n    \"PreToolUse\": [\r\n      {\r\n        \"matcher\": \"Write\",\r\n        \"hooks\": [\r\n          {\r\n            \"type\": \"command\",\r\n            \"command\": \"echo obcy-pre\"\r\n          }\r\n        ]\r\n      },\r\n      {\r\n        \"matcher\": \"Bash\",\r\n        \"hooks\": [\r\n          {\r\n            \"type\": \"command\",\r\n            \"command\": \"f=\\\"$(git -C \\\"${CLAUDE_PROJECT_DIR:-.}\\\" rev-parse --show-toplevel 2>/dev/null)/.claude/hooks/guard-commands.py\\\"; if [ -f \\\"$f\\\" ]; then python3 \\\"$f\\\" --mode deny --attribution on --tests warn --wide-modules 25; fi\",\r\n            \"timeout\": 10\r\n          }\r\n        ]\r\n      }\r\n    ],\r\n    \"Notification\": [\r\n      {\r\n        \"matcher\": \"\",\r\n        \"hooks\": [\r\n          {\r\n            \"type\": \"command\",\r\n            \"command\": \"echo obcy-notify\"\r\n          }\r\n        ]\r\n      }\r\n    ]\r\n  },\r\n  \"attribution\": {\r\n    \"commit\": \"\",\r\n    \"pr\": \"\"\r\n  }\r\n}\r\n",
+  "second_stdout": [],
+  "settings_backup": "{\r\n  \"permissions\": {\r\n    \"allow\": [\r\n      \"Bash(ls:*)\"\r\n    ],\r\n    \"deny\": [\r\n      \"Read(./.env)\"\r\n    ]\r\n  },\r\n  \"env\": {\r\n    \"ZMIENNA\": \"wartość-ą\"\r\n  },\r\n  \"hooks\": {\r\n    \"Stop\": [\r\n      {\r\n        \"matcher\": \"\",\r\n        \"hooks\": [\r\n          {\r\n            \"type\": \"command\",\r\n            \"command\": \"echo obcy-stop-ż\"\r\n          }\r\n        ]\r\n      }\r\n    ],\r\n    \"PreToolUse\": [\r\n      {\r\n        \"matcher\": \"Write\",\r\n        \"hooks\": [\r\n          {\r\n            \"type\": \"command\",\r\n            \"command\": \"echo obcy-pre\"\r\n          }\r\n        ]\r\n      }\r\n    ],\r\n    \"Notification\": [\r\n      {\r\n        \"matcher\": \"\",\r\n        \"hooks\": [\r\n          {\r\n            \"type\": \"command\",\r\n            \"command\": \"echo obcy-notify\"\r\n          }\r\n        ]\r\n      }\r\n    ]\r\n  }\r\n}\r\n",
+  "settings_local": "{\r\n  \"permissions\": {\r\n    \"allow\": [\r\n      \"Bash(ls:*)\"\r\n    ],\r\n    \"deny\": [\r\n      \"Read(./.env)\"\r\n    ]\r\n  },\r\n  \"env\": {\r\n    \"ZMIENNA\": \"wartość-ą\"\r\n  },\r\n  \"hooks\": {\r\n    \"Stop\": [\r\n      {\r\n        \"matcher\": \"\",\r\n        \"hooks\": [\r\n          {\r\n            \"type\": \"command\",\r\n            \"command\": \"echo obcy-stop-ż\"\r\n          }\r\n        ]\r\n      },\r\n      {\r\n        \"matcher\": \"\",\r\n        \"hooks\": [\r\n          {\r\n            \"type\": \"command\",\r\n            \"command\": \"f=\\\"$(git -C \\\"${CLAUDE_PROJECT_DIR:-.}\\\" rev-parse --show-toplevel 2>/dev/null)/.claude/hooks/check-closure.py\\\"; if [ -f \\\"$f\\\" ]; then python3 \\\"$f\\\"; fi\",\r\n            \"timeout\": 10\r\n          }\r\n        ]\r\n      }\r\n    ],\r\n    \"PreToolUse\": [\r\n      {\r\n        \"matcher\": \"Write\",\r\n        \"hooks\": [\r\n          {\r\n            \"type\": \"command\",\r\n            \"command\": \"echo obcy-pre\"\r\n          }\r\n        ]\r\n      },\r\n      {\r\n        \"matcher\": \"Bash\",\r\n        \"hooks\": [\r\n          {\r\n            \"type\": \"command\",\r\n            \"command\": \"f=\\\"$(git -C \\\"${CLAUDE_PROJECT_DIR:-.}\\\" rev-parse --show-toplevel 2>/dev/null)/.claude/hooks/guard-commands.py\\\"; if [ -f \\\"$f\\\" ]; then python3 \\\"$f\\\" --mode deny --attribution on --tests warn --wide-modules 25; fi\",\r\n            \"timeout\": 10\r\n          }\r\n        ]\r\n      }\r\n    ],\r\n    \"Notification\": [\r\n      {\r\n        \"matcher\": \"\",\r\n        \"hooks\": [\r\n          {\r\n            \"type\": \"command\",\r\n            \"command\": \"echo obcy-notify\"\r\n          }\r\n        ]\r\n      }\r\n    ]\r\n  },\r\n  \"attribution\": {\r\n    \"commit\": \"\",\r\n    \"pr\": \"\"\r\n  }\r\n}\r\n",
+  "stdout": [
+    "Updated: <PROJECT>/.claude/settings.local.json",
+    "Updated: <PROJECT>/.claude/settings.local.json"
+  ],
+  "top_level_keys": [
+    "permissions",
+    "env",
+    "hooks",
+    "attribution"
+  ]
+}

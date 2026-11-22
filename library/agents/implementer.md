@@ -4,6 +4,7 @@ description: Implement a scoped step of an approved plan. Production code and as
 tools: Read, Write, Edit, Grep, Glob, Bash
 model: sonnet
 effort: medium
+maxTurns: 170
 ---
 
 Przed zmianą kontraktu przeczytaj brief gotowości i rzeczywistych konsumentów.

@@ -5,7 +5,30 @@ see `tests/test_skillsync_tmp_paths.py`). The AST scan reports every `<tmp path>
 constant, an UPPER_CASE constant or an f-string/concatenation of such constants. A "tmp path" is a name or attribute with `tmp` or
 `temp` in it, or one assigned (transitively) from `tempfile`/`mkdtemp`/`TemporaryDirectory` or from another tmp path.
 
-Mode: STRICT (180-U). Every hit fails the test unless it is in ALLOWED below, with the reason. To fix a hit use `tmp_paths.child` (one name),
+Scope of the taint (CORE-GUARDSCOPE): a NAME assigned from a tmp path (or bound by `with tempfile... as name`) is tmp in the whole function that
+assigns it (any order of statements) and in the functions, lambdas and comprehensions nested in it, in the whole module when assigned at module
+level, and not in a sibling function. ATTRIBUTES (`self.root = ...`) are tmp in the whole file (a setUp in one class serves a mixin in another), also when a name of that
+name is tainted anywhere in the file (`root = Path(tempfile.mkdtemp())` in one function taints `self.root` everywhere, as before, but not
+a name `root` of another function); a name from a class body is also tmp in that class body, not in its methods. A parameter is tmp
+when the file has a tainted name (local anywhere, or an attribute) of the same name (a helper `write(root, rel)`); a parameter never starts as a safe name.
+Inheritance (CORE-GUARDSCOPE): a first pass over every `tests/**/*.py` builds a registry of classes (`class_registry`, `merge_registry`:
+class name -> attributes tainted in its body and methods (targets `self.x` and names of the class body), names of its bases);
+`scan(tree, inherited=registry)` lets a class see the tainted attributes of its base classes defined in OTHER files, by the simple name of
+the class (`Base` or the last part of `module.Base`), through the bases of the bases (a visited set stops a cycle). The inherited attributes
+count only for an expression with an attribute inside that class (and its subclasses), never for a local name of another function and never
+in the attributes of the file. A target derived only from an inherited attribute (`self.out = self.work / "o"`, `base = self.work / "x"`)
+stays in the scope of that class and its subclasses (an attribute) or of its function (a name); it is not an attribute of the file and not
+in the registry. `scan(tree)` alone does not inherit.
+Known limits: no `global`/`nonlocal`, no flow of taint through calls, returns and factories, an attribute of the same name in an unrelated
+class taints the file, equal class names of different files give the union of their attributes AND of their bases, a base is found by name
+only (no import resolution), an attribute derived from an inherited one in a base class is not registered, and `os.path.join` and f-strings are not
+scanned (only `/`), and `NamedTemporaryFile.name` is a file, not a directory.
+`.name` rule: `X.name` of a `TemporaryDirectory` object is a tmp path. `X` is a name or attribute assigned from the call (`temp = tempfile.TemporaryDirectory(...)`,
+`self.tmp = TemporaryDirectory()`: the call is the value of the assignment, not an argument or a link of a chain); the set is file-wide (like the attributes), so
+`Path(self.tmp.name) / key` in another class of the file is a hit, and attributes built from `temp.name` in a base class (`self.root = Path(temp.name).resolve()`)
+enter the registry. `X.name` of anything else is not tmp.
+
+Mode: STRICT (every hit fails). Every hit fails the test unless it is in ALLOWED below, with the reason. To fix a hit use `tmp_paths.child` (one name),
 `tmp_paths.descend` (a relative path with `/`) or `make_dir/write_file`; to keep one on purpose add `(file, expression text): reason`. An entry
 that no longer matches anything fails too (stale). Command to run the scanner alone on a tree (for a branch before its merge):
 `python3 -m unittest discover -s tests -p test_skillsync_tmp_path_guard.py` (it prints every hit with file:line).
@@ -24,6 +47,12 @@ ALLOWED = {
     ('test_skillsync_test_run_hardening.py', 'self.base / name'):
         'the names are written in the test itself on purpose and are hostile (a device name, a name over the length limit, a name outside the step pattern): '
         '`tmp_paths.child` would refuse exactly the cases that test checks',
+    ('test_skillsync_test_gate.py', 'Path(tmp) / name'):
+        'the names are written in the test itself on purpose (a space, a colon, a quote): the test checks that the object directory env survives exactly these paths, '
+        '`tmp_paths.child` would refuse the colon and the quote',
+    ('test_skillsync_dispatch_state.py', "self.root / '.skillsync' / 'dispatch' / name"):
+        'the helper `put` gets its names from literals in the test; the one hostile name (with `\\n`, a call under `os.name != "nt"`) would be refused by `tmp_paths.child`, '
+        'and that character is exactly what the test checks',
 }
 
 TMP = re.compile(r'(^|_)(tmp|temp)(dir|path|file|root|base)?[0-9]*($|_)', re.I)
@@ -44,12 +73,130 @@ def literal(n):
     return False
 
 
-def scan(tree):
-    tmpish = set()
+def base_name(n):
+    """The simple name of a base class: `Base` or the last part of `module.Base`."""
+    if isinstance(n, ast.Name): return n.id
+    if isinstance(n, ast.Attribute): return n.attr
+    return None
+
+
+def merge_registry(into, new):
+    """Adds `new` to the registry `into` (`{class name: (set of tainted attributes, list of base names)}`); equal names: the union of attributes and of bases."""
+    for name, (attrs, bases) in new.items():
+        old_attrs, old_bases = into.setdefault(name, (set(), []))
+        old_attrs |= attrs
+        old_bases.extend(b for b in bases if b not in old_bases)
+
+
+def class_registry(tree):
+    """Registry of the classes of one tree: each class (nested ones too) -> (attributes tainted in its methods or targets of its body, names of its bases)."""
+    registry = {}
+    merge_registry(registry, _scan(tree, None)[1])
+    return registry
+
+
+def scan(tree, inherited=None):
+    """Hits `[(lineno, text)]` of one tree. `inherited` is a registry of classes (see `class_registry`); without it there is no inheritance."""
+    return _scan(tree, inherited)[0]
+
+
+def may_inherit(local, file_attrs, registry):
+    """True when a class of a file (`local`: its own registry, `file_attrs`: its attributes) reaches through its bases (by name) a class of
+    `registry` with a tainted attribute that the file does not know already (an attribute of the file is tmp in the whole file anyway)."""
+    for name, (_, bases) in local.items():
+        seen, todo = set(), list(bases)
+        while todo:
+            name = todo.pop()
+            if name in seen: continue
+            seen.add(name)
+            attrs, more = registry.get(name, (set(), ()))
+            if attrs - file_attrs: return True
+            todo.extend(more)
+            todo.extend(local.get(name, (None, ()))[1])
+    return False
+
+
+def _scan(tree, inherited):
+    # Taint is kept in two sets chosen by the scope of the node. Every scope set is a subset of the one set per file of the earlier scanner and
+    # the three passes visit the assignments in the same order (`ast.walk`), so each step taints no more than before: no hit appears.
+    # `attrs` (per file) holds ALL tainted targets as before (attributes and names), used only for an attribute and the parameter rule;
+    # `own[scope]` holds name targets of one function (whole body, any order), of the module or of one class body.
+    # A function sees its own names and those of the enclosing functions and of the module; a class body sees its own names;
+    # a method does not see the names of its class body (as in Python); siblings do not see each other.
+    scopes = (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)
+    attrs = set()
+    own = {}
+    firm = {}  # like `own`, without the targets that are tmp only through an inherited attribute
+    derived_by_class = {}  # class name -> attributes derived from an inherited one (`self.out = self.work / 'o'`): class scope only
+    inh = True  # False: is_tmp ignores everything that rests on inheritance
+    params = {}
+    visible = {}
+    cls_of = {}  # scope -> the innermost class it stands in (a class body is in its own class), None outside of classes
+    class_attrs = {}  # ClassDef -> attributes tainted by an assignment inside of it (for the registry)
+    scope_of = {}  # Assign/With node -> the scope it stands in; the passes below keep the order of `ast.walk` (as the earlier scanner)
+
+    def params_of(f):
+        a = f.args
+        return {x.arg for x in a.posonlyargs + a.args + a.kwonlyargs + [a.vararg, a.kwarg] if x is not None}
+
+    def collect(node, scope, outer, cls):
+        """`scope` is the innermost scope of `node`; `outer` is the nearest enclosing scope that is not a class body; `cls` the innermost class."""
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, scopes):
+                own[child] = set()
+                firm[child] = set()
+                visible[child] = [child] + visible[outer]
+                cls_of[child] = child if isinstance(child, ast.ClassDef) else cls
+                if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)): params[child] = params_of(child)
+                collect(child, child, outer if isinstance(child, ast.ClassDef) else child, cls_of[child])
+            else:
+                if isinstance(child, (ast.Assign, ast.With)): scope_of[child] = scope
+                collect(child, scope, outer, cls)
+
+    own[tree] = set()
+    firm[tree] = set()
+    visible[tree] = [tree]
+    cls_of[tree] = None
+    collect(tree, tree, tree, None)
+    cur = tree
+
+    bases_of = {}  # class name -> base names: the classes of this tree and of the registry
+    for name, (_, bases) in (inherited or {}).items(): bases_of.setdefault(name, set()).update(bases)
+    for n in ast.walk(tree):
+        if isinstance(n, ast.ClassDef): bases_of.setdefault(n.name, set()).update(b for b in map(base_name, n.bases) if b)
+    chain_cache = {}
+
+    def chain_of_classes(cls):
+        """Names of the base classes of `cls` (through the bases of the bases; a visited set stops a cycle). A base of the same name as `cls`
+        (`class Base(helpers.Base)`) is another class and is visited once. `cls` itself is not in the result."""
+        if cls not in chain_cache:
+            seen, todo, found = set(), [b for b in map(base_name, cls.bases) if b], []
+            while todo:
+                name = todo.pop()
+                if name in seen: continue
+                seen.add(name); found.append(name)
+                todo.extend(bases_of.get(name, ()))
+            chain_cache[cls] = found
+        return chain_cache[cls]
+
+    def inherited_attrs(cls):
+        """Attributes tainted in the base classes of `cls` (registry), plus those derived from them in `cls` or in its bases of this file.
+        Used only for an expression with an attribute inside of `cls`; never joined to `attrs`."""
+        if cls is None or not inherited: return ()
+        found = set(derived_by_class.get(cls.name, ()))
+        for name in chain_of_classes(cls):
+            found |= inherited.get(name, (set(), ()))[0] | derived_by_class.get(name, set())
+        return found
 
     def is_tmp(n):
-        if isinstance(n, ast.Name): return bool(TMP.search(n.id)) or n.id in tmpish
-        if isinstance(n, ast.Attribute): return bool(TMP.search(n.attr)) or n.attr in tmpish
+        if isinstance(n, ast.Name):
+            if TMP.search(n.id): return True
+            chain = visible[cur]
+            names = own if inh else firm
+            return any(n.id in names[s] for s in chain) or (any(n.id in params.get(s, ()) for s in chain) and n.id in attrs)
+        if isinstance(n, ast.Attribute):
+            if n.attr == 'name' and any(x in tdobj for x in names_of(n.value)): return True  # X.name of a TemporaryDirectory object
+            return bool(TMP.search(n.attr)) or n.attr in attrs or (inh and n.attr in inherited_attrs(cls_of[cur]))
         if isinstance(n, ast.Call):
             f = n.func; fn = f.id if isinstance(f, ast.Name) else getattr(f, 'attr', '')
             if fn in ('Path', 'PurePath', 'resolve', 'realpath') or isinstance(f, ast.Attribute) and fn in ('resolve',):
@@ -57,14 +204,52 @@ def scan(tree):
             return False
         if isinstance(n, ast.BinOp) and isinstance(n.op, ast.Div): return is_tmp(n.left)
         return False
+
+    def taint(t, scope, solid=True):
+        """`solid` False: the value is tmp only through an inherited attribute; the target then stays in its own scope (a name: the function,
+        an attribute: the class and its subclasses) and does not enter `attrs` or the registry."""
+        if isinstance(t, ast.Name):
+            own[scope].add(t.id)
+            if solid:
+                firm[scope].add(t.id)
+                attrs.add(t.id)  # a tainted name also taints the attribute of that name (and a parameter): as before
+                if isinstance(scope, ast.ClassDef): class_attrs.setdefault(scope, set()).add(t.id)  # a class attribute, seen as `self.x` in subclasses
+        elif isinstance(t, ast.Attribute):
+            if solid:
+                attrs.add(t.attr)
+                if cls_of[scope] is not None: class_attrs.setdefault(cls_of[scope], set()).add(t.attr)
+            elif cls_of[scope] is not None: derived_by_class.setdefault(cls_of[scope].name, set()).add(t.attr)
+        elif isinstance(t, (ast.Tuple, ast.List)):
+            for e in t.elts: taint(e, scope, solid)
+
+    # Channels unchanged against the earlier scanner and not tested (AnnAssign, AugAssign, NamedExpr, `for` target, `except ... as`):
+    # none of them taints a name, here or before.
+    order = [n for n in ast.walk(tree) if n in scope_of]  # the nodes of the passes in the order of `ast.walk`, found once
+    from_src = {}  # node -> True when it binds a value from `tempfile` & co (independent of the passes, computed once)
+    for n in order:
+        if isinstance(n, ast.Assign): from_src[n] = any(s in ast.unparse(n.value) for s in SRC)
+        else: from_src[n] = [it.optional_vars is not None and any(s in ast.unparse(it.context_expr) for s in SRC) for it in n.items]
+    tdobj = set()  # names/attributes bound to a TemporaryDirectory OBJECT (the call is the value of the assignment): `.name` of those is a tmp path
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Assign) and isinstance(n.value, ast.Call):
+            f = n.value.func
+            if (f.id if isinstance(f, ast.Name) else getattr(f, 'attr', '')) == 'TemporaryDirectory':
+                for t in n.targets: tdobj.update(names_of(t))
     for _ in range(3):
-        for n in ast.walk(tree):
+        for n in order:
+            scope = cur = scope_of[n]
             if isinstance(n, ast.Assign):
-                if any(s in ast.unparse(n.value) for s in SRC) or is_tmp(n.value):
-                    for t in n.targets: tmpish.update(names_of(t))
-            elif isinstance(n, ast.With):
-                for it in n.items:
-                    if it.optional_vars is not None and any(s in ast.unparse(it.context_expr) for s in SRC): tmpish.update(names_of(it.optional_vars))
+                if from_src[n]:
+                    for t in n.targets: taint(t, scope)
+                elif is_tmp(n.value):
+                    inh = False
+                    solid = is_tmp(n.value)
+                    inh = True
+                    for t in n.targets: taint(t, scope, solid)
+            else:
+                for it, hit in zip(n.items, from_src[n]):
+                    if hit: taint(it.optional_vars, scope)
+    cur = tree
 
     # module-level names bound to a literal table (REQUIRED = [(...), ...], VARIANTS = (...), a dict of constants)
     # (an UPPER_CASE name bound to a display - list, tuple, set, dict - is a table of the test, even if its rows hold calls such as re.compile)
@@ -115,9 +300,18 @@ def scan(tree):
         if (isinstance(iter_node, ast.Call) and isinstance(iter_node.func, ast.Name) and iter_node.func.id == 'enumerate'
                 and isinstance(target_node, ast.Tuple) and target_node.elts):
             names |= set(names_of(target_node.elts[0]))  # the index of enumerate is a number whatever is enumerated
-        return ok | {n for n in names if n not in tmpish}
+        return ok | {n for n in names if not any(n in own[s] for s in visible[cur])}
 
     def visit(node, ok):
+        nonlocal cur
+        if isinstance(node, scopes) and node is not tree:
+            outer, cur = cur, node
+            try: visit_in(node, ok)
+            finally: cur = outer
+        else:
+            visit_in(node, ok)
+
+    def visit_in(node, ok):
         if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div) and is_tmp(node.left) and not safe(node.right, ok):
             out.append((node.lineno, ast.unparse(node)))
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef, ast.Module)):
@@ -155,25 +349,38 @@ def scan(tree):
             ok = ok - {name, '@' + name}
             if isinstance(stmt.value, displays) and display_safe(stmt.value, ok):
                 return ok | {'@' + name}  # a local table written in the test
-            if name not in tmpish and safe(stmt.value, ok):
+            if not any(name in own[s] for s in visible[cur]) and safe(stmt.value, ok):
                 return ok | {name}
             return ok
         return ok
 
     visit(tree, set())
-    return out
+    registry = {}
+    for n in ast.walk(tree):
+        if isinstance(n, ast.ClassDef):
+            merge_registry(registry, {n.name: (class_attrs.get(n, set()), sorted(b for b in map(base_name, n.bases) if b))})
+    return out, registry, attrs
 
 
 def repository_hits():
     found = {}
+    parsed = []
     for file in sorted((ROOT / 'tests').rglob('*.py')):
-        if file.name in EXEMPT:
-            continue
         try:
-            tree = ast.parse(file.read_text(encoding='utf-8-sig'), filename=str(file))
+            parsed.append((file, ast.parse(file.read_text(encoding='utf-8-sig'), filename=str(file))))
         except (SyntaxError, ValueError, OSError):
             continue
-        hits = scan(tree)
+    # first pass: one analysis of every file (also of the exempt ones) gives its hits without inheritance and its classes; a file is
+    # analysed again with the registry of all files only when one of its classes can inherit an attribute (the result is the same otherwise)
+    registry, plain, known = {}, {}, {}
+    for file, tree in parsed:
+        plain[file], classes, file_attrs = _scan(tree, None)
+        known[file] = (classes, file_attrs)
+        merge_registry(registry, classes)
+    for file, tree in parsed:
+        if file.name in EXEMPT:
+            continue
+        hits = scan(tree, inherited=registry) if may_inherit(*known[file], registry) else plain[file]
         if hits:
             found[file.relative_to(ROOT / 'tests').as_posix()] = hits
     return found
@@ -234,6 +441,242 @@ class Scanner(unittest.TestCase):
         self.assertEqual(self.hits('x = self.library_dir / name\n'), [])
         self.assertEqual(self.hits('x = attempts / total\ny = template / part\nz = temperature / n\n'), [])
         self.assertEqual(self.hits('x = tmp_dir / n\ny = TMP / n\nz = temp / n\n'), ['tmp_dir / n', 'TMP / n', 'temp / n'])
+
+
+class ScannerScope(unittest.TestCase):
+    """Taint of a name is kept per scope: a function (whole body), the module, a class body; attributes are kept per file (CORE-GUARDSCOPE).
+
+    Channels not tested on purpose, unchanged against the earlier scanner: `AnnAssign`, `AugAssign`, `NamedExpr`, the `for` target and
+    `except ... as` do not taint a name, now as before. Known limits: no `global`/`nonlocal`, no flow through calls, and an attribute of
+    the same name in an unrelated class taints the file."""
+    SETUP = 'import tempfile\nclass T:\n    def setUp(self):\n        self.root = Path(tempfile.mkdtemp())\n'
+    PLANT = ('    def plant(self):\n        for directory in ("a", "b"):\n            rel = f"{directory}/x.md"\n'
+             '            (self.root / rel).write_text("x")\n')
+
+    def hits(self, source):
+        return [text for _, text in scan(ast.parse(source))]
+
+    # --- red on the earlier scanner: a name tainted in another function no longer leaks
+    def test_a_name_tainted_in_another_function_does_not_turn_a_literal_loop_into_a_hit(self):
+        self.assertEqual(self.hits(self.SETUP + self.PLANT), [])
+        other = '    def docs(self):\n        directory = self.root / "docs"\n        return directory\n'
+        self.assertEqual(self.hits(self.SETUP + self.PLANT + other), [])
+
+    def test_an_attribute_does_not_taint_a_local_name_of_the_same_name(self):
+        source = ('class T:\n    def setUp(self):\n        self.path = Path(tempfile.mkdtemp())\n'
+                  '    def f(self, data):\n        path = data\n        return self.tmp_x / path\n    def g(self):\n        for path in ("a",):\n            (self.tmp / path).touch()\n')
+        self.assertEqual(self.hits(source), ['self.tmp_x / path'])
+
+    def test_sibling_functions_do_not_inherit_each_others_names(self):
+        source = 'def a():\n    part = Path(tempfile.mkdtemp())\ndef b(self):\n    for part in ("x",):\n        (self.tmp / part).touch()\n'
+        self.assertEqual(self.hits(source), [])
+        source = 'def a():\n    work = Path(tempfile.mkdtemp())\ndef b(x):\n    return work / x\n'
+        self.assertEqual(self.hits(source), [])
+
+    def test_a_name_from_a_class_body_does_not_leak_into_methods_but_the_attribute_does(self):
+        head = 'import tempfile\nclass T:\n    base = Path(tempfile.mkdtemp())\n'
+        self.assertEqual(self.hits(head + '    def f(self, key):\n        return base / key\n'), [])
+        self.assertEqual(self.hits(head + '    def f(self, key):\n        return self.base / key\n'), ['self.base / key'])
+
+    def test_a_parameter_is_tmp_only_when_the_name_is_tainted_in_the_file(self):
+        """Mutation: "every parameter is tmp" turns the first assertion red (it would report `other / rel`)."""
+        self.assertEqual(self.hits('def write(other, rel):\n    return other / rel\n'), [])
+        self.assertEqual(self.hits('def write(root, rel):\n    return root / rel\n'), [])
+        self.assertEqual(self.hits('root = Path(tempfile.mkdtemp())\ndef write(root, rel):\n    return root / rel\n'), ['root / rel'])
+        self.assertEqual(self.hits('def setup():\n    root = Path(tempfile.mkdtemp())\ndef write(root, rel):\n    return root / rel\n'), ['root / rel'])
+        self.assertEqual(self.hits('class T:\n    def s(self):\n        self.root = Path(tempfile.mkdtemp())\ndef write(root, rel):\n    return root / rel\n'), ['root / rel'])
+        self.assertEqual(self.hits('root = Path(tempfile.mkdtemp())\ndef write(other, rel):\n    return other / rel\n'), [])
+
+    # --- green: behaviour of the earlier scanner that stays
+    def test_one_function_is_a_hit_also_when_the_use_comes_before_the_assignment(self):
+        self.assertEqual(self.hits('def f(key):\n    x = work / key\n    work = Path(tempfile.mkdtemp())\n'), ['work / key'])
+        self.assertEqual(self.hits('def f(key):\n    work = Path(tempfile.mkdtemp())\n    x = work / key\n'), ['work / key'])
+
+    def test_an_attribute_works_between_methods_and_classes(self):
+        self.assertEqual(self.hits(self.SETUP + '    def f(self, key):\n        return self.root / key\n'), ['self.root / key'])
+        mixin = self.SETUP + 'class Mixin:\n    def f(self, key):\n        return self.root / key\n'
+        self.assertEqual(self.hits(mixin), ['self.root / key'])
+
+    def test_a_local_name_taints_the_attribute_of_the_same_name_but_not_a_name_of_another_function(self):
+        taint = 'def a():\n    root = Path(tempfile.mkdtemp())\n'
+        self.assertEqual(self.hits(taint + 'def b(self, key):\n    return self.root / key\n'), ['self.root / key'])
+        self.assertEqual(self.hits(taint + 'def b(key):\n    root = Path("x")\n    return root / key\n'), [])
+
+    def test_a_name_in_the_same_class_body_is_still_tmp(self):
+        self.assertEqual(self.hits('class T:\n    base = Path(tempfile.mkdtemp())\n    other = base / key\n'), ['base / key'])
+
+    def test_a_module_name_is_tmp_in_functions(self):
+        self.assertEqual(self.hits('work = Path(tempfile.mkdtemp())\ndef f(key):\n    return work / key\n'), ['work / key'])
+
+    def test_nested_functions_lambdas_and_comprehensions_inherit_the_names_of_the_function(self):
+        for body in ('def g(key):\n        return work / key\n', 'g = lambda key: work / key\n',
+                     'g = [work / key for key in data]\n'):
+            with self.subTest(body=body):
+                self.assertEqual(self.hits('def f():\n    work = Path(tempfile.mkdtemp())\n    ' + body), ['work / key'])
+
+    def test_with_as_taints_the_name_in_the_function(self):
+        self.assertEqual(self.hits('def f(key):\n    with tempfile.TemporaryDirectory() as d:\n        return Path(d) / key\n'), ['Path(d) / key'])
+
+    def test_with_as_does_not_taint_a_name_of_another_function(self):
+        self.assertEqual(self.hits('def f(key):\n    with tempfile.TemporaryDirectory() as d:\n        pass\ndef g(key):\n    return Path(d) / key\n'), [])
+
+    def test_the_order_of_the_passes_is_the_one_of_ast_walk(self):
+        """Three passes without a fixed point: a chain through `if` blocks must end as in the earlier scanner (no hit), never with one more."""
+        source = ('if c:\n    a1 = Path(tempfile.mkdtemp())\na2 = a1\nif c:\n    a3 = a2\na4 = a3\nif c:\n    a5 = a4\na6 = a5\nx = a6 / key\n')
+        self.assertEqual(self.hits(source), [])
+
+
+class ScannerInheritance(unittest.TestCase):
+    """Attributes tainted in a base class defined in ANOTHER file (a registry of classes) comes from a first pass over all files."""
+    BASE = 'import tempfile\nclass Base:\n    def setUp(self):\n        self.work = Path(tempfile.mkdtemp())\n        self.name = "x"\n'
+
+    def registry(self, *sources):
+        result = {}
+        for source in sources:
+            merge_registry(result, class_registry(ast.parse(source)))
+        return result
+
+    def hits(self, source, *bases):
+        return [text for _, text in scan(ast.parse(source), inherited=self.registry(*bases))]
+
+    def test_an_attribute_tainted_in_a_base_class_of_another_file_is_tmp_in_the_subclass(self):
+        sub = 'class T(Base):\n    def f(self, name):\n        return self.work / name\n'
+        self.assertEqual(self.hits(sub, self.BASE), ['self.work / name'])
+        self.assertEqual([t for _, t in scan(ast.parse(sub))], [])  # no registry: no inheritance (the earlier behaviour)
+
+    def test_a_name_derived_from_an_inherited_attribute_is_tmp_in_the_function(self):
+        """The shape of tests/test_skillsync_layers_merge.py (v1.6.0), IsolatedTestCase.work comes from `temp.name` of a `TemporaryDirectory` object, a tmp path since the `.name` rule (the registry of the base class is built in `ScannerNameRule.test_the_base_of_another_file_taints_the_subclass_through_the_name_rule`); here BASE is a stand-in with `mkdtemp`."""
+        sub = 'class T(Base):\n    def outside(self, files):\n        base = self.work / "external"\n        for rel in files:\n            write(base / rel)\n'
+        self.assertEqual(self.hits(sub, self.BASE), ['base / rel'])
+
+    def test_inheritance_is_transitive(self):
+        a = 'class A:\n    def s(self):\n        self.work = Path(tempfile.mkdtemp())\n'
+        b = 'class B(A):\n    pass\n'
+        sub = 'class C(B):\n    def f(self, name):\n        return self.work / name\n'
+        self.assertEqual(self.hits(sub, a, b), ['self.work / name'])
+        self.assertEqual(self.hits(sub, b), [])  # the registry without A: nothing tainted on the way
+
+    def test_a_module_qualified_base_is_resolved_by_its_last_part(self):
+        sub = 'class T(layers_helpers.Base):\n    def f(self, name):\n        return self.work / name\n'
+        self.assertEqual(self.hits(sub, self.BASE), ['self.work / name'])
+
+    def test_colliding_class_names_give_the_union_of_their_attributes(self):
+        one = 'class Base:\n    def s(self):\n        self.one = Path(tempfile.mkdtemp())\n'
+        two = 'class Base:\n    def s(self):\n        self.two = Path(tempfile.mkdtemp())\n'
+        sub = 'class T(Base):\n    def f(self, name):\n        return [self.one / name, self.two / name]\n'
+        self.assertEqual(self.hits(sub, one, two), ['self.one / name', 'self.two / name'])
+
+    def test_an_attribute_that_is_not_tainted_in_the_base_gives_no_hit(self):
+        sub = 'class T(Base):\n    def f(self, name):\n        return self.name / name\n'
+        self.assertEqual(self.hits(sub, self.BASE), [])
+
+    def test_the_base_does_not_taint_local_names_or_unrelated_classes(self):
+        local = 'class T(Base):\n    def f(self, x):\n        work = Path("x")\n        return work / x\n'
+        self.assertEqual(self.hits(local, self.BASE), [])
+        module = 'def f(x):\n    return work / x\nclass T(Base):\n    pass\n'
+        self.assertEqual(self.hits(module, self.BASE), [])
+        other = 'class Other:\n    def f(self, name):\n        return self.work / name\nclass T(Base):\n    def g(self, name):\n        return self.work / name\n'
+        self.assertEqual([line for line, _ in scan(ast.parse(other), inherited=self.registry(self.BASE))], [6])
+        self.assertEqual(self.hits('def f(self, name):\n    return self.work / name\n', self.BASE), [])
+
+    def test_subclasses_of_the_subclass_in_the_file_inherit_too(self):
+        sub = 'class T(Base):\n    pass\nclass U(T):\n    def f(self, name):\n        return self.work / name\n'
+        self.assertEqual(self.hits(sub, self.BASE), ['self.work / name'])
+
+    def test_the_inherited_attribute_does_not_join_the_attributes_of_the_file(self):
+        """A parameter named like the inherited attribute is not tmp (the rule of parameters reads the attributes of the file only)."""
+        sub = 'class T(Base):\n    pass\ndef write(work, rel):\n    return work / rel\n'
+        self.assertEqual(self.hits(sub, self.BASE), [])
+
+    def test_a_cycle_of_bases_terminates(self):
+        cycle = 'class A(B):\n    def s(self):\n        self.work = Path(tempfile.mkdtemp())\nclass B(A):\n    def f(self, name):\n        return self.work / name\n'
+        self.assertEqual(self.hits(cycle, cycle), ['self.work / name'])
+        sub = 'class T(A):\n    def f(self, name):\n        return self.work / name\n'
+        self.assertEqual(self.hits(sub, cycle), ['self.work / name'])
+
+    def test_a_target_derived_from_an_inherited_attribute_stays_in_the_subclass(self):
+        derived = ('class T(Base):\n    def setUp(self):\n        self.out = self.work / "o"\n        base = self.work / "x"\n'
+                   '    def f(self, name):\n        return [self.out / name, base / name]\n'
+                   '    def g(self, name):\n        base = self.work / "y"\n        return base / name\n')
+        other = 'class Other:\n    def f(self, name, base):\n        return [self.out / name, base / name]\n'
+        found = [t for _, t in scan(ast.parse(derived + other), inherited=self.registry(self.BASE))]
+        self.assertEqual(found.count('self.out / name'), 1)  # the one of `T`, not the one of `Other`
+        self.assertEqual(found.count('base / name'), 1)  # the local of `g` (`f` sees no `base`; `Other` has a parameter)
+        sub = derived + 'class U(T):\n    def h(self, name):\n        return self.out / name\n'
+        self.assertEqual(self.hits(sub, self.BASE).count('self.out / name'), 2)
+        self.assertNotIn('out', class_registry(ast.parse(derived))['T'][0])
+
+    def test_a_name_derived_from_a_derived_name_does_not_leak_either(self):
+        sub = ('class T(Base):\n    def f(self, name):\n        a = self.work / "x"\n        b = a\n        return b / name\n'
+               '    def g(self, name, b):\n        return b / name\n')
+        self.assertEqual(self.hits(sub, self.BASE), ['b / name'])
+
+    def test_colliding_class_names_give_the_union_of_their_bases_too(self):
+        no_bases = 'class Status:\n    pass\n'
+        with_base = 'class Status(Base):\n    pass\n'
+        sub = 'class T(Status):\n    def f(self, name):\n        return self.work / name\n'
+        self.assertEqual(self.hits(sub, no_bases, with_base, self.BASE), ['self.work / name'])
+        self.assertEqual(self.hits(sub, with_base, no_bases, self.BASE), ['self.work / name'])
+
+    def test_a_base_of_the_same_name_as_the_class_is_another_class(self):
+        sub = 'class Base(helpers.Base):\n    def f(self, name):\n        return self.work / name\n'
+        self.assertEqual([t for _, t in scan(ast.parse(sub), inherited=self.registry(self.BASE))], ['self.work / name'])
+
+    def test_a_name_of_the_class_body_of_the_base_is_an_attribute_of_the_subclass(self):
+        base = 'class Base:\n    work = Path(tempfile.mkdtemp())\n'
+        sub = 'class T(Base):\n    def f(self, name):\n        return self.work / name\n'
+        self.assertEqual(self.hits(sub, base), ['self.work / name'])
+        method = 'class Base:\n    def f(self):\n        work = Path(tempfile.mkdtemp())\n'
+        self.assertEqual(self.hits(sub, method), [])
+
+
+class ScannerNameRule(unittest.TestCase):
+    """`X.name` of a `TemporaryDirectory` object (a name or attribute assigned from `TemporaryDirectory(...)`) is a tmp path."""
+    BASE = ('import tempfile\nclass IsolatedTestCase:\n    def setUp(self):\n        temp = tempfile.TemporaryDirectory(prefix="x")\n'
+            '        self.root = Path(temp.name).resolve()\n        self.work = self.root / "work"\n')
+
+    def hits(self, source, *bases):
+        registry = {}
+        for base in bases:
+            merge_registry(registry, class_registry(ast.parse(base)))
+        return [text for _, text in scan(ast.parse(source), inherited=registry)]
+
+    def test_a_name_bound_to_a_temporary_directory_object_gives_a_tmp_path(self):
+        source = 'def f(key):\n    temp = tempfile.TemporaryDirectory()\n    root = Path(temp.name)\n    x = root / key\n'
+        self.assertEqual(self.hits(source), ['root / key'])
+        self.assertEqual(self.hits('def f(key):\n    d = TemporaryDirectory()\n    return Path(d.name) / key\n'), ['Path(d.name) / key'])
+
+    def test_an_attribute_bound_to_the_object_works_between_classes_of_the_file(self):
+        source = ('import tempfile\nclass A:\n    def setUp(self):\n        self.tmp = tempfile.TemporaryDirectory()\n'
+                  'class B:\n    def f(self, key):\n        return Path(self.tmp.name) / key\n')
+        self.assertEqual(self.hits(source), ['Path(self.tmp.name) / key'])
+
+    def test_the_base_of_another_file_taints_the_subclass_through_the_name_rule(self):
+        sub = 'class T(IsolatedTestCase):\n    def f(self, name):\n        return self.work / name\n'
+        self.assertEqual(self.hits(sub, self.BASE), ['self.work / name'])
+        self.assertEqual(self.hits(sub), [])  # no registry: no inheritance
+
+    def test_a_name_that_is_not_a_temporary_directory_object_gives_no_hit(self):
+        self.assertEqual(self.hits('def f(x, key):\n    return Path(x).name / key\n'), [])
+        self.assertEqual(self.hits('class T:\n    def f(self, key):\n        return self.name / key\n'), [])
+        self.assertEqual(self.hits('def f(obj, key):\n    obj = make()\n    return Path(obj.name) / key\n'), [])
+        # mkdtemp gives a str, not a `TemporaryDirectory` object: the rule does not apply to it; `Path(d).name` is the last component (a name), not a path
+        self.assertEqual(self.hits('def f(key):\n    d = tempfile.mkdtemp()\n    y = Path(d).name / key\n'), [])
+
+    def test_known_limit_a_named_temporary_file_is_a_file_not_a_directory(self):
+        # known limit: `.name` of NamedTemporaryFile is a file path, the rule does not apply
+        source = 'def f(key):\n    with tempfile.NamedTemporaryFile() as f:\n        return Path(f.name) / key\n'
+        self.assertEqual(self.hits(source), [])
+
+    def test_known_limit_os_path_join_and_f_strings_are_not_a_join_with_a_slash(self):
+        # known limit: only `/` of pathlib is scanned
+        head = 'def f(self, rel):\n    self.tmp = tempfile.TemporaryDirectory()\n'
+        self.assertEqual(self.hits(head + '    return os.path.join(self.tmp.name, rel)\n'), [])
+        self.assertEqual(self.hits(head + '    return f"{self.tmp.name}/{rel}"\n'), [])
+
+    def test_known_limit_the_call_in_an_argument_does_not_bind_the_object(self):
+        # known limit: the call must be the value of the assignment itself
+        self.assertEqual(self.hits('def f(key):\n    t = wrap(tempfile.TemporaryDirectory())\n    return Path(t.name) / key\n'), [])
 
 
 class Repository(unittest.TestCase):

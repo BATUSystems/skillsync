@@ -1515,6 +1515,20 @@ function summary(m) {
     exD.emptyBoth = view(mkT([], [], true));
     ex.testDebt = exD;
   }
+  // CORE-TESTDEBT2 (a, K1): the note about the groups of an attempt cut by the server (`groupsOmitted`).
+  {
+    const mkA = (extra) => ({ n: 1, state: 'passed', startedAt: '2026-01-11T09:30:00Z', endedAt: '2026-01-11T09:31:00Z', durationMs: 60000, command: 'x', tool: 'tap', levels: 'tests', source: null, exit: 0, reason: null,
+      counts: { total: 2000, passed: 2000, failed: 0, skipped: 0, running: 0, waiting: 0 }, truncated: false, groups: [], ...extra });
+    const run = (extra) => {
+      const j = clone(F['plan-in-progress']);
+      j.tests = { sections: [{ step: { id: 'S1', title: 'Krok S1' }, state: 'running', attempts: [mkA(extra)] }], failedTotal: 0, runningTotal: 0 };
+      const m = mount(j, { now: NOW['plan-in-progress'] });
+      const n = m.root.querySelectorAll('#testsView .tgroups-note');
+      const r = { count: n.length, note: n.length ? text(n[0]) : null, role: n.length ? n[0].getAttribute('role') : null };
+      m.board.destroy(); return r;
+    };
+    ex.groupsNote = { cut: run({ groupsTotal: 2000, groupsOmitted: 1800 }), zero: run({ groupsTotal: 3, groupsOmitted: 0 }), absent: run({}), junk: run({ groupsTotal: 'x', groupsOmitted: 'y' }), noTotal: run({ groupsOmitted: 5 }) };
+  }
   // Formatowanie w linii: tytuły kroków, „czeka na”, pytania do eksperta. HTML wstawia tylko host (mountHtml); dymki i atrybuty zostają czystym tekstem.
   {
     const nm = 'plan-in-progress';
@@ -2502,6 +2516,15 @@ class RendererNodeTests(unittest.TestCase):
         self.assertTrue(c["hiddenAtTheTop"])
         self.assertEqual(c["unsub"], 1)
         self.assertTrue(c["rootClassGone"])
+
+    # CORE-TESTDEBT2 (a), K1: the note about the groups cut by the server.
+    def test_core_testdebt2_groups_note_only_when_groups_were_omitted(self) -> None:
+        g = self.out["extra"]["groupsNote"]
+        self.assertEqual(g["cut"]["count"], 1)
+        self.assertEqual(g["cut"]["role"], "note")
+        self.assertIn("Pokazano 200 z 2000 grup", g["cut"]["note"])
+        for key in ("zero", "absent", "junk", "noTotal"):
+            self.assertEqual(g[key]["count"], 0, key)
 
     # CORE-TESTDEBT F2, K5: the note about skipped result files (`tests.skipped`) in the tests tab.
     def test_core_testdebt_skipped_note_text_count_paths_and_reasons(self) -> None:

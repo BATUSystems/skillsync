@@ -4,6 +4,36 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+## [1.12.0] - 2026-11-22
+
+### Added
+
+- **Hooks `session-context`, `guard-generated`, `check-subagent-report`.** Three Claude Code hooks (SessionStart; PreToolUse on `Write|Edit|NotebookEdit`; SubagentStop) in `hooks/`, with the manifest keys `hooks.session_context`, `hooks.guard_generated`, `hooks.subagent_report` (documented in `docs/manifest.md`); `doctor` reports their state and the warnings of the last 14 days.
+- **`hooks.subagent_commit`: the commit boundary for sub-agents.** The argument `--subagent-commit warn|deny|off` of `guard-commands.py` refuses git and `gh pr` writes from a sub-agent (a call with `agent_id`); the main session is not affected. Default `deny` in `feature` and `dispatch` projects.
+- **`dispatch`: the pulse of the dispatcher.** `references/pulse.md` (the tick, the closed list of actions, the prompt of the loop that points to the file and never to the skill, the sidecar, the permissions of an unattended tick), the key `dispatch.pulse` in `config.md`, the start, the end and the renewal of the loop in `SKILL.md` and `state.md`, and the exception of the rule about polling in `SKILL.md`, `loop.md`, `claude.md` and `codex.md` (Codex has no pulse).
+- Skill `feature`, reference `claude.md`: the column `maxTurns` in the table of the roles, the explanation of the limit (a turn, the partial result, how the values were calibrated) and the result of the probe of `disallowedTools` (`F0-disallowedTools: nieskuteczne`).
+- Skills `skillsync`, `dashboard` and the reference `feature/spec-store.md`: the flag `approvals record --expect-plan-state` and the `409` with `code: plan_state_changed` of the consent button.
+- **`copilot-skills-yaml`: the keys of Claude Code.** The list of the frontmatter keys of Claude Code, the difference between `user-invokable` (Copilot) and `user-invocable` (Claude Code), and the rule that a custom key is only a `doctor` warning (own data goes to `metadata`); `skillsync` mentions the lint of `doctor` in the checks of a new skill.
+- Skill `workflow`, reference `test-run.md`: section "Kontrakt zdarzeń" with the fields of the events of a test step, including the optional `end.changed` (up to five paths that changed while the tests ran, masked, shown only in the message of the gate and never passed to a command).
+- **Skill `skillsync`: the completion command.** One line in "Instalacja i `skillsync setup`": `skillsync completion bash|zsh|powershell` (script on stdout) and `completion install|uninstall`; the installer and `setup` install it, `SKILLSYNC_NO_COMPLETION=1` skips it. Details in `docs/cli.md` of the generator.
+- **Optional status line and output style (opt-in, off by default).** `hooks/statusline.py` is a status line for Claude Code (one line: session name as `sesja: <name>` without any claim about identity, project, branch and worktree, delivery mode, plan with `N/M` steps). `link` installs it only with `claude.statusline: true`, and never over a status line set by someone else. `output-styles/karta.md` is a style for card reports, installed only with `claude.output_styles: true`; the library layer is core-only. It sets no format of its own: it refers to the grammar of the card protocol (`skills/feature/references/multi-session.md`: first line `date: <output of date>`, then `STATUS <paczka> <akt> <czeka-na>` or `REPORT DONE|BLOCKED <paczka> commit=… checks=… debt=… retro=…`) and adds brevity, evidence with the command and its exit code, and an explicit `NOT_RUN`. Requires Claude Code 1.0.71 (status line) and 1.0.81 (output styles) or later; the refresh interval needs 2.1.97. Optional; VS Code display unconfirmed.
+
+### Changed
+
+- **`claude` key read in one place.** `doctor`, `link` and the guard hook read `claude:` through one function; only `false` and `{enabled: false}` switch Claude off, and a non-boolean `enabled` is a `doctor` error (it leaves Claude enabled). `doctor` now validates the keys under `claude:`.
+- **Hooks are installed by one shared merge.** `link` writes the entries of closure, guard and the new hooks through one function; the bytes of the settings file and the backup stay as before. `link` with `claude: false` removes our hook entries and scripts.
+- **`dispatch`: `disable-model-invocation: true`.** The skill is started only by the user (`/dispatch`); the pulse prompt reads `references/pulse.md` and never calls the skill. The loop of a replied probe: the dispatcher updates `last_message` from the reaction table (`loop.md`), otherwise the probe returns every `idle_card_minutes`.
+- Roles `agents/*.md`: `maxTurns` in all eight roles (`explore` 40, `implementer` 170, `mechanic` 40, `reviewer` 85, `scribe` 115, `test-runner` 125, `test-writer` 165, `verifier` 45).
+- **`argument-hint` in the skills with arguments.** `feature`, `bugfix`, `dispatch`, `codereview`, `pr-run` and `docx-to-markdown` have the frontmatter field `argument-hint` (autocomplete hint of Claude Code, presentation only; the notation is described in `copilot-skills-yaml`). The references to the non-existent `docs/library.md` and `docs/layers.md` in the instructions and in the `skillsync` skill point to `docs/layers-authoring.md` and the authoring rules.
+- Skill `dashboard` (`SKILL.md`, "Zakładka „Testy”"): an attempt shows at most 200 groups, and a note says how many were omitted (`groupsOmitted`); the counters still cover every test.
+- Skill `workflow` (`test-run.md`): a `[T]` step counts as done by a checked `- [x]` row or by a PASS checkpoint, so `tests-not-run` also works for plans with a step table.
+- Skill `feature` (`prepush-matrix.md`, `resources.md`): a changed test file (helper) also reruns the guards that scan `tests/` already at the point rung; a point run is one module or test class, while several modules (hundreds of tests) or `discover` is a wide run that needs a lease grant.
+- Skill `feature` (`SKILL.md`, „Testy i poprawki”): the `skillsync test-run` call names the project as the positional argument, and a command without test counts needs an explicit `--allow-no-count <reason>`.
+- Skill `feature` (`retro-quality.md`, `review-loop.md`, agent `reviewer`): a late retrospective (a `final` record written before it) is closed again with `final-2`; a round after the user answered review questions (Q/C) is not `ceremony-excess`; the `plan` loop at risk high is mandatory but not full; with at least one signal the files `retro-signals.json` and `retro-decisions.json` exist before the `retro-quality` `PASS` (not as `--evidence`), and the `open` entry is written after the scan.
+- Skill `feature` (`plan-details.md`): the unfinished-markers rule of `readiness` also covers domain state names, the `Prototyp:` line takes only a path (`invalid_prototype_line`, `prototype_not_found`), and `Bez prototypu:` is a convention for people that the tools do not read.
+- Skill `workflow` (`test-run.md`): limits of `test-run` with wrappers (the wrapper passes the exit code, `--allow-no-count` verifies nothing, counts from an unrecognised command come from loose expressions, `--format` names the adapter, test the wrapper with a failing command).
+- Skill `agent-runtime-pitfalls`: five pitfalls (Glob and Grep do not see linked skills, the host edit tool rewrites mixed line endings as LF, a literal `\0` in a byte-editing script inserts a NUL, `scan; push` is not a gate, do not preview a file with a secret even through a masking filter).
+
 ## [1.11.0] - 2026-11-21
 
 ### Breaking
@@ -26,6 +56,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 - Skill `workflow`, reference `test-run.md`: the limits of the hook are rewritten for the new recognition (`python3 -X dev -m pytest` and `py -3 -m pytest` are seen; `tox` is a tool without a rule of a wide run; `sudo`/`nohup` stay as limits; `-m` behind a script gives `wide`; `env -S '…'` is read like the command it carries).
 - A command given to `test-run` as a string is split with POSIX quoting on every system (on Windows a single quote was a literal character, so `env -S 'CI=1 npx jest'` was not unwrapped; `--grep 'a b'` is one argument, a backslash stays literal); only the detection of the tool reads the string.
 - Skill `dashboard`: the tab "Pytania" shows only the current run (hidden when it has no prototypes and no questions; a server without `current` gets a local filter by `prototype.slug`); the document groups "Speki", "Plany", "Projekt" and "Domena" are collapsed by default.
+
 
 ### Fixed
 

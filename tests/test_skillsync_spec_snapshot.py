@@ -16,6 +16,10 @@ from skillsync_workflow import spec_snapshot  # noqa: E402
 from skillsync_workflow.common import redact  # noqa: E402
 from skillsync_workflow.spec_snapshot import check, snapshot  # noqa: E402
 from skillsync_workflow.status import git_blob_sha  # noqa: E402
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child  # noqa: E402
 
 GIT = shutil.which('git')
 CLI = Path(__file__).resolve().parents[1] / 'skillsync'
@@ -63,7 +67,7 @@ class Base(unittest.TestCase):
         return Path(root or self.root) / '.skillsync/runs' / RUN / 'docs'
 
     def arch(self, name='proj'):
-        return self.archive / name / RUN
+        return child(self.archive, name) / RUN
 
     def targets(self, report):
         return {target['target']: target for target in report['targets']}

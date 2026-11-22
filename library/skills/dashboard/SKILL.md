@@ -175,7 +175,7 @@ była, a nie, że pętla dała PASS.
   w linii `Status:` pliku, którą sesja i `approvals wait --file` i tak czytają. Serwer nie ma własnego dziennika.
 - **„CP” i „READY” (tryb `pr`) w kafelku Aktu III** — przycisk zapisuje zgodę, nie otwiera sesji.
   Dwa kliknięcia; serwer zapisuje przez `status.record_approval` (ta sama funkcja co `skillsync approvals record`: blokada
-  plikowa, odmowa drugiego wpisu dla tego samego HEAD) do `.skillsync/runs/<run-id>/approvals.jsonl` wpis
+  plikowa, odmowa drugiego wpisu dla tego samego HEAD, odmowa przy zmienionym statusie planu = 409 z `code: plan_state_changed`) do `.skillsync/runs/<run-id>/approvals.jsonl` wpis
   `{"schema": 1, "at", "word": "CP"|"READY", "sha": <pełny HEAD pokazany na stronie>, "run", "plan", "target", "branch", "ahead", "mode", "by", "source": "dashboard"}`.
   Zgoda dotyczy tego HEAD: nowy commit = nowa zgoda; ponowny zapis dla tego samego HEAD = odmowa. Przycisk aktywny, gdy
   plan jest `done`, najnowszy checkpoint ma `czeka: CP|READY` albo gałąź robocza ma commity, których nie ma na origin
@@ -225,7 +225,7 @@ była, a nie, że pętla dała PASS.
 
 ## Zakładka „Testy”
 
-Zakładka „Testy” (ukryta do pierwszego biegu) pokazuje wyniki testów kroków planu uruchomionych przez `skillsync test-run`: sekcja na krok (nagłówek = id i tytuł kroku, najnowsza pierwsza), rozwinięta tylko trwająca, zakończone zwinięte (czerwony chip w nagłówku i licznik czerwonych na zakładce); na zakładce „Postęp” przy kroku jest pasek „ile przeszło z ilu” i przycisk do sekcji (`#tests:<krok>`). Dane to pole `tests` JSON-a i trasa `GET /api/tests` (tylko odczyt, oba gniazda). Gdy `tests.skipped` nie jest puste, zakładka pokazuje notkę (`role="note"`) „Pominięto N plików lub katalogów wyników testów (nie dało się ich uwzględnić): ścieżka (powód), …” (do 5 ścieżek, „i N więcej”, „co najmniej 20” przy 20 wpisach; przy pustych sekcjach także „Brak odczytanych wyników.”). **Wyniki testów nie są maskowane** (także na porcie odczytu widocznym w sieci; `tests.mask: on` je maskuje), reszta strony tak; zob. `docs/security.md`.
+Zakładka „Testy” (ukryta do pierwszego biegu) pokazuje wyniki testów kroków planu uruchomionych przez `skillsync test-run`: sekcja na krok (nagłówek = id i tytuł kroku, najnowsza pierwsza), rozwinięta tylko trwająca, zakończone zwinięte (czerwony chip w nagłówku i licznik czerwonych na zakładce); na zakładce „Postęp” przy kroku jest pasek „ile przeszło z ilu” i przycisk do sekcji (`#tests:<krok>`). Dane to pole `tests` JSON-a i trasa `GET /api/tests` (tylko odczyt, oba gniazda). Próba pokazuje najwyżej 200 grup (najpierw nieudane, potem w toku, reszta po nazwie); gdy `groupsOmitted` > 0, przy grupach próby pokazuje się notka `role="note"` „Pokazano N z M grup (najpierw nieudane i w toku); liczniki powyżej obejmują wszystkie testy.”, a pełne testy ucięte grupy są w `GET /api/tests`. Gdy `tests.skipped` nie jest puste, zakładka pokazuje notkę (`role="note"`) „Pominięto N plików lub katalogów wyników testów (nie dało się ich uwzględnić): ścieżka (powód), …” (do 5 ścieżek, „i N więcej”, „co najmniej 20” przy 20 wpisach; przy pustych sekcjach także „Brak odczytanych wyników.”). **Wyniki testów nie są maskowane** (także na porcie odczytu widocznym w sieci; `tests.mask: on` je maskuje), reszta strony tak; zob. `docs/security.md`.
 
 ## Interfejs i API
 

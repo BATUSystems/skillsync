@@ -19,6 +19,10 @@ import yaml
 from test_skillsync_workflow import CLI, WorkflowFixture
 from layers_helpers import make_layer
 from layers_helpers import needs_os_symlinks, require_fifo, require_os_symlinks  # noqa: E402
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import descend  # noqa: E402
 
 needs_fifo = unittest.skipUnless(hasattr(os, 'mkfifo'), 'mkfifo unavailable')
 
@@ -97,7 +101,7 @@ class RetroBase(WorkflowFixture):
 
     # ---- zapis danych ----
     def write(self, name, content):
-        return write_exact(self.root / name, content)
+        return write_exact(descend(self.root, name), content)
 
     def run_file(self, ident, *records, close=True, **top):
         records = list(records)
@@ -549,7 +553,7 @@ class Rubric(RetroBase):
 
     def test_evidence_missing_file(self):
         proof = self.evidence('gone.log')
-        os.unlink(self.root / proof['path'])
+        os.unlink(descend(self.root, proof['path']))
         evidence = self.rubric(rec('a', evidence=[proof]))['evidence']
         self.assertEqual((evidence['status'], evidence['missing'], evidence['verified']), ('partial', 1, 0))
 
@@ -582,7 +586,7 @@ class Rubric(RetroBase):
     @unittest.skipIf(CHMOD_INEFFECTIVE, 'chmod 000 nie blokuje odczytu (root lub nie-POSIX)')
     def test_evidence_unreadable_is_counted_not_raised(self):
         proof = self.evidence('ZXQEVIDENCE.log')
-        path = self.root / proof['path']
+        path = descend(self.root, proof['path'])
         path.chmod(0)
         self.addCleanup(path.chmod, 0o644)
         self.run_file('r', rec('a', evidence=[proof]))
@@ -1207,9 +1211,9 @@ class CandidateBase(RetroBase):
             elif state == 'refused':
                 require_os_symlinks(self)
                 self.write(rel + '.real', content)
-                link = self.root / rel
+                link = descend(self.root, rel)
                 link.parent.mkdir(parents=True, exist_ok=True)
-                link.symlink_to(self.root / (rel + '.real'))
+                link.symlink_to(descend(self.root, rel + '.real'))
                 digest = sha(content)
             else:
                 self.write(rel, content)
@@ -2127,8 +2131,9 @@ class CorruptRecords(RetroBase):
     def test_nul_in_evidence_path_is_malformed(self):
         text = self.doc(rec('a', evidence=[{'path': 'a\x00b.log', 'sha256': sha('x')}]))
         self.assertIn('\\u0000', text)
-        data = self.blocked('nul', text)
-        self.assertEqual(self.by_id(data)['nul'], {'id': 'nul', 'class': 'unreadable', 'reason': 'malformed'})
+        # not 'nul': NUL.json is a reserved device name on Windows (tmp_paths refuses it), the id is not what the test is about
+        data = self.blocked('nulbyte', text)
+        self.assertEqual(self.by_id(data)['nulbyte'], {'id': 'nulbyte', 'class': 'unreadable', 'reason': 'malformed'})
 
     def test_lone_surrogate_in_evidence_path_does_not_break_the_report(self):
         self.run_file('good', rec('a'))
@@ -3904,37 +3909,49 @@ class ProposalFlagsAndId(ProposalBase):
         self.assertEqual(data['decision']['proposal'], 'r1.2/P3')
 
     def test_missing_run_proposal_or_state_entry_is_refused_without_changes(self):
-        self.blocked_prop('nope/P1', 'rejected')
-        self.blocked_prop('r1/P2', 'rejected')
+        self.assertEqual(self.blocked_prop('nope/P1', 'rejected')['reason'], 'Brak przebiegu o podanym id')
+        self.assertEqual(self.blocked_prop('r1/P2', 'rejected')['reason'], 'Brak propozycji P2 w przebiegu')
         self.make_run('nostate', states=(), extra=('P1',))
         data = self.blocked_prop('nostate/P1', 'rejected')
-        self.assertTrue(data['reason'])
+        self.assertEqual(data['reason'], 'Propozycja nie ma wpisu stanu w retro-decisions.json')
         self.make_run('nofile', states=(('P1', 'open'),), decisions_file=False)
-        self.blocked_prop('nofile/P1', 'rejected')
+        data = self.blocked_prop('nofile/P1', 'rejected')
+        self.assertEqual(data['reason'], 'Propozycja nie ma wpisu stanu w retro-decisions.json')
         self.make_run('other', states=(('P2', 'open'),))
-        self.blocked_prop('other/P1', 'rejected')
+        self.assertEqual(self.blocked_prop('other/P1', 'rejected')['reason'], 'Brak propozycji P1 w przebiegu')
         shutil.rmtree(self.root / '.skillsync/runs/r1')
         (self.root / '.skillsync/runs/r1').mkdir()  # katalog bez plików retro
-        self.blocked_prop('r1/P1', 'rejected')
+        data = self.blocked_prop('r1/P1', 'rejected')
+        self.assertIn('Brak retro-signals.json przebiegu r1', data['reason'])
         shutil.rmtree(self.root / '.skillsync/runs')
-        self.blocked_prop('r1/P1', 'rejected')
+        self.assertEqual(self.blocked_prop('r1/P1', 'rejected')['reason'], 'Brak przebiegu o podanym id')
 
     def test_unreadable_run_files_refuse_without_leaking_the_base_path(self):
         folder = self.make_run('mismatch')
         self.edit_signals(folder, run_id='other')
-        self.assert_unreadable('mismatch')
+        self.assert_bad_signals('mismatch')
         folder = self.make_run('baddec')
         (folder / 'retro-decisions.json').write_text('[]', encoding='utf-8')
-        self.assert_unreadable('baddec')
+        self.assert_bad_decisions('baddec')
 
     def test_malformed_json_gives_the_exact_reason(self):
         folder = self.make_run('broken')
         (folder / 'retro-signals.json').write_text('{not json', encoding='utf-8')
-        self.assert_unreadable('broken')
+        self.assert_bad_signals('broken')
         (folder / 'retro-signals.json').write_text('', encoding='utf-8')
-        self.assert_unreadable('broken')
+        self.assert_bad_signals('broken')
+        (folder / 'retro-signals.json').write_text('{"schema": 1}', encoding='utf-8')
+        (folder / 'retro-decisions.json').write_text('{not json', encoding='utf-8')
+        self.assert_bad_signals('broken')
+        self.make_run('brokendec')
+        (self.root / '.skillsync/runs/brokendec/retro-decisions.json').write_text('{not json', encoding='utf-8')
+        self.assert_bad_decisions('brokendec')
 
-    UNREADABLE = 'Pliki retro przebiegu są nieczytelne albo niepoprawne'
+    BAD_SIGNALS = ('Plik retro-signals.json jest niepoprawny; wymagania: run_id zgodne z nazwą przebiegu, schema 1, '
+                   'created_at, lista proposals, zwykły plik (bez dowiązania) nie większy niż 1 MiB')
+    BAD_DECISIONS = ('Plik retro-decisions.json jest niepoprawny; wymagania: run_id zgodne z nazwą przebiegu, '
+                     'schema 1, lista decisions z propozycją P<n> i stanem, zwykły plik (bez dowiązania) '
+                     'nie większy niż 1 MiB')
 
     def edit_signals(self, folder, **top):
         path = folder / 'retro-signals.json'
@@ -3942,23 +3959,84 @@ class ProposalFlagsAndId(ProposalBase):
         data.update(top)
         path.write_text(json.dumps(data), encoding='utf-8')
 
-    def assert_unreadable(self, run):
+    def assert_bad_signals(self, run):
         data = self.blocked_prop(run + '/P1', 'rejected')
-        self.assertEqual(data['reason'], self.UNREADABLE)
+        self.assertEqual(data['reason'], self.BAD_SIGNALS)
+        self.assertNotIn('retro-decisions.json', data['reason'])
+
+    def assert_bad_decisions(self, run):
+        data = self.blocked_prop(run + '/P1', 'rejected')
+        self.assertEqual(data['reason'], self.BAD_DECISIONS)
+        self.assertNotIn('retro-signals.json', data['reason'])
+
+    def test_missing_signals_file_names_it_and_hints(self):
+        folder = self.make_run('onlymd')
+        (folder / 'retro-signals.json').unlink()
+        (folder / 'retro-decisions.json').unlink()
+        (folder / 'retro-A.md').write_text('# x\n', encoding='utf-8')
+        data = self.blocked_prop('onlymd/P1', 'rejected')
+        self.assertEqual(data['reason'], 'Brak retro-signals.json przebiegu onlymd; retrospektywa z sygnałami '
+                         'zapisuje go po skanie (retro-quality.md, „Po skanie”)')
+        folder = self.make_run('nosig')
+        (folder / 'retro-signals.json').unlink()
+        data = self.blocked_prop('nosig/P1', 'rejected')
+        self.assertIn('Brak retro-signals.json przebiegu nosig', data['reason'])
+
+    def test_signals_symlink_counts_as_invalid_not_missing(self):
+        require_os_symlinks(self)
+        folder = self.make_run('symsig')
+        real = folder / 'real.json'
+        (folder / 'retro-signals.json').rename(real)
+        (folder / 'retro-signals.json').symlink_to(real)
+        self.assert_bad_signals('symsig')
+        folder = self.make_run('dangling')
+        (folder / 'retro-signals.json').unlink()
+        (folder / 'retro-signals.json').symlink_to(folder / 'nie-ma.json')
+        self.assert_bad_signals('dangling')
+
+    def test_decisions_symlink_is_invalid_decisions(self):
+        require_os_symlinks(self)
+        folder = self.make_run('symdec')
+        real = folder / 'real.json'
+        (folder / 'retro-decisions.json').rename(real)
+        (folder / 'retro-decisions.json').symlink_to(real)
+        self.assert_bad_decisions('symdec')
+
+    def test_missing_state_entry_and_missing_proposal_texts(self):
+        self.make_run('nostate', states=(), extra=('P1',))
+        data = self.blocked_prop('nostate/P1', 'rejected')
+        self.assertEqual(data['reason'], 'Propozycja nie ma wpisu stanu w retro-decisions.json')
+        self.make_run('only1')
+        data = self.blocked_prop('only1/P5', 'rejected')
+        self.assertEqual(data['reason'], 'Brak propozycji P5 w przebiegu')
+        data = self.blocked_prop('nie-ma/P1', 'rejected')
+        self.assertEqual(data['reason'], 'Brak przebiegu o podanym id')
+
+    def test_complete_run_passes(self):
+        self.make_run('whole')
+        self.assertEqual(self.prop('whole/P1', 'rejected')['status'], 'PASS')
+
+    def test_os_error_is_reported_as_read_error(self):
+        from unittest import mock
+        from skillsync_workflow import retro_scan
+        self.make_run('oserr')
+        failing = mock.patch.object(retro_scan, '_json', side_effect=OSError(13, 'denied', '/x'))
+        code, data = self.in_process('--proposal', 'oserr/P1', '--decision', 'rejected', patches=[failing])
+        self.assertEqual((code, data['reason']), (2, 'Błąd odczytu pliku'))
 
     def test_invalid_signals_content_gives_the_exact_reason_and_no_changes(self):
         folder = self.make_run('badtime')
         self.edit_signals(folder, created_at='wczoraj')
-        self.assert_unreadable('badtime')
+        self.assert_bad_signals('badtime')
         folder = self.make_run('norepo')
         self.edit_signals(folder, proposals=[{'id': 'P1', 'signals': [], 'target': PROPOSAL_TARGET}])
-        self.assert_unreadable('norepo')
+        self.assert_bad_signals('norepo')
         folder = self.make_run('badrepo')
         self.edit_signals(folder, proposals=[{'id': 'P1', 'repo': 'other', 'target': PROPOSAL_TARGET}])
-        self.assert_unreadable('badrepo')
+        self.assert_bad_signals('badrepo')
         folder = self.make_run('badschema')
         self.edit_signals(folder, schema=2)
-        self.assert_unreadable('badschema')
+        self.assert_bad_signals('badschema')
 
     def test_os_error_while_reading_the_run_does_not_leak_the_path(self):
         from unittest import mock
@@ -4281,8 +4359,8 @@ class ProposalWorktree(ProposalBase):
         rel = (prefix + '/' if prefix else '') + '.github/.skillsync.yaml'
         commit_file(self.repo, rel, yaml.safe_dump(self.manifest), 'manifest')
         git(self.repo, 'worktree', 'add', '-q', '-b', 'feat', str(self.wt))
-        self.main_root = self.repo / prefix if prefix else self.repo
-        self.root = self.wt / prefix if prefix else self.wt
+        self.main_root = descend(self.repo, prefix) if prefix else self.repo
+        self.root = descend(self.wt, prefix) if prefix else self.wt
         self.assertTrue((self.root / '.github/.skillsync.yaml').is_file())
 
     def test_worktree_is_blocked_and_neither_tree_changes(self):
