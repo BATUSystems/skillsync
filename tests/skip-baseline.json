@@ -2579,6 +2579,14 @@
    {
     "id": "test_skillsync_statusline_install.Installation.test_on_windows_the_command_uses_double_quotes_only",
     "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_feedback.StoreTest.test_a_symlinked_store_or_draft_is_refused",
+    "category": "needs-symlinks"
+   },
+   {
+    "id": "test_skillsync_feedback_azure.FailClosedTest.test_a_symlinked_descriptor_is_refused",
+    "category": "needs-symlinks"
    }
   ],
   "macos-latest/copy": [
@@ -3183,6 +3191,14 @@
    {
     "id": "test_skillsync_statusline_install.Installation.test_on_windows_the_command_uses_double_quotes_only",
     "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_feedback.StoreTest.test_a_symlinked_store_or_draft_is_refused",
+    "category": "needs-symlinks"
+   },
+   {
+    "id": "test_skillsync_feedback_azure.FailClosedTest.test_a_symlinked_descriptor_is_refused",
+    "category": "needs-symlinks"
    }
   ],
   "macos-uv/copy": [
