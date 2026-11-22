@@ -9,6 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from layers_helpers import LayersCase  # noqa: E402
+from tmp_paths import descend  # noqa: E402
 from skillsync_workflow import layers, translations  # noqa: E402
 import importlib.util  # noqa: E402
 
@@ -61,7 +62,7 @@ class CoreEnglishLayerTest(LayersCase):
         for rel in layers.layer_files(layer):
             if not rel.endswith('.md') or rel == 'README.md':
                 continue
-            for number, line in enumerate((layer.root / rel).read_text(encoding='utf-8').splitlines(), 1):
+            for number, line in enumerate(descend(layer.root, rel).read_text(encoding='utf-8').splitlines(), 1):
                 found += [f'{rel}:{number}: {pl}' for pl, en in pairs.items() if pl in line and en not in line]
         self.assertEqual(found, [])
 
