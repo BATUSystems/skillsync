@@ -21,9 +21,12 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 - **One source of the protocol tokens: `skillsync_workflow/protocol_tokens.py`.** `quality`, `test_gate`, `status`, `retro`, `plan_phases` and `prototype` import the tokens from it instead of keeping their own copies; the `Run:`/`Przebieg:` rule is a single function. The standalone `check-closure` hook keeps a local copy that now also reads `Run:`; a new test compares it with the module.
 - **Readiness sections match in both languages (a change for Polish documents).** A configured name matches a heading that holds either name of its pair: `Cel` is satisfied by `## Goal` too, `TESTY` by `## TESTS`, and `contracts` also by `## Kontrakty`; the defaults `contracts` and `risks` have pairs, `evidence` has none (only a `## evidence` heading satisfies it). The first matching heading from the top wins, also an empty one: a Polish plan with an empty `## Risks of …` before `## Ryzyka` reports `Empty plan section: risks`.
-- **Prototype gate: a mistyped English bypass line is refused.** Before, a mistyped `Prototype gate: skipped` line passed silently as `PASS`. Now the near-miss forms of the `Prototyp:` line and of the bypass line are refused with `BLOCKED` (`invalid_prototype_line`, `invalid_bypass_line`), in both languages; real typos are still refused. A plan header line that starts with `Prototype gate` or `Bramka prototypu` and is not a complete bypass line (for example English prose) is refused the same way.
 - **`plan_section` takes a list of section names.** The first heading from the top wins, also when it is empty.
 - **`approve` also removes the `(waiting for <zgoda>)` note after `Status:`** (next to the Polish `czeka na`). The note is informational only: it is not a consent and does not change the consent states.
+
+### Fixed
+
+- **Prototype gate: a mistyped English bypass line no longer passes silently (fail-open fixed).** Before, a mistyped `Prototype gate: skipped` line passed silently as `PASS`. Now the near-miss forms of the `Prototyp:` line and of the bypass line are refused with `BLOCKED` (`invalid_prototype_line`, `invalid_bypass_line`), in both languages; real typos are still refused. A plan header line that starts with `Prototype gate` or `Bramka prototypu` and is not a complete bypass line (for example English prose) is refused the same way.
 
 ## [1.12.0] - 2026-11-22
 
