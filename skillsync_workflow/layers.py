@@ -2870,6 +2870,46 @@ def _register_clone(config, layer_id, kind, source, subdir, ref, path, writable,
                    warnings=warnings, rules_updated=rules_updated, **edited)
 
 
+def _declared_supersedes(layer):
+    """`(version, [supersedes entries])` of the layer.yaml of a checkout of the machine config; `(None, [])` when it cannot be read (a link, no file,
+    a bad file): `update` must never fail because of an advisory field."""
+    try:
+        root = layer.path / layer.subdir if layer.subdir else layer.path
+        if any(is_link(item) for item in [root, root / LAYER_FILE]) or not layer.path.is_dir():
+            return None, []
+        meta, _ = read_layer_yaml(root)
+    except (OSError, LayerError):
+        return None, []
+    return (meta.get('version'), list(meta.get('supersedes') or [])) if meta else (None, [])
+
+
+def newly_declared_supersedes(before, after):
+    """How many entries of `after` have a `since` in (version before, version after]: declared by the update itself, not by an older version of the layer.
+    Both are `_declared_supersedes` results; no version on either side counts nothing."""
+    (old, _), (new, entries) = before, after
+    if not old or not new or old == new:
+        return 0
+    count = 0
+    for entry in entries:
+        try:
+            if compare_versions(entry['since'], old) > 0 and compare_versions(entry['since'], new) <= 0:
+                count += 1
+        except (LayerError, KeyError, TypeError):
+            continue
+    return count
+
+
+SUPERSEDED_LINE = 'superseded tools: {count} newly declared by updated layers; run skillsync doctor in each project'
+
+
+def superseded_summary(report):
+    """The one line of `layers update` / `pull` about new `supersedes` entries (None when there are none): the count comes from versions read from
+    layer.yaml before and after the update. Only a count, no text of a layer; nothing is run and no project is scanned."""
+    counts = report.get('superseded') if isinstance(report, dict) else None
+    total = sum(value for value in (counts or {}).values() if isinstance(value, int))
+    return SUPERSEDED_LINE.format(count=total) if total else None
+
+
 def layers_update(layer_id=None, *, ref=None):
     """`layers update [id] [--ref R]`: per layer tag/branch/commit/pull; dirty tree or no
     fast-forward = BLOCKED for that layer, the others continue. `--ref` updates the config."""
@@ -2884,7 +2924,7 @@ def layers_update(layer_id=None, *, ref=None):
         selected = [config.layers[layer_id]] if layer_id else config.ordered_layers()
         for layer in selected:
             _check_bridge(layer)
-        results, edited = [], None
+        results, edited, superseded = [], None, {}
         for layer in selected:
             wanted = ref if ref is not None else layer.ref
             item = {'id': layer.id, 'ref': wanted, 'from': None, 'to': None}
@@ -2896,8 +2936,13 @@ def layers_update(layer_id=None, *, ref=None):
                 item.update(status='NOT_RUN', action='not-git', reason='Not a git checkout')
             else:
                 item['from'] = _head(layer.path)
+                declared_before = _declared_supersedes(layer)   # the version BEFORE: the report has commits, the versions are read from layer.yaml
                 status, action, reason = apply_ref(layer.path, wanted)
                 item.update(status=status, action=action, to=_head(layer.path))
+                if status == 'PASS':
+                    news = newly_declared_supersedes(declared_before, _declared_supersedes(layer))
+                    if news:
+                        item['superseded'] = superseded[layer.id] = news
                 if reason:
                     item['reason'] = reason
                 if status == 'PASS' and layer.writable:
@@ -2912,7 +2957,7 @@ def layers_update(layer_id=None, *, ref=None):
             status = 'NOT_RUN'  # nothing was updated (e.g. only non-git checkouts)
         else:
             status = 'PASS'
-        return _report(status, layers=results, **(edited or {}))
+        return _report(status, layers=results, **({'superseded': superseded} if superseded else {}), **(edited or {}))
     except (LayerError, OSError) as exc:
         return _blocked(exc)
 
@@ -3871,7 +3916,12 @@ def _cmd_add(args):
 
 
 def _cmd_update(args):
-    return _print(layers_update(args.id, ref=args.ref), args.json, 'layers update')
+    report = layers_update(args.id, ref=args.ref)
+    code = _print(report, args.json, 'layers update')
+    line = None if args.json else superseded_summary(report)
+    if line:
+        print(f'  {line}')
+    return code
 
 
 def _cmd_list(args):
