@@ -340,3 +340,7 @@ lessons:
     title: "Maska wyjścia obejmuje tekst, nie bajty: trace.zip i zrzuty PNG idą bez maskowania sekretów"
     tags: [skillsync, ui-verify, secrets, redaction, trace, png]
     paths: ['library/skills/ui-verify/scripts/lib/out.mjs', 'library/skills/ui-verify/scripts/capture.mjs', 'library/skills/ui-verify/scripts/lib/playwright-adapter.mjs']
+  - path: commit-dopiero-po-koncu-podumyslu-takze-w-tle.md
+    title: "Commit dopiero po zgłoszeniu końca przez podumysł, także w tle: w historię trafia jego mutacja kontrolna"
+    tags: [skillsync, workflow, subagents, commit, mutation-testing, race]
+    paths: ['library/skills/ui-verify/scripts/lib/css-parse.mjs']
