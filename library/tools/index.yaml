@@ -13,11 +13,11 @@ tools:
   - cofniecie
   - sqlcmd
   - test-env
-  usage: 'python3 db_snapshot.py backup --database <baza> --label <etykieta> [--dir <katalog>] [--dry-run] [--json] | python3 db_snapshot.py restore --file <plik.bak> --database <baza> --confirm <baza> [--dry-run] [--json]'
+  usage: 'python3 db_snapshot.py backup --database <baza> --label <etykieta> [--server <serwer>] [--dir <katalog>] [--dry-run] [--json] | python3 db_snapshot.py restore --file <plik.bak> --database <baza> --confirm <baza> [--server <serwer>] [--dir <katalog>] [--dry-run] [--json]'
   selftest: python3 db_snapshot.py --selftest
   files: []
   limits:
-  - 'Wymaga Pythona 3.11+ i sqlcmd w PATH; selftest działa bez bazy i bez sqlcmd (atrapy w pamięci). Kody 0 PASS, 1 FAIL (stan bazy mógł się zmienić), 2 BLOCKED (odmowa przed zmianą), 3 NOT_RUN (dry-run, brak sqlcmd).'
+  - 'Wymaga Pythona 3.11+ i sqlcmd w PATH; selftest działa bez bazy i bez sqlcmd (atrapy w pamięci). Kody 0 PASS; 1 FAIL po rozpoczęciu zmiany (BACKUP, ALTER, RESTORE; stan bazy mógł się zmienić); 2 BLOCKED (odmowa albo błąd przed pierwszą zmianą; baza nietknięta); 3 NOT_RUN (dry-run, brak sqlcmd).'
   - 'Niezweryfikowane na silniku: test na żywo (S7) nie został wykonany; zachowanie prawdziwego SQL Servera opisuje lista kontrolna w references/db-snapshot.md.'
   - 'restore tylko na lokalnym silniku; zdalny host tylko dla backup z jawnym --allow-host, --dir i --server-os. Nie odtwarza skasowanej bazy; obsługuje pojedynczy pełny zestaw kopii; nie usuwa plików .bak.'
   status: active

@@ -2,7 +2,7 @@
 title: 'Migawka bazy testowej (db_snapshot): odmowy, tożsamość serwera i kopii, kody wyjścia. Niezweryfikowane na silniku'
 tags: [test-env, sql-server, backup, restore, sqlcmd, safety, identity, exit-codes]
 paths: ['library/skills/test-env/scripts/db_snapshot.py', 'library/skills/test-env/references/db-snapshot.md', 'library/tools/index.yaml', 'tests/test_skillsync_db_snapshot.py']
-source: 'plan zadania (poza rdzeniem); library/skills/test-env/scripts/db_snapshot.py:1-34 (nagłówek, granice, bezpieczeństwo), :115-209 (walidatory i tożsamość serwera), :705-786 (backup), :911-1049 (restore), :1025-1033 (krok destrukcyjny i stan po porażce)'
+source: 'library/skills/test-env/scripts/db_snapshot.py: docstring modułu (granice, bezpieczeństwo, kody wyjścia), build_parser, exit_code_for, run_backup, run_restore, _way_back, parse_sqlcmd_table, _restore_command'
 verified: 2026-11-22
 ---
 **Status: niezweryfikowane na silniku.** Test na żywo (S7) nie został wykonany (NOT_RUN). Reguły poniżej
@@ -19,37 +19,43 @@ Odmowy przed zmianą (kod 2):
 - Zdalny host przy backup bez dokładnego `--allow-host` albo bez `--dir` i `--server-os`. Restore na hoście nielokalnym jest zawsze odmawiany, także z `--allow-host`.
 - Katalog kopii w drzewie z `.git` (także worktree i submoduł) albo ze znakami spoza białej listy ścieżek.
 - Restore bez `--confirm` równego nazwie bazy.
-- Plik kopii nieistniejący, nie będący zwykłym plikiem albo poza katalogiem kopii.
+- Plik kopii nieistniejący, nie będący zwykłym plikiem, dowiązaniem symbolicznym albo poza katalogiem kopii.
 - Restore przy braku pliku pomocniczego `<plik>.json`, chyba że `--allow-missing-sidecar`.
-- Sidecar z inną bazą, innym plikiem, innym serwerem albo innym rozmiarem pliku.
-- Nagłówek kopii (`HEADERONLY`) z inną bazą, inną liczbą zestawów albo innym typem niż pełna kopia.
+- Sidecar z inną bazą, innym plikiem, innym serwerem albo innym rozmiarem pliku; sidecar z nieznanym kluczem albo większy niż 64 KB.
+- Sha256 z sidecara różny od sumy pliku.
+- Nagłówek kopii (`HEADERONLY`) z inną bazą, inną liczbą zestawów, innym typem niż pełna kopia, innym `ServerName`/`MachineName` niż silnik celu, albo niezgodny z sidecarem (`BackupSetGUID`, LSN, `BackupFinishDate`).
 - Restore, gdy baza nie istnieje (odtworzenie wymagałoby `MOVE`) albo nie jest `ONLINE`.
 - Nazwa maszyny z silnika różna od tej maszyny (bez wielkości liter, do 15 znaków), chyba że `--allow-machine-mismatch`.
+- Błąd `RESTORE VERIFYONLY` kopii przed przywróceniem (kod 2, baza nietknięta). Tak samo odczyt stanu, tożsamości lub nagłówka, który nie powiódł się przed pierwszym wywołaniem zmieniającym.
 
-Tożsamość kopii: kopia wiąże się z serwerem przez nazwę serwera z silnika, `MachineName` i `InstanceName` z silnika
-(zapisywane w sidecarze) oraz z `BackupSetGUID`, `FirstLSN` i `LastLSN` z `HEADERONLY`. Restore porównuje
-je z sidecarem i z aktualnym nagłówkiem; zgodność jest warunkiem wykonania.
+Tożsamość serwera i kopii: kopia wiąże się z serwerem przez nazwę serwera z silnika (`@@SERVERNAME`), `MachineName` i `InstanceName`
+z silnika (zapisane w sidecarze przy `backup`), oraz z `BackupSetGUID`, `FirstLSN`, `LastLSN` i `BackupFinishDate`
+z `HEADERONLY`. Restore porównuje je z sidecarem i z aktualnym nagłówkiem; zgodność jest warunkiem wykonania. Gdy
+sidecara brak (`--allow-missing-sidecar`), nagłówek jest porównywany z tożsamością silnika celu, a wynik ma ostrzeżenie.
+Sha256 z sidecara (gdy jest) liczy się przed krokiem destrukcyjnym; brak pola daje ostrzeżenie `no sha256 recorded`.
 
 Dane logowania: tylko `SQLCMDUSER` i `SQLCMDPASSWORD` (tryb `env`, domyślnie poza Windows) albo logowanie
 Windows (`integrated`). Nigdy w argumentach procesu, w wyjściu, w sidecarze ani w komunikatach. Wyjście
-jest maskowane. Login nie jest maskowany w komunikatach serwera.
+jest maskowane. Login nie jest maskowany w komunikatach serwera. Proces `sqlcmd` dostaje tylko zmienne z białej listy.
 
-Kody wyjścia (decyzja Dyspozytora, 22.11): 0 PASS; 1 FAIL, operacja się nie udała, stan bazy mógł się zmienić
-(błąd SQL, brak pliku po `backup`, wyjątek po zmianie); 2 BLOCKED, odmowa przed zmianą; 3 NOT_RUN, dry-run
-albo brak `sqlcmd`. Różnica względem `ui-verify`, gdzie 1 oznacza wykrytą różnicę, jest zamierzona.
+Kody wyjścia: 0 PASS; 1 FAIL po rozpoczęciu zmiany (pierwsze wywołanie `BACKUP`, `ALTER` lub `RESTORE` już się zaczęło,
+stan bazy mógł się zmienić: błąd SQL, brak pliku po `backup`, błąd kopii bezpieczeństwa, wyjątek po zmianie); 2 BLOCKED,
+odmowa albo błąd wykonania przed pierwszą zmianą, baza nietknięta; 3 NOT_RUN, dry-run albo brak `sqlcmd`. Różnica względem
+`ui-verify`, gdzie 1 oznacza wykrytą różnicę, jest zamierzona.
 
-Znana rozbieżność do rozstrzygnięcia: błąd `RESTORE VERIFYONLY` i `HEADERONLY` (przed zmianą bazy) daje kod 1
-(`library/skills/test-env/scripts/db_snapshot.py:1009-1012`), a spec wymaga dla `VERIFYONLY` kodu 1 bez
-dotykania bazy. Semantyka kodów mówi, że 2 to odmowa przed zmianą. Kod pozostaje jak jest, do decyzji orkiestratora.
-
-Kolejność restore: stan bazy, tożsamość silnika, `HEADERONLY`, `VERIFYONLY`, kopia bezpieczeństwa z własnym
-`VERIFYONLY` (`pre-restore`, nigdy nie nadpisuje), ścieżka kopii wypisana na stderr, batch `sqlcmd -b`
-z `TRY/CATCH` (`SINGLE_USER`, `RESTORE … WITH REPLACE`, `MULTI_USER`), stan po (`ONLINE` i `MULTI_USER`).
-Po porażce kroku destrukcyjnego lub przerwaniu narzędzie odczytuje stan bazy i nie wykonuje ślepo `MULTI_USER`.
+Kolejność restore: stan bazy (`ONLINE`), tożsamość silnika, `HEADERONLY` i zgodność nagłówka z sidecarem, `VERIFYONLY`
+(błąd = kod 2), sha256 z sidecara, kopia bezpieczeństwa z własnym `VERIFYONLY` (`pre-restore`, nigdy nie nadpisuje; jej błąd
+= kod 1), ścieżka kopii bezpieczeństwa wypisana na stderr, batch `sqlcmd -b` z `TRY/CATCH` (`SINGLE_USER`,
+`RESTORE … WITH REPLACE`, `MULTI_USER`), stan po (`ONLINE` i `MULTI_USER`). Po porażce kroku destrukcyjnego, timeoucie
+lub przerwaniu narzędzie odczytuje stan bazy i nie wykonuje ślepo `MULTI_USER`. Droga powrotu to kopia bezpieczeństwa:
+`rollback_command` w wyniku, a gdy stan nie jest `ONLINE`, ręczny `RESTORE DATABASE … WITH REPLACE, RECOVERY`.
 
 Granice: nie odtwarza skasowanej bazy; `FULL` recovery przerywa łańcuch kopii dziennika (ostrzeżenie);
-`CHECKSUM` wymaga kopii z sumami; `VERIFYONLY` nie dowodzi możliwości `RESTORE` na innej wersji silnika;
-brak retencji; kopie nie są szyfrowane i mogą zawierać dane osobowe.
+`CHECKSUM` wymaga kopii z sumami (kopia obca = kod 2 przed zmianą); `VERIFYONLY` nie dowodzi możliwości `RESTORE`
+na innej wersji silnika; brak retencji; kopie nie są szyfrowane i mogą zawierać dane osobowe.
 
-Gdzie w kodzie: `library/skills/test-env/scripts/db_snapshot.py:115` (walidatory nazw), `:166` (`parse_server`),
-`:198` (`check_host_allowed`), `:212` (ścieżki serwera), `:705` (`run_backup`), `:939` (`run_restore`).
+Gdzie w kodzie (`library/skills/test-env/scripts/db_snapshot.py`): `validate_database` i `validate_label` (nazwy),
+`parse_server` i `check_host_allowed` (hosty), `validate_server_path` (ścieżki serwera), `check_dir_outside_repo`,
+`read_sidecar` i `machine_names_match` (sidecar i tożsamość), `run_backup` (backup), `run_restore` (restore),
+`_check_restore_header` (nagłówek), `_way_back` (droga powrotu), `exit_code_for` (kody), `parse_sqlcmd_table` (parser),
+`_restore_command` (polecenia cofnięcia).
