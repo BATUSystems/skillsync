@@ -12,6 +12,11 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Breaking
+
+- **Readiness sections match either name of their pair, and the first matching heading wins.** `Cel` is satisfied by `## Goal`, `TESTY` by `## TESTS`, `contracts` by `## Kontrakty` and so on; the first matching heading from the top wins even when it is empty, so a Polish plan with an empty `## Risks …` above `## Ryzyka` now reports `Empty plan section: risks`, and a heading that starts with `Data` counts as the risk section `Dane`/`Data`. Check open plans with `skillsync status` and `skillsync pre-implement`.
+- **Prototype gate: near-miss lines are refused.** A plan header line that starts with `Prototype gate` or `Bramka prototypu` and is not a complete bypass line, and near-miss forms of `Prototyp:`/`Prototype:`, now end `BLOCKED` (`invalid_bypass_line`, `invalid_prototype_line`). Before, a mistyped English bypass line passed silently as `PASS` (see Fixed).
+
 ### Added
 
 - **English aliases of the protocol tokens in the core parsers.** The plan and spec parsers read the English forms next to the Polish ones: `Run:` (the run line in the plan header; `Przebieg:` still works anywhere in the plan), `Verdict:` (pre-implement report and retro report), `Acceptance` (a plan step whose title is `Acceptance` alone or followed by `:`, `–`, `—`, `(` or by `-` after a space; `Acceptance tests` and `Acceptance-tests` do not count), `Summary for humans`, `Contracts`, `Migration` and `Data` (a risk section only when the word starts the title of a heading), `not applicable`, the `Step` column (only in a table that also has a Risk/Role/Files or Ryzyko/Rola/Pliki column; `Krok` wins when both are present), `[EXPERT]`, `Prototype:` and `Prototype gate: skipped — <reason> — <person>, <YYYY-MM-DD>`, and the English names of the `readiness` sections (`Goal`, `Criteria`, `TESTS`, `Knowledge`, `Risks`, `Contracts`, `Migration`; see Changed for the matching rules). The core keeps writing Polish lines. Rules and the table: `docs/workflow.md`, section "Aliasy angielskie tokenów protokołu"; record `docs/domain/protocol-tokens-aliasy.md`.
