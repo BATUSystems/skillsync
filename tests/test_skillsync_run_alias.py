@@ -60,7 +60,7 @@ class TmpRoot(unittest.TestCase):
     def put(self, rel, text):
         path = descend(self.root, rel)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding='utf-8')
+        path.write_text(text, encoding='utf-8', newline='')   # exact bytes: Windows would write \r\n and the reader returns the file as it is
         return path
 
     def run_record(self, run_id, final):
