@@ -16,12 +16,28 @@ test('werdykt biegu: PASS, FAIL, UNVERIFIED i kody 0/1/3', () => {
   assert.equal(unv.exit, 3);
 });
 
-test('EXEMPT, EXCEPTED i INFO nie licza sie, CONFIRMED to PASS', () => {
-  assert.equal(buildReport({ pages: [page([f('PASS'), f('EXEMPT'), f('EXCEPTED'), f('INFO')])] }).result, 'PASS');
-  assert.equal(buildReport({ pages: [page([f('CONFIRMED')])] }).result, 'PASS');
-  // same pominiete elementy nie dowodza niczego
-  assert.equal(buildReport({ pages: [page([f('EXEMPT'), f('EXCEPTED')])] }).result, 'UNVERIFIED');
-  assert.equal(buildReport({ pages: [page([f('EXCEPTED'), f('FAIL')])] }).result, 'FAIL');
+test('EXCEPTED i CONFIRMED licza sie jako PASS, gdy cos sie zmierzylo; EXEMPT, INFO i pusta lista nie dowodza niczego', () => {
+  const exit = (verdicts, extra) => buildReport({ pages: [page(verdicts.map((v) => f(v, v === 'UNVERIFIED' ? { reason: 'occluded' } : {})), extra)] }).exit;
+  assert.equal(exit([]), 3);
+  assert.equal(exit(['EXEMPT']), 3);
+  assert.equal(exit(['INFO']), 3);
+  assert.equal(exit(['EXCEPTED']), 0);
+  assert.equal(exit(['CONFIRMED']), 0);
+  assert.equal(exit(['PASS', 'EXEMPT', 'EXCEPTED', 'INFO']), 0);
+  assert.equal(exit(['EXCEPTED', 'UNVERIFIED']), 3);
+  assert.equal(exit(['EXCEPTED', 'FAIL']), 1);
+  assert.equal(exit(['EXCEPTED'], { assertion: 'NONE' }), 3);
+  assert.equal(exit(['EXEMPT', 'INFO']), 3);
+});
+
+test('PASS z wyjatkami jest widoczny: liczniki i klucze w JSON i w Markdown', () => {
+  const r = buildReport({ pages: [page([f('PASS'), f('EXCEPTED', { key: 'contrast|home|#brand' }), f('CONFIRMED', { key: 'contrast|home|#hero', selector: '#hero' })])] });
+  assert.deepEqual([r.exit, r.summary.excepted, r.summary.confirmed], [0, 1, 1]);
+  assert.deepEqual([r.summary.exceptedKeys, r.summary.confirmedKeys], [['contrast|home|#brand'], ['contrast|home|#hero']]);
+  const md = renderMarkdown(r);
+  assert.match(md, /PASS includes 1 excepted and 1 manually confirmed/);
+  assert.ok(md.includes('excepted: `contrast\\|home\\|#brand`') && md.includes('confirmed: `contrast\\|home\\|#hero`'));
+  assert.ok(!renderMarkdown(buildReport({ pages: [page([f('PASS')])] })).includes('PASS includes'));
 });
 
 test('pusta lista kontroli, brak asercji i pusty bieg to UNVERIFIED (3), asercja niespelniona to FAIL', () => {

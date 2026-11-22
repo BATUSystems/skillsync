@@ -7,21 +7,20 @@
  * Outputs: <outDir>/a11y.json (schema 1) and <outDir>/a11y.md; stdout carries the Markdown report (or the JSON with --json).
  * Exit codes: 0 PASS, 1 FAIL, 2 usage/configuration/internal error, 3 missing dependencies or Chrome, or UNVERIFIED (no assertion, no checks, unverifiable element, absent --expect element).
  * Dependencies: playwright-core 1.65.0, pngjs 7.0.0, pixelmatch 8.0.0 (from the skill cache, see lib/deps.mjs), a Chrome/Chromium browser; Node >= 20.11 (tested on 22). The pure logic and --selftest need none of them.
- * Limits: elements measured up to 5000 for contrast, 2000 targets, 500 Tab stops, 200 messages; text longer than 80 characters (messages 300) is cut; closed shadow DOM and cross-origin frames are not audited; whole-page screenshot up to 64000 px high and 40 million pixels (clips of 4000 px above 16000 px); navigation timeout 60 s, whole run 300 s (exit 2); one browser context per run.
- * Security: only localhost, files under the configuration directory and --allow-origin hosts are opened; input files and outDir stay under the configuration directory; text from the page is untrusted data, cleaned and masked for secretEnv and login valueEnv values.
+ * Limits: elements measured up to 5000 for contrast, 2000 targets, 500 Tab stops, 200 messages; text longer than 80 characters (messages 300) is cut; open shadow roots (depth up to 10) are audited, closed shadow roots and cross-origin frames are not (counted in warnings shadow-not-audited and frames-not-audited); whole-page screenshot up to 64000 px high and 40 million pixels (clips of 4000 px above 16000 px); navigation timeout 60 s, whole run 300 s (exit 2); one browser context per run.
+ * Security: only localhost, files under the configuration directory and --allow-origin hosts are opened (HTTP and HTTPS requests, including sub-resources and redirects, are checked lexically in the browser; WebSocket and WebRTC are not routed; file: URLs are also checked with realpath, so a symlink pointing outside the configuration directory is blocked); input files and outDir stay under the configuration directory; text from the page is untrusted data, cleaned and masked for secretEnv and login valueEnv values.
  */
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { parseArgs, runSelftest } from './lib/cli.mjs';
 import { chromeMissing, findChrome } from './lib/chrome.mjs';
 import { DepsError, explainMissing } from './lib/deps.mjs';
-import { createMasker, createSink, collectSecretsFromEnv } from './lib/out.mjs';
+import { createMasker, createSink, collectSecretsFromEnv, setGuardMasker } from './lib/out.mjs';
 import { launchChromium, makeWhich } from './lib/playwright-adapter.mjs';
 import { PolicyError, resolveInside } from './lib/policy.mjs';
 import { loadImaging, resolveCacheDir, skillDirOf } from './lib/runtime.mjs';
-import { EXIT, installGuards } from './lib/verdict.mjs';
+import { EXIT, installGuards, isMain } from './lib/verdict.mjs';
 import { findingKey, isValidDate } from './lib/a11y-exceptions.mjs';
 import { A11yConfigError, configDigest, loginEnvNames, missingLoginEnv, parseConfigText, validateA11yConfig } from './lib/a11y-config.mjs';
 import { measureSample } from './lib/a11y-contrast.mjs';
@@ -178,6 +177,7 @@ export function assembleReport({ pages, config, exceptionsData, now, digest, mas
 export async function main(argv, env, io) {
   const envNames = String(env.UI_VERIFY_SECRET_ENV || '').split(',').map((s) => s.trim()).filter(Boolean);
   let masker = createMasker({ secrets: collectSecretsFromEnv(env, envNames) });
+  setGuardMasker(masker);
   let sink = createSink({ masker, fs, root: io.cwd, stdout: io.stdout, stderr: io.stderr });
   let browser = null;
   let runner = null;
@@ -204,6 +204,7 @@ export async function main(argv, env, io) {
     const raw = parseConfigText(rawText);
     const declared = [...(raw && Array.isArray(raw.secretEnv) ? raw.secretEnv.filter((n) => typeof n === 'string') : []), ...loginEnvNames(raw)];
     masker = createMasker({ secrets: collectSecretsFromEnv(env, [...envNames, ...declared]) });
+    setGuardMasker(masker);
     sink = createSink({ masker, fs, root: io.cwd, stdout: io.stdout, stderr: io.stderr });
 
     const v = validateA11yConfig(raw, { configDir, allowOrigins: values['allow-origin'] || [] });
@@ -265,8 +266,9 @@ export async function main(argv, env, io) {
     return report.exit;
   } catch (e) {
     if (e instanceof DepsError) {
-      await sink.write('stderr', `${explainMissing(e).lines.join('\n')}\n`);
-      return EXIT.NOT_RUN;
+      const ex = explainMissing(e);
+      await sink.write('stderr', `${ex.lines.join('\n')}\n`);
+      return ex.exit;
     }
     if (e instanceof UsageError || e instanceof PolicyError) {
       await sink.write('stderr', `a11y: ${e.message}\n${USAGE}\n`);
@@ -296,8 +298,8 @@ export async function main(argv, env, io) {
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  installGuards(process, { onError: (err) => process.stderr.write(`a11y: ${err && err.message ? err.message : err}\n`) });
+if (isMain(import.meta.url, process.argv[1])) {
+  installGuards(process);
   const code = await main(process.argv.slice(2), process.env, { cwd: process.cwd(), stdout: process.stdout, stderr: process.stderr });
   process.exitCode = code;
 }

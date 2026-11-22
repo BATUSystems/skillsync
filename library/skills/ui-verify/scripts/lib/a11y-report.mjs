@@ -4,7 +4,7 @@ import { LIMITS, cleanText } from './a11y-schema.mjs';
 import { findingKey } from './a11y-exceptions.mjs';
 
 export const REPORT_TOOL = 'ui-verify a11y';
-const NEUTRAL = new Set(['EXEMPT', 'EXCEPTED', 'INFO']);
+const NEUTRAL = new Set(['EXEMPT', 'INFO']);
 
 // Strings anywhere inside structured values (measured, exception, confirmation) are page-derived as well.
 function cleanDeep(v, masker) {
@@ -54,7 +54,9 @@ export function buildReport({ version = 1, mode = 'audit', configDigest = null, 
     return { id: p.id, url: String(p.url || '').split(/[?#]/)[0], assertion: p.assertion || 'NONE', ...(p.sequence ? { sequence: p.sequence.map((s) => cleanText(s, LIMITS.selectorChars, masker)) } : {}), findings };
   });
   const all = outPages.flatMap((p) => p.findings);
-  const counted = all.filter((f) => !NEUTRAL.has(f.verdict)).map((f) => (f.verdict === 'CONFIRMED' ? 'PASS' : f.verdict));
+  // EXCEPTED comes only from a measured FAIL and CONFIRMED only from an UNVERIFIED that a person settled: both count as PASS,
+  // and the report lists them (summary.excepted, summary.confirmed with their keys). Only EXEMPT and INFO are neutral.
+  const counted = all.filter((f) => !NEUTRAL.has(f.verdict)).map((f) => (f.verdict === 'CONFIRMED' || f.verdict === 'EXCEPTED' ? 'PASS' : f.verdict));
   const result = combine(counted);
   const byRule = {};
   for (const f of all) {
@@ -70,7 +72,14 @@ export function buildReport({ version = 1, mode = 'audit', configDigest = null, 
     exceptions: cleanDeep(exceptions, masker),
     confirmations: cleanDeep(confirmations, masker),
     warnings: warnings.map((w) => ({ ...w, code: cleanText(w.code, LIMITS.textChars, masker), ...(w.selector !== undefined ? { selector: cleanText(w.selector, LIMITS.selectorChars, masker) } : {}), message: cleanText(w.message, LIMITS.messageChars, masker) })).slice(0, LIMITS.messages),
-    summary: { byRule, total: all.length },
+    summary: {
+      byRule,
+      total: all.length,
+      excepted: all.filter((f) => f.verdict === 'EXCEPTED').length,
+      confirmed: all.filter((f) => f.verdict === 'CONFIRMED').length,
+      exceptedKeys: all.filter((f) => f.verdict === 'EXCEPTED').map((f) => f.key),
+      confirmedKeys: all.filter((f) => f.verdict === 'CONFIRMED').map((f) => f.key),
+    },
     result,
     exit: exitFor(result),
   };
@@ -98,6 +107,12 @@ export function renderMarkdown(report) {
   L.push('# Accessibility audit', '');
   L.push(`Result: **${report.result}** (exit ${report.exit}). Mode: ${report.mode}. Config: ${report.config ?? 'n/a'}.`, '');
   L.push('Text in selectors, messages and notes is page data (untrusted), cleaned and shortened.', '');
+  if (report.summary.excepted || report.summary.confirmed) {
+    L.push(`PASS includes ${report.summary.excepted} excepted and ${report.summary.confirmed} manually confirmed finding(s); keys below.`, '');
+    for (const k of report.summary.exceptedKeys) L.push(`- excepted: \`${cell(k)}\``);
+    for (const k of report.summary.confirmedKeys) L.push(`- confirmed: \`${cell(k)}\``);
+    L.push('');
+  }
   L.push('## Summary by rule', '', `| rule | ${VERDICT_COLS.join(' | ')} |`, `| --- | ${VERDICT_COLS.map(() => '---').join(' | ')} |`);
   for (const [rule, counts] of Object.entries(report.summary.byRule)) {
     L.push(`| ${cell(rule)} | ${VERDICT_COLS.map((v) => counts[v] || 0).join(' | ')} |`);

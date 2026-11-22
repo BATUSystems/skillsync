@@ -7,7 +7,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+import http from 'node:http';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -127,6 +128,9 @@ test('e2e clean.html: wersja poprawna, brak FAIL i UNVERIFIED, kod 0', { skip: S
   assert.equal(r.report.result, 'PASS');
   assert.deepEqual(all(r.report).filter((f) => f.verdict === 'FAIL' || f.verdict === 'UNVERIFIED'), []);
   for (const rule of ['target-size', 'focus-keyboard-indicator', 'console', 'contrast']) assert.ok(byRule(r.report, rule, 'PASS').length >= 1, `PASS ${rule}`);
+  // M1: etykiety z kontrolka nie sa przystankami Tab (brak tab-unreachable), checkbox z etykieta to cel rownowazny
+  assert.deepEqual(byRule(r.report, 'tab-unreachable').filter((f) => f.verdict !== 'PASS'), []);
+  assert.ok(byRule(r.report, 'target-size').some((f) => f.selector === '#agree' && f.verdict === 'PASS'), 'checkbox z etykieta');
 });
 
 // --- (c) wyjatki z pliku ---
@@ -240,4 +244,204 @@ test('e2e bezpieczenstwo: selektor z cudzyslowami i </script> daje kod 2 albo br
   const text = [r.stdout, r.stderr, r.report ? JSON.stringify(r.report) : ''].join('\n');
   assert.ok(!text.includes('INJECTED-MARKER'), 'wstrzykniety kod nie moze sie wykonac');
   if (r.report) assert.deepEqual(byRule(r.report, 'console', 'FAIL'), []);
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// Rozszerzone fixtury (review A5/A6): wysokie strony, fixed/sticky, lazy obraz, kolory, limity, ramki i shadow DOM,
+// mysz, wiele stron, logowanie, rtl, originy (file: poza katalogiem, przekierowanie 302, data:).
+// ---------------------------------------------------------------------------------------------------------------
+
+const pageFinding = (report, rule, selector) => byRule(report, rule).find((f) => f.selector === selector);
+
+test('e2e tall.html (~5000 px): wspolrzedne dokumentu, jasny tekst na ciemnym pasie nizej PASS, blady tekst na dole FAIL', { skip: SKIP }, () => {
+  const r = audit('tall.config.json');
+  assert.equal(r.code, 1, detail(r));
+  assert.equal(pageFinding(r.report, 'contrast', '#dark-ok').verdict, 'PASS');
+  assert.equal(pageFinding(r.report, 'contrast', '#top-ok').verdict, 'PASS');
+  const low = pageFinding(r.report, 'contrast', '#low-fail');
+  assert.equal(low.verdict, 'FAIL');
+  assert.ok(low.measured.ratio < 2, `ratio ${low.measured.ratio}`);
+});
+
+test('e2e huge.html (>20000 px): klipy po 4000 px, elementy na szwach mierzone poprawnie, czas biegu rozsadny', { skip: SKIP }, () => {
+  const started = Date.now();
+  const r = audit('huge.config.json');
+  const seconds = (Date.now() - started) / 1000;
+  assert.equal(r.code, 1, detail(r));
+  for (const id of ['#seam-4000', '#seam-16000', '#ok-last']) assert.equal(pageFinding(r.report, 'contrast', id).verdict, 'PASS', id);
+  assert.equal(pageFinding(r.report, 'contrast', '#fail-deep').verdict, 'FAIL');
+  assert.ok(seconds < 200, `bieg trwal ${seconds} s (limit calego biegu to 300 s)`);
+  console.log(`# huge.html: ${seconds.toFixed(1)} s`);
+});
+
+test('e2e too-tall.html (>64000 px): UNVERIFIED page-too-tall, kod 3, bez PASS kontrastu', { skip: SKIP }, () => {
+  const r = audit('too-tall.config.json');
+  assert.equal(r.code, 3, detail(r));
+  assert.ok(byRule(r.report, 'contrast', 'UNVERIFIED').some((f) => f.reason === 'page-too-tall'));
+  assert.equal(byRule(r.report, 'contrast', 'PASS').length, 0);
+  assert.ok(r.report.warnings.some((w) => w.code === 'page-too-tall'));
+});
+
+test('e2e fixed-sticky.html: element fixed i sticky mierzone w poczatkowym przewinieciu, PASS', { skip: SKIP }, () => {
+  const r = audit('fixed-sticky.config.json');
+  assert.equal(r.code, 0, detail(r));
+  for (const id of ['#fixed-text', '#sticky-text']) assert.equal(pageFinding(r.report, 'contrast', id).verdict, 'PASS', id);
+});
+
+test('e2e lazy.html: obraz loading=lazy z data: URI pod tekstem jest zaladowany przed zrzutem (bialy tekst na czarnym PASS)', { skip: SKIP }, () => {
+  const r = audit('lazy.config.json');
+  assert.equal(r.code, 0, detail(r));
+  const f = pageFinding(r.report, 'contrast', '#over');
+  assert.equal(f.verdict, 'PASS');
+  assert.ok(f.measured.ratio > 15, `ratio ${f.measured.ratio}`);
+});
+
+test('e2e clip-text.html: background-clip:text to UNVERIFIED background-clip-text, kod 3', { skip: SKIP }, () => {
+  const r = audit('clip-text.config.json');
+  assert.equal(r.code, 3, detail(r));
+  assert.equal(pageFinding(r.report, 'contrast', '#clip').reason, 'background-clip-text');
+});
+
+test('e2e modern-colors.html: oklch, lab, hsl i display-p3 sa zamieniane na sRGB i mierzone (nieprzekształcalny kolor: tylko test jednostkowy)', { skip: SKIP }, () => {
+  const r = audit('modern-colors.config.json');
+  assert.equal(r.code, 1, detail(r));
+  const verdict = (id) => pageFinding(r.report, 'contrast', id).verdict;
+  assert.deepEqual(['#oklch-dark', '#lab-dark', '#p3-dark'].map(verdict), ['PASS', 'PASS', 'PASS']);
+  assert.deepEqual(['#oklch-pale', '#hsl-pale'].map(verdict), ['FAIL', 'FAIL']);
+});
+
+test('e2e limity: 5001 elementow tekstu to UNVERIFIED truncated, maxStops=3 to UNVERIFIED sequence-truncated; kod 3', { skip: SKIP }, () => {
+  const dir = project();
+  const spans = Array.from({ length: 5001 }, (_, i) => `<span>t${i}</span>`).join(' ');
+  fs.writeFileSync(path.join(dir, 'many.html'), `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>many</title></head><body><main>${spans}</main></body></html>`);
+  fs.writeFileSync(path.join(dir, 'many.config.json'), JSON.stringify({ version: 1, pages: [{ id: 'many', url: 'many.html', assert: { selector: 'main' }, checks: ['contrast'] }] }));
+  const r = audit('many.config.json', { dir });
+  assert.equal(r.code, 3, detail(r));
+  assert.ok(byRule(r.report, 'contrast', 'UNVERIFIED').some((f) => f.reason === 'truncated'));
+  assert.ok(r.report.warnings.some((w) => w.code === 'contrast-truncated'));
+  const buttons = Array.from({ length: 6 }, (_, i) => `<button type="button" style="margin:8px;padding:8px 16px">b${i}</button>`).join('');
+  fs.writeFileSync(path.join(dir, 'steps.html'), `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>steps</title></head><body><main>${buttons}</main></body></html>`);
+  fs.writeFileSync(path.join(dir, 'steps.config.json'), JSON.stringify({ version: 1, tab: { maxStops: 3 }, pages: [{ id: 'steps', url: 'steps.html', assert: { selector: 'main' }, checks: ['tab-order'] }] }));
+  const s = audit('steps.config.json', { dir });
+  assert.equal(s.code, 3, detail(s));
+  assert.ok(byRule(s.report, 'tab-unreachable', 'UNVERIFIED').some((f) => f.reason === 'sequence-truncated'));
+});
+
+test('e2e frames-shadow.html: iframe (srcdoc) i host shadow DOM z 3 przystankami to przystanki bez trapu; tekst i cele w shadow root mierzone', { skip: SKIP }, () => {
+  const r = audit('frames-shadow.config.json');
+  assert.equal(r.code, 0, detail(r));
+  assert.deepEqual(byRule(r.report, 'tab-trap'), []);
+  assert.deepEqual(byRule(r.report, 'tab-unreachable').filter((f) => f.verdict !== 'PASS'), []);
+  assert.ok(byRule(r.report, 'contrast', 'PASS').some((f) => f.selector.includes('my-widget') || f.selector.includes('shadow')), JSON.stringify(byRule(r.report, 'contrast').map((f) => f.selector)));
+  assert.ok(byRule(r.report, 'target-size', 'PASS').some((f) => f.selector === '#s1' || f.selector.includes('my-widget')), 'cel w shadow root');
+  const seq = r.report.pages[0].sequence;
+  assert.ok(seq.length >= 7, `sekwencja ${seq.length}: ${seq.join(' | ')}`); // before, 2 in the frame, 3 in the widget, after
+  assert.ok(r.report.warnings.some((w) => w.code === 'frames-not-audited'));
+});
+
+test('e2e mouse.html: nawigacja po kliknieciu poza dozwolone originy jest zablokowana, strona przeladowana, kolejny selektor zmierzony', { skip: SKIP }, () => {
+  const r = audit('mouse.config.json');
+  assert.ok([0, 3].includes(r.code), detail(r));
+  const ring = byRule(r.report, 'focus-mouse-ring');
+  const plain = ring.find((f) => f.selector === '#plain');
+  assert.ok(plain && plain.verdict === 'INFO', JSON.stringify(ring));
+  const nav = ring.find((f) => f.selector === '#nav');
+  assert.ok(nav && ['UNVERIFIED', 'INFO'].includes(nav.verdict), JSON.stringify(nav));
+  assert.ok(r.report.warnings.some((w) => w.code === 'blocked-origin' && /nav-blocked\.example\.invalid/.test(w.message)), JSON.stringify(r.report.warnings));
+});
+
+test('e2e wiele stron w jednej konfiguracji: dwa wyniki, FAIL tylko drugiej strony, kod 1', { skip: SKIP }, () => {
+  const r = audit('multi.config.json');
+  assert.equal(r.code, 1, detail(r));
+  assert.deepEqual(r.report.pages.map((p) => p.id), ['clean', 'console-error']);
+  assert.deepEqual(r.report.pages[0].findings.filter((f) => f.verdict === 'FAIL'), []);
+  assert.ok(r.report.pages[1].findings.some((f) => f.rule === 'console' && f.verdict === 'FAIL'));
+});
+
+test('e2e M5: konfiguracja tylko z checks ["console"] i wyjatek daja kod 0, a PASS z wyjatkiem jest widoczny w summary i Markdown', { skip: SKIP }, () => {
+  const plain = audit('console-only.config.json', { flags: NOW });
+  assert.equal(plain.code, 1, detail(plain));
+  const r = audit('console-only.config.json', { flags: [...NOW, '--exceptions', 'exceptions.json'] });
+  assert.equal(r.code, 0, detail(r));
+  assert.equal(r.report.summary.excepted, 1);
+  assert.equal(r.report.summary.exceptedKeys.length, 1);
+  assert.match(fs.readFileSync(path.join(r.dir, 'out', 'a11y.md'), 'utf8'), /PASS includes 1 excepted/);
+});
+
+test('e2e rtl.html (body dir=rtl): kolejnosc Tab od prawej do lewej nie jest cofnieciem (order.mode=fail), kod 0', { skip: SKIP }, () => {
+  const r = audit('rtl.config.json');
+  assert.equal(r.code, 0, detail(r));
+  assert.deepEqual(byRule(r.report, 'tab-order-visual'), []);
+});
+
+test('e2e logowanie ze strony file: (pole, haslo ze zmiennej srodowiska, przycisk): zalogowany widok, haslo maskowane w calym wyniku', { skip: SKIP }, () => {
+  const password = ['fake', 'pw', String(process.pid), 'lg1'].join('-');
+  const r = audit('login.config.json', { env: { A11Y_FIXTURE_USER: 'fixture-user', A11Y_FIXTURE_PASSWORD: password } });
+  // console.error strony aplikacji niesie haslo: to FAIL konsoli (kod 1), ale wartosc musi byc zamaskowana
+  assert.equal(r.code, 1, detail(r));
+  assert.equal(r.report.pages[0].assertion, 'PASS', 'zalogowany widok (asercja na #who)');
+  const text = outputs(r);
+  assert.ok(!text.includes(password) && !text.includes(encodeURIComponent(password)), 'haslo w wyniku');
+  assert.ok(text.includes('***'), 'wartosc zastapiona maska');
+  const missing = audit('login.config.json', { env: { A11Y_FIXTURE_USER: 'fixture-user' } });
+  assert.equal(missing.code, 2, detail(missing));
+});
+
+// --- originy: file: poza katalogiem konfiguracji, data:, przekierowanie 302 na .invalid (serwer tylko 127.0.0.1) ---
+
+function runAsync(dir, args) {
+  const base = { ...process.env };
+  for (const k of Object.keys(base)) if (k.startsWith('UI_VERIFY_') || k === 'PLAYWRIGHT_MODULE_PATH') delete base[k];
+  const env = { ...base, UI_VERIFY_CACHE_DIR: g.root, UI_VERIFY_CHROME: chromePath || '' };
+  if (process.env.UI_VERIFY_NO_SANDBOX) env.UI_VERIFY_NO_SANDBOX = process.env.UI_VERIFY_NO_SANDBOX;
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, [SCRIPT, ...args], { cwd: dir, env });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (d) => { stdout += d; });
+    child.stderr.on('data', (d) => { stderr += d; });
+    const timer = setTimeout(() => child.kill(), 240000);
+    child.on('close', (code) => { clearTimeout(timer); resolve({ code, stdout, stderr }); });
+  });
+}
+
+test('e2e originy: file: poza katalogiem konfiguracji i przekierowanie 302 na .invalid sa abortowane, data: przechodzi', { skip: SKIP }, async () => {
+  const dir = project();
+  const outside = fs.mkdtempSync(path.join(tmpRoot, 'outside-'));
+  fs.writeFileSync(path.join(outside, 'pic.svg'), '<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"/>');
+  const hits = [];
+  const server = http.createServer((req, res) => {
+    hits.push(req.url);
+    if (req.url.startsWith('/redirect')) { res.writeHead(302, { Location: 'http://redirect-target.example.invalid/x.js' }); res.end(); return; }
+    res.writeHead(200, { 'Content-Type': 'text/html' });
+    res.end(`<!doctype html><html lang="en"><head><meta charset="utf-8"><title>o</title></head><body><main><p>origins</p>
+<img alt="" src="${pathToFileURL(path.join(outside, 'pic.svg')).href}">
+<img alt="" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='4'/%3E">
+<script src="/redirect.js"></script></main></body></html>`);
+  });
+  await new Promise((resolve) => server.listen(Number(process.env.UI_VERIFY_TEST_PORT || 0), '127.0.0.1', resolve));
+  try {
+    const url = `http://127.0.0.1:${server.address().port}/page.html`;
+    fs.writeFileSync(path.join(dir, 'origins.config.json'), JSON.stringify({ version: 1, pages: [{ id: 'origins', url, assert: { selector: 'main' }, checks: ['console'] }] }));
+    const r = await runAsync(dir, ['--config', 'origins.config.json', 'out']);
+    const file = path.join(dir, 'out', 'a11y.json');
+    assert.ok(fs.existsSync(file), `${r.code}\n${r.stdout}${r.stderr}`);
+    const report = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const warn = report.warnings.find((w) => w.code === 'blocked-origin');
+    assert.ok(warn, JSON.stringify(report.warnings));
+    assert.match(warn.message, /redirect-target\.example\.invalid/);
+    assert.match(warn.message, /file/);
+    assert.ok(!report.warnings.some((w) => /data:/.test(w.message)), 'data: nie jest blokowane');
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test('e2e bezpieczenstwo: selektor poprawny skladniowo z cudzyslowami nie psuje biegu i jest uzyty jako selektor, nie jako kod', { skip: SKIP }, () => {
+  const dir = project();
+  const selector = 'main[title="a\'\\"b"], main';
+  fs.writeFileSync(path.join(dir, 'quote.config.json'), JSON.stringify({ version: 1, pages: [{ id: 'quote', url: 'clean.html', assert: { selector }, checks: ['console'] }] }));
+  const r = audit('quote.config.json', { dir });
+  assert.equal(r.code, 0, detail(r));
+  assert.equal(r.report.pages[0].assertion, 'PASS');
 });

@@ -1,7 +1,9 @@
 // Tests of the pure part of the browser adapter (a11y-page.mjs, a11y-login.mjs) and of its orchestration with fake
 // Playwright objects (call order, origin abort, reload after a mouse click, no splicing of selectors). No browser needed.
-import test from 'node:test';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import vm from 'node:vm';
 import { pathToFileURL } from 'node:url';
@@ -17,7 +19,9 @@ import { measureSample } from '../../library/skills/ui-verify/scripts/lib/a11y-c
 import { validateA11yConfig } from '../../library/skills/ui-verify/scripts/lib/a11y-config.mjs';
 import { makePixelmatchFlagger } from '../../library/skills/ui-verify/scripts/lib/runtime.mjs';
 
-const CONFIG_DIR = path.resolve(path.sep, 'cfg');
+// A real directory: file: URLs are checked with realpath (symlinks), so the configuration directory must exist.
+const CONFIG_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'uv-a11y-page-'));
+after(() => fs.rmSync(CONFIG_DIR, { recursive: true, force: true }));
 const plain = (v) => JSON.parse(JSON.stringify(v));
 
 // ---------- the page script as a constant text ----------
@@ -36,14 +40,17 @@ function runInFakeDom(args, dom) {
   return fn(args).then(plain);
 }
 
-test('skrypt strony: selektor walidowany przez querySelectorAll w try, zly selektor nie wychodzi poza strone', async () => {
+test('skrypt strony: selektor trafia do querySelectorAll dokladnie jako argument (takze z cudzyslowami), zly selektor to false', async () => {
+  const tricky = 'main[title="a\'\\"b"], main';
   const nasty = 'a[title="x"], </script><b>"\'';
-  const dom = { document: { querySelectorAll(sel) { if (sel.includes('<')) throw new SyntaxError('bad selector'); return [{ textContent: 'Hello world', getBoundingClientRect: () => ({ width: 5, height: 5 }) }]; } } };
-  assert.deepEqual(await runInFakeDom({ op: 'validate', selectors: ['main', nasty, 42] }, dom), [true, false, false]);
-  assert.deepEqual(await runInFakeDom({ op: 'assert', selector: nasty }, dom), { found: false });
-  assert.deepEqual(await runInFakeDom({ op: 'assert', selector: 'p', text: 'world' }, dom), { found: true });
-  assert.deepEqual(await runInFakeDom({ op: 'assert', selector: 'p', text: 'absent' }, dom), { found: false });
-  assert.deepEqual(await runInFakeDom({ op: 'assert', selector: 'p' }, dom), { found: true });
+  const seen = [];
+  const dom = { document: { querySelectorAll(sel) { seen.push(sel); if (sel.includes('<')) throw new SyntaxError('bad selector'); return [{ textContent: 'Hello world', getBoundingClientRect: () => ({ width: 5, height: 5 }) }]; } } };
+  assert.deepEqual(await runInFakeDom({ op: 'validate', selectors: ['main', nasty, 42, tricky] }, dom), [true, false, false, true]);
+  assert.deepEqual(seen, ['main', nasty, tricky], 'the page received the selector strings unchanged');
+  assert.equal(await runInFakeDom({ op: 'assertOk', selector: nasty }, dom), false);
+  assert.equal(await runInFakeDom({ op: 'assertOk', selector: tricky, text: 'world' }, dom), true);
+  assert.equal(await runInFakeDom({ op: 'assertOk', selector: 'p', text: 'absent' }, dom), false);
+  assert.equal(await runInFakeDom({ op: 'assertOk', selector: 'p' }, dom), true);
   assert.equal(await runInFakeDom({ op: 'visible', selector: 'p' }, dom), true);
   await assert.rejects(runInFakeDom({ op: 'nope' }, dom), /unknown page operation/);
 });
@@ -315,7 +322,7 @@ function makeEnv({ pageHtml = 'page.html', focus, checks, assert: assertion = { 
 }
 
 // A scripted fake page. `ops` maps a page operation to a function (args, state) => value; `shot(opts, state)` gives the fill of a screenshot.
-function fakeBrowser({ ops, shot, doc = { width: 10, height: 10 }, withPopup = false }) {
+function fakeBrowser({ ops, shot, doc = { width: 10, height: 10 }, withPopup = false, assertPasses = true }) {
   const calls = [];
   const state = { url: '', blurred: false, clicked: false, handlers: {}, routeHandler: null, popupClosed: false, closedPages: 0, closedContext: false, contextOptions: null, routePattern: null };
   const popup = { async close() { state.popupClosed = true; } };
@@ -331,9 +338,15 @@ function fakeBrowser({ ops, shot, doc = { width: 10, height: 10 }, withPopup = f
       if (!handler) throw new Error(`no fake for ${args.op}`);
       return handler(args, state, calls);
     },
-    async waitForFunction(fn, args, opts) { calls.push(['waitFor', args.op, fn === pageScript, opts.timeout]); },
+    async waitForFunction(fn, args, opts) {
+      calls.push(['waitFor', args.op, fn === pageScript, opts.timeout]);
+      if (args.op === 'assertOk' && !assertPasses) throw new Error('timeout');
+    },
     keyboard: { async press(key) { calls.push(['press', key]); } },
-    mouse: { async click(x, y) { calls.push(['click', x, y]); state.clicked = true; } },
+    mouse: {
+      async click(x, y) { calls.push(['click', x, y]); state.clicked = true; },
+      async move(x, y) { calls.push(['move', x, y]); },
+    },
     async screenshot(opts) {
       calls.push(['screenshot', opts]);
       const size = opts.clip ? { w: opts.clip.width, h: opts.clip.height } : { w: doc.width, h: doc.height };
@@ -363,7 +376,7 @@ test('adapter: kolejnosc wywolan, jeden zrzut z ukrytym tekstem, fokus z blur/re
   let tabCall = 0;
   const ops = {
     validate: (a) => a.selectors.map(() => true),
-    assert: () => ({ found: true }),
+    recheck: () => ({ height: 10, shifted: 0 }),
     collect: (a, state) => {
       state.handlers.console(msg('error', 'boom happened'));
       assert.equal(state.routePattern instanceof RegExp, true);
@@ -391,7 +404,8 @@ test('adapter: kolejnosc wywolan, jeden zrzut z ukrytym tekstem, fokus z blur/re
   assert.equal(state.closedPages, 1);
   const names = calls.map((c) => (c[0] === 'evaluate' ? `op:${c[1]}` : c[0]));
   const at = (n, from = 0) => names.indexOf(n, from);
-  assert.deepEqual(names.slice(0, 6), ['newPage', 'goto', 'op:validate', 'op:assert', 'op:collect', 'op:settle']);
+  assert.deepEqual(names.slice(0, 6), ['newPage', 'goto', 'op:validate', 'waitFor', 'op:settle', 'op:collect']);
+  assert.ok(names.indexOf('screenshot') < names.indexOf('op:recheck'), 'layout re-check after the screenshot');
   assert.equal(calls.find((c) => c[0] === 'goto')[2], 60000);
   assert.ok(calls.filter((c) => c[0] === 'evaluate').every((c) => c[2] === true), 'every evaluate uses the fixed page function');
   const full = calls.filter((c) => c[0] === 'screenshot' && c[1].fullPage);
@@ -421,13 +435,13 @@ test('adapter: kolejnosc wywolan, jeden zrzut z ukrytym tekstem, fokus z blur/re
   const codes = result.warnings.map((w) => w.code);
   assert.ok(codes.includes('blocked-origin') && codes.includes('frames-not-audited') && codes.includes('tab-end'), codes.join());
   assert.ok(!JSON.stringify(result.warnings).includes('t=1'));
-  assert.ok(at('press') > at('op:settle'));
+  assert.ok(at('press') > at('op:recheck'));
 });
 
 test('adapter: asercja niespelniona konczy strone bez pomiarow, brak asercji to NONE', async () => {
   const config = makeEnv({});
-  const ops = { validate: () => [true], assert: () => ({ found: false }), collect: () => { throw new Error('must not measure'); } };
-  const a = fakeBrowser({ ops, shot: () => WHITE });
+  const ops = { validate: () => [true], collect: () => { throw new Error('must not measure'); } };
+  const a = fakeBrowser({ ops, shot: () => WHITE, assertPasses: false });
   const failed = await createA11yRunner({ browser: a.browser, imaging, config, configDir: CONFIG_DIR }).auditPage(config.pages[0]);
   assert.deepEqual([failed.assertion, failed.findings.length], ['FAIL', 0]);
   const noAssert = makeEnv({ assert: null, checks: ['console'] });
@@ -451,19 +465,21 @@ test('adapter: zly selektor to A11yPageError z numerem strony, bez cytowania sel
 
   const withWait = makeEnv({ checks: ['console'] });
   withWait.pages[0].waitFor = '#ready';
-  const ok = fakeBrowser({ ops: { validate: (a) => a.selectors.map(() => true), assert: () => ({ found: true }) }, shot: () => WHITE });
+  const ok = fakeBrowser({ ops: { validate: (a) => a.selectors.map(() => true) }, shot: () => WHITE });
   await createA11yRunner({ browser: ok.browser, imaging, config: withWait, configDir: CONFIG_DIR }).auditPage(withWait.pages[0]);
   const names = ok.calls.map((c) => c[0]);
-  assert.ok(names.indexOf('waitFor') > names.indexOf('goto') && names.indexOf('waitFor') < names.lastIndexOf('evaluate'));
+  assert.ok(names.indexOf('waitFor') > names.indexOf('goto'));
   assert.deepEqual(ok.calls.find((c) => c[0] === 'waitFor').slice(1), ['visible', true, 10000]);
+  assert.ok(ok.calls.some((c) => c[0] === 'waitFor' && c[1] === 'assertOk'), 'the assertion is polled, not checked once');
 });
 
 test('adapter: strona wyzsza niz 16000 px dzielona na klipy 4000 px, piksele z wlasciwego klipu', async () => {
   const config = makeEnv({ checks: ['contrast'] });
   const ops = {
-    validate: () => [true], assert: () => ({ found: true }),
+    validate: () => [true],
     collect: () => ({ frames: 0, dir: 'ltr', contrast: { truncated: false, items: [rawItem({ id: 'deep', rects: [[2, 4500, 4, 2]] })] } }),
     settle: () => ({ width: 20, height: 20000 }),
+    recheck: () => ({ height: 20000, shifted: 0 }),
   };
   const shot = (opts) => (opts.clip ? 50 + opts.clip.y / CHUNK_PX : 0);
   const { browser, calls } = fakeBrowser({ ops, shot, doc: { width: 20, height: 20000 } });
@@ -478,7 +494,7 @@ test('adapter: strona wyzsza niz 16000 px dzielona na klipy 4000 px, piksele z w
 test('adapter: strona ponad limitami to UNVERIFIED page-too-tall bez zrzutu, ucieta lista to truncated', async () => {
   const config = makeEnv({ checks: ['contrast'] });
   const ops = {
-    validate: () => [true], assert: () => ({ found: true }),
+    validate: () => [true],
     collect: () => ({ frames: 0, dir: 'ltr', contrast: { truncated: true, items: [rawItem(), rawItem({ id: 'hid', hidden: true })] } }),
     settle: () => ({ width: 800, height: 70000 }),
   };
@@ -492,7 +508,7 @@ test('adapter: strona ponad limitami to UNVERIFIED page-too-tall bez zrzutu, uci
 test('adapter: mysz tylko wg konfiguracji, przeladowanie po kliknieciu, popup zamkniety, nawigacja to UNVERIFIED', async () => {
   const config = makeEnv({ checks: ['focus'], focus: { mouse: { mode: 'forbid', selectors: ['#go', '#nav'] } } });
   const ops = {
-    validate: (a) => a.selectors.map(() => true), assert: () => ({ found: true }),
+    validate: (a) => a.selectors.map(() => true),
     resetFocus: () => true, active: () => ({ kind: 'body' }),
     reveal: (a) => ({ found: true, id: a.selector.slice(1), idUnique: true, chain: [], vr: { x: 10, y: 10, width: 50, height: 20 } }),
   };
@@ -505,6 +521,9 @@ test('adapter: mysz tylko wg konfiguracji, przeladowanie po kliknieciu, popup za
   const gotos = calls.filter((c) => c[0] === 'goto').length;
   assert.equal(gotos, 3, 'initial load plus a reload before every mouse selector');
   assert.equal(state.popupClosed, true);
+  assert.deepEqual(calls.filter((c) => c[0] === 'move').map((c) => c.slice(1)), [[1279, 799], [1279, 799]], 'pointer parked away from the element before the "after" shot');
+  const order = calls.map((c) => c[0]).filter((n) => ['click', 'move', 'screenshot'].includes(n)).join();
+  assert.match(order, /screenshot,click,move,screenshot/);
   assert.deepEqual(calls.filter((c) => c[0] === 'click').map((c) => c.slice(1)), [[35, 20], [35, 20]]);
   const mouse = result.findings.filter((f) => f.rule === 'focus-mouse-ring');
   assert.deepEqual(mouse.map((f) => [f.selector, f.verdict]), [['#go', 'FAIL'], ['#nav', 'UNVERIFIED']]);
@@ -515,7 +534,7 @@ test('adapter: mysz tylko wg konfiguracji, przeladowanie po kliknieciu, popup za
 
 test('adapter: bez focus.mouse nie ma klikniec; kontrola focus bez mouse nie wymaga selektorow', async () => {
   const config = makeEnv({ checks: ['focus'] });
-  const ops = { validate: () => [true], assert: () => ({ found: true }), resetFocus: () => true, active: () => ({ kind: 'body' }) };
+  const ops = { validate: () => [true], resetFocus: () => true, active: () => ({ kind: 'body' }) };
   const { browser, calls } = fakeBrowser({ ops, shot: () => WHITE });
   await createA11yRunner({ browser, imaging, config, configDir: CONFIG_DIR }).auditPage(config.pages[0]);
   assert.ok(!calls.some((c) => c[0] === 'click'));
@@ -580,4 +599,83 @@ test('raport z --expect: kod z porownania, element spoza listy nie wplywa, brak 
   assert.equal(missing.exit, 3);
   const mismatch = assembleReport({ ...base, expected: { elements: [{ selector: '#pass', ratio: 9, verdict: 'PASS' }] } });
   assert.equal(mismatch.exit, 1);
+});
+
+test('adapter: cel myszy zakryty przez inny element nie jest klikany, ostrzezenie mouse-occluded', async () => {
+  const config = makeEnv({ checks: ['focus'], focus: { mouse: { mode: 'report', selectors: ['#go'] } } });
+  const ops = {
+    validate: (a) => a.selectors.map(() => true), resetFocus: () => true, active: () => ({ kind: 'body' }),
+    reveal: () => ({ found: true, id: 'go', idUnique: true, chain: [], covered: true, vr: { x: 10, y: 10, width: 50, height: 20 } }),
+  };
+  const { browser, calls } = fakeBrowser({ ops, shot: () => WHITE });
+  const result = await createA11yRunner({ browser, imaging, config, configDir: CONFIG_DIR }).auditPage(config.pages[0]);
+  assert.ok(!calls.some((c) => c[0] === 'click'));
+  assert.ok(result.warnings.some((w) => w.code === 'mouse-occluded'));
+  assert.deepEqual(result.findings.filter((f) => f.rule === 'focus-mouse-ring').map((f) => [f.verdict, f.reason]), [['UNVERIFIED', 'occluded']]);
+});
+
+test('adapter: zmiana ukladu miedzy pomiarem a zrzutem to UNVERIFIED layout-shift bez wynikow pomiarowych', async () => {
+  const config = makeEnv({ checks: ['contrast'] });
+  const mk = (recheck) => ({
+    validate: () => [true],
+    collect: () => ({ frames: 0, dir: 'ltr', contrast: { truncated: false, items: [rawItem(), rawItem({ id: 'hid', hidden: true })] } }),
+    settle: () => ({ width: 10, height: 10 }), recheck,
+  });
+  for (const recheck of [() => ({ height: 12, shifted: 0 }), () => ({ height: 10, shifted: 1 })]) {
+    const { browser } = fakeBrowser({ ops: mk(recheck), shot: () => WHITE });
+    const r = await createA11yRunner({ browser, imaging, config, configDir: CONFIG_DIR }).auditPage(config.pages[0]);
+    assert.deepEqual(r.findings.map((f) => [f.verdict, f.reason]), [['EXEMPT', 'not-rendered'], ['UNVERIFIED', 'layout-shift']]);
+    assert.ok(r.warnings.some((w) => w.code === 'layout-shift'));
+  }
+});
+
+test('adapter: etykieta z kontrolka nie jest przystankiem Tab (kandydat ukryty), notka sampled przy uciecich prostokatach', async () => {
+  assert.equal(toCandidate({ key: 'k1', id: 'l', idUnique: true, chain: [], focusable: false }).hidden, true);
+  assert.equal(toCandidate({ key: 'k1', id: 'l', idUnique: true, chain: [] }).hidden, false);
+  const config = makeEnv({ checks: ['contrast'] });
+  const ops = {
+    validate: () => [true],
+    collect: () => ({ frames: 0, dir: 'ltr', contrast: { truncated: false, items: [rawItem({ rectsCut: true }), rawItem({ id: 'b', rects: [[0, 0, 4, 2]] })] } }),
+    settle: () => ({ width: 10, height: 10 }), recheck: () => ({ height: 10, shifted: 0 }),
+  };
+  const { browser } = fakeBrowser({ ops, shot: () => WHITE });
+  const r = await createA11yRunner({ browser, imaging, config, configDir: CONFIG_DIR }).auditPage(config.pages[0]);
+  assert.deepEqual(r.findings.map((f) => f.note), ['sampled', undefined]);
+});
+
+test('adapter: ostrzezenia o ramkach i zamknietym shadow DOM, plik z symlinku poza katalogiem jest blokowany', async () => {
+  const config = makeEnv({ checks: ['contrast'] });
+  const ops = {
+    validate: () => [true], settle: () => ({ width: 10, height: 10 }),
+    collect: () => ({ frames: 2, dir: 'ltr', closedShadowGuess: 3, openShadowRoots: 1, contrast: { truncated: false, items: [] } }),
+  };
+  const { browser } = fakeBrowser({ ops, shot: () => WHITE });
+  const r = await createA11yRunner({ browser, imaging, config, configDir: CONFIG_DIR }).auditPage(config.pages[0]);
+  assert.deepEqual(r.warnings.map((w) => w.code), ['frames-not-audited', 'shadow-not-audited']);
+  assert.match(r.warnings[1].message, /3 custom element/);
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'uv-a11y-outside-'));
+  fs.writeFileSync(path.join(outside, 'secret.txt'), 'x');
+  try {
+    fs.symlinkSync(outside, path.join(CONFIG_DIR, 'link'));
+    assert.equal(routeDecision(pathToFileURL(path.join(CONFIG_DIR, 'link', 'secret.txt')).href, { configDir: CONFIG_DIR }).allow, false);
+  } catch (e) {
+    if (e.code !== 'EPERM') throw e; // symlinks may be unavailable (Windows without privileges)
+  } finally {
+    fs.rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+test('konsola: wlasny komunikat aplikacji zaczynajacy sie od "Failed to load resource" jest wykrywany, wzorzec Chrome nie; dlugi tekst z wieloma adresami szybko', () => {
+  const c = createConsoleCollector();
+  c.onConsole(msg('error', 'Failed to load resource: the server responded with a status of 404 ()', 'http://localhost/x'));
+  c.onConsole(msg('error', 'Failed to load resource: net::ERR_CONNECTION_REFUSED', 'http://localhost/y'));
+  c.onConsole(msg('error', 'Failed to load resource bundle for locale pl'));
+  assert.deepEqual(c.result().list.map((e) => e.message), ['console.error: Failed to load resource bundle for locale pl']);
+  const hostile = 'http://'.repeat(300000);
+  const started = process.hrtime.bigint();
+  const text = redactUrlQueries(hostile);
+  c.onConsole(msg('error', hostile));
+  const ms = Number(process.hrtime.bigint() - started) / 1e6;
+  assert.ok(text.length <= 2000 + 20 && ms < 1000, `${text.length} chars, ${ms} ms`);
+  assert.ok(c.result().list.every((e) => e.message.length < 2100));
 });

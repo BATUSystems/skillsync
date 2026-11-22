@@ -9,6 +9,10 @@ button:focus-visible{outline:3px solid #005fcc;outline-offset:2px}
 .row{display:flex;gap:8px;margin-bottom:16px}
 .tiny{box-sizing:border-box;width:32px;height:32px;padding:0;margin:0}
 #no-focus{padding:8px 16px}
+form{margin:0 0 16px}
+label{display:inline-flex;align-items:center;gap:8px;min-height:28px;padding:0 4px}
+input[type=text]{box-sizing:border-box;width:200px;height:28px;font:inherit;color:#111;background:#fff;border:1px solid #666}
+input:focus-visible{outline:3px solid #005fcc;outline-offset:2px}
 #bg-text{display:block;width:320px;padding:8px 12px;color:#1a1a1a;background:#fff}
 </style></head><body>
 <main>
@@ -20,6 +24,10 @@ button:focus-visible{outline:3px solid #005fcc;outline-offset:2px}
 </div>
 <p><button id="no-focus" type="button">Visible focus indicator</button></p>
 <p><button id="positive-tabindex" type="button" style="padding:8px 16px">Natural tab order</button></p>
+<form onsubmit="return false">
+<p><label for="name">Your name</label> <input type="text" id="name"></p>
+<p><label class="check"><input type="checkbox" id="agree"> I agree to the terms</label></p>
+</form>
 <p id="bg-text">Text on a solid background</p>
 </main>
 </body></html>

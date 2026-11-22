@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>a11y huge</title>
+<style>
+html,body{margin:0;background:#fff;color:#1a1a1a;font:16px/1.4 Arial,Helvetica,sans-serif}
+main{height:24000px;position:relative}
+.band{position:absolute;left:0;width:100%;height:60px;background:#101820}
+.t{position:absolute;left:16px;margin:0;height:20px;line-height:20px}
+.seam{color:#f5f5f5}
+.bad{color:#c0c0c0}
+</style></head><body>
+<main>
+<div class="band" style="top:3980px"></div><p class="t seam" id="seam-4000" style="top:3990px">Straddles the first clip seam at 4000 px</p>
+<div class="band" style="top:15980px"></div><p class="t seam" id="seam-16000" style="top:15990px">Straddles the seam at 16000 px</p>
+<p class="t bad" id="fail-deep" style="top:21000px">Pale text deep in the last clips</p>
+<p class="t" id="ok-last" style="top:23900px">Last line of the page</p>
+</main>
+</body></html>

@@ -189,3 +189,24 @@ test('classifyMouse waliduje diffPx jak klawiatura', () => {
   assert.throws(() => classifyMouse({ mode: 'report', diffPx: -1 }));
   assert.throws(() => classifyMouse({ mode: 'report', diffPx: NaN }));
 });
+
+test('Tab wchodzi do ramki, ktorej nie da sie sledzic (outside): nieodwiedzone cele to UNVERIFIED tab-frame, nie FAIL', () => {
+  const raw = [step('a'), step('b'), { key: 'outside', selector: 'outside', kind: 'outside' }];
+  const r = analyzeTab({ raw, candidates: [cand('a'), cand('b'), cand('c'), cand('d')] });
+  assert.equal(r.end, 'outside');
+  assert.deepEqual(r.findings.map((f) => [f.rule, f.verdict, f.reason]), [['tab-unreachable', 'UNVERIFIED', 'tab-frame']]);
+  assert.match(r.findings[0].message, /2 target\(s\)/);
+  assert.equal(analyzeTab({ raw, candidates: [cand('a'), cand('b')] }).findings.length, 0, 'everything visited: nothing to verify');
+  // koniec przez body (wrap) zachowuje stare zachowanie: nieodwiedzony cel to FAIL
+  const wrapped = analyzeTab({ raw: [step('a'), { key: 'body', selector: 'body', kind: 'body' }], candidates: [cand('a'), cand('c')] });
+  assert.deepEqual(wrapped.findings.map((f) => f.verdict), ['FAIL']);
+});
+
+test('host shadow DOM i same-origin iframe: kroki wewnatrz maja rozne klucze, wiec trzy przystanki hosta nie sa pulapka', () => {
+  const inner = (n) => step(`h${n}`, 0, n * 30, { selector: `div > my-widget > button:nth-of-type(${n})` });
+  const raw = [step('a'), inner(1), inner(2), inner(3), step('z'), step('a')];
+  const r = analyzeTab({ raw, candidates: [cand('a'), cand('h1'), cand('h2'), cand('h3'), cand('z')] });
+  assert.equal(r.end, 'wrapped');
+  assert.deepEqual(r.findings.filter((f) => f.rule === 'tab-trap'), []);
+  assert.deepEqual(r.findings.filter((f) => f.verdict === 'FAIL'), []);
+});

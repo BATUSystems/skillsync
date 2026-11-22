@@ -1,0 +1,15 @@
+{
+ "version": 1,
+ "pages": [
+  {
+   "id": "too-tall",
+   "url": "too-tall.html",
+   "assert": {
+    "selector": "main"
+   },
+   "checks": [
+    "contrast"
+   ]
+  }
+ ]
+}

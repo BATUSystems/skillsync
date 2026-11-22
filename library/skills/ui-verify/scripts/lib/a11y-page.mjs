@@ -1,8 +1,9 @@
 // Browser adapter of the accessibility audit. Three parts: (1) the fixed page script (page.evaluate, data only as arguments),
 // (2) pure helpers that turn raw page data into contrast samples, targets, Tab steps and findings, (3) the Playwright
 // orchestration of one page. The page script is a function WITHOUT closures: Playwright sends its source text to the page.
-import { pathToFileURL } from 'node:url';
-import { checkOrigin } from './policy.mjs';
+import nodeFs from 'node:fs';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { assertRealInside, checkOrigin } from './policy.mjs';
 import { decodePng, makePixelmatchFlagger } from './runtime.mjs';
 import { LIMITS, cleanText, reportSelector } from './a11y-schema.mjs';
 import { measureSample } from './a11y-contrast.mjs';
@@ -35,7 +36,7 @@ export const PIXEL_THRESHOLD = 0.1;
 export const HIDE_TEXT_CSS = '*, *::before, *::after, ::first-letter, ::first-line, ::marker, ::placeholder, ::file-selector-button { color: transparent !important; -webkit-text-fill-color: transparent !important; -webkit-text-stroke: 0 !important; text-shadow: none !important; text-decoration-color: transparent !important; text-emphasis-color: transparent !important; caret-color: transparent !important }';
 
 // ---------------------------------------------------------------------------------------------------------------
-// Part 1: the page script. Operations (args.op): validate, visible, assert, settle, collect, resetFocus, active, blur,
+// Part 1: the page script. Operations (args.op): validate, visible, assertOk, settle, recheck, collect, resetFocus, active, blur,
 // refocus, reveal. Everything that leaves the page is data (numbers, short strings); DOM nodes never do.
 // ---------------------------------------------------------------------------------------------------------------
 export async function pageScript(args) {
@@ -56,6 +57,52 @@ export async function pageScript(args) {
     try { return { list: Array.from(document.querySelectorAll(sel)) }; } catch { return null; }
   };
 
+  // Flat-tree parent: the parent element, or the host of a shadow root, or the frame element of a frame document.
+  const up = (n) => {
+    if (n.parentElement) return n.parentElement;
+    const root = n.getRootNode ? n.getRootNode() : null;
+    if (root && root.host) return root.host;
+    try { return n.ownerDocument.defaultView.frameElement || null; } catch { return null; }
+  };
+  const isRelated = (hit, el) => {
+    if (el.contains(hit)) return true;
+    for (let n = el, i = 0; n && i < 200; n = up(n), i++) if (n === hit) return true;
+    return false;
+  };
+  // Open shadow roots (depth up to 10, no loops) and a count of custom elements that may hide a closed shadow root.
+  const rootsInfo = { roots: null, closedGuess: 0 };
+  const deepRoots = () => {
+    if (rootsInfo.roots) return rootsInfo.roots;
+    const roots = [document];
+    const depth = new Map([[document, 0]]);
+    for (let i = 0; i < roots.length && roots.length < 2000; i++) {
+      for (const e of roots[i].querySelectorAll('*')) {
+        if (e.shadowRoot) {
+          if (!depth.has(e.shadowRoot) && depth.get(roots[i]) < 10) { depth.set(e.shadowRoot, depth.get(roots[i]) + 1); roots.push(e.shadowRoot); }
+        } else if (e.tagName.includes('-') && e.childNodes.length === 0) rootsInfo.closedGuess += 1;
+      }
+    }
+    rootsInfo.roots = roots;
+    return roots;
+  };
+  const deepAll = (sel) => deepRoots().flatMap((r) => Array.from(r.querySelectorAll(sel)));
+  // Rectangle of an element in the viewport of the top window (frames add the offset of their frame element).
+  const absRect = (el) => {
+    const r = el.getBoundingClientRect();
+    let x = r.left;
+    let y = r.top;
+    try {
+      for (let w = el.ownerDocument.defaultView; w && w !== globalThis && w.frameElement; w = w.parent) {
+        const f = w.frameElement;
+        const fr = f.getBoundingClientRect();
+        const fs = getComputedStyle(f);
+        x += fr.left + f.clientLeft + num(fs.paddingLeft, 0);
+        y += fr.top + f.clientTop + num(fs.paddingTop, 0);
+      }
+    } catch { /* cross-origin frame */ }
+    return { left: x, top: y, width: r.width, height: r.height, right: x + r.width, bottom: y + r.height };
+  };
+
   // Selector parts for the report (built by the caller): the id (when unique) and the tag/nth-of-type chain.
   let idCounts = null;
   const idUnique = (id) => {
@@ -67,13 +114,13 @@ export async function pageScript(args) {
   };
   const describe = (el) => {
     const chain = [];
-    for (let n = el; n && n.nodeType === 1 && chain.length < 64; n = n.parentElement) {
+    for (let n = el; n && n.nodeType === 1 && chain.length < 64; n = up(n)) {
       let nth = 1;
       for (let s = n.previousElementSibling; s; s = s.previousElementSibling) if (s.tagName === n.tagName) nth += 1;
-      chain.unshift({ tag: n.tagName.toLowerCase(), nth });
+      chain.unshift({ tag: cut(n.tagName.toLowerCase(), 200), nth });
     }
     const id = typeof el.id === 'string' && el.id.length <= 200 ? el.id : '';
-    return { id, idUnique: id !== '' && idUnique(id), chain };
+    return { id, idUnique: id !== '' && el.getRootNode() === document && idUnique(id), chain };
   };
 
   // Colour to sRGB through a canvas 2D context; null when the value cannot be converted.
@@ -118,7 +165,7 @@ export async function pageScript(args) {
   const walkUp = (el, own) => {
     const out = { opacity: 1, group: false, filter: false, clipText: false, hidden: own.visibility !== 'visible' };
     const path = [];
-    for (let n = el; n && n.nodeType === 1; n = n.parentElement) {
+    for (let n = el; n && n.nodeType === 1; n = up(n)) {
       const s = n === el ? own : getComputedStyle(n);
       path.push(s);
       if (s.display === 'none') out.hidden = true;
@@ -193,6 +240,7 @@ export async function pageScript(args) {
       inactive: inactiveOf(el),
       flags: { filter: up.filter, clipText: up.clipText, group: up.group, important, autofill: autofillOf(el), media: false, hit: null },
       rects: docRects(rects),
+      rectsCut: rects.length > 40,
     };
   };
 
@@ -205,7 +253,7 @@ export async function pageScript(args) {
     return () => { if (prev) el.style.setProperty('pointer-events', prev, pri); else el.style.removeProperty('pointer-events'); };
   };
   const clippedByAncestor = (el, r, sx, sy) => {
-    for (let n = el.parentElement; n && n !== document.body && n !== document.documentElement; n = n.parentElement) {
+    for (let n = up(el); n && n !== document.body && n !== document.documentElement; n = up(n)) {
       const s = getComputedStyle(n);
       if (s.overflowX === 'visible' && s.overflowY === 'visible') continue;
       const b = n.getBoundingClientRect();
@@ -223,7 +271,7 @@ export async function pageScript(args) {
       for (const [x, y] of pts) {
         const hit = document.elementFromPoint(...at(x, y));
         if (!hit) { it.flags.hit = it.flags.hit || 'clipped'; continue; }
-        if (hit !== it.el && !it.el.contains(hit) && !hit.contains(it.el)) it.flags.hit = it.flags.hit || (clippedByAncestor(it.el, r, sx, sy) ? 'clipped' : 'occluded');
+        if (hit !== it.el && !isRelated(hit, it.el) && !hit.contains(it.el)) it.flags.hit = it.flags.hit || (clippedByAncestor(it.el, r, sx, sy) ? 'clipped' : 'occluded');
       }
       if (document.elementsFromPoint(...at(g.cx, g.cy)).some((e) => MEDIA.has(upper(e)))) it.flags.media = true;
     } finally {
@@ -259,13 +307,15 @@ export async function pageScript(args) {
 
   const collectContrast = (limit) => {
     const owners = new Set();
-    const walker = document.createTreeWalker(document.body || document.documentElement, NodeFilter.SHOW_TEXT);
-    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
-      const p = n.parentElement;
-      if (p && n.data.trim() !== '' && !SKIP_TEXT.has(upper(p))) owners.add(p);
+    for (const root of deepRoots()) {
+      const walker = document.createTreeWalker(root === document ? (document.body || document.documentElement) : root, NodeFilter.SHOW_TEXT);
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+        const p = n.parentElement;
+        if (p && n.data.trim() !== '' && !SKIP_TEXT.has(upper(p))) owners.add(p);
+      }
     }
     const list = Array.from(owners, (el) => ({ el, kind: 'text' }));
-    for (const f of document.querySelectorAll('input, textarea, select')) {
+    for (const f of deepAll('input, textarea, select')) {
       const tag = upper(f);
       if (tag === 'INPUT' && NO_TEXT_INPUT.has((f.type || '').toLowerCase())) continue;
       const hasValue = tag === 'SELECT' ? Boolean(f.selectedOptions[0] && f.selectedOptions[0].text.trim() !== '') : f.value !== '';
@@ -274,6 +324,7 @@ export async function pageScript(args) {
     }
     const items = list.slice(0, limit).map((x) => contrastItem(x.el, x.kind));
     hitPass(items);
+    store.contrast = items.map((it) => ({ el: it.el, kind: it.kind, rect: it.rects[0] || null }));
     return { truncated: list.length > limit, items: items.map(({ el, ...rest }) => rest) };
   };
 
@@ -301,7 +352,7 @@ export async function pageScript(args) {
     return size;
   };
   const boxOf = (el) => {
-    const r = el.getBoundingClientRect();
+    const r = absRect(el);
     const [sx, sy] = scrollNow();
     return { x: q2(r.left + sx), y: q2(r.top + sy), width: q2(r.width), height: q2(r.height) };
   };
@@ -324,6 +375,7 @@ export async function pageScript(args) {
     return {
       key: keyOf(el),
       ...describe(el),
+      focusable: tag !== 'LABEL',
       box,
       display: cs.display,
       parentHasText: Array.from(el.parentNode ? el.parentNode.childNodes : []).some((n) => n.nodeType === 3 && n.data.trim() !== ''),
@@ -335,14 +387,14 @@ export async function pageScript(args) {
       inert: el.closest('[inert]') !== null,
       inClosedDetails: Boolean(details) && !(tag === 'SUMMARY' && el.parentElement === details),
       inModal: el.closest('[role="dialog"][aria-modal="true"], dialog[open]') !== null,
-      radioGroup: type === 'radio' && el.name ? `${el.form ? keyOf(el.form) : 'doc'}|${el.name}` : null,
+      radioGroup: type === 'radio' && el.name ? `${el.form ? keyOf(el.form) : 'doc'}|${cut(el.name, 200)}` : null,
       radioChecked: type === 'radio' && el.checked === true,
     };
   };
   const collectTargets = (limit) => {
     const items = [];
     let truncated = false;
-    for (const el of document.querySelectorAll(TARGET_SELECTOR)) {
+    for (const el of deepAll(TARGET_SELECTOR)) {
       if (upper(el) === 'LABEL' && !el.control) continue;
       const cs = getComputedStyle(el);
       const r = el.getBoundingClientRect();
@@ -354,10 +406,20 @@ export async function pageScript(args) {
   };
 
   const activeInfo = () => {
-    const a = document.activeElement;
+    let a = document.activeElement;
     if (!a || a === document.body || a === document.documentElement) return { kind: 'body' };
-    if (['IFRAME', 'FRAME'].includes(upper(a))) return { kind: 'outside' };
-    const r = a.getBoundingClientRect();
+    // Descend into open shadow roots and same-origin frames: the innermost focused element is the Tab stop.
+    for (let depth = 0; depth < 10; depth++) {
+      if (a.shadowRoot && a.shadowRoot.activeElement) { a = a.shadowRoot.activeElement; continue; }
+      if (['IFRAME', 'FRAME'].includes(upper(a))) {
+        let inner = null;
+        try { inner = a.contentDocument && a.contentDocument.activeElement; } catch { inner = null; }
+        if (inner === null && !a.contentDocument) return { kind: 'outside' };
+        if (inner && inner !== inner.ownerDocument.body && inner !== inner.ownerDocument.documentElement) { a = inner; continue; }
+      }
+      break;
+    }
+    const r = absRect(a);
     const s = getComputedStyle(a);
     const raw = a.getAttribute('tabindex');
     const ti = raw === null ? NaN : parseInt(raw, 10);
@@ -391,28 +453,47 @@ export async function pageScript(args) {
       const r = el.getBoundingClientRect();
       return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility === 'visible';
     }
-    case 'assert': {
+    case 'assertOk': {
       const found = typeof args.selector === 'string' ? trySelector(args.selector) : null;
-      if (!found) return { found: false };
-      if (typeof args.text !== 'string') return { found: found.list.length > 0 };
-      return { found: found.list.some((e) => (e.textContent || '').includes(args.text)) };
+      if (!found) return false;
+      if (typeof args.text !== 'string') return found.list.length > 0;
+      return found.list.some((e) => (e.textContent || '').includes(args.text));
     }
     case 'settle': {
+      // Fonts, then one pass over the whole document (lazy images load when they come into view), then every image decoded.
       if (document.fonts && document.fonts.ready) await document.fonts.ready;
       const vw = globalThis.innerWidth;
       const vh = globalThis.innerHeight;
-      const inView = Array.from(document.images).filter((i) => { const r = i.getBoundingClientRect(); return r.bottom > 0 && r.top < vh && r.right > 0 && r.left < vw; });
-      await Promise.all(inView.map((i) => (i.decode ? i.decode().catch(() => undefined) : undefined)));
-      return {
-        width: Math.max(document.documentElement.scrollWidth, document.body ? document.body.scrollWidth : 0, vw),
-        height: Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0, vh),
-      };
+      const docH = () => Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0, vh);
+      const pause = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
+      for (let y = 0, steps = 0; y < docH() && steps < 200; y += vh, steps++) {
+        jump(0, y);
+        await pause(30);
+      }
+      jump(0, 0);
+      const decode = Promise.all(Array.from(document.images).map((i) => (i.decode ? i.decode().catch(() => undefined) : undefined)));
+      await Promise.race([decode, pause(5000)]);
+      return { width: Math.max(document.documentElement.scrollWidth, document.body ? document.body.scrollWidth : 0, vw), height: docH() };
+    }
+    case 'recheck': {
+      // After the screenshot: did the document or a sampled rectangle move (late content, scripts)?
+      let shifted = 0;
+      for (const it of store.contrast || []) {
+        if (!it.el.isConnected) { shifted += 1; continue; }
+        const rs = it.kind === 'text' ? textRects(it.el) : contentBox(it.el, getComputedStyle(it.el));
+        const now = rs.length ? docRects(rs)[0] : null;
+        if (!it.rect || !now || now.some((v, k) => Math.abs(v - it.rect[k]) > 1)) shifted += 1;
+      }
+      return { height: Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0, globalThis.innerHeight), shifted };
     }
     case 'collect': {
       jump(0, 0);
-      const out = { frames: document.querySelectorAll('iframe, frame').length, dir: getComputedStyle(document.documentElement).direction };
+      const out = { frames: document.querySelectorAll('iframe, frame').length, dir: getComputedStyle(document.body || document.documentElement).direction };
       if (args.want.targets) out.targets = collectTargets(args.limits.targets);
       if (args.want.contrast) out.contrast = collectContrast(args.limits.contrast);
+      deepRoots();
+      out.closedShadowGuess = rootsInfo.closedGuess;
+      out.openShadowRoots = rootsInfo.roots.length - 1;
       return out;
     }
     case 'resetFocus':
@@ -435,7 +516,8 @@ export async function pageScript(args) {
       if (!el) return { found: false };
       el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
       const r = el.getBoundingClientRect();
-      return { found: true, ...describe(el), vr: { x: r.left, y: r.top, width: r.width, height: r.height } };
+      const hit = document.elementFromPoint(Math.min(Math.max(r.left + r.width / 2, 0), globalThis.innerWidth - 1), Math.min(Math.max(r.top + r.height / 2, 0), globalThis.innerHeight - 1));
+      return { found: true, ...describe(el), covered: !hit || !isRelated(hit, el), vr: { x: r.left, y: r.top, width: r.width, height: r.height } };
     }
     default:
       throw new Error('unknown page operation');
@@ -581,7 +663,7 @@ export function targetFindings(raws) {
 export function toCandidate(raw) {
   return {
     key: raw.key, selector: selectorOf(raw), tabindex: raw.tabindex ?? null, disabled: raw.disabled === true, inert: raw.inert === true,
-    inClosedDetails: raw.inClosedDetails === true, hidden: false, inModal: raw.inModal === true, radioGroup: raw.radioGroup || null, radioChecked: raw.radioChecked === true,
+    inClosedDetails: raw.inClosedDetails === true, hidden: raw.focusable === false, inModal: raw.inModal === true, radioGroup: raw.radioGroup || null, radioChecked: raw.radioChecked === true,
   };
 }
 
@@ -608,6 +690,11 @@ export function focusClip(vr, viewport, pad = FOCUS_PAD_PX) {
   return x1 > x0 && y1 > y0 ? { x: x0, y: y0, width: x1 - x0, height: y1 - y0 } : null;
 }
 
+// A pointer position in the viewport corner farthest from the clip.
+export function parkPoint(clip, viewport) {
+  return { x: clip.x + clip.width / 2 > viewport.width / 2 ? 1 : viewport.width - 1, y: clip.y + clip.height / 2 > viewport.height / 2 ? 1 : viewport.height - 1 };
+}
+
 // Number of different pixels between two decoded images of the same size; null when the sizes differ.
 export function diffPixels(flagger, a, b) {
   if (a.width !== b.width || a.height !== b.height) return null;
@@ -625,18 +712,30 @@ export function keyboardFinding(info, diffPx, minDiffPx) {
 
 // ----- console, requests and origins -----
 
+const MAX_MESSAGE_SOURCE = 2000;
 export const stripQuery = (url) => String(url).split(/[?#]/)[0];
 export const isFavicon = (url) => /^[a-z][a-z0-9+.-]*:\/\/[^/]*\/favicon\.ico$/i.test(stripQuery(url));
 
 // A query string or fragment of a URL inside a message can carry a token: it is replaced.
 export function redactUrlQueries(text) {
-  return String(text).replace(/(\b(?:https?|file|wss?):\/\/[^\s?#'"]*)[?#][^\s'"]*/gi, '$1?<redacted>');
+  return String(text).slice(0, MAX_MESSAGE_SOURCE).replace(/(\b(?:https?|file|wss?):\/\/[^\s?#'"]*)[?#][^\s'"]*/gi, '$1?<redacted>');
+}
+
+// A file: URL must stay inside the configuration directory also after resolving symlinks.
+function fileInside(url, configDir) {
+  if (!/^file:/i.test(String(url))) return true;
+  try {
+    assertRealInside(configDir, fileURLToPath(url), nodeFs);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // Requests to other origins are aborted; data:, blob: and about: carry no network access.
 export function routeDecision(url, { configDir, allowOrigins = [] } = {}) {
   if (/^(?:data|blob|about):/i.test(String(url))) return { allow: true };
-  if (checkOrigin(url, { configDir, allow: allowOrigins }).ok) return { allow: true };
+  if (checkOrigin(url, { configDir, allow: allowOrigins }).ok && fileInside(url, configDir)) return { allow: true };
   let host = 'unknown';
   try {
     host = new URL(String(url)).hostname || String(url).split(':')[0];
@@ -664,7 +763,7 @@ export function createConsoleCollector({ maxMessages = LIMITS.messages } = {}) {
   const list = [];
   let truncated = false;
   const add = (level, text) => {
-    const message = redactUrlQueries(text);
+    const message = redactUrlQueries(String(text).slice(0, MAX_MESSAGE_SOURCE));
     const k = `${level}|${message}`;
     if (seen.has(k)) { seen.get(k).count += 1; return; }
     if (list.length >= maxMessages) { truncated = true; return; }
@@ -680,7 +779,7 @@ export function createConsoleCollector({ maxMessages = LIMITS.messages } = {}) {
       const type = msg.type();
       if (type !== 'error' && type !== 'warning') return;
       const text = String(msg.text());
-      if (/^Failed to load resource/i.test(text) || isFavicon(locationUrl(msg))) return; // network failures are reported by the request events
+      if (/^Failed to load resource: (?:the server responded with a status of|net::ERR_)/i.test(text) || isFavicon(locationUrl(msg))) return; // network failures are reported by the request events
       add(type === 'error' ? 'error' : 'warning', `console.${type}: ${text}`);
     },
     onPageError(err) { add('error', `pageerror: ${err && err.message ? err.message : String(err)}`); },
@@ -749,8 +848,12 @@ async function validateSelectors(page, spec, config) {
 
 async function runAssertion(page, spec) {
   if (!spec.assert) return 'NONE';
-  const r = await callPage(page, { op: 'assert', selector: spec.assert.selector, text: spec.assert.text });
-  return r && r.found === true ? 'PASS' : 'FAIL';
+  try {
+    await page.waitForFunction(pageScript, { op: 'assertOk', selector: spec.assert.selector, text: spec.assert.text }, { timeout: ACTION_TIMEOUT_MS });
+    return 'PASS';
+  } catch {
+    return 'FAIL';
+  }
 }
 
 async function phaseContrast(env, raw, warnings) {
@@ -761,17 +864,27 @@ async function phaseContrast(env, raw, warnings) {
   const findings = [];
   let tooTall = false;
   if (todo.length > 0) {
-    const plan = planClips(await callPage(env.page, { op: 'settle' }));
+    const plan = planClips(env.docSize);
     tooTall = !plan.ok;
     if (plan.ok) await sampleClips(env, plan, items, todo, pixels);
   }
+  let blocked = tooTall ? 'page-too-tall' : null;
+  if (!blocked && todo.length > 0) {
+    const after = await callPage(env.page, { op: 'recheck' });
+    if (after.height !== env.docSize.height || after.shifted > 0) blocked = 'layout-shift';
+  }
   items.forEach((it, i) => {
-    if (tooTall && todo.includes(i)) return;
-    findings.push(contrastFinding(measureSample(toContrastSample(it, decisions[i], pixels.get(i)), env.config.thresholds)));
+    if (blocked && todo.includes(i)) return;
+    const f = contrastFinding(measureSample(toContrastSample(it, decisions[i], pixels.get(i)), env.config.thresholds));
+    if (it.rectsCut && (f.verdict === 'PASS' || f.verdict === 'FAIL')) f.note = [f.note, 'sampled'].filter(Boolean).join(', ');
+    findings.push(f);
   });
-  if (tooTall) {
+  if (blocked === 'page-too-tall') {
     findings.push({ rule: 'contrast', verdict: 'UNVERIFIED', reason: 'page-too-tall', hashBasis: 'page-too-tall', message: 'page is too large to capture; contrast not measured' });
     warnings.push({ code: 'page-too-tall', level: 'warning', message: `page ${env.spec.id}: too large for the contrast screenshot (limits ${MAX_PAGE_PX} px height, ${MAX_PAGE_WIDTH_PX} px width, ${MAX_PAGE_PIXELS} pixels)` });
+  } else if (blocked === 'layout-shift') {
+    findings.push({ rule: 'contrast', verdict: 'UNVERIFIED', reason: 'layout-shift', hashBasis: 'layout-shift', message: 'the page layout changed while it was measured; contrast not trusted' });
+    warnings.push({ code: 'layout-shift', level: 'warning', message: `page ${env.spec.id}: document height or text rectangles changed between measuring and the screenshot` });
   }
   if (raw.truncated) {
     findings.push({ rule: 'contrast', verdict: 'UNVERIFIED', reason: 'truncated', hashBasis: 'contrast-truncated', message: `more than ${LIMITS.contrastElements} text elements; the rest was not measured` });
@@ -851,7 +964,7 @@ async function phaseKeyboard(env, targets, dir, want, warnings) {
 }
 
 // Mouse focus (opt-in, explicit selectors): scroll to the element, screenshot, click, screenshot; the page is reloaded after each click.
-async function phaseMouse(env) {
+async function phaseMouse(env, warnings) {
   const { mode, selectors } = env.config.focus.mouse;
   const findings = [];
   for (const selector of selectors) {
@@ -859,6 +972,11 @@ async function phaseMouse(env) {
     const info = await callPage(env.page, { op: 'reveal', selector });
     if (!info || info.found !== true) {
       findings.push({ rule: 'focus-mouse-ring', verdict: 'UNVERIFIED', reason: 'no-samples', hashBasis: `mouse-missing:${selector}`, message: 'configured mouse selector matched no element' });
+      continue;
+    }
+    if (info.covered === true) {
+      warnings.push({ code: 'mouse-occluded', level: 'warning', message: `page ${env.spec.id}: a configured mouse target is covered by another element and was not clicked` });
+      findings.push({ rule: 'focus-mouse-ring', verdict: 'UNVERIFIED', reason: 'occluded', selector: selectorOf(info), message: 'mouse target covered by another element; not clicked' });
       continue;
     }
     const clip = focusClip(info.vr, env.config.viewport);
@@ -869,6 +987,8 @@ async function phaseMouse(env) {
       const before = await shot();
       await env.page.mouse.click(info.vr.x + info.vr.width / 2, info.vr.y + info.vr.height / 2);
       for (const p of env.context.pages()) if (p !== env.page) await p.close();
+      const park = parkPoint(clip, env.config.viewport);
+      await env.page.mouse.move(park.x, park.y); // move the pointer away so :hover does not distort the "after" shot
       if (env.page.url() === urlBefore) diffPx = diffPixels(env.flagger, before, await shot());
     }
     const sel = selectorOf(info);
@@ -902,8 +1022,10 @@ async function runPage(env) {
   const result = { id: spec.id, url: displayUrl(spec.url, env.configDir), assertion: await runAssertion(page, spec), checks: spec.checks, findings: [], warnings };
   if (result.assertion === 'FAIL') return result;
   const want = { contrast: has('contrast'), targets: has('target-size') || has('tab-order') };
+  if (want.contrast || want.targets) env.docSize = await callPage(page, { op: 'settle' });
   const raw = want.contrast || want.targets ? await callPage(page, { op: 'collect', want, limits: { contrast: LIMITS.contrastElements, targets: LIMITS.targets } }) : {};
-  if (raw.frames > 0) warnings.push({ code: 'frames-not-audited', level: 'warning', message: `page ${spec.id}: ${raw.frames} frame(s) are not audited (cross-origin and nested documents)` });
+  if (raw.frames > 0) warnings.push({ code: 'frames-not-audited', level: 'warning', message: `page ${spec.id}: ${raw.frames} frame(s): their content is not measured for contrast and target size (Tab does go through same-origin frames)` });
+  if (raw.closedShadowGuess > 0) warnings.push({ code: 'shadow-not-audited', level: 'warning', message: `page ${spec.id}: ${raw.closedShadowGuess} custom element(s) without readable content (closed shadow DOM is not audited; ${raw.openShadowRoots || 0} open shadow root(s) were)` });
   if (want.contrast) result.findings.push(...await phaseContrast(env, raw.contrast, warnings));
   if (has('target-size')) result.findings.push(...phaseTargets(env, raw.targets, warnings));
   if (has('focus') || has('tab-order')) {
@@ -911,7 +1033,7 @@ async function runPage(env) {
     result.findings.push(...k.findings);
     if (k.sequence) result.sequence = k.sequence;
   }
-  if (has('focus') && config.focus.mouse) result.findings.push(...await phaseMouse(env));
+  if (has('focus') && config.focus.mouse) result.findings.push(...await phaseMouse(env, warnings));
   if (has('console')) result.findings.push(...consoleFindings(env.collector.result()));
   const blocked = env.blocked.take(spec.id);
   if (blocked) warnings.push(blocked);
@@ -925,7 +1047,7 @@ export function createA11yRunner({ browser, imaging, config, configDir, allowOri
   let context = null;
   const gate = (url) => {
     const v = checkOrigin(url, { configDir, allow: allowOrigins });
-    if (!v.ok) throw new A11yPageError(`origin not allowed: ${v.reason}`);
+    if (!v.ok || !fileInside(url, configDir)) throw new A11yPageError(`origin not allowed: ${v.ok ? 'file URL outside config directory' : v.reason}`);
   };
   const ensureContext = async () => {
     if (context) return context;

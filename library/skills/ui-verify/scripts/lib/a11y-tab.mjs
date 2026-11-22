@@ -122,6 +122,11 @@ export function analyzeTab({ raw, candidates = [], options = {} }) {
     findings.push({ rule: 'tab-unreachable', verdict: 'UNVERIFIED', reason: 'sequence-truncated', selector: undefined, hashBasis: 'sequence-truncated', message: `Tab sequence reached the limit of ${maxStops} stops; reachability not verified` });
   } else if (!trap) {
     const modalOnly = seq.steps.length > 0 && seq.steps.every((s) => s.inModal === true);
+    if (seq.end === 'outside' && unvisited.length > 0) {
+      // Focus entered a frame we cannot follow (or left the document): what lies beyond is not verified, not failed.
+      findings.push({ rule: 'tab-unreachable', verdict: 'UNVERIFIED', reason: 'tab-frame', selector: undefined, hashBasis: 'tab-frame', message: `Tab left the document or entered a frame that cannot be followed; ${unvisited.length} target(s) not reached are unverified` });
+      unvisited.length = 0;
+    }
     for (const c of unvisited) {
       if (modalOnly && !c.inModal) continue;
       findings.push({ rule: 'tab-unreachable', verdict: 'FAIL', selector: c.selector, message: 'target is not reached by the Tab key', measured: { tabindex: c.tabindex ?? null } });
