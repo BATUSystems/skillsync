@@ -8,6 +8,7 @@ parsers come from `status.py` (status line, git blob sha, approval entry rules);
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from functools import lru_cache
 import json
 import os
 from pathlib import Path
@@ -29,6 +30,7 @@ from .pathfmt import posix
 from .specs import specs_info
 from . import plan_phases, dashboard_tests, dashboard_forecast, test_events
 from . import i18n
+from . import protocol_tokens as tokens
 
 SCHEMA = 1
 APP_NAME = 'dashboard'
@@ -49,8 +51,11 @@ STEP_ID = r'[A-Z]{1,3}-?\d+[a-z]?(?:\.\d+[a-z]?)?'  # S1, S2a, A-1 and phase sub
 STEP_RE = re.compile(rf'^\s*[-*]\s+\[(?P<mark>[ xX])\]\s+(?P<id>{STEP_ID})(?![\w-])\s*(?P<rest>.*)$')
 HEADER_RE = re.compile(r'^(?P<key>[^\s:#|>*`-][^:|]{0,40}):\s+(?P<val>\S.*?)\s*$')
 CHECKPOINT_RE = re.compile(r'^\s*[-*]\s+(?P<time>\d{1,2}:\d{2})\b\s*(?P<text>.*)$')
-IN_PROGRESS_RE = re.compile(r'(?:w\s+toku\s*:?|in\s+progress\s*:)\s*(?P<seg>.*)', re.IGNORECASE)   # a segment of `split_segments`: `;` inside brackets is part of it
-DONE_RE = re.compile(r'(?<![\w])(?:zrobion[eya]\s*:?|done\s*:)\s*(?P<seg>.*)', re.IGNORECASE)   # English keywords need the colon (prose has "done")
+IN_PROGRESS_RE = re.compile(r'w\s+toku\s*:?\s*(?P<seg>.*)', re.IGNORECASE)   # a segment of `split_segments`: `;` inside brackets is part of it
+DONE_RE = re.compile(r'(?<![\w])zrobion[eya]\s*:?\s*(?P<seg>.*)', re.IGNORECASE)
+# English keywords: only at the start of a segment and with the colon (prose has "review done: 0", "plugin in progress:"); the Polish ones win everywhere.
+IN_PROGRESS_EN_RE = re.compile(r'^\s*in\s+progress\s*:\s*(?P<seg>.*)', re.IGNORECASE)
+DONE_EN_RE = re.compile(r'^\s*done\s*:\s*(?P<seg>.*)', re.IGNORECASE)
 ID_LIST_RE = re.compile(rf'^\s*(?P<ids>{STEP_ID}(?:(?:\s*(?:[/+&‖]|\|\|)\s*|\s+(?:i|oraz)\s+){STEP_ID})*)(?![\w-])')
 # "The session waits for a human" in a checkpoint: segment `czeka: <what>` (segments are split by `;`, like
 # "zrobione" / "w toku"). The newest checkpoint without `czeka:` clears the banner.
@@ -61,7 +66,7 @@ HANDOVER_PLACEHOLDERS = WAIT_NONE | {'tbd', 'todo', 'none', 'n/a', 'null'}   # o
 ETA_RE = re.compile(r'^\s*eta\s*:\s*(?P<seg>.+)', re.IGNORECASE)
 ETA_AT_RE = re.compile(r'^(?P<operation>.*?\S)\s+(?:do|until)\s+(?P<time>\d{1,2}:\d{2})\.?$', re.IGNORECASE)
 # "A stage is going on now": segment `trwa: <stage key>[, <key>…]` of a checkpoint (a segment of `split_segments`, like `czeka:`).
-TRWA_RE = re.compile(r'^\s*(?:trwa|ongoing)\s*:\s*(?P<seg>.+)', re.IGNORECASE)
+TRWA_RE = re.compile(r'^\s*(?:trwa|running|ongoing)\s*:\s*(?P<seg>.+)', re.IGNORECASE)
 # Who the waiting item is addressed to: suffix `(kto: <role>[ <login>])` of a `czeka:` value.
 WHO_RE = re.compile(r'\s*\(\s*(?:kto|who)\s*:\s*(?P<who>[^()]*?)\s*\)\s*\.?\s*$', re.IGNORECASE)
 WHO_ROLES = {'acceptor': 'akceptujący', 'developer': 'programista', 'expert': 'ekspert', 'commenter': 'komentujący', 'agent': 'agent'}   # Polish labels (the default language)
@@ -72,6 +77,7 @@ WHO_ALIASES = {'akceptujący': 'acceptor', 'akceptujacy': 'acceptor', 'programis
                'komentujący': 'commenter', 'komentujacy': 'commenter', 'odbiór': 'acceptor', 'odbior': 'acceptor',
                'approver': 'acceptor', 'acceptance': 'acceptor'}
 STATUS_WAIT_RE = re.compile(r'(?:czeka\s+na|waiting\s+for)\s+(?P<what>[^);,]+)', re.IGNORECASE)
+RETRO_ANSWER_RE = re.compile(rf'\b{tokens.token_alternation("yes")}\b.*\b{tokens.token_alternation("no")}\b|\bP\d+\b')   # a retro proposal: YES/NO (TAK/NIE) or P<n>
 ID_FIND_RE = re.compile(rf'(?<![\w-]){STEP_ID}(?![\w-])')
 SHA_RE = re.compile(r'^[0-9a-f]{7,40}$')
 # Like the run pattern of quality.py: the first character is alphanumeric (no leading dot, so neither `.` nor `..` as a
@@ -87,16 +93,16 @@ STATUS_RANK = {'in_progress': 0, 'approved': 1, 'draft': 2, 'done': 3}  # done: 
 SPEC_DONE = {'approved', 'implemented', 'done', 'accepted'}
 SPEC_OPEN = {'draft', 'approved'}  # a spec that may not have a plan yet (act I)
 PLAN_APPROVED = {'approved', 'in_progress', 'done', 'implemented'}
-RISKY_SECTIONS = ('Kontrakty', 'Migracja', 'Dane', 'Contracts', 'Migration', 'Data model')   # Polish tokens and their English aliases
+RISKY_SECTIONS = tuple(tokens.names(key)[0] for key in ('contracts', 'migration', 'data'))   # the Polish section titles (English aliases wait for the title-prefix rule)
 
 READINESS_RE = re.compile(r'^Readiness:\s*(?P<status>PASS|BLOCKED)\b', re.IGNORECASE)
-READINESS_DATE_RE = re.compile(r'^Data:\s*(?P<val>\S.*?)\s*$', re.MULTILINE)
+READINESS_DATE_RE = re.compile(r'^(?:Data|Date):\s*(?P<val>\S.*?)\s*$', re.MULTILINE)
 READINESS_SHA_RE = re.compile(r'^Plan-sha:\s*`?(?P<val>[0-9a-fA-F]{7,64})`?\s*$', re.MULTILINE)
 QUESTIONS_HEADING = re.compile(r'^##\s+(?:Pytania otwarte|Open questions)\b', re.IGNORECASE)
 QUESTION_RE = re.compile(r'^\s*[-*]\s+(?:\*\*)?(?P<id>Q\d+)(?:\*\*)?(?:\s*\[(?P<tag>[^\]]*)\])?\s*:\s*(?P<body>\S.*?)\s*$')
 TABLE_QUESTION_RE = re.compile(r'^\s*\|\s*(?:\*\*)?(?P<id>Q\d+)(?:\*\*)?\s*\|(?P<rest>.*)$')
-ACCEPTED_RE = re.compile(r'\s+(?:—|–|--|-)\s+(?:przyj[eę]te|accepted)\s*:\s*', re.IGNORECASE)
-ASSUMPTION_TAGS = {'założenie', 'zalozenie', 'assumption'}
+ACCEPTED_RE = re.compile(r'\s+(?:—|–|--|-)\s+(?:przyj[eę]te|assumed|accepted)\s*:\s*', re.IGNORECASE)
+ASSUMPTION_TAGS = {'założenie', 'zalozenie'} | {name.strip('[]').lower() for name in tokens.names('assumption')}
 
 REMOTE_PATTERNS = (
     # Azure DevOps: git@ssh.dev.azure.com:v3/org/project/repo, https://[user@]dev.azure.com/org/project/_git/repo
@@ -160,16 +166,23 @@ def doc_status(text):
     return (None if status == 'unknown' else status), status_text
 
 
-HEADER_ALIASES = {'run': 'przebieg', 'prototype': 'prototyp', 'date': 'data', 'handover': 'oddanie'}   # English header keys read as the Polish ones
+def _header_key(name):
+    return name.rstrip(':').lower()
+
+
+HEADER_ALIASES = {_header_key(tokens.names(key)[1]): _header_key(tokens.names(key)[0]) for key in ('prototype', 'handoff')}   # English header keys read as the Polish ones
+HEADER_ALIASES[_header_key(tokens.names('run')[1])] = _header_key(tokens.names('run')[0])   # `Run: id (note)` reads like `Przebieg: id (note)`
+HEADER_ALIASES['date'] = 'data'   # not in the token map yet
 
 
 def parse_header(text):
-    """Title (first `# `) and `Key: value` fields before the first `## ` (English keys `Run`, `Prototype`, `Date`, `Handover`
-    are stored under the Polish names; the first line of a key wins)."""
-    title, fields = None, {}
+    """Title (first `# `) and `Key: value` fields before the first `## ` (English keys `Prototype`, `Date`, `Handoff` are stored
+    under the Polish names; the first line of a key wins; the run id is read by `protocol_tokens.RUN_LINE`: `Przebieg:` or `Run:`)."""
+    title, fields, head = None, {}, []
     for line in file_lines(text):
         if line.startswith('## '):
             break
+        head.append(line)
         if title is None and line.startswith('# '):
             title = line[2:].strip()
             continue
@@ -177,10 +190,16 @@ def parse_header(text):
         if match:
             key = match.group('key').strip().lower()
             fields.setdefault(HEADER_ALIASES.get(key, key), match.group('val').strip())
+    run = tokens.RUN_LINE.search('\n'.join(head))
+    if run and run.group(1):
+        # The first line of the key wins, as for every other header field: `RUN_LINE` only normalizes the same id (backticks) or fills a gap.
+        first = fields.get('przebieg')
+        if first is None or first.strip().strip('`') == run.group(1):
+            fields['przebieg'] = run.group(1)
     return title, fields
 
 
-def parse_progress(text):
+def parse_progress(text, lang='pl'):
     """`## Progress`: phases `### …` and steps `- [ ] ID Title` / `- [x] ID Title — sha`; code blocks are skipped."""
     phases, current, in_progress, in_fence = [], None, False, False
     for line in file_lines(text):
@@ -204,7 +223,7 @@ def parse_progress(text):
         if not match:
             continue
         if current is None:
-            current = {'name': 'Kroki', 'steps': []}
+            current = {'name': i18n.t(lang, 'srv.phase.steps'), 'steps': []}
             phases.append(current)
         rest = match.group('rest').strip()
         title, note = rest, ''
@@ -339,7 +358,7 @@ def wait_item(what, source, since=None, ctx=None, lang='pl'):
     elif re.fullmatch(r'READY!?', what.strip(), re.IGNORECASE):
         item.update(action=i18n.t(lang, 'srv.wait.ready'),
                     word=what.strip().upper(), approve='ready')
-    elif re.search(r'\bTAK\b.*\bNIE\b|\bP\d+\b', what):
+    elif RETRO_ANSWER_RE.search(what):
         item.update(action=i18n.t(lang, 'srv.wait.retro', what=what))
     return item
 
@@ -358,6 +377,11 @@ def _first_segment_match(pattern, text):
         if match:
             return match
     return None
+
+
+def _keyword_match(polish, english, text):
+    """The Polish keyword in any segment first (as before the English ones existed), else the English one at the start of a segment."""
+    return _first_segment_match(polish, text) or _first_segment_match(english, text)
 
 
 def split_top_level(segment, sep=',', balanced=False):
@@ -418,8 +442,8 @@ def report_warnings(text):
         opener = unclosed_bracket_start(text)   # the masking can remove brackets that were part of a secret: then the fragment starts at the beginning
         start = 0 if opener is None else max(text.rfind(sep, 0, opener) for sep in ';,:') + 1   # the element that holds the bracket
         found.append({'segment': 'raport', 'fragment': ' '.join(text[start:].split())[:PARSE_WARNING_FRAGMENT], 'reason': 'unbalanced-bracket'})
-    for label, pattern in (('w toku', IN_PROGRESS_RE), ('zrobione', DONE_RE)):
-        match = _first_segment_match(pattern, text)
+    for label, pattern, english in (('w toku', IN_PROGRESS_RE, IN_PROGRESS_EN_RE), ('zrobione', DONE_RE, DONE_EN_RE)):
+        match = _keyword_match(pattern, english, text)
         if not match:
             continue
         for item in split_top_level(match.group('seg')):
@@ -462,13 +486,13 @@ def checkpoint_warnings(chronological):
 
 def ids_reported_done(text):
     """Ids after "zrobione" (up to `;`): a visual hint only, it does not change the percentage."""
-    match = _first_segment_match(DONE_RE, text)
+    match = _keyword_match(DONE_RE, DONE_EN_RE, text)
     return _lead_ids(match.group('seg')) if match else []
 
 
 def ids_in_progress(text):
     """Step ids after "w toku" up to the next `;`, only items that start with an id; None when the phrase is absent."""
-    match = _first_segment_match(IN_PROGRESS_RE, text)
+    match = _keyword_match(IN_PROGRESS_RE, IN_PROGRESS_EN_RE, text)
     return _lead_ids(match.group('seg')) if match else None
 
 
@@ -1087,7 +1111,7 @@ def prototype_writing(root, slug, now_ms=None):
 
 
 def risky_sections(text):
-    """Spec sections `## Kontrakty|Migracja|Dane` (or `Contracts|Migration|Data model`) with content (not "nie dotyczy"/"not applicable"): pre-implement is needed before GO plan."""
+    """Spec sections `## Kontrakty|Migracja|Dane` (only the Polish titles; the English ones return with the title-starts-with-alias rule of the aliases package) with content (not "nie dotyczy"/"not applicable"): pre-implement is needed before GO plan."""
     found = []
     for name in RISKY_SECTIONS:
         match = re.search(rf'^##\s+{name}\b[^\n]*\n(?P<body>.*?)(?=^#{{1,6}}\s|\Z)', text, re.MULTILINE | re.DOTALL)
@@ -1495,15 +1519,32 @@ def _stage_token(text):
     return re.sub(r'[\s\-]+', '_', re.sub(r'\s*(×\d+|\d+/\d+)\s*$', '', str(text or '').strip().lower())).strip('_')
 
 
+_STAGE_PLACEHOLDERS = re.compile(r'\s*(?:×\s*\{n\}|\{accepted\}\s*/\s*\{screens\})\s*$')
+
+
+@lru_cache(maxsize=None)
+def _stage_label_groups():
+    """Stage label tokens by catalog key (`srv.stage.*`): the labels of every supported language of one stage (`Szkic` and `Draft`)."""
+    groups = {}
+    for lang in i18n.SUPPORTED_LANGUAGES:
+        for key, value in i18n.catalog(lang).items():
+            if key.split('.')[:2] == ['srv', 'stage'] and isinstance(value, str):
+                groups.setdefault(key, set()).add(_stage_token(_STAGE_PLACEHOLDERS.sub('', value)))
+    return tuple(frozenset(group) for group in groups.values())
+
+
 def _trwa_since(trwa, act, open_act, key, label):
     """Time of the checkpoint since which `trwa:` names this stage, or None: the key of the stage (`stage_` dropped) or its label
-    (`Review ×2` = `review`); a plain `review` means the review of the act that is still open."""
+    in any supported language (`Review ×2` = `review`, `Szkic` = `Draft`); a plain `review` means the review of the act that is still open."""
     if not trwa:
         return None
     names = {_stage_token(label)}
     if key:
         names.add(_stage_token(key[6:] if key.startswith('stage_') else key))
-    for name in names:
+    for group in _stage_label_groups():
+        if names & group:
+            names |= group
+    for name in sorted(names):
         if name in trwa:
             if name == 'review' and act != open_act:
                 continue
@@ -2164,7 +2205,7 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
         plan_path = root / chosen['path']
         text = plan_text = read_masked(plan_path)
         title, fields = parse_header(text)
-        phases = parse_progress(text)
+        phases = parse_progress(text, lang)
         pr = PLAN_PR_RE.search(text)
         status, status_text = doc_status(text)
         plan_info = {'path': chosen['path'], 'title': title or chosen['title'],

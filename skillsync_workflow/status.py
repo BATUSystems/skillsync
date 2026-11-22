@@ -16,6 +16,7 @@ import yaml
 from .common import add_project_arguments, decode_text, file_lines, plan_section, read_project, redact
 from .delivery_mode import delivery_info
 from . import i18n
+from . import protocol_tokens as tokens
 from .layers import add_layer_argument
 from .storage import read_json
 from .pathfmt import posix
@@ -34,10 +35,10 @@ STATUS_TEXT_MAX = 80
 _STATUS_WINDOW_READ = 8192   # characters masked before the 4000-character window of `_status_fields` is cut (a secret on the cut is whole in this span)
 _TITLE = re.compile(r'^#\s+(.+?)\s*$', re.MULTILINE)
 _STEP = re.compile(r'^\s*-\s\[([ xX])\]\s+\S', re.MULTILINE)
-_ACCEPTANCE_STEP = re.compile(r'^\s*-\s\[[ xX]\]\s+(?:[A-Za-z]+\d+(?:\.\d+)?\s+)?(?:Odbi[oó]r|Acceptance)\b', re.MULTILINE | re.IGNORECASE)
+_ACCEPTANCE_STEP = re.compile(r'^\s*-\s\[[ xX]\]\s+' + tokens.ACCEPTANCE_PATTERN, re.MULTILINE | re.IGNORECASE)
 ACCEPTANCE_WORDS = {'pr': 'READY', 'direct': 'CP'}   # the closing consent word of a delivery mode: it is also the acceptance
-PLAN_SUMMARY = 'Streszczenie dla człowieka'
-PLAN_SUMMARY_HEADINGS = (PLAN_SUMMARY, 'Human summary')   # the heading in a Polish and in an English plan
+PLAN_SUMMARY = tokens.names('summary')[0]
+PLAN_SUMMARY_HEADINGS = tokens.names('summary')   # the heading in a Polish and in an English plan
 SUMMARY_MAX_LINES = 40
 SUMMARY_MAX_CHARS = 4000
 _PR = re.compile(r'^PR:\s*#(\d+)\s*\(link:\s*(\S+?)\)\s*$', re.MULTILINE)
@@ -101,16 +102,16 @@ def _plan_spec(text):
     return match.group(1) if match and is_spec_path(match.group(1)) else None
 
 
-PRE_IMPLEMENT_SECTIONS = ('Kontrakty', 'Migracja', 'Dane', 'Contracts', 'Migration', 'Data model')   # Polish tokens and their English aliases
+PRE_IMPLEMENT_SECTIONS = tuple(tokens.names(key)[0] for key in ('contracts', 'migration', 'data'))   # Polish titles; English aliases wait for the title-prefix rule
 PRE_IMPLEMENT_VERDICTS = ('READY', 'NEEDS_CHANGES', 'BLOCKED')  # od najlepszego do najgorszego
 _PRE_HEADING = re.compile(r'^(?P<hashes>#{1,6})[ \t]+(?P<title>.*?)[ \t]*$', re.MULTILINE)
-_PRE_SECTION_WORD = re.compile(r'\b(?:' + '|'.join(PRE_IMPLEMENT_SECTIONS) + r')\b', re.IGNORECASE)
 # Pusta treść: pierwsza niepusta linia (bez znaczników) to samo „nie dotyczy” (po nim koniec linii albo . - – — : , ;), samo
 # TODO/TBD/n/a (po nim koniec linii, kropka albo dwukropek) albo same myślniki; „Todo-lista” i „Nie dotyczy starych” to treść.
 _PRE_TAIL = '*_` \t\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029'   # what the end of a line may carry: markup and white space, also the separators that no longer cut a line
 _PRE_EMPTY_BODY = re.compile(r'(?:(?:nie[ \t]+dotyczy|not[ \t]+applicable)(?:[ \t]*$|[ \t]*[.\-–—:,;])|(?:todo|tbd|n/a)(?:[ \t]*$|[ \t]*[.:])|[-–—]+[ \t]*$)',
                              re.IGNORECASE)
-_PRE_VERDICT = re.compile(r'^[*_`]*(?:Werdykt|Verdict):[*_` \t]*(?P<word>READY|NEEDS_CHANGES|BLOCKED)[*_`. \t]*$')
+_PRE_VERDICT = re.compile(r'^[*_`]*' + tokens.token_alternation('verdict')
+                          + r'[*_` \t]*(?P<word>READY|NEEDS_CHANGES|BLOCKED)[*_`. \t]*$')
 PRE_REPORT_GLOB = 'pre-implement*.md'
 MAX_PRE_REPORT_BYTES = 256 * 1024
 
@@ -138,7 +139,7 @@ def pre_implement_sections(spec_text):
     found = []
     for index, mark in enumerate(marks):
         title = mark.group('title').strip()
-        if not _PRE_SECTION_WORD.search(title):
+        if not tokens.risk_section_title(title):
             continue
         level = len(mark.group('hashes'))
         end = next((later.start() for later in marks[index + 1:] if len(later.group('hashes')) <= level), len(spec_text))
@@ -183,10 +184,10 @@ def pre_implement_state(root, spec_rel, plan_text, status, lang='pl'):
     spec_text = _read_text_safe(root / spec_rel, root=root)
     if spec_text is None:
         return None
-    from .quality import _PLAN_RUN, _RUN_ID  # lazy: quality imports this module
+    from .quality import _RUN_ID  # lazy: quality imports this module
     sections = pre_implement_sections(spec_text)
     required = bool(sections)
-    run_match = _PLAN_RUN.search(plan_text) if plan_text else None
+    run_match = tokens.RUN_LINE.search(plan_text) if plan_text else None
     run = run_match.group(1) if run_match and _RUN_ID.fullmatch(run_match.group(1)) else None
     reports = _pre_implement_reports(root, run) if run else []
     worst = max(reports, key=lambda item: (PRE_IMPLEMENT_VERDICTS.index(item[1]), _natural_key(item[0]))) if reports else None
@@ -207,8 +208,7 @@ def pre_implement_state(root, spec_rel, plan_text, status, lang='pl'):
 def plan_summary(text):
     """The `## Streszczenie dla człowieka` section as plain text for the status page: heading markers removed, at most 40 lines and
     4000 characters (a cut one ends with `…`); None when the section is absent or empty."""
-    masked = redact(text)   # the whole plan is masked before the section is taken, trimmed and cut
-    body = next((section for section in (plan_section(masked, name) for name in PLAN_SUMMARY_HEADINGS) if section), None)
+    body = plan_section(redact(text), tokens.names('summary'))   # the whole plan is masked before the section is taken, trimmed and cut
     if not body:
         return None
     lines, fence = [], None
@@ -296,8 +296,8 @@ def acceptance_pending(status, text, context, rel=None):
     word = ACCEPTANCE_WORDS.get(context.get('mode'))
     if word is None:
         return False
-    from .quality import _PLAN_RUN, _RUN_ID  # lazy: quality imports this module
-    run = _PLAN_RUN.search(text[:4000])
+    from .quality import _RUN_ID  # lazy: quality imports this module
+    run = tokens.RUN_LINE.search(text[:4000])
     if not run or not _RUN_ID.fullmatch(run.group(1)) or run.group(1) not in context.get('runs', ()):
         return False
     for row in context.get('approvals', []):   # `read_approvals` keeps one entry per (run, word): at most two git calls per plan
@@ -657,7 +657,7 @@ def set_doc_status(root, name, action, folder='plans', expect_sha=None, lang='pl
         # „czeka na <tę zgodę>” jest po zatwierdzeniu nieaktualne; inne dopiski (np. „czeka na spec”, „szkic”) zostają,
         # bo rozstrzyga je tabela wznowienia.
         consent = _SATISFIED[folder]
-        rest = re.sub(r'[ \t]*\((?=[^()\n]*czeka na[^()\n]*' + consent + r')[^()\n]*\)', '', rest, flags=re.IGNORECASE)
+        rest = re.sub(r'[ \t]*\((?=[^()\n]*' + tokens.token_alternation('waiting') + r'[^()\n]*' + consent + r')[^()\n]*\)', '', rest, flags=re.IGNORECASE)
     updated = (text[:start] + target + rest + text[line_end:]).encode('utf-8')
     mode = path.stat().st_mode & 0o7777
     fd, tmp = tempfile.mkstemp(prefix=f'.{path.name}.', suffix='.tmp', dir=path.parent)
@@ -679,7 +679,7 @@ def set_doc_status(root, name, action, folder='plans', expect_sha=None, lang='pl
 def _plan_text_for_spec(root, spec_rel, spec_text):
     """Plan text for a spec: the file named by its `Plan:` line, otherwise the newest `docs/plans/*.md` whose `Spec:` line
     points at this spec and which has a valid `Przebieg:` line. None when there is no such plan."""
-    from .quality import _PLAN_RUN, _RUN_ID
+    from .quality import _RUN_ID
     plan = _spec_plan(spec_text)
     text = _read_text_safe(root / plan, root=root) if plan else None
     if text is not None:
@@ -697,7 +697,7 @@ def _plan_text_for_spec(root, spec_rel, spec_text):
         candidate = _read_text_safe(path, root=root)
         if candidate is None or _plan_spec(candidate) != spec_rel:
             continue
-        match = _PLAN_RUN.search(candidate)
+        match = tokens.RUN_LINE.search(candidate)
         if match and _RUN_ID.fullmatch(match.group(1)):
             return candidate
     return None

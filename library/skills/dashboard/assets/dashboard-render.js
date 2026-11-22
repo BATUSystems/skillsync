@@ -36,7 +36,7 @@
 
   // ------------------------------------------------------------------ teksty interfejsu (katalog `ui.*`)
   // Wbudowany polski katalog: brak pola `texts` w statusie (stary serwer, język pl) = dokładnie te teksty. Źródłem prawdy jest
-  // skillsync_workflow/data/i18n/pl.json (klucze `ui.*`); test porównuje oba (blok niżej jest generowany z pl.json, nie edytuj go ręcznie).
+  // skillsync_workflow/data/i18n/pl.json (klucze `ui.*`); test porównuje oba. Blok niżej generuje scripts/sync_renderer_defaults.py (`--check` sprawdza zgodność), nie edytuj go ręcznie.
   // Wartość to napis albo obiekt form liczby mnogiej {one, few, many, other}; parametry to `{nazwa}`, a fragment w odwrotnych apostrofach
   // renderer składa w węzeł `mono` (bez innerHTML).
   // <i18n-defaults>
@@ -164,6 +164,7 @@
     "ui.meta.specNoPlanTip": "Akt I: spec bez planu (plan powstaje przy „GO plan”); status speca",
     "ui.noConnection": "Brak połączenia z serwerem statusu.",
     "ui.noData": "brak danych",
+    "ui.page.title": "Status przebiegu",
     "ui.parseReason.laterId": "id kroku nie na początku elementu",
     "ui.parseReason.noStepId": "bez id kroku na początku",
     "ui.parseReason.unbalancedBracket": "niezamknięty nawias, lista dzielona po każdym „;”",

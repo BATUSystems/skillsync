@@ -6,7 +6,11 @@ import re
 import unittest
 from pathlib import Path
 
-from skillsync_workflow import i18n
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import tmp_paths  # noqa: E402
+from skillsync_workflow import i18n  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 CATALOG_DIR = ROOT / "skillsync_workflow" / "data" / "i18n"
@@ -135,7 +139,7 @@ class Fragments(unittest.TestCase):
         i18n._load.cache_clear()
 
     def _write(self, name, data):
-        (self.dir / name).write_text(json.dumps(data), encoding="utf-8")
+        tmp_paths.child(self.dir, name).write_text(json.dumps(data), encoding="utf-8")
 
     def test_fragment_is_merged_and_selected_by_prefix(self):
         self._write("pl.json", {"ui.a": "A"})

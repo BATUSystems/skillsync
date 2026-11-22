@@ -247,13 +247,14 @@ Zakładka „Testy” (ukryta do pierwszego biegu) pokazuje wyniki testów krok�
 | `app.js` | **adapter strony**: `fetch` `/api/status`, `/api/doc`, `/api/approve` (nagłówek `X-Status-Board: 1`), `/api/descriptions`; SSE `/events` z pollingiem co 5 s i watchdogiem 40 s; `localStorage` (`dashboard:plan`, `dashboard:theme`); motyw; `#hash` adresu; zegar co 1 s; klawisze na poziomie dokumentu |
 | `theme.js` | motyw przed pierwszym rysowaniem (zapamiętany albo systemowy) |
 | `app.css` | wygląd; korzeń renderera ma klasę `dashboard-root` (`display: contents`) |
+| `descriptions.json`, `descriptions.en.json` | opisy dymków: polski i angielski; serwer wybiera plik wg `lang` statusu (brak pliku = polski). Host kopiujący assety kopiuje oba |
 
 Układ zależy od szerokości kolumny hosta, nie okna: szkielet (nagłówek, zakładki, `main`, stopka) jest w wrapperze `.dash-wrap`
 (`container: dash / inline-size`), a progi to `@container dash` 1100, 640, 500 i 420 px (tryb zwarty: panel obok sesji).
 Dymek `#descTip` jest poza wrapperem (containment psuje `position: fixed`). Host z własnym CSS przejmuje te reguły z `app.css` i daje `.dash-wrap` określoną szerokość (kontener inline-size nie ma szerokości własnej treści).
 
 Renderer to UMD: `window.DashboardRenderer` w przeglądarce, `module.exports` w Node. Eksport:
-`create(root, deps)` (alias `createDashboard`), `buildSprite(doc)`, `SPRITE` (dane symboli `i-…`), `version`.
+`create(root, deps)` (alias `createDashboard`), `buildSprite(doc)`, `SPRITE` (dane symboli `i-…`), `version`, `defaultTexts` (wbudowany polski katalog `ui.*`, `DEFAULT_TEXTS`; generowany z `pl.json` przez `scripts/sync_renderer_defaults.py`, nie edytować ręcznie).
 `create` zmienia tylko własny korzeń: dodaje do `root` klasę `dashboard-root`, sprite (pomijany przy `deps.sprite === false`,
 gdy host ma własny) i szkielet ze stałymi identyfikatorami (`title`, `meta`, `live`, `planBtn`, `planMenu`, `waitBanner`,
 `tab-progress`, `tab-docs`, `protoLink`, `acts`, `phases`, `feed`, `feedTitle`, `docList`, `docView`, `foot`, `descTip`,
@@ -282,7 +283,7 @@ Kontrakt `deps` (wymagane tylko `now`):
 | `canApprove` | `(json) => boolean` | nie | czy ten host może dawać zgody; domyślnie `approvals.here` z JSON-a |
 | `storage` | `{get(k) => string \| null, set(k, v)}` | nie | preferencje (`v == null` = usuń); bez niego wybór planu nie jest zapamiętywany |
 | `theme` | `{isDark() => boolean, toggle()}` | nie | przełącznik motywu i klawisz `T`; bez niego przycisku nie ma |
-| `texts` | `{live?, liveTip?, noConnection?}` | nie | nadpisanie tekstów wskaźnika (`live`, `polling`, `down`, `connecting`), ich dymków i komunikatu braku połączenia |
+| `texts` | `{live?, liveTip?, noConnection?}` | nie | nadpisanie tekstów wskaźnika (`live`, `polling`, `down`, `connecting`), ich dymków i komunikatu braku połączenia; tylko te klucze, pozostałe `ui.*` idą z pola `texts` statusu albo z polskiego katalogu |
 | `prototypeUrl` | `(port, slug) => string` | nie | adres prototypu (strona: host strony + port); bez niego odnośnik bez `href` |
 | `prototypeOrigin` | `(port) => string` | nie | adres serwera prototypów bez ścieżki (strona: `protokół//host:port`); z nim toast pytań do eksperta ma odnośnik `/_experts[/<slug>]`, bez niego jest samym tekstem |
 | `mountHtml` | `(el, html) => void` | nie | wstawienie HTML podglądu Markdown i pól `…Html` z `GET /api/status` (escapowanych przez serwer); renderer sam HTML nie parsuje. Bez `mountHtml` (np. wtyczka edytora, która czyta `dashboard show` bez tych pól) strona pokazuje zwykły tekst |
@@ -300,7 +301,9 @@ Metody obiektu z `create`:
 | Metoda | Znaczenie |
 | --- | --- |
 | `update(json)`, alias `render(json)` | rysuje stan; poprzedni stan służy do podświetlenia zmian; w widoku Dokumenty odświeża podgląd |
-| `setDescriptions(map)` | opisy dymków `{klucz: {title, text}}` (`descriptions.json`) |
+| `setDescriptions(map)` | opisy dymków `{klucz: {title, text}}` (`descriptions.json` albo `descriptions.en.json`, wg języka) |
+| `t(key, params, n)` | tekst klucza `ui.*` w języku ostatniego statusu: katalog ze statusu `texts`, a brak klucza → wbudowany polski; `n` wybiera formę liczby mnogiej, `{nazwa}` z `params`; nieznany klucz zwraca klucz |
+| `lang()` | język ostatniego statusu (`pl`, gdy pola `lang` nie ma) |
 | `setNotice({ok, word, text} \| null)` | komunikat w banerze; gaśnie sam (ok po 10 s, błąd po 30 s), „×” zamyka od razu |
 | `setVisible(bool)` | host: karta widoczna/ukryta (`visibilitychange`); odliczanie komunikatu stoi, gdy karta jest w tle, i startuje od nowa po powrocie (domyślnie widoczna) |
 | `setLive(mode)` | wskaźnik `live` / `polling` / `down` / `connecting` |

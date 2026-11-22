@@ -111,6 +111,20 @@ Rozpoznanie czyta wyłącznie `.git` (plik albo katalog) i, dla powiązanego wor
 
 Zgodność wsteczna: starszy serwer nie ma pola, konsument traktuje brak klucza jak `null` (pole opcjonalne dla konsumenta, w fixtures zawsze obecne).
 
+## Język i teksty interfejsu
+
+- Język interfejsu projektu bierze się z klucza manifestu `language` (`pl` domyślnie, `en`; zob. [manifest](manifest.md)). Klucz nie zmienia języka skilli.
+- Status (`dashboard show --json`, `dashboard serve`) zawsze ma pole `lang` (`pl` albo `en`). Pole `texts` jest tylko przy `lang` ≠ `pl`: to katalog `ui.*` języka (napis albo obiekt form liczby mnogiej `{one, few, many, other}` dla pl, `{one, other}` dla en). Brak `texts` = renderer używa wbudowanego polskiego.
+- Teksty `srv.*` (zdania budowane przez serwer) nie są w `texts`: trafiają do pól JSON-a już przetłumaczone (`waiting[].action`, etykiety etapów, powody zgód, ostrzeżenia, błędy HTTP).
+- Pierwszeństwo tekstów renderera: `texts` ze statusu > wbudowany polski katalog (`DEFAULT_TEXTS`). Wyjątek: `deps.texts` hosta nadpisuje tylko `live`, `liveTip` i `noConnection`. Obiekt renderera ma `t(key, params, n)` (`board.t`), `lang()` i `DashboardRenderer.defaultTexts` (polski katalog). `DEFAULT_TEXTS` jest generowany z `skillsync_workflow/data/i18n/pl.json` przez `scripts/sync_renderer_defaults.py` (`--check`: kod 1 przy rozjeździe; nie edytuj bloku ręcznie).
+- Reguły wartości `texts`: renderer wstawia je wyłącznie przez `textContent`; wartości nie zawierają `<` ani `>`; fragment w odwrotnych apostrofach to kod (`mono`); `{nazwa}` podstawiane jest raz. Wartość nie może wyglądać jak sekret dla maskowania (`common.redact`: słowo `token`, `password`, `secret` i podobne, po którym idzie `:` albo `=`), bo zostanie zamaskowana.
+- Starsze renderery (zamrożone kopie 1.5.0, 1.11.0, 1.12.0 w testach) ignorują pola `lang` i `texts`; nowe pola są addytywne.
+- Opisy dymków: `descriptions.json` (pl) i obok `descriptions.en.json` w tej samej warstwie skilla `dashboard`. `GET /api/descriptions` wybiera plik wg `lang`; brak pliku = polski `descriptions.json`. Host, który kopiuje assety skilla (np. wtyczka), musi skopiować też `descriptions.<lang>.json`, inaczej dostanie polskie dymki.
+- Strona HTML: dla `en` atrybut `<html lang="en">` i `<title>` z katalogu; `app.js` aktualizuje `lang` wg pola `lang` statusu. Nagłówek „Wczytuję status…” przed pierwszym statusem zostaje po polsku.
+- Ostrzeżenie o nieznanej wartości `language` (np. `de`) pojawia się w `findings` `skillsync status`; status JSON wtedy ma `lang: "pl"` i nie ma `texts`.
+
+Szczegóły i granice: [domain/i18n-ui](domain/i18n-ui.md).
+
 ## Pola najwyższego poziomu
 
 | Klucz | Typ | Opis |
@@ -178,7 +192,7 @@ W trybach innych niż `plan` pola `plan`, `progress.phases` itd. są puste (`pla
 ### `plans[]`
 
 `path` (string), `title` (string), `status` (`draft`, `approved`, `in_progress`, `done`, `implemented` albo null), `spec`
-(ścieżka speca lub null), `run` (id przebiegu lub null). Plan wiąże się z przebiegiem tylko linią `Przebieg: <run-id>` w nagłówku planu: sam `checkpoint --run-id X` tworzy `.skillsync/runs/X`, ale bez tej linii `plans[].run` i `run.id` strony statusu zostają `null` (strona nie zgaduje powiązania).
+(ścieżka speca lub null), `run` (id przebiegu lub null). Plan wiąże się z przebiegiem linią `Przebieg: <run-id>` albo `Run: <run-id>` w nagłówku planu, czyli przed pierwszym `## ` (`parse_header`); gdy występują obie, wygrywa linia położona wcześniej. `skillsync status` (`status.py`) czyta polskie `Przebieg:` w całym tekście planu, a angielskie `Run:` tylko w nagłówku (`protocol_tokens.RUN_LINE`). Sam `checkpoint --run-id X` tworzy `.skillsync/runs/X`, ale bez tej linii `plans[].run` i `run.id` strony statusu zostają `null` (strona nie zgaduje powiązania). Odczyt linii w `quality._PLAN_RUN` i `test_gate._RUN_LINE` (a przez nią `status.plan_state_for_run`, czyli `planState` zgód) czyta wyłącznie `Przebieg:`; zob. [domain/i18n-ui](domain/i18n-ui.md).
 
 ### `plan`
 
@@ -212,7 +226,18 @@ zatwierdza zgoda), `pr` (`{number, url}` z linii `PR: #N (link: https://…)` lu
 | `parseWarnings` | tablica | opcjonalne (brak klucza = brak ostrzeżeń); do 10 najnowszych: `{time, segment: "w toku"\|"zrobione"\|"raport", fragment (do 80 znaków), reason: "no-step-id"\|"later-id"\|"unbalanced-bracket"}` |
 
 Format checkpointu: `- HH:MM <tekst>`; segmenty `w toku: F1.2, F1.3`, `zrobione: F1.1`, `czeka: <na co>`, `eta: <operacja> do HH:MM`,
-`trwa: <klucz etapu>[, …]`.
+`trwa: <klucz etapu>[, …]`. Angielskie odpowiedniki, czytane przez parser obok polskich:
+
+| Polski | Angielski | Reguła w parserze |
+|---|---|---|
+| `w toku:` | `in progress:` | angielska forma wymaga dwukropka i działa tylko na początku segmentu (`;` dzieli segmenty); polska forma działa w dowolnym miejscu segmentu i ma pierwszeństwo: angielska liczy się dopiero, gdy w liniach brak polskiej |
+| `zrobione:` | `done:` | j.w.; forma polska działa też bez dwukropka |
+| `czeka:` | `waiting:` | tylko na początku segmentu; w tej samej linii wygrywa nad `trwa:` |
+| `eta: <operacja> do HH:MM` | `eta: <operacja> until HH:MM` | na początku segmentu; czas `HH:MM` na końcu |
+| `trwa:` | `running:`, `ongoing:` | tylko na początku segmentu |
+| `(kto: …)` | `(who: …)` | suffix wartości `czeka:` |
+
+Przykład angielski: `- 14:05 in progress: F1.2; eta: rendering 12 prototype screens until 15:10`.
 
 Składnia segmentów: `;` kończy segment tylko poza nawiasami `()`, `[]`, `{}` (opis w nawiasie może zawierać `;`); linia z
 niezbalansowanym nawiasem dzieli się po każdym `;`, więc id po takim `;` może zginąć z odczytu; `parseWarnings` zgłasza zawsze to dzielenie wpisem
@@ -222,7 +247,17 @@ elementy rozdziela przecinek, a id w jednym elemencie łączą `/`, `+`, `&`, `�
 Segment `trwa:` nazywa etapy, które trwają teraz (klucz etapu bez `stage_` albo jego etykieta, np. `spec_review`, `prototyp`); liczy się
 tylko najnowszy checkpoint, a `czeka:` w tej samej linii wygrywa (sesja czeka, nie pracuje). Suffix `(kto: <rola>[ <login>])` w
 wartości `czeka:` wskazuje adresata (role: `acceptor`, `developer`, `expert`, `commenter`, `agent`; po polsku też „akceptujący”,
-„programista”, „ekspert”, „komentujący”, „odbiór”).
+„programista”, „ekspert”, „komentujący”, „odbiór”); angielskie aliasy `approver` i `acceptance` dają `acceptor`.
+
+Tokeny w drugim języku, też czytane przez parser (poza checkpointem):
+
+- plan: `Verdict:` (jak `Werdykt:`); sekcje `## Result` (jak `## Wynik`) i `## Summary for humans` (jak `## Streszczenie dla człowieka`); krok `Acceptance` w `## Progress` (jak `Odbiór`); nagłówki `Prototype:` i `Handoff:` (jak `Prototyp:`, `Oddanie:`);
+- status w nagłówku planu lub speca (`statusText`): `czeka na <słowo zgody>` albo `waiting for <słowo zgody>` daje pozycję czekania na zgodę, gdy status to `draft`, `approved` albo `in_progress` i zgoda nie jest jeszcze dana (`dashboard.py`, `STATUS_WAIT_RE`);
+- plan szkicowy (akt I, „GO implement” jeszcze nie): `szkic` albo `sketch` w tekście planu, `czeka na spec` albo `waiting for spec` (podciągi tekstu planu, `dashboard.py` przy `sketch`);
+- gotowość przebiegu: `Date:` (jak `Data:`); `Readiness:` i `Plan-sha:` bez wariantu angielskiego (nazwy są wspólne);
+- decyzja retro: pozycja `what`, w której występują `TAK`/`YES` i `NIE`/`NO` (albo `P<n>`), dostaje akcję retro w obu językach.
+
+Sekcje ryzyka `Kontrakty`, `Migracja` i `Dane` czytane są tylko po polsku (ostrzeżenie `warning` w akcie I, sprawdzenie przed „GO plan”); angielskie `Contracts`, `Migration` i `Data` wrócą z osobną paczką aliasów tokenów protokołu.
 
 ### `progress`
 
@@ -354,12 +389,12 @@ odświeżenie bez zmiany wyboru jej nie rozwija, gdy użytkownik ją zwinął. D
 ### `readiness`
 
 Źródło: `.skillsync/runs/<run-id>/readiness.md` (produkuje `skillsync readiness --run-id`): pierwsza linia
-`Readiness: PASS|BLOCKED`, potem `Data:` i `Plan-sha:`.
+`Readiness: PASS|BLOCKED`, potem `Data:` (albo `Date:`) i `Plan-sha:`.
 
 | Pole | Typ | Opis |
 |---|---|---|
 | `status` | `"PASS"`, `"BLOCKED"` albo null | null = brak pliku (stan „brak danych”) albo nierozpoznana pierwsza linia |
-| `date` | string lub null | `Data:` |
+| `date` | string lub null | `Data:` (albo `Date:`) |
 | `planSha` | string lub null | `Plan-sha:`; konsument porównuje z `plan.fileSha` (różnica = brief nieaktualny) |
 | `source` | string lub null | ścieżka pliku względem projektu; null bez pliku |
 
@@ -368,18 +403,18 @@ Pierwsza niepusta linia decyduje o `status`; `Data:` i `Plan-sha:` są czytane t
 
 ### `assumptions` i `blockingQuestions`
 
-Źródło: sekcja `## Pytania otwarte` bieżącego speca (`spec.path`).
+Źródło: sekcja `## Pytania otwarte` albo `## Open questions` bieżącego speca (`spec.path`).
 
-- Założenie: `- Q<n> [ZAŁOŻENIE]: <pytanie> — przyjęte: <wartość>` → `assumptions.items[]` = `{id, question, accepted}`,
-  `assumptions.count` = długość listy.
+- Założenie: `- Q<n> [ZAŁOŻENIE]: <pytanie> — przyjęte: <wartość>` albo `- Q<n> [ASSUMPTION]: <pytanie> — assumed: <wartość>`
+  (także `— accepted: <wartość>`) → `assumptions.items[]` = `{id, question, accepted}`, `assumptions.count` = długość listy.
 - Pytanie blokujące: `- Q<n>: <pytanie>` (bez znacznika w nawiasie kwadratowym) → `blockingQuestions.items[]` =
   `{id, question}`, `count`.
-- Linie ze znacznikiem innym niż `[ZAŁOŻENIE]` (np. `[ROZSTRZYGNIĘTE …]`, `[EKSPERT]`) i linie spoza sekcji są pomijane.
+- Linie ze znacznikiem innym niż `[ZAŁOŻENIE]`/`[ASSUMPTION]` (np. `[ROZSTRZYGNIĘTE …]`, `[EKSPERT]`) i linie spoza sekcji są pomijane.
 - Założenia nie są akcją „Odpowiedz na pytania”; tej akcji (`waiting`) dotyczą tylko pytania blokujące zgłoszone przez sesję.
 - Pola zostają w kontrakcie dla innych konsumentów, ale renderer strony ich nie rysuje: lista pytań i założeń w Akcie I została
   zastąpiona toastem opartym na `expertQuestions`.
-- Separator przed `przyjęte:` może być półpauzą, pauzą, `--` albo `-` (otoczonymi spacjami); znacznik bez rozróżnienia
-  wielkości liter, także bez polskich znaków (`[ZALOZENIE]`). Założenie bez `przyjęte:` ma `accepted` = `""`.
+- Separator przed `przyjęte:` (także `assumed:`, `accepted:`) może być półpauzą, pauzą, `--` albo `-` (otoczonymi spacjami); znacznik bez rozróżnienia
+  wielkości liter, także bez polskich znaków (`[ZALOZENIE]`, `[assumption]`). Założenie bez `przyjęte:`/`assumed:`/`accepted:` ma `accepted` = `""`.
 - Wiersz tabeli `| Q<n> | <pytanie> | … |` (jak w szkielecie speca) jest pytaniem blokującym; `question` = pierwsza niepusta
   komórka po id. Id pogrubione (`**Q4**`) jest rozpoznawane; powtórzone id liczy się raz (pierwsze wystąpienie); bloki kodu
   są pomijane.
@@ -438,11 +473,12 @@ bez dowiązań symbolicznych, `prototype.json` obok, plik do 2 MiB (serwer zapis
 
 ### `eta`
 
-Źródło: segment `eta: <operacja> do HH:MM` NAJNOWSZEGO checkpointu przebiegu (`.skillsync/runs/<run>/checkpoints.md`), w tej
-samej linii co `zrobione: …; w toku: …` (segmenty rozdziela `;`):
+Źródło: segment `eta: <operacja> do HH:MM` albo `eta: <operacja> until HH:MM` (`ETA_AT_RE`) NAJNOWSZEGO checkpointu przebiegu
+(`.skillsync/runs/<run>/checkpoints.md`), w tej samej linii co `zrobione: …; w toku: …` (segmenty rozdziela `;`):
 
 ```
 - 14:05 w toku: F1.2; eta: rysowanie 12 ekranów prototypu do 15:10
+- 14:05 in progress: F1.2; eta: rendering 12 prototype screens until 15:10
 ```
 
 Agent pisze segment PRZED długą operacją (spec, prototyp i jego iteracje, plan, krok implementacji), powtarza go w każdej linii
@@ -558,7 +594,7 @@ formatów warstw). Tylko odczyt; bez `--json` drukuje ten sam JSON. Wejście:
 - dziennik `.skillsync/runs/<run-id>/checkpoints.md` (te same znaczniki „w toku”/„zrobione” co `substeps[]`; czasy liczy ta
   sama funkcja co `show`, więc podkrok z czasem w obu wynikach ma identyczne `seconds`, `startedAt`, `finishedAt`);
 - rekordy checkpointów `.skillsync/runs/<run-id>.json` (`skillsync checkpoint`), jeśli plik jest;
-- plan: `--plan` (ścieżka względna planu projektu; nieznany plan = `BLOCKED`), bez niego plan z `Przebieg: <run-id>` (wybór
+- plan: `--plan` (ścieżka względna planu projektu; nieznany plan = `BLOCKED`), bez niego plan z linią `Przebieg: <run-id>` albo `Run: <run-id>` (zob. `plans[].run`; wybór
   jak dla `show`, zob. `planAuto`). Bez planu podkroki to id `Fn.k` z dziennika w
   kolejności pierwszego wystąpienia (`title` = null).
 
