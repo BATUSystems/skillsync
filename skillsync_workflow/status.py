@@ -34,7 +34,7 @@ STATUS_TEXT_MAX = 80
 _STATUS_WINDOW_READ = 8192   # characters masked before the 4000-character window of `_status_fields` is cut (a secret on the cut is whole in this span)
 _TITLE = re.compile(r'^#\s+(.+?)\s*$', re.MULTILINE)
 _STEP = re.compile(r'^\s*-\s\[([ xX])\]\s+\S', re.MULTILINE)
-_ACCEPTANCE_STEP = re.compile(r'^\s*-\s\[[ xX]\]\s+(?:[A-Za-z]+\d+(?:\.\d+)?\s+)?Odbi[oó]r\b', re.MULTILINE | re.IGNORECASE)
+_ACCEPTANCE_STEP = re.compile(r'^\s*-\s\[[ xX]\]\s+' + protocol_tokens.ACCEPTANCE_PATTERN, re.MULTILINE | re.IGNORECASE)
 ACCEPTANCE_WORDS = {'pr': 'READY', 'direct': 'CP'}   # the closing consent word of a delivery mode: it is also the acceptance
 PLAN_SUMMARY = 'Streszczenie dla człowieka'
 SUMMARY_MAX_LINES = 40
@@ -103,11 +103,10 @@ def _plan_spec(text):
 PRE_IMPLEMENT_SECTIONS = ('Kontrakty', 'Migracja', 'Dane')
 PRE_IMPLEMENT_VERDICTS = ('READY', 'NEEDS_CHANGES', 'BLOCKED')  # od najlepszego do najgorszego
 _PRE_HEADING = re.compile(r'^(?P<hashes>#{1,6})[ \t]+(?P<title>.*?)[ \t]*$', re.MULTILINE)
-_PRE_SECTION_WORD = re.compile(r'\b(?:' + '|'.join(PRE_IMPLEMENT_SECTIONS) + r')\b', re.IGNORECASE)
 # Pusta treść: pierwsza niepusta linia (bez znaczników) to samo „nie dotyczy” (po nim koniec linii albo . - – — : , ;), samo
 # TODO/TBD/n/a (po nim koniec linii, kropka albo dwukropek) albo same myślniki; „Todo-lista” i „Nie dotyczy starych” to treść.
 _PRE_TAIL = '*_` \t\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029'   # what the end of a line may carry: markup and white space, also the separators that no longer cut a line
-_PRE_EMPTY_BODY = re.compile(r'(?:nie[ \t]+dotyczy(?:[ \t]*$|[ \t]*[.\-–—:,;])|(?:todo|tbd|n/a)(?:[ \t]*$|[ \t]*[.:])|[-–—]+[ \t]*$)',
+_PRE_EMPTY_BODY = re.compile(r'(?:(?:nie[ \t]+dotyczy|not[ \t]+applicable)(?:[ \t]*$|[ \t]*[.\-–—:,;])|(?:todo|tbd|n/a)(?:[ \t]*$|[ \t]*[.:])|[-–—]+[ \t]*$)',
                              re.IGNORECASE)
 _PRE_VERDICT = re.compile(r'^[*_`]*' + protocol_tokens.token_alternation('verdict')
                           + r'[*_` \t]*(?P<word>READY|NEEDS_CHANGES|BLOCKED)[*_`. \t]*$')
@@ -138,7 +137,7 @@ def pre_implement_sections(spec_text):
     found = []
     for index, mark in enumerate(marks):
         title = mark.group('title').strip()
-        if not _PRE_SECTION_WORD.search(title):
+        if not protocol_tokens.risk_section_title(title):
             continue
         level = len(mark.group('hashes'))
         end = next((later.start() for later in marks[index + 1:] if len(later.group('hashes')) <= level), len(spec_text))
@@ -209,7 +208,7 @@ def pre_implement_state(root, spec_rel, plan_text, status):
 def plan_summary(text):
     """The `## Streszczenie dla człowieka` section as plain text for the status page: heading markers removed, at most 40 lines and
     4000 characters (a cut one ends with `…`); None when the section is absent or empty."""
-    body = plan_section(redact(text), PLAN_SUMMARY)   # the whole plan is masked before the section is taken, trimmed and cut
+    body = plan_section(redact(text), protocol_tokens.names('summary'))   # the whole plan is masked before the section is taken, trimmed and cut
     if not body:
         return None
     lines, fence = [], None
@@ -655,7 +654,7 @@ def set_doc_status(root, name, action, folder='plans', expect_sha=None):
         # „czeka na <tę zgodę>” jest po zatwierdzeniu nieaktualne; inne dopiski (np. „czeka na spec”, „szkic”) zostają,
         # bo rozstrzyga je tabela wznowienia.
         consent = _SATISFIED[folder]
-        rest = re.sub(r'[ \t]*\((?=[^()\n]*czeka na[^()\n]*' + consent + r')[^()\n]*\)', '', rest, flags=re.IGNORECASE)
+        rest = re.sub(r'[ \t]*\((?=[^()\n]*' + protocol_tokens.token_alternation('waiting') + r'[^()\n]*' + consent + r')[^()\n]*\)', '', rest, flags=re.IGNORECASE)
     updated = (text[:start] + target + rest + text[line_end:]).encode('utf-8')
     mode = path.stat().st_mode & 0o7777
     fd, tmp = tempfile.mkstemp(prefix=f'.{path.name}.', suffix='.tmp', dir=path.parent)
