@@ -12,6 +12,10 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Fixed
+
+- **The one-time `precmd` hook of the zsh completion block no longer ends the shell when `compinit` fails.** The line `(( $+functions[compdef] )) || { autoload -Uz compinit && compinit -i; }` returned the status of the failed `compinit`; with `setopt ERR_EXIT` in the user's `.zshrc` that closed the interactive shell at the first prompt, and with `ERR_RETURN` the hook returned before it registered anything or removed its function. The line now ends with `|| :`, so the hook goes on and, when `compdef` is still missing, prints its one-line warning. Run `skillsync completion install` again to refresh the block in `.zshrc`.
+
 ## [1.12.0] - 2026-11-22
 
 Upgrading from 1.11.0: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.11.0 → 1.12.0".
