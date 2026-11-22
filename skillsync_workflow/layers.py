@@ -32,7 +32,7 @@ from pathlib import Path, PurePosixPath
 import yaml
 
 from .fsutil import isabs, rmtree_force
-from . import tools_index
+from . import tools_check, tools_index
 from .pathfmt import posix
 
 # `common` is imported inside functions only, so that `common` can import this module (2.2a).
@@ -1592,6 +1592,10 @@ def merged_tools_index(layerset):
             present = False
         if not present:
             continue
+        if not _clean(path, layer.root):   # a link anywhere on the way (D73): never read, like the other aggregates
+            merged.conflicts.append(_finding('tools-index-invalid', 'warning',
+                                             f'{layer.id}:{tools_index.INDEX_PATH}: a link on the way; links in layers are never read', layer.id))
+            continue
         records, errors = tools_index.read_index_file(path, f'{layer.id}:{tools_index.INDEX_PATH}')
         merged.sources.append((layer.id, path))
         for message in errors:
@@ -1930,7 +1934,7 @@ def _hook_findings(layer):
                      f'hooks ({", ".join(state["missing"])}); {hint}', layer.id)]
 
 
-ATTRIBUTION_DIRS = ('instructions', 'skills', 'agents', 'workflow', 'output-styles')
+ATTRIBUTION_DIRS = ('instructions', 'skills', 'agents', 'workflow', 'output-styles', 'tools')
 ATTRIBUTION_SUFFIXES = ('.md', '.yaml', '.yml', '.txt', '.toml', '.json')
 ATTRIBUTION_FILE_LIMIT = 1 << 20
 
@@ -2018,6 +2022,7 @@ def check_layers(layerset, *, version=None, hooks=True, trust=True, orphans=True
         if layer.meta is not None:
             findings.extend(attribution_findings(layer))
             findings.extend(supersedes_findings(layer))
+            findings.extend(_finding(code, 'warning', message, layer.id) for code, message in tools_check.layer_findings(layer))
         for rel in layer_links(layer):
             findings.append(_finding('symlink-in-layer', 'error', f'Layer {layer.id}: {rel} is a symlink/junction; '
                                      'links are not allowed in layers and are never read', layer.id))

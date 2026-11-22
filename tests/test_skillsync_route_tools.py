@@ -148,5 +148,69 @@ class LimitAndErrorsTest(RouteToolsCase):
         self.assertTrue(result['tools_warnings'])
 
 
+class ReviewTest(RouteToolsCase):
+    def test_a_linked_tools_directory_of_a_layer_is_never_read(self):
+        org, me = self.with_layers()
+        outside = child(self.base, 'outside-tools')
+        outside.mkdir()
+        write(outside / 'index.yaml', idx(rec('evil')))
+        (org / 'tools').symlink_to(outside, target_is_directory=True)
+        self.put(self.library, rec('a'))
+        result = self.route()
+        self.assertEqual(self.ids(result), ['a'])
+        self.assertTrue([text for text in result['tools_warnings'] if 'link' in text])
+
+    def test_a_linked_docs_directory_of_the_project_is_not_followed(self):
+        outside = child(self.base, 'outside-docs')
+        write(outside / 'tools' / 'index.yaml', idx(rec('evil')))
+        (self.root / 'docs').symlink_to(outside, target_is_directory=True)
+        result = self.route()
+        self.assertEqual(result['tools'], [])
+        self.assertTrue(result['tools_warnings'])
+
+    def test_ranking_between_groups_and_layers_and_the_cut_keeps_the_project(self):
+        org, me = self.with_layers()
+        self.put(self.library, rec('core-file', topics=[], files=['**/*.css']))
+        self.put(me, rec('me-topic'))
+        write(descend(self.root, 'docs/tools/index.yaml'), idx(*[rec(f'p{number:02d}') for number in range(10)]))
+        self.assertEqual(self.ids(self.route('--files', 'a.css'))[:2], ['p00', 'p01'])
+        self.assertEqual(len(self.route('--files', 'a.css')['tools']), 10)
+        write(descend(self.root, 'docs/tools/index.yaml'), idx(rec('p')))
+        self.assertEqual(self.ids(self.route('--files', 'a.css')), ['p', 'core-file', 'me-topic'])   # files before topics, whatever the layer
+
+    def test_the_history_carries_matched_by_local_and_project_records(self):
+        org, me = self.with_layers()
+        self.put(me, rec('mine', status='removed'))
+        write(descend(self.root, 'docs/tools/index.yaml'), idx(rec('proj', status='removed')))
+        rows = {item['id']: item for item in self.route('--tools-history')['tools_hidden']}
+        self.assertEqual((rows['mine']['matched_by'], rows['mine']['local']), ('topics', True))
+        self.assertEqual(rows['proj']['layer'], 'project')
+
+    def test_the_history_and_the_warnings_are_limited_and_say_so(self):
+        self.put(self.library, *[rec(f'h{number:02d}', status='removed') for number in range(35)])
+        self.assertIs(self.route('--tools-history')['tools_hidden_truncated'], True)
+        text = 'schema: 1\ntools:\n' + ''.join(f'  - {{id: B{number}}}\n' for number in range(30))
+        write(descend(self.root, 'docs/tools/index.yaml'), text)
+        warnings = self.route()['tools_warnings']
+        self.assertEqual(len(warnings), 21)
+        self.assertIn('more problems', warnings[-1])
+
+    def test_texts_with_odd_content_and_a_bidi_path(self):
+        self.put(self.library, rec('a', limits=['x\x1b[31m', 'y']), rec('b', path='scripts/\u202eb.mjs'))
+        result = self.route()
+        self.assertEqual(self.ids(result), ['a'])
+        self.assertEqual(result['tools'][0]['limits'], ['x', 'y'])
+        self.assertTrue(result['tools_warnings'])
+
+    def test_a_failing_merge_is_a_warning_and_never_an_exception(self):
+        from unittest import mock
+        from skillsync_workflow import layers, tools_route
+        self.put(self.library, rec('a'))
+        with mock.patch.object(layers, 'merged_tools_index', side_effect=RuntimeError('boom')):
+            section = tools_route.tools_section(self.root, layers.resolve_layers(self.root), [], ['ui'])
+        self.assertEqual(section['tools'], [])
+        self.assertIn('not read', section['tools_warnings'][0])
+
+
 if __name__ == '__main__':
     unittest.main()

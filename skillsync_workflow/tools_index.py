@@ -35,6 +35,7 @@ MAX_TOPICS = 30
 MAX_TOPIC = 60
 MAX_FILES = 20
 MAX_PATTERN = 200
+MAX_PATH = 300   # a path or a pattern of a path: control, format (bidi, zero width) and separator characters are refused
 MAX_LIMITS = 30
 MAX_SUPERSEDES = 20
 STATUSES = ('active', 'candidate', 'superseded', 'removed')
@@ -58,8 +59,8 @@ def safe_relative(value):
     if not isinstance(value, str) or not value.strip():
         return False
     text = value.replace('\\', '/')
-    return not (any(ord(char) < 32 or ord(char) == 127 for char in value) or text.startswith('/') or _DRIVE.match(text)
-                or '..' in text.split('/'))
+    return not (len(value) > MAX_PATH or any(unicodedata.category(char)[0] == 'C' for char in value) or text.startswith('/')
+                or _DRIVE.match(text) or '..' in text.split('/'))
 
 
 def _text(record, key, label, *, required=False):

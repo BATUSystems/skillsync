@@ -1152,6 +1152,9 @@ def doctor(root, manifest, library):
     from . import supersedes   # a layer replacing local files of the project (CORE-1140-SUP-TOOLS): texts only, nothing from a layer is run
     for item in supersedes.doctor_findings(root, manifest, layerset):
         finding(item['level'], item['path'], item['reason'])
+    from . import tools_check   # the tool index of the project against its files: warnings, nothing is run
+    for _code, message in tools_check.project_findings(root):
+        finding('warning', 'docs/tools/index.yaml', message)
     skills = expand_project_skills(manifest, library)
     agentflow = WORKFLOW_SKILL in skills or LEGACY_WORKFLOW_SKILL in skills
     declared = manifest.get('skills')
