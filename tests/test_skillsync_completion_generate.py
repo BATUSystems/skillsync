@@ -31,6 +31,20 @@ def usable_bash():
             return None
     return found
 
+
+def usable_powershell():
+    """`(exe, extra args)` of a PowerShell host: `pwsh` when there is one; on Windows otherwise Windows PowerShell 5.1 (`powershell`, which lives in System32 and
+    is the right host there, unlike `bash`), so that the matrix covers 5.1; its default policy is `Restricted`, hence `-ExecutionPolicy Bypass` for the dot-sourced
+    script. Elsewhere without `pwsh`: `None`."""
+    found = shutil.which('pwsh')
+    if found:
+        return found, []
+    if sys.platform == 'win32':
+        found = shutil.which('powershell')
+        if found:
+            return found, ['-ExecutionPolicy', 'Bypass']
+    return None
+
 GOLDEN = Path(__file__).resolve().parent / 'fixtures' / 'completion'
 EXTENSIONS = {'bash': 'bash', 'zsh': 'zsh', 'powershell': 'ps1'}
 
@@ -225,27 +239,29 @@ class Syntax(GeneratedFixtureCase):
         self.check(['zsh', '-n'], 'zsh', 'zsh')
 
     def test_powershell_parses_the_script(self):
-        pwsh = shutil.which('pwsh')
-        if not pwsh:
+        host = usable_powershell()
+        if not host:
             self.skipTest('no pwsh on PATH: pwsh is not installed')
+        pwsh, extra = host
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'script.ps1'
-            path.write_bytes(self.script('powershell').encode('utf-8'))
+            path.write_bytes(self.script('powershell').encode('utf-8-sig'))   # with a BOM, as the installer writes it: 5.1 reads a file without one as ANSI
             command = ('$e = $null; [void][System.Management.Automation.Language.Parser]::ParseFile($env:SK_SCRIPT, [ref]$null, [ref]$e); '
                        'if ($e.Count) { $e | ForEach-Object { $_.Message }; exit 1 }')
-            result = subprocess.run([pwsh, '-NoProfile', '-NonInteractive', '-Command', command], capture_output=True, text=True, timeout=120, env={**os.environ, 'SK_SCRIPT': str(path)})
+            result = subprocess.run([pwsh, '-NoProfile', '-NonInteractive', *extra, '-Command', command], capture_output=True, text=True, timeout=120, env={**os.environ, 'SK_SCRIPT': str(path)})
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_powershell_completes_in_a_real_host(self):
-        pwsh = shutil.which('pwsh')
-        if not pwsh:
+        host = usable_powershell()
+        if not host:
             self.skipTest('no pwsh on PATH: pwsh is not installed')
+        pwsh, extra = host
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'script.ps1'
-            path.write_bytes(self.script('powershell').encode('utf-8'))
+            path.write_bytes(self.script('powershell').encode('utf-8-sig'))   # with a BOM, as the installer writes it: 5.1 reads a file without one as ANSI
             probe = ('. $env:SK_SCRIPT; foreach ($l in \'skillsync s\', \'skillsync link --mode \', \'skillsync skills add b\') '
                      '{ ($l + \' => \' + ((TabExpansion2 $l $l.Length).CompletionMatches.CompletionText -join \',\')) }')
-            result = subprocess.run([pwsh, '-NoProfile', '-NonInteractive', '-Command', probe], capture_output=True, text=True, timeout=120,
+            result = subprocess.run([pwsh, '-NoProfile', '-NonInteractive', *extra, '-Command', probe], capture_output=True, text=True, timeout=120,
                                     stdin=subprocess.DEVNULL, env={**os.environ, 'SK_SCRIPT': str(path)})
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.splitlines(), ['skillsync s => skills', "skillsync link --mode  => copy,'it''s','two words'", 'skillsync skills add b => beta'])
@@ -266,14 +282,15 @@ class Syntax(GeneratedFixtureCase):
         self.assertIn("-CommandName @('skillsync', 'skillsync.exe')", self.script('powershell'))
 
     def test_powershell_completes_the_exe_name_too(self):
-        pwsh = shutil.which('pwsh')
-        if not pwsh:
+        host = usable_powershell()
+        if not host:
             self.skipTest('no pwsh on PATH: pwsh is not installed')
+        pwsh, extra = host
         with tempfile.TemporaryDirectory() as tmp:
             path = child(tmp, 'script.ps1')
-            path.write_bytes(self.script('powershell').encode('utf-8'))
+            path.write_bytes(self.script('powershell').encode('utf-8-sig'))   # with a BOM, as the installer writes it: 5.1 reads a file without one as ANSI
             probe = '. $env:SK_SCRIPT; $l = \'skillsync.exe s\'; ((TabExpansion2 $l $l.Length).CompletionMatches.CompletionText -join \',\')'
-            result = subprocess.run([pwsh, '-NoProfile', '-NonInteractive', '-Command', probe], capture_output=True, text=True, timeout=120,
+            result = subprocess.run([pwsh, '-NoProfile', '-NonInteractive', *extra, '-Command', probe], capture_output=True, text=True, timeout=120,
                                     stdin=subprocess.DEVNULL, env={**os.environ, 'SK_SCRIPT': str(path)})
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.splitlines(), ['skills'])

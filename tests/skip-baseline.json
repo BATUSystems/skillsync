@@ -97,7 +97,7 @@
   "linux/symlink": "Measured locally (full run 2.4 + step 3.1t): Node 22, SKILLSYNC_TEST_LIBRARY and SKILLSYNC_PROTOTYPE_ENGINE_V2_SOURCE set, no Chrome.",
   "linux/copy": "As linux/symlink with SKILLSYNC_NO_SYMLINK=1. Since step 5.1 the prototype tests that plant hostile links use the OS-level guard (`needs_os_symlinks`), so they run in copy mode and no longer appear here.",
   "ubuntu-latest/*": "Measured from the CI logs of 8 jobs (Python 3.11-3.14, symlink and copy): 15 skips each, identical (13 Chrome E2E tests of category e2e-chrome run in the `e2e` job, the Windows-only test, the zsh hook test: the runner has no zsh); plus 3 Windows-only junction tests of test_skillsync_resolve_loop (not in those logs, same behaviour as the Linux entries).",
-  "windows-latest/*": "windows-latest/copy measured from the CI logs of Python 3.11, 3.12 and 3.13 (identical sets); windows-latest/symlink stays null: the matrix excludes it (no OS symlinks without Developer Mode).",
+  "windows-latest/*": "windows-latest/copy measured from the CI logs of Python 3.11, 3.12 and 3.13 (identical sets); windows-latest/symlink stays null: the matrix excludes it (no OS symlinks without Developer Mode). The three PowerShell host tests of test_skillsync_completion_generate do not skip there: without pwsh they run on the Windows PowerShell 5.1 of the runner (`powershell`).",
   "macos-latest/*": "Measured from the CI runs of main (v1.3.0, 12.11): 35 skips, the same in all four jobs (3.11/3.12, symlink/copy): the Chrome E2E scenarios (job e2e), the Azure tests without the machine descriptor, the env lifecycle tests (process ownership backend on Linux only), BSD mktemp, file system limits and shellcheck (not installed on the macOS runner).",
   "e2e-chrome": "The 13 Chrome scenario scripts (one test per tests/e2e/prototype/*.mjs, incl. test_widok, test_w and test_p) are allowed: CI runs no Chrome; the prototype E2E runs separately with Chrome and leased ports.",
   "macos-uv/*": "The local macOS matrix (macmatrix-driver) runs the interpreters of uv (python-build-standalone) 3.11 and 3.12, which have NO time.tzset (the system Python and the setup-python of the CI runners have it): the key of that layout is macos-uv = macos-latest plus the tests that skip on a missing time.tzset (categories no-tzset and windows-no-mechanism). The CI runners keep macos-latest."
@@ -915,18 +915,6 @@
    },
    {
     "id": "test_skillsync_completion_generate.Syntax.test_bash_without_compopt_still_completes",
-    "category": "needs-shell"
-   },
-   {
-    "id": "test_skillsync_completion_generate.Syntax.test_powershell_completes_in_a_real_host",
-    "category": "needs-shell"
-   },
-   {
-    "id": "test_skillsync_completion_generate.Syntax.test_powershell_completes_the_exe_name_too",
-    "category": "needs-shell"
-   },
-   {
-    "id": "test_skillsync_completion_generate.Syntax.test_powershell_parses_the_script",
     "category": "needs-shell"
    },
    {
