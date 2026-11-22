@@ -19,6 +19,10 @@ class HeaderTokens(unittest.TestCase):
         self.assertEqual(dashboard.parse_header('# P\n\nRun: second\nPrzebieg: first\n')[1]['przebieg'], 'second')
         self.assertEqual(dashboard.parse_header('# P\n\nPrzebieg: first\nRun: second\n')[1]['przebieg'], 'first')
 
+    def test_first_run_line_wins_also_with_a_note(self):
+        text = '# P\n\nPrzebieg: a (uwaga)\nPrzebieg: b\n'
+        self.assertEqual(dashboard.parse_header(text)[1]['przebieg'], 'a (uwaga)')
+
     def test_run_line_with_a_note_reads_like_the_polish_one(self):
         for key in ('Przebieg', 'Run'):
             self.assertEqual(dashboard.parse_header(f'# P\n\n{key}: r1 (uwaga)\n')[1]['przebieg'], 'r1 (uwaga)', key)
@@ -40,7 +44,7 @@ class HeaderTokens(unittest.TestCase):
 
 
 class KeywordAnchors(unittest.TestCase):
-    """English `done:` / `in progress:` count only at the start of a segment; the Polish keywords win everywhere (as in ccc01eb)."""
+    """English `done:` / `in progress:` count only at the start of a segment; the Polish keywords win everywhere (as before the English aliases were added)."""
 
     def test_polish_keyword_wins_over_an_english_word_in_an_earlier_segment(self):
         self.assertEqual(dashboard.ids_reported_done('review done: 0 uwag; zrobione: S3'), ['S3'])

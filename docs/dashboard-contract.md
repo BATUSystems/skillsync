@@ -192,7 +192,7 @@ W trybach innych niż `plan` pola `plan`, `progress.phases` itd. są puste (`pla
 ### `plans[]`
 
 `path` (string), `title` (string), `status` (`draft`, `approved`, `in_progress`, `done`, `implemented` albo null), `spec`
-(ścieżka speca lub null), `run` (id przebiegu lub null). Plan wiąże się z przebiegiem linią `Przebieg: <run-id>` (polska forma, czytana w całym tekście planu) albo `Run: <run-id>` (angielska forma, czytana tylko w nagłówku, czyli przed pierwszym `## `; `protocol_tokens.RUN_LINE`). Gdy występują obie, wygrywa linia położona wcześniej w tekście. Sam `checkpoint --run-id X` tworzy `.skillsync/runs/X`, ale bez tej linii `plans[].run` i `run.id` strony statusu zostają `null` (strona nie zgaduje powiązania). Odczyt linii w `quality._PLAN_RUN` i `test_gate._RUN_LINE` (a przez nią `status.plan_state_for_run`, czyli `planState` zgód) czyta wyłącznie `Przebieg:`; zob. [domain/i18n-ui](domain/i18n-ui.md).
+(ścieżka speca lub null), `run` (id przebiegu lub null). Plan wiąże się z przebiegiem linią `Przebieg: <run-id>` albo `Run: <run-id>` w nagłówku planu, czyli przed pierwszym `## ` (`parse_header`); gdy występują obie, wygrywa linia położona wcześniej. `skillsync status` (`status.py`) czyta polskie `Przebieg:` w całym tekście planu, a angielskie `Run:` tylko w nagłówku (`protocol_tokens.RUN_LINE`). Sam `checkpoint --run-id X` tworzy `.skillsync/runs/X`, ale bez tej linii `plans[].run` i `run.id` strony statusu zostają `null` (strona nie zgaduje powiązania). Odczyt linii w `quality._PLAN_RUN` i `test_gate._RUN_LINE` (a przez nią `status.plan_state_for_run`, czyli `planState` zgód) czyta wyłącznie `Przebieg:`; zob. [domain/i18n-ui](domain/i18n-ui.md).
 
 ### `plan`
 
@@ -230,7 +230,7 @@ Format checkpointu: `- HH:MM <tekst>`; segmenty `w toku: F1.2, F1.3`, `zrobione:
 
 | Polski | Angielski | Reguła w parserze |
 |---|---|---|
-| `w toku:` | `in progress:` | angielska forma wymaga dwukropka i działa na początku segmentu (`;` dzieli segmenty) |
+| `w toku:` | `in progress:` | angielska forma wymaga dwukropka i działa tylko na początku segmentu (`;` dzieli segmenty); polska forma działa w dowolnym miejscu segmentu i ma pierwszeństwo: angielska liczy się dopiero, gdy w liniach brak polskiej |
 | `zrobione:` | `done:` | j.w.; forma polska działa też bez dwukropka |
 | `czeka:` | `waiting:` | tylko na początku segmentu; w tej samej linii wygrywa nad `trwa:` |
 | `eta: <operacja> do HH:MM` | `eta: <operacja> until HH:MM` | na początku segmentu; czas `HH:MM` na końcu |

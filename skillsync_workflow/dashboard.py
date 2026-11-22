@@ -192,7 +192,10 @@ def parse_header(text):
             fields.setdefault(HEADER_ALIASES.get(key, key), match.group('val').strip())
     run = tokens.RUN_LINE.search('\n'.join(head))
     if run and run.group(1):
-        fields['przebieg'] = run.group(1)
+        # The first line of the key wins, as for every other header field: `RUN_LINE` only normalizes the same id (backticks) or fills a gap.
+        first = fields.get('przebieg')
+        if first is None or first.strip().strip('`') == run.group(1):
+            fields['przebieg'] = run.group(1)
     return title, fields
 
 
